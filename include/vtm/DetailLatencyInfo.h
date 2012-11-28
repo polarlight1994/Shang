@@ -188,6 +188,10 @@ public:
   bool runOnMachineFunction(MachineFunction &MF);
 
   void releaseMemory() { reset(); }
+
+  // Delay estimation statistics.
+  void print(raw_ostream &O, const Module *M) const;
+  void dump() const;
 };
 
 }

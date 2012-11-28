@@ -451,3 +451,43 @@ bool DetialLatencyInfo::runOnMachineFunction(MachineFunction &MF) {
 
   return false;
 }
+
+void DetialLatencyInfo::dump() const {
+  print(dbgs(), 0);
+}
+
+void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
+  typedef LatencyMapTy::const_iterator LatIt;
+  for (LatIt I = LatencyMap.begin(), E = LatencyMap.end(); I != E; ++I) {
+    const MachineInstr *DstMI = I->first;
+
+    // Ignore the chain end with data-path operations.
+    //if (VInstrInfo::isDatapath(DstMI->getOpcode())) continue;
+
+    typedef DepLatInfoTy::const_iterator SrcIt;
+    for (SrcIt II = I->second.begin(), IE = I->second.end(); II != IE; ++II) {
+      const InstPtrTy SrcMI = II->first;
+
+      // Ignore the chain start from data-path operations.
+      if (SrcMI.isMI() && VInstrInfo::isDatapath(SrcMI->getOpcode())) continue;
+      float MSBDelay = II->second.first, LSBDelay = II->second.second;
+
+      // Do not count the delay introduced by required control-steps.
+      if (const MachineInstr *SrcCtrlMI = SrcMI) {
+        MSBDelay -= VInstrInfo::getDetialLatency(SrcCtrlMI);
+        LSBDelay -= VInstrInfo::getDetialLatency(SrcCtrlMI);
+      }
+
+      O << "DELAY-ESTIMATION: From " << SrcMI.getOpaqueValue()
+        << " to " << DstMI << "\nDELAY-ESTIMATION: MSB-Delay "
+        << II->second.first << "\nDELAY-ESTIMATION: LSB-Delay "
+        << II->second.second << "\nDELAY-ESTIMATION: MAX-Delay "
+        << getMaxLatency(*II) << '\n';
+
+      O << "DELAY-ESTIMATION-JSON: { \"SRC\":\"" << SrcMI.getOpaqueValue()
+        << "\", \"DST\":\"" << DstMI << "\", \"MSB\":" << II->second.first
+        << ", \"LSB\":" << II->second.second << ", \"MAX\":"
+        << getMaxLatency(*II) << "} \n";
+    }
+  }
+}
