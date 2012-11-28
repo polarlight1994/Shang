@@ -264,8 +264,8 @@ LatInfoTy DetialLatencyInfo::getLatencyToDst(const MachineInstr *SrcMI,
       // DirtyHack: Ignore the invert flag.
       if (SrcSize != 1 && UB != 3) {
         assert(UB <= SrcSize && UB > LB  && "Bad bitslice!");
-        return getBitSliceLatency(SrcSize, UB, LB,
-                                  LatInfoTy(MSBLatency, LSBLatency));
+        tie(MSBLatency, LSBLatency)
+          = getBitSliceLatency(SrcSize, UB, LB, LatInfoTy(MSBLatency, LSBLatency));
       }
     }
   } else {
@@ -273,6 +273,10 @@ LatInfoTy DetialLatencyInfo::getLatencyToDst(const MachineInstr *SrcMI,
     LSBLatency = MSBLatency
       = std::max(0.0f, MSBLatency - DetialLatencyInfo::DeltaLatency);
   }
+
+  // Force synchronize the bit-delays if bit-level chaining is disabled.
+  if (DisableBLC)
+    MSBLatency = LSBLatency = std::max(MSBLatency, LSBLatency);
 
   return std::make_pair(MSBLatency, LSBLatency);
 }
@@ -296,8 +300,6 @@ void DetialLatencyInfo::buildDepLatInfo(const MachineInstr *SrcMI,
   SrcLatency = ensureElementalLatency(SrcLatency);
   unsigned Opcode = SrcMI->getOpcode();
   bool isCtrl = VInstrInfo::isControl(SrcMI->getOpcode());
-  if (DisableBLC && Opcode != VTM::VOpBitSlice)
-    Opcode = VTM::INSTRUCTION_LIST_END;
 
   switch (Opcode) {
   default:
