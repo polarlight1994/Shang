@@ -389,6 +389,8 @@ static bool generateOperandNames(const std::string &ModName, luabind::object O,
 unsigned VFUs::getModuleOperands(const std::string &ModName, unsigned FNNum,
                                  SmallVectorImpl<ModOpInfo> &OpInfo) {
   luabind::object O = scriptEngin().getModTemplate(ModName);
+  if (luabind::type(O) != LUA_TTABLE) return 0;
+
   O = O["TimingInfo"];
   if (luabind::type(O) != LUA_TTABLE) return 0;
 
