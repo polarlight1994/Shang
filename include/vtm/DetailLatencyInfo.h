@@ -14,17 +14,14 @@
 // Compute the detail ctrlop to ctrlop latency (in cycle ratio) information.
 //
 //===----------------------------------------------------------------------===//
-#include "VInstrInfo.h"
-#include "Passes.h"
-#include <float.h>
-#include "vtm/VerilogBackendMCTargetDesc.h"
+#include "vtm/VInstrInfo.h"
+#include "vtm/Passes.h"
+
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/PassSupport.h"
-#include "llvm/Support/CommandLine.h"
 
 namespace llvm{
 
@@ -90,24 +87,24 @@ public:
   static char ID;
   // The latency of MSB and LSB from a particular operation to the current
   // operation.
-  typedef std::map<InstPtrTy, std::pair<float, float> > DepLatInfoTy;
-  static float getMaxLatency(DepLatInfoTy::value_type v) {
+  typedef std::map<InstPtrTy, std::pair<unsigned, unsigned> > DepLatInfoTy;
+  static unsigned getMaxLatency(DepLatInfoTy::value_type v) {
     return std::max(v.second.first, v.second.second);
   }
 
-  static float getMinLatency(DepLatInfoTy::value_type v) {
+  static unsigned getMinLatency(DepLatInfoTy::value_type v) {
     return std::min(v.second.first, v.second.second);
   }
 
-  const static float DeltaLatency;
+  const static unsigned LatencyScale, LatencyDelta;
 
   MachineRegisterInfo *MRI;
 
 private:
   // Cache the computational delay for every instruction.
-  typedef std::map<const MachineInstr*, float> CachedLatMapTy;
+  typedef std::map<const MachineInstr*, unsigned> CachedLatMapTy;
   CachedLatMapTy CachedLatencies;
-  float computeAndCacheLatencyFor(const MachineInstr *MI);
+  unsigned computeAndCacheLatencyFor(const MachineInstr *MI);
   CachedLatMapTy::mapped_type
   getCachedLatencyResult(const MachineInstr *MI) const {
     CachedLatMapTy::const_iterator at = CachedLatencies.find(MI);
@@ -149,9 +146,7 @@ public:
 
   // Get the latencies from the control-path dependences to the copy operation
   // which copy MI's result to register.
-  void buildLatenciesToCopy(const MachineInstr *MI, DepLatInfoTy &Info) {
-    buildDepLatInfo<false>(MI, Info, 0, 0.0, VTM::VOpReadFU);
-  }
+  void buildLatenciesToCopy(const MachineInstr *MI, DepLatInfoTy &Info);
 
   typedef const std::set<const MachineInstr*> MISetTy;
   // All operation must finish before the BB exit, this function build the
@@ -159,7 +154,7 @@ public:
   void buildExitMIInfo(const MachineInstr *ExitMI, DepLatInfoTy &Info,
                        MISetTy &MIsToWait, MISetTy &MIsToRead);
 
-  void addDummyLatencyEntry(const MachineInstr *MI, float l = 0.0f) {
+  void addDummyLatencyEntry(const MachineInstr *MI, unsigned l = 0.0f) {
     CachedLatencies.insert(std::make_pair(MI, l));
   }
 
@@ -170,17 +165,17 @@ public:
     clearCachedLatencies();
   }
 
-  float getMaxLatency(const MachineInstr *MI) const {
+  unsigned getMaxLatency(const MachineInstr *MI) const {
     return getCachedLatencyResult(MI);
   }
 
-  unsigned getStepsToFinish(const MachineInstr *MI) const {
-    return ceil(getMaxLatency(MI));
-  }
+  //unsigned getStepsToFinish(const MachineInstr *MI) const {
+  //  return ceil(getMaxLatency(MI));
+  //}
 
   // Return the edge latency between SrcInstr and DstInstr considering chaining
   // effect.
-  float getChainedLatency(const MachineInstr *SrcInstr,
+  unsigned getChainedLatency(const MachineInstr *SrcInstr,
                            const MachineInstr *DstInstr) const;
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
