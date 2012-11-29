@@ -173,7 +173,7 @@ public:
   void buildExitMIInfo(const MachineInstr *ExitMI, DepLatInfoTy &Info,
                        MISetTy &MIsToWait, MISetTy &MIsToRead);
 
-  void addDummyLatencyEntry(const MachineInstr *MI, unsigned l = 0.0f) {
+  void addDummyLatencyEntry(const MachineInstr *MI, unsigned l = 0) {
     CachedLatencies.insert(std::make_pair(MI, l));
   }
 

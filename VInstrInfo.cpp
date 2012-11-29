@@ -775,13 +775,6 @@ bool VInstrInfo::isReadAtEmit(unsigned OpC) {
          || isCopyLike(OpC);
 }
 
-template<int Idx, class FUClass>
-static float LookupLatency(const MachineInstr *MI){
-  unsigned SizeInBits = VInstrInfo::getBitWidth(MI->getOperand(Idx));
-
-  return getFUDesc<FUClass>()->lookupLatency(SizeInBits);
-}
-
 FuncUnitId VInstrInfo::getPreboundFUId(const MachineInstr *MI) {
   // Dirty Hack: Bind all memory access to channel 0 at this moment.
   switch(MI->getOpcode()) {
@@ -890,25 +883,32 @@ unsigned VInstrInfo::countNumRegUses(const MachineInstr *MI) {
   return NumRegs;
 }
 
+template<int Idx, class FUClass>
+static float lookupLogicLevels(const MachineInstr *MI){
+  unsigned SizeInBits = VInstrInfo::getBitWidth(MI->getOperand(Idx));
+
+  return getFUDesc<FUClass>()->lookupLogicLevels(SizeInBits);
+}
+
 // Get the latency of a machineinstr in cycle ratio.
-float VInstrInfo::getDetialLatency(const MachineInstr *MI) {
+unsigned VInstrInfo::getNumLogicLevels(const MachineInstr *MI) {
   unsigned OpC = MI->getOpcode();
 
   switch (OpC) {
     // TODO: Bitrepeat.
   case VTM::VOpICmp_c:
   case VTM::VOpICmp:
-    return LookupLatency<1, VFUICmp>(MI);
+    return lookupLogicLevels<1, VFUICmp>(MI);
   // Retrieve the FU bit width from its operand bit width
   case VTM::VOpAdd_c:
   case VTM::VOpAdd:
-    return LookupLatency<1, VFUAddSub>(MI);
+    return lookupLogicLevels<1, VFUAddSub>(MI);
 
   case VTM::VOpMultLoHi_c:
   case VTM::VOpMult_c:
   case VTM::VOpMultLoHi:
   case VTM::VOpMult:
-    return LookupLatency<0, VFUMult>(MI);
+    return lookupLogicLevels<0, VFUMult>(MI);
 
   case VTM::VOpSRA_c:
   case VTM::VOpSRL_c:
@@ -916,34 +916,36 @@ float VInstrInfo::getDetialLatency(const MachineInstr *MI) {
   case VTM::VOpSRA:
   case VTM::VOpSRL:
   case VTM::VOpSHL:
-    return LookupLatency<0, VFUShift>(MI);
+    return lookupLogicLevels<0, VFUShift>(MI);
 
-  case VTM::VOpMemTrans:    return getFUDesc<VFUMemBus>()->getLatency();
+  case VTM::VOpMemTrans:
+    return getFUDesc<VFUMemBus>()->getStepsToWait() * VFUs::ClockPeriod;
 
   // Can be fitted into LUT.
   case VTM::VOpSel:
-    return LookupLatency<0, VFUSel>(MI);
+    return lookupLogicLevels<0, VFUSel>(MI);
 
   // Ignore the trivial logic operation latency at the moment.
   case VTM::VOpLUT:
   case VTM::VOpAnd:
   case VTM::VOpOr:
   case VTM::VOpXor:
-  case VTM::VOpNot:         return VFUs::LutLatency;
+  case VTM::VOpNot:         return 1;
 
   case VTM::VOpRXor:
   case VTM::VOpROr:
   case VTM::VOpRAnd:
-    return LookupLatency<1, VFUReduction>(MI);
+    return lookupLogicLevels<1, VFUReduction>(MI);
 
-  case VTM::VOpBRAMTrans:   return getFUDesc<VFUBRAM>()->getLatency();
+  case VTM::VOpBRAMTrans:
+    return getFUDesc<VFUBRAM>()->getStepsToWait() * VFUs::ClockPeriod;
 
-  case VTM::VOpInternalCall:  return 1.0f;
+  case VTM::VOpInternalCall:  return VFUs::ClockPeriod;
 
   default:                  break;
   }
 
-  return 0.0f;
+  return 0;
 }
 
 

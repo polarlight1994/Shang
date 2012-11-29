@@ -56,6 +56,14 @@ static inline unsigned ensureElementalLatency(unsigned Latency) {
   return Latency == 0 ? 0 : std::max(Latency, scaledLUTLatency());
 }
 
+static inline unsigned scaleUp(unsigned NumLogicLevels) {
+  return NumLogicLevels * DetialLatencyInfo::LatencyScale;
+}
+
+static inline unsigned scaledDetalLatency(const MachineInstr *MI) {
+  return scaleUp(VInstrInfo::getNumLogicLevels(MI));
+}
+
 // Ensure all latency are not smaller than the elemental latency,
 // i.e. the latency of a single LUT.
 static inline BDInfo ensureElementalLatency(BDInfo L) {
@@ -245,7 +253,7 @@ unsigned DetialLatencyInfo::computeAndCacheLatencyFor(const MachineInstr *MI) {
     BDInfo Lat = getLatencyToDst<false>(BitSliceSrc, VTM::VOpMove, UB, LB);
     TotalLatency = Lat.getCriticalDelay();
   } else
-    TotalLatency = VInstrInfo::getDetialLatency(MI);
+    TotalLatency = scaledDetalLatency(MI);
 
   // Remember the latency from all MI's dependence leaves.
   CachedLatencies.insert(std::make_pair(MI, TotalLatency));
@@ -509,8 +517,8 @@ void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
 
       // Do not count the delay introduced by required control-steps.
       if (const MachineInstr *SrcCtrlMI = SrcMI) {
-        MSBDelay -= VInstrInfo::getDetialLatency(SrcCtrlMI);
-        LSBDelay -= VInstrInfo::getDetialLatency(SrcCtrlMI);
+        MSBDelay -= scaledDetalLatency(SrcCtrlMI);
+        LSBDelay -= scaledDetalLatency(SrcCtrlMI);
       }
 
       O << "DELAY-ESTIMATION: From " << SrcMI.getOpaqueValue()

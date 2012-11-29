@@ -165,7 +165,8 @@ public:
 
   static const MCInstrDesc &getDesc(unsigned Opcode);
   static unsigned countNumRegUses(const MachineInstr *MI);
-  static float getDetialLatency(const MachineInstr *MI);
+  // Return the delay in terms of logic-levels.
+  static unsigned getNumLogicLevels(const MachineInstr *MI);
 
   static MachineInstr *getBundleHead(MachineInstr *MI);
 
