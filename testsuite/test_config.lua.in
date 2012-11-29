@@ -27,7 +27,7 @@ dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
 -- load platform information script
 dofile('@VTS_SOURCE_ROOT@/' .. 'AlteraCommon.lua')
 dofile('@VTS_SOURCE_ROOT@/' .. 'Altera4LUTFUs.lua')
-FUs.LUTDelay = 0.0125 / PERIOD
+FUs.LUTDelay = 0.5 / PERIOD
 
 -- Define some function
 dofile('@VTS_SOURCE_ROOT@/' .. 'FuncDefine.lua')
