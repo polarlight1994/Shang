@@ -398,50 +398,7 @@ void VSchedGraph::clearDanglingFlagForTree(VSUnit *Root) {
   }
 }
 
-void VSchedGraph::addSoftConstraintsToBreakChains(SDCSchedulingBase &S) {
-  for (iterator I = dp_begin(this), E = dp_end(this); I != E; ++I) {
-    VSUnit *U = *I;
-
-    // Add soft constraints to prevent CtrlOps from being chained by Data-path Ops.
-    assert(U->num_instrs() == 1 && "Data-path SU with more than 1 MIs!");
-    MachineInstr *MI = U->getRepresentativePtr();
-    assert(MI && "Bad data-path SU without underlying MI!");
-    // Ignore the trivial data-paths.
-    if (getStepsToFinish(MI) == 0) continue;
-
-    MachineBasicBlock *ParentMBB = U->getParentBB();
-    const DepLatInfoTy *Deps = getDepLatInfo(MI);
-
-    typedef DetialLatencyInfo::DepLatInfoTy::const_iterator dep_it;
-
-    for (dep_it I = Deps->begin(), E = Deps->end(); I != E; ++I) {
-      const MachineInstr *SrcMI = I->first;
-
-      // Ignore the entry root.
-      if (SrcMI == 0 || SrcMI->getParent() != ParentMBB)
-        continue;
-
-      unsigned SrcOpC = SrcMI->getOpcode();
-      // Ignore the operations without interesting function unit.
-      if (VInstrInfo::hasTrivialFU(SrcOpC)) continue;
-
-      VSUnit *SrcSU = lookupSUnit(SrcMI);
-      assert(SrcSU && "Source schedule unit not exist?");
-      unsigned StepsBeforeCopy = SrcSU->getLatency()
-                                 + VInstrInfo::isWriteUntilFinish(SrcOpC);
-
-      float LengthOfChain =
-        DetialLatencyInfo::getMaxLatency(*I) + DLInfo.getMaxLatency(MI);
-
-      // The chain do not extend the live-interval of the underlying FU of the
-      // dependence.
-      if (StepsBeforeCopy >=  ceil(LengthOfChain)) continue;
-
-      // Try avoid chaining by schedule the data-path operation 1 steps after.
-      S.addSoftConstraint(SrcSU, U, StepsBeforeCopy + 1, 100.0);
-    }
-  }
-}
+void VSchedGraph::addSoftConstraintsToBreakChains(SDCSchedulingBase &S) {}
 
 void VSchedGraph::scheduleControlPath() {
   SDCScheduler<true> Scheduler(*this);
