@@ -39,7 +39,7 @@ bool PrebindMuxBase::doInitialization(Module &) {
   unsigned MaxAllowedMuxSize = MUXDesc->MaxAllowedMuxSize;
   // Compute the proper MUX size that fix within 1 cycle.
   while (MaxMuxSize < MaxAllowedMuxSize)
-    if (MUXDesc->getMuxLatency(++MaxMuxSize,64) > 0.5)
+    if (MUXDesc->getMuxLogicLevels(++MaxMuxSize,64) > VFUs::ClockPeriod() / 2)
       break;
   return false;
 }

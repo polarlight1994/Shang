@@ -95,11 +95,13 @@ namespace VFUs {
   extern unsigned LUTCost;
   extern unsigned RegCost;
   extern unsigned MaxLutSize;
-  // The clock period, in terms of number of logic-levels
-  extern unsigned ClockPeriod;
 
   // Latency of clock enable multiplexer selector
   extern float LUTDelay;
+  // The clock period, in terms of number of logic-levels
+  inline unsigned ClockPeriod() {
+    return floor(1.0 / LUTDelay);
+  }
 }
 
 class FuncUnitId {

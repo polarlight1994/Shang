@@ -40,8 +40,8 @@ char DetialLatencyInfo::ID = 0;
 const unsigned DetialLatencyInfo::LatencyScale = 256;
 const unsigned DetialLatencyInfo::LatencyDelta = 1;
 
-static inline unsigned scaledCP() {
-  return VFUs::ClockPeriod * DetialLatencyInfo::LatencyScale;
+static inline unsigned scaledCP(unsigned Num = 1) {
+  return VFUs::ClockPeriod() * DetialLatencyInfo::LatencyScale * Num;
 }
 
 static inline unsigned roundUpToScaledCPMultiple(unsigned Latency) {
