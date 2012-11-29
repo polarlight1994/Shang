@@ -107,13 +107,9 @@ public:
   // The latency of MSB and LSB from a particular operation to the current
   // operation.
   typedef std::map<InstPtrTy, BDInfo> DepLatInfoTy;
-  static unsigned getMaxLatency(DepLatInfoTy::value_type v) {
-    return v.second.getCriticalDelay();
-  }
+  static unsigned getNumCPCeil(DepLatInfoTy::value_type v);
 
-  static unsigned getMinLatency(DepLatInfoTy::value_type v) {
-    return v.second.getMinDelay();
-  }
+  static unsigned getNumCPFloor(DepLatInfoTy::value_type v);
 
   const static unsigned LatencyScale, LatencyDelta;
 
@@ -147,6 +143,15 @@ private:
   DepLatInfoTy::mapped_type getLatencyToDst(const MachineInstr *SrcMI,
                                             unsigned DstOpcode,
                                             unsigned UB, unsigned LB);
+
+  unsigned getMaxLatency(const MachineInstr *MI) const {
+    return getCachedLatencyResult(MI);
+  }
+
+  // Return the edge latency between SrcInstr and DstInstr considering chaining
+  // effect.
+  unsigned getChainedLatency(const MachineInstr *SrcInstr,
+                             const MachineInstr *DstInstr) const;
 protected:
   const DepLatInfoTy &addInstrInternal(const MachineInstr *MI,
                                        DepLatInfoTy &CurLatInfo);
@@ -156,6 +161,11 @@ public:
   const char *getPassName() const {
     return "Refine-CDFG";
   }
+
+  unsigned getStepsToFinish(const MachineInstr *MI) const;
+
+  unsigned getChainedCPs(const MachineInstr *SrcInstr,
+                         const MachineInstr *DstInstr) const;
 
   // Get the source register and the corresponding latency to DstMI
   const DepLatInfoTy *getDepLatInfo(const MachineInstr *DstMI) const {
@@ -173,8 +183,8 @@ public:
   void buildExitMIInfo(const MachineInstr *ExitMI, DepLatInfoTy &Info,
                        MISetTy &MIsToWait, MISetTy &MIsToRead);
 
-  void addDummyLatencyEntry(const MachineInstr *MI, unsigned l = 0) {
-    CachedLatencies.insert(std::make_pair(MI, l));
+  void addDummyLatencyEntry(const MachineInstr *MI) {
+    CachedLatencies.insert(std::make_pair(MI, 0));
   }
 
   void clearCachedLatencies() { CachedLatencies.clear(); }
@@ -183,19 +193,6 @@ public:
     LatencyMap.clear();
     clearCachedLatencies();
   }
-
-  unsigned getMaxLatency(const MachineInstr *MI) const {
-    return getCachedLatencyResult(MI);
-  }
-
-  //unsigned getStepsToFinish(const MachineInstr *MI) const {
-  //  return ceil(getMaxLatency(MI));
-  //}
-
-  // Return the edge latency between SrcInstr and DstInstr considering chaining
-  // effect.
-  unsigned getChainedLatency(const MachineInstr *SrcInstr,
-                           const MachineInstr *DstInstr) const;
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
 

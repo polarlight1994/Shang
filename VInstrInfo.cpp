@@ -947,5 +947,3 @@ unsigned VInstrInfo::getNumLogicLevels(const MachineInstr *MI) {
 
   return 0;
 }
-
-

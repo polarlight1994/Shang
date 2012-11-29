@@ -48,6 +48,14 @@ static inline unsigned roundUpToScaledCPMultiple(unsigned Latency) {
   return ((Latency + scaledCP() - 1) / scaledCP()) * scaledCP();
 }
 
+static inline unsigned roundUpToCP(unsigned Latency) {
+  return ((Latency + scaledCP() - 1) / scaledCP());
+}
+
+static inline unsigned roundDownToCP(unsigned Latency) {
+  return (Latency / scaledCP());
+}
+
 static inline unsigned scaledLUTLatency() {
   return DetialLatencyInfo::LatencyScale;
 }
@@ -83,6 +91,23 @@ void DetialLatencyInfo::getAnalysisUsage(AnalysisUsage &AU) const {
   MachineFunctionPass::getAnalysisUsage(AU);
   AU.addRequiredID(MachineBasicBlockTopOrderID);
   AU.setPreservesAll();
+}
+
+unsigned DetialLatencyInfo::getStepsToFinish(const MachineInstr *MI) const {
+  return roundUpToCP(getMaxLatency(MI));
+}
+
+unsigned DetialLatencyInfo::getNumCPCeil(DepLatInfoTy::value_type v) {
+  return roundUpToCP(v.second.getCriticalDelay());
+}
+
+unsigned DetialLatencyInfo::getNumCPFloor(DepLatInfoTy::value_type v) {
+  return roundDownToCP(v.second.getMinDelay());
+}
+
+unsigned DetialLatencyInfo::getChainedCPs(const MachineInstr *SrcInstr,
+                                          const MachineInstr *DstInstr) const {
+  return roundUpToCP(getChainedLatency(SrcInstr, DstInstr));
 }
 
 static void updateLatency(DepLatInfoTy &CurLatInfo, InstPtrTy Src,
@@ -122,7 +147,7 @@ BDInfo getCmpLatency(BDInfo SrcLatency, BDInfo Inc, unsigned BitInc) {
   BDInfo LatInfo = getMSB2LSBLatency(SrcLatency, Inc, BitInc);
   // We need to get the worst delay because the cmps only have 1 bit output.
   unsigned WorstLat = std::max(LatInfo.MSBDelay, LatInfo.LSBDelay);
-  return BDInfo(WorstLat, WorstLat);
+  return BDInfo(WorstLat);
 }
 
 static
@@ -476,7 +501,7 @@ void DetialLatencyInfo::buildExitMIInfo(const MachineInstr *ExitMI,
 }
 
 unsigned DetialLatencyInfo::getChainedLatency(const MachineInstr *SrcInstr,
-                                            const MachineInstr *DstInstr) const{
+                                              const MachineInstr *DstInstr) const{
   // Compute the latency correspond to detail slot.
   unsigned latency = getMaxLatency(SrcInstr);
   return adjustChainedLatency(latency, SrcInstr->getOpcode(),
@@ -525,12 +550,12 @@ void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
         << " to " << DstMI << "\nDELAY-ESTIMATION: MSB-Delay "
         << II->second.MSBDelay << "\nDELAY-ESTIMATION: LSB-Delay "
         << II->second.LSBDelay << "\nDELAY-ESTIMATION: MAX-Delay "
-        << getMaxLatency(*II) << '\n';
+        << II->second.getCriticalDelay() << '\n';
 
       O << "DELAY-ESTIMATION-JSON: { \"SRC\":\"" << SrcMI.getOpaqueValue()
         << "\", \"DST\":\"" << DstMI << "\", \"MSB\":" << II->second.MSBDelay
         << ", \"LSB\":" << II->second.LSBDelay << ", \"MAX\":"
-        << getMaxLatency(*II) << "} \n";
+        << II->second.getCriticalDelay() << "} \n";
     }
   }
 }

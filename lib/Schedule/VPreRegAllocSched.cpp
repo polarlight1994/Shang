@@ -40,6 +40,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/GraphWriter.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "vtm-sgraph"
 #include "llvm/Support/Debug.h"
 using namespace llvm;
@@ -457,8 +458,7 @@ void VPreRegAllocSched::addControlPathDepForMI(MachineInstr *MI, int MIOffset,
   for (src_it I = LatInfo.begin(), E = LatInfo.end(); I != E; ++I) {
     InstPtrTy Src = I->first;
     // Get the latency from SrcMI to MI.
-    float DetailLatency = DetialLatencyInfo::getMaxLatency(*I);
-    int Latency = int(ceil(DetailLatency));
+    int Latency = DetialLatencyInfo::getNumCPCeil(*I);
 
     // LatencyInfo use a special marker to mark the current MI have some latency
     // from entry of the MBB.
@@ -580,8 +580,7 @@ void VPreRegAllocSched::addDatapathDep(VSchedGraph &G, VSUnit *A) {
     int IntraSULatency = A->getLatencyAt(I);
     // Prevent the data-path dependency from scheduling to the same slot with
     // the MI with the Control SU.
-    if (IntraSULatency < 0 && IsCtrl)
-      IntraSULatency -= DetialLatencyInfo::DeltaLatency;
+    // if (IntraSULatency < 0 && IsCtrl) --IntraSULatency;
 
     const DepLatInfoTy *DepLats = G.getDepLatInfo(MI);
     for (src_it I = DepLats->begin(), E = DepLats->end(); I != E; ++I) {
@@ -601,14 +600,14 @@ void VPreRegAllocSched::addDatapathDep(VSchedGraph &G, VSUnit *A) {
       // from the control-path dependencies to the first started bit of current
       // MI.
       if (IsSrcCtrl)
-        Latency = floor(DetialLatencyInfo::getMinLatency(*I));
+        Latency = DetialLatencyInfo::getNumCPFloor(*I);
       // Get the maximal latency from the data-path dependencies to control-path
       // operations, because the control-path operations read their operand
       // value right before it start, hence we need to get the maximal latency
       // to ensure the data-path operation had already finished when its result
       // is read.
       else if (IsCtrl)
-        Latency = std::max<int>(ceil(DetialLatencyInfo::getMaxLatency(*I)), 1);
+        Latency = std::max<int>(DetialLatencyInfo::getNumCPCeil(*I), 1);
       else {//if(!IsCtrl && !IsSrcCtrl)
         MachineInstr *SrcMI = I->first;
         // Only create the edge if MI is actually reading the result of SrcMI.
