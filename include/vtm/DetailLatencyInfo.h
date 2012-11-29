@@ -84,16 +84,35 @@ struct InstPtrTy : public PointerUnion<MachineInstr*, MachineBasicBlock*> {
 
 class DetialLatencyInfo : public MachineFunctionPass {
 public:
+  // Bit-level delay information.
+  struct BDInfo {
+    unsigned MSBDelay, LSBDelay;
+
+    BDInfo(unsigned MSBDelay, unsigned LSBDelay)
+      : MSBDelay(MSBDelay), LSBDelay(LSBDelay) {}
+
+    BDInfo(unsigned Critical = 0)
+      : MSBDelay(Critical), LSBDelay(Critical) {}
+
+    unsigned getCriticalDelay() const {
+      return std::max(MSBDelay, LSBDelay);
+    }
+
+    unsigned getMinDelay() const {
+      return std::min(MSBDelay, LSBDelay);
+    }
+  };
+
   static char ID;
   // The latency of MSB and LSB from a particular operation to the current
   // operation.
-  typedef std::map<InstPtrTy, std::pair<unsigned, unsigned> > DepLatInfoTy;
+  typedef std::map<InstPtrTy, BDInfo> DepLatInfoTy;
   static unsigned getMaxLatency(DepLatInfoTy::value_type v) {
-    return std::max(v.second.first, v.second.second);
+    return v.second.getCriticalDelay();
   }
 
   static unsigned getMinLatency(DepLatInfoTy::value_type v) {
-    return std::min(v.second.first, v.second.second);
+    return v.second.getMinDelay();
   }
 
   const static unsigned LatencyScale, LatencyDelta;
