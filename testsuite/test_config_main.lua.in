@@ -1,3 +1,14 @@
+InputFile = [[@MAIN_ORIG_BC@]]
+RTLOutput = [[@MAIN_RTL_SRC@]]
+MainSDCOutput = [[@MAIN_SDC_SRC@]]
+MainSDCOutputX = [[@MAIN_UCF_SRC@]]
+SoftwareIROutput = [[@MAIN_SW_LL@]]
+IFFileName = [[@MAIN_IF_SRC@]]
+RTLModuleName = [[@MAIN_RTL_ENTITY@]]
+CounterFile = [[@CycleCounter@]]
+BenchmarkCycles = [[@BenchmarkCyclesTmp@]]
+test_binary_root = [[@TEST_BINARY_ROOT@]]
+
 INTFFILE = [[@MAIN_INT_TOP@]]
 BRAMFILE = [[@MAIN_INT_BRAM@]]
 BRAMXILINXFILE = [[@MAIN_INT_BRAM_XILINX@]]
@@ -7,6 +18,17 @@ BRAMINIT = [[@MAIN_INT_BRAMINIT@]]
 MODELDOFILE = [[@MAIN_MODELDO_FILE@]]
 TBFILE = [[@MAIN_TB_FILE@]]
 
+local FMAX = @FMAX@
+PERIOD = 1000.0 / FMAX
+
+ADDSUB_ChainingThreshold = @ADDSUB_ChainingThreshold@
+SHIFT_ChainingThreshold = @SHIFT_ChainingThreshold@
+MULT_ChainingThreshold = @MULT_ChainingThreshold@
+ICMP_ChainingThreshold = @ICMP_ChainingThreshold@
+SEL_ChainingThreshold = -1
+REDUCTION_ChainingThreshold = -1
+MUX_ChainingThreshold = -1
+
 -- Load bram initfile
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
 -- load platform information script
@@ -15,9 +37,14 @@ dofile('@VTS_SOURCE_ROOT@/' .. 'Altera4LUTFUs.lua')
 FUs.LUTDelay = 0.0125 / PERIOD
 
 
+-- Define some function
+dofile('@VTS_SOURCE_ROOT@/' .. 'FuncDefine.lua')
+
 Functions.main = { ModName = RTLModuleName, Scheduling = SynSettings.@ScheduleType@, Pipeline = SynSettings.@PipelineType@ }
 
 -- Load ip module and simulation interface script.
+dofile('@VTS_SOURCE_ROOT@/' .. 'AddModules.lua')
+dofile('@VTS_SOURCE_ROOT@/' .. 'SCIfCodegen.lua')
 dofile('@VTS_SOURCE_ROOT@/' .. 'BramMIFGen.lua')
 dofile('@VTS_SOURCE_ROOT@/' .. 'InterfaceGen.lua')
 dofile('@VTS_SOURCE_ROOT@/' .. 'ModelSimGen.lua')
@@ -59,4 +86,5 @@ if message ~= nil then print(message) end
 BramInitFile:close()
 ]=]
 
+dofile('@VTS_SOURCE_ROOT@/' .. 'BramGlobVar.lua')
 Misc.RTLGlobalScript = Misc.MainSynthesisRTLGlobalScript .. Misc.CommonRTLGlobalScript

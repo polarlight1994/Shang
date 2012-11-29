@@ -1,31 +1,7 @@
-InputFile = [[@MAIN_ORIG_BC@]]
-RTLOutput = [[@MAIN_RTL_SRC@]]
-MainSDCOutput = [[@MAIN_SDC_SRC@]]
-MainSDCOutputX = [[@MAIN_UCF_SRC@]]
-SoftwareIROutput = [[@MAIN_SW_LL@]]
-IFFileName = [[@MAIN_IF_SRC@]]
-RTLModuleName = [[@MAIN_RTL_ENTITY@]]
-CounterFile = [[@CycleCounter@]]
-BenchmarkCycles = [[@BenchmarkCyclesTmp@]]
-test_binary_root = [[@TEST_BINARY_ROOT@]]
-
-ADDSUB_ChainingThreshold = @ADDSUB_ChainingThreshold@
-SHIFT_ChainingThreshold = @SHIFT_ChainingThreshold@
-MULT_ChainingThreshold = @MULT_ChainingThreshold@
-ICMP_ChainingThreshold = @ICMP_ChainingThreshold@
-SEL_ChainingThreshold = -1
-REDUCTION_ChainingThreshold = -1
-MUX_ChainingThreshold = -1
-
-local FMAX = @FMAX@
-PERIOD = 1000.0 / FMAX
-
-POINTER_SIZE_IN_BITS = @POINTER_SIZE_IN_BITS@
-
 FUs.MemoryBus = { StepsToWait = 1, StartInterval=1, AddressWidth=@POINTER_SIZE_IN_BITS@, DataWidth=64 }
 
 -- Please note that the template of the block RAM is provided in <TargetPlatform>Common.lua
-FUs.BRam = { StepsToWait =1, StartInterval=1, DataWidth = 64, InitFileDir = [[@TEST_BINARY_ROOT@]] }
+FUs.BRam = { StepsToWait = 1, StartInterval=1, DataWidth = 64, InitFileDir = [[@TEST_BINARY_ROOT@]] }
 
 FUs.CommonTemplate =[=[
 
@@ -112,8 +88,3 @@ module shang_reduction#(parameter A_WIDTH = 0, B_WIDTH = 0) (
 	assign b = &a;
 endmodule
 ]=]
-
--- Define some function
-dofile('@VTS_SOURCE_ROOT@/' .. 'FuncDefine.lua')
-dofile('@VTS_SOURCE_ROOT@/' .. 'AddModules.lua')
-dofile('@VTS_SOURCE_ROOT@/' .. 'BramGlobVar.lua')
