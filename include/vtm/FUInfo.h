@@ -95,9 +95,11 @@ namespace VFUs {
   extern unsigned LUTCost;
   extern unsigned RegCost;
   extern unsigned MaxLutSize;
+  // The clock period, in terms of number of logic-levels
+  extern unsigned ClockPeriod;
 
   // Latency of clock enable multiplexer selector
-  extern float LutLatency;
+  extern float LUTDelay;
 }
 
 class FuncUnitId {
@@ -165,10 +167,10 @@ protected:
   VFUDesc(VFUs::FUTypes type, unsigned startInt)
     : ResourceType(type), StartInt(startInt), ChainingThreshold(0) {}
 
-  VFUDesc(VFUs::FUTypes type, const luabind::object &FUTable, float *Delay,
-          unsigned *Cost);
+  VFUDesc(VFUs::FUTypes type, const luabind::object &FUTable,
+          unsigned *LogicLevels, unsigned *Cost);
 
-  static float lookupLatency(const float *Table, unsigned SizeInBits);
+  static unsigned lookupLogicLevels(const unsigned *Table, unsigned SizeInBits);
   static unsigned lookupCost(const unsigned *Table, unsigned SizeInBits);
 public:
 
@@ -190,14 +192,14 @@ public:
 
 class VFUMux : public VFUDesc {
   unsigned MuxCost[31][64];
-  float MuxLatencies[31][4];
+  unsigned MuxLogicLevels[31][5];
 
 public:
   const unsigned MaxAllowedMuxSize;
 
   VFUMux(luabind::object FUTable);
 
-  float getMuxLatency(unsigned Size, unsigned BitWidth);
+  unsigned getMuxLogicLevels(unsigned Size, unsigned BitWidth);
   unsigned getMuxCost(unsigned Size, unsigned BitWidth);
 
   static VFUs::FUTypes getType() { return VFUs::Mux; };
@@ -211,13 +213,13 @@ public:
 class VFUMemBus : public VFUDesc {
   unsigned AddrWidth;
   unsigned DataWidth;
-  float Latency;
+  unsigned StepsToWait;
 public:
   VFUMemBus(luabind::object FUTable);
 
   unsigned getAddrWidth() const { return AddrWidth; }
   unsigned getDataWidth() const { return DataWidth; }
-  float getLatency() const { return Latency; }
+  unsigned getStepsToWait() const { return StepsToWait; }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VFUMemBus *A) { return true; }
@@ -275,11 +277,11 @@ public:
 
 template<enum VFUs::FUTypes T>
 class VSimpleFUDesc : public VFUDesc {
-  float Delay[5];
+  unsigned LogicLevels[5];
   unsigned Cost[64];
 public:
   explicit VSimpleFUDesc(const luabind::object &FUTable)
-    : VFUDesc(T, FUTable, Delay, Cost) {}
+    : VFUDesc(T, FUTable, LogicLevels, Cost) {}
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   template<enum VFUs::FUTypes OtherT>
   static inline bool classof(const VSimpleFUDesc<OtherT> *A) {
@@ -292,8 +294,8 @@ public:
   static VFUs::FUTypes getType() { return T; };
   static const char *getTypeName() { return VFUs::VFUNames[getType()]; }
 
-  float lookupLatency(unsigned SizeInBits) const {
-    return VFUDesc::lookupLatency(Delay, SizeInBits);
+  unsigned lookupLogicLevels(unsigned SizeInBits) const {
+    return VFUDesc::lookupLogicLevels(LogicLevels, SizeInBits);
   }
 
   unsigned lookupCost(unsigned SizeInBits) {
@@ -310,14 +312,14 @@ typedef VSimpleFUDesc<VFUs::Reduction>     VFUReduction;
 
 class VFUBRAM : public  VFUDesc {
   unsigned DataWidth;
-  float Latency;
+  unsigned StepsToWait;
   std::string Prefix;   // Prefix of the block RAM object in timing constraints.
   std::string Template; // Template for inferring block ram.
   std::string InitFileDir; // Template for readmemh dir.
 public:
   VFUBRAM(luabind::object FUTable);
 
-  float getLatency() const { return Latency; }
+  unsigned getStepsToWait() const { return StepsToWait; }
 
   std::string generateCode(const std::string &Clk, unsigned Num,
                            unsigned DataWidth, unsigned Size,

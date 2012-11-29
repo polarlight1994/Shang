@@ -44,6 +44,13 @@ static unsigned ComputeOperandSizeInByteLog2Ceil(unsigned SizeInBits) {
   return std::max(Log2_32_Ceil(SizeInBits), 3u) - 3;
 }
 
+static void initLogicLevelsTable(luabind::object LuaLatTable, unsigned *LLTable,
+                             unsigned Size) {
+  for (unsigned i = 0; i < Size; ++i)
+    // Lua array starts from 1
+    LLTable[i] = getProperty<float>(LuaLatTable, i + 1, LLTable[i]);
+}
+
 //===----------------------------------------------------------------------===//
 /// Hardware resource.
 void VFUDesc::print(raw_ostream &OS) const {
@@ -60,14 +67,8 @@ namespace llvm {
     unsigned LUTCost = 64;
     unsigned RegCost = 4;
     unsigned MaxLutSize = 4;
-    float LutLatency = 0.0f;
-
-    void initLatencyTable(luabind::object LuaLatTable, float *LatTable,
-                          unsigned Size) {
-      for (unsigned i = 0; i < Size; ++i)
-        // Lua array starts from 1
-        LatTable[i] = getProperty<float>(LuaLatTable, i + 1, LatTable[i]);
-    }
+    float LutLatency = 0.5f;
+    unsigned ClockPeriod = 200;
 
     void computeCost(unsigned StartY, unsigned EndY, int Size,
                      unsigned StartX, unsigned Index, unsigned *CostTable){
@@ -97,31 +98,34 @@ namespace llvm {
   }
 }
 
-VFUDesc::VFUDesc(VFUs::FUTypes type, const luabind::object &FUTable, float *Delay,
+
+VFUDesc::VFUDesc(VFUs::FUTypes type, const luabind::object &FUTable, unsigned *LogicLevels,
                  unsigned *Cost)
   : ResourceType(type), StartInt(getProperty<unsigned>(FUTable, "StartInterval")),
     ChainingThreshold(getProperty<unsigned>(FUTable, "ChainingThreshold")) {
-  luabind::object LatTable = FUTable["Latencies"];
-  VFUs::initLatencyTable(LatTable, Delay, 5);
+  luabind::object LogicLevelsTable = FUTable["LogicLevels"];
+  initLogicLevelsTable(LogicLevelsTable, LogicLevels, 5);
   luabind::object CostTable = FUTable["Costs"];
   VFUs::initCostTable(CostTable, Cost, 5);
 }
 
-float VFUDesc::lookupLatency(const float *Table, unsigned SizeInBits) {
+unsigned VFUDesc::lookupLogicLevels(const unsigned *Table, unsigned SizeInBits) {
   int i = ComputeOperandSizeInByteLog2Ceil(SizeInBits);
   // All latency table only contains 4 entries.
   assert(i < 4 && "Bad" && "Bad index!");
 
-  float RoundUpLatency   = Table[i + 1], RoundDownLatency = Table[i];
+  const unsigned Scale = 1024;
+
+  unsigned RoundUpLatency = Table[i + 1] * Scale,
+           RoundDownLatency = Table[i] * Scale;
   unsigned SizeRoundUpToByteInBits = 8 << i;
   unsigned SizeRoundDownToByteInBits = i ? (8 << (i - 1)) : 0;
-  float PerBitLatency =
-    (RoundUpLatency - RoundDownLatency)
-    / (SizeRoundUpToByteInBits - SizeRoundDownToByteInBits);
+  unsigned PerBitLatency =
+    RoundUpLatency / (SizeRoundUpToByteInBits - SizeRoundDownToByteInBits) -
+    RoundDownLatency / (SizeRoundUpToByteInBits - SizeRoundDownToByteInBits);
   // Scale the latency according to the actually width.
-  return
-    RoundDownLatency
-    + PerBitLatency * float(SizeInBits - SizeRoundDownToByteInBits);
+  return (RoundDownLatency
+          + PerBitLatency * (SizeInBits - SizeRoundDownToByteInBits)) / Scale;
 }
 
 unsigned VFUDesc::lookupCost(const unsigned *Table, unsigned SizeInBits) {
@@ -134,22 +138,22 @@ VFUMux::VFUMux(luabind::object FUTable)
   : VFUDesc(VFUs::Mux, 1),
     MaxAllowedMuxSize(getProperty<unsigned>(FUTable, "MaxAllowedMuxSize", 1)) {
   for (unsigned i = 0; i < MaxAllowedMuxSize - 1; i++) {
-    luabind::object LatTable = FUTable["Latencies"][i+1];
-    VFUs::initLatencyTable(LatTable, MuxLatencies[i], 4);
+    luabind::object LatTable = FUTable["LogicLevels"][i+1];
+    initLogicLevelsTable(LatTable, MuxLogicLevels[i], 5);
     luabind::object CostTable = FUTable["Costs"][i+1];
     VFUs::initCostTable(CostTable, MuxCost[i], 5);
   }
 }
 
-float VFUMux::getMuxLatency(unsigned Size, unsigned BitWidth) {
-  if (Size < 2) return 0.0f;
+unsigned VFUMux::getMuxLogicLevels(unsigned Size, unsigned BitWidth) {
+  if (Size < 2) return 0;
 
   float ratio = std::min(float(Size) / float(MaxAllowedMuxSize), 1.0f);
   Size = std::min(Size, MaxAllowedMuxSize);
 
   assert(BitWidth <= 64 && "Bad Mux Size!");
 
-  return VFUDesc::lookupLatency(MuxLatencies[Size - 2], BitWidth) * ratio;
+  return VFUDesc::lookupLogicLevels(MuxLogicLevels[Size - 2], BitWidth) * ratio;
 }
 
 unsigned VFUMux::getMuxCost(unsigned Size, unsigned BitWidth) {
@@ -169,12 +173,12 @@ VFUMemBus::VFUMemBus(luabind::object FUTable)
   : VFUDesc(VFUs::MemoryBus, getProperty<unsigned>(FUTable, "StartInterval")),
     AddrWidth(getProperty<unsigned>(FUTable, "AddressWidth")),
     DataWidth(getProperty<unsigned>(FUTable, "DataWidth")),
-    Latency(getProperty<float>(FUTable, "Latency")) {}
+    StepsToWait(getProperty<float>(FUTable, "StepsToWait")) {}
 
 VFUBRAM::VFUBRAM(luabind::object FUTable)
   : VFUDesc(VFUs::BRam, getProperty<unsigned>(FUTable, "StartInterval")),
     DataWidth(getProperty<unsigned>(FUTable, "DataWidth")),
-    Latency(getProperty<float>(FUTable, "Latency")),
+    StepsToWait(getProperty<float>(FUTable, "StepsToWait")),
     Prefix(getProperty<std::string>(FUTable, "Prefix")),
     Template(getProperty<std::string>(FUTable, "Template")),
     InitFileDir(getProperty<std::string>(FUTable, "InitFileDir")) {}
