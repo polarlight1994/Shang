@@ -67,7 +67,7 @@ namespace llvm {
     unsigned LUTCost = 64;
     unsigned RegCost = 4;
     unsigned MaxLutSize = 4;
-    float LutLatency = 0.5f;
+    float LUTDelay = 0.5f;
 
     void computeCost(unsigned StartY, unsigned EndY, int Size,
                      unsigned StartX, unsigned Index, unsigned *CostTable){
