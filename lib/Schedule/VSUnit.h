@@ -748,7 +748,7 @@ private:
                                          const MachineInstr *DstInstr) const {
     if (!SrcInstr) return getStepsFromEntry(DstInstr);
 
-    if (IsValDep) return ceil(DLInfo.getChainedLatency(SrcInstr, DstInstr));
+    if (IsValDep) return DLInfo.getChainedCPs(SrcInstr, DstInstr);
 
     return getStepsToFinish(SrcInstr);
   }
@@ -770,8 +770,8 @@ public:
     return DLInfo.getStepsToFinish(MI);
   }
 
-  void addDummyLatencyEntry(const MachineInstr *MI, float l = 0.0f) {
-    DLInfo.addDummyLatencyEntry(MI, l);
+  void addDummyLatencyEntry(const MachineInstr *MI) {
+    DLInfo.addDummyLatencyEntry(MI);
   }
 
   typedef DetialLatencyInfo::DepLatInfoTy DepLatInfoTy;
