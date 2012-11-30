@@ -2,8 +2,8 @@
 import sys
 import json
 
-period = 10
-resolution = 1
+#period = 10
+resolution = 50
 
 max_distribution = {}
 mim_distribution = {}
@@ -23,20 +23,15 @@ for line in sys.stdin:
   chainDelay = json.loads(line[len("DELAY-ESTIMATION-JSON:"):])
 
 
-  if (chainDelay["MAX"] > 100) :
-    print chainDelay
-    continue
-
-
   # Get the slowest bit delay.
   total_max_delay = total_max_delay + chainDelay["MAX"];
 
-  range_lb = int(chainDelay["MAX"] * resolution);
+  range_lb = int(chainDelay["MAX"] / resolution);
   max_distribution[range_lb] =  max_distribution.get(range_lb, 0) + 1
   maxlb = max(range_lb, maxlb)
 
   # Get the fastest bit delay.
-  range_lb = int(min(chainDelay["MSB"], chainDelay["LSB"]) * resolution);
+  range_lb = int(min(chainDelay["MSB"], chainDelay["LSB"]) / resolution);
   mim_distribution[range_lb] =  mim_distribution.get(range_lb, 0) + 1
   maxlb = max(range_lb, maxlb)
 
@@ -49,6 +44,6 @@ print "Built %d entires" % maxlb
 for lb in range(0, maxlb):
   max_count = max_distribution.get(lb, 0)
   min_count = mim_distribution.get(lb, 0)
-  print "[%.3fns,%.3fns)\t%d\t%f\t%d\t%f" % (lb * period  / resolution, (lb + 1) *  period / resolution, max_count, float(max_count)/float(num_paths), min_count, float(min_count)/float(num_paths))
+  print "[%dll,%dll)\t%d\t%f\t%d\t%f" % (lb * resolution, (lb + 1) *  resolution, max_count, float(max_count)/float(num_paths), min_count, float(min_count)/float(num_paths))
 
-print "NumPath\t%d\tTotalMaxDelay\t%f" %(num_paths, total_max_delay)
+print "NumPath\t%d\tTotalMaxDelay\t%d" %(num_paths, total_max_delay)
