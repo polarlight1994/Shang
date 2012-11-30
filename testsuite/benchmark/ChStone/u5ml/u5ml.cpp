@@ -180,7 +180,7 @@ int main()
   int x31, x32, x33, x41, x42, x43, x51, x52, x53, x61, x62, x63, x71, x72, x73;
   //  int result_out;  
  
-
+  int return_value=0;
   
   for (int idx =0;idx<NUM;idx++)
     {
@@ -194,12 +194,14 @@ int main()
   x61 = j++; x62 = k++; x63 = j++;
   x71 = i++; x72 = i++; x73 = i++;
   result_out[idx] = u5ml(x01,x02,x03,x11,x12,x13,x21, x22, x23,x31,x32,x33,x41,x42,x43,x51,x52,x53,x61,x62,x63,x71,x72,x73);
+  return_value = return_value+result_out[idx];
      printf("%d\n",result_out[idx]);
     }
   //  printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //   printf("%d\n", main_result);
     //    return main_result;
-    return 0;
+  //    return 0;
+  return return_value != 118741491;
 }
 

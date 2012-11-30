@@ -362,6 +362,7 @@ int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
 int main()
 {
     int main_result;
+   int return_value=0;
 short in00,  in01,  in02,  in03,
                in04,  in05,  in06,  in07,
                in10,  in11,  in12,  in13,
@@ -408,11 +409,15 @@ result_out[idx] =  feig_dct( in00,  in01,  in02,  in03,
                in64,  in65,  in66,  in67,
                in70,  in71,  in72,  in73,
 		        in74,  in75,  in76,  in77);
+  return_value = return_value+result_out[idx];
      printf("%d\n",result_out[idx]);
     }
 //    printf("benchmark_result = %d\n",result_out);
 //    main_result = (result_out != exp_res);
     //        printf("%d\n", main_result);
 //  return main_result;
- return 0;
+//    printf("return return_value != %d", return_value);
+//    return return_value;
+    // return 0;
+  return return_value != 620352;
 }

@@ -151,7 +151,7 @@ int main()
 {
     int main_result;
     int x01, x02, x03, x11, x12, x13, x21, x22;
-
+   int return_value=0;
   for (int idx =0;idx<NUM;idx++)
     {
     i=inputs[idx];
@@ -160,11 +160,13 @@ int main()
   x21 = i++; x22 = i++; 
       result_out[idx] =  mcm(x01     , x02     , x03     , x11     ,
 		  x12     , x13     , x21     , x22     );
+  return_value = return_value+result_out[idx];
      printf("%d\n",result_out[idx]);
     }
 //      printf("benchmark_result = %d\n",result_out);
 //    main_result = (result_out != exp_res);
     //          printf("%d\n", main_result);
     //    return main_result;
-    return 0;
+    //    return 0;
+  return return_value != -95992;
 }

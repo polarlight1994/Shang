@@ -423,6 +423,7 @@ int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
 int main()
 {
     int main_result;
+    int return_value=0;
   int x01, x02, x03, x11, x12, x13, x21, x22, x23;
   int x31, x32, x33, x41, x42, x43, x51, x52, x53, x61, x62, x63;
   //  int result_out;  
@@ -438,11 +439,14 @@ int main()
   x51 = i++; x52 = i++; x53 = i++;
   x61 = i++; x62 = i++; x63 = i++;
   result_out[idx] = aircraft(x01,x02,x03,x11,x12,x13,x21, x22, x23,x31,x32,x33,x41,x42,x43,x51,x52,x53,x61,x62,x63);
+  return_value = return_value+result_out[idx];
      printf("%d\n",result_out[idx]);
     }
   //  printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
   //    return main_result;
-  return 0;
+ //    printf("return return_value != %d", return_value);
+ //  return return_value;
+ return return_value != -321009953;
 }

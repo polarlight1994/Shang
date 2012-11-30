@@ -104,7 +104,7 @@ int main()
     int main_result;
   short x10, x11, x12, x13;
   short x14, x15, x16, x17;
-
+   int return_value=0;
   //  int result_out;  
   for (int idx=0;idx<NUM;idx++)
     {
@@ -115,6 +115,7 @@ int main()
 
   result_out[idx] = arai(x10, x11, x12, x13,
 			 x14, x15, x16,x17);
+  return_value = return_value+result_out[idx];
      printf("%d\n",result_out[idx]);
     }
   //    printf("benchmark_result = %d\n",result_out);
@@ -122,5 +123,7 @@ int main()
     //    printf("%d\n", main_result);
     //    return main_result;
 
-    return 0;
+  //    printf("return return_value != %d", return_value);
+  //  return return_value; 
+return return_value != 4196;
 }

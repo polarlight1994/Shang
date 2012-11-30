@@ -115,7 +115,7 @@ int main()
   int x01, x02, x03, x11, x12, x13, x21, x22, x23;
   int x31, x32, x33, x41, x42, x43, x51, x52, x53, x61, x62;
   //  int result_out;  
-
+  int return_value=0;
   for (int idx=0;idx<NUM;idx++)
     {
       i = inputs[idx];
@@ -130,12 +130,16 @@ int main()
           x13, x21, x22, x23, x31,
           x32, x33, x41, x42, x43,
 		     x51, x52, x53,x61,x62);
+  return_value = return_value+result_out[idx];
      printf("%d\n",result_out[idx]);
     }
   //  printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //  printf("%d\n", main_result);
     //    return main_result;
-  return 0;
+  //    printf("return return_value != %d", return_value);
+  // return return_value;
+    return return_value != 14189499;
+    //  return 0;
 }
 

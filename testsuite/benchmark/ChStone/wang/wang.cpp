@@ -104,7 +104,7 @@ int main()
   int x31, x32;
   //  int result_out;  
   //  int i =25;
-
+   int return_value=0;
 
 
   for (int idx = 0;idx<NUM;idx++)
@@ -115,6 +115,7 @@ int main()
       x31 = i++; x32 = i++; 
       result_out[idx] = wang (x11, x12, x13, x21, x22,
 		     x23, x31, x32);
+ return_value = return_value+result_out[idx];
       printf("%d\n",result_out[idx]);
     }
 
@@ -122,5 +123,6 @@ int main()
   //main_result = (result_out != exp_res);
     //        printf("%d\n", main_result);
     //    return main_result;
-  return 0;
+  //  return 0;
+  return return_value != 113096;
 }

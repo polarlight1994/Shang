@@ -173,6 +173,7 @@ int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
 int main()
 {
     int main_result;
+  int return_value=0;
     short x01, x02, x03, x11, x12, x13, x21, x22;
     //  int result_out;  
   for (int idx=0;idx<NUM;idx++)
@@ -184,11 +185,15 @@ int main()
   
   result_out[idx] = dir(x01, x02, x03, x11,
 		   x12, x13, x21, x22);
+ return_value = return_value+result_out[idx];
      printf("%d\n",result_out[idx]);
     }
   //  printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
     //    return main_result;
-  return 0;
+  //    printf("return return_value != %d", return_value);
+  //  return return_value;
+  return return_value != -44064;
+    // return 0;
 }
