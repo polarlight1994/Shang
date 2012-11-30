@@ -77,22 +77,31 @@ short y10, y11, y12, y13, y14, y15,y16, y17;
 #ifdef __cplusplus
 }
 #endif
+
+#define NUM 10
 int i;//25
+int result_out[NUM];
+int inputs[NUM];
+
 #define exp_res 26500
 int main()
 {
     int main_result;
     short x01, x02, x03, x11, x12, x13, x21, x22;
-    int result_out;  
+    //    int result_out;  
+    
 
-  x01 = i++; x02 = i++; x03 = i++;
-  x11 = i++; x12 = i++; x13 = i++;
-  x21 = i++; x22 = i++;
-
-  result_out = pr(x01,x02,x03,x11,x12,x13,x21, x22);
+  for (int idx=0;idx<NUM;idx++)
+    {
+      i = inputs[idx];
+      x01 = i++; x02 = i++; x03 = i++;
+      x11 = i++; x12 = i++; x13 = i++;
+      x21 = i++; x22 = i++;
+      result_out[idx] = pr(x01,x02,x03,x11,x12,x13,x21, x22);
+    }
   //    printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //        printf("%d\n", main_result);
     //    return main_result;
-    return result_out;
+      return 0;
 }
