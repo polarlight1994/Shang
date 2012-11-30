@@ -252,9 +252,7 @@ SynSettings *llvm::getSynSetting(StringRef Name, SynSettings *ParentSetting) {
   return S;
 }
 
-LuaScript &llvm::scriptEngin() {
-  return *Script;
-}
+LuaScript &llvm::scriptEngin() { return *Script; }
 
 // Dirty Hack: Allow we invoke some scripting function in the libraries
 // compiled with no-rtti
