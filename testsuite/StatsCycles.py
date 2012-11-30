@@ -33,7 +33,7 @@ for data in readdate:
       total = data["total"]
       sheet1.write(1,ColNumber,total)
       #Wait
-      wait = data["wait"]
+      wait = max(data["wait"], 1)
       sheet1.write(2,ColNumber,wait)
       append(all_total, total)
       append(all_waits, wait)
