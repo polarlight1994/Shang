@@ -68,6 +68,11 @@ static inline unsigned scaleUp(unsigned NumLogicLevels) {
   return NumLogicLevels * DetialLatencyInfo::LatencyScale;
 }
 
+static inline unsigned scaleToLogicLevels(unsigned Delay) {
+  return (Delay + DetialLatencyInfo::LatencyScale - 1)\
+    / DetialLatencyInfo::LatencyScale;
+}
+
 static inline unsigned scaledDetalLatency(const MachineInstr *MI) {
   return scaleUp(VInstrInfo::getNumLogicLevels(MI));
 }
@@ -530,7 +535,7 @@ void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
     const MachineInstr *DstMI = I->first;
 
     // Ignore the chain end with data-path operations.
-    //if (VInstrInfo::isDatapath(DstMI->getOpcode())) continue;
+    if (VInstrInfo::isDatapath(DstMI->getOpcode())) continue;
 
     typedef DepLatInfoTy::const_iterator SrcIt;
     for (SrcIt II = I->second.begin(), IE = I->second.end(); II != IE; ++II) {
@@ -548,14 +553,18 @@ void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
 
       O << "DELAY-ESTIMATION: From " << SrcMI.getOpaqueValue()
         << " to " << DstMI << "\nDELAY-ESTIMATION: MSB-Delay "
-        << II->second.MSBDelay << "\nDELAY-ESTIMATION: LSB-Delay "
-        << II->second.LSBDelay << "\nDELAY-ESTIMATION: MAX-Delay "
-        << II->second.getCriticalDelay() << '\n';
+        << scaleToLogicLevels(II->second.MSBDelay)
+        << "\nDELAY-ESTIMATION: LSB-Delay "
+        << scaleToLogicLevels(II->second.LSBDelay)
+        << "\nDELAY-ESTIMATION: MAX-Delay "
+        << scaleToLogicLevels(II->second.getCriticalDelay()) << '\n';
 
       O << "DELAY-ESTIMATION-JSON: { \"SRC\":\"" << SrcMI.getOpaqueValue()
-        << "\", \"DST\":\"" << DstMI << "\", \"MSB\":" << II->second.MSBDelay
-        << ", \"LSB\":" << II->second.LSBDelay << ", \"MAX\":"
-        << II->second.getCriticalDelay() << "} \n";
+        << "\", \"DST\":\"" << DstMI << "\", \"MSB\":"
+        << scaleToLogicLevels(II->second.MSBDelay)
+        << ", \"LSB\":" << scaleToLogicLevels(II->second.LSBDelay)
+        << ", \"MAX\":"
+        << scaleToLogicLevels(II->second.getCriticalDelay()) << "} \n";
     }
   }
 }
