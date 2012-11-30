@@ -81,7 +81,7 @@ short y10, y11, y12, y13, y14, y15,y16, y17;
 #define NUM 10
 int i;//25
 int result_out[NUM];
-int inputs[NUM];
+int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
 
 #define exp_res 26500
 int main()
@@ -98,6 +98,7 @@ int main()
       x11 = i++; x12 = i++; x13 = i++;
       x21 = i++; x22 = i++;
       result_out[idx] = pr(x01,x02,x03,x11,x12,x13,x21, x22);
+     printf("%d\n",result_out[idx]);
     }
   //    printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);

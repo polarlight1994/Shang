@@ -413,15 +413,23 @@ X_3_1)-w(19337*X_3_2)+w(16115*X_3_3)-w(17608*X_4_3);
 #ifdef __cplusplus
 }
 #endif
+//int i;//25
+
+#define NUM 10
 int i;//25
+int result_out[NUM];
+int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
 #define exp_res 564302302
 int main()
 {
     int main_result;
   int x01, x02, x03, x11, x12, x13, x21, x22, x23;
   int x31, x32, x33, x41, x42, x43, x51, x52, x53, x61, x62, x63;
-  int result_out;  
+  //  int result_out;  
 
+ for (int idx=0;idx<NUM;idx++)
+    {
+      i = inputs[idx];
   x01 = i++; x02 = i++; x03 = i++;
   x11 = i++; x12 = i++; x13 = i++;
   x21 = i++; x22 = i++; x23 = i++;
@@ -429,10 +437,12 @@ int main()
   x41 = i++; x42 = i++; x43 = i++;
   x51 = i++; x52 = i++; x53 = i++;
   x61 = i++; x62 = i++; x63 = i++;
-  result_out = aircraft(x01,x02,x03,x11,x12,x13,x21, x22, x23,x31,x32,x33,x41,x42,x43,x51,x52,x53,x61,x62,x63);
+  result_out[idx] = aircraft(x01,x02,x03,x11,x12,x13,x21, x22, x23,x31,x32,x33,x41,x42,x43,x51,x52,x53,x61,x62,x63);
+     printf("%d\n",result_out[idx]);
+    }
   //  printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
   //    return main_result;
-  return result_out;
+  return 0;
 }

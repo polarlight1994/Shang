@@ -167,13 +167,24 @@ int i;//25
 int j;
 int k;
 #define exp_res 48183
+
+#define NUM 10
+//int i;//25
+int result_out[NUM];
+int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
+
 int main()
 {
     int main_result;
   int x01, x02, x03, x11, x12, x13, x21, x22, x23;
   int x31, x32, x33, x41, x42, x43, x51, x52, x53, x61, x62, x63, x71, x72, x73;
-  int result_out;  
+  //  int result_out;  
  
+
+  
+  for (int idx =0;idx<NUM;idx++)
+    {
+      i = inputs[idx];
   x01 = i++; x02 = k++; x03 = i++;
   x11 = k++; x12 = k++; x13 = i++;
   x21 = i++; x22 = i++; x23 = j++;
@@ -182,12 +193,13 @@ int main()
   x51 = j++; x52 = i++; x53 = j++;
   x61 = j++; x62 = k++; x63 = j++;
   x71 = i++; x72 = i++; x73 = i++;
-  
-  result_out = u5ml(x01,x02,x03,x11,x12,x13,x21, x22, x23,x31,x32,x33,x41,x42,x43,x51,x52,x53,x61,x62,x63,x71,x72,x73);
+  result_out[idx] = u5ml(x01,x02,x03,x11,x12,x13,x21, x22, x23,x31,x32,x33,x41,x42,x43,x51,x52,x53,x61,x62,x63,x71,x72,x73);
+     printf("%d\n",result_out[idx]);
+    }
   //  printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //   printf("%d\n", main_result);
     //    return main_result;
-    return result_out;
+    return 0;
 }
 

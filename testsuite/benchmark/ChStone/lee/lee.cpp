@@ -127,22 +127,31 @@ int lee(short x10, short x11, short x12, short x13,
 #ifdef __cplusplus
 }
 #endif
+
+#define NUM 10
 int i;//25
+int result_out[NUM];
+int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
+//int i;//25
 #define exp_res 18637
 int main()
 {
     int main_result;
     short x01, x02, x03, x11, x12, x13, x21, x22;
-  int result_out;  
+    //  int result_out;  
 
+    for (int idx=0;idx<NUM;idx++)
+      {
+    i=inputs[idx];
   x01 = i++; x02 = i++; x03 = i++;
   x11 = i++; x12 = i++; x13 = i++;
   x21 = i++; x22 = i++;
-
-  result_out = lee(x01,x02,x03,x11,x12,x13,x21, x22);
+  result_out[idx] = lee(x01,x02,x03,x11,x12,x13,x21, x22);
+     printf("%d\n",result_out[idx]);
+      }
   //    printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
     //    return main_result;
-    return result_out;
+    return 0;
 }

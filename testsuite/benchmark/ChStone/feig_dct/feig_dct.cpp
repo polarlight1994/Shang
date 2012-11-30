@@ -351,7 +351,13 @@ short
 }
 #endif
 
+//int i;//25
+
+#define NUM 10
 int i;//25
+int result_out[NUM];
+int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
+
 #define exp_res 61640
 int main()
 {
@@ -373,8 +379,10 @@ short in00,  in01,  in02,  in03,
                in70,  in71,  in72,  in73,
                in74,  in75,  in76,  in77;
 
-  int result_out;  
-
+//  int result_out;  
+  for (int idx=0;idx<NUM;idx++)
+    {
+      i = inputs[idx];
   in00=i++;in01=i++;in02=i++;in03=i++; in04=i++;in05=i++;in06=i++;in07=i++;
   in10=i++;in11=i++;in12=i++;in13=i++; in14=i++;in15=i++;in16=i++;in17=i++;
   in20=i++;in21=i++;in22=i++;in23=i++; in24=i++;in25=i++;in26=i++;in27=i++;
@@ -384,7 +392,7 @@ short in00,  in01,  in02,  in03,
   in60=i++;in61=i++;in62=i++;in63=i++; in64=i++;in65=i++;in66=i++;in67=i++;
   in70=i++;in71=i++;in72=i++;in73=i++; in74=i++;in75=i++;in76=i++;in77=i++;
 
-result_out =  feig_dct( in00,  in01,  in02,  in03,
+result_out[idx] =  feig_dct( in00,  in01,  in02,  in03,
                in04,  in05,  in06,  in07,
                in10,  in11,  in12,  in13,
                in14,  in15,  in16,  in17,
@@ -400,9 +408,11 @@ result_out =  feig_dct( in00,  in01,  in02,  in03,
                in64,  in65,  in66,  in67,
                in70,  in71,  in72,  in73,
 		        in74,  in75,  in76,  in77);
+     printf("%d\n",result_out[idx]);
+    }
 //    printf("benchmark_result = %d\n",result_out);
 //    main_result = (result_out != exp_res);
     //        printf("%d\n", main_result);
 //  return main_result;
- return result_out;
+ return 0;
 }

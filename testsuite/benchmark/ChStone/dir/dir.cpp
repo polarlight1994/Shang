@@ -163,23 +163,32 @@ short y10, y11, y12, y13, y14, y15, y16, y17;
 }
 #endif
 
+//int i;//25
+
+#define NUM 10
 int i;//25
+int result_out[NUM];
+int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
 #define exp_res 11420
 int main()
 {
     int main_result;
     short x01, x02, x03, x11, x12, x13, x21, x22;
-  int result_out;  
-
+    //  int result_out;  
+  for (int idx=0;idx<NUM;idx++)
+    {
+      i = inputs[idx];
   x01 = i++; x02 = i++; x03 = i++;
   x11 = i++; x12 = i++; x13 = i++;
   x21 = i++; x22 = i++; 
   
-  result_out = dir(x01, x02, x03, x11,
+  result_out[idx] = dir(x01, x02, x03, x11,
 		   x12, x13, x21, x22);
+     printf("%d\n",result_out[idx]);
+    }
   //  printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
     //    return main_result;
-    return result_out;
+  return 0;
 }
