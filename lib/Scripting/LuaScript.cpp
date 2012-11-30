@@ -173,15 +173,10 @@ void LuaScript::updateFUs() {
   FUSet[VFUs::BRam] = new VFUBRAM(FUs[VFUDesc::getTypeName(VFUs::BRam)]);
 
   initSimpleFU<VFUs::AddSub>(FUs);
-
   initSimpleFU<VFUs::Shift>(FUs);
-
   initSimpleFU<VFUs::Mult>(FUs);
-
   initSimpleFU<VFUs::ICmp>(FUs);
-
   initSimpleFU<VFUs::Sel>(FUs);
-
   initSimpleFU<VFUs::Reduction>(FUs);
 
   FUSet[VFUs::Mux] = new VFUMux(FUs[VFUDesc::getTypeName(VFUs::Mux)]);
