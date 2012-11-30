@@ -1,4 +1,4 @@
-
+#include <stdio.h>
 /*#define num16 fix<8,8> */
 #define num16 (short)
 /*#define num12 fix <12,11> */

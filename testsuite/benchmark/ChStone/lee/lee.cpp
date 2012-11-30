@@ -6,7 +6,7 @@
 
    simulated and corrected (Sandeep Singh)
 */
-
+#include <stdio.h>
 #define  num8 (short)
 #define  num12 (short)
 
