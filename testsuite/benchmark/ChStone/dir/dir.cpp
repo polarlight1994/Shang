@@ -103,7 +103,9 @@
 #define C75 wc(0-4157) 
 #define C76 wc(2777) 
 #define C77 wc(0-975)
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 int  dir(short x0, short x1, short x2, short x3,
           short x4, short x5, short x6, short x7) __attribute__ ((noinline));
 
@@ -157,8 +159,11 @@ short y10, y11, y12, y13, y14, y15, y16, y17;
   return result_out;
 
 }
+#ifdef __cplusplus
+}
+#endif
 
-  int i =25;
+int i;//25
 #define exp_res 11420
 int main()
 {
@@ -173,7 +178,8 @@ int main()
   result_out = dir(x01, x02, x03, x11,
 		   x12, x13, x21, x22);
   //  printf("benchmark_result = %d\n",result_out);
-    main_result = (result_out != exp_res);
+  //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
-    return main_result;
+    //    return main_result;
+    return result_out;
 }

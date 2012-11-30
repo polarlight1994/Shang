@@ -4,7 +4,9 @@
 */
 
 
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 int pr(short x10, short x11, short x12, short x13,
         short x14, short x15, short x16, short x17)  __attribute__ ((noinline));
 
@@ -72,8 +74,10 @@ short y10, y11, y12, y13, y14, y15,y16, y17;
     //    printf("%d\n",result_out);
     return result_out;
 }
-
-int i =25;
+#ifdef __cplusplus
+}
+#endif
+int i;//25
 #define exp_res 26500
 int main()
 {
@@ -87,7 +91,8 @@ int main()
 
   result_out = pr(x01,x02,x03,x11,x12,x13,x21, x22);
   //    printf("benchmark_result = %d\n",result_out);
-    main_result = (result_out != exp_res);
+  //    main_result = (result_out != exp_res);
     //        printf("%d\n", main_result);
-    return main_result;
+    //    return main_result;
+    return result_out;
 }

@@ -18,7 +18,9 @@
 #define  C6  num12(13065)
 #define  C7  num12(25629)
 #define  quarter  num12(25)
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 int lee(short x10, short x11, short x12, short x13,
          short x14, short x15, short x16, short x17)  __attribute__ ((noinline));
 
@@ -122,8 +124,10 @@ int lee(short x10, short x11, short x12, short x13,
     //    printf("%d\n",result_out);  
   return result_out;
 }
-
-  int i =25;
+#ifdef __cplusplus
+}
+#endif
+int i;//25
 #define exp_res 18637
 int main()
 {
@@ -137,7 +141,8 @@ int main()
 
   result_out = lee(x01,x02,x03,x11,x12,x13,x21, x22);
   //    printf("benchmark_result = %d\n",result_out);
-    main_result = (result_out != exp_res);
+  //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
-    return main_result;
+    //    return main_result;
+    return result_out;
 }

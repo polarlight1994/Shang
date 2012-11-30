@@ -22,7 +22,9 @@
 #define  m2  num12 (3826)   
 #define  m3  num12 (5411)    
 #define  m4  num12 (13060)    
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 int arai(short x10, short x11, short x12, short x13,
 	 short x14, short x15, short x16, short x17) __attribute__ ((noinline));
 
@@ -87,8 +89,10 @@ int arai(short x10, short x11, short x12, short x13,
   return result_out;
  
 }
-
-  int i =25;
+#ifdef __cplusplus
+}
+#endif
+int i;//25
 #define exp_res 222
 int main()
 {
@@ -105,7 +109,8 @@ int main()
   result_out = arai(x10, x11, x12, x13,
 			 x14, x15, x16,x17);
   //    printf("benchmark_result = %d\n",result_out);
-    main_result = (result_out != exp_res);
+  // main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
-    return main_result;
+    //    return main_result;
+    return result_out;
 }

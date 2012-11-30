@@ -119,7 +119,9 @@ Q1(x04,x14, y04, y14) \
 Q2(x05,x15, y05, y15) \
 Q3(x06, x07, x16, x17, y06, y07, y16, y17)
 
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 int feig_dct(short in00, short in01, short in02, short in03,
               short in04, short in05, short in06, short in07,
@@ -345,8 +347,11 @@ short
     //    printf("%d\n",result_out);
     return result_out;
 }
+#ifdef __cplusplus
+}
+#endif
 
-  int i =25;
+int i;//25
 #define exp_res 61640
 int main()
 {
@@ -396,7 +401,8 @@ result_out =  feig_dct( in00,  in01,  in02,  in03,
                in70,  in71,  in72,  in73,
 		        in74,  in75,  in76,  in77);
 //    printf("benchmark_result = %d\n",result_out);
-    main_result = (result_out != exp_res);
+//    main_result = (result_out != exp_res);
     //        printf("%d\n", main_result);
-    return main_result;
+//  return main_result;
+ return result_out;
 }

@@ -27,7 +27,9 @@
 #define  S1I16  num12(1950)
 #define  C5I16  num12(5555)
 #define  S5I16  num12(8314)
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 int wang (short x11, short x12, short x13, short x14, short x15,
            short x16, short x17, short x18) __attribute__ ((noinline));
@@ -83,9 +85,12 @@ short x21, x22, x23, x24, x25, x26, x27, x28,
   //  printf("%d\n", result_out);
   return result_out;
 }
+#ifdef __cplusplus
+}
+#endif
 
 #define exp_res 27136
- int i =25;
+int i;//25
 int main()
 {
     int main_result;
@@ -100,7 +105,8 @@ int main()
   result_out = wang (x11, x12, x13, x21, x22,
 		     x23, x31, x32);
   //    printf("benchmark_result = %d\n",result_out);
-    main_result = (result_out != exp_res);
+  //main_result = (result_out != exp_res);
     //        printf("%d\n", main_result);
-    return main_result;
+    //    return main_result;
+  return result_out;
 }

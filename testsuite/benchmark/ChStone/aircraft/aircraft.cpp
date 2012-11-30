@@ -1,6 +1,9 @@
 #include <stdio.h>
 /*#define w fix<20,17> */
 #define w (int)
+#ifdef __cplusplus
+extern "C" {
+#endif
 int aircraft (int X_0_1, int X_0_2, int X_0_3,
                 int X_1_1, int X_1_2, int X_1_3,
                 int X_2_1, int X_2_2, int X_2_3,
@@ -407,8 +410,10 @@ X_3_1)-w(0.5366065589E3*X_3_2)+w(0.8083122566E-1*X_3_3)-w(0.3331108492E1*X_4_3);
       //            printf("%d res\n",result_out);
       return result_out;
 }
-
-  int i =25;
+#ifdef __cplusplus
+}
+#endif
+int i;//25
 #define exp_res 564302302
 int main()
 {
@@ -426,7 +431,8 @@ int main()
   x61 = i++; x62 = i++; x63 = i++;
   result_out = aircraft(x01,x02,x03,x11,x12,x13,x21, x22, x23,x31,x32,x33,x41,x42,x43,x51,x52,x53,x61,x62,x63);
   //  printf("benchmark_result = %d\n",result_out);
-    main_result = (result_out != exp_res);
+  //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
-    return main_result;
+  //    return main_result;
+  return result_out;
 }

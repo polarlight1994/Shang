@@ -2,7 +2,9 @@
 #include <stdio.h>
 /*#define w fix<20,17> */
 #define w (int)
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 int chem(int S_1_1, int S_2_1, int S_3_1, int S_4_1, int S_5_1,
           int S_6_1, int S_7_1, int S_8_1, int S_9_1, int S_10_1,
           int X_0_1, int X_1_1, int X_2_1, int X_3_1, int X_4_1,
@@ -96,8 +98,11 @@ int S_1, S_2, S_3, S_4, S_5, S_6, S_7, S_8, S_9, S_10;
      //     printf("%d\n", result_out);
      return result_out;
 }
+#ifdef __cplusplus
+}
+#endif
 
-  int i =22;
+int i;//22
 #define exp_res 733181
 int main()
 {
@@ -119,8 +124,9 @@ int main()
           x32, x33, x41, x42, x43,
 		     x51, x52, x53,x61,x62);
   //  printf("benchmark_result = %d\n",result_out);
-    main_result = (result_out != exp_res);
+  //    main_result = (result_out != exp_res);
     //  printf("%d\n", main_result);
-    return main_result;
+    //    return main_result;
+  return result_out;
 }
 

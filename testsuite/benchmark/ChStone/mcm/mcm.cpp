@@ -35,7 +35,9 @@
 #define Const_X7_4 num12(937)
 #define Const_X7_5 num12(2778)
 #define Const_X7_6 num12(5078)
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 int  mcm(short X0, short X1, short X2, short X3,
          short X4, short X5, short X6, short X7)  __attribute__ ((noinline));
 
@@ -134,8 +136,10 @@ int  mcm(short X0, short X1, short X2, short X3,
     //    printf("%d\n", result_out);
     return result_out;
 }
-
-  int i =25;
+#ifdef __cplusplus
+}
+#endif
+int i;//25
 #define exp_res 13896
 int main()
 {
@@ -151,7 +155,8 @@ int main()
 result_out =  mcm(x01     , x02     , x03     , x11     ,
 		  x12     , x13     , x21     , x22     );
 //      printf("benchmark_result = %d\n",result_out);
-    main_result = (result_out != exp_res);
+//    main_result = (result_out != exp_res);
     //          printf("%d\n", main_result);
-    return main_result;
+    //    return main_result;
+    return result_out;
 }

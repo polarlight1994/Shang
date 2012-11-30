@@ -1,7 +1,9 @@
 #define w (short)
 #include <stdio.h>
 
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 int honda(short X_0_1, short X_1_1, 
            short S_1_1, short S_2_1, short S_3_1, short S_4_1,
            short S_5_1, short S_6_1, short S_7_1) __attribute__ ((noinline));
@@ -79,8 +81,10 @@ S_7   needed at (   Tj   )+w(   2   *   TS   )
 Y_0_1   needed at (   0   *   TS   )+w(   TL   )
 Y_1_1   needed at (   1   *   TS   )+w(   TL   )
 */
-
-  int i =25;
+#ifdef __cplusplus
+}
+#endif
+int i;//25
 #define exp_res 39735
 int main()
 {
@@ -97,7 +101,8 @@ result_out =  honda(x01, x02,
 		    x21, x22, x23);
 
 //    printf("benchmark_result = %d\n",result_out);
-    main_result = (result_out != exp_res);
+//    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
-    return main_result;
+    //    return main_result;
+    return result_out;
 }
