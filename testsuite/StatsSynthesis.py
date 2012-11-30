@@ -6,7 +6,9 @@ import re
 import sys
 
 def geomean(nums):
-    return (reduce(lambda x, y: x*y, nums))**(1.0/len(nums))
+    if len(nums) != 0 :
+        return (reduce(lambda x, y: x*y, nums))**(1.0/len(nums))
+    return 0
 
 def getFreq(data):
     return float(re.match(r"(^[1-9]\d*\.\d*|0\.\d*[1-9]\d*$|^\d*)",data).group(0))
