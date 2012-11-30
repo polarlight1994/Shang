@@ -18,7 +18,8 @@ function getGVBit(Num)
 end
 InterfaceGen =[=[
 #local table_size_tmp = # LineTotal
-#local Num64GV = LineTotal[table_size_tmp] + 1
+#local Num64GV = 0
+#if table_size_tmp > 0 then Num64GV = LineTotal[table_size_tmp] + 1 end
 ///////////////////////////////////////////////////////////////////////
 //------------------------Experiment module--------------------------//
 ///////////////////////////////////////////////////////////////////////
@@ -246,7 +247,8 @@ table_name = {}
 table_num = {}
 LineTotal = {}
 local preprocess = require "luapp" . preprocess
-local _, message = preprocess {input=BlockRAMInitFileGenScript}
+--FIXME: Simply load the script.
+local _, message = preprocess {input=BlockRAMInitFileGenScript, output=io.stdout}
 local IntfFile = assert(io.open (INTFFILE, "w+"))
 local preprocess = require "luapp" . preprocess
 local _, message = preprocess {input=InterfaceGen, output=IntfFile}
@@ -256,7 +258,8 @@ IntfFile:close()
 
 BRAMGen = [=[
 #local table_size_tmp = # LineTotal
-#local Num64GV = LineTotal[table_size_tmp] + 1
+#local Num64GV = 0
+#if table_size_tmp > 0 then Num64GV = LineTotal[table_size_tmp] + 1 end
 module BRAM
 	$('#')(parameter int
 		ADDR_WIDTH = $(getGVBit(Num64GV)),                       ///////////////////////////
@@ -308,7 +311,7 @@ table_name = {}
 table_num = {}
 LineTotal = {}
 local preprocess = require "luapp" . preprocess
-local _, message = preprocess {input=BlockRAMInitFileGenScript}
+local _, message = preprocess {input=BlockRAMInitFileGenScript, output=io.stdout}
 local BramFile = assert(io.open (BRAMFILE, "w+"))
 local preprocess = require "luapp" . preprocess
 local _, message = preprocess {input=BRAMGen, output=BramFile}
