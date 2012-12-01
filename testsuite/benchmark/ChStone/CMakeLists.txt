@@ -27,7 +27,7 @@
 
 ##################################
 #Add Deming's benchmarks
-#add_subdirectory(aircraft)
+add_subdirectory(aircraft)
 add_subdirectory(arai)
 add_subdirectory(chem)
 add_subdirectory(dir)
@@ -36,7 +36,7 @@ add_subdirectory(honda)
 add_subdirectory(lee)
 add_subdirectory(mcm)
 add_subdirectory(pr)
-#add_subdirectory(u5ml)
+add_subdirectory(u5ml)
 add_subdirectory(wang)
 
 #message(STATUS "Chstore Benchmarks : " ${Benchmarks})
