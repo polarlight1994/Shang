@@ -26,7 +26,6 @@ add_llvm_library(VTMSchedule
 target_link_libraries (
 	VTMSchedule
 	${LPSOLVE_LIBRARY}
-        colamd dl
 )
 
 add_dependencies(VTMSchedule VerilogBackendTableGen)
