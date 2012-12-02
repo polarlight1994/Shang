@@ -196,8 +196,18 @@ static void accumulateDatapathLatency(DepLatInfoTy &CurLatInfo,
                                       BDInfo Inc, unsigned BitInc, FuncTy F) {
   typedef DepLatInfoTy::const_iterator src_it;
   // Compute minimal delay for all possible pathes.
-  for (src_it I = SrcLatInfo->begin(), E = SrcLatInfo->end(); I != E; ++I)
+  for (src_it I = SrcLatInfo->begin(), E = SrcLatInfo->end(); I != E; ++I) {
+    DEBUG(dbgs() << "DELAY-ESTIMATION-DEBUG: SRC " << I->first.getOpaqueValue()
+           << " Original-delay: " << scaleToLogicLevels(I->second.MSBDelay)
+           << ", " << scaleToLogicLevels(I->second.LSBDelay) << " Inc: "
+           << scaleToLogicLevels(Inc.MSBDelay) << ", "
+           << scaleToLogicLevels(Inc.LSBDelay) << " BitInc: "
+           << scaleToLogicLevels(BitInc));
     updateLatency(CurLatInfo, I->first, F(I->second, Inc, BitInc));
+    DEBUG(dbgs() << " After accumulate: "
+      << scaleToLogicLevels(CurLatInfo.find(I->first)->second.MSBDelay) << ", "
+      << scaleToLogicLevels(CurLatInfo.find(I->first)->second.LSBDelay) << '\n');
+  }
 }
 
 static bool NeedExtraStepToLatchResult(const MachineInstr *MI,
