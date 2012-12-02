@@ -4,6 +4,11 @@ load_report
 qsta_utility::generate_all_summary_tables
 report_clock_fmax_summary -panel_name "Fmax Summary"
 
+foreach_in_collection path [get_timing_paths -setup  -npath 1 -detail path_only] {
+  set Data_Delay [get_path_info $path -num_logic_levels]
+  post_message -type info "DELAY-ESTIMATION-VERIFY: Critical Path Logic Levels $Data_Delay"
+}
+
 # Delete the folder if it already existed.
 set folderId [get_report_panel_id "Timing Reports"]
 if {$folderId != -1} {
