@@ -127,7 +127,7 @@ private:
     return at->second;
   }
 
-  bool propagateFromLSB2MSB(const MachineInstr *MI);
+  bool isAddOrMult(const MachineInstr *MI);
 
   // The latency from all register source through the datapath to a given
   // wire/register define by a datapath/control op

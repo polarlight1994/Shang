@@ -304,7 +304,7 @@ unsigned DetialLatencyInfo::computeAndCacheLatencyFor(const MachineInstr *MI) {
   return TotalLatency;
 }
 
-bool DetialLatencyInfo::propagateFromLSB2MSB(const MachineInstr *MI) {
+bool DetialLatencyInfo::isAddOrMult(const MachineInstr *MI) {
   switch (MI->getOpcode()) {
   default: break;
   case VTM::VOpAdd_c:
@@ -322,7 +322,7 @@ bool DetialLatencyInfo::propagateFromLSB2MSB(const MachineInstr *MI) {
     if (MI->getOperand(1).isReg()) {
       unsigned SrcReg = MI->getOperand(1).getReg();
       MachineInstr *BitSliceSrc = MRI->getVRegDef(SrcReg);
-      return propagateFromLSB2MSB(BitSliceSrc);
+      return isAddOrMult(BitSliceSrc);
     }
   }
 
@@ -341,7 +341,7 @@ BDInfo DetialLatencyInfo::getLatencyToDst(const MachineInstr *SrcMI,
     // If we are only reading the lower part of the result of SrcMI, and the
     // LSB of the result of SrcMI are available before SrcMI completely finish,
     // we can read the subword before SrcMI finish.
-    if (UB && propagateFromLSB2MSB(SrcMI)) {
+    if (UB && isAddOrMult(SrcMI)) {
       unsigned SrcSize = VInstrInfo::getBitWidth(SrcMI->getOperand(0));
       // Scale up the latency by SrcSize.
       Result.LSBDelay = Result.MSBDelay;
