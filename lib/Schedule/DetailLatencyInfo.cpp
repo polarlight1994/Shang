@@ -61,7 +61,10 @@ static inline unsigned scaledLUTLatency() {
 }
 
 static inline unsigned ensureElementalLatency(unsigned Latency) {
-  return Latency == 0 ? 0 : std::max(Latency, scaledLUTLatency());
+  if (Latency > DetialLatencyInfo::LatencyDelta)
+    return std::max(Latency, scaledLUTLatency());
+
+  return Latency;
 }
 
 static inline unsigned scaleUp(unsigned NumLogicLevels) {
@@ -69,8 +72,8 @@ static inline unsigned scaleUp(unsigned NumLogicLevels) {
 }
 
 static inline unsigned scaleToLogicLevels(unsigned Delay) {
-  return (Delay + DetialLatencyInfo::LatencyScale - 1)\
-    / DetialLatencyInfo::LatencyScale;
+  return (Delay + DetialLatencyInfo::LatencyScale - 1)
+          / DetialLatencyInfo::LatencyScale;
 }
 
 static inline unsigned scaledDetalLatency(const MachineInstr *MI) {
@@ -226,7 +229,8 @@ static bool NeedExtraStepToLatchResult(const MachineInstr *MI,
 static BDInfo getBitSliceLatency(unsigned OperandSize,
                                     unsigned UB, unsigned LB,
                                     BDInfo SrcLatency) {
-  unsigned SrcMSBLatency = SrcLatency.MSBDelay, SrcLSBLatency = SrcLatency.LSBDelay;
+  unsigned SrcMSBLatency = SrcLatency.MSBDelay,
+           SrcLSBLatency = SrcLatency.LSBDelay;
   assert(OperandSize && "Unexpected zero size operand!");
   // Time difference between MSB and LSB.
   // unsigned MSB2LSBDelta = SrcMSBLatency - SrcLSBLatency;
@@ -327,8 +331,8 @@ bool DetialLatencyInfo::propagateFromLSB2MSB(const MachineInstr *MI) {
 
 template<bool IsCtrlDep>
 BDInfo DetialLatencyInfo::getLatencyToDst(const MachineInstr *SrcMI,
-                                             unsigned DstOpcode,
-                                             unsigned UB, unsigned LB) {
+                                          unsigned DstOpcode,
+                                          unsigned UB, unsigned LB) {
   unsigned CriticalDelay = getCachedLatencyResult(SrcMI);
   BDInfo Result = BDInfo(CriticalDelay);
   if (!IsCtrlDep || NeedExtraStepToLatchResult(SrcMI, *MRI, CriticalDelay)) {
