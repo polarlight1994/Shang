@@ -377,9 +377,11 @@ void DetialLatencyInfo::buildDepLatInfo(const MachineInstr *SrcMI,
 
   // Try to compute the per-bit latency.
   unsigned BitLatency = 0;
-  if (unsigned Size = UB - LB)
-    BitLatency = std::max((SrcLatency.MSBDelay - SrcLatency.LSBDelay) / Size,
-                          scaledLUTLatency());
+  if (unsigned Size = UB - LB) {
+    BitLatency = abs(int(SrcLatency.MSBDelay/Size)
+                     - int(SrcLatency.LSBDelay/Size));
+    BitLatency = ensureElementalLatency(BitLatency);
+  }
 
   SrcLatency = ensureElementalLatency(SrcLatency);
   unsigned Opcode = SrcMI->getOpcode();
