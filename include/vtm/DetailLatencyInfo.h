@@ -154,7 +154,7 @@ private:
                              const MachineInstr *DstInstr) const;
 
 
-  static void printChainDelayInfo(raw_ostream & O,
+  static void printChainDelayInfo(raw_ostream & O, const std::string &Prefix,
                                   const DepLatInfoTy::value_type &II,
                                   const MachineInstr *DstMI);
 protected:

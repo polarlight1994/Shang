@@ -546,18 +546,18 @@ void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
     for (SrcIt II = I->second.begin(), IE = I->second.end(); II != IE; ++II) {
       DepLatInfoTy::value_type CurChain = *II;
 
-      printChainDelayInfo(O, CurChain, DstMI);
+      printChainDelayInfo(O, "DELAY-ESTIMATION", CurChain, DstMI);
 
       if (CurChain.second.getCriticalDelay() > CrtlChain.second.getCriticalDelay())
         CrtlChain = CurChain;
     }
   }
 
-  O << "DELAY-ESTIMATION-CRITICAL-CHAIN: ";
-  printChainDelayInfo(O, CrtlChain, 0);
+  printChainDelayInfo(O, "DELAY-ESTIMATION-CRITICAL-CHAIN", CrtlChain, 0);
 }
 
 void DetialLatencyInfo::printChainDelayInfo(raw_ostream & O,
+                                            const std::string &Prefix,
                                             const DepLatInfoTy::value_type &Lat,
                                             const MachineInstr *DstMI) {
   const InstPtrTy SrcMI = Lat.first;
@@ -573,15 +573,15 @@ void DetialLatencyInfo::printChainDelayInfo(raw_ostream & O,
     LSBDelay -= scaledDetalLatency(SrcCtrlMI);
   }
 
-  O << "DELAY-ESTIMATION: From " << SrcMI.getOpaqueValue()
+  O << Prefix << ": From " << SrcMI.getOpaqueValue()
     << " to " << DstMI << "\nDELAY-ESTIMATION: MSB-Delay "
     << scaleToLogicLevels(Lat.second.MSBDelay)
-    << "\nDELAY-ESTIMATION: LSB-Delay "
+    << "\n" << Prefix << ": LSB-Delay "
     << scaleToLogicLevels(Lat.second.LSBDelay)
-    << "\nDELAY-ESTIMATION: MAX-Delay "
+    << "\n" << Prefix << ": MAX-Delay "
     << scaleToLogicLevels(Lat.second.getCriticalDelay()) << '\n';
 
-  O << "DELAY-ESTIMATION-JSON: { \"SRC\":\"" << SrcMI.getOpaqueValue()
+  O << Prefix << "-JSON: { \"SRC\":\"" << SrcMI.getOpaqueValue()
     << "\", \"DST\":\"" << DstMI << "\", \"MSB\":"
     << scaleToLogicLevels(Lat.second.MSBDelay)
     << ", \"LSB\":" << scaleToLogicLevels(Lat.second.LSBDelay)
