@@ -344,16 +344,15 @@ BDInfo DetialLatencyInfo::getLatencyToDst(const MachineInstr *SrcMI,
     if (UB && isAddOrMult(SrcMI)) {
       unsigned SrcSize = VInstrInfo::getBitWidth(SrcMI->getOperand(0));
       // Scale up the latency by SrcSize.
-      Result.LSBDelay = Result.MSBDelay;
-      Result.MSBDelay = Result.MSBDelay * SrcSize;
+      Result.LSBDelay = std::max<int>(int(Result.MSBDelay) -
+                                      int(scaledLUTLatency() * (SrcSize - 1)),
+                                      scaledLUTLatency());
       // DirtyHack: Ignore the invert flag.
       if (SrcSize != 1 && UB != 3) {
         assert(UB <= SrcSize && UB > LB  && "Bad bitslice!");
         Result = getBitSliceLatency(SrcSize, UB, LB, Result);
       }
-      // Scale down the latency by SrcSize.
-      Result.MSBDelay /= SrcSize;
-      Result.LSBDelay /= SrcSize;
+
     }
   } else
     // IsCtrlDep
