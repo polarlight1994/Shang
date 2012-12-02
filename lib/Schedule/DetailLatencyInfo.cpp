@@ -530,6 +530,11 @@ void DetialLatencyInfo::dump() const {
 }
 
 void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
+  O << "DELAY-ESTIMATION: #Logic-level per clock cycles: "
+    << VFUs::ClockPeriod() << '\n';
+  // The critical chain of the function.
+  std::pair<InstPtrTy, BDInfo> CrtlChain;
+
   typedef LatencyMapTy::const_iterator LatIt;
   for (LatIt I = LatencyMap.begin(), E = LatencyMap.end(); I != E; ++I) {
     const MachineInstr *DstMI = I->first;
@@ -539,32 +544,47 @@ void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
 
     typedef DepLatInfoTy::const_iterator SrcIt;
     for (SrcIt II = I->second.begin(), IE = I->second.end(); II != IE; ++II) {
-      const InstPtrTy SrcMI = II->first;
+      DepLatInfoTy::value_type CurChain = *II;
 
-      // Ignore the chain start from data-path operations.
-      if (SrcMI.isMI() && VInstrInfo::isDatapath(SrcMI->getOpcode())) continue;
-      unsigned MSBDelay = II->second.MSBDelay, LSBDelay = II->second.LSBDelay;
+      printChainDelayInfo(O, CurChain, DstMI);
 
-      // Do not count the delay introduced by required control-steps.
-      if (const MachineInstr *SrcCtrlMI = SrcMI) {
-        MSBDelay -= scaledDetalLatency(SrcCtrlMI);
-        LSBDelay -= scaledDetalLatency(SrcCtrlMI);
-      }
-
-      O << "DELAY-ESTIMATION: From " << SrcMI.getOpaqueValue()
-        << " to " << DstMI << "\nDELAY-ESTIMATION: MSB-Delay "
-        << scaleToLogicLevels(II->second.MSBDelay)
-        << "\nDELAY-ESTIMATION: LSB-Delay "
-        << scaleToLogicLevels(II->second.LSBDelay)
-        << "\nDELAY-ESTIMATION: MAX-Delay "
-        << scaleToLogicLevels(II->second.getCriticalDelay()) << '\n';
-
-      O << "DELAY-ESTIMATION-JSON: { \"SRC\":\"" << SrcMI.getOpaqueValue()
-        << "\", \"DST\":\"" << DstMI << "\", \"MSB\":"
-        << scaleToLogicLevels(II->second.MSBDelay)
-        << ", \"LSB\":" << scaleToLogicLevels(II->second.LSBDelay)
-        << ", \"MAX\":"
-        << scaleToLogicLevels(II->second.getCriticalDelay()) << "} \n";
+      if (CurChain.second.getCriticalDelay() > CrtlChain.second.getCriticalDelay())
+        CrtlChain = CurChain;
     }
   }
+
+  O << "DELAY-ESTIMATION-CRITICAL-CHAIN: ";
+  printChainDelayInfo(O, CrtlChain, 0);
+}
+
+void DetialLatencyInfo::printChainDelayInfo(raw_ostream & O,
+                                            const DepLatInfoTy::value_type &Lat,
+                                            const MachineInstr *DstMI) {
+  const InstPtrTy SrcMI = Lat.first;
+
+  // Ignore the chain start from data-path operations.
+  if (SrcMI.isMI() && VInstrInfo::isDatapath(SrcMI->getOpcode())) return;
+  unsigned MSBDelay = Lat.second.MSBDelay,
+           LSBDelay = Lat.second.LSBDelay;
+
+  // Do not count the delay introduced by required control-steps.
+  if (const MachineInstr *SrcCtrlMI = SrcMI) {
+    MSBDelay -= scaledDetalLatency(SrcCtrlMI);
+    LSBDelay -= scaledDetalLatency(SrcCtrlMI);
+  }
+
+  O << "DELAY-ESTIMATION: From " << SrcMI.getOpaqueValue()
+    << " to " << DstMI << "\nDELAY-ESTIMATION: MSB-Delay "
+    << scaleToLogicLevels(Lat.second.MSBDelay)
+    << "\nDELAY-ESTIMATION: LSB-Delay "
+    << scaleToLogicLevels(Lat.second.LSBDelay)
+    << "\nDELAY-ESTIMATION: MAX-Delay "
+    << scaleToLogicLevels(Lat.second.getCriticalDelay()) << '\n';
+
+  O << "DELAY-ESTIMATION-JSON: { \"SRC\":\"" << SrcMI.getOpaqueValue()
+    << "\", \"DST\":\"" << DstMI << "\", \"MSB\":"
+    << scaleToLogicLevels(Lat.second.MSBDelay)
+    << ", \"LSB\":" << scaleToLogicLevels(Lat.second.LSBDelay)
+    << ", \"MAX\":"
+    << scaleToLogicLevels(Lat.second.getCriticalDelay()) << "} \n";
 }

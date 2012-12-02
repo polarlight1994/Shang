@@ -152,6 +152,11 @@ private:
   // effect.
   unsigned getChainedLatency(const MachineInstr *SrcInstr,
                              const MachineInstr *DstInstr) const;
+
+
+  static void printChainDelayInfo(raw_ostream & O,
+                                  const DepLatInfoTy::value_type &II,
+                                  const MachineInstr *DstMI);
 protected:
   const DepLatInfoTy &addInstrInternal(const MachineInstr *MI,
                                        DepLatInfoTy &CurLatInfo);
