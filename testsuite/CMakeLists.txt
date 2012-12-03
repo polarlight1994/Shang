@@ -343,7 +343,7 @@ if(SYNTHESIS_DUT AND TARGET benchmark_synthesis_main)
   add_custom_target(${TEST}_simulate_main DEPENDS ${CycleCounter})
   add_dependencies(main_sim ${TEST}_simulate_main)
 
-  add_custom_command(OUTPUT ${MAIN_RTL_STA} ${CycleCounter}
+  add_custom_command(OUTPUT ${MAIN_RTL_STA}
     COMMAND ${QUARTUS_BIN_DIR}/quartus_sh -t "${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl"
     DEPENDS ${MAIN_RTL_SRC} "${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl" ${MAIN_SDC_SRC} ${MAIN_INT_TOP} ${MAIN_INT_BRAM} ${MAIN_INT_BRAMINIT}
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
@@ -373,3 +373,4 @@ endmacro(add_test_main_cases)
 add_subdirectory(SimpleTest)
 add_subdirectory(Loops)
 add_subdirectory(benchmark)
+add_subdirectory(regresstests)
