@@ -4,15 +4,15 @@ module @TEST_NAMES@(
   input clk,
   input wire[`WIDTH-1:0] a,
   input wire[`WIDTH-1:0] b,
-  output reg[2 * `WIDTH-1:0] c
+  output reg[`WIDTH-1:0] c
 );
 
   reg [`WIDTH-1:0] a_reg0;
   reg [`WIDTH-1:0] a_reg1;
   reg [`WIDTH-1:0] b_reg0;
   reg [`WIDTH-1:0] b_reg1;
-  reg [2 * `WIDTH-1:0] c_reg0;
-  wire [2 * `WIDTH-1:0] c_wire;
+  reg [`WIDTH-1:0] c_reg0;
+  wire [`WIDTH-1:0] c_wire;
   
 always@(posedge clk) begin
   a_reg0 <= a;
@@ -34,7 +34,7 @@ endmodule
 (* multstyle = "logic" *) module Mul(
   input wire[`WIDTH-1:0] a,
   input wire[`WIDTH-1:0] b,
-  output wire[2 * `WIDTH - 1:0] c
+  output wire[`WIDTH - 1:0] c
 );
 
 assign c = a * b;
