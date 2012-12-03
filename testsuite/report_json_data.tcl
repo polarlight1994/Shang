@@ -10,6 +10,8 @@ puts $DataJSON "\"lut4\":\"[get_fitter_resource_usage -resource {*4 input functi
 puts $DataJSON "\"lut3\":\"[get_fitter_resource_usage -resource {*3 input functions}]\","
 puts $DataJSON "\"lut2\":\"[get_fitter_resource_usage -resource {*2 input functions}]\","
 
+puts $DataJSON "\"mem_bit\":\"[get_fitter_resource_usage -mem_bit]\","
+
 #puts $DataJSON "\"les_normal\":\"[get_fitter_resource_usage -resource {*normal mode}]\","
 #puts $DataJSON "\"les_arit\":\"[get_fitter_resource_usage -resource {*arithmetic mode}]\","
 
