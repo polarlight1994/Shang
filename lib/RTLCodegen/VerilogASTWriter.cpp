@@ -108,7 +108,7 @@ bool VerilogASTWriter::runOnMachineFunction(MachineFunction &F) {
     F.print(Out);
     Out << "`endif\n";
   }
-
+  F.print(dbgs());
   VASTModule *VM = getAnalysis<VerilogModuleAnalysis>().getModule();
 
   // Write buffers to output

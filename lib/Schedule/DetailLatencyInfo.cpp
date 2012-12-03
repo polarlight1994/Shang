@@ -537,6 +537,8 @@ bool DetialLatencyInfo::runOnMachineFunction(MachineFunction &MF) {
     for (instr_iterator I = BI->instr_begin(), E = BI->instr_end(); I != E; ++I)
       addInstrInternal(I,  LatencyMap[I]);
 
+  dump();
+
   return false;
 }
 
@@ -548,7 +550,8 @@ void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
   O << "DELAY-ESTIMATION: #Logic-level per clock cycles: "
     << VFUs::ClockPeriod() << '\n';
   // The critical chain of the function.
-  std::pair<InstPtrTy, BDInfo> CrtlChain;
+  std::pair<InstPtrTy, BDInfo> LongestChain, CriticalChain;
+  unsigned CriticalLL = 0;
 
   typedef LatencyMapTy::const_iterator LatIt;
   for (LatIt I = LatencyMap.begin(), E = LatencyMap.end(); I != E; ++I) {
@@ -563,12 +566,26 @@ void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
 
       printChainDelayInfo(O, "DELAY-ESTIMATION", CurChain, DstMI);
 
-      if (CurChain.second.getCriticalDelay() > CrtlChain.second.getCriticalDelay())
-        CrtlChain = CurChain;
+      if (CurChain.second.getCriticalDelay()
+          > LongestChain.second.getCriticalDelay())
+        LongestChain = CurChain;
+
+      if (unsigned Latency = CurChain.second.getCriticalDelay()) {
+        unsigned NumCycles = roundUpToCP(Latency);
+        unsigned PerCyclesLL = Latency / NumCycles;
+
+        if (CriticalLL < PerCyclesLL)  {
+          CriticalLL = PerCyclesLL;
+          CriticalChain = CurChain;
+        }
+      }
     }
   }
 
-  printChainDelayInfo(O, "DELAY-ESTIMATION-CRITICAL-CHAIN", CrtlChain, 0);
+  printChainDelayInfo(O, "DELAY-ESTIMATION-LONGEST-CHAIN", LongestChain, 0);
+  printChainDelayInfo(O, "DELAY-ESTIMATION-DELAY-CHAIN", CriticalChain, 0);
+  O << "DELAY-ESTIMATION-FMAX: " << double(scaledCP()) / double(CriticalLL)
+    << '\n';
 }
 
 void DetialLatencyInfo::printChainDelayInfo(raw_ostream & O,
