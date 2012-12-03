@@ -4,37 +4,37 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-int single_add(int x, int y) __attribute__ ((noinline));
-int two_add(int x, int y, int z) __attribute__ ((noinline));
-int three_add(int x, int y, int z, int a) __attribute__ ((noinline));
-int four_add(int x, int y, int z , int a, int b) __attribute__ ((noinline));
-int five_add(int x, int y, int z, int a, int b, int c) __attribute__ ((noinline));
+int single_sub(int x, int y) __attribute__ ((noinline));
+int two_sub(int x, int y, int z) __attribute__ ((noinline));
+int three_sub(int x, int y, int z, int a) __attribute__ ((noinline));
+int four_sub(int x, int y, int z , int a, int b) __attribute__ ((noinline));
+int five_sub(int x, int y, int z, int a, int b, int c) __attribute__ ((noinline));
 
-int single_add(int x, int y) {
-  return x+y;
+int single_sub(int x, int y) {
+  return x-y;
 }
 
-int two_adds(int x, int y, int z) {
-  return x+y+z;
+int two_subs(int x, int y, int z) {
+  return x-y-z;
 }
 
-int three_adds(int x, int y, int z, int a) {
-  return (x+y+z+a);
+int three_subs(int x, int y, int z, int a) {
+  return (x-y-z-a);
 }
 
-int four_adds(int x, int y, int z, int a, int b) {
-  return (x+y+z+a+b);
+int four_subs(int x, int y, int z, int a, int b) {
+  return (x-y-z-a-b);
 }
 
-int five_adds(int x, int y, int z, int a, int b, int c) {
-  return (x+y+z+a+b+c);
+int five_subs(int x, int y, int z, int a, int b, int c) {
+  return (x-y-z-a-b-c);
 }
 
 #ifdef __cplusplus
 }
 #endif
 
-#define exp_res 41299476
+#define exp_res 30836
 int main()
 {
   static int array0[NUM] = {61251, 39938, 557, 44087, 47457, 34892, 10951, 27320, 52441, 19223, 37907, 17733, 7955, 63768, 28004, 49123, 8207, 12611, 65416, 5149, 57091, 60947, 38247, 547, 49697, 41377, 18871, 18062, 28699, 44195, 62595, 22690, 9267, 127, 35116, 22432, 22036, 49858, 38900, 17577, 23766, 17334, 36673, 63610, 26343, 63308, 43736, 31387, 38191, 22004, 26629, 15195, 39604, 13415, 41537, 11555, 9773, 22456, 33278, 23191, 41678, 27438, 6844, 36947};
@@ -45,14 +45,14 @@ int main()
   static int array5[NUM] = {47123, 7651, 47287, 22017, 48215, 24375, 936, 10196, 13375, 57884, 37356, 32516, 55893, 17042, 39265, 63004, 12018, 58257, 11455, 12263, 39052, 59527, 61752, 18190, 32045, 35230, 34653, 29487, 49509, 39183, 58354, 7843, 44159, 5419, 48183, 26005, 63965, 30609, 22275, 1691, 22691, 52270, 59574, 34647, 17895, 37281, 2927, 9617, 52026, 60683, 44204, 43070, 48456, 59113, 2237, 6854, 3140, 30950, 61352, 57118, 51012, 44298, 25075, 31540};
 
   long result = 0;
-  for (unsigned i =0; i < NUM; ++i) {
-    result += single_add(array0[i], array1[i]);
-    result += two_adds(array0[i], array1[i], array2[i]);
-    result += three_adds(array0[i], array1[i], array2[i], array3[i]);
-    result += four_adds(array0[i], array1[i], array2[i], array3[i], array4[i]);
-    result += five_adds(array0[i], array1[i], array2[i], array3[i], array4[i], array5[i]);
+  for (unsigned i =0; i < NUM; --i) {
+    result += single_sub(array0[i], array1[i]);
+    result += two_subs(array0[i], array1[i], array2[i]);
+    result += three_subs(array0[i], array1[i], array2[i], array3[i]);
+    result += four_subs(array0[i], array1[i], array2[i], array3[i], array4[i]);
+    result += five_subs(array0[i], array1[i], array2[i], array3[i], array4[i], array5[i]);
   }
 
 //  printf("%ld\n", result);
-  return result != 41299476;
+  return result != 30836;
 }
