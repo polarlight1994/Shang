@@ -8,7 +8,7 @@ FUs.Shift = { LogicLevels = { 1, 4, 3, 5, 6 }, --Shift
               Costs = {1 * 64, 27 * 64, 70 * 64, 171 * 64, 393 * 64}, --Shift
               StartInterval=1,
 			        ChainingThreshold = SHIFT_ChainingThreshold}
-FUs.Mult = { LogicLevels = { 1, 11, 21, 48, 88 }, --Mul
+FUs.Mult = { LogicLevels = { 1, 8, 16, 32, 64 }, --Mul
 	           Costs = {1 * 64, 103 * 64, 344 * 64, 1211 * 64, 4478 * 64}, --Mul
              StartInterval=1,
 			       ChainingThreshold = MULT_ChainingThreshold}
