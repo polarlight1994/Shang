@@ -14,7 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "MachineFunction2Datapath.h"
+#include "MFDatapathContainer.h"
 
 #include "vtm/Passes.h"
 
@@ -33,29 +33,12 @@
 
 using namespace llvm;
 namespace {
-struct PreSchedRTLOpt : public MachineFunctionPass,
-                        public DatapathBuilderContext {
+struct PreSchedRTLOpt : public MachineFunctionPass {
   static char ID;
   MachineRegisterInfo *MRI;
   MachineDominatorTree *DT;
   MachineBasicBlock *Entry;
-  // VASTExprs are managed by DatapathContainer.
-  DatapathContainer DPContainer;
-  OwningPtr<DatapathBuilder> Builder;
-  typedef DenseMap<MachineOperand, VASTMachineOperand*,
-                   VMachineOperandValueTrait> VASTMOMapTy;
-  VASTMOMapTy VASTMOs;
-
-  using VASTExprBuilderContext::getOrCreateImmediate;
-
-  VASTImmediate *getOrCreateImmediate(const APInt &Value) {
-    return DPContainer.getOrCreateImmediate(Value);
-  }
-
-  VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                        unsigned UB, unsigned LB) {
-    return DPContainer.createExpr(Opc, Ops, UB, LB);
-  }
+  MFDatapathContainer Container;
 
   // Remember in which MachineBasicBlock the expression is first created, we can
   // simply write this expression in the MachineBasicBlock.
@@ -71,20 +54,6 @@ struct PreSchedRTLOpt : public MachineFunctionPass,
 
   typedef std::map<VASTValPtr, unsigned> Val2RegMapTy;
   Val2RegMapTy Val2Reg;
-
-  // TODO: Remember the outputs by wires?.
-  VASTValPtr getOrCreateVASTMO(MachineOperand DefMO) {
-    DefMO.clearParent();
-    assert((!DefMO.isReg() || !DefMO.isDef())
-           && "The define flag should had been clear!");
-    VASTMachineOperand *&VASTMO = VASTMOs[DefMO];
-    if (!VASTMO)
-      VASTMO = new VASTMachineOperand(DefMO);
-
-    return VASTMO;
-  }
-
-  VASTValPtr getAsOperand(MachineOperand &Op, bool GetAsInlineOperand = true);
 
   virtual bool shouldExprBeFlatten(VASTExpr *E) {
     return E->isInlinable();
@@ -184,7 +153,7 @@ struct PreSchedRTLOpt : public MachineFunctionPass,
     if (RegNum == 0) {
       RegNum = MRI->createVirtualRegister(&VTM::DRRegClass);
       // Index the expression by the the newly created register number.
-      if (V) Builder->indexVASTExpr(RegNum, V);
+      if (V) Container->indexVASTExpr(RegNum, V);
     }
 
     return RegNum;;
@@ -213,10 +182,8 @@ struct PreSchedRTLOpt : public MachineFunctionPass,
   }
 
   void releaseMemory() {
-    Builder.reset();
-    DeleteContainerSeconds(VASTMOs);
     Val2Reg.clear();
-    DPContainer.reset();
+    Container.reset();
   }
 };
 }
@@ -236,7 +203,7 @@ char PreSchedRTLOpt::ID = 0;
 bool PreSchedRTLOpt::runOnMachineFunction(MachineFunction &F) {
   MRI = &F.getRegInfo();
   DT = &getAnalysis<MachineDominatorTree>();
-  Builder.reset(new DatapathBuilder(*this, *MRI));
+  Container.createBuilder(MRI);
   Entry = F.begin();
 
   typedef MachineFunction::iterator iterator;
@@ -284,11 +251,11 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
     }
 
     if (MI->getOpcode() == VTM::VOpMove) {
-      VASTValPtr Src = getAsOperand(MI->getOperand(1));
+      VASTValPtr Src = Container->getAsOperand(MI->getOperand(1));
       unsigned RegNum = MI->getOperand(0).getReg();
       // Remember the register number mapping, the register maybe CSEd.
       if (RegNum == rememberRegNumForExpr<true>(Src, RegNum))
-        Builder->indexVASTExpr(RegNum, Src);
+        Container->indexVASTExpr(RegNum, Src);
       MI->eraseFromParent();
       continue;
     }
@@ -355,7 +322,7 @@ void PreSchedRTLOpt::rewriteDepForPHI(MachineInstr *PHI,
 void PreSchedRTLOpt::rewriteExprTreeForMO(MachineOperand &MO, MachineInstr *IP,
                                           bool isPredicate, bool isPHI) {
   MO.setIsKill(false);
-  VASTValPtr V = Builder->lookupExpr(MO.getReg());
+  VASTValPtr V = Container->lookupExpr(MO.getReg());
 
   if (!V) {
     assert(MRI->getVRegDef(MO.getReg())
@@ -417,13 +384,13 @@ VASTValPtr PreSchedRTLOpt::buildDatapath(MachineInstr *MI) {
   if (!VInstrInfo::isDatapath(MI->getOpcode())) return 0;
 
   unsigned ResultReg = MI->getOperand(0).getReg();
-  VASTValPtr V = Builder->buildDatapathExpr(MI);
+  VASTValPtr V = Container->buildDatapathExpr(MI);
 
   // Remember the register number mapping, the register maybe CSEd.
   unsigned FoldedReg = rememberRegNumForExpr<true>(V, ResultReg);
   // If ResultReg is not CSEd to other Regs, index the newly created Expr.
   if (FoldedReg == ResultReg)
-    Builder->indexVASTExpr(FoldedReg, V);
+    Container->indexVASTExpr(FoldedReg, V);
 
   return V;
 }
@@ -684,39 +651,6 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
   }
 
   return RegNo;
-}
-
-VASTValPtr
-PreSchedRTLOpt::getAsOperand(MachineOperand &Op, bool GetAsInlineOperand) {
-  unsigned BitWidth = VInstrInfo::getBitWidth(Op);
-  switch (Op.getType()) {
-  case MachineOperand::MO_Register: {
-    unsigned Reg = Op.getReg();
-    if (!Reg) return 0;
-
-    VASTValPtr V = Builder->lookupExpr(Reg);
-
-    if (!V) {
-      MachineInstr *DefMI = check(MRI->getVRegDef(Reg));
-      assert(VInstrInfo::isControl(DefMI->getOpcode())
-             && "Reg defined by data-path should had already been indexed!");
-      MachineOperand DefMO = DefMI->getOperand(0);
-      DefMO.setIsDef(false);
-      V = getOrCreateVASTMO(DefMO);
-    }
-
-    // The operand may only use a sub bitslice of the signal.
-    V = Builder->buildBitSliceExpr(V, BitWidth, 0);
-    // Try to inline the operand.
-    if (GetAsInlineOperand) V = V.getAsInlineOperand();
-    return V;
-                                    }
-  case MachineOperand::MO_Immediate:
-    return getOrCreateImmediate(Op.getImm(), BitWidth);
-  default: break;
-  }
-
-  return getOrCreateVASTMO(Op);
 }
 
 MachineOperand PreSchedRTLOpt::getAsOperand(VASTValPtr V) {
