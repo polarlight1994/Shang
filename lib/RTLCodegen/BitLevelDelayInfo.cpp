@@ -453,16 +453,12 @@ void BitLevelDelayInfo::buildDepLatInfo(const MachineInstr *SrcMI,
   }
 }
 
-const BitLevelDelayInfo::DepLatInfoTy &
-BitLevelDelayInfo::addInstrInternal(const MachineInstr *MI,
-                                    DepLatInfoTy &CurLatInfo) {
-  const MachineBasicBlock *CurMBB = MI->getParent();
+void BitLevelDelayInfo::visitAllUses(const MachineInstr *MI,
+                                     DepLatInfoTy &CurLatInfo) {
   unsigned Opcode = MI->getOpcode();
-  bool IsControl = VInstrInfo::isControl(Opcode);
-
   // Iterate from use to define, ignore the the incoming value of PHINodes.
   // Because the incoming value may be not visited yet.
-  for (unsigned i = 0, e = MI->isPHI() ? 1 : MI->getNumOperands(); i != e; ++i){
+  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
     const MachineOperand &MO = MI->getOperand(i);
 
     // Only care about a use register.
@@ -493,9 +489,19 @@ BitLevelDelayInfo::addInstrInternal(const MachineInstr *MI,
 
     buildDepLatInfo<false>(SrcMI, CurLatInfo, OpSize, 0, Opcode);
   }
+}
+
+
+const BitLevelDelayInfo::DepLatInfoTy &
+BitLevelDelayInfo::addInstrInternal(const MachineInstr *MI,
+                                    DepLatInfoTy &CurLatInfo) {
+  const MachineBasicBlock *CurMBB = MI->getParent();
+
+  if (!MI->isPHI()) visitAllUses(MI, CurLatInfo);
 
   // Compute the latency of MI.
   unsigned Latency = computeAndCacheLatencyFor(MI);
+  bool IsControl = VInstrInfo::isControl(MI->getOpcode());
 
   // We will not get any latency information if a datapath operation do not
   // depends any control operation in the same BB.

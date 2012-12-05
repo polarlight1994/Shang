@@ -153,7 +153,8 @@ private:
   static void printChainDelayInfo(raw_ostream & O, const std::string &Prefix,
                                   const DepLatInfoTy::value_type &II,
                                   const MachineInstr *DstMI);
-protected:
+  void visitAllUses(const MachineInstr *MI, DepLatInfoTy &CurLatInfo);
+
   const DepLatInfoTy &addInstrInternal(const MachineInstr *MI,
                                        DepLatInfoTy &CurLatInfo);
 
