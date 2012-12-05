@@ -51,6 +51,9 @@ class MFDatapathContainer : public DatapathBuilderContext,
   typedef std::map<VASTValPtr, unsigned> Val2RegMapTy;
   Val2RegMapTy Val2Reg;
 
+  // Remember the values used by the control-path.
+  typedef std::map<unsigned, VASTWire*> Reg2WireMapTy;
+  Reg2WireMapTy ExportedVals;
 public:
   explicit MFDatapathContainer() : Builder(0) {}
   ~MFDatapathContainer() { reset(); }
@@ -67,7 +70,6 @@ public:
     return createExprImpl(Opc, Ops, UB, LB);
   }
 
-  // TODO: Remember the outputs by wires?.
   VASTValPtr getOrCreateVASTMO(MachineOperand DefMO);
 
   // VASTValPtr to virtual register mapping.
@@ -97,6 +99,8 @@ public:
   // Build VASTValPtr for a MachineInstr.
   VASTValPtr buildDatapath(MachineInstr *MI);
 
+  // Export the VASTValPtr corresponding to Reg to the output of the datapath.
+  VASTWire *exportValue(unsigned Reg);
   DatapathBuilder *createBuilder(MachineRegisterInfo *MRI);
 
   DatapathBuilder *operator->() const { return Builder; }

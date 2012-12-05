@@ -93,6 +93,24 @@ VASTValPtr MFDatapathContainer::buildDatapath(MachineInstr *MI) {
   return V;
 }
 
+VASTWire *MFDatapathContainer::exportValue(unsigned Reg) {
+  VASTValPtr Val = Builder->lookupExpr(Reg);
+  // The value do not exist.
+  if (!Val) return 0;
+
+  // Have we created the ported?
+  VASTWire *&Wire = ExportedVals[Reg];
+
+  // Do not create a port for the same register more than once.
+  if (!Wire) {
+    // The port is not yet exist, create it now.
+    Wire = new (Allocator) VASTWire(0, Val->getBitWidth());
+    Wire->assign(Val);
+  }
+
+  return Wire;
+}
+
 void MFDatapathContainer::reset() {
   if (Builder) {
     delete Builder;
@@ -101,5 +119,6 @@ void MFDatapathContainer::reset() {
 
   VASTMOs.clear();
   Val2Reg.clear();
+  ExportedVals.clear();
   DatapathContainer::reset();
 }
