@@ -54,6 +54,11 @@ class MFDatapathContainer : public DatapathBuilderContext,
   // Remember the values used by the control-path.
   typedef std::map<unsigned, VASTWire*> Reg2WireMapTy;
   Reg2WireMapTy ExportedVals;
+
+  // Allocate the c-string for the name.
+  const char *allocateName(const Twine &Name);
+  const char *allocateRegName(unsigned Reg);
+
 public:
   explicit MFDatapathContainer() : Builder(0) {}
   ~MFDatapathContainer() { reset(); }

@@ -103,12 +103,34 @@ VASTWire *MFDatapathContainer::exportValue(unsigned Reg) {
 
   // Do not create a port for the same register more than once.
   if (!Wire) {
+    // Create the c-string and copy.
+    const char *Name = allocateRegName(Reg);
+
     // The port is not yet exist, create it now.
-    Wire = new (Allocator) VASTWire(0, Val->getBitWidth());
+    Wire = new (Allocator) VASTWire(Name, Val->getBitWidth());
     Wire->assign(Val);
   }
 
   return Wire;
+}
+
+const char *MFDatapathContainer::allocateName(const Twine &Name) {
+  std::string Str = VBEMangle(Name.str());
+  // Create the c-string and copy.
+  char *CName = Allocator.Allocate<char>(Str.length() + 1);
+  unsigned Term = Str.copy(CName, Str.length());
+  CName[Term] = '\0';
+
+  return CName;
+}
+
+const char *MFDatapathContainer::allocateRegName(unsigned Reg) {
+  if (TargetRegisterInfo::isVirtualRegister(Reg)) {
+    unsigned Idx = TargetRegisterInfo::virtReg2Index(Reg);
+    return allocateName('v' + utostr_32(Idx) + 'r');
+  } //else
+
+  return allocateName('p' + utostr_32(Reg) + 'r');
 }
 
 void MFDatapathContainer::reset() {
