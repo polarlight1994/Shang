@@ -144,7 +144,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
       EmptySlotEnCnd.push_back(Builder.buildNotExpr(PredAliasSlots));
 
     // Disable the current slot.
-    Mod.addAssignment(getRegister(), Mod.getBoolImmediate(false), this,
+    Mod.addAssignment(getRegister(), Mod.getBoolImmediateImpl(false), this,
                       EmptySlotEnCnd);
   }
 
@@ -215,7 +215,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
       DisableAndCnds.push_back(*I->second);
 
       VASTRegister *En = cast<VASTRegister>(I->first);
-      Mod.addAssignment(En, Mod.getBoolImmediate(false), this,
+      Mod.addAssignment(En, Mod.getBoolImmediateImpl(false), this,
                         DisableAndCnds, 0, false);
       DisableAndCnds.clear();
     }

@@ -513,7 +513,7 @@ void DatapathContainer::reset() {
   Allocator.Reset();
 }
 
-VASTImmediate *DatapathContainer::getOrCreateImmediate(const APInt &Value) {
+VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
   FoldingSetNodeID ID;
 
   Value.Profile(ID);
@@ -529,9 +529,9 @@ VASTImmediate *DatapathContainer::getOrCreateImmediate(const APInt &Value) {
   return V;
 }
 
-VASTValPtr DatapathContainer::createExpr(VASTExpr::Opcode Opc,
-                                         ArrayRef<VASTValPtr> Ops,
-                                         unsigned UB, unsigned LB) {
+VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
+                                             ArrayRef<VASTValPtr> Ops,
+                                             unsigned UB, unsigned LB) {
   assert(!Ops.empty() && "Unexpected empty expression");
   if (Ops.size() == 1) {
     switch (Opc) {
@@ -565,6 +565,8 @@ VASTValPtr DatapathContainer::createExpr(VASTExpr::Opcode Opc,
   unsigned ExprSize = 0;
 
   for (unsigned i = 0; i < Ops.size(); ++i) {
+    assert(Ops[i].get() && "Unexpected null VASTValPtr!");
+
     if (VASTExpr *E = Ops[i].getAsLValue<VASTExpr>()) ExprSize += E->ExprSize;
     else                                              ++ExprSize;
 

@@ -18,6 +18,7 @@
 #include "vtm/VInstrInfo.h"
 
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/Support/ErrorHandling.h"
 
 namespace llvm {
 class MachineRegisterInfo;
@@ -46,8 +47,9 @@ public:
 
 class DatapathBuilderContext : public VASTExprBuilderContext {
 public:
-  virtual VASTValPtr getAsOperand(MachineOperand &Op,
-                                  bool GetAsInlineOperand = true) {
+  virtual VASTValPtr getAsOperandImpl(MachineOperand &Op,
+                                      bool GetAsInlineOperand = true) {
+    llvm_unreachable("Function not implemented!");
     return 0;
   }
 };
@@ -55,8 +57,8 @@ public:
 class DatapathBuilder : public VASTExprBuilder {
 public:
   typedef std::map<unsigned, VASTValPtr> RegIdxMapTy;
-private:
   MachineRegisterInfo &MRI;
+private:
   RegIdxMapTy Idx2Expr;
 
   DatapathBuilderContext &getContext() {
@@ -68,7 +70,7 @@ public:
     : VASTExprBuilder(Context), MRI(MRI) {}
 
   VASTValPtr getAsOperand(MachineOperand &Op, bool GetAsInlineOperand = true) {
-    return getContext().getAsOperand(Op, GetAsInlineOperand);
+    return getContext().getAsOperandImpl(Op, GetAsInlineOperand);
   }
 
   VASTValPtr createAndIndexExpr(MachineInstr *MI, bool mayExisted = false);

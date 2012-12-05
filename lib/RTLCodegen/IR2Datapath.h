@@ -24,8 +24,9 @@ class TargetData;
 
 class EarlyDatapathBuilderContext : public VASTExprBuilderContext {
 public:
-  virtual VASTValPtr getAsOperand(Value *Op,
-                                  bool GetAsInlineOperand = true) {
+  virtual VASTValPtr getAsOperandImpl(Value *Op,
+                                      bool GetAsInlineOperand = true) {
+    llvm_unreachable("Function not implemented!");
     return 0;
   }
 };
@@ -55,7 +56,7 @@ public:
   }
 
   VASTValPtr getAsOperand(Value *Op, bool GetAsInlineOperand = true) {
-    return getContext().getAsOperand(Op, GetAsInlineOperand);
+    return getContext().getAsOperandImpl(Op, GetAsInlineOperand);
   }
 
   // Value mapping.

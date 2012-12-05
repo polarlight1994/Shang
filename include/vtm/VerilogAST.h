@@ -1153,17 +1153,17 @@ protected:
 public:
   BumpPtrAllocator *getAllocator() { return &Allocator; }
 
-  VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
+  VASTValPtr createExprImpl(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                         unsigned UB, unsigned LB);
 
-  VASTImmediate *getOrCreateImmediate(const APInt &Value);
+  VASTImmediate *getOrCreateImmediateImpl(const APInt &Value);
 
-  VASTImmediate *getOrCreateImmediate(uint64_t Value, int8_t BitWidth) {
-    return getOrCreateImmediate(APInt(BitWidth, Value));
+  VASTImmediate *getOrCreateImmediateImpl(uint64_t Value, int8_t BitWidth) {
+    return getOrCreateImmediateImpl(APInt(BitWidth, Value));
   }
 
-  VASTImmediate *getBoolImmediate(bool Value) {
-    return getOrCreateImmediate(Value ? 1 : 0, 1);
+  VASTImmediate *getBoolImmediateImpl(bool Value) {
+    return getOrCreateImmediateImpl(Value ? 1 : 0, 1);
   }
 
   void reset();
