@@ -22,13 +22,16 @@ namespace llvm {
 class VASTMachineOperand : public VASTValue {
   const MachineOperand MO;
 public:
-  VASTMachineOperand(const MachineOperand &MO)
-    : VASTValue(VASTNode::vastCustomNode, VInstrInfo::getBitWidth(MO)),
-    MO(MO) {}
+  VASTMachineOperand(const char *Name, const MachineOperand &MO)
+    : VASTValue(VASTNode::vastCustomNode, VInstrInfo::getBitWidth(MO)), MO(MO) {
+    Contents.Name = Name;
+  }
 
   MachineOperand getMO() const {
     return MO;
   }
+
+  const char *getName() const { return Contents.Name; }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTMachineOperand *A) { return true; }
@@ -59,6 +62,7 @@ class MFDatapathContainer : public DatapathBuilderContext,
   const char *allocateName(const Twine &Name);
   const char *allocateRegName(unsigned Reg);
 
+  VASTValPtr getOrCreateVASTMO(const char *Name, MachineOperand DefMO);
 public:
   explicit MFDatapathContainer() : Builder(0) {}
   ~MFDatapathContainer() { reset(); }
@@ -74,8 +78,6 @@ public:
                         unsigned UB, unsigned LB) {
     return createExprImpl(Opc, Ops, UB, LB);
   }
-
-  VASTValPtr getOrCreateVASTMO(MachineOperand DefMO);
 
   // VASTValPtr to virtual register mapping.
   unsigned lookupRegNum(VASTValPtr V) const {

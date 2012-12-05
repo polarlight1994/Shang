@@ -26,7 +26,7 @@ inline static T *check(T *Ptr) {
 
 void VASTMachineOperand::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                             unsigned LB) const {
-  OS << getMO() << '[' << UB << ',' << LB << ']';
+  OS << Contents.Name << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
 }
 
 DatapathBuilder *MFDatapathContainer::createBuilder(MachineRegisterInfo *MRI) {
@@ -34,13 +34,14 @@ DatapathBuilder *MFDatapathContainer::createBuilder(MachineRegisterInfo *MRI) {
   return (Builder = new DatapathBuilder(*this, *MRI));
 }
 
-VASTValPtr MFDatapathContainer::getOrCreateVASTMO(MachineOperand DefMO) {
+VASTValPtr MFDatapathContainer::getOrCreateVASTMO(const char *Name,
+                                                  MachineOperand DefMO) {
   DefMO.clearParent();
   assert((!DefMO.isReg() || !DefMO.isDef())
           && "The define flag should had been clear!");
   VASTMachineOperand *&VASTMO = VASTMOs[DefMO];
   if (!VASTMO)
-    VASTMO = new (Allocator) VASTMachineOperand(DefMO);
+    VASTMO = new (Allocator) VASTMachineOperand(Name, DefMO);
 
   return VASTMO;
 }
@@ -61,7 +62,7 @@ VASTValPtr MFDatapathContainer::getAsOperandImpl(MachineOperand &Op,
         && "Reg defined by data-path should had already been indexed!");
       MachineOperand DefMO = DefMI->getOperand(0);
       DefMO.setIsDef(false);
-      V = getOrCreateVASTMO(DefMO);
+      V = getOrCreateVASTMO(allocateRegName(Reg), DefMO);
     }
 
     // The operand may only use a sub bitslice of the signal.
@@ -75,7 +76,12 @@ VASTValPtr MFDatapathContainer::getAsOperandImpl(MachineOperand &Op,
   default: break;
   }
 
-  return getOrCreateVASTMO(Op);
+  std::string S;
+  raw_string_ostream ss(S);
+  ss << Op;
+  ss.flush();
+
+  return getOrCreateVASTMO(allocateName(S), Op);
 }
 
 VASTValPtr MFDatapathContainer::buildDatapath(MachineInstr *MI) {
