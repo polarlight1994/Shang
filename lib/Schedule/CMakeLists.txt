@@ -9,7 +9,6 @@ add_llvm_library(VTMSchedule
   AdjustLIForBundles.cpp
   ChainBreakingAnalysis.cpp
   CompGraph.cpp
-  DetailLatencyInfo.cpp
   PrebindMuxBase.cpp
   RecurrenceFinder.cpp
   ScheduleEmitter.cpp

@@ -55,7 +55,7 @@ Pass *createBasicPrebindMuxPass();
 Pass *createMemOpsFusingPass();
 Pass *createDeadMemOpEliminationPass();
 Pass *createHoistDatapathPass();
-Pass *createDetialLatencyInfoPass();
+Pass *createBitLevelDelayInfoPass();
 Pass *createVPreRegAllocSchedPass();
 
 // Scheduling pass.
@@ -85,7 +85,7 @@ Pass *createScriptingPass(const char *Name, const char *FScript,
 
 void initializeVerilogModuleAnalysisPass(PassRegistry &Registry);
 void initializeMachineBasicBlockTopOrderPass(PassRegistry &Registry);
-void initializeDetialLatencyInfoPass(PassRegistry &Registry);
+void initializeBitLevelDelayInfoPass(PassRegistry &Registry);
 void initializeVPreRegAllocSchedPass(PassRegistry &Registry);
 void initializeVAliasAnalysisPass(PassRegistry &Registry);
 void initializeAdjustLIForBundlesPass(PassRegistry &Registry);

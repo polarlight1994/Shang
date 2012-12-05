@@ -84,12 +84,12 @@ struct VPreRegAllocSched : public MachineFunctionPass {
   unsigned calculateLatencyFromEntry(VSUnit *U, VSchedGraph &G) const;
 
   // We need to iterate over the operand latency table.
-  typedef DetialLatencyInfo::DepLatInfoTy::const_iterator src_it;
+  typedef BitLevelDelayInfo::DepLatInfoTy::const_iterator src_it;
 
   template<bool CrossBBOnly>
   void addControlPathDepForSU(VSUnit *A, VSchedGraph &G);
 
-  typedef DetialLatencyInfo::DepLatInfoTy DepLatInfoTy;
+  typedef BitLevelDelayInfo::DepLatInfoTy DepLatInfoTy;
   template<VDEdge::Types Type, bool CrossBBOnly>
   void addControlPathDepForMI(MachineInstr *MI, int MIOffset, VSUnit *A,
                         VSchedGraph &G, const DepLatInfoTy &LatInfo);
@@ -194,7 +194,7 @@ INITIALIZE_PASS_BEGIN(VPreRegAllocSched, "Verilog-pre-reg-allocet-sched",
   INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
   INITIALIZE_PASS_DEPENDENCY(MachineBlockFrequencyInfo)
   INITIALIZE_PASS_DEPENDENCY(MachineLoopInfo)
-  INITIALIZE_PASS_DEPENDENCY(DetialLatencyInfo)
+  INITIALIZE_PASS_DEPENDENCY(BitLevelDelayInfo)
 INITIALIZE_PASS_END(VPreRegAllocSched, "Verilog-pre-reg-allocet-sched",
                     "Verilog pre reg allocet sched", false, false)
 
@@ -217,7 +217,7 @@ void VPreRegAllocSched::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<MachineLoopInfo>();
   AU.addRequired<AliasAnalysis>();
   AU.addPreserved<AliasAnalysis>();
-  AU.addRequired<DetialLatencyInfo>();
+  AU.addRequired<BitLevelDelayInfo>();
 }
 
 bool VPreRegAllocSched::runOnMachineFunction(MachineFunction &MF) {
@@ -234,7 +234,7 @@ bool VPreRegAllocSched::runOnMachineFunction(MachineFunction &MF) {
   MachineBasicBlock *VirtualExit = MF.CreateMachineBasicBlock();
   MF.push_back(VirtualExit);
 
-  VSchedGraph G(getAnalysis<DetialLatencyInfo>(), EnableDangling, false, 1);
+  VSchedGraph G(getAnalysis<BitLevelDelayInfo>(), EnableDangling, false, 1);
 
   buildGlobalSchedulingGraph(G, &MF.front(), VirtualExit);
 
@@ -458,7 +458,7 @@ void VPreRegAllocSched::addControlPathDepForMI(MachineInstr *MI, int MIOffset,
   for (src_it I = LatInfo.begin(), E = LatInfo.end(); I != E; ++I) {
     InstPtrTy Src = I->first;
     // Get the latency from SrcMI to MI.
-    int Latency = DetialLatencyInfo::getNumCPCeil(*I);
+    int Latency = BitLevelDelayInfo::getNumCPCeil(*I);
 
     // LatencyInfo use a special marker to mark the current MI have some latency
     // from entry of the MBB.
@@ -600,14 +600,14 @@ void VPreRegAllocSched::addDatapathDep(VSchedGraph &G, VSUnit *A) {
       // from the control-path dependencies to the first started bit of current
       // MI.
       if (IsSrcCtrl)
-        Latency = DetialLatencyInfo::getNumCPFloor(*I);
+        Latency = BitLevelDelayInfo::getNumCPFloor(*I);
       // Get the maximal latency from the data-path dependencies to control-path
       // operations, because the control-path operations read their operand
       // value right before it start, hence we need to get the maximal latency
       // to ensure the data-path operation had already finished when its result
       // is read.
       else if (IsCtrl)
-        Latency = std::max<int>(DetialLatencyInfo::getNumCPCeil(*I), 1);
+        Latency = std::max<int>(BitLevelDelayInfo::getNumCPCeil(*I), 1);
       else {//if(!IsCtrl && !IsSrcCtrl)
         MachineInstr *SrcMI = I->first;
         // Only create the edge if MI is actually reading the result of SrcMI.
@@ -651,7 +651,7 @@ void VPreRegAllocSched::addControlPathDepForSU(VSUnit *A, VSchedGraph &G) {
   for (unsigned I = 0, E = A->num_instrs(); I != E; ++I) {
     MachineInstr *MI = A->getPtrAt(I);
     assert(MI && "Unexpected entry root!");
-    const DetialLatencyInfo::DepLatInfoTy *Deps = G.getDepLatInfo(MI);
+    const BitLevelDelayInfo::DepLatInfoTy *Deps = G.getDepLatInfo(MI);
     assert(Deps && "Operand latency information not available!");
     int MIOffset = A->getLatencyAt(I);
     addControlPathDepForMI<VDEdge::ValDep, CrossBBOnly>(MI, MIOffset, A, G, *Deps);
@@ -880,7 +880,7 @@ void VPreRegAllocSched::buildExitRoot(VSchedGraph &G,
   SmallVector<MachineInstr*, 8> Exits;
   // We need wait all operation finish before the exit operation active, compute
   // the latency from operations need to wait to the exit operation.
-  DetialLatencyInfo::DepLatInfoTy ExitDeps;
+  BitLevelDelayInfo::DepLatInfoTy ExitDeps;
   MachineBasicBlock *MBB = FirstTerminator->getParent();
 
   for (instr_it I = FirstTerminator, E = MBB->end(); I != E; ++I) {

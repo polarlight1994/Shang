@@ -18,7 +18,6 @@
 #include "vtm/VFInfo.h"
 #include "vtm/VInstrInfo.h"
 #include "vtm/Utilities.h"
-#include "vtm/DetailLatencyInfo.h"
 
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"

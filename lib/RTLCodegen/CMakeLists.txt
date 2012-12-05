@@ -6,6 +6,7 @@ add_llvm_library(VTMRTLCodegen
   VerilogASTWriter.cpp
   IR2Datapath.cpp
   DesignMetrics.cpp
+  BitLevelDelayInfo.cpp
   MachineFunction2Datapath.cpp
   MFDatapathContainer.cpp
   PreSchedRTLOpt.cpp

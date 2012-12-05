@@ -1,4 +1,4 @@
-//===------------ VSUnit.cpp - Translate LLVM IR to VSUnit  -----*- C++ -*-===//
+//===--- BitLevelDelayInfo.cpp - Bit-level delay estimator  -----*- C++ -*-===//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -10,7 +10,7 @@
 // Compute the detail ctrlop to ctrlop latency (in cycle ratio) information.
 //
 //===----------------------------------------------------------------------===//
-#include "vtm/DetailLatencyInfo.h"
+#include "vtm/BitLevelDelayInfo.h"
 #include "vtm/VerilogBackendMCTargetDesc.h"
 
 #include "llvm/ADT/PostOrderIterator.h"
@@ -25,23 +25,23 @@ DisableBLC("vtm-disable-blc",
           cl::desc("Disable bit-level chaining"),
           cl::init(false));
 
-INITIALIZE_PASS_BEGIN(DetialLatencyInfo, "detail-latency-info",
+INITIALIZE_PASS_BEGIN(BitLevelDelayInfo, "detail-latency-info",
                       "Calculating the latency of instructions",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(MachineBasicBlockTopOrder)
-INITIALIZE_PASS_END(DetialLatencyInfo, "detail-latency-info",
+INITIALIZE_PASS_END(BitLevelDelayInfo, "detail-latency-info",
                     "Calculating the latency of instructions",
                     false, true)
 
-typedef DetialLatencyInfo::DepLatInfoTy DepLatInfoTy;
-typedef DetialLatencyInfo::BDInfo BDInfo;
+typedef BitLevelDelayInfo::DepLatInfoTy DepLatInfoTy;
+typedef BitLevelDelayInfo::BDInfo BDInfo;
 
-char DetialLatencyInfo::ID = 0;
-const unsigned DetialLatencyInfo::LatencyScale = 256;
-const unsigned DetialLatencyInfo::LatencyDelta = 1;
+char BitLevelDelayInfo::ID = 0;
+const unsigned BitLevelDelayInfo::LatencyScale = 256;
+const unsigned BitLevelDelayInfo::LatencyDelta = 1;
 
 static inline unsigned scaledCP(unsigned Num = 1) {
-  return VFUs::ClockPeriod() * DetialLatencyInfo::LatencyScale * Num;
+  return VFUs::ClockPeriod() * BitLevelDelayInfo::LatencyScale * Num;
 }
 
 static inline unsigned roundUpToScaledCPMultiple(unsigned Latency) {
@@ -57,23 +57,23 @@ static inline unsigned roundDownToCP(unsigned Latency) {
 }
 
 static inline unsigned scaledLUTLatency() {
-  return DetialLatencyInfo::LatencyScale;
+  return BitLevelDelayInfo::LatencyScale;
 }
 
 static inline unsigned ensureElementalLatency(unsigned Latency) {
-  if (Latency > DetialLatencyInfo::LatencyDelta)
+  if (Latency > BitLevelDelayInfo::LatencyDelta)
     return std::max(Latency, scaledLUTLatency());
 
   return Latency;
 }
 
 static inline unsigned scaleUp(unsigned NumLogicLevels) {
-  return NumLogicLevels * DetialLatencyInfo::LatencyScale;
+  return NumLogicLevels * BitLevelDelayInfo::LatencyScale;
 }
 
 static inline unsigned scaleToLogicLevels(unsigned Delay) {
-  return (Delay + DetialLatencyInfo::LatencyScale - 1)
-          / DetialLatencyInfo::LatencyScale;
+  return (Delay + BitLevelDelayInfo::LatencyScale - 1)
+          / BitLevelDelayInfo::LatencyScale;
 }
 
 static inline unsigned scaledDetalLatency(const MachineInstr *MI) {
@@ -87,33 +87,33 @@ static inline BDInfo ensureElementalLatency(BDInfo L) {
                 ensureElementalLatency(L.LSBDelay));
 }
 
-DetialLatencyInfo::DetialLatencyInfo() : MachineFunctionPass(ID), MRI(0) {
-  initializeDetialLatencyInfoPass(*PassRegistry::getPassRegistry());
+BitLevelDelayInfo::BitLevelDelayInfo() : MachineFunctionPass(ID), MRI(0) {
+  initializeBitLevelDelayInfoPass(*PassRegistry::getPassRegistry());
 }
 
-Pass *llvm::createDetialLatencyInfoPass() {
-  return new DetialLatencyInfo();
+Pass *llvm::createBitLevelDelayInfoPass() {
+  return new BitLevelDelayInfo();
 }
 
-void DetialLatencyInfo::getAnalysisUsage(AnalysisUsage &AU) const {
+void BitLevelDelayInfo::getAnalysisUsage(AnalysisUsage &AU) const {
   MachineFunctionPass::getAnalysisUsage(AU);
   AU.addRequiredID(MachineBasicBlockTopOrderID);
   AU.setPreservesAll();
 }
 
-unsigned DetialLatencyInfo::getStepsToFinish(const MachineInstr *MI) const {
+unsigned BitLevelDelayInfo::getStepsToFinish(const MachineInstr *MI) const {
   return roundUpToCP(getMaxLatency(MI));
 }
 
-unsigned DetialLatencyInfo::getNumCPCeil(DepLatInfoTy::value_type v) {
+unsigned BitLevelDelayInfo::getNumCPCeil(DepLatInfoTy::value_type v) {
   return roundUpToCP(v.second.getCriticalDelay());
 }
 
-unsigned DetialLatencyInfo::getNumCPFloor(DepLatInfoTy::value_type v) {
+unsigned BitLevelDelayInfo::getNumCPFloor(DepLatInfoTy::value_type v) {
   return roundDownToCP(v.second.getMinDelay());
 }
 
-unsigned DetialLatencyInfo::getChainedCPs(const MachineInstr *SrcInstr,
+unsigned BitLevelDelayInfo::getChainedCPs(const MachineInstr *SrcInstr,
                                           const MachineInstr *DstInstr) const {
   return roundUpToCP(getChainedLatency(SrcInstr, DstInstr));
 }
@@ -252,7 +252,7 @@ static unsigned adjustChainedLatency(unsigned Latency, unsigned SrcOpcode,
   bool SrcWriteUntilFInish = VInstrInfo::isWriteUntilFinish(SrcOpcode);
   bool DstReadAtEmit = VInstrInfo::isReadAtEmit(DstOpcode);
 
-  const unsigned Delta = DetialLatencyInfo::LatencyDelta;
+  const unsigned Delta = BitLevelDelayInfo::LatencyDelta;
 
   if (DstReadAtEmit && SrcWriteUntilFInish) {
     if (SrcOpcode == VTM::VOpMvPhi) {
@@ -277,12 +277,12 @@ static unsigned adjustChainedLatency(unsigned Latency, unsigned SrcOpcode,
   return std::max(0, int(Latency) - int(Delta));
 }
 
-void DetialLatencyInfo::buildLatenciesToCopy(const MachineInstr *MI,
+void BitLevelDelayInfo::buildLatenciesToCopy(const MachineInstr *MI,
                                              DepLatInfoTy &Info) {
   buildDepLatInfo<false>(MI, Info, 0, 0.0, VTM::VOpReadFU);
 }
 
-unsigned DetialLatencyInfo::computeAndCacheLatencyFor(const MachineInstr *MI) {
+unsigned BitLevelDelayInfo::computeAndCacheLatencyFor(const MachineInstr *MI) {
   unsigned TotalLatency = 0;
 
   if (MI->getOpcode() == VTM::VOpBitSlice && MI->getOperand(1).isReg()) {
@@ -304,7 +304,7 @@ unsigned DetialLatencyInfo::computeAndCacheLatencyFor(const MachineInstr *MI) {
   return TotalLatency;
 }
 
-bool DetialLatencyInfo::isAddOrMult(const MachineInstr *MI) {
+bool BitLevelDelayInfo::isAddOrMult(const MachineInstr *MI) {
   switch (MI->getOpcode()) {
   default: break;
   case VTM::VOpAdd_c:
@@ -330,7 +330,7 @@ bool DetialLatencyInfo::isAddOrMult(const MachineInstr *MI) {
 }
 
 template<bool IsCtrlDep>
-BDInfo DetialLatencyInfo::getLatencyToDst(const MachineInstr *SrcMI,
+BDInfo BitLevelDelayInfo::getLatencyToDst(const MachineInstr *SrcMI,
                                           unsigned DstOpcode,
                                           unsigned UB, unsigned LB) {
   unsigned CriticalDelay = getCachedLatencyResult(SrcMI);
@@ -366,7 +366,7 @@ BDInfo DetialLatencyInfo::getLatencyToDst(const MachineInstr *SrcMI,
 }
 
 template<bool IsCtrlDep>
-void DetialLatencyInfo::buildDepLatInfo(const MachineInstr *SrcMI,
+void BitLevelDelayInfo::buildDepLatInfo(const MachineInstr *SrcMI,
                                         DepLatInfoTy &CurLatInfo,
                                         unsigned UB, unsigned LB,
                                         unsigned DstOpcode){
@@ -453,8 +453,8 @@ void DetialLatencyInfo::buildDepLatInfo(const MachineInstr *SrcMI,
   }
 }
 
-const DetialLatencyInfo::DepLatInfoTy &
-DetialLatencyInfo::addInstrInternal(const MachineInstr *MI,
+const BitLevelDelayInfo::DepLatInfoTy &
+BitLevelDelayInfo::addInstrInternal(const MachineInstr *MI,
                                     DepLatInfoTy &CurLatInfo) {
   const MachineBasicBlock *CurMBB = MI->getParent();
   unsigned Opcode = MI->getOpcode();
@@ -507,7 +507,7 @@ DetialLatencyInfo::addInstrInternal(const MachineInstr *MI,
   return CurLatInfo;
 }
 
-void DetialLatencyInfo::buildExitMIInfo(const MachineInstr *ExitMI,
+void BitLevelDelayInfo::buildExitMIInfo(const MachineInstr *ExitMI,
                                         DepLatInfoTy &Info,
                                         MISetTy &MIsToWait, MISetTy &MIsToRead){
   typedef MISetTy::const_iterator exit_it;
@@ -520,7 +520,7 @@ void DetialLatencyInfo::buildExitMIInfo(const MachineInstr *ExitMI,
     buildDepLatInfo<false>(*I, Info, 0, 0, ExitMI->getOpcode());
 }
 
-unsigned DetialLatencyInfo::getChainedLatency(const MachineInstr *SrcInstr,
+unsigned BitLevelDelayInfo::getChainedLatency(const MachineInstr *SrcInstr,
                                               const MachineInstr *DstInstr) const{
   // Compute the latency correspond to detail slot.
   unsigned latency = getMaxLatency(SrcInstr);
@@ -528,7 +528,7 @@ unsigned DetialLatencyInfo::getChainedLatency(const MachineInstr *SrcInstr,
                               DstInstr->getOpcode());
 }
 
-bool DetialLatencyInfo::runOnMachineFunction(MachineFunction &MF) {
+bool BitLevelDelayInfo::runOnMachineFunction(MachineFunction &MF) {
   MRI = &MF.getRegInfo();
 
   typedef MachineFunction::iterator iterator;
@@ -537,16 +537,14 @@ bool DetialLatencyInfo::runOnMachineFunction(MachineFunction &MF) {
     for (instr_iterator I = BI->instr_begin(), E = BI->instr_end(); I != E; ++I)
       addInstrInternal(I,  LatencyMap[I]);
 
-  dump();
-
   return false;
 }
 
-void DetialLatencyInfo::dump() const {
+void BitLevelDelayInfo::dump() const {
   print(dbgs(), 0);
 }
 
-void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
+void BitLevelDelayInfo::print(raw_ostream &O, const Module *M) const {
   O << "DELAY-ESTIMATION: #Logic-level per clock cycles: "
     << VFUs::ClockPeriod() << '\n';
   // The critical chain of the function.
@@ -588,7 +586,7 @@ void DetialLatencyInfo::print(raw_ostream &O, const Module *M) const {
     << '\n';
 }
 
-void DetialLatencyInfo::printChainDelayInfo(raw_ostream & O,
+void BitLevelDelayInfo::printChainDelayInfo(raw_ostream & O,
                                             const std::string &Prefix,
                                             const DepLatInfoTy::value_type &Lat,
                                             const MachineInstr *DstMI) {

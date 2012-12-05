@@ -19,7 +19,7 @@
 #include "vtm/VInstrInfo.h"
 #include "vtm/FUInfo.h"
 #include "vtm/Utilities.h"
-#include "vtm/DetailLatencyInfo.h"
+#include "vtm/BitLevelDelayInfo.h"
 
 #include "llvm/Assembly/Writer.h"
 #include "llvm/ADT/GraphTraits.h"
@@ -624,7 +624,7 @@ public:
   typedef SUnitVecTy::iterator iterator;
   typedef SUnitVecTy::const_iterator const_iterator;
   enum { NullSUIdx = 0u, FirstSUIdx = 1u };
-  DetialLatencyInfo &DLInfo;
+  BitLevelDelayInfo &DLInfo;
 
   // The flag to indicate whether dangling nodes (or cross BB chains) are
   // allowed.
@@ -755,7 +755,7 @@ private:
 public:
   const unsigned EntrySlot;
 
-  VSchedGraph(DetialLatencyInfo &DLInfo, bool AllowDangling,
+  VSchedGraph(BitLevelDelayInfo &DLInfo, bool AllowDangling,
               bool EnablePipeline, unsigned EntrySlot)
     : DLInfo(DLInfo), AllowDangling(AllowDangling), Exit(0),
       NextSUIdx(FirstSUIdx), LoopOp(0, EnablePipeline), EntrySlot(EntrySlot) {}
@@ -765,7 +765,7 @@ public:
     std::for_each(CPSUs.begin(), CPSUs.end(), deleter<VSUnit>);
   }
 
-  // Forwarding function from DetialLatencyInfo.
+  // Forwarding function from BitLevelDelayInfo.
   unsigned getStepsToFinish(const MachineInstr *MI) const {
     return DLInfo.getStepsToFinish(MI);
   }
@@ -774,7 +774,7 @@ public:
     DLInfo.addDummyLatencyEntry(MI);
   }
 
-  typedef DetialLatencyInfo::DepLatInfoTy DepLatInfoTy;
+  typedef BitLevelDelayInfo::DepLatInfoTy DepLatInfoTy;
   const DepLatInfoTy *getDepLatInfo(const MachineInstr *DstMI) const {
     return DLInfo.getDepLatInfo(DstMI);
   }
