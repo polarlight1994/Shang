@@ -1257,12 +1257,21 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
 
 void VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                   unsigned LB) const {
-  assert(UB == this->UB && LB == this->LB && "Cannot print bitslice of Expr!");
+  assert(((UB == this->UB && LB == this->LB) || Contents.Name)
+         && "Cannot print bitslice of Expr!");
 
   printAsOperandInteral(OS);
+
+  if (UB != this->UB || LB != this->LB)
+    OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
 }
 
 void VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
+  if (Contents.Name) {
+    OS << Contents.Name;
+    return;
+  }
+
   OS << '(';
   typedef ArrayRef<VASTUse> UseArray;
 

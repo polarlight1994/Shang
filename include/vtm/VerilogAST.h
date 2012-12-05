@@ -728,6 +728,16 @@ public:
     return isSubBitSlice() && LB == 0;
   }
 
+  bool hasName() const {
+    return Contents.Name != 0;
+  }
+
+  // Assign a name to this expression.
+  void setExprName(const char *Name) {
+    assert(!hasName() && "Expr already have name!");
+    Contents.Name = Name;
+  }
+
   bool isInlinable() const;
 
   void print(raw_ostream &OS) const { printAsOperandInteral(OS); }
