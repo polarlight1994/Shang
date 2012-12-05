@@ -150,3 +150,88 @@ void MFDatapathContainer::reset() {
   ExportedVals.clear();
   DatapathContainer::reset();
 }
+
+void MFDatapathContainer::printTree(raw_ostream &OS, VASTWire *Root) {
+  typedef VASTValue::dp_dep_it ChildIt;
+  std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
+
+  VisitStack.push_back(std::make_pair(Root, VASTValue::dp_dep_begin(Root)));
+
+  while (!VisitStack.empty()) {
+    VASTValue *Node = VisitStack.back().first;
+    ChildIt It = VisitStack.back().second;
+
+    // We have visited all children of current node.
+    if (It == VASTValue::dp_dep_end(Node)) {
+      VisitStack.pop_back();
+
+      if (VASTExpr *E = dyn_cast<VASTExpr>(Node)) {
+        const char *Name = allocateName("e" + utohexstr(uint64_t(E)) + "e");
+        OS.indent(2) << "wire ";
+
+        unsigned Bitwidth = E->getBitWidth();
+        if (Bitwidth > 1) OS << "[" << (Bitwidth - 1) << ":0]";
+        OS << ' ' << Name << " = ";
+        E->printAsOperand(OS, false);
+        OS << ";\n";
+
+        // Assign the name to the expression.
+        E->setExprName(Name);
+      } else if (VASTWire *W = dyn_cast<VASTWire>(Node))
+        W->printAssignment(OS.indent(2));
+
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    VASTValue *ChildNode = It->getAsLValue<VASTValue>();
+    ++VisitStack.back().second;
+
+    // ChildNode has a name means we had already visited it.
+    if (VASTExpr *E = dyn_cast<VASTExpr>(ChildNode))
+      if (E->hasName()) continue;
+
+    if (!isa<VASTWire>(ChildNode) && !isa<VASTExpr>(ChildNode)) continue;
+
+    VisitStack.push_back(std::make_pair(ChildNode,
+                                        VASTValue::dp_dep_begin(ChildNode)));
+  }
+}
+
+void
+MFDatapathContainer::writeVerilog(raw_ostream &OS, StringRef ModuleName) {
+  OS << "module " << ModuleName << "(\n";
+
+  // Write the input list.
+  typedef VASTMOMapTy::const_iterator in_iterator;
+  for (in_iterator I = VASTMOs.begin(), E = VASTMOs.end(); I != E; ++I) {
+    const VASTMachineOperand *MO = I->second;
+    OS.indent(4) << "input wire";
+    unsigned Bitwidth = MO->getBitWidth();
+    if (Bitwidth > 1) OS << "[" << (Bitwidth - 1) << ":0]";
+
+    OS << ' ' << MO->getName() << ",\n";
+  }
+
+  // And then the output list.
+  typedef Reg2WireMapTy::const_iterator out_iterator;
+  for (out_iterator I = ExportedVals.begin(), E = ExportedVals.end();
+       I != E; ++I) {
+    OS.indent(4) << "output wire";
+
+    unsigned Bitwidth = I->second->getBitWidth();
+    if (Bitwidth > 1) OS << "[" << (Bitwidth - 1) << ":0]";
+
+    OS << ' ' << I->second->getName() << ",\n";
+  }
+
+  OS.indent(4) << "input wire dummy_" << ModuleName << "_output);\n";
+
+
+  for (out_iterator I = ExportedVals.begin(), E = ExportedVals.end();
+       I != E; ++I)
+    printTree(OS, I->second);
+
+  // Write the data-path.
+  OS << "endmodule\n";
+}

@@ -63,6 +63,8 @@ class MFDatapathContainer : public DatapathBuilderContext,
   const char *allocateRegName(unsigned Reg);
 
   VASTValPtr getOrCreateVASTMO(const char *Name, MachineOperand DefMO);
+
+  void printTree(raw_ostream &OS, VASTWire *Root);
 public:
   explicit MFDatapathContainer() : Builder(0) {}
   ~MFDatapathContainer() { reset(); }
@@ -108,11 +110,15 @@ public:
 
   // Export the VASTValPtr corresponding to Reg to the output of the datapath.
   VASTWire *exportValue(unsigned Reg);
+
   DatapathBuilder *createBuilder(MachineRegisterInfo *MRI);
 
   DatapathBuilder *operator->() const { return Builder; }
 
   void reset();
+
+  // Write the data-path in form of VerilogHDL.
+  void writeVerilog(raw_ostream &OS, StringRef ModuleName);
 };
 }
 
