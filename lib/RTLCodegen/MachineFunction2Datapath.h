@@ -23,28 +23,6 @@
 namespace llvm {
 class MachineRegisterInfo;
 
-class VASTMachineOperand : public VASTValue {
-  const MachineOperand MO;
-public:
-  VASTMachineOperand(const MachineOperand &MO)
-    : VASTValue(VASTNode::vastCustomNode, VInstrInfo::getBitWidth(MO)),
-    MO(MO) {}
-
-  MachineOperand getMO() const {
-    return MO;
-  }
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTMachineOperand *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastCustomNode;
-  }
-
-  void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const {
-    OS << getMO() << '[' << UB << ',' << LB << ']';
-  }
-};
-
 class DatapathBuilderContext : public VASTExprBuilderContext {
 public:
   virtual VASTValPtr getAsOperandImpl(MachineOperand &Op,

@@ -7,6 +7,7 @@ add_llvm_library(VTMRTLCodegen
   IR2Datapath.cpp
   DesignMetrics.cpp
   MachineFunction2Datapath.cpp
+  MFDatapathContainer.cpp
   PreSchedRTLOpt.cpp
   ControlLogicBuilder.cpp
   CombPathDelayAnalysis.cpp
