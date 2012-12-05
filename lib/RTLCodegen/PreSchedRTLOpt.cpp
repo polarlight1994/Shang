@@ -52,9 +52,6 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
 
   void verifyMBB(MachineBasicBlock &MBB);
 
-  typedef std::map<VASTValPtr, unsigned> Val2RegMapTy;
-  Val2RegMapTy Val2Reg;
-
   virtual bool shouldExprBeFlatten(VASTExpr *E) {
     return E->isInlinable();
   }
@@ -79,7 +76,6 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
 
   void buildDatapath(MachineBasicBlock &MBB);
   void rewriteDatapath(MachineBasicBlock &MBB);
-  VASTValPtr buildDatapath(MachineInstr *MI);
 
   void rewriteDepForPHI(MachineInstr *PHI, MachineInstr *IncomingPos);
   // Rewrite the expression and all its dependences.
@@ -106,20 +102,15 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   unsigned rewriteNotOf(VASTExpr *Expr);
   void buildNot(unsigned DstReg, const MachineOperand &Op);
 
-  unsigned lookupRegNum(VASTValPtr V) const {
-    Val2RegMapTy::const_iterator at = Val2Reg.find(V);
-    return at == Val2Reg.end() ? 0 : at->second;
-  }
-
   MachineInstr *getRewrittenInstr(VASTValPtr V) const {
-    if (unsigned RegNum = lookupRegNum(V))
+    if (unsigned RegNum = Container.lookupRegNum(V))
       return MRI->getVRegDef(RegNum);
 
     return 0;
   }
 
   unsigned getRewrittenRegNum(VASTValPtr V) const {
-    unsigned RegNum = lookupRegNum(V);
+    unsigned RegNum = Container.lookupRegNum(V);
     if (RegNum && MRI->getVRegDef(RegNum))
       return RegNum;
 
@@ -147,7 +138,7 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   MachineOperand getAsOperand(VASTValPtr V);
 
   unsigned allocateRegNum(VASTValPtr V) {
-    unsigned RegNum = lookupRegNum(V);
+    unsigned RegNum = Container.lookupRegNum(V);
     assert((!RegNum || !MRI->getVRegDef(RegNum))
            && "Reg already allocated for expression!");
     if (RegNum == 0) {
@@ -164,25 +155,7 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
     return VInstrInfo::CreateReg(allocateRegNum(V), BitWidth, true);;
   }
 
-  template<bool AllowDifference>
-  unsigned rememberRegNumForExpr(VASTValPtr V, unsigned RegNo) {
-    bool inserted;
-    Val2RegMapTy::iterator at;
-    assert(TargetRegisterInfo::isVirtualRegister(RegNo)
-           && TargetRegisterInfo::virtReg2Index(RegNo) < MRI->getNumVirtRegs()
-           && "Bad RegNo!");
-    tie(at, inserted) = Val2Reg.insert(std::make_pair(V, RegNo));
-    if (!inserted && at->second != RegNo) {
-      assert(AllowDifference && "Expr is rewritten twice?");
-      MRI->replaceRegWith(RegNo, at->second);
-      RegNo = at->second;
-    }
-
-    return RegNo;
-  }
-
   void releaseMemory() {
-    Val2Reg.clear();
     Container.reset();
   }
 };
@@ -245,7 +218,7 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
     MachineInstr *MI = I++;
 
     // Try to add the instruction into the data-path net-list.
-    if (VASTValPtr V = buildDatapath(MI)) {
+    if (VASTValPtr V = Container.buildDatapath(MI)) {
       MI->eraseFromParent();
       continue;
     }
@@ -254,7 +227,7 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
       VASTValPtr Src = Container->getAsOperand(MI->getOperand(1));
       unsigned RegNum = MI->getOperand(0).getReg();
       // Remember the register number mapping, the register maybe CSEd.
-      if (RegNum == rememberRegNumForExpr<true>(Src, RegNum))
+      if (RegNum == Container.rememberRegNumForExpr<true>(Src, RegNum))
         Container->indexVASTExpr(RegNum, Src);
       MI->eraseFromParent();
       continue;
@@ -378,21 +351,6 @@ void PreSchedRTLOpt::rewriteExprTreeForMO(MachineOperand &MO, MachineInstr *IP,
     .addOperand(Dst).addOperand(NewMO)
     .addOperand(VInstrInfo::CreatePredicate())
     .addOperand(VInstrInfo::CreateTrace());
-}
-
-VASTValPtr PreSchedRTLOpt::buildDatapath(MachineInstr *MI) {
-  if (!VInstrInfo::isDatapath(MI->getOpcode())) return 0;
-
-  unsigned ResultReg = MI->getOperand(0).getReg();
-  VASTValPtr V = Container->buildDatapathExpr(MI);
-
-  // Remember the register number mapping, the register maybe CSEd.
-  unsigned FoldedReg = rememberRegNumForExpr<true>(V, ResultReg);
-  // If ResultReg is not CSEd to other Regs, index the newly created Expr.
-  if (FoldedReg == ResultReg)
-    Container->indexVASTExpr(FoldedReg, V);
-
-  return V;
 }
 
 unsigned PreSchedRTLOpt::rewriteExprTree(VASTExprPtr Expr, MachineInstr *IP) {
@@ -590,7 +548,7 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
   bool isInverted = E.isInverted();
   VASTExpr *Expr = E.get();
 
-  unsigned RegNo = lookupRegNum(Expr);
+  unsigned RegNo = Container.lookupRegNum(Expr);
   // The expression itself may had been rewritten, but the invert is not yet
   // rewritten.
   assert((!getRewrittenRegNum(Expr) || isInverted) && "E had already rewritten!");
@@ -642,12 +600,12 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
       break;
     }
 
-    rememberRegNumForExpr<false>(Expr, RegNo);
+    Container.rememberRegNumForExpr<false>(Expr, RegNo);
   }
 
   if (isInverted) {
     RegNo = rewriteNotOf(Expr);
-    rememberRegNumForExpr<false>(VASTValPtr(Expr, true), RegNo);
+    Container.rememberRegNumForExpr<false>(VASTValPtr(Expr, true), RegNo);
   }
 
   return RegNo;

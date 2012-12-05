@@ -42,9 +42,14 @@ public:
 class MFDatapathContainer : public DatapathBuilderContext,
                             public DatapathContainer {
   DatapathBuilder *Builder;
+  // Remember the VASTValPtr for each "external" MachineOperand.
   typedef DenseMap<MachineOperand, VASTMachineOperand*,
-                    VMachineOperandValueTrait> VASTMOMapTy;
+                   VMachineOperandValueTrait> VASTMOMapTy;
   VASTMOMapTy VASTMOs;
+
+  // Remember the register for each VASTValPtr.
+  typedef std::map<VASTValPtr, unsigned> Val2RegMapTy;
+  Val2RegMapTy Val2Reg;
 
 public:
   explicit MFDatapathContainer() : Builder(0) {}
@@ -64,6 +69,33 @@ public:
 
   // TODO: Remember the outputs by wires?.
   VASTValPtr getOrCreateVASTMO(MachineOperand DefMO);
+
+  // VASTValPtr to virtual register mapping.
+  unsigned lookupRegNum(VASTValPtr V) const {
+    Val2RegMapTy::const_iterator at = Val2Reg.find(V);
+    return at == Val2Reg.end() ? 0 : at->second;
+  }
+
+  template<bool AllowDifference>
+  unsigned rememberRegNumForExpr(VASTValPtr V, unsigned RegNo) {
+    bool inserted;
+    Val2RegMapTy::iterator at;
+    assert(TargetRegisterInfo::isVirtualRegister(RegNo)
+           && TargetRegisterInfo::virtReg2Index(RegNo)
+              < Builder->MRI.getNumVirtRegs()
+           && "Bad RegNo!");
+    tie(at, inserted) = Val2Reg.insert(std::make_pair(V, RegNo));
+    if (!inserted && at->second != RegNo) {
+      assert(AllowDifference && "Expr is rewritten twice?");
+      Builder->MRI.replaceRegWith(RegNo, at->second);
+      RegNo = at->second;
+    }
+
+    return RegNo;
+  }
+
+  // Build VASTValPtr for a MachineInstr.
+  VASTValPtr buildDatapath(MachineInstr *MI);
 
   DatapathBuilder *createBuilder(MachineRegisterInfo *MRI);
 

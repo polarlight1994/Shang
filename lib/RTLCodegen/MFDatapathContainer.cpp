@@ -78,6 +78,21 @@ VASTValPtr MFDatapathContainer::getAsOperandImpl(MachineOperand &Op,
   return getOrCreateVASTMO(Op);
 }
 
+VASTValPtr MFDatapathContainer::buildDatapath(MachineInstr *MI) {
+  if (!VInstrInfo::isDatapath(MI->getOpcode())) return 0;
+
+  unsigned ResultReg = MI->getOperand(0).getReg();
+  VASTValPtr V = Builder->buildDatapathExpr(MI);
+
+  // Remember the register number mapping, the register maybe CSEd.
+  unsigned FoldedReg = rememberRegNumForExpr<true>(V, ResultReg);
+  // If ResultReg is not CSEd to other Regs, index the newly created Expr.
+  if (FoldedReg == ResultReg)
+    Builder->indexVASTExpr(FoldedReg, V);
+
+  return V;
+}
+
 void MFDatapathContainer::reset() {
   if (Builder) {
     delete Builder;
@@ -85,5 +100,6 @@ void MFDatapathContainer::reset() {
   }
   
   DeleteContainerSeconds(VASTMOs);
+  Val2Reg.clear();
   DatapathContainer::reset();
 }
