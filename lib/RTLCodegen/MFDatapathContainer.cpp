@@ -40,7 +40,7 @@ VASTValPtr MFDatapathContainer::getOrCreateVASTMO(MachineOperand DefMO) {
           && "The define flag should had been clear!");
   VASTMachineOperand *&VASTMO = VASTMOs[DefMO];
   if (!VASTMO)
-    VASTMO = new VASTMachineOperand(DefMO);
+    VASTMO = new (Allocator) VASTMachineOperand(DefMO);
 
   return VASTMO;
 }
@@ -98,8 +98,8 @@ void MFDatapathContainer::reset() {
     delete Builder;
     Builder = 0;
   }
-  
-  DeleteContainerSeconds(VASTMOs);
+
+  VASTMOs.clear();
   Val2Reg.clear();
   DatapathContainer::reset();
 }
