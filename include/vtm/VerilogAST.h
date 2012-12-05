@@ -775,17 +775,25 @@ public:
     // The wire connected to an input port.
     InputPort
   };
-private:
-  // VASTValue pointer point to the VASTExpr.
-  VASTUse U;
-
-  friend class VASTModule;
 
   VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "")
     : VASTSignal(vastWire, Name, BitWidth, Attr), U(0, 0) {
-    SignalType = Common;
-    SignalData = 0;
+      SignalType = Common;
+      SignalData = 0;
   }
+
+  void assign(VASTValPtr V, VASTWire::Type T = VASTWire::Common) {
+    assert(U.isInvalid() && "The already has an expression!");
+    SignalType = T;
+    U.set(V);
+    U.setUser(this);
+  }
+
+private:
+  friend class VASTModule;
+
+  // VASTValue pointer point to the VASTExpr.
+  VASTUse U;
 
   VASTWire(unsigned SlotNum, MachineInstr *DefMI)
          : VASTSignal(vastWire, 0, 1, ""), U(0, 0) {
@@ -801,18 +809,10 @@ private:
     SignalData = slotNum;
   }
 
-  void assign(VASTValPtr V, VASTWire::Type T = VASTWire::Common) {
-    assert(U.isInvalid() && "The already has an expression!");
-    SignalType = T;
-    U.set(V);
-    U.setUser(this);
-  }
-
   void assignWithExtraDelay(VASTValPtr V, unsigned latency) {
     assign(V, haveExtraDelay);
     SignalData = latency;
   }
-
 
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 
