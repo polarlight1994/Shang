@@ -13,8 +13,8 @@
 
 #include "ExternalTimingAnalysis.h"
 
-#include "llvm\Support\PathV1.h"
-#include "llvm\Support\Program.h"
+#include "llvm/Support/PathV1.h"
+#include "llvm/Support/Program.h"
 
 using namespace llvm;
 
