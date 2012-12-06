@@ -40,7 +40,8 @@ class TimingNetlist : public MFDatapathContainer {
                             unsigned DstReg) const;
 
   // Write the script to extract the timing analysis results from quartus.
-  void writeTimingExtractionScript(raw_ostream &O, const Twine &Name) const;
+  void writeTimingExtractionScript(raw_ostream &O, const Twine &Name,
+                                   const sys::Path &ResultPath) const;
 public:
   TimingNetlist() {}
 

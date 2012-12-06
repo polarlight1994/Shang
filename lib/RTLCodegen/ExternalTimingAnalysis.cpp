@@ -210,9 +210,12 @@ void TimingNetlist::extractTimingForPair(raw_ostream &O,
     SrcReg = lookupRegNum(VASTValPtr(const_cast<VASTNamedValue*>(From), true));
 
   O <<
+    // Get the source and destination nodes.
     "set dst [get_keepers \"" << To->getName() << "*\"]\n"
     "set src [get_keepers \"" << From->getName() << "*\"]\n"
     "set delay -1\n"
+    // Only extract the delay from source to destination when these node are
+    // not optimized.
     "if {[get_collection_size $src] && [get_collection_size $dst]} {\n"
     "  foreach_in_collection path [get_timing_paths -from $src -to $dst -setup"
     "                              -npath 1 -detail path_only] {\n"
@@ -220,7 +223,9 @@ void TimingNetlist::extractTimingForPair(raw_ostream &O,
     "    post_message -type info \"" << SrcReg << " -> " << DstReg
     << " delay: $delay\"\n"
     "  }\n"
-    "}\n";
+    "}\n"
+    "puts $JSONFile \"\\{\\\"from\\\":" << SrcReg << ",\\\"to\\\":" << DstReg
+    << ",\\\"delay\\\":$delay\\},\"\n";
 }
 
 void
@@ -261,10 +266,20 @@ TimingNetlist::extractTimingForTree(raw_ostream &O, const VASTWire *Root,
   }
 }
 
-void TimingNetlist::writeTimingExtractionScript(raw_ostream &O,
-                                                const Twine &Name) const {
+void
+TimingNetlist::writeTimingExtractionScript(raw_ostream &O, const Twine &Name,
+                                           const sys::Path &ResultPath) const {
+  // Open the file and start the array.
+  O << "set JSONFile [open \"" << ResultPath.str() <<"\" w+]\n"
+       "puts $JSONFile \"\\[\"\n";
+
   for (FanoutIterator I = fanout_begin(), E = fanout_end(); I != E; ++I)
     extractTimingForTree(O, I->second, I->first);
+
+  // Close the array and the file object.
+  O << "puts $JSONFile \"\\{\\\"from\\\":0,\\\"to\\\":0\\\"delay\\\":0\\}\"\n"
+       "puts $JSONFile \"\\]\"\n"
+       "close $JSONFile";
 }
 
 static bool exitWithError(const sys::Path &FileName) {
@@ -303,7 +318,10 @@ bool TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
 
   if (!ErrorInfo.empty())  return exitWithError(TimingExtractTcl);
 
-  writeTimingExtractionScript(TimingExtractTclO, Name);
+  sys::Path TimingExtractResult = buildPath(Name, "_result.json");
+  if (TimingExtractResult.empty()) return false;
+
+  writeTimingExtractionScript(TimingExtractTclO, Name, TimingExtractResult);
   TimingExtractTclO.close();
   errs() << " done. \n";
 
