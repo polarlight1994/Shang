@@ -76,7 +76,7 @@ protected:
   FanoutIterator fanout_begin() const { return ExportedVals.begin(); }
   FanoutIterator fanout_end() const { return ExportedVals.end(); }
 public:
-  explicit MFDatapathContainer() : Builder(0) {}
+  MFDatapathContainer() : Builder(0) {}
   virtual ~MFDatapathContainer() { reset(); }
 
   VASTValPtr getAsOperandImpl(MachineOperand &Op,
