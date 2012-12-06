@@ -912,13 +912,17 @@ void VASTValue::print(raw_ostream &OS) const {
 void VASTValue::printAsOperand(raw_ostream &OS, unsigned UB, unsigned LB,
                                bool isInverted) const{
   if (isInverted) OS << "(~";
+  OS << '(';
   printAsOperandImpl(OS, UB, LB);
+  OS << ')';
   if (isInverted) OS << ')';
 }
 
 void VASTValue::printAsOperand(raw_ostream &OS, bool isInverted) const {
   if (isInverted) OS << "(~";
+  OS << '(';
   printAsOperandImpl(OS);
+  OS << ')';
   if (isInverted) OS << ')';
 }
 
