@@ -198,13 +198,11 @@ void MFDatapathContainer::printTree(raw_ostream &OS, VASTWire *Root) {
   }
 }
 
-void
-MFDatapathContainer::writeVerilog(raw_ostream &OS, StringRef ModuleName) {
-  OS << "module " << ModuleName << "(\n";
+void MFDatapathContainer::writeVerilog(raw_ostream &OS, const Twine &Name) {
+  OS << "module " << Name << "(\n";
 
   // Write the input list.
-  typedef VASTMOMapTy::const_iterator in_iterator;
-  for (in_iterator I = VASTMOs.begin(), E = VASTMOs.end(); I != E; ++I) {
+  for (FaninIterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
     const VASTMachineOperand *MO = I->second;
     OS.indent(4) << "input wire";
     unsigned Bitwidth = MO->getBitWidth();
@@ -214,9 +212,7 @@ MFDatapathContainer::writeVerilog(raw_ostream &OS, StringRef ModuleName) {
   }
 
   // And then the output list.
-  typedef Reg2WireMapTy::const_iterator out_iterator;
-  for (out_iterator I = ExportedVals.begin(), E = ExportedVals.end();
-       I != E; ++I) {
+  for (FanoutIterator I = fanout_begin(), E = fanout_end(); I != E; ++I) {
     OS.indent(4) << "output wire";
 
     unsigned Bitwidth = I->second->getBitWidth();
@@ -225,13 +221,11 @@ MFDatapathContainer::writeVerilog(raw_ostream &OS, StringRef ModuleName) {
     OS << ' ' << I->second->getName() << ",\n";
   }
 
-  OS.indent(4) << "input wire dummy_" << ModuleName << "_output);\n";
-
-
-  for (out_iterator I = ExportedVals.begin(), E = ExportedVals.end();
-       I != E; ++I)
-    printTree(OS, I->second);
+  OS.indent(4) << "input wire dummy_" << Name << "_output);\n";
 
   // Write the data-path.
+  for (FanoutIterator I = fanout_begin(), E = fanout_end(); I != E; ++I)
+    printTree(OS, I->second);
+
   OS << "endmodule\n";
 }

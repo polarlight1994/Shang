@@ -64,10 +64,20 @@ class MFDatapathContainer : public DatapathBuilderContext,
 
   VASTValPtr getOrCreateVASTMO(const char *Name, MachineOperand DefMO);
 
+  // Print the datapath tree whose root is "root".
   void printTree(raw_ostream &OS, VASTWire *Root);
+
+protected:
+  typedef VASTMOMapTy::const_iterator FaninIterator;
+  FaninIterator fanin_begin() const { return VASTMOs.begin(); }
+  FaninIterator fanin_end() const { return VASTMOs.end(); }
+
+  typedef Reg2WireMapTy::const_iterator FanoutIterator;
+  FanoutIterator fanout_begin() const { return ExportedVals.begin(); }
+  FanoutIterator fanout_end() const { return ExportedVals.end(); }
 public:
   explicit MFDatapathContainer() : Builder(0) {}
-  ~MFDatapathContainer() { reset(); }
+  virtual ~MFDatapathContainer() { reset(); }
 
   VASTValPtr getAsOperandImpl(MachineOperand &Op,
                               bool GetAsInlineOperand = true);
@@ -118,7 +128,7 @@ public:
   void reset();
 
   // Write the data-path in form of VerilogHDL.
-  void writeVerilog(raw_ostream &OS, StringRef ModuleName);
+  void writeVerilog(raw_ostream &OS, const Twine &Name);
 };
 }
 
