@@ -369,10 +369,10 @@ public:
   bool replaceAllUseWith(VASTValue *To);
 
   typedef const VASTUse *dp_dep_it;
-  static dp_dep_it dp_dep_begin(VASTValue *V);
-  static dp_dep_it dp_dep_end(VASTValue *V);
+  static dp_dep_it dp_dep_begin(const VASTValue *V);
+  static dp_dep_it dp_dep_end(const VASTValue *V);
 
-  static bool is_dp_leaf(VASTValue *V) {
+  static bool is_dp_leaf(const VASTValue *V) {
     return dp_dep_begin(V) == dp_dep_end(V);
   }
 

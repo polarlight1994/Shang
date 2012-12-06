@@ -956,7 +956,7 @@ bool VASTValue::replaceAllUseWith(VASTValue *To) {
   return use_empty();
 }
 
-VASTValue::dp_dep_it VASTValue::dp_dep_begin(VASTValue *V) {
+VASTValue::dp_dep_it VASTValue::dp_dep_begin(const VASTValue *V) {
   switch (V->getASTType()) {
   case VASTNode::vastExpr: return cast<VASTExpr>(V)->op_begin();
   case VASTNode::vastWire: return cast<VASTWire>(V)->op_begin();
@@ -965,7 +965,7 @@ VASTValue::dp_dep_it VASTValue::dp_dep_begin(VASTValue *V) {
   
 }
 
-VASTValue::dp_dep_it VASTValue::dp_dep_end(VASTValue *V) {
+VASTValue::dp_dep_it VASTValue::dp_dep_end(const VASTValue *V) {
   switch (V->getASTType()) {
   case VASTNode::vastExpr: return cast<VASTExpr>(V)->op_end();
   case VASTNode::vastWire: return cast<VASTWire>(V)->op_end();

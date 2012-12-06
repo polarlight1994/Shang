@@ -98,7 +98,8 @@ static T *printScanChainLogic(raw_ostream &O, T *V, const VASTValue *LastV,
   return V;
 }
 
-void TimingNetlist::writeNetlistWrapper(raw_ostream &O, const Twine &Name) {
+void
+TimingNetlist::writeNetlistWrapper(raw_ostream &O, const Twine &Name) const {
   // FIXME: Use the luascript template?
   O << "module " << Name << "wapper(\n";
   O.indent(2) << "input wire clk,\n";
@@ -175,7 +176,7 @@ void TimingNetlist::writeNetlistWrapper(raw_ostream &O, const Twine &Name) {
 }
 
 void TimingNetlist::writeProjectScript(raw_ostream &O, const Twine &Name,
-                                       const sys::Path &NetlistPath) {
+                                       const sys::Path &NetlistPath) const {
   O << "load_package flow\n"
        "load_package report\n"
     << "project_new " << Name << " -overwrite\n"
@@ -194,54 +195,101 @@ void TimingNetlist::writeProjectScript(raw_ostream &O, const Twine &Name,
        "project_close\n";
 }
 
-void TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
+void
+TimingNetlist::extractTimingForTree(raw_ostream &O, const VASTWire *Root) const{
+  typedef VASTValue::dp_dep_it ChildIt;
+  std::vector<std::pair<const VASTValue*, ChildIt> > VisitStack;
+  std::set<VASTValue*> Visited;
+
+  VisitStack.push_back(std::make_pair(Root, VASTValue::dp_dep_begin(Root)));
+
+  while (!VisitStack.empty()) {
+    const VASTValue *Node = VisitStack.back().first;
+    ChildIt It = VisitStack.back().second;
+
+    // We have visited all children of current node.
+    if (It == VASTValue::dp_dep_end(Node)) {
+      VisitStack.pop_back();
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    VASTValue *ChildNode = It->getAsLValue<VASTValue>();
+    ++VisitStack.back().second;
+
+    // Has ChildNode already been visited?
+    if (!Visited.insert(ChildNode).second) continue;
+
+    if (!isa<VASTWire>(ChildNode) && !isa<VASTExpr>(ChildNode)) {
+      continue;
+    }
+
+    VisitStack.push_back(std::make_pair(ChildNode,
+                                        VASTValue::dp_dep_begin(ChildNode)));
+  }
+}
+
+void TimingNetlist::writeTimingExtractionScript(raw_ostream &O,
+                                                const Twine &Name) const {
+  for (FanoutIterator I = fanout_begin(), E = fanout_end(); I != E; ++I)
+    extractTimingForTree(O, I->second);
+}
+
+static bool exitWithError(const sys::Path &FileName) {
+  errs() << "error opening file '" << FileName.str() << "' for writing!\n";
+  return false;
+}
+
+bool TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
   std::string ErrorInfo;
 
   // Write the Nestlist and the wrapper.
   sys::Path Netlist = buildPath(Name, ".v");
-  if (Netlist.empty()) return;
+  if (Netlist.empty()) return false;
 
   errs() << "Writing '" << Netlist.str() << "'... ";
 
   raw_fd_ostream NetlistO(Netlist.c_str(), ErrorInfo);
+  
+  if (!ErrorInfo.empty())  return exitWithError(Netlist);
 
-  if (ErrorInfo.empty()) {
-    // Write the netlist.
-    writeVerilog(NetlistO, Name);
+  // Write the netlist.
+  writeVerilog(NetlistO, Name);
+  NetlistO << '\n';
+  // Also write the wrapper.
+  writeNetlistWrapper(NetlistO, Name);
+  NetlistO.close();
+  errs() << " done. \n";
 
-    NetlistO << '\n';
+  // Write the SDC and the delay query script.
+  sys::Path TimingExtractTcl = buildPath(Name, ".sdc");
+  if (TimingExtractTcl.empty()) return false;
 
-    // Also write the wrapper.
-    writeNetlistWrapper(NetlistO, Name);
+  errs() << "Writing '" << TimingExtractTcl.str() << "'... ";
 
-    NetlistO.close();
-    errs() << " done. \n";
-  } else {
-    errs() << "error opening file '" << Netlist.str() << "' for writing!\n";
-    return;
-  }
+  raw_fd_ostream TimingExtractTclO(TimingExtractTcl.c_str(), ErrorInfo);
 
-  // TODO: Write the SDC and the delay query script.
+  if (!ErrorInfo.empty())  return exitWithError(TimingExtractTcl);
+
+  writeTimingExtractionScript(TimingExtractTclO, Name);
+  TimingExtractTclO.close();
+  errs() << " done. \n";
 
   // Write the project script.
   sys::Path PrjTcl = buildPath(Name, ".tcl");
-  if (PrjTcl.empty()) return;
+  if (PrjTcl.empty()) return false;
 
   errs() << "Writing '" << PrjTcl.str() << "'... ";
 
   raw_fd_ostream PrjTclO(PrjTcl.c_str(), ErrorInfo);
 
-  if (ErrorInfo.empty()) {
-    writeProjectScript(PrjTclO, Name, Netlist);
+  if (!ErrorInfo.empty())  return exitWithError(PrjTcl);
 
-    PrjTclO.close();
-    errs() << " done. \n";
-  } else {
-    errs() << "error opening file '" << PrjTcl.str() << "' for writing!\n";
-    return;
-  }
+  writeProjectScript(PrjTclO, Name, Netlist);
+  PrjTclO.close();
+  errs() << " done. \n";
 
-  sys::Path quartus("C:/altera/12.1/quartus/bin64/quartus.exe");
+  sys::Path quartus("C:/altera/12.1/quartus/bin64/quartus_sh.exe");
   std::vector<const char*> args;
 
   args.push_back(quartus.c_str());
@@ -252,7 +300,7 @@ void TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
   errs() << "Running 'quartus' program... ";
   if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, 0, 0, 0, &ErrorInfo)) {
     errs() << "Error: " << ErrorInfo <<'\n';
-    return;
+    return false;
   }
 
   // Clean up.
@@ -260,4 +308,6 @@ void TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
   PrjTcl.eraseFromDisk();
 
   errs() << " done. \n";
+
+  return true;
 }
