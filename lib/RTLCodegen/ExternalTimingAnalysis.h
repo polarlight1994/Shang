@@ -26,17 +26,27 @@ namespace sys {
 
 class TimingNetlist : public MFDatapathContainer {
   // Write the wrapper of the netlist.
-  void writeNetlistWrapper(raw_ostream &O, const Twine &Name);
+  void writeNetlistWrapper(raw_ostream &O, const Twine &Name) const;
 
   // Write the project file to perform the timing analysis.
   void writeProjectScript(raw_ostream &O, const Twine &Name,
-                          const sys::Path &NetlistPath);
+                          const sys::Path &NetlistPath,
+                          const sys::Path &TimingExtractionScript) const;
+
+  void extractTimingForPair(raw_ostream &O, const VASTNamedValue *From,
+                            const VASTNamedValue *To, unsigned DstReg) const;
+
+  void extractTimingForTree(raw_ostream &O, const VASTWire *W,
+                            unsigned DstReg) const;
+
+  // Write the script to extract the timing analysis results from quartus.
+  void writeTimingExtractionScript(raw_ostream &O, const Twine &Name) const;
 public:
   TimingNetlist() {}
 
   void addInstrToDatapath(MachineInstr *MI);
 
-  void runExternalTimingAnalysis(const Twine &Name);
+  bool runExternalTimingAnalysis(const Twine &Name);
 };
 }
 

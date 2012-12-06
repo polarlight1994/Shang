@@ -52,16 +52,18 @@ void TimingNetlist::addInstrToDatapath(MachineInstr *MI) {
   }
 }
 
-template<typename T>
-raw_ostream &printAsLHS(raw_ostream &O, T *V, unsigned UB, unsigned LB) {
+raw_ostream &printAsLHS(raw_ostream &O, const VASTNamedValue *V,
+                        unsigned UB, unsigned LB) {
   O << V->getName() << VASTValue::printBitRange(UB, LB, V->getBitWidth() > 1);
 
   return O;
 }
 
-template<bool OUTPUTPART, typename T>
-static T *printScanChainLogic(raw_ostream &O, T *V, const VASTValue *LastV,
-                              unsigned Indent) {
+template<bool OUTPUTPART>
+static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
+                                                 const VASTNamedValue *V,
+                                                 const VASTValue *LastV,
+                                                 unsigned Indent) {
   unsigned Bitwidth = V->getBitWidth();
   bool MultiBits = Bitwidth > 1;
 
@@ -176,7 +178,9 @@ TimingNetlist::writeNetlistWrapper(raw_ostream &O, const Twine &Name) const {
 }
 
 void TimingNetlist::writeProjectScript(raw_ostream &O, const Twine &Name,
-                                       const sys::Path &NetlistPath) const {
+                                       const sys::Path &NetlistPath,
+                                       const sys::Path &TimingExtractionScript)
+                                       const {
   O << "load_package flow\n"
        "load_package report\n"
     << "project_new " << Name << " -overwrite\n"
@@ -191,12 +195,37 @@ void TimingNetlist::writeProjectScript(raw_ostream &O, const Twine &Name,
        // Start the processes.
        "execute_module -tool map\n"
        "execute_module -tool fit\n"
-       "execute_module -tool sta\n"
+       "execute_module -tool sta -args {--report_script \""
+       << TimingExtractionScript.str() << "\"}\n"
        "project_close\n";
 }
 
+void TimingNetlist::extractTimingForPair(raw_ostream &O,
+                                         const VASTNamedValue *From,
+                                         const VASTNamedValue *To,
+                                         unsigned DstReg) const {
+  unsigned SrcReg = lookupRegNum(const_cast<VASTNamedValue*>(From));
+  // If the register not found, invert and find again.
+  if (SrcReg == 0)
+    SrcReg = lookupRegNum(VASTValPtr(const_cast<VASTNamedValue*>(From), true));
+
+  O <<
+    "set dst [get_keepers \"" << To->getName() << "*\"]\n"
+    "set src [get_keepers \"" << From->getName() << "*\"]\n"
+    "set delay -1\n"
+    "if {[get_collection_size $src] && [get_collection_size $dst]} {\n"
+    "  foreach_in_collection path [get_timing_paths -from $src -to $dst -setup"
+    "                              -npath 1 -detail path_only] {\n"
+    "    set delay [get_path_info $path -data_delay]\n"
+    "    post_message -type info \"" << SrcReg << " -> " << DstReg
+    << " delay: $delay\"\n"
+    "  }\n"
+    "}\n";
+}
+
 void
-TimingNetlist::extractTimingForTree(raw_ostream &O, const VASTWire *Root) const{
+TimingNetlist::extractTimingForTree(raw_ostream &O, const VASTWire *Root,
+                                    unsigned DstReg) const{
   typedef VASTValue::dp_dep_it ChildIt;
   std::vector<std::pair<const VASTValue*, ChildIt> > VisitStack;
   std::set<VASTValue*> Visited;
@@ -221,6 +250,9 @@ TimingNetlist::extractTimingForTree(raw_ostream &O, const VASTWire *Root) const{
     if (!Visited.insert(ChildNode).second) continue;
 
     if (!isa<VASTWire>(ChildNode) && !isa<VASTExpr>(ChildNode)) {
+      if (const VASTMachineOperand *MO = dyn_cast<VASTMachineOperand>(ChildNode))
+        extractTimingForPair(O, MO, Root, DstReg);
+
       continue;
     }
 
@@ -232,7 +264,7 @@ TimingNetlist::extractTimingForTree(raw_ostream &O, const VASTWire *Root) const{
 void TimingNetlist::writeTimingExtractionScript(raw_ostream &O,
                                                 const Twine &Name) const {
   for (FanoutIterator I = fanout_begin(), E = fanout_end(); I != E; ++I)
-    extractTimingForTree(O, I->second);
+    extractTimingForTree(O, I->second, I->first);
 }
 
 static bool exitWithError(const sys::Path &FileName) {
@@ -262,7 +294,7 @@ bool TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
   errs() << " done. \n";
 
   // Write the SDC and the delay query script.
-  sys::Path TimingExtractTcl = buildPath(Name, ".sdc");
+  sys::Path TimingExtractTcl = buildPath(Name, "_extract.tcl");
   if (TimingExtractTcl.empty()) return false;
 
   errs() << "Writing '" << TimingExtractTcl.str() << "'... ";
@@ -285,7 +317,7 @@ bool TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
 
   if (!ErrorInfo.empty())  return exitWithError(PrjTcl);
 
-  writeProjectScript(PrjTclO, Name, Netlist);
+  writeProjectScript(PrjTclO, Name, Netlist, TimingExtractTcl);
   PrjTclO.close();
   errs() << " done. \n";
 
