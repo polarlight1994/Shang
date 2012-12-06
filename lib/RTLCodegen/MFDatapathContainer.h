@@ -19,13 +19,12 @@
 #include "vtm/VerilogAST.h"
 
 namespace llvm {
-class VASTMachineOperand : public VASTValue {
+class VASTMachineOperand : public VASTNamedValue {
   const MachineOperand MO;
 public:
   VASTMachineOperand(const char *Name, const MachineOperand &MO)
-    : VASTValue(VASTNode::vastCustomNode, VInstrInfo::getBitWidth(MO)), MO(MO) {
-    Contents.Name = Name;
-  }
+    : VASTNamedValue(VASTNode::vastCustomNode, Name, VInstrInfo::getBitWidth(MO)),
+      MO(MO) {}
 
   MachineOperand getMO() const {
     return MO;
@@ -38,8 +37,6 @@ public:
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastCustomNode;
   }
-
-  void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 };
 
 class MFDatapathContainer : public DatapathBuilderContext,

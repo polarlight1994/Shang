@@ -501,7 +501,8 @@ class VASTNamedValue : public VASTValue {
 protected:
   VASTNamedValue(VASTTypes T, const char *Name, unsigned BitWidth)
     : VASTValue(T, BitWidth) {
-    assert((T == vastSymbol || T == vastWire || T == vastRegister)
+    assert((T == vastSymbol || T == vastWire || T == vastRegister
+            || T == vastCustomNode)
            && "Bad DeclType!");
     Contents.Name = Name;
   }
@@ -519,7 +520,8 @@ public:
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSymbol ||
            A->getASTType() == vastWire ||
-           A->getASTType() == vastRegister;
+           A->getASTType() == vastRegister ||
+           A->getASTType() == vastCustomNode;
   }
 };
 

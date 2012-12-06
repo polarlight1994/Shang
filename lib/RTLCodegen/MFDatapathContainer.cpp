@@ -24,11 +24,6 @@ inline static T *check(T *Ptr) {
   return Ptr;
 }
 
-void VASTMachineOperand::printAsOperandImpl(raw_ostream &OS, unsigned UB,
-                                            unsigned LB) const {
-  OS << Contents.Name << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
-}
-
 DatapathBuilder *MFDatapathContainer::createBuilder(MachineRegisterInfo *MRI) {
   assert(Builder == 0 && "The previous datapath build have not been release!");
   return (Builder = new DatapathBuilder(*this, *MRI));
