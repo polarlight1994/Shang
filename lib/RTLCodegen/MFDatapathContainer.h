@@ -65,6 +65,11 @@ class MFDatapathContainer : public DatapathBuilderContext,
   void printTree(raw_ostream &OS, VASTWire *Root);
 
 protected:
+  VASTValPtr lookupFanout(unsigned Reg) const {
+    Reg2WireMapTy::const_iterator at = ExportedVals.find(Reg);
+    return at == ExportedVals.end() ? VASTValPtr() : at->second;
+  }
+
   typedef VASTMOMapTy::const_iterator FaninIterator;
   FaninIterator fanin_begin() const { return VASTMOs.begin(); }
   FaninIterator fanin_end() const { return VASTMOs.end(); }
