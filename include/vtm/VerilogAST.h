@@ -665,9 +665,10 @@ private:
   /// FastID - A reference to an Interned FoldingSetNodeID for this node.
   /// The DatapathContainer's BumpPtrAllocator holds the data.
   const FoldingSetNodeIDRef FastID;
-  mutable float CachedDelay;
+
   // The total operand of this expression.
-  unsigned ExprSize;
+  unsigned ExprSize : 31;
+  bool     IsNamed    : 1;
 
   VASTExpr(const VASTExpr&);              // Do not implement
   void operator=(const VASTExpr&);        // Do not implement
@@ -730,15 +731,15 @@ public:
     return isSubBitSlice() && LB == 0;
   }
 
-  bool hasName() const {
-    return Contents.Name != 0;
-  }
+  bool hasName() const { return IsNamed != 0; }
 
   // Assign a name to this expression.
-  void setExprName(const char *Name) {
+  void nameExpr() {
     assert(!hasName() && "Expr already have name!");
-    Contents.Name = Name;
+    IsNamed = true;
   }
+
+  std::string getTempName() const;
 
   bool isInlinable() const;
 

@@ -161,7 +161,9 @@ void MFDatapathContainer::printTree(raw_ostream &OS, VASTWire *Root) {
       VisitStack.pop_back();
 
       if (VASTExpr *E = dyn_cast<VASTExpr>(Node)) {
-        const char *Name = allocateName("e" + utohexstr(uint64_t(E)) + "e");
+        // Assign the name to the expression.
+        E->nameExpr();
+        std::string Name = E->getTempName();
         OS.indent(2) << "wire ";
 
         unsigned Bitwidth = E->getBitWidth();
@@ -170,8 +172,6 @@ void MFDatapathContainer::printTree(raw_ostream &OS, VASTWire *Root) {
         E->printAsOperand(OS, false);
         OS << ";\n";
 
-        // Assign the name to the expression.
-        E->setExprName(Name);
       } else if (VASTWire *W = dyn_cast<VASTWire>(Node))
         W->printAssignment(OS.indent(2));
 

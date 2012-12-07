@@ -497,7 +497,7 @@ void VASTRegister::dumpAssignment() const {
 
 VASTExpr::VASTExpr(Opcode Opc, uint8_t NumOps, unsigned UB,
                    unsigned LB, const FoldingSetNodeIDRef ID)
-  : VASTValue(vastExpr, UB - LB), FastID(ID), CachedDelay(-1.0f), ExprSize(0),
+  : VASTValue(vastExpr, UB - LB), FastID(ID), ExprSize(0), IsNamed(0),
     Opc(Opc), NumOps(NumOps), UB(UB), LB(LB) {
   Contents.Name = 0;
   assert(NumOps && "Unexpected empty operand list!");
@@ -1255,9 +1255,14 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
   OS << ";\n";
 }
 
+std::string VASTExpr::getTempName() const {
+  assert(hasName() && "The expression do not have a name!");
+  return "e" + utohexstr(intptr_t(this)) + "e";
+}
+
 void VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                   unsigned LB) const {
-  assert(((UB == this->UB && LB == this->LB) || Contents.Name)
+  assert(((UB == this->UB && LB == this->LB) || hasName())
          && "Cannot print bitslice of Expr!");
 
   printAsOperandInteral(OS);
@@ -1267,8 +1272,8 @@ void VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB,
 }
 
 void VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
-  if (Contents.Name) {
-    OS << Contents.Name;
+  if (hasName()) {
+    OS << getTempName();
     return;
   }
 
