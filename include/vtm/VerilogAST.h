@@ -635,7 +635,6 @@ public:
     dpAssign,
     LastInlinableOpc = dpAssign,
     // Cannot inline.
-    dpLUT,
     // FU datapath
     dpAdd,
     FirstFUOpc = dpAdd,
@@ -646,6 +645,8 @@ public:
     dpSCmp,
     dpUCmp,
     LastFUOpc = dpUCmp,
+    // Lookup-tables.
+    dpLUT,
     // Mux in datapath.
     dpMux,
     // Read/Write block RAM.
