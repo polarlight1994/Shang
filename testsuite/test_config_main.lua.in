@@ -8,6 +8,8 @@ MODELDOFILE = [[@MAIN_MODELDO_FILE@]]
 TBFILE = [[@MAIN_TB_FILE@]]
 
 -- Load bram initfile
+ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
+
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
 -- load platform information script
 dofile('@VTS_SOURCE_ROOT@/' .. 'AlteraCommon.lua')

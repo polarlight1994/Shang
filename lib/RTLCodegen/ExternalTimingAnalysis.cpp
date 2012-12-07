@@ -427,7 +427,8 @@ bool TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
   PrjTclO.close();
   errs() << " done. \n";
 
-  sys::Path quartus("C:/altera/12.1/quartus/bin64/quartus_sh.exe");
+  const char *LUAPath[] = { "ExternalTool", "Path" };
+  sys::Path quartus(getStrValueFromEngine(LUAPath));
   std::vector<const char*> args;
 
   args.push_back(quartus.c_str());
