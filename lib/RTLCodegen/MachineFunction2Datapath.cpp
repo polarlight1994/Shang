@@ -57,7 +57,7 @@ VASTValPtr DatapathBuilder::buildDatapathExpr(MachineInstr *MI) {
 
   case VTM::VOpSel:       return buildSel(MI);
 
-  case VTM::VOpLUT:       return buildLut(MI);
+  case VTM::VOpLUT:       return expandLUT(MI);
 
   case VTM::VOpXor:       return buildBinaryOp(MI, VASTExprBuilder::buildXor);
   case VTM::VOpAnd:
@@ -115,7 +115,7 @@ VASTValPtr DatapathBuilder::buildSel(MachineInstr *MI) {
                    VInstrInfo::getBitWidth(MI->getOperand(0)));
 }
 
-VASTValPtr DatapathBuilder::buildLut(MachineInstr *MI) {
+VASTValPtr DatapathBuilder::expandLUT(MachineInstr *MI) {
   unsigned SizeInBits = VInstrInfo::getBitWidth(MI->getOperand(0));
 
   SmallVector<VASTValPtr, 8> Operands;
