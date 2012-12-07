@@ -635,6 +635,7 @@ public:
     dpAssign,
     LastInlinableOpc = dpAssign,
     // Cannot inline.
+    dpLUT,
     // FU datapath
     dpAdd,
     FirstFUOpc = dpAdd,
@@ -699,6 +700,12 @@ private:
 
     return this;
   }
+
+  void setLUT(const char *LUT) {
+    assert(getOpcode() == dpLUT && "Bad Expr type!");
+    assert(Contents.Name == 0 && "Cannot set LUT twice!");
+    Contents.Name = LUT;
+  }
 public:
   const uint8_t Opc, NumOps,UB, LB;
   Opcode getOpcode() const { return VASTExpr::Opcode(Opc); }
@@ -729,6 +736,11 @@ public:
 
   inline bool isZeroBasedBitSlice() const {
     return isSubBitSlice() && LB == 0;
+  }
+
+  const char *getLUT() const {
+    assert(getOpcode() == dpLUT && "Bad Expr Type!");
+    return Contents.Name;
   }
 
   bool hasName() const { return IsNamed != 0; }

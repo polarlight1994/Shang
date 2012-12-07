@@ -1126,6 +1126,56 @@ static void printBitRepeat(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
   OS << "}}";
 }
 
+static bool printLUT(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *LUT) {
+  // Interpret the sum of product table.
+  const char *p = LUT;
+  unsigned NumInputs = Ops.size();
+  bool isComplemented = false;
+  // The LUT is in form of "Sum of Product", print the left parenthesis of the
+  // sum first.
+  OS << '(';
+
+  while (*p) {
+    OS << '(';
+    // Interpret the product.
+    for (unsigned i = 0; i < NumInputs; ++i) {
+      char c = *p++;
+      switch (c) {
+      default: llvm_unreachable("Unexpected SOP char!");
+      case '-': /*Dont care*/ continue;
+      case '1': Ops[i]->printAsOperand(OS, false); break;
+      case '0': Ops[i]->printAsOperand(OS, true); break;
+      }
+
+      // Perform the AND to build the product.
+      if (i < NumInputs - 1) OS << '&';
+    }
+    // Close the product.
+    OS << ')';
+
+    // Inputs and outputs are seperated by blank space.
+    assert(*p == ' ' && "Expect the blank space!");
+    ++p;
+
+    // Is the output inverted?
+    char c = *p++;
+    assert((c == '0' || c == '1') && "Unexpected SOP char!");
+    isComplemented = (c == '0');
+
+    // Products are separated by new line.
+    assert(*p == '\n' && "Expect the new line!");
+    ++p;
+
+    // Perform the OR to build the sum.
+    if (*p) OS << '|';
+  }
+  // Close the sum.
+  OS << ')';
+
+  // Build the sum;
+  return isComplemented;
+}
+
 static void printCombMux(raw_ostream &OS, const VASTWire *W) {
   assert(!W->getExpr().isInverted() && "Unexpected inverted mux!");
   VASTExpr *E = W->getExpr().get();
@@ -1281,6 +1331,11 @@ void VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   typedef ArrayRef<VASTUse> UseArray;
 
   switch (getOpcode()) {
+  case dpLUT:
+    // Invert the result if the LUT is inverted.
+    if (printLUT(OS, getOperands(), getLUT()))
+      OS << '^' << buildLiteral(~UINT64_C(0), getBitWidth(), false);
+    break;
   case dpAnd: printSimpleUnsignedOp(OS, getOperands(), " & "); break;
 
   case dpRAnd:  printUnaryOp(OS, getOperand(0), "&");  break;
