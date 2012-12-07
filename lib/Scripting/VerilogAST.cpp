@@ -44,8 +44,8 @@ InstSubModForFU("vtm-instantiate-submod-for-fu",
 
 //===----------------------------------------------------------------------===//
 // Value and type printing
-static std::string verilogConstToStr(uint64_t Value, unsigned bitwidth,
-                                     bool isMinValue) {
+static
+std::string buildLiteral(uint64_t Value, unsigned bitwidth, bool isMinValue) {
   std::string ret;
   ret = utostr_32(bitwidth) + '\'';
   if (bitwidth == 1) ret += "b";
@@ -342,7 +342,7 @@ bool VASTRegister::printReset(raw_ostream &OS) const {
     return false;
 
   OS << getName()  << " <= "
-     << verilogConstToStr(InitVal, getBitWidth(), false) << ";";
+     << buildLiteral(InitVal, getBitWidth(), false) << ";";
   return true;
 }
 
@@ -1009,7 +1009,7 @@ void VASTPort::printExternalDriver(raw_ostream &OS, uint64_t InitVal) const {
   OS << ' ' << getName();
 
   if (IsInput)
-    OS << " = " << verilogConstToStr(InitVal, getBitWidth(), false);
+    OS << " = " << buildLiteral(InitVal, getBitWidth(), false);
 
   OS << ';';
 }
@@ -1040,7 +1040,7 @@ void VASTSignal::printDecl(raw_ostream &OS) const {
   OS << ' ' << getName();
 
   if (isRegister)
-    OS << " = " << verilogConstToStr(0, getBitWidth(), false);
+    OS << " = " << buildLiteral(0, getBitWidth(), false);
 
   OS << ";";
 }
