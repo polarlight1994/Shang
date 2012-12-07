@@ -779,8 +779,6 @@ class VASTWire :public VASTSignal {
 public:
   enum Type {
     Common,
-    // Result of a look up table, may have a large expression tree.
-    LUT,
     // Timing BlackBox, have latecy not capture by slots.
     haveExtraDelay,
     // Assignment with slot information.
