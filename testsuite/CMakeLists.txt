@@ -350,7 +350,6 @@ if(SYNTHESIS_DUT AND TARGET benchmark_synthesis_main)
     COMMENT "Synthesising RTL module and interface for ${SYN_FUNC}"
   )
   add_custom_target(${TEST}_synthesis_main DEPENDS ${MAIN_RTL_STA})
-  add_dependencies(${TEST}_synthesis_main ${TEST}_main_hls)
 
 endif(SYNTHESIS_DUT AND TARGET benchmark_synthesis_main)
 
