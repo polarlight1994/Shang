@@ -42,6 +42,8 @@ class TimingNetlist : public MFDatapathContainer {
   // Write the script to extract the timing analysis results from quartus.
   void writeTimingExtractionScript(raw_ostream &O, const Twine &Name,
                                    const sys::Path &ResultPath) const;
+  // Read the JSON file written by the timing extraction script.
+  bool readTimingAnalysisResult(const sys::Path &ResultPath);
 public:
   TimingNetlist() {}
 
