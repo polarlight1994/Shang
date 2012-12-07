@@ -58,6 +58,8 @@ VASTValPtr MFDatapathContainer::getAsOperandImpl(MachineOperand &Op,
       MachineOperand DefMO = DefMI->getOperand(0);
       DefMO.setIsDef(false);
       V = getOrCreateVASTMO(allocateRegName(Reg), DefMO);
+      // Also index the newly created value.
+      Builder->indexVASTExpr(Reg, V);
     }
 
     // The operand may only use a sub bitslice of the signal.
