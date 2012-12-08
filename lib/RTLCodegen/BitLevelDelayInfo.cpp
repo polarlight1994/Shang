@@ -168,6 +168,12 @@ void BitLevelDelayInfo::addDelayForPath(unsigned SrcReg, const MachineInstr *MI,
   addDelayForPath(SrcMI, MI, CurDelayInfo, PathDelay);
 }
 
+static unsigned getRegNum(const VASTMachineOperand *MO) {
+  if (MO->getMO().isReg()) return MO->getMO().getReg();
+
+  return 0;
+}
+
 void BitLevelDelayInfo::addDelayForPath(const MachineInstr *SrcMI,
                                         const MachineInstr *MI,
                                         DepLatInfoTy &CurDelayInfo,
@@ -189,7 +195,7 @@ void BitLevelDelayInfo::addDelayForPath(const MachineInstr *SrcMI,
   // Get the datapath delay from the TimingNetlist.
   typedef TimingNetlist::src_iterator it;
   for (it I = TNL->src_begin(SrcReg), E = TNL->src_end(SrcReg); I != E; ++I)
-    addDelayForPath(I->first, MI, CurDelayInfo, PathDelay +  I->second);
+    addDelayForPath(getRegNum(I->first), MI, CurDelayInfo, PathDelay +  I->second);
 }
 
 void BitLevelDelayInfo::buildDelayMatrix(const MachineInstr *MI) {

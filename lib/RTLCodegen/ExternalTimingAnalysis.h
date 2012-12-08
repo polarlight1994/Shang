@@ -29,13 +29,12 @@ namespace yaml {
 }
 
 class TimingNetlist : public MFDatapathContainer {
-  typedef std::map<unsigned, double> SrcInfoTy;
+  typedef std::map<VASTMachineOperand*, double> SrcInfoTy;
   typedef std::map<unsigned, SrcInfoTy> PathInfoTy;
   PathInfoTy PathInfo;
 
-  void createAnchor(unsigned DstReg);
-
-  void createDelayEntry(unsigned DstReg, unsigned SrcReg);
+  // Create a path from Src to DstReg.
+  void createDelayEntry(unsigned DstReg, VASTMachineOperand *Src);
 
   // Compute the delay to DstReg through SrcReg.
   void computeDelayFromSrc(unsigned DstReg, unsigned SrcReg);
@@ -44,8 +43,8 @@ class TimingNetlist : public MFDatapathContainer {
   // Write the wrapper of the netlist.
   void writeNetlistWrapper(raw_ostream &O, const Twine &Name) const;
 
-  VASTValPtr getSrcPtr(unsigned Reg) const;
-  VASTValPtr getDstPtr(unsigned Reg) const;
+  VASTMachineOperand *getSrcPtr(unsigned Reg) const;
+  VASTWire *getDstPtr(unsigned Reg) const;
 
   // Write the project file to perform the timing analysis.
   void writeProjectScript(raw_ostream &O, const Twine &Name,
@@ -53,10 +52,10 @@ class TimingNetlist : public MFDatapathContainer {
                           const sys::Path &TimingExtractionScript) const;
 
   void extractTimingForPair(raw_ostream &O, unsigned DstReg,
-                            unsigned SrcReg) const;
+                            const VASTValue *Src) const;
   void extractTimingForPair(raw_ostream &O,
                             const VASTValue *Dst, unsigned DstReg,
-                            const VASTValue *Src, unsigned SrcReg) const;
+                            const VASTValue *Src) const;
 
   void extractTimingToDst(raw_ostream &O, unsigned DstReg,
                           const SrcInfoTy &SrcInfo) const;
