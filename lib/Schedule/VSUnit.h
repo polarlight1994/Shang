@@ -682,6 +682,7 @@ private:
 
   inline const BBInfo &getIDomInfo(const MachineBasicBlock *MBB) const {
     const BBInfo &Info = getBBInfo(MBB);
+    assert(Info.IDomIdx < BBInfoMap.size() && "Bad IDomIdx!");
     return BBInfoMap[Info.IDomIdx];
   }
 

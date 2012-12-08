@@ -694,7 +694,6 @@ void VSchedGraph::insertDelayBlock(MachineBasicBlock *From,
 unsigned VSchedGraph::insertDelayBlock(const VSUnit *BBEntry,
                                        unsigned ExpectedSPD) {
   MachineBasicBlock *MBB = BBEntry->getParentBB();
-  const BBInfo &IDomInfo = getIDomInfo(MBB);
 
   // Handle the trivial case trivially.
   if (cp_empty(BBEntry)) return 0;
@@ -706,6 +705,9 @@ unsigned VSchedGraph::insertDelayBlock(const VSUnit *BBEntry,
     const VSUnit *PredTerminator = *I;
     MachineBasicBlock *PredBB = PredTerminator->getParentBB();
     const BBInfo &PredInfo = getBBInfo(PredBB);
+    // DIRTYHACK: Get the IDomInfo in every iteration to avoid IDomInfo
+    // being invalidated by the vector reallocation. 
+    const BBInfo &IDomInfo = getIDomInfo(MBB);
 
     // Get the distance from the entry of IDom to the exit of predecessor BB.
     // It is also the distance from the entry of IDom through predecessor BB
