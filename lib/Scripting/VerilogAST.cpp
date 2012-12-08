@@ -1284,7 +1284,7 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
     switch (Expr->getOpcode()) {
     default: break;
     case VASTExpr::dpAdd:
-      if (InstSubModForFU && printFUAdd(OS, this)) return;
+      if (InstSubModForFU && !Expr->hasName() && printFUAdd(OS, this)) return;
       break;
     case VASTExpr::dpMul:
     case VASTExpr::dpShl:
@@ -1292,7 +1292,7 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
     case VASTExpr::dpSRL:
     case VASTExpr::dpSCmp:
     case VASTExpr::dpUCmp:
-      if (InstSubModForFU &&printBinFU(OS, this)) return;
+      if (InstSubModForFU && !Expr->hasName() && printBinFU(OS, this)) return;
       break;
     case VASTExpr::dpMux: printCombMux(OS, this); return;
     // Don't know how to print black box.
