@@ -19,6 +19,7 @@ MUX_ChainingThreshold = -1
 
 local FMAX = @FMAX@
 PERIOD = 1000.0 / FMAX
+FUs.Period = PERIOD
 
 POINTER_SIZE_IN_BITS = @POINTER_SIZE_IN_BITS@
 

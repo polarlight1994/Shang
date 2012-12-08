@@ -258,8 +258,8 @@ void TimingNetlist::writeProjectScript(raw_ostream &O, const Twine &Name,
        "execute_module -tool map\n"
        "execute_module -tool fit\n"
        "execute_module -tool sta -args {--report_script \""
-       << TimingExtractionScript.str() << "\"}\n";
-       //"project_close\n";
+       << TimingExtractionScript.str() << "\"}\n"
+       "project_close\n";
 }
 
 static void setTerminatorCollection(raw_ostream & O, const VASTValue *V,
@@ -503,15 +503,18 @@ bool TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
     return false;
   }
 
-  // Clean up.
-  //Netlist.eraseFromDisk();
-  //TimingExtractTcl.eraseFromDisk();
-  //PrjTcl.eraseFromDisk();
 
   errs() << " done. \n";
 
   if (!readTimingAnalysisResult(TimingExtractResult))
     return false;
+
+  // Clean up.
+  Netlist.eraseFromDisk();
+  TimingExtractTcl.eraseFromDisk();
+  PrjTcl.eraseFromDisk();
+  TimingExtractResult.eraseFromDisk();
+
 
   return true;
 }
