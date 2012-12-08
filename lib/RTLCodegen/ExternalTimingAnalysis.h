@@ -24,27 +24,65 @@ namespace sys {
   class Path;
 }
 
+namespace yaml {
+  class MappingNode;
+}
+
 class TimingNetlist : public MFDatapathContainer {
+  typedef std::map<unsigned, double> SrcInfoTy;
+  typedef std::map<unsigned, SrcInfoTy> PathInfoTy;
+  PathInfoTy PathInfo;
+
+  void createAnchor(unsigned DstReg);
+
+  void createDelayEntry(unsigned DstReg, unsigned SrcReg);
+
+  // Compute the delay to DstReg through SrcReg.
+  void computeDelayFromSrc(unsigned DstReg, unsigned SrcReg);
+
+  // FIXME: Move these function to another class.
   // Write the wrapper of the netlist.
   void writeNetlistWrapper(raw_ostream &O, const Twine &Name) const;
+
+  VASTValPtr getSrcPtr(unsigned Reg) const;
+  VASTValPtr getDstPtr(unsigned Reg) const;
 
   // Write the project file to perform the timing analysis.
   void writeProjectScript(raw_ostream &O, const Twine &Name,
                           const sys::Path &NetlistPath,
                           const sys::Path &TimingExtractionScript) const;
 
-  void extractTimingForPair(raw_ostream &O, const VASTNamedValue *From,
-                            const VASTNamedValue *To, unsigned DstReg) const;
+  void extractTimingForPair(raw_ostream &O, unsigned DstReg,
+                            unsigned SrcReg) const;
+  void extractTimingForPair(raw_ostream &O,
+                            const VASTValue *Dst, unsigned DstReg,
+                            const VASTValue *Src, unsigned SrcReg) const;
 
-  void extractTimingForTree(raw_ostream &O, const VASTWire *W,
-                            unsigned DstReg) const;
+  void extractTimingToDst(raw_ostream &O, unsigned DstReg,
+                          const SrcInfoTy &SrcInfo) const;
 
   // Write the script to extract the timing analysis results from quartus.
   void writeTimingExtractionScript(raw_ostream &O, const Twine &Name,
                                    const sys::Path &ResultPath) const;
   // Read the JSON file written by the timing extraction script.
   bool readTimingAnalysisResult(const sys::Path &ResultPath);
+  bool readPathDelay(yaml::MappingNode *N);
 public:
+
+  // Iterate over the source node reachable to DstReg.
+  typedef SrcInfoTy::const_iterator src_iterator;
+  src_iterator src_begin(unsigned DstReg) const {
+    PathInfoTy::const_iterator at = PathInfo.find(DstReg);
+    assert(at != PathInfo.end() && "DstReg not find!");
+    return at->second.begin();
+  }
+
+  src_iterator src_end(unsigned DstReg) const {
+    PathInfoTy::const_iterator at = PathInfo.find(DstReg);
+    assert(at != PathInfo.end() && "DstReg not find!");
+    return at->second.end();
+  }
+
   TimingNetlist() {}
 
   void addInstrToDatapath(MachineInstr *MI);

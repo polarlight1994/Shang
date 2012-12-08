@@ -20,6 +20,7 @@
 
 #include "ExternalTimingAnalysis.h"
 
+#include "llvm/ADT/SetOperations.h"
 #include "llvm/Support/PathV1.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SourceMgr.h"
@@ -31,6 +32,70 @@
 
 using namespace llvm;
 using namespace yaml;
+
+void TimingNetlist::createDelayEntry(unsigned DstReg, unsigned SrcReg) {
+  assert(DstReg && "Unexpected NO_REGISTER!");
+
+  SrcInfoTy &SrcInfo = PathInfo[DstReg];
+
+  SrcInfo[SrcReg] = 0;
+}
+
+void TimingNetlist::computeDelayFromSrc(unsigned DstReg, unsigned SrcReg) {
+  // Forward the Src terminator of the path from SrcReg.
+  PathInfoTy::iterator at = PathInfo.find(SrcReg);
+
+  // If SrcReg is a terminator of a path, create a path from SrcReg to DstReg.
+  if (at == PathInfo.end()) {
+    createDelayEntry(DstReg, SrcReg);
+    return;
+  }
+
+  // Otherwise forward the source nodes reachable to SrcReg to DstReg.
+  set_union(PathInfo[DstReg], at->second);
+}
+
+void TimingNetlist::createAnchor(unsigned DstReg) {
+  createDelayEntry(DstReg, 0);
+}
+
+void TimingNetlist::addInstrToDatapath(MachineInstr *MI) {
+  unsigned DefReg = 0;
+
+  bool IsDatapath = VInstrInfo::isDatapath(MI->getOpcode());
+
+  // Can use add the MachineInstr to the datapath?
+  if (IsDatapath)
+    buildDatapath(MI);
+
+  // Ignore the PHIs.
+  if (!IsDatapath && MI->isPHI()) return;
+
+  // Otherwise export the values used by this MachineInstr.
+  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i){
+    const MachineOperand &MO = MI->getOperand(i);
+
+    if (!MO.isReg() || MO.getReg() == 0) continue;
+
+    if (MO.isDef()) {
+      assert(DefReg == 0 && "Unexpected multi-defines!");
+      DefReg = MO.getReg();
+      continue;
+    }
+
+    // Only care about a use register.
+    unsigned UseReg = MO.getReg();
+
+    // Try to export the value.
+    if (IsDatapath)
+      computeDelayFromSrc(DefReg, UseReg);
+    else
+      exportValue(UseReg);
+  }
+
+  // Create anchor for the datapath result, so it is connected to something.
+  if (IsDatapath) createAnchor(DefReg);
+}
 
 static sys::Path buildPath(const Twine &Name, const Twine &Ext) {
   std::string ErrMsg;
@@ -47,23 +112,6 @@ static sys::Path buildPath(const Twine &Name, const Twine &Ext) {
   }
 
   return Filename;
-}
-
-void TimingNetlist::addInstrToDatapath(MachineInstr *MI) {
-  // Can use add the MachineInstr to the datapath?
-  if (buildDatapath(MI)) return;
-
-  // Otherwise export the values used by this MachineInstr.
-  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i){
-    const MachineOperand &MO = MI->getOperand(i);
-
-    // Only care about a use register.
-    if (!MO.isReg() || MO.isDef() || MO.getReg() == 0)
-      continue;
-
-    // Try to export the value.
-    exportValue(MO.getReg());
-  }
 }
 
 raw_ostream &printAsLHS(raw_ostream &O, const VASTNamedValue *V,
@@ -210,23 +258,51 @@ void TimingNetlist::writeProjectScript(raw_ostream &O, const Twine &Name,
        "execute_module -tool map\n"
        "execute_module -tool fit\n"
        "execute_module -tool sta -args {--report_script \""
-       << TimingExtractionScript.str() << "\"}\n"
-       "project_close\n";
+       << TimingExtractionScript.str() << "\"}\n";
+       //"project_close\n";
+}
+
+static void setTerminatorCollection(raw_ostream & O, const VASTValue *V,
+                                    const char *CollectionName) {
+  O << "set " << CollectionName << " [";
+  if (const VASTExpr *E = dyn_cast<VASTExpr>(V))
+    O << "get_nets \"*" << E->getTempName() << "*\"]\n";
+  else
+    O << "get_keepers \"*" << cast<VASTNamedValue>(V)->getName() << "*\"]\n";
+}
+
+VASTValPtr TimingNetlist::getSrcPtr(unsigned Reg) const {
+  // Lookup the value from input of the netlist.
+  return (*this)->lookupExpr(Reg);
+}
+
+VASTValPtr TimingNetlist::getDstPtr(unsigned Reg) const {
+  // Lookup the value from the output list of the netlist first.
+  if (VASTValPtr V = lookupFanout(Reg))
+    return V;
+
+  return getSrcPtr(Reg);
+}
+
+void TimingNetlist::extractTimingForPair(raw_ostream &O, unsigned DstReg,
+                                         unsigned SrcReg) const {
+  VASTValue *Dst = dyn_cast<VASTWire>(getDstPtr(DstReg).get());
+  VASTValue *Src = dyn_cast<VASTMachineOperand>(getSrcPtr(SrcReg).get());
+
+  if (!(Dst && Src)) return;
+
+  extractTimingForPair(O, Dst, DstReg, Src, SrcReg);
 }
 
 void TimingNetlist::extractTimingForPair(raw_ostream &O,
-                                         const VASTNamedValue *From,
-                                         const VASTNamedValue *To,
-                                         unsigned DstReg) const {
-  unsigned SrcReg = lookupRegNum(const_cast<VASTNamedValue*>(From));
-  // If the register not found, invert and find again.
-  if (SrcReg == 0)
-    SrcReg = lookupRegNum(VASTValPtr(const_cast<VASTNamedValue*>(From), true));
+                                         const VASTValue *Dst, unsigned DstReg,
+                                         const VASTValue *Src, unsigned SrcReg)
+                                         const {
+  // Get the source and destination nodes.
+  setTerminatorCollection(O, Dst, "dst");
+  setTerminatorCollection(O, Src, "src");
 
   O <<
-    // Get the source and destination nodes.
-    "set dst [get_keepers \"" << To->getName() << "*\"]\n"
-    "set src [get_keepers \"" << From->getName() << "*\"]\n"
     "set delay -1\n"
     // Only extract the delay from source to destination when these node are
     // not optimized.
@@ -237,46 +313,25 @@ void TimingNetlist::extractTimingForPair(raw_ostream &O,
     "    post_message -type info \"" << SrcReg << " -> " << DstReg
     << " delay: $delay\"\n"
     "  }\n"
+    "} else {\n"
+    "    post_message -type warning \"" << SrcReg << " -> " << DstReg
+    << " path not found!\""
     "}\n"
     "puts $JSONFile \"\\{\\\"from\\\":" << SrcReg << ",\\\"to\\\":" << DstReg
     << ",\\\"delay\\\":$delay\\},\"\n";
 }
 
 void
-TimingNetlist::extractTimingForTree(raw_ostream &O, const VASTWire *Root,
-                                    unsigned DstReg) const{
-  typedef VASTValue::dp_dep_it ChildIt;
-  std::vector<std::pair<const VASTValue*, ChildIt> > VisitStack;
-  std::set<VASTValue*> Visited;
+TimingNetlist::extractTimingToDst(raw_ostream &O, unsigned DstReg,
+                                  const SrcInfoTy &SrcInfo) const{
+  typedef SrcInfoTy::const_iterator iterator;
 
-  VisitStack.push_back(std::make_pair(Root, VASTValue::dp_dep_begin(Root)));
-
-  while (!VisitStack.empty()) {
-    const VASTValue *Node = VisitStack.back().first;
-    ChildIt It = VisitStack.back().second;
-
-    // We have visited all children of current node.
-    if (It == VASTValue::dp_dep_end(Node)) {
-      VisitStack.pop_back();
+  for (iterator I = SrcInfo.begin(), E = SrcInfo.end(); I != E; ++I) {
+    unsigned SrcReg = I->first;
+    if (SrcReg) {
+      extractTimingForPair(O, DstReg, SrcReg);
       continue;
     }
-
-    // Otherwise, remember the node and visit its children first.
-    VASTValue *ChildNode = It->getAsLValue<VASTValue>();
-    ++VisitStack.back().second;
-
-    // Has ChildNode already been visited?
-    if (!Visited.insert(ChildNode).second) continue;
-
-    if (!isa<VASTWire>(ChildNode) && !isa<VASTExpr>(ChildNode)) {
-      if (const VASTMachineOperand *MO = dyn_cast<VASTMachineOperand>(ChildNode))
-        extractTimingForPair(O, MO, Root, DstReg);
-
-      continue;
-    }
-
-    VisitStack.push_back(std::make_pair(ChildNode,
-                                        VASTValue::dp_dep_begin(ChildNode)));
   }
 }
 
@@ -287,8 +342,10 @@ TimingNetlist::writeTimingExtractionScript(raw_ostream &O, const Twine &Name,
   O << "set JSONFile [open \"" << ResultPath.str() <<"\" w+]\n"
        "puts $JSONFile \"\\[\"\n";
 
-  for (FanoutIterator I = fanout_begin(), E = fanout_end(); I != E; ++I)
-    extractTimingForTree(O, I->second, I->first);
+  typedef PathInfoTy::const_iterator iterator;
+  for (iterator I = PathInfo.begin(), E = PathInfo.end(); I != E; ++I)
+    extractTimingToDst(O, I->first, I->second);
+
 
   // Close the array and the file object.
   O << "puts $JSONFile \"\\{\\\"from\\\":0,\\\"to\\\":0,\\\"delay\\\":0\\}\"\n"
@@ -315,7 +372,7 @@ static unsigned readPathTerimator(KeyValueNode *N, StringRef KeyName) {
   return Reg;
 }
 
-static double readPathDelay(KeyValueNode *N) {
+static double readDelay(KeyValueNode *N) {
   assert(cast<ScalarNode>(N->getKey())->getRawValue() == "\"delay\""
          && "Bad Key name!");
 
@@ -331,7 +388,7 @@ static KeyValueNode *readAndAdvance(MappingNode::iterator it) {
   return N;
 }
 
-static bool readPathDelay(MappingNode *N) {
+bool TimingNetlist::readPathDelay(MappingNode *N) {
   typedef MappingNode::iterator iterator;
   iterator CurPtr = N->begin();
 
@@ -342,10 +399,14 @@ static bool readPathDelay(MappingNode *N) {
 
   unsigned FromReg = readPathTerimator(From, "\"from\""),
            ToReg = readPathTerimator(To, "\"to\"");
-  double PathDelay = readPathDelay(Delay);
+  double PathDelay = readDelay(Delay);
 
   dbgs() << "From: " << FromReg << " To: " << ToReg << " delay: "
          << PathDelay << '\n';
+
+  if (PathDelay == -1.0) return false;
+
+  PathInfo[ToReg][FromReg] = PathDelay / VFUs::Period;
 
   return true;
 }
@@ -436,16 +497,16 @@ bool TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
   args.push_back(PrjTcl.c_str());
   args.push_back(0);
 
-  errs() << "Running 'quartus' program... ";
+  errs() << "Running '" << quartus.str() << " ' program... ";
   if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, 0, 0, 0, &ErrorInfo)) {
     errs() << "Error: " << ErrorInfo <<'\n';
     return false;
   }
 
   // Clean up.
-  Netlist.eraseFromDisk();
-  TimingExtractTcl.eraseFromDisk();
-  PrjTcl.eraseFromDisk();
+  //Netlist.eraseFromDisk();
+  //TimingExtractTcl.eraseFromDisk();
+  //PrjTcl.eraseFromDisk();
 
   errs() << " done. \n";
 
