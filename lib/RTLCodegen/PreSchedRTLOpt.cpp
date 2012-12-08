@@ -152,7 +152,7 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
 
   MachineOperand allocateRegMO(VASTValPtr V, unsigned BitWidth = 0) {
     if (BitWidth == 0) BitWidth = V->getBitWidth();
-    return VInstrInfo::CreateReg(allocateRegNum(V), BitWidth, true);;
+    return VInstrInfo::CreateReg(allocateRegNum(V), BitWidth, true);
   }
 
   void releaseMemory() {
@@ -504,6 +504,9 @@ static unsigned GetSameWidth(const MachineOperand &LHS,
 template<unsigned Opcode, typename BitwidthFN>
 unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExpr *Expr, MachineInstr *IP,
                                          BitwidthFN F) {
+  MachineBasicBlock &ParentBB = *IP->getParent();
+  const MCInstrDesc &MID = VInstrInfo::getDesc(Opcode);
+
   SmallVector<MachineOperand, 8> Ops;
   for (unsigned i = 0; i < Expr->NumOps; ++i)
     Ops.push_back(getAsOperand(Expr->getOperand(i)));
@@ -515,14 +518,28 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExpr *Expr, MachineInstr *IP,
     while (OperandPos + 1 < NumOperand) {
       MachineOperand LHS = Ops[OperandPos];
       MachineOperand RHS = Ops[OperandPos + 1];
-      MachineOperand DefMO = allocateRegMO(0, F(LHS, RHS));
       OperandPos += 2;
-      BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(Opcode))
+      // Build the BinExpr to CSE the MachineInstr.
+      VASTValPtr BinExpr = Container->buildExpr(Expr->getOpcode(),
+                                                Container.getAsOperandImpl(LHS),
+                                                Container.getAsOperandImpl(RHS),
+                                                F(LHS, RHS));
+      // Try to reuse the existing register number.
+      if (unsigned Reg =  getRewrittenRegNum(BinExpr)) {
+        Ops[ResultPos++] = VInstrInfo::CreateReg(Reg, BinExpr->getBitWidth());
+        continue;
+      }
+
+      // Otherwise we need to create the register and the MachineInstr.
+      MachineOperand DefMO = allocateRegMO(BinExpr, BinExpr->getBitWidth());
+      // Rewrite the MachineInstr now if it is not rewritten.
+      BuildMI(ParentBB, IP, DebugLoc(), MID)
         .addOperand(DefMO)
         .addOperand(LHS).addOperand(RHS)
         .addOperand(VInstrInfo::CreatePredicate())
         .addOperand(VInstrInfo::CreateTrace());
       DefMO.setIsDef(false);
+
       Ops[ResultPos++] = DefMO;
     }
 
@@ -535,7 +552,7 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExpr *Expr, MachineInstr *IP,
   }
 
   MachineOperand DefMO = allocateRegMO(Expr);
-  BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(Opcode))
+  BuildMI(ParentBB, IP, DebugLoc(), MID)
     .addOperand(DefMO)
     .addOperand(Ops[0]).addOperand(Ops[1])
     .addOperand(VInstrInfo::CreatePredicate())
