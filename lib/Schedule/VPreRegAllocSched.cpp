@@ -68,7 +68,7 @@ struct VPreRegAllocSched : public MachineFunctionPass {
   ScalarEvolution *SE;
   // Also remember the operations that do not use by any others operations in
   // the same bb.
-  std::set<const MachineInstr*> MIsToWait, MIsToRead;
+  std::set<const MachineInstr*> ExitMIs;
 
   VPreRegAllocSched() : MachineFunctionPass(ID), TII(0), MRI(0), FInfo(0),
       MLI(0), MDT(0), LI(0), AA(0), SE(0) {
@@ -131,8 +131,7 @@ struct VPreRegAllocSched : public MachineFunctionPass {
   /// leaving the BB.
   // Erase the instructions from exit set.
   void eraseFromWaitSet(const MachineInstr *MI) {
-    MIsToRead.erase(MI);
-    MIsToWait.erase(MI);
+    ExitMIs.erase(MI);
   }
 
   void updateWaitSets(MachineInstr *MI, VSchedGraph &G);
@@ -943,7 +942,7 @@ void VPreRegAllocSched::buildExitRoot(VSchedGraph &G,
       continue;
 
     // Build datapath latency information for the terminator.
-    G.buildExitMIInfo(MI, ExitDeps, MIsToWait, MIsToRead);
+    G.buildExitMIInfo(MI, ExitDeps, ExitMIs);
   }
 
   // Add the control dependence edge edges to wait all operation finish.
@@ -962,36 +961,7 @@ void VPreRegAllocSched::updateWaitSets(MachineInstr *MI, VSchedGraph &G) {
   const DepLatInfoTy &Deps = *G.getDepLatInfo(MI);
   MachineBasicBlock *MBB = MI->getParent();
 
-  // Compute the instruction which are need to wait before leaving the BB.
-  bool IsControl = VInstrInfo::isControl(MI->getOpcode());
-
-  // Iterate from use to define.
-  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
-    const MachineOperand &MO = MI->getOperand(i);
-
-    // Only care about a use register.
-    if (!MO.isReg() || MO.isDef() || MO.getReg() == 0)
-      continue;
-
-    unsigned SrcReg = MO.getReg();
-    MachineInstr *SrcMI = MRI->getVRegDef(SrcReg);
-    assert(SrcMI && "Virtual register use without define!");
-
-    if (MBB != SrcMI->getParent()) continue;
-
-    // Now MI is actually depends on SrcMI in this MBB, no need to wait it
-    // explicitly.
-    MIsToWait.erase(SrcMI);
-
-    // SrcMI is read by a data-path operation, we need to wait its result before
-    // exiting the BB if there is no other control operation read it.
-    if (VInstrInfo::isControl(SrcMI->getOpcode()) && !IsControl)
-      MIsToRead.insert(SrcMI);
-  }
-
-  if (IsControl ||!G.AllowDangling) MIsToWait.insert(MI);
-
-  if (!IsControl) return;
+  ExitMIs.insert(MI);
 
   typedef DepLatInfoTy::const_iterator it;
   for (it I = Deps.begin(), E = Deps.end(); I != E; ++I) {
@@ -1000,7 +970,7 @@ void VPreRegAllocSched::updateWaitSets(MachineInstr *MI, VSchedGraph &G) {
       continue;
 
     // SrcMI (or its user) is read by MI, no need to wait it explicitly.
-    MIsToRead.erase(SrcMI);
+    ExitMIs.erase(SrcMI);
   }
 }
 
@@ -1008,8 +978,7 @@ void VPreRegAllocSched::buildControlPathGraph(VSchedGraph &G,
                                               MachineBasicBlock *MBB,
                                               std::vector<VSUnit*> &NewSUs) {
   // Clean the context
-  MIsToWait.clear();
-  MIsToRead.clear();
+  ExitMIs.clear();
 
   instr_it BI = MBB->begin();
   while(!BI->isTerminator() && BI->getOpcode() != VTM::VOpMvPhi) {
