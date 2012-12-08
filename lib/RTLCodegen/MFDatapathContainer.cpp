@@ -57,7 +57,7 @@ VASTValPtr MFDatapathContainer::getAsOperandImpl(MachineOperand &Op,
         && "Reg defined by data-path should had already been indexed!");
       MachineOperand DefMO = DefMI->getOperand(0);
       DefMO.setIsDef(false);
-      V = getOrCreateVASTMO(allocateRegName(Reg), DefMO);
+      V = getOrCreateVASTMO(allocateRegName(Reg, 'i'), DefMO);
       // Also index the newly created value.
       Builder->indexVASTExpr(Reg, V);
     }
@@ -107,7 +107,7 @@ VASTWire *MFDatapathContainer::exportValue(unsigned Reg) {
   // Do not create a port for the same register more than once.
   if (!Wire) {
     // Create the c-string and copy.
-    const char *Name = allocateRegName(Reg);
+    const char *Name = allocateRegName(Reg, 'r');
 
     // The port is not yet exist, create it now.
     Wire = new (Allocator) VASTWire(Name, Val->getBitWidth());
@@ -127,13 +127,13 @@ const char *MFDatapathContainer::allocateName(const Twine &Name) {
   return CName;
 }
 
-const char *MFDatapathContainer::allocateRegName(unsigned Reg) {
+const char *MFDatapathContainer::allocateRegName(unsigned Reg, char postfix) {
   if (TargetRegisterInfo::isVirtualRegister(Reg)) {
     unsigned Idx = TargetRegisterInfo::virtReg2Index(Reg);
-    return allocateName('v' + utostr_32(Idx) + 'r');
+    return allocateName('v' + utostr_32(Idx) + postfix);
   } //else
 
-  return allocateName('p' + utostr_32(Reg) + 'r');
+  return allocateName('p' + utostr_32(Reg) + postfix);
 }
 
 void MFDatapathContainer::reset() {

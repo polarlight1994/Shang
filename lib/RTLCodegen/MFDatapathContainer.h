@@ -57,7 +57,7 @@ class MFDatapathContainer : public DatapathBuilderContext,
 
   // Allocate the c-string for the name.
   const char *allocateName(const Twine &Name);
-  const char *allocateRegName(unsigned Reg);
+  const char *allocateRegName(unsigned Reg, char postfix);
 
   VASTValPtr getOrCreateVASTMO(const char *Name, MachineOperand DefMO);
 
