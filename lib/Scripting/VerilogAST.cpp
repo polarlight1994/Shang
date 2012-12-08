@@ -1306,7 +1306,6 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
 }
 
 std::string VASTExpr::getTempName() const {
-  assert(hasName() && "The expression do not have a name!");
   return "e" + utohexstr(intptr_t(this)) + "e";
 }
 
