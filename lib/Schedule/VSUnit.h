@@ -748,7 +748,7 @@ private:
                                          const MachineInstr *DstInstr) const {
     if (!SrcInstr) return getStepsFromEntry(DstInstr);
 
-    if (IsValDep) return DLInfo.getChainedCPs(SrcInstr, DstInstr);
+    if (IsValDep) return DLInfo.getChainedCPs(SrcInstr, DstInstr->getOpcode());
 
     return getStepsToFinish(SrcInstr);
   }
@@ -779,14 +779,9 @@ public:
     return DLInfo.getDepLatInfo(DstMI);
   }
 
-  void buildLatenciesToCopy(const MachineInstr *MI, DepLatInfoTy &Info) {
-    DLInfo.buildLatenciesToCopy(MI, Info);
-  }
-
-  void buildExitMIInfo(const MachineInstr *ExitMI, DepLatInfoTy &Info,
-                       const std::set<const MachineInstr*> &MIsToWait,
-                       const std::set<const MachineInstr*> &MIsToRead) {
-    DLInfo.buildExitMIInfo(ExitMI, Info, MIsToWait, MIsToRead);
+  void buildExitMIInfo(const MachineInstr *SSnk, DepLatInfoTy &Info,
+                       const std::set<const MachineInstr*> &ExitMIs) {
+    DLInfo.buildExitMIInfo(SSnk, Info, ExitMIs);
   }
 
   template<VDEdge::Types Type>

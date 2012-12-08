@@ -20,6 +20,7 @@
 #include "llvm/Target/TargetMachine.h"
 
 namespace llvm{
+class TimingNetlist;
 
 struct InstPtrTy : public PointerUnion<MachineInstr*, MachineBasicBlock*> {
   typedef PointerUnion<MachineInstr*, MachineBasicBlock*> Base;
@@ -80,84 +81,51 @@ struct InstPtrTy : public PointerUnion<MachineInstr*, MachineBasicBlock*> {
 
 class BitLevelDelayInfo : public MachineFunctionPass {
 public:
-  // Bit-level delay information.
-  struct BDInfo {
-    unsigned MSBDelay, LSBDelay;
-
-    BDInfo(unsigned MSBDelay, unsigned LSBDelay)
-      : MSBDelay(MSBDelay), LSBDelay(LSBDelay) {}
-
-    BDInfo(unsigned Critical = 0)
-      : MSBDelay(Critical), LSBDelay(Critical) {}
-
-    unsigned getCriticalDelay() const {
-      return std::max(MSBDelay, LSBDelay);
-    }
-
-    unsigned getMinDelay() const {
-      return std::min(MSBDelay, LSBDelay);
-    }
-  };
-
   static char ID;
-  // The latency of MSB and LSB from a particular operation to the current
-  // operation.
-  typedef std::map<InstPtrTy, BDInfo> DepLatInfoTy;
+  // Remember the normalized delay from source.
+  typedef double delay_type;
+  typedef std::map<InstPtrTy, delay_type> DepLatInfoTy;
+
   static unsigned getNumCPCeil(DepLatInfoTy::value_type v);
-
   static unsigned getNumCPFloor(DepLatInfoTy::value_type v);
-
-  const static unsigned LatencyScale, LatencyDelta;
 
   MachineRegisterInfo *MRI;
 
 private:
+  TimingNetlist *TNL;
   // Cache the computational delay for every instruction.
-  typedef std::map<const MachineInstr*, unsigned> CachedLatMapTy;
+  typedef std::map<const MachineInstr*, double> CachedLatMapTy;
   CachedLatMapTy CachedLatencies;
-  unsigned computeAndCacheLatencyFor(const MachineInstr *MI);
-  CachedLatMapTy::mapped_type
-  getCachedLatencyResult(const MachineInstr *MI) const {
+
+  delay_type computeAndCacheLatencyFor(const MachineInstr *MI);
+  delay_type getCachedLatencyResult(const MachineInstr *MI) const {
     CachedLatMapTy::const_iterator at = CachedLatencies.find(MI);
     assert(at != CachedLatencies.end() && "Latency not calculated!");
     return at->second;
   }
-
-  bool isAddOrMult(const MachineInstr *MI);
 
   // The latency from all register source through the datapath to a given
   // wire/register define by a datapath/control op
   typedef std::map<const MachineInstr*, DepLatInfoTy> LatencyMapTy;
 
   LatencyMapTy LatencyMap;
-  // Add the latency information from SrcMI to CurLatInfo.
-  template<bool IsCtrlDep>
-  void buildDepLatInfo(const MachineInstr *SrcMI, DepLatInfoTy &CurLatInfo,
-                       unsigned UB, unsigned LB, unsigned DstOpcode);
-
-  template<bool IsCtrlDep>
-  DepLatInfoTy::mapped_type getLatencyToDst(const MachineInstr *SrcMI,
-                                            unsigned DstOpcode,
-                                            unsigned UB, unsigned LB);
-
-  unsigned getMaxLatency(const MachineInstr *MI) const {
-    return getCachedLatencyResult(MI);
-  }
 
   // Return the edge latency between SrcInstr and DstInstr considering chaining
   // effect.
-  unsigned getChainedLatency(const MachineInstr *SrcInstr,
-                             const MachineInstr *DstInstr) const;
+  delay_type
+  getChainedDelay(const MachineInstr *SrcInstr, unsigned DstOpcode) const;
 
+  void printChainDelayInfo(raw_ostream & O, const std::string &Prefix,
+                           const DepLatInfoTy::value_type &II,
+                           const MachineInstr *DstMI) const;
 
-  static void printChainDelayInfo(raw_ostream & O, const std::string &Prefix,
-                                  const DepLatInfoTy::value_type &II,
-                                  const MachineInstr *DstMI);
-  void visitAllUses(const MachineInstr *MI, DepLatInfoTy &CurLatInfo);
-
-  const DepLatInfoTy &addInstrInternal(const MachineInstr *MI,
-                                       DepLatInfoTy &CurLatInfo);
-
+  void buildDelayMatrix(const MachineInstr *MI);
+  void addDelayForPath(unsigned SrcReg, const MachineInstr *MI,
+                       DepLatInfoTy &CurDelayInfo,
+                       delay_type PathDelay = delay_type(0)) ;
+  void addDelayForPath(const MachineInstr *SrcMI, const MachineInstr *MI,
+                       DepLatInfoTy &CurDelayInfo,
+                       delay_type PathDelay = delay_type(0)) ;
 public:
   BitLevelDelayInfo();
   const char *getPassName() const {
@@ -166,8 +134,7 @@ public:
 
   unsigned getStepsToFinish(const MachineInstr *MI) const;
 
-  unsigned getChainedCPs(const MachineInstr *SrcInstr,
-                         const MachineInstr *DstInstr) const;
+  unsigned getChainedCPs(const MachineInstr *SrcInstr, unsigned DstOpcode) const;
 
   // Get the source register and the corresponding latency to DstMI
   const DepLatInfoTy *getDepLatInfo(const MachineInstr *DstMI) const {
@@ -175,26 +142,19 @@ public:
     return at == LatencyMap.end() ? 0 : &at->second;
   }
 
-  // Get the latencies from the control-path dependences to the copy operation
-  // which copy MI's result to register.
-  void buildLatenciesToCopy(const MachineInstr *MI, DepLatInfoTy &Info);
-
   typedef const std::set<const MachineInstr*> MISetTy;
   // All operation must finish before the BB exit, this function build the
   // information about the latency from instruction to the BB exit.
-  void buildExitMIInfo(const MachineInstr *ExitMI, DepLatInfoTy &Info,
-                       MISetTy &MIsToWait, MISetTy &MIsToRead);
+  void buildExitMIInfo(const MachineInstr *SSnk, DepLatInfoTy &Info,
+                       MISetTy &ExitMIs);
 
   void addDummyLatencyEntry(const MachineInstr *MI) {
-    CachedLatencies.insert(std::make_pair(MI, 0));
+    CachedLatencies.insert(std::make_pair(MI, delay_type(0)));
   }
 
   void clearCachedLatencies() { CachedLatencies.clear(); }
 
-  void reset() {
-    LatencyMap.clear();
-    clearCachedLatencies();
-  }
+  void reset();
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
 
