@@ -39,6 +39,8 @@ INITIALIZE_PASS_END(BitLevelDelayInfo, "detail-latency-info",
 typedef BitLevelDelayInfo::DepLatInfoTy DepLatInfoTy;
 typedef BitLevelDelayInfo::delay_type delay_type;
 
+const delay_type BitLevelDelayInfo::Delta = 0.00001;
+
 char BitLevelDelayInfo::ID = 0;
 
 BitLevelDelayInfo::BitLevelDelayInfo() : MachineFunctionPass(ID), MRI(0), TNL(0){
@@ -91,8 +93,6 @@ static delay_type adjustChainedLatency(delay_type Latency, unsigned SrcOpcode,
   bool SrcWriteUntilFInish = VInstrInfo::isWriteUntilFinish(SrcOpcode);
   bool DstReadAtEmit = VInstrInfo::isReadAtEmit(DstOpcode);
 
-  const delay_type Delta = 0.00001;
-
   if (DstReadAtEmit && SrcWriteUntilFInish) {
     if (SrcOpcode == VTM::VOpMvPhi) {
       assert((DstOpcode == TargetOpcode::PHI || DstOpcode == VTM::VOpMvPhi
@@ -106,14 +106,14 @@ static delay_type adjustChainedLatency(delay_type Latency, unsigned SrcOpcode,
       // a delta to make sure DstInstr not schedule to the moment right at the
       // SrcInstr finish
       // Round up the latency.
-      return ceil(Latency) + Delta;
+      return ceil(Latency) + BitLevelDelayInfo::Delta;
   }
 
   // If the value is written to register, it has a delta latency
-  if (SrcWriteUntilFInish) return Latency + Delta;
+  if (SrcWriteUntilFInish) return Latency + BitLevelDelayInfo::Delta;
 
   // Chain the operations if dst not read value at the edge of the clock.
-  return std::max(delay_type(0), Latency - Delta);
+  return std::max(delay_type(0), Latency - BitLevelDelayInfo::Delta);
 }
 
 delay_type BitLevelDelayInfo::computeAndCacheLatencyFor(const MachineInstr *MI){

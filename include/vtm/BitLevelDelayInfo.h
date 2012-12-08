@@ -91,6 +91,7 @@ public:
 
   MachineRegisterInfo *MRI;
 
+  const static delay_type Delta;
 private:
   TimingNetlist *TNL;
   // Cache the computational delay for every instruction.
