@@ -62,7 +62,7 @@ void TimingNetlist::addInstrToDatapath(MachineInstr *MI) {
 
   // Can use add the MachineInstr to the datapath?
   if (IsDatapath)
-    buildDatapath(MI);
+    buildDatapathOnly(MI);
 
   // Ignore the PHIs.
   if (!IsDatapath && MI->isPHI()) return;

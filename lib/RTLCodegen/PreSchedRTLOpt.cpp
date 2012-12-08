@@ -218,7 +218,7 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
     MachineInstr *MI = I++;
 
     // Try to add the instruction into the data-path net-list.
-    if (VASTValPtr V = Container.buildDatapath(MI)) {
+    if (VASTValPtr V = Container.buildDatapathAndFoldResult(MI)) {
       MI->eraseFromParent();
       continue;
     }

@@ -77,6 +77,23 @@ protected:
   typedef Reg2WireMapTy::const_iterator FanoutIterator;
   FanoutIterator fanout_begin() const { return ExportedVals.begin(); }
   FanoutIterator fanout_end() const { return ExportedVals.end(); }
+
+  // Build VASTValPtr for a MachineInstr.
+  template<bool AllowDifference>
+  VASTValPtr buildDatapathImpl(MachineInstr *MI) {
+    if (!VInstrInfo::isDatapath(MI->getOpcode())) return 0;
+
+    unsigned ResultReg = MI->getOperand(0).getReg();
+    VASTValPtr V = Builder->buildDatapathExpr(MI);
+
+    // Remember the register number mapping, the register maybe CSEd.
+    unsigned FoldedReg = rememberRegNumForExpr<AllowDifference>(V, ResultReg);
+    // If ResultReg is not CSEd to other Regs, index the newly created Expr.
+    if (FoldedReg == ResultReg)
+      Builder->indexVASTExpr(FoldedReg, V);
+
+    return V;
+  }
 public:
   MFDatapathContainer() : Builder(0) {}
   virtual ~MFDatapathContainer() { reset(); }
@@ -117,8 +134,13 @@ public:
     return RegNo;
   }
 
-  // Build VASTValPtr for a MachineInstr.
-  VASTValPtr buildDatapath(MachineInstr *MI);
+  VASTValPtr buildDatapathAndFoldResult(MachineInstr *MI) {
+    return buildDatapathImpl<true>(MI);
+  }
+
+  VASTValPtr buildDatapathOnly(MachineInstr *MI) {
+    return buildDatapathImpl<false>(MI);
+  }
 
   // Export the VASTValPtr corresponding to Reg to the output of the datapath.
   VASTWire *exportValue(unsigned Reg);
