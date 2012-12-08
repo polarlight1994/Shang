@@ -71,7 +71,7 @@ set DataJSON [open "@BenchmarkSummaryTmp@" a+]
 
 puts $DataJSON ",\n\{\"name\":\"@MAIN_RTL_ENTITY@\","
 
-set FMAX [get_report_panel_data -name {*Fmax*} -col 1 -row 1]
+set FMAX [get_report_panel_data -name {*Fmax*} -col 0 -row 1]
 puts $DataJSON "\"restricted_fmax\":\"$FMAX\","
 #############################################################################
 set MAIN_RTL_ENTITY "@MAIN_RTL_ENTITY@"
