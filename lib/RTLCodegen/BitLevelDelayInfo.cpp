@@ -208,6 +208,8 @@ void BitLevelDelayInfo::buildDelayMatrix(const MachineInstr *MI) {
     return;
   }
 
+  bool NoRegOperand = true;
+
   // Iterate from use to define, ignore the the incoming value of PHINodes.
   // Because the incoming value may be not visited yet.
   for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
@@ -223,7 +225,12 @@ void BitLevelDelayInfo::buildDelayMatrix(const MachineInstr *MI) {
     addDelayForPath(SrcMI, MI, CurDelayInfo);
 
     updateDelay(CurDelayInfo, SrcMI, 0);
+    NoRegOperand = false;
   }
+
+  // Make sure the datapath MachineInstr is connected to something.
+  if (NoRegOperand && VInstrInfo::isDatapath(Opcode))
+    updateDelay(CurDelayInfo, MI->getParent(), delay_type(0));
 
   // Compute the latency of MI.
   computeAndCacheLatencyFor(MI);
