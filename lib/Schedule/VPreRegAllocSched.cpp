@@ -599,7 +599,10 @@ void VPreRegAllocSched::addDatapathDep(VSchedGraph &G, VSUnit *A) {
       // from the control-path dependencies to the first started bit of current
       // MI.
       if (IsSrcCtrl)
-        Latency = BitLevelDelayInfo::getNumCPFloor(*I);
+        // In order to avoid chain breaking, only chain A with its
+        // ctrl-dependence if A's latency is 0.
+        Latency = A->getLatency() ? BitLevelDelayInfo::getNumCPCeil(*I)
+                                  : BitLevelDelayInfo::getNumCPFloor(*I);
       // Get the maximal latency from the data-path dependencies to control-path
       // operations, because the control-path operations read their operand
       // value right before it start, hence we need to get the maximal latency

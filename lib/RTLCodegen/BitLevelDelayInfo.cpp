@@ -122,12 +122,19 @@ delay_type BitLevelDelayInfo::computeAndCacheLatencyFor(const MachineInstr *MI){
   switch (MI->getOpcode()) {
   case VTM::VOpMemTrans:
     TotalLatency = delay_type(getFUDesc<VFUMemBus>()->getStepsToWait());
+    // Enable single-cycle chaining with VOpMemTrans.
+    TotalLatency -= BitLevelDelayInfo::Delta;
     break;
   case VTM::VOpBRAMTrans:
     TotalLatency = delay_type(getFUDesc<VFUBRAM>()->getStepsToWait());
+    // Enable single-cycle chaining with VOpBRAMTrans.
+    TotalLatency -= BitLevelDelayInfo::Delta;
     break;
   case VTM::VOpInternalCall:
+    // Perfrom the call need excatly 1 cycle.
     TotalLatency = delay_type(1.0);
+    // Enable single-cycle chaining with VOpInternalCall.
+    TotalLatency -= BitLevelDelayInfo::Delta;
     break;
 
   default:
