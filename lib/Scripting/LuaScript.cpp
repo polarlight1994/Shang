@@ -191,6 +191,7 @@ void LuaScript::updateFUs() {
   READPARAMETER(LUTCost, unsigned);
   READPARAMETER(RegCost, unsigned);
 
+  READPARAMETER(Period, double);
   READPARAMETER(LUTDelay, float);
   READPARAMETER(MaxLutSize, unsigned);
 }

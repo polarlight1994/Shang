@@ -95,6 +95,7 @@ namespace VFUs {
   extern unsigned LUTCost;
   extern unsigned RegCost;
   extern unsigned MaxLutSize;
+  extern double Period;
 
   // Latency of clock enable multiplexer selector
   extern float LUTDelay;

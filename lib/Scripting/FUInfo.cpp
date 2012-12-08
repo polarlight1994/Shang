@@ -68,6 +68,7 @@ namespace llvm {
     unsigned RegCost = 4;
     unsigned MaxLutSize = 4;
     float LUTDelay = 0.5f;
+    double Period = 10.0;
 
     void computeCost(unsigned StartY, unsigned EndY, int Size,
                      unsigned StartX, unsigned Index, unsigned *CostTable){
