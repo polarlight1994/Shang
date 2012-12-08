@@ -1,5 +1,3 @@
-ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
-
 -- Load bram initfile
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
 -- load platform information script
