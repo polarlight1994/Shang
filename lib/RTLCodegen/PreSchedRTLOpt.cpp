@@ -462,8 +462,10 @@ void PreSchedRTLOpt::buildNot(unsigned DstReg, const MachineOperand &Op) {
 }
 
 unsigned PreSchedRTLOpt::rewriteNotOf(VASTExpr *Expr) {
+  VASTValPtr V = VASTExprPtr(Expr, true);
+  assert(getRewrittenRegNum(V) == 0 && "Expr has already rewritten!");
   // Allocate register for the result of the invertion.
-  MachineOperand DefMO = allocateRegMO(VASTExprPtr(Expr, true));
+  MachineOperand DefMO = allocateRegMO(V);
   buildNot(DefMO.getReg(), getAsOperand(Expr));
   return DefMO.getReg();
 }
