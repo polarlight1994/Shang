@@ -111,7 +111,7 @@ void VSchedGraph::verifySUDataPath(const VSUnit *SU) const {
     ++NumEdges;
   }
 
-  if (SU->isDatapath() && cuse_empty(SU) && duse_empty(SU)) {
+  if (SU->isDatapath() && cuse_empty(SU) && duse_empty(SU))
     llvm_unreachable("Unexpected dangling datapath SU!");
 }
 

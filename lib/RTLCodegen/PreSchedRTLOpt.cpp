@@ -147,7 +147,7 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
       if (V) Container->indexVASTExpr(RegNum, V);
     }
 
-    return RegNum;;
+    return RegNum;
   }
 
   MachineOperand allocateRegMO(VASTValPtr V, unsigned BitWidth = 0) {
