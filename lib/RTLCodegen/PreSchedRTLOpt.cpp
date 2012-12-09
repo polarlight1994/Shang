@@ -94,7 +94,7 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   unsigned rewriteAdd(VASTExpr *Expr, MachineInstr *IP);
   unsigned rewriteAssign(VASTExpr *Expr);
   template<unsigned Opcode, typename BitwidthFN>
-  unsigned rewriteNAryExpr(VASTExpr *Expr, MachineInstr *IP, BitwidthFN F);
+  unsigned rewriteNAryExpr(VASTExprPtr Expr, MachineInstr *IP, BitwidthFN F);
   template<unsigned Opcode>
   unsigned rewriteBinExpr(VASTExpr *Expr, MachineInstr *IP);
   template<VFUs::ICmpFUType ICmpTy>
@@ -504,8 +504,10 @@ static unsigned GetSameWidth(const MachineOperand &LHS,
 }
 
 template<unsigned Opcode, typename BitwidthFN>
-unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExpr *Expr, MachineInstr *IP,
+unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
                                          BitwidthFN F) {
+  VASTExpr *Expr = ExprPtr.get();
+  bool IsInverted = ExprPtr.isInverted();
   MachineBasicBlock &ParentBB = *IP->getParent();
   const MCInstrDesc &MID = VInstrInfo::getDesc(Opcode);
 
@@ -553,14 +555,44 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExpr *Expr, MachineInstr *IP,
     Ops.resize(ResultPos);
   }
 
-  MachineOperand DefMO = allocateRegMO(Expr);
+  MachineOperand LHS = Ops[0];
+  MachineOperand RHS = Ops[1];
+  // Build the BinExpr to CSE the MachineInstr.
+  VASTValPtr BinExpr = Container->buildExpr(Expr->getOpcode(),
+                                            Container.getAsOperandImpl(LHS),
+                                            Container.getAsOperandImpl(RHS),
+                                            Expr->getBitWidth());
+  // Replace the NAryExpr by the BinExpr, which is the actual Expr be rewritten,
+  // and equivalent.
+  if (BinExpr != Expr) {
+    assert(BinExpr.get() != Expr
+           && "Cannot replace the value by its inverted version!");
+    Container.replaceAllUseWith(Expr, BinExpr);
+  }
+
+  // Use BinExpr instead, because Expr is not valid anymore.
+  MachineOperand DefMO = allocateRegMO(BinExpr);
   BuildMI(ParentBB, IP, DebugLoc(), MID)
-    .addOperand(DefMO)
-    .addOperand(Ops[0]).addOperand(Ops[1])
+    .addOperand(DefMO).addOperand(LHS).addOperand(RHS)
     .addOperand(VInstrInfo::CreatePredicate())
     .addOperand(VInstrInfo::CreateTrace());
 
-  return DefMO.getReg();
+  unsigned Reg = DefMO.getReg();
+  // Remember the the VASTExpr to Reg mapping.
+  Container.rememberRegNumForExpr<false>(BinExpr, Reg);
+
+  // We may need to further invert the BinExpr.
+  if (IsInverted) {
+    VASTValPtr InvBinExpr = BinExpr.invert();
+    if (unsigned InvertedReg = getRewrittenRegNum(InvBinExpr))
+      Reg = IsInverted;
+    else // We need to invert the result now.
+      Reg = rewriteNotOf(BinExpr);
+
+    Container.rememberRegNumForExpr<false>(InvBinExpr, Reg);
+  }
+
+  return Reg;
 }
 
 unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
@@ -576,8 +608,9 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
     switch (Expr->getOpcode()) {
     default: llvm_unreachable("Unsupported expression!");
     case VASTExpr::dpAnd:
-      RegNo = rewriteNAryExpr<VTM::VOpAnd>(Expr, IP, GetSameWidth);
-      break;
+      // NAry Expr rewrittng is a bit complicated, and all handled in the
+      // function.
+      return rewriteNAryExpr<VTM::VOpAnd>(E, IP, GetSameWidth);
     case VASTExpr::dpRAnd:
       RegNo = rewriteUnary<VTM::VOpRAnd>(Expr, IP);
       break;
@@ -588,8 +621,9 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
       RegNo = rewriteSel(Expr, IP);
       break;
     case VASTExpr::dpBitCat:
-      RegNo = rewriteNAryExpr<VTM::VOpBitCat>(Expr, IP, GetBitCatWidth);
-      break;
+      // NAry Expr rewrittng is a bit complicated, and all handled in the
+      // function.
+      return rewriteNAryExpr<VTM::VOpBitCat>(E, IP, GetBitCatWidth);
     case VASTExpr::dpBitRepeat:
       RegNo = rewriteBinExpr<VTM::VOpBitRepeat>(Expr, IP);
       break;
