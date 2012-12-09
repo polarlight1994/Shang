@@ -1174,11 +1174,15 @@ class DatapathContainer {
 protected:
   BumpPtrAllocator Allocator;
 
+  static
+  VASTExpr *createExprHeler(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
+                            unsigned UB, unsigned LB, FoldingSetNodeIDRef R,
+                            void *P);
 public:
   BumpPtrAllocator *getAllocator() { return &Allocator; }
 
   VASTValPtr createExprImpl(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                        unsigned UB, unsigned LB);
+                            unsigned UB, unsigned LB);
 
   VASTImmediate *getOrCreateImmediateImpl(const APInt &Value);
 
