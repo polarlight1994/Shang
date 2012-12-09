@@ -529,27 +529,11 @@ VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
   return V;
 }
 
-VASTExpr *
-DatapathContainer::createExprHeler(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                                   unsigned UB, unsigned LB, FoldingSetNodeIDRef R,
-                                   void *P) {
-  VASTExpr *E = new (P) VASTExpr(Opc, Ops.size(), UB, LB, R);
 
-  // Initialize the use list and compute the actual size of the expression.
-  unsigned ExprSize = 0;
 
-  for (unsigned i = 0; i < Ops.size(); ++i) {
-    assert(Ops[i].get() && "Unexpected null VASTValPtr!");
 
-    if (VASTExpr *E = Ops[i].getAsLValue<VASTExpr>()) ExprSize += E->ExprSize;
-    else                                              ++ExprSize;
 
-    (void) new (E->ops() + i) VASTUse(Ops[i], E);
-  }
 
-  E->ExprSize = ExprSize;
-  return E;
-}
 
 VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
                                              ArrayRef<VASTValPtr> Ops,
@@ -580,10 +564,22 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
   // Place the VASTUse array right after the VASTExpr.
   void *P = Allocator.Allocate(sizeof(VASTExpr) + Ops.size() * sizeof(VASTUse),
                                alignOf<VASTExpr>());
-
-  VASTExpr *E = createExprHeler(Opc, Ops, UB, LB, ID.Intern(Allocator), P);
-
+  VASTExpr *E = new (P) VASTExpr(Opc, Ops.size(), UB, LB, ID.Intern(Allocator));
   UniqueExprs.InsertNode(E, IP);
+
+  // Initialize the use list and compute the actual size of the expression.
+  unsigned ExprSize = 0;
+
+  for (unsigned i = 0; i < Ops.size(); ++i) {
+    assert(Ops[i].get() && "Unexpected null VASTValPtr!");
+
+    if (VASTExpr *E = Ops[i].getAsLValue<VASTExpr>()) ExprSize += E->ExprSize;
+    else                                              ++ExprSize;
+
+    (void) new (E->ops() + i) VASTUse(Ops[i], E);
+  }
+
+  E->ExprSize = ExprSize;
   return E;
 }
 
