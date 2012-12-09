@@ -126,10 +126,11 @@ public:
               < Builder->MRI.getNumVirtRegs()
            && "Bad RegNo!");
     tie(at, inserted) = Val2Reg.insert(std::make_pair(V, RegNo));
-    if (!inserted && at->second != RegNo) {
+    unsigned MappedReg = at->second;
+    if (!inserted && MappedReg != RegNo) {
       assert(AllowDifference && "Expr is rewritten twice?");
-      Builder->MRI.replaceRegWith(RegNo, at->second);
-      RegNo = at->second;
+      Builder->MRI.replaceRegWith(RegNo, MappedReg);
+      RegNo = MappedReg;
     }
 
     return RegNo;
