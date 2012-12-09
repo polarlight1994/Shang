@@ -214,6 +214,11 @@ struct ConstraintHelper {
     if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EqTy, RHS))
       report_fatal_error("SDCScheduler: Can NOT add dependency constraints"
                          " at VSUnit " + utostr_32(DstIdx));
+
+    DEBUG(std::string RowName = utostr_32(SrcIdx) + " -> " + utostr_32(DstIdx);
+          unsigned NRow = get_Nrows(lp);
+          set_row_name(lp, NRow, const_cast<char*>(RowName.c_str()));
+    );
   }
 };
 }
