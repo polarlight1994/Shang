@@ -543,6 +543,8 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
         .addOperand(VInstrInfo::CreatePredicate())
         .addOperand(VInstrInfo::CreateTrace());
       DefMO.setIsDef(false);
+      // Remember the rewritten register.
+      Container.rememberRegNumForExpr<false>(BinExpr, DefMO.getReg());
 
       Ops[ResultPos++] = DefMO;
     }
