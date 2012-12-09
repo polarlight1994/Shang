@@ -91,6 +91,8 @@ void MFDatapathContainer::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
     if (unsigned ToReg = lookupRegNum(To))
       // Try to replace the regsiter in the Machine Function.
       Builder->MRI.replaceRegWith(FromReg, ToReg);
+    else // Assign the original register to the new VASTValPtr.
+      rememberRegNumForExpr<false>(To, FromReg);
   }
 
   // Replace the expression in the datapath.
