@@ -85,14 +85,19 @@ void MFDatapathContainer::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
   Val2RegMapTy::iterator at = Val2Reg.find(From);
   if (at != Val2Reg.end()) {
     unsigned FromReg = at->second;
+    // The 'From' Value is not used anymore.
+    Val2Reg.erase(at);
     // Forget the indexing.
     Builder->forgetIndexedExpr(FromReg);
-    Val2Reg.erase(at);
-    if (unsigned ToReg = lookupRegNum(To))
-      // Try to replace the regsiter in the Machine Function.
+    if (unsigned ToReg = lookupRegNum(To)) {
+      // Try to replace the register in the Machine Function.
       Builder->MRI.replaceRegWith(FromReg, ToReg);
-    else // Assign the original register to the new VASTValPtr.
+    } else {
+      // Assign the original register to the new VASTValPtr.
       rememberRegNumForExpr<false>(To, FromReg);
+      // Re-index the expression.
+      Builder->indexVASTExpr(FromReg, To);
+    }
   }
 
   // Replace the expression in the datapath.
