@@ -81,6 +81,22 @@ VASTValPtr MFDatapathContainer::getAsOperandImpl(MachineOperand &Op,
   return getOrCreateVASTMO(allocateName(S), Op);
 }
 
+void MFDatapathContainer::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+  Val2RegMapTy::iterator at = Val2Reg.find(From);
+  if (at != Val2Reg.end()) {
+    unsigned FromReg = at->second;
+    // Forget the indexing.
+    Builder->forgetIndexedExpr(FromReg);
+    Val2Reg.erase(at);
+    if (unsigned ToReg = lookupRegNum(To))
+      // Try to replace the regsiter in the Machine Function.
+      Builder->MRI.replaceRegWith(FromReg, ToReg);
+  }
+
+  // Replace the expression in the datapath.
+  replaceAllUseWithImpl(From, To);
+}
+
 VASTWire *MFDatapathContainer::exportValue(unsigned Reg) {
   VASTValPtr Val = Builder->lookupExpr(Reg);
   // The value do not exist.

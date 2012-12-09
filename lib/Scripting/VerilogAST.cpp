@@ -529,11 +529,103 @@ VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
   return V;
 }
 
+void DatapathContainer::removeValueFromCSEMaps(VASTValue *V) {
+  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(V)) {
+    UniqueImms.RemoveNode(Imm);
+    return;
+  }
 
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
+    UniqueExprs.RemoveNode(Expr);
+    return;
+  }
 
+  // Otherwise V is not in the CSEMap, do nothing.
+}
 
+template<typename T>
+void DatapathContainer::addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap) {
+  T *Existing = CSEMap.GetOrInsertNode(V);
 
+  if (Existing != V) {
+    // If there was already an existing matching node, use ReplaceAllUsesWith
+    // to replace the dead one with the existing one.  This can cause
+    // recursive merging of other unrelated nodes down the line.
+    replaceAllUseWithImpl(V, Existing);
+  }
+}
 
+void DatapathContainer::addModifiedValueToCSEMaps(VASTValue *V) {
+  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(V)) {
+    addModifiedValueToCSEMaps(Imm, UniqueImms);
+    return;
+  }
+
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
+    addModifiedValueToCSEMaps(Expr, UniqueExprs);
+    return;
+  }
+
+  // Otherwise V is not in the CSEMap, do nothing.
+}
+
+void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
+  assert(From && To && From != To && "Unexpected VASTValPtr value!");
+  assert(From->getBitWidth() == To->getBitWidth() && "Bitwidth not match!");
+  VASTValue::use_iterator UI = From->use_begin(), UE = From->use_end();
+
+  while (UI != UE) {
+    VASTValue *User = *UI;
+
+    // This node is about to morph, remove its old self from the CSE maps.
+    removeValueFromCSEMaps(User);
+
+    // A user can appear in a use list multiple times, and when this
+    // happens the uses are usually next to each other in the list.
+    // To help reduce the number of CSE recomputations, process all
+    // the uses of this user that we can find this way.
+    do {
+      VASTUse *Use = UI.get();
+      VASTValPtr UsedValue = Use->get();
+      VASTValPtr Replacement = To;
+      // If a inverted value is used, we must also invert the replacement.
+      if (UsedValue != From) {
+        assert(UsedValue.invert() == From && "Use not using 'From'!");
+        Replacement = Replacement.invert();
+      }
+
+      ++UI;
+      Use->replaceUseBy(Replacement);
+    } while (UI != UE && *UI == User);
+
+    if (VASTExpr *E = dyn_cast<VASTExpr>(User)) {
+      SmallVector<VASTValPtr, 4> Operands;
+
+      // Refresh the FoldingSetNodeID.
+      FoldingSetNodeID ID;
+      ID.AddInteger(E->getOpcode());
+      ID.AddInteger(E->UB);
+      ID.AddInteger(E->LB);
+      typedef VASTExpr::op_iterator op_iterator;
+      for (op_iterator OI = E->op_begin(), OE = E->op_end(); OI != OE; ++OI) {
+        VASTValPtr Operand = *OI;
+        ID.AddPointer(Operand);
+        Operands.push_back(Operand);
+      }
+
+      unsigned ExprSize = E->ExprSize;
+
+      // Renew the the expression's FoldingSet ID..
+      new (E) VASTExpr(E->getOpcode(), E->NumOps, E->UB, E->LB,
+                       ID.Intern(Allocator));
+      E->ExprSize = ExprSize;
+    }
+
+    // Now that we have modified User, add it back to the CSE maps.  If it
+    // already exists there, recursively merge the results together.
+    addModifiedValueToCSEMaps(User);
+  }
+}
 
 VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
                                              ArrayRef<VASTValPtr> Ops,

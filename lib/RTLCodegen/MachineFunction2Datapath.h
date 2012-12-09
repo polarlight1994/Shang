@@ -30,6 +30,10 @@ public:
     llvm_unreachable("Function not implemented!");
     return 0;
   }
+
+  virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+    llvm_unreachable("Function not implemented!");
+  }
 };
 
 class DatapathBuilder : public VASTExprBuilder {
@@ -56,6 +60,7 @@ public:
   // Virtual register mapping.
   VASTValPtr lookupExpr(unsigned RegNo) const;
   VASTValPtr indexVASTExpr(unsigned RegNo, VASTValPtr V);
+  void forgetIndexedExpr(unsigned RegNo);
 
   // Build VASTExpr from MachineInstr.
   VASTValPtr buildDatapathExpr(MachineInstr *MI);

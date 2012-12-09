@@ -63,7 +63,6 @@ class MFDatapathContainer : public DatapathBuilderContext,
 
   // Print the datapath tree whose root is "root".
   void printTree(raw_ostream &OS, VASTWire *Root);
-
 protected:
   VASTValPtr lookupFanout(unsigned Reg) const {
     Reg2WireMapTy::const_iterator at = ExportedVals.find(Reg);
@@ -109,6 +108,8 @@ public:
                         unsigned UB, unsigned LB) {
     return createExprImpl(Opc, Ops, UB, LB);
   }
+
+  virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 
   // VASTValPtr to virtual register mapping.
   unsigned lookupRegNum(VASTValPtr V) const {

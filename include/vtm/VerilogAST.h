@@ -1174,11 +1174,18 @@ class DatapathContainer {
 protected:
   BumpPtrAllocator Allocator;
 
+  void removeValueFromCSEMaps(VASTValue *V);
+  void addModifiedValueToCSEMaps(VASTValue *V);
+  template<typename T>
+  void addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap);
+
 public:
   BumpPtrAllocator *getAllocator() { return &Allocator; }
 
   VASTValPtr createExprImpl(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                            unsigned UB, unsigned LB);
+                        unsigned UB, unsigned LB);
+
+  virtual void replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To);
 
   VASTImmediate *getOrCreateImmediateImpl(const APInt &Value);
 

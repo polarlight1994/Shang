@@ -212,3 +212,7 @@ VASTValPtr DatapathBuilder::indexVASTExpr(unsigned RegNo, VASTValPtr V) {
 
   return V;
 }
+
+void DatapathBuilder::forgetIndexedExpr(unsigned RegNo) {
+  Idx2Expr.erase(RegNo);
+}
