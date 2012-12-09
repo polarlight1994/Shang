@@ -149,7 +149,7 @@ struct VTMPassConfig : public TargetPassConfig {
 
     if (EnablePreSchedRTLOpt) PM->add(createPreSchedRTLOptPass());
     // Perform logic synthesis.
-    PM->add(createLogicSynthesisPass());
+    //PM->add(createLogicSynthesisPass());
     printAndVerify("After logic synthesis.");
 
     // Clean up the MachineFunction.
