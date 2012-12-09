@@ -587,7 +587,7 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
   if (IsInverted) {
     VASTValPtr InvBinExpr = BinExpr.invert();
     if (unsigned InvertedReg = getRewrittenRegNum(InvBinExpr))
-      Reg = IsInverted;
+      Reg = InvertedReg;
     else // We need to invert the result now.
       Reg = rewriteNotOf(BinExpr);
 
