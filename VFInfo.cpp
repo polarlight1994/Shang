@@ -13,7 +13,6 @@
 //===----------------------------------------------------------------------===//
 #include "vtm/VFInfo.h"
 #include "vtm/VInstrInfo.h"
-#include "vtm/VerilogAST.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/MathExtras.h"
