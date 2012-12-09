@@ -99,7 +99,7 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   unsigned rewriteBinExpr(VASTExpr *Expr, MachineInstr *IP);
   template<VFUs::ICmpFUType ICmpTy>
   unsigned rewriteICmp(VASTExpr *Expr, MachineInstr *IP);
-  unsigned rewriteNotOf(VASTExpr *Expr);
+  unsigned rewriteNotOf(VASTValPtr V);
   void buildNot(unsigned DstReg, const MachineOperand &Op);
 
   MachineInstr *getRewrittenInstr(VASTValPtr V) const {
@@ -461,12 +461,12 @@ void PreSchedRTLOpt::buildNot(unsigned DstReg, const MachineOperand &Op) {
     .addOperand(VInstrInfo::CreateTrace());
 }
 
-unsigned PreSchedRTLOpt::rewriteNotOf(VASTExpr *Expr) {
-  VASTValPtr V = VASTExprPtr(Expr, true);
-  assert(getRewrittenRegNum(V) == 0 && "Expr has already rewritten!");
+unsigned PreSchedRTLOpt::rewriteNotOf(VASTValPtr V) {
+  VASTValPtr Inv = V.invert();
+  assert(getRewrittenRegNum(Inv) == 0 && "Expr has already rewritten!");
   // Allocate register for the result of the invertion.
-  MachineOperand DefMO = allocateRegMO(V);
-  buildNot(DefMO.getReg(), getAsOperand(Expr));
+  MachineOperand DefMO = allocateRegMO(Inv);
+  buildNot(DefMO.getReg(), getAsOperand(V));
   return DefMO.getReg();
 }
 
