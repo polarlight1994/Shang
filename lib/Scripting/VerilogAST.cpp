@@ -1035,25 +1035,6 @@ void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   if (UB) OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
 }
 
-bool VASTValue::replaceAllUseWith(VASTValue *To) {
-  assert(To->getBitWidth() == getBitWidth() && "Bitwidth not match!");
-
-  typedef VASTValue::use_iterator it;
-  for (it I = use_begin(), E = use_end(); I != E; /*++I*/) {
-    VASTUse *U = I.get();
-    ++I;
-    assert((*U)->getBitWidth() == To->getBitWidth() && "Bitwidth not match!");
-    VASTValPtr User = U->getUser();
-    // Unlink from old list.
-    removeUseFromList(U);
-    // Move to new list.
-    U->set(To);
-    U->setUser(User.getAsLValue<VASTValue>());
-  }
-
-  return use_empty();
-}
-
 VASTValue::dp_dep_it VASTValue::dp_dep_begin(const VASTValue *V) {
   switch (V->getASTType()) {
   case VASTNode::vastExpr: return cast<VASTExpr>(V)->op_begin();

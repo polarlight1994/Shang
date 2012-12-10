@@ -360,8 +360,6 @@ public:
 
   virtual void print(raw_ostream &OS) const;
 
-  bool replaceAllUseWith(VASTValue *To);
-
   typedef const VASTUse *dp_dep_it;
   static dp_dep_it dp_dep_begin(const VASTValue *V);
   static dp_dep_it dp_dep_end(const VASTValue *V);
