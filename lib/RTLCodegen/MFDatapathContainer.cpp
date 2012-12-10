@@ -83,10 +83,9 @@ VASTValPtr MFDatapathContainer::getAsOperandImpl(MachineOperand &Op,
   return getOrCreateVASTMO(allocateName(S), Op);
 }
 
-void MFDatapathContainer::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
-  DEBUG(dbgs() << "Going to replace: " << From.get() << " to "
-               << To.get() << '\n');
 
+void MFDatapathContainer::replaceInContainerMapping(VASTValPtr From,
+                                                    VASTValPtr To) {
   Val2RegMapTy::iterator at = Val2Reg.find(From);
   if (at != Val2Reg.end()) {
     unsigned FromReg = at->second;
@@ -104,6 +103,14 @@ void MFDatapathContainer::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
       Builder->indexVASTExpr(FromReg, To);
     }
   }
+}
+void MFDatapathContainer::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+  dbgs() << "Going to replace: " << From.get() << " to "
+               << To.get() << '\n';
+
+  // Replace both the original version and the inverted version.
+  replaceInContainerMapping(From, To);
+  replaceInContainerMapping(From.invert(), To.invert());
 
   // Replace the expression in the datapath.
   replaceAllUseWithImpl(From, To);

@@ -89,6 +89,8 @@ protected:
 
     return V;
   }
+
+  void replaceInContainerMapping(VASTValPtr From, VASTValPtr To);
 public:
   typedef Reg2WireMapTy::const_iterator FanoutIterator;
   FanoutIterator fanout_begin() const { return ExportedVals.begin(); }
