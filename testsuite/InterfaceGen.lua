@@ -248,7 +248,7 @@ table_num = {}
 LineTotal = {}
 local preprocess = require "luapp" . preprocess
 --FIXME: Simply load the script.
-local _, message = preprocess {input=BlockRAMInitFileGenScript, output=io.stdout}
+local _, message = preprocess {input=BlockRAMInitFileGenScript}
 local IntfFile = assert(io.open (INTFFILE, "w+"))
 local preprocess = require "luapp" . preprocess
 local _, message = preprocess {input=InterfaceGen, output=IntfFile}
@@ -311,7 +311,7 @@ table_name = {}
 table_num = {}
 LineTotal = {}
 local preprocess = require "luapp" . preprocess
-local _, message = preprocess {input=BlockRAMInitFileGenScript, output=io.stdout}
+local _, message = preprocess {input=BlockRAMInitFileGenScript}
 local BramFile = assert(io.open (BRAMFILE, "w+"))
 local preprocess = require "luapp" . preprocess
 local _, message = preprocess {input=BRAMGen, output=BramFile}
