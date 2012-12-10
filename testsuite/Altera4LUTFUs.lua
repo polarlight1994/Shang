@@ -24,7 +24,7 @@ FUs.Reduction = { LogicLevels = { 1, 2, 2, 3, 3 }, --Red
 	                Costs = {0 * 64, 3 * 64, 5 * 64, 11 * 64, 21 * 64}, --Red
                   StartInterval=1,
                   ChainingThreshold = REDUCTION_ChainingThreshold}
-FUs.Mux    = { MaxAllowedMuxSize = 32,
+FUs.Mux    = { MaxAllowedMuxSize = 16,
                LogicLevels = {
                 { 1, 1, 1, 1, 1 }, --2-input
                 { 1, 1, 1, 1, 1 }, --3-input
