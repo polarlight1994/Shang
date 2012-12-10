@@ -508,7 +508,6 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
                                          BitwidthFN F) {
   VASTExpr *Expr = ExprPtr.get();
   bool IsInverted = ExprPtr.isInverted();
-  MachineBasicBlock &ParentBB = *IP->getParent();
   const MCInstrDesc &MID = VInstrInfo::getDesc(Opcode);
 
   SmallVector<MachineOperand, 8> Ops;
@@ -537,7 +536,8 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
       // Otherwise we need to create the register and the MachineInstr.
       MachineOperand DefMO = allocateRegMO(BinExpr, BinExpr->getBitWidth());
       // Rewrite the MachineInstr now if it is not rewritten.
-      BuildMI(ParentBB, IP, DebugLoc(), MID)
+      MachineInstr *CurIP = calculateInsertPos(cast<VASTExpr>(BinExpr.get()), IP);
+      BuildMI(*CurIP->getParent(), CurIP, DebugLoc(), MID)
         .addOperand(DefMO)
         .addOperand(LHS).addOperand(RHS)
         .addOperand(VInstrInfo::CreatePredicate())
@@ -574,7 +574,8 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
 
   // Use BinExpr instead, because Expr is not valid anymore.
   MachineOperand DefMO = allocateRegMO(BinExpr);
-  BuildMI(ParentBB, IP, DebugLoc(), MID)
+  MachineInstr *CurIP = calculateInsertPos(cast<VASTExpr>(BinExpr.get()), IP);
+  BuildMI(*CurIP->getParent(), CurIP, DebugLoc(), MID)
     .addOperand(DefMO).addOperand(LHS).addOperand(RHS)
     .addOperand(VInstrInfo::CreatePredicate())
     .addOperand(VInstrInfo::CreateTrace());
