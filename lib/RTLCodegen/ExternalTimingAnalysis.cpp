@@ -426,7 +426,7 @@ TimingNetlist::writeNetlistWrapper(raw_ostream &O, const Twine &Name) const {
   O.indent(6) << "scan_chain_out <= ";
 
   if (LastReg) LastReg->printAsOperand(O, 1, 0, false);
-  else         "scan_chain_in";
+  else         O << "scan_chain_in";
 
   O << ";\n";
 
