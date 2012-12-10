@@ -15,6 +15,8 @@
 
 #include "MachineFunction2Datapath.h"
 #include "MFDatapathContainer.h"
+#define DEBUG_TYPE "mf-datapath-container"
+#include "llvm/Support/Debug.h"
 
 using namespace llvm;
 
@@ -82,6 +84,9 @@ VASTValPtr MFDatapathContainer::getAsOperandImpl(MachineOperand &Op,
 }
 
 void MFDatapathContainer::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+  DEBUG(dbgs() << "Going to replace: " << From.get() << " to "
+               << To.get() << '\n');
+
   Val2RegMapTy::iterator at = Val2Reg.find(From);
   if (at != Val2Reg.end()) {
     unsigned FromReg = at->second;
