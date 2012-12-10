@@ -87,6 +87,7 @@ public:
   void addInstrToDatapath(MachineInstr *MI);
 
   bool runExternalTimingAnalysis(const Twine &Name);
+  void runInternalTimingAnalysis();
 };
 }
 
