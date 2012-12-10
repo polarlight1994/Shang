@@ -625,6 +625,8 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
     // already exists there, recursively merge the results together.
     addModifiedValueToCSEMaps(User);
   }
+
+  assert(From->use_empty() && "Incompleted replacement!");
 }
 
 VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
