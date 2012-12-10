@@ -587,11 +587,11 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
   // We may need to further invert the BinExpr.
   if (IsInverted) {
     VASTValPtr InvBinExpr = BinExpr.invert();
-    if (unsigned InvertedReg = getRewrittenRegNum(InvBinExpr))
-      Reg = InvertedReg;
-    else // We need to invert the result now.
-      Reg = rewriteNotOf(BinExpr);
+    assert (getRewrittenRegNum(InvBinExpr) == 0
+            && "Inverted Expr should not yet been rewritten!");
 
+    // We need to invert the result now.
+    Reg = rewriteNotOf(BinExpr);
     Container.rememberRegNumForExpr<false>(InvBinExpr, Reg);
   }
 
