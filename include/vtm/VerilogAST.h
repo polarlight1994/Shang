@@ -395,17 +395,11 @@ template<> struct simplify_type<VASTUse> {
   }
 };
 
-template<> struct FoldingSetTrait<VASTImmediate>;
 class VASTImmediate : public VASTValue, public FoldingSetNode  {
   const APInt Int;
 
-  friend struct FoldingSetTrait<VASTImmediate>;
-  /// FastID - A reference to an Interned FoldingSetNodeID for this node.
-  /// The DatapathContainer's BumpPtrAllocator holds the data.
-  const FoldingSetNodeIDRef FastID;
-
-  VASTImmediate(const APInt &Other, const FoldingSetNodeIDRef ID)
-    : VASTValue(vastImmediate, Other.getBitWidth()), Int(Other), FastID(ID) {}
+  VASTImmediate(const APInt &Other)
+    : VASTValue(vastImmediate, Other.getBitWidth()), Int(Other) {}
 
   VASTImmediate(const VASTImmediate&);              // Do not implement
   void operator=(const VASTImmediate&);             // Do not implement
@@ -469,25 +463,6 @@ template<>
 inline bool PtrInvPair<VASTImmediate>::isAllOnes() const {
   return isInverted() ? get()->isAllZeros() : get()->isAllOnes();
 }
-
-
-// Specialize FoldingSetTrait for VASTImmediate to avoid needing to compute
-// temporary FoldingSetNodeID values.
-template<>
-struct FoldingSetTrait<VASTImmediate> : DefaultFoldingSetTrait<VASTImmediate> {
-  static void Profile(const VASTImmediate &X, FoldingSetNodeID& ID) {
-    ID = X.FastID;
-  }
-
-  static bool Equals(const VASTImmediate &X, const FoldingSetNodeID &ID,
-                     unsigned IDHash, FoldingSetNodeID &TempID) {
-      return ID == X.FastID;
-  }
-
-  static unsigned ComputeHash(const VASTImmediate &X, FoldingSetNodeID &TempID) {
-    return X.FastID.ComputeHash();
-  }
-};
 
 class VASTNamedValue : public VASTValue {
 protected:
@@ -611,7 +586,6 @@ template<> struct simplify_type<VASTPort> {
   }
 };
 
-template<> struct FoldingSetTrait<VASTExpr>;
 class VASTExpr : public VASTValue, public FoldingSetNode {
 public:
   enum Opcode {
@@ -655,11 +629,6 @@ private:
   }
   VASTUse *ops() { return reinterpret_cast<VASTUse*>(this + 1); }
 
-  friend struct FoldingSetTrait<VASTExpr>;
-  /// FastID - A reference to an Interned FoldingSetNodeID for this node.
-  /// The DatapathContainer's BumpPtrAllocator holds the data.
-  const FoldingSetNodeIDRef FastID;
-
   // The total operand of this expression.
   unsigned ExprSize : 31;
   bool     IsNamed    : 1;
@@ -667,8 +636,7 @@ private:
   VASTExpr(const VASTExpr&);              // Do not implement
   void operator=(const VASTExpr&);        // Do not implement
 
-  VASTExpr(Opcode Opc, uint8_t numOps, unsigned UB, unsigned LB,
-           const FoldingSetNodeIDRef ID);
+  VASTExpr(Opcode Opc, uint8_t numOps, unsigned UB, unsigned LB);
 
   friend class DatapathContainer;
 
@@ -755,30 +723,17 @@ public:
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastExpr;
   }
+
+  /// Profile - Used to insert VASTExpr objects, or objects that contain
+  /// VASTExpr objects, into FoldingSets.
+  void Profile(FoldingSetNodeID& ID) const;
 };
+
 typedef PtrInvPair<VASTExpr> VASTExprPtr;
 template<>
 inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
   return get()->getOperand(i).get().invert(isInverted());
 }
-
-// Specialize FoldingSetTrait for VASTExpr to avoid needing to compute
-// temporary FoldingSetNodeID values.
-template<>
-struct FoldingSetTrait<VASTExpr> : DefaultFoldingSetTrait<VASTExpr> {
-  static void Profile(const VASTExpr &X, FoldingSetNodeID& ID) {
-      ID = X.FastID;
-  }
-
-  static bool Equals(const VASTExpr &X, const FoldingSetNodeID &ID,
-                      unsigned IDHash, FoldingSetNodeID &TempID) {
-    return ID == X.FastID;
-  }
-
-  static unsigned ComputeHash(const VASTExpr &X, FoldingSetNodeID &TempID) {
-    return X.FastID.ComputeHash();
-  }
-};
 
 class VASTWire :public VASTSignal {
 public:

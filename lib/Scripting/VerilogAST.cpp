@@ -495,9 +495,8 @@ void VASTRegister::dumpAssignment() const {
   printAssignment(S, 0);
 }
 
-VASTExpr::VASTExpr(Opcode Opc, uint8_t NumOps, unsigned UB,
-                   unsigned LB, const FoldingSetNodeIDRef ID)
-  : VASTValue(vastExpr, UB - LB), FastID(ID), ExprSize(0), IsNamed(0),
+VASTExpr::VASTExpr(Opcode Opc, uint8_t NumOps, unsigned UB, unsigned LB)
+  : VASTValue(vastExpr, UB - LB), ExprSize(0), IsNamed(0),
     Opc(Opc), NumOps(NumOps), UB(UB), LB(LB) {
   Contents.Name = 0;
   assert(NumOps && "Unexpected empty operand list!");
@@ -523,7 +522,7 @@ VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
     return V;
 
   void *P = Allocator.Allocate(sizeof(VASTImmediate), alignOf<VASTImmediate>());
-  VASTImmediate *V = new (P) VASTImmediate(Value, ID.Intern(Allocator));
+  VASTImmediate *V = new (P) VASTImmediate(Value);
   UniqueImms.InsertNode(V, IP);
 
   return V;
@@ -658,7 +657,7 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
   // Place the VASTUse array right after the VASTExpr.
   void *P = Allocator.Allocate(sizeof(VASTExpr) + Ops.size() * sizeof(VASTUse),
                                alignOf<VASTExpr>());
-  VASTExpr *E = new (P) VASTExpr(Opc, Ops.size(), UB, LB, ID.Intern(Allocator));
+  VASTExpr *E = new (P) VASTExpr(Opc, Ops.size(), UB, LB);
   UniqueExprs.InsertNode(E, IP);
 
   // Initialize the use list and compute the actual size of the expression.
@@ -1058,6 +1057,10 @@ void VASTImmediate::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                        unsigned LB) const {
   assert(UB == getBitWidth() && LB == 0 && "Cannot print bitslice of Expr!");
   OS << getBitWidth() << "'h" << Int.toString(16, false);
+}
+
+void VASTImmediate::Profile(FoldingSetNodeID& ID) const {
+  Int.Profile(ID);
 }
 
 void VASTPort::print(raw_ostream &OS) const {
@@ -1487,4 +1490,15 @@ const std::string VASTExpr::getSubModName() const {
 
   SS.flush();
   return Name;
+}
+
+void VASTExpr::Profile(FoldingSetNodeID& ID) const {
+  ID.AddInteger(getOpcode());
+  ID.AddInteger(UB);
+  ID.AddInteger(LB);
+  typedef VASTExpr::op_iterator op_iterator;
+  for (op_iterator OI = op_begin(), OE = op_end(); OI != OE; ++OI) {
+    VASTValPtr Operand = *OI;
+    ID.AddPointer(Operand);
+  }
 }
