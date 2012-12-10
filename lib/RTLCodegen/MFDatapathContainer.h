@@ -64,18 +64,14 @@ class MFDatapathContainer : public DatapathBuilderContext,
   // Print the datapath tree whose root is "root".
   void printTree(raw_ostream &OS, VASTWire *Root);
 protected:
-  VASTValPtr lookupFanout(unsigned Reg) const {
+  VASTWire *lookupFanout(unsigned Reg) const {
     Reg2WireMapTy::const_iterator at = ExportedVals.find(Reg);
-    return at == ExportedVals.end() ? VASTValPtr() : at->second;
+    return at == ExportedVals.end() ? 0 : at->second;
   }
 
   typedef VASTMOMapTy::const_iterator FaninIterator;
   FaninIterator fanin_begin() const { return VASTMOs.begin(); }
   FaninIterator fanin_end() const { return VASTMOs.end(); }
-
-  typedef Reg2WireMapTy::const_iterator FanoutIterator;
-  FanoutIterator fanout_begin() const { return ExportedVals.begin(); }
-  FanoutIterator fanout_end() const { return ExportedVals.end(); }
 
   // Build VASTValPtr for a MachineInstr.
   template<bool AllowDifference>
@@ -94,6 +90,10 @@ protected:
     return V;
   }
 public:
+  typedef Reg2WireMapTy::const_iterator FanoutIterator;
+  FanoutIterator fanout_begin() const { return ExportedVals.begin(); }
+  FanoutIterator fanout_end() const { return ExportedVals.end(); }
+
   MFDatapathContainer() : Builder(0) {}
   virtual ~MFDatapathContainer() { reset(); }
 
