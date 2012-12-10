@@ -259,7 +259,10 @@ void TimingNetlist::computeDelayFromSrc(unsigned DstReg, unsigned SrcReg) {
 
   // If SrcReg is a terminator of a path, create a path from SrcReg to DstReg.
   if (at == PathInfo.end()) {
-    createDelayEntry(DstReg, getSrcPtr(SrcReg));
+    // Ignore the SrcReg that can be eliminated by constant folding.
+    if (VASTMachineOperand *MO = getSrcPtr(SrcReg))
+      createDelayEntry(DstReg, getSrcPtr(SrcReg));
+
     return;
   }
 
