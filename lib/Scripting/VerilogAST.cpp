@@ -594,31 +594,15 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
       }
 
       ++UI;
+
+      VASTValPtr User = Use->getUser();
+      // Unlink from old list.
+      Use->removeFromList();
+      // Move to new list.
       Use->replaceUseBy(Replacement);
+      Use->setUser(User.getAsLValue<VASTValue>());
+
     } while (UI != UE && *UI == User);
-
-    if (VASTExpr *E = dyn_cast<VASTExpr>(User)) {
-      SmallVector<VASTValPtr, 4> Operands;
-
-      // Refresh the FoldingSetNodeID.
-      FoldingSetNodeID ID;
-      ID.AddInteger(E->getOpcode());
-      ID.AddInteger(E->UB);
-      ID.AddInteger(E->LB);
-      typedef VASTExpr::op_iterator op_iterator;
-      for (op_iterator OI = E->op_begin(), OE = E->op_end(); OI != OE; ++OI) {
-        VASTValPtr Operand = *OI;
-        ID.AddPointer(Operand);
-        Operands.push_back(Operand);
-      }
-
-      unsigned ExprSize = E->ExprSize;
-
-      // Renew the the expression's FoldingSet ID..
-      new (E) VASTExpr(E->getOpcode(), E->NumOps, E->UB, E->LB,
-                       ID.Intern(Allocator));
-      E->ExprSize = ExprSize;
-    }
 
     // Now that we have modified User, add it back to the CSE maps.  If it
     // already exists there, recursively merge the results together.
@@ -1395,8 +1379,8 @@ std::string VASTExpr::getTempName() const {
 
 void VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                   unsigned LB) const {
-  assert(((UB == this->UB && LB == this->LB) || hasName())
-         && "Cannot print bitslice of Expr!");
+  //assert(((UB == this->UB && LB == this->LB) || hasName())
+  //       && "Cannot print bitslice of Expr!");
 
   printAsOperandInteral(OS);
 
