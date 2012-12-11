@@ -82,6 +82,10 @@ public:
     return at->second.end();
   }
 
+  bool src_empty(unsigned DstReg) const {
+    return !PathInfo.count(DstReg);
+  }
+
   TimingNetlist() {}
 
   void addInstrToDatapath(MachineInstr *MI);

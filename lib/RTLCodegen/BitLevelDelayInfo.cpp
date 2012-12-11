@@ -191,7 +191,13 @@ void BitLevelDelayInfo::addDelayForPath(const MachineInstr *SrcMI,
 
   assert(SrcMI->getOperand(0).isDef() && "Broken datapath MachineInstr!");
   unsigned SrcReg = SrcMI->getOperand(0).getReg();
-
+  // The source expression tree maybe folded by constant folding, in this case
+  // the path though does not exist.
+  if (TNL->src_empty(SrcReg)) {
+    addDelayForPath(unsigned(0), MI, CurDelayInfo, PathDelay);
+    return;
+  }
+  
   // Get the datapath delay from the TimingNetlist.
   typedef TimingNetlist::src_iterator it;
   for (it I = TNL->src_begin(SrcReg), E = TNL->src_end(SrcReg); I != E; ++I)
@@ -217,7 +223,7 @@ void BitLevelDelayInfo::buildDelayMatrix(const MachineInstr *MI) {
 
     // Only care about a use register.
     if (!MO.isReg() || MO.isDef() || MO.getReg() == 0)
-      continue;
+      continue;    
 
     MachineInstr *SrcMI = MRI->getVRegDef(MO.getReg());
     assert(SrcMI && "Virtual register use without define!");

@@ -261,7 +261,7 @@ void TimingNetlist::computeDelayFromSrc(unsigned DstReg, unsigned SrcReg) {
   if (at == PathInfo.end()) {
     // Ignore the SrcReg that can be eliminated by constant folding.
     if (VASTMachineOperand *MO = getSrcPtr(SrcReg))
-      createDelayEntry(DstReg, getSrcPtr(SrcReg));
+      createDelayEntry(DstReg, MO);
 
     return;
   }
