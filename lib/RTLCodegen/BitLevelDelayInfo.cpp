@@ -266,7 +266,7 @@ bool BitLevelDelayInfo::runOnMachineFunction(MachineFunction &MF) {
     for (instr_iterator I = BI->instr_begin(), E = BI->instr_end(); I != E; ++I)
       TNL->addInstrToDatapath(I);
 
-  TNL->runExternalTimingAnalysis(MF.getFunction()->getName());
+  ExternalTimingAnalysis::runTimingAnalysis(*TNL, MF.getFunction()->getName());
 
   for (iterator BI = MF.begin(), BE = MF.end(); BI != BE; ++BI)
     for (instr_iterator I = BI->instr_begin(), E = BI->instr_end(); I != E; ++I){

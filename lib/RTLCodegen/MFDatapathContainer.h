@@ -69,9 +69,6 @@ protected:
     return at == ExportedVals.end() ? 0 : at->second;
   }
 
-  typedef VASTMOMapTy::const_iterator FaninIterator;
-  FaninIterator fanin_begin() const { return VASTMOs.begin(); }
-  FaninIterator fanin_end() const { return VASTMOs.end(); }
 
   // Build VASTValPtr for a MachineInstr.
   template<bool AllowDifference>
@@ -92,12 +89,16 @@ protected:
 
   void replaceInContainerMapping(VASTValPtr From, VASTValPtr To);
 public:
+  MFDatapathContainer() : Builder(0) {}
+  virtual ~MFDatapathContainer() { reset(); }
+
   typedef Reg2WireMapTy::const_iterator FanoutIterator;
   FanoutIterator fanout_begin() const { return ExportedVals.begin(); }
   FanoutIterator fanout_end() const { return ExportedVals.end(); }
 
-  MFDatapathContainer() : Builder(0) {}
-  virtual ~MFDatapathContainer() { reset(); }
+  typedef VASTMOMapTy::const_iterator FaninIterator;
+  FaninIterator fanin_begin() const { return VASTMOs.begin(); }
+  FaninIterator fanin_end() const { return VASTMOs.end(); }
 
   VASTValPtr getAsOperandImpl(MachineOperand &Op,
                               bool GetAsInlineOperand = true);

@@ -246,72 +246,6 @@ void TimingEstimator::analysisTimingOnTree(VASTWire *W) {
   }
 }
 
-void TimingNetlist::createDelayEntry(unsigned DstReg, VASTMachineOperand *Src) {
-  assert(DstReg && "Unexpected NO_REGISTER!");
-  assert(Src && "Bad pointer to Src!");
-
-  PathInfo[DstReg][Src] = 0;
-}
-
-void TimingNetlist::computeDelayFromSrc(unsigned DstReg, unsigned SrcReg) {
-  // Forward the Src terminator of the path from SrcReg.
-  PathInfoTy::iterator at = PathInfo.find(SrcReg);
-
-  // If SrcReg is a terminator of a path, create a path from SrcReg to DstReg.
-  if (at == PathInfo.end()) {
-    // Ignore the SrcReg that can be eliminated by constant folding.
-    if (VASTMachineOperand *MO = getSrcPtr(SrcReg))
-      createDelayEntry(DstReg, MO);
-
-    return;
-  }
-
-  // Otherwise forward the source nodes reachable to SrcReg to DstReg.
-  set_union(PathInfo[DstReg], at->second);
-}
-
-void TimingNetlist::addInstrToDatapath(MachineInstr *MI) {
-  unsigned DefReg = 0;
-
-  bool IsDatapath = VInstrInfo::isDatapath(MI->getOpcode());
-
-  // Can use add the MachineInstr to the datapath?
-  if (IsDatapath)
-    buildDatapathOnly(MI);
-
-  // Ignore the PHIs.
-  if (!IsDatapath && MI->isPHI()) return;
-
-  // Otherwise export the values used by this MachineInstr.
-  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i){
-    MachineOperand &MO = MI->getOperand(i);
-
-    if (!MO.isReg()) {
-      // Remember the external source.
-      if (IsDatapath && !MO.isImm())
-        createDelayEntry(DefReg, cast<VASTMachineOperand>(getAsOperandImpl(MO)));
-
-      continue;
-    }
-
-    unsigned Reg = MO.getReg();
-
-    if (Reg == 0) continue;
-    
-    if (MO.isDef()) {
-      assert(DefReg == 0 && "Unexpected multi-defines!");
-      DefReg = Reg;
-      continue;
-    }
-
-    // Try to export the value.
-    if (IsDatapath) {
-      computeDelayFromSrc(DefReg, Reg);
-    } else
-      exportValue(Reg);
-  }
-}
-
 static sys::Path buildPath(const Twine &Name, const Twine &Ext) {
   std::string ErrMsg;
   sys::Path Filename = sys::Path::GetTemporaryDirectory(&ErrMsg);
@@ -377,8 +311,8 @@ static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
   return V;
 }
 
-void
-TimingNetlist::writeNetlistWrapper(raw_ostream &O, const Twine &Name) const {
+void ExternalTimingAnalysis::writeNetlistWrapper(raw_ostream &O,
+                                                 const Twine &Name) const {
   // FIXME: Use the luascript template?
   O << "module " << Name << "wapper(\n";
   O.indent(2) << "input wire clk,\n";
@@ -387,7 +321,7 @@ TimingNetlist::writeNetlistWrapper(raw_ostream &O, const Twine &Name) const {
   O.indent(2) << "output reg scan_chain_out);\n";
 
   // Declare the registers for the scan chain.
-  for (FaninIterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
+  for (FaninIterator I = TNL.fanin_begin(), E = TNL.fanin_end(); I != E; ++I) {
     const VASTMachineOperand *MO = I->second;
     O.indent(4) << "reg";
     unsigned Bitwidth = MO->getBitWidth();
@@ -397,7 +331,7 @@ TimingNetlist::writeNetlistWrapper(raw_ostream &O, const Twine &Name) const {
     O << ' ' << MO->getName() << ";\n";
   }
 
-  for (FanoutIterator I = fanout_begin(), E = fanout_end(); I != E; ++I) {
+  for (FanoutIterator I = TNL.fanout_begin(), E = TNL.fanout_end(); I != E; ++I) {
     // The wire connecting the output of the netlist and the scan chain.
     O.indent(4) << "wire";
 
@@ -419,10 +353,10 @@ TimingNetlist::writeNetlistWrapper(raw_ostream &O, const Twine &Name) const {
   // Build the scan chain.
   const VASTValue *LastReg = 0;
   O.indent(4) << "always @(posedge clk) begin\n";
-  for (FaninIterator I = fanin_begin(), E = fanin_end(); I != E; ++I)
+  for (FaninIterator I = TNL.fanin_begin(), E = TNL.fanin_end(); I != E; ++I)
     LastReg = printScanChainLogic<false>(O, I->second, LastReg, 6);
 
-  for (FanoutIterator I = fanout_begin(), E = fanout_end(); I != E; ++I)
+  for (FanoutIterator I = TNL.fanout_begin(), E = TNL.fanout_end(); I != E; ++I)
     LastReg = printScanChainLogic<true>(O, I->second, LastReg, 6);
 
   // Write the output.
@@ -441,11 +375,11 @@ TimingNetlist::writeNetlistWrapper(raw_ostream &O, const Twine &Name) const {
   // Instantiate the netlist.
   O.indent(4) << Name << ' ' << Name << "_inst(\n";
 
-  for (FaninIterator I = fanin_begin(), E = fanin_end(); I != E; ++I)
+  for (FaninIterator I = TNL.fanin_begin(), E = TNL.fanin_end(); I != E; ++I)
     O.indent(6) << '.' << I->second->getName()
                 << '(' << I->second->getName() << "),\n";
 
-  for (FanoutIterator I = fanout_begin(), E = fanout_end(); I != E; ++I)
+  for (FanoutIterator I = TNL.fanout_begin(), E = TNL.fanout_end(); I != E; ++I)
     O.indent(6) << '.' << I->second->getName()
                 << '(' << I->second->getName() << "w),\n";
 
@@ -454,10 +388,11 @@ TimingNetlist::writeNetlistWrapper(raw_ostream &O, const Twine &Name) const {
   O << "endmodule\n";
 }
 
-void TimingNetlist::writeProjectScript(raw_ostream &O, const Twine &Name,
-                                       const sys::Path &NetlistPath,
-                                       const sys::Path &TimingExtractionScript)
-                                       const {
+void
+ExternalTimingAnalysis::writeProjectScript(raw_ostream &O, const Twine &Name,
+                                           const sys::Path &NetlistPath,
+                                           const sys::Path &TimingExtractionScript)
+                                           const {
   O << "load_package flow\n"
        "load_package report\n"
     << "project_new " << Name << " -overwrite\n"
@@ -483,25 +418,16 @@ static void setTerminatorCollection(raw_ostream & O, const VASTValue *V,
     << cast<VASTNamedValue>(V)->getName() << "*\"]\n";
 }
 
-VASTMachineOperand *TimingNetlist::getSrcPtr(unsigned Reg) const {
-  // Lookup the value from input of the netlist.
-  return dyn_cast_or_null<VASTMachineOperand>((*this)->lookupExpr(Reg).get());
-}
-
-VASTWire *TimingNetlist::getDstPtr(unsigned Reg) const {
-  // Lookup the value from the output list of the netlist first.
-  return lookupFanout(Reg);
-}
-
-void TimingNetlist::extractTimingForPair(raw_ostream &O, unsigned DstReg,
-                                         const VASTValue *Src) const {
-  if (VASTValue *Dst = dyn_cast<VASTWire>(getDstPtr(DstReg)))
+void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O, unsigned DstReg,
+                                                  const VASTValue *Src) const {
+  if (VASTValue *Dst = dyn_cast<VASTWire>(TNL.getDstPtr(DstReg)))
     extractTimingForPair(O, Dst, DstReg, Src);
 }
 
-void TimingNetlist::extractTimingForPair(raw_ostream &O,
-                                         const VASTValue *Dst, unsigned DstReg,
-                                         const VASTValue *Src) const {
+void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
+                                                  const VASTValue *Dst,
+                                                  unsigned DstReg,
+                                                  const VASTValue *Src) const {
   // Get the source and destination nodes.
   setTerminatorCollection(O, Dst, "dst");
   setTerminatorCollection(O, Src, "src");
@@ -525,24 +451,24 @@ void TimingNetlist::extractTimingForPair(raw_ostream &O,
     << DstReg << ",\\\"delay\\\":$delay\\},\"\n";
 }
 
-void
-TimingNetlist::extractTimingToDst(raw_ostream &O, unsigned DstReg,
-                                  const SrcInfoTy &SrcInfo) const{
+void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O, unsigned DstReg,
+                                                const SrcInfoTy &SrcInfo) const{
   typedef SrcInfoTy::const_iterator iterator;
 
   for (iterator I = SrcInfo.begin(), E = SrcInfo.end(); I != E; ++I)
     extractTimingForPair(O, DstReg, I->first);
 }
 
-void
-TimingNetlist::writeTimingExtractionScript(raw_ostream &O, const Twine &Name,
-                                           const sys::Path &ResultPath) const {
+void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
+                                                         const Twine &Name,
+                                                         const sys::Path &ResultPath)
+                                                         const {
   // Open the file and start the array.
   O << "set JSONFile [open \"" << ResultPath.str() <<"\" w+]\n"
        "puts $JSONFile \"\\[\"\n";
 
-  typedef PathInfoTy::const_iterator iterator;
-  for (iterator I = PathInfo.begin(), E = PathInfo.end(); I != E; ++I)
+  typedef TimingNetlist::const_path_iterator iterator;
+  for (iterator I = TNL.path_begin(), E = TNL.path_end(); I != E; ++I)
     extractTimingToDst(O, I->first, I->second);
 
 
@@ -601,7 +527,7 @@ static KeyValueNode *readAndAdvance(MappingNode::iterator it) {
   return N;
 }
 
-bool TimingNetlist::readPathDelay(MappingNode *N) {
+bool ExternalTimingAnalysis::readPathDelay(MappingNode *N) {
   typedef MappingNode::iterator iterator;
   iterator CurPtr = N->begin();
 
@@ -619,12 +545,13 @@ bool TimingNetlist::readPathDelay(MappingNode *N) {
 
   if (PathDelay == -1.0) return false;
 
-  PathInfo[ToReg][FromReg] = PathDelay / VFUs::Period;
+  // Annotate the delay to the timing netlist.
+  TNL.annotateDelay(FromReg, ToReg, PathDelay);
 
   return true;
 }
 
-bool TimingNetlist::readTimingAnalysisResult(const sys::Path &ResultPath) {
+bool ExternalTimingAnalysis::readTimingAnalysisResult(const sys::Path &ResultPath) {
   // Read the timing analysis results.
   OwningPtr<MemoryBuffer> File;
   if (error_code ec = MemoryBuffer::getFile(ResultPath.c_str(), File)) {
@@ -649,7 +576,7 @@ bool TimingNetlist::readTimingAnalysisResult(const sys::Path &ResultPath) {
   return true;
 }
 
-bool TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
+bool ExternalTimingAnalysis::runExternalTimingAnalysis(const Twine &Name) {
   std::string ErrorInfo;
 
   // Write the Nestlist and the wrapper.
@@ -663,7 +590,7 @@ bool TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
   if (!ErrorInfo.empty())  return exitWithError(Netlist);
 
   // Write the netlist.
-  writeVerilog(NetlistO, Name);
+  TNL.writeVerilog(NetlistO, Name);
   NetlistO << '\n';
   // Also write the wrapper.
   writeNetlistWrapper(NetlistO, Name);
@@ -732,31 +659,31 @@ bool TimingNetlist::runExternalTimingAnalysis(const Twine &Name) {
   return true;
 }
 
-void TimingNetlist::runInternalTimingAnalysis() {
-  TimingEstimator TE(*this);
-
-  TE.buildDatapathDelayMatrix();
-
-  typedef PathInfoTy::iterator dst_iterator;
-  typedef SrcInfoTy::iterator src_iterator;
-  for (dst_iterator I = PathInfo.begin(), E = PathInfo.end(); I != E; ++I) {
-    unsigned DstReg = I->first;
-    SrcInfoTy &SrcInfo = I->second;
-    VASTWire *ExportedWire = lookupFanout(DstReg);
-
-    // Ignore the nodes that in the middle of the datapath.
-    if (ExportedWire == 0) continue;
-
-    VASTValue *Dst = ExportedWire->getAssigningValue().get();
-    
-    for (src_iterator SI = SrcInfo.begin(), SE = SrcInfo.end(); SI != SE; ++SI) {
-      VASTValue *Src = SI->first;
-      double delay = TE.getPathDelay(Src, Dst);
-      double old_delay = SI->second;
-      dbgs() << "DELAY-ESTIMATOR-JSON: { \"ACCURATE\":\"" << old_delay
-             << "\", \"BLACKBOX\":\"" << delay << "} \n";
-
-      SI->second = delay;
-    }
-  }
-}
+//void ExternalTimingAnalysis::runInternalTimingAnalysis() {
+//  TimingEstimator TE(*this);
+//
+//  TE.buildDatapathDelayMatrix();
+//
+//  typedef PathInfoTy::iterator dst_iterator;
+//  typedef SrcInfoTy::iterator src_iterator;
+//  for (dst_iterator I = PathInfo.begin(), E = PathInfo.end(); I != E; ++I) {
+//    unsigned DstReg = I->first;
+//    SrcInfoTy &SrcInfo = I->second;
+//    VASTWire *ExportedWire = lookupFanout(DstReg);
+//
+//    // Ignore the nodes that in the middle of the datapath.
+//    if (ExportedWire == 0) continue;
+//
+//    VASTValue *Dst = ExportedWire->getAssigningValue().get();
+//    
+//    for (src_iterator SI = SrcInfo.begin(), SE = SrcInfo.end(); SI != SE; ++SI) {
+//      VASTValue *Src = SI->first;
+//      double delay = TE.getPathDelay(Src, Dst);
+//      double old_delay = SI->second;
+//      dbgs() << "DELAY-ESTIMATOR-JSON: { \"ACCURATE\":\"" << old_delay
+//             << "\", \"BLACKBOX\":\"" << delay << "} \n";
+//
+//      SI->second = delay;
+//    }
+//  }
+//}

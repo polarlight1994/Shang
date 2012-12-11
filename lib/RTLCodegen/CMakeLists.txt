@@ -1,6 +1,7 @@
 add_llvm_library(VTMRTLCodegen
   RTLCodegenPrepare.cpp
   ExternalTimingAnalysis.cpp
+  TimingNetlist.cpp
   VerilogModuleAnalysis.cpp
   VASTExprBuilder.cpp
   VerilogASTBuilder.cpp
