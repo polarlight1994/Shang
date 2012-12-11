@@ -14,6 +14,7 @@ add_llvm_library(VTMRTLCodegen
   PreSchedRTLOpt.cpp
   ControlLogicBuilder.cpp
   CombPathDelayAnalysis.cpp
+  LATimingEstimator.cpp
   RtlSSAAnalysis.cpp
 )
 
