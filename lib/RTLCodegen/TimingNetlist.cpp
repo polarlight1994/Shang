@@ -19,55 +19,45 @@
 
 using namespace llvm;
 
-VASTMachineOperand *TimingNetlist::getSrcPtr(unsigned Reg) const {
-  // Lookup the value from input of the netlist.
-  return dyn_cast_or_null<VASTMachineOperand>((*this)->lookupExpr(Reg).get());
-}
-
-VASTWire *TimingNetlist::getDstPtr(unsigned Reg) const {
-  // Lookup the value from the output list of the netlist first.
-  return lookupFanout(Reg);
-}
-
-void TimingNetlist::annotateDelay(VASTMachineOperand *Src, unsigned ToReg,
+void TimingNetlist::annotateDelay(VASTMachineOperand *Src, VASTValue *Dst,
                                   delay_type delay) {
 
-  PathInfo[ToReg][Src] = delay / VFUs::Period;
+  PathInfo[Dst][Src] = delay / VFUs::Period;
 }
 
 
-void TimingNetlist::createDelayEntry(unsigned DstReg, VASTMachineOperand *Src) {
-  assert(DstReg && "Unexpected NO_REGISTER!");
-  assert(Src && "Bad pointer to Src!");
+void TimingNetlist::createDelayEntry(VASTValue *Dst, VASTMachineOperand *Src) {
+  assert(Src && Dst && "Bad pointer!");
 
-  PathInfo[DstReg][Src] = 0;
+  PathInfo[Dst][Src] = 0;
 }
 
-void TimingNetlist::computeDelayFromSrc(unsigned DstReg, unsigned SrcReg) {
+void TimingNetlist::createPathFromSrc(VASTValue *Dst, VASTValue *Src) {
   // Forward the Src terminator of the path from SrcReg.
-  PathInfoTy::iterator at = PathInfo.find(SrcReg);
+  PathInfoTy::iterator at = PathInfo.find(Src);
 
   // If SrcReg is a terminator of a path, create a path from SrcReg to DstReg.
   if (at == PathInfo.end()) {
     // Ignore the SrcReg that can be eliminated by constant folding.
-    if (VASTMachineOperand *MO = getSrcPtr(SrcReg))
-      createDelayEntry(DstReg, MO);
+    if (VASTMachineOperand *MO = dyn_cast<VASTMachineOperand>(Src))
+      createDelayEntry(Dst, MO);
 
     return;
   }
 
   // Otherwise forward the source nodes reachable to SrcReg to DstReg.
-  set_union(PathInfo[DstReg], at->second);
+  set_union(PathInfo[Dst], at->second);
 }
 
 void TimingNetlist::addInstrToDatapath(MachineInstr *MI) {
   unsigned DefReg = 0;
+  VASTValue *DatapathNode = 0;
 
   bool IsDatapath = VInstrInfo::isDatapath(MI->getOpcode());
 
   // Can use add the MachineInstr to the datapath?
   if (IsDatapath)
-    buildDatapathOnly(MI);
+    DatapathNode = buildDatapathOnly(MI).get();
 
   // Ignore the PHIs.
   if (!IsDatapath && MI->isPHI()) return;
@@ -78,8 +68,10 @@ void TimingNetlist::addInstrToDatapath(MachineInstr *MI) {
 
     if (!MO.isReg()) {
       // Remember the external source.
-      if (IsDatapath && !MO.isImm())
-        createDelayEntry(DefReg, cast<VASTMachineOperand>(getAsOperandImpl(MO)));
+      if (IsDatapath && !MO.isImm()) {
+        VASTMachineOperand *VMO = cast<VASTMachineOperand>(getAsOperandImpl(MO));
+        createDelayEntry(DatapathNode, VMO);
+      }
 
       continue;
     }
@@ -96,7 +88,7 @@ void TimingNetlist::addInstrToDatapath(MachineInstr *MI) {
 
     // Remember the paths.
     if (IsDatapath) {
-      computeDelayFromSrc(DefReg, Reg);
+      createPathFromSrc(DatapathNode, Builder.lookupExpr(Reg).get());
     } else
       // Try to export the value.
       pinValue(Reg);

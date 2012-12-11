@@ -41,7 +41,6 @@ public:
 
 class MFDatapathContainer : public DatapathBuilderContext,
                             public DatapathContainer {
-  DatapathBuilder Builder;
   // Remember the VASTValPtr for each "external" MachineOperand.
   typedef DenseMap<MachineOperand, VASTMachineOperand*,
                    VMachineOperandValueTrait> VASTMOMapTy;
@@ -64,6 +63,8 @@ class MFDatapathContainer : public DatapathBuilderContext,
   // Print the datapath tree whose root is "root".
   void printTree(raw_ostream &OS, VASTWire *Root);
 protected:
+  DatapathBuilder Builder;
+
   VASTWire *lookupFanout(unsigned Reg) const {
     Reg2WireMapTy::const_iterator at = ExportedVals.find(Reg);
     return at == ExportedVals.end() ? 0 : at->second;
