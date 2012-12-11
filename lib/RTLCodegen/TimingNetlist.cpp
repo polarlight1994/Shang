@@ -21,8 +21,11 @@ using namespace llvm;
 
 void TimingNetlist::annotateDelay(VASTMachineOperand *Src, VASTValue *Dst,
                                   delay_type delay) {
-
-  PathInfo[Dst][Src] = delay / VFUs::Period;
+  PathInfoTy::iterator path_end_at = PathInfo.find(Dst);
+  assert(path_end_at != PathInfo.end() && "Path not exist!");
+  SrcInfoTy::iterator path_start_from = path_end_at->second.find(Src);
+  assert(path_start_from != path_end_at->second.end() && "Path not exist!");
+  path_start_from->second = delay / VFUs::Period;
 }
 
 

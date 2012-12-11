@@ -417,12 +417,15 @@ static void setTerminatorCollection(raw_ostream & O, const VASTNamedValue *V,
 }
 
 void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
-                                                  const VASTNamedValue *Dst,
+                                                  const VASTWire *Dst,
                                                   const VASTNamedValue *Src)
                                                   const {
   // Get the source and destination nodes.
   setTerminatorCollection(O, Dst, "dst");
   setTerminatorCollection(O, Src, "src");
+  
+  VASTValue *PathDst = Dst->getAssigningValue().get();
+  assert(PathDst && "Bad Assignment!");
 
   O <<
     "set delay -1\n"
@@ -432,23 +435,23 @@ void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
     "  foreach_in_collection path [get_timing_paths -from $src -to $dst -setup"
     "                              -npath 1 -detail path_only] {\n"
     "    set delay [get_path_info $path -data_delay]\n"
-    "    post_message -type info \"" << intptr_t(Src) << " -> " << intptr_t(Dst)
+    "    post_message -type info \"" << intptr_t(Src) << " -> " << intptr_t(PathDst)
     << " delay: $delay\"\n"
     "  }\n"
     "} else {\n"
-    "    post_message -type warning \"" << intptr_t(Src) << " -> " << intptr_t(Dst)
+    "    post_message -type warning \"" << intptr_t(Src) << " -> " << intptr_t(PathDst)
     << " path not found!\""
     "}\n"
     "puts $JSONFile \"\\{\\\"from\\\":" << intptr_t(Src) << ",\\\"to\\\":"
-    <<  intptr_t(Dst) << ",\\\"delay\\\":$delay\\},\"\n";
+    <<  intptr_t(PathDst) << ",\\\"delay\\\":$delay\\},\"\n";
 }
 
 void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O,
-                                                const VASTNamedValue *Dst,
-                                                const SrcInfoTy &SrcInfo) const{
-  typedef SrcInfoTy::const_iterator iterator;
+                                                const VASTWire *Dst) const{
+  typedef SrcInfoTy::const_iterator it;
+  VASTValue *PathDst = Dst->getAssigningValue().get();
 
-  for (iterator I = SrcInfo.begin(), E = SrcInfo.end(); I != E; ++I)    
+  for (it I = TNL.src_begin(PathDst), E = TNL.src_end(PathDst); I != E; ++I)    
     extractTimingForPair(O, Dst, I->first);
 }
 
@@ -460,9 +463,8 @@ void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
        "puts $JSONFile \"\\[\"\n";
 
   typedef TimingNetlist::const_path_iterator iterator;
-  for (iterator I = TNL.path_begin(), E = TNL.path_end(); I != E; ++I)
-    if (VASTNamedValue *NV = dyn_cast<VASTNamedValue>(I->first))
-      extractTimingToDst(O, NV, I->second);
+  for (FanoutIterator I = TNL.fanout_begin(), E = TNL.fanout_end(); I != E; ++I)
+      extractTimingToDst(O, I->second);
 
 
   // Close the array and the file object.
@@ -531,6 +533,10 @@ bool ExternalTimingAnalysis::readPathDelay(MappingNode *N) {
 
   VASTMachineOperand *Src = readPathSrc(From);
   VASTValue *Dst = readPathDst(To);
+
+  // Ignore the the trivial entry.
+  if (!Src && !Dst) return true;
+
   double PathDelay = readDelay(Delay);
 
   dbgs() << "From: " << Src << " To: " << Dst << " delay: " << PathDelay << '\n';
