@@ -284,7 +284,6 @@ void BitLevelDelayInfo::print(raw_ostream &O, const Module *M) const {
     << VFUs::ClockPeriod() << '\n';
   // The critical chain of the function.
   std::pair<InstPtrTy, delay_type> LongestChain, CriticalChain;
-  unsigned CriticalLL = 0;
 
   typedef LatencyMapTy::const_iterator LatIt;
   for (LatIt I = LatencyMap.begin(), E = LatencyMap.end(); I != E; ++I) {

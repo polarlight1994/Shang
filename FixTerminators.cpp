@@ -54,7 +54,6 @@ void fixTerminators(MachineBasicBlock *MBB) {
     if (!VInstrInfo::isBrCndLike(Inst->getOpcode())) continue;
 
     MachineBasicBlock *TargetBB = Inst->getOperand(1).getMBB();
-    MachineOperand Cnd = Inst->getOperand(0);
     //bool inserted;
     //jt_it at;
     //tie(at, inserted) = Table.insert(std::make_pair(TargetBB, Cnd));
