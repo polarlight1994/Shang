@@ -116,6 +116,9 @@ VASTWire *MFDatapathContainer::pinValue(unsigned Reg) {
   // The value do not exist.
   if (!Val) return 0;
 
+  // No need to pin the external input.
+  if (isa<VASTMachineOperand>(Val.get())) return 0;  
+
   // Have we created the ported?
   VASTWire *&Wire = ExportedVals[Reg];
 
