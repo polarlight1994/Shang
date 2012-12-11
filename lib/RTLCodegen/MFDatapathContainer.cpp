@@ -26,11 +26,6 @@ inline static T *check(T *Ptr) {
   return Ptr;
 }
 
-DatapathBuilder *MFDatapathContainer::createBuilder(MachineRegisterInfo *MRI) {
-  assert(Builder == 0 && "The previous datapath build have not been release!");
-  return (Builder = new DatapathBuilder(*this, *MRI));
-}
-
 VASTValPtr MFDatapathContainer::getOrCreateVASTMO(const char *Name,
                                                   MachineOperand DefMO) {
   DefMO.clearParent();
@@ -51,21 +46,21 @@ VASTValPtr MFDatapathContainer::getAsOperandImpl(MachineOperand &Op,
     unsigned Reg = Op.getReg();
     if (!Reg) return 0;
 
-    VASTValPtr V = Builder->lookupExpr(Reg);
+    VASTValPtr V = Builder.lookupExpr(Reg);
 
     if (!V) {
-      MachineInstr *DefMI = check(Builder->MRI.getVRegDef(Reg));
+      MachineInstr *DefMI = check(Builder.MRI.getVRegDef(Reg));
       assert(VInstrInfo::isControl(DefMI->getOpcode())
         && "Reg defined by data-path should had already been indexed!");
       MachineOperand DefMO = DefMI->getOperand(0);
       DefMO.setIsDef(false);
       V = getOrCreateVASTMO(allocateRegName(Reg, 'i'), DefMO);
       // Also index the newly created value.
-      Builder->indexVASTExpr(Reg, V);
+      Builder.indexVASTExpr(Reg, V);
     }
 
     // The operand may only use a sub bitslice of the signal.
-    V = Builder->buildBitSliceExpr(V, BitWidth, 0);
+    V = Builder.buildBitSliceExpr(V, BitWidth, 0);
     // Try to inline the operand.
     if (GetAsInlineOperand) V = V.getAsInlineOperand();
     return V;
@@ -92,15 +87,15 @@ void MFDatapathContainer::replaceInContainerMapping(VASTValPtr From,
     // The 'From' Value is not used anymore.
     Val2Reg.erase(at);
     // Forget the indexing.
-    Builder->forgetIndexedExpr(FromReg);
+    Builder.forgetIndexedExpr(FromReg);
     if (unsigned ToReg = lookupRegNum(To)) {
       // Try to replace the register in the Machine Function.
-      Builder->MRI.replaceRegWith(FromReg, ToReg);
+      Builder.MRI.replaceRegWith(FromReg, ToReg);
     } else {
       // Assign the original register to the new VASTValPtr.
       rememberRegNumForExpr<false>(To, FromReg);
       // Re-index the expression.
-      Builder->indexVASTExpr(FromReg, To);
+      Builder.indexVASTExpr(FromReg, To);
     }
   }
 }
@@ -116,8 +111,8 @@ void MFDatapathContainer::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
   replaceAllUseWithImpl(From, To);
 }
 
-VASTWire *MFDatapathContainer::exportValue(unsigned Reg) {
-  VASTValPtr Val = Builder->lookupExpr(Reg);
+VASTWire *MFDatapathContainer::pinValue(unsigned Reg) {
+  VASTValPtr Val = Builder.lookupExpr(Reg);
   // The value do not exist.
   if (!Val) return 0;
 
@@ -154,18 +149,6 @@ const char *MFDatapathContainer::allocateRegName(unsigned Reg, char postfix) {
   } //else
 
   return allocateName('p' + utostr_32(Reg) + postfix);
-}
-
-void MFDatapathContainer::reset() {
-  if (Builder) {
-    delete Builder;
-    Builder = 0;
-  }
-
-  VASTMOs.clear();
-  Val2Reg.clear();
-  ExportedVals.clear();
-  DatapathContainer::reset();
 }
 
 void MFDatapathContainer::printTree(raw_ostream &OS, VASTWire *Root) {

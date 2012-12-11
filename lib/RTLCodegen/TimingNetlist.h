@@ -18,6 +18,9 @@
 #include "MFDatapathContainer.h"
 
 namespace llvm {
+class MachineRegisterInfo;
+// FIXME: Dont depends on MFDatapathContainer, otherwise we can only perform
+// timing analysis on MachineFunction.
 class TimingNetlist : public MFDatapathContainer {
 public:
   typedef double delay_type;
@@ -36,7 +39,8 @@ private:
   // Compute the delay to DstReg through SrcReg.
   void computeDelayFromSrc(unsigned DstReg, unsigned SrcReg);
 public:
-  TimingNetlist(const StringRef Name) : Name(Name) {}
+  TimingNetlist(const StringRef Name, MachineRegisterInfo *MRI)
+    : MFDatapathContainer(MRI), Name(Name) {}
   // Add the instruction into the data-path.
   void addInstrToDatapath(MachineInstr *MI);
 

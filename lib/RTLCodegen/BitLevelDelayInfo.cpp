@@ -16,7 +16,7 @@
 #include "vtm/BitLevelDelayInfo.h"
 #include "vtm/VerilogBackendMCTargetDesc.h"
 
-#include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "detail-latency"
 #include "llvm/Support/Debug.h"
@@ -205,7 +205,6 @@ void BitLevelDelayInfo::addDelayForPath(const MachineInstr *SrcMI,
 }
 
 void BitLevelDelayInfo::buildDelayMatrix(const MachineInstr *MI) {
-  const MachineBasicBlock *CurMBB = MI->getParent();
   DepLatInfoTy &CurDelayInfo = LatencyMap[MI];
 
   unsigned Opcode = MI->getOpcode();
@@ -255,10 +254,10 @@ void BitLevelDelayInfo::buildExitMIInfo(const MachineInstr *SSnk,
 
 bool BitLevelDelayInfo::runOnMachineFunction(MachineFunction &MF) {
   MRI = &MF.getRegInfo();
+  OwningPtr<TimingNetlist> Ptr(new TimingNetlist(MF.getFunction()->getName(), MRI));
 
   assert(TNL == 0 && "Last TNL not release!");
-  TNL = new TimingNetlist();
-  TNL->createBuilder(MRI);
+  TNL = Ptr.get();
 
   typedef MachineFunction::iterator iterator;
   typedef MachineBasicBlock::instr_iterator instr_iterator;
@@ -266,7 +265,7 @@ bool BitLevelDelayInfo::runOnMachineFunction(MachineFunction &MF) {
     for (instr_iterator I = BI->instr_begin(), E = BI->instr_end(); I != E; ++I)
       TNL->addInstrToDatapath(I);
 
-  ExternalTimingAnalysis::runTimingAnalysis(*TNL, MF.getFunction()->getName());
+  ExternalTimingAnalysis::runTimingAnalysis(*TNL);
 
   for (iterator BI = MF.begin(), BE = MF.end(); BI != BE; ++BI)
     for (instr_iterator I = BI->instr_begin(), E = BI->instr_end(); I != E; ++I){
@@ -274,6 +273,7 @@ bool BitLevelDelayInfo::runOnMachineFunction(MachineFunction &MF) {
       buildDelayMatrix(MI);
     }
 
+  TNL = 0;
   return false;
 }
 
@@ -333,11 +333,6 @@ void BitLevelDelayInfo::printChainDelayInfo(raw_ostream & O,
 }
 
 void BitLevelDelayInfo::reset() {
-  if (TNL) {
-    delete TNL;
-    TNL = 0;
-  }
-
   LatencyMap.clear();
   clearCachedLatencies();
 }

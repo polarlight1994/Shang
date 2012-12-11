@@ -38,7 +38,7 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   MachineRegisterInfo *MRI;
   MachineDominatorTree *DT;
   MachineBasicBlock *Entry;
-  MFDatapathContainer Container;
+  OwningPtr<MFDatapathContainer> Container;
 
   // Remember in which MachineBasicBlock the expression is first created, we can
   // simply write this expression in the MachineBasicBlock.
@@ -103,14 +103,14 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   void buildNot(unsigned DstReg, const MachineOperand &Op);
 
   MachineInstr *getRewrittenInstr(VASTValPtr V) const {
-    if (unsigned RegNum = Container.lookupRegNum(V))
+    if (unsigned RegNum = Container->lookupRegNum(V))
       return MRI->getVRegDef(RegNum);
 
     return 0;
   }
 
   unsigned getRewrittenRegNum(VASTValPtr V) const {
-    unsigned RegNum = Container.lookupRegNum(V);
+    unsigned RegNum = Container->lookupRegNum(V);
     if (RegNum && MRI->getVRegDef(RegNum))
       return RegNum;
 
@@ -138,13 +138,13 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   MachineOperand getAsOperand(VASTValPtr V);
 
   unsigned allocateRegNum(VASTValPtr V) {
-    unsigned RegNum = Container.lookupRegNum(V);
+    unsigned RegNum = Container->lookupRegNum(V);
     assert((!RegNum || !MRI->getVRegDef(RegNum))
            && "Reg already allocated for expression!");
     if (RegNum == 0) {
       RegNum = MRI->createVirtualRegister(&VTM::DRRegClass);
       // Index the expression by the the newly created register number.
-      if (V) Container->indexVASTExpr(RegNum, V);
+      if (V) (*Container)->indexVASTExpr(RegNum, V);
     }
 
     return RegNum;
@@ -153,10 +153,6 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   MachineOperand allocateRegMO(VASTValPtr V, unsigned BitWidth = 0) {
     if (BitWidth == 0) BitWidth = V->getBitWidth();
     return VInstrInfo::CreateReg(allocateRegNum(V), BitWidth, true);
-  }
-
-  void releaseMemory() {
-    Container.reset();
   }
 };
 }
@@ -176,7 +172,7 @@ char PreSchedRTLOpt::ID = 0;
 bool PreSchedRTLOpt::runOnMachineFunction(MachineFunction &F) {
   MRI = &F.getRegInfo();
   DT = &getAnalysis<MachineDominatorTree>();
-  Container.createBuilder(MRI);
+  Container.reset(new MFDatapathContainer(MRI));
   Entry = F.begin();
 
   typedef MachineFunction::iterator iterator;
@@ -198,6 +194,8 @@ bool PreSchedRTLOpt::runOnMachineFunction(MachineFunction &F) {
     verifyMBB(*I);
   }
 
+  Container.reset();
+
   // Verify the function.
   DEBUG(F.verify(this));
   return true;
@@ -218,17 +216,17 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
     MachineInstr *MI = I++;
 
     // Try to add the instruction into the data-path net-list.
-    if (VASTValPtr V = Container.buildDatapathAndFoldResult(MI)) {
+    if (VASTValPtr V = Container->buildDatapathAndFoldResult(MI)) {
       MI->eraseFromParent();
       continue;
     }
 
     if (MI->getOpcode() == VTM::VOpMove) {
-      VASTValPtr Src = Container->getAsOperand(MI->getOperand(1));
+      VASTValPtr Src = (*Container)->getAsOperand(MI->getOperand(1));
       unsigned RegNum = MI->getOperand(0).getReg();
       // Remember the register number mapping, the register maybe CSEd.
-      if (RegNum == Container.rememberRegNumForExpr<true>(Src, RegNum))
-        Container->indexVASTExpr(RegNum, Src);
+      if (RegNum == Container->rememberRegNumForExpr<true>(Src, RegNum))
+        (*Container)->indexVASTExpr(RegNum, Src);
       MI->eraseFromParent();
       continue;
     }
@@ -295,7 +293,7 @@ void PreSchedRTLOpt::rewriteDepForPHI(MachineInstr *PHI,
 void PreSchedRTLOpt::rewriteExprTreeForMO(MachineOperand &MO, MachineInstr *IP,
                                           bool isPredicate, bool isPHI) {
   MO.setIsKill(false);
-  VASTValPtr V = Container->lookupExpr(MO.getReg());
+  VASTValPtr V = (*Container)->lookupExpr(MO.getReg());
 
   if (!V) {
     assert(MRI->getVRegDef(MO.getReg())
@@ -523,9 +521,9 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
       MachineOperand RHS = Ops[OperandPos + 1];
       OperandPos += 2;
       // Build the BinExpr to CSE the MachineInstr.
-      VASTValPtr BinExpr = Container->buildExpr(Expr->getOpcode(),
-                                                Container.getAsOperandImpl(LHS),
-                                                Container.getAsOperandImpl(RHS),
+      VASTValPtr BinExpr = (*Container)->buildExpr(Expr->getOpcode(),
+                                                Container->getAsOperandImpl(LHS),
+                                                Container->getAsOperandImpl(RHS),
                                                 F(LHS, RHS));
       // Try to reuse the existing register number.
       if (unsigned Reg =  getRewrittenRegNum(BinExpr)) {
@@ -544,7 +542,7 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
         .addOperand(VInstrInfo::CreateTrace());
       DefMO.setIsDef(false);
       // Remember the rewritten register.
-      Container.rememberRegNumForExpr<false>(BinExpr, DefMO.getReg());
+      Container->rememberRegNumForExpr<false>(BinExpr, DefMO.getReg());
 
       Ops[ResultPos++] = DefMO;
     }
@@ -560,16 +558,16 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
   MachineOperand LHS = Ops[0];
   MachineOperand RHS = Ops[1];
   // Build the BinExpr to CSE the MachineInstr.
-  VASTValPtr BinExpr = Container->buildExpr(Expr->getOpcode(),
-                                            Container.getAsOperandImpl(LHS),
-                                            Container.getAsOperandImpl(RHS),
-                                            Expr->getBitWidth());
+  VASTValPtr BinExpr = (*Container)->buildExpr(Expr->getOpcode(),
+                                               Container->getAsOperandImpl(LHS),
+                                               Container->getAsOperandImpl(RHS),
+                                               Expr->getBitWidth());
   // Replace the NAryExpr by the BinExpr, which is the actual Expr be rewritten,
   // and equivalent.
   if (BinExpr != Expr) {
     assert(BinExpr.get() != Expr
            && "Cannot replace the value by its inverted version!");
-    Container.replaceAllUseWith(Expr, BinExpr);
+    Container->replaceAllUseWith(Expr, BinExpr);
   }
 
   // Use BinExpr instead, because Expr is not valid anymore.
@@ -582,7 +580,7 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
 
   unsigned Reg = DefMO.getReg();
   // Remember the the VASTExpr to Reg mapping.
-  Container.rememberRegNumForExpr<false>(BinExpr, Reg);
+  Container->rememberRegNumForExpr<false>(BinExpr, Reg);
 
   // We may need to further invert the BinExpr.
   if (IsInverted) {
@@ -592,7 +590,7 @@ unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
 
     // We need to invert the result now.
     Reg = rewriteNotOf(BinExpr);
-    Container.rememberRegNumForExpr<false>(InvBinExpr, Reg);
+    Container->rememberRegNumForExpr<false>(InvBinExpr, Reg);
   }
 
   return Reg;
@@ -602,7 +600,7 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
   bool isInverted = E.isInverted();
   VASTExpr *Expr = E.get();
 
-  unsigned RegNo = Container.lookupRegNum(Expr);
+  unsigned RegNo = Container->lookupRegNum(Expr);
   // The expression itself may had been rewritten, but the invert is not yet
   // rewritten.
   assert((!getRewrittenRegNum(Expr) || isInverted) && "E had already rewritten!");
@@ -656,12 +654,12 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
       break;
     }
 
-    Container.rememberRegNumForExpr<false>(Expr, RegNo);
+    Container->rememberRegNumForExpr<false>(Expr, RegNo);
   }
 
   if (isInverted) {
     RegNo = rewriteNotOf(Expr);
-    Container.rememberRegNumForExpr<false>(VASTValPtr(Expr, true), RegNo);
+    Container->rememberRegNumForExpr<false>(VASTValPtr(Expr, true), RegNo);
   }
 
   return RegNo;

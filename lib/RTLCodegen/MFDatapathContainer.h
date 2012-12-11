@@ -41,7 +41,7 @@ public:
 
 class MFDatapathContainer : public DatapathBuilderContext,
                             public DatapathContainer {
-  DatapathBuilder *Builder;
+  DatapathBuilder Builder;
   // Remember the VASTValPtr for each "external" MachineOperand.
   typedef DenseMap<MachineOperand, VASTMachineOperand*,
                    VMachineOperandValueTrait> VASTMOMapTy;
@@ -76,20 +76,20 @@ protected:
     if (!VInstrInfo::isDatapath(MI->getOpcode())) return 0;
 
     unsigned ResultReg = MI->getOperand(0).getReg();
-    VASTValPtr V = Builder->buildDatapathExpr(MI);
+    VASTValPtr V = Builder.buildDatapathExpr(MI);
 
     // Remember the register number mapping, the register maybe CSEd.
     unsigned FoldedReg = rememberRegNumForExpr<AllowDifference>(V, ResultReg);
     // If ResultReg is not CSEd to other Regs, index the newly created Expr.
     if (FoldedReg == ResultReg)
-      Builder->indexVASTExpr(FoldedReg, V);
+      Builder.indexVASTExpr(FoldedReg, V);
 
     return V;
   }
 
   void replaceInContainerMapping(VASTValPtr From, VASTValPtr To);
 public:
-  MFDatapathContainer() : Builder(0) {}
+  explicit MFDatapathContainer(MachineRegisterInfo *MRI) : Builder(*this, *MRI) {}
   virtual ~MFDatapathContainer() { reset(); }
 
   typedef Reg2WireMapTy::const_iterator FanoutIterator;
@@ -126,13 +126,13 @@ public:
     Val2RegMapTy::iterator at;
     assert(TargetRegisterInfo::isVirtualRegister(RegNo)
            && TargetRegisterInfo::virtReg2Index(RegNo)
-              < Builder->MRI.getNumVirtRegs()
+              < Builder.MRI.getNumVirtRegs()
            && "Bad RegNo!");
     tie(at, inserted) = Val2Reg.insert(std::make_pair(V, RegNo));
     unsigned MappedReg = at->second;
     if (!inserted && MappedReg != RegNo) {
       assert(AllowDifference && "Expr is rewritten twice?");
-      Builder->MRI.replaceRegWith(RegNo, MappedReg);
+      Builder.MRI.replaceRegWith(RegNo, MappedReg);
       RegNo = MappedReg;
     }
 
@@ -148,13 +148,10 @@ public:
   }
 
   // Export the VASTValPtr corresponding to Reg to the output of the datapath.
-  VASTWire *exportValue(unsigned Reg);
+  VASTWire *pinValue(unsigned Reg);
 
-  DatapathBuilder *createBuilder(MachineRegisterInfo *MRI);
-
-  DatapathBuilder *operator->() const { return Builder; }
-
-  void reset();
+  DatapathBuilder *operator->() { return &Builder; }
+  const DatapathBuilder *operator->() const { return &Builder; }
 
   // Write the data-path in form of VerilogHDL.
   void writeVerilog(raw_ostream &OS, const Twine &Name);

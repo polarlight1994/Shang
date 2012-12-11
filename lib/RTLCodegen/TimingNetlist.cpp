@@ -99,6 +99,6 @@ void TimingNetlist::addInstrToDatapath(MachineInstr *MI) {
       computeDelayFromSrc(DefReg, Reg);
     } else
       // Try to export the value.
-      exportValue(Reg);
+      pinValue(Reg);
   }
 }
