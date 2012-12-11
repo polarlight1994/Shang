@@ -129,6 +129,8 @@ private:
                        delay_type PathDelay = delay_type(0)) ;
 public:
   BitLevelDelayInfo();
+  ~BitLevelDelayInfo() { reset(); }
+
   const char *getPassName() const {
     return "Refine-CDFG";
   }

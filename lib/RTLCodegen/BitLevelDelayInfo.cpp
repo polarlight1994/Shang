@@ -254,10 +254,9 @@ void BitLevelDelayInfo::buildExitMIInfo(const MachineInstr *SSnk,
 
 bool BitLevelDelayInfo::runOnMachineFunction(MachineFunction &MF) {
   MRI = &MF.getRegInfo();
-  OwningPtr<TimingNetlist> Ptr(new TimingNetlist(MF.getFunction()->getName(), MRI));
 
   assert(TNL == 0 && "Last TNL not release!");
-  TNL = Ptr.get();
+  TNL = new TimingNetlist(MF.getFunction()->getName(), MRI);
 
   typedef MachineFunction::iterator iterator;
   typedef MachineBasicBlock::instr_iterator instr_iterator;
@@ -273,7 +272,6 @@ bool BitLevelDelayInfo::runOnMachineFunction(MachineFunction &MF) {
       buildDelayMatrix(MI);
     }
 
-  TNL = 0;
   return false;
 }
 
@@ -333,6 +331,11 @@ void BitLevelDelayInfo::printChainDelayInfo(raw_ostream & O,
 }
 
 void BitLevelDelayInfo::reset() {
+  if (TNL) {
+    delete TNL;
+    TNL = 0;
+  }
+  
   LatencyMap.clear();
   clearCachedLatencies();
 }
