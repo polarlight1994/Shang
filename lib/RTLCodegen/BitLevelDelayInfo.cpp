@@ -190,17 +190,17 @@ void BitLevelDelayInfo::addDelayForPath(const MachineInstr *SrcMI,
   }
 
   assert(SrcMI->getOperand(0).isDef() && "Broken datapath MachineInstr!");
-  unsigned SrcReg = SrcMI->getOperand(0).getReg();
+  VASTValue *Src = (*TNL)->lookupExpr(SrcMI->getOperand(0).getReg()).get();
   // The source expression tree maybe folded by constant folding, in this case
   // the path though does not exist.
-  if (TNL->src_empty(SrcReg)) {
+  if (TNL->src_empty(Src)) {
     addDelayForPath(unsigned(0), MI, CurDelayInfo, PathDelay);
     return;
   }
-  
+
   // Get the datapath delay from the TimingNetlist.
   typedef TimingNetlist::src_iterator it;
-  for (it I = TNL->src_begin(SrcReg), E = TNL->src_end(SrcReg); I != E; ++I)
+  for (it I = TNL->src_begin(Src), E = TNL->src_end(Src); I != E; ++I)
     addDelayForPath(getRegNum(I->first), MI, CurDelayInfo, PathDelay +  I->second);
 }
 

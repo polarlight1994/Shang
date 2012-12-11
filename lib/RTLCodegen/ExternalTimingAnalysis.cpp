@@ -410,22 +410,16 @@ void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
        "project_close\n";
 }
 
-static void setTerminatorCollection(raw_ostream & O, const VASTValue *V,
+static void setTerminatorCollection(raw_ostream & O, const VASTNamedValue *V,
                                     const char *CollectionName) {
-  O << "set " << CollectionName << " [" << "get_keepers \"*"
-    << cast<VASTNamedValue>(V)->getName() << "*\"]\n";
-}
-
-void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O, unsigned DstReg,
-                                                  const VASTValue *Src) const {
-  if (VASTValue *Dst = dyn_cast<VASTWire>(TNL.getDstPtr(DstReg)))
-    extractTimingForPair(O, Dst, DstReg, Src);
+  O << "set " << CollectionName << " [" << "get_keepers \"*" << V->getName()
+    << "*\"]\n";
 }
 
 void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
-                                                  const VASTValue *Dst,
-                                                  unsigned DstReg,
-                                                  const VASTValue *Src) const {
+                                                  const VASTNamedValue *Dst,
+                                                  const VASTNamedValue *Src)
+                                                  const {
   // Get the source and destination nodes.
   setTerminatorCollection(O, Dst, "dst");
   setTerminatorCollection(O, Src, "src");
@@ -438,23 +432,24 @@ void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
     "  foreach_in_collection path [get_timing_paths -from $src -to $dst -setup"
     "                              -npath 1 -detail path_only] {\n"
     "    set delay [get_path_info $path -data_delay]\n"
-    "    post_message -type info \"" << intptr_t(Src) << " -> " << DstReg
+    "    post_message -type info \"" << intptr_t(Src) << " -> " << intptr_t(Dst)
     << " delay: $delay\"\n"
     "  }\n"
     "} else {\n"
-    "    post_message -type warning \"" << intptr_t(Src) << " -> " << DstReg
+    "    post_message -type warning \"" << intptr_t(Src) << " -> " << intptr_t(Dst)
     << " path not found!\""
     "}\n"
     "puts $JSONFile \"\\{\\\"from\\\":" << intptr_t(Src) << ",\\\"to\\\":"
-    << DstReg << ",\\\"delay\\\":$delay\\},\"\n";
+    <<  intptr_t(Dst) << ",\\\"delay\\\":$delay\\},\"\n";
 }
 
-void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O, unsigned DstReg,
+void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O,
+                                                const VASTNamedValue *Dst,
                                                 const SrcInfoTy &SrcInfo) const{
   typedef SrcInfoTy::const_iterator iterator;
 
-  for (iterator I = SrcInfo.begin(), E = SrcInfo.end(); I != E; ++I)
-    extractTimingForPair(O, DstReg, I->first);
+  for (iterator I = SrcInfo.begin(), E = SrcInfo.end(); I != E; ++I)    
+    extractTimingForPair(O, Dst, I->first);
 }
 
 void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
@@ -466,7 +461,8 @@ void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
 
   typedef TimingNetlist::const_path_iterator iterator;
   for (iterator I = TNL.path_begin(), E = TNL.path_end(); I != E; ++I)
-    extractTimingToDst(O, I->first, I->second);
+    if (VASTNamedValue *NV = dyn_cast<VASTNamedValue>(I->first))
+      extractTimingToDst(O, NV, I->second);
 
 
   // Close the array and the file object.
@@ -480,23 +476,23 @@ static bool exitWithError(const sys::Path &FileName) {
   return false;
 }
 
-static unsigned readPathDst(KeyValueNode *N) {
+static VASTValue *readPathDst(KeyValueNode *N) {
   assert(cast<ScalarNode>(N->getKey())->getRawValue() == "\"to\""
          && "Bad Key name!");
 
-  unsigned Reg = 0;
+  intptr_t Ptr = 0;
 
   ScalarNode *Pin = cast<ScalarNode>(N->getValue());
 
-  if (Pin->getRawValue().getAsInteger<unsigned>(10, Reg))
-    return unsigned(-1);
+  if (Pin->getRawValue().getAsInteger<intptr_t>(10, Ptr))
+    return 0;
 
-  return Reg;
+  return (VASTValue*)Ptr;
 }
 
 static VASTMachineOperand *readPathSrc(KeyValueNode *N) {
   assert(cast<ScalarNode>(N->getKey())->getRawValue() == "\"from\""
-    && "Bad Key name!");
+         && "Bad Key name!");
 
   intptr_t Ptr = 0;
 
@@ -533,17 +529,16 @@ bool ExternalTimingAnalysis::readPathDelay(MappingNode *N) {
   KeyValueNode *To = readAndAdvance(CurPtr);
   KeyValueNode *Delay = readAndAdvance(CurPtr);
 
-  VASTMachineOperand *FromReg = readPathSrc(From);
-  unsigned ToReg = readPathDst(To);
+  VASTMachineOperand *Src = readPathSrc(From);
+  VASTValue *Dst = readPathDst(To);
   double PathDelay = readDelay(Delay);
 
-  dbgs() << "From: " << FromReg << " To: " << ToReg << " delay: "
-         << PathDelay << '\n';
+  dbgs() << "From: " << Src << " To: " << Dst << " delay: " << PathDelay << '\n';
 
   if (PathDelay == -1.0) return false;
 
   // Annotate the delay to the timing netlist.
-  TNL.annotateDelay(FromReg, ToReg, PathDelay);
+  TNL.annotateDelay(Src, Dst, PathDelay);
 
   return true;
 }

@@ -42,13 +42,10 @@ class ExternalTimingAnalysis {
   void writeProjectScript(raw_ostream &O, const sys::Path &NetlistPath,
                           const sys::Path &ExtractScript) const;
 
-  void extractTimingForPair(raw_ostream &O, unsigned DstReg,
-                            const VASTValue *Src) const;
-  void extractTimingForPair(raw_ostream &O,
-                            const VASTValue *Dst, unsigned DstReg,
-                            const VASTValue *Src) const;
+  void extractTimingForPair(raw_ostream &O, const VASTNamedValue *Dst,
+                            const VASTNamedValue *Src) const;
 
-  void extractTimingToDst(raw_ostream &O, unsigned DstReg,
+  void extractTimingToDst(raw_ostream &O, const VASTNamedValue *Dst,
                           const SrcInfoTy &SrcInfo) const;
 
   // Write the script to extract the timing analysis results from quartus.
