@@ -100,8 +100,8 @@ void MFDatapathContainer::replaceInContainerMapping(VASTValPtr From,
   }
 }
 void MFDatapathContainer::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
-  dbgs() << "Going to replace: " << From.get() << " to "
-               << To.get() << '\n';
+  DEBUG(dbgs() << "Going to replace: " << From.get() << " to "
+               << To.get() << '\n');
 
   // Replace both the original version and the inverted version.
   replaceInContainerMapping(From, To);

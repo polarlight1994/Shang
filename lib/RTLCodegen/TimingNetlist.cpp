@@ -28,6 +28,14 @@ void TimingNetlist::annotateDelay(VASTMachineOperand *Src, VASTValue *Dst,
   path_start_from->second = delay / VFUs::Period;
 }
 
+TimingNetlist::delay_type TimingNetlist::getDelay(VASTMachineOperand *Src,
+                                                  VASTValue *Dst) const {                                                    
+  PathInfoTy::const_iterator path_end_at = PathInfo.find(Dst);
+  assert(path_end_at != PathInfo.end() && "Path not exist!");
+  SrcInfoTy::const_iterator path_start_from = path_end_at->second.find(Src);
+  assert(path_start_from != path_end_at->second.end() && "Path not exist!");
+  return path_start_from->second;
+}
 
 void TimingNetlist::createDelayEntry(VASTValue *Dst, VASTMachineOperand *Src) {
   assert(Src && Dst && "Bad pointer!");

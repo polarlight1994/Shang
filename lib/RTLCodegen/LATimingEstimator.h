@@ -46,10 +46,9 @@ protected:
     return at == SrcInfo.end() ? delay_type(0) : at->second;
   }
 
-  const TimingNetlist &Netlist;
+  TimingNetlist &TNL;
 public:
-  explicit TimingEstimatorBase(const TimingNetlist &Netlist)
-    : Netlist(Netlist) {}
+  explicit TimingEstimatorBase(TimingNetlist &Netlist) : TNL(Netlist) {}
 
   void updateDelay(SrcDelayInfo &Info, SrcEntryTy NewValue) {
     delay_type &OldDelay = Info[NewValue.first];
@@ -115,7 +114,7 @@ public:
   void buildDatapathDelayMatrix() {
     typedef TimingNetlist::FanoutIterator it;
 
-    for (it I = Netlist.fanout_begin(), E = Netlist.fanout_end(); I != E; ++I)
+    for (it I = TNL.fanout_begin(), E = TNL.fanout_end(); I != E; ++I)
       analysisTimingOnTree(I->second);
   }
 
@@ -123,6 +122,41 @@ public:
     const SrcDelayInfo *SrcInfo = getPathTo(To);
     assert(SrcInfo && "SrcInfo not available!");
     return getDelayFrom(From, *SrcInfo);
+  }
+};
+
+
+// Accumulating the delay according to the blackbox model.
+class BlackBoxTimingEstimator
+  : public TimingEstimatorBase<BlackBoxTimingEstimator, double> {
+  typedef double delay_type;
+  typedef TimingEstimatorBase<BlackBoxTimingEstimator, double> Base;
+
+  // For trivial expressions, the delay is zero.
+  static SrcEntryTy AccumulateTrivialExprDelay(VASTValue *Dst, unsigned SrcPos,
+                                               const SrcEntryTy DelayFromSrc) {
+    return DelayFromSrc;
+  }
+
+  static SrcEntryTy AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
+                                        const SrcEntryTy DelayFromSrc);
+
+  static unsigned ComputeOperandSizeInByteLog2Ceil(unsigned SizeInBits) {
+    return std::max(Log2_32_Ceil(SizeInBits), 3u) - 3;
+  }
+
+  template<unsigned ROWNUM>
+  static SrcEntryTy AccumulateWithDelayTable(VASTValue *Dst, unsigned SrcPos,
+                                              const SrcEntryTy DelayFromSrc);
+
+  explicit BlackBoxTimingEstimator(TimingNetlist &Netlist) : Base(Netlist) {}
+  void runTimingAnalysis();
+
+public:
+  void accumulateExprDelay(VASTExpr *Expr);
+
+  static void runTimingAnalysis(TimingNetlist &Netlist) {
+    BlackBoxTimingEstimator(Netlist).runTimingAnalysis();
   }
 };
 }

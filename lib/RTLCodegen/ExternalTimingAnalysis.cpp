@@ -249,7 +249,6 @@ void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
   O << "set JSONFile [open \"" << ResultPath.str() <<"\" w+]\n"
        "puts $JSONFile \"\\[\"\n";
 
-  typedef TimingNetlist::const_path_iterator iterator;
   for (FanoutIterator I = TNL.fanout_begin(), E = TNL.fanout_end(); I != E; ++I)
       extractTimingToDst(O, I->second);
 
@@ -443,32 +442,3 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
 
   return true;
 }
-
-//void ExternalTimingAnalysis::runInternalTimingAnalysis() {
-//  TimingEstimator TE(*this);
-//
-//  TE.buildDatapathDelayMatrix();
-//
-//  typedef PathInfoTy::iterator dst_iterator;
-//  typedef SrcInfoTy::iterator src_iterator;
-//  for (dst_iterator I = PathInfo.begin(), E = PathInfo.end(); I != E; ++I) {
-//    unsigned DstReg = I->first;
-//    SrcInfoTy &SrcInfo = I->second;
-//    VASTWire *ExportedWire = lookupFanout(DstReg);
-//
-//    // Ignore the nodes that in the middle of the datapath.
-//    if (ExportedWire == 0) continue;
-//
-//    VASTValue *Dst = ExportedWire->getAssigningValue().get();
-//    
-//    for (src_iterator SI = SrcInfo.begin(), SE = SrcInfo.end(); SI != SE; ++SI) {
-//      VASTValue *Src = SI->first;
-//      double delay = TE.getPathDelay(Src, Dst);
-//      double old_delay = SI->second;
-//      dbgs() << "DELAY-ESTIMATOR-JSON: { \"ACCURATE\":\"" << old_delay
-//             << "\", \"BLACKBOX\":\"" << delay << "} \n";
-//
-//      SI->second = delay;
-//    }
-//  }
-//}

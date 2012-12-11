@@ -44,7 +44,10 @@ public:
   // Add the instruction into the data-path.
   void addInstrToDatapath(MachineInstr *MI);
 
+  // Annotate the delay for path Src -> Dst.
   void annotateDelay(VASTMachineOperand *Src, VASTValue *Dst, delay_type delay);
+
+  delay_type getDelay(VASTMachineOperand *Src, VASTValue *Dst) const;
 
   // Iterate over the source node reachable to DstReg.
   typedef SrcInfoTy::const_iterator src_iterator;
