@@ -311,10 +311,9 @@ static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
   return V;
 }
 
-void ExternalTimingAnalysis::writeNetlistWrapper(raw_ostream &O,
-                                                 const Twine &Name) const {
+void ExternalTimingAnalysis::writeNetlistWrapper(raw_ostream &O) const {
   // FIXME: Use the luascript template?
-  O << "module " << Name << "wapper(\n";
+  O << "module " << TNL.Name << "wapper(\n";
   O.indent(2) << "input wire clk,\n";
   O.indent(2) << "input wire read_netlist,\n";
   O.indent(2) << "input wire scan_chain_in,\n";
@@ -373,7 +372,7 @@ void ExternalTimingAnalysis::writeNetlistWrapper(raw_ostream &O,
   O.indent(4) << '\n';
 
   // Instantiate the netlist.
-  O.indent(4) << Name << ' ' << Name << "_inst(\n";
+  O.indent(4) << TNL.Name << ' ' << TNL.Name << "_inst(\n";
 
   for (FaninIterator I = TNL.fanin_begin(), E = TNL.fanin_end(); I != E; ++I)
     O.indent(6) << '.' << I->second->getName()
@@ -383,22 +382,21 @@ void ExternalTimingAnalysis::writeNetlistWrapper(raw_ostream &O,
     O.indent(6) << '.' << I->second->getName()
                 << '(' << I->second->getName() << "w),\n";
 
-  O.indent(6) << ".dummy_" << Name << "_output(0));\n\n";
+  O.indent(6) << ".dummy_" << TNL.Name << "_output(0));\n\n";
 
   O << "endmodule\n";
 }
 
-void
-ExternalTimingAnalysis::writeProjectScript(raw_ostream &O, const Twine &Name,
-                                           const sys::Path &NetlistPath,
-                                           const sys::Path &TimingExtractionScript)
-                                           const {
+void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
+                                                const sys::Path &NetlistPath,
+                                                const sys::Path &ExtractScript)
+                                                const {
   O << "load_package flow\n"
        "load_package report\n"
-    << "project_new " << Name << " -overwrite\n"
+    << "project_new " << TNL.Name << " -overwrite\n"
     << "set_global_assignment -name FAMILY \"Cyclone IV E\"\n"
        "set_global_assignment -name DEVICE EP4CE75F29C6\n"
-       "set_global_assignment -name TOP_LEVEL_ENTITY " << Name << "wapper\n"
+       "set_global_assignment -name TOP_LEVEL_ENTITY " << TNL.Name << "wapper\n"
        "set_global_assignment -name SOURCE_FILE \""<< NetlistPath.str() <<"\"\n"
        //"set_global_assignment -name SDC_FILE @SDC_FILE@\n"
        "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
@@ -408,7 +406,7 @@ ExternalTimingAnalysis::writeProjectScript(raw_ostream &O, const Twine &Name,
        "execute_module -tool map\n"
        "execute_module -tool fit\n"
        "execute_module -tool sta -args {--report_script \""
-       << TimingExtractionScript.str() << "\"}\n"
+       << ExtractScript.str() << "\"}\n"
        "project_close\n";
 }
 
@@ -460,7 +458,6 @@ void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O, unsigned DstReg,
 }
 
 void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
-                                                         const Twine &Name,
                                                          const sys::Path &ResultPath)
                                                          const {
   // Open the file and start the array.
@@ -576,11 +573,11 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(const sys::Path &ResultPat
   return true;
 }
 
-bool ExternalTimingAnalysis::runExternalTimingAnalysis(const Twine &Name) {
+bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
   std::string ErrorInfo;
 
   // Write the Nestlist and the wrapper.
-  sys::Path Netlist = buildPath(Name, ".v");
+  sys::Path Netlist = buildPath(TNL.Name, ".v");
   if (Netlist.empty()) return false;
 
   errs() << "Writing '" << Netlist.str() << "'... ";
@@ -590,15 +587,15 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis(const Twine &Name) {
   if (!ErrorInfo.empty())  return exitWithError(Netlist);
 
   // Write the netlist.
-  TNL.writeVerilog(NetlistO, Name);
+  TNL.writeVerilog(NetlistO, TNL.Name);
   NetlistO << '\n';
   // Also write the wrapper.
-  writeNetlistWrapper(NetlistO, Name);
+  writeNetlistWrapper(NetlistO);
   NetlistO.close();
   errs() << " done. \n";
 
   // Write the SDC and the delay query script.
-  sys::Path TimingExtractTcl = buildPath(Name, "_extract.tcl");
+  sys::Path TimingExtractTcl = buildPath(TNL.Name, "_extract.tcl");
   if (TimingExtractTcl.empty()) return false;
 
   errs() << "Writing '" << TimingExtractTcl.str() << "'... ";
@@ -607,15 +604,15 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis(const Twine &Name) {
 
   if (!ErrorInfo.empty())  return exitWithError(TimingExtractTcl);
 
-  sys::Path TimingExtractResult = buildPath(Name, "_result.json");
+  sys::Path TimingExtractResult = buildPath(TNL.Name, "_result.json");
   if (TimingExtractResult.empty()) return false;
 
-  writeTimingExtractionScript(TimingExtractTclO, Name, TimingExtractResult);
+  writeTimingExtractionScript(TimingExtractTclO, TimingExtractResult);
   TimingExtractTclO.close();
   errs() << " done. \n";
 
   // Write the project script.
-  sys::Path PrjTcl = buildPath(Name, ".tcl");
+  sys::Path PrjTcl = buildPath(TNL.Name, ".tcl");
   if (PrjTcl.empty()) return false;
 
   errs() << "Writing '" << PrjTcl.str() << "'... ";
@@ -624,7 +621,7 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis(const Twine &Name) {
 
   if (!ErrorInfo.empty())  return exitWithError(PrjTcl);
 
-  writeProjectScript(PrjTclO, Name, Netlist, TimingExtractTcl);
+  writeProjectScript(PrjTclO, Netlist, TimingExtractTcl);
   PrjTclO.close();
   errs() << " done. \n";
 

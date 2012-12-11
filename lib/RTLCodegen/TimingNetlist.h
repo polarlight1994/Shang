@@ -24,9 +24,11 @@ public:
   typedef std::map<VASTMachineOperand*, delay_type> SrcInfoTy;
   // FIXME: Represent the destination with VASTValue.
   typedef std::map<unsigned, SrcInfoTy> PathInfoTy;
+  // The name of this netlist.
+  const StringRef Name;
 private:
+  // The path delay information.
   PathInfoTy PathInfo;
-
 
   // Create a path from Src to DstReg.
   void createDelayEntry(unsigned DstReg, VASTMachineOperand *Src);
@@ -34,7 +36,7 @@ private:
   // Compute the delay to DstReg through SrcReg.
   void computeDelayFromSrc(unsigned DstReg, unsigned SrcReg);
 public:
-  TimingNetlist() {}
+  TimingNetlist(const StringRef Name) : Name(Name) {}
   // Add the instruction into the data-path.
   void addInstrToDatapath(MachineInstr *MI);
 

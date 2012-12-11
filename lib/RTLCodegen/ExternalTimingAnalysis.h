@@ -36,12 +36,11 @@ class ExternalTimingAnalysis {
 
   // FIXME: Move these function to another class.
   // Write the wrapper of the netlist.
-  void writeNetlistWrapper(raw_ostream &O, const Twine &Name) const;
+  void writeNetlistWrapper(raw_ostream &O) const;
 
   // Write the project file to perform the timing analysis.
-  void writeProjectScript(raw_ostream &O, const Twine &Name,
-                          const sys::Path &NetlistPath,
-                          const sys::Path &TimingExtractionScript) const;
+  void writeProjectScript(raw_ostream &O, const sys::Path &NetlistPath,
+                          const sys::Path &ExtractScript) const;
 
   void extractTimingForPair(raw_ostream &O, unsigned DstReg,
                             const VASTValue *Src) const;
@@ -53,7 +52,7 @@ class ExternalTimingAnalysis {
                           const SrcInfoTy &SrcInfo) const;
 
   // Write the script to extract the timing analysis results from quartus.
-  void writeTimingExtractionScript(raw_ostream &O, const Twine &Name,
+  void writeTimingExtractionScript(raw_ostream &O,
                                    const sys::Path &ResultPath) const;
   // Read the JSON file written by the timing extraction script.
   bool readTimingAnalysisResult(const sys::Path &ResultPath);
@@ -61,11 +60,10 @@ class ExternalTimingAnalysis {
 
   explicit ExternalTimingAnalysis(TimingNetlist &TNL) : TNL(TNL) {}
 
-  bool runExternalTimingAnalysis(const Twine &Name);
-  void runInternalTimingAnalysis();
+  bool runExternalTimingAnalysis();
 public:
-  static bool runTimingAnalysis(TimingNetlist &TNL, const Twine &Name) {
-    return ExternalTimingAnalysis(TNL).runExternalTimingAnalysis(Name);
+  static bool runTimingAnalysis(TimingNetlist &TNL) {
+    return ExternalTimingAnalysis(TNL).runExternalTimingAnalysis();
   }
 };
 }
