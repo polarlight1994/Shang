@@ -39,7 +39,7 @@ VASTValPtr VASTExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
 template<VASTExpr::Opcode Opcode, typename visitor>
 void VASTExprBuilder::flattenExpr(VASTValPtr V, visitor F) {
   if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
-    typedef const VASTUse *op_iterator;
+    typedef VASTExpr::op_iterator op_iterator;
     if (Expr->getOpcode() == Opcode && shouldExprBeFlatten(Expr)) {
       for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
         flattenExpr<Opcode>(I->getAsInlineOperand(), F);
