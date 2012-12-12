@@ -293,7 +293,7 @@ VASTValPtr VASTExprBuilder::buildBitCatExpr(ArrayRef<VASTValPtr> Ops,
   }
 #endif
 
-  return Context.createExpr(VASTExpr::dpBitCat, NewOps, BitWidth, 0);
+  return createExpr(VASTExpr::dpBitCat, NewOps, BitWidth, 0);
 }
 
 VASTValPtr VASTExprBuilder::buildBitSliceExpr(VASTValPtr U, uint8_t UB,
@@ -306,7 +306,7 @@ VASTValPtr VASTExprBuilder::buildBitSliceExpr(VASTValPtr U, uint8_t UB,
   U = Context.nameExpr(U);
 
   VASTValPtr Ops[] = { U };
-  return Context.createExpr(VASTExpr::dpAssign, Ops, UB, LB);
+  return createExpr(VASTExpr::dpAssign, Ops, UB, LB);
 }
 
 VASTValPtr VASTExprBuilder::buildReduction(VASTExpr::Opcode Opc,VASTValPtr Op) {
@@ -356,7 +356,7 @@ VASTValPtr VASTExprBuilder::buildReduction(VASTExpr::Opcode Opc,VASTValPtr Op) {
     }
   }
 
-  return Context.createExpr(Opc, Op, 1, 0);
+  return createExpr(Opc, Op, 1, 0);
 }
 
 static bool VASTValPtr_less(const VASTValPtr LHS, const VASTValPtr RHS) {
@@ -371,7 +371,7 @@ VASTExprBuilder::getOrCreateCommutativeExpr(VASTExpr::Opcode Opc,
                                             SmallVectorImpl<VASTValPtr> &Ops,
                                              unsigned BitWidth) {
   std::sort(Ops.begin(), Ops.end(), VASTValPtr_less);
-  return Context.createExpr(Opc, Ops, BitWidth, 0);
+  return createExpr(Opc, Ops, BitWidth, 0);
 }
 
 VASTValPtr VASTExprBuilder::buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes){
@@ -529,7 +529,7 @@ VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
   // Resize the operand vector so it only contains valid operands.
   NewOps.resize(ActualPos);
 
-  return Context.createExpr(VASTExpr::dpAnd, NewOps, BitWidth, 0);
+  return createExpr(VASTExpr::dpAnd, NewOps, BitWidth, 0);
 }
 
 VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr LHS,
@@ -569,7 +569,7 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
     return buildReduction(Opc, Ops[0]);
   }
 
-  return Context.createExpr(Opc, Ops, BitWidth, 0);
+  return createExpr(Opc, Ops, BitWidth, 0);
 }
 
 VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op,
@@ -583,7 +583,7 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op,
   }
 
   VASTValPtr Ops[] = { Op };
-  return Context.createExpr(Opc, Ops, BitWidth, 0);
+  return createExpr(Opc, Ops, BitWidth, 0);
 }
 
 namespace llvm {
@@ -899,7 +899,7 @@ VASTValPtr VASTExprBuilder::buildAddExpr(ArrayRef<VASTValPtr> Ops,
     return buildBitCatExpr(BitCatOps, BitWidth);
   }
 
-  return Context.createExpr(VASTExpr::dpAdd, NewOps, BitWidth, 0);
+  return createExpr(VASTExpr::dpAdd, NewOps, BitWidth, 0);
 }
 
 VASTValPtr VASTExprBuilder::buildOrExpr(ArrayRef<VASTValPtr> Ops,
@@ -993,7 +993,7 @@ VASTValPtr VASTExprBuilder::buildShiftExpr(VASTExpr::Opcode Opc,
   }
 
   VASTValPtr Ops[] = { LHS, RHS }; 
-  return Context.createExpr(Opc, Ops, BitWidth, 0);
+  return createExpr(Opc, Ops, BitWidth, 0);
 }
 
 VASTValPtr VASTExprBuilder::buildZExtExpr(VASTValPtr V, unsigned DstBitWidth) {

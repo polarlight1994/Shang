@@ -172,7 +172,18 @@ protected:
 public:
   explicit VASTExprBuilder(VASTExprBuilderContext &Context)
     : Context(Context) {}
-  
+
+  // Directly create the expression without optimizations.
+  VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
+                        unsigned UB, unsigned LB = 0) {
+    return Context.createExpr(Opc, Ops, UB, LB);
+  }
+
+  VASTValPtr createExpr(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
+                        unsigned UB, unsigned LB = 0) {
+    VASTValPtr Ops[] = { LHS, RHS };
+    return createExpr(Opc, Ops, UB, LB);
+  }
 
   // Bit mask analyzing, bitmask_collecting_iterator.
   void calculateBitMask(VASTValPtr V, APInt &KnownZeros, APInt &KnownOnes);
