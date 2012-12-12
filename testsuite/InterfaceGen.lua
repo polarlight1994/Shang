@@ -144,6 +144,7 @@ reg               rden;
 wire  	 					readactive = mem0en&&(mem0cmd==0)? 1:0;
 wire		[7:0]			mem0be_wire = readactive?	(mem0be << mem0addr[2:0]):8'b1111_1111;
 wire    [63:0]    q;
+reg	[63:0]	  q_pipe;
 //-=======================================================================================
 assign          q[7:0] = (rden&&byen2R[0])? q_i[7:0]:0;
 assign          q[15:8] = (rden&&byen2R[1])? q_i[15:8]:0;
@@ -154,7 +155,15 @@ assign          q[47:40] = (rden&&byen2R[5])? q_i[47:40]:0;
 assign          q[55:48] = (rden&&byen2R[6])? q_i[55:48]:0;
 assign          q[63:56] = (rden&&byen2R[7])? q_i[63:56]:0;
 //-=======================================================================================
-assign          mem0in = readrdy? (q >> {addr2R_read[2:0],3'b0}):0;
+assign          mem0in = readrdy? (q_pipe >> {addr2R_read[2:0],3'b0}):0;
+
+always@(posedge clk,negedge rstN)begin
+	if(!rstN)begin
+		q_pipe <= 0;
+	end else begin
+		q_pipe <= q;
+	end
+end
 
 // synthesis translate_off
 integer MemAccessCycles = 0;
@@ -306,8 +315,7 @@ module BRAM
 			if(be[6]) ram[waddr][6] <= wdata[55:48];
 			if(be[7]) ram[waddr][7] <= wdata[63:56];
 	end
-		q_tmp <= ram[raddr];
-		q <= q_tmp;
+		q <= ram[raddr];
 	end
 endmodule : BRAM
 
