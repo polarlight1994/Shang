@@ -75,6 +75,23 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   }
 
   void buildDatapath(MachineBasicBlock &MBB);
+
+  void pinUsedValue(MachineInstr * MI) {
+    assert(VInstrInfo::isControl(MI->getOpcode())
+           && "Expect control-path operation!");
+    // Try to Pin the value used by the control-path.
+    for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i){
+      MachineOperand &MO = MI->getOperand(i);
+
+      if (!MO.isReg() || MO.isDef() || MO.getReg() == 0)
+        continue;
+
+      // This value is used by the control-path, pin it so that it will not be
+      // deleted.
+      Container->pinValue(MO.getReg());
+    }
+  }
+
   void rewriteDatapath(MachineBasicBlock &MBB);
 
   void rewriteDepForPHI(MachineInstr *PHI, MachineInstr *IncomingPos);
@@ -208,8 +225,11 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
   MachineBasicBlock::instr_iterator I = MBB.instr_begin(), E = MBB.instr_end();
 
   // Skip the PHINodes.
-  while (I != E && I->isPHI())
+  while (I != E && I->isPHI()) {
+    // Also try to pin the user of PHI.
+    pinUsedValue(I);
     ++I;
+  }
 
   typedef MachineBasicBlock::instr_iterator instr_iterator;
   while (I != E) {
@@ -231,17 +251,7 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
       continue;
     }
 
-    // Try to Pin the value used by the control-path.
-    for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i){
-      MachineOperand &MO = MI->getOperand(i);
-
-      if (!MO.isReg() || MO.isDef() || MO.getReg() == 0)
-        continue;
-
-      // This value is used by the control-path, pin it so that it will not be
-      // deleted.
-      Container->pinValue(MO.getReg());
-    }
+    pinUsedValue(MI);
   }
 }
 
