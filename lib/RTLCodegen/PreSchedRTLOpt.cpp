@@ -74,6 +74,12 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
     AU.setPreservesCFG();
   }
 
+  // Break the NAry expressions down to the binary expressions, because we cannot
+  // directly rewrite the NAry expressions back to MachineInstr.
+  void breakDownNAryExpr(VASTExpr *Expr);
+  void breakDownNAryExprs(VASTValue *Root, std::set<VASTValue*> &Visited);
+  void breakDownNAryExprs();
+
   void buildDatapath(MachineBasicBlock &MBB);
 
   void pinUsedValue(MachineInstr * MI) {
@@ -110,8 +116,6 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   unsigned rewriteSel(VASTExpr *Expr, MachineInstr *IP);
   unsigned rewriteAdd(VASTExpr *Expr, MachineInstr *IP);
   unsigned rewriteAssign(VASTExpr *Expr);
-  template<unsigned Opcode, typename BitwidthFN>
-  unsigned rewriteNAryExpr(VASTExprPtr Expr, MachineInstr *IP, BitwidthFN F);
   template<unsigned Opcode>
   unsigned rewriteBinExpr(VASTExpr *Expr, MachineInstr *IP);
   template<VFUs::ICmpFUType ICmpTy>
@@ -205,6 +209,9 @@ bool PreSchedRTLOpt::runOnMachineFunction(MachineFunction &F) {
     // Ask ABC for LUT mapping.
   }
 
+  // Prepare for datapath rewrite.
+  breakDownNAryExprs();
+
   // Rewrite the operations in data-path.
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     rewriteDatapath(*I);
@@ -216,6 +223,109 @@ bool PreSchedRTLOpt::runOnMachineFunction(MachineFunction &F) {
   // Verify the function.
   DEBUG(F.verify(this));
   return true;
+}
+
+
+static unsigned GetBitCatWidth(VASTValPtr LHS, VASTValPtr RHS) {
+  return LHS->getBitWidth() + RHS->getBitWidth();
+}
+
+static unsigned GetSameWidth(VASTValPtr LHS, VASTValPtr RHS) {
+  unsigned BitWidth = LHS->getBitWidth();
+  assert(BitWidth == RHS->getBitWidth() && "Bitwidth not match!");
+  return BitWidth;
+}
+
+void PreSchedRTLOpt::breakDownNAryExpr(VASTExpr *Expr) {
+  VASTExpr::Opcode Opcode = Expr->getOpcode();
+
+  // Only the and and bitcat need to be broken down at the moment.
+  // TODO: Also break multipications and additions.
+  if (Opcode != VASTExpr::dpAnd && Opcode != VASTExpr::dpBitCat)
+    return;
+
+  // Already binary expressions no need to break them down.
+  if (Expr->NumOps <= 2) return;
+
+  SmallVector<VASTValPtr, 8> Ops;
+  for (unsigned i = 0; i < Expr->NumOps; ++i)
+    Ops.push_back(Expr->getOperand(i));
+
+  // Construct the expression tree for the NAry expression.
+  while (Ops.size() > 1) {
+    unsigned ResultPos = 0;
+    unsigned OperandPos = 0;
+    unsigned NumOperand = Ops.size();
+    while (OperandPos + 1 < NumOperand) {
+      VASTValPtr LHS = Ops[OperandPos];
+      VASTValPtr RHS = Ops[OperandPos + 1];
+      OperandPos += 2;
+      unsigned ResultWidth
+        = Opcode == VASTExpr::dpBitCat ? GetBitCatWidth(LHS, RHS) :
+                    GetSameWidth(LHS, RHS);
+      // Create the BinExpr without optimizations.
+      VASTValPtr BinExpr = (*Container)->createExpr(Expr->getOpcode(), LHS, RHS,
+                                                    ResultWidth);
+
+      Ops[ResultPos++] = BinExpr;
+    }
+
+    // Move the rest of the operand.
+    while (OperandPos < NumOperand)
+      Ops[ResultPos++] = Ops[OperandPos++];
+
+    // Only preserve the results.
+    Ops.resize(ResultPos);
+  }
+
+  // Replace the original Expr by the broken down Expr.
+  Container->replaceAllUseWith(Expr, Ops.back());
+}
+
+void PreSchedRTLOpt::breakDownNAryExprs(VASTValue *Root,
+                                        std::set<VASTValue*> &Visited) {
+  typedef VASTValue::dp_dep_it ChildIt;
+  std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
+
+  VisitStack.push_back(std::make_pair(Root, VASTValue::dp_dep_begin(Root)));
+
+  while (!VisitStack.empty()) {
+    VASTValue *Node = VisitStack.back().first;
+    ChildIt It = VisitStack.back().second;
+
+    // We have visited all children of current node.
+    if (It == VASTValue::dp_dep_end(Node)) {
+      VisitStack.pop_back();
+
+      // Break down the current expression.
+      if (VASTExpr *E = dyn_cast<VASTExpr>(Node))
+        breakDownNAryExpr(E);
+
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    VASTValue *ChildNode = It->getAsLValue<VASTValue>();
+    ++VisitStack.back().second;
+
+    // Do not visit the same value twice.
+    if (!Visited.insert(ChildNode).second) continue;
+
+    if (!isa<VASTExpr>(ChildNode)) continue;
+
+    VisitStack.push_back(std::make_pair(ChildNode,
+                                        VASTValue::dp_dep_begin(ChildNode)));
+  }
+}
+
+void PreSchedRTLOpt::breakDownNAryExprs() {
+  // Remember the visited values so that we wont visit the same value twice.
+  std::set<VASTValue*> Visited;
+  typedef MFDatapathContainer::FanoutIterator iterator;
+
+  for (iterator I = Container->fanout_begin(), E = Container->fanout_end();
+       I != E; ++I)
+    breakDownNAryExprs(I->second->getDriver().get(), Visited);
 }
 
 void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
@@ -420,6 +530,7 @@ unsigned PreSchedRTLOpt::rewriteUnary(VASTExpr *Expr, MachineInstr *IP) {
 
 template<unsigned Opcode>
 unsigned PreSchedRTLOpt::rewriteBinExpr(VASTExpr *Expr, MachineInstr *IP) {
+  assert(Expr->NumOps == 2 && "Not binary expression!");
   MachineOperand DefMO = allocateRegMO(Expr);
   BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(Opcode))
     .addOperand(DefMO)
@@ -511,113 +622,6 @@ unsigned PreSchedRTLOpt::rewriteAssign(VASTExpr *Expr) {
   return DefMO.getReg();
 }
 
-static unsigned GetBitCatWidth(const MachineOperand &LHS,
-                               const MachineOperand &RHS) {
-  return VInstrInfo::getBitWidth(LHS) + VInstrInfo::getBitWidth(RHS);
-}
-
-static unsigned GetSameWidth(const MachineOperand &LHS,
-                               const MachineOperand &RHS) {
-  unsigned BitWidth = VInstrInfo::getBitWidth(LHS);
-  assert(BitWidth == VInstrInfo::getBitWidth(RHS) && "Bitwidth not match!");
-  return BitWidth;
-}
-
-template<unsigned Opcode, typename BitwidthFN>
-unsigned PreSchedRTLOpt::rewriteNAryExpr(VASTExprPtr ExprPtr, MachineInstr *IP,
-                                         BitwidthFN F) {
-  VASTExpr *Expr = ExprPtr.get();
-  bool IsInverted = ExprPtr.isInverted();
-  const MCInstrDesc &MID = VInstrInfo::getDesc(Opcode);
-
-  SmallVector<MachineOperand, 8> Ops;
-  for (unsigned i = 0; i < Expr->NumOps; ++i)
-    Ops.push_back(getAsOperand(Expr->getOperand(i)));
-
-  while (Ops.size() > 2) {
-    unsigned ResultPos = 0;
-    unsigned OperandPos = 0;
-    unsigned NumOperand = Ops.size();
-    while (OperandPos + 1 < NumOperand) {
-      MachineOperand LHS = Ops[OperandPos];
-      MachineOperand RHS = Ops[OperandPos + 1];
-      OperandPos += 2;
-      // Build the BinExpr to CSE the MachineInstr.
-      VASTValPtr BinExpr = (*Container)->buildExpr(Expr->getOpcode(),
-                                                Container->getAsOperandImpl(LHS),
-                                                Container->getAsOperandImpl(RHS),
-                                                F(LHS, RHS));
-      // Try to reuse the existing register number.
-      if (unsigned Reg =  getRewrittenRegNum(BinExpr)) {
-        Ops[ResultPos++] = VInstrInfo::CreateReg(Reg, BinExpr->getBitWidth());
-        continue;
-      }
-
-      // Otherwise we need to create the register and the MachineInstr.
-      MachineOperand DefMO = allocateRegMO(BinExpr, BinExpr->getBitWidth());
-      // Rewrite the MachineInstr now if it is not rewritten.
-      MachineInstr *CurIP = calculateInsertPos(cast<VASTExpr>(BinExpr.get()), IP);
-      BuildMI(*CurIP->getParent(), CurIP, DebugLoc(), MID)
-        .addOperand(DefMO)
-        .addOperand(LHS).addOperand(RHS)
-        .addOperand(VInstrInfo::CreatePredicate())
-        .addOperand(VInstrInfo::CreateTrace());
-      DefMO.setIsDef(false);
-      // Remember the rewritten register.
-      Container->rememberRegNumForExpr<false>(BinExpr, DefMO.getReg());
-
-      Ops[ResultPos++] = DefMO;
-    }
-
-    // Move the rest of the operand.
-    while (OperandPos < NumOperand)
-      Ops[ResultPos++] = Ops[OperandPos++];
-
-    // Only preserve the results.
-    Ops.resize(ResultPos);
-  }
-
-  MachineOperand LHS = Ops[0];
-  MachineOperand RHS = Ops[1];
-  // Build the BinExpr to CSE the MachineInstr.
-  VASTValPtr BinExpr = (*Container)->buildExpr(Expr->getOpcode(),
-                                               Container->getAsOperandImpl(LHS),
-                                               Container->getAsOperandImpl(RHS),
-                                               Expr->getBitWidth());
-  // Replace the NAryExpr by the BinExpr, which is the actual Expr be rewritten,
-  // and equivalent.
-  if (BinExpr != Expr) {
-    assert(BinExpr.get() != Expr
-           && "Cannot replace the value by its inverted version!");
-    Container->replaceAllUseWith(Expr, BinExpr);
-  }
-
-  // Use BinExpr instead, because Expr is not valid anymore.
-  MachineOperand DefMO = allocateRegMO(BinExpr);
-  MachineInstr *CurIP = calculateInsertPos(cast<VASTExpr>(BinExpr.get()), IP);
-  BuildMI(*CurIP->getParent(), CurIP, DebugLoc(), MID)
-    .addOperand(DefMO).addOperand(LHS).addOperand(RHS)
-    .addOperand(VInstrInfo::CreatePredicate())
-    .addOperand(VInstrInfo::CreateTrace());
-
-  unsigned Reg = DefMO.getReg();
-  // Remember the the VASTExpr to Reg mapping.
-  Container->rememberRegNumForExpr<false>(BinExpr, Reg);
-
-  // We may need to further invert the BinExpr.
-  if (IsInverted) {
-    VASTValPtr InvBinExpr = BinExpr.invert();
-    assert (getRewrittenRegNum(InvBinExpr) == 0
-            && "Inverted Expr should not yet been rewritten!");
-
-    // We need to invert the result now.
-    Reg = rewriteNotOf(BinExpr);
-    Container->rememberRegNumForExpr<false>(InvBinExpr, Reg);
-  }
-
-  return Reg;
-}
-
 unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
   bool isInverted = E.isInverted();
   VASTExpr *Expr = E.get();
@@ -631,9 +635,8 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
     switch (Expr->getOpcode()) {
     default: llvm_unreachable("Unsupported expression!");
     case VASTExpr::dpAnd:
-      // NAry Expr rewrittng is a bit complicated, and all handled in the
-      // function.
-      return rewriteNAryExpr<VTM::VOpAnd>(E, IP, GetSameWidth);
+      RegNo = rewriteBinExpr<VTM::VOpAnd>(Expr, IP);
+      break;
     case VASTExpr::dpRAnd:
       RegNo = rewriteUnary<VTM::VOpRAnd>(Expr, IP);
       break;
@@ -644,9 +647,8 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
       RegNo = rewriteSel(Expr, IP);
       break;
     case VASTExpr::dpBitCat:
-      // NAry Expr rewrittng is a bit complicated, and all handled in the
-      // function.
-      return rewriteNAryExpr<VTM::VOpBitCat>(E, IP, GetBitCatWidth);
+      RegNo = rewriteBinExpr<VTM::VOpBitCat>(Expr, IP);
+      break;
     case VASTExpr::dpBitRepeat:
       RegNo = rewriteBinExpr<VTM::VOpBitRepeat>(Expr, IP);
       break;
