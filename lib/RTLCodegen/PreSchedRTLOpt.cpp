@@ -230,6 +230,18 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
       MI->eraseFromParent();
       continue;
     }
+
+    // Try to Pin the value used by the control-path.
+    for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i){
+      MachineOperand &MO = MI->getOperand(i);
+
+      if (!MO.isReg() || MO.isDef() || MO.getReg() == 0)
+        continue;
+
+      // This value is used by the control-path, pin it so that it will not be
+      // deleted.
+      Container->pinValue(MO.getReg());
+    }
   }
 }
 
