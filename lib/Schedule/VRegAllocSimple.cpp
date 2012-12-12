@@ -151,7 +151,6 @@ struct VRASimple : public MachineFunctionPass {
   bool reduceCompGraph(LICGraph &G, CompEdgeWeight &C);
 
   void bindCompGraph(LICGraph &G);
-  void bindICmps(LICGraph &G);
 
   bool runOnMachineFunction(MachineFunction &F);
 
@@ -479,135 +478,6 @@ struct CompRegEdgeWeight : public CompEdgeWeightBase<VFUDesc, 1> {
     return Base::computeWeight(Base::getWidth());
   }
 };
-
-// Weight computation functor for commutable binary operation Compatibility
-// Graph.
-template<class FUDescTy, unsigned OpCode, unsigned OpIdx>
-struct CompBinOpEdgeWeight : public CompEdgeWeightBase<FUDescTy, 2> {
-  // Is there a copy between the src and dst of the edge?
-  //bool hasCopy;
-
-  void reset() {
-    //hasCopy = 0;
-    Base::reset();
-  }
-
-  template<unsigned Offset>
-  void visitOperand(MachineInstr *MI) {
-    FaninChecker<2>::addFanin<Offset>(MI->getOperand(OpIdx + Offset));
-  }
-
-  typedef CompEdgeWeightBase<FUDescTy, 2> Base;
-  explicit CompBinOpEdgeWeight(VRASimple *V) : Base(V) {}
-
-  // Run on the use-def chain of a FU to collect information about the live
-  // interval.
-  bool operator()(MachineRegisterInfo::reg_iterator I) {
-    MachineOperand &MO = I.getOperand();
-    if (I.getOperand().isDef()) {
-      // 1. Get the bit width information.
-      if (!Base::checkWidth(VInstrInfo::getBitWidth(MO)))
-        return true;
-      // 2. Analyze the definition op.
-      MachineInstr *MI = &*I;
-      assert(MI->getOpcode() == OpCode && "Unexpected Opcode!");
-
-      visitOperand<0>(MI);
-      visitOperand<1>(MI);
-    }
-
-    if (!MO.isImplicit()) FanoutChecker::addFanout(I);
-
-    return false;
-  }
-
-  int operator()(LiveInterval *Src, LiveInterval *Dst) {
-    assert(Dst && Src && "Unexpected null li!");
-    reset();
-
-    if (Base::VRA->iterateUseDefChain(Src->reg, *this))
-      return CompGraphWeights::HUGE_NEG_VAL;
-
-    // Go on check next source.
-    Base::nextSrc();
-
-    if (Base::VRA->iterateUseDefChain(Dst->reg, *this))
-      return CompGraphWeights::HUGE_NEG_VAL;
-
-    return Base::computeWeight(Base::getWidth());
-  }
-};
-
-struct CompICmpEdgeWeight : public CompBinOpEdgeWeight<VFUICmp, VTM::VOpICmp, 1>
-{
-  bool hasSignedCC, hasUnsignedCC;
-
-  typedef CompBinOpEdgeWeight<VFUICmp, VTM::VOpICmp, 1> Base;
-  CompICmpEdgeWeight(VRASimple *V) : Base(V) {}
-
-  void reset() {
-    hasSignedCC = false;
-    hasUnsignedCC = false;
-    //hasCopy = 0;
-    Base::reset();
-  }
-
-  bool hasInCompatibleCC(unsigned CC) {
-    if (CC == VFUs::CmpSigned) {
-      hasSignedCC = true;
-      return hasUnsignedCC;
-    }
-
-    if (CC == VFUs::CmpUnsigned) {
-      hasUnsignedCC = true;
-      return hasSignedCC;
-    }
-
-    return false;
-  }
-
-  // Run on the use-def chain of a FU to collect information about the live
-  // interval.
-  bool operator()(MachineRegisterInfo::reg_iterator I) {
-    MachineOperand &MO = I.getOperand();
-    if (I.getOperand().isDef()) {
-      // 2. Analyze the definition op.
-      MachineInstr *MI = &*I;
-      assert(MI->getOpcode() == VTM::VOpICmp && "Unexpected Opcode!");
-
-      MachineOperand &CondCode = MI->getOperand(3);
-      // Get the bit width information.
-      if (!checkWidth(VInstrInfo::getBitWidth(CondCode)))
-        return true;
-      // Are these CC compatible?
-      if (hasInCompatibleCC(CondCode.getImm()))
-        return true;
-
-      visitOperand<0>(MI);
-      visitOperand<1>(MI);
-    }
-
-    if (!MO.isImplicit()) addFanout(I);
-
-    return false;
-  }
-
-  int operator()(LiveInterval *Src, LiveInterval *Dst) {
-    assert(Dst && Src && "Unexpected null li!");
-    reset();
-
-    if (VRA->iterateUseDefChain(Src->reg, *this))
-      return CompGraphWeights::HUGE_NEG_VAL;
-
-    // Go on check next source.
-    nextSrc();
-
-    if (VRA->iterateUseDefChain(Dst->reg, *this))
-      return CompGraphWeights::HUGE_NEG_VAL;
-
-    return computeWeight(getWidth(), 1);
-  }
-};
 }
 
 namespace llvm {
@@ -713,56 +583,22 @@ bool VRASimple::runOnMachineFunction(MachineFunction &F) {
   bindDstMux();
 
   //Build the Compatibility Graphs
-  LICGraph RCG(VTM::DRRegClassID),
-           AdderCG(VTM::RADDRegClassID),
-           ICmpCG(VTM::RUCMPRegClassID),
-           MulCG(VTM::RMULRegClassID),
-           MulLHCG(VTM::RMULLHRegClassID),
-           AsrCG(VTM::RASRRegClassID),
-           LsrCG(VTM::RLSRRegClassID),
-           ShlCG(VTM::RSHLRegClassID);
+  LICGraph RCG(VTM::DRRegClassID);
+
   buildCompGraph(RCG);
-  buildCompGraph(AdderCG);
-  buildCompGraph(ICmpCG);
-  buildCompGraph(MulCG);
-  buildCompGraph(MulLHCG);
-  buildCompGraph(AsrCG);
-  buildCompGraph(LsrCG);
-  buildCompGraph(ShlCG);
 
   CompRegEdgeWeight RegWeight(this);
-  CompBinOpEdgeWeight<VFUAddSub, VTM::VOpAdd, 1> AddWeight(this);
-  CompICmpEdgeWeight ICmpWeight(this);
-  //CompSelEdgeWeight SelWeight(this, VFUs::SelCost);
-  CompBinOpEdgeWeight<VFUMult, VTM::VOpMult, 1> MulWeiht(this);
-  CompBinOpEdgeWeight<VFUMult, VTM::VOpMultLoHi, 1> MulLHWeiht(this);
-  CompBinOpEdgeWeight<VFUShift, VTM::VOpSRA, 1> SRAWeight(this);
-  CompBinOpEdgeWeight<VFUShift, VTM::VOpSRL, 1> SRLWeight(this);
-  CompBinOpEdgeWeight<VFUShift, VTM::VOpSHL, 1> SHLWeight(this);
+
 
   bool SomethingBound = !DisableFUSharing;
   // Reduce the Compatibility Graphs
   while (SomethingBound) {
     DEBUG(dbgs() << "Going to reduce CompGraphs\n");
-    SomethingBound = reduceCompGraph(AsrCG, SRAWeight)
-                  || reduceCompGraph(LsrCG, SRLWeight)
-                  || reduceCompGraph(ShlCG, SHLWeight)
-                  || reduceCompGraph(MulCG, MulWeiht)
-                  || reduceCompGraph(MulLHCG, MulLHWeiht)
-                  || reduceCompGraph(AdderCG, AddWeight)
-                  || reduceCompGraph(ICmpCG, ICmpWeight)
-                  || reduceCompGraph(RCG, RegWeight);
+    SomethingBound = reduceCompGraph(RCG, RegWeight);
   }
 
   // Bind the Compatibility Graphs
   bindCompGraph(RCG);
-  bindCompGraph(AdderCG);
-  bindICmps(ICmpCG);
-  bindCompGraph(MulCG);
-  bindCompGraph(MulLHCG);
-  bindCompGraph(AsrCG);
-  bindCompGraph(LsrCG);
-  bindCompGraph(ShlCG);
 
   // Run rewriter
   LIS->addKillFlags();
@@ -1119,23 +955,5 @@ void VRASimple::bindCompGraph(LICGraph &G) {
   for (LICGraph::iterator I = G.begin(), E = G.end(); I != E; ++I) {
     LiveInterval *LI = (*I)->get();
     assign(*LI, TRI->allocatePhyReg(RC, getBitWidthOf(LI->reg)));
-  }
-}
-
-void VRASimple::bindICmps(LICGraph &G) {
-  CompICmpEdgeWeight ICmpChecker(this);
-
-  for (LICGraph::iterator I = G.begin(), E = G.end(); I != E; ++I) {
-    LiveInterval *LI = (*I)->get();
-    // Run the checker on LI to collect the signedness and bitwidth information.
-    ICmpChecker.reset();
-    bool succ = iterateUseDefChain(LI->reg, ICmpChecker);
-    assert(!succ && "Something went wrong while checking LI!");
-    (void) succ;
-
-    unsigned FUType = ICmpChecker.hasSignedCC ? VTM::RSCMPRegClassID
-                                              : VTM::RUCMPRegClassID;
-    unsigned CmpFU = TRI->allocateFN(FUType, ICmpChecker.CurMaxWidth);
-    assign(*LI, CmpFU);
   }
 }

@@ -354,11 +354,6 @@ class VerilogASTBuilder : public MachineFunctionPass,
   void emitBasicBlock(MachineBasicBlock &MBB);
 
   void emitAllSignals();
-  VASTValPtr emitFUAdd(unsigned FUNum, unsigned BitWidth);
-  VASTValPtr emitFUMult(unsigned FUNum, unsigned BitWidth, bool HasHi);
-  VASTValPtr emitFUShift(unsigned FUNum, unsigned BitWidth,
-                         VASTExpr::Opcode Opc);
-  VASTValPtr emitFUCmp(unsigned FUNum, unsigned BitWidth, bool isSigned);
 
   // Mapping success fsm state to their predicate in current state.
   void emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
@@ -376,10 +371,6 @@ class VerilogASTBuilder : public MachineFunctionPass,
 
   void emitBr(MachineInstr *MI, VASTSlot *CurSlot, VASTValueVecTy &Cnds,
               MachineBasicBlock *CurBB, bool Pipelined);
-
-  void emitOpAdd(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds);
-  void emitBinaryFUOp(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds);
-  void emitSignedCmpOp(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds);
 
   VASTValPtr getAsOperandImpl(MachineOperand &Op, bool GetAsInlineOperand = true);
 
@@ -809,59 +800,6 @@ void VerilogASTBuilder::emitSubModule(StringRef CalleeName, unsigned FNNum) {
   indexVASTRegister(RetPortIdx, 0);
 }
 
-
-VASTValPtr VerilogASTBuilder::emitFUAdd(unsigned FUNum, unsigned BitWidth) {
-  // Write the datapath for function unit.
-  std::string ResultName = "addsub" + utostr_32(FUNum) + "o";
-  unsigned OperandWidth = BitWidth - 1;
-  VASTRegister *LHS = VM->addOpRegister(ResultName + "_a", OperandWidth, FUNum),
-               *RHS = VM->addOpRegister(ResultName + "_b", OperandWidth, FUNum),
-               *C = VM->addOpRegister(ResultName + "_c", 1, FUNum);
-  return VM->assign(VM->addWire(ResultName, BitWidth),
-                    Builder->buildExpr(VASTExpr::dpAdd, LHS, RHS, C, BitWidth));
-}
-
-VASTValPtr VerilogASTBuilder::emitFUMult(unsigned FUNum, unsigned BitWidth, bool HasHi){
-  std::string ResultName = "mult" + utostr_32(FUNum) + "o";
-  VASTWire *Result = VM->addWire(ResultName, BitWidth);
-
-  // No need to include the high part is included in the operand register.
-  unsigned OperandWidth = BitWidth;
-  if (HasHi) OperandWidth /= 2;
-  
-  VASTRegister *LHS = VM->addOpRegister(ResultName + "_a", OperandWidth, FUNum),
-               *RHS = VM->addOpRegister(ResultName + "_b", OperandWidth, FUNum);
-  return VM->assign(Result,
-                    Builder->buildExpr(VASTExpr::dpMul, LHS, RHS, BitWidth));
-}
-
-VASTValPtr VerilogASTBuilder::emitFUShift(unsigned FUNum, unsigned BitWidth,
-                                          VASTExpr::Opcode Opc) {
-  std::string ResultName = "shift" + utostr_32(FUNum) + "o";
-
-
-  VASTRegister *LHS = VM->addOpRegister(ResultName + "_a", BitWidth, FUNum),
-               *RHS = VM->addOpRegister(ResultName + "_b",
-                                             Log2_32_Ceil(BitWidth), FUNum);
-  return VM->assign(VM->addWire(ResultName, BitWidth),
-                    Builder->buildExpr(Opc, LHS, RHS, BitWidth));
-}
-
-VASTValPtr VerilogASTBuilder::emitFUCmp(unsigned FUNum, unsigned BitWidth,
-                                        bool isSigned) {
-  std::string ResultName = "cmp" + utostr_32(FUNum) + "o";
-  if (isSigned)  ResultName = "s" + ResultName;
-  else           ResultName = "u" + ResultName;
-
-  VASTRegister *LHS = VM->addOpRegister(ResultName + "_a", BitWidth, FUNum),
-               *RHS = VM->addOpRegister(ResultName + "_b", BitWidth, FUNum);
-  // Comparer have 4 output port.
-  return VM->assign(VM->addWire(ResultName, 8),
-                    Builder->buildExpr(isSigned ? VASTExpr::dpSCmp
-                                                : VASTExpr::dpUCmp,
-                                       LHS, RHS, 5));
-}
-
 void VerilogASTBuilder::emitAllSignals() {
   for (unsigned i = 0, e = TRI->num_phyreg(); i != e; ++i) {
     unsigned RegNum = i + 1;
@@ -881,36 +819,6 @@ void VerilogASTBuilder::emitAllSignals() {
     case VTM::DRRegClassID:
       addDataRegister(RegNum, Info.getBitWidth());
       break;
-    case VTM::RADDRegClassID:
-      indexVASTRegister(RegNum, emitFUAdd(RegNum, Info.getBitWidth()));
-      break;
-    case VTM::RUCMPRegClassID:
-      indexVASTRegister(RegNum, emitFUCmp(RegNum, Info.getBitWidth(), false));
-      break;
-    case VTM::RSCMPRegClassID:
-      indexVASTRegister(RegNum, emitFUCmp(RegNum, Info.getBitWidth(), true));
-      break;
-    case VTM::RMULRegClassID:
-      indexVASTRegister(RegNum, emitFUMult(RegNum, Info.getBitWidth(), false));
-      break;
-    case VTM::RMULLHRegClassID:
-      indexVASTRegister(RegNum, emitFUMult(RegNum, Info.getBitWidth(), true));
-      break;
-    case VTM::RASRRegClassID: {
-      VASTValPtr V = emitFUShift(RegNum, Info.getBitWidth(), VASTExpr::dpSRA);
-      indexVASTRegister(RegNum, V);
-      break;
-    }
-    case VTM::RLSRRegClassID:{
-      VASTValPtr V = emitFUShift(RegNum, Info.getBitWidth(), VASTExpr::dpSRL);
-      indexVASTRegister(RegNum, V);
-      break;
-    }
-    case VTM::RSHLRegClassID:{
-      VASTValPtr V = emitFUShift(RegNum, Info.getBitWidth(), VASTExpr::dpShl);
-      indexVASTRegister(RegNum, V);
-      break;
-    }
     case VTM::RINFRegClassID: {
       // FIXME: Do not use such magic number!
       // The offset of data input port is 3
@@ -962,19 +870,6 @@ void VerilogASTBuilder::emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
     case VTM::VOpMove:
     case VTM::VOpMvPhi:
     case VTM::VOpMvPipe:        emitOpReadFU(MI, CurSlot, Cnds);          break;
-    case VTM::VOpAdd:           emitOpAdd(MI, CurSlot, Cnds);             break;
-    case VTM::VOpICmp: {
-      if (MI->getOperand(3).getImm() == VFUs::CmpSigned) {
-        emitSignedCmpOp(MI, CurSlot, Cnds);
-        break;
-      }
-      /* Fall through */
-    }
-    case VTM::VOpMultLoHi:
-    case VTM::VOpMult:
-    case VTM::VOpSHL:
-    case VTM::VOpSRL:
-    case VTM::VOpSRA:           emitBinaryFUOp(MI, CurSlot, Cnds);        break;
     case VTM::VOpReadFU:        emitOpReadFU(MI, CurSlot, Cnds);          break;
     case VTM::VOpDisableFU:     emitOpDisableFU(MI, CurSlot, Cnds);       break;
     case VTM::VOpInternalCall:  emitOpInternalCall(MI, CurSlot, Cnds);    break;
@@ -1026,13 +921,6 @@ bool VerilogASTBuilder::emitFirstCtrlBundle(MachineBasicBlock *DstBB,
       break;
     case VTM::VOpMemTrans:      emitOpMemTrans(MI, Slot, Cnds);        break;
     case VTM::VOpBRAMTrans:     emitOpBRamTrans(MI, Slot, Cnds);       break;
-    case VTM::VOpAdd:           emitOpAdd(MI, Slot, Cnds);             break;
-    case VTM::VOpICmp:
-    case VTM::VOpMultLoHi:
-    case VTM::VOpMult:
-    case VTM::VOpSHL:
-    case VTM::VOpSRL:
-    case VTM::VOpSRA:           emitBinaryFUOp(MI, Slot, Cnds);        break;
     default:  llvm_unreachable("Unexpected opcode!");         break;
     }
     Cnds.pop_back();
@@ -1080,70 +968,6 @@ void VerilogASTBuilder::emitOpUnreachable(MachineInstr *MI, VASTSlot *Slot,
 
   addSuccSlot(Slot, VM->getOrCreateSlot(0, 0),
               VM->getBoolImmediateImpl(true));
-}
-
-void VerilogASTBuilder::emitOpAdd(MachineInstr *MI, VASTSlot *Slot,
-                                  VASTValueVecTy &Cnds) {
-  VASTWire *Result = getAsLValue<VASTWire>(MI->getOperand(0));
-  assert(Result && "FU result port replaced?");
-
-  VASTRegister *R = cast<VASTRegister>(Result->getExpr()->getOperand(0));
-  // Make sure every bit of the operand register is updated in the assignment
-  // by extending the source value.
-  VASTValPtr Src = Builder->buildZExtExprOrSelf(getAsOperandImpl(MI->getOperand(1)),
-                                                R->getBitWidth());
-  VM->addAssignment(R, Src, Slot, Cnds, MI);
-
-  R = cast<VASTRegister>(Result->getExpr()->getOperand(1));
-  // Make sure every bit of the operand register is updated in the assignment
-  // by extending the source value.
-  Src = Builder->buildZExtExprOrSelf(getAsOperandImpl(MI->getOperand(2)),
-                                     R->getBitWidth());
-  VM->addAssignment(R, Src, Slot, Cnds, MI);
-
-  // No need to extend for 1 bit operand.
-  R = cast<VASTRegister>(Result->getExpr()->getOperand(2));
-  VM->addAssignment(R, getAsOperandImpl(MI->getOperand(3)), Slot, Cnds, MI);
-}
-
-void VerilogASTBuilder::emitBinaryFUOp(MachineInstr *MI, VASTSlot *Slot,
-                                       VASTValueVecTy &Cnds) {
-  VASTWirePtr Result = getAsLValue<VASTWire>(MI->getOperand(0));
-  assert(Result && "FU result port replaced?");
-
-  VASTRegister *R = cast<VASTRegister>(Result->getExpr()->getOperand(0));
-  // Make sure every bit of the operand register is updated in the assignment
-  // by extending the source value.
-  VASTValPtr Src = Builder->buildZExtExprOrSelf(getAsOperandImpl(MI->getOperand(1)),
-                                                R->getBitWidth());
-  VM->addAssignment(R, Src, Slot, Cnds, MI);
-
-  R = cast<VASTRegister>(Result->getExpr()->getOperand(1));
-  // Make sure every bit of the operand register is updated in the assignment
-  // by extending the source value.
-  Src = Builder->buildZExtExprOrSelf(getAsOperandImpl(MI->getOperand(2)),
-                                     R->getBitWidth());
-  VM->addAssignment(R, Src, Slot, Cnds, MI);
-}
-
-void VerilogASTBuilder::emitSignedCmpOp(MachineInstr *MI, VASTSlot *Slot,
-                                        VASTValueVecTy &Cnds) {
-  VASTWirePtr Result = getAsLValue<VASTWire>(MI->getOperand(0));
-  assert(Result && "FU result port replaced?");
-
-  VASTRegister *R = cast<VASTRegister>(Result->getExpr()->getOperand(0));
-  // Make sure every bit of the operand register is updated in the assignment
-  // by extending the source value.
-  VASTValPtr Src = Builder->buildSExtExprOrSelf(getAsOperandImpl(MI->getOperand(1)),
-                                                R->getBitWidth());
-  VM->addAssignment(R, Src, Slot, Cnds, MI);
-
-  R = cast<VASTRegister>(Result->getExpr()->getOperand(1));
-  // Make sure every bit of the operand register is updated in the assignment
-  // by extending the source value.
-  Src = Builder->buildSExtExprOrSelf(getAsOperandImpl(MI->getOperand(2)),
-                                     R->getBitWidth());
-  VM->addAssignment(R, Src, Slot, Cnds, MI);
 }
 
 void VerilogASTBuilder::emitOpReadFU(MachineInstr *MI, VASTSlot *Slot,

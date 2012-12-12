@@ -157,9 +157,9 @@ bool BitLevelInfo::runOnMachineFunction(MachineFunction &MF) {
       }
       case VTM::COPY:     case VTM::PHI:
         continue;
-      case VTM::VOpSRA: case VTM::VOpSRA_c:
-      case VTM::VOpSRL: case VTM::VOpSRL_c:
-      case VTM::VOpSHL: case VTM::VOpSHL_c:
+      case VTM::VOpSRA:
+      case VTM::VOpSRL:
+      case VTM::VOpSHL:
         isShifts = true;
         break;
       }
@@ -260,7 +260,6 @@ void BitLevelInfo::computeBitWidth(MachineInstr *Instr) {
            && "BitCat's width changed!");
     return;
   // Operations with Fixed bit width.
-  case VTM::VOpICmp_c:
   case VTM::VOpICmp:
   case VTM::VOpROr:
   case VTM::VOpRAnd:
@@ -275,7 +274,6 @@ void BitLevelInfo::computeBitWidth(MachineInstr *Instr) {
   // Dirty Hack: this appear in bugpoint.
   // case VTM::IMPLICIT_DEF:
   // Other Instructions.
-  case VTM::VOpAdd_c:
   case VTM::VOpAdd: {
     MachineOperand &Result = Instr->getOperand(0);
     unsigned Width = computeByOpWithSameWidth(Instr->operands_begin() + 1,
@@ -286,7 +284,7 @@ void BitLevelInfo::computeBitWidth(MachineInstr *Instr) {
     break;
   }
 
-  case VTM::VOpMult:  case VTM::VOpMult_c:
+  case VTM::VOpMult:
   case VTM::VOpOr:
   case VTM::VOpAnd:
   case VTM::VOpXor: {
@@ -298,7 +296,7 @@ void BitLevelInfo::computeBitWidth(MachineInstr *Instr) {
     break;
   }
 
-  case VTM::VOpMultLoHi: case VTM::VOpMultLoHi_c: {
+  case VTM::VOpMultLoHi: {
     MachineOperand &Result = Instr->getOperand(0);
     unsigned Width = computeByOpWithSameWidth(Instr->operands_begin() + 1,
                                               Instr->operands_begin() + 3);
@@ -319,9 +317,9 @@ void BitLevelInfo::computeBitWidth(MachineInstr *Instr) {
   }
   // The bitwidth determinate by its first operand.
   case VTM::VOpNot:
-  case VTM::VOpSRA: case VTM::VOpSRA_c:
-  case VTM::VOpSRL: case VTM::VOpSRL_c:
-  case VTM::VOpSHL: case VTM::VOpSHL_c: {
+  case VTM::VOpSRA:
+  case VTM::VOpSRL:
+  case VTM::VOpSHL: {
     MachineOperand &Result = Instr->getOperand(0);
     unsigned Width = VInstrInfo::getBitWidth(Instr->getOperand(1));
     if (updateBitWidth(Result, Width))

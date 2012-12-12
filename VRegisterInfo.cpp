@@ -165,17 +165,9 @@ const TargetRegisterClass *VRegisterInfo::getRepRegisterClass(unsigned Opcode) {
 
   switch (Opcode) {
   default:                  return &VTM::DRRegClass;
-  case VTM::VOpAdd:         return &VTM::RADDRegClass;
-  case VTM::VOpSRA:         return &VTM::RASRRegClass;
-  case VTM::VOpSRL:         return &VTM::RLSRRegClass;
-  case VTM::VOpSHL:         return &VTM::RSHLRegClass;
-  case VTM::VOpMult:        return &VTM::RMULRegClass;
-  case VTM::VOpMultLoHi:    return &VTM::RMULLHRegClass;
   case VTM::VOpMemTrans:    return &VTM::RINFRegClass;
   case VTM::VOpInternalCall:return &VTM::RCFNRegClass;
   case VTM::VOpBRAMTrans:   return &VTM::RBRMRegClass;
-    // allocate unsigned comparison fu by default.
-  case VTM::VOpICmp:        return &VTM::RUCMPRegClass;
   case VTM::VOpDstMux:      return &VTM::RMUXRegClass;
   }
 

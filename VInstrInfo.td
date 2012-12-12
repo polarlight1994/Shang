@@ -237,55 +237,30 @@ def VOpDisableFU: CtrlInst<(outs), (ins DR:$src, i8imm:$fuid),
 let isReMaterializable = 1,
     neverHasSideEffects = 1 in {
   let isCommutable        = 1 in {
-    def VOpAdd : FUInst<(outs DR:$dst),(ins DR:$src1, DR:$src2, DR:$ci),
-                         "$dst = $src1 + $src2 + $ci;",
-                         [], FUAddSub, 0 /*writeUntilFinish*/>;
-
 	// Data-path only version.
-    def VOpAdd_c : DPTvaInst<(outs DR:$dst),(ins DR:$src1, DR:$src2, DR:$ci),
+    def VOpAdd : DPTvaInst<(outs DR:$dst),(ins DR:$src1, DR:$src2, DR:$ci),
                              "$dst = $src1 + $src2 + $ci;", []>;
 
-    def VOpMult : FUInst<(outs DR:$dst), (ins DR:$src1, DR:$src2),
-                         "$dst = $src1 * $src2;",
-                         [], FUMult, 0 /*writeUntilFinish*/>;
-    def VOpMultLoHi : FUInst<(outs DR:$dst), (ins DR:$src1, DR:$src2),
-                             "$dst = $src1 * $src2;",
-                             [], FUMult, 0 /*writeUntilFinish*/>;
-
-    def VOpMult_c : DPTvaInst<(outs DR:$dst), (ins DR:$src1, DR:$src2),
+    def VOpMult : DPTvaInst<(outs DR:$dst), (ins DR:$src1, DR:$src2),
                          "$dst = $src1 * $src2;",
                          []>;
-    def VOpMultLoHi_c : DPTvaInst<(outs DR:$dst), (ins DR:$src1, DR:$src2),
+    def VOpMultLoHi : DPTvaInst<(outs DR:$dst), (ins DR:$src1, DR:$src2),
                              "$dst = $src1 * $src2;",
                              []>;
   }
 
-  def VOpSHL : FUInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
-                       "$dst = shl $src0, $src1", [], FUSHIFT,
-                       0 /*writeUntilFinish*/>;
-  def VOpSRL : FUInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
-                       "$dst = lsr $src0, $src1", [], FUSHIFT,
-                       0 /*writeUntilFinish*/>;
-
-  def VOpSRA : FUInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
-                       "$dst = sra $src0, $src1", [], FUSHIFT,
-                       0 /*writeUntilFinish*/>;
-
-  def VOpSHL_c : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
+  def VOpSHL : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
                            "$dst = shl $src0, $src1", []>;
-  def VOpSRL_c : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
+  def VOpSRL : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
                            "$dst = lsr $src0, $src1", []>;
 
-  def VOpSRA_c : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
+  def VOpSRA : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
                            "$dst = sra $src0, $src1", []>;
 
   // Integer comparison
   let isCompare = 1 in
-    def VOpICmp   : FUInst<(outs DR:$dst), (ins DR:$src0, DR:$src1, i8imm:$CC),
-                           "$dst = icmp $src0, $src1 $CC", [], FUICmp,
-	                       0 /*writeUntilFinish*/>;
 	// Data-path only version.
-    def VOpICmp_c  : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1, i8imm:$CC),
+    def VOpICmp  : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1, i8imm:$CC),
                                 "$dst = icmp $src0, $src1 $CC", []>;
 }
 

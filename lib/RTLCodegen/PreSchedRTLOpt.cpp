@@ -429,7 +429,7 @@ unsigned PreSchedRTLOpt::rewriteAdd(VASTExpr *Expr, MachineInstr *IP) {
   MachineOperand Carry = VInstrInfo::CreateImm(0, 1);
   if (Expr->NumOps == 3) Carry = getAsOperand(Expr->getOperand(2));
 
-  BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(VTM::VOpAdd_c))
+  BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(VTM::VOpAdd))
     .addOperand(DefMO).addOperand(LHS).addOperand(RHS).addOperand(Carry)
     .addOperand(VInstrInfo::CreatePredicate())
     .addOperand(VInstrInfo::CreateTrace());
@@ -441,7 +441,7 @@ unsigned PreSchedRTLOpt::rewriteICmp(VASTExpr *Expr, MachineInstr *IP) {
   MachineOperand DefMO = allocateRegMO(Expr);
   unsigned ICMPBitWidth = std::max(Expr->getOperand(0)->getBitWidth(),
                                    Expr->getOperand(1)->getBitWidth());
-  BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(VTM::VOpICmp_c))
+  BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(VTM::VOpICmp))
     .addOperand(DefMO)
     .addOperand(getAsOperand(Expr->getOperand(0)))
     .addOperand(getAsOperand(Expr->getOperand(1)))
@@ -635,16 +635,16 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
       RegNo = rewriteAdd(Expr, IP);
       break;
     case VASTExpr::dpMul:
-      RegNo = rewriteBinExpr<VTM::VOpMult_c>(Expr, IP);
+      RegNo = rewriteBinExpr<VTM::VOpMult>(Expr, IP);
       break;
     case VASTExpr::dpShl:
-      RegNo = rewriteBinExpr<VTM::VOpSHL_c>(Expr, IP);
+      RegNo = rewriteBinExpr<VTM::VOpSHL>(Expr, IP);
       break;
     case VASTExpr::dpSRA:
-      RegNo = rewriteBinExpr<VTM::VOpSRA_c>(Expr, IP);
+      RegNo = rewriteBinExpr<VTM::VOpSRA>(Expr, IP);
       break;
     case VASTExpr::dpSRL:
-      RegNo = rewriteBinExpr<VTM::VOpSRL_c>(Expr, IP);
+      RegNo = rewriteBinExpr<VTM::VOpSRL>(Expr, IP);
       break;
     case VASTExpr::dpUCmp:
       RegNo = rewriteICmp<VFUs::CmpUnsigned>(Expr, IP);

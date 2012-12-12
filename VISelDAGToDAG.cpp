@@ -422,24 +422,19 @@ SDNode *VDAGToDAGISel::Select(SDNode *N) {
   case ISD::BRCOND:           return SelectBrcnd(N);
 
   case VTMISD::ADDCS:{ 
-    return SelectSimpleNode(N, VTM::VOpAdd_c);
+    return SelectSimpleNode(N, VTM::VOpAdd);
   }
 
   case VTMISD::ICmp:{
-    return SelectSimpleNode(N, VTM::VOpICmp_c);
+    return SelectSimpleNode(N, VTM::VOpICmp);
   }
 
-  //case VTMISD::Sel:{
-  //  unsigned Opcode = SelectOpCode<VFUs::Sel, VTM::VOpSel_c, VTM::VOpSel>(N);
-  //  return SelectSimpleNode(N, Opcode);
-  //}
-
   case ISD::MUL:{
-    return SelectBinary(N, VTM::VOpMult_c);
+    return SelectBinary(N, VTM::VOpMult);
   }
 
   case VTMISD::MULHiLo:{
-    return SelectBinary(N, VTM::VOpMultLoHi_c);
+    return SelectBinary(N, VTM::VOpMultLoHi);
   }
 
   case ISD::XOR:              return SelectBinary(N, VTM::VOpXor);
@@ -449,13 +444,13 @@ SDNode *VDAGToDAGISel::Select(SDNode *N) {
   case ISD::SELECT:           return SelectSimpleNode(N, VTM::VOpSel);
 
   case ISD::SHL:
-    return SelectBinary(N, VTM::VOpSHL_c);
+    return SelectBinary(N, VTM::VOpSHL);
 
   case ISD::SRL:
-    return SelectBinary(N, VTM::VOpSRL_c);
+    return SelectBinary(N, VTM::VOpSRL);
 
   case ISD::SRA:
-    return SelectBinary(N, VTM::VOpSRA_c);
+    return SelectBinary(N, VTM::VOpSRA);
 
   case VTMISD::BitRepeat:     return SelectBinary(N, VTM::VOpBitRepeat);
   case VTMISD::BitCat:        return SelectBinary(N, VTM::VOpBitCat);

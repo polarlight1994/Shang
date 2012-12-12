@@ -41,18 +41,18 @@ VASTValPtr DatapathBuilder::buildDatapathExpr(MachineInstr *MI) {
   case VTM::VOpBitRepeat:
     return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpBitRepeat>);
 
-  case VTM::VOpAdd_c:     return buildAdd(MI);
-  case VTM::VOpICmp_c:    return buildICmp(MI);
+  case VTM::VOpAdd:     return buildAdd(MI);
+  case VTM::VOpICmp:    return buildICmp(MI);
 
-  case VTM::VOpSHL_c:
+  case VTM::VOpSHL:
     return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpShl>);
-  case VTM::VOpSRA_c:
+  case VTM::VOpSRA:
     return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpSRA>);
-  case VTM::VOpSRL_c:
+  case VTM::VOpSRL:
     return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpSRL>);
 
-  case VTM::VOpMultLoHi_c:
-  case VTM::VOpMult_c:
+  case VTM::VOpMultLoHi:
+  case VTM::VOpMult:
     return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpMul>);
 
   case VTM::VOpSel:       return buildSel(MI);
