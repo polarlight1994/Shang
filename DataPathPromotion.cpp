@@ -22,24 +22,70 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/CodeGen/Passes.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
 
 using namespace llvm;
 namespace {
 struct DataPathPromotion : public MachineFunctionPass {
-  // Mapping the PHI number to accutally register.
-  std::map<unsigned, unsigned> PHIsMap;
   static char ID;
 
   DataPathPromotion() : MachineFunctionPass(ID) {}
 
+  template<unsigned IDX>
+  void insertRegForOperand(MachineInstr *MI, MachineRegisterInfo &MRI) {
+    MachineOperand &MO = MI->getOperand(IDX);
+    MachineOperand MOToBeCopied = MO;
+    MOToBeCopied.clearParent();
+    unsigned Reg = MRI.createVirtualRegister(&VTM::DRRegClass);
+    MachineInstr *IP = MO.getParent();
+    DebugLoc dl = IP->getDebugLoc();
+
+    BuildMI(*IP->getParent(), IP, dl, VInstrInfo::getDesc(VTM::VOpMove))
+      .addOperand(VInstrInfo::CreateReg(Reg, VInstrInfo::getBitWidth(MO), true))
+      .addOperand(MOToBeCopied)
+      // The predecate and trace information sould also be copied.
+      .addOperand(*VInstrInfo::getPredOperand(MI))
+      .addOperand(*VInstrInfo::getTraceOperand(MI));
+
+    // Read the value from the copied register instead.
+    MO.ChangeToRegister(Reg, false);
+  }
+
+  void promoteAdd(MachineInstr *MI, MachineRegisterInfo &MRI);
+
+  template<VFUs::FUTypes T>
+  void promoteBinOp(MachineInstr *MI, MachineRegisterInfo &MRI) {
+    unsigned Size = VInstrInfo::getBitWidth(MI->getOperand(0));
+    if (!getFUDesc(T)->shouldBeChained(Size)) {
+      insertRegForOperand<1>(MI, MRI);
+      insertRegForOperand<2>(MI, MRI);
+    }
+  }
+
   bool runOnMachineFunction(MachineFunction &MF) {
+    MachineRegisterInfo &MRI = MF.getRegInfo();
+
     for (MachineFunction::iterator I = MF.begin(), E = MF.end(); I != E; ++I)
       for (MachineBasicBlock::instr_iterator II = I->instr_begin(),
            IE = I->instr_end(); II != IE; ++II) {
         MachineInstr *MI = II;   
         switch(MI->getOpcode()) {
-        default: 
+        case VTM::VOpAdd:
+          promoteAdd(MI, MRI);
+          break;
+        case VTM::VOpICmp:
+          promoteBinOp<VFUs::ICmp>(MI, MRI);
+          break;
+        case VTM::VOpMult:
+        case VTM::VOpMultLoHi:
+          promoteBinOp<VFUs::Mult>(MI, MRI);
+          break;
+        case VTM::VOpSHL:
+        case VTM::VOpSRA:
+        case VTM::VOpSRL:
+          promoteBinOp<VFUs::Shift>(MI, MRI);
+          break;
+        default:
           break;
         }
       }    
@@ -50,6 +96,17 @@ struct DataPathPromotion : public MachineFunctionPass {
     return "Data Path Promotion Pass";
   }
 };
+}
+
+void DataPathPromotion::promoteAdd(MachineInstr *MI, MachineRegisterInfo &MRI) {
+  unsigned Size = VInstrInfo::getBitWidth(MI->getOperand(0));
+  Size = std::min<int>(Size - 1, 0);
+  
+  if (!getFUDesc(VFUs::AddSub)->shouldBeChained(Size)) {
+    insertRegForOperand<1>(MI, MRI);
+    insertRegForOperand<2>(MI, MRI);
+    insertRegForOperand<3>(MI, MRI);
+  }
 }
 
 char DataPathPromotion::ID = 0;
