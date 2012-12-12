@@ -129,10 +129,11 @@ module Main2Bram(
 //-=======================================================================================
 //The process of Reading
 //-=======================================================================================
-parameter 				S0 = 1'b0,
-									S_wait = 1'b1;
+parameter 				S0 = 1'b00,
+					S_wait0 = 1'b01,
+					S_wait1 = 1'b11;
 //-=======================================================================================
-reg       				state;
+reg [1:0]      				state;
 reg [31:0] 				addr2R_read;
 reg      					readrdy;
 reg [7:0] 			 	readbyte_en;
@@ -171,9 +172,9 @@ always@(posedge clk,negedge rstN)begin
 			S0 :begin//Get the read or write data when mem0en turns to high
 				if(readactive)begin
 					addr2R_read <= mem0addr;
-					state <= S_wait;
+					state <= S_wait0;
 					readbyte_en <= mem0be_wire;
-          rden <= 1;
+          				rden <= 1;
           // synthesis translate_off
           ++MemAccessCycles;
           // synthesis translate_on
@@ -182,16 +183,21 @@ always@(posedge clk,negedge rstN)begin
 					state <= S0;
 					readbyte_en <= 8'b1111_1111;
 					readrdy <= 0;
-          rden <= 0;
+          				rden <= 0;
 				end
 			end
-			S_wait :begin
-			  state <= S0;//Write process is less a cycle to Read process
+			S_wait0 :begin
+			  state <= S_wait1;//Write process is less by 2 cycle to Read process
+			  readrdy <= 0;
+			end
+			S_wait1 :begin
+			  state <= S0;//Write process is less by 2 cycle to Read process
 			  readrdy <= 1;
         // synthesis translate_off
         ++MemAccessCycles;
         // synthesis translate_on
 			end
+
 			default : state <= S0;
 		endcase
 	end
@@ -252,7 +258,10 @@ local _, message = preprocess {input=BlockRAMInitFileGenScript}
 local IntfFile = assert(io.open (INTFFILE, "w+"))
 local preprocess = require "luapp" . preprocess
 local _, message = preprocess {input=InterfaceGen, output=IntfFile}
-if message ~= nil then print(message) end
+if message ~= nil then
+  print(message)
+  print('BRAMGen')
+end
 IntfFile:close()
 ]=]}
 
@@ -276,7 +285,7 @@ module BRAM
 	output reg [WIDTH - 1:0] q
 );
 	localparam int WORDS = 1 << ADDR_WIDTH ;
-
+	reg [WIDTH-1:0] q_tmp;
 	// use a multi-dimensional packed array to model individual bytes within the word
 	logic [BYTES-1:0][BYTE_WIDTH-1:0] ram[0:WORDS-1];
 
@@ -297,7 +306,8 @@ module BRAM
 			if(be[6]) ram[waddr][6] <= wdata[55:48];
 			if(be[7]) ram[waddr][7] <= wdata[63:56];
 	end
-		q <= ram[raddr];
+		q_tmp <= ram[addr];
+		q <= q_tmp;
 	end
 endmodule : BRAM
 
@@ -315,7 +325,10 @@ local _, message = preprocess {input=BlockRAMInitFileGenScript}
 local BramFile = assert(io.open (BRAMFILE, "w+"))
 local preprocess = require "luapp" . preprocess
 local _, message = preprocess {input=BRAMGen, output=BramFile}
-if message ~= nil then print(message) end
+if message ~= nil then
+  print(message)
+  print('BRAMGen')
+end
 BramFile:close()
 ]=]}
 

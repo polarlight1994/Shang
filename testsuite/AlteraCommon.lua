@@ -73,18 +73,6 @@ create_clock -name "clk" -period $(PERIOD)ns [get_ports {clk}]
 derive_pll_clocks -create_base_clocks
 derive_clock_uncertainty
 set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
-
-#$(_put('#')) DIRTY HACK: Set the outside path to false path.
-#set_false_path -from *$(RTLModuleName)_inst|* -through *i1|* -to *$(RTLModuleName)_inst|* -setup
-#set_false_path -from *$(RTLModuleName)_inst|* -through *i1|* -to *$(RTLModuleName)_inst|* -hold
-#set_false_path -from *i1|* -to *$(RTLModuleName)_inst|* -setup
-#set_false_path -from *i1|* -to *$(RTLModuleName)_inst|* -hold
-#set_false_path -to *i1|* -from *$(RTLModuleName)_inst|* -setup
-#set_false_path -to *i1|* -from *$(RTLModuleName)_inst|* -hold
-#set_false_path -from *i2|* -to *$(RTLModuleName)_inst|* -setup
-#set_false_path -from *i2|* -to *$(RTLModuleName)_inst|* -hold
-#set_false_path -to *i2|* -from *$(RTLModuleName)_inst|* -setup
-#set_false_path -to *i2|* -from *$(RTLModuleName)_inst|* -hold
 ]=]
 
 Misc.DatapathScript = [=[
