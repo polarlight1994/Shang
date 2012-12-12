@@ -691,7 +691,7 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
        I != E; ++I) {
     VASTWire *W = *I;
     // Do not print the trivial dead data-path.
-    if (W->getAssigningValue() && (W->isPinned() || !W->use_empty()))
+    if (W->getDriver() && (W->isPinned() || !W->use_empty()))
       W->printAssignment(OS);
   }
 }
@@ -1320,7 +1320,7 @@ void VASTWire::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   if (getWireType() != AssignCond && getName())
     VASTNamedValue::printAsOperandImpl(OS, UB, LB);
   else {
-    VASTValPtr V = getAssigningValue();
+    VASTValPtr V = getDriver();
     assert(V && "Cannot print wire as operand!");
     V.printAsOperand(OS, UB, LB);
   }
@@ -1346,7 +1346,7 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
   // Input ports do not have datapath.
   if (T == VASTWire::InputPort) return;
 
-  VASTValPtr V = getAssigningValue();
+  VASTValPtr V = getDriver();
   assert(V && "Cannot print the wire!");
 
   if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {

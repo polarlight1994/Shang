@@ -211,7 +211,7 @@ void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
   setTerminatorCollection(O, Dst, "dst");
   setTerminatorCollection(O, Src, "src");
   
-  VASTValue *PathDst = Dst->getAssigningValue().get();
+  VASTValue *PathDst = Dst->getDriver().get();
   assert(PathDst && "Bad Assignment!");
 
   O <<
@@ -236,7 +236,7 @@ void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
 void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O,
                                                 const VASTWire *Dst) const{
   typedef SrcInfoTy::const_iterator it;
-  VASTValue *PathDst = Dst->getAssigningValue().get();
+  VASTValue *PathDst = Dst->getDriver().get();
 
   for (it I = TNL.src_begin(PathDst), E = TNL.src_end(PathDst); I != E; ++I)    
     extractTimingForPair(O, Dst, I->first);

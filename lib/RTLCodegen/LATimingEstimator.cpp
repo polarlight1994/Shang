@@ -117,7 +117,7 @@ void BlackBoxTimingEstimator::runTimingAnalysis() {
 
     analysisTimingOnTree(ExportedWire);
 
-    VASTValue *Dst = ExportedWire->getAssigningValue().get();
+    VASTValue *Dst = ExportedWire->getDriver().get();
     SrcDelayInfo *SrcInfo = getPathTo(Dst);
 
     for (src_iterator SI = SrcInfo->begin(), SE = SrcInfo->end(); SI != SE; ++SI) {

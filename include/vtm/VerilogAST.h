@@ -788,7 +788,7 @@ private:
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 
   VASTValPtr getAsInlineOperandImpl() {
-    if (VASTValPtr V = getAssigningValue()) {
+    if (VASTValPtr V = getDriver()) {
       // Can the expression be printed inline?
       if (VASTExprPtr E = dyn_cast<VASTExprPtr>(V)) {
         if (E->isInlinable()) return E.getAsInlineOperand();
@@ -800,7 +800,7 @@ private:
     return this;
   }
 public:
-  VASTValPtr getAssigningValue() const {
+  VASTValPtr getDriver() const {
     // Ignore the virtual register of the input port, the virtual register only
     // carry the timing information.
     return getWireType() == InputPort ? VASTValPtr(0) : U.unwrap();
@@ -809,7 +809,7 @@ public:
   VASTRegister *getVirturalRegister() const;
 
   VASTExprPtr getExpr() const {
-    return getAssigningValue()? dyn_cast<VASTExprPtr>(getAssigningValue()) : 0;
+    return getDriver()? dyn_cast<VASTExprPtr>(getDriver()) : 0;
   }
 
   VASTWire::Type getWireType() const { return VASTWire::Type(SignalType); }
@@ -859,7 +859,7 @@ struct VASTWireExpressionTrait : public DenseMapInfo<VASTWire*> {
   static unsigned getHashValue(const VASTWire *Val) {
     if (Val == 0) return DenseMapInfo<void*>::getHashValue(0);
 
-    if (VASTValPtr Ptr = Val->getAssigningValue())
+    if (VASTValPtr Ptr = Val->getDriver())
       return DenseMapInfo<void*>::getHashValue(Ptr.getOpaqueValue());
 
     return DenseMapInfo<void*>::getHashValue(Val);
@@ -869,7 +869,7 @@ struct VASTWireExpressionTrait : public DenseMapInfo<VASTWire*> {
     if (W == getEmptyKey() || W == getTombstoneKey() || W == 0)
       return 0;
 
-    if (const VASTValPtr V = W->getAssigningValue()) return V;
+    if (const VASTValPtr V = W->getDriver()) return V;
 
     return W;
   }
