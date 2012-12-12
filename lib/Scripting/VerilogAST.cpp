@@ -125,21 +125,21 @@ void VASTNode::dump() const {
 
 //----------------------------------------------------------------------------//
 // Classes in Verilog AST.
-VASTUse::VASTUse(VASTValPtr v, VASTValue *u) : V(v), User(u) {
-  if (User) setUser(User);
+VASTUse::VASTUse(VASTNode *U, VASTValPtr V) : User(*U), V(V) {
+  linkUseToUser();
 }
 
-void VASTUse::removeFromList() {
+void VASTUse::unlinkUseFromUser() {
   get()->removeUseFromList(this);
 }
 
-void VASTUse::setUser(VASTValue *User) {
+void VASTUse::linkUseToUser() {
   assert(!ilist_traits<VASTUse>::inAnyList(this)
          && "Not unlink from old list!");
-  VASTValue *Use = getAsLValue<VASTValue>();
-  assert(Use != User && "Unexpected cycle!");
-  this->User = User;
-  Use->addUseToList(this);
+  if (VASTValue *Use = V.get()) {
+    assert(Use != &User && "Unexpected cycle!");
+    Use->addUseToList(this);
+  }
 }
 
 bool VASTUse::operator==(const VASTValPtr RHS) const {
@@ -152,8 +152,9 @@ void VASTUse::PinUser() const {
 }
 
 VASTSlot::VASTSlot(unsigned slotNum, MachineInstr *BundleStart, VASTModule *VM)
-  : VASTNode(vastSlot), SlotReg(0, 0), SlotActive(0, 0), SlotReady(0, 0),
-    StartSlot(slotNum), EndSlot(slotNum), II(~0), SlotNum(slotNum) {
+  : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
+    SlotReady(this, 0), StartSlot(slotNum), EndSlot(slotNum), II(~0),
+    SlotNum(slotNum) {
   Contents.BundleStart = BundleStart;
 
   // Create the relative signals.
@@ -184,26 +185,26 @@ void VASTSlot::addSuccSlot(VASTSlot *NextSlot, VASTValPtr Cnd, VASTModule *VM) {
   VASTUse *&U = NextSlots[NextSlot];
   assert(U == 0 && "Succ Slot already existed!");
   NextSlot->PredSlots.push_back(this);
-  U = new (VM->allocateUse()) VASTUse(Cnd, 0);
+  U = new (VM->allocateUse()) VASTUse(this, Cnd);
 }
 
 VASTUse &VASTSlot::allocateEnable(VASTRegister *R, VASTModule *VM) {
   VASTUse *&U = Enables[R];
-  if (U == 0) U = new (VM->allocateUse()) VASTUse(0, 0);
+  if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
 
   return *U;
 }
 
 VASTUse &VASTSlot::allocateReady(VASTValue *V, VASTModule *VM) {
   VASTUse *&U = Readys[V];
-  if (U == 0) U = new (VM->allocateUse()) VASTUse(0, 0);
+  if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
 
   return *U;
 }
 
 VASTUse &VASTSlot::allocateDisable(VASTRegister *R, VASTModule *VM) {
   VASTUse *&U = Disables[R];
-  if (U == 0) U = new (VM->allocateUse()) VASTUse(0, 0);
+  if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
 
   return *U;
 }
@@ -211,7 +212,7 @@ VASTUse &VASTSlot::allocateDisable(VASTRegister *R, VASTModule *VM) {
 VASTUse &VASTSlot::allocateSuccSlot(VASTSlot *NextSlot, VASTModule *VM) {
   VASTUse *&U = NextSlots[NextSlot];
   if (U == 0) {
-    U = new (VM->allocateUse()) VASTUse(0, 0);
+    U = new (VM->allocateUse()) VASTUse(this, 0);
     NextSlot->PredSlots.push_back(this);
   }
 
@@ -243,7 +244,6 @@ void VASTRegister::addAssignment(VASTUse *Src, VASTWire *AssignCnd) {
          && "Expect wire for assign condition!");
   bool inserted = Assigns.insert(std::make_pair(AssignCnd, Src)).second;
   assert(inserted &&  "Assignment condition conflict detected!");
-  if (Src) Src->setUser(this);
 }
 
 //VASTUse VASTRegister::getConstantValue() const {
@@ -528,13 +528,13 @@ VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
   return V;
 }
 
-void DatapathContainer::removeValueFromCSEMaps(VASTValue *V) {
-  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(V)) {
+void DatapathContainer::removeValueFromCSEMaps(VASTNode *N) {
+  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(N)) {
     UniqueImms.RemoveNode(Imm);
     return;
   }
 
-  if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(N)) {
     UniqueExprs.RemoveNode(Expr);
     return;
   }
@@ -554,13 +554,13 @@ void DatapathContainer::addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap) {
   }
 }
 
-void DatapathContainer::addModifiedValueToCSEMaps(VASTValue *V) {
-  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(V)) {
+void DatapathContainer::addModifiedValueToCSEMaps(VASTNode *N) {
+  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(N)) {
     addModifiedValueToCSEMaps(Imm, UniqueImms);
     return;
   }
 
-  if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(N)) {
     addModifiedValueToCSEMaps(Expr, UniqueExprs);
     return;
   }
@@ -574,7 +574,7 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
   VASTValue::use_iterator UI = From->use_begin(), UE = From->use_end();
 
   while (UI != UE) {
-    VASTValue *User = *UI;
+    VASTNode *User = *UI;
 
     // This node is about to morph, remove its old self from the CSE maps.
     removeValueFromCSEMaps(User);
@@ -594,14 +594,9 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
       }
 
       ++UI;
-
-      VASTValPtr User = Use->getUser();
-      // Unlink from old list.
-      Use->removeFromList();
       // Move to new list.
       Use->replaceUseBy(Replacement);
-      Use->setUser(User.getAsLValue<VASTValue>());
-
+      
     } while (UI != UE && *UI == User);
 
     // Now that we have modified User, add it back to the CSE maps.  If it
@@ -652,7 +647,7 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
     if (VASTExpr *E = Ops[i].getAsLValue<VASTExpr>()) ExprSize += E->ExprSize;
     else                                              ++ExprSize;
 
-    (void) new (E->ops() + i) VASTUse(Ops[i], E);
+    (void) new (E->ops() + i) VASTUse(E, Ops[i]);
   }
 
   E->ExprSize = ExprSize;
@@ -780,7 +775,8 @@ void VASTModule::addAssignment(VASTRegister *Dst, VASTValPtr Src, VASTSlot *Slot
   if (Src) {
     VASTWire *Cnd = createAssignPred(Slot, DefMI);
     Cnd = addPredExpr(Cnd, Cnds, AddSlotActive);
-    Dst->addAssignment(new (Allocator.Allocate<VASTUse>()) VASTUse(Src, 0), Cnd);
+    VASTUse *U = new (Allocator.Allocate<VASTUse>()) VASTUse(Dst, Src);
+    Dst->addAssignment(U, Cnd);
   }
 }
 

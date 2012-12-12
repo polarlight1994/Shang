@@ -199,34 +199,39 @@ struct isa_impl<To, PtrInvPair<From> > {
 typedef PtrInvPair<VASTValue> VASTValPtr;
 
 class VASTUse : public ilist_node<VASTUse> {
+  VASTNode &User;
   VASTValPtr V;
-  VASTValue *User;
 
   friend struct ilist_sentinel_traits<VASTUse>;
+
+  void linkUseToUser();
 
   void operator=(const VASTUse &RHS); // DO NOT IMPLEMENT
   VASTUse(const VASTUse &RHS); // DO NOT IMPLEMENT
 public:
-  VASTUse(VASTValPtr v = 0, VASTValue *user = 0);
+  VASTUse(VASTNode *User, VASTValPtr V = 0);
 
   bool isInvalid() const { return !V; }
 
   void set(VASTValPtr RHS) {
     assert(!V && "Already using some value!");
     V = RHS;
+    linkUseToUser();
   }
 
   void replaceUseBy(VASTValPtr RHS) {
     assert(V && V != RHS && "Cannot replace!");
+    unlinkUseFromUser();
     V = RHS;
+    linkUseToUser();
   }
 
-  // Set the user of this use and insert this use to use list.
-  void setUser(VASTValue *User);
   // Get the user of this use.
-  VASTValue *getUser() const { return User; }
+  VASTNode &getUser() { return User; }
+  const VASTNode &getUser() const { return User; }
+
   // Remove this use from use list.
-  void removeFromList();
+  void unlinkUseFromUser();
 
   bool operator==(const VASTValPtr RHS) const;
 
@@ -273,6 +278,8 @@ public:
 
 template<>
 struct ilist_traits<VASTUse> : public ilist_default_traits<VASTUse> {
+  static VASTUse *createSentinel() { return new VASTUse(0, 0); }
+
   static void deleteNode(VASTUse *U) {}
 
   static bool inAnyList(const VASTUse *U) {
@@ -297,7 +304,7 @@ public:
   }
 
   NodeType* operator*() const {
-    return I->getUser();
+    return &I->getUser();
   }
 
   NodeType* operator->() const { return operator*(); }
@@ -343,7 +350,7 @@ public:
   const uint8_t BitWidth;
   unsigned getBitWidth() const { return BitWidth; }
 
-  typedef VASTUseIterator<UseListTy::iterator, VASTValue> use_iterator;
+  typedef VASTUseIterator<UseListTy::iterator, VASTNode> use_iterator;
   use_iterator use_begin() { return use_iterator(UseList.begin()); }
   use_iterator use_end() { return use_iterator(UseList.end()); }
 
@@ -644,9 +651,8 @@ private:
 
   void dropOperandsFromUseList() {
     for (VASTUse *I = ops(), *E = ops() + NumOps; I != E; ++I)
-      I->removeFromList();
+      I->unlinkUseFromUser();
   }
-
 
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 
@@ -748,16 +754,14 @@ public:
   };
 
   VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "")
-    : VASTSignal(vastWire, Name, BitWidth, Attr), U(0, 0) {
+    : VASTSignal(vastWire, Name, BitWidth, Attr), U(this, 0) {
       SignalType = Common;
       SignalData = 0;
   }
 
   void assign(VASTValPtr V, VASTWire::Type T = VASTWire::Common) {
-    assert(U.isInvalid() && "The already has an expression!");
     SignalType = T;
     U.set(V);
-    U.setUser(this);
   }
 
 private:
@@ -767,7 +771,7 @@ private:
   VASTUse U;
 
   VASTWire(unsigned SlotNum, MachineInstr *DefMI)
-         : VASTSignal(vastWire, 0, 1, ""), U(0, 0) {
+         : VASTSignal(vastWire, 0, 1, ""), U(this, 0) {
     SignalType = AssignCond;
     SignalData = SlotNum;
     Contents.BundleStart = DefMI;
@@ -1121,8 +1125,8 @@ class DatapathContainer {
 protected:
   BumpPtrAllocator Allocator;
 
-  void removeValueFromCSEMaps(VASTValue *V);
-  void addModifiedValueToCSEMaps(VASTValue *V);
+  void removeValueFromCSEMaps(VASTNode *N);
+  void addModifiedValueToCSEMaps(VASTNode *N);
   template<typename T>
   void addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap);
 
