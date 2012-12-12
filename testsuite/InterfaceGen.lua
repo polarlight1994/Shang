@@ -129,9 +129,9 @@ module Main2Bram(
 //-=======================================================================================
 //The process of Reading
 //-=======================================================================================
-parameter 				S0 = 1'b00,
-					S_wait0 = 1'b01,
-					S_wait1 = 1'b11;
+parameter 				S0 = 2'b00,
+					S_wait0 = 2'b01,
+					S_wait1 = 2'b11;
 //-=======================================================================================
 reg [1:0]      				state;
 reg [31:0] 				addr2R_read;
@@ -306,7 +306,7 @@ module BRAM
 			if(be[6]) ram[waddr][6] <= wdata[55:48];
 			if(be[7]) ram[waddr][7] <= wdata[63:56];
 	end
-		q_tmp <= ram[addr];
+		q_tmp <= ram[raddr];
 		q <= q_tmp;
 	end
 endmodule : BRAM
