@@ -729,6 +729,8 @@ MachineOperand PreSchedRTLOpt::getAsOperand(VASTValPtr V) {
   // Build the not operation.
   unsigned RegNum = allocateRegNum(V);
   buildNot(RegNum, MO);
+  // Remember the rewritten Not.
+  Container->rememberRegNumForExpr<false>(V, RegNum);
 
   return VInstrInfo::CreateReg(RegNum, V->getBitWidth());
 }
