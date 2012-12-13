@@ -349,39 +349,6 @@ VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
   return at->second;
 }
 
-static char *utobin_buffer(uint64_t X, char *BufferEnd, unsigned NumDigit) {
-  char *BufPtr = BufferEnd;
-  *--BufPtr = 0;      // Null terminate buffer.
-  if (X == 0) {
-    *--BufPtr = '0';  // Handle special case.
-    return BufPtr;
-  }
-
-  while (X) {
-    unsigned char Mod = static_cast<unsigned char>(X) & 1;
-    *--BufPtr = hexdigit(Mod);
-    X >>= 1;
-  }
-
-  // Fill the MSB by 0 until we get NumDigits in the returned string.
-  while (BufferEnd <= BufPtr + NumDigit);
-    *--BufPtr = hexdigit(0);
-
-  return BufPtr;
-}
-
-const char *llvm::TruthToSop(uint64_t Truth, unsigned NInput) {
-  assert(NInput < 65 && "Too many inputs!");
-  char buffer[65];
-  unsigned NumDigit = 1 << NInput;
-  utobin_buffer(Truth, buffer + 65, NumDigit);
-  char *TruthStr = buffer + 64 - NumDigit;
-
-  const char *SopStr = Abc_SopFromTruthBin(TruthStr);
-  assert(SopStr && "Bad SopStr, may due to bad Input number.");
-  return SopStr;
-}
-
 void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
   SmallVector<VASTValPtr, 4> Ops;
   Abc_Obj_t *FO = Abc_ObjFanout0(Obj);

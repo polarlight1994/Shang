@@ -1476,12 +1476,52 @@ const std::string VASTExpr::getSubModName() const {
   return Name;
 }
 
+static char *utobin_buffer(uint64_t X, char *BuffurStart, unsigned NumDigit) {
+  char *BufPtr = BuffurStart, *BufferEnd = BuffurStart + NumDigit;
+
+  while (BufPtr < BufferEnd) {
+    unsigned char Mod = static_cast<unsigned char>(X) & 1;
+    *BufPtr++ = '0' + Mod;
+    X >>= 1;
+  }
+
+  return BufPtr;
+}
+
 // Implementation of LUT related functions.
 const char *VASTExpr::getLUT() const {
+  // 6 is the maximum supported input number of a single LUT.
+  // 3 is for the space, the value of the truth table and the newline char in
+  // each row.
+  static char SOPBuffer[(6 + 3) /*Columns*/ * (1 << 6) /*Rows*/ + 1];
   unsigned NumInputs = NumOps - 1;
+  unsigned NumRows = 1 << NumInputs;
+  unsigned NumCols = NumInputs + 3;
+  assert(NumRows * NumCols + 1 <= array_lengthof(SOPBuffer) && "LUT too big!");
+
   VASTImmediate *TruthImm = cast<VASTImmediate>(getOperand(NumInputs).get());
   uint64_t Truth = TruthImm->getZExtValue();
-  return 0; //TruthToSop(Truth, NumInputs);
+
+  unsigned NumRowsAdded = 0;
+  for (unsigned i = 0; i < NumRows; ++i) {
+    char *CurRow = SOPBuffer + NumRowsAdded * NumCols;
+
+    unsigned char Mod = static_cast<unsigned char>(Truth) & 1;
+    Truth >>= 1;
+    // Ignore the row with zero value in the LUT.
+    if (!Mod) continue;
+
+    utobin_buffer(i, CurRow, NumInputs);
+
+    CurRow[NumInputs + 0] = ' ';
+    CurRow[NumInputs + 1] = '1';
+    CurRow[NumInputs + 2] = '\n';
+    ++NumRowsAdded;
+  }
+
+  // Terminate the SOP string.
+  SOPBuffer[NumRowsAdded * NumCols] = 0;
+  return SOPBuffer;
 }
 
 void VASTExpr::Profile(FoldingSetNodeID& ID) const {
