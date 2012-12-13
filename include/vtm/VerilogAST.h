@@ -430,6 +430,7 @@ public:
   void Profile(FoldingSetNodeID& ID) const;
 
   const APInt &getAPInt() const { return Int; }
+  uint64_t getZExtValue() const { return Int.getZExtValue(); }
   APInt getBitSlice(unsigned UB, unsigned LB = 0) const {
     return getBitSlice(Int, UB, LB);
   }
