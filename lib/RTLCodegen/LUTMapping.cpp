@@ -17,7 +17,6 @@
 
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/ADT/SmallString.h"
-#include "llvm/Support/Allocator.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
