@@ -155,13 +155,13 @@ assign          q[47:40] = (rden&&byen2R[5])? q_i[47:40]:0;
 assign          q[55:48] = (rden&&byen2R[6])? q_i[55:48]:0;
 assign          q[63:56] = (rden&&byen2R[7])? q_i[63:56]:0;
 //-=======================================================================================
-assign          mem0in = (q_pipe >> {addr2R_read[2:0],3'b0});
+assign          mem0in = q_pipe;
 
 always@(posedge clk,negedge rstN)begin
 	if(!rstN)begin
 		q_pipe <= 0;
 	end else begin
-		q_pipe <= q;
+		q_pipe <= q >> {addr2R_read[2:0],3'b0};
 	end
 end
 
