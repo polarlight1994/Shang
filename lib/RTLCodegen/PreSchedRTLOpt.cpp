@@ -117,6 +117,7 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   unsigned rewriteAssign(VASTExpr *Expr);
   template<unsigned Opcode>
   unsigned rewriteBinExpr(VASTExpr *Expr, MachineInstr *IP);
+  unsigned rewriteLUTExpr(VASTExpr *Expr, MachineInstr *IP);
   template<VFUs::ICmpFUType ICmpTy>
   unsigned rewriteICmp(VASTExpr *Expr, MachineInstr *IP);
   unsigned rewriteNotOf(VASTValPtr V);
@@ -527,6 +528,29 @@ unsigned PreSchedRTLOpt::rewriteBinExpr(VASTExpr *Expr, MachineInstr *IP) {
   return DefMO.getReg();
 }
 
+unsigned PreSchedRTLOpt::rewriteLUTExpr(VASTExpr *Expr, MachineInstr *IP) {
+  MachineOperand DefMO = allocateRegMO(Expr);
+
+  // Collect the Fanins of the LUTs.
+  SmallVector<MachineOperand, 6> Ops;
+  for (unsigned i = 0; i < Expr->NumOps - 1; ++i)
+    Ops.push_back(getAsOperand(Expr->getOperand(i)));
+
+  MachineInstrBuilder Builder =
+    BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(VTM::VOpLUT))
+      .addOperand(DefMO)
+      // Add the truth table of the LUT in to the operand list.
+      .addOperand(getAsOperand(Expr->getOperand(Expr->NumOps - 1)))
+      .addOperand(VInstrInfo::CreatePredicate())
+      .addOperand(VInstrInfo::CreateTrace());
+
+  // Add the Fanin operands.
+  for (unsigned i = 0, e = Ops.size(); i != e; ++i)
+    Builder.addOperand(Ops[i]);
+
+  return DefMO.getReg();
+}
+
 unsigned PreSchedRTLOpt::rewriteSel(VASTExpr *Expr, MachineInstr *IP) {
   MachineOperand DefMO = allocateRegMO(Expr);
   assert(Expr->getOperand(0)->getASTType() != VASTNode::vastImmediate);
@@ -661,6 +685,9 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
       break;
     case VASTExpr::dpSCmp:
       RegNo = rewriteICmp<VFUs::CmpSigned>(Expr, IP);
+      break;
+    case VASTExpr::dpLUT:
+      RegNo = rewriteLUTExpr(Expr, IP);
       break;
     }
 
