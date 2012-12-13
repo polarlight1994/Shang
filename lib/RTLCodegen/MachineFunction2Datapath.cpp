@@ -57,7 +57,7 @@ VASTValPtr DatapathBuilder::buildDatapathExpr(MachineInstr *MI) {
 
   case VTM::VOpSel:       return buildSel(MI);
 
-  case VTM::VOpLUT:       return expandLUT(MI);
+  case VTM::VOpLUT:       return buildLUT(MI);
 
   case VTM::VOpXor:       return buildBinaryOp(MI, VASTExprBuilder::buildXor);
   case VTM::VOpAnd:
@@ -115,59 +115,17 @@ VASTValPtr DatapathBuilder::buildSel(MachineInstr *MI) {
                    VInstrInfo::getBitWidth(MI->getOperand(0)));
 }
 
-VASTValPtr DatapathBuilder::expandLUT(MachineInstr *MI) {
+VASTValPtr DatapathBuilder::buildLUT(MachineInstr *MI) {
   unsigned SizeInBits = VInstrInfo::getBitWidth(MI->getOperand(0));
 
   SmallVector<VASTValPtr, 8> Operands;
   for (unsigned i = 4, e = MI->getNumOperands(); i < e; ++i)
     Operands.push_back(getAsOperand(MI->getOperand(i)));
-  unsigned NumInputs = Operands.size();
 
-  // Interpret the sum of product table.
-  const char *p = MI->getOperand(1).getSymbolName();
-  SmallVector<VASTValPtr, 8> ProductOps, SumOps;
-  bool isComplement = false;
+  // The truth table goes last.
+  Operands.push_back(getAsOperand(MI->getOperand(1)));
 
-  while (*p) {
-    // Interpret the product.
-    ProductOps.clear();
-    for (unsigned i = 0; i < NumInputs; ++i) {
-      char c = *p++;
-      switch (c) {
-      default: llvm_unreachable("Unexpected SOP char!");
-      case '-': /*Dont care*/ break;
-      case '1': ProductOps.push_back(Operands[i]); break;
-      case '0':
-        ProductOps.push_back(buildNotExpr(Operands[i]));
-        break;
-      }
-    }
-
-    // Inputs and outputs are seperated by blank space.
-    assert(*p == ' ' && "Expect the blank space!");
-    ++p;
-
-    // Create the product.
-    // Add the product to the operand list of the sum.
-    SumOps.push_back(buildAndExpr(ProductOps, SizeInBits));
-
-    // Is the output inverted?
-    char c = *p++;
-    assert((c == '0' || c == '1') && "Unexpected SOP char!");
-    isComplement = (c == '0');
-
-    // Products are separated by new line.
-    assert(*p == '\n' && "Expect the new line!");
-    ++p;
-  }
-
-  // Or the products together to build the SOP (Sum of Product).
-  VASTValPtr SOP = buildOrExpr(SumOps, SizeInBits);
-
-  if (isComplement) SOP = buildNotExpr(SOP);
-
-  // Build the sum;
-  return SOP;
+  return buildExpr(VASTExpr::dpLUT, Operands, SizeInBits);
 }
 
 VASTValPtr DatapathBuilder::buildBitSlice(MachineInstr *MI) {

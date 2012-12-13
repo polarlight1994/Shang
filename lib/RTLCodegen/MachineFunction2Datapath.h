@@ -69,7 +69,7 @@ public:
               VInstrInfo::getBitWidth(MI->getOperand(0)), this);
   }
 
-  VASTValPtr expandLUT(MachineInstr *MI);
+  VASTValPtr buildLUT(MachineInstr *MI);
   VASTValPtr buildSel(MachineInstr *MI);
   VASTValPtr buildAdd(MachineInstr *MI);
   VASTValPtr buildICmp(MachineInstr *MI);
