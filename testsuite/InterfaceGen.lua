@@ -207,7 +207,13 @@ always@(posedge clk,negedge rstN)begin
         // synthesis translate_on
 			end
 
-			default : state <= S0;
+			default : begin
+			  state <= S0;
+			  addr2R_read <= 0;
+			  readbyte_en <= 8'b1111_1111;
+			  readrdy <= 0;
+        rden <= 0;
+			end
 		endcase
 	end
 end
