@@ -19,6 +19,7 @@
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/ManagedStatic.h"
 #define DEBUG_TYPE "vtm-logic-synthesis"
 #include "llvm/Support/Debug.h"
 
@@ -49,14 +50,11 @@ struct ABCContext {
 };
 
 struct LogicNetwork {
-  static ABCContext Context;
+  ABCContext &Context;
 
   Abc_Ntk_t *Ntk;
 
-  LogicNetwork(const Twine &Name) {
-    Ntk = Abc_NtkAlloc(ABC_NTK_STRASH, ABC_FUNC_AIG, 1);
-    Ntk->pName = Extra_UtilStrsav(Name.str().c_str());
-  }
+  LogicNetwork(const Twine &Name);
 
   ~LogicNetwork() {
     Abc_NtkDelete(Ntk);
@@ -147,8 +145,6 @@ struct LogicNetwork {
   }
 };
 }
-
-ABCContext LogicNetwork::Context;
 
 bool LogicNetwork::buildAIG(VASTValue *Root, std::set<VASTValue*> &Visited) {
   typedef VASTValue::dp_dep_it ChildIt;
@@ -467,3 +463,9 @@ void MFDatapathContainer::performLUTMapping(const Twine &Name) {
   DEBUG(writeVerilog(dbgs(), Name));
 }
 
+static ManagedStatic<ABCContext> GlobalContext;
+
+LogicNetwork::LogicNetwork(const Twine &Name) : Context(*GlobalContext) {
+  Ntk = Abc_NtkAlloc(ABC_NTK_STRASH, ABC_FUNC_AIG, 1);
+  Ntk->pName = Extra_UtilStrsav(Name.str().c_str());
+}
