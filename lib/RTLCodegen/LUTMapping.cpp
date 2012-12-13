@@ -365,7 +365,7 @@ static char *utobin_buffer(uint64_t X, char *BufferEnd) {
   return BufPtr;
 }
 
-static const char *TruthToSop(unsigned Truth, unsigned NInput) {
+static const char *TruthToSop(uint64_t Truth, unsigned NInput) {
   assert(NInput < 65 && "Too many inputs!");
   char buffer[65];
   utobin_buffer(Truth, buffer + 65);
