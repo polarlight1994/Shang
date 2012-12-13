@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MFDatapathContainer.h"
+#include "vtm/Utilities.h"
 
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/ADT/SmallString.h"
@@ -349,7 +350,7 @@ VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
   return at->second;
 }
 
-static char *utobin_buffer(uint64_t X, char *BufferEnd) {
+static char *utobin_buffer(uint64_t X, char *BufferEnd, unsigned NumDigit) {
   char *BufPtr = BufferEnd;
   *--BufPtr = 0;      // Null terminate buffer.
   if (X == 0) {
@@ -362,24 +363,24 @@ static char *utobin_buffer(uint64_t X, char *BufferEnd) {
     *--BufPtr = hexdigit(Mod);
     X >>= 1;
   }
+
+  // Fill the MSB by 0 until we get NumDigits in the returned string.
+  while (BufferEnd <= BufPtr + NumDigit);
+    *--BufPtr = hexdigit(0);
+
   return BufPtr;
 }
 
-static const char *TruthToSop(uint64_t Truth, unsigned NInput) {
+const char *llvm::TruthToSop(uint64_t Truth, unsigned NInput) {
   assert(NInput < 65 && "Too many inputs!");
   char buffer[65];
-  utobin_buffer(Truth, buffer + 65);
-  char *TruthStr = buffer + 64 - (1 << NInput);
+  unsigned NumDigit = 1 << NInput;
+  utobin_buffer(Truth, buffer + 65, NumDigit);
+  char *TruthStr = buffer + 64 - NumDigit;
 
-  return Abc_SopFromTruthBin(TruthStr);
-}
-
-// Implementation of LUT related functions.
-const char *VASTExpr::getLUT() const {
-  unsigned NumInputs = NumOps - 1;
-  VASTImmediate *TruthImm = cast<VASTImmediate>(getOperand(NumInputs).get());
-  uint64_t Truth = TruthImm->getZExtValue();
-  return TruthToSop(Truth, NumInputs);
+  const char *SopStr = Abc_SopFromTruthBin(TruthStr);
+  assert(SopStr && "Bad SopStr, may due to bad Input number.");
+  return SopStr;
 }
 
 void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {

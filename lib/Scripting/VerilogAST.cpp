@@ -1476,6 +1476,14 @@ const std::string VASTExpr::getSubModName() const {
   return Name;
 }
 
+// Implementation of LUT related functions.
+const char *VASTExpr::getLUT() const {
+  unsigned NumInputs = NumOps - 1;
+  VASTImmediate *TruthImm = cast<VASTImmediate>(getOperand(NumInputs).get());
+  uint64_t Truth = TruthImm->getZExtValue();
+  return TruthToSop(Truth, NumInputs);
+}
+
 void VASTExpr::Profile(FoldingSetNodeID& ID) const {
   ID.AddInteger(getOpcode());
   ID.AddInteger(UB);

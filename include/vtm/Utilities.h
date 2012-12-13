@@ -62,6 +62,9 @@ inline std::string VBEMangle(const std::string &S) {
     return Result;
 }
 
+// Translate the truth table to Sum Of Product string.
+const char *TruthToSop(uint64_t Truth, unsigned NInput);
+
 // PrintEscapedString - Print each character of the specified string, escaping
 // it if it is not printable or if it is an escape char.
 inline void PrintEscapedString(const char *Str, unsigned Length,
