@@ -156,6 +156,8 @@ public:
 
   // Write the data-path in form of VerilogHDL.
   void writeVerilog(raw_ostream &OS, const Twine &Name);
+
+  void performLUTMapping(const Twine &Name);
 };
 }
 

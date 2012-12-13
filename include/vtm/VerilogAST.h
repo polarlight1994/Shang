@@ -431,6 +431,7 @@ public:
 
   const APInt &getAPInt() const { return Int; }
   uint64_t getZExtValue() const { return Int.getZExtValue(); }
+
   APInt getBitSlice(unsigned UB, unsigned LB = 0) const {
     return getBitSlice(Int, UB, LB);
   }
@@ -675,11 +676,7 @@ private:
     return this;
   }
 
-  void setLUT(const char *LUT) {
-    assert(getOpcode() == dpLUT && "Bad Expr type!");
-    assert(Contents.Name == 0 && "Cannot set LUT twice!");
-    Contents.Name = LUT;
-  }
+  const char *getLUT() const;
 public:
   const uint8_t Opc, NumOps,UB, LB;
   Opcode getOpcode() const { return VASTExpr::Opcode(Opc); }
@@ -710,11 +707,6 @@ public:
 
   inline bool isZeroBasedBitSlice() const {
     return isSubBitSlice() && LB == 0;
-  }
-
-  const char *getLUT() const {
-    assert(getOpcode() == dpLUT && "Bad Expr Type!");
-    return Contents.Name;
   }
 
   bool hasName() const { return IsNamed != 0; }

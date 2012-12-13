@@ -1197,7 +1197,7 @@ static void printBitRepeat(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
 static bool printLUT(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *LUT) {
   // Interpret the sum of product table.
   const char *p = LUT;
-  unsigned NumInputs = Ops.size();
+  unsigned NumInputs = Ops.size() - 1;
   bool isComplemented = false;
   // The LUT is in form of "Sum of Product", print the left parenthesis of the
   // sum first.
