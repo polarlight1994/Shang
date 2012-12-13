@@ -605,6 +605,9 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
   }
 
   assert(From->use_empty() && "Incompleted replacement!");
+  // From is dead now, unlink it from all its use.
+  From->dropUses();
+  // TODO: Delete From.
 }
 
 VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,

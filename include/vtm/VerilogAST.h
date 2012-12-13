@@ -75,10 +75,16 @@ protected:
   explicit VASTNode(VASTTypes T) : NodeT(T) {}
 
   virtual void print(raw_ostream &OS) const = 0;
+
+  friend class DatapathContainer;
+
+  // Drop this VASTNode from the userlist of all its uses.
+  virtual void dropUses() { };
 public:
   virtual ~VASTNode() {}
 
   VASTTypes getASTType() const { return VASTTypes(NodeT); }
+
 
   void dump() const;
 };
@@ -649,7 +655,7 @@ private:
 
   void printAsOperandInteral(raw_ostream &OS) const;
 
-  void dropOperandsFromUseList() {
+  void dropUses() {
     for (VASTUse *I = ops(), *E = ops() + NumOps; I != E; ++I)
       I->unlinkUseFromUser();
   }
@@ -803,6 +809,8 @@ private:
 
     return this;
   }
+
+  void dropUses() { if (U.get()) U.unlinkUseFromUser(); }
 public:
   VASTValPtr getDriver() const {
     // Ignore the virtual register of the input port, the virtual register only
@@ -933,6 +941,10 @@ private:
   
   const_succ_cnd_iterator succ_cnd_begin() const { return NextSlots.begin(); }
   const_succ_cnd_iterator succ_cnd_end() const { return NextSlots.end(); }
+
+  void dropUses() { 
+    assert(0 && "Function not implemented!");
+  }
 
   friend class VASTModule;
 public:
@@ -1068,6 +1080,11 @@ private:
                VASTRegister::Type T = Data, uint16_t RegData = 0,
                const char *Attr = "");
   friend class VASTModule;
+
+  void dropUses() { 
+    assert(0 && "Function not implemented!");
+  }
+
 public:
   VASTRegister::Type getRegType() const {
     return VASTRegister::Type(SignalType);
