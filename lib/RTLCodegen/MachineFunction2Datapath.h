@@ -30,10 +30,6 @@ public:
     llvm_unreachable("Function not implemented!");
     return 0;
   }
-
-  virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
-    llvm_unreachable("Function not implemented!");
-  }
 };
 
 class DatapathBuilder : public VASTExprBuilder {

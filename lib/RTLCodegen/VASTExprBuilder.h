@@ -81,6 +81,8 @@ public:
 
   virtual VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                                 unsigned UB, unsigned LB);
+
+  virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 };
 
 // The helper class to collect the information about the operands of a VASTExpr.
@@ -177,6 +179,10 @@ public:
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                         unsigned UB, unsigned LB = 0) {
     return Context.createExpr(Opc, Ops, UB, LB);
+  }
+
+  void replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+    Context.replaceAllUseWith(From, To);
   }
 
   VASTValPtr createExpr(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,

@@ -34,6 +34,11 @@ VASTValPtr VASTExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
   return 0;
 }
 
+
+void VASTExprBuilderContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+  llvm_unreachable("Function not implemented!");
+}
+
 // Inline all operands in the expression whose Opcode is the same as Opc
 // recursively;
 template<VASTExpr::Opcode Opcode, typename visitor>
