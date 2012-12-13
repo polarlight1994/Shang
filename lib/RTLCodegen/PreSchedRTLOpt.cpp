@@ -335,11 +335,8 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
   MachineBasicBlock::instr_iterator I = MBB.instr_begin(), E = MBB.instr_end();
 
   // Skip the PHINodes.
-  while (I != E && I->isPHI()) {
-    // Also try to pin the user of PHI.
-    pinUsedValue(I);
+  while (I != E && I->isPHI())
     ++I;
-  }
 
   typedef MachineBasicBlock::instr_iterator instr_iterator;
   while (I != E) {
@@ -362,6 +359,15 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
     }
 
     pinUsedValue(MI);
+  }
+
+  // Pin the incoming value from this MBB.
+  typedef MachineBasicBlock::succ_iterator succ_iterator;
+  for (succ_iterator SI = MBB.succ_begin(), SE = MBB.succ_end(); SI != SE; ++SI) {
+    MachineBasicBlock::instr_iterator PHI = (*SI)->instr_begin();
+    for (instr_iterator PI = (*SI)->instr_begin(), PE = (*SI)->instr_end();
+         PI != PE && PI->isPHI(); ++PI)
+      pinUsedValue(PI);
   }
 }
 
