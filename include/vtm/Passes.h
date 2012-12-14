@@ -45,10 +45,8 @@ Pass *createFunctionFilterPass(raw_ostream &O);
 
 // Bit level information analysis
 Pass *createBitLevelInfoPass();
-Pass *createLogicSynthesisPass();
 Pass *createPreSchedRTLOptPass(bool enableLUTMapping = false);
 Pass *createFixMachineCodePass(bool IsPreOpt);
-Pass *createBuildWireTransitiveUsersPass();
 Pass *createHyperBlockFormationPass();
 Pass *createPrebindUnbalanceMuxPass();
 Pass *createBasicPrebindMuxPass();
@@ -64,9 +62,6 @@ Pass *createVPreRegAllocSchedPass();
 
 // Register allocation.
 FunctionPass *createSimpleRegisterAllocator();
-
-// Find Shortest Path.
-Pass *createCFGShortestPathPass();
 
 // Analyse the Combination Path Delay.
 Pass *createCombPathDelayAnalysisPass();
