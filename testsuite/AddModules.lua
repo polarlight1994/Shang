@@ -2,8 +2,8 @@ Modules.__ip_udiv_i64 = {
 InstTmplt = [=[
 
 // 64bit div
-reg [5:0] div64_$(num)_counter;
-wire [6:0] div64_$(num)_counter_wire = div64_$(num)_counter + 1'b1;
+reg [6:0] div64_$(num)_counter;
+wire [7:0] div64_$(num)_counter_wire = div64_$(num)_counter + 1'b1;
 
 reg div64_$(num)_busy;
 wire $(fin) = ~(div64_$(num)_busy | $(en));
@@ -12,23 +12,23 @@ assign $(out0) = div64_$(num)opa / div64_$(num)opb;
 
 always @(posedge $(clk), negedge $(rst)) begin
   if (!$(rst)) begin
-   div64_$(num)_counter <= 6'b0;
+   div64_$(num)_counter <= 7'b0;
    div64_$(num)_busy <= 1'b0;
   end else begin
     if ($(en)) begin
 	  div64_$(num)_busy <= 1'b1;
-      div64_$(num)_counter <= 6'b0;
+      div64_$(num)_counter <= 7'b0111000;
     end
 
 	if (div64_$(num)_busy)
    	  div64_$(num)_counter <= div64_$(num)_counter_wire;
 
-    if (div64_$(num)_counter_wire[6])
+    if (div64_$(num)_counter_wire[7])
 	  div64_$(num)_busy <= 1'b0;
   end
 end
 ]=],
-TimingInfo = { NumOperands = 2, Latency = 64, OperandInfo = { { Name = [=[div64_$(num)opa]=], SizeInBits = 64 }, { Name = [=[div64_$(num)opb]=], SizeInBits = 64 } } }
+TimingInfo = { NumOperands = 2, Latency = 72, OperandInfo = { { Name = [=[div64_$(num)opa]=], SizeInBits = 64 }, { Name = [=[div64_$(num)opb]=], SizeInBits = 64 } } }
 }
 
 Modules.__ip_udiv_i32 = {
