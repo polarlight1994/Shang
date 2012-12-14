@@ -205,12 +205,14 @@ bool PreSchedRTLOpt::runOnMachineFunction(MachineFunction &F) {
   }
 
   // Perform optimizations.
-  if (enableLUTMapping) {
-    // Ask ABC for LUT mapping.
-  }
 
   // Prepare for datapath rewrite.
   breakDownNAryExprs();
+
+  if (enableLUTMapping) {
+    // Ask ABC for LUT mapping.
+    Container->performLUTMapping(F.getFunction()->getName());
+  }
 
   // Rewrite the operations in data-path.
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
@@ -533,7 +535,7 @@ unsigned PreSchedRTLOpt::rewriteLUTExpr(VASTExpr *Expr, MachineInstr *IP) {
 
   // Collect the Fanins of the LUTs.
   SmallVector<MachineOperand, 6> Ops;
-  for (unsigned i = 0; i < Expr->NumOps - 1; ++i)
+  for (uint8_t i = 0; i < Expr->NumOps - 1; ++i)
     Ops.push_back(getAsOperand(Expr->getOperand(i)));
 
   MachineInstrBuilder Builder =

@@ -147,9 +147,8 @@ struct VTMPassConfig : public TargetPassConfig {
     // Fix the machine code for schedule and function unit allocation.
     PM->add(createFixMachineCodePass(false));
 
-    if (EnablePreSchedRTLOpt) PM->add(createPreSchedRTLOptPass());
+    if (EnablePreSchedRTLOpt) PM->add(createPreSchedRTLOptPass(true));
     // Perform logic synthesis.
-    //PM->add(createLogicSynthesisPass());
     printAndVerify("After logic synthesis.");
 
     // Clean up the MachineFunction.
