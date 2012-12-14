@@ -140,7 +140,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
 		      unsigned char cur_be = mem0be.read(), addrmask = 0;
           long long cur_addr = mem0addr.read();
           if(mem0cmd) { // Write memory
-            CyclesToWait = 1;
+            CyclesToWait = 0;
             switch (cur_be){
             case 1:  *((unsigned char *)(cur_addr)) = ((unsigned char ) (mem0out.read()));   addrmask = 0; break;
             case 3:  *((unsigned short *)(cur_addr)) = ((unsigned short ) (mem0out.read())); addrmask = 1; break;
@@ -149,7 +149,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
             default: assert(0 && "Unsupported size!"); break;
             }
           } else { // Read memory
-            CyclesToWait = 2;
+            CyclesToWait = 1;
             switch (cur_be){
             case 1:  (mem0in) = *((unsigned char *)(cur_addr));  addrmask = 0; break;
             case 3:  (mem0in) = *((unsigned short *)(cur_addr)); addrmask = 1; break;
@@ -165,7 +165,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
             mem0waitrequest = 1;
             ++memcnt;
             wait();
-            assert(!mem0en && "Please disable memory while waiting it ready!");
+            assert(!mem0en && "Please disable memory while waiting is ready!");
           }
 
           mem0waitrequest = 0;
