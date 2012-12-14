@@ -209,10 +209,6 @@ always@(posedge clk,negedge rstN)begin
 
       default : begin
         state <= S0;
-        addr2R_read <= 0;
-        readbyte_en <= 8'b1111_1111;
-        readrdy <= 0;
-        rden <= 0;
       end
     endcase
   end
@@ -228,7 +224,7 @@ wire            writerdy = writeactive? 1:0;
 wire   [7:0]    writebyte_en = writeactive? (mem0be<<mem0addr[2:0]):8'b1111_1111;
 assign           data2R = writeactive? (mem0out<<{mem0addr[2:0],3'b0}):0;
 assign          wren = writeactive? 1:0;
-assign           mem0rdy = ((readrdy)||(writerdy))? 1:0;
+assign           mem0rdy = (readrdy);
 assign           addr2R = (wren)? mem0addr[$(getGVBit(Num64GV)+2):3]:addr2R_read[$(getGVBit(Num64GV)+2):3];/////////////////////////////////
 assign          byen2R = (wren)? writebyte_en:readbyte_en;
 
