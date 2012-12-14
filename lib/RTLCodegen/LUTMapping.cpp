@@ -97,7 +97,12 @@ struct LogicNetwork {
 
   VASTValPtr getAsOperand(Abc_Obj_t *O) const;
 
+  bool isNodeVisited(Abc_Obj_t *Obj) const {
+    return RewriteMap.count(Obj) || Abc_ObjIsPi(Abc_ObjFanin0(Obj));
+  }
+
   void buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder);
+  void buildLUTTree(Abc_Obj_t *Root, DatapathBuilder &Builder);
   void buildLUTDatapath(DatapathBuilder &Builder);
 
   bool hasExternalUse(VASTValue * V) {
@@ -354,10 +359,7 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
   Abc_Obj_t *FO = Abc_ObjFanout0(Obj);
   unsigned Bitwidth = 0;
 
-  // No need to handle constant.
-  if (Abc_NodeIsConst(Obj)) {
-    return;
-  }
+  assert(Abc_ObjIsNode(Obj) && "Unexpected Obj Type!");
 
   Abc_Obj_t *FI;
   int j;
@@ -385,18 +387,48 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
   assert(Inserted && "The node is visited?");
 }
 
+void LogicNetwork::buildLUTTree(Abc_Obj_t *Root, DatapathBuilder &Builder) {
+  std::vector<std::pair<Abc_Obj_t*, unsigned> > VisitStack;
+  VisitStack.push_back(std::make_pair(Abc_ObjRegular(Root), 0));
+
+  while (!VisitStack.empty()) {
+    Abc_Obj_t *CurNode = Abc_ObjRegular(Abc_ObjFanin0(VisitStack.back().first));
+    unsigned &FIIdx = VisitStack.back().second;
+
+    if (FIIdx == Abc_ObjFaninNum(CurNode)) {
+      VisitStack.pop_back();
+
+      DEBUG(dbgs().indent(VisitStack.size() * 2) << "Visiting "
+            << Abc_ObjName(Abc_ObjRegular(CurNode)) << '\n');
+
+      // All fanin visited, visit the current node.
+      buildLUTExpr(CurNode, Builder);
+      continue;
+    }
+
+    Abc_Obj_t *ChildNode = Abc_ObjRegular(Abc_ObjFanin(CurNode, FIIdx));
+    ++FIIdx;
+
+    // Fanin had already visited.
+    if (isNodeVisited(ChildNode)) continue;
+
+    VisitStack.push_back(std::make_pair(Abc_ObjRegular(ChildNode), 0));
+  }
+}
+
 void LogicNetwork::buildLUTDatapath(DatapathBuilder &Builder) {
   int i;
   Abc_Obj_t *Obj;
 
   DEBUG(dump());
 
-  Abc_NtkForEachNode(Ntk, Obj, i) {
-    buildLUTExpr(Obj, Builder);
-  }
-
   Abc_NtkForEachPo(Ntk,Obj, i) {
     Abc_Obj_t *FI = Abc_ObjFanin0(Obj);
+    // The Fanin of the PO maybe visited.
+    if (isNodeVisited(FI)) continue;
+
+    // Rewrite the LUT tree rooted FI.
+    buildLUTTree(FI, Builder);
 
     AbcObjMapTy::const_iterator at = RewriteMap.find(Abc_ObjRegular(FI));
     assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
