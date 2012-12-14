@@ -959,7 +959,10 @@ void ChainBreaker::buildFUCtrl(VSUnit *U) {
     // do not need to create a new register to hold the result. Otherwise, a
     // new register is needed.
     bool IsWaitOnly = Id.getFUType() == VFUs::CalleeFN;
-    buildReadFU(MI, U, G.getStepsToFinish(MI), Id, IsWaitOnly);
+    // No need to wait the write to memory bus.
+    if (!(Id.getFUType() == VFUs::MemoryBus && VInstrInfo::mayStore(MI)))
+      buildReadFU(MI, U, G.getStepsToFinish(MI), Id, IsWaitOnly);
+
     MRI.setRegClass(MI->getOperand(0).getReg(), RC);
   }
 
