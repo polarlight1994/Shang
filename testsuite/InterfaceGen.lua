@@ -219,7 +219,7 @@ assign           data2R = writeactive? (mem0out<<{mem0addr[2:0],3'b0}):0;
 assign          wren = writeactive? 1:0;
 assign           mem0rdy = (readrdy);
 assign           addr2R = (wren)? mem0addr[$(getGVBit(Num64GV)+2):3]:addr2R_read[$(getGVBit(Num64GV)+2):3];/////////////////////////////////
-assign          byen2R = (wren)? writebyte_en:readbyte_en;
+assign          byen2R = writebyte_en;
 
 // synthesis translate_off
 always@(posedge clk) begin
