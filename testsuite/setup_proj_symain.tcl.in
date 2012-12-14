@@ -82,7 +82,7 @@ source @VTS_SOURCE_ROOT@/report_json_data.tcl
 unload_report
 
 #Perform functional simulation.
-exec timeout @TIMEOUTS@s bash @MAIN_MODELDO_FILE@ >@ stderr
+exec timeout 1800s bash @MAIN_MODELDO_FILE@ >@ stderr
 
 #Read the execution cycles
 set cycleFile [open "@MAIN_RTL_ENTITY@.txt" r]
