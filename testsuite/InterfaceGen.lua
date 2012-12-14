@@ -192,7 +192,7 @@ always@(posedge clk,negedge rstN)begin
           state <= S0;
           readbyte_en <= 8'b1111_1111;
           readrdy <= 0;
-                  rden <= 0;
+          rden <= 0;
         end
       end
       S_wait0 :begin
