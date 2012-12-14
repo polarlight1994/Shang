@@ -146,14 +146,7 @@ wire    [7:0]      mem0be_wire = readactive?  (mem0be << mem0addr[2:0]):8'b1111_
 wire    [63:0]    q;
 reg  [63:0]    q_pipe;
 //-=======================================================================================
-assign          q[7:0] = (rden&&byen2R[0])? q_i[7:0]:0;
-assign          q[15:8] = (rden&&byen2R[1])? q_i[15:8]:0;
-assign          q[23:16] = (rden&&byen2R[2])? q_i[23:16]:0;
-assign          q[31:24] = (rden&&byen2R[3])? q_i[31:24]:0;
-assign          q[39:32] = (rden&&byen2R[4])? q_i[39:32]:0;
-assign          q[47:40] = (rden&&byen2R[5])? q_i[47:40]:0;
-assign          q[55:48] = (rden&&byen2R[6])? q_i[55:48]:0;
-assign          q[63:56] = (rden&&byen2R[7])? q_i[63:56]:0;
+assign          q = q_i;
 //-=======================================================================================
 assign          mem0in = q_pipe;
 
