@@ -38,6 +38,7 @@ set(MaxAllowedMuxSize "16" CACHE STRING "Maximum allowed mux size without pipeli
 set(ENABLE_PHYSICAL_SYNTHESIS "OFF" CACHE BOOL "Enable quartus physical synthesis")
 set(ScheduleType "ASAP" CACHE STRING "The algorithm to schedule linear code region")
 set(PipelineType "DontPipeline" CACHE STRING "The algorithm to schedule cyclic code region")
+set(CPULIMIT "" CACHE STRING "Limit the CPU usage with the cpulimit command")
 
 set(ENV{PATH} ${VERILATOR_ROOT_DIR})
 
@@ -321,7 +322,7 @@ macro(add_general_main_test test_file config_file altera_setup_prj_file postfix)
   add_custom_command(OUTPUT ${MAIN_RTL_SRC} ${MAIN_SDC_SRC} ${MAIN_UCF_SRC} ${MAIN_INT_TOP} ${MAIN_INT_BRAM} 
                             ${MAIN_INT_BRAMINIT} ${MAIN_TB_FILE} ${MAIN_MODELDO_FILE}
     COMMAND echo "Bad RTL source!" > ${MAIN_RTL_SRC}
-    COMMAND ${SYNC} -vtm-enable-memscm=false ${TEST_BINARY_ROOT}/${TEST}_config_main.lua  ${EXTRA_HLS_OPTION}
+    COMMAND bash -c "${CPULIMIT} ${SYNC} -vtm-enable-memscm=false ${TEST_BINARY_ROOT}/${TEST}_config_main.lua  ${EXTRA_HLS_OPTION}"
     DEPENDS ${MAIN_ORIG_BC} ${SYNC} "${TEST_BINARY_ROOT}/${TEST}_config_main.lua"
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
     COMMENT "High-levle Synthesising RTL module and interface for ${SYN_FUNC}"
@@ -344,7 +345,7 @@ if(SYNTHESIS_DUT AND TARGET benchmark_synthesis_main)
   add_dependencies(main_sim ${TEST}_simulate_main)
 
   add_custom_command(OUTPUT ${MAIN_RTL_STA}
-    COMMAND ${QUARTUS_BIN_DIR}/quartus_sh -t "${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl"
+    COMMAND bash -c "${CPULIMIT} ${QUARTUS_BIN_DIR}/quartus_sh -t ${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl"
     DEPENDS ${MAIN_RTL_SRC} "${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl" ${MAIN_SDC_SRC} ${MAIN_INT_TOP} ${MAIN_INT_BRAM} ${MAIN_INT_BRAMINIT}
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
     COMMENT "Synthesising RTL module and interface for ${SYN_FUNC}"
