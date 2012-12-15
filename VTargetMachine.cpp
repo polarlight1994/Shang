@@ -130,7 +130,7 @@ struct VTMPassConfig : public TargetPassConfig {
 
     // Fix the machine code to avoid unnecessary mux.
     PM->add(createFixMachineCodePass(true));
-    PM->add(createHoistDatapathPass());
+    if (EnablePreSchedRTLOpt) PM->add(createPreSchedRTLOptPass());
 
     // Optimize the CFG.
     PM->add(createHyperBlockFormationPass());

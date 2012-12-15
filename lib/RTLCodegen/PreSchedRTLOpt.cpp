@@ -100,6 +100,7 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
 
   void rewriteDatapath(MachineBasicBlock &MBB);
 
+  void rewriteDepForPHI(MachineInstr *PHI, MachineInstr *IncomingPos);
   // Rewrite the expression and all its dependences.
   unsigned rewriteExprTree(VASTExprPtr V, MachineInstr *InsertBefore);
   void rewriteExprTreeForMO(MachineOperand &MO, MachineInstr *InsertBefore,
@@ -337,20 +338,8 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
   MachineBasicBlock::instr_iterator I = MBB.instr_begin(), E = MBB.instr_end();
 
   // Skip the PHINodes.
-  while (I != E && I->isPHI()) {
-    // PreSchedRTLOpt assumes that VOpMvPhis have been already inserted.
-#ifndef NDEBUG
-    MachineInstr *PHI = I;
-
-    for (unsigned i = 1, e = PHI->getNumOperands(); i != e; i += 2) {
-      unsigned Reg = PHI->getOperand(i).getReg();
-      assert(!VRegisterInfo::IsWire(Reg, MRI)
-             && "PreSchedRTLOpt should run after VOpMvPhis are inserted!");
-    };
-#endif
-
+  while (I != E && I->isPHI())
     ++I;
-  }
 
   typedef MachineBasicBlock::instr_iterator instr_iterator;
   while (I != E) {
@@ -373,6 +362,15 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
     }
 
     pinUsedValue(MI);
+  }
+
+  // Pin the incoming value from this MBB.
+  typedef MachineBasicBlock::succ_iterator succ_iterator;
+  for (succ_iterator SI = MBB.succ_begin(), SE = MBB.succ_end(); SI != SE; ++SI) {
+    MachineBasicBlock::instr_iterator PHI = (*SI)->instr_begin();
+    for (instr_iterator PI = (*SI)->instr_begin(), PE = (*SI)->instr_end();
+         PI != PE && PI->isPHI(); ++PI)
+      pinUsedValue(PI);
   }
 }
 
@@ -408,6 +406,28 @@ void PreSchedRTLOpt::rewriteDatapath(MachineBasicBlock &MBB) {
       IsPredicate |= VInstrInfo::isBrCndLike(TID.getOpcode());
       rewriteExprTreeForMO(MO, InsertPos, IsPredicate, false);
     }
+  }
+
+  // Rewrite the incoming value from this MBB.
+  typedef MachineBasicBlock::succ_iterator succ_iterator;
+  for (succ_iterator SI = MBB.succ_begin(), SE = MBB.succ_end(); SI != SE; ++SI) {
+    MachineBasicBlock::instr_iterator PHI = (*SI)->instr_begin();
+    for (instr_iterator PI = (*SI)->instr_begin(), PE = (*SI)->instr_end();
+         PI != PE && PI->isPHI(); ++PI)
+      rewriteDepForPHI(PHI++, InsertPos);
+  }
+}
+
+void PreSchedRTLOpt::rewriteDepForPHI(MachineInstr *PHI,
+                                      MachineInstr *IncomingPos) {
+  for (unsigned i = 1, e = PHI->getNumOperands(); i != e; i += 2) {
+    // Only rewrite the dependence from incoming BB.
+    if (PHI->getOperand(i + 1).getMBB() != IncomingPos->getParent())
+      continue;
+
+    MachineOperand &MO = PHI->getOperand(i);
+
+    rewriteExprTreeForMO(MO, IncomingPos, false, true);
   }
 }
 
