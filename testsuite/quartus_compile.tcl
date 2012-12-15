@@ -68,5 +68,4 @@ set_global_assignment -name SYNTH_PROTECT_SDC_CONSTRAINT ON
 # Compile project.
 execute_module -tool map
 execute_module -tool fit
-execute_module -tool asm
 

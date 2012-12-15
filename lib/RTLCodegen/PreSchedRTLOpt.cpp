@@ -211,7 +211,7 @@ bool PreSchedRTLOpt::runOnMachineFunction(MachineFunction &F) {
 
   if (enableLUTMapping) {
     // Ask ABC for LUT mapping.
-    Container->performLUTMapping(F.getFunction()->getName());
+    // Container->performLUTMapping(F.getFunction()->getName());
   }
 
   // Rewrite the operations in data-path.
