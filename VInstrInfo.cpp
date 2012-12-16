@@ -910,9 +910,6 @@ unsigned VInstrInfo::getNumLogicLevels(const MachineInstr *MI) {
   case VTM::VOpSHL:
     return lookupLogicLevels<0, VFUShift>(MI);
 
-  case VTM::VOpMemTrans:
-    return getFUDesc<VFUMemBus>()->getStepsToWait() * VFUs::ClockPeriod();
-
   // Can be fitted into LUT.
   case VTM::VOpSel:
     return lookupLogicLevels<0, VFUSel>(MI);
@@ -929,12 +926,9 @@ unsigned VInstrInfo::getNumLogicLevels(const MachineInstr *MI) {
   case VTM::VOpRAnd:
     return lookupLogicLevels<1, VFUReduction>(MI);
 
-  case VTM::VOpBRAMTrans:
-    return getFUDesc<VFUBRAM>()->getStepsToWait() * VFUs::ClockPeriod();
-
-  case VTM::VOpInternalCall:  return VFUs::ClockPeriod();
-
-  default:                  break;
+  default:
+    llvm_unreachable("Unexpected MachineInstr!");
+    break;
   }
 
   return 0;
