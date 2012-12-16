@@ -146,7 +146,7 @@ wire    [7:0]      mem0be_wire = readactive?  (mem0be << mem0addr[2:0]):8'b1111_
 wire    [63:0]    q;
 reg  [63:0]    q_pipe;
 //-=======================================================================================
-assign          q = q_i;
+assign          q = q_i >> {addr2R_read[2:0],3'b0};
 //-=======================================================================================
 assign          mem0in = q_pipe;
 
@@ -154,7 +154,7 @@ always@(posedge clk,negedge rstN)begin
   if(!rstN)begin
     q_pipe <= 0;
   end else begin
-    q_pipe <= q >> {addr2R_read[2:0],3'b0};
+    q_pipe <= q ;
   end
 end
 
@@ -212,18 +212,36 @@ end
 //
 //-Active the wren signal
 //-=======================================================================================
-wire             writeactive = (mem0en&&mem0cmd)? 1:0;
-wire            writerdy = writeactive? 1:0;
-wire   [7:0]    writebyte_en = writeactive? (mem0be<<mem0addr[2:0]):8'b1111_1111;
-assign           data2R = writeactive? (mem0out<<{mem0addr[2:0],3'b0}):0;
-assign          wren = writeactive? 1:0;
-assign           mem0rdy = (readrdy);
-assign           addr2R = (wren)? mem0addr[$(getGVBit(Num64GV)+2):3]:addr2R_read[$(getGVBit(Num64GV)+2):3];/////////////////////////////////
-assign          byen2R = writebyte_en;
+reg [31:0]       memwaddr_reg;
+reg [7:0]       mem0be_reg;
+reg              writeactive_reg;
+reg [63:0]       writedata_reg;
+
+//registering all the input for writes
+always@(posedge clk,negedge rstN)begin
+  if(!rstN)begin
+    memwaddr_reg <= 0;
+    mem0be_reg <= 0;
+    writeactive_reg <= 0;
+    writedata_reg <=0;
+  end else begin
+    memwaddr_reg <= mem0addr;
+    mem0be_reg <= mem0be << mem0addr[2:0];
+    writeactive_reg <= mem0en&&mem0cmd[0];
+    writedata_reg <= (mem0out<<{mem0addr[2:0],3'b0});
+  end
+end
+
+//connecting to the blockRAM
+assign byen2R = mem0be_reg;
+assign addr2R = memwaddr_reg[$(getGVBit(Num64GV)+2):3];
+assign data2R = writedata_reg;
+assign wren = writeactive_reg;
+assign mem0rdy = (readrdy);
 
 // synthesis translate_off
 always@(posedge clk) begin
-  if (writeactive) ++MemAccessCycles;
+  if (writeactive_reg) ++MemAccessCycles;
 end
 // synthesis translate_on
 
