@@ -128,7 +128,11 @@ delay_type BitLevelDelayInfo::computeAndCacheLatencyFor(const MachineInstr *MI){
   case VTM::VOpBRAMTrans:
     // Block RAM read/write is copy-like operations and we do not need to wait
     // it.
-    TotalLatency = delay_type(0);
+    // DIRTYHACK: Prevent other operation being chained with the block ram access
+    // by setting it's latency to 1 cycles.
+    TotalLatency = delay_type(1);
+    // Enable single-cycle chaining with VOpMemTrans.
+    TotalLatency -= BitLevelDelayInfo::Delta;
     break;
   case VTM::VOpInternalCall:
     // Perfrom the call need excatly 1 cycle.
