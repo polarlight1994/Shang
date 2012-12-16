@@ -315,14 +315,11 @@ typedef VSimpleFUDesc<VFUs::Reduction>     VFUReduction;
 
 class VFUBRAM : public  VFUDesc {
   unsigned DataWidth;
-  unsigned StepsToWait;
   std::string Prefix;   // Prefix of the block RAM object in timing constraints.
   std::string Template; // Template for inferring block ram.
   std::string InitFileDir; // Template for readmemh dir.
 public:
   VFUBRAM(luabind::object FUTable);
-
-  unsigned getStepsToWait() const { return StepsToWait; }
 
   std::string generateCode(const std::string &Clk, unsigned Num,
                            unsigned DataWidth, unsigned Size,

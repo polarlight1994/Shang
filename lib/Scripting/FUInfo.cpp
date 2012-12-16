@@ -178,7 +178,6 @@ VFUMemBus::VFUMemBus(luabind::object FUTable)
 VFUBRAM::VFUBRAM(luabind::object FUTable)
   : VFUDesc(VFUs::BRam, getProperty<unsigned>(FUTable, "StartInterval")),
     DataWidth(getProperty<unsigned>(FUTable, "DataWidth")),
-    StepsToWait(getProperty<float>(FUTable, "StepsToWait")),
     Prefix(getProperty<std::string>(FUTable, "Prefix")),
     Template(getProperty<std::string>(FUTable, "Template")),
     InitFileDir(getProperty<std::string>(FUTable, "InitFileDir")) {}
