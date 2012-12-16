@@ -131,55 +131,68 @@ SC_MODULE(V$(RTLModuleName)_tb){
       outfile.close();
       exit(0);
     }
+
     //Memory bus function
-    void bus_transation(){
-      mem0waitrequest = 0;
+    unsigned char brige_byte_en_pipe, brige_read_en_pipe, brige_read_ready, brige_write_en_pipe;
+    long long brige_addr_pipe, brige_data_out_pipe, brige_data_in_pipe;
+
+    // Stage 1, latch the signals in to the brige.
+    void brige_pipe_1() {
       while (true){
-        if(mem0en){
-          unsigned CyclesToWait = 0;
-		      unsigned char cur_be = mem0be.read(), addrmask = 0;
-          long long cur_addr = mem0addr.read();
-          if(mem0cmd) { // Write memory
-            CyclesToWait = 0;
-            switch (cur_be){
-            case 1:  *((unsigned char *)(cur_addr)) = ((unsigned char ) (mem0out.read()));   addrmask = 0; break;
-            case 3:  *((unsigned short *)(cur_addr)) = ((unsigned short ) (mem0out.read())); addrmask = 1; break;
-            case 15: *((unsigned int *)(cur_addr)) = ((unsigned int ) (mem0out.read()));     addrmask = 3; break;
-            case 255: *((unsigned long long *)(cur_addr)) = ((unsigned long long ) (mem0out.read())); addrmask = 7; break;
-            default: assert(0 && "Unsupported size!"); break;
-            }
-          } else { // Read memory
-            CyclesToWait = 1;
-            switch (cur_be){
-            case 1:  (mem0in) = *((unsigned char *)(cur_addr));  addrmask = 0; break;
-            case 3:  (mem0in) = *((unsigned short *)(cur_addr)); addrmask = 1; break;
-            case 15: (mem0in) = *((unsigned int *)(cur_addr));   addrmask = 3; break;
-            case 255: (mem0in)= *((unsigned long long *)(cur_addr)); addrmask = 7; break;
-            default: assert(0 && "Unsupported size!"); break;
-            }
-          }
-
-          assert((cur_addr & addrmask) == 0 && "Unexpected unalign access!");
-
-          for (unsigned i = 0; i < CyclesToWait; ++i) {
-            mem0waitrequest = 1;
-            ++memcnt;
-            wait();
-            assert(!mem0en && "Please disable memory while waiting is ready!");
-          }
-
-          mem0waitrequest = 0;
-          wait();
+        brige_byte_en_pipe = mem0be.read();
+        brige_read_en_pipe = mem0en.read() && !mem0cmd.read();
+        brige_write_en_pipe = mem0en.read() && mem0cmd.read();
+        if (mem0en.read()) {
+          brige_addr_pipe = mem0addr.read();
+          brige_data_in_pipe = mem0out.read();
         } else {
-          mem0in = 0xcdcdcdcdcdcdcdcd;
-          // Wait for next cycle.
-          wait();
+          brige_addr_pipe = 0;
+          brige_data_in_pipe = 0x0123456789abcdef;
         }
+
+        wait();
       }
     }
 
-    void memrdyLogic() {
-      mem0rdy = !(mem0en || mem0waitrequest);
+    // Stage 2, the memory recive the signals from the brige.
+    void brige_pipe_2() {
+      unsigned char addrmask = 0;
+      while (true){
+        if (brige_read_en_pipe) {
+          switch (brige_byte_en_pipe){
+          case 1:  (brige_data_out_pipe) = *((unsigned char *)(brige_addr_pipe));  addrmask = 0; break;
+          case 3:  (brige_data_out_pipe) = *((unsigned short *)(brige_addr_pipe)); addrmask = 1; break;
+          case 15: (brige_data_out_pipe) = *((unsigned int *)(brige_addr_pipe));   addrmask = 3; break;
+          case 255: (brige_data_out_pipe)= *((unsigned long long *)(brige_addr_pipe)); addrmask = 7; break;
+          default: assert(0 && "Unsupported size!"); break;
+          }
+        } else {
+          brige_data_out_pipe = 0x0123456789abcdef;
+        }
+
+        brige_read_ready = brige_read_en_pipe;
+
+        if(brige_write_en_pipe) { // Write memory
+          switch (brige_byte_en_pipe){
+          case 1:  *((unsigned char *)(brige_addr_pipe)) = ((unsigned char ) (brige_data_in_pipe));   addrmask = 0; break;
+          case 3:  *((unsigned short *)(brige_addr_pipe)) = ((unsigned short ) (brige_data_in_pipe)); addrmask = 1; break;
+          case 15: *((unsigned int *)(brige_addr_pipe)) = ((unsigned int ) (brige_data_in_pipe));     addrmask = 3; break;
+          case 255: *((unsigned long long *)(brige_addr_pipe)) = ((unsigned long long ) (brige_data_in_pipe)); addrmask = 7; break;
+          default: assert(0 && "Unsupported size!"); break;
+          }
+        }
+
+        wait();
+      }
+    }
+
+    // Stage 3, output the signal.
+    void brige_pipe_3() {
+      while (true){
+        mem0in = brige_data_out_pipe;
+        mem0rdy = brige_read_ready ? 1 : 0;
+        wait();
+      }
     }
 
     static V$(RTLModuleName)_tb* Instance() {
@@ -211,9 +224,9 @@ SC_MODULE(V$(RTLModuleName)_tb){
         DUT.mem0be(mem0be);
         DUT.mem0addr(mem0addr);
         SC_CTHREAD(sw_main_entry,clk.pos());
-        SC_CTHREAD(bus_transation,clk.pos());
-        SC_METHOD(memrdyLogic);
-        sensitive << mem0en << mem0waitrequest;
+        SC_CTHREAD(brige_pipe_1,clk.pos());
+        SC_CTHREAD(brige_pipe_2,clk.pos());
+        SC_CTHREAD(brige_pipe_3,clk.pos());
       }
     private:
       V$(RTLModuleName)_tb(const V$(RTLModuleName)_tb&) ;
