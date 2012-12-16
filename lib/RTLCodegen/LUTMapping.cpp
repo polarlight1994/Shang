@@ -388,12 +388,12 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
 }
 
 void LogicNetwork::buildLUTTree(Abc_Obj_t *Root, DatapathBuilder &Builder) {
-  std::vector<std::pair<Abc_Obj_t*, unsigned> > VisitStack;
+  std::vector<std::pair<Abc_Obj_t*, int> > VisitStack;
   VisitStack.push_back(std::make_pair(Abc_ObjRegular(Root), 0));
 
   while (!VisitStack.empty()) {
     Abc_Obj_t *CurNode = Abc_ObjRegular(Abc_ObjFanin0(VisitStack.back().first));
-    unsigned &FIIdx = VisitStack.back().second;
+    int &FIIdx = VisitStack.back().second;
 
     if (FIIdx == Abc_ObjFaninNum(CurNode)) {
       VisitStack.pop_back();
