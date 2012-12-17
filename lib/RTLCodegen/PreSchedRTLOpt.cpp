@@ -367,7 +367,6 @@ void PreSchedRTLOpt::buildDatapath(MachineBasicBlock &MBB) {
   // Pin the incoming value from this MBB.
   typedef MachineBasicBlock::succ_iterator succ_iterator;
   for (succ_iterator SI = MBB.succ_begin(), SE = MBB.succ_end(); SI != SE; ++SI) {
-    MachineBasicBlock::instr_iterator PHI = (*SI)->instr_begin();
     for (instr_iterator PI = (*SI)->instr_begin(), PE = (*SI)->instr_end();
          PI != PE && PI->isPHI(); ++PI)
       pinUsedValue(PI);
