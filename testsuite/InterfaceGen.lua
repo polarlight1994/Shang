@@ -98,7 +98,7 @@ module Main2Bram(
   input wire        [63:0]        mem0out,
   //--------Signal to IP--------------------------//
   output reg                 mem0rdy,
-  output reg     [63:0]      mem0in
+  output wire     [63:0]      mem0in
   );
 
 reg [31:0]       MemAddrPipe0Reg, MemAddrPipe1Reg;
@@ -106,6 +106,8 @@ reg [7:0]        MemBePipe0Reg;
 reg              WEnPipe0Reg, REnPipe0Reg, REnPipe1Reg;
 reg [63:0]       MemWDataPipe0Reg;
 wire [63:0]      MemRDataPipe1Wire;
+reg [63:0]       MemRDataPipe2Reg;
+reg [2:0]        MemAddrPipe2Reg;
 
 // Stage 1: registering all the input for writes
 always@(posedge clk,negedge rstN)begin
@@ -149,12 +151,16 @@ end
 always@(posedge clk,negedge rstN)begin
   if(!rstN)begin
     mem0rdy <= 0;
-    mem0in <= 0;
+    MemRDataPipe2Reg <=0;
+    MemAddrPipe2Reg <=0;
   end else begin
     mem0rdy <= REnPipe1Reg;
-    mem0in <= MemRDataPipe1Wire >> {MemAddrPipe1Reg[2:0],3'b0};
+    MemAddrPipe2Reg <= MemAddrPipe1Reg[2:0];
+    MemRDataPipe2Reg <= MemRDataPipe1Wire;
   end
 end
+
+assign mem0in = MemRDataPipe2Reg>> {MemAddrPipe2Reg[2:0],3'b0};
 
 endmodule
 
