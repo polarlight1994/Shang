@@ -121,7 +121,11 @@ delay_type BitLevelDelayInfo::computeAndCacheLatencyFor(const MachineInstr *MI){
 
   switch (MI->getOpcode()) {
   case VTM::VOpMemTrans:
-    TotalLatency = delay_type(getFUDesc<VFUMemBus>()->getReadLatency());
+    if (VInstrInfo::mayLoad(MI))
+      TotalLatency = delay_type(getFUDesc<VFUMemBus>()->getReadLatency());
+    else // Need 1 cycles to disable the memory bus.
+      TotalLatency = delay_type(1.0);
+
     // Enable single-cycle chaining with VOpMemTrans.
     TotalLatency -= BitLevelDelayInfo::Delta;
     break;
@@ -130,9 +134,12 @@ delay_type BitLevelDelayInfo::computeAndCacheLatencyFor(const MachineInstr *MI){
     // it.
     // DIRTYHACK: Prevent other operation being chained with the block ram access
     // by setting it's latency to 1 cycles.
-    TotalLatency = delay_type(1);
-    // Enable single-cycle chaining with VOpMemTrans.
-    TotalLatency -= BitLevelDelayInfo::Delta;
+    if (VInstrInfo::mayLoad(MI)) {
+      TotalLatency = delay_type(1);
+      // Enable single-cycle chaining with VOpMemTrans.
+      TotalLatency -= BitLevelDelayInfo::Delta;
+    } else // No need to wait the write finish.
+      TotalLatency = delay_type(0);
     break;
   case VTM::VOpInternalCall:
     // Perfrom the call need excatly 1 cycle.
