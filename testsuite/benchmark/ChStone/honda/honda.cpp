@@ -52,8 +52,8 @@ short Y_0_1, Y_1_1;
             w(4344 * S_5_1) + w(1194 * X_0_1) - 
             w(2114 * X_1_1);
 
-      Y_0_1 = w(S_6_1) - w(1491 * X_0_1);
-      Y_1_1 = w(S_7_1) + w(2007 * X_0_1) - w(1491 * X_1_1);
+      Y_0_1 = w(S_1)+ w(S_2)+ w(S_3)+ w(S_6_1) - w(1491 * X_0_1);
+      Y_1_1 = w(S_6)+ w(S_4)+ w(S_5)+ w(S_7)+ w(S_7_1) + w(2007 * X_0_1) - w(1491 * X_1_1);
 
       result_out = Y_0_1 + Y_1_1;
       //      printf("%d\n", result_out);
@@ -89,7 +89,7 @@ Y_1_1   needed at (   1   *   TS   )+w(   TL   )
 #define NUM 10
 int i;//25
 int result_out[NUM];
-int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
+int inputs[NUM+4]={10,23,34,43,54,98,78,67,75,15,37,81,19,91};
 #define exp_res 39735
 int main()
 {
@@ -100,23 +100,23 @@ int main()
   for (int idx=0;idx<NUM;idx++)
     {
       i = inputs[idx]; 
-  x01 = i++; x02 = i++; x03 = i++;
-  x11 = i++; x12 = i++; x13 = i++;
-  x21 = i++; x22 = i++; x23 = i++;
+  x01 = i++; x02 = i*2; x03 = i+2;
+  x11 = i++; x12 = i++; x13 = (i*3)+1;
+  x21 = i+2; x22 = (i*2)+2; x23 = i++;
 
 result_out[idx] =  honda(x01, x02, 
            x03, x11, x12, x13,
 		    x21, x22, x23);
  return_value = return_value+result_out[idx];
-     printf("%d\n",result_out[idx]);
+ //     printf("%d\n",result_out[idx]);
     }
 
 //    printf("benchmark_result = %d\n",result_out);
 //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
     //    return main_result;
-  //    printf("return return_value != %d", return_value);
+  //            printf("return return_value != %d", return_value);
   //return return_value;
     //  return 0;
-  return return_value != 25947;
+	  return return_value != 92521 ;
 }
