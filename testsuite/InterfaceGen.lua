@@ -27,25 +27,20 @@ module DUT_TOP(
   input wire clk,
   input wire rstN,
   input wire start,
-  output wire[7:0] LED7,
+  output reg[7:0] LED7,
   output wire succ,
   output wire fin
 );
 
 wire  [31:0]         return_value;
 wire                 mem0en;
-wire  [3:0]         mem0cmd;
+wire  [3:0]          mem0cmd;
 wire  [31:0]         mem0addr;
 wire                 mem0rdy;
 wire  [7:0]          mem0be;
-wire  [$(getGVBit(Num64GV)-1):0]         addr2R;   //////////////////////////////
-wire  [7:0]         byteenable;
-wire  [63:0]         data2R;
-wire  [63:0]         q_i;
 wire  [63:0]         mem0in;
-wire                 wren;
-wire  [63:0]        mem0out;
-wire                start_N =~start;
+wire  [63:0]         mem0out;
+wire                 start_N =~start;
 
 // The module successfully complete its execution if return_value is 0.
 assign succ = ~(|return_value);
@@ -66,7 +61,7 @@ $(RTLModuleName) $(RTLModuleName)_inst(
 );
 
 Main2Bram i1(
-  .addr2R(addr2R),
+  .rstN(rstN),
   .clk(clk),
   .mem0addr(mem0addr),
   .mem0cmd(mem0cmd),
@@ -74,26 +69,18 @@ Main2Bram i1(
   .mem0rdy(mem0rdy),
   .mem0be(mem0be),
   .mem0out(mem0out),
-  .mem0in(mem0in),
-  .q_i(q_i),
-  .data2R(data2R),
-  .byen2R(byteenable),
-  .rstN(rstN),
-  .wren(wren),
-  .fin(fin),
-  .return_value(return_value),
-  .LED7(LED7)
+  .mem0in(mem0in)
 );
 
-BRAM i2(
-  .waddr(addr2R),
-  .raddr(addr2R),
-  .be(byteenable),
-  .wdata(data2R),
-  .we(wren),
-  .clk(clk),
-  .q(q_i)
-);
+  always@(posedge clk, negedge rstN) begin
+    if(!rstN)begin
+      LED7 <= 8'b10101010;
+    end else begin
+      if(fin)begin
+        LED7 <= (|return_value) ? 8'b00000000 : 8'b11111111;
+      end
+    end
+  end
 
 endmodule
 
@@ -102,164 +89,70 @@ endmodule
 //-_-------------------------Interface module for Bram-----------------------------_-//
 module Main2Bram(
   //_---------Signal from IP----------------------//
-  input                   clk,
-  input                   rstN,
-  input                    fin,
-  input                   mem0en,
-  input       [3:0]       mem0cmd,
-  input        [7:0]        mem0be,
-  input       [31:0]       mem0addr,
-  input        [63:0]        mem0out,//
-  input       [31:0]      return_value,
-  //--------Signal from Bram----------------------//
-  input        [63:0]      q_i,
-  //_-------Linking LED to show the activity-------//
-  output reg  [7:0]        LED7,
+  input wire                   clk,
+  input wire                   rstN,
+  input wire                   mem0en,
+  input wire       [3:0]       mem0cmd,
+  input wire        [7:0]        mem0be,
+  input wire       [31:0]       mem0addr,
+  input wire        [63:0]        mem0out,
   //--------Signal to IP--------------------------//
-  output                  mem0rdy,
-  output      [63:0]      mem0in,
-  //--------Signal to Bram------------------------//
-  output      [7:0]        byen2R,
-  output        [$(getGVBit(Num64GV)-1):0]       addr2R,  ///////////////////////////////////
-  output      [63:0]       data2R,
-  output                   wren
+  output reg                 mem0rdy,
+  output reg     [63:0]      mem0in
   );
-//-=======================================================================================
-//Some declarn
-//-=======================================================================================
-//The process of Reading
-//-=======================================================================================
-parameter         S0 = 2'b00,
-          S_wait0 = 2'b01,
-          S_wait1 = 2'b11;
-//-=======================================================================================
-reg [1:0]              state;
-reg [31:0]         addr2R_read;
-reg                readrdy;
-reg [7:0]          readbyte_en;
-reg               rden;
-//-=======================================================================================
-//-Active signal start the read process
-//-=======================================================================================
-wire               readactive = mem0en&&(mem0cmd==0)? 1:0;
-wire    [7:0]      mem0be_wire = readactive?  (mem0be << mem0addr[2:0]):8'b1111_1111;
-wire    [63:0]    q;
-reg  [63:0]    q_pipe;
-//-=======================================================================================
-assign          q = q_i >> {addr2R_read[2:0],3'b0};
-//-=======================================================================================
-assign          mem0in = q_pipe;
 
+reg [31:0]       MemAddrPipe0Reg, MemAddrPipe1Reg;
+reg [7:0]        MemBePipe0Reg;
+reg              WEnPipe0Reg, REnPipe0Reg, REnPipe1Reg;
+reg [63:0]       MemWDataPipe0Reg;
+wire [63:0]      MemRDataPipe1Wire;
+
+// Stage 1: registering all the input for writes
 always@(posedge clk,negedge rstN)begin
   if(!rstN)begin
-    q_pipe <= 0;
+    MemAddrPipe0Reg <= 0;
+    MemBePipe0Reg <= 0;
+    WEnPipe0Reg <= 0;
+    MemWDataPipe0Reg <=0;
   end else begin
-    q_pipe <= q ;
+    MemAddrPipe0Reg <= mem0addr;
+    MemBePipe0Reg <= mem0be << mem0addr[2:0];
+    WEnPipe0Reg <= mem0en & mem0cmd[0];
+    REnPipe0Reg <= mem0en & ~mem0cmd[0];
+    MemWDataPipe0Reg <= (mem0out<<{mem0addr[2:0],3'b0});
   end
 end
 
-// synthesis translate_off
-integer MemAccessCycles = 0;
-// synthesis translate_on
+// Stage 2: Access the block ram.
+BRAM i2(
+  .waddr(MemAddrPipe0Reg[$(getGVBit(Num64GV)+2):3]),
+  .raddr(MemAddrPipe0Reg[$(getGVBit(Num64GV)+2):3]),
+  .be(MemBePipe0Reg),
+  .wdata(MemWDataPipe0Reg),
+  .we(WEnPipe0Reg),
+  .clk(clk),
+  .q(MemRDataPipe1Wire)
+);
+
 
 always@(posedge clk,negedge rstN)begin
   if(!rstN)begin
-    state <= S0;
-    addr2R_read <= 0;
-    readrdy <= 0;
-    readbyte_en <= 8'b1111_1111;
-    rden <= 0;
+    MemAddrPipe1Reg <= 0;
+    REnPipe1Reg <= 0;
   end else begin
-    case(state)
-      S0 :begin//Get the read or write data when mem0en turns to high
-        if(readactive)begin
-          addr2R_read <= mem0addr;
-          state <= S_wait0;
-          readbyte_en <= mem0be_wire;
-                  rden <= 1;
-          // synthesis translate_off
-          ++MemAccessCycles;
-          // synthesis translate_on
-        end else begin
-          addr2R_read <= 0;
-          state <= S0;
-          readbyte_en <= 8'b1111_1111;
-          readrdy <= 0;
-          rden <= 0;
-        end
-      end
-      S_wait0 :begin
-        state <= S_wait1;//Write process is less by 2 cycle to Read process
-        readrdy <= 0;
-      end
-      S_wait1 :begin
-        state <= S0;//Write process is less by 2 cycle to Read process
-        readrdy <= 1;
-        // synthesis translate_off
-        ++MemAccessCycles;
-        // synthesis translate_on
-      end
-
-      default : begin
-        state <= S0;
-      end
-    endcase
+    MemAddrPipe1Reg <= MemAddrPipe0Reg;
+    REnPipe1Reg <= REnPipe0Reg;
   end
 end
 
-//-=======================================================================================
-//The process of Writing
-//
-//-Active the wren signal
-//-=======================================================================================
-reg [31:0]       memwaddr_reg;
-reg [7:0]       mem0be_reg;
-reg              writeactive_reg;
-reg [63:0]       writedata_reg;
-
-//registering all the input for writes
+// Stage 3: Generate the output.
 always@(posedge clk,negedge rstN)begin
   if(!rstN)begin
-    memwaddr_reg <= 0;
-    mem0be_reg <= 0;
-    writeactive_reg <= 0;
-    writedata_reg <=0;
+    mem0rdy <= 0;
+    mem0in <= 0;
   end else begin
-    memwaddr_reg <= mem0addr;
-    mem0be_reg <= mem0be << mem0addr[2:0];
-    writeactive_reg <= mem0en&&mem0cmd[0];
-    writedata_reg <= (mem0out<<{mem0addr[2:0],3'b0});
-  end
-end
-
-//connecting to the blockRAM
-assign byen2R = mem0be_reg;
-assign addr2R = memwaddr_reg[$(getGVBit(Num64GV)+2):3];
-assign data2R = writedata_reg;
-assign wren = writeactive_reg;
-assign mem0rdy = (readrdy);
-
-// synthesis translate_off
-always@(posedge clk) begin
-  if (writeactive_reg) ++MemAccessCycles;
-end
-// synthesis translate_on
-
-//-=======================================================================================
-//-=======================================================================================
-//Return the value
-//-=======================================================================================
-always@(posedge clk,negedge rstN)begin
-  if(!rstN)begin
-    LED7 <= 8'b10101010;
-  end else begin
-    if(fin)begin
-      if(return_value==0)begin
-        LED7 <= 8'b11111111;
-      end else begin
-        LED7 <= 8'b00000000;
-      end
-    end
+    mem0rdy <= REnPipe1Reg;
+    mem0in <= MemRDataPipe1Wire >> {MemAddrPipe1Reg[2:0],3'b0};
   end
 end
 
