@@ -11,3 +11,4 @@ macro(add_regress_test file_name)
 endmacro(add_regress_test)
 
 add_subdirectory(delayestimation)
+add_subdirectory(memorybus)

@@ -1,0 +1,1 @@
+add_regress_test(membus_read)
