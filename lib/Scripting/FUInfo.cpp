@@ -173,7 +173,7 @@ VFUMemBus::VFUMemBus(luabind::object FUTable)
   : VFUDesc(VFUs::MemoryBus, getProperty<unsigned>(FUTable, "StartInterval")),
     AddrWidth(getProperty<unsigned>(FUTable, "AddressWidth")),
     DataWidth(getProperty<unsigned>(FUTable, "DataWidth")),
-    StepsToWait(getProperty<float>(FUTable, "StepsToWait")) {}
+    ReadLatency(getProperty<float>(FUTable, "ReadLatency")) {}
 
 VFUBRAM::VFUBRAM(luabind::object FUTable)
   : VFUDesc(VFUs::BRam, getProperty<unsigned>(FUTable, "StartInterval")),

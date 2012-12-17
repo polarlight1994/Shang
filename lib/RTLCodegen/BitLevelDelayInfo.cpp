@@ -121,7 +121,7 @@ delay_type BitLevelDelayInfo::computeAndCacheLatencyFor(const MachineInstr *MI){
 
   switch (MI->getOpcode()) {
   case VTM::VOpMemTrans:
-    TotalLatency = delay_type(getFUDesc<VFUMemBus>()->getStepsToWait());
+    TotalLatency = delay_type(getFUDesc<VFUMemBus>()->getReadLatency());
     // Enable single-cycle chaining with VOpMemTrans.
     TotalLatency -= BitLevelDelayInfo::Delta;
     break;

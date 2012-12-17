@@ -216,13 +216,13 @@ public:
 class VFUMemBus : public VFUDesc {
   unsigned AddrWidth;
   unsigned DataWidth;
-  unsigned StepsToWait;
+  unsigned ReadLatency;
 public:
   VFUMemBus(luabind::object FUTable);
 
   unsigned getAddrWidth() const { return AddrWidth; }
   unsigned getDataWidth() const { return DataWidth; }
-  unsigned getStepsToWait() const { return StepsToWait; }
+  unsigned getReadLatency() const { return ReadLatency; }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VFUMemBus *A) { return true; }
