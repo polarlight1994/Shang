@@ -642,9 +642,6 @@ void VerilogASTBuilder::addSlotReady(MachineInstr *MI, VASTSlot *Slot) {
   VASTValue *ReadyPort = 0;
 
   switch (Id.getFUType()) {
-  case VFUs::MemoryBus:
-    ReadyPort = VM->getSymbol(VFUMemBus::getReadyName(Id.getFUNum()));
-    break;
   case VFUs::CalleeFN: {
     // The register representing the function unit is store in the src operand
     // of VOpReadFU.
