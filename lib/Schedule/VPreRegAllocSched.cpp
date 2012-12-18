@@ -120,6 +120,8 @@ struct VPreRegAllocSched : public MachineFunctionPass {
            ? 0 : G.lookupSUnit(Dep);
   }
 
+  unsigned getDelayBetweenMemInstr(VSchedGraph &G, const MachineInstr *Src,
+                                   const MachineInstr *Dst);
   void buildMemDepEdges(VSchedGraph &G, ArrayRef<VSUnit*> SUs);
 
   bool couldBePipelined(const MachineBasicBlock *MBB);
@@ -297,6 +299,17 @@ static inline bool mayAccessMemory(const MCInstrDesc &TID) {
   return TID.mayLoad() || TID.mayStore() || TID.isCall();
 }
 
+unsigned VPreRegAllocSched::getDelayBetweenMemInstr(VSchedGraph &G,
+                                                    const MachineInstr *Src,
+                                                    const MachineInstr *Dst) {
+  // Wait until the memory operation finish before jumping to sub functions.
+  if (Dst->getOpcode() == VTM::VOpInternalCall)
+    return std::max(G.getStepsToFinish(Src), 1u);
+
+  // The Initial Interval of the memory bus instructions is cycles.
+  return 1;
+}
+
 void VPreRegAllocSched::buildMemDepEdges(VSchedGraph &G, ArrayRef<VSUnit*> SUs){
   // The schedule unit and the corresponding memory operand.
   typedef std::vector<std::pair<MachineMemOperand*, VSUnit*> > MemOpMapTy;
@@ -338,15 +351,14 @@ void VPreRegAllocSched::buildMemDepEdges(VSchedGraph &G, ArrayRef<VSUnit*> SUs){
 
       // Handle unanalyzable memory access.
       if (DstMO == 0 || SrcMO == 0) {
-        // Build the Src -> Dst dependence.
-        unsigned Latency = G.getStepsToFinish(SrcMI);
+        unsigned Latency = getDelayBetweenMemInstr(G, SrcMI, DstMI);
         //if (MayBothActive || SrcMO != DstMO)
         DstU->addDep<true>(SrcU, VDEdge::CreateMemDep(Latency, 0));
 
         // Build the Dst -> Src (in next iteration) dependence, the dependence
         // occur even if SrcMI and DstMI are mutual exclusive.
         if (G.enablePipeLine()) {
-          Latency = G.getStepsToFinish(SrcMI);
+          unsigned Latency = getDelayBetweenMemInstr(G, DstMI, SrcMI);
           SrcU->addDep<true>(DstU, VDEdge::CreateMemDep(Latency, 1));
         }
         // Go on handle next visited SUnit.
@@ -371,7 +383,7 @@ void VPreRegAllocSched::buildMemDepEdges(VSchedGraph &G, ArrayRef<VSUnit*> SUs){
           int DepDst = analyzeLoopDep(SrcMO, DstMO, *IRL, true);
 
           if (DepDst >= 0) {
-            unsigned Latency = G.getStepsToFinish(SrcMI);
+            unsigned Latency = getDelayBetweenMemInstr(G, SrcMI, DstMI);
             DstU->addDep<true>(SrcU, VDEdge::CreateMemDep(Latency, DepDst));
           }
         }
@@ -382,11 +394,11 @@ void VPreRegAllocSched::buildMemDepEdges(VSchedGraph &G, ArrayRef<VSUnit*> SUs){
         int DepDst = analyzeLoopDep(DstMO, SrcMO, *IRL, false);
 
         if (DepDst >=0 ) {
-          unsigned Latency = G.getStepsToFinish(SrcMI);
+          unsigned Latency = getDelayBetweenMemInstr(G, DstMI, SrcMI);
           SrcU->addDep<true>(DstU, VDEdge::CreateMemDep(Latency, DepDst));
         }
       } else if (MayBothActive) {
-        unsigned Latency = G.getStepsToFinish(SrcMI);
+        unsigned Latency = getDelayBetweenMemInstr(G, SrcMI, DstMI);
         DstU->addDep<true>(SrcU, VDEdge::CreateMemDep(Latency, 0));
       }
     }
