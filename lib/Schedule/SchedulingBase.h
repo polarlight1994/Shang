@@ -264,22 +264,30 @@ struct ASAPScheduler : public Scheduler<true> {
 // A pseudo scheduler which generate linear order for SDC scheduler.
 class BasicLinearOrderGenerator {
 protected:
+  SchedulingBase &S;
+
   typedef std::vector<VSUnit*> SUVecTy;
   typedef std::map<FuncUnitId, SUVecTy> ConflictListTy;
-  typedef std::map<MachineBasicBlock*, SmallSet<FuncUnitId, 2> >
-          FirstSlotConflictMapTy;
-  SchedulingBase &S;
-  FirstSlotConflictMapTy FirstSlotConflicts;
-  void buildSuccConflictMap(const VSUnit *Terminator);
-  bool isFUConflictedAtFirstSlot(MachineBasicBlock *MBB, FuncUnitId Id) const {
-    FirstSlotConflictMapTy::const_iterator at = FirstSlotConflicts.find(MBB);
-    return at == FirstSlotConflicts.end() ? false : at->second.count(Id);
+
+  typedef std::map<MachineBasicBlock*, ConflictListTy> LiveOutMapTy;
+  LiveOutMapTy LiveOutFUs;
+  void buildPipelineConflictMap(const VSUnit *Terminator);
+
+  const SUVecTy *getLiveOuts(MachineBasicBlock *MBB, FuncUnitId Id) const {
+    LiveOutMapTy::const_iterator at = LiveOutFUs.find(MBB);
+    // There is no live-outs in this MBB, all SU only use trivial FUs.
+    if (at == LiveOutFUs.end()) return 0;
+
+    ConflictListTy::const_iterator su_at = at->second.find(Id);
+
+    // Such FU are not used in the MBB.
+    return su_at == at->second.end() ? 0 : &su_at->second;
   }
 
   void addLinOrdEdge(ConflictListTy &ConflictList);
   // Add the linear ordering edges to the SUs in the vector and return the first
   // SU.
-  VSUnit *addLinOrdEdge(SUVecTy &SUs);
+  void addLinOrdEdge(SUVecTy &SUs);
 
   explicit BasicLinearOrderGenerator(SchedulingBase &S) : S(S) {}
 

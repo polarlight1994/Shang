@@ -50,7 +50,7 @@ void BasicLinearOrderGenerator::addLinOrdEdge() {
     // No need to assign the linear order for the SU which already has a fixed
     // timing constraint.
     if (U->hasFixedTiming()) {
-      if (U->isTerminator()) buildSuccConflictMap(U);
+      if (U->isTerminator()) buildPipelineConflictMap(U);
       continue;
     }
 
@@ -74,7 +74,7 @@ void BasicLinearOrderGenerator::addLinOrdEdge() {
   S->topologicalSortCPSUs();
 }
 
-void BasicLinearOrderGenerator::buildSuccConflictMap(const VSUnit *U) {
+void BasicLinearOrderGenerator::buildPipelineConflictMap(const VSUnit *U) {
   assert(U->isTerminator() && "Bad SU type!");
 
   MachineBasicBlock *ParentBB = U->getParentBB();
@@ -82,54 +82,66 @@ void BasicLinearOrderGenerator::buildSuccConflictMap(const VSUnit *U) {
   // There is no FU conflict if the block is not pipelined.
   if (II == 0) return;
 
-  SmallVector<FuncUnitId, 2> ActiveFUsAtLastSlot;
-
-  typedef VSUnit::const_dep_iterator dep_it;
-  for (dep_it DI = cp_begin(U), DE = cp_end(U); DI != DE; ++DI) {
-    if (DI.getEdgeType() != VDEdge::FixedTiming) continue;
-
-    if (DI.getLatency(II) % II) continue;
-    // Now the source of the dependency is scheduled to a slot which alias with
-    // the last slot of the BB.
-
-    FuncUnitId FU = DI->getFUId();
-    if (!FU.isBound()) continue;
-
-    ActiveFUsAtLastSlot.push_back(FU);
-  }
-
-  for (unsigned iter = 0, e = U->num_instrs(); iter < e; ++iter) {
-    MachineInstr *MI = U->getPtrAt(iter);
-    if (!MI->isBranch()) continue;
-
-    MachineBasicBlock *SuccBB = MI->getOperand(1).getMBB();
-    FirstSlotConflicts[SuccBB].insert(ActiveFUsAtLastSlot.begin(),
-                                      ActiveFUsAtLastSlot.end());
-  }
+  llvm_unreachable("buildSuccConfilictMap is not supported yet!");
 }
 
 void BasicLinearOrderGenerator::addLinOrdEdge(ConflictListTy &List) {
   typedef ConflictListTy::iterator iterator;
   for (iterator I = List.begin(), E = List.end(); I != E; ++I) {
     std::vector<VSUnit*> &SUs = I->second;
-    std::sort(SUs.begin(), SUs.end(), alap_less(S));
+    FuncUnitId Id = I->first;
 
-    VSUnit *FirstSU;
-    FirstSU = addLinOrdEdge(I->second);
+    VSUnit *FirstSU = 0, *LastSU = 0;
+    
+    if (!SUs.empty()) {
+      std::sort(SUs.begin(), SUs.end(), alap_less(S));
+      FirstSU = SUs.front();
+      LastSU = SUs.back();
+      addLinOrdEdge(SUs);
+    }
 
-    MachineBasicBlock *ParentBB = FirstSU->getParentBB();
-    if (!isFUConflictedAtFirstSlot(ParentBB, I->first)) continue;
+    MachineBasicBlock *CurBB = FirstSU->getParentBB();
+    SUVecTy LiveOuts;
 
-    // Prevent the First SU from being scheduled to the first slot if there is
-    // FU conflict.
-    VSUnit *BBEntry = S->lookupSUnit(ParentBB);
-    assert(BBEntry && "EntrySU not found!");
-    VDEdge Edge = VDEdge::CreateDep<VDEdge::LinearOrder>(1);
-    FirstSU->addDep<true>(BBEntry, Edge);
+    if (LastSU) LiveOuts.push_back(LastSU);
+
+    typedef MachineBasicBlock::pred_iterator pred_iterator;
+    for (pred_iterator PI = CurBB->pred_begin(), PE = CurBB->pred_end();
+         PI != PE; ++PI) {
+      MachineBasicBlock *PredBB = *PI;
+
+      // Ignore the backward edges.
+      if (PredBB->getNumber() >= CurBB->getNumber()) continue;
+
+      const SUVecTy *PredLiveOuts = getLiveOuts(PredBB, Id);
+
+      if (PredLiveOuts == 0) continue;
+
+      if (FirstSU) {
+        typedef SUVecTy::const_iterator su_iterator;
+        for (su_iterator SI = PredLiveOuts->begin(), SE = PredLiveOuts->end();
+             SI != SE; ++SI) {
+          VSUnit *PredSU = *SI;
+          // Add the dependencies between the liveouts from pred SU to the first
+          // SU of the current BB.
+          unsigned IntialInterval = 1;
+          VDEdge Edge = VDEdge::CreateDep<VDEdge::LinearOrder>(IntialInterval);
+          FirstSU->addDep<true>(PredSU, Edge);
+        }
+
+        continue;
+      }
+
+      // Else forward the live out of pred BB to the current BB.
+      LiveOuts.insert(LiveOuts.end(), PredLiveOuts->begin(), PredLiveOuts->end());
+    }
+
+    // Build the live out vector for current BB.
+    LiveOutFUs[CurBB][Id] = LiveOuts;
   }
 }
 
-VSUnit *BasicLinearOrderGenerator::addLinOrdEdge(SUVecTy &SUs) {
+void BasicLinearOrderGenerator::addLinOrdEdge(SUVecTy &SUs) {
   VSUnit *LaterSU = SUs.back();
   SUs.pop_back();
 
@@ -140,14 +152,12 @@ VSUnit *BasicLinearOrderGenerator::addLinOrdEdge(SUVecTy &SUs) {
     // Build a dependence edge from EalierSU to LaterSU.
     // TODO: Add an new kind of edge: Constraint Edge, and there should be
     // hard constraint and soft constraint.
-    unsigned Latency = EalierSU->getLatency();
-    VDEdge Edge = VDEdge::CreateDep<VDEdge::LinearOrder>(Latency);
+    unsigned IntialInterval = 1;
+    VDEdge Edge = VDEdge::CreateDep<VDEdge::LinearOrder>(IntialInterval);
     LaterSU->addDep<true>(EalierSU, Edge);
 
     LaterSU = EalierSU;
   }
-
-  return LaterSU;
 }
 
 void SDCSchedulingBase::LPObjFn::setLPObj(lprec *lp) const {
