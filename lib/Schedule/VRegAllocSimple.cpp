@@ -70,6 +70,15 @@ struct VRASimple : public MachineFunctionPass {
   VirtRegMap *VRM;
   LiveIntervals *LIS;
 
+  typedef std::map<FuncUnitId, LiveInterval*> FU2PhysRegMapTy;
+  FU2PhysRegMapTy FU2PhysRegMap;
+
+  typedef const std::vector<unsigned> VRegVec;
+  // Register/FU Compatibility Graph.
+  typedef CompGraph<LiveInterval*, unsigned> LICGraph;
+  typedef CompGraphNode<LiveInterval*> LICGraphNode;
+  LICGraph RegLIG;
+
   VRASimple();
   void init(VirtRegMap &vrm, LiveIntervals &lis);
 
@@ -132,21 +141,11 @@ struct VRASimple : public MachineFunctionPass {
   typedef EquivalenceClasses<unsigned> EquRegClasses;
   void mergeEquLIs(EquRegClasses &LIs);
 
-  typedef std::map<FuncUnitId, LiveInterval*> FU2PhysRegMapTy;
-  FU2PhysRegMapTy FU2PhysRegMap;
-
-  typedef const std::vector<unsigned> VRegVec;
-  // Register/FU Compatibility Graph.
-  typedef CompGraph<LiveInterval*, unsigned> LICGraph;
-  typedef CompGraphNode<LiveInterval*> LICGraphNode;
-
   // Compatibility Graph building.
-  void buildCompGraph(LICGraph &G);
-
   template<class CompEdgeWeight>
-  bool reduceCompGraph(LICGraph &G, CompEdgeWeight &C);
+  bool reduceCompGraph(CompEdgeWeight &C);
 
-  void bindCompGraph(LICGraph &G);
+  void bindCompGraph();
 
   void handleMemoryAccess(MachineInstr *MI);
   void handleBRAMAccess(MachineInstr *MI);
@@ -555,6 +554,7 @@ void VRASimple::getAnalysisUsage(AnalysisUsage &AU) const {
 void VRASimple::releaseMemory() {
   //RegAllocBase::releaseMemory();
   FU2PhysRegMap.clear();
+  RegLIG.reset();
 }
 
 void VRASimple::init(VirtRegMap &vrm, LiveIntervals &lis) {
@@ -686,7 +686,17 @@ void VRASimple::handleCtrlOp(MachineInstr *MI) {
   case VTM::VOpBRAMTrans:     handleBRAMAccess(MI); break;
   case VTM::VOpDstMux:        handleDstMux(MI); break;
   case VTM::VOpInternalCall:  handleCalleeFN(MI); break;
-  //default: llvm_unreachable("Unexpected instruction!");
+  case VTM::VOpReadFU:
+    if (MI->getOperand(0).getReg() == 0)
+      break;
+    /* FALL THROUGH */
+  case VTM::VOpMoveArg:
+  case VTM::VOpMove:
+  case VTM::VOpMvPhi:
+  case VTM::VOpReadReturn:
+    //Build the Compatibility Graphs
+    RegLIG.GetOrCreateNode(getInterval(MI->getOperand(0).getReg()));
+    break;
   }
 }
 
@@ -712,23 +722,17 @@ bool VRASimple::runOnMachineFunction(MachineFunction &F) {
     }
   }
 
-  //Build the Compatibility Graphs
-  LICGraph RCG(VTM::DRRegClassID);
-
-  buildCompGraph(RCG);
-
   CompRegEdgeWeight RegWeight(this);
-
 
   bool SomethingBound = !DisableFUSharing;
   // Reduce the Compatibility Graphs
   while (SomethingBound) {
     DEBUG(dbgs() << "Going to reduce CompGraphs\n");
-    SomethingBound = reduceCompGraph(RCG, RegWeight);
+    SomethingBound = reduceCompGraph(RegWeight);
   }
 
   // Bind the Compatibility Graphs
-  bindCompGraph(RCG);
+  bindCompGraph();
 
   // Run rewriter
   LIS->addKillFlags();
@@ -890,28 +894,18 @@ void VRASimple::mergeLI(LiveInterval *FromLI, LiveInterval *ToLI,
   mergeIdenticalDatapath(ToLI);
 }
 
-void VRASimple::buildCompGraph(LICGraph &G) {
-  for (unsigned i = 0, e = MRI->getNumVirtRegs(); i != e; ++i) {
-    unsigned RegNum = TargetRegisterInfo::index2VirtReg(i);
-    if (MRI->getRegClass(RegNum)->getID() != G.ID)
-      continue;
-
-    if (LiveInterval *LI = getInterval(RegNum))
-      G.GetOrCreateNode(LI);
-  }
-}
-
 template<class CompEdgeWeight>
-bool VRASimple::reduceCompGraph(LICGraph &G, CompEdgeWeight &C) {
+bool VRASimple::reduceCompGraph(CompEdgeWeight &C) {
   SmallVector<LiveInterval*, 8> LongestPath, MergedLIs;
-  G.updateEdgeWeight(C);
+  RegLIG.updateEdgeWeight(C);
 
   bool AnyReduced = false;
 
-  for (int PathWeight = G.findLongestPath(LongestPath, true); PathWeight > 0;
-       PathWeight = G.findLongestPath(LongestPath, true)) {
+  for (int PathWeight = RegLIG.findLongestPath(LongestPath, true);
+       PathWeight > 0; PathWeight = RegLIG.findLongestPath(LongestPath, true)) {
     DEBUG(dbgs() << "// longest path in graph: {"
-      << TRI->getRegClass(G.ID)->getName() << "} weight:" << PathWeight << "\n";
+                 << TRI->getRegClass(RegLIG.ID)->getName() << "} weight:"
+                 << PathWeight << "\n";
     for (unsigned i = 0; i < LongestPath.size(); ++i) {
       LiveInterval *LI = LongestPath[i];
       dbgs() << *LI << " bitwidth:" << getBitWidthOf(LI->reg) << '\n';
@@ -929,14 +923,16 @@ bool VRASimple::reduceCompGraph(LICGraph &G, CompEdgeWeight &C) {
 
   // Re-add the merged LI to the graph.
   while (!MergedLIs.empty())
-    G.GetOrCreateNode(MergedLIs.pop_back_val());
+    RegLIG.GetOrCreateNode(MergedLIs.pop_back_val());
 
   return AnyReduced;
 }
 
-void VRASimple::bindCompGraph(LICGraph &G) {
-  unsigned RC = G.ID;
-  for (LICGraph::iterator I = G.begin(), E = G.end(); I != E; ++I) {
+void VRASimple::bindCompGraph() {
+  unsigned RC = RegLIG.ID;
+  typedef LICGraph::iterator iterator;
+
+  for (iterator I = RegLIG.begin(), E = RegLIG.end(); I != E; ++I) {
     LiveInterval *LI = (*I)->get();
     assign(*LI, TRI->allocatePhyReg(RC, getBitWidthOf(LI->reg)));
   }
