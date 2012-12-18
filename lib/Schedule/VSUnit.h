@@ -653,10 +653,10 @@ private:
     // std::vector, which may reallocate on the fly.
     unsigned IDomIdx;
 
-    // The shortest path distance from the BB's IDom.
+    // The shortest path distance from the Entry.
     // NOTE: The distance is from the entry of the source BB to the entry of
     // sink BB.
-    unsigned SPDFromIDom;
+    unsigned SPDFromEntry;
 
     unsigned getTotalSlot() const {
       return Exit->getSlot() - Entry->getSlot();
@@ -679,15 +679,6 @@ private:
 
   typedef std::vector<BBInfo> BBInfoMapTy;
   BBInfoMapTy BBInfoMap;
-
-  inline const BBInfo &getIDomInfo(const MachineBasicBlock *MBB) const {
-    const BBInfo &Info = getBBInfo(MBB);
-    assert(Info.IDomIdx < BBInfoMap.size() && "Bad IDomIdx!");
-    return BBInfoMap[Info.IDomIdx];
-  }
-
-  unsigned getSPD(const BBInfo &Src, const BBInfo &Snk,
-                  unsigned ExtraDistance = 0) const;
 
   inline const BBInfo &getBBInfo(const MachineBasicBlock *MBB) const {
     if (enablePipeLine()) {
@@ -725,7 +716,7 @@ private:
 
   void insertDelayBlocks();
 
-  unsigned calculateExpectedSPDFromIDom(const VSUnit *BBEntry);
+  unsigned calculateExpectedSPDFromEntry(const VSUnit *BBEntry);
 
   void insertDelayBlock(MachineBasicBlock *From, MachineBasicBlock *To,
                         unsigned Latency);

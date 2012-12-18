@@ -252,7 +252,7 @@ VSUnit *VSchedGraph::createTerminator(const MachineBasicBlock *MBB,
   assert(Info.Entry && "Create terminator before creating entry!");
   Info.II = 0;
   Info.IDomIdx = 0;
-  Info.SPDFromIDom = UINT32_MAX;
+  Info.SPDFromEntry = UINT32_MAX;
 
   // Set the IDomIdx if MDT is provided.
   if (MDT) {
