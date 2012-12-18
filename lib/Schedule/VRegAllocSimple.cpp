@@ -708,6 +708,8 @@ bool VRASimple::runOnMachineFunction(MachineFunction &F) {
 
   DEBUG(dbgs() << "Before simple register allocation:\n";F.dump());
 
+  // Iterate over all instruction to bind the FU or construct the compatibility
+  // graph.
   for (MachineFunction::iterator I = F.begin(), E =F.end(); I != E; ++I) {
     bool InCtrlBundle = false;
     typedef MachineBasicBlock::instr_iterator instr_it;
@@ -742,7 +744,7 @@ bool VRASimple::runOnMachineFunction(MachineFunction &F) {
   releaseMemory();
 
   DEBUG(dbgs() << "After simple register allocation:\n";
-        //printVMF(dbgs(), F);
+        F.dump();
   );
   MRI->leaveSSA();
   MRI->invalidateLiveness();
