@@ -156,11 +156,11 @@ always@(posedge clk,negedge rstN)begin
   end else begin
     mem0rdy <= REnPipe1Reg;
     MemAddrPipe2Reg <= MemAddrPipe1Reg[2:0];
-    MemRDataPipe2Reg <= MemRDataPipe1Wire;
+    MemRDataPipe2Reg <= MemRDataPipe1Wire >> {MemAddrPipe1Reg[2],5'b0};
   end
 end
 
-assign mem0in = MemRDataPipe2Reg>> {MemAddrPipe2Reg[2:0],3'b0};
+assign mem0in = MemRDataPipe2Reg >> {1'b0, MemAddrPipe2Reg[1:0],3'b0};
 
 endmodule
 
