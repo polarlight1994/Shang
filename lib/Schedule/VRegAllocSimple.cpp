@@ -132,12 +132,8 @@ struct VRASimple : public MachineFunctionPass {
   typedef EquivalenceClasses<unsigned> EquRegClasses;
   void mergeEquLIs(EquRegClasses &LIs);
 
-  // Pre-bound function unit binding functions.
-  void bindMemoryBus();
-  void bindBlockRam();
-  void bindCalleeFN();
-  void bindDstMux();
-  unsigned allocateCalleeFNPorts(unsigned RegNum);
+  typedef std::map<FuncUnitId, LiveInterval*> FU2PhysRegMapTy;
+  FU2PhysRegMapTy FU2PhysRegMap;
 
   typedef const std::vector<unsigned> VRegVec;
   // Register/FU Compatibility Graph.
@@ -152,6 +148,14 @@ struct VRASimple : public MachineFunctionPass {
 
   void bindCompGraph(LICGraph &G);
 
+  void handleMemoryAccess(MachineInstr *MI);
+  void handleBRAMAccess(MachineInstr *MI);
+  void handleDstMux(MachineInstr *MI);
+  unsigned allocateCalleeFNPorts(unsigned RegNum);
+  void handleCalleeFN(MachineInstr *MI);
+  void handleCopy(MachineInstr *MI);
+
+  void handleCtrlOp(MachineInstr *MI);
   bool runOnMachineFunction(MachineFunction &F);
 
   void rewrite();
@@ -550,6 +554,7 @@ void VRASimple::getAnalysisUsage(AnalysisUsage &AU) const {
 
 void VRASimple::releaseMemory() {
   //RegAllocBase::releaseMemory();
+  FU2PhysRegMap.clear();
 }
 
 void VRASimple::init(VirtRegMap &vrm, LiveIntervals &lis) {
@@ -568,6 +573,123 @@ void VRASimple::init(VirtRegMap &vrm, LiveIntervals &lis) {
   // Queries.reset(new LiveIntervalUnion::Query[PhysReg2LiveUnion.numRegs()]);
 }
 
+void VRASimple::handleMemoryAccess(MachineInstr *MI) {
+  unsigned RegNo = MI->getOperand(0).getReg();
+  assert(TargetRegisterInfo::isVirtualRegister(RegNo) && "Bad register number!");
+  assert(MRI->getRegClass(RegNo) == &VTM::RINFRegClass && "Bad register class!");
+  // Look up the corresponding LiveInterval.
+  FuncUnitId FU = VInstrInfo::getPreboundFUId(MI);
+  LiveInterval *&FULI = FU2PhysRegMap[FU];
+
+  if (FULI == 0) {
+    FULI = getInterval(RegNo);
+    assign(*FULI, TRI->allocateFN(VTM::RINFRegClassID));
+    return;
+  }
+  
+  mergeLI(getInterval(RegNo), FULI, true);
+}
+
+void VRASimple::handleBRAMAccess(MachineInstr *MI) {
+  unsigned RegNo = MI->getOperand(0).getReg();
+  assert(TargetRegisterInfo::isVirtualRegister(RegNo) && "Bad register number!");
+  assert(MRI->getRegClass(RegNo) == &VTM::RBRMRegClass && "Bad register class!");
+  // Look up the corresponding LiveInterval.
+  FuncUnitId FU = VInstrInfo::getPreboundFUId(MI);
+  LiveInterval *&FULI = FU2PhysRegMap[FU];
+
+  if (FULI == 0) {
+    // Allocate the physical register according to the BRAM information.
+    unsigned BRAMNum = FU.getFUNum();
+    VFInfo::BRamInfo &Info = VFI->getBRamInfo(BRAMNum);
+    unsigned &PhysReg = Info.PhyRegNum;
+    unsigned BitWidth = Info.ElemSizeInBytes * 8;
+    // Get the physical register number and update the blockram information.
+    PhysReg = TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
+    FULI = getInterval(RegNo);
+    assign(*FULI, PhysReg);
+    return;
+  }
+  
+  mergeLI(getInterval(RegNo), FULI, true);
+}
+
+void VRASimple::handleDstMux(MachineInstr *MI) {
+  unsigned RegNo = MI->getOperand(0).getReg();
+  assert(TargetRegisterInfo::isVirtualRegister(RegNo) && "Bad register number!");
+  assert(MRI->getRegClass(RegNo) == &VTM::RMUXRegClass && "Bad register class!");
+  // Look up the corresponding LiveInterval.
+  FuncUnitId FU = VInstrInfo::getPreboundFUId(MI);
+  LiveInterval *&FULI = FU2PhysRegMap[FU];
+
+  if (FULI == 0) {
+    unsigned FNNum = FU.getFUNum();
+    unsigned BitWidth = VInstrInfo::getBitWidth(MI->getOperand(0));
+    unsigned PhysReg = TRI->allocateFN(VTM::RMUXRegClassID, BitWidth);
+    FULI = getInterval(RegNo);
+    assign(*FULI, PhysReg);
+    return;
+  }
+
+  mergeLI(getInterval(RegNo), FULI, true);
+}
+
+unsigned VRASimple::allocateCalleeFNPorts(unsigned RegNum) {
+  unsigned RetPortSize = 0;
+  typedef MachineRegisterInfo::use_iterator use_it;
+  for (use_it I = MRI->use_begin(RegNum); I != MRI->use_end(); ++I) {
+    MachineInstr *MI = &*I;
+    if (MI->getOpcode() == VTM::VOpReadFU ||
+        MI->getOpcode() == VTM::VOpDisableFU)
+      continue;
+
+    assert(MI->getOpcode() == VTM::VOpReadReturn && "Unexpected callee user!");
+    assert((RetPortSize == 0 ||
+            RetPortSize == VInstrInfo::getBitWidth(MI->getOperand(0)))
+            && "Return port has multiple size?");
+    RetPortSize = VInstrInfo::getBitWidth(MI->getOperand(0));
+  }
+
+  return TRI->allocateFN(VTM::RCFNRegClassID, RetPortSize);
+}
+
+
+void VRASimple::handleCalleeFN(MachineInstr *MI) {
+  unsigned RegNo = MI->getOperand(0).getReg();
+  assert(TargetRegisterInfo::isVirtualRegister(RegNo) && "Bad register number!");
+  assert(MRI->getRegClass(RegNo) == &VTM::RCFNRegClass && "Bad register class!");
+  // Look up the corresponding LiveInterval.
+  FuncUnitId FU = VInstrInfo::getPreboundFUId(MI);
+  LiveInterval *&FULI = FU2PhysRegMap[FU];
+
+  if (FULI == 0) {
+    unsigned FNNum = FU.getFUNum();
+    unsigned PhysReg = allocateCalleeFNPorts(RegNo);
+
+    // Also allocate the enable port.
+    TRI->getSubRegOf(PhysReg, 1, 0);
+    if (PhysReg != FNNum)
+      VFI->remapCallee(MI->getOperand(1).getSymbolName(), PhysReg);
+
+    FULI = getInterval(RegNo);
+    assign(*FULI, PhysReg);
+    return;
+  }
+
+  mergeLI(getInterval(RegNo), FULI, true);
+}
+
+void VRASimple::handleCtrlOp(MachineInstr *MI) {
+  unsigned Opcode = MI->getOpcode();
+  switch (Opcode) {
+  case VTM::VOpMemTrans:      handleMemoryAccess(MI); break;
+  case VTM::VOpBRAMTrans:     handleBRAMAccess(MI); break;
+  case VTM::VOpDstMux:        handleDstMux(MI); break;
+  case VTM::VOpInternalCall:  handleCalleeFN(MI); break;
+  //default: llvm_unreachable("Unexpected instruction!");
+  }
+}
+
 bool VRASimple::runOnMachineFunction(MachineFunction &F) {
   MF = &F;
   VFI = F.getInfo<VFInfo>();
@@ -576,11 +698,19 @@ bool VRASimple::runOnMachineFunction(MachineFunction &F) {
 
   DEBUG(dbgs() << "Before simple register allocation:\n";F.dump());
 
-  // Bind the pre-bind function units.
-  bindMemoryBus();
-  bindBlockRam();
-  bindCalleeFN();
-  bindDstMux();
+  for (MachineFunction::iterator I = F.begin(), E =F.end(); I != E; ++I) {
+    bool InCtrlBundle = false;
+    typedef MachineBasicBlock::instr_iterator instr_it;
+
+    for (instr_it II = I->instr_begin(), IE = I->instr_end(); II != IE; ++II) {
+      if (II->getOpcode() == VTM::CtrlStart)
+        InCtrlBundle = true;
+      else if (II->getOpcode() == VTM::CtrlEnd)
+        InCtrlBundle = false;
+      else if (InCtrlBundle)
+        handleCtrlOp(II);
+    }
+  }
 
   //Build the Compatibility Graphs
   LICGraph RCG(VTM::DRRegClassID);
@@ -616,7 +746,6 @@ bool VRASimple::runOnMachineFunction(MachineFunction &F) {
 }
 
 void VRASimple::rewrite() {
-
   for (MachineFunction::iterator MBBI = MF->begin(), MBBE = MF->end();
        MBBI != MBBE; ++MBBI) {
     DEBUG(MBBI->print(dbgs(), LIS->getSlotIndexes()));
@@ -759,151 +888,6 @@ void VRASimple::mergeLI(LiveInterval *FromLI, LiveInterval *ToLI,
   ++LIMerged;
   // Merge the identical datapath ops.
   mergeIdenticalDatapath(ToLI);
-}
-
-void VRASimple::bindMemoryBus() {
-  LiveInterval *MemBusLI = 0;
-
-  for (unsigned i = 0, e = MRI->getNumVirtRegs(); i != e; ++i) {
-    unsigned RegNum = TargetRegisterInfo::index2VirtReg(i);
-    if (MRI->getRegClass(RegNum) != &VTM::RINFRegClass)
-      continue;
-
-    if (LiveInterval *LI = getInterval(RegNum)) {
-      if (MemBusLI == 0) {
-        assign(*LI, TRI->allocateFN(VTM::RINFRegClassID));
-        MemBusLI = LI;
-        continue;
-      }
-
-      // Merge all others LI to MemBusLI.
-      mergeLI(LI, MemBusLI, true);
-    }
-  }
-}
-
-void VRASimple::bindDstMux() {
-  std::map<unsigned, LiveInterval*> RepLIs;
-
-  for (unsigned i = 0, e = MRI->getNumVirtRegs(); i != e; ++i) {
-    unsigned RegNum = TargetRegisterInfo::index2VirtReg(i);
-    if (MRI->getRegClass(RegNum) != &VTM::RMUXRegClass)
-      continue;
-
-    if (LiveInterval *LI = getInterval(RegNum)) {
-      MachineInstr *MI = MRI->getVRegDef(RegNum);
-      assert(MI && MI->getOpcode() == VTM::VOpDstMux && "Unexpected opcode!");
-      unsigned MuxNum = VInstrInfo::getPreboundFUId(MI).getFUNum();
-
-      // Merge to the representative live interval.
-      LiveInterval *RepLI = RepLIs[MuxNum];
-      // Had we allocate a register for this bram?
-      if (RepLI == 0) {
-        unsigned BitWidth = VInstrInfo::getBitWidth(MI->getOperand(0));
-        unsigned PhyReg = TRI->allocateFN(VTM::RMUXRegClassID, BitWidth);
-        RepLIs[MuxNum] = LI;
-        assign(*LI, PhyReg);
-        continue;
-      }
-
-      // Merge to the representative live interval.
-      // DirtyHack: Now bram is write until finish, it is ok to overlap the
-      // live interval of bram for 1 control step(2 indexes in SlotIndex).
-      //SlotIndex NextStart = LI->beginIndex().getNextIndex().getNextIndex();
-      //assert(!RepLI->overlaps(NextStart, LI->endIndex())
-        //&& "Unexpected bram overlap!");
-      mergeLI(LI, RepLI, true);
-    }
-  }
-}
-
-void VRASimple::bindBlockRam() {
-  std::map<unsigned, LiveInterval*> RepLIs;
-
-  for (unsigned i = 0, e = MRI->getNumVirtRegs(); i != e; ++i) {
-    unsigned RegNum = TargetRegisterInfo::index2VirtReg(i);
-    if (MRI->getRegClass(RegNum) != &VTM::RBRMRegClass)
-      continue;
-
-    if (LiveInterval *LI = getInterval(RegNum)) {
-      MachineInstr *MI = MRI->getVRegDef(RegNum);
-      assert(MI->getOpcode() == VTM::VOpBRAMTrans && "Unexpected opcode!");
-      unsigned BRamNum = VInstrInfo::getPreboundFUId(MI).getFUNum();
-
-      VFInfo::BRamInfo &Info = VFI->getBRamInfo(BRamNum);
-      unsigned &PhyReg = Info.PhyRegNum;
-
-      // Had we allocate a register for this bram?
-      if (PhyReg == 0) {
-        unsigned BitWidth = Info.ElemSizeInBytes * 8;
-        PhyReg = TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
-        RepLIs[PhyReg] = LI;
-        assign(*LI, PhyReg);
-        continue;
-      }
-
-      // Merge to the representative live interval.
-      LiveInterval *RepLI = RepLIs[PhyReg];
-      // FIXME: Check overlap of the results of VOpPipeStage.
-      mergeLI(LI, RepLI, true);
-    }
-  }
-}
-
-unsigned VRASimple::allocateCalleeFNPorts(unsigned RegNum) {
-  unsigned RetPortSize = 0;
-  typedef MachineRegisterInfo::use_iterator use_it;
-  for (use_it I = MRI->use_begin(RegNum); I != MRI->use_end(); ++I) {
-    MachineInstr *MI = &*I;
-    if (MI->getOpcode() == VTM::VOpReadFU ||
-        MI->getOpcode() == VTM::VOpDisableFU)
-      continue;
-
-    assert(MI->getOpcode() == VTM::VOpReadReturn && "Unexpected callee user!");
-    assert((RetPortSize == 0 ||
-            RetPortSize == VInstrInfo::getBitWidth(MI->getOperand(0)))
-            && "Return port has multiple size?");
-    RetPortSize = VInstrInfo::getBitWidth(MI->getOperand(0));
-  }
-
-  return TRI->allocateFN(VTM::RCFNRegClassID, RetPortSize);
-}
-
-void VRASimple::bindCalleeFN() {
-  std::map<unsigned, LiveInterval*> RepLIs;
-
-  for (unsigned i = 0, e = MRI->getNumVirtRegs(); i != e; ++i) {
-    unsigned RegNum = TargetRegisterInfo::index2VirtReg(i);
-    if (MRI->getRegClass(RegNum) != &VTM::RCFNRegClass)
-      continue;
-
-    if (LiveInterval *LI = getInterval(RegNum)) {
-      MachineInstr *MI = MRI->getVRegDef(RegNum);
-      assert(MI && MI->getOpcode() == VTM::VOpInternalCall
-             && "Unexpected define op of CaleeFN!");
-      unsigned FNNum = VInstrInfo::getPreboundFUId(MI).getFUNum();
-      LiveInterval *&RepLI = RepLIs[FNNum];
-
-      if (RepLI == 0) {
-        // This is the first live interval bound to this callee function.
-        // Use this live interval to represent the live interval of this callee
-        // function.
-        RepLI = LI;
-        // Get the return ports of this callee FN.
-        unsigned NewFNNum = allocateCalleeFNPorts(RegNum);
-        // Also allocate the enable port.
-        TRI->getSubRegOf(NewFNNum, 1, 0);
-        if (NewFNNum != FNNum)
-          VFI->remapCallee(MI->getOperand(1).getSymbolName(), NewFNNum);
-        
-        assign(*LI, NewFNNum);
-        continue;
-      }
-
-      // Merge to the representative live interval.
-      mergeLI(LI, RepLI, true);
-    }
-  }
 }
 
 void VRASimple::buildCompGraph(LICGraph &G) {
