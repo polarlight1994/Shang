@@ -545,7 +545,9 @@ void BundleBuilder::updateOperand(MachineInstr &Inst, OpSlot SchedSlot) {
       continue;
     }
 
-    if (MRI.use_empty(Reg)) {
+    // We will set the register "IsDead" if it do not have users, but we want to
+    // keep it.
+    if (MRI.use_empty(Reg) && !MO.isDead()) {
       MO.ChangeToRegister(0, true);
       continue;
     }
@@ -940,8 +942,11 @@ void ChainBreaker::buildFUCtrl(VSUnit *U) {
     // new register is needed.
     bool IsWaitOnly = Id.getFUType() == VFUs::CalleeFN;
     // No need to wait the write to memory bus.
-    if (!(Id.getFUType() == VFUs::MemoryBus && VInstrInfo::mayStore(MI)))
+    if (!VInstrInfo::mayStore(MI))
       buildReadFU(MI, U, G.getStepsToFinish(MI), Id, IsWaitOnly);
+    else if (Id.getFUType() == VFUs::BRam)
+      // Kill the liveinterval of the register for the write.
+      MI->getOperand(0).setIsDead(true);
 
     MRI.setRegClass(MI->getOperand(0).getReg(), RC);
   }
