@@ -233,9 +233,13 @@ public:
   const IDTy ID;
   CompGraph(IDTy id = IDTy()) : ID(id) {}
 
-  ~CompGraph() {
+  void reset() {
     DeleteContainerSeconds(Nodes);
+    Entry.dropAllEdges();
+    Exit.dropAllEdges();
   }
+
+  ~CompGraph() { reset(); }
 
   const NodeTy *getEntry() const { return &Entry; }
   const NodeTy *getExit() const { return &Exit; }
