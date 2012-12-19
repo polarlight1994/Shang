@@ -73,6 +73,10 @@ static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
     Indent += 2;
   }
 
+  // Active the scan chain shifting.
+  O.indent(Indent) << "if (shift) begin\n";
+
+  Indent += 2;
   // Connect the last register to current register.
   printAsLHS(O.indent(Indent), V, Bitwidth, Bitwidth - 1) << " <= ";
 
@@ -90,6 +94,9 @@ static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
     O << ";\n";
   }
 
+  Indent -= 2;
+  O.indent(Indent) << "end\n";
+
   // Finish the else block if necessary.
   if (OUTPUTPART) O.indent(Indent - 2) << "end\n";
 
@@ -103,6 +110,7 @@ void ExternalTimingAnalysis::writeNetlistWrapper(raw_ostream &O) const {
   O << "module " << TNL.Name << "wapper(\n";
   O.indent(2) << "input wire clk,\n";
   O.indent(2) << "input wire read_netlist,\n";
+  O.indent(2) << "input wire shift,\n";
   O.indent(2) << "input wire scan_chain_in,\n";
   O.indent(2) << "output reg scan_chain_out);\n";
 
