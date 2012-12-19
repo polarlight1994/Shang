@@ -223,19 +223,21 @@ void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
   assert(PathDst && "Bad Assignment!");
 
   O <<
+    "set paths [get_timing_paths -from $src -to $dst -setup -npath 1 -detail path_only]\n"
     "set delay -1\n"
     // Only extract the delay from source to destination when these node are
     // not optimized.
-    "if {[get_collection_size $src] && [get_collection_size $dst]} {\n"
-    "  foreach_in_collection path [get_timing_paths -from $src -to $dst -setup"
-    "                              -npath 1 -detail path_only] {\n"
+    "if {[get_collection_size $src] && [get_collection_size $dst] && [get_collection_size $paths]} {\n"
+    "  foreach_in_collection path $paths {\n"
     "    set delay [get_path_info $path -data_delay]\n"
-    "    post_message -type info \"" << intptr_t(Src) << " -> " << intptr_t(PathDst)
-    << " delay: $delay\"\n"
+    "    post_message -type info \"" << intptr_t(Src) << ' '<< getName(Src)
+    << " -> " << intptr_t(PathDst) << ' '<< getName(PathDst) << ' '
+    << getName(Dst) << " delay: $delay\"\n"
     "  }\n"
     "} else {\n"
-    "    post_message -type warning \"" << intptr_t(Src) << " -> " << intptr_t(PathDst)
-    << " path not found!\""
+    "    post_message -type info \"" << intptr_t(Src)<< ' ' << getName(Src)
+    << " -> " << intptr_t(PathDst) << ' ' << getName(PathDst) << ' '
+    << getName(Dst) << " path not found!\"\n"
     "}\n"
     "puts $JSONFile \"\\{\\\"from\\\":" << intptr_t(Src) << ",\\\"to\\\":"
     <<  intptr_t(PathDst) << ",\\\"delay\\\":$delay\\},\"\n";
