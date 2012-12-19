@@ -44,6 +44,8 @@ void TimingNetlist::createDelayEntry(VASTValue *Dst, VASTMachineOperand *Src) {
 }
 
 void TimingNetlist::createPathFromSrc(VASTValue *Dst, VASTValue *Src) {
+  assert(Dst != Src && "Unexpected cycle!");
+
   // Forward the Src terminator of the path from SrcReg.
   PathInfoTy::iterator at = PathInfo.find(Src);
 
@@ -61,7 +63,6 @@ void TimingNetlist::createPathFromSrc(VASTValue *Dst, VASTValue *Src) {
 }
 
 void TimingNetlist::addInstrToDatapath(MachineInstr *MI) {
-  unsigned DefReg = 0;
   VASTValue *DatapathNode = 0;
 
   bool IsDatapath = VInstrInfo::isDatapath(MI->getOpcode());
@@ -89,17 +90,14 @@ void TimingNetlist::addInstrToDatapath(MachineInstr *MI) {
 
     unsigned Reg = MO.getReg();
 
-    if (Reg == 0) continue;
-    
-    if (MO.isDef()) {
-      assert(DefReg == 0 && "Unexpected multi-defines!");
-      DefReg = Reg;
-      continue;
-    }
+    if (MO.isDef() || Reg == 0) continue;
 
     // Remember the paths.
     if (IsDatapath) {
-      createPathFromSrc(DatapathNode, Builder.lookupExpr(Reg).get());
+      VASTValue *SrcVal = Builder.lookupExpr(Reg).get();
+      assert((SrcVal != DatapathNode || MI->getOpcode() == VTM::VOpNot)
+             && "Unexpected cycle!");
+      if (SrcVal != DatapathNode) createPathFromSrc(DatapathNode, SrcVal);
     } else
       // Try to export the value.
       pinValue(Reg);
