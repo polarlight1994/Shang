@@ -218,11 +218,11 @@ void BitLevelDelayInfo::addDelayForPath(const MachineInstr *SrcMI,
 void BitLevelDelayInfo::buildDelayMatrix(const MachineInstr *MI) {
   DepLatInfoTy &CurDelayInfo = LatencyMap[MI];
 
+  // Compute the latency of MI.
+  computeAndCacheLatencyFor(MI);
+
   unsigned Opcode = MI->getOpcode();
-  if (Opcode == VTM::PHI) {
-    computeAndCacheLatencyFor(MI);
-    return;
-  }
+  if (Opcode == VTM::PHI) return;
 
   bool NoRegOperand = true;
 
@@ -248,8 +248,6 @@ void BitLevelDelayInfo::buildDelayMatrix(const MachineInstr *MI) {
   if (NoRegOperand && VInstrInfo::isDatapath(Opcode))
     updateDelay(CurDelayInfo, MI->getParent(), delay_type(0));
 
-  // Compute the latency of MI.
-  computeAndCacheLatencyFor(MI);
 }
 
 void BitLevelDelayInfo::buildExitMIInfo(const MachineInstr *SSnk,
