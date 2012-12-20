@@ -156,7 +156,7 @@ always@(posedge clk,negedge rstN)begin
   end else begin
     mem0rdy <= REnPipe1Reg;
     MemAddrPipe2Reg <= MemAddrPipe1Reg[2:0];
-    MemRDataPipe2Reg <= MemRDataPipe1Wire >> {MemAddrPipe1Reg[2],4'b0};
+    MemRDataPipe2Reg <= MemRDataPipe1Wire >> {MemAddrPipe1Reg[2],5'b0};
   end
 end
 
