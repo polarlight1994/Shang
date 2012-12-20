@@ -717,6 +717,11 @@ public:
     IsNamed = true;
   }
 
+  void unnameExpr() {
+    assert(hasName() && "Expr already have name!");
+    IsNamed = false;
+  }
+
   std::string getTempName() const;
 
   bool isInlinable() const;

@@ -211,6 +211,13 @@ static void setTerminatorCollection(raw_ostream & O, const VASTNamedValue *V,
     << "*\"]\n";
 }
 
+static std::string getName(const VASTValue *V) {
+  if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V))
+    return NV->getName();
+
+  return cast<VASTExpr>(V)->getTempName();
+}
+
 void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
                                                   const VASTWire *Dst,
                                                   const VASTNamedValue *Src)
@@ -318,6 +325,52 @@ static KeyValueNode *readAndAdvance(MappingNode::iterator it) {
   return N;
 }
 
+static void dumpNetlistTree(raw_ostream &O, VASTValue *Dst)  {
+  typedef VASTValue::dp_dep_it ChildIt;
+  std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
+  std::set<VASTValue*> Visited;
+
+  VisitStack.push_back(std::make_pair(Dst, VASTValue::dp_dep_begin(Dst)));
+
+  while (!VisitStack.empty()) {
+    VASTValue *Node = VisitStack.back().first;
+    ChildIt It = VisitStack.back().second;
+
+    // We have visited all children of current node.
+    if (It == VASTValue::dp_dep_end(Node)) {
+      VisitStack.pop_back();
+
+      if (VASTExpr *E = dyn_cast<VASTExpr>(Node)) {
+        E->unnameExpr();
+        std::string Name = E->getTempName();
+        O.indent(2) << "wire ";
+
+        unsigned Bitwidth = E->getBitWidth();
+        if (Bitwidth > 1) O << "[" << (Bitwidth - 1) << ":0]";
+        O << ' ' << Name << " = ";
+        E->printAsOperand(O, false);
+        O << ";\n";
+
+        // Assign the name to the expression.
+        E->nameExpr();
+      } else if (VASTWire *W = dyn_cast<VASTWire>(Node))
+        W->printAssignment(O.indent(2));
+
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    VASTValue *ChildNode = It->getAsLValue<VASTValue>();
+    ++VisitStack.back().second;
+
+    if (!Visited.insert(ChildNode).second)  continue;
+
+    if (!isa<VASTWire>(ChildNode) && !isa<VASTExpr>(ChildNode)) continue;
+
+    VisitStack.push_back(std::make_pair(ChildNode, VASTValue::dp_dep_begin(ChildNode)));
+  }
+}
+
 bool ExternalTimingAnalysis::readPathDelay(MappingNode *N) {
   typedef MappingNode::iterator iterator;
   iterator CurPtr = N->begin();
@@ -335,9 +388,13 @@ bool ExternalTimingAnalysis::readPathDelay(MappingNode *N) {
 
   double PathDelay = readDelay(Delay);
 
-  dbgs() << "From: " << Src << " To: " << Dst << " delay: " << PathDelay << '\n';
+  dbgs() << "From: " << getName(Src) << " To: " << getName(Dst) << " delay: "
+         << PathDelay << '\n';
 
-  if (PathDelay == -1.0) return false;
+  if (PathDelay == -1.0) {
+    dumpNetlistTree(dbgs(), Dst);
+    return false;
+  }
 
   // Annotate the delay to the timing netlist.
   TNL.annotateDelay(Src, Dst, PathDelay);
