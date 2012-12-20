@@ -55,6 +55,12 @@ public:
     OldDelay = std::max(OldDelay, NewValue.second);
   }
 
+  // For trivial expressions, the delay is zero.
+  static SrcEntryTy AccumulateZeroDelay(VASTValue *Dst, unsigned SrcPos,
+                                        const SrcEntryTy DelayFromSrc) {
+    return DelayFromSrc;
+  }
+
   // Take DelayAccumulatorTy to accumulate the design.
   // The signature of DelayAccumulatorTy should be:
   // SrcEntryTy DelayAccumulatorTy(VASTValue *Dst, unsign SrcPos,
@@ -75,6 +81,63 @@ public:
     // FIXME: Also add the delay from Src to Dst.
   }
 
+  void accumulateExprDelay(VASTExpr *Expr) {
+    SrcDelayInfo &CurSrcInfo = PathDelay[Expr];
+    assert(CurSrcInfo.empty() && "We are visiting the same Expr twice?");
+    SubClass *SCThis = reinterpret_cast<SubClass*>(this);
+
+    typedef VASTExpr::op_iterator op_iterator;
+    for (unsigned i = 0; i < Expr->NumOps; ++i) {
+      VASTValPtr Operand = Expr->getOperand(i);
+      switch (Expr->getOpcode()) {
+      case VASTExpr::dpLUT:
+        SCThis->accumulateDelayThuLUT(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpAnd:
+        SCThis->accumulateDelayThuAnd(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpRAnd:
+        SCThis->accumulateDelayThuRAnd(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpRXor:
+        SCThis->accumulateDelayThuRXor(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpSCmp:
+      case VASTExpr::dpUCmp:
+        SCThis->accumulateDelayThuCmp(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpAdd:
+        SCThis->accumulateDelayThuAdd(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpMul:
+        SCThis->accumulateDelayThuMul(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpShl:
+        SCThis->accumulateDelayThuShl(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpSRL:
+        SCThis->accumulateDelayThuSRL(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpSRA:
+        SCThis->accumulateDelayThuSRA(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpSel:
+        SCThis->accumulateDelayThuSel(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpAssign:
+        SCThis->accumulateDelayThuAssign(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpBitCat:
+        SCThis->accumulateDelayThuRBitCat(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      case VASTExpr::dpBitRepeat:
+        SCThis->accumulateDelayBitRepeat(Operand.get(), Expr, i, CurSrcInfo);
+        break;
+      default: llvm_unreachable("Unknown datapath opcode!"); break;
+      }
+    }
+  }
+
   void analysisTimingOnTree(VASTWire *W)  {
     typedef VASTValue::dp_dep_it ChildIt;
     std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
@@ -91,7 +154,7 @@ public:
 
         // Accumulate the delay of the current node from all the source.
         if (VASTExpr *E = dyn_cast<VASTExpr>(Node))
-          reinterpret_cast<SubClass*>(this)->accumulateExprDelay(E);
+          this->accumulateExprDelay(E);
 
         continue;
       }
@@ -123,42 +186,34 @@ public:
     assert(SrcInfo && "SrcInfo not available!");
     return getDelayFrom(From, *SrcInfo);
   }
-};
 
+  void runTimingAnalysis() {
+    typedef TimingNetlist::FanoutIterator iterator;
+    for (iterator I = TNL.fanout_begin(), E = TNL.fanout_end(); I != E; ++I) {
+      VASTWire *ExportedWire = I->second;
 
-// Accumulating the delay according to the blackbox model.
-class BlackBoxTimingEstimator
-  : public TimingEstimatorBase<BlackBoxTimingEstimator, double> {
-  typedef double delay_type;
-  typedef TimingEstimatorBase<BlackBoxTimingEstimator, double> Base;
+      analysisTimingOnTree(ExportedWire);
 
-  // For trivial expressions, the delay is zero.
-  static SrcEntryTy AccumulateTrivialExprDelay(VASTValue *Dst, unsigned SrcPos,
-                                               const SrcEntryTy DelayFromSrc) {
-    return DelayFromSrc;
-  }
+      VASTValue *Dst = ExportedWire->getDriver().get();
+      SrcDelayInfo *SrcInfo = getPathTo(Dst);
 
-  static SrcEntryTy AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
-                                        const SrcEntryTy DelayFromSrc);
-
-  static unsigned ComputeOperandSizeInByteLog2Ceil(unsigned SizeInBits) {
-    return std::max(Log2_32_Ceil(SizeInBits), 3u) - 3;
-  }
-
-  template<unsigned ROWNUM>
-  static SrcEntryTy AccumulateWithDelayTable(VASTValue *Dst, unsigned SrcPos,
-                                              const SrcEntryTy DelayFromSrc);
-
-  explicit BlackBoxTimingEstimator(TimingNetlist &Netlist) : Base(Netlist) {}
-  void runTimingAnalysis();
-
-public:
-  void accumulateExprDelay(VASTExpr *Expr);
-
-  static void runTimingAnalysis(TimingNetlist &Netlist) {
-    BlackBoxTimingEstimator(Netlist).runTimingAnalysis();
+      for (src_iterator SI = SrcInfo->begin(), SE = SrcInfo->end(); SI != SE; ++SI) {
+        if (VASTMachineOperand *Src = dyn_cast<VASTMachineOperand>(SI->first)) {
+          TimingNetlist::delay_type delay = SI->second;
+          TimingNetlist::delay_type old_delay = TNL.getDelay(Src, Dst) * VFUs::Period;
+          //dbgs() << "DELAY-ESTIMATOR-JSON: { \"ACCURATE\":" << old_delay
+          //       << ", \"BLACKBOX\":" << delay << "} \n";
+          TNL.annotateDelay(Src, Dst, delay);
+        }
+      }
+    }
   }
 };
+
+namespace delay_estimation {
+  void estimateDelaysWithBB(TimingNetlist &Netlist);
+  void esitmateDelayWithLA(TimingNetlist &Netlist);
+}
 }
 
 #endif

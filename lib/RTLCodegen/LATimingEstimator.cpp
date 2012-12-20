@@ -17,13 +17,107 @@
 
 using namespace llvm;
 
+namespace {
+// Accumulating the delay according to the blackbox model.
+// This is the baseline delay estimate model.
+class BlackBoxTimingEstimator
+  : public TimingEstimatorBase<BlackBoxTimingEstimator, double> {
+  typedef double delay_type;
+  typedef TimingEstimatorBase<BlackBoxTimingEstimator, double> Base;
+
+  static SrcEntryTy AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
+                                       const SrcEntryTy DelayFromSrc);
+
+  static unsigned ComputeOperandSizeInByteLog2Ceil(unsigned SizeInBits) {
+    return std::max(Log2_32_Ceil(SizeInBits), 3u) - 3;
+  }
+
+  template<unsigned ROWNUM>
+  static SrcEntryTy AccumulateWithDelayTable(VASTValue *Dst, unsigned SrcPos,
+                                             const SrcEntryTy DelayFromSrc);
+
+  explicit BlackBoxTimingEstimator(TimingNetlist &Netlist) : Base(Netlist) {}
+
+  friend void llvm::delay_estimation::estimateDelaysWithBB(TimingNetlist &Netlist);
+public:
+  void accumulateDelayThuLUT(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateLUTDelay);
+  }
+
+  void accumulateDelayThuAnd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateLUTDelay);
+  }
+
+  void accumulateDelayThuRAnd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateWithDelayTable<5>);
+  }
+
+  void accumulateDelayThuRXor(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateWithDelayTable<5>);
+  }
+
+  void accumulateDelayThuCmp(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateWithDelayTable<3>);
+  }
+
+  void accumulateDelayThuAdd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateWithDelayTable<0>);
+  }
+
+  void accumulateDelayThuMul(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateWithDelayTable<2>);
+  }
+
+  void accumulateDelayThuShl(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateWithDelayTable<1>);
+  }
+
+  void accumulateDelayThuSRL(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateWithDelayTable<1>);
+  }
+
+  void accumulateDelayThuSRA(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateWithDelayTable<1>);
+  }
+
+  void accumulateDelayThuSel(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateWithDelayTable<4>);
+  }
+
+  void accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                                SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuRBitCat(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                                 SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayBitRepeat(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                                SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+};
+}
+
 BlackBoxTimingEstimator::SrcEntryTy
 BlackBoxTimingEstimator::AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
                                             const SrcEntryTy DelayFromSrc) {
   return SrcEntryTy(DelayFromSrc.first, DelayFromSrc.second + 0.635);
 }
 
-  
 template<unsigned ROWNUM>
 BlackBoxTimingEstimator::SrcEntryTy
 BlackBoxTimingEstimator::AccumulateWithDelayTable(VASTValue *Dst, unsigned SrcPos,
@@ -44,7 +138,7 @@ BlackBoxTimingEstimator::AccumulateWithDelayTable(VASTValue *Dst, unsigned SrcPo
   unsigned BitWidth = Dst->getBitWidth();
 
   int i = ComputeOperandSizeInByteLog2Ceil(BitWidth);
-    
+
   delay_type RoundUpLatency = CurTable[i + 1],
               RoundDownLatency = CurTable[i];
   unsigned SizeRoundUpToByteInBits = 8 << i;
@@ -59,75 +153,106 @@ BlackBoxTimingEstimator::AccumulateWithDelayTable(VASTValue *Dst, unsigned SrcPo
   return SrcEntryTy(DelayFromSrc.first, DelayFromSrc.second + Delay);
 }
 
-void BlackBoxTimingEstimator::accumulateExprDelay(VASTExpr *Expr) {
-  SrcDelayInfo &CurSrcInfo = PathDelay[Expr];
-  assert(CurSrcInfo.empty() && "We are visiting the same Expr twice?");
+namespace {
+struct BitLevelDelay {
+  unsigned MSB, LSB;
+  unsigned MSBDelay, LSBDelay;
 
-  typedef VASTExpr::op_iterator op_iterator;
-  for (unsigned i = 0; i < Expr->NumOps; ++i) {
-    VASTValPtr Operand = Expr->getOperand(i);
-    switch (Expr->getOpcode()) {
-    case VASTExpr::dpLUT:
-    case VASTExpr::dpAnd:
-      accumulateDelayThu(Operand.get(), Expr, i, CurSrcInfo, AccumulateLUTDelay);
-      break;
-    case VASTExpr::dpRAnd:
-    case VASTExpr::dpRXor:
-      accumulateDelayThu(Operand.get(), Expr, i, CurSrcInfo,
-                          AccumulateWithDelayTable<5>);
-      break;
-    case VASTExpr::dpSCmp:
-    case VASTExpr::dpUCmp:
-      accumulateDelayThu(Operand.get(), Expr, i, CurSrcInfo,
-                          AccumulateWithDelayTable<3>);
-      break;
-    case VASTExpr::dpAdd:
-      accumulateDelayThu(Operand.get(), Expr, i, CurSrcInfo,
-                          AccumulateWithDelayTable<0>);
-      break;
-    case VASTExpr::dpMul:
-      accumulateDelayThu(Operand.get(), Expr, i, CurSrcInfo,
-                          AccumulateWithDelayTable<2>);
-      break;
-    case VASTExpr::dpShl:
-    case VASTExpr::dpSRL:
-    case VASTExpr::dpSRA:
-      accumulateDelayThu(Operand.get(), Expr, i, CurSrcInfo,
-                          AccumulateWithDelayTable<1>);
-      break;
-    case VASTExpr::dpSel:
-      accumulateDelayThu(Operand.get(), Expr, i, CurSrcInfo,
-                          AccumulateWithDelayTable<4>);
-      break;
-    case VASTExpr::dpAssign:
-    case VASTExpr::dpBitCat:
-    case VASTExpr::dpBitRepeat:
-      accumulateDelayThu(Operand.get(), Expr, i, CurSrcInfo,
-                          AccumulateTrivialExprDelay);
-      break;
-    default: llvm_unreachable("Unknown datapath opcode!"); break;
-    }
-  }  
+  operator double() const {
+    return double(std::max(MSBDelay, LSBDelay)) * VFUs::LUTDelay;
+  }
+};
+
+// Estimate the bit-level delay with linear approximation.
+class BitlevelDelayEsitmator : public TimingEstimatorBase<BitlevelDelayEsitmator,
+                                                          BitLevelDelay> {
+  typedef TimingEstimatorBase<BitlevelDelayEsitmator, BitLevelDelay> Base;
+  typedef BitLevelDelay delay_type;
+
+  explicit BitlevelDelayEsitmator(TimingNetlist &Netlist) : Base(Netlist) {}
+  friend void llvm::delay_estimation::esitmateDelayWithLA(TimingNetlist &Netlist);
+public:
+
+  void accumulateDelayThuLUT(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuAnd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuRAnd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                              SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuRXor(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                              SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuCmp(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuAdd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuMul(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuShl(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                              SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuSRL(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                              SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuSRA(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                              SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuSel(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                              SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                                SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuRBitCat(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                                 SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayBitRepeat(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                              SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+};
 }
 
-void BlackBoxTimingEstimator::runTimingAnalysis() {
-  typedef TimingNetlist::FanoutIterator iterator;
-  for (iterator I = TNL.fanout_begin(), E = TNL.fanout_end(); I != E; ++I) {
-    VASTWire *ExportedWire = I->second;
+namespace llvm {
+  namespace delay_estimation {
+    void estimateDelaysWithBB(TimingNetlist &Netlist) {
+      BlackBoxTimingEstimator(Netlist).runTimingAnalysis();
+    }
 
-    analysisTimingOnTree(ExportedWire);
-
-    VASTValue *Dst = ExportedWire->getDriver().get();
-    SrcDelayInfo *SrcInfo = getPathTo(Dst);
-
-    for (src_iterator SI = SrcInfo->begin(), SE = SrcInfo->end(); SI != SE; ++SI) {
-      if (VASTMachineOperand *Src = dyn_cast<VASTMachineOperand>(SI->first)) {
-        double delay = SI->second;
-        double old_delay = TNL.getDelay(Src, Dst) * VFUs::Period;
-        dbgs() << "DELAY-ESTIMATOR-JSON: { \"ACCURATE\":" << old_delay
-               << ", \"BLACKBOX\":" << delay << "} \n";
-        TNL.annotateDelay(Src, Dst, delay);
-      }
+    void esitmateDelayWithLA(TimingNetlist &Netlist) {
+      BitlevelDelayEsitmator(Netlist).runTimingAnalysis();
     }
   }
 }
