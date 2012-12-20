@@ -205,6 +205,15 @@ void BitLevelDelayInfo::addDelayForPath(const MachineInstr *SrcMI,
   // The source expression tree maybe folded by constant folding, in this case
   // the path though does not exist.
   if (TNL->src_empty(Src)) {
+    // Try to add delay from the input port of the netlist.
+    if (VASTMachineOperand *VMO = dyn_cast<VASTMachineOperand>(Src)) {
+      const MachineOperand &MO = VMO->getMO();
+      if (MO.isReg()) {
+        addDelayForPath(MO.getReg(), MI, CurDelayInfo, PathDelay);
+        return;
+      }
+    }
+
     addDelayForPath(unsigned(0), MI, CurDelayInfo, PathDelay);
     return;
   }
