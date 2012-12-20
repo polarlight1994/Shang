@@ -14,10 +14,16 @@
 #include "TimingNetlist.h"
 
 #include "llvm/ADT/SetOperations.h"
+#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "timing-netlist"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+
+static cl::opt<double>
+DelayFactor("vtm-delay-estimation-factor",
+             cl::desc("Factor to be multipied to the estimated delay"),
+             cl::init(1.0));
 
 void TimingNetlist::annotateDelay(VASTMachineOperand *Src, VASTValue *Dst,
                                   delay_type delay) {
@@ -25,7 +31,7 @@ void TimingNetlist::annotateDelay(VASTMachineOperand *Src, VASTValue *Dst,
   assert(path_end_at != PathInfo.end() && "Path not exist!");
   SrcInfoTy::iterator path_start_from = path_end_at->second.find(Src);
   assert(path_start_from != path_end_at->second.end() && "Path not exist!");
-  path_start_from->second = delay / VFUs::Period;
+  path_start_from->second = delay / VFUs::Period * DelayFactor;
 }
 
 TimingNetlist::delay_type TimingNetlist::getDelay(VASTMachineOperand *Src,

@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 #include "MFDatapathContainer.h"
 #include "ExternalTimingAnalysis.h"
+#include "LATimingEstimator.h"
 
 #include "vtm/BitLevelDelayInfo.h"
 #include "vtm/VerilogBackendMCTargetDesc.h"
@@ -27,6 +28,11 @@ static cl::opt<bool>
 DisableBLC("vtm-disable-blc",
           cl::desc("Disable bit-level chaining"),
           cl::init(false));
+
+static cl::opt<bool>
+EnableZeroDelay("vtm-disable-datapath-delay-estimation",
+                cl::desc("Disable datapath delay esitmation"),
+                cl::init(false));
 
 INITIALIZE_PASS_BEGIN(BitLevelDelayInfo, "detail-latency-info",
                       "Calculating the latency of instructions",
@@ -282,7 +288,7 @@ bool BitLevelDelayInfo::runOnMachineFunction(MachineFunction &MF) {
     for (instr_iterator I = BI->instr_begin(), E = BI->instr_end(); I != E; ++I)
       TNL->addInstrToDatapath(I);
 
-  ExternalTimingAnalysis::runTimingAnalysis(*TNL);
+  if (!EnableZeroDelay) ExternalTimingAnalysis::runTimingAnalysis(*TNL);
 
   for (iterator BI = MF.begin(), BE = MF.end(); BI != BE; ++BI)
     for (instr_iterator I = BI->instr_begin(), E = BI->instr_end(); I != E; ++I){

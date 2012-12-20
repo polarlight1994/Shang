@@ -28,11 +28,15 @@
 #include "llvm/Target/TargetData.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/raw_ostream.h"
 #define DEBUG_TYPE "trivial-loop-unroll"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+
+static cl::opt<unsigned>
+ThresholdFactor("vtm-unroll-threshold-factor",
+                cl::desc("Factor to be multipied to the unroll threshold"),
+                cl::init(1));
 
 namespace {
 class TrivialLoopUnroll : public LoopPass {
@@ -638,7 +642,7 @@ bool TrivialLoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
   }
 
   // FIXME: Read the threshold from the constraints script.
-  uint64_t Threshold = 256000;
+  uint64_t Threshold = 256000 * ThresholdFactor;
 
   if (TripCount != 1 && !Metrics.isUnrollAccaptable(Count, Threshold)) {
     DEBUG(dbgs() << "  Too large to fully unroll with count: " << Count
