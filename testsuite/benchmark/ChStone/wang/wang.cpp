@@ -93,7 +93,7 @@ short x21, x22, x23, x24, x25, x26, x27, x28,
 #define NUM 10
 int i;//25
 int result_out[NUM];
-int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
+int inputs[NUM+5]={10,23,34,43,54,98,78,67,75,15,81, 19, 74, 24, 45};
 
 #define exp_res 27136
 //int i;//25
@@ -102,6 +102,7 @@ int main()
     int main_result;
   int x11, x12, x13, x21, x22, x23;
   int x31, x32;
+  int j, k, l;
   //  int result_out;  
   //  int i =25;
    int return_value=0;
@@ -110,19 +111,22 @@ int main()
   for (int idx = 0;idx<NUM;idx++)
     {
       i = inputs[idx];
-      x11 = i++; x12 = i++; x13 = i++;
-      x21 = i++; x22 = i++; x23 = i++;
-      x31 = i++; x32 = i++; 
+      j = inputs[idx+1];
+      k = inputs[idx+2];
+      l = inputs[idx+4];
+      x11 = i++; x12 = l++; x13 = k++;
+      x21 = k++; x22 = j++; x23 = i++;
+      x31 = j++; x32 = k++; 
       result_out[idx] = wang (x11, x12, x13, x21, x22,
 		     x23, x31, x32);
  return_value = return_value+result_out[idx];
-      printf("%d\n",result_out[idx]);
+ //      printf("%d\n",result_out[idx]);
     }
 
   //    printf("benchmark_result = %d\n",result_out);
   //main_result = (result_out != exp_res);
-    //        printf("%d\n", main_result);
+  //           printf("%d\n", return_value);
     //    return main_result;
   //  return 0;
-  return return_value != 113096;
+  return return_value != 282164;
 }

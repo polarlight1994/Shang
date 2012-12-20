@@ -354,15 +354,15 @@ short
 //int i;//25
 
 #define NUM 10
-int i;//25
 int result_out[NUM];
-int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
+int inputs[NUM+5]={10,23,34,43,54,98,78,67,75,15,62,74,82,19,22};
 
 #define exp_res 61640
 int main()
 {
     int main_result;
    int return_value=0;
+   int i, j, k, l;
 short in00,  in01,  in02,  in03,
                in04,  in05,  in06,  in07,
                in10,  in11,  in12,  in13,
@@ -384,14 +384,17 @@ short in00,  in01,  in02,  in03,
   for (int idx=0;idx<NUM;idx++)
     {
       i = inputs[idx];
-  in00=i++;in01=i++;in02=i++;in03=i++; in04=i++;in05=i++;in06=i++;in07=i++;
-  in10=i++;in11=i++;in12=i++;in13=i++; in14=i++;in15=i++;in16=i++;in17=i++;
-  in20=i++;in21=i++;in22=i++;in23=i++; in24=i++;in25=i++;in26=i++;in27=i++;
-  in30=i++;in31=i++;in32=i++;in33=i++; in34=i++;in35=i++;in36=i++;in37=i++;
-  in40=i++;in41=i++;in42=i++;in43=i++; in44=i++;in45=i++;in46=i++;in47=i++;
-  in50=i++;in51=i++;in52=i++;in53=i++; in54=i++;in55=i++;in56=i++;in57=i++;
-  in60=i++;in61=i++;in62=i++;in63=i++; in64=i++;in65=i++;in66=i++;in67=i++;
-  in70=i++;in71=i++;in72=i++;in73=i++; in74=i++;in75=i++;in76=i++;in77=i++;
+      j = inputs[idx+1];
+      k = inputs[idx+2];
+      l = inputs[idx+3];
+  in00=i++;in01=j++;in02=k++;in03=i++; in04=l++;in05=j++;in06=k++;in07=l++;
+  in10=i++;in11=j++;in12=k++;in13=l++; in14=i++;in15=i++;in16=i++;in17=i++;
+  in20=i++;in21=j++;in22=k++;in23=l++; in24=j++;in25=k++;in26=l++;in27=i++;
+  in30=k++;in31=j++;in32=k++;in33=l++; in34=j++;in35=k++;in36=l++;in37=j++;
+  in40=i++;in41=j++;in42=k++;in43=l++; in44=j++;in45=k++;in46=l++;in47=j++;
+  in50=i++;in51=i++;in52=k++;in53=l++; in54=j++;in55=k++;in56=l++;in57=j++;
+  in60=i++;in61=k++;in62=k++;in63=l++; in64=i++;in65=i++;in66=i++;in67=i++;
+  in70=l++;in71=k++;in72=l++;in73=k++; in74=i++;in75=l++;in76=j++;in77=k++;
 
 result_out[idx] =  feig_dct( in00,  in01,  in02,  in03,
                in04,  in05,  in06,  in07,
@@ -410,7 +413,7 @@ result_out[idx] =  feig_dct( in00,  in01,  in02,  in03,
                in70,  in71,  in72,  in73,
 		        in74,  in75,  in76,  in77);
   return_value = return_value+result_out[idx];
-     printf("%d\n",result_out[idx]);
+  //     printf("%d\n",result_out[idx]);
     }
 //    printf("benchmark_result = %d\n",result_out);
 //    main_result = (result_out != exp_res);
@@ -419,5 +422,5 @@ result_out[idx] =  feig_dct( in00,  in01,  in02,  in03,
 //    printf("return return_value != %d", return_value);
 //    return return_value;
     // return 0;
-  return return_value != 620352;
+  return return_value != -673245;
 }

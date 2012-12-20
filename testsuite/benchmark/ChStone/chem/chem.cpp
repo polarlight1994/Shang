@@ -82,18 +82,18 @@ int S_1, S_2, S_3, S_4, S_5, S_6, S_7, S_8, S_9, S_10;
             1571 * X_2_1 - 2664 * X_2_2 - 2640 * X_3_1 + 
             4615 * X_3_2 + 4463 * X_4_1 - 8284 * X_4_2;
 
-     Y_0_1 = S_6_1 + 63 * X_0_1 + 1281 * X_0_2;
+     Y_0_1 = S_6_1 + 63 * X_0_1 + 1281 * X_0_2 + S_1 + S_6;
      Y_1_1 = S_7_1 + 1554 * X_0_1 - 3578 * X_0_2 + 
-             63 * X_1_1+ 1281*X_1_2;
+             63 * X_1_1+ 1281*X_1_2 + S_2 + S_7;
      Y_2_1 = S_8_1 - 3420 * X_0_1 + 9274 * X_0_2 + 
              1554 * X_1_1 - 3578 * X_1_2 + 63 * X_2_1 +
-             1281*X_2_2;
+             1281*X_2_2 + S_3 + S_8;
      Y_3_1 = S_9_1 + 1416 * X_0_1 - 3451 * X_0_2 - 34205 * X_1_1 + 
              9274 * X_1_2 + 1554 * X_2_1 - 3578 * X_2_2 + 63 * X_3_1 +
-             1281 * X_3_2;
+             1281 * X_3_2 + S_4 + S_9;
      Y_4_1 = S_10_1 - 7684 * X_0_1 + 1591 * X_0_2 + 1416 * X_1_1 - 
              3451 * X_1_2 - 3420 * X_2_1 + 9274 * X_2_2 + 1554 * X_3_1 - 
-             3578 * X_3_2 + 63 * X_4_1 + 1281 * X_4_2;
+             3578 * X_3_2 + 63 * X_4_1 + 1281 * X_4_2 + S_5 + S_10;
      result_out = (Y_0_1 + Y_1_1 + Y_2_1 + Y_3_1 + Y_4_1)*-1;
      //     printf("%d\n", result_out);
      return result_out;
@@ -104,9 +104,8 @@ int S_1, S_2, S_3, S_4, S_5, S_6, S_7, S_8, S_9, S_10;
 
 //int i;//22
 #define NUM 10
-int i;//25
 int result_out[NUM];
-int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
+int inputs[NUM + 5]={10,23,34,43,54,98,78,67,75,15,27,81,45,91 };
 
 #define exp_res 733181
 int main()
@@ -114,32 +113,37 @@ int main()
     int main_result;
   int x01, x02, x03, x11, x12, x13, x21, x22, x23;
   int x31, x32, x33, x41, x42, x43, x51, x52, x53, x61, x62;
+  int i, j, k, l;
   //  int result_out;  
   int return_value=0;
   for (int idx=0;idx<NUM;idx++)
     {
       i = inputs[idx];
-  x01 = i++; x02 = i++; x03 = i++;
-  x11 = i++; x12 = i++; x13 = i++;
-  x21 = i++; x22 = i++; x23 = i++;
-  x31 = i++; x32 = i++; x33 = i++;
-  x41 = i++; x42 = i++; x43 = i++;
-  x51 = i++; x52 = i++; x53 = i++;
-  x61 = i++; x62 = i++; 
+      j = inputs[idx+1];
+      k = inputs[idx+2];
+      l = inputs[idx+3];
+
+  x01 = i++; x02 = j++; x03 = k++;
+  x11 = l++; x12 = i++; x13 = k++;
+  x21 = j++; x22 = l++; x23 = j++;
+  x31 = i++; x32 = k++; x33 = l++;
+  x41 = k++; x42 = i++; x43 = j++;
+  x51 = i++; x52 = k++; x53 = l++;
+  x61 = j++; x62 = k++; 
       result_out[idx] =  chem(x01, x02, x03, x11, x12,
           x13, x21, x22, x23, x31,
           x32, x33, x41, x42, x43,
 		     x51, x52, x53,x61,x62);
   return_value = return_value+result_out[idx];
-     printf("%d\n",result_out[idx]);
+  //     printf("%d\n",result_out[idx]);
     }
   //  printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //  printf("%d\n", main_result);
     //    return main_result;
-  //    printf("return return_value != %d", return_value);
+  //     printf("return return_value != %d", return_value);
   // return return_value;
-    return return_value != 14189499;
+    return return_value != 55695653;
     //  return 0;
 }
 

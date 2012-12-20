@@ -40,11 +40,11 @@ int aircraft (int X_0_1, int X_0_2, int X_0_3,
 
   int result_out;
   S_1_1 = X_1_1; S_2_1 = X_2_1; S_3_1 = X_3_1; S_4_1 = X_4_1; S_5_1 = X_5_1; S_6_1 = X_6_1;
-  S_7_1 = X_1_1; S_8_1 = X_2_1; S_9_1 = X_3_1; S_10_1 = X_4_1; S_11_1 = X_5_1; S_12_1 = X_6_1;
+  S_7_1 = X_1_2; S_8_1 = X_2_2; S_9_1 = X_3_2; S_10_1 = X_4_2; S_11_1 = X_5_2; S_12_1 = X_6_2;
   S_13_1 = X_1_2; S_14_1 = X_2_1; S_15_1 = X_3_1; S_16_1 = X_4_1; S_17_1 = X_5_1; S_18_1 = X_6_1;
-  S_19_1 = X_1_3; S_20_1 = X_2_3; S_21_1 = X_3_3; S_22_1 = X_4_2; S_23_1 = X_5_2; S_24_1 = X_6_2;
+  S_19_1 = X_1_3; S_20_1 = X_2_3; S_21_1 = X_3_3; S_22_1 = X_4_3; S_23_1 = X_5_3; S_24_1 = X_6_3;
   S_25_1 = X_1_2; S_26_1 = X_2_2; S_27_1 = X_3_2; S_28_1 = X_4_3; S_29_1 = X_5_3; S_30_1 = X_6_3;
-  S_31_1 = X_1_1; S_32_1 = X_2_1; S_33_1 = X_3_1; S_34_1 = X_4_1; S_35_1 = X_5_1;
+  S_31_1 = X_1_2; S_32_1 = X_2_2; S_33_1 = X_3_2; S_34_1 = X_4_2; S_35_1 = X_5_2;
 
 
       S_1 = w(65004*S_14_1)-w(53607*S_13_1)+w(11108*S_12_1)+w(
@@ -406,7 +406,8 @@ X_0_3)-w(56886*X_1_1)-w(41843*X_1_2)-w(6085*X_1_3)+w(
 41636*X_2_1)+w(19952*X_2_2)-w(44407*X_2_3)-w(42506*
 X_3_1)-w(19337*X_3_2)+w(16115*X_3_3)-w(17608*X_4_3);
 
-      result_out = Y_0_1+ Y_0_2+ Y_0_3+ Y_1_1+ Y_1_2+ Y_1_3+ Y_2_1+ Y_2_2+ Y_2_3+ Y_3_1+ Y_3_2+  Y_3_3+ Y_4_1+ Y_4_2+ Y_4_3+ Y_5_1+ Y_5_2+ Y_5_3+ Y_6_1+ Y_6_2+  Y_6_3;
+      result_out = Y_0_1 - Y_0_2 - Y_0_3+ Y_1_1+ Y_1_2 - Y_1_3+ Y_2_1 - Y_2_2+ Y_2_3+ Y_3_1+ Y_3_2+  Y_3_3+ Y_4_1+ Y_4_2+ Y_4_3+ Y_5_1 - Y_5_2+ Y_5_3+ Y_6_1+ Y_6_2+  Y_6_3;
+      result_out = result_out + S_1 - S_2 + S_3 + S_4 - S_5 + S_6 + S_7 + S_8 + S_9 - S_10 + S_11 + S_12 + S_13 - S_14 + S_15 + S_16 - S_17 + S_18 + S_19 + S_20 + S_21 - S_22 + S_23 + S_24 + S_25 - S_26 + S_27 + S_28 - S_29 + S_30 + S_31 - S_32 + S_33 - S_34 - S_35;
       //            printf("%d res\n",result_out);
       return result_out;
 }
@@ -416,10 +417,9 @@ X_3_1)-w(19337*X_3_2)+w(16115*X_3_3)-w(17608*X_4_3);
 //int i;//25
 
 #define NUM 10
-int i;//25
 int result_out[NUM];
-int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
-#define exp_res 564302302
+int inputs[NUM+5]={10,23,34,43,54,98,78,67,75,15,27,31,46,84,3};
+
 int main()
 {
     int main_result;
@@ -427,26 +427,30 @@ int main()
   int x01, x02, x03, x11, x12, x13, x21, x22, x23;
   int x31, x32, x33, x41, x42, x43, x51, x52, x53, x61, x62, x63;
   //  int result_out;  
+  int i, j, k, l;
 
  for (int idx=0;idx<NUM;idx++)
     {
       i = inputs[idx];
-  x01 = i++; x02 = i++; x03 = i++;
-  x11 = i++; x12 = i++; x13 = i++;
-  x21 = i++; x22 = i++; x23 = i++;
-  x31 = i++; x32 = i++; x33 = i++;
-  x41 = i++; x42 = i++; x43 = i++;
-  x51 = i++; x52 = i++; x53 = i++;
-  x61 = i++; x62 = i++; x63 = i++;
+      j = inputs[idx+1];
+      k = inputs[idx+3];
+      l = inputs[idx+4];
+  x01 = i++; x02 = j++; x03 = i++;
+  x11 = i++; x12 = k++; x13 = l++;
+  x21 = l++; x22 = j++; x23 = j++;
+  x31 = k++; x32 = j++; x33 = i++;
+  x41 = i++; x42 = j++; x43 = l++;
+  x51 = k++; x52 = k++; x53 = i++;
+  x61 = l++; x62 = i++; x63 = l++;
   result_out[idx] = aircraft(x01,x02,x03,x11,x12,x13,x21, x22, x23,x31,x32,x33,x41,x42,x43,x51,x52,x53,x61,x62,x63);
   return_value = return_value+result_out[idx];
-     printf("%d\n",result_out[idx]);
+  //     printf("%d\n",result_out[idx]);
     }
   //  printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
   //    return main_result;
- //    printf("return return_value != %d", return_value);
+ //      printf("return return_value != %d", return_value);
  //  return return_value;
- return return_value != -321009953;
+ return return_value != -798516913;
 }

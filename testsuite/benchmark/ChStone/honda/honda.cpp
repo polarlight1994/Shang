@@ -95,14 +95,17 @@ int main()
 {
     int main_result;
   short x01, x02, x03, x11, x12, x13, x21, x22, x23;
+  int j, k;
   //  int result_out;  
    int return_value=0;
   for (int idx=0;idx<NUM;idx++)
     {
       i = inputs[idx]; 
-  x01 = i++; x02 = i*2; x03 = i+2;
-  x11 = i++; x12 = i++; x13 = (i*3)+1;
-  x21 = i+2; x22 = (i*2)+2; x23 = i++;
+      j = inputs[idx+2];
+      k = inputs[idx+1];
+  x01 = i++; x02 = i*2; x03 = j+2;
+  x11 = j++; x12 = k++; x13 = (i*3)+1;
+  x21 = j+2; x22 = (k*2)+2; x23 = j++;
 
 result_out[idx] =  honda(x01, x02, 
            x03, x11, x12, x13,
@@ -115,8 +118,8 @@ result_out[idx] =  honda(x01, x02,
 //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
     //    return main_result;
-  //            printf("return return_value != %d", return_value);
+  //              printf("return return_value != %d", return_value);
   //return return_value;
     //  return 0;
-	  return return_value != 92521 ;
+	  return return_value != -49639 ;
 }

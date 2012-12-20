@@ -132,7 +132,7 @@ int  mcm(short X0, short X1, short X2, short X3,
     Y6 = Sum44 - ImX1_8 + ImX3_7 + ImX5_9 + MX7_5 ;
     Y7 = Sum43 - ImX1_9 - ImX3_8 - MX5_5 - ImX7_7 ;
 
-    result_out = (Y0 + Y1 + Y2 + Y3 + Y4 + Y5 + Y6 +Y7)*-1;
+    result_out = (Y0 + Y1 + Y2 + Y3 + Y4 + Y5 + Y6 +Y7);
     //    printf("%d\n", result_out);
     return result_out;
 }
@@ -141,9 +141,8 @@ int  mcm(short X0, short X1, short X2, short X3,
 #endif
 
 #define NUM 10
-int i;//25
 int result_out[NUM];
-int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
+int inputs[NUM+5]={10,23,34,43,54,98,78,67,75,15, 74, 81, 19, 45, 63};
 
 //int i;//25
 #define exp_res 13896
@@ -152,21 +151,25 @@ int main()
     int main_result;
     int x01, x02, x03, x11, x12, x13, x21, x22;
    int return_value=0;
+   int i, j, k, l;
   for (int idx =0;idx<NUM;idx++)
     {
     i=inputs[idx];
-  x01 = i++; x02 = i++; x03 = i++;
-  x11 = i++; x12 = i++; x13 = i++;
-  x21 = i++; x22 = i++; 
+    j = inputs[idx+1];
+    k = inputs[idx+2];
+    l = inputs[idx+3];
+  x01 = i++; x02 = i++; x03 = l++;
+  x11 = j++; x12 = k++; x13 = i++;
+  x21 = i++; x22 = j++; 
       result_out[idx] =  mcm(x01     , x02     , x03     , x11     ,
 		  x12     , x13     , x21     , x22     );
   return_value = return_value+result_out[idx];
-     printf("%d\n",result_out[idx]);
+  //     printf("%d\n",result_out[idx]);
     }
 //      printf("benchmark_result = %d\n",result_out);
 //    main_result = (result_out != exp_res);
-    //          printf("%d\n", main_result);
+//              printf("%d\n", return_value);
     //    return main_result;
     //    return 0;
-  return return_value != -95992;
+  return return_value != 30456;
 }

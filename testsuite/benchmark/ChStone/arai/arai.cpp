@@ -94,14 +94,15 @@ int arai(short x10, short x11, short x12, short x13,
 #endif
 
 //int i;//25
+//int i, j, k, l;
 #define NUM 10
-int i;//25
 int result_out[NUM];
-int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
+int inputs[NUM+5]={10,23,34,43,54,98,78,67,75,15,84,71,19,24};
 #define exp_res 222
 int main()
 {
     int main_result;
+    int i, j, k, l;
   short x10, x11, x12, x13;
   short x14, x15, x16, x17;
    int return_value=0;
@@ -109,14 +110,17 @@ int main()
   for (int idx=0;idx<NUM;idx++)
     {
       i = inputs[idx];
-
-  x10 = i++; x11 = i++; x12 = i++; x13 = i++;
-  x14 = i++; x15 = i++; x16 = i++; x17 = i++;
+      j = inputs[idx];
+      k = inputs[idx];
+      l = inputs[idx];
+      
+  x10 = i++; x11 = j++; x12 = k++; x13 = l++;
+  x14 = j++; x15 = i++; x16 = l++; x17 = k++;
 
   result_out[idx] = arai(x10, x11, x12, x13,
 			 x14, x15, x16,x17);
   return_value = return_value+result_out[idx];
-     printf("%d\n",result_out[idx]);
+  //     printf("%d\n",result_out[idx]);
     }
   //    printf("benchmark_result = %d\n",result_out);
   // main_result = (result_out != exp_res);
@@ -125,5 +129,5 @@ int main()
 
   //    printf("return return_value != %d", return_value);
   //  return return_value; 
-return return_value != 4196;
+return return_value != 592956;
 }

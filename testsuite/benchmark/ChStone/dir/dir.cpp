@@ -168,32 +168,36 @@ short y10, y11, y12, y13, y14, y15, y16, y17;
 #define NUM 10
 int i;//25
 int result_out[NUM];
-int inputs[NUM]={10,23,34,43,54,98,78,67,75,15};
+int inputs[NUM+15]={10,23,34,43,54,98,78,67,75,15};
 #define exp_res 11420
 int main()
 {
     int main_result;
   int return_value=0;
     short x01, x02, x03, x11, x12, x13, x21, x22;
+    int i, j, k,l;
     //  int result_out;  
   for (int idx=0;idx<NUM;idx++)
     {
       i = inputs[idx];
-  x01 = i++; x02 = i++; x03 = i++;
-  x11 = i++; x12 = i++; x13 = i++;
-  x21 = i++; x22 = i++; 
+      j = inputs[idx+1];
+      k = inputs[idx+2];
+      l = inputs[idx+3];
+  x01 = i++; x02 = j++; x03 = l++;
+  x11 = j++; x12 = k++; x13 = i++;
+  x21 = l++; x22 = k++; 
   
   result_out[idx] = dir(x01, x02, x03, x11,
 		   x12, x13, x21, x22);
  return_value = return_value+result_out[idx];
-     printf("%d\n",result_out[idx]);
+ //     printf("%d\n",result_out[idx]);
     }
   //  printf("benchmark_result = %d\n",result_out);
   //    main_result = (result_out != exp_res);
     //    printf("%d\n", main_result);
     //    return main_result;
-  //    printf("return return_value != %d", return_value);
+  //        printf("return return_value != %d", return_value);
   //  return return_value;
-  return return_value != -44064;
+  return return_value != 18928;
     // return 0;
 }
