@@ -427,7 +427,7 @@ struct VASTExprOpInfo<VASTExpr::dpAnd> {
     APInt OpKnownZeros, OpKnownOnes;
     Builder.calculateBitMask(V, OpKnownZeros, OpKnownOnes);
     KnownOnes &= OpKnownOnes;
-    KnownZeros |=OpKnownZeros;
+    KnownZeros |= OpKnownZeros;
 
     // Do nothing by default.
     return V;

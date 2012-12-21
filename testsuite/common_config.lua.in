@@ -83,17 +83,37 @@ module shang_scmp#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
 	assign c[0] = 1'bx;
 endmodule
 
-module shang_ucmp#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+module shang_sgt#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
   input wire[A_WIDTH-1:0] a,
   input wire[B_WIDTH-1:0] b,
-  output wire[7:0] c
+  output wire c
 );
-	assign c[7:5] = 3'bx;
-	assign c[4] = (a > b)  ? 1'b1 : 1'b0;
-	assign c[3] = (a >= b) ? 1'b1 : 1'b0;
-	assign c[2] = (a == b) ? 1'b1 : 1'b0;
-	assign c[1] = (a != b) ? 1'b1 : 1'b0;
-	assign c[0] = 1'bx;
+	assign c = ($signed(a) >  $signed(b)) ? 1'b1 : 1'b0;
+endmodule
+
+module shang_sge#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+  input wire[A_WIDTH-1:0] a,
+  input wire[B_WIDTH-1:0] b,
+  output wire c
+);
+	assign c = ($signed(a) >=  $signed(b)) ? 1'b1 : 1'b0;
+endmodule
+
+module shang_ugt#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+  input wire[A_WIDTH-1:0] a,
+  input wire[B_WIDTH-1:0] b,
+  output wire c
+);
+	assign c = (a > b)  ? 1'b1 : 1'b0;
+endmodule
+
+
+module shang_uge#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+  input wire[A_WIDTH-1:0] a,
+  input wire[B_WIDTH-1:0] b,
+  output wire c
+);
+	assign c = (a >= b)  ? 1'b1 : 1'b0;
 endmodule
 
 module shang_sel#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0, D_WIDTH = 0) (

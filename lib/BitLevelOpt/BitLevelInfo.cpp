@@ -260,7 +260,10 @@ void BitLevelInfo::computeBitWidth(MachineInstr *Instr) {
            && "BitCat's width changed!");
     return;
   // Operations with Fixed bit width.
-  case VTM::VOpICmp:
+  case VTM::VOpSGT:
+  case VTM::VOpSGE:
+  case VTM::VOpUGT:
+  case VTM::VOpUGE:
   case VTM::VOpROr:
   case VTM::VOpRAnd:
   case VTM::VOpRXor: {

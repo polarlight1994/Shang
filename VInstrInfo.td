@@ -258,10 +258,17 @@ let isReMaterializable = 1,
                            "$dst = sra $src0, $src1", []>;
 
   // Integer comparison
-  let isCompare = 1 in
+  let isCompare = 1 in {
 	// Data-path only version.
-    def VOpICmp  : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1, i8imm:$CC),
-                                "$dst = icmp $src0, $src1 $CC", []>;
+    def VOpSGT  : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
+                             "$dst = icmp $src0, $src1", []>;
+    def VOpSGE  : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
+                             "$dst = icmp $src0, $src1", []>;
+    def VOpUGT  : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
+                             "$dst = icmp $src0, $src1", []>;
+    def VOpUGE  : DPTvaInst<(outs DR:$dst), (ins DR:$src0, DR:$src1),
+                             "$dst = icmp $src0, $src1", []>;
+  }
 }
 
 // Memory transaction.

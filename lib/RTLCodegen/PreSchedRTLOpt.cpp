@@ -119,8 +119,6 @@ struct PreSchedRTLOpt : public MachineFunctionPass {
   template<unsigned Opcode>
   unsigned rewriteBinExpr(VASTExpr *Expr, MachineInstr *IP);
   unsigned rewriteLUTExpr(VASTExpr *Expr, MachineInstr *IP);
-  template<VFUs::ICmpFUType ICmpTy>
-  unsigned rewriteICmp(VASTExpr *Expr, MachineInstr *IP);
   unsigned rewriteNotOf(VASTValPtr V);
   void buildNot(unsigned DstReg, const MachineOperand &Op);
 
@@ -600,21 +598,6 @@ unsigned PreSchedRTLOpt::rewriteAdd(VASTExpr *Expr, MachineInstr *IP) {
   return DefMO.getReg();
 }
 
-template<VFUs::ICmpFUType ICmpTy>
-unsigned PreSchedRTLOpt::rewriteICmp(VASTExpr *Expr, MachineInstr *IP) {
-  MachineOperand DefMO = allocateRegMO(Expr);
-  unsigned ICMPBitWidth = std::max(Expr->getOperand(0)->getBitWidth(),
-                                   Expr->getOperand(1)->getBitWidth());
-  BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(VTM::VOpICmp))
-    .addOperand(DefMO)
-    .addOperand(getAsOperand(Expr->getOperand(0)))
-    .addOperand(getAsOperand(Expr->getOperand(1)))
-    .addOperand(VInstrInfo::CreateImm(ICmpTy, ICMPBitWidth))
-    .addOperand(VInstrInfo::CreatePredicate())
-    .addOperand(VInstrInfo::CreateTrace());
-  return DefMO.getReg();
-}
-
 void PreSchedRTLOpt::buildNot(unsigned DstReg, const MachineOperand &Op) {
   MachineInstr *IP = getInsertPos(Op);
   BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(VTM::VOpNot))
@@ -701,11 +684,17 @@ unsigned PreSchedRTLOpt::rewriteExpr(VASTExprPtr E, MachineInstr *IP) {
     case VASTExpr::dpSRL:
       RegNo = rewriteBinExpr<VTM::VOpSRL>(Expr, IP);
       break;
-    case VASTExpr::dpUCmp:
-      RegNo = rewriteICmp<VFUs::CmpUnsigned>(Expr, IP);
+    case VASTExpr::dpUGE:
+      RegNo = rewriteBinExpr<VTM::VOpUGE>(Expr, IP);
       break;
-    case VASTExpr::dpSCmp:
-      RegNo = rewriteICmp<VFUs::CmpSigned>(Expr, IP);
+    case VASTExpr::dpUGT:
+      RegNo = rewriteBinExpr<VTM::VOpUGT>(Expr, IP);
+      break;
+    case VASTExpr::dpSGE:
+      RegNo = rewriteBinExpr<VTM::VOpSGE>(Expr, IP);
+      break;
+    case VASTExpr::dpSGT:
+      RegNo = rewriteBinExpr<VTM::VOpSGT>(Expr, IP);
       break;
     case VASTExpr::dpLUT:
       RegNo = rewriteLUTExpr(Expr, IP);

@@ -93,33 +93,37 @@ VASTValPtr EarlyDatapathBuilder::visitICmpInst(ICmpInst &I) {
   VASTValPtr LHS = getAsOperand(I.getOperand(0)),
              RHS = getAsOperand(I.getOperand(1));
 
-  VASTExpr::Opcode Opcode = I.isSigned() ? VASTExpr::dpSCmp : VASTExpr::dpUCmp;
-
-  unsigned ResultBit = 0;
-
   switch (I.getPredicate()) {
-  case CmpInst::ICMP_NE:  ResultBit = 1; break;
-  case CmpInst::ICMP_EQ:  ResultBit = 2; break;
+  case CmpInst::ICMP_NE:  return buildNE(LHS, RHS);
+  case CmpInst::ICMP_EQ:  return buildNotExpr(buildNE(LHS, RHS));
 
   case CmpInst::ICMP_SLT:
-  case CmpInst::ICMP_ULT:
-    std::swap(LHS, RHS);
-    // Fall though.
-  case CmpInst::ICMP_SGE:
-  case CmpInst::ICMP_UGE: ResultBit = 3; break;
-
-  case CmpInst::ICMP_SLE:
-  case CmpInst::ICMP_ULE:
     std::swap(LHS, RHS);
     // Fall though.
   case CmpInst::ICMP_SGT:
-  case CmpInst::ICMP_UGT: ResultBit = 4; break;
+    return buildExpr(VASTExpr::dpSGT, LHS, RHS, 1);
+  case CmpInst::ICMP_ULT:
+    std::swap(LHS, RHS);
+    // Fall though.
+  case CmpInst::ICMP_UGT:
+    return buildExpr(VASTExpr::dpUGT, LHS, RHS, 1);
+
+  case CmpInst::ICMP_SLE:
+    std::swap(LHS, RHS);
+    // Fall though.
+  case CmpInst::ICMP_SGE:
+    return buildExpr(VASTExpr::dpUGT, LHS, RHS, 1);
+
+  case CmpInst::ICMP_ULE:
+    std::swap(LHS, RHS);
+    // Fall though.
+  case CmpInst::ICMP_UGE:
+    return buildExpr(VASTExpr::dpUGE, LHS, RHS, 1);
+
   default: llvm_unreachable("Unexpected ICmp predicate!"); break;
   }
 
-  VASTValPtr CmpExpr = buildExpr(Opcode, LHS, RHS, 8);
-  // Get the result bit from the CmpExpr.
-  return buildBitSliceExpr(CmpExpr, ResultBit + 1, ResultBit);
+  return 0;
 }
 
 VASTValPtr EarlyDatapathBuilder::visitBinaryOperator(BinaryOperator &I) {

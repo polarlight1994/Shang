@@ -42,7 +42,15 @@ VASTValPtr DatapathBuilder::buildDatapathExpr(MachineInstr *MI) {
     return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpBitRepeat>);
 
   case VTM::VOpAdd:     return buildAdd(MI);
-  case VTM::VOpICmp:    return buildICmp(MI);
+
+  case VTM::VOpSGE:
+    return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpSGE>);
+  case VTM::VOpSGT:
+    return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpSGT>);
+  case VTM::VOpUGE:
+    return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpUGE>);
+  case VTM::VOpUGT:
+    return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpUGT>);
 
   case VTM::VOpSHL:
     return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpShl>);
@@ -80,24 +88,12 @@ VASTValPtr DatapathBuilder::buildAdd(MachineInstr *MI) {
                    VInstrInfo::getBitWidth(MI->getOperand(0)));
 }
 
-VASTValPtr DatapathBuilder::buildICmp(MachineInstr *MI) {
-  unsigned CndCode = MI->getOperand(3).getImm();
-  if (CndCode == VFUs::CmpSigned)
-    return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpSCmp>);
-
-  // else
-  return buildBinaryOp(MI, VASTExprBuilder::buildExpr<VASTExpr::dpUCmp>);
-}
-
 VASTValPtr DatapathBuilder::buildInvert(MachineInstr *MI) {
   return buildNotExpr(getAsOperand(MI->getOperand(1)));
 }
 
 VASTValPtr DatapathBuilder::buildReduceOr(MachineInstr *MI) {
-  // A | B .. | Z = ~(~A & ~B ... & ~Z).
-  VASTValPtr V = buildNotExpr(getAsOperand(MI->getOperand(1)));
-  V = buildNotExpr(buildExpr(VASTExpr::dpRAnd, V, 1));
-  return V;
+  return buildROr(getAsOperand(MI->getOperand(1)));
 }
 
 VASTValPtr DatapathBuilder::buildUnaryOp(MachineInstr *MI,

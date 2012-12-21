@@ -269,6 +269,20 @@ public:
   VASTValPtr buildShiftExpr(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
                             unsigned BitWidth);
   VASTValPtr buildReduction(VASTExpr::Opcode Opc, VASTValPtr Op);
+  VASTValPtr buildROr(VASTValPtr V) {
+    // A | B .. | Z = ~(~A & ~B ... & ~Z).
+    return buildNotExpr(buildExpr(VASTExpr::dpRAnd, buildNotExpr(V), 1));
+  }
+
+  VASTValPtr buildNE(VASTValPtr LHS, VASTValPtr RHS) {
+    unsigned Bitwidth = LHS->getBitWidth();
+    VASTValPtr Ops[] = { LHS, RHS };
+    // Get the bitwise difference by Xor.
+    VASTValPtr BitWiseDiff = buildXorExpr(Ops, Bitwidth);
+    // If there is any bitwise difference, then LHS and RHS is not equal.
+    return buildROr(BitWiseDiff);
+  }
+
   VASTValPtr buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes);
 
   VASTValPtr buildNotExpr(VASTValPtr U);

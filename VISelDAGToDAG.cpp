@@ -72,6 +72,7 @@ private:
   SDNode *SelectUnary(SDNode *N, unsigned OpC);
   // If we need to copy the operand to register explicitly, set CopyOp to true.
   SDNode *SelectBinary(SDNode *N, unsigned OpC);
+  SDNode *SelectICmp(SDNode *N);
   SDNode *SelectSimpleNode(SDNode *N, unsigned OpC);
 
   // Function argument and return values.
@@ -103,9 +104,6 @@ private:
   void LowerMemAccessISel(SDNode *N, SelectionDAG &DAG, bool isStore);
   void LowerADDEForISel(SDNode *N, SelectionDAG &DAG);
   void LowerUMUL_LOHIForISel(SDNode *N, SelectionDAG &DAG);
-  // Return true if the node already lowered.
-  void LowerICmpForISel(SDNode *N, SelectionDAG &DAG);
-
 };
 }  // end anonymous namespace
 
@@ -164,16 +162,58 @@ static inline void updateBitWidthAnnotator(SDValue (&Ops)[N], SelectionDAG *DAG,
 }
 
 SDNode *VDAGToDAGISel::SelectBinary(SDNode *N, unsigned OpC) {
-  // Copy immediate to register if necessary.
-  SDValue Ops [] = { N->getOperand(0),
-                     N->getOperand(1),
-                     SDValue()/*The dummy bit width operand*/,
-                     CurDAG->getTargetConstant(0, MVT::i64) /*and trace number*/
+  SDValue Ops[] = { N->getOperand(0),
+                    N->getOperand(1),
+                    SDValue()/*The dummy bit width operand*/,
+                    CurDAG->getTargetConstant(0, MVT::i64) /*and trace number*/
                    };
 
   computeOperandsBitWidth(N, Ops, array_lengthof(Ops));
 
   return CurDAG->SelectNodeTo(N, OpC, N->getVTList(),
+                              Ops, array_lengthof(Ops));
+}
+
+SDNode *VDAGToDAGISel::SelectICmp(SDNode *N) {
+  SDValue Ops[] = { N->getOperand(0),
+                    N->getOperand(1),
+                    SDValue()/*The dummy bit width operand*/,
+                    CurDAG->getTargetConstant(0, MVT::i64) /*and trace number*/
+                   };
+
+  CondCodeSDNode *CCNode = cast<CondCodeSDNode>(N->getOperand(2));
+
+  ISD::CondCode CC = CCNode->get();
+  // Translate the opcode to those we can handle.
+  switch (CC) {
+  case ISD::SETGT:
+  case ISD::SETGE:
+  case ISD::SETUGT:
+  case ISD::SETUGE:
+    break;
+  case ISD::SETLT:
+  case ISD::SETLE:
+  case ISD::SETULT:
+  case ISD::SETULE:
+    CC = ISD::getSetCCSwappedOperands(CC);
+    std::swap(Ops[0], Ops[1]);
+    break;
+  default: llvm_unreachable("Unexpected CondCode!");
+  }
+
+  // Select the opcode for icmp according to the condition code.
+  unsigned Opc = 0;
+  switch (CC) {
+  case ISD::SETGT:  Opc = VTM::VOpSGT; break;
+  case ISD::SETGE:  Opc = VTM::VOpSGE; break;
+  case ISD::SETUGT: Opc = VTM::VOpUGT; break;
+  case ISD::SETUGE: Opc = VTM::VOpUGE; break;
+  default: llvm_unreachable("Unexpected CondCode!");
+  }
+
+  computeOperandsBitWidth(N, Ops, array_lengthof(Ops));
+
+  return CurDAG->SelectNodeTo(N, Opc, N->getVTList(),
                               Ops, array_lengthof(Ops));
 }
 
@@ -421,21 +461,13 @@ SDNode *VDAGToDAGISel::Select(SDNode *N) {
   case ISD::BR:
   case ISD::BRCOND:           return SelectBrcnd(N);
 
-  case VTMISD::ADDCS:{ 
-    return SelectSimpleNode(N, VTM::VOpAdd);
-  }
+  case VTMISD::ADDCS:         return SelectSimpleNode(N, VTM::VOpAdd);
 
-  case VTMISD::ICmp:{
-    return SelectSimpleNode(N, VTM::VOpICmp);
-  }
+  case VTMISD::ICmp:          return SelectICmp(N);
 
-  case ISD::MUL:{
-    return SelectBinary(N, VTM::VOpMult);
-  }
+  case ISD::MUL:              return SelectBinary(N, VTM::VOpMult);
 
-  case VTMISD::MULHiLo:{
-    return SelectBinary(N, VTM::VOpMultLoHi);
-  }
+  case VTMISD::MULHiLo:       return SelectBinary(N, VTM::VOpMultLoHi);
 
   case ISD::XOR:              return SelectBinary(N, VTM::VOpXor);
   case ISD::AND:              return SelectBinary(N, VTM::VOpAnd);
@@ -443,14 +475,11 @@ SDNode *VDAGToDAGISel::Select(SDNode *N) {
   case VTMISD::Not:           return SelectUnary(N, VTM::VOpNot);
   case ISD::SELECT:           return SelectSimpleNode(N, VTM::VOpSel);
 
-  case ISD::SHL:
-    return SelectBinary(N, VTM::VOpSHL);
+  case ISD::SHL:              return SelectBinary(N, VTM::VOpSHL);
 
-  case ISD::SRL:
-    return SelectBinary(N, VTM::VOpSRL);
+  case ISD::SRL:              return SelectBinary(N, VTM::VOpSRL);
 
-  case ISD::SRA:
-    return SelectBinary(N, VTM::VOpSRA);
+  case ISD::SRA:              return SelectBinary(N, VTM::VOpSRA);
 
   case VTMISD::BitRepeat:     return SelectBinary(N, VTM::VOpBitRepeat);
   case VTMISD::BitCat:        return SelectBinary(N, VTM::VOpBitCat);
@@ -620,51 +649,6 @@ static unsigned getICmpPort(unsigned CC) {
   }
 }
 
-void VDAGToDAGISel::LowerICmpForISel(SDNode *N, SelectionDAG &DAG) {
-  CondCodeSDNode *CCNode = cast<CondCodeSDNode>(N->getOperand(2));
-
-  DebugLoc dl = N->getDebugLoc();
-  LLVMContext &Cntx = *DAG.getContext();
-
-  SDValue LHS = N->getOperand(0), RHS = N->getOperand(1);
-  unsigned OpSize = VTargetLowering::computeSizeInBits(LHS);
-  //assert(OpSize > 1 && "Unexpected 1bit comparison!");
-  EVT FUVT = EVT::getIntegerVT(Cntx, OpSize);
-  ISD::CondCode CC = CCNode->get();
-
-  switch (CC) {
-  case ISD::SETEQ:
-  case ISD::SETNE:
-  case ISD::SETGT:
-  case ISD::SETGE:
-  case ISD::SETUGT:
-  case ISD::SETUGE:
-    break;
-  case ISD::SETLT:
-  case ISD::SETLE:
-  case ISD::SETULT:
-  case ISD::SETULE:
-    CC = ISD::getSetCCSwappedOperands(CC);
-    std::swap(LHS, RHS);
-    break;
-  default: llvm_unreachable("Unexpected CondCode!");
-  }
-
-  unsigned CCNum = (CC == ISD::SETEQ || CC == ISD::SETNE) ? VFUs::CmpEQ
-    : (ISD::isSignedIntSetCC(CC) ? VFUs::CmpSigned
-    : VFUs::CmpUnsigned);
-
-  SDValue NewICmp = DAG.getNode(VTMISD::ICmp, dl, MVT::i8, LHS, RHS,
-                                DAG.getTargetConstant(CCNum, FUVT));
-  // Read the result from specific bit of the result.
-  unsigned ResultPort = getICmpPort(CC);
-
-  DAG.ReplaceAllUsesWith(SDValue(N, 0),
-                         VTargetLowering::getBitSlice(DAG, dl, NewICmp,
-                                                      ResultPort + 1, ResultPort,
-                                                      N->getValueSizeInBits(0)));
-}
-
 void VDAGToDAGISel::PreprocessISelDAG() {
   // Create a dummy node (which is not added to allnodes), that adds a reference
   // to the root node, preventing it from being deleted, and tracking any
@@ -683,9 +667,6 @@ void VDAGToDAGISel::PreprocessISelDAG() {
     default: --I; continue;
     case ISD::ADDE:
       LowerADDEForISel(N, *CurDAG);
-      break;
-    case VTMISD::ICmp:
-      LowerICmpForISel(N, *CurDAG);
       break;
     case ISD::UMUL_LOHI:
       LowerUMUL_LOHIForISel(N, *CurDAG);

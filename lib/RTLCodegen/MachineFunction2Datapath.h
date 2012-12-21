@@ -72,7 +72,6 @@ public:
   VASTValPtr buildLUT(MachineInstr *MI);
   VASTValPtr buildSel(MachineInstr *MI);
   VASTValPtr buildAdd(MachineInstr *MI);
-  VASTValPtr buildICmp(MachineInstr *MI);
   VASTValPtr buildBitSlice(MachineInstr *MI);
 
   // Create a condition from a predicate operand.

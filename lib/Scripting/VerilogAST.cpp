@@ -1143,6 +1143,11 @@ static void printSimpleUnsignedOp(raw_ostream &OS, ArrayRef<VASTUse> Ops,
   printSimpleOp(OS, Ops, Opc, printUnsignedOperand);
 }
 
+static void printSimpleSignedOp(raw_ostream &OS, ArrayRef<VASTUse> Ops,
+                                const char *Opc) {
+  printSimpleOp(OS, Ops, Opc, printSignedOperand);
+}
+
 //----------------------------------------------------------------------------//
 // Generic datapath printing helper function.
 static void printUnaryOp(raw_ostream &OS, const VASTUse &U, const char *Opc) {
@@ -1154,24 +1159,6 @@ static void printSRAOp(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
   printSignedOperand(OS, Ops[0]);
   OS << " >>> ";
   Ops[1].printAsOperand(OS);
-}
-
-template<typename PrintOperandFN>
-static void printCmpFU(raw_ostream &OS, ArrayRef<VASTUse> Ops,
-                       PrintOperandFN &FN) {
-  OS << "{ 3'bx, ((";
-  // Port 4: gt.
-  printSimpleOp<PrintOperandFN>(OS, Ops, " > ", FN);
-  OS << ") ? 1'b1 : 1'b0), ((";
-  // Port 3: gt.
-  printSimpleOp<PrintOperandFN>(OS, Ops, " >= ", FN);
-  OS << ") ? 1'b1 : 1'b0), ((";
-  // Port 2: gt.
-  printSimpleOp<PrintOperandFN>(OS, Ops, " == ", FN);
-  OS << ") ? 1'b1 : 1'b0), ((";
-  // Port 2: gt.
-  printSimpleOp<PrintOperandFN>(OS, Ops, " != ", FN);
-  OS << ") ? 1'b1 : 1'b0), 1'bx }";
 }
 
 static void printSel(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
@@ -1358,8 +1345,10 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
     case VASTExpr::dpShl:
     case VASTExpr::dpSRA:
     case VASTExpr::dpSRL:
-    case VASTExpr::dpSCmp:
-    case VASTExpr::dpUCmp:
+    case VASTExpr::dpSGE:
+    case VASTExpr::dpSGT:
+    case VASTExpr::dpUGE:
+    case VASTExpr::dpUGT:
       if (InstSubModForFU && !Expr->hasName() && printBinFU(OS, this)) return;
       break;
     case VASTExpr::dpMux: printCombMux(OS, this); return;
@@ -1408,8 +1397,11 @@ void VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   case dpRAnd:  printUnaryOp(OS, getOperand(0), "&");  break;
   case dpRXor:  printUnaryOp(OS, getOperand(0), "^");  break;
 
-  case dpSCmp:  printCmpFU(OS, getOperands(), printSignedOperand); break;
-  case dpUCmp:  printCmpFU(OS, getOperands(), printUnsignedOperand); break;
+  case dpSGE:   printSimpleSignedOp(OS, getOperands(),  " >= "); break;
+  case dpSGT:   printSimpleSignedOp(OS, getOperands(),  " > ");  break;
+
+  case dpUGE:   printSimpleUnsignedOp(OS, getOperands(),  " >= "); break;
+  case dpUGT:   printSimpleUnsignedOp(OS, getOperands(),  " > ");  break;
 
   case dpAdd: printSimpleUnsignedOp(OS, getOperands(), " + "); break;
   case dpMul: printSimpleUnsignedOp(OS, getOperands(), " * "); break;
@@ -1430,34 +1422,21 @@ void VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   OS << ')';
 }
 
-const char *VASTExpr::StandarFUName[] = {
-    // bitwise logic datapath
-    0,
-    0,
-    0,
-    0,
-    // bit level assignment.
-    0,
-    0,
-    // Simple wire assignment.
-    0,
-    // Cannot inline.
-    // FU datapath
-    "shang_addc",
-    "shang_mult",
-    "shang_shl",
-    "shang_sra",
-    "shang_srl",
-    "shang_scmp",
-    "shang_ucmp",
-    // Mux in datapath.
-    0,
-    // Read/Write block RAM.
-    0,
-    0,
-    // Blackbox,
-    0
-};
+const char *VASTExpr::getFUName() const {
+  switch (getOpcode()) {
+  case dpAdd: return "shang_addc";
+  case dpMul: return "shang_mult";
+  case dpShl: return "shang_shl";
+  case dpSRL: return "shang_sra";
+  case dpSRA: return "shang_srl";
+  case dpSGE: return "shang_sge";
+  case dpSGT: return "shang_sgt";
+  case dpUGE: return "shang_uge";
+  case dpUGT: return "shang_ugt";
+  }
+
+  return 0;
+}
 
 const std::string VASTExpr::getSubModName() const {
   const char *FUName = getFUName();
@@ -1467,10 +1446,17 @@ const std::string VASTExpr::getSubModName() const {
   std::string Name(FUName);
   raw_string_ostream SS(Name);
   SS << this << 'w' ;
-  if (getOpcode() == VASTExpr::dpUCmp || VASTExpr::dpSCmp)
-    SS << getOperand(0)->getBitWidth();
-  else
+  switch (getOpcode()) {
+  default:
     SS << getBitWidth();
+    break;
+  case dpSGE:
+  case dpSGT:
+  case dpUGE:
+  case dpUGT:
+    SS << getOperand(0)->getBitWidth();
+    break;
+  }
 
   SS.flush();
   return Name;

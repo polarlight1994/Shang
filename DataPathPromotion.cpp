@@ -73,7 +73,10 @@ struct DataPathPromotion : public MachineFunctionPass {
         case VTM::VOpAdd:
           promoteAdd(MI, MRI);
           break;
-        case VTM::VOpICmp:
+        case VTM::VOpSGE:
+        case VTM::VOpSGT:
+        case VTM::VOpUGE:
+        case VTM::VOpUGT:
           promoteBinOp<VFUs::ICmp>(MI, MRI);
           break;
         case VTM::VOpMult:

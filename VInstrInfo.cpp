@@ -895,7 +895,10 @@ unsigned VInstrInfo::getNumLogicLevels(const MachineInstr *MI) {
 
   switch (OpC) {
     // TODO: Bitrepeat.
-  case VTM::VOpICmp:
+  case VTM::VOpUGT:
+  case VTM::VOpSGT:
+  case VTM::VOpUGE:
+  case VTM::VOpSGE:
     return lookupLogicLevels<1, VFUICmp>(MI);
   // Retrieve the FU bit width from its operand bit width
   case VTM::VOpAdd:

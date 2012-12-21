@@ -623,9 +623,11 @@ public:
     dpShl,
     dpSRA,
     dpSRL,
-    dpSCmp,
-    dpUCmp,
-    LastFUOpc = dpUCmp,
+    dpSGT,
+    dpSGE,
+    dpUGT,
+    dpUGE,
+    LastFUOpc = dpUGE,
     // Lookup-tables.
     dpLUT,
     // Mux in datapath.
@@ -637,7 +639,6 @@ public:
     dpBlackBox
   };
 private:
-  static const char *StandarFUName[];
   // Operands, right after this VASTExpr.
   const VASTUse *ops() const {
     return reinterpret_cast<const VASTUse*>(this + 1);
@@ -680,7 +681,7 @@ private:
 public:
   const uint8_t Opc, NumOps,UB, LB;
   Opcode getOpcode() const { return VASTExpr::Opcode(Opc); }
-  const char *getFUName() const { return StandarFUName[getOpcode()]; }
+  const char *getFUName() const;
   const std::string getSubModName() const;
 
   const VASTUse &getOperand(unsigned Idx) const {
