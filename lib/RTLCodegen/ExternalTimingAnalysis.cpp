@@ -274,6 +274,9 @@ void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
   O << "puts $JSONFile \"\\{\\\"from\\\":0,\\\"to\\\":0,\\\"delay\\\":0\\}\"\n"
        "puts $JSONFile \"\\]\"\n"
        "close $JSONFile";
+  // Print the critical path in the datapath to debug the TimingNetlist.
+  O << "report_timing -from_clock { clk } -to_clock { clk } -setup -npaths 1"
+       "-detail full_path -stdout\n";
 }
 
 static bool exitWithError(const sys::Path &FileName) {
