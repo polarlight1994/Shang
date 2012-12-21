@@ -262,8 +262,11 @@ void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O,
 void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
                                                          const sys::Path &ResultPath)
                                                          const {
+  // Print the critical path in the datapath to debug the TimingNetlist.
+  O << "report_timing -from_clock { clk } -to_clock { clk } -setup -npaths 1"
+       " -detail full_path -stdout\n"
   // Open the file and start the array.
-  O << "set JSONFile [open \"" << ResultPath.str() <<"\" w+]\n"
+       "set JSONFile [open \"" << ResultPath.str() <<"\" w+]\n"
        "puts $JSONFile \"\\[\"\n";
 
   for (FanoutIterator I = TNL.fanout_begin(), E = TNL.fanout_end(); I != E; ++I)
@@ -273,10 +276,7 @@ void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
   // Close the array and the file object.
   O << "puts $JSONFile \"\\{\\\"from\\\":0,\\\"to\\\":0,\\\"delay\\\":0\\}\"\n"
        "puts $JSONFile \"\\]\"\n"
-       "close $JSONFile";
-  // Print the critical path in the datapath to debug the TimingNetlist.
-  O << "report_timing -from_clock { clk } -to_clock { clk } -setup -npaths 1"
-       "-detail full_path -stdout\n";
+       "close $JSONFile\n";
 }
 
 static bool exitWithError(const sys::Path &FileName) {
