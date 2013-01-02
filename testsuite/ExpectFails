@@ -1,4 +1,8 @@
 sim_memcpy_libcall_opt
 mem_unalign
 op_shl
-
+sim_memset
+sim_memcpy
+sim_memset_complex
+sim_memcpy_complex
+sim_memmove
