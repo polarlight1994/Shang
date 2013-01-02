@@ -128,8 +128,7 @@ struct MemBusBuilder {
 
   void addSubModule(const std::string &SubModuleName, raw_ostream &S) {
     VASTWire *SubModEn = 0;
-    addSubModuleOutPort(S, MembusEn, 1,
-                          SubModuleName, SubModEn, EnExpr);
+    addSubModuleOutPort(S, MembusEn, 1, SubModuleName, SubModEn, EnExpr);
     // Output ports.
     addSubModuleOutPort(S, MembusCmd,
                         VFUMemBus::CMDWidth, SubModuleName, SubModEn, CmdExpr);

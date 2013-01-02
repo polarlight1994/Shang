@@ -264,18 +264,6 @@ public:
   }
 
   static const int CMDWidth = 4;
-
-  enum Cmds {
-    // Load and store.
-    CmdLoad = 0, CmdStore = 1,
-    CmdFirstNoLoadStore = 2,
-    // Memset/Memcpy/Memmove
-    CmdMemSet = 2, CmdMemCpy = 3, CmdMemMove = 4
-  };
-
-  enum CmdSeqs {
-    SeqBegin = 0, Seq = 1, SeqEnd = 2
-  };
 };
 
 template<enum VFUs::FUTypes T>
