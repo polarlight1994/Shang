@@ -198,7 +198,7 @@ static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {
       if (R->getRegType() == VASTRegister::BRAM) {
         OS << " { NameSet =[=[ [ list "
            // BlockRam name with prefix
-           << getFUDesc<VFUBRAM>()->getPrefix()
+           << getFUDesc<VFUBRAM>()->Prefix
            << VFUBRAM::getArrayName(R->getDataRegNum()) << ' '
            // Or simply the name of the output register.
            << VFUBRAM::getArrayName(R->getDataRegNum())

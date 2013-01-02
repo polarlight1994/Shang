@@ -302,11 +302,12 @@ typedef VSimpleFUDesc<VFUs::Sel>     VFUSel;
 typedef VSimpleFUDesc<VFUs::Reduction>     VFUReduction;
 
 class VFUBRAM : public  VFUDesc {
-  unsigned DataWidth;
-  std::string Prefix;   // Prefix of the block RAM object in timing constraints.
-  std::string Template; // Template for inferring block ram.
-  std::string InitFileDir; // Template for readmemh dir.
 public:
+  const unsigned DataWidth;
+  const std::string Prefix;   // Prefix of the block RAM object in timing constraints.
+  const std::string Template; // Template for inferring block ram.
+  const std::string InitFileDir; // Template for readmemh dir.
+
   VFUBRAM(luabind::object FUTable);
 
   std::string generateCode(const std::string &Clk, unsigned Num,
@@ -337,8 +338,6 @@ public:
   inline static std::string getArrayName(unsigned FUNum) {
     return "bram" + utostr(FUNum) + "array";
   }
-
-  const std::string &getPrefix() const { return Prefix; }
 };
 
 struct CommonFUIdentityFunctor
