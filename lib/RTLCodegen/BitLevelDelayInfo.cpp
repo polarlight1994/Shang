@@ -81,7 +81,7 @@ unsigned BitLevelDelayInfo::getChainedCPs(const MachineInstr *SrcInstr,
 }
 
 static void updateDelay(DepLatInfoTy &CurLatInfo, InstPtrTy Src, delay_type d) {
-  // Latency from a control operation is simply the latency of the control
+  /* Latency from a control operation is simply the latency of the control
   // operation.
   // We may have dependency like:
   //  other op
@@ -89,7 +89,7 @@ static void updateDelay(DepLatInfoTy &CurLatInfo, InstPtrTy Src, delay_type d) {
   //    |   other op
   //    |   /
   // current op
-  // We should update the latency if we get a bigger latency.
+  // We should update the latency if we get a bigger latency.*/
   delay_type &OldDelay = CurLatInfo[Src];
   OldDelay = std::max(OldDelay, d);
 }

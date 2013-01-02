@@ -116,28 +116,28 @@ Pass *llvm::createFunctionFilterPass(raw_ostream &O) {
 void FunctionFilter::SplitSoftFunctions(Module &M,SmallPtrSet<const Function*, 32> &HWFunctions){
   OwningPtr<Module> SoftMod(CloneModule(&M));
   SoftMod->setModuleIdentifier(M.getModuleIdentifier() + ".sw");
-  for (Module::iterator IHW = M.begin(), ISW = SoftMod->begin(), 
-    EHW = M.end(), E = SoftMod->end(); IHW != EHW; ++IHW, ++ISW) {
-      Function *FHW = IHW;
-      Function *FSW = ISW;
+  for (Module::iterator IHW = M.begin(), ISW = SoftMod->begin(),  EHW = M.end();
+      IHW != EHW; ++IHW, ++ISW) {
+    Function *FHW = IHW;
+    Function *FSW = ISW;
 
-      // The function is s software function, delete it from the hardware module.
-      if (!HWFunctions.count(FHW))
-        FHW->deleteBody();
-      else if (getSynSetting(FSW->getName())->isTopLevelModule())
-        // Remove hardware functions in software module and leave the declaretion
-        // only.
-        FSW->deleteBody();
-      else if (FHW->getName() != "main" && !FHW->isDeclaration()) {
-        FHW->setLinkage(GlobalValue::PrivateLinkage);
-        FSW->setLinkage(GlobalValue::PrivateLinkage);
-      }
+    // The function is s software function, delete it from the hardware module.
+    if (!HWFunctions.count(FHW))
+      FHW->deleteBody();
+    else if (getSynSetting(FSW->getName())->isTopLevelModule())
+      // Remove hardware functions in software module and leave the declaretion
+      // only.
+      FSW->deleteBody();
+    else if (FHW->getName() != "main" && !FHW->isDeclaration()) {
+      FHW->setLinkage(GlobalValue::PrivateLinkage);
+      FSW->setLinkage(GlobalValue::PrivateLinkage);
+    }
 
-      if (FSW->getName() == "main") {
-        FSW->setName("sw_main");
-        // If we are synthesizing main, change its name so the SystemC module can find it.
-        //if (getSynSetting("main")) FHW->setName("sw_main");
-      }
+    if (FSW->getName() == "main") {
+      FSW->setName("sw_main");
+      // If we are synthesizing main, change its name so the SystemC module can find it.
+      //if (getSynSetting("main")) FHW->setName("sw_main");
+    }
   }
 
   OwningPtr<ModulePass> GlobalDEC(createGlobalDCEPass());

@@ -623,7 +623,6 @@ void VRASimple::handleDstMux(MachineInstr *MI) {
   LiveInterval *&FULI = FU2PhysRegMap[FU];
 
   if (FULI == 0) {
-    unsigned FNNum = FU.getFUNum();
     unsigned BitWidth = VInstrInfo::getBitWidth(MI->getOperand(0));
     unsigned PhysReg = TRI->allocateFN(VTM::RMUXRegClassID, BitWidth);
     FULI = getInterval(RegNo);

@@ -202,7 +202,7 @@ public:
       for (src_iterator SI = SrcInfo->begin(), SE = SrcInfo->end(); SI != SE; ++SI) {
         if (VASTMachineOperand *Src = dyn_cast<VASTMachineOperand>(SI->first)) {
           TimingNetlist::delay_type delay = SI->second;
-          TimingNetlist::delay_type old_delay = TNL.getDelay(Src, Dst) * VFUs::Period;
+          //TimingNetlist::delay_type old_delay = TNL.getDelay(Src, Dst) * VFUs::Period;
           //dbgs() << "DELAY-ESTIMATOR-JSON: { \"ACCURATE\":" << old_delay
           //       << ", \"BLACKBOX\":" << delay << "} \n";
           TNL.annotateDelay(Src, Dst, delay);
