@@ -167,7 +167,8 @@ const TargetRegisterClass *VRegisterInfo::getRepRegisterClass(unsigned Opcode) {
   default:                  return &VTM::DRRegClass;
   case VTM::VOpMemTrans:    return &VTM::RINFRegClass;
   case VTM::VOpInternalCall:return &VTM::RCFNRegClass;
-  case VTM::VOpBRAMTrans:   return &VTM::RBRMRegClass;
+  case VTM::VOpBRAMRead:
+  case VTM::VOpBRAMWrite:   return &VTM::RBRMRegClass;
   case VTM::VOpDstMux:      return &VTM::RMUXRegClass;
   }
 

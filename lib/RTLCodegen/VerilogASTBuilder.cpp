@@ -397,7 +397,8 @@ class VerilogASTBuilder : public MachineFunctionPass,
   void emitOpDisableFU(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds);
 
   void emitOpMemTrans(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds);
-  void emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds);
+  void emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds,
+                       bool IsWrite);
 
   std::string getSubModulePortName(unsigned FNNum,
                                    const std::string PortName) const {
@@ -873,7 +874,8 @@ void VerilogASTBuilder::emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
     case VTM::VOpRetVal:        emitOpRetVal(MI, CurSlot, Cnds);          break;
     case VTM::VOpRet_nt:        emitOpRet(MI, CurSlot, Cnds);             break;
     case VTM::VOpMemTrans:      emitOpMemTrans(MI, CurSlot, Cnds);        break;
-    case VTM::VOpBRAMTrans:     emitOpBRamTrans(MI, CurSlot, Cnds);       break;
+    case VTM::VOpBRAMRead:      emitOpBRamTrans(MI, CurSlot, Cnds, false);break;
+    case VTM::VOpBRAMWrite:     emitOpBRamTrans(MI, CurSlot, Cnds, true); break;
     case VTM::VOpToState_nt: emitBr(MI, CurSlot, Cnds, CurBB, Pipelined); break;
     case VTM::VOpReadReturn:    emitOpReadReturn(MI, CurSlot, Cnds);      break;
     case VTM::VOpUnreachable:   emitOpUnreachable(MI, CurSlot, Cnds);     break;
@@ -917,7 +919,8 @@ bool VerilogASTBuilder::emitFirstCtrlBundle(MachineBasicBlock *DstBB,
       ++SlotsByPassed;
       break;
     case VTM::VOpMemTrans:      emitOpMemTrans(MI, Slot, Cnds);        break;
-    case VTM::VOpBRAMTrans:     emitOpBRamTrans(MI, Slot, Cnds);       break;
+    case VTM::VOpBRAMRead:      emitOpBRamTrans(MI, Slot, Cnds, false);break;
+    case VTM::VOpBRAMWrite:     emitOpBRamTrans(MI, Slot, Cnds, true); break;
     default:  llvm_unreachable("Unexpected opcode!");         break;
     }
     Cnds.pop_back();
@@ -1160,8 +1163,8 @@ void VerilogASTBuilder::emitOpMemTrans(MachineInstr *MI, VASTSlot *Slot,
 }
 
 void VerilogASTBuilder::emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot,
-                                        VASTValueVecTy &Cnds) {
-  unsigned BRamID = MI->getOperand(5).getImm();
+                                        VASTValueVecTy &Cnds, bool IsWrite) {
+  unsigned BRamID = VInstrInfo::getPreboundFUId(MI).getFUNum();
   unsigned SizeInBytes = FInfo->getBRamInfo(BRamID).ElemSizeInBytes;
   unsigned Alignment = Log2_32_Ceil(SizeInBytes);
 
@@ -1169,7 +1172,7 @@ void VerilogASTBuilder::emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot,
   Addr = Builder->buildBitSliceExpr(Addr, Addr->getBitWidth(), Alignment);
   
   VASTRegister *BRAMArray = getAsLValue<VASTRegister>(MI->getOperand(0));
-  bool IsWrite = VInstrInfo::mayStore(MI);
+
   if (BRAMArray->getRegType() != VASTRegister::BRAM) {
     // If the block RAM is replaced by a register, we can ignore the read
     // operation.

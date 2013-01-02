@@ -182,7 +182,9 @@ bool DeadMemOpElimination::runOnMachineBasicBlock(MachineBasicBlock &MBB) {
       continue;
     }
 
-    if (Opcode != VTM::VOpMemTrans && Opcode != VTM::VOpBRAMTrans) continue;
+    if (Opcode != VTM::VOpMemTrans && Opcode != VTM::VOpBRAMRead
+        && Opcode != VTM::VOpBRAMWrite)
+      continue;
 
     I = handleMemOp(I, ReachingDefMap, AST);
   }

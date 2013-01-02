@@ -86,7 +86,6 @@ private:
   SDNode *SelectImmediate(SDNode *N, bool ForceMove = false);
 
   SDNode *SelectMemAccess(SDNode *N);
-  SDNode *SelectBRAMAccess(SDNode *N);
 
   SDNode *SelectINTRINSIC_W_CHAIN(SDNode *N);
 
@@ -390,16 +389,24 @@ SDNode *VDAGToDAGISel::SelectMemAccess(SDNode *N) {
   MemOp[0] = cast<MemSDNode>(N)->getMemOperand();
 
   unsigned Opcode = VTM::VOpMemTrans;
+  unsigned AS = MemOp[0]->getPointerInfo().getAddrSpace();
+  bool isStore = N->getConstantOperandVal(3);
   SmallVector<SDValue, 8> Ops;
   Ops.push_back(N->getOperand(1)); // Address
-  Ops.push_back(N->getOperand(2)); // Data to store
-  Ops.push_back(N->getOperand(3)); // write enable
+
+   // Data to store, for Blocak RAM read, this operand is not reqired.
+  if (!AS || isStore) Ops.push_back(N->getOperand(2));
+
+  // Encode the write enable of Block RAM read/wire to the opcode of the
+  // instruction.
+  if (AS)   Opcode = isStore ? VTM::VOpBRAMWrite : VTM::VOpBRAMRead;
+  else      Ops.push_back(N->getOperand(3));
+
   Ops.push_back(N->getOperand(4)); // byte enable
-  if (unsigned AS = MemOp[0]->getPointerInfo().getAddrSpace()) {
+  if (AS)
     // Block RAM number.
     Ops.push_back(CurDAG->getTargetConstant(AS, MVT::i32));
-    Opcode = VTM::VOpBRAMTrans;
-  }
+
   Ops.push_back(SDValue()); //The dummy bit width operand
   Ops.push_back(CurDAG->getTargetConstant(0, MVT::i64)); //and trace number*
   Ops.push_back(N->getOperand(0));
@@ -408,31 +415,6 @@ SDNode *VDAGToDAGISel::SelectMemAccess(SDNode *N) {
   computeOperandsBitWidth(N, Ops.data(), Ops.size() -1 /*Skip the chain*/);
   SDNode *Ret = CurDAG->SelectNodeTo(N, Opcode, N->getVTList(),
                                      Ops.data(), Ops.size());
-
-  cast<MachineSDNode>(Ret)->setMemRefs(MemOp, MemOp + 1);
-  return Ret;
-}
-
-SDNode *VDAGToDAGISel::SelectBRAMAccess(SDNode *N) {
-  MachineSDNode::mmo_iterator MemOp = MF->allocateMemRefsArray(1);
-  MemOp[0] = cast<MemIntrinsicSDNode>(N)->getMemOperand();
-
-  unsigned ArgIdx = 2;
-  unsigned BRamNum = N->getConstantOperandVal(ArgIdx + 5);
-
-  SDValue Ops[] = { N->getOperand(ArgIdx), N->getOperand(ArgIdx + 1),
-                    N->getOperand(ArgIdx + 2),
-                    // FIXME: Set the correct byte enable.
-                    CurDAG->getTargetConstant(0, MVT::i32),
-                    CurDAG->getTargetConstant(BRamNum, MVT::i32),
-                    SDValue()/*The dummy bit width operand*/,
-                    CurDAG->getTargetConstant(0, MVT::i64) /*and trace number*/,
-                    N->getOperand(0) };
-
-  computeOperandsBitWidth(N, Ops, array_lengthof(Ops) -1 /*Skip the chain*/);
-
-  SDNode *Ret = CurDAG->SelectNodeTo(N, VTM::VOpBRAMTrans, N->getVTList(),
-                                     Ops, array_lengthof(Ops));
 
   cast<MachineSDNode>(Ret)->setMemRefs(MemOp, MemOp + 1);
   return Ret;

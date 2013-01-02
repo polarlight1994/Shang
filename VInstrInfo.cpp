@@ -783,8 +783,12 @@ FuncUnitId VInstrInfo::getPreboundFUId(const MachineInstr *MI) {
     return FuncUnitId(uint16_t(MI->getOperand(2).getImm()));
   case VTM::VOpMemTrans:
     return FuncUnitId(VFUs::MemoryBus, 0);
-  case VTM::VOpBRAMTrans: {
-    unsigned Id = MI->getOperand(5).getImm();
+  case VTM::VOpBRAMRead: {
+    unsigned Id = MI->getOperand(3).getImm();
+    return FuncUnitId(VFUs::BRam, Id);
+  }
+  case VTM::VOpBRAMWrite: {
+    unsigned Id = MI->getOperand(4).getImm();
     return FuncUnitId(VFUs::BRam, Id);
   }
   case VTM::VOpInternalCall: {
@@ -805,7 +809,9 @@ bool VInstrInfo::mayLoad(const MachineInstr *MI) {
   default: return false;
     // There is a "isLoad" flag in memory access operation.
   case VTM::VOpMemTrans:
-  case VTM::VOpBRAMTrans: return !MI->getOperand(3).getImm();
+    return !MI->getOperand(3).getImm();
+  case VTM::VOpBRAMRead:
+    return true;
   }
 }
 
@@ -814,7 +820,9 @@ bool VInstrInfo::mayStore(const MachineInstr *MI) {
   default: return false;
     // There is a "isLoad" flag in memory access operation.
   case VTM::VOpMemTrans:
-  case VTM::VOpBRAMTrans:  return MI->getOperand(3).getImm();
+    return MI->getOperand(3).getImm();
+  case VTM::VOpBRAMWrite:
+    return true;
   }
 }
 

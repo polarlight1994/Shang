@@ -683,7 +683,8 @@ void VRASimple::handleCtrlOp(MachineInstr *MI) {
   unsigned Opcode = MI->getOpcode();
   switch (Opcode) {
   case VTM::VOpMemTrans:      handleMemoryAccess(MI); break;
-  case VTM::VOpBRAMTrans:     handleBRAMAccess(MI); break;
+  case VTM::VOpBRAMRead:
+  case VTM::VOpBRAMWrite:     handleBRAMAccess(MI); break;
   case VTM::VOpDstMux:        handleDstMux(MI); break;
   case VTM::VOpInternalCall:  handleCalleeFN(MI); break;
   case VTM::VOpReadFU:

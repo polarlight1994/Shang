@@ -278,10 +278,14 @@ let mayLoad      = 1,
                            (ins ptr_rc:$addr, DR:$src, DR:$isStore, DR:$byteenable),
                             "$dst = memtrans $src, $addr, $isStore, $byteenable",
                             [], FUMemBus, 0 /*writeUntilFinish*/>;
-  def VOpBRAMTrans : FUInst<(outs DR:$dst),
-                       (ins ptr_rc:$addr, DR:$src, DR:$isStore, DR:$byteenable,
-                        i8imm:$bramnum),
-                       "$dst = bram $src, $addr, $isStore, $byteenable, $bramnum",
+
+  def VOpBRAMRead : FUInst<(outs DR:$dst),
+                       (ins ptr_rc:$addr, DR:$byteenable, i8imm:$bramnum),
+                       "$dst = bram $src, $addr, $byteenable, $bramnum",
+                       [], FUBRam, 0 /*writeUntilFinish*/>;
+  def VOpBRAMWrite : FUInst<(outs DR:$dst),
+                       (ins ptr_rc:$addr, DR:$src, DR:$byteenable, i8imm:$bramnum),
+                       "$dst = bram $src, $addr, $byteenable, $bramnum",
                        [], FUBRam, 0 /*writeUntilFinish*/>;
 }
 

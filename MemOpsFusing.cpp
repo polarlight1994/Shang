@@ -147,7 +147,7 @@ bool MemOpsFusing::hasMemDependency(MachineInstr *DstMI, MachineInstr *SrcMI) {
   unsigned Opcode = DstMI->getOpcode();
   bool ForceDstDep =  Opcode == VTM::VOpInternalCall;
   bool IsDstMemTrans = Opcode == VTM::VOpMemTrans;
-  IsDstMemTrans |= Opcode == VTM::VOpBRAMTrans;
+  IsDstMemTrans |= (Opcode == VTM::VOpBRAMRead) || (Opcode == VTM::VOpBRAMWrite);
 
   if (!IsDstMemTrans && !ForceDstDep) return false;
 
@@ -157,8 +157,8 @@ bool MemOpsFusing::hasMemDependency(MachineInstr *DstMI, MachineInstr *SrcMI) {
   if (SrcMI == DstMI) return false;
 
   unsigned SrcOpcode = SrcMI->getOpcode();
-  if (SrcOpcode != VTM::VOpMemTrans && SrcOpcode != VTM::VOpBRAMTrans
-      && SrcOpcode != VTM::VOpInternalCall)
+  if (SrcOpcode != VTM::VOpMemTrans && SrcOpcode != VTM::VOpBRAMRead
+      && SrcOpcode != VTM::VOpBRAMWrite && SrcOpcode != VTM::VOpInternalCall)
     return false;
 
   if (VInstrInfo::isPredicateMutex(SrcMI, DstMI)) return false;
