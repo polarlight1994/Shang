@@ -303,7 +303,22 @@ typedef VSimpleFUDesc<VFUs::Reduction>     VFUReduction;
 
 class VFUBRAM : public  VFUDesc {
 public:
+  // Various Block RAM modes supported FPGA.
+  enum BRAMMode {
+    // Single-port mode supports non-simultaneous read and write operations from
+    // a single address.
+    Default = 0,
+    // Simple dual-port mode supports simultaneous read and write operations to
+    // different locations.
+    SimpleDualPort = 1,
+    // True dual-port mode supports any combination of two-port operations: two
+    // reads, two writes, or one read and one write, at two different clock
+    // frequencies.
+    TrueDualPort = 2
+  };
+
   const unsigned DataWidth;
+  const BRAMMode Mode;
   const std::string Prefix;   // Prefix of the block RAM object in timing constraints.
   const std::string Template; // Template for inferring block ram.
   const std::string InitFileDir; // Template for readmemh dir.
