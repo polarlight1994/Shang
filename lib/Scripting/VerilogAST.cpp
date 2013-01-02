@@ -231,19 +231,19 @@ void VASTSlot::print(raw_ostream &OS) const {
   llvm_unreachable("VASTSlot::print should not be called!");
 }
 
+void VASTLocalStoragePort::addAssignment(VASTUse *Src, VASTWire *AssignCnd) {
+  assert(AssignCnd->getWireType() == VASTWire::AssignCond
+         && "Expect wire for assign condition!");
+  bool inserted = Assigns.insert(std::make_pair(AssignCnd, Src)).second;
+  assert(inserted &&  "Assignment condition conflict detected!");
+}
+
 VASTRegister::VASTRegister(const char *Name, unsigned BitWidth,
                            uint64_t initVal, VASTRegister::Type T,
                            uint16_t RegData,const char *Attr)
   : VASTSignal(vastRegister, Name, BitWidth, Attr), InitVal(initVal) {
   SignalType = T;
   SignalData = RegData;
-}
-
-void VASTRegister::addAssignment(VASTUse *Src, VASTWire *AssignCnd) {
-  assert(AssignCnd->getWireType() == VASTWire::AssignCond
-         && "Expect wire for assign condition!");
-  bool inserted = Assigns.insert(std::make_pair(AssignCnd, Src)).second;
-  assert(inserted &&  "Assignment condition conflict detected!");
 }
 
 //VASTUse VASTRegister::getConstantValue() const {
@@ -395,7 +395,7 @@ static void PrintSelector(raw_ostream &OS, const Twine &Name, unsigned BitWidth,
 }
 
 void VASTRegister::printSelector(raw_ostream &OS) const {
-  if (Assigns.empty()) return;
+  if (Port.empty()) return;
 
   typedef std::vector<VASTValPtr> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
@@ -436,7 +436,7 @@ void VASTRegister::printSelector(raw_ostream &OS) const {
 
 void VASTRegister::printAssignment(vlang_raw_ostream &OS,
                                    const VASTModule *Mod) const {
-  if (Assigns.empty()) return;
+  if (Port.empty()) return;
 
   if (getRegType() == VASTRegister::BRAM) {
     const std::string &BRAMArray = VFUBRAM::getArrayName(getDataRegNum());
@@ -779,7 +779,7 @@ void VASTModule::addAssignment(VASTRegister *Dst, VASTValPtr Src, VASTSlot *Slot
     VASTWire *Cnd = createAssignPred(Slot, DefMI);
     Cnd = addPredExpr(Cnd, Cnds, AddSlotActive);
     VASTUse *U = new (Allocator.Allocate<VASTUse>()) VASTUse(Dst, Src);
-    Dst->addAssignment(U, Cnd);
+    Dst->Port.addAssignment(U, Cnd);
   }
 }
 
@@ -788,7 +788,7 @@ void VASTModule::addVitrualAssignment(VASTRegister *Dst, VASTSlot *Slot,
   assert(Dst->getRegType() == VASTRegister::Virtual
          && "Expected virtual register!");
 
-  Dst->addAssignment(0, createAssignPred(Slot, DefMI));
+  Dst->Port.addAssignment(0, createAssignPred(Slot, DefMI));
 }
 
 VASTWire *VASTModule::assignWithExtraDelay(VASTWire *W, VASTValPtr V,

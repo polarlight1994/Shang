@@ -1054,9 +1054,28 @@ template<> struct GraphTraits<VASTSlot*> {
   }
 };
 
-class VASTRegister : public VASTSignal {
+// Represent single access port for local Storage.
+class VASTLocalStoragePort {
 public:
   typedef ArrayRef<VASTValPtr> AndCndVec;
+private:
+  // Map the assignment condition to assignment value.
+  typedef DenseMap<VASTWire*, VASTUse*, VASTWireExpressionTrait> AssignMapTy;
+  AssignMapTy Assigns;
+
+public:
+  void addAssignment(VASTUse *Src, VASTWire *AssignCnd);
+  void clearAssignments() { Assigns.clear(); }
+
+  typedef AssignMapTy::const_iterator assign_itertor;
+  assign_itertor begin() const { return Assigns.begin(); }
+  assign_itertor end() const { return Assigns.end(); }
+  unsigned size() const { return Assigns.size(); }
+  bool empty() const { return Assigns.empty(); }
+};
+
+class VASTRegister : public VASTSignal {
+public:
   enum Type {
     Data,       // Common registers which hold data for data-path.
     BRAM,       // Block RAM.
@@ -1068,12 +1087,7 @@ public:
 private:
   uint64_t InitVal;
 
-  // the first key VASTWire is Assignment condition. The second value is
-  // assignment value.
-  typedef DenseMap<VASTWire*, VASTUse*, VASTWireExpressionTrait> AssignMapTy;
-  AssignMapTy Assigns;
-
-  void addAssignment(VASTUse *Src, VASTWire *AssignCnd);
+  VASTLocalStoragePort Port;
 
   VASTRegister(const char *Name, unsigned BitWidth, uint64_t InitVal,
                VASTRegister::Type T = Data, uint16_t RegData = 0,
@@ -1102,14 +1116,12 @@ public:
   void clearAssignments() {
     assert(use_empty() && "Cannot clear assignments!");
     // TODO: Release the Uses and Wires.
-    Assigns.clear();
   }
 
-  typedef AssignMapTy::const_iterator assign_itertor;
-  assign_itertor assign_begin() const { return Assigns.begin(); }
-  assign_itertor assign_end() const { return Assigns.end(); }
-  unsigned num_assigns() const { return Assigns.size(); }
-  /*VASTUse getConstantValue() const;*/
+  typedef VASTLocalStoragePort::assign_itertor assign_itertor;
+  assign_itertor assign_begin() const { return Port.begin(); }
+  assign_itertor assign_end() const { return Port.end(); }
+  unsigned num_assigns() const { return Port.size(); }
 
   void printSelector(raw_ostream &OS) const;
 
@@ -1126,6 +1138,7 @@ public:
     return A->getASTType() == vastRegister;
   }
 
+  typedef VASTLocalStoragePort::AndCndVec AndCndVec;
   static void printCondition(raw_ostream &OS, const VASTSlot *Slot,
                              const AndCndVec &Cnds);
 };
