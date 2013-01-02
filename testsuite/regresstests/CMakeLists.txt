@@ -12,3 +12,4 @@ endmacro(add_regress_test)
 
 add_subdirectory(delayestimation)
 add_subdirectory(memorybus)
+add_subdirectory(dualportram)
