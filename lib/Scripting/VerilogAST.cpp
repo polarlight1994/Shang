@@ -1433,6 +1433,7 @@ const char *VASTExpr::getFUName() const {
   case dpSGT: return "shang_sgt";
   case dpUGE: return "shang_uge";
   case dpUGT: return "shang_ugt";
+  default: break;
   }
 
   return 0;
