@@ -526,8 +526,6 @@ class VASTSignal : public VASTNamedValue {
   bool IsPinned;
   bool IsTimingUndef;
 protected:
-  uint8_t SignalType;
-  uint16_t SignalData;
   // TODO: Annotate the signal so we know that some of them are port signals
   // and no need to declare again in the declaration list.
   const char *AttrStr;
@@ -535,7 +533,7 @@ protected:
   VASTSignal(VASTTypes DeclType, const char *Name, unsigned BitWidth,
              const char *Attr = "")
     : VASTNamedValue(DeclType, Name, BitWidth), IsPinned(false),
-      IsTimingUndef(false), SignalType(0), SignalData(0), AttrStr(Attr) {}
+      IsTimingUndef(false), AttrStr(Attr) {}
 public:
 
   // Pin the wire, prevent it from being remove.
@@ -756,15 +754,17 @@ public:
     // The wire connected to an input port.
     InputPort
   };
+private:
+  Type T : 2;
+  unsigned Idx : 30;
+public:
 
   VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "")
-    : VASTSignal(vastWire, Name, BitWidth, Attr), U(this, 0) {
-      SignalType = Common;
-      SignalData = 0;
-  }
+    : VASTSignal(vastWire, Name, BitWidth, Attr), U(this, 0), T(Common), Idx(0)
+  {}
 
   void assign(VASTValPtr V, VASTWire::Type T = VASTWire::Common) {
-    SignalType = T;
+    this->T = T;
     U.set(V);
   }
 
@@ -775,9 +775,8 @@ private:
   VASTUse U;
 
   VASTWire(unsigned SlotNum, MachineInstr *DefMI)
-         : VASTSignal(vastWire, 0, 1, ""), U(this, 0) {
-    SignalType = AssignCond;
-    SignalData = SlotNum;
+         : VASTSignal(vastWire, 0, 1, ""), U(this, 0), T(AssignCond),
+           Idx(SlotNum) {
     Contents.BundleStart = DefMI;
   } 
 
@@ -785,12 +784,12 @@ private:
 
   void setSlot(uint16_t slotNum) {
     assert(getWireType() == VASTWire::AssignCond && "setSlot on wrong type!");
-    SignalData = slotNum;
+    Idx = slotNum;
   }
 
   void assignWithExtraDelay(VASTValPtr V, unsigned latency) {
     assign(V, haveExtraDelay);
-    SignalData = latency;
+    Idx = latency;
   }
 
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
@@ -822,16 +821,16 @@ public:
     return getDriver()? dyn_cast<VASTExprPtr>(getDriver()) : 0;
   }
 
-  VASTWire::Type getWireType() const { return VASTWire::Type(SignalType); }
+  VASTWire::Type getWireType() const { return T; }
 
   unsigned getExtraDelayIfAny() const {
-    return getWireType() == VASTWire::haveExtraDelay ? SignalData : 0;
+    return getWireType() == VASTWire::haveExtraDelay ? Idx : 0;
   }
 
   uint16_t getSlotNum() const {
     assert(getWireType() == VASTWire::AssignCond &&
            "Call getSlot on bad wire type!");
-    return SignalData;
+    return Idx;
   }
 
   MachineInstr *getDefMI() const {
@@ -1083,6 +1082,7 @@ public:
 
 class VASTBlockRAM : public VASTSignal {
   unsigned NumWords;
+  unsigned BRamNum;
 public:
   VASTLocalStoragePort WritePortA, WritePortB, ReadPortA, ReadPortB;
 private:
@@ -1093,15 +1093,13 @@ private:
   VASTBlockRAM(const char *Name, unsigned BRamNum, unsigned BitWidth,
                unsigned NumWords)
                : VASTSignal(vastBlockRAM, Name, BitWidth), NumWords(NumWords),
-                 WritePortA(*this), WritePortB(*this), ReadPortA(*this),
-                 ReadPortB(*this) {
-    SignalData = BRamNum;
-  }
+                 BRamNum(BRamNum), WritePortA(*this), WritePortB(*this),
+                 ReadPortA(*this), ReadPortB(*this) {}
 
   friend class VASTModule;
 public:
   typedef VASTLocalStoragePort::assign_itertor assign_itertor;
-  unsigned getBlockRAMNum() const { return SignalData; }
+  unsigned getBlockRAMNum() const { return BRamNum; }
 
   void printSelector(raw_ostream &OS) const {
     printSelector(OS, WritePortA);
@@ -1131,6 +1129,8 @@ private:
   uint64_t InitVal;
 
   VASTLocalStoragePort Port;
+  Type T : 2;
+  unsigned Idx : 30;
 
   VASTRegister(const char *Name, unsigned BitWidth, uint64_t InitVal,
                VASTRegister::Type T = Data, uint16_t RegData = 0,
@@ -1142,18 +1142,16 @@ private:
   }
 
 public:
-  VASTRegister::Type getRegType() const {
-    return VASTRegister::Type(SignalType);
-  }
+  VASTRegister::Type getRegType() const { return T; }
 
   unsigned getDataRegNum() const {
     assert((getRegType() == Data) && "Wrong accessor!");
-    return SignalData;
+    return Idx;
   }
 
   unsigned getSlotNum() const {
     assert(getRegType() == Slot && "Wrong accessor!");
-    return SignalData;
+    return Idx;
   }
 
   void clearAssignments() {

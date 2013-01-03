@@ -242,10 +242,7 @@ VASTRegister::VASTRegister(const char *Name, unsigned BitWidth,
                            uint64_t initVal, VASTRegister::Type T,
                            uint16_t RegData,const char *Attr)
   : VASTSignal(vastRegister, Name, BitWidth, Attr), InitVal(initVal),
-    Port(*this) {
-  SignalType = T;
-  SignalData = RegData;
-}
+    Port(*this), T(T), Idx(RegData) {}
 
 //VASTUse VASTRegister::getConstantValue() const {
 //  std::set<VASTUse> Srcs;
