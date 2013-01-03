@@ -783,14 +783,6 @@ void VASTModule::addAssignment(VASTRegister *Dst, VASTValPtr Src, VASTSlot *Slot
   }
 }
 
-void VASTModule::addVitrualAssignment(VASTRegister *Dst, VASTSlot *Slot,
-                                      MachineInstr *DefMI) {
-  assert(Dst->getRegType() == VASTRegister::Virtual
-         && "Expected virtual register!");
-
-  Dst->Port.addAssignment(0, createAssignPred(Slot, DefMI));
-}
-
 VASTWire *VASTModule::assignWithExtraDelay(VASTWire *W, VASTValPtr V,
                                            unsigned latency) {
   if (W->getExpr() != V)
