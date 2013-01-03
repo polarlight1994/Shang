@@ -59,7 +59,7 @@ void VASTSlot::buildReadyLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
       // FU ready for alias slot, when alias slot register is 1, its waiting
       // signal must be 1.
       VASTValPtr AliasReady = AliasSlot->buildFUReadyExpr(Builder);
-      VASTValPtr AliasDisactive = Builder.buildNotExpr(AliasSlot->getRegister());
+      VASTValPtr AliasDisactive = Builder.buildNotExpr(AliasSlot->getValue());
       Ops.push_back(Builder.buildOrExpr(AliasDisactive, AliasReady, 1));
     }
   }
@@ -130,7 +130,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
   for (VASTSlot::const_succ_cnd_iterator I = succ_cnd_begin(),E = succ_cnd_end();
         I != E; ++I) {
     hasSelfLoop |= I->first->SlotNum == SlotNum;
-    VASTRegister *NextSlotReg = I->first->getRegister();
+    VASTSeqValue *NextSlotReg = I->first->getValue();
     Mod.addAssignment(NextSlotReg, *I->second, this, EmptySlotEnCnd);
   }
 
@@ -144,7 +144,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
       EmptySlotEnCnd.push_back(Builder.buildNotExpr(PredAliasSlots));
 
     // Disable the current slot.
-    Mod.addAssignment(getRegister(), Mod.getBoolImmediateImpl(false), this,
+    Mod.addAssignment(getValue(), Mod.getBoolImmediateImpl(false), this,
                       EmptySlotEnCnd);
   }
 
@@ -174,12 +174,11 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
     // No need to wait for the slot ready.
     // We may try to enable and disable the same port at the same slot.
     EmptySlotEnCnd.clear();
-    EmptySlotEnCnd.push_back(getRegister());
+    EmptySlotEnCnd.push_back(getValue());
     VASTValPtr ReadyCnd
       = Builder.buildAndExpr(getReady()->getAsInlineOperand(false),
                              I->second->getAsInlineOperand(), 1);
-    Mod.addAssignment(cast<VASTRegister>(I->first), ReadyCnd, this,
-                      EmptySlotEnCnd, 0, false);
+    Mod.addAssignment(I->first, ReadyCnd, this, EmptySlotEnCnd, 0, false);
   }
 
   SmallVector<VASTValPtr, 4> DisableAndCnds;
@@ -193,7 +192,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
       // ok that the port is enabled.
       if (isEnabled(I->first)) continue;
 
-      DisableAndCnds.push_back(getRegister());
+      DisableAndCnds.push_back(getValue());
       // If the port enabled in alias slots, disable it only if others slots is
       // not active.
       bool AliasEnabled = AliasEnables.count(I->first);
@@ -206,7 +205,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
           assert(!ASlot->isDiabled(I->first)
                  && "Same signal disabled in alias slot!");
           if (ASlot->isEnabled(I->first)) {
-            DisableAndCnds.push_back(Builder.buildNotExpr(ASlot->getRegister()));
+            DisableAndCnds.push_back(Builder.buildNotExpr(ASlot->getValue()));
             continue;
           }
         }
@@ -214,7 +213,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
 
       DisableAndCnds.push_back(*I->second);
 
-      VASTRegister *En = cast<VASTRegister>(I->first);
+      VASTSeqValue *En = I->first;
       Mod.addAssignment(En, Mod.getBoolImmediateImpl(false), this,
                         DisableAndCnds, 0, false);
       DisableAndCnds.clear();
