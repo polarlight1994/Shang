@@ -36,7 +36,6 @@ VSelectionDAGInfo::EmitTargetCodeForMemset(SelectionDAG &DAG, DebugLoc dl,
                                            SDValue Op3, unsigned Align,
                                            bool isVolatile,
                                            MachinePointerInfo DstPtrInfo) const{
-  llvm_unreachable("Function is NOT implemented yet!");
   return SDValue();
 }
 
@@ -48,7 +47,6 @@ VSelectionDAGInfo::EmitTargetCodeForMemcpy(SelectionDAG &DAG, DebugLoc dl,
                                            bool isVolatile, bool AlwaysInline,
                                            MachinePointerInfo DstPtrInfo,
                                            MachinePointerInfo SrcPtrInfo) const{
-  llvm_unreachable("Function is NOT implemented yet!");
   return SDValue();
 }
 
@@ -59,6 +57,5 @@ VSelectionDAGInfo::EmitTargetCodeForMemmove(SelectionDAG &DAG, DebugLoc dl,
                                             SDValue Op3, unsigned Align, bool isVolatile,
                                             MachinePointerInfo DstPtrInfo,
                                             MachinePointerInfo SrcPtrInfo)const{
-  llvm_unreachable("Function is NOT implemented yet!");
   return SDValue();
 }
