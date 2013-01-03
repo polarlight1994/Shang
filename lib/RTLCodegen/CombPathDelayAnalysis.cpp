@@ -57,9 +57,9 @@ namespace{
 struct CombPathDelayAnalysis;
 
 struct PathDelayQueryCache {
-  typedef std::map<unsigned, DenseSet<VASTRegister*> > DelayStatsMapTy;
-  typedef DenseMap<VASTRegister*, unsigned> RegSetTy;
-  typedef DenseMap<VASTValue*, RegSetTy> QueryCacheTy;
+  typedef std::map<unsigned, DenseSet<VASTSeqValue*> > DelayStatsMapTy;
+  typedef DenseMap<VASTSeqValue*, unsigned> SeqValSetTy;
+  typedef DenseMap<VASTValue*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
   // Statistics for simple path and complex paths.
   DelayStatsMapTy Stats[2];
@@ -70,25 +70,25 @@ struct PathDelayQueryCache {
     Stats[1].clear();
   }
 
-  void addDelayFromToStats(VASTRegister *Src, unsigned Delay, bool isSimple) {
+  void addDelayFromToStats(VASTSeqValue *Src, unsigned Delay, bool isSimple) {
     Stats[isSimple][Delay].insert(Src);
   }
 
   void annotatePathDelay(CombPathDelayAnalysis &A, VASTValue *Tree,
                          ArrayRef<ValueAtSlot*> DstVAS);
 
-  bool updateDelay(RegSetTy &To, const RegSetTy &From,
-                   const RegSetTy &LocalDelayMap) {
+  bool updateDelay(SeqValSetTy &To, const SeqValSetTy &From,
+                   const SeqValSetTy &LocalDelayMap) {
     bool Changed = false;
 
-    typedef RegSetTy::const_iterator it;
+    typedef SeqValSetTy::const_iterator it;
     for (it I = From.begin(), E = From.end(); I != E; ++I) {
       assert(I->second && "Unexpected zero delay!");
 
       unsigned &ExistDelay = To[I->first];
       // Look up the delay from local delay map, because the delay of the From
       // map may correspond to another data-path with different destination.
-      RegSetTy::const_iterator at = LocalDelayMap.find(I->first);
+      SeqValSetTy::const_iterator at = LocalDelayMap.find(I->first);
       assert(at != LocalDelayMap.end() && "Node not visited yet?");
       if (ExistDelay == 0 || ExistDelay > at->second) {
         ExistDelay = at->second;
@@ -99,15 +99,16 @@ struct PathDelayQueryCache {
     return Changed;
   }
 
-  void bindAllPath2ScriptEngine(VASTRegister *Dst) const;
-  void bindAllPath2ScriptEngine(VASTRegister *Dst, bool IsSimple,
-                                DenseSet<VASTRegister*> &BoundSrc) const;
-  unsigned bindPath2ScriptEngine(VASTRegister *DstReg, VASTRegister *SrcReg,
-                                 unsigned Delay, bool SkipThu, bool IsCritical)const;
-  unsigned printPathWithDelayFrom(raw_ostream &OS, VASTRegister *SrcReg,
+  void bindAllPath2ScriptEngine(VASTSeqValue *Dst) const;
+  void bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimple,
+                                DenseSet<VASTSeqValue*> &BoundSrc) const;
+  unsigned bindPath2ScriptEngine(VASTSeqValue *Dst, VASTSeqValue *Src,
+                                 unsigned Delay, bool SkipThu, bool IsCritical)
+                                 const;
+  unsigned printPathWithDelayFrom(raw_ostream &OS, VASTSeqValue *Src,
                                   unsigned Delay) const;
 
-  typedef DenseSet<VASTRegister*>::const_iterator src_it;
+  typedef DenseSet<VASTSeqValue*>::const_iterator src_it;
   typedef DelayStatsMapTy::const_iterator delay_it;
   delay_it stats_begin(bool IsSimple) const { return Stats[IsSimple].begin(); }
   delay_it stats_end(bool IsSimple) const { return Stats[IsSimple].end(); }
@@ -129,7 +130,7 @@ struct CombPathDelayAnalysis : public MachineFunctionPass {
     AU.setPreservesAll();
   }
 
-  void writeConstraintsForDstReg(VASTRegister *DstReg);
+  void writeConstraintsForDst(VASTSeqValue *Dst);
 
   void extractTimingPaths(PathDelayQueryCache &Cache,
                           ArrayRef<ValueAtSlot*> DstVAS,
@@ -154,16 +155,15 @@ struct CombPathDelayAnalysis : public MachineFunctionPass {
 };
 }
 
-static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTRegister *SrcReg,
+static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTSeqValue *Src,
                                 ValueAtSlot *Dst) {
   unsigned PathDelay = 10000;
   SlotInfo *DstSI = A.RtlSSA->getSlotInfo(Dst->getSlot());
 
   typedef VASTRegister::assign_itertor assign_it;
-  for (assign_it I = SrcReg->assign_begin(), E = SrcReg->assign_end();
-       I != E; ++I) {
+  for (assign_it I = Src->begin(), E = Src->end(); I != E; ++I) {
     VASTSlot *SrcSlot = A.VM->getSlot(I->first->getSlotNum());
-    ValueAtSlot *SrcVAS = A.RtlSSA->getValueASlot(SrcReg, SrcSlot);
+    ValueAtSlot *SrcVAS = A.RtlSSA->getValueASlot(Src, SrcSlot);
 
     // Update the PathDelay if the source VAS reaches DstSlot.
     if (unsigned Distance = DstSI->getCyclesFromDef(SrcVAS)) {
@@ -175,12 +175,12 @@ static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTRegister *SrcReg,
   return PathDelay;
 }
 
-static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTRegister *SrcReg,
+static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTSeqValue *Src,
                                 ArrayRef<ValueAtSlot*> DstVAS) {
   unsigned PathDelay = 10000;
   typedef ArrayRef<ValueAtSlot*>::iterator it;
   for (it I = DstVAS.begin(), E = DstVAS.end(); I != E; ++I)
-    PathDelay = std::min(PathDelay, getMinimalDelay(A, SrcReg, *I));
+    PathDelay = std::min(PathDelay, getMinimalDelay(A, Src, *I));
 
   return PathDelay;
 }
@@ -194,16 +194,19 @@ static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {
         return false;
 
     // The block RAM should be printed as Prefix + ArrayName in the script.
-    if (const VASTBlockRAM *R = dyn_cast<VASTBlockRAM>(V)) {
+    if (const VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V)) {
+      if (SeqVal->getValType() == VASTSeqValue::BRAM) {
+        const VASTBlockRAM *RAM = cast<VASTBlockRAM>(SeqVal->getParent());
         OS << " { NameSet =[=[ [ list "
-           // BlockRam name with prefix
-           << getFUDesc<VFUBRAM>()->Prefix
-           << VFUBRAM::getArrayName(R->getBlockRAMNum()) << ' '
-           // Or simply the name of the output register.
-           << VFUBRAM::getArrayName(R->getBlockRAMNum())
-           << " ] ]=] }";
+          // BlockRam name with prefix
+          << getFUDesc<VFUBRAM>()->Prefix
+          << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << ' '
+          // Or simply the name of the output register.
+          << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
+          << " ] ]=] }";
         return true;
       }
+    }
 
     if (const char *N = NV->getName()) {
       OS << " { NameSet =[=[ [ list " << N << " ] ]=] }";
@@ -227,7 +230,7 @@ void PathDelayQueryCache::annotatePathDelay(CombPathDelayAnalysis &A,
   typedef VASTValue::dp_dep_it ChildIt;
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
   std::set<VASTValue*> Visited;
-  RegSetTy LocalDelay;
+  SeqValSetTy LocalDelay;
 
   unsigned ExtraDelay = 0;
   if (VASTWire *W = dyn_cast<VASTWire>(Root))
@@ -238,7 +241,7 @@ void PathDelayQueryCache::annotatePathDelay(CombPathDelayAnalysis &A,
     VASTValue *Node = VisitStack.back().first;
     ChildIt It = VisitStack.back().second;
 
-    RegSetTy &ParentReachableRegs = QueryCache[Node];
+    SeqValSetTy &ParentReachableRegs = QueryCache[Node];
 
     // All sources of this node is visited.
     if (It == VASTValue::dp_dep_end(Node)) {
@@ -264,8 +267,8 @@ void PathDelayQueryCache::annotatePathDelay(CombPathDelayAnalysis &A,
       continue;
     }
 
-    if (VASTRegister *R = dyn_cast<VASTRegister>(ChildNode)) {
-      unsigned Delay = getMinimalDelay(A, R, DstVAS);
+    if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
+      unsigned Delay = getMinimalDelay(A, V, DstVAS);
 
       // If there are black box in the path.
       if (ExtraDelay) {
@@ -277,14 +280,14 @@ void PathDelayQueryCache::annotatePathDelay(CombPathDelayAnalysis &A,
         Delay = ExtraDelay;
       }
 
-      bool inserted = LocalDelay.insert(std::make_pair(R, Delay)).second;
+      bool inserted = LocalDelay.insert(std::make_pair(V, Delay)).second;
       assert(inserted && "Node had already been visited?");
-      unsigned &ExistedDelay = ParentReachableRegs[R];
+      unsigned &ExistedDelay = ParentReachableRegs[V];
       if (ExistedDelay == 0 || Delay < ExistedDelay)
         ExistedDelay = Delay;
 
       // Add the information to statistics.
-      addDelayFromToStats(R, Delay, false);
+      addDelayFromToStats(V, Delay, false);
       continue;
     }
 
@@ -298,11 +301,11 @@ void PathDelayQueryCache::annotatePathDelay(CombPathDelayAnalysis &A,
   DEBUG(QueryCacheTy::iterator at = QueryCache.find(Root);
   assert(at != QueryCache.end()
          && "Timing path information for root not found!");
-  const RegSetTy &RootSet = at->second;
-  typedef RegSetTy::const_iterator it;
+  const SeqValSetTy &RootSet = at->second;
+  typedef SeqValSetTy::const_iterator it;
   bool DelayMasked = false;
   for (it I = LocalDelay.begin(), E = LocalDelay.end(); I != E; ++I) {
-    RegSetTy::const_iterator ActualDelayAt = RootSet.find(I->first);
+    SeqValSetTy::const_iterator ActualDelayAt = RootSet.find(I->first);
     assert(ActualDelayAt != RootSet.end() && "Timing path entire missed!");
     assert(ActualDelayAt->second <= I->second
            && "Delay information not applied?");
@@ -329,14 +332,14 @@ void PathDelayQueryCache::annotatePathDelay(CombPathDelayAnalysis &A,
 }
 
 unsigned PathDelayQueryCache::printPathWithDelayFrom(raw_ostream &OS,
-                                                     VASTRegister *SrcReg,
+                                                     VASTSeqValue *Src,
                                                      unsigned Delay) const {
   unsigned NumNodesPrinted = 0;
 
   typedef QueryCacheTy::const_iterator it;
   for (it I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I) {
-    const RegSetTy &Set = I->second;
-    RegSetTy::const_iterator at = Set.find(SrcReg);
+    const SeqValSetTy &Set = I->second;
+    SeqValSetTy::const_iterator at = Set.find(Src);
     // The register may be not reachable from this node.
     if (at == Set.end() || at->second != Delay) continue;
 
@@ -353,8 +356,8 @@ void PathDelayQueryCache::dump() const {
   dbgs() << "\nCurrent data-path timing:\n";
   typedef QueryCacheTy::const_iterator it;
   for (it I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I) {
-    const RegSetTy &Set = I->second;
-    typedef RegSetTy::const_iterator reg_it;
+    const SeqValSetTy &Set = I->second;
+    typedef SeqValSetTy::const_iterator reg_it;
 
     if (!printBindingLuaCode(dbgs(), I->first))
       continue;
@@ -372,8 +375,8 @@ void PathDelayQueryCache::dump() const {
 
 // The first node of the path is the use node and the last node of the path is
 // the define node.
-unsigned PathDelayQueryCache::bindPath2ScriptEngine(VASTRegister *DstReg,
-                                                    VASTRegister *SrcReg,
+unsigned PathDelayQueryCache::bindPath2ScriptEngine(VASTSeqValue *Dst,
+                                                    VASTSeqValue *Src,
                                                     unsigned Delay, bool SkipThu,
                                                     bool IsCritical) const {
   // Path table:
@@ -398,13 +401,13 @@ unsigned PathDelayQueryCache::bindPath2ScriptEngine(VASTRegister *DstReg,
 
   unsigned NumThuNodePrinted = 0;
   SS << "RTLDatapath.Nodes = { ";
-  printBindingLuaCode(SS, DstReg);
+  printBindingLuaCode(SS, Dst);
   SS << ", ";
 
   if (!SkipThu)
-    NumThuNodePrinted = printPathWithDelayFrom(SS, SrcReg, Delay);
+    NumThuNodePrinted = printPathWithDelayFrom(SS, Src, Delay);
 
-  printBindingLuaCode(SS, SrcReg);
+  printBindingLuaCode(SS, Src);
   SS << " }";
 
   SS.flush();
@@ -419,30 +422,30 @@ unsigned PathDelayQueryCache::bindPath2ScriptEngine(VASTRegister *DstReg,
   return NumThuNodePrinted;
 }
 
-void PathDelayQueryCache::bindAllPath2ScriptEngine(VASTRegister *Dst,
-                                                   bool IsSimple,
-                                                   DenseSet<VASTRegister*>
-                                                   &BoundSrc) const {
+void
+PathDelayQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimple,
+                                              DenseSet<VASTSeqValue*> &BoundSrc)
+                                              const {
   DEBUG(dbgs() << "Binding path for dst register: "
                << Dst->getName() << '\n');
   for (delay_it I = stats_begin(IsSimple), E = stats_end(IsSimple);I != E;++I) {
     unsigned Delay = I->first;
 
     for (src_it SI = I->second.begin(), SE = I->second.end(); SI != SE; ++SI) {
-      VASTRegister *SrcReg = *SI;
-      bool Visited = !BoundSrc.insert(SrcReg).second;
+      VASTSeqValue *Src = *SI;
+      bool Visited = !BoundSrc.insert(Src).second;
       assert((!IsSimple || !Visited)
              && "A simple path should not have been visited!");
       ++NumTimingPath;
       if (Delay == 10000) ++NumFalseTimingPath;
       else if (Delay > 1) ++NumMultiCyclesTimingPath;
 
-      DEBUG(dbgs().indent(2) << "from: " << SrcReg->getName() << '#'
+      DEBUG(dbgs().indent(2) << "from: " << Src->getName() << '#'
                              << I->first << '\n');
       // If we not visited the path before, this path is the critical path,
       // since we are iteration the path from the smallest delay to biggest
       // delay.
-      unsigned NumConstraints = bindPath2ScriptEngine(Dst, SrcReg, Delay,
+      unsigned NumConstraints = bindPath2ScriptEngine(Dst, Src, Delay,
                                                       IsSimple, !Visited);
       if (NumConstraints == 0 && !IsSimple && Delay > 1)
         ++NumMaskedMultiCyclesTimingPath;
@@ -450,8 +453,8 @@ void PathDelayQueryCache::bindAllPath2ScriptEngine(VASTRegister *Dst,
   }
 }
 
-void PathDelayQueryCache::bindAllPath2ScriptEngine(VASTRegister *Dst) const {
-  DenseSet<VASTRegister*> BoundSrc;
+void PathDelayQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst) const {
+  DenseSet<VASTSeqValue*> BoundSrc;
   DEBUG(dbgs() << "Going to bind delay information of graph: \n");
   DEBUG(dump());
   // Bind the simple paths first, which are the most general.
@@ -469,24 +472,20 @@ bool CombPathDelayAnalysis::runOnMachineFunction(MachineFunction &MF) {
   RtlSSA = &getAnalysis<RtlSSAAnalysis>();
 
   //Write the timing constraints.
-  typedef VASTModule::reg_iterator reg_it;
-  for (reg_it I = VM->reg_begin(), E = VM->reg_end(); I != E; ++I)
-    writeConstraintsForDstReg(*I);
+  typedef VASTModule::seqval_iterator seqval_iterator;
+  for (seqval_iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I)
+    writeConstraintsForDst(*I);
 
   return false;
 }
 
-void CombPathDelayAnalysis::writeConstraintsForDstReg(VASTRegister *DstReg) {
-  // Virtual registers are not act as sink.
-  if (DstReg->getRegType() == VASTRegister::Virtual) return;
-
+void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
   DenseMap<VASTValue*, SmallVector<ValueAtSlot*, 8> > DatapathMap;
 
-  typedef VASTRegister::assign_itertor assign_it;
-  for (assign_it I = DstReg->assign_begin(), E = DstReg->assign_end();
-       I != E; ++I) {
+  typedef VASTSeqValue::assign_itertor assign_it;
+  for (assign_it I = Dst->begin(), E = Dst->end(); I != E; ++I) {
     VASTSlot *S = VM->getSlot(I->first->getSlotNum());
-    ValueAtSlot *DstVAS = RtlSSA->getValueASlot(DstReg, S);
+    ValueAtSlot *DstVAS = RtlSSA->getValueASlot(Dst, S);
     // Paths for the condition.
     DatapathMap[I->first].push_back(DstVAS);
     // Paths for the assigning value
@@ -498,7 +497,7 @@ void CombPathDelayAnalysis::writeConstraintsForDstReg(VASTRegister *DstReg) {
   for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
     extractTimingPaths(Cache, I->second, I->first);
 
-  Cache.bindAllPath2ScriptEngine(DstReg);
+  Cache.bindAllPath2ScriptEngine(Dst);
 }
 
 void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
@@ -507,9 +506,9 @@ void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
   VASTValue *SrcValue = DepTree;
 
   // Trivial case: register to register path.
-  if (VASTRegister *SrcReg = dyn_cast<VASTRegister>(SrcValue)){
-    int Delay = getMinimalDelay(*this, SrcReg, DstVAS);
-    Cache.addDelayFromToStats(SrcReg, Delay, true);
+  if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(SrcValue)){
+    int Delay = getMinimalDelay(*this, Src, DstVAS);
+    Cache.addDelayFromToStats(Src, Delay, true);
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
     // reg_a <= c + x;
