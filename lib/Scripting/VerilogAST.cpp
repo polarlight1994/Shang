@@ -1090,9 +1090,6 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
   return ret;
 }
 
-// Out of line virtual function to provide home for the class.
-void VASTPort::anchor() {}
-
 void VASTSignal::printDecl(raw_ostream &OS) const {
   OS << AttrStr << ' ';
 

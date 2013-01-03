@@ -579,9 +579,6 @@ public:
   void print(raw_ostream &OS) const;
   void printExternalDriver(raw_ostream &OS, uint64_t InitVal = 0) const;
   std::string getExternalDriverStr(unsigned InitVal = 0) const;
-
-  // Out of line virtual function to provide home for the class.
-  virtual void anchor();
 };
 
 // simplify_type - Allow clients to treat VASTRValue just like VASTValues when
