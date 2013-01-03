@@ -41,7 +41,7 @@ class ValueAtSlot {
     void incCycles(int Inc = 1) { Cycles += Inc; }
   };
 
-  VASTRegister *const V;
+  VASTSeqValue *const V;
   VASTSlot *const Slot;
   const MachineInstr *const DefMI;
 
@@ -65,8 +65,8 @@ class ValueAtSlot {
       Info = NewLI;
   }
 
-  ValueAtSlot(VASTRegister *v, VASTSlot *slot, const MachineInstr *MI)
-    : V(v), Slot(slot), DefMI(MI) {}
+  ValueAtSlot(VASTSeqValue *V, VASTSlot *slot, const MachineInstr *MI)
+    : V(V), Slot(slot), DefMI(MI) {}
   ValueAtSlot(const ValueAtSlot&); // Do not implement.
 
   LiveInInfo getDepInfo(ValueAtSlot *VAS) const {
@@ -77,7 +77,7 @@ class ValueAtSlot {
   friend class SlotInfo;
   friend class RtlSSAAnalysis;
 public:
-  VASTRegister *getValue() const { return V; }
+  VASTSeqValue *getValue() const { return V; }
   VASTSlot *getSlot() const { return Slot; }
   const MachineInstr *getDefMI() const { return DefMI; }
 
@@ -219,7 +219,7 @@ private:
   SlotInfoTy SlotInfos;
   SlotVecTy SlotVec;
 
-  typedef DenseMap<std::pair<VASTValue*, VASTSlot*>, ValueAtSlot*> VASMapTy;
+  typedef DenseMap<std::pair<VASTSeqValue*, VASTSlot*>, ValueAtSlot*> VASMapTy;
   VASMapTy UniqueVASs;
   // Use mapped_iterator which is a simple iterator adapter that causes a
   // function to be dereferenced whenever operator* is invoked on the iterator.
@@ -273,7 +273,7 @@ public:
   // Get SlotInfo from the existing SlotInfos set.
   SlotInfo* getSlotInfo(const VASTSlot *S) const;
 
-  ValueAtSlot *getValueASlot(VASTValue *V, VASTSlot *S);
+  ValueAtSlot *getValueASlot(VASTSeqValue *V, VASTSlot *S);
 
   // Traverse every register to define the ValueAtSlots.
   void buildAllVAS();
@@ -282,7 +282,7 @@ public:
   void buildVASGraph();
 
   // Add dependent ValueAtSlot.
-  void addVASDep(ValueAtSlot *VAS, VASTRegister *DepReg);
+  void addVASDep(ValueAtSlot *VAS, VASTSeqValue *DepVal);
 
   // Traverse the dependent VASTValue *to get the registers.
   void visitDepTree(VASTValue *DepTree, ValueAtSlot *VAS);

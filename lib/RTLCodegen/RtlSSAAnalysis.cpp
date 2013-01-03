@@ -71,7 +71,7 @@ struct VASDepBuilder {
 
   void operator() (ArrayRef<VASTValue*> PathArray) {
     VASTValue *SrcUse = PathArray.back();
-    if (VASTRegister *Src = dyn_cast_or_null<VASTRegister>(SrcUse))
+    if (VASTSeqValue *Src = dyn_cast_or_null<VASTSeqValue>(SrcUse))
       A.addVASDep(DstVAS, Src);
   }
 };
@@ -199,7 +199,7 @@ bool RtlSSAAnalysis::runOnMachineFunction(MachineFunction &MF) {
   return false;
 }
 
-ValueAtSlot *RtlSSAAnalysis::getValueASlot(VASTValue *V, VASTSlot *S){
+ValueAtSlot *RtlSSAAnalysis::getValueASlot(VASTSeqValue *V, VASTSlot *S){
   ValueAtSlot *VAS = UniqueVASs.lookup(std::make_pair(V, S));
   assert(VAS && "VAS not exist!");
   return VAS;
@@ -211,15 +211,14 @@ SlotInfo *RtlSSAAnalysis::getSlotInfo(const VASTSlot *S) const {
   return It->second;
 }
 
-void RtlSSAAnalysis::addVASDep(ValueAtSlot *VAS, VASTRegister *DepReg) {
+void RtlSSAAnalysis::addVASDep(ValueAtSlot *VAS, VASTSeqValue *DepVal) {
   VASTSlot *UseSlot = VAS->getSlot();
   SlotInfo *UseSI = getSlotInfo(UseSlot);
   assert(UseSI && "SlotInfo missed!");
 
-  for (assign_it I = DepReg->assign_begin(), E = DepReg->assign_end();
-       I != E; ++I) {
+  for (assign_it I = DepVal->begin(), E = DepVal->end(); I != E; ++I) {
     VASTSlot *DefSlot = VM->getSlot(I->first->getSlotNum());
-    ValueAtSlot *DefVAS = getValueASlot(DepReg, DefSlot);
+    ValueAtSlot *DefVAS = getValueASlot(DepVal, DefSlot);
 
     ValueAtSlot::LiveInInfo LI = UseSI->getLiveIn(DefVAS);
 
@@ -230,17 +229,17 @@ void RtlSSAAnalysis::addVASDep(ValueAtSlot *VAS, VASTRegister *DepReg) {
 }
 
 void RtlSSAAnalysis::buildAllVAS() {
-  typedef VASTModule::reg_iterator reg_it;
-  for (reg_it I = VM->reg_begin(), E = VM->reg_end(); I != E; ++I){
-      VASTRegister *Reg = *I;
+  typedef VASTModule::seqval_iterator it;
+  for (it I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I){
+    VASTSeqValue *V = *I;
 
     typedef VASTRegister::assign_itertor assign_it;
-    for (assign_it I = Reg->assign_begin(), E = Reg->assign_end(); I != E; ++I){
+    for (assign_it I = V->begin(), E = V->end(); I != E; ++I){
       VASTSlot *S = VM->getSlot(I->first->getSlotNum());
       MachineInstr *DefMI = I->first->getDefMI();
       // Create the origin VAS.
-      ValueAtSlot *VAS = new (Allocator) ValueAtSlot(Reg, S, DefMI);
-      UniqueVASs.insert(std::make_pair(std::make_pair(Reg, S), VAS));
+      ValueAtSlot *VAS = new (Allocator) ValueAtSlot(V, S, DefMI);
+      UniqueVASs.insert(std::make_pair(std::make_pair(V, S), VAS));
     }
   }
 }
@@ -251,16 +250,15 @@ void RtlSSAAnalysis::verifyRTLDependences() const {
 }
 
 void RtlSSAAnalysis::buildVASGraph() {
-  typedef VASTModule::reg_iterator it;
-  for (VASTModule::reg_iterator I = VM->reg_begin(), E = VM->reg_end(); I != E;
-       ++I){
-    VASTRegister *R = *I;
+  typedef VASTModule::seqval_iterator it;
+  for (it I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
+    VASTSeqValue *V = *I;
 
     typedef VASTRegister::assign_itertor assign_it;
-    for (assign_it I = R->assign_begin(), E = R->assign_end(); I != E; ++I) {
+    for (assign_it I = V->begin(), E = V->end(); I != E; ++I) {
       VASTSlot *S = VM->getSlot(I->first->getSlotNum());
       // Create the origin VAS.
-      ValueAtSlot *VAS = getValueASlot(R, S);
+      ValueAtSlot *VAS = getValueASlot(V, S);
       // Build dependence for conditions
       visitDepTree(I->first, VAS);
       // Build dependence for the assigning value.
@@ -277,8 +275,8 @@ void RtlSSAAnalysis::visitDepTree(VASTValue *DepTree, ValueAtSlot *VAS){
 
   // If the define Value is register, add the dependent VAS to the
   // dependentVAS.
-  if (VASTRegister *DepReg = dyn_cast<VASTRegister>(DefValue)){
-    addVASDep(VAS, DepReg);
+  if (VASTSeqValue *DepVal = dyn_cast<VASTSeqValue>(DefValue)){
+    addVASDep(VAS, DepVal);
     return;
   }
 
@@ -302,7 +300,7 @@ bool RtlSSAAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
 
   for (it I = From->out_begin(), E = From->out_end(); I != E; ++I) {
     ValueAtSlot *PredOut = I->first;
-    VASTRegister *R = PredOut->getValue();
+    VASTSeqValue *V = PredOut->getValue();
 
     VASTSlot *DefSlot = PredOut->getSlot();
     ValueAtSlot::LiveInInfo LI = I->second;
@@ -311,14 +309,14 @@ bool RtlSSAAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
     // Increase the cycles by 1 after the value lives to next slot.
     LI.incCycles();
 
-    bool LiveInToSlot = !FromLaterAliasSlot || R->isTimingUndef();
+    bool LiveInToSlot = !FromLaterAliasSlot || V->isTimingUndef();
     bool LiveOutToSlot = !To->isVASKilled(PredOut);
 
     // Check if the register is killed according MachineFunction level liveness
     // information.
-    switch (R->getRegType()) {
-    case VASTRegister::Data: {
-      unsigned RegNum = R->getDataRegNum();
+    switch (V->getValType()) {
+    case VASTSeqValue::Data: {
+      unsigned RegNum = V->getDataRegNum();
       // The registers are not propagate from the slot to its alias slot.
       if (RegNum && FromAliasSlot) LiveInToSlot = false;
 
@@ -350,12 +348,12 @@ bool RtlSSAAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
       }
       break;
     }
-    case VASTRegister::Slot:
+    case VASTSeqValue::Slot:
       // Ignore the assignment that reset the slot enable register, even the
       // signal may take more than one cycles to propagation, the shortest path
       // should be the path that propagating the "1" value of the enable
       // register.
-      if (R->getSlotNum() == DefSlot->SlotNum && LI.getCycles() > 1)
+      if (V->getSlotNum() == DefSlot->SlotNum && LI.getCycles() > 1)
         LiveOutToSlot = false;
       break;
     default: break;
@@ -440,7 +438,7 @@ void RtlSSAAnalysis::ComputeGenAndKill() {
     if (!S->hasAliasSlot()) continue;
 
     unsigned CurSlotNum = S->SlotNum;
-    VASTRegister *V = VAS->getValue();
+    VASTSeqValue *V = VAS->getValue();
     bool IsLoopingBackPHIMove = false;
     if (const MachineInstr *MI = VAS->getDefMI())
       IsLoopingBackPHIMove = MI->getOpcode() == VTM::VOpMvPhi
