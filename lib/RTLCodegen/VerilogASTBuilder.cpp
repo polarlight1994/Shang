@@ -711,9 +711,8 @@ void VerilogASTBuilder::emitAllocatedFUs() {
     }
 
     // Create the block RAM object.
-    VASTRegister *BRAMArray = VM->addRegister(VFUBRAM::getOutDataBusName(BramNum),
-                                              DataWidth, NumElem,
-                                              VASTRegister::BRAM, BramNum);
+    VASTBlockRAM *BRAMArray = VM->addBlockRAM(BramNum, DataWidth, NumElem);
+
     // Used in template.
     BRAMArray->Pin();
     indexVASTRegister(BramNum, BRAMArray);
@@ -1170,27 +1169,29 @@ void VerilogASTBuilder::emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot,
   VASTValPtr Addr = getAsOperandImpl(MI->getOperand(1));
   Addr = Builder->buildBitSliceExpr(Addr, Addr->getBitWidth(), Alignment);
   
-  VASTRegister *BRAMArray = getAsLValue<VASTRegister>(MI->getOperand(0));
+  VASTSignal *BRAMArray = getAsLValue<VASTSignal>(MI->getOperand(0));
 
-  if (BRAMArray->getRegType() != VASTRegister::BRAM) {
+  if (VASTRegister *R = dyn_cast<VASTRegister>(BRAMArray)) {
     // If the block RAM is replaced by a register, we can ignore the read
     // operation.
     if (IsWrite)
-      VM->addAssignment(BRAMArray, getAsOperandImpl(MI->getOperand(2)),
+      VM->addAssignment(R, getAsOperandImpl(MI->getOperand(2)),
                         Slot, Cnds, MI);
 
     return;
   }
 
+  VASTBlockRAM *BRAM = cast<VASTBlockRAM>(BRAMArray);
+
   if (IsWrite) {
     VASTValPtr Data = getAsOperandImpl(MI->getOperand(2));
     VASTValPtr WriteBRAM = Builder->buildExpr(VASTExpr::dpWrBRAM, Addr, Data,
                                               SizeInBytes * 8);
-    VM->addAssignment(BRAMArray, WriteBRAM, Slot, Cnds, MI);
+    VM->addAssignment(BRAM->WritePortA, WriteBRAM, Slot, Cnds, MI);
   } else {
     VASTValPtr ReadBRAM = Builder->buildExpr(VASTExpr::dpRdBRAM, Addr,
                                              SizeInBytes * 8);
-    VM->addAssignment(BRAMArray, ReadBRAM, Slot, Cnds, MI);
+    VM->addAssignment(BRAM->ReadPortA, ReadBRAM, Slot, Cnds, MI);
   }
 }
 

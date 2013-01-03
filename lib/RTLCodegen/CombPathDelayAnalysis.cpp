@@ -193,15 +193,14 @@ static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {
       if (W->getWireType() == VASTWire::AssignCond)
         return false;
 
-    if (const VASTRegister *R = dyn_cast<VASTRegister>(V))
-      // The block RAM should be printed as Prefix + ArrayName in the script.
-      if (R->getRegType() == VASTRegister::BRAM) {
+    // The block RAM should be printed as Prefix + ArrayName in the script.
+    if (const VASTBlockRAM *R = dyn_cast<VASTBlockRAM>(V)) {
         OS << " { NameSet =[=[ [ list "
            // BlockRam name with prefix
            << getFUDesc<VFUBRAM>()->Prefix
-           << VFUBRAM::getArrayName(R->getDataRegNum()) << ' '
+           << VFUBRAM::getArrayName(R->getBlockRAMNum()) << ' '
            // Or simply the name of the output register.
-           << VFUBRAM::getArrayName(R->getDataRegNum())
+           << VFUBRAM::getArrayName(R->getBlockRAMNum())
            << " ] ]=] }";
         return true;
       }
