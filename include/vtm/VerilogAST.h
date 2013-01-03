@@ -548,7 +548,6 @@ public:
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSignal *A) { return true; }
-  static inline bool classof(const VASTExpr *A) { return true; }
   static inline bool classof(const VASTRegister *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastWire || A->getASTType() == vastRegister;
