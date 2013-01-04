@@ -183,6 +183,18 @@ VFUBRAM::VFUBRAM(luabind::object FUTable)
     Template(getProperty<std::string>(FUTable, "Template")),
     InitFileDir(getProperty<std::string>(FUTable, "InitFileDir")) {}
 
+unsigned VFUBRAM::BRamNumToFUNum(unsigned BRamNum, bool IsWrite) {
+  // If dual-port mode is supported, the write port has a different FU number
+  // from  the read port.
+  bool FUForWritePort = IsWrite && getFUDesc<VFUBRAM>()->Mode > VFUBRAM::Default;
+
+  return BRamNum * 2 + (FUForWritePort ? 1 : 0);
+}
+
+unsigned VFUBRAM::FUNumToBRamNum(unsigned FUNum) {
+  return FUNum / 2;
+}
+
 // Dirty Hack: anchor from SynSettings.h
 SynSettings::SynSettings(StringRef Name, SynSettings &From)
   : PipeAlg(From.PipeAlg), SchedAlg(From.SchedAlg),

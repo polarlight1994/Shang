@@ -353,6 +353,9 @@ public:
   inline static std::string getArrayName(unsigned FUNum) {
     return "bram" + utostr(FUNum) + "array";
   }
+
+  static unsigned BRamNumToFUNum(unsigned BRamNum, bool IsWrite);
+  static unsigned FUNumToBRamNum(unsigned FUNum);
 };
 
 struct CommonFUIdentityFunctor
