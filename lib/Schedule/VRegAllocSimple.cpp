@@ -22,9 +22,6 @@
 #include "vtm/Passes.h"
 #include "vtm/VInstrInfo.h"
 
-//Dirty Hack:
-#include "llvm/../../lib/CodeGen/VirtRegMap.h"
-
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Function.h"
 #include "llvm/PassAnalysisSupport.h"
@@ -67,7 +64,7 @@ struct VRASimple : public MachineFunctionPass {
   const TargetInstrInfo *TII;
   VRegisterInfo *TRI;
   // Analysis
-  VirtRegMap *VRM;
+  std::map<unsigned, unsigned> Virt2PhysRegsMap;
   LiveIntervals *LIS;
 
   typedef std::map<FuncUnitId, LiveInterval*> FU2PhysRegMapTy;
@@ -80,16 +77,26 @@ struct VRASimple : public MachineFunctionPass {
   LICGraph RegLIG;
 
   VRASimple();
-  void init(VirtRegMap &vrm, LiveIntervals &lis);
+  void init(MachineFunction &MF);
 
   static char ID;
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
   void releaseMemory();
 
+  bool hasPhys(unsigned VReg) const { return Virt2PhysRegsMap.count(VReg); }
+
+  unsigned getPhys(unsigned VReg) const {
+    std::map<unsigned, unsigned>::const_iterator at
+      = Virt2PhysRegsMap.find(VReg);
+
+    return at != Virt2PhysRegsMap.end() ? at->second : 0;
+  }
+
   void assign(LiveInterval &VirtReg, unsigned PhysReg) {
-    assert(!VRM->hasPhys(VirtReg.reg) && "Duplicate VirtReg assignment");
-    VRM->assignVirt2Phys(VirtReg.reg, PhysReg);
+    bool inserted
+      = Virt2PhysRegsMap.insert(std::make_pair(VirtReg.reg, PhysReg)).second;
+    assert(inserted && "Duplicate VirtReg assignment");
   }
 
   LiveInterval *getInterval(unsigned RegNum) {
@@ -534,7 +541,6 @@ VRASimple::VRASimple() : MachineFunctionPass(ID) {
   initializeAdjustLIForBundlesPass(*PassRegistry::getPassRegistry());
   initializeLiveIntervalsPass(*PassRegistry::getPassRegistry());
   initializeSlotIndexesPass(*PassRegistry::getPassRegistry());
-  initializeVirtRegMapPass(*PassRegistry::getPassRegistry());
   initializeBitLevelInfoPass(*PassRegistry::getPassRegistry());
 }
 
@@ -546,8 +552,6 @@ void VRASimple::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequiredID(AdjustLIForBundlesID);
   AU.addPreservedID(AdjustLIForBundlesID);
   AU.addPreserved<SlotIndexes>();
-  AU.addRequired<VirtRegMap>();
-  AU.addPreserved<VirtRegMap>();
   MachineFunctionPass::getAnalysisUsage(AU);
 }
 
@@ -555,15 +559,19 @@ void VRASimple::releaseMemory() {
   //RegAllocBase::releaseMemory();
   FU2PhysRegMap.clear();
   RegLIG.reset();
+  Virt2PhysRegsMap.clear();
 }
 
-void VRASimple::init(VirtRegMap &vrm, LiveIntervals &lis) {
-  TargetRegisterInfo *RegInfo
-    = const_cast<TargetRegisterInfo*>(&vrm.getTargetRegInfo());
-  TRI = reinterpret_cast<VRegisterInfo*>(RegInfo);
-  MRI = &vrm.getRegInfo();
-  VRM = &vrm;
-  LIS = &lis;
+void VRASimple::init(MachineFunction &F) {
+  MF = &F;
+  VFI = F.getInfo<VFInfo>();
+  MRI = &F.getRegInfo();
+  const TargetMachine &TM = F.getTarget();
+
+  LIS = &getAnalysis<LiveIntervals>();
+
+  TargetRegisterInfo *Info = const_cast<TargetRegisterInfo*>(TM.getRegisterInfo());
+  TRI = reinterpret_cast<VRegisterInfo*>(Info);
   // Reset the physics register allocation information before register allocation.
   TRI->resetPhyRegAllocation();
   // FIXME: Init the PhysReg2LiveUnion right before we start to bind the physics
@@ -701,10 +709,7 @@ void VRASimple::handleCtrlOp(MachineInstr *MI) {
 }
 
 bool VRASimple::runOnMachineFunction(MachineFunction &F) {
-  MF = &F;
-  VFI = F.getInfo<VFInfo>();
-
-  init(getAnalysis<VirtRegMap>(), getAnalysis<LiveIntervals>());
+  init(F);
 
   DEBUG(dbgs() << "Before simple register allocation:\n";F.dump());
 
@@ -740,7 +745,6 @@ bool VRASimple::runOnMachineFunction(MachineFunction &F) {
   LIS->addKillFlags();
   addMBBLiveIns(MF);
   rewrite();
-  VRM->clearAllVirt();
   releaseMemory();
 
   DEBUG(dbgs() << "After simple register allocation:\n";
@@ -771,10 +775,10 @@ void VRASimple::rewrite() {
         if (!MO.isReg() || !TargetRegisterInfo::isVirtualRegister(MO.getReg()))
           continue;
         unsigned VirtReg = MO.getReg();
-        unsigned PhysReg = VRM->getPhys(VirtReg);
+        unsigned PhysReg = getPhys(VirtReg);
         // assert(PhysReg != VirtRegMap::NO_PHYS_REG &&
         //        "Instruction uses unmapped VirtReg");
-        if (PhysReg == VirtRegMap::NO_PHYS_REG) continue;
+        if (PhysReg == 0) continue;
         //assert(!Reserved.test(PhysReg) && "Reserved register assignment");
 
         // Preserve semantics of sub-register operands.
@@ -803,9 +807,9 @@ void VRASimple::addMBBLiveIns(MachineFunction *MF) {
 
   for (unsigned i = 0, e = MRI->getNumVirtRegs(); i != e; ++i) {
     unsigned Reg = TargetRegisterInfo::index2VirtReg(i);
-    unsigned PhysReg = VRM->getPhys(Reg);
+    unsigned PhysReg = getPhys(Reg);
     // Virtual register not bound.
-    if (PhysReg == VirtRegMap::NO_PHYS_REG) continue;
+    if (PhysReg == 0) continue;
 
     LiveInterval &LI = LIS->getInterval(Reg);
 
