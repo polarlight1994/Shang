@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "vtm/Passes.h"
-#include "vtm/VerilogAST.h"
+#include "vtm/VASTModule.h"
 #include "vtm/VFInfo.h"
 #include "vtm/Utilities.h"
 #include "vtm/VerilogModuleAnalysis.h"

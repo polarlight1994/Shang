@@ -48,6 +48,21 @@ public:
 
     vastModule
   };
+
+  enum SeqValType {
+    Data,       // Common registers which hold data for data-path.
+    Slot,       // Slot register which hold the enable signals for each slot.
+    IO,         // The I/O port of the module.
+    BRAM        // Port of the block RAM
+  };
+
+  enum WireType {
+    Common,
+    // Timing BlackBox, have latecy not capture by slots.
+    haveExtraDelay,
+    // Assignment with slot information.
+    AssignCond
+  };
 protected:
   union {
     const char *Name;
@@ -422,8 +437,9 @@ public:
 
 class VASTSignal : public VASTNamedValue {
 protected:
-  VASTSignal(VASTTypes DeclType, const char *Name, unsigned BitWidth)
-    : VASTNamedValue(DeclType, Name, BitWidth) {}
+  VASTSignal(VASTTypes DeclType, const char *Name, unsigned BitWidth);
+
+  virtual void anchor() const;
 public:
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSignal *A) { return true; }

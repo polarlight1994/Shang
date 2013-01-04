@@ -98,8 +98,7 @@ inline bool PtrInvPair<VASTImmediate>::isAllOnes() const {
 }
 
 class VASTSymbol : public VASTNamedValue {
-  VASTSymbol(const char *Name, unsigned BitWidth)
-    : VASTNamedValue(VASTNode::vastSymbol, Name, BitWidth) {}
+  VASTSymbol(const char *Name, unsigned BitWidth);
 
   friend class VASTModule;
 public:
@@ -256,15 +255,6 @@ inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
 }
 
 class VASTWire :public VASTSignal {
-public:
-  enum Type {
-    Common,
-    // Timing BlackBox, have latecy not capture by slots.
-    haveExtraDelay,
-    // Assignment with slot information.
-    AssignCond
-  };
-private:
   unsigned   T : 2;
   unsigned Idx : 29;
   bool IsPinned : 1;
@@ -280,7 +270,7 @@ public:
     : VASTSignal(vastWire, Name, BitWidth), T(Common), Idx(0),
       IsPinned(IsPinned), U(this, 0), AttrStr(Attr) {}
 
-  void assign(VASTValPtr V, VASTWire::Type T = VASTWire::Common) {
+  void assign(VASTValPtr V, VASTNode::WireType T = VASTNode::Common) {
     this->T = T;
     U.set(V);
   }
@@ -324,20 +314,20 @@ public:
     return getDriver() ? dyn_cast<VASTExprPtr>(getDriver()) : 0;
   }
 
-  VASTWire::Type getWireType() const { return Type(T); }
+  VASTNode::WireType getWireType() const { return VASTNode::WireType(T); }
 
   unsigned getExtraDelayIfAny() const {
-    return getWireType() == VASTWire::haveExtraDelay ? Idx : 0;
+    return getWireType() == VASTNode::haveExtraDelay ? Idx : 0;
   }
 
   uint16_t getSlotNum() const {
-    assert(getWireType() == VASTWire::AssignCond &&
+    assert(getWireType() == VASTNode::AssignCond &&
            "Call getSlot on bad wire type!");
     return Idx;
   }
 
   MachineInstr *getDefMI() const {
-    assert(getWireType() == VASTWire::AssignCond &&
+    assert(getWireType() == VASTNode::AssignCond &&
            "Call getDefMI on bad wire type!");
     return Contents.BundleStart;
   }

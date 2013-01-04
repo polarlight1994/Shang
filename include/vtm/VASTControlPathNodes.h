@@ -195,13 +195,6 @@ class VASTSeqValue : public VASTSignal {
 public:
   typedef ArrayRef<VASTValPtr> AndCndVec;
 
-  enum Type {
-    Data,       // Common registers which hold data for data-path.
-    Slot,       // Slot register which hold the enable signals for each slot.
-    IO,         // The I/O port of the module.
-    BRAM        // Port of the block RAM
-  };
-
 private:
   // For common registers, the Idx is the corresponding register number in the
   // MachineFunction. With this register number we can get the define/use/kill
@@ -215,8 +208,8 @@ private:
 
   VASTNode &Parent;
 public:
-  VASTSeqValue(const char *Name, unsigned Bitwidth, Type T, unsigned Idx,
-               VASTNode &Parent)
+  VASTSeqValue(const char *Name, unsigned Bitwidth, VASTNode::SeqValType T,
+               unsigned Idx, VASTNode &Parent)
     : VASTSignal(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx),
       Parent(Parent) {}
 
@@ -226,7 +219,7 @@ public:
     return A->getASTType() == vastSeqValue;
   }
 
-  VASTSeqValue::Type getValType() const { return Type(T); }
+  VASTNode::SeqValType getValType() const { return VASTNode::SeqValType(T); }
 
   unsigned getDataRegNum() const {
     assert((getValType() == Data) && "Wrong accessor!");
@@ -242,7 +235,7 @@ public:
   const VASTNode *getParent() const { return &Parent; }
 
   void addAssignment(VASTUse *Src, VASTWire *AssignCnd);
-  bool isTimingUndef() const { return getValType() == VASTSeqValue::Slot; }
+  bool isTimingUndef() const { return getValType() == VASTNode::Slot; }
 
   typedef AssignMapTy::const_iterator assign_itertor;
   assign_itertor begin() const { return Assigns.begin(); }
@@ -254,6 +247,8 @@ public:
                        const VASTModule *Mod) const;
 
   void buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> > &CSEMap) const;
+
+  virtual void anchor() const;
 };
 } // end namespace
 

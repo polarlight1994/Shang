@@ -235,7 +235,7 @@ void RtlSSAAnalysis::buildAllVAS() {
   for (it I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I){
     VASTSeqValue *V = *I;
 
-    typedef VASTRegister::assign_itertor assign_it;
+    typedef VASTSeqValue::assign_itertor assign_it;
     for (assign_it I = V->begin(), E = V->end(); I != E; ++I){
       VASTSlot *S = VM->getSlot(I->first->getSlotNum());
       MachineInstr *DefMI = I->first->getDefMI();
@@ -256,7 +256,7 @@ void RtlSSAAnalysis::buildVASGraph() {
   for (it I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
     VASTSeqValue *V = *I;
 
-    typedef VASTRegister::assign_itertor assign_it;
+    typedef VASTSeqValue::assign_itertor assign_it;
     for (assign_it I = V->begin(), E = V->end(); I != E; ++I) {
       VASTSlot *S = VM->getSlot(I->first->getSlotNum());
       // Create the origin VAS.

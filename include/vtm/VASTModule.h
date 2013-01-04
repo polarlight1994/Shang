@@ -13,106 +13,24 @@
 #ifndef VTM_VAST_MODULE_H
 #define VTM_VAST_MODULE_H
 
+#include "vtm/VASTNodeBases.h"
 #include "vtm/VASTDatapathNodes.h"
-#include "vtm/VASTControlPathNodes.h"
+
 #include "vtm/LangSteam.h"
 #include "vtm/FUInfo.h"
 #include "vtm/VerilogBackendMCTargetDesc.h"
 
 #include "llvm/ADT/StringMap.h"
 
+#include <map>
+
 namespace llvm {
-class VASTBlockRAM : public VASTNode {
-  unsigned Depth;
-  unsigned WordSize;
-  unsigned BRamNum;
-public:
-  VASTSeqValue WritePortA;
-private:
-  void printSelector(raw_ostream &OS, const VASTSeqValue &Port) const;
-  void printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod,
-                       const VASTSeqValue &Port) const;
-
-  VASTBlockRAM(const char *Name, unsigned BRamNum, unsigned WordSize,
-               unsigned Depth)
-    : VASTNode(vastBlockRAM), Depth(Depth), WordSize(WordSize),
-      BRamNum(BRamNum),
-      WritePortA(Name, WordSize, VASTSeqValue::BRAM, BRamNum, *this)
-  {}
-
-  friend class VASTModule;
-public:
-  typedef VASTSeqValue::assign_itertor assign_itertor;
-  unsigned getBlockRAMNum() const { return BRamNum; }
-
-  unsigned getWordSize() const { return WordSize; }
-  unsigned getDepth() const { return Depth; }
-
-  void printSelector(raw_ostream &OS) const {
-    printSelector(OS, WritePortA);
-  }
-
-  void printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod) const {
-    printAssignment(OS, Mod, WritePortA);
-  }
-
-  void print(raw_ostream &OS) const {}
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTBlockRAM *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastBlockRAM;
-  }
-
-};
-
-class VASTRegister : public VASTNode {
-  VASTSeqValue Value;
-  uint64_t InitVal;
-
-  VASTRegister(const char *Name, unsigned BitWidth, uint64_t InitVal,
-               VASTSeqValue::Type T = VASTSeqValue::Data, unsigned RegData = 0,
-               const char *Attr = "");
-  friend class VASTModule;
-
-  void dropUses() {
-    assert(0 && "Function not implemented!");
-  }
-
-public:
-  const char *const AttrStr;
-
-  VASTSeqValue *getValue() { return &Value; }
-  VASTSeqValue *operator->() { return getValue(); }
-
-  const char *getName() const { return Value.getName(); }
-  unsigned getBitWidth() const { return Value.getBitWidth(); }
-
-  typedef VASTSeqValue::assign_itertor assign_itertor;
-  assign_itertor assign_begin() const { return Value.begin(); }
-  assign_itertor assign_end() const { return Value.end(); }
-  unsigned num_assigns() const { return Value.size(); }
-
-  void printSelector(raw_ostream &OS) const;
-
-  // Print data transfer between registers.
-  void printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod) const;
-  // Return true if the reset is actually printed.
-  bool printReset(raw_ostream &OS) const;
-  void dumpAssignment() const;
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTRegister *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastRegister;
-  }
-
-  typedef VASTSeqValue::AndCndVec AndCndVec;
-  static void printCondition(raw_ostream &OS, const VASTSlot *Slot,
-                             const AndCndVec &Cnds);
-
-  void print(raw_ostream &OS) const {}
-};
+class VASTWire;
+class VASTRegister;
+class VASTBlockRAM;
+class VASTSlot;
+class DatapathContainer;
+class VASTExprBuilder;
 
 class VASTPort : public VASTNode {
 
@@ -122,11 +40,11 @@ public:
   VASTPort(VASTNamedValue *V, bool isInput);
 
   VASTNamedValue *getValue() const { return Contents.Value; }
-  VASTSeqValue *getSeqVal() const { return cast<VASTSeqValue>(getValue()); }
+  VASTSeqValue *getSeqVal() const;
 
   const char *getName() const { return getValue()->getName(); }
   bool isInput() const { return IsInput; }
-  bool isRegister() const { return !isInput() && !isa<VASTWire>(getValue()); }
+  bool isRegister() const;
   unsigned getBitWidth() const { return getValue()->getBitWidth(); }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -267,10 +185,6 @@ public:
     Slots.assign(TotalSlots, 0);
   }
 
-  virtual void *Allocate(size_t Num, size_t Alignment){
-    return Allocator.Allocate(Num, Alignment);
-  }
-
   VASTSlot *getOrCreateSlot(unsigned SlotNum, MachineInstr *BundleStart);
 
   VASTSlot *getSlot(unsigned SlotNum) const {
@@ -363,18 +277,14 @@ public:
 
   VASTRegister *addRegister(const std::string &Name, unsigned BitWidth,
                             unsigned InitVal = 0,
-                            VASTSeqValue::Type T = VASTSeqValue::Data,
+                            VASTNode::SeqValType T = VASTNode::Data,
                             uint16_t RegData = 0, const char *Attr = "");
 
   VASTRegister *addOpRegister(const std::string &Name, unsigned BitWidth,
-                              unsigned FUNum, const char *Attr = "") {
-    return addRegister(Name, BitWidth, 0, VASTSeqValue::Data, FUNum, Attr);
-  }
+                              unsigned FUNum, const char *Attr = "");
 
   VASTRegister *addDataRegister(const std::string &Name, unsigned BitWidth,
-                                unsigned RegNum = 0, const char *Attr = "") {
-    return addRegister(Name, BitWidth, 0, VASTSeqValue::Data, RegNum, Attr);
-  }
+                                unsigned RegNum = 0, const char *Attr = "");
 
   VASTWire *addWire(const std::string &Name, unsigned BitWidth,
                     const char *Attr = "", bool IsPinned = false);
@@ -397,7 +307,7 @@ public:
   VASTWire *addPredExpr(VASTWire *CndWire, SmallVectorImpl<VASTValPtr> &Cnds,
                         bool AddSlotActive = true);
 
-  VASTWire *assign(VASTWire *W, VASTValPtr V, VASTWire::Type T = VASTWire::Common);
+  VASTWire *assign(VASTWire *W, VASTValPtr V, VASTNode::WireType T = VASTNode::Common);
   VASTWire *assignWithExtraDelay(VASTWire *W, VASTValPtr V, unsigned latency);
 
   void printSignalDecl(raw_ostream &OS);
@@ -426,9 +336,6 @@ public:
   std::string &getDataPathStr() {
     return DataPath.str();
   }
-
-  // Out of line virtual function to provide home for the class.
-  virtual void anchor();
 
   static const std::string GetMemBusEnableName(unsigned FUNum) {
     return VFUMemBus::getEnableName(FUNum) + "_r";

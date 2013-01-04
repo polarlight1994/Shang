@@ -3,6 +3,7 @@ add_llvm_library(VTMRTLCodegen
   ExternalTimingAnalysis.cpp
   TimingNetlist.cpp
   VerilogModuleAnalysis.cpp
+  VASTExpr.cpp
   VASTExprBuilder.cpp
   VerilogASTBuilder.cpp
   VerilogASTWriter.cpp
@@ -13,10 +14,11 @@ add_llvm_library(VTMRTLCodegen
   MFDatapathContainer.cpp
   PreSchedRTLOpt.cpp
   LUTMapping.cpp
-  ControlLogicBuilder.cpp
+  VASTControlpath.cpp
   CombPathDelayAnalysis.cpp
   LATimingEstimator.cpp
   RtlSSAAnalysis.cpp
+  VerilogAST.cpp
 )
 
 add_dependencies(VTMRTLCodegen VerilogBackendTableGen)

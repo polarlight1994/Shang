@@ -14,6 +14,7 @@
 
 #include "VASTExprBuilder.h"
 #include "vtm/Utilities.h"
+#include "vtm/VASTControlPathNodes.h"
 #include "vtm/VASTModule.h"
 
 #include "llvm/Support/ErrorHandling.h"

@@ -18,6 +18,7 @@
 #include "vtm/LangSteam.h"
 #include "vtm/VRegisterInfo.h"
 #include "vtm/VInstrInfo.h"
+#include "vtm/VASTSubModules.h"
 #include "vtm/VASTModule.h"
 #include "vtm/VerilogModuleAnalysis.h"
 #include "vtm/Utilities.h"
