@@ -35,11 +35,14 @@ class MachineBasicBlock;
 class MachineOperand;
 class VASTModule;
 template<typename T> struct PtrInvPair;
+class VASTUse;
 class VASTValue;
 class VASTImmediate;
+class VASTNamedValue;
 class VASTSlot;
 class VASTSignal;
 class VASTWire;
+class VASTSeqValue;
 class VASTExpr;
 class VASTRegister;
 class VASTUse;
@@ -54,21 +57,22 @@ public:
     vastSymbol,
     vastExpr,
     vastWire,
-    vastRegister,
-    vastBlockRAM,
+    vastSeqValue,
     // CustomNode used by pre-scheduling data-path optimizer and the IR level
     // resource usage estimation pass.
     vastCustomNode,
     vastLastValueType = vastCustomNode,
     vastPort,
     vastSlot,
+    vastRegister,
+    vastBlockRAM,
 
     vastModule
   };
 protected:
   union {
     const char *Name;
-    VASTSignal *Signal;
+    VASTNamedValue *Value;
     MachineInstr *BundleStart;
   } Contents;
 
@@ -484,8 +488,8 @@ class VASTNamedValue : public VASTValue {
 protected:
   VASTNamedValue(VASTTypes T, const char *Name, unsigned BitWidth)
     : VASTValue(T, BitWidth) {
-    assert((T == vastSymbol || T == vastWire || T == vastRegister
-            || T == vastBlockRAM || T == vastCustomNode)
+    assert((T == vastSymbol || T == vastWire || T == vastSeqValue
+            || T == vastCustomNode)
            && "Bad DeclType!");
     Contents.Name = Name;
   }
@@ -503,8 +507,7 @@ public:
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSymbol ||
            A->getASTType() == vastWire ||
-           A->getASTType() == vastRegister ||
-           A->getASTType() == vastBlockRAM ||
+           A->getASTType() == vastSeqValue ||
            A->getASTType() == vastCustomNode;
   }
 };
@@ -523,78 +526,15 @@ public:
 };
 
 class VASTSignal : public VASTNamedValue {
-  bool IsPinned;
-  bool IsTimingUndef;
 protected:
-  // TODO: Annotate the signal so we know that some of them are port signals
-  // and no need to declare again in the declaration list.
-  const char *AttrStr;
-
-  VASTSignal(VASTTypes DeclType, const char *Name, unsigned BitWidth,
-             const char *Attr = "")
-    : VASTNamedValue(DeclType, Name, BitWidth), IsPinned(false),
-      IsTimingUndef(false), AttrStr(Attr) {}
+  VASTSignal(VASTTypes DeclType, const char *Name, unsigned BitWidth)
+    : VASTNamedValue(DeclType, Name, BitWidth) {}
 public:
-
-  // Pin the wire, prevent it from being remove.
-  void Pin(bool isPinned = true) { IsPinned = isPinned; }
-  bool isPinned() const { return IsPinned; }
-
-  // The timing of a node may not captured by schedule information.
-  void setTimingUndef(bool UnDef = true) { IsTimingUndef = UnDef; }
-  bool isTimingUndef() const { return IsTimingUndef; }
-
-  void printDecl(raw_ostream &OS) const;
-
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSignal *A) { return true; }
-  static inline bool classof(const VASTRegister *A) { return true; }
+  static inline bool classof(const VASTSeqValue *A) { return true; }
   static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastWire || A->getASTType() == vastRegister ||
-           A->getASTType() == vastBlockRAM;
-  }
-};
-
-class VASTPort : public VASTNode {
-public:
-  const bool IsInput;
-
-  VASTPort(VASTSignal *S, bool isInput) : VASTNode(vastPort), IsInput(isInput) {
-    assert(!(isInput && isa<VASTRegister>(S)) && "Bad port decl!");
-    Contents.Signal = S;
-  }
-
-  const char *getName() const { return Contents.Signal->getName(); }
-  bool isRegister() const { return isa<VASTRegister>(Contents.Signal); }
-  bool isInput() const { return IsInput; }
-  unsigned getBitWidth() const { return Contents.Signal->getBitWidth(); }
-  VASTSignal *get() const { return Contents.Signal; }
-  operator VASTSignal *() const { return Contents.Signal; }
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTPort *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastPort;
-  }
-
-  void print(raw_ostream &OS) const;
-  void printExternalDriver(raw_ostream &OS, uint64_t InitVal = 0) const;
-  std::string getExternalDriverStr(unsigned InitVal = 0) const;
-};
-
-// simplify_type - Allow clients to treat VASTRValue just like VASTValues when
-// using casting operators.
-template<> struct simplify_type<const VASTPort> {
-  typedef VASTSignal *SimpleType;
-  static SimpleType getSimplifiedValue(const VASTPort &Val) {
-    return Val.get();
-  }
-};
-
-template<> struct simplify_type<VASTPort> {
-  typedef VASTSignal *SimpleType;
-  static SimpleType getSimplifiedValue(const VASTPort &Val) {
-    return Val.get();
+    return A->getASTType() == vastWire || A->getASTType() == vastSeqValue;
   }
 };
 
@@ -750,24 +690,27 @@ public:
     // Timing BlackBox, have latecy not capture by slots.
     haveExtraDelay,
     // Assignment with slot information.
-    AssignCond,
-    // The wire connected to an input port.
-    InputPort
+    AssignCond
   };
 private:
-  Type T : 2;
-  unsigned Idx : 30;
+  unsigned   T : 2;
+  unsigned Idx : 29;
+  bool IsPinned : 1;
 public:
+  const char *const AttrStr;
 
-  VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "")
-    : VASTSignal(vastWire, Name, BitWidth, Attr), U(this, 0), T(Common), Idx(0)
-  {}
+  VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "",
+           bool IsPinned = false)
+    : VASTSignal(vastWire, Name, BitWidth), U(this, 0), T(Common), Idx(0),
+      IsPinned(IsPinned), AttrStr(Attr) {}
 
   void assign(VASTValPtr V, VASTWire::Type T = VASTWire::Common) {
     this->T = T;
     U.set(V);
   }
 
+  bool isPinned() const { return IsPinned; }
+  void Pin(bool isPinned = true ) { IsPinned = isPinned; }
 private:
   friend class VASTModule;
 
@@ -775,17 +718,11 @@ private:
   VASTUse U;
 
   VASTWire(unsigned SlotNum, MachineInstr *DefMI)
-         : VASTSignal(vastWire, 0, 1, ""), U(this, 0), T(AssignCond),
-           Idx(SlotNum) {
+    : VASTSignal(vastWire, 0, 1), U(this, 0), T(AssignCond),
+      Idx(SlotNum), IsPinned(false), AttrStr("")
+  {
     Contents.BundleStart = DefMI;
   } 
-
-  void setAsInput(VASTRegister *VReg);
-
-  void setSlot(uint16_t slotNum) {
-    assert(getWireType() == VASTWire::AssignCond && "setSlot on wrong type!");
-    Idx = slotNum;
-  }
 
   void assignWithExtraDelay(VASTValPtr V, unsigned latency) {
     assign(V, haveExtraDelay);
@@ -809,19 +746,13 @@ private:
 
   void dropUses() { if (U.get()) U.unlinkUseFromUser(); }
 public:
-  VASTValPtr getDriver() const {
-    // Ignore the virtual register of the input port, the virtual register only
-    // carry the timing information.
-    return getWireType() == InputPort ? VASTValPtr(0) : U.unwrap();
-  }
-
-  VASTRegister *getVirturalRegister() const;
+  VASTValPtr getDriver() const { return U.unwrap(); }
 
   VASTExprPtr getExpr() const {
-    return getDriver()? dyn_cast<VASTExprPtr>(getDriver()) : 0;
+    return getDriver() ? dyn_cast<VASTExprPtr>(getDriver()) : 0;
   }
 
-  VASTWire::Type getWireType() const { return T; }
+  VASTWire::Type getWireType() const { return Type(T); }
 
   unsigned getExtraDelayIfAny() const {
     return getWireType() == VASTWire::haveExtraDelay ? Idx : 0;
@@ -850,10 +781,10 @@ public:
 
   // Internal function used by VASTValue.
   VASTValue::dp_dep_it op_begin() const {
-    return (U.isInvalid() || getWireType() == InputPort) ? 0 : &U;
+    return (U.isInvalid()) ? 0 : &U;
   }
   VASTValue::dp_dep_it op_end() const {
-    return (U.isInvalid() || getWireType() == InputPort) ? 0 : &U + 1;
+    return (U.isInvalid()) ? 0 : &U + 1;
   }
 };
 
@@ -905,7 +836,7 @@ public:
   typedef mapped_iterator<const_succ_cnd_iterator, slot_getter>
           const_succ_iterator;
 
-  typedef std::map<VASTRegister*, VASTUse*> FUCtrlVecTy;
+  typedef std::map<VASTSeqValue*, VASTUse*> FUCtrlVecTy;
   typedef FUCtrlVecTy::const_iterator const_fu_ctrl_it;
 
   typedef std::map<VASTValue*, VASTUse*> FUReadyVecTy;
@@ -959,9 +890,10 @@ public:
 
   void print(raw_ostream &OS) const;
 
+  VASTSeqValue *getValue() const;
   const char *getName() const;
   // Getting the relative signals.
-  VASTRegister *getRegister() const { return cast<VASTRegister>(SlotReg); }
+  VASTRegister *getRegister() const;
   VASTValue *getReady() const { return cast<VASTValue>(SlotReady); }
   VASTValue *getActive() const { return cast<VASTValue>(SlotActive); }
 
@@ -994,13 +926,13 @@ public:
   pred_it pred_end() { return PredSlots.end(); }
 
 
-  VASTUse &allocateEnable(VASTRegister *R, VASTModule *VM);
+  VASTUse &allocateEnable(VASTSeqValue *P, VASTModule *VM);
   VASTUse &allocateReady(VASTValue *V, VASTModule *VM);
-  VASTUse &allocateDisable(VASTRegister *R, VASTModule *VM);
+  VASTUse &allocateDisable(VASTSeqValue *P, VASTModule *VM);
   VASTUse &allocateSuccSlot(VASTSlot *S, VASTModule *VM);
 
   // Signals need to be enabled at this slot.
-  bool isEnabled(VASTRegister *R) const { return Enables.count(R); }
+  bool isEnabled(VASTSeqValue *P) const { return Enables.count(P); }
   const_fu_ctrl_it enable_begin() const { return Enables.begin(); }
   const_fu_ctrl_it enable_end() const { return Enables.end(); }
 
@@ -1010,7 +942,7 @@ public:
   const_fu_rdy_it ready_end() const { return Readys.end(); }
 
   // Signals need to be disabled at this slot.
-  bool isDiabled(VASTRegister *R) const { return Disables.count(R); }
+  bool isDiabled(VASTSeqValue *P) const { return Disables.count(P); }
   bool disableEmpty() const { return Disables.empty(); }
   const_fu_ctrl_it disable_begin() const { return Disables.begin(); }
   const_fu_ctrl_it disable_end() const { return Disables.end(); }
@@ -1052,23 +984,59 @@ template<> struct GraphTraits<VASTSlot*> {
   }
 };
 
-// Represent single access port for local Storage.
-class VASTLocalStoragePort {
+// Represent value in the sequential logic.
+class VASTSeqValue : public VASTSignal {
 public:
   typedef ArrayRef<VASTValPtr> AndCndVec;
+
+  enum Type {
+    Data,       // Common registers which hold data for data-path.
+    Slot,       // Slot register which hold the enable signals for each slot.
+    IO,         // The I/O port of the module.
+    BRAM,       // Port of the block RAM
+  };
+
 private:
+  // For common registers, the Idx is the corresponding register number in the
+  // MachineFunction. With this register number we can get the define/use/kill
+  // information of assignment to this local storage.
+  const unsigned T    : 2;
+  const unsigned Idx  : 30;
+
   // Map the assignment condition to assignment value.
   typedef DenseMap<VASTWire*, VASTUse*, VASTWireExpressionTrait> AssignMapTy;
   AssignMapTy Assigns;
 
-  VASTValue &User;
+  VASTNode &Parent;
 public:
-  explicit VASTLocalStoragePort(VASTValue &User) : User(User) {}
+  VASTSeqValue(const char *Name, unsigned Bitwidth, Type T, unsigned Idx,
+               VASTNode &Parent)
+    : VASTSignal(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx),
+      Parent(Parent) {}
 
-  operator VASTValue *() const { return &User; }
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTSeqValue *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastSeqValue;
+  }
+
+  VASTSeqValue::Type getValType() const { return Type(T); }
+
+  unsigned getDataRegNum() const {
+    assert((getValType() == Data) && "Wrong accessor!");
+    return Idx;
+  }
+
+  unsigned getSlotNum() const {
+    assert(getValType() == Slot && "Wrong accessor!");
+    return Idx;
+  }
+
+  VASTNode *getParent() { return &Parent; }
+  const VASTNode *getParent() const { return &Parent; }
 
   void addAssignment(VASTUse *Src, VASTWire *AssignCnd);
-  void clearAssignments() { Assigns.clear(); }
+  bool isTimingUndef() const { return getValType() == VASTSeqValue::Slot; }
 
   typedef AssignMapTy::const_iterator assign_itertor;
   assign_itertor begin() const { return Assigns.begin(); }
@@ -1078,62 +1046,60 @@ public:
 
   void verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
                        const VASTModule *Mod) const;
+
+  void buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> > &CSEMap) const;
 };
 
-class VASTBlockRAM : public VASTSignal {
-  unsigned NumWords;
+class VASTBlockRAM : public VASTNode {
+  unsigned Depth;
+  unsigned WordSize;
   unsigned BRamNum;
 public:
-  VASTLocalStoragePort WritePortA, WritePortB, ReadPortA, ReadPortB;
+  VASTSeqValue WritePortA;
 private:
-  void printSelector(raw_ostream &OS, const VASTLocalStoragePort &Port) const;
+  void printSelector(raw_ostream &OS, const VASTSeqValue &Port) const;
   void printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod,
-                       const VASTLocalStoragePort &Port) const;
+                       const VASTSeqValue &Port) const;
 
-  VASTBlockRAM(const char *Name, unsigned BRamNum, unsigned BitWidth,
-               unsigned NumWords)
-               : VASTSignal(vastBlockRAM, Name, BitWidth), NumWords(NumWords),
-                 BRamNum(BRamNum), WritePortA(*this), WritePortB(*this),
-                 ReadPortA(*this), ReadPortB(*this) {}
+  VASTBlockRAM(const char *Name, unsigned BRamNum, unsigned WordSize,
+               unsigned Depth)
+    : VASTNode(vastBlockRAM), Depth(Depth), WordSize(WordSize),
+      BRamNum(BRamNum),
+      WritePortA(Name, WordSize, VASTSeqValue::BRAM, BRamNum, *this)
+  {}
 
   friend class VASTModule;
 public:
-  typedef VASTLocalStoragePort::assign_itertor assign_itertor;
+  typedef VASTSeqValue::assign_itertor assign_itertor;
   unsigned getBlockRAMNum() const { return BRamNum; }
+
+  unsigned getWordSize() const { return WordSize; }
+  unsigned getDepth() const { return Depth; }
 
   void printSelector(raw_ostream &OS) const {
     printSelector(OS, WritePortA);
-    printSelector(OS, WritePortB);
-    printSelector(OS, ReadPortA);
-    printSelector(OS, ReadPortB);
   }
 
   void printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod) const {
     printAssignment(OS, Mod, WritePortA);
-    printAssignment(OS, Mod, WritePortB);
-    printAssignment(OS, Mod, ReadPortA);
-    printAssignment(OS, Mod, ReadPortB);
   }
+
+  void print(raw_ostream &OS) const {}
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTBlockRAM *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastBlockRAM;
+  }
+
 };
 
-class VASTRegister : public VASTSignal {
-public:
-  enum Type {
-    Data,       // Common registers which hold data for data-path.
-    Operand,    // Operand registers of functional units.
-    Slot,       // Slot register which hold the enable signals for each slot.
-    OutputPort, // The I/O register of an output port.
-    Virtual     // Virtual registers that only hold timing information.
-  };
-private:
+class VASTRegister : public VASTNode {
+  VASTSeqValue Value;
   uint64_t InitVal;
 
-  VASTLocalStoragePort Port;
-  Type T : 2;
-  unsigned Idx : 30;
-
   VASTRegister(const char *Name, unsigned BitWidth, uint64_t InitVal,
-               VASTRegister::Type T = Data, uint16_t RegData = 0,
+               VASTSeqValue::Type T = VASTSeqValue::Data, unsigned RegData = 0,
                const char *Attr = "");
   friend class VASTModule;
 
@@ -1142,27 +1108,18 @@ private:
   }
 
 public:
-  VASTRegister::Type getRegType() const { return T; }
+  const char *const AttrStr;
 
-  unsigned getDataRegNum() const {
-    assert((getRegType() == Data) && "Wrong accessor!");
-    return Idx;
-  }
+  VASTSeqValue *getValue() { return &Value; }
+  VASTSeqValue *operator->() { return getValue(); }
 
-  unsigned getSlotNum() const {
-    assert(getRegType() == Slot && "Wrong accessor!");
-    return Idx;
-  }
+  const char *getName() const { return Value.getName(); }
+  unsigned getBitWidth() const { return Value.getBitWidth(); }
 
-  void clearAssignments() {
-    assert(use_empty() && "Cannot clear assignments!");
-    // TODO: Release the Uses and Wires.
-  }
-
-  typedef VASTLocalStoragePort::assign_itertor assign_itertor;
-  assign_itertor assign_begin() const { return Port.begin(); }
-  assign_itertor assign_end() const { return Port.end(); }
-  unsigned num_assigns() const { return Port.size(); }
+  typedef VASTSeqValue::assign_itertor assign_itertor;
+  assign_itertor assign_begin() const { return Value.begin(); }
+  assign_itertor assign_end() const { return Value.end(); }
+  unsigned num_assigns() const { return Value.size(); }
 
   void printSelector(raw_ostream &OS) const;
 
@@ -1178,9 +1135,37 @@ public:
     return A->getASTType() == vastRegister;
   }
 
-  typedef VASTLocalStoragePort::AndCndVec AndCndVec;
+  typedef VASTSeqValue::AndCndVec AndCndVec;
   static void printCondition(raw_ostream &OS, const VASTSlot *Slot,
                              const AndCndVec &Cnds);
+
+  void print(raw_ostream &OS) const {}
+};
+
+class VASTPort : public VASTNode {
+
+public:
+  const bool IsInput;
+
+  VASTPort(VASTNamedValue *V, bool isInput);
+
+  VASTNamedValue *getValue() const { return Contents.Value; }
+  VASTSeqValue *getSeqVal() const { return cast<VASTSeqValue>(getValue()); }
+
+  const char *getName() const { return getValue()->getName(); }
+  bool isInput() const { return IsInput; }
+  bool isRegister() const { return !isInput() && !isa<VASTWire>(getValue()); }
+  unsigned getBitWidth() const { return getValue()->getBitWidth(); }
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTPort *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastPort;
+  }
+
+  void print(raw_ostream &OS) const;
+  void printExternalDriver(raw_ostream &OS, uint64_t InitVal = 0) const;
+  std::string getExternalDriverStr(unsigned InitVal = 0) const;
 };
 
 // The container to hold all VASTExprs in data-path of the design.
@@ -1228,11 +1213,16 @@ public:
   typedef PortVector::const_iterator const_port_iterator;
 
   typedef SmallVector<VASTWire*, 128> WireVector;
+  typedef WireVector::iterator wire_iterator;
+
   typedef SmallVector<VASTRegister*, 128> RegisterVector;
   typedef RegisterVector::iterator reg_iterator;
 
-  typedef SmallVector<VASTBlockRAM*, 128> BlockRAMVector;
+  typedef SmallVector<VASTBlockRAM*, 16> BlockRAMVector;
   typedef BlockRAMVector::iterator bram_iterator;
+
+  typedef SmallVector<VASTSeqValue*, 128> SeqValueVector;
+  typedef SeqValueVector::iterator seqval_iterator;
 
   typedef std::vector<VASTSlot*> SlotVecTy;
   typedef SlotVecTy::iterator slot_iterator;
@@ -1243,6 +1233,8 @@ private:
   vlang_raw_ostream LangControlBlock;
   // The slots vector, each slot represent a state in the FSM of the design.
   SlotVecTy Slots;
+  SeqValueVector SeqVals;
+
   // Input/Output ports of the design.
   PortVector Ports;
   // Wires and Registers of the design.
@@ -1262,6 +1254,8 @@ private:
   SmallVector<std::map<unsigned, unsigned>, VFUs::NumCommonFUs> FUPortOffsets;
   unsigned NumArgPorts, RetPortIdx;
 
+  VASTPort *addPort(const std::string &Name, unsigned BitWidth, bool isReg,
+                    bool isInput);
 public:
   static std::string DirectClkEnAttr, ParallelCaseAttr, FullCaseAttr;
 
@@ -1409,7 +1403,7 @@ public:
 
   unsigned getNumArgPorts() const { return NumArgPorts; }
   unsigned getRetPortIdx() const { return RetPortIdx; }
-  const VASTPort &getRetPort() const {
+  VASTPort &getRetPort() const {
     assert(getRetPortIdx() && "No return port in this module!");
     return getPort(getRetPortIdx());
   }
@@ -1434,54 +1428,41 @@ public:
 
   VASTRegister *addRegister(const std::string &Name, unsigned BitWidth,
                             unsigned InitVal = 0,
-                            VASTRegister::Type T = VASTRegister::Data,
+                            VASTSeqValue::Type T = VASTSeqValue::Data,
                             uint16_t RegData = 0, const char *Attr = "");
 
   VASTRegister *addOpRegister(const std::string &Name, unsigned BitWidth,
                               unsigned FUNum, const char *Attr = "") {
-    return addRegister(Name, BitWidth, 0, VASTRegister::Operand, FUNum, Attr);
+    return addRegister(Name, BitWidth, 0, VASTSeqValue::Data, FUNum, Attr);
   }
 
   VASTRegister *addDataRegister(const std::string &Name, unsigned BitWidth,
                                 unsigned RegNum = 0, const char *Attr = "") {
-    return addRegister(Name, BitWidth, 0, VASTRegister::Data, RegNum, Attr);
-  }
-
-  VASTRegister *addSlotRegister(VASTSlot *S) {
-    std::string SlotName = "Slot" + utostr_32(S->SlotNum);
-    VASTRegister *R = addRegister(SlotName + "r", 1, S->SlotNum == 0 ? 1 : 0,
-                                  VASTRegister::Slot, S->SlotNum,
-                                  VASTModule::DirectClkEnAttr.c_str());
-    // The slot enable register's timing is not captured by schedule information.
-    R->setTimingUndef();
-    return R;
+    return addRegister(Name, BitWidth, 0, VASTSeqValue::Data, RegNum, Attr);
   }
 
   VASTWire *addWire(const std::string &Name, unsigned BitWidth,
-                    const char *Attr = "");
+                    const char *Attr = "", bool IsPinned = false);
 
   reg_iterator reg_begin() { return Registers.begin(); }
   reg_iterator reg_end() { return Registers.end(); }
+
+  seqval_iterator seqval_begin()  { return SeqVals.begin(); }
+  seqval_iterator seqval_end()    { return SeqVals.end(); }
 
   slot_iterator slot_begin() { return Slots.begin(); }
   slot_iterator slot_end() { return Slots.end(); }
 
   VASTWire *createAssignPred(VASTSlot *Slot, MachineInstr *DefMI);
  
-  void addAssignment(VASTLocalStoragePort &Port, VASTValPtr Src, VASTSlot *Slot,
+  void addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
                      SmallVectorImpl<VASTValPtr> &Cnds, MachineInstr *DefMI = 0,
                      bool AddSlotActive = true);
-  void addAssignment(VASTRegister *R, VASTValPtr Src, VASTSlot *Slot,
-                     SmallVectorImpl<VASTValPtr> &Cnds, MachineInstr *DefMI = 0,
-                     bool AddSlotActive = true) {
-    addAssignment(R->Port, Src, Slot, Cnds, DefMI, AddSlotActive);
-  }
 
   VASTWire *addPredExpr(VASTWire *CndWire, SmallVectorImpl<VASTValPtr> &Cnds,
                         bool AddSlotActive = true);
 
-  VASTWire *assign(VASTWire *W, VASTValPtr V,
-                   VASTWire::Type T = VASTWire::Common);
+  VASTWire *assign(VASTWire *W, VASTValPtr V, VASTWire::Type T = VASTWire::Common);
   VASTWire *assignWithExtraDelay(VASTWire *W, VASTValPtr V, unsigned latency);
 
   void printSignalDecl(raw_ostream &OS);

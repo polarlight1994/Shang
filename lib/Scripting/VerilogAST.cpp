@@ -147,7 +147,7 @@ bool VASTUse::operator==(const VASTValPtr RHS) const {
 }
 
 void VASTUse::PinUser() const {
-  if (VASTSignal *S = dyn_cast<VASTSignal>(getAsLValue<VASTValue>()))
+  if (VASTWire *S = getAsLValue<VASTWire>())
     S->Pin();
 }
 
@@ -158,8 +158,11 @@ VASTSlot::VASTSlot(unsigned slotNum, MachineInstr *BundleStart, VASTModule *VM)
   Contents.BundleStart = BundleStart;
 
   // Create the relative signals.
-  SlotReg.set(VM->addSlotRegister(this));
   std::string SlotName = "Slot" + utostr_32(slotNum);
+  VASTRegister *R = VM->addRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0,
+                                    VASTSeqValue::Slot, SlotNum,
+                                    VASTModule::DirectClkEnAttr.c_str());
+  SlotReg.set(R->getValue());
 
   VASTWire *Ready = VM->addWire(SlotName + "Ready", 1,
                                 VASTModule::DirectClkEnAttr.c_str());
@@ -188,8 +191,8 @@ void VASTSlot::addSuccSlot(VASTSlot *NextSlot, VASTValPtr Cnd, VASTModule *VM) {
   U = new (VM->allocateUse()) VASTUse(this, Cnd);
 }
 
-VASTUse &VASTSlot::allocateEnable(VASTRegister *R, VASTModule *VM) {
-  VASTUse *&U = Enables[R];
+VASTUse &VASTSlot::allocateEnable(VASTSeqValue *P, VASTModule *VM) {
+  VASTUse *&U = Enables[P];
   if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
 
   return *U;
@@ -202,8 +205,8 @@ VASTUse &VASTSlot::allocateReady(VASTValue *V, VASTModule *VM) {
   return *U;
 }
 
-VASTUse &VASTSlot::allocateDisable(VASTRegister *R, VASTModule *VM) {
-  VASTUse *&U = Disables[R];
+VASTUse &VASTSlot::allocateDisable(VASTSeqValue *P, VASTModule *VM) {
+  VASTUse *&U = Disables[P];
   if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
 
   return *U;
@@ -225,13 +228,23 @@ bool VASTSlot::hasNextSlot(VASTSlot *NextSlot) const {
   return NextSlots.count(NextSlot);
 }
 
-const char *VASTSlot::getName() const { return getRegister()->getName(); }
+VASTRegister *VASTSlot::getRegister() const {
+  return cast<VASTRegister>(getValue()->getParent());
+}
+
+VASTSeqValue *VASTSlot::getValue() const {
+  return cast<VASTSeqValue>(SlotReg);
+}
+
+const char *VASTSlot::getName() const {
+  return getValue()->getName();
+}
 
 void VASTSlot::print(raw_ostream &OS) const {
   llvm_unreachable("VASTSlot::print should not be called!");
 }
 
-void VASTLocalStoragePort::addAssignment(VASTUse *Src, VASTWire *AssignCnd) {
+void VASTSeqValue::addAssignment(VASTUse *Src, VASTWire *AssignCnd) {
   assert(AssignCnd->getWireType() == VASTWire::AssignCond
          && "Expect wire for assign condition!");
   bool inserted = Assigns.insert(std::make_pair(AssignCnd, Src)).second;
@@ -239,10 +252,10 @@ void VASTLocalStoragePort::addAssignment(VASTUse *Src, VASTWire *AssignCnd) {
 }
 
 VASTRegister::VASTRegister(const char *Name, unsigned BitWidth,
-                           uint64_t initVal, VASTRegister::Type T,
-                           uint16_t RegData,const char *Attr)
-  : VASTSignal(vastRegister, Name, BitWidth, Attr), InitVal(initVal),
-    Port(*this), T(T), Idx(RegData) {}
+                           uint64_t initVal, VASTSeqValue::Type T,
+                           unsigned RegData,  const char *Attr)
+  : VASTNode(vastRegister), Value(Name, BitWidth, T, RegData, *this),
+    InitVal(initVal), AttrStr(Attr) {}
 
 //VASTUse VASTRegister::getConstantValue() const {
 //  std::set<VASTUse> Srcs;
@@ -266,22 +279,21 @@ void VASTRegister::printCondition(raw_ostream &OS, const VASTSlot *Slot,
   if (Slot) {
     VASTValPtr Active = Slot->getActive();
     Active.printAsOperand(OS);
-    if (VASTSignal *S = Active.getAsLValue<VASTSignal>()) S->Pin();
+    if (VASTWire *S = Active.getAsLValue<VASTWire>()) S->Pin();
   } else      OS << "1'b1";
 
   typedef AndCndVec::const_iterator and_it;
   for (and_it CI = Cnds.begin(), CE = Cnds.end(); CI != CE; ++CI) {
     OS << " & ";
     CI->printAsOperand(OS);
-    if (VASTSignal *S = CI->getAsLValue<VASTSignal>()) S->Pin();
+    if (VASTWire *S = CI->getAsLValue<VASTWire>()) S->Pin();
   }
 
   OS << ')';
 }
 
 bool VASTRegister::printReset(raw_ostream &OS) const {
-  if (num_assigns() == 0 && !isPinned())
-    return false;
+  if (num_assigns() == 0) return false;
 
   OS << getName()  << " <= "
      << buildLiteral(InitVal, getBitWidth(), false) << ";";
@@ -336,9 +348,14 @@ static void PrintSelector(raw_ostream &OS, const Twine &Name, unsigned BitWidth,
   OS.indent(2) << "endcase\nend  // end mux logic\n\n";
 }
 
-void VASTLocalStoragePort::verifyAssignCnd(vlang_raw_ostream &OS,
-                                           const Twine &Name,
-                                           const VASTModule *Mod) const {
+void VASTSeqValue::buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> >
+                               &CSEMap) const {
+  for (assign_itertor I = begin(), E = end(); I != E; ++I)
+    CSEMap[*I->second].push_back(I->first);
+}
+
+void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
+                                   const VASTModule *Mod) const {
   // Concatenate all condition together to detect the case that more than one
   // case is activated.
   std::string AllPred;
@@ -393,8 +410,8 @@ void VASTLocalStoragePort::verifyAssignCnd(vlang_raw_ostream &OS,
   OS.indent(2) << "$finish();\nend\n";
 }
 
-void VASTBlockRAM::printSelector(raw_ostream &OS,
-                                 const VASTLocalStoragePort &Port) const {
+void
+VASTBlockRAM::printSelector(raw_ostream &OS, const VASTSeqValue &Port) const {
   if (Port.empty()) return;
 
   typedef std::vector<VASTValPtr> OrVec;
@@ -416,21 +433,21 @@ void VASTBlockRAM::printSelector(raw_ostream &OS,
   }
 
   assert(!AddrCSEMap.empty() && "Unexpected zero address bus fanin!");
-  unsigned AddrWidth = Log2_32_Ceil(NumWords);
+  unsigned AddrWidth = Log2_32_Ceil(getDepth());
   PrintSelector(OS, Twine(BRAMArray) + "_addr", AddrWidth, AddrCSEMap);
 
   // Only create the selector if there is any fanin to the data port.
   if (!DataCSEMap.empty())
-    PrintSelector(OS, Twine(BRAMArray) + "_data", getBitWidth(), DataCSEMap);
+    PrintSelector(OS, Twine(BRAMArray) + "_data", getWordSize(), DataCSEMap);
 }
 
 void VASTBlockRAM::printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod,
-                                   const VASTLocalStoragePort &Port) const {
+                                   const VASTSeqValue &Port) const {
   if (Port.empty()) return;
 
   const std::string &BRAMArray = VFUBRAM::getArrayName(getBlockRAMNum());
 
-  unsigned AddrWidth = Log2_32_Ceil(NumWords);
+  unsigned AddrWidth = Log2_32_Ceil(getDepth());
   // The block RAM is active if the address bus is active.
   OS.if_begin(Twine(BRAMArray) + "_addr" + "_selector_enable");
   // Check if there is any write to the block RAM.
@@ -449,9 +466,9 @@ void VASTBlockRAM::printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod,
     // It is a write if the data bus is active.
     OS.if_begin(Twine(BRAMArray) + "_data" + "_selector_enable");
     OS << BRAMArray << '[' << BRAMArray << "_addr_selector_wire"
-      << printBitRange(AddrWidth, 0, false) << ']' << " <= "
+      << VASTValue::printBitRange(AddrWidth, 0, false) << ']' << " <= "
       << BRAMArray << "_data_selector_wire"
-      << printBitRange(getBitWidth(), 0, false) << ";\n";
+      << VASTValue::printBitRange(getWordSize(), 0, false) << ";\n";
     OS.exit_block();
   }
 
@@ -459,9 +476,9 @@ void VASTBlockRAM::printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod,
   // To let the synthesis tools correctly infer a block RAM, the write to
   // result register is active even the current operation is a write access.
   OS << VFUBRAM::getOutDataBusName(getBlockRAMNum())
-    << printBitRange(getBitWidth(), 0, false) << " <= "
+    << VASTValue::printBitRange(getWordSize(), 0, false) << " <= "
     << BRAMArray << '[' << BRAMArray << "_addr_selector_wire"
-    << printBitRange(AddrWidth, 0, false) << "];\n";
+    << VASTValue::printBitRange(AddrWidth, 0, false) << "];\n";
   OS.exit_block();
 
   OS << "// synthesis translate_off\n";
@@ -470,32 +487,28 @@ void VASTBlockRAM::printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod,
 }
 
 void VASTRegister::printSelector(raw_ostream &OS) const {
-  if (Port.empty()) return;
+  if (Value.empty()) return;
 
   typedef std::vector<VASTValPtr> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
-  typedef CSEMapTy::const_iterator it;
   CSEMapTy SrcCSEMap;
 
-  for (assign_itertor I = assign_begin(), E = assign_end(); I != E; ++I)
-    SrcCSEMap[*I->second].push_back(I->first);
+  Value.buildCSEMap(SrcCSEMap);
 
   PrintSelector(OS, Twine(getName()), getBitWidth(), SrcCSEMap);
 }
 
-void VASTRegister::printAssignment(vlang_raw_ostream &OS,
-                                   const VASTModule *Mod) const {
-  if (Port.empty()) return;
+void
+VASTRegister::printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod) const {
+  if (Value.empty()) return;
 
   OS.if_begin(Twine(getName()) + Twine("_selector_enable"));
-  printAsOperandImpl(OS);
-  OS << " <= " << getName() << "_selector_wire"
-      << printBitRange(getBitWidth(), 0, false)
-      << ";\n";
+  OS << getName() << " <= " << getName() << "_selector_wire"
+     << VASTValue::printBitRange(getBitWidth(), 0, false) << ";\n";
   OS.exit_block();
 
   OS << "// synthesis translate_off\n";
-  Port.verifyAssignCnd(OS, getName(), Mod);
+  Value.verifyAssignCnd(OS, getName(), Mod);
   OS << "// synthesis translate_on\n\n";
 }
 
@@ -727,7 +740,7 @@ void VASTModule::printRegisterBlocks(vlang_raw_ostream &OS) const {
   for (iterator I = Registers.begin(), E = Registers.end(); I != E; ++I) {
     VASTRegister *R = *I;
     // Ignore the register if it do not have any fanin or it is virtual
-    if (R->num_assigns() == 0 || R->getRegType() == VASTRegister::Virtual)
+    if (R->num_assigns() == 0)
       continue;
 
     // Print the data selector of the register.
@@ -757,31 +770,42 @@ void VASTModule::printModuleDecl(raw_ostream &OS) const {
   OS << ");\n";
 }
 
+template<typename T>
+static raw_ostream &printDecl(raw_ostream &OS, T *V) {
+  OS << V->AttrStr << ' ';
+
+  bool isRegister = isa<VASTRegister>(V);
+  if (isRegister)
+    OS << "reg";
+  else
+    OS << "wire";
+
+  if (V->getBitWidth() > 1)
+    OS << "[" << (V->getBitWidth() - 1) << ":0]";
+
+  OS << ' ' << V->getName();
+
+  if (isRegister)
+    OS << " = " << buildLiteral(0, V->getBitWidth(), false);
+
+  OS << ";";
+
+  return OS;
+}
+
 void VASTModule::printSignalDecl(raw_ostream &OS) {
-  for (WireVector::const_iterator I = Wires.begin(), E = Wires.end();
-       I != E; ++I) {
+  for (wire_iterator I = Wires.begin(), E = Wires.end(); I != E; ++I) {
     VASTWire *W = *I;
 
     // Print the declaration.
     if (W->use_empty() && !W->isPinned()) OS << "//";
-    W->printDecl(OS);
+    printDecl(OS, W);
     OS << "// uses " << W->num_uses() << " pinned " << W->isPinned() << '\n';
   }
 
-  for (RegisterVector::const_iterator I = Registers.begin(), E = Registers.end();
-       I != E; ++I) {
-    VASTRegister *R = *I;
-    // The output register already declared in module signature.
-    switch (R->getRegType()) {
-    default: break;
-    case VASTRegister::OutputPort:
-    case VASTRegister::Virtual:
-      continue;
-    }
+  for (reg_iterator I = Registers.begin(), E = Registers.end(); I != E; ++I)
+    printDecl(OS, *I) << "\n";
 
-    R->printDecl(OS);
-    OS << "\n";
-  }
 }
 
 VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V, VASTWire::Type T) {
@@ -794,14 +818,14 @@ VASTWire *VASTModule::createAssignPred(VASTSlot *Slot, MachineInstr *DefMI) {
   return new (Allocator) VASTWire(Slot->SlotNum, DefMI);
 }
 
-void VASTModule::addAssignment(VASTLocalStoragePort &Port, VASTValPtr Src,
-                               VASTSlot *Slot, SmallVectorImpl<VASTValPtr> &Cnds,
+void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
+                               SmallVectorImpl<VASTValPtr> &Cnds,
                                MachineInstr *DefMI, bool AddSlotActive) {
   if (Src) {
     VASTWire *Cnd = createAssignPred(Slot, DefMI);
     Cnd = addPredExpr(Cnd, Cnds, AddSlotActive);
-    VASTUse *U = new (Allocator.Allocate<VASTUse>()) VASTUse(Port, Src);
-    Port.addAssignment(U, Cnd);
+    VASTUse *U = new (Allocator.Allocate<VASTUse>()) VASTUse(V, Src);
+    V->addAssignment(U, Cnd);
   }
 }
 
@@ -817,17 +841,23 @@ void VASTModule::print(raw_ostream &OS) const {
   // Print the verilog module?
 }
 
+VASTPort *VASTModule::addPort(const std::string &Name, unsigned BitWidth,
+                              bool isReg, bool isInput) {
+  VASTNamedValue *V;
+  if (isInput || isReg)
+    V = addRegister(Name, BitWidth, 0, VASTSeqValue::IO, 0, "// ")->getValue();
+  else
+    V = addWire(Name, BitWidth, "// ", true);
+
+  VASTPort *Port = new (Allocator) VASTPort(V, isInput);
+
+  return Port;
+}
+
 VASTPort *VASTModule::addInputPort(const std::string &Name, unsigned BitWidth,
                                    PortTypes T /*= Others*/) {
-  // DIRTYHACK: comment out the deceleration of the signal for ports.
-  VASTWire *W = addWire(Name, BitWidth, "//");
-  VASTRegister *VReg = Allocator.Allocate<VASTRegister>();
-  new (VReg) VASTRegister(W->getName(), BitWidth, 0, VASTRegister::Virtual);
+  VASTPort *Port = addPort(Name, BitWidth, false, true);
 
-  // Do not remove the wire for input port.
-  W->setAsInput(VReg);
-
-  VASTPort *Port = new (Allocator.Allocate<VASTPort>()) VASTPort(W, true);
   if (T < SpecialInPortEnd) {
     assert(Ports[T] == 0 && "Special port exist!");
     Ports[T] = Port;
@@ -849,15 +879,8 @@ VASTPort *VASTModule::addInputPort(const std::string &Name, unsigned BitWidth,
 VASTPort *VASTModule::addOutputPort(const std::string &Name, unsigned BitWidth,
                                     PortTypes T /*= Others*/,
                                     bool isReg /*= true*/) {
-  VASTSignal *V = 0;
-  // DIRTYHACK: comment out the deceleration of the signal for ports.
-  if (isReg) V = addRegister(Name, BitWidth, 0, VASTRegister::OutputPort);
-  else       V = addWire(Name, BitWidth, "//");
+  VASTPort *Port = addPort(Name, BitWidth, isReg, false);
 
-  // Do not remove the signal for output port.
-  V->Pin();
-
-  VASTPort *Port = new (Allocator.Allocate<VASTPort>()) VASTPort(V, false);
   if (SpecialInPortEnd <= T && T < SpecialOutPortEnd) {
     assert(Ports[T] == 0 && "Special port exist!");
     Ports[T] = Port;
@@ -868,7 +891,7 @@ VASTPort *VASTModule::addOutputPort(const std::string &Name, unsigned BitWidth,
   if (T == RetPort) {
     RetPortIdx = Ports.size();
     assert(RetPortIdx == NumArgPorts + NumSpecialPort
-      && "Unexpected port added before return port!");
+           && "Unexpected port added before return port!");
   }
 
   Ports.push_back(Port);
@@ -876,14 +899,16 @@ VASTPort *VASTModule::addOutputPort(const std::string &Name, unsigned BitWidth,
 }
 
 VASTRegister *VASTModule::addRegister(const std::string &Name, unsigned BitWidth,
-                                      unsigned InitVal, VASTRegister::Type T,
+                                      unsigned InitVal, VASTSeqValue::Type T,
                                       uint16_t RegData, const char *Attr) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name);
   assert(Entry.second == 0 && "Symbol already exist!");
   VASTRegister *Reg = Allocator.Allocate<VASTRegister>();
   new (Reg) VASTRegister(Entry.getKeyData(), BitWidth, InitVal, T, RegData,Attr);
-  Entry.second = Reg;
+  Entry.second = Reg->getValue();
+
   Registers.push_back(Reg);
+  SeqVals.push_back(Reg->getValue());
 
   return Reg;
 }
@@ -896,18 +921,20 @@ VASTBlockRAM *VASTModule::addBlockRAM(unsigned BRamNum, unsigned Bitwidth,
   assert(Entry.second == 0 && "Symbol already exist!");
   VASTBlockRAM *RAM = Allocator.Allocate<VASTBlockRAM>();
   new (RAM) VASTBlockRAM(Entry.getKeyData(), BRamNum, Bitwidth, Size);
-  Entry.second = RAM;
+  Entry.second = &RAM->WritePortA;
+
   BlockRAMs.push_back(RAM);
+  SeqVals.push_back(&RAM->WritePortA);
 
   return RAM;
 }
 
 VASTWire *VASTModule::addWire(const std::string &Name, unsigned BitWidth,
-                              const char *Attr) {
+                              const char *Attr, bool IsPinned) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name);
   assert(Entry.second == 0 && "Symbol already exist!");
   VASTWire *Wire = Allocator.Allocate<VASTWire>();
-  new (Wire) VASTWire(Entry.getKeyData(), BitWidth, Attr);
+  new (Wire) VASTWire(Entry.getKeyData(), BitWidth, Attr, IsPinned);
   Entry.second = Wire;
   Wires.push_back(Wire);
 
@@ -965,8 +992,8 @@ void VASTModule::writeProfileCounters(VASTSlot *S, bool isFirstSlot) {
   // Create the profile counter.
   // Write the counter for the function.
   if (S->SlotNum == 0) {
-    addRegister(FunctionCounter, 64)->Pin();
-    addRegister(BBCounter, 64)->Pin();
+    addRegister(FunctionCounter, 64)/*->Pin()*/;
+    addRegister(BBCounter, 64)/*->Pin()*/;
     CtrlS.if_begin(getPortName(VASTModule::Finish));
     CtrlS << "$display(\"Module: " << getName();
 
@@ -974,7 +1001,7 @@ void VASTModule::writeProfileCounters(VASTSlot *S, bool isFirstSlot) {
     CtrlS.exit_block() << "\n";
   } else { // Dont count the ilde state at the moment.
     if (isFirstSlot) {
-      addRegister(BBCounter, 64)->Pin();
+      addRegister(BBCounter, 64)/*->Pin()*/;
 
       CtrlS.if_begin(getPortName(VASTModule::Finish));
       CtrlS << "$display(\"Module: " << getName();
@@ -988,11 +1015,11 @@ void VASTModule::writeProfileCounters(VASTSlot *S, bool isFirstSlot) {
 
     // Increase the profile counter.
     if (S->isLeaderSlot()) {
-      CtrlS.if_() << S->getRegister()->getName();
+      CtrlS.if_() << S->getName();
       if (S->hasAliasSlot()) {
         for (unsigned i = S->alias_start(), e = S->alias_end(),
           k = S->alias_ii(); i < e; i += k) {
-            CtrlS << '|' << getSlot(i)->getRegister()->getName();
+            CtrlS << '|' << getSlot(i)->getName();
         }
       }
 
@@ -1075,6 +1102,12 @@ void VASTImmediate::Profile(FoldingSetNodeID& ID) const {
   Int.Profile(ID);
 }
 
+VASTPort::VASTPort(VASTNamedValue *V, bool isInput)
+  : VASTNode(vastPort), IsInput(isInput)
+{
+  Contents.Value = V;
+}
+
 void VASTPort::print(raw_ostream &OS) const {
   if (IsInput)
     OS << "input ";
@@ -1116,26 +1149,6 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
   printExternalDriver(ss, InitVal);
   ss.flush();
   return ret;
-}
-
-void VASTSignal::printDecl(raw_ostream &OS) const {
-  OS << AttrStr << ' ';
-
-  bool isRegister = isa<VASTRegister>(this);
-  if (isRegister)
-    OS << "reg";
-  else
-    OS << "wire";
-
-  if (getBitWidth() > 1)
-    OS << "[" << (getBitWidth() - 1) << ":0]";
-
-  OS << ' ' << getName();
-
-  if (isRegister)
-    OS << " = " << buildLiteral(0, getBitWidth(), false);
-
-  OS << ";";
 }
 
 //----------------------------------------------------------------------------//
@@ -1337,25 +1350,8 @@ void VASTWire::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   }
 }
 
-void VASTWire::setAsInput(VASTRegister *VReg) {
-  assign(VReg, VASTWire::InputPort);
-  // Pin the signal to prevent it from being optimized away.
-  Pin();
-  setTimingUndef();
-}
-
-VASTRegister * llvm::VASTWire::getVirturalRegister() const {
-  if (VASTRegister *VReg = dyn_cast<VASTRegister>(U.unwrap()))
-    if (VReg->getRegType() == VASTRegister::Virtual)
-      return VReg;
-
-  return 0;
-}
-
 void VASTWire::printAssignment(raw_ostream &OS) const {
   VASTWire::Type T = getWireType();
-  // Input ports do not have datapath.
-  if (T == VASTWire::InputPort) return;
 
   VASTValPtr V = getDriver();
   assert(V && "Cannot print the wire!");
