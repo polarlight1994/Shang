@@ -20,7 +20,7 @@
 
 #include "RtlSSAAnalysis.h"
 
-#include "vtm/VerilogAST.h"
+#include "vtm/VASTModule.h"
 #include "vtm/Passes.h"
 #include "vtm/VFInfo.h"
 #include "vtm/Utilities.h"
@@ -160,7 +160,7 @@ static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTSeqValue *Src,
   unsigned PathDelay = 10000;
   SlotInfo *DstSI = A.RtlSSA->getSlotInfo(Dst->getSlot());
 
-  typedef VASTRegister::assign_itertor assign_it;
+  typedef VASTSeqValue::assign_itertor assign_it;
   for (assign_it I = Src->begin(), E = Src->end(); I != E; ++I) {
     VASTSlot *SrcSlot = A.VM->getSlot(I->first->getSlotNum());
     ValueAtSlot *SrcVAS = A.RtlSSA->getValueASlot(Src, SrcSlot);

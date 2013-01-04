@@ -13,8 +13,7 @@
 #ifndef VTM_VASTEXPR_BUILDER_H
 #define VTM_VASTEXPR_BUILDER_H
 
-#include "vtm/VerilogAST.h"
-
+#include "vtm/VASTDatapathNodes.h"
 #include "llvm/Support/Allocator.h"
 
 namespace llvm {

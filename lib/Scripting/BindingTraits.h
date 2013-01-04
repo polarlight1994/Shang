@@ -15,7 +15,7 @@
 
 #include "vtm/FUInfo.h"
 #include "vtm/SynSettings.h"
-#include "vtm/VerilogAST.h"
+#include "vtm/VASTModule.h"
 
 #include "luabind/luabind.hpp"
 

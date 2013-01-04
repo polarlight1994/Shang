@@ -15,11 +15,13 @@
 #include "IR2Datapath.h"
 #include "vtm/Passes.h"
 #include "vtm/DesignMetrics.h"
+#include "vtm/FUInfo.h"
 
 #include "llvm/Pass.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Support/InstIterator.h"
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/CFG.h"
 #define DEBUG_TYPE "vtm-design-metrics"
 #include "llvm/Support/Debug.h"

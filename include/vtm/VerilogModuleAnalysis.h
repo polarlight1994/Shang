@@ -14,7 +14,6 @@
 
 #include "llvm/CodeGen/MachineFunctionPass.h"
 
-
 namespace llvm {
 class VASTModule;
 class VASTExprBuilder;

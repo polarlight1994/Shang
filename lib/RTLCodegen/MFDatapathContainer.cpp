@@ -11,10 +11,10 @@
 // datapath container.
 //
 //===----------------------------------------------------------------------===//
-
-
 #include "MachineFunction2Datapath.h"
 #include "MFDatapathContainer.h"
+#include "vtm/Utilities.h"
+
 #define DEBUG_TYPE "mf-datapath-container"
 #include "llvm/Support/Debug.h"
 

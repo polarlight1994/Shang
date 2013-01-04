@@ -16,7 +16,9 @@
 
 #include "MFDatapathContainer.h"
 
+#include "vtm/VerilogBackendMCTargetDesc.h"
 #include "vtm/Passes.h"
+#include "vtm/Utilities.h"
 
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineFunction.h"

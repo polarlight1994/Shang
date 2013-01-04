@@ -13,8 +13,7 @@
 //===----------------------------------------------------------------------===//
 #include "vtm/Passes.h"
 #include "vtm/VerilogModuleAnalysis.h"
-#include "vtm/VerilogAST.h"
-#include "vtm/VerilogAST.h"
+#include "vtm/VASTModule.h"
 
 using namespace llvm;
 

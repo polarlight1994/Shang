@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TimingNetlist.h"
+#include "vtm/VerilogBackendMCTargetDesc.h"
 
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/Support/CommandLine.h"

@@ -19,6 +19,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ExternalTimingAnalysis.h"
+#include "vtm/Utilities.h"
 
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/Support/PathV1.h"

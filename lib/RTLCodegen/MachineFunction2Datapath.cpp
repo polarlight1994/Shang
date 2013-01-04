@@ -13,6 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "MachineFunction2Datapath.h"
+
+#include "vtm/VerilogBackendMCTargetDesc.h"
+
 #include "llvm/Target/TargetRegisterInfo.h"
 
 using namespace llvm;

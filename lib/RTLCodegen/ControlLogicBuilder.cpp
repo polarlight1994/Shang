@@ -12,7 +12,8 @@
 //===----------------------------------------------------------------------===//
 #include "VASTExprBuilder.h"
 
-#include "vtm/VerilogAST.h"
+#include "vtm/VASTControlPathNodes.h"
+#include "vtm/VASTModule.h"
 
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/Support/CommandLine.h"

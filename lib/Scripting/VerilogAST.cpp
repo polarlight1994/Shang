@@ -11,7 +11,7 @@
 // common Verilog HDL writing task.
 //
 //===----------------------------------------------------------------------===//
-#include "vtm/VerilogAST.h"
+#include "vtm/VASTModule.h"
 #include "vtm/Utilities.h"
 
 #include "llvm/Constants.h"

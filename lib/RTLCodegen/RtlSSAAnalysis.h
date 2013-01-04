@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 
-#include "vtm/VerilogAST.h"
+#include "vtm/VASTControlPathNodes.h"
 #include "vtm/Utilities.h"
 
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -21,9 +21,10 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/Allocator.h"
 
+#include <set>
+
 #ifndef RTL_SSA_ANALYSIS_H
 #define RTL_SSA_ANALYSIS_H
-
 
 namespace llvm {
 class RtlSSAAnalysis;
@@ -236,7 +237,7 @@ private:
   BumpPtrAllocator Allocator;
 
   // define VAS assign iterator.
-  typedef VASTRegister::assign_itertor assign_it;
+  typedef VASTSeqValue::assign_itertor assign_it;
 
   VASTModule *VM;
 public:

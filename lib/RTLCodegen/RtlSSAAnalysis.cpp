@@ -16,7 +16,9 @@
 #include "RtlSSAAnalysis.h"
 #include "vtm/Passes.h"
 #include "vtm/VFInfo.h"
+#include "vtm/VASTModule.h"
 #include "vtm/VerilogModuleAnalysis.h"
+#include "vtm/VerilogBackendMCTargetDesc.h"
 
 #include "llvm/Target/TargetData.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -25,9 +27,9 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/GraphWriter.h"
 #define DEBUG_TYPE "vtm-rtl-ssa"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/GraphWriter.h"
 
 #include <map>
 
@@ -264,6 +266,57 @@ void RtlSSAAnalysis::buildVASGraph() {
       // Build dependence for the assigning value.
       visitDepTree(I->second->getAsLValue<VASTValue>(), VAS);
     }
+  }
+}
+
+// Helper functions
+// Traverse the use tree to get the registers.
+template<typename VisitPathFunc>
+static void DepthFirstTraverseDepTree(VASTValue *DepTree, VisitPathFunc VisitPath) {
+  typedef VASTValue::dp_dep_it ChildIt;
+  // Use seperate node and iterator stack, so we can get the path vector.
+  typedef SmallVector<VASTValue*, 16> NodeStackTy;
+  typedef SmallVector<ChildIt, 16> ItStackTy;
+  NodeStackTy NodeWorkStack;
+  ItStackTy ItWorkStack;
+  // Remember what we had visited.
+  std::set<VASTValue*> VisitedUses;
+
+  // Put the root.
+  NodeWorkStack.push_back(DepTree);
+  ItWorkStack.push_back(VASTValue::dp_dep_begin(DepTree));
+
+  while (!ItWorkStack.empty()) {
+    VASTValue *Node = NodeWorkStack.back();
+
+    ChildIt It = ItWorkStack.back();
+
+    // Do we reach the leaf?
+    if (VASTValue::is_dp_leaf(Node)) {
+      VisitPath(NodeWorkStack);
+      NodeWorkStack.pop_back();
+      ItWorkStack.pop_back();
+      continue;
+    }
+
+    // All sources of this node is visited.
+    if (It == VASTValue::dp_dep_end(Node)) {
+      NodeWorkStack.pop_back();
+      ItWorkStack.pop_back();
+      continue;
+    }
+
+    // Depth first traverse the child of current node.
+    VASTValue *ChildNode = (*It).get().get();
+    ++ItWorkStack.back();
+
+    // Had we visited this node? If the Use slots are same, the same subtree
+    // will lead to a same slack, and we do not need to compute the slack agian.
+    if (!VisitedUses.insert(ChildNode).second) continue;
+
+    // If ChildNode is not visit, go on visit it and its childrens.
+    NodeWorkStack.push_back(ChildNode);
+    ItWorkStack.push_back(VASTValue::dp_dep_begin(ChildNode));
   }
 }
 
