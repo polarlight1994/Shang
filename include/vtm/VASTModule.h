@@ -277,7 +277,8 @@ public:
                                VASTNode::SeqValType T, unsigned Idx,
                                VASTNode *Parent);
 
-  VASTBlockRAM *addBlockRAM(unsigned BRamNum, unsigned Bitwidth, unsigned Size);
+  VASTBlockRAM *addBlockRAM(unsigned BRamNum, unsigned Bitwidth, unsigned Size,
+                            const GlobalVariable *Initializer);
 
   VASTRegister *addRegister(const std::string &Name, unsigned BitWidth,
                             unsigned InitVal = 0,

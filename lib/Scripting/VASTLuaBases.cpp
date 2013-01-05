@@ -152,8 +152,9 @@ VASTModule::createSeqValue(const std::string &Name, unsigned BitWidth,
 }
 
 VASTBlockRAM *VASTModule::addBlockRAM(unsigned BRamNum, unsigned Bitwidth,
-                                      unsigned Size) {
-  VASTBlockRAM *RAM = new (Allocator) VASTBlockRAM("", BRamNum, Bitwidth, Size);
+                                      unsigned Size, const GlobalVariable *Init){
+  VASTBlockRAM *RAM
+    = new (Allocator) VASTBlockRAM("", BRamNum, Bitwidth, Size, Init);
   // Build the ports.
   RAM->addPorts(this);
 

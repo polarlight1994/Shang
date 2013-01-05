@@ -100,7 +100,7 @@ void VASTBlockRAM::addPorts(VASTModule *VM) {
   std::string BRamArrayName = VFUBRAM::getArrayName(getBlockRAMNum());
   
   // Add the address port and the data port.
-  VASTSeqValue *ReadAddrA = VM->createSeqValue(BRamArrayName + "_raddr0",
+  VASTSeqValue *ReadAddrA = VM->createSeqValue(BRamArrayName + "_rdata0",
                                                getWordSize(), VASTNode::BRAM,
                                                BRamNum, this);
   addFanin(ReadAddrA);
@@ -119,6 +119,21 @@ void VASTBlockRAM::addPorts(VASTModule *VM) {
 
 void
 VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
+  // Print the array and the initializer.
+  std::string InitFilePath = "";
+  // Set the initialize file's name if there is any.
+  if (Initializer)
+    InitFilePath = VBEMangle(Initializer->getName()) + "_init.txt";
+
+  // Generate the code for the block RAM.
+  OS << "// Address space: " << getBlockRAMNum();
+  if (Initializer) OS << *Initializer;
+  OS << '\n'
+     << getFUDesc<VFUBRAM>()->generateCode(Mod->getPortName(VASTModule::Clk),
+                                           getBlockRAMNum(), getWordSize(),
+                                           getDepth(), InitFilePath)
+     << '\n';
+
   // Print the selectors.
   getRAddr(0)->printSelector(OS, getAddrWidth());
   getWAddr(0)->printSelector(OS);

@@ -677,8 +677,6 @@ void VerilogASTBuilder::emitCommonPort(unsigned FNNum) {
 }
 
 void VerilogASTBuilder::emitAllocatedFUs() {
-  raw_ostream &S = VM->getDataPathBuffer();
-  VFUBRAM *BlockRam = getFUDesc<VFUBRAM>();
   for (VFInfo::const_bram_iterator I = FInfo->bram_begin(), E = FInfo->bram_end();
        I != E; ++I) {
     const VFInfo::BRamInfo &Info = I->second;
@@ -686,32 +684,19 @@ void VerilogASTBuilder::emitAllocatedFUs() {
     //const Value* Initializer = Info.Initializer;
     unsigned NumElem = Info.NumElem;
     unsigned DataWidth = Info.ElemSizeInBytes * 8;
-    std::string InitFilePath = "";
     const GlobalVariable *Initializer =
       dyn_cast_or_null<GlobalVariable>(Info.Initializer);
 
     // Create the block RAM object.
-    VASTBlockRAM *BRAMArray = VM->addBlockRAM(I->first, DataWidth, NumElem);
+    VASTBlockRAM *BRAM = VM->addBlockRAM(I->first, DataWidth, NumElem, Initializer);
 
     // Index the read port.
-    indexPhysReg(Info.ReadPortARegNum, BRAMArray->getRAddr(0));
+    indexPhysReg(Info.ReadPortARegNum, BRAM->getRAddr(0));
     // Index the write ports if there is any write access.
     if (unsigned WritePortNum = Info.WritePortARegnum) {
-      indexPhysReg(Info.WritePortARegnum, BRAMArray->getWAddr(0));
-      indexPhysReg(Info.WritePortARegnum + 1, BRAMArray->getWData(0));
+      indexPhysReg(Info.WritePortARegnum, BRAM->getWAddr(0));
+      indexPhysReg(Info.WritePortARegnum + 1, BRAM->getWData(0));
     }
-
-    // Set the initialize file's name if there is any.
-    if (Initializer)
-      InitFilePath = VBEMangle(Initializer->getName()) + "_init.txt";
-
-    // Generate the code for the block RAM.
-    S << "// Address space: " << I->first;
-    if (Info.Initializer) S << *Info.Initializer;
-    S << '\n'
-      << BlockRam->generateCode(VM->getPortName(VASTModule::Clk), I->first,
-                                DataWidth, NumElem, InitFilePath)
-      << '\n';
   }
 }
 

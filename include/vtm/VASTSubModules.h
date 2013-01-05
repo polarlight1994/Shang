@@ -18,15 +18,19 @@
 #include "vtm/VASTControlPathNodes.h"
 
 namespace llvm {
+class GlobalVariable;
+
 class VASTBlockRAM : public VASTSubModuleBase {
   unsigned Depth;
   unsigned WordSize;
   unsigned BRamNum;
+  // TODO: Support multiple initializers.
+  const GlobalVariable *Initializer;
 
   VASTBlockRAM(const char *Name, unsigned BRamNum, unsigned WordSize,
-               unsigned Depth)
+               unsigned Depth, const GlobalVariable *Initializer)
     : VASTSubModuleBase(vastBlockRAM, Name), Depth(Depth), WordSize(WordSize),
-      BRamNum(BRamNum)
+      BRamNum(BRamNum), Initializer(Initializer)
   {}
 
   friend class VASTModule;
