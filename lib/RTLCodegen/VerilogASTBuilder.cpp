@@ -621,18 +621,18 @@ void VerilogASTBuilder::emitAllocatedFUs() {
       dyn_cast_or_null<GlobalVariable>(Info.Initializer);
     // If there is only 1 element, simply replace the block RAM by a register.
     if (NumElem == 1) {
-      uint64_t InitVal = 0;
-      if (Initializer) {
-        // Try to retrieve the initialize value of the register, it may be a
-        // ConstantInt or ConstPointerNull, we can safely ignore the later case
-        // since the InitVal is default to 0.
-        const ConstantInt *CI
-          = dyn_cast_or_null<ConstantInt>(Initializer->getInitializer());
-        assert((CI || !Initializer->hasInitializer()
-                || isa<ConstantPointerNull>(Initializer->getInitializer()))
-               && "Unexpected initialier!");
-        if (CI) InitVal = CI->getZExtValue();
-      }
+      //uint64_t InitVal = 0;
+      //if (Initializer) {
+      //  // Try to retrieve the initialize value of the register, it may be a
+      //  // ConstantInt or ConstPointerNull, we can safely ignore the later case
+      //  // since the InitVal is default to 0.
+      //  const ConstantInt *CI
+      //    = dyn_cast_or_null<ConstantInt>(Initializer->getInitializer());
+      //  assert((CI || !Initializer->hasInitializer()
+      //          || isa<ConstantPointerNull>(Initializer->getInitializer()))
+      //         && "Unexpected initialier!");
+      //  if (CI) InitVal = CI->getZExtValue();
+      //}
       // Dirty Hack: For some block RAM, there is no read access, while for
       // some others, there is no write access.
       unsigned PhysReg = std::max(Info.ReadPortARegNum, Info.WritePortARegnum);
