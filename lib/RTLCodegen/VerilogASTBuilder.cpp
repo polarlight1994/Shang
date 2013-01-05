@@ -620,6 +620,7 @@ void VerilogASTBuilder::addSlotReady(MachineInstr *MI, VASTSlot *Slot) {
 void VerilogASTBuilder::emitAllocatedFUs() {
   for (VFInfo::const_bram_iterator I = FInfo->bram_begin(), E = FInfo->bram_end();
        I != E; ++I) {
+    unsigned BRAMNum = I->first;
     const VFInfo::BRamInfo &Info = I->second;
 
     //const Value* Initializer = Info.Initializer;
@@ -644,7 +645,8 @@ void VerilogASTBuilder::emitAllocatedFUs() {
       // Dirty Hack: For some block RAM, there is no read access, while for
       // some others, there is no write access.
       unsigned PhysReg = std::max(Info.ReadPortARegNum, Info.WritePortARegnum);
-      assert((PhysReg == Info.WritePortARegnum || Info.WritePortARegnum == 0)
+      assert((Info.ReadPortARegNum == Info.WritePortARegnum
+              || Info.WritePortARegnum == 0 || Info.ReadPortARegNum == 0)
              && "The same register should be assigned to the single element BRAM"
                 " or there is no write access!");
       VASTRegister *R = VM->addDataRegister(VFUBRAM::getOutDataBusName(PhysReg),
@@ -654,7 +656,7 @@ void VerilogASTBuilder::emitAllocatedFUs() {
     }
 
     // Create the block RAM object.
-    VASTBlockRAM *BRAM = VM->addBlockRAM(I->first, DataWidth, NumElem, Initializer);
+    VASTBlockRAM *BRAM = VM->addBlockRAM(BRAMNum, DataWidth, NumElem, Initializer);
 
     // Index the read port if there is any read accesses.
     if (unsigned ReadPortNum = Info.ReadPortARegNum)
@@ -1147,9 +1149,9 @@ void VerilogASTBuilder::emitOpMemTrans(MachineInstr *MI, VASTSlot *Slot,
 
 void VerilogASTBuilder::emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot,
                                         VASTValueVecTy &Cnds, bool IsWrite) {
-  unsigned FUNum = VInstrInfo::getPreboundFUId(MI).getFUNum();
-  unsigned SizeInBytes
-    = FInfo->getBRamInfo(VFUBRAM::FUNumToBRamNum(FUNum)).ElemSizeInBytes;
+  unsigned FUNum =
+    VFUBRAM::FUNumToBRamNum(VInstrInfo::getPreboundFUId(MI).getFUNum());
+  unsigned SizeInBytes = FInfo->getBRamInfo(FUNum).ElemSizeInBytes;
   unsigned Alignment = Log2_32_Ceil(SizeInBytes);
 
   VASTValPtr Addr = getAsOperandImpl(MI->getOperand(1));

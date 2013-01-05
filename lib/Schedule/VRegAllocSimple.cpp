@@ -648,7 +648,7 @@ void VRASimple::handleBRAMWrite(MachineInstr *MI) {
     unsigned &WritePortReg = Info.WritePortARegnum;
     assert(WritePortReg == 0 && "Register had already allocated!");
     unsigned BitWidth = Info.ElemSizeInBytes * 8;
-    if (Info.NumElem == 1 && Info.WritePortARegnum)
+    if (Info.NumElem == 1 && Info.ReadPortARegNum)
       // Degrade the block RAM to a register.
       WritePortReg = Info.ReadPortARegNum;
     else {
