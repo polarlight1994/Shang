@@ -614,8 +614,12 @@ void VRASimple::handleBRAMRead(MachineInstr *MI) {
     unsigned &ReadPortReg = Info.ReadPortARegNum;
     assert(ReadPortReg == 0 && "Register had already allocated!");
     unsigned BitWidth = Info.ElemSizeInBytes * 8;
-    // Get the physical register number and update the blockram information.
-    ReadPortReg = TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
+    if (Info.NumElem == 1 && Info.WritePortARegnum)
+      // Degrade the block RAM to a register.
+      ReadPortReg = Info.WritePortARegnum;
+    else
+      // Get the physical register number and update the blockram information.
+      ReadPortReg = TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
 
     FULI = getInterval(RegNo);
     assign(*FULI, ReadPortReg);
@@ -644,10 +648,16 @@ void VRASimple::handleBRAMWrite(MachineInstr *MI) {
     unsigned &WritePortReg = Info.WritePortARegnum;
     assert(WritePortReg == 0 && "Register had already allocated!");
     unsigned BitWidth = Info.ElemSizeInBytes * 8;
-    // Get the physical register number and update the blockram information.
-    WritePortReg = TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
-    // Also allocate the register for the data port of the block ram.
-    (void) TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
+    if (Info.NumElem == 1 && Info.WritePortARegnum)
+      // Degrade the block RAM to a register.
+      WritePortReg = Info.ReadPortARegNum;
+    else {
+      // Get the physical register number and update the blockram information.
+      WritePortReg = TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
+      // Also allocate the register for the data port of the block ram.
+      (void) TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
+    }
+
     FULI = getInterval(RegNo);
     assign(*FULI, WritePortReg);
     return;

@@ -686,6 +686,30 @@ void VerilogASTBuilder::emitAllocatedFUs() {
     unsigned DataWidth = Info.ElemSizeInBytes * 8;
     const GlobalVariable *Initializer =
       dyn_cast_or_null<GlobalVariable>(Info.Initializer);
+    // If there is only 1 element, simply replace the block RAM by a register.
+    if (NumElem == 1) {
+      uint64_t InitVal = 0;
+      if (Initializer) {
+        // Try to retrieve the initialize value of the register, it may be a
+        // ConstantInt or ConstPointerNull, we can safely ignore the later case
+        // since the InitVal is default to 0.
+        const ConstantInt *CI
+          = dyn_cast_or_null<ConstantInt>(Initializer->getInitializer());
+        assert((CI || !Initializer->hasInitializer()
+                || isa<ConstantPointerNull>(Initializer->getInitializer()))
+               && "Unexpected initialier!");
+        if (CI) InitVal = CI->getZExtValue();
+      }
+
+      unsigned PhysReg = Info.ReadPortARegNum;
+      assert((PhysReg == Info.WritePortARegnum || Info.WritePortARegnum == 0)
+             && "The same register should be assigned to the single element BRAM"
+                " or there is no write access!");
+      VASTRegister *R = VM->addDataRegister(VFUBRAM::getOutDataBusName(PhysReg),
+                                            DataWidth, PhysReg);
+      indexPhysReg(PhysReg, R->getValue());
+      continue;
+    }
 
     // Create the block RAM object.
     VASTBlockRAM *BRAM = VM->addBlockRAM(I->first, DataWidth, NumElem, Initializer);
@@ -694,8 +718,8 @@ void VerilogASTBuilder::emitAllocatedFUs() {
     indexPhysReg(Info.ReadPortARegNum, BRAM->getRAddr(0));
     // Index the write ports if there is any write access.
     if (unsigned WritePortNum = Info.WritePortARegnum) {
-      indexPhysReg(Info.WritePortARegnum, BRAM->getWAddr(0));
-      indexPhysReg(Info.WritePortARegnum + 1, BRAM->getWData(0));
+      indexPhysReg(WritePortNum, BRAM->getWAddr(0));
+      indexPhysReg(WritePortNum + 1, BRAM->getWData(0));
     }
   }
 }
@@ -1141,6 +1165,18 @@ void VerilogASTBuilder::emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot,
   unsigned PortRegNum = MI->getOperand(0).getReg();
 
   VASTSeqValue *AddrPort = cast<VASTSeqValue>(lookupSignal(PortRegNum));
+  // The block RAM maybe degraded.
+  if (AddrPort->getValType() != VASTNode::BRAM) {
+    assert(isa<VASTRegister>(AddrPort->getParent()) && "Bad VASTSeqVal Parent!");
+
+    if (IsWrite) {
+      VASTValPtr Data = getAsOperandImpl(MI->getOperand(2));
+      VM->addAssignment(AddrPort, Data, Slot, Cnds, MI);
+    }
+
+    return;
+  }
+
   VM->addAssignment(AddrPort, Addr, Slot, Cnds, MI);
 
   // Also assign the data to write to the dataport of the block RAM.
@@ -1149,7 +1185,6 @@ void VerilogASTBuilder::emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot,
     VASTSeqValue *DataPort = cast<VASTSeqValue>(lookupSignal(PortRegNum + 1));
 
     VM->addAssignment(DataPort, Data, Slot, Cnds, MI);
-    return;
   }
 }
 
