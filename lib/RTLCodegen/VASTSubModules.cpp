@@ -134,7 +134,8 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
      << VFUBRAM::getArrayName(getBlockRAMNum()) << "[0:" << getDepth() << "];\n";
 
   if (Initializer)
-    OS << "initial $readmemh(\"" << InitFilePath << "\", "
+    OS << "initial $readmemh(\"" << getFUDesc<VFUBRAM>()->InitFileDir
+       << '/' << InitFilePath << "\", "
        << VFUBRAM::getArrayName(getBlockRAMNum()) << ");\n";
 
   // Print the selectors.
