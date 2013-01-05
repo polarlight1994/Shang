@@ -656,8 +656,10 @@ void VerilogASTBuilder::emitAllocatedFUs() {
     // Create the block RAM object.
     VASTBlockRAM *BRAM = VM->addBlockRAM(I->first, DataWidth, NumElem, Initializer);
 
-    // Index the read port.
-    indexPhysReg(Info.ReadPortARegNum, BRAM->getRAddr(0));
+    // Index the read port if there is any read accesses.
+    if (unsigned ReadPortNum = Info.ReadPortARegNum)
+      indexPhysReg(Info.ReadPortARegNum, BRAM->getRAddr(0));
+
     // Index the write ports if there is any write access.
     if (unsigned WritePortNum = Info.WritePortARegnum) {
       indexPhysReg(WritePortNum, BRAM->getWAddr(0));
