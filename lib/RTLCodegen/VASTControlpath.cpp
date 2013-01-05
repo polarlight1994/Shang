@@ -336,98 +336,12 @@ void VASTModule::buildSlotLogic(VASTExprBuilder &Builder) {
 
 //===----------------------------------------------------------------------===//
 
-void VASTSeqValue::addAssignment(VASTUse *Src, VASTWire *AssignCnd) {
-  assert(AssignCnd->getWireType() == VASTWire::AssignCond
-         && "Expect wire for assign condition!");
-  bool inserted = Assigns.insert(std::make_pair(AssignCnd, Src)).second;
-  assert(inserted &&  "Assignment condition conflict detected!");
-}
-
-VASTRegister::VASTRegister(const char *Name, unsigned BitWidth,
-                           uint64_t initVal, VASTNode::SeqValType T,
-                           unsigned RegData,  const char *Attr)
-  : VASTNode(vastRegister), Value(Name, BitWidth, T, RegData, *this),
-    InitVal(initVal), AttrStr(Attr) {}
-
-void VASTRegister::printCondition(raw_ostream &OS, const VASTSlot *Slot,
-                                  const AndCndVec &Cnds) {
-  OS << '(';
-  if (Slot) {
-    VASTValPtr Active = Slot->getActive();
-    Active.printAsOperand(OS);
-    if (VASTWire *S = Active.getAsLValue<VASTWire>()) S->Pin();
-  } else      OS << "1'b1";
-
-  typedef AndCndVec::const_iterator and_it;
-  for (and_it CI = Cnds.begin(), CE = Cnds.end(); CI != CE; ++CI) {
-    OS << " & ";
-    CI->printAsOperand(OS);
-    if (VASTWire *S = CI->getAsLValue<VASTWire>()) S->Pin();
-  }
-
-  OS << ')';
-}
-
-bool VASTRegister::printReset(raw_ostream &OS) const {
-  if (num_assigns() == 0) return false;
-
-  OS << getName()  << " <= "
-     << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false) << ";";
-  return true;
-}
-
-static void PrintSelector(raw_ostream &OS, const Twine &Name, unsigned BitWidth,
-                          const std::map<VASTValPtr, std::vector<VASTValPtr> > &
-                          SrcCSEMap) {
-  typedef std::vector<VASTValPtr> OrVec;
-  typedef std::map<VASTValPtr, OrVec> CSEMapTy;
-  typedef CSEMapTy::const_iterator it;
-
-  // Create the temporary signal.
-  OS << "// Combinational MUX\n"
-     << "reg " << VASTValue::printBitRange(BitWidth, 0, false)
-     << ' ' << Name << "_selector_wire;\n"
-     << "reg " << ' ' << Name << "_selector_enable = 0;\n\n";
-
-  // If there is no fanin, leave the signal alone.
-  if (SrcCSEMap.empty()) return;
-
-  // Print the mux logic.
-  OS << "always @(*)begin  // begin mux logic\n";
-  OS.indent(2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
-
-  for (it I = SrcCSEMap.begin(), E = SrcCSEMap.end(); I != E; ++I) {
-    OS.indent(4) << '(';
-
-    const OrVec &Ors = I->second;
-    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI)
-    {
-      OI->printAsOperand(OS);
-      OS << '|';
-    }
-
-    OS << "1'b0): begin\n";
-    // Print the assignment under the condition.
-    OS.indent(6) << Name << "_selector_wire = ";
-    I->first.printAsOperand(OS);
-    OS << ";\n";
-    // Print the enable.
-    OS.indent(6) << Name << "_selector_enable = 1'b1;\n";
-    OS.indent(4) << "end\n";
-  }
-
-  // Write the default condition, otherwise latch will be inferred.
-  OS.indent(4) << "default: begin\n";
-  OS.indent(6) << Name << "_selector_wire = " << BitWidth << "'bx;\n";
-  OS.indent(6) << Name << "_selector_enable = 1'b0;\n";
-  OS.indent(4) << "end\n";
-  OS.indent(2) << "endcase\nend  // end mux logic\n\n";
-}
-
-void VASTSeqValue::buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> >
+bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> >
                                &CSEMap) const {
   for (assign_itertor I = begin(), E = end(); I != E; ++I)
     CSEMap[*I->second].push_back(I->first);
+
+  return !CSEMap.empty();
 }
 
 void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
@@ -486,111 +400,58 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
   OS.indent(2) << "$finish();\nend\n";
 }
 
-void VASTSeqValue::anchor() const {}
+void VASTSeqValue::addAssignment(VASTUse *Src, VASTWire *AssignCnd) {
+  assert(AssignCnd->getWireType() == VASTWire::AssignCond
+    && "Expect wire for assign condition!");
+  bool inserted = Assigns.insert(std::make_pair(AssignCnd, Src)).second;
+  assert(inserted &&  "Assignment condition conflict detected!");
+}
 
-void
-VASTBlockRAM::printSelector(raw_ostream &OS, const VASTSeqValue &Port) const {
-  if (Port.empty()) return;
-
+void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
   typedef std::vector<VASTValPtr> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator it;
 
-  const std::string &BRAMArray = VFUBRAM::getArrayName(getBlockRAMNum());
+  CSEMapTy CSEMap;
 
-  CSEMapTy AddrCSEMap, DataCSEMap;
-  for (assign_itertor I = Port.begin(), E = Port.end(); I != E; ++I) {
-    VASTExpr *Expr = cast<VASTExpr>(*I->second);
+  if (!buildCSEMap(CSEMap)) return;
 
-    // Add the address to the selector.
-    AddrCSEMap[Expr->getOperand(0)].push_back(I->first);
+  // Create the temporary signal.
+  OS << "// Combinational MUX\n"
+     << "reg " << VASTValue::printBitRange(Bitwidth, 0, false)
+     << ' ' << getName() << "_selector_wire;\n"
+     << "reg " << ' ' << getName() << "_selector_enable = 0;\n\n";
 
-    // Add the data to the selector.
-    if (Expr->getOpcode() == VASTExpr::dpWrBRAM)
-      DataCSEMap[Expr->getOperand(1)].push_back(I->first);
-  }
+  // Print the mux logic.
+  OS << "always @(*)begin  // begin mux logic\n";
+  OS.indent(2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
 
-  assert(!AddrCSEMap.empty() && "Unexpected zero address bus fanin!");
-  unsigned AddrWidth = Log2_32_Ceil(getDepth());
-  PrintSelector(OS, Twine(BRAMArray) + "_addr", AddrWidth, AddrCSEMap);
+  for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    OS.indent(4) << '(';
 
-  // Only create the selector if there is any fanin to the data port.
-  if (!DataCSEMap.empty())
-    PrintSelector(OS, Twine(BRAMArray) + "_data", getWordSize(), DataCSEMap);
-}
-
-void VASTBlockRAM::printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod,
-                                   const VASTSeqValue &Port) const {
-  if (Port.empty()) return;
-
-  const std::string &BRAMArray = VFUBRAM::getArrayName(getBlockRAMNum());
-
-  unsigned AddrWidth = Log2_32_Ceil(getDepth());
-  // The block RAM is active if the address bus is active.
-  OS.if_begin(Twine(BRAMArray) + "_addr" + "_selector_enable");
-  // Check if there is any write to the block RAM.
-  bool HasAnyWrite = false;
-
-  for (assign_itertor I = Port.begin(), E = Port.end(); I != E; ++I) {
-    VASTExpr *Expr = cast<VASTExpr>(*I->second);
-    if (Expr->getOpcode() == VASTExpr::dpWrBRAM) {
-      HasAnyWrite = true;
-      break;
+    const OrVec &Ors = I->second;
+    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI)
+    {
+      OI->printAsOperand(OS);
+      OS << '|';
     }
+
+    OS << "1'b0): begin\n";
+    // Print the assignment under the condition.
+    OS.indent(6) << getName() << "_selector_wire = ";
+    I->first.printAsOperand(OS);
+    OS << ";\n";
+    // Print the enable.
+    OS.indent(6) << getName() << "_selector_enable = 1'b1;\n";
+    OS.indent(4) << "end\n";
   }
 
-  // Only print the write port if there is any write.
-  if (HasAnyWrite) {
-    // It is a write if the data bus is active.
-    OS.if_begin(Twine(BRAMArray) + "_data" + "_selector_enable");
-    OS << BRAMArray << '[' << BRAMArray << "_addr_selector_wire"
-      << VASTValue::printBitRange(AddrWidth, 0, false) << ']' << " <= "
-      << BRAMArray << "_data_selector_wire"
-      << VASTValue::printBitRange(getWordSize(), 0, false) << ";\n";
-    OS.exit_block();
-  }
-
-  // Else is is a read, write to the output port.
-  // To let the synthesis tools correctly infer a block RAM, the write to
-  // result register is active even the current operation is a write access.
-  OS << VFUBRAM::getOutDataBusName(getBlockRAMNum())
-    << VASTValue::printBitRange(getWordSize(), 0, false) << " <= "
-    << BRAMArray << '[' << BRAMArray << "_addr_selector_wire"
-    << VASTValue::printBitRange(AddrWidth, 0, false) << "];\n";
-  OS.exit_block();
-
-  OS << "// synthesis translate_off\n";
-  Port.verifyAssignCnd(OS, BRAMArray, Mod);
-  OS << "// synthesis translate_on\n\n";
+  // Write the default condition, otherwise latch will be inferred.
+  OS.indent(4) << "default: begin\n";
+  OS.indent(6) << getName() << "_selector_wire = " << Bitwidth << "'bx;\n";
+  OS.indent(6) << getName() << "_selector_enable = 1'b0;\n";
+  OS.indent(4) << "end\n";
+  OS.indent(2) << "endcase\nend  // end mux logic\n\n";
 }
 
-void VASTRegister::printSelector(raw_ostream &OS) const {
-  if (Value.empty()) return;
-
-  typedef std::vector<VASTValPtr> OrVec;
-  typedef std::map<VASTValPtr, OrVec> CSEMapTy;
-  CSEMapTy SrcCSEMap;
-
-  Value.buildCSEMap(SrcCSEMap);
-
-  PrintSelector(OS, Twine(getName()), getBitWidth(), SrcCSEMap);
-}
-
-void
-VASTRegister::printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod) const {
-  if (Value.empty()) return;
-
-  OS.if_begin(Twine(getName()) + Twine("_selector_enable"));
-  OS << getName() << " <= " << getName() << "_selector_wire"
-     << VASTValue::printBitRange(getBitWidth(), 0, false) << ";\n";
-  OS.exit_block();
-
-  OS << "// synthesis translate_off\n";
-  Value.verifyAssignCnd(OS, getName(), Mod);
-  OS << "// synthesis translate_on\n\n";
-}
-
-void VASTRegister::dumpAssignment() const {
-  vlang_raw_ostream S(dbgs());
-  printAssignment(S, 0);
-}
+void VASTSeqValue::anchor() const {}

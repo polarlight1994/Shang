@@ -207,17 +207,13 @@ private:
   AssignMapTy Assigns;
 
   VASTNode &Parent;
+
+  bool buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> > &CSEMap) const;
 public:
   VASTSeqValue(const char *Name, unsigned Bitwidth, VASTNode::SeqValType T,
                unsigned Idx, VASTNode &Parent)
     : VASTSignal(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx),
       Parent(Parent) {}
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTSeqValue *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastSeqValue;
-  }
 
   VASTNode::SeqValType getValType() const { return VASTNode::SeqValType(T); }
 
@@ -243,10 +239,24 @@ public:
   unsigned size() const { return Assigns.size(); }
   bool empty() const { return Assigns.empty(); }
 
+  // Functions to write the verilog code.
   void verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
                        const VASTModule *Mod) const;
 
-  void buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> > &CSEMap) const;
+  void printSelector(raw_ostream &OS, unsigned Bitwidth) const;
+  void printSelector(raw_ostream &OS) const {
+    printSelector(OS, getBitWidth());
+  }
+
+  void dropUses() {
+    assert(0 && "Function not implemented!");
+  }
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTSeqValue *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastSeqValue;
+  }
 
   virtual void anchor() const;
 };
