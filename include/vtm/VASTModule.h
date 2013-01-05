@@ -71,8 +71,8 @@ public:
   typedef SmallVector<VASTRegister*, 128> RegisterVector;
   typedef RegisterVector::iterator reg_iterator;
 
-  typedef SmallVector<VASTBlockRAM*, 16> BlockRAMVector;
-  typedef BlockRAMVector::iterator bram_iterator;
+  typedef SmallVector<VASTSubModuleBase*, 16> SubmoduleVector;
+  typedef SubmoduleVector::iterator submod_iterator;
 
   typedef SmallVector<VASTSeqValue*, 128> SeqValueVector;
   typedef SeqValueVector::iterator seqval_iterator;
@@ -93,7 +93,7 @@ private:
   // Wires and Registers of the design.
   WireVector Wires;
   RegisterVector Registers;
-  BlockRAMVector BlockRAMs;
+  SubmoduleVector Submodules;
 
   typedef StringMap<VASTNamedValue*> SymTabTy;
   SymTabTy SymbolTable;
@@ -148,7 +148,7 @@ public:
 
   void printDatapath(raw_ostream &OS) const;
   void printRegisterBlocks(vlang_raw_ostream &OS) const;
-  void printBlockRAMBlocks(vlang_raw_ostream &OS) const;
+  void printSubmodules(vlang_raw_ostream &OS) const;
 
   // Print the slot control flow.
   void buildSlotLogic(VASTExprBuilder &Builder);

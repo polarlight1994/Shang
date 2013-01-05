@@ -157,8 +157,7 @@ VASTBlockRAM *VASTModule::addBlockRAM(unsigned BRamNum, unsigned Bitwidth,
     = new (Allocator) VASTBlockRAM("", BRamNum, Bitwidth, Size, Init);
   // Build the ports.
   RAM->addPorts(this);
-
-  BlockRAMs.push_back(RAM);
+  Submodules.push_back(RAM);
   return RAM;
 }
 
@@ -294,14 +293,14 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
   }
 }
 
-void VASTModule::printBlockRAMBlocks(vlang_raw_ostream &OS) const {
-  typedef BlockRAMVector::const_iterator iterator;
+void VASTModule::printSubmodules(vlang_raw_ostream &OS) const {
+  typedef SubmoduleVector::const_iterator iterator;
 
-  for (iterator I = BlockRAMs.begin(), E = BlockRAMs.end(); I != E; ++I) {
-    VASTBlockRAM *R = *I;
+  for (iterator I = Submodules.begin(), E = Submodules.end(); I != E; ++I) {
+    VASTSubModuleBase *S = *I;
 
     // Print the data selector of the register.
-    R->print(OS, this);
+    S->print(OS, this);
   }
 }
 
@@ -364,10 +363,9 @@ void VASTModule::printSignalDecl(raw_ostream &OS) {
     printDecl(OS, R, true, R->AttrStr) << "\n";
   }
 
-  for (bram_iterator I = BlockRAMs.begin(), E = BlockRAMs.end(); I != E; ++I) {
-    VASTBlockRAM *R = *I;
-
-    printDecl(OS, R->getRAddr(0), true, "") << "\n";
+  for (submod_iterator I = Submodules.begin(),E = Submodules.end();I != E;++I) {
+    if (VASTBlockRAM *R = dyn_cast<VASTBlockRAM>(*I))
+      printDecl(OS, R->getRAddr(0), true, "") << "\n";
   }
 }
 
