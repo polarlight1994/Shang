@@ -222,5 +222,5 @@ void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   }
 
   // Write the clock and the reset signal at last.
-  OS.indent(4) << ".clk(clk),\n\t.rstN(rstN));\n";
+  OS.indent(4) << ".clk(clk), .rstN(rstN));\n";
 }

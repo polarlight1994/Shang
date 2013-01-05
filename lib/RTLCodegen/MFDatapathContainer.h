@@ -16,8 +16,6 @@
 
 #include "MachineFunction2Datapath.h"
 
-#include "vtm/VASTDatapathNodes.h"
-
 namespace llvm {
 class VASTMachineOperand : public VASTNamedValue {
   const MachineOperand MO;
