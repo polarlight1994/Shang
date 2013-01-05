@@ -73,9 +73,7 @@ class VASTSubModule : public VASTSubModuleBase {
   // Can the submodule be simply instantiated?
   bool IsSimple;
   // Special ports in the submodule.
-  VASTSeqValue *StartPort;
-  VASTValue *FinPort;
-  VASTSeqValue *RetPort;
+  VASTSeqValue *StartPort, *FinPort, *RetPort;
 
   // The latency of the submodule.
   unsigned Latency;
@@ -108,19 +106,11 @@ public:
     addPort(Name, V, false);
   }
 
-  void addStartPort(VASTSeqValue *V) {
-    assert(V && "Bad start port!");
-    StartPort = V;
-    addInPort("start", V);
-  }
+  VASTSeqValue *createStartPort(VASTModule *VM);
   VASTSeqValue *getStartPort() const { return StartPort; }
 
-  void addFinPort(VASTValue *V) {
-    assert(V && "Bad finish port!");
-    FinPort = V;
-    addOutPort("fin", V);
-  }
-  VASTValue *getFinPort() const { return FinPort; }
+  VASTSeqValue *createFinPort(VASTModule *VM);
+  VASTSeqValue *getFinPort() const { return FinPort; }
 
   VASTSeqValue *createRetPort(VASTModule *VM, unsigned Bitwidth,
                               unsigned Latency = 0);

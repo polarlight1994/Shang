@@ -6,7 +6,7 @@ reg [6:0] div64_$(num)_counter;
 wire [7:0] div64_$(num)_counter_wire = div64_$(num)_counter + 1'b1;
 
 reg div64_$(num)_busy;
-wire $(fin) = ~(div64_$(num)_busy | $(en));
+assign $(fin) = ~(div64_$(num)_busy | $(en));
 
 assign $(out0) = div64_$(num)opa / div64_$(num)opb;
 
@@ -38,7 +38,7 @@ reg [5:0] div32_$(num)_counter;
 wire [6:0] div32_$(num)_counter_wire = div32_$(num)_counter + 1'b1;
 
 reg div32_$(num)_busy;
-wire $(fin) = ~(div32_$(num)_busy | $(en));
+assign $(fin) = ~(div32_$(num)_busy | $(en));
 
 assign $(out0) = div32_$(num)opa / div32_$(num)opb;
 
@@ -70,7 +70,7 @@ reg [5:0] div32_$(num)_counter;
 wire [6:0] div32_$(num)_counter_wire = div32_$(num)_counter + 1'b1;
 
 reg div32_$(num)_busy;
-wire $(fin) = ~(div32_$(num)_busy | $(en));
+assign $(fin) = ~(div32_$(num)_busy | $(en));
 
 assign $(out0) = $signed (div32_$(num)opa) / $signed (div32_$(num)opb);
 
@@ -103,7 +103,7 @@ reg [4:0] div32_$(num)_counter;
 wire [5:0] div32_$(num)_counter_wire = div32_$(num)_counter + 1'b1;
 
 reg div32_$(num)_busy;
-wire $(fin) = ~(div32_$(num)_busy | $(en));
+assign $(fin) = ~(div32_$(num)_busy | $(en));
 
 assign $(out0) = $signed (div32_$(num)opa) % $signed (div32_$(num)opb);
 

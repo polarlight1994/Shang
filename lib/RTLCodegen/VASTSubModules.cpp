@@ -192,6 +192,18 @@ VASTSubModule::getPortName(unsigned FNNum, const std::string &PortName) {
   return "SubMod" + utostr(FNNum) + "_" + PortName;
 }
 
+VASTSeqValue *VASTSubModule::createStartPort(VASTModule *VM) {
+  StartPort = VM->addRegister(getPortName("start"), 1)->getValue();
+  addInPort("start", StartPort);
+  return StartPort;
+}
+
+VASTSeqValue *VASTSubModule::createFinPort(VASTModule *VM) {
+  FinPort = VM->createSeqValue(getPortName("fin"), 1, VASTNode::IO, 0, this);
+  addOutPort("fin", FinPort);
+  return FinPort;
+}
+
 VASTSeqValue *VASTSubModule::createRetPort(VASTModule *VM, unsigned Bitwidth,
                                            unsigned Latency) {
   RetPort = VM->createSeqValue(getPortName("return_value"),

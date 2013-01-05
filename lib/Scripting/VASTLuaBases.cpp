@@ -369,14 +369,21 @@ void VASTModule::printSignalDecl(raw_ostream &OS) {
   }
 
   for (submod_iterator I = Submodules.begin(),E = Submodules.end();I != E;++I) {
+    // Declare the output register of the block RAM.
     if (VASTBlockRAM *R = dyn_cast<VASTBlockRAM>(*I)) {
       printDecl(OS, R->getRAddr(0), true, "") << "\n";
       continue;
     }
 
-    if (VASTSubModule *S = dyn_cast<VASTSubModule>(*I))
+    if (VASTSubModule *S = dyn_cast<VASTSubModule>(*I)) {
+      // Declare the output of submodule.
       if (VASTSeqValue *Ret = S->getRetPort())
         printDecl(OS, Ret, false, "") << "\n";
+
+      // Declare the finish signal of submodule.
+      if (VASTSeqValue *Fin = S->getFinPort())
+        printDecl(OS, Fin, false, "") << "\n";
+    }
   }
 }
 

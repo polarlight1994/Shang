@@ -693,13 +693,9 @@ VASTSubModule *VerilogASTBuilder::emitSubModule(const char *CalleeName,
     Ops.push_back(R->getValue());
   }
   // Add the start register.
-  VASTRegister *Start =
-    VM->addRegister(VASTSubModule::getPortName(FNNum, "start"), 1);
-  indexPhysReg(FNNum + 1, Start->getValue());
-  SubMod->addStartPort(Start->getValue());
-  // Add the finish output from the submodule.
-  VASTValPtr S = VM->getOrCreateSymbol(SubMod->getPortName("fin"), 1, false);
-  SubMod->addFinPort(cast<VASTValue>(S));
+  indexPhysReg(FNNum + 1, SubMod->createStartPort(VM));
+  // Create the finish signal from the submodule.
+  SubMod->createFinPort(VM);
 
   // Dose the submodule have a return port?
   if (Info.getBitWidth()) {
@@ -746,12 +742,8 @@ void VerilogASTBuilder::emitFunctionSignature(const Function *F,
 void VerilogASTBuilder::emitCommonPort(VASTSubModule *SubMod) {
   if (SubMod) {
     // It is a callee function, emit the signal for the sub module.
-    std::string StartPortName = SubMod->getPortName("start");
-    VASTRegister *R = VM->addRegister(StartPortName, 1);
-    indexPhysReg(SubMod->getNum() + 1, R->getValue());
-    SubMod->addStartPort(R->getValue());
-    std::string FinPortName = SubMod->getPortName("fin");
-    SubMod->addFinPort(VM->addWire(FinPortName, 1));
+    SubMod->createStartPort(VM);
+    SubMod->createFinPort(VM);
     // Also connedt the memory bus.
     MBBuilder->addSubModule(SubMod);
   } else { // If F is current function.
