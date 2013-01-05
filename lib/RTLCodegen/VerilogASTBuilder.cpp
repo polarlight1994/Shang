@@ -1056,10 +1056,10 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
       continue;
     }
     printOperand(Operand, OS);
-
-    OS << ", \");\""; // Enclose the c function call.
-    OS << ");\n";
   } 
+
+  OS << ", \");\""; // Enclose the c function call.
+  OS << ");\n";
 
   OS.exit_block();
 }
