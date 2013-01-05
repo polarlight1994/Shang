@@ -660,7 +660,7 @@ void VerilogASTBuilder::emitAllocatedFUs() {
 
     // Index the read port if there is any read accesses.
     if (unsigned ReadPortNum = Info.ReadPortARegNum)
-      indexPhysReg(Info.ReadPortARegNum, BRAM->getRAddr(0));
+      indexPhysReg(ReadPortNum, BRAM->getRAddr(0));
 
     // Index the write ports if there is any write access.
     if (unsigned WritePortNum = Info.WritePortARegnum) {
