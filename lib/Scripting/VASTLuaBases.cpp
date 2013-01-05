@@ -367,7 +367,7 @@ void VASTModule::printSignalDecl(raw_ostream &OS) {
   for (bram_iterator I = BlockRAMs.begin(), E = BlockRAMs.end(); I != E; ++I) {
     VASTBlockRAM *R = *I;
 
-    printDecl(OS, R->getRAddr(0), true, "");
+    printDecl(OS, R->getRAddr(0), true, "") << "\n";
   }
 }
 

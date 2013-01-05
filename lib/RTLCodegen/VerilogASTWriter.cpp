@@ -143,5 +143,3 @@ bool VerilogASTWriter::runOnMachineFunction(MachineFunction &F) {
 
   return false;
 }
-
-

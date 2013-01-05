@@ -741,8 +741,8 @@ void VerilogASTBuilder::emitSubModule(StringRef CalleeName, unsigned FNNum) {
 
     if (Latency == 0) {
       VASTValPtr PortName = VM->getOrCreateSymbol(Ports[4],
-        Info.getBitWidth(),
-        false);
+                                                  Info.getBitWidth(),
+                                                  false);
       indexPhysReg(RetPortIdx, PortName);
       return;
     }

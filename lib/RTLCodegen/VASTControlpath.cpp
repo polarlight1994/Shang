@@ -346,6 +346,8 @@ bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> >
 
 void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
                                    const VASTModule *Mod) const {
+  if (empty()) return;
+
   // Concatenate all condition together to detect the case that more than one
   // case is activated.
   std::string AllPred;
