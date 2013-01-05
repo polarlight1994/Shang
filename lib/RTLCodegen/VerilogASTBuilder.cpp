@@ -700,8 +700,9 @@ void VerilogASTBuilder::emitAllocatedFUs() {
                && "Unexpected initialier!");
         if (CI) InitVal = CI->getZExtValue();
       }
-
-      unsigned PhysReg = Info.ReadPortARegNum;
+      // Dirty Hack: For some block RAM, there is no read access, while for
+      // some others, there is no write access.
+      unsigned PhysReg = std::max(Info.ReadPortARegNum, Info.WritePortARegnum);
       assert((PhysReg == Info.WritePortARegnum || Info.WritePortARegnum == 0)
              && "The same register should be assigned to the single element BRAM"
                 " or there is no write access!");
