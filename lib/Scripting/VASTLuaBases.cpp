@@ -140,19 +140,24 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 }
 
 //----------------------------------------------------------------------------//
+VASTSeqValue *
+VASTModule::createSeqValue(const std::string &Name, unsigned BitWidth,
+                           VASTNode::SeqValType T, unsigned Idx, VASTNode *P) {
+  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name);
+  VASTSeqValue *V
+    = new (Allocator) VASTSeqValue(Entry.getKeyData(), BitWidth, T, Idx, *P);
+  SeqVals.push_back(V);
+
+  return V;
+}
+
 VASTBlockRAM *VASTModule::addBlockRAM(unsigned BRamNum, unsigned Bitwidth,
                                       unsigned Size) {
-  SymEntTy &Entry
-    = SymbolTable.GetOrCreateValue(VFUBRAM::getOutDataBusName(BRamNum));
-
-  assert(Entry.second == 0 && "Symbol already exist!");
-  VASTBlockRAM *RAM = Allocator.Allocate<VASTBlockRAM>();
-  new (RAM) VASTBlockRAM(Entry.getKeyData(), BRamNum, Bitwidth, Size);
-  Entry.second = &RAM->WritePortA;
+  VASTBlockRAM *RAM = new (Allocator) VASTBlockRAM("", BRamNum, Bitwidth, Size);
+  // Build the ports.
+  RAM->addPorts(this);
 
   BlockRAMs.push_back(RAM);
-  SeqVals.push_back(&RAM->WritePortA);
-
   return RAM;
 }
 
@@ -295,14 +300,7 @@ void VASTModule::printBlockRAMBlocks(vlang_raw_ostream &OS) const {
     VASTBlockRAM *R = *I;
 
     // Print the data selector of the register.
-    R->printSelector(OS);
-
-    OS.always_ff_begin(false);
-    // Print the sequential logic of the block RAM.
-    // Print the assignment.
-    R->printAssignment(OS, this);
-
-    OS.always_ff_end(false);
+    R->print(OS, this);
   }
 }
 
@@ -311,23 +309,7 @@ void VASTModule::printRegisterBlocks(vlang_raw_ostream &OS) const {
 
   for (iterator I = Registers.begin(), E = Registers.end(); I != E; ++I) {
     VASTRegister *R = *I;
-    // Ignore the register if it do not have any fanin or it is virtual
-    if (R->num_assigns() == 0)
-      continue;
-
-    // Print the data selector of the register.
-    R->printSelector(OS);
-
-    OS.always_ff_begin();
-    // Print the sequential logic of the register.
-    // Reset the register.
-    if (R->printReset(OS)) OS << "\n";
-    OS.else_begin();
-
-    // Print the assignment.
-    R->printAssignment(OS, this);
-
-    OS.always_ff_end();
+    R->print(OS, this);
   }
 }
 
@@ -343,11 +325,12 @@ void VASTModule::printModuleDecl(raw_ostream &OS) const {
 }
 
 template<typename T>
-static raw_ostream &printDecl(raw_ostream &OS, T *V) {
-  OS << V->AttrStr << ' ';
+static
+raw_ostream &printDecl(raw_ostream &OS, T *V, bool declAsRegister,
+                       const char *AttrStr) {
+  OS << AttrStr << ' ';
 
-  bool isRegister = isa<VASTRegister>(V);
-  if (isRegister)
+  if (declAsRegister)
     OS << "reg";
   else
     OS << "wire";
@@ -357,7 +340,7 @@ static raw_ostream &printDecl(raw_ostream &OS, T *V) {
 
   OS << ' ' << V->getName();
 
-  if (isRegister)
+  if (isa<VASTRegister>(V))
     OS << " = " << VASTImmediate::buildLiteral(0, V->getBitWidth(), false);
 
   OS << ";";
@@ -371,13 +354,20 @@ void VASTModule::printSignalDecl(raw_ostream &OS) {
 
     // Print the declaration.
     if (W->use_empty() && !W->isPinned()) OS << "//";
-    printDecl(OS, W);
+    printDecl(OS, W, false, W->AttrStr);
     OS << "// uses " << W->num_uses() << " pinned " << W->isPinned() << '\n';
   }
 
-  for (reg_iterator I = Registers.begin(), E = Registers.end(); I != E; ++I)
-    printDecl(OS, *I) << "\n";
+  for (reg_iterator I = Registers.begin(), E = Registers.end(); I != E; ++I) {
+    VASTRegister *R = *I;
+    printDecl(OS, R, true, R->AttrStr) << "\n";
+  }
 
+  for (bram_iterator I = BlockRAMs.begin(), E = BlockRAMs.end(); I != E; ++I) {
+    VASTBlockRAM *R = *I;
+
+    printDecl(OS, R->getRAddr(0), true, "");
+  }
 }
 
 VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V, VASTNode::WireType T) {

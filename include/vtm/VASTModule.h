@@ -273,6 +273,10 @@ public:
     return Ports.begin() + VASTModule::SpecialOutPortEnd;
   }
 
+  VASTSeqValue *createSeqValue(const std::string &Name, unsigned BitWidth,
+                               VASTNode::SeqValType T, unsigned Idx,
+                               VASTNode *Parent);
+
   VASTBlockRAM *addBlockRAM(unsigned BRamNum, unsigned Bitwidth, unsigned Size);
 
   VASTRegister *addRegister(const std::string &Name, unsigned BitWidth,
