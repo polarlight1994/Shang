@@ -127,30 +127,3 @@ end
 ]=],
 TimingInfo = { NumOperands = 2, Latency = 32, OperandInfo = { { Name = [=[div32_$(num)opa]=], SizeInBits = 32 }, { Name = [=[div32_$(num)opb]=], SizeInBits = 32 } } }
 }
-
-Modules.memset = {
-InstTmplt = [=[
-parameter $(fin) = 1'b1;
-import "DPI-C" function chandle verilator_memset(chandle ptr, int value, longint num);
-]=],
-StartTmplt = [=[
-verilator_memset($(in0), $(in1), $(in2));
-]=]}
-
-Modules.memcpy = {
-InstTmplt = [=[
-parameter $(fin) = 1'b1;
-import "DPI-C" function chandle verilator_memcpy(chandle dst, chandle src, longint num);
-]=],
-StartTmplt = [=[
-verilator_memcpy($(in0), $(in1), $(in2));
-]=]}
-
-Modules.memmove = {
-InstTmplt = [=[
-parameter $(fin) = 1'b1;
-import "DPI-C" function chandle verilator_memmove(chandle dst, chandle src, longint num);
-]=],
-StartTmplt = [=[
-verilator_memmove($(in0), $(in1), $(in2));
-]=]}

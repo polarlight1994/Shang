@@ -283,48 +283,6 @@ std::string VFUs::instantiatesModule(const std::string &ModName, unsigned ModNum
   return scriptEngin().getValueStr(ResultName);
 }
 
-std::string VFUs::startModule(const std::string &ModName, unsigned ModNum,
-                              ArrayRef<std::string> InPorts) {
-  std::string Script;
-  raw_string_ostream ScriptBuilder(Script);
-
-  luabind::object ModTemplate = scriptEngin().getModTemplate(ModName);
-  std::string Template = getProperty<std::string>(ModTemplate, "StartTmplt");
-
-  std::string ResultName = ModName + utostr_32(ModNum) + "_start";
-  // FIXME: Use LUA api directly?
-  // Call the preprocess function.
-  ScriptBuilder <<
-    /*"local " <<*/ ResultName << ", message = require \"luapp\" . preprocess {"
-  // The inpute template.
-                   "input=[=[";
-  if (Template.empty()) {
-    ScriptBuilder << "// " << ModName << " not available!\n";
-    errs() << "Start template for external Module :" << ModName
-           << " not available!\n";
-  } else
-    ScriptBuilder << Template;
-  ScriptBuilder << "]=],"
-  // And the look up.
-                   "lookup={ num=" << ModNum;
-  // The input ports.
-  for (unsigned i = 0, e = InPorts.size(); i < e; ++i)
-    ScriptBuilder << ", in" << i << " = [=[" <<  InPorts[i] << "]=]";
-
-  // End the look up and the function call.
-  ScriptBuilder << "}}\n";
-  DEBUG(ScriptBuilder << "print(" << ResultName << ")\n");
-  DEBUG(ScriptBuilder << "print(message)\n");
-  ScriptBuilder.flush();
-  DEBUG(dbgs() << "Going to execute:\n" << Script);
-
-  SMDiagnostic Err;
-  if (!scriptEngin().runScriptStr(Script, Err))
-    report_fatal_error("External module starting:" + Err.getMessage());
-
-  return scriptEngin().getValueStr(ResultName);
-}
-
 static bool generateOperandNames(const std::string &ModName, luabind::object O,
                                  unsigned FNNum,
                                  SmallVectorImpl<VFUs::ModOpInfo> &OpInfo) {

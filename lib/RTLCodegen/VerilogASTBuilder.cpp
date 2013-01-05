@@ -1084,21 +1084,8 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
 
     OS << ", \");\""; // Enclose the c function call.
     OS << ");\n";
-  } else {
-    // Else ask the constraint about how to handle this call.
-    SmallVector<std::string, 8> InPorts;
-    std::string s;
-    raw_string_ostream SS(s);
-    for (unsigned i = 4, e = MI->getNumOperands(); i != e; ++i) {
-      printOperand(MI->getOperand(i), SS);
-      SS.flush();
-      InPorts.push_back(SS.str());
-      s.clear();
-    }
+  } 
 
-    std::string Name = CalleeName;
-    OS << VFUs::startModule(Name, FInfo->getCalleeFNNum(CalleeName), InPorts);
-  }
   OS.exit_block();
 }
 

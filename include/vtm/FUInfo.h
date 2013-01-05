@@ -85,8 +85,6 @@ namespace VFUs {
   // Ports layout: Clk, Rst, En, Fin, ouput0, output1 ...
   std::string instantiatesModule(const std::string &ModName, unsigned ModNum,
                                  ArrayRef<std::string> Ports);
-  std::string startModule(const std::string &ModName, unsigned ModNum,
-                          ArrayRef<std::string> InPorts);
 
   typedef std::pair<std::string, unsigned> ModOpInfo;
   unsigned getModuleOperands(const std::string &ModName, unsigned FNNum,
