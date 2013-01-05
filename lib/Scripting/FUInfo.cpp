@@ -237,41 +237,6 @@ void FuncUnitId::dump() const {
   print(dbgs());
 }
 
-std::string VFUBRAM::generateCode(const std::string &Clk, unsigned Num,
-                                  unsigned DataWidth, unsigned Size,
-                                  std::string Filename) const {
-  std::string Script;
-  raw_string_ostream ScriptBuilder(Script);
-
-  std::string ResultName = "bram" + utostr_32(Num) + "_"
-                           + utostr_32(DataWidth) + "x" + utostr_32(Size)
-                           + "_result";
-  // FIXME: Use LUA api directly?
-  // Call the preprocess function.
-  ScriptBuilder <<
-    /*"local " <<*/ ResultName << ", message = require \"luapp\" . preprocess {"
-  // The inpute template.
-                << "input=[=[" << Template <<"]=],"
-  // And the look up.
-                << "lookup={ "
-                << "datawidth=" << DataWidth << ", size=" << Size
-                << ", num=" << Num << ", clk='" << Clk << '\''
-                << ", filepath=" << "[[" << InitFileDir << "]]"
-                << ", filename=" << "[[" << Filename << "]]"
-  // End the look up and the function call.
-                << "}}\n";
-  DEBUG(ScriptBuilder << "print(" << ResultName << ")\n");
-  DEBUG(ScriptBuilder << "print(message)\n");
-  ScriptBuilder.flush();
-  DEBUG(dbgs() << "Going to execute:\n" << Script);
-
-  SMDiagnostic Err;
-  if (!scriptEngin().runScriptStr(Script, Err))
-    report_fatal_error("Block Ram code generation:" + Err.getMessage());
-
-  return scriptEngin().getValueStr(ResultName);
-}
-
 std::string VFUs::instantiatesModule(const std::string &ModName, unsigned ModNum,
                                      ArrayRef<std::string> Ports) {
   std::string Script;

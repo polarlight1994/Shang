@@ -129,10 +129,13 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   OS << "// Address space: " << getBlockRAMNum();
   if (Initializer) OS << *Initializer;
   OS << '\n'
-     << getFUDesc<VFUBRAM>()->generateCode(Mod->getPortName(VASTModule::Clk),
-                                           getBlockRAMNum(), getWordSize(),
-                                           getDepth(), InitFilePath)
-     << '\n';
+     << "(* ramstyle = \"no_rw_check\" *) reg"
+     << VASTValue::printBitRange(getWordSize(), 0, false) << ' '
+     << VFUBRAM::getArrayName(getBlockRAMNum()) << "[0:" << getDepth() << "];\n";
+
+  if (Initializer)
+    OS << "initial $readmemh(\"" << InitFilePath << "\", "
+       << VFUBRAM::getArrayName(getBlockRAMNum()) << ");\n";
 
   // Print the selectors.
   getRAddr(0)->printSelector(OS, getAddrWidth());
