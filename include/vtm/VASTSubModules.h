@@ -72,9 +72,12 @@ class VASTSubModule : public VASTSubModuleBase {
   StringMap<VASTSubModulePortPtr> PortMap;
   // Can the submodule be simply instantiated?
   bool IsSimple;
+  //
+  VASTSeqValue *StartPort;
+  VASTValue *FinPort;
 
   VASTSubModule(const char *Name, unsigned FNNum)
-    : VASTSubModuleBase(vastSubmodule, Name, FNNum) {}
+    : VASTSubModuleBase(vastSubmodule, Name, FNNum), StartPort(0), FinPort(0) {}
 
   friend class VASTModule;
   void addPort(const std::string &Name, VASTValue *V, bool IsInput);
@@ -92,13 +95,27 @@ public:
   const_port_iterator port_begin() const { return PortMap.begin(); }
   const_port_iterator port_end() const { return PortMap.end(); }
 
-  void addInPort(const std::string &Name, VASTValue *V) {
+  void addInPort(const std::string &Name, VASTSeqValue *V) {
     addPort(Name, V, true);
   }
 
   void addOutPort(const std::string &Name, VASTValue *V) {
     addPort(Name, V, false);
   }
+
+  void addStartPort(VASTSeqValue *V) {
+    assert(V && "Bad start port!");
+    StartPort = V;
+    addInPort("start", V);
+  }
+  VASTSeqValue *getStartPort() const { return StartPort; }
+
+  void addFinPort(VASTValue *V) {
+    assert(V && "Bad finish port!");
+    FinPort = V;
+    addOutPort("fin", V);
+  }
+  VASTValue *getFinPort() const { return FinPort; }
 
   static std::string getPortName(unsigned FNNum, const std::string &PortName);
   std::string getPortName(const std::string &PortName) const {

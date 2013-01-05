@@ -706,10 +706,10 @@ VASTSubModule *VerilogASTBuilder::emitSubModule(const char *CalleeName,
     Ops.push_back(R->getValue());
   }
   // Add the start register.
-  SubMod->addInPort("start", Start->getValue());
+  SubMod->addStartPort(Start->getValue());
   // Add the finish output from the submodule.
   VASTValPtr S = VM->getOrCreateSymbol(SubMod->getPortName("fin"), 1, false);
-  SubMod->addOutPort("fin", cast<VASTValue>(S));
+  SubMod->addFinPort(cast<VASTValue>(S));
 
   // Dose the submodule have a return port?
   if (Info.getBitWidth()) {
@@ -768,9 +768,9 @@ void VerilogASTBuilder::emitCommonPort(VASTSubModule *SubMod) {
     std::string StartPortName = SubMod->getPortName("start");
     VASTRegister *R = VM->addRegister(StartPortName, 1);
     indexPhysReg(SubMod->getNum() + 1, R->getValue());
-    SubMod->addInPort("start", R->getValue());
+    SubMod->addStartPort(R->getValue());
     std::string FinPortName = SubMod->getPortName("fin");
-    SubMod->addOutPort("fin", VM->addWire(FinPortName, 1));
+    SubMod->addFinPort(VM->addWire(FinPortName, 1));
     // Also connedt the memory bus.
     MBBuilder->addSubModule(SubMod);
   } else { // If F is current function.
