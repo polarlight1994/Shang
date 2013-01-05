@@ -140,9 +140,7 @@ public:
     dpLUT,
     // Mux in datapath.
     dpMux,
-    // Read/Write block RAM.
-    dpRdBRAM, // Represented by the Address.
-    dpWrBRAM, // Represented by tuple (Address, Data).
+
     // Blackbox,
     dpBlackBox
   };

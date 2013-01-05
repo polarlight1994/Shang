@@ -682,7 +682,7 @@ void VerilogASTBuilder::emitAllocatedFUs() {
   for (VFInfo::const_bram_iterator I = FInfo->bram_begin(), E = FInfo->bram_end();
        I != E; ++I) {
     const VFInfo::BRamInfo &Info = I->second;
-    unsigned BramNum = Info.PhyRegNum;
+
     //const Value* Initializer = Info.Initializer;
     unsigned NumElem = Info.NumElem;
     unsigned DataWidth = Info.ElemSizeInBytes * 8;
@@ -690,34 +690,16 @@ void VerilogASTBuilder::emitAllocatedFUs() {
     const GlobalVariable *Initializer =
       dyn_cast_or_null<GlobalVariable>(Info.Initializer);
 
-    // If there is only 1 element, simply replace the block RAM by a register.
-    if (NumElem == 1) {
-      uint64_t InitVal = 0;
-      if (Initializer) {
-        // Try to retrieve the initialize value of the register, it may be a
-        // ConstantInt or ConstPointerNull, we can safely ignore the later case
-        // since the InitVal is default to 0.
-        const ConstantInt *CI
-          = dyn_cast_or_null<ConstantInt>(Initializer->getInitializer());
-        assert((CI || !Initializer->hasInitializer()
-                || isa<ConstantPointerNull>(Initializer->getInitializer()))
-               && "Unexpected initialier!");
-        if (CI) InitVal = CI->getZExtValue();
-      }
-
-      VASTRegister *R = VM->addRegister(VFUBRAM::getOutDataBusName(BramNum),
-                                        DataWidth, InitVal, VASTSeqValue::Data,
-                                        BramNum);
-      indexPhysReg(BramNum, R->getValue());
-      continue;
-    }
-
     // Create the block RAM object.
-    VASTBlockRAM *BRAMArray = VM->addBlockRAM(BramNum, DataWidth, NumElem);
+    VASTBlockRAM *BRAMArray = VM->addBlockRAM(I->first, DataWidth, NumElem);
 
-    // Used in template.
-    // BRAMArray->Pin();
-    indexPhysReg(BramNum, &BRAMArray->WritePortA);
+    // Index the read port.
+    indexPhysReg(Info.ReadPortARegNum, BRAMArray->getRAddr(0));
+    // Index the write ports if there is any write access.
+    if (unsigned WritePortNum = Info.WritePortARegnum) {
+      indexPhysReg(Info.WritePortARegnum, BRAMArray->getWAddr(0));
+      indexPhysReg(Info.WritePortARegnum + 1, BRAMArray->getWData(0));
+    }
 
     // Set the initialize file's name if there is any.
     if (Initializer)
@@ -727,12 +709,11 @@ void VerilogASTBuilder::emitAllocatedFUs() {
     S << "// Address space: " << I->first;
     if (Info.Initializer) S << *Info.Initializer;
     S << '\n'
-      << BlockRam->generateCode(VM->getPortName(VASTModule::Clk), BramNum,
+      << BlockRam->generateCode(VM->getPortName(VASTModule::Clk), I->first,
                                 DataWidth, NumElem, InitFilePath)
       << '\n';
   }
 }
-
 
 void VerilogASTBuilder::emitSubModule(StringRef CalleeName, unsigned FNNum) {
   // Do not emit a submodule more than once.
@@ -1164,36 +1145,26 @@ void VerilogASTBuilder::emitOpMemTrans(MachineInstr *MI, VASTSlot *Slot,
 
 void VerilogASTBuilder::emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot,
                                         VASTValueVecTy &Cnds, bool IsWrite) {
-  unsigned BRamID = VInstrInfo::getPreboundFUId(MI).getFUNum();
-  unsigned SizeInBytes = FInfo->getBRamInfo(BRamID).ElemSizeInBytes;
+  unsigned FUNum = VInstrInfo::getPreboundFUId(MI).getFUNum();
+  unsigned SizeInBytes
+    = FInfo->getBRamInfo(VFUBRAM::FUNumToBRamNum(FUNum)).ElemSizeInBytes;
   unsigned Alignment = Log2_32_Ceil(SizeInBytes);
 
   VASTValPtr Addr = getAsOperandImpl(MI->getOperand(1));
   Addr = Builder->buildBitSliceExpr(Addr, Addr->getBitWidth(), Alignment);
   
-  VASTSeqValue *BRAMArray = getAsLValue<VASTSeqValue>(MI->getOperand(0));
+  unsigned PortRegNum = MI->getOperand(0).getReg();
 
-  if (BRAMArray->getValType() != VASTSeqValue::BRAM) {
-    // If the block RAM is replaced by a register, we can ignore the read
-    // operation.
-    if (IsWrite)
-      VM->addAssignment(BRAMArray, getAsOperandImpl(MI->getOperand(2)),
-                        Slot, Cnds, MI);
+  VASTSeqValue *AddrPort = cast<VASTSeqValue>(lookupSignal(PortRegNum));
+  VM->addAssignment(AddrPort, Addr, Slot, Cnds, MI);
 
-    return;
-  }
-
-  VASTBlockRAM *BRAM = cast<VASTBlockRAM>(BRAMArray->getParent());
-
+  // Also assign the data to write to the dataport of the block RAM.
   if (IsWrite) {
     VASTValPtr Data = getAsOperandImpl(MI->getOperand(2));
-    VASTValPtr WriteBRAM = Builder->buildExpr(VASTExpr::dpWrBRAM, Addr, Data,
-                                              SizeInBytes * 8);
-    VM->addAssignment(&BRAM->WritePortA, WriteBRAM, Slot, Cnds, MI);
-  } else {
-    VASTValPtr ReadBRAM = Builder->buildExpr(VASTExpr::dpRdBRAM, Addr,
-                                             SizeInBytes * 8);
-    VM->addAssignment(&BRAM->WritePortA, ReadBRAM, Slot, Cnds, MI);
+    VASTSeqValue *DataPort = cast<VASTSeqValue>(lookupSignal(PortRegNum + 1));
+
+    VM->addAssignment(DataPort, Data, Slot, Cnds, MI);
+    return;
   }
 }
 

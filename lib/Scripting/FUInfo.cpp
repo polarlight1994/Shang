@@ -188,11 +188,11 @@ unsigned VFUBRAM::BRamNumToFUNum(unsigned BRamNum, bool IsWrite) {
   // from  the read port.
   bool FUForWritePort = IsWrite && getFUDesc<VFUBRAM>()->Mode > VFUBRAM::Default;
 
-  return BRamNum * 2 + (FUForWritePort ? 1 : 0);
+  return BRamNum * 4 + (FUForWritePort ? 1 : 0);
 }
 
 unsigned VFUBRAM::FUNumToBRamNum(unsigned FUNum) {
-  return FUNum / 2;
+  return FUNum / 4;
 }
 
 // Dirty Hack: anchor from SynSettings.h

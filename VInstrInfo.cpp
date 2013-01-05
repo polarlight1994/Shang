@@ -784,11 +784,15 @@ FuncUnitId VInstrInfo::getPreboundFUId(const MachineInstr *MI) {
   case VTM::VOpMemTrans:
     return FuncUnitId(VFUs::MemoryBus, 0);
   case VTM::VOpBRAMRead: {
-    unsigned Id = MI->getOperand(3).getImm();
+    // For the same Block RAM, we have the FU for the read port and the FU for
+    // the write port.
+    unsigned Id = VFUBRAM::BRamNumToFUNum(MI->getOperand(3).getImm(), false);
     return FuncUnitId(VFUs::BRam, Id);
   }
   case VTM::VOpBRAMWrite: {
-    unsigned Id = MI->getOperand(4).getImm();
+    // For the same Block RAM, we have the FU for the read port and the FU for
+    // the write port.
+    unsigned Id = VFUBRAM::BRamNumToFUNum(MI->getOperand(4).getImm(), true);
     return FuncUnitId(VFUs::BRam, Id);
   }
   case VTM::VOpInternalCall: {

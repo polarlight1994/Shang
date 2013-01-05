@@ -155,7 +155,8 @@ struct VRASimple : public MachineFunctionPass {
   void bindCompGraph();
 
   void handleMemoryAccess(MachineInstr *MI);
-  void handleBRAMAccess(MachineInstr *MI);
+  void handleBRAMRead(MachineInstr *MI);
+  void handleBRAMWrite(MachineInstr *MI);
   void handleDstMux(MachineInstr *MI);
   unsigned allocateCalleeFNPorts(unsigned RegNum);
   void handleCalleeFN(MachineInstr *MI);
@@ -598,7 +599,7 @@ void VRASimple::handleMemoryAccess(MachineInstr *MI) {
   mergeLI(getInterval(RegNo), FULI, true);
 }
 
-void VRASimple::handleBRAMAccess(MachineInstr *MI) {
+void VRASimple::handleBRAMRead(MachineInstr *MI) {
   unsigned RegNo = MI->getOperand(0).getReg();
   assert(TargetRegisterInfo::isVirtualRegister(RegNo) && "Bad register number!");
   assert(MRI->getRegClass(RegNo) == &VTM::RBRMRegClass && "Bad register class!");
@@ -608,17 +609,50 @@ void VRASimple::handleBRAMAccess(MachineInstr *MI) {
 
   if (FULI == 0) {
     // Allocate the physical register according to the BRAM information.
-    unsigned BRAMNum = FU.getFUNum();
+    unsigned BRAMNum = VFUBRAM::FUNumToBRamNum(FU.getFUNum());
     VFInfo::BRamInfo &Info = VFI->getBRamInfo(BRAMNum);
-    unsigned &PhysReg = Info.PhyRegNum;
+    unsigned &ReadPortReg = Info.ReadPortARegNum;
+    assert(ReadPortReg == 0 && "Register had already allocated!");
     unsigned BitWidth = Info.ElemSizeInBytes * 8;
     // Get the physical register number and update the blockram information.
-    PhysReg = TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
+    ReadPortReg = TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
+
     FULI = getInterval(RegNo);
-    assign(*FULI, PhysReg);
+    assign(*FULI, ReadPortReg);
     return;
   }
   
+  mergeLI(getInterval(RegNo), FULI, true);
+}
+
+void VRASimple::handleBRAMWrite(MachineInstr *MI) {
+  unsigned RegNo = MI->getOperand(0).getReg();
+  assert(TargetRegisterInfo::isVirtualRegister(RegNo) && "Bad register number!");
+  assert(MRI->getRegClass(RegNo) == &VTM::RBRMRegClass && "Bad register class!");
+  // Look up the corresponding LiveInterval.
+  FuncUnitId FU = VInstrInfo::getPreboundFUId(MI);
+  // Dirty Hack: Assign different register number to write port even dual-port
+  // ram is disabled.
+  if (getFUDesc<VFUBRAM>()->Mode == VFUBRAM::Default)
+    FU = FuncUnitId(VFUs::BRam, FU.getFUNum() + 1);
+  LiveInterval *&FULI = FU2PhysRegMap[FU];
+
+  if (FULI == 0) {
+    // Allocate the physical register according to the BRAM information.
+    unsigned BRAMNum = VFUBRAM::FUNumToBRamNum(FU.getFUNum());
+    VFInfo::BRamInfo &Info = VFI->getBRamInfo(BRAMNum);
+    unsigned &WritePortReg = Info.WritePortARegnum;
+    assert(WritePortReg == 0 && "Register had already allocated!");
+    unsigned BitWidth = Info.ElemSizeInBytes * 8;
+    // Get the physical register number and update the blockram information.
+    WritePortReg = TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
+    // Also allocate the register for the data port of the block ram.
+    (void) TRI->allocateFN(VTM::RBRMRegClassID, BitWidth);
+    FULI = getInterval(RegNo);
+    assign(*FULI, WritePortReg);
+    return;
+  }
+
   mergeLI(getInterval(RegNo), FULI, true);
 }
 
@@ -660,7 +694,6 @@ unsigned VRASimple::allocateCalleeFNPorts(unsigned RegNum) {
   return TRI->allocateFN(VTM::RCFNRegClassID, RetPortSize);
 }
 
-
 void VRASimple::handleCalleeFN(MachineInstr *MI) {
   unsigned RegNo = MI->getOperand(0).getReg();
   assert(TargetRegisterInfo::isVirtualRegister(RegNo) && "Bad register number!");
@@ -690,8 +723,8 @@ void VRASimple::handleCtrlOp(MachineInstr *MI) {
   unsigned Opcode = MI->getOpcode();
   switch (Opcode) {
   case VTM::VOpMemTrans:      handleMemoryAccess(MI); break;
-  case VTM::VOpBRAMRead:
-  case VTM::VOpBRAMWrite:     handleBRAMAccess(MI); break;
+  case VTM::VOpBRAMRead:      handleBRAMRead(MI);     break;
+  case VTM::VOpBRAMWrite:     handleBRAMWrite(MI);    break;
   case VTM::VOpDstMux:        handleDstMux(MI); break;
   case VTM::VOpInternalCall:  handleCalleeFN(MI); break;
   case VTM::VOpReadFU:
