@@ -110,6 +110,7 @@ private:
 
   VASTPort *addPort(const std::string &Name, unsigned BitWidth, bool isReg,
                     bool isInput);
+  void writeProfileCounters(vlang_raw_ostream &OS, VASTSlot *S, bool isFirstSlot);
 public:
   static std::string DirectClkEnAttr, ParallelCaseAttr, FullCaseAttr;
 
@@ -146,13 +147,16 @@ public:
 
   const std::string &getName() const { return Name; }
 
+  // Functions to generate verilog code.
   void printDatapath(raw_ostream &OS) const;
   void printRegisterBlocks(vlang_raw_ostream &OS) const;
   void printSubmodules(vlang_raw_ostream &OS) const;
+  void printModuleDecl(raw_ostream &OS) const;
+  void printSignalDecl(raw_ostream &OS);
+  void writeProfileCounters(vlang_raw_ostream &OS);
 
   // Print the slot control flow.
   void buildSlotLogic(VASTExprBuilder &Builder);
-  void writeProfileCounters(VASTSlot *S, bool isFirstSlot);
 
   VASTValue *getSymbol(const std::string &Name) const {
     SymTabTy::const_iterator at = SymbolTable.find(Name);
@@ -222,8 +226,6 @@ public:
     unsigned PortBegin = getFUPortOf(ID);
     return Ports.begin() + PortBegin;
   }
-
-  void printModuleDecl(raw_ostream &OS) const;
 
   // Get all ports of this moudle.
   const PortVector &getPorts() const { return Ports; }
@@ -315,8 +317,6 @@ public:
                         bool AddSlotActive = true);
 
   VASTWire *assign(VASTWire *W, VASTValPtr V, VASTNode::WireType T = VASTNode::Common);
-
-  void printSignalDecl(raw_ostream &OS);
 
   void print(raw_ostream &OS) const;
 

@@ -17,16 +17,10 @@
 #include "vtm/VASTModule.h"
 
 #include "llvm/CodeGen/MachineBasicBlock.h"
-#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "vtm-ctrl-logic-builder"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
-
-static cl::opt<bool>
-EnableBBProfile("vtm-enable-bb-profile",
-                cl::desc("Generate counters to profile the design"),
-                cl::init(false));
 
 VASTSlot::VASTSlot(unsigned slotNum, MachineInstr *BundleStart, VASTModule *VM)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
@@ -171,9 +165,6 @@ void VASTSlot::buildReadyLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
 }
 
 void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
-  vlang_raw_ostream &CtrlS = Mod.getControlBlockBuffer();
-  // TODO: Build the AST for these logic.
-  CtrlS.if_begin(getName());
   bool ReadyPresented = !readyEmpty();
 
   // DirtyHack: Remember the enabled signals in alias slots, the signal may be
@@ -183,11 +174,8 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
   VASTValPtr PredAliasSlots = 0;
 
   if (hasAliasSlot()) {
-    CtrlS << "// Alias slots: ";
-
     for (unsigned s = alias_start(), e = alias_end(), ii = alias_ii();
          s < e; s += ii) {
-      CtrlS << s << ", ";
       if (s == SlotNum) continue;
 
       const VASTSlot *AliasSlot = Mod.getSlot(s);
@@ -206,24 +194,12 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
 
       ReadyPresented  |= !AliasSlot->readyEmpty();
     }
-
-    CtrlS << '\n';
   } // SS flushes automatically here.
-
-  DEBUG_WITH_TYPE("vtm-codegen-self-verify",
-  if (SlotNum != 0) {
-    CtrlS << "$display(\"" << getName() << " in " << Mod.getName() << " BB#"
-          << getParentBB()->getNumber() << ' ';
-    if (const BasicBlock *BB = getParentBB()->getBasicBlock())
-      CtrlS << BB->getName();
-    CtrlS << " ready at %d\", $time());\n";
-  });
 
   bool hasSelfLoop = false;
   SmallVector<VASTValPtr, 2> EmptySlotEnCnd;
 
   assert(!NextSlots.empty() && "Expect at least 1 next slot!");
-  CtrlS << "// Enable the successor slots.\n";
   for (VASTSlot::const_succ_cnd_iterator I = succ_cnd_begin(),E = succ_cnd_end();
         I != E; ++I) {
     hasSelfLoop |= I->first->SlotNum == SlotNum;
@@ -245,26 +221,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
                       EmptySlotEnCnd);
   }
 
-  if (!ReadyPresented) {
-    DEBUG_WITH_TYPE("vtm-codegen-self-verify",
-    if (SlotNum != 0) {
-      CtrlS << "if (start) begin $display(\"" << getName() << " in "
-            << Mod.getName()
-            << " bad start %b\\n\", start);  $finish(); end\n";
-
-      CtrlS << "if (Slot0r) begin $display(\"" << getName() << " in "
-            << Mod.getName()
-            << " bad Slot0 %b\\n\", Slot0r);  $finish(); end\n";
-    }
-
-    CtrlS << "if (mem0en_r) begin $display(\"" << getName() << " in "
-          << Mod.getName()
-          << " bad mem0en_r %b\\n\", mem0en_r);  $finish(); end\n";
-    );
-  }
-
   std::string SlotReady = std::string(getName()) + "Ready";
-  CtrlS << "// Enable the active FUs.\n";
   for (VASTSlot::const_fu_ctrl_it I = enable_begin(), E = enable_end();
        I != E; ++I) {
     assert(!AliasEnables.count(I->first) && "Signal enabled by alias slot!");
@@ -280,7 +237,6 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
 
   SmallVector<VASTValPtr, 4> DisableAndCnds;
   if (!disableEmpty()) {
-    CtrlS << "// Disable the resources when the condition is true.\n";
     for (VASTSlot::const_fu_ctrl_it I = disable_begin(), E = disable_end();
          I != E; ++I) {
       // Look at the current enable set and alias enables set;
@@ -315,25 +271,6 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
                         DisableAndCnds, 0, false);
       DisableAndCnds.clear();
     }
-  }
-  CtrlS.exit_block("\n\n");
-}
-
-//===----------------------------------------------------------------------===//
-void VASTModule::buildSlotLogic(VASTExprBuilder &Builder) {
-  bool IsFirstSlotInBB = false;
-  for (SlotVecTy::const_iterator I = Slots.begin(), E = Slots.end();I != E;++I){
-    if (VASTSlot *S = *I) {
-      S->buildCtrlLogic(*this, Builder);
-
-      // Create a profile counter for each BB.
-      if (EnableBBProfile) writeProfileCounters(S, IsFirstSlotInBB);
-      IsFirstSlotInBB = false;
-      continue;
-    }
-
-    // We meet an end slot, The next slot is the first slot in new BB
-    IsFirstSlotInBB = true;
   }
 }
 

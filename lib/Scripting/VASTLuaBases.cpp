@@ -217,52 +217,84 @@ VASTSlot *VASTModule::getOrCreateSlot(unsigned SlotNum,
   return Slot;
 }
 
-void VASTModule::writeProfileCounters(VASTSlot *S, bool isFirstSlot) {
+void VASTModule::writeProfileCounters(vlang_raw_ostream &OS, VASTSlot *S,
+                                      bool isFirstSlot) {
   MachineBasicBlock *BB = S->getParentBB();
   std::string BBCounter = "cnt"+ utostr_32(BB ? BB->getNumber() : 0);
   std::string FunctionCounter = "cnt" + getName();
-  vlang_raw_ostream &CtrlS = getControlBlockBuffer();
 
   // Create the profile counter.
   // Write the counter for the function.
   if (S->SlotNum == 0) {
-    addRegister(FunctionCounter, 64)/*->Pin()*/;
-    addRegister(BBCounter, 64)/*->Pin()*/;
-    CtrlS.if_begin(getPortName(VASTModule::Finish));
-    CtrlS << "$display(\"Module: " << getName();
+    OS << "integer " << FunctionCounter << " = 0;\n"
+       << "integer " << BBCounter << " = 0;\n";
 
-    CtrlS << " total cycles" << "->%d\"," << FunctionCounter << ");\n";
-    CtrlS.exit_block() << "\n";
+    OS.if_begin(getPortName(VASTModule::Finish));
+    OS << "$display(\"Module: " << getName();
+
+    OS << " total cycles" << "->%d\"," << FunctionCounter << ");\n";
+    OS.exit_block() << "\n";
+    OS.always_ff_end(false);
   } else { // Dont count the ilde state at the moment.
     if (isFirstSlot) {
-      addRegister(BBCounter, 64)/*->Pin()*/;
+      OS << "integer " << BBCounter << " = 0;\n";
 
-      CtrlS.if_begin(getPortName(VASTModule::Finish));
-      CtrlS << "$display(\"Module: " << getName();
+      OS.always_ff_begin(false);
+      OS.if_begin(getPortName(VASTModule::Finish));
+      OS << "$display(\"Module: " << getName();
       // Write the parent MBB name.
       if (BB)
-        CtrlS << " MBB#" << BB->getNumber() << ": " << BB->getName();
+        OS << " MBB#" << BB->getNumber() << ": " << BB->getName();
 
-      CtrlS << ' ' << "->%d\"," << BBCounter << ");\n";
-      CtrlS.exit_block() << "\n";
+      OS << ' ' << "->%d\"," << BBCounter << ");\n";
+      OS.exit_block() << "\n";
     }
 
     // Increase the profile counter.
     if (S->isLeaderSlot()) {
-      CtrlS.if_() << S->getName();
+      OS.if_() << S->getName();
       if (S->hasAliasSlot()) {
         for (unsigned i = S->alias_start(), e = S->alias_end(),
-          k = S->alias_ii(); i < e; i += k) {
-            CtrlS << '|' << getSlot(i)->getName();
+             k = S->alias_ii(); i < e; i += k) {
+          OS << '|' << getSlot(i)->getName();
         }
       }
 
-      CtrlS._then();
-      CtrlS << BBCounter << " <= " << BBCounter << " +1;\n";
-      CtrlS << FunctionCounter << " <= " << FunctionCounter << " +1;\n";
-      CtrlS.exit_block() << "\n";
+      OS._then();
+      OS << BBCounter << " <= " << BBCounter << " +1;\n";
+      OS << FunctionCounter << " <= " << FunctionCounter << " +1;\n";
+      OS.exit_block() << "\n";
     }
   }
+}
+
+void VASTModule::writeProfileCounters(vlang_raw_ostream &OS) {
+  OS << "// synthesis translate_off\n";
+
+  OS.always_ff_begin(false);
+  bool IsFirstSlotInBB = false;
+  for (SlotVecTy::const_iterator I = Slots.begin(), E = Slots.end();I != E;++I){
+    if (VASTSlot *S = *I) {
+      // Create a profile counter for each BB.
+      writeProfileCounters(OS, S, IsFirstSlotInBB);
+      IsFirstSlotInBB = false;
+      continue;
+    }
+
+    // We meet an end slot, The next slot is the first slot in new BB
+    IsFirstSlotInBB = true;
+  }
+  OS.always_ff_end(false);
+
+  OS << "// synthesis translate_on\n\n";
+}
+
+void VASTModule::buildSlotLogic(VASTExprBuilder &Builder) {
+  for (SlotVecTy::const_iterator I = Slots.begin(), E = Slots.end();I != E;++I)
+    if (VASTSlot *S = *I) {
+      S->buildCtrlLogic(*this, Builder);
+      continue;
+    }
 }
 
 void VASTModule::reset() {
