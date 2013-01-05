@@ -139,10 +139,7 @@ public:
     // Lookup-tables.
     dpLUT,
     // Mux in datapath.
-    dpMux,
-
-    // Blackbox,
-    dpBlackBox
+    dpMux
   };
 private:
   // Operands, right after this VASTExpr.
@@ -284,11 +281,6 @@ private:
     Contents.BundleStart = DefMI;
   }
 
-  void assignWithExtraDelay(VASTValPtr V, unsigned latency) {
-    assign(V, haveExtraDelay);
-    Idx = latency;
-  }
-
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 
   VASTValPtr getAsInlineOperandImpl() {
@@ -313,10 +305,6 @@ public:
   }
 
   VASTNode::WireType getWireType() const { return VASTNode::WireType(T); }
-
-  unsigned getExtraDelayIfAny() const {
-    return getWireType() == VASTNode::haveExtraDelay ? Idx : 0;
-  }
 
   uint16_t getSlotNum() const {
     assert(getWireType() == VASTNode::AssignCond &&

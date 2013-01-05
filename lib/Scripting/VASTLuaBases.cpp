@@ -408,14 +408,6 @@ void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
   }
 }
 
-VASTWire *VASTModule::assignWithExtraDelay(VASTWire *W, VASTValPtr V,
-                                           unsigned latency) {
-  if (W->getExpr() != V)
-    W->assignWithExtraDelay(V, latency);
-
-  return W;
-}
-
 void VASTModule::print(raw_ostream &OS) const {
   // Print the verilog module?
 }

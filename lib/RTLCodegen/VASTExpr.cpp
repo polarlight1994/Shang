@@ -477,8 +477,6 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
       if (InstSubModForFU && !Expr->hasName() && printBinFU(OS, this)) return;
       break;
     case VASTExpr::dpMux: printCombMux(OS, this); return;
-    // Don't know how to print black box.
-    case VASTExpr::dpBlackBox: return;
     }
   }
 

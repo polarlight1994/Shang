@@ -315,7 +315,6 @@ public:
                         bool AddSlotActive = true);
 
   VASTWire *assign(VASTWire *W, VASTValPtr V, VASTNode::WireType T = VASTNode::Common);
-  VASTWire *assignWithExtraDelay(VASTWire *W, VASTValPtr V, unsigned latency);
 
   void printSignalDecl(raw_ostream &OS);
 

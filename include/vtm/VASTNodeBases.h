@@ -65,8 +65,6 @@ public:
 
   enum WireType {
     Common,
-    // Timing BlackBox, have latecy not capture by slots.
-    haveExtraDelay,
     // Assignment with slot information.
     AssignCond
   };
