@@ -102,18 +102,18 @@ void VASTBlockRAM::addPorts(VASTModule *VM) {
   // Add the address port and the data port.
   VASTSeqValue *ReadAddrA = VM->createSeqValue(BRamArrayName + "_rdata0",
                                                getWordSize(), VASTNode::BRAM,
-                                               BRamNum, this);
+                                               getBlockRAMNum(), this);
   addFanin(ReadAddrA);
   addFanout(ReadAddrA);
 
   VASTSeqValue *WriteAddrA = VM->createSeqValue(BRamArrayName + "_waddr0",
                                                 getAddrWidth(), VASTNode::BRAM,
-                                                BRamNum, this);
+                                                getBlockRAMNum(), this);
   addFanin(WriteAddrA);
 
   VASTSeqValue *WriteDataA = VM->createSeqValue(BRamArrayName + "_wdata0",
                                                 getWordSize(), VASTNode::BRAM,
-                                                BRamNum, this);
+                                                getBlockRAMNum(), this);
   addFanin(WriteDataA);
 }
 

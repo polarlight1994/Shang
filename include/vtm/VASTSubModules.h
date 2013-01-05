@@ -23,14 +23,13 @@ class GlobalVariable;
 class VASTBlockRAM : public VASTSubModuleBase {
   unsigned Depth;
   unsigned WordSize;
-  unsigned BRamNum;
   // TODO: Support multiple initializers.
   const GlobalVariable *Initializer;
 
   VASTBlockRAM(const char *Name, unsigned BRamNum, unsigned WordSize,
                unsigned Depth, const GlobalVariable *Initializer)
-    : VASTSubModuleBase(vastBlockRAM, Name), Depth(Depth), WordSize(WordSize),
-      BRamNum(BRamNum), Initializer(Initializer)
+    : VASTSubModuleBase(vastBlockRAM, Name, BRamNum), Depth(Depth),
+      WordSize(WordSize), Initializer(Initializer)
   {}
 
   friend class VASTModule;
@@ -38,7 +37,7 @@ class VASTBlockRAM : public VASTSubModuleBase {
   void printPort(vlang_raw_ostream &OS, unsigned Num) const;
   void addPorts(VASTModule *VM);
 public:
-  unsigned getBlockRAMNum() const { return BRamNum; }
+  unsigned getBlockRAMNum() const { return Idx; }
   unsigned getWordSize() const { return WordSize; }
   unsigned getDepth() const { return Depth; }
   unsigned getAddrWidth() const { return Log2_32_Ceil(getDepth()); }

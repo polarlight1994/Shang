@@ -459,7 +459,10 @@ class VASTSubModuleBase : public VASTNode {
   SmallVector<VASTSeqValue*, 8> Fanins;
   SmallVector<VASTValue*, 4> Fanouts;
 protected:
-  VASTSubModuleBase(VASTTypes DeclType, const char *Name) : VASTNode(DeclType) {
+  const unsigned Idx;
+
+  VASTSubModuleBase(VASTTypes DeclType, const char *Name, unsigned Idx)
+    : VASTNode(DeclType), Idx(Idx) {
     Contents.Name = Name;
   }
 
