@@ -190,11 +190,7 @@ class VerilogASTBuilder : public MachineFunctionPass,
   VASTModule *VM;
   OwningPtr<DatapathBuilder> Builder;
   MemBusBuilder *MBBuilder;
-  StringSet<> EmittedSubModules;
-
-  bool isSubModuleEmitted(StringRef Name) {
-    return !EmittedSubModules.insert(Name);
-  }
+  StringMap<VASTSubModule*> EmittedSubModules;
 
   VASTImmediate *getOrCreateImmediate(const APInt &Value) {
     return VM->getOrCreateImmediateImpl(Value);
@@ -337,7 +333,7 @@ class VerilogASTBuilder : public MachineFunctionPass,
   void emitFunctionSignature(const Function *F, VASTSubModule *SubMod = 0);
   void emitCommonPort(VASTSubModule *SubMod);
   void emitAllocatedFUs();
-  void emitSubModule(const char *CalleeName, unsigned FNNum);
+  VASTSubModule *emitSubModule(const char *CalleeName, unsigned FNNum);
   void emitIdleState();
 
   void emitBasicBlock(MachineBasicBlock &MBB);
@@ -659,16 +655,18 @@ void VerilogASTBuilder::emitAllocatedFUs() {
   }
 }
 
-void VerilogASTBuilder::emitSubModule(const char *CalleeName, unsigned FNNum) {
+VASTSubModule *VerilogASTBuilder::emitSubModule(const char *CalleeName,
+                                                unsigned FNNum) {
+  VASTSubModule *&SubMod = EmittedSubModules.GetOrCreateValue(CalleeName).second;
   // Do not emit a submodule more than once.
-  if (isSubModuleEmitted(CalleeName)) return;
+  if (SubMod) return SubMod;
 
   if (const Function *Callee = M->getFunction(CalleeName)) {
     if (!Callee->isDeclaration()) {
-      VASTSubModule *SubMod = VM->addSubmodule(CalleeName, FNNum);
+      SubMod = VM->addSubmodule(CalleeName, FNNum);
       emitFunctionSignature(Callee, SubMod);
       SubMod->setIsSimple();
-      return;
+      return SubMod;
     }
   }
 
@@ -695,10 +693,10 @@ void VerilogASTBuilder::emitSubModule(const char *CalleeName, unsigned FNNum) {
       indexPhysReg(FNNum, V);
     }
 
-    return;
+    return 0;
   }
 
-  VASTSubModule *SubMod = VM->addSubmodule(CalleeName, FNNum);
+  SubMod = VM->addSubmodule(CalleeName, FNNum);
   SubMod->setIsSimple(false);
   SmallVector<VASTValPtr, 4> Ops;
   // Add the fanin registers.
@@ -713,8 +711,6 @@ void VerilogASTBuilder::emitSubModule(const char *CalleeName, unsigned FNNum) {
   VASTValPtr S = VM->getOrCreateSymbol(SubMod->getPortName("fin"), 1, false);
   SubMod->addOutPort("fin", cast<VASTValue>(S));
 
-  // Add the start/finsh signal and return_value to the signal list.
-
   // Dose the submodule have a return port?
   if (Info.getBitWidth()) {
     VASTWire *ResultWire = VM->addWire(SubMod->getPortName("return_value"),
@@ -724,11 +720,12 @@ void VerilogASTBuilder::emitSubModule(const char *CalleeName, unsigned FNNum) {
     VASTValPtr Expr
       = Builder->buildExpr(VASTExpr::dpBlackBox, Ops, Info.getBitWidth());
     VM->assignWithExtraDelay(ResultWire, Expr, Latency);
-    return;
+    return SubMod;
   }
 
   // Else do not has return port.
   indexPhysReg(FNNum, 0);
+  return SubMod;
 }
 
 void VerilogASTBuilder::emitFunctionSignature(const Function *F,
