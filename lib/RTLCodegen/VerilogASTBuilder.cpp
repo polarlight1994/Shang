@@ -190,7 +190,14 @@ class VerilogASTBuilder : public MachineFunctionPass,
   VASTModule *VM;
   OwningPtr<DatapathBuilder> Builder;
   MemBusBuilder *MBBuilder;
-  StringMap<VASTSubModule*> EmittedSubModules;
+  std::map<unsigned, VASTSubModule*> EmittedSubModules;
+
+  VASTSubModule *getSubModule(unsigned FNNum) const {
+    std::map<unsigned, VASTSubModule*>::const_iterator at
+      = EmittedSubModules.find(FNNum);
+    assert(at != EmittedSubModules.end() && "Submodule not yet created!");
+    return at->second;
+  }
 
   VASTImmediate *getOrCreateImmediate(const APInt &Value) {
     return VM->getOrCreateImmediateImpl(Value);
@@ -592,14 +599,14 @@ void VerilogASTBuilder::addSlotReady(MachineInstr *MI, VASTSlot *Slot) {
   case VFUs::CalleeFN: {
     // The register representing the function unit is store in the src operand
     // of VOpReadFU.
-    unsigned FNNum = MI->getOperand(1).getReg();
-    ReadyPort = VM->getSymbol(VASTSubModule::getPortName(FNNum, "fin"));
+    if (VASTSubModule *Submod = getSubModule(MI->getOperand(1).getReg()))
+      // TODO: Assert not in first slot.
+      addSlotReady(Slot, Submod->getFinPort(), Builder->createCnd(MI));
+
     break;
   }
   default: return;
   }
-  // TODO: Assert not in first slot.
-  addSlotReady(Slot, ReadyPort, Builder->createCnd(MI));
 }
 
 void VerilogASTBuilder::emitAllocatedFUs() {
@@ -657,7 +664,7 @@ void VerilogASTBuilder::emitAllocatedFUs() {
 
 VASTSubModule *VerilogASTBuilder::emitSubModule(const char *CalleeName,
                                                 unsigned FNNum) {
-  VASTSubModule *&SubMod = EmittedSubModules.GetOrCreateValue(CalleeName).second;
+  VASTSubModule *&SubMod = EmittedSubModules[FNNum];
   // Do not emit a submodule more than once.
   if (SubMod) return SubMod;
 
@@ -674,27 +681,8 @@ VASTSubModule *VerilogASTBuilder::emitSubModule(const char *CalleeName,
   unsigned Latency = VFUs::getModuleOperands(CalleeName, FNNum, OpInfo);
   VRegisterInfo::PhyRegInfo Info = TRI->getPhyRegInfo(FNNum);
 
-  // Create the start signal even the Submodule template is not available.
-  VASTRegister *Start =
-    VM->addRegister(VASTSubModule::getPortName(FNNum, "start"), 1);
-  indexPhysReg(FNNum + 1, Start->getValue());
-
   // Submodule information not available.
-  if (OpInfo.empty()) {
-    // Create a finish signal that is always true.
-    VASTWire *W = VM->addWire(VASTSubModule::getPortName(FNNum, "fin"), 1);
-    W->assign(Builder->getBoolImmediate(true));
-    // Create something for the return port if needed. Because we may need to
-    // look up the return port by the FNNum later.
-    if (Info.getBitWidth()) {
-      VASTValPtr V
-        = VM->getOrCreateSymbol(VASTSubModule::getPortName(FNNum,"return_value"),
-                                Info.getBitWidth(), false);
-      indexPhysReg(FNNum, V);
-    }
-
-    return 0;
-  }
+  if (OpInfo.empty()) return 0;
 
   SubMod = VM->addSubmodule(CalleeName, FNNum);
   SubMod->setIsSimple(false);
@@ -706,6 +694,9 @@ VASTSubModule *VerilogASTBuilder::emitSubModule(const char *CalleeName,
     Ops.push_back(R->getValue());
   }
   // Add the start register.
+  VASTRegister *Start =
+    VM->addRegister(VASTSubModule::getPortName(FNNum, "start"), 1);
+  indexPhysReg(FNNum + 1, Start->getValue());
   SubMod->addStartPort(Start->getValue());
   // Add the finish output from the submodule.
   VASTValPtr S = VM->getOrCreateSymbol(SubMod->getPortName("fin"), 1, false);
@@ -978,9 +969,15 @@ void VerilogASTBuilder::emitOpDisableFU(MachineInstr *MI, VASTSlot *Slot,
   case VFUs::MemoryBus:
     EnablePort = VM->getSymbol(VFUMemBus::getEnableName(FUNum) + "_r");
     break;
-  case VFUs::CalleeFN:
-    EnablePort =  lookupSignal(MI->getOperand(0).getReg() + 1);
+  case VFUs::CalleeFN: {
+    VASTSubModule *Submod = getSubModule(MI->getOperand(0).getReg());
+    // The submodule information is not available.
+    if (!Submod) return;
+
+    EnablePort =  Submod->getStartPort();
+    
     break;
+  }
   default:
     llvm_unreachable("Unexpected FU to disable!");
     break;
@@ -1006,40 +1003,22 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
   unsigned FNNum = FInfo->getCalleeFNNum(CalleeName);
 
   // Emit the submodule on the fly.
-  emitSubModule(CalleeName, FNNum);
+  VASTSubModule *Submod = emitSubModule(CalleeName, FNNum);
 
   VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
 
   std::string StartPortName = VASTSubModule::getPortName(FNNum, "start");
-  VASTValPtr StartSignal = VM->getSymbol(StartPortName);
-  addSlotEnable(Slot, cast<VASTSeqValue>(StartSignal), Pred);
 
-  const Function *FN = M->getFunction(CalleeName);
-  if (FN && !FN->isDeclaration()) {
-    Function::const_arg_iterator ArgIt = FN->arg_begin();
-    for (unsigned i = 0, e = FN->arg_size(); i != e; ++i) {
-      VASTSeqValue *R =
-        VM->getSymbol<VASTSeqValue>(VASTSubModule::getPortName(FNNum, ArgIt->getName()));
-      VM->addAssignment(R, getAsOperandImpl(MI->getOperand(4 + i)), Slot,
-                        Cnds, MI);
-      ++ArgIt;
+  if (Submod) {
+    // Start the submodule.
+    addSlotEnable(Slot, Submod->getStartPort(), Pred);
+    // Assign the new value for this function call to the operand registers.
+    for (unsigned i = 4, e = MI->getNumOperands(); i != e; ++i) {
+      VASTValPtr V = getAsOperandImpl(MI->getOperand(i));
+      VM->addAssignment(Submod->getFanin(i - 4), V, Slot, Cnds, MI);
     }
+
     return;
-  }
-
-  if (TRI->getPhyRegInfo(FNNum).getBitWidth()) {
-    typedef PtrInvPair<VASTExpr> VASTExprPtr;
-    // Is the function have latency information not captured by schedule?
-    if (VASTWire *RetPort = getAsLValue<VASTWire>(MI->getOperand(0))) {
-      if (VASTExpr *Expr = RetPort->getExpr().getAsLValue<VASTExpr>()) {
-        for (unsigned i = 0, e = Expr->NumOps; i < e; ++i) {
-          VASTSeqValue *R = cast<VASTSeqValue>(Expr->getOperand(i));
-          VM->addAssignment(R, getAsOperandImpl(MI->getOperand(4 + i)), Slot, Cnds,
-                            MI);
-        }
-        return;
-      }
-    }
   }
 
   // Else we had to write the control code to the control block.
@@ -1051,34 +1030,32 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
   SS.flush();
 
   OS.if_begin(PredStr);
-  if (FN /*&& FN->isDeclaration()*/) {
-    // Dirty Hack.
-    // TODO: Extract these to some special instruction?
-    OS << "$c(\"" << FN->getName() << "(\",";
-    for (unsigned i = 4, e = MI->getNumOperands(); i != e; ++i) {
-      MachineOperand &Operand = MI->getOperand(i);
-      if (Operand.isReg() && (Operand.getReg() == 0 || Operand.isImplicit()))
-        continue;
+  // Dirty Hack.
+  // TODO: Extract these to some special instruction?
+  OS << "$c(\"" << CalleeName << "(\",";
+  for (unsigned i = 4, e = MI->getNumOperands(); i != e; ++i) {
+    MachineOperand &Operand = MI->getOperand(i);
+    if (Operand.isReg() && (Operand.getReg() == 0 || Operand.isImplicit()))
+      continue;
 
-      if (i != 4) OS << ",\",\", ";
+    if (i != 4) OS << ",\",\", ";
 
-      // It is the format string?
-      StringRef FmtStr;
-      if (Operand.isGlobal()
-          && getConstantStringInfo(Operand.getGlobal(), FmtStr)) {
-        std::string s;
-        raw_string_ostream SS(s);
-        SS << '"';
-        PrintEscapedString(FmtStr, SS);
-        SS << '"';
-        SS.flush();
-        OS << '"';
-        PrintEscapedString(s, OS);
-        OS << '"';
-        continue;
-      }
-      printOperand(Operand, OS);
+    // It is the format string?
+    StringRef FmtStr;
+    if (Operand.isGlobal()
+        && getConstantStringInfo(Operand.getGlobal(), FmtStr)) {
+      std::string s;
+      raw_string_ostream SS(s);
+      SS << '"';
+      PrintEscapedString(FmtStr, SS);
+      SS << '"';
+      SS.flush();
+      OS << '"';
+      PrintEscapedString(s, OS);
+      OS << '"';
+      continue;
     }
+    printOperand(Operand, OS);
 
     OS << ", \");\""; // Enclose the c function call.
     OS << ");\n";
