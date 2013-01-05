@@ -75,6 +75,8 @@ struct PathDelayQueryCache {
     Stats[isSimple][Delay].insert(Src);
   }
 
+  bool annotateSubmoduleLatency(VASTSeqValue * V);
+
   void annotatePathDelay(CombPathDelayAnalysis &A, VASTValue *Tree,
                          ArrayRef<ValueAtSlot*> DstVAS);
 
@@ -224,6 +226,30 @@ static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {
   return false;
 }
 
+bool PathDelayQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
+  VASTSubModule *SubMod = dyn_cast<VASTSubModule>(V->getParent());
+  if (SubMod == 0) return false;
+
+  assert(V->getValType() == VASTNode::IO && "Bad Seqvalue type!");
+  assert(V->empty() && "Unexpected assigement to return value!");
+
+  unsigned Latency = SubMod->getLatency();
+  // No latency information available.
+  if (Latency == 0) return true;
+
+  SeqValSetTy &ParentReachableRegs = QueryCache[V];
+
+  // Add the timing constraints from operand registers to the output registers.
+  typedef VASTSubModule::fanin_iterator fanin_iterator;
+  for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
+       I != E; ++I) {
+    VASTSeqValue *Operand = *I;
+    ParentReachableRegs[Operand] = Latency;
+  }
+
+  return true;
+}
+
 void PathDelayQueryCache::annotatePathDelay(CombPathDelayAnalysis &A,
                                             VASTValue *Root,
                                             ArrayRef<ValueAtSlot*> DstVAS) {
@@ -232,10 +258,6 @@ void PathDelayQueryCache::annotatePathDelay(CombPathDelayAnalysis &A,
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
   std::set<VASTValue*> Visited;
   SeqValSetTy LocalDelay;
-
-  unsigned ExtraDelay = 0;
-  if (VASTWire *W = dyn_cast<VASTWire>(Root))
-    ExtraDelay += W->getExtraDelayIfAny();
 
   VisitStack.push_back(std::make_pair(Root, VASTValue::dp_dep_begin(Root)));
   while (!VisitStack.empty()) {
@@ -270,16 +292,6 @@ void PathDelayQueryCache::annotatePathDelay(CombPathDelayAnalysis &A,
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
       unsigned Delay = getMinimalDelay(A, V, DstVAS);
-
-      // If there are black box in the path.
-      if (ExtraDelay) {
-        // Only allow the wire and the black box expression, we only allocate
-        // 1 static slot for the black box that has very big delay, whose
-        // actually delay is available from getExtraDelayIfAny of the wire.
-        assert(Delay == 1 && VisitStack.size() == 2
-               && "Unexpected chained black box!");
-        Delay = ExtraDelay;
-      }
 
       bool inserted = LocalDelay.insert(std::make_pair(V, Delay)).second;
       assert(inserted && "Node had already been visited?");
@@ -508,6 +520,9 @@ void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
 
   // Trivial case: register to register path.
   if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(SrcValue)){
+    // Src may be the return_value of the submodule.
+    if (Cache.annotateSubmoduleLatency(Src)) return;
+
     int Delay = getMinimalDelay(*this, Src, DstVAS);
     Cache.addDelayFromToStats(Src, Delay, true);
     // Even a trivial path can be a false path, e.g.:

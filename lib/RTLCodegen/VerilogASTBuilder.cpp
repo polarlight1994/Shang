@@ -703,13 +703,7 @@ VASTSubModule *VerilogASTBuilder::emitSubModule(const char *CalleeName,
 
   // Dose the submodule have a return port?
   if (Info.getBitWidth()) {
-    VASTWire *ResultWire = VM->addWire(SubMod->getPortName("return_value"),
-                                       Info.getBitWidth());
-    indexPhysReg(FNNum, ResultWire);
-    SubMod->addOutPort("return_value", ResultWire);
-    VASTValPtr Expr
-      = Builder->buildExpr(VASTExpr::dpBlackBox, Ops, Info.getBitWidth());
-    VM->assignWithExtraDelay(ResultWire, Expr, Latency);
+    indexPhysReg(FNNum, SubMod->createRetPort(VM, Info.getBitWidth(), Latency));
     return SubMod;
   }
 
@@ -740,12 +734,9 @@ void VerilogASTBuilder::emitFunctionSignature(const Function *F,
   if (!RetTy->isVoidTy()) {
     assert(RetTy->isIntegerTy() && "Only support return integer now!");
     unsigned BitWidth = TD->getTypeSizeInBits(RetTy);
-    if (SubMod) {
-      std::string WireName = SubMod->getPortName("return_value");
-      VASTWire *OutWire = VM->addWire(WireName, BitWidth);
-      indexPhysReg(SubMod->getNum(), OutWire);
-      SubMod->addOutPort("return_value", OutWire);
-    } else
+    if (SubMod)
+      indexPhysReg(SubMod->getNum(), SubMod->createRetPort(VM, BitWidth));
+    else
       VM->addOutputPort("return_value", BitWidth, VASTModule::RetPort);
   }
 

@@ -369,8 +369,14 @@ void VASTModule::printSignalDecl(raw_ostream &OS) {
   }
 
   for (submod_iterator I = Submodules.begin(),E = Submodules.end();I != E;++I) {
-    if (VASTBlockRAM *R = dyn_cast<VASTBlockRAM>(*I))
+    if (VASTBlockRAM *R = dyn_cast<VASTBlockRAM>(*I)) {
       printDecl(OS, R->getRAddr(0), true, "") << "\n";
+      continue;
+    }
+
+    if (VASTSubModule *S = dyn_cast<VASTSubModule>(*I))
+      if (VASTSeqValue *Ret = S->getRetPort())
+        printDecl(OS, Ret, false, "") << "\n";
   }
 }
 
@@ -475,7 +481,6 @@ VASTRegister *VASTModule::addRegister(const std::string &Name, unsigned BitWidth
 
   Registers.push_back(Reg);
   SeqVals.push_back(Reg->getValue());
-
   return Reg;
 }
 

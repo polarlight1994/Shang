@@ -192,6 +192,16 @@ VASTSubModule::getPortName(unsigned FNNum, const std::string &PortName) {
   return "SubMod" + utostr(FNNum) + "_" + PortName;
 }
 
+VASTSeqValue *VASTSubModule::createRetPort(VASTModule *VM, unsigned Bitwidth,
+                                           unsigned Latency) {
+  RetPort = VM->createSeqValue(getPortName("return_value"),
+                               Bitwidth, VASTNode::IO, 0, this);
+  addOutPort("return_value", RetPort);
+  // Also update the latency.
+  this->Latency = Latency;
+  return RetPort;
+}
+
 void VASTSubModule::addPort(const std::string &Name, VASTValue *V, bool IsInput) {
   VASTSubModulePortPtr Ptr(V, IsInput);
   VASTSubModulePortPtr Inserted = PortMap.GetOrCreateValue(Name, Ptr).second;

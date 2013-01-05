@@ -72,12 +72,17 @@ class VASTSubModule : public VASTSubModuleBase {
   StringMap<VASTSubModulePortPtr> PortMap;
   // Can the submodule be simply instantiated?
   bool IsSimple;
-  //
+  // Special ports in the submodule.
   VASTSeqValue *StartPort;
   VASTValue *FinPort;
+  VASTSeqValue *RetPort;
+
+  // The latency of the submodule.
+  unsigned Latency;
 
   VASTSubModule(const char *Name, unsigned FNNum)
-    : VASTSubModuleBase(vastSubmodule, Name, FNNum), StartPort(0), FinPort(0) {}
+    : VASTSubModuleBase(vastSubmodule, Name, FNNum), StartPort(0), FinPort(0),
+      RetPort(0), Latency(0) {}
 
   friend class VASTModule;
   void addPort(const std::string &Name, VASTValue *V, bool IsInput);
@@ -117,12 +122,24 @@ public:
   }
   VASTValue *getFinPort() const { return FinPort; }
 
+  VASTSeqValue *createRetPort(VASTModule *VM, unsigned Bitwidth,
+                              unsigned Latency = 0);
+  VASTSeqValue *getRetPort() const { return RetPort; }
+
+  // Get the latency of the submodule.
+  unsigned getLatency() const { return Latency; }
+
   static std::string getPortName(unsigned FNNum, const std::string &PortName);
   std::string getPortName(const std::string &PortName) const {
     return getPortName(getNum(), PortName);
   }
 
   void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTSubModule *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastSubmodule;
+  }
 };
 
 class VASTRegister : public VASTNode {
