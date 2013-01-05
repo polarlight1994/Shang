@@ -69,6 +69,7 @@ void VASTSlot::addSuccSlot(VASTSlot *NextSlot, VASTValPtr Cnd, VASTModule *VM) {
 }
 
 VASTUse &VASTSlot::allocateEnable(VASTSeqValue *P, VASTModule *VM) {
+  assert(P && "Bad signal! to enable!");
   VASTUse *&U = Enables[P];
   if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
 
@@ -76,6 +77,7 @@ VASTUse &VASTSlot::allocateEnable(VASTSeqValue *P, VASTModule *VM) {
 }
 
 VASTUse &VASTSlot::allocateReady(VASTValue *V, VASTModule *VM) {
+  assert(V && "Bad ready signal!");
   VASTUse *&U = Readys[V];
   if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
 
@@ -83,6 +85,7 @@ VASTUse &VASTSlot::allocateReady(VASTValue *V, VASTModule *VM) {
 }
 
 VASTUse &VASTSlot::allocateDisable(VASTSeqValue *P, VASTModule *VM) {
+  assert(P && "Bad signal to disable!");
   VASTUse *&U = Disables[P];
   if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
 
