@@ -93,11 +93,11 @@ struct MemBusBuilder {
     return cast<VASTWire>(P->getValue());
   }
 
-  void addSubModuleOutPort(raw_ostream &S, VASTWire *OutputValue,
-                           unsigned BitWidth, const std::string &SubModuleName,
-                           VASTWire *&SubModEn, VASTExprHelper &Expr) {
-    std::string ConnectedWireName = SubModuleName + "_"
-                                    + std::string(OutputValue->getName());
+  void addSubModuleOutPort(VASTSubModule *SubMod, VASTWire *OutputValue,
+                           unsigned BitWidth, VASTWire *&SubModEn,
+                           VASTExprHelper &Expr) {
+    std::string ConnectedWireName
+      = SubMod->getSubModulePortName(OutputValue->getName());
 
     VASTWire *SubModWire = VM->addWire(ConnectedWireName, BitWidth);
 
@@ -116,10 +116,7 @@ struct MemBusBuilder {
       Expr.addOperand(SubModWire);
     }
 
-    // Write the connection.
-    // The corresponding port name of submodule should be the same as current
-    // output port name.
-    S << '.' << OutputValue->getName() << '(' << ConnectedWireName << "),\n\t";
+    SubMod->addOutPort(OutputValue->getName(), SubModWire);
   }
 
   void addSubModuleInPort(raw_ostream &S, const std::string &PortName) {
@@ -128,25 +125,22 @@ struct MemBusBuilder {
     S << '.' << PortName << '(' <<  PortName << "),\n\t";
   }
 
-  void addSubModule(const std::string &SubModuleName, raw_ostream &S) {
+  void addSubModule(VASTSubModule *SubMod) {
     VASTWire *SubModEn = 0;
-    addSubModuleOutPort(S, MembusEn, 1, SubModuleName, SubModEn, EnExpr);
+    addSubModuleOutPort(SubMod, MembusEn, 1, SubModEn, EnExpr);
     // Output ports.
-    addSubModuleOutPort(S, MembusCmd,
-                        VFUMemBus::CMDWidth, SubModuleName, SubModEn, CmdExpr);
-    addSubModuleOutPort(S, MemBusAddr,
-                        Bus->getAddrWidth(), SubModuleName, SubModEn,
+    addSubModuleOutPort(SubMod, MembusCmd, VFUMemBus::CMDWidth, SubModEn,
+                        CmdExpr);
+    addSubModuleOutPort(SubMod, MemBusAddr, Bus->getAddrWidth(), SubModEn,
                         AddrExpr);
-    addSubModuleOutPort(S, MemBusOutData,
-                        Bus->getDataWidth(), SubModuleName, SubModEn,
+    addSubModuleOutPort(SubMod, MemBusOutData, Bus->getDataWidth(), SubModEn,
                         OutDataExpr);
-    addSubModuleOutPort(S, MemBusByteEn,
-                        Bus->getDataWidth()/8, SubModuleName, SubModEn,
+    addSubModuleOutPort(SubMod, MemBusByteEn, Bus->getDataWidth()/8, SubModEn,
                         BeExpr);
 
-    // Input ports.
-    addSubModuleInPort(S, VFUMemBus::getInDataBusName(BusNum));
-    addSubModuleInPort(S, VFUMemBus::getReadyName(BusNum));
+    // Add the pseudo drivers to input ports.
+    SubMod->addInPort(VFUMemBus::getInDataBusName(BusNum), 0);
+    SubMod->addInPort(VFUMemBus::getReadyName(BusNum), 0);
   }
 
   MemBusBuilder(VASTModule *VM, VASTExprBuilder &Builder, unsigned N)
@@ -346,10 +340,10 @@ class VerilogASTBuilder : public MachineFunctionPass,
   }
 
   void addSlotReady(MachineInstr *MI, VASTSlot *Slot);
-  void emitFunctionSignature(const Function *F);
-  void emitCommonPort(unsigned FNNum);
+  void emitFunctionSignature(const Function *F, VASTSubModule *SubMod = 0);
+  void emitCommonPort(VASTSubModule *SubMod);
   void emitAllocatedFUs();
-  void emitSubModule(StringRef CalleeName, unsigned FNNum);
+  void emitSubModule(const char *CalleeName, unsigned FNNum);
   void emitIdleState();
 
   void emitBasicBlock(MachineBasicBlock &MBB);
@@ -512,40 +506,6 @@ void VerilogASTBuilder::print(raw_ostream &O, const Module *M) const {
 
 }
 
-void VerilogASTBuilder::emitFunctionSignature(const Function *F) {
-  raw_ostream &S = VM->getDataPathBuffer();
-  unsigned FNNum = FInfo->getCalleeFNNum(F->getName());
-  for (Function::const_arg_iterator I = F->arg_begin(), E = F->arg_end();
-      I != E; ++I) {
-    const Argument *Arg = I;
-    std::string Name = Arg->getName();
-    unsigned BitWidth = TD->getTypeSizeInBits(Arg->getType());
-    // Add port declaration.
-    if (FNNum == 0)
-      VM->addInputPort(Name, BitWidth, VASTModule::ArgPort);
-    else {
-      std::string RegName = getSubModulePortName(FNNum, Name);
-      VM->addRegister(RegName, BitWidth);
-      S << "." << Name << '(' << RegName << "),\n\t";
-    }
-  }
-
-  Type *RetTy = F->getReturnType();
-  if (!RetTy->isVoidTy()) {
-    assert(RetTy->isIntegerTy() && "Only support return integer now!");
-    unsigned BitWidth = TD->getTypeSizeInBits(RetTy);
-    if (FNNum == 0)
-      VM->addOutputPort("return_value", BitWidth, VASTModule::RetPort);
-    else {
-      std::string WireName = getSubModulePortName(FNNum, "return_value");
-      indexPhysReg(FNNum, VM->addWire(WireName, BitWidth));
-      S << ".return_value(" << WireName << "),\n\t";
-    }
-  }
-
-  emitCommonPort(FNNum);
-}
-
 void VerilogASTBuilder::emitIdleState() {
   // The module is busy now
   MachineBasicBlock *EntryBB =  GraphTraits<MachineFunction*>::getEntryNode(MF);
@@ -657,25 +617,6 @@ void VerilogASTBuilder::addSlotReady(MachineInstr *MI, VASTSlot *Slot) {
   addSlotReady(Slot, ReadyPort, Builder->createCnd(MI));
 }
 
-void VerilogASTBuilder::emitCommonPort(unsigned FNNum) {
-  if (FNNum == 0) { // If F is current function.
-    VM->addInputPort("clk", 1, VASTModule::Clk);
-    VM->addInputPort("rstN", 1, VASTModule::RST);
-    VM->addInputPort("start", 1, VASTModule::Start);
-    VM->addOutputPort("fin", 1, VASTModule::Finish);
-  } else { // It is a callee function, emit the signal for the sub module.
-    std::string StartPortName = getSubModulePortName(FNNum, "start");
-    indexPhysReg(FNNum + 1, VM->addRegister(StartPortName, 1)->getValue());
-    std::string FinPortName = getSubModulePortName(FNNum, "fin");
-    VM->addWire(FinPortName, 1);
-    // Connect to the ports
-    raw_ostream &S = VM->getDataPathBuffer();
-    S << ".clk(clk),\n\t.rstN(rstN),\n\t";
-    S << ".start(" << StartPortName << "),\n\t";
-    S << ".fin(" <<FinPortName << ")";
-  }
-}
-
 void VerilogASTBuilder::emitAllocatedFUs() {
   for (VFInfo::const_bram_iterator I = FInfo->bram_begin(), E = FInfo->bram_end();
        I != E; ++I) {
@@ -725,23 +666,19 @@ void VerilogASTBuilder::emitAllocatedFUs() {
   }
 }
 
-void VerilogASTBuilder::emitSubModule(StringRef CalleeName, unsigned FNNum) {
+void VerilogASTBuilder::emitSubModule(const char *CalleeName, unsigned FNNum) {
   // Do not emit a submodule more than once.
   if (isSubModuleEmitted(CalleeName)) return;
 
-  raw_ostream &S = VM->getDataPathBuffer();
-
   if (const Function *Callee = M->getFunction(CalleeName)) {
     if (!Callee->isDeclaration()) {
-      S << getSynSetting(Callee->getName())->getModName() << ' '
-        << CalleeName << "_inst" << "(\n\t";
-      MBBuilder->addSubModule(getSubModulePortName(FNNum, "_inst"), S);
-      emitFunctionSignature(Callee);
-      S << ");\n";
+      VASTSubModule *SubMod = VM->addSubmodule(CalleeName, FNNum);
+      emitFunctionSignature(Callee, SubMod);
       return;
     }
   }
 
+  raw_ostream &S = VM->getDataPathBuffer();
 
   std::string Ports[5] = {
     VM->getPortName(VASTModule::Clk),
@@ -789,6 +726,59 @@ void VerilogASTBuilder::emitSubModule(StringRef CalleeName, unsigned FNNum) {
 
   // Else do not has return port.
   indexPhysReg(RetPortIdx, 0);
+}
+
+void VerilogASTBuilder::emitFunctionSignature(const Function *F,
+                                              VASTSubModule *SubMod) {
+  for (Function::const_arg_iterator I = F->arg_begin(), E = F->arg_end();
+       I != E; ++I) {
+    const Argument *Arg = I;
+    std::string Name = Arg->getName();
+    unsigned BitWidth = TD->getTypeSizeInBits(Arg->getType());
+    // Add port declaration.
+    if (SubMod) {
+      std::string RegName = SubMod->getSubModulePortName(Name);
+      VASTRegister *R = VM->addOpRegister(RegName, BitWidth, SubMod->getNum());
+      SubMod->addInPort(Name, R->getValue());
+      continue;
+    }
+
+    VM->addInputPort(Name, BitWidth, VASTModule::ArgPort);
+  }
+
+  Type *RetTy = F->getReturnType();
+  if (!RetTy->isVoidTy()) {
+    assert(RetTy->isIntegerTy() && "Only support return integer now!");
+    unsigned BitWidth = TD->getTypeSizeInBits(RetTy);
+    if (SubMod) {
+      std::string WireName = SubMod->getSubModulePortName("return_value");
+      VASTWire *OutWire = VM->addWire(WireName, BitWidth);
+      indexPhysReg(SubMod->getNum(), OutWire);
+      SubMod->addOutPort("return_value", OutWire);
+    } else
+      VM->addOutputPort("return_value", BitWidth, VASTModule::RetPort);
+  }
+
+  emitCommonPort(SubMod);
+}
+
+void VerilogASTBuilder::emitCommonPort(VASTSubModule *SubMod) {
+  if (SubMod) {
+    // It is a callee function, emit the signal for the sub module.
+    std::string StartPortName = SubMod->getSubModulePortName("start");
+    VASTRegister *R = VM->addRegister(StartPortName, 1);
+    indexPhysReg(SubMod->getNum() + 1, R->getValue());
+    SubMod->addInPort(StartPortName, R->getValue());
+    std::string FinPortName = SubMod->getSubModulePortName("fin");
+    SubMod->addOutPort(FinPortName, VM->addWire(FinPortName, 1));
+    // Also connedt the memory bus.
+    MBBuilder->addSubModule(SubMod);
+  } else { // If F is current function.
+    VM->addInputPort("clk", 1, VASTModule::Clk);
+    VM->addInputPort("rstN", 1, VASTModule::RST);
+    VM->addInputPort("start", 1, VASTModule::Start);
+    VM->addOutputPort("fin", 1, VASTModule::Finish);
+  }
 }
 
 void VerilogASTBuilder::emitAllSignals() {
