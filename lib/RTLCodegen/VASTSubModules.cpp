@@ -185,3 +185,42 @@ void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {
     OS.exit_block();
   }
 }
+
+//===----------------------------------------------------------------------===//
+std::string
+VASTSubModule::getSubModulePortName(const std::string &PortName) const {
+  return "SubMod" + utostr(getNum()) + "_" + PortName;
+}
+
+void VASTSubModule::addPort(const std::string &Name, VASTValue *V, bool IsInput) {
+  VASTSubModulePortPtr Ptr(V, IsInput);
+  VASTSubModulePortPtr Inserted = PortMap.GetOrCreateValue(Name, Ptr).second;
+  assert(Inserted == Ptr && "Already inserted!");
+  (void) Inserted;
+
+  // Do not add the pseudo drivers to the fanin/fanout list.
+  if (V == 0) return;
+
+  if (IsInput) addFanin(cast<VASTSeqValue>(V));
+  else         addFanout(V);
+}
+
+void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
+  OS << getSynSetting(getName())->getModName() << ' '
+     << getName() << "_inst" << "(\n";
+
+  // Print the port connections.
+  for (const_port_iterator I = port_begin(), E = port_end(); I != E; ++I) {
+    OS.indent(4) << "." << I->first() << '(';
+    if (const VASTValue *Driver = I->second.getPointer())
+      Driver->printAsOperand(OS, false);
+    else
+      // Simply repeat the port name for the pseudo drivers.
+      OS << I->first();
+
+    OS << "), //" << (I->second.getInt() ? "Input" : "Output") << "\n";
+  }
+
+  // Write the clock and the reset signal at last.
+  OS.indent(4) << ".clk(clk),\n\t.rstN(rstN));\n";
+}

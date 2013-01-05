@@ -51,6 +51,7 @@ public:
     vastSlot,
     vastRegister,
     vastBlockRAM,
+    vastSubmodule,
 
     vastModule
   };

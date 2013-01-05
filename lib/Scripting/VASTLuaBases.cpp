@@ -161,6 +161,12 @@ VASTBlockRAM *VASTModule::addBlockRAM(unsigned BRamNum, unsigned Bitwidth,
   return RAM;
 }
 
+VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {
+  VASTSubModule *M = new (Allocator) VASTSubModule(Name, Num);
+  Submodules.push_back(M);
+  return M;
+}
+
 VASTWire *VASTModule::addWire(const std::string &Name, unsigned BitWidth,
                               const char *Attr, bool IsPinned) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name);

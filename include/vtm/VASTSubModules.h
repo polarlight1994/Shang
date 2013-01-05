@@ -17,6 +17,8 @@
 #include "vtm/VASTNodeBases.h"
 #include "vtm/VASTControlPathNodes.h"
 
+#include "llvm/ADT/StringMap.h"
+
 namespace llvm {
 class GlobalVariable;
 
@@ -62,6 +64,37 @@ public:
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastBlockRAM;
   }
+};
+
+class VASTSubModule : public VASTSubModuleBase {
+  // Remember the input/output flag in the pointer.
+  typedef PointerIntPair<VASTValue*, 1, bool> VASTSubModulePortPtr;
+  StringMap<VASTSubModulePortPtr> PortMap;
+
+  VASTSubModule(const char *Name, unsigned FNNum)
+    : VASTSubModuleBase(vastSubmodule, Name, FNNum) {}
+
+  friend class VASTModule;
+  void addPort(const std::string &Name, VASTValue *V, bool IsInput);
+public:
+  unsigned getNum() const { return Idx; }
+  const char *getName() const { return Contents.Name; }
+
+  typedef StringMap<VASTSubModulePortPtr>::const_iterator const_port_iterator;
+  const_port_iterator port_begin() const { return PortMap.begin(); }
+  const_port_iterator port_end() const { return PortMap.end(); }
+
+  void addInPort(const std::string &Name, VASTValue *V) {
+    addPort(Name, V, true);
+  }
+
+  void addOutPort(const std::string &Name, VASTValue *V) {
+    addPort(Name, V, false);
+  }
+
+  std::string getSubModulePortName(const std::string &PortName) const;
+
+  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 };
 
 class VASTRegister : public VASTNode {

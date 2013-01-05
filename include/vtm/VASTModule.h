@@ -28,6 +28,7 @@ namespace llvm {
 class VASTWire;
 class VASTRegister;
 class VASTBlockRAM;
+class VASTSubModule;
 class VASTSlot;
 class DatapathContainer;
 class VASTExprBuilder;
@@ -279,6 +280,8 @@ public:
 
   VASTBlockRAM *addBlockRAM(unsigned BRamNum, unsigned Bitwidth, unsigned Size,
                             const GlobalVariable *Initializer);
+
+  VASTSubModule *addSubmodule(const char *Name, unsigned Num);
 
   VASTRegister *addRegister(const std::string &Name, unsigned BitWidth,
                             unsigned InitVal = 0,
