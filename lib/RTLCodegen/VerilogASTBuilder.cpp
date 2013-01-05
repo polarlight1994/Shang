@@ -770,9 +770,9 @@ void VerilogASTBuilder::emitCommonPort(VASTSubModule *SubMod) {
     std::string StartPortName = SubMod->getSubModulePortName("start");
     VASTRegister *R = VM->addRegister(StartPortName, 1);
     indexPhysReg(SubMod->getNum() + 1, R->getValue());
-    SubMod->addInPort(StartPortName, R->getValue());
+    SubMod->addInPort("start", R->getValue());
     std::string FinPortName = SubMod->getSubModulePortName("fin");
-    SubMod->addOutPort(FinPortName, VM->addWire(FinPortName, 1));
+    SubMod->addOutPort("fin", VM->addWire(FinPortName, 1));
     // Also connedt the memory bus.
     MBBuilder->addSubModule(SubMod);
   } else { // If F is current function.
