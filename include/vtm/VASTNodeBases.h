@@ -16,6 +16,7 @@
 #include "llvm/ADT/ilist.h"
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/ADT/PointerIntPair.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Casting.h"
@@ -26,6 +27,11 @@ class VASTNamedValue;
 class VASTValue;
 class VASTExpr;
 class VASTSeqValue;
+class VASTSymbol;
+class VASTRegister;
+class VASTModule;
+class vlang_raw_ostream;
+class raw_ostream;
 
 class VASTNode {
 public:
@@ -447,6 +453,40 @@ public:
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastWire || A->getASTType() == vastSeqValue;
   }
+};
+
+class VASTSubModuleBase : public VASTNode {
+  SmallVector<VASTSeqValue*, 8> Fanins;
+  SmallVector<VASTValue*, 4> Fanouts;
+protected:
+  VASTSubModuleBase(VASTTypes DeclType, const char *Name) : VASTNode(DeclType) {
+    Contents.Name = Name;
+  }
+
+public:
+  typedef SmallVectorImpl<VASTSeqValue*>::iterator fanin_iterator;
+  fanin_iterator fanin_begin() { return Fanins.begin(); }
+  fanin_iterator fanin_end() { return Fanins.end(); }
+
+  typedef SmallVectorImpl<VASTSeqValue*>::const_iterator const_fanin_iterator;
+  const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
+  const_fanin_iterator fanin_end()   const { return Fanins.end(); }
+
+  typedef SmallVectorImpl<VASTValue*>::iterator fanout_iterator;
+
+  void addFanin(VASTSeqValue *V);
+  void addFanout(VASTValue *V);
+
+  VASTValue *getFanout(unsigned Idx) const {
+    return Fanouts[Idx];
+  }
+
+  VASTSeqValue *getFanin(unsigned Idx) const {
+    return Fanins[Idx];
+  }
+
+  virtual void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void print(raw_ostream &OS) const;
 };
 } // end namespace
 

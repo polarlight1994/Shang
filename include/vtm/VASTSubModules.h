@@ -18,48 +18,47 @@
 #include "vtm/VASTControlPathNodes.h"
 
 namespace llvm {
-class VASTBlockRAM : public VASTNode {
+class VASTBlockRAM : public VASTSubModuleBase {
   unsigned Depth;
   unsigned WordSize;
   unsigned BRamNum;
-public:
-  VASTSeqValue WritePortA;
-private:
-  void printSelector(raw_ostream &OS, const VASTSeqValue &Port) const;
-  void printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod,
-                       const VASTSeqValue &Port) const;
 
   VASTBlockRAM(const char *Name, unsigned BRamNum, unsigned WordSize,
                unsigned Depth)
-    : VASTNode(vastBlockRAM), Depth(Depth), WordSize(WordSize),
-      BRamNum(BRamNum),
-      WritePortA(Name, WordSize, VASTNode::BRAM, BRamNum, *this)
+    : VASTSubModuleBase(vastBlockRAM, Name), Depth(Depth), WordSize(WordSize),
+      BRamNum(BRamNum)
   {}
 
   friend class VASTModule;
-public:
-  typedef VASTSeqValue::assign_itertor assign_itertor;
-  unsigned getBlockRAMNum() const { return BRamNum; }
 
+  void printPort(vlang_raw_ostream &OS, unsigned Num) const;
+  void addPorts(VASTModule *VM);
+public:
+  unsigned getBlockRAMNum() const { return BRamNum; }
   unsigned getWordSize() const { return WordSize; }
   unsigned getDepth() const { return Depth; }
+  unsigned getAddrWidth() const { return Log2_32_Ceil(getDepth()); }
 
-  void printSelector(raw_ostream &OS) const {
-    printSelector(OS, WritePortA);
+  // Get the buses to block RAM.
+  VASTSeqValue *getRAddr(unsigned PortNum) const {
+    return getFanin(PortNum * 3);
   }
 
-  void printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod) const {
-    printAssignment(OS, Mod, WritePortA);
+  VASTSeqValue *getWAddr(unsigned PortNum) const {
+    return getFanin(PortNum * 3 + 1);
   }
 
-  void print(raw_ostream &OS) const {}
+  VASTSeqValue *getWData(unsigned PortNum) const {
+    return getFanin(PortNum * 3 + 2);
+  }
+
+  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTBlockRAM *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastBlockRAM;
   }
-
 };
 
 class VASTRegister : public VASTNode {
@@ -70,11 +69,6 @@ class VASTRegister : public VASTNode {
                VASTNode::SeqValType T = VASTNode::Data, unsigned RegData = 0,
                const char *Attr = "");
   friend class VASTModule;
-
-  void dropUses() {
-    assert(0 && "Function not implemented!");
-  }
-
 public:
   const char *const AttrStr;
 
@@ -83,19 +77,6 @@ public:
 
   const char *getName() const { return Value.getName(); }
   unsigned getBitWidth() const { return Value.getBitWidth(); }
-
-  typedef VASTSeqValue::assign_itertor assign_itertor;
-  assign_itertor assign_begin() const { return Value.begin(); }
-  assign_itertor assign_end() const { return Value.end(); }
-  unsigned num_assigns() const { return Value.size(); }
-
-  void printSelector(raw_ostream &OS) const;
-
-  // Print data transfer between registers.
-  void printAssignment(vlang_raw_ostream &OS, const VASTModule *Mod) const;
-  // Return true if the reset is actually printed.
-  bool printReset(raw_ostream &OS) const;
-  void dumpAssignment() const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTRegister *A) { return true; }
@@ -107,7 +88,8 @@ public:
   static void printCondition(raw_ostream &OS, const VASTSlot *Slot,
                              const AndCndVec &Cnds);
 
-  void print(raw_ostream &OS) const {}
+  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void print(raw_ostream &OS) const;
 };
 
 }
