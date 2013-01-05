@@ -593,7 +593,6 @@ void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
 
 void VerilogASTBuilder::addSlotReady(MachineInstr *MI, VASTSlot *Slot) {
   FuncUnitId Id = VInstrInfo::getPreboundFUId(MI);
-  VASTValue *ReadyPort = 0;
 
   switch (Id.getFUType()) {
   case VFUs::CalleeFN: {
