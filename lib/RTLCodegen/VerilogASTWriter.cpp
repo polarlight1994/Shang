@@ -121,7 +121,6 @@ bool VerilogASTWriter::runOnMachineFunction(MachineFunction &F) {
   Out << "\n\n";
   // Datapath
   Out << "// Datapath\n";
-  Out << VM->getDataPathStr();
   VM->printDatapath(Out);
 
   // Sequential logic of the registers.

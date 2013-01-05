@@ -282,7 +282,6 @@ void VASTModule::reset() {
 VASTModule::~VASTModule() {
   reset();
 
-  delete &(DataPath.str());
   delete &(ControlBlock.str());
 }
 std::string VASTModule::DirectClkEnAttr = "";

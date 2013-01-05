@@ -97,7 +97,7 @@ struct MemBusBuilder {
                            unsigned BitWidth, VASTWire *&SubModEn,
                            VASTExprHelper &Expr) {
     std::string ConnectedWireName
-      = SubMod->getSubModulePortName(OutputValue->getName());
+      = SubMod->getPortName(OutputValue->getName());
 
     VASTWire *SubModWire = VM->addWire(ConnectedWireName, BitWidth);
 
@@ -117,12 +117,6 @@ struct MemBusBuilder {
     }
 
     SubMod->addOutPort(OutputValue->getName(), SubModWire);
-  }
-
-  void addSubModuleInPort(raw_ostream &S, const std::string &PortName) {
-    // Simply connect the input port to the corresponding port of submodule,
-    // which suppose to have the same name.
-    S << '.' << PortName << '(' <<  PortName << "),\n\t";
   }
 
   void addSubModule(VASTSubModule *SubMod) {
@@ -395,11 +389,6 @@ class VerilogASTBuilder : public MachineFunctionPass,
   void emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds,
                        bool IsWrite);
 
-  std::string getSubModulePortName(unsigned FNNum,
-                                   const std::string PortName) const {
-    return "SubMod" + utostr(FNNum) + "_" + PortName;
-  }
-
 public:
   /// @name FunctionPass interface
   //{
@@ -608,7 +597,7 @@ void VerilogASTBuilder::addSlotReady(MachineInstr *MI, VASTSlot *Slot) {
     // The register representing the function unit is store in the src operand
     // of VOpReadFU.
     unsigned FNNum = MI->getOperand(1).getReg();
-    ReadyPort = VM->getSymbol(getSubModulePortName(FNNum, "fin"));
+    ReadyPort = VM->getSymbol(VASTSubModule::getPortName(FNNum, "fin"));
     break;
   }
   default: return;
@@ -678,58 +667,68 @@ void VerilogASTBuilder::emitSubModule(const char *CalleeName, unsigned FNNum) {
     if (!Callee->isDeclaration()) {
       VASTSubModule *SubMod = VM->addSubmodule(CalleeName, FNNum);
       emitFunctionSignature(Callee, SubMod);
+      SubMod->setIsSimple();
       return;
     }
   }
 
-  raw_ostream &S = VM->getDataPathBuffer();
+  SmallVector<VFUs::ModOpInfo, 4> OpInfo;
+  unsigned Latency = VFUs::getModuleOperands(CalleeName, FNNum, OpInfo);
+  VRegisterInfo::PhyRegInfo Info = TRI->getPhyRegInfo(FNNum);
 
-  std::string Ports[5] = {
-    VM->getPortName(VASTModule::Clk),
-    VM->getPortName(VASTModule::RST),
-    getSubModulePortName(FNNum, "start"),
-    getSubModulePortName(FNNum, "fin"),
-    getSubModulePortName(FNNum, "return_value")
-  };
-  // Else ask the constraint about how to instantiates this submodule.
-  S << "// External module: " << CalleeName << '\n';
-  S << VFUs::instantiatesModule(CalleeName, FNNum, Ports);
+  // Create the start signal even the Submodule template is not available.
+  VASTRegister *Start =
+    VM->addRegister(VASTSubModule::getPortName(FNNum, "start"), 1);
+  indexPhysReg(FNNum + 1, Start->getValue());
+
+  // Submodule information not available.
+  if (OpInfo.empty()) {
+    // Create a finish signal that is always true.
+    VASTWire *W = VM->addWire(VASTSubModule::getPortName(FNNum, "fin"), 1);
+    W->assign(Builder->getBoolImmediate(true));
+    // Create something for the return port if needed. Because we may need to
+    // look up the return port by the FNNum later.
+    if (Info.getBitWidth()) {
+      VASTValPtr V
+        = VM->getOrCreateSymbol(VASTSubModule::getPortName(FNNum,"return_value"),
+                                Info.getBitWidth(), false);
+      indexPhysReg(FNNum, V);
+    }
+
+    return;
+  }
+
+  VASTSubModule *SubMod = VM->addSubmodule(CalleeName, FNNum);
+  SubMod->setIsSimple(false);
+  SmallVector<VASTValPtr, 4> Ops;
+  // Add the fanin registers.
+  for (unsigned i = 0, e = OpInfo.size(); i < e; ++i) {
+    VASTRegister *R = VM->addOpRegister(OpInfo[i].first, OpInfo[i].second, FNNum);
+    SubMod->addInPort(OpInfo[i].first, R->getValue());
+    Ops.push_back(R->getValue());
+  }
+  // Add the start register.
+  SubMod->addInPort("start", Start->getValue());
+  // Add the finish output from the submodule.
+  VASTValPtr S = VM->getOrCreateSymbol(SubMod->getPortName("fin"), 1, false);
+  SubMod->addOutPort("fin", cast<VASTValue>(S));
 
   // Add the start/finsh signal and return_value to the signal list.
-  indexPhysReg(FNNum + 1, VM->addRegister(Ports[2], 1)->getValue());
-  VM->getOrCreateSymbol(Ports[3], 1, false);
-  unsigned RetPortIdx = FNNum;
+
   // Dose the submodule have a return port?
-  VRegisterInfo::PhyRegInfo Info = TRI->getPhyRegInfo(RetPortIdx);
   if (Info.getBitWidth()) {
-    SmallVector<VFUs::ModOpInfo, 4> OpInfo;
-    unsigned Latency = VFUs::getModuleOperands(CalleeName, FNNum, OpInfo);
-
-    if (Latency == 0) {
-      VASTValPtr PortName = VM->getOrCreateSymbol(Ports[4],
-                                                  Info.getBitWidth(),
-                                                  false);
-      indexPhysReg(RetPortIdx, PortName);
-      return;
-    }
-
-    VASTWire *ResultWire = VM->addWire(Ports[4], Info.getBitWidth());
-    indexPhysReg(RetPortIdx, ResultWire);
-
-    SmallVector<VASTValPtr, 4> Ops;
-    for (unsigned i = 0, e = OpInfo.size(); i < e; ++i) {
-      VASTRegister *R = VM->addOpRegister(OpInfo[i].first, OpInfo[i].second, FNNum);
-      Ops.push_back(R->getValue());
-    }
-
-    VASTValPtr Expr = Builder->buildExpr(VASTExpr::dpBlackBox, Ops,
-                                         Info.getBitWidth());
+    VASTWire *ResultWire = VM->addWire(SubMod->getPortName("return_value"),
+                                       Info.getBitWidth());
+    indexPhysReg(FNNum, ResultWire);
+    SubMod->addOutPort("return_value", ResultWire);
+    VASTValPtr Expr
+      = Builder->buildExpr(VASTExpr::dpBlackBox, Ops, Info.getBitWidth());
     VM->assignWithExtraDelay(ResultWire, Expr, Latency);
     return;
   }
 
   // Else do not has return port.
-  indexPhysReg(RetPortIdx, 0);
+  indexPhysReg(FNNum, 0);
 }
 
 void VerilogASTBuilder::emitFunctionSignature(const Function *F,
@@ -741,7 +740,7 @@ void VerilogASTBuilder::emitFunctionSignature(const Function *F,
     unsigned BitWidth = TD->getTypeSizeInBits(Arg->getType());
     // Add port declaration.
     if (SubMod) {
-      std::string RegName = SubMod->getSubModulePortName(Name);
+      std::string RegName = SubMod->getPortName(Name);
       VASTRegister *R = VM->addOpRegister(RegName, BitWidth, SubMod->getNum());
       SubMod->addInPort(Name, R->getValue());
       continue;
@@ -755,7 +754,7 @@ void VerilogASTBuilder::emitFunctionSignature(const Function *F,
     assert(RetTy->isIntegerTy() && "Only support return integer now!");
     unsigned BitWidth = TD->getTypeSizeInBits(RetTy);
     if (SubMod) {
-      std::string WireName = SubMod->getSubModulePortName("return_value");
+      std::string WireName = SubMod->getPortName("return_value");
       VASTWire *OutWire = VM->addWire(WireName, BitWidth);
       indexPhysReg(SubMod->getNum(), OutWire);
       SubMod->addOutPort("return_value", OutWire);
@@ -769,11 +768,11 @@ void VerilogASTBuilder::emitFunctionSignature(const Function *F,
 void VerilogASTBuilder::emitCommonPort(VASTSubModule *SubMod) {
   if (SubMod) {
     // It is a callee function, emit the signal for the sub module.
-    std::string StartPortName = SubMod->getSubModulePortName("start");
+    std::string StartPortName = SubMod->getPortName("start");
     VASTRegister *R = VM->addRegister(StartPortName, 1);
     indexPhysReg(SubMod->getNum() + 1, R->getValue());
     SubMod->addInPort("start", R->getValue());
-    std::string FinPortName = SubMod->getSubModulePortName("fin");
+    std::string FinPortName = SubMod->getPortName("fin");
     SubMod->addOutPort("fin", VM->addWire(FinPortName, 1));
     // Also connedt the memory bus.
     MBBuilder->addSubModule(SubMod);
@@ -1014,7 +1013,7 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
 
   VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
 
-  std::string StartPortName = getSubModulePortName(FNNum, "start");
+  std::string StartPortName = VASTSubModule::getPortName(FNNum, "start");
   VASTValPtr StartSignal = VM->getSymbol(StartPortName);
   addSlotEnable(Slot, cast<VASTSeqValue>(StartSignal), Pred);
 
@@ -1023,7 +1022,7 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
     Function::const_arg_iterator ArgIt = FN->arg_begin();
     for (unsigned i = 0, e = FN->arg_size(); i != e; ++i) {
       VASTSeqValue *R =
-        VM->getSymbol<VASTSeqValue>(getSubModulePortName(FNNum, ArgIt->getName()));
+        VM->getSymbol<VASTSeqValue>(VASTSubModule::getPortName(FNNum, ArgIt->getName()));
       VM->addAssignment(R, getAsOperandImpl(MI->getOperand(4 + i)), Slot,
                         Cnds, MI);
       ++ArgIt;
@@ -1031,16 +1030,18 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
     return;
   }
 
-  typedef PtrInvPair<VASTExpr> VASTExprPtr;
-  // Is the function have latency information not captured by schedule?
-  if (VASTWire *RetPort = getAsLValue<VASTWire>(MI->getOperand(0))) {
-    if (VASTExpr *Expr = RetPort->getExpr().getAsLValue<VASTExpr>()) {
-      for (unsigned i = 0, e = Expr->NumOps; i < e; ++i) {
-        VASTSeqValue *R = cast<VASTSeqValue>(Expr->getOperand(i));
-        VM->addAssignment(R, getAsOperandImpl(MI->getOperand(4 + i)), Slot, Cnds,
-                          MI);
+  if (TRI->getPhyRegInfo(FNNum).getBitWidth()) {
+    typedef PtrInvPair<VASTExpr> VASTExprPtr;
+    // Is the function have latency information not captured by schedule?
+    if (VASTWire *RetPort = getAsLValue<VASTWire>(MI->getOperand(0))) {
+      if (VASTExpr *Expr = RetPort->getExpr().getAsLValue<VASTExpr>()) {
+        for (unsigned i = 0, e = Expr->NumOps; i < e; ++i) {
+          VASTSeqValue *R = cast<VASTSeqValue>(Expr->getOperand(i));
+          VM->addAssignment(R, getAsOperandImpl(MI->getOperand(4 + i)), Slot, Cnds,
+                            MI);
+        }
+        return;
       }
-      return;
     }
   }
 

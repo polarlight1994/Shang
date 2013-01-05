@@ -83,7 +83,7 @@ public:
 private:
   // Dirty Hack:
   // Buffers
-  raw_string_ostream DataPath, ControlBlock;
+  raw_string_ostream ControlBlock;
   vlang_raw_ostream LangControlBlock;
   // The slots vector, each slot represent a state in the FSM of the design.
   SlotVecTy Slots;
@@ -128,7 +128,6 @@ public:
 
   VASTModule(const std::string &Name, VASTExprBuilder *Builder)
     : VASTNode(vastModule),
-    DataPath(*(new std::string())),
     ControlBlock(*(new std::string())),
     LangControlBlock(ControlBlock),
     Name(Name), Builder(Builder),
@@ -335,14 +334,6 @@ public:
   std::string &getControlBlockStr() {
     LangControlBlock.flush();
     return ControlBlock.str();
-  }
-
-  raw_ostream &getDataPathBuffer() {
-    return DataPath;
-  }
-
-  std::string &getDataPathStr() {
-    return DataPath.str();
   }
 
   static const std::string GetMemBusEnableName(unsigned FUNum) {

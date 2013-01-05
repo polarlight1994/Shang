@@ -188,8 +188,8 @@ void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {
 
 //===----------------------------------------------------------------------===//
 std::string
-VASTSubModule::getSubModulePortName(const std::string &PortName) const {
-  return "SubMod" + utostr(getNum()) + "_" + PortName;
+VASTSubModule::getPortName(unsigned FNNum, const std::string &PortName) {
+  return "SubMod" + utostr(FNNum) + "_" + PortName;
 }
 
 void VASTSubModule::addPort(const std::string &Name, VASTValue *V, bool IsInput) {
@@ -205,7 +205,8 @@ void VASTSubModule::addPort(const std::string &Name, VASTValue *V, bool IsInput)
   else         addFanout(V);
 }
 
-void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
+void VASTSubModule::printSimpleInstantiation(vlang_raw_ostream &OS,
+                                             const VASTModule *Mod) const {
   OS << getSynSetting(getName())->getModName() << ' '
      << getName() << "_inst" << "(\n";
 
@@ -223,4 +224,28 @@ void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 
   // Write the clock and the reset signal at last.
   OS.indent(4) << ".clk(clk), .rstN(rstN));\n";
+}
+
+void VASTSubModule::printInstantiationFromTemplate(vlang_raw_ostream &OS,
+                                                   const VASTModule *Mod)
+                                                   const {
+  std::string Ports[5] = {
+    "clk", "rstN",
+    getPortName("start"),
+    getPortName("fin"),
+    getPortName("return_value")
+  };
+
+  // ask the constraint about how to instantiates this submodule.
+  OS << "// External module: " << getName() << '\n';
+  OS << VFUs::instantiatesModule(getName(), getNum(), Ports);
+}
+
+void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
+  if (IsSimple) {
+    printSimpleInstantiation(OS, Mod);
+    return;
+  }
+
+  printInstantiationFromTemplate(OS, Mod);
 }

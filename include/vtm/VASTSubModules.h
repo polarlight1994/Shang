@@ -70,15 +70,23 @@ class VASTSubModule : public VASTSubModuleBase {
   // Remember the input/output flag in the pointer.
   typedef PointerIntPair<VASTValue*, 1, bool> VASTSubModulePortPtr;
   StringMap<VASTSubModulePortPtr> PortMap;
+  // Can the submodule be simply instantiated?
+  bool IsSimple;
 
   VASTSubModule(const char *Name, unsigned FNNum)
     : VASTSubModuleBase(vastSubmodule, Name, FNNum) {}
 
   friend class VASTModule;
   void addPort(const std::string &Name, VASTValue *V, bool IsInput);
+  void
+  printSimpleInstantiation(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void printInstantiationFromTemplate(vlang_raw_ostream &OS,
+                                      const VASTModule *Mod) const;
 public:
   unsigned getNum() const { return Idx; }
   const char *getName() const { return Contents.Name; }
+
+  void setIsSimple(bool isSimple = true) { IsSimple = isSimple; }
 
   typedef StringMap<VASTSubModulePortPtr>::const_iterator const_port_iterator;
   const_port_iterator port_begin() const { return PortMap.begin(); }
@@ -92,7 +100,10 @@ public:
     addPort(Name, V, false);
   }
 
-  std::string getSubModulePortName(const std::string &PortName) const;
+  static std::string getPortName(unsigned FNNum, const std::string &PortName);
+  std::string getPortName(const std::string &PortName) const {
+    return getPortName(getNum(), PortName);
+  }
 
   void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 };
