@@ -745,7 +745,8 @@ unsigned VSchedGraph::calculateExpectedSPDFromEntry(const VSUnit *BBEntry) {
     unsigned USlot = U->getSlot();
     unsigned UOffset = USlot - EntrySlot;
     for (dep_it DI = cp_begin(U), DE = cp_end(U); DI != DE; ++DI) {
-      if (!DI.isCrossBB()) continue;
+      // Ignore the linear order edge when we are calculating the delay.
+      if (!DI.isCrossBB() || DI.getEdgeType() == VDEdge::LinearOrder) continue;
 
       VSUnit *Src = *DI;
       MachineBasicBlock *SrcBB = Src->getParentBB();
