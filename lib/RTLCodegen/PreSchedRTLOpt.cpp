@@ -461,7 +461,7 @@ void PreSchedRTLOpt::rewriteExprTreeForMO(MachineOperand &MO, MachineInstr *IP,
       VInstrInfo::setBitWidth(MO, 1);
     }
 
-    assert(VInstrInfo::getBitWidth(MO) == V->getBitWidth()
+    assert(VInstrInfo::getBitWidth(MO) <= V->getBitWidth()
            && "Bitwidth not match!");
     return;
   }

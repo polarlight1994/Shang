@@ -28,7 +28,7 @@
 using namespace llvm;
 
 namespace {
-  class BitLevelInfo : public MachineFunctionPass {
+struct BitLevelInfo : public MachineFunctionPass {
   void computeBitWidth(MachineInstr *Instr);
   void propagateBitWidth(MachineOperand &MO);
 
@@ -69,9 +69,19 @@ namespace {
 
   unsigned computePHI(MachineInstr *PN);
 
-  MachineRegisterInfo *MRI;
+  void handleOpBRAMReadWrite(MachineInstr &Instr, bool IsRead);
 
-public:
+  void handleOpToState(MachineInstr &Instr);
+
+  void handleOpRet(MachineInstr &Instr) {
+    // Setup the bit width for predicate operand.
+    MachineOperand &Op = Instr.getOperand(0);
+    VInstrInfo::setBitWidth(Op, 1);
+  }
+
+  MachineRegisterInfo *MRI;
+  VFInfo *VFI;
+
   static char ID;
   BitLevelInfo();
 
@@ -103,7 +113,7 @@ Pass *llvm::createBitLevelInfoPass() {
 
 char BitLevelInfo::ID = 0;
 
-BitLevelInfo::BitLevelInfo() : MachineFunctionPass(ID) {
+BitLevelInfo::BitLevelInfo() : MachineFunctionPass(ID), MRI(0), VFI(0) {
   initializeBitLevelInfoPass(*PassRegistry::getPassRegistry());
 }
 
@@ -112,10 +122,58 @@ void BitLevelInfo::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
 }
 
+void BitLevelInfo::handleOpToState(MachineInstr &Instr) {
+  // Setup the bit width for predicate operand.
+  MachineOperand &Op = Instr.getOperand(0);
+  if (Op.isImm()) {
+    assert(Op.getImm() && "Unexpected 'never' in unconditional branch!");
+    Op.ChangeToRegister(0, false);
+    VInstrInfo::setBitWidth(Op, 1);
+  }
+
+  MachineOperand &Pred = Instr.getOperand(2);
+  if (Pred.isImm()) {
+    assert(Pred.getImm() && "Unexpected 'never' in unconditional branch!");
+    Pred.ChangeToRegister(0, false);
+    VInstrInfo::setBitWidth(Op, 1);
+  }
+}
+
+void BitLevelInfo::handleOpBRAMReadWrite(MachineInstr &Instr, bool IsRead) {
+  FuncUnitId FU = VInstrInfo::getPreboundFUId(&Instr);
+  unsigned BRAMNum = VFUBRAM::FUNumToBRamNum(FU.getFUNum());
+  VFInfo::BRamInfo &Info = VFI->getBRamInfo(BRAMNum);
+
+  unsigned ResultIdx = 0;
+  VInstrInfo::setBitWidth(Instr.getOperand(ResultIdx), Info.ElemSizeInBytes * 8);
+
+  unsigned AddrIdx = 1;
+  unsigned BRAMSizeInBytes = Info.NumElem * Info.ElemSizeInBytes;
+  // Ensure a nozero address width even the BRAM only containts 1 element.
+  unsigned AddrWidth = std::max(Log2_32_Ceil(BRAMSizeInBytes), 1u);
+  VInstrInfo::setBitWidth(Instr.getOperand(AddrIdx), AddrWidth);
+
+  if (!IsRead) {
+    unsigned DataIdx = 2;
+    VInstrInfo::setBitWidth(Instr.getOperand(DataIdx), Info.ElemSizeInBytes * 8);
+  }
+
+  unsigned BEnIdx = IsRead ? 2 : 3;
+  VInstrInfo::setBitWidth(Instr.getOperand(BEnIdx), 8);
+  unsigned BRAMNumIdx = IsRead ? 3 : 4;
+  VInstrInfo::setBitWidth(Instr.getOperand(BRAMNumIdx), 32);
+  unsigned PredIdx = IsRead ? 4 : 5;
+  VInstrInfo::setBitWidth(Instr.getOperand(PredIdx), 1);
+  Instr.getOperand(PredIdx).ChangeToRegister(0, false);
+
+  unsigned TracIdx = IsRead ? 5 : 6;
+  VInstrInfo::setBitWidth(Instr.getOperand(TracIdx), 1);
+}
+
 bool BitLevelInfo::runOnMachineFunction(MachineFunction &MF) {
   MRI = &MF.getRegInfo();
+  VFI = MF.getInfo<VFInfo>();
 
-  VFInfo *VFI = MF.getInfo<VFInfo>();
   // No need to run the pass if bitwidth information not available anymore.
   if (!VFI->isBitWidthAnnotated())
     return false;
@@ -131,30 +189,13 @@ bool BitLevelInfo::runOnMachineFunction(MachineFunction &MF) {
       default: break;
       case VTM::IMPLICIT_DEF:
         continue;
-      case VTM::VOpRet: {
-        // Setup the bit width for predicate operand.
-        MachineOperand &Op = Instr.getOperand(0);
-        VInstrInfo::setBitWidth(Op, 1);
+      case VTM::VOpRet:
+        handleOpRet(Instr);
         continue;
-      }
       case VTM::VOpToState:
-      case VTM::VOpToStateb: {
-        // Setup the bit width for predicate operand.
-        MachineOperand &Op = Instr.getOperand(0);
-        if (Op.isImm()) {
-          assert(Op.getImm() && "Unexpected 'never' in unconditional branch!");
-          Op.ChangeToRegister(0, false);
-          VInstrInfo::setBitWidth(Op, 1);
-        }
-
-        MachineOperand &Pred = Instr.getOperand(2);
-        if (Pred.isImm()) {
-          assert(Pred.getImm() && "Unexpected 'never' in unconditional branch!");
-          Pred.ChangeToRegister(0, false);
-          VInstrInfo::setBitWidth(Op, 1);
-        }
+      case VTM::VOpToStateb:
+        handleOpToState(Instr);
         continue;
-      }
       case VTM::COPY:     case VTM::PHI:
         continue;
       case VTM::VOpSRA:
@@ -162,6 +203,12 @@ bool BitLevelInfo::runOnMachineFunction(MachineFunction &MF) {
       case VTM::VOpSHL:
         isShifts = true;
         break;
+      case VTM::VOpBRAMRead:
+        handleOpBRAMReadWrite(Instr, true);
+        continue;
+      case VTM::VOpBRAMWrite:
+        handleOpBRAMReadWrite(Instr, false);
+        continue;
       }
 
       BitWidthAnnotator Annotator(Instr);
