@@ -15,6 +15,8 @@ dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
 dofile('@VTS_SOURCE_ROOT@/' .. 'AlteraCommon.lua')
 dofile('@VTS_SOURCE_ROOT@/' .. 'Altera4LUTFUs.lua')
 FUs.LUTDelay = 0.2 / PERIOD
+-- Enable simple dual-port mode
+FUs.BRam.Mode = 1
 
 Functions.main = { ModName = RTLModuleName, Scheduling = SynSettings.@ScheduleType@, Pipeline = SynSettings.@PipelineType@ }
 
