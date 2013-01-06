@@ -237,14 +237,12 @@ bool PathDelayQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   // No latency information available.
   if (Latency == 0) return true;
 
-  SeqValSetTy &ParentReachableRegs = QueryCache[V];
-
   // Add the timing constraints from operand registers to the output registers.
   typedef VASTSubModule::fanin_iterator fanin_iterator;
   for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
        I != E; ++I) {
     VASTSeqValue *Operand = *I;
-    ParentReachableRegs[Operand] = Latency;
+    addDelayFromToStats(Operand, Latency, true);
   }
 
   return true;
