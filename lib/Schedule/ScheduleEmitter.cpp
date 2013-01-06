@@ -693,8 +693,8 @@ void VSchedGraph::insertDelayBlock(MachineBasicBlock *From,
   // TODO: Fix the dependencies edges in the scheduling graph.
 }
 
-unsigned VSchedGraph::insertDelayBlock(const VSUnit *BBEntry,
-                                       unsigned ExpectedSPD) {
+unsigned VSchedGraph::insertDelayBlock(const VSUnit *BBEntry, unsigned ExpectedSPD,
+                                       std::set<VSUnit*> &ConflictPredExits) {
   MachineBasicBlock *MBB = BBEntry->getParentBB();
 
   // Handle the trivial case trivially.
@@ -717,6 +717,11 @@ unsigned VSchedGraph::insertDelayBlock(const VSUnit *BBEntry,
       = PredInfo.SPDFromEntry + PredInfo.getTotalSlot();
 
     int ExtraLatency = int(ExpectedSPD) - int(Entry2ExitDistanceFromEntry);
+    // If the predecessor BB have FU conflict with current BB, 1 extra wait
+    // state is needed.
+    if (ConflictPredExits.count(PredInfo.Exit))
+      ExtraLatency = std::max(ExtraLatency, 1);
+
     if (ExtraLatency > 0) {
       assert(AllowDangling && "Unexpected extra delay when dangling is disabled!");
       insertDelayBlock(PredTerminator->getParentBB(), MBB, ExtraLatency);
@@ -730,7 +735,9 @@ unsigned VSchedGraph::insertDelayBlock(const VSUnit *BBEntry,
   return std::max(ActualSPD, ExpectedSPD);
 }
 
-unsigned VSchedGraph::calculateExpectedSPDFromEntry(const VSUnit *BBEntry) {
+unsigned VSchedGraph::calculateExpectedSPDFromEntry(const VSUnit *BBEntry,
+                                                    std::set<VSUnit*>
+                                                    &ConflictPredExits) {
   unsigned EntrySlot = BBEntry->getSlot();
   MachineBasicBlock *MBB = BBEntry->getParentBB();
   typedef VSUnit::use_iterator use_it;
@@ -745,14 +752,23 @@ unsigned VSchedGraph::calculateExpectedSPDFromEntry(const VSUnit *BBEntry) {
     unsigned USlot = U->getSlot();
     unsigned UOffset = USlot - EntrySlot;
     for (dep_it DI = cp_begin(U), DE = cp_end(U); DI != DE; ++DI) {
-      // Ignore the linear order edge when we are calculating the delay.
-      if (!DI.isCrossBB() || DI.getEdgeType() == VDEdge::LinearOrder) continue;
+      if (!DI.isCrossBB()) continue;
 
       VSUnit *Src = *DI;
       MachineBasicBlock *SrcBB = Src->getParentBB();
       assert(SrcBB != MBB && "Not cross BB depenency!");
       BBInfo &SrcInfo = getBBInfo(SrcBB);
       VSUnit *SrcEntry = SrcInfo.Entry;
+
+      // Ignore the linear order edge when we are calculating the delay.
+      if (DI.getEdgeType() == VDEdge::LinearOrder) {
+        VSUnit *SrcExit = SrcInfo.Exit;
+        // Identify the BB that have FU conflict with current BB.
+        if (UOffset == 0 && Src->getSlot() == SrcExit->getSlot())
+          ConflictPredExits.insert(SrcExit);
+
+        continue;
+      }
 
       // Get the required entry-to-entry distance from source BB to current BB.
       int E2EDistance = DI.getLatency() - UOffset
@@ -770,6 +786,9 @@ unsigned VSchedGraph::calculateExpectedSPDFromEntry(const VSUnit *BBEntry) {
 }
 
 void VSchedGraph::insertDelayBlocks() {
+  // Remember the predecessor BBs which have FU conflict with the current BBs,
+  // and insert extra wait state to resolve the conflict.
+  std::set<VSUnit*> ConflictPredExits;
   // Because we will push new BBInfo to BBInfoMap during inserting delay blocks,
   // we should use the index to iterate over the exiting BBInfos, and the newly
   // pushed BBInfos will not be visited.
@@ -777,15 +796,18 @@ void VSchedGraph::insertDelayBlocks() {
     const VSUnit *BBEntry = BBInfoMap[i].Entry;
     assert(i == unsigned(BBEntry->getParentBB()->getNumber())
            && "BBInfoMap's index not synchronized!");
+    ConflictPredExits.clear();
     // Calculate the the expected shortest path distance from IDom.
     // Because the source of cross BB chain always dominates the sink, so we
     // can only calculate the shortest path distance from the immediate
     // dominator of the sink's parent BB. After that, we can get the total
     // shortest path distance by adding the distance from the IDom to the source
     // in the dominator tree.
-    unsigned ExpectedSPD = calculateExpectedSPDFromEntry(BBEntry);
+    unsigned ExpectedSPD
+      = calculateExpectedSPDFromEntry(BBEntry, ConflictPredExits);
 
-    unsigned ActualSPD = insertDelayBlock(BBEntry, ExpectedSPD);
+    unsigned ActualSPD
+      = insertDelayBlock(BBEntry, ExpectedSPD, ConflictPredExits);
 
     // Set the distance from IDom including the delay operations.
     // NOTE: BBInfoMap may reallocated on the fly in function 'insertDelayBlock'

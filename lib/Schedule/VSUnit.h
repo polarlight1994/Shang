@@ -716,15 +716,18 @@ private:
 
   void insertDelayBlocks();
 
-  unsigned calculateExpectedSPDFromEntry(const VSUnit *BBEntry);
+  unsigned calculateExpectedSPDFromEntry(const VSUnit *BBEntry,
+                                         std::set<VSUnit*> &ConflictPredExits);
 
   void insertDelayBlock(MachineBasicBlock *From, MachineBasicBlock *To,
                         unsigned Latency);
+
   // Insert the necessary delay operation from current BB's predecessors to
   // current BB to make sure the shortest path distance is satisfied.
   // Return the actually SPD from current BB's IDom after the delay operations
   // are inserted.
-  unsigned insertDelayBlock(const VSUnit *BBEntry, unsigned ExpectedSPD);
+  unsigned insertDelayBlock(const VSUnit *BBEntry, unsigned ExpectedSPD,
+                            std::set<VSUnit*> &ConflictPredExits);
 
   // Insert the copy operations which copy the result of the operations to
   // registers, so that we can break the chain.
