@@ -278,16 +278,19 @@ let mayLoad      = 1,
                            (ins ptr_rc:$addr, DR:$src, DR:$isStore, DR:$byteenable),
                             "$dst = memtrans $src, $addr, $isStore, $byteenable",
                             [], FUMemBus, 0 /*writeUntilFinish*/>;
-
-  def VOpBRAMRead : FUInst<(outs DR:$dst),
-                       (ins ptr_rc:$addr, DR:$byteenable, i8imm:$bramnum),
-                       "$dst = bram $src, $addr, $byteenable, $bramnum",
-                       [], FUBRam, 0 /*writeUntilFinish*/>;
-  def VOpBRAMWrite : FUInst<(outs DR:$dst),
-                       (ins ptr_rc:$addr, DR:$src, DR:$byteenable, i8imm:$bramnum),
-                       "$dst = bram $src, $addr, $byteenable, $bramnum",
-                       [], FUBRam, 0 /*writeUntilFinish*/>;
 }
+
+let mayLoad      = 1 in
+def VOpBRAMRead : FUInst<(outs DR:$dst),
+                    (ins ptr_rc:$addr, DR:$byteenable, i8imm:$bramnum),
+                    "$dst = bram $src, $addr, $byteenable, $bramnum",
+                    [], FUBRam, 0 /*writeUntilFinish*/>;
+					
+let mayStore    = 1 in
+def VOpBRAMWrite : FUInst<(outs DR:$dst),
+                    (ins ptr_rc:$addr, DR:$src, DR:$byteenable, i8imm:$bramnum),
+                    "$dst = bram $src, $addr, $byteenable, $bramnum",
+                    [], FUBRam, 0 /*writeUntilFinish*/>;
 
 def ImpUse : InstVTM<(outs), (ins variable_ops), "imp-use", [], FUTrivial>;
 
