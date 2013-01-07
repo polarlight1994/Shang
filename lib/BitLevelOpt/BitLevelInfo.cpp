@@ -146,6 +146,7 @@ void BitLevelInfo::handleOpBRAMReadWrite(MachineInstr &Instr, bool IsRead) {
 
   unsigned ResultIdx = 0;
   VInstrInfo::setBitWidth(Instr.getOperand(ResultIdx), Info.ElemSizeInBytes * 8);
+  propagateBitWidth(Instr.getOperand(ResultIdx));
 
   unsigned AddrIdx = 1;
   unsigned BRAMSizeInBytes = Info.NumElem * Info.ElemSizeInBytes;
