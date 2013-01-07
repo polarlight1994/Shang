@@ -478,8 +478,18 @@ void VPreRegAllocSched::addControlPathDepForMI(MachineInstr *MI, int MIOffset,
       // Ignore the dependency from other BB in local scheduling mode.
       if (SrcSU == 0) continue;
 
-      if (SrcBB != CurMBB || !CrossBBOnly)
-        A->addDep<true>(SrcSU, VDEdge::CreateDep<Type>(Latency - MIOffset));
+      if (SrcBB != CurMBB || !CrossBBOnly) {
+        int NumSteps = Latency - MIOffset;
+        if (SrcBB == CurMBB) {
+          // SrcSU reach the current SU via some data-path (because there is no
+          // operation reading the result of the entry of a BB), make sure there
+          // is a slot to schedule the the data-path operations between the
+          // entry and the current SU.
+          NumSteps = std::max(1, NumSteps);
+        }
+
+        A->addDep<true>(SrcSU, VDEdge::CreateDep<Type>(NumSteps));
+      }
 
       // If we are only adding cross basic block dependencies, do not add the
       // control dependencies from the entry of the same BB.
