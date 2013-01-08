@@ -18,7 +18,6 @@
 
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/ADT/GraphTraits.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/Allocator.h"
 
 #include <set>
@@ -30,8 +29,8 @@ namespace llvm {
 class VASTSeqValNumbering;
 class SlotInfo;
 
-// VASTSeqValue numbering information.
-class SVNInfo {
+// SlotInfo, store the data-flow information of a slot.
+class SlotInfo {
   struct LiveInInfo {
     uint32_t Cycles;
 
@@ -42,80 +41,9 @@ class SVNInfo {
     void incCycles(int Inc = 1) { Cycles += Inc; }
   };
 
-  VASTSeqValue *const V;
-  VASTSlot *const Slot;
-  const MachineInstr *const DefMI;
-
-  // Vector for the dependent SVNInfos which is a Predecessor VAS.
-  typedef DenseMap<SVNInfo*, LiveInInfo> VASCycMapTy;
-  VASCycMapTy DepVAS;
-
-  typedef SmallPtrSet<SVNInfo*, 8> VASSetTy;
-  // Vector for the successor SVNInfo.
-  VASSetTy UseVAS;
-
-  void addDepVAS(SVNInfo *VAS, SVNInfo::LiveInInfo NewLI){
-    assert(NewLI.getCycles() && "Expect non-zero distance!");
-
-    LiveInInfo &Info = DepVAS[VAS];
-
-    if (Info.getCycles() == 0) VAS->UseVAS.insert(this);
-
-    if (Info.getCycles() == 0 || Info.getCycles() > NewLI.getCycles())
-      // Try to take the shortest path.
-      Info = NewLI;
-  }
-
-  SVNInfo(VASTSeqValue *V, VASTSlot *slot, const MachineInstr *MI)
-    : V(V), Slot(slot), DefMI(MI) {}
-  SVNInfo(const SVNInfo&); // Do not implement.
-
-  LiveInInfo getDepInfo(SVNInfo *VAS) const {
-    VASCycMapTy::const_iterator at = DepVAS.find(VAS);
-    return at == DepVAS.end() ? LiveInInfo() : at->second;
-  }
-
-  friend class SlotInfo;
-  friend class VASTSeqValNumbering;
-public:
-  VASTSeqValue *getValue() const { return V; }
-  VASTSlot *getSlot() const { return Slot; }
-  const MachineInstr *getDefMI() const { return DefMI; }
-
-  std::string getName() const;
-
-  void verify() const;
-
-  void print(raw_ostream &OS, unsigned Ind = 0) const;
-
-  void dump() const;
-
-  typedef VASSetTy::iterator iterator;
-  iterator use_begin() { return UseVAS.begin(); }
-  iterator use_end() { return UseVAS.end(); }
-
-  bool operator==(SVNInfo &RHS) const {
-    return V == RHS.getValue() && Slot == RHS.getSlot();
-  }
-};
-
-template<> struct GraphTraits<SVNInfo*> {
-  typedef SVNInfo NodeType;
-  typedef NodeType::iterator ChildIteratorType;
-  static NodeType *getEntryNode(NodeType* N) { return N; }
-  static inline ChildIteratorType child_begin(NodeType *N) {
-    return N->use_begin();
-  }
-  static inline ChildIteratorType child_end(NodeType *N) {
-    return N->use_end();
-  }
-};
-
-// SlotInfo, store the data-flow information of a slot.
-class SlotInfo {
   // Define the VAS set for the reaching definition dense map.
-  typedef std::set<SVNInfo*> VASSetTy;
-  typedef std::map<SVNInfo*, SVNInfo::LiveInInfo> VASCycMapTy;
+  typedef std::set<VASTSeqValue::Def> VASSetTy;
+  typedef std::map<VASTSeqValue::Def, SlotInfo::LiveInInfo> VASCycMapTy;
   const VASTSlot *S;
   // Define Set for the reaching definition.
   VASSetTy SlotGen;
@@ -131,14 +59,14 @@ class SlotInfo {
   gen_iterator gen_end() const { return SlotGen.end(); }
 
   typedef
-  std::pointer_to_unary_function<std::pair<SVNInfo*, unsigned>,
-                                 SVNInfo*>
+  std::pointer_to_unary_function<std::pair<VASTSeqValue::Def, unsigned>,
+                                 VASTSeqValue::Def>
   vas_getter;
 
-  static bool updateLiveIn(SVNInfo *VAS, SVNInfo::LiveInInfo NewLI,
+  static bool updateLiveIn(VASTSeqValue::Def D, SlotInfo::LiveInInfo NewLI,
                            VASCycMapTy &S) {
     assert(NewLI.getCycles() && "It takes at least a cycle to live in!");
-    SVNInfo::LiveInInfo &Info = S[VAS];
+    SlotInfo::LiveInInfo &Info = S[D];
 
     if (Info.Cycles == 0 || Info.Cycles > NewLI.Cycles) {
       // Try to take the shortest path.
@@ -149,9 +77,9 @@ class SlotInfo {
     return false;
   }
 
-  SVNInfo::LiveInInfo getLiveIn(SVNInfo *VAS) const {
-    vascyc_iterator at = SlotIn.find(VAS);
-    return at == SlotIn.end() ? SVNInfo::LiveInInfo() : at->second;
+  SlotInfo::LiveInInfo getLiveIn(VASTSeqValue::Def D) const {
+    vascyc_iterator at = SlotIn.find(D);
+    return at == SlotIn.end() ? SlotInfo::LiveInInfo() : at->second;
   }
 
   // Initialize the out set by simply copying the gen set, and initialize the
@@ -159,21 +87,21 @@ class SlotInfo {
   void initOutSet();
 
   // Insert VAS into different set.
-  void insertGen(SVNInfo *VAS) {
-    SlotGen.insert(VAS);
-    insertOvewritten(VAS->getValue());
+  void insertGen(VASTSeqValue::Def D) {
+    SlotGen.insert(D);
+    insertOvewritten(D.getValue());
   }
 
   void insertOvewritten(VASTValue *V) {
     OverWrittenValue.insert(V);
   }
 
-  bool insertIn(SVNInfo *VAS, SVNInfo::LiveInInfo NewLI) {
-    return updateLiveIn(VAS, NewLI, SlotIn);
+  bool insertIn(VASTSeqValue::Def D, SlotInfo::LiveInInfo NewLI) {
+    return updateLiveIn(D, NewLI, SlotIn);
   }
 
-  bool insertOut(SVNInfo *VAS, SVNInfo::LiveInInfo NewLI) {
-    return updateLiveIn(VAS, NewLI, SlotOut);
+  bool insertOut(VASTSeqValue::Def D, SlotInfo::LiveInInfo NewLI) {
+    return updateLiveIn(D, NewLI, SlotOut);
   }
 
   friend class VASTSeqValNumbering;
@@ -188,11 +116,11 @@ public:
   vascyc_iterator out_begin() const { return SlotOut.begin(); }
   vascyc_iterator out_end() const { return SlotOut.end(); }
 
-  bool isVASKilled(const SVNInfo *VAS) const;
+  bool isVASKilled(const VASTSeqValue::Def D) const;
 
   // Get the distance (in cycles) from the define slot of the VAS to this slot.
-  unsigned getCyclesFromDef(SVNInfo *VAS) const {
-    return getLiveIn(VAS).getCycles();
+  unsigned getCyclesFromDef(VASTSeqValue::Def D) const {
+    return getLiveIn(D).getCycles();
   }
 
   // Get Slot pointer.
@@ -206,7 +134,7 @@ public:
 class VASTSeqValNumbering : public MachineFunctionPass {
 public:
   // define VASVec for the SVNInfo.
-  typedef SmallVector<SVNInfo*, 4> VASVec;
+  typedef std::vector<VASTSeqValue::Def> VASVec;
   typedef VASVec::iterator vasvec_it;
 
   // Define small vector for the slots.
@@ -220,73 +148,19 @@ private:
   SlotInfoTy SlotInfos;
   SlotVecTy SlotVec;
 
-  typedef DenseMap<std::pair<VASTSeqValue*, VASTSlot*>, SVNInfo*> VASMapTy;
-  VASMapTy UniqueVASs;
-  // Use mapped_iterator which is a simple iterator adapter that causes a
-  // function to be dereferenced whenever operator* is invoked on the iterator.
-  typedef
-  std::pointer_to_unary_function<std::pair<std::pair<VASTValue*, VASTSlot*>,
-                                                     SVNInfo*>,
-                                 SVNInfo*>
-  vas_getter;
-
-  typedef mapped_iterator<VASMapTy::iterator, vas_getter> vas_iterator;
-  typedef mapped_iterator<VASMapTy::const_iterator, vas_getter>
-          const_vas_iterator;
-
-  BumpPtrAllocator Allocator;
-
   // define VAS assign iterator.
   typedef VASTSeqValue::const_itertor vn_itertor;
 
   VASTModule *VM;
+  BumpPtrAllocator Allocator;
 public:
   static char ID;
-
-  vas_iterator vas_begin() {
-    return vas_iterator(UniqueVASs.begin(),
-                        vas_getter(pair_second<std::pair<VASTValue*, VASTSlot*>,
-                                               SVNInfo*>));
-  }
-
-  vas_iterator vas_end() {
-    return vas_iterator(UniqueVASs.end(),
-                        vas_getter(pair_second<std::pair<VASTValue*, VASTSlot*>,
-                        SVNInfo*>));
-  }
-
-  const_vas_iterator vas_begin() const {
-    return const_vas_iterator(UniqueVASs.begin(),
-                        vas_getter(pair_second<std::pair<VASTValue*, VASTSlot*>,
-                                               SVNInfo*>));
-  }
-
-  const_vas_iterator vas_end() const {
-    return const_vas_iterator(UniqueVASs.end(),
-                        vas_getter(pair_second<std::pair<VASTValue*, VASTSlot*>,
-                        SVNInfo*>));
-  }
-
 
   slot_vec_it slot_begin() { return SlotVec.begin(); }
   slot_vec_it slot_end() { return SlotVec.end(); }
 
   // Get SlotInfo from the existing SlotInfos set.
   SlotInfo* getSlotInfo(const VASTSlot *S) const;
-
-  SVNInfo *getValueASlot(VASTSeqValue *V, VASTSlot *S);
-
-  // Traverse every register to define the SVNInfos.
-  void buildAllVAS();
-
-  // Traverse every register to define the SVNInfos.
-  void buildVASGraph();
-
-  // Add dependent SVNInfo.
-  void addVASDep(SVNInfo *VAS, VASTSeqValue *DepVal);
-
-  // Traverse the dependent VASTValue *to get the registers.
-  void visitDepTree(VASTValue *DepTree, SVNInfo *VAS);
 
   bool addLiveIns(SlotInfo *From, SlotInfo *To, bool FromAliasSlot);
   bool addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To);
@@ -300,12 +174,9 @@ public:
   // collect the Generated and Killed statements of the slot.
   void ComputeGenAndKill();
 
-  void verifyRTLDependences() const;
-
   void viewGraph();
 
   void releaseMemory() {
-    UniqueVASs.clear();
     Allocator.Reset();
     SlotVec.clear();
     SlotInfos.clear();

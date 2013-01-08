@@ -231,6 +231,30 @@ class VASTSeqValue : public VASTSignal {
 public:
   typedef ArrayRef<VASTValPtr> AndCndVec;
 
+  struct Def {
+    VASTSeqValue *V;
+    VASTSVGuard G;
+
+    /*implicit*/ Def(const std::pair<VASTSVGuard, VASTUse*> &P)
+      : V(cast<VASTSeqValue>(&P.second->getUser())), G(P.first) {}
+
+    /*implicit*/ Def(const std::pair<const VASTSVGuard, VASTUse*> &P)
+      : V(cast<VASTSeqValue>(&P.second->getUser())), G(P.first) {}
+
+    VASTSeqValue *getValue() const { return V; }
+    const char *getValueName() const { return getValue()->getName(); }
+
+    VASTSlot *getSlot() const { return G.getSlot(); }
+
+    MachineInstr *getDefMI() const { return G.getDefMI(); }
+
+    bool operator<(const VASTSeqValue::Def &RHS) const {
+      if (getValue() < RHS.getValue()) return true;
+      else if (getValue() > RHS.getValue()) return false;
+
+      return G < RHS.G;
+    }
+  };
 private:
   struct GuardLess {
     bool operator()(const VASTSVGuard &LHS, const VASTSVGuard &RHS) const {

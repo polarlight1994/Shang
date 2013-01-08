@@ -66,72 +66,6 @@ void VASTSeqValNumbering::viewGraph() {
   ViewGraph(this, "CompatibilityGraph" + utostr_32(ID));
 }
 
-// Helper class
-struct VASDepBuilder {
-  VASTSeqValNumbering &A;
-  SVNInfo *DstVAS;
-  VASDepBuilder(VASTSeqValNumbering &RtlSSA, SVNInfo *V) : A(RtlSSA), DstVAS(V) {}
-
-  void operator() (ArrayRef<VASTValue*> PathArray) {
-    VASTValue *SrcUse = PathArray.back();
-    if (VASTSeqValue *Src = dyn_cast_or_null<VASTSeqValue>(SrcUse))
-      A.addVASDep(DstVAS, Src);
-  }
-};
-
-std::string SVNInfo::getName() const {
-  std::string Name = std::string(getValue()->getName())
-                     + "@" + utostr_32(getSlot()->SlotNum);
-
-  if (MachineBasicBlock *ParentBB = getSlot()->getParentBB())
-    Name += "#" + utostr_32(ParentBB->getNumber());
-
-  return Name;
-}
-
-void SVNInfo::print(raw_ostream &OS, unsigned Ind) const {
-  OS.indent(Ind) << getName() << "\t <= {";
-
-  typedef VASCycMapTy::const_iterator it;
-  for (it I = DepVAS.begin(), E = DepVAS.end(); I != E; ++I) {
-    OS.indent(Ind + 2) << '[' << I->second.getCycles() << ']';
-    if (Ind > 2) OS << I->first->getName() << ',';
-    else {
-      OS  << "{\n";
-      I->first->print(OS, Ind + 4);
-      OS.indent(Ind + 2) << "}\n";
-    }
-  }
-
-  OS.indent(Ind) << "}\n";
-
-  if (DefMI) OS.indent(Ind + 2) << *DefMI << '\n';
-}
-
-void SVNInfo::verify() const {
-  typedef VASCycMapTy::const_iterator it;
-  VASTSlot *UseSlot = getSlot();
-  for (it I = DepVAS.begin(), E = DepVAS.end(); I != E; ++I) {
-    VASTSlot *DefSlot = I->first->getSlot();
-    LiveInInfo LI = I->second;
-    if (DefSlot->getParentBB() == UseSlot->getParentBB() &&
-        UseSlot->hasAliasSlot() && LI.getCycles() > DefSlot->alias_ii()) {
-      if (const MachineInstr *MI = I->first->getDefMI()) {
-        // The value comes from others BB, it is loop-invariant.
-        if (MI->getOpcode() == VTM::VOpMvPhi
-            && MI->getOperand(2).getMBB() != MI->getParent())
-          continue;
-      }
-
-      llvm_unreachable("Broken RTL dependence!");
-    }
-  }
-}
-
-void SVNInfo::dump() const {
-  print(dbgs());
-}
-
 void SlotInfo::dump() const {
   print(dbgs());
 }
@@ -139,28 +73,28 @@ void SlotInfo::dump() const {
 void SlotInfo::print(raw_ostream &OS) const {
   OS << S->getName() << "\nGen:\n";
   for (gen_iterator I = gen_begin(), E = gen_end(); I != E; ++I) {
-    SVNInfo *VAS = *I;
-    OS.indent(2) << VAS->getName() << "\n";
+    VASTSeqValue::Def D = *I;
+    OS.indent(2) << D.getValueName() << "\n";
   }
 
   OS << "\n\nIn:\n";
   for (VASCycMapTy::const_iterator I = in_begin(), E = in_end(); I != E; ++I) {
-    SVNInfo *VAS = I->first;
-    OS.indent(2) << VAS->getName() << '[' << I->second.getCycles() << "]\n";
+    VASTSeqValue::Def D = I->first;
+    OS.indent(2) << D.getValueName() << '[' << I->second.getCycles() << "]\n";
   }
 
   OS << "\n\n";
 }
 
 // Any VAS whose value is overwritten at this slot is killed.
-bool SlotInfo::isVASKilled(const SVNInfo *VAS) const {
-  return OverWrittenValue.count(VAS->getValue());
+bool SlotInfo::isVASKilled(VASTSeqValue::Def D) const {
+  return OverWrittenValue.count(D.getValue());
 }
 
 void SlotInfo::initOutSet() {
   // Build the initial out set ignoring the kill set.
   for (gen_iterator I = gen_begin(), E = gen_end(); I != E; ++I)
-    SlotOut.insert(std::make_pair(*I, SVNInfo::LiveInInfo()));
+    SlotOut.insert(std::make_pair(*I, SlotInfo::LiveInInfo()));
 }
 
 VASTSeqValNumbering::VASTSeqValNumbering() : MachineFunctionPass(ID), VM(0) {
@@ -193,19 +127,11 @@ bool VASTSeqValNumbering::runOnMachineFunction(MachineFunction &MF) {
   }
 
   // Define the VAS.
-  buildAllVAS();
-
   ComputeReachingDefinition();
 
   DEBUG(viewGraph());
 
   return false;
-}
-
-SVNInfo *VASTSeqValNumbering::getValueASlot(VASTSeqValue *V, VASTSlot *S){
-  SVNInfo *VAS = UniqueVASs.lookup(std::make_pair(V, S));
-  assert(VAS && "VAS not exist!");
-  return VAS;
 }
 
 SlotInfo *VASTSeqValNumbering::getSlotInfo(const VASTSlot *S) const {
@@ -214,133 +140,8 @@ SlotInfo *VASTSeqValNumbering::getSlotInfo(const VASTSlot *S) const {
   return It->second;
 }
 
-void VASTSeqValNumbering::addVASDep(SVNInfo *VAS, VASTSeqValue *DepVal) {
-  VASTSlot *UseSlot = VAS->getSlot();
-  SlotInfo *UseSI = getSlotInfo(UseSlot);
-  assert(UseSI && "SlotInfo missed!");
-
-  for (vn_itertor I = DepVal->begin(), E = DepVal->end(); I != E; ++I) {
-    VASTSlot *DefSlot = I->first.getSlot();
-    SVNInfo *DefVAS = getValueASlot(DepVal, DefSlot);
-
-    SVNInfo::LiveInInfo LI = UseSI->getLiveIn(DefVAS);
-
-    // VAS is only depends on DefVAS if it can reach this slot.
-    if (LI.getCycles())
-      VAS->addDepVAS(DefVAS, LI);
-  }
-}
-
-void VASTSeqValNumbering::buildAllVAS() {
-  typedef VASTModule::seqval_iterator it;
-  for (it I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I){
-    VASTSeqValue *V = *I;
-
-    for (vn_itertor I = V->begin(), E = V->end(); I != E; ++I){
-      VASTSlot *S = I->first.getSlot();
-      MachineInstr *DefMI = I->first.getDefMI();
-      // Create the origin VAS.
-      SVNInfo *VAS = new (Allocator) SVNInfo(V, S, DefMI);
-      bool inserted = UniqueVASs.insert(std::make_pair(std::make_pair(V, S), VAS)).second;
-      assert(inserted);
-    }
-  }
-}
-
-void VASTSeqValNumbering::verifyRTLDependences() const {
-  for (const_vas_iterator I = vas_begin(), E = vas_end(); I != E; ++I)
-    (*I)->verify();
-}
-
-void VASTSeqValNumbering::buildVASGraph() {
-  typedef VASTModule::seqval_iterator it;
-  for (it I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
-    VASTSeqValue *V = *I;
-
-    for (vn_itertor I = V->begin(), E = V->end(); I != E; ++I) {
-      VASTSlot *S = I->first.getSlot();
-      // Create the origin VAS.
-      SVNInfo *VAS = getValueASlot(V, S);
-      // Build dependence for conditions
-      visitDepTree(I->first.getAsLValue<VASTValue>(), VAS);
-      // Build dependence for the assigning value.
-      visitDepTree(I->second->getAsLValue<VASTValue>(), VAS);
-    }
-  }
-}
-
-// Helper functions
-// Traverse the use tree to get the registers.
-template<typename VisitPathFunc>
-static void DepthFirstTraverseDepTree(VASTValue *DepTree, VisitPathFunc VisitPath) {
-  typedef VASTValue::dp_dep_it ChildIt;
-  // Use seperate node and iterator stack, so we can get the path vector.
-  typedef SmallVector<VASTValue*, 16> NodeStackTy;
-  typedef SmallVector<ChildIt, 16> ItStackTy;
-  NodeStackTy NodeWorkStack;
-  ItStackTy ItWorkStack;
-  // Remember what we had visited.
-  std::set<VASTValue*> VisitedUses;
-
-  // Put the root.
-  NodeWorkStack.push_back(DepTree);
-  ItWorkStack.push_back(VASTValue::dp_dep_begin(DepTree));
-
-  while (!ItWorkStack.empty()) {
-    VASTValue *Node = NodeWorkStack.back();
-
-    ChildIt It = ItWorkStack.back();
-
-    // Do we reach the leaf?
-    if (VASTValue::is_dp_leaf(Node)) {
-      VisitPath(NodeWorkStack);
-      NodeWorkStack.pop_back();
-      ItWorkStack.pop_back();
-      continue;
-    }
-
-    // All sources of this node is visited.
-    if (It == VASTValue::dp_dep_end(Node)) {
-      NodeWorkStack.pop_back();
-      ItWorkStack.pop_back();
-      continue;
-    }
-
-    // Depth first traverse the child of current node.
-    VASTValue *ChildNode = (*It).get().get();
-    ++ItWorkStack.back();
-
-    // Had we visited this node? If the Use slots are same, the same subtree
-    // will lead to a same slack, and we do not need to compute the slack agian.
-    if (!VisitedUses.insert(ChildNode).second) continue;
-
-    // If ChildNode is not visit, go on visit it and its childrens.
-    NodeWorkStack.push_back(ChildNode);
-    ItWorkStack.push_back(VASTValue::dp_dep_begin(ChildNode));
-  }
-}
-
-void VASTSeqValNumbering::visitDepTree(VASTValue *DepTree, SVNInfo *VAS){
-  VASTValue *DefValue = DepTree;
-
-  // If Define Value is immediate or symbol, skip it.
-  if (!DefValue) return;
-
-  // If the define Value is register, add the dependent VAS to the
-  // dependentVAS.
-  if (VASTSeqValue *DepVal = dyn_cast<VASTSeqValue>(DefValue)){
-    addVASDep(VAS, DepVal);
-    return;
-  }
-
-  VASDepBuilder B(*this, VAS);
-  // If the define Value is wire, traverse the use tree to get the
-  // ultimate registers.
-  DepthFirstTraverseDepTree(DepTree, B);
-}
-
 bool VASTSeqValNumbering::addLiveIns(SlotInfo *From, SlotInfo *To,
-                                bool FromAliasSlot) {
+                                     bool FromAliasSlot) {
   bool Changed = false;
   typedef SlotInfo::vascyc_iterator it;
   // Store the slot numbers in signed integer, we will perform subtraction on
@@ -352,11 +153,11 @@ bool VASTSeqValNumbering::addLiveIns(SlotInfo *From, SlotInfo *To,
   bool FromLaterAliasSlot = FromAliasSlot && FromSlotNum > ToSlotNum;
 
   for (it I = From->out_begin(), E = From->out_end(); I != E; ++I) {
-    SVNInfo *PredOut = I->first;
-    VASTSeqValue *V = PredOut->getValue();
+    VASTSeqValue::Def PredOut = I->first;
+    VASTSeqValue *V = PredOut.getValue();
 
-    VASTSlot *DefSlot = PredOut->getSlot();
-    SVNInfo::LiveInInfo LI = I->second;
+    VASTSlot *DefSlot = PredOut.getSlot();
+    SlotInfo::LiveInInfo LI = I->second;
 
     bool IsDefSlot = LI.getCycles() == 0;
     // Increase the cycles by 1 after the value lives to next slot.
@@ -373,7 +174,7 @@ bool VASTSeqValNumbering::addLiveIns(SlotInfo *From, SlotInfo *To,
       // The registers are not propagate from the slot to its alias slot.
       if (RegNum && FromAliasSlot) LiveInToSlot = false;
 
-      const MachineInstr *DefMI = PredOut->getDefMI();
+      const MachineInstr *DefMI = PredOut.getDefMI();
       // Do not add live out if data register R not live in the new BB.
       if (RegNum && DefMI) {
         if (DefMI->getOpcode() == VTM::VOpMvPhi && IsDefSlot) {
@@ -481,42 +282,48 @@ void VASTSeqValNumbering::ComputeReachingDefinition() {
 
 void VASTSeqValNumbering::ComputeGenAndKill() {
   // Collect the generated statements to the SlotGenMap.
-  for (vas_iterator I = vas_begin(), E = vas_end(); I != E; ++I) {
-    SVNInfo *VAS = *I;
-    VASTSlot *S = VAS->getSlot();
-    SlotInfo *SI = getSlotInfo(S);
-    SI->insertGen(VAS);
+  typedef VASTModule::seqval_iterator it;
+  for (it SI = VM->seqval_begin(), SE = VM->seqval_end(); SI != SE; ++SI) {
+    VASTSeqValue *V = *SI;
 
-    // Values are overwritten by the alias slots of its defining slot.
-    if (!S->hasAliasSlot()) continue;
+    for (vn_itertor I = V->begin(), E = V->end(); I != E; ++I) {
+      VASTSeqValue::Def D = *I;
+      VASTSlot *S = D.getSlot();
+      SlotInfo *SI = getSlotInfo(S);
+      SI->insertGen(D);
 
-    unsigned CurSlotNum = S->SlotNum;
-    VASTSeqValue *V = VAS->getValue();
-    bool IsLoopingBackPHIMove = false;
-    if (const MachineInstr *MI = VAS->getDefMI())
-      IsLoopingBackPHIMove = MI->getOpcode() == VTM::VOpMvPhi
-                             && MI->getOperand(2).getMBB() == MI->getParent();
+      // Values are overwritten by the alias slots of its defining slot.
+      if (!S->hasAliasSlot()) continue;
 
-    for (unsigned i = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
-         i < e; i += ii) {
-       if (i == CurSlotNum) continue;
+      unsigned CurSlotNum = S->SlotNum;
+      VASTSeqValue *V = D.getValue();
+      bool IsLoopingBackPHIMove = false;
+      if (const MachineInstr *MI = D.getDefMI())
+        IsLoopingBackPHIMove = MI->getOpcode() == VTM::VOpMvPhi
+                               && MI->getOperand(2).getMBB() == MI->getParent();
 
-       SlotInfo *AliasSlot = getSlotInfo(VM->getSlot(i));
+      for (unsigned i = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
+           i < e; i += ii) {
+         if (i == CurSlotNum) continue;
 
-       // From the view of signals with undefined timing, all alias slot is the
-       // same slot, otherwise, the signal is only overwritten by its following
-       // alias slot.
-       if (i > CurSlotNum || V->isTimingUndef()) AliasSlot->insertOvewritten(V);
+         SlotInfo *AliasSlot = getSlotInfo(VM->getSlot(i));
 
-       if (i == CurSlotNum - ii && IsLoopingBackPHIMove) {
-         // The definition of PHIMove can reach its previous alias slot with
-         // distance II.
-         AliasSlot->insertIn(VAS, SVNInfo::LiveInInfo(ii));
-         // The definition is actually for the previous stage.
-         AliasSlot->insertGen(VAS);
-         // The definition of looping-back PHIMove is not for the current stage.
-         SI->SlotGen.erase(VAS);
-       }
+         // From the view of signals with undefined timing, all alias slot is the
+         // same slot, otherwise, the signal is only overwritten by its following
+         // alias slot.
+         if (i > CurSlotNum || V->isTimingUndef())
+           AliasSlot->insertOvewritten(V);
+
+         if (i == CurSlotNum - ii && IsLoopingBackPHIMove) {
+           // The definition of PHIMove can reach its previous alias slot with
+           // distance II.
+           AliasSlot->insertIn(D, SlotInfo::LiveInInfo(ii));
+           // The definition is actually for the previous stage.
+           AliasSlot->insertGen(D);
+           // The definition of looping-back PHIMove is not for the current stage.
+           SI->SlotGen.erase(D);
+         }
+      }
     }
   }
 
