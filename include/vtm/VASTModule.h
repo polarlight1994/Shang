@@ -108,7 +108,7 @@ private:
   SmallVector<std::map<unsigned, unsigned>, VFUs::NumCommonFUs> FUPortOffsets;
   unsigned NumArgPorts, RetPortIdx;
 
-  VASTPort *addPort(const std::string &Name, unsigned BitWidth, bool isReg,
+  VASTPort *addPort(const Twine &Name, unsigned BitWidth, bool isReg,
                     bool isInput);
 
   void writeProfileCounters(vlang_raw_ostream &OS, VASTSlot *S, bool isFirstSlot);
@@ -131,15 +131,7 @@ public:
     RetPort // Port for function return value.
   };
 
-  VASTModule(const std::string &Name, VASTExprBuilder *Builder)
-    : VASTNode(vastModule),
-    ControlBlock(*(new std::string())),
-    LangControlBlock(ControlBlock),
-    Name(Name), Builder(Builder),
-    FUPortOffsets(VFUs::NumCommonFUs),
-    NumArgPorts(0) {
-    Ports.append(NumSpecialPort, 0);
-  }
+  VASTModule(const Twine &Name, VASTExprBuilder *Builder);
 
   ~VASTModule();
 
@@ -162,31 +154,31 @@ public:
   // Print the slot control flow.
   void buildSlotLogic(VASTExprBuilder &Builder);
 
-  VASTValue *getSymbol(const std::string &Name) const {
-    SymTabTy::const_iterator at = SymbolTable.find(Name);
+  VASTValue *getSymbol(const Twine &Name) const {
+    SymTabTy::const_iterator at = SymbolTable.find(Name.str());
     assert(at != SymbolTable.end() && "Symbol not found!");
     return at->second;
   }
 
-  VASTValue *lookupSymbol(const std::string &Name) const {
-    SymTabTy::const_iterator at = SymbolTable.find(Name);
+  VASTValue *lookupSymbol(const Twine &Name) const {
+    SymTabTy::const_iterator at = SymbolTable.find(Name.str());
     if (at == SymbolTable.end()) return 0;
 
     return at->second;
   }
 
   template<class T>
-  T *lookupSymbol(const std::string &Name) const {
+  T *lookupSymbol(const Twine &Name) const {
     return cast_or_null<T>(lookupSymbol(Name));
   }
 
   template<class T>
-  T *getSymbol(const std::string &Name) const {
+  T *getSymbol(const Twine &Name) const {
     return cast<T>(getSymbol(Name));
   }
 
   // Create wrapper to allow us get a bitslice of the symbol.
-  VASTValPtr getOrCreateSymbol(const std::string &Name, unsigned BitWidth,
+  VASTValPtr getOrCreateSymbol(const Twine &Name, unsigned BitWidth,
                                bool CreateWrapper);
 
   void allocaSlots(unsigned TotalSlots) {
@@ -203,10 +195,10 @@ public:
 
   VASTUse *allocateUse() { return Allocator.Allocate<VASTUse>(); }
   // Allow user to add ports.
-  VASTPort *addInputPort(const std::string &Name, unsigned BitWidth,
+  VASTPort *addInputPort(const Twine &Name, unsigned BitWidth,
                          PortTypes T = Others);
 
-  VASTPort *addOutputPort(const std::string &Name, unsigned BitWidth,
+  VASTPort *addOutputPort(const Twine &Name, unsigned BitWidth,
                           PortTypes T = Others, bool isReg = true);
 
   void setFUPortBegin(FuncUnitId ID) {
@@ -279,7 +271,7 @@ public:
     return Ports.begin() + VASTModule::SpecialOutPortEnd;
   }
 
-  VASTSeqValue *createSeqValue(const std::string &Name, unsigned BitWidth,
+  VASTSeqValue *createSeqValue(const Twine &Name, unsigned BitWidth,
                                VASTNode::SeqValType T, unsigned Idx,
                                VASTNode *Parent);
 
@@ -288,18 +280,18 @@ public:
 
   VASTSubModule *addSubmodule(const char *Name, unsigned Num);
 
-  VASTRegister *addRegister(const std::string &Name, unsigned BitWidth,
+  VASTRegister *addRegister(const Twine &Name, unsigned BitWidth,
                             unsigned InitVal = 0,
                             VASTNode::SeqValType T = VASTNode::Data,
                             uint16_t RegData = 0, const char *Attr = "");
 
-  VASTRegister *addOpRegister(const std::string &Name, unsigned BitWidth,
+  VASTRegister *addOpRegister(const Twine &Name, unsigned BitWidth,
                               unsigned FUNum, const char *Attr = "");
 
-  VASTRegister *addDataRegister(const std::string &Name, unsigned BitWidth,
+  VASTRegister *addDataRegister(const Twine &Name, unsigned BitWidth,
                                 unsigned RegNum = 0, const char *Attr = "");
 
-  VASTWire *addWire(const std::string &Name, unsigned BitWidth,
+  VASTWire *addWire(const Twine &Name, unsigned BitWidth,
                     const char *Attr = "", bool IsPinned = false);
 
   reg_iterator reg_begin() { return Registers.begin(); }

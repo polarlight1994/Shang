@@ -140,10 +140,20 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 }
 
 //----------------------------------------------------------------------------//
+
+VASTModule::VASTModule(const Twine &Name, VASTExprBuilder *Builder)
+  : VASTNode(vastModule),
+    ControlBlock(*(new std::string())), LangControlBlock(ControlBlock),
+    Name(Name.str()), Builder(Builder), FUPortOffsets(VFUs::NumCommonFUs),
+    NumArgPorts(0)
+{
+    Ports.append(NumSpecialPort, 0);
+}
+
 VASTSeqValue *
-VASTModule::createSeqValue(const std::string &Name, unsigned BitWidth,
+VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
                            VASTNode::SeqValType T, unsigned Idx, VASTNode *P) {
-  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name);
+  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   VASTSeqValue *V
     = new (Allocator) VASTSeqValue(Entry.getKeyData(), BitWidth, T, Idx, *P);
   SeqVals.push_back(V);
@@ -167,9 +177,9 @@ VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {
   return M;
 }
 
-VASTWire *VASTModule::addWire(const std::string &Name, unsigned BitWidth,
+VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
                               const char *Attr, bool IsPinned) {
-  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name);
+  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   VASTWire *Wire = Allocator.Allocate<VASTWire>();
   new (Wire) VASTWire(Entry.getKeyData(), BitWidth, Attr, IsPinned);
@@ -179,10 +189,10 @@ VASTWire *VASTModule::addWire(const std::string &Name, unsigned BitWidth,
   return Wire;
 }
 
-VASTValPtr VASTModule::getOrCreateSymbol(const std::string &Name,
+VASTValPtr VASTModule::getOrCreateSymbol(const Twine &Name,
                                          unsigned BitWidth,
                                          bool CreateWrapper) {
-  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name);
+  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   VASTNamedValue *&V = Entry.second;
   if (V == 0) {
     const char *S = Entry.getKeyData();
@@ -191,7 +201,7 @@ VASTValPtr VASTModule::getOrCreateSymbol(const std::string &Name,
     V = new (Allocator.Allocate<VASTSymbol>()) VASTSymbol(S, SymbolWidth);
     if (CreateWrapper) {
       // Create the wire for the symbol, and assign the symbol to the wire.
-      VASTWire *Wire = addWire(VBEMangle(Name + "_s"), BitWidth);
+      VASTWire *Wire = addWire(VBEMangle(Name.str() + "_s"), BitWidth);
       Wire->assign(V);
       // Remember the wire.
       V = Wire;
@@ -440,7 +450,7 @@ void VASTModule::print(raw_ostream &OS) const {
   // Print the verilog module?
 }
 
-VASTPort *VASTModule::addPort(const std::string &Name, unsigned BitWidth,
+VASTPort *VASTModule::addPort(const Twine &Name, unsigned BitWidth,
                               bool isReg, bool isInput) {
   VASTNamedValue *V;
   if (isInput || isReg)
@@ -453,7 +463,7 @@ VASTPort *VASTModule::addPort(const std::string &Name, unsigned BitWidth,
   return Port;
 }
 
-VASTPort *VASTModule::addInputPort(const std::string &Name, unsigned BitWidth,
+VASTPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
                                    PortTypes T /*= Others*/) {
   VASTPort *Port = addPort(Name, BitWidth, false, true);
 
@@ -475,7 +485,7 @@ VASTPort *VASTModule::addInputPort(const std::string &Name, unsigned BitWidth,
   return Port;
 }
 
-VASTPort *VASTModule::addOutputPort(const std::string &Name, unsigned BitWidth,
+VASTPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
                                     PortTypes T /*= Others*/,
                                     bool isReg /*= true*/) {
   VASTPort *Port = addPort(Name, BitWidth, isReg, false);
@@ -497,10 +507,10 @@ VASTPort *VASTModule::addOutputPort(const std::string &Name, unsigned BitWidth,
   return Port;
 }
 
-VASTRegister *VASTModule::addRegister(const std::string &Name, unsigned BitWidth,
+VASTRegister *VASTModule::addRegister(const Twine &Name, unsigned BitWidth,
                                       unsigned InitVal, VASTNode::SeqValType T,
                                       uint16_t RegData, const char *Attr) {
-  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name);
+  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   VASTRegister *Reg = Allocator.Allocate<VASTRegister>();
   new (Reg) VASTRegister(Entry.getKeyData(), BitWidth, InitVal, T, RegData,Attr);
@@ -511,12 +521,12 @@ VASTRegister *VASTModule::addRegister(const std::string &Name, unsigned BitWidth
   return Reg;
 }
 
-VASTRegister *VASTModule::addOpRegister(const std::string &Name, unsigned BitWidth,
+VASTRegister *VASTModule::addOpRegister(const Twine &Name, unsigned BitWidth,
                                         unsigned FUNum, const char *Attr) {
   return addRegister(Name, BitWidth, 0, VASTNode::Data, FUNum, Attr);
 }
 
-VASTRegister *VASTModule::addDataRegister(const std::string &Name, unsigned BitWidth,
+VASTRegister *VASTModule::addDataRegister(const Twine &Name, unsigned BitWidth,
                                           unsigned RegNum, const char *Attr) {
   return addRegister(Name, BitWidth, 0, VASTNode::Data, RegNum, Attr);
 }
