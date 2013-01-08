@@ -435,14 +435,31 @@ VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V) {
   return W;
 }
 
+VASTValPtr VASTModule::wrapSeqValue(VASTValPtr Src, VASTSeqValue *V)  {
+  if (Src.get() == V) {
+    Twine WrapperName = Twine(V->getName()) + "w";
+    if (Src.isInverted()) WrapperName = WrapperName + "i";
+
+    // If the wire had been already created?
+    if (VASTValue *V = lookupSymbol(WrapperName)) return V;
+
+    Src = assign(addWire(WrapperName, V->getBitWidth()), Src);
+  }
+
+  return Src;
+}
+
 void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
                                SmallVectorImpl<VASTValPtr> &Cnds,
                                MachineInstr *DefMI, bool AddSlotActive) {
   if (Src) {
-    VASTUse *Cnd
-      = new (Allocator) VASTUse(V, buildGuardExpr(Slot, Cnds, AddSlotActive));
+    // Create a wrapper to avoid the direct cycle in the def-use chain.
+    Src = wrapSeqValue(Src, V);
+    VASTValPtr Cnd = wrapSeqValue(buildGuardExpr(Slot, Cnds, AddSlotActive), V);
+
+    VASTUse *GuardUse = new (Allocator) VASTUse(V, Cnd);
     VASTUse *U = new (Allocator) VASTUse(V, Src);
-    V->addAssignment(U, VASTSVGuard(Cnd, Slot, DefMI));
+    V->addAssignment(U, VASTSVGuard(GuardUse, Slot, DefMI));
   }
 }
 

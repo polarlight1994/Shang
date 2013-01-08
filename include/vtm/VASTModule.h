@@ -108,6 +108,8 @@ private:
   SmallVector<std::map<unsigned, unsigned>, VFUs::NumCommonFUs> FUPortOffsets;
   unsigned NumArgPorts, RetPortIdx;
 
+  VASTValPtr wrapSeqValue(VASTValPtr Src, VASTSeqValue *V);
+
   VASTPort *addPort(const Twine &Name, unsigned BitWidth, bool isReg,
                     bool isInput);
 
