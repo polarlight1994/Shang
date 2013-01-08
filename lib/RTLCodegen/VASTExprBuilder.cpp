@@ -1020,19 +1020,18 @@ VASTValPtr VASTExprBuilder::buildSExtExpr(VASTValPtr V, unsigned DstBitWidth) {
   return buildBitCatExpr(Ops, DstBitWidth);
 }
 
-VASTWire *VASTModule::addPredExpr(VASTWire *CndWire,
-                                  SmallVectorImpl<VASTValPtr> &Cnds,
-                                  bool AddSlotActive){
+VASTValPtr VASTModule::buildGuardExpr(VASTSlot *S,
+                                      SmallVectorImpl<VASTValPtr> &Cnds,
+                                      bool AddSlotActive){
   // We only assign the Src to Dst when the given slot is active.
   if (AddSlotActive) {
-    VASTSlot *Slot = getSlot(CndWire->getSlotNum());
-    Cnds.push_back(Slot->getActive()->getAsInlineOperand(false));
+    Cnds.push_back(S->getActive()->getAsInlineOperand(false));
   }
 
-  assign(CndWire, Builder->buildAndExpr(Cnds, 1), VASTWire::AssignCond);
+  VASTValPtr V = Builder->buildAndExpr(Cnds, 1);
 
   // Recover the condition vector.
   if (AddSlotActive) Cnds.pop_back();
 
-  return CndWire;
+  return V;
 }

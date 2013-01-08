@@ -219,7 +219,7 @@ void RtlSSAAnalysis::addVASDep(ValueAtSlot *VAS, VASTSeqValue *DepVal) {
   assert(UseSI && "SlotInfo missed!");
 
   for (assign_it I = DepVal->begin(), E = DepVal->end(); I != E; ++I) {
-    VASTSlot *DefSlot = VM->getSlot(I->first->getSlotNum());
+    VASTSlot *DefSlot = I->first.getSlot();
     ValueAtSlot *DefVAS = getValueASlot(DepVal, DefSlot);
 
     ValueAtSlot::LiveInInfo LI = UseSI->getLiveIn(DefVAS);
@@ -237,8 +237,8 @@ void RtlSSAAnalysis::buildAllVAS() {
 
     typedef VASTSeqValue::assign_itertor assign_it;
     for (assign_it I = V->begin(), E = V->end(); I != E; ++I){
-      VASTSlot *S = VM->getSlot(I->first->getSlotNum());
-      MachineInstr *DefMI = I->first->getDefMI();
+      VASTSlot *S = I->first.getSlot();
+      MachineInstr *DefMI = I->first.getDefMI();
       // Create the origin VAS.
       ValueAtSlot *VAS = new (Allocator) ValueAtSlot(V, S, DefMI);
       UniqueVASs.insert(std::make_pair(std::make_pair(V, S), VAS));
@@ -258,11 +258,11 @@ void RtlSSAAnalysis::buildVASGraph() {
 
     typedef VASTSeqValue::assign_itertor assign_it;
     for (assign_it I = V->begin(), E = V->end(); I != E; ++I) {
-      VASTSlot *S = VM->getSlot(I->first->getSlotNum());
+      VASTSlot *S = I->first.getSlot();
       // Create the origin VAS.
       ValueAtSlot *VAS = getValueASlot(V, S);
       // Build dependence for conditions
-      visitDepTree(I->first, VAS);
+      visitDepTree(I->first.getAsLValue<VASTValue>(), VAS);
       // Build dependence for the assigning value.
       visitDepTree(I->second->getAsLValue<VASTValue>(), VAS);
     }

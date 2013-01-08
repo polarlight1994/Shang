@@ -63,11 +63,6 @@ public:
     BRAM        // Port of the block RAM
   };
 
-  enum WireType {
-    Common,
-    // Assignment with slot information.
-    AssignCond
-  };
 protected:
   union {
     const char *Name;

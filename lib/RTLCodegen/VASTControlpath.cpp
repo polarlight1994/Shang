@@ -275,6 +275,13 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
 }
 
 //===----------------------------------------------------------------------===//
+VASTSVGuard::VASTSVGuard(VASTUse *U, VASTSlot *S, MachineInstr *MI)
+  : Val(U), S(S), DefMI(MI) {}
+
+void VASTSVGuard::print(raw_ostream &OS) const {
+  get().printAsOperand(OS);
+  // TODO: Print the slot information.
+}
 
 bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> >
                                &CSEMap) const {
@@ -319,7 +326,7 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
     OS.indent(4) << "$display(\"Condition: ";
     I->first->printAsOperand(OS, false);
 
-    unsigned CndSlot = I->first->getSlotNum();
+    unsigned CndSlot = I->first.getSlotNum();
     VASTSlot *S = Mod->getSlot(CndSlot);
     OS << ", current slot: " << CndSlot << ", ";
 
@@ -342,10 +349,8 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
   OS.indent(2) << "$finish();\nend\n";
 }
 
-void VASTSeqValue::addAssignment(VASTUse *Src, VASTWire *AssignCnd) {
-  assert(AssignCnd->getWireType() == VASTWire::AssignCond
-    && "Expect wire for assign condition!");
-  bool inserted = Assigns.insert(std::make_pair(AssignCnd, Src)).second;
+void VASTSeqValue::addAssignment(VASTUse *Src, VASTSVGuard Guard) {
+  bool inserted = Assigns.insert(std::make_pair(Guard, Src)).second;
   assert(inserted &&  "Assignment condition conflict detected!");
 }
 

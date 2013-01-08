@@ -444,18 +444,6 @@ static void printCombMux(raw_ostream &OS, const VASTWire *W) {
   printAssign(OS, W) << W->getName() << "_mux_wire;\n";
 }
 
-void VASTWire::printAsOperandImpl(raw_ostream &OS, unsigned UB,
-                                  unsigned LB) const {
-  // For the AssignCond, the name is invalid.
-  if (getWireType() != AssignCond && getName())
-    VASTNamedValue::printAsOperandImpl(OS, UB, LB);
-  else {
-    VASTValPtr V = getDriver();
-    assert(V && "Cannot print wire as operand!");
-    V.printAsOperand(OS, UB, LB);
-  }
-}
-
 void VASTWire::printAssignment(raw_ostream &OS) const {
   VASTValPtr V = getDriver();
   assert(V && "Cannot print the wire!");

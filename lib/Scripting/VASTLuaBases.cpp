@@ -419,24 +419,20 @@ void VASTModule::printSignalDecl(raw_ostream &OS) {
   }
 }
 
-VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V, VASTNode::WireType T) {
-  if (W->getDriver() != V) W->assign(V, T);
+VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V) {
+  if (W->getDriver() != V) W->assign(V);
 
   return W;
-}
-
-VASTWire *VASTModule::createAssignPred(VASTSlot *Slot, MachineInstr *DefMI) {
-  return new (Allocator) VASTWire(Slot->SlotNum, DefMI);
 }
 
 void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
                                SmallVectorImpl<VASTValPtr> &Cnds,
                                MachineInstr *DefMI, bool AddSlotActive) {
   if (Src) {
-    VASTWire *Cnd = createAssignPred(Slot, DefMI);
-    Cnd = addPredExpr(Cnd, Cnds, AddSlotActive);
-    VASTUse *U = new (Allocator.Allocate<VASTUse>()) VASTUse(V, Src);
-    V->addAssignment(U, Cnd);
+    VASTUse *Cnd
+      = new (Allocator) VASTUse(V, buildGuardExpr(Slot, Cnds, AddSlotActive));
+    VASTUse *U = new (Allocator) VASTUse(V, Src);
+    V->addAssignment(U, VASTSVGuard(Cnd, Slot, DefMI));
   }
 }
 

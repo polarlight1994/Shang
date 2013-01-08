@@ -250,8 +250,7 @@ inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
 }
 
 class VASTWire :public VASTSignal {
-  unsigned   T : 2;
-  unsigned Idx : 29;
+  unsigned Idx : 31;
   bool IsPinned : 1;
   friend class VASTModule;
 
@@ -262,27 +261,16 @@ public:
 
   VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "",
            bool IsPinned = false)
-    : VASTSignal(vastWire, Name, BitWidth), T(Common), Idx(0),
-      IsPinned(IsPinned), U(this, 0), AttrStr(Attr) {}
+    : VASTSignal(vastWire, Name, BitWidth), Idx(0), IsPinned(IsPinned),
+      U(this, 0), AttrStr(Attr) {}
 
-  void assign(VASTValPtr V, VASTNode::WireType T = VASTNode::Common) {
-    this->T = T;
+  void assign(VASTValPtr V) {
     U.set(V);
   }
 
   bool isPinned() const { return IsPinned; }
   void Pin(bool isPinned = true ) { IsPinned = isPinned; }
 private:
-
-  VASTWire(unsigned SlotNum, MachineInstr *DefMI)
-    : VASTSignal(vastWire, 0, 1), T(AssignCond),
-      Idx(SlotNum), IsPinned(false), U(this, 0), AttrStr("")
-  {
-    Contents.BundleStart = DefMI;
-  }
-
-  void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
-
   VASTValPtr getAsInlineOperandImpl() {
     if (VASTValPtr V = getDriver()) {
       // Can the expression be printed inline?
@@ -302,20 +290,6 @@ public:
 
   VASTExprPtr getExpr() const {
     return getDriver() ? dyn_cast<VASTExprPtr>(getDriver()) : 0;
-  }
-
-  VASTNode::WireType getWireType() const { return VASTNode::WireType(T); }
-
-  uint16_t getSlotNum() const {
-    assert(getWireType() == VASTNode::AssignCond &&
-           "Call getSlot on bad wire type!");
-    return Idx;
-  }
-
-  MachineInstr *getDefMI() const {
-    assert(getWireType() == VASTNode::AssignCond &&
-           "Call getDefMI on bad wire type!");
-    return Contents.BundleStart;
   }
 
   // Print the logic to the output stream.
@@ -342,30 +316,6 @@ template<>
 inline VASTExprPtr PtrInvPair<VASTWire>::getExpr() const {
   return get()->getExpr().invert(isInverted());
 }
-
-struct VASTWireExpressionTrait : public DenseMapInfo<VASTWire*> {
-  static unsigned getHashValue(const VASTWire *Val) {
-    if (Val == 0) return DenseMapInfo<void*>::getHashValue(0);
-
-    if (VASTValPtr Ptr = Val->getDriver())
-      return DenseMapInfo<void*>::getHashValue(Ptr.getOpaqueValue());
-
-    return DenseMapInfo<void*>::getHashValue(Val);
-  }
-
-  static const PtrInvPair<const VASTValue> getAssigningValue(const VASTWire *W) {
-    if (W == getEmptyKey() || W == getTombstoneKey() || W == 0)
-      return 0;
-
-    if (const VASTValPtr V = W->getDriver()) return V;
-
-    return W;
-  }
-
-  static bool isEqual(const VASTWire *LHS, const VASTWire *RHS) {
-    return LHS == RHS || getAssigningValue(LHS) == getAssigningValue(RHS);
-  }
-};
 
 // The container to hold all VASTExprs in data-path of the design.
 class DatapathContainer {

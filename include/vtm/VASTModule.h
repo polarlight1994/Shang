@@ -110,7 +110,11 @@ private:
 
   VASTPort *addPort(const std::string &Name, unsigned BitWidth, bool isReg,
                     bool isInput);
+
   void writeProfileCounters(vlang_raw_ostream &OS, VASTSlot *S, bool isFirstSlot);
+
+  VASTValPtr buildGuardExpr(VASTSlot *S, SmallVectorImpl<VASTValPtr> &Cnds,
+                            bool AddSlotActive = true);
 public:
   static std::string DirectClkEnAttr, ParallelCaseAttr, FullCaseAttr;
 
@@ -307,16 +311,11 @@ public:
   slot_iterator slot_begin() { return Slots.begin(); }
   slot_iterator slot_end() { return Slots.end(); }
 
-  VASTWire *createAssignPred(VASTSlot *Slot, MachineInstr *DefMI);
-
   void addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
                      SmallVectorImpl<VASTValPtr> &Cnds, MachineInstr *DefMI = 0,
                      bool AddSlotActive = true);
 
-  VASTWire *addPredExpr(VASTWire *CndWire, SmallVectorImpl<VASTValPtr> &Cnds,
-                        bool AddSlotActive = true);
-
-  VASTWire *assign(VASTWire *W, VASTValPtr V, VASTNode::WireType T = VASTNode::Common);
+  VASTWire *assign(VASTWire *W, VASTValPtr V);
 
   void print(raw_ostream &OS) const;
 

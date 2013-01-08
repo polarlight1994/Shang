@@ -190,12 +190,53 @@ template<> struct GraphTraits<VASTSlot*> {
   }
 };
 
+// The guard condition of assignment to VASTSeqValue.
+class VASTSVGuard {
+  VASTUse *Val;
+  VASTSlot *S;
+  MachineInstr *DefMI;
+public:
+  VASTSVGuard(VASTUse *U, VASTSlot *S, MachineInstr *MI);
+
+  // Underlying value accessor.
+  VASTValPtr get() const { return *Val; }
+  operator VASTValPtr () const { return get(); }
+  VASTValPtr operator->() const { return get(); }
+  template<typename T1>
+  T1 *getAsLValue() const { return get().getAsLValue<T1>(); }
+
+  // Active Slot accessor
+  VASTSlot *getSlot() const { return S; }
+  unsigned getSlotNum() const { return S->SlotNum; }
+
+  //
+  MachineInstr *getDefMI() const { return DefMI; }
+
+  bool operator==(const VASTSVGuard &RHS) const {
+    return get() == RHS.get() && S == RHS.S;
+  }
+
+  bool operator<(const VASTSVGuard &RHS) const {
+    if (get() < RHS.get()) return true;
+    else if (get() > RHS.get()) return false;
+
+    return S < RHS.S;
+  }
+
+  virtual void print(raw_ostream &OS) const;
+};
+
 // Represent value in the sequential logic.
 class VASTSeqValue : public VASTSignal {
 public:
   typedef ArrayRef<VASTValPtr> AndCndVec;
 
 private:
+  struct GuardLess {
+    bool operator()(const VASTSVGuard &LHS, const VASTSVGuard &RHS) const {
+      return LHS.get() < RHS.get();
+    }
+  };
   // For common registers, the Idx is the corresponding register number in the
   // MachineFunction. With this register number we can get the define/use/kill
   // information of assignment to this local storage.
@@ -203,7 +244,7 @@ private:
   const unsigned Idx  : 30;
 
   // Map the assignment condition to assignment value.
-  typedef DenseMap<VASTWire*, VASTUse*, VASTWireExpressionTrait> AssignMapTy;
+  typedef std::map<VASTSVGuard, VASTUse*, GuardLess> AssignMapTy;
   AssignMapTy Assigns;
 
   VASTNode &Parent;
@@ -230,7 +271,7 @@ public:
   VASTNode *getParent() { return &Parent; }
   const VASTNode *getParent() const { return &Parent; }
 
-  void addAssignment(VASTUse *Src, VASTWire *AssignCnd);
+  void addAssignment(VASTUse *Src, VASTSVGuard Guard);
   bool isTimingUndef() const { return getValType() == VASTNode::Slot; }
 
   typedef AssignMapTy::const_iterator assign_itertor;

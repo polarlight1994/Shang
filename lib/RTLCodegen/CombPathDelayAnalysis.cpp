@@ -165,7 +165,7 @@ static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTSeqValue *Src,
 
   typedef VASTSeqValue::assign_itertor assign_it;
   for (assign_it I = Src->begin(), E = Src->end(); I != E; ++I) {
-    VASTSlot *SrcSlot = A.VM->getSlot(I->first->getSlotNum());
+    VASTSlot *SrcSlot = I->first.getSlot();
     ValueAtSlot *SrcVAS = A.RtlSSA->getValueASlot(Src, SrcSlot);
 
     // Update the PathDelay if the source VAS reaches DstSlot.
@@ -495,10 +495,10 @@ void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
 
   typedef VASTSeqValue::assign_itertor assign_it;
   for (assign_it I = Dst->begin(), E = Dst->end(); I != E; ++I) {
-    VASTSlot *S = VM->getSlot(I->first->getSlotNum());
+    VASTSlot *S = I->first.getSlot();
     ValueAtSlot *DstVAS = RtlSSA->getValueASlot(Dst, S);
     // Paths for the condition.
-    DatapathMap[I->first].push_back(DstVAS);
+    DatapathMap[I->first.getAsLValue<VASTValue>()].push_back(DstVAS);
     // Paths for the assigning value
     DatapathMap[I->second->getAsLValue<VASTValue>()].push_back(DstVAS);
   }
