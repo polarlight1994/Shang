@@ -284,7 +284,7 @@ private:
     return this;
   }
 
-  void dropUses() { if (U.get()) U.unlinkUseFromUser(); }
+  virtual void dropUses();
 public:
   VASTValPtr getDriver() const { return U.unwrap(); }
 

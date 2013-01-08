@@ -84,7 +84,6 @@ public:
 
   VASTTypes getASTType() const { return VASTTypes(NodeT); }
 
-
   void dump() const;
 };
 

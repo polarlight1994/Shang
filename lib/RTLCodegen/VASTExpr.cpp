@@ -444,6 +444,10 @@ static void printCombMux(raw_ostream &OS, const VASTWire *W) {
   printAssign(OS, W) << W->getName() << "_mux_wire;\n";
 }
 
+void VASTWire::dropUses() {
+  if (U.get()) U.unlinkUseFromUser();
+}
+
 void VASTWire::printAssignment(raw_ostream &OS) const {
   VASTValPtr V = getDriver();
   assert(V && "Cannot print the wire!");
