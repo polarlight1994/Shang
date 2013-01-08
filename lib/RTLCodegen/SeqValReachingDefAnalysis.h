@@ -1,4 +1,4 @@
-//===- VASSTSeqValNumbering.h - Reaching Definition on Verilog AST - C++ ----=//
+//===--- SeqValReachingDefAnalysis.h - Reaching Definition on VAST - C++ ----=//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This define the VASSTSeqValNumbering pass, which construct SSA form on
-// register transfer level.
+// This define the SeqValReachingDefAnalysis pass, which compute the reaching
+// definition analysis on the Verilog AST.
 //
 //===----------------------------------------------------------------------===//
 
@@ -26,7 +26,7 @@
 #define RTL_SSA_ANALYSIS_H
 
 namespace llvm {
-class VASTSeqValNumbering;
+class SeqValReachingDefAnalysis;
 class SlotInfo;
 
 // SlotInfo, store the data-flow information of a slot.
@@ -104,7 +104,7 @@ class SlotInfo {
     return updateLiveIn(D, NewLI, SlotOut);
   }
 
-  friend class VASTSeqValNumbering;
+  friend class SeqValReachingDefAnalysis;
 public:
   SlotInfo(const VASTSlot *s) : S(s) {}
 
@@ -131,7 +131,7 @@ public:
 };
 
 // The RtlSSAAnalysis that construct the SSA form.
-class VASTSeqValNumbering : public MachineFunctionPass {
+class SeqValReachingDefAnalysis : public MachineFunctionPass {
 public:
   // define VASVec for the SVNInfo.
   typedef std::vector<VASTSeqValue::Def> VASVec;
@@ -185,18 +185,18 @@ public:
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnMachineFunction(MachineFunction &MF);
 
-  VASTSeqValNumbering();
+  SeqValReachingDefAnalysis();
 };
 
 
-template <> struct GraphTraits<VASTSeqValNumbering*>
+template <> struct GraphTraits<SeqValReachingDefAnalysis*>
 : public GraphTraits<VASTSlot*> {
 
-  typedef VASTSeqValNumbering::slot_vec_it nodes_iterator;
-  static nodes_iterator nodes_begin(VASTSeqValNumbering *G) {
+  typedef SeqValReachingDefAnalysis::slot_vec_it nodes_iterator;
+  static nodes_iterator nodes_begin(SeqValReachingDefAnalysis *G) {
     return G->slot_begin();
   }
-  static nodes_iterator nodes_end(VASTSeqValNumbering *G) {
+  static nodes_iterator nodes_end(SeqValReachingDefAnalysis *G) {
     return G->slot_end();
   }
 };

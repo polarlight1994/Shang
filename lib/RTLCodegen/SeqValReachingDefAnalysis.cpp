@@ -13,7 +13,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "VASTSeqValNumbering.h"
+#include "SeqValReachingDefAnalysis.h"
 
 #include "vtm/Passes.h"
 #include "vtm/VFInfo.h"
@@ -38,9 +38,9 @@ using namespace llvm;
 
 namespace llvm {
 template<>
-struct DOTGraphTraits<VASTSeqValNumbering*> : public DefaultDOTGraphTraits{
+struct DOTGraphTraits<SeqValReachingDefAnalysis*> : public DefaultDOTGraphTraits{
   typedef VASTSlot NodeTy;
-  typedef VASTSeqValNumbering GraphTy;
+  typedef SeqValReachingDefAnalysis GraphTy;
 
   DOTGraphTraits(bool isSimple=false) : DefaultDOTGraphTraits(isSimple) {}
 
@@ -62,7 +62,7 @@ struct DOTGraphTraits<VASTSeqValNumbering*> : public DefaultDOTGraphTraits{
 };
 }
 
-void VASTSeqValNumbering::viewGraph() {
+void SeqValReachingDefAnalysis::viewGraph() {
   ViewGraph(this, "CompatibilityGraph" + utostr_32(ID));
 }
 
@@ -97,18 +97,18 @@ void SlotInfo::initOutSet() {
     SlotOut.insert(std::make_pair(*I, SlotInfo::LiveInInfo()));
 }
 
-VASTSeqValNumbering::VASTSeqValNumbering() : MachineFunctionPass(ID), VM(0) {
-  initializeVASTSeqValNumberingPass(*PassRegistry::getPassRegistry());
+SeqValReachingDefAnalysis::SeqValReachingDefAnalysis() : MachineFunctionPass(ID), VM(0) {
+  initializeSeqValReachingDefAnalysisPass(*PassRegistry::getPassRegistry());
 }
 
 
-void VASTSeqValNumbering::getAnalysisUsage(AnalysisUsage &AU) const {
+void SeqValReachingDefAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   MachineFunctionPass::getAnalysisUsage(AU);
   AU.addRequired<VerilogModuleAnalysis>();
   AU.setPreservesAll();
 }
 
-bool VASTSeqValNumbering::runOnMachineFunction(MachineFunction &MF) {
+bool SeqValReachingDefAnalysis::runOnMachineFunction(MachineFunction &MF) {
   VM = getAnalysis<VerilogModuleAnalysis>().getModule();
 
   // Push back all the slot into the SlotVec for the purpose of view graph.
@@ -134,13 +134,13 @@ bool VASTSeqValNumbering::runOnMachineFunction(MachineFunction &MF) {
   return false;
 }
 
-SlotInfo *VASTSeqValNumbering::getSlotInfo(const VASTSlot *S) const {
+SlotInfo *SeqValReachingDefAnalysis::getSlotInfo(const VASTSlot *S) const {
   slotinfo_it It = SlotInfos.find(S);
   assert(It != SlotInfos.end() && "SlotInfo not exist!");
   return It->second;
 }
 
-bool VASTSeqValNumbering::addLiveIns(SlotInfo *From, SlotInfo *To,
+bool SeqValReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
                                      bool FromAliasSlot) {
   bool Changed = false;
   typedef SlotInfo::vascyc_iterator it;
@@ -225,7 +225,7 @@ bool VASTSeqValNumbering::addLiveIns(SlotInfo *From, SlotInfo *To,
   return Changed;
 }
 
-bool VASTSeqValNumbering::addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To) {
+bool SeqValReachingDefAnalysis::addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To) {
   bool Changed = false;
   unsigned FromSlotNum = From->SlotNum;
 
@@ -243,7 +243,7 @@ bool VASTSeqValNumbering::addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To) 
   return Changed;
 }
 
-void VASTSeqValNumbering::ComputeReachingDefinition() {
+void SeqValReachingDefAnalysis::ComputeReachingDefinition() {
   ComputeGenAndKill();
   // TODO: Simplify the data-flow, some slot may neither define new VAS nor
   // kill any VAS.
@@ -280,7 +280,7 @@ void VASTSeqValNumbering::ComputeReachingDefinition() {
   } while (Changed);
 }
 
-void VASTSeqValNumbering::ComputeGenAndKill() {
+void SeqValReachingDefAnalysis::ComputeGenAndKill() {
   // Collect the generated statements to the SlotGenMap.
   typedef VASTModule::seqval_iterator it;
   for (it SI = VM->seqval_begin(), SE = VM->seqval_end(); SI != SE; ++SI) {
@@ -336,13 +336,13 @@ void VASTSeqValNumbering::ComputeGenAndKill() {
   }
 }
 
-char VASTSeqValNumbering::ID = 0;
-INITIALIZE_PASS_BEGIN(VASTSeqValNumbering, "RtlSSAAnalysis",
+char SeqValReachingDefAnalysis::ID = 0;
+INITIALIZE_PASS_BEGIN(SeqValReachingDefAnalysis, "RtlSSAAnalysis",
                       "RtlSSAAnalysis", false, false)
   INITIALIZE_PASS_DEPENDENCY(VerilogModuleAnalysis);
-INITIALIZE_PASS_END(VASTSeqValNumbering, "RtlSSAAnalysis",
+INITIALIZE_PASS_END(SeqValReachingDefAnalysis, "RtlSSAAnalysis",
                     "RtlSSAAnalysis", false, false)
 
-Pass *llvm::createVASTSeqValNumberingPass() {
-  return new VASTSeqValNumbering();
+Pass *llvm::createSeqValReachingDefAnalysisPass() {
+  return new SeqValReachingDefAnalysis();
 }
