@@ -91,9 +91,6 @@ struct VTMPassConfig : public TargetPassConfig {
     // Generate the code.
     PM->add(createVerilogASTBuilderPass());
 
-    // Analyse the dependency between registers.
-    PM->add(createRtlSSAAnalysisPass());
-
     return true;
   }
 

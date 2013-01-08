@@ -13,7 +13,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "RtlSSAAnalysis.h"
+#include "VASTSeqValNumbering.h"
+
 #include "vtm/Passes.h"
 #include "vtm/VFInfo.h"
 #include "vtm/VASTModule.h"
@@ -37,9 +38,9 @@ using namespace llvm;
 
 namespace llvm {
 template<>
-struct DOTGraphTraits<RtlSSAAnalysis*> : public DefaultDOTGraphTraits{
+struct DOTGraphTraits<VASTSeqValNumbering*> : public DefaultDOTGraphTraits{
   typedef VASTSlot NodeTy;
-  typedef RtlSSAAnalysis GraphTy;
+  typedef VASTSeqValNumbering GraphTy;
 
   DOTGraphTraits(bool isSimple=false) : DefaultDOTGraphTraits(isSimple) {}
 
@@ -61,15 +62,15 @@ struct DOTGraphTraits<RtlSSAAnalysis*> : public DefaultDOTGraphTraits{
 };
 }
 
-void RtlSSAAnalysis::viewGraph() {
+void VASTSeqValNumbering::viewGraph() {
   ViewGraph(this, "CompatibilityGraph" + utostr_32(ID));
 }
 
 // Helper class
 struct VASDepBuilder {
-  RtlSSAAnalysis &A;
-  ValueAtSlot *DstVAS;
-  VASDepBuilder(RtlSSAAnalysis &RtlSSA, ValueAtSlot *V) : A(RtlSSA), DstVAS(V) {}
+  VASTSeqValNumbering &A;
+  SVNInfo *DstVAS;
+  VASDepBuilder(VASTSeqValNumbering &RtlSSA, SVNInfo *V) : A(RtlSSA), DstVAS(V) {}
 
   void operator() (ArrayRef<VASTValue*> PathArray) {
     VASTValue *SrcUse = PathArray.back();
@@ -78,7 +79,7 @@ struct VASDepBuilder {
   }
 };
 
-std::string ValueAtSlot::getName() const {
+std::string SVNInfo::getName() const {
   std::string Name = std::string(getValue()->getName())
                      + "@" + utostr_32(getSlot()->SlotNum);
 
@@ -88,7 +89,7 @@ std::string ValueAtSlot::getName() const {
   return Name;
 }
 
-void ValueAtSlot::print(raw_ostream &OS, unsigned Ind) const {
+void SVNInfo::print(raw_ostream &OS, unsigned Ind) const {
   OS.indent(Ind) << getName() << "\t <= {";
 
   typedef VASCycMapTy::const_iterator it;
@@ -107,7 +108,7 @@ void ValueAtSlot::print(raw_ostream &OS, unsigned Ind) const {
   if (DefMI) OS.indent(Ind + 2) << *DefMI << '\n';
 }
 
-void ValueAtSlot::verify() const {
+void SVNInfo::verify() const {
   typedef VASCycMapTy::const_iterator it;
   VASTSlot *UseSlot = getSlot();
   for (it I = DepVAS.begin(), E = DepVAS.end(); I != E; ++I) {
@@ -127,7 +128,7 @@ void ValueAtSlot::verify() const {
   }
 }
 
-void ValueAtSlot::dump() const {
+void SVNInfo::dump() const {
   print(dbgs());
 }
 
@@ -138,13 +139,13 @@ void SlotInfo::dump() const {
 void SlotInfo::print(raw_ostream &OS) const {
   OS << S->getName() << "\nGen:\n";
   for (gen_iterator I = gen_begin(), E = gen_end(); I != E; ++I) {
-    ValueAtSlot *VAS = *I;
+    SVNInfo *VAS = *I;
     OS.indent(2) << VAS->getName() << "\n";
   }
 
   OS << "\n\nIn:\n";
   for (VASCycMapTy::const_iterator I = in_begin(), E = in_end(); I != E; ++I) {
-    ValueAtSlot *VAS = I->first;
+    SVNInfo *VAS = I->first;
     OS.indent(2) << VAS->getName() << '[' << I->second.getCycles() << "]\n";
   }
 
@@ -152,28 +153,28 @@ void SlotInfo::print(raw_ostream &OS) const {
 }
 
 // Any VAS whose value is overwritten at this slot is killed.
-bool SlotInfo::isVASKilled(const ValueAtSlot *VAS) const {
+bool SlotInfo::isVASKilled(const SVNInfo *VAS) const {
   return OverWrittenValue.count(VAS->getValue());
 }
 
 void SlotInfo::initOutSet() {
   // Build the initial out set ignoring the kill set.
   for (gen_iterator I = gen_begin(), E = gen_end(); I != E; ++I)
-    SlotOut.insert(std::make_pair(*I, ValueAtSlot::LiveInInfo()));
+    SlotOut.insert(std::make_pair(*I, SVNInfo::LiveInInfo()));
 }
 
-RtlSSAAnalysis::RtlSSAAnalysis() : MachineFunctionPass(ID), VM(0) {
-  initializeRtlSSAAnalysisPass(*PassRegistry::getPassRegistry());
+VASTSeqValNumbering::VASTSeqValNumbering() : MachineFunctionPass(ID), VM(0) {
+  initializeVASTSeqValNumberingPass(*PassRegistry::getPassRegistry());
 }
 
 
-void RtlSSAAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
+void VASTSeqValNumbering::getAnalysisUsage(AnalysisUsage &AU) const {
   MachineFunctionPass::getAnalysisUsage(AU);
   AU.addRequired<VerilogModuleAnalysis>();
   AU.setPreservesAll();
 }
 
-bool RtlSSAAnalysis::runOnMachineFunction(MachineFunction &MF) {
+bool VASTSeqValNumbering::runOnMachineFunction(MachineFunction &MF) {
   VM = getAnalysis<VerilogModuleAnalysis>().getModule();
 
   // Push back all the slot into the SlotVec for the purpose of view graph.
@@ -201,28 +202,28 @@ bool RtlSSAAnalysis::runOnMachineFunction(MachineFunction &MF) {
   return false;
 }
 
-ValueAtSlot *RtlSSAAnalysis::getValueASlot(VASTSeqValue *V, VASTSlot *S){
-  ValueAtSlot *VAS = UniqueVASs.lookup(std::make_pair(V, S));
+SVNInfo *VASTSeqValNumbering::getValueASlot(VASTSeqValue *V, VASTSlot *S){
+  SVNInfo *VAS = UniqueVASs.lookup(std::make_pair(V, S));
   assert(VAS && "VAS not exist!");
   return VAS;
 }
 
-SlotInfo *RtlSSAAnalysis::getSlotInfo(const VASTSlot *S) const {
+SlotInfo *VASTSeqValNumbering::getSlotInfo(const VASTSlot *S) const {
   slotinfo_it It = SlotInfos.find(S);
   assert(It != SlotInfos.end() && "SlotInfo not exist!");
   return It->second;
 }
 
-void RtlSSAAnalysis::addVASDep(ValueAtSlot *VAS, VASTSeqValue *DepVal) {
+void VASTSeqValNumbering::addVASDep(SVNInfo *VAS, VASTSeqValue *DepVal) {
   VASTSlot *UseSlot = VAS->getSlot();
   SlotInfo *UseSI = getSlotInfo(UseSlot);
   assert(UseSI && "SlotInfo missed!");
 
   for (vn_itertor I = DepVal->begin(), E = DepVal->end(); I != E; ++I) {
     VASTSlot *DefSlot = I->first.getSlot();
-    ValueAtSlot *DefVAS = getValueASlot(DepVal, DefSlot);
+    SVNInfo *DefVAS = getValueASlot(DepVal, DefSlot);
 
-    ValueAtSlot::LiveInInfo LI = UseSI->getLiveIn(DefVAS);
+    SVNInfo::LiveInInfo LI = UseSI->getLiveIn(DefVAS);
 
     // VAS is only depends on DefVAS if it can reach this slot.
     if (LI.getCycles())
@@ -230,7 +231,7 @@ void RtlSSAAnalysis::addVASDep(ValueAtSlot *VAS, VASTSeqValue *DepVal) {
   }
 }
 
-void RtlSSAAnalysis::buildAllVAS() {
+void VASTSeqValNumbering::buildAllVAS() {
   typedef VASTModule::seqval_iterator it;
   for (it I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I){
     VASTSeqValue *V = *I;
@@ -239,18 +240,19 @@ void RtlSSAAnalysis::buildAllVAS() {
       VASTSlot *S = I->first.getSlot();
       MachineInstr *DefMI = I->first.getDefMI();
       // Create the origin VAS.
-      ValueAtSlot *VAS = new (Allocator) ValueAtSlot(V, S, DefMI);
-      UniqueVASs.insert(std::make_pair(std::make_pair(V, S), VAS));
+      SVNInfo *VAS = new (Allocator) SVNInfo(V, S, DefMI);
+      bool inserted = UniqueVASs.insert(std::make_pair(std::make_pair(V, S), VAS)).second;
+      assert(inserted);
     }
   }
 }
 
-void RtlSSAAnalysis::verifyRTLDependences() const {
+void VASTSeqValNumbering::verifyRTLDependences() const {
   for (const_vas_iterator I = vas_begin(), E = vas_end(); I != E; ++I)
     (*I)->verify();
 }
 
-void RtlSSAAnalysis::buildVASGraph() {
+void VASTSeqValNumbering::buildVASGraph() {
   typedef VASTModule::seqval_iterator it;
   for (it I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
     VASTSeqValue *V = *I;
@@ -258,7 +260,7 @@ void RtlSSAAnalysis::buildVASGraph() {
     for (vn_itertor I = V->begin(), E = V->end(); I != E; ++I) {
       VASTSlot *S = I->first.getSlot();
       // Create the origin VAS.
-      ValueAtSlot *VAS = getValueASlot(V, S);
+      SVNInfo *VAS = getValueASlot(V, S);
       // Build dependence for conditions
       visitDepTree(I->first.getAsLValue<VASTValue>(), VAS);
       // Build dependence for the assigning value.
@@ -318,7 +320,7 @@ static void DepthFirstTraverseDepTree(VASTValue *DepTree, VisitPathFunc VisitPat
   }
 }
 
-void RtlSSAAnalysis::visitDepTree(VASTValue *DepTree, ValueAtSlot *VAS){
+void VASTSeqValNumbering::visitDepTree(VASTValue *DepTree, SVNInfo *VAS){
   VASTValue *DefValue = DepTree;
 
   // If Define Value is immediate or symbol, skip it.
@@ -337,7 +339,7 @@ void RtlSSAAnalysis::visitDepTree(VASTValue *DepTree, ValueAtSlot *VAS){
   DepthFirstTraverseDepTree(DepTree, B);
 }
 
-bool RtlSSAAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
+bool VASTSeqValNumbering::addLiveIns(SlotInfo *From, SlotInfo *To,
                                 bool FromAliasSlot) {
   bool Changed = false;
   typedef SlotInfo::vascyc_iterator it;
@@ -350,11 +352,11 @@ bool RtlSSAAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
   bool FromLaterAliasSlot = FromAliasSlot && FromSlotNum > ToSlotNum;
 
   for (it I = From->out_begin(), E = From->out_end(); I != E; ++I) {
-    ValueAtSlot *PredOut = I->first;
+    SVNInfo *PredOut = I->first;
     VASTSeqValue *V = PredOut->getValue();
 
     VASTSlot *DefSlot = PredOut->getSlot();
-    ValueAtSlot::LiveInInfo LI = I->second;
+    SVNInfo::LiveInInfo LI = I->second;
 
     bool IsDefSlot = LI.getCycles() == 0;
     // Increase the cycles by 1 after the value lives to next slot.
@@ -422,7 +424,7 @@ bool RtlSSAAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
   return Changed;
 }
 
-bool RtlSSAAnalysis::addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To) {
+bool VASTSeqValNumbering::addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To) {
   bool Changed = false;
   unsigned FromSlotNum = From->SlotNum;
 
@@ -440,7 +442,7 @@ bool RtlSSAAnalysis::addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To) {
   return Changed;
 }
 
-void RtlSSAAnalysis::ComputeReachingDefinition() {
+void VASTSeqValNumbering::ComputeReachingDefinition() {
   ComputeGenAndKill();
   // TODO: Simplify the data-flow, some slot may neither define new VAS nor
   // kill any VAS.
@@ -477,10 +479,10 @@ void RtlSSAAnalysis::ComputeReachingDefinition() {
   } while (Changed);
 }
 
-void RtlSSAAnalysis::ComputeGenAndKill() {
+void VASTSeqValNumbering::ComputeGenAndKill() {
   // Collect the generated statements to the SlotGenMap.
   for (vas_iterator I = vas_begin(), E = vas_end(); I != E; ++I) {
-    ValueAtSlot *VAS = *I;
+    SVNInfo *VAS = *I;
     VASTSlot *S = VAS->getSlot();
     SlotInfo *SI = getSlotInfo(S);
     SI->insertGen(VAS);
@@ -509,7 +511,7 @@ void RtlSSAAnalysis::ComputeGenAndKill() {
        if (i == CurSlotNum - ii && IsLoopingBackPHIMove) {
          // The definition of PHIMove can reach its previous alias slot with
          // distance II.
-         AliasSlot->insertIn(VAS, ValueAtSlot::LiveInInfo(ii));
+         AliasSlot->insertIn(VAS, SVNInfo::LiveInInfo(ii));
          // The definition is actually for the previous stage.
          AliasSlot->insertGen(VAS);
          // The definition of looping-back PHIMove is not for the current stage.
@@ -527,13 +529,13 @@ void RtlSSAAnalysis::ComputeGenAndKill() {
   }
 }
 
-char RtlSSAAnalysis::ID = 0;
-INITIALIZE_PASS_BEGIN(RtlSSAAnalysis, "RtlSSAAnalysis",
+char VASTSeqValNumbering::ID = 0;
+INITIALIZE_PASS_BEGIN(VASTSeqValNumbering, "RtlSSAAnalysis",
                       "RtlSSAAnalysis", false, false)
   INITIALIZE_PASS_DEPENDENCY(VerilogModuleAnalysis);
-INITIALIZE_PASS_END(RtlSSAAnalysis, "RtlSSAAnalysis",
+INITIALIZE_PASS_END(VASTSeqValNumbering, "RtlSSAAnalysis",
                     "RtlSSAAnalysis", false, false)
 
-Pass *llvm::createRtlSSAAnalysisPass() {
-  return new RtlSSAAnalysis();
+Pass *llvm::createVASTSeqValNumberingPass() {
+  return new VASTSeqValNumbering();
 }

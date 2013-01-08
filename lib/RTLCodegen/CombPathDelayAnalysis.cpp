@@ -18,7 +18,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "RtlSSAAnalysis.h"
+#include "VASTSeqValNumbering.h"
 
 #include "vtm/VASTSubModules.h"
 #include "vtm/VASTModule.h"
@@ -78,7 +78,7 @@ struct PathDelayQueryCache {
   bool annotateSubmoduleLatency(VASTSeqValue * V);
 
   void annotatePathDelay(CombPathDelayAnalysis &A, VASTValue *Tree,
-                         ArrayRef<ValueAtSlot*> DstVAS);
+                         ArrayRef<SVNInfo*> DstVAS);
 
   bool updateDelay(SeqValSetTy &To, const SeqValSetTy &From,
                    const SeqValSetTy &LocalDelayMap) {
@@ -120,7 +120,7 @@ struct PathDelayQueryCache {
 };
 
 struct CombPathDelayAnalysis : public MachineFunctionPass {
-  RtlSSAAnalysis *RtlSSA;
+  VASTSeqValNumbering *SVNumbering;
   VASTModule *VM;
 
   static char ID;
@@ -128,7 +128,7 @@ struct CombPathDelayAnalysis : public MachineFunctionPass {
   void getAnalysisUsage(AnalysisUsage &AU) const {
     MachineFunctionPass::getAnalysisUsage(AU);
     AU.addRequired<TargetData>();
-    AU.addRequired<RtlSSAAnalysis>();
+    AU.addRequired<VASTSeqValNumbering>();
     AU.addRequired<VerilogModuleAnalysis>();
     AU.setPreservesAll();
   }
@@ -136,7 +136,7 @@ struct CombPathDelayAnalysis : public MachineFunctionPass {
   void writeConstraintsForDst(VASTSeqValue *Dst);
 
   void extractTimingPaths(PathDelayQueryCache &Cache,
-                          ArrayRef<ValueAtSlot*> DstVAS,
+                          ArrayRef<SVNInfo*> DstVAS,
                           VASTValue *DepTree);
 
   bool runOnMachineFunction(MachineFunction &MF);
@@ -152,21 +152,21 @@ struct CombPathDelayAnalysis : public MachineFunctionPass {
     return false;
   }
 
-  CombPathDelayAnalysis() : MachineFunctionPass(ID), RtlSSA(0), VM(0) {
+  CombPathDelayAnalysis() : MachineFunctionPass(ID), SVNumbering(0), VM(0) {
     initializeCombPathDelayAnalysisPass(*PassRegistry::getPassRegistry());
   }
 };
 }
 
 static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTSeqValue *Src,
-                                ValueAtSlot *Dst) {
+                                SVNInfo *Dst) {
   unsigned PathDelay = 10000;
-  SlotInfo *DstSI = A.RtlSSA->getSlotInfo(Dst->getSlot());
+  SlotInfo *DstSI = A.SVNumbering->getSlotInfo(Dst->getSlot());
 
   typedef VASTSeqValue::const_itertor vn_itertor;
   for (vn_itertor I = Src->begin(), E = Src->end(); I != E; ++I) {
     VASTSlot *SrcSlot = I->first.getSlot();
-    ValueAtSlot *SrcVAS = A.RtlSSA->getValueASlot(Src, SrcSlot);
+    SVNInfo *SrcVAS = A.SVNumbering->getValueASlot(Src, SrcSlot);
 
     // Update the PathDelay if the source VAS reaches DstSlot.
     if (unsigned Distance = DstSI->getCyclesFromDef(SrcVAS)) {
@@ -179,9 +179,9 @@ static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTSeqValue *Src,
 }
 
 static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTSeqValue *Src,
-                                ArrayRef<ValueAtSlot*> DstVAS) {
+                                ArrayRef<SVNInfo*> DstVAS) {
   unsigned PathDelay = 10000;
-  typedef ArrayRef<ValueAtSlot*>::iterator it;
+  typedef ArrayRef<SVNInfo*>::iterator it;
   for (it I = DstVAS.begin(), E = DstVAS.end(); I != E; ++I)
     PathDelay = std::min(PathDelay, getMinimalDelay(A, Src, *I));
 
@@ -244,7 +244,7 @@ bool PathDelayQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
 
 void PathDelayQueryCache::annotatePathDelay(CombPathDelayAnalysis &A,
                                             VASTValue *Root,
-                                            ArrayRef<ValueAtSlot*> DstVAS) {
+                                            ArrayRef<SVNInfo*> DstVAS) {
   assert((isa<VASTWire>(Root) || isa<VASTExpr>(Root)) && "Bad root type!");
   typedef VASTValue::dp_dep_it ChildIt;
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
@@ -474,7 +474,7 @@ bool CombPathDelayAnalysis::runOnMachineFunction(MachineFunction &MF) {
   VM = getAnalysis<VerilogModuleAnalysis>().getModule();
   bindFunctionInfoToScriptEngine(MF, getAnalysis<TargetData>(), VM);
 
-  RtlSSA = &getAnalysis<RtlSSAAnalysis>();
+  SVNumbering = &getAnalysis<VASTSeqValNumbering>();
 
   //Write the timing constraints.
   typedef VASTModule::seqval_iterator seqval_iterator;
@@ -485,12 +485,12 @@ bool CombPathDelayAnalysis::runOnMachineFunction(MachineFunction &MF) {
 }
 
 void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
-  DenseMap<VASTValue*, SmallVector<ValueAtSlot*, 8> > DatapathMap;
+  DenseMap<VASTValue*, SmallVector<SVNInfo*, 8> > DatapathMap;
 
   typedef VASTSeqValue::const_itertor vn_itertor;
   for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
     VASTSlot *S = I->first.getSlot();
-    ValueAtSlot *DstVAS = RtlSSA->getValueASlot(Dst, S);
+    SVNInfo *DstVAS = SVNumbering->getValueASlot(Dst, S);
     // Paths for the condition.
     DatapathMap[I->first.getAsLValue<VASTValue>()].push_back(DstVAS);
     // Paths for the assigning value
@@ -498,7 +498,7 @@ void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
   }
 
   PathDelayQueryCache Cache;
-  typedef DenseMap<VASTValue*, SmallVector<ValueAtSlot*, 8> >::iterator it;
+  typedef DenseMap<VASTValue*, SmallVector<SVNInfo*, 8> >::iterator it;
   for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
     extractTimingPaths(Cache, I->second, I->first);
 
@@ -506,7 +506,7 @@ void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
 }
 
 void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
-                                               ArrayRef<ValueAtSlot*> DstVAS,
+                                               ArrayRef<SVNInfo*> DstVAS,
                                                VASTValue *DepTree) {
   VASTValue *SrcValue = DepTree;
 
@@ -536,6 +536,7 @@ char CombPathDelayAnalysis::ID = 0;
 INITIALIZE_PASS_BEGIN(CombPathDelayAnalysis, "CombPathDelayAnalysis",
                       "CombPathDelayAnalysis", false, false)
   INITIALIZE_PASS_DEPENDENCY(VerilogModuleAnalysis);
+  INITIALIZE_PASS_DEPENDENCY(VASTSeqValNumbering);
 INITIALIZE_PASS_END(CombPathDelayAnalysis, "CombPathDelayAnalysis",
                     "CombPathDelayAnalysis", false, false)
 

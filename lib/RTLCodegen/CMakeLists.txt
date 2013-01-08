@@ -15,10 +15,10 @@ add_llvm_library(VTMRTLCodegen
   PreSchedRTLOpt.cpp
   LUTMapping.cpp
   VASTControlpath.cpp
+  VASTSeqValNumbering.cpp
   VASTSubModules.cpp
   CombPathDelayAnalysis.cpp
   LATimingEstimator.cpp
-  RtlSSAAnalysis.cpp
   VerilogAST.cpp
 )
 
