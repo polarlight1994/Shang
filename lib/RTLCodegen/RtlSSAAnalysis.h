@@ -237,7 +237,7 @@ private:
   BumpPtrAllocator Allocator;
 
   // define VAS assign iterator.
-  typedef VASTSeqValue::assign_itertor assign_it;
+  typedef VASTSeqValue::const_itertor vn_itertor;
 
   VASTModule *VM;
 public:

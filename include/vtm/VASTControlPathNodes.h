@@ -274,9 +274,9 @@ public:
   void addAssignment(VASTUse *Src, VASTSVGuard Guard);
   bool isTimingUndef() const { return getValType() == VASTNode::Slot; }
 
-  typedef AssignMapTy::const_iterator assign_itertor;
-  assign_itertor begin() const { return Assigns.begin(); }
-  assign_itertor end() const { return Assigns.end(); }
+  typedef AssignMapTy::const_iterator const_itertor;
+  const_itertor begin() const { return Assigns.begin(); }
+  const_itertor end() const { return Assigns.end(); }
   unsigned size() const { return Assigns.size(); }
   bool empty() const { return Assigns.empty(); }
 

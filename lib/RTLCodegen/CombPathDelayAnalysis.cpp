@@ -163,8 +163,8 @@ static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTSeqValue *Src,
   unsigned PathDelay = 10000;
   SlotInfo *DstSI = A.RtlSSA->getSlotInfo(Dst->getSlot());
 
-  typedef VASTSeqValue::assign_itertor assign_it;
-  for (assign_it I = Src->begin(), E = Src->end(); I != E; ++I) {
+  typedef VASTSeqValue::const_itertor vn_itertor;
+  for (vn_itertor I = Src->begin(), E = Src->end(); I != E; ++I) {
     VASTSlot *SrcSlot = I->first.getSlot();
     ValueAtSlot *SrcVAS = A.RtlSSA->getValueASlot(Src, SrcSlot);
 
@@ -190,12 +190,6 @@ static unsigned getMinimalDelay(CombPathDelayAnalysis &A, VASTSeqValue *Src,
 
 static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {  
   if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
-    if (const VASTWire *W = dyn_cast<VASTWire>(V))
-      // Do not trust the name of the assign condition, it is the pointer to the
-      // defining MachineInstr.
-      if (W->getWireType() == VASTWire::AssignCond)
-        return false;
-
     // The block RAM should be printed as Prefix + ArrayName in the script.
     if (const VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V)) {
       if (SeqVal->getValType() == VASTNode::BRAM) {
@@ -493,8 +487,8 @@ bool CombPathDelayAnalysis::runOnMachineFunction(MachineFunction &MF) {
 void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
   DenseMap<VASTValue*, SmallVector<ValueAtSlot*, 8> > DatapathMap;
 
-  typedef VASTSeqValue::assign_itertor assign_it;
-  for (assign_it I = Dst->begin(), E = Dst->end(); I != E; ++I) {
+  typedef VASTSeqValue::const_itertor vn_itertor;
+  for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
     VASTSlot *S = I->first.getSlot();
     ValueAtSlot *DstVAS = RtlSSA->getValueASlot(Dst, S);
     // Paths for the condition.

@@ -218,7 +218,7 @@ void RtlSSAAnalysis::addVASDep(ValueAtSlot *VAS, VASTSeqValue *DepVal) {
   SlotInfo *UseSI = getSlotInfo(UseSlot);
   assert(UseSI && "SlotInfo missed!");
 
-  for (assign_it I = DepVal->begin(), E = DepVal->end(); I != E; ++I) {
+  for (vn_itertor I = DepVal->begin(), E = DepVal->end(); I != E; ++I) {
     VASTSlot *DefSlot = I->first.getSlot();
     ValueAtSlot *DefVAS = getValueASlot(DepVal, DefSlot);
 
@@ -235,8 +235,7 @@ void RtlSSAAnalysis::buildAllVAS() {
   for (it I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I){
     VASTSeqValue *V = *I;
 
-    typedef VASTSeqValue::assign_itertor assign_it;
-    for (assign_it I = V->begin(), E = V->end(); I != E; ++I){
+    for (vn_itertor I = V->begin(), E = V->end(); I != E; ++I){
       VASTSlot *S = I->first.getSlot();
       MachineInstr *DefMI = I->first.getDefMI();
       // Create the origin VAS.
@@ -256,8 +255,7 @@ void RtlSSAAnalysis::buildVASGraph() {
   for (it I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
     VASTSeqValue *V = *I;
 
-    typedef VASTSeqValue::assign_itertor assign_it;
-    for (assign_it I = V->begin(), E = V->end(); I != E; ++I) {
+    for (vn_itertor I = V->begin(), E = V->end(); I != E; ++I) {
       VASTSlot *S = I->first.getSlot();
       // Create the origin VAS.
       ValueAtSlot *VAS = getValueASlot(V, S);

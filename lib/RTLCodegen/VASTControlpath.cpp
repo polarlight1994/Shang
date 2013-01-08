@@ -285,7 +285,7 @@ void VASTSVGuard::print(raw_ostream &OS) const {
 
 bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> >
                                &CSEMap) const {
-  for (assign_itertor I = begin(), E = end(); I != E; ++I)
+  for (const_itertor I = begin(), E = end(); I != E; ++I)
     CSEMap[*I->second].push_back(I->first);
 
   return !CSEMap.empty();
@@ -301,7 +301,7 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
   raw_string_ostream AllPredSS(AllPred);
 
   AllPredSS << '{';
-  for (assign_itertor I = begin(), E = end(); I != E; ++I) {
+  for (const_itertor I = begin(), E = end(); I != E; ++I) {
     I->first->printAsOperand(AllPredSS, false);
     AllPredSS << ", ";
   }
@@ -318,7 +318,7 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
         << AllPred << ");\n";
 
   // Display the conflicted condition and its slot.
-  for (assign_itertor I = begin(), E = end(); I != E; ++I) {
+  for (const_itertor I = begin(), E = end(); I != E; ++I) {
     OS.indent(2) << "if (";
     I->first->printAsOperand(OS, false);
     OS << ") begin\n";
