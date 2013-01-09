@@ -55,7 +55,6 @@ VASTSignal::VASTSignal(VASTTypes DeclType, const char *Name, unsigned BitWidth)
 
 void VASTSignal::anchor() const {}
 
-
 VASTUse::VASTUse(VASTNode *U, VASTValPtr V) : User(*U), V(V) {
   linkUseToUser();
 }
@@ -65,8 +64,6 @@ void VASTUse::unlinkUseFromUser() {
 }
 
 void VASTUse::linkUseToUser() {
-  assert(!ilist_traits<VASTUse>::inAnyList(this)
-         && "Not unlink from old list!");
   if (VASTValue *Use = V.get()) {
     assert(Use != &User && "Unexpected cycle!");
     Use->addUseToList(this);

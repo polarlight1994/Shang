@@ -592,6 +592,7 @@ void DatapathContainer::addModifiedValueToCSEMaps(VASTNode *N) {
 void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
   assert(From && To && From != To && "Unexpected VASTValPtr value!");
   assert(From->getBitWidth() == To->getBitWidth() && "Bitwidth not match!");
+  assert(!To->isDead() && "Replacing node by dead node!");
   VASTValue::use_iterator UI = From->use_begin(), UE = From->use_end();
 
   while (UI != UE) {
@@ -628,6 +629,10 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
   assert(From->use_empty() && "Incompleted replacement!");
   // From is dead now, unlink it from all its use.
   From->dropUses();
+  // Do not use this node anymore.
+  removeValueFromCSEMaps(From.get());
+  // Sentence this Node to dead!
+  From->setDead();
   // TODO: Delete From.
 }
 

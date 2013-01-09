@@ -70,8 +70,9 @@ protected:
     MachineInstr *BundleStart;
   } Contents;
 
-  const uint8_t NodeT;
-  explicit VASTNode(VASTTypes T) : NodeT(T) {}
+  const uint8_t NodeT : 7;
+  bool IsDead         : 1;
+  explicit VASTNode(VASTTypes T) : NodeT(T), IsDead(false) {}
 
   virtual void print(raw_ostream &OS) const = 0;
 
@@ -79,10 +80,12 @@ protected:
 
   // Drop this VASTNode from the userlist of all its uses.
   virtual void dropUses() { };
+  void setDead() { IsDead = true; }
 public:
   virtual ~VASTNode() {}
 
   VASTTypes getASTType() const { return VASTTypes(NodeT); }
+  bool isDead() const { return IsDead; }
 
   void dump() const;
 };
@@ -285,10 +288,6 @@ struct ilist_traits<VASTUse> : public ilist_default_traits<VASTUse> {
   static VASTUse *createSentinel() { return new VASTUse(0, 0); }
 
   static void deleteNode(VASTUse *U) {}
-
-  static bool inAnyList(const VASTUse *U) {
-    return U->getPrev() != 0 || U->getNext() != 0;
-  }
 };
 
 template<class IteratorType, class NodeType>
