@@ -66,7 +66,7 @@ struct LogicNetwork {
   ValueMapTy Nodes;
 
   // Map the Abc_Obj_t name to Instruction.
-  typedef StringMap<VASTValue*> ABCNameMapTy;
+  typedef StringMap<VASTValPtr> ABCNameMapTy;
   ABCNameMapTy ValueNames;
 
   // Map the Abc_Obj_t to VASTValue for VAST datapath rewriting.
@@ -435,8 +435,12 @@ void LogicNetwork::buildLUTDatapath(DatapathBuilder &Builder) {
     VASTValPtr NewVal = at->second;
     if (Abc_ObjIsComplement(FI)) NewVal = NewVal.invert();
     
-    VASTValPtr OldVal = ValueNames.lookup(Abc_ObjName(Abc_ObjRegular(FI)));
-    Builder.replaceAllUseWith(OldVal, NewVal);
+    VASTValPtr &OldVal = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))];
+    // Update the mapping if the mapped value changed.
+    if (OldVal != NewVal) {
+      Builder.replaceAllUseWith(OldVal, NewVal);
+      OldVal = NewVal;
+    }
   }
 }
 
