@@ -165,7 +165,6 @@ static unsigned getMinimalDelay(SeqValReachingDefAnalysis *R, VASTSeqValue *Src,
 
   typedef VASTSeqValue::const_itertor vn_itertor;
   for (vn_itertor I = Src->begin(), E = Src->end(); I != E; ++I) {
-    VASTSlot *SrcSlot = I->first.getSlot();
     VASTSeqValue::Def SrcDef = *I;
 
     // Update the PathDelay if the source VAS reaches DstSlot.
