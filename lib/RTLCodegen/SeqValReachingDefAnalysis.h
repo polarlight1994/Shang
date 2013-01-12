@@ -153,14 +153,6 @@ private:
 
   VASTModule *VM;
   BumpPtrAllocator Allocator;
-public:
-  static char ID;
-
-  slot_vec_it slot_begin() { return SlotVec.begin(); }
-  slot_vec_it slot_end() { return SlotVec.end(); }
-
-  // Get SlotInfo from the existing SlotInfos set.
-  SlotInfo* getSlotInfo(const VASTSlot *S) const;
 
   bool addLiveIns(SlotInfo *From, SlotInfo *To, bool FromAliasSlot);
   bool addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To);
@@ -173,6 +165,14 @@ public:
 
   // collect the Generated and Killed statements of the slot.
   void ComputeGenAndKill();
+public:
+  static char ID;
+
+  slot_vec_it slot_begin() { return SlotVec.begin(); }
+  slot_vec_it slot_end() { return SlotVec.end(); }
+
+  // Get SlotInfo from the existing SlotInfos set.
+  SlotInfo* getSlotInfo(const VASTSlot *S) const;
 
   void viewGraph();
 

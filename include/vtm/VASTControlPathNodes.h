@@ -27,7 +27,6 @@ class vlang_raw_ostream;
 
 class VASTSlot : public VASTNode {
 public:
-  // TODO: Store the pointer to the Slot instead the slot number.
   typedef std::map<VASTSlot*, VASTUse*> SuccVecTy;
   typedef SuccVecTy::iterator succ_cnd_iterator;
   typedef SuccVecTy::const_iterator const_succ_cnd_iterator;
