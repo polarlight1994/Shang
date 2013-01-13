@@ -449,18 +449,23 @@ VASTValPtr VASTModule::wrapSeqValue(VASTValPtr Src, VASTSeqValue *V)  {
   return Src;
 }
 
-void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
-                               SmallVectorImpl<VASTValPtr> &Cnds,
-                               MachineInstr *DefMI, bool AddSlotActive) {
+VASTValPtr
+VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
+                          SmallVectorImpl<VASTValPtr> &Cnds, MachineInstr *DefMI,
+                          bool AddSlotActive) {
+  VASTValPtr GuardCnd;
+
   if (Src) {
     // Create a wrapper to avoid the direct cycle in the def-use chain.
     Src = wrapSeqValue(Src, V);
-    VASTValPtr Cnd = wrapSeqValue(buildGuardExpr(Slot, Cnds, AddSlotActive), V);
+    GuardCnd = buildGuardExpr(Slot, Cnds, AddSlotActive);
 
-    VASTUse *GuardUse = new (Allocator) VASTUse(V, Cnd);
+    VASTUse *GuardUse = new (Allocator) VASTUse(V, wrapSeqValue(GuardCnd, V));
     VASTUse *U = new (Allocator) VASTUse(V, Src);
     V->addAssignment(U, VASTSVGuard(GuardUse, Slot, DefMI));
   }
+
+  return GuardCnd;
 }
 
 void VASTModule::print(raw_ostream &OS) const {

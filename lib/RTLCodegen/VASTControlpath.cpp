@@ -177,30 +177,33 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
     }
   } // SS flushes automatically here.
 
-  bool hasSelfLoop = false;
+  VASTValPtr SelfLoopCnd;
   SmallVector<VASTValPtr, 2> SlotCndVector;
+  VASTValPtr AlwaysTrue = Builder.getBoolImmediate(true);
 
   assert(!NextSlots.empty() && "Expect at least 1 next slot!");
-  for (VASTSlot::const_succ_cnd_iterator I = succ_cnd_begin(),E = succ_cnd_end();
-        I != E; ++I) {
-    hasSelfLoop |= I->first->SlotNum == SlotNum;
+  for (succ_cnd_iterator I = succ_cnd_begin(),E = succ_cnd_end(); I != E; ++I) {
     VASTSeqValue *NextSlotReg = I->first->getValue();
-    Mod.addAssignment(NextSlotReg, I->second, this, SlotCndVector);
+    if (I->first->SlotNum == SlotNum) SelfLoopCnd = I->second;
+    SlotCndVector.push_back(I->second);
+    // Build the assignment and update the successor branching condition.
+    I->second = Mod.addAssignment(NextSlotReg, AlwaysTrue, this, SlotCndVector);
+    SlotCndVector.clear();
   }
 
-  assert(!(hasSelfLoop && PredAliasSlots)
+  assert(!(SelfLoopCnd && PredAliasSlots)
          && "Unexpected have self loop and pred alias slot at the same time.");
-  // Do not assign a value to the current slot enable twice.
-  if (!hasSelfLoop) {
-    // Only disable the current slot if there is no alias slot enable current
-    // slot.
-    if (PredAliasSlots)
-      SlotCndVector.push_back(Builder.buildNotExpr(PredAliasSlots));
+  // Only disable the current slot if there is no alias slot enable current
+  // slot.
+  if (PredAliasSlots)
+    SlotCndVector.push_back(Builder.buildNotExpr(PredAliasSlots));
+  // Disable the current slot when we are not looping back.
+  if (SelfLoopCnd)
+    SlotCndVector.push_back(Builder.buildNotExpr(SelfLoopCnd));
 
-    // Disable the current slot.
-    Mod.addAssignment(getValue(), Mod.getBoolImmediateImpl(false), this,
-                      SlotCndVector);
-  }
+  // Disable the current slot.
+  Mod.addAssignment(getValue(), Mod.getBoolImmediateImpl(false), this,
+                    SlotCndVector);
 
   std::string SlotReady = std::string(getName()) + "Ready";
   for (VASTSlot::const_fu_ctrl_it I = enable_begin(), E = enable_end();

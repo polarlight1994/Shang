@@ -305,9 +305,10 @@ public:
   slot_iterator slot_begin() { return Slots.begin(); }
   slot_iterator slot_end() { return Slots.end(); }
 
-  void addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
-                     SmallVectorImpl<VASTValPtr> &Cnds, MachineInstr *DefMI = 0,
-                     bool AddSlotActive = true);
+  VASTValPtr
+  addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
+                SmallVectorImpl<VASTValPtr> &Cnds, MachineInstr *DefMI = 0,
+                bool AddSlotActive = true);
 
   VASTWire *assign(VASTWire *W, VASTValPtr V);
 
