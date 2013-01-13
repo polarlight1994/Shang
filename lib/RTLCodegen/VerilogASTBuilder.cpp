@@ -320,8 +320,13 @@ class VerilogASTBuilder : public MachineFunctionPass,
     else                U.replaceUseBy(Builder->buildOrExpr(Cnd, U, 1));
   }
 
+  void OrCnd(VASTValPtr &U, VASTValPtr Cnd) {
+    if (!U)  U = Cnd;
+    else     U = Builder->buildOrExpr(Cnd, U, 1);
+  }
+
   void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd) {
-    OrCnd(S->allocateSuccSlot(NextSlot, VM), Cnd);
+    OrCnd(S->getOrCreateSuccCnd(NextSlot), Cnd);
   }
 
   void addSlotDisable(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
@@ -504,7 +509,7 @@ void VerilogASTBuilder::emitIdleState() {
   VASTSlot *IdleSlot = VM->getOrCreateSlot(0, 0);
   IdleSlot->buildReadyLogic(*VM, *Builder);
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
-  IdleSlot->addSuccSlot(IdleSlot, Builder->buildNotExpr(StartPort), VM);
+  IdleSlot->addSuccSlot(IdleSlot, Builder->buildNotExpr(StartPort));
 
   // Always Disable the finish signal.
   addSlotDisable(IdleSlot, VM->getPort(VASTModule::Finish).getSeqVal(),

@@ -27,14 +27,14 @@ class vlang_raw_ostream;
 
 class VASTSlot : public VASTNode {
 public:
-  typedef std::map<VASTSlot*, VASTUse*> SuccVecTy;
+  typedef std::map<VASTSlot*, VASTValPtr> SuccVecTy;
   typedef SuccVecTy::iterator succ_cnd_iterator;
   typedef SuccVecTy::const_iterator const_succ_cnd_iterator;
 
   // Use mapped_iterator which is a simple iterator adapter that causes a
   // function to be dereferenced whenever operator* is invoked on the iterator.
   typedef
-  std::pointer_to_unary_function<std::pair<VASTSlot*, VASTUse*>, VASTSlot*>
+  std::pointer_to_unary_function<std::pair<VASTSlot*, VASTValPtr>, VASTSlot*>
   slot_getter;
 
   typedef mapped_iterator<succ_cnd_iterator, slot_getter> succ_iterator;
@@ -102,28 +102,38 @@ public:
   VASTValue *getReady() const { return cast<VASTValue>(SlotReady); }
   VASTValue *getActive() const { return cast<VASTValue>(SlotActive); }
 
-  void addSuccSlot(VASTSlot *NextSlot, VASTValPtr Cnd, VASTModule *VM);
+  void addSuccSlot(VASTSlot *NextSlot, VASTValPtr Cnd);
   bool hasNextSlot(VASTSlot *NextSlot) const;
+
+  VASTValPtr getSuccCnd(const VASTSlot *DstSlot) const {
+    const_succ_cnd_iterator at = NextSlots.find(const_cast<VASTSlot*>(DstSlot));
+    assert(at != NextSlots.end() && "DstSlot is not the successor!");
+    return at->second;
+  }
+
+  VASTValPtr &getOrCreateSuccCnd(const VASTSlot *DstSlot) {
+    return NextSlots[const_cast<VASTSlot*>(DstSlot)];
+  }
 
   // Next VASTSlot iterator.
   succ_iterator succ_begin() {
     return map_iterator(NextSlots.begin(),
-                        slot_getter(pair_first<VASTSlot*, VASTUse*>));
+                        slot_getter(pair_first<VASTSlot*, VASTValPtr>));
   }
 
   const_succ_iterator succ_begin() const {
     return map_iterator(NextSlots.begin(),
-                        slot_getter(pair_first<VASTSlot*, VASTUse*>));
+                        slot_getter(pair_first<VASTSlot*, VASTValPtr>));
   }
 
   succ_iterator succ_end() {
     return map_iterator(NextSlots.end(),
-                        slot_getter(pair_first<VASTSlot*, VASTUse*>));
+                        slot_getter(pair_first<VASTSlot*, VASTValPtr>));
   }
 
   const_succ_iterator succ_end() const {
     return map_iterator(NextSlots.end(),
-                        slot_getter(pair_first<VASTSlot*, VASTUse*>));
+                        slot_getter(pair_first<VASTSlot*, VASTValPtr>));
   }
 
   // Predecessor slots of this slot.
@@ -134,7 +144,6 @@ public:
   VASTUse &allocateEnable(VASTSeqValue *P, VASTModule *VM);
   VASTUse &allocateReady(VASTValue *V, VASTModule *VM);
   VASTUse &allocateDisable(VASTSeqValue *P, VASTModule *VM);
-  VASTUse &allocateSuccSlot(VASTSlot *S, VASTModule *VM);
 
   // Signals need to be enabled at this slot.
   bool isEnabled(VASTSeqValue *P) const { return Enables.count(P); }
@@ -242,6 +251,8 @@ public:
 
     VASTSeqValue *getValue() const { return V; }
     const char *getValueName() const { return getValue()->getName(); }
+
+    VASTValPtr getGuardValue() const { return G.get(); }
 
     VASTSlot *getSlot() const { return G.getSlot(); }
 

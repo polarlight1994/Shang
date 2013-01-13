@@ -55,11 +55,11 @@ MachineBasicBlock *VASTSlot::getParentBB() const {
   return 0;
 }
 
-void VASTSlot::addSuccSlot(VASTSlot *NextSlot, VASTValPtr Cnd, VASTModule *VM) {
-  VASTUse *&U = NextSlots[NextSlot];
-  assert(U == 0 && "Succ Slot already existed!");
+void VASTSlot::addSuccSlot(VASTSlot *NextSlot, VASTValPtr Cnd) {
+  VASTValPtr &U = NextSlots[NextSlot];
+  assert(!U && "Succ Slot already existed!");
   NextSlot->PredSlots.push_back(this);
-  U = new (VM->allocateUse()) VASTUse(this, Cnd);
+  U = Cnd;
 }
 
 VASTUse &VASTSlot::allocateEnable(VASTSeqValue *P, VASTModule *VM) {
@@ -82,16 +82,6 @@ VASTUse &VASTSlot::allocateDisable(VASTSeqValue *P, VASTModule *VM) {
   assert(P && "Bad signal to disable!");
   VASTUse *&U = Disables[P];
   if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
-
-  return *U;
-}
-
-VASTUse &VASTSlot::allocateSuccSlot(VASTSlot *NextSlot, VASTModule *VM) {
-  VASTUse *&U = NextSlots[NextSlot];
-  if (U == 0) {
-    U = new (VM->allocateUse()) VASTUse(this, 0);
-    NextSlot->PredSlots.push_back(this);
-  }
 
   return *U;
 }
@@ -197,14 +187,14 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
   } // SS flushes automatically here.
 
   bool hasSelfLoop = false;
-  SmallVector<VASTValPtr, 2> EmptySlotEnCnd;
+  SmallVector<VASTValPtr, 2> SlotCndVector;
 
   assert(!NextSlots.empty() && "Expect at least 1 next slot!");
   for (VASTSlot::const_succ_cnd_iterator I = succ_cnd_begin(),E = succ_cnd_end();
         I != E; ++I) {
     hasSelfLoop |= I->first->SlotNum == SlotNum;
     VASTSeqValue *NextSlotReg = I->first->getValue();
-    Mod.addAssignment(NextSlotReg, *I->second, this, EmptySlotEnCnd);
+    Mod.addAssignment(NextSlotReg, I->second, this, SlotCndVector);
   }
 
   assert(!(hasSelfLoop && PredAliasSlots)
@@ -214,11 +204,11 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
     // Only disable the current slot if there is no alias slot enable current
     // slot.
     if (PredAliasSlots)
-      EmptySlotEnCnd.push_back(Builder.buildNotExpr(PredAliasSlots));
+      SlotCndVector.push_back(Builder.buildNotExpr(PredAliasSlots));
 
     // Disable the current slot.
     Mod.addAssignment(getValue(), Mod.getBoolImmediateImpl(false), this,
-                      EmptySlotEnCnd);
+                      SlotCndVector);
   }
 
   std::string SlotReady = std::string(getName()) + "Ready";
@@ -227,12 +217,12 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
     assert(!AliasEnables.count(I->first) && "Signal enabled by alias slot!");
     // No need to wait for the slot ready.
     // We may try to enable and disable the same port at the same slot.
-    EmptySlotEnCnd.clear();
-    EmptySlotEnCnd.push_back(getValue());
+    SlotCndVector.clear();
+    SlotCndVector.push_back(getValue());
     VASTValPtr ReadyCnd
       = Builder.buildAndExpr(getReady()->getAsInlineOperand(false),
                              I->second->getAsInlineOperand(), 1);
-    Mod.addAssignment(I->first, ReadyCnd, this, EmptySlotEnCnd, 0, false);
+    Mod.addAssignment(I->first, ReadyCnd, this, SlotCndVector, 0, false);
   }
 
   SmallVector<VASTValPtr, 4> DisableAndCnds;
