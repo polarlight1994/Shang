@@ -62,28 +62,19 @@ void VASTSlot::addSuccSlot(VASTSlot *NextSlot, VASTValPtr Cnd) {
   U = Cnd;
 }
 
-VASTUse &VASTSlot::allocateEnable(VASTSeqValue *P, VASTModule *VM) {
-  assert(P && "Bad signal! to enable!");
-  VASTUse *&U = Enables[P];
-  if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
-
-  return *U;
+VASTValPtr &VASTSlot::getOrCreateEnable(VASTSeqValue *P) {
+  assert(P && "Bad enable signal!");
+  return Enables[P];
 }
 
-VASTUse &VASTSlot::allocateReady(VASTValue *V, VASTModule *VM) {
+VASTValPtr &VASTSlot::getOrCreateReady(VASTValue *V) {
   assert(V && "Bad ready signal!");
-  VASTUse *&U = Readys[V];
-  if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
-
-  return *U;
+  return Readys[V];
 }
 
-VASTUse &VASTSlot::allocateDisable(VASTSeqValue *P, VASTModule *VM) {
-  assert(P && "Bad signal to disable!");
-  VASTUse *&U = Disables[P];
-  if (U == 0) U = new (VM->allocateUse()) VASTUse(this, 0);
-
-  return *U;
+VASTValPtr &VASTSlot::getOrCreateDisable(VASTSeqValue *P) {
+  assert(P && "Bad ready signal!");
+  return Disables[P];
 }
 
 bool VASTSlot::hasNextSlot(VASTSlot *NextSlot) const {
@@ -113,7 +104,7 @@ VASTValPtr VASTSlot::buildFUReadyExpr(VASTExprBuilder &Builder) {
 
   for (VASTSlot::const_fu_rdy_it I = ready_begin(), E = ready_end();I != E; ++I) {
     // If the condition is true then the signal must be 1 to ready.
-    VASTValPtr ReadyCnd = Builder.buildNotExpr(I->second->getAsInlineOperand());
+    VASTValPtr ReadyCnd = Builder.buildNotExpr(I->second.getAsInlineOperand());
     Ops.push_back(Builder.buildOrExpr(I->first, ReadyCnd, 1));
   }
 
@@ -221,7 +212,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
     SlotCndVector.push_back(getValue());
     VASTValPtr ReadyCnd
       = Builder.buildAndExpr(getReady()->getAsInlineOperand(false),
-                             I->second->getAsInlineOperand(), 1);
+                             I->second.getAsInlineOperand(), 1);
     Mod.addAssignment(I->first, ReadyCnd, this, SlotCndVector, 0, false);
   }
 
@@ -254,7 +245,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
         }
       }
 
-      DisableAndCnds.push_back(*I->second);
+      DisableAndCnds.push_back(I->second);
 
       VASTSeqValue *En = I->first;
       Mod.addAssignment(En, Mod.getBoolImmediateImpl(false), this,

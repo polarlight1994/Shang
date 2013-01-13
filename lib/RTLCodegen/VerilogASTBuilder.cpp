@@ -315,11 +315,6 @@ class VerilogASTBuilder : public MachineFunctionPass,
     return VM->getOrCreateSlot(SlotNum - 1, MI);
   }
 
-  void OrCnd(VASTUse &U, VASTValPtr Cnd) {
-    if (U.isInvalid())  U.set(Cnd);
-    else                U.replaceUseBy(Builder->buildOrExpr(Cnd, U, 1));
-  }
-
   void OrCnd(VASTValPtr &U, VASTValPtr Cnd) {
     if (!U)  U = Cnd;
     else     U = Builder->buildOrExpr(Cnd, U, 1);
@@ -330,15 +325,15 @@ class VerilogASTBuilder : public MachineFunctionPass,
   }
 
   void addSlotDisable(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    OrCnd(S->allocateDisable(P, VM), Cnd);
+    OrCnd(S->getOrCreateDisable(P), Cnd);
   }
 
   void addSlotReady(VASTSlot *Slot, VASTValue *V, VASTValPtr Cnd) {
-    OrCnd(Slot->allocateReady(V, VM), Cnd);
+    OrCnd(Slot->getOrCreateReady(V), Cnd);
   }
 
   void addSlotEnable(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    OrCnd(S->allocateEnable(P, VM), Cnd);
+    OrCnd(S->getOrCreateEnable(P), Cnd);
   }
 
   void addSlotReady(MachineInstr *MI, VASTSlot *Slot);

@@ -41,10 +41,10 @@ public:
   typedef mapped_iterator<const_succ_cnd_iterator, slot_getter>
           const_succ_iterator;
 
-  typedef std::map<VASTSeqValue*, VASTUse*> FUCtrlVecTy;
+  typedef std::map<VASTSeqValue*, VASTValPtr> FUCtrlVecTy;
   typedef FUCtrlVecTy::const_iterator const_fu_ctrl_it;
 
-  typedef std::map<VASTValue*, VASTUse*> FUReadyVecTy;
+  typedef std::map<VASTValue*, VASTValPtr> FUReadyVecTy;
   typedef FUReadyVecTy::const_iterator const_fu_rdy_it;
 
   typedef SmallVector<VASTSlot*, 4> PredVecTy;
@@ -140,10 +140,9 @@ public:
   pred_it pred_begin() { return PredSlots.begin(); }
   pred_it pred_end() { return PredSlots.end(); }
 
-
-  VASTUse &allocateEnable(VASTSeqValue *P, VASTModule *VM);
-  VASTUse &allocateReady(VASTValue *V, VASTModule *VM);
-  VASTUse &allocateDisable(VASTSeqValue *P, VASTModule *VM);
+  VASTValPtr &getOrCreateEnable(VASTSeqValue *P);
+  VASTValPtr &getOrCreateReady(VASTValue *V);
+  VASTValPtr &getOrCreateDisable(VASTSeqValue *P);
 
   // Signals need to be enabled at this slot.
   bool isEnabled(VASTSeqValue *P) const { return Enables.count(P); }
