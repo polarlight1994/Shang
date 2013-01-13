@@ -108,6 +108,7 @@ if {0} {
   #TODO Check the result.
   exec bash @MAIN_MODELDO_FILE@_post_routed >@ stderr
 
+  execute_module -tool asm
   # Estimate power base on the vcd.
   execute_module -tool pow -args {--input_vcd=simulation/modelsim/DUT_TOP.vcd --use_vectorless_estimation=on --vcd_filter_glitches=on}
 

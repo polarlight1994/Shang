@@ -5,8 +5,8 @@ vdel -lib work -all
 vlib work
 vlog +define+quartus_synthesis -sv $(RTLModuleName).v
 vlog -sv INTF_$(RTLModuleName).v
-sed -i -e 's/<half-period>/5/' DUT_TOP_tb.sv
-vlog -sv DUT_TOP_tb.sv
+sed -e 's/<half-period>/5/' DUT_TOP_tb.sv > DUT_TOP_tb_5ns.sv
+vlog -sv DUT_TOP_tb_5ns.sv
 vlog -sv BRAM.sv
 vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f"
 
@@ -20,7 +20,7 @@ vdel -lib work -all
 vlib work
 vlog DUT_TOP.vo
 vlog -sv ../../DUT_TOP_tb.sv
-vsim -t 1ps -L cycloneii_ver work.DUT_TOP_tb -c -do "do DUT_TOP_dump_all_vcd_nodes.tcl;run <run-time>ns;vcd flush;quit -f"
+vsim -t 1ps -L cycloneive_ver -L altera_ver work.DUT_TOP_tb -c -do "do DUT_TOP_dump_all_vcd_nodes.tcl;run <run-time>ns;vcd flush;quit -f"
 
 ]=]
 
