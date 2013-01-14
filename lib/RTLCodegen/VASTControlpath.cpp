@@ -55,11 +55,13 @@ MachineBasicBlock *VASTSlot::getParentBB() const {
   return 0;
 }
 
-void VASTSlot::addSuccSlot(VASTSlot *NextSlot, VASTValPtr Cnd) {
-  VASTValPtr &U = NextSlots[NextSlot];
-  assert(!U && "Succ Slot already existed!");
-  NextSlot->PredSlots.push_back(this);
-  U = Cnd;
+VASTValPtr &VASTSlot::getOrCreateSuccCnd(VASTSlot *DstSlot) {
+  assert(DstSlot && "Bad DstSlot!");
+  VASTValPtr &U = NextSlots[DstSlot];
+  // If we are adding a new succ slot, link the DstSlot to current slot as well.
+  if (!U) DstSlot->PredSlots.push_back(this);
+
+  return U;
 }
 
 VASTValPtr &VASTSlot::getOrCreateEnable(VASTSeqValue *P) {

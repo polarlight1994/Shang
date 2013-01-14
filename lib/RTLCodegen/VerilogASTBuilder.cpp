@@ -504,7 +504,7 @@ void VerilogASTBuilder::emitIdleState() {
   VASTSlot *IdleSlot = VM->getOrCreateSlot(0, 0);
   IdleSlot->buildReadyLogic(*VM, *Builder);
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
-  IdleSlot->addSuccSlot(IdleSlot, Builder->buildNotExpr(StartPort));
+  addSuccSlot(IdleSlot, IdleSlot, Builder->buildNotExpr(StartPort));
 
   // Always Disable the finish signal.
   addSlotDisable(IdleSlot, VM->getPort(VASTModule::Finish).getSeqVal(),

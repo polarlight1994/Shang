@@ -102,7 +102,6 @@ public:
   VASTValue *getReady() const { return cast<VASTValue>(SlotReady); }
   VASTValue *getActive() const { return cast<VASTValue>(SlotActive); }
 
-  void addSuccSlot(VASTSlot *NextSlot, VASTValPtr Cnd);
   bool hasNextSlot(VASTSlot *NextSlot) const;
 
   VASTValPtr getSuccCnd(const VASTSlot *DstSlot) const {
@@ -111,9 +110,7 @@ public:
     return at->second;
   }
 
-  VASTValPtr &getOrCreateSuccCnd(const VASTSlot *DstSlot) {
-    return NextSlots[const_cast<VASTSlot*>(DstSlot)];
-  }
+  VASTValPtr &getOrCreateSuccCnd(VASTSlot *DstSlot);
 
   // Next VASTSlot iterator.
   succ_iterator succ_begin() {
