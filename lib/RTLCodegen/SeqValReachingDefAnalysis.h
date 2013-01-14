@@ -27,7 +27,7 @@
 
 namespace llvm {
 class SeqValReachingDefAnalysis;
-class ImplyEvaluator;
+class SlotInfo;
 
 // SlotInfo, store the data-flow information of a slot.
 class SlotInfo {
@@ -147,7 +147,6 @@ public:
 private:
   SlotInfoTy SlotInfos;
   SlotVecTy SlotVec;
-  ImplyEvaluator *Evaluator;
 
   // define VAS assign iterator.
   typedef VASTSeqValue::const_itertor vn_itertor;

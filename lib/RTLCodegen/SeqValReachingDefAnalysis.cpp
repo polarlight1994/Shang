@@ -14,7 +14,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "SeqValReachingDefAnalysis.h"
-#include "VASTExprBuilder.h"
 
 #include "vtm/Passes.h"
 #include "vtm/VFInfo.h"
@@ -61,54 +60,6 @@ struct DOTGraphTraits<SeqValReachingDefAnalysis*> : public DefaultDOTGraphTraits
       return "shape=Mrecord";
   }
 };
-
-class ImplyEvaluator : public VASTExprBuilderContext, public DatapathContainer {
-  VASTExprBuilder Builder;
-  VASTValPtr buildLocalExpr(VASTValPtr V);
-  VASTImmediate *getOrCreateImmediate(const APInt &Value) {
-    return getOrCreateImmediateImpl(Value);
-  }
-
-  VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-    unsigned UB, unsigned LB) {
-      return createExprImpl(Opc, Ops, UB, LB);
-  }
-
-public:
-  ImplyEvaluator() : VASTExprBuilderContext(), Builder(*this) {}
-
-  bool imply(VASTValPtr Guard, VASTValPtr TransCnd);
-};
-}
-
-VASTValPtr ImplyEvaluator::buildLocalExpr(VASTValPtr V) {
-  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
-
-  if (!Expr || Expr->getOpcode() != VASTExpr::dpAnd) return V;
-
-  SmallVector<VASTValPtr, 8> Ops;
-  typedef VASTExpr::op_iterator op_iterator;
-  for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
-    Ops.push_back(*I);
-
-  V = Builder.buildAndExpr(Ops, 1);
-
-  if (Expr.isInverted()) V = Builder.buildNotExpr(V);
-
-  return V;
-}
-
-bool ImplyEvaluator::imply(VASTValPtr Guard, VASTValPtr TransCnd) {
-  Guard = buildLocalExpr(Guard);
-  TransCnd = buildLocalExpr(TransCnd);
-
-  // Is the guard implies transition condition?
-  VASTValPtr Imply = Builder.buildOrExpr(Builder.buildNotExpr(Guard), TransCnd, 1);
-
-  if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(Imply))
-    return Imm.isAllOnes();
-
-  return false;
 }
 
 void SeqValReachingDefAnalysis::viewGraph() {
@@ -146,9 +97,7 @@ void SlotInfo::initOutSet() {
     SlotOut.insert(std::make_pair(*I, SlotInfo::LiveInInfo()));
 }
 
-SeqValReachingDefAnalysis::SeqValReachingDefAnalysis()
-  : MachineFunctionPass(ID), Evaluator(0), VM(0)
-{
+SeqValReachingDefAnalysis::SeqValReachingDefAnalysis() : MachineFunctionPass(ID), VM(0) {
   initializeSeqValReachingDefAnalysisPass(*PassRegistry::getPassRegistry());
 }
 
@@ -161,9 +110,6 @@ void SeqValReachingDefAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 
 bool SeqValReachingDefAnalysis::runOnMachineFunction(MachineFunction &MF) {
   VM = getAnalysis<VerilogModuleAnalysis>().getModule();
-  // Allocate the evaluator.
-  ImplyEvaluator E;
-  Evaluator = &E;
 
   // Push back all the slot into the SlotVec for the purpose of view graph.
   typedef VASTModule::slot_iterator slot_it;
@@ -197,16 +143,14 @@ SlotInfo *SeqValReachingDefAnalysis::getSlotInfo(const VASTSlot *S) const {
 bool SeqValReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
                                            bool FromAliasSlot) {
   bool Changed = false;
-  const VASTSlot *FromSlot = From->getSlot(), *ToSlot = To->getSlot();
   typedef SlotInfo::vascyc_iterator it;
   // Store the slot numbers in signed integer, we will perform subtraction on
   // them and may produce negative result.
-  int FromSlotNum = FromSlot->SlotNum, ToSlotNum = ToSlot->SlotNum;
-  MachineBasicBlock *ToBB = ToSlot->getParentBB();
-  MachineBasicBlock *FromBB = FromSlot->getParentBB();
+  int FromSlotNum = From->getSlot()->SlotNum,
+      ToSlotNum = To->getSlot()->SlotNum;
+  MachineBasicBlock *ToBB = To->getSlot()->getParentBB();
+  MachineBasicBlock *FromBB = From->getSlot()->getParentBB();
   bool FromLaterAliasSlot = FromAliasSlot && FromSlotNum > ToSlotNum;
-
-  VASTValPtr TransCnd = FromSlot->getSuccCnd(ToSlot);
 
   for (it I = From->out_begin(), E = From->out_end(); I != E; ++I) {
     VASTSeqValue::Def PredOut = I->first;
@@ -234,17 +178,12 @@ bool SeqValReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
       // Do not add live out if data register R not live in the new BB.
       if (RegNum && DefMI) {
         if (DefMI->getOpcode() == VTM::VOpMvPhi && IsDefSlot) {
-          VASTValPtr Guard = PredOut.getGuardValue();
-          // Is the guard implies transition condition?
-          bool implied = Evaluator->imply(Guard, TransCnd);
-
-          assert(implied == (DefMI->getOperand(2).getMBB() == ToBB)
-                 && "Bad imply evaluation!");
           // The register is defined by the VOpMvPhi at FromSlot.
           // However, the copy maybe disabled when jumping to ToBB.
           // Then this define is even not live-in ToSlot, we can simply skip the
           // rest of the code.
-          if (!implied) continue;
+          if (DefMI->getOperand(2).getMBB() != ToBB)
+            continue;
         }
 
         // If the FromSlot is bigger than the ToSlot, then we are looping back.
