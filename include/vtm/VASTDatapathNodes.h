@@ -334,7 +334,7 @@ protected:
   void addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap);
 
 public:
-  BumpPtrAllocator *getAllocator() { return &Allocator; }
+  BumpPtrAllocator &getAllocator() { return Allocator; }
 
   VASTValPtr createExprImpl(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                         unsigned UB, unsigned LB);

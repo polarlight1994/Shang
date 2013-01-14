@@ -150,7 +150,7 @@ VASTValPtr DesignMetricsImpl::getAsOperandImpl(Value *Op,
 
   // Else we need to create a leaf node for the expression tree.
   VASTValueOperand *ValueOp
-    = DPContainer.getAllocator()->Allocate<VASTValueOperand>();
+    = DPContainer.getAllocator().Allocate<VASTValueOperand>();
     
   new (ValueOp) VASTValueOperand(Op, NumBits);
 
