@@ -470,7 +470,18 @@ VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
 }
 
 void VASTModule::print(raw_ostream &OS) const {
-  // Print the verilog module?
+  for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
+    VASTSlot *S = *SI;
+    if (S == 0) continue;
+
+    OS << "Slot" << S->SlotNum << '\n';
+
+    typedef VASTSlot::const_def_iterator def_iterator;
+    for (def_iterator I = S->def_begin(), E = S->def_end(); I != E; ++I) {
+      const VASTSeqDef &D = *I;
+      D.print(OS.indent(2));
+    }
+  }
 }
 
 VASTPort *VASTModule::addPort(const Twine &Name, unsigned BitWidth,

@@ -282,11 +282,13 @@ void SeqValReachingDefAnalysis::ComputeReachingDefinition() {
 
 void SeqValReachingDefAnalysis::ComputeGenAndKill() {
   // Collect the generated statements to the SlotGenMap.
-  typedef VASTModule::seqval_iterator it;
-  for (it SI = VM->seqval_begin(), SE = VM->seqval_end(); SI != SE; ++SI) {
-    VASTSeqValue *V = *SI;
+  typedef VASTModule::slot_iterator it;
+  for (it SI = VM->slot_begin(), SE = VM->slot_end(); SI != SE; ++SI) {
+    VASTSlot *S = *SI;
+    if (S == 0) continue;
 
-    for (vn_itertor I = V->begin(), E = V->end(); I != E; ++I) {
+    typedef VASTSlot::const_def_iterator def_iterator;
+    for (def_iterator I = S->def_begin(), E = S->def_end(); I != E; ++I) {
       const VASTSeqDef &D = *I;
       VASTSlot *S = D.getSlot();
       SlotInfo *SI = getSlotInfo(S);

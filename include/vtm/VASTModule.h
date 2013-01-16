@@ -80,6 +80,7 @@ public:
 
   typedef std::vector<VASTSlot*> SlotVecTy;
   typedef SlotVecTy::iterator slot_iterator;
+  typedef SlotVecTy::const_iterator const_slot_iterator;
 private:
   // Dirty Hack:
   // Buffers
@@ -304,6 +305,9 @@ public:
 
   slot_iterator slot_begin() { return Slots.begin(); }
   slot_iterator slot_end() { return Slots.end(); }
+
+  const_slot_iterator slot_begin() const { return Slots.begin(); }
+  const_slot_iterator slot_end() const { return Slots.end(); }
 
   VASTValPtr
   addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
