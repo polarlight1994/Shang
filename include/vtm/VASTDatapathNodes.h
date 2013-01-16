@@ -109,7 +109,8 @@ public:
   }
 };
 
-class VASTExpr : public VASTValue, public FoldingSetNode {
+class VASTExpr : public VASTValue, public VASTOperandList,
+                 public FoldingSetNode {
 public:
   enum Opcode {
     // bitwise logic datapath
@@ -146,7 +147,6 @@ private:
   const VASTUse *ops() const {
     return reinterpret_cast<const VASTUse*>(this + 1);
   }
-  VASTUse *ops() { return reinterpret_cast<VASTUse*>(this + 1); }
 
   // The total operand of this expression.
   unsigned ExprSize : 31;
@@ -161,10 +161,7 @@ private:
 
   void printAsOperandInteral(raw_ostream &OS) const;
 
-  void dropUses() {
-    for (VASTUse *I = ops(), *E = ops() + NumOps; I != E; ++I)
-      I->unlinkUseFromUser();
-  }
+  void dropUses();
 
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 
@@ -182,27 +179,10 @@ private:
 
   const char *getLUT() const;
 public:
-  const uint8_t Opc, NumOps,UB, LB;
+  const uint8_t Opc, UB, LB;
   Opcode getOpcode() const { return VASTExpr::Opcode(Opc); }
   const char *getFUName() const;
   const std::string getSubModName() const;
-
-  const VASTUse &getOperand(unsigned Idx) const {
-    assert(Idx < NumOps && "Index out of range!");
-    return ops()[Idx];
-  }
-
-  typedef const VASTUse *op_iterator;
-  op_iterator op_begin() const { return ops(); }
-  op_iterator op_end() const { return ops() + NumOps; }
-
-  //typedef VASTUse *op_iterator;
-  //op_iterator op_begin() const { return ops(); }
-  //op_iterator op_end() const { return ops() + num_ops(); }
-
-  ArrayRef<VASTUse> getOperands() const {
-    return ArrayRef<VASTUse>(ops(), NumOps);
-  }
 
   inline bool isSubBitSlice() const {
     return getOpcode() == dpAssign

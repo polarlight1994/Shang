@@ -87,7 +87,7 @@ public:
     SubClass *SCThis = reinterpret_cast<SubClass*>(this);
 
     typedef VASTExpr::op_iterator op_iterator;
-    for (unsigned i = 0; i < Expr->NumOps; ++i) {
+    for (unsigned i = 0; i < Expr->size(); ++i) {
       VASTValPtr Operand = Expr->getOperand(i);
       switch (Expr->getOpcode()) {
       case VASTExpr::dpLUT:

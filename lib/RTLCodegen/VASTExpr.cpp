@@ -200,8 +200,8 @@ static bool printFUAdd(raw_ostream &OS, const VASTWire *W) {
   VASTExpr *E = dyn_cast<VASTExpr>(W->getExpr());
   if (E == 0) return false;
 
-  assert(E->NumOps >= 2 && E->NumOps <=3 && "bad operand number!");
-  if (E->NumOps > 3) return false;
+  assert(E->size() >= 2 && E->size() <=3 && "bad operand number!");
+  if (E->size() > 3) return false;
 
   const VASTUse &OpA = E->getOperand(0), &OpB = E->getOperand(1);
 
@@ -218,7 +218,7 @@ static bool printFUAdd(raw_ostream &OS, const VASTWire *W) {
   OS << ", ";
   OpB.printAsOperand(OS);
   OS << ", ";
-  if (E->NumOps == 3) E->getOperand(2).printAsOperand(OS);
+  if (E->size() == 3) E->getOperand(2).printAsOperand(OS);
   else                OS << "1'b0";
   OS << ", ";
   W->printAsOperand(OS, false);
@@ -229,7 +229,7 @@ static bool printFUAdd(raw_ostream &OS, const VASTWire *W) {
 static bool printBinFU(raw_ostream &OS, const VASTWire *W) {
   assert(!W->getExpr().isInverted() && "Unexpected inverted mux!");
   VASTExpr *E = dyn_cast<VASTExpr>(W->getExpr());
-  assert(E->NumOps == 2 && "Not a binary expression!");
+  assert(E->size() == 2 && "Not a binary expression!");
   if (E == 0) return false;
 
   const VASTUse &OpA = E->getOperand(0), &OpB = E->getOperand(1);
@@ -254,8 +254,9 @@ static bool printBinFU(raw_ostream &OS, const VASTWire *W) {
 //===----------------------------------------------------------------------===//
 
 VASTExpr::VASTExpr(Opcode Opc, uint8_t NumOps, unsigned UB, unsigned LB)
-  : VASTValue(vastExpr, UB - LB), ExprSize(0), IsNamed(0),
-    Opc(Opc), NumOps(NumOps), UB(UB), LB(LB) {
+  : VASTValue(vastExpr, UB - LB),
+    VASTOperandList(reinterpret_cast<VASTUse*>(this + 1), NumOps),
+    ExprSize(0), IsNamed(0), Opc(Opc), UB(UB), LB(LB) {
   Contents.Name = 0;
   assert(NumOps && "Unexpected empty operand list!");
 }
@@ -384,7 +385,7 @@ const char *VASTExpr::getLUT() const {
   // 3 is for the space, the value of the truth table and the newline char in
   // each row.
   static char SOPBuffer[(6 + 3) /*Columns*/ * (1 << 6) /*Rows*/ + 1];
-  unsigned NumInputs = NumOps - 1;
+  unsigned NumInputs = Size - 1;
   unsigned NumRows = 1 << NumInputs;
   unsigned NumCols = NumInputs + 3;
   assert(NumRows * NumCols + 1 <= array_lengthof(SOPBuffer) && "LUT too big!");
@@ -435,7 +436,7 @@ static raw_ostream &printAssign(raw_ostream &OS, const VASTWire *Wire) {
 static void printCombMux(raw_ostream &OS, const VASTWire *W) {
   assert(!W->getExpr().isInverted() && "Unexpected inverted mux!");
   VASTExpr *E = W->getExpr().get();
-  unsigned NumOperands = E->NumOps;
+  unsigned NumOperands = E->size();
   assert((NumOperands & 0x1) == 0 && "Expect even operand number for CombMUX!");
 
   printCombMux(OS, E->getOperands(), W->getName(), W->getBitWidth());
@@ -475,4 +476,9 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
   printAssign(OS, this);
   V.printAsOperand(OS);
   OS << ";\n";
+}
+
+void VASTExpr::dropUses() {
+  for (VASTUse *I = Operands, *E = Operands + Size; I != E; ++I)
+    I->unlinkUseFromUser();
 }

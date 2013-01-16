@@ -32,6 +32,7 @@ class VASTRegister;
 class VASTModule;
 class vlang_raw_ostream;
 class raw_ostream;
+template<typename T> class ArrayRef;
 
 class VASTNode {
 public:
@@ -324,6 +325,37 @@ public:
   }
 
   VASTUse *get() { return I; }
+};
+
+class VASTOperandList {
+protected:
+  VASTUse *Operands;
+  unsigned Size;
+public:
+
+  VASTOperandList(VASTUse *Operands, unsigned Size)
+    : Operands(Operands), Size(Size) {}
+
+  const VASTUse &getOperand(unsigned Idx) const {
+    assert(Idx < Size && "Index out of range!");
+    return Operands[Idx];
+  }
+
+  VASTUse &getOperand(unsigned Idx) {
+    assert(Idx < Size && "Index out of range!");
+    return Operands[Idx];
+  }
+
+  typedef const VASTUse *op_iterator;
+  op_iterator op_begin() const { return Operands; }
+  op_iterator op_end() const { return Operands + Size; }
+
+  unsigned size() const { return Size; }
+  //typedef VASTUse *op_iterator;
+  //op_iterator op_begin() const { return ops(); }
+  //op_iterator op_end() const { return ops() + num_ops(); }
+
+  ArrayRef<VASTUse> getOperands() const;
 };
 
 class VASTValue : public VASTNode {

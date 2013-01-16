@@ -47,6 +47,16 @@ VASTImmediate::buildLiteral(uint64_t Value, unsigned bitwidth, bool isMinValue) 
   return ret;
 }
 
+void VASTImmediate::printAsOperandImpl(raw_ostream &OS, unsigned UB,
+                                       unsigned LB) const {
+  assert(UB == getBitWidth() && LB == 0 && "Cannot print bitslice of Expr!");
+  OS << getBitWidth() << "'h" << Int.toString(16, false);
+}
+
+void VASTImmediate::Profile(FoldingSetNodeID& ID) const {
+  Int.Profile(ID);
+}
+
 VASTSymbol::VASTSymbol(const char *Name, unsigned BitWidth)
   : VASTNamedValue(VASTNode::vastSymbol, Name, BitWidth) {}
 
@@ -79,12 +89,6 @@ void VASTUse::PinUser() const {
     S->Pin();
 }
 
-void VASTImmediate::printAsOperandImpl(raw_ostream &OS, unsigned UB,
-                                       unsigned LB) const {
-  assert(UB == getBitWidth() && LB == 0 && "Cannot print bitslice of Expr!");
-  OS << getBitWidth() << "'h" << Int.toString(16, false);
-}
-
-void VASTImmediate::Profile(FoldingSetNodeID& ID) const {
-  Int.Profile(ID);
+ArrayRef<VASTUse> VASTOperandList::getOperands() const {
+  return ArrayRef<VASTUse>(Operands, Size);
 }

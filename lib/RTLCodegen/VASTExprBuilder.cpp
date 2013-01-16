@@ -73,7 +73,7 @@ void VASTExprBuilder::calculateBitCatBitMask(VASTExprPtr Expr,
   KnownOnes = KnownZeros = APInt::getNullValue(ExprSize);
 
   // Concatenate the bit mask together.
-  for (unsigned i = 0; i < Expr->NumOps; ++i) {
+  for (unsigned i = 0; i < Expr->size(); ++i) {
     VASTValPtr CurBitSlice = Expr.getOperand(i);
     unsigned CurSize = CurBitSlice->getBitWidth();
     unsigned CurLB = CurUB - CurSize;
@@ -180,7 +180,7 @@ VASTValPtr VASTExprBuilder::foldBitSliceExpr(VASTValPtr U, uint8_t UB,
     SmallVector<VASTValPtr, 8> Ops;
     unsigned CurUB = Expr->getBitWidth(), CurLB = 0;
     unsigned LeadingBitsToLeft = 0, TailingBitsToTrim = 0;
-    for (unsigned i = 0; i < Expr->NumOps; ++i) {
+    for (unsigned i = 0; i < Expr->size(); ++i) {
       VASTValPtr CurBitSlice = Expr.getOperand(i);
       CurLB = CurUB - CurBitSlice->getBitWidth();
       // Not fall into (UB, LB] yet.
@@ -838,7 +838,7 @@ VASTValPtr VASTExprBuilder::buildAddExpr(ArrayRef<VASTValPtr> Ops,
       // Try to keep the operand bitwidth unchanged.
       unsigned OpBitwidth = NewOps[ExprIdx]->getBitWidth();
       NewOps.erase(NewOps.begin() + ExprIdx);
-      assert(Expr->NumOps == 2&&"Unexpected operand number of sub-expression!");
+      assert(Expr->size() == 2&&"Unexpected operand number of sub-expression!");
 
       // Replace the expression by the no-carry operand
       VASTValPtr ExprLHS = Expr->getOperand(0);

@@ -64,7 +64,7 @@ public:
     // We only flatten the expression to make full use of the carry bit.
     // So check if there is only 2 operand and the second operand can be fitted
     // into the carry bit.
-    if (Expr->NumOps != 2) return 0;
+    if (Expr->size() != 2) return 0;
 
     if (MustHasCarry && Expr->getOperand(1)->getBitWidth() != 1)
       return 0;

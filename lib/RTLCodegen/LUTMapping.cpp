@@ -329,7 +329,7 @@ bool LogicNetwork::buildAIG(VASTExpr *E) {
   // Only handle the boolean expressions.
   if (E->getOpcode() != VASTExpr::dpAnd) return false;
 
-  assert(E->NumOps == 2 && "Bad Operand number!");
+  assert(E->size() == 2 && "Bad Operand number!");
 
   VASTValPtr LHS = E->getOperand(0), RHS = E->getOperand(1);
   Abc_Obj_t *LHS_OBJ = getOrCreateObj(LHS.get()),

@@ -671,7 +671,7 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
   void *P = Allocator.Allocate(sizeof(VASTExpr) + Ops.size() * sizeof(VASTUse),
                                alignOf<VASTExpr>());
   VASTExpr *E = new (P) VASTExpr(Opc, Ops.size(), UB, LB);
-
+  VASTUse *UseBegin = reinterpret_cast<VASTUse*>(E + 1);
   // Initialize the use list and compute the actual size of the expression.
   unsigned ExprSize = 0;
 
@@ -681,7 +681,7 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
     if (VASTExpr *E = Ops[i].getAsLValue<VASTExpr>()) ExprSize += E->ExprSize;
     else                                              ++ExprSize;
 
-    (void) new (E->ops() + i) VASTUse(E, Ops[i]);
+    (void) new (UseBegin + i) VASTUse(E, Ops[i]);
   }
 
   E->ExprSize = ExprSize;

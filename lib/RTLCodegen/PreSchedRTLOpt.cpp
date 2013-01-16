@@ -248,10 +248,10 @@ void PreSchedRTLOpt::breakDownNAryExpr(VASTExpr *Expr) {
     return;
 
   // Already binary expressions no need to break them down.
-  if (Expr->NumOps <= 2) return;
+  if (Expr->size() <= 2) return;
 
   SmallVector<VASTValPtr, 8> Ops;
-  for (unsigned i = 0; i < Expr->NumOps; ++i)
+  for (unsigned i = 0; i < Expr->size(); ++i)
     Ops.push_back(Expr->getOperand(i));
 
   // Construct the expression tree for the NAry expression.
@@ -538,7 +538,7 @@ unsigned PreSchedRTLOpt::rewriteUnary(VASTExpr *Expr, MachineInstr *IP) {
 
 template<unsigned Opcode>
 unsigned PreSchedRTLOpt::rewriteBinExpr(VASTExpr *Expr, MachineInstr *IP) {
-  assert(Expr->NumOps == 2 && "Not binary expression!");
+  assert(Expr->size() == 2 && "Not binary expression!");
   MachineOperand DefMO = allocateRegMO(Expr);
   BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(Opcode))
     .addOperand(DefMO)
@@ -554,14 +554,14 @@ unsigned PreSchedRTLOpt::rewriteLUTExpr(VASTExpr *Expr, MachineInstr *IP) {
 
   // Collect the Fanins of the LUTs.
   SmallVector<MachineOperand, 6> Ops;
-  for (uint8_t i = 0; i < Expr->NumOps - 1; ++i)
+  for (uint8_t i = 0; i < Expr->size() - 1; ++i)
     Ops.push_back(getAsOperand(Expr->getOperand(i)));
 
   MachineInstrBuilder Builder =
     BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(VTM::VOpLUT))
       .addOperand(DefMO)
       // Add the truth table of the LUT in to the operand list.
-      .addOperand(getAsOperand(Expr->getOperand(Expr->NumOps - 1)))
+      .addOperand(getAsOperand(Expr->getOperand(Expr->size() - 1)))
       .addOperand(VInstrInfo::CreatePredicate())
       .addOperand(VInstrInfo::CreateTrace());
 
@@ -586,12 +586,12 @@ unsigned PreSchedRTLOpt::rewriteSel(VASTExpr *Expr, MachineInstr *IP) {
 }
 
 unsigned PreSchedRTLOpt::rewriteAdd(VASTExpr *Expr, MachineInstr *IP) {
-  assert(Expr->NumOps > 1 && Expr->NumOps < 4 && "Bad operand number!");
+  assert(Expr->size() > 1 && Expr->size() < 4 && "Bad operand number!");
   MachineOperand DefMO = allocateRegMO(Expr);
   MachineOperand LHS = getAsOperand(Expr->getOperand(0));
   MachineOperand RHS = getAsOperand(Expr->getOperand(1));
   MachineOperand Carry = VInstrInfo::CreateImm(0, 1);
-  if (Expr->NumOps == 3) Carry = getAsOperand(Expr->getOperand(2));
+  if (Expr->size() == 3) Carry = getAsOperand(Expr->getOperand(2));
 
   BuildMI(*IP->getParent(), IP, DebugLoc(), VInstrInfo::getDesc(VTM::VOpAdd))
     .addOperand(DefMO).addOperand(LHS).addOperand(RHS).addOperand(Carry)
@@ -766,7 +766,7 @@ MachineBasicBlock *PreSchedRTLOpt::calculateInsertMBB(VASTExpr *Expr) const {
 
   // Find a MBB that dominated by all defining MBB of the operands.
   // In a dominator tree, these MBBs should distributes in the nodes of a path.
-  for (unsigned i = 0; i < Expr->NumOps; ++i) {
+  for (unsigned i = 0; i < Expr->size(); ++i) {
     MachineBasicBlock *CurMBB = getDefMBB(Expr->getOperand(i));
     if (DT->dominates(MBB, CurMBB)) {
       MBB = CurMBB;
