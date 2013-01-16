@@ -24,6 +24,50 @@ class VASTRegister;
 class MachineBasicBlock;
 class VASTExprBuilder;
 class vlang_raw_ostream;
+class VASTSlot;
+
+class VASTSeqDef : public VASTOperandList {
+  VASTSeqValue *Def;
+  VASTSlot *S;
+  MachineInstr *DefMI;
+public:
+  VASTSeqDef(VASTSeqValue *Def, VASTSlot *S,  MachineInstr *DefMI,
+             VASTUse *Operands, unsigned Size);
+
+  operator VASTSeqValue *() const { return Def; }
+  const char *getName() const;
+
+  // Active Slot accessor
+  VASTSlot *getSlot() const { return S; }
+  unsigned getSlotNum() const;
+
+  //
+  MachineInstr *getDefMI() const { return DefMI; }
+
+  virtual void print(raw_ostream &OS) const;
+
+  // Get the guard of the assignment.
+  VASTUse &getGuard() { return getOperand(0); }
+  const VASTUse &getGuard() const { return getOperand(0); }
+
+  VASTUse &getSrcVal() {
+    assert(Size == 2 && "Operand list is not for assignment!");
+    return getOperand(1);
+  }
+
+  const VASTUse &getSrcVal() const {
+    assert(Size == 2 && "Operand list is not for assignment!");
+    return getOperand(1);
+  }
+
+  // Provide the < operator to support set of VASTSeqDef.
+  bool operator<(const VASTSeqDef *RHS) const {
+    if (Def < RHS->Def) return true;
+    else if (Def > RHS->Def) return false;
+
+    return getGuard() < RHS->getGuard();
+  }
+};
 
 class VASTSlot : public VASTNode {
 public:
@@ -68,6 +112,11 @@ private:
   uint16_t StartSlot;
   uint16_t EndSlot;
   uint16_t II;
+
+  // The definitions in the current slot.
+  typedef std::vector<VASTSeqDef> SeqDefVector;
+  SeqDefVector Defintions;
+
   // Successor slots of this slot.
   succ_cnd_iterator succ_cnd_begin() { return NextSlots.begin(); }
   succ_cnd_iterator succ_cnd_end() { return NextSlots.end(); }
@@ -101,6 +150,11 @@ public:
   VASTRegister *getRegister() const;
   VASTValue *getReady() const { return cast<VASTValue>(SlotReady); }
   VASTValue *getActive() const { return cast<VASTValue>(SlotActive); }
+
+  void addDefinition(VASTSeqDef D) { Defintions.push_back(D); }
+  typedef SeqDefVector::const_iterator const_def_iterator;
+  const_def_iterator def_begin() const { return Defintions.begin(); }
+  const_def_iterator def_end() const { return Defintions.end(); }
 
   bool hasNextSlot(VASTSlot *NextSlot) const;
 
@@ -191,49 +245,6 @@ template<> struct GraphTraits<VASTSlot*> {
   }
   static inline ChildIteratorType child_end(NodeType *N) {
     return N->succ_end();
-  }
-};
-
-class VASTSeqDef : public VASTOperandList {
-  VASTSeqValue *Def;
-  VASTSlot *S;
-  MachineInstr *DefMI;
-public:
-  VASTSeqDef(VASTSeqValue *Def, VASTSlot *S,  MachineInstr *DefMI,
-             VASTUse *Operands, unsigned Size);
-
-  operator VASTSeqValue *() const { return Def; }
-  const char *getName() const;
-
-  // Active Slot accessor
-  VASTSlot *getSlot() const { return S; }
-  unsigned getSlotNum() const { return S->SlotNum; }
-
-  //
-  MachineInstr *getDefMI() const { return DefMI; }
-
-  virtual void print(raw_ostream &OS) const;
-
-  // Get the guard of the assignment.
-  VASTUse &getGuard() { return getOperand(0); }
-  const VASTUse &getGuard() const { return getOperand(0); }
-
-  VASTUse &getSrcVal() {
-    assert(Size == 2 && "Operand list is not for assignment!");
-    return getOperand(1);
-  }
-
-  const VASTUse &getSrcVal() const {
-    assert(Size == 2 && "Operand list is not for assignment!");
-    return getOperand(1);
-  }
-
-  // Provide the < operator to support set of VASTSeqDef.
-  bool operator<(const VASTSeqDef *RHS) const {
-    if (Def < RHS->Def) return true;
-    else if (Def > RHS->Def) return false;
-
-    return getGuard() < RHS->getGuard();
   }
 };
 

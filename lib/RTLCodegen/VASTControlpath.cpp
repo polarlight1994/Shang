@@ -275,13 +275,17 @@ void VASTSeqDef::print(raw_ostream &OS) const {
 
 VASTSeqDef::VASTSeqDef(VASTSeqValue *Def, VASTSlot *S,  MachineInstr *DefMI,
                        VASTUse *Operands, unsigned Size)
-  : VASTOperandList(Operands, Size), Def(Def), S(S), DefMI(DefMI) {}
+  : VASTOperandList(Operands, Size), Def(Def), S(S), DefMI(DefMI) {
+  S->addDefinition(*this);
+}
 
 const char *VASTSeqDef::getName() const {
   if (Def) return Def->getName();
 
   return "<no-def>";
 }
+
+unsigned VASTSeqDef::getSlotNum() const { return getSlot()->SlotNum; }
 //----------------------------------------------------------------------------//
 
 bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> >
