@@ -73,22 +73,22 @@ void SlotInfo::dump() const {
 void SlotInfo::print(raw_ostream &OS) const {
   OS << S->getName() << "\nGen:\n";
   for (gen_iterator I = gen_begin(), E = gen_end(); I != E; ++I) {
-    VASTSeqValue::Def D = *I;
-    OS.indent(2) << D.getValueName() << "\n";
+    const VASTSeqDef &D = *I;
+    OS.indent(2) << D.getName() << "\n";
   }
 
   OS << "\n\nIn:\n";
   for (VASCycMapTy::const_iterator I = in_begin(), E = in_end(); I != E; ++I) {
-    VASTSeqValue::Def D = I->first;
-    OS.indent(2) << D.getValueName() << '[' << I->second.getCycles() << "]\n";
+    const VASTSeqDef &D = I->first;
+    OS.indent(2) << D.getName() << '[' << I->second.getCycles() << "]\n";
   }
 
   OS << "\n\n";
 }
 
 // Any VAS whose value is overwritten at this slot is killed.
-bool SlotInfo::isVASKilled(VASTSeqValue::Def D) const {
-  return OverWrittenValue.count(D.getValue());
+bool SlotInfo::isVASKilled(VASTSeqDef D) const {
+  return OverWrittenValue.count(D);
 }
 
 void SlotInfo::initOutSet() {
@@ -153,8 +153,8 @@ bool SeqValReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
   bool FromLaterAliasSlot = FromAliasSlot && FromSlotNum > ToSlotNum;
 
   for (it I = From->out_begin(), E = From->out_end(); I != E; ++I) {
-    VASTSeqValue::Def PredOut = I->first;
-    VASTSeqValue *V = PredOut.getValue();
+    const VASTSeqDef &PredOut = I->first;
+    VASTSeqValue *V = PredOut;
 
     VASTSlot *DefSlot = PredOut.getSlot();
     SlotInfo::LiveInInfo LI = I->second;
@@ -287,7 +287,7 @@ void SeqValReachingDefAnalysis::ComputeGenAndKill() {
     VASTSeqValue *V = *SI;
 
     for (vn_itertor I = V->begin(), E = V->end(); I != E; ++I) {
-      VASTSeqValue::Def D = *I;
+      const VASTSeqDef &D = *I;
       VASTSlot *S = D.getSlot();
       SlotInfo *SI = getSlotInfo(S);
       SI->insertGen(D);
@@ -296,7 +296,7 @@ void SeqValReachingDefAnalysis::ComputeGenAndKill() {
       if (!S->hasAliasSlot()) continue;
 
       unsigned CurSlotNum = S->SlotNum;
-      VASTSeqValue *V = D.getValue();
+      VASTSeqValue *V = D;
       bool IsLoopingBackPHIMove = false;
       if (const MachineInstr *MI = D.getDefMI())
         IsLoopingBackPHIMove = MI->getOpcode() == VTM::VOpMvPhi

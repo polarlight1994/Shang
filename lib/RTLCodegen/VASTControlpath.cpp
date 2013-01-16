@@ -261,18 +261,35 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
 }
 
 //===----------------------------------------------------------------------===//
-VASTSVGuard::VASTSVGuard(VASTUse *U, VASTSlot *S, MachineInstr *MI)
-  : Val(U), S(S), DefMI(MI) {}
+void VASTSeqDef::print(raw_ostream &OS) const {
+  OS << getName() << '@' << getSlotNum() << '{';
+  for (unsigned i = 0; i < Size; ++i) {
+    getOperand(i).printAsOperand(OS);
+    OS << ", ";
+  }
+  OS << "} ";
 
-void VASTSVGuard::print(raw_ostream &OS) const {
-  get().printAsOperand(OS);
-  // TODO: Print the slot information.
+  if (DefMI) DefMI->print(OS);
+  else       OS << '\n';
 }
+
+VASTSeqDef::VASTSeqDef(VASTSeqValue *Def, VASTSlot *S,  MachineInstr *DefMI,
+                       VASTUse *Operands, unsigned Size)
+  : VASTOperandList(Operands, Size), Def(Def), S(S), DefMI(DefMI) {}
+
+const char *VASTSeqDef::getName() const {
+  if (Def) return Def->getName();
+
+  return "<no-def>";
+}
+//----------------------------------------------------------------------------//
 
 bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> >
                                &CSEMap) const {
-  for (const_itertor I = begin(), E = end(); I != E; ++I)
-    CSEMap[*I->second].push_back(I->first);
+  for (const_itertor I = begin(), E = end(); I != E; ++I) {
+    const VASTSeqDef &L = *I;
+    CSEMap[L.getSrcVal()].push_back(L.getGuard());
+  }
 
   return !CSEMap.empty();
 }
@@ -281,6 +298,10 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
                                    const VASTModule *Mod) const {
   if (empty()) return;
 
+#ifndef NDEBUG
+  std::set<VASTSeqDef*> UniqueGuards;
+#endif
+
   // Concatenate all condition together to detect the case that more than one
   // case is activated.
   std::string AllPred;
@@ -288,7 +309,8 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
 
   AllPredSS << '{';
   for (const_itertor I = begin(), E = end(); I != E; ++I) {
-    I->first->printAsOperand(AllPredSS, false);
+    const VASTSeqDef &L = *I;
+    L.getGuard().printAsOperand(AllPredSS);
     AllPredSS << ", ";
   }
   AllPredSS << "1'b0 }";
@@ -305,14 +327,15 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
 
   // Display the conflicted condition and its slot.
   for (const_itertor I = begin(), E = end(); I != E; ++I) {
+    const VASTSeqDef &L = *I;
     OS.indent(2) << "if (";
-    I->first->printAsOperand(OS, false);
+    L.getGuard().printAsOperand(OS);
     OS << ") begin\n";
 
     OS.indent(4) << "$display(\"Condition: ";
-    I->first->printAsOperand(OS, false);
+    L.getGuard().printAsOperand(OS);
 
-    unsigned CndSlot = I->first.getSlotNum();
+    unsigned CndSlot = L.getSlotNum();
     VASTSlot *S = Mod->getSlot(CndSlot);
     OS << ", current slot: " << CndSlot << ", ";
 
@@ -335,9 +358,8 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
   OS.indent(2) << "$finish();\nend\n";
 }
 
-void VASTSeqValue::addAssignment(VASTUse *Src, VASTSVGuard Guard) {
-  bool inserted = Assigns.insert(std::make_pair(Guard, Src)).second;
-  assert(inserted &&  "Assignment condition conflict detected!");
+void VASTSeqValue::addAssignment(VASTSeqDef Ops) {
+  Assigns.push_back(Ops);
 }
 
 void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
