@@ -300,7 +300,7 @@ public:
   // Functions to write the verilog code.
   void verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
                        const VASTModule *Mod) const;
-
+  void verify() const;
   void printSelector(raw_ostream &OS, unsigned Bitwidth) const;
   void printSelector(raw_ostream &OS) const {
     printSelector(OS, getBitWidth());

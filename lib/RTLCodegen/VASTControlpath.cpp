@@ -298,12 +298,22 @@ bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> >
   return !CSEMap.empty();
 }
 
+void VASTSeqValue::verify() const {
+  std::set<VASTValPtr> UniqueGuards;
+
+  for (const_itertor I = begin(), E = end(); I != E; ++I) {
+    const VASTSeqDef &L = *I;
+    bool success = UniqueGuards.insert(L.getGuard()).second;
+    assert(success && "Conflict assignment detected!");
+  }
+}
+
 void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
                                    const VASTModule *Mod) const {
   if (empty()) return;
 
 #ifndef NDEBUG
-  std::set<VASTSeqDef*> UniqueGuards;
+  verify();
 #endif
 
   // Concatenate all condition together to detect the case that more than one
