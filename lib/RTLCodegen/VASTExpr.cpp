@@ -419,7 +419,7 @@ void VASTExpr::Profile(FoldingSetNodeID& ID) const {
   ID.AddInteger(getOpcode());
   ID.AddInteger(UB);
   ID.AddInteger(LB);
-  typedef VASTExpr::op_iterator op_iterator;
+  typedef VASTExpr::const_op_iterator op_iterator;
   for (op_iterator OI = op_begin(), OE = op_end(); OI != OE; ++OI) {
     VASTValPtr Operand = *OI;
     ID.AddPointer(Operand);

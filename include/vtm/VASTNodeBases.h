@@ -350,9 +350,13 @@ public:
     return Operands[Idx];
   }
 
-  typedef const VASTUse *op_iterator;
-  op_iterator op_begin() const { return Operands; }
-  op_iterator op_end() const { return Operands + Size; }
+  typedef const VASTUse *const_op_iterator;
+  const_op_iterator op_begin() const { return Operands; }
+  const_op_iterator op_end() const { return Operands + Size; }
+
+  typedef VASTUse *op_iterator;
+  op_iterator op_begin() { return Operands; }
+  op_iterator op_end() { return Operands + Size; }
 
   unsigned size() const { return Size; }
   //typedef VASTUse *op_iterator;

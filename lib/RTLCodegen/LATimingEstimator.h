@@ -86,7 +86,7 @@ public:
     assert(CurSrcInfo.empty() && "We are visiting the same Expr twice?");
     SubClass *SCThis = reinterpret_cast<SubClass*>(this);
 
-    typedef VASTExpr::op_iterator op_iterator;
+    typedef VASTExpr::const_op_iterator op_iterator;
     for (unsigned i = 0; i < Expr->size(); ++i) {
       VASTValPtr Operand = Expr->getOperand(i);
       switch (Expr->getOpcode()) {
