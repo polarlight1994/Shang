@@ -191,32 +191,30 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
   } // SS flushes automatically here.
 
   VASTValPtr SelfLoopCnd;
-  SmallVector<VASTValPtr, 2> SlotCndVector;
   VASTValPtr AlwaysTrue = Builder.getBoolImmediate(true);
 
   assert(!NextSlots.empty() && "Expect at least 1 next slot!");
   for (succ_cnd_iterator I = succ_cnd_begin(),E = succ_cnd_end(); I != E; ++I) {
     VASTSeqValue *NextSlotReg = I->first->getValue();
     if (I->first->SlotNum == SlotNum) SelfLoopCnd = I->second;
-    SlotCndVector.push_back(I->second);
     // Build the assignment and update the successor branching condition.
-    I->second = Mod.addAssignment(NextSlotReg, AlwaysTrue, this, SlotCndVector);
-    SlotCndVector.clear();
+    Mod.addAssignment(NextSlotReg, AlwaysTrue, this, I->second);
   }
 
   assert(!(SelfLoopCnd && PredAliasSlots)
          && "Unexpected have self loop and pred alias slot at the same time.");
+  SmallVector<VASTValPtr, 2> CndVector;
   // Only disable the current slot if there is no alias slot enable current
   // slot.
   if (PredAliasSlots)
-    SlotCndVector.push_back(Builder.buildNotExpr(PredAliasSlots));
+    CndVector.push_back(Builder.buildNotExpr(PredAliasSlots));
   // Disable the current slot when we are not looping back.
   if (SelfLoopCnd)
-    SlotCndVector.push_back(Builder.buildNotExpr(SelfLoopCnd));
+    CndVector.push_back(Builder.buildNotExpr(SelfLoopCnd));
 
   // Disable the current slot.
   Mod.addAssignment(getValue(), Mod.getBoolImmediateImpl(false), this,
-                    SlotCndVector);
+                    Builder.buildAndExpr(CndVector, 1));
 
   std::string SlotReady = std::string(getName()) + "Ready";
   for (VASTSlot::const_fu_ctrl_it I = enable_begin(), E = enable_end();
@@ -224,12 +222,13 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
     assert(!AliasEnables.count(I->first) && "Signal enabled by alias slot!");
     // No need to wait for the slot ready.
     // We may try to enable and disable the same port at the same slot.
-    SlotCndVector.clear();
-    SlotCndVector.push_back(getValue());
+    CndVector.clear();
+    CndVector.push_back(getValue());
     VASTValPtr ReadyCnd
       = Builder.buildAndExpr(getReady()->getAsInlineOperand(false),
                              I->second.getAsInlineOperand(), 1);
-    Mod.addAssignment(I->first, ReadyCnd, this, SlotCndVector, 0, false);
+    Mod.addAssignment(I->first, ReadyCnd, this, Builder.buildAndExpr(CndVector, 1),
+                      0, false);
   }
 
   SmallVector<VASTValPtr, 4> DisableAndCnds;
@@ -265,7 +264,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
 
       VASTSeqValue *En = I->first;
       Mod.addAssignment(En, Mod.getBoolImmediateImpl(false), this,
-                        DisableAndCnds, 0, false);
+                        Builder.buildAndExpr(DisableAndCnds, 1), 0, false);
       DisableAndCnds.clear();
     }
   }

@@ -1019,19 +1019,3 @@ VASTValPtr VASTExprBuilder::buildSExtExpr(VASTValPtr V, unsigned DstBitWidth) {
   VASTValPtr Ops[] = { ExtendBits, V };
   return buildBitCatExpr(Ops, DstBitWidth);
 }
-
-VASTValPtr VASTModule::buildGuardExpr(VASTSlot *S,
-                                      SmallVectorImpl<VASTValPtr> &Cnds,
-                                      bool AddSlotActive){
-  // We only assign the Src to Dst when the given slot is active.
-  if (AddSlotActive) {
-    Cnds.push_back(S->getActive()->getAsInlineOperand(false));
-  }
-
-  VASTValPtr V = Builder->buildAndExpr(Cnds, 1);
-
-  // Recover the condition vector.
-  if (AddSlotActive) Cnds.pop_back();
-
-  return V;
-}

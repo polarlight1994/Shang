@@ -103,7 +103,6 @@ private:
 
   // The Name of the Design.
   std::string Name;
-  VASTExprBuilder *Builder;
 
   // The port starting offset of a specific function unit.
   SmallVector<std::map<unsigned, unsigned>, VFUs::NumCommonFUs> FUPortOffsets;
@@ -115,9 +114,6 @@ private:
                     bool isInput);
 
   void writeProfileCounters(vlang_raw_ostream &OS, VASTSlot *S, bool isFirstSlot);
-
-  VASTValPtr buildGuardExpr(VASTSlot *S, SmallVectorImpl<VASTValPtr> &Cnds,
-                            bool AddSlotActive = true);
 public:
   static std::string DirectClkEnAttr, ParallelCaseAttr, FullCaseAttr;
 
@@ -134,13 +130,9 @@ public:
     RetPort // Port for function return value.
   };
 
-  VASTModule(const Twine &Name, VASTExprBuilder *Builder);
+  VASTModule(const Twine &Name);
 
   ~VASTModule();
-
-  void setBuilder(VASTExprBuilder *Builder) {
-    this->Builder = Builder;
-  }
 
   void reset();
 
@@ -313,10 +305,9 @@ public:
   const_slot_iterator slot_begin() const { return Slots.begin(); }
   const_slot_iterator slot_end() const { return Slots.end(); }
 
-  VASTValPtr
-  addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
-                SmallVectorImpl<VASTValPtr> &Cnds, MachineInstr *DefMI = 0,
-                bool AddSlotActive = true);
+  void addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
+                     VASTValPtr GuardCnd, MachineInstr *DefMI = 0,
+                     bool AddSlotActive = true);
 
   VASTWire *assign(VASTWire *W, VASTValPtr V);
 

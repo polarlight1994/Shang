@@ -28,7 +28,7 @@ public:
   bool runOnMachineFunction(MachineFunction &MF);
   void releaseMemory();
 
-  VASTModule *createModule(const std::string &Name, VASTExprBuilder *Builder);
+  VASTModule *createModule(const std::string &Name);
   VASTModule *getModule() const {
     assert(Module && "The module is not yet created!");
     return Module;

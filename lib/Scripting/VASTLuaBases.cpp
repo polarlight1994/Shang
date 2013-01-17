@@ -141,14 +141,10 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 
 //----------------------------------------------------------------------------//
 
-VASTModule::VASTModule(const Twine &Name, VASTExprBuilder *Builder)
-  : VASTNode(vastModule),
-    ControlBlock(*(new std::string())), LangControlBlock(ControlBlock),
-    Name(Name.str()), Builder(Builder), FUPortOffsets(VFUs::NumCommonFUs),
-    NumArgPorts(0)
-{
-    Ports.append(NumSpecialPort, 0);
-}
+VASTModule::VASTModule(const Twine &Name)
+  : VASTNode(vastModule), ControlBlock(*(new std::string())),
+    LangControlBlock(ControlBlock), Ports(NumSpecialPort), Name(Name.str()),
+    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0) {}
 
 VASTSeqValue *
 VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
@@ -463,28 +459,22 @@ VASTValPtr VASTModule::wrapSeqValue(VASTValPtr Src, VASTSeqValue *V)  {
   return Src;
 }
 
-VASTValPtr
-VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
-                          SmallVectorImpl<VASTValPtr> &Cnds, MachineInstr *DefMI,
-                          bool AddSlotActive) {
-  VASTValPtr GuardCnd;
+void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
+                               VASTValPtr GuardCnd, MachineInstr *DefMI,
+                               bool AddSlotActive) {
+  assert(Src && "Bad assignment source!");
 
-  if (Src) {
-    // Create a wrapper to avoid the direct cycle in the def-use chain.
-    Src = wrapSeqValue(Src, V);
-    GuardCnd = buildGuardExpr(Slot, Cnds, false);
-    void *P =  Allocator.Allocate(sizeof(VASTSeqDef) + 2 * sizeof(VASTUse),
-                                  alignOf<VASTSeqDef>());
-    VASTSeqDef *Def = reinterpret_cast<VASTSeqDef*>(P);
-    // Create the uses in the list.
-    VASTUse *UseBegin = reinterpret_cast<VASTUse*>(Def + 1);
-    new (Def) VASTSeqDef(Slot, AddSlotActive, DefMI, UseBegin, 2);
-    new (UseBegin) VASTUse(V, wrapSeqValue(GuardCnd, V));
-    new (UseBegin + 1) VASTUse(V, Src);
-    V->addAssignment(Def);
-  }
-
-  return GuardCnd;
+  // Create a wrapper to avoid the direct cycle in the def-use chain.
+  Src = wrapSeqValue(Src, V);
+  void *P =  Allocator.Allocate(sizeof(VASTSeqDef) + 2 * sizeof(VASTUse),
+                                alignOf<VASTSeqDef>());
+  VASTSeqDef *Def = reinterpret_cast<VASTSeqDef*>(P);
+  // Create the uses in the list.
+  VASTUse *UseBegin = reinterpret_cast<VASTUse*>(Def + 1);
+  new (Def) VASTSeqDef(Slot, AddSlotActive, DefMI, UseBegin, 2);
+  new (UseBegin) VASTUse(V, wrapSeqValue(GuardCnd, V));
+  new (UseBegin + 1) VASTUse(V, Src);
+  V->addAssignment(Def);
 }
 
 void VASTModule::print(raw_ostream &OS) const {

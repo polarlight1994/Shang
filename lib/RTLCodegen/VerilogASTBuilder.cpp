@@ -336,6 +336,10 @@ class VerilogASTBuilder : public MachineFunctionPass,
     OrCnd(S->getOrCreateEnable(P), Cnd);
   }
 
+  void addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
+                     ArrayRef<VASTValPtr> Cnds, MachineInstr *DefMI = 0,
+                     bool AddSlotActive = true);
+
   void addSlotReady(MachineInstr *MI, VASTSlot *Slot);
   void emitFunctionSignature(const Function *F, VASTSubModule *SubMod = 0);
   void emitCommonPort(VASTSubModule *SubMod);
@@ -459,7 +463,7 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
 
   Builder.reset(new DatapathBuilder(*this, *MRI));
   VerilogModuleAnalysis &VMA = getAnalysis<VerilogModuleAnalysis>();
-  VM = VMA.createModule(FInfo->getInfo().getModName(), Builder.get());
+  VM = VMA.createModule(FInfo->getInfo().getModName());
   VM->allocaSlots(FInfo->getTotalSlots());
 
   emitFunctionSignature(F.getFunction());
@@ -496,6 +500,15 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
 
 void VerilogASTBuilder::print(raw_ostream &O, const Module *M) const {
 
+}
+
+void VerilogASTBuilder::addAssignment(VASTSeqValue *V, VASTValPtr Src,
+                                      VASTSlot *Slot, ArrayRef<VASTValPtr> Cnds,
+                                      MachineInstr *DefMI, bool AddSlotActive) {
+  if (!Src) return;
+
+  VASTValPtr Cnd = Builder->buildAndExpr(Cnds, 1);
+  VM->addAssignment(V, Src, Slot, Cnd, DefMI, AddSlotActive);
 }
 
 void VerilogASTBuilder::emitIdleState() {
@@ -937,7 +950,7 @@ void VerilogASTBuilder::emitOpReadFU(MachineInstr *MI, VASTSlot *Slot,
   // Ignore the identical copy.
   if (DstR == SrcVal) return;
 
-  VM->addAssignment(DstR, SrcVal, Slot, Cnds, MI, true);
+  addAssignment(DstR, SrcVal, Slot, Cnds, MI, true);
 }
 
 void VerilogASTBuilder::emitOpDisableFU(MachineInstr *MI, VASTSlot *Slot,
@@ -973,7 +986,7 @@ void VerilogASTBuilder::emitOpReadReturn(MachineInstr *MI, VASTSlot *Slot,
   VASTSeqValue *R = getAsLValue<VASTSeqValue>(MI->getOperand(0));
   // Dirty Hack: Do not trust the bitwidth information of the operand
   // representing the return port.
-  VM->addAssignment(R, lookupSignal(MI->getOperand(1).getReg()), Slot,
+  addAssignment(R, lookupSignal(MI->getOperand(1).getReg()), Slot,
                     Cnds, MI);
 }
 
@@ -996,7 +1009,7 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
     // Assign the new value for this function call to the operand registers.
     for (unsigned i = 4, e = MI->getNumOperands(); i != e; ++i) {
       VASTValPtr V = getAsOperandImpl(MI->getOperand(i));
-      VM->addAssignment(Submod->getFanin(i - 4), V, Slot, Cnds, MI);
+      addAssignment(Submod->getFanin(i - 4), V, Slot, Cnds, MI);
     }
 
     return;
@@ -1057,7 +1070,7 @@ void VerilogASTBuilder::emitOpRetVal(MachineInstr *MI, VASTSlot *Slot,
                                      VASTValueVecTy &Cnds) {
   unsigned retChannel = MI->getOperand(1).getImm();
   assert(retChannel == 0 && "Only support Channel 0!");
-  VM->addAssignment(VM->getRetPort().getSeqVal(),
+  addAssignment(VM->getRetPort().getSeqVal(),
                     getAsOperandImpl(MI->getOperand(0)),
                     Slot, Cnds, MI);
 }
@@ -1069,19 +1082,19 @@ void VerilogASTBuilder::emitOpMemTrans(MachineInstr *MI, VASTSlot *Slot,
   // Emit Address.
   std::string RegName = VFUMemBus::getAddrBusName(FUNum) + "_r";
   VASTSeqValue *R = VM->getSymbol<VASTSeqValue>(RegName);
-  VM->addAssignment(R, getAsOperandImpl(MI->getOperand(1)), Slot, Cnds, MI);
+  addAssignment(R, getAsOperandImpl(MI->getOperand(1)), Slot, Cnds, MI);
   // Assign store data.
   RegName = VFUMemBus::getOutDataBusName(FUNum) + "_r";
   R = VM->getSymbol<VASTSeqValue>(RegName);
-  VM->addAssignment(R, getAsOperandImpl(MI->getOperand(2)), Slot, Cnds, MI);
+  addAssignment(R, getAsOperandImpl(MI->getOperand(2)), Slot, Cnds, MI);
   // And write enable.
   RegName = VFUMemBus::getCmdName(FUNum) + "_r";
   R = VM->getSymbol<VASTSeqValue>(RegName);
-  VM->addAssignment(R, getAsOperandImpl(MI->getOperand(3)), Slot, Cnds, MI);
+  addAssignment(R, getAsOperandImpl(MI->getOperand(3)), Slot, Cnds, MI);
   // The byte enable.
   RegName = VFUMemBus::getByteEnableName(FUNum) + "_r";
   R = VM->getSymbol<VASTSeqValue>(RegName);
-  VM->addAssignment(R, getAsOperandImpl(MI->getOperand(4)), Slot, Cnds, MI);
+  addAssignment(R, getAsOperandImpl(MI->getOperand(4)), Slot, Cnds, MI);
 
   // Remember we enabled the memory bus at this slot.
   std::string EnableName = VFUMemBus::getEnableName(FUNum) + "_r";
@@ -1109,20 +1122,20 @@ void VerilogASTBuilder::emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot,
 
     if (IsWrite) {
       VASTValPtr Data = getAsOperandImpl(MI->getOperand(2));
-      VM->addAssignment(AddrPort, Data, Slot, Cnds, MI);
+      addAssignment(AddrPort, Data, Slot, Cnds, MI);
     }
 
     return;
   }
 
-  VM->addAssignment(AddrPort, Addr, Slot, Cnds, MI);
+  addAssignment(AddrPort, Addr, Slot, Cnds, MI);
 
   // Also assign the data to write to the dataport of the block RAM.
   if (IsWrite) {
     VASTValPtr Data = getAsOperandImpl(MI->getOperand(2));
     VASTSeqValue *DataPort = cast<VASTSeqValue>(lookupSignal(PortRegNum + 1));
 
-    VM->addAssignment(DataPort, Data, Slot, Cnds, MI);
+    addAssignment(DataPort, Data, Slot, Cnds, MI);
   }
 }
 
