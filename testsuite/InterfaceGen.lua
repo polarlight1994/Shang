@@ -108,6 +108,13 @@ reg [63:0]       MemWDataPipe0Reg;
 wire [63:0]      MemRDataPipe1Wire;
 reg [63:0]       MemRDataPipe2Reg;
 reg [2:0]        MemAddrPipe2Reg;
+integer counter = 0;
+
+// synthesis translate_off
+// Count the number of cycles the memory bus is actived.
+always@(posedge clk,negedge rstN)
+  if (mem0en | WEnPipe0Reg | REnPipe0Reg | REnPipe1Reg | mem0rdy) counter <= counter + 1;
+// synthesis translate_on
 
 // Stage 1: registering all the input for writes
 always@(posedge clk,negedge rstN)begin
@@ -305,11 +312,11 @@ always_comb begin
 
   if (fin) begin
     wfile = $('$')fopen("$(CounterFile)");
-    $('$')fwrite (wfile,"$(RTLModuleName) hardware run cycles %0d\n",cnt);
+    $('$')fwrite (wfile,"$(RTLModuleName) hardware run cycles %0d %0d\n",cnt, i1.i1.counter);
     $('$')fclose(wfile);
 
     wtmpfile = $('$')fopen("$(BenchmarkCycles)","a");
-    $('$')fwrite (wtmpfile,",\n{\"name\":\"$(RTLModuleName)\", \"total\": %0d, \"wait\": 1}", cnt);
+    $('$')fwrite (wtmpfile,",\n{\"name\":\"$(RTLModuleName)\", \"total\": %0d, \"wait\": %0d}", cnt, i1.i1.counter);
     $('$')fclose(wtmpfile);
     $display("At %t the result is correct!", $('$')time());
   
