@@ -61,12 +61,7 @@ public:
   }
 
   // Provide the < operator to support set of VASTSeqDef.
-  bool operator<(const VASTSeqDef *RHS) const {
-    if (Def < RHS->Def) return true;
-    else if (Def > RHS->Def) return false;
-
-    return getGuard() < RHS->getGuard();
-  }
+  bool operator<(const VASTSeqDef &RHS) const;
 };
 
 class VASTSlot : public VASTNode {

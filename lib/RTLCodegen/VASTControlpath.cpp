@@ -272,6 +272,19 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
 }
 
 //===----------------------------------------------------------------------===//
+bool VASTSeqDef::operator <(const VASTSeqDef &RHS) const  {
+  // Same definition?
+  if (Def < RHS.Def) return true;
+  else if (Def > RHS.Def) return false;
+
+  // Same predicate?
+  if (getPred() < RHS.getPred()) return true;
+  else if (getPred() > RHS.getPred()) return false;
+
+  // Same slot?
+  return getSlot() < RHS.getSlot();
+}
+
 void VASTSeqDef::print(raw_ostream &OS) const {
   OS << getName() << '@' << getSlotNum() << '{';
   for (unsigned i = 0; i < Size; ++i) {

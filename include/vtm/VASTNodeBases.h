@@ -251,6 +251,10 @@ public:
     return V < RHS.V;
   }
 
+  bool operator>(const VASTUse &RHS) const {
+    return V > RHS.V;
+  }
+
   // Return the underlying VASTValue.
   VASTValPtr get() const {
     assert(!isInvalid() && "Not a valid Use!");
