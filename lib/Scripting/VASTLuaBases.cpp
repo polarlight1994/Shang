@@ -472,12 +472,12 @@ VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
   if (Src) {
     // Create a wrapper to avoid the direct cycle in the def-use chain.
     Src = wrapSeqValue(Src, V);
-    GuardCnd = buildGuardExpr(Slot, Cnds, AddSlotActive);
+    GuardCnd = buildGuardExpr(Slot, Cnds, false);
     // Create the uses in the list.
     VASTUse *UseBegin = Allocator.Allocate<VASTUse>(2);
     new (UseBegin) VASTUse(V, wrapSeqValue(GuardCnd, V));
     new (UseBegin + 1) VASTUse(V, Src);
-    V->addAssignment(VASTSeqDef(V, Slot, DefMI, UseBegin, 2));
+    V->addAssignment(VASTSeqDef(Slot, AddSlotActive, DefMI, UseBegin, 2));
   }
 
   return GuardCnd;

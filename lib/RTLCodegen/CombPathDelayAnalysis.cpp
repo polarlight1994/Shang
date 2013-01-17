@@ -490,7 +490,8 @@ void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
   for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
     const VASTSeqDef &DstDef = *I;
     // Paths for the condition.
-    DatapathMap[DstDef.getGuard().getAsLValue<VASTValue>()].push_back(DstDef);
+    DatapathMap[DstDef.getPred().getAsLValue<VASTValue>()].push_back(DstDef);
+    DatapathMap[DstDef.getSlotActive().getAsLValue<VASTValue>()].push_back(DstDef);
     // Paths for the assigning value
     DatapathMap[DstDef.getSrcVal().getAsLValue<VASTValue>()].push_back(DstDef);
   }

@@ -285,6 +285,10 @@ bool VASTSeqDef::operator <(const VASTSeqDef &RHS) const  {
   return getSlot() < RHS.getSlot();
 }
 
+void VASTSeqDef::setDef(VASTSeqValue *Def) {
+  this->Def = Def;
+}
+
 void VASTSeqDef::print(raw_ostream &OS) const {
   OS << getName() << '@' << getSlotNum() << '{';
   for (unsigned i = 0; i < Size; ++i) {
@@ -297,9 +301,21 @@ void VASTSeqDef::print(raw_ostream &OS) const {
   else       OS << '\n';
 }
 
-VASTSeqDef::VASTSeqDef(VASTSeqValue *Def, VASTSlot *S,  MachineInstr *DefMI,
+void VASTSeqDef::printPredicate(raw_ostream &OS) const {
+  OS << '(';
+  if (VASTValPtr SlotActive = getSlotActive()) {
+    SlotActive.printAsOperand(OS);
+    OS << '&';
+  }
+
+  getPred().printAsOperand(OS);
+
+  OS << ')';
+}
+
+VASTSeqDef::VASTSeqDef(VASTSlot *S, bool UseSlotActive, MachineInstr *DefMI,
                        VASTUse *Operands, unsigned Size)
-  : VASTOperandList(Operands, Size), Def(Def), S(S), DefMI(DefMI) {
+  : VASTOperandList(Operands, Size), Def(0), S(S, UseSlotActive), DefMI(DefMI) {
   S->addDefinition(*this);
 }
 
@@ -310,24 +326,32 @@ const char *VASTSeqDef::getName() const {
 }
 
 unsigned VASTSeqDef::getSlotNum() const { return getSlot()->SlotNum; }
+
+VASTValPtr VASTSeqDef::getSlotActive() const {
+  if (S.getInt())
+    return getSlot()->getActive();
+
+  return VASTValPtr();
+}
 //----------------------------------------------------------------------------//
 
-bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> >
+bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr,
+                                        std::vector<const VASTSeqDef*> >
                                &CSEMap) const {
   for (const_itertor I = begin(), E = end(); I != E; ++I) {
     const VASTSeqDef &L = *I;
-    CSEMap[L.getSrcVal()].push_back(L.getGuard());
+    CSEMap[L.getSrcVal()].push_back(&L);
   }
 
   return !CSEMap.empty();
 }
 
 bool VASTSeqValue::verify() const {
-  std::set<VASTValPtr> UniqueGuards;
+  std::set<VASTSeqDef> UniqueDefs;
 
   for (const_itertor I = begin(), E = end(); I != E; ++I) {
     const VASTSeqDef &L = *I;
-    if (!UniqueGuards.insert(L.getGuard()).second)
+    if (!UniqueDefs.insert(L).second)
       return false;
   }
 
@@ -343,16 +367,18 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
   // Concatenate all condition together to detect the case that more than one
   // case is activated.
   std::string AllPred;
-  raw_string_ostream AllPredSS(AllPred);
 
-  AllPredSS << '{';
-  for (const_itertor I = begin(), E = end(); I != E; ++I) {
-    const VASTSeqDef &L = *I;
-    L.getGuard().printAsOperand(AllPredSS);
-    AllPredSS << ", ";
+  {
+    raw_string_ostream AllPredSS(AllPred);
+
+    AllPredSS << '{';
+    for (const_itertor I = begin(), E = end(); I != E; ++I) {
+      const VASTSeqDef &L = *I;
+      L.printPredicate(AllPredSS);
+      AllPredSS << ", ";
+    }
+    AllPredSS << "1'b0 }";
   }
-  AllPredSS << "1'b0 }";
-  AllPredSS.flush();
 
   // As long as $onehot0(expr) returns true if at most one bit of expr is high,
   // we can use it to detect if more one case condition is true at the same
@@ -367,11 +393,11 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
   for (const_itertor I = begin(), E = end(); I != E; ++I) {
     const VASTSeqDef &L = *I;
     OS.indent(2) << "if (";
-    L.getGuard().printAsOperand(OS);
+    L.printPredicate(OS);
     OS << ") begin\n";
 
     OS.indent(4) << "$display(\"Condition: ";
-    L.getGuard().printAsOperand(OS);
+    L.printPredicate(OS);
 
     unsigned CndSlot = L.getSlotNum();
     VASTSlot *S = Mod->getSlot(CndSlot);
@@ -397,11 +423,12 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
 }
 
 void VASTSeqValue::addAssignment(VASTSeqDef Ops) {
+  Ops.setDef(this);
   Assigns.push_back(Ops);
 }
 
 void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
-  typedef std::vector<VASTValPtr> OrVec;
+  typedef std::vector<const VASTSeqDef*> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator it;
 
@@ -425,7 +452,7 @@ void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
     const OrVec &Ors = I->second;
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI)
     {
-      OI->printAsOperand(OS);
+      (*OI)->printPredicate(OS);
       OS << '|';
     }
 

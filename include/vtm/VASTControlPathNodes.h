@@ -28,27 +28,31 @@ class VASTSlot;
 
 class VASTSeqDef : public VASTOperandList {
   VASTSeqValue *Def;
-  VASTSlot *S;
+  PointerIntPair<VASTSlot*, 1, bool> S;
   MachineInstr *DefMI;
 public:
-  VASTSeqDef(VASTSeqValue *Def, VASTSlot *S,  MachineInstr *DefMI,
+  VASTSeqDef(VASTSlot *S, bool UseSlotActive, MachineInstr *DefMI,
              VASTUse *Operands, unsigned Size);
+
+  void setDef(VASTSeqValue *Def);
 
   operator VASTSeqValue *() const { return Def; }
   const char *getName() const;
 
   // Active Slot accessor
-  VASTSlot *getSlot() const { return S; }
+  VASTSlot *getSlot() const { return S.getPointer(); }
   unsigned getSlotNum() const;
+  VASTValPtr getSlotActive() const;
 
   //
   MachineInstr *getDefMI() const { return DefMI; }
 
   virtual void print(raw_ostream &OS) const;
+  void printPredicate(raw_ostream &OS) const;
 
-  // Get the guard of the assignment.
-  VASTUse &getGuard() { return getOperand(0); }
-  const VASTUse &getGuard() const { return getOperand(0); }
+  // Get the predicate operand of the assignment.
+  VASTUse &getPred() { return getOperand(0); }
+  const VASTUse &getPred() const { return getOperand(0); }
 
   VASTUse &getSrcVal() {
     assert(Size == 2 && "Operand list is not for assignment!");
@@ -263,7 +267,9 @@ private:
 
   VASTNode &Parent;
 
-  bool buildCSEMap(std::map<VASTValPtr, std::vector<VASTValPtr> > &CSEMap) const;
+  bool buildCSEMap(std::map<VASTValPtr,
+                            std::vector<const VASTSeqDef*> >
+                   &CSEMap) const;
 public:
   VASTSeqValue(const char *Name, unsigned Bitwidth, VASTNode::SeqValType T,
                unsigned Idx, VASTNode &Parent)
