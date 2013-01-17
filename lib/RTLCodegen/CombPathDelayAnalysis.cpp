@@ -78,7 +78,7 @@ struct PathDelayQueryCache {
   bool annotateSubmoduleLatency(VASTSeqValue * V);
 
   void annotatePathDelay(SeqValReachingDefAnalysis *R, VASTValue *Tree,
-                         ArrayRef<VASTSeqDef> DstDefs);
+                         ArrayRef<VASTSeqUse> DstUses);
 
   bool updateDelay(SeqValSetTy &To, const SeqValSetTy &From,
                    const SeqValSetTy &LocalDelayMap) {
@@ -135,8 +135,7 @@ struct CombPathDelayAnalysis : public MachineFunctionPass {
 
   void writeConstraintsForDst(VASTSeqValue *Dst);
 
-  void extractTimingPaths(PathDelayQueryCache &Cache,
-                          ArrayRef<VASTSeqDef> DstDefs,
+  void extractTimingPaths(PathDelayQueryCache &Cache, ArrayRef<VASTSeqUse> Uses,
                           VASTValue *DepTree);
 
   bool runOnMachineFunction(MachineFunction &MF);
@@ -159,16 +158,16 @@ struct CombPathDelayAnalysis : public MachineFunctionPass {
 }
 
 static unsigned getMinimalDelay(SeqValReachingDefAnalysis *R, VASTSeqValue *Src,
-                                const VASTSeqDef &Dst) {
+                                const VASTSeqUse &Dst) {
   unsigned PathDelay = 10000;
   SlotInfo *DstSI = R->getSlotInfo(Dst.getSlot());
 
   typedef VASTSeqValue::const_itertor vn_itertor;
   for (vn_itertor I = Src->begin(), E = Src->end(); I != E; ++I) {
-    const VASTSeqDef &SrcDef = **I;
+    VASTSeqUse Def = *I;
 
     // Update the PathDelay if the source VAS reaches DstSlot.
-    if (unsigned Distance = DstSI->getCyclesFromDef(SrcDef)) {
+    if (unsigned Distance = DstSI->getCyclesFromDef(Def)) {
       assert(Distance < 10000 && "Distance too large!");
       PathDelay = std::min(PathDelay, Distance);
     }
@@ -178,10 +177,10 @@ static unsigned getMinimalDelay(SeqValReachingDefAnalysis *R, VASTSeqValue *Src,
 }
 
 static unsigned getMinimalDelay(SeqValReachingDefAnalysis *R, VASTSeqValue *Src,
-                                ArrayRef<VASTSeqDef> DstDefs) {
+                                ArrayRef<VASTSeqUse> DstUses) {
   unsigned PathDelay = 10000;
-  typedef ArrayRef<VASTSeqDef>::iterator it;
-  for (it I = DstDefs.begin(), E = DstDefs.end(); I != E; ++I)
+  typedef ArrayRef<VASTSeqUse>::iterator iterator;
+  for (iterator I = DstUses.begin(), E = DstUses.end(); I != E; ++I)
     PathDelay = std::min(PathDelay, getMinimalDelay(R, Src, *I));
 
   return PathDelay;
@@ -243,7 +242,7 @@ bool PathDelayQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
 
 void PathDelayQueryCache::annotatePathDelay(SeqValReachingDefAnalysis *R,
                                             VASTValue *Root,
-                                            ArrayRef<VASTSeqDef> DstDefs) {
+                                            ArrayRef<VASTSeqUse> DstUses) {
   assert((isa<VASTWire>(Root) || isa<VASTExpr>(Root)) && "Bad root type!");
   typedef VASTValue::dp_dep_it ChildIt;
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
@@ -282,7 +281,7 @@ void PathDelayQueryCache::annotatePathDelay(SeqValReachingDefAnalysis *R,
     }
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
-      unsigned Delay = getMinimalDelay(R, V, DstDefs);
+      unsigned Delay = getMinimalDelay(R, V, DstUses);
 
       bool inserted = LocalDelay.insert(std::make_pair(V, Delay)).second;
       assert(inserted && "Node had already been visited?");
@@ -484,21 +483,21 @@ bool CombPathDelayAnalysis::runOnMachineFunction(MachineFunction &MF) {
 }
 
 void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
-  DenseMap<VASTValue*, SmallVector<VASTSeqDef, 8> > DatapathMap;
+  DenseMap<VASTValue*, SmallVector<VASTSeqUse, 8> > DatapathMap;
 
   typedef VASTSeqValue::const_itertor vn_itertor;
   for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
-    const VASTSeqDef &DstDef = **I;
+    const VASTSeqUse &DstUse = *I;
     // Paths for the condition.
-    DatapathMap[DstDef.getPred().getAsLValue<VASTValue>()].push_back(DstDef);
-    if (VASTValPtr SlotActive = DstDef.getSlotActive())
-      DatapathMap[SlotActive.getAsLValue<VASTValue>()].push_back(DstDef);
+    DatapathMap[((VASTValPtr)DstUse.getPred()).get()].push_back(DstUse);
+    if (VASTValPtr SlotActive = DstUse.getSlotActive())
+      DatapathMap[SlotActive.get()].push_back(DstUse);
     // Paths for the assigning value
-    DatapathMap[DstDef.getSrcVal().getAsLValue<VASTValue>()].push_back(DstDef);
+    DatapathMap[((VASTValPtr)DstUse).get()].push_back(DstUse);
   }
 
   PathDelayQueryCache Cache;
-  typedef DenseMap<VASTValue*, SmallVector<VASTSeqDef, 8> >::iterator it;
+  typedef DenseMap<VASTValue*, SmallVector<VASTSeqUse, 8> >::iterator it;
   for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
     extractTimingPaths(Cache, I->second, I->first);
 
@@ -506,7 +505,7 @@ void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
 }
 
 void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
-                                               ArrayRef<VASTSeqDef> DstDefs,
+                                               ArrayRef<VASTSeqUse> Uses,
                                                VASTValue *DepTree) {
   VASTValue *SrcValue = DepTree;
 
@@ -515,7 +514,7 @@ void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
     // Src may be the return_value of the submodule.
     if (Cache.annotateSubmoduleLatency(Src)) return;
 
-    int Delay = getMinimalDelay(ReachingDef, Src, DstDefs);
+    int Delay = getMinimalDelay(ReachingDef, Src, Uses);
     Cache.addDelayFromToStats(Src, Delay, true);
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
@@ -529,7 +528,7 @@ void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
   // If Define Value is immediate or symbol, skip it.
   if (!isa<VASTWire>(SrcValue) && !isa<VASTExpr>(SrcValue)) return;
 
-  Cache.annotatePathDelay(ReachingDef, DepTree, DstDefs);
+  Cache.annotatePathDelay(ReachingDef, DepTree, Uses);
 }
 
 char CombPathDelayAnalysis::ID = 0;

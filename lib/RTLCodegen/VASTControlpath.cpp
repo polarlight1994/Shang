@@ -271,11 +271,49 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
 }
 
 //===----------------------------------------------------------------------===//
-bool VASTSeqDef::operator <(const VASTSeqDef &RHS) const  {
-  // Same definition?
-  if (Def < RHS.Def) return true;
-  else if (Def > RHS.Def) return false;
+VASTSeqUse::operator VASTUse &() const {
+  return Op->getUseInteranal(No);
+}
 
+VASTSeqUse::operator VASTValPtr() const {
+  return Op->getUseInteranal(No);
+}
+
+VASTUse &VASTSeqUse::operator ->() const {
+  return Op->getUseInteranal(No);
+}
+
+VASTSlot *VASTSeqUse::getSlot() const {
+  return Op->getSlot();
+}
+
+VASTUse &VASTSeqUse::getPred() const {
+  return Op->getPred();
+}
+
+VASTValPtr VASTSeqUse::getSlotActive() const {
+  return Op->getSlotActive();
+}
+
+VASTSeqValue *VASTSeqUse::getDst() const {
+  return cast<VASTSeqValue>(&Op->getUseInteranal(No).getUser());
+}
+
+//===----------------------------------------------------------------------===//
+VASTSeqOp *VASTSeqDef::operator ->() const {
+  return Op;
+}
+
+VASTSeqDef::operator VASTSeqValue *() const {
+  return Op->Defs[No];
+}
+
+const char *VASTSeqDef::getName() const {
+  return Op->Defs[No]->getName();
+}
+
+//----------------------------------------------------------------------------//
+bool VASTSeqOp::operator <(const VASTSeqOp &RHS) const  {
   // Same predicate?
   if (getPred() < RHS.getPred()) return true;
   else if (getPred() > RHS.getPred()) return false;
@@ -284,12 +322,18 @@ bool VASTSeqDef::operator <(const VASTSeqDef &RHS) const  {
   return getSlot() < RHS.getSlot();
 }
 
-void VASTSeqDef::setDef(VASTSeqValue *Def) {
-  this->Def = Def;
+void VASTSeqOp::addDefDst(VASTSeqValue *Def) {
+  assert(std::find(Defs.begin(), Defs.end(), Def) == Defs.end()
+         && "Define the same seqval twice!");
+  Defs.push_back(Def);
 }
 
-void VASTSeqDef::print(raw_ostream &OS) const {
-  OS << getName() << '@' << getSlotNum() << '{';
+void VASTSeqOp::print(raw_ostream &OS) const {
+  for (unsigned I = 0, E = getNumDefs(); I != E; ++I) {
+    OS << Defs[I]->getName() << ", ";
+  }
+  
+  OS << "<-@" << getSlotNum() << '{';
   for (unsigned i = 0; i < Size; ++i) {
     getOperand(i).printAsOperand(OS);
     OS << ", ";
@@ -300,7 +344,7 @@ void VASTSeqDef::print(raw_ostream &OS) const {
   else       OS << '\n';
 }
 
-void VASTSeqDef::printPredicate(raw_ostream &OS) const {
+void VASTSeqOp::printPredicate(raw_ostream &OS) const {
   OS << '(';
   if (VASTValPtr SlotActive = getSlotActive()) {
     SlotActive.printAsOperand(OS);
@@ -312,21 +356,15 @@ void VASTSeqDef::printPredicate(raw_ostream &OS) const {
   OS << ')';
 }
 
-VASTSeqDef::VASTSeqDef(VASTSlot *S, bool UseSlotActive, MachineInstr *DefMI,
+VASTSeqOp::VASTSeqOp(VASTSlot *S, bool UseSlotActive, MachineInstr *DefMI,
                        VASTUse *Operands, unsigned Size)
-  : VASTOperandList(Operands, Size), Def(0), S(S, UseSlotActive), DefMI(DefMI) {
-  S->addDefinition(this);
+  : VASTOperandList(Operands, Size), S(S, UseSlotActive), DefMI(DefMI) {
+  S->addOperation(this);
 }
 
-const char *VASTSeqDef::getName() const {
-  if (Def) return Def->getName();
+unsigned VASTSeqOp::getSlotNum() const { return getSlot()->SlotNum; }
 
-  return "<no-def>";
-}
-
-unsigned VASTSeqDef::getSlotNum() const { return getSlot()->SlotNum; }
-
-VASTValPtr VASTSeqDef::getSlotActive() const {
+VASTValPtr VASTSeqOp::getSlotActive() const {
   if (S.getInt())
     return getSlot()->getActive();
 
@@ -335,22 +373,22 @@ VASTValPtr VASTSeqDef::getSlotActive() const {
 //----------------------------------------------------------------------------//
 
 bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr,
-                                        std::vector<const VASTSeqDef*> >
+                                        std::vector<const VASTSeqOp*> >
                                &CSEMap) const {
   for (const_itertor I = begin(), E = end(); I != E; ++I) {
-    const VASTSeqDef *L = *I;
-    CSEMap[L->getSrcVal()].push_back(L);
+    VASTSeqUse U = *I;
+    CSEMap[U].push_back(U.Op);
   }
 
   return !CSEMap.empty();
 }
 
 bool VASTSeqValue::verify() const {
-  std::set<VASTSeqDef> UniqueDefs;
+  std::set<VASTSeqOp*, less_ptr<VASTSeqOp> > UniqueDefs;
 
   for (const_itertor I = begin(), E = end(); I != E; ++I) {
-    const VASTSeqDef &L = **I;
-    if (!UniqueDefs.insert(L).second)
+    VASTSeqUse U = *I;
+    if (!UniqueDefs.insert(U.Op).second)
       return false;
   }
 
@@ -372,8 +410,7 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
 
     AllPredSS << '{';
     for (const_itertor I = begin(), E = end(); I != E; ++I) {
-      const VASTSeqDef &L = **I;
-      L.printPredicate(AllPredSS);
+      (*I).Op->printPredicate(AllPredSS);
       AllPredSS << ", ";
     }
     AllPredSS << "1'b0 }";
@@ -390,15 +427,15 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
 
   // Display the conflicted condition and its slot.
   for (const_itertor I = begin(), E = end(); I != E; ++I) {
-    const VASTSeqDef &L = **I;
+    const VASTSeqOp &Op = *(*I).Op;
     OS.indent(2) << "if (";
-    L.printPredicate(OS);
+    Op.printPredicate(OS);
     OS << ") begin\n";
 
     OS.indent(4) << "$display(\"Condition: ";
-    L.printPredicate(OS);
+    Op.printPredicate(OS);
 
-    unsigned CndSlot = L.getSlotNum();
+    unsigned CndSlot = Op.getSlotNum();
     VASTSlot *S = Mod->getSlot(CndSlot);
     OS << ", current slot: " << CndSlot << ", ";
 
@@ -421,13 +458,13 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
   OS.indent(2) << "$finish();\nend\n";
 }
 
-void VASTSeqValue::addAssignment(VASTSeqDef *Ops) {
-  Ops->setDef(this);
-  Assigns.push_back(Ops);
+void VASTSeqValue::addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef) {
+  if (IsDef)  Op->addDefDst(this);
+  Assigns.push_back(VASTSeqUse(Op, SrcNo));
 }
 
 void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
-  typedef std::vector<const VASTSeqDef*> OrVec;
+  typedef std::vector<const VASTSeqOp*> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator it;
 

@@ -466,15 +466,15 @@ void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
 
   // Create a wrapper to avoid the direct cycle in the def-use chain.
   Src = wrapSeqValue(Src, V);
-  void *P =  Allocator.Allocate(sizeof(VASTSeqDef) + 2 * sizeof(VASTUse),
-                                alignOf<VASTSeqDef>());
-  VASTSeqDef *Def = reinterpret_cast<VASTSeqDef*>(P);
+  void *P =  Allocator.Allocate(sizeof(VASTSeqOp) + 2 * sizeof(VASTUse),
+                                alignOf<VASTSeqOp>());
+  VASTSeqOp *Def = reinterpret_cast<VASTSeqOp*>(P);
   // Create the uses in the list.
   VASTUse *UseBegin = reinterpret_cast<VASTUse*>(Def + 1);
-  new (Def) VASTSeqDef(Slot, AddSlotActive, DefMI, UseBegin, 2);
+  new (Def) VASTSeqOp(Slot, AddSlotActive, DefMI, UseBegin, 2);
   new (UseBegin) VASTUse(V, wrapSeqValue(GuardCnd, V));
   new (UseBegin + 1) VASTUse(V, Src);
-  V->addAssignment(Def);
+  V->addAssignment(Def, 0, true);
 }
 
 void VASTModule::print(raw_ostream &OS) const {
@@ -484,9 +484,9 @@ void VASTModule::print(raw_ostream &OS) const {
 
     OS << "Slot" << S->SlotNum << '\n';
 
-    typedef VASTSlot::const_def_iterator def_iterator;
-    for (def_iterator I = S->def_begin(), E = S->def_end(); I != E; ++I) {
-      const VASTSeqDef &D = **I;
+    typedef VASTSlot::const_op_iterator def_iterator;
+    for (def_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
+      const VASTSeqOp &D = **I;
       D.print(OS.indent(2));
     }
   }

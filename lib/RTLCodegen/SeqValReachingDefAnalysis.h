@@ -31,6 +31,27 @@ class SlotInfo;
 
 // SlotInfo, store the data-flow information of a slot.
 class SlotInfo {
+public:
+  struct VNInfo {
+    VASTSeqValue *Dst;
+    VASTSeqOp *Op;
+
+    /*implicit*/ VNInfo(VASTSeqDef D) : Dst(D), Op(D.Op) {}
+
+    /*implicit*/ VNInfo(VASTSeqUse U) : Dst(U.getDst()), Op(U.Op) {}
+
+    bool operator<(const VNInfo &RHS) const {
+      if (Dst < RHS.Dst) return true;
+      else if (Dst > RHS.Dst) return false;
+
+      if (Op->getPred() < RHS.Op->getPred()) return true;
+      else if (Op->getPred() > RHS.Op->getPred()) return false;
+
+      return Op->getPred() < RHS.Op->getPred();
+    }
+  };
+
+private:
   struct LiveInInfo {
     uint32_t Cycles;
 
@@ -42,8 +63,8 @@ class SlotInfo {
   };
 
   // Define the VAS set for the reaching definition dense map.
-  typedef std::set<VASTSeqDef> VASSetTy;
-  typedef std::map<VASTSeqDef, SlotInfo::LiveInInfo> VASCycMapTy;
+  typedef std::set<VNInfo> VASSetTy;
+  typedef std::map<VNInfo, SlotInfo::LiveInInfo> VASCycMapTy;
   const VASTSlot *S;
   // Define Set for the reaching definition.
   VASSetTy SlotGen;
@@ -62,8 +83,7 @@ class SlotInfo {
   std::pointer_to_unary_function<std::pair<VASTSeqDef, unsigned>, VASTSeqDef>
   vas_getter;
 
-  static bool updateLiveIn(VASTSeqDef D, SlotInfo::LiveInInfo NewLI,
-                           VASCycMapTy &S) {
+  static bool updateLiveIn(VNInfo D, SlotInfo::LiveInInfo NewLI, VASCycMapTy &S) {
     assert(NewLI.getCycles() && "It takes at least a cycle to live in!");
     SlotInfo::LiveInInfo &Info = S[D];
 
@@ -76,7 +96,7 @@ class SlotInfo {
     return false;
   }
 
-  SlotInfo::LiveInInfo getLiveIn(VASTSeqDef D) const {
+  SlotInfo::LiveInInfo getLiveIn(VNInfo D) const {
     vascyc_iterator at = SlotIn.find(D);
     return at == SlotIn.end() ? SlotInfo::LiveInInfo() : at->second;
   }
@@ -86,20 +106,18 @@ class SlotInfo {
   void initOutSet();
 
   // Insert VAS into different set.
-  void insertGen(VASTSeqDef D) {
+  void insertGen(VNInfo D) {
     SlotGen.insert(D);
-    insertOvewritten(D);
+    insertOvewritten(D.Dst);
   }
 
-  void insertOvewritten(VASTSeqValue *V) {
-    OverWrittenValue.insert(V);
-  }
+  void insertOvewritten(VASTSeqValue *V);
 
-  bool insertIn(VASTSeqDef D, SlotInfo::LiveInInfo NewLI) {
+  bool insertIn(VNInfo D, SlotInfo::LiveInInfo NewLI) {
     return updateLiveIn(D, NewLI, SlotIn);
   }
 
-  bool insertOut(VASTSeqDef D, SlotInfo::LiveInInfo NewLI) {
+  bool insertOut(VNInfo D, SlotInfo::LiveInInfo NewLI) {
     return updateLiveIn(D, NewLI, SlotOut);
   }
 
@@ -115,10 +133,10 @@ public:
   vascyc_iterator out_begin() const { return SlotOut.begin(); }
   vascyc_iterator out_end() const { return SlotOut.end(); }
 
-  bool isVASKilled(const VASTSeqDef D) const;
+  bool isVASKilled(VNInfo VN) const;
 
   // Get the distance (in cycles) from the define slot of the VAS to this slot.
-  unsigned getCyclesFromDef(VASTSeqDef D) const {
+  unsigned getCyclesFromDef(VASTSeqUse D) const {
     return getLiveIn(D).getCycles();
   }
 
@@ -164,6 +182,7 @@ private:
 
   // collect the Generated and Killed statements of the slot.
   void ComputeGenAndKill();
+  void ComputeGenAndKill(const VASTSeqDef &D);
 public:
   static char ID;
 

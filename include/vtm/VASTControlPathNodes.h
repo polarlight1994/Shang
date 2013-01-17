@@ -25,19 +25,65 @@ class MachineBasicBlock;
 class VASTExprBuilder;
 class vlang_raw_ostream;
 class VASTSlot;
+class VASTSeqOp;
 
-class VASTSeqDef : public VASTOperandList {
-  VASTSeqValue *Def;
+// The value at used by the VASTSeqOp at a specific slot. Where "used" means we
+// assign the value to some register.
+struct VASTSeqUse {
+  VASTSeqOp *Op;
+  unsigned No;
+
+  VASTSeqUse(VASTSeqOp *Op, unsigned No) : Op(Op), No(No) {}
+
+  operator VASTUse &() const;
+  operator VASTValPtr () const;
+  VASTUse &operator->() const;
+
+  // Get the destination of the assignment.
+  VASTSeqValue *getDst() const;
+
+  // Forward the functions from VASTSeqOp;
+  VASTSlot *getSlot() const;
+  VASTUse &getPred() const;
+  VASTValPtr getSlotActive() const;
+};
+
+// The value at produced by the VASTSeqOp at a specific slot.
+struct VASTSeqDef {
+  VASTSeqOp *Op;
+  unsigned No;
+
+  VASTSeqDef(VASTSeqOp *Op, unsigned No) : Op(Op), No(No) {}
+
+  VASTSeqOp *operator->() const;
+  operator VASTSeqValue *() const;
+
+  const char *getName() const;
+};
+
+// Represent an operation in seqential logic, it read some value and define some
+// others.
+class VASTSeqOp : public VASTOperandList {
+  SmallVector<VASTSeqValue*, 1> Defs;
   PointerIntPair<VASTSlot*, 1, bool> S;
   MachineInstr *DefMI;
+
+  friend struct VASTSeqDef;
+  friend struct VASTSeqUse;
+
+  VASTUse &getUseInteranal(unsigned Idx) {
+    return getOperand(1 + Idx);
+  }
+
+  void operator=(const VASTSeqOp &RHS); // DO NOT IMPLEMENT
+  VASTSeqOp(const VASTSeqOp &RHS); // DO NOT IMPLEMENT
 public:
-  VASTSeqDef(VASTSlot *S, bool UseSlotActive, MachineInstr *DefMI,
+  VASTSeqOp(VASTSlot *S, bool UseSlotActive, MachineInstr *DefMI,
              VASTUse *Operands, unsigned Size);
 
-  void setDef(VASTSeqValue *Def);
-
-  operator VASTSeqValue *() const { return Def; }
-  const char *getName() const;
+  void addDefDst(VASTSeqValue *Def);
+  VASTSeqDef getDef(unsigned No) { return VASTSeqDef(this, No); }
+  unsigned getNumDefs() const { return Defs.size(); }
 
   // Active Slot accessor
   VASTSlot *getSlot() const { return S.getPointer(); }
@@ -54,10 +100,8 @@ public:
   VASTUse &getPred() { return getOperand(0); }
   const VASTUse &getPred() const { return getOperand(0); }
 
-  VASTUse &getSrcVal() {
-    assert(Size == 2 && "Operand list is not for assignment!");
-    return getOperand(1);
-  }
+  // Get the source of the assignment.
+  VASTSeqUse getSrc(unsigned Idx) { return VASTSeqUse(this, Idx); };
 
   const VASTUse &getSrcVal() const {
     assert(Size == 2 && "Operand list is not for assignment!");
@@ -65,7 +109,7 @@ public:
   }
 
   // Provide the < operator to support set of VASTSeqDef.
-  bool operator<(const VASTSeqDef &RHS) const;
+  bool operator<(const VASTSeqOp &RHS) const;
 };
 
 class VASTSlot : public VASTNode {
@@ -113,8 +157,8 @@ private:
   uint16_t II;
 
   // The definitions in the current slot.
-  typedef std::vector<VASTSeqDef*> SeqDefVector;
-  SeqDefVector Defintions;
+  typedef std::vector<VASTSeqOp*> OpVector;
+  OpVector Operations;
 
   // Successor slots of this slot.
   succ_cnd_iterator succ_cnd_begin() { return NextSlots.begin(); }
@@ -151,10 +195,10 @@ public:
   VASTValue *getReady() const { return cast<VASTValue>(SlotReady); }
   VASTValue *getActive() const { return cast<VASTValue>(SlotActive); }
 
-  void addDefinition(VASTSeqDef *D) { Defintions.push_back(D); }
-  typedef SeqDefVector::const_iterator const_def_iterator;
-  const_def_iterator def_begin() const { return Defintions.begin(); }
-  const_def_iterator def_end() const { return Defintions.end(); }
+  void addOperation(VASTSeqOp *D) { Operations.push_back(D); }
+  typedef OpVector::const_iterator const_op_iterator;
+  const_op_iterator op_begin() const { return Operations.begin(); }
+  const_op_iterator op_end() const { return Operations.end(); }
 
   bool hasNextSlot(VASTSlot *NextSlot) const;
 
@@ -261,13 +305,13 @@ private:
   const unsigned Idx  : 30;
 
   // Map the assignment condition to assignment value.
-  typedef std::vector<VASTSeqDef*> AssignmentVector;
+  typedef std::vector<VASTSeqUse> AssignmentVector;
   AssignmentVector Assigns;
 
   VASTNode &Parent;
 
   bool buildCSEMap(std::map<VASTValPtr,
-                            std::vector<const VASTSeqDef*> >
+                            std::vector<const VASTSeqOp*> >
                    &CSEMap) const;
 public:
   VASTSeqValue(const char *Name, unsigned Bitwidth, VASTNode::SeqValType T,
@@ -290,7 +334,7 @@ public:
   VASTNode *getParent() { return &Parent; }
   const VASTNode *getParent() const { return &Parent; }
 
-  void addAssignment(VASTSeqDef *Ops);
+  void addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef);
   bool isTimingUndef() const { return getValType() == VASTNode::Slot; }
 
   typedef AssignmentVector::const_iterator const_itertor;

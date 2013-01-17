@@ -70,25 +70,29 @@ void SlotInfo::dump() const {
   print(dbgs());
 }
 
+void SlotInfo::insertOvewritten(VASTSeqValue *V) {  
+  OverWrittenValue.insert(V);
+}
+
 void SlotInfo::print(raw_ostream &OS) const {
   OS << S->getName() << "\nGen:\n";
   for (gen_iterator I = gen_begin(), E = gen_end(); I != E; ++I) {
-    const VASTSeqDef &D = *I;
-    OS.indent(2) << D.getName() << "\n";
+    const VASTSeqValue *D = (*I).Dst;
+    OS.indent(2) << D->getName() << "\n";
   }
 
   OS << "\n\nIn:\n";
   for (VASCycMapTy::const_iterator I = in_begin(), E = in_end(); I != E; ++I) {
-    const VASTSeqDef &D = I->first;
-    OS.indent(2) << D.getName() << '[' << I->second.getCycles() << "]\n";
+    const VASTSeqValue *D = I->first.Dst;
+    OS.indent(2) << D->getName() << '[' << I->second.getCycles() << "]\n";
   }
 
   OS << "\n\n";
 }
 
 // Any VAS whose value is overwritten at this slot is killed.
-bool SlotInfo::isVASKilled(VASTSeqDef D) const {
-  return OverWrittenValue.count(D);
+bool SlotInfo::isVASKilled(VNInfo VN) const {
+  return OverWrittenValue.count(VN.Dst);
 }
 
 void SlotInfo::initOutSet() {
@@ -153,10 +157,10 @@ bool SeqValReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
   bool FromLaterAliasSlot = FromAliasSlot && FromSlotNum > ToSlotNum;
 
   for (it I = From->out_begin(), E = From->out_end(); I != E; ++I) {
-    const VASTSeqDef &PredOut = I->first;
-    VASTSeqValue *V = PredOut;
+    const SlotInfo::VNInfo &PredOut = I->first;
+    VASTSeqValue *V = PredOut.Dst;
 
-    VASTSlot *DefSlot = PredOut.getSlot();
+    VASTSlot *DefSlot = PredOut.Op->getSlot();
     SlotInfo::LiveInInfo LI = I->second;
 
     bool IsDefSlot = LI.getCycles() == 0;
@@ -174,7 +178,7 @@ bool SeqValReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
       // The registers are not propagate from the slot to its alias slot.
       if (RegNum && FromAliasSlot) LiveInToSlot = false;
 
-      const MachineInstr *DefMI = PredOut.getDefMI();
+      const MachineInstr *DefMI = PredOut.Op->getDefMI();
       // Do not add live out if data register R not live in the new BB.
       if (RegNum && DefMI) {
         if (DefMI->getOpcode() == VTM::VOpMvPhi && IsDefSlot) {
@@ -276,6 +280,45 @@ void SeqValReachingDefAnalysis::ComputeReachingDefinition() {
   } while (Changed);
 }
 
+void SeqValReachingDefAnalysis::ComputeGenAndKill(const VASTSeqDef &D) {
+  VASTSlot *S = D->getSlot();
+  SlotInfo *SI = getSlotInfo(S);
+  SI->insertGen(D);
+
+  // Values are overwritten by the alias slots of its defining slot.
+  if (!S->hasAliasSlot()) return;
+
+  unsigned CurSlotNum = S->SlotNum;
+  VASTSeqValue *V = D;
+  bool IsLoopingBackPHIMove = false;
+  if (const MachineInstr *MI = D->getDefMI())
+    IsLoopingBackPHIMove = MI->getOpcode() == VTM::VOpMvPhi
+                            && MI->getOperand(2).getMBB() == MI->getParent();
+
+  for (unsigned i = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
+        i < e; i += ii) {
+      if (i == CurSlotNum) continue;
+
+      SlotInfo *AliasSlot = getSlotInfo(VM->getSlot(i));
+
+      // From the view of signals with undefined timing, all alias slot is the
+      // same slot, otherwise, the signal is only overwritten by its following
+      // alias slot.
+      if (i > CurSlotNum || V->isTimingUndef())
+        AliasSlot->insertOvewritten(D);
+
+      if (i == CurSlotNum - ii && IsLoopingBackPHIMove) {
+        // The definition of PHIMove can reach its previous alias slot with
+        // distance II.
+        AliasSlot->insertIn(D, SlotInfo::LiveInInfo(ii));
+        // The definition is actually for the previous stage.
+        AliasSlot->insertGen(D);
+        // The definition of looping-back PHIMove is not for the current stage.
+        SI->SlotGen.erase(D);
+      }
+  }
+}
+
 void SeqValReachingDefAnalysis::ComputeGenAndKill() {
   // Collect the generated statements to the SlotGenMap.
   typedef VASTModule::slot_iterator it;
@@ -283,45 +326,11 @@ void SeqValReachingDefAnalysis::ComputeGenAndKill() {
     VASTSlot *S = *SI;
     if (S == 0) continue;
 
-    typedef VASTSlot::const_def_iterator def_iterator;
-    for (def_iterator I = S->def_begin(), E = S->def_end(); I != E; ++I) {
-      const VASTSeqDef &D = **I;
-      VASTSlot *S = D.getSlot();
-      SlotInfo *SI = getSlotInfo(S);
-      SI->insertGen(D);
-
-      // Values are overwritten by the alias slots of its defining slot.
-      if (!S->hasAliasSlot()) continue;
-
-      unsigned CurSlotNum = S->SlotNum;
-      VASTSeqValue *V = D;
-      bool IsLoopingBackPHIMove = false;
-      if (const MachineInstr *MI = D.getDefMI())
-        IsLoopingBackPHIMove = MI->getOpcode() == VTM::VOpMvPhi
-                               && MI->getOperand(2).getMBB() == MI->getParent();
-
-      for (unsigned i = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
-           i < e; i += ii) {
-         if (i == CurSlotNum) continue;
-
-         SlotInfo *AliasSlot = getSlotInfo(VM->getSlot(i));
-
-         // From the view of signals with undefined timing, all alias slot is the
-         // same slot, otherwise, the signal is only overwritten by its following
-         // alias slot.
-         if (i > CurSlotNum || V->isTimingUndef())
-           AliasSlot->insertOvewritten(V);
-
-         if (i == CurSlotNum - ii && IsLoopingBackPHIMove) {
-           // The definition of PHIMove can reach its previous alias slot with
-           // distance II.
-           AliasSlot->insertIn(D, SlotInfo::LiveInInfo(ii));
-           // The definition is actually for the previous stage.
-           AliasSlot->insertGen(D);
-           // The definition of looping-back PHIMove is not for the current stage.
-           SI->SlotGen.erase(D);
-         }
-      }
+    typedef VASTSlot::const_op_iterator def_iterator;
+    for (def_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
+      VASTSeqOp *Op = *I;
+      for (unsigned i = 0, e = Op->getNumDefs(); i != e; ++i)
+        ComputeGenAndKill(Op->getDef(i));      
     }
   }
 
