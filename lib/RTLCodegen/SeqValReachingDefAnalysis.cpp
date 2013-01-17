@@ -187,7 +187,7 @@ bool SeqValReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
         }
 
         // If the FromSlot is bigger than the ToSlot, then we are looping back.
-        bool ToNewBB = FromBB != ToBB || FromSlotNum >= ToSlotNum;
+        bool ToNewBB = (FromBB != ToBB || FromSlotNum >= ToSlotNum) && ToBB;
 
         // The register may be defined at the first slot of current BB, which
         // slot is alias with the last slot of Current BB's predecessor. In this
@@ -263,10 +263,6 @@ void SeqValReachingDefAnalysis::ComputeReachingDefinition() {
       typedef VASTSlot::pred_it pred_it;
       for (pred_it PI = S->pred_begin(), PE = S->pred_end(); PI != PE; ++PI) {
         VASTSlot *PredSlot = *PI;
-
-        // No need to update the out set of Slot 0 according its incoming value.
-        // It is the first slot of the FSM.
-        if (S->SlotNum == 0 && PredSlot->SlotNum != 0) continue;
 
         SlotInfo *PredSI = getSlotInfo(PredSlot);
 

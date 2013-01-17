@@ -218,13 +218,27 @@ VASTSlot *VASTModule::getOrCreateSlot(unsigned SlotNum,
                                       MachineInstr *BundleStart) {
   VASTSlot *&Slot = Slots[SlotNum];
   if(Slot == 0) {
-    Slot = Allocator.Allocate<VASTSlot>();
     assert((BundleStart == 0 || BundleStart->getOpcode() == VTM::CtrlStart)
            && "Bad BundleStart!");
-    new (Slot) VASTSlot(SlotNum, BundleStart, this);
+    Slot = new (Allocator) VASTSlot(SlotNum, BundleStart, this);
   }
 
   return Slot;
+}
+
+VASTSlot *VASTModule::getOrCreateStartSlot() {
+  VASTSlot *StartSlot = getOrCreateSlot(0, 0);
+  assert(Slots.back() == 0 && "Unexpected finish slot!");
+  Slots.back() = new (Allocator) VASTSlot(Slots.size() - 1, StartSlot);
+  return StartSlot;
+}
+
+VASTSlot *VASTModule::getStartSlot() const {
+  return getSlot(0);
+}
+
+VASTSlot *VASTModule::getFinishSlot() const {
+  return getSlot(Slots.size() - 1);
 }
 
 void VASTModule::writeProfileCounters(vlang_raw_ostream &OS, VASTSlot *S,
@@ -300,7 +314,7 @@ void VASTModule::writeProfileCounters(vlang_raw_ostream &OS) {
 }
 
 void VASTModule::buildSlotLogic(VASTExprBuilder &Builder) {
-  for (SlotVecTy::const_iterator I = Slots.begin(), E = Slots.end();I != E;++I)
+  for (slot_iterator I = Slots.begin(), E = llvm::prior(Slots.end());I != E;++I)
     if (VASTSlot *S = *I) {
       S->buildCtrlLogic(*this, Builder);
       continue;

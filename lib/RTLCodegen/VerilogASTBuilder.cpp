@@ -501,7 +501,7 @@ void VerilogASTBuilder::print(raw_ostream &O, const Module *M) const {
 void VerilogASTBuilder::emitIdleState() {
   // The module is busy now
   MachineBasicBlock *EntryBB =  GraphTraits<MachineFunction*>::getEntryNode(MF);
-  VASTSlot *IdleSlot = VM->getOrCreateSlot(0, 0);
+  VASTSlot *IdleSlot = VM->getOrCreateStartSlot();
   IdleSlot->buildReadyLogic(*VM, *Builder);
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
   addSuccSlot(IdleSlot, IdleSlot, Builder->buildNotExpr(StartPort));
@@ -921,8 +921,7 @@ void VerilogASTBuilder::emitOpUnreachable(MachineInstr *MI, VASTSlot *Slot,
   OS << "$finish();\n";
   OS.exit_block();
 
-  addSuccSlot(Slot, VM->getOrCreateSlot(0, 0),
-              VM->getBoolImmediateImpl(true));
+  addSuccSlot(Slot, VM->getFinishSlot(), VM->getBoolImmediateImpl(true));
 }
 
 void VerilogASTBuilder::emitOpReadFU(MachineInstr *MI, VASTSlot *Slot,
@@ -1050,7 +1049,7 @@ void VerilogASTBuilder::emitOpRet(MachineInstr *MI, VASTSlot *CurSlot,
                                   VASTValueVecTy &Cnds) {
   // Go back to the idle slot.
   VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
-  addSuccSlot(CurSlot, VM->getOrCreateSlot(0, 0), Pred);
+  addSuccSlot(CurSlot, VM->getFinishSlot(), Pred);
   addSlotEnable(CurSlot, VM->getPort(VASTModule::Finish).getSeqVal(), Pred);
 }
 

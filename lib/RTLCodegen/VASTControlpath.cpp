@@ -44,6 +44,17 @@ VASTSlot::VASTSlot(unsigned slotNum, MachineInstr *BundleStart, VASTModule *VM)
   SlotActive.set(Active);
 }
 
+VASTSlot::VASTSlot(unsigned slotNum, VASTSlot *StartSlot)
+  : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
+    SlotReady(this, 0), StartSlot(slotNum), EndSlot(slotNum), II(~0),
+    SlotNum(slotNum){
+  Contents.BundleStart = 0;
+  // Finish slot alias with the start slot.
+  SlotReg.set(StartSlot->SlotReg);
+  SlotReady.set(StartSlot->SlotReady);
+  SlotActive.set(StartSlot->SlotActive);
+}
+
 MachineInstr *VASTSlot::getBundleStart() const {
   return Contents.BundleStart;
 }

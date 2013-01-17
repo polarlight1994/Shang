@@ -185,16 +185,20 @@ public:
                                bool CreateWrapper);
 
   void allocaSlots(unsigned TotalSlots) {
-    Slots.assign(TotalSlots, 0);
+    Slots.assign(TotalSlots + 1, 0);
   }
 
   VASTSlot *getOrCreateSlot(unsigned SlotNum, MachineInstr *BundleStart);
+  VASTSlot *getOrCreateStartSlot();
 
   VASTSlot *getSlot(unsigned SlotNum) const {
     VASTSlot *S = Slots[SlotNum];
     assert(S && "Slot not exist!");
     return S;
   }
+
+  VASTSlot *getStartSlot() const;
+  VASTSlot *getFinishSlot() const;
 
   VASTUse *allocateUse() { return Allocator.Allocate<VASTUse>(); }
   // Allow user to add ports.

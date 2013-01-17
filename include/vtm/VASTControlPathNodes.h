@@ -129,10 +129,12 @@ private:
   }
 
   friend class VASTModule;
+  VASTSlot(unsigned slotNum, MachineInstr *BundleStart, VASTModule *VM);
+  // Create the finish slot.
+  VASTSlot(unsigned slotNum, VASTSlot *StartSlot);
 public:
   const uint16_t SlotNum;
 
-  VASTSlot(unsigned slotNum, MachineInstr *BundleStart, VASTModule *VM);
 
   MachineBasicBlock *getParentBB() const;
   MachineInstr *getBundleStart() const;
