@@ -113,7 +113,7 @@ private:
   uint16_t II;
 
   // The definitions in the current slot.
-  typedef std::vector<VASTSeqDef> SeqDefVector;
+  typedef std::vector<VASTSeqDef*> SeqDefVector;
   SeqDefVector Defintions;
 
   // Successor slots of this slot.
@@ -134,7 +134,6 @@ private:
 public:
   const uint16_t SlotNum;
 
-
   MachineBasicBlock *getParentBB() const;
   MachineInstr *getBundleStart() const;
 
@@ -152,7 +151,7 @@ public:
   VASTValue *getReady() const { return cast<VASTValue>(SlotReady); }
   VASTValue *getActive() const { return cast<VASTValue>(SlotActive); }
 
-  void addDefinition(VASTSeqDef D) { Defintions.push_back(D); }
+  void addDefinition(VASTSeqDef *D) { Defintions.push_back(D); }
   typedef SeqDefVector::const_iterator const_def_iterator;
   const_def_iterator def_begin() const { return Defintions.begin(); }
   const_def_iterator def_end() const { return Defintions.end(); }
@@ -262,7 +261,7 @@ private:
   const unsigned Idx  : 30;
 
   // Map the assignment condition to assignment value.
-  typedef std::vector<VASTSeqDef> AssignmentVector;
+  typedef std::vector<VASTSeqDef*> AssignmentVector;
   AssignmentVector Assigns;
 
   VASTNode &Parent;
@@ -291,7 +290,7 @@ public:
   VASTNode *getParent() { return &Parent; }
   const VASTNode *getParent() const { return &Parent; }
 
-  void addAssignment(VASTSeqDef Ops);
+  void addAssignment(VASTSeqDef *Ops);
   bool isTimingUndef() const { return getValType() == VASTNode::Slot; }
 
   typedef AssignmentVector::const_iterator const_itertor;

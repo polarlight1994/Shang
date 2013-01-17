@@ -285,7 +285,7 @@ void SeqValReachingDefAnalysis::ComputeGenAndKill() {
 
     typedef VASTSlot::const_def_iterator def_iterator;
     for (def_iterator I = S->def_begin(), E = S->def_end(); I != E; ++I) {
-      const VASTSeqDef &D = *I;
+      const VASTSeqDef &D = **I;
       VASTSlot *S = D.getSlot();
       SlotInfo *SI = getSlotInfo(S);
       SI->insertGen(D);

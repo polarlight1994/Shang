@@ -165,7 +165,7 @@ static unsigned getMinimalDelay(SeqValReachingDefAnalysis *R, VASTSeqValue *Src,
 
   typedef VASTSeqValue::const_itertor vn_itertor;
   for (vn_itertor I = Src->begin(), E = Src->end(); I != E; ++I) {
-    const VASTSeqDef &SrcDef = *I;
+    const VASTSeqDef &SrcDef = **I;
 
     // Update the PathDelay if the source VAS reaches DstSlot.
     if (unsigned Distance = DstSI->getCyclesFromDef(SrcDef)) {
@@ -488,10 +488,11 @@ void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
 
   typedef VASTSeqValue::const_itertor vn_itertor;
   for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
-    const VASTSeqDef &DstDef = *I;
+    const VASTSeqDef &DstDef = **I;
     // Paths for the condition.
     DatapathMap[DstDef.getPred().getAsLValue<VASTValue>()].push_back(DstDef);
-    DatapathMap[DstDef.getSlotActive().getAsLValue<VASTValue>()].push_back(DstDef);
+    if (VASTValPtr SlotActive = DstDef.getSlotActive())
+      DatapathMap[SlotActive.getAsLValue<VASTValue>()].push_back(DstDef);
     // Paths for the assigning value
     DatapathMap[DstDef.getSrcVal().getAsLValue<VASTValue>()].push_back(DstDef);
   }

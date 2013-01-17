@@ -316,7 +316,7 @@ void VASTSeqDef::printPredicate(raw_ostream &OS) const {
 VASTSeqDef::VASTSeqDef(VASTSlot *S, bool UseSlotActive, MachineInstr *DefMI,
                        VASTUse *Operands, unsigned Size)
   : VASTOperandList(Operands, Size), Def(0), S(S, UseSlotActive), DefMI(DefMI) {
-  S->addDefinition(*this);
+  S->addDefinition(this);
 }
 
 const char *VASTSeqDef::getName() const {
@@ -339,8 +339,8 @@ bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr,
                                         std::vector<const VASTSeqDef*> >
                                &CSEMap) const {
   for (const_itertor I = begin(), E = end(); I != E; ++I) {
-    const VASTSeqDef &L = *I;
-    CSEMap[L.getSrcVal()].push_back(&L);
+    const VASTSeqDef *L = *I;
+    CSEMap[L->getSrcVal()].push_back(L);
   }
 
   return !CSEMap.empty();
@@ -350,7 +350,7 @@ bool VASTSeqValue::verify() const {
   std::set<VASTSeqDef> UniqueDefs;
 
   for (const_itertor I = begin(), E = end(); I != E; ++I) {
-    const VASTSeqDef &L = *I;
+    const VASTSeqDef &L = **I;
     if (!UniqueDefs.insert(L).second)
       return false;
   }
@@ -373,7 +373,7 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
 
     AllPredSS << '{';
     for (const_itertor I = begin(), E = end(); I != E; ++I) {
-      const VASTSeqDef &L = *I;
+      const VASTSeqDef &L = **I;
       L.printPredicate(AllPredSS);
       AllPredSS << ", ";
     }
@@ -391,7 +391,7 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
 
   // Display the conflicted condition and its slot.
   for (const_itertor I = begin(), E = end(); I != E; ++I) {
-    const VASTSeqDef &L = *I;
+    const VASTSeqDef &L = **I;
     OS.indent(2) << "if (";
     L.printPredicate(OS);
     OS << ") begin\n";
@@ -422,8 +422,8 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
   OS.indent(2) << "$finish();\nend\n";
 }
 
-void VASTSeqValue::addAssignment(VASTSeqDef Ops) {
-  Ops.setDef(this);
+void VASTSeqValue::addAssignment(VASTSeqDef *Ops) {
+  Ops->setDef(this);
   Assigns.push_back(Ops);
 }
 
