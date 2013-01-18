@@ -229,23 +229,23 @@ inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
   return get()->getOperand(i).get().invert(isInverted());
 }
 
-class VASTWire :public VASTSignal {
+class VASTWire :public VASTSignal, public VASTOperandList {
   unsigned Idx : 31;
   bool IsPinned : 1;
   friend class VASTModule;
 
-  // VASTValue pointer point to the VASTExpr.
-  VASTUse U;
 public:
   const char *const AttrStr;
 
-  VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "",
+  VASTWire(const char *Name, unsigned BitWidth, VASTUse *U, const char *Attr = "",
            bool IsPinned = false)
-    : VASTSignal(vastWire, Name, BitWidth), Idx(0), IsPinned(IsPinned),
-      U(this, 0), AttrStr(Attr) {}
+    : VASTSignal(vastWire, Name, BitWidth), VASTOperandList(U, 1),
+      Idx(0), IsPinned(IsPinned), AttrStr(Attr) {
+    new (Operands) VASTUse(this);
+  }
 
   void assign(VASTValPtr V) {
-    U.set(V);
+    getOperand(0).set(V);
   }
 
   bool isPinned() const { return IsPinned; }
@@ -266,7 +266,7 @@ private:
 
   virtual void dropUses();
 public:
-  VASTValPtr getDriver() const { return U.unwrap(); }
+  VASTValPtr getDriver() const { return getOperand(0).unwrap(); }
 
   VASTExprPtr getExpr() const {
     return getDriver() ? dyn_cast<VASTExprPtr>(getDriver()) : 0;
@@ -279,14 +279,6 @@ public:
   static inline bool classof(const VASTWire *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastWire;
-  }
-
-  // Internal function used by VASTValue.
-  VASTValue::dp_dep_it op_begin() const {
-    return (U.isInvalid()) ? 0 : &U;
-  }
-  VASTValue::dp_dep_it op_end() const {
-    return (U.isInvalid()) ? 0 : &U + 1;
   }
 };
 

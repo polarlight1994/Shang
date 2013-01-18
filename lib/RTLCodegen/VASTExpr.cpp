@@ -446,7 +446,7 @@ static void printCombMux(raw_ostream &OS, const VASTWire *W) {
 }
 
 void VASTWire::dropUses() {
-  if (U.get()) U.unlinkUseFromUser();
+  if (getOperand(0).get()) getOperand(0).unlinkUseFromUser();
 }
 
 void VASTWire::printAssignment(raw_ostream &OS) const {

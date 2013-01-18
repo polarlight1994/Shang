@@ -380,6 +380,13 @@ VASTValPtr VASTSeqOp::getSlotActive() const {
 
   return VASTValPtr();
 }
+
+VASTOperandList *VASTOperandList::GetOperandList(VASTNode *N) {
+  if (VASTOperandList *L = GetDatapathOperandList(N))
+    return L;
+
+  return dyn_cast_or_null<VASTSeqOp>(N);
+}
 //----------------------------------------------------------------------------//
 
 bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr,

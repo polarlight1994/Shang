@@ -182,8 +182,14 @@ VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
                               const char *Attr, bool IsPinned) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
-  VASTWire *Wire = Allocator.Allocate<VASTWire>();
-  new (Wire) VASTWire(Entry.getKeyData(), BitWidth, Attr, IsPinned);
+  // Allocate the wire and the use.
+  void *P =  Allocator.Allocate(sizeof(VASTWire) + sizeof(VASTUse),
+                                alignOf<VASTWire>());
+
+  VASTWire *Wire = reinterpret_cast<VASTWire*>(P);
+  // Create the uses in the list.
+  VASTUse *U = reinterpret_cast<VASTUse*>(Wire + 1);
+  new (Wire) VASTWire(Entry.getKeyData(), BitWidth, U, Attr, IsPinned);
   Entry.second = Wire;
   Wires.push_back(Wire);
 

@@ -119,6 +119,12 @@ public:
 
   // Provide the < operator to support set of VASTSeqDef.
   bool operator<(const VASTSeqOp &RHS) const;
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTSeqOp *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastSeqOp;
+  }
 };
 
 class VASTSlot : public VASTNode {

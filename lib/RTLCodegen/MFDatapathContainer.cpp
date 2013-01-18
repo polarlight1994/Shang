@@ -126,9 +126,17 @@ VASTWire *MFDatapathContainer::pinValue(unsigned Reg) {
   if (!Wire) {
     // Create the c-string and copy.
     const char *Name = allocateRegName(Reg, 'r');
+    
+    // Allocate the wire and the use.
+    void *P =  Allocator.Allocate(sizeof(VASTWire) + sizeof(VASTUse),
+                                  alignOf<VASTWire>());
+
+    Wire = reinterpret_cast<VASTWire*>(P);
+    // Create the uses in the list.
+    VASTUse *U = reinterpret_cast<VASTUse*>(Wire + 1);
 
     // The port is not yet exist, create it now.
-    Wire = new (Allocator) VASTWire(Name, Val->getBitWidth());
+    new (Wire) VASTWire(Name, Val->getBitWidth(), U);
     Wire->assign(Val);
   }
 

@@ -369,6 +369,10 @@ public:
   //op_iterator op_end() const { return ops() + num_ops(); }
 
   ArrayRef<VASTUse> getOperands() const;
+
+  // Convert the VASTNode to VASTOperandList.
+  static VASTOperandList *GetDatapathOperandList(VASTNode *N);
+  static VASTOperandList *GetOperandList(VASTNode *N);
 };
 
 class VASTValue : public VASTNode {
