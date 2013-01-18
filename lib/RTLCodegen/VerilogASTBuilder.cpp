@@ -1080,28 +1080,33 @@ void VerilogASTBuilder::emitOpRetVal(MachineInstr *MI, VASTSlot *Slot,
 void VerilogASTBuilder::emitOpMemTrans(MachineInstr *MI, VASTSlot *Slot,
                                        VASTValueVecTy &Cnds) {
   unsigned FUNum = VInstrInfo::getPreboundFUId(MI).getFUNum();
+  VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
+
+  // Create the SeqOp for the load/store.
+  VASTSeqOp *Op = VM->createSeqOp(Slot, Pred, 4, MI, true);
 
   // Emit Address.
   std::string RegName = VFUMemBus::getAddrBusName(FUNum) + "_r";
   VASTSeqValue *R = VM->getSymbol<VASTSeqValue>(RegName);
-  addAssignment(R, getAsOperandImpl(MI->getOperand(1)), Slot, Cnds, MI);
+  Op->addSrc(getAsOperandImpl(MI->getOperand(1)), 0, false, R);
   // Assign store data.
   RegName = VFUMemBus::getOutDataBusName(FUNum) + "_r";
   R = VM->getSymbol<VASTSeqValue>(RegName);
-  addAssignment(R, getAsOperandImpl(MI->getOperand(2)), Slot, Cnds, MI);
+  // Please note that the data are not present when we are performing a load.
+  if (VASTValPtr Data = getAsOperandImpl(MI->getOperand(2)))
+    Op->addSrc(Data, 1, false, R);
   // And write enable.
   RegName = VFUMemBus::getCmdName(FUNum) + "_r";
   R = VM->getSymbol<VASTSeqValue>(RegName);
-  addAssignment(R, getAsOperandImpl(MI->getOperand(3)), Slot, Cnds, MI);
+  Op->addSrc(getAsOperandImpl(MI->getOperand(3)), 2, false, R);
   // The byte enable.
   RegName = VFUMemBus::getByteEnableName(FUNum) + "_r";
   R = VM->getSymbol<VASTSeqValue>(RegName);
-  addAssignment(R, getAsOperandImpl(MI->getOperand(4)), Slot, Cnds, MI);
+  Op->addSrc(getAsOperandImpl(MI->getOperand(4)), 3, false, R);
 
   // Remember we enabled the memory bus at this slot.
   std::string EnableName = VFUMemBus::getEnableName(FUNum) + "_r";
   VASTValPtr MemEn = VM->getSymbol(EnableName);
-  VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
   addSlotEnable(Slot, cast<VASTSeqValue>(MemEn), Pred);
 }
 

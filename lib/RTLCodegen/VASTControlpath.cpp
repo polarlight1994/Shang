@@ -330,6 +330,7 @@ void VASTSeqOp::addDefDst(VASTSeqValue *Def) {
 
 void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef, VASTSeqValue *D) {
   assert(Src && "Bad assignment source!");
+  assert(SrcIdx < getNumSrcs() && "Bad source index!");
   // The source value of assignment is used by the SeqValue.
   new (src_begin() + SrcIdx) VASTUse(D ? (VASTNode*)D : (VASTNode*)this, Src);
 
