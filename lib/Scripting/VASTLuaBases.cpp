@@ -191,7 +191,6 @@ VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
   VASTUse *U = reinterpret_cast<VASTUse*>(Wire + 1);
   new (Wire) VASTWire(Entry.getKeyData(), BitWidth, U, Attr, IsPinned);
   Entry.second = Wire;
-  Wires.push_back(Wire);
 
   return Wire;
 }
@@ -334,7 +333,6 @@ void VASTModule::reset() {
   // Release all ports.
   Slots.clear();
   Ports.clear();
-  Wires.clear();
   Registers.clear();
   SymbolTable.clear();
   FUPortOffsets.clear();
@@ -358,7 +356,13 @@ struct DatapathPrinter {
 
   void operator()(const VASTNode *N) const {
     if (const VASTWire *W = dyn_cast<VASTWire>(N))  {
-      if (W->getDriver()) W->printAssignment(OS, DECL);
+
+      // Declare the wire if necessary.
+      OS << "wire "
+         << VASTValue::printBitRange(W->getBitWidth(), 0, W->getBitWidth() > 1)
+         << ' ' << W->getName() << ";\n";
+
+      if (W->getDriver()) W->printAssignment(OS);
     }
   }
 };
@@ -399,8 +403,9 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
     VASTPort *P = *I;
 
     if (P->isInput() || P->isRegister()) continue;
-
-    VASTOperandList::visitTopOrder(P->getValue(), Visited, DatapathPrinter(OS));
+    VASTWire *W = cast<VASTWire>(P->getValue());
+    VASTOperandList::visitTopOrder(W->getDriver().get(), Visited, DatapathPrinter(OS));
+    W->printAssignment(OS);
   }
 }
 
@@ -468,15 +473,6 @@ raw_ostream &printDecl(raw_ostream &OS, T *V, bool declAsRegister,
 }
 
 void VASTModule::printSignalDecl(raw_ostream &OS) {
-  for (wire_iterator I = Wires.begin(), E = Wires.end(); I != E; ++I) {
-    VASTWire *W = *I;
-
-    // Print the declaration.
-    if (W->use_empty() && !W->isPinned()) OS << "//";
-    printDecl(OS, W, false, W->AttrStr);
-    OS << "// uses " << W->num_uses() << " pinned " << W->isPinned() << '\n';
-  }
-
   for (reg_iterator I = Registers.begin(), E = Registers.end(); I != E; ++I) {
     VASTRegister *R = *I;
     printDecl(OS, R, true, R->AttrStr) << "\n";

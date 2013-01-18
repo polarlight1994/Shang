@@ -93,7 +93,6 @@ private:
   // Input/Output ports of the design.
   PortVector Ports;
   // Wires and Registers of the design.
-  WireVector Wires;
   RegisterVector Registers;
   SubmoduleVector Submodules;
   SeqCodeVector SeqCode;
