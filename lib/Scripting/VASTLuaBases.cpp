@@ -478,21 +478,17 @@ void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
 
   // Create a wrapper to avoid the direct cycle in the def-use chain.
   Src = wrapSeqValue(Src, V);
-  void *P =  Allocator.Allocate(sizeof(VASTSeqOp) + 2 * sizeof(VASTUse),
-                                alignOf<VASTSeqOp>());
-  VASTSeqOp *Def = reinterpret_cast<VASTSeqOp*>(P);
-  // Create the uses in the list.
-  VASTUse *UseBegin = reinterpret_cast<VASTUse*>(Def + 1);
-  new (Def) VASTSeqOp(Slot, AddSlotActive, DefMI, UseBegin, 2);
-  new (UseBegin) VASTUse(V, wrapSeqValue(GuardCnd, V));
-  new (UseBegin + 1) VASTUse(V, Src);
+
+  VASTSeqOp *Def = createSeqOp(Slot, GuardCnd, 1, DefMI, AddSlotActive);
+  new (Def->src_begin()) VASTUse(V, Src);
+
   V->addAssignment(Def, 0, true);
 }
 
 VASTSeqOp *VASTModule::createSeqOp(VASTSlot *Slot, VASTValPtr Pred,
                                    unsigned NumOps, MachineInstr *DefMI,
                                    bool AddSlotActive) {
-  void *P =  Allocator.Allocate(sizeof(VASTSeqOp) + NumOps * sizeof(VASTUse),
+  void *P =  Allocator.Allocate(sizeof(VASTSeqOp) + (NumOps + 1) * sizeof(VASTUse),
                                 alignOf<VASTSeqOp>());
 
   VASTSeqOp *Def = reinterpret_cast<VASTSeqOp*>(P);

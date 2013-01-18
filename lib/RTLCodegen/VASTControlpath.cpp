@@ -358,7 +358,7 @@ void VASTSeqOp::printPredicate(raw_ostream &OS) const {
 
 VASTSeqOp::VASTSeqOp(VASTSlot *S, bool UseSlotActive, MachineInstr *DefMI,
                      VASTUse *Operands, unsigned Size)
-  : VASTOperandList(Operands, Size), VASTNode(vastSeqOp), S(S, UseSlotActive),
+  : VASTOperandList(Operands, Size + 1), VASTNode(vastSeqOp), S(S, UseSlotActive),
     DefMI(DefMI) {
   S->addOperation(this);
 }
