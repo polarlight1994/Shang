@@ -980,8 +980,7 @@ void VerilogASTBuilder::emitOpReadReturn(MachineInstr *MI, VASTSlot *Slot,
   VASTSeqValue *R = getAsLValue<VASTSeqValue>(MI->getOperand(0));
   // Dirty Hack: Do not trust the bitwidth information of the operand
   // representing the return port.
-  addAssignment(R, lookupSignal(MI->getOperand(1).getReg()), Slot,
-                    Cnds, MI);
+  addAssignment(R, lookupSignal(MI->getOperand(1).getReg()), Slot, Cnds, MI);
 }
 
 void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,

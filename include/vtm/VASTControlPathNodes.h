@@ -102,6 +102,8 @@ public:
 
   // Get the source of the transaction.
   VASTSeqUse getSrc(unsigned Idx) { return VASTSeqUse(this, Idx); };
+  // Add a source value to the SeqOp.
+  void addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef, VASTSeqValue *Dst);
 
   // Iterate over the source value of register transaction.
   const_op_iterator src_begin() const { return Operands + 1; }

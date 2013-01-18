@@ -109,8 +109,6 @@ private:
   SmallVector<std::map<unsigned, unsigned>, VFUs::NumCommonFUs> FUPortOffsets;
   unsigned NumArgPorts, RetPortIdx;
 
-  VASTValPtr wrapSeqValue(VASTValPtr Src, VASTSeqValue *V);
-
   VASTPort *addPort(const Twine &Name, unsigned BitWidth, bool isReg,
                     bool isInput);
 
@@ -308,10 +306,6 @@ public:
   const_slot_iterator slot_begin() const { return Slots.begin(); }
   const_slot_iterator slot_end() const { return Slots.end(); }
 
-  void addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
-                     VASTValPtr GuardCnd, MachineInstr *DefMI = 0,
-                     bool AddSlotActive = true);
-
   VASTWire *assign(VASTWire *W, VASTValPtr V);
 
   // Fine-grain Control-flow creation functions.
@@ -319,6 +313,9 @@ public:
   // operand is excluded from NumOps.
   VASTSeqOp *createSeqOp(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps,
                          MachineInstr *DefMI, bool AddSlotActive);
+  void addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
+                     VASTValPtr GuardCnd, MachineInstr *DefMI = 0,
+                     bool AddSlotActive = true);
 
   void print(raw_ostream &OS) const;
 
