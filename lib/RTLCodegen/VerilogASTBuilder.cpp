@@ -1135,14 +1135,17 @@ void VerilogASTBuilder::emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot,
     return;
   }
 
-  addAssignment(AddrPort, Addr, Slot, Cnds, MI);
+  VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
+  VASTSeqOp *Op = VM->createSeqOp(Slot, Pred, IsWrite ? 2 : 1, MI, true);
+  // DIRTY HACK: Because the Read address are also use as the data ouput port of
+  // the block RAM, the block RAM read define its result at the address port.
+  Op->addSrc(Addr, 0, !IsWrite, AddrPort);
 
   // Also assign the data to write to the dataport of the block RAM.
   if (IsWrite) {
     VASTValPtr Data = getAsOperandImpl(MI->getOperand(2));
     VASTSeqValue *DataPort = cast<VASTSeqValue>(lookupSignal(PortRegNum + 1));
-
-    addAssignment(DataPort, Data, Slot, Cnds, MI);
+    Op->addSrc(Data, 1, false, DataPort);
   }
 }
 
