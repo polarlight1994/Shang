@@ -1071,9 +1071,10 @@ void VerilogASTBuilder::emitOpRetVal(MachineInstr *MI, VASTSlot *Slot,
                                      VASTValueVecTy &Cnds) {
   unsigned retChannel = MI->getOperand(1).getImm();
   assert(retChannel == 0 && "Only support Channel 0!");
-  addAssignment(VM->getRetPort().getSeqVal(),
-                    getAsOperandImpl(MI->getOperand(0)),
-                    Slot, Cnds, MI);
+  VASTSeqOp *Op
+    = VM->createSeqOp(Slot, Builder->buildAndExpr(Cnds, 1), 1, MI, true);
+  Op->addSrc(getAsOperandImpl(MI->getOperand(0)), 0, false,
+             VM->getRetPort().getSeqVal());
 }
 
 void VerilogASTBuilder::emitOpMemTrans(MachineInstr *MI, VASTSlot *Slot,
