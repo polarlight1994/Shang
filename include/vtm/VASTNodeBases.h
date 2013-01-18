@@ -487,7 +487,7 @@ void VASTOperandList::visitTopOrder(VASTValue *Root,
     }
 
     // Otherwise, remember the node and visit its children first.
-    VASTValue *ChildNode = It->getAsLValue<VASTValue>();
+    VASTValue *ChildNode = It->unwrap().get();
     ++VisitStack.back().second;
 
     if (VASTOperandList *L = VASTOperandList::GetDatapathOperandList(ChildNode)) {

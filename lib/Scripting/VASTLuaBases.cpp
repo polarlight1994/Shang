@@ -357,7 +357,9 @@ struct DatapathPrinter {
   DatapathPrinter(raw_ostream &OS) : OS(OS) {}
 
   void operator()(const VASTNode *N) const {
-    if (const VASTWire *W = dyn_cast<VASTWire>(N))  W->printAssignment(OS);
+    if (const VASTWire *W = dyn_cast<VASTWire>(N))  {
+      if (W->getDriver()) W->printAssignment(OS, DECL);
+    }
   }
 };
 }

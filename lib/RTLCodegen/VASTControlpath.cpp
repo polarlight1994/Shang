@@ -344,7 +344,7 @@ void VASTSeqOp::print(raw_ostream &OS) const {
   OS << "<-@" << getSlotNum() << "{ pred";
   for (unsigned i = 0; i < Size; ++i) {
     if (VASTValPtr V = getOperand(i).unwrap()) V.printAsOperand(OS);
-    else                              OS << "<nullptr>";
+    else                                       OS << "<nullptr>";
     OS << ", ";
   }
   OS << "} ";
