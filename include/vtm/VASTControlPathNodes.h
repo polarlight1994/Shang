@@ -39,7 +39,7 @@ struct VASTSeqUse {
   operator VASTValPtr () const;
   VASTUse &operator->() const;
 
-  // Get the destination of the assignment.
+  // Get the destination of the transaction.
   VASTSeqValue *getDst() const;
 
   // Forward the functions from VASTSeqOp;
@@ -63,7 +63,7 @@ struct VASTSeqDef {
 
 // Represent an operation in seqential logic, it read some value and define some
 // others.
-class VASTSeqOp : public VASTOperandList {
+class VASTSeqOp : public VASTOperandList, public VASTNode {
   SmallVector<VASTSeqValue*, 1> Defs;
   PointerIntPair<VASTSlot*, 1, bool> S;
   MachineInstr *DefMI;
@@ -96,17 +96,24 @@ public:
   virtual void print(raw_ostream &OS) const;
   void printPredicate(raw_ostream &OS) const;
 
-  // Get the predicate operand of the assignment.
+  // Get the predicate operand of the transaction.
   VASTUse &getPred() { return getOperand(0); }
   const VASTUse &getPred() const { return getOperand(0); }
 
-  // Get the source of the assignment.
+  // Get the source of the transaction.
   VASTSeqUse getSrc(unsigned Idx) { return VASTSeqUse(this, Idx); };
 
-  const VASTUse &getSrcVal() const {
-    assert(Size == 2 && "Operand list is not for assignment!");
-    return getOperand(1);
-  }
+  // Iterate over the source value of register transaction.
+  const_op_iterator src_begin() const { return Operands + 1; }
+  const_op_iterator src_end() const { return op_end(); }
+
+  op_iterator src_begin() { return Operands + 1; }
+  op_iterator src_end() { return op_end(); }
+
+  // Return the used values for the register assignments, the predicate is
+  // excluded.
+  unsigned getNumSrcs() const { return size() - 1; }
+  bool src_empty() const { return getNumSrcs() == 0; }
 
   // Provide the < operator to support set of VASTSeqDef.
   bool operator<(const VASTSeqOp &RHS) const;
@@ -300,11 +307,11 @@ public:
 private:
   // For common registers, the Idx is the corresponding register number in the
   // MachineFunction. With this register number we can get the define/use/kill
-  // information of assignment to this local storage.
+  // information of transaction to this local storage.
   const unsigned T    : 2;
   const unsigned Idx  : 30;
 
-  // Map the assignment condition to assignment value.
+  // Map the transaction condition to transaction value.
   typedef std::vector<VASTSeqUse> AssignmentVector;
   AssignmentVector Assigns;
 

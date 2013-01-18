@@ -190,13 +190,13 @@ class VerilogASTBuilder : public MachineFunctionPass,
   VASTModule *VM;
   OwningPtr<DatapathBuilder> Builder;
   MemBusBuilder *MBBuilder;
-  std::map<unsigned, VASTSubModule*> EmittedSubModules;
+  std::map<unsigned, VASTNode*> EmittedSubModules;
 
   VASTSubModule *getSubModule(unsigned FNNum) const {
-    std::map<unsigned, VASTSubModule*>::const_iterator at
+    std::map<unsigned, VASTNode*>::const_iterator at
       = EmittedSubModules.find(FNNum);
     assert(at != EmittedSubModules.end() && "Submodule not yet created!");
-    return at->second;
+    return dyn_cast<VASTSubModule>(at->second);
   }
 
   VASTImmediate *getOrCreateImmediate(const APInt &Value) {
@@ -344,7 +344,7 @@ class VerilogASTBuilder : public MachineFunctionPass,
   void emitFunctionSignature(const Function *F, VASTSubModule *SubMod = 0);
   void emitCommonPort(VASTSubModule *SubMod);
   void emitAllocatedFUs();
-  VASTSubModule *emitSubModule(const char *CalleeName, unsigned FNNum);
+  VASTNode *emitSubModule(const char *CalleeName, unsigned FNNum);
   void emitIdleState();
 
   void emitBasicBlock(MachineBasicBlock &MBB);
@@ -674,17 +674,17 @@ void VerilogASTBuilder::emitAllocatedFUs() {
   }
 }
 
-VASTSubModule *VerilogASTBuilder::emitSubModule(const char *CalleeName,
-                                                unsigned FNNum) {
-  VASTSubModule *&SubMod = EmittedSubModules[FNNum];
+VASTNode *VerilogASTBuilder::emitSubModule(const char *CalleeName, unsigned FNNum) {
+  VASTNode *&N = EmittedSubModules[FNNum];
   // Do not emit a submodule more than once.
-  if (SubMod) return SubMod;
+  if (N) return N;
 
   if (const Function *Callee = M->getFunction(CalleeName)) {
     if (!Callee->isDeclaration()) {
-      SubMod = VM->addSubmodule(CalleeName, FNNum);
+      VASTSubModule *SubMod = VM->addSubmodule(CalleeName, FNNum);
       emitFunctionSignature(Callee, SubMod);
       SubMod->setIsSimple();
+      N = SubMod;
       return SubMod;
     }
   }
@@ -693,10 +693,14 @@ VASTSubModule *VerilogASTBuilder::emitSubModule(const char *CalleeName,
   unsigned Latency = VFUs::getModuleOperands(CalleeName, FNNum, OpInfo);
   VRegisterInfo::PhyRegInfo Info = TRI->getPhyRegInfo(FNNum);
 
-  // Submodule information not available.
-  if (OpInfo.empty()) return 0;
+  // Submodule information not available, create the seqential code.
+  if (OpInfo.empty()) {
+    N = VM->addSeqCode(CalleeName);
+    return N;
+  }
 
-  SubMod = VM->addSubmodule(CalleeName, FNNum);
+  VASTSubModule *SubMod = VM->addSubmodule(CalleeName, FNNum);
+  N = SubMod;
   SubMod->setIsSimple(false);
   SmallVector<VASTValPtr, 4> Ops;
   // Add the fanin registers.
@@ -924,16 +928,6 @@ void VerilogASTBuilder::emitBr(MachineInstr *MI, VASTSlot *CurSlot,
 
 void VerilogASTBuilder::emitOpUnreachable(MachineInstr *MI, VASTSlot *Slot,
                                           VASTValueVecTy &Cnds) {
-  vlang_raw_ostream &OS = VM->getControlBlockBuffer();
-  std::string PredStr;
-  raw_string_ostream SS(PredStr);
-  VASTRegister::printCondition(SS, Slot, Cnds);
-  SS.flush();
-  OS.if_begin(PredStr);
-  OS << "$display(\"BAD BAD BAD BAD! Run to unreachable\");\n";
-  OS << "$finish();\n";
-  OS.exit_block();
-
   addSuccSlot(Slot, VM->getFinishSlot(), VM->getBoolImmediateImpl(true));
 }
 
@@ -997,13 +991,13 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
   unsigned FNNum = FInfo->getCalleeFNNum(CalleeName);
 
   // Emit the submodule on the fly.
-  VASTSubModule *Submod = emitSubModule(CalleeName, FNNum);
+  VASTNode *N = emitSubModule(CalleeName, FNNum);
 
   VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
 
   std::string StartPortName = VASTSubModule::getPortName(FNNum, "start");
 
-  if (Submod) {
+  if (VASTSubModule *Submod = dyn_cast<VASTSubModule>(N)) {
     // Start the submodule.
     addSlotEnable(Slot, Submod->getStartPort(), Pred);
     // Assign the new value for this function call to the operand registers.
@@ -1016,46 +1010,52 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
   }
 
   // Else we had to write the control code to the control block.
-  vlang_raw_ostream &OS = VM->getControlBlockBuffer();
-  OS << "// Calling function: " << CalleeName << ";\n";
-  std::string PredStr;
-  raw_string_ostream SS(PredStr);
-  VASTRegister::printCondition(SS, Slot, Cnds);
-  SS.flush();
+  VASTSeqCode *Code = cast<VASTSeqCode>(N);
+  SmallVector<VASTValPtr, 4> Operands;
 
-  OS.if_begin(PredStr);
-  // Dirty Hack.
-  // TODO: Extract these to some special instruction?
-  OS << "$c(\"" << CalleeName << "(\",";
   for (unsigned i = 4, e = MI->getNumOperands(); i != e; ++i) {
     MachineOperand &Operand = MI->getOperand(i);
     if (Operand.isReg() && (Operand.getReg() == 0 || Operand.isImplicit()))
       continue;
-
-    if (i != 4) OS << ",\",\", ";
 
     // It is the format string?
     StringRef FmtStr;
     if (Operand.isGlobal()
         && getConstantStringInfo(Operand.getGlobal(), FmtStr)) {
       std::string s;
-      raw_string_ostream SS(s);
-      SS << '"';
-      PrintEscapedString(FmtStr, SS);
-      SS << '"';
-      SS.flush();
-      OS << '"';
-      PrintEscapedString(s, OS);
-      OS << '"';
+      {
+        raw_string_ostream SS(s);
+        std::string s;
+        {
+          raw_string_ostream SS(s);
+          SS << '"';
+          PrintEscapedString(FmtStr, SS);
+          SS << '"';
+          SS.flush();
+
+        }
+        PrintEscapedString(s,SS);
+      }
+
+      Operands.push_back(VM->getOrCreateSymbol(s, 1, false));
       continue;
     }
-    printOperand(Operand, OS);
-  } 
 
-  OS << ", \");\""; // Enclose the c function call.
-  OS << ");\n";
+    Operands.push_back(getAsOperandImpl(Operand));
+  }
 
-  OS.exit_block();
+  // Create the VASTSeqOp
+  VASTValPtr Cnd = Builder->buildAndExpr(Cnds, 1);
+  VASTSeqOp *Op = VM->createSeqOp(Slot, Cnd, Operands.size(), MI, true);
+  // Create the operand list.
+  unsigned Idx = 0;
+  typedef VASTSeqOp::op_iterator op_iterator;
+  for (op_iterator I = Op->src_begin(), E = Op->src_end(); I != E; ++I) {
+    new (I) VASTUse(Code, Operands[Idx++]);
+  }
+
+  // Add the operation to the seqcode.
+  Code->addSeqOp(Op);
 }
 
 void VerilogASTBuilder::emitOpRet(MachineInstr *MI, VASTSlot *CurSlot,

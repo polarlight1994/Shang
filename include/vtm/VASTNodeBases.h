@@ -29,6 +29,7 @@ class VASTExpr;
 class VASTSeqValue;
 class VASTSymbol;
 class VASTRegister;
+class VASTSeqOp;
 class VASTModule;
 class vlang_raw_ostream;
 class raw_ostream;
@@ -53,6 +54,10 @@ public:
     vastRegister,
     vastBlockRAM,
     vastSubmodule,
+    vastSeqCode,
+
+    // Fine-grain control flow.
+    vastSeqOp,
 
     vastModule
   };

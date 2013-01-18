@@ -29,6 +29,7 @@ class VASTWire;
 class VASTRegister;
 class VASTBlockRAM;
 class VASTSubModule;
+class VASTSeqCode;
 class VASTSlot;
 class DatapathContainer;
 class VASTExprBuilder;
@@ -75,6 +76,9 @@ public:
   typedef SmallVector<VASTSubModuleBase*, 16> SubmoduleVector;
   typedef SubmoduleVector::iterator submod_iterator;
 
+  typedef SmallVector<VASTSeqCode*, 16> SeqCodeVector;
+  typedef SeqCodeVector::iterator seqcode_iterator;
+
   typedef SmallVector<VASTSeqValue*, 128> SeqValueVector;
   typedef SeqValueVector::iterator seqval_iterator;
 
@@ -82,10 +86,6 @@ public:
   typedef SlotVecTy::iterator slot_iterator;
   typedef SlotVecTy::const_iterator const_slot_iterator;
 private:
-  // Dirty Hack:
-  // Buffers
-  raw_string_ostream ControlBlock;
-  vlang_raw_ostream LangControlBlock;
   // The slots vector, each slot represent a state in the FSM of the design.
   SlotVecTy Slots;
   SeqValueVector SeqVals;
@@ -96,6 +96,7 @@ private:
   WireVector Wires;
   RegisterVector Registers;
   SubmoduleVector Submodules;
+  SeqCodeVector SeqCode;
 
   typedef StringMap<VASTNamedValue*> SymTabTy;
   SymTabTy SymbolTable;
@@ -279,6 +280,8 @@ public:
 
   VASTSubModule *addSubmodule(const char *Name, unsigned Num);
 
+  VASTSeqCode *addSeqCode(const char *Name);
+
   VASTRegister *addRegister(const Twine &Name, unsigned BitWidth,
                             unsigned InitVal = 0,
                             VASTNode::SeqValType T = VASTNode::Data,
@@ -311,21 +314,16 @@ public:
 
   VASTWire *assign(VASTWire *W, VASTValPtr V);
 
+  // Fine-grain Control-flow creation functions.
+  VASTSeqOp *createSeqOp(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps,
+                         MachineInstr *DefMI, bool AddSlotActive);
+
   void print(raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTModule *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastModule;
-  }
-
-  vlang_raw_ostream &getControlBlockBuffer() {
-    return LangControlBlock;
-  }
-
-  std::string &getControlBlockStr() {
-    LangControlBlock.flush();
-    return ControlBlock.str();
   }
 
   static const std::string GetMemBusEnableName(unsigned FUNum) {

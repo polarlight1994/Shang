@@ -140,8 +140,6 @@ bool VerilogASTWriter::runOnMachineFunction(MachineFunction &F) {
 
   Out.else_begin();
 
-  Out << VM->getControlBlockStr();
-
   Out.always_ff_end();
 
   Out.module_end();

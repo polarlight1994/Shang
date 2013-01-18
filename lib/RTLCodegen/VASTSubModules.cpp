@@ -46,25 +46,6 @@ VASTRegister::VASTRegister(const char *Name, unsigned BitWidth,
   : VASTNode(vastRegister), Value(Name, BitWidth, T, RegData, *this),
     InitVal(initVal), AttrStr(Attr) {}
 
-void VASTRegister::printCondition(raw_ostream &OS, const VASTSlot *Slot,
-                                  const AndCndVec &Cnds) {
-  OS << '(';
-  if (Slot) {
-    VASTValPtr Active = Slot->getActive();
-    Active.printAsOperand(OS);
-    if (VASTWire *S = Active.getAsLValue<VASTWire>()) S->Pin();
-  } else      OS << "1'b1";
-
-  typedef AndCndVec::const_iterator and_it;
-  for (and_it CI = Cnds.begin(), CE = Cnds.end(); CI != CE; ++CI) {
-    OS << " & ";
-    CI->printAsOperand(OS);
-    if (VASTWire *S = CI->getAsLValue<VASTWire>()) S->Pin();
-  }
-
-  OS << ')';
-}
-
 void VASTRegister::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   if (Value.empty()) return;
 
@@ -270,4 +251,53 @@ void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   }
 
   printInstantiationFromTemplate(OS, Mod);
+}
+
+//===----------------------------------------------------------------------===//
+VASTSeqCode::VASTSeqCode(const char *Name) : VASTNode(vastSeqCode) {
+  Contents.Name = Name;
+}
+
+void VASTSeqCode::print(vlang_raw_ostream &OS) const {
+  OS << "// synthesis translate_off\n";
+  OS.always_ff_begin(false);
+
+  typedef OperationVector::const_iterator iterator;
+  for (iterator I = Ops.begin(), E = Ops.end(); I != E; ++I)
+    printSeqOp(OS, *I);
+
+  OS.always_ff_end(false);
+  OS << "// synthesis translate_on\n\n";
+}
+
+void VASTSeqCode::print(raw_ostream &OS) const {
+  vlang_raw_ostream O(OS);
+  print(O);
+}
+
+void VASTSeqCode::printSeqOp(vlang_raw_ostream &OS, VASTSeqOp *Op) const {
+  OS.if_();
+  Op->printPredicate(OS);
+  OS._then();
+
+  OS << "$c(\"" << Contents.Name << "(\",";
+  for (unsigned i = 0, e = Op->getNumSrcs(); i != e; ++i) {
+    VASTValPtr V = Op->getSrc(i);
+
+    if (i != 0) OS << ",\",\", ";
+
+    V.printAsOperand(OS);
+  }
+
+  if (!Op->src_empty()) OS << ',';
+
+  OS << " \");\""; // Enclose the c function call.
+  OS << ");\n";
+
+
+  OS.exit_block();
+}
+
+void VASTSeqCode::addSeqOp(VASTSeqOp *Op) {
+  Ops.push_back(Op);
 }

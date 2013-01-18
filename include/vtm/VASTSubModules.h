@@ -156,12 +156,29 @@ public:
   }
 
   typedef VASTSeqValue::AndCndVec AndCndVec;
-  static void printCondition(raw_ostream &OS, const VASTSlot *Slot,
-                             const AndCndVec &Cnds);
 
   void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
   void print(raw_ostream &OS) const;
 };
 
+// Represent the code in the sequential logic that we don't understand.
+class VASTSeqCode : public VASTNode {
+  typedef std::vector<VASTSeqOp*> OperationVector;
+  OperationVector Ops;
+
+  void printSeqOp(vlang_raw_ostream &OS, VASTSeqOp *Op) const;
+public:
+  explicit VASTSeqCode(const char *Name);
+  void addSeqOp(VASTSeqOp *Op);
+
+  void print(vlang_raw_ostream &OS) const;
+  void print(raw_ostream &OS) const;
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTSeqCode *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastSeqCode;
+  }
+};
 }
 #endif

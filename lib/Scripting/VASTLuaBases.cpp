@@ -142,8 +142,7 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 //----------------------------------------------------------------------------//
 
 VASTModule::VASTModule(const Twine &Name)
-  : VASTNode(vastModule), ControlBlock(*(new std::string())),
-    LangControlBlock(ControlBlock), Ports(NumSpecialPort), Name(Name.str()),
+  : VASTNode(vastModule), Ports(NumSpecialPort), Name(Name.str()),
     FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0) {}
 
 VASTSeqValue *
@@ -171,6 +170,12 @@ VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {
   VASTSubModule *M = new (Allocator) VASTSubModule(Name, Num);
   Submodules.push_back(M);
   return M;
+}
+
+VASTSeqCode *VASTModule::addSeqCode(const char *Name) {
+  VASTSeqCode *Code = new (Allocator) VASTSeqCode(Name);
+  SeqCode.push_back(Code);
+  return Code;
 }
 
 VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
@@ -333,9 +338,8 @@ void VASTModule::reset() {
 
 VASTModule::~VASTModule() {
   reset();
-
-  delete &(ControlBlock.str());
 }
+
 std::string VASTModule::DirectClkEnAttr = "";
 std::string VASTModule::ParallelCaseAttr = "";
 std::string VASTModule::FullCaseAttr = "";
@@ -358,6 +362,14 @@ void VASTModule::printSubmodules(vlang_raw_ostream &OS) const {
 
     // Print the data selector of the register.
     S->print(OS, this);
+  }
+
+  typedef SeqCodeVector::const_iterator code_iterator;
+  for (code_iterator I = SeqCode.begin(), E = SeqCode.end(); I != E; ++I) {
+    VASTSeqCode *C = *I;
+
+    // Print the sequential code.
+    C->print(OS);
   }
 }
 
@@ -475,6 +487,21 @@ void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
   new (UseBegin) VASTUse(V, wrapSeqValue(GuardCnd, V));
   new (UseBegin + 1) VASTUse(V, Src);
   V->addAssignment(Def, 0, true);
+}
+
+VASTSeqOp *VASTModule::createSeqOp(VASTSlot *Slot, VASTValPtr Pred,
+                                   unsigned NumOps, MachineInstr *DefMI,
+                                   bool AddSlotActive) {
+  void *P =  Allocator.Allocate(sizeof(VASTSeqOp) + NumOps * sizeof(VASTUse),
+                                alignOf<VASTSeqOp>());
+
+  VASTSeqOp *Def = reinterpret_cast<VASTSeqOp*>(P);
+  // Create the uses in the list.
+  VASTUse *UseBegin = reinterpret_cast<VASTUse*>(Def + 1);
+  new (Def) VASTSeqOp(Slot, AddSlotActive, DefMI, UseBegin, NumOps);
+  // Create the predicate operand.
+  new (UseBegin) VASTUse(Def, Pred);
+  return Def;
 }
 
 void VASTModule::print(raw_ostream &OS) const {
