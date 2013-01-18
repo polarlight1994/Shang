@@ -350,13 +350,55 @@ std::string VASTModule::DirectClkEnAttr = "";
 std::string VASTModule::ParallelCaseAttr = "";
 std::string VASTModule::FullCaseAttr = "";
 
+namespace {
+struct DatapathPrinter {
+  raw_ostream &OS;
+
+  DatapathPrinter(raw_ostream &OS) : OS(OS) {}
+
+  void operator()(const VASTNode *N) const {
+    if (const VASTWire *W = dyn_cast<VASTWire>(N))  W->printAssignment(OS);
+  }
+};
+}
+
 void VASTModule::printDatapath(raw_ostream &OS) const{
-  for (WireVector::const_iterator I = Wires.begin(), E = Wires.end();
-       I != E; ++I) {
-    VASTWire *W = *I;
-    // Do not print the trivial dead data-path.
-    if (W->getDriver() && (W->isPinned() || !W->use_empty()))
-      W->printAssignment(OS);
+  std::set<VASTOperandList*> Visited;
+
+  for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
+    VASTSlot *S = *SI;
+
+    if (S == 0) continue;
+    typedef VASTSlot::const_op_iterator op_iterator;
+
+    OS << "\n// At slot " << S->SlotNum << '\n';
+
+    // Print the logic of slot ready and active.
+    VASTOperandList::visitTopOrder(S->getActive(), Visited, DatapathPrinter(OS));
+    VASTOperandList::visitTopOrder(S->getReady(), Visited, DatapathPrinter(OS));
+
+    // Print the logic of the datapath used by the SeqOps.
+    for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
+      VASTSeqOp *L = *I;
+
+      typedef VASTOperandList::op_iterator op_iterator;
+      for (op_iterator OI = L->op_begin(), OE = L->op_end(); OI != OE; ++OI) {
+        VASTValue *V = OI->unwrap().get();
+        VASTOperandList::visitTopOrder(V, Visited, DatapathPrinter(OS));
+      }
+
+      OS << "// ";
+      L->print(OS);
+    }
+  }
+
+  // Also print the driver of the wire outputs.
+  for (const_port_iterator I = ports_begin(), E = ports_end(); I != E; ++I) {
+    VASTPort *P = *I;
+
+    if (P->isInput() || P->isRegister()) continue;
+
+    VASTOperandList::visitTopOrder(P->getValue(), Visited, DatapathPrinter(OS));
   }
 }
 
