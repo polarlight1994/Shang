@@ -992,17 +992,19 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
   // Emit the submodule on the fly.
   VASTNode *N = emitSubModule(CalleeName, FNNum);
 
-  VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
-
-  std::string StartPortName = VASTSubModule::getPortName(FNNum, "start");
-
   if (VASTSubModule *Submod = dyn_cast<VASTSubModule>(N)) {
+    VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
     // Start the submodule.
+    // Because there maybe conflict between the disabling and enabling the start
+    // port, we need to resolve it in "buildSlotLogic", instead of simply adding
+    // this transaction to the VASTSeqOp.
     addSlotEnable(Slot, Submod->getStartPort(), Pred);
+    unsigned NumOperands = MI->getNumOperands() - 4;
+    VASTSeqOp *Op = VM->createSeqOp(Slot, Pred, NumOperands, MI, true);
     // Assign the new value for this function call to the operand registers.
     for (unsigned i = 4, e = MI->getNumOperands(); i != e; ++i) {
       VASTValPtr V = getAsOperandImpl(MI->getOperand(i));
-      addAssignment(Submod->getFanin(i - 4), V, Slot, Cnds, MI);
+      Op->addSrc(V, i - 4, false, Submod->getFanin(i - 4));
     }
 
     return;
