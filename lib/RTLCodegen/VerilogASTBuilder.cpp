@@ -1093,8 +1093,7 @@ void VerilogASTBuilder::emitOpMemTrans(MachineInstr *MI, VASTSlot *Slot,
   RegName = VFUMemBus::getOutDataBusName(FUNum) + "_r";
   R = VM->getSymbol<VASTSeqValue>(RegName);
   // Please note that the data are not present when we are performing a load.
-  if (VASTValPtr Data = getAsOperandImpl(MI->getOperand(2)))
-    Op->addSrc(Data, 1, false, R);
+  Op->addSrc(getAsOperandImpl(MI->getOperand(2)), 1, false, R);
   // And write enable.
   RegName = VFUMemBus::getCmdName(FUNum) + "_r";
   R = VM->getSymbol<VASTSeqValue>(RegName);

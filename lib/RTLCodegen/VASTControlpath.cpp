@@ -329,12 +329,11 @@ void VASTSeqOp::addDefDst(VASTSeqValue *Def) {
 }
 
 void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef, VASTSeqValue *D) {
-  assert(Src && "Bad assignment source!");
   assert(SrcIdx < getNumSrcs() && "Bad source index!");
   // The source value of assignment is used by the SeqValue.
   new (src_begin() + SrcIdx) VASTUse(D ? (VASTNode*)D : (VASTNode*)this, Src);
-
-  if (D) D->addAssignment(this, SrcIdx, IsDef);
+  // Do not add the assignment if the source is invalid.
+  if (Src && D) D->addAssignment(this, SrcIdx, IsDef);
 }
 
 void VASTSeqOp::print(raw_ostream &OS) const {
@@ -344,7 +343,8 @@ void VASTSeqOp::print(raw_ostream &OS) const {
   
   OS << "<-@" << getSlotNum() << '{';
   for (unsigned i = 0; i < Size; ++i) {
-    getOperand(i).printAsOperand(OS);
+    if (VASTValPtr V = getOperand(i).unwrap()) V.printAsOperand(OS);
+    else                              OS << "<nullptr>";
     OS << ", ";
   }
   OS << "} ";
