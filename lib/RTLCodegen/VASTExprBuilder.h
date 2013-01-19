@@ -38,9 +38,6 @@ class VASTExprBuilderContext {
 public:
   virtual ~VASTExprBuilderContext() {}
 
-  virtual VASTValPtr nameExpr(VASTValPtr V) { return V; }
-  virtual VASTValPtr stripName(VASTValPtr V) const { return V; }
-
   virtual bool shouldExprBeFlatten(VASTExpr *E) const {
     return E->isInlinable();
   }
@@ -56,7 +53,7 @@ public:
   // If V is an addition which can be flatten the addition that using its result
   // return the expression, or return null otherwise.
   virtual VASTExpr *getAddExprToFlatten(VASTValPtr V, bool MustHasCarry) {
-    V = stripName(stripZeroBasedBitSlize(V));
+    V = stripZeroBasedBitSlize(V);
 
     VASTExpr *Expr = dyn_cast<VASTExpr>(V);
     if (!Expr || Expr->getOpcode() != VASTExpr::dpAdd) return 0;

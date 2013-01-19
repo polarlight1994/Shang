@@ -100,12 +100,15 @@ void VASTExprBuilder::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
 
   VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
   if (!Expr) {
-    VASTValPtr NameStripped = Context.stripName(V);
-    if (NameStripped != V)
-      // Compute the bitmask of underlying expression if name is actually
-      // stripped.
-      calculateBitMask(NameStripped, KnownZeros, KnownOnes);
-    
+    if (VASTWire *W = dyn_cast_or_null<VASTWire>(V.get()))
+      if (VASTValPtr Driver = W->getDriver()) {
+        // Be careful of the zero-width symbol.
+        if (Driver->getBitWidth())
+          // Compute the bitmask of underlying expression if name is actually
+          // stripped.
+          calculateBitMask(Driver.invert(V.isInverted()), KnownZeros, KnownOnes);
+      }
+
     return;
   }
 
@@ -308,9 +311,6 @@ VASTValPtr VASTExprBuilder::buildBitSliceExpr(VASTValPtr U, uint8_t UB,
   assert(UB <= U->getBitWidth() && UB > LB && "Bad bit range!");
   // Try to fold the expression.
   if (VASTValPtr P = foldBitSliceExpr(U, UB, LB)) return P;
-
-  // Name the expression if necessary.
-  U = Context.nameExpr(U);
 
   VASTValPtr Ops[] = { U };
   return createExpr(VASTExpr::dpAssign, Ops, UB, LB);
@@ -797,7 +797,7 @@ VASTValPtr VASTExprBuilder::buildMulExpr(ArrayRef<VASTValPtr> Ops,
     // Build the new multiply without known zeros.
     unsigned NewMultSize = BitWidth - TailingZeros;
     VASTValPtr NewMultOps[] = { NotEndWithZeros, TrimedOp };
-    VASTValPtr NewMult = Context.nameExpr(buildMulExpr(NewMultOps, NewMultSize));
+    VASTValPtr NewMult = buildMulExpr(NewMultOps, NewMultSize);
     return padLowerBits(NewMult, BitWidth, false);
   }
 
@@ -888,7 +888,6 @@ VASTValPtr VASTExprBuilder::buildAddExpr(ArrayRef<VASTValPtr> Ops,
         Hi
       };
       Hi = buildAddExpr(HiAddOps, BitWidth - TailingZeros);
-      Hi = Context.nameExpr(Hi);
     } else
       // In this case, no addition is needed, we can simply concatenate the
       // operands together, still, we may pad the higher bit for additions.

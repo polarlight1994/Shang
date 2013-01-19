@@ -136,6 +136,9 @@ public:
 
   const std::string &getName() const { return Name; }
 
+  // Assign names to the expressions in the datapath.
+  void nameDatapath() const;
+
   // Functions to generate verilog code.
   void printDatapath(raw_ostream &OS) const;
   void printRegisterBlocks(vlang_raw_ostream &OS) const;

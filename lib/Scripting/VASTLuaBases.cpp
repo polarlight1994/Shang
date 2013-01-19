@@ -14,11 +14,17 @@
 #include "vtm/VASTModule.h"
 
 #include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "vast-lua-bases"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
 
+static cl::opt<unsigned>
+ExprInlineThreshold("vtm-expr-inline-thredhold",
+                    cl::desc("Inline the expression which has less than N "
+                    "operand  (16 by default)"),
+                    cl::init(2));
 //----------------------------------------------------------------------------//
 void VASTNode::dump() const {
   print(dbgs());
@@ -344,9 +350,114 @@ VASTModule::~VASTModule() {
   reset();
 }
 
+namespace {
+struct DatapathNamer {
+  std::map<VASTExpr*, unsigned> &ExprSize;
+
+  DatapathNamer(std::map<VASTExpr*, unsigned> &ExprSize) : ExprSize(ExprSize) {}
+
+  void nameExpr(VASTExpr *Expr) const {
+    // The size of named expression is 1.
+    ExprSize[Expr] = 1;
+    // Dirty hack: Do not name the MUX, they should be print with a wire.
+    if (Expr->getOpcode() != VASTExpr::dpMux) Expr->nameExpr();
+  }
+
+  void operator()(VASTNode *N) const {
+    VASTExpr *Expr = dyn_cast<VASTExpr>(N);
+
+    if (Expr == 0) return;
+
+    // Remove the naming, we will recalculate them.
+    if (Expr->hasName()) Expr->unnameExpr();
+
+    if (!Expr->isInlinable()) {
+      nameExpr(Expr);
+      return;
+    }
+
+    unsigned Size = 0;
+
+    // Visit all the operand to accumulate the expression size.
+    typedef VASTExpr::op_iterator op_iterator;
+    for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
+      if (VASTExpr *SubExpr = dyn_cast<VASTExpr>(*I)) {
+        std::map<VASTExpr*, unsigned>::const_iterator at = ExprSize.find(SubExpr);
+        assert(at != ExprSize.end() && "SubExpr not visited?");
+        Size += at->second;
+        continue;
+      }
+
+      Size += 1;
+    }
+
+    if (Size >= ExprInlineThreshold) nameExpr(Expr);
+    else                             ExprSize[Expr] = Size;
+  }
+};
+}
+
+void VASTModule::nameDatapath() const{
+  std::set<VASTOperandList*> Visited;
+  std::map<VASTExpr*, unsigned> ExprSize;
+
+  for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
+    VASTSlot *S = *SI;
+
+    if (S == 0) continue;
+    typedef VASTSlot::const_op_iterator op_iterator;
+
+    // Print the logic of slot ready and active.
+    VASTOperandList::visitTopOrder(S->getActive(), Visited, DatapathNamer(ExprSize));
+
+    // Print the logic of the datapath used by the SeqOps.
+    for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
+      VASTSeqOp *L = *I;
+
+      typedef VASTOperandList::op_iterator op_iterator;
+      for (op_iterator OI = L->op_begin(), OE = L->op_end(); OI != OE; ++OI) {
+        VASTValue *V = OI->unwrap().get();
+        VASTOperandList::visitTopOrder(V, Visited, DatapathNamer(ExprSize));
+      }
+    }
+  }
+
+  // Also print the driver of the wire outputs.
+  for (const_port_iterator I = ports_begin(), E = ports_end(); I != E; ++I) {
+    VASTPort *P = *I;
+
+    if (P->isInput() || P->isRegister()) continue;
+    VASTWire *W = cast<VASTWire>(P->getValue());
+    VASTOperandList::visitTopOrder(W, Visited, DatapathNamer(ExprSize));
+  }
+}
+
 std::string VASTModule::DirectClkEnAttr = "";
 std::string VASTModule::ParallelCaseAttr = "";
 std::string VASTModule::FullCaseAttr = "";
+
+
+template<typename T>
+static
+raw_ostream &printDecl(raw_ostream &OS, T *V, bool declAsRegister,
+                       const char *Terminator = ";\n") {
+  if (declAsRegister)
+    OS << "reg";
+  else
+    OS << "wire";
+
+  if (V->getBitWidth() > 1)
+    OS << "[" << (V->getBitWidth() - 1) << ":0]";
+
+  OS << ' ' << V->getName();
+
+  if (isa<VASTRegister>(V))
+    OS << " = " << VASTImmediate::buildLiteral(0, V->getBitWidth(), false);
+
+  OS << Terminator;
+
+  return OS;
+}
 
 namespace {
 struct DatapathPrinter {
@@ -354,16 +465,36 @@ struct DatapathPrinter {
 
   DatapathPrinter(raw_ostream &OS) : OS(OS) {}
 
-  void operator()(const VASTNode *N) const {
-    if (const VASTWire *W = dyn_cast<VASTWire>(N))  {
+  void operator()(VASTNode *N) const {
+    if (VASTWire *W = dyn_cast<VASTWire>(N))  {
 
       // Declare the wire if necessary.
-      OS << "wire "
-         << VASTValue::printBitRange(W->getBitWidth(), 0, W->getBitWidth() > 1)
-         << ' ' << W->getName() << ";\n";
+      printDecl(OS, W, false, "");
 
-      if (W->getDriver()) W->printAssignment(OS);
+      if (VASTValPtr V= W->getDriver()) {
+        OS << " = ";
+        V.printAsOperand(OS);
+      }
+
+      OS << ";\n";
     }
+
+    if (VASTExpr *E = dyn_cast<VASTExpr>(N))
+      if (E->hasName()) {
+        OS << "wire ";
+
+        if (E->getBitWidth() > 1)
+          OS << "[" << (E->getBitWidth() - 1) << ":0] ";
+
+        OS << E->getTempName() << " = ";
+
+        // Temporary unname the rexpression so that we can
+        E->unnameExpr();
+        E->printAsOperand(OS, false);
+        E->nameExpr();
+
+        OS << ";\n";
+      }
   }
 };
 }
@@ -381,7 +512,6 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
 
     // Print the logic of slot ready and active.
     VASTOperandList::visitTopOrder(S->getActive(), Visited, DatapathPrinter(OS));
-    VASTOperandList::visitTopOrder(S->getReady(), Visited, DatapathPrinter(OS));
 
     // Print the logic of the datapath used by the SeqOps.
     for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
@@ -448,51 +578,27 @@ void VASTModule::printModuleDecl(raw_ostream &OS) const {
   OS << ");\n";
 }
 
-template<typename T>
-static
-raw_ostream &printDecl(raw_ostream &OS, T *V, bool declAsRegister,
-                       const char *AttrStr) {
-  OS << AttrStr << ' ';
-
-  if (declAsRegister)
-    OS << "reg";
-  else
-    OS << "wire";
-
-  if (V->getBitWidth() > 1)
-    OS << "[" << (V->getBitWidth() - 1) << ":0]";
-
-  OS << ' ' << V->getName();
-
-  if (isa<VASTRegister>(V))
-    OS << " = " << VASTImmediate::buildLiteral(0, V->getBitWidth(), false);
-
-  OS << ";";
-
-  return OS;
-}
-
 void VASTModule::printSignalDecl(raw_ostream &OS) {
   for (reg_iterator I = Registers.begin(), E = Registers.end(); I != E; ++I) {
     VASTRegister *R = *I;
-    printDecl(OS, R, true, R->AttrStr) << "\n";
+    printDecl(OS, R, true);
   }
 
   for (submod_iterator I = Submodules.begin(),E = Submodules.end();I != E;++I) {
     // Declare the output register of the block RAM.
     if (VASTBlockRAM *R = dyn_cast<VASTBlockRAM>(*I)) {
-      printDecl(OS, R->getRAddr(0), true, "") << "\n";
+      printDecl(OS, R->getRAddr(0), true);
       continue;
     }
 
     if (VASTSubModule *S = dyn_cast<VASTSubModule>(*I)) {
       // Declare the output of submodule.
       if (VASTSeqValue *Ret = S->getRetPort())
-        printDecl(OS, Ret, false, "") << "\n";
+        printDecl(OS, Ret, false);
 
       // Declare the finish signal of submodule.
       if (VASTSeqValue *Fin = S->getFinPort())
-        printDecl(OS, Fin, false, "") << "\n";
+        printDecl(OS, Fin, false);
     }
   }
 }
@@ -740,19 +846,12 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
                                alignOf<VASTExpr>());
   VASTExpr *E = new (P) VASTExpr(Opc, Ops.size(), UB, LB);
   VASTUse *UseBegin = reinterpret_cast<VASTUse*>(E + 1);
-  // Initialize the use list and compute the actual size of the expression.
-  unsigned ExprSize = 0;
 
   for (unsigned i = 0; i < Ops.size(); ++i) {
     assert(Ops[i].get() && "Unexpected null VASTValPtr!");
 
-    if (VASTExpr *E = Ops[i].getAsLValue<VASTExpr>()) ExprSize += E->ExprSize;
-    else                                              ++ExprSize;
-
     (void) new (UseBegin + i) VASTUse(E, Ops[i]);
   }
-
-  E->ExprSize = ExprSize;
 
   UniqueExprs.InsertNode(E, IP);
   return E;

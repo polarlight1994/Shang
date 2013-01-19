@@ -22,11 +22,6 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
-static cl::opt<unsigned>
-  ExprInlineThreshold("vtm-expr-inline-thredhold",
-  cl::desc("Inline the expression which has less than N "
-  "operand  (16 by default)"),
-  cl::init(8));
 
 static cl::opt<bool>
   InstSubModForFU("vtm-instantiate-submod-for-fu",
@@ -256,17 +251,17 @@ static bool printBinFU(raw_ostream &OS, const VASTWire *W) {
 VASTExpr::VASTExpr(Opcode Opc, uint8_t NumOps, unsigned UB, unsigned LB)
   : VASTValue(vastExpr, UB - LB),
     VASTOperandList(reinterpret_cast<VASTUse*>(this + 1), NumOps),
-    ExprSize(0), IsNamed(0), Opc(Opc), UB(UB), LB(LB) {
+    IsNamed(0), Opc(Opc), UB(UB), LB(LB) {
   Contents.Name = 0;
   assert(NumOps && "Unexpected empty operand list!");
 }
 
 bool VASTExpr::isInlinable() const {
-  return ExprSize < ExprInlineThreshold && getOpcode() <= LastInlinableOpc;
+  return getOpcode() <= LastInlinableOpc;
 }
 
 std::string VASTExpr::getTempName() const {
-  return "e" + utohexstr(intptr_t(this)) + "e";
+  return "t" + utohexstr(intptr_t(this)) + "t";
 }
 
 void VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB,

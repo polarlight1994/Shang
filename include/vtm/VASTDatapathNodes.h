@@ -149,7 +149,6 @@ private:
   }
 
   // The total operand of this expression.
-  unsigned ExprSize : 31;
   bool     IsNamed    : 1;
 
   VASTExpr(const VASTExpr&);              // Do not implement

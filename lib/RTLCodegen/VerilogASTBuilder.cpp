@@ -211,10 +211,6 @@ class VerilogASTBuilder : public MachineFunctionPass,
   typedef DatapathBuilder::RegIdxMapTy RegIdxMapTy;
   RegIdxMapTy Idx2Reg;
 
-  // Keep the wires are single defined and CSEd.
-  typedef std::map<VASTValPtr, VASTWire*> ExprLHSMapTy;
-  ExprLHSMapTy ExprLHS;
-
   VASTValPtr lookupSignal(unsigned RegNum) {
     if (TargetRegisterInfo::isPhysicalRegister(RegNum)) {
       RegIdxMapTy::const_iterator at = Idx2Reg.find(RegNum);
@@ -233,58 +229,7 @@ class VerilogASTBuilder : public MachineFunctionPass,
       Expr = Builder->createAndIndexExpr(MI);
     }
     
-    VASTExprPtr Ptr = dyn_cast<VASTExprPtr>(Expr);
-    // If the expression is inlinalbe, do not create the wire.
-    if (!Ptr || Ptr->isInlinable()) return Expr;
-
-    // Try to get the wire.
-    VASTWire *&LHSWire = ExprLHS[Expr];    
-    if (LHSWire) return  LHSWire;
-
-    // Create the LHS wire if it had not existed yet.
-    assert(TargetRegisterInfo::isVirtualRegister(RegNum)
-           && "Unexpected physics register as wire!");
-    std::string Name =
-      "w" + utostr_32(TargetRegisterInfo::virtReg2Index(RegNum)) + "w";
-
-    return (LHSWire = VM->assign(VM->addWire(Name, Expr->getBitWidth()), Expr));
-  }
-
-  VASTWire *lookupWire(unsigned WireNum) const {
-    VASTValPtr Expr = Builder->lookupExpr(WireNum);
-    if(!Expr) return 0;
-    
-    ExprLHSMapTy::const_iterator wire_at = ExprLHS.find(Expr);
-    if (wire_at == ExprLHS.end()) return 0;
-
-    return wire_at->second;
-  }
-
-  VASTValPtr nameExpr(VASTValPtr V) {
-    // Name the expression when necessary.
-    if (isa<VASTNamedValue>(V.get()) && cast<VASTNamedValue>(V.get())->getName())
-      return V;
-
-    ExprLHSMapTy::iterator at = ExprLHS.find(V);
-    if (at != ExprLHS.end()) return at->second;
-
-    // Distinguish the temporary wire by its invert flag and the value of pointer.
-    std::string Name = "e" + utohexstr(uint64_t(V.getOpaqueValue())) + "w";
-
-    // Try to create the temporary wire for the bitslice.
-    if (VASTValue *V = VM->lookupSymbol(Name)) return V;
-
-    return VM->assign(VM->addWire(Name, V->getBitWidth()), V);
-  }
-
-  VASTValPtr stripName(VASTValPtr V) const {
-    // Try to get the underlying expression.
-    if (VASTWirePtr Ptr = dyn_cast<VASTWire>(V)) {
-      VASTExprPtr ExprPtr = Ptr.getExpr();
-      if (ExprPtr.get()) return ExprPtr;
-    }
-
-    return V;
+    return Expr;
   }
 
   VASTValPtr indexPhysReg(unsigned RegNum, VASTValPtr V) {
@@ -420,7 +365,6 @@ public:
     Builder.reset();
     EmittedSubModules.clear();
     Idx2Reg.clear();
-    ExprLHS.clear();
   }
 
   bool runOnMachineFunction(MachineFunction &MF);
@@ -492,6 +436,9 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
 
   // Building the Slot active signals.
   VM->buildSlotLogic(*Builder);
+
+  // Assign names to the data-path expressions.
+  VM->nameDatapath();
 
   // Release the context.
   releaseMemory();
