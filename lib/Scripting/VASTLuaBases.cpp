@@ -356,6 +356,25 @@ struct DatapathNamer {
 
   DatapathNamer(std::map<VASTExpr*, unsigned> &ExprSize) : ExprSize(ExprSize) {}
 
+  bool isInlinable(VASTExpr *Expr) const {
+    switch (Expr->getOpcode()) {
+    // bitwise logic datapath
+    case VASTExpr::dpAnd: return false;
+    case VASTExpr::dpRAnd: return false;
+    case VASTExpr::dpRXor: return false;
+    case VASTExpr::dpSel: return false;
+    // bit level assignment.
+    case VASTExpr::dpBitCat: return false;
+    case VASTExpr::dpBitRepeat: return false;
+    // Simple wire assignment.
+    case VASTExpr::dpAssign: return false;
+    // Cannot inline.
+    default: break;
+    }
+
+    return false;
+  }
+
   void nameExpr(VASTExpr *Expr) const {
     // The size of named expression is 1.
     ExprSize[Expr] = 1;
@@ -371,7 +390,7 @@ struct DatapathNamer {
     // Remove the naming, we will recalculate them.
     if (Expr->hasName()) Expr->unnameExpr();
 
-    if (!Expr->isInlinable()) {
+    if (!isInlinable(Expr)) {
       nameExpr(Expr);
       return;
     }
