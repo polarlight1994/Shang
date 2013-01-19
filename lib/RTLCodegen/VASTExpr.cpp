@@ -191,9 +191,7 @@ static bool printLUT(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *LUT) {
   return isComplemented;
 }
 
-static bool printFUAdd(raw_ostream &OS, const VASTWire *W) {
-  assert(!W->getExpr().isInverted() && "Unexpected inverted mux!");
-  VASTExpr *E = dyn_cast<VASTExpr>(W->getExpr());
+static bool printFUAdd(raw_ostream &OS, const VASTExpr *E, const VASTValue *LHS){
   if (E == 0) return false;
 
   assert(E->size() >= 2 && E->size() <=3 && "bad operand number!");
@@ -207,7 +205,7 @@ static bool printFUAdd(raw_ostream &OS, const VASTWire *W) {
   OS << E->getFUName() << "#("
      << OpA->getBitWidth() << ", "
      << OpB->getBitWidth() << ", "
-     << W->getBitWidth() << ") "
+     << LHS->getBitWidth() << ") "
      << E->getSubModName() << '(';
 
   OpA.printAsOperand(OS);
@@ -217,14 +215,12 @@ static bool printFUAdd(raw_ostream &OS, const VASTWire *W) {
   if (E->size() == 3) E->getOperand(2).printAsOperand(OS);
   else                OS << "1'b0";
   OS << ", ";
-  W->printAsOperand(OS, false);
+  LHS->printAsOperand(OS, false);
   OS << ");\n";
   return true;
 }
 
-static bool printBinFU(raw_ostream &OS, const VASTWire *W) {
-  assert(!W->getExpr().isInverted() && "Unexpected inverted mux!");
-  VASTExpr *E = dyn_cast<VASTExpr>(W->getExpr());
+static bool printBinFU(raw_ostream &OS, const VASTExpr *E, const VASTValue *LHS){
   assert(E->size() == 2 && "Not a binary expression!");
   if (E == 0) return false;
 
@@ -236,14 +232,14 @@ static bool printBinFU(raw_ostream &OS, const VASTWire *W) {
   OS << E->getFUName() << "#("
      << OpA->getBitWidth() << ", "
      << OpB->getBitWidth() << ", "
-     << W->getBitWidth() << ") "
+     << LHS->getBitWidth() << ") "
      << E->getSubModName() << '(';
 
   OpA.printAsOperand(OS);
   OS << ", ";
   OpB.printAsOperand(OS);
   OS << ", ";
-  W->printAsOperand(OS, false);
+  LHS->printAsOperand(OS, false);
   OS << ");\n";
   return true;
 }
@@ -365,6 +361,29 @@ const std::string VASTExpr::getSubModName() const {
   return Name;
 }
 
+bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
+  switch (getOpcode()) {
+  default: break;
+  case VASTExpr::dpAdd:
+    if (InstSubModForFU && hasName() && printFUAdd(OS, this, this))
+      return true;
+    break;
+  case VASTExpr::dpMul:
+  case VASTExpr::dpShl:
+  case VASTExpr::dpSRA:
+  case VASTExpr::dpSRL:
+  case VASTExpr::dpSGE:
+  case VASTExpr::dpSGT:
+  case VASTExpr::dpUGE:
+  case VASTExpr::dpUGT:
+    if (InstSubModForFU && hasName() && printBinFU(OS, this, this))
+      return true;
+    break;
+  }
+
+  return false;
+}
+
 static char *utobin_buffer(uint64_t X, char *BuffurStart, unsigned NumDigit) {
   char *BufPtr = BuffurStart, *BufferEnd = BuffurStart + NumDigit;
 
@@ -424,6 +443,11 @@ void VASTExpr::Profile(FoldingSetNodeID& ID) const {
   }
 }
 
+void VASTExpr::dropUses() {
+  for (VASTUse *I = Operands, *E = Operands + Size; I != E; ++I)
+    I->unlinkUseFromUser();
+}
+
 //----------------------------------------------------------------------------//
 // Helper function for Verilog RTL printing.
 
@@ -455,7 +479,8 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
     switch (Expr->getOpcode()) {
     default: break;
     case VASTExpr::dpAdd:
-      if (InstSubModForFU && !Expr->hasName() && printFUAdd(OS, this)) return;
+      if (InstSubModForFU && !Expr->hasName() && printFUAdd(OS, Expr, this))
+        return;
       break;
     case VASTExpr::dpMul:
     case VASTExpr::dpShl:
@@ -465,7 +490,8 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
     case VASTExpr::dpSGT:
     case VASTExpr::dpUGE:
     case VASTExpr::dpUGT:
-      if (InstSubModForFU && !Expr->hasName() && printBinFU(OS, this)) return;
+      if (InstSubModForFU && !Expr->hasName() && printBinFU(OS, Expr, this))
+        return;
       break;
     case VASTExpr::dpMux: printCombMux(OS, this); return;
     }
@@ -474,9 +500,4 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
   printAssign(OS, this);
   V.printAsOperand(OS);
   OS << ";\n";
-}
-
-void VASTExpr::dropUses() {
-  for (VASTUse *I = Operands, *E = Operands + Size; I != E; ++I)
-    I->unlinkUseFromUser();
 }

@@ -178,6 +178,7 @@ public:
   Opcode getOpcode() const { return VASTExpr::Opcode(Opc); }
   const char *getFUName() const;
   const std::string getSubModName() const;
+  bool printFUInstantiation(raw_ostream &OS) const;
 
   inline bool isSubBitSlice() const {
     return getOpcode() == dpAssign

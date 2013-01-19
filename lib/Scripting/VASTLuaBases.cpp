@@ -484,7 +484,19 @@ struct DatapathPrinter {
         if (E->getBitWidth() > 1)
           OS << "[" << (E->getBitWidth() - 1) << ":0] ";
 
-        OS << E->getTempName() << " = ";
+        OS << E->getTempName();
+
+        if (!E->getSubModName().empty()) {
+          OS << ";\n";
+          if (E->printFUInstantiation(OS))
+            return;
+        
+          // If the FU instantiation is not printed, we need to print the
+          // assignment.
+          OS << "assign " << E->getTempName();
+        }
+
+        OS << " = ";
 
         // Temporary unname the rexpression so that we can
         E->unnameExpr();
