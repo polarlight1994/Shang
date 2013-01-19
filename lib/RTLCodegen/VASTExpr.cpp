@@ -80,7 +80,9 @@ static void printSignedOperand(raw_ostream &OS, const VASTUse &U) {
 }
 
 static void printUnsignedOperand(raw_ostream &OS, const VASTUse &U) {
+  OS << "$unsigned(";
   U.printAsOperand(OS);
+  OS << ")";
 }
 
 template<typename PrintOperandFN>
