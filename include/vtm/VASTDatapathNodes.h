@@ -158,7 +158,7 @@ private:
 
   friend class DatapathContainer;
 
-  void printAsOperandInteral(raw_ostream &OS) const;
+  bool printAsOperandInteral(raw_ostream &OS) const;
 
   void dropUses();
 

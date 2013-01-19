@@ -269,16 +269,19 @@ void VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   //assert(((UB == this->UB && LB == this->LB) || hasName())
   //       && "Cannot print bitslice of Expr!");
 
-  printAsOperandInteral(OS);
+  if (printAsOperandInteral(OS)) {
+    assert(UB == this->UB && LB == this->LB && "Cannot print bitslice of Expr!");
+    return;
+  }
 
-  if (UB != this->UB || LB != this->LB)
-    OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
+  OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
 }
 
-void VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
+bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   if (hasName()) {
     OS << getTempName();
-    return;
+    // Only printed the temp name, subexpression is not printed.
+    return false;
   }
 
   OS << '(';
@@ -319,6 +322,7 @@ void VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   }
 
   OS << ')';
+  return true;
 }
 
 const char *VASTExpr::getFUName() const {
