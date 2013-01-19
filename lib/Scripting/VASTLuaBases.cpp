@@ -600,6 +600,7 @@ void VASTModule::printModuleDecl(raw_ostream &OS) const {
 void VASTModule::printSignalDecl(raw_ostream &OS) {
   for (reg_iterator I = Registers.begin(), E = Registers.end(); I != E; ++I) {
     VASTRegister *R = *I;
+    OS << R->AttrStr << ' ';
     printDecl(OS, R, true);
   }
 
