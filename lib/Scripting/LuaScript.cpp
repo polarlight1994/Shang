@@ -201,11 +201,11 @@ void LuaScript::updateStatus() {
 
   // Read the synthesis attributes.
   const char *Path[] = { "SynAttr", "DirectClkEnAttr" };
-  VASTModule::DirectClkEnAttr = getValue<std::string>(Path);
+  VASTNode::DirectClkEnAttr = getValue<std::string>(Path);
   Path[1] = "ParallelCaseAttr";
-  VASTModule::ParallelCaseAttr = getValue<std::string>(Path);
+  VASTNode::ParallelCaseAttr = getValue<std::string>(Path);
   Path[1] = "FullCaseAttr";
-  VASTModule::FullCaseAttr = getValue<std::string>(Path);
+  VASTNode::FullCaseAttr = getValue<std::string>(Path);
 
   typedef luabind::iterator tab_it;
   for (tab_it I = tab_it(luabind::globals(State)["Functions"]), E = tab_it();

@@ -113,8 +113,6 @@ private:
 
   void writeProfileCounters(vlang_raw_ostream &OS, VASTSlot *S, bool isFirstSlot);
 public:
-  static std::string DirectClkEnAttr, ParallelCaseAttr, FullCaseAttr;
-
   enum PortTypes {
     Clk = 0,
     RST,

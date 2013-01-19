@@ -13,7 +13,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "vtm/VASTDatapathNodes.h"
-#include "vtm/VASTModule.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
@@ -57,7 +56,7 @@ static void printCombMux(raw_ostream &OS, ArrayRef<OperandT> Ops,
 
   // Print the mux logic.
   OS << "always @(*)begin  // begin mux logic\n";
-  OS.indent(2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
+  OS.indent(2) << VASTNode::ParallelCaseAttr << " case (1'b1)\n";
   for (unsigned i = 0; i < Ops.size(); i+=2) {
     OS.indent(4);
     Ops[i].printAsOperand(OS);

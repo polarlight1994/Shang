@@ -97,6 +97,8 @@ public:
   bool isDead() const { return IsDead; }
 
   void dump() const;
+
+  static std::string DirectClkEnAttr, ParallelCaseAttr, FullCaseAttr;
 };
 
 template<typename T>

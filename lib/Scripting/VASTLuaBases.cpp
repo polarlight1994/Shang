@@ -31,6 +31,10 @@ void VASTNode::dump() const {
   dbgs() << '\n';
 }
 
+std::string VASTNode::DirectClkEnAttr = "";
+std::string VASTNode::ParallelCaseAttr = "";
+std::string VASTNode::FullCaseAttr = "";
+
 //----------------------------------------------------------------------------//
 VASTValue::dp_dep_it VASTValue::dp_dep_begin(const VASTValue *V) {
   switch (V->getASTType()) {
@@ -451,15 +455,9 @@ void VASTModule::nameDatapath() const{
   }
 }
 
-std::string VASTModule::DirectClkEnAttr = "";
-std::string VASTModule::ParallelCaseAttr = "";
-std::string VASTModule::FullCaseAttr = "";
-
-
 template<typename T>
-static
-raw_ostream &printDecl(raw_ostream &OS, T *V, bool declAsRegister,
-                       const char *Terminator = ";\n") {
+static raw_ostream &printDecl(raw_ostream &OS, T *V, bool declAsRegister,
+                              const char *Terminator = ";\n") {
   if (declAsRegister)
     OS << "reg";
   else
