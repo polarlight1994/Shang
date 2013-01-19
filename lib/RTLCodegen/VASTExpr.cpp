@@ -85,6 +85,10 @@ static void printUnsignedOperand(raw_ostream &OS, const VASTUse &U) {
   OS << ")";
 }
 
+static void printOperand(raw_ostream &OS, const VASTUse &U) {
+  U.printAsOperand(OS);
+}
+
 template<typename PrintOperandFN>
 static void printSimpleOp(raw_ostream &OS, ArrayRef<VASTUse> Ops,
                           const char *Opc, PrintOperandFN &FN) {
@@ -108,6 +112,10 @@ static void printSimpleSignedOp(raw_ostream &OS, ArrayRef<VASTUse> Ops,
   printSimpleOp(OS, Ops, Opc, printSignedOperand);
 }
 
+static void printSimpleOp(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *Opc) {
+  printSimpleOp(OS, Ops, Opc, printOperand);
+}
+
 //----------------------------------------------------------------------------//
 // Generic datapath printing helper function.
 static void printUnaryOp(raw_ostream &OS, const VASTUse &U, const char *Opc) {
@@ -122,16 +130,16 @@ static void printSRAOp(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
 }
 
 static void printSel(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
- printUnsignedOperand(OS, Ops[0]);
+ printOperand(OS, Ops[0]);
  OS << '?';
- printUnsignedOperand(OS, Ops[1]);
+ printOperand(OS, Ops[1]);
  OS << ':';
- printUnsignedOperand(OS, Ops[2]);
+ printOperand(OS, Ops[2]);
 }
 
 static void printBitCat(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
   OS << '{';
-  printSimpleUnsignedOp(OS, Ops, " , ");
+  printSimpleOp(OS, Ops, " , ");
   OS << '}';
 }
 
@@ -289,7 +297,7 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
       OS << '^'
          << VASTImmediate::buildLiteral(~UINT64_C(0), getBitWidth(), false);
     break;
-  case dpAnd: printSimpleUnsignedOp(OS, getOperands(), " & "); break;
+  case dpAnd: printSimpleOp(OS, getOperands(), " & "); break;
 
   case dpRAnd:  printUnaryOp(OS, getOperand(0), "&");  break;
   case dpRXor:  printUnaryOp(OS, getOperand(0), "^");  break;
@@ -300,7 +308,7 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   case dpUGE:   printSimpleUnsignedOp(OS, getOperands(),  " >= "); break;
   case dpUGT:   printSimpleUnsignedOp(OS, getOperands(),  " > ");  break;
 
-  case dpAdd: printSimpleUnsignedOp(OS, getOperands(), " + "); break;
+  case dpAdd: printSimpleOp(OS, getOperands(), " + "); break;
   case dpMul: printSimpleUnsignedOp(OS, getOperands(), " * "); break;
   case dpShl: printSimpleUnsignedOp(OS, getOperands(), " << ");break;
   case dpSRL: printSimpleUnsignedOp(OS, getOperands(), " >> ");break;
