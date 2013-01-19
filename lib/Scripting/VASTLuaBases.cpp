@@ -81,7 +81,7 @@ void VASTValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
 
 std::string VASTValue::printBitRange(unsigned UB, unsigned LB, bool printOneBit){
   std::string ret;
-  assert(UB && UB >= LB && "Bad bit range!");
+  assert(UB && UB > LB && "Bad bit range!");
   --UB;
   if (UB != LB)
     ret = "[" + utostr_32(UB) + ":" + utostr_32(LB) + "]";

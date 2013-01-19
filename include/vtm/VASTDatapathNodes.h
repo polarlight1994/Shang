@@ -165,7 +165,7 @@ private:
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 
   void printAsOperandImpl(raw_ostream &OS) const {
-    printAsOperandImpl(OS, UB, LB);
+    printAsOperandImpl(OS, getBitWidth(), 0);
   }
 
   VASTValPtr getAsInlineOperandImpl() {

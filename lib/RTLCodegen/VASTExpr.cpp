@@ -263,16 +263,14 @@ std::string VASTExpr::getTempName() const {
   return "t" + utohexstr(intptr_t(this)) + "t";
 }
 
-void VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB,
-                                  unsigned LB) const {
-  //assert(((UB == this->UB && LB == this->LB) || hasName())
-  //       && "Cannot print bitslice of Expr!");
-
+void
+VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const {
   if (printAsOperandInteral(OS)) {
-    assert(UB == this->UB && LB == this->LB && "Cannot print bitslice of Expr!");
+    assert(UB == getBitWidth() && LB == 0 && "Cannot print bitslice of Expr!");
     return;
   }
 
+  assert(UB <= getBitWidth() && "Bad bit range!");
   OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
 }
 
