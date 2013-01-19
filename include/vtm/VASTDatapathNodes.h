@@ -164,10 +164,6 @@ private:
 
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 
-  void printAsOperandImpl(raw_ostream &OS) const {
-    printAsOperandImpl(OS, getBitWidth(), 0);
-  }
-
   VASTValPtr getAsInlineOperandImpl() {
     // Can the expression be printed inline?
     if (getOpcode() == VASTExpr::dpAssign && !isSubBitSlice())
