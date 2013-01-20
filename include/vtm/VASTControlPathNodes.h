@@ -150,7 +150,7 @@ public:
   typedef FUReadyVecTy::const_iterator const_fu_rdy_it;
 
   typedef SmallVector<VASTSlot*, 4> PredVecTy;
-  typedef PredVecTy::iterator pred_it;
+  typedef PredVecTy::iterator pred_ititerator;
 private:
   // The relative signal of the slot: Slot register, Slot active and Slot ready.
   VASTUse SlotReg;
@@ -247,8 +247,8 @@ public:
   }
 
   // Predecessor slots of this slot.
-  pred_it pred_begin() { return PredSlots.begin(); }
-  pred_it pred_end() { return PredSlots.end(); }
+  pred_ititerator pred_begin() { return PredSlots.begin(); }
+  pred_ititerator pred_end() { return PredSlots.end(); }
 
   VASTValPtr &getOrCreateEnable(VASTSeqValue *P);
   VASTValPtr &getOrCreateReady(VASTValue *V);
