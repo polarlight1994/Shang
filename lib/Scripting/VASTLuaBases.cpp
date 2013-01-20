@@ -97,7 +97,7 @@ void VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
   std::set<VASTOperandList*> Visited;
   VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
   // The entire tree had been visited.
-  if (L) {
+  if (!L) {
     // If ChildNode is a not data-path operand list, it may be the SeqVal.
     if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Root))
       SeqVals.insert(SeqVal);
