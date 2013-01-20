@@ -47,7 +47,7 @@ public:
       if (Op->getPred() < RHS.Op->getPred()) return true;
       else if (Op->getPred() > RHS.Op->getPred()) return false;
 
-      return Op->getPred() < RHS.Op->getPred();
+      return Op->getSlot() < RHS.Op->getSlot();
     }
   };
 
