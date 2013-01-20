@@ -63,13 +63,17 @@ struct VASTSeqDef {
 
 // Represent an operation in seqential logic, it read some value and define some
 // others.
-class VASTSeqOp : public VASTOperandList, public VASTNode {
+class VASTSeqOp : public VASTOperandList, public VASTNode,
+                  public ilist_node<VASTSeqOp> {
   SmallVector<VASTSeqValue*, 1> Defs;
   PointerIntPair<VASTSlot*, 1, bool> S;
   MachineInstr *DefMI;
 
   friend struct VASTSeqDef;
   friend struct VASTSeqUse;
+  friend struct ilist_sentinel_traits<VASTSeqOp>;
+  // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
+  VASTSeqOp() : VASTNode(vastSeqOp), VASTOperandList(0, 0), DefMI(0) {}
 
   VASTUse &getUseInteranal(unsigned Idx) {
     return getOperand(1 + Idx);
@@ -308,7 +312,7 @@ template<> struct GraphTraits<VASTSlot*> {
 };
 
 // Represent value in the sequential logic.
-class VASTSeqValue : public VASTSignal {
+class VASTSeqValue : public VASTSignal, public ilist_node<VASTSeqValue> {
 public:
   typedef ArrayRef<VASTValPtr> AndCndVec;
 
@@ -328,6 +332,12 @@ private:
   bool buildCSEMap(std::map<VASTValPtr,
                             std::vector<const VASTSeqOp*> >
                    &CSEMap) const;
+
+  friend struct ilist_sentinel_traits<VASTSeqValue>;
+  // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
+  VASTSeqValue()
+    : VASTSignal(vastSeqValue, 0, 0), T(VASTNode::IO), Idx(0), Parent(*this) {}
+
 public:
   VASTSeqValue(const char *Name, unsigned Bitwidth, VASTNode::SeqValType T,
                unsigned Idx, VASTNode &Parent)
@@ -350,6 +360,7 @@ public:
   const VASTNode *getParent() const { return &Parent; }
 
   void addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef);
+
   bool isTimingUndef() const { return getValType() == VASTNode::Slot; }
 
   typedef AssignmentVector::const_iterator const_itertor;

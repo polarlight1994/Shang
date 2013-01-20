@@ -15,6 +15,7 @@
 
 #include "vtm/VASTNodeBases.h"
 #include "vtm/VASTDatapathNodes.h"
+#include "vtm/VASTControlPathNodes.h"
 
 #include "vtm/LangSteam.h"
 #include "vtm/FUInfo.h"
@@ -30,7 +31,6 @@ class VASTRegister;
 class VASTBlockRAM;
 class VASTSubModule;
 class VASTSeqCode;
-class VASTSlot;
 class DatapathContainer;
 class VASTExprBuilder;
 
@@ -79,7 +79,7 @@ public:
   typedef SmallVector<VASTSeqCode*, 16> SeqCodeVector;
   typedef SeqCodeVector::iterator seqcode_iterator;
 
-  typedef SmallVector<VASTSeqValue*, 128> SeqValueVector;
+  typedef ilist<VASTSeqValue> SeqValueVector;
   typedef SeqValueVector::iterator seqval_iterator;
 
   typedef std::vector<VASTSlot*> SlotVecTy;
@@ -89,6 +89,7 @@ private:
   // The slots vector, each slot represent a state in the FSM of the design.
   SlotVecTy Slots;
   SeqValueVector SeqVals;
+  ilist<VASTSeqOp> SeqOps;
 
   // Input/Output ports of the design.
   PortVector Ports;
@@ -297,8 +298,6 @@ public:
   reg_iterator reg_begin() { return Registers.begin(); }
   reg_iterator reg_end() { return Registers.end(); }
 
-  seqval_iterator seqval_begin()  { return SeqVals.begin(); }
-  seqval_iterator seqval_end()    { return SeqVals.end(); }
 
   slot_iterator slot_begin() { return Slots.begin(); }
   slot_iterator slot_end() { return Slots.end(); }
@@ -316,6 +315,15 @@ public:
   void addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
                      VASTValPtr GuardCnd, MachineInstr *DefMI = 0,
                      bool AddSlotActive = true);
+
+  // Iterate over all SeqOps in the module.
+  typedef ilist<VASTSeqOp>::iterator seqop_iterator;
+  seqop_iterator seqop_begin() { return SeqOps.begin(); }
+  seqop_iterator seqop_end() { return SeqOps.end(); }
+
+  // Iterate over all SeqVals in the module.
+  seqval_iterator seqval_begin()  { return SeqVals.begin(); }
+  seqval_iterator seqval_end()    { return SeqVals.end(); }
 
   void print(raw_ostream &OS) const;
 

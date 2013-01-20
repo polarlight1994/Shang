@@ -477,7 +477,7 @@ bool CombPathDelayAnalysis::runOnMachineFunction(MachineFunction &MF) {
   //Write the timing constraints.
   typedef VASTModule::seqval_iterator seqval_iterator;
   for (seqval_iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I)
-    writeConstraintsForDst(*I);
+    writeConstraintsForDst(I);
 
   return false;
 }

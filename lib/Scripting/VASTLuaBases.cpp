@@ -387,6 +387,9 @@ void VASTModule::reset() {
   DatapathContainer::reset();
 
   // Release all ports.
+  SeqOps.clear();
+  SeqVals.clear();
+
   Slots.clear();
   Ports.clear();
   Registers.clear();
@@ -685,6 +688,10 @@ VASTSeqOp *VASTModule::createSeqOp(VASTSlot *Slot, VASTValPtr Pred,
   new (Def) VASTSeqOp(Slot, AddSlotActive, DefMI, UseBegin, NumOps);
   // Create the predicate operand.
   new (UseBegin) VASTUse(Def, Pred);
+
+  // Add the SeqOp to the the all SeqOp list.
+  SeqOps.push_back(Def);
+
   return Def;
 }
 
