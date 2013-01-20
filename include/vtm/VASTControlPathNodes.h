@@ -73,7 +73,7 @@ class VASTSeqOp : public VASTOperandList, public VASTNode,
   friend struct VASTSeqUse;
   friend struct ilist_sentinel_traits<VASTSeqOp>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
-  VASTSeqOp() : VASTNode(vastSeqOp), VASTOperandList(0, 0), DefMI(0) {}
+  VASTSeqOp() : VASTOperandList(0, 0), VASTNode(vastSeqOp), DefMI(0) {}
 
   VASTUse &getUseInteranal(unsigned Idx) {
     return getOperand(1 + Idx);
@@ -83,7 +83,7 @@ class VASTSeqOp : public VASTOperandList, public VASTNode,
   VASTSeqOp(const VASTSeqOp &RHS); // DO NOT IMPLEMENT
 public:
   VASTSeqOp(VASTSlot *S, bool UseSlotActive, MachineInstr *DefMI,
-             VASTUse *Operands, unsigned Size);
+            VASTUse *Operands, unsigned Size);
 
   void addDefDst(VASTSeqValue *Def);
   VASTSeqDef getDef(unsigned No) { return VASTSeqDef(this, No); }

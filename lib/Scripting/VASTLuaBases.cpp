@@ -205,8 +205,8 @@ VASTSeqValue *
 VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
                            VASTNode::SeqValType T, unsigned Idx, VASTNode *P) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
-  VASTSeqValue *V
-    = new (Allocator) VASTSeqValue(Entry.getKeyData(), BitWidth, T, Idx, *P);
+  VASTSeqValue *V = new VASTSeqValue(Entry.getKeyData(), BitWidth, T, Idx, *P);
+  Entry.second = V;
   SeqVals.push_back(V);
 
   return V;
@@ -399,9 +399,7 @@ void VASTModule::reset() {
   RetPortIdx = 0;
 }
 
-VASTModule::~VASTModule() {
-  reset();
-}
+VASTModule::~VASTModule() {}
 
 namespace {
 struct DatapathNamer {
@@ -679,13 +677,10 @@ void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
 VASTSeqOp *VASTModule::createSeqOp(VASTSlot *Slot, VASTValPtr Pred,
                                    unsigned NumOps, MachineInstr *DefMI,
                                    bool AddSlotActive) {
-  void *P =  Allocator.Allocate(sizeof(VASTSeqOp) + (NumOps + 1) * sizeof(VASTUse),
-                                alignOf<VASTSeqOp>());
+  VASTUse *UseBegin = Allocator.Allocate<VASTUse>(NumOps + 1);
 
-  VASTSeqOp *Def = reinterpret_cast<VASTSeqOp*>(P);
   // Create the uses in the list.
-  VASTUse *UseBegin = reinterpret_cast<VASTUse*>(Def + 1);
-  new (Def) VASTSeqOp(Slot, AddSlotActive, DefMI, UseBegin, NumOps);
+  VASTSeqOp *Def = new VASTSeqOp(Slot, AddSlotActive, DefMI, UseBegin, NumOps);
   // Create the predicate operand.
   new (UseBegin) VASTUse(Def, Pred);
 
@@ -773,11 +768,10 @@ VASTRegister *VASTModule::addRegister(const Twine &Name, unsigned BitWidth,
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   VASTRegister *Reg = Allocator.Allocate<VASTRegister>();
-  new (Reg) VASTRegister(Entry.getKeyData(), BitWidth, InitVal, T, RegData,Attr);
-  Entry.second = Reg->getValue();
+  VASTSeqValue *V = createSeqValue(Entry.getKeyData(), BitWidth, T, RegData, Reg);
+  new (Reg) VASTRegister(V, InitVal, Attr);
 
   Registers.push_back(Reg);
-  SeqVals.push_back(Reg->getValue());
   return Reg;
 }
 

@@ -40,17 +40,14 @@ void VASTSubModuleBase::print(vlang_raw_ostream &OS,
 }
 
 //===----------------------------------------------------------------------===//
-VASTRegister::VASTRegister(const char *Name, unsigned BitWidth,
-                           uint64_t initVal, VASTNode::SeqValType T,
-                           unsigned RegData,  const char *Attr)
-  : VASTNode(vastRegister), Value(Name, BitWidth, T, RegData, *this),
-    InitVal(initVal), AttrStr(Attr) {}
+VASTRegister::VASTRegister(VASTSeqValue *V, uint64_t initVal, const char *Attr)
+  : VASTNode(vastRegister), Value(V), InitVal(initVal), AttrStr(Attr) {}
 
 void VASTRegister::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
-  if (Value.empty()) return;
+  if (getValue()->empty()) return;
 
   // Print the data selector of the register.
-  Value.printSelector(OS);
+  getValue()->printSelector(OS);
 
   OS.always_ff_begin();
   // Reset the register.
@@ -65,7 +62,7 @@ void VASTRegister::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   OS.exit_block();
 
   OS << "// synthesis translate_off\n";
-  Value.verifyAssignCnd(OS, getName(), Mod);
+  getValue()->verifyAssignCnd(OS, getName(), Mod);
   OS << "// synthesis translate_on\n\n";
 
   OS.always_ff_end();

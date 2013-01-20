@@ -133,21 +133,19 @@ public:
 };
 
 class VASTRegister : public VASTNode {
-  VASTSeqValue Value;
+  VASTSeqValue *Value;
   uint64_t InitVal;
 
-  VASTRegister(const char *Name, unsigned BitWidth, uint64_t InitVal,
-               VASTNode::SeqValType T = VASTNode::Data, unsigned RegData = 0,
-               const char *Attr = "");
+  VASTRegister(VASTSeqValue *V, uint64_t initVal, const char *Attr = "");
   friend class VASTModule;
 public:
   const char *const AttrStr;
 
-  VASTSeqValue *getValue() { return &Value; }
+  VASTSeqValue *getValue() const { return Value; }
   VASTSeqValue *operator->() { return getValue(); }
 
-  const char *getName() const { return Value.getName(); }
-  unsigned getBitWidth() const { return Value.getBitWidth(); }
+  const char *getName() const { return getValue()->getName(); }
+  unsigned getBitWidth() const { return getValue()->getBitWidth(); }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTRegister *A) { return true; }
