@@ -1,4 +1,4 @@
-//===--- SeqValReachingDefAnalysis.h - Reaching Definition on VAST - C++ ----=//
+//===--- SeqReachingDefAnalysis.h - Reaching Definition on VAST - C++ ----=//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This define the SeqValReachingDefAnalysis pass, which compute the reaching
+// This define the SeqReachingDefAnalysis pass, which compute the reaching
 // definition analysis on the Verilog AST.
 //
 //===----------------------------------------------------------------------===//
@@ -26,7 +26,7 @@
 #define RTL_SSA_ANALYSIS_H
 
 namespace llvm {
-class SeqValReachingDefAnalysis;
+class SeqReachingDefAnalysis;
 class SlotInfo;
 
 // SlotInfo, store the data-flow information of a slot.
@@ -121,7 +121,7 @@ private:
     return updateLiveIn(D, NewLI, SlotOut);
   }
 
-  friend class SeqValReachingDefAnalysis;
+  friend class SeqReachingDefAnalysis;
 public:
   SlotInfo(const VASTSlot *s) : S(s) {}
 
@@ -148,7 +148,7 @@ public:
 };
 
 // The RtlSSAAnalysis that construct the SSA form.
-class SeqValReachingDefAnalysis : public MachineFunctionPass {
+class SeqReachingDefAnalysis : public MachineFunctionPass {
 public:
   // define VASVec for the SVNInfo.
   typedef std::vector<VASTSeqDef> VASVec;
@@ -203,18 +203,18 @@ public:
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnMachineFunction(MachineFunction &MF);
 
-  SeqValReachingDefAnalysis();
+  SeqReachingDefAnalysis();
 };
 
 
-template <> struct GraphTraits<SeqValReachingDefAnalysis*>
+template <> struct GraphTraits<SeqReachingDefAnalysis*>
 : public GraphTraits<VASTSlot*> {
 
-  typedef SeqValReachingDefAnalysis::slot_vec_it nodes_iterator;
-  static nodes_iterator nodes_begin(SeqValReachingDefAnalysis *G) {
+  typedef SeqReachingDefAnalysis::slot_vec_it nodes_iterator;
+  static nodes_iterator nodes_begin(SeqReachingDefAnalysis *G) {
     return G->slot_begin();
   }
-  static nodes_iterator nodes_end(SeqValReachingDefAnalysis *G) {
+  static nodes_iterator nodes_end(SeqReachingDefAnalysis *G) {
     return G->slot_end();
   }
 };

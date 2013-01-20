@@ -498,7 +498,7 @@ struct DatapathPrinter {
 
         OS << " = ";
 
-        // Temporary unname the rexpression so that we can
+        // Temporary unname the rexpression so that we can print its logic.
         E->unnameExpr();
         E->printAsOperand(OS, false);
         E->nameExpr();

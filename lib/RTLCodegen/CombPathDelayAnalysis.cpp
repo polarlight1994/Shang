@@ -18,7 +18,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "SeqValReachingDefAnalysis.h"
+#include "SeqReachingDefAnalysis.h"
 
 #include "vtm/VASTSubModules.h"
 #include "vtm/VASTModule.h"
@@ -77,7 +77,7 @@ struct PathDelayQueryCache {
 
   bool annotateSubmoduleLatency(VASTSeqValue * V);
 
-  void annotatePathDelay(SeqValReachingDefAnalysis *R, VASTValue *Tree,
+  void annotatePathDelay(SeqReachingDefAnalysis *R, VASTValue *Tree,
                          ArrayRef<VASTSeqUse> DstUses);
 
   bool updateDelay(SeqValSetTy &To, const SeqValSetTy &From,
@@ -120,7 +120,7 @@ struct PathDelayQueryCache {
 };
 
 struct CombPathDelayAnalysis : public MachineFunctionPass {
-  SeqValReachingDefAnalysis *ReachingDef;
+  SeqReachingDefAnalysis *ReachingDef;
   VASTModule *VM;
 
   static char ID;
@@ -128,7 +128,7 @@ struct CombPathDelayAnalysis : public MachineFunctionPass {
   void getAnalysisUsage(AnalysisUsage &AU) const {
     MachineFunctionPass::getAnalysisUsage(AU);
     AU.addRequired<TargetData>();
-    AU.addRequired<SeqValReachingDefAnalysis>();
+    AU.addRequired<SeqReachingDefAnalysis>();
     AU.addRequired<VerilogModuleAnalysis>();
     AU.setPreservesAll();
   }
@@ -157,7 +157,7 @@ struct CombPathDelayAnalysis : public MachineFunctionPass {
 };
 }
 
-static unsigned getMinimalDelay(SeqValReachingDefAnalysis *R, VASTSeqValue *Src,
+static unsigned getMinimalDelay(SeqReachingDefAnalysis *R, VASTSeqValue *Src,
                                 const VASTSeqUse &Dst) {
   unsigned PathDelay = 10000;
   SlotInfo *DstSI = R->getSlotInfo(Dst.getSlot());
@@ -176,7 +176,7 @@ static unsigned getMinimalDelay(SeqValReachingDefAnalysis *R, VASTSeqValue *Src,
   return PathDelay;
 }
 
-static unsigned getMinimalDelay(SeqValReachingDefAnalysis *R, VASTSeqValue *Src,
+static unsigned getMinimalDelay(SeqReachingDefAnalysis *R, VASTSeqValue *Src,
                                 ArrayRef<VASTSeqUse> DstUses) {
   unsigned PathDelay = 10000;
   typedef ArrayRef<VASTSeqUse>::iterator iterator;
@@ -240,7 +240,7 @@ bool PathDelayQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   return true;
 }
 
-void PathDelayQueryCache::annotatePathDelay(SeqValReachingDefAnalysis *R,
+void PathDelayQueryCache::annotatePathDelay(SeqReachingDefAnalysis *R,
                                             VASTValue *Root,
                                             ArrayRef<VASTSeqUse> DstUses) {
   assert((isa<VASTWire>(Root) || isa<VASTExpr>(Root)) && "Bad root type!");
@@ -472,7 +472,7 @@ bool CombPathDelayAnalysis::runOnMachineFunction(MachineFunction &MF) {
   VM = getAnalysis<VerilogModuleAnalysis>().getModule();
   bindFunctionInfoToScriptEngine(MF, getAnalysis<TargetData>(), VM);
 
-  ReachingDef = &getAnalysis<SeqValReachingDefAnalysis>();
+  ReachingDef = &getAnalysis<SeqReachingDefAnalysis>();
 
   //Write the timing constraints.
   typedef VASTModule::seqval_iterator seqval_iterator;
@@ -535,7 +535,7 @@ char CombPathDelayAnalysis::ID = 0;
 INITIALIZE_PASS_BEGIN(CombPathDelayAnalysis, "CombPathDelayAnalysis",
                       "CombPathDelayAnalysis", false, false)
   INITIALIZE_PASS_DEPENDENCY(VerilogModuleAnalysis);
-  INITIALIZE_PASS_DEPENDENCY(SeqValReachingDefAnalysis);
+  INITIALIZE_PASS_DEPENDENCY(SeqReachingDefAnalysis);
 INITIALIZE_PASS_END(CombPathDelayAnalysis, "CombPathDelayAnalysis",
                     "CombPathDelayAnalysis", false, false)
 

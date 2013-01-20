@@ -13,7 +13,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "SeqValReachingDefAnalysis.h"
+#include "SeqReachingDefAnalysis.h"
 
 #include "vtm/Passes.h"
 #include "vtm/VFInfo.h"
@@ -38,9 +38,9 @@ using namespace llvm;
 
 namespace llvm {
 template<>
-struct DOTGraphTraits<SeqValReachingDefAnalysis*> : public DefaultDOTGraphTraits{
+struct DOTGraphTraits<SeqReachingDefAnalysis*> : public DefaultDOTGraphTraits{
   typedef VASTSlot NodeTy;
-  typedef SeqValReachingDefAnalysis GraphTy;
+  typedef SeqReachingDefAnalysis GraphTy;
 
   DOTGraphTraits(bool isSimple=false) : DefaultDOTGraphTraits(isSimple) {}
 
@@ -62,7 +62,7 @@ struct DOTGraphTraits<SeqValReachingDefAnalysis*> : public DefaultDOTGraphTraits
 };
 }
 
-void SeqValReachingDefAnalysis::viewGraph() {
+void SeqReachingDefAnalysis::viewGraph() {
   ViewGraph(this, "CompatibilityGraph" + utostr_32(ID));
 }
 
@@ -101,18 +101,18 @@ void SlotInfo::initOutSet() {
     SlotOut.insert(std::make_pair(*I, SlotInfo::LiveInInfo()));
 }
 
-SeqValReachingDefAnalysis::SeqValReachingDefAnalysis() : MachineFunctionPass(ID), VM(0) {
-  initializeSeqValReachingDefAnalysisPass(*PassRegistry::getPassRegistry());
+SeqReachingDefAnalysis::SeqReachingDefAnalysis() : MachineFunctionPass(ID), VM(0) {
+  initializeSeqReachingDefAnalysisPass(*PassRegistry::getPassRegistry());
 }
 
 
-void SeqValReachingDefAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
+void SeqReachingDefAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   MachineFunctionPass::getAnalysisUsage(AU);
   AU.addRequired<VerilogModuleAnalysis>();
   AU.setPreservesAll();
 }
 
-bool SeqValReachingDefAnalysis::runOnMachineFunction(MachineFunction &MF) {
+bool SeqReachingDefAnalysis::runOnMachineFunction(MachineFunction &MF) {
   VM = getAnalysis<VerilogModuleAnalysis>().getModule();
 
   // Push back all the slot into the SlotVec for the purpose of view graph.
@@ -138,13 +138,13 @@ bool SeqValReachingDefAnalysis::runOnMachineFunction(MachineFunction &MF) {
   return false;
 }
 
-SlotInfo *SeqValReachingDefAnalysis::getSlotInfo(const VASTSlot *S) const {
+SlotInfo *SeqReachingDefAnalysis::getSlotInfo(const VASTSlot *S) const {
   slotinfo_it It = SlotInfos.find(S);
   assert(It != SlotInfos.end() && "SlotInfo not exist!");
   return It->second;
 }
 
-bool SeqValReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
+bool SeqReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
                                            bool FromAliasSlot) {
   bool Changed = false;
   typedef SlotInfo::vascyc_iterator it;
@@ -229,7 +229,7 @@ bool SeqValReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
   return Changed;
 }
 
-bool SeqValReachingDefAnalysis::addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To) {
+bool SeqReachingDefAnalysis::addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To) {
   bool Changed = false;
   unsigned FromSlotNum = From->SlotNum;
 
@@ -247,7 +247,7 @@ bool SeqValReachingDefAnalysis::addLiveInFromAliasSlots(VASTSlot *From, SlotInfo
   return Changed;
 }
 
-void SeqValReachingDefAnalysis::ComputeReachingDefinition() {
+void SeqReachingDefAnalysis::ComputeReachingDefinition() {
   ComputeGenAndKill();
   // TODO: Simplify the data-flow, some slot may neither define new VAS nor
   // kill any VAS.
@@ -280,7 +280,7 @@ void SeqValReachingDefAnalysis::ComputeReachingDefinition() {
   } while (Changed);
 }
 
-void SeqValReachingDefAnalysis::ComputeGenAndKill(const VASTSeqDef &D) {
+void SeqReachingDefAnalysis::ComputeGenAndKill(const VASTSeqDef &D) {
   VASTSlot *S = D->getSlot();
   SlotInfo *SI = getSlotInfo(S);
   SI->insertGen(D);
@@ -319,7 +319,7 @@ void SeqValReachingDefAnalysis::ComputeGenAndKill(const VASTSeqDef &D) {
   }
 }
 
-void SeqValReachingDefAnalysis::ComputeGenAndKill() {
+void SeqReachingDefAnalysis::ComputeGenAndKill() {
   // Collect the generated statements to the SlotGenMap.
   typedef VASTModule::slot_iterator it;
   for (it SI = VM->slot_begin(), SE = VM->slot_end(); SI != SE; ++SI) {
@@ -343,13 +343,13 @@ void SeqValReachingDefAnalysis::ComputeGenAndKill() {
   }
 }
 
-char SeqValReachingDefAnalysis::ID = 0;
-INITIALIZE_PASS_BEGIN(SeqValReachingDefAnalysis, "RtlSSAAnalysis",
+char SeqReachingDefAnalysis::ID = 0;
+INITIALIZE_PASS_BEGIN(SeqReachingDefAnalysis, "RtlSSAAnalysis",
                       "RtlSSAAnalysis", false, false)
   INITIALIZE_PASS_DEPENDENCY(VerilogModuleAnalysis);
-INITIALIZE_PASS_END(SeqValReachingDefAnalysis, "RtlSSAAnalysis",
+INITIALIZE_PASS_END(SeqReachingDefAnalysis, "RtlSSAAnalysis",
                     "RtlSSAAnalysis", false, false)
 
-Pass *llvm::createSeqValReachingDefAnalysisPass() {
-  return new SeqValReachingDefAnalysis();
+Pass *llvm::createSeqReachingDefAnalysisPass() {
+  return new SeqReachingDefAnalysis();
 }

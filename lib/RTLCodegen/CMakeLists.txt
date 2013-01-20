@@ -15,7 +15,8 @@ add_llvm_library(VTMRTLCodegen
   PreSchedRTLOpt.cpp
   LUTMapping.cpp
   VASTControlpath.cpp
-  SeqValReachingDefAnalysis.cpp
+  SeqLiveVariables.cpp
+  SeqReachingDefAnalysis.cpp
   VASTSubModules.cpp
   CombPathDelayAnalysis.cpp
   LATimingEstimator.cpp
