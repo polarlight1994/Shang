@@ -20,6 +20,10 @@ class VASTExprBuilder;
 
 class VerilogModuleAnalysis : public MachineFunctionPass {
   VASTModule *Module;
+  VASTModule *getModule() const {
+    assert(Module && "The module is not yet created!");
+    return Module;
+  }
 public:
   static char ID;
 
@@ -29,9 +33,7 @@ public:
   void releaseMemory();
 
   VASTModule *createModule(const std::string &Name);
-  VASTModule *getModule() const {
-    assert(Module && "The module is not yet created!");
-    return Module;
-  }
+
+  operator VASTModule*() const { return getModule(); }
 };
 }

@@ -247,7 +247,7 @@ bool ScriptingPass::doFinalization(Module &M) {
 }
 
 bool ScriptingPass::runOnMachineFunction(MachineFunction &MF) {
-  VASTModule *Module = getAnalysis<VerilogModuleAnalysis>().getModule();
+  VASTModule *Module = getAnalysis<VerilogModuleAnalysis>();
   bindFunctionInfoToScriptEngine(MF, *TD, Module);
 
   SMDiagnostic Err;

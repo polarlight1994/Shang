@@ -113,7 +113,7 @@ void SeqReachingDefAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool SeqReachingDefAnalysis::runOnMachineFunction(MachineFunction &MF) {
-  VM = getAnalysis<VerilogModuleAnalysis>().getModule();
+  VM = getAnalysis<VerilogModuleAnalysis>();
 
   // Push back all the slot into the SlotVec for the purpose of view graph.
   typedef VASTModule::slot_iterator slot_it;

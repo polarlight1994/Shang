@@ -469,7 +469,7 @@ bool CombPathDelayAnalysis::runOnMachineFunction(MachineFunction &MF) {
   // No need to write timing script at all.
   if (DisableTimingScriptGeneration) return false;
 
-  VM = getAnalysis<VerilogModuleAnalysis>().getModule();
+  VM = getAnalysis<VerilogModuleAnalysis>();
   bindFunctionInfoToScriptEngine(MF, getAnalysis<TargetData>(), VM);
 
   ReachingDef = &getAnalysis<SeqReachingDefAnalysis>();
