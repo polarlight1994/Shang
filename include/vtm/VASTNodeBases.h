@@ -438,6 +438,9 @@ public:
   // Helper function.
   static std::string printBitRange(unsigned UB, unsigned LB, bool printOneBit);
 
+  // Extract all SeqVals which are connect to this VASTValue through data-path.
+  void extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals);
+
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTValue *A) { return true; }
   static inline bool classof(const VASTNode *A) {
