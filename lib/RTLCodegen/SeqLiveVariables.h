@@ -17,6 +17,7 @@
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/ADT/SparseBitVector.h"
+#include "llvm/ADT/PointerIntPair.h"
 
 #include <map>
 #include <set>
@@ -31,6 +32,7 @@ class VASTSlot;
 class VASTModule;
 template<class PtrType, unsigned SmallSize> class SmallPtrSet;
 class MachineBasicBlock;
+class MachineInstr;
 
 class SeqLiveVariables : public MachineFunctionPass {
 public:
@@ -40,9 +42,12 @@ public:
 
   struct VarInfo {
     // DefinedByPHI - Set to true if this variable defined by PHI node.
-    const bool IsPHI;
+    PointerIntPair<MachineInstr*, 1, bool> DefMI;
 
-    explicit VarInfo(bool IsPHI = false) : IsPHI(IsPHI) {}
+    explicit VarInfo(MachineInstr *MI = 0, bool IsPHI = false)
+      : DefMI(MI, IsPHI) {}
+
+    bool isPHI() const { return DefMI.getInt(); }
 
     /// AliveSlots - Set of Slots at which this value is defined.  This is a bit
     /// set which uses the Slot number as an index.
@@ -97,11 +102,10 @@ private:
   std::map<VarName, VarInfo*> VarInfos;
 
   // Get the corresponding VarInfo, create the VarInfo if necessary.
-  VarInfo *getVarInfo(VarName VN) {
-    VarInfo *&V = VarInfos[VN];
-    if (V == 0) V = new (Allocator) VarInfo();
-
-    return V;
+  VarInfo *getVarInfo(VarName VN) const {
+    std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(VN);
+    assert(at != VarInfos.end() && "Value use before define!");
+    return at->second;
   }
 
   // The Slots the writing a specific SeqValue.
@@ -110,7 +114,7 @@ private:
   bool isWrittenAt(VASTSeqValue *V, VASTSlot *S);
 
   // Create the VarInfo for PHINodes.
-  void createPHIVarInfo(VASTModule *VM);
+  void createInstVarInfo(VASTModule *VM);
 };
 }
 

@@ -39,7 +39,10 @@ SeqLiveVariables::VarName::VarName(VASTSeqDef D)
   : Dst(D), S(D->getSlot()) {}
 
 void SeqLiveVariables::VarInfo::dump() const {
-  if (IsPHI) dbgs() << "  [PHI]";
+  if (isPHI()) dbgs() << "  [PHI]";
+
+  if (MachineInstr *MI = DefMI.getPointer())
+    MI->print(dbgs());
 
   dbgs() << "  Defined in Slots: ";
 
@@ -99,14 +102,32 @@ void SeqLiveVariables::releaseMemory() {
 }
 
 void SeqLiveVariables::verifyAnalysis() const {
+  VASTModule *VM = getAnalysis<VerilogModuleAnalysis>();
 
+  // The liveness of the variable information derived from the same SeqVal should
+  // not overlap.
+  typedef VASTModule::seqval_iterator seqval_iterator;
+  for (seqval_iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
+    VASTSeqValue *V = I;
+    SmallPtrSet<VarInfo*, 8> VIs;
+    typedef VASTSeqValue::const_itertor iterator;
+    for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI)
+      VIs.insert(getVarInfo(*DI));
+
+    typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
+    for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
+      VarInfo *VInfo = *VI;
+      // Verify the VarInfo itself first.
+      VInfo->verify();
+    }
+  }
 }
 
 bool SeqLiveVariables::runOnMachineFunction(MachineFunction &MF) {
   VASTModule *VM = getAnalysis<VerilogModuleAnalysis>();
 
   // Compute the PHI joins.
-  createPHIVarInfo(VM);
+  createInstVarInfo(VM);
 
   // Calculate live variable information in depth first order on the CFG of the
   // function.  This guarantees that we will see the definition of a virtual
@@ -175,33 +196,49 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector &PathFromEntry) {
     handleUse(*I, S, PathFromEntry);
 }
 
-void SeqLiveVariables::createPHIVarInfo(VASTModule *VM) {
+void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
   typedef VASTModule::seqop_iterator seqop_iterator;
 
   // Compute the join slots for corresponding to a basic block.
   // Because of BB bypassing during VAST construction, there may be no any
   // VASTSlot corresponding to a BB
   std::map<MachineBasicBlock*, std::map<VASTSeqValue*, VarInfo*> > PHIInfos;
+  // Remeber the VarInfo defined
+  std::map<MachineInstr *, VarInfo*> InstVarInfo;
   for (seqop_iterator I = VM->seqop_begin(), E = VM->seqop_end(); I != E; ++I) {
     VASTSeqOp *SeqOp = I;
-    if (MachineInstr *DefMI = SeqOp->getDefMI()) {
-      // Only compute the PHIJoins for VOpMvPhi.
-      if (DefMI->getOpcode() != VTM::VOpMvPhi) continue;
+    MachineInstr *DefMI = SeqOp->getDefMI();
 
+    if (DefMI == 0) continue;
+
+    unsigned SlotNum = SeqOp->getSlotNum();
+
+    // Only compute the PHIJoins for VOpMvPhi.
+    if (DefMI->getOpcode() == VTM::VOpMvPhi) {
       VASTSeqDef Def = SeqOp->getDef(0);
       MachineBasicBlock *TargetBB = DefMI->getOperand(2).getMBB();
 
       // Create the VarInfo for the PHI.
       VarInfo *&VI = PHIInfos[TargetBB][Def];
-      if (VI == 0) VI = new (Allocator) VarInfo(true);
+      if (VI == 0) VI = new (Allocator) VarInfo(DefMI, true);
       // Set the defined slot.
-      VI->DefSlots.set(SeqOp->getSlotNum());
-
+      VI->DefSlots.set(SlotNum);
+      VI->Kills.set(SlotNum);
+      WrittenSlots[Def].set(SlotNum);
       VarInfos[Def] = VI;
-      WrittenSlots[Def].set(SeqOp->getSlotNum());
+    } else if (SeqOp->getNumDefs()) {
+      assert(SeqOp->getNumDefs() == 1 && "Multi-definition not supported yet!");
+      VASTSeqDef Def = SeqOp->getDef(0);
+
+      VarInfo *&VI = InstVarInfo[DefMI];
+      if (VI == 0) VI = new (Allocator) VarInfo(DefMI);
+      // Set the defined slot.
+      VI->DefSlots.set(SlotNum);
+      VI->Kills.set(SlotNum);
+      WrittenSlots[Def].set(SlotNum);
+      VarInfos[Def] = VI;
     }
   }
-
 }
 
 void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
@@ -226,16 +263,17 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   }
 
   if (!DefSlot) {
-    dbgs() << "Dumping path:\n";
-    typedef PathVector::const_iterator iterator;
-    for (iterator I = PathFromEntry.begin(), E = PathFromEntry.end(); I != E; ++I)
-      (*I)->dump();
+    DEBUG(dbgs() << "Dumping path:\n";
+      typedef PathVector::const_iterator iterator;
+      for (iterator I = PathFromEntry.begin(), E = PathFromEntry.end(); I != E; ++I)
+      (*I)->dump());
 
     llvm_unreachable("Define of VASTSeqVal not dominates all its uses!");
   }
 
-  dbgs() << "SeqVal: " << Use->getName() << " Used at Slot " << UseSlot->SlotNum
-         << " Def at slot " << DefSlot->SlotNum << '\n';
+  DEBUG(dbgs() << "SeqVal: " << Use->getName() << " Used at Slot "
+               << UseSlot->SlotNum << " Def at slot " << DefSlot->SlotNum
+               << '\n');
 
   // Get the corresponding VarInfo defined at DefSlot.
   VarInfo *VI = getVarInfo(VarName(Use, DefSlot));
@@ -282,18 +320,20 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
 
   VI->Kills.set(UseSlot->SlotNum);
 
-  VI->dump();
-
-  dbgs() << '\n';
+  DEBUG(VI->dump(); dbgs() << '\n');
 }
 
 void SeqLiveVariables::handleDef(VASTSeqDef Def) {
-  VarInfo *V = getVarInfo(Def);
+  VarInfo *&V = VarInfos[Def];
+  if (V) return;
 
-  // VarInfo for PHI is already setuped.
-  if (V->IsPHI) return;
+  // Create and initialize the VarInfo if necessary.
+  V = new (Allocator) VarInfo();
 
-  assert(V->AliveSlots.empty() && "Unexpected alive slots!");
+  // Multi-
+  if (V->DefSlots.count()) return;
+
+  unsigned SlotNum = Def->getSlotNum();
 
   // Initialize the define slot.
   V->DefSlots.set(Def->getSlotNum());
