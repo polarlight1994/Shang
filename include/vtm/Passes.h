@@ -67,6 +67,7 @@ FunctionPass *createSimpleRegisterAllocator();
 Pass *createCombPathDelayAnalysisPass();
 
 // Analysis the dependency between registers
+Pass *createSeqLiveVariablesPass();
 Pass *createSeqReachingDefAnalysisPass();
 
 // RTL code generation.
@@ -89,6 +90,7 @@ void initializePrebindUnbalanceMuxPass(PassRegistry &Registry);
 void initializeBitLevelInfoPass(PassRegistry &Registry);
 void initializeHyperBlockFormationPass(PassRegistry &Registry);
 void initializeCombPathDelayAnalysisPass(PassRegistry &Registry);
+void initializeSeqLiveVariablesPass(PassRegistry &Registry);
 void initializeSeqReachingDefAnalysisPass(PassRegistry &Registry);
 void initializeVerilogASTBuilderPass(PassRegistry &Registry);
 void initializeVerilogASTWriterPass(PassRegistry &Registry);

@@ -157,6 +157,7 @@ public:
   typedef SmallVector<VASTSlot*, 4> PredVecTy;
   typedef PredVecTy::iterator pred_iterator;
   typedef PredVecTy::const_iterator const_pred_iterator;
+
 private:
   // The relative signal of the slot: Slot register, Slot active and Slot ready.
   VASTUse SlotReg;

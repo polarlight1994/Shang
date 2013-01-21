@@ -272,7 +272,7 @@ std::string VASTExpr::getTempName() const {
 void
 VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const {
   if (printAsOperandInteral(OS)) {
-    assert(UB == getBitWidth() && LB == 0 && "Cannot print bitslice of Expr!");
+    //assert(UB == getBitWidth() && LB == 0 && "Cannot print bitslice of Expr!");
     return;
   }
 

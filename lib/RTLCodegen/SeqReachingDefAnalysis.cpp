@@ -13,6 +13,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "SeqLiveVariables.h"
 #include "SeqReachingDefAnalysis.h"
 
 #include "vtm/Passes.h"
@@ -109,6 +110,7 @@ SeqReachingDefAnalysis::SeqReachingDefAnalysis() : MachineFunctionPass(ID), VM(0
 void SeqReachingDefAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   MachineFunctionPass::getAnalysisUsage(AU);
   AU.addRequired<VerilogModuleAnalysis>();
+  AU.addRequired<SeqLiveVariables>();
   AU.setPreservesAll();
 }
 
@@ -344,11 +346,12 @@ void SeqReachingDefAnalysis::ComputeGenAndKill() {
 }
 
 char SeqReachingDefAnalysis::ID = 0;
-INITIALIZE_PASS_BEGIN(SeqReachingDefAnalysis, "RtlSSAAnalysis",
-                      "RtlSSAAnalysis", false, false)
+INITIALIZE_PASS_BEGIN(SeqReachingDefAnalysis, "SeqReachingDefAnalysis",
+                      "SeqReachingDefAnalysis", false, false)
   INITIALIZE_PASS_DEPENDENCY(VerilogModuleAnalysis);
-INITIALIZE_PASS_END(SeqReachingDefAnalysis, "RtlSSAAnalysis",
-                    "RtlSSAAnalysis", false, false)
+  INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables);
+INITIALIZE_PASS_END(SeqReachingDefAnalysis, "SeqReachingDefAnalysis",
+                    "SeqReachingDefAnalysis", false, false)
 
 Pass *llvm::createSeqReachingDefAnalysisPass() {
   return new SeqReachingDefAnalysis();
