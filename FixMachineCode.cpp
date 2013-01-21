@@ -142,16 +142,20 @@ void FixMachineCode::handlePHI(MachineInstr *PN, MachineBasicBlock *CurBB) {
   //bool isAllImpDef = true;
 
   for (unsigned i = 1, e = PN->getNumOperands(); i != e; i += 2) {
-    MachineOperand &SrcMO = PN->getOperand(i);
+    MachineOperand SrcMO = PN->getOperand(i);
     MachineInstr *DefMI = MRI->getVRegDef(SrcMO.getReg());
     assert(DefMI && "Not in SSA form?");
-    if (DefMI->isImplicitDef())
-      continue;
 
     MachineBasicBlock *SrcBB = PN->getOperand(i + 1).getMBB();
 
     unsigned NewSrcReg =
       MRI->createVirtualRegister(MRI->getRegClass(SrcMO.getReg()));
+    // Update the incoming register.
+    PN->getOperand(i).ChangeToRegister(NewSrcReg, false);
+
+    // Replace the implicit defined by some random value.
+    if (DefMI->isImplicitDef())
+      SrcMO = VInstrInfo::CreateImm(intptr_t(PN), BitWidth);
 
     MachineOperand Pred = VInstrInfo::CreatePredicate();
     typedef MachineBasicBlock::instr_iterator it;
@@ -162,9 +166,6 @@ void FixMachineCode::handlePHI(MachineInstr *PN, MachineBasicBlock *CurBB) {
       // The phi copy is only active when SrcBB jumping to CurBB.
       .addOperand(Pred)
       .addImm(0);
-
-    SrcMO.ChangeToRegister(NewSrcReg, false);
-    //isAllImpDef = false;
   }
 
   // TODO: Incoming copy?
