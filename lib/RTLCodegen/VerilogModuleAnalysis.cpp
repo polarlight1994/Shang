@@ -31,9 +31,10 @@ bool VerilogModuleAnalysis::runOnMachineFunction(MachineFunction &MF){
   return false;
 }
 
-VASTModule *VerilogModuleAnalysis::createModule(const std::string &Name) {
+VASTModule *VerilogModuleAnalysis::createModule(const std::string &Name,
+                                                unsigned NumSlots) {
   assert(Module == 0 && "Module has been already created!");
-  Module = new VASTModule(Name);
+  Module = new VASTModule(Name, NumSlots);
   return Module;
 }
 

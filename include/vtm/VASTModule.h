@@ -109,6 +109,13 @@ private:
   SmallVector<std::map<unsigned, unsigned>, VFUs::NumCommonFUs> FUPortOffsets;
   unsigned NumArgPorts, RetPortIdx;
 
+  // Allocate the slots, including the idle slot and the finish slot.
+  void allocaSlots(unsigned TotalSlots) {
+    Slots.assign(TotalSlots + 1, 0);
+  }
+
+  VASTSlot *createStartSlot();
+
   VASTPort *addPort(const Twine &Name, unsigned BitWidth, bool isReg,
                     bool isInput);
 
@@ -127,7 +134,7 @@ public:
     RetPort // Port for function return value.
   };
 
-  VASTModule(const Twine &Name);
+  VASTModule(const Twine &Name, unsigned NumSlots);
 
   ~VASTModule();
 
@@ -176,12 +183,8 @@ public:
   VASTValPtr getOrCreateSymbol(const Twine &Name, unsigned BitWidth,
                                bool CreateWrapper);
 
-  void allocaSlots(unsigned TotalSlots) {
-    Slots.assign(TotalSlots + 1, 0);
-  }
 
   VASTSlot *getOrCreateSlot(unsigned SlotNum, MachineInstr *BundleStart);
-  VASTSlot *getOrCreateStartSlot();
 
   VASTSlot *getSlot(unsigned SlotNum) const {
     VASTSlot *S = Slots[SlotNum];
@@ -312,6 +315,9 @@ public:
   // operand is excluded from NumOps.
   VASTSeqOp *createSeqOp(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps,
                          MachineInstr *DefMI, bool AddSlotActive);
+  // Add the virtual VASTSeqOp which define the VASTSeqValue D.
+  VASTSeqOp *createVirtSeqOp(VASTSlot *Slot, VASTValPtr Pred, VASTSeqValue *D);
+
   void addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
                      VASTValPtr GuardCnd, MachineInstr *DefMI = 0,
                      bool AddSlotActive = true);

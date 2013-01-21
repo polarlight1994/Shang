@@ -365,8 +365,8 @@ void VASTSeqOp::print(raw_ostream &OS) const {
   }
   OS << "} ";
 
-  if (DefMI) DefMI->print(OS);
-  else       OS << '\n';
+  if (getDefMI()) getDefMI()->print(OS);
+  else            OS << '\n';
 }
 
 void VASTSeqOp::printPredicate(raw_ostream &OS) const {
@@ -382,9 +382,9 @@ void VASTSeqOp::printPredicate(raw_ostream &OS) const {
 }
 
 VASTSeqOp::VASTSeqOp(VASTSlot *S, bool UseSlotActive, MachineInstr *DefMI,
-                     VASTUse *Operands, unsigned Size)
+                     VASTUse *Operands, unsigned Size, bool IsVirtual)
   : VASTOperandList(Operands, Size + 1), VASTNode(vastSeqOp), S(S, UseSlotActive),
-    DefMI(DefMI) {
+    DefMI(DefMI, IsVirtual) {
   S->addOperation(this);
 }
 

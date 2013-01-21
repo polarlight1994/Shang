@@ -197,9 +197,12 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 
 //----------------------------------------------------------------------------//
 
-VASTModule::VASTModule(const Twine &Name)
+VASTModule::VASTModule(const Twine &Name, unsigned NumSlots)
   : VASTNode(vastModule), Ports(NumSpecialPort), Name(Name.str()),
-    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0) {}
+    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0) {
+  allocaSlots(NumSlots);
+  createStartSlot();
+}
 
 VASTSeqValue *
 VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
@@ -288,7 +291,7 @@ VASTSlot *VASTModule::getOrCreateSlot(unsigned SlotNum,
   return Slot;
 }
 
-VASTSlot *VASTModule::getOrCreateStartSlot() {
+VASTSlot *VASTModule::createStartSlot() {
   VASTSlot *StartSlot = getOrCreateSlot(0, 0);
   assert(Slots.back() == 0 && "Unexpected finish slot!");
   Slots.back() = new (Allocator) VASTSlot(Slots.size() - 1, StartSlot);
@@ -683,6 +686,23 @@ VASTSeqOp *VASTModule::createSeqOp(VASTSlot *Slot, VASTValPtr Pred,
   VASTSeqOp *Def = new VASTSeqOp(Slot, AddSlotActive, DefMI, UseBegin, NumOps);
   // Create the predicate operand.
   new (UseBegin) VASTUse(Def, Pred);
+
+  // Add the SeqOp to the the all SeqOp list.
+  SeqOps.push_back(Def);
+
+  return Def;
+}
+
+VASTSeqOp *VASTModule::createVirtSeqOp(VASTSlot *Slot, VASTValPtr Pred,
+                                          VASTSeqValue *D) {
+  VASTUse *UseBegin = Allocator.Allocate<VASTUse>(1);
+
+  // Create the uses in the list.
+  VASTSeqOp *Def = new VASTSeqOp(Slot, true, 0, UseBegin, 0, true);
+  // Create the predicate operand.
+  new (UseBegin) VASTUse(Def, Pred);
+  // Add the defined value.
+  Def->addDefDst(D);
 
   // Add the SeqOp to the the all SeqOp list.
   SeqOps.push_back(Def);

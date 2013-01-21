@@ -406,8 +406,7 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
 
   Builder.reset(new DatapathBuilder(*this, *MRI));
   VerilogModuleAnalysis &VMA = getAnalysis<VerilogModuleAnalysis>();
-  VM = VMA.createModule(FInfo->getInfo().getModName());
-  VM->allocaSlots(FInfo->getTotalSlots());
+  VM = VMA.createModule(FInfo->getInfo().getModName(), FInfo->getTotalSlots());
 
   emitFunctionSignature(F.getFunction());
 
@@ -460,7 +459,7 @@ void VerilogASTBuilder::addAssignment(VASTSeqValue *V, VASTValPtr Src,
 void VerilogASTBuilder::emitIdleState() {
   // The module is busy now
   MachineBasicBlock *EntryBB =  GraphTraits<MachineFunction*>::getEntryNode(MF);
-  VASTSlot *IdleSlot = VM->getOrCreateStartSlot();
+  VASTSlot *IdleSlot = VM->getStartSlot();
   IdleSlot->buildReadyLogic(*VM, *Builder);
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
   addSuccSlot(IdleSlot, IdleSlot, Builder->buildNotExpr(StartPort));
@@ -602,6 +601,9 @@ void VerilogASTBuilder::emitAllocatedFUs() {
       VASTRegister *R = VM->addDataRegister(VFUBRAM::getOutDataBusName(PhysReg),
                                             DataWidth, PhysReg);
       indexPhysReg(PhysReg, R->getValue());
+      // Ad the virtual definition for this register.
+      VM->createVirtSeqOp(VM->getStartSlot(), VM->getBoolImmediateImpl(true),
+                          R->getValue());
       continue;
     }
 

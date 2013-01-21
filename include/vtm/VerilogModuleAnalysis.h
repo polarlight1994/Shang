@@ -32,7 +32,7 @@ public:
   bool runOnMachineFunction(MachineFunction &MF);
   void releaseMemory();
 
-  VASTModule *createModule(const std::string &Name);
+  VASTModule *createModule(const std::string &Name, unsigned NumSlots);
 
   operator VASTModule*() const { return getModule(); }
 };
