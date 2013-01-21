@@ -69,8 +69,11 @@ void SeqLiveVariables::VarInfo::dump() const {
 }
 
 void SeqLiveVariables::VarInfo::verify() const {
-  if (AliveSlots.intersects(Kills))
+  if (AliveSlots.intersects(Kills)) {
+    dbgs() << "Bad VarInfo: \n";
+    dump();
     llvm_unreachable("Kills and Alives should not intersect!");
+  }
 }
 
 char SeqLiveVariables::ID = 0;
@@ -101,24 +104,45 @@ void SeqLiveVariables::releaseMemory() {
   Allocator.Reset();
 }
 
+void SeqLiveVariables::dumpVarInfoSet(SmallPtrSet<VarInfo*, 8> VIs) {
+  typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
+  for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI)
+    (*VI)->dump();
+}
+
 void SeqLiveVariables::verifyAnalysis() const {
   VASTModule *VM = getAnalysis<VerilogModuleAnalysis>();
+  SparseBitVector<> OverlapMask;
+  SmallPtrSet<VarInfo*, 8> VIs;
 
   // The liveness of the variable information derived from the same SeqVal should
   // not overlap.
   typedef VASTModule::seqval_iterator seqval_iterator;
   for (seqval_iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
     VASTSeqValue *V = I;
-    SmallPtrSet<VarInfo*, 8> VIs;
+    // Reset the context.
+    VIs.clear();
+    OverlapMask.clear();
+
     typedef VASTSeqValue::const_itertor iterator;
-    for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI)
-      VIs.insert(getVarInfo(*DI));
+    for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
+      std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
+      if (at != VarInfos.end()) VIs.insert(getVarInfo(*DI));
+    }
 
     typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
     for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
       VarInfo *VInfo = *VI;
       // Verify the VarInfo itself first.
       VInfo->verify();
+
+      if (OverlapMask.intersects(VInfo->AliveSlots)) {
+        dumpVarInfoSet(VIs);
+        llvm_unreachable("VarInfo of the same SeqVal alive slot overlap!");
+      }
+
+      // Construct the union.
+      OverlapMask |= VInfo->AliveSlots;
     }
   }
 }
@@ -167,6 +191,10 @@ bool SeqLiveVariables::runOnMachineFunction(MachineFunction &MF) {
     NodeStack.push_back(ChildNode);
     ChildItStack.push_back(NodeStack.back()->succ_begin());
   }
+
+#ifndef NDEBUG
+  verifyAnalysis();
+#endif
 
   return false;
 }
@@ -283,9 +311,26 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   // This variable is known alive at this slot, that means there is some even
   // later use. We do not need to do anything.
   if (VI->AliveSlots.test(UseSlot->SlotNum)) return;
+  // Otherwise we can simply assume this is the kill slot. Please note that
+  // This situation can occur:
+  // \      ,-.
+  // slot_a   |
+  //   |      |
+  // slot_b---'
+  //
+  // where slot_b is reachable via slot_a's predecessors, in this case the kill
+  // flag for slot_a will be reset. And the kill flag for slot_b will be set
+  // when we handling the use at slot_b. What we need to ensure is that we will
+  // always visit slot_a first then slot_b, otherwise we will get the VarInfo
+  // that killed at slot_a but alive at slot_b! If slot_a dominates slot_b,
+  // we will visit slot_a first. In case that slot_a not dominates slot_b, this
+  // may become a PROBLEM. However, such CFG should only be generated when user
+  // is using the goto statement.
+  VI->Kills.set(UseSlot->SlotNum);
 
   // The value not killed at define slot anymore.
   VI->Kills.reset(DefSlot->SlotNum);
+
 
   typedef VASTSlot::pred_iterator ChildIt;
   std::vector<std::pair<VASTSlot*, ChildIt> > VisitStack;
@@ -311,16 +356,16 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
 
     // Reach the alive slot, no need to further visit other known AliveSlots.
     // Please note that test_and_set will return true if the bit is newly set.
-    if (!VI->AliveSlots.test_and_set(ChildNode->SlotNum)) continue;
+    if (VI->AliveSlots.test(ChildNode->SlotNum)) continue;
 
+    // Update the live slots.
+    VI->AliveSlots.set(ChildNode->SlotNum);
     VI->Kills.reset(ChildNode->SlotNum);
 
     VisitStack.push_back(std::make_pair(ChildNode, ChildNode->pred_begin()));
   }
 
-  VI->Kills.set(UseSlot->SlotNum);
-
-  DEBUG(VI->dump(); dbgs() << '\n');
+  DEBUG(VI->verify();VI->dump(); dbgs() << '\n');
 }
 
 void SeqLiveVariables::handleDef(VASTSeqDef Def) {
@@ -336,14 +381,13 @@ void SeqLiveVariables::handleDef(VASTSeqDef Def) {
   unsigned SlotNum = Def->getSlotNum();
 
   // Initialize the define slot.
-  V->DefSlots.set(Def->getSlotNum());
+  V->DefSlots.set(SlotNum);
 
   // If vr is not alive in any block, then defaults to dead.
-  V->Kills.set(Def->getSlotNum());
+  V->Kills.set(SlotNum);
 
   // Remember the written slots.
-  VASTSlot *DefSlot = Def->getSlot();
-  WrittenSlots[Def].set(Def->getSlotNum());
+  WrittenSlots[Def].set(SlotNum);
 }
 
 bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot *S) {

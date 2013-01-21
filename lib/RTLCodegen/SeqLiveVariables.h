@@ -115,6 +115,9 @@ private:
 
   // Create the VarInfo for PHINodes.
   void createInstVarInfo(VASTModule *VM);
+
+  // Debug Helper functions.
+  static void dumpVarInfoSet(SmallPtrSet<VarInfo*, 8> VIs);
 };
 }
 
