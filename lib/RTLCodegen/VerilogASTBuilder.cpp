@@ -298,8 +298,7 @@ class VerilogASTBuilder : public MachineFunctionPass,
 
   // Mapping success fsm state to their predicate in current state.
   void emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
-                  MachineBasicBlock::instr_iterator ctrl_end,
-                  unsigned II, bool Pipelined);
+                  MachineBasicBlock::instr_iterator ctrl_end);
 
   MachineBasicBlock::iterator emitDatapath(MachineInstr *Bundle);
 
@@ -311,7 +310,7 @@ class VerilogASTBuilder : public MachineFunctionPass,
                            VASTValueVecTy &Cnds);
 
   void emitBr(MachineInstr *MI, VASTSlot *CurSlot, VASTValueVecTy &Cnds,
-              MachineBasicBlock *CurBB, bool Pipelined);
+              MachineBasicBlock *CurBB);
 
   VASTValPtr getAsOperandImpl(MachineOperand &Op, bool GetAsInlineOperand = true);
 
@@ -544,7 +543,7 @@ void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
     }
 
     // Emit the control operations.
-    emitCtrlOp(instr_iterator(I), NextI, II, IISlot < EndSlot);
+    emitCtrlOp(instr_iterator(I), NextI);
     I = bundle_iterator(llvm::next(NextI));
     // Emit the date-path of current state.
     I = emitDatapath(I);
@@ -763,8 +762,7 @@ VerilogASTBuilder::~VerilogASTBuilder() {}
 
 //===----------------------------------------------------------------------===//
 void VerilogASTBuilder::emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
-                                   MachineBasicBlock::instr_iterator ctrl_end,
-                                   unsigned II, bool Pipelined) {
+                                   MachineBasicBlock::instr_iterator ctrl_end) {
   MachineBasicBlock *CurBB = ctrl_begin->getParent();
   assert(ctrl_begin->getOpcode() == VTM::CtrlStart && "Expect control bundle!");
   SmallVector<VASTValPtr, 4> Cnds;
@@ -795,7 +793,7 @@ void VerilogASTBuilder::emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
     case VTM::VOpMemTrans:      emitOpMemTrans(MI, CurSlot, Cnds);        break;
     case VTM::VOpBRAMRead:      emitOpBRamTrans(MI, CurSlot, Cnds, false);break;
     case VTM::VOpBRAMWrite:     emitOpBRamTrans(MI, CurSlot, Cnds, true); break;
-    case VTM::VOpToState_nt: emitBr(MI, CurSlot, Cnds, CurBB, Pipelined); break;
+    case VTM::VOpToState_nt:    emitBr(MI, CurSlot, Cnds, CurBB);         break;
     case VTM::VOpReadReturn:    emitOpReadReturn(MI, CurSlot, Cnds);      break;
     case VTM::VOpUnreachable:   emitOpUnreachable(MI, CurSlot, Cnds);     break;
     default:  assert(0 && "Unexpected opcode!");                          break;
@@ -828,7 +826,7 @@ bool VerilogASTBuilder::emitFirstCtrlBundle(MachineBasicBlock *DstBB,
     case VTM::COPY:             emitOpReadFU(MI, Slot, Cnds);   break;
     case VTM::VOpDefPhi:                                      break;
     case VTM::VOpToState_nt:
-      emitBr(MI, Slot, Cnds, DstBB, false);
+      emitBr(MI, Slot, Cnds, DstBB);
       ++SlotsByPassed;
       break;
     case VTM::VOpRetVal:        emitOpRetVal(MI, Slot, Cnds); break;
@@ -849,8 +847,7 @@ bool VerilogASTBuilder::emitFirstCtrlBundle(MachineBasicBlock *DstBB,
 }
 
 void VerilogASTBuilder::emitBr(MachineInstr *MI, VASTSlot *CurSlot,
-                               VASTValueVecTy &Cnds, MachineBasicBlock *CurBB,
-                               bool Pipelined) {
+                               VASTValueVecTy &Cnds, MachineBasicBlock *CurBB) {
   MachineOperand &CndOp = MI->getOperand(0);
   Cnds.push_back(Builder->createCnd(CndOp));
 
