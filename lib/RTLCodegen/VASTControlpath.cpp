@@ -109,7 +109,23 @@ const char *VASTSlot::getName() const {
 }
 
 void VASTSlot::print(raw_ostream &OS) const {
-  llvm_unreachable("VASTSlot::print should not be called!");
+  OS << "Slot#"<< SlotNum << " Pred: ";
+  for (const_pred_iterator I = pred_begin(), E = pred_end(); I != E; ++I)
+    OS << "S#" << (*I)->SlotNum << ", ";
+
+  OS << '\n';
+
+  for (const_op_iterator I = op_begin(), E = op_end(); I != E; ++I)
+    (*I)->print(OS.indent(2));
+
+  OS << "Succ: ";
+
+  for (const_succ_cnd_iterator I = succ_cnd_begin(), E = succ_cnd_end();
+       I != E; ++I) {
+    OS << "S#" << I->first->SlotNum << " (";
+    I->second.printAsOperand(OS);
+    OS << "), ";
+  }
 }
 
 VASTValPtr VASTSlot::buildFUReadyExpr(VASTExprBuilder &Builder) {

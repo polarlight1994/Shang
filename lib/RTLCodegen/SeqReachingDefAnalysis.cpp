@@ -264,8 +264,8 @@ void SeqReachingDefAnalysis::ComputeReachingDefinition() {
       SlotInfo *CurSI = getSlotInfo(S);
 
       // Compute the out set.
-      typedef VASTSlot::pred_ititerator pred_it;
-      for (pred_it PI = S->pred_begin(), PE = S->pred_end(); PI != PE; ++PI) {
+      typedef VASTSlot::pred_iterator iterator;
+      for (iterator PI = S->pred_begin(), PE = S->pred_end(); PI != PE; ++PI) {
         VASTSlot *PredSlot = *PI;
 
         SlotInfo *PredSI = getSlotInfo(PredSlot);
