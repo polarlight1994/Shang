@@ -143,6 +143,7 @@ void SeqLiveVariables::verifyAnalysis() const {
 
       // Construct the union.
       OverlapMask |= VInfo->AliveSlots;
+      OverlapMask |= VInfo->Kills;
     }
   }
 }
