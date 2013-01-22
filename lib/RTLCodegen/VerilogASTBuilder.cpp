@@ -184,7 +184,6 @@ class VerilogASTBuilder : public MachineFunctionPass,
   const Module *M;
   MachineFunction *MF;
   TargetData *TD;
-  VRegisterInfo *TRI;
   VFInfo *FInfo;
   MachineRegisterInfo *MRI;
   VASTModule *VM;
@@ -199,6 +198,13 @@ class VerilogASTBuilder : public MachineFunctionPass,
     return dyn_cast<VASTSubModule>(at->second);
   }
 
+  std::map<unsigned, VASTNode*> BlockRAMs;
+  VASTNode *getBlockRAM(unsigned FNNum) const {
+    std::map<unsigned, VASTNode*>::const_iterator at = BlockRAMs.find(FNNum);
+    assert(at != BlockRAMs.end() && "Submodule not yet created!");
+    return at->second;
+  }
+
   VASTImmediate *getOrCreateImmediate(const APInt &Value) {
     return VM->getOrCreateImmediateImpl(Value);
   }
@@ -210,9 +216,34 @@ class VerilogASTBuilder : public MachineFunctionPass,
 
   typedef DatapathBuilder::RegIdxMapTy RegIdxMapTy;
   RegIdxMapTy Idx2Reg;
+  std::map<const MachineInstr*, VASTSeqValue*> SeqValMaps;
+
+  VASTSeqValue *getOrCreateSeqVal(const MachineOperand &DefMO) {
+    assert(DefMO.isDef() && "Cannot create SeqVal for MI!");
+    VASTSeqValue *&V = SeqValMaps[DefMO.getParent()];
+
+    if (V) return V;
+    unsigned RegNo = DefMO.getReg();
+    unsigned BitWidth = VInstrInfo::getBitWidth(DefMO);
+    VASTRegister *R =  VM->addRegister("v" + utostr_32(RegNo) + "r", BitWidth,
+                                       0, VASTNode::Data, RegNo);
+    // V = VM->createSeqValue("v" + utostr_32(RegNo) + "r", BitWidth,
+    //                        VASTNode::Data, RegNo, 0);
+    V = R->getValue();
+    return indexSeqValue(RegNo, V);
+  }
+
+  VASTSeqValue *indexSeqValue(unsigned RegNum, VASTSeqValue *V) {
+    std::pair<RegIdxMapTy::iterator, bool> inserted
+      = Idx2Reg.insert(std::make_pair(RegNum, V));
+    assert((inserted.second || inserted.first->second == V)
+           && "RegNum already indexed some value!");
+
+    return V;
+  }
 
   VASTValPtr lookupSignal(unsigned RegNum) {
-    if (TargetRegisterInfo::isPhysicalRegister(RegNum)) {
+    if (MRI->getRegClass(RegNum) != &VTM::WireRegClass) {
       RegIdxMapTy::const_iterator at = Idx2Reg.find(RegNum);
       assert(at != Idx2Reg.end() && "Signal not found!");
 
@@ -230,24 +261,6 @@ class VerilogASTBuilder : public MachineFunctionPass,
     }
     
     return Expr;
-  }
-
-  VASTValPtr indexPhysReg(unsigned RegNum, VASTValPtr V) {
-    assert(TargetRegisterInfo::isPhysicalRegister(RegNum)
-           && "Expect physical register!");
-    bool inserted = Idx2Reg.insert(std::make_pair(RegNum, V)).second;
-    assert(inserted && "RegNum already indexed some value!");
-
-    return V;
-  }
-
-  VASTRegister *addDataRegister(unsigned RegNum, unsigned BitWidth,
-                                const char *Attr = "") {
-    std::string Name = "p" + utostr_32(RegNum) + "r";
-
-    VASTRegister *R = VM->addDataRegister(Name, BitWidth, RegNum, Attr);
-    indexPhysReg(RegNum, R->getValue());
-    return R;
   }
 
   VASTSlot *getInstrSlot(MachineInstr *MI) {
@@ -289,12 +302,11 @@ class VerilogASTBuilder : public MachineFunctionPass,
   void emitFunctionSignature(const Function *F, VASTSubModule *SubMod = 0);
   void emitCommonPort(VASTSubModule *SubMod);
   void emitAllocatedFUs();
-  VASTNode *emitSubModule(const char *CalleeName, unsigned FNNum);
+  VASTNode *emitSubModule(const char *CalleeName, unsigned FNNum, unsigned RegNum);
+
   void emitIdleState();
 
   void emitBasicBlock(MachineBasicBlock &MBB);
-
-  void emitAllSignals();
 
   // Mapping success fsm state to their predicate in current state.
   void emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
@@ -334,6 +346,7 @@ class VerilogASTBuilder : public MachineFunctionPass,
   void emitOpRetVal(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds);
   void emitOpRet(MachineInstr *MIRet, VASTSlot *CurSlot, VASTValueVecTy &Cnds);
   void emitOpReadFU(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds);
+  void emitOpMvPhi(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds);
   void emitOpDisableFU(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds);
 
   void emitOpMemTrans(MachineInstr *MI, VASTSlot *Slot, VASTValueVecTy &Cnds);
@@ -364,6 +377,8 @@ public:
     Builder.reset();
     EmittedSubModules.clear();
     Idx2Reg.clear();
+    SeqValMaps.clear();
+    BlockRAMs.clear();
   }
 
   bool runOnMachineFunction(MachineFunction &MF);
@@ -400,9 +415,6 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
   TD = getAnalysisIfAvailable<TargetData>();
   FInfo = MF->getInfo<VFInfo>();
   MRI = &MF->getRegInfo();
-  TargetRegisterInfo *RegInfo
-    = const_cast<TargetRegisterInfo*>(MF->getTarget().getRegisterInfo());
-  TRI = reinterpret_cast<VRegisterInfo*>(RegInfo);
 
   Builder.reset(new DatapathBuilder(*this, *MRI));
   VerilogModuleAnalysis &VMA = getAnalysis<VerilogModuleAnalysis>();
@@ -417,10 +429,21 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
   MemBusBuilder MBB(VM, *Builder, 0);
   MBBuilder = &MBB;
 
-  // Emit all function units then emit all register/wires because function units
-  // may alias with registers.
+  // Build the bundles.
+  typedef MachineFunction::iterator iterator;
+  for (iterator BI = F.begin(), BE = F.end(); BI != BE; ++BI) {
+    typedef MachineBasicBlock::instr_iterator instr_iterator;
+    for (instr_iterator I = BI->instr_begin(), E = BI->instr_end(); I != E; ++I)
+      switch (I->getOpcode()) {
+      default: I->setIsInsideBundle(); break;
+        // Do not bundle these instructions.
+      case VTM::CtrlStart: case VTM::Datapath: case VTM::PHI: case VTM::EndState:
+        break;
+      }
+  }
+
+  // Emit the allocated Functional units, currently they are the block RAMs.
   emitAllocatedFUs();
-  emitAllSignals();
 
   // States of the control flow.
   emitIdleState();
@@ -556,10 +579,8 @@ void VerilogASTBuilder::addSlotReady(MachineInstr *MI, VASTSlot *Slot) {
   case VFUs::CalleeFN: {
     // The register representing the function unit is store in the src operand
     // of VOpReadFU.
-    if (VASTSubModule *Submod = getSubModule(MI->getOperand(1).getReg()))
-      // TODO: Assert not in first slot.
-      addSlotReady(Slot, Submod->getFinPort(), Builder->createCnd(MI));
-
+    if (VASTSeqValue *FinPort = getAsLValue<VASTSeqValue>(MI->getOperand(1)))
+      addSlotReady(Slot, FinPort, Builder->createCnd(MI));
     break;
   }
   default: return;
@@ -593,36 +614,27 @@ void VerilogASTBuilder::emitAllocatedFUs() {
       //}
       // Dirty Hack: For some block RAM, there is no read access, while for
       // some others, there is no write access.
-      unsigned PhysReg = std::max(Info.ReadPortARegNum, Info.WritePortARegnum);
-      assert((Info.ReadPortARegNum == Info.WritePortARegnum
-              || Info.WritePortARegnum == 0 || Info.ReadPortARegNum == 0)
-             && "The same register should be assigned to the single element BRAM"
-                " or there is no write access!");
-      VASTRegister *R = VM->addDataRegister(VFUBRAM::getOutDataBusName(PhysReg),
-                                            DataWidth, PhysReg);
-      indexPhysReg(PhysReg, R->getValue());
-      // Ad the virtual definition for this register.
-      VM->createVirtSeqOp(VM->getStartSlot(), VM->getBoolImmediateImpl(true),
-                          R->getValue());
+      VASTRegister *R = VM->addDataRegister(VFUBRAM::getOutDataBusName(BRAMNum),
+                                            DataWidth, BRAMNum);
+      bool Inserted = BlockRAMs.insert(std::make_pair(BRAMNum, R)).second;
+      assert(Inserted && "Creating the same BRAM twice?");
+      (void) Inserted;
+      // Add the virtual definition for this register.
+      VASTSeqValue *V = R->getValue();
+      VM->createVirtSeqOp(VM->getStartSlot(), VM->getBoolImmediateImpl(true), V);
       continue;
     }
 
     // Create the block RAM object.
     VASTBlockRAM *BRAM = VM->addBlockRAM(BRAMNum, DataWidth, NumElem, Initializer);
-
-    // Index the read port if there is any read accesses.
-    if (unsigned ReadPortNum = Info.ReadPortARegNum)
-      indexPhysReg(ReadPortNum, BRAM->getRAddr(0));
-
-    // Index the write ports if there is any write access.
-    if (unsigned WritePortNum = Info.WritePortARegnum) {
-      indexPhysReg(WritePortNum, BRAM->getWAddr(0));
-      indexPhysReg(WritePortNum + 1, BRAM->getWData(0));
-    }
+    bool Inserted = BlockRAMs.insert(std::make_pair(BRAMNum, BRAM)).second;
+    assert(Inserted && "Creating the same BRAM twice?");
+    (void) Inserted;
   }
 }
 
-VASTNode *VerilogASTBuilder::emitSubModule(const char *CalleeName, unsigned FNNum) {
+VASTNode *VerilogASTBuilder::emitSubModule(const char *CalleeName, unsigned FNNum,
+                                           unsigned RegNum) {
   VASTNode *&N = EmittedSubModules[FNNum];
   // Do not emit a submodule more than once.
   if (N) return N;
@@ -639,7 +651,6 @@ VASTNode *VerilogASTBuilder::emitSubModule(const char *CalleeName, unsigned FNNu
 
   SmallVector<VFUs::ModOpInfo, 4> OpInfo;
   unsigned Latency = VFUs::getModuleOperands(CalleeName, FNNum, OpInfo);
-  VRegisterInfo::PhyRegInfo Info = TRI->getPhyRegInfo(FNNum);
 
   // Submodule information not available, create the seqential code.
   if (OpInfo.empty()) {
@@ -658,18 +669,33 @@ VASTNode *VerilogASTBuilder::emitSubModule(const char *CalleeName, unsigned FNNu
     Ops.push_back(R->getValue());
   }
   // Add the start register.
-  indexPhysReg(FNNum + 1, SubMod->createStartPort(VM));
+  SubMod->createStartPort(VM);
   // Create the finish signal from the submodule.
   SubMod->createFinPort(VM);
 
+  // Compute the size of the return port.
+
+  unsigned RetPortSize = 0;
+  typedef MachineRegisterInfo::use_iterator use_it;
+  for (use_it I = MRI->use_begin(RegNum); I != MRI->use_end(); ++I) {
+    MachineInstr *MI = &*I;
+    if (MI->getOpcode() == VTM::VOpReadFU ||
+        MI->getOpcode() == VTM::VOpDisableFU)
+      continue;
+
+    assert(MI->getOpcode() == VTM::VOpReadReturn && "Unexpected callee user!");
+    assert((RetPortSize == 0 ||
+           RetPortSize == VInstrInfo::getBitWidth(MI->getOperand(0)))
+           && "Return port has multiple size?");
+    RetPortSize = VInstrInfo::getBitWidth(MI->getOperand(0));
+  }
+
   // Dose the submodule have a return port?
-  if (Info.getBitWidth()) {
-    indexPhysReg(FNNum, SubMod->createRetPort(VM, Info.getBitWidth(), Latency));
+  if (RetPortSize) {
+    SubMod->createRetPort(VM, RetPortSize, Latency);
     return SubMod;
   }
 
-  // Else do not has return port.
-  indexPhysReg(FNNum, 0);
   return SubMod;
 }
 
@@ -696,7 +722,7 @@ void VerilogASTBuilder::emitFunctionSignature(const Function *F,
     assert(RetTy->isIntegerTy() && "Only support return integer now!");
     unsigned BitWidth = TD->getTypeSizeInBits(RetTy);
     if (SubMod)
-      indexPhysReg(SubMod->getNum(), SubMod->createRetPort(VM, BitWidth));
+      SubMod->createRetPort(VM, BitWidth);
     else
       VM->addOutputPort("return_value", BitWidth, VASTModule::RetPort);
   }
@@ -716,47 +742,6 @@ void VerilogASTBuilder::emitCommonPort(VASTSubModule *SubMod) {
     VM->addInputPort("rstN", 1, VASTModule::RST);
     VM->addInputPort("start", 1, VASTModule::Start);
     VM->addOutputPort("fin", 1, VASTModule::Finish);
-  }
-}
-
-void VerilogASTBuilder::emitAllSignals() {
-  for (unsigned i = 0, e = TRI->num_phyreg(); i != e; ++i) {
-    unsigned RegNum = i + 1;
-    VRegisterInfo::PhyRegInfo Info = TRI->getPhyRegInfo(RegNum);
-    if (!Info.isTopLevelReg(RegNum)
-        // Sub-register for RCFNRegClass already handled in
-        // emitFunctionSignature called by emitAllocatedFUs;
-        && Info.getRegClass() != VTM::RCFNRegClassID) {
-      VASTValPtr Parent = lookupSignal(Info.getParentRegister());
-      indexPhysReg(RegNum, Builder->buildBitSliceExpr(Parent.getAsInlineOperand(),
-                                                      Info.getUB(), Info.getLB()));
-      continue;
-    }
-
-    switch (Info.getRegClass()) {
-    case VTM::DRRegClassID:
-      addDataRegister(RegNum, Info.getBitWidth());
-      break;
-    case VTM::RINFRegClassID: {
-      // FIXME: Do not use such magic number!
-      // The offset of data input port is 3
-      unsigned DataInIdx = VM->getFUPortOf(FuncUnitId(VFUs::MemoryBus, 0)) + 3;
-      VASTValue *V = VM->getPort(DataInIdx).getValue();
-      indexPhysReg(RegNum, V);
-      break;
-    }
-    case VTM::RBRMRegClassID:
-    case VTM::RCFNRegClassID:
-      /*Nothing to do, it is allocated on the fly*/
-      break;
-    case VTM::RMUXRegClassID: {
-      std::string Name = "dstmux" + utostr_32(RegNum) + "r";
-      VASTRegister *R = VM->addDataRegister(Name, Info.getBitWidth(), RegNum);
-      indexPhysReg(RegNum, R->getValue());
-      break;
-    }
-    default: llvm_unreachable("Unexpected register class!"); break;
-    }
   }
 }
 
@@ -785,9 +770,9 @@ void VerilogASTBuilder::emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
     case VTM::VOpDstMux:
     case VTM::VOpMoveArg:
     case VTM::VOpMove:
-    case VTM::VOpMvPhi:
-    case VTM::VOpMvPipe:        emitOpReadFU(MI, CurSlot, Cnds);          break;
+    case VTM::VOpMvPipe:
     case VTM::VOpReadFU:        emitOpReadFU(MI, CurSlot, Cnds);          break;
+    case VTM::VOpMvPhi:         emitOpMvPhi(MI, CurSlot, Cnds);           break;
     case VTM::VOpDisableFU:     emitOpDisableFU(MI, CurSlot, Cnds);       break;
     case VTM::VOpInternalCall:  emitOpInternalCall(MI, CurSlot, Cnds);    break;
     case VTM::VOpRetVal:        emitOpRetVal(MI, CurSlot, Cnds);          break;
@@ -809,7 +794,7 @@ bool VerilogASTBuilder::emitFirstCtrlBundle(MachineBasicBlock *DstBB,
                                             VASTSlot *Slot,
                                             VASTValueVecTy &Cnds) {
   // TODO: Emit PHINodes if necessary.
-  MachineInstr *FirstBundle = DstBB->instr_begin();
+  MachineInstr *FirstBundle = DstBB->getFirstNonPHI();
   assert(FInfo->getStartSlotFor(DstBB) == VInstrInfo::getBundleSlot(FirstBundle)
          && FirstBundle->getOpcode() == VTM::CtrlStart && "Broken Slot!");
 
@@ -824,9 +809,8 @@ bool VerilogASTBuilder::emitFirstCtrlBundle(MachineBasicBlock *DstBB,
     case VTM::VOpDstMux:
     case VTM::VOpMoveArg:
     case VTM::VOpMove:
-    case VTM::VOpMvPhi:
-    case VTM::COPY:             emitOpReadFU(MI, Slot, Cnds);   break;
-    case VTM::VOpDefPhi:                                      break;
+    case VTM::COPY:             emitOpReadFU(MI, Slot, Cnds);             break;
+    case VTM::VOpMvPhi:         emitOpMvPhi(MI, Slot, Cnds);           break;
     case VTM::VOpToState_nt:
       emitBr(MI, Slot, Cnds, DstBB);
       ++SlotsByPassed;
@@ -863,7 +847,8 @@ void VerilogASTBuilder::emitBr(MachineInstr *MI, VASTSlot *CurSlot,
     unsigned TargetSlotNum = FInfo->getStartSlotFor(TargetBB);
     // Get the second control bundle by skipping the first control bundle and
     // data-path bundle.
-    MachineBasicBlock::iterator I = llvm::next(TargetBB->begin(), 2);
+    MachineBasicBlock::iterator I = TargetBB->getFirstNonPHI();
+    I = llvm::next(I, 2);
 
     VASTSlot *TargetSlot = VM->getOrCreateSlot(TargetSlotNum, I);
     VASTValPtr Cnd = Builder->buildAndExpr(Cnds, 1);
@@ -877,6 +862,20 @@ void VerilogASTBuilder::emitOpUnreachable(MachineInstr *MI, VASTSlot *Slot,
   addSuccSlot(Slot, VM->getFinishSlot(), VM->getBoolImmediateImpl(true));
 }
 
+void VerilogASTBuilder::emitOpMvPhi(MachineInstr *MI, VASTSlot *Slot,
+                                    VASTValueVecTy &Cnds) {
+  MachineOperand &Dst = MI->getOperand(0), &Src = MI->getOperand(1);
+  assert(MRI->hasOneUse(Dst.getReg()) && "Unexpected MI using VOpMvPhi!");
+  MachineInstr &PHI = *MRI->use_begin(Dst.getReg());
+
+  VASTSeqValue *DstR = getOrCreateSeqVal(PHI.getOperand(0));
+  VASTValPtr SrcVal = getAsOperandImpl(Src);
+  // Ignore the identical copy.
+  if (DstR == SrcVal) return;
+
+  addAssignment(DstR, SrcVal, Slot, Cnds, MI, true);
+}
+
 void VerilogASTBuilder::emitOpReadFU(MachineInstr *MI, VASTSlot *Slot,
                                      VASTValueVecTy &Cnds) {
   // The dst operand of ReadFU change to immediate if it is dead.
@@ -884,7 +883,7 @@ void VerilogASTBuilder::emitOpReadFU(MachineInstr *MI, VASTSlot *Slot,
     return;
 
   MachineOperand &Dst = MI->getOperand(0), &Src = MI->getOperand(1);
-  VASTSeqValue *DstR = getAsLValue<VASTSeqValue>(Dst);
+  VASTSeqValue *DstR = getOrCreateSeqVal(Dst);
   VASTValPtr SrcVal = getAsOperandImpl(Src);
 
   // Ignore the identical copy.
@@ -897,14 +896,20 @@ void VerilogASTBuilder::emitOpDisableFU(MachineInstr *MI, VASTSlot *Slot,
                                         VASTValueVecTy &Cnds) {
   FuncUnitId Id = VInstrInfo::getPreboundFUId(MI);
   unsigned FUNum = Id.getFUNum();
-  VASTValPtr EnablePort = 0;
+  VASTSeqValue *EnablePort = 0;
 
   switch (Id.getFUType()) {
   case VFUs::MemoryBus:
-    EnablePort = VM->getSymbol(VFUMemBus::getEnableName(FUNum) + "_r");
+    EnablePort = VM->getSymbol<VASTSeqValue>(VFUMemBus::getEnableName(FUNum) + "_r");
     break;
   case VFUs::CalleeFN: {
-    VASTSubModule *Submod = getSubModule(MI->getOperand(0).getReg());
+    VASTSeqValue *FinPort = getAsLValue<VASTSeqValue>(MI->getOperand(0));
+    // There will not be a FinPort if the call is lowered to VASTSeqCode.
+    if (!FinPort) return;
+
+    // The register representing the function unit is store in the src operand
+    // of VOpReadFU.
+    VASTSubModule *Submod =  dyn_cast<VASTSubModule>(FinPort->getParent());
     // The submodule information is not available.
     if (!Submod) return;
 
@@ -918,15 +923,24 @@ void VerilogASTBuilder::emitOpDisableFU(MachineInstr *MI, VASTSlot *Slot,
   }
 
   VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
-  addSlotDisable(Slot, cast<VASTSeqValue>(EnablePort), Pred);
+  addSlotDisable(Slot, EnablePort, Pred);
 }
 
 void VerilogASTBuilder::emitOpReadReturn(MachineInstr *MI, VASTSlot *Slot,
                                          VASTValueVecTy &Cnds) {
-  VASTSeqValue *R = getAsLValue<VASTSeqValue>(MI->getOperand(0));
+  VASTSeqValue *R = getOrCreateSeqVal(MI->getOperand(0));
+
+  VASTSeqValue *FinPort = getAsLValue<VASTSeqValue>(MI->getOperand(1));
+  // The register representing the function unit is store in the src operand
+  // of VOpReadFU.
+  VASTSubModule *Submod =  dyn_cast<VASTSubModule>(FinPort->getParent());
+
+  // The submodule information is not available.
+  if (!Submod) return;
+
   // Dirty Hack: Do not trust the bitwidth information of the operand
   // representing the return port.
-  addAssignment(R, lookupSignal(MI->getOperand(1).getReg()), Slot, Cnds, MI);
+  addAssignment(R, Submod->getRetPort(), Slot, Cnds, MI);
 }
 
 void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
@@ -935,8 +949,10 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
   const char *CalleeName = MI->getOperand(1).getSymbolName();
   unsigned FNNum = FInfo->getCalleeFNNum(CalleeName);
 
+  unsigned ResultReg = MI->getOperand(0).getReg();
+
   // Emit the submodule on the fly.
-  VASTNode *N = emitSubModule(CalleeName, FNNum);
+  VASTNode *N = emitSubModule(CalleeName, FNNum, ResultReg);
 
   if (VASTSubModule *Submod = dyn_cast<VASTSubModule>(N)) {
     VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
@@ -952,6 +968,9 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
       VASTValPtr V = getAsOperandImpl(MI->getOperand(i));
       Op->addSrc(V, i - 4, false, Submod->getFanin(i - 4));
     }
+
+    // Index the return port.
+    indexSeqValue(ResultReg, Submod->getFinPort());
 
     return;
   }
@@ -1003,6 +1022,8 @@ void VerilogASTBuilder::emitOpInternalCall(MachineInstr *MI, VASTSlot *Slot,
 
   // Add the operation to the seqcode.
   Code->addSeqOp(Op);
+  // Create a placeholder for the finish signal for this call.
+  indexSeqValue(ResultReg, 0);
 }
 
 void VerilogASTBuilder::emitOpRet(MachineInstr *MI, VASTSlot *CurSlot,
@@ -1049,6 +1070,11 @@ void VerilogASTBuilder::emitOpMemTrans(MachineInstr *MI, VASTSlot *Slot,
   R = VM->getSymbol<VASTSeqValue>(RegName);
   Op->addSrc(getAsOperandImpl(MI->getOperand(4)), 3, false, R);
 
+  // Index the result of the load/store.
+  RegName = VFUMemBus::getInDataBusName(FUNum);
+  R = VM->getSymbol<VASTSeqValue>(RegName);
+  indexSeqValue(MI->getOperand(0).getReg(), R);
+
   // Remember we enabled the memory bus at this slot.
   std::string EnableName = VFUMemBus::getEnableName(FUNum) + "_r";
   VASTValPtr MemEn = VM->getSymbol(EnableName);
@@ -1059,37 +1085,42 @@ void VerilogASTBuilder::emitOpBRamTrans(MachineInstr *MI, VASTSlot *Slot,
                                         VASTValueVecTy &Cnds, bool IsWrite) {
   unsigned FUNum =
     VFUBRAM::FUNumToBRamNum(VInstrInfo::getPreboundFUId(MI).getFUNum());
-  unsigned SizeInBytes = FInfo->getBRamInfo(FUNum).ElemSizeInBytes;
-  unsigned Alignment = Log2_32_Ceil(SizeInBytes);
+  VASTNode *Node = getBlockRAM(FUNum);
 
-  VASTValPtr Addr = getAsOperandImpl(MI->getOperand(1));
-  Addr = Builder->buildBitSliceExpr(Addr, Addr->getBitWidth(), Alignment);
-  
-  unsigned PortRegNum = MI->getOperand(0).getReg();
-
-  VASTSeqValue *AddrPort = cast<VASTSeqValue>(lookupSignal(PortRegNum));
   // The block RAM maybe degraded.
-  if (AddrPort->getValType() != VASTNode::BRAM) {
-    assert(isa<VASTRegister>(AddrPort->getParent()) && "Bad VASTSeqVal Parent!");
-
+  if (VASTRegister *R = dyn_cast<VASTRegister>(Node)) {
+    VASTSeqValue *V = R->getValue();
     if (IsWrite) {
       VASTValPtr Data = getAsOperandImpl(MI->getOperand(2));
-      addAssignment(AddrPort, Data, Slot, Cnds, MI);
-    }
+      addAssignment(V, Data, Slot, Cnds, MI);
+    } else
+      // Also index the address port as the result of the block RAM read.
+      indexSeqValue(MI->getOperand(0).getReg(), V);
 
     return;
   }
 
+  VASTBlockRAM *BRAM = cast<VASTBlockRAM>(Node);
+  // Get the address port and build the assignment.
+  VASTValPtr Addr = getAsOperandImpl(MI->getOperand(1));
+  unsigned SizeInBytes = FInfo->getBRamInfo(FUNum).ElemSizeInBytes;
+  unsigned Alignment = Log2_32_Ceil(SizeInBytes);
+  Addr = Builder->buildBitSliceExpr(Addr, Addr->getBitWidth(), Alignment);
+
   VASTValPtr Pred = Builder->buildAndExpr(Cnds, 1);
   VASTSeqOp *Op = VM->createSeqOp(Slot, Pred, IsWrite ? 2 : 1, MI, true);
+
+  VASTSeqValue *AddrPort = IsWrite ? BRAM->getWAddr(0) : BRAM->getRAddr(0);
   // DIRTY HACK: Because the Read address are also use as the data ouput port of
   // the block RAM, the block RAM read define its result at the address port.
   Op->addSrc(Addr, 0, !IsWrite, AddrPort);
+  // Also index the address port as the result of the block RAM read.
+  if (!IsWrite) indexSeqValue(MI->getOperand(0).getReg(), AddrPort);
 
   // Also assign the data to write to the dataport of the block RAM.
   if (IsWrite) {
     VASTValPtr Data = getAsOperandImpl(MI->getOperand(2));
-    VASTSeqValue *DataPort = cast<VASTSeqValue>(lookupSignal(PortRegNum + 1));
+    VASTSeqValue *DataPort = BRAM->getWData(0);
     Op->addSrc(Data, 1, false, DataPort);
   }
 }

@@ -346,27 +346,6 @@ struct BundleBuilder {
   // Build the machine operand that read the wire definition at a specified slot.
   unsigned getRegAtSlot(SimpleValDef *VD, OpSlot ReadSlot, unsigned SizeInBits);
 
-  void emitPHIDef(MachineInstr *PN) {
-    // FIXME: Place the PHI define at the right slot to avoid the live interval
-    // of registers in the PHI overlap. 
-    unsigned InsertSlot = /*Slot ? Slot :*/ ScheduleStartSlot;
-    MachineOperand &MO = PN->getOperand(0);
-    unsigned PHIReg = MO.getReg();
-    const TargetRegisterClass *RC = MRI.getRegClass(PHIReg);
-    unsigned NewReg = MRI.createVirtualRegister(RC);
-
-    DebugLoc dl;
-    InsertPosTy IP = getStateCtrlAt(OpSlot(InsertSlot, true));
-    unsigned BitWidth = VInstrInfo::getBitWidth(MO);
-    BuildMI(MBB, IP, dl, VInstrInfo::getDesc(VTM::VOpDefPhi))
-      .addOperand(MO).addOperand(VInstrInfo::CreateReg(NewReg, BitWidth, false))
-      .addOperand(VInstrInfo::CreatePredicate())
-      .addImm(translateToSlotRegNum(InsertSlot));
-
-    // Update the MO of the Original PHI.
-    MO.ChangeToRegister(NewReg, true);
-  }
-
   // Translate the global slot number to unique slot register number.
   unsigned translateToSlotRegNum(unsigned ScheduleSlot) {
     return ScheduleSlot - ScheduleStartSlot + StartSlot;
@@ -425,11 +404,6 @@ struct BundleBuilder {
         MachineOperand &SrcOp = PN->getOperand(i);
         VInstrInfo::setBitWidth(SrcOp, SizeInBits);
       }
-
-      // Insert the PHIDef, so we can avoid the PHIElimination inserting
-      // strange COPY instruction. Note that we may defining "wire" in a control
-      // slot, however it is ok since the PHIDef will be eliminated.
-      emitPHIDef(PN);
     }
 
     return NewReg;
@@ -502,10 +476,7 @@ void BundleBuilder::buildBundle(unsigned Slot) {
 
       updateOperand(*MI, S);
 
-      if (MI->isPHI()) {
-        emitPHIDef(MI);
-        continue;
-      }
+      if (MI->isPHI()) continue;
 
       // Simply place the dangling node at the end.
       if (IsDangling){
@@ -1396,6 +1367,7 @@ unsigned VSchedGraph::emitSchedule(iterator su_begin, iterator su_end,
   // Remember the schedule information.
   unsigned LoopOpSlot = StartSlot + getLoopOpSlot(MBB) - getStartSlot(MBB);
   VFI->rememberTotalSlot(MBB, StartSlot, getTotalSlot(MBB), LoopOpSlot);
+
   // Advance 1 slots after the endslot.
   return StartSlot + getTotalSlot(MBB) + 1;
 }

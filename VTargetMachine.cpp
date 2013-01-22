@@ -87,10 +87,6 @@ struct VTMPassConfig : public TargetPassConfig {
   }
 
   virtual bool addFinalizeRegAlloc() {
-    PM->add(createRTLCodegenPreparePass());
-    // Generate the code.
-    PM->add(createVerilogASTBuilderPass());
-
     return true;
   }
 
@@ -156,57 +152,6 @@ struct VTMPassConfig : public TargetPassConfig {
     PM->add(createDataPathPromotionPass());
   }
 
-  virtual void addOptimizedRegAlloc(FunctionPass *RegAllocPass) {
-    addPass(ProcessImplicitDefsID);
-    // LiveVariables currently requires pure SSA form.
-    //
-    // FIXME: Once TwoAddressInstruction pass no longer uses kill flags,
-    // LiveVariables can be removed completely, and LiveIntervals can be directly
-    // computed. (We still either need to regenerate kill flags after regalloc, or
-    // preferably fix the scavenger to not depend on them).
-    addPass(LiveVariablesID);
-
-    // Add passes that move from transformed SSA into conventional SSA. This is a
-    // "copy coalescing" problem.
-    //
-    // if (!EnableStrongPHIElim) {
-      // Edge splitting is smarter with machine loop info.
-      addPass(MachineLoopInfoID);
-      addPass(PHIEliminationID);
-    // }
-    // addPass(TwoAddressInstructionPassID);
-
-    //if (EnableStrongPHIElim)
-    //  addPass(StrongPHIEliminationID);
-
-    addPass(RegisterCoalescerID);
-
-    // Add the selected register allocation pass.
-    PM->add(RegAllocPass);
-    printAndVerify("After Register Allocation");
-
-    // FinalizeRegAlloc is convenient until MachineInstrBundles is more mature,
-    // but eventually, all users of it should probably be moved to addPostRA and
-    // it can go away.  Currently, it's the intended place for targets to run
-    // FinalizeMachineBundles, because passes other than MachineScheduling an
-    // RegAlloc itself may not be aware of bundles.
-    if (addFinalizeRegAlloc())
-      printAndVerify("After RegAlloc finalization");
-
-    // Perform stack slot coloring and post-ra machine LICM.
-    //
-    // FIXME: Re-enable coloring with register when it's capable of adding
-    // kill markers.
-    // addPass(StackSlotColoringID);
-
-    // Run post-ra machine LICM to hoist reloads / remats.
-    //
-    // FIXME: can this move into MachineLateOptimization?
-    // addPass(PostRAMachineLICMID);
-
-    // printAndVerify("After StackSlotColoring and postra Machine LICM");
-  }
-
   virtual void addMachinePasses() {
     // Print the instruction selected machine code...
     printAndVerify("After Instruction Selection");
@@ -228,12 +173,8 @@ struct VTMPassConfig : public TargetPassConfig {
     if (addPreRegAlloc())
       printAndVerify("After PreRegAlloc passes");
 
-    // Run register allocation and passes that are tightly coupled with it,
-    // including phi elimination and scheduling.
-    //if (getOptimizeRegAlloc())
-      addOptimizedRegAlloc(createSimpleRegisterAllocator());
-    //else
-    //  addFastRegAlloc(createRegAllocPass(false));
+    // Generate the code.
+    PM->add(createVerilogASTBuilderPass());
   }
   virtual void addISelPrepare() {
     // Do not pass the TLI to CodeGenPrepare pass, so it won't sink the address

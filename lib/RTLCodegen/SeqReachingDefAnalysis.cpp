@@ -147,7 +147,7 @@ SlotInfo *SeqReachingDefAnalysis::getSlotInfo(const VASTSlot *S) const {
 }
 
 bool SeqReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
-                                           bool FromAliasSlot) {
+                                        bool FromAliasSlot) {
   bool Changed = false;
   typedef SlotInfo::vascyc_iterator it;
   // Store the slot numbers in signed integer, we will perform subtraction on
