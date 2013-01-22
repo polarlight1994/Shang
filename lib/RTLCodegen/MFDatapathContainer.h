@@ -89,7 +89,7 @@ protected:
   void replaceInContainerMapping(VASTValPtr From, VASTValPtr To);
 public:
   explicit MFDatapathContainer(MachineRegisterInfo *MRI) : Builder(*this, *MRI) {}
-  virtual ~MFDatapathContainer() { reset(); }
+  virtual ~MFDatapathContainer() { }
 
   typedef Reg2WireMapTy::const_iterator FanoutIterator;
   FanoutIterator fanout_begin() const { return ExportedVals.begin(); }

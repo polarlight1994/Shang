@@ -302,6 +302,10 @@ protected:
   void addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap);
 
 public:
+  VASTImmediate True, False;
+
+  DatapathContainer();
+
   BumpPtrAllocator &getAllocator() { return Allocator; }
 
   VASTValPtr createExprImpl(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
@@ -313,10 +317,6 @@ public:
 
   VASTImmediate *getOrCreateImmediateImpl(uint64_t Value, int8_t BitWidth) {
     return getOrCreateImmediateImpl(APInt(BitWidth, Value));
-  }
-
-  VASTImmediate *getBoolImmediateImpl(bool Value) {
-    return getOrCreateImmediateImpl(Value ? 1 : 0, 1);
   }
 
   void reset();

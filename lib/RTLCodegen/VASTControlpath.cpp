@@ -229,7 +229,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
     CndVector.push_back(Builder.buildNotExpr(SelfLoopCnd));
 
   // Disable the current slot.
-  Mod.addAssignment(getValue(), Mod.getBoolImmediateImpl(false), this,
+  Mod.addAssignment(getValue(), &Mod.False, this,
                     Builder.buildAndExpr(CndVector, 1));
 
   std::string SlotReady = std::string(getName()) + "Ready";
@@ -279,7 +279,7 @@ void VASTSlot::buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder) {
       DisableAndCnds.push_back(I->second);
 
       VASTSeqValue *En = I->first;
-      Mod.addAssignment(En, Mod.getBoolImmediateImpl(false), this,
+      Mod.addAssignment(En, &Mod.False, this,
                         Builder.buildAndExpr(DisableAndCnds, 1), 0, false);
       DisableAndCnds.clear();
     }

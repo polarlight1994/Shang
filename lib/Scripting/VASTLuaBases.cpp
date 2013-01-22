@@ -939,6 +939,15 @@ void DatapathContainer::reset() {
   UniqueExprs.clear();
   UniqueImms.clear();
   Allocator.Reset();
+
+  // Reinsert the TRUE and False.
+  UniqueImms.InsertNode(&True);
+  UniqueImms.InsertNode(&False);
+}
+
+DatapathContainer::DatapathContainer() : True(APInt(1, 1)), False(APInt(1, 0)){
+  UniqueImms.InsertNode(&True);
+  UniqueImms.InsertNode(&False);
 }
 
 VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
@@ -958,7 +967,7 @@ VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
 }
 
 void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
-  unsigned LB) const{
-    OS << getName();
-    if (UB) OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
+                                        unsigned LB) const{
+  OS << getName();
+  if (UB) OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
 }

@@ -489,7 +489,7 @@ void VerilogASTBuilder::emitIdleState() {
 
   // Always Disable the finish signal.
   addSlotDisable(IdleSlot, VM->getPort(VASTModule::Finish).getSeqVal(),
-                 VM->getBoolImmediateImpl(true));
+                 &VM->True);
   SmallVector<VASTValPtr, 1> Cnds(1, StartPort);
   if (!emitFirstCtrlBundle(EntryBB, IdleSlot, Cnds)) {
     unsigned EntryStartSlot = FInfo->getStartSlotFor(EntryBB);
@@ -550,8 +550,7 @@ void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
     // condition is not always true. Such control-flow is handled by function
     // "emitOpBr".
     if (CurSlotNum != startSlot)
-      addSuccSlot(VM->getSlot(CurSlotNum - 1), LeaderSlot,
-                  VM->getBoolImmediateImpl(true));
+      addSuccSlot(VM->getSlot(CurSlotNum - 1), LeaderSlot, &VM->True);
 
     LeaderSlot->buildReadyLogic(*VM, *Builder);
 
@@ -559,7 +558,7 @@ void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
     if (startSlot + II < EndSlot) {
       for (unsigned slot = CurSlotNum + II; slot < EndSlot; slot += II) {
         VASTSlot *S = VM->getSlot(slot);
-        addSuccSlot(VM->getSlot(slot - 1), S, VM->getBoolImmediateImpl(true));
+        addSuccSlot(VM->getSlot(slot - 1), S, &VM->True);
         S->buildReadyLogic(*VM, *Builder);
       }
     }
@@ -621,7 +620,7 @@ void VerilogASTBuilder::emitAllocatedFUs() {
       (void) Inserted;
       // Add the virtual definition for this register.
       VASTSeqValue *V = R->getValue();
-      VM->createVirtSeqOp(VM->getStartSlot(), VM->getBoolImmediateImpl(true), V);
+      VM->createVirtSeqOp(VM->getStartSlot(), &VM->True, V);
       continue;
     }
 
@@ -859,7 +858,7 @@ void VerilogASTBuilder::emitBr(MachineInstr *MI, VASTSlot *CurSlot,
 
 void VerilogASTBuilder::emitOpUnreachable(MachineInstr *MI, VASTSlot *Slot,
                                           VASTValueVecTy &Cnds) {
-  addSuccSlot(Slot, VM->getFinishSlot(), VM->getBoolImmediateImpl(true));
+  addSuccSlot(Slot, VM->getFinishSlot(), &VM->True);
 }
 
 void VerilogASTBuilder::emitOpMvPhi(MachineInstr *MI, VASTSlot *Slot,
