@@ -6,7 +6,6 @@ include_directories(
 )
 
 add_llvm_library(VTMSchedule
-  AdjustLIForBundles.cpp
   ChainBreakingAnalysis.cpp
   CompGraph.cpp
   PrebindMuxBase.cpp
@@ -18,7 +17,6 @@ add_llvm_library(VTMSchedule
   UnbalanceMuxPrebind.cpp
   VSUnit.cpp
   VPreRegAllocSched.cpp
-  VRegAllocSimple.cpp
   VAliasAnalysis.cpp
 )
 
