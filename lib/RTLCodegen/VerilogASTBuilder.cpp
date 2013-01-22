@@ -223,14 +223,17 @@ class VerilogASTBuilder : public MachineFunctionPass,
     VASTSeqValue *&V = SeqValMaps[DefMO.getParent()];
 
     if (V) return V;
-    unsigned RegNo = DefMO.getReg();
+
+    // Create the SeqVal now.
+    unsigned Reg = DefMO.getReg();
     unsigned BitWidth = VInstrInfo::getBitWidth(DefMO);
-    VASTRegister *R =  VM->addRegister("v" + utostr_32(RegNo) + "r", BitWidth,
-                                       0, VASTNode::Data, RegNo);
+    const Twine &Name
+      = "v" + utostr_32(TargetRegisterInfo::virtReg2Index(Reg)) + "r";
+    VASTRegister *R =  VM->addRegister(Name, BitWidth, 0, VASTNode::Data, Reg);
     // V = VM->createSeqValue("v" + utostr_32(RegNo) + "r", BitWidth,
     //                        VASTNode::Data, RegNo, 0);
     V = R->getValue();
-    return indexSeqValue(RegNo, V);
+    return indexSeqValue(Reg, V);
   }
 
   VASTSeqValue *indexSeqValue(unsigned RegNum, VASTSeqValue *V) {
