@@ -378,14 +378,6 @@ void VASTModule::writeProfileCounters(vlang_raw_ostream &OS) {
   OS << "// synthesis translate_on\n\n";
 }
 
-void VASTModule::buildSlotLogic(VASTExprBuilder &Builder) {
-  for (slot_iterator I = Slots.begin(), E = llvm::prior(Slots.end());I != E;++I)
-    if (VASTSlot *S = *I) {
-      S->buildCtrlLogic(*this, Builder);
-      continue;
-    }
-}
-
 void VASTModule::reset() {
   DatapathContainer::reset();
 

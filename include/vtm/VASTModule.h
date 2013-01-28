@@ -153,9 +153,6 @@ public:
   void printSignalDecl(raw_ostream &OS);
   void writeProfileCounters(vlang_raw_ostream &OS);
 
-  // Print the slot control flow.
-  void buildSlotLogic(VASTExprBuilder &Builder);
-
   VASTValue *getSymbol(const Twine &Name) const {
     SymTabTy::const_iterator at = SymbolTable.find(Name.str());
     assert(at != SymbolTable.end() && "Symbol not found!");

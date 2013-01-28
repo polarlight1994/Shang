@@ -148,12 +148,6 @@ public:
   typedef mapped_iterator<const_succ_cnd_iterator, slot_getter>
           const_succ_iterator;
 
-  typedef std::map<VASTSeqValue*, VASTValPtr> FUCtrlVecTy;
-  typedef FUCtrlVecTy::const_iterator const_fu_ctrl_it;
-
-  typedef std::map<VASTValue*, VASTValPtr> FUReadyVecTy;
-  typedef FUReadyVecTy::const_iterator const_fu_rdy_it;
-
   typedef SmallVector<VASTSlot*, 4> PredVecTy;
   typedef PredVecTy::iterator pred_iterator;
   typedef PredVecTy::const_iterator const_pred_iterator;
@@ -163,15 +157,9 @@ private:
   VASTUse SlotReg;
   VASTUse SlotActive;
   VASTUse SlotReady;
-  // The ready signals that need to wait before we go to next slot.
-  FUReadyVecTy Readys;
-  // The function units that enabled at this slot.
-  FUCtrlVecTy Enables;
-  // The function units that need to disable when condition is not satisfy.
-  FUCtrlVecTy Disables;
 
+  // The link to other slots.
   PredVecTy PredSlots;
-
   SuccVecTy NextSlots;
   // Slot ranges of alias slot.
   uint16_t StartSlot;
@@ -181,13 +169,6 @@ private:
   // The definitions in the current slot.
   typedef std::vector<VASTSeqOp*> OpVector;
   OpVector Operations;
-
-  // Successor slots of this slot.
-  succ_cnd_iterator succ_cnd_begin() { return NextSlots.begin(); }
-  succ_cnd_iterator succ_cnd_end() { return NextSlots.end(); }
-
-  const_succ_cnd_iterator succ_cnd_begin() const { return NextSlots.begin(); }
-  const_succ_cnd_iterator succ_cnd_end() const { return NextSlots.end(); }
 
   void dropUses() {
     assert(0 && "Function not implemented!");
@@ -202,11 +183,6 @@ public:
 
   MachineBasicBlock *getParentBB() const;
   MachineInstr *getBundleStart() const;
-
-  void buildCtrlLogic(VASTModule &Mod, VASTExprBuilder &Builder);
-  // Print the logic of ready signal of this slot, need alias slot information.
-  void buildReadyLogic(VASTModule &Mod, VASTExprBuilder &Builder);
-  VASTValPtr buildFUReadyExpr(VASTExprBuilder &Builder);
 
   void print(raw_ostream &OS) const;
 
@@ -253,32 +229,20 @@ public:
                         slot_getter(pair_first<VASTSlot*, VASTValPtr>));
   }
 
+  // Successor slots of this slot.
+  succ_cnd_iterator succ_cnd_begin() { return NextSlots.begin(); }
+  succ_cnd_iterator succ_cnd_end() { return NextSlots.end(); }
+
+  const_succ_cnd_iterator succ_cnd_begin() const { return NextSlots.begin(); }
+  const_succ_cnd_iterator succ_cnd_end() const { return NextSlots.end(); }
+  bool succ_empty() const { return NextSlots.empty(); }
+
   // Predecessor slots of this slot.
   pred_iterator pred_begin() { return PredSlots.begin(); }
   pred_iterator pred_end() { return PredSlots.end(); }
   const_pred_iterator pred_begin() const { return PredSlots.begin(); }
   const_pred_iterator pred_end() const { return PredSlots.end(); }
   unsigned pred_size() const { return PredSlots.size(); }
-
-  VASTValPtr &getOrCreateEnable(VASTSeqValue *P);
-  VASTValPtr &getOrCreateReady(VASTValue *V);
-  VASTValPtr &getOrCreateDisable(VASTSeqValue *P);
-
-  // Signals need to be enabled at this slot.
-  bool isEnabled(VASTSeqValue *P) const { return Enables.count(P); }
-  const_fu_ctrl_it enable_begin() const { return Enables.begin(); }
-  const_fu_ctrl_it enable_end() const { return Enables.end(); }
-
-  // Signals need to set before this slot is ready.
-  bool readyEmpty() const { return Readys.empty(); }
-  const_fu_rdy_it ready_begin() const { return Readys.begin(); }
-  const_fu_rdy_it ready_end() const { return Readys.end(); }
-
-  // Signals need to be disabled at this slot.
-  bool isDiabled(VASTSeqValue *P) const { return Disables.count(P); }
-  bool disableEmpty() const { return Disables.empty(); }
-  const_fu_ctrl_it disable_begin() const { return Disables.begin(); }
-  const_fu_ctrl_it disable_end() const { return Disables.end(); }
 
   // This slots alias with this slot, this happened in a pipelined loop.
   // The slots from difference stage of the loop may active at the same time,

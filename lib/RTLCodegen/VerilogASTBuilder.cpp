@@ -227,8 +227,8 @@ class VerilogASTBuilder : public MachineFunctionPass,
     // Create the SeqVal now.
     unsigned Reg = DefMO.getReg();
     unsigned BitWidth = VInstrInfo::getBitWidth(DefMO);
-    const Twine &Name
-      = "v" + utostr_32(TargetRegisterInfo::virtReg2Index(Reg)) + "r";
+    unsigned VirtRegIdx = TargetRegisterInfo::virtReg2Index(Reg);
+    std::string Name = "v" + utostr_32(VirtRegIdx) + "r";
     VASTRegister *R =  VM->addRegister(Name, BitWidth, 0, VASTNode::Data, Reg);
     // V = VM->createSeqValue("v" + utostr_32(RegNo) + "r", BitWidth,
     //                        VASTNode::Data, RegNo, 0);
@@ -286,16 +286,73 @@ class VerilogASTBuilder : public MachineFunctionPass,
   }
 
   void addSlotDisable(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    OrCnd(S->getOrCreateDisable(P), Cnd);
+    OrCnd(SlotDisables[S][P], Cnd);
   }
 
-  void addSlotReady(VASTSlot *Slot, VASTValue *V, VASTValPtr Cnd) {
-    OrCnd(Slot->getOrCreateReady(V), Cnd);
+  void addSlotReady(VASTSlot *S, VASTValue *V, VASTValPtr Cnd) {
+    OrCnd(SlotReadys[S][V], Cnd);
   }
 
   void addSlotEnable(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    OrCnd(S->getOrCreateEnable(P), Cnd);
+    OrCnd(SlotEnables[S][P], Cnd);
   }
+
+  typedef std::map<VASTSeqValue*, VASTValPtr> FUCtrlVecTy;
+  typedef FUCtrlVecTy::const_iterator const_fu_ctrl_it;
+  std::map<const VASTSlot*, FUCtrlVecTy> SlotEnables, SlotDisables;
+
+  typedef std::map<VASTValue*, VASTValPtr> FUReadyVecTy;
+  typedef FUReadyVecTy::const_iterator const_fu_rdy_it;
+  std::map<const VASTSlot*, FUReadyVecTy> SlotReadys;
+
+  // Signals need to be enabled at this slot.
+  const FUCtrlVecTy *getEnableSet(const VASTSlot *S) const {
+    std::map<const VASTSlot*, FUCtrlVecTy>::const_iterator at
+      = SlotEnables.find(S);
+
+    if (at == SlotEnables.end()) return 0;
+
+    return &at->second;
+  }
+
+  bool isEnabled(const VASTSlot *S, VASTSeqValue *P) const {
+    if (const FUCtrlVecTy *EnableSet = getEnableSet(S))
+      return EnableSet->count(P);
+
+    return false;
+  }
+
+  // Signals need to set before this slot is ready.
+  const FUReadyVecTy *getReadySet(const VASTSlot *S) const {
+    std::map<const VASTSlot*, FUReadyVecTy>::const_iterator at
+      = SlotReadys.find(S);
+
+    if (at == SlotReadys.end()) return 0;
+
+    return &at->second;
+  }
+
+  // Signals need to be disabled at this slot.
+  const FUCtrlVecTy *getDisableSet(const VASTSlot *S) const {
+    std::map<const VASTSlot*, FUCtrlVecTy>::const_iterator at
+      = SlotDisables.find(S);
+
+    if (at == SlotDisables.end()) return 0;
+
+    return &at->second;
+  }
+
+  bool isDisabled(const VASTSlot *S, VASTSeqValue *P) const {
+    if (const FUCtrlVecTy *DisableSet = getDisableSet(S))
+      return DisableSet->count(P);
+
+    return false;
+  }
+
+  // State-transition graph building functions.
+  VASTValPtr buildSlotReadyExpr(VASTSlot *S);
+  void buildSlotReadyLogic(VASTSlot *S);
+  void buildSlotLogic(VASTSlot *S);
 
   void addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
                      ArrayRef<VASTValPtr> Cnds, MachineInstr *DefMI = 0,
@@ -382,6 +439,9 @@ public:
     Idx2Reg.clear();
     SeqValMaps.clear();
     BlockRAMs.clear();
+    SlotReadys.clear();
+    SlotEnables.clear();
+    SlotDisables.clear();
   }
 
   bool runOnMachineFunction(MachineFunction &MF);
@@ -459,7 +519,18 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
   MBBuilder->buildMemBusMux();
 
   // Building the Slot active signals.
-  VM->buildSlotLogic(*Builder);
+  typedef VASTModule::slot_iterator slot_iterator;
+  for (slot_iterator I = VM->slot_begin(), E = llvm::prior(VM->slot_end());
+       I != E; ++I) {
+    VASTSlot *S = *I;
+
+    if (S == 0) continue;
+
+    // Build the ready logic.
+    buildSlotReadyLogic(S);
+    // Build the state-transfer logic and the functional unit controlling logic.
+    buildSlotLogic(S);
+  }
 
   // Assign names to the data-path expressions.
   VM->nameDatapath();
@@ -467,6 +538,168 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
   // Release the context.
   releaseMemory();
   return false;
+}
+
+VASTValPtr VerilogASTBuilder::buildSlotReadyExpr(VASTSlot *S) {
+  SmallVector<VASTValPtr, 4> Ops;
+
+  const FUReadyVecTy *ReadySet = getReadySet(S);
+  if (ReadySet)
+    for (const_fu_rdy_it I = ReadySet->begin(), E = ReadySet->end();I != E; ++I) {
+      // If the condition is true then the signal must be 1 to ready.
+      VASTValPtr ReadyCnd = Builder->buildNotExpr(I->second.getAsInlineOperand());
+      Ops.push_back(Builder->buildOrExpr(I->first, ReadyCnd, 1));
+    }
+
+  // No waiting signal means always ready.
+  if (Ops.empty()) return &VM->True;
+
+  return Builder->buildAndExpr(Ops, 1);
+}
+
+void VerilogASTBuilder::buildSlotReadyLogic(VASTSlot *S) {
+  SmallVector<VASTValPtr, 4> Ops;
+  // FU ready for current slot.
+  Ops.push_back(buildSlotReadyExpr(S));
+
+  if (S->hasAliasSlot()) {
+    for (unsigned s = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
+         s < e; s += ii) {
+      if (s == S->SlotNum) continue;
+
+      VASTSlot *AliasSlot = VM->getSlot(s);
+
+      if (!getReadySet(AliasSlot)) continue;
+
+      // FU ready for alias slot, when alias slot register is 1, its waiting
+      // signal must be 1.
+      VASTValPtr AliasReady = buildSlotReadyExpr(AliasSlot);
+      VASTValPtr AliasDisactive = Builder->buildNotExpr(AliasSlot->getValue());
+      Ops.push_back(Builder->buildOrExpr(AliasDisactive, AliasReady, 1));
+    }
+  }
+
+  // All signals should be 1 before the slot is ready.
+  VASTValPtr ReadyExpr = Builder->buildAndExpr(Ops, 1);
+  VM->assign(cast<VASTWire>(S->getReady()), ReadyExpr);
+  // The slot is activated when the slot is enable and all waiting signal is
+  // ready.
+  VM->assign(cast<VASTWire>(S->getActive()),
+             Builder->buildAndExpr(S->getValue(), ReadyExpr, 1));
+}
+
+void VerilogASTBuilder::buildSlotLogic(VASTSlot *S) {
+  typedef VASTSlot::succ_cnd_iterator succ_cnd_iterator;
+  bool ReadyPresented = getReadySet(S);
+
+  // DirtyHack: Remember the enabled signals in alias slots, the signal may be
+  // assigned at a alias slot.
+  std::set<const VASTValue *> AliasEnables;
+  // A slot may be enable by its alias slot if II of a pipelined loop is 1.
+  VASTValPtr PredAliasSlots = 0;
+
+  if (S->hasAliasSlot()) {
+    for (unsigned s = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
+         s < e; s += ii) {
+      if (s == S->SlotNum) continue;
+
+      const VASTSlot *AliasSlot = VM->getSlot(s);
+      if (AliasSlot->hasNextSlot(S)) {
+        assert(!PredAliasSlots
+               && "More than one PredAliasSlots found!");
+        PredAliasSlots = AliasSlot->getActive();
+      }
+
+      if (const FUCtrlVecTy *AliasEnable = getEnableSet(AliasSlot))
+        for (const_fu_ctrl_it I = AliasEnable->begin(), E = AliasEnable->end();
+             I != E; ++I) {
+          bool inserted = AliasEnables.insert(I->first).second;
+          assert(inserted && "The same signal is enabled twice!");
+          (void) inserted;
+        }
+
+      ReadyPresented  |= getReadySet(AliasSlot) != 0;
+    }
+  } // SS flushes automatically here.
+
+  VASTValPtr SelfLoopCnd;
+  VASTValPtr AlwaysTrue = &VM->True;
+
+  assert(!S->succ_empty() && "Expect at least 1 next slot!");
+  for (succ_cnd_iterator I = S->succ_cnd_begin(),E = S->succ_cnd_end(); I != E; ++I) {
+    VASTSeqValue *NextSlotReg = I->first->getValue();
+    if (I->first->SlotNum == S->SlotNum) SelfLoopCnd = I->second;
+    // Build the assignment and update the successor branching condition.
+    VM->addAssignment(NextSlotReg, AlwaysTrue, S, I->second);
+  }
+
+  assert(!(SelfLoopCnd && PredAliasSlots)
+         && "Unexpected have self loop and pred alias slot at the same time.");
+  SmallVector<VASTValPtr, 2> CndVector;
+  // Only disable the current slot if there is no alias slot enable current
+  // slot.
+  if (PredAliasSlots)
+    CndVector.push_back(Builder->buildNotExpr(PredAliasSlots));
+  // Disable the current slot when we are not looping back.
+  if (SelfLoopCnd)
+    CndVector.push_back(Builder->buildNotExpr(SelfLoopCnd));
+
+  // Disable the current slot.
+  VM->addAssignment(S->getValue(), &VM->False, S,
+                    Builder->buildAndExpr(CndVector, 1));
+
+  if (const FUCtrlVecTy *EnableSet = getEnableSet(S))
+    for (const_fu_ctrl_it I = EnableSet->begin(), E = EnableSet->end();
+         I != E; ++I) {
+      assert(!AliasEnables.count(I->first) && "Signal enabled by alias slot!");
+      // No need to wait for the slot ready.
+      // We may try to enable and disable the same port at the same slot.
+      CndVector.clear();
+      CndVector.push_back(S->getValue());
+      VASTValPtr ReadyCnd
+        = Builder->buildAndExpr(S->getReady()->getAsInlineOperand(false),
+                                I->second.getAsInlineOperand(), 1);
+      VM->addAssignment(I->first, ReadyCnd, S, Builder->buildAndExpr(CndVector, 1),
+                        0, false);
+    }
+
+  SmallVector<VASTValPtr, 4> DisableAndCnds;
+
+  if (const FUCtrlVecTy *DisableSet = getDisableSet(S))
+    for (const_fu_ctrl_it I = DisableSet->begin(), E = DisableSet->end();
+         I != E; ++I) {
+      // Look at the current enable set and alias enables set;
+      // The port assigned at the current slot, and it will be disabled if
+      // The slot is not ready or the enable condition is false. And it is
+      // ok that the port is enabled.
+      if (isEnabled(S, I->first)) continue;
+
+      DisableAndCnds.push_back(S->getValue());
+      // If the port enabled in alias slots, disable it only if others slots is
+      // not active.
+      bool AliasEnabled = AliasEnables.count(I->first);
+      if (AliasEnabled) {
+        for (unsigned s = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
+             s < e; s += ii) {
+          if (s == S->SlotNum) continue;
+
+          VASTSlot *ASlot = VM->getSlot(s);
+          assert(!isDisabled(ASlot, I->first)
+                 && "Same signal disabled in alias slot!");
+          if (isEnabled(ASlot, I->first)) {
+            DisableAndCnds.push_back(Builder->buildNotExpr(ASlot->getValue()));
+            continue;
+          }
+        }
+      }
+
+      DisableAndCnds.push_back(I->second);
+
+      VASTSeqValue *En = I->first;
+      VM->addAssignment(En, &VM->False, S,
+                        Builder->buildAndExpr(DisableAndCnds, 1), 0, false);
+      DisableAndCnds.clear();
+    }
 }
 
 void VerilogASTBuilder::print(raw_ostream &O, const Module *M) const {
@@ -486,7 +719,6 @@ void VerilogASTBuilder::emitIdleState() {
   // The module is busy now
   MachineBasicBlock *EntryBB =  GraphTraits<MachineFunction*>::getEntryNode(MF);
   VASTSlot *IdleSlot = VM->getStartSlot();
-  IdleSlot->buildReadyLogic(*VM, *Builder);
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
   addSuccSlot(IdleSlot, IdleSlot, Builder->buildNotExpr(StartPort));
 
@@ -555,14 +787,11 @@ void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
     if (CurSlotNum != startSlot)
       addSuccSlot(VM->getSlot(CurSlotNum - 1), LeaderSlot, &VM->True);
 
-    LeaderSlot->buildReadyLogic(*VM, *Builder);
-
     // There will be alias slot if the BB is pipelined.
     if (startSlot + II < EndSlot) {
       for (unsigned slot = CurSlotNum + II; slot < EndSlot; slot += II) {
         VASTSlot *S = VM->getSlot(slot);
         addSuccSlot(VM->getSlot(slot - 1), S, &VM->True);
-        S->buildReadyLogic(*VM, *Builder);
       }
     }
 
