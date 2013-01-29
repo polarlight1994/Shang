@@ -24,8 +24,7 @@ using namespace llvm;
 
 VASTSlot::VASTSlot(unsigned slotNum, MachineBasicBlock *ParentBB, VASTModule *VM)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
-    SlotReady(this, 0), StartSlot(slotNum), EndSlot(slotNum), II(~0),
-    SlotNum(slotNum) {
+    SlotReady(this, 0), SlotNum(slotNum) {
   Contents.ParentBB = ParentBB;
 
   // Create the relative signals.
@@ -46,8 +45,7 @@ VASTSlot::VASTSlot(unsigned slotNum, MachineBasicBlock *ParentBB, VASTModule *VM
 
 VASTSlot::VASTSlot(unsigned slotNum, VASTSlot *StartSlot)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
-    SlotReady(this, 0), StartSlot(slotNum), EndSlot(slotNum), II(~0),
-    SlotNum(slotNum){
+    SlotReady(this, 0), SlotNum(slotNum){
   Contents.ParentBB = 0;
   // Finish slot alias with the start slot.
   SlotReg.set(StartSlot->SlotReg);
@@ -298,12 +296,6 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
         OS << BB->getName() << ',';
     }
 
-    if (S->hasAliasSlot()) {
-      OS << " Alias slots: ";
-      for (unsigned s = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
-           s < e; s += ii)
-        OS << s << ", ";
-    }
     OS << "\");\n";
     OS.indent(2) << "end\n";
   }

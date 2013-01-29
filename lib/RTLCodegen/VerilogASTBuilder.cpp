@@ -565,23 +565,6 @@ void VerilogASTBuilder::buildSlotReadyLogic(VASTSlot *S) {
   // FU ready for current slot.
   Ops.push_back(buildSlotReadyExpr(S));
 
-  if (S->hasAliasSlot()) {
-    for (unsigned s = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
-         s < e; s += ii) {
-      if (s == S->SlotNum) continue;
-
-      VASTSlot *AliasSlot = VM->getSlot(s);
-
-      if (!getReadySet(AliasSlot)) continue;
-
-      // FU ready for alias slot, when alias slot register is 1, its waiting
-      // signal must be 1.
-      VASTValPtr AliasReady = buildSlotReadyExpr(AliasSlot);
-      VASTValPtr AliasDisactive = Builder->buildNotExpr(AliasSlot->getValue());
-      Ops.push_back(Builder->buildOrExpr(AliasDisactive, AliasReady, 1));
-    }
-  }
-
   // All signals should be 1 before the slot is ready.
   VASTValPtr ReadyExpr = Builder->buildAndExpr(Ops, 1);
   VM->assign(cast<VASTWire>(S->getReady()), ReadyExpr);
@@ -593,37 +576,6 @@ void VerilogASTBuilder::buildSlotReadyLogic(VASTSlot *S) {
 
 void VerilogASTBuilder::buildSlotLogic(VASTSlot *S) {
   typedef VASTSlot::succ_cnd_iterator succ_cnd_iterator;
-  bool ReadyPresented = getReadySet(S);
-
-  // DirtyHack: Remember the enabled signals in alias slots, the signal may be
-  // assigned at a alias slot.
-  std::set<const VASTValue *> AliasEnables;
-  // A slot may be enable by its alias slot if II of a pipelined loop is 1.
-  VASTValPtr PredAliasSlots = 0;
-
-  if (S->hasAliasSlot()) {
-    for (unsigned s = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
-         s < e; s += ii) {
-      if (s == S->SlotNum) continue;
-
-      const VASTSlot *AliasSlot = VM->getSlot(s);
-      if (AliasSlot->hasNextSlot(S)) {
-        assert(!PredAliasSlots
-               && "More than one PredAliasSlots found!");
-        PredAliasSlots = AliasSlot->getActive();
-      }
-
-      if (const FUCtrlVecTy *AliasEnable = getEnableSet(AliasSlot))
-        for (const_fu_ctrl_it I = AliasEnable->begin(), E = AliasEnable->end();
-             I != E; ++I) {
-          bool inserted = AliasEnables.insert(I->first).second;
-          assert(inserted && "The same signal is enabled twice!");
-          (void) inserted;
-        }
-
-      ReadyPresented  |= getReadySet(AliasSlot) != 0;
-    }
-  } // SS flushes automatically here.
 
   VASTValPtr SelfLoopCnd;
   VASTValPtr AlwaysTrue = &VM->True;
@@ -636,13 +588,7 @@ void VerilogASTBuilder::buildSlotLogic(VASTSlot *S) {
     VM->addAssignment(NextSlotReg, AlwaysTrue, S, I->second);
   }
 
-  assert(!(SelfLoopCnd && PredAliasSlots)
-         && "Unexpected have self loop and pred alias slot at the same time.");
   SmallVector<VASTValPtr, 2> CndVector;
-  // Only disable the current slot if there is no alias slot enable current
-  // slot.
-  if (PredAliasSlots)
-    CndVector.push_back(Builder->buildNotExpr(PredAliasSlots));
   // Disable the current slot when we are not looping back.
   if (SelfLoopCnd)
     CndVector.push_back(Builder->buildNotExpr(SelfLoopCnd));
@@ -654,7 +600,6 @@ void VerilogASTBuilder::buildSlotLogic(VASTSlot *S) {
   if (const FUCtrlVecTy *EnableSet = getEnableSet(S))
     for (const_fu_ctrl_it I = EnableSet->begin(), E = EnableSet->end();
          I != E; ++I) {
-      assert(!AliasEnables.count(I->first) && "Signal enabled by alias slot!");
       // No need to wait for the slot ready.
       // We may try to enable and disable the same port at the same slot.
       CndVector.clear();
@@ -678,24 +623,6 @@ void VerilogASTBuilder::buildSlotLogic(VASTSlot *S) {
       if (isEnabled(S, I->first)) continue;
 
       DisableAndCnds.push_back(S->getValue());
-      // If the port enabled in alias slots, disable it only if others slots is
-      // not active.
-      bool AliasEnabled = AliasEnables.count(I->first);
-      if (AliasEnabled) {
-        for (unsigned s = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
-             s < e; s += ii) {
-          if (s == S->SlotNum) continue;
-
-          VASTSlot *ASlot = VM->getSlot(s);
-          assert(!isDisabled(ASlot, I->first)
-                 && "Same signal disabled in alias slot!");
-          if (isEnabled(ASlot, I->first)) {
-            DisableAndCnds.push_back(Builder->buildNotExpr(ASlot->getValue()));
-            continue;
-          }
-        }
-      }
-
       DisableAndCnds.push_back(I->second);
 
       VASTSeqValue *En = I->first;
@@ -755,16 +682,8 @@ void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
 
   // Create the slots for all control-path bundles in the current BB.
   for (bundle_iterator BI = I, BE = MBB.end(); BI != BE && !BI->isTerminator();
-       BI = llvm::next(BI, 2) ) {
-    VASTSlot *LeaderSlot = getOrCreateCtrlStartSlot(BI);
-    // Create the alias slots for the pipelined loop.
-    if (startSlot + II < EndSlot) {
-      LeaderSlot->setAliasSlots(LeaderSlot->SlotNum, EndSlot, II);
-      unsigned CurSlotNum = LeaderSlot->SlotNum;
-      for (unsigned S = CurSlotNum + II; S < EndSlot; S += II)
-        VM->getOrCreateSlot(S, BI->getParent())->setAliasSlots(CurSlotNum, EndSlot, II);
-    }
-  }
+       BI = llvm::next(BI, 2))
+    getOrCreateCtrlStartSlot(BI);
 
   // Emit the other bundles.
   while(!I->isTerminator()) {
@@ -788,14 +707,6 @@ void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
     // "emitOpBr".
     if (CurSlotNum != startSlot)
       addSuccSlot(VM->getSlot(CurSlotNum - 1), LeaderSlot, &VM->True);
-
-    // There will be alias slot if the BB is pipelined.
-    if (startSlot + II < EndSlot) {
-      for (unsigned slot = CurSlotNum + II; slot < EndSlot; slot += II) {
-        VASTSlot *S = VM->getSlot(slot);
-        addSuccSlot(VM->getSlot(slot - 1), S, &VM->True);
-      }
-    }
 
     // Emit the control operations.
     emitCtrlOp(instr_iterator(I), NextI);

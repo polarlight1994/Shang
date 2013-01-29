@@ -231,24 +231,6 @@ bool SeqReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
   return Changed;
 }
 
-bool SeqReachingDefAnalysis::addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To) {
-  bool Changed = false;
-  unsigned FromSlotNum = From->SlotNum;
-
-  for (unsigned i = From->alias_start(), e = From->alias_end(),
-       ii = From->alias_ii(); i < e; i += ii) {
-    if (i == FromSlotNum) continue;
-
-    SlotInfo * PredSI = getSlotInfo(VM->getSlot(i));
-
-    // From the view of signals with undefined timing, all alias slot is the
-    // same slot.
-    Changed |= addLiveIns(PredSI, To, true);
-  }
-
-  return Changed;
-}
-
 void SeqReachingDefAnalysis::ComputeReachingDefinition() {
   ComputeGenAndKill();
   // TODO: Simplify the data-flow, some slot may neither define new VAS nor
@@ -273,10 +255,6 @@ void SeqReachingDefAnalysis::ComputeReachingDefinition() {
         SlotInfo *PredSI = getSlotInfo(PredSlot);
 
         Changed |= addLiveIns(PredSI, CurSI, false);
-
-        if (PredSlot->getParentBB() == S->getParentBB() &&
-            PredSlot->hasAliasSlot())
-          Changed |= addLiveInFromAliasSlots(PredSlot, CurSI);
       }
     }
   } while (Changed);
@@ -286,39 +264,6 @@ void SeqReachingDefAnalysis::ComputeGenAndKill(const VASTSeqDef &D) {
   VASTSlot *S = D->getSlot();
   SlotInfo *SI = getSlotInfo(S);
   SI->insertGen(D);
-
-  // Values are overwritten by the alias slots of its defining slot.
-  if (!S->hasAliasSlot()) return;
-
-  unsigned CurSlotNum = S->SlotNum;
-  VASTSeqValue *V = D;
-  bool IsLoopingBackPHIMove = false;
-  if (const MachineInstr *MI = D->getDefMI())
-    IsLoopingBackPHIMove = MI->getOpcode() == VTM::VOpMvPhi
-                            && MI->getOperand(2).getMBB() == MI->getParent();
-
-  for (unsigned i = S->alias_start(), e = S->alias_end(), ii = S->alias_ii();
-        i < e; i += ii) {
-      if (i == CurSlotNum) continue;
-
-      SlotInfo *AliasSlot = getSlotInfo(VM->getSlot(i));
-
-      // From the view of signals with undefined timing, all alias slot is the
-      // same slot, otherwise, the signal is only overwritten by its following
-      // alias slot.
-      if (i > CurSlotNum || V->isTimingUndef())
-        AliasSlot->insertOvewritten(D);
-
-      if (i == CurSlotNum - ii && IsLoopingBackPHIMove) {
-        // The definition of PHIMove can reach its previous alias slot with
-        // distance II.
-        AliasSlot->insertIn(D, SlotInfo::LiveInInfo(ii));
-        // The definition is actually for the previous stage.
-        AliasSlot->insertGen(D);
-        // The definition of looping-back PHIMove is not for the current stage.
-        SI->SlotGen.erase(D);
-      }
-  }
 }
 
 void SeqReachingDefAnalysis::ComputeGenAndKill() {

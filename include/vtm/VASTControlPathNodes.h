@@ -161,10 +161,6 @@ private:
   // The link to other slots.
   PredVecTy PredSlots;
   SuccVecTy NextSlots;
-  // Slot ranges of alias slot.
-  uint16_t StartSlot;
-  uint16_t EndSlot;
-  uint16_t II;
 
   // The definitions in the current slot.
   typedef std::vector<VASTSeqOp*> OpVector;
@@ -242,26 +238,6 @@ public:
   const_pred_iterator pred_begin() const { return PredSlots.begin(); }
   const_pred_iterator pred_end() const { return PredSlots.end(); }
   unsigned pred_size() const { return PredSlots.size(); }
-
-  // This slots alias with this slot, this happened in a pipelined loop.
-  // The slots from difference stage of the loop may active at the same time,
-  // and these slot called "alias".
-  void setAliasSlots(unsigned startSlot, unsigned endSlot, unsigned ii) {
-    StartSlot = startSlot ;
-    EndSlot = endSlot;
-    II = ii;
-  }
-
-  // Is the current slot the first slot of its alias slots?
-  bool isLeaderSlot() const { return StartSlot == SlotNum; }
-  // Iterates over all alias slot
-  unsigned alias_start() const { return StartSlot; }
-  unsigned alias_end() const { return EndSlot; }
-  bool hasAliasSlot() const { return alias_start() != alias_end(); }
-  unsigned alias_ii() const {
-    assert(hasAliasSlot() && "Dont have II!");
-    return II;
-  }
 
   bool operator<(const VASTSlot &RHS) const {
     return SlotNum < RHS.SlotNum;

@@ -340,20 +340,11 @@ void VASTModule::writeProfileCounters(vlang_raw_ostream &OS, VASTSlot *S,
     }
 
     // Increase the profile counter.
-    if (S->isLeaderSlot()) {
-      OS.if_() << S->getName();
-      if (S->hasAliasSlot()) {
-        for (unsigned i = S->alias_start(), e = S->alias_end(),
-             k = S->alias_ii(); i < e; i += k) {
-          OS << '|' << getSlot(i)->getName();
-        }
-      }
-
-      OS._then();
-      OS << BBCounter << " <= " << BBCounter << " +1;\n";
-      OS << FunctionCounter << " <= " << FunctionCounter << " +1;\n";
-      OS.exit_block() << "\n";
-    }
+    OS.if_() << S->getName();
+    OS._then();
+    OS << BBCounter << " <= " << BBCounter << " +1;\n";
+    OS << FunctionCounter << " <= " << FunctionCounter << " +1;\n";
+    OS.exit_block() << "\n";
   }
 }
 

@@ -172,7 +172,6 @@ private:
   BumpPtrAllocator Allocator;
 
   bool addLiveIns(SlotInfo *From, SlotInfo *To, bool FromAliasSlot);
-  bool addLiveInFromAliasSlots(VASTSlot *From, SlotInfo *To);
 
   // Using the reaching definition algorithm to sort out the ultimate
   // relationship of registers.
