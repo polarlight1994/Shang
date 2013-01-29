@@ -371,6 +371,7 @@ class VerilogASTBuilder : public MachineFunctionPass,
   // Mapping success fsm state to their predicate in current state.
   void emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
                   MachineBasicBlock::instr_iterator ctrl_end);
+  void emitCtrlOp(MachineInstr *MI, VASTSlot *CurSlot);
 
   MachineBasicBlock::iterator emitDatapath(MachineInstr *Bundle);
 
@@ -983,45 +984,49 @@ VerilogASTBuilder::~VerilogASTBuilder() {}
 //===----------------------------------------------------------------------===//
 void VerilogASTBuilder::emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
                                    MachineBasicBlock::instr_iterator ctrl_end) {
-  MachineBasicBlock *CurBB = ctrl_begin->getParent();
   assert(ctrl_begin->getOpcode() == VTM::CtrlStart && "Expect control bundle!");
-  SmallVector<VASTValPtr, 4> Cnds;
 
   typedef MachineBasicBlock::instr_iterator instr_it;
   for (instr_it I = llvm::next(ctrl_begin); I != ctrl_end; ++I) {
     MachineInstr *MI = I;
-
     VASTSlot *CurSlot = getInstrSlot(MI);
+
     assert(VInstrInfo::getInstrSlotNum(MI) !=
              FInfo->getStartSlotFor(CurSlot->getParentBB())
            && "Unexpected first slot!");
 
-    Cnds.push_back(Builder->createCnd(MI));
-
-    // Emit the operations.
-    switch (MI->getOpcode()) {
-    case VTM::VOpDstMux:
-    case VTM::VOpMoveArg:
-    case VTM::VOpMove:
-    case VTM::VOpMvPipe:
-    case VTM::VOpReadFU:        emitOpReadFU(MI, CurSlot, Cnds);          break;
-    case VTM::VOpMvPhi:         emitOpMvPhi(MI, CurSlot, Cnds);           break;
-    case VTM::VOpDisableFU:     emitOpDisableFU(MI, CurSlot, Cnds);       break;
-    case VTM::VOpInternalCall:  emitOpInternalCall(MI, CurSlot, Cnds);    break;
-    case VTM::VOpRetVal:        emitOpRetVal(MI, CurSlot, Cnds);          break;
-    case VTM::VOpRet_nt:        emitOpRet(MI, CurSlot, Cnds);             break;
-    case VTM::VOpMemTrans:      emitOpMemTrans(MI, CurSlot, Cnds);        break;
-    case VTM::VOpBRAMRead:      emitOpBRamTrans(MI, CurSlot, Cnds, false);break;
-    case VTM::VOpBRAMWrite:     emitOpBRamTrans(MI, CurSlot, Cnds, true); break;
-    case VTM::VOpToState_nt:    emitBr(MI, CurSlot, Cnds, CurBB);         break;
-    case VTM::VOpReadReturn:    emitOpReadReturn(MI, CurSlot, Cnds);      break;
-    case VTM::VOpUnreachable:   emitOpUnreachable(MI, CurSlot, Cnds);     break;
-    default:  assert(0 && "Unexpected opcode!");                          break;
-    }
-    Cnds.pop_back();
-    assert(Cnds.empty() && "Unexpected extra predicate operand!");
+    emitCtrlOp(MI, CurSlot);
   }
 }
+
+void VerilogASTBuilder::emitCtrlOp(MachineInstr *MI, VASTSlot *CurSlot) {
+  SmallVector<VASTValPtr, 4> Cnds;
+  Cnds.push_back(Builder->createCnd(MI));
+
+  // Emit the operations.
+  switch (MI->getOpcode()) {
+  case VTM::VOpDstMux:
+  case VTM::VOpMoveArg:
+  case VTM::VOpMove:
+  case VTM::VOpMvPipe:
+  case VTM::VOpReadFU:        emitOpReadFU(MI, CurSlot, Cnds);          break;
+  case VTM::VOpMvPhi:         emitOpMvPhi(MI, CurSlot, Cnds);           break;
+  case VTM::VOpDisableFU:     emitOpDisableFU(MI, CurSlot, Cnds);       break;
+  case VTM::VOpInternalCall:  emitOpInternalCall(MI, CurSlot, Cnds);    break;
+  case VTM::VOpRetVal:        emitOpRetVal(MI, CurSlot, Cnds);          break;
+  case VTM::VOpRet_nt:        emitOpRet(MI, CurSlot, Cnds);             break;
+  case VTM::VOpMemTrans:      emitOpMemTrans(MI, CurSlot, Cnds);        break;
+  case VTM::VOpBRAMRead:      emitOpBRamTrans(MI, CurSlot, Cnds, false);break;
+  case VTM::VOpBRAMWrite:     emitOpBRamTrans(MI, CurSlot, Cnds, true); break;
+  case VTM::VOpToState_nt:    emitBr(MI, CurSlot, Cnds, MI->getParent());break;
+  case VTM::VOpReadReturn:    emitOpReadReturn(MI, CurSlot, Cnds);      break;
+  case VTM::VOpUnreachable:   emitOpUnreachable(MI, CurSlot, Cnds);     break;
+  default:  assert(0 && "Unexpected opcode!");                          break;
+  }
+  Cnds.pop_back();
+  assert(Cnds.empty() && "Unexpected extra predicate operand!");
+}
+
 
 bool VerilogASTBuilder::emitFirstCtrlBundle(MachineBasicBlock *DstBB,
                                             VASTSlot *Slot,
