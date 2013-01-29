@@ -271,9 +271,9 @@ class VerilogASTBuilder : public MachineFunctionPass,
     return VM->getSlot(SlotNum - 1);
   }
 
-  VASTSlot *getOrCreateCtrlStartSlot(MachineInstr *MI, unsigned ParentIdx) {
+  VASTSlot *getOrCreateCtrlStartSlot(MachineInstr *MI) {
     unsigned SlotNum = VInstrInfo::getBundleSlot(MI);
-    return VM->getOrCreateSlot(SlotNum - 1, MI);
+    return VM->getOrCreateSlot(SlotNum - 1, MI->getParent());
   }
 
   void OrCnd(VASTValPtr &U, VASTValPtr Cnd) {
@@ -735,7 +735,7 @@ void VerilogASTBuilder::emitIdleState() {
     // data-path bundle.
     MachineBasicBlock::iterator I = llvm::next(EntryBB->begin(), 2);
 
-    addSuccSlot(IdleSlot, VM->getOrCreateSlot(EntryStartSlot, I), StartPort);
+    addSuccSlot(IdleSlot, VM->getOrCreateSlot(EntryStartSlot, I->getParent()), StartPort);
   }
 }
 
@@ -756,13 +756,13 @@ void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
   // Create the slots for all control-path bundles in the current BB.
   for (bundle_iterator BI = I, BE = MBB.end(); BI != BE && !BI->isTerminator();
        BI = llvm::next(BI, 2) ) {
-    VASTSlot *LeaderSlot = getOrCreateCtrlStartSlot(BI, startSlot);
+    VASTSlot *LeaderSlot = getOrCreateCtrlStartSlot(BI);
     // Create the alias slots for the pipelined loop.
     if (startSlot + II < EndSlot) {
       LeaderSlot->setAliasSlots(LeaderSlot->SlotNum, EndSlot, II);
       unsigned CurSlotNum = LeaderSlot->SlotNum;
       for (unsigned S = CurSlotNum + II; S < EndSlot; S += II)
-        VM->getOrCreateSlot(S, BI)->setAliasSlots(CurSlotNum, EndSlot, II);
+        VM->getOrCreateSlot(S, BI->getParent())->setAliasSlots(CurSlotNum, EndSlot, II);
     }
   }
 
@@ -777,7 +777,6 @@ void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
 
     // Create and collect the slots.
     VASTSlot *LeaderSlot = VM->getSlot(CurSlotNum);
-    assert(LeaderSlot->getBundleStart() == NextI && "BundleStart not match!");
 
     while ((++NextI)->getOpcode() != VTM::CtrlEnd)
       if (NextI->getOpcode() == VTM::VOpReadFU)
@@ -1088,7 +1087,7 @@ void VerilogASTBuilder::emitBr(MachineInstr *MI, VASTSlot *CurSlot,
     MachineBasicBlock::iterator I = TargetBB->getFirstNonPHI();
     I = llvm::next(I, 2);
 
-    VASTSlot *TargetSlot = VM->getOrCreateSlot(TargetSlotNum, I);
+    VASTSlot *TargetSlot = VM->getOrCreateSlot(TargetSlotNum, I->getParent());
     VASTValPtr Cnd = Builder->buildAndExpr(Cnds, 1);
     addSuccSlot(CurSlot, TargetSlot, Cnd);
   }

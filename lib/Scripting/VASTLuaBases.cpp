@@ -283,13 +283,10 @@ VASTSlot *VASTModule::getSlot(unsigned SlotNum) const {
 }
 
 VASTSlot *VASTModule::getOrCreateSlot(unsigned SlotNum,
-                                      MachineInstr *BundleStart) {
+                                      MachineBasicBlock *ParentBB) {
   VASTSlot *&Slot = Slots[SlotNum];
-  if(Slot == 0) {
-    assert((BundleStart == 0 || BundleStart->getOpcode() == VTM::CtrlStart)
-           && "Bad BundleStart!");
-    Slot = new (Allocator) VASTSlot(SlotNum, BundleStart, this);
-  }
+  if(Slot == 0)
+    Slot = new (Allocator) VASTSlot(SlotNum, ParentBB, this);
 
   return Slot;
 }

@@ -25,7 +25,7 @@
 #include <vector>
 
 namespace llvm {
-class MachineInstr;
+class MachineBasicBlock;
 class VASTNamedValue;
 class VASTValue;
 class VASTExpr;
@@ -76,7 +76,7 @@ protected:
   union {
     const char *Name;
     VASTNamedValue *Value;
-    MachineInstr *BundleStart;
+    MachineBasicBlock *ParentBB;
   } Contents;
 
   const uint8_t NodeT : 7;

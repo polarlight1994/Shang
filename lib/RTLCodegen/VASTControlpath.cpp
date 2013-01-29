@@ -22,11 +22,11 @@
 
 using namespace llvm;
 
-VASTSlot::VASTSlot(unsigned slotNum, MachineInstr *BundleStart, VASTModule *VM)
+VASTSlot::VASTSlot(unsigned slotNum, MachineBasicBlock *ParentBB, VASTModule *VM)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
     SlotReady(this, 0), StartSlot(slotNum), EndSlot(slotNum), II(~0),
     SlotNum(slotNum) {
-  Contents.BundleStart = BundleStart;
+  Contents.ParentBB = ParentBB;
 
   // Create the relative signals.
   std::string SlotName = "Slot" + utostr_32(slotNum);
@@ -48,22 +48,15 @@ VASTSlot::VASTSlot(unsigned slotNum, VASTSlot *StartSlot)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
     SlotReady(this, 0), StartSlot(slotNum), EndSlot(slotNum), II(~0),
     SlotNum(slotNum){
-  Contents.BundleStart = 0;
+  Contents.ParentBB = 0;
   // Finish slot alias with the start slot.
   SlotReg.set(StartSlot->SlotReg);
   SlotReady.set(StartSlot->SlotReady);
   SlotActive.set(StartSlot->SlotActive);
 }
 
-MachineInstr *VASTSlot::getBundleStart() const {
-  return Contents.BundleStart;
-}
-
 MachineBasicBlock *VASTSlot::getParentBB() const {
-  if (MachineInstr *BundleStart = getBundleStart())
-    return BundleStart->getParent();
-
-  return 0;
+  return Contents.ParentBB;
 }
 
 VASTValPtr &VASTSlot::getOrCreateSuccCnd(VASTSlot *DstSlot) {
