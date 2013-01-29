@@ -276,17 +276,17 @@ VASTValPtr VASTModule::getOrCreateSymbol(const Twine &Name,
   return V;
 }
 
-VASTSlot *VASTModule::getOrCreateSlot(unsigned SlotNum,
+VASTSlot *VASTModule::createSlot(unsigned SlotNum,
                                       MachineBasicBlock *ParentBB) {
   VASTSlot *&Slot = Slots[SlotNum];
-  if(Slot == 0)
-    Slot = new (Allocator) VASTSlot(SlotNum, ParentBB, this);
+  assert (Slot == 0 && "The same slot had already been created!");
+  Slot = new (Allocator) VASTSlot(SlotNum, ParentBB, this);
 
   return Slot;
 }
 
 VASTSlot *VASTModule::createStartSlot() {
-  VASTSlot *StartSlot = getOrCreateSlot(0, 0);
+  VASTSlot *StartSlot = createSlot(0, 0);
   assert(Slots.back() == 0 && "Unexpected finish slot!");
   Slots.back() = new (Allocator) VASTSlot(Slots.size() - 1, StartSlot);
   return StartSlot;

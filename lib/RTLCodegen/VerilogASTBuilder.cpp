@@ -266,9 +266,19 @@ class VerilogASTBuilder : public MachineFunctionPass,
     return Expr;
   }
 
-  VASTSlot *getOrCreateCtrlStartSlot(MachineInstr *MI) {
+  std::map<MachineBasicBlock*, VASTSlot*> LandingSlots;
+  VASTSlot *getOrCreateLandingSlot(MachineBasicBlock *MBB) {
+    VASTSlot *&LandingSlot = LandingSlots[MBB];
+
+    if (LandingSlot == 0)
+      LandingSlot = VM->createSlot(FInfo->getStartSlotFor(MBB), MBB);
+
+    return LandingSlot;
+  }
+
+  VASTSlot *createCtrlStartSlot(MachineInstr *MI) {
     unsigned SlotNum = VInstrInfo::getBundleSlot(MI);
-    return VM->getOrCreateSlot(SlotNum - 1, MI->getParent());
+    return VM->createSlot(SlotNum - 1, MI->getParent());
   }
 
   void OrCnd(VASTValPtr &U, VASTValPtr Cnd) {
@@ -436,6 +446,7 @@ public:
     SlotReadys.clear();
     SlotEnables.clear();
     SlotDisables.clear();
+    LandingSlots.clear();
   }
 
   bool runOnMachineFunction(MachineFunction &MF);
@@ -649,14 +660,8 @@ void VerilogASTBuilder::emitIdleState() {
   addSlotDisable(IdleSlot, VM->getPort(VASTModule::Finish).getSeqVal(),
                  &VM->True);
   SmallVector<VASTValPtr, 1> Cnds(1, StartPort);
-  if (!emitFirstCtrlBundle(EntryBB, IdleSlot, Cnds)) {
-    unsigned EntryStartSlot = FInfo->getStartSlotFor(EntryBB);
-    // Get the second control bundle by skipping the first control bundle and
-    // data-path bundle.
-    MachineBasicBlock::iterator I = llvm::next(EntryBB->begin(), 2);
-
-    addSuccSlot(IdleSlot, VM->getOrCreateSlot(EntryStartSlot, I->getParent()), StartPort);
-  }
+  if (!emitFirstCtrlBundle(EntryBB, IdleSlot, Cnds))
+    addSuccSlot(IdleSlot, getOrCreateLandingSlot(EntryBB), StartPort);
 }
 
 void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
@@ -675,7 +680,8 @@ void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
   while(!I->isTerminator()) {
     // We are assign the register at the previous slot of this slot, so the
     // data-path op with same slot can read the register schedule to this slot.
-    VASTSlot *CurSlot = getOrCreateCtrlStartSlot(I);
+    VASTSlot *CurSlot = LastSlot ? createCtrlStartSlot(I)
+                                 : getOrCreateLandingSlot(&MBB);
 
     // Collect slot ready signals.
     instr_iterator NextI = instr_iterator(I);
@@ -969,13 +975,7 @@ void VerilogASTBuilder::emitBr(MachineInstr *MI, VASTSlot *CurSlot,
   // Emit the first micro state of the target state.
   if (!emitFirstCtrlBundle(TargetBB, CurSlot, Cnds)) {
     // Build the edge if the edge is not bypassed.
-    unsigned TargetSlotNum = FInfo->getStartSlotFor(TargetBB);
-    // Get the second control bundle by skipping the first control bundle and
-    // data-path bundle.
-    MachineBasicBlock::iterator I = TargetBB->getFirstNonPHI();
-    I = llvm::next(I, 2);
-
-    VASTSlot *TargetSlot = VM->getOrCreateSlot(TargetSlotNum, I->getParent());
+    VASTSlot *TargetSlot = getOrCreateLandingSlot(TargetBB);
     VASTValPtr Cnd = Builder->buildAndExpr(Cnds, 1);
     addSuccSlot(CurSlot, TargetSlot, Cnd);
   }

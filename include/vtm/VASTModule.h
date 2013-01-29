@@ -180,7 +180,7 @@ public:
   VASTValPtr getOrCreateSymbol(const Twine &Name, unsigned BitWidth,
                                bool CreateWrapper);
 
-  VASTSlot *getOrCreateSlot(unsigned SlotNum, MachineBasicBlock *ParentBB);
+  VASTSlot *createSlot(unsigned SlotNum, MachineBasicBlock *ParentBB);
 
   VASTSlot *getStartSlot() const;
   VASTSlot *getFinishSlot() const;
