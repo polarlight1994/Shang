@@ -132,7 +132,7 @@ public:
   }
 };
 
-class VASTSlot : public VASTNode {
+class VASTSlot : public VASTNode, public ilist_node<VASTSlot> {
 public:
   typedef std::map<VASTSlot*, VASTValPtr> SuccVecTy;
   typedef SuccVecTy::iterator succ_cnd_iterator;
@@ -174,6 +174,11 @@ private:
   VASTSlot(unsigned slotNum, MachineBasicBlock *ParentBB, VASTModule *VM);
   // Create the finish slot.
   VASTSlot(unsigned slotNum, VASTSlot *StartSlot);
+
+  VASTSlot() : VASTNode(vastSlot), SlotReg(this), SlotActive(this),
+    SlotReady(this), SlotNum(0) {}
+
+  friend struct ilist_sentinel_traits<VASTSlot>;
 public:
   const uint16_t SlotNum;
 

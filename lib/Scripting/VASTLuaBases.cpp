@@ -199,7 +199,9 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 
 VASTModule::VASTModule(const Twine &Name)
   : VASTNode(vastModule), Ports(NumSpecialPort), Name(Name.str()),
-    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0) {}
+    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0) {
+  createStartSlot();
+}
 
 VASTSeqValue *
 VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
@@ -276,101 +278,61 @@ VASTValPtr VASTModule::getOrCreateSymbol(const Twine &Name,
   return V;
 }
 
+namespace {
+  struct SlotNumEqual {
+    unsigned SlotNum;
+    SlotNumEqual(unsigned SlotNum) : SlotNum(SlotNum) {}
+
+    bool operator()(const VASTSlot &S) const {
+      return S.SlotNum == SlotNum;
+    }
+  };
+}
+
 VASTSlot *VASTModule::createSlot(unsigned SlotNum,
                                       MachineBasicBlock *ParentBB) {
-  VASTSlot *&Slot = Slots[SlotNum];
-  assert (Slot == 0 && "The same slot had already been created!");
-  Slot = new (Allocator) VASTSlot(SlotNum, ParentBB, this);
+  assert(std::find_if(Slots.begin(), Slots.end(), SlotNumEqual(SlotNum)) == Slots.end()
+         && "The same slot had already been created!");
+
+  VASTSlot *Slot = new VASTSlot(SlotNum, ParentBB, this);
+  // Insert the newly created slot before the finish slot.
+  Slots.insert(Slots.back(), Slot);
 
   return Slot;
 }
 
 VASTSlot *VASTModule::createStartSlot() {
-  VASTSlot *StartSlot = createSlot(0, 0);
-  assert(Slots.back() == 0 && "Unexpected finish slot!");
-  Slots.back() = new (Allocator) VASTSlot(Slots.size() - 1, StartSlot);
+  VASTSlot *StartSlot = new VASTSlot(0, 0, this);
+  Slots.push_back(StartSlot);
+  // Also create the finish slot.
+  Slots.push_back(new VASTSlot(Slots.size() - 1, StartSlot));
   return StartSlot;
 }
 
-VASTSlot *VASTModule::getStartSlot() const {
-  return Slots.front();
+VASTSlot *VASTModule::getStartSlot() {
+  return &Slots.front();
 }
 
-VASTSlot *VASTModule::getFinishSlot() const {
-  return Slots.back();
+VASTSlot *VASTModule::getFinishSlot() {
+  return &Slots.back();
 }
 
-void VASTModule::writeProfileCounters(vlang_raw_ostream &OS, VASTSlot *S,
-                                      bool isFirstSlot) {
-  MachineBasicBlock *BB = S->getParentBB();
-  std::string BBCounter = "cnt"+ utostr_32(BB ? BB->getNumber() : 0);
-  std::string FunctionCounter = "cnt" + getName();
-
-  // Create the profile counter.
-  // Write the counter for the function.
-  if (S->SlotNum == 0) {
-    OS << "integer " << FunctionCounter << " = 0;\n"
-       << "integer " << BBCounter << " = 0;\n";
-
-    OS.if_begin(getPortName(VASTModule::Finish));
-    OS << "$display(\"Module: " << getName();
-
-    OS << " total cycles" << "->%d\"," << FunctionCounter << ");\n";
-    OS.exit_block() << "\n";
-    OS.always_ff_end(false);
-  } else { // Dont count the ilde state at the moment.
-    if (isFirstSlot) {
-      OS << "integer " << BBCounter << " = 0;\n";
-
-      OS.always_ff_begin(false);
-      OS.if_begin(getPortName(VASTModule::Finish));
-      OS << "$display(\"Module: " << getName();
-      // Write the parent MBB name.
-      if (BB)
-        OS << " MBB#" << BB->getNumber() << ": " << BB->getName();
-
-      OS << ' ' << "->%d\"," << BBCounter << ");\n";
-      OS.exit_block() << "\n";
-    }
-
-    // Increase the profile counter.
-    OS.if_() << S->getName();
-    OS._then();
-    OS << BBCounter << " <= " << BBCounter << " +1;\n";
-    OS << FunctionCounter << " <= " << FunctionCounter << " +1;\n";
-    OS.exit_block() << "\n";
-  }
+const VASTSlot *VASTModule::getStartSlot() const {
+  return &Slots.front();
 }
 
-void VASTModule::writeProfileCounters(vlang_raw_ostream &OS) {
-  OS << "// synthesis translate_off\n";
-
-  OS.always_ff_begin(false);
-  bool IsFirstSlotInBB = false;
-  for (SlotVecTy::const_iterator I = Slots.begin(), E = Slots.end();I != E;++I){
-    if (VASTSlot *S = *I) {
-      // Create a profile counter for each BB.
-      writeProfileCounters(OS, S, IsFirstSlotInBB);
-      IsFirstSlotInBB = false;
-      continue;
-    }
-
-    // We meet an end slot, The next slot is the first slot in new BB
-    IsFirstSlotInBB = true;
-  }
-  OS.always_ff_end(false);
-
-  OS << "// synthesis translate_on\n\n";
+const VASTSlot *VASTModule::getFinishSlot() const {
+  return &Slots.back();
 }
 
 void VASTModule::reset() {
   DatapathContainer::reset();
 
-  // Release all ports.
   SeqOps.clear();
   SeqVals.clear();
-
   Slots.clear();
+
+  // Release all ports.
   Ports.clear();
   Registers.clear();
   SymbolTable.clear();
@@ -433,9 +395,8 @@ void VASTModule::nameDatapath() const{
   std::map<VASTExpr*, unsigned> ExprSize;
 
   for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
-    VASTSlot *S = *SI;
+    const VASTSlot *S = SI;
 
-    if (S == 0) continue;
     typedef VASTSlot::const_op_iterator op_iterator;
 
     // Print the logic of slot ready and active.
@@ -540,9 +501,8 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
   std::set<VASTOperandList*> Visited;
 
   for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
-    VASTSlot *S = *SI;
+    const VASTSlot *S = SI;
 
-    if (S == 0) continue;
     typedef VASTSlot::const_op_iterator op_iterator;
 
     OS << "\n// At slot " << S->SlotNum << '\n';
@@ -689,8 +649,7 @@ VASTSeqOp *VASTModule::createVirtSeqOp(VASTSlot *Slot, VASTValPtr Pred,
 
 void VASTModule::print(raw_ostream &OS) const {
   for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
-    VASTSlot *S = *SI;
-    if (S == 0) continue;
+    const VASTSlot *S = SI;
 
     OS << "Slot" << S->SlotNum << '\n';
 

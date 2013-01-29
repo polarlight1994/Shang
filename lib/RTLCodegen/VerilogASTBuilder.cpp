@@ -510,8 +510,6 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
       }
   }
 
-  VM->allocaSlots(FInfo->getTotalSlots());
-
   // Emit the allocated Functional units, currently they are the block RAMs.
   emitAllocatedFUs();
 
@@ -529,9 +527,7 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
   typedef VASTModule::slot_iterator slot_iterator;
   for (slot_iterator I = VM->slot_begin(), E = llvm::prior(VM->slot_end());
        I != E; ++I) {
-    VASTSlot *S = *I;
-
-    if (S == 0) continue;
+    VASTSlot *S = I;
 
     // Build the ready logic.
     buildSlotReadyLogic(S);

@@ -82,7 +82,7 @@ public:
   typedef ilist<VASTSeqValue> SeqValueVector;
   typedef SeqValueVector::iterator seqval_iterator;
 
-  typedef std::vector<VASTSlot*> SlotVecTy;
+  typedef ilist<VASTSlot> SlotVecTy;
   typedef SlotVecTy::iterator slot_iterator;
   typedef SlotVecTy::const_iterator const_slot_iterator;
 private:
@@ -112,8 +112,6 @@ private:
 
   VASTPort *addPort(const Twine &Name, unsigned BitWidth, bool isReg,
                     bool isInput);
-
-  void writeProfileCounters(vlang_raw_ostream &OS, VASTSlot *S, bool isFirstSlot);
 public:
   enum PortTypes {
     Clk = 0,
@@ -132,12 +130,6 @@ public:
 
   ~VASTModule();
 
-  // Allocate the slots, including the idle slot and the finish slot.
-  void allocaSlots(unsigned TotalSlots) {
-    Slots.assign(TotalSlots + 1, 0);
-    createStartSlot();
-  }
-
   void reset();
 
   const std::string &getName() const { return Name; }
@@ -151,7 +143,6 @@ public:
   void printSubmodules(vlang_raw_ostream &OS) const;
   void printModuleDecl(raw_ostream &OS) const;
   void printSignalDecl(raw_ostream &OS);
-  void writeProfileCounters(vlang_raw_ostream &OS);
 
   VASTValue *getSymbol(const Twine &Name) const {
     SymTabTy::const_iterator at = SymbolTable.find(Name.str());
@@ -182,8 +173,10 @@ public:
 
   VASTSlot *createSlot(unsigned SlotNum, MachineBasicBlock *ParentBB);
 
-  VASTSlot *getStartSlot() const;
-  VASTSlot *getFinishSlot() const;
+  VASTSlot *getStartSlot();
+  VASTSlot *getFinishSlot();
+  const VASTSlot *getStartSlot() const;
+  const VASTSlot *getFinishSlot() const;
 
   VASTUse *allocateUse() { return Allocator.Allocate<VASTUse>(); }
   // Allow user to add ports.

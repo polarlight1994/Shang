@@ -37,11 +37,6 @@ static cl::opt<bool>
 EnalbeDumpIR("vtm-dump-ir", cl::desc("Dump the IR to the RTL code."),
              cl::init(false));
 
-static cl::opt<bool>
-EnableBBProfile("vtm-enable-bb-profile",
-                cl::desc("Generate counters to profile the design"),
-                cl::init(false));
-
 namespace {
   class VerilogASTWriter : public MachineFunctionPass {
     vlang_raw_ostream Out;
@@ -131,8 +126,6 @@ bool VerilogASTWriter::runOnMachineFunction(MachineFunction &F) {
   // Sequential logic of the registers.
   VM->printSubmodules(Out);
   VM->printRegisterBlocks(Out);
-  // Generate profiling code if user request to do so.
-  if (EnableBBProfile) VM->writeProfileCounters(Out);
 
   Out << "\n\n";
   Out << "// Always Block\n";

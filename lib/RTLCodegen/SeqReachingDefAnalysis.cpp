@@ -120,9 +120,7 @@ bool SeqReachingDefAnalysis::runOnMachineFunction(MachineFunction &MF) {
   // Push back all the slot into the SlotVec for the purpose of view graph.
   typedef VASTModule::slot_iterator slot_it;
   for (slot_it I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
-    VASTSlot *S = *I;
-    // If the VASTslot is void, abandon it.
-    if (!S) continue;
+    VASTSlot *S = I;
 
     SlotVec.push_back(S);
     // Create a new SlotInfo if it is not defined before.
@@ -270,8 +268,7 @@ void SeqReachingDefAnalysis::ComputeGenAndKill() {
   // Collect the generated statements to the SlotGenMap.
   typedef VASTModule::slot_iterator it;
   for (it SI = VM->slot_begin(), SE = VM->slot_end(); SI != SE; ++SI) {
-    VASTSlot *S = *SI;
-    if (S == 0) continue;
+    VASTSlot *S = SI;
 
     typedef VASTSlot::const_op_iterator def_iterator;
     for (def_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
