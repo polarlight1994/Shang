@@ -182,8 +182,6 @@ public:
 
   VASTSlot *getOrCreateSlot(unsigned SlotNum, MachineBasicBlock *ParentBB);
 
-  VASTSlot *getSlot(unsigned SlotNum) const;
-
   VASTSlot *getStartSlot() const;
   VASTSlot *getFinishSlot() const;
 

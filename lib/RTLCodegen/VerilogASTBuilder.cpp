@@ -266,11 +266,6 @@ class VerilogASTBuilder : public MachineFunctionPass,
     return Expr;
   }
 
-  VASTSlot *getInstrSlot(MachineInstr *MI) {
-    unsigned SlotNum = VInstrInfo::getInstrSlotNum(MI);
-    return VM->getSlot(SlotNum - 1);
-  }
-
   VASTSlot *getOrCreateCtrlStartSlot(MachineInstr *MI) {
     unsigned SlotNum = VInstrInfo::getBundleSlot(MI);
     return VM->getOrCreateSlot(SlotNum - 1, MI->getParent());
@@ -369,8 +364,6 @@ class VerilogASTBuilder : public MachineFunctionPass,
   void emitBasicBlock(MachineBasicBlock &MBB);
 
   // Mapping success fsm state to their predicate in current state.
-  void emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
-                  MachineBasicBlock::instr_iterator ctrl_end);
   void emitCtrlOp(MachineInstr *MI, VASTSlot *CurSlot);
 
   MachineBasicBlock::iterator emitDatapath(MachineInstr *Bundle);
@@ -667,10 +660,6 @@ void VerilogASTBuilder::emitIdleState() {
 }
 
 void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
-  unsigned startSlot = FInfo->getStartSlotFor(&MBB);
-  unsigned IISlot = FInfo->getIISlotFor(&MBB);
-  unsigned II = IISlot - startSlot;
-  unsigned EndSlot = FInfo->getEndSlotFor(&MBB);
   typedef MachineBasicBlock::instr_iterator instr_iterator;
   typedef MachineBasicBlock::iterator bundle_iterator;
   bundle_iterator I = MBB.getFirstNonPHI();
@@ -680,39 +669,44 @@ void VerilogASTBuilder::emitBasicBlock(MachineBasicBlock &MBB) {
   // Emit the data-path bundle right after the first bundle.
   I = emitDatapath(I);
 
-  // Create the slots for all control-path bundles in the current BB.
-  for (bundle_iterator BI = I, BE = MBB.end(); BI != BE && !BI->isTerminator();
-       BI = llvm::next(BI, 2))
-    getOrCreateCtrlStartSlot(BI);
+  VASTSlot *LastSlot = 0;
 
   // Emit the other bundles.
   while(!I->isTerminator()) {
     // We are assign the register at the previous slot of this slot, so the
     // data-path op with same slot can read the register schedule to this slot.
-    unsigned CurSlotNum = VInstrInfo::getBundleSlot(I) - 1;
+    VASTSlot *CurSlot = getOrCreateCtrlStartSlot(I);
 
     // Collect slot ready signals.
     instr_iterator NextI = instr_iterator(I);
 
-    // Create and collect the slots.
-    VASTSlot *LeaderSlot = VM->getSlot(CurSlotNum);
-
     while ((++NextI)->getOpcode() != VTM::CtrlEnd)
       if (NextI->getOpcode() == VTM::VOpReadFU)
-        addSlotReady(NextI, getInstrSlot(NextI));
+        addSlotReady(NextI, CurSlot);
 
     // Build the straight-line control-flow. Note that when
     // CurSlotNum == startSlot, slot[CurSlotNum - 1] is in other MBB, and the
     // condition is not always true. Such control-flow is handled by function
     // "emitOpBr".
-    if (CurSlotNum != startSlot)
-      addSuccSlot(VM->getSlot(CurSlotNum - 1), LeaderSlot, &VM->True);
+    if (LastSlot) addSuccSlot(LastSlot, CurSlot, &VM->True);
 
     // Emit the control operations.
-    emitCtrlOp(instr_iterator(I), NextI);
+    typedef MachineBasicBlock::instr_iterator instr_it;
+    for (instr_it II = llvm::next(instr_iterator(I)); II != NextI; ++II) {
+      MachineInstr *MI = II;
+
+      assert(VInstrInfo::getInstrSlotNum(MI) !=
+        FInfo->getStartSlotFor(CurSlot->getParentBB())
+        && "Unexpected first slot!");
+
+      emitCtrlOp(MI, CurSlot);
+    }
+
     I = bundle_iterator(llvm::next(NextI));
     // Emit the date-path of current state.
     I = emitDatapath(I);
+
+    LastSlot = CurSlot;
   }
 }
 
@@ -892,23 +886,6 @@ void VerilogASTBuilder::emitCommonPort(VASTSubModule *SubMod) {
 VerilogASTBuilder::~VerilogASTBuilder() {}
 
 //===----------------------------------------------------------------------===//
-void VerilogASTBuilder::emitCtrlOp(MachineBasicBlock::instr_iterator ctrl_begin,
-                                   MachineBasicBlock::instr_iterator ctrl_end) {
-  assert(ctrl_begin->getOpcode() == VTM::CtrlStart && "Expect control bundle!");
-
-  typedef MachineBasicBlock::instr_iterator instr_it;
-  for (instr_it I = llvm::next(ctrl_begin); I != ctrl_end; ++I) {
-    MachineInstr *MI = I;
-    VASTSlot *CurSlot = getInstrSlot(MI);
-
-    assert(VInstrInfo::getInstrSlotNum(MI) !=
-             FInfo->getStartSlotFor(CurSlot->getParentBB())
-           && "Unexpected first slot!");
-
-    emitCtrlOp(MI, CurSlot);
-  }
-}
-
 void VerilogASTBuilder::emitCtrlOp(MachineInstr *MI, VASTSlot *CurSlot) {
   SmallVector<VASTValPtr, 4> Cnds;
   Cnds.push_back(Builder->createCnd(MI));

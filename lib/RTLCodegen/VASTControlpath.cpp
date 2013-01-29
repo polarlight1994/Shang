@@ -286,9 +286,8 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
     OS.indent(4) << "$display(\"Condition: ";
     Op.printPredicate(OS);
 
-    unsigned CndSlot = Op.getSlotNum();
-    VASTSlot *S = Mod->getSlot(CndSlot);
-    OS << ", current slot: " << CndSlot << ", ";
+    VASTSlot *S = Op.getSlot();
+    OS << ", current slot: " << Op.getSlotNum() << ", ";
 
     if (MachineBasicBlock *MBB = S->getParentBB()) {
       OS << "in BB#" << MBB->getNumber() << ',';

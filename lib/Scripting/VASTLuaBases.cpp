@@ -276,12 +276,6 @@ VASTValPtr VASTModule::getOrCreateSymbol(const Twine &Name,
   return V;
 }
 
-VASTSlot *VASTModule::getSlot(unsigned SlotNum) const {
-  VASTSlot *S = Slots[SlotNum];
-  assert(S && "Slot not exist!");
-  return S;
-}
-
 VASTSlot *VASTModule::getOrCreateSlot(unsigned SlotNum,
                                       MachineBasicBlock *ParentBB) {
   VASTSlot *&Slot = Slots[SlotNum];
@@ -299,11 +293,11 @@ VASTSlot *VASTModule::createStartSlot() {
 }
 
 VASTSlot *VASTModule::getStartSlot() const {
-  return getSlot(0);
+  return Slots.front();
 }
 
 VASTSlot *VASTModule::getFinishSlot() const {
-  return getSlot(Slots.size() - 1);
+  return Slots.back();
 }
 
 void VASTModule::writeProfileCounters(vlang_raw_ostream &OS, VASTSlot *S,
