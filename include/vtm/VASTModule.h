@@ -108,12 +108,6 @@ private:
   // The port starting offset of a specific function unit.
   SmallVector<std::map<unsigned, unsigned>, VFUs::NumCommonFUs> FUPortOffsets;
   unsigned NumArgPorts, RetPortIdx;
-
-  // Allocate the slots, including the idle slot and the finish slot.
-  void allocaSlots(unsigned TotalSlots) {
-    Slots.assign(TotalSlots + 1, 0);
-  }
-
   VASTSlot *createStartSlot();
 
   VASTPort *addPort(const Twine &Name, unsigned BitWidth, bool isReg,
@@ -134,9 +128,15 @@ public:
     RetPort // Port for function return value.
   };
 
-  VASTModule(const Twine &Name, unsigned NumSlots);
+  VASTModule(const Twine &Name);
 
   ~VASTModule();
+
+  // Allocate the slots, including the idle slot and the finish slot.
+  void allocaSlots(unsigned TotalSlots) {
+    Slots.assign(TotalSlots + 1, 0);
+    createStartSlot();
+  }
 
   void reset();
 
@@ -180,14 +180,9 @@ public:
   VASTValPtr getOrCreateSymbol(const Twine &Name, unsigned BitWidth,
                                bool CreateWrapper);
 
-
   VASTSlot *getOrCreateSlot(unsigned SlotNum, MachineInstr *BundleStart);
 
-  VASTSlot *getSlot(unsigned SlotNum) const {
-    VASTSlot *S = Slots[SlotNum];
-    assert(S && "Slot not exist!");
-    return S;
-  }
+  VASTSlot *getSlot(unsigned SlotNum) const;
 
   VASTSlot *getStartSlot() const;
   VASTSlot *getFinishSlot() const;

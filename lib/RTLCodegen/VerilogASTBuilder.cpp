@@ -151,7 +151,7 @@ struct MemBusBuilder {
       createOutputPort(VFUMemBus::getEnableName(BusNum), 1, LocalEn, EnExpr);
     MembusCmd =
       createOutputPort(VFUMemBus::getCmdName(BusNum), VFUMemBus::CMDWidth,
-                        LocalEn, CmdExpr);
+                       LocalEn, CmdExpr);
 
     // Address port.
     MemBusAddr =
@@ -481,7 +481,7 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
 
   Builder.reset(new DatapathBuilder(*this, *MRI));
   VerilogModuleAnalysis &VMA = getAnalysis<VerilogModuleAnalysis>();
-  VM = VMA.createModule(FInfo->getInfo().getModName(), FInfo->getTotalSlots());
+  VM = VMA.createModule(FInfo->getInfo().getModName());
 
   emitFunctionSignature(F.getFunction());
 
@@ -504,6 +504,8 @@ bool VerilogASTBuilder::runOnMachineFunction(MachineFunction &F) {
         break;
       }
   }
+
+  VM->allocaSlots(FInfo->getTotalSlots());
 
   // Emit the allocated Functional units, currently they are the block RAMs.
   emitAllocatedFUs();

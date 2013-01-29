@@ -197,12 +197,9 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 
 //----------------------------------------------------------------------------//
 
-VASTModule::VASTModule(const Twine &Name, unsigned NumSlots)
+VASTModule::VASTModule(const Twine &Name)
   : VASTNode(vastModule), Ports(NumSpecialPort), Name(Name.str()),
-    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0) {
-  allocaSlots(NumSlots);
-  createStartSlot();
-}
+    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0) {}
 
 VASTSeqValue *
 VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
@@ -277,6 +274,12 @@ VASTValPtr VASTModule::getOrCreateSymbol(const Twine &Name,
           && "Getting symbol with wrong bitwidth!");
 
   return V;
+}
+
+VASTSlot *VASTModule::getSlot(unsigned SlotNum) const {
+  VASTSlot *S = Slots[SlotNum];
+  assert(S && "Slot not exist!");
+  return S;
 }
 
 VASTSlot *VASTModule::getOrCreateSlot(unsigned SlotNum,
@@ -686,7 +689,7 @@ VASTSeqOp *VASTModule::createSeqOp(VASTSlot *Slot, VASTValPtr Pred,
 }
 
 VASTSeqOp *VASTModule::createVirtSeqOp(VASTSlot *Slot, VASTValPtr Pred,
-                                          VASTSeqValue *D) {
+                                       VASTSeqValue *D) {
   VASTUse *UseBegin = Allocator.Allocate<VASTUse>(1);
 
   // Create the uses in the list.
