@@ -58,7 +58,7 @@ if (ENABLE_LOGIC_SYNTHESIS)
   if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
     set(ABC_PLATFORM LIN)
     # libreadline is need under linux
-    target_link_libraries (ShangRTLCodegen readline)
+    target_link_libraries (ShangVAST readline)
 
     # Set the platform flag.
     if (CMAKE_SIZEOF_VOID_P MATCHES 8)
