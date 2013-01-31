@@ -18,7 +18,7 @@ FUs.LUTDelay = 0.2 / PERIOD
 -- Enable simple dual-port mode
 FUs.BRam.Mode = 1
 
-Functions.main = { ModName = RTLModuleName, Scheduling = SynSettings.@ScheduleType@, Pipeline = SynSettings.@PipelineType@ }
+Functions.main = RTLModuleName
 
 -- Load ip module and simulation interface script.
 dofile('@VTS_SOURCE_ROOT@/' .. 'BramMIFGen.lua')
