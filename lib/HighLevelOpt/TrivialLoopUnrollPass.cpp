@@ -12,12 +12,12 @@
 // counts of loops easily.
 //===----------------------------------------------------------------------===//
 
-#include "vtm/Passes.h"
-#include "vtm/DesignMetrics.h"
-#include "vtm/FUInfo.h"
-#include "vtm/Utilities.h"
+#include "shang/Passes.h"
+#include "shang/DesignMetrics.h"
+#include "shang/FUInfo.h"
+#include "shang/Utilities.h"
 
-#include "llvm/IntrinsicInst.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/LoopIterator.h"
@@ -25,7 +25,7 @@
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/UnrollLoop.h"
-#include "llvm/Target/TargetData.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "trivial-loop-unroll"
@@ -37,6 +37,34 @@ static cl::opt<unsigned>
 ThresholdFactor("vtm-unroll-threshold-factor",
                 cl::desc("Factor to be multipied to the unroll threshold"),
                 cl::init(1));
+
+namespace llvm {
+int getLoopDepDist(const SCEV *SSAddr, const SCEV *SDAddr, bool SrcBeforeDest,
+                   unsigned ElemSizeInByte, ScalarEvolution *SE) {
+  // Use SCEV to compute the dependencies distance.
+  const SCEV *Distance = SE->getMinusSCEV(SSAddr, SDAddr);
+  // TODO: Get range.
+  if (const SCEVConstant *C = dyn_cast<SCEVConstant>(Distance)) {
+    int ItDistance = C->getValue()->getSExtValue();
+    if (ItDistance >= 0)
+      // The pointer distance is in Byte, but we need to get the distance in
+      // Iteration.
+      return getLoopDepDist(SrcBeforeDest, ItDistance / ElemSizeInByte);
+
+    // No dependency.
+    return -1;
+  }
+
+  return getLoopDepDist(SrcBeforeDest);
+}
+
+int getLoopDepDist(bool SrcBeforeDest, int Distance){
+  if (!SrcBeforeDest && (Distance == 0)) Distance = 1;
+
+  assert(Distance >= 0 && "Do not create a dependence with diff small than 0!");
+  return Distance;
+}
+}
 
 namespace {
 class TrivialLoopUnroll : public LoopPass {
@@ -53,7 +81,7 @@ public:
   ///
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.addRequired<AliasAnalysis>();
-    AU.addRequired<TargetData>();
+    AU.addRequired<DataLayout>();
     AU.addRequired<LoopInfo>();
     AU.addPreserved<LoopInfo>();
     AU.addRequiredID(LoopSimplifyID);
@@ -139,7 +167,7 @@ protected:
 
   ScalarEvolution &SE;
 
-  TargetData *TD;
+  DataLayout *TD;
 
 private:
   const Instruction *getAsNonTrivial(const Value *Src) {
@@ -208,7 +236,7 @@ private:
   void buildTransitiveClosure(ArrayRef<const Instruction*> MemOps);
 public:
 
-  LoopDepGraph(Loop *L, TargetData *TD, ScalarEvolution &SE)
+  LoopDepGraph(Loop *L, DataLayout *TD, ScalarEvolution &SE)
     : L(L), SE(SE), TD(TD) {}
 
   typedef DepMapTy::const_iterator iterator;
@@ -233,7 +261,7 @@ class LoopMetrics : public DesignMetrics, public LoopDepGraph {
   unsigned getSaturateCount(Value *Val, Value *Ptr);
 public:
 
-  LoopMetrics(Loop *L, TargetData *TD, ScalarEvolution &SE)
+  LoopMetrics(Loop *L, DataLayout *TD, ScalarEvolution &SE)
     : DesignMetrics(TD), LoopDepGraph(L, TD, SE), NumParallelIt(1) {}
 
   bool initialize(LoopInfo *LI, AliasAnalysis *AA);
@@ -635,7 +663,7 @@ bool TrivialLoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
 
   unsigned Count = TripCount;
 
-  LoopMetrics Metrics(L, &getAnalysis<TargetData>(), *SE);
+  LoopMetrics Metrics(L, &getAnalysis<DataLayout>(), *SE);
   if (!Metrics.initialize(LI, &getAnalysis<AliasAnalysis>())) {
     DEBUG(dbgs() << "  Not unrolling loop with strange instructions.\n");
     return false;

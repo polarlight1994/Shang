@@ -12,9 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "vtm/FUInfo.h"
-#include "vtm/SynSettings.h" // DiryHack: Also implement the SynSetting class.
-#include "vtm/LuaScript.h"
+#include "shang/FUInfo.h"
+#include "shang/LuaScript.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/raw_ostream.h"
@@ -193,38 +192,6 @@ unsigned VFUBRAM::BRamNumToFUNum(unsigned BRamNum, bool IsWrite) {
 
 unsigned VFUBRAM::FUNumToBRamNum(unsigned FUNum) {
   return FUNum / 4;
-}
-
-// Dirty Hack: anchor from SynSettings.h
-SynSettings::SynSettings(StringRef Name, SynSettings &From)
-  : PipeAlg(From.PipeAlg), SchedAlg(From.SchedAlg),
-  ModName(Name), InstName(""), IsTopLevelModule(false) {}
-
-SynSettings::SynSettings(luabind::object SettingTable)
-  : PipeAlg(SynSettings::DontPipeline),
-    SchedAlg(SynSettings::SDC), IsTopLevelModule(true) {
-  if (luabind::type(SettingTable) != LUA_TTABLE)
-    return;
-
-  if (boost::optional<std::string> Result =
-      luabind::object_cast_nothrow<std::string>(SettingTable["ModName"]))
-    ModName = Result.get();
-
-  if (boost::optional<std::string> Result =
-      luabind::object_cast_nothrow<std::string>(SettingTable["InstName"]))
-    InstName = Result.get();
-
-  if (boost::optional<ScheduleAlgorithm> Result =
-    luabind::object_cast_nothrow<ScheduleAlgorithm>(SettingTable["Scheduling"]))
-    SchedAlg = Result.get();
-
-  if (boost::optional<PipeLineAlgorithm> Result =
-    luabind::object_cast_nothrow<PipeLineAlgorithm>(SettingTable["Pipeline"]))
-    PipeAlg = Result.get();
-
-  if (boost::optional<bool> Result =
-    luabind::object_cast_nothrow<bool>(SettingTable["isTopMod"]))
-    IsTopLevelModule = Result.get();
 }
 
 void FuncUnitId::print(raw_ostream &OS) const {

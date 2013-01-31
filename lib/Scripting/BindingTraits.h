@@ -13,9 +13,8 @@
 #ifndef VTM_BINDING_TRAITS_H
 #define VTM_BINDING_TRAITS_H
 
-#include "vtm/FUInfo.h"
-#include "vtm/SynSettings.h"
-#include "vtm/VASTModule.h"
+#include "shang/FUInfo.h"
+#include "shang/VASTModule.h"
 
 #include "luabind/luabind.hpp"
 

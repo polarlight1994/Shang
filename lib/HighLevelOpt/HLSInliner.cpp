@@ -10,16 +10,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "vtm/DesignMetrics.h"
-#include "vtm/FUInfo.h"
-#include "vtm/Passes.h"
+#include "shang/DesignMetrics.h"
+#include "shang/FUInfo.h"
+#include "shang/Passes.h"
 
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/InlineCost.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Transforms/IPO/InlinerPass.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/Target/TargetData.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/Support/raw_ostream.h"
 #define DEBUG_TYPE "vtm-inliner"
 #include "llvm/Support/Debug.h"
@@ -44,7 +44,7 @@ public:
 
     if (Cost) return Cost;
 
-    DesignMetrics Metrics(&getAnalysis<TargetData>());
+    DesignMetrics Metrics(&getAnalysis<DataLayout>());
     Metrics.visit(*F);
 
     Cost = Metrics.getCost();
@@ -57,7 +57,7 @@ public:
 
   InlineCost getInlineCost(CallSite CS) {
     Function *F = CS.getCalledFunction(), *CallerF = CS.getCaller();
-    if (!F || F->isDeclaration() ||  F->hasFnAttr(Attribute::NoInline))
+    if (!F || F->isDeclaration() ||  F->getAttributes().hasAttribute(AttributeSet::FunctionIndex, Attribute::NoInline))
       return InlineCost::getNever();
 
     unsigned NumUses = 0;
@@ -101,7 +101,7 @@ public:
   void releaseMemory() { CachedCost.clear(); }
 
   void getAnalysisUsage(AnalysisUsage &Info) const {
-    Info.addRequired<TargetData>();
+    Info.addRequired<DataLayout>();
     Inliner::getAnalysisUsage(Info);
   }
 };

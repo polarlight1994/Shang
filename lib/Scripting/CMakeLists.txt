@@ -8,7 +8,7 @@ include_directories(
   ${LUABIND_INCLUDE_DIR}/luabind
 )
 
-add_llvm_library(VTMScripting
+add_llvm_library(ShangScripting
   FUInfo.cpp
   LuaScript.cpp
   VASTLuaBases.cpp
@@ -57,9 +57,9 @@ endmacro(luamodule)
 luamodule(luapp)
 
 target_link_libraries (
-  VTMScripting
+  ShangScripting
   ${LUA_LIBRARY}
   ${LUABIND_LIBRARY}
 )
 
-add_dependencies(VTMScripting VerilogBackendTableGen luappLua_gen)
+add_dependencies(ShangScripting luappLua_gen)

@@ -13,10 +13,9 @@
 //===----------------------------------------------------------------------===//
 #include "BindingTraits.h"
 
-#include "vtm/Passes.h"
-#include "vtm/LuaScript.h"
-#include "vtm/VInstrInfo.h"
-#include "vtm/Utilities.h"
+#include "shang/Passes.h"
+#include "shang/LuaScript.h"
+#include "shang/Utilities.h"
 
 #include "llvm/PassManager.h"
 #include "llvm/Support/raw_ostream.h"
@@ -74,16 +73,6 @@ void LuaScript::init() {
 
   // Bind the C++ classes.
   luabind::module(State)[
-    luabind::class_<SynSettings>("SynSettings")
-      .enum_("PipeLine")[
-        luabind::value("IMS", SynSettings::IMS),
-          luabind::value("DontPipeline", SynSettings::DontPipeline)
-      ]
-      .enum_("Schedule")[
-        luabind::value("ASAP", SynSettings::ASAP),
-        luabind::value("SDC", SynSettings::SDC)
-      ],
-
     BindingTraits<VASTPort>::register_("VASTPort"),
 
     BindingTraits<VASTModule>::register_("VASTModule")
@@ -136,7 +125,7 @@ raw_ostream &LuaScript::getOutputStream(const char *Name) {
 
   tool_output_file *NewFile = new tool_output_file(Path.c_str(), error);
   // TODO: Support binary file.
-  Files.insert(std::make_pair(Path, NewFile));
+  Files.GetOrCreateValue(Path, NewFile);
 
   return NewFile->os();
 }
@@ -156,7 +145,7 @@ raw_ostream &LuaScript::getOutputFileStream(std::string &Name) {
 
   tool_output_file *NewFile = new tool_output_file(Path.c_str(), error);
   // TODO: Support binary file.
-  Files.insert(std::make_pair(Path, NewFile));
+  Files.GetOrCreateValue(Path, NewFile);
 
   return NewFile->os();
 }
@@ -207,13 +196,10 @@ void LuaScript::updateStatus() {
   Path[1] = "FullCaseAttr";
   VASTNode::FullCaseAttr = getValue<std::string>(Path);
 
-  typedef luabind::iterator tab_it;
-  for (tab_it I = tab_it(luabind::globals(State)["Functions"]), E = tab_it();
-       I != E; ++I) {
-    FunctionSettings.GetOrCreateValue(
-      luabind::object_cast<std::string>(I.key()).c_str(),
-      new SynSettings(*I));
-  }
+  for (luabind::iterator I = luabind::iterator(luabind::globals(State)["Functions"]);
+       I != luabind::iterator(); ++I)
+    TopHWFunctions.GetOrCreateValue(luabind::object_cast<std::string>(I.key()),
+                                    luabind::object_cast<std::string>(*I));
 
   // Build the data layout.
   raw_string_ostream s(DataLayout);
@@ -238,20 +224,6 @@ ManagedStatic<LuaScript> Script;
 
 VFUDesc *llvm::getFUDesc(enum VFUs::FUTypes T) {
   return Script->FUSet[T];
-}
-
-SynSettings *llvm::getSynSetting(StringRef Name, SynSettings *ParentSetting) {
-  StringMap<SynSettings*> *SynSettingMap = &Script->FunctionSettings;
-  StringMapEntry<SynSettings*> &Entry = SynSettingMap->GetOrCreateValue(Name);
-  SynSettings *&S = Entry.second;
-  if (S) return S;
-
-  if (!ParentSetting) return 0;
-
-  // Create a new synthesis setting by copying ParentSetting.
-  S = SynSettingMap->getAllocator().Allocate<SynSettings>();
-  new (S) SynSettings(Name, *ParentSetting);
-  return S;
 }
 
 LuaScript &llvm::scriptEngin() { return *Script; }

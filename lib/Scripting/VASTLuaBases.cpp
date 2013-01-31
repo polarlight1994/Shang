@@ -10,11 +10,12 @@
 // This file implement the classes that need to be bound.
 //
 //===----------------------------------------------------------------------===//
-#include "vtm/VASTSubModules.h"
-#include "vtm/VASTModule.h"
+#include "shang/VASTSubModules.h"
+#include "shang/VASTModule.h"
 
-#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/IR/Function.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/GraphWriter.h"
 #define DEBUG_TYPE "vast-lua-bases"
 #include "llvm/Support/Debug.h"
 
@@ -197,9 +198,9 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 
 //----------------------------------------------------------------------------//
 
-VASTModule::VASTModule(const Twine &Name)
-  : VASTNode(vastModule), Ports(NumSpecialPort), Name(Name.str()),
-    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0) {
+VASTModule::VASTModule(Function &F)
+  : VASTNode(vastModule), Ports(NumSpecialPort), Name(F.getName().str()),
+    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0), F(F) {
   createStartSlot();
 }
 
@@ -289,8 +290,7 @@ namespace {
   };
 }
 
-VASTSlot *VASTModule::createSlot(unsigned SlotNum,
-                                      MachineBasicBlock *ParentBB) {
+VASTSlot *VASTModule::createSlot(unsigned SlotNum, BasicBlock *ParentBB) {
   assert(std::find_if(Slots.begin(), Slots.end(), SlotNumEqual(SlotNum)) == Slots.end()
          && "The same slot had already been created!");
 
@@ -305,7 +305,7 @@ VASTSlot *VASTModule::createStartSlot() {
   VASTSlot *StartSlot = new VASTSlot(0, 0, this);
   Slots.push_back(StartSlot);
   // Also create the finish slot.
-  Slots.push_back(new VASTSlot(Slots.size() - 1, StartSlot));
+  Slots.push_back(new VASTSlot(0, StartSlot));
   return StartSlot;
 }
 
@@ -608,19 +608,19 @@ VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V) {
 }
 
 void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
-                               VASTValPtr GuardCnd, MachineInstr *DefMI,
+                               VASTValPtr GuardCnd, Instruction *Inst,
                                bool AddSlotActive) {
   assert(Src && "Bad assignment source!");
-  createSeqOp(Slot, GuardCnd, 1, DefMI, AddSlotActive)->addSrc(Src, 0, true, V);
+  createSeqOp(Slot, GuardCnd, 1, Inst, AddSlotActive)->addSrc(Src, 0, true, V);
 }
 
 VASTSeqOp *VASTModule::createSeqOp(VASTSlot *Slot, VASTValPtr Pred,
-                                   unsigned NumOps, MachineInstr *DefMI,
+                                   unsigned NumOps, Instruction *Inst,
                                    bool AddSlotActive) {
   VASTUse *UseBegin = Allocator.Allocate<VASTUse>(NumOps + 1);
 
   // Create the uses in the list.
-  VASTSeqOp *Def = new VASTSeqOp(Slot, AddSlotActive, DefMI, UseBegin, NumOps);
+  VASTSeqOp *Def = new VASTSeqOp(Slot, AddSlotActive, Inst, UseBegin, NumOps);
   // Create the predicate operand.
   new (UseBegin) VASTUse(Def, Pred);
 
@@ -631,15 +631,16 @@ VASTSeqOp *VASTModule::createSeqOp(VASTSlot *Slot, VASTValPtr Pred,
 }
 
 VASTSeqOp *VASTModule::createVirtSeqOp(VASTSlot *Slot, VASTValPtr Pred,
-                                       VASTSeqValue *D) {
+                                       VASTSeqValue *D, Instruction *Inst,
+                                       bool AddSlotActive) {
   VASTUse *UseBegin = Allocator.Allocate<VASTUse>(1);
 
   // Create the uses in the list.
-  VASTSeqOp *Def = new VASTSeqOp(Slot, true, 0, UseBegin, 0, true);
+  VASTSeqOp *Def = new VASTSeqOp(Slot, AddSlotActive, Inst, UseBegin, 0, true);
   // Create the predicate operand.
   new (UseBegin) VASTUse(Def, Pred);
   // Add the defined value.
-  Def->addDefDst(D);
+  if (D) Def->addDefDst(D);
 
   // Add the SeqOp to the the all SeqOp list.
   SeqOps.push_back(Def);
@@ -651,14 +652,46 @@ void VASTModule::print(raw_ostream &OS) const {
   for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
     const VASTSlot *S = SI;
 
-    OS << "Slot" << S->SlotNum << '\n';
-
-    typedef VASTSlot::const_op_iterator def_iterator;
-    for (def_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
-      const VASTSeqOp &D = **I;
-      D.print(OS.indent(2));
-    }
+    S->print(OS);
   }
+}
+
+namespace llvm {
+template <>
+struct GraphTraits<const VASTModule*> : public GraphTraits<const VASTSlot*> {
+  typedef VASTModule::const_slot_iterator nodes_iterator;
+  static nodes_iterator nodes_begin(const VASTModule *G) {
+    return G->slot_begin();
+  }
+  static nodes_iterator nodes_end(const VASTModule *G) {
+    return G->slot_end();
+  }
+};
+
+
+template<>
+struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
+  typedef const VASTSlot NodeTy;
+  typedef const VASTModule GraphTy;
+
+  DOTGraphTraits(bool isSimple=false) : DefaultDOTGraphTraits(isSimple) {}
+
+  std::string getNodeLabel(NodeTy *Node, GraphTy *Graph) {
+    std::string Str;
+    raw_string_ostream ss(Str);
+    ss << Node->getName();
+    DEBUG(Node->print(ss));
+    return ss.str();
+  }
+
+  static std::string getNodeAttributes(NodeTy *Node, GraphTy *Graph) {
+      return "shape=Mrecord";
+  }
+};
+}
+
+void VASTModule::viewGraph() const {
+  ViewGraph(this, getName());
 }
 
 VASTPort *VASTModule::addPort(const Twine &Name, unsigned BitWidth,

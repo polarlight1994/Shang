@@ -13,8 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 
-#include "vtm/Passes.h"
-#include "vtm/Utilities.h"
+#include "shang/Passes.h"
+#include "shang/Utilities.h"
 
 #include "llvm/Pass.h"
 #include "llvm/IR/Module.h"

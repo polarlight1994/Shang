@@ -1,1 +1,1 @@
-add_subdirectory(vtm)
+add_subdirectory(shang)
