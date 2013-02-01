@@ -26,6 +26,7 @@
 
 namespace llvm {
 class BasicBlock;
+class Value;
 class VASTNamedValue;
 class VASTValue;
 class VASTExpr;
@@ -45,13 +46,12 @@ public:
     vastImmediate,
     vastFirstValueType = vastImmediate,
     vastSymbol,
+    vastLLVMValue,
     vastExpr,
     vastWire,
     vastSeqValue,
-    // CustomNode used by pre-scheduling data-path optimizer and the IR level
-    // resource usage estimation pass.
-    vastCustomNode,
-    vastLastValueType = vastCustomNode,
+
+    vastLastValueType = vastSeqValue,
     vastPort,
     vastSlot,
     vastRegister,
@@ -75,8 +75,9 @@ public:
 protected:
   union {
     const char *Name;
-    VASTNamedValue *Value;
+    VASTNamedValue *NamedValue;
     BasicBlock *ParentBB;
+    const Value *LLVMValue;
   } Contents;
 
   const uint8_t NodeT : 7;
@@ -509,7 +510,7 @@ protected:
   VASTNamedValue(VASTTypes T, const char *Name, unsigned BitWidth)
     : VASTValue(T, BitWidth) {
     assert((T == vastSymbol || T == vastWire || T == vastSeqValue
-            || T == vastCustomNode)
+            || T == vastLLVMValue)
            && "Bad DeclType!");
     Contents.Name = Name;
   }
@@ -528,7 +529,7 @@ public:
     return A->getASTType() == vastSymbol ||
            A->getASTType() == vastWire ||
            A->getASTType() == vastSeqValue ||
-           A->getASTType() == vastCustomNode;
+           A->getASTType() == vastLLVMValue;
   }
 };
 

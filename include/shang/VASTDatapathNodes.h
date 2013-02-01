@@ -23,6 +23,9 @@
 #include <map>
 
 namespace llvm {
+class Value;
+class VASTModule;
+
 class VASTImmediate : public VASTValue, public FoldingSetNode  {
   const APInt Int;
 
@@ -108,6 +111,20 @@ public:
   static inline bool classof(const VASTSymbol *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSymbol;
+  }
+};
+
+// Wrapper for the LLVM values.
+class VASTLLVMValue : public VASTValue {
+  void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
+public:
+  VASTLLVMValue(const Value *V, unsigned Size);
+  const Value *getValue() const { return Contents.LLVMValue; }
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTLLVMValue *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastLLVMValue;
   }
 };
 
@@ -304,8 +321,6 @@ protected:
   void addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap);
 
 public:
-  static VASTImmediate *True, *False;
-
   DatapathContainer();
 
   BumpPtrAllocator &getAllocator() { return Allocator; }

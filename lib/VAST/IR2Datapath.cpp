@@ -16,34 +16,24 @@
 #include "llvm/IR/DataLayout.h"
 
 using namespace llvm;
-// TD
-unsigned DatapathBuilder::getValueSizeInBits(const Value *V) const {
-  unsigned SizeInBits = TD->getTypeSizeInBits(V->getType());
-  assert(SizeInBits && "Size of V is unknown!");
-  return SizeInBits;
+
+VASTValPtr DatapathBuilderContext::lookupExpr(Value *Val) const {
+  ValueMapTy::const_iterator at = Value2Expr.find(Val);
+  return at == Value2Expr.end() ? 0 : at->second;
 }
 
-VASTValPtr DatapathBuilder::lookupExpr(Value *Val) const {
-   ValueMapTy::const_iterator at = Value2Expr.find(Val);
-   return at == Value2Expr.end() ? 0 : at->second;
- }
-
-VASTValPtr DatapathBuilder::indexVASTExpr(Value *Val, VASTValPtr V) {
+VASTValPtr DatapathBuilderContext::indexVASTExpr(Value *Val, VASTValPtr V) {
   bool inserted = Value2Expr.insert(std::make_pair(Val, V)).second;
   assert(inserted && "RegNum already indexed some value!");
 
   return V;
 }
 
-//VASTValPtr DatapathBuilder::createAndIndexExpr(Instruction *I,
-//                                                    bool mayExisted){
-//  VASTValPtr &Expr = Value2Expr[I];
-//  assert((!Expr || mayExisted) && "Expression had already been created!");
-//
-//  if (Expr) return Expr;
-//
-//  return (Expr = visit(I));
-//}
+unsigned DatapathBuilderContext::getValueSizeInBits(const Value *V) const {
+  unsigned SizeInBits = TD->getTypeSizeInBits(V->getType());
+  assert(SizeInBits && "Size of V is unknown!");
+  return SizeInBits;
+}
 
 VASTValPtr DatapathBuilder::visitTruncInst(TruncInst &I) {
   // Truncate the value by bitslice expression.
@@ -181,7 +171,8 @@ VASTValPtr DatapathBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
       unsigned Field = cast<ConstantInt>(Idx)->getZExtValue();
       if (Field) {
         // N = N + Offset
-        uint64_t Offset = TD->getStructLayout(StTy)->getElementOffset(Field);
+        uint64_t Offset
+          = getDataLayout()->getStructLayout(StTy)->getElementOffset(Field);
         Ptr = buildExpr(VASTExpr::dpAdd,
                         Ptr, getOrCreateImmediate(Offset, PtrSize),
                         PtrSize);
@@ -194,8 +185,8 @@ VASTValPtr DatapathBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
       // If this is a constant subscript, handle it quickly.
       if (const ConstantInt *CI = dyn_cast<ConstantInt>(Idx)) {
         if (CI->isZero()) continue;
-        uint64_t Offs =
-            TD->getTypeAllocSize(Ty) * cast<ConstantInt>(CI)->getSExtValue();
+        uint64_t Offs = getDataLayout()->getTypeAllocSize(Ty)
+                        * cast<ConstantInt>(CI)->getSExtValue();
         
         Ptr = buildExpr(VASTExpr::dpAdd,
                         Ptr, getOrCreateImmediate(Offs, PtrSize),
@@ -204,7 +195,7 @@ VASTValPtr DatapathBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
       }
 
       // N = N + Idx * ElementSize;
-      APInt ElementSize = APInt(PtrSize, TD->getTypeAllocSize(Ty));
+      APInt ElementSize = APInt(PtrSize, getDataLayout()->getTypeAllocSize(Ty));
       VASTValPtr IdxN = getAsOperand(const_cast<Value*>(Idx));
 
       // If the index is smaller or larger than intptr_t, truncate or extend

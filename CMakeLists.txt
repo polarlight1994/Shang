@@ -121,6 +121,4 @@ set(LLVM_LINK_COMPONENTS  bitreader asmparser codegen SelectionDAG transformutil
 add_llvm_tool(shang
   shang.cpp
  )
-
 target_link_libraries(shang ShangHighLevelOpt ShangVAST ShangHLS ShangScripting)
-add_dependencies(shang ShangHighLevelOpt ShangVAST ShangHLS ShangScripting)

@@ -29,28 +29,8 @@
 using namespace llvm;
 
 namespace llvm {
-// Wrapper for the external values.
-class VASTValueOperand : public VASTValue {
-public:
-  const Value *const V;
-
-  VASTValueOperand(const Value *V, unsigned Size)
-    : VASTValue(VASTNode::vastCustomNode, Size),
-      V(V) {}
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTValueOperand *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastCustomNode;
-  }
-
-  void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const {
-    OS << *V << '[' << UB << ',' << LB << ']';
-  }
-};
-
 // FIXME: Move the class definition to a header file.
-class DesignMetricsImpl : public EarlyDatapathBuilderContext {
+class DesignMetricsImpl : public DatapathBuilderContext {
   // Data-path container to hold the optimized data-path of the design.
   DatapathContainer DPContainer;
   DatapathBuilder Builder;
@@ -93,7 +73,7 @@ class DesignMetricsImpl : public EarlyDatapathBuilderContext {
   void visitStoreInst(StoreInst &I);
 public:
   explicit DesignMetricsImpl(DataLayout *TD)
-    : Builder(*this, TD), StepLB(0), NumCalls(0){}
+    : DatapathBuilderContext(TD), Builder(*this), StepLB(0), NumCalls(0){}
 
   void visit(Instruction &Inst);
   void visit(BasicBlock &BB);
@@ -149,12 +129,12 @@ VASTValPtr DesignMetricsImpl::getAsOperandImpl(Value *Op,
   }
 
   // Else we need to create a leaf node for the expression tree.
-  VASTValueOperand *ValueOp
-    = DPContainer.getAllocator().Allocate<VASTValueOperand>();
+  VASTLLVMValue *ValueOp
+    = DPContainer.getAllocator().Allocate<VASTLLVMValue>();
     
-  new (ValueOp) VASTValueOperand(Op, NumBits);
+  new (ValueOp) VASTLLVMValue(Op, NumBits);
 
-  // Remember the newly create VASTValueOperand, so that it will not be created
+  // Remember the newly create VASTLLVMValue, so that it will not be created
   // again.
   Builder.indexVASTExpr(Op, ValueOp);
   return ValueOp;

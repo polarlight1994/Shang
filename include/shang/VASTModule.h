@@ -40,7 +40,7 @@ public:
 
   VASTPort(VASTNamedValue *V, bool isInput);
 
-  VASTNamedValue *getValue() const { return Contents.Value; }
+  VASTNamedValue *getValue() const { return Contents.NamedValue; }
   VASTSeqValue *getSeqVal() const;
 
   const char *getName() const { return getValue()->getName(); }
@@ -60,7 +60,7 @@ public:
 };
 
 // The class that represent Verilog modulo.
-class VASTModule : public VASTNode, public DatapathContainer {
+class VASTModule : public VASTNode {
 public:
   typedef SmallVector<VASTPort*, 16> PortVector;
   typedef PortVector::iterator port_iterator;
@@ -85,6 +85,8 @@ public:
   typedef SlotVecTy::iterator slot_iterator;
   typedef SlotVecTy::const_iterator const_slot_iterator;
 private:
+  DatapathContainer Datapath;
+
   // The slots vector, each slot represent a state in the FSM of the design.
   SlotVecTy Slots;
   SeqValueVector SeqVals;
@@ -180,7 +182,11 @@ public:
   const VASTSlot *getStartSlot() const;
   const VASTSlot *getFinishSlot() const;
 
-  VASTUse *allocateUse() { return Allocator.Allocate<VASTUse>(); }
+  const DatapathContainer &getDatapath() const { return Datapath; }
+  DatapathContainer &getDatapath() { return Datapath; }
+  BumpPtrAllocator &getAllocator();
+  VASTUse *allocateUse();
+
   // Allow user to add ports.
   VASTPort *addInputPort(const Twine &Name, unsigned BitWidth,
                          PortTypes T = Others);

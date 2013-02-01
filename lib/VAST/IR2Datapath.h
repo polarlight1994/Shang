@@ -22,35 +22,52 @@
 namespace llvm {
 class DataLayout;
 
-class EarlyDatapathBuilderContext : public VASTExprBuilderContext {
-public:
-  virtual VASTValPtr getAsOperandImpl(Value *Op,
-                                      bool GetAsInlineOperand = true) {
-    llvm_unreachable("Function not implemented!");
-    return 0;
-  }
-};
-
-class DatapathBuilder : public VASTExprBuilder,
-                             public InstVisitor<DatapathBuilder,
-                                                VASTValPtr> {
-  EarlyDatapathBuilderContext &getContext() {
-    return static_cast<EarlyDatapathBuilderContext&>(Context);
-  }
-
+class DatapathBuilderContext : public VASTExprBuilderContext {
 public:
   typedef DenseMap<Value*, VASTValPtr> ValueMapTy;
+
 private:
   ValueMapTy Value2Expr;
   DataLayout *TD;
 
 public:
-  DatapathBuilder(EarlyDatapathBuilderContext &Context, DataLayout *TD)
-    : VASTExprBuilder(Context), TD(TD) {}
+  explicit DatapathBuilderContext(DataLayout *TD) : TD(TD) {}
 
   DataLayout *getDataLayout() const { return TD; }
 
   unsigned getValueSizeInBits(const Value *V) const;
+  unsigned getValueSizeInBits(const Value &V) const {
+    return getValueSizeInBits(&V);
+  }
+
+  virtual VASTValPtr getAsOperandImpl(Value *Op,
+                                      bool GetAsInlineOperand = true) {
+    llvm_unreachable("Function not implemented!");
+    return 0;
+  }
+
+  VASTValPtr lookupExpr(Value *Val) const;
+  VASTValPtr indexVASTExpr(Value *Val, VASTValPtr V);
+};
+
+class DatapathBuilder : public VASTExprBuilder,
+                        public InstVisitor<DatapathBuilder,
+                                           VASTValPtr> {
+  DatapathBuilderContext &getContext() const {
+    return static_cast<DatapathBuilderContext&>(Context);
+  }
+
+
+public:
+  DatapathBuilder(DatapathBuilderContext &Context)
+    : VASTExprBuilder(Context) {}
+
+  DataLayout *getDataLayout() const { return getContext().getDataLayout(); }
+
+  unsigned getValueSizeInBits(const Value *V) const {
+    return getContext().getValueSizeInBits(V);
+  }
+
   unsigned getValueSizeInBits(const Value &V) const {
     return getValueSizeInBits(&V);
   }
@@ -60,9 +77,13 @@ public:
   }
 
   // Value mapping.
-  VASTValPtr createAndIndexExpr(Instruction *I, bool mayExisted = false);
-  VASTValPtr lookupExpr(Value *Val) const;
-  VASTValPtr indexVASTExpr(Value *Val, VASTValPtr V);
+  VASTValPtr lookupExpr(Value *Val) const {
+    return getContext().lookupExpr(Val);
+  }
+
+  VASTValPtr indexVASTExpr(Value *Val, VASTValPtr V) {
+    return getContext().indexVASTExpr(Val, V);
+  }
 
   // Converting CastInst
   VASTValPtr visitTruncInst(TruncInst &I);

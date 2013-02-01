@@ -134,7 +134,7 @@ void VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
 VASTPort::VASTPort(VASTNamedValue *V, bool isInput)
   : VASTNode(vastPort), IsInput(isInput)
 {
-  Contents.Value = V;
+  Contents.NamedValue = V;
 }
 
 void VASTPort::print(raw_ostream &OS) const {
@@ -210,7 +210,7 @@ VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
 VASTBlockRAM *VASTModule::addBlockRAM(unsigned BRamNum, unsigned Bitwidth,
                                       unsigned Size, const GlobalVariable *Init){
   VASTBlockRAM *RAM
-    = new (Allocator) VASTBlockRAM("", BRamNum, Bitwidth, Size, Init);
+    = new (getAllocator()) VASTBlockRAM("", BRamNum, Bitwidth, Size, Init);
   // Build the ports.
   RAM->addPorts(this);
   Submodules.push_back(RAM);
@@ -218,13 +218,13 @@ VASTBlockRAM *VASTModule::addBlockRAM(unsigned BRamNum, unsigned Bitwidth,
 }
 
 VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {
-  VASTSubModule *M = new (Allocator) VASTSubModule(Name, Num);
+  VASTSubModule *M = new (getAllocator()) VASTSubModule(Name, Num);
   Submodules.push_back(M);
   return M;
 }
 
 VASTSeqCode *VASTModule::addSeqCode(const char *Name) {
-  VASTSeqCode *Code = new (Allocator) VASTSeqCode(Name);
+  VASTSeqCode *Code = new (getAllocator()) VASTSeqCode(Name);
   SeqCode.push_back(Code);
   return Code;
 }
@@ -234,8 +234,8 @@ VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   // Allocate the wire and the use.
-  void *P =  Allocator.Allocate(sizeof(VASTWire) + sizeof(VASTUse),
-                                alignOf<VASTWire>());
+  void *P =  getAllocator().Allocate(sizeof(VASTWire) + sizeof(VASTUse),
+                                     alignOf<VASTWire>());
 
   VASTWire *Wire = reinterpret_cast<VASTWire*>(P);
   // Create the uses in the list.
@@ -255,7 +255,7 @@ VASTValPtr VASTModule::getOrCreateSymbol(const Twine &Name,
     const char *S = Entry.getKeyData();
     // If we are going to create a wrapper, apply the bitwidth to the wrapper.
     unsigned SymbolWidth = CreateWrapper ? 0 : BitWidth;
-    V = new (Allocator.Allocate<VASTSymbol>()) VASTSymbol(S, SymbolWidth);
+    V = new (getAllocator().Allocate<VASTSymbol>()) VASTSymbol(S, SymbolWidth);
     if (CreateWrapper) {
       // Create the wire for the symbol, and assign the symbol to the wire.
       VASTWire *Wire = addWire(VBEMangle(Name.str() + "_s"), BitWidth);
@@ -318,7 +318,7 @@ const VASTSlot *VASTModule::getFinishSlot() const {
 }
 
 void VASTModule::reset() {
-  DatapathContainer::reset();
+  Datapath.reset();
 
   SeqOps.clear();
   SeqVals.clear();
@@ -528,7 +528,7 @@ void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
 VASTSeqOp *VASTModule::createSeqOp(VASTSlot *Slot, VASTValPtr Pred,
                                    unsigned NumOps, Instruction *Inst,
                                    bool AddSlotActive) {
-  VASTUse *UseBegin = Allocator.Allocate<VASTUse>(NumOps + 1);
+  VASTUse *UseBegin = getAllocator().Allocate<VASTUse>(NumOps + 1);
 
   // Create the uses in the list.
   VASTSeqOp *Def = new VASTSeqOp(Slot, AddSlotActive, Inst, UseBegin, NumOps);
@@ -544,7 +544,7 @@ VASTSeqOp *VASTModule::createSeqOp(VASTSlot *Slot, VASTValPtr Pred,
 VASTSeqOp *VASTModule::createVirtSeqOp(VASTSlot *Slot, VASTValPtr Pred,
                                        VASTSeqValue *D, Instruction *Inst,
                                        bool AddSlotActive) {
-  VASTUse *UseBegin = Allocator.Allocate<VASTUse>(1);
+  VASTUse *UseBegin = getAllocator().Allocate<VASTUse>(1);
 
   // Create the uses in the list.
   VASTSeqOp *Def = new VASTSeqOp(Slot, AddSlotActive, Inst, UseBegin, 0, true);
@@ -575,7 +575,7 @@ VASTPort *VASTModule::addPort(const Twine &Name, unsigned BitWidth,
   else
     V = addWire(Name, BitWidth, "// ", true);
 
-  VASTPort *Port = new (Allocator) VASTPort(V, isInput);
+  VASTPort *Port = new (getAllocator()) VASTPort(V, isInput);
 
   return Port;
 }
@@ -629,7 +629,7 @@ VASTRegister *VASTModule::addRegister(const Twine &Name, unsigned BitWidth,
                                       uint16_t RegData, const char *Attr) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
-  VASTRegister *Reg = Allocator.Allocate<VASTRegister>();
+  VASTRegister *Reg = getAllocator().Allocate<VASTRegister>();
   VASTSeqValue *V = createSeqValue(Entry.getKeyData(), BitWidth, T, RegData, Reg);
   new (Reg) VASTRegister(V, InitVal, Attr);
 
@@ -647,167 +647,15 @@ VASTRegister *VASTModule::addDataRegister(const Twine &Name, unsigned BitWidth,
   return addRegister(Name, BitWidth, 0, VASTNode::Data, RegNum, Attr);
 }
 
+VASTUse *VASTModule::allocateUse() {
+  return getAllocator().Allocate<VASTUse>();
+}
+
+BumpPtrAllocator &VASTModule::getAllocator() {
+  return Datapath.getAllocator();
+}
+
 //----------------------------------------------------------------------------//
-void DatapathContainer::removeValueFromCSEMaps(VASTNode *N) {
-  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(N)) {
-    UniqueImms.RemoveNode(Imm);
-    return;
-  }
-
-  if (VASTExpr *Expr = dyn_cast<VASTExpr>(N)) {
-    UniqueExprs.RemoveNode(Expr);
-    return;
-  }
-
-  // Otherwise V is not in the CSEMap, do nothing.
-}
-
-template<typename T>
-void DatapathContainer::addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap) {
-  T *Existing = CSEMap.GetOrInsertNode(V);
-
-  if (Existing != V) {
-    // If there was already an existing matching node, use ReplaceAllUsesWith
-    // to replace the dead one with the existing one.  This can cause
-    // recursive merging of other unrelated nodes down the line.
-    replaceAllUseWithImpl(V, Existing);
-  }
-}
-
-void DatapathContainer::addModifiedValueToCSEMaps(VASTNode *N) {
-  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(N)) {
-    addModifiedValueToCSEMaps(Imm, UniqueImms);
-    return;
-  }
-
-  if (VASTExpr *Expr = dyn_cast<VASTExpr>(N)) {
-    addModifiedValueToCSEMaps(Expr, UniqueExprs);
-    return;
-  }
-
-  // Otherwise V is not in the CSEMap, do nothing.
-}
-
-void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
-  assert(From && To && From != To && "Unexpected VASTValPtr value!");
-  assert(From->getBitWidth() == To->getBitWidth() && "Bitwidth not match!");
-  assert(!To->isDead() && "Replacing node by dead node!");
-  VASTValue::use_iterator UI = From->use_begin(), UE = From->use_end();
-
-  while (UI != UE) {
-    VASTNode *User = *UI;
-
-    // This node is about to morph, remove its old self from the CSE maps.
-    removeValueFromCSEMaps(User);
-
-    // A user can appear in a use list multiple times, and when this
-    // happens the uses are usually next to each other in the list.
-    // To help reduce the number of CSE recomputations, process all
-    // the uses of this user that we can find this way.
-    do {
-      VASTUse *Use = UI.get();
-      VASTValPtr UsedValue = Use->get();
-      VASTValPtr Replacement = To;
-      // If a inverted value is used, we must also invert the replacement.
-      if (UsedValue != From) {
-        assert(UsedValue.invert() == From && "Use not using 'From'!");
-        Replacement = Replacement.invert();
-      }
-
-      ++UI;
-      // Move to new list.
-      Use->replaceUseBy(Replacement);
-
-    } while (UI != UE && *UI == User);
-
-    // Now that we have modified User, add it back to the CSE maps.  If it
-    // already exists there, recursively merge the results together.
-    addModifiedValueToCSEMaps(User);
-  }
-
-  assert(From->use_empty() && "Incompleted replacement!");
-  // From is dead now, unlink it from all its use.
-  From->dropUses();
-  // Do not use this node anymore.
-  removeValueFromCSEMaps(From.get());
-  // Sentence this Node to dead!
-  From->setDead();
-  // TODO: Delete From.
-}
-
-VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
-                                             ArrayRef<VASTValPtr> Ops,
-                                             unsigned UB, unsigned LB) {
-  assert(!Ops.empty() && "Unexpected empty expression");
-  if (Ops.size() == 1) {
-    switch (Opc) {
-    default: break;
-    case VASTExpr::dpAnd: case VASTExpr::dpAdd: case VASTExpr::dpMul:
-      return Ops[0];
-    }
-  }
-
-  FoldingSetNodeID ID;
-
-  // Profile the elements of VASTExpr.
-  ID.AddInteger(Opc);
-  ID.AddInteger(UB);
-  ID.AddInteger(LB);
-  for (unsigned i = 0; i < Ops.size(); ++i)
-    ID.AddPointer(Ops[i]);
-
-  void *IP = 0;
-  if (VASTExpr *E = UniqueExprs.FindNodeOrInsertPos(ID, IP))
-    return E;
-
-  // If the Expression do not exist, allocate a new one.
-  // Place the VASTUse array right after the VASTExpr.
-  void *P = Allocator.Allocate(sizeof(VASTExpr) + Ops.size() * sizeof(VASTUse),
-                               alignOf<VASTExpr>());
-  VASTExpr *E = new (P) VASTExpr(Opc, Ops.size(), UB, LB);
-  VASTUse *UseBegin = reinterpret_cast<VASTUse*>(E + 1);
-
-  for (unsigned i = 0; i < Ops.size(); ++i) {
-    assert(Ops[i].get() && "Unexpected null VASTValPtr!");
-
-    (void) new (UseBegin + i) VASTUse(E, Ops[i]);
-  }
-
-  UniqueExprs.InsertNode(E, IP);
-  return E;
-}
-
-void DatapathContainer::reset() {
-  UniqueExprs.clear();
-  UniqueImms.clear();
-  Allocator.Reset();
-
-  // Reinsert the TRUE and False.
-  VASTImmediate::True = getOrCreateImmediateImpl(1, 1);
-  VASTImmediate::False = getOrCreateImmediateImpl(0, 1);
-}
-
-DatapathContainer::DatapathContainer() {
-  VASTImmediate::True = getOrCreateImmediateImpl(1, 1);
-  VASTImmediate::False = getOrCreateImmediateImpl(0, 1);
-}
-
-VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
-  FoldingSetNodeID ID;
-
-  Value.Profile(ID);
-
-  void *IP = 0;
-  if (VASTImmediate *V = UniqueImms.FindNodeOrInsertPos(ID, IP))
-    return V;
-
-  void *P = Allocator.Allocate(sizeof(VASTImmediate), alignOf<VASTImmediate>());
-  VASTImmediate *V = new (P) VASTImmediate(Value);
-  UniqueImms.InsertNode(V, IP);
-
-  return V;
-}
-
 void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                         unsigned LB) const{
   OS << getName();

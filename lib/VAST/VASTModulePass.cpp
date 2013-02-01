@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "IR2Datapath.h"
+#include "MinimalDatapathContext.h"
 
 #include "shang/VASTModulePass.h"
 #include "shang/VASTModule.h"
@@ -20,32 +21,12 @@
 #include "shang/Passes.h"
 
 #include "llvm/IR/DataLayout.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 
 #include <map>
 
 using namespace llvm;
-
-
-namespace llvm {
-// FIXME: Move to the VAST headers.
-// Wrapper for the external values.
-struct VASTExternalOperand : public VASTValue {
-  const Value *const V;
-
-  VASTExternalOperand(const Value *V, unsigned Size)
-    : VASTValue(VASTNode::vastCustomNode, Size), V(V) {}
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTExternalOperand *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastCustomNode;
-  }
-
-  void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const {
-    OS << *V << '[' << UB << ',' << LB << ']';
-  }
-};
-}
 
 namespace {
 // Note: Create the memory bus builder will add the input/output ports of the
@@ -180,27 +161,12 @@ struct MemBusBuilder {
   }
 };
 
-struct VASTModuleBuilder : public EarlyDatapathBuilderContext {
+struct VASTModuleBuilder : public MinimalDatapathContext {
   DatapathBuilder Builder;
   VASTModule *VM;
   DataLayout *TD;
   // FIXME: Allocate enough MBBuilder according to the memory bus allocation.
   MemBusBuilder MBBuilder;
-
-  //===--------------------------------------------------------------------===//
-  // Implement the functions of EarlyDatapathBuilderContext.
-  VASTImmediate *getOrCreateImmediate(const APInt &Value) {
-    return VM->getOrCreateImmediateImpl(Value);
-  }
-
-  VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-    unsigned UB, unsigned LB) {
-      return VM->createExprImpl(Opc, Ops, UB, LB);;
-  }
-
-  VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand = true);
-
-  //===--------------------------------------------------------------------===//
 
   //===--------------------------------------------------------------------===//
   void emitFunctionSignature(Function *F, VASTSubModule *SubMod = 0);
@@ -239,8 +205,8 @@ struct VASTModuleBuilder : public EarlyDatapathBuilderContext {
 
   //===--------------------------------------------------------------------===//
   VASTModuleBuilder(VASTModule *Module, DataLayout *TD)
-    : Builder(*this, TD), VM(Module), TD(TD), MBBuilder(Module, Builder, 0),
-      NumSlots(0)  {}
+    : MinimalDatapathContext(Module->getDatapath(), TD), Builder(*this),
+      VM(Module), TD(TD), MBBuilder(Module, Builder, 0), NumSlots(0)  {}
 };
 }
 
@@ -274,31 +240,6 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqVal(Value *V, const Twine &Name) 
   // Index the value.
   Builder.indexVASTExpr(V, R->getValue());
   return R->getValue();
-}
-
-VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *Op,
-                                               bool GetAsInlineOperand) {
-  unsigned NumBits = Builder.getValueSizeInBits(Op);
-
-  if (ConstantInt *Int = dyn_cast<ConstantInt>(Op))
-    return getOrCreateImmediate(Int->getValue());
-
-  if (VASTValPtr V = Builder.lookupExpr(Op)) {
-    // Try to inline the operand if user ask to.
-    if (GetAsInlineOperand) V = V.getAsInlineOperand();
-    return V;
-  }
-
-  // Else we need to create a leaf node for the expression tree.
-  VASTExternalOperand *ValueOp
-    = VM->getAllocator().Allocate<VASTExternalOperand>();
-    
-  new (ValueOp) VASTExternalOperand(Op, NumBits);
-
-  // Remember the newly create VASTValueOperand, so that it will not be created
-  // again.
-  Builder.indexVASTExpr(Op, ValueOp);
-  return ValueOp;
 }
 
 //===----------------------------------------------------------------------===//
@@ -470,6 +411,9 @@ char VASTModuleAnalysis::ID = 0;
 //===----------------------------------------------------------------------===//
 void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequiredTransitive<VASTModuleAnalysis>();
+  AU.addPreservedID(BasicBlockTopOrderID);
+  AU.addPreserved<AliasAnalysis>();
+  AU.addPreserved<ScalarEvolution>();
 }
 
 bool VASTModulePass::runOnFunction(Function &F) {
