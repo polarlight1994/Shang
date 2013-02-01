@@ -11,7 +11,7 @@ FIND_PACKAGE(Verilator  REQUIRED)
 FIND_PACKAGE(SystemC    REQUIRED)
 
 #Set up the llvm binaries.
-set(SYNC ${LLVM_TOOLS_BINARY_DIR}/sync)
+set(SHANG ${LLVM_TOOLS_BINARY_DIR}/shang)
 set(LLC ${LLVM_TOOLS_BINARY_DIR}/llc)
 set(LLI ${LLVM_TOOLS_BINARY_DIR}/lli)
 set(CLANG ${LLVM_TOOLS_BINARY_DIR}/clang)
@@ -31,7 +31,7 @@ set(ADDSUB_ChainingThreshold "-1" CACHE STRING "The chaining threshold of add/su
 set(MULT_ChainingThreshold "-1" CACHE STRING "The chaining threshold of mult function unit (Set to -1 to chains all)")
 set(SHIFT_ChainingThreshold "-1" CACHE STRING "The chaining threshold of shift function unit (Set to -1 to chains all)")
 set(ICMP_ChainingThreshold "-1" CACHE STRING "The chaining threshold of icmp function unit (Set to -1 to chains all)")
-set(EXTRA_HLS_OPTION "" CACHE STRING "Extra high level synthesis options should be passed to sync")
+set(EXTRA_HLS_OPTION "" CACHE STRING "Extra high level synthesis options should be passed to shang")
 set(TIMEOUT "240" CACHE STRING "Maximum time allow the simulation to run")
 set(TIMEOUTS "4000" CACHE STRING "Maximum time allow the simulation to run")
 set(MaxAllowedMuxSize "16" CACHE STRING "Maximum allowed mux size without pipeline register")
@@ -193,8 +193,8 @@ macro(add_general_test test_file config_file altera_setup_prj_file postfix)
   add_custom_command(OUTPUT ${MAIN_RTL_SRC} ${MAIN_SDC_SRC} ${MAIN_UCF_SRC} ${MAIN_SW_LL}
     COMMAND echo "Bad RTL source!" > ${MAIN_RTL_SRC}
     COMMAND echo "Bad Result!" > "${TEST_BINARY_ROOT}/Test.output"
-    COMMAND timeout ${TIMEOUT}s sh -c "${SYNC} -vtm-enable-memscm=false ${TEST_BINARY_ROOT}/${TEST}_config.lua  ${EXTRA_HLS_OPTION} -verify-machineinstrs" || ${CatchFail}
-    DEPENDS ${MAIN_ORIG_BC} ${SYNC} "${TEST_BINARY_ROOT}/${TEST}_config.lua"
+    COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} -vtm-enable-memscm=false ${TEST_BINARY_ROOT}/${TEST}_config.lua  ${EXTRA_HLS_OPTION} -verify-machineinstrs" || ${CatchFail}
+    DEPENDS ${MAIN_ORIG_BC} ${SHANG} "${TEST_BINARY_ROOT}/${TEST}_config.lua"
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
     COMMENT "High-level Synthesising RTL module and interface for ${SYN_FUNC}"
   )  
@@ -321,8 +321,8 @@ macro(add_general_main_test test_file config_file altera_setup_prj_file postfix)
   add_custom_command(OUTPUT ${MAIN_RTL_SRC} ${MAIN_SDC_SRC} ${MAIN_UCF_SRC} ${MAIN_INT_TOP} ${MAIN_INT_BRAM} 
                             ${MAIN_INT_BRAMINIT} ${MAIN_TB_FILE} ${MAIN_MODELDO_FILE}
     COMMAND echo "Bad RTL source!" > ${MAIN_RTL_SRC}
-    COMMAND ${SYNC} -vtm-enable-memscm=false ${TEST_BINARY_ROOT}/${TEST}_config_main.lua  ${EXTRA_HLS_OPTION}
-    DEPENDS ${MAIN_ORIG_BC} ${SYNC} "${TEST_BINARY_ROOT}/${TEST}_config_main.lua"
+    COMMAND ${SHANG} -vtm-enable-memscm=false ${TEST_BINARY_ROOT}/${TEST}_config_main.lua  ${EXTRA_HLS_OPTION}
+    DEPENDS ${MAIN_ORIG_BC} ${SHANG} "${TEST_BINARY_ROOT}/${TEST}_config_main.lua"
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
     COMMENT "High-levle Synthesising RTL module and interface for ${SYN_FUNC}"
   )
