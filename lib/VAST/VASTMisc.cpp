@@ -74,6 +74,12 @@ VASTImmediate *VASTImmediate::False = 0;
 VASTSymbol::VASTSymbol(const char *Name, unsigned BitWidth)
   : VASTNamedValue(VASTNode::vastSymbol, Name, BitWidth) {}
 
+void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
+                                        unsigned LB) const{
+  OS << getName();
+  if (UB) OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
+}
+
 //===----------------------------------------------------------------------===//
 VASTLLVMValue::VASTLLVMValue(const Value *V, unsigned Size)
   : VASTValue(vastLLVMValue, Size)
@@ -391,6 +397,7 @@ void DatapathContainer::reset() {
 }
 
 DatapathContainer::DatapathContainer() {
+
   VASTImmediate::True = getOrCreateImmediateImpl(1, 1);
   VASTImmediate::False = getOrCreateImmediateImpl(0, 1);
 }

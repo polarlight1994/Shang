@@ -191,7 +191,8 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 //----------------------------------------------------------------------------//
 
 VASTModule::VASTModule(Function &F)
-  : VASTNode(vastModule), Ports(NumSpecialPort), Name(F.getName().str()),
+  : VASTNode(vastModule), Datapath(new DatapathContainer()),
+    Ports(NumSpecialPort), Name(F.getName().str()),
     FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0), F(F) {
   createStartSlot();
 }
@@ -318,7 +319,7 @@ const VASTSlot *VASTModule::getFinishSlot() const {
 }
 
 void VASTModule::reset() {
-  Datapath.reset();
+  Datapath->reset();
 
   SeqOps.clear();
   SeqVals.clear();
@@ -333,7 +334,9 @@ void VASTModule::reset() {
   RetPortIdx = 0;
 }
 
-VASTModule::~VASTModule() {}
+VASTModule::~VASTModule() {
+  delete Datapath;
+}
 
 template<typename T>
 static raw_ostream &printDecl(raw_ostream &OS, T *V, bool declAsRegister,
@@ -652,12 +655,5 @@ VASTUse *VASTModule::allocateUse() {
 }
 
 BumpPtrAllocator &VASTModule::getAllocator() {
-  return Datapath.getAllocator();
-}
-
-//----------------------------------------------------------------------------//
-void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
-                                        unsigned LB) const{
-  OS << getName();
-  if (UB) OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
+  return Datapath->getAllocator();
 }

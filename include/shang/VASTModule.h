@@ -85,7 +85,7 @@ public:
   typedef SlotVecTy::iterator slot_iterator;
   typedef SlotVecTy::const_iterator const_slot_iterator;
 private:
-  DatapathContainer Datapath;
+  DatapathContainer *Datapath;
 
   // The slots vector, each slot represent a state in the FSM of the design.
   SlotVecTy Slots;
@@ -182,8 +182,8 @@ public:
   const VASTSlot *getStartSlot() const;
   const VASTSlot *getFinishSlot() const;
 
-  const DatapathContainer &getDatapath() const { return Datapath; }
-  DatapathContainer &getDatapath() { return Datapath; }
+  const DatapathContainer &getDatapath() const { return *Datapath; }
+  DatapathContainer &getDatapath() { return *Datapath; }
   BumpPtrAllocator &getAllocator();
   VASTUse *allocateUse();
 
