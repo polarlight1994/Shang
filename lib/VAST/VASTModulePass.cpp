@@ -205,7 +205,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext {
 
   //===--------------------------------------------------------------------===//
   VASTModuleBuilder(VASTModule *Module, DataLayout *TD)
-    : MinimalDatapathContext(Module->getDatapath(), TD), Builder(*this),
+    : MinimalDatapathContext(*Module, TD), Builder(*this),
       VM(Module), TD(TD), MBBuilder(Module, Builder, 0), NumSlots(0)  {}
 };
 }
@@ -411,6 +411,7 @@ char VASTModuleAnalysis::ID = 0;
 //===----------------------------------------------------------------------===//
 void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequiredTransitive<VASTModuleAnalysis>();
+  AU.addPreserved<VASTModuleAnalysis>();
   AU.addPreservedID(BasicBlockTopOrderID);
   AU.addPreserved<AliasAnalysis>();
   AU.addPreserved<ScalarEvolution>();

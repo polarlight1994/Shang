@@ -182,8 +182,8 @@ public:
   const VASTSlot *getStartSlot() const;
   const VASTSlot *getFinishSlot() const;
 
-  const DatapathContainer &getDatapath() const { return *Datapath; }
-  DatapathContainer &getDatapath() { return *Datapath; }
+  operator DatapathContainer &() { return *Datapath; }
+
   BumpPtrAllocator &getAllocator();
   VASTUse *allocateUse();
 

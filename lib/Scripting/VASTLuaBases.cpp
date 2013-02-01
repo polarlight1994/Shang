@@ -190,13 +190,6 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 
 //----------------------------------------------------------------------------//
 
-VASTModule::VASTModule(Function &F)
-  : VASTNode(vastModule), Datapath(new DatapathContainer()),
-    Ports(NumSpecialPort), Name(F.getName().str()),
-    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0), F(F) {
-  createStartSlot();
-}
-
 VASTSeqValue *
 VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
                            VASTNode::SeqValType T, unsigned Idx, VASTNode *P) {
@@ -318,9 +311,15 @@ const VASTSlot *VASTModule::getFinishSlot() const {
   return &Slots.back();
 }
 
-void VASTModule::reset() {
-  Datapath->reset();
 
+VASTModule::VASTModule(Function &F)
+  : VASTNode(vastModule), Datapath(new DatapathContainer()),
+    Ports(NumSpecialPort), Name(F.getName().str()),
+    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0), F(F) {
+  createStartSlot();
+}
+
+void VASTModule::reset() {
   SeqOps.clear();
   SeqVals.clear();
   Slots.clear();
@@ -332,9 +331,13 @@ void VASTModule::reset() {
   FUPortOffsets.clear();
   NumArgPorts = 0;
   RetPortIdx = 0;
+
+  // Release the datapath after all other contexts released.
+  Datapath->reset();
 }
 
 VASTModule::~VASTModule() {
+  reset();
   delete Datapath;
 }
 

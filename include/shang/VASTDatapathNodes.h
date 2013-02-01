@@ -306,11 +306,12 @@ inline VASTExprPtr PtrInvPair<VASTWire>::getExpr() const {
 
 // The container to hold all VASTExprs in data-path of the design.
 class DatapathContainer {
+  // Use pointer to workaround the typeid problem.
   // The unique immediate in the data-path.
-  FoldingSet<VASTImmediate> UniqueImms;
+  FoldingSet<VASTImmediate> *UniqueImms;
 
   // Expression in data-path
-  FoldingSet<VASTExpr> UniqueExprs;
+  FoldingSet<VASTExpr> *UniqueExprs;
 
 protected:
   BumpPtrAllocator Allocator;
@@ -322,6 +323,7 @@ protected:
 
 public:
   DatapathContainer();
+  ~DatapathContainer();
 
   BumpPtrAllocator &getAllocator() { return Allocator; }
 
