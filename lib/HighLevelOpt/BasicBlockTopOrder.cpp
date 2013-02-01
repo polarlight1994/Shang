@@ -22,7 +22,7 @@
 
 using namespace llvm;
 
-namespace llvm {
+namespace {
 struct BasicBlockTopOrder : public FunctionPass {
   static char ID;
 
@@ -44,7 +44,7 @@ INITIALIZE_PASS(BasicBlockTopOrder, "basicblock-top-order",
                false, true)
 
 char BasicBlockTopOrder::ID = 0;
-char &llvm::BasicBlockTopOrderID= BasicBlockTopOrder::ID;
+char &llvm::BasicBlockTopOrderID = BasicBlockTopOrder::ID;
 
 bool BasicBlockTopOrder::runOnFunction(Function &F){
   Function::BasicBlockListType &Blocks = F.getBasicBlockList();

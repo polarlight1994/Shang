@@ -10,13 +10,12 @@
 // SUnits optimization passes
 //
 //===----------------------------------------------------------------------===//
-#ifndef VBE_HARDWARE_ATOM_PASSES_H
-#define VBE_HARDWARE_ATOM_PASSES_H
+#ifndef SHANG_PASSES_H
+#define SHANG_PASSES_H
 
 #include <string>
 
 namespace llvm {
-class LLVMContext;
 class Pass;
 class FunctionPass;
 class raw_ostream;
@@ -27,6 +26,8 @@ template<typename T, typename AllocatorTy> class StringMap;
 
 //BasicBlockTopOrder Pass - Place the MachineBasicBlocks in topological order.
 extern char &BasicBlockTopOrderID;
+
+extern char &ControlLogicSynthesisID;
 
 FunctionPass *createDesignMetricsPass();
 
@@ -55,6 +56,7 @@ Pass *createScriptingPass(const char *Name, const char *FScript,
                           const char *GScript);
 
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
+void initializeControlLogicSynthesisPass(PassRegistry &Registry);
 void initializeCombPathDelayAnalysisPass(PassRegistry &Registry);
 void initializeSeqLiveVariablesPass(PassRegistry &Registry);
 void initializeSeqReachingDefAnalysisPass(PassRegistry &Registry);
@@ -64,6 +66,5 @@ void initializeHLSInlinerPass(PassRegistry &Registry);
 void initializeTrivialLoopUnrollPass(PassRegistry &Registry);
 void initializeLoopVectorizerPass(PassRegistry &Registry);
 } // end namespace
-
 
 #endif

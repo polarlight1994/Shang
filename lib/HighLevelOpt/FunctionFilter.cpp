@@ -106,6 +106,14 @@ bool FunctionFilter::runOnModule(Module &M) {
 
   if (!isSyntesizingMain) SplitSoftFunctions(M, HWFunctions);
 
+  // Rename the function after we split the module.
+  for (HWFnMap::const_iterator I = TopHWFns.begin(), E = TopHWFns.end();
+       I != E; ++I) {
+    Function *F = M.getFunction(I->first());
+    if (F == 0 || F->isDeclaration()) continue;
+    F->setName(I->second);
+  }
+
   return true;
 }
 
