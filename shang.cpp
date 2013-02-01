@@ -13,7 +13,6 @@
 //
 //===----------------------------------------------------------------------===//
 #include "shang/Passes.h"
-#include "shang/LuaScript.h"
 
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -42,22 +41,19 @@
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/ToolOutputFile.h"
 
 #include <memory>
-
-// This is the only header we need to include for LuaBind to work
-#include "luabind/luabind.hpp"
-
-
-// Include the lua headers (the extern "C" is a requirement because we're
-// using C++ and lua has been compiled as C code)
-extern "C" {
-#include "lua.h"
-#include "lualib.h"
-#include "lauxlib.h"
-}
+#include <map>
 
 using namespace llvm;
+namespace llvm {
+bool loadConfig(const std::string &Path,
+                std::map<std::string, std::string> &ConfigTable,
+                StringMap<std::string> &TopHWFunctions,
+                std::map<std::string, std::pair<std::string, std::string> >
+                &Passes);
+}
 
 // General options for sync.  Other pass-specific options are specified
 // within the corresponding sync passes, and target-specific options
@@ -136,26 +132,24 @@ int main(int argc, char **argv) {
   
   SMDiagnostic Err;
 
-  LuaScript *S = &scriptEngin();
-  S->init();
+  std::map<std::string, std::string> ConfigTable;
+  StringMap<std::string> TopHWFunctions;
+  std::map<std::string, std::pair<std::string, std::string> > Scripts;
+  std::string error;
 
-  // Run the lua script.
-  if (!S->runScriptFile(InputFilename, Err)){
-    Err.print(argv[0], errs());
+  if (loadConfig(InputFilename, ConfigTable, TopHWFunctions, Scripts))
     return 1;
-  }
-
-  S->updateStatus();
 
   // Load the module to be compiled...
   std::auto_ptr<Module> M;
 
-  M.reset(ParseIRFile(S->getValue<std::string>("InputFile"),
-                      Err, Context));
+  M.reset(ParseIRFile(ConfigTable["InputFile"], Err, Context));
+
   if (M.get() == 0) {
     Err.print(argv[0], errs());
     return 1;
   }
+
   Module &mod = *M.get();
 
   // TODO: Build the right triple.
@@ -173,7 +167,7 @@ int main(int argc, char **argv) {
   Builder.addExtension(PassManagerBuilder::EP_LoopOptimizerEnd,
                        LoopOptimizerEndExtensionFn);
   PassManager Passes;
-  Passes.add(new DataLayout(S->getDataLayout()));
+  Passes.add(new DataLayout(ConfigTable["DataLayout"]));
 
   Passes.add(createVerifierPass());
 
@@ -184,8 +178,8 @@ int main(int argc, char **argv) {
   Passes.add(createInternalizePass(ExportList));
 
   // Perform Software/Hardware partition.
-  Passes.add(createFunctionFilterPass(S->getOutputStream("SoftwareIROutput"),
-                                      S->getTopHWFunctions()));
+  tool_output_file SoftwareIROutput(ConfigTable["SoftwareIROutput"].c_str(), error);
+  Passes.add(createFunctionFilterPass(SoftwareIROutput.os(), TopHWFunctions));
   Passes.add(createGlobalDCEPass());
   // Optimize the hardware part.
   //Builder.populateFunctionPassManager(*FPasses);
@@ -202,24 +196,23 @@ int main(int argc, char **argv) {
 
   // Analyse the slack between registers.
   //Passes.add(createCombPathDelayAnalysisPass());
-  Passes.add(createRTLCodeGenPass(S->getOutputStream("RTLOutput")));
-
-  //// Run some scripting passes.
-  //for (LuaScript::scriptpass_it I = S->passes_begin(), E = S->passes_end();
-  //     I != E; ++I) {
-  //  const luabind::object &o = *I;
-  //  Pass *P = createScriptingPass(
-  //    luabind::object_cast<std::string>(I.key()).c_str(),
-  //    luabind::object_cast<std::string>(o["FunctionScript"]).c_str(),
-  //    luabind::object_cast<std::string>(o["GlobalScript"]).c_str());
-  //  Passes.add(P);
-  //}
-
+  tool_output_file RTLOutput(ConfigTable["RTLOutput"].c_str(), error);
+  Passes.add(createRTLCodeGenPass(RTLOutput.os()));
+  
+  // Run some scripting passes.
+  typedef std::map<std::string, std::pair<std::string, std::string> >::iterator
+          iterator;
+  for (iterator I = Scripts.begin(), E = Scripts.end(); I != E; ++I)
+    Passes.add(createScriptingPass(I->first.c_str(),
+                                   I->second.first.c_str(),
+                                   I->second.second.c_str()));
+  
   // Run the passes.
   Passes.run(mod);
 
   // If no error occur, keep the files.
-  S->keepAllFiles();
+  RTLOutput.keep();
+  SoftwareIROutput.keep();
 
   return 0;
 }

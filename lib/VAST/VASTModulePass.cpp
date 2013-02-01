@@ -397,12 +397,12 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I, VASTSlot *CurSlot) {
   if (I.getNumOperands()) {
     VASTSeqValue *RetPort = VM->getRetPort().getSeqVal();
     VM->addAssignment(RetPort, getAsOperandImpl(I.getReturnValue()), CurSlot,
-                      &VM->True, &I);
+                      VASTImmediate::True, &I);
   } else
-    VM->createVirtSeqOp(CurSlot, &VM->True, 0, &I, true);
+    VM->createVirtSeqOp(CurSlot, VASTImmediate::True, 0, &I, true);
 
   // Construct the control flow.
-  addSuccSlot(CurSlot, VM->getFinishSlot(), &VM->True);
+  addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True);
 }
 
 //===----------------------------------------------------------------------===//

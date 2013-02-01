@@ -12,16 +12,15 @@
 //
 //===----------------------------------------------------------------------===//
 #include "BindingTraits.h"
+#include "LuaScript.h"
 
 #include "shang/Passes.h"
-#include "shang/LuaScript.h"
 #include "shang/Utilities.h"
 
 #include "llvm/PassManager.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/ADT/STLExtras.h"
 
@@ -53,13 +52,7 @@ LuaScript::~LuaScript() {
   //for (size_t i = 0, e = array_lengthof(FUSet); i != e; ++i)
   //  if(VFUDesc *Desc = FUSet[i]) delete Desc;
 
-  DeleteContainerSeconds(Files);
   lua_close(State);
-}
-
-void LuaScript::keepAllFiles() {
-  for (FileMapTy::iterator I = Files.begin(), E = Files.end(); I != E; ++I)
-    I->second->keep();
 }
 
 void LuaScript::init() {
@@ -111,45 +104,6 @@ bool LuaScript::runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err) 
   return true;
 }
 
-raw_ostream &LuaScript::getOutputStream(const char *Name) {
-  std::string Path = getValueStr(Name);
-
-  // Try to return the existing file.
-  FileMapTy::const_iterator at = Files.find(Path);
-
-  if (at != Files.end()) return at->second->os();
-
-  if (Path.empty()) return outs();
-
-  std::string error;
-
-  tool_output_file *NewFile = new tool_output_file(Path.c_str(), error);
-  // TODO: Support binary file.
-  Files.GetOrCreateValue(Path, NewFile);
-
-  return NewFile->os();
-}
-
-raw_ostream &LuaScript::getOutputFileStream(std::string &Name) {
-
-  std::string Path = Name;
-
-  // Try to return the existing file.
-  FileMapTy::const_iterator at = Files.find(Path);
-
-  if (at != Files.end()) return at->second->os();
-
-  if (Path.empty()) return outs();
-
-  std::string error;
-
-  tool_output_file *NewFile = new tool_output_file(Path.c_str(), error);
-  // TODO: Support binary file.
-  Files.GetOrCreateValue(Path, NewFile);
-
-  return NewFile->os();
-}
-
 template<enum VFUs::FUTypes T>
 void LuaScript::initSimpleFU(luabind::object FUs) {
   FUSet[T] = new VSimpleFUDesc<T>(FUs[VFUDesc::getTypeName(T)]);
@@ -195,11 +149,6 @@ void LuaScript::updateStatus() {
   VASTNode::ParallelCaseAttr = getValue<std::string>(Path);
   Path[1] = "FullCaseAttr";
   VASTNode::FullCaseAttr = getValue<std::string>(Path);
-
-  for (luabind::iterator I = luabind::iterator(luabind::globals(State)["Functions"]);
-       I != luabind::iterator(); ++I)
-    TopHWFunctions.GetOrCreateValue(luabind::object_cast<std::string>(I.key()),
-                                    luabind::object_cast<std::string>(*I));
 
   // Build the data layout.
   raw_string_ostream s(DataLayout);
@@ -248,4 +197,43 @@ bool llvm::runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err) {
 
 bool llvm::runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err) {
   return Script->runScriptStr(ScriptStr, Err);
+}
+
+namespace llvm {
+bool loadConfig(const std::string &Path,
+                std::map<std::string, std::string> &ConfigTable,
+                StringMap<std::string> &TopHWFunctions,
+                std::map<std::string, std::pair<std::string, std::string> >
+                &Passes) {
+  Script->init();
+
+  SMDiagnostic Err;
+  if (!Script->runScriptFile(Path, Err)){
+    report_fatal_error(Err.getMessage());
+    return true;
+  }
+
+  Script->updateStatus();
+
+  ConfigTable["InputFile"] = Script->getValueStr("InputFile");
+  ConfigTable["SoftwareIROutput"] = Script->getValueStr("SoftwareIROutput");
+  ConfigTable["RTLOutput"] = Script->getValueStr("RTLOutput");
+  ConfigTable["DataLayout"] = Script->getDataLayout();
+
+  typedef luabind::iterator iterator;
+  for (iterator I = iterator(luabind::globals(Script->State)["Functions"]);
+       I != iterator(); ++I)
+    TopHWFunctions.GetOrCreateValue(luabind::object_cast<std::string>(I.key()),
+                                    luabind::object_cast<std::string>(*I));
+
+  for (iterator I = iterator(luabind::globals(Script->State)["Passes"]);
+       I != iterator(); ++I) {
+    const luabind::object &o = *I;
+    Passes.insert(std::make_pair(luabind::object_cast<std::string>(I.key()),
+                  std::make_pair(luabind::object_cast<std::string>(o["FunctionScript"]),
+                                 luabind::object_cast<std::string>(o["GlobalScript"]))));
+  }
+    
+  return false;
+}
 }

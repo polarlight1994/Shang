@@ -32,10 +32,8 @@ struct lua_State;
 
 namespace llvm {
 // Forward declaration.
-class tool_output_file;
 class raw_ostream;
 class SMDiagnostic;
-class PassManager;
 
 // Lua scripting support.
 class LuaScript {
@@ -46,19 +44,25 @@ class LuaScript {
 
   lua_State *State;
 
-  typedef StringMap<tool_output_file*> FileMapTy;
-  FileMapTy Files;
-
   IndexedMap<VFUDesc*, CommonFUIdentityFunctor> FUSet;
   std::string DataLayout;
-
-  StringMap<std::string> TopHWFunctions;
 
   friend VFUDesc *getFUDesc(enum VFUs::FUTypes T);
 
   template<enum VFUs::FUTypes T>
   void initSimpleFU(luabind::object FUs);
 
+  friend bool loadConfig(const std::string &Path,
+                         std::map<std::string, std::string> &ConfigTable,
+                         StringMap<std::string> &TopHWFunctions,
+                         std::map<std::string, std::pair<std::string, std::string> >
+                         &Passes);
+
+  void init();
+  // Read the Function units information from script engine
+  void updateFUs();
+  // Update the status of script engine after script run.
+  void updateStatus();
 public:
 
   LuaScript();
@@ -83,10 +87,6 @@ public:
     return Res.get();
   }
 
-  const StringMap<std::string> &getTopHWFunctions() const {
-    return TopHWFunctions;
-  }
-
   template<class T>
   T getValue(const char *Name) {
     const char *Path[] = { Name };
@@ -105,28 +105,6 @@ public:
   luabind::object getModTemplate(const std::string &Name) const {
     return luabind::globals(State)["Modules"][Name];
   }
-
-  // Iterator to iterate over all user scripting pass from the constraint script.
-  typedef luabind::iterator scriptpass_it;
-
-  scriptpass_it passes_begin() const {
-    return scriptpass_it(luabind::globals(State)["Passes"]);
-  }
-
-  scriptpass_it passes_end() const {
-    return scriptpass_it();
-  }
-
-  raw_ostream &getOutputStream(const char *Name);
-  raw_ostream &getOutputFileStream(std::string &Name);
-
-  void keepAllFiles();
-
-  void init();
-  // Read the Function units information from script engine
-  void updateFUs();
-  // Update the status of script engine after script run.
-  void updateStatus();
 
   bool runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err);
   bool runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err);

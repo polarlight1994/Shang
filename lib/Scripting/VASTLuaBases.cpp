@@ -783,13 +783,13 @@ void DatapathContainer::reset() {
   Allocator.Reset();
 
   // Reinsert the TRUE and False.
-  UniqueImms.InsertNode(&True);
-  UniqueImms.InsertNode(&False);
+  VASTImmediate::True = getOrCreateImmediateImpl(1, 1);
+  VASTImmediate::False = getOrCreateImmediateImpl(0, 1);
 }
 
-DatapathContainer::DatapathContainer() : True(APInt(1, 1)), False(APInt(1, 0)){
-  UniqueImms.InsertNode(&True);
-  UniqueImms.InsertNode(&False);
+DatapathContainer::DatapathContainer() {
+  VASTImmediate::True = getOrCreateImmediateImpl(1, 1);
+  VASTImmediate::False = getOrCreateImmediateImpl(0, 1);
 }
 
 VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {

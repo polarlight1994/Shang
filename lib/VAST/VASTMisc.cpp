@@ -66,6 +66,11 @@ void VASTImmediate::Profile(FoldingSetNodeID& ID) const {
   Int.Profile(ID);
 }
 
+VASTImmediate *VASTImmediate::True = 0;
+VASTImmediate *VASTImmediate::False = 0;
+
+//===----------------------------------------------------------------------===//
+
 VASTSymbol::VASTSymbol(const char *Name, unsigned BitWidth)
   : VASTNamedValue(VASTNode::vastSymbol, Name, BitWidth) {}
 
