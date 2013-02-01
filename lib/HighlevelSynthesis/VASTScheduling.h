@@ -76,7 +76,7 @@ public:
 
   template<int DISTANCE>
   static VASTDep CreateMemDep(int Latency) {
-    return VDEdge(MemDep, Latency, DISTANCE);
+    return VASTDep(MemDep, Latency, DISTANCE);
   }
 
   static VASTDep CreateMemDep(int Latency, int Distance) {
