@@ -2,6 +2,7 @@ add_llvm_library(ShangVAST
   VASTModulePass.cpp
   VASTExpr.cpp
   VASTExprBuilder.cpp
+  DatapathContainer.cpp
   MinimalDatapathContext.cpp
   IR2Datapath.cpp
   DesignMetrics.cpp
@@ -10,6 +11,7 @@ add_llvm_library(ShangVAST
   VASTSubModules.cpp
   VASTMisc.cpp
   ScriptingPass.cpp
+  ControlLogicSynthesis.cpp
   RTLCodeGen.cpp
 )
 
