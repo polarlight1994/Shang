@@ -192,6 +192,26 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     return LandingSlot;
   }
 
+  // DIRTYHACK: Allocate enough slots for the read operation.
+  VASTSlot *advanceToNextSlot(VASTSlot *CurSlot) {
+    BasicBlock *BB = CurSlot->getParent();
+    VASTSlot *&Slot = LandingSlots[BB];
+    assert(Slot == CurSlot && "CurSlot not the last slot in the BB!");
+    assert(CurSlot->succ_empty() && "CurSlot already have successors!");
+    Slot = VM->createSlot(++NumSlots, BB);
+    // Connect the slots.
+    addSuccSlot(CurSlot, Slot, VASTImmediate::True);
+    return Slot;
+  }
+
+  VASTSlot *advanceToNextSlot(VASTSlot *CurSlot, unsigned NumSlots) {
+    VASTSlot *S = CurSlot;
+    for (unsigned i = 0; i < NumSlots; ++i)
+      S = advanceToNextSlot(S);
+
+    return S;
+  }
+
   void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd) {
     Builder.orEqual(S->getOrCreateSuccCnd(NextSlot), Cnd);
   }
@@ -359,12 +379,11 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
 }
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
-
-
+  buildMemoryTransaction(I.getPointerOperand(), 0, 0, I);
 }
 
 void VASTModuleBuilder::visitStoreInst(StoreInst &I) {
-
+  buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(), 0, I);
 }
 
 //===----------------------------------------------------------------------===//
@@ -386,7 +405,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
 
   // Build the logic to start the transaction.
   VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, Data ? 4 : 3, &I,
-                                    VASTSeqInst::Launch);
+                                VASTSeqInst::Launch);
   unsigned CurOperandIdx = 0;
 
   // Emit Address.
@@ -414,11 +433,26 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   // Compute the byte enable.
   RegName = VFUMemBus::getByteEnableName(PortNum) + "_r";
   R = VM->getSymbol<VASTSeqValue>(RegName);
-  unsigned ByteEn = getByteEnable(Addr);
-  Op->addSrc(Builder.getOrCreateImmediate(ByteEn, R->getBitWidth()), 3, false, R);
+  VASTValPtr ByteEn
+    = Builder.getOrCreateImmediate(getByteEnable(Addr), R->getBitWidth());
+  Op->addSrc(ByteEn, CurOperandIdx++, false, R);
 
   // Enable the memory bus at the same slot.
+  // Disable the memory bus at the next slot.
 
+  // Read the result of the memory transaction.
+  if (Data == 0) {
+    Slot = advanceToNextSlot(Slot, getFUDesc<VFUMemBus>()->getReadLatency());
+    // Get the input port from the memory bus.
+    RegName = VFUMemBus::getInDataBusName(PortNum);
+    R = VM->getSymbol<VASTSeqValue>(RegName);
+    VASTSeqValue *Result = getOrCreateSeqVal(&I, I.getName());
+    VM->latchValue(Result, R, Slot, VASTImmediate::True, &I);
+  }
+
+  // Move the the next slot so that the other operations are not conflict with
+  // the current memory operations.
+  advanceToNextSlot(Slot);
 }
 
 //===----------------------------------------------------------------------===//
