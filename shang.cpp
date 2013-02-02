@@ -71,8 +71,7 @@ static void LoopOptimizerEndExtensionFn(const PassManagerBuilder &Builder,
   PM.add(createInstructionCombiningPass());
 }
 
-
-static void addHighlevelSynthesisPasses(PassManager &PM) {
+static void addHLSPreparePasses(PassManager &PM) {
   // Basic AliasAnalysis support.
   // Add TypeBasedAliasAnalysis before BasicAliasAnalysis so that
   // BasicAliasAnalysis wins if they disagree. This is intended to help
@@ -115,6 +114,27 @@ static void addHighlevelSynthesisPasses(PassManager &PM) {
   PM.add(createScalarEvolutionAliasAnalysisPass());
 }
 
+void addIROptimizationPasses(PassManager &HLSPasses) {
+  PassManagerBuilder Builder;
+  Builder.DisableUnrollLoops = true;
+  Builder.LibraryInfo = new TargetLibraryInfo();
+  Builder.LibraryInfo->disableAllFunctions();
+  Builder.OptLevel = 3;
+  Builder.SizeLevel = 2;
+  Builder.DisableSimplifyLibCalls = true;
+  Builder.Inliner = createHLSInlinerPass();
+  Builder.addExtension(PassManagerBuilder::EP_LoopOptimizerEnd,
+                       LoopOptimizerEndExtensionFn);
+
+  HLSPasses.add(createVerifierPass());
+  // Optimize the hardware part.
+  //Builder.populateFunctionPassManager(*FPasses);
+  Builder.populateModulePassManager(HLSPasses);
+  Builder.populateLTOPassManager(HLSPasses,
+                                 /*Internalize*/false,
+                                 /*RunInliner*/true);
+}
+
 // main - Entry point for the sync compiler.
 //
 int main(int argc, char **argv) {
@@ -152,67 +172,55 @@ int main(int argc, char **argv) {
 
   Module &mod = *M.get();
 
-  // TODO: Build the right triple.
-  Triple TheTriple(mod.getTargetTriple());
+  // Stage 1, perform software/hardware partition.
+  {
+    PassManager PreHLSPasses;
+    PreHLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
 
+    PreHLSPasses.add(createVerifierPass());
+
+    // This is the final bitcode, internalize it to expose more optimization
+    // opportunities. Note that we should internalize it before SW/HW partition,
+    // otherwise we may lost some information that help the later internalize.
+    const char *ExportList[] = { "main" };
+    PreHLSPasses.add(createInternalizePass(ExportList));
+
+    // Perform Software/Hardware partition.
+    tool_output_file SoftwareIROutput(ConfigTable["SoftwareIROutput"].c_str(), error);
+    PreHLSPasses.add(createFunctionFilterPass(SoftwareIROutput.os(), TopHWFunctions));
+    PreHLSPasses.add(createGlobalDCEPass());
+
+    PreHLSPasses.run(mod);
+    SoftwareIROutput.keep();
+  }
+
+  // Stage 2, perform high-level synthesis.
   // Build up all of the passes that we want to do to the module.
-  PassManagerBuilder Builder;
-  Builder.DisableUnrollLoops = true;
-  Builder.LibraryInfo = new TargetLibraryInfo();
-  Builder.LibraryInfo->disableAllFunctions();
-  Builder.OptLevel = 3;
-  Builder.SizeLevel = 2;
-  Builder.DisableSimplifyLibCalls = true;
-  Builder.Inliner = createHLSInlinerPass();
-  Builder.addExtension(PassManagerBuilder::EP_LoopOptimizerEnd,
-                       LoopOptimizerEndExtensionFn);
-  PassManager Passes;
-  Passes.add(new DataLayout(ConfigTable["DataLayout"]));
+  PassManager HLSPasses;
+  HLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
 
-  Passes.add(createVerifierPass());
+  addIROptimizationPasses(HLSPasses);
 
-  // This is the final bitcode, internalize it to expose more optimization
-  // opportunities. Note that we should internalize it before SW/HW partition,
-  // otherwise we may lost some information that help the later internalize.
-  const char *ExportList[] = { "main" };
-  Passes.add(createInternalizePass(ExportList));
-
-  // Perform Software/Hardware partition.
-  tool_output_file SoftwareIROutput(ConfigTable["SoftwareIROutput"].c_str(), error);
-  Passes.add(createFunctionFilterPass(SoftwareIROutput.os(), TopHWFunctions));
-  Passes.add(createGlobalDCEPass());
-  // Optimize the hardware part.
-  //Builder.populateFunctionPassManager(*FPasses);
-  Builder.populateModulePassManager(Passes);
-  Builder.populateLTOPassManager(Passes,
-                                 /*Internalize*/false,
-                                 /*RunInliner*/true);
-
-  //PM.add(createPrintModulePass(&dbgs()));
-   
-  // We do not use the stream that passing into addPassesToEmitFile.
-
-  addHighlevelSynthesisPasses(Passes);
+  addHLSPreparePasses(HLSPasses);
 
   // Analyse the slack between registers.
   //Passes.add(createCombPathDelayAnalysisPass());
   tool_output_file RTLOutput(ConfigTable["RTLOutput"].c_str(), error);
-  Passes.add(createRTLCodeGenPass(RTLOutput.os()));
+  HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
   
   // Run some scripting passes.
   typedef std::map<std::string, std::pair<std::string, std::string> >::iterator
           iterator;
   for (iterator I = Scripts.begin(), E = Scripts.end(); I != E; ++I)
-    Passes.add(createScriptingPass(I->first.c_str(),
-                                   I->second.first.c_str(),
-                                   I->second.second.c_str()));
+    HLSPasses.add(createScriptingPass(I->first.c_str(),
+                                      I->second.first.c_str(),
+                                      I->second.second.c_str()));
   
   // Run the passes.
-  Passes.run(mod);
+  HLSPasses.run(mod);
 
   // If no error occur, keep the files.
   RTLOutput.keep();
-  SoftwareIROutput.keep();
 
   return 0;
 }
