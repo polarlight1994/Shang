@@ -524,45 +524,41 @@ VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V) {
   return W;
 }
 
-void VASTModule::addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
-                               VASTValPtr GuardCnd, Instruction *Inst,
-                               bool AddSlotActive) {
+void VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
+                            VASTValPtr GuardCnd, Value *V) {
   assert(Src && "Bad assignment source!");
-  createSeqOp(Slot, GuardCnd, 1, Inst, AddSlotActive)->addSrc(Src, 0, true, V);
+  VASTSeqInst *Inst = lauchInst(Slot, GuardCnd, 1, V, VASTSeqInst::Latch);
+  Inst->addSrc(Src, 0, true, SeqVal);
 }
 
-VASTSeqOp *VASTModule::createSeqOp(VASTSlot *Slot, VASTValPtr Pred,
-                                   unsigned NumOps, Instruction *Inst,
-                                   bool AddSlotActive) {
+VASTSeqInst *
+VASTModule::lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps, Value *V,
+                      VASTSeqInst::Type T) {
   VASTUse *UseBegin = getAllocator().Allocate<VASTUse>(NumOps + 1);
 
   // Create the uses in the list.
-  VASTSeqOp *Def = new VASTSeqOp(Slot, AddSlotActive, Inst, UseBegin, NumOps);
+  VASTSeqInst *SeqInst = new VASTSeqInst(V, Slot, UseBegin, NumOps, T);
   // Create the predicate operand.
-  new (UseBegin) VASTUse(Def, Pred);
+  new (UseBegin) VASTUse(SeqInst, Pred);
 
   // Add the SeqOp to the the all SeqOp list.
-  SeqOps.push_back(Def);
+  SeqOps.push_back(SeqInst);
 
-  return Def;
+  return SeqInst;
 }
 
-VASTSeqOp *VASTModule::createVirtSeqOp(VASTSlot *Slot, VASTValPtr Pred,
-                                       VASTSeqValue *D, Instruction *Inst,
-                                       bool AddSlotActive) {
-  VASTUse *UseBegin = getAllocator().Allocate<VASTUse>(1);
-
-  // Create the uses in the list.
-  VASTSeqOp *Def = new VASTSeqOp(Slot, AddSlotActive, Inst, UseBegin, 0, true);
+void VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
+                                 VASTSlot *Slot, VASTValPtr GuardCnd,
+                                 bool UseSlotActive,bool ExportDefine) {
+  VASTUse *UseBegin = getAllocator().Allocate<VASTUse>(1 + 1);
+  VASTSeqCtrlOp *CtrlOp = new VASTSeqCtrlOp(Slot, UseSlotActive, UseBegin);
   // Create the predicate operand.
-  new (UseBegin) VASTUse(Def, Pred);
-  // Add the defined value.
-  if (D) Def->addDefDst(D);
+  new (UseBegin) VASTUse(CtrlOp, GuardCnd);
+  // Create the source of the assignment
+  CtrlOp->addSrc(Src, 0, ExportDefine, SeqVal);
 
   // Add the SeqOp to the the all SeqOp list.
-  SeqOps.push_back(Def);
-
-  return Def;
+  SeqOps.push_back(CtrlOp);
 }
 
 void VASTModule::print(raw_ostream &OS) const {

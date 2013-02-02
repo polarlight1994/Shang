@@ -13,12 +13,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "VASTExprBuilder.h"
+
 #include "shang/Utilities.h"
-#include "shang/VASTControlPathNodes.h"
-#include "shang/VASTModule.h"
 
 #include "llvm/Support/ErrorHandling.h"
-#define DEBUG_TYPE "vtm-vast-expr-builder"
+#define DEBUG_TYPE "vast-expr-builder"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;

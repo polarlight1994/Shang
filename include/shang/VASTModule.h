@@ -15,7 +15,10 @@
 
 #include "shang/VASTNodeBases.h"
 #include "shang/VASTDatapathNodes.h"
-#include "shang/VASTControlPathNodes.h"
+#include "shang/VASTSeqOp.h"
+#include "shang/VASTSeqValue.h"
+#include "shang/VASTSlot.h"
+#include "shang/VASTSlot.h"
 
 #include "shang/FUInfo.h"
 
@@ -24,11 +27,13 @@
 #include <map>
 
 namespace llvm {
+class Value;
 class VASTWire;
 class VASTRegister;
 class VASTBlockRAM;
 class VASTSubModule;
 class VASTSeqCode;
+class VASTSeqInst;
 class DatapathContainer;
 class VASTExprBuilder;
 class vlang_raw_ostream;
@@ -302,15 +307,16 @@ public:
   // Fine-grain Control-flow creation functions.
   // Create a SeqOp that contains NumOps operands, please note that the predicate
   // operand is excluded from NumOps.
-  VASTSeqOp *createSeqOp(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps,
-                         Instruction *Inst, bool AddSlotActive);
-  // Add the virtual VASTSeqOp which define the VASTSeqValue D.
-  VASTSeqOp *createVirtSeqOp(VASTSlot *Slot, VASTValPtr Pred, VASTSeqValue *D,
-                             Instruction *Inst, bool AddSlotActive);
+  VASTSeqInst *lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps,
+                         Value *V, VASTSeqInst::Type T);
+  
+  void latchValue(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,
+                  VASTValPtr GuardCnd, Value *V);
 
-  void addAssignment(VASTSeqValue *V, VASTValPtr Src, VASTSlot *Slot,
-                     VASTValPtr GuardCnd, Instruction *Inst = 0,
-                     bool AddSlotActive = true);
+  /// Create an assignment on the control logic.
+  void assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,
+                       VASTValPtr GuardCnd, bool UseSlotActive,
+                       bool ExportDefine = true);
 
   // Iterate over all SeqOps in the module.
   typedef ilist<VASTSeqOp>::iterator seqop_iterator;

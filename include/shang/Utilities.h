@@ -19,9 +19,6 @@
 #include "llvm/Support/Compiler.h"
 
 namespace llvm {
-inline unsigned getByteEnable(unsigned SizeInBytes) {
-  return (0x1 << SizeInBytes) - 1;
-}
 // Get the bit slice in range (UB, LB].
 /// GetBits - Retrieve bits between [LB, UB).
 inline uint64_t getBitSlice64(uint64_t x, unsigned UB, unsigned LB = 0) {

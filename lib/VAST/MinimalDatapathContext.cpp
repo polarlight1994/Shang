@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 #include "MinimalDatapathContext.h"
-#include "shang/VASTControlPathNodes.h"
 
 using namespace llvm;
 

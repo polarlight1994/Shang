@@ -142,10 +142,10 @@ bool SeqReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
       // The registers are not propagate from the slot to its alias slot.
       if (RegNum && FromAliasSlot) LiveInToSlot = false;
 
-      const Instruction *Inst = PredOut.Op->getInst();
+      const Value *V = PredOut.Op->getValue();
       // Do not add live out if data register R not live in the new BB.
-      if (Inst) {
-        if (isa<PHINode>(Inst) && IsDefSlot) {
+      if (V) {
+        if (isa<PHINode>(V) && IsDefSlot) {
           // The register is defined by the VOpMvPhi at FromSlot.
           // However, the copy maybe disabled when jumping to ToBB.
           // Then this define is even not live-in ToSlot, we can simply skip the

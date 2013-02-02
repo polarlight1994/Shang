@@ -14,8 +14,7 @@
 #ifndef VAST_SUBMODULES_H
 #define VAST_SUBMODULES_H
 
-#include "shang/VASTNodeBases.h"
-#include "shang/VASTControlPathNodes.h"
+#include "shang/VASTSeqValue.h"
 
 #include "llvm/ADT/StringMap.h"
 

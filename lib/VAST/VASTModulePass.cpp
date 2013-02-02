@@ -161,7 +161,8 @@ struct MemBusBuilder {
   }
 };
 
-struct VASTModuleBuilder : public MinimalDatapathContext {
+struct VASTModuleBuilder : public MinimalDatapathContext,
+                           public InstVisitor<VASTModuleBuilder, void> {
   DatapathBuilder Builder;
   VASTModule *VM;
   DataLayout *TD;
@@ -198,10 +199,19 @@ struct VASTModuleBuilder : public MinimalDatapathContext {
   //===--------------------------------------------------------------------===//
   void visitBasicBlock(BasicBlock *BB);
 
-  // Build the memory transaction.
-  void visitLoadInst(LoadInst &I, VASTSlot *CurSlot);
-  void visitStoreInst(StoreInst &I, VASTSlot *CurSlot);
-  void visitReturnInst(ReturnInst &I, VASTSlot *CurSlot);
+  // Build the SeqOps from the LLVM Instruction.
+  void visitReturnInst(ReturnInst &I);
+  void visitLoadInst(LoadInst &I);
+  void visitStoreInst(StoreInst &I);
+
+  //===--------------------------------------------------------------------===//
+  void buildMemoryTransaction(Value *Addr, Value *Data, unsigned PortNum,
+                              Instruction &Inst);
+  unsigned getByteEnable(Value *Addr) const;
+
+  void visitInstruction(Instruction &I) {
+    llvm_unreachable("Unhandled instruction!");
+  }
 
   //===--------------------------------------------------------------------===//
   VASTModuleBuilder(VASTModule *Module, DataLayout *TD)
@@ -246,8 +256,9 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqVal(Value *V, const Twine &Name) 
 void VASTModuleBuilder::emitFunctionSignature(Function *F,
                                               VASTSubModule *SubMod) {
   VASTSlot *StartSlot = VM->getStartSlot();
-  SmallVector<VASTSeqValue*, 4> Args;
+  SmallVector<VASTSeqValue*, 4> ArgRegs;
   SmallVector<VASTValPtr, 4> ArgPorts;
+  SmallVector<Value*, 4> Args;
 
   for (Function::arg_iterator I = F->arg_begin(), E = F->arg_end(); I != E; ++I)
   {
@@ -266,8 +277,9 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
       = VM->addInputPort(Name, BitWidth, VASTModule::ArgPort)->getValue();
     // Remember the expression for the argument input.
     VASTSeqValue *SeqVal = getOrCreateSeqVal(Arg, Name);
-    Args.push_back(SeqVal);
+    ArgRegs.push_back(SeqVal);
     ArgPorts.push_back(V);
+    Args.push_back(Arg);
   }
 
   Type *RetTy = F->getReturnType();
@@ -285,8 +297,8 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
 
   // Copy the value to the register.
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
-  for (unsigned i = 0, e = Args.size(); i != e; ++i)
-    VM->addAssignment(Args[i], ArgPorts[i], StartSlot, StartPort);
+  for (unsigned i = 0, e = ArgRegs.size(); i != e; ++i)
+    VM->latchValue(ArgRegs[i], ArgPorts[i], StartSlot, StartPort, Args[i]);
 }
 
 void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
@@ -311,8 +323,6 @@ void VASTModuleBuilder::allocateSubModules() {
 
 //===----------------------------------------------------------------------===//
 void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
-  VASTSlot *CurSlot = getOrCreateLandingSlot(BB);
-
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
     // PHINodes will be handled in somewhere else.
@@ -324,26 +334,91 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
       continue;
     }
 
-    switch (I->getOpcode()) {
-    case Instruction::Ret:
-      visitReturnInst(cast<ReturnInst>(*I), CurSlot);
-      break;
-    default: llvm_unreachable("Instruction not supported yet!"); break;
-    }
+    // Otherwise build the SeqOp for this operation.
+    visit(I);
   }
 }
 
-void VASTModuleBuilder::visitReturnInst(ReturnInst &I, VASTSlot *CurSlot) {
+void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
+  VASTSlot *CurSlot = getOrCreateLandingSlot(I.getParent());
+  unsigned NumOperands = I.getNumOperands();
+  VASTSeqInst *SeqInst = 
+    VM->lauchInst(CurSlot, VASTImmediate::True, NumOperands, &I,
+                  VASTSeqInst::Latch);
+
   // Assign the return port if necessary.
-  if (I.getNumOperands()) {
+  if (NumOperands) {
     VASTSeqValue *RetPort = VM->getRetPort().getSeqVal();
-    VM->addAssignment(RetPort, getAsOperandImpl(I.getReturnValue()), CurSlot,
-                      VASTImmediate::True, &I);
-  } else
-    VM->createVirtSeqOp(CurSlot, VASTImmediate::True, 0, &I, true);
+    // Please note that we do not need to export the definition of the value
+    // on the return port.
+    SeqInst->addSrc(getAsOperandImpl(I.getReturnValue()), 0, false, RetPort);
+  }
 
   // Construct the control flow.
   addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True);
+}
+
+void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
+
+
+}
+
+void VASTModuleBuilder::visitStoreInst(StoreInst &I) {
+
+}
+
+//===----------------------------------------------------------------------===//
+// Memory transaction code building functions.
+static unsigned GetByteEnable(unsigned SizeInBytes) {
+  return (0x1 << SizeInBytes) - 1;
+}
+
+unsigned VASTModuleBuilder::getByteEnable(Value *Addr) const {
+  PointerType *AddrTy = cast<PointerType>(Addr->getType());
+  Type *DataTy = AddrTy->getElementType();
+  return GetByteEnable(TD->getTypeStoreSize(DataTy));
+}
+
+void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
+                                               unsigned PortNum, Instruction &I){
+  BasicBlock *ParentBB = I.getParent();
+  VASTSlot *Slot = getOrCreateLandingSlot(ParentBB);
+
+  // Build the logic to start the transaction.
+  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, Data ? 4 : 3, &I,
+                                    VASTSeqInst::Launch);
+  unsigned CurOperandIdx = 0;
+
+  // Emit Address.
+  std::string RegName = VFUMemBus::getAddrBusName(PortNum) + "_r";
+  VASTSeqValue *R = VM->getSymbol<VASTSeqValue>(RegName);
+  Op->addSrc(getAsOperandImpl(Addr), CurOperandIdx++, false, R);
+
+  VASTValPtr WEn = VASTImmediate::False;
+
+  if (Data) {
+    // Assign store data.
+    RegName = VFUMemBus::getOutDataBusName(PortNum) + "_r";
+    R = VM->getSymbol<VASTSeqValue>(RegName);
+    // Please note that the data are not present when we are performing a load.
+    Op->addSrc(getAsOperandImpl(Data), CurOperandIdx++, false, R);
+    // Set write enable to 1.
+    WEn = VASTImmediate::True;
+  }
+  
+  // Assign the write enable.
+  RegName = VFUMemBus::getCmdName(PortNum) + "_r";
+  R = VM->getSymbol<VASTSeqValue>(RegName);
+  Op->addSrc(WEn, CurOperandIdx++, false, R);
+
+  // Compute the byte enable.
+  RegName = VFUMemBus::getByteEnableName(PortNum) + "_r";
+  R = VM->getSymbol<VASTSeqValue>(RegName);
+  unsigned ByteEn = getByteEnable(Addr);
+  Op->addSrc(Builder.getOrCreateImmediate(ByteEn, R->getBitWidth()), 3, false, R);
+
+  // Enable the memory bus at the same slot.
+
 }
 
 //===----------------------------------------------------------------------===//

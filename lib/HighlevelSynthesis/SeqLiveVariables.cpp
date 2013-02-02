@@ -11,20 +11,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/VASTModulePass.h"
 #include "SeqLiveVariables.h"
 
 #include "shang/Passes.h"
 
+#include "shang/VASTSeqOp.h"
+#include "shang/VASTSeqValue.h"
 #include "shang/VASTModule.h"
-#include "shang/VASTControlPathNodes.h"
+#include "shang/VASTModulePass.h"
 
-#include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/MachineBasicBlock.h"
-
+#include "llvm/IR/Instructions.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/DepthFirstIterator.h"
-#define DEBUG_TYPE "vtm-live-variables"
+#define DEBUG_TYPE "shang-live-variables"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
@@ -36,13 +35,13 @@ SeqLiveVariables::VarName::VarName(VASTSeqDef D)
   : Dst(D), S(D->getSlot()) {}
 
 bool SeqLiveVariables::VarInfo::isPHI() const {
-  return isa<PHINode>(Inst);
+  return isa<PHINode>(V);
 }
 
 void SeqLiveVariables::VarInfo::dump() const {
   if (isPHI()) dbgs() << "  [PHI]";
 
-  if (Inst) Inst->print(dbgs());
+  if (V) V->print(dbgs());
 
   dbgs() << "  Defined in Slots: ";
 
@@ -228,23 +227,23 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
   // VASTSlot corresponding to a BB
   std::map<std::pair<BasicBlock*, VASTSeqValue*>, VarInfo*> PHIInfos;
   // Remeber the VarInfo defined
-  std::map<Instruction*, VarInfo*> InstVarInfo;
+  std::map<Value*, VarInfo*> InstVarInfo;
   for (seqop_iterator I = VM->seqop_begin(), E = VM->seqop_end(); I != E; ++I) {
     VASTSeqOp *SeqOp = I;
-    Instruction *Inst = SeqOp->getInst();
+    Value *V = SeqOp->getValue();
 
-    if (Inst == 0) continue;
+    if (V == 0) continue;
 
     unsigned SlotNum = SeqOp->getSlotNum();
 
     // Only compute the PHIJoins for VOpMvPhi.
-    if (PHINode *PN = dyn_cast<PHINode>(Inst)) {
+    if (PHINode *PN = dyn_cast<PHINode>(V)) {
       VASTSeqDef Def = SeqOp->getDef(0);
       BasicBlock *TargetBB = SeqOp->getSlot()->getParentBB();
 
       // Create the VarInfo for the PHI.
       VarInfo *&VI = PHIInfos[std::make_pair(TargetBB, Def)];
-      if (VI == 0) VI = new (Allocator) VarInfo(Inst);
+      if (VI == 0) VI = new (Allocator) VarInfo(PN);
       // Set the defined slot.
       VI->DefSlots.set(SlotNum);
       VI->Kills.set(SlotNum);
@@ -254,8 +253,8 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
       assert(SeqOp->getNumDefs() == 1 && "Multi-definition not supported yet!");
       VASTSeqDef Def = SeqOp->getDef(0);
 
-      VarInfo *&VI = InstVarInfo[Inst];
-      if (VI == 0) VI = new (Allocator) VarInfo(Inst);
+      VarInfo *&VI = InstVarInfo[V];
+      if (VI == 0) VI = new (Allocator) VarInfo(V);
       // Set the defined slot.
       VI->DefSlots.set(SlotNum);
       VI->Kills.set(SlotNum);

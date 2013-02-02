@@ -14,7 +14,6 @@
 #include "MinimalDatapathContext.h"
 
 #include "shang/VASTModulePass.h"
-#include "shang/VASTControlPathNodes.h"
 #include "shang/VASTModule.h"
 #include "shang/Passes.h"
 
@@ -158,7 +157,7 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
     VASTSeqValue *NextSlotReg = I->first->getValue();
     if (I->first->SlotNum == S->SlotNum) SelfLoopCnd = I->second;
     // Build the assignment and update the successor branching condition.
-    VM->addAssignment(NextSlotReg, AlwaysTrue, S, I->second);
+    VM->assignCtrlLogic(NextSlotReg, AlwaysTrue, S, I->second, true);
   }
 
   SmallVector<VASTValPtr, 2> CndVector;
@@ -166,9 +165,10 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
   if (SelfLoopCnd)
     CndVector.push_back(Builder->buildNotExpr(SelfLoopCnd));
 
-  // Disable the current slot.
-  VM->addAssignment(S->getValue(), VASTImmediate::False, S,
-                    Builder->buildAndExpr(CndVector, 1));
+  // Disable the current slot. Do not export the definition of the assignment.
+  VM->assignCtrlLogic(S->getValue(), VASTImmediate::False, S,
+                      Builder->buildAndExpr(CndVector, 1),
+                      true/*, false*/);
 
   if (const FUCtrlVecTy *EnableSet = getEnableSet(S))
     for (const_fu_ctrl_it I = EnableSet->begin(), E = EnableSet->end();
@@ -180,8 +180,11 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
       VASTValPtr ReadyCnd
         = Builder->buildAndExpr(S->getReady()->getAsInlineOperand(false),
                                 I->second.getAsInlineOperand(), 1);
-      VM->addAssignment(I->first, ReadyCnd, S, Builder->buildAndExpr(CndVector, 1),
-                        0, false);
+      // No need to export the definition of the enable assignment, it is never
+      // use inside the module.
+      VM->assignCtrlLogic(I->first, ReadyCnd, S,
+                          Builder->buildAndExpr(CndVector, 1),
+                          false, false);
     }
 
   SmallVector<VASTValPtr, 4> DisableAndCnds;
@@ -199,8 +202,11 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
       DisableAndCnds.push_back(I->second);
 
       VASTSeqValue *En = I->first;
-      VM->addAssignment(En, VASTImmediate::False, S,
-                        Builder->buildAndExpr(DisableAndCnds, 1), 0, false);
+      // No need to export the definition of the disable assignment, it is never
+      // use inside the module.
+      VM->assignCtrlLogic(En, VASTImmediate::False, S, 
+                          Builder->buildAndExpr(DisableAndCnds, 1),
+                          false, true);
       DisableAndCnds.clear();
     }
 }
@@ -219,7 +225,7 @@ void ControlLogicSynthesis::getherControlLogicInfo(VASTSlot *S) {
   for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
     VASTSeqOp *SeqOp = *I;
     VASTValPtr Pred = SeqOp->getPred();
-    Instruction *Inst = SeqOp->getInst();
+    Instruction *Inst = dyn_cast<Instruction>(SeqOp->getValue());
 
     if (Inst == 0) continue;
 

@@ -15,6 +15,9 @@
 
 #include "VASTScheduling.h"
 #include "shang/VASTModule.h"
+#include "shang/VASTSeqValue.h"
+#define DEBUG_TYPE "vast-scheduling-graph"
+#include "llvm/Support/Debug.h"
 
 using namespace llvm;
 

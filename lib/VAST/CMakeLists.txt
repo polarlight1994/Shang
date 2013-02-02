@@ -7,7 +7,9 @@ add_llvm_library(ShangVAST
   IR2Datapath.cpp
   DesignMetrics.cpp
   LUTMapping.cpp
-  VASTControlpath.cpp
+  VASTSeqOp.cpp
+  VASTSeqValue.cpp
+  VASTSlot.cpp
   VASTSubModules.cpp
   VASTMisc.cpp
   ScriptingPass.cpp

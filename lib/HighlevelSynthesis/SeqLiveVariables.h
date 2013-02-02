@@ -33,7 +33,7 @@ class VASTSlot;
 class VASTModule;
 template<class PtrType, unsigned SmallSize> class SmallPtrSet;
 class BasicBlock;
-class Instruction;
+class Value;
 
 class SeqLiveVariables : public VASTModulePass {
   VASTModule *VM;
@@ -44,9 +44,9 @@ public:
 
   struct VarInfo {
     // DefinedByPHI - Set to true if this variable defined by PHI node.
-    Instruction *Inst;
+    Value *V;
 
-    explicit VarInfo(Instruction *Inst = 0) : Inst(Inst) {}
+    explicit VarInfo(Value *V = 0) : V(V) {}
 
     bool isPHI() const;
 
@@ -54,6 +54,11 @@ public:
     /// set which uses the Slot number as an index.
     ///
     SparseBitVector<> DefSlots;
+
+    /// LiveInSlots - Set of the Slot that this variable just live-in from the
+    /// def slots. Please note that some definition is conditional and hence
+    /// the live-in slots are not equal to the union of def slot's successors.
+    SparseBitVector<> LiveInSlots;
 
     /// AliveSlots - Set of Slots in which this value is alive completely
     /// through.  This is a bit set which uses the Slot number as an index.

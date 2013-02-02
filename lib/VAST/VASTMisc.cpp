@@ -15,7 +15,6 @@
 #include "shang/VASTModule.h"
 #include "shang/Utilities.h"
 
-#include "llvm/Support/GraphWriter.h"
 #define DEBUG_TYPE "vast-misc"
 #include "llvm/Support/Debug.h"
 
@@ -127,40 +126,3 @@ VASTOperandList *VASTOperandList::GetDatapathOperandList(VASTNode *N) {
 }
 
 //===----------------------------------------------------------------------===//
-namespace llvm {
-template <>
-struct GraphTraits<const VASTModule*> : public GraphTraits<const VASTSlot*> {
-  typedef VASTModule::const_slot_iterator nodes_iterator;
-  static nodes_iterator nodes_begin(const VASTModule *G) {
-    return G->slot_begin();
-  }
-  static nodes_iterator nodes_end(const VASTModule *G) {
-    return G->slot_end();
-  }
-};
-
-
-template<>
-struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
-  typedef const VASTSlot NodeTy;
-  typedef const VASTModule GraphTy;
-
-  DOTGraphTraits(bool isSimple=false) : DefaultDOTGraphTraits(isSimple) {}
-
-  std::string getNodeLabel(NodeTy *Node, GraphTy *Graph) {
-    std::string Str;
-    raw_string_ostream ss(Str);
-    ss << Node->getName();
-    DEBUG(Node->print(ss));
-    return ss.str();
-  }
-
-  static std::string getNodeAttributes(NodeTy *Node, GraphTy *Graph) {
-      return "shape=Mrecord";
-  }
-};
-}
-
-void VASTModule::viewGraph() const {
-  ViewGraph(this, getName());
-}

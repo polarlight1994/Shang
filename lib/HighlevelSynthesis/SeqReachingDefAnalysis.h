@@ -13,11 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "shang/VASTModulePass.h"
-#include "shang/VASTControlPathNodes.h"
+#include "shang/VASTSeqValue.h"
 #include "shang/Utilities.h"
 
-
-#include "llvm/ADT/GraphTraits.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Allocator.h"
 
 #include <set>

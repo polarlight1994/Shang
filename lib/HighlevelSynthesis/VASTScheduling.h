@@ -16,11 +16,13 @@
 #ifndef VAST_SCHEDULING_H
 #define VAST_SCHEDULING_H
 
-#include "shang/VASTControlPathNodes.h"
+#include "shang/VASTSeqOp.h"
 
 #include "llvm/Support/DataTypes.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/PointerUnion.h"
+#include <map>
 
 namespace llvm {
 class raw_ostream;
@@ -188,7 +190,7 @@ private:
 
   // The scheduling unit may represent a VASTNode of just an alias of another
   // Scheduling unit.
-  PointerUnion<VASTNode*, VASTSUnit*> Ptr;
+  VASTSeqOp *SeqOp;
 public:
   VASTSUnit(VASTNode *N, unsigned InstIdx);
 
