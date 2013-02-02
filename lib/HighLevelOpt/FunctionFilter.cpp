@@ -63,6 +63,7 @@ struct FunctionFilter : public ModulePass {
   }
 
   void SplitSoftFunctions(Module &M,SmallPtrSet<const Function*, 32> &HWFunctions);
+
   bool runOnModule(Module &M);
 };
 } // end anonymous.
@@ -89,6 +90,8 @@ bool FunctionFilter::runOnModule(Module &M) {
     // Export the hardware function, so that it can be called from the software
     // side.
     F->setLinkage(GlobalValue::ExternalLinkage);
+    // Change the function name to the design name.
+    F->setName(I->second);
 
     CallGraphNode *CGN = CG[F];
     assert(CGN && "Broken CallGraph!");
@@ -105,14 +108,6 @@ bool FunctionFilter::runOnModule(Module &M) {
   }
 
   if (!isSyntesizingMain) SplitSoftFunctions(M, HWFunctions);
-
-  // Rename the function after we split the module.
-  for (HWFnMap::const_iterator I = TopHWFns.begin(), E = TopHWFns.end();
-       I != E; ++I) {
-    Function *F = M.getFunction(I->first());
-    if (F == 0 || F->isDeclaration()) continue;
-    F->setName(I->second);
-  }
 
   return true;
 }
@@ -151,11 +146,7 @@ void FunctionFilter::SplitSoftFunctions(Module &M,
       FSW->setLinkage(GlobalValue::PrivateLinkage);
     }
 
-    if (FSW->getName() == "main") {
-      FSW->setName("sw_main");
-      // If we are synthesizing main, change its name so the SystemC module can find it.
-      //if (getSynSetting("main")) FHW->setName("sw_main");
-    }
+    if (FSW->getName() == "main") FSW->setName("sw_main");
   }
 
   OwningPtr<ModulePass> GlobalDEC(createGlobalDCEPass());
