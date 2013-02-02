@@ -41,7 +41,6 @@ EnalbeDumpIR("vtm-dump-ir", cl::desc("Dump the IR to the RTL code."),
 namespace {
 class RTLCodeGen : public VASTModulePass {
   vlang_raw_ostream Out;
-  DataLayout *TD;
 
 public:
   /// @name FunctionPass interface
@@ -83,7 +82,7 @@ RTLCodeGen::RTLCodeGen(raw_ostream &O) : VASTModulePass(ID), Out(O) {
 }
 
 bool RTLCodeGen::doInitialization(Module &Mod) {
-  TD = getAnalysisIfAvailable<DataLayout>();
+  DataLayout *TD = getAnalysisIfAvailable<DataLayout>();
   SMDiagnostic Err;
   const char *GlobalScriptPath[] = { "Misc", "RTLGlobalScript" };
   std::string GlobalScript = getStrValueFromEngine(GlobalScriptPath);
