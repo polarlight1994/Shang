@@ -122,14 +122,6 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   VM.printSubmodules(Out);
   VM.printRegisterBlocks(Out);
 
-  Out << "\n\n";
-  Out << "// Always Block\n";
-  Out.always_ff_begin();
-
-  Out.else_begin();
-
-  Out.always_ff_end();
-
   Out.module_end();
   Out.flush();
 
