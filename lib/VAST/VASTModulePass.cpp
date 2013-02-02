@@ -230,6 +230,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   unsigned getByteEnable(Value *Addr) const;
 
   void visitInstruction(Instruction &I) {
+    I.dump();
     llvm_unreachable("Unhandled instruction!");
   }
 
