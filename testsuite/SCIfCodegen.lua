@@ -55,10 +55,14 @@ $('#')endif
 
 ]=]
 
+-- DIRTY HACK: Generate an interface file for each module even it is not the top
+-- level module. However, only the interface file for the top-level module will
+-- be compile and link.
+-- Also no need to worry about the main function at this moment because this
+-- script is only run on the hybrid flow.
 SCIFFScript = [=[
-#if Functions[FuncInfo.Name] ~= nil then
-#local RTLModuleName = Functions[FuncInfo.Name].ModName
-// And the header file of the generated module.
+#local RTLModuleName = FuncInfo.Name
+// Include the header file of the generated module.
 $('#')include "V$(RTLModuleName).h"
 static int cnt = 0;
 static int memcnt = 0;
@@ -74,9 +78,7 @@ $(getType(FuncInfo.ReturnSize)) $(FuncInfo.Name)_if($(
   end
  ));
 
-#if FuncInfo.Name ~= "main" then
 int sw_main();
-#end
 
 $('#')ifdef __cplusplus
 }
@@ -111,9 +113,8 @@ SC_MODULE(V$(RTLModuleName)_tb){
       wait(); tb_ptr->rstN = 0;
       wait(10); tb_ptr->rstN = 1;
       wait();
-#if FuncInfo.Name ~= "main"	then
 			sw_main();
-#else
+
 			$(getType(FuncInfo.ReturnSize)) RetVle = $(FuncInfo.Name)_if($(
 				for i,v in ipairs(FuncInfo.Args) do
 					if i ~= 1 then _put(', ') end
@@ -272,8 +273,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
     sc_start();
 
     return 0;
-  }  
-#end  
+  }
 ]=]
 
 Passes.SCIFCodegen = { FunctionScript = [=[
