@@ -118,7 +118,7 @@ bool FunctionFilter::runOnModule(Module &M) {
 
     HWF->setName(I->second);
 
-    Function *SWF = M.getFunction(I->first());
+    Function *SWF = SWM->getFunction(I->first());
     if (SWF == 0 || !SWF->isDeclaration()) continue;
 
     // Call the interface function from the software side instead.
