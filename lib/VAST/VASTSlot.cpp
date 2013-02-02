@@ -55,7 +55,7 @@ VASTSlot::VASTSlot(unsigned slotNum, VASTSlot *StartSlot)
   SlotActive.set(StartSlot->SlotActive);
 }
 
-BasicBlock *VASTSlot::getParentBB() const {
+BasicBlock *VASTSlot::getParent() const {
   return Contents.ParentBB;
 }
 

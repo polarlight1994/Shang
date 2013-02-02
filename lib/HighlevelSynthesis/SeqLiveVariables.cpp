@@ -239,7 +239,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
     // Only compute the PHIJoins for VOpMvPhi.
     if (PHINode *PN = dyn_cast<PHINode>(V)) {
       VASTSeqDef Def = SeqOp->getDef(0);
-      BasicBlock *TargetBB = SeqOp->getSlot()->getParentBB();
+      BasicBlock *TargetBB = SeqOp->getSlot()->getParent();
 
       // Create the VarInfo for the PHI.
       VarInfo *&VI = PHIInfos[std::make_pair(TargetBB, Def)];

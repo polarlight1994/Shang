@@ -116,8 +116,8 @@ bool SeqReachingDefAnalysis::addLiveIns(SlotInfo *From, SlotInfo *To,
   // them and may produce negative result.
   int FromSlotNum = From->getSlot()->SlotNum,
       ToSlotNum = To->getSlot()->SlotNum;
-  BasicBlock *ToBB = To->getSlot()->getParentBB();
-  BasicBlock *FromBB = From->getSlot()->getParentBB();
+  BasicBlock *ToBB = To->getSlot()->getParent();
+  BasicBlock *FromBB = From->getSlot()->getParent();
   bool FromLaterAliasSlot = FromAliasSlot && FromSlotNum > ToSlotNum;
 
   for (it I = From->out_begin(), E = From->out_end(); I != E; ++I) {

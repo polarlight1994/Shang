@@ -90,7 +90,7 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
     VASTSlot *S = Op.getSlot();
     OS << ", current slot: " << Op.getSlotNum() << ", ";
 
-    if (BasicBlock *BB = S->getParentBB()) OS << BB->getName() << ',';
+    if (BasicBlock *BB = S->getParent()) OS << BB->getName() << ',';
 
 
     OS << "\");\n";

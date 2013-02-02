@@ -78,7 +78,7 @@ private:
 public:
   const uint16_t SlotNum;
 
-  BasicBlock *getParentBB() const;
+  BasicBlock *getParent() const;
 
   void print(raw_ostream &OS) const;
 
