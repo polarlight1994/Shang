@@ -113,16 +113,9 @@ SC_MODULE(V$(RTLModuleName)_tb){
       wait(); tb_ptr->rstN = 0;
       wait(10); tb_ptr->rstN = 1;
       wait();
+
 			sw_main();
 
-			$(getType(FuncInfo.ReturnSize)) RetVle = $(FuncInfo.Name)_if($(
-				for i,v in ipairs(FuncInfo.Args) do
-					if i ~= 1 then _put(', ') end
-					_put(v.Name)
-				end
-			 ));
-		  assert(RetVle == 0 && "Return value of main function is not 0!");
-#end
       ofstream outfile;
       outfile.open ("$(CounterFile)"); 
       outfile <<"$(RTLModuleName) hardware run cycles " << cnt << " wait cycles " << memcnt <<endl;
