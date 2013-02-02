@@ -91,10 +91,17 @@ void VASTSeqOp::print(raw_ostream &OS) const {
     OS << Defs[I]->getName() << ", ";
   }
   
-  OS << "<-@" << getSlotNum() << "{ pred";
+  if (getNumDefs()) OS << "<- ";
+
+  OS << '@' << getSlotNum() << "{ pred";
   for (unsigned i = 0; i < Size; ++i) {
-    if (VASTValPtr V = getOperand(i).unwrap()) V.printAsOperand(OS);
-    else                                       OS << "<nullptr>";
+    VASTValPtr V = getOperand(i);
+    V.printAsOperand(OS);
+
+    const VASTNode *User = &getOperand(i).getUser();
+    if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(User))
+      OS << '[' << NV->getName() << ']';
+
     OS << ", ";
   }
   OS << "} ";
