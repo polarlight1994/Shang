@@ -263,6 +263,5 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
 
   delete Builder;
 
-  // Return true?
-  return false;
+  return true;
 }

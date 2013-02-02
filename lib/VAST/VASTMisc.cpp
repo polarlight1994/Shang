@@ -16,20 +16,12 @@
 #include "shang/Utilities.h"
 
 #include "llvm/Support/GraphWriter.h"
-#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "vast-misc"
 #include "llvm/Support/Debug.h"
 
 #include <sstream>
 
 using namespace llvm;
-
-static cl::opt<unsigned>
-ExprInlineThreshold("vtm-expr-inline-thredhold",
-                    cl::desc("Inline the expression which has less than N "
-                    "operand  (16 by default)"),
-                    cl::init(2));
-
 //===----------------------------------------------------------------------===//
 // Value and type printing
 std::string
@@ -135,89 +127,6 @@ VASTOperandList *VASTOperandList::GetDatapathOperandList(VASTNode *N) {
 }
 
 //===----------------------------------------------------------------------===//
-
-
-namespace {
-struct DatapathNamer {
-  std::map<VASTExpr*, unsigned> &ExprSize;
-
-  DatapathNamer(std::map<VASTExpr*, unsigned> &ExprSize) : ExprSize(ExprSize) {}
-
-  void nameExpr(VASTExpr *Expr) const {
-    // The size of named expression is 1.
-    ExprSize[Expr] = 1;
-    // Dirty hack: Do not name the MUX, they should be print with a wire.
-    if (Expr->getOpcode() != VASTExpr::dpMux) Expr->nameExpr();
-  }
-
-  void operator()(VASTNode *N) const {
-    VASTExpr *Expr = dyn_cast<VASTExpr>(N);
-
-    if (Expr == 0) return;
-
-    // Remove the naming, we will recalculate them.
-    if (Expr->hasName()) Expr->unnameExpr();
-
-    if (!Expr->isInlinable()) {
-      nameExpr(Expr);
-      return;
-    }
-
-    unsigned Size = 0;
-
-    // Visit all the operand to accumulate the expression size.
-    typedef VASTExpr::op_iterator op_iterator;
-    for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
-      if (VASTExpr *SubExpr = dyn_cast<VASTExpr>(*I)) {
-        std::map<VASTExpr*, unsigned>::const_iterator at = ExprSize.find(SubExpr);
-        assert(at != ExprSize.end() && "SubExpr not visited?");
-        Size += at->second;
-        continue;
-      }
-
-      Size += 1;
-    }
-
-    if (Size >= ExprInlineThreshold) nameExpr(Expr);
-    else                             ExprSize[Expr] = Size;
-  }
-};
-}
-
-void VASTModule::nameDatapath() const{
-  std::set<VASTOperandList*> Visited;
-  std::map<VASTExpr*, unsigned> ExprSize;
-
-  for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
-    const VASTSlot *S = SI;
-
-    typedef VASTSlot::const_op_iterator op_iterator;
-
-    // Print the logic of slot ready and active.
-    VASTOperandList::visitTopOrder(S->getActive(), Visited, DatapathNamer(ExprSize));
-
-    // Print the logic of the datapath used by the SeqOps.
-    for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
-      VASTSeqOp *L = *I;
-
-      typedef VASTOperandList::op_iterator op_iterator;
-      for (op_iterator OI = L->op_begin(), OE = L->op_end(); OI != OE; ++OI) {
-        VASTValue *V = OI->unwrap().get();
-        VASTOperandList::visitTopOrder(V, Visited, DatapathNamer(ExprSize));
-      }
-    }
-  }
-
-  // Also print the driver of the wire outputs.
-  for (const_port_iterator I = ports_begin(), E = ports_end(); I != E; ++I) {
-    VASTPort *P = *I;
-
-    if (P->isInput() || P->isRegister()) continue;
-    VASTWire *W = cast<VASTWire>(P->getValue());
-    VASTOperandList::visitTopOrder(W, Visited, DatapathNamer(ExprSize));
-  }
-}
-
 namespace llvm {
 template <>
 struct GraphTraits<const VASTModule*> : public GraphTraits<const VASTSlot*> {

@@ -60,6 +60,7 @@ public:
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequiredID(ControlLogicSynthesisID);
+    AU.addRequiredID(DatapathNamerID);
     AU.setPreservesAll();
   }
 };
@@ -79,6 +80,7 @@ INITIALIZE_PASS(RTLCodeGen, "shang-verilog-writer",
 RTLCodeGen::RTLCodeGen(raw_ostream &O) : VASTModulePass(ID), Out(O) {
   initializeRTLCodeGenPass(*PassRegistry::getPassRegistry());
   initializeControlLogicSynthesisPass(*PassRegistry::getPassRegistry());
+  initializeDatapathNamerPass(*PassRegistry::getPassRegistry());
 }
 
 bool RTLCodeGen::doInitialization(Module &Mod) {

@@ -12,6 +12,7 @@ add_llvm_library(ShangVAST
   VASTMisc.cpp
   ScriptingPass.cpp
   ControlLogicSynthesis.cpp
+  DatapathNamer.cpp
   RTLCodeGen.cpp
 )
 
