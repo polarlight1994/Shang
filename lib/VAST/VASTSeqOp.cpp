@@ -149,8 +149,16 @@ VASTSeqInst::VASTSeqInst(Value *V, VASTSlot *S, VASTUse *Operands, unsigned Size
 void VASTSeqInst::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
 
+  switch (getSeqOpType()) {
+  case Launch: OS << "<Launch> "; break;
+  case Latch:  OS << "<Latch> ";  break;
+  case Alias:  OS << "<Alias> ";  break;
+  }
+
   if (getValue()) getValue()->print(OS);
   else            OS << '\n';
+
+  OS << '\n';
 }
 
 //----------------------------------------------------------------------------//
@@ -159,4 +167,5 @@ VASTSeqCtrlOp::VASTSeqCtrlOp(VASTSlot *S, bool UseSlotActive, VASTUse *Operands)
 
 void VASTSeqCtrlOp::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
+  OS << '\n';
 }
