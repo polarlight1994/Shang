@@ -105,7 +105,6 @@ static void addHLSPreparePasses(PassManager &PM) {
   // Name the instructions.
   PM.add(createInstructionNamerPass());
 
-
   // All passes which modify the LLVM IR are now complete; run the verifier
   // to ensure that the IR is valid.
   PM.add(createVerifierPass());
@@ -170,10 +169,16 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  // Create the output files.
+  tool_output_file SoftwareIROutput(ConfigTable["SoftwareIROutput"].c_str(), error);
+  tool_output_file RTLOutput(ConfigTable["RTLOutput"].c_str(), error);
+
   Module &mod = *M.get();
 
   // Stage 1, perform software/hardware partition.
   {
+    // Make sure the PassManager is deleted before the tool_output_file otherwise
+    // we may delete the raw_fd_ostream before the other streams that using it.
     PassManager PreHLSPasses;
     PreHLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
 
@@ -186,40 +191,42 @@ int main(int argc, char **argv) {
     PreHLSPasses.add(createInternalizePass(ExportList));
 
     // Perform Software/Hardware partition.
-    tool_output_file SoftwareIROutput(ConfigTable["SoftwareIROutput"].c_str(), error);
     PreHLSPasses.add(createFunctionFilterPass(SoftwareIROutput.os(), TopHWFunctions));
     PreHLSPasses.add(createGlobalDCEPass());
 
     PreHLSPasses.run(mod);
-    SoftwareIROutput.keep();
   }
 
   // Stage 2, perform high-level synthesis.
   // Build up all of the passes that we want to do to the module.
-  PassManager HLSPasses;
-  HLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
+  {
+    // Make sure the PassManager is deleted before the tool_output_file otherwise
+    // we may delete the raw_fd_ostream before the other streams that using it.
+    PassManager HLSPasses;
+    HLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
 
-  addIROptimizationPasses(HLSPasses);
+    addIROptimizationPasses(HLSPasses);
 
-  addHLSPreparePasses(HLSPasses);
+    addHLSPreparePasses(HLSPasses);
 
-  // Analyse the slack between registers.
-  //Passes.add(createCombPathDelayAnalysisPass());
-  tool_output_file RTLOutput(ConfigTable["RTLOutput"].c_str(), error);
-  HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
-  
-  // Run some scripting passes.
-  typedef std::map<std::string, std::pair<std::string, std::string> >::iterator
-          iterator;
-  for (iterator I = Scripts.begin(), E = Scripts.end(); I != E; ++I)
-    HLSPasses.add(createScriptingPass(I->first.c_str(),
-                                      I->second.first.c_str(),
-                                      I->second.second.c_str()));
-  
-  // Run the passes.
-  HLSPasses.run(mod);
+    // Analyse the slack between registers.
+    //Passes.add(createCombPathDelayAnalysisPass());
+    HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
+
+    // Run some scripting passes.
+    typedef std::map<std::string, std::pair<std::string, std::string> >::iterator
+      iterator;
+    for (iterator I = Scripts.begin(), E = Scripts.end(); I != E; ++I)
+      HLSPasses.add(createScriptingPass(I->first.c_str(),
+      I->second.first.c_str(),
+      I->second.second.c_str()));
+
+    // Run the passes.
+    HLSPasses.run(mod);
+  }
 
   // If no error occur, keep the files.
+  SoftwareIROutput.keep();
   RTLOutput.keep();
 
   return 0;
