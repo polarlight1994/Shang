@@ -62,7 +62,8 @@ struct FunctionFilter : public ModulePass {
     ModulePass::getAnalysisUsage(AU);
   }
 
-  void SplitSoftFunctions(Module &M,SmallPtrSet<const Function*, 32> &HWFunctions);
+  void partition(Module &HWM, Module &SWM,
+                 SmallPtrSet<const Function*, 32> &HWFunctions);
 
   bool runOnModule(Module &M);
 };
@@ -90,8 +91,6 @@ bool FunctionFilter::runOnModule(Module &M) {
     // Export the hardware function, so that it can be called from the software
     // side.
     F->setLinkage(GlobalValue::ExternalLinkage);
-    // Change the function name to the design name.
-    F->setName(I->second);
 
     CallGraphNode *CGN = CG[F];
     assert(CGN && "Broken CallGraph!");
@@ -107,7 +106,28 @@ bool FunctionFilter::runOnModule(Module &M) {
     }
   }
 
-  if (!isSyntesizingMain) SplitSoftFunctions(M, HWFunctions);
+  OwningPtr<Module> SWM(CloneModule(&M));
+
+  if (!isSyntesizingMain) partition(M, *SWM, HWFunctions);
+
+  // Rename the function after we split the module.
+  for (HWFnMap::const_iterator I = TopHWFns.begin(), E = TopHWFns.end();
+       I != E; ++I) {
+    Function *HWF = M.getFunction(I->first());
+    if (HWF == 0 || HWF->isDeclaration()) continue;
+
+    HWF->setName(I->second);
+
+    Function *SWF = M.getFunction(I->first());
+    if (SWF == 0 || !SWF->isDeclaration()) continue;
+
+    // Call the interface function from the software side instead.
+    SWF->setName(I->second  + "_if");
+  }
+
+  // Write the module out.
+  OwningPtr<AssemblyAnnotationWriter> Annotator;
+  SWM->print(SwOut, Annotator.get());
 
   return true;
 }
@@ -126,13 +146,12 @@ llvm::createFunctionFilterPass(raw_ostream &O,
   return new FunctionFilter(O, TopHWFUnctions);
 }
 
-void FunctionFilter::SplitSoftFunctions(Module &M,
-                                        SmallPtrSet<const Function*, 32> &HWFunctions){
-  OwningPtr<Module> SoftMod(CloneModule(&M));
-  SoftMod->setModuleIdentifier(M.getModuleIdentifier() + ".sw");
-  for (Module::iterator I = M.begin(), E = M.end(); I != E; ++I) {
+void FunctionFilter::partition(Module &HWM, Module &SWM,
+                               SmallPtrSet<const Function*, 32> &HWFunctions){
+  SWM.setModuleIdentifier(HWM.getModuleIdentifier() + ".sw");
+  for (Module::iterator I = HWM.begin(), E = HWM.end(); I != E; ++I) {
     Function *FHW = I;
-    Function *FSW = SoftMod->getFunction(FHW->getName());
+    Function *FSW = SWM.getFunction(FHW->getName());
 
     // The function is s software function, delete it from the hardware module.
     if (!HWFunctions.count(FHW))
@@ -150,35 +169,32 @@ void FunctionFilter::SplitSoftFunctions(Module &M,
   }
 
   OwningPtr<ModulePass> GlobalDEC(createGlobalDCEPass());
-  GlobalDEC->runOnModule(*SoftMod);
+  GlobalDEC->runOnModule(SWM);
 
-  if (!SoftMod->empty()) {
+  if (!SWM.empty()) {
     // If a global variable present in software module, set the linkage of
     // corresponding one in hardware module to external.
     typedef Module::global_iterator global_iterator;
-    for (global_iterator I = SoftMod->global_begin(), E = SoftMod->global_end();
+    for (global_iterator I = SWM.global_begin(), E = SWM.global_end();
          I != E; ++I) {
       // Make sure we can link against the global variables in software module.
       I->setLinkage(GlobalVariable::LinkOnceAnyLinkage);
 
-      if (GlobalVariable *GV = M.getGlobalVariable(I->getName(), true)) {
+      if (GlobalVariable *GV = HWM.getGlobalVariable(I->getName(), true)) {
         GV->setLinkage(GlobalValue::ExternalLinkage);
         GV->setInitializer(0);
       }
     }
 
-    for (Module::iterator I = M.begin(), E = M.end(); I != E; ++I) {
+    for (Module::iterator I = HWM.begin(), E = HWM.end(); I != E; ++I) {
       Function *HWF = I;
       // Do not inline the functions that called by software module.
-      if (Function *SWF = SoftMod->getFunction(I->getName())) {
+      if (Function *SWF = SWM.getFunction(I->getName())) {
         // Is it a software function?
         if (!SWF->isDeclaration()) continue;
 
         // Is it also not a hardware function?
         if (HWF->isDeclaration()) continue;
-
-        // Call the interface function from the software side instead.
-        SWF->setName(SWF->getName() + "_if");
 
         // Do not inline the HW function.
         HWF->getAttributes().removeAttribute(HWF->getContext(),
@@ -198,8 +214,4 @@ void FunctionFilter::SplitSoftFunctions(Module &M,
       }
     }
   }
-
-  // TODO: We may rename the entry function, too.
-  OwningPtr<AssemblyAnnotationWriter> Annotator;
-  SoftMod->print(SwOut, Annotator.get());
 }
