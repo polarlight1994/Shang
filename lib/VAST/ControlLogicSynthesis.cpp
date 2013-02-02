@@ -225,13 +225,24 @@ void ControlLogicSynthesis::getherControlLogicInfo(VASTSlot *S) {
   for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
     VASTSeqOp *SeqOp = *I;
     VASTValPtr Pred = SeqOp->getPred();
-    Instruction *Inst = dyn_cast<Instruction>(SeqOp->getValue());
+    Instruction *Inst = dyn_cast_or_null<Instruction>(SeqOp->getValue());
 
     if (Inst == 0) continue;
 
     switch (Inst->getOpcode()) {
     // Nothing to do by default.
     default: break;
+    case Instruction::Load:
+    case Instruction::Store: {
+      // FIXIME: Use the correct memory port number.
+      std::string EnableName = VFUMemBus::getEnableName(0) + "_r";
+      VASTSeqValue *MemEn = VM->getSymbol<VASTSeqValue>(EnableName);
+      addSlotEnable(S, MemEn, Pred);
+
+      VASTSlot *NextSlot = GetLinearNextSlot(S);
+      addSlotDisable(NextSlot, MemEn, Pred);
+      break;
+    }
     // Enable the finish at the same slot.
     case Instruction::Ret:
       addSlotEnable(S, VM->getPort(VASTModule::Finish).getSeqVal(), Pred);
