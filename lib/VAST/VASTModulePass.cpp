@@ -181,21 +181,30 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   //===--------------------------------------------------------------------===//
   void connectEntryState(BasicBlock *EntryBB);
 
-  std::map<BasicBlock*, VASTSlot*> LandingSlots;
+  std::map<BasicBlock*, std::pair<VASTSlot*, VASTSlot*> > BB2SlotMap;
   unsigned NumSlots;
   VASTSlot *getOrCreateLandingSlot(BasicBlock *BB) {
-    VASTSlot *&LandingSlot = LandingSlots[BB];
+    std::pair<VASTSlot*, VASTSlot*> &Slots = BB2SlotMap[BB];
 
-    if (LandingSlot == 0)
-      LandingSlot = VM->createSlot(++NumSlots, BB);
+    if (Slots.first == 0) {
+      assert(Slots.second == 0 && "Unexpected Latest slot without landing slot!");
+      Slots.first = (Slots.second = VM->createSlot(++NumSlots, BB));
+    }
 
-    return LandingSlot;
+    return Slots.first;
+  }
+
+  VASTSlot *getLatestSlot(BasicBlock *BB) const {
+    std::map<BasicBlock*, std::pair<VASTSlot*, VASTSlot*> >::const_iterator at
+      = BB2SlotMap.find(BB);
+    assert(at != BB2SlotMap.end() && "Latest slot not found!");
+    return at->second.second;
   }
 
   // DIRTYHACK: Allocate enough slots for the read operation.
   VASTSlot *advanceToNextSlot(VASTSlot *CurSlot) {
     BasicBlock *BB = CurSlot->getParent();
-    VASTSlot *&Slot = LandingSlots[BB];
+    VASTSlot *&Slot = BB2SlotMap[BB].second;
     assert(Slot == CurSlot && "CurSlot not the last slot in the BB!");
     assert(CurSlot->succ_empty() && "CurSlot already have successors!");
     Slot = VM->createSlot(++NumSlots, BB);
@@ -346,6 +355,9 @@ void VASTModuleBuilder::allocateSubModules() {
 
 //===----------------------------------------------------------------------===//
 void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
+  // Create the landing slot for this BB.
+  (void) getOrCreateLandingSlot(BB);
+
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
     // PHINodes will be handled in somewhere else.
@@ -363,7 +375,7 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
 }
 
 void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
-  VASTSlot *CurSlot = getOrCreateLandingSlot(I.getParent());
+  VASTSlot *CurSlot = getLatestSlot(I.getParent());
   unsigned NumOperands = I.getNumOperands();
   VASTSeqInst *SeqInst = 
     VM->lauchInst(CurSlot, VASTImmediate::True, NumOperands, &I,
@@ -382,7 +394,7 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
 }
 
 void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
-  VASTSlot *CurSlot = getOrCreateLandingSlot(I.getParent());
+  VASTSlot *CurSlot = getLatestSlot(I.getParent());
   // TODO: Create alias operations.
   if (I.isUnconditional()) {
     addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(0)),
@@ -420,7 +432,7 @@ unsigned VASTModuleBuilder::getByteEnable(Value *Addr) const {
 void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
                                                unsigned PortNum, Instruction &I){
   BasicBlock *ParentBB = I.getParent();
-  VASTSlot *Slot = getOrCreateLandingSlot(ParentBB);
+  VASTSlot *Slot = getLatestSlot(ParentBB);
 
   // Build the logic to start the transaction.
   VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, Data ? 4 : 3, &I,
