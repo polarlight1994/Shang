@@ -404,9 +404,8 @@ void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
 
   // Connect the slots according to the condition.
   VASTValPtr Cnd = getAsOperandImpl(I.getCondition());
-  // Please note that the TrueDest is at the second successor.
-  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(1)), Cnd);
-  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(0)), Cnd.invert());
+  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(0)), Cnd);
+  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(1)), Cnd.invert());
 }
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
