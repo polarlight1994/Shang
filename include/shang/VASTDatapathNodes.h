@@ -249,6 +249,18 @@ class VASTWire :public VASTSignal, public VASTOperandList {
   bool IsPinned : 1;
   friend class VASTModule;
 
+  VASTValPtr getAsInlineOperandImpl() {
+    if (VASTValPtr V = getDriver()) {
+      // Can the expression be printed inline?
+      if (VASTExprPtr E = dyn_cast<VASTExprPtr>(V)) {
+        if (E->isInlinable()) return E.getAsInlineOperand();
+      }
+    }
+
+    return this;
+  }
+
+  virtual void dropUses();
 public:
   const char *const AttrStr;
 
@@ -265,22 +277,7 @@ public:
 
   bool isPinned() const { return IsPinned; }
   void Pin(bool isPinned = true ) { IsPinned = isPinned; }
-private:
-  VASTValPtr getAsInlineOperandImpl() {
-    if (VASTValPtr V = getDriver()) {
-      // Can the expression be printed inline?
-      if (VASTExprPtr E = dyn_cast<VASTExprPtr>(V)) {
-        if (E->isInlinable()) return E.getAsInlineOperand();
-      } else if (V->getBitWidth()) // The wire may wrapping a symbol.
-        // This is a simple assignment.
-        return V;
-    }
 
-    return this;
-  }
-
-  virtual void dropUses();
-public:
   VASTValPtr getDriver() const { return getOperand(0).unwrap(); }
 
   VASTExprPtr getExpr() const {
