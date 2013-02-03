@@ -20,6 +20,7 @@
 
 #include "shang/Passes.h"
 
+#include "llvm/Support/CFG.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -371,6 +372,26 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
 
     // Otherwise build the SeqOp for this operation.
     visit(I);
+  }
+
+  // Emit the operation that copy the incoming value of PHIs at the last slot.
+  // TODO: Optimize the PHIs in the datapath hoist pass.
+  VASTSlot *LatestSlot = getLatestSlot(BB);
+
+  for (succ_iterator SI = succ_begin(BB), SE = succ_end(BB); SI != SE; ++SI) {
+    BasicBlock *SuccBB = *SI;
+    VASTSlot *SuccSlot = getOrCreateLandingSlot(SuccBB);
+
+    for (iterator I = SuccBB->begin(), E = SuccBB->getFirstNonPHI(); I != E; ++I) {
+      PHINode *PN = cast<PHINode>(I);
+
+      Value *LiveOutedFromBB = PN->DoPHITranslation(SuccBB, BB);
+      VASTValPtr LiveOut = getAsOperandImpl(LiveOutedFromBB);
+      VASTValPtr Pred = LatestSlot->getSuccCnd(SuccSlot);
+      VASTSeqValue *PHISeqVal = getOrCreateSeqVal(PN, PN->getName());
+      // Latch the incoming value when we are branching to the succ slot.
+      VM->latchValue(PHISeqVal, LiveOut, LatestSlot,  Pred, PN);
+    }
   }
 }
 
