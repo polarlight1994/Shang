@@ -69,6 +69,22 @@ VASTValPtr DatapathBuilder::visitBitCastInst(BitCastInst &I) {
   return Operand;
 }
 
+VASTValPtr DatapathBuilder::visitPtrToIntInst(PtrToIntInst &I) {
+  VASTValPtr Operand = getAsOperand(I.getPointerOperand());
+
+  assert((!Operand || getValueSizeInBits(I) == Operand->getBitWidth())
+         && "Cast between types with different size found!");
+  return Operand;
+}
+
+VASTValPtr DatapathBuilder::visitIntToPtrInst(IntToPtrInst &I) {
+  VASTValPtr Operand = getAsOperand(I.getOperand(0));
+
+  assert((!Operand || getValueSizeInBits(I) == Operand->getBitWidth())
+         && "Cast between types with different size found!");
+  return Operand;
+}
+
 VASTValPtr DatapathBuilder::visitSelectInst(SelectInst &I) {
   return buildExpr(VASTExpr::dpSel,
                    getAsOperand(I.getOperand(0)),

@@ -99,6 +99,9 @@ public:
 
   VASTValPtr visitBinaryOperator(BinaryOperator &I);
 
+  VASTValPtr visitPtrToIntInst(PtrToIntInst &I);
+  VASTValPtr visitIntToPtrInst(IntToPtrInst &I);
+
   VASTValPtr visitInstruction(Instruction &I) {
     // Unhandled instructions can be safely ignored.
     return VASTValPtr();
