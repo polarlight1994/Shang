@@ -232,6 +232,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   // Build the SeqOps from the LLVM Instruction.
   void visitReturnInst(ReturnInst &I);
   void visitBranchInst(BranchInst &I);
+  void visitSwitchInst(SwitchInst &I);
 
   void visitLoadInst(LoadInst &I);
   void visitStoreInst(StoreInst &I);
@@ -427,7 +428,35 @@ void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
   // Connect the slots according to the condition.
   VASTValPtr Cnd = getAsOperandImpl(I.getCondition());
   addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(0)), Cnd);
-  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(1)), Cnd.invert());
+  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(1)),
+              Builder.buildNotExpr(Cnd));
+}
+
+void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
+  VASTSlot *CurSlot = getLatestSlot(I.getParent());
+
+  VASTValPtr CndVal = getAsOperandImpl(I.getCondition());
+  // The predicate for each non-default destination.
+  SmallVector<VASTValPtr, 4> CasePreds;
+
+  typedef SwitchInst::CaseIt CaseIt;
+  for (CaseIt CI = I.case_begin(), CE = I.case_end(); CI != CE; ++CI) {
+    BasicBlock *SuccBB = CI.getCaseSuccessor();
+    VASTSlot *SuccSlot = getOrCreateLandingSlot(SuccBB);
+
+    assert(CI.getCaseValueEx().getSize() == 1
+           && "Range case is not supported yet!");
+    const APInt &CasValInt = CI.getCaseValueEx().getSingleValue(0);
+    VASTValPtr CaseVal = getOrCreateImmediate(CasValInt);
+    VASTValPtr Pred = Builder.buildEQ(CndVal, CaseVal);
+    CasePreds.push_back(Pred);
+    addSuccSlot(CurSlot, SuccSlot, Pred);
+  }
+
+  // Jump to the default block when all the case value not match, i.e. all case
+  // predicate is false.
+  VASTValPtr DefaultPred = Builder.buildNotExpr(Builder.buildOrExpr(CasePreds, 1));
+  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getDefaultDest()), DefaultPred);
 }
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
