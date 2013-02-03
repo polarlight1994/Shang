@@ -88,7 +88,6 @@ static void addHLSPreparePasses(PassManager &PM) {
   // Schedule the DeadArgEliminationPass to clean up the module.
   PM.add(createDeadArgEliminationPass());
 
-  PM.add(createLoopStrengthReducePass());
   PM.add(createGCLoweringPass());
 
   // Make sure that no unreachable blocks are instruction selected.
