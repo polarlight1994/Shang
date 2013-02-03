@@ -80,7 +80,13 @@ VASTLLVMValue::VASTLLVMValue(const Value *V, unsigned Size)
 
 void VASTLLVMValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                        unsigned LB) const {
-  OS << getValue()->getName() << printBitRange(UB, LB, getBitWidth() != 1);
+  if (isa<GlobalVariable>(getValue())) {
+    assert(LB == 0 && UB == getBitWidth() && "Cannot print bitslice of GV!");
+    OS << "(`gv" << ShangMangle(getValue()->getName()) << ')';
+    return;
+  }
+
+  llvm_unreachable("Dont know how to print the value!");
 }
 
 //===----------------------------------------------------------------------===//

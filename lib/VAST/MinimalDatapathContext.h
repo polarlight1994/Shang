@@ -29,7 +29,7 @@ public:
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                         unsigned UB, unsigned LB);
 
-  VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand = true);
+  virtual VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand = true);
 };
 }
 

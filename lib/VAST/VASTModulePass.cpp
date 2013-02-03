@@ -178,7 +178,9 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   //===--------------------------------------------------------------------===//
   VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name);
 
+  VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand = true);
 
+  VASTWire *createWrapperWire(GlobalVariable *GV);
   //===--------------------------------------------------------------------===//
   void connectEntryState(BasicBlock *EntryBB);
 
@@ -285,6 +287,44 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqVal(Value *V, const Twine &Name) 
   // Index the value.
   Builder.indexVASTExpr(V, R->getValue());
   return R->getValue();
+}
+
+
+VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand)
+{
+  if (VASTValPtr Val = lookupExpr(V)) {
+    // Try to inline the operand if user ask to.
+    if (GetAsInlineOperand) Val = Val.getAsInlineOperand();
+    return Val;
+  }
+
+  // The VASTValPtr of the instruction should had been created when we trying
+  // to get it as operand.
+  assert(!isa<Instruction>(V) && "The VASTValPtr for Instruction not found!");
+
+  if (ConstantInt *Int = dyn_cast<ConstantInt>(V))
+    return indexVASTExpr(V, getOrCreateImmediate(Int->getValue()));
+
+  if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
+    // If the GV is assigned to the memory port 0, create a wrapper wire for it.
+    return indexVASTExpr(GV, createWrapperWire(GV));
+  }
+
+  llvm_unreachable("Unhandle value!");
+}
+
+VASTWire *VASTModuleBuilder::createWrapperWire(GlobalVariable *GV) {
+  unsigned SizeInBits = getValueSizeInBits(GV);
+
+  VASTWire *WrapperWire
+    = VM->addWire("gv_" + ShangMangle(GV->getName()) + "_wrapper", SizeInBits);
+
+  VASTLLVMValue *ValueOp
+    = new (VM->getAllocator()) VASTLLVMValue(GV, SizeInBits);
+
+  VM->assign(WrapperWire, ValueOp);
+
+  return WrapperWire;
 }
 
 //===----------------------------------------------------------------------===//
