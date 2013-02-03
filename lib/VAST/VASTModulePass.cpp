@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 #include "IR2Datapath.h"
 #include "MinimalDatapathContext.h"
+#include "Allocation.h"
 
 #include "shang/VASTModulePass.h"
 #include "shang/VASTModule.h"
@@ -169,6 +170,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   DataLayout *TD;
   // FIXME: Allocate enough MBBuilder according to the memory bus allocation.
   MemBusBuilder MBBuilder;
+  HLSAllocation &Allocation;
 
   //===--------------------------------------------------------------------===//
   void emitFunctionSignature(Function *F, VASTSubModule *SubMod = 0);
@@ -246,13 +248,13 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   void visitInstruction(Instruction &I) {
     I.dump();
-    llvm_unreachable("Unhandled instruction!");
   }
 
   //===--------------------------------------------------------------------===//
-  VASTModuleBuilder(VASTModule *Module, DataLayout *TD)
+  VASTModuleBuilder(VASTModule *Module, DataLayout *TD, HLSAllocation &Allocation)
     : MinimalDatapathContext(*Module, TD), Builder(*this),
-      VM(Module), TD(TD), MBBuilder(Module, Builder, 0), NumSlots(0)  {}
+      VM(Module), TD(TD), MBBuilder(Module, Builder, 0), Allocation(Allocation),
+      NumSlots(0)  {}
 };
 }
 
@@ -395,6 +397,7 @@ void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
 }
 
 void VASTModuleBuilder::allocateSubModules() {
+
   // Connect the membus for all submodules.
   MBBuilder.buildMemBusMux();
 }
@@ -605,6 +608,7 @@ struct VASTModuleAnalysis : public FunctionPass {
 
   VASTModuleAnalysis() : FunctionPass(ID), VM(0) {
     initializeBasicBlockTopOrderPass(*PassRegistry::getPassRegistry());
+    initializeHLSAllocationPass(*PassRegistry::getPassRegistry());
     initializeVASTModuleAnalysisPass(*PassRegistry::getPassRegistry());
   }
 
@@ -623,7 +627,8 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
   assert(VM == 0 && "Module has been already created!");
   VM = new VASTModule(F);
 
-  VASTModuleBuilder Builder(VM, getAnalysisIfAvailable<DataLayout>());
+  VASTModuleBuilder Builder(VM, getAnalysisIfAvailable<DataLayout>(),
+                            getAnalysis<HLSAllocation>());
 
   Builder.emitFunctionSignature(&F);
 
@@ -641,6 +646,7 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
 }
 
 void VASTModuleAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
+  AU.addRequired<HLSAllocation>();
   AU.addRequiredID(BasicBlockTopOrderID);
   AU.setPreservesAll();
 }

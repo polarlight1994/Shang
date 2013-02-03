@@ -1,4 +1,5 @@
 add_llvm_library(ShangVAST
+  Allocation.cpp
   VASTModulePass.cpp
   VASTExpr.cpp
   VASTExprBuilder.cpp

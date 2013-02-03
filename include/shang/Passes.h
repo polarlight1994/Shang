@@ -56,6 +56,7 @@ Pass *createScriptingPass(const char *Name, const char *FScript,
                           const char *GScript);
 
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
+void initializeHLSAllocationPass(PassRegistry &Registry);
 void initializeControlLogicSynthesisPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
 void initializeCombPathDelayAnalysisPass(PassRegistry &Registry);
