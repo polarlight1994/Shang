@@ -443,7 +443,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
 
   // Read the result of the memory transaction.
   if (Data == 0) {
-    Slot = advanceToNextSlot(Slot, getFUDesc<VFUMemBus>()->getReadLatency());
+    Slot = advanceToNextSlot(Slot, getFUDesc<VFUMemBus>()->getReadLatency() - 1);
     // Get the input port from the memory bus.
     RegName = VFUMemBus::getInDataBusName(PortNum);
     R = VM->getSymbol<VASTSeqValue>(RegName);
