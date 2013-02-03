@@ -83,7 +83,7 @@ VASTValPtr DatapathBuilder::visitICmpInst(ICmpInst &I) {
 
   switch (I.getPredicate()) {
   case CmpInst::ICMP_NE:  return buildNE(LHS, RHS);
-  case CmpInst::ICMP_EQ:  return buildNotExpr(buildNE(LHS, RHS));
+  case CmpInst::ICMP_EQ:  return buildEQ(LHS, RHS);
 
   case CmpInst::ICMP_SLT:
     std::swap(LHS, RHS);

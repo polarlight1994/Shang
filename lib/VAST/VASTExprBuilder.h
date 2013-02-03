@@ -270,6 +270,7 @@ public:
     return buildNotExpr(buildExpr(VASTExpr::dpRAnd, buildNotExpr(V), 1));
   }
 
+  // For operator !=
   VASTValPtr buildNE(VASTValPtr LHS, VASTValPtr RHS) {
     unsigned Bitwidth = LHS->getBitWidth();
     VASTValPtr Ops[] = { LHS, RHS };
@@ -277,6 +278,11 @@ public:
     VASTValPtr BitWiseDiff = buildXorExpr(Ops, Bitwidth);
     // If there is any bitwise difference, then LHS and RHS is not equal.
     return buildROr(BitWiseDiff);
+  }
+
+  // For operator ==
+  VASTValPtr buildEQ(VASTValPtr LHS, VASTValPtr RHS) {
+    return buildNotExpr(buildNE(LHS, RHS));
   }
 
   VASTValPtr buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes);
