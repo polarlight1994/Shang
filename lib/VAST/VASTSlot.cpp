@@ -74,6 +74,14 @@ bool VASTSlot::hasNextSlot(VASTSlot *NextSlot) const {
   return NextSlots.count(NextSlot);
 }
 
+VASTSlot::op_iterator VASTSlot::removeOp(op_iterator where) {
+  // Clear the SeqOp's parent slot.
+  VASTSeqOp *Op = *where;
+  Op->clearParent();
+  // Erase it from the SeqOp vector.
+  return Operations.erase(where);
+}
+
 VASTRegister *VASTSlot::getRegister() const {
   return cast<VASTRegister>(getValue()->getParent());
 }

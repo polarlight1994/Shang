@@ -548,6 +548,12 @@ void VASTModule::createEnable(VASTSeqValue *SeqVal, VASTSlot *Slot,
   SeqOps.push_back(CtrlOp);
 }
 
+void VASTModule::eraseSeqOp(VASTSeqOp *SeqOp) {
+  assert(SeqOp->getSlot() == 0
+         && "The VASTSeqOp should be erase from its parent slot first!");
+  SeqOps.erase(SeqOp);
+}
+
 void VASTModule::print(raw_ostream &OS) const {
   for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
     const VASTSlot *S = SI;

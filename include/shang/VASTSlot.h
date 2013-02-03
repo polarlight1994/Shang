@@ -97,6 +97,9 @@ public:
   op_iterator op_begin() { return Operations.begin(); }
   op_iterator op_end() { return Operations.end(); }
 
+  // Remove a VASTSeqOp pointed by where in this slot.
+  op_iterator removeOp(op_iterator where);
+
   bool hasNextSlot(VASTSlot *NextSlot) const;
 
   VASTValPtr getSuccCnd(const VASTSlot *DstSlot) const {

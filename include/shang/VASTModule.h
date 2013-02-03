@@ -318,6 +318,10 @@ public:
   void createEnable(VASTSeqValue *SeqVal, VASTSlot *Slot, VASTValPtr GuardCnd,
                     bool IsEnable);
 
+  /// Remove the VASTSeqOp from the module and delete it. Please note that
+  /// the SeqOp should be remove from its parent slot before we erase it.
+  void eraseSeqOp(VASTSeqOp *SeqOp);
+
   // Iterate over all SeqOps in the module.
   typedef ilist<VASTSeqOp>::iterator seqop_iterator;
   seqop_iterator seqop_begin() { return SeqOps.begin(); }

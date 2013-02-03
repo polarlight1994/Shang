@@ -86,6 +86,10 @@ public:
 
   // Active Slot accessor
   VASTSlot *getSlot() const { return S.getPointer(); }
+
+  // Set the parent slot to 0.
+  void clearParent() { S.setPointer(0); }
+
   unsigned getSlotNum() const;
   VASTValPtr getSlotActive() const;
 
