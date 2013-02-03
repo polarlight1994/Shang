@@ -173,10 +173,6 @@ public:
     return cast<T>(getSymbol(Name));
   }
 
-  // Create wrapper to allow us get a bitslice of the symbol.
-  VASTValPtr getOrCreateSymbol(const Twine &Name, unsigned BitWidth,
-                               bool CreateWrapper);
-
   VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB);
 
   VASTSlot *getStartSlot();
