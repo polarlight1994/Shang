@@ -176,3 +176,18 @@ void VASTSeqCtrlOp::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
   OS << '\n';
 }
+
+//----------------------------------------------------------------------------//
+VASTSeqEnable::VASTSeqEnable(VASTSlot *S, VASTUse *Operands, bool Enable,
+                             VASTSeqValue *Dst)
+  : VASTSeqOp(vastSeqEnable, S, false, Operands, 0), Ptr(Dst, Enable) {}
+
+void VASTSeqEnable::print(raw_ostream &OS) const {
+  VASTSeqOp::print(OS);
+  if (isEnable()) OS << "Enable ";
+  else            OS << "Disable ";
+
+  getDst()->printAsOperand(OS, false);
+
+  OS << '\n';
+}

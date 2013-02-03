@@ -62,6 +62,7 @@ public:
     // Fine-grain control flow.
     vastSeqInst,
     vastSeqCtrlOp,
+    vastSeqEnable,
 
     vastModule
   };

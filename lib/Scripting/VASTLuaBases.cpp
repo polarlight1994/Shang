@@ -537,6 +537,17 @@ void VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
   SeqOps.push_back(CtrlOp);
 }
 
+void VASTModule::createEnable(VASTSeqValue *SeqVal, VASTSlot *Slot,
+                              VASTValPtr GuardCnd, bool IsEnable) {
+  VASTUse *UseBegin = getAllocator().Allocate<VASTUse>(0 + 1);
+  VASTSeqEnable *CtrlOp = new VASTSeqEnable(Slot, UseBegin, IsEnable, SeqVal);
+  // Create the predicate operand.
+  new (UseBegin) VASTUse(CtrlOp, GuardCnd);
+
+  // Add the SeqOp to the the all SeqOp list.
+  SeqOps.push_back(CtrlOp);
+}
+
 void VASTModule::print(raw_ostream &OS) const {
   for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
     const VASTSlot *S = SI;

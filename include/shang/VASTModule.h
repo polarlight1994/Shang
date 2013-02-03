@@ -313,6 +313,10 @@ public:
   void assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,
                        VASTValPtr GuardCnd, bool UseSlotActive,
                        bool ExportDefine = true);
+  /// Create an assignment on the control logic which may need further conflict
+  /// resolution.
+  void createEnable(VASTSeqValue *SeqVal, VASTSlot *Slot, VASTValPtr GuardCnd,
+                    bool IsEnable);
 
   // Iterate over all SeqOps in the module.
   typedef ilist<VASTSeqOp>::iterator seqop_iterator;
