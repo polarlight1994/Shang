@@ -260,6 +260,9 @@ void VASTModuleBuilder::connectEntryState(BasicBlock *EntryBB) {
   VASTSlot *IdleSlot = VM->getStartSlot();
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
   addSuccSlot(IdleSlot, IdleSlot, Builder.buildNotExpr(StartPort));
+  // Disable the finish port at the idle slot.
+  VM->createEnable(VM->getPort(VASTModule::Finish).getSeqVal(), IdleSlot,
+                   VASTImmediate::True, false);
 
   SmallVector<VASTValPtr, 1> Cnds(1, StartPort);
   addSuccSlot(IdleSlot, getOrCreateLandingSlot(EntryBB), StartPort);
@@ -452,6 +455,10 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
     SeqInst->addSrc(getAsOperandImpl(I.getReturnValue()), 0, false, RetPort);
   }
 
+  // Enable the finish port.
+  VM->createEnable(VM->getPort(VASTModule::Finish).getSeqVal(), CurSlot,
+                   VASTImmediate::True, true);
+
   // Construct the control flow.
   addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True);
 }
@@ -559,21 +566,30 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   Op->addSrc(ByteEn, CurOperandIdx++, false, R);
 
   // Enable the memory bus at the same slot.
+  // FIXIME: Use the correct memory port number.
+  RegName = VFUMemBus::getEnableName(PortNum) + "_r";
+  VASTSeqValue *MemEn = VM->getSymbol<VASTSeqValue>(RegName);
+  VM->createEnable(MemEn, Slot, VASTImmediate::True, true);
   // Disable the memory bus at the next slot.
+  Slot = advanceToNextSlot(Slot);
+  VM->createEnable(MemEn, Slot, VASTImmediate::True, false);
 
   // Read the result of the memory transaction.
   if (Data == 0) {
-    Slot = advanceToNextSlot(Slot, getFUDesc<VFUMemBus>()->getReadLatency());
+    unsigned Latency = getFUDesc<VFUMemBus>()->getReadLatency();
+    // Please note that we had already advance 1 slot after we lauch the
+    // load/store to disable the load/store. Now we need only wait Latency - 1
+    // slots to get the result.
+    Slot = advanceToNextSlot(Slot, Latency - 1);
     // Get the input port from the memory bus.
     RegName = VFUMemBus::getInDataBusName(PortNum);
     R = VM->getSymbol<VASTSeqValue>(RegName);
     VASTSeqValue *Result = getOrCreateSeqVal(&I, I.getName());
     VM->latchValue(Result, R, Slot, VASTImmediate::True, &I);
+    // Move the the next slot so that the other operations are not conflict with
+    // the current memory operations.
+    advanceToNextSlot(Slot);
   }
-
-  // Move the the next slot so that the other operations are not conflict with
-  // the current memory operations.
-  advanceToNextSlot(Slot);
 }
 
 //===----------------------------------------------------------------------===//

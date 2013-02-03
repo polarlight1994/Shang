@@ -222,32 +222,23 @@ static VASTSlot *GetLinearNextSlot(VASTSlot *S) {
 void ControlLogicSynthesis::getherControlLogicInfo(VASTSlot *S) {
   typedef VASTSlot::op_iterator op_iterator;
 
-  for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
-    VASTSeqOp *SeqOp = *I;
-    VASTValPtr Pred = SeqOp->getPred();
-    Instruction *Inst = dyn_cast_or_null<Instruction>(SeqOp->getValue());
+  // We need to read the S->op_end() at every iteration because it may be
+  // changed by removeOp.
+  for (op_iterator I = S->op_begin(); I != S->op_end(); /*++I*/) {
+    if (VASTSeqEnable *SeqOp = dyn_cast<VASTSeqEnable>(*I)) {
+      VASTValPtr Pred = SeqOp->getPred();
+      VASTSeqValue *Dst = SeqOp->getDst();
 
-    if (Inst == 0) continue;
+      if (SeqOp->isEnable())  addSlotEnable(S, Dst, Pred);
+      else                    addSlotDisable(S, Dst, Pred);
 
-    switch (Inst->getOpcode()) {
-    // Nothing to do by default.
-    default: break;
-    case Instruction::Load:
-    case Instruction::Store: {
-      // FIXIME: Use the correct memory port number.
-      std::string EnableName = VFUMemBus::getEnableName(0) + "_r";
-      VASTSeqValue *MemEn = VM->getSymbol<VASTSeqValue>(EnableName);
-      addSlotEnable(S, MemEn, Pred);
-
-      VASTSlot *NextSlot = GetLinearNextSlot(S);
-      addSlotDisable(NextSlot, MemEn, Pred);
-      break;
+      // This SeqOp is not used any more.
+      I = S->removeOp(I);
+      VM->eraseSeqOp(SeqOp);
+      continue;
     }
-    // Enable the finish at the same slot.
-    case Instruction::Ret:
-      addSlotEnable(S, VM->getPort(VASTModule::Finish).getSeqVal(), Pred);
-      break;
-    }
+
+    ++I;
   }
 }
 
@@ -255,11 +246,6 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
   VM = &M;
   MinimalDatapathContext Context(M, getAnalysisIfAvailable<DataLayout>());
   Builder = new DatapathBuilder(Context);
-
-  // Disable the finish signal when the module start.
-  VASTSlot *StartSlot = VM->getStartSlot();
-  addSlotDisable(StartSlot, VM->getPort(VASTModule::Finish).getSeqVal(),
-                 VASTImmediate::True);
 
   // Building the Slot active signals.
   typedef VASTModule::slot_iterator slot_iterator;
