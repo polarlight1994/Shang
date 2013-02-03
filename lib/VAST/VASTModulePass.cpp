@@ -221,6 +221,8 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   // Build the SeqOps from the LLVM Instruction.
   void visitReturnInst(ReturnInst &I);
+  void visitBranchInst(BranchInst &I);
+
   void visitLoadInst(LoadInst &I);
   void visitStoreInst(StoreInst &I);
 
@@ -377,6 +379,22 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
 
   // Construct the control flow.
   addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True);
+}
+
+void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
+  VASTSlot *CurSlot = getOrCreateLandingSlot(I.getParent());
+  // TODO: Create alias operations.
+  if (I.isUnconditional()) {
+    addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(0)),
+                VASTImmediate::True);
+    return;
+  }
+
+  // Connect the slots according to the condition.
+  VASTValPtr Cnd = getAsOperandImpl(I.getCondition());
+  // Please note that the TrueDest is at the second successor.
+  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(1)), Cnd);
+  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(0)), Cnd.invert());
 }
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
