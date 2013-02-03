@@ -103,7 +103,7 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   std::string InitFilePath = "";
   // Set the initialize file's name if there is any.
   if (Initializer)
-    InitFilePath = VBEMangle(Initializer->getName()) + "_init.txt";
+    InitFilePath = ShangMangle(Initializer->getName()) + "_init.txt";
 
   // Generate the code for the block RAM.
   OS << "// Address space: " << getBlockRAMNum();

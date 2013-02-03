@@ -274,7 +274,8 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqVal(Value *V, const Twine &Name) 
 
   // Create the SeqVal now.
   unsigned BitWidth = Builder.getValueSizeInBits(V);
-  Twine SeqValName = "v_" + Name+ "_r";
+  std::string SeqValName = "v_" + Name.str() + "_r";
+  SeqValName = ShangMangle(SeqValName);
   VASTRegister *R
     =  VM->addRegister(SeqValName, BitWidth, 0, VASTNode::Data, 0);
   // V = VM->createSeqValue("v" + utostr_32(RegNo) + "r", BitWidth,

@@ -128,7 +128,7 @@ bool llvm::runScriptOnGlobalVariables(Module &M, DataLayout *TD,
     //   table Initializer.
     //}
 
-    SS << "GlobalVariables." << VBEMangle(GV->getName()) << " = { ";
+    SS << "GlobalVariables." << ShangMangle(GV->getName()) << " = { ";
     SS << "isLocal = " << GV->hasLocalLinkage() << ", ";
     SS << "AddressSpace = " << GV->getType()->getAddressSpace() << ", ";
     SS << "Alignment = " << GV->getAlignment() << ", ";

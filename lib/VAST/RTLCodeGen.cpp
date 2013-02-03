@@ -14,17 +14,12 @@
 
 #include "LangSteam.h"
 #include "shang/VASTModulePass.h"
-
-#include "shang/Passes.h"
 #include "shang/VASTModule.h"
 #include "shang/Utilities.h"
+#include "shang/Passes.h"
 
 #include "llvm/IR/Module.h"
-#include "llvm/Target/Mangler.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
-#include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/IR/DataLayout.h"
-#include "llvm/ADT/Statistic.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SourceMgr.h"

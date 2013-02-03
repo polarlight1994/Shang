@@ -38,7 +38,7 @@ inline bool isAllOnes64(uint64_t V, unsigned BitWidth) {
 
 }
 
-inline std::string VBEMangle(const std::string &S) {
+inline std::string ShangMangle(const std::string &S) {
   std::string Result;
 
   for (unsigned i = 0, e = S.size(); i != e; ++i)

@@ -252,7 +252,7 @@ VASTValPtr VASTModule::getOrCreateSymbol(const Twine &Name,
     V = new (getAllocator().Allocate<VASTSymbol>()) VASTSymbol(S, SymbolWidth);
     if (CreateWrapper) {
       // Create the wire for the symbol, and assign the symbol to the wire.
-      VASTWire *Wire = addWire(VBEMangle(Name.str() + "_s"), BitWidth);
+      VASTWire *Wire = addWire(ShangMangle(Name.str() + "_s"), BitWidth);
       Wire->assign(V);
       // Remember the wire.
       V = Wire;
