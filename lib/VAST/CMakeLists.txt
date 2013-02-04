@@ -19,7 +19,7 @@ add_llvm_library(ShangVAST
   RTLCodeGen.cpp
 )
 
-target_link_libraries (ShangVAST ShangHighLevelOpt)
+target_link_libraries (ShangVAST ShangIROpts)
 
 if (ENABLE_LOGIC_SYNTHESIS)
   include_directories(

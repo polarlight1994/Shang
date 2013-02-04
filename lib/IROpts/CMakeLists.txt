@@ -1,4 +1,4 @@
-add_llvm_library(ShangHighLevelOpt
+add_llvm_library(ShangIROpts
   FunctionFilter.cpp
   HLSInliner.cpp
   TrivialLoopUnrollPass.cpp
@@ -6,4 +6,4 @@ add_llvm_library(ShangHighLevelOpt
   BasicBlockTopOrder.cpp
   )
 
-llvm_config(ShangHighLevelOpt transformutils ipo)
+llvm_config(ShangIROpts transformutils ipo)
