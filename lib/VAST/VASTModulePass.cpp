@@ -335,6 +335,19 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
   if (GEPOperator *GEP = dyn_cast<GEPOperator>(V))
     return indexVASTExpr(V, Builder.visitGEPOperator(*GEP));
 
+  // Try to build the datapath for the constant expression.
+  if (ConstantExpr *CExpr = dyn_cast<ConstantExpr>(V)) {
+    switch (CExpr->getOpcode()) {
+    default:break;
+    case Instruction::BitCast: {
+      VASTValPtr Operand = getAsOperandImpl(CExpr->getOperand(0));
+      assert(getValueSizeInBits(V) == Operand->getBitWidth()
+             && "Cast between types with different size found!");
+      return Operand;
+    }
+    }
+  }
+
   llvm_unreachable("Unhandle value!");
 }
 
