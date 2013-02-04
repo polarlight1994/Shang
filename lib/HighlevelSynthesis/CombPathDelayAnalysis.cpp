@@ -466,7 +466,7 @@ bool CombPathDelayAnalysis::runOnVASTModule(VASTModule &VM)  {
   // No need to write timing script at all.
   if (DisableTimingScriptGeneration) return false;
 
-  bindFunctionToScriptEngine(VM.F, getAnalysis<DataLayout>(), &VM);
+  bindFunctionToScriptEngine(getAnalysis<DataLayout>(), &VM);
 
   ReachingDef = &getAnalysis<SeqReachingDefAnalysis>();
 

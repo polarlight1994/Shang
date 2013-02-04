@@ -180,9 +180,9 @@ bool llvm::runScriptOnGlobalVariables(Module &M, DataLayout *TD,
   return runScriptStr(ScriptToRun, Err);
 }
 
-void llvm::bindFunctionToScriptEngine(Function &F, DataLayout &TD,
-                                      VASTModule *Module) {
+void llvm::bindFunctionToScriptEngine(DataLayout &TD, VASTModule *Module) {
   SMDiagnostic Err;
+  Function &F = *Module;
   // Push the function information into the script engine.
   // FuncInfo {
   //   String Name,
@@ -243,7 +243,7 @@ bool ScriptingPass::doFinalization(Module &M) {
 }
 
 bool ScriptingPass::runOnVASTModule(VASTModule &VM)  {
-  bindFunctionToScriptEngine(VM.F, *TD, &VM);
+  bindFunctionToScriptEngine(*TD, &VM);
 
   SMDiagnostic Err;
   if (!runScriptStr(FunctionScript, Err))

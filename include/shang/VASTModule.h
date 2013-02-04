@@ -110,6 +110,8 @@ private:
 
   // The Name of the Design.
   std::string Name;
+  // The corresponding function for this module.
+  Function &F;
 
   // The port starting offset of a specific function unit.
   SmallVector<std::map<unsigned, unsigned>, VFUs::NumCommonFUs> FUPortOffsets;
@@ -138,8 +140,6 @@ public:
 
   void reset();
 
-  // The corresponding function for this module.
-  Function &F;
 
   const std::string &getName() const { return Name; }
 
@@ -181,6 +181,7 @@ public:
   const VASTSlot *getFinishSlot() const;
 
   operator DatapathContainer &() { return *Datapath; }
+  operator Function &() { return F; }
 
   BumpPtrAllocator &getAllocator();
   VASTUse *allocateUse();
