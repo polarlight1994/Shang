@@ -225,12 +225,21 @@ void ControlLogicSynthesis::getherControlLogicInfo(VASTSlot *S) {
   // We need to read the S->op_end() at every iteration because it may be
   // changed by removeOp.
   for (op_iterator I = S->op_begin(); I != S->op_end(); /*++I*/) {
-    if (VASTSeqEnable *SeqOp = dyn_cast<VASTSeqEnable>(*I)) {
+    if (VASTSeqSlotCtrl *SeqOp = dyn_cast<VASTSeqSlotCtrl>(*I)) {
       VASTValPtr Pred = SeqOp->getPred();
-      VASTSeqValue *Dst = SeqOp->getDst();
+      VASTValue *CtrlSignal = SeqOp->getCtrlSignal();
 
-      if (SeqOp->isEnable())  addSlotEnable(S, Dst, Pred);
-      else                    addSlotDisable(S, Dst, Pred);
+      switch (SeqOp->getCtrlType()) {
+      case VASTSeqSlotCtrl::Enable:
+        addSlotEnable(S, cast<VASTSeqValue>(CtrlSignal), Pred);
+        break;
+      case VASTSeqSlotCtrl::Disable:
+        addSlotDisable(S, cast<VASTSeqValue>(CtrlSignal), Pred);
+        break;
+      case VASTSeqSlotCtrl::WaitReady:
+        addSlotReady(S, CtrlSignal, Pred);
+        break;
+      }
 
       // This SeqOp is not used any more.
       I = S->removeOp(I);

@@ -537,12 +537,13 @@ void VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
   SeqOps.push_back(CtrlOp);
 }
 
-void VASTModule::createEnable(VASTSeqValue *SeqVal, VASTSlot *Slot,
-                              VASTValPtr GuardCnd, bool IsEnable) {
+void VASTModule::createSlotCtrl(VASTValue *CtrlSignal, VASTSlot *Slot,
+                                VASTValPtr Pred, VASTSeqSlotCtrl::Type CtrlType) {
   VASTUse *UseBegin = getAllocator().Allocate<VASTUse>(0 + 1);
-  VASTSeqEnable *CtrlOp = new VASTSeqEnable(Slot, UseBegin, IsEnable, SeqVal);
+  VASTSeqSlotCtrl *CtrlOp
+    = new VASTSeqSlotCtrl(Slot, UseBegin, CtrlType, CtrlSignal);
   // Create the predicate operand.
-  new (UseBegin) VASTUse(CtrlOp, GuardCnd);
+  new (UseBegin) VASTUse(CtrlOp, Pred);
 
   // Add the SeqOp to the the all SeqOp list.
   SeqOps.push_back(CtrlOp);

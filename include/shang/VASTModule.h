@@ -316,8 +316,8 @@ public:
                        bool ExportDefine = true);
   /// Create an assignment on the control logic which may need further conflict
   /// resolution.
-  void createEnable(VASTSeqValue *SeqVal, VASTSlot *Slot, VASTValPtr GuardCnd,
-                    bool IsEnable);
+  void createSlotCtrl(VASTValue *CtrlSignal, VASTSlot *Slot, VASTValPtr GuardCnd,
+                      VASTSeqSlotCtrl::Type CtrlType);
 
   /// Remove the VASTSeqOp from the module and delete it. Please note that
   /// the SeqOp should be remove from its parent slot before we erase it.

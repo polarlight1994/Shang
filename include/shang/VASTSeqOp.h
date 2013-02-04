@@ -176,27 +176,32 @@ public:
   }
 };
 
-/// VASTSeqEnable - Represent the assignment to the control signal which may
+/// VASTSeqSlotCtrl - Represent the assignment to the control signal which may
 /// conflict with other assignment. These conflicts will be resolved in the
 /// ControlLogicSynthesis pass.
-/// Please note that UseSlotActive does not make sense in VASTSeqEnable.
-class VASTSeqEnable : public VASTSeqOp {
-  PointerIntPair<VASTSeqValue*, 1, bool> Ptr;
+/// Please note that UseSlotActive does not make sense in VASTSeqSlotCtrl.
+class VASTSeqSlotCtrl : public VASTSeqOp {
 public:
-  // VASTSeqEnable may not use slot active, it is a part of the control logic.
-  // VASTSeqEnable only assign 1 or 0 to the destination VASTSeqValue.
-  VASTSeqEnable(VASTSlot *S, VASTUse *Operands, bool Enable, VASTSeqValue *Dst);
+  enum Type {
+    Enable, Disable, WaitReady
+  };
+private:
+  PointerIntPair<VASTValue*, 2, Type> Ptr;
+public:
+  // VASTSeqSlotCtrl may not use slot active, it is a part of the control logic.
+  // VASTSeqSlotCtrl only assign 1 or 0 to the destination VASTSeqValue.
+  VASTSeqSlotCtrl(VASTSlot *S, VASTUse *Operands, Type T, VASTValue *CtrlSignal);
 
   Value *getValue() const { return 0; }
 
   /// getDst - Get the register to be enable/disable.
-  VASTSeqValue *getDst() const { return Ptr.getPointer(); }
+  VASTValue *getCtrlSignal() const { return Ptr.getPointer(); }
   /// isEnable - Return true if the the operation is enabling a control register,
   /// false otherwise.
-  bool isEnable() const { return Ptr.getInt(); }
+  VASTSeqSlotCtrl::Type getCtrlType() const { return Ptr.getInt(); }
 
   virtual void print(raw_ostream &OS) const;
-  static inline bool classof(const VASTSeqEnable *A) { return true; }
+  static inline bool classof(const VASTSeqSlotCtrl *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSeqEnable;
   }

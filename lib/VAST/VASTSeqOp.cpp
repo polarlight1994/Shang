@@ -178,16 +178,19 @@ void VASTSeqCtrlOp::print(raw_ostream &OS) const {
 }
 
 //----------------------------------------------------------------------------//
-VASTSeqEnable::VASTSeqEnable(VASTSlot *S, VASTUse *Operands, bool Enable,
-                             VASTSeqValue *Dst)
-  : VASTSeqOp(vastSeqEnable, S, false, Operands, 0), Ptr(Dst, Enable) {}
+VASTSeqSlotCtrl::VASTSeqSlotCtrl(VASTSlot *S, VASTUse *Operands, Type T,
+                                 VASTValue *CtrlSignal)
+  : VASTSeqOp(vastSeqEnable, S, false, Operands, 0), Ptr(CtrlSignal, T) {}
 
-void VASTSeqEnable::print(raw_ostream &OS) const {
+void VASTSeqSlotCtrl::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
-  if (isEnable()) OS << "Enable ";
-  else            OS << "Disable ";
+  switch (getCtrlType()) {
+  case VASTSeqSlotCtrl::Enable:     OS << "Enable ";      break;
+  case VASTSeqSlotCtrl::Disable:    OS << "Disable ";     break;
+  case VASTSeqSlotCtrl::WaitReady:  OS << "Wait Ready ";  break;
+  }
 
-  getDst()->printAsOperand(OS, false);
+  getCtrlSignal()->printAsOperand(OS, false);
 
   OS << '\n';
 }

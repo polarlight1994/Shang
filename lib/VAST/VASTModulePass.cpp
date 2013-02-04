@@ -263,8 +263,8 @@ void VASTModuleBuilder::connectEntryState(BasicBlock *EntryBB) {
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
   addSuccSlot(IdleSlot, IdleSlot, Builder.buildNotExpr(StartPort));
   // Disable the finish port at the idle slot.
-  VM->createEnable(VM->getPort(VASTModule::Finish).getSeqVal(), IdleSlot,
-                   VASTImmediate::True, false);
+  VM->createSlotCtrl(VM->getPort(VASTModule::Finish).getSeqVal(), IdleSlot,
+                     VASTImmediate::True, VASTSeqSlotCtrl::Disable);
 
   SmallVector<VASTValPtr, 1> Cnds(1, StartPort);
   addSuccSlot(IdleSlot, getOrCreateLandingSlot(EntryBB), StartPort);
@@ -459,8 +459,8 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   }
 
   // Enable the finish port.
-  VM->createEnable(VM->getPort(VASTModule::Finish).getSeqVal(), CurSlot,
-                   VASTImmediate::True, true);
+  VM->createSlotCtrl(VM->getPort(VASTModule::Finish).getSeqVal(), CurSlot,
+                     VASTImmediate::True, VASTSeqSlotCtrl::Enable);
 
   // Construct the control flow.
   addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True);
@@ -572,10 +572,10 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   // FIXIME: Use the correct memory port number.
   RegName = VFUMemBus::getEnableName(PortNum) + "_r";
   VASTSeqValue *MemEn = VM->getSymbol<VASTSeqValue>(RegName);
-  VM->createEnable(MemEn, Slot, VASTImmediate::True, true);
+  VM->createSlotCtrl(MemEn, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Enable);
   // Disable the memory bus at the next slot.
   Slot = advanceToNextSlot(Slot);
-  VM->createEnable(MemEn, Slot, VASTImmediate::True, false);
+  VM->createSlotCtrl(MemEn, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Disable);
 
   // Read the result of the memory transaction.
   if (Data == 0) {
