@@ -461,9 +461,12 @@ VASTModuleBuilder::emitIPFromTemplate(const char *Name, unsigned ResultSize)
     return 0;
   }
 
+  // Create and insert the submodule.
   unsigned FNNum = SubModules.size();
   VASTSubModule *SubMod = VM->addSubmodule(Name, FNNum);
   SubMod->setIsSimple(false);
+  SubModules.GetOrCreateValue(Name, SubMod);
+
   SmallVector<VASTValPtr, 4> Ops;
   // Add the fanin registers.
   for (unsigned i = 0, e = OpInfo.size(); i < e; ++i) {
@@ -477,10 +480,7 @@ VASTModuleBuilder::emitIPFromTemplate(const char *Name, unsigned ResultSize)
   SubMod->createFinPort(VM);
 
   // Dose the submodule have a return port?
-  if (ResultSize) {
-    SubMod->createRetPort(VM, ResultSize, Latency);
-    return SubMod;
-  }
+  if (ResultSize) SubMod->createRetPort(VM, ResultSize, Latency);
 
   return SubMod;
 }
