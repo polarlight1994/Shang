@@ -106,6 +106,12 @@ struct ControlLogicSynthesis : public VASTModulePass {
   }
 
   bool runOnVASTModule(VASTModule &VM);
+
+  void releaseMemory() {
+    SlotEnables.clear();
+    SlotDisables.clear();
+    SlotReadys.clear();
+  }
 };
 }
 
@@ -274,6 +280,7 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
   }
 
   delete Builder;
+  releaseMemory();
 
   return true;
 }
