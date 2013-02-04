@@ -24,6 +24,8 @@ class MinimalDatapathContext : public DatapathBuilderContext {
 public:
   MinimalDatapathContext(DatapathContainer &Datapath, DataLayout *TD);
 
+  using VASTExprBuilderContext::getOrCreateImmediate;
+
   VASTImmediate *getOrCreateImmediate(const APInt &Value);
 
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
