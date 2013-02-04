@@ -21,10 +21,12 @@
 
 #include "shang/Passes.h"
 
-#include "llvm/Support/CFG.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Support/CFG.h"
+#include "llvm/Support/InstIterator.h"
 
 #include <map>
 
@@ -176,7 +178,15 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void emitFunctionSignature(Function *F, VASTSubModule *SubMod = 0);
   void emitCommonPort(VASTSubModule *SubMod);
 
-  void allocateSubModules();
+  //===--------------------------------------------------------------------===//
+  StringMap<VASTNode*> SubModules;
+  VASTSubModule *getSubModule(StringRef Name) const {
+    VASTNode *SubMod = SubModules.lookup(Name);
+    assert(SubMod && "Submodule not allocated!");
+    return dyn_cast<VASTSubModule>(SubMod);
+  }
+
+  void allocateSubModules(CallGraph &CG);
   //===--------------------------------------------------------------------===//
   VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name);
 
@@ -237,6 +247,8 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void visitReturnInst(ReturnInst &I);
   void visitBranchInst(BranchInst &I);
   void visitSwitchInst(SwitchInst &I);
+
+  void visitCallSite(CallSite CS);
 
   void visitLoadInst(LoadInst &I);
   void visitStoreInst(StoreInst &I);
@@ -373,12 +385,17 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
   }
 
   emitCommonPort(SubMod);
-  MBBuilder.addMemPorts();
 
-  // Copy the value to the register.
-  VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
-  for (unsigned i = 0, e = ArgRegs.size(); i != e; ++i)
-    VM->latchValue(ArgRegs[i], ArgPorts[i], StartSlot, StartPort, Args[i]);
+  // Only build the following logics if we are building current module instead
+  // of the submodule.
+  if (SubMod == 0) {
+    MBBuilder.addMemPorts();
+
+    // Copy the value to the register.
+    VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
+    for (unsigned i = 0, e = ArgRegs.size(); i != e; ++i)
+      VM->latchValue(ArgRegs[i], ArgPorts[i], StartSlot, StartPort, Args[i]);
+  }
 }
 
 void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
@@ -396,7 +413,25 @@ void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
   }
 }
 
-void VASTModuleBuilder::allocateSubModules() {
+void VASTModuleBuilder::allocateSubModules(CallGraph &CG) {
+  Function &F = *VM;
+  CallGraphNode *CGN = CG[&F];
+
+  typedef CallGraphNode::const_iterator iterator;
+  for (iterator I = CGN->begin(), E = CGN->end(); I != E; ++I) {
+    Function *Callee = I->second->getFunction();
+
+    // Submodule for external function is ignored now.
+    if (Callee->isDeclaration()) continue;
+
+    // Create the submodule.
+    const char *SubModName = Callee->getValueName()->getKeyData();
+    assert(!SubModules.count(SubModName) && "Submodule had already exist!");
+    VASTSubModule *SubMod = VM->addSubmodule(SubModName, SubModules.size());
+    emitFunctionSignature(Callee, SubMod);
+    SubMod->setIsSimple();
+    SubModules.GetOrCreateValue(SubModName, SubMod);
+  }
 
   // Connect the membus for all submodules.
   MBBuilder.buildMemBusMux();
@@ -507,6 +542,46 @@ void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
   // predicate is false.
   VASTValPtr DefaultPred = Builder.buildNotExpr(Builder.buildOrExpr(CasePreds, 1));
   addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getDefaultDest()), DefaultPred);
+}
+
+void VASTModuleBuilder::visitCallSite(CallSite CS) {
+  Function *Callee = CS.getCalledFunction();
+  // Ignore the external function.
+  if (Callee->isDeclaration()) return;
+
+  assert(!CS.isInvoke() && "Cannot handle invoke at this moment!");
+  CallInst *Inst = cast<CallInst>(CS.getInstruction());
+
+  BasicBlock *ParentBB = CS->getParent();
+  VASTSlot *Slot = getLatestSlot(ParentBB);
+
+  VASTSubModule *SubMod = getSubModule(Callee->getName());
+  assert(SubMod && "Submodule not allocated?");
+  unsigned NumArgs = CS.arg_size();
+  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, NumArgs, Inst,
+                                VASTSeqInst::Launch);
+  for (unsigned i = 0; i < NumArgs; ++i) {
+    VASTValPtr Arg = getAsOperandImpl(CS.getArgument(i));
+    Op->addSrc(Arg, i, false, SubMod->getFanin(i));
+  }
+
+  // Enable the start port of the submodule at the current slot.
+  VASTSeqValue *Start = SubMod->getStartPort();
+  VM->createSlotCtrl(Start, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Enable);
+  // Disable the start port of the submodule at the next slot.
+  Slot = advanceToNextSlot(Slot);
+  VM->createSlotCtrl(Start, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Disable);
+  VM->createSlotCtrl(SubMod->getFinPort(), Slot, VASTImmediate::True,
+                     VASTSeqSlotCtrl::WaitReady);
+
+  // Read the return value from the function if there is any.
+  if (!CS->getType()->isVoidTy()) {
+    VASTSeqValue *Result = getOrCreateSeqVal(Inst, Inst->getName());
+    VM->latchValue(Result, SubMod->getRetPort(), Slot, VASTImmediate::True, Inst);
+    // Move the the next slot so that the operation can correctly read the
+    // returned value
+    advanceToNextSlot(Slot);
+  }
 }
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
@@ -633,7 +708,7 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
   Builder.emitFunctionSignature(&F);
 
   // Allocate the submodules.
-  Builder.allocateSubModules();
+  Builder.allocateSubModules(getAnalysis<CallGraph>());
 
   // Build the Submodule.
   Builder.connectEntryState(&F.getEntryBlock());
@@ -647,6 +722,7 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
 
 void VASTModuleAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<HLSAllocation>();
+  AU.addRequired<CallGraph>();
   AU.addRequiredID(BasicBlockTopOrderID);
   AU.setPreservesAll();
 }

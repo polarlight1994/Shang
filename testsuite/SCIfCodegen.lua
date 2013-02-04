@@ -61,9 +61,10 @@ $('#')endif
 -- Also no need to worry about the main function at this moment because this
 -- script is only run on the hybrid flow.
 SCIFFScript = [=[
-#local RTLModuleName = FuncInfo.Name
+#if FuncInfo.Name == RTLModuleName then
+#local CurRTLModuleName = FuncInfo.Name
 // Include the header file of the generated module.
-$('#')include "V$(RTLModuleName).h"
+$('#')include "V$(CurRTLModuleName).h"
 static int cnt = 0;
 static int memcnt = 0;
 
@@ -85,7 +86,7 @@ $('#')ifdef __cplusplus
 $('#')endif
 
 //Top module here
-SC_MODULE(V$(RTLModuleName)_tb){
+SC_MODULE(V$(CurRTLModuleName)_tb){
   public:
     sc_in_clk clk;
     sc_signal<bool> fin;
@@ -106,10 +107,10 @@ SC_MODULE(V$(RTLModuleName)_tb){
     sc_signal<$(getBitWidth(v.Size))>$(v.Name);
 #end
 
-    V$(RTLModuleName) DUT;
+    V$(CurRTLModuleName) DUT;
     
     void sw_main_entry(){
-      V$(RTLModuleName)_tb *tb_ptr = V$(RTLModuleName)_tb::Instance();
+      V$(CurRTLModuleName)_tb *tb_ptr = V$(CurRTLModuleName)_tb::Instance();
       wait(); tb_ptr->rstN = 0;
       wait(10); tb_ptr->rstN = 1;
       wait();
@@ -118,10 +119,10 @@ SC_MODULE(V$(RTLModuleName)_tb){
 
       ofstream outfile;
       outfile.open ("$(CounterFile)"); 
-      outfile <<"$(RTLModuleName) hardware run cycles " << cnt << " wait cycles " << memcnt <<endl;
+      outfile <<"$(CurRTLModuleName) hardware run cycles " << cnt << " wait cycles " << memcnt <<endl;
       outfile.close();
       outfile.open ("$(BenchmarkCycles)", ios_base::app); 
-      outfile <<",\n{\"name\":\"$(RTLModuleName)\", \"total\":" << cnt << ", \"wait\":" << memcnt << '}' <<endl;
+      outfile <<",\n{\"name\":\"$(CurRTLModuleName)\", \"total\":" << cnt << ", \"wait\":" << memcnt << '}' <<endl;
       outfile.close();
       exit(0);
     }
@@ -189,14 +190,14 @@ SC_MODULE(V$(RTLModuleName)_tb){
       }
     }
 
-    static V$(RTLModuleName)_tb* Instance() {
-      static V$(RTLModuleName)_tb _instance("top");
+    static V$(CurRTLModuleName)_tb* Instance() {
+      static V$(CurRTLModuleName)_tb _instance("top");
       return &_instance ;
     }
 
     protected:
     //Include the DUT in the top module
-      SC_CTOR(V$(RTLModuleName)_tb): DUT("DUT"){
+      SC_CTOR(V$(CurRTLModuleName)_tb): DUT("DUT"){
         DUT.clk(clk);
 #for i,v in ipairs(FuncInfo.Args) do
         DUT.$(v.Name)($(v.Name));
@@ -204,9 +205,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
         DUT.fin(fin);
         //whether there is a return value
 #if FuncInfo.ReturnSize~=0 then
-        DUT.return_value(return_value);  
-#else
-        
+        DUT.return_value(return_value);          
 #end
         DUT.start(start);
         DUT.rstN(rstN);
@@ -223,8 +222,8 @@ SC_MODULE(V$(RTLModuleName)_tb){
         SC_CTHREAD(brige_pipe_3,clk.pos());
       }
     private:
-      V$(RTLModuleName)_tb(const V$(RTLModuleName)_tb&) ;
-      V$(RTLModuleName)_tb& operator=(const V$(RTLModuleName)_tb&) ;
+      V$(CurRTLModuleName)_tb(const V$(CurRTLModuleName)_tb&) ;
+      V$(CurRTLModuleName)_tb& operator=(const V$(CurRTLModuleName)_tb&) ;
     };  
 
   $(getType(FuncInfo.ReturnSize)) $(FuncInfo.Name)_if($(
@@ -233,7 +232,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
       _put(getType(v.Size) .. ' '.. v.Name)
     end
   )){
-    V$(RTLModuleName)_tb *tb_ptr = V$(RTLModuleName)_tb::Instance();
+    V$(CurRTLModuleName)_tb *tb_ptr = V$(CurRTLModuleName)_tb::Instance();
 #for i,v in ipairs(FuncInfo.Args) do
     tb_ptr->$(v.Name)=$(v.Name);
 #end       
@@ -244,7 +243,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
       ++cnt;
     }
     
-    //printf("$(RTLModuleName) finish\n");
+    //printf("$(CurRTLModuleName) finish\n");
 #if FuncInfo.ReturnSize~=0 then
     return ($(getType(FuncInfo.ReturnSize))) tb_ptr->return_value;      
 #else 
@@ -259,7 +258,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
     
     Verilated::commandArgs(argc,argv);
     sc_clock clk ("clk",10, 0.5, 3, true);
-    V$(RTLModuleName)_tb *top = V$(RTLModuleName)_tb::Instance();
+    V$(CurRTLModuleName)_tb *top = V$(CurRTLModuleName)_tb::Instance();
     //Link the stimulate to the clk
     top->clk(clk);
     //Start the test
@@ -267,6 +266,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
 
     return 0;
   }
+#end
 ]=]
 
 Passes.SCIFCodegen = { FunctionScript = [=[
