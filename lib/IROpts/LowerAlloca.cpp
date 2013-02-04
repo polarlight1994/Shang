@@ -28,11 +28,13 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/CommandLine.h"
-#define DEBUG_TYPE "vtm-frame-lowering"
+#define DEBUG_TYPE "shang-alloca-2-gv"
 #include "llvm/Support/Debug.h"
 #include "llvm/ADT/Statistic.h"
 
 using namespace llvm;
+
+STATISTIC(NumAllocaReplaced, "Number of allocas replaced by globalvariable");
 
 namespace {
 struct LowerAlloca : public ModulePass {
@@ -72,6 +74,7 @@ GlobalVariable *LowerAlloca::createGVFramStack(AllocaInst *AI, Module &M) {
   // Please note that this operation make the function become no reentrantable.
   AI->replaceAllUsesWith(GV);
   AI->eraseFromParent();
+  ++NumAllocaReplaced;
 
   return GV;
 }
