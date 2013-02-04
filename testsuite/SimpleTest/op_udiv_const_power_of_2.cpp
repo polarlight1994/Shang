@@ -5,8 +5,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-int op_sdiv(int a, int b) __attribute__ ((noinline));
-int op_sdiv(int a, int b) { return a / b; }
+int op_udiv_const_power_of_2(unsigned a) __attribute__ ((noinline));
+int op_udiv_const_power_of_2(unsigned a) { return a / 64; }
 #ifdef __cplusplus
 }
 #endif
@@ -17,9 +17,7 @@ int main(int argc, char **argv) {
   int i;
   for(i = 0; i < 16; ++i) {
     int a = rand();
-    int b = rand();
-	  if (b == 0) b = 1;
-    printf("result:%d\n", op_sdiv(a, b));
+    printf("result:%d\n", op_udiv_const_power_of_2(a));
   }
 
   return 0;
