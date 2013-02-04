@@ -426,7 +426,10 @@ void VASTModuleBuilder::allocateSubModules(CallGraph &CG) {
 
     // Create the submodule.
     const char *SubModName = Callee->getValueName()->getKeyData();
-    assert(!SubModules.count(SubModName) && "Submodule had already exist!");
+
+    // Ignore the function that is called more than once in the function.
+    if (SubModules.count(SubModName)) continue;
+
     VASTSubModule *SubMod = VM->addSubmodule(SubModName, SubModules.size());
     emitFunctionSignature(Callee, SubMod);
     SubMod->setIsSimple();
