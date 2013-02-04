@@ -188,6 +188,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   void allocateSubModules(CallGraph &CG);
 
+  VASTSubModule *emitIPFromTemplate(const char *Name, unsigned ResultSize);
   //===--------------------------------------------------------------------===//
   VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name);
 
@@ -250,6 +251,8 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void visitSwitchInst(SwitchInst &I);
 
   void visitCallSite(CallSite CS);
+
+  void visitBinaryOperator(BinaryOperator &I);
 
   void visitLoadInst(LoadInst &I);
   void visitStoreInst(StoreInst &I);
@@ -443,6 +446,45 @@ void VASTModuleBuilder::allocateSubModules(CallGraph &CG) {
   MBBuilder.buildMemBusMux();
 }
 
+VASTSubModule *
+VASTModuleBuilder::emitIPFromTemplate(const char *Name, unsigned ResultSize)
+{
+  if (VASTSubModule *SubMod = SubModules.lookup(Name))
+    return SubMod;
+
+  SmallVector<VFUs::ModOpInfo, 4> OpInfo;
+  unsigned Latency = VFUs::getModuleOperands(Name, SubModules.size(), OpInfo);
+
+  // Submodule information not available, create the sequential code.
+  if (OpInfo.empty()) {
+    //N = VM->addSeqCode(Name);
+    return 0;
+  }
+
+  unsigned FNNum = SubModules.size();
+  VASTSubModule *SubMod = VM->addSubmodule(Name, FNNum);
+  SubMod->setIsSimple(false);
+  SmallVector<VASTValPtr, 4> Ops;
+  // Add the fanin registers.
+  for (unsigned i = 0, e = OpInfo.size(); i < e; ++i) {
+    VASTRegister *R = VM->addOpRegister(OpInfo[i].first, OpInfo[i].second, FNNum);
+    SubMod->addInPort(OpInfo[i].first, R->getValue());
+    Ops.push_back(R->getValue());
+  }
+  // Add the start register.
+  SubMod->createStartPort(VM);
+  // Create the finish signal from the submodule.
+  SubMod->createFinPort(VM);
+
+  // Dose the submodule have a return port?
+  if (ResultSize) {
+    SubMod->createRetPort(VM, ResultSize, Latency);
+    return SubMod;
+  }
+
+  return SubMod;
+}
+
 //===----------------------------------------------------------------------===//
 void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
   // Create the landing slot for this BB.
@@ -572,6 +614,45 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
                                   VASTSeqInst::Launch);
   // Build the logic to lauch the module and read the result.
   buildSubModuleOperation(Op, SubMod, Args);
+}
+
+void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
+  unsigned SizeInBits = getValueSizeInBits(I);
+  VASTSubModule *SubMod = 0;
+
+  switch (I.getOpcode()) {
+  default: break;;
+  case Instruction::UDiv: {
+    static const char *IPNames[] = { "__ip_udiv_i64", "__ip_udiv_i32" };
+    SubMod = emitIPFromTemplate(IPNames[6 - Log2_32_Ceil(SizeInBits)], SizeInBits);
+    break;
+  }
+  case Instruction::SDiv: {
+    static const char *IPNames[] = { "__ip_sdiv_i64", "__ip_sdiv_i32" };
+    SubMod = emitIPFromTemplate(IPNames[6 - Log2_32_Ceil(SizeInBits)], SizeInBits);
+    break;
+  }
+  case Instruction::SRem: {
+    static const char *IPNames[] = { "__ip_srem_i64", "__ip_srem_i32" };
+    SubMod = emitIPFromTemplate(IPNames[6 - Log2_32_Ceil(SizeInBits)], SizeInBits);
+    break;
+  }
+  }
+
+  if (SubMod == 0) {
+    errs() << "Warning: Cannot generate IP to implement instruction:\n";
+    I.print(errs());
+    return;
+  }
+
+  VASTValPtr Ops[] = { getAsOperandImpl(I.getOperand(0)),
+                       getAsOperandImpl(I.getOperand(1)) };
+
+  BasicBlock *ParentBB = I.getParent();
+  VASTSlot *Slot = getLatestSlot(ParentBB);
+  VASTSeqInst *Op
+    = VM->lauchInst(Slot, VASTImmediate::True, 2, &I, VASTSeqInst::Launch);
+  buildSubModuleOperation(Op, SubMod, Ops);
 }
 
 void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
