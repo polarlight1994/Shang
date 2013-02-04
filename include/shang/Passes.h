@@ -42,6 +42,9 @@ Pass *createFunctionFilterPass(raw_ostream &O,
                                const StringMap<std::string, MallocAllocator> &
                                TopHWFUnctions);
 
+Pass *createLowerAllocaPass();
+
+
 // Analyse the Combination Path Delay.
 Pass *createCombPathDelayAnalysisPass();
 
@@ -57,6 +60,7 @@ Pass *createScriptingPass(const char *Name, const char *FScript,
 
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
 void initializeHLSAllocationPass(PassRegistry &Registry);
+void initializeLowerAllocaPass(PassRegistry &Registry);
 void initializeControlLogicSynthesisPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
 void initializeCombPathDelayAnalysisPass(PassRegistry &Registry);

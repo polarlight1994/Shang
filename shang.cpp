@@ -72,6 +72,9 @@ static void LoopOptimizerEndExtensionFn(const PassManagerBuilder &Builder,
 }
 
 static void addHLSPreparePasses(PassManager &PM) {
+  // Relplace the stack alloca variables by global variables.
+  PM.add(createLowerAllocaPass());
+
   // Basic AliasAnalysis support.
   // Add TypeBasedAliasAnalysis before BasicAliasAnalysis so that
   // BasicAliasAnalysis wins if they disagree. This is intended to help
@@ -94,22 +97,12 @@ static void addHLSPreparePasses(PassManager &PM) {
   PM.add(createUnreachableBlockEliminationPass());
 
   PM.add(createCFGSimplificationPass());
-
+  // Do not perform this before CFG simplification pass, because the CFG
+  // simplification pass creates the switch instructions.
+  PM.add(createLowerSwitchPass());
   // Do not pass the TLI to CodeGenPrepare pass, so it won't sink the address
   // computation. We can handle sinking by ourself.
   PM.add(createCodeGenPreparePass(0));
-
-  //PM.add(createStackProtectorPass(getTargetLowering()));
-
-  // Name the instructions.
-  PM.add(createInstructionNamerPass());
-
-  // All passes which modify the LLVM IR are now complete; run the verifier
-  // to ensure that the IR is valid.
-  PM.add(createVerifierPass());
-
-  // Run the SCEVAA pass to compute more accurate alias information.
-  PM.add(createScalarEvolutionAliasAnalysisPass());
 }
 
 void addIROptimizationPasses(PassManager &HLSPasses) {
@@ -196,7 +189,16 @@ int main(int argc, char **argv) {
     PreHLSPasses.run(mod);
   }
 
-  // Stage 2, perform high-level synthesis.
+  // Stage 2, perform high-level synthesis related IR optimizations.
+  {
+    PassManager HLSIRPasses;
+    HLSIRPasses.add(new DataLayout(ConfigTable["DataLayout"]));
+    addIROptimizationPasses(HLSIRPasses);
+    addHLSPreparePasses(HLSIRPasses);
+    HLSIRPasses.run(mod);
+  }
+
+  // Stage 3, perform high-level synthesis.
   // Build up all of the passes that we want to do to the module.
   {
     // Make sure the PassManager is deleted before the tool_output_file otherwise
@@ -204,9 +206,17 @@ int main(int argc, char **argv) {
     PassManager HLSPasses;
     HLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
 
-    addIROptimizationPasses(HLSPasses);
+    //PM.add(createStackProtectorPass(getTargetLowering()));
 
-    addHLSPreparePasses(HLSPasses);
+    // Name the instructions.
+    HLSPasses.add(createInstructionNamerPass());
+
+    // All passes which modify the LLVM IR are now complete; run the verifier
+    // to ensure that the IR is valid.
+    HLSPasses.add(createVerifierPass());
+    HLSPasses.add(createTypeBasedAliasAnalysisPass());
+    // Run the SCEVAA pass to compute more accurate alias information.
+    HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
 
     // Analyse the slack between registers.
     //Passes.add(createCombPathDelayAnalysisPass());
