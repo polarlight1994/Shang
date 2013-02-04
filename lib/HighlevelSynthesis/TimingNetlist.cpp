@@ -12,20 +12,18 @@
 //===----------------------------------------------------------------------===//
 
 #include "TimingNetlist.h"
+#include "TimingEstimator.h"
 
+#include "shang/VASTModule.h"
+#include "shang/Passes.h"
 #include "shang/FUInfo.h"
 
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SetOperations.h"
-#include "llvm/Support/CommandLine.h"
-#define DEBUG_TYPE "timing-netlist"
+#define DEBUG_TYPE "shang-timing-netlist"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
-
-static cl::opt<double>
-DelayFactor("vtm-delay-estimation-factor",
-             cl::desc("Factor to be multipied to the estimated delay"),
-             cl::init(1.0));
 
 void TimingNetlist::annotateDelay(VASTSeqValue *Src, VASTValue *Dst,
                                   delay_type delay) {
@@ -33,7 +31,7 @@ void TimingNetlist::annotateDelay(VASTSeqValue *Src, VASTValue *Dst,
   assert(path_end_at != PathInfo.end() && "Path not exist!");
   SrcInfoTy::iterator path_start_from = path_end_at->second.find(Src);
   assert(path_start_from != path_end_at->second.end() && "Path not exist!");
-  path_start_from->second = delay / VFUs::Period * DelayFactor;
+  path_start_from->second = delay / VFUs::Period;
 }
 
 TimingNetlist::delay_type
@@ -65,3 +63,46 @@ void TimingNetlist::createPathFromSrc(VASTValue *Dst, VASTValue *Src) {
   set_union(PathInfo[Dst], at->second);
 }
 
+TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
+  initializeTimingNetlistPass(*PassRegistry::getPassRegistry());
+}
+
+char TimingNetlist::ID = 0;
+char &llvm::TimingNetlistID = TimingNetlist::ID;
+
+INITIALIZE_PASS(TimingNetlist, "shang-timing-netlist",
+                "Preform Timing Estimation on the RTL Netlist",
+                false, true)
+
+Pass *llvm::createTimingNetlistPass() {
+  return new TimingNetlist();
+}
+
+void TimingNetlist::releaseMemory() {
+  PathInfo.clear();
+}
+
+void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
+  VASTModulePass::getAnalysisUsage(AU);
+  AU.setPreservesAll();
+}
+
+//===----------------------------------------------------------------------===//
+bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
+  // Create an estimator.
+  OwningPtr<TimingEstimatorBase>
+    Estimator(TimingEstimatorBase::CreateBlackBoxModel());
+
+  typedef VASTModule::seqval_iterator iterator;
+  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
+    VASTSeqValue *SeqVal = I;
+    typedef VASTSeqValue::itertor fanin_iterator;
+    for (fanin_iterator FI = SeqVal->begin(), FE = SeqVal->end(); FI != FE; ++FI)
+    {
+      VASTValPtr Fanin = (*FI);
+      Estimator->estimateTimingOnTree(Fanin.get());
+    }
+  }
+
+  return false;
+}

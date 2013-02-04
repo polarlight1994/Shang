@@ -76,6 +76,10 @@ public:
 
   path_iterator path_end() { return PathInfo.end(); }
   const_path_iterator path_end() const { return PathInfo.end(); }
+
+  void releaseMemory();
+  bool runOnVASTModule(VASTModule &VM);
+  void getAnalysisUsage(AnalysisUsage &AU) const;
 };
 }
 

@@ -28,6 +28,7 @@ template<typename T, typename AllocatorTy> class StringMap;
 extern char &BasicBlockTopOrderID;
 extern char &ControlLogicSynthesisID;
 extern char &DatapathNamerID;
+extern char &TimingNetlistID;
 
 FunctionPass *createDesignMetricsPass();
 
@@ -44,6 +45,7 @@ Pass *createFunctionFilterPass(raw_ostream &O,
 
 Pass *createLowerAllocaPass();
 
+Pass *createTimingNetlistPass();
 
 // Analyse the Combination Path Delay.
 Pass *createCombPathDelayAnalysisPass();
@@ -61,6 +63,7 @@ Pass *createScriptingPass(const char *Name, const char *FScript,
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
 void initializeHLSAllocationPass(PassRegistry &Registry);
 void initializeLowerAllocaPass(PassRegistry &Registry);
+void initializeTimingNetlistPass(PassRegistry &Registry);
 void initializeControlLogicSynthesisPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
 void initializeCombPathDelayAnalysisPass(PassRegistry &Registry);
