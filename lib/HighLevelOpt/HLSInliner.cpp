@@ -57,7 +57,9 @@ public:
 
   InlineCost getInlineCost(CallSite CS) {
     Function *F = CS.getCalledFunction(), *CallerF = CS.getCaller();
-    if (!F || F->isDeclaration() ||  F->getAttributes().hasAttribute(AttributeSet::FunctionIndex, Attribute::NoInline))
+    if (!F || F->isDeclaration() ||
+         F->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                         Attribute::NoInline))
       return InlineCost::getNever();
 
     unsigned NumUses = 0;
