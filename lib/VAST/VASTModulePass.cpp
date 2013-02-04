@@ -249,6 +249,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void visitReturnInst(ReturnInst &I);
   void visitBranchInst(BranchInst &I);
   void visitSwitchInst(SwitchInst &I);
+  void visitUnreachableInst(UnreachableInst &I);
 
   void visitCallSite(CallSite CS);
 
@@ -567,6 +568,13 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   VM->createSlotCtrl(VM->getPort(VASTModule::Finish).getSeqVal(), CurSlot,
                      VASTImmediate::True, VASTSeqSlotCtrl::Enable);
 
+  // Construct the control flow.
+  addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True);
+}
+
+void VASTModuleBuilder::visitUnreachableInst(UnreachableInst &I) {
+  VASTSlot *CurSlot = getLatestSlot(I.getParent());
+  // DIRTYHACK: Simply jump back the start slot.
   // Construct the control flow.
   addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True);
 }
