@@ -179,14 +179,15 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void emitCommonPort(VASTSubModule *SubMod);
 
   //===--------------------------------------------------------------------===//
-  StringMap<VASTNode*> SubModules;
+  StringMap<VASTSubModule*> SubModules;
   VASTSubModule *getSubModule(StringRef Name) const {
-    VASTNode *SubMod = SubModules.lookup(Name);
+    VASTSubModule *SubMod = SubModules.lookup(Name);
     assert(SubMod && "Submodule not allocated!");
-    return dyn_cast<VASTSubModule>(SubMod);
+    return SubMod;
   }
 
   void allocateSubModules(CallGraph &CG);
+
   //===--------------------------------------------------------------------===//
   VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name);
 
@@ -258,6 +259,8 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
                               Instruction &Inst);
   unsigned getByteEnable(Value *Addr) const;
 
+  void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
+                               ArrayRef<VASTValPtr> Args);
   void visitInstruction(Instruction &I) {
     I.dump();
   }
@@ -555,21 +558,31 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
   assert(!CS.isInvoke() && "Cannot handle invoke at this moment!");
   CallInst *Inst = cast<CallInst>(CS.getInstruction());
 
-  BasicBlock *ParentBB = CS->getParent();
-  VASTSlot *Slot = getLatestSlot(ParentBB);
-
   VASTSubModule *SubMod = getSubModule(Callee->getName());
   assert(SubMod && "Submodule not allocated?");
   unsigned NumArgs = CS.arg_size();
-  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, NumArgs, Inst,
-                                VASTSeqInst::Launch);
-  for (unsigned i = 0; i < NumArgs; ++i) {
-    VASTValPtr Arg = getAsOperandImpl(CS.getArgument(i));
-    Op->addSrc(Arg, i, false, SubMod->getFanin(i));
-  }
+
+  SmallVector<VASTValPtr, 4> Args;
+  for (unsigned i = 0; i < NumArgs; ++i)
+    Args.push_back(getAsOperandImpl(CS.getArgument(i)));
+
+  BasicBlock *ParentBB = CS->getParent();
+  VASTSlot *Slot = getLatestSlot(ParentBB);
+  VASTSeqInst *Op = VM->lauchInst(Slot, VASTImmediate::True, Args.size(), Inst,
+                                  VASTSeqInst::Launch);
+  // Build the logic to lauch the module and read the result.
+  buildSubModuleOperation(Op, SubMod, Args);
+}
+
+void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
+                                                VASTSubModule *SubMod,
+                                                ArrayRef<VASTValPtr> Args) {
+  for (unsigned i = 0; i < Args.size(); ++i)
+    Inst->addSrc(Args[i], i, false, SubMod->getFanin(i));
 
   // Enable the start port of the submodule at the current slot.
   VASTSeqValue *Start = SubMod->getStartPort();
+  VASTSlot *Slot = Inst->getSlot();
   VM->createSlotCtrl(Start, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Enable);
   // Disable the start port of the submodule at the next slot.
   Slot = advanceToNextSlot(Slot);
@@ -578,9 +591,10 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
                      VASTSeqSlotCtrl::WaitReady);
 
   // Read the return value from the function if there is any.
-  if (!CS->getType()->isVoidTy()) {
-    VASTSeqValue *Result = getOrCreateSeqVal(Inst, Inst->getName());
-    VM->latchValue(Result, SubMod->getRetPort(), Slot, VASTImmediate::True, Inst);
+  if (VASTSeqValue *RetPort = SubMod->getRetPort()) {
+    VASTSeqValue *Result
+      = getOrCreateSeqVal(Inst->getValue(), Inst->getValue()->getName());
+    VM->latchValue(Result, RetPort, Slot, VASTImmediate::True, Inst->getValue());
     // Move the the next slot so that the operation can correctly read the
     // returned value
     advanceToNextSlot(Slot);
