@@ -328,10 +328,12 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
   if (ConstantInt *Int = dyn_cast<ConstantInt>(V))
     return indexVASTExpr(V, getOrCreateImmediate(Int->getValue()));
 
-  if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
+  if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V))
     // If the GV is assigned to the memory port 0, create a wrapper wire for it.
     return indexVASTExpr(GV, createWrapperWire(GV));
-  }
+
+  if (GEPOperator *GEP = dyn_cast<GEPOperator>(V))
+    return indexVASTExpr(V, Builder.visitGEPOperator(*GEP));
 
   llvm_unreachable("Unhandle value!");
 }

@@ -21,6 +21,7 @@
 
 namespace llvm {
 class DataLayout;
+class GEPOperator;
 
 class DatapathBuilderContext : public VASTExprBuilderContext {
 public:
@@ -110,6 +111,9 @@ public:
     // Unhandled instructions can be safely ignored.
     return VASTValPtr();
   }
+
+  // Operator visiting functions.
+  VASTValPtr visitGEPOperator(GEPOperator &O);
 };
 }
 

@@ -14,6 +14,7 @@
 #include "IR2Datapath.h"
 
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Operator.h"
 
 using namespace llvm;
 
@@ -210,17 +211,21 @@ VASTValPtr DatapathBuilder::visitExtractValueInst(ExtractValueInst &I) {
 }
 
 VASTValPtr DatapathBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
-  VASTValPtr Ptr = getAsOperand(I.getOperand(0));
+  return visitGEPOperator(cast<GEPOperator>(I));
+}
+
+VASTValPtr DatapathBuilder::visitGEPOperator(GEPOperator &O) {
+  VASTValPtr Ptr = getAsOperand(O.getPointerOperand());
   // FIXME: All the pointer arithmetic are perform under the precision of
   // PtrSize, do we need to perform the arithmetic at the max avilable integer
   // width and truncate the resunt?
   unsigned PtrSize = Ptr->getBitWidth();
   // Note that the pointer operand may be a vector of pointers. Take the scalar
   // element which holds a pointer.
-  Type *Ty = I.getOperand(0)->getType()->getScalarType();
+  Type *Ty = O.getPointerOperandType()->getScalarType();
 
-  for (GetElementPtrInst::const_op_iterator OI = I.op_begin()+1, E = I.op_end();
-       OI != E; ++OI) {
+  typedef GEPOperator::op_iterator op_iterator;
+  for (op_iterator OI = O.idx_begin(), E = O.op_end(); OI != E; ++OI) {
     const Value *Idx = *OI;
     if (StructType *StTy = dyn_cast<StructType>(Ty)) {
       unsigned Field = cast<ConstantInt>(Idx)->getZExtValue();
