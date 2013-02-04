@@ -23,6 +23,7 @@ class StoreInst;
 class LoadInst;
 class FuncUnitId;
 
+/// TODO: Implement the HLS allocation as analysis group.
 /// HLSAllocation - The resource allocation interface.
 class HLSAllocation : public ImmutablePass {
 public:

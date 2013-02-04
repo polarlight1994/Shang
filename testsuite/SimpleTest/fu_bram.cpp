@@ -21,8 +21,7 @@ int main(int argc, char **argv) {
   long index;
   int x;
   for(i = 0; i < 16; ++i) {
-	index = rand();
-	x = i & 0x7;
+    x = i & 0x7;
     printf("%d, %d, result:%d\n", i, x, fu_bram(i));
   }
 
