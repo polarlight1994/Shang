@@ -217,14 +217,6 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
     }
 }
 
-static VASTSlot *GetLinearNextSlot(VASTSlot *S) {
-  assert(S->succ_size() == 1 && "More than one slot!");
-  VASTSlot *NextSlot = *S->succ_begin();
-  assert(S->getSuccCnd(NextSlot) == VASTImmediate::True
-         && "Next slot is conditional!");
-  return NextSlot;
-}
-
 void ControlLogicSynthesis::getherControlLogicInfo(VASTSlot *S) {
   typedef VASTSlot::op_iterator op_iterator;
 
@@ -246,7 +238,8 @@ void ControlLogicSynthesis::getherControlLogicInfo(VASTSlot *S) {
         addSlotReady(S, CtrlSignal, Pred);
         break;
       }
-
+      // TODO: Do not remove these operation, so that we can build the control
+      // logic again after we reschedule the design.
       // This SeqOp is not used any more.
       I = S->removeOp(I);
       VM->eraseSeqOp(SeqOp);
