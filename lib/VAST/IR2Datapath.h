@@ -102,6 +102,10 @@ public:
   VASTValPtr visitPtrToIntInst(PtrToIntInst &I);
   VASTValPtr visitIntToPtrInst(IntToPtrInst &I);
 
+  VASTValPtr visitIntrinsicInst(IntrinsicInst &I);
+
+  VASTValPtr visitExtractValueInst(ExtractValueInst &I);
+
   VASTValPtr visitInstruction(Instruction &I) {
     // Unhandled instructions can be safely ignored.
     return VASTValPtr();

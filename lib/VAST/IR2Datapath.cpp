@@ -170,6 +170,45 @@ VASTValPtr DatapathBuilder::visitBinaryOperator(BinaryOperator &I) {
   return VASTValPtr();
 }
 
+VASTValPtr DatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
+  switch (I.getIntrinsicID()) {
+  default: break;
+  case Intrinsic::uadd_with_overflow: {
+    VASTValPtr Ops[] = { getAsOperand(I.getOperand(0)),
+                         getAsOperand(I.getOperand(1)) };
+    // The result of uadd_with_overflow is 1 bit bigger than the operand size.
+    unsigned ResultSize = Ops[0]->getBitWidth() + 1;
+    // For unsigned addition, the overflow bit is just the carry bit, i.e. the
+    // extra bit of the addition.
+    return buildAddExpr(Ops, ResultSize);
+  }
+  }
+
+  return VASTValPtr();
+}
+
+VASTValPtr DatapathBuilder::visitExtractValueInst(ExtractValueInst &I) {
+  Value *Operand = I.getAggregateOperand();
+
+  if (IntrinsicInst *Intri = dyn_cast<IntrinsicInst>(Operand)) {
+    VASTValPtr V = getAsOperand(Operand);
+    switch (Intri->getIntrinsicID()) {
+    default: break;
+    case Intrinsic::uadd_with_overflow: {
+      assert(I.getNumIndices() == 1 && "Unexpected number of indices!");
+      // Return the overflow bit.
+      if (I.getIndices()[0] == 1)
+        return buildBitSliceExpr(V, V->getBitWidth(), V->getBitWidth() - 1);
+      // Else return the addition result.
+      assert(I.getIndices()[0] == 0 && "Bad index!");
+      return buildBitSliceExpr(V, V->getBitWidth() - 1, 0);
+    }
+    }
+  }
+
+  return VASTValPtr();
+}
+
 VASTValPtr DatapathBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
   VASTValPtr Ptr = getAsOperand(I.getOperand(0));
   // FIXME: All the pointer arithmetic are perform under the precision of
