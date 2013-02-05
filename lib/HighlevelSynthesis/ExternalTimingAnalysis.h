@@ -33,6 +33,8 @@ class ExternalTimingAnalysis {
   TimingNetlist &TNL;
 
   // FIXME: Move these function to another class.
+  void writeDatapathNetlist(raw_ostream &O) const;
+
   // Write the wrapper of the netlist.
   void writeNetlist(raw_ostream &O) const;
 
@@ -54,7 +56,7 @@ class ExternalTimingAnalysis {
   bool readPathDelay(yaml::MappingNode *N);
 
 public:
-  explicit ExternalTimingAnalysis(VASTModule &VM, TimingNetlist &TNL)
+  ExternalTimingAnalysis(VASTModule &VM, TimingNetlist &TNL)
     : VM(VM), TNL(TNL) {}
 
   bool runExternalTimingAnalysis();

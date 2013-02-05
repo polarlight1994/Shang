@@ -145,23 +145,39 @@ namespace {
 
       if (VASTValPtr V= W->getDriver()) {
         OS << " = ";
-        V.printAsOperand(OS);
+        // Print some random constant for the linked time known value.
+        if (isa<VASTLLVMValue>(V.get())) OS << intptr_t(W);
+        else                             V.printAsOperand(OS);
       }
 
       OS << ";\n";
     }
 
     if (VASTExpr *E = dyn_cast<VASTExpr>(N)) {
+        // If the wire has name at the first time we visit it, it is a output
+        // pint. Otherwise we should declare it here.
+      if (!E->hasName()) {
+        E->nameExpr();
+        OS << "wire ";
+
+        if (E->getBitWidth() > 1)
+          OS << "[" << (E->getBitWidth() - 1) << ":0] ";
+
+        OS << E->getTempName() << ";\n";
+      }
+
       // Temporary unname the rexpression so that we can print its logic.
-      E->nameExpr();
-      OS << "wire ";
+      //if (!E->getSubModName().empty()) {
+      //  OS << ";\n";
+      //  if (E->printFUInstantiation(OS))
+      //    return;
 
-      if (E->getBitWidth() > 1)
-        OS << "[" << (E->getBitWidth() - 1) << ":0] ";
+      //  // If the FU instantiation is not printed, we need to print the
+      //  // assignment.
+      //  OS << "assign " << E->getTempName();
+      //}
 
-      OS << E->getTempName();
-
-      OS << " = ";
+      OS << "assign " << E->getTempName() << " = ";
 
       E->nameExpr(false);
       E->printAsOperand(OS, false);
@@ -173,9 +189,56 @@ namespace {
 };
 }
 
+
+void ExternalTimingAnalysis::writeDatapathNetlist(raw_ostream &O) const {
+  O << "module " << VM.getName() << "_datapath(\n";
+
+  typedef VASTModule::seqval_iterator iterator;
+  typedef VASTSeqValue::itertor fanin_iterator;
+  std::set<VASTExpr*> Outputs;
+  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
+    VASTSeqValue *SVal = I;
+    // Declare the registers as input of the datapath.
+    O.indent(2) << "input wire ";
+    unsigned Bitwidth = SVal->getBitWidth();
+
+    if (Bitwidth > 1) O << "[" << (Bitwidth - 1) << ":0]";
+    O << ' ' << SVal->getName() <<  ",\n";
+    // And the wire that drive the registers as output of the datapath.
+    for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI)
+      if (VASTExpr *E = dyn_cast<VASTExpr>(VASTValPtr(*FI).get())) {
+        // The wire had aready declared.
+        if (!Outputs.insert(E).second) continue;
+
+        E->nameExpr(true);
+        O.indent(2) << "output wire";
+        if (Bitwidth > 1) O << "[" << (Bitwidth - 1) << ":0] ";
+        O << E->getTempName() <<  ",\n";
+      }
+  }
+  O.indent(2) << "output wire somewire);\n";
+
+  O << "//Data-path\n";
+
+  // Write the data-path.
+  std::set<VASTOperandList*> Visited;
+  typedef std::set<VASTExpr*>::iterator output_iterator;
+  for (output_iterator I = Outputs.begin(), E = Outputs.end(); I != E; ++I)
+    VASTOperandList::visitTopOrder(*I, Visited, DatapathPrinter(O));
+
+  O << "endmodule\n\n";
+}
+
+
+
 void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
+  typedef VASTModule::seqval_iterator iterator;
+  typedef VASTSeqValue::itertor fanin_iterator;
+
+  writeDatapathNetlist(O);
+
   // FIXME: Use the luascript template?
-  O << "module " << VM.getName() << "wapper(\n";
+  O << "module " << VM.getName() << "_wapper(\n";
   O.indent(2) << "input wire scan_clk,\n";
   O.indent(2) << "input wire read_netlist,\n";
   O.indent(2) << "input wire shift,\n";
@@ -183,7 +246,6 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
   O.indent(2) << "output reg scan_chain_out);\n";
 
   // Declare the registers for the scan chain.
-  typedef VASTModule::seqval_iterator iterator;
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
     VASTSeqValue *SeqVal = I;
 
@@ -195,15 +257,22 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
     O << ' ' << SeqVal->getName() << ";\n";
   }
 
-  O << "//Data-path\n";
-  // Write the data-path.
-  std::set<VASTOperandList*> Visited;
+  std::set<VASTExpr*> Fanins;
+  // Declare the wires so that we can connect it to the datapath.
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
     VASTSeqValue *SVal = I;
-    typedef VASTSeqValue::itertor fanin_iterator;
     for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI)
-      VASTOperandList::visitTopOrder(VASTValPtr(*FI).get(), Visited,
-                                     DatapathPrinter(O));
+      if (VASTExpr *E = dyn_cast<VASTExpr>(VASTValPtr(*FI).get())) {
+        // The wire had aready declared.
+        if (!Fanins.insert(E).second) continue;
+
+        O.indent(4) << "wire";
+        unsigned Bitwidth = E->getBitWidth();
+
+        if (Bitwidth > 1) O << "[" << (Bitwidth - 1) << ":0]";
+
+        O << ' ' << E->getTempName() << ";\n";
+      }
   }
 
   O.indent(4) << "// Scan chain timing\n";
@@ -228,9 +297,27 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
   // Close the timing block.
   O.indent(4) << "end\n";
 
-  O<< '\n';
+  O << '\n';
 
-  O << "endmodule\n";
+  // Instantante the datapath module
+  O << VM.getName() << "_datapath DATAPATH_INST(\n";
+  // Connect the input to the datapath.
+  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
+    VASTSeqValue *SVal = I;
+
+    O.indent(2) << '.' << SVal->getName() <<  '(' << SVal->getName() << "),\n";
+  }
+
+  // Connect the output from the datapath.
+  typedef std::set<VASTExpr*>::iterator output_iterator;
+  for (output_iterator I = Fanins.begin(), E = Fanins.end(); I != E; ++I) {
+    VASTExpr *Expr = *I;
+    O.indent(2) << '.' << Expr->getTempName()
+                << '(' << Expr->getTempName() << "),\n";
+  }
+
+  O.indent(2) << ".somewire());\n";
+  O << "endmodule\n\n";
 }
 
 void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
@@ -242,7 +329,7 @@ void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
     << "project_new " << VM.getName() << " -overwrite\n"
     << "set_global_assignment -name FAMILY \"Cyclone IV E\"\n"
        "set_global_assignment -name DEVICE EP4CE75F29C6\n"
-       "set_global_assignment -name TOP_LEVEL_ENTITY " << VM.getName() << "wapper\n"
+       "set_global_assignment -name TOP_LEVEL_ENTITY " << VM.getName() << "_wapper\n"
        "set_global_assignment -name SOURCE_FILE \""<< NetlistPath.str() <<"\"\n"
        //"set_global_assignment -name SDC_FILE @SDC_FILE@\n"
        "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
