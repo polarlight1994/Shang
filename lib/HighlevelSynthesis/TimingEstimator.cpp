@@ -477,14 +477,7 @@ void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root,
 {
   VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
 
-  if (L == 0) {
-    if (VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(Root)) {
-      // Create an entry from SVal.
-      TimingNetlist::delay_type &d = SrcInfo[SVal];
-      d = std::max(TimingNetlist::delay_type(), d);
-    }
-    return;
-  }
+  assert(L && "Root is not a datapath node!");
   
   // The entire tree had been visited.
   if (hasPathInfo(Root)) {

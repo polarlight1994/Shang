@@ -101,6 +101,15 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
     for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
       // Estimate the delay for each fanin.
       VASTValue *Fanin = VASTValPtr(*FI).get();
+      if (VASTOperandList::GetDatapathOperandList(Fanin) == 0) {
+        if (VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(Fanin)) {
+          // Create an entry from SVal.
+          TimingNetlist::delay_type &d = PathInfo[Fanin][SVal];
+          d = std::max(TimingNetlist::delay_type(), d);
+        }
+        continue;
+      }
+
       SrcInfoTy &SrcInfo = PathInfo[Fanin];
       if (!SrcInfo.empty()) continue;
 
