@@ -256,12 +256,6 @@ void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
        "project_close\n";
 }
 
-static void setTerminatorCollection(raw_ostream & O, const VASTNamedValue *V,
-                                    const char *CollectionName) {
-  O << "set " << CollectionName << " [" << "get_keepers \"*" << V->getName()
-    << "*\"]\n";
-}
-
 static std::string getName(const VASTValue *V) {
   if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V))
     return NV->getName();
@@ -269,16 +263,19 @@ static std::string getName(const VASTValue *V) {
   return cast<VASTExpr>(V)->getTempName();
 }
 
+static void setTerminatorCollection(raw_ostream & O, const VASTValue *V,
+                                    const char *CollectionName) {
+  O << "set " << CollectionName << " [" << "get_keepers \"*" << getName(V)
+    << "*\"]\n";
+}
+
 void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
-                                                  const VASTSeqValue *Dst,
+                                                  const VASTExpr *Dst,
                                                   const VASTSeqValue *Src)
                                                   const {
   // Get the source and destination nodes.
   setTerminatorCollection(O, Dst, "dst");
   setTerminatorCollection(O, Src, "src");
-  
-  const VASTValue *PathDst = Dst;
-  assert(PathDst && "Bad Assignment!");
 
   O <<
     "set paths [get_timing_paths -from $src -to $dst -setup -npath 1 -detail path_only]\n"
@@ -289,40 +286,39 @@ void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
     "  foreach_in_collection path $paths {\n"
     "    set delay [get_path_info $path -data_delay]\n"
     "    post_message -type info \"" << intptr_t(Src) << ' '<< getName(Src)
-    << " -> " << intptr_t(PathDst) << ' '<< getName(PathDst) << ' '
+    << " -> " << intptr_t(Dst) << ' '<< getName(Dst) << ' '
     << getName(Dst) << " delay: $delay\"\n"
     "  }\n"
     "} else {\n"
     "    post_message -type info \"" << intptr_t(Src)<< ' ' << getName(Src)
-    << " -> " << intptr_t(PathDst) << ' ' << getName(PathDst) << ' '
+    << " -> " << intptr_t(Dst) << ' ' << getName(Dst) << ' '
     << getName(Dst) << " path not found!\"\n"
     "}\n"
     "puts $JSONFile \"\\{\\\"from\\\":" << intptr_t(Src) << ",\\\"to\\\":"
-    <<  intptr_t(PathDst) << ",\\\"delay\\\":$delay\\},\"\n";
+    <<  intptr_t(Dst) << ",\\\"delay\\\":$delay\\},\"\n";
 }
 
 void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O,
-                                                const VASTSeqValue *Dst) const{
-  //typedef SrcInfoTy::const_iterator it;
-  //VASTValue *PathDst = Dst->getDriver().get();
-
-  //for (it I = TNL.src_begin(PathDst), E = TNL.src_end(PathDst); I != E; ++I)    
-  //  extractTimingForPair(O, Dst, I->first);
+                                                const TimingPaths &Paths) const{
+  typedef TimingNetlist::src_iterator iterator;
+  for (iterator I = Paths.second.begin(), E = Paths.second.end(); I != E; ++I)
+    if (VASTExpr *Expr = dyn_cast<VASTExpr>(Paths.first))
+      extractTimingForPair(O, Expr, I->first);
 }
 
 void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
                                                          const sys::Path &ResultPath)
                                                          const {
   // Print the critical path in the datapath to debug the TimingNetlist.
-  O << "report_timing -from_clock { clk } -to_clock { clk } -setup -npaths 1"
-       " -detail full_path -stdout\n"
+  O << "report_timing -from_clock { scan_clk } -to_clock { scan_clk }"
+       " -setup -npaths 1 -detail full_path -stdout\n"
   // Open the file and start the array.
        "set JSONFile [open \"" << ResultPath.str() <<"\" w+]\n"
        "puts $JSONFile \"\\[\"\n";
 
-  //for (FanoutIterator I = TNL.fanout_begin(), E = TNL.fanout_end(); I != E; ++I)
-  //    extractTimingToDst(O, I->second);
-
+  typedef TimingNetlist::path_iterator path_iterator;
+  for (path_iterator I = TNL.path_begin(), E = TNL.path_end(); I != E; ++I)
+    extractTimingToDst(O, *I);
 
   // Close the array and the file object.
   O << "puts $JSONFile \"\\{\\\"from\\\":0,\\\"to\\\":0,\\\"delay\\\":0\\}\"\n"
@@ -335,7 +331,7 @@ static bool exitWithError(const sys::Path &FileName) {
   return false;
 }
 
-static VASTSeqValue *readPathDst(KeyValueNode *N) {
+static VASTExpr *readPathDst(KeyValueNode *N) {
   assert(cast<ScalarNode>(N->getKey())->getRawValue() == "\"to\""
          && "Bad Key name!");
 
@@ -346,7 +342,7 @@ static VASTSeqValue *readPathDst(KeyValueNode *N) {
   if (Pin->getRawValue().getAsInteger<intptr_t>(10, Ptr))
     return 0;
 
-  return (VASTSeqValue*)Ptr;
+  return (VASTExpr*)Ptr;
 }
 
 static VASTSeqValue *readPathSrc(KeyValueNode *N) {
@@ -389,7 +385,7 @@ bool ExternalTimingAnalysis::readPathDelay(MappingNode *N) {
   KeyValueNode *Delay = readAndAdvance(CurPtr);
 
   VASTSeqValue *Src = readPathSrc(From);
-  VASTSeqValue *Dst = readPathDst(To);
+  VASTExpr *Dst = readPathDst(To);
 
   // Ignore the the trivial entry.
   if (!Src && !Dst) return true;

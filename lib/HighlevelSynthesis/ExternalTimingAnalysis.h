@@ -13,10 +13,11 @@
 #ifndef EXTERNAL_TIMING_ANALYSIS_H
 #define EXTERNAL_TIMING_ANALYSIS_H
 
-#include "TimingEstimator.h"
+#include "TimingNetlist.h"
 
 namespace llvm {
 class VASTModule;
+class VASTExpr;
 class raw_ostream;
 
 namespace sys {
@@ -27,8 +28,9 @@ namespace yaml {
   class MappingNode;
 }
 
-class ExternalTimingAnalysis : public TimingEstimatorBase {
+class ExternalTimingAnalysis {
   VASTModule &VM;
+  TimingNetlist &TNL;
 
   // FIXME: Move these function to another class.
   // Write the wrapper of the netlist.
@@ -38,10 +40,11 @@ class ExternalTimingAnalysis : public TimingEstimatorBase {
   void writeProjectScript(raw_ostream &O, const sys::Path &NetlistPath,
                           const sys::Path &ExtractScript) const;
 
-  void extractTimingForPair(raw_ostream &O, const VASTSeqValue *Dst,
+  void extractTimingForPair(raw_ostream &O, const VASTExpr *Dst,
                             const VASTSeqValue *Src) const;
 
-  void extractTimingToDst(raw_ostream &O, const VASTSeqValue *Dst) const;
+  typedef TimingNetlist::PathInfoTy::value_type TimingPaths;
+  void extractTimingToDst(raw_ostream &O, const TimingPaths &Paths) const;
 
   // Write the script to extract the timing analysis results from quartus.
   void writeTimingExtractionScript(raw_ostream &O,
@@ -51,7 +54,8 @@ class ExternalTimingAnalysis : public TimingEstimatorBase {
   bool readPathDelay(yaml::MappingNode *N);
 
 public:
-  explicit ExternalTimingAnalysis(VASTModule &VM) : VM(VM) {}
+  explicit ExternalTimingAnalysis(VASTModule &VM, TimingNetlist &TNL)
+    : VM(VM), TNL(TNL) {}
 
   bool runExternalTimingAnalysis();
 };
