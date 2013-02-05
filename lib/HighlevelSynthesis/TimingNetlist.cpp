@@ -13,6 +13,7 @@
 
 #include "TimingNetlist.h"
 #include "TimingEstimator.h"
+#include "ExternalTimingAnalysis.h"
 
 #include "shang/VASTModule.h"
 #include "shang/Passes.h"
@@ -118,6 +119,9 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
       // Accumulate the delay of the fanin MUX.
     }
   }
+
+  ExternalTimingAnalysis ETA(VM);
+  ETA.runExternalTimingAnalysis();
 
   dbgs() << "Timing Netlist: \n";
   print(dbgs());

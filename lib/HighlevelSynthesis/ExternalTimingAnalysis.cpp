@@ -34,23 +34,40 @@
 using namespace llvm;
 using namespace yaml;
 
-static sys::Path buildPath(const Twine &Name, const Twine &Ext) {
-  std::string ErrMsg;
-  // FIXME: Delete the Temporary Directory
-  sys::Path Filename = sys::Path::GetTemporaryDirectory(&ErrMsg);
-  if (Filename.isEmpty()) {
-    errs() << "Error: " << ErrMsg << "\n";
+namespace {
+struct TempDir {
+  sys::Path Dirname;
+
+  TempDir() {
+    std::string ErrMsg;
+    Dirname = sys::Path::GetTemporaryDirectory(&ErrMsg);
+    if (Dirname.isEmpty()) errs() << "Error: " << ErrMsg << "\n";
+  }
+
+  sys::Path buildPath(const Twine &Name, const Twine &Ext) {
+    std::string ErrMsg;
+    // FIXME: Delete the Temporary Directory
+    sys::Path Filename = Dirname;
+    if (Filename.isEmpty()) {
+      errs() << "Error: " << ErrMsg << "\n";
+      return sys::Path();
+    }
+
+    Filename.appendComponent((Name + Ext).str());
+    if (Filename.makeUnique(true, &ErrMsg)) {
+      errs() << "Error: " << ErrMsg << "\n";
+      return sys::Path();
+    }
+
     return Filename;
   }
 
-  Filename.appendComponent((Name + Ext).str());
-  if (Filename.makeUnique(true, &ErrMsg)) {
-    errs() << "Error: " << ErrMsg << "\n";
-    return sys::Path();
+  ~TempDir() {
+    if (!Dirname.isEmpty()) Dirname.eraseFromDisk(true);
   }
-
-  return Filename;
+};
 }
+
 
 raw_ostream &printAsLHS(raw_ostream &O, const VASTNamedValue *V,
                         unsigned UB, unsigned LB) {
@@ -66,20 +83,30 @@ static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
   unsigned Bitwidth = V->getBitWidth();
   bool MultiBits = Bitwidth > 1;
 
-  O.indent(Indent) << "if (read_netlist) \n";
-  // For each fanin, print the datapath, selected by the slot register.
-  O.indent(Indent + 2) << V->getName() << " <= " << V->getName() << "w;\n";
-  //
-  O.indent(Indent) << "else begin\n";
-  // Increase the indent in the esle block.
-  Indent += 2;
+  if (!V->empty()) {
+    O.indent(Indent) << "if (read_netlist) begin\n";
+    // For each fanin, print the datapath, selected by the slot register.
+    O.indent(Indent + 2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
+    typedef VASTSeqValue::const_itertor fanin_iterator;
+    for (fanin_iterator FI = V->begin(), FE = V->end(); FI != FE; ++FI) {
+      VASTSeqUse U = *FI;
+
+      O.indent(Indent + 2) << '(' << U.getSlot()->getName() << "): begin ";
+      O << V->getName() << " <= ";
+      VASTValPtr(U).printAsOperand(O);
+      O << "; end\n";
+    }
+
+    O.indent(Indent + 2) << "endcase\n";
+
+    O.indent(Indent) << "end\n";
+  }
 
   // Active the scan chain shifting.
   O.indent(Indent) << "if (shift) begin\n";
 
-  Indent += 2;
   // Connect the last register to current register.
-  printAsLHS(O.indent(Indent), V, Bitwidth, Bitwidth - 1) << " <= ";
+  printAsLHS(O.indent(Indent + 2), V, Bitwidth, Bitwidth - 1) << " <= ";
 
   if (LastV)
     LastV->printAsOperand(O, 1, 0, false);
@@ -90,26 +117,66 @@ static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
 
   // Shift the register.
   if (MultiBits) {
-    printAsLHS(O.indent(Indent), V, Bitwidth - 1, 0) << " <= ";
+    printAsLHS(O.indent(Indent + 2), V, Bitwidth - 1, 0) << " <= ";
     V->printAsOperand(O, Bitwidth, 1, false);    
     O << ";\n";
   }
 
-  Indent -= 2;
   O.indent(Indent) << "end\n";
-
-  // Finish the else block if necessary.
-  O.indent(Indent - 2) << "end\n";
 
   O << '\n';
 
   return V;
 }
 
+namespace {
+  struct DatapathPrinter {
+  raw_ostream &OS;
+
+  DatapathPrinter(raw_ostream &OS) : OS(OS) {}
+
+  void operator()(VASTNode *N) const {
+    if (VASTWire *W = dyn_cast<VASTWire>(N))  {
+      // Declare the wire if necessary.
+      OS << "wire ";
+      if (W->getBitWidth() > 1)
+        OS << "[" << (W->getBitWidth() - 1) << ":0] ";
+      OS << W->getName();
+
+      if (VASTValPtr V= W->getDriver()) {
+        OS << " = ";
+        V.printAsOperand(OS);
+      }
+
+      OS << ";\n";
+    }
+
+    if (VASTExpr *E = dyn_cast<VASTExpr>(N)) {
+      // Temporary unname the rexpression so that we can print its logic.
+      E->nameExpr();
+      OS << "wire ";
+
+      if (E->getBitWidth() > 1)
+        OS << "[" << (E->getBitWidth() - 1) << ":0] ";
+
+      OS << E->getTempName();
+
+      OS << " = ";
+
+      E->unnameExpr();
+      E->printAsOperand(OS, false);
+
+      OS << ";\n";
+      E->nameExpr();
+    }
+  }
+};
+}
+
 void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
   // FIXME: Use the luascript template?
   O << "module " << VM.getName() << "wapper(\n";
-  O.indent(2) << "input wire clk,\n";
+  O.indent(2) << "input wire scan_clk,\n";
   O.indent(2) << "input wire read_netlist,\n";
   O.indent(2) << "input wire shift,\n";
   O.indent(2) << "input wire scan_chain_in,\n";
@@ -128,11 +195,22 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
     O << ' ' << SeqVal->getName() << ";\n";
   }
 
+  O << "//Data-path\n";
+  // Write the data-path.
+  std::set<VASTOperandList*> Visited;
+  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
+    VASTSeqValue *SVal = I;
+    typedef VASTSeqValue::itertor fanin_iterator;
+    for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI)
+      VASTOperandList::visitTopOrder(VASTValPtr(*FI).get(), Visited,
+                                     DatapathPrinter(O));
+  }
+
   O.indent(4) << "// Scan chain timing\n";
 
   // Build the scan chain.
   const VASTValue *LastReg = 0;
-  O.indent(4) << "always @(posedge clk) begin\n";
+  O.indent(4) << "always @(posedge scan_clk) begin\n";
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
     VASTSeqValue *SeqVal = I;
 
@@ -150,7 +228,7 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
   // Close the timing block.
   O.indent(4) << "end\n";
 
-  O.indent(4) << '\n';
+  O<< '\n';
 
   O << "endmodule\n";
 }
@@ -301,52 +379,6 @@ static KeyValueNode *readAndAdvance(MappingNode::iterator it) {
   return N;
 }
 
-static void dumpNetlistTree(raw_ostream &O, VASTValue *Dst)  {
-  typedef VASTValue::dp_dep_it ChildIt;
-  std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
-  std::set<VASTValue*> Visited;
-
-  VisitStack.push_back(std::make_pair(Dst, VASTValue::dp_dep_begin(Dst)));
-
-  while (!VisitStack.empty()) {
-    VASTValue *Node = VisitStack.back().first;
-    ChildIt It = VisitStack.back().second;
-
-    // We have visited all children of current node.
-    if (It == VASTValue::dp_dep_end(Node)) {
-      VisitStack.pop_back();
-
-      if (VASTExpr *E = dyn_cast<VASTExpr>(Node)) {
-        E->unnameExpr();
-        std::string Name = E->getTempName();
-        O.indent(2) << "wire ";
-
-        unsigned Bitwidth = E->getBitWidth();
-        if (Bitwidth > 1) O << "[" << (Bitwidth - 1) << ":0]";
-        O << ' ' << Name << " = ";
-        E->printAsOperand(O, false);
-        O << ";\n";
-
-        // Assign the name to the expression.
-        E->nameExpr();
-      } else if (VASTWire *W = dyn_cast<VASTWire>(Node))
-        W->printAssignment(O.indent(2));
-
-      continue;
-    }
-
-    // Otherwise, remember the node and visit its children first.
-    VASTValue *ChildNode = It->getAsLValue<VASTValue>();
-    ++VisitStack.back().second;
-
-    if (!Visited.insert(ChildNode).second)  continue;
-
-    if (!isa<VASTWire>(ChildNode) && !isa<VASTExpr>(ChildNode)) continue;
-
-    VisitStack.push_back(std::make_pair(ChildNode, VASTValue::dp_dep_begin(ChildNode)));
-  }
-}
-
 bool ExternalTimingAnalysis::readPathDelay(MappingNode *N) {
   typedef MappingNode::iterator iterator;
   iterator CurPtr = N->begin();
@@ -368,7 +400,7 @@ bool ExternalTimingAnalysis::readPathDelay(MappingNode *N) {
          << PathDelay << '\n';
 
   if (PathDelay == -1.0) {
-    dumpNetlistTree(dbgs(), Dst);
+    //dumpNetlistTree(dbgs(), Dst);
     return false;
   }
 
@@ -404,10 +436,11 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(const sys::Path &ResultPat
 }
 
 bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
+  TempDir Dir;
   std::string ErrorInfo;
 
   // Write the Nestlist and the wrapper.
-  sys::Path Netlist = buildPath(VM.getName(), ".v");
+  sys::Path Netlist = Dir.buildPath(VM.getName(), ".v");
   if (Netlist.empty()) return false;
 
   errs() << "Writing '" << Netlist.str() << "'... ";
@@ -422,7 +455,7 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
   errs() << " done. \n";
 
   // Write the SDC and the delay query script.
-  sys::Path TimingExtractTcl = buildPath(VM.getName(), "_extract.tcl");
+  sys::Path TimingExtractTcl = Dir.buildPath(VM.getName(), "_extract.tcl");
   if (TimingExtractTcl.empty()) return false;
 
   errs() << "Writing '" << TimingExtractTcl.str() << "'... ";
@@ -431,7 +464,7 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
 
   if (!ErrorInfo.empty())  return exitWithError(TimingExtractTcl);
 
-  sys::Path TimingExtractResult = buildPath(VM.getName(), "_result.json");
+  sys::Path TimingExtractResult = Dir.buildPath(VM.getName(), "_result.json");
   if (TimingExtractResult.empty()) return false;
 
   writeTimingExtractionScript(TimingExtractTclO, TimingExtractResult);
@@ -439,7 +472,7 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
   errs() << " done. \n";
 
   // Write the project script.
-  sys::Path PrjTcl = buildPath(VM.getName(), ".tcl");
+  sys::Path PrjTcl = Dir.buildPath(VM.getName(), ".tcl");
   if (PrjTcl.empty()) return false;
 
   errs() << "Writing '" << PrjTcl.str() << "'... ";
@@ -472,13 +505,6 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
 
   if (!readTimingAnalysisResult(TimingExtractResult))
     return false;
-
-  // Clean up.
-  Netlist.eraseFromDisk();
-  TimingExtractTcl.eraseFromDisk();
-  PrjTcl.eraseFromDisk();
-  TimingExtractResult.eraseFromDisk();
-
 
   return true;
 }
