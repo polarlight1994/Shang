@@ -97,7 +97,8 @@ bool RTLCodeGen::doInitialization(Module &Mod) {
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   if (EnalbeDumpIR) {
     Out << "`ifdef wtf_is_this\n" << "Function for RTL Codegen:\n";
-    VM.print(Out);
+    Function &F = VM;
+    F.print(Out);
     Out << "`endif\n";
   }
 

@@ -41,14 +41,16 @@ protected:
   ///
   virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 
+  /// print - Print the status of the pass.
+  ///
+  virtual void print(raw_ostream &OS, const Module *) const {
+    print(OS);
+  }
+
+  virtual void print(raw_ostream &OS) const;
 private:
   bool runOnFunction(Function &F);
 
-  virtual void print(raw_ostream &OS, const Module *) const {
-    printVASTModule(OS);
-  }
-
-  virtual void printVASTModule(raw_ostream &OS) const;
 };
 }
 

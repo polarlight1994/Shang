@@ -877,7 +877,7 @@ bool VASTModulePass::runOnFunction(Function &F) {
   return runOnVASTModule(*getAnalysis<VASTModuleAnalysis>());
 }
 
-void VASTModulePass::printVASTModule(raw_ostream &OS) const {
+void VASTModulePass::print(raw_ostream &OS) const {
 
 }
 

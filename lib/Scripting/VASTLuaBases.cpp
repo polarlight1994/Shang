@@ -289,8 +289,8 @@ const VASTSlot *VASTModule::getFinishSlot() const {
 
 VASTModule::VASTModule(Function &F)
   : VASTNode(vastModule), Datapath(new DatapathContainer()),
-    Ports(NumSpecialPort), Name(F.getName().str()),
-    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0), F(F) {
+    Ports(NumSpecialPort), Name(F.getName().str()), F(F),
+    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0) {
   createStartSlot();
 }
 
@@ -397,7 +397,9 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
 
     typedef VASTSlot::const_op_iterator op_iterator;
 
-    OS << "\n// At slot " << S->SlotNum << '\n';
+    OS << "\n// At slot " << S->SlotNum;
+    if (BasicBlock *BB = S->getParent()) OS << ", BB: " << BB->getName();
+    OS << '\n';
 
     // Print the logic of slot ready and active.
     VASTOperandList::visitTopOrder(S->getActive(), Visited, DatapathPrinter(OS));
