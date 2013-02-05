@@ -80,6 +80,10 @@ public:
   void releaseMemory();
   bool runOnVASTModule(VASTModule &VM);
   void getAnalysisUsage(AnalysisUsage &AU) const;
+  void print(raw_ostream &OS) const;
+
+  void printPathsTo(raw_ostream &OS, VASTValue *Dst) const;
+  void printPathsTo(raw_ostream &OS, const PathInfoTy::value_type &Path) const;
 };
 }
 

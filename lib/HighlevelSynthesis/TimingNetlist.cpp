@@ -91,18 +91,53 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   // Create an estimator.
   OwningPtr<TimingEstimatorBase>
-    Estimator(TimingEstimatorBase::CreateBlackBoxModel());
+    Estimator(TimingEstimatorBase::CreateZeroDelayModel());
 
   typedef VASTModule::seqval_iterator iterator;
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
-    VASTSeqValue *SeqVal = I;
+    VASTSeqValue *SVal = I;
+
     typedef VASTSeqValue::itertor fanin_iterator;
-    for (fanin_iterator FI = SeqVal->begin(), FE = SeqVal->end(); FI != FE; ++FI)
-    {
-      VASTValPtr Fanin = (*FI);
-      Estimator->estimateTimingOnTree(Fanin.get());
+    for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
+      // Estimate the delay for each fanin.
+      VASTValue *Fanin = VASTValPtr(*FI).get();
+      SrcInfoTy &SrcInfo = PathInfo[Fanin];
+      if (!SrcInfo.empty()) continue;
+
+      Estimator->estimateTimingOnTree(Fanin, SrcInfo);
+
+      // Accumulate the delay of the fanin MUX.
     }
   }
 
+  dbgs() << "Timing Netlist: \n";
+  print(dbgs());
+
   return false;
+}
+
+void TimingNetlist::print(raw_ostream &OS) const {
+  for (const_path_iterator I = path_begin(), E = path_end(); I != E; ++I)
+    printPathsTo(OS, *I);
+}
+
+void TimingNetlist::printPathsTo(raw_ostream &OS, VASTValue *Dst) const {
+  PathInfoTy::const_iterator at = PathInfo.find(Dst);
+  assert(at != PathInfo.end() && "DstReg not find!");
+  printPathsTo(OS, *at);
+}
+
+void TimingNetlist::printPathsTo(raw_ostream &OS,
+                                 const PathInfoTy::value_type &Path) const {
+  VASTValue *Dst = Path.first;
+  OS << "Dst: ";
+  Dst->printAsOperand(OS, false);
+  OS << " {\n";
+  for (src_iterator I = Path.second.begin(), E = Path.second.end(); I != E; ++I)
+  {
+    OS.indent(2);
+    I->first->printAsOperand(OS, false);
+    OS << '(' << I->second << ")\n";
+  }
+  OS << "}\n";
 }

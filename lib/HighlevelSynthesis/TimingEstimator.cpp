@@ -11,9 +11,11 @@
 //
 //===----------------------------------------------------------------------===//
 #include "TimingEstimator.h"
-
+#include "shang/VASTDatapathNodes.h"
+#include "shang/VASTSeqValue.h"
 #include "shang/FUInfo.h"
 
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #define DEBUG_TYPE "shang-timing-estimator"
 #include "llvm/Support/Debug.h"
@@ -24,7 +26,7 @@ namespace {
 template<typename SubClass, typename delay_type>
 class TimingEstimatorImpl : public TimingEstimatorBase {
 protected:
-  typedef typename std::map<VASTValue*, delay_type> SrcDelayInfo;
+  typedef typename std::map<VASTSeqValue*, delay_type> SrcDelayInfo;
   typedef typename SrcDelayInfo::value_type SrcEntryTy;
   typedef typename SrcDelayInfo::const_iterator src_iterator;
   typedef typename SrcDelayInfo::const_iterator const_src_iterator;
@@ -51,6 +53,15 @@ protected:
   }
 
 public:
+  void annotateDelay(VASTValue *Dst, TimingNetlist::SrcInfoTy &SrcInfo) const {
+    const SrcDelayInfo *Srcs = getPathTo(Dst);
+    assert(Srcs && "Not path to Dst found!");
+    for (const_src_iterator I = Srcs->begin(), E = Srcs->end(); I != E; ++I) {
+      TimingNetlist::delay_type &d = SrcInfo[I->first];
+      d= std::max<TimingNetlist::delay_type>(d, I->second);
+    }
+  }
+
   void updateDelay(SrcDelayInfo &Info, SrcEntryTy NewValue) {
     delay_type &OldDelay = Info[NewValue.first];
     OldDelay = std::max(OldDelay, NewValue.second);
@@ -71,8 +82,10 @@ public:
                           SrcDelayInfo &CurInfo, DelayAccumulatorTy F) {
     const SrcDelayInfo *SrcInfo = getPathTo(Thu);
     if (SrcInfo == 0) {
-      assert(!isa<VASTExpr>(Thu) && "Not SrcInfo from Src find!");
-      updateDelay(CurInfo, F(Dst, ThuPos, SrcEntryTy(Thu, delay_type())));
+      if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Thu)) {
+        assert(!isa<VASTExpr>(Thu) && "Not SrcInfo from Src find!");
+        updateDelay(CurInfo, F(Dst, ThuPos, SrcEntryTy(SeqVal, delay_type())));
+      }
       return;
     }
 
@@ -151,6 +164,89 @@ public:
     return getDelayFrom(From, *SrcInfo);
   }
 };
+
+
+// Set all datapath delay to zero.
+class ZeroDelayEstimator
+  : public TimingEstimatorImpl<ZeroDelayEstimator, double> {
+  typedef double delay_type;
+  typedef TimingEstimatorImpl<ZeroDelayEstimator, double> Base;
+
+public:
+  ZeroDelayEstimator() {}
+
+  void accumulateDelayThuLUT(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuAnd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuRAnd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuRXor(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuCmp(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuAdd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuMul(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuShl(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuSRL(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuSRA(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuSel(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                             SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                                SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayThuRBitCat(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                                 SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+
+  void accumulateDelayBitRepeat(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                                SrcDelayInfo &CurInfo) {
+    accumulateDelayThu(Thu, Dst, ThuPos, CurInfo, AccumulateZeroDelay);
+  }
+};
+
+
 // Accumulating the delay according to the blackbox model.
 // This is the baseline delay estimate model.
 class BlackBoxTimingEstimator
@@ -376,11 +472,25 @@ public:
 }
 
 //===----------------------------------------------------------------------===//
-void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
+void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root,
+                                               TimingNetlist::SrcInfoTy &SrcInfo)
+{
   VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
 
+  if (L == 0) {
+    if (VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(Root)) {
+      // Create an entry from SVal.
+      TimingNetlist::delay_type &d = SrcInfo[SVal];
+      d = std::max(TimingNetlist::delay_type(), d);
+    }
+    return;
+  }
+  
   // The entire tree had been visited.
-  if (!(L && hasPathInfo(Root) == 0)) return;
+  if (hasPathInfo(Root)) {
+    assert(!SrcInfo.empty() && "Path information not annotated before?");
+    return;
+  }
 
   typedef VASTValue::dp_dep_it ChildIt;
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
@@ -412,8 +522,20 @@ void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
     if (VASTOperandList *L = VASTOperandList::GetDatapathOperandList(ChildNode))
       VisitStack.push_back(std::make_pair(ChildNode, L->op_begin()));
   }
+
+  annotateDelay(Root, SrcInfo);
+}
+
+void TimingEstimatorBase::annotateDelay(VASTValue *Dst,
+                                        TimingNetlist::SrcInfoTy &SrcInfo) const
+{
+  llvm_unreachable("annotateDelay not implemented!");
 }
 
 TimingEstimatorBase *TimingEstimatorBase::CreateBlackBoxModel() {
   return new BlackBoxTimingEstimator();
+}
+
+TimingEstimatorBase *TimingEstimatorBase::CreateZeroDelayModel() {
+  return new ZeroDelayEstimator();
 }

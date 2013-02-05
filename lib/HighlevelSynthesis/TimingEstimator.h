@@ -15,23 +15,29 @@
 #define TIMING_ESTIMATOR_LINEAR_APPROXIMATION_H
 
 #include "TimingNetlist.h"
-#include "shang/VASTDatapathNodes.h"
-
-#include "llvm/Support/ErrorHandling.h"
 
 namespace llvm {
+class VASTValue;
+class VASTExpr;
+
 class TimingEstimatorBase {
 protected:
   TimingEstimatorBase() {}
+  
+  virtual void annotateDelay(VASTValue *Dst,
+                             TimingNetlist::SrcInfoTy &SrcInfo) const;
+
+  virtual void accumulateExprDelay(VASTExpr *Expr) {}
+
+  virtual bool hasPathInfo(VASTValue *V) const { return true; }
 public:
   virtual ~TimingEstimatorBase() {}
 
-  virtual void accumulateExprDelay(VASTExpr *Expr) {}
-  virtual bool hasPathInfo(VASTValue *V) const { return true; }
 
-  void estimateTimingOnTree(VASTValue *Root);
+  void estimateTimingOnTree(VASTValue *Root, TimingNetlist::SrcInfoTy &SrcInfo);
 
   static TimingEstimatorBase *CreateBlackBoxModel();
+  static TimingEstimatorBase *CreateZeroDelayModel();
 };
 
 }
