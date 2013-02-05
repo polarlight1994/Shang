@@ -67,6 +67,11 @@ public:
     return !PathInfo.count(Dst);
   }
 
+  const SrcInfoTy *getSrcInfo(VASTValue *Dst) const {
+    PathInfoTy::const_iterator at = PathInfo.find(Dst);
+    return at != PathInfo.end() ? &at->second : 0;
+  }
+
   // Iterators for path iterating.
   typedef PathInfoTy::iterator       path_iterator;
   typedef PathInfoTy::const_iterator const_path_iterator;

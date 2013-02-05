@@ -32,9 +32,6 @@ class ExternalTimingAnalysis {
   VASTModule &VM;
   TimingNetlist &TNL;
 
-  // FIXME: Move these function to another class.
-  void writeDatapathNetlist(raw_ostream &O) const;
-
   // Write the wrapper of the netlist.
   void writeNetlist(raw_ostream &O) const;
 
@@ -42,11 +39,14 @@ class ExternalTimingAnalysis {
   void writeProjectScript(raw_ostream &O, const sys::Path &NetlistPath,
                           const sys::Path &ExtractScript) const;
 
-  void extractTimingForPair(raw_ostream &O, const VASTExpr *Dst,
+  void extractTimingForPair(raw_ostream &O, const VASTSeqValue *Dst,
+                            const VASTValue *Thu,
                             const VASTSeqValue *Src) const;
 
   typedef TimingNetlist::PathInfoTy::value_type TimingPaths;
-  void extractTimingToDst(raw_ostream &O, const TimingPaths &Paths) const;
+  void extractTimingToDst(raw_ostream &O, const VASTSeqValue *Dst,
+                          const VASTValue *Thu,
+                          const TimingNetlist::SrcInfoTy &Paths) const;
 
   // Write the script to extract the timing analysis results from quartus.
   void writeTimingExtractionScript(raw_ostream &O,

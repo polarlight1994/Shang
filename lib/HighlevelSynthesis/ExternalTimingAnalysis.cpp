@@ -158,17 +158,15 @@ namespace {
     }
 
     if (VASTExpr *E = dyn_cast<VASTExpr>(N)) {
-        // If the wire has name at the first time we visit it, it is a output
-        // pint. Otherwise we should declare it here.
-      if (!E->hasName()) {
-        E->nameExpr();
-        OS << "wire ";
+      // If the wire has name at the first time we visit it, it is a output
+      // pint. Otherwise we should declare it here.
+      E->nameExpr();
+      OS << "wire ";
 
-        if (E->getBitWidth() > 1)
-          OS << "[" << (E->getBitWidth() - 1) << ":0] ";
+      if (E->getBitWidth() > 1)
+        OS << "[" << (E->getBitWidth() - 1) << ":0] ";
 
-        OS << E->getTempName() << ";\n";
-      }
+      OS << E->getTempName() << " = ";
 
       // Temporary unname the rexpression so that we can print its logic.
       //if (!E->getSubModName().empty()) {
@@ -181,8 +179,6 @@ namespace {
       //  OS << "assign " << E->getTempName();
       //}
 
-      OS << "assign " << E->getTempName() << " = ";
-
       E->nameExpr(false);
       E->printAsOperand(OS, false);
 
@@ -193,52 +189,9 @@ namespace {
 };
 }
 
-void ExternalTimingAnalysis::writeDatapathNetlist(raw_ostream &O) const {
-  O << "module " << VM.getName() << "_datapath(\n";
-
-  typedef VASTModule::seqval_iterator iterator;
-  typedef VASTSeqValue::itertor fanin_iterator;
-  std::set<VASTExpr*> Outputs;
-  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
-    VASTSeqValue *SVal = I;
-    // Declare the registers as input of the datapath.
-    O.indent(2) << "input wire ";
-    unsigned Bitwidth = SVal->getBitWidth();
-
-    if (Bitwidth > 1) O << "[" << (Bitwidth - 1) << ":0]";
-    O << ' ' << SVal->getName() <<  ",\n";
-    // And the wire that drive the registers as output of the datapath.
-    for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI)
-      if (VASTExpr *E = dyn_cast<VASTExpr>(VASTValPtr(*FI).get())) {
-        // The wire had aready declared.
-        if (!Outputs.insert(E).second) continue;
-
-        E->nameExpr(true);
-        O.indent(2) << "output wire";
-        if (Bitwidth > 1) O << "[" << (Bitwidth - 1) << ":0]";
-        O << ' ' << E->getTempName() <<  ",\n";
-      }
-  }
-  O.indent(2) << "output wire somewire);\n";
-
-  O << "//Data-path\n";
-
-  // Write the data-path.
-  std::set<VASTOperandList*> Visited;
-  typedef std::set<VASTExpr*>::iterator output_iterator;
-  for (output_iterator I = Outputs.begin(), E = Outputs.end(); I != E; ++I)
-    VASTOperandList::visitTopOrder(*I, Visited, DatapathPrinter(O));
-
-  O << "endmodule\n\n";
-}
-
-
-
 void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
   typedef VASTModule::seqval_iterator iterator;
   typedef VASTSeqValue::itertor fanin_iterator;
-
-  writeDatapathNetlist(O);
 
   // FIXME: Use the luascript template?
   O << "module " << VM.getName() << "_wapper(\n";
@@ -248,35 +201,29 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
   O.indent(2) << "input wire scan_chain_in,\n";
   O.indent(2) << "output reg scan_chain_out);\n";
 
-  // Declare the registers for the scan chain.
-  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
-    VASTSeqValue *SeqVal = I;
 
+  std::set<VASTExpr*> Fanins;
+  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
+    VASTSeqValue *SVal = I;    
+    // Declare the registers for the scan chain.
     O.indent(4) << "reg";
-    unsigned Bitwidth = SeqVal->getBitWidth();
+    unsigned Bitwidth = SVal->getBitWidth();
 
     if (Bitwidth > 1) O << "[" << (Bitwidth - 1) << ":0]";
 
-    O << ' ' << SeqVal->getName() << ";\n";
-  }
+    O << ' ' << SVal->getName() << ";\n";
 
-  std::set<VASTExpr*> Fanins;
-  // Declare the wires so that we can connect it to the datapath.
-  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
-    VASTSeqValue *SVal = I;
+    // Collect the wires.
     for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI)
-      if (VASTExpr *E = dyn_cast<VASTExpr>(VASTValPtr(*FI).get())) {
-        // The wire had aready declared.
-        if (!Fanins.insert(E).second) continue;
-
-        O.indent(4) << "wire";
-        unsigned Bitwidth = E->getBitWidth();
-
-        if (Bitwidth > 1) O << "[" << (Bitwidth - 1) << ":0]";
-
-        O << ' ' << E->getTempName() << ";\n";
-      }
+      if (VASTExpr *E = dyn_cast<VASTExpr>(VASTValPtr(*FI).get())) 
+        Fanins.insert(E);
   }
+
+  // Print the combinational logic.
+  std::set<VASTOperandList*> Visited;
+  typedef std::set<VASTExpr*>::iterator output_iterator;
+  for (output_iterator I = Fanins.begin(), E = Fanins.end(); I != E; ++I)
+    VASTOperandList::visitTopOrder(*I, Visited, DatapathPrinter(O));
 
   O.indent(4) << "// Scan chain timing\n";
 
@@ -302,24 +249,6 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
 
   O << '\n';
 
-  // Instantante the datapath module
-  O << VM.getName() << "_datapath DATAPATH_INST(\n";
-  // Connect the input to the datapath.
-  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
-    VASTSeqValue *SVal = I;
-
-    O.indent(2) << '.' << SVal->getName() <<  '(' << SVal->getName() << "),\n";
-  }
-
-  // Connect the output from the datapath.
-  typedef std::set<VASTExpr*>::iterator output_iterator;
-  for (output_iterator I = Fanins.begin(), E = Fanins.end(); I != E; ++I) {
-    VASTExpr *Expr = *I;
-    O.indent(2) << '.' << Expr->getTempName()
-                << '(' << Expr->getTempName() << "),\n";
-  }
-
-  O.indent(2) << ".somewire());\n";
   O << "endmodule\n\n";
 }
 
@@ -345,7 +274,6 @@ void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
        << ExtractScript.str() << "\"}\n"
        "project_close\n";
 }
-
 static std::string getName(const VASTValue *V) {
   if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V))
     return NV->getName();
@@ -353,20 +281,23 @@ static std::string getName(const VASTValue *V) {
   return cast<VASTExpr>(V)->getTempName();
 }
 
-static void setTerminatorCollection(raw_ostream & O, const VASTValue *V,
+static void setTerminatorCollection(raw_ostream & O, const VASTSeqValue *V,
                                     const char *CollectionName) {
-  O << "set " << CollectionName << " [" << "get_keepers \"*" << getName(V)
+  O << "set " << CollectionName << " [" << "get_keepers \"*" << V->getName()
     << "*\"]\n";
 }
 
 void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
-                                                  const VASTExpr *Dst,
+                                                  const VASTSeqValue *Dst,
+                                                  const VASTValue *Thu,
                                                   const VASTSeqValue *Src)
                                                   const {
   // Get the source and destination nodes.
   setTerminatorCollection(O, Dst, "dst");
   setTerminatorCollection(O, Src, "src");
-
+  
+  O << "set " << "thu" << " [" << "get_nets \"*" << getName(Thu) << "*\"]\n";
+  
   O <<
     "set paths [get_timing_paths -from $src -to $dst -setup -npath 1 -detail path_only]\n"
     "set delay -1\n"
@@ -375,13 +306,13 @@ void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
     "if {[get_collection_size $src] && [get_collection_size $dst] && [get_collection_size $paths]} {\n"
     "  foreach_in_collection path $paths {\n"
     "    set delay [get_path_info $path -data_delay]\n"
-    "    post_message -type info \"" << intptr_t(Src) << ' '<< getName(Src)
-    << " -> " << intptr_t(Dst) << ' '<< getName(Dst) << ' '
+    "    post_message -type info \"" << intptr_t(Src) << ' '<< Src->getName()
+    << " -> " << intptr_t(Dst) << ' '<< Dst->getName() << ' '
     << getName(Dst) << " delay: $delay\"\n"
     "  }\n"
     "} else {\n"
-    "    post_message -type info \"" << intptr_t(Src)<< ' ' << getName(Src)
-    << " -> " << intptr_t(Dst) << ' ' << getName(Dst) << ' '
+    "    post_message -type info \"" << intptr_t(Src)<< ' ' << Src->getName()
+    << " -> " << intptr_t(Dst) << ' ' << Dst->getName() << ' '
     << getName(Dst) << " path not found!\"\n"
     "}\n"
     "puts $JSONFile \"\\{\\\"from\\\":" << intptr_t(Src) << ",\\\"to\\\":"
@@ -389,11 +320,13 @@ void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
 }
 
 void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O,
-                                                const TimingPaths &Paths) const{
+                                                const VASTSeqValue *Dst,
+                                                const VASTValue *Thu,
+                                                const TimingNetlist::SrcInfoTy
+                                                &Paths) const{
   typedef TimingNetlist::src_iterator iterator;
-  for (iterator I = Paths.second.begin(), E = Paths.second.end(); I != E; ++I)
-    if (VASTExpr *Expr = dyn_cast<VASTExpr>(Paths.first))
-      extractTimingForPair(O, Expr, I->first);
+  for (iterator I = Paths.begin(), E = Paths.end(); I != E; ++I)
+    extractTimingForPair(O, Dst, Thu, I->first);
 }
 
 void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
@@ -406,9 +339,18 @@ void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
        "set JSONFile [open \"" << ResultPath.str() <<"\" w+]\n"
        "puts $JSONFile \"\\[\"\n";
 
-  typedef TimingNetlist::path_iterator path_iterator;
-  for (path_iterator I = TNL.path_begin(), E = TNL.path_end(); I != E; ++I)
-    extractTimingToDst(O, *I);
+  typedef VASTModule::seqval_iterator iterator;
+  typedef VASTSeqValue::itertor fanin_iterator;
+  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
+    VASTSeqValue *SVal = I;    
+  
+    typedef TimingNetlist::SrcInfoTy SrcInfoTy;
+    for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
+      VASTValue *Thu = VASTValPtr(*FI).get();
+      if (const SrcInfoTy *Src = TNL.getSrcInfo(Thu))
+        extractTimingToDst(O, SVal, Thu, *Src);
+    }
+  }
 
   // Close the array and the file object.
   O << "puts $JSONFile \"\\{\\\"from\\\":0,\\\"to\\\":0,\\\"delay\\\":0\\}\"\n"
@@ -421,7 +363,7 @@ static bool exitWithError(const sys::Path &FileName) {
   return false;
 }
 
-static VASTExpr *readPathDst(KeyValueNode *N) {
+static VASTSeqValue *readPathDst(KeyValueNode *N) {
   assert(cast<ScalarNode>(N->getKey())->getRawValue() == "\"to\""
          && "Bad Key name!");
 
@@ -432,7 +374,7 @@ static VASTExpr *readPathDst(KeyValueNode *N) {
   if (Pin->getRawValue().getAsInteger<intptr_t>(10, Ptr))
     return 0;
 
-  return (VASTExpr*)Ptr;
+  return (VASTSeqValue*)Ptr;
 }
 
 static VASTSeqValue *readPathSrc(KeyValueNode *N) {
@@ -475,14 +417,14 @@ bool ExternalTimingAnalysis::readPathDelay(MappingNode *N) {
   KeyValueNode *Delay = readAndAdvance(CurPtr);
 
   VASTSeqValue *Src = readPathSrc(From);
-  VASTExpr *Dst = readPathDst(To);
+  VASTSeqValue *Dst = readPathDst(To);
 
   // Ignore the the trivial entry.
   if (!Src && !Dst) return true;
 
   double PathDelay = readDelay(Delay);
 
-  dbgs() << "From: " << getName(Src) << " To: " << getName(Dst) << " delay: "
+  dbgs() << "From: " << Src->getName() << " To: " << Src->getName() << " delay: "
          << PathDelay << '\n';
 
   if (PathDelay == -1.0) {
@@ -585,7 +527,6 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
     errs() << "Error: " << ErrorInfo <<'\n';
     return false;
   }
-
 
   errs() << " done. \n";
 
