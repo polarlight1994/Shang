@@ -55,7 +55,9 @@ protected:
 public:
   void annotateDelay(VASTValue *Dst, TimingNetlist::SrcInfoTy &SrcInfo) const {
     const SrcDelayInfo *Srcs = getPathTo(Dst);
-    assert(Srcs && "Not path to Dst found!");
+    // It maybe not path to Dst.
+    if (Srcs == 0) return;
+
     for (const_src_iterator I = Srcs->begin(), E = Srcs->end(); I != E; ++I) {
       TimingNetlist::delay_type &d = SrcInfo[I->first];
       d= std::max<TimingNetlist::delay_type>(d, I->second);
@@ -481,7 +483,9 @@ void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root,
   
   // The entire tree had been visited.
   if (hasPathInfo(Root)) {
-    assert(!SrcInfo.empty() && "Path information not annotated before?");
+    // Simply annotate the delay to SrcInfo. This happen when we visit a
+    // big datapath tree that contains this Root node before.
+    annotateDelay(Root, SrcInfo);
     return;
   }
 
