@@ -414,17 +414,19 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
   }
 
   emitCommonPort(SubMod);
+  if (SubMod) {
+    MBBuilder.addSubModule(SubMod);
+    return;
+  }
 
   // Only build the following logics if we are building current module instead
   // of the submodule.
-  if (SubMod == 0) {
-    MBBuilder.addMemPorts();
+  MBBuilder.addMemPorts();
 
-    // Copy the value to the register.
-    VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
-    for (unsigned i = 0, e = ArgRegs.size(); i != e; ++i)
-      VM->latchValue(ArgRegs[i], ArgPorts[i], StartSlot, StartPort, Args[i]);
-  }
+  // Copy the value to the register.
+  VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
+  for (unsigned i = 0, e = ArgRegs.size(); i != e; ++i)
+    VM->latchValue(ArgRegs[i], ArgPorts[i], StartSlot, StartPort, Args[i]);
 }
 
 void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
@@ -432,8 +434,6 @@ void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
     // It is a callee function, emit the signal for the sub module.
     SubMod->createStartPort(VM);
     SubMod->createFinPort(VM);
-    // Also connedt the memory bus.
-    MBBuilder.addSubModule(SubMod);
   } else { // If F is current function.
     VM->addInputPort("clk", 1, VASTModule::Clk);
     VM->addInputPort("rstN", 1, VASTModule::RST);

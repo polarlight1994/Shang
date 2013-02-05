@@ -447,11 +447,6 @@ struct VASTExprOpInfo<VASTExpr::dpAnd> {
 
     if (APIntOps::isShiftedMask(OperandWidth, KnownZeros)
         || APIntOps::isMask(OperandWidth, KnownZeros)) {
-      unsigned NumZeros = KnownZeros.countPopulation();
-
-      // FIXME: Improve the profitable analysis.
-      if (NumZeros < OperandWidth / 2) return false;
-
       LoPt = KnownZeros.countTrailingZeros();
       HiPt = OperandWidth - KnownZeros.countLeadingZeros();
       assert(HiPt > LoPt && "Bad split point!");
@@ -461,9 +456,6 @@ struct VASTExprOpInfo<VASTExpr::dpAnd> {
     APInt NotKnownZeros = ~KnownZeros;
     if (APIntOps::isShiftedMask(OperandWidth, NotKnownZeros)
         || APIntOps::isMask(OperandWidth, NotKnownZeros)) {
-      unsigned NumZeros = KnownZeros.countPopulation();
-      if (NumZeros < OperandWidth / 2) return false;
-
       LoPt = NotKnownZeros.countTrailingZeros();
       HiPt = OperandWidth - NotKnownZeros.countLeadingZeros();
       assert(HiPt > LoPt && "Bad split point!");

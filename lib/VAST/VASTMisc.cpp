@@ -86,7 +86,7 @@ void VASTLLVMValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
     return;
   }
 
-  llvm_unreachable("Dont know how to print the value!");
+  OS << "LLVM IR " << *getValue() << "<Dont know how to print the value!>";
 }
 
 //===----------------------------------------------------------------------===//
