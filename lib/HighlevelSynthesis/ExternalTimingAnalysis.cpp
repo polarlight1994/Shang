@@ -93,7 +93,11 @@ static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
 
       O.indent(Indent + 2) << '(' << U.getSlot()->getName() << "): begin ";
       O << V->getName() << " <= ";
-      VASTValPtr(U).printAsOperand(O);
+      if (U->getASTType() == VASTNode::vastWire)
+        // Ignore the wrapper wire and print some random value.
+        O << intptr_t(VASTValPtr(U).getOpaqueValue());
+        else
+        VASTValPtr(U).printAsOperand(O);
       O << "; end\n";
     }
 
@@ -189,7 +193,6 @@ namespace {
 };
 }
 
-
 void ExternalTimingAnalysis::writeDatapathNetlist(raw_ostream &O) const {
   O << "module " << VM.getName() << "_datapath(\n";
 
@@ -212,8 +215,8 @@ void ExternalTimingAnalysis::writeDatapathNetlist(raw_ostream &O) const {
 
         E->nameExpr(true);
         O.indent(2) << "output wire";
-        if (Bitwidth > 1) O << "[" << (Bitwidth - 1) << ":0] ";
-        O << E->getTempName() <<  ",\n";
+        if (Bitwidth > 1) O << "[" << (Bitwidth - 1) << ":0]";
+        O << ' ' << E->getTempName() <<  ",\n";
       }
   }
   O.indent(2) << "output wire somewire);\n";
