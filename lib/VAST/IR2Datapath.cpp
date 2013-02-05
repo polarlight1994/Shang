@@ -107,6 +107,7 @@ VASTValPtr DatapathBuilder::visitICmpInst(ICmpInst &I) {
     // Fall though.
   case CmpInst::ICMP_SGT:
     return buildExpr(VASTExpr::dpSGT, LHS, RHS, 1);
+
   case CmpInst::ICMP_ULT:
     std::swap(LHS, RHS);
     // Fall though.
@@ -117,7 +118,7 @@ VASTValPtr DatapathBuilder::visitICmpInst(ICmpInst &I) {
     std::swap(LHS, RHS);
     // Fall though.
   case CmpInst::ICMP_SGE:
-    return buildExpr(VASTExpr::dpUGT, LHS, RHS, 1);
+    return buildExpr(VASTExpr::dpSGE, LHS, RHS, 1);
 
   case CmpInst::ICMP_ULE:
     std::swap(LHS, RHS);
