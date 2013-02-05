@@ -163,7 +163,7 @@ namespace {
 
       OS << " = ";
 
-      E->unnameExpr();
+      E->nameExpr(false);
       E->printAsOperand(OS, false);
 
       OS << ";\n";

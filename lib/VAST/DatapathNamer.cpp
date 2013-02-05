@@ -51,7 +51,7 @@ struct Namer {
     if (Expr == 0) return;
 
     // Remove the naming, we will recalculate them.
-    if (Expr->hasName()) Expr->unnameExpr();
+    Expr->nameExpr(false);
 
     if (!Expr->isInlinable()) {
       nameExpr(Expr);

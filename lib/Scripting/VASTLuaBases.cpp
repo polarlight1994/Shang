@@ -345,7 +345,6 @@ struct DatapathPrinter {
 
   void operator()(VASTNode *N) const {
     if (VASTWire *W = dyn_cast<VASTWire>(N))  {
-
       // Declare the wire if necessary.
       printDecl(OS, W, false, "");
 
@@ -379,7 +378,7 @@ struct DatapathPrinter {
         OS << " = ";
 
         // Temporary unname the rexpression so that we can print its logic.
-        E->unnameExpr();
+        E->nameExpr(false);
         E->printAsOperand(OS, false);
         E->nameExpr();
 

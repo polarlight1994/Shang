@@ -211,14 +211,9 @@ public:
   bool hasName() const { return IsNamed != 0; }
 
   // Assign a name to this expression.
-  void nameExpr() {
-    assert(!hasName() && "Expr already have name!");
-    IsNamed = true;
-  }
-
-  void unnameExpr() {
-    assert(hasName() && "Expr already have name!");
-    IsNamed = false;
+  void nameExpr(bool NameExpr = true) {
+    //assert(!hasName() && "Expr already have name!");
+    IsNamed = NameExpr;
   }
 
   std::string getTempName() const;
