@@ -61,7 +61,7 @@ char HLSAllocation::ID = 0;
 
 INITIALIZE_ANALYSIS_GROUP(HLSAllocation,
                           "High-level Synthesis Resource Allocation",
-                          BasicAllocation);
+                          BasicAllocation)
 
 namespace {
 /// TODO: Implement the HLS allocation as analysis group.
