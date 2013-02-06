@@ -62,7 +62,8 @@ Pass *createScriptingPass(const char *Name, const char *FScript,
                           const char *GScript);
 
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
-void initializeHLSAllocationPass(PassRegistry &Registry);
+void initializeHLSAllocationAnalysisGroup(PassRegistry &Registry);
+void initializeBasicAllocationPass(PassRegistry &Registry);
 void initializeLowerAllocaPass(PassRegistry &Registry);
 void initializeLUTMappingPass(PassRegistry &Registry);
 void initializeTimingNetlistPass(PassRegistry &Registry);

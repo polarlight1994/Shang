@@ -252,12 +252,16 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void visitUnreachableInst(UnreachableInst &I);
 
   void visitCallSite(CallSite CS);
+  void visitIntrinsicInst(IntrinsicInst &I);
 
   void visitBinaryOperator(BinaryOperator &I);
 
   void visitLoadInst(LoadInst &I);
   void visitStoreInst(StoreInst &I);
 
+  void visitInstruction(Instruction &I) {
+    I.dump();
+  }
   //===--------------------------------------------------------------------===//
   void buildMemoryTransaction(Value *Addr, Value *Data, unsigned PortNum,
                               Instruction &Inst);
@@ -265,10 +269,6 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
                                ArrayRef<VASTValPtr> Args);
-  void visitInstruction(Instruction &I) {
-    I.dump();
-  }
-
   //===--------------------------------------------------------------------===//
   VASTModuleBuilder(VASTModule *Module, DataLayout *TD, HLSAllocation &Allocation)
     : MinimalDatapathContext(*Module, TD), Builder(*this),
@@ -712,12 +712,23 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
   }
 }
 
+//===----------------------------------------------------------------------===//
+
+void VASTModuleBuilder::visitIntrinsicInst(IntrinsicInst &I) {
+  I.dump();
+}
+
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
-  buildMemoryTransaction(I.getPointerOperand(), 0, 0, I);
+  FuncUnitId FU = Allocation.getMemoryPort(I);
+  if (FU.getFUType() == VFUs::MemoryBus)
+    buildMemoryTransaction(I.getPointerOperand(), 0, FU.getFUNum(), I);
 }
 
 void VASTModuleBuilder::visitStoreInst(StoreInst &I) {
-  buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(), 0, I);
+  FuncUnitId FU = Allocation.getMemoryPort(I);
+  if (FU.getFUType() == VFUs::MemoryBus)
+    buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(),
+                           FU.getFUNum(), I);
 }
 
 //===----------------------------------------------------------------------===//
@@ -810,8 +821,6 @@ struct VASTModuleAnalysis : public FunctionPass {
   static char ID;
 
   VASTModuleAnalysis() : FunctionPass(ID), VM(0) {
-    initializeBasicBlockTopOrderPass(*PassRegistry::getPassRegistry());
-    initializeHLSAllocationPass(*PassRegistry::getPassRegistry());
     initializeVASTModuleAnalysisPass(*PassRegistry::getPassRegistry());
   }
 
@@ -823,8 +832,14 @@ struct VASTModuleAnalysis : public FunctionPass {
 };
 }
 
-INITIALIZE_PASS(VASTModuleAnalysis, "vast-module-builder", "VASTModule Builder",
-                false, true)
+INITIALIZE_PASS_BEGIN(VASTModuleAnalysis,
+                      "vast-module-builder", "VASTModule Builder",
+                      false, true)
+  INITIALIZE_AG_DEPENDENCY(HLSAllocation)
+  INITIALIZE_PASS_DEPENDENCY(BasicBlockTopOrder)
+INITIALIZE_PASS_END(VASTModuleAnalysis,
+                    "vast-module-builder", "VASTModule Builder",
+                    false, true)
 
 bool VASTModuleAnalysis::runOnFunction(Function &F) {
   assert(VM == 0 && "Module has been already created!");
