@@ -12,7 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Allocation.h"
 #include "LangSteam.h"
+
 #include "shang/VASTModulePass.h"
 #include "shang/VASTModule.h"
 #include "shang/Utilities.h"
@@ -34,10 +36,14 @@ EnalbeDumpIR("vtm-dump-ir", cl::desc("Dump the IR to the RTL code."),
              cl::init(false));
 
 namespace {
-class RTLCodeGen : public VASTModulePass {
+struct RTLCodeGen : public VASTModulePass {
   vlang_raw_ostream Out;
 
-public:
+  // DIRTY HACK: Make sure we can run the global script after the HLSAllocation
+  // pass.
+  // We can move this to the VASTModulePass.
+  bool FirstTimeRun;
+
   /// @name FunctionPass interface
   //{
   static char ID;
@@ -48,14 +54,14 @@ public:
 
   ~RTLCodeGen(){}
 
-  bool doInitialization(Module &M);
-
+  void generateCodeForTopModule(Module *M);
   bool runOnVASTModule(VASTModule &VM);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addRequiredID(DatapathNamerID);
+    AU.addRequired<HLSAllocation>();
     AU.setPreservesAll();
   }
 };
@@ -68,36 +74,59 @@ Pass *llvm::createRTLCodeGenPass(raw_ostream &O) {
   return new RTLCodeGen(O);
 }
 
-INITIALIZE_PASS(RTLCodeGen, "shang-verilog-writer",
-                "Write the RTL verilog code to output file.",
-                false, true)
+INITIALIZE_PASS_BEGIN(RTLCodeGen, "shang-verilog-writer",
+                      "Write the RTL verilog code to output file.",
+                      false, true)
+  INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
+  INITIALIZE_AG_DEPENDENCY(HLSAllocation)
+INITIALIZE_PASS_END(RTLCodeGen, "shang-verilog-writer",
+                    "Write the RTL verilog code to output file.",
+                    false, true)
 
-RTLCodeGen::RTLCodeGen(raw_ostream &O) : VASTModulePass(ID), Out(O) {
+RTLCodeGen::RTLCodeGen(raw_ostream &O) : VASTModulePass(ID), Out(O),
+                                         FirstTimeRun(true) {
   initializeRTLCodeGenPass(*PassRegistry::getPassRegistry());
-  initializeControlLogicSynthesisPass(*PassRegistry::getPassRegistry());
-  initializeDatapathNamerPass(*PassRegistry::getPassRegistry());
 }
 
-bool RTLCodeGen::doInitialization(Module &Mod) {
+void RTLCodeGen::generateCodeForTopModule(Module *M) {
   DataLayout *TD = getAnalysisIfAvailable<DataLayout>();
+  HLSAllocation &Allocation = getAnalysis<HLSAllocation>();
+
   SMDiagnostic Err;
   const char *GlobalScriptPath[] = { "Misc", "RTLGlobalScript" };
   std::string GlobalScript = getStrValueFromEngine(GlobalScriptPath);
-  if (!runScriptOnGlobalVariables(Mod, TD, GlobalScript, Err))
+  SmallVector<GlobalVariable*, 32> GVs;
+
+  for (Module::global_iterator I = M->global_begin(), E = M->global_end();
+       I != E; ++I) {
+    GlobalVariable *GV = I;
+
+    if (Allocation.getMemoryPort(*GV).getFUType() == VFUs::MemoryBus)
+      GVs.push_back(I);
+  }
+
+  if (!runScriptOnGlobalVariables(GVs, TD, GlobalScript, Err))
     report_fatal_error("VerilogASTWriter: Cannot run globalvariable script:\n"
                        + Err.getMessage());
 
+  // Read the result from the scripting engine.
   const char *GlobalCodePath[] = { "RTLGlobalCode" };
   std::string GlobalCode = getStrValueFromEngine(GlobalCodePath);
   Out << GlobalCode << '\n';
-
-  return false;
 }
 
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
+  Function &F = VM;
+
+  // Is this the top module?
+  if (FirstTimeRun) {
+    generateCodeForTopModule(F.getParent());
+    FirstTimeRun = false;
+  }
+
   if (EnalbeDumpIR) {
     Out << "`ifdef wtf_is_this\n" << "Function for RTL Codegen:\n";
-    Function &F = VM;
     F.print(Out);
     Out << "`endif\n";
   }

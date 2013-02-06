@@ -11,7 +11,7 @@
 // manipulate some data such as current generated RTL module with external script
 //
 //===----------------------------------------------------------------------===//
-
+#include "Allocation.h"
 
 #include "shang/Passes.h"
 #include "shang/Utilities.h"
@@ -36,20 +36,22 @@ struct ScriptingPass : public VASTModulePass {
   static char ID;
   std::string PassName, GlobalScript, FunctionScript;
   DataLayout *TD;
+  // DIRTY HACK: Make sure we can run the global script after the HLSAllocation
+  // pass.
+  bool FirstTimeRun;
 
   ScriptingPass(const char *Name, const char *FScript, const char *GScript)
     : VASTModulePass(ID), PassName(Name),
-      GlobalScript(GScript), FunctionScript(FScript), TD(0) {}
+      GlobalScript(GScript), FunctionScript(FScript), TD(0), FirstTimeRun(true)
+  {}
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
+    AU.addRequired<HLSAllocation>();
     AU.setPreservesAll();
   }
 
   const char *getPassName() const { return PassName.c_str(); }
-
-  bool doInitialization(Module &M);
-  bool doFinalization(Module &M);
 
   bool runOnVASTModule(VASTModule &VM);
 };
@@ -105,6 +107,18 @@ static void ExtractConstant(raw_ostream &OS, Constant *C, DataLayout *TD) {
 }
 
 bool llvm::runScriptOnGlobalVariables(Module &M, DataLayout *TD,
+                                      const std::string &Script,
+                                      SMDiagnostic Err) {
+  SmallVector<GlobalVariable*, 32> GVs;
+  for (Module::global_iterator I = M.global_begin(), E = M.global_end();
+       I != E; ++I)
+    GVs.push_back(I);
+
+  return runScriptOnGlobalVariables(GVs, TD, Script, Err);
+}
+
+bool llvm::runScriptOnGlobalVariables(ArrayRef<GlobalVariable*> GVs,
+                                      DataLayout *TD,
                                       const std::string &ScriptToRun,
                                       SMDiagnostic Err) {
   // Put the global variable information to the script engine.
@@ -114,9 +128,8 @@ bool llvm::runScriptOnGlobalVariables(Module &M, DataLayout *TD,
   std::string Script;
   raw_string_ostream SS(Script);
   // Push the global variable information into the script engine.
-  for (Module::global_iterator GI = M.global_begin(), E = M.global_end();
-       GI != E; ++GI ){
-    GlobalVariable *GV = GI;
+  for (unsigned i = 0; i < GVs.size(); ++i){
+    GlobalVariable *GV = GVs[i];
 
     // GlobalVariable information:
     // GVInfo {
@@ -226,23 +239,35 @@ void llvm::bindFunctionToScriptEngine(DataLayout &TD, VASTModule *Module) {
   bindToScriptEngine("CurModule", Module);
 }
 
-bool ScriptingPass::doInitialization(Module &M) {
+bool ScriptingPass::runOnVASTModule(VASTModule &VM)  {
   TD = getAnalysisIfAvailable<DataLayout>();
   assert(TD && "TD not avaialbe?");
 
-  SMDiagnostic Err;
-  if (!runScriptOnGlobalVariables(M, TD, GlobalScript, Err))
-    report_fatal_error("In Scripting pass[" + PassName + "]:\n"
-                       + Err.getMessage());
+  if (FirstTimeRun) {
+    Function &F = VM;
+    Module *M = F.getParent();
 
-  return false;
-}
+    HLSAllocation &Allocation = getAnalysis<HLSAllocation>();
 
-bool ScriptingPass::doFinalization(Module &M) {
-  return false;
-}
+    SmallVector<GlobalVariable*, 32> GVs;
 
-bool ScriptingPass::runOnVASTModule(VASTModule &VM)  {
+    for (Module::global_iterator I = M->global_begin(), E = M->global_end();
+         I != E; ++I) {
+      GlobalVariable *GV = I;
+      // The GlobalVariables that bound to block RAM are not "Global" anymore.
+      if (Allocation.getMemoryPort(*GV).getFUType() == VFUs::MemoryBus)
+        GVs.push_back(I);
+    }
+
+    SMDiagnostic Err;
+    if (!runScriptOnGlobalVariables(GVs, TD, GlobalScript, Err))
+      report_fatal_error("In Scripting pass[" + PassName + "]:\n"
+                         + Err.getMessage());
+
+
+    FirstTimeRun = false;
+  }
+
   bindFunctionToScriptEngine(*TD, &VM);
 
   SMDiagnostic Err;

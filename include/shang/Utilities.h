@@ -91,6 +91,10 @@ class SMDiagnostic;
 bool runScriptOnGlobalVariables(Module &M, DataLayout *TD,
                                 const std::string &Script,
                                 SMDiagnostic Err);
+
+bool runScriptOnGlobalVariables(ArrayRef<GlobalVariable*> GVs, DataLayout *TD,
+                                const std::string &Script,
+                                SMDiagnostic Err);
 class VASTModule;
 void bindFunctionToScriptEngine(DataLayout &TD, VASTModule *Module);
 

@@ -27,10 +27,14 @@
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/InstIterator.h"
+#include "llvm/ADT/Statistic.h"
+#define DEBUG_TYPE "shang-vast-module-analysis"
+#include "llvm/Support/Debug.h"
 
 #include <map>
 
 using namespace llvm;
+STATISTIC(NumIPs, "Number of IPs Instantiated");
 
 namespace {
 // Note: Create the memory bus builder will add the input/output ports of the
@@ -597,6 +601,7 @@ VASTModuleBuilder::emitIPFromTemplate(const char *Name, unsigned ResultSize)
   // Dose the submodule have a return port?
   if (ResultSize) SubMod->createRetPort(VM, ResultSize, Latency);
 
+  ++NumIPs;
   return SubMod;
 }
 
@@ -1047,6 +1052,7 @@ void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreservedID(BasicBlockTopOrderID);
   AU.addPreserved<AliasAnalysis>();
   AU.addPreserved<ScalarEvolution>();
+  AU.addPreserved<HLSAllocation>();
 }
 
 bool VASTModulePass::runOnFunction(Function &F) {
