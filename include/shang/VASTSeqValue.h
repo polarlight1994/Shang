@@ -55,6 +55,8 @@ public:
     : VASTSignal(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx),
       Parent(Parent) {}
 
+  ~VASTSeqValue();
+
   VASTNode::SeqValType getValType() const { return VASTNode::SeqValType(T); }
 
   unsigned getDataRegNum() const {

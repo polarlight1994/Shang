@@ -71,7 +71,7 @@ public:
   typedef PortVector::iterator port_iterator;
   typedef PortVector::const_iterator const_port_iterator;
 
-  typedef SmallVector<VASTWire*, 128> WireVector;
+  typedef ilist<VASTWire> WireVector;
   typedef WireVector::iterator wire_iterator;
 
   typedef SmallVector<VASTRegister*, 128> RegisterVector;
@@ -91,6 +91,7 @@ public:
   typedef SlotVecTy::const_iterator const_slot_iterator;
 private:
   DatapathContainer *Datapath;
+  WireVector Wires;
 
   // The slots vector, each slot represent a state in the FSM of the design.
   SlotVecTy Slots;
@@ -140,7 +141,6 @@ public:
 
   void reset();
 
-
   const std::string &getName() const { return Name; }
 
   // Functions to generate verilog code.
@@ -180,11 +180,11 @@ public:
   const VASTSlot *getStartSlot() const;
   const VASTSlot *getFinishSlot() const;
 
-  operator DatapathContainer &() { return *Datapath; }
+  operator DatapathContainer &() const { return *Datapath; }
   operator Function &() { return F; }
+  DatapathContainer *operator->() const { return Datapath; }
 
   BumpPtrAllocator &getAllocator();
-  VASTUse *allocateUse();
 
   // Allow user to add ports.
   VASTPort *addInputPort(const Twine &Name, unsigned BitWidth,

@@ -153,3 +153,7 @@ void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
 }
 
 void VASTSeqValue::anchor() const {}
+
+VASTSeqValue::~VASTSeqValue() {
+
+}

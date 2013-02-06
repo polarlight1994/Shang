@@ -254,12 +254,19 @@ static bool printBinFU(raw_ostream &OS, const VASTExpr *E, const VASTValue *LHS)
 //===----------------------------------------------------------------------===//
 
 VASTExpr::VASTExpr(Opcode Opc, uint8_t NumOps, unsigned UB, unsigned LB)
-  : VASTValue(vastExpr, UB - LB),
-    VASTOperandList(reinterpret_cast<VASTUse*>(this + 1), NumOps),
+  : VASTValue(vastExpr, UB - LB), VASTOperandList(NumOps),
     IsNamed(0), Opc(Opc), UB(UB), LB(LB) {
   Contents.Name = 0;
   assert(NumOps && "Unexpected empty operand list!");
 }
+
+VASTExpr::VASTExpr()
+  : VASTValue(vastExpr, 0), VASTOperandList(0), IsNamed(0), Opc(-1),
+    UB(0), LB(0) {
+  Contents.Name = 0;
+}
+
+VASTExpr::~VASTExpr() {}
 
 bool VASTExpr::isInlinable() const {
   return getOpcode() <= LastInlinableOpc;
@@ -452,8 +459,7 @@ void VASTExpr::Profile(FoldingSetNodeID& ID) const {
 }
 
 void VASTExpr::dropUses() {
-  for (VASTUse *I = Operands, *E = Operands + Size; I != E; ++I)
-    I->unlinkUseFromUser();
+  dropOperands();
 }
 
 //----------------------------------------------------------------------------//
@@ -476,7 +482,7 @@ static void printCombMux(raw_ostream &OS, const VASTWire *W) {
 }
 
 void VASTWire::dropUses() {
-  if (getOperand(0).get()) getOperand(0).unlinkUseFromUser();
+  dropOperands();
 }
 
 void VASTWire::printAssignment(raw_ostream &OS) const {

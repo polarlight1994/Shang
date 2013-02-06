@@ -67,7 +67,7 @@ class VASTSeqOp : public VASTOperandList, public VASTNode,
   friend struct VASTSeqUse;
   friend struct ilist_sentinel_traits<VASTSeqOp>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
-  VASTSeqOp() : VASTOperandList(0, 0), VASTNode(VASTNode::VASTTypes(-1)) {}
+  VASTSeqOp() : VASTOperandList(0), VASTNode(VASTNode::VASTTypes(-1)) {}
 
   VASTUse &getUseInteranal(unsigned Idx) {
     return getOperand(1 + Idx);
@@ -77,8 +77,7 @@ class VASTSeqOp : public VASTOperandList, public VASTNode,
   VASTSeqOp(const VASTSeqOp &RHS); // DO NOT IMPLEMENT
 
 protected:
-  VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive,
-            VASTUse *Operands, unsigned Size);
+  VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive, unsigned Size);
 public:
   void addDefDst(VASTSeqValue *Def);
   VASTSeqDef getDef(unsigned No) { return VASTSeqDef(this, No); }
@@ -123,6 +122,8 @@ public:
   // Provide the < operator to support set of VASTSeqDef.
   bool operator<(const VASTSeqOp &RHS) const;
 
+  virtual void dropUses();
+
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSeqInst *A) { return true; }
   static inline bool classof(const VASTSeqOp *A) { return true; }
@@ -146,7 +147,7 @@ private:
   PointerIntPair<Value*, 2, Type> V;
 public:
   // VASTSeqInst always use slot active, it is not a part of the control logic.
-  VASTSeqInst(Value *V, VASTSlot *S, VASTUse *Operands, unsigned Size,
+  VASTSeqInst(Value *V, VASTSlot *S, unsigned Size,
               VASTSeqInst::Type T);
 
   Value *getValue() const { return V.getPointer(); }
@@ -165,7 +166,7 @@ class VASTSeqCtrlOp : public VASTSeqOp {
 public:
   // VASTSeqCtrlOp may not use slot active, it is a part of the control logic.
   // VASTSeqCtrlOp only read one source value and assign it to a register.
-  VASTSeqCtrlOp(VASTSlot *S, bool UseSlotActive, VASTUse *Operands);
+  VASTSeqCtrlOp(VASTSlot *S, bool UseSlotActive);
 
   Value *getValue() const { return 0; }
 
@@ -186,19 +187,22 @@ public:
     Enable, Disable, WaitReady
   };
 private:
-  PointerIntPair<VASTValue*, 2, Type> Ptr;
+  Type T;
 public:
   // VASTSeqSlotCtrl may not use slot active, it is a part of the control logic.
   // VASTSeqSlotCtrl only assign 1 or 0 to the destination VASTSeqValue.
-  VASTSeqSlotCtrl(VASTSlot *S, VASTUse *Operands, Type T, VASTValue *CtrlSignal);
+  VASTSeqSlotCtrl(VASTSlot *S, Type T);
 
   Value *getValue() const { return 0; }
 
   /// getDst - Get the register to be enable/disable.
-  VASTValue *getCtrlSignal() const { return Ptr.getPointer(); }
+  VASTValue *getCtrlSignal() const {
+    return src_begin()->getAsLValue<VASTValue>();
+  }
+
   /// isEnable - Return true if the the operation is enabling a control register,
   /// false otherwise.
-  VASTSeqSlotCtrl::Type getCtrlType() const { return Ptr.getInt(); }
+  VASTSeqSlotCtrl::Type getCtrlType() const { return T; }
 
   virtual void print(raw_ostream &OS) const;
   static inline bool classof(const VASTSeqSlotCtrl *A) { return true; }

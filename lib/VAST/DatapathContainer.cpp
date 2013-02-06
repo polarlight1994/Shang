@@ -127,26 +127,23 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
   if (VASTExpr *E = UniqueExprs->FindNodeOrInsertPos(ID, IP))
     return E;
 
-  // If the Expression do not exist, allocate a new one.
-  // Place the VASTUse array right after the VASTExpr.
-  void *P = Allocator.Allocate(sizeof(VASTExpr) + Ops.size() * sizeof(VASTUse),
-                               alignOf<VASTExpr>());
-  VASTExpr *E = new (P) VASTExpr(Opc, Ops.size(), UB, LB);
-  VASTUse *UseBegin = reinterpret_cast<VASTUse*>(E + 1);
+  VASTExpr *E = new VASTExpr(Opc, Ops.size(), UB, LB);
 
   for (unsigned i = 0; i < Ops.size(); ++i) {
     assert(Ops[i].get() && "Unexpected null VASTValPtr!");
 
-    (void) new (UseBegin + i) VASTUse(E, Ops[i]);
+    (void) new (E->Operands + i) VASTUse(E, Ops[i]);
   }
 
   UniqueExprs->InsertNode(E, IP);
+  Exprs.push_back(E);
   return E;
 }
 
 void DatapathContainer::reset() {
   UniqueExprs->clear();
   UniqueImms->clear();
+  Exprs.clear();
   Allocator.Reset();
 
   // Reinsert the TRUE and False.

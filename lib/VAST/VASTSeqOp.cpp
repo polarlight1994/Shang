@@ -119,9 +119,8 @@ void VASTSeqOp::printPredicate(raw_ostream &OS) const {
   OS << ')';
 }
 
-VASTSeqOp::VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive,
-                     VASTUse *Operands, unsigned Size)
-  : VASTOperandList(Operands, Size + 1), VASTNode(T), S(S, UseSlotActive) {
+VASTSeqOp::VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive, unsigned Size)
+  : VASTOperandList(Size + 1), VASTNode(T), S(S, UseSlotActive) {
   S->addOperation(this);
 }
 
@@ -139,6 +138,10 @@ Value *VASTSeqOp::getValue() const {
   return 0;
 }
 
+void VASTSeqOp::dropUses() {
+  dropOperands();
+}
+
 VASTOperandList *VASTOperandList::GetOperandList(VASTNode *N) {
   if (VASTOperandList *L = GetDatapathOperandList(N))
     return L;
@@ -146,12 +149,10 @@ VASTOperandList *VASTOperandList::GetOperandList(VASTNode *N) {
   return dyn_cast_or_null<VASTSeqOp>(N);
 }
 
-
 //----------------------------------------------------------------------------//
 
-VASTSeqInst::VASTSeqInst(Value *V, VASTSlot *S, VASTUse *Operands, unsigned Size,
-                         VASTSeqInst::Type T)
-  : VASTSeqOp(vastSeqInst, S, true, Operands, Size), V(V, T) {}
+VASTSeqInst::VASTSeqInst(Value *V, VASTSlot *S, unsigned Size, VASTSeqInst::Type T)
+  : VASTSeqOp(vastSeqInst, S, true, Size), V(V, T) {}
 
 void VASTSeqInst::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
@@ -169,8 +170,8 @@ void VASTSeqInst::print(raw_ostream &OS) const {
 }
 
 //----------------------------------------------------------------------------//
-VASTSeqCtrlOp::VASTSeqCtrlOp(VASTSlot *S, bool UseSlotActive, VASTUse *Operands)
-  : VASTSeqOp(vastSeqCtrlOp, S, UseSlotActive, Operands, 1) {}
+VASTSeqCtrlOp::VASTSeqCtrlOp(VASTSlot *S, bool UseSlotActive)
+  : VASTSeqOp(vastSeqCtrlOp, S, UseSlotActive, 1) {}
 
 void VASTSeqCtrlOp::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
@@ -178,9 +179,8 @@ void VASTSeqCtrlOp::print(raw_ostream &OS) const {
 }
 
 //----------------------------------------------------------------------------//
-VASTSeqSlotCtrl::VASTSeqSlotCtrl(VASTSlot *S, VASTUse *Operands, Type T,
-                                 VASTValue *CtrlSignal)
-  : VASTSeqOp(vastSeqEnable, S, false, Operands, 0), Ptr(CtrlSignal, T) {}
+VASTSeqSlotCtrl::VASTSeqSlotCtrl(VASTSlot *S, Type T)
+  : VASTSeqOp(vastSeqEnable, S, false, 1), T(T) {}
 
 void VASTSeqSlotCtrl::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);

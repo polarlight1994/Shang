@@ -129,7 +129,7 @@ public:
 };
 
 class VASTExpr : public VASTValue, public VASTOperandList,
-                 public FoldingSetNode {
+                 public FoldingSetNode, public ilist_node<VASTExpr> {
 public:
   enum Opcode {
     // bitwise logic datapath
@@ -173,7 +173,10 @@ private:
   VASTExpr(const VASTExpr&);              // Do not implement
   void operator=(const VASTExpr&);        // Do not implement
 
-  VASTExpr(Opcode Opc, uint8_t numOps, unsigned UB, unsigned LB);
+  VASTExpr(Opcode Opc, uint8_t NumOps, unsigned UB, unsigned LB);
+  VASTExpr();
+
+  friend struct ilist_sentinel_traits<VASTExpr>;
 
   friend class DatapathContainer;
 
@@ -193,6 +196,8 @@ private:
 
   const char *getLUT() const;
 public:
+  ~VASTExpr();
+
   const uint8_t Opc, UB, LB;
   Opcode getOpcode() const { return VASTExpr::Opcode(Opc); }
   const char *getFUName() const;
@@ -239,7 +244,8 @@ inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
   return get()->getOperand(i).get().invert(isInverted());
 }
 
-class VASTWire :public VASTSignal, public VASTOperandList {
+class VASTWire :public VASTSignal, public VASTOperandList,
+                public ilist_node<VASTWire> {
   unsigned Idx : 31;
   bool IsPinned : 1;
   friend class VASTModule;
@@ -255,13 +261,17 @@ class VASTWire :public VASTSignal, public VASTOperandList {
     return this;
   }
 
+  friend struct ilist_sentinel_traits<VASTWire>;
+  VASTWire() : VASTSignal(vastWire, 0, 0), VASTOperandList(0), Idx(0),
+    IsPinned(false), AttrStr(0) {}
+
   virtual void dropUses();
 public:
   const char *const AttrStr;
 
-  VASTWire(const char *Name, unsigned BitWidth, VASTUse *U, const char *Attr = "",
+  VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "",
            bool IsPinned = false)
-    : VASTSignal(vastWire, Name, BitWidth), VASTOperandList(U, 1),
+    : VASTSignal(vastWire, Name, BitWidth), VASTOperandList(1),
       Idx(0), IsPinned(IsPinned), AttrStr(Attr) {
     new (Operands) VASTUse(this);
   }
@@ -313,6 +323,8 @@ protected:
   template<typename T>
   void addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap);
 
+  ilist<VASTExpr> Exprs;
+
 public:
   DatapathContainer();
   ~DatapathContainer();
@@ -329,6 +341,14 @@ public:
   VASTImmediate *getOrCreateImmediateImpl(uint64_t Value, int8_t BitWidth) {
     return getOrCreateImmediateImpl(APInt(BitWidth, Value));
   }
+
+  typedef ilist<VASTExpr>::iterator expr_iterator;
+  expr_iterator expr_begin() { return Exprs.begin(); }
+  expr_iterator expr_end() { return Exprs.end(); }
+
+  typedef ilist<VASTExpr>::const_iterator const_expr_iterator;
+  const_expr_iterator expr_begin() const { return Exprs.begin(); }
+  const_expr_iterator expr_end() const  { return Exprs.end(); }
 
   void reset();
 };

@@ -345,13 +345,15 @@ public:
 };
 
 class VASTOperandList {
+  friend class VASTModule;
+  friend class DatapathContainer;
 protected:
   VASTUse *Operands;
   unsigned Size;
 public:
 
-  VASTOperandList(VASTUse *Operands, unsigned Size)
-    : Operands(Operands), Size(Size) {}
+  VASTOperandList(unsigned Size);
+  ~VASTOperandList();
 
   const VASTUse &getOperand(unsigned Idx) const {
     assert(Idx < Size && "Index out of range!");
@@ -377,6 +379,8 @@ public:
   //op_iterator op_end() const { return ops() + num_ops(); }
 
   ArrayRef<VASTUse> getOperands() const;
+
+  void dropOperands();
 
   // Convert the VASTNode to VASTOperandList.
   static VASTOperandList *GetDatapathOperandList(VASTNode *N);

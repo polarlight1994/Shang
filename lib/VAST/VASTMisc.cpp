@@ -131,4 +131,19 @@ VASTOperandList *VASTOperandList::GetDatapathOperandList(VASTNode *N) {
   return dyn_cast_or_null<VASTWire>(N);
 }
 
+VASTOperandList::VASTOperandList(unsigned Size)
+  : Operands(0), Size(Size) {
+  if (Size)
+    Operands = reinterpret_cast<VASTUse*>(::operator new(sizeof(VASTUse) * Size));
+}
+
+VASTOperandList::~VASTOperandList() {
+  if (Operands) ::operator delete(Operands);
+}
+
+void VASTOperandList::dropOperands() {
+  for (VASTUse *I = Operands, *E = Operands + Size; I != E; ++I)
+    if (I->get()) I->unlinkUseFromUser();
+}
+
 //===----------------------------------------------------------------------===//

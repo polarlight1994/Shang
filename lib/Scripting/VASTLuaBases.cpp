@@ -135,7 +135,7 @@ VASTValue::VASTValue(VASTTypes T, unsigned BitWidth)
   assert(T >= vastFirstValueType && T <= vastLastValueType
     && "Bad DeclType!");
   UseList
-    = reinterpret_cast<iplist<VASTUse>*>::operator new(sizeof(iplist<VASTUse>));
+    = reinterpret_cast<iplist<VASTUse>*>(::operator new(sizeof(iplist<VASTUse>)));
   new (UseList) iplist<VASTUse>();
 }
 
@@ -243,14 +243,11 @@ VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   // Allocate the wire and the use.
-  void *P =  getAllocator().Allocate(sizeof(VASTWire) + sizeof(VASTUse),
-                                     alignOf<VASTWire>());
 
-  VASTWire *Wire = reinterpret_cast<VASTWire*>(P);
-  // Create the uses in the list.
-  VASTUse *U = reinterpret_cast<VASTUse*>(Wire + 1);
-  new (Wire) VASTWire(Entry.getKeyData(), BitWidth, U, Attr, IsPinned);
+
+  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, Attr, IsPinned);
   Entry.second = Wire;
+  Wires.push_back(Wire);
 
   return Wire;
 }
@@ -310,6 +307,7 @@ VASTModule::VASTModule(Function &F)
 }
 
 void VASTModule::reset() {
+  Wires.clear();
   SeqOps.clear();
   SeqVals.clear();
   Slots.clear();
@@ -526,12 +524,10 @@ void VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slo
 VASTSeqInst *
 VASTModule::lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps, Value *V,
                       VASTSeqInst::Type T) {
-  VASTUse *UseBegin = getAllocator().Allocate<VASTUse>(NumOps + 1);
-
   // Create the uses in the list.
-  VASTSeqInst *SeqInst = new VASTSeqInst(V, Slot, UseBegin, NumOps, T);
+  VASTSeqInst *SeqInst = new VASTSeqInst(V, Slot, NumOps, T);
   // Create the predicate operand.
-  new (UseBegin) VASTUse(SeqInst, Pred);
+  new (SeqInst->Operands) VASTUse(SeqInst, Pred);
 
   // Add the SeqOp to the the all SeqOp list.
   SeqOps.push_back(SeqInst);
@@ -542,10 +538,9 @@ VASTModule::lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps, Value *V
 void VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
                                  VASTSlot *Slot, VASTValPtr GuardCnd,
                                  bool UseSlotActive,bool ExportDefine) {
-  VASTUse *UseBegin = getAllocator().Allocate<VASTUse>(1 + 1);
-  VASTSeqCtrlOp *CtrlOp = new VASTSeqCtrlOp(Slot, UseSlotActive, UseBegin);
+  VASTSeqCtrlOp *CtrlOp = new VASTSeqCtrlOp(Slot, UseSlotActive);
   // Create the predicate operand.
-  new (UseBegin) VASTUse(CtrlOp, GuardCnd);
+  new (CtrlOp->Operands) VASTUse(CtrlOp, GuardCnd);
   // Create the source of the assignment
   CtrlOp->addSrc(Src, 0, ExportDefine, SeqVal);
 
@@ -555,11 +550,10 @@ void VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
 
 void VASTModule::createSlotCtrl(VASTValue *CtrlSignal, VASTSlot *Slot,
                                 VASTValPtr Pred, VASTSeqSlotCtrl::Type CtrlType) {
-  VASTUse *UseBegin = getAllocator().Allocate<VASTUse>(0 + 1);
-  VASTSeqSlotCtrl *CtrlOp
-    = new VASTSeqSlotCtrl(Slot, UseBegin, CtrlType, CtrlSignal);
+  VASTSeqSlotCtrl *CtrlOp = new VASTSeqSlotCtrl(Slot, CtrlType);
   // Create the predicate operand.
-  new (UseBegin) VASTUse(CtrlOp, Pred);
+  new (CtrlOp->Operands) VASTUse(CtrlOp, Pred);
+  new (CtrlOp->Operands + 1) VASTUse(CtrlOp, CtrlSignal);
 
   // Add the SeqOp to the the all SeqOp list.
   SeqOps.push_back(CtrlOp);
@@ -568,6 +562,7 @@ void VASTModule::createSlotCtrl(VASTValue *CtrlSignal, VASTSlot *Slot,
 void VASTModule::eraseSeqOp(VASTSeqOp *SeqOp) {
   assert(SeqOp->getSlot() == 0
          && "The VASTSeqOp should be erase from its parent slot first!");
+  SeqOp->dropUses();
   SeqOps.erase(SeqOp);
 }
 
@@ -657,10 +652,6 @@ VASTRegister *VASTModule::addOpRegister(const Twine &Name, unsigned BitWidth,
 VASTRegister *VASTModule::addDataRegister(const Twine &Name, unsigned BitWidth,
                                           unsigned RegNum, const char *Attr) {
   return addRegister(Name, BitWidth, 0, VASTNode::Data, RegNum, Attr);
-}
-
-VASTUse *VASTModule::allocateUse() {
-  return getAllocator().Allocate<VASTUse>();
 }
 
 BumpPtrAllocator &VASTModule::getAllocator() {
