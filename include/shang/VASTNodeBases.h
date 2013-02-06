@@ -388,16 +388,13 @@ public:
 
 class VASTValue : public VASTNode {
   typedef iplist<VASTUse> UseListTy;
-  UseListTy UseList;
+  UseListTy *UseList;
 protected:
 
-  VASTValue(VASTTypes T, unsigned BitWidth) : VASTNode(T), BitWidth(BitWidth) {
-    assert(T >= vastFirstValueType && T <= vastLastValueType
-           && "Bad DeclType!");
-  }
+  VASTValue(VASTTypes T, unsigned BitWidth);
 
-  void addUseToList(VASTUse *U) { UseList.push_back(U); }
-  void removeUseFromList(VASTUse *U) { UseList.remove(U); }
+  void addUseToList(VASTUse *U) { UseList->push_back(U); }
+  void removeUseFromList(VASTUse *U) { UseList->remove(U); }
 
   friend class VASTUse;
 
@@ -410,15 +407,16 @@ protected:
   // Print the value as inline operand.
   virtual VASTValPtr getAsInlineOperandImpl() { return this; }
 public:
+  virtual ~VASTValue();
   const uint8_t BitWidth;
   unsigned getBitWidth() const { return BitWidth; }
 
   typedef VASTUseIterator<UseListTy::iterator, VASTNode> use_iterator;
-  use_iterator use_begin() { return use_iterator(UseList.begin()); }
-  use_iterator use_end() { return use_iterator(UseList.end()); }
+  use_iterator use_begin() { return use_iterator(UseList->begin()); }
+  use_iterator use_end() { return use_iterator(UseList->end()); }
 
-  bool use_empty() const { return UseList.empty(); }
-  size_t num_uses() const { return UseList.size(); }
+  bool use_empty() const { return UseList->empty(); }
+  size_t num_uses() const { return UseList->size(); }
 
   void printAsOperand(raw_ostream &OS, unsigned UB, unsigned LB,
                       bool isInverted) const;

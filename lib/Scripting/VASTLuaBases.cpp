@@ -130,6 +130,21 @@ void VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
   }
 }
 
+VASTValue::VASTValue(VASTTypes T, unsigned BitWidth)
+  : VASTNode(T), BitWidth(BitWidth) {
+  assert(T >= vastFirstValueType && T <= vastLastValueType
+    && "Bad DeclType!");
+  UseList
+    = reinterpret_cast<iplist<VASTUse>*>::operator new(sizeof(iplist<VASTUse>));
+  new (UseList) iplist<VASTUse>();
+}
+
+VASTValue::~VASTValue() {
+  // Do not call the destructor of UseList.
+  // We should check if use list is empty if necessary.
+  ::operator delete(UseList);
+}
+
 //----------------------------------------------------------------------------//
 VASTPort::VASTPort(VASTNamedValue *V, bool isInput)
   : VASTNode(vastPort), IsInput(isInput)
