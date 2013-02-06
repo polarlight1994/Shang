@@ -140,7 +140,8 @@ VASTValue::VASTValue(VASTTypes T, unsigned BitWidth)
 }
 
 VASTValue::~VASTValue() {
-  // Do not call the destructor of UseList.
+  // Do not call the destructor of UseList. They are deleted by the
+  // VASTOperandList.
   // We should check if use list is empty if necessary.
   ::operator delete(UseList);
 }
@@ -325,7 +326,6 @@ void VASTModule::reset() {
 }
 
 VASTModule::~VASTModule() {
-  reset();
   delete Datapath;
 }
 

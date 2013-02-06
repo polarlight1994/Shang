@@ -303,6 +303,7 @@ public:
 
 template<>
 struct ilist_traits<VASTUse> : public ilist_default_traits<VASTUse> {
+  // FIXME: This sentinel is created and never released.
   static VASTUse *createSentinel() { return new VASTUse(0, 0); }
 
   static void deleteNode(VASTUse *U) {}
