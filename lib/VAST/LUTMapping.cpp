@@ -26,10 +26,12 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/ADT/Statistic.h"
-#define DEBUG_TYPE "vtm-logic-synthesis"
+#define DEBUG_TYPE "shang-logic-synthesis"
 #include "llvm/Support/Debug.h"
 
 STATISTIC(NumAndExpand, "Number of binary And expanded from NAry And expanded");
+STATISTIC(NumABCNodeBulit, "Number of ABC node built");
+STATISTIC(NumLUTBulit, "Number of LUT node built");
 
 // The header of ABC
 #define ABC_DLL
@@ -106,7 +108,7 @@ struct LogicNetwork {
 
   bool buildAIG(VASTExpr *E);
   bool buildAIG(VASTValue *Root, std::set<VASTValue*> &Visited);
-  bool buildAIG(VASTModule &VM);
+  bool buildAIG(DatapathContainer &DP);
 
   VASTValPtr getAsOperand(Abc_Obj_t *O) const;
 
@@ -204,15 +206,14 @@ bool LogicNetwork::buildAIG(VASTValue *Root, std::set<VASTValue*> &Visited) {
   return AnyNodeCreated;
 }
 
-bool LogicNetwork::buildAIG(VASTModule &VM) {
+bool LogicNetwork::buildAIG(DatapathContainer &DP) {
   // Remember the visited values so that we wont visit the same value twice.
   std::set<VASTValue*> Visited;
   bool AnyNodeCreated = false;
-  //typedef MFDatapathContainer::FanoutIterator iterator;
 
-  //for (iterator I = Datapath.fanout_begin(), E = Datapath.fanout_end();
-  //     I != E; ++I)
-  //  AnyNodeCreated |= buildAIG(I->second->getDriver().get(), Visited);
+  typedef DatapathContainer::expr_iterator expr_iterator;
+  for (expr_iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I)
+    AnyNodeCreated |= buildAIG(E, Visited);
 
   return AnyNodeCreated;
 }
@@ -349,6 +350,8 @@ bool LogicNetwork::buildAIG(VASTExpr *E) {
   Abc_Obj_t *AndObj = Abc_AigAnd((Abc_Aig_t *)Ntk->pManFunc, LHS_OBJ, RHS_OBJ);
   Nodes.insert(std::make_pair(E, AndObj));
 
+  ++NumABCNodeBulit;
+
   return true;
 }
 
@@ -449,6 +452,7 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
     unsigned Truth = Abc_SopToTruth(sop, Ops.size());
     Ops.push_back(Builder.getOrCreateImmediate(Truth, 1 << Ops.size()));
     V = Builder.buildExpr(VASTExpr::dpLUT, Ops, Bitwidth);
+    ++NumLUTBulit;
   }
 
   bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
@@ -512,28 +516,6 @@ void LogicNetwork::buildLUTDatapath(DatapathBuilder &Builder) {
   }
 }
 
-//void MFDatapathContainer::performLUTMapping(const Twine &Name) {
-//  LogicNetwork Ntk(Name);
-//
-//  DEBUG(writeVerilog(dbgs(), Name));
-//
-//  // Build the AIG, if nothing built
-//  if (!Ntk.buildAIG(*this)) return;
-//
-//  // Clean up the network, prepare for logic optimization.
-//  Ntk.cleanUp();
-//
-//  // Synthesis the logic network.
-//  Ntk.synthesis();
-//
-//  // Map the logic network to LUTs
-//  Ntk.performLUTMapping();
-//
-//  Ntk.buildLUTDatapath(Builder);
-//
-//  DEBUG(writeVerilog(dbgs(), Name));
-//}
-
 static ManagedStatic<ABCContext> GlobalContext;
 
 LogicNetwork::LogicNetwork(const Twine &Name) : Context(*GlobalContext) {
@@ -563,7 +545,16 @@ struct NAryExprBreaker {
       breakDownNAryExpr(E);
   }
 
-  void breakDownNAryExpr(VASTExpr *Expr) const ;
+  void breakDownNAryExpr(VASTExpr *Expr) const;
+
+  static void BreakNAryExpr(DatapathContainer &DP, DatapathBuilder &Builder) {
+    std::set<VASTOperandList*> Visited;
+    typedef DatapathContainer::expr_iterator expr_iterator;
+    for (expr_iterator I = DP.expr_begin(); I != DP.expr_end(); /*++I*/) {
+      VASTExpr *CurExpr = I++;
+      VASTOperandList::visitTopOrder(CurExpr, Visited, NAryExprBreaker(Builder));
+    }
+  }
 };
 }
 
@@ -621,18 +612,21 @@ bool LUTMapping::runOnVASTModule(VASTModule &VM) {
   MinimalDatapathContext Context(DP, getAnalysisIfAvailable<DataLayout>());
   Builder = new DatapathBuilder(Context);
 
+  NAryExprBreaker::BreakNAryExpr(DP, *Builder);
+
   LogicNetwork Ntk(VM.getName());
 
-  typedef VASTModule::seqval_iterator iterator;
-  typedef VASTSeqValue::itertor fanin_iterator;
+  if (!Ntk.buildAIG(DP)) return true;
 
-  // Break down the expressions.
-  std::set<VASTOperandList*> Visited;
-  typedef DatapathContainer::expr_iterator expr_iterator;
-  for (expr_iterator I = DP.expr_begin(); I != DP.expr_end(); /*++I*/) {
-    VASTExpr *CurExpr = I++;
-    VASTOperandList::visitTopOrder(CurExpr, Visited, NAryExprBreaker(*Builder));
-  }
+  Ntk.cleanUp();
+
+  // Synthesis the logic network.
+  Ntk.synthesis();
+
+  // Map the logic network to LUTs
+  Ntk.performLUTMapping();
+
+  Ntk.buildLUTDatapath(*Builder);
 
   delete Builder;
   return true;
