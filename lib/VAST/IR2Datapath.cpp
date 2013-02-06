@@ -158,10 +158,10 @@ VASTValPtr DatapathBuilder::visitBinaryOperator(BinaryOperator &I) {
   case Instruction::LShr: return buildExpr(VASTExpr::dpSRL, Ops, NumBits);
 
   // Div is implemented as submodule.
-  case Instruction::SRem:
-  case Instruction::URem:
-  case Instruction::UDiv:
-  case Instruction::SDiv: return VASTValPtr();
+  case Instruction::UDiv: return lowerUDiv(I);
+  case Instruction::SDiv: return lowerSDiv(I);
+  case Instruction::SRem: return lowerSRem(I);
+  case Instruction::URem: return lowerURem(I);
 
   case Instruction::And:  return buildAndExpr(Ops, NumBits);
   case Instruction::Or:   return buildOrExpr(Ops, NumBits);

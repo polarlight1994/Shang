@@ -8,6 +8,7 @@ add_llvm_library(ShangVAST
   DatapathContainer.cpp
   MinimalDatapathContext.cpp
   IR2Datapath.cpp
+  LowerDiv.cpp
   DesignMetrics.cpp
   LUTMapping.cpp
   VASTSeqOp.cpp

@@ -58,7 +58,10 @@ class DatapathBuilder : public VASTExprBuilder,
     return static_cast<DatapathBuilderContext&>(Context);
   }
 
-
+  VASTValPtr lowerUDiv(BinaryOperator &I);
+  VASTValPtr lowerSDiv(BinaryOperator &I);
+  VASTValPtr lowerURem(BinaryOperator &I);
+  VASTValPtr lowerSRem(BinaryOperator &I);
 public:
   DatapathBuilder(DatapathBuilderContext &Context)
     : VASTExprBuilder(Context) {}
