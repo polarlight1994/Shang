@@ -323,7 +323,7 @@ protected:
   template<typename T>
   void addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap);
 
-  ilist<VASTExpr> Exprs;
+  iplist<VASTExpr> Exprs;
 
 public:
   DatapathContainer();
@@ -351,6 +351,11 @@ public:
   const_expr_iterator expr_end() const  { return Exprs.end(); }
 
   void reset();
+
+  void eraseExpr(VASTExpr *E) {
+    assert(E->use_empty() && "Incompleted replacement!");
+    Exprs.erase(E);
+  }
 };
 } // end namespace
 

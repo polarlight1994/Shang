@@ -32,6 +32,8 @@ public:
                         unsigned UB, unsigned LB);
 
   virtual VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand = true);
+
+  void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 };
 }
 

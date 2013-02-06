@@ -49,6 +49,12 @@ MinimalDatapathContext::getAsOperandImpl(Value *Op, bool GetAsInlineOperand) {
   return ValueOp;
 }
 
+void MinimalDatapathContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+  Datapath.replaceAllUseWithImpl(From, To);
+  if (VASTExpr *E = dyn_cast<VASTExpr>(From.get()))
+    Datapath.eraseExpr(E);
+}
+
 MinimalDatapathContext::MinimalDatapathContext(DatapathContainer &Datapath,
                                                DataLayout *TD)
   : DatapathBuilderContext(TD), Datapath(Datapath) {}
