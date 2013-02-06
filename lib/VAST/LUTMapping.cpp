@@ -11,20 +11,25 @@
 // boalean expressions in the VerilogAST to LUTs with ABC logic synthesis.
 //
 //===----------------------------------------------------------------------===//
-#include "IR2Datapath.h"
+#include "MinimalDatapathContext.h"
 
 #include "shang/VASTModule.h"
-
+#include "shang/VASTModulePass.h"
 #include "shang/Utilities.h"
 #include "shang/FUInfo.h"
- 
+#include "shang/Passes.h"
+
+#include "llvm/IR/DataLayout.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
+#include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "vtm-logic-synthesis"
 #include "llvm/Support/Debug.h"
+
+STATISTIC(NumAndExpand, "Number of binary And expanded from NAry And expanded");
 
 // The header of ABC
 #define ABC_DLL
@@ -534,4 +539,110 @@ static ManagedStatic<ABCContext> GlobalContext;
 LogicNetwork::LogicNetwork(const Twine &Name) : Context(*GlobalContext) {
   Ntk = Abc_NtkAlloc(ABC_NTK_STRASH, ABC_FUNC_AIG, 1);
   Ntk->pName = Extra_UtilStrsav(Name.str().c_str());
+}
+
+namespace {
+struct LUTMapping : public VASTModulePass {
+  DatapathBuilder *Builder;
+
+  static char ID;
+  LUTMapping() : VASTModulePass(ID), Builder(0) {
+
+  }
+
+  bool runOnVASTModule(VASTModule &VM);
+
+};
+
+struct NAryExprBreaker {
+  DatapathBuilder &Builder;
+  explicit NAryExprBreaker(DatapathBuilder &Builder) : Builder(Builder) {}
+
+  void operator()(VASTNode *Node) const {
+    if (VASTExpr *E = dyn_cast<VASTExpr>(Node))
+      breakDownNAryExpr(E);
+  }
+
+  void breakDownNAryExpr(VASTExpr *Expr) const ;
+};
+}
+
+static unsigned GetSameWidth(VASTValPtr LHS, VASTValPtr RHS) {
+  unsigned BitWidth = LHS->getBitWidth();
+  assert(BitWidth == RHS->getBitWidth() && "Bitwidth not match!");
+  return BitWidth;
+}
+
+void NAryExprBreaker::breakDownNAryExpr(VASTExpr *Expr) const  {
+  VASTExpr::Opcode Opcode = Expr->getOpcode();
+
+  if (Opcode != VASTExpr::dpAnd) return;
+
+  // Already binary expressions no need to break them down.
+  if (Expr->size() <= 2) return;
+
+  SmallVector<VASTValPtr, 8> Ops;
+  for (unsigned i = 0; i < Expr->size(); ++i)
+    Ops.push_back(Expr->getOperand(i));
+
+  // Construct the expression tree for the NAry expression.
+  while (Ops.size() > 1) {
+    unsigned ResultPos = 0;
+    unsigned OperandPos = 0;
+    unsigned NumOperand = Ops.size();
+    while (OperandPos + 1 < NumOperand) {
+      VASTValPtr LHS = Ops[OperandPos];
+      VASTValPtr RHS = Ops[OperandPos + 1];
+      OperandPos += 2;
+      unsigned ResultWidth = GetSameWidth(LHS, RHS);
+      // Create the BinExpr without optimizations.
+      VASTValPtr BinExpr = Builder.createExpr(Expr->getOpcode(), LHS, RHS,
+                                               ResultWidth);
+
+      Ops[ResultPos++] = BinExpr;
+      ++NumAndExpand;
+    }
+
+    // Move the rest of the operand.
+    while (OperandPos < NumOperand)
+      Ops[ResultPos++] = Ops[OperandPos++];
+
+    // Only preserve the results.
+    Ops.resize(ResultPos);
+  }
+
+  // Replace the original Expr by the broken down Expr.
+  Builder.replaceAllUseWith(Expr, Ops.back());
+}
+
+bool LUTMapping::runOnVASTModule(VASTModule &VM) {
+  DatapathContainer &DP = VM;
+
+  MinimalDatapathContext Context(DP, getAnalysisIfAvailable<DataLayout>());
+  Builder = new DatapathBuilder(Context);
+
+  LogicNetwork Ntk(VM.getName());
+
+  typedef VASTModule::seqval_iterator iterator;
+  typedef VASTSeqValue::itertor fanin_iterator;
+
+  // Break down the expressions.
+  std::set<VASTOperandList*> Visited;
+  typedef DatapathContainer::expr_iterator expr_iterator;
+  for (expr_iterator I = DP.expr_begin(); I != DP.expr_end(); /*++I*/) {
+    VASTExpr *CurExpr = I++;
+    VASTOperandList::visitTopOrder(CurExpr, Visited, NAryExprBreaker(*Builder));
+  }
+
+  delete Builder;
+  return true;
+}
+
+char LUTMapping::ID = 0;
+
+INITIALIZE_PASS(LUTMapping, "vast-lut-mapping", "Map Logic Operation to LUTs",
+                false, true)
+
+Pass *llvm::createLUTMappingPass() {
+  return new LUTMapping();
 }

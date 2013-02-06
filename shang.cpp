@@ -218,6 +218,7 @@ int main(int argc, char **argv) {
     // Run the SCEVAA pass to compute more accurate alias information.
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
 
+    HLSPasses.add(createLUTMappingPass());
     // Analyse the slack between registers.
     //Passes.add(createCombPathDelayAnalysisPass());
     HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));

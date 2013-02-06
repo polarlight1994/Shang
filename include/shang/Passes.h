@@ -45,6 +45,7 @@ Pass *createFunctionFilterPass(raw_ostream &O,
 
 Pass *createLowerAllocaPass();
 
+Pass *createLUTMappingPass();
 Pass *createTimingNetlistPass();
 
 // Analyse the Combination Path Delay.
@@ -63,6 +64,7 @@ Pass *createScriptingPass(const char *Name, const char *FScript,
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
 void initializeHLSAllocationPass(PassRegistry &Registry);
 void initializeLowerAllocaPass(PassRegistry &Registry);
+void initializeLUTMappingPass(PassRegistry &Registry);
 void initializeTimingNetlistPass(PassRegistry &Registry);
 void initializeControlLogicSynthesisPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
