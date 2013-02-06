@@ -23,6 +23,7 @@ class MinimalDatapathContext : public DatapathBuilderContext {
 
 public:
   MinimalDatapathContext(DatapathContainer &Datapath, DataLayout *TD);
+  ~MinimalDatapathContext();
 
   using VASTExprBuilderContext::getOrCreateImmediate;
 

@@ -58,3 +58,7 @@ void MinimalDatapathContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
 MinimalDatapathContext::MinimalDatapathContext(DatapathContainer &Datapath,
                                                DataLayout *TD)
   : DatapathBuilderContext(TD), Datapath(Datapath) {}
+
+MinimalDatapathContext::~MinimalDatapathContext() {
+  // TODO: Free all dead VASTExprs.
+}
