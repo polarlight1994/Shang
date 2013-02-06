@@ -15,11 +15,13 @@
 #ifndef SHANG_ALLOCATION_H
 #define SHANG_ALLOCATION_H
 
+#include "llvm/ADT/ArrayRef.h"
 
 namespace llvm {
-class VASTModule;
+class GlobalVariable;
 class StoreInst;
 class LoadInst;
+class Function;
 class FuncUnitId;
 class DataLayout;
 class Pass;
@@ -44,8 +46,11 @@ public:
 
   virtual ~HLSAllocation() {}
 
-  virtual FuncUnitId getMemoryPort(LoadInst &I) const;
-  virtual FuncUnitId getMemoryPort(StoreInst &I) const;
+  virtual FuncUnitId getMemoryPort(const LoadInst &I) const;
+  virtual FuncUnitId getMemoryPort(const StoreInst &I) const;
+  virtual FuncUnitId getMemoryPort(const GlobalVariable &GV) const;
+  virtual ArrayRef<const GlobalVariable*>
+  getBRAMAllocation(const Function *F) const;
 };
 }
 

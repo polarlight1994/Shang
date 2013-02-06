@@ -22,16 +22,29 @@
 
 using namespace llvm;
 
-FuncUnitId HLSAllocation::getMemoryPort(StoreInst &I) const {
+FuncUnitId HLSAllocation::getMemoryPort(const StoreInst &I) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
   return Allocation->getMemoryPort(I);
 }
 
-FuncUnitId HLSAllocation::getMemoryPort(LoadInst &I) const {
+FuncUnitId HLSAllocation::getMemoryPort(const LoadInst &I) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
   return Allocation->getMemoryPort(I);
+}
+
+FuncUnitId HLSAllocation::getMemoryPort(const GlobalVariable &GV) const {
+  assert(Allocation
+         && "Allocation didn't call InitializeHLSAllocation in its run method!");
+  return Allocation->getMemoryPort(GV);
+}
+
+ArrayRef<const GlobalVariable*>
+HLSAllocation::getBRAMAllocation(const Function *F) const {
+  assert(Allocation
+         && "Allocation didn't call InitializeHLSAllocation in its run method!");
+  return Allocation->getBRAMAllocation(F);
 }
 
 void HLSAllocation::getAnalysisUsage(AnalysisUsage &AU) const {
@@ -58,12 +71,20 @@ struct BasicAllocation : public ImmutablePass, public HLSAllocation {
 
   BasicAllocation();
 
-  FuncUnitId getMemoryPort(LoadInst &I) const {
+  FuncUnitId getMemoryPort(const LoadInst &I) const {
     return FuncUnitId(VFUs::MemoryBus, 0);
   }
 
-  FuncUnitId getMemoryPort(StoreInst &I) const {
+  FuncUnitId getMemoryPort(const StoreInst &I) const {
     return FuncUnitId(VFUs::MemoryBus, 0);
+  }
+
+  FuncUnitId getMemoryPort(const GlobalVariable &GV) const {
+    return FuncUnitId(VFUs::MemoryBus, 0);
+  }
+
+  ArrayRef<const GlobalVariable*> getBRAMAllocation(const Function *F) const {
+    return ArrayRef<const GlobalVariable*>();
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
