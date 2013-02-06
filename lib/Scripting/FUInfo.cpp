@@ -182,18 +182,6 @@ VFUBRAM::VFUBRAM(luabind::object FUTable)
     Template(getProperty<std::string>(FUTable, "Template")),
     InitFileDir(getProperty<std::string>(FUTable, "InitFileDir")) {}
 
-unsigned VFUBRAM::BRamNumToFUNum(unsigned BRamNum, bool IsWrite) {
-  // If dual-port mode is supported, the write port has a different FU number
-  // from  the read port.
-  bool FUForWritePort = IsWrite && getFUDesc<VFUBRAM>()->Mode > VFUBRAM::Default;
-
-  return BRamNum * 4 + (FUForWritePort ? 1 : 0);
-}
-
-unsigned VFUBRAM::FUNumToBRamNum(unsigned FUNum) {
-  return FUNum / 4;
-}
-
 void FuncUnitId::print(raw_ostream &OS) const {
   OS << VFUs::VFUNames[getFUType()];
   // Print the function unit id if necessary.

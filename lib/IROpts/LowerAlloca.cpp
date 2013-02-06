@@ -69,7 +69,7 @@ GlobalVariable *LowerAlloca::createGVFramStack(AllocaInst *AI, Module &M) {
                        Constant::getNullValue(AllocatedType),
                        AI->getName() + utohexstr(intptr_t(AI)) + "_s2g",
                        0, GlobalVariable::NotThreadLocal, 0);
-  GV->setAlignment(AI->getAlignment());
+  GV->setAlignment(std::max(8u, AI->getAlignment()));
   // Replace the alloca by the global variable.
   // Please note that this operation make the function become no reentrantable.
   AI->replaceAllUsesWith(GV);
