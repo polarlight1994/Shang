@@ -120,11 +120,11 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
     }
   }
 
-  ExternalTimingAnalysis ETA(VM, *this);
-  ETA.runExternalTimingAnalysis();
+  //ExternalTimingAnalysis ETA(VM, *this);
+  //ETA.runExternalTimingAnalysis();
 
-  dbgs() << "Timing Netlist: \n";
-  print(dbgs());
+  DEBUG(dbgs() << "Timing Netlist: \n";
+        print(dbgs()););
 
   return false;
 }
