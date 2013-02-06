@@ -17,6 +17,8 @@
 #include "shang/FUInfo.h"
 
 #include "llvm/IR/GlobalVariable.h"
+#include "llvm/Support/Format.h"
+#include "llvm/Support/PathV2.h"
 #define DEBUG_TYPE "vast-submodules"
 #include "llvm/Support/Debug.h"
 
@@ -97,13 +99,57 @@ void VASTBlockRAM::addPorts(VASTModule *VM) {
   addFanin(WriteDataA);
 }
 
+static void printConstant(raw_ostream &OS, uint64_t Val, unsigned SizeInBits) {
+  if (SizeInBits == 1)
+    OS << (Val ? '1' : '0');
+  else {
+    std::string FormatS = "%0" + utostr_32(SizeInBits / 8 * 2) + "llx";
+    OS << format(FormatS.c_str(), Val);
+  }
+
+  OS << '\n';
+}
+
+
+static void WriteBRAMInitializer(raw_ostream &OS, const Constant *C,
+                                 unsigned SizeInBits) {
+  if (const ConstantInt *CI = dyn_cast<ConstantInt>(C)) {
+    printConstant(OS, CI->getZExtValue(), SizeInBits);
+    return;
+  }
+
+  if (isa<ConstantPointerNull>(C)) {
+    printConstant(OS, 0, SizeInBits);
+    return;
+  }
+
+  if (const ConstantDataSequential *CDS = dyn_cast<ConstantDataSequential>(C)) {
+    for (unsigned i = 0, e = CDS->getNumElements(); i != e; ++i)
+      WriteBRAMInitializer(OS, CDS->getElementAsConstant(i), SizeInBits);
+
+    return;
+  }
+
+  if (const ConstantArray *CA = dyn_cast<ConstantArray>(C)) {
+    for (unsigned i = 0, e = CA->getNumOperands(); i != e; ++i)
+      WriteBRAMInitializer(OS, cast<Constant>(CA->getOperand(i)), SizeInBits);
+
+    return;
+  }
+
+  llvm_unreachable("Unsupported constant type to bind to script engine!");
+  OS << '0';
+}
+
 void
 VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
+  bool HasInitializer = Initializer != 0;
+
   // Print the array and the initializer.
-  std::string InitFilePath = "";
+  std::string InitFileName = "";
   // Set the initialize file's name if there is any.
-  if (Initializer)
-    InitFilePath = ShangMangle(Initializer->getName()) + "_init.txt";
+  if (HasInitializer)
+    InitFileName = ShangMangle(Initializer->getName()) + "_init.txt";
 
   // Generate the code for the block RAM.
   OS << "// Address space: " << getBlockRAMNum();
@@ -111,12 +157,37 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   OS << '\n'
      << "(* ramstyle = \"no_rw_check\" *) reg"
      << VASTValue::printBitRange(getWordSize(), 0, false) << ' '
-     << VFUBRAM::getArrayName(getBlockRAMNum()) << "[0:" << getDepth() << "];\n";
+     << VFUBRAM::getArrayName(getBlockRAMNum()) << "[0:" << (getDepth() - 1)
+     << "];\n";
 
-  if (Initializer)
-    OS << "initial $readmemh(\"" << getFUDesc<VFUBRAM>()->InitFileDir
-       << '/' << InitFilePath << "\", "
-       << VFUBRAM::getArrayName(getBlockRAMNum()) << ");\n";
+  if (HasInitializer) {
+    SmallString<1024> FullInitFilePath;
+    sys::path::append(FullInitFilePath,
+                      getFUDesc<VFUBRAM>()->InitFileDir, InitFileName);
+    // Generate the initialize file.
+    std::string ErrorInfo;
+    const char *CFullInitFilePath = FullInitFilePath.c_str();
+    raw_fd_ostream InitFileO(CFullInitFilePath, ErrorInfo);
+
+    if (ErrorInfo.empty()) {
+      DEBUG(dbgs() << "writing" << CFullInitFilePath << '\n');
+      OS << "initial $readmemh(\"" << CFullInitFilePath << "\", "
+         << VFUBRAM::getArrayName(getBlockRAMNum()) << ");\n";
+
+      // Initialize the block RAM with the array or zeros.
+      if (Initializer->hasInitializer() &&
+          !Initializer->getInitializer()->isNullValue()) {
+          WriteBRAMInitializer(InitFileO, Initializer->getInitializer(),
+                               getWordSize());
+      } else {
+        for (unsigned i = 0; i < getDepth(); ++i)
+          printConstant(InitFileO, 0, getWordSize());
+      }
+
+    } else
+      errs() << "error opening file '" << FullInitFilePath.data()
+             << "' for writing block RAM initialize file!\n";
+  }
 
   // Print the selectors.
   getRAddr(0)->printSelector(OS, getAddrWidth());
