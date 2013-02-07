@@ -44,6 +44,7 @@ Pass *createFunctionFilterPass(raw_ostream &O,
                                TopHWFUnctions);
 
 Pass *createLowerAllocaPass();
+Pass *createSimpleBlockRAMAllocationPass();
 
 Pass *createLUTMappingPass();
 Pass *createTimingNetlistPass();
@@ -63,6 +64,7 @@ Pass *createScriptingPass(const char *Name, const char *FScript,
 
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
 void initializeHLSAllocationAnalysisGroup(PassRegistry &Registry);
+void initializeSimpleBlockRAMAllocationPass(PassRegistry &Registry);
 void initializeBasicAllocationPass(PassRegistry &Registry);
 void initializeLowerAllocaPass(PassRegistry &Registry);
 void initializeLUTMappingPass(PassRegistry &Registry);
