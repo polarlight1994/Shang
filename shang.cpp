@@ -193,6 +193,7 @@ int main(int argc, char **argv) {
   {
     PassManager HLSIRPasses;
     HLSIRPasses.add(new DataLayout(ConfigTable["DataLayout"]));
+    HLSIRPasses.add(createShangTargetTransformInfoPass());
     addIROptimizationPasses(HLSIRPasses);
     addHLSPreparePasses(HLSIRPasses);
     HLSIRPasses.run(mod);
@@ -205,6 +206,7 @@ int main(int argc, char **argv) {
     // we may delete the raw_fd_ostream before the other streams that using it.
     PassManager HLSPasses;
     HLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
+    HLSPasses.add(createShangTargetTransformInfoPass());
 
     //PM.add(createStackProtectorPass(getTargetLowering()));
     // Try to optimize the computation.

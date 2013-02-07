@@ -5,6 +5,7 @@ add_llvm_library(ShangIROpts
   TrivialLoopUnrollPass.cpp
   DatapathCodehMotion.cpp
   BasicBlockTopOrder.cpp
+  ShangTTI.cpp
   )
 
 llvm_config(ShangIROpts transformutils ipo)
