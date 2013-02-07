@@ -82,7 +82,7 @@ static bool hoistInst(Instruction *Inst, DominatorTree &DT) {
 
   if (Dst == CurMBB) return false;
 
-  dbgs() << "Moving " << *Inst << '\n';
+  DEBUG(dbgs() << "Moving " << *Inst << '\n');
 
   Inst->removeFromParent();
 
