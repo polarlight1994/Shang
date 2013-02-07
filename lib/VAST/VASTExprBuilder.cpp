@@ -40,29 +40,6 @@ void VASTExprBuilderContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
   llvm_unreachable("Function not implemented!");
 }
 
-// Inline all operands in the expression whose Opcode is the same as Opc
-// recursively;
-template<VASTExpr::Opcode Opcode, typename visitor>
-void VASTExprBuilder::flattenExpr(VASTValPtr V, visitor F) {
-  if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
-    typedef VASTExpr::op_iterator op_iterator;
-    if (Expr->getOpcode() == Opcode && shouldExprBeFlatten(Expr)) {
-      for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
-        flattenExpr<Opcode>(I->getAsInlineOperand(), F);
-
-      return;
-    }
-  }
-
-  F++ = V;
-}
-
-template<VASTExpr::Opcode Opcode, typename iterator, typename visitor>
-void VASTExprBuilder::flattenExpr(iterator begin, iterator end, visitor F) {
-  while (begin != end)
-    flattenExpr<Opcode>(*begin++, F);
-}
-
 void VASTExprBuilder::calculateBitCatBitMask(VASTExprPtr Expr,
                                              APInt &KnownZeros,
                                              APInt &KnownOnes) {
@@ -92,7 +69,7 @@ void VASTExprBuilder::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
 
   // Most simple case: Immediate.
   if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(V)) {
-    KnownOnes = Imm.getInt();
+    KnownOnes = Imm.getAPInt();
     KnownZeros = ~Imm.getAPInt();
     return;
   }
@@ -365,18 +342,11 @@ VASTValPtr VASTExprBuilder::buildReduction(VASTExpr::Opcode Opc,VASTValPtr Op) {
   return createExpr(Opc, Op, 1, 0);
 }
 
-static bool VASTValPtr_less(const VASTValPtr LHS, const VASTValPtr RHS) {
-  if (LHS->getASTType() < RHS->getASTType()) return true;
-  else if (LHS->getASTType() > RHS->getASTType()) return false;
-
-  return LHS < RHS;
-}
-
 VASTValPtr
 VASTExprBuilder::getOrCreateCommutativeExpr(VASTExpr::Opcode Opc,
                                             SmallVectorImpl<VASTValPtr> &Ops,
                                              unsigned BitWidth) {
-  std::sort(Ops.begin(), Ops.end(), VASTValPtr_less);
+  std::sort(Ops.begin(), Ops.end(), VASTValPtr::type_less);
   return createExpr(Opc, Ops, BitWidth, 0);
 }
 
@@ -400,134 +370,6 @@ VASTValPtr VASTExprBuilder::buildSelExpr(VASTValPtr Cnd, VASTValPtr TrueV,
   return buildOrExpr(buildAndExpr(Cnd, TrueV, BitWidth),
                      buildAndExpr(buildNotExpr(Cnd), FalseV, BitWidth),
                      BitWidth);
-}
-
-namespace llvm {
-template<>
-struct VASTExprOpInfo<VASTExpr::dpAnd> {
-  VASTExprBuilder &Builder;
-  unsigned OperandWidth;
-  APInt KnownZeros, KnownOnes;
-
-  VASTExprOpInfo(VASTExprBuilder &Builder, unsigned OperandWidth)
-    : Builder(Builder), OperandWidth(OperandWidth), KnownZeros(OperandWidth, 0),
-      KnownOnes(APInt::getAllOnesValue(OperandWidth))/*Assume all bits are ones*/
-  {}
-
-  VASTValPtr analyzeOperand(VASTValPtr V) {
-    assert(OperandWidth == V->getBitWidth() && "Bitwidth not match!");
-
-    if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(V)) {
-      // The bit is known one only if the bit of all operand are one.
-      KnownOnes &= Imm.getAPInt();
-      // The bit is known zero if the bit of any operand are zero.
-      KnownZeros |= ~Imm.getAPInt();
-      return 0;
-    }
-
-    APInt OpKnownZeros, OpKnownOnes;
-    Builder.calculateBitMask(V, OpKnownZeros, OpKnownOnes);
-    KnownOnes &= OpKnownOnes;
-    KnownZeros |= OpKnownZeros;
-
-    // Do nothing by default.
-    return V;
-  }
-
-  bool isAllZeros() const { return KnownZeros.isAllOnesValue(); }
-  bool hasAnyZero() const  { return KnownZeros.getBoolValue(); }
-  // For the and expression, only zero is known.
-  APInt getImmVal() const { return ~KnownZeros; }
-
-  bool getZeroMaskSplitPoints(unsigned &HiPt, unsigned &LoPt) const {
-    HiPt = OperandWidth;
-    LoPt = 0;
-
-    if (!KnownZeros.getBoolValue()) return false;
-
-    if (APIntOps::isShiftedMask(OperandWidth, KnownZeros)
-        || APIntOps::isMask(OperandWidth, KnownZeros)) {
-      LoPt = KnownZeros.countTrailingZeros();
-      HiPt = OperandWidth - KnownZeros.countLeadingZeros();
-      assert(HiPt > LoPt && "Bad split point!");
-      return true;
-    }
-
-    APInt NotKnownZeros = ~KnownZeros;
-    if (APIntOps::isShiftedMask(OperandWidth, NotKnownZeros)
-        || APIntOps::isMask(OperandWidth, NotKnownZeros)) {
-      LoPt = NotKnownZeros.countTrailingZeros();
-      HiPt = OperandWidth - NotKnownZeros.countLeadingZeros();
-      assert(HiPt > LoPt && "Bad split point!");
-      return true;
-    }
-
-    return false;
-  }
-};
-}
-
-VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
-                                         unsigned BitWidth) {
-  SmallVector<VASTValPtr, 8> NewOps;
-  typedef const VASTUse *op_iterator;
-  VASTExprOpInfo<VASTExpr::dpAnd> OpInfo(*this, BitWidth);
-  flattenExpr<VASTExpr::dpAnd>(Ops.begin(), Ops.end(),
-                               op_filler<VASTExpr::dpAnd>(NewOps, OpInfo));
-
-  // Check the immediate mask.
-  if (OpInfo.isAllZeros())
-    return getOrCreateImmediate(UINT64_C(0), BitWidth);
-
-  if (OpInfo.hasAnyZero()) {
-    NewOps.push_back(Context.getOrCreateImmediate(OpInfo.getImmVal()));
-
-    // Split the word according to known zeros.
-    unsigned HiPt, LoPt;
-    if (OpInfo.getZeroMaskSplitPoints(HiPt, LoPt)) {
-      assert(BitWidth >= HiPt && HiPt > LoPt && "Bad split point!");
-      SmallVector<VASTValPtr, 4> Ops;
-
-      if (HiPt != BitWidth)
-        Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, BitWidth,
-                                            HiPt));
-
-      Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, HiPt, LoPt));
-
-      if (LoPt != 0)
-        Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, LoPt, 0));
-
-      return buildBitCatExpr(Ops, BitWidth);
-    }
-  }
-
-  if (NewOps.empty())
-    return Context.getOrCreateImmediate(getBitSlice64(~0ull, BitWidth),
-                                        BitWidth);
-
-  std::sort(NewOps.begin(), NewOps.end(), VASTValPtr_less);
-  typedef SmallVectorImpl<VASTValPtr>::iterator it;
-  VASTValPtr LastVal;
-  unsigned ActualPos = 0;
-  for (unsigned i = 0, e = NewOps.size(); i != e; ++i) {
-    VASTValPtr CurVal = NewOps[i];
-    if (CurVal == LastVal) {
-      // A & A = A
-      continue;
-    } else if (CurVal.invert() == LastVal)
-      // A & ~A => 0
-      return getBoolImmediate(false);
-
-    NewOps[ActualPos++] = CurVal;
-    LastVal = CurVal;
-  }
-  // If there is only 1 operand left, simply return the operand.
-  if (ActualPos == 1) return LastVal;
-
-  // Resize the operand vector so it only contains valid operands.
-  NewOps.resize(ActualPos);
-
-  return createExpr(VASTExpr::dpAnd, NewOps, BitWidth, 0);
 }
 
 VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr LHS,

@@ -98,16 +98,27 @@ class VASTExprBuilder {
 
   VASTValPtr foldBitSliceExpr(VASTValPtr U, uint8_t UB, uint8_t LB);
 
+  // Inline all operands in the expression whose Opcode is the same as Opc
+  // recursively;
   template<VASTExpr::Opcode Opcode, typename visitor>
-  void flattenExpr(VASTValPtr V, visitor F);
+  void flattenExpr(VASTValPtr V, visitor F) {
+    if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
+      typedef VASTExpr::op_iterator op_iterator;
+      if (Expr->getOpcode() == Opcode && shouldExprBeFlatten(Expr)) {
+        for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
+          flattenExpr<Opcode>(I->getAsInlineOperand(), F);
+
+        return;
+      }
+    }
+
+    F++ = V;
+  }
+
   template<VASTExpr::Opcode Opcode, typename iterator, typename visitor>
-  void flattenExpr(iterator begin, iterator end, visitor F);
-
-  static bool isAllZeros(VASTValPtr V) {
-    if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(V))
-      return Imm->isAllZeros();
-
-    return false;
+  void flattenExpr(iterator begin, iterator end, visitor F) {
+    while (begin != end)
+      flattenExpr<Opcode>(*begin++, F);
   }
 
   // The helper iterator class to collect all leaf operand of an expression tree.
