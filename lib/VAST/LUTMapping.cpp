@@ -213,7 +213,7 @@ bool LogicNetwork::buildAIG(DatapathContainer &DP) {
 
   typedef DatapathContainer::expr_iterator expr_iterator;
   for (expr_iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I)
-    AnyNodeCreated |= buildAIG(E, Visited);
+    AnyNodeCreated |= buildAIG(I, Visited);
 
   return AnyNodeCreated;
 }
