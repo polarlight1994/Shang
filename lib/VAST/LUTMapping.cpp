@@ -463,6 +463,16 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
     return;
   }
 
+  // Do not need to build the LUT for a simple buffer.
+  if (Abc_SopIsBuf(sop)) {
+    llvm_unreachable("Unexpected buffer!");
+    assert(Ops.size() == 1 && "Bad operand size for invert!");
+    VASTValPtr V = Ops[0];
+    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+    assert(Inserted && "The node is visited?");
+    return;
+  }
+
   // Otherwise simple construct the LUT expression.
   unsigned Truth = Abc_SopToTruth(sop, Ops.size());
   Ops.push_back(Builder.getOrCreateImmediate(Truth, 1 << Ops.size()));
