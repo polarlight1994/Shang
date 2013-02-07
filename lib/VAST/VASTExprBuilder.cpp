@@ -40,6 +40,33 @@ void VASTExprBuilderContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
   llvm_unreachable("Function not implemented!");
 }
 
+bool
+VASTExprBuilder::GetMaskSplitPoints(APInt Mask, unsigned &HiPt, unsigned &LoPt) {
+  unsigned BitWidth = Mask.getBitWidth();
+  HiPt = BitWidth;
+  LoPt = 0;
+
+  if (Mask.isAllOnesValue() || !Mask.getBoolValue()) return false;
+
+  unsigned NormalLoPt = Mask.countTrailingZeros();
+  unsigned NormalHiPt = BitWidth - Mask.countLeadingZeros();
+
+  APInt InvertedMask = ~Mask;
+  unsigned InvertedLoPt = InvertedMask.countTrailingZeros();
+  unsigned InvertedHiPt = BitWidth - InvertedMask.countLeadingZeros();
+
+  HiPt = std::min(NormalHiPt, InvertedHiPt);
+  LoPt = std::max(NormalLoPt, InvertedLoPt);
+
+  // We may get a single spliting point, set the lower spliting point to 0 in
+  // this case.
+  if (HiPt == LoPt) LoPt = 0;
+
+  assert(HiPt > LoPt && "Illegal spliting point!");
+
+  return true;
+}
+
 void VASTExprBuilder::calculateBitCatBitMask(VASTExprPtr Expr,
                                              APInt &KnownZeros,
                                              APInt &KnownOnes) {

@@ -26,29 +26,30 @@ template<>
 struct VASTExprOpInfo<VASTExpr::dpAnd> {
   VASTExprBuilder &Builder;
   unsigned OperandWidth;
+  // We only care about the known zeros because we assume all unknown bits are
+  // 1s.
   APInt KnownZeros, KnownOnes;
 
   VASTExprOpInfo(VASTExprBuilder &Builder, unsigned OperandWidth)
     : Builder(Builder), OperandWidth(OperandWidth), KnownZeros(OperandWidth, 0),
-      KnownOnes(APInt::getAllOnesValue(OperandWidth))/*Assume all bits are ones*/
+      KnownOnes(APInt::getAllOnesValue(OperandWidth))
   {}
 
   VASTValPtr analyzeOperand(VASTValPtr V) {
     assert(OperandWidth == V->getBitWidth() && "Bitwidth not match!");
 
     if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(V)) {
-      // The bit is known one only if the bit of all operand are one.
-      KnownOnes &= Imm.getAPInt();
       // The bit is known zero if the bit of any operand are zero.
       KnownZeros |= ~Imm.getAPInt();
+      KnownOnes  &= Imm.getAPInt();
       return 0;
     }
 
     APInt OpKnownZeros, OpKnownOnes;
     Builder.calculateBitMask(V, OpKnownZeros, OpKnownOnes);
-    KnownOnes &= OpKnownOnes;
     KnownZeros |= OpKnownZeros;
-
+    KnownOnes &= OpKnownOnes;
+    assert(!KnownZeros.intersects(KnownOnes) && "Got bad bitmask!");
     // Do nothing by default.
     return V;
   }
@@ -56,86 +57,78 @@ struct VASTExprOpInfo<VASTExpr::dpAnd> {
   // Functions about constant mask.
   bool isAllZeros() const { return KnownZeros.isAllOnesValue(); }
   bool hasAnyZero() const  { return KnownZeros.getBoolValue(); }
-  // For the and expression, only zero is known.
+  bool isAllOnes() const { return KnownOnes.isAllOnesValue(); }
+  APInt getKnownBits() const { return KnownZeros | KnownOnes; }
+  bool isAllBitsKnown() const {
+    return getKnownBits().isAllOnesValue();
+  }
+
+  // For the and expression, only zero is known, and we assume all other bits
+  // are 1s.
   APInt getZeros() const { return ~KnownZeros; }
-  APInt getConstMask() const {
-    APInt Mask = KnownZeros;
-    Mask |= KnownOnes;
-    return Mask;
-  }
-
-  bool hasFullConstMask() const { return getConstMask().isAllOnesValue(); }
-
-  bool getZeroMaskSplitPoints(unsigned &HiPt, unsigned &LoPt) const {
-    HiPt = OperandWidth;
-    LoPt = 0;
-
-    if (!KnownZeros.getBoolValue()) return false;
-
-    if (APIntOps::isShiftedMask(OperandWidth, KnownZeros)
-        || APIntOps::isMask(OperandWidth, KnownZeros)) {
-      LoPt = KnownZeros.countTrailingZeros();
-      HiPt = OperandWidth - KnownZeros.countLeadingZeros();
-      assert(HiPt > LoPt && "Bad split point!");
-      return true;
-    }
-
-    APInt NotKnownZeros = ~KnownZeros;
-    if (APIntOps::isShiftedMask(OperandWidth, NotKnownZeros)
-        || APIntOps::isMask(OperandWidth, NotKnownZeros)) {
-      LoPt = NotKnownZeros.countTrailingZeros();
-      HiPt = OperandWidth - NotKnownZeros.countLeadingZeros();
-      assert(HiPt > LoPt && "Bad split point!");
-      return true;
-    }
-
-    return false;
-  }
 };
+}
+
+static VASTValPtr splitByMask(VASTExprBuilder &Builder, APInt Mask,
+                              ArrayRef<VASTValPtr> NewOps) {
+  // Split the word according to known bits.
+  unsigned HiPt, LoPt;
+  unsigned BitWidth = Mask.getBitWidth();
+
+  if (VASTExprBuilder::GetMaskSplitPoints(Mask, HiPt, LoPt)) {
+    assert(BitWidth >= HiPt && HiPt > LoPt && "Bad split point!");
+    SmallVector<VASTValPtr, 4> Ops;
+
+    if (HiPt != BitWidth)
+      Ops.push_back(Builder.buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps,
+                                                  BitWidth, HiPt));
+
+    Ops.push_back(Builder.buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps,
+                                                HiPt, LoPt));
+
+    if (LoPt != 0)
+      Ops.push_back(Builder.buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps,
+                                                  LoPt, 0));
+
+    return Builder.buildBitCatExpr(Ops, BitWidth);
+  }
+
+  return VASTValPtr();
 }
 
 VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
                                          unsigned BitWidth) {
+  // Handle the trivial case trivially.
+  if (Ops.size() == 1) return Ops[0];
+
+  DEBUG(dbgs() << "Going to and these Operands together:\n";
+  for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
+    Ops[i].printAsOperand(dbgs().indent(2));
+    dbgs() << '\n';
+  });
+  
   SmallVector<VASTValPtr, 8> NewOps;
   typedef const VASTUse *op_iterator;
   VASTExprOpInfo<VASTExpr::dpAnd> OpInfo(*this, BitWidth);
   flattenExpr<VASTExpr::dpAnd>(Ops.begin(), Ops.end(),
                                op_filler<VASTExpr::dpAnd>(NewOps, OpInfo));
 
-  // Check the immediate mask.
-  if (OpInfo.isAllZeros())
-    return getOrCreateImmediate(APInt::getNullValue(BitWidth));
+  // Check the immediate mask. Return the constant value if all bits are known.
+  if (OpInfo.isAllBitsKnown())
+    return getOrCreateImmediate(OpInfo.getZeros());
+  
+  DEBUG(
+    dbgs() << "KnownZeros: " << OpInfo.KnownZeros.toString(16, false) << '\n'
+           << "KnownOnes: " << OpInfo.KnownOnes.toString(16, false) << '\n';
+  );
 
-  if (NewOps.empty()) {
-    assert(OpInfo.hasFullConstMask() && "Unexpected empty NewOps!");
-    // All the operands in Ops are constant, directly return the constant result.
-    return Context.getOrCreateImmediate(OpInfo.getZeros());
-  }
+  // Add the Constant back to the Operands.
+  if (OpInfo.hasAnyZero())
+    NewOps.push_back(getOrCreateImmediate(OpInfo.getZeros()));
 
-  if (NewOps.size() == 1) {
-  }
-
-  if (OpInfo.hasAnyZero()) {
-    NewOps.push_back(Context.getOrCreateImmediate(OpInfo.getZeros()));
-
-    // Split the word according to known zeros.
-    unsigned HiPt, LoPt;
-    if (OpInfo.getZeroMaskSplitPoints(HiPt, LoPt)) {
-      assert(BitWidth >= HiPt && HiPt > LoPt && "Bad split point!");
-      SmallVector<VASTValPtr, 4> Ops;
-
-      if (HiPt != BitWidth)
-        Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, BitWidth,
-                                            HiPt));
-
-      Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, HiPt, LoPt));
-
-      if (LoPt != 0)
-        Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, LoPt, 0));
-
-      return buildBitCatExpr(Ops, BitWidth);
-    }
-  }
+  // Split the word according to known zero bits.
+  if (VASTValPtr V = splitByMask(*this, OpInfo.getKnownBits(), NewOps))
+    return V;
 
   std::sort(NewOps.begin(), NewOps.end(), VASTValPtr::type_less);
   typedef SmallVectorImpl<VASTValPtr>::iterator it;
@@ -148,7 +141,16 @@ VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
       continue;
     } else if (CurVal.invert() == LastVal)
       // A & ~A => 0
-      return getBoolImmediate(false);
+      return getOrCreateImmediate(APInt::getNullValue(BitWidth));
+
+    // Ignore the 1s
+    if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(CurVal))
+      if (Imm.isAllOnes()) {
+        dbgs().indent(2) << "Discard the all ones value: ";
+        Imm.printAsOperand(dbgs());
+        dbgs() << '\n';
+        continue;
+      }
 
     NewOps[ActualPos++] = CurVal;
     LastVal = CurVal;

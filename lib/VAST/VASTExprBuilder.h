@@ -120,7 +120,7 @@ class VASTExprBuilder {
     while (begin != end)
       flattenExpr<Opcode>(*begin++, F);
   }
-
+  
   // The helper iterator class to collect all leaf operand of an expression tree.
   template<VASTExpr::Opcode Opcode, class _Container>
   struct op_filler_iterator : public std::iterator<std::output_iterator_tag,
@@ -202,6 +202,7 @@ public:
   void calculateBitMask(VASTValPtr V, APInt &KnownZeros, APInt &KnownOnes);
   void calculateBitCatBitMask(VASTExprPtr Expr, APInt &KnownZeros,
                               APInt &KnownOnes);
+  static bool GetMaskSplitPoints(APInt Mask, unsigned &HiPt, unsigned &LoPt);
 
   VASTValPtr getBoolImmediate(bool Val) {
     return Context.getOrCreateImmediate(Val, 1);
