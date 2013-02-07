@@ -207,6 +207,8 @@ int main(int argc, char **argv) {
     HLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
 
     //PM.add(createStackProtectorPass(getTargetLowering()));
+    // Try to optimize the computation.
+    HLSPasses.add(createInstructionCombiningPass());
 
     // Name the instructions.
     HLSPasses.add(createInstructionNamerPass());

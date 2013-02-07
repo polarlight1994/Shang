@@ -186,9 +186,21 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     return SubMod;
   }
 
-  void allocateSubModules(CallGraph &CG);
-
   VASTSubModule *emitIPFromTemplate(const char *Name, unsigned ResultSize);
+  //===--------------------------------------------------------------------===//
+  // TODO: Support putting multiple GVs in a single BRAM.
+  std::map<unsigned, VASTNode*> AllocatedBRAMs;
+
+  VASTNode *emitBlockRAM(unsigned BRAMNum, const GlobalVariable *GV);
+  VASTNode *getBlockRAM(unsigned BRAMNum) const {
+    std::map<unsigned, VASTNode*>::const_iterator at
+      = AllocatedBRAMs.find(BRAMNum);
+    assert(at != AllocatedBRAMs.end() && "BlockRAM not existed!");
+    return at->second;
+  }
+
+  //===--------------------------------------------------------------------===//
+  void allocateSubModules(CallGraph &CG);
   //===--------------------------------------------------------------------===//
   VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name);
 
@@ -267,6 +279,9 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
                               Instruction &Inst);
   unsigned getByteEnable(Value *Addr) const;
 
+  void buildBRAMTransaction(Value *Addr, Value *Data, unsigned BRAMNum,
+                            Instruction &Inst);
+
   void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
                                ArrayRef<VASTValPtr> Args);
   //===--------------------------------------------------------------------===//
@@ -329,9 +344,16 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
   if (ConstantInt *Int = dyn_cast<ConstantInt>(V))
     return indexVASTExpr(V, getOrCreateImmediate(Int->getValue()));
 
-  if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V))
+  if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
+    FuncUnitId ID = Allocation.getMemoryPort(*GV);
+
+    if (ID.getFUType() == VFUs::BRam)
+      // FIXIME: Calculate the offset of the GV in the block RAM.
+      return indexVASTExpr(GV, getOrCreateImmediate(0, getValueSizeInBits(GV)));
+
     // If the GV is assigned to the memory port 0, create a wrapper wire for it.
     return indexVASTExpr(GV, createWrapperWire(GV));
+  }
 
   if (GEPOperator *GEP = dyn_cast<GEPOperator>(V))
     return indexVASTExpr(V, Builder.visitGEPOperator(*GEP));
@@ -467,6 +489,76 @@ void VASTModuleBuilder::allocateSubModules(CallGraph &CG) {
 
   // Connect the membus for all submodules.
   MBBuilder.buildMemBusMux();
+
+  // Allocate the block RAMs.
+  ArrayRef<const GlobalVariable*> GVs = Allocation.getBRAMAllocation(&F);
+  for (unsigned i = 0; i < GVs.size(); ++i) {
+    const GlobalVariable *GV = GVs[i];
+    FuncUnitId ID = Allocation.getMemoryPort(*GV);
+    assert(ID.getFUType() == VFUs::BRam && "Bad block RAM allocation!");
+    emitBlockRAM(ID.getFUNum(), GV);
+  }
+}
+
+static unsigned countNumElements(const Type *AllocatedType) {
+  // Assume the Allocated type is a scalar.
+  const Type *ElemTy = AllocatedType;
+
+  unsigned NumElem = 1;
+  // Try to expand multi-dimension array to single dimension array.
+  while (const ArrayType *AT = dyn_cast<ArrayType>(ElemTy)) {
+    ElemTy = AT->getElementType();
+    NumElem *= AT->getNumElements();
+  }
+
+  return NumElem;
+}
+
+VASTNode *VASTModuleBuilder::emitBlockRAM(unsigned BRAMNum,
+                                          const GlobalVariable *GV) {
+  // Count the number of elements and the size of a single element.
+  // Assume the Allocated type is a scalar.
+  Type *ElemTy = GV->getType()->getElementType();
+  unsigned NumElem = 1;
+
+  // Try to expand multi-dimension array to single dimension array.
+  while (const ArrayType *AT = dyn_cast<ArrayType>(ElemTy)) {
+    ElemTy = AT->getElementType();
+    NumElem *= AT->getNumElements();
+  }
+
+  unsigned ElementSizeInBits = TD->getTypeStoreSizeInBits(ElemTy);
+
+  // If there is only 1 element, simply replace the block RAM by a register.
+  if (NumElem == 1) {
+    //uint64_t InitVal = 0;
+    //if (Initializer) {
+    //  // Try to retrieve the initialize value of the register, it may be a
+    //  // ConstantInt or ConstPointerNull, we can safely ignore the later case
+    //  // since the InitVal is default to 0.
+    //  const ConstantInt *CI
+    //    = dyn_cast_or_null<ConstantInt>(Initializer->getInitializer());
+    //  assert((CI || !Initializer->hasInitializer()
+    //          || isa<ConstantPointerNull>(Initializer->getInitializer()))
+    //         && "Unexpected initialier!");
+    //  if (CI) InitVal = CI->getZExtValue();
+    //}
+
+    VASTRegister *R = VM->addDataRegister(VFUBRAM::getOutDataBusName(BRAMNum),
+                                          ElementSizeInBits, BRAMNum);
+    bool Inserted = AllocatedBRAMs.insert(std::make_pair(BRAMNum, R)).second;
+    assert(Inserted && "Creating the same BRAM twice?");
+    (void) Inserted;
+    return 0;
+  }
+
+  // Create the block RAM object.
+  VASTBlockRAM *BRAM = VM->addBlockRAM(BRAMNum, ElementSizeInBits, NumElem, GV);
+  bool Inserted = AllocatedBRAMs.insert(std::make_pair(BRAMNum, BRAM)).second;
+  assert(Inserted && "Creating the same BRAM twice?");
+  (void) Inserted;
+
+  return BRAM;
 }
 
 VASTSubModule *
@@ -647,6 +739,9 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
 }
 
 void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
+  // The Operator may had already been lowered.
+  if (lookupExpr(&I)) return;
+
   unsigned SizeInBits = getValueSizeInBits(I);
   VASTSubModule *SubMod = 0;
 
@@ -720,15 +815,26 @@ void VASTModuleBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
   FuncUnitId FU = Allocation.getMemoryPort(I);
-  if (FU.getFUType() == VFUs::MemoryBus)
+  if (FU.getFUType() == VFUs::MemoryBus) {
     buildMemoryTransaction(I.getPointerOperand(), 0, FU.getFUNum(), I);
+    return;
+  }
+
+  assert(FU.getFUType() == VFUs::BRam && "Unexpected FU type for memory access!");
+  buildBRAMTransaction(I.getPointerOperand(), 0, FU.getFUNum(), I);
 }
 
 void VASTModuleBuilder::visitStoreInst(StoreInst &I) {
   FuncUnitId FU = Allocation.getMemoryPort(I);
-  if (FU.getFUType() == VFUs::MemoryBus)
+  if (FU.getFUType() == VFUs::MemoryBus) {
     buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(),
                            FU.getFUNum(), I);
+    return;
+  }
+
+  assert(FU.getFUType() == VFUs::BRam && "Unexpected FU type for memory access!");
+  buildBRAMTransaction(I.getPointerOperand(), I.getValueOperand(),
+                       FU.getFUNum(), I);
 }
 
 //===----------------------------------------------------------------------===//
@@ -807,6 +913,61 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     // the current memory operations.
     advanceToNextSlot(Slot);
   }
+}
+
+void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
+                                             unsigned BRAMNum, Instruction &I) {
+  bool IsWrite = Data != 0;
+  VASTNode *Node = getBlockRAM(BRAMNum);
+
+  BasicBlock *ParentBB = I.getParent();
+  VASTSlot *Slot = getLatestSlot(ParentBB);
+
+  // The block RAM maybe degraded.
+  if (VASTRegister *R = dyn_cast<VASTRegister>(Node)) {
+    VASTSeqValue *V = R->getValue();
+    if (IsWrite) {
+      VASTSeqInst *Op
+        = VM->lauchInst(Slot, VASTImmediate::True, 1, &I, VASTSeqInst::Launch);
+      Op->addSrc(getAsOperandImpl(Data), 0, false, V);
+    } else {
+      // Also index the address port as the result of the block RAM read.
+      Builder.indexVASTExpr(&I, V);
+    }
+
+    return;
+  }
+
+  VASTBlockRAM *BRAM = cast<VASTBlockRAM>(Node);
+  // Get the address port and build the assignment.
+  VASTValPtr AddrVal = getAsOperandImpl(Addr);
+  unsigned SizeInBytes = BRAM->getWordSize() / 8;
+  unsigned Alignment = Log2_32_Ceil(SizeInBytes);
+  AddrVal = Builder.buildBitSliceExpr(AddrVal, AddrVal->getBitWidth(), Alignment);
+
+  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, IsWrite ? 2 : 1, &I,
+                                VASTSeqInst::Launch);
+
+  VASTSeqValue *AddrPort = IsWrite ? BRAM->getWAddr(0) : BRAM->getRAddr(0);
+  // DIRTY HACK: Because the Read address are also use as the data ouput port of
+  // the block RAM, the block RAM read define its result at the address port.
+  Op->addSrc(AddrVal, 0, !IsWrite, AddrPort);
+  // Also assign the data to write to the dataport of the block RAM.
+  if (IsWrite) {
+    VASTSeqValue *DataPort = BRAM->getWData(0);
+    Op->addSrc(getAsOperandImpl(Data), 1, false, DataPort);
+  }
+
+  // Wait for 1 cycles and get the result for the read operation.
+  if (!IsWrite) {
+    Slot = advanceToNextSlot(Slot);
+    VASTSeqValue *Result = getOrCreateSeqVal(&I, I.getName());
+    // Use the the value from address port as the result of the block RAM read.
+    VM->latchValue(Result, AddrPort, Slot, VASTImmediate::True, &I);
+  }
+  // Move the the next slot so that the other operations are not conflict with
+  // the current memory operations.
+  advanceToNextSlot(Slot);
 }
 
 //===----------------------------------------------------------------------===//
