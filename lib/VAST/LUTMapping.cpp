@@ -445,15 +445,29 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
 
   char *sop = (char*)Abc_ObjData(Obj);
 
-  VASTValPtr V;
-  if (ExpandLUT) // Expand the SOP back to SOP if user ask to.
-    V = expandSOP(sop, Ops, Bitwidth, Builder);
-  else { // Otherwise simple construct the LUT expression.
-    unsigned Truth = Abc_SopToTruth(sop, Ops.size());
-    Ops.push_back(Builder.getOrCreateImmediate(Truth, 1 << Ops.size()));
-    V = Builder.buildExpr(VASTExpr::dpLUT, Ops, Bitwidth);
-    ++NumLUTBulit;
+  if (ExpandLUT) {
+    // Expand the SOP back to SOP if user ask to.
+    VASTValPtr V = expandSOP(sop, Ops, Bitwidth, Builder);
+
+    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+    assert(Inserted && "The node is visited?");
+    return;
   }
+
+  // Do not need to build the LUT for a simple invert.
+  if (Abc_SopIsInv(sop)) {
+    assert(Ops.size() == 1 && "Bad operand size for invert!");
+    VASTValPtr V = Builder.buildNotExpr(Ops[0]);
+    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+    assert(Inserted && "The node is visited?");
+    return;
+  }
+
+  // Otherwise simple construct the LUT expression.
+  unsigned Truth = Abc_SopToTruth(sop, Ops.size());
+  Ops.push_back(Builder.getOrCreateImmediate(Truth, 1 << Ops.size()));
+  VASTValPtr V = Builder.buildExpr(VASTExpr::dpLUT, Ops, Bitwidth);
+  ++NumLUTBulit;
 
   bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
   assert(Inserted && "The node is visited?");
