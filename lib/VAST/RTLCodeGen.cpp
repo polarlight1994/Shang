@@ -32,7 +32,7 @@
 using namespace llvm;
 
 static cl::opt<bool>
-EnalbeDumpIR("vtm-dump-ir", cl::desc("Dump the IR to the RTL code."),
+EnalbeDumpIR("shang-dump-ir", cl::desc("Dump the IR to the RTL code."),
              cl::init(false));
 
 namespace {

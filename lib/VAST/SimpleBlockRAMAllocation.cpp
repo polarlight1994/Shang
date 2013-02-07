@@ -189,7 +189,6 @@ Pass *llvm::createSimpleBlockRAMAllocationPass() {
 
 bool SimpleBlockRAMAllocation::runOnModule(Module &M) {
   InitializeHLSAllocation(this);
-  unsigned BRAMNum = 0;
 
   typedef Module::global_iterator global_iterator;
   for (global_iterator I = M.global_begin(), E = M.global_end(); I != E; ++I)
