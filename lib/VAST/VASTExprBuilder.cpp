@@ -664,6 +664,12 @@ VASTValPtr VASTExprBuilder::buildMulExpr(ArrayRef<VASTValPtr> Ops,
   return getOrCreateCommutativeExpr(VASTExpr::dpMul, NewOps, BitWidth);
 }
 
+VASTValPtr VASTExprBuilder::buildNegative(VASTValPtr Op) {
+  return buildAddExpr(buildNotExpr(Op),
+                      getOrCreateImmediate(1, Op->getBitWidth()),
+                      Op->getBitWidth());
+}
+
 VASTValPtr VASTExprBuilder::buildAddExpr(ArrayRef<VASTValPtr> Ops,
                                          unsigned BitWidth) {
   SmallVector<VASTValPtr, 8> NewOps;
@@ -811,8 +817,8 @@ VASTValPtr VASTExprBuilder::buildShiftExpr(VASTExpr::Opcode Opc,
     
     // Any known zeros?
     if (KnownZeros.getBoolValue()) {
-      // Ignore the zero operand for the addition.
-      if (KnownZeros.isAllOnesValue()) return 0;
+      // No need to shift at all.
+      if (KnownZeros.isAllOnesValue()) return LHS;
 
       // Any known leading zeros?
       if (unsigned LeadingZeros = KnownZeros.countLeadingOnes()) {

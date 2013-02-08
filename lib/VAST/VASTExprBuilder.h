@@ -272,8 +272,21 @@ public:
 
   VASTValPtr buildSelExpr(VASTValPtr Cnd, VASTValPtr TrueV, VASTValPtr FalseV,
                           unsigned BitWidth);
+
+  VASTValPtr buildMulExpr(VASTValPtr LHS, VASTValPtr RHS, unsigned BitWidth) {
+    VASTValPtr Ops[] = { LHS, RHS };
+    return buildMulExpr(Ops, BitWidth);
+  }
   VASTValPtr buildMulExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
+
+  VASTValPtr buildAddExpr(VASTValPtr LHS, VASTValPtr RHS, unsigned BitWidth) {
+    VASTValPtr Ops[] = { LHS, RHS };
+    return buildAddExpr(Ops, BitWidth);
+  }
   VASTValPtr buildAddExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
+  // -A = 0 - A = ~A + 1
+  VASTValPtr buildNegative(VASTValPtr Op);
+
   VASTValPtr buildShiftExpr(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
                             unsigned BitWidth);
   VASTValPtr buildReduction(VASTExpr::Opcode Opc, VASTValPtr Op);
