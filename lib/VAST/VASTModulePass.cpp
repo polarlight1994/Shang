@@ -875,8 +875,10 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     // Assign store data.
     RegName = VFUMemBus::getOutDataBusName(PortNum) + "_r";
     R = VM->getSymbol<VASTSeqValue>(RegName);
-    // Please note that the data are not present when we are performing a load.
-    Op->addSrc(getAsOperandImpl(Data), CurOperandIdx++, false, R);
+    VASTValPtr ValToStore = getAsOperandImpl(Data);
+    assert(ValToStore->getBitWidth() <= R->getBitWidth()
+           && "Storing data that exceed the width of databus!");
+    Op->addSrc(ValToStore, CurOperandIdx++, false, R);
     // Set write enable to 1.
     WEn = VASTImmediate::True;
   }
@@ -913,6 +915,8 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     RegName = VFUMemBus::getInDataBusName(PortNum);
     R = VM->getSymbol<VASTSeqValue>(RegName);
     VASTSeqValue *Result = getOrCreateSeqVal(&I, I.getName());
+    assert(Result->getBitWidth() <= R->getBitWidth()
+           && "Loading data that exceed the width of databus!");
     VM->latchValue(Result, R, Slot, VASTImmediate::True, &I);
     // Move the the next slot so that the other operations are not conflict with
     // the current memory operations.
@@ -960,13 +964,18 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
   // Also assign the data to write to the dataport of the block RAM.
   if (IsWrite) {
     VASTSeqValue *DataPort = BRAM->getWData(0);
-    Op->addSrc(getAsOperandImpl(Data), 1, false, DataPort);
+    VASTValPtr DataToStore = getAsOperandImpl(Data);
+    assert(DataToStore->getBitWidth() == BRAM->getWordSize()
+           && "Write to BRAM data width not match!");
+    Op->addSrc(DataToStore, 1, false, DataPort);
   }
 
   // Wait for 1 cycles and get the result for the read operation.
   if (!IsWrite) {
     Slot = advanceToNextSlot(Slot);
     VASTSeqValue *Result = getOrCreateSeqVal(&I, I.getName());
+    assert(Result->getBitWidth() == BRAM->getWordSize()
+           && "Read from BRAM data width not match!");
     // Use the the value from address port as the result of the block RAM read.
     VM->latchValue(Result, AddrPort, Slot, VASTImmediate::True, &I);
   }
