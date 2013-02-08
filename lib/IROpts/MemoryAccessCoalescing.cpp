@@ -55,6 +55,8 @@ struct MemoryAccessCoalescing : public FunctionPass {
     AA = &getAnalysis<AliasAnalysis>();
     TD = &getAnalysis<DataLayout>();
 
+    DEBUG(dbgs() << "Run Memory Access Coalescer on " << F.getName() << '\n');
+
     for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I)
       // We may scan the same BB more than once to fuse all compatible pairs.
       while (runOnBasicBlock(*I))
@@ -206,6 +208,8 @@ INITIALIZE_PASS_END(MemoryAccessCoalescing,
 
  bool MemoryAccessCoalescing::runOnBasicBlock(BasicBlock &BB) {
   bool Changed = false;
+
+  DEBUG(dbgs() << "Before memory access coalescing\n"; BB.dump(););
 
   // 1. Collect the fusing candidates.
   for (BasicBlock::iterator I = BB.begin(), E = BB.end(); I != E; /*++I*/) {
@@ -413,7 +417,6 @@ bool MemoryAccessCoalescing::canBeFused(Instruction *LowerInst,
 void MemoryAccessCoalescing::moveUsesAfter(Instruction *MergeFrom,
                                            Instruction *MergeTo,
                                            InstSetTy &UseSet) {
-  DEBUG(dbgs() << "Going to merge:\n" << *MergeFrom << "into\n" << *MergeTo);
   BasicBlock *BB = MergeFrom->getParent();
 
   typedef BasicBlock::iterator iterator;
@@ -492,6 +495,8 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
   assert(((LowerSizeInBytes + HigherSizeInBytes == NewSizeInBytes)
            || isa<LoadInst>(HigherInst))
          && "New Access writing extra bytes!");
+
+  assert(LowerAlignment >= NewSizeInBytes && "Bad alignment of lower access!");
 
   IRBuilder<> Builder(HigherInst);
   Value *NewAddr
