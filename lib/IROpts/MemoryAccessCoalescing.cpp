@@ -446,12 +446,14 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
   Value *LowerStoredValue = getStoredValue(LowerInst);
   Type *LowerType = getAccessType(LowerInst);
   unsigned LowerSizeInBytes = getAccessSizeInBytes(LowerInst);
+  unsigned LowerAlignment = getAccessAlignment(LowerInst);
 
   Value *HigherLoadValue = getLoadedValue(HigherInst);
   Value *HigherAddr = getPointerOperand(HigherInst);
   Value *HigherStoredValue = getStoredValue(HigherInst);
   Type *HigherType = getAccessType(HigherInst);
   unsigned HigherSizeInBytes = getAccessSizeInBytes(HigherInst);
+  unsigned HigherAlignment = getAccessAlignment(HigherInst);
 
   int64_t AddrDistant = getAddressDistantInt(LowerInst, HigherInst);
   // Make sure lower address is actually lower.
@@ -462,6 +464,7 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
     std::swap(LowerLoadValue, HigherLoadValue);
     std::swap(LowerSizeInBytes, HigherSizeInBytes);
     std::swap(LowerType, HigherType);
+    std::swap(LowerAlignment, HigherAlignment);
   }
 
   int64_t NewSizeInBytes = std::max<unsigned>(LowerSizeInBytes,
@@ -477,11 +480,13 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
            || isa<LoadInst>(HigherInst))
          && "New Access writing extra bytes!");
 
+  assert(LowerAlignment >= LowerSizeInBytes && "Bad alignment of lower access!");
+
   IRBuilder<> Builder(HigherInst);
   Value *NewAddr
     = Builder.CreatePointerCast(LowerAddr, PointerType::get(NewType, 0));
   // Build the new data to store by concatenating them together.
-  if (StoreInst *S = dyn_cast<StoreInst>(HigherInst)) {
+  if (isa<StoreInst>(HigherInst)) {
     // Get the Masked Values.
     Value *ExtendLowerData
       = CreateMaskedValue(Builder, NewType, LowerType, LowerStoredValue, TD);
@@ -492,14 +497,14 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
     // Concat the values to build the new stored value.
     Value *NewStoredValue = Builder.CreateOr(ExtendHigherData, ExtendLowerData);
     StoreInst *NewStore = Builder.CreateStore(NewStoredValue, NewAddr, false);
-    NewStore->setAlignment(NewSizeInBytes);
+    NewStore->setAlignment(LowerAlignment);
   }
 
   // Update the result registers.
   if (isa<LoadInst>(HigherInst)) {
     LoadInst *NewLoad = Builder.CreateLoad(NewAddr, false);
     // Update the pointer.
-    NewLoad->setAlignment(NewSizeInBytes);
+    NewLoad->setAlignment(LowerAlignment);
     // Extract the lower part and the higher part of the value.
     Value *ShiftedHigerValue = Builder.CreateLShr(NewLoad, AddrDistant * 8);
     Value *NewHigherValue
