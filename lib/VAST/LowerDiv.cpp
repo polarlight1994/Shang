@@ -13,46 +13,97 @@
 
 #include "IR2Datapath.h"
 
-#include "llvm/Support/CommandLine.h"
+#include "llvm/ADT/Statistic.h"
+#define DEBUG_TYPE "shang-lower-div-rem"
+#include "llvm/Support/Debug.h"
 
 using namespace llvm;
-
-static cl::opt<bool>
-SDIVBYPOW2TOASHR("shang-sdiv-by-power-of-2-to-ashr",
-  cl::desc("Replace the sdiv by power of 2 by ashr"),
-  cl::init(false));
+STATISTIC(SDIVLowered, "Number of SDiv lowered");
+STATISTIC(SREMLowered, "Number of SRem lowered");
 
 VASTValPtr DatapathBuilder::lowerUDiv(BinaryOperator &I) {
   return VASTValPtr();
 }
 
 VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
-  Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
+  Value *LHS = I.getOperand(0), *RHS = I.getOperand(1);
+  ConstantInt *LHSC = dyn_cast<ConstantInt>(LHS);
+  ConstantInt *RHSC = dyn_cast<ConstantInt>(RHS);
+  // Assume we can lower the SDiv.
+  ++SDIVLowered;
 
-  if (ConstantInt *RHS = dyn_cast<ConstantInt>(Op1)) {
-    // Ignore the exact flag and round toward 0.
-    // See http://bob.allegronetwork.com/prog/tricks.html
-    // Section "Division by constant powers-of-2"
-    if (SDIVBYPOW2TOASHR && RHS->getValue().isNonNegative()
-        && RHS->getValue().isPowerOf2()) {
-      VASTValPtr LHSVal = getAsOperand(Op0);
-      VASTValPtr LHSSign = getSignBit(LHSVal);
-      // Compensate for the shift error by adding the missing 1 if the original
-      // number was negative
-      VASTValPtr AddOps[] = { LHSVal, LHSSign };
-      unsigned SizeInBits = LHSVal->getBitWidth();
-      LHSVal = buildAddExpr(AddOps, SizeInBits);
-      VASTValPtr ShiftAmt =
-        getOrCreateImmediate(RHS->getValue().exactLogBase2(), SizeInBits);
-      // Replace the sdiv by a shift.
-      return buildShiftExpr(VASTExpr::dpSRA, LHSVal, ShiftAmt, SizeInBits);
-    }
+  // fold (sdiv c1, c2) -> c1/c2
+  if (LHSC && RHSC && !RHSC->isNullValue())
+    return getOrCreateImmediate(LHSC->getValue().sdiv(RHSC->getValue()));
+  // fold (sdiv X, 1) -> X
+  if (RHSC && RHSC->getValue() == 1LL)
+    return getAsOperand(LHS);
+  // fold (sdiv X, -1) -> 0-X
+  if (RHSC && RHSC->isAllOnesValue())
+    return buildNegative(getAsOperand(LHS));
+
+  // fold (sdiv X, pow2)
+  if (RHSC && !RHSC->isNullValue()
+      && (RHSC->getValue().isPowerOf2() || (-RHSC->getValue()).isPowerOf2())) {
+    unsigned lg2 = RHSC->getValue().countTrailingZeros();
+    VASTValPtr LHSVal = getAsOperand(LHS);
+    unsigned SizeInBits = LHSVal->getBitWidth();
+
+    // Splat the sign bit put the sign bit of LHS at the lower lg2 bits, and add
+    // it to LHS.
+    VASTValPtr BitCatOps[] = { getOrCreateImmediate(0, SizeInBits - lg2),
+                               buildBitRepeat(getSignBit(LHSVal), lg2),
+                             };
+    VASTValPtr SGN = buildBitCatExpr(BitCatOps, SizeInBits);
+
+    // Add (LHS < 0) ? abs2 - 1 : 0;
+    VASTValPtr ADD = buildAddExpr(LHSVal, SGN, SizeInBits);
+
+    // Divide by pow2
+    VASTValPtr SRA
+      = buildShiftExpr(VASTExpr::dpSRA, ADD,
+                       getOrCreateImmediate(lg2, SizeInBits), SizeInBits);
+
+    // If we're dividing by a positive value, we're done.  Otherwise, we must
+    // negate the result.
+    if (RHSC->getValue().isNonNegative()) return SRA;
+
+    return buildNegative(SRA);
   }
 
+  // Well, our assumption about we can lower the SDiv is wrong.
+  --SDIVLowered;
   return VASTValPtr();
 }
 
 VASTValPtr DatapathBuilder::lowerSRem(BinaryOperator &I) {
+  Value *LHS = I.getOperand(0), *RHS = I.getOperand(1);
+  ConstantInt *LHSC = dyn_cast<ConstantInt>(LHS);
+  ConstantInt *RHSC = dyn_cast<ConstantInt>(RHS);
+  // Assume we can lower the SRem.
+  ++SREMLowered;
+
+  // fold (srem c1, c2) -> c1%c2
+  if (LHSC && RHSC && !RHSC->isNullValue())
+    return getOrCreateImmediate(LHSC->getValue().srem(RHSC->getValue()));
+
+  // If X/C can be simplified by the division-by-constant logic, lower
+  // X%C to the equivalent of X-X/C*C.
+  if (RHSC && !RHSC->isNullValue())
+    // If we can get the SDiv expression.
+    if (VASTValPtr SDiv = lowerSDiv(I)) {
+      VASTValPtr LHSVal = getAsOperand(LHS);
+      unsigned SizeInBits = LHSVal->getBitWidth();
+      VASTValPtr Mul = buildMulExpr(SDiv, getAsOperand(RHS), SizeInBits);
+      VASTValPtr SubOps[] = { LHSVal,
+                              buildNotExpr(Mul),
+                              getOrCreateImmediate(1,1)
+                            };
+      return buildAddExpr(SubOps, SizeInBits);
+    }
+
+  // Well, our assumption about we can lower the SRem is wrong.
+  --SREMLowered;
   return VASTValPtr();
 }
 
