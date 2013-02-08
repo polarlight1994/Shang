@@ -429,6 +429,13 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
   case VASTExpr::dpSRL:
     assert(Ops.size() == 2 && "Bad Operand input!");
     return buildShiftExpr(Opc, Ops[0], Ops[1], BitWidth);
+  case VASTExpr::dpSGE:
+  case VASTExpr::dpSGT:
+  case VASTExpr::dpUGE:
+  case VASTExpr::dpUGT:
+    assert(Ops.size() == 2 && "Bad Operand input!");
+    assert(BitWidth == 1 && "Bitwidth of ICmp should be 1!");
+    return buildICmpExpr(Opc, Ops[0], Ops[1]);
   case VASTExpr::dpRAnd:
   case VASTExpr::dpRXor:
     assert(Ops.size() == 1 && "Unexpected more than 1 operands for reduction!");

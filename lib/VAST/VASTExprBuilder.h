@@ -120,7 +120,7 @@ class VASTExprBuilder {
     while (begin != end)
       flattenExpr<Opcode>(*begin++, F);
   }
-  
+
   // The helper iterator class to collect all leaf operand of an expression tree.
   template<VASTExpr::Opcode Opcode, class _Container>
   struct op_filler_iterator : public std::iterator<std::output_iterator_tag,
@@ -294,6 +294,8 @@ public:
     // A | B .. | Z = ~(~A & ~B ... & ~Z).
     return buildNotExpr(buildExpr(VASTExpr::dpRAnd, buildNotExpr(V), 1));
   }
+
+  VASTValPtr buildICmpExpr(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS);
 
   // For operator !=
   VASTValPtr buildNE(VASTValPtr LHS, VASTValPtr RHS) {

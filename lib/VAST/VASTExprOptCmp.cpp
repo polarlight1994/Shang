@@ -13,10 +13,17 @@
 
 #include "VASTExprBuilder.h"
 
-#include "shang/Utilities.h"
-
-#include "llvm/Support/ErrorHandling.h"
+#include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "vast-expr-opt-cmp"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
 
 using namespace llvm;
+STATISTIC(ConstICmpLowered, "Number of Constant ICmp lowered");
+
+VASTValPtr VASTExprBuilder::buildICmpExpr(VASTExpr::Opcode Opc,
+                                          VASTValPtr LHS, VASTValPtr RHS) {
+
+  VASTValPtr Ops[] = { LHS, RHS };
+  return createExpr(Opc, Ops, 1, 0);
+}
