@@ -158,6 +158,18 @@ struct MemoryAccessCoalescing : public FunctionPass {
     return dyn_cast<SCEVConstant>(SE->getMinusSCEV(HigherSCEV, LowerSCEV));
   }
 
+  AliasAnalysis::Location getLocation(Instruction *I) {
+    if (LoadInst *L = dyn_cast<LoadInst>(I))
+      return AA->getLocation(L);
+
+    if (StoreInst *S = dyn_cast<StoreInst>(I))
+      return AA->getLocation(S);
+
+    llvm_unreachable("Unexpected instruction type!");
+    return AliasAnalysis::Location();
+
+  }
+
   int64_t getAddressDistantInt(Instruction *LowerInst, Instruction *HigherInst) {
     const SCEVConstant *DeltaSCEV = getAddressDistant(LowerInst, HigherInst);
     assert(DeltaSCEV && "Cannot calculate distance!");
@@ -291,7 +303,8 @@ bool MemoryAccessCoalescing::hasMemDependency(Instruction *DstInst,
   Value *SrcPtr = getPointerOperand(SrcInst);
 
   // Is DstInst depends on SrcInst?
-  return !(AA->alias(SrcPtr, DstPtr) != AliasAnalysis::NoAlias);
+  // TODO: Provide the size of the accessed location.
+  return !AA->isNoAlias(getLocation(SrcInst), getLocation(DstInst));
 }
 
 bool MemoryAccessCoalescing::trackUsesOfSrc(InstSetTy &UseSet, Instruction *Src,
