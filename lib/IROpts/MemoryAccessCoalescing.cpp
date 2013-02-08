@@ -480,8 +480,6 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
            || isa<LoadInst>(HigherInst))
          && "New Access writing extra bytes!");
 
-  assert(LowerAlignment >= LowerSizeInBytes && "Bad alignment of lower access!");
-
   IRBuilder<> Builder(HigherInst);
   Value *NewAddr
     = Builder.CreatePointerCast(LowerAddr, PointerType::get(NewType, 0));
