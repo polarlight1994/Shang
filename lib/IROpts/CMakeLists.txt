@@ -5,6 +5,7 @@ add_llvm_library(ShangIROpts
   TrivialLoopUnrollPass.cpp
   DatapathHoisting.cpp
   BasicBlockTopOrder.cpp
+  MemoryAccessCoalescing.cpp
   ShangTTI.cpp
   )
 

@@ -44,6 +44,7 @@ Pass *createFunctionFilterPass(raw_ostream &O,
                                TopHWFUnctions);
 
 Pass *createLowerAllocaPass();
+Pass *createMemoryAccessCoalescingPass();
 Pass *createSimpleBlockRAMAllocationPass();
 Pass *createShangTargetTransformInfoPass();
 Pass *createDatapathHoistingPass();
@@ -66,6 +67,7 @@ Pass *createScriptingPass(const char *Name, const char *FScript,
 
 void initializeShangTTIPass(PassRegistry &Registry);
 void initializeDatapathHoistingPass(PassRegistry &Registry);
+void initializeMemoryAccessCoalescingPass(PassRegistry &Registry);
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
 void initializeHLSAllocationAnalysisGroup(PassRegistry &Registry);
 void initializeSimpleBlockRAMAllocationPass(PassRegistry &Registry);
