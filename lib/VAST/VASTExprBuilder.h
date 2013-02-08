@@ -208,11 +208,11 @@ public:
     return Context.getOrCreateImmediate(Val, 1);
   }
 
-  VASTImmediate *getOrCreateImmediate(uint64_t Value, int8_t BitWidth) {
+  VASTImmediate *getImmediate(uint64_t Value, int8_t BitWidth) {
     return Context.getOrCreateImmediate(Value, BitWidth);
   }
 
-  VASTImmediate *getOrCreateImmediate(const APInt &Value) {
+  VASTImmediate *getImmediate(const APInt &Value) {
     return Context.getOrCreateImmediate(Value);
   }
 

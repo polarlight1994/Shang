@@ -878,7 +878,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   RegName = VFUMemBus::getByteEnableName(PortNum) + "_r";
   R = VM->getSymbol<VASTSeqValue>(RegName);
   VASTValPtr ByteEn
-    = Builder.getOrCreateImmediate(getByteEnable(Addr), R->getBitWidth());
+    = Builder.getImmediate(getByteEnable(Addr), R->getBitWidth());
   Op->addSrc(ByteEn, CurOperandIdx++, false, R);
 
   // Enable the memory bus at the same slot.

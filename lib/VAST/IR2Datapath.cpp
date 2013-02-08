@@ -148,7 +148,7 @@ VASTValPtr DatapathBuilder::visitBinaryOperator(BinaryOperator &I) {
     // A - B is equivalent to A + ~(B) + 1
     VASTValPtr SubOps[] = { Ops[0],
                             buildNotExpr(Ops[1]),
-                            getOrCreateImmediate(1, 1) };
+                            getImmediate(1, 1) };
     return buildAddExpr(SubOps, NumBits);
   }
   case Instruction::Mul: return buildMulExpr(Ops, NumBits);
@@ -235,7 +235,7 @@ VASTValPtr DatapathBuilder::visitGEPOperator(GEPOperator &O) {
         uint64_t Offset
           = getDataLayout()->getStructLayout(StTy)->getElementOffset(Field);
         Ptr = buildExpr(VASTExpr::dpAdd,
-                        Ptr, getOrCreateImmediate(Offset, PtrSize),
+                        Ptr, getImmediate(Offset, PtrSize),
                         PtrSize);
       }
 
@@ -250,7 +250,7 @@ VASTValPtr DatapathBuilder::visitGEPOperator(GEPOperator &O) {
                         * cast<ConstantInt>(CI)->getSExtValue();
         
         Ptr = buildExpr(VASTExpr::dpAdd,
-                        Ptr, getOrCreateImmediate(Offs, PtrSize),
+                        Ptr, getImmediate(Offs, PtrSize),
                         PtrSize);
         continue;
       }
@@ -269,10 +269,10 @@ VASTValPtr DatapathBuilder::visitGEPOperator(GEPOperator &O) {
         if (ElementSize.isPowerOf2()) {
           unsigned Amt = ElementSize.logBase2();
           IdxN = buildShiftExpr(VASTExpr::dpShl, IdxN,
-                                getOrCreateImmediate(Amt, PtrSize),
+                                getImmediate(Amt, PtrSize),
                                 PtrSize);
         } else {
-          VASTValPtr Scale = getOrCreateImmediate(ElementSize.getSExtValue(),
+          VASTValPtr Scale = getImmediate(ElementSize.getSExtValue(),
                                                   PtrSize);
           IdxN = buildExpr(VASTExpr::dpMul, IdxN, Scale, PtrSize);
         }

@@ -473,9 +473,25 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
     return;
   }
 
+  // Do not need to build the LUT for a simple and.
+  //if (Abc_SopIsAndType(sop)) {
+  //  VASTValPtr V = Builder.buildAndExpr(Ops, Bitwidth);
+  //  bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+  //  assert(Inserted && "The node is visited?");
+  //  return;
+  //}
+
+  //// Do not need to build the LUT for a simple and.
+  //if (Abc_SopIsOrType(sop)) {
+  //  VASTValPtr V = Builder.buildOrExpr(Ops, Bitwidth);
+  //  bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+  //  assert(Inserted && "The node is visited?");
+  //  return;
+  //}
+
   // Otherwise simple construct the LUT expression.
   unsigned Truth = Abc_SopToTruth(sop, Ops.size());
-  Ops.push_back(Builder.getOrCreateImmediate(Truth, 1 << Ops.size()));
+  Ops.push_back(Builder.getImmediate(Truth, 1 << Ops.size()));
   VASTValPtr V = Builder.buildExpr(VASTExpr::dpLUT, Ops, Bitwidth);
   ++NumLUTBulit;
 

@@ -115,7 +115,7 @@ VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
 
   // Check the immediate mask. Return the constant value if all bits are known.
   if (OpInfo.isAllBitsKnown())
-    return getOrCreateImmediate(OpInfo.getZeros());
+    return getImmediate(OpInfo.getZeros());
   
   DEBUG(
     dbgs() << "KnownZeros: " << OpInfo.KnownZeros.toString(16, false) << '\n'
@@ -124,7 +124,7 @@ VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
 
   // Add the Constant back to the Operands.
   if (OpInfo.hasAnyZero())
-    NewOps.push_back(getOrCreateImmediate(OpInfo.getZeros()));
+    NewOps.push_back(getImmediate(OpInfo.getZeros()));
 
   // Split the word according to known zero bits.
   if (VASTValPtr V = splitByMask(*this, OpInfo.getKnownBits(), NewOps))
@@ -141,7 +141,7 @@ VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
       continue;
     } else if (CurVal.invert() == LastVal)
       // A & ~A => 0
-      return getOrCreateImmediate(APInt::getNullValue(BitWidth));
+      return getImmediate(APInt::getNullValue(BitWidth));
 
     // Ignore the 1s
     if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(CurVal))

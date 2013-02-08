@@ -34,7 +34,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
 
   // fold (sdiv c1, c2) -> c1/c2
   if (LHSC && RHSC && !RHSC->isNullValue())
-    return getOrCreateImmediate(LHSC->getValue().sdiv(RHSC->getValue()));
+    return getImmediate(LHSC->getValue().sdiv(RHSC->getValue()));
   // fold (sdiv X, 1) -> X
   if (RHSC && RHSC->getValue() == 1LL)
     return getAsOperand(LHS);
@@ -51,7 +51,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
 
     // Splat the sign bit put the sign bit of LHS at the lower lg2 bits, and add
     // it to LHS.
-    VASTValPtr BitCatOps[] = { getOrCreateImmediate(0, SizeInBits - lg2),
+    VASTValPtr BitCatOps[] = { getImmediate(0, SizeInBits - lg2),
                                buildBitRepeat(getSignBit(LHSVal), lg2),
                              };
     VASTValPtr SGN = buildBitCatExpr(BitCatOps, SizeInBits);
@@ -62,7 +62,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
     // Divide by pow2
     VASTValPtr SRA
       = buildShiftExpr(VASTExpr::dpSRA, ADD,
-                       getOrCreateImmediate(lg2, SizeInBits), SizeInBits);
+                       getImmediate(lg2, SizeInBits), SizeInBits);
 
     // If we're dividing by a positive value, we're done.  Otherwise, we must
     // negate the result.
@@ -85,7 +85,7 @@ VASTValPtr DatapathBuilder::lowerSRem(BinaryOperator &I) {
 
   // fold (srem c1, c2) -> c1%c2
   if (LHSC && RHSC && !RHSC->isNullValue())
-    return getOrCreateImmediate(LHSC->getValue().srem(RHSC->getValue()));
+    return getImmediate(LHSC->getValue().srem(RHSC->getValue()));
 
   // If X/C can be simplified by the division-by-constant logic, lower
   // X%C to the equivalent of X-X/C*C.
@@ -97,7 +97,7 @@ VASTValPtr DatapathBuilder::lowerSRem(BinaryOperator &I) {
       VASTValPtr Mul = buildMulExpr(SDiv, getAsOperand(RHS), SizeInBits);
       VASTValPtr SubOps[] = { LHSVal,
                               buildNotExpr(Mul),
-                              getOrCreateImmediate(1,1)
+                              getImmediate(1,1)
                             };
       return buildAddExpr(SubOps, SizeInBits);
     }
