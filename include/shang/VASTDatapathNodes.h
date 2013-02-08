@@ -194,7 +194,7 @@ private:
     return this;
   }
 
-  const char *getLUT() const;
+  const char *getLUT(MutableArrayRef<char> SOPBuffer) const;
 public:
   ~VASTExpr();
 

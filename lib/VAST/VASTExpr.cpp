@@ -298,12 +298,18 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   typedef ArrayRef<VASTUse> UseArray;
 
   switch (getOpcode()) {
-  case dpLUT:
+  case dpLUT: {
+    // 6 is the maximum supported input number of a single LUT.
+    // 3 is for the space, the value of the truth table and the newline char in
+    // each row.
+    char SOPBuffer[(6 + 3) /*Columns*/ * (1 << 6) /*Rows*/ + 1];
+
     // Invert the result if the LUT is inverted.
-    if (printLUT(OS, getOperands(), getLUT()))
+    if (printLUT(OS, getOperands(), getLUT(SOPBuffer)))
       OS << '^'
          << VASTImmediate::buildLiteral(~UINT64_C(0), getBitWidth(), false);
     break;
+  }
   case dpAnd: printSimpleOp(OS, getOperands(), " & "); break;
 
   case dpRAnd:  printUnaryOp(OS, getOperand(0), "&");  break;
@@ -412,22 +418,18 @@ static char *utobin_buffer(uint64_t X, char *BuffurStart, unsigned NumDigit) {
 }
 
 // Implementation of LUT related functions.
-const char *VASTExpr::getLUT() const {
-  // 6 is the maximum supported input number of a single LUT.
-  // 3 is for the space, the value of the truth table and the newline char in
-  // each row.
-  static char SOPBuffer[(6 + 3) /*Columns*/ * (1 << 6) /*Rows*/ + 1];
+const char *VASTExpr::getLUT(MutableArrayRef<char> SOPBuffer) const {
   unsigned NumInputs = Size - 1;
   unsigned NumRows = 1 << NumInputs;
   unsigned NumCols = NumInputs + 3;
-  assert(NumRows * NumCols + 1 <= array_lengthof(SOPBuffer) && "LUT too big!");
+  assert(NumRows * NumCols + 1 <= SOPBuffer.size() && "LUT too big!");
 
   VASTImmediate *TruthImm = cast<VASTImmediate>(getOperand(NumInputs).get());
   uint64_t Truth = TruthImm->getZExtValue();
 
   unsigned NumRowsAdded = 0;
   for (unsigned i = 0; i < NumRows; ++i) {
-    char *CurRow = SOPBuffer + NumRowsAdded * NumCols;
+    char *CurRow = SOPBuffer.data() + NumRowsAdded * NumCols;
 
     unsigned char Mod = static_cast<unsigned char>(Truth) & 1;
     Truth >>= 1;
@@ -444,7 +446,7 @@ const char *VASTExpr::getLUT() const {
 
   // Terminate the SOP string.
   SOPBuffer[NumRowsAdded * NumCols] = 0;
-  return SOPBuffer;
+  return SOPBuffer.data();
 }
 
 void VASTExpr::Profile(FoldingSetNodeID& ID) const {
