@@ -207,21 +207,33 @@ int main(int argc, char **argv) {
     PassManager HLSPasses;
     HLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
     HLSPasses.add(createShangTargetTransformInfoPass());
+    HLSPasses.add(createTypeBasedAliasAnalysisPass());
+    // Name the instructions to make the LLVM IR easier for debugging.
+    HLSPasses.add(createInstructionNamerPass());
 
-    //PM.add(createStackProtectorPass(getTargetLowering()));
     // Try to optimize the computation.
     HLSPasses.add(createInstructionCombiningPass());
 
     // Move the datapath instructions as soon as possible.
     HLSPasses.add(createDatapathHoistingPass());
+    HLSPasses.add(createDeadCodeEliminationPass());
+
+    HLSPasses.add(createDeadStoreEliminationPass());
+    HLSPasses.add(createMemoryAccessAlignerPass());
+    // Run the SCEVAA pass to compute more accurate alias information.
+    HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
+    HLSPasses.add(createMemoryAccessCoalescingPass());
+    // Verifier the IR produced by the Coalescer.
+    HLSPasses.add(createVerifierPass());
+    HLSPasses.add(createInstructionCombiningPass());
+    HLSPasses.add(createDeadStoreEliminationPass());
+
+    // Try to optimize the computation.
+    HLSPasses.add(createInstructionCombiningPass());
 
     // Name the instructions.
     HLSPasses.add(createInstructionNamerPass());
 
-    // All passes which modify the LLVM IR are now complete; run the verifier
-    // to ensure that the IR is valid.
-    HLSPasses.add(createVerifierPass());
-    HLSPasses.add(createTypeBasedAliasAnalysisPass());
     // Allocate the BlockRAMs.
     HLSPasses.add(createSimpleBlockRAMAllocationPass());
 
