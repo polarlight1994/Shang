@@ -453,10 +453,10 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
   Type *HigherType = getAccessType(HigherInst);
   unsigned HigherSizeInBytes = getAccessSizeInBytes(HigherInst);
 
-  int64_t Delta = getAddressDistantInt(LowerInst, HigherInst);
+  int64_t AddrDistant = getAddressDistantInt(LowerInst, HigherInst);
   // Make sure lower address is actually lower.
-  if (Delta < 0) {
-    Delta = - Delta;
+  if (AddrDistant < 0) {
+    AddrDistant = - AddrDistant;
     std::swap(LowerAddr, HigherAddr);
     std::swap(LowerStoredValue, HigherStoredValue);
     std::swap(LowerLoadValue, HigherLoadValue);
@@ -465,7 +465,7 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
   }
 
   int64_t NewSizeInBytes = std::max<unsigned>(LowerSizeInBytes,
-                                              Delta + HigherSizeInBytes);
+                                              AddrDistant + HigherSizeInBytes);
   NewSizeInBytes = NextPowerOf2(NewSizeInBytes - 1);
 
   assert(NewSizeInBytes <= getFUDesc<VFUMemBus>()->getDataWidth() / 8
@@ -501,8 +501,7 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
     // Update the pointer.
     NewLoad->setAlignment(NewSizeInBytes);
     // Extract the lower part and the higher part of the value.
-    Value *ShiftedHigerValue
-      = Builder.CreateLShr(NewLoad, LowerSizeInBytes * 8);
+    Value *ShiftedHigerValue = Builder.CreateLShr(NewLoad, AddrDistant * 8);
     Value *NewHigherValue
       = Builder.CreateZExtOrTrunc(ShiftedHigerValue, HigherType);
 
