@@ -288,8 +288,6 @@ bool MemoryAccessCoalescing::hasMemDependency(Instruction *DstInst,
   // Do not add loop to dependent graph.
   if (SrcInst == DstInst) return false;
 
-  Value *DstPtr = getPointerOperand(DstInst);
-
   // Check if source will access memory.
   unsigned SrcOpcode = SrcInst->getOpcode();
   if (!isLoadStore(SrcInst) && SrcOpcode != Instruction::Call)
@@ -303,8 +301,6 @@ bool MemoryAccessCoalescing::hasMemDependency(Instruction *DstInst,
 
   // Ignore RAR dependency.
   if (!SrcMayWrite && ! DstMayWrite) return false;
-
-  Value *SrcPtr = getPointerOperand(SrcInst);
 
   // Is DstInst depends on SrcInst?
   // TODO: Provide the size of the accessed location.
