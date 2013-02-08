@@ -504,20 +504,6 @@ void VASTModuleBuilder::allocateSubModules(CallGraph &CG) {
   }
 }
 
-static unsigned countNumElements(const Type *AllocatedType) {
-  // Assume the Allocated type is a scalar.
-  const Type *ElemTy = AllocatedType;
-
-  unsigned NumElem = 1;
-  // Try to expand multi-dimension array to single dimension array.
-  while (const ArrayType *AT = dyn_cast<ArrayType>(ElemTy)) {
-    ElemTy = AT->getElementType();
-    NumElem *= AT->getNumElements();
-  }
-
-  return NumElem;
-}
-
 VASTNode *VASTModuleBuilder::emitBlockRAM(unsigned BRAMNum,
                                           const GlobalVariable *GV) {
   // Count the number of elements and the size of a single element.
