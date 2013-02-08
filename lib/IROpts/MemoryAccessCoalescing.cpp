@@ -67,13 +67,25 @@ struct MemoryAccessCoalescing : public FunctionPass {
   Instruction *findFusingCandidate(BasicBlock::iterator I, BasicBlock &BB);
 
   typedef SmallPtrSet<Instruction*, 8> InstSetTy;
-  bool canBeFused(Instruction *LHS, Instruction *RHS);
+  bool canBeFused(Instruction *LowerInst, Instruction *HigherInst);
   bool hasMemDependency(Instruction *DstInst, Instruction *SrcInst);
   bool trackUsesOfSrc(InstSetTy &UseSet, Instruction *Src, Instruction *Dst);
 
   static bool isLoadStore(Instruction *I) {
     return I->getOpcode() == Instruction::Load
            || I->getOpcode() == Instruction::Store;
+  }
+
+  static bool isVolatile(Instruction *I) {
+    if (LoadInst *L = dyn_cast<LoadInst>(I))
+      return L->isVolatile();
+
+    if (StoreInst *S = dyn_cast<StoreInst>(I))
+      return S->isVolatile();
+
+    assert(isa<CallInst>(I) && "Unexpected instruction type!");
+
+    return false;
   }
 
   static Value *getPointerOperand(Instruction *I) {
@@ -136,15 +148,18 @@ struct MemoryAccessCoalescing : public FunctionPass {
     return 0;
   }
 
-  const SCEVConstant *getAddressDistant(Instruction *LHS, Instruction *RHS) {
-    Value *LHSAddr = getPointerOperand(LHS), *RHSAddr = getPointerOperand(RHS);
-    const SCEV *LHSSCEV = SE->getSCEV(LHSAddr), *RHSSCEV = SE->getSCEV(RHSAddr);
+  const SCEVConstant *getAddressDistant(Instruction *LowerInst,
+                                        Instruction *HigherInst) {
+    Value *LowerAddr = getPointerOperand(LowerInst),
+          *HigherAddr = getPointerOperand(HigherInst);
+    const SCEV *LowerSCEV = SE->getSCEV(LowerAddr),
+               *HigherSCEV = SE->getSCEV(HigherAddr);
 
-    return dyn_cast<SCEVConstant>(SE->getMinusSCEV(RHSSCEV, LHSSCEV));
+    return dyn_cast<SCEVConstant>(SE->getMinusSCEV(HigherSCEV, LowerSCEV));
   }
 
-  int64_t getAddressDistantInt(Instruction *LHS, Instruction *RHS) {
-    const SCEVConstant *DeltaSCEV = getAddressDistant(LHS, RHS);
+  int64_t getAddressDistantInt(Instruction *LowerInst, Instruction *HigherInst) {
+    const SCEVConstant *DeltaSCEV = getAddressDistant(LowerInst, HigherInst);
     assert(DeltaSCEV && "Cannot calculate distance!");
 
     return DeltaSCEV->getValue()->getSExtValue();
@@ -163,7 +178,7 @@ struct MemoryAccessCoalescing : public FunctionPass {
 
   void moveUsesAfter(Instruction *MergeFrom, Instruction *MergeTo,
                      InstSetTy &UseSet);
-  void fuseInstruction(Instruction *From, Instruction *To);
+  void fuseInstruction(Instruction *LowerInst, Instruction *HigherInst);
 };
 }
 
@@ -190,6 +205,8 @@ INITIALIZE_PASS_END(MemoryAccessCoalescing,
     }
 
     if (Instruction *FusingCandidate = findFusingCandidate(Inst, BB)) {
+      DEBUG(dbgs() << "Going to fuse\n\t" << *FusingCandidate << " into \n\t"
+                   << *Inst << '\n');
       // Fuse Inst into FusingCandidate.
       fuseInstruction(Inst, FusingCandidate);
       assert(Inst->use_empty() && FusingCandidate->use_empty()
@@ -211,7 +228,7 @@ INITIALIZE_PASS_END(MemoryAccessCoalescing,
   // Eliminated the dead instructions if necessary.
   if (Changed) {
     SimplifyInstructionsInBlock(&BB, TD);
-    BB.dump();
+    DEBUG(dbgs() << "BB Changed:\n"; BB.dump(););
   }
   
   return Changed;
@@ -247,11 +264,10 @@ bool MemoryAccessCoalescing::hasMemDependency(Instruction *DstInst,
                                               Instruction *SrcInst) {
   unsigned DstOpcode = DstInst->getOpcode();
   bool ForceDstDep = (DstOpcode == Instruction::Call);
-  bool IsDstMemTrans = isLoadStore(DstInst);
 
-  if (!IsDstMemTrans && !ForceDstDep) return false;
+  if (!isLoadStore(DstInst) && !ForceDstDep) return false;
 
-  bool DstMayWrite = DstInst->mayWriteToMemory();
+  bool DstMayWrite = DstInst->mayWriteToMemory() || isVolatile(DstInst);
 
   // Do not add loop to dependent graph.
   if (SrcInst == DstInst) return false;
@@ -267,7 +283,7 @@ bool MemoryAccessCoalescing::hasMemDependency(Instruction *DstInst,
   if (ForceDstDep || SrcOpcode == Instruction::Call)
     return true;
 
-  bool SrcMayWrite = SrcInst->mayWriteToMemory();
+  bool SrcMayWrite = SrcInst->mayWriteToMemory() || isVolatile(SrcInst);
 
   // Ignore RAR dependency.
   if (!SrcMayWrite && ! DstMayWrite) return false;
@@ -324,41 +340,52 @@ bool MemoryAccessCoalescing::trackUsesOfSrc(InstSetTy &UseSet, Instruction *Src,
   return false;
 }
 
-bool MemoryAccessCoalescing::canBeFused(Instruction *LHS, Instruction *RHS) {
+bool MemoryAccessCoalescing::canBeFused(Instruction *LowerInst,
+                                        Instruction *HigherInst) {
   // Only fuse the memory accesses with the same access type.
-  if (LHS->getOpcode() != RHS->getOpcode()) return false;
+  if (LowerInst->getOpcode() != HigherInst->getOpcode()) return false;
 
-  const SCEVConstant *DeltaSCEV = getAddressDistant(LHS, RHS);
+  // Do not fuse the Volatile load/stores.
+  if (isVolatile(LowerInst) || isVolatile(HigherInst)) return false;
 
+  const SCEVConstant *DistanceSCEV = getAddressDistant(LowerInst, HigherInst);
   // Cannot fuse two memory access with unknown distance.
-  if (!DeltaSCEV) return false;
+  if (!DistanceSCEV) return false;
 
-  int64_t Delta = DeltaSCEV->getValue()->getSExtValue();
+  int64_t AddrDistance = DistanceSCEV->getValue()->getSExtValue();
+
+  DEBUG(dbgs() << "Get lower " << *LowerInst << '\n'
+               << "    higher" << *HigherInst << '\n'
+               << "    Address distance " << AddrDistance << '\n');
+
   // Make sure LHS is in the lower address.
-  if (Delta < 0) {
-    Delta = -Delta;
-    std::swap(LHS, RHS);
+  if (AddrDistance < 0) {
+    AddrDistance = -AddrDistance;
+    std::swap(LowerInst, HigherInst);
   }
 
   // Check if we can fuse the address of RHS into LHS
-  uint64_t FusedWidth = std::max<unsigned>(getAccessSizeInBytes(LHS),
-                                           Delta + getAccessSizeInBytes(RHS));
+  uint64_t FusedWidth
+    = std::max<unsigned>(getAccessSizeInBytes(LowerInst),
+                         AddrDistance + getAccessSizeInBytes(HigherInst));
   // Do not generate unaligned memory access.
-  if (FusedWidth > getAccessAlignment(LHS)) return false;
+  if (FusedWidth > getAccessAlignment(LowerInst)) return false;
 
-  if (LHS->mayWriteToMemory()) {
+  if (LowerInst->mayWriteToMemory()) {
     // Cannot store with irregular byteenable at the moment.
     if (!isPowerOf2_64(FusedWidth)) return false;
 
     // For the stores, we must make sure the higher address is just next to
     // the lower address.
-    if (Delta && uint64_t(Delta) != getAccessSizeInBytes(LHS)) return false;
+    if (AddrDistance &&
+        uint64_t(AddrDistance) != getAccessSizeInBytes(LowerInst))
+      return false;
 
     // LHS and RHS have the same address.
-    if (Delta == 0 &&
+    if (AddrDistance == 0 &&
       // Need to check if the two access are writing the same data, and writing
       // the same size.
-        (!isWritingTheSameValue(LHS, RHS)))
+        (!isWritingTheSameValue(LowerInst, HigherInst)))
         return false;
   }
 
@@ -399,32 +426,34 @@ static Value *CreateMaskedValue(IRBuilder<> &Builder, Type *DstType,
                                 Type *SrcType, Value *SrcValue, DataLayout *TD) {
   APInt MaskInt =  APInt::getLowBitsSet(TD->getTypeStoreSizeInBits(DstType),
                                         TD->getTypeAllocSizeInBits(SrcType));
-  dbgs() << "Create mask " << MaskInt.toString(16, false) << " for " << *SrcType
-         << " -> " << *DstType << '\n';
+  DEBUG(dbgs() << "Create mask " << MaskInt.toString(16, false)
+               << " for " << *SrcType << " -> " << *DstType << '\n');
   Value *V = Builder.CreateZExtOrBitCast(SrcValue, DstType);
   return Builder.CreateAnd(V,  ConstantInt::get(DstType, MaskInt));
 }
 
-void MemoryAccessCoalescing::fuseInstruction(Instruction *From, Instruction *To) {
-  assert(isLoadStore(From) && isLoadStore(To) 
+void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
+                                             Instruction *HigherInst) {
+  assert(isLoadStore(LowerInst) && isLoadStore(HigherInst)
          && "Unexpected type of Instruction to merge!!");
-  assert(From->getOpcode() == To->getOpcode() && "Cannot mixing load and store!");
+  assert(LowerInst->getOpcode() == HigherInst->getOpcode()
+         && "Cannot mixing load and store!");
 
   // Get the new address, i.e. the lower address which has a bigger
   // alignment.
-  Value *LowerLoadValue = getLoadedValue(From);
-  Value *LowerAddr = getPointerOperand(From);
-  Value *LowerStoredValue = getStoredValue(From);
-  Type *LowerType = getAccessType(From);
-  unsigned LowerSizeInBytes = getAccessSizeInBytes(From);
+  Value *LowerLoadValue = getLoadedValue(LowerInst);
+  Value *LowerAddr = getPointerOperand(LowerInst);
+  Value *LowerStoredValue = getStoredValue(LowerInst);
+  Type *LowerType = getAccessType(LowerInst);
+  unsigned LowerSizeInBytes = getAccessSizeInBytes(LowerInst);
 
-  Value *HigherLoadValue = getLoadedValue(To);
-  Value *HigherAddr = getPointerOperand(To);
-  Value *HigherStoredValue = getStoredValue(To);
-  Type *HigherType = getAccessType(To);
-  unsigned HigherSizeInBytes = getAccessSizeInBytes(To);
+  Value *HigherLoadValue = getLoadedValue(HigherInst);
+  Value *HigherAddr = getPointerOperand(HigherInst);
+  Value *HigherStoredValue = getStoredValue(HigherInst);
+  Type *HigherType = getAccessType(HigherInst);
+  unsigned HigherSizeInBytes = getAccessSizeInBytes(HigherInst);
 
-  int64_t Delta = getAddressDistantInt(To, From);
+  int64_t Delta = getAddressDistantInt(LowerInst, HigherInst);
   // Make sure lower address is actually lower.
   if (Delta < 0) {
     Delta = - Delta;
@@ -439,17 +468,20 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *From, Instruction *To)
                                               Delta + HigherSizeInBytes);
   NewSizeInBytes = NextPowerOf2(NewSizeInBytes - 1);
 
+  assert(NewSizeInBytes <= getFUDesc<VFUMemBus>()->getDataWidth() / 8
+         && "Bad load/store size!");
+
   // Get the Byte enable.
-  Type *NewType = IntegerType::get(From->getContext(), NewSizeInBytes * 8);
+  Type *NewType = IntegerType::get(LowerInst->getContext(), NewSizeInBytes * 8);
   assert(((LowerSizeInBytes + HigherSizeInBytes == NewSizeInBytes)
-           || isa<LoadInst>(To))
+           || isa<LoadInst>(HigherInst))
          && "New Access writing extra bytes!");
 
-  IRBuilder<> Builder(To);
+  IRBuilder<> Builder(HigherInst);
   Value *NewAddr
     = Builder.CreatePointerCast(LowerAddr, PointerType::get(NewType, 0));
   // Build the new data to store by concatenating them together.
-  if (StoreInst *S = dyn_cast<StoreInst>(To)) {
+  if (StoreInst *S = dyn_cast<StoreInst>(HigherInst)) {
     // Get the Masked Values.
     Value *ExtendLowerData
       = CreateMaskedValue(Builder, NewType, LowerType, LowerStoredValue, TD);
@@ -459,14 +491,12 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *From, Instruction *To)
     ExtendHigherData = Builder.CreateShl(ExtendHigherData, LowerSizeInBytes * 8);
     // Concat the values to build the new stored value.
     Value *NewStoredValue = Builder.CreateOr(ExtendHigherData, ExtendLowerData);
-    S->getOperandUse(0).set(NewStoredValue);
-    // Update the pointer.
-    S->getOperandUse(1).set(NewAddr);
-    S->setAlignment(NewSizeInBytes);
+    StoreInst *NewStore = Builder.CreateStore(NewStoredValue, NewAddr, false);
+    NewStore->setAlignment(NewSizeInBytes);
   }
 
   // Update the result registers.
-  if (isa<LoadInst>(To)) {
+  if (isa<LoadInst>(HigherInst)) {
     LoadInst *NewLoad = Builder.CreateLoad(NewAddr, false);
     // Update the pointer.
     NewLoad->setAlignment(NewSizeInBytes);
