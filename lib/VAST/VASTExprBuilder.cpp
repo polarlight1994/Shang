@@ -552,7 +552,7 @@ struct VASTExprOpInfo<VASTExpr::dpAdd> : public AddMultOpInfoBase {
 
   VASTValPtr flushImmOperand() {
     if (ImmVal.getBoolValue()) {
-      VASTImmPtr Imm = Builder.getOrCreateImmediate(ImmVal.zextOrTrunc(ImmSize));
+      VASTImmPtr Imm = Builder.getImmediate(ImmVal.zextOrTrunc(ImmSize));
       APInt KnownZeros = ~Imm.getAPInt();
       unsigned CurTailingZeros = KnownZeros.countTrailingOnes();
 
