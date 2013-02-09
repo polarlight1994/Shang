@@ -330,7 +330,6 @@ public:
   }
 
   VASTValPtr buildOrExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
-
   VASTValPtr buildOrExpr(VASTValPtr LHS, VASTValPtr RHS, unsigned BitWidth) {
     VASTValPtr Ops[] = { LHS, RHS };
     return buildOrExpr(Ops, BitWidth);
@@ -343,6 +342,10 @@ public:
   }
 
   VASTValPtr buildXorExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
+  VASTValPtr buildXorExpr(VASTValPtr LHS, VASTValPtr RHS, unsigned BitWidth) {
+    VASTValPtr Ops[] = { LHS, RHS };
+    return buildXorExpr(Ops, BitWidth);
+  }
 
   VASTValPtr buildZExtExpr(VASTValPtr V, unsigned DstBitWidth);
   VASTValPtr buildSExtExpr(VASTValPtr V, unsigned DstBitWidth);
