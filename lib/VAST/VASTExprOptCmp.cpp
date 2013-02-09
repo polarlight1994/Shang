@@ -22,26 +22,20 @@ using namespace llvm;
 STATISTIC(ConstICmpLowered, "Number of Constant ICmp lowered");
 STATISTIC(OneBitICmpLowered, "Number of 1 bit ICmp lowered");
 STATISTIC(ICmpSplited, "Number of ICmp splited");
+//===----------------------------------------------------------------------===//
+// FIXME: Commit these function to llvm mainstream.
+static bool isMask(APInt Value) {
+  return Value.getBoolValue() && ((Value + 1) & Value).isMinValue();
+}
+
+inline bool isShiftedMask(APInt Value) {
+  return isMask((Value - 1) | Value);
+}
 
 static bool isSigned(VASTExpr::Opcode Opc) {
   switch (Opc) {
-  case VASTExpr::dpUGE:
   case VASTExpr::dpUGT: return false;
-  case VASTExpr::dpSGE:
   case VASTExpr::dpSGT: return true;
-  default:
-    llvm_unreachable("Unexpected opcode!");
-  }
-
-  return false;
-}
-
-static bool includeEQ(VASTExpr::Opcode Opc) {
-  switch (Opc) {
-  case VASTExpr::dpUGE:
-  case VASTExpr::dpSGE: return true;
-  case VASTExpr::dpUGT:
-  case VASTExpr::dpSGT: return false;
   default:
     llvm_unreachable("Unexpected opcode!");
   }
@@ -60,19 +54,55 @@ static APInt GetMin(VASTExpr::Opcode Opc, unsigned SizeInBits) {
                        : APInt::getMinValue(SizeInBits);
 }
 
+//===----------------------------------------------------------------------===//
+static VASTValPtr BuildSplitedICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
+                                   VASTValPtr LHS, VASTValPtr RHS,
+                                   unsigned SplitAt) {
+  unsigned SizeInBits = LHS->getBitWidth();
+  assert(SplitAt != SizeInBits && SplitAt != 0 && "Bad split point!");
+  ++ICmpSplited;
+
+  // Force split at the signed bit for signed comparison.
+  if (isSigned(Opc)) SplitAt = SizeInBits - 1;
+
+  VASTValPtr Ops[] = { LHS, RHS };
+  VASTValPtr Hi = Builder.buildExprByOpBitSlice(Opc, Ops, SizeInBits, SplitAt);
+  // Force unsigned comparison on the lower part.
+  VASTValPtr Lo = Builder.buildExprByOpBitSlice(VASTExpr::dpUGT, Ops, SplitAt, 0);
+
+  VASTValPtr HiEQ
+    = Builder.buildEQ(Builder.buildBitSliceExpr(LHS, SizeInBits, SplitAt),
+                      Builder.buildBitSliceExpr(RHS, SizeInBits, SplitAt));
+
+  // Use the Lo result if the operands higher part are equal.
+  return Builder.buildOrExpr(Hi, Builder.buildAndExpr(HiEQ, Lo, 1), 1);
+}
+
+static VASTValPtr BuildSplitedICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
+                                   VASTValPtr LHS, VASTValPtr RHS,
+                                   const APInt &Mask) {
+  unsigned SizeInBits = LHS->getBitWidth();
+  unsigned HiPt, LoPt;
+
+  if (Builder.GetMaskSplitPoints(Mask, HiPt, LoPt)) {
+    if (SizeInBits - HiPt > LoPt)
+      return BuildSplitedICmp(Builder, Opc, LHS, RHS, HiPt);
+    else
+      return BuildSplitedICmp(Builder, Opc, LHS, RHS, LoPt);
+  }
+
+  return VASTValPtr();
+}
+
+//===----------------------------------------------------------------------===//
 static VASTValPtr Lower1BitICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
                                 VASTValPtr LHS, VASTValPtr RHS) {
   assert(LHS->getBitWidth() == 1 && LHS->getBitWidth() == 1
          && "Unexpected bitwidth in lower1BitICmp!");
   switch (Opc) {
-  // A >= B <=> A == 1.
-  case VASTExpr::dpUGE: return LHS;
-  // A >= B <=> A == 1 && B == 0.
+  // A > B <=> A == 1 && B == 0.
   case VASTExpr::dpUGT:
     return Builder.buildAndExpr(LHS, Builder.buildNotExpr(RHS), 1);
-  // A >= B <=>  A == 0, because what we got is a signed bit.
-  case VASTExpr::dpSGE:
-    return Builder.buildNotExpr(LHS);
   // A > B <=>  A == 0 && B == 1.
   case VASTExpr::dpSGT:
     return Builder.buildAndExpr(Builder.buildNotExpr(LHS), RHS, 1);
@@ -83,47 +113,26 @@ static VASTValPtr Lower1BitICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
   return VASTValPtr();
 }
 
+//===----------------------------------------------------------------------===//
 static VASTValPtr
-FoldPatialConstICmp(VASTExprBuilder &Builder, bool IncludeEQ, bool IsSigned,
-                    VASTValPtr Var, const APInt &Const, bool VarAtLHS,
+FoldPatialConstICmp(VASTExprBuilder &Builder, bool IsSigned, VASTValPtr Var,
+                    const APInt &Const, bool VarAtLHS,
                     const APInt &Max, const APInt &Min) {
-  if (Const == Min && !IncludeEQ) {
+  if (Const == Min) {
     // a > min <=> a != min.
     if (VarAtLHS) return Builder.buildNE(Var, Builder.getImmediate(Min));
     // min > a is always false,
     else          return Builder.getBoolImmediate(false);
   }
 
-  if (Const == Max && !IncludeEQ) {
+  if (Const == Max) {
     // a > max is always false.
     if (VarAtLHS) return Builder.getBoolImmediate(false);
     // max > a <=> a != max
     else          return Builder.buildNE(Var, Builder.getImmediate(Max));
   }
 
-  if (Const == Min && IncludeEQ) {
-    // a >= min is always true.
-    if (VarAtLHS) return Builder.getBoolImmediate(true);
-    // min >= a <=> a == min.
-    else          return Builder.buildEQ(Var, Builder.getImmediate(Min));
-  }
-
-  if (Const == Max && IncludeEQ) {
-    // a >= max <=> a == max
-    if (VarAtLHS) return Builder.buildEQ(Var, Builder.getImmediate(Max));
-    // max >= a is is always true
-    else          return Builder.getBoolImmediate(true);
-  }
-
-  if (IsSigned && IncludeEQ && Const.isMinValue()) {
-    // a >= 0 => signed bit == 0
-    if (VarAtLHS) return Builder.buildNotExpr(Builder.getSignBit(Var));
-    // 0 >= a => signed bit == 1
-    else          return Builder.getSignBit(Var);
-
-  }
-
-  if (IsSigned && !IncludeEQ && Const.isMinValue()) {
+  if (IsSigned && Const.isMinValue()) {
     // a > 0 => signed bit == 0 && nonzero.
     if (VarAtLHS)
       return Builder.buildAndExpr(Builder.buildNotExpr(Builder.getSignBit(Var)),
@@ -143,10 +152,40 @@ FoldPatialConstICmp(VASTExprBuilder &Builder, bool IncludeEQ, bool IsSigned,
 static
 VASTValPtr FoldPatialConstICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
                                VASTValPtr Var, const APInt &Const, bool VarAtLHS) {
-  return FoldPatialConstICmp(Builder, includeEQ(Opc), isSigned(Opc),
-                             Var, Const, VarAtLHS,
-                             GetMax(Opc, Var->getBitWidth()),
-                             GetMin(Opc, Var->getBitWidth()));
+  if (VASTValPtr V = FoldPatialConstICmp(Builder, isSigned(Opc), Var, Const,
+                                         VarAtLHS,
+                                         GetMax(Opc, Var->getBitWidth()),
+                                         GetMin(Opc, Var->getBitWidth())))
+    return V;
+
+  if (!Const.isAllOnesValue() && Const.getBoolValue()) {
+    // Try to split the operand according to the sequence of ones/zeros
+    VASTValPtr LHS = VarAtLHS ? Var : Builder.getImmediate(Const);
+    VASTValPtr RHS = VarAtLHS ? Builder.getImmediate(Const) : Var;
+
+    unsigned SizeInBits = Var->getBitWidth();
+    unsigned LoPt = 0, HiPt = SizeInBits;
+
+    // Try to get the maximal sequence of ones/zeros.
+    if (isMask(Const))
+      LoPt = std::max(LoPt, Const.countTrailingOnes());
+    else if (isShiftedMask(Const)) {
+      LoPt = std::max(LoPt, Const.countTrailingZeros());
+      HiPt = std::min(HiPt, SizeInBits - Const.countLeadingZeros());
+    }
+
+    if (isMask(~Const))
+      LoPt = std::max(LoPt, Const.countTrailingZeros());
+    else if (isShiftedMask(~Const)) {
+      LoPt = std::max(LoPt, Const.countTrailingOnes());
+      HiPt = std::min(HiPt, SizeInBits - Const.countLeadingOnes());
+    }
+
+    unsigned SplitPt = (SizeInBits - HiPt > LoPt) ? HiPt : LoPt;
+    if (SplitPt) return BuildSplitedICmp(Builder, Opc, LHS, RHS, SplitPt);
+  }
+
+  return VASTValPtr();
 }
 
 static VASTValPtr FoldConstICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
@@ -157,12 +196,8 @@ static VASTValPtr FoldConstICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
   // Calculate the results of ICmp now.
   if (LHSC && RHSC) {
     switch (Opc) {
-    case VASTExpr::dpUGE:
-      return Builder.getImmediate(LHSC.getAPInt().uge(RHSC.getAPInt()), 1);
     case VASTExpr::dpUGT:
       return Builder.getImmediate(LHSC.getAPInt().ugt(RHSC.getAPInt()), 1);
-    case VASTExpr::dpSGE:
-      return Builder.getImmediate(LHSC.getAPInt().sge(RHSC.getAPInt()), 1);
     case VASTExpr::dpSGT:
       return Builder.getImmediate(LHSC.getAPInt().sgt(RHSC.getAPInt()), 1);
     default:
@@ -177,41 +212,6 @@ static VASTValPtr FoldConstICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
 
   if (RHSC)
     return FoldPatialConstICmp(Builder, Opc, LHS, RHSC.getAPInt(), true);
-
-  return VASTValPtr();
-}
-
-static VASTValPtr BuildSplitedICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
-                                   VASTValPtr LHS, VASTValPtr RHS,
-                                   unsigned SplitAt) {
-  unsigned SizeInBits = LHS->getBitWidth();
-  assert(SplitAt != SizeInBits && SplitAt != 0 && "Bad split point!");
-  ++ICmpSplited;
-
-  VASTValPtr Ops[] = { LHS, RHS };
-  VASTValPtr Hi = Builder.buildExprByOpBitSlice(Opc, Ops, SizeInBits, SplitAt),
-             Lo = Builder.buildExprByOpBitSlice(Opc, Ops, SplitAt, 0);
-
-  VASTValPtr HiEQ
-    = Builder.buildEQ(Builder.buildBitSliceExpr(LHS, SizeInBits, SplitAt),
-                      Builder.buildBitSliceExpr(RHS, SizeInBits, SplitAt));
-
-  // Return Hi(LHS) == Hi(RHS) ? LoCmp : HiCmp, this is even valid for signed
-  // comparisons.
-  return Builder.buildSelExpr(HiEQ, Lo, Hi, 1);
-}
-
-static VASTValPtr BuildSplitedICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
-                                   VASTValPtr LHS, VASTValPtr RHS, APInt Mask) {
-  unsigned SizeInBits = LHS->getBitWidth();
-  unsigned HiPt, LoPt;
-
-  if (Builder.GetMaskSplitPoints(Mask, HiPt, LoPt)) {
-    if (SizeInBits - HiPt > LoPt)
-      return BuildSplitedICmp(Builder, Opc, LHS, RHS, HiPt);
-    else
-      return BuildSplitedICmp(Builder, Opc, LHS, RHS, LoPt);
-  }
 
   return VASTValPtr();
 }
