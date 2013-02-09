@@ -241,8 +241,7 @@ endmodule : BRAM
 ]=]
 
 Passes.BRAMGen = { FunctionScript = [=[
-if Functions[FuncInfo.Name] ~= nil then
-end
+
 ]=], GlobalScript =[=[
 table_name = {}
 table_num = {}
@@ -337,8 +336,7 @@ endmodule
 ]=]
 
 Passes.DUT_TB_Gen = { FunctionScript = [=[
-if Functions[FuncInfo.Name] ~= nil then
-end
+
 ]=], GlobalScript =[=[
 local tbFile = assert(io.open (TBFILE, "w+"))
 local preprocess = require "luapp" . preprocess

@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 int op_sdiv_const_power_of_2(int a) __attribute__ ((noinline));
-int op_sdiv_const_power_of_2(int a) { return a / 64; }
+int op_sdiv_const_power_of_2(int a) { return a / 16; }
 #ifdef __cplusplus
 }
 #endif
