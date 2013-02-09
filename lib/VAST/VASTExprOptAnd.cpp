@@ -106,7 +106,7 @@ VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
     Ops[i].printAsOperand(dbgs().indent(2));
     dbgs() << '\n';
   });
-  
+
   SmallVector<VASTValPtr, 8> NewOps;
   typedef const VASTUse *op_iterator;
   VASTExprOpInfo<VASTExpr::dpAnd> OpInfo(*this, BitWidth);
@@ -116,7 +116,7 @@ VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
   // Check the immediate mask. Return the constant value if all bits are known.
   if (OpInfo.isAllBitsKnown())
     return getImmediate(OpInfo.getZeros());
-  
+
   DEBUG(
     dbgs() << "KnownZeros: " << OpInfo.KnownZeros.toString(16, false) << '\n'
            << "KnownOnes: " << OpInfo.KnownOnes.toString(16, false) << '\n';
@@ -146,9 +146,7 @@ VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
     // Ignore the 1s
     if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(CurVal))
       if (Imm.isAllOnes()) {
-        dbgs().indent(2) << "Discard the all ones value: ";
-        Imm.printAsOperand(dbgs());
-        dbgs() << '\n';
+        DEBUG(dbgs().indent(2) << "Discard the all ones value: " << Imm << '\n');
         continue;
       }
 
