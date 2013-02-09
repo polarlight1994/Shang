@@ -315,10 +315,8 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   case dpRAnd:  printUnaryOp(OS, getOperand(0), "&");  break;
   case dpRXor:  printUnaryOp(OS, getOperand(0), "^");  break;
 
-  case dpSGE:   printSimpleSignedOp(OS, getOperands(),  " >= "); break;
   case dpSGT:   printSimpleSignedOp(OS, getOperands(),  " > ");  break;
 
-  case dpUGE:   printSimpleUnsignedOp(OS, getOperands(),  " >= "); break;
   case dpUGT:   printSimpleUnsignedOp(OS, getOperands(),  " > ");  break;
 
   case dpAdd: printSimpleOp(OS, getOperands(), " + "); break;
@@ -348,9 +346,7 @@ const char *VASTExpr::getFUName() const {
   case dpShl: return "shang_shl";
   case dpSRL: return "shang_sra";
   case dpSRA: return "shang_srl";
-  case dpSGE: return "shang_sge";
   case dpSGT: return "shang_sgt";
-  case dpUGE: return "shang_uge";
   case dpUGT: return "shang_ugt";
   default: break;
   }
@@ -370,9 +366,7 @@ const std::string VASTExpr::getSubModName() const {
   default:
     SS << getBitWidth();
     break;
-  case dpSGE:
   case dpSGT:
-  case dpUGE:
   case dpUGT:
     SS << getOperand(0)->getBitWidth();
     break;
@@ -393,9 +387,7 @@ bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
   case VASTExpr::dpShl:
   case VASTExpr::dpSRA:
   case VASTExpr::dpSRL:
-  case VASTExpr::dpSGE:
   case VASTExpr::dpSGT:
-  case VASTExpr::dpUGE:
   case VASTExpr::dpUGT:
     if (InstSubModForFU && hasName() && printBinFU(OS, this, this))
       return true;
@@ -502,9 +494,7 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
     case VASTExpr::dpShl:
     case VASTExpr::dpSRA:
     case VASTExpr::dpSRL:
-    case VASTExpr::dpSGE:
     case VASTExpr::dpSGT:
-    case VASTExpr::dpUGE:
     case VASTExpr::dpUGT:
       if (InstSubModForFU && !Expr->hasName() && printBinFU(OS, Expr, this))
         return;

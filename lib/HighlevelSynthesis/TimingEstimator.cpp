@@ -123,9 +123,7 @@ public:
         SCThis->accumulateDelayThuRXor(Operand.get(), Expr, i, CurSrcInfo);
         break;
       case VASTExpr::dpSGT:
-      case VASTExpr::dpSGE:
       case VASTExpr::dpUGT:
-      case VASTExpr::dpUGE:
         SCThis->accumulateDelayThuCmp(Operand.get(), Expr, i, CurSrcInfo);
         break;
       case VASTExpr::dpAdd:

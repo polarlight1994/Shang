@@ -230,9 +230,7 @@ uint64_t DesignMetricsImpl::getFUCost(VASTValue *V) const {
   case VASTExpr::dpAdd: return getFUDesc<VFUAddSub>()->lookupCost(ValueSize);
   case VASTExpr::dpMul: return getFUDesc<VFUMult>()->lookupCost(ValueSize);
   case VASTExpr::dpSGT:
-  case VASTExpr::dpSGE:
-  case VASTExpr::dpUGT:
-  case VASTExpr::dpUGE: return getFUDesc<VFUICmp>()->lookupCost(ValueSize);
+  case VASTExpr::dpUGT: return getFUDesc<VFUICmp>()->lookupCost(ValueSize);
   case VASTExpr::dpSel: return getFUDesc<VFUSel>()->lookupCost(ValueSize);
   case VASTExpr::dpShl:
   case VASTExpr::dpSRA:

@@ -172,11 +172,9 @@ public:
     dpSRL,
     dpSGT,
     FirstICmpOpc = dpSGT,
-    dpSGE,
     dpUGT,
-    dpUGE,
-    LastFUOpc = dpUGE,
-    LastICmpOpc = dpUGE,
+    LastFUOpc = dpUGT,
+    LastICmpOpc = dpUGT,
     // Lookup-tables.
     dpLUT,
     // Mux in datapath.
@@ -266,8 +264,7 @@ public:
   static unsigned GetResultBitWidth(Opcode Opc) {
     switch (Opc) {
     default:      return 0;
-    case dpRAnd:  case dpRXor:
-    case dpSGT:   case dpSGE:   case dpUGT:   case dpUGE: return 1;
+    case dpRAnd:  case dpRXor: case dpSGT:   case dpUGT:   return 1;
     }
   }
 };

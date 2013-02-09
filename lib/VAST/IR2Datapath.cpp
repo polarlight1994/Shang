@@ -118,13 +118,15 @@ VASTValPtr DatapathBuilder::visitICmpInst(ICmpInst &I) {
     std::swap(LHS, RHS);
     // Fall though.
   case CmpInst::ICMP_SGE:
-    return buildExpr(VASTExpr::dpSGE, LHS, RHS, 1);
+    return buildOrExpr(buildExpr(VASTExpr::dpSGT, LHS, RHS, 1),
+                       buildEQ(LHS, RHS), 1);
 
   case CmpInst::ICMP_ULE:
     std::swap(LHS, RHS);
     // Fall though.
   case CmpInst::ICMP_UGE:
-    return buildExpr(VASTExpr::dpUGE, LHS, RHS, 1);
+    return buildOrExpr(buildExpr(VASTExpr::dpUGT, LHS, RHS, 1),
+                       buildEQ(LHS, RHS), 1);
 
   default: llvm_unreachable("Unexpected ICmp predicate!"); break;
   }
