@@ -145,6 +145,19 @@ FoldPatialConstICmp(VASTExprBuilder &Builder, bool IsSigned, VASTValPtr Var,
                                   1);
   }
 
+  if (IsSigned && Const.isAllOnesValue()) {
+    // a > -1 <=> a >= 0 <=> signed bit == 0
+    if (VarAtLHS) return Builder.buildNotExpr(Builder.getSignBit(Var));
+    // -1 > a <=> a < 0 && a != -1
+    else {
+      APInt MinusOne = APInt::getAllOnesValue(Var->getBitWidth());
+      VASTValPtr MinusOneImm = Builder.getImmediate(MinusOne);
+      return Builder.buildAndExpr(Builder.getSignBit(Var),
+                                  Builder.buildNE(Var, MinusOneImm),
+                                  1);
+    }
+  }
+
   return VASTValPtr();
 }
 
