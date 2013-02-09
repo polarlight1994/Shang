@@ -64,6 +64,14 @@ public:
     return Int.isAllOnesValue();
   }
 
+  bool isMaxSigned() const {
+    return Int.isMaxSignedValue();
+  }
+
+  bool isMinSigned() const {
+    return Int.isMinSignedValue();
+  }
+
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTImmediate *A) { return true; }
   static inline bool classof(const VASTNode *A) {
@@ -100,6 +108,17 @@ inline bool PtrInvPair<VASTImmediate>::isAllZeros() const {
 template<>
 inline bool PtrInvPair<VASTImmediate>::isAllOnes() const {
   return isInverted() ? get()->isAllZeros() : get()->isAllOnes();
+}
+
+template<>
+inline bool PtrInvPair<VASTImmediate>::isMaxSigned() const {
+  return isInverted() ? (~get()->getAPInt()).isMaxSignedValue()
+                      : get()->isMaxSigned();
+}
+template<>
+inline bool PtrInvPair<VASTImmediate>::isMinSigned() const {
+  return isInverted() ? (~get()->getAPInt()).isMinSignedValue()
+                      : get()->isMinSigned();
 }
 
 class VASTSymbol : public VASTNamedValue {

@@ -144,6 +144,8 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
   inline APInt getBitSlice(unsigned UB, unsigned LB = 0) const;
   inline bool isAllZeros() const;
   inline bool isAllOnes() const;
+  inline bool isMaxSigned() const;
+  inline bool isMinSigned() const;
 
   // PtrInvPairs are equal when their Opaque Value are equal, which contain the
   // pointer and Int information.
