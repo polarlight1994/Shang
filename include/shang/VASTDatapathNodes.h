@@ -171,10 +171,12 @@ public:
     dpSRA,
     dpSRL,
     dpSGT,
+    FirstICmpOpc = dpSGT,
     dpSGE,
     dpUGT,
     dpUGE,
     LastFUOpc = dpUGE,
+    LastICmpOpc = dpUGE,
     // Lookup-tables.
     dpLUT,
     // Mux in datapath.
@@ -255,6 +257,19 @@ public:
   /// Profile - Used to insert VASTExpr objects, or objects that contain
   /// VASTExpr objects, into FoldingSets.
   void Profile(FoldingSetNodeID& ID) const;
+
+  /// Helper function returning the properties of the opcodes.
+  static bool IsICmp(Opcode Opc) {
+    return Opc >= FirstICmpOpc && Opc <= LastICmpOpc;
+  }
+
+  static unsigned GetResultBitWidth(Opcode Opc) {
+    switch (Opc) {
+    default:      return 0;
+    case dpRAnd:  case dpRXor:
+    case dpSGT:   case dpSGE:   case dpUGT:   case dpUGE: return 1;
+    }
+  }
 };
 
 typedef PtrInvPair<VASTExpr> VASTExprPtr;

@@ -233,7 +233,8 @@ public:
     for (unsigned i = 0; i < Ops.size(); ++i)
       OpBitSlices.push_back(buildBitSliceExpr(Ops[i], UB, LB));
 
-    return buildExpr(Opc, OpBitSlices, UB - LB);
+    unsigned KnownBitwidth = VASTExpr::GetResultBitWidth(Opc);
+    return buildExpr(Opc, OpBitSlices, KnownBitwidth ? KnownBitwidth : (UB - LB));
   }
 
   VASTValPtr buildExpr(VASTExpr::Opcode Opc,VASTValPtr Op, unsigned BitWidth);
