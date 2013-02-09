@@ -24,6 +24,11 @@ void VASTNode::dump() const {
   dbgs() << '\n';
 }
 
+void VASTNode::dropUses() {
+  dbgs() << "Current Type " << unsigned(getASTType()) << '\n';
+  llvm_unreachable("Subclass should implement this function!");
+}
+
 std::string VASTNode::DirectClkEnAttr = "";
 std::string VASTNode::ParallelCaseAttr = "";
 std::string VASTNode::FullCaseAttr = "";

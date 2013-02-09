@@ -91,7 +91,7 @@ protected:
   friend class DatapathContainer;
 
   // Drop this VASTNode from the userlist of all its uses.
-  virtual void dropUses() { };
+  virtual void dropUses();
   void setDead() { IsDead = true; }
 public:
   virtual ~VASTNode() {}

@@ -59,19 +59,8 @@ BasicBlock *VASTSlot::getParent() const {
   return Contents.ParentBB;
 }
 
-VASTValPtr &VASTSlot::getOrCreateSuccCnd(VASTSlot *DstSlot) {
-  assert(DstSlot && "Bad DstSlot!");
-  VASTValPtr &U = NextSlots[DstSlot];
-  // If we are adding a new succ slot, link the DstSlot to current slot as well.
-  if (!U) DstSlot->PredSlots.push_back(this);
-
-  return U;
-}
-
 bool VASTSlot::hasNextSlot(VASTSlot *NextSlot) const {
-  if (NextSlots.empty()) return NextSlot->SlotNum == SlotNum + 1;
-
-  return NextSlots.count(NextSlot);
+  return std::find(NextSlots.begin(), NextSlots.end(), NextSlot) != NextSlots.end();
 }
 
 VASTSlot::op_iterator VASTSlot::removeOp(op_iterator where) {
@@ -94,6 +83,33 @@ const char *VASTSlot::getName() const {
   return getValue()->getName();
 }
 
+VASTSeqSlotCtrl *VASTSlot::getBrToSucc(const VASTSlot *DstSlot) const {
+  // Find the SeqOp that branching to DstSlot and return the condition.
+  for (const_op_iterator I = op_begin(), E = op_end(); I != E; ++I)
+    if (VASTSeqSlotCtrl *SlotCtrl = dyn_cast<VASTSeqSlotCtrl>(*I))
+      if (SlotCtrl->getCtrlType() == VASTSeqSlotCtrl::SlotBr)
+        if (SlotCtrl->getCtrlSignal() == DstSlot->getValue())
+          return SlotCtrl;
+
+  return 0;
+}
+
+VASTValPtr VASTSlot::getSuccCnd(const VASTSlot *DstSlot) const {
+  // Find the SeqOp that branching to DstSlot and return the condition.
+  VASTSeqSlotCtrl *SlotCtrl = getBrToSucc(DstSlot);
+  assert(SlotCtrl &&  "DstSlot is not the successor of current slot!");
+  return SlotCtrl->getPred();
+}
+
+void VASTSlot::addSuccSlot(VASTSlot *NextSlot) {
+  // Do not add the same successor slot twice.
+  if (hasNextSlot(NextSlot)) return;
+
+  // Connect the slots.
+  NextSlot->PredSlots.push_back(this);
+  NextSlots.push_back(NextSlot);
+}
+
 void VASTSlot::print(raw_ostream &OS) const {
   OS << "Slot#"<< SlotNum << " Pred: ";
   for (const_pred_iterator I = pred_begin(), E = pred_end(); I != E; ++I)
@@ -106,12 +122,8 @@ void VASTSlot::print(raw_ostream &OS) const {
 
   OS << "Succ: ";
 
-  for (const_succ_cnd_iterator I = succ_cnd_begin(), E = succ_cnd_end();
-       I != E; ++I) {
-    OS << "S#" << I->first->SlotNum << " (";
-    I->second.printAsOperand(OS);
-    OS << "), ";
-  }
+  for (const_succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I)
+    OS << "S#" << (*I)->SlotNum << ", ";
 }
 
 //===----------------------------------------------------------------------===//

@@ -42,13 +42,24 @@ struct ControlLogicSynthesis : public VASTModulePass {
     Builder->orEqual(SlotEnables[S][P], Cnd);
   }
 
+  void addSlotSucc(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
+    Builder->orEqual(SlotSuccs[S][P], Cnd);
+  }
+
   typedef std::map<VASTSeqValue*, VASTValPtr> FUCtrlVecTy;
   typedef FUCtrlVecTy::const_iterator const_fu_ctrl_it;
-  std::map<const VASTSlot*, FUCtrlVecTy> SlotEnables, SlotDisables;
+  std::map<const VASTSlot*, FUCtrlVecTy> SlotEnables, SlotDisables, SlotSuccs;
 
   typedef std::map<VASTValue*, VASTValPtr> FUReadyVecTy;
   typedef FUReadyVecTy::const_iterator const_fu_rdy_it;
   std::map<const VASTSlot*, FUReadyVecTy> SlotReadys;
+
+  const FUCtrlVecTy &getSlotSucc(const VASTSlot *S) {
+    std::map<const VASTSlot*, FUCtrlVecTy>::const_iterator at
+      = SlotSuccs.find(S);
+    assert(at != SlotSuccs.end() && "Slot do not have successor!");
+    return at->second;
+  }
 
   // Signals need to be enabled at this slot.
   const FUCtrlVecTy *getEnableSet(const VASTSlot *S) const {
@@ -98,7 +109,7 @@ struct ControlLogicSynthesis : public VASTModulePass {
   VASTValPtr buildSlotReadyExpr(VASTSlot *S);
   void buildSlotReadyLogic(VASTSlot *S);
   void buildSlotLogic(VASTSlot *S);
-  
+
   void getherControlLogicInfo(VASTSlot *S);
 
   ControlLogicSynthesis() : VASTModulePass(ID) {
@@ -111,6 +122,7 @@ struct ControlLogicSynthesis : public VASTModulePass {
     SlotEnables.clear();
     SlotDisables.clear();
     SlotReadys.clear();
+    SlotSuccs.clear();
   }
 };
 }
@@ -153,15 +165,16 @@ void ControlLogicSynthesis::buildSlotReadyLogic(VASTSlot *S) {
 }
 
 void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
-  typedef VASTSlot::succ_cnd_iterator succ_cnd_iterator;
+  typedef const_fu_ctrl_it succ_cnd_iterator;
 
   VASTValPtr SelfLoopCnd;
   VASTValPtr AlwaysTrue = VASTImmediate::True;
 
   assert(!S->succ_empty() && "Expect at least 1 next slot!");
-  for (succ_cnd_iterator I = S->succ_cnd_begin(),E = S->succ_cnd_end(); I != E; ++I) {
-    VASTSeqValue *NextSlotReg = I->first->getValue();
-    if (I->first->SlotNum == S->SlotNum) SelfLoopCnd = I->second;
+  const FUCtrlVecTy &NextSlots = getSlotSucc(S);
+  for (succ_cnd_iterator I = NextSlots.begin(),E = NextSlots.end(); I != E; ++I) {
+    VASTSeqValue *NextSlotReg = I->first;
+    if (NextSlotReg == S->getValue()) SelfLoopCnd = I->second;
     // Build the assignment and update the successor branching condition.
     VM->assignCtrlLogic(NextSlotReg, AlwaysTrue, S, I->second, true);
   }
@@ -210,7 +223,7 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
       VASTSeqValue *En = I->first;
       // No need to export the definition of the disable assignment, it is never
       // use inside the module.
-      VM->assignCtrlLogic(En, VASTImmediate::False, S, 
+      VM->assignCtrlLogic(En, VASTImmediate::False, S,
                           Builder->buildAndExpr(DisableAndCnds, 1),
                           false, true);
       DisableAndCnds.clear();
@@ -228,6 +241,9 @@ void ControlLogicSynthesis::getherControlLogicInfo(VASTSlot *S) {
       VASTValue *CtrlSignal = SeqOp->getCtrlSignal();
 
       switch (SeqOp->getCtrlType()) {
+      case VASTSeqSlotCtrl::SlotBr:
+        addSlotSucc(S, cast<VASTSeqValue>(CtrlSignal), Pred);
+        break;
       case VASTSeqSlotCtrl::Enable:
         addSlotEnable(S, cast<VASTSeqValue>(CtrlSignal), Pred);
         break;
@@ -257,7 +273,7 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
 
   // Building the Slot active signals.
   typedef VASTModule::slot_iterator slot_iterator;
-  
+
   for (slot_iterator I = VM->slot_begin(), E = llvm::prior(VM->slot_end());
        I != E; ++I)
     getherControlLogicInfo(I);

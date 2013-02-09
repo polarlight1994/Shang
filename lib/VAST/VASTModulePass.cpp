@@ -255,7 +255,15 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   }
 
   void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd) {
-    Builder.orEqual(S->getOrCreateSuccCnd(NextSlot), Cnd);
+    // If the Br is already exist, simply or the conditions together.
+    if (VASTSeqSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
+      VASTValPtr Pred = SlotBr->getPred();
+      SlotBr->getPred().replaceUseBy(Builder.buildOrExpr(Pred, Cnd, 1));
+      return;
+    }
+
+    VM->createSlotCtrl(NextSlot->getValue(), S, Cnd, VASTSeqSlotCtrl::SlotBr);
+    S->addSuccSlot(NextSlot);
   }
 
   //===--------------------------------------------------------------------===//
@@ -635,7 +643,7 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
 void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
   unsigned NumOperands = I.getNumOperands();
-  VASTSeqInst *SeqInst = 
+  VASTSeqInst *SeqInst =
     VM->lauchInst(CurSlot, VASTImmediate::True, NumOperands, &I,
                   VASTSeqInst::Latch);
 
@@ -732,6 +740,8 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
 void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
   // The Operator may had already been lowered.
   if (lookupExpr(&I)) return;
+
+  I.dump();
 
   unsigned SizeInBits = getValueSizeInBits(I);
   VASTSubModule *SubMod = 0;
@@ -868,7 +878,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     // Set write enable to 1.
     WEn = VASTImmediate::True;
   }
-  
+
   // Assign the write enable.
   RegName = VFUMemBus::getCmdName(PortNum) + "_r";
   R = VM->getSymbol<VASTSeqValue>(RegName);

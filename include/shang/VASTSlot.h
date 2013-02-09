@@ -27,22 +27,13 @@ class VASTExprBuilder;
 class vlang_raw_ostream;
 class VASTSlot;
 class VASTSeqOp;
+class VASTSeqSlotCtrl;
 
 class VASTSlot : public VASTNode, public ilist_node<VASTSlot> {
 public:
-  typedef std::map<VASTSlot*, VASTValPtr> SuccVecTy;
-  typedef SuccVecTy::iterator succ_cnd_iterator;
-  typedef SuccVecTy::const_iterator const_succ_cnd_iterator;
-
-  // Use mapped_iterator which is a simple iterator adapter that causes a
-  // function to be dereferenced whenever operator* is invoked on the iterator.
-  typedef
-  std::pointer_to_unary_function<std::pair<VASTSlot*, VASTValPtr>, VASTSlot*>
-  slot_getter;
-
-  typedef mapped_iterator<succ_cnd_iterator, slot_getter> succ_iterator;
-  typedef mapped_iterator<const_succ_cnd_iterator, slot_getter>
-          const_succ_iterator;
+  typedef SmallVector<VASTSlot*, 4> SuccVecTy;
+  typedef SuccVecTy::iterator succ_iterator;
+  typedef SuccVecTy::const_iterator const_succ_iterator;
 
   typedef SmallVector<VASTSlot*, 4> PredVecTy;
   typedef PredVecTy::iterator pred_iterator;
@@ -100,43 +91,28 @@ public:
   // Remove a VASTSeqOp pointed by where in this slot.
   op_iterator removeOp(op_iterator where);
 
+  VASTSeqSlotCtrl *getBrToSucc(const VASTSlot *DstSlot) const;
+  VASTValPtr getSuccCnd(const VASTSlot *DstSlot) const;
   bool hasNextSlot(VASTSlot *NextSlot) const;
+  void addSuccSlot(VASTSlot *NextSlot);
 
-  VASTValPtr getSuccCnd(const VASTSlot *DstSlot) const {
-    const_succ_cnd_iterator at = NextSlots.find(const_cast<VASTSlot*>(DstSlot));
-    assert(at != NextSlots.end() && "DstSlot is not the successor!");
-    return at->second;
-  }
-
-  VASTValPtr &getOrCreateSuccCnd(VASTSlot *DstSlot);
-
-  // Next VASTSlot iterator.
+  // Successor slots of this slot.
   succ_iterator succ_begin() {
-    return map_iterator(NextSlots.begin(),
-                        slot_getter(pair_first<VASTSlot*, VASTValPtr>));
+    return NextSlots.begin();
   }
 
   const_succ_iterator succ_begin() const {
-    return map_iterator(NextSlots.begin(),
-                        slot_getter(pair_first<VASTSlot*, VASTValPtr>));
+    return NextSlots.begin();
   }
 
   succ_iterator succ_end() {
-    return map_iterator(NextSlots.end(),
-                        slot_getter(pair_first<VASTSlot*, VASTValPtr>));
+    return NextSlots.end();
   }
 
   const_succ_iterator succ_end() const {
-    return map_iterator(NextSlots.end(),
-                        slot_getter(pair_first<VASTSlot*, VASTValPtr>));
+    return NextSlots.end();
   }
 
-  // Successor slots of this slot.
-  succ_cnd_iterator succ_cnd_begin() { return NextSlots.begin(); }
-  succ_cnd_iterator succ_cnd_end() { return NextSlots.end(); }
-
-  const_succ_cnd_iterator succ_cnd_begin() const { return NextSlots.begin(); }
-  const_succ_cnd_iterator succ_cnd_end() const { return NextSlots.end(); }
   bool succ_empty() const { return NextSlots.empty(); }
   unsigned succ_size() const { return NextSlots.size(); }
 

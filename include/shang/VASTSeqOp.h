@@ -183,8 +183,9 @@ public:
 /// Please note that UseSlotActive does not make sense in VASTSeqSlotCtrl.
 class VASTSeqSlotCtrl : public VASTSeqOp {
 public:
+  // TODO: Remember the br instruction for SlotBr
   enum Type {
-    Enable, Disable, WaitReady
+    Enable, Disable, WaitReady, SlotBr
   };
 private:
   Type T;
