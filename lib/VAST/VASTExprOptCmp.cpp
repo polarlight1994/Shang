@@ -21,6 +21,7 @@
 using namespace llvm;
 STATISTIC(ConstICmpLowered, "Number of Constant ICmp lowered");
 STATISTIC(OneBitICmpLowered, "Number of 1 bit ICmp lowered");
+STATISTIC(ICmpSplited, "Number of ICmp splited");
 
 static bool isSigned(VASTExpr::Opcode Opc) {
   switch (Opc) {
@@ -180,12 +181,48 @@ static VASTValPtr FoldConstICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
   return VASTValPtr();
 }
 
+static VASTValPtr BuildSplitedICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
+                                   VASTValPtr LHS, VASTValPtr RHS,
+                                   unsigned SplitAt) {
+  unsigned SizeInBits = LHS->getBitWidth();
+  assert(SplitAt != SizeInBits && SplitAt != 0 && "Bad split point!");
+  ++ICmpSplited;
+
+  VASTValPtr Ops[] = { LHS, RHS };
+  VASTValPtr Hi = Builder.buildExprByOpBitSlice(Opc, Ops, SizeInBits, SplitAt),
+             Lo = Builder.buildExprByOpBitSlice(Opc, Ops, SplitAt, 0);
+
+  VASTValPtr HiEQ
+    = Builder.buildEQ(Builder.buildBitSliceExpr(LHS, SizeInBits, SplitAt),
+                      Builder.buildBitSliceExpr(RHS, SizeInBits, SplitAt));
+
+  // Return Hi(LHS) == Hi(RHS) ? LoCmp : HiCmp, this is even valid for signed
+  // comparisons.
+  return Builder.buildSelExpr(HiEQ, Lo, Hi, 1);
+}
+
+static VASTValPtr BuildSplitedICmp(VASTExprBuilder &Builder, VASTExpr::Opcode Opc,
+                                   VASTValPtr LHS, VASTValPtr RHS, APInt Mask) {
+  unsigned SizeInBits = LHS->getBitWidth();
+  unsigned HiPt, LoPt;
+
+  if (Builder.GetMaskSplitPoints(Mask, HiPt, LoPt)) {
+    if (SizeInBits - HiPt > LoPt)
+      return BuildSplitedICmp(Builder, Opc, LHS, RHS, HiPt);
+    else
+      return BuildSplitedICmp(Builder, Opc, LHS, RHS, LoPt);
+  }
+
+  return VASTValPtr();
+}
+
 VASTValPtr VASTExprBuilder::buildICmpExpr(VASTExpr::Opcode Opc,
                                           VASTValPtr LHS, VASTValPtr RHS) {
   assert(RHS->getBitWidth() == LHS->getBitWidth() && "Bad icmp bitwidth!");
+  unsigned SizeInBits = LHS->getBitWidth();
 
   // Handle the trivial case trivially.
-  if (RHS->getBitWidth() == 1) {
+  if (SizeInBits == 1) {
     ++OneBitICmpLowered;
     return Lower1BitICmp(*this, Opc, LHS, RHS);
   }
@@ -194,6 +231,26 @@ VASTValPtr VASTExprBuilder::buildICmpExpr(VASTExpr::Opcode Opc,
     ++ConstICmpLowered;
     return V;
   }
+
+  APInt LHSKnownZeros, LHSKnownOnes, RHSKnownZeros, RHSKnownOnes;
+  calculateBitMask(LHS, LHSKnownZeros, LHSKnownOnes);
+  calculateBitMask(RHS, RHSKnownZeros, RHSKnownOnes);
+  APInt LHSKnownBits = LHSKnownZeros | LHSKnownOnes,
+        RHSKnownBits = RHSKnownZeros | RHSKnownOnes;
+  APInt AllKnownBits = LHSKnownBits & RHSKnownBits;
+
+  DEBUG(
+  dbgs() << "Size of ICmp: " << LHS->getBitWidth() << "\n";
+  LHS.printAsOperand(dbgs());
+  dbgs().indent(2) << " LHSKnownBits " << LHSKnownBits.toString(2, false) << "\n";
+  RHS.printAsOperand(dbgs());
+  dbgs().indent(2) << " RHSKnownBits " << RHSKnownBits.toString(2, false) << "\n";
+  dbgs().indent(2) << " AllKnownBits " << AllKnownBits.toString(2, false) << "\n";
+  );
+
+  // Split the ICmp according to the all known bits.
+  if (VASTValPtr V = BuildSplitedICmp(*this, Opc, LHS, RHS, AllKnownBits))
+    return V;
 
   VASTValPtr Ops[] = { LHS, RHS };
   return createExpr(Opc, Ops, 1, 0);
