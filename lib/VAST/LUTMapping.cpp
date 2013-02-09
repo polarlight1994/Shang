@@ -124,14 +124,16 @@ struct LogicNetwork {
 
   bool hasExternalUse(VASTValue * V) {
     typedef VASTValue::use_iterator use_iterator;
-    for (use_iterator UI = V->use_begin(), UE = V->use_end(); UI != UE; ++UI)
+    for (use_iterator UI = V->use_begin(), UE = V->use_end(); UI != UE; ++UI) {
       if (VASTValue *U = dyn_cast<VASTValue>(*UI))
-        // Some User outside the logic network found.
-        if (getObj(U) == 0) {
-          return true;
-        }
+        if (getObj(U)) continue;
 
-     return false; 
+      // Any use that not have a corresponding logic network object is a
+      // external use.
+      return true;
+    }
+
+    return false;
   }
 
   void cleanUp();
@@ -262,7 +264,7 @@ void LogicNetwork::cleanUp() {
     VASTValue *V = I->first;
     Abc_Obj_t *&Obj = I->second;
 
-    if (Abc_ObjIsPi(Obj) || !hasExternalUse(V)) continue;    
+    if (Abc_ObjIsPi(Obj) || !hasExternalUse(V)) continue;
 
     // Connect the node which is used by the node outside the network to a PO.
     Abc_Obj_t *PO = Abc_NtkCreatePo(Ntk);
@@ -504,6 +506,7 @@ void LogicNetwork::buildLUTTree(Abc_Obj_t *Root, DatapathBuilder &Builder) {
   VisitStack.push_back(std::make_pair(Abc_ObjRegular(Root), 0));
 
   while (!VisitStack.empty()) {
+    assert(Abc_ObjIsNet(VisitStack.back().first) && "Bad object type!");
     Abc_Obj_t *CurNode = Abc_ObjRegular(Abc_ObjFanin0(VisitStack.back().first));
     int &FIIdx = VisitStack.back().second;
 
@@ -546,7 +549,7 @@ void LogicNetwork::buildLUTDatapath(DatapathBuilder &Builder) {
     assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
     VASTValPtr NewVal = at->second;
     if (Abc_ObjIsComplement(FI)) NewVal = NewVal.invert();
-    
+
     VASTValPtr &OldVal = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))];
     // Update the mapping if the mapped value changed.
     if (OldVal != NewVal) {
