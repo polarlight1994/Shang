@@ -36,7 +36,6 @@ class VASTRegister;
 class VASTSeqOp;
 class VASTModule;
 class vlang_raw_ostream;
-class raw_ostream;
 template<typename T> class ArrayRef;
 
 class VASTNode {
@@ -185,6 +184,12 @@ private:
   // Hide the confusing getInt function.
   bool getInt() const { return Base::getInt(); }
 };
+
+template<typename T>
+inline raw_ostream &operator<<(raw_ostream &OS, PtrInvPair<T> V) {
+  V.printAsOperand(OS);
+  return OS;
+}
 
 // Casting PtrInvPair.
 template<class To, class From>
