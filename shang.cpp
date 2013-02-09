@@ -230,6 +230,8 @@ int main(int argc, char **argv) {
 
     // Try to optimize the computation.
     HLSPasses.add(createInstructionCombiningPass());
+    // Move the datapath instructions as soon as possible.
+    HLSPasses.add(createDatapathHoistingPass());
 
     // Name the instructions.
     HLSPasses.add(createInstructionNamerPass());
