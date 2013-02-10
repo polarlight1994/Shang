@@ -122,6 +122,7 @@ void VASTSeqOp::printPredicate(raw_ostream &OS) const {
 VASTSeqOp::VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive, unsigned Size)
   : VASTOperandList(Size + 1), VASTNode(T), S(S, UseSlotActive) {
   S->addOperation(this);
+  Contents.LLVMValue = 0;
 }
 
 unsigned VASTSeqOp::getSlotNum() const { return getSlot()->SlotNum; }
@@ -134,8 +135,13 @@ VASTValPtr VASTSeqOp::getSlotActive() const {
 }
 
 Value *VASTSeqOp::getValue() const {
-  llvm_unreachable("VASTSeqOp::getInst() should had been overrided!");
-  return 0;
+  return Contents.LLVMValue;
+}
+
+void VASTSeqOp::annotateValue(Value *V) {
+  assert((getValue() == 0 || getValue() == V)
+         && "Already annotated with some value!");
+  Contents.LLVMValue =  V;
 }
 
 void VASTSeqOp::dropUses() {
@@ -152,7 +158,9 @@ VASTOperandList *VASTOperandList::GetOperandList(VASTNode *N) {
 //----------------------------------------------------------------------------//
 
 VASTSeqInst::VASTSeqInst(Value *V, VASTSlot *S, unsigned Size, VASTSeqInst::Type T)
-  : VASTSeqOp(vastSeqInst, S, true, Size), V(V, T) {}
+  : VASTSeqOp(vastSeqInst, S, true, Size), T(T) {
+  annotateValue(V);
+}
 
 void VASTSeqInst::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
@@ -160,7 +168,6 @@ void VASTSeqInst::print(raw_ostream &OS) const {
   switch (getSeqOpType()) {
   case Launch: OS << "<Launch> "; break;
   case Latch:  OS << "<Latch> ";  break;
-  case Alias:  OS << "<Alias> ";  break;
   }
 
   if (getValue()) getValue()->print(OS);

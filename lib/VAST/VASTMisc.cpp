@@ -72,7 +72,7 @@ void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
 }
 
 //===----------------------------------------------------------------------===//
-VASTLLVMValue::VASTLLVMValue(const Value *V, unsigned Size)
+VASTLLVMValue::VASTLLVMValue(Value *V, unsigned Size)
   : VASTValue(vastLLVMValue, Size)
 {
   Contents.LLVMValue = V;

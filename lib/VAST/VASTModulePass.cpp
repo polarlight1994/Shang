@@ -254,16 +254,17 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     return S;
   }
 
-  void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd) {
+  VASTSeqSlotCtrl *addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd) {
     // If the Br is already exist, simply or the conditions together.
     if (VASTSeqSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
       VASTValPtr Pred = SlotBr->getPred();
       SlotBr->getPred().replaceUseBy(Builder.buildOrExpr(Pred, Cnd, 1));
-      return;
+      return SlotBr;
     }
 
-    VM->createSlotCtrl(NextSlot->getValue(), S, Cnd, VASTSeqSlotCtrl::SlotBr);
     S->addSuccSlot(NextSlot);
+    return VM->createSlotCtrl(NextSlot->getValue(), S, Cnd,
+                              VASTSeqSlotCtrl::SlotBr);
   }
 
   //===--------------------------------------------------------------------===//

@@ -93,7 +93,8 @@ public:
   VASTValPtr getSlotActive() const;
 
   // Get the underlying object.
-  virtual Value *getValue() const;
+  Value *getValue() const;
+  void annotateValue(Value *V);
 
   virtual void print(raw_ostream &OS) const;
   void printPredicate(raw_ostream &OS) const;
@@ -139,19 +140,15 @@ public:
   enum Type {
     Launch, // Launch the LLVM Instruction, e.g. start the memory transaction.
     Latch,  // Latch the result of the Launched LLVM Instruction.
-    Alias   // Define the incoming value of a PHI node.
   };
 private:
-  // Represent the corresponding value in LLVM IR which is in SSA form.
-  // The bit represent if this VASTSeqInst alias with other VASTSeqInsts.
-  PointerIntPair<Value*, 2, Type> V;
+  Type T;
 public:
   // VASTSeqInst always use slot active, it is not a part of the control logic.
   VASTSeqInst(Value *V, VASTSlot *S, unsigned Size,
               VASTSeqInst::Type T);
 
-  Value *getValue() const { return V.getPointer(); }
-  VASTSeqInst::Type getSeqOpType() const { return V.getInt(); }
+  VASTSeqInst::Type getSeqOpType() const { return T; }
 
   virtual void print(raw_ostream &OS) const;
   static inline bool classof(const VASTSeqInst *A) { return true; }
@@ -193,8 +190,6 @@ public:
   // VASTSeqSlotCtrl may not use slot active, it is a part of the control logic.
   // VASTSeqSlotCtrl only assign 1 or 0 to the destination VASTSeqValue.
   VASTSeqSlotCtrl(VASTSlot *S, Type T);
-
-  Value *getValue() const { return 0; }
 
   /// getDst - Get the register to be enable/disable.
   VASTValue *getCtrlSignal() const {

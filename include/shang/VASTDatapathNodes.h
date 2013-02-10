@@ -137,8 +137,8 @@ public:
 class VASTLLVMValue : public VASTValue {
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 public:
-  VASTLLVMValue(const Value *V, unsigned Size);
-  const Value *getValue() const { return Contents.LLVMValue; }
+  VASTLLVMValue(Value *V, unsigned Size);
+  Value *getValue() const { return Contents.LLVMValue; }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTLLVMValue *A) { return true; }

@@ -78,7 +78,7 @@ protected:
     const char *Name;
     VASTNamedValue *NamedValue;
     BasicBlock *ParentBB;
-    const Value *LLVMValue;
+    Value *LLVMValue;
   } Contents;
 
   const uint8_t NodeT : 7;
