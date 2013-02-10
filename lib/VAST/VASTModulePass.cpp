@@ -793,21 +793,26 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
   for (unsigned i = 0; i < Args.size(); ++i)
     Inst->addSrc(Args[i], i, false, SubMod->getFanin(i));
 
+  Value *V = Inst->getValue();
   // Enable the start port of the submodule at the current slot.
   VASTSeqValue *Start = SubMod->getStartPort();
   VASTSlot *Slot = Inst->getSlot();
-  VM->createSlotCtrl(Start, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Enable);
+  VM->createSlotCtrl(Start, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Enable)
+      ->annotateValue(V);
   // Disable the start port of the submodule at the next slot.
   Slot = advanceToNextSlot(Slot);
-  VM->createSlotCtrl(Start, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Disable);
+  VM->createSlotCtrl(Start, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Disable)
+    ->annotateValue(V);
   VM->createSlotCtrl(SubMod->getFinPort(), Slot, VASTImmediate::True,
-                     VASTSeqSlotCtrl::WaitReady);
+                     VASTSeqSlotCtrl::WaitReady)
+      ->annotateValue(V);
 
   // Read the return value from the function if there is any.
   if (VASTSeqValue *RetPort = SubMod->getRetPort()) {
     VASTSeqValue *Result
       = getOrCreateSeqVal(Inst->getValue(), Inst->getValue()->getName());
-    VM->latchValue(Result, RetPort, Slot, VASTImmediate::True, Inst->getValue());
+    VM->latchValue(Result, RetPort, Slot, VASTImmediate::True, Inst->getValue())
+      ->annotateValue(V);
     // Move the the next slot so that the operation can correctly read the
     // returned value
     advanceToNextSlot(Slot);
@@ -901,10 +906,12 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   // FIXIME: Use the correct memory port number.
   RegName = VFUMemBus::getEnableName(PortNum) + "_r";
   VASTSeqValue *MemEn = VM->getSymbol<VASTSeqValue>(RegName);
-  VM->createSlotCtrl(MemEn, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Enable);
+  VM->createSlotCtrl(MemEn, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Enable)
+      ->annotateValue(&I);
   // Disable the memory bus at the next slot.
   Slot = advanceToNextSlot(Slot);
-  VM->createSlotCtrl(MemEn, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Disable);
+  VM->createSlotCtrl(MemEn, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Disable)
+      ->annotateValue(&I);
 
   // Read the result of the memory transaction.
   if (Data == 0) {

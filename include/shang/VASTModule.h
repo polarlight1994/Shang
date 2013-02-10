@@ -311,8 +311,8 @@ public:
   VASTSeqInst *lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps,
                          Value *V, VASTSeqInst::Type T);
   
-  void latchValue(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,
-                  VASTValPtr GuardCnd, Value *V);
+  VASTSeqInst *latchValue(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,
+                          VASTValPtr GuardCnd, Value *V);
 
   /// Create an assignment on the control logic.
   void assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,

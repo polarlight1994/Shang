@@ -535,11 +535,14 @@ VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V) {
   return W;
 }
 
-void VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
-                            VASTValPtr GuardCnd, Value *V) {
+VASTSeqInst *
+VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
+                       VASTValPtr GuardCnd, Value *V) {
   assert(Src && "Bad assignment source!");
   VASTSeqInst *Inst = lauchInst(Slot, GuardCnd, 1, V, VASTSeqInst::Latch);
   Inst->addSrc(Src, 0, true, SeqVal);
+
+  return Inst;
 }
 
 VASTSeqInst *
