@@ -68,8 +68,9 @@ struct LogicNetwork {
   ABCContext &Context;
 
   Abc_Ntk_t *Ntk;
+  VASTModule &VM;
 
-  LogicNetwork(const Twine &Name);
+  LogicNetwork(VASTModule &VM);
 
   ~LogicNetwork() {
     Abc_NtkDelete(Ntk);
@@ -492,8 +493,11 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
   //}
 
   // Otherwise simple construct the LUT expression.
-  unsigned Truth = Abc_SopToTruth(sop, Ops.size());
-  Ops.push_back(Builder.getImmediate(Truth, 1 << Ops.size()));
+  VASTValPtr SOP = VM.getOrCreateSymbol(sop, 0);
+  // Encode the comment flag of the SOP into the invert flag of the LUT string.
+  if (Abc_SopIsComplement(sop)) SOP = SOP.invert();
+  Ops.push_back(SOP);
+
   VASTValPtr V = Builder.buildExpr(VASTExpr::dpLUT, Ops, Bitwidth);
   ++NumLUTBulit;
 
@@ -561,9 +565,9 @@ void LogicNetwork::buildLUTDatapath(DatapathBuilder &Builder) {
 
 static ManagedStatic<ABCContext> GlobalContext;
 
-LogicNetwork::LogicNetwork(const Twine &Name) : Context(*GlobalContext) {
+LogicNetwork::LogicNetwork(VASTModule &VM) : Context(*GlobalContext), VM(VM) {
   Ntk = Abc_NtkAlloc(ABC_NTK_STRASH, ABC_FUNC_AIG, 1);
-  Ntk->pName = Extra_UtilStrsav(Name.str().c_str());
+  Ntk->pName = Extra_UtilStrsav(VM.getName().c_str());
 }
 
 namespace {
@@ -572,11 +576,10 @@ struct LUTMapping : public VASTModulePass {
 
   static char ID;
   LUTMapping() : VASTModulePass(ID), Builder(0) {
-
+    initializeLUTMappingPass(*PassRegistry::getPassRegistry());
   }
 
   bool runOnVASTModule(VASTModule &VM);
-
 };
 
 struct NAryExprBreaker {
@@ -657,7 +660,7 @@ bool LUTMapping::runOnVASTModule(VASTModule &VM) {
 
   NAryExprBreaker::BreakNAryExpr(DP, *Builder);
 
-  LogicNetwork Ntk(VM.getName());
+  LogicNetwork Ntk(VM);
 
   if (!Ntk.buildAIG(DP)) return true;
 

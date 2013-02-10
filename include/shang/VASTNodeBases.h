@@ -300,6 +300,10 @@ public:
   operator VASTValPtr() const { return get(); }
 
   VASTValPtr operator->() const { return get(); }
+
+  bool isInverted() const { return get().isInverted(); }
+  VASTValPtr invert(bool Invert = true) const { return get().invert(Invert); }
+
   inline VASTValPtr getAsInlineOperand() const {
     return get().getAsInlineOperand();
   }

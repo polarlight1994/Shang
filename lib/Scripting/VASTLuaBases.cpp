@@ -512,6 +512,22 @@ void VASTModule::printSignalDecl(raw_ostream &OS) {
   }
 }
 
+VASTNamedValue *VASTModule::getOrCreateSymbol(const Twine &Name,
+                                              unsigned BitWidth) {
+  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
+  VASTNamedValue *&V = Entry.second;
+  if (V == 0) {
+    const char *S = Entry.getKeyData();
+    // If we are going to create a wrapper, apply the bitwidth to the wrapper.
+    unsigned SymbolWidth = BitWidth;
+    V = new (getAllocator()) VASTSymbol(S, SymbolWidth);
+  }
+
+  assert(V->getBitWidth() == BitWidth && "Getting symbol with wrong bitwidth!");
+
+  return V;
+}
+
 VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V) {
   // TODO: Replace the W by the new value.
   if (W->getDriver() != V) W->assign(V);

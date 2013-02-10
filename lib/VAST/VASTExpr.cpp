@@ -149,29 +149,29 @@ static void printBitRepeat(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
   OS << "}}";
 }
 
-static bool printLUT(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *LUT) {
+static void printLUT(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *LUT) {
   // Interpret the sum of product table.
   const char *p = LUT;
   unsigned NumInputs = Ops.size() - 1;
-  bool isComplemented = false;
   // The LUT is in form of "Sum of Product", print the left parenthesis of the
   // sum first.
   OS << '(';
 
   while (*p) {
     OS << '(';
+    bool AnyOperandPrinted = false;
     // Interpret the product.
     for (unsigned i = 0; i < NumInputs; ++i) {
       char c = *p++;
-      switch (c) {
-      default: llvm_unreachable("Unexpected SOP char!");
-      case '-': /*Dont care*/ continue;
-      case '1': Ops[i]->printAsOperand(OS, false); break;
-      case '0': Ops[i]->printAsOperand(OS, true); break;
-      }
+      if (c == '-') continue;
 
-      // Perform the AND to build the product.
-      if (i < NumInputs - 1) OS << '&';
+      // Connect the printed operands with '&' to build the product.
+      if (AnyOperandPrinted) OS << '&';
+
+      assert((c == '0' || c == '1') && "Unexpected SOP char!");
+      // Print the operand, invert it if necessary.
+      Ops[i].invert(c == '0').printAsOperand(OS);
+      AnyOperandPrinted = true;
     }
     // Close the product.
     OS << ')';
@@ -183,7 +183,6 @@ static bool printLUT(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *LUT) {
     // Is the output inverted?
     char c = *p++;
     assert((c == '0' || c == '1') && "Unexpected SOP char!");
-    isComplemented = (c == '0');
 
     // Products are separated by new line.
     assert(*p == '\n' && "Expect the new line!");
@@ -194,9 +193,6 @@ static bool printLUT(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *LUT) {
   }
   // Close the sum.
   OS << ')';
-
-  // Build the sum;
-  return isComplemented;
 }
 
 static bool printFUAdd(raw_ostream &OS, const VASTExpr *E, const VASTValue *LHS){
@@ -299,15 +295,11 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
 
   switch (getOpcode()) {
   case dpLUT: {
-    // 6 is the maximum supported input number of a single LUT.
-    // 3 is for the space, the value of the truth table and the newline char in
-    // each row.
-    char SOPBuffer[(6 + 3) /*Columns*/ * (1 << 6) /*Rows*/ + 1];
-
     // Invert the result if the LUT is inverted.
-    if (printLUT(OS, getOperands(), getLUT(SOPBuffer)))
-      OS << '^'
-         << VASTImmediate::buildLiteral(~UINT64_C(0), getBitWidth(), false);
+    // Please note that we had encoded the comment flag of the SOP into the
+    // invert flag of the LUT string.
+    if (getOperand(size() - 1).isInverted())  OS << '~';
+    printLUT(OS, getOperands(), getLUT());
     break;
   }
   case dpAnd: printSimpleOp(OS, getOperands(), " & "); break;
@@ -410,35 +402,10 @@ static char *utobin_buffer(uint64_t X, char *BuffurStart, unsigned NumDigit) {
 }
 
 // Implementation of LUT related functions.
-const char *VASTExpr::getLUT(MutableArrayRef<char> SOPBuffer) const {
-  unsigned NumInputs = Size - 1;
-  unsigned NumRows = 1 << NumInputs;
-  unsigned NumCols = NumInputs + 3;
-  assert(NumRows * NumCols + 1 <= SOPBuffer.size() && "LUT too big!");
-
-  VASTImmediate *TruthImm = cast<VASTImmediate>(getOperand(NumInputs).get());
-  uint64_t Truth = TruthImm->getZExtValue();
-
-  unsigned NumRowsAdded = 0;
-  for (unsigned i = 0; i < NumRows; ++i) {
-    char *CurRow = SOPBuffer.data() + NumRowsAdded * NumCols;
-
-    unsigned char Mod = static_cast<unsigned char>(Truth) & 1;
-    Truth >>= 1;
-    // Ignore the row with zero value in the LUT.
-    if (!Mod) continue;
-
-    utobin_buffer(i, CurRow, NumInputs);
-
-    CurRow[NumInputs + 0] = ' ';
-    CurRow[NumInputs + 1] = '1';
-    CurRow[NumInputs + 2] = '\n';
-    ++NumRowsAdded;
-  }
-
-  // Terminate the SOP string.
-  SOPBuffer[NumRowsAdded * NumCols] = 0;
-  return SOPBuffer.data();
+const char *VASTExpr::getLUT() const {
+  assert(getOpcode() == VASTExpr::dpLUT && "Call getLUT on the wrong Expr type!");
+  // The LUT is in the last operand.
+  return getOperand(size() - 1).getAsLValue<VASTSymbol>()->getName();
 }
 
 void VASTExpr::Profile(FoldingSetNodeID& ID) const {

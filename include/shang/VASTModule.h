@@ -173,6 +173,10 @@ public:
     return cast<T>(getSymbol(Name));
   }
 
+  /// getOrCreateSymbol - Get the symbol with the specified name, create a new
+  /// one if it does not exists.
+  VASTNamedValue *getOrCreateSymbol(const Twine &Name, unsigned Bitwidth);
+
   VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB);
 
   VASTSlot *getStartSlot();
