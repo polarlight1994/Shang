@@ -40,8 +40,8 @@ struct BasicBlockTopOrder : public FunctionPass {
 }
 
 INITIALIZE_PASS(BasicBlockTopOrder, "basicblock-top-order",
-               "Place the BasicBlocks in topological order",
-               false, true)
+                "Place the BasicBlocks in topological order",
+                true, true)
 
 char BasicBlockTopOrder::ID = 0;
 char &llvm::BasicBlockTopOrderID = BasicBlockTopOrder::ID;
