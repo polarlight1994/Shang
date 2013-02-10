@@ -254,17 +254,19 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     return S;
   }
 
-  VASTSeqSlotCtrl *addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd) {
+  void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd,
+                   BasicBlock *DstBB = 0) {
     // If the Br is already exist, simply or the conditions together.
     if (VASTSeqSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
       VASTValPtr Pred = SlotBr->getPred();
       SlotBr->getPred().replaceUseBy(Builder.buildOrExpr(Pred, Cnd, 1));
-      return SlotBr;
+      if (DstBB) SlotBr->annotateValue(DstBB);
     }
 
     S->addSuccSlot(NextSlot);
-    return VM->createSlotCtrl(NextSlot->getValue(), S, Cnd,
-                              VASTSeqSlotCtrl::SlotBr);
+    VASTSeqSlotCtrl *SlotBr = VM->createSlotCtrl(NextSlot->getValue(), S, Cnd,
+                                                 VASTSeqSlotCtrl::SlotBr);
+    if (DstBB) SlotBr->annotateValue(DstBB);
   }
 
   //===--------------------------------------------------------------------===//
@@ -675,16 +677,19 @@ void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
   // TODO: Create alias operations.
   if (I.isUnconditional()) {
-    addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(0)),
-                VASTImmediate::True);
+    BasicBlock *DstBB = I.getSuccessor(0);
+    addSuccSlot(CurSlot, getOrCreateLandingSlot(DstBB), VASTImmediate::True,
+                DstBB);
     return;
   }
 
   // Connect the slots according to the condition.
   VASTValPtr Cnd = getAsOperandImpl(I.getCondition());
-  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(0)), Cnd);
-  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getSuccessor(1)),
-              Builder.buildNotExpr(Cnd));
+  BasicBlock *TrueBB = I.getSuccessor(0);
+  addSuccSlot(CurSlot, getOrCreateLandingSlot(TrueBB), Cnd, TrueBB);
+  BasicBlock *FalseBB = I.getSuccessor(1);
+  addSuccSlot(CurSlot, getOrCreateLandingSlot(FalseBB),
+              Builder.buildNotExpr(Cnd), FalseBB);
 }
 
 void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {

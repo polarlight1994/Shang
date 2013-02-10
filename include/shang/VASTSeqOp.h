@@ -139,7 +139,7 @@ class VASTSeqInst : public VASTSeqOp {
 public:
   enum Type {
     Launch, // Launch the LLVM Instruction, e.g. start the memory transaction.
-    Latch,  // Latch the result of the Launched LLVM Instruction.
+    Latch  // Latch the result of the Launched LLVM Instruction.
   };
 private:
   Type T;
