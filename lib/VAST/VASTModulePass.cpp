@@ -1058,6 +1058,7 @@ void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<AliasAnalysis>();
   AU.addPreserved<ScalarEvolution>();
   AU.addPreserved<HLSAllocation>();
+  AU.setPreservesCFG();
 }
 
 bool VASTModulePass::runOnFunction(Function &F) {

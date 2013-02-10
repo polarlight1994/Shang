@@ -69,7 +69,6 @@ TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
 }
 
 char TimingNetlist::ID = 0;
-char &llvm::TimingNetlistID = TimingNetlist::ID;
 
 INITIALIZE_PASS(TimingNetlist, "shang-timing-netlist",
                 "Preform Timing Estimation on the RTL Netlist",

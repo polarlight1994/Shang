@@ -28,7 +28,6 @@ template<typename T, typename AllocatorTy> class StringMap;
 extern char &BasicBlockTopOrderID;
 extern char &ControlLogicSynthesisID;
 extern char &DatapathNamerID;
-extern char &TimingNetlistID;
 
 FunctionPass *createDesignMetricsPass();
 
@@ -51,6 +50,7 @@ Pass *createDatapathHoistingPass();
 
 Pass *createLUTMappingPass();
 Pass *createTimingNetlistPass();
+Pass *createVASTSchedulingPass();
 
 // Analyse the Combination Path Delay.
 Pass *createCombPathDelayAnalysisPass();
@@ -66,25 +66,30 @@ Pass *createScriptingPass(const char *Name, const char *FScript,
                           const char *GScript);
 
 void initializeShangTTIPass(PassRegistry &Registry);
+
 void initializeDatapathHoistingPass(PassRegistry &Registry);
+void initializeFunctionFilterPass(PassRegistry &Registry);
+void initializeHLSInlinerPass(PassRegistry &Registry);
+void initializeTrivialLoopUnrollPass(PassRegistry &Registry);
+
 void initializeMemoryAccessCoalescingPass(PassRegistry &Registry);
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
+
 void initializeHLSAllocationAnalysisGroup(PassRegistry &Registry);
-void initializeSimpleBlockRAMAllocationPass(PassRegistry &Registry);
 void initializeBasicAllocationPass(PassRegistry &Registry);
+void initializeSimpleBlockRAMAllocationPass(PassRegistry &Registry);
+
 void initializeLowerAllocaPass(PassRegistry &Registry);
 void initializeLUTMappingPass(PassRegistry &Registry);
 void initializeTimingNetlistPass(PassRegistry &Registry);
+void initializeVASTSchedulingPass(PassRegistry &Registry);
+
 void initializeControlLogicSynthesisPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
 void initializeCombPathDelayAnalysisPass(PassRegistry &Registry);
 void initializeSeqLiveVariablesPass(PassRegistry &Registry);
 void initializeSeqReachingDefAnalysisPass(PassRegistry &Registry);
 void initializeRTLCodeGenPass(PassRegistry &Registry);
-void initializeFunctionFilterPass(PassRegistry &Registry);
-void initializeHLSInlinerPass(PassRegistry &Registry);
-void initializeTrivialLoopUnrollPass(PassRegistry &Registry);
-void initializeLoopVectorizerPass(PassRegistry &Registry);
 } // end namespace
 
 #endif
