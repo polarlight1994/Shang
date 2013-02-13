@@ -18,10 +18,13 @@
 
 #include "shang/VASTSeqOp.h"
 
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/PointerUnion.h"
+#include "llvm/ADT/ilist_node.h"
 #include <map>
 
 namespace llvm {
@@ -31,13 +34,13 @@ class VASTModule;
 class VASTDep {
 public:
   enum Types {
-    ValDep = 0,
-    MemDep = 1,
-    CtrlDep = 2,
+    ValDep      = 0,
+    MemDep      = 1,
+    CtrlDep     = 2,
     FixedTiming = 3,
-    ChainSupporting = 4,
-    LinearOrder = 5,
-    Conditional = 6
+    LinearOrder = 4,
+    Conditional = 5,
+    Predicate   = 6
   };
 private:
   uint8_t EdgeType : 3;
@@ -47,11 +50,10 @@ private:
   int16_t Latancy;
   int32_t Data;
 
-  friend class VSUnit;
-protected:
+public:
   VASTDep(enum Types T, int latancy, int Dst)
     : EdgeType(T), Distance(Dst), Latancy(latancy) {}
-public:
+
   Types getEdgeType() const { return Types(EdgeType); }
 
   // Compute the latency considering the distance between iterations in a loop.
@@ -85,7 +87,7 @@ public:
     return VASTDep(MemDep, Latency, Distance);
   }
 
-  static VASTDep CreateValDep(int Latency) {
+  static VASTDep CreateFlowDep(int Latency) {
     return VASTDep(ValDep, Latency, 0);
   }
 
@@ -103,20 +105,17 @@ public:
   }
 };
 
-class VASTSUnit {
+//
+class VASTSchedUnit : public ilist_node<VASTSchedUnit> {
   // TODO: typedef SlotType
-  unsigned SchedSlot : 31;
-  bool     HasFixedTiming: 1;
+  uint16_t SchedSlot;
   uint16_t InstIdx;
-  uint16_t FUNum;
 
   // EdgeBundle allow us add/remove edges between VASTSUnit more easily.
   struct EdgeBundle {
     SmallVector<VASTDep, 1> Edges;
-    bool IsCrossBB;
 
-    explicit EdgeBundle(VASTDep E, bool IsCrossBB)
-      : Edges(1, E), IsCrossBB(IsCrossBB) {}
+    explicit EdgeBundle(VASTDep E) : Edges(1, E)  {}
 
     void addEdge(VASTDep NewEdge);
     VASTDep &getEdge(unsigned II = 0);
@@ -125,11 +124,12 @@ class VASTSUnit {
     }
   };
 
+  typedef DenseMap<VASTSchedUnit*, EdgeBundle> DepSet;
 public:
   template<class IteratorType, bool IsConst>
   class VSUnitDepIterator : public IteratorType {
     typedef VSUnitDepIterator<IteratorType, IsConst> Self;
-    typedef typename conditional<IsConst, const VASTSUnit, VASTSUnit>::type
+    typedef typename conditional<IsConst, const VASTSchedUnit, VASTSchedUnit>::type
             NodeType;
     typedef typename conditional<IsConst, const VASTDep, VASTDep>::type
             EdgeType;
@@ -177,79 +177,170 @@ public:
     int getDistance(unsigned II = 0) const { return getEdge(II).getDistance(); }
   };
 
+  typedef VSUnitDepIterator<DepSet::const_iterator, true> const_dep_iterator;
+  typedef VSUnitDepIterator<DepSet::iterator, false> dep_iterator;
 private:
   // Remember the dependencies of the scheduling unit.
-  typedef DenseMap<VASTSUnit*, EdgeBundle> DepSet;
   DepSet Deps;
 
   // The scheduling units that using this scheduling unit.
-  typedef std::set<VASTSUnit*> UseListTy;
+  typedef std::set<VASTSchedUnit*> UseListTy;
   UseListTy UseList;
 
-  void addToUseList(VASTSUnit *User) { UseList.insert(User); }
+  void addToUseList(VASTSchedUnit *User) { UseList.insert(User); }
 
-  // The scheduling unit may represent a VASTNode of just an alias of another
-  // Scheduling unit.
-  VASTSeqOp *SeqOp;
+  const PointerUnion3<VASTSeqOp*, BasicBlock*, PHINode*> Ptr;
+
+  VASTSchedUnit();
+
+  friend struct ilist_sentinel_traits<VASTSchedUnit>;
+
+  /// Finding dependencies edges from a specified node.
+  dep_iterator getDepIt(VASTSchedUnit *A) {  return Deps.find(A); }
+  const_dep_iterator getDepIt(VASTSchedUnit *A) const {  return Deps.find(A); }
 public:
-  VASTSUnit(VASTNode *N, unsigned InstIdx);
+  VASTSchedUnit(unsigned InstIdx, VASTSeqOp *Op);
+  VASTSchedUnit(unsigned InstIdx, BasicBlock *BB);
+  VASTSchedUnit(unsigned InstIdx, PHINode *PN);
+
+  VASTSeqOp *getSeqOp() const { return Ptr.get<VASTSeqOp*>(); }
 
   BasicBlock *getParentBB() const;
-  
-  void addDep(VASTSUnit *Src, VASTDep NewE) {
+
+  // Iterators for dependencies.
+  dep_iterator dep_begin() { return Deps.begin(); }
+  dep_iterator dep_end() { return Deps.end(); }
+
+  const_dep_iterator dep_begin() const { return Deps.begin(); }
+  const_dep_iterator dep_end() const { return Deps.end(); }
+
+  // Iterators for the uses.
+  typedef UseListTy::iterator use_iterator;
+  use_iterator use_begin() { return UseList.begin(); }
+  use_iterator use_end() { return UseList.end(); }
+
+  bool isDependsOn(VASTSchedUnit *A) const { return Deps.count(A); }
+
+  VASTDep &getEdgeFrom(VASTSchedUnit *A, unsigned II = 0) {
+    assert(isDependsOn(A) && "Current atom not depend on A!");
+    return getDepIt(A).getEdge(II);
+  }
+
+  const VASTDep &getEdgeFrom(VASTSchedUnit *A, unsigned II = 0) const {
+    assert(isDependsOn(A) && "Current atom not depend on A!");
+    return getDepIt(A).getEdge(II);
+  }
+
+  /// Maintaining dependencies.
+  void addDep(VASTSchedUnit *Src, VASTDep NewE) {
     assert(Src != this && "Cannot add self-loop!");
     DepSet::iterator at = Deps.find(Src);
 
     if (at == Deps.end()) {
-      bool IsCrossBB = Src->getParentBB() != getParentBB();
-      Deps.insert(std::make_pair(Src, EdgeBundle(NewE, IsCrossBB)));
+      Deps.insert(std::make_pair(Src, EdgeBundle(NewE)));
       Src->addToUseList(this);
       return;
     }
 
     at->second.addEdge(NewE);
   }
+
+  /// Debug Helper functions.
+
+  /// print - Print out the internal representation of this atom to the
+  /// specified stream.  This should really only be used for debugging
+  /// purposes.
+  void print(raw_ostream &OS) const;
+
+  /// dump - This method is used for debugging.
+  ///
+  void dump() const;
+};
+
+
+template<>
+struct GraphTraits<VASTSchedUnit*> {
+  typedef VASTSchedUnit NodeType;
+  typedef VASTSchedUnit::use_iterator ChildIteratorType;
+
+  static NodeType *getEntryNode(const VASTSchedUnit *N) {
+    return const_cast<VASTSchedUnit*>(N);
+  }
+
+  static ChildIteratorType child_begin(NodeType *N) {
+    return N->use_begin();
+  }
+
+  static ChildIteratorType child_end(NodeType *N) {
+    return N->use_end();
+  }
 };
 
 // The container of the VASTSUnits
 class VASTSchedGraph {
 public:
-  typedef std::vector<VASTSUnit*> SUnitVecTy;
-  typedef SUnitVecTy::iterator iterator;
-  typedef SUnitVecTy::const_iterator const_iterator;
+  typedef iplist<VASTSchedUnit> SUList;
+  typedef iplist<VASTSchedUnit>::iterator iterator;
+  typedef iplist<VASTSchedUnit>::const_iterator const_iterator;
   enum { NullSUIdx = 0u, FirstSUIdx = 1u };
 
 private:
-  unsigned InstIdx;
-  VASTSUnit *Entry, *Exit;
-  std::map<VASTNode*, VASTSUnit*> N2SUMap;
-  SUnitVecTy SUnits;
-
-  void buildSchedGraph(VASTModule *VM);
-  void buildSchedGraph(VASTSlot *S);
-  
-  void buildDepEdges(VASTSlot *S);
-  void buildDepEdges(VASTSeqOp *SeqOp);
-  void buildDatapathEdge(VASTSeqOp *SeqOp);
-
-  VASTSUnit *buildSlotEntry(VASTSlot *S);
-  VASTSUnit *buildSeqOpSU(VASTSeqOp *SeqOp);
-  VASTSUnit *buildSUnit(VASTNode *N);
-
-  void schedule();
-
-  VASTSUnit *getSUnit(VASTNode *N) const {
-    std::map<VASTNode*, VASTSUnit*>::const_iterator at = N2SUMap.find(N);
-    assert(at != N2SUMap.end() && "SUnit not found!");
-    return at->second;
-  }
+  SUList SUnits;
 public:
   VASTSchedGraph();
   ~VASTSchedGraph();
 
-  VASTSUnit *createSUnit(BasicBlock *ParentBB, uint16_t FUNum);
+  VASTSchedUnit *getEntry() { return &SUnits.front(); }
+  const VASTSchedUnit *getEntry() const { return &SUnits.front(); }
 
-  void schedule(VASTModule *VM);
+  VASTSchedUnit *getExit() { return &SUnits.back(); }
+  const VASTSchedUnit *getExit() const { return &SUnits.back(); }
+
+  template<typename T>
+  VASTSchedUnit *createSUnit(T *X) {
+    VASTSchedUnit *U = new VASTSchedUnit(SUnits.size(), X);
+    // Insert the newly create SU before the exit.
+    SUnits.insert(SUnits.back(), U);
+    return U;
+  }
+
+  // Iterate over all scheduling units in the scheduling graph.
+  typedef SUList::iterator iterator;
+  iterator begin() { return SUnits.begin(); }
+  iterator end() { return SUnits.end(); }
+
+  void schedule();
+
+  void viewGraph() const;
+};
+
+template<>
+struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {
+  typedef VASTSchedUnit NodeType;
+  typedef VASTSchedUnit::use_iterator ChildIteratorType;
+
+  static NodeType *getEntryNode(const VASTSchedGraph *G) {
+    return const_cast<VASTSchedUnit*>(G->getEntry());
+  }
+
+  static ChildIteratorType chile_begin(NodeType *N) {
+    N->use_begin();
+  }
+
+  static ChildIteratorType chile_end(NodeType *N) {
+    N->use_end();
+  }
+
+  typedef VASTSchedGraph::iterator nodes_iterator;
+
+  static nodes_iterator nodes_begin(VASTSchedGraph *G) {
+    return G->begin();
+  }
+
+  static nodes_iterator nodes_end(VASTSchedGraph *G) {
+    return G->end();
+  }
+
 };
 
 }
