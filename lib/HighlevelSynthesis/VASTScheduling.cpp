@@ -22,6 +22,7 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
 
+#include "llvm/Support/CFG.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #define DEBUG_TYPE "vast-scheduling-graph"
@@ -144,9 +145,10 @@ void VASTSchedUnit::dump() const {
 //===----------------------------------------------------------------------===//
 VASTSchedGraph::VASTSchedGraph() {
   // Create the entry SU.
-  SUnits.push_back(new VASTSchedUnit(0, reinterpret_cast<PHINode*>(0)));
-  // Create the exit SU.
   SUnits.push_back(new VASTSchedUnit(0, reinterpret_cast<BasicBlock*>(0)));
+
+  // Create the exit SU.
+  SUnits.push_back(new VASTSchedUnit(0, reinterpret_cast<PHINode*>(0)));
 }
 
 VASTSchedGraph::~VASTSchedGraph() {}
@@ -155,6 +157,19 @@ void VASTSchedGraph::schedule() {}
 
 void VASTSchedGraph::viewGraph() const {
   ViewGraph(const_cast<VASTSchedGraph*>(this), "SchedulingGraph");
+}
+
+void VASTSchedGraph::verify() const {
+  if (getEntry()->use_empty())
+    llvm_unreachable("Broken dependencies on Entry!");
+
+  if (getExit()->dep_empty())
+    llvm_unreachable("Broken dependencies on Exit!");
+
+  for (const_iterator I = llvm::next(SUnits.begin()), E = SUnits.back();
+       I != E; ++I)
+    if (I->dep_empty() || I->use_empty())
+      llvm_unreachable("Broken dependencies!");
 }
 
 //===----------------------------------------------------------------------===//
@@ -181,7 +196,9 @@ struct VASTScheduling : public VASTModulePass {
 
   void buildFlowDependencies(Instruction *I, VASTSchedUnit *U);
   void buildFlowDependencies(Value *V, VASTSchedUnit *U);
-  bool addFlowDepandencies(Value *V, VASTSchedUnit *U);
+  bool addFlowDepandency(Value *V, VASTSchedUnit *U);
+
+  void addConditionalDependencies(BasicBlock *BB, VASTSchedUnit *BBEntry);
 
   void buildSchedulingGraph(VASTModule &VM);
   void buildSchedulingUnits(VASTSlot *S);
@@ -211,7 +228,7 @@ Pass *llvm::createVASTSchedulingPass() {
   return new VASTScheduling();
 }
 
-bool VASTScheduling::addFlowDepandencies(Value *V, VASTSchedUnit *U) {
+bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
   IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
 
   if (at == IR2SUMap.end()) return false;
@@ -249,7 +266,7 @@ void VASTScheduling::buildFlowDependencies(Instruction *I, VASTSchedUnit *U) {
     Value *ChildNode = *VisitStack.back().second++;
 
     // Are we reach the leaf of the dependencies tree?
-    if (addFlowDepandencies(ChildNode, U))
+    if (addFlowDepandency(ChildNode, U))
       continue;
 
     if (Instruction *ChildInst = dyn_cast<Instruction>(ChildNode))
@@ -262,8 +279,16 @@ void VASTScheduling::buildFlowDependencies(Value *V, VASTSchedUnit *U) {
 
   if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op)) {
     VASTSeqInst::Type T = SeqInst->getSeqOpType();
-    if (T == VASTSeqInst::Launch || isa<ReturnInst>(V)) {
+    if (T == VASTSeqInst::Launch) {
       buildFlowDependencies(cast<Instruction>(V), U);
+      return;
+    }
+
+    if (ReturnInst *Ret = dyn_cast<ReturnInst>(V)) {
+      buildFlowDependencies(Ret, U);
+      // Also add the dependencies form the return instruction to the exit of
+      // the scheduling graph.
+      G->getExit()->addDep(U, VASTDep::CreateCndDep());
       return;
     }
 
@@ -271,7 +296,7 @@ void VASTScheduling::buildFlowDependencies(Value *V, VASTSchedUnit *U) {
       BasicBlock *IncomingBB = U->getParentBB();
       BasicBlock *PNParent = PN->getParent();
       Value *V = PN->DoPHITranslation(PNParent, IncomingBB);
-      if (!addFlowDepandencies(V, U))
+      if (!addFlowDepandency(V, U))
         buildFlowDependencies(dyn_cast<Instruction>(V), U);
       return;
     }
@@ -301,16 +326,54 @@ void VASTScheduling::buildFlowDependencies(Value *V, VASTSchedUnit *U) {
 
     return;
   }
+}
 
+void VASTScheduling::addConditionalDependencies(BasicBlock *BB,
+                                                VASTSchedUnit *BBEntry) {
+  bool PredEmpty = true;
+  // Add the dependencies from other BB.
+  for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
+    BasicBlock *PredBB = *I;
+    PredEmpty = false;
+
+    IR2SUMapTy::const_iterator at = IR2SUMap.find(BB);
+
+    if (at == IR2SUMap.end()) continue;
+
+    // Get the corresponding br SeqOp and add the conditional dependencies.
+    ArrayRef<VASTSchedUnit*> SUs(at->second);
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSeqOp *Op = SUs[i]->getSeqOp();
+
+      if (Op->getValue() == BB) {
+        assert(isa<VASTSeqSlotCtrl>(Op)
+               && cast<VASTSeqSlotCtrl>(Op)->getCtrlType()
+                  == VASTSeqSlotCtrl::SlotBr
+               && "Bad SeqOp type!");
+
+        BBEntry->addDep(SUs[i], VASTDep::CreateCndDep());
+        break;
+      }
+    }
+  }
+
+  // If the BB do not have any predecessor, it is the entry block of the
+  // function. Add a flow dependencies form it.
+  if (PredEmpty) BBEntry->addDep(G->getEntry(), VASTDep::CreateFlowDep(0));
 }
 
 VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
   SmallVectorImpl<VASTSchedUnit*> &SUs = IR2SUMap[BB];
 
   // Simply return the BBEntry if it had already existed.
-  if (!SUs.empty()) return SUs.back();
+  if (!SUs.empty()) {
+    assert(SUs.back()->isBBEntry() && "Unexpected SU type!");
+    return SUs.back();
+  }
 
   VASTSchedUnit *Entry = G->createSUnit(BB);
+
+  addConditionalDependencies(BB, Entry);
 
   // Also create the SUnit for the PHI Nodes.
   typedef BasicBlock::iterator iterator;
@@ -330,8 +393,9 @@ VASTSchedUnit *VASTScheduling::createSUnit(Value *V, VASTSeqOp *Op,
                                            VASTSchedUnit *BBEntry) {
   VASTSchedUnit *U = G->createSUnit(Op);
 
-  assert(U && "The scheduling Unit Not built!");
+  assert(V && "Unexpected null llvm Value!");
   U->addDep(BBEntry, VASTDep(VASTDep::Predicate, 0, 0));
+
   IR2SUMap[V].push_back(U);
 
   // Build the flow dependencies.
@@ -375,9 +439,16 @@ void VASTScheduling::buildSchedulingGraph(VASTModule &VM) {
   for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     buildSchedulingUnits(*I);
 
+  // Connect the conditional dependencies.
+
+
   // Build the dependencies edges.
   // When the BranchInst looping back, we need to wait for the last instruction?
   // Or just build another conditional dependencies?
+
+#ifndef NDEBUG
+  G->verify();
+#endif
 
   DEBUG(G->viewGraph());
 }

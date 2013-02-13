@@ -103,6 +103,10 @@ public:
   static VASTDep CreateDep(int Latency) {
     return VASTDep(Type, Latency, 0);
   }
+
+  static VASTDep CreateCndDep() {
+    return VASTDep(Conditional, 0, 0);
+  }
 };
 
 //
@@ -203,6 +207,10 @@ public:
   VASTSchedUnit(unsigned InstIdx, BasicBlock *BB);
   VASTSchedUnit(unsigned InstIdx, PHINode *PN);
 
+  bool isEntry() const { return Ptr.is<BasicBlock*>() && Ptr.isNull(); }
+  bool isExit() const { return Ptr.is<PHINode*>() && Ptr.isNull(); }
+  bool isBBEntry() const { return Ptr.is<BasicBlock*>() && !Ptr.isNull(); }
+
   VASTSeqOp *getSeqOp() const { return Ptr.get<VASTSeqOp*>(); }
 
   BasicBlock *getParentBB() const;
@@ -214,10 +222,13 @@ public:
   const_dep_iterator dep_begin() const { return Deps.begin(); }
   const_dep_iterator dep_end() const { return Deps.end(); }
 
+  bool dep_empty() const { return Deps.empty(); }
+
   // Iterators for the uses.
   typedef UseListTy::iterator use_iterator;
   use_iterator use_begin() { return UseList.begin(); }
   use_iterator use_end() { return UseList.end(); }
+  bool use_empty() const { return UseList.empty(); }
 
   bool isDependsOn(VASTSchedUnit *A) const { return Deps.count(A); }
 
@@ -309,9 +320,14 @@ public:
   iterator begin() { return SUnits.begin(); }
   iterator end() { return SUnits.end(); }
 
+  typedef SUList::const_iterator const_iterator;
+  const_iterator begin() const { return SUnits.begin(); }
+  const_iterator end() const { return SUnits.end(); }
+
   void schedule();
 
   void viewGraph() const;
+  void verify() const;
 };
 
 template<>
