@@ -3,7 +3,23 @@ add_llvm_library(ShangHLS
   TimingEstimator.cpp
   ExternalTimingAnalysis.cpp
   VASTScheduling.cpp
+  SchedulerBase.cpp
+  SDCScheduler.cpp
   CombPathDelayAnalysis.cpp
   SeqLiveVariables.cpp
   SeqReachingDefAnalysis.cpp
 )
+
+IF (NOT MSVC)
+ set(EXTRA_LIBS colamd dl)
+ELSE (NOT MSVC)
+ set(EXTRA_LIBS "")
+ENDIF (NOT MSVC)
+
+target_link_libraries (
+  ShangHLS
+  ${LPSOLVE_LIBRARY}
+  ${EXTRA_LIBS}
+)
+
+include_directories(${LPSOLVE_INCLUDE_DIR})

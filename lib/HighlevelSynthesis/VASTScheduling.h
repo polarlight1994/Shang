@@ -112,7 +112,7 @@ public:
 //
 class VASTSchedUnit : public ilist_node<VASTSchedUnit> {
   // TODO: typedef SlotType
-  uint16_t SchedSlot;
+  uint16_t Schedule;
   uint16_t InstIdx;
 
   // EdgeBundle allow us add/remove edges between VASTSUnit more easily.
@@ -131,8 +131,8 @@ class VASTSchedUnit : public ilist_node<VASTSchedUnit> {
   typedef DenseMap<VASTSchedUnit*, EdgeBundle> DepSet;
 public:
   template<class IteratorType, bool IsConst>
-  class VSUnitDepIterator : public IteratorType {
-    typedef VSUnitDepIterator<IteratorType, IsConst> Self;
+  class VASTSchedUnitDepIterator : public IteratorType {
+    typedef VASTSchedUnitDepIterator<IteratorType, IsConst> Self;
     typedef typename conditional<IsConst, const VASTSchedUnit, VASTSchedUnit>::type
             NodeType;
     typedef typename conditional<IsConst, const VASTDep, VASTDep>::type
@@ -144,7 +144,7 @@ public:
       return IteratorType::operator->()->second;
     }
   public:
-    VSUnitDepIterator(IteratorType i) : IteratorType(i) {}
+    VASTSchedUnitDepIterator(IteratorType i) : IteratorType(i) {}
 
     NodeType *operator*() const {
       return IteratorType::operator->()->first;
@@ -181,8 +181,8 @@ public:
     int getDistance(unsigned II = 0) const { return getEdge(II).getDistance(); }
   };
 
-  typedef VSUnitDepIterator<DepSet::const_iterator, true> const_dep_iterator;
-  typedef VSUnitDepIterator<DepSet::iterator, false> dep_iterator;
+  typedef VASTSchedUnitDepIterator<DepSet::const_iterator, true> const_dep_iterator;
+  typedef VASTSchedUnitDepIterator<DepSet::iterator, false> dep_iterator;
 private:
   // Remember the dependencies of the scheduling unit.
   DepSet Deps;
@@ -198,10 +198,16 @@ private:
   VASTSchedUnit();
 
   friend struct ilist_sentinel_traits<VASTSchedUnit>;
+  friend class VASTSchedGraph;
 
   /// Finding dependencies edges from a specified node.
-  dep_iterator getDepIt(VASTSchedUnit *A) {  return Deps.find(A); }
-  const_dep_iterator getDepIt(VASTSchedUnit *A) const {  return Deps.find(A); }
+  dep_iterator getDepIt(const VASTSchedUnit *A) {
+    return Deps.find(const_cast<VASTSchedUnit*>(A));
+  }
+
+  const_dep_iterator getDepIt(const VASTSchedUnit *A) const {
+    return Deps.find(const_cast<VASTSchedUnit*>(A));
+  }
 public:
   VASTSchedUnit(unsigned InstIdx, VASTSeqOp *Op);
   VASTSchedUnit(unsigned InstIdx, BasicBlock *BB);
@@ -213,7 +219,7 @@ public:
 
   VASTSeqOp *getSeqOp() const { return Ptr.get<VASTSeqOp*>(); }
 
-  BasicBlock *getParentBB() const;
+  BasicBlock *getParent() const;
 
   // Iterators for dependencies.
   dep_iterator dep_begin() { return Deps.begin(); }
@@ -224,20 +230,27 @@ public:
 
   bool dep_empty() const { return Deps.empty(); }
 
-  // Iterators for the uses.
+  /// Iterators for the uses.
   typedef UseListTy::iterator use_iterator;
   use_iterator use_begin() { return UseList.begin(); }
   use_iterator use_end() { return UseList.end(); }
+
+  typedef UseListTy::const_iterator const_use_iterator;
+  const_use_iterator use_begin() const { return UseList.begin(); }
+  const_use_iterator use_end() const { return UseList.end(); }
+
   bool use_empty() const { return UseList.empty(); }
 
-  bool isDependsOn(VASTSchedUnit *A) const { return Deps.count(A); }
+  bool isDependsOn(const VASTSchedUnit *A) const {
+    return Deps.count(const_cast<VASTSchedUnit*>(A));
+  }
 
-  VASTDep &getEdgeFrom(VASTSchedUnit *A, unsigned II = 0) {
+  VASTDep &getEdgeFrom(const VASTSchedUnit *A, unsigned II = 0) {
     assert(isDependsOn(A) && "Current atom not depend on A!");
     return getDepIt(A).getEdge(II);
   }
 
-  const VASTDep &getEdgeFrom(VASTSchedUnit *A, unsigned II = 0) const {
+  const VASTDep &getEdgeFrom(const VASTSchedUnit *A, unsigned II = 0) const {
     assert(isDependsOn(A) && "Current atom not depend on A!");
     return getDepIt(A).getEdge(II);
   }
@@ -266,6 +279,25 @@ public:
   /// dump - This method is used for debugging.
   ///
   void dump() const;
+
+  /// resetSchedule - Reset the schedule of this scheduling unit.
+  ///
+  void resetSchedule();
+
+  /// isScheduled - Return true if the scheduling unit is scheduled, false
+  /// otherwise.
+  ///
+  bool isScheduled() const { return Schedule != 0; }
+
+  /// scheduleTo - Schedule the VASTSchedUnit to a specific slot.
+  ///
+  void scheduleTo(unsigned Step);
+
+  /// getSchedule - Return the schedule of the current Scheduling Unit.
+  ///
+  uint16_t getSchedule() const { return Schedule; }
+
+  uint16_t getIdx() const { return InstIdx; };
 };
 
 
@@ -289,14 +321,11 @@ struct GraphTraits<VASTSchedUnit*> {
 
 // The container of the VASTSUnits
 class VASTSchedGraph {
-public:
   typedef iplist<VASTSchedUnit> SUList;
-  typedef iplist<VASTSchedUnit>::iterator iterator;
-  typedef iplist<VASTSchedUnit>::const_iterator const_iterator;
-  enum { NullSUIdx = 0u, FirstSUIdx = 1u };
-
-private:
   SUList SUnits;
+
+  void scheduleSDC();
+
 public:
   VASTSchedGraph();
   ~VASTSchedGraph();
@@ -324,9 +353,26 @@ public:
   const_iterator begin() const { return SUnits.begin(); }
   const_iterator end() const { return SUnits.end(); }
 
+  typedef SUList::reverse_iterator reverse_iterator;
+  reverse_iterator rbegin() { return SUnits.rbegin(); }
+  reverse_iterator rend() { return SUnits.rend(); }
+
+  typedef SUList::const_reverse_iterator const_reverse_iterator;
+  const_reverse_iterator rbegin() const { return SUnits.rbegin(); }
+  const_reverse_iterator rend() const { return SUnits.rend(); }
+
+  unsigned size() const { return SUnits.size(); }
+
+  /// prepareForScheduling - Fix the scheduling traph
+  void prepareForScheduling();
+
   void schedule();
 
-  void viewGraph() const;
+  void resetSchedule();
+
+  void viewGraph();
+
+  /// verify - Verify the scheduling graph.
   void verify() const;
 };
 
@@ -356,9 +402,7 @@ struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {
   static nodes_iterator nodes_end(VASTSchedGraph *G) {
     return G->end();
   }
-
 };
-
 }
 
 #endif

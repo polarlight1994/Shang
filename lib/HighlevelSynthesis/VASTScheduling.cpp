@@ -31,16 +31,16 @@
 using namespace llvm;
 //===----------------------------------------------------------------------===//
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, PHINode *PN)
-  : SchedSlot(0),  InstIdx(InstIdx), Ptr(PN) {}
+  : Schedule(0),  InstIdx(InstIdx), Ptr(PN) {}
 
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, BasicBlock *BB)
-  : SchedSlot(0),  InstIdx(InstIdx), Ptr(BB) {}
+  : Schedule(0),  InstIdx(InstIdx), Ptr(BB) {}
 
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, VASTSeqOp *Op)
-  : SchedSlot(0),  InstIdx(InstIdx), Ptr(Op) {}
+  : Schedule(0),  InstIdx(InstIdx), Ptr(Op) {}
 
 VASTSchedUnit::VASTSchedUnit()
-  : SchedSlot(0), InstIdx(0), Ptr(reinterpret_cast<VASTSeqOp*>(0))
+  : Schedule(0), InstIdx(0), Ptr(reinterpret_cast<VASTSeqOp*>(0))
 {}
 
 void VASTSchedUnit::EdgeBundle::addEdge(VASTDep NewEdge) {
@@ -111,7 +111,9 @@ VASTDep &VASTSchedUnit::EdgeBundle::getEdge(unsigned II) {
   return *CurEdge;
 }
 
-BasicBlock *VASTSchedUnit::getParentBB() const {
+BasicBlock *VASTSchedUnit::getParent() const {
+  assert(!isEntry() && !isExit() && "Call getParent on the wrong SUnit type!");
+
   if (VASTSeqOp *Op = Ptr.dyn_cast<VASTSeqOp*>())
     return Op->getSlot()->getParent();
 
@@ -121,9 +123,23 @@ BasicBlock *VASTSchedUnit::getParentBB() const {
   return Ptr.get<PHINode*>()->getParent();
 }
 
+void VASTSchedUnit::scheduleTo(unsigned Step) {
+  assert(Step && "Bad schedule!");
+  Schedule = Step;
+}
+
+void VASTSchedUnit::resetSchedule() {
+  Schedule = 0;
+}
+
 void VASTSchedUnit::print(raw_ostream &OS) const {
-  if (InstIdx == 0) {
+  if (isEntry()) {
     OS << "Entry Node";
+    return;
+  }
+
+  if (isExit()) {
+    OS << "Exit Node";
     return;
   }
 
@@ -135,7 +151,7 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
   else
     OS << "PHI: " << *Ptr.get<PHINode*>();
 
-  OS << " Scheduled to " << SchedSlot;
+  OS << " Scheduled to " << Schedule;
 }
 
 void VASTSchedUnit::dump() const {
@@ -153,17 +169,26 @@ VASTSchedGraph::VASTSchedGraph() {
 
 VASTSchedGraph::~VASTSchedGraph() {}
 
-void VASTSchedGraph::schedule() {}
+void VASTSchedGraph::schedule() {
+  scheduleSDC();
+}
 
-void VASTSchedGraph::viewGraph() const {
-  ViewGraph(const_cast<VASTSchedGraph*>(this), "SchedulingGraph");
+void VASTSchedGraph::resetSchedule() {
+  for (iterator I = begin(), E = end(); I != E; ++I)
+    I->resetSchedule();
+
+  getEntry()->scheduleTo(1);
+}
+
+void VASTSchedGraph::viewGraph() {
+  ViewGraph(this, "SchedulingGraph");
 }
 
 void VASTSchedGraph::verify() const {
-  if (getEntry()->use_empty())
+  if (getEntry()->use_empty() && !getEntry()->dep_empty())
     llvm_unreachable("Broken dependencies on Entry!");
 
-  if (getExit()->dep_empty())
+  if (getExit()->dep_empty() && !getExit()->use_empty())
     llvm_unreachable("Broken dependencies on Exit!");
 
   for (const_iterator I = llvm::next(SUnits.begin()), E = SUnits.back();
@@ -172,6 +197,11 @@ void VASTSchedGraph::verify() const {
       llvm_unreachable("Broken dependencies!");
 }
 
+void VASTSchedGraph::prepareForScheduling() {
+  getEntry()->scheduleTo(1);
+
+  getExit()->InstIdx = size();
+}
 //===----------------------------------------------------------------------===//
 namespace {
 struct VASTScheduling : public VASTModulePass {
@@ -293,7 +323,7 @@ void VASTScheduling::buildFlowDependencies(Value *V, VASTSchedUnit *U) {
     }
 
     if (PHINode *PN = dyn_cast<PHINode>(V)) {
-      BasicBlock *IncomingBB = U->getParentBB();
+      BasicBlock *IncomingBB = U->getParent();
       BasicBlock *PNParent = PN->getParent();
       Value *V = PN->DoPHITranslation(PNParent, IncomingBB);
       if (!addFlowDepandency(V, U))
@@ -315,7 +345,7 @@ void VASTScheduling::buildFlowDependencies(Value *V, VASTSchedUnit *U) {
       // This SlotCtrl is corresponding to the terminator of the BasicBlock.
       // Please note that the SlotBr of the entry slot do not have a
       // corresponding LLVM BB.
-      if (BasicBlock *BB = U->getParentBB())
+      if (BasicBlock *BB = U->getParent())
         buildFlowDependencies(BB->getTerminator(), U);
 
       return;
@@ -461,6 +491,8 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
 
   // Create the llvm Value to VASTSeqOp mapping.
   buildSchedulingGraph(VM);
+
+  G->schedule();
 
   return true;
 }

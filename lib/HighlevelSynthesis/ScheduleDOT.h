@@ -15,14 +15,13 @@
 #ifndef VAST_SCHEDULE_DOT
 #define VAST_SCHEDULE_DOT
 #include "VASTScheduling.h"
-//#include "SchedulingBase.h"
+#include "SchedulerBase.h"
 
 #include "llvm/Support/GraphWriter.h"
 #include "llvm/ADT/StringExtras.h"
 
 namespace llvm {
-template<>
-struct DOTGraphTraits<VASTSchedUnit*> : public DefaultDOTGraphTraits {
+template<> struct DOTGraphTraits<VASTSchedUnit*> : public DefaultDOTGraphTraits{
 
   explicit DOTGraphTraits(bool isSimple=false)
     : DefaultDOTGraphTraits(isSimple) {}
@@ -73,15 +72,29 @@ struct DOTGraphTraits<VASTSchedUnit*> : public DefaultDOTGraphTraits {
   }
 };
 
-template<>
-struct DOTGraphTraits<VASTSchedGraph*>
+template<> struct DOTGraphTraits<VASTSchedGraph*>
   : public DOTGraphTraits<VASTSchedUnit*> {
 
   explicit DOTGraphTraits(bool isSimple = false)
     : DOTGraphTraits<VASTSchedUnit*>(isSimple) {}
-
-
 };
+
+template<> struct DOTGraphTraits<SchedulerBase*>
+  : public DOTGraphTraits<VASTSchedGraph*> {
+
+  DOTGraphTraits(bool isSimple = false)
+    : DOTGraphTraits<VASTSchedGraph*>(isSimple) {}
+
+  template<typename GraphType>
+  std::string getNodeLabel(const VASTSchedUnit *Node, const GraphType &G) {
+    std::string Str;
+    raw_string_ostream ss(Str);
+    Node->print(ss);
+    ss << '[' << G->getASAPStep(Node) << ", " << G->getALAPStep(Node) << ']';
+    return ss.str();
+  }
+};
+
 }
 
 #endif
