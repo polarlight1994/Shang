@@ -598,6 +598,8 @@ void VASTModule::print(raw_ostream &OS) const {
     const VASTSlot *S = SI;
 
     S->print(OS);
+
+    OS << '\n';
   }
 }
 
