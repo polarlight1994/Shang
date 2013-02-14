@@ -649,5 +649,5 @@ void VASTSchedGraph::scheduleSDC() {
     (void) success;
   }
 
-  viewGraph();
+  DEBUG(viewGraph());
 }

@@ -811,8 +811,7 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
   if (VASTSeqValue *RetPort = SubMod->getRetPort()) {
     VASTSeqValue *Result
       = getOrCreateSeqVal(Inst->getValue(), Inst->getValue()->getName());
-    VM->latchValue(Result, RetPort, Slot, VASTImmediate::True, Inst->getValue())
-      ->annotateValue(V);
+    VM->latchValue(Result, RetPort, Slot, VASTImmediate::True, V);
     // Move the the next slot so that the operation can correctly read the
     // returned value
     advanceToNextSlot(Slot);
