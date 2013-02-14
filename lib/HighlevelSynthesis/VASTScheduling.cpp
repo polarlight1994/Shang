@@ -610,7 +610,6 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   TimingNetlist &TNL = getAnalysis<TimingNetlist>();
   (void) TNL;
 
-
   buildSchedulingGraph();
 
   G->schedule();

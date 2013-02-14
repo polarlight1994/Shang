@@ -12,6 +12,9 @@
 //===----------------------------------------------------------------------===//
 #include "shang/VASTDatapathNodes.h"
 
+#define DEBUG_TYPE "vast-datapath-container"
+#include "llvm/Support/Debug.h"
+
 using namespace llvm;
 
 //----------------------------------------------------------------------------//

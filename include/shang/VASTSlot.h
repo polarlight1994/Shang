@@ -94,6 +94,7 @@ public:
 
   // Remove a VASTSeqOp pointed by where in this slot.
   op_iterator removeOp(op_iterator where);
+  void removeOp(VASTSeqOp *Op);
 
   VASTSlotCtrl *getBrToSucc(const VASTSlot *DstSlot) const;
   VASTValPtr getSuccCnd(const VASTSlot *DstSlot) const;

@@ -584,6 +584,17 @@ VASTSlotCtrl *VASTModule::createSlotCtrl(VASTNode *N, VASTSlot *Slot,
   return CtrlOp;
 }
 
+void VASTModule::eraseSeqVal(VASTSeqValue *Val) {
+  assert(Val->use_empty() && "Val still stuck at some user!");
+
+  // Also try to erase the parent registr.
+  if (VASTRegister *R = dyn_cast<VASTRegister>(Val->getParent()))
+    Registers.erase(std::find(reg_begin(), reg_end(), R));
+
+  SeqVals.erase(Val);
+
+}
+
 void VASTModule::eraseSeqOp(VASTSeqOp *SeqOp) {
   assert(SeqOp->getSlot() == 0
          && "The VASTSeqOp should be erase from its parent slot first!");
@@ -595,8 +606,6 @@ void VASTModule::eraseSeqOp(VASTSeqOp *SeqOp) {
       VASTSeqUse U = SeqOp->getSrc(i);
       VASTSeqValue *V = U.getDst();
       V->eraseUse(U);
-      // Erase the SeqValue if it is dead.
-      if (V->use_empty() && V->empty()) SeqVals.erase(V);
     }
 
   SeqOp->dropUses();

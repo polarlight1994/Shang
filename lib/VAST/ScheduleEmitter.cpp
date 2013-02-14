@@ -61,6 +61,11 @@ class ScheduleEmitterImpl : public EmitterBuilderContext {
   ilist<VASTSlot> OldSlots;
 public:
   explicit ScheduleEmitterImpl(VASTModule &VM);
+  ~ScheduleEmitterImpl() { clearUp(); }
+
+  void clearUp();
+  void clearUp(VASTSlot *S);
+  void clearUp(VASTSeqValue *V);
 
   void takeOldSlots();
 
@@ -106,7 +111,6 @@ void ScheduleEmitterImpl::takeOldSlots() {
   VASTSlot *StartSlot = VM.getStartSlot();
   VASTSlot *OldStartSlot = OldSlots.begin();
   StartSlot->unlinkSuccs();
-  VASTValue *StartSeqVal = StartSlot->getValue();
 
   typedef VASTSlot::op_iterator op_iterator;
   for (op_iterator I = OldStartSlot->op_begin(); I != OldStartSlot->op_end(); ++I) {
@@ -119,7 +123,6 @@ void ScheduleEmitterImpl::takeOldSlots() {
 
 VASTSeqInst *ScheduleEmitterImpl::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
                                                VASTValPtr Pred) {
-
   SmallVector<VASTValPtr, 4> RetimedOperands;
   // Retime all the operand to the specificed slot.
   typedef VASTOperandList::op_iterator iterator;
@@ -236,6 +239,62 @@ VASTValPtr ScheduleEmitterImpl::retimeDatapath(VASTValue *Root, VASTSlot *ToSlot
   VASTValPtr RetimedRoot = RetimedMap[RootExpr];
   assert(RetimedRoot && "RootExpr not visited?");
   return RetimedRoot;
+}
+
+//===----------------------------------------------------------------------===//
+void ScheduleEmitterImpl::clearUp(VASTSlot *S) {
+  typedef VASTSlot::op_iterator op_iterator;
+  for (op_iterator I = S->op_begin(); I != S->op_end(); ++I) {
+    VASTSeqOp *SeqOp = *I;
+
+    // Delete the dead Exprs used by this SeqOp.
+    for (unsigned i = 0, e = SeqOp->size(); i != e; ++i) {
+      VASTValue *V = SeqOp->getOperand(i).unwrap().get();
+      SeqOp->getOperand(i).unlinkUseFromUser();
+
+      if (!V->use_empty()) continue;
+
+      if (VASTExpr *Child = dyn_cast<VASTExpr>(V))
+        VM->recursivelyDeleteTriviallyDeadExprs(Child);
+    }
+
+    SeqOp->clearParent();
+    VM.eraseSeqOp(*I);
+  }
+}
+
+void ScheduleEmitterImpl::clearUp(VASTSeqValue *V) {
+  if (!V->use_empty() || V->getValType() != VASTSeqValue::Data) return;
+
+  SmallVector<VASTSeqOp*, 4> DeadOps;
+  for (VASTSeqValue::itertor I = V->begin(), E = V->end(); I != E; ++I) {
+    VASTSeqUse U = *I;
+    DeadOps.push_back(U.Op);
+  }
+
+  while (!DeadOps.empty()) {
+    VASTSeqOp *Op = DeadOps.pop_back_val();
+    Op->removeFromParent();
+    VM.eraseSeqOp(Op);
+  }
+
+  VM.eraseSeqVal(V);
+}
+
+void ScheduleEmitterImpl::clearUp() {
+  // Clear up the VASTSeqOp in the old list.
+  while (!OldSlots.empty()) {
+    VASTSlot *CurSlot = &OldSlots.back();
+
+    clearUp(CurSlot);
+
+    OldSlots.pop_back();
+  }
+
+  // Clear up the dead VASTSeqValues.
+  typedef VASTModule::seqval_iterator seqval_iterator;
+  for (seqval_iterator I = VM.seqval_begin(); I != VM.seqval_end(); /*++I*/)
+    clearUp(I++);
 }
 
 //===----------------------------------------------------------------------===//

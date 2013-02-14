@@ -98,6 +98,12 @@ VASTSlot::op_iterator VASTSlot::removeOp(op_iterator where) {
   return Operations.erase(where);
 }
 
+void VASTSlot::removeOp(VASTSeqOp *Op) {
+  op_iterator at = std::find(op_begin(), op_end(), Op);
+  assert(at != op_end() && "Op is not in this slot?");
+  removeOp(at);
+}
+
 VASTRegister *VASTSlot::getRegister() const {
   return cast<VASTRegister>(getValue()->getParent());
 }

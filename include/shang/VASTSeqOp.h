@@ -93,6 +93,7 @@ public:
 
   // Set the parent slot to 0.
   void clearParent() { S.setPointer(0); }
+  void removeFromParent();
 
   unsigned getSlotNum() const;
   VASTValPtr getSlotActive() const;

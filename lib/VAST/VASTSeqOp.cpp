@@ -148,6 +148,10 @@ void VASTSeqOp::dropUses() {
   dropOperands();
 }
 
+void VASTSeqOp::removeFromParent() {
+  getSlot()->removeOp(this);
+}
+
 VASTOperandList *VASTOperandList::GetOperandList(VASTNode *N) {
   if (VASTOperandList *L = GetDatapathOperandList(N))
     return L;
