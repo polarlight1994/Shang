@@ -101,6 +101,7 @@ VASTUse::VASTUse(VASTNode *U, VASTValPtr V) : User(*U), V(V) {
 
 void VASTUse::unlinkUseFromUser() {
   get()->removeUseFromList(this);
+  V.setFromOpaqueValue(0);
 }
 
 void VASTUse::linkUseToUser() {
@@ -143,7 +144,7 @@ VASTOperandList::~VASTOperandList() {
 
 void VASTOperandList::dropOperands() {
   for (VASTUse *I = Operands, *E = Operands + Size; I != E; ++I)
-    if (I->get()) I->unlinkUseFromUser();
+    if (I->unwrap()) I->unlinkUseFromUser();
 }
 
 //===----------------------------------------------------------------------===//

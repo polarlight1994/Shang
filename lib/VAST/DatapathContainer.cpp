@@ -93,13 +93,13 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
   }
 
   assert(From->use_empty() && "Incompleted replacement!");
-  // From is dead now, unlink it from all its use.
-  From->dropUses();
   // Do not use this node anymore.
   removeValueFromCSEMaps(From.get());
   // Sentence this Node to dead!
   From->setDead();
-  // TODO: Delete From.
+  // Delete From.
+  if (VASTExpr *E = dyn_cast<VASTExpr>(From.get()))
+    recursivelyDeleteTriviallyDeadExprs(E);
 }
 
 VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
@@ -177,4 +177,33 @@ VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
   UniqueImms->InsertNode(V, IP);
 
   return V;
+}
+
+void DatapathContainer::recursivelyDeleteTriviallyDeadExprs(VASTExpr *E) {
+  if (E == 0 || !E->use_empty()) return;
+
+  SmallVector<VASTExpr*, 16> DeadExprs;
+  DeadExprs.push_back(E);
+
+  do {
+    VASTExpr *E = DeadExprs.pop_back_val();
+
+    // Null out all of the instruction's operands to see if any operand becomes
+    // dead as we go.
+    for (unsigned i = 0, e = E->size(); i != e; ++i) {
+      VASTValue *V = E->getOperand(i).unwrap().get();
+      E->getOperand(i).unlinkUseFromUser();
+
+      // If the operand is an instruction that became dead as we nulled out the
+      // operand, and if it is 'trivially' dead, delete it in a future loop
+      // iteration.
+      if (VASTExpr *Child = dyn_cast<VASTExpr>(V))
+        if (Child->use_empty()) DeadExprs.push_back(Child);
+    }
+
+    // Remove the value from the CSEMap before erasing it.
+    removeValueFromCSEMaps(E);
+
+    Exprs.erase(E);
+  } while (!DeadExprs.empty());
 }

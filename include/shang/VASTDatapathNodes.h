@@ -387,6 +387,8 @@ public:
     assert(E->use_empty() && "Incompleted replacement!");
     Exprs.erase(E);
   }
+
+  void recursivelyDeleteTriviallyDeadExprs(VASTExpr *L);
 };
 } // end namespace
 
