@@ -273,7 +273,7 @@ VASTSlot *VASTModule::createSlot(unsigned SlotNum, BasicBlock *ParentBB) {
   assert(std::find_if(Slots.begin(), Slots.end(), SlotNumEqual(SlotNum)) == Slots.end()
          && "The same slot had already been created!");
 
-  VASTSlot *Slot = new VASTSlot(SlotNum, ParentBB, this);
+  VASTSlot *Slot = new VASTSlot(SlotNum, ParentBB);
   // Insert the newly created slot before the finish slot.
   Slots.insert(Slots.back(), Slot);
 
@@ -281,10 +281,10 @@ VASTSlot *VASTModule::createSlot(unsigned SlotNum, BasicBlock *ParentBB) {
 }
 
 VASTSlot *VASTModule::createStartSlot() {
-  VASTSlot *StartSlot = new VASTSlot(0, 0, this);
+  VASTSlot *StartSlot = new VASTSlot(0, 0);
   Slots.push_back(StartSlot);
   // Also create the finish slot.
-  Slots.push_back(new VASTSlot(0, StartSlot));
+  Slots.push_back(new VASTSlot(-1));
   return StartSlot;
 }
 

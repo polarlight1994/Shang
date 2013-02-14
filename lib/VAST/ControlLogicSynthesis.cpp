@@ -110,7 +110,7 @@ struct ControlLogicSynthesis : public VASTModulePass {
   void buildSlotReadyLogic(VASTSlot *S);
   void buildSlotLogic(VASTSlot *S);
 
-  void getherControlLogicInfo(VASTSlot *S);
+  void collectControlLogicInfo(VASTSlot *S);
 
   ControlLogicSynthesis() : VASTModulePass(ID) {
     initializeControlLogicSynthesisPass(*PassRegistry::getPassRegistry());
@@ -230,7 +230,7 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
     }
 }
 
-void ControlLogicSynthesis::getherControlLogicInfo(VASTSlot *S) {
+void ControlLogicSynthesis::collectControlLogicInfo(VASTSlot *S) {
   typedef VASTSlot::op_iterator op_iterator;
 
   // We need to read the S->op_end() at every iteration because it may be
@@ -264,9 +264,16 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
   // Building the Slot active signals.
   typedef VASTModule::slot_iterator slot_iterator;
 
+  // Build the signals corresponding to the slots.
   for (slot_iterator I = VM->slot_begin(), E = llvm::prior(VM->slot_end());
        I != E; ++I)
-    getherControlLogicInfo(I);
+    I->createSignals(VM);
+
+  VM->getFinishSlot()->copySignals(VM->getStartSlot());
+
+  for (slot_iterator I = VM->slot_begin(), E = llvm::prior(VM->slot_end());
+       I != E; ++I)
+    collectControlLogicInfo(I);
 
   for (slot_iterator I = VM->slot_begin(), E = llvm::prior(VM->slot_end());
        I != E; ++I) {

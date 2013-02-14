@@ -24,13 +24,21 @@
 
 using namespace llvm;
 
-VASTSlot::VASTSlot(unsigned slotNum, BasicBlock *ParentBB, VASTModule *VM)
+VASTSlot::VASTSlot(unsigned slotNum, BasicBlock *ParentBB)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
     SlotReady(this, 0), SlotNum(slotNum) {
   Contents.ParentBB = ParentBB;
+}
 
+VASTSlot::VASTSlot(unsigned slotNum)
+  : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
+    SlotReady(this, 0), SlotNum(slotNum){
+  Contents.ParentBB = 0;
+}
+
+void VASTSlot::createSignals(VASTModule *VM) {
   // Create the relative signals.
-  std::string SlotName = "Slot" + utostr_32(slotNum);
+  std::string SlotName = "Slot" + utostr_32(SlotNum);
   VASTRegister *R = VM->addRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0,
                                     VASTSeqValue::Slot, SlotNum,
                                     VASTModule::DirectClkEnAttr.c_str());
@@ -45,14 +53,11 @@ VASTSlot::VASTSlot(unsigned slotNum, BasicBlock *ParentBB, VASTModule *VM)
   SlotActive.set(Active);
 }
 
-VASTSlot::VASTSlot(unsigned slotNum, VASTSlot *StartSlot)
-  : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
-    SlotReady(this, 0), SlotNum(slotNum){
-  Contents.ParentBB = 0;
+void VASTSlot::copySignals(VASTSlot *S) {
   // Finish slot alias with the start slot.
-  SlotReg.set(StartSlot->SlotReg);
-  SlotReady.set(StartSlot->SlotReady);
-  SlotActive.set(StartSlot->SlotActive);
+  SlotReg.set(S->SlotReg);
+  SlotReady.set(S->SlotReady);
+  SlotActive.set(S->SlotActive);
 }
 
 BasicBlock *VASTSlot::getParent() const {

@@ -58,7 +58,7 @@ private:
   }
 
   friend class VASTModule;
-  VASTSlot(unsigned slotNum, BasicBlock *ParentBB, VASTModule *VM);
+  VASTSlot(unsigned slotNum, BasicBlock *ParentBB);
 
   VASTSlot() : VASTNode(vastSlot), SlotReg(this), SlotActive(this),
     SlotReady(this), SlotNum(0) {}
@@ -66,9 +66,12 @@ private:
   friend struct ilist_sentinel_traits<VASTSlot>;
 public:
   // Create the finish slot.
-  VASTSlot(unsigned slotNum, VASTSlot *StartSlot);
+  explicit VASTSlot(unsigned slotNum);
 
   const uint16_t SlotNum;
+
+  void createSignals(VASTModule *VM);
+  void copySignals(VASTSlot *S);
 
   BasicBlock *getParent() const;
 
