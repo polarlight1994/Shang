@@ -32,14 +32,15 @@
 using namespace llvm;
 //===----------------------------------------------------------------------===//
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
-                             BasicBlock *BB)
-  : Schedule(0),  InstIdx(InstIdx), Ptr(Inst), BB(BB, IsLatch) {}
+                             BasicBlock *BB, VASTSeqOp *SeqOp)
+  : Schedule(0),  InstIdx(InstIdx), Ptr(Inst), BB(BB, IsLatch), SeqOp(SeqOp) {}
 
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, BasicBlock *BB)
-  : Schedule(0),  InstIdx(InstIdx), Ptr(BB), BB(0, false) {}
+  : Schedule(0),  InstIdx(InstIdx), Ptr(BB), BB(0, false), SeqOp(0) {}
 
 VASTSchedUnit::VASTSchedUnit()
-  : Schedule(0), InstIdx(0), Ptr(reinterpret_cast<BasicBlock*>(-1024)), BB()
+  : Schedule(0), InstIdx(0), Ptr(reinterpret_cast<BasicBlock*>(-1024)),
+    BB(0), SeqOp(0)
 {}
 
 void VASTSchedUnit::EdgeBundle::addEdge(VASTDep NewEdge) {
@@ -161,7 +162,7 @@ VASTSchedGraph::VASTSchedGraph() {
 
   // Create the exit SU.
   SUnits.push_back(new VASTSchedUnit(0, reinterpret_cast<Instruction*>(0),
-                                     false, 0));
+                                     false, 0, 0));
 }
 
 VASTSchedGraph::~VASTSchedGraph() {}
@@ -274,6 +275,9 @@ Pass *llvm::createVASTSchedulingPass() {
 
 bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
   if (Argument *Arg = dyn_cast<Argument>(V)) {
+    // Lookup the VASTValue corresponding to Arg.
+    (void) Arg;
+
     U->addDep(G->getEntry(), VASTDep::CreateFlowDep(0));
     return true;
   }
@@ -396,7 +400,7 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB->begin(), E = BB->getFirstNonPHI(); I != E; ++I) {
     PHINode *PN = cast<PHINode>(I);
-    VASTSchedUnit *U = G->createSUnit(PN, true, 0);
+    VASTSchedUnit *U = G->createSUnit(PN, true, 0, 0);
 
     // Add the dependencies between the entry of the BB and the PHINode.
     U->addDep(Entry, VASTDep(VASTDep::Predicate, 0, 0));
@@ -430,9 +434,9 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 
     VASTSchedUnit *U = 0;
     if (PHINode *PN = dyn_cast<PHINode>(Inst))
-      U = G->createSUnit(PN, false, BB);
+      U = G->createSUnit(PN, false, BB, Op);
     else
-      U = G->createSUnit(Inst, Op->getSeqOpType() == VASTSeqInst::Latch, 0);
+      U = G->createSUnit(Inst, Op->getSeqOpType() == VASTSeqInst::Latch, 0, Op);
 
     IR2SUMap[Inst].push_back(U);
 
@@ -537,6 +541,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   G = GPtr.get();
 
   TimingNetlist &TNL = getAnalysis<TimingNetlist>();
+  (void) TNL;
 
   // Create the llvm Value to VASTSeqOp mapping.
   buildSchedulingGraph(VM);

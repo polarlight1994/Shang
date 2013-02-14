@@ -585,8 +585,6 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
   for(VASTSchedGraph::const_iterator I = begin(), E = end(); I != E; ++I) {
     const VASTSchedUnit *U = I;
 
-    bool IsBBEntry = U->isBBEntry();
-
     ConstraintHelper H;
     H.resetDst(U, this);
 

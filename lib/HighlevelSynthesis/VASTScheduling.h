@@ -198,7 +198,7 @@ private:
 
   const PointerUnion<BasicBlock*, Instruction*> Ptr;
   const PointerIntPair<BasicBlock*, 1, bool> BB;
-  SmallVector<VASTSeqOp*, 4> SeqOps;
+  VASTSeqOp *SeqOp;
 
   VASTSchedUnit();
 
@@ -214,7 +214,8 @@ private:
     return Deps.find(const_cast<VASTSchedUnit*>(A));
   }
 public:
-  VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch, BasicBlock *BB);
+  VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
+                BasicBlock *BB, VASTSeqOp *SeqOp);
   VASTSchedUnit(unsigned InstIdx, BasicBlock *BB);
 
   bool isEntry() const { return Ptr.is<BasicBlock*>() && Ptr.isNull(); }
@@ -366,8 +367,10 @@ public:
     return U;
   }
 
-  VASTSchedUnit *createSUnit(Instruction *Inst, bool IsLatch, BasicBlock *BB) {
-    VASTSchedUnit *U = new VASTSchedUnit(SUnits.size(), Inst, IsLatch, BB);
+  VASTSchedUnit *createSUnit(Instruction *Inst, bool IsLatch, BasicBlock *BB,
+                             VASTSeqOp *SeqOp) {
+    VASTSchedUnit *U = new VASTSchedUnit(SUnits.size(), Inst, IsLatch, BB,
+                                         SeqOp);
     // Insert the newly create SU before the exit.
     SUnits.insert(SUnits.back(), U);
     return U;
@@ -457,14 +460,6 @@ struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {
 
   static NodeType *getEntryNode(const VASTSchedGraph *G) {
     return const_cast<VASTSchedUnit*>(G->getEntry());
-  }
-
-  static ChildIteratorType chile_begin(NodeType *N) {
-    N->use_begin();
-  }
-
-  static ChildIteratorType chile_end(NodeType *N) {
-    N->use_end();
   }
 
   typedef VASTSchedGraph::iterator nodes_iterator;

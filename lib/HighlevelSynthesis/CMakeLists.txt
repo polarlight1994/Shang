@@ -18,6 +18,7 @@ ENDIF (NOT MSVC)
 
 target_link_libraries (
   ShangHLS
+  ShangVAST
   ${LPSOLVE_LIBRARY}
   ${EXTRA_LIBS}
 )
