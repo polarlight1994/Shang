@@ -7,8 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file define the VASTSUnit class, which represents the elemental
-// scheduling unit in VAST.
+// This file define the VASTSSchedUnit and VASTSchedGraph. With these class we
+// perform scheduling in High-level Synthesis. Please note that the scheduling
+// is based on LLVM IR. After scheduling we will annotate the schedule of the
+// LLVM Instructions in form of metadata. And we will rebuild the VAST according
+// to the schedule.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -193,7 +196,9 @@ private:
 
   void addToUseList(VASTSchedUnit *User) { UseList.insert(User); }
 
-  const PointerUnion3<VASTSeqOp*, BasicBlock*, PHINode*> Ptr;
+  const PointerUnion<BasicBlock*, Instruction*> Ptr;
+  const PointerIntPair<BasicBlock*, 1, bool> BB;
+  SmallVector<VASTSeqOp*, 4> SeqOps;
 
   VASTSchedUnit();
 
@@ -209,15 +214,33 @@ private:
     return Deps.find(const_cast<VASTSchedUnit*>(A));
   }
 public:
-  VASTSchedUnit(unsigned InstIdx, VASTSeqOp *Op);
+  VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch, BasicBlock *BB);
   VASTSchedUnit(unsigned InstIdx, BasicBlock *BB);
-  VASTSchedUnit(unsigned InstIdx, PHINode *PN);
 
   bool isEntry() const { return Ptr.is<BasicBlock*>() && Ptr.isNull(); }
-  bool isExit() const { return Ptr.is<PHINode*>() && Ptr.isNull(); }
+  bool isExit() const { return Ptr.is<Instruction*>() && Ptr.isNull(); }
   bool isBBEntry() const { return Ptr.is<BasicBlock*>() && !Ptr.isNull(); }
 
-  VASTSeqOp *getSeqOp() const { return Ptr.get<VASTSeqOp*>(); }
+  Instruction *getInst() const { return Ptr.get<Instruction*>(); }
+
+  bool isLatch() const { return BB.getInt(); }
+  bool isLaunch() const { return !BB.getInt(); }
+
+  BasicBlock *getIncomingBlock() const {
+    assert(isa<PHINode>(getInst()) && isLaunch()
+           && "Call getIncomingBlock on the wrong type!");
+    return BB.getPointer();
+  }
+
+  BasicBlock *getTargetBlock() const {
+    assert(isa<TerminatorInst>(getInst())
+           && "Call getTargetBlock on the wrong type!");
+    return BB.getPointer();
+  }
+
+  bool isLatching(Value *V) const {
+    return isLatch() && Ptr.dyn_cast<Instruction*>() == V;
+  }
 
   BasicBlock *getParent() const;
 
@@ -336,9 +359,15 @@ public:
   VASTSchedUnit *getExit() { return &SUnits.back(); }
   const VASTSchedUnit *getExit() const { return &SUnits.back(); }
 
-  template<typename T>
-  VASTSchedUnit *createSUnit(T *X) {
-    VASTSchedUnit *U = new VASTSchedUnit(SUnits.size(), X);
+  VASTSchedUnit *createSUnit(BasicBlock *BB) {
+    VASTSchedUnit *U = new VASTSchedUnit(SUnits.size(), BB);
+    // Insert the newly create SU before the exit.
+    SUnits.insert(SUnits.back(), U);
+    return U;
+  }
+
+  VASTSchedUnit *createSUnit(Instruction *Inst, bool IsLatch, BasicBlock *BB) {
+    VASTSchedUnit *U = new VASTSchedUnit(SUnits.size(), Inst, IsLatch, BB);
     // Insert the newly create SU before the exit.
     SUnits.insert(SUnits.back(), U);
     return U;
@@ -363,18 +392,63 @@ public:
 
   unsigned size() const { return SUnits.size(); }
 
-  /// prepareForScheduling - Fix the scheduling traph
+  /// Fix the scheduling graph after it is built.
+  ///
   void prepareForScheduling();
 
+  /// Schedule the scheduling graph.
+  ///
   void schedule();
 
+  /// Reset the schedule of all the scheduling units in the scheduling graph.
+  ///
   void resetSchedule();
+
+  /// Emit the schedule by reimplementing the state-transition graph according
+  /// the new scheduling results.
+  ///
+  void emitSchedule(Function &F);
+
+  /// Emit the scheduling units in the same BB.
+  ///
+  unsigned emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs,
+                            unsigned LastSlotNum);
+
+  /// Emit the scheduling units to a specific slot.
+  ///
+  void emitScheduleAtSlot(MutableArrayRef<VASTSchedUnit*> SUs,
+                          unsigned SlotNum, bool IsFirstSlot);
 
   void viewGraph();
 
   /// verify - Verify the scheduling graph.
+  ///
   void verify() const;
 };
+
+
+/// Helper class to arrange the scheduling units according to their parent BB, 
+/// we will emit the schedule or build the linear order BB by BB.
+struct SUBBMap {
+  std::map<BasicBlock*, std::vector<VASTSchedUnit*> > Map;
+
+  void buildMap(VASTSchedGraph &G);
+
+  MutableArrayRef<VASTSchedUnit*> getSUInBB(BasicBlock *BB);
+
+  template<typename T>
+  void sortSUs(T F) {
+    typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator
+    iterator;
+
+    for (iterator I = Map.begin(), E = Map.end(); I != E; ++I) {
+      std::vector<VASTSchedUnit*> &SUs = I->second;
+
+      array_pod_sort(SUs.begin(), SUs.end(), F);
+    }
+  }
+};
+
 
 template<>
 struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {

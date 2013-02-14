@@ -20,6 +20,7 @@
 #include "shang/Passes.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTSeqValue.h"
+#include "shang/ScheduleEmitter.h"
 #include "shang/VASTModulePass.h"
 
 #include "llvm/Support/CFG.h"
@@ -30,17 +31,15 @@
 
 using namespace llvm;
 //===----------------------------------------------------------------------===//
-VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, PHINode *PN)
-  : Schedule(0),  InstIdx(InstIdx), Ptr(PN) {}
+VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
+                             BasicBlock *BB)
+  : Schedule(0),  InstIdx(InstIdx), Ptr(Inst), BB(BB, IsLatch) {}
 
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, BasicBlock *BB)
-  : Schedule(0),  InstIdx(InstIdx), Ptr(BB) {}
-
-VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, VASTSeqOp *Op)
-  : Schedule(0),  InstIdx(InstIdx), Ptr(Op) {}
+  : Schedule(0),  InstIdx(InstIdx), Ptr(BB), BB(0, false) {}
 
 VASTSchedUnit::VASTSchedUnit()
-  : Schedule(0), InstIdx(0), Ptr(reinterpret_cast<VASTSeqOp*>(0))
+  : Schedule(0), InstIdx(0), Ptr(reinterpret_cast<BasicBlock*>(-1024)), BB()
 {}
 
 void VASTSchedUnit::EdgeBundle::addEdge(VASTDep NewEdge) {
@@ -88,7 +87,6 @@ void VASTSchedUnit::EdgeBundle::addEdge(VASTDep NewEdge) {
   if (NeedToInsert) Edges.insert(Edges.begin() + InsertBefore, NewEdge);
 }
 
-
 VASTDep &VASTSchedUnit::EdgeBundle::getEdge(unsigned II) {
   assert(Edges.size() && "Unexpected empty edge bundle!");
   VASTDep *CurEdge = &Edges.front();
@@ -114,13 +112,12 @@ VASTDep &VASTSchedUnit::EdgeBundle::getEdge(unsigned II) {
 BasicBlock *VASTSchedUnit::getParent() const {
   assert(!isEntry() && !isExit() && "Call getParent on the wrong SUnit type!");
 
-  if (VASTSeqOp *Op = Ptr.dyn_cast<VASTSeqOp*>())
-    return Op->getSlot()->getParent();
-
   if (BasicBlock *BB = Ptr.dyn_cast<BasicBlock*>())
     return BB;
 
-  return Ptr.get<PHINode*>()->getParent();
+  if (isa<PHINode>(getInst()) && isLaunch()) return getIncomingBlock();
+
+  return Ptr.get<Instruction*>()->getParent();
 }
 
 void VASTSchedUnit::scheduleTo(unsigned Step) {
@@ -144,12 +141,11 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
   }
 
   OS << '#' << InstIdx << ' ';
-  if (VASTSeqOp *Op = Ptr.dyn_cast<VASTSeqOp*>())
-    Op->print(OS);
-  else if (BasicBlock *BB = Ptr.dyn_cast<BasicBlock*>())
+ 
+  if (BasicBlock *BB = Ptr.dyn_cast<BasicBlock*>())
     OS << "BB: " << BB->getName();
   else
-    OS << "PHI: " << *Ptr.get<PHINode*>();
+    OS << *Ptr.get<Instruction*>();
 
   OS << " Scheduled to " << Schedule;
 }
@@ -164,7 +160,8 @@ VASTSchedGraph::VASTSchedGraph() {
   SUnits.push_back(new VASTSchedUnit(0, reinterpret_cast<BasicBlock*>(0)));
 
   // Create the exit SU.
-  SUnits.push_back(new VASTSchedUnit(0, reinterpret_cast<PHINode*>(0)));
+  SUnits.push_back(new VASTSchedUnit(0, reinterpret_cast<Instruction*>(0),
+                                     false, 0));
 }
 
 VASTSchedGraph::~VASTSchedGraph() {}
@@ -202,6 +199,23 @@ void VASTSchedGraph::prepareForScheduling() {
 
   getExit()->InstIdx = size();
 }
+
+//===----------------------------------------------------------------------===//
+void SUBBMap::buildMap(VASTSchedGraph &G) {
+  typedef VASTSchedGraph::iterator iterator;
+  for (iterator I = llvm::next(G.begin()), E = G.getExit(); I != E; ++I)
+    Map[I->getParent()].push_back(I);
+}
+
+MutableArrayRef<VASTSchedUnit*> SUBBMap::getSUInBB(BasicBlock *BB) {
+  std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator
+    at = Map.find(BB);
+
+  assert(at != Map.end() && "BB not found!");
+
+  return MutableArrayRef<VASTSchedUnit*>(at->second);
+}
+
 //===----------------------------------------------------------------------===//
 namespace {
 struct VASTScheduling : public VASTModulePass {
@@ -209,6 +223,7 @@ struct VASTScheduling : public VASTModulePass {
   typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
   IR2SUMapTy IR2SUMap;
   VASTSchedGraph *G;
+  ScheduleEmitter *Emitter;
   TimingNetlist *TNL;
 
   VASTScheduling() : VASTModulePass(ID), G(0), TNL(0) {
@@ -222,10 +237,9 @@ struct VASTScheduling : public VASTModulePass {
   }
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
-  VASTSchedUnit *createSUnit(Value *V, VASTSeqOp *Op, VASTSchedUnit *BBEntry);
 
   void buildFlowDependencies(Instruction *I, VASTSchedUnit *U);
-  void buildFlowDependencies(Value *V, VASTSchedUnit *U);
+  void buildFlowDependencies(VASTSchedUnit *U);
   bool addFlowDepandency(Value *V, VASTSchedUnit *U);
 
   void addConditionalDependencies(BasicBlock *BB, VASTSchedUnit *BBEntry);
@@ -259,6 +273,11 @@ Pass *llvm::createVASTSchedulingPass() {
 }
 
 bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
+  if (Argument *Arg = dyn_cast<Argument>(V)) {
+    U->addDep(G->getEntry(), VASTDep::CreateFlowDep(0));
+    return true;
+  }
+
   IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
 
   if (at == IR2SUMap.end()) return false;
@@ -266,11 +285,10 @@ bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
   // Get the corresponding latch SeqOp.
   ArrayRef<VASTSchedUnit*> SUs(at->second);
   for (unsigned i = 0; i < SUs.size(); ++i)
-    if (VASTSeqInst *Inst = dyn_cast<VASTSeqInst>(SUs[i]->getSeqOp()))
-      if (Inst->getSeqOpType() == VASTSeqInst::Latch) {
-        U->addDep(SUs[i], VASTDep::CreateFlowDep(0));
-        return true;
-      }
+    if (SUs[i]->isLatching(V)) {
+      U->addDep(SUs[i], VASTDep::CreateFlowDep(0));
+      return true;
+    }
 
   llvm_unreachable("Source SU not found!");
   return false;
@@ -304,25 +322,11 @@ void VASTScheduling::buildFlowDependencies(Instruction *I, VASTSchedUnit *U) {
   }
 }
 
-void VASTScheduling::buildFlowDependencies(Value *V, VASTSchedUnit *U) {
-  VASTSeqOp *Op = U->getSeqOp();
+void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
+  Instruction *Inst = U->getInst();
 
-  if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op)) {
-    VASTSeqInst::Type T = SeqInst->getSeqOpType();
-    if (T == VASTSeqInst::Launch) {
-      buildFlowDependencies(cast<Instruction>(V), U);
-      return;
-    }
-
-    if (ReturnInst *Ret = dyn_cast<ReturnInst>(V)) {
-      buildFlowDependencies(Ret, U);
-      // Also add the dependencies form the return instruction to the exit of
-      // the scheduling graph.
-      G->getExit()->addDep(U, VASTDep::CreateCndDep());
-      return;
-    }
-
-    if (PHINode *PN = dyn_cast<PHINode>(V)) {
+  if (U->isLaunch()) {
+    if (PHINode *PN = dyn_cast<PHINode>(Inst)) {
       BasicBlock *IncomingBB = U->getParent();
       BasicBlock *PNParent = PN->getParent();
       Value *V = PN->DoPHITranslation(PNParent, IncomingBB);
@@ -331,31 +335,20 @@ void VASTScheduling::buildFlowDependencies(Value *V, VASTSchedUnit *U) {
       return;
     }
 
-    if (T == VASTSeqInst::Latch && !isa<Argument>(V)) {
-      // Simply build the dependencies from the launch instruction.
-
-      return;
-    }
-
+    buildFlowDependencies(Inst, U);
     return;
   }
 
-  if (VASTSeqSlotCtrl *SlotCtrl = dyn_cast<VASTSeqSlotCtrl>(Op)) {
-    if (SlotCtrl->getCtrlType() == VASTSeqSlotCtrl::SlotBr) {
-      // This SlotCtrl is corresponding to the terminator of the BasicBlock.
-      // Please note that the SlotBr of the entry slot do not have a
-      // corresponding LLVM BB.
-      if (BasicBlock *BB = U->getParent())
-        buildFlowDependencies(BB->getTerminator(), U);
-
-      return;
-    }
-
-    Instruction *Inst = cast<Instruction>(V);
-    // Get the launching SeqOp and build the dependencies.
-
+  if (ReturnInst *Ret = dyn_cast<ReturnInst>(Inst)) {
+    buildFlowDependencies(Ret, U);
+    // Also add the dependencies form the return instruction to the exit of
+    // the scheduling graph.
+    G->getExit()->addDep(U, VASTDep::CreateCndDep());
     return;
   }
+
+  assert(U->isLatch() && "Unexpected scheduling unit type!");
+  // Simply build the dependencies from the launch instruction.
 }
 
 void VASTScheduling::addConditionalDependencies(BasicBlock *BB,
@@ -373,17 +366,11 @@ void VASTScheduling::addConditionalDependencies(BasicBlock *BB,
     // Get the corresponding br SeqOp and add the conditional dependencies.
     ArrayRef<VASTSchedUnit*> SUs(at->second);
     for (unsigned i = 0; i < SUs.size(); ++i) {
-      VASTSeqOp *Op = SUs[i]->getSeqOp();
+      llvm_unreachable("Not implemented!");
 
-      if (Op->getValue() == BB) {
-        assert(isa<VASTSeqSlotCtrl>(Op)
-               && cast<VASTSeqSlotCtrl>(Op)->getCtrlType()
-                  == VASTSeqSlotCtrl::SlotBr
-               && "Bad SeqOp type!");
-
-        BBEntry->addDep(SUs[i], VASTDep::CreateCndDep());
-        break;
-      }
+      BBEntry->addDep(SUs[i], VASTDep::CreateCndDep());
+      break;
+      
     }
   }
 
@@ -409,7 +396,7 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB->begin(), E = BB->getFirstNonPHI(); I != E; ++I) {
     PHINode *PN = cast<PHINode>(I);
-    VASTSchedUnit *U = G->createSUnit(PN);
+    VASTSchedUnit *U = G->createSUnit(PN, true, 0);
 
     // Add the dependencies between the entry of the BB and the PHINode.
     U->addDep(Entry, VASTDep(VASTDep::Predicate, 0, 0));
@@ -417,21 +404,6 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
   }
 
   return Entry;
-}
-
-VASTSchedUnit *VASTScheduling::createSUnit(Value *V, VASTSeqOp *Op,
-                                           VASTSchedUnit *BBEntry) {
-  VASTSchedUnit *U = G->createSUnit(Op);
-
-  assert(V && "Unexpected null llvm Value!");
-  U->addDep(BBEntry, VASTDep(VASTDep::Predicate, 0, 0));
-
-  IR2SUMap[V].push_back(U);
-
-  // Build the flow dependencies.
-  buildFlowDependencies(V, U);
-
-  return U;
 }
 
 void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
@@ -446,14 +418,27 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
   else         BBEntry = getOrCreateBBEntry(BB);
 
   for (op_iterator OI = S->op_begin(), OE = S->op_end(); OI != OE; ++OI) {
-    VASTSeqOp *Op = *OI;
-
-    Value *V = Op->getValue();
+    VASTSeqInst *Op = dyn_cast<VASTSeqInst>(*OI);
+      
     // We can safely ignore the SeqOp that does not correspond to any LLVM
     // Value, their will be rebuilt when we emit the scheduling.
-    if (V == 0) continue;
+    if (Op == 0) continue;
 
-    createSUnit(V, Op, BBEntry);
+    Instruction *Inst = dyn_cast<Instruction>(Op->getValue());
+
+    if (Inst == 0) continue;
+
+    VASTSchedUnit *U = 0;
+    if (PHINode *PN = dyn_cast<PHINode>(Inst))
+      U = G->createSUnit(PN, false, BB);
+    else
+      U = G->createSUnit(Inst, Op->getSeqOpType() == VASTSeqInst::Latch, 0);
+
+    IR2SUMap[Inst].push_back(U);
+
+    U->addDep(BBEntry, VASTDep(VASTDep::Predicate, 0, 0));
+
+    buildFlowDependencies(U);
   }
 }
 
@@ -483,6 +468,70 @@ void VASTScheduling::buildSchedulingGraph(VASTModule &VM) {
   DEBUG(G->viewGraph());
 }
 
+void VASTSchedGraph::emitScheduleAtSlot(MutableArrayRef<VASTSchedUnit*> SUs,
+                                        unsigned SlotNum, bool IsFirstSlot) {
+
+}
+
+static
+int top_sort_schedule(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) {
+  if (LHS->getSchedule() != RHS->getSchedule())
+    return LHS->getSchedule() < RHS->getSchedule() ? -1 : 1;
+
+  if (LHS->getIdx() < RHS->getIdx()) return -1;
+
+  if (LHS->getIdx() > RHS->getIdx()) return 1;
+
+  return 0;
+}
+
+static int top_sort_schedule_wrapper(const void *LHS, const void *RHS) {
+  return top_sort_schedule(*reinterpret_cast<const VASTSchedUnit* const *>(LHS),
+                           *reinterpret_cast<const VASTSchedUnit* const *>(RHS));
+}
+
+unsigned VASTSchedGraph::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs,
+                                          unsigned LastSlotNum) {
+
+  assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
+  unsigned EntrySlot = SUs[0]->getSchedule();
+  unsigned LatestSlot = EntrySlot;
+
+  SmallVector<VASTSchedUnit*, 8> SUsToEmit;
+  for (unsigned i = 1; i < SUs.size(); ++i) {
+    VASTSchedUnit *CurSU = SUs[i];
+    if (LatestSlot != CurSU->getSchedule()) {      
+      emitScheduleAtSlot(SUsToEmit, LastSlotNum + LatestSlot - EntrySlot,
+                         LatestSlot == EntrySlot);
+
+      SUsToEmit.clear();
+    }
+
+    SUsToEmit.push_back(CurSU);
+    LatestSlot = SUsToEmit.back()->getSchedule();
+  }
+
+  emitScheduleAtSlot(SUsToEmit, LastSlotNum + LatestSlot - EntrySlot,
+                     LatestSlot == EntrySlot);
+  return LastSlotNum + LatestSlot + 1 - EntrySlot;
+
+}
+
+void VASTSchedGraph::emitSchedule(Function &F) {
+  // Verify the schedules, especially the schedule of the cross BB chains.
+  SUBBMap BBMap;
+  BBMap.buildMap(*this);
+  BBMap.sortSUs(top_sort_schedule_wrapper);
+
+  unsigned CurSlotNum = 1;
+
+  typedef Function::iterator iterator;
+  for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    MutableArrayRef<VASTSchedUnit*> SUs(BBMap.getSUInBB(I));
+    CurSlotNum = emitScheduleInBB(SUs, CurSlotNum);
+  }
+}
+
 bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   OwningPtr<VASTSchedGraph> GPtr(new VASTSchedGraph());
   G = GPtr.get();
@@ -493,6 +542,11 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   buildSchedulingGraph(VM);
 
   G->schedule();
+
+  OwningPtr<ScheduleEmitter> EmitterPtr(new ScheduleEmitter(VM));
+  Emitter = EmitterPtr.get();
+
+  G->emitSchedule(VM);
 
   return true;
 }
