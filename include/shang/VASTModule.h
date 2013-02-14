@@ -184,6 +184,8 @@ public:
   const VASTSlot *getStartSlot() const;
   const VASTSlot *getFinishSlot() const;
 
+  ilist<VASTSlot> &getSLotList() { return Slots; }
+
   operator DatapathContainer &() const { return *Datapath; }
   operator Function &() { return F; }
   DatapathContainer *operator->() const { return Datapath; }

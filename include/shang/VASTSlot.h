@@ -59,14 +59,15 @@ private:
 
   friend class VASTModule;
   VASTSlot(unsigned slotNum, BasicBlock *ParentBB, VASTModule *VM);
-  // Create the finish slot.
-  VASTSlot(unsigned slotNum, VASTSlot *StartSlot);
 
   VASTSlot() : VASTNode(vastSlot), SlotReg(this), SlotActive(this),
     SlotReady(this), SlotNum(0) {}
 
   friend struct ilist_sentinel_traits<VASTSlot>;
 public:
+  // Create the finish slot.
+  VASTSlot(unsigned slotNum, VASTSlot *StartSlot);
+
   const uint16_t SlotNum;
 
   BasicBlock *getParent() const;
@@ -122,6 +123,8 @@ public:
   const_pred_iterator pred_begin() const { return PredSlots.begin(); }
   const_pred_iterator pred_end() const { return PredSlots.end(); }
   unsigned pred_size() const { return PredSlots.size(); }
+
+  void unlinkSuccs();
 
   bool operator<(const VASTSlot &RHS) const {
     return SlotNum < RHS.SlotNum;

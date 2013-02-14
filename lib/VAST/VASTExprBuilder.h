@@ -259,6 +259,16 @@ public:
 
   VASTValPtr buildBitSliceExpr(VASTValPtr U, uint8_t UB, uint8_t LB);
 
+  VASTValPtr buildExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
+                       uint8_t UB, uint8_t LB) {
+    if (Opc == VASTExpr::dpAssign) {
+      assert(Ops.size() == 1 && "Wrong operand number!");
+      return buildBitSliceExpr(Ops[0], UB, LB);
+    }
+
+    return buildExpr(Opc, Ops, UB - LB);
+  }
+
   VASTValPtr getSignBit(VASTValPtr V) {
     return buildBitSliceExpr(V, V->getBitWidth(), V->getBitWidth() - 1);
   }

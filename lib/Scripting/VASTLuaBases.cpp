@@ -541,7 +541,6 @@ VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
   assert(Src && "Bad assignment source!");
   VASTSeqInst *Inst = lauchInst(Slot, GuardCnd, 1, V, VASTSeqInst::Latch);
   Inst->addSrc(Src, 0, true, SeqVal);
-  Inst->annotateValue(V);
 
   return Inst;
 }

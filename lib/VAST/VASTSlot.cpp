@@ -63,6 +63,28 @@ bool VASTSlot::hasNextSlot(VASTSlot *NextSlot) const {
   return std::find(NextSlots.begin(), NextSlots.end(), NextSlot) != NextSlots.end();
 }
 
+void VASTSlot::unlinkSuccs() {
+  bool hasLoop = false;
+
+  for (succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
+    VASTSlot *SuccSlot = *I;
+
+    if (SuccSlot == this) {
+      hasLoop = true;
+      continue;
+    }
+
+    // Find the this slot in the PredSlot of the successor and erase it.
+    pred_iterator at
+      = std::find(SuccSlot->PredSlots.begin(), SuccSlot->PredSlots.end(), this);
+    SuccSlot->PredSlots.erase(at);
+  }
+
+  NextSlots.clear();
+
+  if (hasLoop) NextSlots.push_back(this);
+}
+
 VASTSlot::op_iterator VASTSlot::removeOp(op_iterator where) {
   // Clear the SeqOp's parent slot.
   VASTSeqOp *Op = *where;
