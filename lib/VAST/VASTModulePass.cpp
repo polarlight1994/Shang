@@ -790,8 +790,6 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
   Inst->addSrc(VASTImmediate::True, Args.size(), false, SubMod->getStartPort());
 
   Value *V = Inst->getValue();
-  // Enable the start port of the submodule at the current slot.
-  VASTSeqValue *Start = SubMod->getStartPort();
   VASTSlot *Slot = Inst->getSlot();
   // Disable the start port of the submodule at the next slot.
   Slot = advanceToNextSlot(Slot);
