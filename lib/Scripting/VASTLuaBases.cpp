@@ -590,13 +590,16 @@ void VASTModule::eraseSeqOp(VASTSeqOp *SeqOp) {
   assert(SeqOp->getSlot() == 0
          && "The VASTSeqOp should be erase from its parent slot first!");
 
-  for (unsigned i = 0, e = SeqOp->getNumSrcs(); i != e; ++i) {
-    VASTSeqUse U = SeqOp->getSrc(i);
-    VASTSeqValue *V = U.getDst();
-    V->eraseUse(U);
-    // Erase the SeqValue if it is dead.
-    if (V->use_empty() && V->empty()) SeqVals.erase(V);
-  }
+  // Do not delete the dead SeqVal of VASTSeqSlotCtrl, their are not actually
+  // assigning the Dst.
+  if (SeqOp->getASTType() != VASTNode::vastSeqEnable)
+    for (unsigned i = 0, e = SeqOp->getNumSrcs(); i != e; ++i) {
+      VASTSeqUse U = SeqOp->getSrc(i);
+      VASTSeqValue *V = U.getDst();
+      V->eraseUse(U);
+      // Erase the SeqValue if it is dead.
+      if (V->use_empty() && V->empty()) SeqVals.erase(V);
+    }
 
   SeqOp->dropUses();
   SeqOps.erase(SeqOp);
