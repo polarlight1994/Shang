@@ -121,10 +121,13 @@ void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
   if (!buildCSEMap(CSEMap)) return;
 
   // Create the temporary signal.
-  OS << "// Combinational MUX\n"
-     << "reg " << VASTValue::printBitRange(Bitwidth, 0, false)
-     << ' ' << getName() << "_selector_wire;\n"
-     << "reg " << ' ' << getName() << "_selector_enable = 0;\n\n";
+  OS << "// Combinational MUX\n";
+
+  if (getValType() != VASTSeqValue::Enable)
+    OS << "reg " << VASTValue::printBitRange(Bitwidth, 0, false)
+       << ' ' << getName() << "_selector_wire;\n";
+
+  OS << "reg " << ' ' << getName() << "_selector_enable = 0;\n\n";
 
   // Print the mux logic.
   OS << "always @(*)begin  // begin mux logic\n";
@@ -142,9 +145,9 @@ void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
 
     OS << "1'b0): begin\n";
     // Print the assignment under the condition.
-    OS.indent(6) << getName() << "_selector_wire = ";
-    I->first.printAsOperand(OS);
-    OS << ";\n";
+    if (getValType() != VASTSeqValue::Enable)
+      OS.indent(6) << getName() << "_selector_wire = " << I->first << ";\n";
+
     // Print the enable.
     OS.indent(6) << getName() << "_selector_enable = 1'b1;\n";
     OS.indent(4) << "end\n";
@@ -152,7 +155,10 @@ void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
 
   // Write the default condition, otherwise latch will be inferred.
   OS.indent(4) << "default: begin\n";
-  OS.indent(6) << getName() << "_selector_wire = " << Bitwidth << "'bx;\n";
+
+  if (getValType() != VASTSeqValue::Enable)
+    OS.indent(6) << getName() << "_selector_wire = " << Bitwidth << "'bx;\n";
+
   OS.indent(6) << getName() << "_selector_enable = 1'b0;\n";
   OS.indent(4) << "end\n";
   OS.indent(2) << "endcase\nend  // end mux logic\n\n";

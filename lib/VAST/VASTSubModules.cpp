@@ -60,10 +60,14 @@ void VASTRegister::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   OS.else_begin();
 
   // Print the assignment.
-  OS.if_begin(Twine(getName()) + Twine("_selector_enable"));
-  OS << getName() << " <= " << getName() << "_selector_wire"
-    << VASTValue::printBitRange(getBitWidth(), 0, false) << ";\n";
-  OS.exit_block();
+  if (getValue()->getValType() == VASTSeqValue::Enable)
+    OS << getName() << " <= " << getName() << "_selector_enable" << ";\n";
+  else {
+    OS.if_begin(Twine(getName()) + Twine("_selector_enable"));
+    OS << getName() << " <= " << getName() << "_selector_wire"
+       << VASTValue::printBitRange(getBitWidth(), 0, false) << ";\n";
+    OS.exit_block();
+  }
 
   OS << "// synthesis translate_off\n";
   getValue()->verifyAssignCnd(OS, getName(), Mod);
@@ -244,7 +248,8 @@ VASTSubModule::getPortName(unsigned FNNum, const std::string &PortName) {
 }
 
 VASTSeqValue *VASTSubModule::createStartPort(VASTModule *VM) {
-  StartPort = VM->addRegister(getPortName("start"), 1)->getValue();
+  StartPort
+    = VM->addRegister(getPortName("start"), 1, 0, VASTSeqValue::Enable)->getValue();
   addInPort("start", StartPort);
   return StartPort;
 }

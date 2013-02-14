@@ -616,10 +616,10 @@ void VASTModule::print(raw_ostream &OS) const {
 }
 
 VASTPort *VASTModule::addPort(const Twine &Name, unsigned BitWidth,
-                              bool isReg, bool isInput) {
+                              bool isReg, bool isInput, VASTSeqValue::Type T) {
   VASTNamedValue *V;
   if (isInput || isReg)
-    V = addRegister(Name, BitWidth, 0, VASTSeqValue::IO, 0, "// ")->getValue();
+    V = addRegister(Name, BitWidth, 0, T, 0, "// ")->getValue();
   else
     V = addWire(Name, BitWidth, "// ", true);
 
@@ -630,7 +630,7 @@ VASTPort *VASTModule::addPort(const Twine &Name, unsigned BitWidth,
 
 VASTPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
                                    PortTypes T /*= Others*/) {
-  VASTPort *Port = addPort(Name, BitWidth, false, true);
+  VASTPort *Port = addPort(Name, BitWidth, false, true, VASTSeqValue::IO);
 
   if (T < SpecialInPortEnd) {
     assert(Ports[T] == 0 && "Special port exist!");
@@ -653,7 +653,9 @@ VASTPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
 VASTPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
                                     PortTypes T /*= Others*/,
                                     bool isReg /*= true*/) {
-  VASTPort *Port = addPort(Name, BitWidth, isReg, false);
+  VASTPort *Port = addPort(Name, BitWidth, isReg, false,
+                           T == VASTModule::Finish ? VASTSeqValue::Enable
+                                                   : VASTSeqValue::IO);
 
   if (SpecialInPortEnd <= T && T < SpecialOutPortEnd) {
     assert(Ports[T] == 0 && "Special port exist!");

@@ -244,12 +244,6 @@ void ControlLogicSynthesis::getherControlLogicInfo(VASTSlot *S) {
       case VASTSeqSlotCtrl::SlotBr:
         addSlotSucc(S, cast<VASTSeqValue>(CtrlSignal), Pred);
         break;
-      case VASTSeqSlotCtrl::Enable:
-        addSlotEnable(S, cast<VASTSeqValue>(CtrlSignal), Pred);
-        break;
-      case VASTSeqSlotCtrl::Disable:
-        addSlotDisable(S, cast<VASTSeqValue>(CtrlSignal), Pred);
-        break;
       case VASTSeqSlotCtrl::WaitReady:
         addSlotReady(S, CtrlSignal, Pred);
         break;

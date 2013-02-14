@@ -55,7 +55,9 @@ struct MemBusBuilder {
     // We need to create multiplexer to allow current module and its submodules
     // share the bus.
     std::string PortReg = PortName + "_r";
-    VASTRegister *LocalReg = VM->addRegister(PortReg, BitWidth);
+    VASTRegister *LocalReg
+      = VM->addRegister(PortReg, BitWidth, 0,
+                        LocalEn == 0 ? VASTSeqValue::Enable : VASTSeqValue::Data);
     VASTPort *P = VM->addOutputPort(PortName, BitWidth, VASTModule::Others,
                                     false);
 
@@ -311,9 +313,6 @@ void VASTModuleBuilder::connectEntryState(BasicBlock *EntryBB) {
   VASTSlot *IdleSlot = VM->getStartSlot();
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
   addSuccSlot(IdleSlot, IdleSlot, Builder.buildNotExpr(StartPort));
-  // Disable the finish port at the idle slot.
-  VM->createSlotCtrl(VM->getPort(VASTModule::Finish).getSeqVal(), IdleSlot,
-                     VASTImmediate::True, VASTSeqSlotCtrl::Disable);
 
   SmallVector<VASTValPtr, 1> Cnds(1, StartPort);
   addSuccSlot(IdleSlot, getOrCreateLandingSlot(EntryBB), StartPort);
@@ -647,7 +646,7 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
   unsigned NumOperands = I.getNumOperands();
   VASTSeqInst *SeqInst =
-    VM->lauchInst(CurSlot, VASTImmediate::True, NumOperands, &I,
+    VM->lauchInst(CurSlot, VASTImmediate::True, NumOperands + 1, &I,
                   VASTSeqInst::Latch);
 
   // Assign the return port if necessary.
@@ -659,8 +658,8 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   }
 
   // Enable the finish port.
-  VM->createSlotCtrl(VM->getPort(VASTModule::Finish).getSeqVal(), CurSlot,
-                     VASTImmediate::True, VASTSeqSlotCtrl::Enable);
+  SeqInst->addSrc(VASTImmediate::True, NumOperands, false,
+                  VM->getPort(VASTModule::Finish).getSeqVal());
 
   // Construct the control flow.
   addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True);
@@ -737,8 +736,8 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
 
   BasicBlock *ParentBB = CS->getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
-  VASTSeqInst *Op = VM->lauchInst(Slot, VASTImmediate::True, Args.size(), Inst,
-                                  VASTSeqInst::Launch);
+  VASTSeqInst *Op = VM->lauchInst(Slot, VASTImmediate::True, Args.size() + 1,
+                                  Inst, VASTSeqInst::Launch);
   // Build the logic to lauch the module and read the result.
   buildSubModuleOperation(Op, SubMod, Args);
 }
@@ -783,7 +782,7 @@ void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
   BasicBlock *ParentBB = I.getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
   VASTSeqInst *Op
-    = VM->lauchInst(Slot, VASTImmediate::True, 2, &I, VASTSeqInst::Launch);
+    = VM->lauchInst(Slot, VASTImmediate::True, 2 + 1, &I, VASTSeqInst::Launch);
   buildSubModuleOperation(Op, SubMod, Ops);
 }
 
@@ -792,17 +791,15 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
                                                 ArrayRef<VASTValPtr> Args) {
   for (unsigned i = 0; i < Args.size(); ++i)
     Inst->addSrc(Args[i], i, false, SubMod->getFanin(i));
+  // Assign to the enable port.
+  Inst->addSrc(VASTImmediate::True, Args.size(), false, SubMod->getStartPort());
 
   Value *V = Inst->getValue();
   // Enable the start port of the submodule at the current slot.
   VASTSeqValue *Start = SubMod->getStartPort();
   VASTSlot *Slot = Inst->getSlot();
-  VM->createSlotCtrl(Start, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Enable)
-      ->annotateValue(V);
   // Disable the start port of the submodule at the next slot.
   Slot = advanceToNextSlot(Slot);
-  VM->createSlotCtrl(Start, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Disable)
-    ->annotateValue(V);
   VM->createSlotCtrl(SubMod->getFinPort(), Slot, VASTImmediate::True,
                      VASTSeqSlotCtrl::WaitReady)
       ->annotateValue(V);
@@ -866,7 +863,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   VASTSlot *Slot = getLatestSlot(ParentBB);
 
   // Build the logic to start the transaction.
-  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, Data ? 4 : 3, &I,
+  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, Data ? 5 : 4, &I,
                                 VASTSeqInst::Launch);
   unsigned CurOperandIdx = 0;
 
@@ -905,12 +902,10 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   // FIXIME: Use the correct memory port number.
   RegName = VFUMemBus::getEnableName(PortNum) + "_r";
   VASTSeqValue *MemEn = VM->getSymbol<VASTSeqValue>(RegName);
-  VM->createSlotCtrl(MemEn, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Enable)
-      ->annotateValue(&I);
+  Op->addSrc(VASTImmediate::True, CurOperandIdx, false, MemEn);
+
   // Disable the memory bus at the next slot.
   Slot = advanceToNextSlot(Slot);
-  VM->createSlotCtrl(MemEn, Slot, VASTImmediate::True, VASTSeqSlotCtrl::Disable)
-      ->annotateValue(&I);
 
   // Read the result of the memory transaction.
   if (Data == 0) {

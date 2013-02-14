@@ -192,8 +192,6 @@ VASTSeqSlotCtrl::VASTSeqSlotCtrl(VASTSlot *S, Type T)
 void VASTSeqSlotCtrl::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
   switch (getCtrlType()) {
-  case VASTSeqSlotCtrl::Enable:     OS << "Enable ";      break;
-  case VASTSeqSlotCtrl::Disable:    OS << "Disable ";     break;
   case VASTSeqSlotCtrl::WaitReady:  OS << "Wait Ready ";  break;
   case VASTSeqSlotCtrl::SlotBr:     OS << "Slot Br ";     break;
   }

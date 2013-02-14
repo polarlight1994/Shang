@@ -498,12 +498,9 @@ void VASTScheduling::buildSchedulingGraph() {
 
 void VASTScheduling::handleNewSeqOp(VASTSeqOp *SeqOp) {
   VASTSlot *S = SeqOp->getSlot();
-  if (ReturnInst *Ret = dyn_cast_or_null<ReturnInst>(SeqOp->getValue())) {
-    // Enable the finish port.
-    VM->createSlotCtrl(VM->getPort(VASTModule::Finish).getSeqVal(), S,
-                       SeqOp->getPred(), VASTSeqSlotCtrl::Enable);
+
+  if (dyn_cast_or_null<ReturnInst>(SeqOp->getValue()))
     Emitter->addSuccSlot(S, VM->getFinishSlot(), SeqOp->getPred());
-  }
 }
 
 void VASTScheduling::emitScheduleAtFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,

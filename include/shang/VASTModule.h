@@ -118,7 +118,7 @@ private:
   unsigned NumArgPorts, RetPortIdx;
 
   VASTPort *addPort(const Twine &Name, unsigned BitWidth, bool isReg,
-                    bool isInput);
+                    bool isInput, VASTSeqValue::Type T);
 public:
   enum PortTypes {
     Clk = 0,

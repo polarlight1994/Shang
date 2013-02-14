@@ -186,7 +186,7 @@ class VASTSeqSlotCtrl : public VASTSeqOp {
 public:
   // TODO: Remember the br instruction for SlotBr
   enum Type {
-    Enable, Disable, WaitReady, SlotBr
+    WaitReady, SlotBr
   };
 private:
   Type T;
