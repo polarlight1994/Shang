@@ -334,7 +334,7 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqVal(Value *V, const Twine &Name) 
   std::string SeqValName = "v_" + Name.str() + "_r";
   SeqValName = ShangMangle(SeqValName);
   VASTRegister *R
-    =  VM->addRegister(SeqValName, BitWidth, 0, VASTNode::Data, 0);
+    =  VM->addRegister(SeqValName, BitWidth, 0, VASTSeqValue::Data, 0);
   // V = VM->createSeqValue("v" + utostr_32(RegNo) + "r", BitWidth,
   //                        VASTNode::Data, RegNo, 0);
 

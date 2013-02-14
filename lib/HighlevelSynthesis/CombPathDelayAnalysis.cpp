@@ -187,7 +187,7 @@ static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {
   if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
     // The block RAM should be printed as Prefix + ArrayName in the script.
     if (const VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V)) {
-      if (SeqVal->getValType() == VASTNode::BRAM) {
+      if (SeqVal->getValType() == VASTSeqValue::BRAM) {
         const VASTBlockRAM *RAM = cast<VASTBlockRAM>(SeqVal->getParent());
         OS << " { NameSet =[=[ [ list "
           // BlockRam name with prefix
@@ -219,7 +219,7 @@ bool PathDelayQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   VASTSubModule *SubMod = dyn_cast<VASTSubModule>(V->getParent());
   if (SubMod == 0) return false;
 
-  assert(V->getValType() == VASTNode::IO && "Bad Seqvalue type!");
+  assert(V->getValType() == VASTSeqValue::IO && "Bad Seqvalue type!");
   assert(V->empty() && "Unexpected assigement to return value!");
 
   unsigned Latency = SubMod->getLatency();

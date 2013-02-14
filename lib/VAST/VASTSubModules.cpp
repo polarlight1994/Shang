@@ -83,18 +83,18 @@ void VASTBlockRAM::addPorts(VASTModule *VM) {
   
   // Add the address port and the data port.
   VASTSeqValue *ReadAddrA = VM->createSeqValue(BRamArrayName + "_rdata0",
-                                               getWordSize(), VASTNode::BRAM,
+                                               getWordSize(), VASTSeqValue::BRAM,
                                                getBlockRAMNum(), this);
   addFanin(ReadAddrA);
   addFanout(ReadAddrA);
 
   VASTSeqValue *WriteAddrA = VM->createSeqValue(BRamArrayName + "_waddr0",
-                                                getAddrWidth(), VASTNode::BRAM,
+                                                getAddrWidth(), VASTSeqValue::BRAM,
                                                 getBlockRAMNum(), this);
   addFanin(WriteAddrA);
 
   VASTSeqValue *WriteDataA = VM->createSeqValue(BRamArrayName + "_wdata0",
-                                                getWordSize(), VASTNode::BRAM,
+                                                getWordSize(), VASTSeqValue::BRAM,
                                                 getBlockRAMNum(), this);
   addFanin(WriteDataA);
 }
@@ -250,7 +250,7 @@ VASTSeqValue *VASTSubModule::createStartPort(VASTModule *VM) {
 }
 
 VASTSeqValue *VASTSubModule::createFinPort(VASTModule *VM) {
-  FinPort = VM->createSeqValue(getPortName("fin"), 1, VASTNode::IO, 0, this);
+  FinPort = VM->createSeqValue(getPortName("fin"), 1, VASTSeqValue::IO, 0, this);
   addOutPort("fin", FinPort);
   return FinPort;
 }
@@ -258,7 +258,7 @@ VASTSeqValue *VASTSubModule::createFinPort(VASTModule *VM) {
 VASTSeqValue *VASTSubModule::createRetPort(VASTModule *VM, unsigned Bitwidth,
                                            unsigned Latency) {
   RetPort = VM->createSeqValue(getPortName("return_value"),
-                               Bitwidth, VASTNode::IO, 0, this);
+                               Bitwidth, VASTSeqValue::IO, 0, this);
   addOutPort("return_value", RetPort);
   // Also update the latency.
   this->Latency = Latency;

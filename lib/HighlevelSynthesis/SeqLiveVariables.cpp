@@ -267,7 +267,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
 void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
                                  PathVector &PathFromEntry) {
   // The timing information is not avaliable.
-  if (Use->empty() || Use->getValType() == VASTNode::Slot) return;
+  if (Use->empty() || Use->getValType() == VASTSeqValue::Slot) return;
 
   assert(Use && "Bad Use pointer!");
   VASTSlot *DefSlot = 0;

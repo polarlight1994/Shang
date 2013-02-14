@@ -25,20 +25,29 @@ class Twine;
 // Represent value in the sequential logic.
 class VASTSeqValue : public VASTSignal, public ilist_node<VASTSeqValue> {
 public:
+
+  enum Type {
+    Data,       // Common registers which hold data for data-path.
+    Slot,       // Slot register which hold the enable signals for each slot.
+    IO,         // The I/O port of the module.
+    BRAM,       // Port of the block RAM
+    Enable      // The Enable Signal.
+  };
+
   typedef ArrayRef<VASTValPtr> AndCndVec;
 
 private:
   // For common registers, the Idx is the corresponding register number in the
   // MachineFunction. With this register number we can get the define/use/kill
   // information of transaction to this local storage.
-  const unsigned T    : 2;
+  const unsigned T    : 3;
   const unsigned Idx  : 30;
 
   // Map the transaction condition to transaction value.
   typedef std::vector<VASTSeqUse> AssignmentVector;
   AssignmentVector Assigns;
 
-  VASTNode &Parent;
+  VASTNode *Parent;
 
   bool buildCSEMap(std::map<VASTValPtr,
                             std::vector<const VASTSeqOp*> >
@@ -47,17 +56,17 @@ private:
   friend struct ilist_sentinel_traits<VASTSeqValue>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
   VASTSeqValue()
-    : VASTSignal(vastSeqValue, 0, 0), T(VASTNode::IO), Idx(0), Parent(*this) {}
+    : VASTSignal(vastSeqValue, 0, 0), T(VASTSeqValue::IO), Idx(0), Parent(this) {}
 
 public:
-  VASTSeqValue(const char *Name, unsigned Bitwidth, VASTNode::SeqValType T,
-               unsigned Idx, VASTNode &Parent)
+  VASTSeqValue(const char *Name, unsigned Bitwidth, Type T, unsigned Idx,
+               VASTNode *Parent)
     : VASTSignal(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx),
       Parent(Parent) {}
 
   ~VASTSeqValue();
 
-  VASTNode::SeqValType getValType() const { return VASTNode::SeqValType(T); }
+  VASTSeqValue::Type getValType() const { return VASTSeqValue::Type(T); }
 
   unsigned getDataRegNum() const {
     assert((getValType() == Data) && "Wrong accessor!");
@@ -69,13 +78,12 @@ public:
     return Idx;
   }
 
-  VASTNode *getParent() { return &Parent; }
-  const VASTNode *getParent() const { return &Parent; }
+  VASTNode *getParent() const { return Parent; }
 
   void addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef);
   void eraseUse(VASTSeqUse U);
 
-  bool isTimingUndef() const { return getValType() == VASTNode::Slot; }
+  bool isTimingUndef() const { return getValType() == VASTSeqValue::Slot; }
 
   typedef AssignmentVector::const_iterator const_itertor;
   const_itertor begin() const { return Assigns.begin(); }

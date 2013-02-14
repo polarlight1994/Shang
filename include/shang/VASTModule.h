@@ -18,7 +18,6 @@
 #include "shang/VASTSeqOp.h"
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTSlot.h"
-#include "shang/VASTSlot.h"
 
 #include "shang/FUInfo.h"
 
@@ -117,7 +116,6 @@ private:
   // The port starting offset of a specific function unit.
   SmallVector<std::map<unsigned, unsigned>, VFUs::NumCommonFUs> FUPortOffsets;
   unsigned NumArgPorts, RetPortIdx;
-  VASTSlot *createStartSlot();
 
   VASTPort *addPort(const Twine &Name, unsigned BitWidth, bool isReg,
                     bool isInput);
@@ -179,6 +177,7 @@ public:
 
   VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB);
 
+  VASTSlot *createStartSlot();
   VASTSlot *getStartSlot();
   VASTSlot *getFinishSlot();
   const VASTSlot *getStartSlot() const;
@@ -270,7 +269,7 @@ public:
   }
 
   VASTSeqValue *createSeqValue(const Twine &Name, unsigned BitWidth,
-                               VASTNode::SeqValType T, unsigned Idx,
+                               VASTSeqValue::Type T, unsigned Idx,
                                VASTNode *Parent);
 
   VASTBlockRAM *addBlockRAM(unsigned BRamNum, unsigned Bitwidth, unsigned Size,
@@ -282,7 +281,7 @@ public:
 
   VASTRegister *addRegister(const Twine &Name, unsigned BitWidth,
                             unsigned InitVal = 0,
-                            VASTNode::SeqValType T = VASTNode::Data,
+                            VASTSeqValue::Type T = VASTSeqValue::Data,
                             uint16_t RegData = 0, const char *Attr = "");
 
   VASTRegister *addOpRegister(const Twine &Name, unsigned BitWidth,
@@ -329,6 +328,8 @@ public:
   /// Remove the VASTSeqOp from the module and delete it. Please note that
   /// the SeqOp should be remove from its parent slot before we erase it.
   void eraseSeqOp(VASTSeqOp *SeqOp);
+
+  void eraseSeqVal(VASTSeqValue *Val);
 
   // Iterate over all SeqOps in the module.
   typedef ilist<VASTSeqOp>::iterator seqop_iterator;

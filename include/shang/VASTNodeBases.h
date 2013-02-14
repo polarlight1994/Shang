@@ -66,13 +66,6 @@ public:
     vastModule
   };
 
-  enum SeqValType {
-    Data,       // Common registers which hold data for data-path.
-    Slot,       // Slot register which hold the enable signals for each slot.
-    IO,         // The I/O port of the module.
-    BRAM        // Port of the block RAM
-  };
-
 protected:
   union {
     const char *Name;

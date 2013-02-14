@@ -213,9 +213,9 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 
 VASTSeqValue *
 VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
-                           VASTNode::SeqValType T, unsigned Idx, VASTNode *P) {
+                           VASTSeqValue::Type T, unsigned Idx, VASTNode *P) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
-  VASTSeqValue *V = new VASTSeqValue(Entry.getKeyData(), BitWidth, T, Idx, *P);
+  VASTSeqValue *V = new VASTSeqValue(Entry.getKeyData(), BitWidth, T, Idx, P);
   Entry.second = V;
   SeqVals.push_back(V);
 
@@ -619,7 +619,7 @@ VASTPort *VASTModule::addPort(const Twine &Name, unsigned BitWidth,
                               bool isReg, bool isInput) {
   VASTNamedValue *V;
   if (isInput || isReg)
-    V = addRegister(Name, BitWidth, 0, VASTNode::IO, 0, "// ")->getValue();
+    V = addRegister(Name, BitWidth, 0, VASTSeqValue::IO, 0, "// ")->getValue();
   else
     V = addWire(Name, BitWidth, "// ", true);
 
@@ -673,7 +673,7 @@ VASTPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
 }
 
 VASTRegister *VASTModule::addRegister(const Twine &Name, unsigned BitWidth,
-                                      unsigned InitVal, VASTNode::SeqValType T,
+                                      unsigned InitVal, VASTSeqValue::Type T,
                                       uint16_t RegData, const char *Attr) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
@@ -687,12 +687,12 @@ VASTRegister *VASTModule::addRegister(const Twine &Name, unsigned BitWidth,
 
 VASTRegister *VASTModule::addOpRegister(const Twine &Name, unsigned BitWidth,
                                         unsigned FUNum, const char *Attr) {
-  return addRegister(Name, BitWidth, 0, VASTNode::Data, FUNum, Attr);
+  return addRegister(Name, BitWidth, 0, VASTSeqValue::Data, FUNum, Attr);
 }
 
 VASTRegister *VASTModule::addDataRegister(const Twine &Name, unsigned BitWidth,
                                           unsigned RegNum, const char *Attr) {
-  return addRegister(Name, BitWidth, 0, VASTNode::Data, RegNum, Attr);
+  return addRegister(Name, BitWidth, 0, VASTSeqValue::Data, RegNum, Attr);
 }
 
 BumpPtrAllocator &VASTModule::getAllocator() {
