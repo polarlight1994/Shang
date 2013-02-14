@@ -41,6 +41,10 @@ struct VASTSeqUse {
   VASTSlot *getSlot() const;
   VASTUse &getPred() const;
   VASTValPtr getSlotActive() const;
+
+  bool operator==(VASTSeqUse RHS) const {
+    return Op == RHS.Op && No == RHS.No;
+  }
 };
 
 /// VASTSeqDef - The value at produced by the VASTSeqOp at a specific slot.

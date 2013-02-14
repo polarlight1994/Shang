@@ -73,6 +73,7 @@ public:
   const VASTNode *getParent() const { return &Parent; }
 
   void addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef);
+  void eraseUse(VASTSeqUse U);
 
   bool isTimingUndef() const { return getValType() == VASTNode::Slot; }
 

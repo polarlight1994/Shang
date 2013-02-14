@@ -105,6 +105,12 @@ void VASTSeqValue::addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef) {
   Assigns.push_back(VASTSeqUse(Op, SrcNo));
 }
 
+void VASTSeqValue::eraseUse(VASTSeqUse U) {
+  itertor at = std::find(begin(), end(), U);
+  assert(at != end() && "U is not in the assignment vector!");
+  Assigns.erase(at);
+}
+
 void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
   typedef std::vector<const VASTSeqOp*> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
