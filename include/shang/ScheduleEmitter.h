@@ -21,19 +21,22 @@
 namespace llvm {
 class BasicBlock;
 
+class ScheduleEmitterImpl;
 class VASTModule;
 class VASTSlot;
 
 class ScheduleEmitter {
-  VASTModule &VM;
-  
-  /// PredSlot map.
-  typedef std::map<BasicBlock*, std::map<VASTSlot*, VASTValPtr> > PredSlotMapTy;
-  PredSlotMapTy PredSlots;
-
+  ScheduleEmitterImpl *Impl;
 public:
   explicit ScheduleEmitter(VASTModule &VM);
+  ~ScheduleEmitter();
 
+  void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd,
+                   BasicBlock *DstBB = 0);
+
+  VASTSeqOp *emitToSlot(VASTSeqOp *Op, VASTValPtr Pred, VASTSlot *ToSlot);
+
+  void takeOldSlots();
 };
 
 }

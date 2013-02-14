@@ -223,6 +223,7 @@ public:
   bool isBBEntry() const { return Ptr.is<BasicBlock*>() && !Ptr.isNull(); }
 
   Instruction *getInst() const { return Ptr.get<Instruction*>(); }
+  VASTSeqOp *getSeqOp() const { return SeqOp; }
 
   bool isLatch() const { return BB.getInt(); }
   bool isLaunch() const { return !BB.getInt(); }
@@ -407,20 +408,7 @@ public:
   ///
   void resetSchedule();
 
-  /// Emit the schedule by reimplementing the state-transition graph according
-  /// the new scheduling results.
-  ///
-  void emitSchedule(Function &F);
 
-  /// Emit the scheduling units in the same BB.
-  ///
-  unsigned emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs,
-                            unsigned LastSlotNum);
-
-  /// Emit the scheduling units to a specific slot.
-  ///
-  void emitScheduleAtSlot(MutableArrayRef<VASTSchedUnit*> SUs,
-                          unsigned SlotNum, bool IsFirstSlot);
 
   void viewGraph();
 
@@ -438,6 +426,8 @@ struct SUBBMap {
   void buildMap(VASTSchedGraph &G);
 
   MutableArrayRef<VASTSchedUnit*> getSUInBB(BasicBlock *BB);
+
+  void clear() { Map.clear(); }
 
   template<typename T>
   void sortSUs(T F) {
