@@ -16,6 +16,7 @@
 
 #include "shang/VASTNodeBases.h"
 #include "llvm/IR/Value.h"
+#include "llvm/ADT/PointerUnion.h"
 
 namespace llvm {
 class VASTSeqOp;
@@ -182,30 +183,22 @@ public:
 /// conflict with other assignment. These conflicts will be resolved in the
 /// ControlLogicSynthesis pass.
 /// Please note that UseSlotActive does not make sense in VASTSeqSlotCtrl.
-class VASTSeqSlotCtrl : public VASTSeqOp {
+class VASTSlotCtrl : public VASTSeqOp {
 public:
-  // TODO: Remember the br instruction for SlotBr
-  enum Type {
-    WaitReady, SlotBr
-  };
+
 private:
-  Type T;
+  PointerUnion<VASTSlot*, VASTValue*> Ptr;
 public:
   // VASTSeqSlotCtrl may not use slot active, it is a part of the control logic.
   // VASTSeqSlotCtrl only assign 1 or 0 to the destination VASTSeqValue.
-  VASTSeqSlotCtrl(VASTSlot *S, Type T);
+  VASTSlotCtrl(VASTSlot *S, VASTNode *N);
 
-  /// getDst - Get the register to be enable/disable.
-  VASTValue *getCtrlSignal() const {
-    return src_begin()->getAsLValue<VASTValue>();
-  }
-
-  /// isEnable - Return true if the the operation is enabling a control register,
-  /// false otherwise.
-  VASTSeqSlotCtrl::Type getCtrlType() const { return T; }
+  bool isBranch() const;
+  VASTSlot *getTargetSlot() const;
+  VASTValue *getWaitingSignal() const;
 
   virtual void print(raw_ostream &OS) const;
-  static inline bool classof(const VASTSeqSlotCtrl *A) { return true; }
+  static inline bool classof(const VASTSlotCtrl *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSeqEnable;
   }

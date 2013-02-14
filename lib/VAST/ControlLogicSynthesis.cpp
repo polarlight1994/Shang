@@ -236,18 +236,14 @@ void ControlLogicSynthesis::getherControlLogicInfo(VASTSlot *S) {
   // We need to read the S->op_end() at every iteration because it may be
   // changed by removeOp.
   for (op_iterator I = S->op_begin(); I != S->op_end(); /*++I*/) {
-    if (VASTSeqSlotCtrl *SeqOp = dyn_cast<VASTSeqSlotCtrl>(*I)) {
+    if (VASTSlotCtrl *SeqOp = dyn_cast<VASTSlotCtrl>(*I)) {
       VASTValPtr Pred = SeqOp->getPred();
-      VASTValue *CtrlSignal = SeqOp->getCtrlSignal();
 
-      switch (SeqOp->getCtrlType()) {
-      case VASTSeqSlotCtrl::SlotBr:
-        addSlotSucc(S, cast<VASTSeqValue>(CtrlSignal), Pred);
-        break;
-      case VASTSeqSlotCtrl::WaitReady:
-        addSlotReady(S, CtrlSignal, Pred);
-        break;
-      }
+      if (SeqOp->isBranch())
+        addSlotSucc(S, SeqOp->getTargetSlot()->getValue(), Pred);
+      else
+        addSlotReady(S, SeqOp->getWaitingSignal(), Pred);
+
       // TODO: Do not remove these operation, so that we can build the control
       // logic again after we reschedule the design.
       // This SeqOp is not used any more.

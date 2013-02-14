@@ -27,7 +27,7 @@ class VASTExprBuilder;
 class vlang_raw_ostream;
 class VASTSlot;
 class VASTSeqOp;
-class VASTSeqSlotCtrl;
+class VASTSlotCtrl;
 
 class VASTSlot : public VASTNode, public ilist_node<VASTSlot> {
 public:
@@ -92,7 +92,7 @@ public:
   // Remove a VASTSeqOp pointed by where in this slot.
   op_iterator removeOp(op_iterator where);
 
-  VASTSeqSlotCtrl *getBrToSucc(const VASTSlot *DstSlot) const;
+  VASTSlotCtrl *getBrToSucc(const VASTSlot *DstSlot) const;
   VASTValPtr getSuccCnd(const VASTSlot *DstSlot) const;
   bool hasNextSlot(VASTSlot *NextSlot) const;
   void addSuccSlot(VASTSlot *NextSlot);
@@ -128,6 +128,11 @@ public:
 
   bool operator<(const VASTSlot &RHS) const {
     return SlotNum < RHS.SlotNum;
+  }
+
+  static inline bool classof(const VASTSlot *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastSlot;
   }
 };
 

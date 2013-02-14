@@ -78,15 +78,14 @@ public:
   void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd,
                    BasicBlock *DstBB = 0) {
     // If the Br is already exist, simply or the conditions together.
-    if (VASTSeqSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
+    if (VASTSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
       VASTValPtr Pred = SlotBr->getPred();
       SlotBr->getPred().replaceUseBy(Builder.buildOrExpr(Pred, Cnd, 1));
       if (DstBB) SlotBr->annotateValue(DstBB);
     }
 
     S->addSuccSlot(NextSlot);
-    VASTSeqSlotCtrl *SlotBr = VM.createSlotCtrl(NextSlot->getValue(), S, Cnd,
-                                                VASTSeqSlotCtrl::SlotBr);
+    VASTSlotCtrl *SlotBr = VM.createSlotCtrl(NextSlot, S, Cnd);
     if (DstBB) SlotBr->annotateValue(DstBB);
   }
 
@@ -100,31 +99,22 @@ ScheduleEmitterImpl::ScheduleEmitterImpl(VASTModule &VM)
 
 void ScheduleEmitterImpl::takeOldSlots() {
   OldSlots.splice(OldSlots.begin(), VM.getSLotList(),
-                  llvm::next(VM.slot_begin()), VM.slot_end());
+                  VM.slot_begin(), VM.slot_end());
 
   // Remove the successors of the start slot, we will reconstruct them.
+  VM.createStartSlot();
   VASTSlot *StartSlot = VM.getStartSlot();
+  VASTSlot *OldStartSlot = OldSlots.begin();
   StartSlot->unlinkSuccs();
   VASTValue *StartSeqVal = StartSlot->getValue();
 
   typedef VASTSlot::op_iterator op_iterator;
-  for (op_iterator I = StartSlot->op_begin(); I != StartSlot->op_end(); /*++I*/) {
-    if (VASTSeqSlotCtrl *SeqOp = dyn_cast<VASTSeqSlotCtrl>(*I)) {
-      VASTValue *CtrlSignal = SeqOp->getCtrlSignal();
-      VASTSeqSlotCtrl::Type T = SeqOp->getCtrlType();
-      // Erase the SlotBr to other slots.
-      if (T == VASTSeqSlotCtrl::SlotBr && CtrlSignal != StartSeqVal) {
-        I = StartSlot->removeOp(I);
-        VM.eraseSeqOp(SeqOp);
-        continue;
-      }
+  for (op_iterator I = OldStartSlot->op_begin(); I != OldStartSlot->op_end(); ++I) {
+    if (VASTSeqInst *SeqOp = dyn_cast<VASTSeqInst>(*I)) {
+      if (isa<Argument>(SeqOp->getValue()))
+        cloneSeqInst(SeqOp, StartSlot, SeqOp->getPred());
     }
-
-    ++I;
   }
-
-  //Create the new Finish Slot.
-  VM.getSLotList().push_back(new VASTSlot(-1, StartSlot));
 }
 
 VASTSeqInst *ScheduleEmitterImpl::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,

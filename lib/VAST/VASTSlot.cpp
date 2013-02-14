@@ -105,12 +105,11 @@ const char *VASTSlot::getName() const {
   return getValue()->getName();
 }
 
-VASTSeqSlotCtrl *VASTSlot::getBrToSucc(const VASTSlot *DstSlot) const {
+VASTSlotCtrl *VASTSlot::getBrToSucc(const VASTSlot *DstSlot) const {
   // Find the SeqOp that branching to DstSlot and return the condition.
   for (const_op_iterator I = op_begin(), E = op_end(); I != E; ++I)
-    if (VASTSeqSlotCtrl *SlotCtrl = dyn_cast<VASTSeqSlotCtrl>(*I))
-      if (SlotCtrl->getCtrlType() == VASTSeqSlotCtrl::SlotBr)
-        if (SlotCtrl->getCtrlSignal() == DstSlot->getValue())
+    if (VASTSlotCtrl *SlotCtrl = dyn_cast<VASTSlotCtrl>(*I))
+      if (SlotCtrl->isBranch() && SlotCtrl->getTargetSlot() == DstSlot)
           return SlotCtrl;
 
   return 0;
@@ -118,7 +117,7 @@ VASTSeqSlotCtrl *VASTSlot::getBrToSucc(const VASTSlot *DstSlot) const {
 
 VASTValPtr VASTSlot::getSuccCnd(const VASTSlot *DstSlot) const {
   // Find the SeqOp that branching to DstSlot and return the condition.
-  VASTSeqSlotCtrl *SlotCtrl = getBrToSucc(DstSlot);
+  VASTSlotCtrl *SlotCtrl = getBrToSucc(DstSlot);
   assert(SlotCtrl &&  "DstSlot is not the successor of current slot!");
   return SlotCtrl->getPred();
 }

@@ -572,13 +572,11 @@ void VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
   SeqOps.push_back(CtrlOp);
 }
 
-VASTSeqSlotCtrl *
-VASTModule::createSlotCtrl(VASTValue *CtrlSignal, VASTSlot *Slot, VASTValPtr Pred,
-                           VASTSeqSlotCtrl::Type CtrlType) {
-  VASTSeqSlotCtrl *CtrlOp = new VASTSeqSlotCtrl(Slot, CtrlType);
+VASTSlotCtrl *VASTModule::createSlotCtrl(VASTNode *N, VASTSlot *Slot,
+                                         VASTValPtr Pred) {
+  VASTSlotCtrl *CtrlOp = new VASTSlotCtrl(Slot, N);
   // Create the predicate operand.
   new (CtrlOp->Operands) VASTUse(CtrlOp, Pred);
-  new (CtrlOp->Operands + 1) VASTUse(CtrlOp, CtrlSignal);
 
   // Add the SeqOp to the the all SeqOp list.
   SeqOps.push_back(CtrlOp);

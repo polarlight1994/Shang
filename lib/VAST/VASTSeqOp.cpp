@@ -186,17 +186,26 @@ void VASTSeqCtrlOp::print(raw_ostream &OS) const {
 }
 
 //----------------------------------------------------------------------------//
-VASTSeqSlotCtrl::VASTSeqSlotCtrl(VASTSlot *S, Type T)
-  : VASTSeqOp(vastSeqEnable, S, false, 1), T(T) {}
+VASTSlotCtrl::VASTSlotCtrl(VASTSlot *S, VASTNode *N)
+  : VASTSeqOp(vastSeqEnable, S, false, 0), Ptr() {
+  if (VASTSlot *S = dyn_cast<VASTSlot>(N)) Ptr = S;
+  else                                     Ptr = cast<VASTValue>(N);
+}
 
-void VASTSeqSlotCtrl::print(raw_ostream &OS) const {
+bool VASTSlotCtrl::isBranch() const { return Ptr.is<VASTSlot*>(); }
+
+VASTSlot *VASTSlotCtrl::getTargetSlot() const {
+  return Ptr.get<VASTSlot*>();
+}
+
+VASTValue *VASTSlotCtrl::getWaitingSignal() const {
+  return Ptr.get<VASTValue*>();
+}
+
+void VASTSlotCtrl::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
-  switch (getCtrlType()) {
-  case VASTSeqSlotCtrl::WaitReady:  OS << "Wait Ready ";  break;
-  case VASTSeqSlotCtrl::SlotBr:     OS << "Slot Br ";     break;
-  }
-
-  getCtrlSignal()->printAsOperand(OS, false);
+  if (isBranch()) OS << "Slot Br #" << getSlot()->SlotNum;
+  else            OS << "Waiting" << VASTValPtr(getWaitingSignal());
 
   OS << '\n';
 }

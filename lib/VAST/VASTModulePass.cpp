@@ -259,15 +259,10 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd,
                    BasicBlock *DstBB = 0) {
     // If the Br is already exist, simply or the conditions together.
-    if (VASTSeqSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
-      VASTValPtr Pred = SlotBr->getPred();
-      SlotBr->getPred().replaceUseBy(Builder.buildOrExpr(Pred, Cnd, 1));
-      if (DstBB) SlotBr->annotateValue(DstBB);
-    }
+    assert (S->getBrToSucc(NextSlot) == 0 && "Branching to target slot existed!");
 
     S->addSuccSlot(NextSlot);
-    VASTSeqSlotCtrl *SlotBr = VM->createSlotCtrl(NextSlot->getValue(), S, Cnd,
-                                                 VASTSeqSlotCtrl::SlotBr);
+    VASTSlotCtrl *SlotBr = VM->createSlotCtrl(NextSlot, S, Cnd);
     if (DstBB) SlotBr->annotateValue(DstBB);
   }
 
@@ -800,8 +795,7 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
   VASTSlot *Slot = Inst->getSlot();
   // Disable the start port of the submodule at the next slot.
   Slot = advanceToNextSlot(Slot);
-  VM->createSlotCtrl(SubMod->getFinPort(), Slot, VASTImmediate::True,
-                     VASTSeqSlotCtrl::WaitReady)
+  VM->createSlotCtrl(SubMod->getFinPort(), Slot, VASTImmediate::True)
       ->annotateValue(V);
 
   // Read the return value from the function if there is any.
