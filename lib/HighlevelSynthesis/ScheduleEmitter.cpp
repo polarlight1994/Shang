@@ -411,7 +411,6 @@ void ScheduleEmitter::emitToSlot(VASTSeqOp *Op, VASTValPtr Pred,
 bool ScheduleEmitter::emitToFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
                                       MutableArrayRef<VASTSchedUnit*> SUs) {
   assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
-  BasicBlock *ToBB = SUs[0]->getParent();
   unsigned EntrySlot = SUs[0]->getSchedule();
 
   for (unsigned i = 1; i < SUs.size(); ++i) {
