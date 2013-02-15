@@ -563,7 +563,7 @@ void VASTScheduling::fixDanglingNodes() {
     if (!U->use_empty()) continue;
 
     BasicBlock *BB = U->getParent();
-    VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].back();
+    VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].front();
 
     // Allocate 1 cycles for the scheduling units that launching some operations.
     unsigned Latency = U->isLatch() ? 0 : 1;
