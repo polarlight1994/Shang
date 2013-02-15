@@ -62,7 +62,7 @@ protected:
 public:
   virtual ~SchedulerBase() {}
 
-  VASTSchedGraph *operator*() const { return &G; }
+  VASTSchedGraph &operator*() const { return G; }
   VASTSchedGraph *operator->() const { return &G; }
 
   virtual bool scheduleState() { return false; };

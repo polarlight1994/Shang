@@ -399,6 +399,10 @@ public:
   ///
   void prepareForScheduling();
 
+  /// Sort the scheduling units in topological order.
+  ///
+  void topologicalSortSUs();
+
   /// Schedule the scheduling graph.
   ///
   void schedule();
@@ -417,13 +421,20 @@ public:
   /// verify - Verify the scheduling graph.
   ///
   void verify() const;
-};
 
+  void print(raw_ostream &OS) const;
+
+  void dump() const;
+};
 
 /// Helper class to arrange the scheduling units according to their parent BB, 
 /// we will emit the schedule or build the linear order BB by BB.
 struct SUBBMap {
   std::map<BasicBlock*, std::vector<VASTSchedUnit*> > Map;
+
+  typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator iterator;
+  iterator begin() { return Map.begin(); }
+  iterator end() { return Map.end(); }
 
   void buildMap(VASTSchedGraph &G);
 

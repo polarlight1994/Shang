@@ -32,21 +32,6 @@ protected:
   typedef std::vector<VASTSchedUnit*> SUVecTy;
   typedef std::map<VASTNode*, SUVecTy> ConflictListTy;
 
-  typedef std::map<BasicBlock*, ConflictListTy> LiveOutMapTy;
-  LiveOutMapTy LiveOutFUs;
-  void buildPipelineConflictMap(const VASTSchedUnit *Terminator);
-
-  const SUVecTy *getLiveOuts(BasicBlock *MBB, VASTNode *Node) const {
-    LiveOutMapTy::const_iterator at = LiveOutFUs.find(MBB);
-    // There is no live-outs in this MBB, all SU only use trivial FUs.
-    if (at == LiveOutFUs.end()) return 0;
-
-    ConflictListTy::const_iterator su_at = at->second.find(Node);
-
-    // Such FU are not used in the MBB.
-    return su_at == at->second.end() ? 0 : &su_at->second;
-  }
-
   void addLinOrdEdge(ConflictListTy &ConflictList);
   // Add the linear ordering edges to the SUs in the vector and return the first
   // SU.
@@ -155,7 +140,6 @@ public:
   bool schedule();
 };
 
-
 struct alap_less {
   SchedulerBase &S;
   alap_less(SchedulerBase &s) : S(s) {}
@@ -176,53 +160,38 @@ struct alap_less {
 
 void BasicLinearOrderGenerator::addLinOrdEdge() {
   ConflictListTy ConflictList;
+  SUBBMap Map;
+  Map.buildMap(*G);
 
-/*  typedef VASTSchedGraph::iterator iterator;
-  BasicBlock *PrevBB = G->getEntryBB();
+  for (SUBBMap::iterator I = Map.begin(), E = Map.end(); I != E; ++I) {
+    MutableArrayRef<VASTSchedUnit*> SUs(I->second);
+    ConflictList.clear();
 
-  for (iterator I = G.begin(), E = G.end(); I != E; ++I) {
-    VASTSchedUnit *U = *I;
-    // No need to assign the linear order for the SU which already has a fixed
-    // timing constraint.
-    if (U->hasFixedTiming()) {
-      if (U->isTerminator()) buildPipelineConflictMap(U);
-      continue;
+    // Iterate the scheduling units in the same BB to assign linear order.
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSchedUnit *SU = SUs[i];
+
+      VASTSeqOp *Op = SU->getSeqOp();
+
+      // Ignore the trivial operations.
+      if (Op == 0 || Op->getNumSrcs() == 0) continue;
+
+      VASTSeqValue *Dst = Op->getSrc(Op->getNumSrcs() - 1).getDst();
+
+      // Ignore the common resource.
+      if (Dst->getValType() == VASTSeqValue::Data) continue;
+
+      // Assign the linear order.
+      ConflictList[Dst].push_back(SU);
     }
 
-    BasicBlock *BB = U->getParentBB();
-    if (BB != PrevBB) {
-      addLinOrdEdge(ConflictList);
-      ConflictList.clear();
-      PrevBB = MBB;
-    }
-
-    FuncUnitId Id = U->getFUId();
-
-    // FIXME: Detect mutually exclusive predicate condition.
-    if (!Id.isBound()) continue;
-
-    ConflictList[Id].push_back(U);
+    addLinOrdEdge(ConflictList);
   }
 
-  addLinOrdEdge(ConflictList);
-
-  G->topologicalSortCPSUs();
-  */
-}
-
-void BasicLinearOrderGenerator::buildPipelineConflictMap(const VASTSchedUnit *U) {
-  //assert(U->isTerminator() && "Bad SU type!");
-
-  //MachineBasicBlock *ParentBB = U->getParentBB();
-  //unsigned II = G->getII(ParentBB);
-  // There is no FU conflict if the block is not pipelined.
-  //if (II == 0) return;
-
-  llvm_unreachable("buildSuccConfilictMap is not supported yet!");
+  G->topologicalSortSUs();
 }
 
 void BasicLinearOrderGenerator::addLinOrdEdge(ConflictListTy &List) {
-  /*
   typedef ConflictListTy::iterator iterator;
   for (iterator I = List.begin(), E = List.end(); I != E; ++I) {
     std::vector<VASTSchedUnit*> &SUs = I->second;
@@ -232,51 +201,9 @@ void BasicLinearOrderGenerator::addLinOrdEdge(ConflictListTy &List) {
 
     if (!SUs.empty()) {
       std::sort(SUs.begin(), SUs.end(), alap_less(G));
-      FirstSU = SUs.front();
-      LastSU = SUs.back();
       addLinOrdEdge(SUs);
     }
-
-    BasicBlock *CurBB = FirstSU->getParentBB();
-    SUVecTy LiveOuts;
-
-    if (LastSU) LiveOuts.push_back(LastSU);
-
-    typedef BasicBlock::pred_iterator pred_iterator;
-    for (pred_iterator PI = CurBB->pred_begin(), PE = CurBB->pred_end();
-         PI != PE; ++PI) {
-      BasicBlock *PredBB = *PI;
-
-      // Ignore the backward edges.
-      // if (PredBB->getNumber() >= CurBB->getNumber()) continue;
-
-      const SUVecTy *PredLiveOuts = getLiveOuts(PredBB, Id);
-
-      if (PredLiveOuts == 0) continue;
-
-      if (FirstSU) {
-        typedef SUVecTy::const_iterator su_iterator;
-        for (su_iterator SI = PredLiveOuts->begin(), SE = PredLiveOuts->end();
-             SI != SE; ++SI) {
-          VASTSchedUnit *PredSU = *SI;
-          // Add the dependencies between the liveouts from pred SU to the first
-          // SU of the current BB.
-          unsigned IntialInterval = 1;
-          VASTDep Edge = VASTDep::CreateDep<VASTDep::LinearOrder>(IntialInterval);
-          FirstSU->addDep<true>(PredSU, Edge);
-        }
-
-        continue;
-      }
-
-      // Else forward the live out of pred BB to the current BB.
-      LiveOuts.insert(LiveOuts.end(), PredLiveOuts->begin(), PredLiveOuts->end());
-    }
-
-    // Build the live out vector for current BB.
-    LiveOutFUs[CurBB][Id] = LiveOuts;
   }
-  */
 }
 
 void BasicLinearOrderGenerator::addLinOrdEdge(SUVecTy &SUs) {

@@ -58,7 +58,13 @@ unsigned SchedulerBase::calculateASAP(const VASTSchedUnit *U) {
   for (iterator DI = U->dep_begin(), DE = U->dep_end(); DI != DE; ++DI) {
     const VASTSchedUnit *Dep = *DI;
     // Ignore the back-edges when we are not pipelining the BB.
-    if (Dep->getIdx() > U->getIdx() && MII == 0) continue;
+    if (Dep->getIdx() > U->getIdx() && MII == 0) {
+      assert((Dep->getIdx() < U->getIdx()
+              || DI.getEdgeType(MII) == VASTDep::Conditional
+              || DI.getEdgeType(MII) == VASTDep::MemDep)
+             && "Bad dependencies!");
+      continue;
+    }
 
     unsigned DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
     int Step = DepASAP + DI.getLatency(MII);
@@ -127,7 +133,6 @@ bool SchedulerBase::buildASAPStep() {
   return false;
 }
 
-
 unsigned SchedulerBase::computeRecMII(unsigned MinRecMII) {
   unsigned CriticalPathLength = getCriticalPathLength();
   unsigned MaxRecMII = CriticalPathLength;
@@ -166,7 +171,13 @@ unsigned SchedulerBase::calculateALAP(const VASTSchedUnit *A) {
     VASTDep UseEdge = Use->getEdgeFrom(A, MII);
 
     // Ignore the back-edges when we are not pipelining the BB.
-    if (A->getIdx() > Use->getIdx() && MII == 0) continue;
+    if (A->getIdx() > Use->getIdx() && MII == 0) {
+      assert((A->getIdx() < Use->getIdx()
+              || UseEdge.getEdgeType() == VASTDep::Conditional
+              || UseEdge.getEdgeType() == VASTDep::MemDep)
+             && "Bad dependencies!");
+      continue;
+    }
 
     unsigned UseALAP = Use->isScheduled() ?
                        Use->getSchedule() : getALAPStep(Use);

@@ -164,7 +164,7 @@ VASTSchedGraph::VASTSchedGraph() {
   SUnits.push_back(new VASTSchedUnit(0, reinterpret_cast<BasicBlock*>(0)));
 
   // Create the exit SU.
-  SUnits.push_back(new VASTSchedUnit(0, reinterpret_cast<Instruction*>(0),
+  SUnits.push_back(new VASTSchedUnit(-1, reinterpret_cast<Instruction*>(0),
                                      false, 0, 0));
 }
 
@@ -202,6 +202,32 @@ void VASTSchedGraph::prepareForScheduling() {
   getEntry()->scheduleTo(1);
 
   getExit()->InstIdx = size();
+}
+
+void VASTSchedGraph::topologicalSortSUs() {
+  for (po_iterator<VASTSchedUnit*> I = po_begin(getEntry()),
+       E = po_end(getEntry()); I != E; ++I) {
+    VASTSchedUnit *U = *I;
+    SUnits.splice(SUnits.begin(), SUnits, U);
+  }
+
+  unsigned Idx = 0;
+  for (iterator I = begin(), E = end(); I != E; ++I)
+    I->InstIdx = Idx++;
+
+  assert(getEntry()->isEntry() && getExit()->isExit() && "Broken TopSort!");
+}
+
+//===----------------------------------------------------------------------===//
+void VASTSchedGraph::print(raw_ostream &OS) const {
+  for (const_iterator I = begin(), E = end(); I != E; ++I) {
+    I->print(OS);
+    OS << '\n';
+  }
+}
+
+void VASTSchedGraph::dump() const {
+  print(dbgs());
 }
 
 //===----------------------------------------------------------------------===//
