@@ -402,6 +402,10 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
 
   assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
   unsigned EntrySlot = SUs[0]->getSchedule();
+  // All SUs are scheduled to the same slot with the entry, hence they are all
+  // folded to the predecessor of this BB.
+  if (SUs.back()->getSchedule() == EntrySlot) return;
+
   BasicBlock *BB = SUs[0]->getParent();
 
   unsigned LatestSlot = EntrySlot;
