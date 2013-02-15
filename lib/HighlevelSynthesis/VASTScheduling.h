@@ -220,6 +220,9 @@ public:
   bool isEntry() const { return Ptr.is<BasicBlock*>() && Ptr.isNull(); }
   bool isExit() const { return Ptr.is<Instruction*>() && Ptr.isNull(); }
   bool isBBEntry() const { return Ptr.is<BasicBlock*>() && !Ptr.isNull(); }
+  bool isPHI() const {
+    return Ptr.is<Instruction*>() && isa<PHINode>(getInst()) && isLaunch();
+  }
 
   Instruction *getInst() const { return Ptr.get<Instruction*>(); }
   VASTSeqOp *getSeqOp() const { return SeqOp; }

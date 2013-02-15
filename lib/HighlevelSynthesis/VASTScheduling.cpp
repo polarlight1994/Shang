@@ -275,8 +275,6 @@ struct VASTScheduling : public VASTModulePass {
   void buildFlowDependencies(VASTSchedUnit *U);
   bool addFlowDepandency(Value *V, VASTSchedUnit *U);
 
-  void addConditionalDependencies(BasicBlock *BB, VASTSchedUnit *BBEntry);
-
   void buildMemoryDependencies(Instruction *Src, Instruction *Dst);
   void buildLoopDependencies(Instruction *Src, Instruction *Dst);
   void buildMemoryDependencies(BasicBlock *BB);
@@ -373,6 +371,8 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
     return;
   }
 
+  assert(U->isLatch() && "Unexpected scheduling unit type!");
+
   if (ReturnInst *Ret = dyn_cast<ReturnInst>(Inst)) {
     buildFlowDependencies(Ret, U);
     // Also add the dependencies form the return instruction to the exit of
@@ -381,7 +381,21 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
     return;
   }
 
-  assert(U->isLatch() && "Unexpected scheduling unit type!");
+  if (BranchInst *Br = dyn_cast<BranchInst>(Inst)) {
+    // Add the dependencies from the condition.
+    if (Br->isConditional() && !addFlowDepandency(Br->getCondition(), U))
+        buildFlowDependencies(dyn_cast<Instruction>(Br->getCondition()), U);
+
+    return;
+  }
+
+  if (SwitchInst *SW = dyn_cast<SwitchInst>(Inst)) {
+    // Add the dependencies from the condition.
+    if (!addFlowDepandency(SW->getCondition(), U))
+      buildFlowDependencies(dyn_cast<Instruction>(SW->getCondition()), U);
+
+    return;
+  }
 
   // Add the dependencies from the incoming value.
   if (PHINode *PN = dyn_cast<PHINode>(Inst)) {
@@ -393,65 +407,69 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
     return;
   }
 
+  // Nothing to do with Unreachable.
+  if (isa<UnreachableInst>(Inst)) return;
+
   // Simply build the dependencies from the launch instruction.
   SmallVectorImpl<VASTSchedUnit*> &SUs = IR2SUMap[Inst];
-  assert(SUs.size() == 1 && "Launching SU not found!");
-  VASTSchedUnit *LaunchU = SUs.back();
+  assert(SUs.size() >= 1 && "Launching SU not found!");
+  VASTSchedUnit *LaunchU = SUs.front();
+  assert(LaunchU->isLaunch() && "Bad SU type!");
 
   unsigned Latency = cast<VASTSeqInst>(U->getSeqOp())->getCyclesFromLaunch();
   U->addDep(LaunchU, VASTDep::CreateFixTimingConstraint(Latency));
-}
-
-void VASTScheduling::addConditionalDependencies(BasicBlock *BB,
-                                                VASTSchedUnit *BBEntry) {
-  bool PredEmpty = true;
-  // Add the dependencies from other BB.
-  for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
-    //BasicBlock *PredBB = *I;
-    PredEmpty = false;
-
-    IR2SUMapTy::const_iterator at = IR2SUMap.find(BB);
-
-    if (at == IR2SUMap.end()) continue;
-
-    // Get the corresponding br SeqOp and add the conditional dependencies.
-    ArrayRef<VASTSchedUnit*> SUs(at->second);
-    for (unsigned i = 0; i < SUs.size(); ++i) {
-      llvm_unreachable("Not implemented!");
-
-      BBEntry->addDep(SUs[i], VASTDep::CreateCndDep());
-      break;
-    }
-  }
-
-  // If the BB do not have any predecessor, it is the entry block of the
-  // function. Add a flow dependencies form it.
-  if (PredEmpty) BBEntry->addDep(G->getEntry(), VASTDep::CreateFlowDep(0));
 }
 
 VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
   SmallVectorImpl<VASTSchedUnit*> &SUs = IR2SUMap[BB];
 
   // Simply return the BBEntry if it had already existed.
-  if (!SUs.empty()) {
-    assert(SUs.back()->isBBEntry() && "Unexpected SU type!");
+  if (!SUs.empty() && SUs.back()->isBBEntry())
     return SUs.back();
-  }
 
   VASTSchedUnit *Entry = G->createSUnit(BB);
-  SUs.push_back(Entry);
 
-  addConditionalDependencies(BB, Entry);
+  // Add the conditional dependencies from the branch instructions that
+  // targeting this BB.
+  // Please note that because we are visiting the BBs in topological order,
+  // we are supposed to not introduce backedges here.
+  for (unsigned i = 0; i < SUs.size(); ++i) {
+    assert(!SUs[i]->isBBEntry() && "Unexpected BB entry!");
+    assert(isa<TerminatorInst>(SUs[i]->getInst())
+           && "Unexpected instruction type!");
+    assert(SUs[i]->getTargetBlock() == BB && "Wrong target BB!");
+    Entry->addDep(SUs[i], VASTDep::CreateCndDep());
+  }
+
+  if (SUs.empty()) {
+    assert(pred_begin(BB) == pred_end(BB)
+           && "No entry block do not have any predecessor?");
+    // Dependency from the BB entry is not conditional.
+    Entry->addDep(G->getEntry(), VASTDep::CreateFlowDep(0));
+  }
+
+  // Add the entry to the mapping.
+  SUs.push_back(Entry);
 
   // Also create the SUnit for the PHI Nodes.
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB->begin(), E = BB->getFirstNonPHI(); I != E; ++I) {
     PHINode *PN = cast<PHINode>(I);
-    VASTSchedUnit *U = G->createSUnit(PN, true, 0, 0);
+    VASTSchedUnit *U = G->createSUnit(PN, false, 0, 0);
 
-    // Add the dependencies between the entry of the BB and the PHINode.
-    U->addDep(Entry, VASTDep::CreateCtrlDep(0));
-    IR2SUMap[PN].push_back(U);
+    // Schedule the PHI to the same slot with the entry if we are not perform
+    // Software pipelining.
+    U->addDep(Entry, VASTDep::CreateFixTimingConstraint(0));
+
+    // Add the dependencies from the incoming values.
+    SmallVectorImpl<VASTSchedUnit*> &Incomings = IR2SUMap[PN];
+    for (unsigned i = 0; i < Incomings.size(); ++i) {
+      VASTSchedUnit *Incoming = Incomings[i];
+      assert(Incoming->isLatch() && "Bad incoming scheduling unit type!");
+      U->addDep(Incoming, VASTDep::CreateCndDep());
+    }
+
+    Incomings.push_back(U);
   }
 
   return Entry;
@@ -479,9 +497,23 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
       VASTSchedUnit *U = 0;
       bool IsLatch = SeqInst->getSeqOpType() == VASTSeqInst::Latch;
 
-      if (PHINode *PN = dyn_cast<PHINode>(Inst))
+      if (PHINode *PN = dyn_cast<PHINode>(Inst)) {
         U = G->createSUnit(PN, IsLatch, BB, SeqInst);
-      else
+
+        BasicBlock *LandingBlock = PN->getParent();
+        ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[BB->getTerminator()]);
+        for (unsigned i = 0; i < Terminators.size(); ++i) {
+          VASTSchedUnit *T = Terminators[i];
+          if (T->getTargetBlock() == LandingBlock) {
+            // Schedule the incoming copy of the PHIs to the same slot that
+            // the branch instruction branching to the same BB.
+            U->addDep(T, VASTDep::CreateFixTimingConstraint(0));
+            break;
+          }
+        }
+        assert(!U->dep_empty()
+               && "PHI not bind to the Branch that targeting the same block!");
+      } else
         U = G->createSUnit(Inst, IsLatch, 0, SeqInst);
 
       U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
@@ -495,11 +527,20 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
     if (VASTSlotCtrl *SlotCtrl = dyn_cast<VASTSlotCtrl>(Op)) {
       if (SlotCtrl->isBranch()) {
         // Handle the branch.
+        BasicBlock *TargetBB = SlotCtrl->getTargetSlot()->getParent();
+        VASTSchedUnit *U = G->createSUnit(Inst, true, TargetBB, SlotCtrl);
+        IR2SUMap[Inst].push_back(U);
+        // Also map the target BB to this terminator.
+        IR2SUMap[TargetBB].push_back(U);
+
+        U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
+        buildFlowDependencies(U);
         continue;
       }
 
       // This is a wait operation.
       VASTSchedUnit *U = G->createSUnit(Inst, true, BB, SlotCtrl);
+      IR2SUMap[Inst].push_back(U);
       VASTSchedUnit *Launch = IR2SUMap[Inst].front();
       assert(Launch->isLaunch() && "Expect launch operation!");
       // The wait operation is 1 cycle after the launch operation.
