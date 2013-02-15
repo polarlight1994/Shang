@@ -22,6 +22,7 @@
 #include "shang/Passes.h"
 
 #include "llvm/IR/DataLayout.h"
+#include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -1057,6 +1058,7 @@ void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<AliasAnalysis>();
   AU.addPreserved<ScalarEvolution>();
   AU.addPreserved<HLSAllocation>();
+  AU.addPreserved<DependenceAnalysis>();
   AU.setPreservesCFG();
 }
 
