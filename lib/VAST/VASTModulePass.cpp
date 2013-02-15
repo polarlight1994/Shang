@@ -913,7 +913,8 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     VASTSeqValue *Result = getOrCreateSeqVal(&I, I.getName());
     assert(Result->getBitWidth() <= R->getBitWidth()
            && "Loading data that exceed the width of databus!");
-    VM->latchValue(Result, R, Slot, VASTImmediate::True, &I, Latency);
+    VASTValPtr V = Builder.buildBitSliceExpr(R, Result->getBitWidth(), 0);
+    VM->latchValue(Result, V, Slot, VASTImmediate::True, &I, Latency);
     // Move the the next slot so that the other operations are not conflict with
     // the current memory operations.
     advanceToNextSlot(Slot);
