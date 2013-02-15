@@ -119,6 +119,9 @@ void ScheduleEmitterImpl::takeOldSlots() {
         cloneSeqInst(SeqOp, StartSlot, SeqOp->getPred());
     }
   }
+
+  VASTValPtr StartPort = VM.getPort(VASTModule::Start).getValue();
+  addSuccSlot(StartSlot, StartSlot, Builder.buildNotExpr(StartPort));
 }
 
 VASTSeqInst *ScheduleEmitterImpl::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
