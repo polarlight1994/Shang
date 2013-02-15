@@ -592,7 +592,6 @@ void VASTModule::eraseSeqVal(VASTSeqValue *Val) {
     Registers.erase(std::find(reg_begin(), reg_end(), R));
 
   SeqVals.erase(Val);
-
 }
 
 void VASTModule::eraseSeqOp(VASTSeqOp *SeqOp) {

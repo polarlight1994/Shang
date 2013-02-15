@@ -237,7 +237,8 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
     tb_ptr->$(v.Name)=$(v.Name);
 #end       
     tb_ptr->start=1;
-    wait(); tb_ptr->start=0;
+    wait();
+    tb_ptr->start=0;
     while(!(tb_ptr->fin)){
       wait();
       ++cnt;
