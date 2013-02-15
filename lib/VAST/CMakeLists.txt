@@ -2,7 +2,6 @@ add_llvm_library(ShangVAST
   Allocation.cpp
   SimpleBlockRAMAllocation.cpp
   VASTModulePass.cpp
-  ScheduleEmitter.cpp
   VASTExpr.cpp
   VASTExprBuilder.cpp
   VASTExprOptAnd.cpp

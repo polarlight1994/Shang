@@ -20,7 +20,6 @@
 #include "shang/Passes.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTSeqValue.h"
-#include "shang/ScheduleEmitter.h"
 #include "shang/VASTModulePass.h"
 
 #include "llvm/Support/CFG.h"
@@ -224,10 +223,8 @@ struct VASTScheduling : public VASTModulePass {
   typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
   IR2SUMapTy IR2SUMap;
   VASTSchedGraph *G;
-  ScheduleEmitter *Emitter;
   TimingNetlist *TNL;
   VASTModule *VM;
-  SUBBMap BBMap;
 
   VASTScheduling() : VASTModulePass(ID) {
     initializeVASTSchedulingPass(*PassRegistry::getPassRegistry());
@@ -250,32 +247,10 @@ struct VASTScheduling : public VASTModulePass {
   void buildSchedulingGraph();
   void buildSchedulingUnits(VASTSlot *S);
 
-
-  /// Emit the schedule by reimplementing the state-transition graph according
-  /// the new scheduling results.
-  ///
-  void emitSchedule();
-
-  /// Emit the scheduling units in the same BB.
-  ///
-  unsigned emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs,
-                            unsigned LastSlotNum);
-
-  /// Emit the scheduling units to a specific slot.
-  ///
-  void emitScheduleAtSlot(MutableArrayRef<VASTSchedUnit*> SUs,
-                          unsigned SlotNum);
-
-  void emitScheduleAtFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
-                               MutableArrayRef<VASTSchedUnit*> SUs);
-
-  void handleNewSeqOp(VASTSeqOp *SeqOp);
-
   bool runOnVASTModule(VASTModule &VM);
 
   void releaseMemory() {
     IR2SUMap.clear();
-    BBMap.clear();
     G = 0;
     TNL = 0;
   }
@@ -377,6 +352,12 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
 
   assert(U->isLatch() && "Unexpected scheduling unit type!");
   // Simply build the dependencies from the launch instruction.
+  SmallVectorImpl<VASTSchedUnit*> &SUs = IR2SUMap[Inst];
+  assert(SUs.size() == 1 && "Launching SU not found!");
+  VASTSchedUnit *LaunchU = SUs.back();
+
+  unsigned Latency = cast<VASTSeqInst>(U->getSeqOp())->getCyclesFromLaunch();
+  U->addDep(LaunchU, VASTDep::CreateFixTimingConstraint(Latency));
 }
 
 void VASTScheduling::addConditionalDependencies(BasicBlock *BB,
@@ -463,11 +444,12 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
     else
       U = G->createSUnit(Inst, Op->getSeqOpType() == VASTSeqInst::Latch, 0, Op);
 
-    IR2SUMap[Inst].push_back(U);
 
     U->addDep(BBEntry, VASTDep(VASTDep::Predicate, 0, 0));
 
     buildFlowDependencies(U);
+
+    IR2SUMap[Inst].push_back(U);
   }
 }
 
@@ -497,111 +479,6 @@ void VASTScheduling::buildSchedulingGraph() {
   DEBUG(G->viewGraph());
 }
 
-void VASTScheduling::handleNewSeqOp(VASTSeqOp *SeqOp) {
-  VASTSlot *S = SeqOp->getSlot();
-
-  if (dyn_cast_or_null<ReturnInst>(SeqOp->getValue()))
-    Emitter->addSuccSlot(S, VM->getFinishSlot(), SeqOp->getPred());
-}
-
-void VASTScheduling::emitScheduleAtFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
-                                             MutableArrayRef<VASTSchedUnit*> SUs) {
-
-  assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
-  BasicBlock *ToBB = SUs[0]->getParent();
-  unsigned EntrySlot = SUs[0]->getSchedule();
-
-  for (unsigned i = 1; i < SUs.size(); ++i) {
-    VASTSchedUnit *SU = SUs[i];
-
-    // Only emit the SUs in the same slot with the entry.
-    if (SU->getSchedule() != EntrySlot) return;
-
-    VASTSeqOp *NewOp = Emitter->emitToSlot(SU->getSeqOp(), Pred, ToSlot);
-
-    handleNewSeqOp(NewOp);
-  }
-}
-
-void VASTScheduling::emitScheduleAtSlot(MutableArrayRef<VASTSchedUnit*> SUs,
-                                        unsigned SlotNum) {
-
-}
-
-static
-int top_sort_schedule(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) {
-  if (LHS->getSchedule() != RHS->getSchedule())
-    return LHS->getSchedule() < RHS->getSchedule() ? -1 : 1;
-
-  if (LHS->getIdx() < RHS->getIdx()) return -1;
-
-  if (LHS->getIdx() > RHS->getIdx()) return 1;
-
-  return 0;
-}
-
-static int top_sort_schedule_wrapper(const void *LHS, const void *RHS) {
-  return top_sort_schedule(*reinterpret_cast<const VASTSchedUnit* const *>(LHS),
-                           *reinterpret_cast<const VASTSchedUnit* const *>(RHS));
-}
-
-unsigned VASTScheduling::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs,
-                                          unsigned LastSlotNum) {
-
-  assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
-  unsigned EntrySlot = SUs[0]->getSchedule();
-  unsigned LatestSlot = EntrySlot;
-
-  SmallVector<VASTSchedUnit*, 8> SUsToEmit;
-  for (unsigned i = 1; i < SUs.size(); ++i) {
-    VASTSchedUnit *CurSU = SUs[i];
-    if (LatestSlot != CurSU->getSchedule()) {
-      assert((LatestSlot != EntrySlot || SUsToEmit.empty())
-             && "Unexpected SUs in the first slot!");
-
-      if (LatestSlot != EntrySlot)
-        emitScheduleAtSlot(SUsToEmit, LastSlotNum + LatestSlot - EntrySlot);
-
-      SUsToEmit.clear();
-    }
-
-    LatestSlot = CurSU->getSchedule();
-    // Do not emit the scheduling units at the first slot of the BB. They had
-    // already folded in the the last slot of its predecessors.
-    if (LatestSlot != EntrySlot) SUsToEmit.push_back(CurSU);
-  }
-
-  assert((LatestSlot != EntrySlot || SUsToEmit.empty())
-         && "Unexpected SUs in the first slot!");
-
-  if (LatestSlot != EntrySlot)
-    emitScheduleAtSlot(SUsToEmit, LastSlotNum + LatestSlot - EntrySlot);
-
-  return LastSlotNum + LatestSlot + 1 - EntrySlot;
-}
-
-void VASTScheduling::emitSchedule() {
-  Function &F = *VM;
-
-  BBMap.buildMap(*G);
-  BBMap.sortSUs(top_sort_schedule_wrapper);
-
-  Emitter->takeOldSlots();
-  unsigned CurSlotNum = 1;
-
-  BasicBlock &EntryBB = F.getEntryBlock();
-  emitScheduleAtFirstSlot(VM->getPort(VASTModule::Start).getValue(),
-                          VM->getStartSlot(), BBMap.getSUInBB(&EntryBB));
-
-
-  typedef Function::iterator iterator;
-  for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    BasicBlock *BB = I;
-    MutableArrayRef<VASTSchedUnit*> SUs(BBMap.getSUInBB(BB));
-    CurSlotNum = emitScheduleInBB(SUs, CurSlotNum);
-  }
-}
-
 bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   this->VM = &VM;
 
@@ -615,10 +492,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
 
   G->schedule();
 
-  OwningPtr<ScheduleEmitter> EmitterPtr(new ScheduleEmitter(VM));
-  Emitter = EmitterPtr.get();
-
-  emitSchedule();
+  G->emitSchedule(VM);
 
   return true;
 }
