@@ -195,9 +195,6 @@ void BasicLinearOrderGenerator::addLinOrdEdge(ConflictListTy &List) {
   typedef ConflictListTy::iterator iterator;
   for (iterator I = List.begin(), E = List.end(); I != E; ++I) {
     std::vector<VASTSchedUnit*> &SUs = I->second;
-    VASTNode *Node = I->first;
-
-    VASTSchedUnit *FirstSU = 0, *LastSU = 0;
 
     if (!SUs.empty()) {
       std::sort(SUs.begin(), SUs.end(), alap_less(G));
