@@ -258,13 +258,13 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   }
 
   void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd,
-                   BasicBlock *DstBB = 0) {
+                   TerminatorInst *Inst = 0) {
     // If the Br is already exist, simply or the conditions together.
     assert (S->getBrToSucc(NextSlot) == 0 && "Branching to target slot existed!");
 
     S->addSuccSlot(NextSlot);
     VASTSlotCtrl *SlotBr = VM->createSlotCtrl(NextSlot, S, Cnd);
-    if (DstBB) SlotBr->annotateValue(DstBB);
+    if (Inst) SlotBr->annotateValue(Inst);
   }
 
   //===--------------------------------------------------------------------===//
@@ -658,14 +658,14 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
                   VM->getPort(VASTModule::Finish).getSeqVal());
 
   // Construct the control flow.
-  addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True);
+  addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True, &I);
 }
 
 void VASTModuleBuilder::visitUnreachableInst(UnreachableInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
   // DIRTYHACK: Simply jump back the start slot.
   // Construct the control flow.
-  addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True);
+  addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True, &I);
 }
 
 void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
@@ -673,18 +673,17 @@ void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
   // TODO: Create alias operations.
   if (I.isUnconditional()) {
     BasicBlock *DstBB = I.getSuccessor(0);
-    addSuccSlot(CurSlot, getOrCreateLandingSlot(DstBB), VASTImmediate::True,
-                DstBB);
+    addSuccSlot(CurSlot, getOrCreateLandingSlot(DstBB), VASTImmediate::True, &I);
     return;
   }
 
   // Connect the slots according to the condition.
   VASTValPtr Cnd = getAsOperandImpl(I.getCondition());
   BasicBlock *TrueBB = I.getSuccessor(0);
-  addSuccSlot(CurSlot, getOrCreateLandingSlot(TrueBB), Cnd, TrueBB);
+  addSuccSlot(CurSlot, getOrCreateLandingSlot(TrueBB), Cnd, &I);
   BasicBlock *FalseBB = I.getSuccessor(1);
   addSuccSlot(CurSlot, getOrCreateLandingSlot(FalseBB),
-              Builder.buildNotExpr(Cnd), FalseBB);
+              Builder.buildNotExpr(Cnd), &I);
 }
 
 void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
@@ -705,13 +704,14 @@ void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
     VASTValPtr CaseVal = getOrCreateImmediate(CasValInt);
     VASTValPtr Pred = Builder.buildEQ(CndVal, CaseVal);
     CasePreds.push_back(Pred);
-    addSuccSlot(CurSlot, SuccSlot, Pred);
+    addSuccSlot(CurSlot, SuccSlot, Pred, &I);
   }
 
   // Jump to the default block when all the case value not match, i.e. all case
   // predicate is false.
   VASTValPtr DefaultPred = Builder.buildNotExpr(Builder.buildOrExpr(CasePreds, 1));
-  addSuccSlot(CurSlot, getOrCreateLandingSlot(I.getDefaultDest()), DefaultPred);
+  VASTSlot *DefLandingSlot = getOrCreateLandingSlot(I.getDefaultDest());
+  addSuccSlot(CurSlot, DefLandingSlot, DefaultPred, &I);
 }
 
 void VASTModuleBuilder::visitCallSite(CallSite CS) {
