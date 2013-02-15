@@ -235,9 +235,13 @@ VASTValPtr ScheduleEmitter::getValAtSlot(VASTValue *V, VASTSlot *ToSlot) {
   for (iterator I = SeqVal->begin(), E = SeqVal->end(); I != E; ++I) {
     VASTSeqUse U = *I;
 
-    if (U.getSlot() == ToSlot) {
+    // Only retime across the latch operation.
+    if (cast<VASTSeqInst>(U.Op)->getSeqOpType() == VASTSeqInst::Latch
+        && U.getSlot() == ToSlot) {
       assert(ForwardedValue == SeqVal && "Cannot resolve the source value!");
       ForwardedValue = U;
+      assert(ForwardedValue->getBitWidth() == V->getBitWidth()
+             && "Bitwidth implicitly changed!");
     }
   }
 
