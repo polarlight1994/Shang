@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 #include "LangSteam.h"
-#include "VASTExprBuilder.h"
 
 #include "shang/VASTSlot.h"
 #include "shang/VASTSeqValue.h"

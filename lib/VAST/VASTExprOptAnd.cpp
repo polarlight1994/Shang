@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "VASTExprBuilder.h"
+#include "shang/VASTExprBuilder.h"
 
 #include "shang/Utilities.h"
 

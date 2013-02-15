@@ -12,8 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "VASTExprBuilder.h"
-
+#include "shang/VASTExprBuilder.h"
 #include "shang/Utilities.h"
 
 #include "llvm/Support/ErrorHandling.h"
