@@ -80,7 +80,8 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
 
   void emitToSlot(VASTSeqOp *Op, VASTValPtr Pred, VASTSlot *ToSlot);
 
-  void handleNewSeqOp(VASTSeqOp *SeqOp);
+  void handleNewSeqOp(VASTSeqInst *SeqOp);
+  void handleNewSeqOp(VASTSlotCtrl *SeqOp);
 public:
   ScheduleEmitter(VASTModule &VM, VASTSchedGraph &G);
   ~ScheduleEmitter() { clearUp(); }
@@ -212,9 +213,24 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
   Pred = Builder.buildAndExpr(retimeDatapath(Pred, ToSlot),
                               retimeDatapath(Op->getPred(), ToSlot),
                               1);
+  VASTNode *N = Op->getNode();
+  Value *V = Op->getValue();
 
-  VASTSlotCtrl *NewSlotCtrl = VM.createSlotCtrl(Op->getNode(), ToSlot, Pred);
-  NewSlotCtrl->annotateValue(Op->getValue());
+  if (Op->isBranch()) {
+    // Point to the slot in the new slotlist.
+    if (isa<ReturnInst>(V) || isa<UnreachableInst>(V)) {
+      N = VM.getFinishSlot();
+      ToSlot->addSuccSlot(VM.getFinishSlot());
+    } else {
+      // Emit the the SUs in the first slot in the target BB.
+      // Connect to the landing slot if not all SU in the target BB emitted to
+      // current slot.
+      llvm_unreachable("Not implemented!");
+    }
+  }
+
+  VASTSlotCtrl *NewSlotCtrl = VM.createSlotCtrl(N, ToSlot, Pred);
+  NewSlotCtrl->annotateValue(V);
   return NewSlotCtrl;
 }
 
@@ -344,12 +360,11 @@ VASTValPtr ScheduleEmitter::retimeDatapath(VASTValue *Root, VASTSlot *ToSlot) {
 }
 
 //===----------------------------------------------------------------------===//
-void ScheduleEmitter::handleNewSeqOp(VASTSeqOp *SeqOp) {
-  VASTSlot *S = SeqOp->getSlot();
+void ScheduleEmitter::handleNewSeqOp(VASTSeqInst *SeqOp) {
 
-  if (dyn_cast_or_null<ReturnInst>(SeqOp->getValue()))
-    addSuccSlot(S, VM.getFinishSlot(), SeqOp->getPred());
 }
+
+void ScheduleEmitter::handleNewSeqOp(VASTSlotCtrl *SeqOp) {}
 
 void ScheduleEmitter::emitToSlot(VASTSeqOp *Op, VASTValPtr Pred,
                                  VASTSlot *ToSlot) {
