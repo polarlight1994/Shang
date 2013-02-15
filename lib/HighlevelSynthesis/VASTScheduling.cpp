@@ -468,29 +468,43 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
   else         BBEntry = getOrCreateBBEntry(BB);
 
   for (op_iterator OI = S->op_begin(), OE = S->op_end(); OI != OE; ++OI) {
-    VASTSeqInst *Op = dyn_cast<VASTSeqInst>(*OI);
-
+    VASTSeqOp *Op = *OI;
+    Instruction *Inst = dyn_cast_or_null<Instruction>(Op->getValue());
     // We can safely ignore the SeqOp that does not correspond to any LLVM
     // Value, their will be rebuilt when we emit the scheduling.
-    if (Op == 0) continue;
-
-    Instruction *Inst = dyn_cast<Instruction>(Op->getValue());
-
     if (Inst == 0) continue;
 
-    VASTSchedUnit *U = 0;
-    bool IsLatch = Op->getSeqOpType() == VASTSeqInst::Latch;
+    if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op)) {
+      VASTSchedUnit *U = 0;
+      bool IsLatch = SeqInst->getSeqOpType() == VASTSeqInst::Latch;
 
-    if (PHINode *PN = dyn_cast<PHINode>(Inst))
-      U = G->createSUnit(PN, IsLatch, BB, Op);
-    else
-      U = G->createSUnit(Inst, IsLatch, 0, Op);
+      if (PHINode *PN = dyn_cast<PHINode>(Inst))
+        U = G->createSUnit(PN, IsLatch, BB, SeqInst);
+      else
+        U = G->createSUnit(Inst, IsLatch, 0, SeqInst);
 
-    U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
+      U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
 
-    buildFlowDependencies(U);
+      buildFlowDependencies(U);
 
-    IR2SUMap[Inst].push_back(U);
+      IR2SUMap[Inst].push_back(U);
+      continue;
+    }
+
+    if (VASTSlotCtrl *SlotCtrl = dyn_cast<VASTSlotCtrl>(Op)) {
+      if (SlotCtrl->isBranch()) {
+        // Handle the branch.
+        continue;
+      }
+
+      // This is a wait operation.
+      VASTSchedUnit *U = G->createSUnit(Inst, true, BB, SlotCtrl);
+      VASTSchedUnit *Launch = IR2SUMap[Inst].front();
+      assert(Launch->isLaunch() && "Expect launch operation!");
+      // The wait operation is 1 cycle after the launch operation.
+      U->addDep(Launch, VASTDep::CreateFixTimingConstraint(1));
+      continue;
+    }
   }
 }
 

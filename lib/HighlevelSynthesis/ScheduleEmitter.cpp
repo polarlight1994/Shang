@@ -68,12 +68,14 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
   }
 
   VASTSeqInst *cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot, VASTValPtr Pred);
+  VASTSlotCtrl *cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
+                              VASTValPtr Pred);
 
   /// Emit the scheduling units in the same BB.
   ///
   void emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs);
 
-  bool emitScheduleAtFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
+  bool emitToFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
                                MutableArrayRef<VASTSchedUnit*> SUs);
 
   void emitToSlot(VASTSeqOp *Op, VASTValPtr Pred, VASTSlot *ToSlot);
@@ -194,11 +196,31 @@ void ScheduleEmitter::initialize() {
   BBMap.sortSUs(top_sort_schedule_wrapper);
 
   takeOldSlots();
+
+  // Assign the landing slot number for each BB.
+  Function &F = VM;
+  typedef Function::iterator iterator;
+
+  for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
+  }
+}
+
+//===----------------------------------------------------------------------===//
+VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
+                                             VASTValPtr Pred) {
+  // Retime the predicate operand.
+  Pred = Builder.buildAndExpr(retimeDatapath(Pred, ToSlot),
+                              retimeDatapath(Op->getPred(), ToSlot),
+                              1);
+
+  VASTSlotCtrl *NewSlotCtrl = VM.createSlotCtrl(Op->getNode(), ToSlot, Pred);
+  NewSlotCtrl->annotateValue(Op->getValue());
+  return NewSlotCtrl;
 }
 
 //===----------------------------------------------------------------------===//
 VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
-                                               VASTValPtr Pred) {
+                                           VASTValPtr Pred) {
   SmallVector<VASTValPtr, 4> RetimedOperands;
   // Retime all the operand to the specificed slot.
   typedef VASTOperandList::op_iterator iterator;
@@ -336,13 +358,15 @@ void ScheduleEmitter::emitToSlot(VASTSeqOp *Op, VASTValPtr Pred,
   case VASTNode::vastSeqInst:
     handleNewSeqOp(cloneSeqInst(cast<VASTSeqInst>(Op), ToSlot, Pred));
     break;
+  case VASTNode::vastSeqEnable:
+    handleNewSeqOp(cloneSlotCtrl(cast<VASTSlotCtrl>(Op), ToSlot, Pred));
+    break;
   default: llvm_unreachable("Unexpected SeqOp type!");
   }
 }
 
-bool ScheduleEmitter::emitScheduleAtFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
+bool ScheduleEmitter::emitToFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
                                               MutableArrayRef<VASTSchedUnit*> SUs) {
-
   assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
   BasicBlock *ToBB = SUs[0]->getParent();
   unsigned EntrySlot = SUs[0]->getSchedule();
@@ -396,17 +420,16 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
 void ScheduleEmitter::emitSchedule() {
   Function &F = VM;
 
-  BasicBlock &EntryBB = F.getEntryBlock();
+  BasicBlock &Entry = F.getEntryBlock();
 
-  if (emitScheduleAtFirstSlot(VM.getPort(VASTModule::Start).getValue(),
-                              VM.getStartSlot(), BBMap.getSUInBB(&EntryBB))) {
+  VASTValPtr StartPort = VM.getPort(VASTModule::Start).getValue();
+  if (emitToFirstSlot(StartPort, VM.getStartSlot(), BBMap.getSUInBB(&Entry))) {
     // Create the landing slot of entry BB if not all SUs in the Entry BB
     // emitted to the idle slot.
-    VASTSlot *S = VM.createSlot(1, &EntryBB);
-    LandingSlots[&EntryBB] = S;
+    VASTSlot *S = VM.createSlot(1, &Entry);
+    LandingSlots[&Entry] = S;
     // Go to the new slot if the start port is 1.
-    VASTValPtr StartPort = VM.getPort(VASTModule::Start).getValue();
-    addSuccSlot(VM.getStartSlot(), S, StartPort, &EntryBB);
+    addSuccSlot(VM.getStartSlot(), S, StartPort, &Entry);
   } else
     // Trivial case: All schedule units scheduled to the first slot.
     return;
