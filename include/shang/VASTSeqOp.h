@@ -210,6 +210,10 @@ public:
   bool isBranch() const;
   VASTSlot *getTargetSlot() const;
   VASTValue *getWaitingSignal() const;
+  VASTNode *getNode() const {
+    return isBranch() ? (VASTNode*)getTargetSlot()
+                      : (VASTNode*)getWaitingSignal();
+  }
 
   virtual void print(raw_ostream &OS) const;
   static inline bool classof(const VASTSlotCtrl *A) { return true; }
