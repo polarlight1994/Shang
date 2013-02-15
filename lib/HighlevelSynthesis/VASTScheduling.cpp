@@ -569,6 +569,19 @@ void VASTScheduling::fixDanglingNodes() {
     unsigned Latency = U->isLatch() ? 0 : 1;
     BBExit->addDep(U, VASTDep::CreateCtrlDep(Latency));
   }
+
+  // Assign constraint to the terminators in the same BB so that their are
+  // scheduled to the same slot.
+  Function &F = *VM;
+
+  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    Instruction *Inst = I->getTerminator();
+    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[Inst]);
+    assert(!SUs.empty() && "Scheduling Units for terminator not built?");
+    VASTSchedUnit *U = SUs[0];
+    for (unsigned i = 1; i < SUs.size(); ++i)
+      SUs[i]->addDep(U, VASTDep::CreateFixTimingConstraint(0));
+  }
 }
 
 void VASTScheduling::buildSchedulingGraph() {
