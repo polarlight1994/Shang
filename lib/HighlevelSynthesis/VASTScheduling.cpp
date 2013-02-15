@@ -511,9 +511,9 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 //===----------------------------------------------------------------------===//
 void VASTScheduling::buildMemoryDependencies(Instruction *Src, Instruction *Dst)
 {
-  // Loop dependencies are not handled in this function, so simply disable the
-  // loop dependencies analysis.
-  Dependence *D = DA->depends(Src, Dst, false);
+  // The control flow can reach from Src to Dst without traversing a loop back
+  // edge.
+  Dependence *D = DA->depends(Src, Dst, true);
 
   // No dependencies at all.
   if ((D == 0 || D->isInput()) && !isa<CallInst>(Src) && !isa<CallInst>(Dst))
