@@ -31,6 +31,9 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
   VASTModule &VM;
   ilist<VASTSlot> OldSlots;
   VASTSchedGraph &G;
+
+  std::map<BasicBlock*, VASTSlot*> LandingSlots;
+
   SUBBMap BBMap;
 
   void takeOldSlots();
@@ -68,15 +71,9 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
 
   /// Emit the scheduling units in the same BB.
   ///
-  unsigned emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs,
-                            unsigned LastSlotNum);
+  void emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs);
 
-  /// Emit the scheduling units to a specific slot.
-  ///
-  void emitScheduleAtSlot(MutableArrayRef<VASTSchedUnit*> SUs,
-                          unsigned SlotNum);
-
-  void emitScheduleAtFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
+  bool emitScheduleAtFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
                                MutableArrayRef<VASTSchedUnit*> SUs);
 
   void emitToSlot(VASTSeqOp *Op, VASTValPtr Pred, VASTSlot *ToSlot);
@@ -339,7 +336,7 @@ void ScheduleEmitter::emitToSlot(VASTSeqOp *Op, VASTValPtr Pred,
   }
 }
 
-void ScheduleEmitter::emitScheduleAtFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
+bool ScheduleEmitter::emitScheduleAtFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
                                               MutableArrayRef<VASTSchedUnit*> SUs) {
 
   assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
@@ -350,67 +347,71 @@ void ScheduleEmitter::emitScheduleAtFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
     VASTSchedUnit *SU = SUs[i];
 
     // Only emit the SUs in the same slot with the entry.
-    if (SU->getSchedule() != EntrySlot) return;
+    if (SU->getSchedule() != EntrySlot) return true;
 
     emitToSlot(SU->getSeqOp(), Pred, ToSlot);
   }
+
+  return false;
 }
 
-void ScheduleEmitter::emitScheduleAtSlot(MutableArrayRef<VASTSchedUnit*> SUs,
-                                         unsigned SlotNum) {
-
-}
-
-unsigned ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs,
-                                           unsigned LastSlotNum) {
+void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
 
   assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
   unsigned EntrySlot = SUs[0]->getSchedule();
-  unsigned LatestSlot = EntrySlot;
+  BasicBlock *BB = SUs[0]->getParent();
 
-  SmallVector<VASTSchedUnit*, 8> SUsToEmit;
+  unsigned LatestSlot = EntrySlot;
+  VASTSlot *CurSlot = LandingSlots[BB];
+  assert(CurSlot && "Landing Slot not created?");
+  unsigned EntrySlotNum = CurSlot->SlotNum;
+
   for (unsigned i = 1; i < SUs.size(); ++i) {
     VASTSchedUnit *CurSU = SUs[i];
-    if (LatestSlot != CurSU->getSchedule()) {
-      assert((LatestSlot != EntrySlot || SUsToEmit.empty())
-             && "Unexpected SUs in the first slot!");
-
-      if (LatestSlot != EntrySlot)
-        emitScheduleAtSlot(SUsToEmit, LastSlotNum + LatestSlot - EntrySlot);
-
-      SUsToEmit.clear();
-    }
-
     LatestSlot = CurSU->getSchedule();
+
     // Do not emit the scheduling units at the first slot of the BB. They had
     // already folded in the the last slot of its predecessors.
-    if (LatestSlot != EntrySlot) SUsToEmit.push_back(CurSU);
+    if (LatestSlot == EntrySlot) continue;
+
+    // Please note that the EntrySlot is actually folded into its predecessor's
+    // last slot, hence we need to minus EntrySlot by 1
+    unsigned CurSlotNum = EntrySlotNum + LatestSlot - EntrySlot - 1;
+    // Create the slot if it is not created.
+    while (CurSlotNum != CurSlot->SlotNum) {
+      VASTSlot *NextSlot = VM.createSlot(CurSlot->SlotNum + 1, BB);
+      addSuccSlot(CurSlot, NextSlot, VASTImmediate::True);
+      CurSlot = NextSlot;
+    }
+
+    emitToSlot(CurSU->getSeqOp(), VASTImmediate::True, CurSlot);
   }
-
-  assert((LatestSlot != EntrySlot || SUsToEmit.empty())
-         && "Unexpected SUs in the first slot!");
-
-  if (LatestSlot != EntrySlot)
-    emitScheduleAtSlot(SUsToEmit, LastSlotNum + LatestSlot - EntrySlot);
-
-  return LastSlotNum + LatestSlot + 1 - EntrySlot;
 }
 
 
 void ScheduleEmitter::emitSchedule() {
   Function &F = VM;
 
-  unsigned CurSlotNum = 1;
-
   BasicBlock &EntryBB = F.getEntryBlock();
-  emitScheduleAtFirstSlot(VM.getPort(VASTModule::Start).getValue(),
-                          VM.getStartSlot(), BBMap.getSUInBB(&EntryBB));
+
+  if (emitScheduleAtFirstSlot(VM.getPort(VASTModule::Start).getValue(),
+                              VM.getStartSlot(), BBMap.getSUInBB(&EntryBB))) {
+    // Create the landing slot of entry BB if not all SUs in the Entry BB
+    // emitted to the idle slot.
+    VASTSlot *S = VM.createSlot(1, &EntryBB);
+    LandingSlots[&EntryBB] = S;
+    // Go to the new slot if the start port is 1.
+    VASTValPtr StartPort = VM.getPort(VASTModule::Start).getValue();
+    addSuccSlot(VM.getStartSlot(), S, StartPort, &EntryBB);
+  } else
+    // Trivial case: All schedule units scheduled to the first slot.
+    return;
 
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
     MutableArrayRef<VASTSchedUnit*> SUs(BBMap.getSUInBB(BB));
-    CurSlotNum = emitScheduleInBB(SUs, CurSlotNum);
+    emitScheduleInBB(SUs);
   }
 }
 
@@ -418,5 +419,8 @@ void ScheduleEmitter::emitSchedule() {
 
 void VASTSchedGraph::emitSchedule(VASTModule &VM) {
   ScheduleEmitter Emitter(VM, *this);
+
+  Emitter.initialize();
+
   Emitter.emitSchedule();
 }
