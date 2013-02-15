@@ -83,8 +83,9 @@ void VASTSchedUnit::EdgeBundle::addEdge(VASTDep NewEdge) {
     ++InsertBefore;
   }
 
-  assert(Edges[InsertBefore].getLatency() <= NewEdge.getLatency()
-         && Edges[InsertBefore].getDistance() >= NewEdge.getDistance()
+  assert((InsertBefore == Edges.size()
+          || (Edges[InsertBefore].getLatency() <= NewEdge.getLatency()
+              && Edges[InsertBefore].getDistance() >= NewEdge.getDistance()))
          && "Bad insert position!");
 
   // Insert the new edge right before the edge with bigger iterative distance.
