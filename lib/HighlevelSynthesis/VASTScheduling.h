@@ -228,7 +228,7 @@ public:
   bool isLaunch() const { return !BB.getInt(); }
 
   BasicBlock *getIncomingBlock() const {
-    assert(isa<PHINode>(getInst()) && isLaunch()
+    assert(isa<PHINode>(getInst()) && isLatch()
            && "Call getIncomingBlock on the wrong type!");
     return BB.getPointer();
   }

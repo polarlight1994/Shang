@@ -119,7 +119,7 @@ BasicBlock *VASTSchedUnit::getParent() const {
   if (BasicBlock *BB = Ptr.dyn_cast<BasicBlock*>())
     return BB;
 
-  if (isa<PHINode>(getInst()) && isLaunch()) return getIncomingBlock();
+  if (isa<PHINode>(getInst()) && isLatch()) return getIncomingBlock();
 
   return Ptr.get<Instruction*>()->getParent();
 }
@@ -368,15 +368,6 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   Instruction *Inst = U->getInst();
 
   if (U->isLaunch()) {
-    if (PHINode *PN = dyn_cast<PHINode>(Inst)) {
-      BasicBlock *IncomingBB = U->getParent();
-      BasicBlock *PNParent = PN->getParent();
-      Value *V = PN->DoPHITranslation(PNParent, IncomingBB);
-      if (!addFlowDepandency(V, U))
-        buildFlowDependencies(dyn_cast<Instruction>(V), U);
-      return;
-    }
-
     buildFlowDependencies(Inst, U);
     return;
   }
@@ -390,6 +381,17 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   }
 
   assert(U->isLatch() && "Unexpected scheduling unit type!");
+
+  // Add the dependencies from the incoming value.
+  if (PHINode *PN = dyn_cast<PHINode>(Inst)) {
+    BasicBlock *IncomingBB = U->getParent();
+    BasicBlock *PNParent = PN->getParent();
+    Value *V = PN->DoPHITranslation(PNParent, IncomingBB);
+    if (!addFlowDepandency(V, U))
+      buildFlowDependencies(dyn_cast<Instruction>(V), U);
+    return;
+  }
+
   // Simply build the dependencies from the launch instruction.
   SmallVectorImpl<VASTSchedUnit*> &SUs = IR2SUMap[Inst];
   assert(SUs.size() == 1 && "Launching SU not found!");
