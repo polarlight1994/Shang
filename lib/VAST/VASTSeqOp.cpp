@@ -208,8 +208,8 @@ VASTValue *VASTSlotCtrl::getWaitingSignal() const {
 
 void VASTSlotCtrl::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
-  if (isBranch()) OS << "Slot Br #" << getSlot()->SlotNum;
-  else            OS << "Waiting" << VASTValPtr(getWaitingSignal());
+  if (isBranch()) OS << "Slot Br #" << getTargetSlot()->SlotNum;
+  else            OS << "Waiting " << VASTValPtr(getWaitingSignal());
 
   OS << '\n';
 }
