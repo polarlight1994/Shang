@@ -148,9 +148,17 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
   OS << '#' << InstIdx << ' ' << (isLaunch() ? "Launch" : "Latch");
 
   if (BasicBlock *BB = Ptr.dyn_cast<BasicBlock*>())
-    OS << "BB: " << BB->getName();
-  else
-    OS << *Ptr.get<Instruction*>();
+    OS << " BB: " << BB->getName();
+  else {
+    Instruction *Inst = Ptr.get<Instruction*>();
+    OS << *Inst;
+
+    if (isa<PHINode>(Inst) && isLatch())
+      OS << " From: " << getIncomingBlock()->getName();
+
+    if (isa<TerminatorInst>(Inst) && getTargetBlock())
+      OS << " Targeting" << getTargetBlock()->getName();
+  }
 
   OS << " Scheduled to " << Schedule;
 }
@@ -605,6 +613,15 @@ void VASTScheduling::fixDanglingNodes() {
 
     BasicBlock *BB = U->getParent();
     VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].front();
+
+
+    // The SU maybe a PHI incoming copy targeting a back edge.
+    if (BBExit->getIdx() < U->getIdx()) {
+      assert(isa<PHINode>(U->getInst()) && "Unexpected instruction type!");
+      // Create the pseudo dependencies to the exit node.
+      G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
+      continue;
+    }
 
     // Allocate 1 cycles for the scheduling units that launching some operations.
     unsigned Latency = U->isLatch() ? 0 : 1;
