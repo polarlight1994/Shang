@@ -20,10 +20,12 @@
 
 #include "llvm/IR/Function.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-schedule-emitter"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+STATISTIC(NumBBByPassed, "Number of Bypassed by the CFG folding");
 
 namespace {
 class ScheduleEmitter : public MinimalExprBuilderContext {
@@ -31,8 +33,8 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
   VASTModule &VM;
   ilist<VASTSlot> OldSlots;
   VASTSchedGraph &G;
-
   std::map<BasicBlock*, VASTSlot*> LandingSlots;
+  std::map<BasicBlock*, unsigned> LandingSlotNum;
 
   SUBBMap BBMap;
 
@@ -202,7 +204,14 @@ void ScheduleEmitter::initialize() {
   Function &F = VM;
   typedef Function::iterator iterator;
 
+  // Allocate the landing slots.
+  unsigned CurLandingSlot = 1;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    BasicBlock *BB = I;
+    ArrayRef<VASTSchedUnit*> SUs(BBMap.getSUInBB(BB));
+    unsigned SlotIncr = SUs.back()->getSchedule() - SUs.front()->getSchedule();
+    LandingSlotNum[BB] = SlotIncr == 0 ? 0 : CurLandingSlot;
+    CurLandingSlot += SlotIncr;
   }
 }
 
@@ -217,15 +226,34 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
   Value *V = Op->getValue();
 
   if (Op->isBranch()) {
-    // Point to the slot in the new slotlist.
     if (isa<ReturnInst>(V) || isa<UnreachableInst>(V)) {
+      // Point to the slot in the new slotlist.
       N = VM.getFinishSlot();
       ToSlot->addSuccSlot(VM.getFinishSlot());
     } else {
+      BasicBlock *TargetBB = Op->getTargetSlot()->getParent();
       // Emit the the SUs in the first slot in the target BB.
       // Connect to the landing slot if not all SU in the target BB emitted to
       // current slot.
-      llvm_unreachable("Not implemented!");
+      if (emitToFirstSlot(Pred, ToSlot, BBMap.getSUInBB(TargetBB))) {
+        // There is some SeqOp need to be emitted to TargetBB, build the control
+        // flow.
+        VASTSlot *&LandingSlot = LandingSlots[TargetBB];
+        // There maybe more than one branch instruction targeting the landing
+        // slot. Only create the slot once.
+        if (LandingSlot == 0)
+          LandingSlot = VM.createSlot(LandingSlotNum[TargetBB], TargetBB);
+
+        addSuccSlot(ToSlot, LandingSlot, Pred, TargetBB);
+
+        // Point to the slot in the new slot list.
+        N = LandingSlot;
+      } else {
+        // Else all scheduling unit of target block are emitted to current slot
+        // do not emit the SlotCtrl because it is not needed.
+        ++NumBBByPassed;
+        return 0;
+      }
     }
   }
 
@@ -381,7 +409,7 @@ void ScheduleEmitter::emitToSlot(VASTSeqOp *Op, VASTValPtr Pred,
 }
 
 bool ScheduleEmitter::emitToFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
-                                              MutableArrayRef<VASTSchedUnit*> SUs) {
+                                      MutableArrayRef<VASTSchedUnit*> SUs) {
   assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
   BasicBlock *ToBB = SUs[0]->getParent();
   unsigned EntrySlot = SUs[0]->getSchedule();
@@ -391,6 +419,9 @@ bool ScheduleEmitter::emitToFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
 
     // Only emit the SUs in the same slot with the entry.
     if (SU->getSchedule() != EntrySlot) return true;
+
+    // Ignore the pseudo scheduling units.
+    if (SU->isPHI()) continue;
 
     emitToSlot(SU->getSeqOp(), Pred, ToSlot);
   }
@@ -445,7 +476,7 @@ void ScheduleEmitter::emitSchedule() {
   if (emitToFirstSlot(StartPort, VM.getStartSlot(), BBMap.getSUInBB(&Entry))) {
     // Create the landing slot of entry BB if not all SUs in the Entry BB
     // emitted to the idle slot.
-    VASTSlot *S = VM.createSlot(1, &Entry);
+    VASTSlot *S = VM.createSlot(LandingSlotNum[&Entry], &Entry);
     LandingSlots[&Entry] = S;
     // Go to the new slot if the start port is 1.
     addSuccSlot(VM.getStartSlot(), S, StartPort, &Entry);
