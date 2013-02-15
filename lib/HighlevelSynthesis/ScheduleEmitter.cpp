@@ -445,9 +445,7 @@ void ScheduleEmitter::emitSchedule() {
     LandingSlots[&Entry] = S;
     // Go to the new slot if the start port is 1.
     addSuccSlot(VM.getStartSlot(), S, StartPort, &Entry);
-  } else
-    // Trivial case: All schedule units scheduled to the first slot.
-    return;
+  }
 
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
