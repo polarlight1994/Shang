@@ -42,7 +42,6 @@ template<> struct DOTGraphTraits<VASTSchedUnit*> : public DefaultDOTGraphTraits{
     case VASTDep::FixedTiming:     return "color=red";
     case VASTDep::LinearOrder:     return "color=green";
     case VASTDep::Conditional:     return "color=blue";
-    case VASTDep::Predicate:       return "color=navyblue";
     }
 
     llvm_unreachable("Unexpected edge type!");

@@ -141,7 +141,7 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
   }
 
   OS << '#' << InstIdx << ' ' << (isLaunch() ? "Launch" : "Latch");
- 
+
   if (BasicBlock *BB = Ptr.dyn_cast<BasicBlock*>())
     OS << "BB: " << BB->getName();
   else
@@ -243,6 +243,8 @@ struct VASTScheduling : public VASTModulePass {
   bool addFlowDepandency(Value *V, VASTSchedUnit *U);
 
   void addConditionalDependencies(BasicBlock *BB, VASTSchedUnit *BBEntry);
+
+  void fixDanglingNodes();
 
   void buildSchedulingGraph();
   void buildSchedulingUnits(VASTSlot *S);
@@ -379,7 +381,6 @@ void VASTScheduling::addConditionalDependencies(BasicBlock *BB,
 
       BBEntry->addDep(SUs[i], VASTDep::CreateCndDep());
       break;
-      
     }
   }
 
@@ -409,7 +410,7 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
     VASTSchedUnit *U = G->createSUnit(PN, true, 0, 0);
 
     // Add the dependencies between the entry of the BB and the PHINode.
-    U->addDep(Entry, VASTDep(VASTDep::Predicate, 0, 0));
+    U->addDep(Entry, VASTDep::CreateCtrlDep(0));
     IR2SUMap[PN].push_back(U);
   }
 
@@ -429,7 +430,7 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 
   for (op_iterator OI = S->op_begin(), OE = S->op_end(); OI != OE; ++OI) {
     VASTSeqInst *Op = dyn_cast<VASTSeqInst>(*OI);
-      
+
     // We can safely ignore the SeqOp that does not correspond to any LLVM
     // Value, their will be rebuilt when we emit the scheduling.
     if (Op == 0) continue;
@@ -439,17 +440,33 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
     if (Inst == 0) continue;
 
     VASTSchedUnit *U = 0;
+    bool IsLatch = Op->getSeqOpType() == VASTSeqInst::Latch;
+
     if (PHINode *PN = dyn_cast<PHINode>(Inst))
-      U = G->createSUnit(PN, false, BB, Op);
+      U = G->createSUnit(PN, IsLatch, BB, Op);
     else
-      U = G->createSUnit(Inst, Op->getSeqOpType() == VASTSeqInst::Latch, 0, Op);
+      U = G->createSUnit(Inst, IsLatch, 0, Op);
 
-
-    U->addDep(BBEntry, VASTDep(VASTDep::Predicate, 0, 0));
+    U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
 
     buildFlowDependencies(U);
 
     IR2SUMap[Inst].push_back(U);
+  }
+}
+
+void VASTScheduling::fixDanglingNodes() {
+  typedef VASTSchedGraph::iterator iterator;
+  for (iterator I = llvm::next(G->begin()), E = G->getExit(); I != E; ++I) {
+    VASTSchedUnit *U = I;
+    if (!U->use_empty()) continue;
+
+    BasicBlock *BB = U->getParent();
+    VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].back();
+
+    // Allocate 1 cycles for the scheduling units that launching some operations.
+    unsigned Latency = U->isLatch() ? 0 : 1;
+    BBExit->addDep(U, VASTDep::CreateCtrlDep(Latency));
   }
 }
 
@@ -471,6 +488,10 @@ void VASTScheduling::buildSchedulingGraph() {
   // Build the dependencies edges.
   // When the BranchInst looping back, we need to wait for the last instruction?
   // Or just build another conditional dependencies?
+
+  // Constraint all nodes that do not have a user by the terminator in its parent
+  // BB.
+  fixDanglingNodes();
 
 #ifndef NDEBUG
   G->verify();

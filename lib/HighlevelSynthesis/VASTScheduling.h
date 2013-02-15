@@ -42,8 +42,7 @@ public:
     CtrlDep     = 2,
     FixedTiming = 3,
     LinearOrder = 4,
-    Conditional = 5,
-    Predicate   = 6
+    Conditional = 5
   };
 private:
   uint8_t EdgeType : 3;
