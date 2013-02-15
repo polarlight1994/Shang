@@ -141,7 +141,7 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
     return;
   }
 
-  OS << '#' << InstIdx << ' ';
+  OS << '#' << InstIdx << ' ' << (isLaunch() ? "Launch" : "Latch");
  
   if (BasicBlock *BB = Ptr.dyn_cast<BasicBlock*>())
     OS << "BB: " << BB->getName();
@@ -417,6 +417,7 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
   }
 
   VASTSchedUnit *Entry = G->createSUnit(BB);
+  SUs.push_back(Entry);
 
   addConditionalDependencies(BB, Entry);
 
