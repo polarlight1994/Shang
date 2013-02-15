@@ -284,7 +284,7 @@ public:
                             VASTSeqValue::Type T = VASTSeqValue::Data,
                             uint16_t RegData = 0, const char *Attr = "");
 
-  VASTRegister *addOpRegister(const Twine &Name, unsigned BitWidth,
+  VASTRegister *addIORegister(const Twine &Name, unsigned BitWidth,
                               unsigned FUNum, const char *Attr = "");
 
   VASTRegister *addDataRegister(const Twine &Name, unsigned BitWidth,

@@ -694,9 +694,9 @@ VASTRegister *VASTModule::addRegister(const Twine &Name, unsigned BitWidth,
   return Reg;
 }
 
-VASTRegister *VASTModule::addOpRegister(const Twine &Name, unsigned BitWidth,
+VASTRegister *VASTModule::addIORegister(const Twine &Name, unsigned BitWidth,
                                         unsigned FUNum, const char *Attr) {
-  return addRegister(Name, BitWidth, 0, VASTSeqValue::Data, FUNum, Attr);
+  return addRegister(Name, BitWidth, 0, VASTSeqValue::IO, FUNum, Attr);
 }
 
 VASTRegister *VASTModule::addDataRegister(const Twine &Name, unsigned BitWidth,

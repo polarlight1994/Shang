@@ -421,7 +421,7 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
     // Add port declaration.
     if (SubMod) {
       std::string RegName = SubMod->getPortName(Name);
-      VASTRegister *R = VM->addOpRegister(RegName, BitWidth, SubMod->getNum());
+      VASTRegister *R = VM->addIORegister(RegName, BitWidth, SubMod->getNum());
       SubMod->addInPort(Name, R->getValue());
       continue;
     }
@@ -581,7 +581,7 @@ VASTModuleBuilder::emitIPFromTemplate(const char *Name, unsigned ResultSize)
   SmallVector<VASTValPtr, 4> Ops;
   // Add the fanin registers.
   for (unsigned i = 0, e = OpInfo.size(); i < e; ++i) {
-    VASTRegister *R = VM->addOpRegister(OpInfo[i].first, OpInfo[i].second, FNNum);
+    VASTRegister *R = VM->addIORegister(OpInfo[i].first, OpInfo[i].second, FNNum);
     SubMod->addInPort(OpInfo[i].first, R->getValue());
     Ops.push_back(R->getValue());
   }
