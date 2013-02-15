@@ -81,6 +81,26 @@ public:
   virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 };
 
+class DatapathContainer;
+class DataLayout;
+
+class MinimalExprBuilderContext : public VASTExprBuilderContext {
+  DatapathContainer &Datapath;
+public:
+  explicit MinimalExprBuilderContext(DatapathContainer &Datapath)
+    : Datapath(Datapath) {}
+  ~MinimalExprBuilderContext() {}
+
+  using VASTExprBuilderContext::getOrCreateImmediate;
+
+  VASTImmediate *getOrCreateImmediate(const APInt &Value);
+
+  VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
+    unsigned UB, unsigned LB);
+
+  void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
+};
+
 // The helper class to collect the information about the operands of a VASTExpr.
 template<VASTExpr::Opcode Opcode>
 struct VASTExprOpInfo {

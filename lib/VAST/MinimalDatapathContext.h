@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 #ifndef SHANG_VASTMODULE_DATAPATH_CONTEXT_H
 #define SHANG_VASTMODULE_DATAPATH_CONTEXT_H
+
 #include "IR2Datapath.h"
 
 namespace llvm {

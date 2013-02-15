@@ -21,7 +21,7 @@
 
 using namespace llvm;
 
-
+//===--------------------------------------------------------------------===//
 VASTImmediate *VASTExprBuilderContext::getOrCreateImmediate(const APInt &Value) {
   llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
   return 0;
@@ -39,6 +39,24 @@ void VASTExprBuilderContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
   llvm_unreachable("Function not implemented!");
 }
 
+//===--------------------------------------------------------------------===//
+
+VASTImmediate *MinimalExprBuilderContext::getOrCreateImmediate(const APInt &Value) {
+  return Datapath.getOrCreateImmediateImpl(Value);
+}
+
+VASTValPtr MinimalExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
+  ArrayRef<VASTValPtr> Ops,
+  unsigned UB, unsigned LB) {
+    return Datapath.createExprImpl(Opc, Ops, UB, LB);
+}
+
+void MinimalExprBuilderContext::replaceAllUseWith(VASTValPtr From,
+  VASTValPtr To) {
+    Datapath.replaceAllUseWithImpl(From, To);
+}
+
+//===--------------------------------------------------------------------===//
 bool
 VASTExprBuilder::GetMaskSplitPoints(APInt Mask, unsigned &HiPt, unsigned &LoPt) {
   unsigned BitWidth = Mask.getBitWidth();

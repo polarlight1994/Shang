@@ -13,7 +13,6 @@
 #include "MinimalDatapathContext.h"
 
 using namespace llvm;
-
 //===--------------------------------------------------------------------===//
 // Implement the functions of EarlyDatapathBuilderContext.
 VASTImmediate *
