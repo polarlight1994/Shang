@@ -800,7 +800,7 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
   if (VASTSeqValue *RetPort = SubMod->getRetPort()) {
     VASTSeqValue *Result
       = getOrCreateSeqVal(Inst->getValue(), Inst->getValue()->getName());
-    VM->latchValue(Result, RetPort, Slot, VASTImmediate::True, V);
+    VM->latchValue(Result, RetPort, Slot, VASTImmediate::True, V, 1);
     // Move the the next slot so that the operation can correctly read the
     // returned value
     advanceToNextSlot(Slot);
@@ -912,7 +912,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     VASTSeqValue *Result = getOrCreateSeqVal(&I, I.getName());
     assert(Result->getBitWidth() <= R->getBitWidth()
            && "Loading data that exceed the width of databus!");
-    VM->latchValue(Result, R, Slot, VASTImmediate::True, &I);
+    VM->latchValue(Result, R, Slot, VASTImmediate::True, &I, Latency);
     // Move the the next slot so that the other operations are not conflict with
     // the current memory operations.
     advanceToNextSlot(Slot);
@@ -972,7 +972,7 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
     assert(Result->getBitWidth() == BRAM->getWordSize()
            && "Read from BRAM data width not match!");
     // Use the the value from address port as the result of the block RAM read.
-    VM->latchValue(Result, AddrPort, Slot, VASTImmediate::True, &I);
+    VM->latchValue(Result, AddrPort, Slot, VASTImmediate::True, &I, 1);
   }
   // Move the the next slot so that the other operations are not conflict with
   // the current memory operations.

@@ -162,7 +162,7 @@ VASTOperandList *VASTOperandList::GetOperandList(VASTNode *N) {
 //----------------------------------------------------------------------------//
 
 VASTSeqInst::VASTSeqInst(Value *V, VASTSlot *S, unsigned Size, VASTSeqInst::Type T)
-  : VASTSeqOp(vastSeqInst, S, true, Size), T(T) {
+  : VASTSeqOp(vastSeqInst, S, true, Size), T(T), Data(0) {
   annotateValue(V);
 }
 

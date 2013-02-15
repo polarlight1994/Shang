@@ -148,13 +148,26 @@ public:
     Latch  // Latch the result of the Launched LLVM Instruction.
   };
 private:
-  Type T;
+  unsigned T    : 1;
+  unsigned Data : 15;
 public:
   // VASTSeqInst always use slot active, it is not a part of the control logic.
   VASTSeqInst(Value *V, VASTSlot *S, unsigned Size,
               VASTSeqInst::Type T);
 
-  VASTSeqInst::Type getSeqOpType() const { return T; }
+  VASTSeqInst::Type getSeqOpType() const { return VASTSeqInst::Type(T); }
+
+  unsigned getCyclesFromLaunch() const {
+    assert(getSeqOpType() == Latch
+           && "Call getCyclesFromLaunch on the wrong type!");
+    return Data;
+  }
+
+  void setCyclesFromLaunch(unsigned Cycles) {
+    assert(getSeqOpType() == Latch
+           && "Call setCyclesFromLaunch on the wrong type!");
+    Data = Cycles;
+  }
 
   virtual void print(raw_ostream &OS) const;
   static inline bool classof(const VASTSeqInst *A) { return true; }

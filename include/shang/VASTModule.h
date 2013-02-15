@@ -313,7 +313,7 @@ public:
                          Value *V, VASTSeqInst::Type T);
   
   VASTSeqInst *latchValue(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,
-                          VASTValPtr GuardCnd, Value *V);
+                          VASTValPtr GuardCnd, Value *V, unsigned Latency = 0);
 
   /// Create an assignment on the control logic.
   void assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,

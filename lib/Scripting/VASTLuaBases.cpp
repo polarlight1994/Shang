@@ -537,10 +537,11 @@ VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V) {
 
 VASTSeqInst *
 VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
-                       VASTValPtr GuardCnd, Value *V) {
+                       VASTValPtr GuardCnd, Value *V, unsigned Latency) {
   assert(Src && "Bad assignment source!");
   VASTSeqInst *Inst = lauchInst(Slot, GuardCnd, 1, V, VASTSeqInst::Latch);
   Inst->addSrc(Src, 0, true, SeqVal);
+  Inst->setCyclesFromLaunch(Latency);
 
   return Inst;
 }
