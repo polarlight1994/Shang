@@ -22,13 +22,17 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
 
+#include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "vast-scheduling-graph"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+STATISTIC(NumMemDep, "Number of Memory Dependencies Added");
+
 //===----------------------------------------------------------------------===//
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
                              BasicBlock *BB, VASTSeqOp *SeqOp)
@@ -225,6 +229,7 @@ struct VASTScheduling : public VASTModulePass {
   VASTSchedGraph *G;
   TimingNetlist *TNL;
   VASTModule *VM;
+  DependenceAnalysis *DA;
 
   VASTScheduling() : VASTModulePass(ID) {
     initializeVASTSchedulingPass(*PassRegistry::getPassRegistry());
@@ -234,6 +239,7 @@ struct VASTScheduling : public VASTModulePass {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequiredID(BasicBlockTopOrderID);
     AU.addRequired<TimingNetlist>();
+    AU.addRequired<DependenceAnalysis>();
   }
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
@@ -243,6 +249,10 @@ struct VASTScheduling : public VASTModulePass {
   bool addFlowDepandency(Value *V, VASTSchedUnit *U);
 
   void addConditionalDependencies(BasicBlock *BB, VASTSchedUnit *BBEntry);
+
+  void buildMemoryDependencies(Instruction *Src, Instruction *Dst);
+  void buildLoopDependencies(Instruction *Src, Instruction *Dst);
+  void buildMemoryDependencies(BasicBlock *BB);
 
   void fixDanglingNodes();
 
@@ -266,6 +276,7 @@ INITIALIZE_PASS_BEGIN(VASTScheduling,
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(BasicBlockTopOrder)
+  INITIALIZE_PASS_DEPENDENCY(DependenceAnalysis)
 INITIALIZE_PASS_END(VASTScheduling,
                     "vast-scheduling", "Perfrom Scheduling on the VAST",
                     false, true)
@@ -455,6 +466,53 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
   }
 }
 
+//===----------------------------------------------------------------------===//
+void VASTScheduling::buildMemoryDependencies(Instruction *Src, Instruction *Dst)
+{
+  // Loop dependencies are not handled in this function, so simply disable the
+  // loop dependencies analysis.
+  Dependence *D = DA->depends(Src, Dst, false);
+
+  // No dependencies at all.
+  if ((D == 0 || D->isInput()) && !isa<CallInst>(Src) && !isa<CallInst>(Dst))
+    return;
+
+  VASTSchedUnit *SrcU = IR2SUMap[Src].front(), *DstU = IR2SUMap[Dst].front();
+  assert(SrcU->isLaunch() && DstU->isLaunch() && "Bad scheduling unit type!");
+
+  unsigned Latency = 1;
+
+  // We must flush the memory bus pipeline before starting the call.
+  if (isa<CallInst>(Dst)) {
+    VASTSchedUnit *SrcLatch = IR2SUMap[Src].back();
+    // Make the call dependence on the latch operation instead.
+    if (SrcLatch->isLatch()) {
+      SrcU = SrcLatch;
+      Latency = 0;
+    }
+  }
+
+  DstU->addDep(SrcU, VASTDep::CreateMemDep(Latency, 0));
+  ++NumMemDep;
+}
+
+void VASTScheduling::buildMemoryDependencies(BasicBlock *BB) {
+  typedef BasicBlock::iterator iterator;
+  SmallVector<Instruction*, 16> PiorMemInsts;
+
+  for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+    Instruction *Inst = I;
+
+    if (!Inst->mayReadOrWriteMemory() && !isa<CallInst>(Inst)) continue;
+
+    for (unsigned i = 0, e = PiorMemInsts.size(); i < e; ++i)
+      buildMemoryDependencies(PiorMemInsts[i], Inst);
+
+    PiorMemInsts.push_back(Inst);
+  }
+}
+
+//===----------------------------------------------------------------------===//
 void VASTScheduling::fixDanglingNodes() {
   typedef VASTSchedGraph::iterator iterator;
   for (iterator I = llvm::next(G->begin()), E = G->getExit(); I != E; ++I) {
@@ -482,6 +540,12 @@ void VASTScheduling::buildSchedulingGraph() {
   for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     buildSchedulingUnits(*I);
 
+  // Build the memory dependencies.
+  Function &F = *VM;
+  typedef Function::iterator iterator;
+  for (iterator I = F.begin(), E = F.end(); I != E; ++I)
+    buildMemoryDependencies(I);
+
   // Connect the conditional dependencies.
 
 
@@ -508,6 +572,8 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
 
   TimingNetlist &TNL = getAnalysis<TimingNetlist>();
   (void) TNL;
+
+  DA = &getAnalysis<DependenceAnalysis>();
 
   buildSchedulingGraph();
 
