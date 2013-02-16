@@ -627,11 +627,22 @@ void VASTScheduling::fixDanglingNodes() {
   typedef VASTSchedGraph::iterator iterator;
   for (iterator I = llvm::next(G->begin()), E = G->getExit(); I != E; ++I) {
     VASTSchedUnit *U = I;
-    if (!U->use_empty()) continue;
+    // Terminators will be handled later.
+    if (U->isTerminator()) continue;
 
     BasicBlock *BB = U->getParent();
-    VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].front();
 
+    // Constrain the SU by the exit of the same BB if it is not constrained yet.
+    bool ConstrainedByExit = false;
+
+    typedef VASTSchedUnit::use_iterator use_iterator;
+    for (use_iterator UI = U->use_begin(), UE = U->use_end(); UI != UE; ++UI)
+      if ((ConstrainedByExit = /*Assignment*/((*UI)->getParent() == BB)))
+        break;
+
+    if (ConstrainedByExit) continue;
+
+    VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].front();
 
     // The SU maybe a PHI incoming copy targeting a back edge.
     if (BBExit->getIdx() < U->getIdx()) {
