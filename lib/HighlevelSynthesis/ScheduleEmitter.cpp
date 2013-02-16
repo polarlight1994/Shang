@@ -55,19 +55,8 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
     return RetimedV;
   }
 
-  void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd,
-                   BasicBlock *DstBB = 0) {
-    // If the Br is already exist, simply or the conditions together.
-    if (VASTSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
-      VASTValPtr Pred = SlotBr->getPred();
-      SlotBr->getPred().replaceUseBy(Builder.buildOrExpr(Pred, Cnd, 1));
-      if (DstBB) SlotBr->annotateValue(DstBB);
-    }
-
-    S->addSuccSlot(NextSlot);
-    VASTSlotCtrl *SlotBr = VM.createSlotCtrl(NextSlot, S, Cnd);
-    if (DstBB) SlotBr->annotateValue(DstBB);
-  }
+  VASTSlotCtrl *addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd,
+                            Value *V = 0);
 
   VASTSeqInst *cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot, VASTValPtr Pred);
   VASTSlotCtrl *cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
@@ -225,50 +214,61 @@ void ScheduleEmitter::initialize() {
 }
 
 //===----------------------------------------------------------------------===//
+VASTSlotCtrl *ScheduleEmitter::addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
+                                           VASTValPtr Cnd, Value *V) {
+  // If the Br is already exist, simply or the conditions together.
+  if (VASTSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
+    VASTValPtr Pred = SlotBr->getPred();
+    SlotBr->getPred().replaceUseBy(Builder.buildOrExpr(Pred, Cnd, 1));
+    SlotBr->annotateValue(V);
+    return 0;
+  }
+
+  S->addSuccSlot(NextSlot);
+  VASTSlotCtrl *SlotBr = VM.createSlotCtrl(NextSlot, S, Cnd);
+  if (V) SlotBr->annotateValue(V);
+
+  return SlotBr;
+}
+
 VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
                                              VASTValPtr Pred) {
   // Retime the predicate operand.
   Pred = Builder.buildAndExpr(retimeDatapath(Pred, ToSlot),
                               retimeDatapath(Op->getPred(), ToSlot),
                               1);
-  VASTNode *N = Op->getNode();
   Value *V = Op->getValue();
 
-  if (Op->isBranch()) {
-    if (isa<ReturnInst>(V) || isa<UnreachableInst>(V)) {
-      // Point to the slot in the new slotlist.
-      N = VM.getFinishSlot();
-      ToSlot->addSuccSlot(VM.getFinishSlot());
-    } else {
-      BasicBlock *TargetBB = Op->getTargetSlot()->getParent();
-      // Emit the the SUs in the first slot in the target BB.
-      // Connect to the landing slot if not all SU in the target BB emitted to
-      // current slot.
-      if (emitToFirstSlot(Pred, ToSlot, BBMap.getSUInBB(TargetBB))) {
-        // There is some SeqOp need to be emitted to TargetBB, build the control
-        // flow.
-        VASTSlot *&LandingSlot = LandingSlots[TargetBB];
-        // There maybe more than one branch instruction targeting the landing
-        // slot. Only create the slot once.
-        if (LandingSlot == 0)
-          LandingSlot = VM.createSlot(LandingSlotNum[TargetBB], TargetBB);
-
-        addSuccSlot(ToSlot, LandingSlot, Pred, TargetBB);
-
-        // Point to the slot in the new slot list.
-        N = LandingSlot;
-      } else {
-        // Else all scheduling unit of target block are emitted to current slot
-        // do not emit the SlotCtrl because it is not needed.
-        ++NumBBByPassed;
-        return 0;
-      }
-    }
+  // Handle the trivial case
+  if (!Op->isBranch()) {
+    VASTSlotCtrl *NewSlotCtrl = VM.createSlotCtrl(Op->getNode(), ToSlot, Pred);
+    NewSlotCtrl->annotateValue(V);
+    return NewSlotCtrl;
   }
 
-  VASTSlotCtrl *NewSlotCtrl = VM.createSlotCtrl(N, ToSlot, Pred);
-  NewSlotCtrl->annotateValue(V);
-  return NewSlotCtrl;
+  if (isa<ReturnInst>(V) || isa<UnreachableInst>(V))
+    return addSuccSlot(ToSlot, VM.getFinishSlot(), Pred, V);
+
+  BasicBlock *TargetBB = Op->getTargetSlot()->getParent();
+  // Emit the the SUs in the first slot in the target BB.
+  // Connect to the landing slot if not all SU in the target BB emitted to
+  // current slot.
+  if (emitToFirstSlot(Pred, ToSlot, BBMap.getSUInBB(TargetBB))) {
+    // There is some SeqOp need to be emitted to TargetBB, build the control
+    // flow.
+    VASTSlot *&LandingSlot = LandingSlots[TargetBB];
+    // There maybe more than one branch instruction targeting the landing
+    // slot. Only create the slot once.
+    if (LandingSlot == 0)
+      LandingSlot = VM.createSlot(LandingSlotNum[TargetBB], TargetBB);
+
+    return addSuccSlot(ToSlot, LandingSlot, Pred, V);
+  }
+
+  // Else all scheduling unit of target block are emitted to current slot
+  // do not emit the SlotCtrl because it is not needed.
+  ++NumBBByPassed;
+  return 0;
 }
 
 //===----------------------------------------------------------------------===//
