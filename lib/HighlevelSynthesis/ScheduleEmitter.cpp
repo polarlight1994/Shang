@@ -182,6 +182,15 @@ int top_sort_schedule(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) {
   if (LHS->getSchedule() != RHS->getSchedule())
     return LHS->getSchedule() < RHS->getSchedule() ? -1 : 1;
 
+  VASTSeqOp *LHSOp = LHS->getSeqOp(), *RHSOp = RHS->getSeqOp();
+
+  // Make sure we emit all VASTSeqInsts before emitting the VASTSlotCtrls.
+  // Because we will emit the SUs in the first slot of the BB that pointed by
+  // the VASTCtrls, and we may need to perform retiming based on the newly
+  // emitted VASTSeqInsts.
+  if (LHSOp && RHSOp && LHSOp->getASTType() != RHSOp->getASTType())
+    return LHSOp->getASTType() < RHSOp->getASTType() ? -1 : 1;
+
   if (LHS->getIdx() < RHS->getIdx()) return -1;
 
   if (LHS->getIdx() > RHS->getIdx()) return 1;
