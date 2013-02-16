@@ -30,6 +30,8 @@ STATISTIC(NumRetimed, "Number of Retimed Value during Schedule Emitting");
 STATISTIC(NumRejectedRetiming,
           "Number of Reject Retiming because the predicates are not compatible");
 STATISTIC(NumSelection, "Number of Selection built for Retiming");
+STATISTIC(NumFalsePathSkip,
+          "Number of False Paths skipped during the CFG folding");
 
 namespace {
 class ScheduleEmitter : public MinimalExprBuilderContext {
@@ -249,6 +251,14 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
   Pred = Builder.buildAndExpr(retimeDatapath(Pred, ToSlot, RetimingPath),
                               retimeDatapath(Op->getPred(), ToSlot, RetimingPath),
                               1);
+
+  // Some times we may even try to fold the BB through a 'false path' ... such
+  // folding can be safely skiped.
+  if (Pred == VASTImmediate::False) {
+    ++NumFalsePathSkip;
+    return 0;
+  }
+
   Value *V = Op->getValue();
 
   // Handle the trivial case
@@ -288,23 +298,29 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
                                            VASTValPtr Pred,
                                            ArrayRef<BasicBlock*> RetimingPath) {
   SmallVector<VASTValPtr, 4> RetimedOperands;
+  // Retime the predicate operand.
+  Pred = Builder.buildAndExpr(retimeDatapath(Pred, ToSlot, RetimingPath),
+                              retimeDatapath(Op->getPred(), ToSlot, RetimingPath),
+                              1);
+
+  // Some times we may even try to fold the BB through a 'false path' ... such
+  // folding can be safely skiped.
+  if (Pred == VASTImmediate::False) {
+    ++NumFalsePathSkip;
+    return 0;
+  }
+
   // Retime all the operand to the specificed slot.
   typedef VASTOperandList::op_iterator iterator;
-  for (iterator I = Op->op_begin(), E = Op->op_end(); I != E; ++I)
+  for (iterator I = Op->src_begin(), E = Op->src_end(); I != E; ++I)
     RetimedOperands.push_back(retimeDatapath(*I, ToSlot, RetimingPath));
-
-  // Also retime the predicate.
-  Pred = retimeDatapath(Pred, ToSlot, RetimingPath);
-
-  // And the predicate together.
-  Pred = Builder.buildAndExpr(RetimedOperands[0], Pred, 1);
 
   VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Pred, Op->getNumSrcs(),
                                       Op->getValue(), Op->getSeqOpType());
   typedef VASTSeqOp::op_iterator iterator;
 
   for (unsigned i = 0, e = Op->getNumSrcs(); i < e; ++i)
-    NewInst->addSrc(RetimedOperands[1 + i], i, i < Op->getNumDefs(),
+    NewInst->addSrc(RetimedOperands[i], i, i < Op->getNumDefs(),
                     Op->getSrc(i).getDst());
 
   return NewInst;
