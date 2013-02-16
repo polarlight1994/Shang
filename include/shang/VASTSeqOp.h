@@ -136,7 +136,7 @@ public:
   static inline bool classof(const VASTSeqOp *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSeqInst || A->getASTType() == vastSeqCtrlOp
-           || A->getASTType() == vastSeqEnable;
+           || A->getASTType() == vastSlotCtrl;
   }
 };
 
@@ -218,7 +218,7 @@ public:
   virtual void print(raw_ostream &OS) const;
   static inline bool classof(const VASTSlotCtrl *A) { return true; }
   static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastSeqEnable;
+    return A->getASTType() == vastSlotCtrl;
   }
 };
 }

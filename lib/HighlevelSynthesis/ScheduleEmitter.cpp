@@ -401,7 +401,7 @@ void ScheduleEmitter::emitToSlot(VASTSeqOp *Op, VASTValPtr Pred,
   case VASTNode::vastSeqInst:
     handleNewSeqOp(cloneSeqInst(cast<VASTSeqInst>(Op), ToSlot, Pred));
     break;
-  case VASTNode::vastSeqEnable:
+  case VASTNode::vastSlotCtrl:
     handleNewSeqOp(cloneSlotCtrl(cast<VASTSlotCtrl>(Op), ToSlot, Pred));
     break;
   default: llvm_unreachable("Unexpected SeqOp type!");

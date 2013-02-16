@@ -601,7 +601,7 @@ void VASTModule::eraseSeqOp(VASTSeqOp *SeqOp) {
 
   // Do not delete the dead SeqVal of VASTSeqSlotCtrl, their are not actually
   // assigning the Dst.
-  if (SeqOp->getASTType() != VASTNode::vastSeqEnable)
+  if (SeqOp->getASTType() != VASTNode::vastSlotCtrl)
     for (unsigned i = 0, e = SeqOp->getNumSrcs(); i != e; ++i) {
       VASTSeqUse U = SeqOp->getSrc(i);
       VASTSeqValue *V = U.getDst();

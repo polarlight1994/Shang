@@ -59,9 +59,11 @@ public:
     vastSeqCode,
 
     // Fine-grain control flow.
+    // Please note that we MUST make sure that vastSeqInst's value smaller than
+    // vastSeqEnable
     vastSeqInst,
     vastSeqCtrlOp,
-    vastSeqEnable,
+    vastSlotCtrl,
 
     vastModule
   };
