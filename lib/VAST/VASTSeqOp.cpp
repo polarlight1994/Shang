@@ -105,6 +105,8 @@ void VASTSeqOp::print(raw_ostream &OS) const {
     OS << ", ";
   }
   OS << "} ";
+
+  if (getValue()) getValue()->print(OS);
 }
 
 void VASTSeqOp::printPredicate(raw_ostream &OS) const {
@@ -170,12 +172,9 @@ void VASTSeqInst::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
 
   switch (getSeqOpType()) {
-  case Launch: OS << "<Launch> "; break;
-  case Latch:  OS << "<Latch> ";  break;
+  case Launch: OS << " <Launch> "; break;
+  case Latch:  OS << " <Latch> ";  break;
   }
-
-  if (getValue()) getValue()->print(OS);
-  else            OS << '\n';
 
   OS << '\n';
 }
@@ -208,8 +207,8 @@ VASTValue *VASTSlotCtrl::getWaitingSignal() const {
 
 void VASTSlotCtrl::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
-  if (isBranch()) OS << "Slot Br #" << getTargetSlot()->SlotNum;
-  else            OS << "Waiting " << VASTValPtr(getWaitingSignal());
+  if (isBranch()) OS << " Slot Br #" << getTargetSlot()->SlotNum;
+  else            OS << " Waiting " << VASTValPtr(getWaitingSignal());
 
   OS << '\n';
 }
