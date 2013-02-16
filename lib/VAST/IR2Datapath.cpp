@@ -186,6 +186,17 @@ VASTValPtr DatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
     // extra bit of the addition.
     return buildAddExpr(Ops, ResultSize);
   }
+  case Intrinsic::bswap: {
+    unsigned NumBits = getValueSizeInBits(I);
+    VASTValPtr V = getAsOperand(I.getOperand(0));
+    assert(NumBits % 16 == 0 && "Bad bitwidth for byteswap!");
+    unsigned NumBytes = NumBits / 8;
+    SmallVector<VASTValPtr, 8> Bytes(NumBytes, VASTValPtr()) ;
+    for (unsigned i = 0; i != NumBytes; ++i)
+      Bytes[i] = buildBitSliceExpr(V, i * 8 + 8, i * 8);
+
+    return buildBitCatExpr(Bytes, NumBits);
+  }
   }
 
   return VASTValPtr();
