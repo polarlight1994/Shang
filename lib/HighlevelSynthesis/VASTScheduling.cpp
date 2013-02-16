@@ -564,6 +564,7 @@ static bool isCall(const Instruction *Inst) {
 
   if (CI == 0) return false;
 
+  // Ignore the trivial intrinsics.
   if (const IntrinsicInst *Intr = dyn_cast<IntrinsicInst>(CI)) {
     switch (Intr->getIntrinsicID()) {
     default: break;
@@ -572,6 +573,10 @@ static bool isCall(const Instruction *Inst) {
     case Intrinsic::lifetime_start: return false;
     }
   }
+
+  // Ignore the call to external function, they are ignored in the VAST and do
+  // not have a corresponding VASTSeqInst.
+  if (CI->getCalledFunction()->isDeclaration()) return false;
 
   return true;
 }
