@@ -29,11 +29,46 @@ STATISTIC(NumBBByPassed, "Number of BasicBlock Bypassed by the CFG folding");
 STATISTIC(NumRetimed, "Number of Retimed Value during Schedule Emitting");
 STATISTIC(NumRejectedRetiming,
           "Number of Reject Retiming because the predicates are not compatible");
-STATISTIC(NumSelection, "Number of Selection built for Retiming");
 STATISTIC(NumFalsePathSkip,
           "Number of False Paths skipped during the CFG folding");
 
 namespace {
+/// VASTCFGPred - Represent the predicate by the path in the CFG.
+struct CFGPred : public FoldingSetNode {
+  BasicBlock *const*BBList;
+  unsigned Size;
+public:
+  CFGPred(BasicBlock *const*BBList, unsigned Size) : BBList(BBList), Size(Size) {}
+
+  /// Profile - Used to insert VASTCFGPred objects, or objects that contain
+  /// VASTExpr objects, into FoldingSets.
+  void Profile(FoldingSetNodeID& ID) const {
+    for (unsigned i = 0; i < size(); ++i)
+      ID.AddPointer(BBList[i]);
+  }
+  unsigned size() const { return Size; }
+
+  bool isCompatible(ArrayRef<BasicBlock*> RetimingPath) const {
+    // This Pred is more restricted and hence not compatible with RetimingPath.
+    if (size() > RetimingPath.size()) return false;
+
+    // Now we have size() < RetimingPath.size()
+    for (unsigned i = 0; i < size(); ++i)
+      // Not compatible because RetimingPath following a different path.
+      if (BBList[i] != RetimingPath[i]) return false;
+
+    return true;
+  }
+
+  void dump() const {
+    dbgs() << "Current Pred Path: ";
+    for (unsigned i = 0; i < size(); ++i)
+      if (BasicBlock *BB = BBList[i]) dbgs() << BB->getName() << ", ";
+      else                            dbgs() << "<entry>, ";
+    dbgs()<< '\n';
+  }
+};
+
 class ScheduleEmitter : public MinimalExprBuilderContext {
   VASTExprBuilder Builder;
   VASTModule &VM;
@@ -42,6 +77,10 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
   std::map<BasicBlock*, VASTSlot*> LandingSlots;
   std::map<BasicBlock*, unsigned> LandingSlotNum;
 
+  std::map<VASTSeqInst*, CFGPred*> PredMap;
+  BumpPtrAllocator PredAllocator;
+  FoldingSet<CFGPred> UniqueCFGPreds;
+
   SUBBMap BBMap;
 
   void takeOldSlots();
@@ -49,6 +88,25 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
   void clearUp();
   void clearUp(VASTSlot *S);
   void clearUp(VASTSeqValue *V);
+
+  CFGPred *getCFGPred(ArrayRef<BasicBlock*> RetimingPath) {
+    unsigned NumBBs = RetimingPath.size();
+    FoldingSetNodeID ID;
+    for (unsigned i = 0; i < NumBBs; ++i)
+      ID.AddPointer(RetimingPath[i]);
+
+    void *IP = 0;
+    if (CFGPred *P = UniqueCFGPreds.FindNodeOrInsertPos(ID, IP))
+      return P;
+
+    // Allocate the BB list.
+    BasicBlock **BBList = PredAllocator.Allocate<BasicBlock*>(NumBBs);
+    std::uninitialized_copy(RetimingPath.begin(), RetimingPath.end(), BBList);
+    CFGPred *P = new (PredAllocator) CFGPred(BBList, NumBBs);
+    UniqueCFGPreds.InsertNode(P, IP);
+
+    return P;
+  }
 
   VASTValPtr retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
                              ArrayRef<BasicBlock*> RetimingPath);
@@ -68,7 +126,7 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
                             Value *V = 0);
 
   VASTSeqInst *cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot, VASTValPtr Pred,
-                            ArrayRef<BasicBlock*> RetimingPath);
+                            SmallVectorImpl<BasicBlock*> &RetimingPath);
   VASTSlotCtrl *cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
                               VASTValPtr Pred,
                               SmallVectorImpl<BasicBlock*> &RetimingPath);
@@ -167,7 +225,8 @@ void ScheduleEmitter::takeOldSlots() {
   StartSlot->unlinkSuccs();
 
   // Build a path from the entry slot.
-  BasicBlock *RetimingPath[] = { 0 };
+  SmallVector<BasicBlock*, 4> RetimingPath;
+  RetimingPath.push_back(0);
   typedef VASTSlot::op_iterator op_iterator;
   for (op_iterator I = OldStart->op_begin(); I != OldStart->op_end(); ++I)
     if (VASTSeqInst *SeqOp = dyn_cast<VASTSeqInst>(*I))
@@ -247,15 +306,13 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
                                              VASTValPtr Pred,
                                              SmallVectorImpl<BasicBlock*> &
                                              RetimingPath) {
-  // And the predicate together, we may need it to predicate the SU in the first
-  // slot in the successor block.
-  Pred = Builder.buildAndExpr(Pred, Op->getPred(), 1);
-  // Retime the predicate and use it to predicate the current SlotCtrl Op.
-  VASTValPtr RetimedPred = retimeDatapath(Pred, ToSlot, RetimingPath);
+  // Retime the predicate operand.
+  Pred = Builder.buildAndExpr(retimeDatapath(Op->getPred(), ToSlot, RetimingPath),
+                              Pred, 1);
 
   // Some times we may even try to fold the BB through a 'false path' ... such
-  // folding can be safely skiped.
-  if (RetimedPred == VASTImmediate::False) {
+  // folding can be safely skipped.
+  if (Pred == VASTImmediate::False) {
     ++NumFalsePathSkip;
     return 0;
   }
@@ -265,15 +322,16 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
   // Handle the trivial case
   if (!Op->isBranch()) {
     VASTSlotCtrl *NewSlotCtrl
-      = VM.createSlotCtrl(Op->getNode(), ToSlot, RetimedPred);
+      = VM.createSlotCtrl(Op->getNode(), ToSlot, Pred);
     NewSlotCtrl->annotateValue(V);
     return NewSlotCtrl;
   }
 
   if (isa<ReturnInst>(V) || isa<UnreachableInst>(V))
-    return addSuccSlot(ToSlot, VM.getFinishSlot(), RetimedPred, V);
+    return addSuccSlot(ToSlot, VM.getFinishSlot(), Pred, V);
 
   BasicBlock *TargetBB = Op->getTargetSlot()->getParent();
+
   // Emit the the SUs in the first slot in the target BB.
   // Connect to the landing slot if not all SU in the target BB emitted to
   // current slot.
@@ -286,7 +344,7 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
     if (LandingSlot == 0)
       LandingSlot = VM.createSlot(LandingSlotNum[TargetBB], TargetBB);
 
-    return addSuccSlot(ToSlot, LandingSlot, RetimedPred, V);
+    return addSuccSlot(ToSlot, LandingSlot, Pred, V);
   }
 
   // Else all scheduling unit of target block are emitted to current slot
@@ -298,15 +356,15 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
 //===----------------------------------------------------------------------===//
 VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
                                            VASTValPtr Pred,
-                                           ArrayRef<BasicBlock*> RetimingPath) {
+                                           SmallVectorImpl<BasicBlock*> &
+                                           RetimingPath) {
   SmallVector<VASTValPtr, 4> RetimedOperands;
   // Retime the predicate operand.
-  Pred = Builder.buildAndExpr(retimeDatapath(Pred, ToSlot, RetimingPath),
-                              retimeDatapath(Op->getPred(), ToSlot, RetimingPath),
-                              1);
+  Pred = Builder.buildAndExpr(retimeDatapath(Op->getPred(), ToSlot, RetimingPath),
+                              Pred, 1);
 
   // Some times we may even try to fold the BB through a 'false path' ... such
-  // folding can be safely skiped.
+  // folding can be safely skipped.
   if (Pred == VASTImmediate::False) {
     ++NumFalsePathSkip;
     return 0;
@@ -325,6 +383,21 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
     NewInst->addSrc(RetimedOperands[i], i, i < Op->getNumDefs(),
                     Op->getSrc(i).getDst());
 
+  // PHINode have extra predicate.
+  if (PHINode *PN = dyn_cast<PHINode>(NewInst->getValue())) {
+    assert(PN->getBasicBlockIndex(RetimingPath.back()) >= 0
+           && "Not from incoming block?");
+    RetimingPath.push_back(PN->getParent());
+  }
+
+  bool inserted
+    = PredMap.insert(std::make_pair(NewInst, getCFGPred(RetimingPath))).second;
+  assert(inserted && "Cannot insert Pred!");
+  (void) inserted;
+
+  // Pop the extra predicate.
+  if (isa<PHINode>(NewInst->getValue())) RetimingPath.pop_back();
+
   return NewInst;
 }
 
@@ -339,7 +412,7 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
   for (unsigned i = 0; i < RetimingPath.size(); ++i)
     if (BasicBlock *BB = RetimingPath[i]) dbgs() << BB->getName() << ", ";
     else                                  dbgs() << "<entry>, ";
-  dbgs()<< '\n');
+  dbgs()<< '\n';);
 
   // Try to forward the value which is assigned to SeqVal at the same slot.
   VASTValPtr ForwardedValue = SeqVal;
@@ -357,62 +430,27 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
 
     Value *Val = U.Op->getValue();
 
-    // The PHINode incoming copy is supposed to be the only predicated copy.
-    // Make sure the current retiming path (Represent the current predicate)
-    //  is compatible with the predicated of the incoming copy.
-    if (PHINode *PN = dyn_cast<PHINode>(Val)) {
-      // Please note that the incoming copy itself may had been retimed.
-      // The IncomingBB may be different from the Incoming Block in the LLVM IR.
-      // Hence the edge (IncomingBB, TargetBB) is not necessary exist in the
-      // CFG of the LLVM IR. It may be the start and end point of a path in the
-      // CFG of the LLVM IR.
-      BasicBlock *IncomingBB = U.Op->getSlot()->getParent();
-      BasicBlock *TargetBB = PN->getParent();
+    CFGPred *Pred = PredMap[cast<VASTSeqInst>(U.Op)];
+    assert(Pred && "CFGPred not found!");
 
-      // If the current retiming path include the path of the incoming copy,
-      // the predicate apply to the current SeqOp imply the predicate of the
-      // incoming copy.
-      bool SameSrc = false, SameDst = false;
-      for (unsigned i = 0; i < RetimingPath.size(); ++i) {
-        // Try to match the Src first.
-        if (!SameSrc) {
-          SameSrc |= IncomingBB == RetimingPath[i];
-          continue;
-        }
+    // Do not perform the retiming if the path is not matched.
+    if (!Pred->isCompatible(RetimingPath)) {
+      DEBUG(dbgs() << "Reject retiming:\n";
+      CFGPred(RetimingPath.data(), RetimingPath.size()).dump();
+      Pred->dump(););
 
-        // If Src had already been matched, try to further match the Dst.
-        if ((SameDst = /*Assignment*/ TargetBB == RetimingPath[i])) break;
-      }
-
-      // Do not perform the retiming if the path is not matched.
-      if (!(SameSrc && SameDst)) {
-        ++NumRejectedRetiming;
-        continue;
-      }      
+      ++NumRejectedRetiming;
+      continue;
     }
 
     DEBUG(dbgs() << "Goning to forward " << VASTValPtr(U) << ", " << *Val
                  << '\n');
 
-    if (ForwardedValue != SeqVal) {
-      // Build the selection on the fly.
-      // Please note that the selection looks like:
-      // ForwardValue = CurPred ? CurValue : OldValue;
-      // instead of ForwardValue = CurPred ? CurValue
-      //                                   : OldPred ? OldValue
-      //                                             : Undefined;
-      // Because we expected CurPred == false imply OldPred == true when the
-      // guarding condition (the prediciate) of the whole (retimed) assignment
-      // is true.
-      ForwardedValue
-        = Builder.buildSelExpr(U.Op->getPred(), VASTValPtr(U), ForwardedValue,
-                               V->getBitWidth());
-      ++NumSelection;
-    } else
-      ForwardedValue = VASTValPtr(U);
+    assert (ForwardedValue == SeqVal && "Unexpected multiple compatible source!");
+    ForwardedValue = VASTValPtr(U);
 
     assert(ForwardedValue->getBitWidth() == V->getBitWidth()
-            && "Bitwidth implicitly changed!");
+           && "Bitwidth implicitly changed!");
     ++NumRetimed;
   }
 
