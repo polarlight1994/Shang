@@ -26,6 +26,7 @@
 
 using namespace llvm;
 STATISTIC(NumBBByPassed, "Number of Bypassed by the CFG folding");
+STATISTIC(NumRetimed, "Number of Retimed Value during Schedule Emitting");
 
 namespace {
 class ScheduleEmitter : public MinimalExprBuilderContext {
@@ -44,7 +45,7 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
   void clearUp(VASTSlot *S);
   void clearUp(VASTSeqValue *V);
 
-  VASTValPtr getValAtSlot(VASTValue *V, VASTSlot *ToSlot);
+  VASTValPtr retimeValToSlot(VASTValue *V, VASTSlot *ToSlot);
 
   VASTValPtr retimeDatapath(VASTValue *V, VASTSlot *ToSlot);
 
@@ -297,7 +298,7 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
   return NewInst;
 }
 
-VASTValPtr ScheduleEmitter::getValAtSlot(VASTValue *V, VASTSlot *ToSlot) {
+VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot) {
   // TODO: Check the predicate of the assignment.
   VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V);
 
@@ -317,6 +318,7 @@ VASTValPtr ScheduleEmitter::getValAtSlot(VASTValue *V, VASTSlot *ToSlot) {
       ForwardedValue = U;
       assert(ForwardedValue->getBitWidth() == V->getBitWidth()
              && "Bitwidth implicitly changed!");
+      ++NumRetimed;
     }
   }
 
@@ -330,7 +332,7 @@ VASTValPtr ScheduleEmitter::retimeDatapath(VASTValue *Root, VASTSlot *ToSlot) {
   VASTExpr *RootExpr = dyn_cast<VASTExpr>(Root);
 
   // The Root is already the leaf of the expr tree.
-  if (RootExpr == 0) return getValAtSlot(Root, ToSlot);
+  if (RootExpr == 0) return retimeValToSlot(Root, ToSlot);
 
   typedef VASTOperandList::op_iterator ChildIt;
   std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
@@ -388,7 +390,7 @@ VASTValPtr ScheduleEmitter::retimeDatapath(VASTValue *Root, VASTSlot *ToSlot) {
     // Retime the leaf if it is not retimed yet.
     VASTValPtr &Retimed = RetimedMap[ChildNode];
 
-    if (!Retimed) Retimed = getValAtSlot(ChildNode, ToSlot);
+    if (!Retimed) Retimed = retimeValToSlot(ChildNode, ToSlot);
   }
 
   VASTValPtr RetimedRoot = RetimedMap[RootExpr];
@@ -438,7 +440,6 @@ bool ScheduleEmitter::emitToFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
 }
 
 void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
-
   assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
   unsigned EntrySlot = SUs[0]->getSchedule();
   // All SUs are scheduled to the same slot with the entry, hence they are all
