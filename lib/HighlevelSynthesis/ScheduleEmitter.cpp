@@ -25,7 +25,7 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
-STATISTIC(NumBBByPassed, "Number of Bypassed by the CFG folding");
+STATISTIC(NumBBByPassed, "Number of BasicBlock Bypassed by the CFG folding");
 STATISTIC(NumRetimed, "Number of Retimed Value during Schedule Emitting");
 STATISTIC(NumRejectedRetiming,
           "Number of Reject Retiming because the predicates are not compatible");
