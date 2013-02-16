@@ -29,6 +29,7 @@ STATISTIC(NumBBByPassed, "Number of Bypassed by the CFG folding");
 STATISTIC(NumRetimed, "Number of Retimed Value during Schedule Emitting");
 STATISTIC(NumRejectedRetiming,
           "Number of Reject Retiming because the predicates are not compatible");
+STATISTIC(NumSelection, "Number of Selection built for Retiming");
 
 namespace {
 class ScheduleEmitter : public MinimalExprBuilderContext {
@@ -316,6 +317,12 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
 
   if (SeqVal == 0) return V;
 
+  DEBUG(dbgs() << "Current Retiming Path: ";
+  for (unsigned i = 0; i < RetimingPath.size(); ++i)
+    if (BasicBlock *BB = RetimingPath[i]) dbgs() << BB->getName() << ", ";
+    else                                  dbgs() << "<entry>, ";
+  dbgs()<< '\n');
+
   // Try to forward the value which is assigned to SeqVal at the same slot.
   VASTValPtr ForwardedValue = SeqVal;
 
@@ -366,8 +373,26 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
       }      
     }
 
-    assert(ForwardedValue == SeqVal && "Cannot resolve the source value!");
-    ForwardedValue = U;
+    DEBUG(dbgs() << "Goning to forward " << VASTValPtr(U) << ", " << *Val
+                 << '\n');
+
+    if (ForwardedValue != SeqVal) {
+      // Build the selection on the fly.
+      // Please note that the selection looks like:
+      // ForwardValue = CurPred ? CurValue : OldValue;
+      // instead of ForwardValue = CurPred ? CurValue
+      //                                   : OldPred ? OldValue
+      //                                             : Undefined;
+      // Because we expected CurPred == false imply OldPred == true when the
+      // guarding condition (the prediciate) of the whole (retimed) assignment
+      // is true.
+      ForwardedValue
+        = Builder.buildSelExpr(U.Op->getPred(), VASTValPtr(U), ForwardedValue,
+                               V->getBitWidth());
+      ++NumSelection;
+    } else
+      ForwardedValue = VASTValPtr(U);
+
     assert(ForwardedValue->getBitWidth() == V->getBitWidth()
             && "Bitwidth implicitly changed!");
     ++NumRetimed;
