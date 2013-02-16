@@ -239,13 +239,16 @@ int main(int argc, char **argv) {
     HLSPasses.add(createInstructionNamerPass());
 
     // Allocate the BlockRAMs.
-    HLSPasses.add(createSimpleBlockRAMAllocationPass());
+    // HLSPasses.add(createSimpleBlockRAMAllocationPass());
 
     // Run the SCEVAA pass to compute more accurate alias information.
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
 
     HLSPasses.add(createLUTMappingPass());
-    HLSPasses.add(createTimingNetlistPass());
+
+    // Perform the scheduling.
+    HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
+    HLSPasses.add(createVASTSchedulingPass());
 
     // Analyse the slack between registers.
     //Passes.add(createCombPathDelayAnalysisPass());
