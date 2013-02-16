@@ -386,7 +386,7 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
     buildFlowDependencies(Ret, U);
     // Also add the dependencies form the return instruction to the exit of
     // the scheduling graph.
-    G->getExit()->addDep(U, VASTDep::CreateCndDep());
+    G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
     return;
   }
 
@@ -417,7 +417,12 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   }
 
   // Nothing to do with Unreachable.
-  if (isa<UnreachableInst>(Inst)) return;
+  if (isa<UnreachableInst>(Inst)) {
+    // Also add the dependencies form the return instruction to the exit of
+    // the scheduling graph.
+    G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
+    return;
+  }
 
   // Simply build the dependencies from the launch instruction.
   SmallVectorImpl<VASTSchedUnit*> &SUs = IR2SUMap[Inst];
