@@ -290,7 +290,7 @@ VASTSlotCtrl *ScheduleEmitter::addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
   // If the Br is already exist, simply or the conditions together.
   if (VASTSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
     VASTValPtr Pred = SlotBr->getPred();
-    SlotBr->getPred().replaceUseByOrKeep(Builder.buildOrExpr(Pred, Cnd, 1));
+    SlotBr->getPred().replaceUseBy(Builder.buildOrExpr(Pred, Cnd, 1));
     //SlotBr->annotateValue(V);
     return 0;
   }
