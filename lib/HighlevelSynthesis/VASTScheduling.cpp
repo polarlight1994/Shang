@@ -576,6 +576,10 @@ static bool isCall(const Instruction *Inst) {
   return true;
 }
 
+static bool isLoadStore(const Instruction *Inst) {
+  return isa<LoadInst>(Inst) || isa<StoreInst>(Inst);
+}
+
 //===----------------------------------------------------------------------===//
 void VASTScheduling::buildMemoryDependencies(Instruction *Src, Instruction *Dst)
 {
@@ -613,7 +617,7 @@ void VASTScheduling::buildMemoryDependencies(BasicBlock *BB) {
   for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
     Instruction *Inst = I;
 
-    if (!Inst->mayReadOrWriteMemory() && !isCall(Inst)) continue;
+    if (!isLoadStore(Inst) && !isCall(Inst)) continue;
 
     for (unsigned i = 0, e = PiorMemInsts.size(); i < e; ++i)
       buildMemoryDependencies(PiorMemInsts[i], Inst);
