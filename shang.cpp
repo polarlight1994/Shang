@@ -219,12 +219,14 @@ int main(int argc, char **argv) {
     HLSPasses.add(createDeadCodeEliminationPass());
 
     HLSPasses.add(createDeadStoreEliminationPass());
+    HLSPasses.add(createGVNPass());
     HLSPasses.add(createMemoryAccessAlignerPass());
     // Run the SCEVAA pass to compute more accurate alias information.
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
     HLSPasses.add(createMemoryAccessCoalescingPass());
     // Verifier the IR produced by the Coalescer.
     HLSPasses.add(createVerifierPass());
+    HLSPasses.add(createGVNPass());
     HLSPasses.add(createInstructionCombiningPass());
     HLSPasses.add(createDeadStoreEliminationPass());
 
