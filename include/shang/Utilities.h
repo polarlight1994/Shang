@@ -13,6 +13,7 @@
 #ifndef VTM_UTILITIES_H
 #define VTM_UTILITIES_H
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
@@ -78,12 +79,6 @@ inline void PrintEscapedString(const std::string &Str, raw_ostream &Out) {
   PrintEscapedString(Str.c_str(), Str.size(), Out);
 }
 
-template <typename X, typename Y>
-inline X pair_first(std::pair<X, Y> P) { return P.first; }
-
-template <typename X, typename Y>
-inline Y pair_second(std::pair<X, Y> P) { return P.second; }
-
 class Module;
 class DataLayout;
 class SMDiagnostic;
@@ -107,36 +102,41 @@ bool runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err);
 unsigned getIntValueFromEngine(ArrayRef<const char*> Path);
 std::string getStrValueFromEngine(ArrayRef<const char*> Path);
 
-class MachineMemOperand;
-class ScalarEvolution;
 class SCEV;
-// Alias Analysis.
-AliasAnalysis::AliasResult
-MachineMemOperandAlias(MachineMemOperand* V1, MachineMemOperand *V2,
-                       AliasAnalysis *AA, ScalarEvolution *SE);
-
-const SCEV *getMachineMemOperandSCEV(MachineMemOperand *V, ScalarEvolution *SE);
-
-const SCEV *getAddressDeltaSCEV(MachineMemOperand *LHS, MachineMemOperand *RHS,
-                                ScalarEvolution *SE);
-
-int64_t getAddressDelta(MachineMemOperand *LHS, MachineMemOperand *RHS,
-                        ScalarEvolution *SE);
-
-static inline
-bool isMachineMemOperandAlias(MachineMemOperand* V1, MachineMemOperand *V2,
-                              AliasAnalysis *AA, ScalarEvolution *SE) {
-  return MachineMemOperandAlias(V1, V2, AA, SE) != AliasAnalysis::NoAlias;
-}
-
-std::pair<const Value*, int64_t>
-extractPointerAndOffset(const Value *V, int64_t Offset);
-
+class ScalarEvolution;
 // Loop dependency Analysis.
 int getLoopDepDist(bool SrcBeforeDest, int Distance = 0);
 
 int getLoopDepDist(const SCEV *SSAddr, const SCEV *SDAddr,
                    bool SrcLoad, unsigned ElemSizeInByte, ScalarEvolution *SE);
+
+
+
+inline bool isCall(const Instruction *Inst) {
+  const CallInst *CI = dyn_cast<CallInst>(Inst);
+
+  if (CI == 0) return false;
+
+  // Ignore the trivial intrinsics.
+  if (const IntrinsicInst *Intr = dyn_cast<IntrinsicInst>(CI)) {
+    switch (Intr->getIntrinsicID()) {
+    default: break;
+    case Intrinsic::uadd_with_overflow:
+    case Intrinsic::lifetime_end:
+    case Intrinsic::lifetime_start: return false;
+    }
+  }
+
+  // Ignore the call to external function, they are ignored in the VAST and do
+  // not have a corresponding VASTSeqInst.
+  if (CI->getCalledFunction()->isDeclaration()) return false;
+
+  return true;
+}
+
+inline bool isLoadStore(const Instruction *Inst) {
+  return isa<LoadInst>(Inst) || isa<StoreInst>(Inst);
+}
 }
 
 #endif

@@ -14,6 +14,7 @@
 //===----------------------------------------------------------------------===//
 #include "shang/Passes.h"
 #include "shang/FUInfo.h"
+#include "shang/Utilities.h"
 
 #include "llvm/Pass.h"
 #include "llvm/IR/IRBuilder.h"
@@ -73,11 +74,6 @@ struct MemoryAccessCoalescing : public FunctionPass {
   bool hasMemDependency(Instruction *DstInst, Instruction *SrcInst);
   bool trackUsesOfSrc(InstSetTy &UseSet, Instruction *Src, Instruction *Dst);
 
-  static bool isLoadStore(Instruction *I) {
-    return I->getOpcode() == Instruction::Load
-           || I->getOpcode() == Instruction::Store;
-  }
-
   static bool isVolatile(Instruction *I) {
     if (LoadInst *L = dyn_cast<LoadInst>(I))
       return L->isVolatile();
@@ -107,7 +103,7 @@ struct MemoryAccessCoalescing : public FunctionPass {
       StoreInst *RHSS = cast<StoreInst>(RHS);
       return LHSS->getValueOperand() == RHSS->getValueOperand();
     }
-    
+
     // Not store instruction, it must be load instruction, and "write" the same
     // Value.
     assert(isa<LoadInst>(LHS) && "Bad instruction type!");
@@ -246,7 +242,7 @@ INITIALIZE_PASS_END(MemoryAccessCoalescing,
     SimplifyInstructionsInBlock(&BB, TD);
     DEBUG(dbgs() << "BB Changed:\n"; BB.dump(););
   }
-  
+
   return Changed;
 }
 
@@ -262,7 +258,7 @@ Instruction *MemoryAccessCoalescing::findFusingCandidate(BasicBlock::iterator It
     if (trackUsesOfSrc(UseSet, Inst, LastInst)) continue;
 
     // Only fuse VOpMemTranses together.
-    if (!isLoadStore(LastInst)) continue;    
+    if (!isLoadStore(LastInst)) continue;
 
     // Return the fusing candidate.
     if (canBeFused(Inst, LastInst)) {
@@ -278,8 +274,7 @@ Instruction *MemoryAccessCoalescing::findFusingCandidate(BasicBlock::iterator It
 
 bool MemoryAccessCoalescing::hasMemDependency(Instruction *DstInst,
                                               Instruction *SrcInst) {
-  unsigned DstOpcode = DstInst->getOpcode();
-  bool ForceDstDep = (DstOpcode == Instruction::Call);
+  bool ForceDstDep = isCall(DstInst);
 
   if (!isLoadStore(DstInst) && !ForceDstDep) return false;
 
@@ -290,12 +285,11 @@ bool MemoryAccessCoalescing::hasMemDependency(Instruction *DstInst,
 
   // Check if source will access memory.
   unsigned SrcOpcode = SrcInst->getOpcode();
-  if (!isLoadStore(SrcInst) && SrcOpcode != Instruction::Call)
+  if (!isLoadStore(SrcInst) && !isCall(SrcInst))
     return false;
 
   // Handle force dependency.
-  if (ForceDstDep || SrcOpcode == Instruction::Call)
-    return true;
+  if (ForceDstDep || isCall(SrcInst)) return true;
 
   bool SrcMayWrite = SrcInst->mayWriteToMemory() || isVolatile(SrcInst);
 
@@ -330,7 +324,7 @@ bool MemoryAccessCoalescing::trackUsesOfSrc(InstSetTy &UseSet, Instruction *Src,
       // relationship.
       UseSet.insert(Dst);
       return true;
-    }      
+    }
   }
 
   // Iterate from use to define.
@@ -525,9 +519,9 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
     Value *NewLowerValue = Builder.CreateZExtOrTrunc(NewLoad, LowerType);
 
     LowerLoadValue->replaceAllUsesWith(NewLowerValue);
-    HigherLoadValue->replaceAllUsesWith(NewHigherValue);    
+    HigherLoadValue->replaceAllUsesWith(NewHigherValue);
   }
-  
+
   ++MemOpFused;
 }
 

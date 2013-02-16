@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "shang/Passes.h"
+#include "shang/Utilities.h"
 
 #include "llvm/Pass.h"
 #include "llvm/IR/Instructions.h"
@@ -59,8 +60,8 @@ INITIALIZE_PASS_END(DatapathHoisting,
 
 static bool hoistInst(Instruction *Inst, DominatorTree &DT) {
   // Do not touch the following instructions.
-  if (Inst->isTerminator() || Inst->mayReadOrWriteMemory() || isa<PHINode>(Inst)
-      || Inst->mayThrow() || isa<CallInst>(Inst))
+  if (Inst->isTerminator() || isLoadStore(Inst) || isa<PHINode>(Inst)
+      || Inst->mayThrow() || isCall(Inst))
     return false;
 
   BasicBlock *Dst = DT.getRoot(), *CurMBB = Inst->getParent();
@@ -77,7 +78,6 @@ static bool hoistInst(Instruction *Inst, DominatorTree &DT) {
       assert(DT.dominates(SrcBB, Dst)
              && "Operands not in a path of the dominator tree!");
     }
-    
   }
 
   if (Dst == CurMBB) return false;

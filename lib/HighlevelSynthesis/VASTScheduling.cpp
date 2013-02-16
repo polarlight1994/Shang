@@ -22,7 +22,6 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
 
-#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/ADT/OwningPtr.h"
@@ -562,32 +561,6 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
       continue;
     }
   }
-}
-
-static bool isCall(const Instruction *Inst) {
-  const CallInst *CI = dyn_cast<CallInst>(Inst);
-
-  if (CI == 0) return false;
-
-  // Ignore the trivial intrinsics.
-  if (const IntrinsicInst *Intr = dyn_cast<IntrinsicInst>(CI)) {
-    switch (Intr->getIntrinsicID()) {
-    default: break;
-    case Intrinsic::uadd_with_overflow:
-    case Intrinsic::lifetime_end:
-    case Intrinsic::lifetime_start: return false;
-    }
-  }
-
-  // Ignore the call to external function, they are ignored in the VAST and do
-  // not have a corresponding VASTSeqInst.
-  if (CI->getCalledFunction()->isDeclaration()) return false;
-
-  return true;
-}
-
-static bool isLoadStore(const Instruction *Inst) {
-  return isa<LoadInst>(Inst) || isa<StoreInst>(Inst);
 }
 
 //===----------------------------------------------------------------------===//
