@@ -247,14 +247,15 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
                                              VASTValPtr Pred,
                                              SmallVectorImpl<BasicBlock*> &
                                              RetimingPath) {
-  // Retime the predicate operand.
-  Pred = Builder.buildAndExpr(retimeDatapath(Pred, ToSlot, RetimingPath),
-                              retimeDatapath(Op->getPred(), ToSlot, RetimingPath),
-                              1);
+  // And the predicate together, we may need it to predicate the SU in the first
+  // slot in the successor block.
+  Pred = Builder.buildAndExpr(Pred, Op->getPred(), 1);
+  // Retime the predicate and use it to predicate the current SlotCtrl Op.
+  VASTValPtr RetimedPred = retimeDatapath(Pred, ToSlot, RetimingPath);
 
   // Some times we may even try to fold the BB through a 'false path' ... such
   // folding can be safely skiped.
-  if (Pred == VASTImmediate::False) {
+  if (RetimedPred == VASTImmediate::False) {
     ++NumFalsePathSkip;
     return 0;
   }
@@ -263,13 +264,14 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
 
   // Handle the trivial case
   if (!Op->isBranch()) {
-    VASTSlotCtrl *NewSlotCtrl = VM.createSlotCtrl(Op->getNode(), ToSlot, Pred);
+    VASTSlotCtrl *NewSlotCtrl
+      = VM.createSlotCtrl(Op->getNode(), ToSlot, RetimedPred);
     NewSlotCtrl->annotateValue(V);
     return NewSlotCtrl;
   }
 
   if (isa<ReturnInst>(V) || isa<UnreachableInst>(V))
-    return addSuccSlot(ToSlot, VM.getFinishSlot(), Pred, V);
+    return addSuccSlot(ToSlot, VM.getFinishSlot(), RetimedPred, V);
 
   BasicBlock *TargetBB = Op->getTargetSlot()->getParent();
   // Emit the the SUs in the first slot in the target BB.
@@ -284,7 +286,7 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
     if (LandingSlot == 0)
       LandingSlot = VM.createSlot(LandingSlotNum[TargetBB], TargetBB);
 
-    return addSuccSlot(ToSlot, LandingSlot, Pred, V);
+    return addSuccSlot(ToSlot, LandingSlot, RetimedPred, V);
   }
 
   // Else all scheduling unit of target block are emitted to current slot
