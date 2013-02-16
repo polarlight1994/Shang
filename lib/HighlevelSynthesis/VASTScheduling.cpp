@@ -22,6 +22,7 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
 
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/ADT/OwningPtr.h"
@@ -558,6 +559,23 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
   }
 }
 
+static bool isCall(const Instruction *Inst) {
+  const CallInst *CI = dyn_cast<CallInst>(Inst);
+
+  if (CI == 0) return false;
+
+  if (const IntrinsicInst *Intr = dyn_cast<IntrinsicInst>(CI)) {
+    switch (Intr->getIntrinsicID()) {
+    default: break;
+    case Intrinsic::uadd_with_overflow:
+    case Intrinsic::lifetime_end:
+    case Intrinsic::lifetime_start: return false;
+    }
+  }
+
+  return true;
+}
+
 //===----------------------------------------------------------------------===//
 void VASTScheduling::buildMemoryDependencies(Instruction *Src, Instruction *Dst)
 {
@@ -566,7 +584,7 @@ void VASTScheduling::buildMemoryDependencies(Instruction *Src, Instruction *Dst)
   Dependence *D = DA->depends(Src, Dst, true);
 
   // No dependencies at all.
-  if ((D == 0 || D->isInput()) && !isa<CallInst>(Src) && !isa<CallInst>(Dst))
+  if ((D == 0 || D->isInput()) && !isCall(Src) && !isCall(Dst))
     return;
 
   VASTSchedUnit *SrcU = IR2SUMap[Src].front(), *DstU = IR2SUMap[Dst].front();
@@ -595,7 +613,7 @@ void VASTScheduling::buildMemoryDependencies(BasicBlock *BB) {
   for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
     Instruction *Inst = I;
 
-    if (!Inst->mayReadOrWriteMemory() && !isa<CallInst>(Inst)) continue;
+    if (!Inst->mayReadOrWriteMemory() && !isCall(Inst)) continue;
 
     for (unsigned i = 0, e = PiorMemInsts.size(); i < e; ++i)
       buildMemoryDependencies(PiorMemInsts[i], Inst);
