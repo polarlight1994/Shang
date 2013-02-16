@@ -87,13 +87,21 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
     OS.indent(4) << "$display(\"Condition: ";
     Op.printPredicate(OS);
 
+    OS << ",  Src: " << VASTValPtr(*I);
+
     VASTSlot *S = Op.getSlot();
     OS << ", current slot: " << Op.getSlotNum() << ", ";
 
     if (BasicBlock *BB = S->getParent()) OS << BB->getName() << ',';
 
+    OS << "\"); // ";
+    if (Value *V = Op.getValue()) {
+      OS << *V;
+      if (Instruction *Inst = dyn_cast<Instruction>(V))
+        OS << ", BB: " << Inst->getParent()->getName();
+    }
 
-    OS << "\");\n";
+    OS << "\n";
     OS.indent(2) << "end\n";
   }
 
