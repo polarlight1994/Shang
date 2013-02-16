@@ -123,7 +123,8 @@ inline bool isCall(const Instruction *Inst) {
     default: break;
     case Intrinsic::uadd_with_overflow:
     case Intrinsic::lifetime_end:
-    case Intrinsic::lifetime_start: return false;
+    case Intrinsic::lifetime_start:
+    case Intrinsic::bswap: return false;
     }
   }
 
