@@ -252,8 +252,10 @@ int top_sort_schedule(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) {
   // Because we will emit the SUs in the first slot of the BB that pointed by
   // the VASTCtrls, and we may need to perform retiming based on the newly
   // emitted VASTSeqInsts.
-  if (LHSOp && RHSOp && LHSOp->getASTType() != RHSOp->getASTType())
-    return LHSOp->getASTType() < RHSOp->getASTType() ? -1 : 1;
+  if (LHSOp && RHSOp && LHSOp->getASTType() != RHSOp->getASTType()) {
+    if (LHSOp->getASTType() == VASTNode::vastSeqInst) return -1;
+    if (RHSOp->getASTType() == VASTNode::vastSeqInst) return 1;
+  }
 
   // Now LHSOp and RHSOp have the same ASTType.
   // Put the latch before lanch.
