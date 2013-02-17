@@ -32,6 +32,8 @@
 STATISTIC(NumAndExpand, "Number of binary And expanded from NAry And expanded");
 STATISTIC(NumABCNodeBulit, "Number of ABC node built");
 STATISTIC(NumLUTBulit, "Number of LUT node built");
+STATISTIC(NumLUTExpand, "Number of LUT node expanded");
+STATISTIC(NumBufferBuilt, "Number of buffers built by ABC");
 
 // The header of ABC
 #define ABC_DLL
@@ -117,8 +119,6 @@ struct LogicNetwork {
     return RewriteMap.count(Obj) || Abc_ObjIsPi(Abc_ObjFanin0(Obj));
   }
 
-  VASTValPtr expandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
-                       unsigned Bitwidth, DatapathBuilder &Builder);
   void buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder);
   void buildLUTTree(Abc_Obj_t *Root, DatapathBuilder &Builder);
   void buildLUTDatapath(DatapathBuilder &Builder);
@@ -376,8 +376,8 @@ VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
   return at->second;
 }
 
-VASTValPtr LogicNetwork::expandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
-                                   unsigned Bitwidth, DatapathBuilder &Builder) {
+static VASTValPtr ExpandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
+                            unsigned Bitwidth, DatapathBuilder &Builder) {
   unsigned NInput = Ops.size();
   const char *p = sop;
   SmallVector<VASTValPtr, 8> ProductOps, SumOps;
@@ -421,6 +421,7 @@ VASTValPtr LogicNetwork::expandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
 
   if (isComplement) SOP = Builder.buildNotExpr(SOP);
 
+  ++NumLUTExpand;
   return SOP;
 }
 
@@ -450,7 +451,7 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
 
   if (ExpandLUT) {
     // Expand the SOP back to SOP if user ask to.
-    VASTValPtr V = expandSOP(sop, Ops, Bitwidth, Builder);
+    VASTValPtr V = ExpandSOP(sop, Ops, Bitwidth, Builder);
 
     bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
     assert(Inserted && "The node is visited?");
@@ -472,6 +473,7 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
     VASTValPtr V = Ops[0];
     bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
     assert(Inserted && "The node is visited?");
+    ++NumBufferBuilt;
     return;
   }
 
