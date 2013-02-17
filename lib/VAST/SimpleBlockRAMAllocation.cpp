@@ -25,6 +25,7 @@
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/ADT/ValueMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-simple-bram-allocation"
 #include "llvm/Support/Debug.h"
@@ -32,6 +33,11 @@
 using namespace llvm;
 
 STATISTIC(NumLocalizedGV, "Number of GlobalVariable localized as BRAM");
+
+static cl::opt<bool> NoSingleElementBRAM(
+"shang-no-single-element-bram",
+cl::desc("Forbid the SimpleBlockRAMAllocation allocate the single  element bram"),
+cl::init(true));
 
 namespace {
 struct SimpleBlockRAMAllocation : public ModulePass, public HLSAllocation {
@@ -205,6 +211,9 @@ void SimpleBlockRAMAllocation::localizeGV(GlobalVariable *GV) {
   if (!visitPtrUseTree(GV, Collector)) return;
 
   if (!Collector.canBeLocalized()) return;
+
+  if (!isa<ArrayType>(GV->getType()->getElementType()) && NoSingleElementBRAM)
+    return;
 
   // Allocate the FUID for the GV.
   FuncUnitId ID = FuncUnitId(VFUs::BRam, BlockRAMBinding.size());
