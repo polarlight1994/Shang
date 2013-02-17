@@ -117,8 +117,6 @@ struct LogicNetwork {
     return RewriteMap.count(Obj) || Abc_ObjIsPi(Abc_ObjFanin0(Obj));
   }
 
-  VASTValPtr expandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
-                       unsigned Bitwidth, DatapathBuilder &Builder);
   void buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder);
   void buildLUTTree(Abc_Obj_t *Root, DatapathBuilder &Builder);
   void buildLUTDatapath(DatapathBuilder &Builder);
@@ -376,135 +374,6 @@ VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
   return at->second;
 }
 
-VASTValPtr LogicNetwork::expandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
-                                   unsigned Bitwidth, DatapathBuilder &Builder) {
-  unsigned NInput = Ops.size();
-  const char *p = sop;
-  SmallVector<VASTValPtr, 8> ProductOps, SumOps;
-  bool isComplement = false;
-
-  while (*p) {
-    // Interpret the product.
-    ProductOps.clear();
-    for (unsigned i = 0; i < NInput; ++i) {
-      char c = *p++;
-      switch (c) {
-      default: llvm_unreachable("Unexpected SOP char!");
-      case '-': /*Dont care*/ break;
-      case '1': ProductOps.push_back(Ops[i]); break;
-      case '0':
-        ProductOps.push_back(Builder.buildNotExpr(Ops[i]));
-        break;
-      }
-    }
-
-    // Inputs and outputs are seperated by blank space.
-    assert(*p == ' ' && "Expect the blank space!");
-    ++p;
-
-    // Create the product.
-    // Add the product to the operand list of the sum.
-    SumOps.push_back(Builder.buildAndExpr(ProductOps, Bitwidth));
-
-    // Is the output inverted?
-    char c = *p++;
-    assert((c == '0' || c == '1') && "Unexpected SOP char!");
-    isComplement = (c == '0');
-
-    // Products are separated by new line.
-    assert(*p == '\n' && "Expect the new line!");
-    ++p;
-  }
-
-  // Or the products together to build the SOP (Sum of Product).
-  VASTValPtr SOP = Builder.buildOrExpr(SumOps, Bitwidth);
-
-  if (isComplement) SOP = Builder.buildNotExpr(SOP);
-
-  return SOP;
-}
-
-void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
-  SmallVector<VASTValPtr, 4> Ops;
-  Abc_Obj_t *FO = Abc_ObjFanout0(Obj);
-  unsigned Bitwidth = 0;
-
-  assert(Abc_ObjIsNode(Obj) && "Unexpected Obj Type!");
-
-  Abc_Obj_t *FI;
-  int j;
-  Abc_ObjForEachFanin(Obj, FI, j) {
-    DEBUG(dbgs() << "\tBuilt MO for FI: " << Abc_ObjName(FI) << '\n');
-
-    VASTValPtr Operand = getAsOperand(FI);
-    assert((Bitwidth == 0 || Bitwidth == Operand->getBitWidth())
-           && "Bitwidth mismatch!");
-
-    if (!Bitwidth) Bitwidth = Operand->getBitWidth();
-    Ops.push_back(Operand);
-  }
-
-  assert(Bitwidth && "We got a node without fanin?");
-
-  char *sop = (char*)Abc_ObjData(Obj);
-
-  if (ExpandLUT) {
-    // Expand the SOP back to SOP if user ask to.
-    VASTValPtr V = expandSOP(sop, Ops, Bitwidth, Builder);
-
-    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-    assert(Inserted && "The node is visited?");
-    return;
-  }
-
-  // Do not need to build the LUT for a simple invert.
-  if (Abc_SopIsInv(sop)) {
-    assert(Ops.size() == 1 && "Bad operand size for invert!");
-    VASTValPtr V = Builder.buildNotExpr(Ops[0]);
-    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-    assert(Inserted && "The node is visited?");
-    return;
-  }
-
-  // Do not need to build the LUT for a simple buffer.
-  if (Abc_SopIsBuf(sop)) {
-    llvm_unreachable("Unexpected buffer!");
-    assert(Ops.size() == 1 && "Bad operand size for invert!");
-    VASTValPtr V = Ops[0];
-    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-    assert(Inserted && "The node is visited?");
-    return;
-  }
-
-  // Do not need to build the LUT for a simple and.
-  //if (Abc_SopIsAndType(sop)) {
-  //  VASTValPtr V = Builder.buildAndExpr(Ops, Bitwidth);
-  //  bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-  //  assert(Inserted && "The node is visited?");
-  //  return;
-  //}
-
-  //// Do not need to build the LUT for a simple and.
-  //if (Abc_SopIsOrType(sop)) {
-  //  VASTValPtr V = Builder.buildOrExpr(Ops, Bitwidth);
-  //  bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-  //  assert(Inserted && "The node is visited?");
-  //  return;
-  //}
-
-  // Otherwise simple construct the LUT expression.
-  VASTValPtr SOP = VM.getOrCreateSymbol(sop, 0);
-  // Encode the comment flag of the SOP into the invert flag of the LUT string.
-  if (Abc_SopIsComplement(sop)) SOP = SOP.invert();
-  Ops.push_back(SOP);
-
-  VASTValPtr V = Builder.buildExpr(VASTExpr::dpLUT, Ops, Bitwidth);
-  ++NumLUTBulit;
-
-  bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-  assert(Inserted && "The node is visited?");
-}
-
 void LogicNetwork::buildLUTTree(Abc_Obj_t *Root, DatapathBuilder &Builder) {
   std::vector<std::pair<Abc_Obj_t*, int> > VisitStack;
   VisitStack.push_back(std::make_pair(Abc_ObjRegular(Root), 0));
@@ -593,6 +462,9 @@ struct NAryExprBreaker {
 
   void breakDownNAryExpr(VASTExpr *Expr) const;
 
+  VASTValPtr expandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
+                       unsigned Bitwidth);
+
   static void BreakNAryExpr(DatapathContainer &DP, DatapathBuilder &Builder) {
     std::set<VASTOperandList*> Visited;
     typedef DatapathContainer::expr_iterator expr_iterator;
@@ -650,6 +522,135 @@ void NAryExprBreaker::breakDownNAryExpr(VASTExpr *Expr) const  {
 
   // Replace the original Expr by the broken down Expr.
   Builder.replaceAllUseWith(Expr, Ops.back());
+}
+
+VASTValPtr NAryExprBreaker::expandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
+                                      unsigned Bitwidth) {
+  unsigned NInput = Ops.size();
+  const char *p = sop;
+  SmallVector<VASTValPtr, 8> ProductOps, SumOps;
+  bool isComplement = false;
+
+  while (*p) {
+    // Interpret the product.
+    ProductOps.clear();
+    for (unsigned i = 0; i < NInput; ++i) {
+      char c = *p++;
+      switch (c) {
+      default: llvm_unreachable("Unexpected SOP char!");
+      case '-': /*Dont care*/ break;
+      case '1': ProductOps.push_back(Ops[i]); break;
+      case '0':
+        ProductOps.push_back(Builder.buildNotExpr(Ops[i]));
+        break;
+      }
+    }
+
+    // Inputs and outputs are seperated by blank space.
+    assert(*p == ' ' && "Expect the blank space!");
+    ++p;
+
+    // Create the product.
+    // Add the product to the operand list of the sum.
+    SumOps.push_back(Builder.buildAndExpr(ProductOps, Bitwidth));
+
+    // Is the output inverted?
+    char c = *p++;
+    assert((c == '0' || c == '1') && "Unexpected SOP char!");
+    isComplement = (c == '0');
+
+    // Products are separated by new line.
+    assert(*p == '\n' && "Expect the new line!");
+    ++p;
+  }
+
+  // Or the products together to build the SOP (Sum of Product).
+  VASTValPtr SOP = Builder.buildOrExpr(SumOps, Bitwidth);
+
+  if (isComplement) SOP = Builder.buildNotExpr(SOP);
+
+  return SOP;
+}
+
+void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
+  SmallVector<VASTValPtr, 4> Ops;
+  Abc_Obj_t *FO = Abc_ObjFanout0(Obj);
+  unsigned Bitwidth = 0;
+
+  assert(Abc_ObjIsNode(Obj) && "Unexpected Obj Type!");
+
+  Abc_Obj_t *FI;
+  int j;
+  Abc_ObjForEachFanin(Obj, FI, j) {
+    DEBUG(dbgs() << "\tBuilt MO for FI: " << Abc_ObjName(FI) << '\n');
+
+    VASTValPtr Operand = getAsOperand(FI);
+    assert((Bitwidth == 0 || Bitwidth == Operand->getBitWidth())
+           && "Bitwidth mismatch!");
+
+    if (!Bitwidth) Bitwidth = Operand->getBitWidth();
+    Ops.push_back(Operand);
+  }
+
+  assert(Bitwidth && "We got a node without fanin?");
+
+  char *sop = (char*)Abc_ObjData(Obj);
+
+  if (ExpandLUT) {
+    // Expand the SOP back to SOP if user ask to.
+    VASTValPtr V = NAryExprBreaker(Builder).expandSOP(sop, Ops, Bitwidth);
+
+    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+    assert(Inserted && "The node is visited?");
+    return;
+  }
+
+  // Do not need to build the LUT for a simple invert.
+  if (Abc_SopIsInv(sop)) {
+    assert(Ops.size() == 1 && "Bad operand size for invert!");
+    VASTValPtr V = Builder.buildNotExpr(Ops[0]);
+    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+    assert(Inserted && "The node is visited?");
+    return;
+  }
+
+  // Do not need to build the LUT for a simple buffer.
+  if (Abc_SopIsBuf(sop)) {
+    llvm_unreachable("Unexpected buffer!");
+    assert(Ops.size() == 1 && "Bad operand size for invert!");
+    VASTValPtr V = Ops[0];
+    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+    assert(Inserted && "The node is visited?");
+    return;
+  }
+
+  // Do not need to build the LUT for a simple and.
+  //if (Abc_SopIsAndType(sop)) {
+  //  VASTValPtr V = Builder.buildAndExpr(Ops, Bitwidth);
+  //  bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+  //  assert(Inserted && "The node is visited?");
+  //  return;
+  //}
+
+  //// Do not need to build the LUT for a simple and.
+  //if (Abc_SopIsOrType(sop)) {
+  //  VASTValPtr V = Builder.buildOrExpr(Ops, Bitwidth);
+  //  bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+  //  assert(Inserted && "The node is visited?");
+  //  return;
+  //}
+
+  // Otherwise simple construct the LUT expression.
+  VASTValPtr SOP = VM.getOrCreateSymbol(sop, 0);
+  // Encode the comment flag of the SOP into the invert flag of the LUT string.
+  if (Abc_SopIsComplement(sop)) SOP = SOP.invert();
+  Ops.push_back(SOP);
+
+  VASTValPtr V = Builder.buildExpr(VASTExpr::dpLUT, Ops, Bitwidth);
+  ++NumLUTBulit;
+
+  bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+  assert(Inserted && "The node is visited?");
 }
 
 bool LUTMapping::runOnVASTModule(VASTModule &VM) {
