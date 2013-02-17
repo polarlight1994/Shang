@@ -676,7 +676,8 @@ void VASTScheduling::fixSchedulingGraph() {
     if (!L->empty()) Worklist.append(L->begin(), L->end());
 
     // Build the constraints from the entry to the branch of the backedges.
-    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[L->getHeader()]);
+    BasicBlock *HeaderBB = L->getHeader();
+    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[HeaderBB]);
     VASTSchedUnit *Header = 0;
 
     for (unsigned i = 0; i < SUs.size(); ++i) {
@@ -695,6 +696,12 @@ void VASTScheduling::fixSchedulingGraph() {
         SU->addDep(Header, VASTDep::CreateCtrlDep(1));
       }
     }
+
+    // Also try to prevent the other part of the loop being folded across the
+    // loop header.
+    ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[HeaderBB->getTerminator()]);
+    for (unsigned i = 0; i < Terminators.size(); ++i)
+      Terminators[i]->addDep(Header, VASTDep::CreateCtrlDep(1));
   }
 }
 
