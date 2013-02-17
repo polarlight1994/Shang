@@ -328,8 +328,9 @@ public:
   uint16_t getSchedule() const { return Schedule; }
 
   uint16_t getIdx() const { return InstIdx; };
-};
 
+  void viewNeighbourGraph();
+};
 
 template<>
 struct GraphTraits<VASTSchedUnit*> {

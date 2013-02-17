@@ -94,6 +94,47 @@ template<> struct DOTGraphTraits<SchedulerBase*>
   }
 };
 
-}
+struct SchedGraphWrapper {
+  VASTSchedUnit *Entry;
+  std::set<VASTSchedUnit*> SUs;
 
+  /*implicit*/ inline SchedGraphWrapper(VASTSchedUnit *U) : Entry(U) {
+    SUs.insert(Entry);
+  }
+};
+
+template<>
+struct GraphTraits<SchedGraphWrapper*> : public GraphTraits<VASTSchedUnit*> {
+  typedef VASTSchedUnit NodeType;
+  typedef VASTSchedUnit::use_iterator ChildIteratorType;
+
+  static NodeType *getEntryNode(const SchedGraphWrapper* G) {
+    return G->Entry;
+  }
+
+  typedef std::set<VASTSchedUnit*>::iterator nodes_iterator;
+
+  static nodes_iterator nodes_begin(SchedGraphWrapper *G) {
+    return G->SUs.begin();
+  }
+
+  static nodes_iterator nodes_end(SchedGraphWrapper *G) {
+    return G->SUs.end();
+  }
+};
+
+template<> struct DOTGraphTraits<SchedGraphWrapper*>
+  : public DOTGraphTraits<VASTSchedUnit*> {
+
+  DOTGraphTraits(bool isSimple = false)
+    : DOTGraphTraits<VASTSchedUnit*>(isSimple) {}
+
+  static std::string getNodeAttributes(const VASTSchedUnit *Node,
+                                       const SchedGraphWrapper *W) {
+    std::string Attr = "shape=Mrecord";
+    if (Node == W->Entry) Attr += ", fontcolor=blue";
+    return Attr;
+  }
+};
+}
 #endif

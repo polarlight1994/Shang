@@ -453,7 +453,7 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
       continue;
     }
 
-    DEBUG(dbgs() << "Goning to forward " << VASTValPtr(U) << ", " << *Val
+    DEBUG(dbgs() << "Goning to forward " /*<< VASTValPtr(U) << ", "*/ << *Val
                  << '\n');
 
     assert (ForwardedValue == SeqVal && "Unexpected multiple compatible source!");

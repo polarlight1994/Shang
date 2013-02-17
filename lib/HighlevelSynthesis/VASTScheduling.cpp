@@ -158,14 +158,22 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
       OS << " From: " << getIncomingBlock()->getName();
 
     if (isa<TerminatorInst>(Inst) && getTargetBlock())
-      OS << " Targeting" << getTargetBlock()->getName();
+      OS << " Targeting: " << getTargetBlock()->getName();
   }
 
   OS << " Scheduled to " << Schedule;
 }
 
+void VASTSchedUnit::viewNeighbourGraph() {
+  SchedGraphWrapper W(this);
+  W.SUs.insert(dep_begin(), dep_end());
+  W.SUs.insert(use_begin(), use_end());
+  ViewGraph(&W, "NeighbourGraph");
+}
+
 void VASTSchedUnit::dump() const {
   print(dbgs());
+  dbgs() << '\n';
 }
 
 //===----------------------------------------------------------------------===//
