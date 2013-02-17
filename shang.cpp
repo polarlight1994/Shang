@@ -62,6 +62,11 @@ bool loadConfig(const std::string &Path,
 static cl::opt<std::string>
 InputFilename(cl::Positional, cl::desc("<input lua script>"), cl::init("-"));
 
+static cl::opt<bool> BaselineSchedulingOnly(
+"shang-baseline-scheduling-only",
+cl::desc("Only use the scheduling derive from the LLVM IR"),
+cl::init(false));
+
 static void LoopOptimizerEndExtensionFn(const PassManagerBuilder &Builder,
                                         PassManagerBase &PM) {
   PM.add(createMemoryAccessAlignerPass());
@@ -246,9 +251,11 @@ int main(int argc, char **argv) {
 
     HLSPasses.add(createLUTMappingPass());
 
-    // Perform the scheduling.
-    HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
-    HLSPasses.add(createVASTSchedulingPass());
+    if (!BaselineSchedulingOnly) {
+      // Perform the scheduling.
+      HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
+      HLSPasses.add(createVASTSchedulingPass());
+    }
 
     // Analyse the slack between registers.
     //Passes.add(createCombPathDelayAnalysisPass());
