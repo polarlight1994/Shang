@@ -22,6 +22,7 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
 
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/ADT/OwningPtr.h"
@@ -265,6 +266,7 @@ struct VASTScheduling : public VASTModulePass {
   TimingNetlist *TNL;
   VASTModule *VM;
   DependenceAnalysis *DA;
+  LoopInfo *LI;
 
   VASTScheduling() : VASTModulePass(ID) {
     initializeVASTSchedulingPass(*PassRegistry::getPassRegistry());
@@ -275,6 +277,7 @@ struct VASTScheduling : public VASTModulePass {
     AU.addRequiredID(BasicBlockTopOrderID);
     AU.addRequired<TimingNetlist>();
     AU.addRequired<DependenceAnalysis>();
+    AU.addRequired<LoopInfo>();
   }
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
@@ -287,7 +290,7 @@ struct VASTScheduling : public VASTModulePass {
   void buildLoopDependencies(Instruction *Src, Instruction *Dst);
   void buildMemoryDependencies(BasicBlock *BB);
 
-  void fixDanglingNodes();
+  void fixSchedulingGraph();
 
   void buildSchedulingGraph();
   void buildSchedulingUnits(VASTSlot *S);
@@ -310,6 +313,7 @@ INITIALIZE_PASS_BEGIN(VASTScheduling,
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(BasicBlockTopOrder)
   INITIALIZE_PASS_DEPENDENCY(DependenceAnalysis)
+  INITIALIZE_PASS_DEPENDENCY(LoopInfo);
 INITIALIZE_PASS_END(VASTScheduling,
                     "vast-scheduling", "Perfrom Scheduling on the VAST",
                     false, true)
@@ -612,7 +616,8 @@ void VASTScheduling::buildMemoryDependencies(BasicBlock *BB) {
 }
 
 //===----------------------------------------------------------------------===//
-void VASTScheduling::fixDanglingNodes() {
+void VASTScheduling::fixSchedulingGraph() {
+  // Try to fix the dangling nodes.
   typedef VASTSchedGraph::iterator iterator;
   for (iterator I = llvm::next(G->begin()), E = G->getExit(); I != E; ++I) {
     VASTSchedUnit *U = I;
@@ -631,6 +636,7 @@ void VASTScheduling::fixDanglingNodes() {
 
     if (ConstrainedByExit) continue;
 
+    // TODO: Constrain the dangling nodes by all terminators.
     VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].front();
 
     // The SU maybe a PHI incoming copy targeting a back edge.
@@ -658,9 +664,43 @@ void VASTScheduling::fixDanglingNodes() {
     for (unsigned i = 1; i < SUs.size(); ++i)
       SUs[i]->addDep(U, VASTDep::CreateFixTimingConstraint(0));
   }
+
+  // Prevent the scheduler from generating 1 slot loop, that is the loop can be
+  // entirely folded into its predecessors. If this happen, the schedule emitter
+  // will try to unroll the loop.
+  SmallVector<Loop*, 64> Worklist(LI->begin(), LI->end());
+  while (!Worklist.empty()) {
+    Loop *L = Worklist.pop_back_val();
+
+    // Also push the children of L into the work list.
+    if (!L->empty()) Worklist.append(L->begin(), L->end());
+
+    // Build the constraints from the entry to the branch of the backedges.
+    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[L->getHeader()]);
+    VASTSchedUnit *Header = 0;
+
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSchedUnit *SU = SUs[i];
+      // First of all we need to locate the header.
+      if (SU->isBBEntry()) {
+        Header = SU;
+        continue;
+      }
+
+      if (Header) {
+        assert(SU->getIdx() > Header->getIdx() && "Bad SU ordering!");
+        assert(SU->isTerminator() && "Bad SU type!");
+        // Make sure there is at least 1 slot from the header to the branch of
+        // the backedge.
+        SU->addDep(Header, VASTDep::CreateCtrlDep(1));
+      }
+    }
+  }
 }
 
 void VASTScheduling::buildSchedulingGraph() {
+  Function &F = *VM;
+
   // Build the scheduling units according to the original scheduling.
   ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >
     RPO(VM->getStartSlot());
@@ -673,7 +713,6 @@ void VASTScheduling::buildSchedulingGraph() {
     buildSchedulingUnits(*I);
 
   // Build the memory dependencies.
-  Function &F = *VM;
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I)
     buildMemoryDependencies(I);
@@ -687,7 +726,7 @@ void VASTScheduling::buildSchedulingGraph() {
 
   // Constraint all nodes that do not have a user by the terminator in its parent
   // BB.
-  fixDanglingNodes();
+  fixSchedulingGraph();
 
 #ifndef NDEBUG
   G->verify();
@@ -706,6 +745,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   (void) TNL;
 
   DA = &getAnalysis<DependenceAnalysis>();
+  LI = &getAnalysis<LoopInfo>();
 
   buildSchedulingGraph();
 
