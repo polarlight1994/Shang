@@ -244,6 +244,10 @@ int top_sort_schedule(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) {
 
   VASTSeqOp *LHSOp = LHS->getSeqOp(), *RHSOp = RHS->getSeqOp();
 
+  /// Put the pseudo Scheduling Unit before the normal Scheduling Unit.
+  if (LHSOp == 0 && RHSOp != 0) return -1;
+  if (LHSOp != 0 && RHSOp == 0) return 1;
+
   // Make sure we emit all VASTSeqInsts before emitting the VASTSlotCtrls.
   // Because we will emit the SUs in the first slot of the BB that pointed by
   // the VASTCtrls, and we may need to perform retiming based on the newly
@@ -251,8 +255,12 @@ int top_sort_schedule(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) {
   if (LHSOp && RHSOp && LHSOp->getASTType() != RHSOp->getASTType())
     return LHSOp->getASTType() < RHSOp->getASTType() ? -1 : 1;
 
-  if (LHS->getIdx() < RHS->getIdx()) return -1;
+  // Now LHSOp and RHSOp have the same ASTType.
+  // Put the latch before lanch.
+  if (LHS->isLatch() && !RHS->isLatch()) return -1;
+  if (!LHS->isLatch() && RHS->isLatch()) return 1;
 
+  if (LHS->getIdx() < RHS->getIdx()) return -1;
   if (LHS->getIdx() > RHS->getIdx()) return 1;
 
   return 0;
