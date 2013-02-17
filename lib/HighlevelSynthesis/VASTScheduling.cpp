@@ -93,26 +93,26 @@ void VASTSchedUnit::EdgeBundle::addEdge(VASTDep NewEdge) {
   if (NeedToInsert) Edges.insert(Edges.begin() + InsertBefore, NewEdge);
 }
 
-VASTDep &VASTSchedUnit::EdgeBundle::getEdge(unsigned II) {
+VASTDep VASTSchedUnit::EdgeBundle::getEdge(unsigned II) const {
   assert(Edges.size() && "Unexpected empty edge bundle!");
-  VASTDep *CurEdge = &Edges.front();
-  int Latency = CurEdge->getLatency(II);
+  VASTDep CurEdge = Edges.front();
+  int Latency = CurEdge.getLatency(II);
 
   // Zero II means we should ignore the loop-carried dependencies.
   // if (II == 0) return *CurEdge;
 
   for (unsigned i = 1, e = Edges.size(); i != e; ++i) {
-    VASTDep &Edge = Edges[i];
+    VASTDep Edge = Edges[i];
 
     // Find the edge with biggest latency.
     int NewLatency = Edge.getLatency(II);
     if (NewLatency > Latency) {
       Latency = NewLatency;
-      CurEdge = &Edge;
+      CurEdge = Edge;
     }
   }
 
-  return *CurEdge;
+  return CurEdge;
 }
 
 BasicBlock *VASTSchedUnit::getParent() const {

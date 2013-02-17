@@ -124,10 +124,10 @@ class VASTSchedUnit : public ilist_node<VASTSchedUnit> {
     explicit EdgeBundle(VASTDep E) : Edges(1, E)  {}
 
     void addEdge(VASTDep NewEdge);
-    VASTDep &getEdge(unsigned II = 0);
-    const VASTDep &getEdge(unsigned II = 0) const {
-      return const_cast<EdgeBundle*>(this)->getEdge(II);
-    }
+    VASTDep getEdge(unsigned II = 0) const;
+
+    // TODO: Print all edges in the edge bundle.
+    void printDetials(raw_ostream &OS) const;
   };
 
   typedef DenseMap<VASTSchedUnit*, EdgeBundle> DepSet;
@@ -153,7 +153,7 @@ public:
     }
 
     NodeType *operator->() const { return operator*(); }
-    EdgeType &getEdge(unsigned II = 0) const {
+    EdgeType getEdge(unsigned II = 0) const {
       return getEdgeBundle().getEdge(II);
     }
 
@@ -275,12 +275,7 @@ public:
     return Deps.count(const_cast<VASTSchedUnit*>(A));
   }
 
-  VASTDep &getEdgeFrom(const VASTSchedUnit *A, unsigned II = 0) {
-    assert(isDependsOn(A) && "Current atom not depend on A!");
-    return getDepIt(A).getEdge(II);
-  }
-
-  const VASTDep &getEdgeFrom(const VASTSchedUnit *A, unsigned II = 0) const {
+  VASTDep getEdgeFrom(const VASTSchedUnit *A, unsigned II = 0) const {
     assert(isDependsOn(A) && "Current atom not depend on A!");
     return getDepIt(A).getEdge(II);
   }
