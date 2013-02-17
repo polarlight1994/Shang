@@ -680,24 +680,16 @@ void VASTScheduling::fixSchedulingGraph() {
     ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[HeaderBB]);
     VASTSchedUnit *Header = 0;
 
+    // First of all we need to locate the header.
     for (unsigned i = 0; i < SUs.size(); ++i) {
       VASTSchedUnit *SU = SUs[i];
-      // First of all we need to locate the header.
       if (SU->isBBEntry()) {
         Header = SU;
-        continue;
-      }
-
-      if (Header) {
-        assert(SU->getIdx() > Header->getIdx() && "Bad SU ordering!");
-        assert(SU->isTerminator() && "Bad SU type!");
-        // Make sure there is at least 1 slot from the header to the branch of
-        // the backedge.
-        SU->addDep(Header, VASTDep::CreateCtrlDep(1));
+        break;
       }
     }
 
-    // Also try to prevent the other part of the loop being folded across the
+    // Try to prevent the other part of the loop being folded across the
     // loop header.
     ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[HeaderBB->getTerminator()]);
     for (unsigned i = 0; i < Terminators.size(); ++i)
