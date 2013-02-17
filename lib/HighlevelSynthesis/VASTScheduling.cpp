@@ -331,10 +331,12 @@ bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
 
   if (at == IR2SUMap.end()) return false;
 
+  bool IsPHI = isa<PHINode>(V);
+
   // Get the corresponding latch SeqOp.
   ArrayRef<VASTSchedUnit*> SUs(at->second);
   for (unsigned i = 0; i < SUs.size(); ++i)
-    if (SUs[i]->isLatching(V)) {
+    if (IsPHI ? SUs[i]->isPHI() : SUs[i]->isLatching(V)) {
       U->addDep(SUs[i], VASTDep::CreateFlowDep(0));
       return true;
     }
