@@ -213,7 +213,6 @@ private:
     return this;
   }
 
-  const char *getLUT() const;
 public:
   ~VASTExpr();
 
@@ -222,6 +221,8 @@ public:
   const char *getFUName() const;
   const std::string getSubModName() const;
   bool printFUInstantiation(raw_ostream &OS) const;
+
+  const char *getLUT() const;
 
   inline bool isSubBitSlice() const {
     return getOpcode() == dpAssign
