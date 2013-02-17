@@ -366,17 +366,17 @@ VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
   char *Name = Abc_ObjName(Abc_ObjRegular(O));
 
   VASTValPtr V = ValueNames.lookup(Name);
-  if (V) {
-    if (Abc_ObjIsComplement(O)) V = Builder.buildNotExpr(V);
+  if (!V) {
+    // Otherwise this value should be rewritten.
+    AbcObjMapTy::const_iterator at = RewriteMap.find(Abc_ObjRegular(O));
+    assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
 
-    return V;
+    V = at->second;
   }
 
-  // Otherwise this value should be rewritten.
-  AbcObjMapTy::const_iterator at = RewriteMap.find(Abc_ObjRegular(O));
-  assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
+  if (Abc_ObjIsComplement(O)) V = Builder.buildNotExpr(V);
 
-  return at->second;
+  return V;
 }
 
 static ManagedStatic<ABCContext> GlobalContext;
@@ -583,7 +583,7 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj) {
   // Do not need to build the LUT for a simple buffer.
   if (Abc_SopIsBuf(sop)) {
     ++NumBufferBuilt;
-    assert(Ops.size() == 1 && "Bad operand size for invert!");
+    assert(Ops.size() == 1 && "Bad operand size for buffer!");
     return Ops[0];
   }
 
@@ -668,7 +668,7 @@ void LogicNetwork::buildLUTDatapath() {
       VASTValPtr NewVal = Imm == VASTImmediate::True ?
                           Builder.getImmediate(APInt::getAllOnesValue(Bitwidth))
                           : Builder.getImmediate(APInt::getNullValue(Bitwidth));
-      if (Abc_ObjIsComplement(FI)) NewVal = NewVal.invert();
+      if (Abc_ObjIsComplement(FI)) NewVal = Builder.buildNotExpr(NewVal);
       assert(NewVal != OldVal && "We are sending constant out to ABC?");
       Builder.replaceAllUseWith(OldVal, NewVal);
       OldVal = NewVal;
@@ -687,6 +687,8 @@ void LogicNetwork::buildLUTDatapath() {
     if (Abc_ObjIsComplement(FI)) NewVal = Builder.buildNotExpr(NewVal);
 
     VASTValPtr &OldVal = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))];
+    assert(NewVal->getBitWidth() == OldVal->getBitWidth()
+           && "Bitwidth not match!");
     // Update the mapping if the mapped value changed.
     if (OldVal != NewVal) {
       Builder.replaceAllUseWith(OldVal, NewVal);
