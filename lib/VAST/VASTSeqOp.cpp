@@ -16,10 +16,11 @@
 #include "shang/VASTSlot.h"
 
 #include "llvm/IR/Instruction.h"
+#include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "vast-seq-op"
 #include "llvm/Support/Debug.h"
 using namespace llvm;
-
+STATISTIC(NumCycles, "Number of Cycles in Register Assignment");
 //===----------------------------------------------------------------------===//
 VASTSeqUse::operator VASTUse &() const {
   return Op->getUseInteranal(No);
@@ -78,10 +79,18 @@ void VASTSeqOp::addDefDst(VASTSeqValue *Def) {
   Defs.push_back(Def);
 }
 
-void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef, VASTSeqValue *D) {
+void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef,
+                       VASTSeqValue *D) {
   assert(SrcIdx < getNumSrcs() && "Bad source index!");
   // The source value of assignment is used by the SeqValue.
-  new (src_begin() + SrcIdx) VASTUse(D ? (VASTNode*)D : (VASTNode*)this, Src);
+  VASTNode *DstUser = D ? (VASTNode*)D : (VASTNode*)this;
+  // DIRTYHACK: Temporary allow cycles in register assignment.
+  if (D == Src) {
+    ++NumCycles;
+    DstUser = this;
+  }
+
+  new (src_begin() + SrcIdx) VASTUse(DstUser, Src);
   // Do not add the assignment if the source is invalid.
   if (Src && D) D->addAssignment(this, SrcIdx, IsDef);
 }
@@ -90,7 +99,7 @@ void VASTSeqOp::print(raw_ostream &OS) const {
   for (unsigned I = 0, E = getNumDefs(); I != E; ++I) {
     OS << Defs[I]->getName() << ", ";
   }
-  
+
   if (getNumDefs()) OS << "<- ";
 
   OS << '@' << getSlotNum() << "{ pred";
