@@ -89,7 +89,7 @@ class MinimalExprBuilderContext : public VASTExprBuilderContext {
 public:
   explicit MinimalExprBuilderContext(DatapathContainer &Datapath)
     : Datapath(Datapath) {}
-  ~MinimalExprBuilderContext() {}
+  ~MinimalExprBuilderContext();
 
   using VASTExprBuilderContext::getOrCreateImmediate;
 

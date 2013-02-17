@@ -46,14 +46,22 @@ VASTImmediate *MinimalExprBuilderContext::getOrCreateImmediate(const APInt &Valu
 }
 
 VASTValPtr MinimalExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
-  ArrayRef<VASTValPtr> Ops,
-  unsigned UB, unsigned LB) {
-    return Datapath.createExprImpl(Opc, Ops, UB, LB);
+                                                 ArrayRef<VASTValPtr> Ops,
+                                                 unsigned UB, unsigned LB) {
+  return Datapath.createExprImpl(Opc, Ops, UB, LB);
 }
 
 void MinimalExprBuilderContext::replaceAllUseWith(VASTValPtr From,
-  VASTValPtr To) {
-    Datapath.replaceAllUseWithImpl(From, To);
+                                                  VASTValPtr To) {
+  Datapath.replaceAllUseWithImpl(From, To);
+}
+
+MinimalExprBuilderContext::~MinimalExprBuilderContext() {
+  typedef DatapathContainer::expr_iterator expr_iterator;
+  for (expr_iterator I = Datapath.expr_begin(); I != Datapath.expr_end(); /*++I*/) {
+    VASTExpr *E = I++;
+    if (E->use_empty()) Datapath.recursivelyDeleteTriviallyDeadExprs(E);
+  }
 }
 
 //===--------------------------------------------------------------------===//
