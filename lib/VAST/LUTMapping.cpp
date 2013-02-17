@@ -712,6 +712,9 @@ bool LUTMapping::runOnVASTModule(VASTModule &VM) {
   ExpandSOP(DP, *Builder);
   BreakNAryExpr(DP, *Builder);
 
+  // DIRTY HACK: Force release the dead expressions.
+  VM.gc();
+
   LogicNetwork Ntk(VM);
 
   if (!Ntk.buildAIG(DP)) return true;
