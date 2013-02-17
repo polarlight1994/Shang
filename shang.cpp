@@ -255,6 +255,9 @@ int main(int argc, char **argv) {
       // Perform the scheduling.
       HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
       HLSPasses.add(createVASTSchedulingPass());
+      // Scheduling will restruct the datapath. Optimize the datapath again
+      // after scheduling.
+      HLSPasses.add(createLUTMappingPass());
     }
 
     // Analyse the slack between registers.

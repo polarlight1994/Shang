@@ -32,6 +32,9 @@
 STATISTIC(NumAndExpand, "Number of binary And expanded from NAry And expanded");
 STATISTIC(NumABCNodeBulit, "Number of ABC node built");
 STATISTIC(NumLUTBulit, "Number of LUT node built");
+STATISTIC(NumLUTExpand, "Number of LUT node expanded");
+STATISTIC(NumBufferBuilt, "Number of buffers built by ABC");
+STATISTIC(NumConstPOs, "Number of POs folded to constant.");
 
 // The header of ABC
 #define ABC_DLL
@@ -117,6 +120,7 @@ struct LogicNetwork {
     return RewriteMap.count(Obj) || Abc_ObjIsPi(Abc_ObjFanin0(Obj));
   }
 
+  VASTImmediate *extractConstant(Abc_Obj_t *Obj);
   void buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder);
   void buildLUTTree(Abc_Obj_t *Root, DatapathBuilder &Builder);
   void buildLUTDatapath(DatapathBuilder &Builder);
@@ -374,64 +378,6 @@ VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
   return at->second;
 }
 
-void LogicNetwork::buildLUTTree(Abc_Obj_t *Root, DatapathBuilder &Builder) {
-  std::vector<std::pair<Abc_Obj_t*, int> > VisitStack;
-  VisitStack.push_back(std::make_pair(Abc_ObjRegular(Root), 0));
-
-  while (!VisitStack.empty()) {
-    assert(Abc_ObjIsNet(VisitStack.back().first) && "Bad object type!");
-    Abc_Obj_t *CurNode = Abc_ObjRegular(Abc_ObjFanin0(VisitStack.back().first));
-    int &FIIdx = VisitStack.back().second;
-
-    if (FIIdx == Abc_ObjFaninNum(CurNode)) {
-      VisitStack.pop_back();
-
-      DEBUG(dbgs().indent(VisitStack.size() * 2) << "Visiting "
-            << Abc_ObjName(Abc_ObjRegular(CurNode)) << '\n');
-
-      // All fanin visited, visit the current node.
-      buildLUTExpr(CurNode, Builder);
-      continue;
-    }
-
-    Abc_Obj_t *ChildNode = Abc_ObjRegular(Abc_ObjFanin(CurNode, FIIdx));
-    ++FIIdx;
-
-    // Fanin had already visited.
-    if (isNodeVisited(ChildNode)) continue;
-
-    VisitStack.push_back(std::make_pair(Abc_ObjRegular(ChildNode), 0));
-  }
-}
-
-void LogicNetwork::buildLUTDatapath(DatapathBuilder &Builder) {
-  int i;
-  Abc_Obj_t *Obj;
-
-  DEBUG(dump());
-
-  Abc_NtkForEachPo(Ntk,Obj, i) {
-    Abc_Obj_t *FI = Abc_ObjFanin0(Obj);
-    // The Fanin of the PO maybe visited.
-    if (isNodeVisited(FI)) continue;
-
-    // Rewrite the LUT tree rooted FI.
-    buildLUTTree(FI, Builder);
-
-    AbcObjMapTy::const_iterator at = RewriteMap.find(Abc_ObjRegular(FI));
-    assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
-    VASTValPtr NewVal = at->second;
-    if (Abc_ObjIsComplement(FI)) NewVal = NewVal.invert();
-
-    VASTValPtr &OldVal = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))];
-    // Update the mapping if the mapped value changed.
-    if (OldVal != NewVal) {
-      Builder.replaceAllUseWith(OldVal, NewVal);
-      OldVal = NewVal;
-    }
-  }
-}
-
 static ManagedStatic<ABCContext> GlobalContext;
 
 LogicNetwork::LogicNetwork(VASTModule &VM) : Context(*GlobalContext), VM(VM) {
@@ -441,38 +387,12 @@ LogicNetwork::LogicNetwork(VASTModule &VM) : Context(*GlobalContext), VM(VM) {
 
 namespace {
 struct LUTMapping : public VASTModulePass {
-  DatapathBuilder *Builder;
-
   static char ID;
-  LUTMapping() : VASTModulePass(ID), Builder(0) {
+  LUTMapping() : VASTModulePass(ID) {
     initializeLUTMappingPass(*PassRegistry::getPassRegistry());
   }
 
   bool runOnVASTModule(VASTModule &VM);
-};
-
-struct NAryExprBreaker {
-  DatapathBuilder &Builder;
-  explicit NAryExprBreaker(DatapathBuilder &Builder) : Builder(Builder) {}
-
-  void operator()(VASTNode *Node) const {
-    if (VASTExpr *E = dyn_cast<VASTExpr>(Node))
-      breakDownNAryExpr(E);
-  }
-
-  void breakDownNAryExpr(VASTExpr *Expr) const;
-
-  VASTValPtr expandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
-                       unsigned Bitwidth);
-
-  static void BreakNAryExpr(DatapathContainer &DP, DatapathBuilder &Builder) {
-    std::set<VASTOperandList*> Visited;
-    typedef DatapathContainer::expr_iterator expr_iterator;
-    for (expr_iterator I = DP.expr_begin(); I != DP.expr_end(); /*++I*/) {
-      VASTExpr *CurExpr = I++;
-      VASTOperandList::visitTopOrder(CurExpr, Visited, NAryExprBreaker(Builder));
-    }
-  }
 };
 }
 
@@ -482,13 +402,13 @@ static unsigned GetSameWidth(VASTValPtr LHS, VASTValPtr RHS) {
   return BitWidth;
 }
 
-void NAryExprBreaker::breakDownNAryExpr(VASTExpr *Expr) const  {
+static bool BreakDownNAryExpr(VASTExpr *Expr, DatapathBuilder &Builder) {
   VASTExpr::Opcode Opcode = Expr->getOpcode();
 
-  if (Opcode != VASTExpr::dpAnd) return;
+  if (Opcode != VASTExpr::dpAnd) return false;
 
   // Already binary expressions no need to break them down.
-  if (Expr->size() <= 2) return;
+  if (Expr->size() <= 2) return false;
 
   SmallVector<VASTValPtr, 8> Ops;
   for (unsigned i = 0; i < Expr->size(); ++i)
@@ -522,10 +442,26 @@ void NAryExprBreaker::breakDownNAryExpr(VASTExpr *Expr) const  {
 
   // Replace the original Expr by the broken down Expr.
   Builder.replaceAllUseWith(Expr, Ops.back());
+  return true;
 }
 
-VASTValPtr NAryExprBreaker::expandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
-                                      unsigned Bitwidth) {
+static void BreakNAryExpr(DatapathContainer &DP, DatapathBuilder &Builder) {
+  std::vector<VASTExpr*> Worklist;
+
+  typedef DatapathContainer::expr_iterator iterator;
+  for (iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I)
+    if (I->getOpcode() == VASTExpr::dpAnd) Worklist.push_back(I);
+
+  while (!Worklist.empty()) {
+    VASTExpr *E = Worklist.back();
+    Worklist.pop_back();
+
+    BreakDownNAryExpr(E, Builder);
+  }
+}
+
+static VASTValPtr ExpandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
+                            unsigned Bitwidth, DatapathBuilder &Builder) {
   unsigned NInput = Ops.size();
   const char *p = sop;
   SmallVector<VASTValPtr, 8> ProductOps, SumOps;
@@ -569,7 +505,45 @@ VASTValPtr NAryExprBreaker::expandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
 
   if (isComplement) SOP = Builder.buildNotExpr(SOP);
 
+  ++NumLUTExpand;
   return SOP;
+}
+
+static void ExpandSOP(DatapathContainer &DP, DatapathBuilder &Builder) {
+  std::vector<VASTExpr*> Worklist;
+
+  typedef DatapathContainer::expr_iterator iterator;
+  for (iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I)
+    if (I->getOpcode() == VASTExpr::dpLUT) Worklist.push_back(I);
+
+  while (!Worklist.empty()) {
+    VASTExpr *E = Worklist.back();
+    Worklist.pop_back();
+
+    SmallVector<VASTValPtr, 8> Operands;
+    // Push the fanin of the LUT into the operand list, do not put the SOP
+    // string which is the last operand.
+    for (unsigned i = 0; i < E->size() - 1; ++i)
+      Operands.push_back(E->getOperand(i));
+
+    VASTValPtr Expaned
+      = ExpandSOP(E->getLUT(), Operands, E->getBitWidth(), Builder);
+    Builder.replaceAllUseWith(E, Expaned);
+  }
+}
+
+VASTImmediate *LogicNetwork::extractConstant(Abc_Obj_t *Obj) {
+  assert(Abc_ObjIsNet(Obj) && "Unexpected Obj Type!");
+  Obj = Abc_ObjRegular(Abc_ObjFanin0(Abc_ObjRegular(Obj)));
+  assert(Abc_ObjIsNode(Obj) && "Unexpected Obj Type!");
+
+  char *sop = (char*)Abc_ObjData(Obj);
+
+  if (Abc_SopIsConst0(sop)) return VASTImmediate::False;
+
+  if (Abc_SopIsConst1(sop)) return VASTImmediate::True;
+
+  return 0;
 }
 
 void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
@@ -598,7 +572,7 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
 
   if (ExpandLUT) {
     // Expand the SOP back to SOP if user ask to.
-    VASTValPtr V = NAryExprBreaker(Builder).expandSOP(sop, Ops, Bitwidth);
+    VASTValPtr V = ExpandSOP(sop, Ops, Bitwidth, Builder);
 
     bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
     assert(Inserted && "The node is visited?");
@@ -616,11 +590,11 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
 
   // Do not need to build the LUT for a simple buffer.
   if (Abc_SopIsBuf(sop)) {
-    llvm_unreachable("Unexpected buffer!");
     assert(Ops.size() == 1 && "Bad operand size for invert!");
     VASTValPtr V = Ops[0];
     bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
     assert(Inserted && "The node is visited?");
+    ++NumBufferBuilt;
     return;
   }
 
@@ -653,13 +627,86 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, DatapathBuilder &Builder) {
   assert(Inserted && "The node is visited?");
 }
 
+void LogicNetwork::buildLUTTree(Abc_Obj_t *Root, DatapathBuilder &Builder) {
+  std::vector<std::pair<Abc_Obj_t*, int> > VisitStack;
+  VisitStack.push_back(std::make_pair(Abc_ObjRegular(Root), 0));
+
+  while (!VisitStack.empty()) {
+    assert(Abc_ObjIsNet(VisitStack.back().first) && "Bad object type!");
+    Abc_Obj_t *CurNode = Abc_ObjRegular(Abc_ObjFanin0(VisitStack.back().first));
+    int &FIIdx = VisitStack.back().second;
+
+    if (FIIdx == Abc_ObjFaninNum(CurNode)) {
+      VisitStack.pop_back();
+
+      DEBUG(dbgs().indent(VisitStack.size() * 2) << "Visiting "
+            << Abc_ObjName(Abc_ObjRegular(CurNode)) << '\n');
+
+      // All fanin visited, visit the current node.
+      buildLUTExpr(CurNode, Builder);
+      continue;
+    }
+
+    Abc_Obj_t *ChildNode = Abc_ObjRegular(Abc_ObjFanin(CurNode, FIIdx));
+    ++FIIdx;
+
+    // Fanin had already visited.
+    if (isNodeVisited(ChildNode)) continue;
+
+    VisitStack.push_back(std::make_pair(Abc_ObjRegular(ChildNode), 0));
+  }
+}
+
+void LogicNetwork::buildLUTDatapath(DatapathBuilder &Builder) {
+  int i;
+  Abc_Obj_t *Obj;
+
+  DEBUG(dump());
+
+  Abc_NtkForEachPo(Ntk,Obj, i) {
+    Abc_Obj_t *FI = Abc_ObjFanin0(Obj);
+    // The Fanin of the PO maybe visited.
+    if (isNodeVisited(FI)) continue;
+
+    // Check if the PO is folded to constant.
+    if (VASTImmediate *Imm = extractConstant(FI)) {
+      VASTValPtr &OldVal = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))];
+      unsigned Bitwidth = OldVal->getBitWidth();
+      VASTValPtr NewVal = Imm == VASTImmediate::True ?
+                          Builder.getImmediate(APInt::getAllOnesValue(Bitwidth))
+                          : Builder.getImmediate(APInt::getNullValue(Bitwidth));
+      assert(NewVal != OldVal && "We are sending constant out to ABC?");
+      Builder.replaceAllUseWith(OldVal, NewVal);
+      OldVal = NewVal;
+      ++NumConstPOs;
+      continue;
+    }
+
+    // Rewrite the LUT tree rooted FI.
+    buildLUTTree(FI, Builder);
+
+    AbcObjMapTy::const_iterator at = RewriteMap.find(Abc_ObjRegular(FI));
+    assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
+    VASTValPtr NewVal = at->second;
+    if (Abc_ObjIsComplement(FI)) NewVal = NewVal.invert();
+
+    VASTValPtr &OldVal = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))];
+    // Update the mapping if the mapped value changed.
+    if (OldVal != NewVal) {
+      Builder.replaceAllUseWith(OldVal, NewVal);
+      OldVal = NewVal;
+    }
+  }
+}
+
 bool LUTMapping::runOnVASTModule(VASTModule &VM) {
   DatapathContainer &DP = VM;
 
   MinimalDatapathContext Context(DP, getAnalysisIfAvailable<DataLayout>());
-  Builder = new DatapathBuilder(Context);
+  DatapathBuilder Builder(Context);
 
-  NAryExprBreaker::BreakNAryExpr(DP, *Builder);
+  ExpandSOP(DP, Builder);
+  BreakNAryExpr(DP, Builder);
 
   LogicNetwork Ntk(VM);
 
@@ -673,9 +720,8 @@ bool LUTMapping::runOnVASTModule(VASTModule &VM) {
   // Map the logic network to LUTs
   Ntk.performLUTMapping();
 
-  Ntk.buildLUTDatapath(*Builder);
+  Ntk.buildLUTDatapath(Builder);
 
-  delete Builder;
   return true;
 }
 
