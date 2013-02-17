@@ -15,6 +15,7 @@
 //
 #include "VASTScheduling.h"
 
+#include "shang/VASTModulePass.h"
 #include "shang/VASTExprBuilder.h"
 #include "shang/VASTModule.h"
 
@@ -87,7 +88,6 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
 
   void clearUp();
   void clearUp(VASTSlot *S);
-  void clearUp(VASTSeqValue *V);
 
   CFGPred *getCFGPred(ArrayRef<BasicBlock*> RetimingPath) {
     unsigned NumBBs = RetimingPath.size();
@@ -179,24 +179,6 @@ void ScheduleEmitter::clearUp(VASTSlot *S) {
   }
 }
 
-void ScheduleEmitter::clearUp(VASTSeqValue *V) {
-  if (!V->use_empty() || V->getValType() != VASTSeqValue::Data) return;
-
-  SmallVector<VASTSeqOp*, 4> DeadOps;
-  for (VASTSeqValue::itertor I = V->begin(), E = V->end(); I != E; ++I) {
-    VASTSeqUse U = *I;
-    DeadOps.push_back(U.Op);
-  }
-
-  while (!DeadOps.empty()) {
-    VASTSeqOp *Op = DeadOps.pop_back_val();
-    Op->removeFromParent();
-    VM.eraseSeqOp(Op);
-  }
-
-  VM.eraseSeqVal(V);
-}
-
 void ScheduleEmitter::clearUp() {
   // Clear up the VASTSeqOp in the old list.
   while (!OldSlots.empty()) {
@@ -207,10 +189,8 @@ void ScheduleEmitter::clearUp() {
     OldSlots.pop_back();
   }
 
-  // Clear up the dead VASTSeqValues.
-  typedef VASTModule::seqval_iterator seqval_iterator;
-  for (seqval_iterator I = VM.seqval_begin(); I != VM.seqval_end(); /*++I*/)
-    clearUp(I++);
+  // Release the dead objects now.
+  VM.gc();
 }
 
 //===----------------------------------------------------------------------===//

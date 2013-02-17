@@ -340,6 +340,10 @@ public:
 
   void print(raw_ostream &OS) const;
 
+  /// Perform the Garbage Collection to release the dead objects on the
+  /// VASTModule
+  void gc();
+
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTModule *A) { return true; }
   static inline bool classof(const VASTNode *A) {

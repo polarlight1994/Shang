@@ -148,3 +148,43 @@ void VASTOperandList::dropOperands() {
 }
 
 //===----------------------------------------------------------------------===//
+void VASTModule::gc() {
+  // Clear up the dead VASTSeqValues.
+  for (seqval_iterator I = seqval_begin(); I != seqval_end(); /*++I*/) {
+    VASTSeqValue *V = I++;
+
+    if (!V->use_empty() || V->getValType() != VASTSeqValue::Data) continue;;
+
+    SmallVector<VASTSeqOp*, 4> DeadOps;
+    for (VASTSeqValue::itertor I = V->begin(), E = V->end(); I != E; ++I) {
+      VASTSeqUse U = *I;
+      DeadOps.push_back(U.Op);
+    }
+
+    while (!DeadOps.empty()) {
+      VASTSeqOp *Op = DeadOps.pop_back_val();
+      Op->removeFromParent();
+      eraseSeqOp(Op);
+    }
+
+    eraseSeqVal(V);
+  }
+
+  // Release the dead seqops, this happen when we fold the SeqOp through the
+  // false paths.
+  for (seqop_iterator I = seqop_begin(); I != seqop_end(); /*++I*/) {
+    VASTSeqOp *Op = I++;
+    if (Op->getPred() == VASTImmediate::False) {
+      Op->removeFromParent();
+      eraseSeqOp(Op);
+    }
+  }
+
+  // At last clear up the dead VASTExprs.
+  typedef DatapathContainer::expr_iterator expr_iterator;
+  for (expr_iterator I = Datapath->expr_begin(); I != Datapath->expr_end();
+       /*++I*/) {
+    VASTExpr *E = I++;
+    if (E->use_empty()) Datapath->recursivelyDeleteTriviallyDeadExprs(E);
+  }
+}

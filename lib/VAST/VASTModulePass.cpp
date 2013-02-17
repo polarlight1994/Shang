@@ -1032,6 +1032,9 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I)
     Builder.visitBasicBlock(I);
 
+  // Release the dead objects generated during the VM construction.
+  VM->gc();
+
   return false;
 }
 
@@ -1064,7 +1067,10 @@ void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool VASTModulePass::runOnFunction(Function &F) {
-  return runOnVASTModule(*getAnalysis<VASTModuleAnalysis>());
+  VASTModule &VM = *getAnalysis<VASTModuleAnalysis>();
+  bool changed = runOnVASTModule(VM);
+  if (changed) VM.gc();
+  return changed;
 }
 
 void VASTModulePass::print(raw_ostream &OS) const {
