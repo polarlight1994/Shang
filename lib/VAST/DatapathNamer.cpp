@@ -53,7 +53,10 @@ struct Namer {
     // Remove the naming, we will recalculate them.
     Expr->nameExpr(false);
 
-    if (!Expr->isInlinable()) {
+    // Even dpAssign is inlinable, we should assign a name to it.
+    // Otherwise we may lost the UB and LB information when we print it.
+    // Another solution is name the operand of the dpAssign.
+    if (!Expr->isInlinable() || Expr->getOpcode() == VASTExpr::dpAssign) {
       nameExpr(Expr);
       return;
     }
