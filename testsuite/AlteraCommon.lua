@@ -89,7 +89,58 @@ local preprocess = require "luapp" . preprocess
 local _, message = preprocess {input=SDCHeader, output=SlackFile}
 if message ~= nil then print(message) end
 SlackFile:close()
+
+local VerifyFile = assert(io.open (MainDelayVerifyOutput, "w"))
+VerifyFile:close()
 ]=]
 
 SynAttr.ParallelCaseAttr = '/* parallel_case */'
 SynAttr.FullCaseAttr = '/* full_case */'
+
+
+VerifyDatapathDelay = [=[
+#for i, n in pairs(RTLDatapathDelay) do
+#  if n.Thu ~= '<null>' then
+#    local DstNameSet = n.Dst.NameSet
+#    local SrcNameSet = n.Src.NameSet
+#    local Delay = n.Delay
+
+foreach DstPattern $(DstNameSet) {
+  set dst [get_keepers "*$(CurModule:getName())_inst|$DstPattern*"]
+  if { [get_collection_size $dst] } { break }
+}
+
+foreach SrcPattern $(SrcNameSet) {
+  set src [get_keepers "*$(CurModule:getName())_inst|$SrcPattern*"]
+  if { [get_collection_size $src] } { break }
+}
+#    if n.Thu ~= nil then
+#    local ThuNameSet = n.Thu.NameSet
+foreach ThuPattern $(ThuNameSet) {
+  set thu [get_keepers "*$(CurModule:getName())_inst|$ThuPattern*"]
+  if { [get_collection_size $thu] } { break }
+}
+
+$(_put('#')) $(DstNameSet) <- $(ThuNameSet) <- $(SrcNameSet) delay $(Delay)
+
+if {[get_collection_size $thu]} {
+  set_multicycle_path -from $src -through $thu -to $dst -setup -end $(Delay)
+}
+
+#    else
+
+$(_put('#')) $(DstNameSet) <- $(SrcNameSet) delay $(Delay)
+  set_multicycle_path -from $src -to $dst -setup -end $(Delay)
+
+#    end
+#  end
+#end -- for
+]=]
+
+Misc.DelayVerifyScript = [=[
+local VerifyFile = assert(io.open (MainDelayVerifyOutput, "a+"))
+local preprocess = require "luapp" . preprocess
+local _, message = preprocess {input=VerifyDatapathDelay, output=VerifyFile}
+if message ~= nil then print(message) end
+VerifyFile:close()
+]=]

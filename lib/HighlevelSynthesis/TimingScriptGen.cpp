@@ -107,9 +107,17 @@ struct PathIntervalQueryCache {
   void bindAllPath2ScriptEngine(VASTSeqValue *Dst) const;
   void bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimple,
                                 DenseSet<VASTSeqValue*> &BoundSrc) const;
-  unsigned bindPath2ScriptEngine(VASTSeqValue *Dst, VASTSeqValue *Src,
-                                 unsigned Interval, bool SkipThu, bool IsCritical)
-                                 const;
+  // Bind multi-cycle path constraints to the scripting engine.
+  unsigned bindMCPC2ScriptEngine(VASTSeqValue *Dst, VASTSeqValue *Src,
+                                 unsigned Interval, bool SkipThu,
+                                 bool IsCritical) const;
+
+  // Bind the combinational delay to the scripting engine to verify the timing
+  // analysis.
+  unsigned bindDelay2ScriptEngine(VASTSeqValue *Dst, VASTSeqValue *Src,
+                                  unsigned Interval, bool SkipThu,
+                                  bool IsCritical) const;
+
   unsigned printPathWithIntervalFrom(raw_ostream &OS, VASTSeqValue *Src,
                                      unsigned Interval) const;
 
@@ -187,7 +195,7 @@ static unsigned getMinimalInterval(/*SeqReachingDefAnalysis *R,*/ VASTSeqValue *
   return PathInterval;
 }
 
-static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {  
+static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {
   if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
     // The block RAM should be printed as Prefix + ArrayName in the script.
     if (const VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V)) {
@@ -378,12 +386,94 @@ void PathIntervalQueryCache::dump() const {
   }
 }
 
+static bool printDelayRecord(raw_ostream &OS, VASTSeqValue *Dst,
+                             VASTSeqValue *Src, VASTValue *Thu, double delay) {
+  // Record: {Src = '...', Dst = '...', THU = '...', delay = ''}
+  OS << "{ Src=";
+  printBindingLuaCode(OS, Src);
+  OS << ", ";
+
+  OS << "Dst=";
+  printBindingLuaCode(OS, Dst);
+  OS << ", ";
+
+  OS << "Thu=";
+  if (Thu == 0)
+    OS << "nil";
+  else if (!printBindingLuaCode(OS, Thu))
+    OS << "'<null>'";
+  OS << ", ";
+
+  OS << "Delay = '" << delay << '\'';
+
+  OS << " }";
+  return Thu != 0;
+}
+
+unsigned PathIntervalQueryCache::bindDelay2ScriptEngine(VASTSeqValue *Dst,
+                                                        VASTSeqValue *Src,
+                                                        unsigned Interval,
+                                                        bool SkipThu,
+                                                        bool IsCritical) const {
+  // Delay table:
+  // Datapath: {
+  //  {Src = '...', Dst = '...', THU = '...', delay = ''}
+  // }
+  // }
+  SMDiagnostic Err;
+
+  if (!runScriptStr("RTLDatapathDelay = {}\n", Err))
+    llvm_unreachable("Cannot create RTLDatapath table in scripting pass!");
+
+  std::string Script;
+  raw_string_ostream SS(Script);
+
+  Script.clear();
+
+  unsigned NumThuNodePrinted = 0;
+  SS << "RTLDatapathDelay = { ";
+
+  // Only print the source and the dst.
+  if (SkipThu) {
+    // FIXME: Get the delay from timing netlist.
+    printDelayRecord(SS, Dst, Src, 0, 0.0);
+  } else {
+    typedef QueryCacheTy::const_iterator it;
+    for (it I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I) {
+      const SeqValSetTy &Set = I->second;
+      SeqValSetTy::const_iterator at = Set.find(Src);
+      // The register may be not reachable from this node.
+      if (at == Set.end() || at->second != Interval) continue;
+      if (NumThuNodePrinted) SS << ", ";
+
+      if (printDelayRecord(SS, Dst, Src, I->first, 0.0)) {
+        ++NumThuNodePrinted;
+      }
+    }
+  }
+
+  SS << " }";
+
+  SS.flush();
+  if (!runScriptStr(Script, Err))
+    llvm_unreachable("Cannot create node table of RTLDatapath!");
+
+  // Get the script from script engine.
+  const char *DatapathScriptPath[] = { "Misc", "DelayVerifyScript" };
+  if (!runScriptStr(getStrValueFromEngine(DatapathScriptPath), Err))
+    report_fatal_error("Error occur while running datapath script:\n"
+                       + Err.getMessage());
+
+  return NumThuNodePrinted;
+}
+
 // The first node of the path is the use node and the last node of the path is
 // the define node.
-unsigned PathIntervalQueryCache::bindPath2ScriptEngine(VASTSeqValue *Dst,
-                                                    VASTSeqValue *Src,
-                                                    unsigned Interval, bool SkipThu,
-                                                    bool IsCritical) const {
+unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Dst,
+                                                       VASTSeqValue *Src,
+                                                       unsigned Interval,
+                                                       bool SkipThu,
+                                                       bool IsCritical) const {
   // Path table:
   // Datapath: {
   //  unsigned Slack,
@@ -424,6 +514,7 @@ unsigned PathIntervalQueryCache::bindPath2ScriptEngine(VASTSeqValue *Dst,
   if (!runScriptStr(getStrValueFromEngine(DatapathScriptPath), Err))
     report_fatal_error("Error occur while running datapath script:\n"
                        + Err.getMessage());
+
   return NumThuNodePrinted;
 }
 
@@ -450,10 +541,13 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimpl
       // If we not visited the path before, this path is the critical path,
       // since we are iteration the path from the smallest delay to biggest
       // delay.
-      unsigned NumConstraints = bindPath2ScriptEngine(Dst, Src, Interval,
+      unsigned NumConstraints = bindMCPC2ScriptEngine(Dst, Src, Interval,
                                                       IsSimple, !Visited);
       if (NumConstraints == 0 && !IsSimple && Interval > 1)
         ++NumMaskedMultiCyclesTimingPath;
+
+      // Try to verify the result of the timing netlist.
+      if (TNL) bindDelay2ScriptEngine(Dst, Src, Interval, IsSimple, !Visited);
     }
   }
 }

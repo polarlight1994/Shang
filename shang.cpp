@@ -261,8 +261,8 @@ int main(int argc, char **argv) {
     }
 
     // Analyse the slack between registers.
-    //Passes.add(createCombPathDelayAnalysisPass());
     HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
+    HLSPasses.add(createTimingScriptGenPass());
 
     // Run some scripting passes.
     typedef std::map<std::string, std::pair<std::string, std::string> >::iterator
