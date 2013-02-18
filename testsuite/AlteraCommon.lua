@@ -145,7 +145,7 @@ if {[get_collection_size $src] && [get_collection_size $dst]} {
 #    if n.Thu ~= nil then
 #    local ThuNameSet = n.Thu.NameSet
   foreach ThuPattern $(ThuNameSet) {
-    set thu [get_keepers "*$(CurModule:getName())_inst|$ThuPattern*"]
+    set thu [get_nets "*$(CurModule:getName())_inst|$ThuPattern*"]
     if { [get_collection_size $thu] } { break }
   }
 
