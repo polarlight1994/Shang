@@ -1,2 +1,7 @@
 add_regress_test(blc_add)
-
+add_regress_test(blc_boolean)
+add_regress_test(blc_mult)
+add_regress_test(blc_partial_add)
+add_regress_test(blc_partial_mult)
+add_regress_test(blc_shift)
+add_regress_test(blc_sub)
