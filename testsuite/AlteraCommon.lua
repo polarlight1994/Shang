@@ -75,6 +75,28 @@ derive_clock_uncertainty
 set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
 ]=]
 
+VerifyHeader = [=[
+proc runOnPath { path } {
+  # Accumulate the number of logic levels.
+  set cur_path_ll [get_path_info $path -num_logic_levels]
+  set cur_path_delay [get_path_info $path -data_delay]
+  set cur_total_ic_delay 0
+  set cur_slack [ get_path_info $path -slack]
+  puts " $cur_path_ll "
+
+  foreach_in_collection point [ get_path_info $path -arrival_points ] {
+    if { [ get_point_info $point -type ] eq "ic" } {
+      set cur_total_ic_delay [expr {$cur_total_ic_delay + [ get_point_info $point -incr     ]}]
+    }
+  }
+
+  set cur_ave_ll_ic_delay [expr {$cur_path_delay / $cur_path_ll}]
+  if { $cur_path_ll > 0 } {
+    puts " $cur_path_ll $cur_ave_ll_ic_delay "
+  }
+}
+]=]
+
 Misc.DatapathScript = [=[
 local SlackFile = assert(io.open (MainSDCOutput, "a+"))
 local preprocess = require "luapp" . preprocess
@@ -91,15 +113,19 @@ if message ~= nil then print(message) end
 SlackFile:close()
 
 local VerifyFile = assert(io.open (MainDelayVerifyOutput, "w"))
+local preprocess = require "luapp" . preprocess
+local _, message = preprocess {input=VerifyHeader, output=VerifyFile}
+if message ~= nil then print(message) end
 VerifyFile:close()
 ]=]
 
 SynAttr.ParallelCaseAttr = '/* parallel_case */'
 SynAttr.FullCaseAttr = '/* full_case */'
 
-
 VerifyDatapathDelay = [=[
 #for i, n in pairs(RTLDatapathDelay) do
+
+#-- Ignore the invalid record
 #  if n.Thu ~= '<null>' then
 #    local DstNameSet = n.Dst.NameSet
 #    local SrcNameSet = n.Src.NameSet
@@ -114,25 +140,31 @@ foreach SrcPattern $(SrcNameSet) {
   set src [get_keepers "*$(CurModule:getName())_inst|$SrcPattern*"]
   if { [get_collection_size $src] } { break }
 }
+
+if {[get_collection_size $src] && [get_collection_size $dst]} {
 #    if n.Thu ~= nil then
 #    local ThuNameSet = n.Thu.NameSet
-foreach ThuPattern $(ThuNameSet) {
-  set thu [get_keepers "*$(CurModule:getName())_inst|$ThuPattern*"]
-  if { [get_collection_size $thu] } { break }
-}
+  foreach ThuPattern $(ThuNameSet) {
+    set thu [get_keepers "*$(CurModule:getName())_inst|$ThuPattern*"]
+    if { [get_collection_size $thu] } { break }
+  }
 
 $(_put('#')) $(DstNameSet) <- $(ThuNameSet) <- $(SrcNameSet) delay $(Delay)
 
-if {[get_collection_size $thu]} {
-  set_multicycle_path -from $src -through $thu -to $dst -setup -end $(Delay)
-}
+  if {[get_collection_size $thu]} {
+    foreach_in_collection path [ get_timing_paths -from $src -through $thu -to $dst -nworst 1 -pairs_only -setup ] {
+      runOnPath $path
+    }
+  }
 
 #    else
 
 $(_put('#')) $(DstNameSet) <- $(SrcNameSet) delay $(Delay)
-  set_multicycle_path -from $src -to $dst -setup -end $(Delay)
-
+  foreach_in_collection path [ get_timing_paths -from $src -to $dst -nworst 1 -pairs_only -setup ] {
+    runOnPath $path
+  }
 #    end
+}
 #  end
 #end -- for
 ]=]
