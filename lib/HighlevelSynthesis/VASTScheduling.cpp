@@ -700,8 +700,15 @@ void VASTScheduling::fixSchedulingGraph() {
     // Try to prevent the other part of the loop being folded across the
     // loop header.
     ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[HeaderBB->getTerminator()]);
-    for (unsigned i = 0; i < Terminators.size(); ++i)
-      Terminators[i]->addDep(Header, VASTDep::CreateCtrlDep(1));
+    for (unsigned i = 0; i < Terminators.size(); ++i) {
+      VASTSchedUnit *Terminator = Terminators[i];
+      BasicBlock *TargetBB = Terminator->getTargetBlock();
+      // Folding the block that is outside the loop through the header is
+      // allowed.
+      if (!L->contains(TargetBB)) continue;
+
+      Terminator->addDep(Header, VASTDep::CreateCtrlDep(1));
+    }
   }
 }
 
