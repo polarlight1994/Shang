@@ -82,19 +82,21 @@ proc runOnPath { path } {
   set cur_path_delay [get_path_info $path -data_delay]
   set cur_total_ic_delay 0
   set cur_slack [ get_path_info $path -slack]
-  puts " $cur_path_ll "
 
+  set PlotXY [open "[pwd]/PlotXY.data" a+]
   foreach_in_collection point [ get_path_info $path -arrival_points ] {
     if { [ get_point_info $point -type ] eq "ic" } {
       set cur_total_ic_delay [expr {$cur_total_ic_delay + [ get_point_info $point -incr     ]}]
     }
   }
 
-  set cur_ave_ll_ic_delay [expr {$cur_path_delay / $cur_path_ll}]
-  if { $cur_path_ll > 0 } {
-    puts " $cur_path_ll $cur_ave_ll_ic_delay "
-  }
+  puts $PlotXY "$cur_path_ll $cur_path_delay $cur_total_ic_delay"
+  
+  close $PlotXY
 }
+
+set PlotXY [open "[pwd]/PlotXY.data" w]
+close $PlotXY
 ]=]
 
 Misc.DatapathScript = [=[
