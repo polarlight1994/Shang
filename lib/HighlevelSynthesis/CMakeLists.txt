@@ -8,7 +8,6 @@ add_llvm_library(ShangHLS
   SDCScheduler.cpp
   CombPathDelayAnalysis.cpp
   SeqLiveVariables.cpp
-  SeqReachingDefAnalysis.cpp
 )
 
 IF (NOT MSVC)

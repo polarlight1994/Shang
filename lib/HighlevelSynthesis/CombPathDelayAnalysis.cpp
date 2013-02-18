@@ -18,8 +18,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "SeqReachingDefAnalysis.h"
-
 #include "shang/VASTModulePass.h"
 #include "shang/VASTSubModules.h"
 #include "shang/VASTModule.h"
@@ -40,7 +38,7 @@
 using namespace llvm;
 
 static cl::opt<bool>
-DisableTimingScriptGeneration("vtm-disable-timing-script",
+DisableTimingScriptGeneration("shang-disable-timing-script",
                               cl::desc("Disable timing script generation"),
                               cl::init(false));
 
@@ -76,7 +74,7 @@ struct PathDelayQueryCache {
 
   bool annotateSubmoduleLatency(VASTSeqValue * V);
 
-  void annotatePathDelay(SeqReachingDefAnalysis *R, VASTValue *Tree,
+  void annotatePathDelay(/*SeqReachingDefAnalysis *R,*/ VASTValue *Tree,
                          ArrayRef<VASTSeqUse> DstUses);
 
   bool updateDelay(SeqValSetTy &To, const SeqValSetTy &From,
@@ -119,14 +117,14 @@ struct PathDelayQueryCache {
 };
 
 struct CombPathDelayAnalysis : public VASTModulePass {
-  SeqReachingDefAnalysis *ReachingDef;
   VASTModule *VM;
 
   static char ID;
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequired<SeqReachingDefAnalysis>();
+    //AU.addRequired<SeqLiveVariables>();
+    AU.addRequired<DataLayout>();
     AU.setPreservesAll();
   }
 
@@ -148,37 +146,37 @@ struct CombPathDelayAnalysis : public VASTModulePass {
     return false;
   }
 
-  CombPathDelayAnalysis() : VASTModulePass(ID), ReachingDef(0), VM(0) {
+  CombPathDelayAnalysis() : VASTModulePass(ID), VM(0) {
     initializeCombPathDelayAnalysisPass(*PassRegistry::getPassRegistry());
   }
 };
 }
 
-static unsigned getMinimalDelay(SeqReachingDefAnalysis *R, VASTSeqValue *Src,
+static unsigned getMinimalDelay(/*SeqReachingDefAnalysis *R,*/ VASTSeqValue *Src,
                                 const VASTSeqUse &Dst) {
-  unsigned PathDelay = 10000;
-  SlotInfo *DstSI = R->getSlotInfo(Dst.getSlot());
+  unsigned PathDelay = 2;
+  VASTSlot *DstSlot = Dst.getSlot();
 
   typedef VASTSeqValue::const_itertor vn_itertor;
   for (vn_itertor I = Src->begin(), E = Src->end(); I != E; ++I) {
     VASTSeqUse Def = *I;
 
     // Update the PathDelay if the source VAS reaches DstSlot.
-    if (unsigned Distance = DstSI->getCyclesFromDef(Def)) {
-      assert(Distance < 10000 && "Distance too large!");
-      PathDelay = std::min(PathDelay, Distance);
-    }
+    //if (unsigned Distance = DstSI->getCyclesFromDef(Def)) {
+    //  assert(Distance < 10000 && "Distance too large!");
+    //  PathDelay = std::min(PathDelay, Distance);
+    //}
   }
 
   return PathDelay;
 }
 
-static unsigned getMinimalDelay(SeqReachingDefAnalysis *R, VASTSeqValue *Src,
+static unsigned getMinimalDelay(/*SeqReachingDefAnalysis *R,*/ VASTSeqValue *Src,
                                 ArrayRef<VASTSeqUse> DstUses) {
   unsigned PathDelay = 10000;
   typedef ArrayRef<VASTSeqUse>::iterator iterator;
   for (iterator I = DstUses.begin(), E = DstUses.end(); I != E; ++I)
-    PathDelay = std::min(PathDelay, getMinimalDelay(R, Src, *I));
+    PathDelay = std::min(PathDelay, getMinimalDelay(/*R,*/ Src, *I));
 
   return PathDelay;
 }
@@ -237,7 +235,7 @@ bool PathDelayQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   return true;
 }
 
-void PathDelayQueryCache::annotatePathDelay(SeqReachingDefAnalysis *R,
+void PathDelayQueryCache::annotatePathDelay(/*SeqReachingDefAnalysis *R,*/
                                             VASTValue *Root,
                                             ArrayRef<VASTSeqUse> DstUses) {
   assert((isa<VASTWire>(Root) || isa<VASTExpr>(Root)) && "Bad root type!");
@@ -278,7 +276,7 @@ void PathDelayQueryCache::annotatePathDelay(SeqReachingDefAnalysis *R,
     }
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
-      unsigned Delay = getMinimalDelay(R, V, DstUses);
+      unsigned Delay = getMinimalDelay(/*R,*/ V, DstUses);
 
       bool inserted = LocalDelay.insert(std::make_pair(V, Delay)).second;
       assert(inserted && "Node had already been visited?");
@@ -457,8 +455,10 @@ void PathDelayQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst) const {
   DenseSet<VASTSeqValue*> BoundSrc;
   DEBUG(dbgs() << "Going to bind delay information of graph: \n");
   DEBUG(dump());
-  // Bind the simple paths first, which are the most general.
+  // Bind the simple paths first, they apply the constraints to all paths
+  // between two registers.
   bindAllPath2ScriptEngine(Dst, true, BoundSrc);
+  // Then we refine the constraints by applying the constraints with thu nodes.
   bindAllPath2ScriptEngine(Dst, false, BoundSrc);
 }
 
@@ -467,8 +467,6 @@ bool CombPathDelayAnalysis::runOnVASTModule(VASTModule &VM)  {
   if (DisableTimingScriptGeneration) return false;
 
   bindFunctionToScriptEngine(getAnalysis<DataLayout>(), &VM);
-
-  ReachingDef = &getAnalysis<SeqReachingDefAnalysis>();
 
   //Write the timing constraints.
   typedef VASTModule::seqval_iterator seqval_iterator;
@@ -510,7 +508,7 @@ void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
     // Src may be the return_value of the submodule.
     if (Cache.annotateSubmoduleLatency(Src)) return;
 
-    int Delay = getMinimalDelay(ReachingDef, Src, Uses);
+    int Delay = getMinimalDelay(/*ReachingDef,*/ Src, Uses);
     Cache.addDelayFromToStats(Src, Delay, true);
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
@@ -524,13 +522,14 @@ void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
   // If Define Value is immediate or symbol, skip it.
   if (!isa<VASTWire>(SrcValue) && !isa<VASTExpr>(SrcValue)) return;
 
-  Cache.annotatePathDelay(ReachingDef, DepTree, Uses);
+  Cache.annotatePathDelay(/*ReachingDef,*/ DepTree, Uses);
 }
 
 char CombPathDelayAnalysis::ID = 0;
 INITIALIZE_PASS_BEGIN(CombPathDelayAnalysis, "CombPathDelayAnalysis",
                       "CombPathDelayAnalysis", false, false)
-  INITIALIZE_PASS_DEPENDENCY(SeqReachingDefAnalysis);
+  INITIALIZE_PASS_DEPENDENCY(DataLayout)
+  //INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables);
 INITIALIZE_PASS_END(CombPathDelayAnalysis, "CombPathDelayAnalysis",
                     "CombPathDelayAnalysis", false, false)
 
