@@ -17,6 +17,7 @@
 // the slack is 0. But if we read the data at cycle 3, the slack is 1.
 //
 //===----------------------------------------------------------------------===//
+#include "TimingNetlist.h"
 
 #include "shang/VASTModulePass.h"
 #include "shang/VASTSubModules.h"
@@ -33,7 +34,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/Statistic.h"
-#define DEBUG_TYPE "vtm-comb-path-delay"
+#define DEBUG_TYPE "vtm-comb-path-interval"
 #include "llvm/Support/Debug.h"
 using namespace llvm;
 
@@ -54,13 +55,17 @@ STATISTIC(NumFalseTimingPath,
 namespace{
 struct CombPathDelayAnalysis;
 
-struct PathDelayQueryCache {
-  typedef std::map<unsigned, DenseSet<VASTSeqValue*> > DelayStatsMapTy;
+struct PathIntervalQueryCache {
+  TimingNetlist *TNL;
+
+  typedef std::map<unsigned, DenseSet<VASTSeqValue*> > IntervalStatsMapTy;
   typedef DenseMap<VASTSeqValue*, unsigned> SeqValSetTy;
   typedef DenseMap<VASTValue*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
   // Statistics for simple path and complex paths.
-  DelayStatsMapTy Stats[2];
+  IntervalStatsMapTy Stats[2];
+
+  explicit PathIntervalQueryCache(TimingNetlist *TNL) : TNL(TNL) {}
 
   void reset() {
     QueryCache.clear();
@@ -68,30 +73,30 @@ struct PathDelayQueryCache {
     Stats[1].clear();
   }
 
-  void addDelayFromToStats(VASTSeqValue *Src, unsigned Delay, bool isSimple) {
-    Stats[isSimple][Delay].insert(Src);
+  void addIntervalFromToStats(VASTSeqValue *Src, unsigned Interval, bool isSimple) {
+    Stats[isSimple][Interval].insert(Src);
   }
 
   bool annotateSubmoduleLatency(VASTSeqValue * V);
 
-  void annotatePathDelay(/*SeqReachingDefAnalysis *R,*/ VASTValue *Tree,
+  void annotatePathInterval(/*SeqReachingDefAnalysis *R,*/ VASTValue *Tree,
                          ArrayRef<VASTSeqUse> DstUses);
 
-  bool updateDelay(SeqValSetTy &To, const SeqValSetTy &From,
-                   const SeqValSetTy &LocalDelayMap) {
+  bool updateInterval(SeqValSetTy &To, const SeqValSetTy &From,
+                   const SeqValSetTy &LocalIntervalMap) {
     bool Changed = false;
 
     typedef SeqValSetTy::const_iterator it;
     for (it I = From.begin(), E = From.end(); I != E; ++I) {
       assert(I->second && "Unexpected zero delay!");
 
-      unsigned &ExistDelay = To[I->first];
+      unsigned &ExistInterval = To[I->first];
       // Look up the delay from local delay map, because the delay of the From
       // map may correspond to another data-path with different destination.
-      SeqValSetTy::const_iterator at = LocalDelayMap.find(I->first);
-      assert(at != LocalDelayMap.end() && "Node not visited yet?");
-      if (ExistDelay == 0 || ExistDelay > at->second) {
-        ExistDelay = at->second;
+      SeqValSetTy::const_iterator at = LocalIntervalMap.find(I->first);
+      assert(at != LocalIntervalMap.end() && "Node not visited yet?");
+      if (ExistInterval == 0 || ExistInterval > at->second) {
+        ExistInterval = at->second;
         Changed |= true;
       }
     }
@@ -103,13 +108,13 @@ struct PathDelayQueryCache {
   void bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimple,
                                 DenseSet<VASTSeqValue*> &BoundSrc) const;
   unsigned bindPath2ScriptEngine(VASTSeqValue *Dst, VASTSeqValue *Src,
-                                 unsigned Delay, bool SkipThu, bool IsCritical)
+                                 unsigned Interval, bool SkipThu, bool IsCritical)
                                  const;
-  unsigned printPathWithDelayFrom(raw_ostream &OS, VASTSeqValue *Src,
-                                  unsigned Delay) const;
+  unsigned printPathWithIntervalFrom(raw_ostream &OS, VASTSeqValue *Src,
+                                     unsigned Interval) const;
 
   typedef DenseSet<VASTSeqValue*>::const_iterator src_it;
-  typedef DelayStatsMapTy::const_iterator delay_it;
+  typedef IntervalStatsMapTy::const_iterator delay_it;
   delay_it stats_begin(bool IsSimple) const { return Stats[IsSimple].begin(); }
   delay_it stats_end(bool IsSimple) const { return Stats[IsSimple].end(); }
 
@@ -125,12 +130,13 @@ struct CombPathDelayAnalysis : public VASTModulePass {
     VASTModulePass::getAnalysisUsage(AU);
     //AU.addRequired<SeqLiveVariables>();
     AU.addRequired<DataLayout>();
+    AU.addRequired<TimingNetlist>();
     AU.setPreservesAll();
   }
 
-  void writeConstraintsForDst(VASTSeqValue *Dst);
+  void writeConstraintsForDst(VASTSeqValue *Dst, TimingNetlist *TNL);
 
-  void extractTimingPaths(PathDelayQueryCache &Cache, ArrayRef<VASTSeqUse> Uses,
+  void extractTimingPaths(PathIntervalQueryCache &Cache, ArrayRef<VASTSeqUse> Uses,
                           VASTValue *DepTree);
 
   bool runOnVASTModule(VASTModule &VM);
@@ -152,33 +158,33 @@ struct CombPathDelayAnalysis : public VASTModulePass {
 };
 }
 
-static unsigned getMinimalDelay(/*SeqReachingDefAnalysis *R,*/ VASTSeqValue *Src,
+static unsigned getMinimalInterval(/*SeqReachingDefAnalysis *R,*/ VASTSeqValue *Src,
                                 const VASTSeqUse &Dst) {
-  unsigned PathDelay = 2;
+  unsigned PathInterval = 2;
   VASTSlot *DstSlot = Dst.getSlot();
 
   typedef VASTSeqValue::const_itertor vn_itertor;
   for (vn_itertor I = Src->begin(), E = Src->end(); I != E; ++I) {
     VASTSeqUse Def = *I;
 
-    // Update the PathDelay if the source VAS reaches DstSlot.
+    // Update the PathInterval if the source VAS reaches DstSlot.
     //if (unsigned Distance = DstSI->getCyclesFromDef(Def)) {
     //  assert(Distance < 10000 && "Distance too large!");
-    //  PathDelay = std::min(PathDelay, Distance);
+    //  PathInterval = std::min(PathInterval, Distance);
     //}
   }
 
-  return PathDelay;
+  return PathInterval;
 }
 
-static unsigned getMinimalDelay(/*SeqReachingDefAnalysis *R,*/ VASTSeqValue *Src,
+static unsigned getMinimalInterval(/*SeqReachingDefAnalysis *R,*/ VASTSeqValue *Src,
                                 ArrayRef<VASTSeqUse> DstUses) {
-  unsigned PathDelay = 10000;
+  unsigned PathInterval = 10000;
   typedef ArrayRef<VASTSeqUse>::iterator iterator;
   for (iterator I = DstUses.begin(), E = DstUses.end(); I != E; ++I)
-    PathDelay = std::min(PathDelay, getMinimalDelay(/*R,*/ Src, *I));
+    PathInterval = std::min(PathInterval, getMinimalInterval(/*R,*/ Src, *I));
 
-  return PathDelay;
+  return PathInterval;
 }
 
 static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {  
@@ -213,7 +219,7 @@ static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {
   return false;
 }
 
-bool PathDelayQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
+bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   VASTSubModule *SubMod = dyn_cast<VASTSubModule>(V->getParent());
   if (SubMod == 0) return false;
 
@@ -229,20 +235,20 @@ bool PathDelayQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
        I != E; ++I) {
     VASTSeqValue *Operand = *I;
-    addDelayFromToStats(Operand, Latency, true);
+    addIntervalFromToStats(Operand, Latency, true);
   }
 
   return true;
 }
 
-void PathDelayQueryCache::annotatePathDelay(/*SeqReachingDefAnalysis *R,*/
+void PathIntervalQueryCache::annotatePathInterval(/*SeqReachingDefAnalysis *R,*/
                                             VASTValue *Root,
                                             ArrayRef<VASTSeqUse> DstUses) {
   assert((isa<VASTWire>(Root) || isa<VASTExpr>(Root)) && "Bad root type!");
   typedef VASTValue::dp_dep_it ChildIt;
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
   std::set<VASTValue*> Visited;
-  SeqValSetTy LocalDelay;
+  SeqValSetTy LocalInterval;
 
   VisitStack.push_back(std::make_pair(Root, VASTValue::dp_dep_begin(Root)));
   while (!VisitStack.empty()) {
@@ -257,8 +263,8 @@ void PathDelayQueryCache::annotatePathDelay(/*SeqReachingDefAnalysis *R,*/
       // Add the supporting register of current node to its parent's
       // supporting register set.
       if (!VisitStack.empty())
-        updateDelay(QueryCache[VisitStack.back().first], ParentReachableRegs,
-                    LocalDelay);
+        updateInterval(QueryCache[VisitStack.back().first], ParentReachableRegs,
+                    LocalInterval);
 
       continue;
     }
@@ -271,21 +277,21 @@ void PathDelayQueryCache::annotatePathDelay(/*SeqReachingDefAnalysis *R,*/
     if (!Visited.insert(ChildNode).second) {
       // If there are tighter delay from the child, it means we had already
       // visited the sub-tree.
-      updateDelay(ParentReachableRegs, QueryCache[ChildNode], LocalDelay);
+      updateInterval(ParentReachableRegs, QueryCache[ChildNode], LocalInterval);
       continue;
     }
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
-      unsigned Delay = getMinimalDelay(/*R,*/ V, DstUses);
+      unsigned Interval = getMinimalInterval(/*R,*/ V, DstUses);
 
-      bool inserted = LocalDelay.insert(std::make_pair(V, Delay)).second;
+      bool inserted = LocalInterval.insert(std::make_pair(V, Interval)).second;
       assert(inserted && "Node had already been visited?");
-      unsigned &ExistedDelay = ParentReachableRegs[V];
-      if (ExistedDelay == 0 || Delay < ExistedDelay)
-        ExistedDelay = Delay;
+      unsigned &ExistedInterval = ParentReachableRegs[V];
+      if (ExistedInterval == 0 || Interval < ExistedInterval)
+        ExistedInterval = Interval;
 
       // Add the information to statistics.
-      addDelayFromToStats(V, Delay, false);
+      addIntervalFromToStats(V, Interval, false);
       continue;
     }
 
@@ -301,23 +307,23 @@ void PathDelayQueryCache::annotatePathDelay(/*SeqReachingDefAnalysis *R,*/
          && "Timing path information for root not found!");
   const SeqValSetTy &RootSet = at->second;
   typedef SeqValSetTy::const_iterator it;
-  bool DelayMasked = false;
-  for (it I = LocalDelay.begin(), E = LocalDelay.end(); I != E; ++I) {
-    SeqValSetTy::const_iterator ActualDelayAt = RootSet.find(I->first);
-    assert(ActualDelayAt != RootSet.end() && "Timing path entire missed!");
-    assert(ActualDelayAt->second <= I->second
-           && "Delay information not applied?");
-    if (ActualDelayAt->second == I->second) continue;
+  bool IntervalMasked = false;
+  for (it I = LocalInterval.begin(), E = LocalInterval.end(); I != E; ++I) {
+    SeqValSetTy::const_iterator ActualIntervalAt = RootSet.find(I->first);
+    assert(ActualIntervalAt != RootSet.end() && "Timing path entire missed!");
+    assert(ActualIntervalAt->second <= I->second
+           && "Interval information not applied?");
+    if (ActualIntervalAt->second == I->second) continue;
 
     dbgs() << "Timing path masked: Root is";
     Root->printAsOperand(dbgs(), false);
     dbgs() << " end node is " << I->first->getName()
            << " masked delay: " << I->second
-           << " actual delay: " << ActualDelayAt->second << '\n';
-    DelayMasked = true;
+           << " actual delay: " << ActualIntervalAt->second << '\n';
+    IntervalMasked = true;
   }
 
-  if (DelayMasked) {
+  if (IntervalMasked) {
     dbgs() << " going to dump the nodes in the tree:\n";
 
     typedef std::set<VASTValue*>::iterator node_it;
@@ -329,9 +335,10 @@ void PathDelayQueryCache::annotatePathDelay(/*SeqReachingDefAnalysis *R,*/
   });
 }
 
-unsigned PathDelayQueryCache::printPathWithDelayFrom(raw_ostream &OS,
-                                                     VASTSeqValue *Src,
-                                                     unsigned Delay) const {
+unsigned PathIntervalQueryCache::printPathWithIntervalFrom(raw_ostream &OS,
+                                                           VASTSeqValue *Src,
+                                                           unsigned Interval)
+                                                           const {
   unsigned NumNodesPrinted = 0;
 
   typedef QueryCacheTy::const_iterator it;
@@ -339,7 +346,7 @@ unsigned PathDelayQueryCache::printPathWithDelayFrom(raw_ostream &OS,
     const SeqValSetTy &Set = I->second;
     SeqValSetTy::const_iterator at = Set.find(Src);
     // The register may be not reachable from this node.
-    if (at == Set.end() || at->second != Delay) continue;
+    if (at == Set.end() || at->second != Interval) continue;
 
     if (printBindingLuaCode(OS, I->first)) {
       OS << ", ";
@@ -350,7 +357,7 @@ unsigned PathDelayQueryCache::printPathWithDelayFrom(raw_ostream &OS,
   return NumNodesPrinted;
 }
 
-void PathDelayQueryCache::dump() const {
+void PathIntervalQueryCache::dump() const {
   dbgs() << "\nCurrent data-path timing:\n";
   typedef QueryCacheTy::const_iterator it;
   for (it I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I) {
@@ -373,9 +380,9 @@ void PathDelayQueryCache::dump() const {
 
 // The first node of the path is the use node and the last node of the path is
 // the define node.
-unsigned PathDelayQueryCache::bindPath2ScriptEngine(VASTSeqValue *Dst,
+unsigned PathIntervalQueryCache::bindPath2ScriptEngine(VASTSeqValue *Dst,
                                                     VASTSeqValue *Src,
-                                                    unsigned Delay, bool SkipThu,
+                                                    unsigned Interval, bool SkipThu,
                                                     bool IsCritical) const {
   // Path table:
   // Datapath: {
@@ -389,7 +396,7 @@ unsigned PathDelayQueryCache::bindPath2ScriptEngine(VASTSeqValue *Dst,
 
   std::string Script;
   raw_string_ostream SS(Script);
-  SS << "RTLDatapath.Slack = " << Delay << '\n';
+  SS << "RTLDatapath.Slack = " << Interval << '\n';
   SS << "RTLDatapath.isCriticalPath = " << (SkipThu || IsCritical) << '\n';
   SS.flush();
   if (!runScriptStr(Script, Err))
@@ -403,7 +410,7 @@ unsigned PathDelayQueryCache::bindPath2ScriptEngine(VASTSeqValue *Dst,
   SS << ", ";
 
   if (!SkipThu)
-    NumThuNodePrinted = printPathWithDelayFrom(SS, Src, Delay);
+    NumThuNodePrinted = printPathWithIntervalFrom(SS, Src, Interval);
 
   printBindingLuaCode(SS, Src);
   SS << " }";
@@ -421,13 +428,13 @@ unsigned PathDelayQueryCache::bindPath2ScriptEngine(VASTSeqValue *Dst,
 }
 
 void
-PathDelayQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimple,
+PathIntervalQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimple,
                                               DenseSet<VASTSeqValue*> &BoundSrc)
                                               const {
   DEBUG(dbgs() << "Binding path for dst register: "
                << Dst->getName() << '\n');
   for (delay_it I = stats_begin(IsSimple), E = stats_end(IsSimple);I != E;++I) {
-    unsigned Delay = I->first;
+    unsigned Interval = I->first;
 
     for (src_it SI = I->second.begin(), SE = I->second.end(); SI != SE; ++SI) {
       VASTSeqValue *Src = *SI;
@@ -435,23 +442,23 @@ PathDelayQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimple,
       assert((!IsSimple || !Visited)
              && "A simple path should not have been visited!");
       ++NumTimingPath;
-      if (Delay == 10000) ++NumFalseTimingPath;
-      else if (Delay > 1) ++NumMultiCyclesTimingPath;
+      if (Interval == 10000) ++NumFalseTimingPath;
+      else if (Interval > 1) ++NumMultiCyclesTimingPath;
 
       DEBUG(dbgs().indent(2) << "from: " << Src->getName() << '#'
                              << I->first << '\n');
       // If we not visited the path before, this path is the critical path,
       // since we are iteration the path from the smallest delay to biggest
       // delay.
-      unsigned NumConstraints = bindPath2ScriptEngine(Dst, Src, Delay,
+      unsigned NumConstraints = bindPath2ScriptEngine(Dst, Src, Interval,
                                                       IsSimple, !Visited);
-      if (NumConstraints == 0 && !IsSimple && Delay > 1)
+      if (NumConstraints == 0 && !IsSimple && Interval > 1)
         ++NumMaskedMultiCyclesTimingPath;
     }
   }
 }
 
-void PathDelayQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst) const {
+void PathIntervalQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst) const {
   DenseSet<VASTSeqValue*> BoundSrc;
   DEBUG(dbgs() << "Going to bind delay information of graph: \n");
   DEBUG(dump());
@@ -468,15 +475,18 @@ bool CombPathDelayAnalysis::runOnVASTModule(VASTModule &VM)  {
 
   bindFunctionToScriptEngine(getAnalysis<DataLayout>(), &VM);
 
+  TimingNetlist &TNL = getAnalysis<TimingNetlist>();
+
   //Write the timing constraints.
   typedef VASTModule::seqval_iterator seqval_iterator;
   for (seqval_iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
-    writeConstraintsForDst(I);
+    writeConstraintsForDst(I, &TNL);
 
   return false;
 }
 
-void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
+void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst,
+                                                   TimingNetlist *TNL) {
   DenseMap<VASTValue*, SmallVector<VASTSeqUse, 8> > DatapathMap;
 
   typedef VASTSeqValue::const_itertor vn_itertor;
@@ -490,7 +500,7 @@ void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
     DatapathMap[((VASTValPtr)DstUse).get()].push_back(DstUse);
   }
 
-  PathDelayQueryCache Cache;
+  PathIntervalQueryCache Cache(TNL);
   typedef DenseMap<VASTValue*, SmallVector<VASTSeqUse, 8> >::iterator it;
   for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
     extractTimingPaths(Cache, I->second, I->first);
@@ -498,7 +508,7 @@ void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst) {
   Cache.bindAllPath2ScriptEngine(Dst);
 }
 
-void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
+void CombPathDelayAnalysis::extractTimingPaths(PathIntervalQueryCache &Cache,
                                                ArrayRef<VASTSeqUse> Uses,
                                                VASTValue *DepTree) {
   VASTValue *SrcValue = DepTree;
@@ -508,8 +518,8 @@ void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
     // Src may be the return_value of the submodule.
     if (Cache.annotateSubmoduleLatency(Src)) return;
 
-    int Delay = getMinimalDelay(/*ReachingDef,*/ Src, Uses);
-    Cache.addDelayFromToStats(Src, Delay, true);
+    int Interval = getMinimalInterval(/*ReachingDef,*/ Src, Uses);
+    Cache.addIntervalFromToStats(Src, Interval, true);
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
     // reg_a <= c + x;
@@ -522,13 +532,14 @@ void CombPathDelayAnalysis::extractTimingPaths(PathDelayQueryCache &Cache,
   // If Define Value is immediate or symbol, skip it.
   if (!isa<VASTWire>(SrcValue) && !isa<VASTExpr>(SrcValue)) return;
 
-  Cache.annotatePathDelay(/*ReachingDef,*/ DepTree, Uses);
+  Cache.annotatePathInterval(/*ReachingDef,*/ DepTree, Uses);
 }
 
 char CombPathDelayAnalysis::ID = 0;
 INITIALIZE_PASS_BEGIN(CombPathDelayAnalysis, "CombPathDelayAnalysis",
                       "CombPathDelayAnalysis", false, false)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
+  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   //INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables);
 INITIALIZE_PASS_END(CombPathDelayAnalysis, "CombPathDelayAnalysis",
                     "CombPathDelayAnalysis", false, false)
