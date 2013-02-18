@@ -1,4 +1,4 @@
-//CombPathDelayAnalysis.cpp- Analysis the Path delay between registers- C++ -=//
+//===----------- TimingScriptGen.cpp- Generate the Timing Scripts - C++ ---===//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -53,7 +53,7 @@ STATISTIC(NumFalseTimingPath,
           "Number of false timing paths detected (From->To pair)");
 
 namespace{
-struct CombPathDelayAnalysis;
+struct TimingScriptGen;
 
 struct PathIntervalQueryCache {
   TimingNetlist *TNL;
@@ -121,7 +121,7 @@ struct PathIntervalQueryCache {
   void dump() const;
 };
 
-struct CombPathDelayAnalysis : public VASTModulePass {
+struct TimingScriptGen : public VASTModulePass {
   VASTModule *VM;
 
   static char ID;
@@ -152,8 +152,8 @@ struct CombPathDelayAnalysis : public VASTModulePass {
     return false;
   }
 
-  CombPathDelayAnalysis() : VASTModulePass(ID), VM(0) {
-    initializeCombPathDelayAnalysisPass(*PassRegistry::getPassRegistry());
+  TimingScriptGen() : VASTModulePass(ID), VM(0) {
+    initializeTimingScriptGenPass(*PassRegistry::getPassRegistry());
   }
 };
 }
@@ -469,7 +469,7 @@ void PathIntervalQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst) const {
   bindAllPath2ScriptEngine(Dst, false, BoundSrc);
 }
 
-bool CombPathDelayAnalysis::runOnVASTModule(VASTModule &VM)  {
+bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
   // No need to write timing script at all.
   if (DisableTimingScriptGeneration) return false;
 
@@ -485,7 +485,7 @@ bool CombPathDelayAnalysis::runOnVASTModule(VASTModule &VM)  {
   return false;
 }
 
-void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst,
+void TimingScriptGen::writeConstraintsForDst(VASTSeqValue *Dst,
                                                    TimingNetlist *TNL) {
   DenseMap<VASTValue*, SmallVector<VASTSeqUse, 8> > DatapathMap;
 
@@ -508,7 +508,7 @@ void CombPathDelayAnalysis::writeConstraintsForDst(VASTSeqValue *Dst,
   Cache.bindAllPath2ScriptEngine(Dst);
 }
 
-void CombPathDelayAnalysis::extractTimingPaths(PathIntervalQueryCache &Cache,
+void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
                                                ArrayRef<VASTSeqUse> Uses,
                                                VASTValue *DepTree) {
   VASTValue *SrcValue = DepTree;
@@ -535,15 +535,15 @@ void CombPathDelayAnalysis::extractTimingPaths(PathIntervalQueryCache &Cache,
   Cache.annotatePathInterval(/*ReachingDef,*/ DepTree, Uses);
 }
 
-char CombPathDelayAnalysis::ID = 0;
-INITIALIZE_PASS_BEGIN(CombPathDelayAnalysis, "CombPathDelayAnalysis",
+char TimingScriptGen::ID = 0;
+INITIALIZE_PASS_BEGIN(TimingScriptGen, "CombPathDelayAnalysis",
                       "CombPathDelayAnalysis", false, false)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   //INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables);
-INITIALIZE_PASS_END(CombPathDelayAnalysis, "CombPathDelayAnalysis",
+INITIALIZE_PASS_END(TimingScriptGen, "CombPathDelayAnalysis",
                     "CombPathDelayAnalysis", false, false)
 
-Pass *llvm::createCombPathDelayAnalysisPass() {
-  return new CombPathDelayAnalysis();
+Pass *llvm::createTimingScriptGenPass() {
+  return new TimingScriptGen();
 }

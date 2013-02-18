@@ -53,7 +53,7 @@ Pass *createTimingNetlistPass();
 Pass *createVASTSchedulingPass();
 
 // Analyse the Combination Path Delay.
-Pass *createCombPathDelayAnalysisPass();
+Pass *createTimingScriptGenPass();
 
 // Analysis the dependency between registers
 Pass *createSeqLiveVariablesPass();
@@ -86,7 +86,7 @@ void initializeVASTSchedulingPass(PassRegistry &Registry);
 
 void initializeControlLogicSynthesisPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
-void initializeCombPathDelayAnalysisPass(PassRegistry &Registry);
+void initializeTimingScriptGenPass(PassRegistry &Registry);
 void initializeSeqLiveVariablesPass(PassRegistry &Registry);
 void initializeSeqReachingDefAnalysisPass(PassRegistry &Registry);
 void initializeRTLCodeGenPass(PassRegistry &Registry);

@@ -1,12 +1,12 @@
 add_llvm_library(ShangHLS
   TimingNetlist.cpp
   TimingEstimator.cpp
+  TimingScriptGen.cpp
   ExternalTimingAnalysis.cpp
   VASTScheduling.cpp
   ScheduleEmitter.cpp
   SchedulerBase.cpp
   SDCScheduler.cpp
-  CombPathDelayAnalysis.cpp
   SeqLiveVariables.cpp
 )
 
