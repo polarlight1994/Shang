@@ -21,11 +21,30 @@
 namespace llvm {
 class VASTSeqValue;
 class VASTValue;
+struct TNLDelay {
+  double delay;
+  uint16_t MSB_LL, LSB_LL;
+  uint16_t PathSize;
+
+  TNLDelay() : delay(0.0), MSB_LL(0), LSB_LL(0), PathSize(0) {}
+
+  TNLDelay(double delay) : delay(delay), MSB_LL(0), LSB_LL(0), PathSize(0) {}
+
+  TNLDelay operator + (double RHS) const {
+    return TNLDelay(delay + RHS);
+  }
+
+  static TNLDelay max(TNLDelay LHS, TNLDelay RHS) {
+    if (LHS.delay > RHS.delay) return LHS;
+
+    return RHS;
+  }
+};
 
 /// Timinging Netlist - Annotate the timing information to the RTL netlist.
 class TimingNetlist : public VASTModulePass {
 public:
-  typedef double delay_type;
+  typedef TNLDelay delay_type;
   typedef std::map<VASTSeqValue*, delay_type> SrcInfoTy;
   // FIXME: Represent the destination with VASTValue.
   typedef std::map<VASTValue*, SrcInfoTy> PathInfoTy;

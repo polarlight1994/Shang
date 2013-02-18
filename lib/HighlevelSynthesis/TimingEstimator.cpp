@@ -23,9 +23,10 @@
 using namespace llvm;
 
 namespace {
-template<typename SubClass, typename delay_type>
+template<typename SubClass>
 class TimingEstimatorImpl : public TimingEstimatorBase {
 protected:
+  typedef TNLDelay delay_type;
   typedef typename std::map<VASTSeqValue*, delay_type> SrcDelayInfo;
   typedef typename SrcDelayInfo::value_type SrcEntryTy;
   typedef typename SrcDelayInfo::const_iterator src_iterator;
@@ -60,13 +61,13 @@ public:
 
     for (const_src_iterator I = Srcs->begin(), E = Srcs->end(); I != E; ++I) {
       TimingNetlist::delay_type &d = SrcInfo[I->first];
-      d= std::max<TimingNetlist::delay_type>(d, I->second);
+      d = TNLDelay::max(d, I->second);
     }
   }
 
   void updateDelay(SrcDelayInfo &Info, SrcEntryTy NewValue) {
     delay_type &OldDelay = Info[NewValue.first];
-    OldDelay = std::max(OldDelay, NewValue.second);
+    OldDelay = TNLDelay::max(OldDelay, NewValue.second);
   }
 
   // For trivial expressions, the delay is zero.
@@ -167,10 +168,9 @@ public:
 
 
 // Set all datapath delay to zero.
-class ZeroDelayEstimator
-  : public TimingEstimatorImpl<ZeroDelayEstimator, double> {
-  typedef double delay_type;
-  typedef TimingEstimatorImpl<ZeroDelayEstimator, double> Base;
+class ZeroDelayEstimator : public TimingEstimatorImpl<ZeroDelayEstimator> {
+  typedef TimingEstimatorImpl<ZeroDelayEstimator> Base;
+  typedef Base::delay_type delay_type;
 
 public:
   ZeroDelayEstimator() {}
@@ -250,9 +250,9 @@ public:
 // Accumulating the delay according to the blackbox model.
 // This is the baseline delay estimate model.
 class BlackBoxTimingEstimator
-  : public TimingEstimatorImpl<BlackBoxTimingEstimator, double> {
-  typedef double delay_type;
-  typedef TimingEstimatorImpl<BlackBoxTimingEstimator, double> Base;
+  : public TimingEstimatorImpl<BlackBoxTimingEstimator> {
+  typedef TimingEstimatorImpl<BlackBoxTimingEstimator> Base;
+  typedef Base::delay_type delay_type;
 
   static SrcEntryTy AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
                                        const SrcEntryTy DelayFromSrc);
@@ -351,7 +351,7 @@ BlackBoxTimingEstimator::AccumulateWithDelayTable(VASTValue *Dst, unsigned SrcPo
                                                   const SrcEntryTy DelayFromSrc)
 {
   // Delay table in nanosecond.
-  static delay_type DelayTable[][5] = {
+  static double DelayTable[][5] = {
     { 1.430 , 2.615 , 3.260 , 4.556 , 7.099 }, //Add 0
     { 1.191 , 3.338 , 4.415 , 5.150 , 6.428 }, //Shift 1
     { 1.195 , 4.237 , 4.661 , 9.519 , 12.616 }, //Mul 2
@@ -360,41 +360,31 @@ BlackBoxTimingEstimator::AccumulateWithDelayTable(VASTValue *Dst, unsigned SrcPo
     { 0.988 , 1.958 , 2.103 , 2.852 , 3.230 }  //Red 5
   };
 
-  delay_type *CurTable = DelayTable[ROWNUM];
+  double *CurTable = DelayTable[ROWNUM];
 
   unsigned BitWidth = Dst->getBitWidth();
 
   int i = ComputeOperandSizeInByteLog2Ceil(BitWidth);
 
-  delay_type RoundUpLatency = CurTable[i + 1],
-              RoundDownLatency = CurTable[i];
+  double RoundUpLatency = CurTable[i + 1],
+         RoundDownLatency = CurTable[i];
   unsigned SizeRoundUpToByteInBits = 8 << i;
   unsigned SizeRoundDownToByteInBits = i ? (8 << (i - 1)) : 0;
-  delay_type PerBitLatency =
+  double PerBitLatency =
     RoundUpLatency / (SizeRoundUpToByteInBits - SizeRoundDownToByteInBits) -
     RoundDownLatency / (SizeRoundUpToByteInBits - SizeRoundDownToByteInBits);
   // Scale the latency according to the actually width.
-  delay_type Delay =
+  double Delay =
     (RoundDownLatency + PerBitLatency * (BitWidth - SizeRoundDownToByteInBits));
 
   return SrcEntryTy(DelayFromSrc.first, DelayFromSrc.second + Delay);
 }
 
 namespace {
-struct BitLevelDelay {
-  unsigned MSB, LSB;
-  unsigned MSBDelay, LSBDelay;
-
-  operator double() const {
-    return double(std::max(MSBDelay, LSBDelay)) * VFUs::LUTDelay;
-  }
-};
-
 // Estimate the bit-level delay with linear approximation.
-class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator,
-                                                          BitLevelDelay> {
-  typedef TimingEstimatorImpl<BitlevelDelayEsitmator, BitLevelDelay> Base;
-  typedef BitLevelDelay delay_type;
+class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator> {
+  typedef TimingEstimatorImpl<BitlevelDelayEsitmator> Base;
+  typedef Base::delay_type delay_type;
 
 public:
   BitlevelDelayEsitmator() {}

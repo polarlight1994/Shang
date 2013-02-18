@@ -23,7 +23,7 @@ class VASTExpr;
 class TimingEstimatorBase {
 protected:
   TimingEstimatorBase() {}
-  
+
   virtual void annotateDelay(VASTValue *Dst,
                              TimingNetlist::SrcInfoTy &SrcInfo) const;
 
