@@ -48,7 +48,7 @@ protected:
     return at == PathDelay.end() ? 0 : &at->second;
   }
 
-  delay_type getDelayFrom(VASTValue *Src, const SrcDelayInfo &SrcInfo) const {
+  delay_type getDelayFrom(VASTSeqValue *Src, const SrcDelayInfo &SrcInfo) const {
     const_src_iterator at = SrcInfo.find(Src);
     return at == SrcInfo.end() ? delay_type(0) : at->second;
   }

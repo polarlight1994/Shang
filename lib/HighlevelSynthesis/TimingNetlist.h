@@ -34,6 +34,10 @@ struct TNLDelay {
     return TNLDelay(delay + RHS);
   }
 
+  TNLDelay operator / (double RHS) const {
+    return TNLDelay(delay / RHS);
+  }
+
   static TNLDelay max(TNLDelay LHS, TNLDelay RHS) {
     if (LHS.delay > RHS.delay) return LHS;
 

@@ -105,7 +105,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
         if (VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(Fanin)) {
           // Create an entry from SVal.
           TimingNetlist::delay_type &d = PathInfo[Fanin][SVal];
-          d = std::max(TimingNetlist::delay_type(), d);
+          d = TNLDelay::max(TimingNetlist::delay_type(), d);
         }
         continue;
       }
@@ -149,7 +149,7 @@ void TimingNetlist::printPathsTo(raw_ostream &OS,
   {
     OS.indent(2);
     I->first->printAsOperand(OS, false);
-    OS << '(' << I->second << ")\n";
+    OS << '(' << I->second.delay << ")\n";
   }
   OS << "}\n";
 }
