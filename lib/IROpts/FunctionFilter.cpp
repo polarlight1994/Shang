@@ -125,9 +125,11 @@ bool FunctionFilter::runOnModule(Module &M) {
     SWF->setName(I->second  + "_if");
   }
 
-  // Write the module out.
-  OwningPtr<AssemblyAnnotationWriter> Annotator;
-  SWM->print(SwOut, Annotator.get());
+  if (!isSyntesizingMain) {
+    // Write the module out.
+    OwningPtr<AssemblyAnnotationWriter> Annotator;
+    SWM->print(SwOut, Annotator.get());
+  }
 
   return true;
 }
