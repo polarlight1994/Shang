@@ -388,6 +388,26 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
   // Pop the extra predicate.
   if (isa<PHINode>(NewInst->getValue())) RetimingPath.pop_back();
 
+#ifdef XDEBUG
+  // Verify if we have the CFGPred conflict.
+  std::set<std::pair<CFGPred*, VASTSlot*> > UniqueCFGPreds;
+  if (NewInst->getNumDefs()) {
+    assert(NewInst->getNumDefs() == 1 && "Unexpected multi-define SeqOp!");
+    VASTSeqValue *S = NewInst->getDef(0);
+
+    for (VASTSeqValue::iterator I = S->begin(), E = S->end(); I != E; ++I) {
+      VASTSeqUse U = *I;
+      std::map<VASTSeqInst*, CFGPred*>::iterator at
+        = PredMap.find(cast<VASTSeqInst>(U.Op));
+      if (at == PredMap.end()) continue;
+      CFGPred *Pred = at->second;
+      Pred->dump();
+      assert(UniqueCFGPreds.insert(std::make_pair(at->second, U.getSlot())).second
+             && "CFGPred conflict detected!");
+    }
+  }
+#endif
+
   return NewInst;
 }
 
@@ -434,7 +454,9 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
     }
 
     DEBUG(dbgs() << "Goning to forward " /*<< VASTValPtr(U) << ", "*/ << *Val
-                 << '\n');
+                 << "\n Retiming path and pred path:\n";
+          CFGPred(RetimingPath.data(), RetimingPath.size()).dump();
+          Pred->dump(););
 
     assert (ForwardedValue == SeqVal && "Unexpected multiple compatible source!");
     ForwardedValue = VASTValPtr(U);
