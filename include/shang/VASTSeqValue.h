@@ -85,12 +85,12 @@ public:
 
   bool isTimingUndef() const { return getValType() == VASTSeqValue::Slot; }
 
-  typedef AssignmentVector::const_iterator const_itertor;
-  const_itertor begin() const { return Assigns.begin(); }
-  const_itertor end() const { return Assigns.end(); }
-  typedef AssignmentVector::iterator itertor;
-  itertor begin() { return Assigns.begin(); }
-  itertor end() { return Assigns.end(); }
+  typedef AssignmentVector::const_iterator const_iterator;
+  const_iterator begin() const { return Assigns.begin(); }
+  const_iterator end() const { return Assigns.end(); }
+  typedef AssignmentVector::iterator iterator;
+  iterator begin() { return Assigns.begin(); }
+  iterator end() { return Assigns.end(); }
   unsigned size() const { return Assigns.size(); }
   bool empty() const { return Assigns.empty(); }
 

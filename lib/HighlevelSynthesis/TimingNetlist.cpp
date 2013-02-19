@@ -67,7 +67,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
     VASTSeqValue *SVal = I;
 
-    typedef VASTSeqValue::itertor fanin_iterator;
+    typedef VASTSeqValue::iterator fanin_iterator;
     for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
       // Estimate the delay for each fanin.
       VASTValue *Fanin = VASTValPtr(*FI).get();

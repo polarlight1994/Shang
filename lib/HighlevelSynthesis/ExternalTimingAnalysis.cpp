@@ -87,7 +87,7 @@ static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
     O.indent(Indent) << "if (read_netlist) begin\n";
     // For each fanin, print the datapath, selected by the slot register.
     O.indent(Indent + 2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
-    typedef VASTSeqValue::const_itertor fanin_iterator;
+    typedef VASTSeqValue::const_iterator fanin_iterator;
     for (fanin_iterator FI = V->begin(), FE = V->end(); FI != FE; ++FI) {
       VASTSeqUse U = *FI;
 
@@ -191,7 +191,7 @@ namespace {
 
 void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
   typedef VASTModule::seqval_iterator iterator;
-  typedef VASTSeqValue::itertor fanin_iterator;
+  typedef VASTSeqValue::iterator fanin_iterator;
 
   // FIXME: Use the luascript template?
   O << "module " << VM.getName() << "_wapper(\n";
@@ -340,7 +340,7 @@ void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
        "puts $JSONFile \"\\[\"\n";
 
   typedef VASTModule::seqval_iterator iterator;
-  typedef VASTSeqValue::itertor fanin_iterator;
+  typedef VASTSeqValue::iterator fanin_iterator;
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
     VASTSeqValue *SVal = I;    
 

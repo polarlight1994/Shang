@@ -407,7 +407,7 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
   // Try to forward the value which is assigned to SeqVal at the same slot.
   VASTValPtr ForwardedValue = SeqVal;
 
-  typedef VASTSeqValue::itertor iterator;
+  typedef VASTSeqValue::iterator iterator;
   for (iterator I = SeqVal->begin(), E = SeqVal->end(); I != E; ++I) {
     VASTSeqUse U = *I;
 

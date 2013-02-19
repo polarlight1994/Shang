@@ -156,7 +156,7 @@ void VASTModule::gc() {
     if (!V->use_empty() || V->getValType() != VASTSeqValue::Data) continue;;
 
     SmallVector<VASTSeqOp*, 4> DeadOps;
-    for (VASTSeqValue::itertor I = V->begin(), E = V->end(); I != E; ++I) {
+    for (VASTSeqValue::iterator I = V->begin(), E = V->end(); I != E; ++I) {
       VASTSeqUse U = *I;
       DeadOps.push_back(U.Op);
     }

@@ -171,7 +171,7 @@ static unsigned getMinimalInterval(/*SeqReachingDefAnalysis *R,*/ VASTSeqValue *
   unsigned PathInterval = 2;
   VASTSlot *DstSlot = Dst.getSlot();
 
-  typedef VASTSeqValue::const_itertor vn_itertor;
+  typedef VASTSeqValue::const_iterator vn_itertor;
   for (vn_itertor I = Src->begin(), E = Src->end(); I != E; ++I) {
     VASTSeqUse Def = *I;
 
@@ -583,7 +583,7 @@ void TimingScriptGen::writeConstraintsForDst(VASTSeqValue *Dst,
                                                    TimingNetlist *TNL) {
   DenseMap<VASTValue*, SmallVector<VASTSeqUse, 8> > DatapathMap;
 
-  typedef VASTSeqValue::const_itertor vn_itertor;
+  typedef VASTSeqValue::const_iterator vn_itertor;
   for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
     const VASTSeqUse &DstUse = *I;
     // Paths for the condition.

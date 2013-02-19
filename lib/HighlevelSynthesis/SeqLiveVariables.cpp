@@ -118,7 +118,7 @@ void SeqLiveVariables::verifyAnalysis() const {
     VIs.clear();
     OverlapMask.clear();
 
-    typedef VASTSeqValue::const_itertor iterator;
+    typedef VASTSeqValue::const_iterator iterator;
     for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
       std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
       if (at != VarInfos.end()) VIs.insert(getVarInfo(*DI));
