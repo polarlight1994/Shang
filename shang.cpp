@@ -102,9 +102,7 @@ static void addHLSPreparePasses(PassManager &PM) {
   PM.add(createUnreachableBlockEliminationPass());
 
   PM.add(createCFGSimplificationPass());
-  // Do not perform this before CFG simplification pass, because the CFG
-  // simplification pass creates the switch instructions.
-  PM.add(createLowerSwitchPass());
+
   // Do not pass the TLI to CodeGenPrepare pass, so it won't sink the address
   // computation. We can handle sinking by ourself.
   PM.add(createCodeGenPreparePass(0));
