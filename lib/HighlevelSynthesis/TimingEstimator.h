@@ -15,6 +15,8 @@
 #define TIMING_ESTIMATOR_LINEAR_APPROXIMATION_H
 
 #include "TimingNetlist.h"
+#include "shang/VASTDatapathNodes.h"
+#include "shang/VASTSeqValue.h"
 
 #include "llvm/Support/ErrorHandling.h"
 

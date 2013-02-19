@@ -11,11 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 #include "TimingEstimator.h"
-#include "shang/VASTDatapathNodes.h"
-#include "shang/VASTSeqValue.h"
 #include "shang/FUInfo.h"
 
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #define DEBUG_TYPE "shang-timing-estimator"
 #include "llvm/Support/Debug.h"
@@ -29,7 +26,7 @@ void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
   VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
 
   assert(L && "Root is not a datapath node!");
-  
+
   // The entire tree had been visited or the root is some trivial node..
   if (hasPathInfo(Root)) return;
 
