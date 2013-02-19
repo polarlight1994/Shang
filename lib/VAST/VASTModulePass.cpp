@@ -620,8 +620,10 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
   // Emit the operation that copy the incoming value of PHIs at the last slot.
   // TODO: Optimize the PHIs in the datapath hoist pass.
   VASTSlot *LatestSlot = getLatestSlot(BB);
-
-  for (succ_iterator SI = succ_begin(BB), SE = succ_end(BB); SI != SE; ++SI) {
+  // Please note that the successor blocks enumed by succ_iterator is not unique.
+  std::set<BasicBlock*> UniqueSuccs(succ_begin(BB), succ_end(BB));
+  typedef std::set<BasicBlock*>::iterator succ_it;
+  for (succ_it SI = UniqueSuccs.begin(), SE = UniqueSuccs.end(); SI != SE; ++SI) {
     BasicBlock *SuccBB = *SI;
     VASTSlot *SuccSlot = getOrCreateLandingSlot(SuccBB);
 
@@ -686,23 +688,93 @@ void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
               Builder.buildNotExpr(Cnd), &I);
 }
 
+// Copy from LowerSwitch.cpp.
+namespace {
+struct CaseRange {
+  APInt Low;
+  APInt High;
+  BasicBlock* BB;
+
+  CaseRange(APInt low = APInt(), APInt high = APInt(), BasicBlock *bb = 0) :
+    Low(low), High(high), BB(bb) { }
+
+};
+
+typedef std::vector<CaseRange>           CaseVector;
+typedef std::vector<CaseRange>::iterator CaseItr;
+}
+
+// Clusterify - Transform simple list of Cases into list of CaseRange's
+static unsigned Clusterify(CaseVector& Cases, SwitchInst *SI) {
+  IntegersSubsetToBB TheClusterifier;
+
+  // Start with "simple" cases
+  for (SwitchInst::CaseIt i = SI->case_begin(), e = SI->case_end();
+       i != e; ++i) {
+    BasicBlock *SuccBB = i.getCaseSuccessor();
+    IntegersSubset CaseRanges = i.getCaseValueEx();
+    TheClusterifier.add(CaseRanges, SuccBB);
+  }
+
+  TheClusterifier.optimize();
+
+  size_t numCmps = 0;
+  for (IntegersSubsetToBB::RangeIterator i = TheClusterifier.begin(),
+       e = TheClusterifier.end(); i != e; ++i, ++numCmps) {
+    IntegersSubsetToBB::Cluster &C = *i;
+
+    // FIXME: Currently work with ConstantInt based numbers.
+    // Changing it to APInt based is a pretty heavy for this commit.
+    Cases.push_back(CaseRange(C.first.getLow(), C.first.getHigh(), C.second));
+    if (C.first.isSingleNumber())
+      // A range counts double, since it requires two compares.
+      ++numCmps;
+  }
+
+  return numCmps;
+}
+
 void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
-
   VASTValPtr CndVal = getAsOperandImpl(I.getCondition());
+
+  std::map<BasicBlock*, VASTValPtr> CaseMap;
+
+  // Prepare cases vector.
+  CaseVector Cases;
+  unsigned numCmps = Clusterify(Cases, &I);
+  // Build the condition map.
+  for (CaseItr CI = Cases.begin(), CE = Cases.end(); CI != CE; ++CI) {
+    const CaseRange &Case = *CI;
+    // Simple case, test if the CndVal is equal to a specific value.
+    if (Case.High == Case.Low) {
+      VASTValPtr CaseVal = getOrCreateImmediate(Case.High);
+      VASTValPtr Pred = Builder.buildEQ(CndVal, CaseVal);
+      VASTValPtr &BBPred = CaseMap[Case.BB];
+      if (!BBPred) BBPred = Pred;
+      else         Builder.orEqual(BBPred, Pred);
+
+      continue;
+    }
+
+    // Test if Low <= CndVal <= High
+    VASTValPtr Low = Builder.getImmediate(Case.Low);
+    VASTValPtr LowCmp = Builder.buildICmpOrEqExpr(VASTExpr::dpUGT, CndVal, Low);
+    VASTValPtr High = Builder.getImmediate(Case.High);
+    VASTValPtr HighCmp = Builder.buildICmpOrEqExpr(VASTExpr::dpUGT, High, CndVal);
+    VASTValPtr Pred = Builder.buildAndExpr(LowCmp, HighCmp, 1);
+    VASTValPtr &BBPred = CaseMap[Case.BB];
+    if (!BBPred) BBPred = Pred;
+    else         Builder.orEqual(BBPred, Pred);
+  }
+
   // The predicate for each non-default destination.
   SmallVector<VASTValPtr, 4> CasePreds;
-
-  typedef SwitchInst::CaseIt CaseIt;
-  for (CaseIt CI = I.case_begin(), CE = I.case_end(); CI != CE; ++CI) {
-    BasicBlock *SuccBB = CI.getCaseSuccessor();
+  typedef std::map<BasicBlock*, VASTValPtr>::iterator CaseIt;
+  for (CaseIt CI = CaseMap.begin(), CE = CaseMap.end(); CI != CE; ++CI) {
+    BasicBlock *SuccBB = CI->first;
     VASTSlot *SuccSlot = getOrCreateLandingSlot(SuccBB);
-
-    assert(CI.getCaseValueEx().getSize() == 1
-           && "Range case is not supported yet!");
-    const APInt &CasValInt = CI.getCaseValueEx().getSingleValue(0);
-    VASTValPtr CaseVal = getOrCreateImmediate(CasValInt);
-    VASTValPtr Pred = Builder.buildEQ(CndVal, CaseVal);
+    VASTValPtr Pred = CI->second;
     CasePreds.push_back(Pred);
     addSuccSlot(CurSlot, SuccSlot, Pred, &I);
   }
