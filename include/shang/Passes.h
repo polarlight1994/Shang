@@ -33,6 +33,7 @@ FunctionPass *createDesignMetricsPass();
 
 // Always inline function.
 Pass *createHLSInlinerPass();
+Pass *createGotoExpansionPass();
 
 Pass *createTrivialLoopUnrollPass();
 
@@ -70,6 +71,7 @@ void initializeShangTTIPass(PassRegistry &Registry);
 void initializeDatapathHoistingPass(PassRegistry &Registry);
 void initializeFunctionFilterPass(PassRegistry &Registry);
 void initializeHLSInlinerPass(PassRegistry &Registry);
+void initializeGotoExpansionPass(PassRegistry &Registry);
 void initializeTrivialLoopUnrollPass(PassRegistry &Registry);
 
 void initializeMemoryAccessCoalescingPass(PassRegistry &Registry);

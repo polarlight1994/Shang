@@ -3,6 +3,7 @@ add_llvm_library(ShangIROpts
   LowerAlloca.cpp
   LowerIntrinsic.cpp
   HLSInliner.cpp
+  GotoExpansion.cpp
   TrivialLoopUnrollPass.cpp
   DatapathHoisting.cpp
   BasicBlockTopOrder.cpp

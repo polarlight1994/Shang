@@ -84,7 +84,7 @@ bool FunctionFilter::runOnModule(Module &M) {
     // The function does not exisit.
     // TODO: Issue a warning.
     if (F == 0 || F->isDeclaration()) continue;
-    
+
     if (F->getName()=="main")
       isSyntesizingMain = true;
 

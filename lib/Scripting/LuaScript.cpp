@@ -233,7 +233,7 @@ bool loadConfig(const std::string &Path,
                   std::make_pair(luabind::object_cast<std::string>(o["FunctionScript"]),
                                  luabind::object_cast<std::string>(o["GlobalScript"]))));
   }
-    
+
   return false;
 }
 }
