@@ -27,8 +27,9 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
-#define DEBUG_TYPE "shang-inliner"
+#define DEBUG_TYPE "shang-goto-expansion"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
@@ -37,6 +38,10 @@ STATISTIC(NumCallsDeleted, "Number of call sites deleted, not goto-expanded");
 STATISTIC(NumCrossBBValue,
           "Number of value demote to stack again after Call BB is splited");
 
+static cl::opt<bool> InitStacks(
+"shang-goto-expansion-initialize-stack",
+cl::desc("Initialize the newly create stack variable by 0"),
+cl::init(false));
 namespace {
 struct ExpandedFunctionInfo {
   /// The expanded function will become a single-entry single-exit function.
@@ -78,10 +83,10 @@ struct GotoExpansion : public ModulePass {
 }
 
 char GotoExpansion::ID = 0;
-INITIALIZE_PASS_BEGIN(GotoExpansion, "hls-goto-expansion",
+INITIALIZE_PASS_BEGIN(GotoExpansion, "shang-goto-expansion",
                 "Goto Expansion in HLS", false, false)
 
-INITIALIZE_PASS_END(GotoExpansion, "hls-goto-expansion",
+INITIALIZE_PASS_END(GotoExpansion, "shang-goto-expansion",
                 "Goto Expansion in HLS", false, false)
 
 Pass *llvm::createGotoExpansionPass() {
@@ -214,20 +219,28 @@ GotoExpansion::reloadForEscapedUses(BasicBlock *CallBB, BasicBlock *AfterCallBB)
   typedef SmallPtrSet<Instruction*, 4>::iterator worklist_it;
 
   for (iterator I = CallBB->begin(), E = CallBB->end(); I != E; ++I) {
+    // Ignore the Allocas.
+    if (isa<AllocaInst>(I)) continue;
+
     Worklist.clear();
+
     for (use_iterator UI = I->use_begin(), UE = I->use_end(); UI != UE; ++UI) {
       Instruction *UseInst = dyn_cast<Instruction>(*UI);
       if (UseInst == 0 || UseInst->getParent() == CallBB) continue;
       // Cross BB use detected, demote the value to stack again.
       assert(UseInst->getParent() == AfterCallBB && "reg2mem pass not run?");
       Worklist.insert(UseInst);
+      assert(!isa<PHINode>(UseInst) && "Not support PHI for now!");
     }
 
     // All uses are within the same BB.
     if (Worklist.empty()) continue;
-    
+
     AllocaInst *AI = new AllocaInst(I->getType(), "crossbb.reload.addr",
                                     EntryInsertPoint);
+    if (InitStacks)
+      new StoreInst(Constant::getNullValue(I->getType()), AI, EntryInsertPoint);
+
     CallBB->getInstList().insertAfter(I, new StoreInst(I, AI));
     ++NumCrossBBValue;
     for (worklist_it WI = Worklist.begin(), WE = Worklist.end(); WI != WE; ++WI)
@@ -235,11 +248,11 @@ GotoExpansion::reloadForEscapedUses(BasicBlock *CallBB, BasicBlock *AfterCallBB)
       Instruction *UseInst = *WI;
       UseInst->replaceUsesOfWith(I, new LoadInst(AI, "crossbb.reload", UseInst));
     }
-  }  
+  }
 }
 
-ExpandedFunctionInfo *GotoExpansion::cloneCallee(Function *Caller, Function *Callee)\
-{
+ExpandedFunctionInfo *
+GotoExpansion::cloneCallee(Function *Caller, Function *Callee) {
   ExpandedFunctionInfo *Info = new ExpandedFunctionInfo();
   StringRef CalleeName = Callee->getName();
   BasicBlock *CallerEntry = &Caller->getEntryBlock();
@@ -257,8 +270,10 @@ ExpandedFunctionInfo *GotoExpansion::cloneCallee(Function *Caller, Function *Cal
 
   // Build the return address.
   Info->RetAddr
-    = new AllocaInst(RetAddrTy, CalleeName + ".retaddr", EntryInsertPoint); 
-
+    = new AllocaInst(RetAddrTy, CalleeName + ".retaddr", EntryInsertPoint);
+  if (InitStacks)
+    new StoreInst(Constant::getNullValue(RetAddrTy), Info->RetAddr,
+                  EntryInsertPoint);
   // Create the default unreachable block for the exit. So we can get the warning
   // when the something wrong with the retaddr and we branch to the unreachable
   // BB.
@@ -281,6 +296,9 @@ ExpandedFunctionInfo *GotoExpansion::cloneCallee(Function *Caller, Function *Cal
     Twine ArgName = CalleeName + "." + Arg->getName() + ".inline.arg";
     AllocaInst *ArgAlloca
       = new AllocaInst(Arg->getType(), ArgName, EntryInsertPoint);
+    if (InitStacks)
+      new StoreInst(Constant::getNullValue(Arg->getType()), ArgAlloca,
+                    EntryInsertPoint);
     Info->Args.push_back(ArgAlloca);
     Twine ArgLoadName = ArgName + ".load.for.call";
     CloneVMap[Arg] = new LoadInst(ArgAlloca, ArgLoadName, Entry);
@@ -300,9 +318,13 @@ ExpandedFunctionInfo *GotoExpansion::cloneCallee(Function *Caller, Function *Cal
   // Forward the return value of the cloned function if there is any.
   Type *RetTy = Callee->getReturnType();
   AllocaInst *RetVal = 0;
-  if (!RetTy->isVoidTy())
+  if (!RetTy->isVoidTy()) {
     Info->RetVal
-      = (RetVal = new AllocaInst(RetTy, CalleeName + ".retval", EntryInsertPoint));
+      = (RetVal = new AllocaInst(RetTy, CalleeName + ".retval",
+                                 EntryInsertPoint));
+    if (InitStacks)
+      new StoreInst(Constant::getNullValue(RetTy), RetVal, EntryInsertPoint);
+  }
 
   while (!Rets.empty()) {
     ReturnInst *Ret = Rets.pop_back_val();
