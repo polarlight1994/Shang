@@ -281,7 +281,10 @@ void LogicNetwork::cleanUp() {
     Abc_ObjAssignName(Obj, S.data(), 0);
 
     // Remember the MO.
-    ValueNames.GetOrCreateValue(Abc_ObjName(Abc_ObjRegular(Obj)), V);
+    char *Name = Abc_ObjName(Abc_ObjRegular(Obj));
+    VASTValPtr NewV = ValueNames.GetOrCreateValue(Name, V).second;
+    assert(NewV == V && "Value not inserted!");
+    (void) NewV;
   }
 
   // Clean up the aig.
@@ -329,10 +332,13 @@ Abc_Obj_t *LogicNetwork::getOrCreateObj(VASTValue *V) {
     // DirtyHack: Terminate the string manually.
     S.push_back(0);
     Abc_ObjAssignName(Obj, S.data(), 0);
+
     char *Name = Abc_ObjName(Abc_ObjRegular(Obj));
 
     // Map the PI to VASTValue.
-    ValueNames.GetOrCreateValue(Name, V);
+    VASTValPtr NewV = ValueNames.GetOrCreateValue(Name, V).second;
+    assert(NewV == V && "Value not inserted!");
+    (void) NewV;
     Nodes.insert(std::make_pair(V, Obj));
   }
 
