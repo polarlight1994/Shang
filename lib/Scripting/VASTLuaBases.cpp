@@ -14,8 +14,10 @@
 #include "shang/VASTModule.h"
 
 #include "llvm/IR/Function.h"
+#include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "vast-lua-bases"
 #include "llvm/Support/Debug.h"
+STATISTIC(NumCycles, "Number of Cycles in Register Assignment");
 
 using namespace llvm;
 //----------------------------------------------------------------------------//
@@ -540,6 +542,20 @@ VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
                        VASTValPtr GuardCnd, Value *V, unsigned Latency) {
   assert(Src && "Bad assignment source!");
   VASTSeqInst *Inst = lauchInst(Slot, GuardCnd, 1, V, VASTSeqInst::Latch);
+  // Create a wrapper wire to break the cycle.
+  if (Src == SeqVal) {
+    unsigned BitWidth = Src->getBitWidth();
+    Twine WrapperName = Twine(SeqVal->getName()) + "_Wrapper";
+    // Reuse the old wire if we had create one.
+    VASTWire *W = dyn_cast_or_null<VASTWire>(lookupSymbol(WrapperName));
+    if (W == 0) {
+      W = addWire(WrapperName, BitWidth);
+      W->assign(Src);
+    }
+    Src = W;
+    ++NumCycles;
+  }
+
   Inst->addSrc(Src, 0, true, SeqVal);
   Inst->setCyclesFromLaunch(Latency);
 

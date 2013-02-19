@@ -16,11 +16,9 @@
 #include "shang/VASTSlot.h"
 
 #include "llvm/IR/Instruction.h"
-#include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "vast-seq-op"
 #include "llvm/Support/Debug.h"
 using namespace llvm;
-STATISTIC(NumCycles, "Number of Cycles in Register Assignment");
 //===----------------------------------------------------------------------===//
 VASTSeqUse::operator VASTUse &() const {
   return Op->getUseInteranal(No);
@@ -85,10 +83,7 @@ void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef,
   // The source value of assignment is used by the SeqValue.
   VASTNode *DstUser = D ? (VASTNode*)D : (VASTNode*)this;
   // DIRTYHACK: Temporary allow cycles in register assignment.
-  if (D == Src) {
-    ++NumCycles;
-    DstUser = this;
-  }
+  assert(D != Src && "Unexpected cycle!");
 
   new (src_begin() + SrcIdx) VASTUse(DstUser, Src);
   // Do not add the assignment if the source is invalid.

@@ -369,9 +369,24 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
                                       Op->getValue(), Op->getSeqOpType());
   typedef VASTSeqOp::op_iterator iterator;
 
-  for (unsigned i = 0, e = Op->getNumSrcs(); i < e; ++i)
-    NewInst->addSrc(RetimedOperands[i], i, i < Op->getNumDefs(),
-                    Op->getSrc(i).getDst());
+  for (unsigned i = 0, e = Op->getNumSrcs(); i < e; ++i) {
+    VASTSeqValue *Dst = Op->getSrc(i).getDst();
+    VASTValPtr Src = RetimedOperands[i];
+    // Create a wrapper wire to break the cycle.
+    if (Src == Dst) {
+      unsigned BitWidth = Src->getBitWidth();
+      Twine WrapperName = Twine(Dst->getName()) + "_Wrapper";
+      // Reuse the old wire if we had create one.
+      VASTWire *W = dyn_cast_or_null<VASTWire>(VM.lookupSymbol(WrapperName));
+      if (W == 0) {
+        W = VM.addWire(WrapperName, BitWidth);
+        W->assign(Src);
+      }
+      Src = W;
+    }
+
+    NewInst->addSrc(Src, i, i < Op->getNumDefs(), Dst);
+  }
 
   // PHINode have extra predicate.
   if (PHINode *PN = dyn_cast<PHINode>(NewInst->getValue())) {
