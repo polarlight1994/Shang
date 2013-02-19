@@ -55,50 +55,9 @@ public:
     return Cost;
   }
 
-  InlineCost getInlineCost(CallSite CS) {
-    Function *F = CS.getCalledFunction(), *CallerF = CS.getCaller();
-    if (!F || F->isDeclaration() ||
-         F->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
-                                         Attribute::NoInline))
-      return InlineCost::getNever();
+  InlineCost getInlineCost(CallSite CS);
 
-    unsigned NumUses = 0;
-    typedef Instruction::use_iterator use_iterator;
-    for (use_iterator I = F->use_begin(), E = F->use_end(); I != E; ++I) {
-      CallSite CurCS(*I);
-
-      if (!CurCS.getInstruction() || !CurCS.getCaller()) continue;
-
-      Function *CurCaller = CurCS.getCaller();
-
-      // Don't try to inline F if all its caller function are not visited, but
-      // please not that CurCaller will never be visited if it do not have any
-      // user.
-      if (!CachedCost.count(CurCaller) && CurCaller->getNumUses() != 0)
-        return InlineCost::getNever();
-
-      if (CurCaller == CallerF) ++NumUses;
-    }
-
-    DEBUG(dbgs() << "Function: " << F->getName() << '\n');
-    DesignMetrics::DesignCost Cost = lookupOrComputeCost(F);
-    uint64_t Threshold = 64000;
-    uint64_t IncreasedCost = Cost.getCostInc(NumUses, 1, 8, 0) * Cost.StepLB;
-
-    DEBUG(dbgs() << "Cost: " << Cost << '\n'
-                 << "Increased cost: " << IncreasedCost << ' '
-                 << "IncThreshold: " << Threshold << '\n');
-    // FIXME: Read the threshold from the constraints script.
-    if (IncreasedCost < Threshold) {
-      DEBUG(dbgs() << "...going to inline function\n");
-      // The cost of ParentF is changed.
-      CachedCost.erase(CallerF);
-      return InlineCost::getAlways();
-    }
-
-    DEBUG(dbgs() << "...not inline function\n");
-    return InlineCost::getNever();
-  }
+  bool doFinalization(CallGraph &CG);
 
   void releaseMemory() { CachedCost.clear(); }
 
@@ -118,4 +77,56 @@ INITIALIZE_PASS_END(HLSInliner, "hls-inline",
 
 Pass *llvm::createHLSInlinerPass() {
   return new HLSInliner();
+}
+
+InlineCost HLSInliner::getInlineCost(CallSite CS)  {
+  Function *F = CS.getCalledFunction(), *CallerF = CS.getCaller();
+  if (!F || F->isDeclaration() ||
+      F->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                      Attribute::NoInline))
+    return InlineCost::getNever();
+
+  unsigned NumUses = 0;
+  typedef Instruction::use_iterator use_iterator;
+  for (use_iterator I = F->use_begin(), E = F->use_end(); I != E; ++I) {
+    CallSite CurCS(*I);
+
+    if (!CurCS.getInstruction() || !CurCS.getCaller()) continue;
+
+    Function *CurCaller = CurCS.getCaller();
+
+    // Don't try to inline F if all its caller function are not visited, but
+    // please not that CurCaller will never be visited if it do not have any
+    // user.
+    if (!CachedCost.count(CurCaller) && CurCaller->getNumUses() != 0)
+      return InlineCost::getNever();
+
+    if (CurCaller == CallerF) ++NumUses;
+  }
+
+  DEBUG(dbgs() << "Function: " << F->getName() << '\n');
+  DesignMetrics::DesignCost Cost = lookupOrComputeCost(F);
+  uint64_t Threshold = 64000;
+  uint64_t IncreasedCost = Cost.getCostInc(NumUses, 1, 8, 0) * Cost.StepLB;
+
+  DEBUG(dbgs() << "Cost: " << Cost << '\n'
+                << "Increased cost: " << IncreasedCost << ' '
+                << "IncThreshold: " << Threshold << '\n');
+  // FIXME: Read the threshold from the constraints script.
+  if (IncreasedCost < Threshold) {
+    DEBUG(dbgs() << "...going to inline function\n");
+    // The cost of ParentF is changed.
+    CachedCost.erase(CallerF);
+    return InlineCost::getAlways();
+  }
+
+  DEBUG(dbgs() << "...not inline function\n");
+  return InlineCost::getNever();
+}
+
+bool HLSInliner::doFinalization(CallGraph &CG) {
+  // Perform "goto expansion", a kind of inline that do not duplicate function
+  // body when we inlining the function.
+
+  return Inliner::doFinalization(CG);
 }
