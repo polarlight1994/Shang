@@ -31,6 +31,8 @@ namespace yaml {
 class ExternalTimingAnalysis {
   VASTModule &VM;
   TimingNetlist &TNL;
+  typedef TimingNetlist::PathTy PathTy;
+  typedef TimingNetlist::SrcDelayInfo SrcDelayInfo;
 
   // Write the wrapper of the netlist.
   void writeNetlist(raw_ostream &O) const;
@@ -43,10 +45,8 @@ class ExternalTimingAnalysis {
                             const VASTValue *Thu,
                             const VASTSeqValue *Src) const;
 
-  typedef TimingNetlist::PathInfoTy::value_type TimingPaths;
   void extractTimingToDst(raw_ostream &O, const VASTSeqValue *Dst,
-                          const VASTValue *Thu,
-                          const TimingNetlist::SrcInfoTy &Paths) const;
+                          const VASTValue *Thu, const SrcDelayInfo &Paths) const;
 
   // Write the script to extract the timing analysis results from quartus.
   void writeTimingExtractionScript(raw_ostream &O,

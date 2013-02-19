@@ -22,19 +22,19 @@ namespace llvm {
 class VASTSeqValue;
 class VASTValue;
 struct TNLDelay {
-  double delay;
+  float delay;
   uint16_t MSB_LL, LSB_LL;
   uint16_t PathSize;
 
   TNLDelay() : delay(0.0), MSB_LL(0), LSB_LL(0), PathSize(0) {}
 
-  TNLDelay(double delay) : delay(delay), MSB_LL(0), LSB_LL(0), PathSize(0) {}
+  TNLDelay(float delay) : delay(delay), MSB_LL(0), LSB_LL(0), PathSize(0) {}
 
   TNLDelay operator + (double RHS) const {
     return TNLDelay(delay + RHS);
   }
 
-  TNLDelay operator / (double RHS) const {
+  TNLDelay operator / (float RHS) const {
     return TNLDelay(delay / RHS);
   }
 
@@ -49,39 +49,36 @@ struct TNLDelay {
 class TimingNetlist : public VASTModulePass {
 public:
   typedef TNLDelay delay_type;
-  typedef std::map<VASTSeqValue*, delay_type> SrcInfoTy;
-  // FIXME: Represent the destination with VASTValue.
-  typedef std::map<VASTValue*, SrcInfoTy> PathInfoTy;
+  typedef std::map<VASTSeqValue*, delay_type> SrcDelayInfo;
+  typedef SrcDelayInfo::value_type SrcEntryTy;
+  typedef SrcDelayInfo::const_iterator src_iterator;
+  typedef SrcDelayInfo::const_iterator const_src_iterator;
+
+  typedef std::map<VASTValue*, SrcDelayInfo> PathDelayInfo;
+  typedef PathDelayInfo::value_type PathTy;
+  typedef PathDelayInfo::iterator path_iterator;
+  typedef PathDelayInfo::const_iterator const_path_iterator;
 
 private:
   // The path delay information.
-  PathInfoTy PathInfo;
+  PathDelayInfo PathInfo;
 
-  // Create a path from Src to DstReg.
-  void createDelayEntry(VASTValue *Dst, VASTSeqValue *Src);
-
-  // Compute the delay to DstReg through SrcReg.
-  void createPathFromSrc(VASTValue *Dst, VASTValue *Src);
 public:
   static char ID;
 
   TimingNetlist();
 
-  // Annotate the delay for path Src -> Dst.
-  void annotateDelay(VASTSeqValue *Src, VASTValue *Dst, delay_type delay);
-
   delay_type getDelay(VASTSeqValue *Src, VASTValue *Dst) const;
 
   // Iterate over the source node reachable to DstReg.
-  typedef SrcInfoTy::const_iterator src_iterator;
   src_iterator src_begin(VASTValue *Dst) const {
-    PathInfoTy::const_iterator at = PathInfo.find(Dst);
+    const_path_iterator at = PathInfo.find(Dst);
     assert(at != PathInfo.end() && "DstReg not find!");
     return at->second.begin();
   }
 
   src_iterator src_end(VASTValue *Dst) const {
-    PathInfoTy::const_iterator at = PathInfo.find(Dst);
+    const_path_iterator at = PathInfo.find(Dst);
     assert(at != PathInfo.end() && "DstReg not find!");
     return at->second.end();
   }
@@ -90,14 +87,10 @@ public:
     return !PathInfo.count(Dst);
   }
 
-  const SrcInfoTy *getSrcInfo(VASTValue *Dst) const {
-    PathInfoTy::const_iterator at = PathInfo.find(Dst);
+  const SrcDelayInfo *getSrcInfo(VASTValue *Dst) const {
+    const_path_iterator at = PathInfo.find(Dst);
     return at != PathInfo.end() ? &at->second : 0;
   }
-
-  // Iterators for path iterating.
-  typedef PathInfoTy::iterator       path_iterator;
-  typedef PathInfoTy::const_iterator const_path_iterator;
 
   path_iterator path_begin() { return PathInfo.begin(); }
   const_path_iterator path_begin() const { return PathInfo.begin(); }
@@ -111,7 +104,7 @@ public:
   void print(raw_ostream &OS) const;
 
   void printPathsTo(raw_ostream &OS, VASTValue *Dst) const;
-  void printPathsTo(raw_ostream &OS, const PathInfoTy::value_type &Path) const;
+  void printPathsTo(raw_ostream &OS, const PathTy &Path) const;
 };
 }
 

@@ -322,8 +322,8 @@ void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
 void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O,
                                                 const VASTSeqValue *Dst,
                                                 const VASTValue *Thu,
-                                                const TimingNetlist::SrcInfoTy
-                                                &Paths) const{
+                                                const SrcDelayInfo &Paths) const
+{
   typedef TimingNetlist::src_iterator iterator;
   for (iterator I = Paths.begin(), E = Paths.end(); I != E; ++I)
     extractTimingForPair(O, Dst, Thu, I->first);
@@ -343,11 +343,10 @@ void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
   typedef VASTSeqValue::itertor fanin_iterator;
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
     VASTSeqValue *SVal = I;    
-  
-    typedef TimingNetlist::SrcInfoTy SrcInfoTy;
+
     for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
       VASTValue *Thu = VASTValPtr(*FI).get();
-      if (const SrcInfoTy *Src = TNL.getSrcInfo(Thu))
+      if (const SrcDelayInfo *Src = TNL.getSrcInfo(Thu))
         extractTimingToDst(O, SVal, Thu, *Src);
     }
   }

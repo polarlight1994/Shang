@@ -26,42 +26,13 @@
 
 using namespace llvm;
 
-void TimingNetlist::annotateDelay(VASTSeqValue *Src, VASTValue *Dst,
-                                  delay_type delay) {
-  PathInfoTy::iterator path_end_at = PathInfo.find(Dst);
-  assert(path_end_at != PathInfo.end() && "Path not exist!");
-  SrcInfoTy::iterator path_start_from = path_end_at->second.find(Src);
-  assert(path_start_from != path_end_at->second.end() && "Path not exist!");
-  path_start_from->second = delay / VFUs::Period;
-}
-
 TimingNetlist::delay_type
 TimingNetlist::getDelay(VASTSeqValue *Src, VASTValue *Dst) const {
-  PathInfoTy::const_iterator path_end_at = PathInfo.find(Dst);
+  const_path_iterator path_end_at = PathInfo.find(Dst);
   assert(path_end_at != PathInfo.end() && "Path not exist!");
-  SrcInfoTy::const_iterator path_start_from = path_end_at->second.find(Src);
+  src_iterator path_start_from = path_end_at->second.find(Src);
   assert(path_start_from != path_end_at->second.end() && "Path not exist!");
   return path_start_from->second;
-}
-
-void TimingNetlist::createDelayEntry(VASTValue *Dst, VASTSeqValue *Src) {
-  assert(Src && Dst && "Bad pointer!");
-
-  PathInfo[Dst][Src] = 0;
-}
-
-void TimingNetlist::createPathFromSrc(VASTValue *Dst, VASTValue *Src) {
-  assert(Dst != Src && "Unexpected cycle!");
-
-  // Forward the Src terminator of the path from SrcReg.
-  PathInfoTy::iterator at = PathInfo.find(Src);
-
-  // No need to worry about this path.
-  if (at == PathInfo.end()) return;
-
-
-  // Otherwise forward the source nodes reachable to SrcReg to DstReg.
-  set_union(PathInfo[Dst], at->second);
 }
 
 TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
@@ -90,8 +61,7 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
 //===----------------------------------------------------------------------===//
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   // Create an estimator.
-  OwningPtr<TimingEstimatorBase>
-    Estimator(TimingEstimatorBase::CreateZeroDelayModel());
+  TimingEstimatorBase *Estimator = new ZeroDelayEstimator(PathInfo);
 
   typedef VASTModule::seqval_iterator iterator;
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
@@ -110,10 +80,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
         continue;
       }
 
-      SrcInfoTy &SrcInfo = PathInfo[Fanin];
-      if (!SrcInfo.empty()) continue;
-
-      Estimator->estimateTimingOnTree(Fanin, SrcInfo);
+      Estimator->estimateTimingOnTree(Fanin);
 
       // Accumulate the delay of the fanin MUX.
     }
@@ -134,13 +101,12 @@ void TimingNetlist::print(raw_ostream &OS) const {
 }
 
 void TimingNetlist::printPathsTo(raw_ostream &OS, VASTValue *Dst) const {
-  PathInfoTy::const_iterator at = PathInfo.find(Dst);
+  const_path_iterator at = PathInfo.find(Dst);
   assert(at != PathInfo.end() && "DstReg not find!");
   printPathsTo(OS, *at);
 }
 
-void TimingNetlist::printPathsTo(raw_ostream &OS,
-                                 const PathInfoTy::value_type &Path) const {
+void TimingNetlist::printPathsTo(raw_ostream &OS, const PathTy &Path) const {
   VASTValue *Dst = Path.first;
   OS << "Dst: ";
   Dst->printAsOperand(OS, false);
