@@ -176,6 +176,10 @@ void BasicLinearOrderGenerator::addLinOrdEdge() {
       // Ignore the trivial operations.
       if (Op == 0 || Op->getNumSrcs() == 0) continue;
 
+      // Ignore the Latch, they will not cause a resource conflict.
+      if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op))
+        if (SeqInst->getSeqOpType() == VASTSeqInst::Latch) continue;
+
       VASTSeqValue *Dst = Op->getSrc(Op->getNumSrcs() - 1).getDst();
 
       // Ignore the common resource.
