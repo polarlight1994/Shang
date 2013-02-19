@@ -112,7 +112,7 @@ int getLoopDepDist(const SCEV *SSAddr, const SCEV *SDAddr,
 
 
 
-inline bool isCall(const Instruction *Inst) {
+inline bool isCall(const Instruction *Inst, bool IgnoreExternalCall = true) {
   const CallInst *CI = dyn_cast<CallInst>(Inst);
 
   if (CI == 0) return false;
@@ -130,7 +130,8 @@ inline bool isCall(const Instruction *Inst) {
 
   // Ignore the call to external function, they are ignored in the VAST and do
   // not have a corresponding VASTSeqInst.
-  if (CI->getCalledFunction()->isDeclaration()) return false;
+  if (CI->getCalledFunction()->isDeclaration() && IgnoreExternalCall)
+    return false;
 
   return true;
 }

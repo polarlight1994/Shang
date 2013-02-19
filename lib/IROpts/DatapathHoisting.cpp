@@ -61,7 +61,7 @@ INITIALIZE_PASS_END(DatapathHoisting,
 static bool hoistInst(Instruction *Inst, DominatorTree &DT) {
   // Do not touch the following instructions.
   if (Inst->isTerminator() || isLoadStore(Inst) || isa<PHINode>(Inst)
-      || Inst->mayThrow() || isCall(Inst))
+      || Inst->mayThrow() || isCall(Inst, false))
     return false;
 
   BasicBlock *Dst = DT.getRoot(), *CurMBB = Inst->getParent();
