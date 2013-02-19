@@ -67,6 +67,11 @@ static cl::opt<bool> BaselineSchedulingOnly(
 cl::desc("Only use the scheduling derive from the LLVM IR"),
 cl::init(false));
 
+static cl::opt<bool> EnableGotoExpansion(
+  "shang-enable-goto-expansion",
+  cl::desc("Perform goto expansion to generate a function that include all code"),
+  cl::init(true));
+
 static void LoopOptimizerEndExtensionFn(const PassManagerBuilder &Builder,
                                         PassManagerBase &PM) {
   PM.add(createMemoryAccessAlignerPass());
@@ -222,6 +227,22 @@ int main(int argc, char **argv) {
     HLSPasses.add(createDeadCodeEliminationPass());
     HLSPasses.add(createDeadStoreEliminationPass());
     HLSPasses.add(createGVNPass());
+
+    if (EnableGotoExpansion) {
+      // Perform goto expansion.
+      HLSPasses.add(createDemoteRegisterToMemoryPass());
+      HLSPasses.add(createGotoExpansionPass());
+      HLSPasses.add(createGlobalDCEPass());
+      HLSPasses.add(createVerifierPass());
+      HLSPasses.add(createPromoteMemoryToRegisterPass());
+      HLSPasses.add(createCFGSimplificationPass());
+      HLSPasses.add(createCorrelatedValuePropagationPass());
+      HLSPasses.add(createSROAPass());
+      HLSPasses.add(createDatapathHoistingPass());
+      HLSPasses.add(createGVNPass());
+      HLSPasses.add(createInstructionCombiningPass());
+      HLSPasses.add(createDeadStoreEliminationPass());
+    }
 
     HLSPasses.add(createMemoryAccessAlignerPass());
     // Run the SCEVAA pass to compute more accurate alias information.
