@@ -24,6 +24,7 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/InstIterator.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/raw_ostream.h"
@@ -31,17 +32,19 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
-STATISTIC(NumFnExapnded, "Number of Functions inlined");
-STATISTIC(NumCallsDeleted, "Number of call sites deleted, not inlined");
+STATISTIC(NumFnExapnded, "Number of Functions goto-expanded");
+STATISTIC(NumCallsDeleted, "Number of call sites deleted, not goto-expanded");
+STATISTIC(NumCrossBBValue,
+          "Number of value demote to stack again after Call BB is splited");
 
 namespace {
 struct ExpandedFunctionInfo {
   /// The expanded function will become a single-entry single-exit function.
   BasicBlock *Entry, *Exit;
   /// The token to represent the return address and the returned values.
-  PHINode *RetAddr, *RetVal;
+  AllocaInst *RetAddr, *RetVal;
   /// Map the argument of the inlined function to the PHINode.s
-  SmallVector<PHINode*, 8> Args;
+  SmallVector<AllocaInst*, 8> Args;
   /// Remember the number of CallSite expanded.
   unsigned NumCallSite;
 
@@ -62,7 +65,6 @@ struct GotoExpansion : public ModulePass {
 
   bool runOnModule(Module &M);
   void releaseMemory() {
-    DeleteContainerSeconds(ExpandedFunctions);
     RetAddrTy = 0;
   }
 
@@ -70,6 +72,8 @@ struct GotoExpansion : public ModulePass {
   void inlineCallSite(CallInst *CI, Function *Caller);
   /// Create the entry block and exit block for the inline candidate.
   ExpandedFunctionInfo *cloneCallee(Function *Caller, Function *Callee);
+
+  void reloadForEscapedUses(BasicBlock *CallBB, BasicBlock *AfterCallBB);
 };
 }
 
@@ -109,6 +113,12 @@ bool GotoExpansion::runOnModule(Module &M) {
   while (inlineAllCallSites(F))
     changed = true;
 
+  // Release the memory and erase the dead functions.
+  DeleteContainerSeconds(ExpandedFunctions);
+  ExpandedFunctions.clear();
+
+  DEBUG(F->dump());
+
   return changed;
 }
 
@@ -120,7 +130,7 @@ bool GotoExpansion::inlineAllCallSites(Function *F) {
     if (CallInst *CI = dyn_cast<CallInst>(&*I)) {
       // Do not try to inline the declaration.
       if (CI->getCalledFunction()->isDeclaration()) continue;
-      
+
       Worklist.push_back(CI);
     }
 
@@ -149,15 +159,16 @@ bool GotoExpansion::inlineAllCallSites(Function *F) {
 
 void GotoExpansion::inlineCallSite(CallInst *CI, Function *Caller) {
   Function *Callee = CI->getCalledFunction();
-
   ExpandedFunctionInfo *&Info = ExpandedFunctions[Callee];
 
   // Clone the callee if we had not do so yet.
   if (Info == 0) Info = cloneCallee(Caller, Callee);
 
   BasicBlock *CallingBB = CI->getParent();
+
   BasicBlock *AfterCallBB
     = CallingBB->splitBasicBlock(CI, Callee->getName() +".ret");
+
   // Change the branch that used to go to AfterCallBB to branch to the first
   // basic block of the inlined function.
   //
@@ -169,28 +180,71 @@ void GotoExpansion::inlineCallSite(CallInst *CI, Function *Caller) {
   // Setup the incoming arguments.
   CallSite CS(CI);
   for (unsigned i = 0, e = CS.arg_size(); i != e; ++i)
-    Info->Args[i]->addIncoming(CS.getArgument(i), CallingBB);  
+    new StoreInst(CS.getArgument(i), Info->Args[i], CallingBB->getTerminator());
 
   // Also setup the return address value.
   ConstantInt *CurRetAddr = ConstantInt::get(RetAddrTy, Info->NumCallSite);
-  Info->RetAddr->addIncoming(CurRetAddr, CallingBB);
+  new StoreInst(CurRetAddr, Info->RetAddr, CallingBB->getTerminator());
   // Return to the corresponding block according to the CurAddr.
   SwitchInst *SW = cast<SwitchInst>(Info->Exit->getTerminator());
   SW->addCase(CurRetAddr, AfterCallBB);
 
   // Replace returned value.
-  if (Value *V = Info->RetVal) CI->replaceAllUsesWith(V);
-
+  if (Value *V = Info->RetVal) {
+    Twine RetName = CI->getName() + ".retval.goto_expansion";
+    Value *NewRetVal = new LoadInst(V, RetName, CI);
+    CI->replaceAllUsesWith(NewRetVal);
+  }
   // And the remove the call site since we had already inlined the call.
   CI->eraseFromParent();
 
   ++Info->NumCallSite;
+
+  // Avoid the virtual register live across the CallInst, otherwise we may break
+  // the SSA form after we change the CFG.
+  reloadForEscapedUses(CallingBB, AfterCallBB);
+}
+
+void
+GotoExpansion::reloadForEscapedUses(BasicBlock *CallBB, BasicBlock *AfterCallBB) {
+  typedef BasicBlock::iterator iterator;
+  typedef Value::use_iterator use_iterator;
+  iterator EntryInsertPoint = CallBB->getParent()->getEntryBlock().begin();
+  SmallPtrSet<Instruction*, 4> Worklist;
+  typedef SmallPtrSet<Instruction*, 4>::iterator worklist_it;
+
+  for (iterator I = CallBB->begin(), E = CallBB->end(); I != E; ++I) {
+    Worklist.clear();
+    for (use_iterator UI = I->use_begin(), UE = I->use_end(); UI != UE; ++UI) {
+      Instruction *UseInst = dyn_cast<Instruction>(*UI);
+      if (UseInst == 0 || UseInst->getParent() == CallBB) continue;
+      // Cross BB use detected, demote the value to stack again.
+      assert(UseInst->getParent() == AfterCallBB && "reg2mem pass not run?");
+      Worklist.insert(UseInst);
+    }
+
+    // All uses are within the same BB.
+    if (Worklist.empty()) continue;
+    
+    AllocaInst *AI = new AllocaInst(I->getType(), "crossbb.reload.addr",
+                                    EntryInsertPoint);
+    CallBB->getInstList().insertAfter(I, new StoreInst(I, AI));
+    ++NumCrossBBValue;
+    for (worklist_it WI = Worklist.begin(), WE = Worklist.end(); WI != WE; ++WI)
+    {
+      Instruction *UseInst = *WI;
+      UseInst->replaceUsesOfWith(I, new LoadInst(AI, "crossbb.reload", UseInst));
+    }
+  }  
 }
 
 ExpandedFunctionInfo *GotoExpansion::cloneCallee(Function *Caller, Function *Callee)\
 {
   ExpandedFunctionInfo *Info = new ExpandedFunctionInfo();
   StringRef CalleeName = Callee->getName();
+  BasicBlock *CallerEntry = &Caller->getEntryBlock();
+  typedef BasicBlock::iterator iterator;
+  iterator EntryInsertPoint = CallerEntry->begin();
 
   // Construct the entry and exit blocks.
   BasicBlock *Entry = BasicBlock::Create(*Context, CalleeName + ".entry", Caller);
@@ -202,7 +256,8 @@ ExpandedFunctionInfo *GotoExpansion::cloneCallee(Function *Caller, Function *Cal
   if (RetAddrTy == 0) RetAddrTy= IntegerType::get(*Context, 8);
 
   // Build the return address.
-  Info->RetAddr = PHINode::Create(RetAddrTy, 0, CalleeName + ".retaddr", Entry);
+  Info->RetAddr
+    = new AllocaInst(RetAddrTy, CalleeName + ".retaddr", EntryInsertPoint); 
 
   // Create the default unreachable block for the exit. So we can get the warning
   // when the something wrong with the retaddr and we branch to the unreachable
@@ -211,7 +266,9 @@ ExpandedFunctionInfo *GotoExpansion::cloneCallee(Function *Caller, Function *Cal
     = BasicBlock::Create(*Context, CalleeName + ".unreachable", Caller);
   new UnreachableInst(*Context, UnreachableBB);
 
-  SwitchInst::Create(Info->RetAddr, UnreachableBB, 0, Exit);
+  Twine SwitchValName = CalleeName + ".retswitch";
+  Value *SwitchVal = new LoadInst(Info->RetAddr, SwitchValName, Exit);
+  SwitchInst::Create(SwitchVal, UnreachableBB, 0, Exit);
 
   // Create the value for the arguments.
   // Duplicate the argument map, because the VMap will be changed by the clone
@@ -222,15 +279,19 @@ ExpandedFunctionInfo *GotoExpansion::cloneCallee(Function *Caller, Function *Cal
     Argument *Arg = I;
 
     Twine ArgName = CalleeName + "." + Arg->getName() + ".inline.arg";
-    PHINode *ArgPHI = PHINode::Create(Arg->getType(), 0, ArgName, Entry);
-    Info->Args.push_back(ArgPHI);
-    CloneVMap[Arg] = ArgPHI;
+    AllocaInst *ArgAlloca
+      = new AllocaInst(Arg->getType(), ArgName, EntryInsertPoint);
+    Info->Args.push_back(ArgAlloca);
+    Twine ArgLoadName = ArgName + ".load.for.call";
+    CloneVMap[Arg] = new LoadInst(ArgAlloca, ArgLoadName, Entry);
   }
 
   // Clone the caller into the callee.
   // TODO: Fix the line numbers.
   SmallVector<ReturnInst*, 16> Rets;
-  CloneFunctionInto(Caller, Callee, CloneVMap, true, Rets, ".goto_expansion");
+  std::string S(".goto_expansion.");
+  S += std::string(CalleeName);
+  CloneFunctionInto(Caller, Callee, CloneVMap, true, Rets, S.c_str());
 
   BasicBlock *CalleeEntry = cast<BasicBlock>(CloneVMap[&Callee->getEntryBlock()]);
   // Connect to the newly cloned function body.
@@ -238,16 +299,16 @@ ExpandedFunctionInfo *GotoExpansion::cloneCallee(Function *Caller, Function *Cal
 
   // Forward the return value of the cloned function if there is any.
   Type *RetTy = Callee->getReturnType();
-  PHINode *RetVal = 0;
+  AllocaInst *RetVal = 0;
   if (!RetTy->isVoidTy())
     Info->RetVal
-      = (RetVal = PHINode::Create(RetTy, Rets.size(), CalleeName + ".retval",
-                                  Exit->getTerminator()));
+      = (RetVal = new AllocaInst(RetTy, CalleeName + ".retval", EntryInsertPoint));
 
   while (!Rets.empty()) {
     ReturnInst *Ret = Rets.pop_back_val();
     BasicBlock *RetBB = Ret->getParent();
-    if (RetVal) RetVal->addIncoming(Ret->getReturnValue(), RetBB);
+    if (RetVal)
+      new StoreInst(Ret->getReturnValue(), RetVal, RetBB->getTerminator());
     // Replace the ret instruction by the branch to the exit bb.
     Ret->eraseFromParent();
     BranchInst::Create(Exit, RetBB);
@@ -261,23 +322,20 @@ ExpandedFunctionInfo *GotoExpansion::cloneCallee(Function *Caller, Function *Cal
   // block for the callee, move them to the entry block of the caller.  First
   // calculate which instruction they should be inserted before.  We insert the
   // instructions at the end of the current alloca list.
-  typedef BasicBlock::iterator iterator;
-  BasicBlock *CallerEntry = &Caller->getEntryBlock();
-  iterator InsertPoint = CallerEntry->begin();
   for (iterator I = CalleeEntry->begin(), E = CalleeEntry->end(); I != E; ) {
     AllocaInst *AI = dyn_cast<AllocaInst>(I++);
     if (AI == 0) continue;
 
     if (!isa<Constant>(AI->getArraySize()))
       continue;
-      
+
     // Keep track of the static allocas that we inline into the caller.
     StaticAllocas.push_back(AI);
-      
+
     // Scan for the block of allocas that we can move over, and move them
     // all at once.
     while (isa<AllocaInst>(I) &&
-            isa<Constant>(cast<AllocaInst>(I)->getArraySize())) {
+           isa<Constant>(cast<AllocaInst>(I)->getArraySize())) {
       StaticAllocas.push_back(cast<AllocaInst>(I));
       ++I;
     }
@@ -285,7 +343,7 @@ ExpandedFunctionInfo *GotoExpansion::cloneCallee(Function *Caller, Function *Cal
     // Transfer all of the allocas over in a block.  Using splice means
     // that the instructions aren't removed from the symbol table, then
     // reinserted.
-    CallerEntry->getInstList().splice(InsertPoint, CalleeEntry->getInstList(),
+    CallerEntry->getInstList().splice(EntryInsertPoint, CalleeEntry->getInstList(),
                                       AI, I);
   }
 

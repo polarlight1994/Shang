@@ -143,7 +143,7 @@ int main(int argc, char **argv) {
   llvm_shutdown_obj Y;  // Call llvm_shutdown() on exit.
 
   cl::ParseCommandLineOptions(argc, argv, "llvm system compiler\n");
-  
+
   SMDiagnostic Err;
 
   std::map<std::string, std::string> ConfigTable;
@@ -220,9 +220,9 @@ int main(int argc, char **argv) {
     // Move the datapath instructions as soon as possible.
     HLSPasses.add(createDatapathHoistingPass());
     HLSPasses.add(createDeadCodeEliminationPass());
-
     HLSPasses.add(createDeadStoreEliminationPass());
     HLSPasses.add(createGVNPass());
+
     HLSPasses.add(createMemoryAccessAlignerPass());
     // Run the SCEVAA pass to compute more accurate alias information.
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
