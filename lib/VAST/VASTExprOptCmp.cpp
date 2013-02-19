@@ -268,3 +268,8 @@ VASTValPtr VASTExprBuilder::buildICmpExpr(VASTExpr::Opcode Opc,
   VASTValPtr Ops[] = { LHS, RHS };
   return createExpr(Opc, Ops, 1, 0);
 }
+
+VASTValPtr VASTExprBuilder::buildICmpOrEqExpr(VASTExpr::Opcode Opc,
+                                              VASTValPtr LHS, VASTValPtr RHS) {
+  return buildOrExpr(buildExpr(Opc, LHS, RHS, 1), buildEQ(LHS, RHS), 1);
+}

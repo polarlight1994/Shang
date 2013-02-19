@@ -327,6 +327,7 @@ public:
   }
 
   VASTValPtr buildICmpExpr(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS);
+  VASTValPtr buildICmpOrEqExpr(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS);
 
   // For operator !=
   VASTValPtr buildNE(VASTValPtr LHS, VASTValPtr RHS) {
