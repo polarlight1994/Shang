@@ -284,7 +284,6 @@ bool MemoryAccessCoalescing::hasMemDependency(Instruction *DstInst,
   if (SrcInst == DstInst) return false;
 
   // Check if source will access memory.
-  unsigned SrcOpcode = SrcInst->getOpcode();
   if (!isLoadStore(SrcInst) && !isCall(SrcInst))
     return false;
 

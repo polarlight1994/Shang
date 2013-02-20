@@ -742,7 +742,7 @@ void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
 
   // Prepare cases vector.
   CaseVector Cases;
-  unsigned numCmps = Clusterify(Cases, &I);
+  Clusterify(Cases, &I);
   // Build the condition map.
   for (CaseItr CI = Cases.begin(), CE = Cases.end(); CI != CE; ++CI) {
     const CaseRange &Case = *CI;
