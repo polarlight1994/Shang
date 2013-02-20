@@ -44,6 +44,7 @@ Pass *createFunctionFilterPass(raw_ostream &O,
                                TopHWFUnctions);
 
 Pass *createLowerAllocaPass();
+Pass *createGlobalToStackPass();
 Pass *createMemoryAccessCoalescingPass();
 Pass *createSimpleBlockRAMAllocationPass();
 Pass *createShangTargetTransformInfoPass();
@@ -82,6 +83,7 @@ void initializeBasicAllocationPass(PassRegistry &Registry);
 void initializeSimpleBlockRAMAllocationPass(PassRegistry &Registry);
 
 void initializeLowerAllocaPass(PassRegistry &Registry);
+void initializeGlobalToStackPass(PassRegistry &Registry);
 void initializeLUTMappingPass(PassRegistry &Registry);
 void initializeTimingNetlistPass(PassRegistry &Registry);
 void initializeVASTSchedulingPass(PassRegistry &Registry);

@@ -234,6 +234,7 @@ int main(int argc, char **argv) {
       HLSPasses.add(createGotoExpansionPass());
       HLSPasses.add(createGlobalDCEPass());
       HLSPasses.add(createVerifierPass());
+      HLSPasses.add(createGlobalToStackPass());
       HLSPasses.add(createPromoteMemoryToRegisterPass());
       HLSPasses.add(createCFGSimplificationPass());
       HLSPasses.add(createCorrelatedValuePropagationPass());
