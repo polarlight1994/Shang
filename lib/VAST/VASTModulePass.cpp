@@ -536,7 +536,7 @@ VASTNode *VASTModuleBuilder::emitBlockRAM(unsigned BRAMNum,
       = dyn_cast_or_null<ConstantInt>(GV->getInitializer());
     assert((CI || isa<ConstantPointerNull>(GV->getInitializer()))
             && "Unexpected initialier!");
-    assert(CI->getBitWidth() <= 64 && "Initializer not supported!");
+    assert(CI == 0 || CI->getBitWidth() <= 64 && "Initializer not supported!");
     if (CI) InitVal = CI->getZExtValue();
 
     VASTRegister *R = VM->addDataRegister(VFUBRAM::getOutDataBusName(BRAMNum),
