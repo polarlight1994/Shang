@@ -82,9 +82,6 @@ static void LoopOptimizerEndExtensionFn(const PassManagerBuilder &Builder,
 }
 
 static void addHLSPreparePasses(PassManager &PM) {
-  // Relplace the stack alloca variables by global variables.
-  PM.add(createLowerAllocaPass());
-
   // Basic AliasAnalysis support.
   // Add TypeBasedAliasAnalysis before BasicAliasAnalysis so that
   // BasicAliasAnalysis wins if they disagree. This is intended to help
@@ -259,6 +256,9 @@ int main(int argc, char **argv) {
     HLSPasses.add(createInstructionCombiningPass());
     // Move the datapath instructions as soon as possible.
     HLSPasses.add(createDatapathHoistingPass());
+
+    // Replace the stack alloca variables by global variables.
+    HLSPasses.add(createLowerAllocaPass());
 
     // Name the instructions.
     HLSPasses.add(createInstructionNamerPass());
