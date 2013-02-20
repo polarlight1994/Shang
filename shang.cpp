@@ -72,6 +72,11 @@ static cl::opt<bool> EnableGotoExpansion(
   cl::desc("Perform goto expansion to generate a function that include all code"),
   cl::init(true));
 
+static cl::opt<bool> DumpIRBeforeHLS(
+"shang-enable-dump-ir-before-hls",
+cl::desc("Print the IR before HLS"),
+cl::init(false));
+
 static void LoopOptimizerEndExtensionFn(const PassManagerBuilder &Builder,
                                         PassManagerBase &PM) {
   PM.add(createMemoryAccessAlignerPass());
@@ -240,7 +245,6 @@ int main(int argc, char **argv) {
       HLSPasses.add(createGVNPass());
       HLSPasses.add(createInstructionCombiningPass());
       HLSPasses.add(createDeadStoreEliminationPass());
-      HLSPasses.add(createCFGSimplificationPass());
     }
 
     HLSPasses.add(createMemoryAccessAlignerPass());
@@ -257,6 +261,9 @@ int main(int argc, char **argv) {
     HLSPasses.add(createInstructionCombiningPass());
     // Move the datapath instructions as soon as possible.
     HLSPasses.add(createDatapathHoistingPass());
+
+    if (DumpIRBeforeHLS)
+      HLSPasses.add(createPrintModulePass(&dbgs()));
 
     // Replace the stack alloca variables by global variables.
     HLSPasses.add(createLowerAllocaPass());

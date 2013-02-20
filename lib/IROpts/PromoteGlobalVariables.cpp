@@ -116,14 +116,14 @@ bool GlobalToStack::replaceScalarGlobalVariable(GlobalVariable *GV,
   }
 
   // Load the value to the shadow register in the entry of the BB.
-  LoadInst *L = new LoadInst(GV, GV->getName(), InsertPos);
+  LoadInst *L = new LoadInst(GV, GV->getName() + ".restore", InsertPos);
   new StoreInst(L, Shadow, InsertPos);
 
   // Store the value of the shadow back to the global variable.
   for (unsigned i = 0; i < Rets.size(); ++i) {
     ReturnInst *R = Rets[i];
 
-    LoadInst *L = new LoadInst(Shadow, Shadow->getName(), R);
+    LoadInst *L = new LoadInst(Shadow, Shadow->getName() + ".save", R);
     new StoreInst(L, GV, R);
   }
 
