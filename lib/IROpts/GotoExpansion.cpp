@@ -122,7 +122,7 @@ bool GotoExpansion::runOnModule(Module &M) {
   DeleteContainerSeconds(ExpandedFunctions);
   ExpandedFunctions.clear();
 
-  DEBUG(F->dump());
+  DEBUG(dbgs() << "After goto expansion:\n"; F->dump(););
 
   return changed;
 }

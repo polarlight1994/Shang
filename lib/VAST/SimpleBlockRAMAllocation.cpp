@@ -36,7 +36,7 @@ STATISTIC(NumLocalizedGV, "Number of GlobalVariable localized as BRAM");
 
 static cl::opt<bool> NoSingleElementBRAM(
 "shang-no-single-element-bram",
-cl::desc("Forbid the SimpleBlockRAMAllocation allocate the single  element bram"),
+cl::desc("Forbid the SimpleBlockRAMAllocation allocate the single element bram"),
 cl::init(true));
 
 namespace {
