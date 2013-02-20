@@ -215,39 +215,32 @@ GotoExpansion::reloadForEscapedUses(BasicBlock *CallBB, BasicBlock *AfterCallBB)
   typedef BasicBlock::iterator iterator;
   typedef Value::use_iterator use_iterator;
   iterator EntryInsertPoint = CallBB->getParent()->getEntryBlock().begin();
-  SmallPtrSet<Instruction*, 4> Worklist;
-  typedef SmallPtrSet<Instruction*, 4>::iterator worklist_it;
+  SmallVector<Instruction*, 4> Worklist;
 
   for (iterator I = CallBB->begin(), E = CallBB->end(); I != E; ++I) {
     // Ignore the Allocas.
     if (isa<AllocaInst>(I)) continue;
 
-    Worklist.clear();
-
+    bool AnyEscapedUse = false;
     for (use_iterator UI = I->use_begin(), UE = I->use_end(); UI != UE; ++UI) {
       Instruction *UseInst = dyn_cast<Instruction>(*UI);
       if (UseInst == 0 || UseInst->getParent() == CallBB) continue;
+
       // Cross BB use detected, demote the value to stack again.
       assert(UseInst->getParent() == AfterCallBB && "reg2mem pass not run?");
-      Worklist.insert(UseInst);
-      assert(!isa<PHINode>(UseInst) && "Not support PHI for now!");
+      AnyEscapedUse = true;
     }
 
-    // All uses are within the same BB.
-    if (Worklist.empty()) continue;
+    if (AnyEscapedUse) Worklist.push_back(I);
+  }
 
-    AllocaInst *AI = new AllocaInst(I->getType(), "crossbb.reload.addr",
-                                    EntryInsertPoint);
-    if (InitStacks)
-      new StoreInst(Constant::getNullValue(I->getType()), AI, EntryInsertPoint);
-
-    CallBB->getInstList().insertAfter(I, new StoreInst(I, AI));
+  while (!Worklist.empty()) {
+    Instruction *Inst = Worklist.pop_back_val();
     ++NumCrossBBValue;
-    for (worklist_it WI = Worklist.begin(), WE = Worklist.end(); WI != WE; ++WI)
-    {
-      Instruction *UseInst = *WI;
-      UseInst->replaceUsesOfWith(I, new LoadInst(AI, "crossbb.reload", UseInst));
-    }
+
+    AllocaInst *AI = DemoteRegToStack(*Inst, false, EntryInsertPoint);
+    if (InitStacks)
+      new StoreInst(Constant::getNullValue(Inst->getType()), AI, EntryInsertPoint);
   }
 }
 
@@ -289,6 +282,7 @@ GotoExpansion::cloneCallee(Function *Caller, Function *Callee) {
   // Duplicate the argument map, because the VMap will be changed by the clone
   // function.
   ValueToValueMapTy CloneVMap;
+  SmallVector<LoadInst*, 8> ArgLoads;
   typedef Function::arg_iterator arg_iterator;
   for (arg_iterator I = Callee->arg_begin(), E = Callee->arg_end(); I != E; ++I){
     Argument *Arg = I;
@@ -301,7 +295,9 @@ GotoExpansion::cloneCallee(Function *Caller, Function *Callee) {
                     EntryInsertPoint);
     Info->Args.push_back(ArgAlloca);
     Twine ArgLoadName = ArgName + ".load.for.call";
-    CloneVMap[Arg] = new LoadInst(ArgAlloca, ArgLoadName, Entry);
+    LoadInst *L = new LoadInst(ArgAlloca, ArgLoadName, Entry);
+    CloneVMap[Arg] = L;
+    ArgLoads.push_back(L);
   }
 
   // Clone the caller into the callee.
@@ -379,6 +375,20 @@ GotoExpansion::cloneCallee(Function *Caller, Function *Callee) {
       continue;
     }
     // TODO: Add lifetime marker.
+  }
+
+  // Also load that replaced the function argument to memory.
+  while (!ArgLoads.empty()) {
+    LoadInst *L = ArgLoads.pop_back_val();
+    AllocaInst *Addr = cast<AllocaInst>(L->getPointerOperand());
+
+    while (!L->use_empty()) {
+      Instruction *U = cast<Instruction>(L->use_back());
+      assert(!isa<PHINode>(U) && "reg2mem not run before goto-expansion!");
+      // If this is a normal instruction, just insert a load.
+      Value *V = new LoadInst(Addr, L->getName(), false, U);
+      U->replaceUsesOfWith(L, V);
+    }
   }
 
   ++NumFnExapnded;
