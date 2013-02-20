@@ -687,9 +687,9 @@ static void BreakNAryExpr(DatapathContainer &DP, DatapathBuilder &Builder) {
 }
 
 static void ExpandSOP(DatapathContainer &DP, DatapathBuilder &Builder) {
-  bool changed = false;
+  bool changed = true;
 
-  do {
+  while (changed) {
     changed = false;
     typedef DatapathContainer::expr_iterator iterator;
     for (iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I) {
@@ -714,7 +714,7 @@ static void ExpandSOP(DatapathContainer &DP, DatapathBuilder &Builder) {
       // any LUT.
       break;
     }
-  } while (changed);
+  }
 }
 
 bool LUTMapping::runOnVASTModule(VASTModule &VM) {

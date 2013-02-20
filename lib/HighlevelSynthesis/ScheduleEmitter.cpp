@@ -32,6 +32,7 @@ STATISTIC(NumRejectedRetiming,
           "Number of Reject Retiming because the predicates are not compatible");
 STATISTIC(NumFalsePathSkip,
           "Number of False Paths skipped during the CFG folding");
+STATISTIC(NumSlots, "Number of States created in the State-Transition Graph");
 
 namespace {
 /// VASTCFGPred - Represent the predicate by the path in the CFG.
@@ -331,8 +332,10 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
     VASTSlot *&LandingSlot = LandingSlots[TargetBB];
     // There maybe more than one branch instruction targeting the landing
     // slot. Only create the slot once.
-    if (LandingSlot == 0)
+    if (LandingSlot == 0) {
       LandingSlot = VM.createSlot(LandingSlotNum[TargetBB], TargetBB);
+      ++NumSlots;
+    }
 
     return addSuccSlot(ToSlot, LandingSlot, Pred, V);
   }
@@ -634,6 +637,7 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
     // Create the slot if it is not created.
     while (CurSlotNum != CurSlot->SlotNum) {
       VASTSlot *NextSlot = VM.createSlot(CurSlot->SlotNum + 1, BB);
+      ++NumSlots;
       addSuccSlot(CurSlot, NextSlot, VASTImmediate::True);
       CurSlot = NextSlot;
     }
@@ -660,6 +664,7 @@ void ScheduleEmitter::emitSchedule() {
   if (emitToFirstSlot(StartPort, StartSlot, EntrySUs, RetimingPath)) {
     // Create the landing slot of entry BB if not all SUs in the Entry BB
     // emitted to the idle slot.
+    ++NumSlots;
     VASTSlot *S = VM.createSlot(LandingSlotNum[&Entry], &Entry);
     LandingSlots[&Entry] = S;
     // Go to the new slot if the start port is true.
