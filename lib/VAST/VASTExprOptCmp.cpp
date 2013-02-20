@@ -22,6 +22,7 @@ using namespace llvm;
 STATISTIC(ConstICmpLowered, "Number of Constant ICmp lowered");
 STATISTIC(OneBitICmpLowered, "Number of 1 bit ICmp lowered");
 STATISTIC(ICmpSplited, "Number of ICmp splited");
+STATISTIC(CmpEquOptimized, "Number of >= optimized");
 //===----------------------------------------------------------------------===//
 // FIXME: Commit these function to llvm mainstream.
 static bool isMask(APInt Value) {
@@ -271,5 +272,36 @@ VASTValPtr VASTExprBuilder::buildICmpExpr(VASTExpr::Opcode Opc,
 
 VASTValPtr VASTExprBuilder::buildICmpOrEqExpr(VASTExpr::Opcode Opc,
                                               VASTValPtr LHS, VASTValPtr RHS) {
-  return buildOrExpr(buildExpr(Opc, LHS, RHS, 1), buildEQ(LHS, RHS), 1);
+  unsigned SizeInBits = LHS->getBitWidth();
+  VASTImmPtr LHSC = dyn_cast<VASTImmPtr>(LHS),
+             RHSC = dyn_cast<VASTImmPtr>(RHS);
+  if (LHSC) {
+    ++CmpEquOptimized;
+
+    APInt LHSInt = LHSC.getAPInt();
+    // Replace C >= X by C + 1 > X if C is not the Max value.
+    if (LHSInt != GetMax(Opc, SizeInBits)) {
+      ++LHSInt;
+      return buildICmpExpr(Opc, getImmediate(LHSInt), RHS);
+    }
+
+    // Else, Max >= X is always true!
+    return VASTImmediate::True;
+  }
+
+  if (RHSC) {
+    ++CmpEquOptimized;
+
+    APInt RHSInt = RHSC.getAPInt();
+    // Replace X >= C by X > C - 1 if C is not the Min value.
+    if (RHSInt != GetMin(Opc, SizeInBits)) {
+      --RHSInt;
+      return buildICmpExpr(Opc, LHS, getImmediate(RHSInt));
+    }
+
+    // Else X >= Min is always true!
+    return VASTImmediate::True;
+  }
+
+  return buildOrExpr(buildICmpExpr(Opc, LHS, RHS), buildEQ(LHS, RHS), 1);
 }
