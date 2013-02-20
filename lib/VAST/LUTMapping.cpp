@@ -687,26 +687,34 @@ static void BreakNAryExpr(DatapathContainer &DP, DatapathBuilder &Builder) {
 }
 
 static void ExpandSOP(DatapathContainer &DP, DatapathBuilder &Builder) {
-  std::vector<VASTExpr*> Worklist;
+  bool changed = false;
 
-  typedef DatapathContainer::expr_iterator iterator;
-  for (iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I)
-    if (I->getOpcode() == VASTExpr::dpLUT) Worklist.push_back(I);
+  do {
+    changed = false;
+    typedef DatapathContainer::expr_iterator iterator;
+    for (iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I) {
+      VASTExpr *Expr = I;
 
-  while (!Worklist.empty()) {
-    VASTExpr *E = Worklist.back();
-    Worklist.pop_back();
+      if (Expr->getOpcode() != VASTExpr::dpLUT) continue;
 
-    SmallVector<VASTValPtr, 8> Operands;
-    // Push the fanin of the LUT into the operand list, do not put the SOP
-    // string which is the last operand.
-    for (unsigned i = 0; i < E->size() - 1; ++i)
-      Operands.push_back(E->getOperand(i));
+      SmallVector<VASTValPtr, 8> Operands;
+      // Push the fanin of the LUT into the operand list, do not put the SOP
+      // string which is the last operand.
+      for (unsigned i = 0; i < Expr->size() - 1; ++i)
+        Operands.push_back(Expr->getOperand(i));
 
-    VASTValPtr Expaned
-      = ExpandSOP(E->getLUT(), Operands, E->getBitWidth(), Builder);
-    Builder.replaceAllUseWith(E, Expaned);
-  }
+      VASTValPtr Expaned
+        = ExpandSOP(Expr->getLUT(), Operands, Expr->getBitWidth(), Builder);
+      Builder.replaceAllUseWith(Expr, Expaned);
+      changed = true;
+
+      // Because replaceAllUseWith may invalid the others expression, including
+      // the other LUTs, we cannot first collect the LUTs to a list and expand
+      // then one by one. We had to iterate over and over untill we cannot find
+      // any LUT.
+      break;
+    }
+  } while (changed);
 }
 
 bool LUTMapping::runOnVASTModule(VASTModule &VM) {
