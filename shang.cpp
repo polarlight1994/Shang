@@ -77,15 +77,6 @@ static cl::opt<bool> DumpIRBeforeHLS(
 cl::desc("Print the IR before HLS"),
 cl::init(false));
 
-static void LoopOptimizerEndExtensionFn(const PassManagerBuilder &Builder,
-                                        PassManagerBase &PM) {
-  PM.add(createMemoryAccessAlignerPass());
-  PM.add(createScalarEvolutionAliasAnalysisPass());
-  PM.add(createTrivialLoopUnrollPass());
-  PM.add(createMemoryAccessAlignerPass());
-  PM.add(createInstructionCombiningPass());
-}
-
 static void addHLSPreparePasses(PassManager &PM) {
   // Basic AliasAnalysis support.
   // Add TypeBasedAliasAnalysis before BasicAliasAnalysis so that
@@ -124,8 +115,6 @@ void addIROptimizationPasses(PassManager &HLSPasses) {
   Builder.SizeLevel = 2;
   Builder.DisableSimplifyLibCalls = true;
   Builder.Inliner = createHLSInlinerPass();
-  Builder.addExtension(PassManagerBuilder::EP_LoopOptimizerEnd,
-                       LoopOptimizerEndExtensionFn);
 
   HLSPasses.add(createVerifierPass());
   // Optimize the hardware part.
@@ -221,6 +210,8 @@ int main(int argc, char **argv) {
     // Name the instructions to make the LLVM IR easier for debugging.
     HLSPasses.add(createInstructionNamerPass());
 
+    HLSPasses.add(createLowerIntrinsicPass());
+
     // Try to optimize the computation.
     HLSPasses.add(createInstructionCombiningPass());
 
@@ -248,6 +239,12 @@ int main(int argc, char **argv) {
     }
 
     HLSPasses.add(createMemoryAccessAlignerPass());
+
+    // Unroll the loop to expose more coalescing opportunities.
+    HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
+    HLSPasses.add(createTrivialLoopUnrollPass());
+    HLSPasses.add(createMemoryAccessAlignerPass());
+
     // Run the SCEVAA pass to compute more accurate alias information.
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
     HLSPasses.add(createMemoryAccessCoalescingPass());

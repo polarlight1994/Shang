@@ -54,7 +54,9 @@ set ENABLE_PHYSICAL_SYNTHESIS "@ENABLE_PHYSICAL_SYNTHESIS@"
 
 source @VTS_SOURCE_ROOT@/quartus_compile.tcl
 #############################################################################
-execute_module -tool sta -args {--report_script @VTS_SOURCE_ROOT@/extract_timing.tcl}
+#execute_module -tool sta -args {--report_script @VTS_SOURCE_ROOT@/extract_timing.tcl}
+# Path STATISTIC
+execute_module -tool sta -args {--report_script @MAIN_DELAY_VERIFY_SRC@}
 
 #############################################################################
 #Write the netlist
