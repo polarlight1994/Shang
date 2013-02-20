@@ -437,13 +437,23 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
     return;
   }
 
+  VASTSeqInst *SeqInst = cast<VASTSeqInst>(U->getSeqOp());
+  unsigned Latency = SeqInst->getCyclesFromLaunch();
+  // This is a lowered signle-element- block RAM access.
+  if (Latency == 0) {
+    assert(isa<StoreInst>(Inst)
+           && isa<GlobalVariable>(cast<StoreInst>(Inst)->getPointerOperand())
+           && "Zero latency latching is not allowed!");
+    buildFlowDependencies(Inst, U);
+    return;
+  }
+
   // Simply build the dependencies from the launch instruction.
   SmallVectorImpl<VASTSchedUnit*> &SUs = IR2SUMap[Inst];
   assert(SUs.size() >= 1 && "Launching SU not found!");
   VASTSchedUnit *LaunchU = SUs.front();
   assert(LaunchU->isLaunch() && "Bad SU type!");
 
-  unsigned Latency = cast<VASTSeqInst>(U->getSeqOp())->getCyclesFromLaunch();
   U->addDep(LaunchU, VASTDep::CreateFixTimingConstraint(Latency));
 }
 
@@ -615,6 +625,13 @@ void VASTScheduling::buildMemoryDependencies(BasicBlock *BB) {
     Instruction *Inst = I;
 
     if (!isLoadStore(Inst) && !isCall(Inst)) continue;
+
+    // The load/store to single element block RAM will be lowered to register
+    // access by the VASTModuleBuilder.
+    if (!IR2SUMap.count(Inst) || IR2SUMap[Inst].front()->isLatch()) {
+      Inst->dump();
+      continue;
+    }
 
     for (unsigned i = 0, e = PiorMemInsts.size(); i < e; ++i)
       buildMemoryDependencies(PiorMemInsts[i], Inst);

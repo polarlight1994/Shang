@@ -212,8 +212,20 @@ void SimpleBlockRAMAllocation::localizeGV(GlobalVariable *GV) {
 
   if (!Collector.canBeLocalized()) return;
 
-  if (!isa<ArrayType>(GV->getType()->getElementType()) && NoSingleElementBRAM)
-    return;
+  static unsigned cnt = 0;
+
+  if (!isa<ArrayType>(GV->getType()->getElementType()) && NoSingleElementBRAM) {
+    for (unsigned i = 0, e = Collector.Uses.size(); i != e; ++i) {
+      Instruction *I = dyn_cast<Instruction>(Collector.Uses[i]);
+
+      if (I == 0 || !isa<StoreInst>(I)) continue;
+
+      // It is ok if the GV is only written in the return block, so that we do not
+      // need to Worry about SSA form at all.
+      if (!isa<ReturnInst>(I->getParent()->getTerminator()))
+        return;
+    }
+  }
 
   // Allocate the FUID for the GV.
   FuncUnitId ID = FuncUnitId(VFUs::BRam, BlockRAMBinding.size());
