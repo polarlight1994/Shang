@@ -240,6 +240,7 @@ int main(int argc, char **argv) {
       HLSPasses.add(createGVNPass());
       HLSPasses.add(createInstructionCombiningPass());
       HLSPasses.add(createDeadStoreEliminationPass());
+      HLSPasses.add(createCFGSimplificationPass());
     }
 
     HLSPasses.add(createMemoryAccessAlignerPass());
