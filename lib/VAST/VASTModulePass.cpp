@@ -36,6 +36,7 @@
 
 using namespace llvm;
 STATISTIC(NumIPs, "Number of IPs Instantiated");
+STATISTIC(NumBRam2Reg, "Number of Single Element Block RAM lowered to Register");
 
 namespace {
 // Note: Create the memory bus builder will add the input/output ports of the
@@ -527,24 +528,23 @@ VASTNode *VASTModuleBuilder::emitBlockRAM(unsigned BRAMNum,
 
   // If there is only 1 element, simply replace the block RAM by a register.
   if (NumElem == 1) {
-    //uint64_t InitVal = 0;
-    //if (Initializer) {
-    //  // Try to retrieve the initialize value of the register, it may be a
-    //  // ConstantInt or ConstPointerNull, we can safely ignore the later case
-    //  // since the InitVal is default to 0.
-    //  const ConstantInt *CI
-    //    = dyn_cast_or_null<ConstantInt>(Initializer->getInitializer());
-    //  assert((CI || !Initializer->hasInitializer()
-    //          || isa<ConstantPointerNull>(Initializer->getInitializer()))
-    //         && "Unexpected initialier!");
-    //  if (CI) InitVal = CI->getZExtValue();
-    //}
+    uint64_t InitVal = 0;
+    // Try to retrieve the initialize value of the register, it may be a
+    // ConstantInt or ConstPointerNull, we can safely ignore the later case
+    // since the InitVal is default to 0.
+    const ConstantInt *CI
+      = dyn_cast_or_null<ConstantInt>(GV->getInitializer());
+    assert((CI || isa<ConstantPointerNull>(GV->getInitializer()))
+            && "Unexpected initialier!");
+    assert(CI->getBitWidth() <= 64 && "Initializer not supported!");
+    if (CI) InitVal = CI->getZExtValue();
 
     VASTRegister *R = VM->addDataRegister(VFUBRAM::getOutDataBusName(BRAMNum),
-                                          ElementSizeInBits, BRAMNum);
+                                          ElementSizeInBits, BRAMNum, InitVal);
     bool Inserted = AllocatedBRAMs.insert(std::make_pair(BRAMNum, R)).second;
     assert(Inserted && "Creating the same BRAM twice?");
     (void) Inserted;
+    ++NumBRam2Reg;
     return 0;
   }
 
@@ -1005,9 +1005,8 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
   if (VASTRegister *R = dyn_cast<VASTRegister>(Node)) {
     VASTSeqValue *V = R->getValue();
     if (IsWrite) {
-      VASTSeqInst *Op
-        = VM->lauchInst(Slot, VASTImmediate::True, 1, &I, VASTSeqInst::Launch);
-      Op->addSrc(getAsOperandImpl(Data), 0, false, V);
+      VASTValPtr Src = getAsOperandImpl(Data);
+      VM->latchValue(V, Src, Slot, VASTImmediate::True, &I);
     } else {
       // Also index the address port as the result of the block RAM read.
       Builder.indexVASTExpr(&I, V);

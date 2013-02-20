@@ -288,7 +288,8 @@ public:
                               unsigned FUNum, const char *Attr = "");
 
   VASTRegister *addDataRegister(const Twine &Name, unsigned BitWidth,
-                                unsigned RegNum = 0, const char *Attr = "");
+                                unsigned RegNum = 0, unsigned InitVal = 0,
+                                const char *Attr = "");
 
   VASTWire *addWire(const Twine &Name, unsigned BitWidth,
                     const char *Attr = "", bool IsPinned = false);

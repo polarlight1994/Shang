@@ -716,8 +716,9 @@ VASTRegister *VASTModule::addIORegister(const Twine &Name, unsigned BitWidth,
 }
 
 VASTRegister *VASTModule::addDataRegister(const Twine &Name, unsigned BitWidth,
-                                          unsigned RegNum, const char *Attr) {
-  return addRegister(Name, BitWidth, 0, VASTSeqValue::Data, RegNum, Attr);
+                                          unsigned RegNum, unsigned InitVal,
+                                          const char *Attr) {
+  return addRegister(Name, BitWidth, InitVal, VASTSeqValue::Data, RegNum, Attr);
 }
 
 BumpPtrAllocator &VASTModule::getAllocator() {
