@@ -196,7 +196,7 @@ void GotoExpansion::inlineCallSite(CallInst *CI, Function *Caller) {
 
   // Replace returned value.
   if (Value *V = Info->RetVal) {
-    Twine RetName = CI->getName() + ".retval.goto_expansion";
+    Twine RetName = CI->getName() + ".gerv";
     Value *NewRetVal = new LoadInst(V, RetName, CI);
     CI->replaceAllUsesWith(NewRetVal);
   }
@@ -263,7 +263,7 @@ GotoExpansion::cloneCallee(Function *Caller, Function *Callee) {
 
   // Build the return address.
   Info->RetAddr
-    = new AllocaInst(RetAddrTy, CalleeName + ".retaddr", EntryInsertPoint);
+    = new AllocaInst(RetAddrTy, CalleeName + ".gera", EntryInsertPoint);
   if (InitStacks)
     new StoreInst(Constant::getNullValue(RetAddrTy), Info->RetAddr,
                   EntryInsertPoint);
@@ -274,7 +274,7 @@ GotoExpansion::cloneCallee(Function *Caller, Function *Callee) {
     = BasicBlock::Create(*Context, CalleeName + ".unreachable", Caller);
   new UnreachableInst(*Context, UnreachableBB);
 
-  Twine SwitchValName = CalleeName + ".retswitch";
+  Twine SwitchValName = CalleeName + ".gerw";
   Value *SwitchVal = new LoadInst(Info->RetAddr, SwitchValName, Exit);
   SwitchInst::Create(SwitchVal, UnreachableBB, 0, Exit);
 
@@ -287,14 +287,14 @@ GotoExpansion::cloneCallee(Function *Caller, Function *Callee) {
   for (arg_iterator I = Callee->arg_begin(), E = Callee->arg_end(); I != E; ++I){
     Argument *Arg = I;
 
-    Twine ArgName = CalleeName + "." + Arg->getName() + ".inline.arg";
+    Twine ArgName = CalleeName + "." + Arg->getName() + ".geia";
     AllocaInst *ArgAlloca
       = new AllocaInst(Arg->getType(), ArgName, EntryInsertPoint);
     if (InitStacks)
       new StoreInst(Constant::getNullValue(Arg->getType()), ArgAlloca,
                     EntryInsertPoint);
     Info->Args.push_back(ArgAlloca);
-    Twine ArgLoadName = ArgName + ".load.for.call";
+    Twine ArgLoadName = ArgName + ".geal";
     LoadInst *L = new LoadInst(ArgAlloca, ArgLoadName, Entry);
     CloneVMap[Arg] = L;
     ArgLoads.push_back(L);
@@ -303,9 +303,7 @@ GotoExpansion::cloneCallee(Function *Caller, Function *Callee) {
   // Clone the caller into the callee.
   // TODO: Fix the line numbers.
   SmallVector<ReturnInst*, 16> Rets;
-  std::string S(".goto_expansion.");
-  S += std::string(CalleeName);
-  CloneFunctionInto(Caller, Callee, CloneVMap, true, Rets, S.c_str());
+  CloneFunctionInto(Caller, Callee, CloneVMap, true, Rets, ".ge");
 
   BasicBlock *CalleeEntry = cast<BasicBlock>(CloneVMap[&Callee->getEntryBlock()]);
   // Connect to the newly cloned function body.
@@ -316,7 +314,7 @@ GotoExpansion::cloneCallee(Function *Caller, Function *Callee) {
   AllocaInst *RetVal = 0;
   if (!RetTy->isVoidTy()) {
     Info->RetVal
-      = (RetVal = new AllocaInst(RetTy, CalleeName + ".retval",
+      = (RetVal = new AllocaInst(RetTy, CalleeName + ".gerv",
                                  EntryInsertPoint));
     if (InitStacks)
       new StoreInst(Constant::getNullValue(RetTy), RetVal, EntryInsertPoint);
