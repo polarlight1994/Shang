@@ -49,8 +49,14 @@ VASTImmediate::buildLiteral(uint64_t Value, unsigned bitwidth, bool isMinValue) 
 
 void VASTImmediate::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                        unsigned LB) const {
-  assert(UB == getBitWidth() && LB == 0 && "Cannot print bitslice of Expr!");
-  OS << getBitWidth() << "'h" << Int.toString(16, false);
+  APInt Operand = Int;
+  if (UB != getBitWidth() || LB != 0) {
+    assert(UB <= getBitWidth() && UB > LB  && "Bad bit range!");
+    if (UB != getBitWidth())  Operand = Operand.trunc(UB);
+    if (LB != 0)              Operand = Operand.lshr(LB);
+  }
+
+  OS << (UB - LB) << "'h" << Operand.toString(16, false);
 }
 
 void VASTImmediate::Profile(FoldingSetNodeID& ID) const {
