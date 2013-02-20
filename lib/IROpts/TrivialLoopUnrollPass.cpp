@@ -587,10 +587,17 @@ bool LoopMetrics::isUnrollAccaptable(unsigned Count, uint64_t UnrollThreshold,
   unsigned AddrWidth = MemBus->getAddrWidth();
   unsigned DataWidth = MemBus->getDataWidth();
 
-  uint64_t MUXCost = Beta * (MUX->getMuxCost(NumAddressFanIn, AddrWidth)
-                             - MUX->getMuxCost(Cost.NumAddrBusFanin, AddrWidth))
-                   + Beta * (MUX->getMuxCost(NumDataFanIn, DataWidth)
-                             - MUX->getMuxCost(Cost.NumDataBusFanin, DataWidth));
+  int64_t AddrFaninCost
+    = int64_t(MUX->getMuxCost(NumAddressFanIn, AddrWidth))
+      - int64_t(MUX->getMuxCost(Cost.NumAddrBusFanin, AddrWidth));
+  AddrFaninCost = std::max(0ll, AddrFaninCost);
+
+  int64_t DataFaninCost
+    = int64_t(MUX->getMuxCost(NumDataFanIn, DataWidth))
+      - int64_t(MUX->getMuxCost(Cost.NumDataBusFanin, DataWidth));
+  DataFaninCost = std::max(0ll, DataFaninCost);
+
+  uint64_t MUXCost = Beta * uint64_t(AddrFaninCost + DataFaninCost);
   uint64_t IncreasedCost = DataPathCost + MUXCost;
 
   DEBUG(dbgs() << *L << ":\n" << "Count: " << Count
@@ -602,7 +609,7 @@ bool LoopMetrics::isUnrollAccaptable(unsigned Count, uint64_t UnrollThreshold,
                << ", NumAddressFanIn: " << NumAddressFanIn
                << "\n");
   // Cost increment must be smaller than the threshold.
-  if (DataPathCost > UnrollThreshold) return false;
+  if (IncreasedCost > UnrollThreshold) return false;
 
   return IncreasedCost < Gama * StepsElimnated;
 }
