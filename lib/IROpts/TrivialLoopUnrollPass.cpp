@@ -23,7 +23,10 @@
 #include "llvm/Analysis/LoopIterator.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
+#include "llvm/Analysis/ScalarEvolutionExpander.h"
+#include "llvm/Analysis/Verifier.h"
 #include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/Transforms/Utils/UnrollLoop.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Support/CallSite.h"
@@ -34,9 +37,14 @@
 using namespace llvm;
 
 static cl::opt<unsigned>
-ThresholdFactor("vtm-unroll-threshold-factor",
+ThresholdFactor("shang-unroll-threshold-factor",
                 cl::desc("Factor to be multipied to the unroll threshold"),
                 cl::init(1));
+static cl::opt<unsigned>
+EpilogThreshold("shang-unroll-epilog-threshold",
+                cl::desc("Threshold to insert the epilog to ensure the tripcount"
+                         " is a mulitple of the unroll count"),
+                cl::init(128));
 
 namespace llvm {
 int getLoopDepDist(const SCEV *SSAddr, const SCEV *SDAddr, bool SrcBeforeDest,
@@ -73,6 +81,8 @@ public:
   TrivialLoopUnroll() : LoopPass(ID) {
     initializeTrivialLoopUnrollPass(*PassRegistry::getPassRegistry());
   }
+
+  bool tailUnroll(Loop *L, ScalarEvolution *SE, unsigned Count);
 
   bool runOnLoop(Loop *L, LPPassManager &LPM);
 
@@ -269,7 +279,7 @@ public:
   bool isUnrollAccaptable(unsigned Count, uint64_t UnrollThreshold,
                           uint64_t Alpha = 1, uint64_t Beta = 8,
                           uint64_t Gama = (2048 * 64)) const;
-
+  unsigned exposedMemoryCoalescing(unsigned Count) const;
   unsigned getNumParallelIteration() const { return NumParallelIt; }
 };
 }
@@ -549,6 +559,28 @@ bool LoopMetrics::initialize(LoopInfo *LI, AliasAnalysis *AA) {
   return true;
 }
 
+unsigned LoopMetrics::exposedMemoryCoalescing(unsigned Count) const {
+  unsigned OriginalAccesses = 0, UnrolledAccesses = 0;
+
+  // Iterate over the load/store to calculate the related cost and benefit.
+  typedef Inst2IntMap::const_iterator iterator;
+  for (iterator I = SaturatedCounts.begin(), E = SaturatedCounts.end();
+       I != E; ++I) {
+    const Instruction *Inst = I->first;
+    unsigned SaturedCount = I->second;
+
+    OriginalAccesses += Count;
+    if (isa<StoreInst>(Inst)) OriginalAccesses += Count;
+
+    // The unrolled instances can be fused.
+    UnrolledAccesses += Count / SaturedCount;
+    if (isa<StoreInst>(Inst)) UnrolledAccesses += Count / SaturedCount;
+  }
+
+  assert(OriginalAccesses >= UnrolledAccesses && "Bad calculation!");
+  return OriginalAccesses - UnrolledAccesses;
+}
+
 bool LoopMetrics::isUnrollAccaptable(unsigned Count, uint64_t UnrollThreshold,
                                      uint64_t Alpha, uint64_t Beta,
                                      uint64_t Gama) const {
@@ -637,6 +669,10 @@ bool TrivialLoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
   // Only unroll the deepest loops in the loop nest.
   if (!L->empty()) return false;
 
+  // Make sure the loop is in canonical form, and there is a single
+  // exit block only.
+  if (!L->isLoopSimplifyForm()) return false;
+
   LoopInfo *LI = &getAnalysis<LoopInfo>();
   ScalarEvolution *SE = &getAnalysis<ScalarEvolution>();
 
@@ -696,9 +732,6 @@ bool TrivialLoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
           MaxCount = MidCount - 1;
       }
 
-      // Reduce unroll count to be modulo of TripCount for partial unrolling
-      while (Count != 0 && TripCount % Count != 0)
-        --Count;
     }
 
     if (Count < 2) {
@@ -710,10 +743,146 @@ bool TrivialLoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
 
   //assert(TripCount % Count == 0 && "Bad unroll count!");
   //assert(Metrics.isUnrollAccaptable(Count, Threshold) && "Bad unroll count!");
+  if (TripCount % Count != 0) {
+    if (TripCount > (TripCount % Count) * EpilogThreshold
+        && Metrics.exposedMemoryCoalescing(Count)
+        && tailUnroll(L, SE, Count)) {
+      SE->forgetLoop(L);
+
+      TripCount = SE->getSmallConstantTripCount(L, LatchBlock);
+      TripMultiple = SE->getSmallConstantTripMultiple(L, LatchBlock);
+      assert(TripCount % Count == 0 && "InsertEpilog should ensure TripCount % Count!");
+    } else {
+      // Reduce unroll count to be modulo of TripCount for partial unrolling
+      while (Count != 0 && TripCount % Count != 0)
+        --Count;
+    }
+  }
+
+  if (Count < 2) {
+    DEBUG(dbgs() << "  could not unroll partially\n");
+    return false;
+  }
 
   // Unroll the loop.
   if (!UnrollLoop(L, Count, TripCount, false, TripMultiple, LI, &LPM))
     return false;
+
+#ifndef NDEBUG
+  verifyFunction(*LatchBlock->getParent());
+#endif
+
+  return true;
+}
+
+bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
+                                   unsigned Count) {
+  // Ensure there is a single exit block only.
+  if (L->getNumBlocks() > 1 || L->getUniqueExitBlock() == 0) return false;
+
+  // Check if we can hack the exiting condition.
+  BasicBlock *Latch = L->getLoopLatch();
+  assert(Latch && "Cannot get loop latch in 1 bb loop!");
+
+  BranchInst *Br = dyn_cast<BranchInst>(Latch->getTerminator());
+
+  // Do not mess up with the strange cases.
+  if (Br == 0 || Br->isUnconditional()) return false;
+  
+  ICmpInst *ICmp = dyn_cast<ICmpInst>(Br->getCondition());
+
+  // We can only handle the == comparision.
+  if (ICmp == 0 || ICmp->getPredicate() != CmpInst::ICMP_EQ) return false;
+
+  dbgs() << "insertEpilog - Get exit guard:\t" << *ICmp << '\n';
+
+  unsigned ConstIdx = 1;
+  Instruction *IndVar = dyn_cast<Instruction>(ICmp->getOperand(0));
+
+  if (IndVar == 0) {
+    IndVar = dyn_cast<Instruction>(ICmp->getOperand(1));
+    ConstIdx = 0;
+  }
+
+  if (IndVar == 0) return false;
+
+  dbgs() << "insertEpilog - Get IndVar:\t" << *IndVar << '\n';
+
+  Type *IndVarTy = IndVar->getType();
+  Loop *ParentLoop = L->getParentLoop();
+
+
+  while (SE->getSmallConstantTripCount(L, Latch) % Count) {
+    const SCEV *IndVarExit = SE->getSCEVAtScope(IndVar, ParentLoop);
+    assert(!isa<SCEVCouldNotCompute>(IndVarExit) && "Bad Exit value!");
+    dbgs() << "insertEpilog - Get IndValExit:\t" << *IndVarExit << '\n';
+
+    SCEVExpander Expander(*SE, "LoopEpilog");
+    const SCEV *ExitMinusOne
+      = SE->getAddExpr(IndVarExit, SE->getConstant(IndVarTy, -1));
+    Value *ExitVal = Expander.expandCodeFor(ExitMinusOne, IndVarTy, ICmp);
+
+    ICmp->getOperandUse(ConstIdx).set(ExitVal);
+
+    // Force the ScalarEvaluation to recompute the loop.
+    if (ParentLoop) SE->forgetLoop(ParentLoop);
+    SE->forgetLoop(L);
+
+    BasicBlock *ExitBlock = L->getExitBlock();
+    assert(ExitBlock && "Cannot get exit block for 1 BB loop and exit br!");
+    // Create the new block to duplicate the bodiy.
+    BasicBlock *NewBB = BasicBlock::Create(SE->getContext(), "unroll",
+                                           Latch->getParent(), ExitBlock);
+    Latch->getTerminator()->replaceUsesOfWith(ExitBlock, NewBB);
+    Instruction *NewInsertPt = BranchInst::Create(ExitBlock, NewBB);
+    if (ParentLoop)
+      ParentLoop->addBasicBlockToLoop(NewBB, getAnalysis<LoopInfo>().getBase());
+
+    // Build the map for the exit value.
+    ValueToValueMapTy VMap;
+    SmallVector<Instruction*, 8> Worklist;
+
+    typedef BasicBlock::iterator iterator;
+    // Clone the loop body but do not clone the terminator.
+    for (iterator I = Latch->begin(), E = Latch->getTerminator(); I != E; ++I) {
+      Instruction *Inst = I;
+      Value *NewVal = 0;
+  
+      if (PHINode *PN = dyn_cast<PHINode>(I))
+        // Use the value come from the backedge for the epilog.
+        NewVal = PN->DoPHITranslation(Latch, Latch);
+      else {
+        Instruction *NewInst = Inst->clone();
+        NewBB->getInstList().insert(NewInsertPt, NewInst);
+        NewVal = NewInst;
+        // Update the operands according to the value map.
+        RemapInstruction(NewInst, VMap, RF_IgnoreMissingEntries);
+      }
+
+      // Update the value map.
+      VMap[Inst] = NewVal;
+      Worklist.clear();
+
+      // Update the users outside the loop.
+      typedef Instruction::use_iterator use_iterator;
+      for (use_iterator UI = Inst->use_begin(), UE = Inst->use_end();
+           UI != UE; ++UI) {
+        Instruction *UseInst = cast<Instruction>(*UI);
+
+        if (UseInst->getParent() == Latch || UseInst->getParent() == NewBB)
+          continue;
+
+        Worklist.push_back(UseInst);
+      }
+
+      while (!Worklist.empty())
+        Worklist.pop_back_val()->replaceUsesOfWith(Inst, NewVal);
+    }
+  }
+
+  // DIRTY HACK: Rerun the dominator tree.
+  if (DominatorTree *DT = getAnalysisIfAvailable<DominatorTree>())
+    DT->runOnFunction(Latch->getParent());
 
   return true;
 }
