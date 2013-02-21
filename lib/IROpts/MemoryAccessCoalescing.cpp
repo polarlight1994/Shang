@@ -21,6 +21,7 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
+#include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -36,16 +37,16 @@ namespace {
 struct MemoryAccessCoalescing : public FunctionPass {
   static char ID;
   ScalarEvolution *SE;
-  AliasAnalysis *AA;
+  DependenceAnalysis *DA;
   DataLayout *TD;
 
-  MemoryAccessCoalescing() : FunctionPass(ID), SE(0), AA(0), TD(0) {
+  MemoryAccessCoalescing() : FunctionPass(ID), SE(0), DA(0), TD(0) {
     initializeMemoryAccessCoalescingPass(*PassRegistry::getPassRegistry());
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.addRequired<ScalarEvolution>();
-    AU.addRequired<AliasAnalysis>();
+    AU.addRequired<DependenceAnalysis>();
     AU.addRequired<DataLayout>();
     AU.setPreservesCFG();
   }
@@ -53,7 +54,7 @@ struct MemoryAccessCoalescing : public FunctionPass {
   bool runOnFunction(Function &F) {
     bool changed = false;
     SE = &getAnalysis<ScalarEvolution>();
-    AA = &getAnalysis<AliasAnalysis>();
+    DA = &getAnalysis<DependenceAnalysis>();
     TD = &getAnalysis<DataLayout>();
 
     DEBUG(dbgs() << "Run Memory Access Coalescer on " << F.getName() << '\n');
@@ -156,18 +157,6 @@ struct MemoryAccessCoalescing : public FunctionPass {
     return dyn_cast<SCEVConstant>(SE->getMinusSCEV(HigherSCEV, LowerSCEV));
   }
 
-  AliasAnalysis::Location getLocation(Instruction *I) {
-    if (LoadInst *L = dyn_cast<LoadInst>(I))
-      return AA->getLocation(L);
-
-    if (StoreInst *S = dyn_cast<StoreInst>(I))
-      return AA->getLocation(S);
-
-    llvm_unreachable("Unexpected instruction type!");
-    return AliasAnalysis::Location();
-
-  }
-
   int64_t getAddressDistantInt(Instruction *LowerInst, Instruction *HigherInst) {
     const SCEVConstant *DeltaSCEV = getAddressDistant(LowerInst, HigherInst);
     assert(DeltaSCEV && "Cannot calculate distance!");
@@ -197,7 +186,7 @@ char MemoryAccessCoalescing::ID = 0;
 INITIALIZE_PASS_BEGIN(MemoryAccessCoalescing,
                       "shang-mem-coalesce", "Memory Coalescing", false, false)
   INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
-  INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
+  INITIALIZE_PASS_DEPENDENCY(DependenceAnalysis)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
 INITIALIZE_PASS_END(MemoryAccessCoalescing,
                     "shang-mem-coalesce", "Memory Coalescing", false, false)
@@ -296,8 +285,9 @@ bool MemoryAccessCoalescing::hasMemDependency(Instruction *DstInst,
   if (!SrcMayWrite && ! DstMayWrite) return false;
 
   // Is DstInst depends on SrcInst?
-  // TODO: Provide the size of the accessed location.
-  return !AA->isNoAlias(getLocation(SrcInst), getLocation(DstInst));
+  Dependence *D = DA->depends(SrcInst, DstInst, true);
+  // Input dependencies are already ignored in the above code.
+  return D != 0 /*&& D->isInput()*/;
 }
 
 bool MemoryAccessCoalescing::trackUsesOfSrc(InstSetTy &UseSet, Instruction *Src,
