@@ -747,6 +747,7 @@ bool TrivialLoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
   //assert(TripCount % Count == 0 && "Bad unroll count!");
   //assert(Metrics.isUnrollAccaptable(Count, Threshold) && "Bad unroll count!");
   if (TripCount % Count != 0) {
+    // TODO: Estimate the cost of the tail unroll.
     if (TripCount > (TripCount % Count) * TailUnrollThreshold
         && Metrics.exposedMemoryCoalescing(Count)
         && tailUnroll(L, SE, Count)) {
@@ -799,7 +800,7 @@ bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
   // We can only handle the == comparision.
   if (ICmp == 0 || ICmp->getPredicate() != CmpInst::ICMP_EQ) return false;
 
-  dbgs() << "insertEpilog - Get exit guard:\t" << *ICmp << '\n';
+  DEBUG(dbgs() << "tailUnroll  - Get exit guard:\t" << *ICmp << '\n');
 
   unsigned ConstIdx = 1;
   Instruction *IndVar = dyn_cast<Instruction>(ICmp->getOperand(0));
@@ -811,16 +812,15 @@ bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
 
   if (IndVar == 0) return false;
 
-  dbgs() << "insertEpilog - Get IndVar:\t" << *IndVar << '\n';
+  DEBUG(dbgs() << "tailUnroll - Get IndVar:\t" << *IndVar << '\n');
 
   Type *IndVarTy = IndVar->getType();
   Loop *ParentLoop = L->getParentLoop();
 
-
   while (SE->getSmallConstantTripCount(L, Latch) % Count) {
     const SCEV *IndVarExit = SE->getSCEVAtScope(IndVar, ParentLoop);
     assert(!isa<SCEVCouldNotCompute>(IndVarExit) && "Bad Exit value!");
-    dbgs() << "insertEpilog - Get IndValExit:\t" << *IndVarExit << '\n';
+    DEBUG(dbgs() << "tailUnroll - Get IndValExit:\t" << *IndVarExit << '\n');
 
     SCEVExpander Expander(*SE, "LoopEpilog");
     const SCEV *ExitMinusOne
