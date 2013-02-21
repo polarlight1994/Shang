@@ -212,8 +212,6 @@ void SimpleBlockRAMAllocation::localizeGV(GlobalVariable *GV) {
 
   if (!Collector.canBeLocalized()) return;
 
-  static unsigned cnt = 0;
-
   if (!isa<ArrayType>(GV->getType()->getElementType()) && NoSingleElementBRAM) {
     for (unsigned i = 0, e = Collector.Uses.size(); i != e; ++i) {
       Instruction *I = dyn_cast<Instruction>(Collector.Uses[i]);
