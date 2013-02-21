@@ -25,6 +25,8 @@
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/ScalarEvolutionExpander.h"
 #include "llvm/Analysis/Verifier.h"
+#include "llvm/Analysis/InstructionSimplify.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/Transforms/Utils/UnrollLoop.h"
@@ -817,7 +819,14 @@ bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
   Type *IndVarTy = IndVar->getType();
   Loop *ParentLoop = L->getParentLoop();
 
+  // Build the map for the exit value.
+  ValueToValueMapTy VMap;
+  SmallVector<Instruction*, 8> Worklist, NewInsts;
+
   while (SE->getSmallConstantTripCount(L, Latch) % Count) {
+    VMap.clear();
+    Worklist.clear();
+
     const SCEV *IndVarExit = SE->getSCEVAtScope(IndVar, ParentLoop);
     assert(!isa<SCEVCouldNotCompute>(IndVarExit) && "Bad Exit value!");
     DEBUG(dbgs() << "tailUnroll - Get IndValExit:\t" << *IndVarExit << '\n');
@@ -836,7 +845,7 @@ bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
     BasicBlock *ExitBlock = L->getExitBlock();
     assert(ExitBlock && "Cannot get exit block for 1 BB loop and exit br!");
     // Create the new block to duplicate the bodiy.
-    BasicBlock *NewBB = BasicBlock::Create(SE->getContext(), "unroll",
+    BasicBlock *NewBB = BasicBlock::Create(SE->getContext(), "tail.unroll",
                                            Latch->getParent(), ExitBlock);
 
     Latch->getTerminator()->replaceUsesOfWith(ExitBlock, NewBB);
@@ -857,9 +866,7 @@ bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
     if (ParentLoop)
       ParentLoop->addBasicBlockToLoop(NewBB, getAnalysis<LoopInfo>().getBase());
 
-    // Build the map for the exit value.
-    ValueToValueMapTy VMap;
-    SmallVector<Instruction*, 8> Worklist;
+    assert(NewInsts.empty() && "NewInst not empty!");
 
     // Clone the loop body but do not clone the terminator.
     for (iterator I = Latch->begin(), E = Latch->getTerminator(); I != E; ++I) {
@@ -867,25 +874,35 @@ bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
       Value *NewVal = 0;
   
       if (PHINode *PN = dyn_cast<PHINode>(I)) {
-        // Create the PHINode to preserve LCSSA from, because the function
-        // UnrollLoop require LCSSA from.
-        PHINode *LCSSAPHI = PHINode::Create(PN->getType(), 1,
-                                            PN->getName() + ".lcssa",
-                                            NewInsertPt);
-        LCSSAPHI->addIncoming(PN->DoPHITranslation(Latch, Latch), Latch);
-        // Use the value come from the backedge for the epilog.
-        NewVal = LCSSAPHI;
+        Value *IncomingVal = PN->DoPHITranslation(Latch, Latch);
+        if (const SCEVConstant *C
+            = dyn_cast<SCEVConstant>(SE->getSCEVAtScope(IncomingVal, ParentLoop)))
+          NewVal = C->getValue();
+        else {
+          // Create the PHINode to preserve LCSSA from, because the function
+          // UnrollLoop require LCSSA from.
+          PHINode *LCSSAPHI = PHINode::Create(PN->getType(), 1,
+                                              PN->getName() + ".lcssa",
+                                              NewInsertPt);
+          // Never push the PHI to the NewInst vector for simplification,
+          // otherwise we will break the LCSSA from!
+          // NewInsts.push_back(LCSSAPHI);
+          LCSSAPHI->addIncoming(IncomingVal, Latch);
+          // Use the value come from the backedge for the epilog.
+          NewVal = LCSSAPHI;
+        }
       } else {
         Instruction *NewInst = Inst->clone();
         NewBB->getInstList().insert(NewInsertPt, NewInst);
         NewVal = NewInst;
+        NewInsts.push_back(NewInst);
         // Update the operands according to the value map.
         RemapInstruction(NewInst, VMap, RF_IgnoreMissingEntries);
       }
 
       // Update the value map.
       VMap[Inst] = NewVal;
-      Worklist.clear();
+      assert(Worklist.empty() && "Worklist should be empty!");
 
       // Update the users outside the loop.
       typedef Instruction::use_iterator use_iterator;
@@ -901,6 +918,21 @@ bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
 
       while (!Worklist.empty())
         Worklist.pop_back_val()->replaceUsesOfWith(Inst, NewVal);
+    }
+
+    // Simplify the new instructions.
+    while (!NewInsts.empty()) {
+      Instruction *Inst = NewInsts.pop_back_val();
+
+      if (isInstructionTriviallyDead(Inst)) {
+        Inst->eraseFromParent();
+        continue;
+      }
+
+      if (Value *V = SimplifyInstruction(Inst)) {
+        Inst->replaceAllUsesWith(V);
+        Inst->eraseFromParent();
+      }
     }
   }
 
