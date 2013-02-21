@@ -833,7 +833,21 @@ bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
     // Create the new block to duplicate the bodiy.
     BasicBlock *NewBB = BasicBlock::Create(SE->getContext(), "unroll",
                                            Latch->getParent(), ExitBlock);
+
     Latch->getTerminator()->replaceUsesOfWith(ExitBlock, NewBB);
+    // Do not forget to update the incoming value of the PHIs in the exit block!
+    typedef BasicBlock::iterator iterator;
+    for (iterator I = ExitBlock->begin(), E = ExitBlock->getFirstNonPHI();
+         I != E; ++I) {
+      PHINode *PN = cast<PHINode>(I);
+  
+      // Replace the incoming block of the PHI, be carefule with the PHI have
+      // multiple identical incoming block.
+      int Idx;
+      while((Idx = PN->getBasicBlockIndex(Latch)) != -1)
+        PN->setIncomingBlock(Idx, NewBB);
+    }
+
     Instruction *NewInsertPt = BranchInst::Create(ExitBlock, NewBB);
     if (ParentLoop)
       ParentLoop->addBasicBlockToLoop(NewBB, getAnalysis<LoopInfo>().getBase());
@@ -842,16 +856,21 @@ bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
     ValueToValueMapTy VMap;
     SmallVector<Instruction*, 8> Worklist;
 
-    typedef BasicBlock::iterator iterator;
     // Clone the loop body but do not clone the terminator.
     for (iterator I = Latch->begin(), E = Latch->getTerminator(); I != E; ++I) {
       Instruction *Inst = I;
       Value *NewVal = 0;
   
-      if (PHINode *PN = dyn_cast<PHINode>(I))
+      if (PHINode *PN = dyn_cast<PHINode>(I)) {
+        // Create the PHINode to preserve LCSSA from, because the function
+        // UnrollLoop require LCSSA from.
+        PHINode *LCSSAPHI = PHINode::Create(PN->getType(), 1,
+                                            PN->getName() + ".lcssa",
+                                            NewInsertPt);
+        LCSSAPHI->addIncoming(PN->DoPHITranslation(Latch, Latch), Latch);
         // Use the value come from the backedge for the epilog.
-        NewVal = PN->DoPHITranslation(Latch, Latch);
-      else {
+        NewVal = LCSSAPHI;
+      } else {
         Instruction *NewInst = Inst->clone();
         NewBB->getInstList().insert(NewInsertPt, NewInst);
         NewVal = NewInst;
@@ -880,9 +899,9 @@ bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
     }
   }
 
-  // DIRTY HACK: Rerun the dominator tree.
+  // DIRTY HACK: Recalculate the dominator tree.
   if (DominatorTree *DT = getAnalysisIfAvailable<DominatorTree>())
-    DT->runOnFunction(Latch->getParent());
+    DT->runOnFunction(*Latch->getParent());
 
   return true;
 }
