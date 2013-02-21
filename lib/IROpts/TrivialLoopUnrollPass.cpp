@@ -31,20 +31,23 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/CommandLine.h"
-#define DEBUG_TYPE "trivial-loop-unroll"
+#include "llvm/ADT/Statistic.h"
+#define DEBUG_TYPE "shang-loop-unroll"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+STATISTIC(NumUnrolled, "Number of loops unrolled");
+STATISTIC(NumTailUnrolled, "Number of loops tail unrolled");
 
 static cl::opt<unsigned>
 ThresholdFactor("shang-unroll-threshold-factor",
                 cl::desc("Factor to be multipied to the unroll threshold"),
                 cl::init(1));
 static cl::opt<unsigned>
-EpilogThreshold("shang-unroll-epilog-threshold",
-                cl::desc("Threshold to insert the epilog to ensure the tripcount"
-                         " is a mulitple of the unroll count"),
-                cl::init(128));
+TailUnrollThreshold("shang-unroll-epilog-threshold",
+                    cl::desc("Threshold to perform tail unroll to ensure"
+                             "  the tripcount is a mulitple of the unroll count"),
+                    cl::init(128));
 
 namespace llvm {
 int getLoopDepDist(const SCEV *SSAddr, const SCEV *SDAddr, bool SrcBeforeDest,
@@ -744,7 +747,7 @@ bool TrivialLoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
   //assert(TripCount % Count == 0 && "Bad unroll count!");
   //assert(Metrics.isUnrollAccaptable(Count, Threshold) && "Bad unroll count!");
   if (TripCount % Count != 0) {
-    if (TripCount > (TripCount % Count) * EpilogThreshold
+    if (TripCount > (TripCount % Count) * TailUnrollThreshold
         && Metrics.exposedMemoryCoalescing(Count)
         && tailUnroll(L, SE, Count)) {
       SE->forgetLoop(L);
@@ -771,6 +774,8 @@ bool TrivialLoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
 #ifndef NDEBUG
   verifyFunction(*LatchBlock->getParent());
 #endif
+
+  ++NumUnrolled;
 
   return true;
 }
@@ -902,6 +907,8 @@ bool TrivialLoopUnroll::tailUnroll(Loop *L, ScalarEvolution *SE,
   // DIRTY HACK: Recalculate the dominator tree.
   if (DominatorTree *DT = getAnalysisIfAvailable<DominatorTree>())
     DT->runOnFunction(*Latch->getParent());
+
+  ++NumTailUnrolled;
 
   return true;
 }
