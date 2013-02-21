@@ -6,6 +6,7 @@ add_llvm_library(ShangVAST
   VASTExprBuilder.cpp
   VASTExprOptAnd.cpp
   VASTExprOptCmp.cpp
+  VASTMemoryPort.cpp
   DatapathContainer.cpp
   MinimalDatapathContext.cpp
   IR2Datapath.cpp
