@@ -629,7 +629,7 @@ void VASTScheduling::buildMemoryDependencies(BasicBlock *BB) {
     // The load/store to single element block RAM will be lowered to register
     // access by the VASTModuleBuilder.
     if (!IR2SUMap.count(Inst) || IR2SUMap[Inst].front()->isLatch()) {
-      Inst->dump();
+      DEBUG(dbgs() << "Ignore " << *Inst << " in dependencies graph\n");
       continue;
     }
 

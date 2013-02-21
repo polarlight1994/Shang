@@ -66,7 +66,7 @@ bool LowerIntrinsic::runOnFunction(Function &F) {
     IntrinsicInst *I = Worklist.back();
     Worklist.pop_back();
 
-    RecursivelyDeleteTriviallyDeadInstructions(I);
+    I->eraseFromParent();
   }
 
   return true;
