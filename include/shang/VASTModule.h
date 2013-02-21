@@ -277,8 +277,6 @@ public:
 
   VASTSubModule *addSubmodule(const char *Name, unsigned Num);
 
-  VASTSeqCode *addSeqCode(const char *Name);
-
   VASTRegister *addRegister(const Twine &Name, unsigned BitWidth,
                             unsigned InitVal = 0,
                             VASTSeqValue::Type T = VASTSeqValue::Data,

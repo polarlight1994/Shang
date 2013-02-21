@@ -56,12 +56,13 @@ public:
     vastRegister,
     vastBlockRAM,
     vastSubmodule,
-    vastSeqCode,
+    vastMemoryBus,
 
     // Fine-grain control flow.
     vastSeqInst,
     vastSeqCtrlOp,
     vastSlotCtrl,
+    vastSeqCode,
 
     vastModule
   };

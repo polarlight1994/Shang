@@ -240,18 +240,11 @@ VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {
   return M;
 }
 
-VASTSeqCode *VASTModule::addSeqCode(const char *Name) {
-  VASTSeqCode *Code = new (getAllocator()) VASTSeqCode(Name);
-  SeqCode.push_back(Code);
-  return Code;
-}
-
 VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
                               const char *Attr, bool IsPinned) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   // Allocate the wire and the use.
-
 
   VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, Attr, IsPinned);
   Entry.second = Wire;
@@ -457,14 +450,6 @@ void VASTModule::printSubmodules(vlang_raw_ostream &OS) const {
 
     // Print the data selector of the register.
     S->print(OS, this);
-  }
-
-  typedef SeqCodeVector::const_iterator code_iterator;
-  for (code_iterator I = SeqCode.begin(), E = SeqCode.end(); I != E; ++I) {
-    VASTSeqCode *C = *I;
-
-    // Print the sequential code.
-    C->print(OS);
   }
 }
 
