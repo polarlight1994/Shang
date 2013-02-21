@@ -206,6 +206,7 @@ int main(int argc, char **argv) {
     PassManager HLSPasses;
     HLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
     HLSPasses.add(createShangTargetTransformInfoPass());
+    HLSPasses.add(createBasicAliasAnalysisPass());
     HLSPasses.add(createTypeBasedAliasAnalysisPass());
     // Name the instructions to make the LLVM IR easier for debugging.
     HLSPasses.add(createInstructionNamerPass());
@@ -243,6 +244,11 @@ int main(int argc, char **argv) {
     // Unroll the loop to expose more coalescing opportunities.
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
     HLSPasses.add(createTrivialLoopUnrollPass());
+    HLSPasses.add(createInstructionCombiningPass());
+    HLSPasses.add(createCFGSimplificationPass());
+    HLSPasses.add(createDeadInstEliminationPass());
+    HLSPasses.add(createSROAPass());
+    HLSPasses.add(createInstructionCombiningPass());
     HLSPasses.add(createMemoryAccessAlignerPass());
 
     // Run the SCEVAA pass to compute more accurate alias information.
