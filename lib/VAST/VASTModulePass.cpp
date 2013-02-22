@@ -212,8 +212,6 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name);
 
   VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand = true);
-
-  VASTWire *createWrapperWire(GlobalVariable *GV);
   //===--------------------------------------------------------------------===//
   void connectEntryState(BasicBlock *EntryBB);
 
@@ -362,7 +360,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
       return indexVASTExpr(GV, getOrCreateImmediate(0, getValueSizeInBits(GV)));
 
     // If the GV is assigned to the memory port 0, create a wrapper wire for it.
-    return indexVASTExpr(GV, createWrapperWire(GV));
+    return indexVASTExpr(GV, VM->createWrapperWire(GV, getValueSizeInBits(GV)));
   }
 
   if (GEPOperator *GEP = dyn_cast<GEPOperator>(V))
@@ -389,20 +387,6 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
   }
 
   llvm_unreachable("Unhandle value!");
-}
-
-VASTWire *VASTModuleBuilder::createWrapperWire(GlobalVariable *GV) {
-  unsigned SizeInBits = getValueSizeInBits(GV);
-
-  VASTWire *WrapperWire
-    = VM->addWire("gv_" + ShangMangle(GV->getName()) + "_wrapper", SizeInBits);
-
-  VASTLLVMValue *ValueOp
-    = new (VM->getAllocator()) VASTLLVMValue(GV, SizeInBits);
-
-  VM->assign(WrapperWire, ValueOp);
-
-  return WrapperWire;
 }
 
 //===----------------------------------------------------------------------===//

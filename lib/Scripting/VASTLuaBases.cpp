@@ -14,6 +14,7 @@
 #include "shang/VASTModule.h"
 
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "vast-lua-bases"
 #include "llvm/Support/Debug.h"
@@ -238,6 +239,25 @@ VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {
   VASTSubModule *M = new (getAllocator()) VASTSubModule(Name, Num);
   Submodules.push_back(M);
   return M;
+}
+
+VASTWire *VASTModule::createWrapperWire(const Twine &Name, unsigned SizeInBits,
+                                        VASTValPtr V) {
+  Twine WrapperName = Name + "_wrapper";
+  // Reuse the old wire if we had create one.
+  VASTWire *W = cast_or_null<VASTWire>(lookupSymbol(WrapperName));
+  if (W == 0) {
+    W = addWire(WrapperName, SizeInBits);
+    if (V) W->assign(V);
+  }
+
+  return W;
+}
+
+VASTWire *VASTModule::createWrapperWire(GlobalVariable *GV, unsigned SizeInBits){
+  std::string WrapperName = "gv_" + ShangMangle(GV->getName());
+  VASTLLVMValue *ValueOp = new (getAllocator()) VASTLLVMValue(GV, SizeInBits);
+  return createWrapperWire(WrapperName, SizeInBits, ValueOp);
 }
 
 VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
@@ -504,7 +524,6 @@ VASTNamedValue *VASTModule::getOrCreateSymbol(const Twine &Name,
   VASTNamedValue *&V = Entry.second;
   if (V == 0) {
     const char *S = Entry.getKeyData();
-    // If we are going to create a wrapper, apply the bitwidth to the wrapper.
     unsigned SymbolWidth = BitWidth;
     V = new (getAllocator()) VASTSymbol(S, SymbolWidth);
   }
@@ -530,13 +549,7 @@ VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
   if (Src == SeqVal) {
     unsigned BitWidth = Src->getBitWidth();
     Twine WrapperName = Twine(SeqVal->getName()) + "_Wrapper";
-    // Reuse the old wire if we had create one.
-    VASTWire *W = dyn_cast_or_null<VASTWire>(lookupSymbol(WrapperName));
-    if (W == 0) {
-      W = addWire(WrapperName, BitWidth);
-      W->assign(Src);
-    }
-    Src = W;
+    Src = createWrapperWire(WrapperName, BitWidth, Src);
     ++NumCycles;
   }
 

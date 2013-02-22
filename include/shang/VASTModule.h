@@ -267,6 +267,9 @@ public:
 
   VASTWire *addWire(const Twine &Name, unsigned BitWidth,
                     const char *Attr = "", bool IsPinned = false);
+  VASTWire *createWrapperWire(const Twine &Name, unsigned SizeInBits,
+                              VASTValPtr V = VASTValPtr());
+  VASTWire *createWrapperWire(GlobalVariable *GV, unsigned SizeInBits);
 
   reg_iterator reg_begin() { return Registers.begin(); }
   reg_iterator reg_end() { return Registers.end(); }

@@ -379,13 +379,7 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
     if (Src == Dst) {
       unsigned BitWidth = Src->getBitWidth();
       Twine WrapperName = Twine(Dst->getName()) + "_Wrapper";
-      // Reuse the old wire if we had create one.
-      VASTWire *W = dyn_cast_or_null<VASTWire>(VM.lookupSymbol(WrapperName));
-      if (W == 0) {
-        W = VM.addWire(WrapperName, BitWidth);
-        W->assign(Src);
-      }
-      Src = W;
+      Src = VM.createWrapperWire(WrapperName, BitWidth, Src);
     }
 
     NewInst->addSrc(Src, i, i < Op->getNumDefs(), Dst);
