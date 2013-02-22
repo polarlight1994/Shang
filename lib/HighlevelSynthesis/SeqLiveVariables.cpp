@@ -76,6 +76,7 @@ void SeqLiveVariables::VarInfo::verify() const {
 }
 
 char SeqLiveVariables::ID = 0;
+char &llvm::SeqLiveVariablesID = SeqLiveVariables::ID;
 
 INITIALIZE_PASS(SeqLiveVariables, "SeqLiveVariables", "SeqLiveVariables", false,
                 true)

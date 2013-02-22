@@ -28,6 +28,7 @@ template<typename T, typename AllocatorTy> class StringMap;
 extern char &BasicBlockTopOrderID;
 extern char &ControlLogicSynthesisID;
 extern char &DatapathNamerID;
+extern char &SeqLiveVariablesID;
 
 FunctionPass *createDesignMetricsPass();
 
