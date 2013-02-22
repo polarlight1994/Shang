@@ -11,10 +11,10 @@
 // boalean expressions in the VerilogAST to LUTs with ABC logic synthesis.
 //
 //===----------------------------------------------------------------------===//
-#include "MinimalDatapathContext.h"
 
 #include "shang/VASTModule.h"
 #include "shang/VASTModulePass.h"
+#include "shang/VASTExprBuilder.h"
 #include "shang/Utilities.h"
 #include "shang/FUInfo.h"
 #include "shang/Passes.h"
@@ -72,9 +72,9 @@ struct LogicNetwork {
 
   Abc_Ntk_t *Ntk;
   VASTModule &VM;
-  DatapathBuilder &Builder;
+  VASTExprBuilder &Builder;
 
-  LogicNetwork(VASTModule &VM, DatapathBuilder &Builder);
+  LogicNetwork(VASTModule &VM, VASTExprBuilder &Builder);
 
   ~LogicNetwork() {
     Abc_NtkDelete(Ntk);
@@ -385,7 +385,7 @@ VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
 }
 
 static VASTValPtr ExpandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
-                            unsigned Bitwidth, DatapathBuilder &Builder) {
+                            unsigned Bitwidth, VASTExprBuilder &Builder) {
   unsigned NInput = Ops.size();
   const char *p = sop;
   SmallVector<VASTValPtr, 8> ProductOps, SumOps;
@@ -568,7 +568,7 @@ void LogicNetwork::buildLUTDatapath() {
 
 static ManagedStatic<ABCContext> GlobalContext;
 
-LogicNetwork::LogicNetwork(VASTModule &VM, DatapathBuilder &Builder)
+LogicNetwork::LogicNetwork(VASTModule &VM, VASTExprBuilder &Builder)
   : Context(*GlobalContext), VM(VM), Builder(Builder) {
   Ntk = Abc_NtkAlloc(ABC_NTK_STRASH, ABC_FUNC_AIG, 1);
   Ntk->pName = Extra_UtilStrsav(VM.getName().c_str());
@@ -576,10 +576,8 @@ LogicNetwork::LogicNetwork(VASTModule &VM, DatapathBuilder &Builder)
 
 namespace {
 struct LUTMapping : public VASTModulePass {
-  DatapathBuilder *Builder;
-
   static char ID;
-  LUTMapping() : VASTModulePass(ID), Builder(0) {
+  LUTMapping() : VASTModulePass(ID) {
     initializeLUTMappingPass(*PassRegistry::getPassRegistry());
   }
 
@@ -594,7 +592,7 @@ static unsigned GetSameWidth(VASTValPtr LHS, VASTValPtr RHS) {
   return BitWidth;
 }
 
-static bool BreakDownNAryExpr(VASTExpr *Expr, DatapathBuilder &Builder) {
+static bool BreakDownNAryExpr(VASTExpr *Expr, VASTExprBuilder &Builder) {
   VASTExpr::Opcode Opcode = Expr->getOpcode();
 
   if (Opcode != VASTExpr::dpAnd) return false;
@@ -637,7 +635,7 @@ static bool BreakDownNAryExpr(VASTExpr *Expr, DatapathBuilder &Builder) {
   return true;
 }
 
-static void BreakNAryExpr(DatapathContainer &DP, DatapathBuilder &Builder) {
+static void BreakNAryExpr(DatapathContainer &DP, VASTExprBuilder &Builder) {
   std::vector<VASTExpr*> Worklist;
 
   typedef DatapathContainer::expr_iterator iterator;
@@ -652,7 +650,7 @@ static void BreakNAryExpr(DatapathContainer &DP, DatapathBuilder &Builder) {
   }
 }
 
-static void ExpandSOP(DatapathContainer &DP, DatapathBuilder &Builder) {
+static void ExpandSOP(DatapathContainer &DP, VASTExprBuilder &Builder) {
   bool changed = true;
 
   while (changed) {
@@ -686,16 +684,16 @@ static void ExpandSOP(DatapathContainer &DP, DatapathBuilder &Builder) {
 bool LUTMapping::runOnVASTModule(VASTModule &VM) {
   DatapathContainer &DP = VM;
 
-  MinimalDatapathContext Context(DP, getAnalysisIfAvailable<DataLayout>());
-  Builder = new DatapathBuilder(Context);
+  MinimalExprBuilderContext Context(DP);
+  VASTExprBuilder Builder(Context);
 
-  ExpandSOP(DP, *Builder);
-  BreakNAryExpr(DP, *Builder);
+  ExpandSOP(DP, Builder);
+  BreakNAryExpr(DP, Builder);
 
   // DIRTY HACK: Force release the dead expressions.
   VM.gc();
 
-  LogicNetwork Ntk(VM, *Builder);
+  LogicNetwork Ntk(VM, Builder);
 
   if (!Ntk.buildAIG(DP)) return true;
 
@@ -709,7 +707,6 @@ bool LUTMapping::runOnVASTModule(VASTModule &VM) {
 
   Ntk.buildLUTDatapath();
 
-  delete Builder;
   return true;
 }
 
