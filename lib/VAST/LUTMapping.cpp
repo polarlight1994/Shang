@@ -546,13 +546,11 @@ void LogicNetwork::buildLUTDatapath() {
     Abc_Obj_t *FI = Abc_ObjFanin0(Obj);
     // The Fanin of the PO maybe visited.
     if (isNodeVisited(FI)) continue;
-
-    VASTValPtr &OldVal = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))];
-
+    unsigned TreeWidth = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))]->getBitWidth();
     // Rewrite the LUT tree rooted FI. Please note that the whole LUT Tree should
     // have the the same bitwidth. This means we can pass the bitwidth to the
     // LUT tree building function.
-    buildLUTTree(FI, OldVal->getBitWidth());
+    buildLUTTree(FI, TreeWidth);
 
     AbcObjMapTy::const_iterator at = RewriteMap.find(Abc_ObjRegular(FI));
     assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
@@ -560,6 +558,7 @@ void LogicNetwork::buildLUTDatapath() {
     if (Abc_ObjIsComplement(FI)) NewVal = NewVal.invert();
 
     // Update the mapping if the mapped value changed.
+    VASTValPtr &OldVal = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))];
     if (OldVal != NewVal) {
       Builder.replaceAllUseWith(OldVal, NewVal);
       OldVal = NewVal;
