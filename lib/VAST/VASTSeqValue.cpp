@@ -119,7 +119,8 @@ void VASTSeqValue::eraseUse(VASTSeqUse U) {
   Assigns.erase(at);
 }
 
-void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
+void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth,
+                                 bool PrintEnable) const {
   typedef std::vector<const VASTSeqOp*> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator it;
@@ -135,7 +136,8 @@ void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
     OS << "reg " << VASTValue::printBitRange(Bitwidth, 0, false)
        << ' ' << getName() << "_selector_wire;\n";
 
-  OS << "reg " << ' ' << getName() << "_selector_enable = 0;\n\n";
+  if (PrintEnable)
+    OS << "reg " << ' ' << getName() << "_selector_enable = 0;\n\n";
 
   // Print the mux logic.
   OS << "always @(*)begin  // begin mux logic\n";
@@ -157,7 +159,7 @@ void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
       OS.indent(6) << getName() << "_selector_wire = " << I->first << ";\n";
 
     // Print the enable.
-    OS.indent(6) << getName() << "_selector_enable = 1'b1;\n";
+    if (PrintEnable) OS.indent(6) << getName() << "_selector_enable = 1'b1;\n";
     OS.indent(4) << "end\n";
   }
 
@@ -167,7 +169,7 @@ void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth) const {
   if (getValType() != VASTSeqValue::Enable)
     OS.indent(6) << getName() << "_selector_wire = " << Bitwidth << "'bx;\n";
 
-  OS.indent(6) << getName() << "_selector_enable = 1'b0;\n";
+  if (PrintEnable) OS.indent(6) << getName() << "_selector_enable = 1'b0;\n";
   OS.indent(4) << "end\n";
   OS.indent(2) << "endcase\nend  // end mux logic\n\n";
 }

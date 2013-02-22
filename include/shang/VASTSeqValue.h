@@ -98,9 +98,10 @@ public:
   void verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
                        const VASTModule *Mod) const;
   bool verify() const;
-  void printSelector(raw_ostream &OS, unsigned Bitwidth) const;
-  void printSelector(raw_ostream &OS) const {
-    printSelector(OS, getBitWidth());
+  void printSelector(raw_ostream &OS, unsigned Bitwidth,
+                     bool PrintEnable = true) const;
+  void printSelector(raw_ostream &OS, bool PrintEnable = true) const {
+    printSelector(OS, getBitWidth(), PrintEnable);
   }
 
   void dropUses() {
