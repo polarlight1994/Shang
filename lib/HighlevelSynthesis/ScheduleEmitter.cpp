@@ -32,7 +32,7 @@ STATISTIC(NumRejectedRetiming,
           "Number of Reject Retiming because the predicates are not compatible");
 STATISTIC(NumFalsePathSkip,
           "Number of False Paths skipped during the CFG folding");
-STATISTIC(NumSlots, "Number of States created in the State-Transition Graph");
+STATISTIC(NumSlots, "Number of States created in the State-transition Graph");
 
 namespace {
 /// VASTCFGPred - Represent the predicate by the path in the CFG.
