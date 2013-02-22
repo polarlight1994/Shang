@@ -121,7 +121,7 @@ struct LogicNetwork {
     return RewriteMap.count(Obj) || Abc_ObjIsPi(Abc_ObjFanin0(Obj));
   }
 
-  void buildLUTExpr(Abc_Obj_t *Obj, unsigned BitWidth);
+  VASTValPtr buildLUTExpr(Abc_Obj_t *Obj, unsigned BitWidth);
   void buildLUTTree(Abc_Obj_t *Root, unsigned BitWidth);
   void buildLUTDatapath();
 
@@ -433,9 +433,8 @@ static VASTValPtr ExpandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
   return SOP;
 }
 
-void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
+VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
   SmallVector<VASTValPtr, 4> Ops;
-  Abc_Obj_t *FO = Abc_ObjFanout0(Obj);
 
   assert(Abc_ObjIsNode(Obj) && "Unexpected Obj Type!");
 
@@ -452,48 +451,29 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
 
   char *sop = (char*)Abc_ObjData(Obj);
 
-  if (Abc_SopIsConst0(sop)) {
-    VASTValPtr V = Builder.getImmediate(APInt::getNullValue(Bitwidth));
-    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-    assert(Inserted && "The node is visited?");
-    return;
-  }
+  if (Abc_SopIsConst0(sop))
+    return Builder.getImmediate(APInt::getNullValue(Bitwidth));
 
-  if (Abc_SopIsConst1(sop)) {
-    VASTValPtr V = Builder.getImmediate(APInt::getAllOnesValue(Bitwidth));
-    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-    assert(Inserted && "The node is visited?");
-    return;
-  }
+  if (Abc_SopIsConst1(sop))
+    return Builder.getImmediate(APInt::getAllOnesValue(Bitwidth));
 
   assert(!Ops.empty() && "We got a node without fanin?");
 
-  if (ExpandLUT) {
+  if (ExpandLUT)
     // Expand the SOP back to SOP if user ask to.
-    VASTValPtr V = ExpandSOP(sop, Ops, Bitwidth, Builder);
-
-    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-    assert(Inserted && "The node is visited?");
-    return;
-  }
+    return ExpandSOP(sop, Ops, Bitwidth, Builder);
 
   // Do not need to build the LUT for a simple invert.
   if (Abc_SopIsInv(sop)) {
     assert(Ops.size() == 1 && "Bad operand size for invert!");
-    VASTValPtr V = Builder.buildNotExpr(Ops[0]);
-    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-    assert(Inserted && "The node is visited?");
-    return;
+    return Builder.buildNotExpr(Ops[0]);
   }
 
   // Do not need to build the LUT for a simple buffer.
   if (Abc_SopIsBuf(sop)) {
-    assert(Ops.size() == 1 && "Bad operand size for invert!");
-    VASTValPtr V = Ops[0];
-    bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-    assert(Inserted && "The node is visited?");
     ++NumBufferBuilt;
-    return;
+    assert(Ops.size() == 1 && "Bad operand size for invert!");
+    return Ops[0];
   }
 
   // Do not need to build the LUT for a simple and.
@@ -518,11 +498,8 @@ void LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
   if (Abc_SopIsComplement(sop)) SOP = SOP.invert();
   Ops.push_back(SOP);
 
-  VASTValPtr V = Builder.buildExpr(VASTExpr::dpLUT, Ops, Bitwidth);
   ++NumLUTBulit;
-
-  bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-  assert(Inserted && "The node is visited?");
+  return Builder.buildExpr(VASTExpr::dpLUT, Ops, Bitwidth);
 }
 
 void LogicNetwork::buildLUTTree(Abc_Obj_t *Root, unsigned BitWidth ) {
@@ -540,8 +517,12 @@ void LogicNetwork::buildLUTTree(Abc_Obj_t *Root, unsigned BitWidth ) {
       DEBUG(dbgs().indent(VisitStack.size() * 2) << "Visiting "
             << Abc_ObjName(Abc_ObjRegular(CurNode)) << '\n');
 
+      Abc_Obj_t *FO = Abc_ObjFanout0(CurNode);
       // All fanin visited, visit the current node.
-      buildLUTExpr(CurNode, BitWidth);
+      VASTValPtr V = buildLUTExpr(CurNode, BitWidth);
+      bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
+      assert(Inserted && "The node is visited?");
+
       continue;
     }
 
