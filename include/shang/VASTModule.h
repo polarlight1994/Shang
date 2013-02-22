@@ -35,6 +35,7 @@ class VASTSeqCode;
 class VASTSeqInst;
 class DatapathContainer;
 class VASTExprBuilder;
+class VASTMemoryBus;
 class vlang_raw_ostream;
 
 class VASTPort : public VASTNode {
@@ -88,6 +89,19 @@ public:
   typedef ilist<VASTSlot> SlotVecTy;
   typedef SlotVecTy::iterator slot_iterator;
   typedef SlotVecTy::const_iterator const_slot_iterator;
+
+  enum PortTypes {
+    Clk = 0,
+    RST,
+    Start,
+    SpecialInPortEnd,
+    Finish = SpecialInPortEnd,
+    SpecialOutPortEnd,
+    NumSpecialPort = SpecialOutPortEnd,
+    ArgPort, // Ports for function arguments.
+    Others,   // Likely ports for function unit.
+    RetPort // Port for function return value.
+  };
 private:
   DatapathContainer *Datapath;
   WireVector Wires;
@@ -115,21 +129,11 @@ private:
 
   unsigned NumArgPorts, RetPortIdx;
 
-  VASTPort *addPort(const Twine &Name, unsigned BitWidth, bool isReg,
-                    bool isInput, VASTSeqValue::Type T);
+  BumpPtrAllocator &getAllocator();
+
+  VASTPort *createPort(const Twine &Name, unsigned BitWidth, bool isReg,
+                       bool isInput, VASTSeqValue::Type T);
 public:
-  enum PortTypes {
-    Clk = 0,
-    RST,
-    Start,
-    SpecialInPortEnd,
-    Finish = SpecialInPortEnd,
-    SpecialOutPortEnd,
-    NumSpecialPort = SpecialOutPortEnd,
-    ArgPort, // Ports for function arguments.
-    Others,   // Likely ports for function unit.
-    RetPort // Port for function return value.
-  };
 
   VASTModule(Function &F);
 
@@ -187,9 +191,9 @@ public:
   operator Function &() { return F; }
   DatapathContainer *operator->() const { return Datapath; }
 
-  BumpPtrAllocator &getAllocator();
 
   // Allow user to add ports.
+  VASTPort *createPort(VASTSeqValue *SeqVal, bool IsInput, PortTypes T = Others);
   VASTPort *addInputPort(const Twine &Name, unsigned BitWidth,
                          PortTypes T = Others);
 
@@ -326,10 +330,6 @@ public:
   static inline bool classof(const VASTModule *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastModule;
-  }
-
-  static const std::string GetMemBusEnableName(unsigned FUNum) {
-    return VFUMemBus::getEnableName(FUNum) + "_r";
   }
 
   static const std::string GetFinPortName() {

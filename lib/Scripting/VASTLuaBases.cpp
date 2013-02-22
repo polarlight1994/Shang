@@ -10,7 +10,7 @@
 // This file implement the classes that need to be bound.
 //
 //===----------------------------------------------------------------------===//
-#include "shang/VASTSubModules.h"
+#include "shang/VASTMemoryPort.h"
 #include "shang/VASTModule.h"
 
 #include "llvm/IR/Function.h"
@@ -635,7 +635,7 @@ void VASTModule::print(raw_ostream &OS) const {
   }
 }
 
-VASTPort *VASTModule::addPort(const Twine &Name, unsigned BitWidth,
+VASTPort *VASTModule::createPort(const Twine &Name, unsigned BitWidth,
                               bool isReg, bool isInput, VASTSeqValue::Type T) {
   VASTNamedValue *V;
   if (isInput || isReg)
@@ -648,9 +648,18 @@ VASTPort *VASTModule::addPort(const Twine &Name, unsigned BitWidth,
   return Port;
 }
 
+VASTPort *VASTModule::createPort(VASTSeqValue *SeqVal, bool IsInput, PortTypes T)
+{
+  VASTPort *Port = new (getAllocator()) VASTPort(SeqVal, IsInput);
+  assert(T == VASTModule::Others && "The author is too lazy to implement this!");
+  Ports.push_back(Port);
+
+  return Port;
+}
+
 VASTPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
                                    PortTypes T /*= Others*/) {
-  VASTPort *Port = addPort(Name, BitWidth, false, true, VASTSeqValue::IO);
+  VASTPort *Port = createPort(Name, BitWidth, false, true, VASTSeqValue::IO);
 
   if (T < SpecialInPortEnd) {
     assert(Ports[T] == 0 && "Special port exist!");
@@ -673,7 +682,7 @@ VASTPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
 VASTPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
                                     PortTypes T /*= Others*/,
                                     bool isReg /*= true*/) {
-  VASTPort *Port = addPort(Name, BitWidth, isReg, false,
+  VASTPort *Port = createPort(Name, BitWidth, isReg, false,
                            T == VASTModule::Finish ? VASTSeqValue::Enable
                                                    : VASTSeqValue::IO);
 
