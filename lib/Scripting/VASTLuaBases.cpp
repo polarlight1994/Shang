@@ -225,6 +225,15 @@ VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
   return V;
 }
 
+VASTMemoryBus *VASTModule::createDefaultMemBus() {
+  VFUMemBus *Desc = getFUDesc<VFUMemBus>();
+  VASTMemoryBus *Bus = getAllocator().Allocate<VASTMemoryBus>();
+  new (Bus) VASTMemoryBus(0, Desc->getAddrWidth(), Desc->getDataWidth());
+  Bus->addPorts(this);
+  Submodules.push_back(Bus);
+  return Bus;
+}
+
 VASTBlockRAM *VASTModule::addBlockRAM(unsigned BRamNum, unsigned Bitwidth,
                                       unsigned Size, const GlobalVariable *Init){
   VASTBlockRAM *RAM

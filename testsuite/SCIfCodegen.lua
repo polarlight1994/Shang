@@ -90,19 +90,18 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
   public:
     sc_in_clk clk;
     sc_signal<bool> fin;
-    sc_signal<bool> mem0en;
-    sc_signal<uint32_t> mem0cmd;
-    sc_signal<uint32_t> mem0be;
+    sc_signal<bool> mem0ren;
+    sc_signal<bool> mem0wen;
+    sc_signal<uint32_t> mem0rbe;
+    sc_signal<uint32_t> mem0wbe;
     $(getRetPort(FuncInfo.ReturnSize));
-    sc_signal<uint$(FUs.MemoryBus.AddressWidth)_t> mem0addr;
-    sc_signal<uint64_t> mem0out;
+    sc_signal<uint$(FUs.MemoryBus.AddressWidth)_t> mem0raddr;
+    sc_signal<uint$(FUs.MemoryBus.AddressWidth)_t> mem0waddr;
+    sc_signal<uint64_t> mem0rdata;
+    sc_signal<uint64_t> mem0wdata;
     sc_signal<bool> rstN;
     sc_signal<bool> start;
-    sc_signal<bool> mem0rdy;
 
-    sc_signal<bool> mem0waitrequest;
-
-    sc_signal<uint64_t>mem0in;
 #for i,v in ipairs(FuncInfo.Args) do
     sc_signal<$(getBitWidth(v.Size))>$(v.Name);
 #end
@@ -128,22 +127,20 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
     }
 
     //Memory bus function
-    unsigned char brige_byte_en_pipe, brige_read_en_pipe, brige_read_ready, brige_write_en_pipe;
-    long long brige_addr_pipe, brige_data_out_pipe, brige_data_in_pipe;
+    bool brige_read_en_pipe, brige_read_ready, brige_write_en_pipe;
+    uint8_t brige_read_byte_en_pipe, brige_write_byte_en_pipe;
+    uint64_t brige_raddr_pipe, brige_waddr_pipe, brige_read_data_pipe, brige_write_data_pipe;
 
     // Stage 1, latch the signals in to the brige.
     void brige_pipe_1() {
       while (true){
-        brige_byte_en_pipe = mem0be.read();
-        brige_read_en_pipe = mem0en.read() && !mem0cmd.read();
-        brige_write_en_pipe = mem0en.read() && mem0cmd.read();
-        if (mem0en.read()) {
-          brige_addr_pipe = mem0addr.read();
-          brige_data_in_pipe = mem0out.read();
-        } else {
-          brige_addr_pipe = 0;
-          brige_data_in_pipe = 0x0123456789abcdef;
-        }
+        brige_read_byte_en_pipe = mem0rbe.read();
+        brige_write_byte_en_pipe = mem0wbe.read();
+        brige_read_en_pipe = mem0ren.read();
+        brige_write_en_pipe = mem0wen.read();
+        brige_raddr_pipe = mem0raddr.read();;
+        brige_waddr_pipe = mem0waddr.read();
+        brige_write_data_pipe = mem0wdata.read();
 
         wait();
       }
@@ -154,25 +151,25 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
       unsigned char addrmask = 0;
       while (true){
         if (brige_read_en_pipe) {
-          switch (brige_byte_en_pipe){
-          case 1:  (brige_data_out_pipe) = *((unsigned char *)(brige_addr_pipe));  addrmask = 0; break;
-          case 3:  (brige_data_out_pipe) = *((unsigned short *)(brige_addr_pipe)); addrmask = 1; break;
-          case 15: (brige_data_out_pipe) = *((unsigned int *)(brige_addr_pipe));   addrmask = 3; break;
-          case 255: (brige_data_out_pipe)= *((unsigned long long *)(brige_addr_pipe)); addrmask = 7; break;
+          switch (brige_read_byte_en_pipe){
+          case 1:  (brige_read_data_pipe) = *((uint8_t*)(brige_raddr_pipe));  addrmask = 0; break;
+          case 3:  (brige_read_data_pipe) = *((uint16_t*)(brige_raddr_pipe)); addrmask = 1; break;
+          case 15: (brige_read_data_pipe) = *((uint32_t*)(brige_raddr_pipe));   addrmask = 3; break;
+          case 255: (brige_read_data_pipe)= *((uint64_t*)(brige_raddr_pipe)); addrmask = 7; break;
           default: assert(0 && "Unsupported size!"); break;
           }
         } else {
-          brige_data_out_pipe = 0x0123456789abcdef;
+          brige_read_data_pipe = 0x0123456789abcdef;
         }
 
         brige_read_ready = brige_read_en_pipe;
 
         if(brige_write_en_pipe) { // Write memory
-          switch (brige_byte_en_pipe){
-          case 1:  *((unsigned char *)(brige_addr_pipe)) = ((unsigned char ) (brige_data_in_pipe));   addrmask = 0; break;
-          case 3:  *((unsigned short *)(brige_addr_pipe)) = ((unsigned short ) (brige_data_in_pipe)); addrmask = 1; break;
-          case 15: *((unsigned int *)(brige_addr_pipe)) = ((unsigned int ) (brige_data_in_pipe));     addrmask = 3; break;
-          case 255: *((unsigned long long *)(brige_addr_pipe)) = ((unsigned long long ) (brige_data_in_pipe)); addrmask = 7; break;
+          switch (brige_write_byte_en_pipe){
+          case 1:  *((unsigned char *)(brige_waddr_pipe)) = ((uint8_t) (brige_write_data_pipe));   addrmask = 0; break;
+          case 3:  *((uint16_t*)(brige_waddr_pipe)) = ((uint16_t) (brige_write_data_pipe)); addrmask = 1; break;
+          case 15: *((uint32_t*)(brige_waddr_pipe)) = ((uint32_t) (brige_write_data_pipe));     addrmask = 3; break;
+          case 255: *((uint64_t*)(brige_waddr_pipe)) = ((uint64_t) (brige_write_data_pipe)); addrmask = 7; break;
           default: assert(0 && "Unsupported size!"); break;
           }
         }
@@ -184,8 +181,7 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
     // Stage 3, output the signal.
     void brige_pipe_3() {
       while (true){
-        mem0in = brige_data_out_pipe;
-        mem0rdy = brige_read_ready ? 1 : 0;
+        mem0rdata = brige_read_data_pipe;
         wait();
       }
     }
@@ -209,13 +205,14 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
 #end
         DUT.start(start);
         DUT.rstN(rstN);
-        DUT.mem0en(mem0en);
-        DUT.mem0cmd(mem0cmd);
-        DUT.mem0rdy(mem0rdy);
-        DUT.mem0in(mem0in);
-        DUT.mem0out(mem0out);
-        DUT.mem0be(mem0be);
-        DUT.mem0addr(mem0addr);
+        DUT.mem0ren(mem0ren);
+        DUT.mem0wen(mem0wen);
+        DUT.mem0rbe(mem0rbe);
+        DUT.mem0wbe(mem0wbe);
+        DUT.mem0rdata(mem0rdata);
+        DUT.mem0wdata(mem0wdata);
+        DUT.mem0raddr(mem0raddr);
+        DUT.mem0waddr(mem0waddr);
         SC_CTHREAD(sw_main_entry,clk.pos());
         SC_CTHREAD(brige_pipe_1,clk.pos());
         SC_CTHREAD(brige_pipe_2,clk.pos());

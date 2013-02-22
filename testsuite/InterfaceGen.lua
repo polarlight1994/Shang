@@ -33,13 +33,15 @@ module DUT_TOP(
 );
 
 wire  [31:0]         return_value;
-wire                 mem0en;
-wire  [3:0]          mem0cmd;
-wire  [31:0]         mem0addr;
+wire                 mem0ren;
+wire                 mem0wen;
+wire  [7:0]          mem0rbe;
+wire  [7:0]          mem0wbe;
+wire  [31:0]         mem0raddr;
+wire  [31:0]         mem0waddr;
+wire  [63:0]         mem0rdata;
+wire  [63:0]         mem0wdata;
 wire                 mem0rdy;
-wire  [7:0]          mem0be;
-wire  [63:0]         mem0in;
-wire  [63:0]         mem0out;
 wire                 start_N =~start;
 
 // The module successfully complete its execution if return_value is 0.
@@ -51,25 +53,28 @@ $(RTLModuleName) $(RTLModuleName)_inst(
     .start(start_N),
     .fin(fin),
     .return_value(return_value),
-    .mem0en(mem0en),
-    .mem0cmd(mem0cmd),
-    .mem0addr(mem0addr),
-    .mem0in(mem0in),
-    .mem0out(mem0out),
-    .mem0be(mem0be),
-    .mem0rdy(mem0rdy)
+    .mem0ren(mem0ren),
+    .mem0wen(mem0wen),
+    .mem0rbe(mem0rbe),
+    .mem0wbe(mem0wbe),
+    .mem0raddr(mem0raddr),
+    .mem0waddr(mem0waddr),
+    .mem0rdata(mem0rdata),
+    .mem0wdata(mem0wdata)
 );
 
 Main2Bram i1(
   .rstN(rstN),
   .clk(clk),
-  .mem0addr(mem0addr),
-  .mem0cmd(mem0cmd),
-  .mem0en(mem0en),
-  .mem0rdy(mem0rdy),
-  .mem0be(mem0be),
-  .mem0out(mem0out),
-  .mem0in(mem0in)
+  .mem0ren(mem0ren),
+  .mem0wen(mem0wen),
+  .mem0rbe(mem0rbe),
+  .mem0wbe(mem0wbe),
+  .mem0raddr(mem0raddr),
+  .mem0waddr(mem0waddr),
+  .mem0wdata(mem0wdata),
+  .mem0rdata(mem0rdata),
+  .mem0rdy(mem0rdy)
 );
 
   always@(posedge clk, negedge rstN) begin
@@ -85,24 +90,26 @@ Main2Bram i1(
 endmodule
 
 //-_-------------------------Interface module for Bram-----------------------------_-//
-//-_-------------------------Interface module for Bram-----------------------------_-//
-//-_-------------------------Interface module for Bram-----------------------------_-//
 module Main2Bram(
   //_---------Signal from IP----------------------//
   input wire                   clk,
   input wire                   rstN,
-  input wire                   mem0en,
-  input wire       [3:0]       mem0cmd,
-  input wire        [7:0]        mem0be,
-  input wire       [31:0]       mem0addr,
-  input wire        [63:0]        mem0out,
+
+  input  wire                 mem0ren,
+  input  wire                 mem0wen,
+  input  wire  [7:0]          mem0rbe,
+  input  wire  [7:0]          mem0wbe,
+  input  wire  [31:0]         mem0raddr,
+  input  wire  [31:0]         mem0waddr,
+  output wire  [63:0]         mem0rdata,
+  input  wire  [63:0]         mem0wdata,
+
   //--------Signal to IP--------------------------//
-  output reg                 mem0rdy,
-  output wire     [63:0]      mem0in
+  output reg                 mem0rdy
   );
 
-reg [31:0]       MemAddrPipe0Reg, MemAddrPipe1Reg;
-reg [7:0]        MemBePipe0Reg;
+reg [31:0]       MemWAddrPipe0Reg, MemWAddrPipe1Reg, MemRAddrPipe0Reg, MemRAddrPipe1Reg;
+reg [7:0]        MemWBePipe0Reg;
 reg              WEnPipe0Reg, REnPipe0Reg, REnPipe1Reg;
 reg [63:0]       MemWDataPipe0Reg;
 wire [63:0]      MemRDataPipe1Wire;
@@ -113,30 +120,32 @@ integer counter = 0;
 // synthesis translate_off
 // Count the number of cycles the memory bus is actived.
 always@(posedge clk,negedge rstN)
-  if (mem0en | WEnPipe0Reg | REnPipe0Reg | REnPipe1Reg | mem0rdy) counter <= counter + 1;
+  if (mem0ren | mem0wen | WEnPipe0Reg | REnPipe0Reg | REnPipe1Reg | mem0rdy) counter <= counter + 1;
 // synthesis translate_on
 
 // Stage 1: registering all the input for writes
 always@(posedge clk,negedge rstN)begin
   if(!rstN)begin
-    MemAddrPipe0Reg <= 0;
-    MemBePipe0Reg <= 0;
+    MemWAddrPipe0Reg <= 0;
+    MemRAddrPipe0Reg <= 0;
+    MemWBePipe0Reg <= 0;
     WEnPipe0Reg <= 0;
     MemWDataPipe0Reg <=0;
   end else begin
-    MemAddrPipe0Reg <= mem0addr;
-    MemBePipe0Reg <= mem0be << mem0addr[2:0];
-    WEnPipe0Reg <= mem0en & mem0cmd[0];
-    REnPipe0Reg <= mem0en & ~mem0cmd[0];
-    MemWDataPipe0Reg <= (mem0out<<{mem0addr[2:0],3'b0});
+    MemWAddrPipe0Reg <= mem0waddr;
+    MemRAddrPipe0Reg <= mem0raddr;
+    MemWBePipe0Reg <= mem0wbe << mem0waddr[2:0];
+    WEnPipe0Reg <= mem0wen;
+    REnPipe0Reg <= mem0ren;
+    MemWDataPipe0Reg <= (mem0wdata<<{mem0waddr[2:0],3'b0});
   end
 end
 
 // Stage 2: Access the block ram.
 BRAM i2(
-  .waddr(MemAddrPipe0Reg[$(getGVBit(Num64GV)+2):3]),
-  .raddr(MemAddrPipe0Reg[$(getGVBit(Num64GV)+2):3]),
-  .be(MemBePipe0Reg),
+  .waddr(MemWAddrPipe0Reg[$(getGVBit(Num64GV)+2):3]),
+  .raddr(MemRAddrPipe0Reg[$(getGVBit(Num64GV)+2):3]),
+  .be(MemWBePipe0Reg),
   .wdata(MemWDataPipe0Reg),
   .we(WEnPipe0Reg),
   .clk(clk),
@@ -146,10 +155,10 @@ BRAM i2(
 
 always@(posedge clk,negedge rstN)begin
   if(!rstN)begin
-    MemAddrPipe1Reg <= 0;
+    MemRAddrPipe1Reg <= 0;
     REnPipe1Reg <= 0;
   end else begin
-    MemAddrPipe1Reg <= MemAddrPipe0Reg;
+    MemRAddrPipe1Reg <= MemRAddrPipe0Reg;
     REnPipe1Reg <= REnPipe0Reg;
   end
 end
@@ -162,12 +171,12 @@ always@(posedge clk,negedge rstN)begin
     MemAddrPipe2Reg <=0;
   end else begin
     mem0rdy <= REnPipe1Reg;
-    MemAddrPipe2Reg <= MemAddrPipe1Reg[2:0];
-    MemRDataPipe2Reg <= MemRDataPipe1Wire >> {MemAddrPipe1Reg[2],5'b0};
+    MemAddrPipe2Reg <= MemRAddrPipe1Reg[2:0];
+    MemRDataPipe2Reg <= MemRDataPipe1Wire >> {MemRAddrPipe1Reg[2],5'b0};
   end
 end
 
-assign mem0in = MemRDataPipe2Reg >> {1'b0, MemAddrPipe2Reg[1:0],3'b0};
+assign mem0rdata = MemRDataPipe2Reg >> {1'b0, MemAddrPipe2Reg[1:0],3'b0};
 
 endmodule
 
@@ -318,7 +327,7 @@ always_comb begin
     $('$')fwrite (wtmpfile,",\n{\"name\":\"$(RTLModuleName)\", \"total\": %0d, \"wait\": %0d}", cnt, i1.i1.counter);
     $('$')fclose(wtmpfile);
     $display("At %t the result is correct!", $('$')time());
-  
+
     //$display("$(RTLModuleName) memory access cycles: %d", DUT_TOP_tb.i1.i1.MemAccessCycles);
     $('$')stop;
   end

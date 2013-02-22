@@ -252,6 +252,8 @@ public:
                                VASTSeqValue::Type T, unsigned Idx,
                                VASTNode *Parent);
 
+  VASTMemoryBus *createDefaultMemBus();
+
   VASTBlockRAM *addBlockRAM(unsigned BRamNum, unsigned Bitwidth, unsigned Size,
                             const GlobalVariable *Initializer);
 

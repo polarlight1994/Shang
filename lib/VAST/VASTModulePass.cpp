@@ -15,6 +15,7 @@
 #include "MinimalDatapathContext.h"
 #include "Allocation.h"
 
+#include "shang/VASTMemoryPort.h"
 #include "shang/VASTModulePass.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTSubModules.h"
@@ -39,146 +40,11 @@ STATISTIC(NumIPs, "Number of IPs Instantiated");
 STATISTIC(NumBRam2Reg, "Number of Single Element Block RAM lowered to Register");
 
 namespace {
-// Note: Create the memory bus builder will add the input/output ports of the
-// memory bus implicitly. We should add these ports after function
-// "emitFunctionSignature" is called, which add some other ports that need to
-// be added before input/output ports of memory bus.
-struct MemBusBuilder {
-  VASTModule *VM;
-  VASTExprBuilder &Builder;
-  VFUMemBus *Bus;
-  unsigned BusNum;
-  VASTWire *MembusEn, *MembusCmd, *MemBusAddr, *MemBusOutData, *MemBusByteEn;
-  // Helper class to build the expression.
-  VASTExprHelper EnExpr, CmdExpr, AddrExpr, OutDataExpr, BeExpr;
-
-  VASTWire *createOutputPort(const std::string &PortName, unsigned BitWidth,
-                             VASTRegister *&LocalEn, VASTExprHelper &Expr) {
-    // We need to create multiplexer to allow current module and its submodules
-    // share the bus.
-    std::string PortReg = PortName + "_r";
-    VASTRegister *LocalReg
-      = VM->addRegister(PortReg, BitWidth, 0,
-                        LocalEn == 0 ? VASTSeqValue::Enable : VASTSeqValue::Data);
-    VASTPort *P = VM->addOutputPort(PortName, BitWidth, VASTModule::Others,
-                                    false);
-
-    // Are we creating the enable port?
-    if (LocalEn == 0) {
-      // Or all enables together to generate the enable output,
-      // we use And Inverter Graph here.
-      Expr.init(VASTExpr::dpAnd, BitWidth, true);
-      // Add the local enable.
-      assert(Expr.BuildNot && Expr.Opc == VASTExpr::dpAnd
-             && "It is not building an Or Expr!");
-      VASTValPtr V = Builder.buildNotExpr(LocalReg->getValue());
-      Expr.addOperand(V);
-      LocalEn = LocalReg;
-    } else {
-      Expr.init(VASTExpr::dpMux, BitWidth);
-      // Select the local signal if local enable is true.
-      Expr.addOperand(LocalEn->getValue());
-      Expr.addOperand(LocalReg->getValue());
-    }
-
-    return cast<VASTWire>(P->getValue());
-  }
-
-  void addSubModuleOutPort(VASTSubModule *SubMod, VASTWire *OutputValue,
-                           unsigned BitWidth, VASTWire *&SubModEn,
-                           VASTExprHelper &Expr) {
-    std::string ConnectedWireName
-      = SubMod->getPortName(OutputValue->getName());
-
-    VASTWire *SubModWire = VM->addWire(ConnectedWireName, BitWidth);
-
-    // Are we creating the enable signal from sub module?
-    if (SubModEn == 0) {
-      // Or all enables together to generate the enable output.
-      // we use And Inverter Graph here.
-      assert(Expr.BuildNot && Expr.Opc == VASTExpr::dpAnd
-             && "It is not building an Or Expr!");
-      VASTValPtr V = Builder.buildNotExpr(SubModWire);
-      Expr.addOperand(V);
-      SubModEn = SubModWire;
-    } else {
-      // Select the signal from submodule if sub module enable is true.
-      Expr.addOperand(SubModEn);
-      Expr.addOperand(SubModWire);
-    }
-
-    SubMod->addOutPort(OutputValue->getName(), SubModWire);
-  }
-
-  void addSubModule(VASTSubModule *SubMod) {
-    VASTWire *SubModEn = 0;
-    addSubModuleOutPort(SubMod, MembusEn, 1, SubModEn, EnExpr);
-    // Output ports.
-    addSubModuleOutPort(SubMod, MembusCmd, VFUMemBus::CMDWidth, SubModEn,
-                        CmdExpr);
-    addSubModuleOutPort(SubMod, MemBusAddr, Bus->getAddrWidth(), SubModEn,
-                        AddrExpr);
-    addSubModuleOutPort(SubMod, MemBusOutData, Bus->getDataWidth(), SubModEn,
-                        OutDataExpr);
-    addSubModuleOutPort(SubMod, MemBusByteEn, Bus->getDataWidth()/8, SubModEn,
-                        BeExpr);
-
-    // Add the pseudo drivers to input ports.
-    SubMod->addInPort(VFUMemBus::getInDataBusName(BusNum), 0);
-    SubMod->addInPort(VFUMemBus::getReadyName(BusNum), 0);
-  }
-
-  MemBusBuilder(VASTModule *VM, VASTExprBuilder &Builder, unsigned N)
-    : VM(VM), Builder(Builder), Bus(getFUDesc<VFUMemBus>()), BusNum(N) {
-  }
-
-  void addMemPorts() {
-    // Build the ports for current module.
-    FuncUnitId ID(VFUs::MemoryBus, BusNum);
-    // We need to create multiplexer to allow current module and its submodules
-    // share the memory bus.
-    // The enable signal for local memory bus.
-    VASTRegister *LocalEn = 0;
-    // Control ports.
-    MembusEn =
-      createOutputPort(VFUMemBus::getEnableName(BusNum), 1, LocalEn, EnExpr);
-    MembusCmd =
-      createOutputPort(VFUMemBus::getCmdName(BusNum), VFUMemBus::CMDWidth,
-                       LocalEn, CmdExpr);
-
-    // Address port.
-    MemBusAddr =
-      createOutputPort(VFUMemBus::getAddrBusName(BusNum), Bus->getAddrWidth(),
-                       LocalEn, AddrExpr);
-    // Data ports.
-    VM->addInputPort(VFUMemBus::getInDataBusName(BusNum), Bus->getDataWidth());
-    MemBusOutData =
-      createOutputPort(VFUMemBus::getOutDataBusName(BusNum),
-                       Bus->getDataWidth(), LocalEn, OutDataExpr);
-    // Byte enable.
-    MemBusByteEn =
-      createOutputPort(VFUMemBus::getByteEnableName(BusNum),
-                       Bus->getDataWidth() / 8, LocalEn, BeExpr);
-    // Bus ready.
-    VM->addInputPort(VFUMemBus::getReadyName(BusNum), 1);
-  }
-
-  void buildMemBusMux() {
-    VM->assign(MembusEn, Builder.buildExpr(EnExpr));
-    VM->assign(MembusCmd, Builder.buildExpr(CmdExpr));
-    VM->assign(MemBusAddr, Builder.buildExpr(AddrExpr));
-    VM->assign(MemBusOutData, Builder.buildExpr(OutDataExpr));
-    VM->assign(MemBusByteEn, Builder.buildExpr(BeExpr));
-  }
-};
-
 struct VASTModuleBuilder : public MinimalDatapathContext,
                            public InstVisitor<VASTModuleBuilder, void> {
   DatapathBuilder Builder;
   VASTModule *VM;
   DataLayout *TD;
-  // FIXME: Allocate enough MBBuilder according to the memory bus allocation.
-  MemBusBuilder MBBuilder;
   HLSAllocation &Allocation;
 
   //===--------------------------------------------------------------------===//
@@ -203,6 +69,13 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     std::map<unsigned, VASTNode*>::const_iterator at
       = AllocatedBRAMs.find(BRAMNum);
     assert(at != AllocatedBRAMs.end() && "BlockRAM not existed!");
+    return at->second;
+  }
+
+  std::map<unsigned, VASTMemoryBus*> MemBuses;
+  VASTMemoryBus *getMemBus(unsigned Num) const {
+    std::map<unsigned, VASTMemoryBus*>::const_iterator at = MemBuses.find(Num);
+    assert(at != MemBuses.end() && "BlockRAM not existed!");
     return at->second;
   }
 
@@ -298,8 +171,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   //===--------------------------------------------------------------------===//
   VASTModuleBuilder(VASTModule *Module, DataLayout *TD, HLSAllocation &Allocation)
     : MinimalDatapathContext(*Module, TD), Builder(*this),
-      VM(Module), TD(TD), MBBuilder(Module, Builder, 0), Allocation(Allocation),
-      NumSlots(0)  {}
+      VM(Module), TD(TD), Allocation(Allocation), NumSlots(0)  {}
 };
 }
 
@@ -430,14 +302,13 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
   }
 
   emitCommonPort(SubMod);
-  if (SubMod) {
-    MBBuilder.addSubModule(SubMod);
-    return;
-  }
+  if (SubMod) return;
 
-  // Only build the following logics if we are building current module instead
-  // of the submodule.
-  MBBuilder.addMemPorts();
+  // Create the default memory bus.
+  bool Inserted
+    = MemBuses.insert(std::make_pair(0, VM->createDefaultMemBus())).second;
+  assert(Inserted && "Memory bus not inserted!");
+  (void) Inserted;
 
   // Copy the value to the register.
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
@@ -480,9 +351,6 @@ void VASTModuleBuilder::allocateSubModules(CallGraph &CG) {
     SubMod->setIsSimple();
     SubModules.GetOrCreateValue(SubModName, SubMod);
   }
-
-  // Connect the membus for all submodules.
-  MBBuilder.buildMemBusMux();
 
   // Allocate the block RAMs.
   ArrayRef<const GlobalVariable*> GVs = Allocation.getBRAMAllocation(&F);
@@ -909,48 +777,34 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
                                                unsigned PortNum, Instruction &I){
   BasicBlock *ParentBB = I.getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
+  VASTMemoryBus *Bus = getMemBus(PortNum);
 
   // Build the logic to start the transaction.
-  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, Data ? 5 : 4, &I,
+  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, Data ? 4 : 3, &I,
                                 VASTSeqInst::Launch);
   unsigned CurOperandIdx = 0;
 
   // Emit Address.
-  std::string RegName = VFUMemBus::getAddrBusName(PortNum) + "_r";
-  VASTSeqValue *R = VM->getSymbol<VASTSeqValue>(RegName);
-  Op->addSrc(getAsOperandImpl(Addr), CurOperandIdx++, false, R);
-
-  VASTValPtr WEn = VASTImmediate::False;
+  Op->addSrc(getAsOperandImpl(Addr), CurOperandIdx++, false,
+             Data ? Bus->getWAddr() : Bus->getRAddr());
 
   if (Data) {
     // Assign store data.
-    RegName = VFUMemBus::getOutDataBusName(PortNum) + "_r";
-    R = VM->getSymbol<VASTSeqValue>(RegName);
     VASTValPtr ValToStore = getAsOperandImpl(Data);
-    assert(ValToStore->getBitWidth() <= R->getBitWidth()
+    assert(ValToStore->getBitWidth() <= Bus->getDataWidth()
            && "Storing data that exceed the width of databus!");
-    Op->addSrc(ValToStore, CurOperandIdx++, false, R);
-    // Set write enable to 1.
-    WEn = VASTImmediate::True;
+    Op->addSrc(ValToStore, CurOperandIdx++, false, Bus->getWData());
   }
 
-  // Assign the write enable.
-  RegName = VFUMemBus::getCmdName(PortNum) + "_r";
-  R = VM->getSymbol<VASTSeqValue>(RegName);
-  Op->addSrc(WEn, CurOperandIdx++, false, R);
-
   // Compute the byte enable.
-  RegName = VFUMemBus::getByteEnableName(PortNum) + "_r";
-  R = VM->getSymbol<VASTSeqValue>(RegName);
   VASTValPtr ByteEn
-    = Builder.getImmediate(getByteEnable(Addr), R->getBitWidth());
-  Op->addSrc(ByteEn, CurOperandIdx++, false, R);
+    = Builder.getImmediate(getByteEnable(Addr), Bus->getByteEnWdith());
+  Op->addSrc(ByteEn, CurOperandIdx++, false,
+             Data ? Bus->getWByteEn() : Bus->getRByteEn());
 
   // Enable the memory bus at the same slot.
-  // FIXIME: Use the correct memory port number.
-  RegName = VFUMemBus::getEnableName(PortNum) + "_r";
-  VASTSeqValue *MemEn = VM->getSymbol<VASTSeqValue>(RegName);
-  Op->addSrc(VASTImmediate::True, CurOperandIdx, false, MemEn);
+  Op->addSrc(VASTImmediate::True, CurOperandIdx, false,
+             Data ? Bus->getWEnable() : Bus->getREnable());
 
   // Disable the memory bus at the next slot.
   Slot = advanceToNextSlot(Slot);
@@ -963,12 +817,11 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     // slots to get the result.
     Slot = advanceToNextSlot(Slot, Latency - 1);
     // Get the input port from the memory bus.
-    RegName = VFUMemBus::getInDataBusName(PortNum);
-    R = VM->getSymbol<VASTSeqValue>(RegName);
     VASTSeqValue *Result = getOrCreateSeqVal(&I, I.getName());
-    assert(Result->getBitWidth() <= R->getBitWidth()
+    assert(Result->getBitWidth() <= Bus->getDataWidth()
            && "Loading data that exceed the width of databus!");
-    VASTValPtr V = Builder.buildBitSliceExpr(R, Result->getBitWidth(), 0);
+    VASTValPtr V
+      = Builder.buildBitSliceExpr(Bus->getRData(), Result->getBitWidth(), 0);
     VM->latchValue(Result, V, Slot, VASTImmediate::True, &I, Latency);
     // Move the the next slot so that the other operations are not conflict with
     // the current memory operations.
