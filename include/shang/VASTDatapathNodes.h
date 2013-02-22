@@ -278,33 +278,25 @@ inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
 
 class VASTWire :public VASTSignal, public VASTOperandList,
                 public ilist_node<VASTWire> {
-  unsigned Idx : 31;
+  unsigned Idx : 30;
   bool IsPinned : 1;
+  bool IsWrapper : 1;
   friend class VASTModule;
 
-  VASTValPtr getAsInlineOperandImpl() {
-    if (VASTValPtr V = getDriver()) {
-      // Can the expression be printed inline?
-      if (VASTExprPtr E = dyn_cast<VASTExprPtr>(V)) {
-        if (E->isInlinable()) return E.getAsInlineOperand();
-      }
-    }
-
-    return this;
-  }
+  VASTValPtr getAsInlineOperandImpl();
 
   friend struct ilist_sentinel_traits<VASTWire>;
   VASTWire() : VASTSignal(vastWire, 0, 0), VASTOperandList(0), Idx(0),
-    IsPinned(false), AttrStr(0) {}
+    IsPinned(false), IsWrapper(false), AttrStr(0) {}
 
   virtual void dropUses();
 public:
   const char *const AttrStr;
 
   VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "",
-           bool IsPinned = false)
+           bool IsPinned = false, bool IsWrapper = false)
     : VASTSignal(vastWire, Name, BitWidth), VASTOperandList(1),
-      Idx(0), IsPinned(IsPinned), AttrStr(Attr) {
+      Idx(0), IsPinned(IsPinned), IsWrapper(IsWrapper), AttrStr(Attr) {
     new (Operands) VASTUse(this);
   }
 

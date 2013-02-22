@@ -256,7 +256,7 @@ VASTWire *VASTModule::createWrapperWire(const Twine &Name, unsigned SizeInBits,
   // Reuse the old wire if we had create one.
   VASTWire *W = cast_or_null<VASTWire>(lookupSymbol(WrapperName));
   if (W == 0) {
-    W = addWire(WrapperName, SizeInBits);
+    W = addWire(WrapperName, SizeInBits, "", false, true);
     if (V) W->assign(V);
   }
 
@@ -270,12 +270,13 @@ VASTWire *VASTModule::createWrapperWire(GlobalVariable *GV, unsigned SizeInBits)
 }
 
 VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
-                              const char *Attr, bool IsPinned) {
+                              const char *Attr, bool IsPinned, bool IsWrapper) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   // Allocate the wire and the use.
 
-  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, Attr, IsPinned);
+  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, Attr, IsPinned,
+                                IsWrapper);
   Entry.second = Wire;
   Wires.push_back(Wire);
 

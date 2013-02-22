@@ -476,3 +476,17 @@ void VASTWire::printAssignment(raw_ostream &OS) const {
   V.printAsOperand(OS);
   OS << ";\n";
 }
+
+VASTValPtr VASTWire::getAsInlineOperandImpl() {
+  if (VASTValPtr V = getDriver()) {
+    // Can the expression be printed inline?
+    if (VASTExprPtr E = dyn_cast<VASTExprPtr>(V)) {
+      if (E->isInlinable()) return E.getAsInlineOperand();
+    } else if (!IsWrapper) {
+      assert(!isa<VASTLLVMValue>(V.get()) && "Cannot inline VASTLLVMValue!");
+      return V.getAsInlineOperand();
+    }
+  }
+
+  return this;
+}
