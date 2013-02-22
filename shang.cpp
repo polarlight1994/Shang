@@ -216,13 +216,9 @@ int main(int argc, char **argv) {
     // Try to optimize the computation.
     HLSPasses.add(createInstructionCombiningPass());
 
-    // Move the datapath instructions as soon as possible.
-    HLSPasses.add(createDatapathHoistingPass());
-    HLSPasses.add(createDeadCodeEliminationPass());
-    HLSPasses.add(createDeadStoreEliminationPass());
-    HLSPasses.add(createGVNPass());
-
     if (EnableGotoExpansion) {
+      // Sink the the datapath instruction to avoid unnecessary PHIs.
+      HLSPasses.add(createSinkingPass());
       // Perform goto expansion.
       HLSPasses.add(createDemoteRegisterToMemoryPass());
       HLSPasses.add(createGotoExpansionPass());
@@ -239,6 +235,7 @@ int main(int argc, char **argv) {
       HLSPasses.add(createDeadStoreEliminationPass());
     }
 
+    HLSPasses.add(createDatapathHoistingPass());
     HLSPasses.add(createMemoryAccessAlignerPass());
 
     // Unroll the loop to expose more coalescing opportunities.
