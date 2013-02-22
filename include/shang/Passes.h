@@ -48,6 +48,7 @@ Pass *createLowerIntrinsicPass();
 Pass *createGlobalToStackPass();
 Pass *createMemoryAccessCoalescingPass();
 Pass *createSimpleBlockRAMAllocationPass();
+Pass *createMemoryPartitionPass();
 Pass *createShangTargetTransformInfoPass();
 Pass *createDatapathHoistingPass();
 
@@ -82,6 +83,7 @@ void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
 void initializeHLSAllocationAnalysisGroup(PassRegistry &Registry);
 void initializeBasicAllocationPass(PassRegistry &Registry);
 void initializeSimpleBlockRAMAllocationPass(PassRegistry &Registry);
+void initializeMemoryPartitionPass(PassRegistry &Registry);
 
 void initializeLowerAllocaPass(PassRegistry &Registry);
 void initializeGlobalToStackPass(PassRegistry &Registry);
