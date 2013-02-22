@@ -303,7 +303,7 @@ const VASTSlot *VASTModule::getFinishSlot() const {
 VASTModule::VASTModule(Function &F)
   : VASTNode(vastModule), Datapath(new DatapathContainer()),
     Ports(NumSpecialPort), Name(F.getName().str()), F(F),
-    FUPortOffsets(VFUs::NumCommonFUs), NumArgPorts(0) {
+    NumArgPorts(0) {
   createStartSlot();
 }
 
@@ -317,7 +317,6 @@ void VASTModule::reset() {
   Ports.clear();
   Registers.clear();
   SymbolTable.clear();
-  FUPortOffsets.clear();
   NumArgPorts = 0;
   RetPortIdx = 0;
 

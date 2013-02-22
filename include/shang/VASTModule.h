@@ -113,8 +113,6 @@ private:
   // The corresponding function for this module.
   Function &F;
 
-  // The port starting offset of a specific function unit.
-  SmallVector<std::map<unsigned, unsigned>, VFUs::NumCommonFUs> FUPortOffsets;
   unsigned NumArgPorts, RetPortIdx;
 
   VASTPort *addPort(const Twine &Name, unsigned BitWidth, bool isReg,
@@ -197,28 +195,6 @@ public:
 
   VASTPort *addOutputPort(const Twine &Name, unsigned BitWidth,
                           PortTypes T = Others, bool isReg = true);
-
-  void setFUPortBegin(FuncUnitId ID) {
-    unsigned offset = Ports.size();
-    std::pair<unsigned, unsigned> mapping
-      = std::make_pair(ID.getFUNum(), offset);
-    std::map<unsigned, unsigned> &Map = FUPortOffsets[ID.getFUType()];
-    assert(!Map.count(mapping.first) && "Port begin mapping existed!");
-    FUPortOffsets[ID.getFUType()].insert(mapping);
-  }
-
-  unsigned getFUPortOf(FuncUnitId ID) const {
-    typedef std::map<unsigned, unsigned> MapTy;
-    const MapTy &Map = FUPortOffsets[ID.getFUType()];
-    MapTy::const_iterator at = Map.find(ID.getFUNum());
-    assert(at != Map.end() && "FU do not existed!");
-    return at->second;
-  }
-
-  const_port_iterator getFUPortItBegin(FuncUnitId ID) const {
-    unsigned PortBegin = getFUPortOf(ID);
-    return Ports.begin() + PortBegin;
-  }
 
   // Get all ports of this moudle.
   const PortVector &getPorts() const { return Ports; }

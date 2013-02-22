@@ -137,7 +137,6 @@ struct MemBusBuilder {
     FuncUnitId ID(VFUs::MemoryBus, BusNum);
     // We need to create multiplexer to allow current module and its submodules
     // share the memory bus.
-    VM->setFUPortBegin(ID);
     // The enable signal for local memory bus.
     VASTRegister *LocalEn = 0;
     // Control ports.
