@@ -31,7 +31,7 @@ public:
   VASTHandle(VASTValue *Ptr = 0)
     : VASTNode(VASTNode::vastHandle), U(this, Ptr) {}
   
-  VASTHandle(VASTValPtr Ptr)
+  VASTHandle(const VASTValPtr &Ptr)
     : VASTNode(VASTNode::vastHandle), U(this, Ptr) {}
   
   VASTHandle(const VASTHandle &RHS)
@@ -55,12 +55,28 @@ public:
 
   VASTValPtr operator->() const { return U.unwrap(); }
 
-  bool operator==(VASTValPtr RHS) const {
+  bool operator==(const VASTValPtr &RHS) const {
     return U.unwrap() == RHS;
   }
 
-  bool operator!=(VASTValPtr RHS) const {
+  bool operator!=(const VASTValPtr &RHS) const {
     return !operator==(RHS);
+  }
+
+  bool operator<(const VASTHandle &RHS) const {
+    return U.unwrap() < RHS.U.unwrap();
+  }
+
+  bool operator>(const VASTHandle &RHS) const {
+    return U.unwrap() > RHS.U.unwrap();
+  }
+
+  bool operator<=(const VASTHandle &RHS) const {
+    return U.unwrap() <= RHS.U.unwrap();
+  }
+
+  bool operator>=(const VASTHandle &RHS) const {
+    return U.unwrap() >= RHS.U.unwrap();
   }
 
   operator VASTValPtr() const { return U.unwrap(); }
@@ -69,6 +85,12 @@ public:
   ~VASTHandle() { unlinkFromUser(); }
 
   void print(raw_ostream &OS) const;
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTHandle *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == VASTNode::vastHandle;
+  }
 };
 
 template<> struct simplify_type<VASTHandle> {
