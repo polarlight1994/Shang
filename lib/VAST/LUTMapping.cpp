@@ -637,14 +637,17 @@ static bool BreakDownNAryExpr(VASTExpr *Expr, VASTExprBuilder &Builder) {
 }
 
 static void BreakNAryExpr(DatapathContainer &DP, VASTExprBuilder &Builder) {
-  std::vector<VASTExpr*> Worklist;
+  std::vector<VASTHandle> Worklist;
 
   typedef DatapathContainer::expr_iterator iterator;
-  for (iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I)
-    if (I->getOpcode() == VASTExpr::dpAnd) Worklist.push_back(I);
+  for (iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I) {
+    VASTExpr *Expr = I;
+
+    if (Expr->getOpcode() == VASTExpr::dpAnd) Worklist.push_back(Expr);
+  }
 
   while (!Worklist.empty()) {
-    VASTExpr *E = Worklist.back();
+    VASTExpr *E = cast<VASTExpr>(Worklist.back());
     Worklist.pop_back();
 
     BreakDownNAryExpr(E, Builder);
@@ -654,31 +657,33 @@ static void BreakNAryExpr(DatapathContainer &DP, VASTExprBuilder &Builder) {
 static void ExpandSOP(DatapathContainer &DP, VASTExprBuilder &Builder) {
   bool changed = true;
 
-  while (changed) {
-    changed = false;
-    typedef DatapathContainer::expr_iterator iterator;
-    for (iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I) {
-      VASTExpr *Expr = I;
+  std::vector<VASTHandle> Worklist;
 
-      if (Expr->getOpcode() != VASTExpr::dpLUT) continue;
+  typedef DatapathContainer::expr_iterator iterator;
+  for (iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I) {
+    VASTExpr *Expr = I;
 
-      SmallVector<VASTValPtr, 8> Operands;
-      // Push the fanin of the LUT into the operand list, do not put the SOP
-      // string which is the last operand.
-      for (unsigned i = 0; i < Expr->size() - 1; ++i)
-        Operands.push_back(Expr->getOperand(i));
+    if (I->getOpcode() == VASTExpr::dpLUT) Worklist.push_back(Expr);
+  }
 
-      VASTValPtr Expaned
-        = ExpandSOP(Expr->getLUT(), Operands, Expr->getBitWidth(), Builder);
-      Builder.replaceAllUseWith(Expr, Expaned);
-      changed = true;
+  while (!Worklist.empty()) {
+    VASTExpr *Expr = dyn_cast<VASTExpr>(Worklist.back());
+    Worklist.pop_back();
 
-      // Because replaceAllUseWith may invalid the others expression, including
-      // the other LUTs, we cannot first collect the LUTs to a list and expand
-      // then one by one. We had to iterate over and over untill we cannot find
-      // any LUT.
-      break;
-    }
+    if (Expr == 0) continue;
+
+    assert(Expr->getOpcode() == VASTExpr::dpLUT
+           && "LUT should not be changed by replacement!");
+
+    SmallVector<VASTValPtr, 8> Operands;
+    // Push the fanin of the LUT into the operand list, do not put the SOP
+    // string which is the last operand.
+    for (unsigned i = 0; i < Expr->size() - 1; ++i)
+      Operands.push_back(Expr->getOperand(i));
+
+    VASTValPtr Expaned
+      = ExpandSOP(Expr->getLUT(), Operands, Expr->getBitWidth(), Builder);
+    Builder.replaceAllUseWith(Expr, Expaned);
   }
 }
 
