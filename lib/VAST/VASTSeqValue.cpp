@@ -15,6 +15,7 @@
 
 #include "LangSteam.h"
 
+#include "shang/VASTExprBuilder.h"
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTSlot.h"
 #include "shang/VASTModule.h"
@@ -121,6 +122,45 @@ void VASTSeqValue::eraseUse(VASTSeqUse U) {
 
 void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth,
                                  bool PrintEnable) const {
+  if (empty()) return;
+
+  if (!EnableU.isInvalid()) {
+    assert((getValType() == VASTSeqValue::Enable || !Fanins.empty())
+            && "Bad Fanin numder!");
+    OS << "// Synthesized MUX\n";
+
+    if (PrintEnable)
+      OS << "wire " << ' ' << getName() << "_selector_enable = "
+         << VASTValPtr(EnableU) << ";\n\n";
+
+    if (getValType() == VASTSeqValue::Enable) return;
+
+    OS << "reg " << VASTValue::printBitRange(Bitwidth, 0, false)
+       << ' ' << getName() << "_selector_wire;\n";
+
+    // Print the mux logic.
+    OS << "always @(*)begin  // begin mux logic\n";
+    OS.indent(2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
+
+    for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
+      Fanin *FI = *I;
+      OS.indent(4) << '(' << VASTValPtr(FI->Pred) << "): begin\n";
+      // Print the assignment under the condition.
+      OS.indent(6) << getName() << "_selector_wire = "
+                   << VASTValPtr(FI->FI) << ";\n";
+      OS.indent(4) << "end\n";
+    }
+
+    // Write the default condition, otherwise latch will be inferred.
+    OS.indent(4) << "default: begin\n";
+
+    OS.indent(6) << getName() << "_selector_wire = " << Bitwidth << "'bx;\n";
+
+    OS.indent(4) << "end\n";
+    OS.indent(2) << "endcase\nend  // end mux logic\n\n";
+    return;
+  }
+
   typedef std::vector<const VASTSeqOp*> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator it;
@@ -177,5 +217,67 @@ void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth,
 void VASTSeqValue::anchor() const {}
 
 VASTSeqValue::~VASTSeqValue() {
+  DeleteContainerPointers(Fanins);
+}
 
+VASTSeqValue::Fanin::Fanin(VASTSeqValue *V) : Pred(V), FI(V) {}
+
+void VASTSeqValue::Fanin::AddSlot(VASTSlot *S) {
+  Slots.push_back(S);
+}
+
+void VASTSeqValue::synthesisSelector(VASTExprBuilder &Builder) {
+  typedef std::vector<const VASTSeqOp*> OrVec;
+  typedef std::map<VASTValPtr, OrVec> CSEMapTy;
+  typedef CSEMapTy::const_iterator it;
+
+  CSEMapTy CSEMap;
+
+  if (!buildCSEMap(CSEMap)) return;
+
+  // Print the mux logic.
+  SmallVector<VASTValPtr, 2> SeqOpPreds;
+  SmallVector<VASTValPtr, 8> FaninPreds;
+  SmallVector<VASTValPtr, 16> EnablePreds;
+
+  bool IsEnable = (getValType() == VASTSeqValue::Enable);
+
+  for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    Fanin *FI = 0;
+    if (!IsEnable) {
+      FaninPreds.clear();
+      FI = new Fanin(this);
+    }
+
+    const OrVec &Ors = I->second;
+    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
+      SeqOpPreds.clear();
+      const VASTSeqOp *Op = *OI;
+      if (VASTValPtr SlotActive = Op->getSlotActive()) {
+        VASTValPtr V = SlotActive.getAsInlineOperand();
+        if (V != this) SeqOpPreds.push_back(V);
+        else           SeqOpPreds.push_back(SlotActive);
+      }
+
+      SeqOpPreds.push_back(Op->getPred());
+
+      VASTValPtr FIPred = Builder.buildAndExpr(SeqOpPreds, 1);
+      EnablePreds.push_back(FIPred);
+      if (FI) {
+        FaninPreds.push_back(FIPred);
+        FI->AddSlot(Op->getSlot());
+      }
+    }
+
+    // For enables, there is only 1 fanin, which is the Or of all predicated.
+    if (FI == 0) continue;
+
+    VASTValPtr CurPred = Builder.buildOrExpr(FaninPreds, 1);
+    FI->Pred.set(CurPred);
+    FI->FI.set(I->first);
+    Fanins.push_back(FI);
+  }
+
+  assert((!IsEnable || Fanins.empty()) && "Enable should has only 1 fanin!");
+  EnableU.set(Builder.buildOrExpr(EnablePreds, 1));
 }

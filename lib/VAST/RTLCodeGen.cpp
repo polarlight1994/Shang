@@ -60,6 +60,7 @@ struct RTLCodeGen : public VASTModulePass {
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequiredID(ControlLogicSynthesisID);
+    AU.addRequiredID(SeqSelectorSynthesisID);
     AU.addRequiredID(DatapathNamerID);
     AU.addRequired<HLSAllocation>();
     AU.setPreservesAll();
@@ -77,6 +78,7 @@ Pass *llvm::createRTLCodeGenPass(raw_ostream &O) {
 INITIALIZE_PASS_BEGIN(RTLCodeGen, "shang-verilog-writer",
                       "Write the RTL verilog code to output file.",
                       false, true)
+  INITIALIZE_PASS_DEPENDENCY(SeqSelectorSynthesis)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
   INITIALIZE_AG_DEPENDENCY(HLSAllocation)

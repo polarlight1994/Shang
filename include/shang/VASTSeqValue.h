@@ -21,6 +21,7 @@
 
 namespace llvm {
 class Twine;
+class VASTExprBuilder;
 
 // Represent value in the sequential logic.
 class VASTSeqValue : public VASTSignal, public ilist_node<VASTSeqValue> {
@@ -36,6 +37,20 @@ public:
 
   typedef ArrayRef<VASTValPtr> AndCndVec;
 
+  // Synthesized Fanin.
+  struct Fanin {
+    Fanin(const Fanin&) LLVM_DELETED_FUNCTION;
+    void operator=(const Fanin&) LLVM_DELETED_FUNCTION;
+
+    std::vector<VASTSlot*> Slots;
+    VASTUse Pred;
+    VASTUse FI;
+
+    Fanin(VASTSeqValue *V);
+
+    void AddSlot(VASTSlot *S);
+    typedef std::vector<VASTSlot*>::iterator slot_iterator;
+  };
 private:
   // For common registers, the Idx is the corresponding register number in the
   // MachineFunction. With this register number we can get the define/use/kill
@@ -47,6 +62,10 @@ private:
   typedef std::vector<VASTSeqUse> AssignmentVector;
   AssignmentVector Assigns;
 
+  typedef std::vector<Fanin*> FaninVector;
+  FaninVector Fanins;
+  VASTUse EnableU;
+
   VASTNode *Parent;
 
   bool buildCSEMap(std::map<VASTValPtr,
@@ -56,12 +75,13 @@ private:
   friend struct ilist_sentinel_traits<VASTSeqValue>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
   VASTSeqValue()
-    : VASTSignal(vastSeqValue, 0, 0), T(VASTSeqValue::IO), Idx(0), Parent(this) {}
+    : VASTSignal(vastSeqValue, 0, 0), T(VASTSeqValue::IO), Idx(0),
+      EnableU(this), Parent(this) {}
 
 public:
   VASTSeqValue(const char *Name, unsigned Bitwidth, Type T, unsigned Idx,
                VASTNode *Parent)
-    : VASTSignal(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx),
+    : VASTSignal(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx), EnableU(this),
       Parent(Parent) {}
 
   ~VASTSeqValue();
@@ -94,6 +114,14 @@ public:
   unsigned size() const { return Assigns.size(); }
   bool empty() const { return Assigns.empty(); }
 
+  typedef FaninVector::iterator fanin_iterator;
+  fanin_iterator fanin_begin() { return Fanins.begin(); }
+  fanin_iterator fanin_end() { return Fanins.end(); }
+
+  typedef FaninVector::const_iterator const_fanin_iterator;
+  const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
+  const_fanin_iterator fanin_end() const { return Fanins.end(); }
+
   // Functions to write the verilog code.
   void verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
                        const VASTModule *Mod) const;
@@ -107,6 +135,8 @@ public:
   void dropUses() {
     assert(0 && "Function not implemented!");
   }
+
+  void synthesisSelector(VASTExprBuilder &Builder);
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSeqValue *A) { return true; }

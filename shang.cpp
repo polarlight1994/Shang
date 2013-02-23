@@ -276,6 +276,7 @@ int main(int argc, char **argv) {
 
     // Run the SCEVAA pass to compute more accurate alias information.
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
+    HLSPasses.add(createMemoryPartitionPass());
 
     HLSPasses.add(createLUTMappingPass());
 
@@ -290,7 +291,6 @@ int main(int argc, char **argv) {
 
     // Analyse the slack between registers.
     HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
-    HLSPasses.add(createTimingScriptGenPass());
 
     // Run some scripting passes.
     typedef std::map<std::string, std::pair<std::string, std::string> >::iterator

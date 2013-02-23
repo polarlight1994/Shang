@@ -27,6 +27,7 @@ template<typename T, typename AllocatorTy> class StringMap;
 //BasicBlockTopOrder Pass - Place the MachineBasicBlocks in topological order.
 extern char &BasicBlockTopOrderID;
 extern char &ControlLogicSynthesisID;
+extern char &SeqSelectorSynthesisID;
 extern char &DatapathNamerID;
 extern char &SeqLiveVariablesID;
 
@@ -94,6 +95,7 @@ void initializeTimingNetlistPass(PassRegistry &Registry);
 void initializeVASTSchedulingPass(PassRegistry &Registry);
 
 void initializeControlLogicSynthesisPass(PassRegistry &Registry);
+void initializeSeqSelectorSynthesisPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
 void initializeTimingScriptGenPass(PassRegistry &Registry);
 void initializeSeqLiveVariablesPass(PassRegistry &Registry);
