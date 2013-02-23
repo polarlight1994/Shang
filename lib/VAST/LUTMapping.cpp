@@ -482,21 +482,11 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
     return Ops[0];
   }
 
-  // Do not need to build the LUT for a simple and.
-  //if (Abc_SopIsAndType(sop)) {
-  //  VASTValPtr V = Builder.buildAndExpr(Ops, Bitwidth);
-  //  bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-  //  assert(Inserted && "The node is visited?");
-  //  return;
-  //}
-
-  //// Do not need to build the LUT for a simple and.
-  //if (Abc_SopIsOrType(sop)) {
-  //  VASTValPtr V = Builder.buildOrExpr(Ops, Bitwidth);
-  //  bool Inserted = RewriteMap.insert(std::make_pair(FO, V)).second;
-  //  assert(Inserted && "The node is visited?");
-  //  return;
-  //}
+  // Do not need to build the LUT for a simple And or Or.
+  // Be careful even the sop is claimed as And or Or, its fanins still may be
+  // inverted, hence we need to call ExpandSOP to build them correctly.
+  if (Abc_SopIsAndType(sop) || Abc_SopIsOrType(sop))
+    return ExpandSOP(sop, Ops, Bitwidth, Builder);
 
   // Otherwise simple construct the LUT expression.
   VASTValPtr SOP = VM.getOrCreateSymbol(sop, 0);
