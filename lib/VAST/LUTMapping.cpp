@@ -129,7 +129,12 @@ struct LogicNetwork {
   bool hasExternalUse(VASTValPtr V) {
     typedef VASTValue::use_iterator use_iterator;
     for (use_iterator UI = V->use_begin(), UE = V->use_end(); UI != UE; ++UI) {
-      if (VASTValue *U = dyn_cast<VASTValue>(*UI))
+      VASTNode *N = *UI;
+
+      // Ignore the VASTHandle.
+      if (isa<VASTHandle>(N)) continue;
+
+      if (VASTValue *U = dyn_cast<VASTValue>(N))
         if (getObj(U)) continue;
 
       // Any use that not have a corresponding logic network object is a
