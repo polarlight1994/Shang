@@ -58,9 +58,5 @@ MinimalDatapathContext::MinimalDatapathContext(DatapathContainer &Datapath,
 
 MinimalDatapathContext::~MinimalDatapathContext() {
   // Free all dead VASTExprs.
-  typedef DatapathContainer::expr_iterator expr_iterator;
-  for (expr_iterator I = Datapath.expr_begin(); I != Datapath.expr_end(); /*++I*/) {
-    VASTExpr *E = I++;
-    if (E->use_empty()) Datapath.recursivelyDeleteTriviallyDeadExprs(E);
-  }
+  Datapath.gc();
 }

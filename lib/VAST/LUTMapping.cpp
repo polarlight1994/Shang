@@ -702,7 +702,7 @@ bool LUTMapping::runOnVASTModule(VASTModule &VM) {
   BreakNAryExpr(DP, Builder);
 
   // DIRTY HACK: Force release the dead expressions.
-  VM.gc();
+  DP.gc();
 
   LogicNetwork Ntk(VM, Builder);
 

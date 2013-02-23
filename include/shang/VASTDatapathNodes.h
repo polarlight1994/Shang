@@ -377,6 +377,10 @@ public:
   void reset();
 
   void recursivelyDeleteTriviallyDeadExprs(VASTExpr *L);
+
+  /// Perform the Garbage Collection to release the dead objects on the
+  /// VASTModule
+  void gc();
 };
 } // end namespace
 
