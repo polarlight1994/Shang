@@ -325,8 +325,10 @@ void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O,
                                                 const SrcDelayInfo &Paths) const
 {
   typedef TimingNetlist::src_iterator iterator;
-  for (iterator I = Paths.begin(), E = Paths.end(); I != E; ++I)
-    extractTimingForPair(O, Dst, Thu, I->first);
+  for (iterator I = Paths.begin(), E = Paths.end(); I != E; ++I) {
+    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(I->first))
+      extractTimingForPair(O, Dst, Thu, SeqVal);
+  }
 }
 
 void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,

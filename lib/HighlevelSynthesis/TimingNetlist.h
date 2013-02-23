@@ -21,6 +21,8 @@
 namespace llvm {
 class VASTSeqValue;
 class VASTValue;
+class TimingEstimatorBase;
+
 struct TNLDelay {
   float delay;
   uint16_t MSB_LL, LSB_LL;
@@ -34,8 +36,16 @@ struct TNLDelay {
     return TNLDelay(delay + RHS);
   }
 
+  TNLDelay operator + (TNLDelay RHS) const {
+    return TNLDelay(delay + RHS.delay);
+  }
+
   TNLDelay operator / (float RHS) const {
     return TNLDelay(delay / RHS);
+  }
+
+  operator float() const {
+    return delay;
   }
 
   static TNLDelay max(TNLDelay LHS, TNLDelay RHS) {
@@ -49,7 +59,7 @@ struct TNLDelay {
 class TimingNetlist : public VASTModulePass {
 public:
   typedef TNLDelay delay_type;
-  typedef std::map<VASTSeqValue*, delay_type> SrcDelayInfo;
+  typedef std::map<VASTValue*, delay_type> SrcDelayInfo;
   typedef SrcDelayInfo::value_type SrcEntryTy;
   typedef SrcDelayInfo::const_iterator src_iterator;
   typedef SrcDelayInfo::const_iterator const_src_iterator;
@@ -62,13 +72,16 @@ public:
 private:
   // The path delay information.
   PathDelayInfo PathInfo;
+  TimingEstimatorBase *Estimator;
 
+  void buildTimingPath(VASTValue *Thu, VASTSeqValue *Dst, delay_type MUXDelay);
 public:
   static char ID;
 
   TimingNetlist();
 
-  delay_type getDelay(VASTSeqValue *Src, VASTValue *Dst) const;
+  delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;
+  delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTValue *Dst) const;
 
   // Iterate over the source node reachable to DstReg.
   src_iterator src_begin(VASTValue *Dst) const {

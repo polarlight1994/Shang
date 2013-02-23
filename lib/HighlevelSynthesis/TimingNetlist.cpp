@@ -27,12 +27,20 @@
 using namespace llvm;
 
 TimingNetlist::delay_type
-TimingNetlist::getDelay(VASTSeqValue *Src, VASTValue *Dst) const {
+TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
   const_path_iterator path_end_at = PathInfo.find(Dst);
   assert(path_end_at != PathInfo.end() && "Path not exist!");
   src_iterator path_start_from = path_end_at->second.find(Src);
   assert(path_start_from != path_end_at->second.end() && "Path not exist!");
   return path_start_from->second;
+}
+
+TimingNetlist::delay_type
+TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu, VASTValue *Dst) const {
+  if (Thu == 0) return getDelay(Src, Dst);
+
+  delay_type S2T = getDelay(Src, Thu), T2D = getDelay(Thu, Dst);
+  return S2T + T2D;
 }
 
 TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
@@ -59,30 +67,48 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 //===----------------------------------------------------------------------===//
+void TimingNetlist::buildTimingPath(VASTValue *Thu, VASTSeqValue *Dst,
+                                    delay_type MUXDelay) {
+  if (VASTOperandList::GetDatapathOperandList(Thu) == 0) {
+    if (isa<VASTSeqValue>(Thu)) {
+      TimingNetlist::delay_type &d = PathInfo[Dst][Thu];
+      d = TNLDelay::max(MUXDelay, d);
+    }
+
+    return;
+  }
+
+  Estimator->estimateTimingOnTree(Thu);
+
+  // If this expression if not driven by any register, there is not timing path.
+  if (src_empty(Thu)) return;
+
+  // Accumulate the delay of the fanin MUX.
+  TimingNetlist::delay_type &d = PathInfo[Dst][Thu];
+  d = TNLDelay::max(MUXDelay, d);
+  Estimator->accumulateDelayFrom(Thu, Dst);
+}
+
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   // Create an estimator.
-  TimingEstimatorBase *Estimator = new ZeroDelayEstimator(PathInfo);
+  Estimator = new BlackBoxTimingEstimator(PathInfo);
 
   typedef VASTModule::seqval_iterator iterator;
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
     VASTSeqValue *SVal = I;
 
+    // Calculate the delay of the Fanin MUX.
+    delay_type MUXDelay = delay_type(0.0f);
+
     typedef VASTSeqValue::iterator fanin_iterator;
     for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
+      VASTSeqUse U = *FI;
       // Estimate the delay for each fanin.
-      VASTValue *Fanin = VASTValPtr(*FI).get();
-      if (VASTOperandList::GetDatapathOperandList(Fanin) == 0) {
-        if (VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(Fanin)) {
-          // Create an entry from SVal.
-          TimingNetlist::delay_type &d = PathInfo[Fanin][SVal];
-          d = TNLDelay::max(TimingNetlist::delay_type(), d);
-        }
-        continue;
-      }
-
-      Estimator->estimateTimingOnTree(Fanin);
-
-      // Accumulate the delay of the fanin MUX.
+      buildTimingPath(VASTValPtr(U).get(), SVal, MUXDelay);
+      // And the predicate expression.
+      buildTimingPath(VASTValPtr(U.getPred()).get(), SVal, MUXDelay);
+      if (VASTValPtr SlotActive = U.getSlotActive())
+        buildTimingPath(SlotActive.get(), SVal, MUXDelay);
     }
   }
 
@@ -92,6 +118,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   DEBUG(dbgs() << "Timing Netlist: \n";
         print(dbgs()););
 
+  delete Estimator;
   return false;
 }
 

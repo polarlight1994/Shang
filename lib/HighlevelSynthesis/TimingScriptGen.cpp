@@ -34,7 +34,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/Statistic.h"
-#define DEBUG_TYPE "vtm-comb-path-interval"
+#define DEBUG_TYPE "shang-comb-path-interval"
 #include "llvm/Support/Debug.h"
 using namespace llvm;
 
@@ -272,7 +272,7 @@ void PathIntervalQueryCache::annotatePathInterval(/*SeqReachingDefAnalysis *R,*/
       // supporting register set.
       if (!VisitStack.empty())
         updateInterval(QueryCache[VisitStack.back().first], ParentReachableRegs,
-                    LocalInterval);
+                       LocalInterval);
 
       continue;
     }
@@ -387,7 +387,7 @@ void PathIntervalQueryCache::dump() const {
 }
 
 static bool printDelayRecord(raw_ostream &OS, VASTSeqValue *Dst,
-                             VASTSeqValue *Src, VASTValue *Thu, double delay) {
+                             VASTSeqValue *Src, VASTValue *Thu, float delay) {
   // Record: {Src = '...', Dst = '...', THU = '...', delay = ''}
   OS << "{ Src=";
   printBindingLuaCode(OS, Src);
@@ -435,8 +435,7 @@ unsigned PathIntervalQueryCache::bindDelay2ScriptEngine(VASTSeqValue *Dst,
 
   // Only print the source and the dst.
   if (SkipThu) {
-    // FIXME: Get the delay from timing netlist.
-    printDelayRecord(SS, Dst, Src, 0, 0.0);
+    printDelayRecord(SS, Dst, Src, 0, TNL->getDelay(Src, Dst));
   } else {
     typedef QueryCacheTy::const_iterator it;
     for (it I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I) {
@@ -446,7 +445,9 @@ unsigned PathIntervalQueryCache::bindDelay2ScriptEngine(VASTSeqValue *Dst,
       if (at == Set.end() || at->second != Interval) continue;
       if (NumThuNodePrinted) SS << ", ";
 
-      if (printDelayRecord(SS, Dst, Src, I->first, 0.0)) {
+      float Delay = TNL->getDelay(Src, I->first, Dst);
+
+      if (printDelayRecord(SS, Dst, Src, I->first, Delay)) {
         ++NumThuNodePrinted;
       }
     }
@@ -580,7 +581,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 }
 
 void TimingScriptGen::writeConstraintsForDst(VASTSeqValue *Dst,
-                                                   TimingNetlist *TNL) {
+                                             TimingNetlist *TNL) {
   DenseMap<VASTValue*, SmallVector<VASTSeqUse, 8> > DatapathMap;
 
   typedef VASTSeqValue::const_iterator vn_itertor;

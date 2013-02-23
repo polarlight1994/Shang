@@ -65,18 +65,6 @@ protected:
 public:
   virtual ~TimingEstimatorBase() {}
 
-
-  void estimateTimingOnTree(VASTValue *Root);
-};
-
-template<typename SubClass>
-class TimingEstimatorImpl : public TimingEstimatorBase {
-protected:
-
-  explicit TimingEstimatorImpl(PathDelayInfo &PathDelay)
-    : TimingEstimatorBase(PathDelay) {}
-
-public:
   void annotateDelay(VASTValue *Dst, SrcDelayInfo &SrcInfo) const {
     const SrcDelayInfo *Srcs = getPathTo(Dst);
     // It maybe not path to Dst.
@@ -95,8 +83,8 @@ public:
 
   // For trivial expressions, the delay is zero.
   static SrcEntryTy AccumulateZeroDelay(VASTValue *Dst, unsigned SrcPos,
-                                        const SrcEntryTy DelayFromSrc) {
-    return DelayFromSrc;
+    const SrcEntryTy DelayFromSrc) {
+      return DelayFromSrc;
   }
 
   // Take DelayAccumulatorTy to accumulate the design.
@@ -106,20 +94,42 @@ public:
   template<typename DelayAccumulatorTy>
   void accumulateDelayThu(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
                           SrcDelayInfo &CurInfo, DelayAccumulatorTy F) {
-    const SrcDelayInfo *SrcInfo = getPathTo(Thu);
-    if (SrcInfo == 0) {
-      if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Thu)) {
-        assert(!isa<VASTExpr>(Thu) && "Not SrcInfo from Src find!");
-        updateDelay(CurInfo, F(Dst, ThuPos, SrcEntryTy(SeqVal, delay_type())));
-      }
+    // Do not lookup the source across the SeqValue.
+    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Thu)) {
+      assert(!isa<VASTExpr>(Thu) && "Not SrcInfo from Src find!");
+      updateDelay(CurInfo, F(Dst, ThuPos, SrcEntryTy(SeqVal, delay_type())));
       return;
     }
+
+    // Lookup the source of the timing path.
+    const SrcDelayInfo *SrcInfo = getPathTo(Thu);
+
+    if (SrcInfo == 0) return;
 
     for (src_iterator I = SrcInfo->begin(), E = SrcInfo->end(); I != E; ++I)
       updateDelay(CurInfo, F(Dst, ThuPos, *I));
 
     // FIXME: Also add the delay from Src to Dst.
+    if (VASTOperandList::GetOperandList(Thu) && hasPathInfo(Thu))
+      updateDelay(CurInfo, F(Dst, ThuPos, SrcEntryTy(Thu, delay_type())));
   }
+
+  void accumulateDelayFrom(VASTValue *Src, VASTValue *Dst) {
+    SrcDelayInfo &CurInfo = PathDelay[Dst];
+    accumulateDelayThu(Src, Dst, 0, CurInfo, AccumulateZeroDelay);
+  }
+
+  void estimateTimingOnTree(VASTValue *Root);
+};
+
+template<typename SubClass>
+class TimingEstimatorImpl : public TimingEstimatorBase {
+protected:
+
+  explicit TimingEstimatorImpl(PathDelayInfo &PathDelay)
+    : TimingEstimatorBase(PathDelay) {}
+
+public:
 
   void accumulateExprDelay(VASTExpr *Expr) {
     SrcDelayInfo &CurSrcInfo = PathDelay[Expr];
@@ -278,7 +288,37 @@ class BlackBoxTimingEstimator
 
   template<unsigned ROWNUM>
   static SrcEntryTy AccumulateWithDelayTable(VASTValue *Dst, unsigned SrcPos,
-                                             const SrcEntryTy DelayFromSrc);
+                                             const SrcEntryTy DelayFromSrc)
+  {
+    // Delay table in nanosecond.
+    static double DelayTable[][5] = {
+      { 1.430 , 2.615 , 3.260 , 4.556 , 7.099 }, //Add 0
+      { 1.191 , 3.338 , 4.415 , 5.150 , 6.428 }, //Shift 1
+      { 1.195 , 4.237 , 4.661 , 9.519 , 12.616 }, //Mul 2
+      { 1.191 , 2.612 , 3.253 , 4.531 , 7.083 }, //Cmp 3
+      { 1.376 , 1.596 , 1.828 , 1.821 , 2.839 }, //Sel 4
+      { 0.988 , 1.958 , 2.103 , 2.852 , 3.230 }  //Red 5
+    };
+
+    double *CurTable = DelayTable[ROWNUM];
+
+    unsigned BitWidth = Dst->getBitWidth();
+
+    int i = ComputeOperandSizeInByteLog2Ceil(BitWidth);
+
+    double RoundUpLatency = CurTable[i + 1],
+           RoundDownLatency = CurTable[i];
+    unsigned SizeRoundUpToByteInBits = 8 << i;
+    unsigned SizeRoundDownToByteInBits = i ? (8 << (i - 1)) : 0;
+    double PerBitLatency =
+      RoundUpLatency / (SizeRoundUpToByteInBits - SizeRoundDownToByteInBits) -
+      RoundDownLatency / (SizeRoundUpToByteInBits - SizeRoundDownToByteInBits);
+    // Scale the latency according to the actually width.
+    double Delay =
+      (RoundDownLatency + PerBitLatency * (BitWidth - SizeRoundDownToByteInBits));
+
+    return SrcEntryTy(DelayFromSrc.first, DelayFromSrc.second + Delay);
+  }
 public:
   explicit BlackBoxTimingEstimator(PathDelayInfo &PathDelay) : Base(PathDelay) {}
 
