@@ -36,6 +36,7 @@ STATISTIC(NumLUTBulit, "Number of LUT node built");
 STATISTIC(NumLUTExpand, "Number of LUT node expanded");
 STATISTIC(NumBufferBuilt, "Number of buffers built by ABC");
 STATISTIC(NumConstPOs, "Number of POs folded to constant.");
+STATISTIC(NumSimpleLUTExpand, "Number of LUT of And type or Or type expand.");
 
 // The header of ABC
 #define ABC_DLL
@@ -485,8 +486,10 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
   // Do not need to build the LUT for a simple And or Or.
   // Be careful even the sop is claimed as And or Or, its fanins still may be
   // inverted, hence we need to call ExpandSOP to build them correctly.
-  if (Abc_SopIsAndType(sop) || Abc_SopIsOrType(sop))
+  if (Abc_SopIsAndType(sop) || Abc_SopIsOrType(sop)) {
+    ++NumSimpleLUTExpand;
     return ExpandSOP(sop, Ops, Bitwidth, Builder);
+  }
 
   // Otherwise simple construct the LUT expression.
   VASTValPtr SOP = VM.getOrCreateSymbol(sop, 0);
