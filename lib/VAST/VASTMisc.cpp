@@ -11,6 +11,7 @@
 // common Verilog HDL writing task.
 //
 //===----------------------------------------------------------------------===//
+#include "shang/VASTHandle.h"
 #include "shang/VASTDatapathNodes.h"
 #include "shang/VASTModule.h"
 #include "shang/Utilities.h"
@@ -125,11 +126,16 @@ void VASTUse::PinUser() const {
   if (VASTWire *S = getAsLValue<VASTWire>())
     S->Pin();
 }
+//===----------------------------------------------------------------------===//
+void VASTHandle::print(raw_ostream &OS) const {
+  if (U.isInvalid()) OS << "<null>";
+  else               OS << U.unwrap();
+}
 
+//===----------------------------------------------------------------------===//
 ArrayRef<VASTUse> VASTOperandList::getOperands() const {
   return ArrayRef<VASTUse>(Operands, Size);
 }
-
 
 VASTOperandList *VASTOperandList::GetDatapathOperandList(VASTNode *N) {
   if (VASTExpr *E = dyn_cast_or_null<VASTExpr>(N))

@@ -15,6 +15,7 @@
 #include "shang/VASTModule.h"
 #include "shang/VASTModulePass.h"
 #include "shang/VASTExprBuilder.h"
+#include "shang/VASTHandle.h"
 #include "shang/Utilities.h"
 #include "shang/FUInfo.h"
 #include "shang/Passes.h"
@@ -81,16 +82,16 @@ struct LogicNetwork {
   }
 
   // Map VASTValue to Abc_Obj_t for AIG construction.
-  typedef std::map<VASTValue*, Abc_Obj_t*> ValueMapTy;
+  typedef std::map<VASTHandle, Abc_Obj_t*> ValueMapTy;
   // Nodes.
   ValueMapTy Nodes;
 
   // Map the Abc_Obj_t name to Instruction.
-  typedef StringMap<VASTValPtr> ABCNameMapTy;
+  typedef StringMap<VASTHandle> ABCNameMapTy;
   ABCNameMapTy ValueNames;
 
   // Map the Abc_Obj_t to VASTValue for VAST datapath rewriting.
-  typedef std::map<Abc_Obj_t*, VASTValPtr> AbcObjMapTy;
+  typedef std::map<Abc_Obj_t*, VASTHandle> AbcObjMapTy;
   AbcObjMapTy RewriteMap;
 
   // Convert a value to shortest string, the string must not containing \0 in
@@ -125,7 +126,7 @@ struct LogicNetwork {
   void buildLUTTree(Abc_Obj_t *Root, unsigned BitWidth);
   void buildLUTDatapath();
 
-  bool hasExternalUse(VASTValue * V) {
+  bool hasExternalUse(VASTValPtr V) {
     typedef VASTValue::use_iterator use_iterator;
     for (use_iterator UI = V->use_begin(), UE = V->use_end(); UI != UE; ++UI) {
       if (VASTValue *U = dyn_cast<VASTValue>(*UI))
@@ -264,7 +265,7 @@ void LogicNetwork::cleanUp() {
   typedef ValueMapTy::iterator node_iterator;
 
   for (node_iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
-    VASTValue *V = I->first;
+    VASTValPtr V = I->first;
     Abc_Obj_t *&Obj = I->second;
 
     if (Abc_ObjIsPi(Obj) || !hasExternalUse(V)) continue;
@@ -546,7 +547,10 @@ void LogicNetwork::buildLUTDatapath() {
     Abc_Obj_t *FI = Abc_ObjFanin0(Obj);
     // The Fanin of the PO maybe visited.
     if (isNodeVisited(FI)) continue;
-    unsigned TreeWidth = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))]->getBitWidth();
+
+    VASTHandle VH = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))];
+    assert(VH && "Cannot find the corresponding VASTValue!");
+    unsigned TreeWidth = VH->getBitWidth();
     // Rewrite the LUT tree rooted FI. Please note that the whole LUT Tree should
     // have the the same bitwidth. This means we can pass the bitwidth to the
     // LUT tree building function.
@@ -558,11 +562,8 @@ void LogicNetwork::buildLUTDatapath() {
     if (Abc_ObjIsComplement(FI)) NewVal = NewVal.invert();
 
     // Update the mapping if the mapped value changed.
-    VASTValPtr &OldVal = ValueNames[Abc_ObjName(Abc_ObjRegular(FI))];
-    if (OldVal != NewVal) {
-      Builder.replaceAllUseWith(OldVal, NewVal);
-      OldVal = NewVal;
-    }
+    if (VH != NewVal)
+      Builder.replaceAllUseWith(VH, NewVal);
   }
 }
 

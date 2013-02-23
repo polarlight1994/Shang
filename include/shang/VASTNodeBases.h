@@ -10,8 +10,8 @@
 // This file defines the base classes in the Verilog Abstract Syntax Tree.
 //
 //===----------------------------------------------------------------------===//
-#ifndef VTM_VAST_NODE_BASE_H
-#define VTM_VAST_NODE_BASE_H
+#ifndef SHANG_VAST_NODE_BASE_H
+#define SHANG_VAST_NODE_BASE_H
 
 #include "llvm/ADT/ilist.h"
 #include "llvm/ADT/ilist_node.h"
@@ -63,6 +63,10 @@ public:
     vastSeqCtrlOp,
     vastSlotCtrl,
     vastSeqCode,
+
+    // Handle of the VASTValPtr, make sure the replacement in the datapath do
+    // not invalid the external use.
+    vastHandle,
 
     vastModule
   };
