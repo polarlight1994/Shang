@@ -300,10 +300,15 @@ GotoExpansion::cloneCallee(Function *Caller, Function *Callee) {
     ArgLoads.push_back(L);
   }
 
+  AttributeSet OldSet = Caller->getAttributes();
+
   // Clone the caller into the callee.
   // TODO: Fix the line numbers.
   SmallVector<ReturnInst*, 16> Rets;
   CloneFunctionInto(Caller, Callee, CloneVMap, true, Rets, ".ge");
+
+  // There is a bug in llvm CloneFunctionInto which will break the attribute set.
+  Caller->setAttributes(OldSet);
 
   BasicBlock *CalleeEntry = cast<BasicBlock>(CloneVMap[&Callee->getEntryBlock()]);
   // Connect to the newly cloned function body.
