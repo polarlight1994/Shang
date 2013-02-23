@@ -31,10 +31,14 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/InstIterator.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-memory-partition"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+STATISTIC(NumMemoryAccess, "Number of memory accesses");
+STATISTIC(NumLoad, "Number of Load");
+STATISTIC(NumStore, "Number of Store");
 
 namespace {
 struct MemoryPartition : public FunctionPass, public HLSAllocation {
@@ -82,7 +86,36 @@ Pass *llvm::createMemoryPartitionPass() {
 bool MemoryPartition::runOnFunction(Function &F) {
   InitializeHLSAllocation(this);
 
+  Module *M = F.getParent();
+
+  // Make sure we have only 1 function.
+#ifndef NDEBUG
+  {
+    Function *TopFunction = 0;
+    for (Module::iterator I = M->begin(), E = M->end(); I != E; ++I) {
+      Function *F = I;
+
+      if (!F->use_empty() || F->isDeclaration())  continue;
+
+      // Ignore the dead functions.
+      if (!F->hasExternalLinkage()) continue;
+
+      assert(TopFunction == 0 && "More than 1 top functions!");
+      TopFunction = F;
+    }
+  }
+#endif
+
   AliasSetTracker AST(getAnalysis<AliasAnalysis>());
+
+  typedef Module::global_iterator iterator;
+  for (iterator I = M->global_begin(), E = M->global_end(); I != E; ++I) {
+    GlobalVariable *GV = I;
+    if (HLSAllocation::getMemoryPort(*GV).getFUType() != VFUs::MemoryBus)
+      continue;
+
+    AST.add(GV, TD->getTypeAllocSize(GV->getType()->getElementType()), 0);
+  }
 
   for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
     Instruction *Inst = &*I;
@@ -91,17 +124,17 @@ bool MemoryPartition::runOnFunction(Function &F) {
     if (!isLoadStore(Inst)) continue;
 
     // Ignore the block RAM accesses.
-    VFUs::FUTypes T;
-    if (LoadInst *L = dyn_cast<LoadInst>(Inst))
-      T = HLSAllocation::getMemoryPort(*L).getFUType();
-    else
-      T = HLSAllocation::getMemoryPort(cast<StoreInst>(*Inst)).getFUType();
-    
+    VFUs::FUTypes T = HLSAllocation::getMemoryPort(*Inst).getFUType();
+
     if (T != VFUs::MemoryBus) continue;
+
+    ++NumMemoryAccess;
+
+    if (Inst->mayWriteToMemory()) ++NumStore;
+    else                          ++NumLoad;
 
     AST.add(Inst);
   }
-  
 
   AST.dump();
 

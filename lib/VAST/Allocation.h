@@ -18,6 +18,7 @@
 #include "llvm/ADT/ArrayRef.h"
 
 namespace llvm {
+class Value;
 class GlobalVariable;
 class StoreInst;
 class LoadInst;
@@ -49,6 +50,9 @@ public:
   virtual FuncUnitId getMemoryPort(const LoadInst &I) const;
   virtual FuncUnitId getMemoryPort(const StoreInst &I) const;
   virtual FuncUnitId getMemoryPort(const GlobalVariable &GV) const;
+
+  FuncUnitId getMemoryPort(const Value &V) const;
+
   virtual ArrayRef<const GlobalVariable*>
   getBRAMAllocation(const Function *F) const;
 };

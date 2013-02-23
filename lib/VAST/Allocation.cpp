@@ -18,6 +18,8 @@
 #include "shang/FUInfo.h"
 
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/Pass.h"
 
 using namespace llvm;
@@ -38,6 +40,19 @@ FuncUnitId HLSAllocation::getMemoryPort(const GlobalVariable &GV) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
   return Allocation->getMemoryPort(GV);
+}
+
+FuncUnitId HLSAllocation::getMemoryPort(const Value &V) const {
+  if (const LoadInst *L = dyn_cast<LoadInst>(&V))
+    return getMemoryPort(*L);
+
+  if (const StoreInst *S = dyn_cast<StoreInst>(&V))
+    return getMemoryPort(*S);
+
+  if (const GlobalVariable *G = dyn_cast<GlobalVariable>(&V))
+    return getMemoryPort(*G);
+
+  return FuncUnitId();
 }
 
 ArrayRef<const GlobalVariable*>
