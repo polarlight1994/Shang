@@ -391,18 +391,6 @@ bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
   return false;
 }
 
-static char *utobin_buffer(uint64_t X, char *BuffurStart, unsigned NumDigit) {
-  char *BufPtr = BuffurStart, *BufferEnd = BuffurStart + NumDigit;
-
-  while (BufPtr < BufferEnd) {
-    unsigned char Mod = static_cast<unsigned char>(X) & 1;
-    *BufPtr++ = '0' + Mod;
-    X >>= 1;
-  }
-
-  return BufPtr;
-}
-
 // Implementation of LUT related functions.
 const char *VASTExpr::getLUT() const {
   assert(getOpcode() == VASTExpr::dpLUT && "Call getLUT on the wrong Expr type!");
