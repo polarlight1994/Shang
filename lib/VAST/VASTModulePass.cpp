@@ -235,13 +235,24 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
 
   if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
     FuncUnitId ID = Allocation.getMemoryPort(*GV);
+    unsigned SizeInBits = getValueSizeInBits(GV);
 
     if (ID.getFUType() == VFUs::BRam)
       // FIXIME: Calculate the offset of the GV in the block RAM.
-      return indexVASTExpr(GV, getOrCreateImmediate(0, getValueSizeInBits(GV)));
+      return indexVASTExpr(GV, getOrCreateImmediate(0, SizeInBits));
 
+    assert(ID.getFUType() == VFUs::MemoryBus && "Bad FU type!");
+    if (unsigned PortNum = ID.getFUNum()) {
+      VASTMemoryBus *Bus = getMemBus(PortNum);
+      unsigned StartOffset = Bus->getStartOffset(GV);
+      VASTImmediate *Imm = getOrCreateImmediate(StartOffset, SizeInBits);
+      VASTWire *W = VM->createWrapperWire(ShangMangle(GV->getName()), SizeInBits);
+      W->assign(Imm);
+      return indexVASTExpr(GV, W);
+    }
+    
     // If the GV is assigned to the memory port 0, create a wrapper wire for it.
-    return indexVASTExpr(GV, VM->createWrapperWire(GV, getValueSizeInBits(GV)));
+    return indexVASTExpr(GV, VM->createWrapperWire(GV, SizeInBits));
   }
 
   if (GEPOperator *GEP = dyn_cast<GEPOperator>(V))
