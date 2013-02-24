@@ -613,7 +613,7 @@ public:
     return Fanins[Idx];
   }
 
-  void printDecl(raw_ostream &OS) const {}
+  virtual void printDecl(raw_ostream &OS) const;
 
   virtual void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
   void print(raw_ostream &OS) const;
