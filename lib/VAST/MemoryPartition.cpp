@@ -43,8 +43,8 @@ STATISTIC(NumStore, "Number of Store");
 namespace {
 struct MemoryPartition : public FunctionPass, public HLSAllocation {
   static char ID;
-
-  DenseMap<const Value*, FuncUnitId>  Allocation;
+  
+  ValueMap<const Value*, FuncUnitId>  Allocation;
 
   // Look up the memory port allocation if the pointers are not allocated
   // to the BlockRAM.
@@ -185,15 +185,23 @@ bool MemoryPartition::runOnFunction(Function &F) {
       // Do not allocate local memory port if the pointers alias with external
       // global variables.
       if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V))
-        AllocateNewPort &= GV->hasInternalLinkage();
+        AllocateNewPort &= GV->hasInternalLinkage() || GV->hasPrivateLinkage();
     }
 
     unsigned Num = AllocateNewPort ? CurPortNum++ : 0;
 
     // Create the allocation.
-    while (!Pointers.empty())
-      Allocation.insert(std::make_pair(Pointers.pop_back_val(),
-                                       FuncUnitId(VFUs::MemoryBus, Num)));
+    while (!Pointers.empty()) {
+      FuncUnitId Id = FuncUnitId(VFUs::MemoryBus, Num);
+      Value *Ptr = Pointers.pop_back_val();
+
+      if (GlobalVariable *GV = dyn_cast<GlobalVariable>(GV))
+        dbgs() << "Assign " << *GV << " to Memory #" << Num << "\n";
+
+      bool inserted = Allocation.insert(std::make_pair(Ptr, Id)).second;
+      assert(inserted && "Allocation not inserted!");
+      (void) inserted;
+    }
   }
 
   return false;
