@@ -43,6 +43,10 @@ void VASTSubModuleBase::print(vlang_raw_ostream &OS,
 
 }
 
+void VASTSubModuleBase::printDecl(raw_ostream &OS) const {
+
+}
+
 //===----------------------------------------------------------------------===//
 VASTRegister::VASTRegister(VASTSeqValue *V, uint64_t initVal, const char *Attr)
   : VASTNode(vastRegister), Value(V), InitVal(initVal), AttrStr(Attr) {}
