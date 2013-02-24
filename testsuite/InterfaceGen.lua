@@ -108,7 +108,7 @@ always_comb begin
 
   if (fin) begin
     wfile = $('$')fopen("$(CounterFile)");
-    $('$')fwrite (wfile,"$(RTLModuleName) hardware run cycles %0d %0d\n",cnt, i1.i1.counter);
+    $('$')fwrite (wfile,"$(RTLModuleName) hardware run cycles %0d %0d\n",cnt, 0);
     $('$')fclose(wfile);
 
     wtmpfile = $('$')fopen("$(BenchmarkCycles)","a");
@@ -116,7 +116,7 @@ always_comb begin
     $('$')fclose(wtmpfile);
     $display("At %t the result is correct!", $('$')time());
 
-    //$display("$(RTLModuleName) memory access cycles: %d", DUT_TOP_tb.i1.i1.MemAccessCycles);
+    //$display("$(RTLModuleName) memory access cycles: %d", 0);
     $('$')stop;
   end
 end
