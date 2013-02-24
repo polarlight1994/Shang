@@ -41,10 +41,6 @@ struct GlobalToStack : public ModulePass {
   bool replaceScalarGlobalVariable(GlobalVariable *GV,
                                    BasicBlock::iterator InsertPos,
                                    ArrayRef<ReturnInst*> Rets);
-
-  bool replaceArrayGlobalVariable(GlobalVariable *GV,
-                                   BasicBlock::iterator InsertPos,
-                                   ArrayRef<ReturnInst*> Rets);
 };
 }
 
@@ -92,8 +88,12 @@ bool GlobalToStack::runOnModule(Module &M) {
     // Ignore the dead GlobalVariables.
     if (GV->use_empty()) continue;
 
-    changed |= replaceScalarGlobalVariable(GV, EntryInsertPoint, Rets)
-               || replaceArrayGlobalVariable(GV, EntryInsertPoint, Rets);    
+    if (replaceScalarGlobalVariable(GV, EntryInsertPoint, Rets)) {
+      changed = true;
+      continue;
+    }
+    
+    // TODO: Also replace the small arrays.
   }
 
   return changed;
@@ -129,10 +129,4 @@ bool GlobalToStack::replaceScalarGlobalVariable(GlobalVariable *GV,
 
   ++NumPromotedGV;
   return true;
-}
-
-bool GlobalToStack::replaceArrayGlobalVariable(GlobalVariable *GV,
-                                               BasicBlock::iterator InsertPos,
-                                               ArrayRef<ReturnInst*> Rets) {
-  return false;
 }

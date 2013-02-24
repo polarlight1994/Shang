@@ -47,7 +47,7 @@ wire                 start_N =~start;
 // The module successfully complete its execution if return_value is 0.
 assign succ = ~(|return_value);
 
-$(RTLModuleName) $(RTLModuleName)_inst(
+main main_inst(
     .clk(clk),
     .rstN(rstN),
     .start(start_N),
