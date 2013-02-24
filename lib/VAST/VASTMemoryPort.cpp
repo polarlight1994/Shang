@@ -82,15 +82,21 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
 }
 
 void VASTMemoryBus::addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes) {
+  DEBUG(dbgs() << GV->getName() << " CurOffset: " << CurrentOffset << "\n");
   // Insert the GlobalVariable to the offset map, and calculate its offset.
   // Please note that the computation is in the byte address.
   assert(GV->getAlignment() >= (DataSize / 8) && "Bad alignment!");
   assert(CurrentOffset % (DataSize / 8) == 0 && "Bad CurrentOffset!");
   CurrentOffset = RoundUpToAlignment(CurrentOffset, GV->getAlignment());
+  DEBUG(dbgs() << "Roundup to " << CurrentOffset << " according to alignment "
+         << GV->getAlignment() << '\n');
   bool inserted = BaseAddrs.insert(std::make_pair(GV, CurrentOffset)).second;
   assert(inserted && "GV had already added!");
   (void) inserted;
+  DEBUG(dbgs() << "Size of GV " << SizeInBytes << " Offset increase to "
+         << (CurrentOffset + SizeInBytes) << "\n");
   CurrentOffset = RoundUpToAlignment(CurrentOffset + SizeInBytes, DataSize / 8);
+  DEBUG(dbgs() << "Roundup to Word address " << CurrentOffset << "\n");
 }
 
 unsigned VASTMemoryBus::getStartOffset(GlobalVariable *GV) const {
@@ -441,16 +447,18 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
     std::pair<GlobalVariable*, unsigned> Var = Vars.pop_back_val();
 
     GlobalVariable *GV = Var.first;
+    DEBUG(dbgs() << GV->getName() << " CurByteAddress " << CurByteAddr << '\n');
     unsigned StartOffset = Var.second;
     CurByteAddr = padZeroToByteAddr(InitFileO, CurByteAddr, StartOffset,
                                     WordSizeInByte);
-    
+    DEBUG(dbgs() << "Pad zero to " << StartOffset << '\n');
     InitFileO << "//" << GV->getName() << " start byte address "
               << StartOffset << '\n';
-    if (GV->hasInitializer() && !GV->getInitializer()->isNullValue())
+    if (GV->hasInitializer() && !GV->getInitializer()->isNullValue()) {
       CurByteAddr = WriteInitializer(InitFileO, GV->getInitializer(),
                                       CurByteAddr, WordSizeInByte);
-
+      DEBUG(dbgs() << "Write initializer: " << CurByteAddr << '\n');
+    }
   }
 
   padZeroToByteAddr(InitFileO, CurByteAddr, CurrentOffset, WordSizeInByte);
