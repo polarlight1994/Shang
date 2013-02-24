@@ -227,8 +227,13 @@ VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
 
 VASTMemoryBus *VASTModule::createDefaultMemBus() {
   VFUMemBus *Desc = getFUDesc<VFUMemBus>();
+  return createMemBus(0, Desc->getAddrWidth(), Desc->getDataWidth());
+}
+
+VASTMemoryBus *VASTModule::createMemBus(unsigned Num, unsigned AddrWidth,
+                                        unsigned DataWidth) {
   VASTMemoryBus *Bus = getAllocator().Allocate<VASTMemoryBus>();
-  new (Bus) VASTMemoryBus(0, Desc->getAddrWidth(), Desc->getDataWidth());
+  new (Bus) VASTMemoryBus(Num, AddrWidth, DataWidth);
   Bus->addPorts(this);
   Submodules.push_back(Bus);
   return Bus;

@@ -44,6 +44,34 @@ namespace {
 struct MemoryPartition : public FunctionPass, public HLSAllocation {
   static char ID;
 
+  DenseMap<const Value*, FuncUnitId>  Allocation;
+
+  // Look up the memory port allocation if the pointers are not allocated
+  // to the BlockRAM.
+  virtual FuncUnitId getMemoryPort(const LoadInst &I) const {
+    FuncUnitId ID = HLSAllocation::getMemoryPort(I);
+
+    if (ID.getFUType() == VFUs::BRam) return ID;
+
+    return Allocation.lookup(I.getPointerOperand());
+  }
+
+  virtual FuncUnitId getMemoryPort(const StoreInst &I) const {
+    FuncUnitId ID = HLSAllocation::getMemoryPort(I);
+
+    if (ID.getFUType() == VFUs::BRam) return ID;
+
+    return Allocation.lookup(I.getPointerOperand());
+  }
+
+  virtual FuncUnitId getMemoryPort(const GlobalVariable &GV) const {
+    FuncUnitId ID = HLSAllocation::getMemoryPort(GV);
+
+    if (ID.getFUType() == VFUs::BRam) return ID;
+
+    return Allocation.lookup(&GV);
+  }
+
   MemoryPartition() : FunctionPass(ID) {
     initializeMemoryPartitionPass(*PassRegistry::getPassRegistry());
   }
@@ -55,6 +83,8 @@ struct MemoryPartition : public FunctionPass, public HLSAllocation {
   }
 
   bool runOnFunction(Function &F);
+
+  void releaseMemory() { Allocation.clear(); }
 
   /// getAdjustedAnalysisPointer - This method is used when a pass implements
   /// an analysis interface through multiple inheritance.  If needed, it
@@ -74,8 +104,8 @@ INITIALIZE_AG_PASS_BEGIN(MemoryPartition, HLSAllocation,
                          false, true, false)
   INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
 INITIALIZE_AG_PASS_END(MemoryPartition, HLSAllocation,
-                         "memory-partition", "Memory Partition",
-                         false, true, false)
+                       "memory-partition", "Memory Partition",
+                       false, true, false)
 
 char MemoryPartition::ID = 0;
 
@@ -111,10 +141,11 @@ bool MemoryPartition::runOnFunction(Function &F) {
   typedef Module::global_iterator iterator;
   for (iterator I = M->global_begin(), E = M->global_end(); I != E; ++I) {
     GlobalVariable *GV = I;
-    if (HLSAllocation::getMemoryPort(*GV).getFUType() != VFUs::MemoryBus)
+    // Ignore the block rams that is already assign to block RAM.
+    if (HLSAllocation::getMemoryPort(*GV).getFUType() == VFUs::BRam)
       continue;
 
-    AST.add(GV, TD->getTypeAllocSize(GV->getType()->getElementType()), 0);
+    AST.add(GV, AliasAnalysis::UnknownSize, 0);
   }
 
   for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
@@ -126,7 +157,7 @@ bool MemoryPartition::runOnFunction(Function &F) {
     // Ignore the block RAM accesses.
     VFUs::FUTypes T = HLSAllocation::getMemoryPort(*Inst).getFUType();
 
-    if (T != VFUs::MemoryBus) continue;
+    if (T == VFUs::BRam) continue;
 
     ++NumMemoryAccess;
 
@@ -136,7 +167,34 @@ bool MemoryPartition::runOnFunction(Function &F) {
     AST.add(Inst);
   }
 
-  AST.dump();
+  unsigned CurPortNum = 1;
+
+  for (AliasSetTracker::iterator I = AST.begin(), E = AST.end(); I != E; ++I) {
+    AliasSet *AS = I;
+
+    // Ignore the set that does not contain any load/store.
+    if (AS->isForwardingAliasSet() || !(AS->isMod() || AS->isRef()))
+      continue;
+
+    bool AllocateNewPort = true;
+    SmallVector<Value*, 8> Pointers;
+
+    for (AliasSet::iterator AI = AS->begin(), AE = AS->end(); AI != AE; ++AI) {
+      Value *V = AI.getPointer();
+      Pointers.push_back(V);
+      // Do not allocate local memory port if the pointers alias with external
+      // global variables.
+      if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V))
+        AllocateNewPort &= GV->hasInternalLinkage();
+    }
+
+    unsigned Num = AllocateNewPort ? CurPortNum++ : 0;
+
+    // Create the allocation.
+    while (!Pointers.empty())
+      Allocation.insert(std::make_pair(Pointers.pop_back_val(),
+                                       FuncUnitId(VFUs::MemoryBus, Num)));
+  }
 
   return false;
 }

@@ -467,7 +467,8 @@ public:
   }
 
   // Helper function.
-  static std::string printBitRange(unsigned UB, unsigned LB, bool printOneBit);
+  static std::string printBitRange(unsigned UB, unsigned LB = 0,
+                                   bool printOneBit = false);
 
   // Extract all SeqVals which are connect to this VASTValue through data-path.
   void extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals);

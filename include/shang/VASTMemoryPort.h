@@ -17,8 +17,13 @@
 #include "shang/VASTSubModules.h"
 
 namespace llvm {
+class GlobalVariable;
+
 class VASTMemoryBus : public VASTSubModuleBase {
   unsigned AddrSize, DataSize;
+
+  std::map<GlobalVariable*, unsigned> BaseAddrs;
+  unsigned CurrentOffset;
 
   VASTMemoryBus(unsigned BusNum, unsigned AddrSize, unsigned DataSize);
   friend class VASTModule;
@@ -60,6 +65,8 @@ public:
   VASTSeqValue *getWByteEn() const;
   VASTSeqValue *getWAddr() const;
   VASTSeqValue *getWData() const;
+
+  void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
 
   void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 

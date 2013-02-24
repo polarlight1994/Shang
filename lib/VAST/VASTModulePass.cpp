@@ -25,7 +25,6 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/InstIterator.h"
@@ -73,6 +72,16 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   }
 
   std::map<unsigned, VASTMemoryBus*> MemBuses;
+  VASTMemoryBus *getOrCreateMemBus(unsigned Num) {
+    VASTMemoryBus *&Bus = MemBuses[Num];
+    if (Bus == 0) {
+      VFUMemBus *Desc = getFUDesc<VFUMemBus>();
+      Bus = VM->createMemBus(Num, Desc->getAddrWidth(), Desc->getDataWidth());
+    }
+
+    return Bus;
+  }
+
   VASTMemoryBus *getMemBus(unsigned Num) const {
     std::map<unsigned, VASTMemoryBus*>::const_iterator at = MemBuses.find(Num);
     assert(at != MemBuses.end() && "BlockRAM not existed!");
@@ -80,7 +89,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   }
 
   //===--------------------------------------------------------------------===//
-  void allocateSubModules(CallGraph &CG);
+  void allocateSubModules();
   //===--------------------------------------------------------------------===//
   VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name);
 
@@ -310,10 +319,12 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
   if (SubMod) return;
 
   // Create the default memory bus.
-  bool Inserted
-    = MemBuses.insert(std::make_pair(0, VM->createDefaultMemBus())).second;
-  assert(Inserted && "Memory bus not inserted!");
-  (void) Inserted;
+  if (F->getName() != "main") {
+    bool Inserted
+      = MemBuses.insert(std::make_pair(0, VM->createDefaultMemBus())).second;
+    assert(Inserted && "Memory bus not inserted!");
+    (void) Inserted;
+  }
 
   // Copy the value to the register.
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
@@ -334,28 +345,8 @@ void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
   }
 }
 
-void VASTModuleBuilder::allocateSubModules(CallGraph &CG) {
+void VASTModuleBuilder::allocateSubModules() {
   Function &F = *VM;
-  CallGraphNode *CGN = CG[&F];
-
-  typedef CallGraphNode::const_iterator iterator;
-  for (iterator I = CGN->begin(), E = CGN->end(); I != E; ++I) {
-    Function *Callee = I->second->getFunction();
-
-    // Submodule for external function is ignored now.
-    if (Callee->isDeclaration()) continue;
-
-    // Create the submodule.
-    const char *SubModName = Callee->getValueName()->getKeyData();
-
-    // Ignore the function that is called more than once in the function.
-    if (SubModules.count(SubModName)) continue;
-
-    VASTSubModule *SubMod = VM->addSubmodule(SubModName, SubModules.size());
-    emitFunctionSignature(Callee, SubMod);
-    SubMod->setIsSimple();
-    SubModules.GetOrCreateValue(SubModName, SubMod);
-  }
 
   // Allocate the block RAMs.
   ArrayRef<const GlobalVariable*> GVs = Allocation.getBRAMAllocation(&F);
@@ -364,6 +355,32 @@ void VASTModuleBuilder::allocateSubModules(CallGraph &CG) {
     FuncUnitId ID = Allocation.getMemoryPort(*GV);
     assert(ID.getFUType() == VFUs::BRam && "Bad block RAM allocation!");
     emitBlockRAM(ID.getFUNum(), GV);
+  }
+
+  typedef Module::global_iterator global_iterator;
+  Module *M = F.getParent();
+  for (global_iterator I = M->global_begin(), E = M->global_end(); I != E; ++I) {
+    GlobalVariable *GV = I;
+
+    FuncUnitId Id = Allocation.getMemoryPort(*GV);
+    // Ignore the block rams that is already assign to block RAM.
+    if (Id.getFUType() != VFUs::MemoryBus || Id.getFUNum() == 0)
+      continue;
+
+    VASTMemoryBus *Bus = getOrCreateMemBus(Id.getFUNum());
+
+    Type *ElemTy = GV->getType()->getElementType();
+    unsigned NumElem = 1;
+
+    // Try to expand multi-dimension array to single dimension array.
+    while (const ArrayType *AT = dyn_cast<ArrayType>(ElemTy)) {
+      ElemTy = AT->getElementType();
+      NumElem *= AT->getNumElements();
+    }
+
+    unsigned ElementSizeInBytes = TD->getTypeStoreSize(ElemTy);
+
+    Bus->addGlobalVariable(GV, NumElem * ElementSizeInBytes);
   }
 }
 
@@ -935,7 +952,7 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
   Builder.emitFunctionSignature(&F);
 
   // Allocate the submodules.
-  Builder.allocateSubModules(getAnalysis<CallGraph>());
+  Builder.allocateSubModules();
 
   // Build the Submodule.
   Builder.connectEntryState(&F.getEntryBlock());
@@ -952,7 +969,6 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
 
 void VASTModuleAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<HLSAllocation>();
-  AU.addRequired<CallGraph>();
   AU.addRequiredID(BasicBlockTopOrderID);
   AU.setPreservesAll();
 }

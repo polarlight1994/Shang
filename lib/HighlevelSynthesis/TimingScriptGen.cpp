@@ -278,8 +278,10 @@ void PathIntervalQueryCache::annotatePathInterval(/*SeqReachingDefAnalysis *R,*/
     }
 
     // Otherwise, remember the node and visit its children first.
-    VASTValue *ChildNode = It->getAsLValue<VASTValue>();
+    VASTValue *ChildNode = It->unwrap().get();
     ++VisitStack.back().second;
+
+    if (ChildNode == 0) continue;
 
     // And do not visit a node twice.
     if (!Visited.insert(ChildNode).second) {

@@ -253,6 +253,7 @@ public:
                                VASTNode *Parent);
 
   VASTMemoryBus *createDefaultMemBus();
+  VASTMemoryBus *createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth);
 
   VASTBlockRAM *addBlockRAM(unsigned BRamNum, unsigned Bitwidth, unsigned Size,
                             const GlobalVariable *Initializer);
