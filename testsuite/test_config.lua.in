@@ -38,5 +38,10 @@ import "DPI-C" function chandle vlt_$(escapeNumber(k))();
 `endif
 ]=]
 
-Misc.RTLGlobalScript = Misc.CommonRTLGlobalScript
+Misc.RTLGlobalScript = Misc.CommonRTLGlobalScript = [=[
+local preprocess = require "luapp" . preprocess
+RTLGlobalCode, message = preprocess {input=RTLGlobalTemplate}
+if message ~= nil then print(message) end
 
+RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
+]=]

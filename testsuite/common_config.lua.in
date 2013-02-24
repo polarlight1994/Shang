@@ -124,4 +124,3 @@ endmodule
 -- Define some function
 dofile('@VTS_SOURCE_ROOT@/' .. 'FuncDefine.lua')
 dofile('@VTS_SOURCE_ROOT@/' .. 'AddModules.lua')
-dofile('@VTS_SOURCE_ROOT@/' .. 'BramGlobVar.lua')
