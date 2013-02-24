@@ -39,6 +39,7 @@ using namespace llvm;
 STATISTIC(NumMemoryAccess, "Number of memory accesses");
 STATISTIC(NumLoad, "Number of Load");
 STATISTIC(NumStore, "Number of Store");
+STATISTIC(NumMemBanks, "Number of Local Memory Bank Allocated");
 
 namespace {
 struct MemoryPartition : public FunctionPass, public HLSAllocation {
@@ -135,7 +136,9 @@ bool MemoryPartition::runOnFunction(Function &F) {
     }
   }
 #endif
-
+  // Temporary hack: Do not perform memory partition on the hybrid flow.
+  if (F.getName() != "main") return false;
+  
   AliasSetTracker AST(getAnalysis<AliasAnalysis>());
 
   typedef Module::global_iterator iterator;
@@ -188,14 +191,14 @@ bool MemoryPartition::runOnFunction(Function &F) {
         AllocateNewPort &= GV->hasInternalLinkage() || GV->hasPrivateLinkage();
     }
 
-    unsigned Num = AllocateNewPort ? CurPortNum++ : 0;
+    unsigned Num = 1;//AllocateNewPort ? CurPortNum++ : 0;
 
     // Create the allocation.
     while (!Pointers.empty()) {
       FuncUnitId Id = FuncUnitId(VFUs::MemoryBus, Num);
       Value *Ptr = Pointers.pop_back_val();
 
-      if (GlobalVariable *GV = dyn_cast<GlobalVariable>(GV))
+      if (GlobalVariable *GV = dyn_cast<GlobalVariable>(Ptr))
         dbgs() << "Assign " << *GV << " to Memory #" << Num << "\n";
 
       bool inserted = Allocation.insert(std::make_pair(Ptr, Id)).second;
@@ -203,6 +206,8 @@ bool MemoryPartition::runOnFunction(Function &F) {
       (void) inserted;
     }
   }
+
+  NumMemBanks += (CurPortNum - 1);
 
   return false;
 }
