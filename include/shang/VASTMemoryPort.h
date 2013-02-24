@@ -47,6 +47,7 @@ class VASTMemoryBus : public VASTSubModuleBase {
 
   static std::string getREnName(unsigned Idx);
 
+  void writeInitializeFile(vlang_raw_ostream &OS) const;
 public:
   unsigned getDataWidth() const { return DataSize; }
   unsigned getAddrWidth() const { return AddrSize; }
@@ -67,6 +68,7 @@ public:
   VASTSeqValue *getWData() const;
 
   void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
+  unsigned getStartOffset(GlobalVariable *GV) const;
 
   void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 
