@@ -136,8 +136,6 @@ bool MemoryPartition::runOnFunction(Function &F) {
     }
   }
 #endif
-  // Temporary hack: Do not perform memory partition on the hybrid flow.
-  if (F.getName() != "main") return false;
   
   AliasSetTracker AST(getAnalysis<AliasAnalysis>());
 
@@ -191,7 +189,7 @@ bool MemoryPartition::runOnFunction(Function &F) {
         AllocateNewPort &= GV->hasInternalLinkage() || GV->hasPrivateLinkage();
     }
 
-    unsigned Num = 1;//AllocateNewPort ? CurPortNum++ : 0;
+    unsigned Num = F.getName() != "main" ? 0 : 1;//AllocateNewPort ? CurPortNum++ : 0;
 
     // Create the allocation.
     while (!Pointers.empty()) {
