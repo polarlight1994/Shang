@@ -70,6 +70,8 @@ public:
   void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
   unsigned getStartOffset(GlobalVariable *GV) const;
 
+  void printDecl(raw_ostream &OS) const;
+
   void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:

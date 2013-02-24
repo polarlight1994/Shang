@@ -78,6 +78,23 @@ void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   if (UB) OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
 }
 
+void VASTNamedValue::printDecl(raw_ostream &OS, bool declAsRegister,
+                               const char *Terminator) const {
+  if (declAsRegister)
+    OS << "reg";
+  else
+    OS << "wire";
+
+  if (getBitWidth() > 1)
+    OS << "[" << (getBitWidth() - 1) << ":0]";
+
+  OS << ' ' << getName();
+
+  OS << Terminator;
+
+  return;
+}
+
 //===----------------------------------------------------------------------===//
 VASTLLVMValue::VASTLLVMValue(Value *V, unsigned Size)
   : VASTValue(vastLLVMValue, Size)

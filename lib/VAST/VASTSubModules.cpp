@@ -81,6 +81,13 @@ void VASTRegister::print(raw_ostream &OS) const {
   print(S, 0);
 }
 
+
+void VASTRegister::printDecl(raw_ostream &OS) const {
+  OS << AttrStr << ' ';
+  getValue()->printDecl(OS, true, "");
+  OS << " = " << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false) <<  ";\n";
+}
+
 //===----------------------------------------------------------------------===//
 void VASTBlockRAM::addPorts(VASTModule *VM) {
   std::string BRamArrayName = VFUBRAM::getArrayName(getBlockRAMNum());
@@ -143,6 +150,10 @@ static void WriteBRAMInitializer(raw_ostream &OS, const Constant *C,
 
   llvm_unreachable("Unsupported constant type to bind to script engine!");
   OS << '0';
+}
+
+void VASTBlockRAM::printDecl(raw_ostream &OS) const {
+  getRAddr(0)->printDecl(OS, true);
 }
 
 void
@@ -325,4 +336,14 @@ void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   }
 
   printInstantiationFromTemplate(OS, Mod);
+}
+
+void VASTSubModule::printDecl(raw_ostream &OS) const {
+  // Declare the output of submodule.
+  if (VASTSeqValue *Ret = getRetPort())
+    Ret->printDecl(OS, false);
+
+  // Declare the finish signal of submodule.
+  if (VASTSeqValue *Fin = getFinPort())
+    Fin->printDecl(OS, false);
 }

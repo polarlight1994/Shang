@@ -363,27 +363,6 @@ VASTModule::~VASTModule() {
   delete Datapath;
 }
 
-template<typename T>
-static raw_ostream &printDecl(raw_ostream &OS, T *V, bool declAsRegister,
-                              const char *Terminator = ";\n") {
-  if (declAsRegister)
-    OS << "reg";
-  else
-    OS << "wire";
-
-  if (V->getBitWidth() > 1)
-    OS << "[" << (V->getBitWidth() - 1) << ":0]";
-
-  OS << ' ' << V->getName();
-
-  if (isa<VASTRegister>(V))
-    OS << " = " << VASTImmediate::buildLiteral(0, V->getBitWidth(), false);
-
-  OS << Terminator;
-
-  return OS;
-}
-
 namespace {
 struct DatapathPrinter {
   raw_ostream &OS;
@@ -393,7 +372,7 @@ struct DatapathPrinter {
   void operator()(VASTNode *N) const {
     if (VASTWire *W = dyn_cast<VASTWire>(N))  {
       // Declare the wire if necessary.
-      printDecl(OS, W, false, "");
+      W->printDecl(OS, false, "");
 
       if (VASTValPtr V= W->getDriver()) {
         OS << " = ";
@@ -508,45 +487,11 @@ void VASTModule::printModuleDecl(raw_ostream &OS) const {
 }
 
 void VASTModule::printSignalDecl(raw_ostream &OS) {
-  for (reg_iterator I = Registers.begin(), E = Registers.end(); I != E; ++I) {
-    VASTRegister *R = *I;
-    OS << R->AttrStr << ' ';
-    printDecl(OS, R, true);
-  }
+  for (reg_iterator I = Registers.begin(), E = Registers.end(); I != E; ++I)
+    (*I)->printDecl(OS);
 
-  for (submod_iterator I = Submodules.begin(),E = Submodules.end();I != E;++I) {
-    // FIXME: Implement the printDecl for SubModuleBase.
-    // Declare the output register of the block RAM.
-    if (VASTBlockRAM *R = dyn_cast<VASTBlockRAM>(*I)) {
-      printDecl(OS, R->getRAddr(0), true);
-      continue;
-    }
-
-    if (VASTMemoryBus *M = dyn_cast<VASTMemoryBus>(*I)) {
-      if (M->isDefault()) continue;
-
-      printDecl(OS, M->getREnable(), true);
-      printDecl(OS, M->getRByteEn(), true);
-      printDecl(OS, M->getRAddr(),   true);
-
-      printDecl(OS, M->getWEnable(), true);
-      printDecl(OS, M->getWByteEn(), true);
-      printDecl(OS, M->getWAddr(),   true);
-      printDecl(OS, M->getWData(),   true);
-
-      continue;
-    }
-
-    if (VASTSubModule *S = dyn_cast<VASTSubModule>(*I)) {
-      // Declare the output of submodule.
-      if (VASTSeqValue *Ret = S->getRetPort())
-        printDecl(OS, Ret, false);
-
-      // Declare the finish signal of submodule.
-      if (VASTSeqValue *Fin = S->getFinPort())
-        printDecl(OS, Fin, false);
-    }
-  }
+  for (submod_iterator I = Submodules.begin(),E = Submodules.end();I != E;++I)
+    (*I)->printDecl(OS);
 }
 
 VASTNamedValue *VASTModule::getOrCreateSymbol(const Twine &Name,

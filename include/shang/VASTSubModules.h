@@ -56,6 +56,8 @@ public:
     return getFanin(PortNum * 3 + 2);
   }
 
+  void printDecl(raw_ostream &OS) const;
+
   void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -115,6 +117,8 @@ public:
                               unsigned Latency = 0);
   VASTSeqValue *getRetPort() const { return RetPort; }
 
+  void printDecl(raw_ostream &OS) const;
+
   // Get the latency of the submodule.
   unsigned getLatency() const { return Latency; }
 
@@ -153,6 +157,8 @@ public:
   }
 
   typedef VASTSeqValue::AndCndVec AndCndVec;
+
+  void printDecl(raw_ostream &OS) const;
 
   void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
   void print(raw_ostream &OS) const;

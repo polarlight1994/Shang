@@ -165,6 +165,19 @@ std::string VASTMemoryBus::getREnName(unsigned Idx) {
   return "mem" + utostr(Idx) + "ren";
 }
 
+void VASTMemoryBus::printDecl(raw_ostream &OS) const {
+  if (isDefault()) return;
+
+  getREnable()->printDecl(OS, true);
+  getRByteEn()->printDecl(OS, true);
+  getRAddr()->printDecl(OS, true);
+
+  getWEnable()->printDecl(OS, true);
+  getWByteEn()->printDecl(OS, true);
+  getWAddr()->printDecl(OS,   true);
+  getWData()->printDecl(OS,   true);
+}
+
 static void printAssigment(vlang_raw_ostream &OS, VASTSeqValue *SeqVal,
                            const VASTModule *Mod) {
   OS << SeqVal->getName() << " <= ";
@@ -291,7 +304,9 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
     " <= mem" << Idx << "wdata0r[" << (i * 8 + 7 ) << ':' << (i * 8) << "];\n";
 
   OS.exit_block();
-  OS << "mem" << Idx << "rdata1r <= mem" << Idx << "ram[mem" << Idx << "raddr0r];\n";
+  for (unsigned i = 0; i < 8; ++i)
+    OS << "mem" << Idx << "rdata1r[" << (i * 8 + 7 ) << ':' << (i * 8) << "]"
+          " <= mem" << Idx << "ram[mem" << Idx << "raddr0r][" << i << "];\n";
   OS.always_ff_end(false);
 
   OS.always_ff_begin(false);
