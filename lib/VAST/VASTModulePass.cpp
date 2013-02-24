@@ -253,9 +253,14 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
 
   if (UndefValue *UDef = dyn_cast<UndefValue>(V)) {
     unsigned SizeInBit = getValueSizeInBits(UDef);
-    // TEMPORARY HACK: Create randome value for UndefValue.
+    // TEMPORARY HACK: Create random value for UndefValue.
     // TODO: Create 'x' for UndefValue.
     return getOrCreateImmediate(intptr_t(V), SizeInBit);
+  }
+
+  if (ConstantPointerNull *PtrNull = dyn_cast<ConstantPointerNull>(V)) {
+    unsigned SizeInBit = getValueSizeInBits(PtrNull);
+    return getOrCreateImmediate(APInt::getNullValue(SizeInBit));
   }
 
   llvm_unreachable("Unhandle value!");
