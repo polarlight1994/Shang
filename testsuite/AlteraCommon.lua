@@ -90,7 +90,7 @@ proc runOnPath { path } {
     }
   }
 
-  puts $PlotXY "$cur_path_ll $cur_path_delay $cur_total_ic_delay"
+  puts $PlotXY "$cur_path_ll $cur_path_delay $cur_total_ic_delay $cur_slack"
   
   close $PlotXY
 }
