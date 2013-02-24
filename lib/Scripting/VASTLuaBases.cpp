@@ -515,9 +515,25 @@ void VASTModule::printSignalDecl(raw_ostream &OS) {
   }
 
   for (submod_iterator I = Submodules.begin(),E = Submodules.end();I != E;++I) {
+    // FIXME: Implement the printDecl for SubModuleBase.
     // Declare the output register of the block RAM.
     if (VASTBlockRAM *R = dyn_cast<VASTBlockRAM>(*I)) {
       printDecl(OS, R->getRAddr(0), true);
+      continue;
+    }
+
+    if (VASTMemoryBus *M = dyn_cast<VASTMemoryBus>(*I)) {
+      if (M->isDefault()) continue;
+
+      printDecl(OS, M->getREnable(), true);
+      printDecl(OS, M->getRByteEn(), true);
+      printDecl(OS, M->getRAddr(),   true);
+
+      printDecl(OS, M->getWEnable(), true);
+      printDecl(OS, M->getWByteEn(), true);
+      printDecl(OS, M->getWAddr(),   true);
+      printDecl(OS, M->getWData(),   true);
+
       continue;
     }
 
