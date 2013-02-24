@@ -97,12 +97,12 @@ bool FunctionFilter::runOnModule(Module &M) {
     // All functions called by this function is also hardware functions.
     for (df_iterator<CallGraphNode*> ICGN = df_begin(CGN),
          ECGN = df_end(CGN); ICGN != ECGN; ++ICGN){
-        const CallGraphNode *SubCGN = *ICGN;
-        Function *SubFN = SubCGN->getFunction();
-        if (!SubFN || SubFN->isDeclaration())
-          continue;
+      const CallGraphNode *SubCGN = *ICGN;
+      Function *SubFN = SubCGN->getFunction();
+      if (!SubFN || SubFN->isDeclaration())
+        continue;
 
-        HWFunctions.insert(SubFN);
+      HWFunctions.insert(SubFN);
     }
   }
 
@@ -114,7 +114,7 @@ bool FunctionFilter::runOnModule(Module &M) {
   for (HWFnMap::const_iterator I = TopHWFns.begin(), E = TopHWFns.end();
        I != E; ++I) {
     Function *HWF = M.getFunction(I->first());
-    if (HWF == 0 || HWF->isDeclaration()) continue;
+    if (HWF == 0 || HWF->isDeclaration() || HWF->getName() == "main") continue;
 
     HWF->setName(I->second);
 
