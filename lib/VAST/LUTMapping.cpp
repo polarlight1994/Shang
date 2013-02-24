@@ -35,7 +35,7 @@ STATISTIC(NumABCNodeBulit, "Number of ABC node built");
 STATISTIC(NumLUTBulit, "Number of LUT node built");
 STATISTIC(NumLUTExpand, "Number of LUT node expanded");
 STATISTIC(NumBufferBuilt, "Number of buffers built by ABC");
-STATISTIC(NumConstPOs, "Number of POs folded to constant.");
+STATISTIC(NumConsts, "Number of Nodes folded to constant.");
 STATISTIC(NumSimpleLUTExpand, "Number of LUT of And type or Or type expand.");
 
 // The header of ABC
@@ -458,11 +458,15 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
 
   char *sop = (char*)Abc_ObjData(Obj);
 
-  if (Abc_SopIsConst0(sop))
+  if (Abc_SopIsConst0(sop)) {
+    ++NumConsts;
     return Builder.getImmediate(APInt::getNullValue(Bitwidth));
+  }
 
-  if (Abc_SopIsConst1(sop))
+  if (Abc_SopIsConst1(sop)) {
+    ++NumConsts;
     return Builder.getImmediate(APInt::getAllOnesValue(Bitwidth));
+  }
 
   assert(!Ops.empty() && "We got a node without fanin?");
 
@@ -653,8 +657,6 @@ static void BreakNAryExpr(DatapathContainer &DP, VASTExprBuilder &Builder) {
 }
 
 static void ExpandSOP(DatapathContainer &DP, VASTExprBuilder &Builder) {
-  bool changed = true;
-
   std::vector<VASTHandle> Worklist;
 
   typedef DatapathContainer::expr_iterator iterator;
