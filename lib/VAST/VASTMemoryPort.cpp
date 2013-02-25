@@ -284,7 +284,9 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   unsigned NumBytes = getDataWidth() / 8;
   assert(CurrentOffset % NumBytes == 0 && "CurrentOffset not aligned!");
   unsigned NumWords = (CurrentOffset / NumBytes);
-  // use a multi-dimensional packed array to model individual bytes within the word
+  // use a multi-dimensional packed array to model individual bytes within the
+  // word. Please note that the bytes is ordered from 0 to 7 ([0:7]) because
+  // so that the byte address can access the correct byte.
   OS << "(* ramstyle = \"no_rw_check\" *)"
         "reg [0:" << (NumBytes - 1) << ']' << VASTValue::printBitRange(8)
      << " mem" << Idx << "ram[0:" << NumWords << "-1];\n";
