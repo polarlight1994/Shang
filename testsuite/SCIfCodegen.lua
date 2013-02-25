@@ -127,9 +127,9 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
     }
 
     //Memory bus function
-    bool brige_read_en_pipe, brige_read_ready, brige_write_en_pipe;
+    bool brige_read_en_pipe, brige_write_en_pipe;
     uint8_t brige_read_byte_en_pipe, brige_write_byte_en_pipe;
-    uint64_t brige_raddr_pipe, brige_waddr_pipe, brige_read_data_pipe, brige_write_data_pipe;
+    uint64_t brige_raddr_pipe, brige_waddr_pipe, brige_write_data_pipe;
 
     // Stage 1, latch the signals in to the brige.
     void brige_pipe_1() {
@@ -152,17 +152,15 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
       while (true){
         if (brige_read_en_pipe) {
           switch (brige_read_byte_en_pipe){
-          case 1:  (brige_read_data_pipe) = *((uint8_t*)(brige_raddr_pipe));  addrmask = 0; break;
-          case 3:  (brige_read_data_pipe) = *((uint16_t*)(brige_raddr_pipe)); addrmask = 1; break;
-          case 15: (brige_read_data_pipe) = *((uint32_t*)(brige_raddr_pipe));   addrmask = 3; break;
-          case 255: (brige_read_data_pipe)= *((uint64_t*)(brige_raddr_pipe)); addrmask = 7; break;
+          case 1:  (mem0rdata) = *((uint8_t*)(brige_raddr_pipe));  addrmask = 0; break;
+          case 3:  (mem0rdata) = *((uint16_t*)(brige_raddr_pipe)); addrmask = 1; break;
+          case 15: (mem0rdata) = *((uint32_t*)(brige_raddr_pipe));   addrmask = 3; break;
+          case 255: (mem0rdata)= *((uint64_t*)(brige_raddr_pipe)); addrmask = 7; break;
           default: assert(0 && "Unsupported size!"); break;
           }
         } else {
-          brige_read_data_pipe = 0x0123456789abcdef;
+          mem0rdata = 0x0123456789abcdef;
         }
-
-        brige_read_ready = brige_read_en_pipe;
 
         if(brige_write_en_pipe) { // Write memory
           switch (brige_write_byte_en_pipe){
@@ -174,14 +172,6 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
           }
         }
 
-        wait();
-      }
-    }
-
-    // Stage 3, output the signal.
-    void brige_pipe_3() {
-      while (true){
-        mem0rdata = brige_read_data_pipe;
         wait();
       }
     }
@@ -216,7 +206,6 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
         SC_CTHREAD(sw_main_entry,clk.pos());
         SC_CTHREAD(brige_pipe_1,clk.pos());
         SC_CTHREAD(brige_pipe_2,clk.pos());
-        SC_CTHREAD(brige_pipe_3,clk.pos());
       }
     private:
       V$(CurRTLModuleName)_tb(const V$(CurRTLModuleName)_tb&) ;

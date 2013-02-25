@@ -265,28 +265,21 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   if (isDefault()) return;
 
   OS << "reg " << VASTValue::printBitRange(getAddrWidth())
-     << " mem" << Idx << "waddr0r, mem" << Idx << "waddr1r,"
-     << " mem" << Idx << "raddr0r, mem" << Idx << "raddr1r;\n";
-  OS << "reg " << VASTValue::printBitRange(getByteEnWdith())
-     <<" mem" << Idx << "wbe0r;\n";
-  OS << "reg mem" << Idx << "wen0r, mem" << Idx << "ren0r,"
-        " mem" << Idx << "ren1r;\n";
+     << " mem" << Idx << "waddr1r,"
+     << " mem" << Idx << "raddr1r;\n";
+  OS << "reg mem" << Idx << "ren1r;\n";
   OS << "reg "<< VASTValue::printBitRange(getDataWidth())
-     << " mem" << Idx << "wdata0r,  mem" << Idx << "rdata1r,"
-        " mem" << Idx << "rdata2r;\n";
+     << " mem" << Idx << "rdata1r, mem" << Idx << "rdata2r;\n";
   OS << "reg [2:0] mem" << Idx << "raddr2r;\n";
 
   // Stage 1: registering all the input for writes
-  OS.always_ff_begin(false);
-  OS << "mem" << Idx << "waddr0r <= mem" << Idx << "waddr;\n";
-  OS << "mem" << Idx << "raddr0r <= mem" << Idx << "raddr;\n";
-  OS << "mem" << Idx << "wbe0r <= "
+  OS << "wire " << VASTValue::printBitRange(getByteEnWdith())
+     << " mem" << Idx << "wbe0w = "
         "mem" << Idx << "wbe << mem" << Idx << "waddr[2:0];\n";
-  OS << "mem" << Idx << "wen0r <= mem" << Idx << "wen;\n";
-  OS << "mem" << Idx << "ren0r <= mem" << Idx << "ren;\n";
-  OS << "mem" << Idx << "wdata0r <= "
-        "(mem" << Idx << "wdata << { mem" << Idx << "waddr[2:0],3'b0});\n";
-  OS.always_ff_end(false);
+  OS << "wire "<< VASTValue::printBitRange(getDataWidth())
+     << " mem" << Idx << "wdata0w = "
+        "(mem" << Idx << "wdata << { mem" << Idx << "waddr[2:0], 3'b0 });\n";
+
 
   // Stage 2: Access the block ram.
   unsigned NumBytes = getDataWidth() / 8;
@@ -300,16 +293,16 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   writeInitializeFile(OS);
 
   OS.always_ff_begin(false);
-  OS.if_() << "mem" << Idx << "wen0r";
+  OS.if_() << "mem" << Idx << "wen";
   OS._then();
 
   for (unsigned i = 0; i < 8; ++i)
-    OS << "if(mem" << Idx << "wbe0r[" << i << "])"
-          " mem" << Idx << "ram[mem" << Idx << "waddr0r"
+    OS << "if(mem" << Idx << "wbe0w[" << i << "])"
+          " mem" << Idx << "ram[mem" << Idx << "waddr"
        << VASTValue::printBitRange(getAddrWidth(), 3) << "][" << i << "]"
-          " <= mem" << Idx << "wdata0r[" << (i * 8 + 7 ) << ':' << (i * 8) << "];\n";
+          " <= mem" << Idx << "wdata0w[" << (i * 8 + 7 ) << ':' << (i * 8) << "];\n";
 
-  OS << "if (mem" << Idx << "waddr0r"
+  OS << "if (mem" << Idx << "waddr"
      << VASTValue::printBitRange(getAddrWidth(), 3) << ">= "<< NumWords <<")"
         " $finish(\"Write access out of bound!\");\n";
   OS.exit_block();
@@ -317,20 +310,20 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 
   for (unsigned i = 0; i < 8; ++i)
     OS << "mem" << Idx << "rdata1r[" << (i * 8 + 7 ) << ':' << (i * 8) << "]"
-          " <= mem" << Idx << "ram[mem" << Idx << "raddr0r"
+          " <= mem" << Idx << "ram[mem" << Idx << "raddr"
        << VASTValue::printBitRange(getAddrWidth(), 3) << "][" << i << "];\n";
 
-  OS.if_() << "mem" << Idx << "ren0r";
+  OS.if_() << "mem" << Idx << "ren";
   OS._then();
-  OS << "if (mem" << Idx << "raddr0r"
+  OS << "if (mem" << Idx << "raddr"
      << VASTValue::printBitRange(getAddrWidth(), 3) << ">= "<< NumWords <<")"
         " $finish(\"Read access out of bound!\");\n";
   OS.exit_block();
   OS.always_ff_end(false);
 
   OS.always_ff_begin(false);
-  OS << "mem" << Idx << "raddr1r <= mem" << Idx << "raddr0r;\n";
-  OS << "mem" << Idx << "ren1r <= mem" << Idx << "ren0r;\n";
+  OS << "mem" << Idx << "raddr1r <= mem" << Idx << "raddr;\n";
+  OS << "mem" << Idx << "ren1r <= mem" << Idx << "ren;\n";
   OS.always_ff_end(false);
 
   // Stage 3: Generate the output.
