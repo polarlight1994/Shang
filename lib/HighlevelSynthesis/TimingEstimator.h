@@ -260,17 +260,17 @@ class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator
     TNLDelay D = DelayFromSrc.second;
     VASTExpr *Expr = cast<VASTExpr>(Dst);
     // TODO: Get sourcewidth from delay from src?
-    unsigned SrcWidth = Expr->getOperand(SrcPos)->getBitWidth();
+    unsigned FUWidth = Dst->getBitWidth();
     VFUTy *FU = getFUDesc<VFUTy>();
-    unsigned LL = FU->lookupLogicLevels(SrcWidth);
+    unsigned LL = FU->lookupLogicLevels(FUWidth);
     // The pre-bit logic level increment for add/mult is 1;
-    unsigned LLPreBitx1024 = LL * 1024 / SrcWidth;
-    unsigned LLPreBit = ((LLPreBitx1024 - 1) / 1024) + 1;
+    unsigned LLPreBitx1024 = LL * 1024 / FUWidth;
+    unsigned LLPreBit = TNLDelay::toInt(LLPreBitx1024);
     TNLDelay Inc(LL, LLPreBit);
     unsigned ScaledLSB_LLx1024 = Inc.LSB_LLx1024 + DstLB * LLPreBitx1024;
     unsigned ScaledMSB_LLx1024 = Inc.LSB_LLx1024 + DstUB * LLPreBitx1024;
-    unsigned ScaledLSB_LL = ((ScaledLSB_LLx1024 - 1) / 1024) + 1;
-    unsigned ScaledMSB_LL = ((ScaledMSB_LLx1024 - 1) / 1024) + 1;
+    unsigned ScaledLSB_LL = TNLDelay::toInt(ScaledLSB_LLx1024);
+    unsigned ScaledMSB_LL = TNLDelay::toInt(ScaledMSB_LLx1024);
 
     D.addLLLSB2MSB(ScaledMSB_LL, ScaledLSB_LL, LLPreBit);
     return SrcEntryTy(DelayFromSrc.first, D);
@@ -281,10 +281,9 @@ class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator
                                             uint8_t DstUB, uint8_t DstLB,
                                             const SrcEntryTy &DelayFromSrc) {
     TNLDelay D = DelayFromSrc.second;
-    VASTExpr *CmpExpr = cast<VASTExpr>(Dst);
-    unsigned SrcWidth = CmpExpr->getOperand(SrcPos)->getBitWidth();
+    unsigned FUWidth = Dst->getBitWidth();
     VFUTy *FU = getFUDesc<VFUTy>();
-    unsigned LL = FU->lookupLogicLevels(SrcWidth);
+    unsigned LL = FU->lookupLogicLevels(FUWidth);
     D.syncLL().addLLParallel(LL, LL);
     return SrcEntryTy(DelayFromSrc.first, D);
   }

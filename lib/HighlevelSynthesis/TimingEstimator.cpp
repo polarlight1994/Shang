@@ -94,9 +94,9 @@ BitlevelDelayEsitmator::AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
   assert(DstUB == 1 && DstLB == 0 && "Bad UB and LB!");
   TNLDelay D = DelayFromSrc.second;
   VASTExpr *RedExpr = cast<VASTExpr>(Dst);
-  unsigned SrcWidth = RedExpr->getOperand(0)->getBitWidth();
+  unsigned FUWidth = RedExpr->getOperand(0)->getBitWidth();
   VFUReduction *Red = getFUDesc<VFUReduction>();
-  unsigned LL = Red->lookupLogicLevels(SrcWidth);
+  unsigned LL = Red->lookupLogicLevels(FUWidth);
   return SrcEntryTy(DelayFromSrc.first, D.addLLWorst(LL, LL));
 }
 
@@ -107,12 +107,12 @@ BitlevelDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
   assert(DstUB == 1 && DstLB == 0 && "Bad UB and LB!");
   TNLDelay D = DelayFromSrc.second;
   VASTExpr *CmpExpr = cast<VASTExpr>(Dst);
-  unsigned SrcWidth = CmpExpr->getOperand(SrcPos)->getBitWidth();
+  unsigned FUWidth = CmpExpr->getOperand(SrcPos)->getBitWidth();
   VFUICmp *Cmp = getFUDesc<VFUICmp>();
-  unsigned LL = Cmp->lookupLogicLevels(SrcWidth);
+  unsigned LL = Cmp->lookupLogicLevels(FUWidth);
   // The pre-bit logic level increment for comparison is 1;
   unsigned LLPreBit = 1;
-  D.addLLMSB2LSB(LL, LLPreBit, LLPreBit).syncLL();
+  D.addLLMSB2LSB(LLPreBit, LL, LLPreBit).syncLL();
   return SrcEntryTy(DelayFromSrc.first, D);
 }
 

@@ -46,8 +46,12 @@ public:
                     true);
   }
 
-  unsigned getLSBLL() const { return (LSB_LLx1024 - 1) / 1024 + 1; }
-  unsigned getMSBLL() const { return (MSB_LLx1024 - 1) / 1024 + 1; }
+  static unsigned toInt(unsigned X) {
+    return X == 0 ? 0 : (X - 1) / 1024 + 1;
+  }
+
+  unsigned getLSBLL() const { return toInt(LSB_LLx1024); }
+  unsigned getMSBLL() const { return toInt(MSB_LLx1024); }
   unsigned getMaxLL() const { return std::max(getLSBLL(), getMSBLL()); }
   unsigned getMinLL() const { return std::min(getLSBLL(), getMSBLL()); }
 
@@ -94,8 +98,9 @@ public:
 
   TNLDelay &addLLMSB2LSB(unsigned MSB_LL, unsigned LSB_LL, unsigned BitLL) {
     TNLDelay RHS(MSB_LL, LSB_LL);
+    unsigned BitLLx1024 = BitLL * 1024;
     unsigned NewMSB_LLx1024 = RHS.MSB_LLx1024 + MSB_LLx1024;
-    LSB_LLx1024 =  std::max(LSB_LLx1024 + BitLL,
+    LSB_LLx1024 =  std::max(LSB_LLx1024 + BitLLx1024,
                             RHS.LSB_LLx1024 + MSB_LLx1024);
     MSB_LLx1024 = NewMSB_LLx1024;
     return *this;
@@ -103,8 +108,9 @@ public:
 
   TNLDelay &addLLLSB2MSB(unsigned MSB_LL, unsigned LSB_LL, unsigned BitLL) {
     TNLDelay RHS(MSB_LL, LSB_LL);
+    unsigned BitLLx1024 = BitLL * 1024;
     unsigned NewLSB_LLx1024 = RHS.LSB_LLx1024 + LSB_LLx1024;
-    MSB_LLx1024 =  std::max(MSB_LLx1024 + BitLL,
+    MSB_LLx1024 =  std::max(MSB_LLx1024 + BitLLx1024,
                             RHS.MSB_LLx1024 + LSB_LLx1024);
     LSB_LLx1024 = NewLSB_LLx1024;
     return *this;

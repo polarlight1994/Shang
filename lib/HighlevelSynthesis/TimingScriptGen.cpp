@@ -389,8 +389,9 @@ void PathIntervalQueryCache::dump() const {
 }
 
 static bool printDelayRecord(raw_ostream &OS, VASTSeqValue *Dst,
-                             VASTSeqValue *Src, VASTValue *Thu, float delay) {
-  // Record: {Src = '...', Dst = '...', THU = '...', delay = ''}
+                             VASTSeqValue *Src, VASTValue *Thu,
+                             const TNLDelay &delay) {
+  // Record: {Src = '', Dst = '', THU = '', delay = '', max_ll = '', min_ll = ''}
   OS << "{ Src=";
   printBindingLuaCode(OS, Src);
   OS << ", ";
@@ -406,7 +407,10 @@ static bool printDelayRecord(raw_ostream &OS, VASTSeqValue *Dst,
     OS << "'<null>'";
   OS << ", ";
 
-  OS << "Delay = '" << delay << '\'';
+  OS << "Delay = '" << delay.getDelay() << "', ";
+
+  OS << "MaxLL = '" << delay.getMaxLL() << "', ";
+  OS << "MinLL = '" << delay.getMinLL() << '\'';
 
   OS << " }";
   return Thu != 0;
@@ -419,7 +423,7 @@ unsigned PathIntervalQueryCache::bindDelay2ScriptEngine(VASTSeqValue *Dst,
                                                         bool IsCritical) const {
   // Delay table:
   // Datapath: {
-  //  {Src = '...', Dst = '...', THU = '...', delay = ''}
+  //  {Src = '', Dst = '', THU = '', delay = '', max_ll = '', min_ll = ''}
   // }
   // }
   SMDiagnostic Err;
@@ -447,7 +451,7 @@ unsigned PathIntervalQueryCache::bindDelay2ScriptEngine(VASTSeqValue *Dst,
       if (at == Set.end() || at->second != Interval) continue;
       if (NumThuNodePrinted) SS << ", ";
 
-      float Delay = TNL->getDelay(Src, I->first, Dst);
+      const TNLDelay &Delay = TNL->getDelay(Src, I->first, Dst);
 
       if (printDelayRecord(SS, Dst, Src, I->first, Delay)) {
         ++NumThuNodePrinted;
@@ -486,6 +490,11 @@ unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Dst,
 
   if (!runScriptStr("RTLDatapath = {}\n", Err))
     llvm_unreachable("Cannot create RTLDatapath table in scripting pass!");
+
+  // Hack the interval.
+  // DIRTY HACK: Ignore the div/rem
+  if (Interval < 32)
+    Interval = std::max<unsigned>(TNL->getDelay(Src, Dst).getNumCycles(), 1);
 
   std::string Script;
   raw_string_ostream SS(Script);
@@ -550,7 +559,8 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimpl
         ++NumMaskedMultiCyclesTimingPath;
 
       // Try to verify the result of the timing netlist.
-      if (TNL) bindDelay2ScriptEngine(Dst, Src, Interval, IsSimple, !Visited);
+      if (TNL && Interval < 32)
+        bindDelay2ScriptEngine(Dst, Src, Interval, IsSimple, !Visited);
     }
   }
 }
