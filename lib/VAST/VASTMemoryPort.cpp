@@ -294,8 +294,7 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   unsigned NumWords = (CurrentOffset / NumBytes);
   // use a multi-dimensional packed array to model individual bytes within the word
   OS << "(* ramstyle = \"no_rw_check\" *)"
-        "reg" << VASTValue::printBitRange(NumBytes)
-     << VASTValue::printBitRange(8)
+        "reg [0:" << (NumBytes - 1) << ']' << VASTValue::printBitRange(8)
      << " mem" << Idx << "ram[0:" << NumWords << "-1];\n";
 
   writeInitializeFile(OS);
@@ -303,7 +302,7 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   OS.always_ff_begin(false);
   OS.if_() << "mem" << Idx << "wen0r";
   OS._then();
-      // edit this code if using other than four bytes per word
+
   for (unsigned i = 0; i < 8; ++i)
     OS << "if(mem" << Idx << "wbe0r[" << i << "])"
           " mem" << Idx << "ram[mem" << Idx << "waddr0r"
@@ -314,6 +313,7 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
      << VASTValue::printBitRange(getAddrWidth(), 3) << ">= "<< NumWords <<")"
         " $finish(\"Write access out of bound!\");\n";
   OS.exit_block();
+
 
   for (unsigned i = 0; i < 8; ++i)
     OS << "mem" << Idx << "rdata1r[" << (i * 8 + 7 ) << ':' << (i * 8) << "]"
@@ -350,25 +350,28 @@ static inline int base_addr_less(const void *P1, const void *P2) {
   return T(P2)->second - T(P1)->second;
 }
 
-static unsigned printConstant(raw_ostream &OS, uint64_t Val, unsigned SizeInBits) {
-  SizeInBits = std::max(8u, SizeInBits);
-  std::string FormatS = "%0" + utostr_32(SizeInBits / 8 * 2) + "llx";
-  OS << format(FormatS.c_str(), Val);
-  return SizeInBits / 8;
+static unsigned printConstant(raw_ostream &OS, uint64_t Val, unsigned SizeInBytes) {
+  SizeInBytes = std::max(1u, SizeInBytes);
+  for (unsigned i = 0; i < SizeInBytes; ++i) {
+    OS << format("%02llx", Val & 0xff);
+    Val >>= 8;
+  }
+
+  return SizeInBytes;
 }
 
 static unsigned WriteInitializer(raw_ostream &OS, const Constant *C,
                                  unsigned CurByteAddr, unsigned WordSizeInBytes)
 {
   if (const ConstantInt *CI = dyn_cast<ConstantInt>(C)) {
-    CurByteAddr += printConstant(OS, CI->getZExtValue(), CI->getBitWidth());
+    CurByteAddr += printConstant(OS, CI->getZExtValue(), CI->getBitWidth() / 8);
     if (CurByteAddr % WordSizeInBytes == 0)
       OS << "// " << CurByteAddr << '\n';
     return CurByteAddr;
   }
 
   if (isa<ConstantPointerNull>(C)) {
-    CurByteAddr += printConstant(OS, 0, getFUDesc<VFUMemBus>()->getAddrWidth());
+    CurByteAddr += printConstant(OS, 0, getFUDesc<VFUMemBus>()->getAddrWidth() / 8);
     if (CurByteAddr % WordSizeInBytes == 0)
       OS << "// " << CurByteAddr << '\n';
     return CurByteAddr;
