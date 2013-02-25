@@ -196,8 +196,9 @@ bool MemoryPartition::runOnFunction(Function &F) {
       FuncUnitId Id = FuncUnitId(VFUs::MemoryBus, Num);
       Value *Ptr = Pointers.pop_back_val();
 
-      if (GlobalVariable *GV = dyn_cast<GlobalVariable>(Ptr))
-        dbgs() << "Assign " << *GV << " to Memory #" << Num << "\n";
+      DEBUG(if (GlobalVariable *GV = dyn_cast<GlobalVariable>(Ptr))
+              dbgs() << "Assign " << *GV << " to Memory #" << Num << "\n";
+      );
 
       bool inserted = Allocation.insert(std::make_pair(Ptr, Id)).second;
       assert(inserted && "Allocation not inserted!");

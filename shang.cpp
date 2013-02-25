@@ -198,6 +198,7 @@ int main(int argc, char **argv) {
     HLSIRPasses.run(mod);
   }
 
+  bool isMainSynthesis = TopHWFunctions.count("main");
   // Stage 3, perform high-level synthesis.
   // Build up all of the passes that we want to do to the module.
   {
@@ -276,7 +277,7 @@ int main(int argc, char **argv) {
 
     // Run the SCEVAA pass to compute more accurate alias information.
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
-    HLSPasses.add(createMemoryPartitionPass());
+    if (isMainSynthesis) HLSPasses.add(createMemoryPartitionPass());
 
     HLSPasses.add(createLUTMappingPass());
 
