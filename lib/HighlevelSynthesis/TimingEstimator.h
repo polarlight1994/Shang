@@ -133,7 +133,6 @@ public:
 
     // FIXME: Also add the delay from Src to Dst.
     if (VASTOperandList::GetOperandList(Thu) && hasPathInfo(Thu)) {
-      unsigned BitWidth = Thu->getBitWidth();
       delay_type D(0, 0);
       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(Thu, D)));
     }
@@ -164,7 +163,7 @@ public:
   }
 
   void accumulateDelayTo(VASTExpr *Expr, unsigned UB, unsigned LB,
-                         SrcDelayInfo &CurSrcInfo ) {
+                         SrcDelayInfo &CurSrcInfo) {
     SubClass *SCThis = reinterpret_cast<SubClass*>(this);
 
     typedef VASTExpr::const_op_iterator op_iterator;

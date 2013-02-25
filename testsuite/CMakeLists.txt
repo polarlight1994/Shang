@@ -194,7 +194,7 @@ macro(add_general_test test_file config_file altera_setup_prj_file postfix)
   add_custom_command(OUTPUT ${MAIN_RTL_SRC} ${MAIN_SDC_SRC} ${MAIN_UCF_SRC} ${MAIN_SW_LL}
     COMMAND echo "Bad RTL source!" > ${MAIN_RTL_SRC}
     COMMAND echo "Bad Result!" > "${TEST_BINARY_ROOT}/Test.output"
-    COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/${TEST}_config.lua  ${EXTRA_HLS_OPTION}" || ${CatchFail}
+    COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/${TEST}_config.lua -timing-model=zero-delay ${EXTRA_HLS_OPTION}" || ${CatchFail}
     DEPENDS ${MAIN_ORIG_BC} ${SHANG} "${TEST_BINARY_ROOT}/${TEST}_config.lua"
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
     COMMENT "High-level Synthesising RTL module and interface for ${SYN_FUNC}"
@@ -323,7 +323,7 @@ macro(add_general_main_test test_file config_file altera_setup_prj_file postfix)
   add_custom_command(OUTPUT ${MAIN_RTL_SRC} ${MAIN_SDC_SRC} ${MAIN_UCF_SRC} ${MAIN_INT_TOP} ${MAIN_INT_BRAM} 
                             ${MAIN_INT_BRAMINIT} ${MAIN_TB_FILE} ${MAIN_MODELDO_FILE}
     COMMAND echo "Bad RTL source!" > ${MAIN_RTL_SRC}
-    COMMAND ${SHANG} ${TEST_BINARY_ROOT}/${TEST}_config_main.lua  ${EXTRA_HLS_OPTION}
+    COMMAND ${SHANG} ${TEST_BINARY_ROOT}/${TEST}_config_main.lua  -timing-model=bit-level ${EXTRA_HLS_OPTION}
     DEPENDS ${MAIN_ORIG_BC} ${SHANG} "${TEST_BINARY_ROOT}/${TEST}_config_main.lua"
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
     COMMENT "High-levle Synthesising RTL module and interface for ${SYN_FUNC}"

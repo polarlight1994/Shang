@@ -41,11 +41,6 @@ public:
     : MSB_LLx1024(ceil(delay/VFUs::LUTDelay) * 1024),
       LSB_LLx1024(ceil(delay/VFUs::LUTDelay) * 1024) {}
 
-  TNLDelay operator + (TNLDelay RHS) const {
-    return TNLDelay(MSB_LLx1024 + RHS.MSB_LLx1024, LSB_LLx1024 + LSB_LLx1024,
-                    true);
-  }
-
   static unsigned toInt(unsigned X) {
     return X == 0 ? 0 : (X - 1) / 1024 + 1;
   }
@@ -78,6 +73,13 @@ public:
   TNLDelay &scale(float RHS) {
     MSB_LLx1024 = ceil(MSB_LLx1024 / RHS);
     LSB_LLx1024 = ceil(LSB_LLx1024 / RHS);
+  }
+
+
+  TNLDelay &addLLParallel(const TNLDelay &RHS) {
+    MSB_LLx1024 += RHS.MSB_LLx1024;
+    LSB_LLx1024 += RHS.LSB_LLx1024;
+    return *this;
   }
 
   TNLDelay &addLLParallel(unsigned MSB_LL, unsigned LSB_LL) {
@@ -119,6 +121,11 @@ public:
   virtual void print(raw_ostream &OS) const;
   void dump() const;
 };
+
+inline raw_ostream &operator<<(raw_ostream &OS, const TNLDelay &D) {
+  D.print(OS);
+  return OS;
+}
 
 /// Timinging Netlist - Annotate the timing information to the RTL netlist.
 class TimingNetlist : public VASTModulePass {
@@ -193,6 +200,8 @@ public:
 
   void printPathsTo(raw_ostream &OS, VASTValue *Dst) const;
   void printPathsTo(raw_ostream &OS, const PathTy &Path) const;
+
+  void dumpPathsTo(VASTValue *Dst) const;
 };
 }
 

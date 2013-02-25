@@ -40,11 +40,12 @@ TimingModel("timing-model", cl::Hidden,
   clEnumValEnd));
 
 void TNLDelay::print(raw_ostream &OS) const {
-
+  OS << "MSB: " << getMSBLL() << " LSB: " << getLSBLL() << " Delay(ns): "
+     << getDelay();
 }
 
 void TNLDelay::dump() const {
-
+  print(dbgs());
 }
 
 TimingNetlist::delay_type
@@ -61,7 +62,7 @@ TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu, VASTValue *Dst) const {
   if (Thu == 0) return getDelay(Src, Dst);
 
   delay_type S2T = getDelay(Src, Thu), T2D = getDelay(Thu, Dst);
-  return S2T + T2D;
+  return S2T.addLLParallel(T2D);
 }
 
 TimingNetlist::TimingNetlist() : VASTModulePass(ID),
@@ -154,6 +155,10 @@ void TimingNetlist::print(raw_ostream &OS) const {
     printPathsTo(OS, *I);
 }
 
+void TimingNetlist::dumpPathsTo(VASTValue *Dst) const {
+  printPathsTo(dbgs(), Dst);
+}
+
 void TimingNetlist::printPathsTo(raw_ostream &OS, VASTValue *Dst) const {
   const_path_iterator at = PathInfo.find(Dst);
   assert(at != PathInfo.end() && "DstReg not find!");
@@ -169,7 +174,7 @@ void TimingNetlist::printPathsTo(raw_ostream &OS, const PathTy &Path) const {
   {
     OS.indent(2);
     I->first->printAsOperand(OS, false);
-    OS << '(' << I->second.getNormalizedDelay() << ")\n";
+    OS << '(' << I->second << ")\n";
   }
   OS << "}\n";
 }

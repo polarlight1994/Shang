@@ -17,24 +17,14 @@ RunOnDatapath = [=[
 #local SrcNameSet = RTLDatapath.Nodes[table.getn(RTLDatapath.Nodes)].NameSet
 
 foreach DstPattern $(DstNameSet) {
-#if Functions[FuncInfo.Name] == nil then
   set dst [get_keepers "*$(CurModule:getName())_inst|$DstPattern*"]
-#elseif FuncInfo.Name == 'main' then
-  set dst [get_keepers "*$(Functions[FuncInfo.Name].ModName)_inst|$DstPattern*"]
-#else
-  set dst [get_keepers "$DstPattern*"]
-#end
+
   if { [get_collection_size $dst] } { break }
 }
 
 foreach SrcPattern $(SrcNameSet) {
-#if Functions[FuncInfo.Name] == nil then
   set src [get_keepers "*$(CurModule:getName())_inst|$SrcPattern*"]
-#elseif FuncInfo.Name == 'main' then
-  set src [get_keepers "*$(Functions[FuncInfo.Name].ModName)_inst|$SrcPattern*"]
-#else
-  set dst [get_keepers "$SrcPattern*"]
-#end
+
   if { [get_collection_size $src] } { break }
 }
 
@@ -49,13 +39,8 @@ $(_put('#')) $(DstNameSet) <- $(SrcNameSet) Slack $(Slack)
 $(_put('#')) $(DstNameSet) <- $(ThuNameSet) <- $(SrcNameSet) Slack $(Slack)
 #    if (RTLDatapath.isCriticalPath ~= 1) then
   foreach ThuPattern $(ThuNameSet) {
-#if Functions[FuncInfo.Name] == nil then
     set thu [get_nets "*$(CurModule:getName())_inst|$ThuPattern*"]
-#elseif FuncInfo.Name == 'main' then
-    set thu [get_nets "*$(Functions[FuncInfo.Name].ModName)_inst|$ThuPattern*"]
-#else
-  set dst [get_nets "$ThuPattern*"]
-#end
+
     if { [get_collection_size $thu] } { break }
   }
 
@@ -76,7 +61,7 @@ set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
 ]=]
 
 VerifyHeader = [=[
-proc runOnPath { path } {
+proc runOnPath { path max_ll min_ll from thu to } {
   # Accumulate the number of logic levels.
   set cur_path_ll [get_path_info $path -num_logic_levels]
   set cur_path_delay [get_path_info $path -data_delay]
@@ -90,7 +75,7 @@ proc runOnPath { path } {
     }
   }
 
-  puts $PlotXY "$cur_path_ll $cur_path_delay $cur_total_ic_delay $cur_slack"
+  puts $PlotXY "$cur_path_ll $cur_path_delay $cur_total_ic_delay $cur_slack $max_ll $min_ll $from $thu $to "
   
   close $PlotXY
 }
@@ -155,7 +140,7 @@ $(_put('#')) $(DstNameSet) <- $(ThuNameSet) <- $(SrcNameSet) delay $(Delay)
 
   if {[get_collection_size $thu]} {
     foreach_in_collection path [ get_timing_paths -from $src -through $thu -to $dst -nworst 1 -pairs_only -setup ] {
-      runOnPath $path
+      runOnPath $path $(n.MaxLL) $(n.MinLL) "$(SrcNameSet)" "$(ThuNameSet)" "$(DstNameSet)"
     }
   }
 
@@ -163,7 +148,7 @@ $(_put('#')) $(DstNameSet) <- $(ThuNameSet) <- $(SrcNameSet) delay $(Delay)
 
 $(_put('#')) $(DstNameSet) <- $(SrcNameSet) delay $(Delay)
   foreach_in_collection path [ get_timing_paths -from $src -to $dst -nworst 1 -pairs_only -setup ] {
-    runOnPath $path
+    runOnPath $path $(n.MaxLL) $(n.MinLL) "$(SrcNameSet)" "<null>" "$(DstNameSet)"
   }
 #    end
 }
