@@ -268,9 +268,8 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
      << " mem" << Idx << "waddr1r,"
      << " mem" << Idx << "raddr1r;\n";
   OS << "reg mem" << Idx << "ren1r;\n";
-  OS << "reg "<< VASTValue::printBitRange(getDataWidth())
-     << " mem" << Idx << "rdata1r, mem" << Idx << "rdata2r;\n";
-  OS << "reg [2:0] mem" << Idx << "raddr2r;\n";
+  OS << "reg "<< VASTValue::printBitRange(getDataWidth()) // [2:0]
+     << " mem" << Idx << "rdata1r;\n";
 
   // Stage 1: registering all the input for writes
   OS << "wire " << VASTValue::printBitRange(getByteEnWdith())
@@ -326,15 +325,8 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   OS << "mem" << Idx << "ren1r <= mem" << Idx << "ren;\n";
   OS.always_ff_end(false);
 
-  // Stage 3: Generate the output.
-  OS.always_ff_begin(false);
-  OS << "mem" << Idx << "raddr2r <= mem" << Idx << "raddr1r[2:0];\n";
-  OS << "mem" << Idx << "rdata2r <="
-        " mem" << Idx << "rdata1r >> { mem" << Idx << "raddr1r[2],5'b0};\n";
-  OS.always_ff_end(false);
-
   OS << "assign mem" << Idx << "rdata "
-        "= mem" << Idx << "rdata2r >> { 1'b0, mem" << Idx << "raddr2r[1:0],3'b0};\n";
+        "= mem" << Idx << "rdata1r >> { mem" << Idx << "raddr1r[2:0],3'b0};\n";
 }
 
 static inline int base_addr_less(const void *P1, const void *P2) {
