@@ -21,10 +21,31 @@
 
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SetOperations.h"
+#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "shang-timing-netlist"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+
+static cl::opt<enum TimingEstimatorBase::ModelType>
+TimingModel("timing-model", cl::Hidden,
+            cl::desc("The Timing Model of the Delay Estimator"),
+            cl::values(
+  clEnumValN(TimingEstimatorBase::Bitlevel, "bit-level",
+            "Bit-level delay estimation with linear approximation"),
+  clEnumValN(TimingEstimatorBase::BlackBox, "blackbox",
+            "Only accumulate the critical path delay of each FU"),
+  clEnumValN(TimingEstimatorBase::ZeroDelay, "zero-delay",
+            "Assume all datapath delay is zero"),
+  clEnumValEnd));
+
+void TNLDelay::print(raw_ostream &OS) const {
+
+}
+
+void TNLDelay::dump() const {
+
+}
 
 TimingNetlist::delay_type
 TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
@@ -43,8 +64,14 @@ TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu, VASTValue *Dst) const {
   return S2T + T2D;
 }
 
-TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
+TimingNetlist::TimingNetlist() : VASTModulePass(ID),
+  Estimator(new BitlevelDelayEsitmator(PathInfo, TimingModel))
+{
   initializeTimingNetlistPass(*PassRegistry::getPassRegistry());
+}
+
+TimingNetlist::~TimingNetlist() {
+  delete Estimator;
 }
 
 char TimingNetlist::ID = 0;
@@ -90,15 +117,16 @@ void TimingNetlist::buildTimingPath(VASTValue *Thu, VASTSeqValue *Dst,
 }
 
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
-  // Create an estimator.
-  Estimator = new BlackBoxTimingEstimator(PathInfo);
+  VFUMux *Mux = getFUDesc<VFUMux>();
 
   typedef VASTModule::seqval_iterator iterator;
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
     VASTSeqValue *SVal = I;
 
+    unsigned MUXLL = Mux->getMuxLogicLevels(SVal->size(), SVal->getBitWidth());
+    unsigned MUXCost = Mux->getMuxCost(SVal->size(), SVal->getBitWidth());
     // Calculate the delay of the Fanin MUX.
-    delay_type MUXDelay = delay_type(0.0f);
+    delay_type MUXDelay = delay_type(MUXLL, MUXLL);
 
     typedef VASTSeqValue::iterator fanin_iterator;
     for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
@@ -118,7 +146,6 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   DEBUG(dbgs() << "Timing Netlist: \n";
         print(dbgs()););
 
-  delete Estimator;
   return false;
 }
 
@@ -142,7 +169,7 @@ void TimingNetlist::printPathsTo(raw_ostream &OS, const PathTy &Path) const {
   {
     OS.indent(2);
     I->first->printAsOperand(OS, false);
-    OS << '(' << I->second.delay << ")\n";
+    OS << '(' << I->second.getNormalizedDelay() << ")\n";
   }
   OS << "}\n";
 }

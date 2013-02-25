@@ -19,8 +19,8 @@
 
 using namespace llvm;
 
-TimingEstimatorBase::TimingEstimatorBase(PathDelayInfo &PathDelay)
-  : PathDelay(PathDelay) {}
+TimingEstimatorBase::TimingEstimatorBase(PathDelayInfo &PathDelay, ModelType T)
+  : PathDelay(PathDelay), T(T) {}
 
 void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
   VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
@@ -45,7 +45,7 @@ void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
 
       // Accumulate the delay of the current node from all the source.
       if (VASTExpr *E = dyn_cast<VASTExpr>(Node))
-        this->accumulateExprDelay(E);
+        this->accumulateExprDelay(E, E->getBitWidth(), 0);
       else {
         VASTWire *W = cast<VASTWire>(Node);
         if (VASTValPtr V= W->getDriver())
@@ -67,15 +67,72 @@ void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
   }
 }
 
-
 //===----------------------------------------------------------------------===//
-BlackBoxTimingEstimator::SrcEntryTy
-BlackBoxTimingEstimator::AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
-                                            const SrcEntryTy DelayFromSrc) {
-  return SrcEntryTy(DelayFromSrc.first, DelayFromSrc.second + 0.635);
+BitlevelDelayEsitmator::SrcEntryTy
+BitlevelDelayEsitmator::AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
+                                           uint8_t DstUB, uint8_t DstLB,
+                                           const SrcEntryTy &DelayFromSrc) {
+  TNLDelay D = DelayFromSrc.second;
+  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(1, 1));
 }
 
-unsigned
-BlackBoxTimingEstimator::ComputeOperandSizeInByteLog2Ceil(unsigned SizeInBits) {
-  return std::max(Log2_32_Ceil(SizeInBits), 3u) - 3;
+BitlevelDelayEsitmator::SrcEntryTy
+BitlevelDelayEsitmator::AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
+                                           uint8_t DstUB, uint8_t DstLB,
+                                           const SrcEntryTy &DelayFromSrc) {
+  TNLDelay D = DelayFromSrc.second;
+  VASTExpr *AndExpr = cast<VASTExpr>(Dst);
+  unsigned NumFanins = AndExpr->size();
+  unsigned LL = Log2_32_Ceil(NumFanins) / Log2_32_Ceil(VFUs::MaxLutSize);
+  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(LL, LL));
+}
+
+BitlevelDelayEsitmator::SrcEntryTy
+BitlevelDelayEsitmator::AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
+                                           uint8_t DstUB, uint8_t DstLB,
+                                           const SrcEntryTy &DelayFromSrc) {
+  assert(DstUB == 1 && DstLB == 0 && "Bad UB and LB!");
+  TNLDelay D = DelayFromSrc.second;
+  VASTExpr *RedExpr = cast<VASTExpr>(Dst);
+  unsigned SrcWidth = RedExpr->getOperand(0)->getBitWidth();
+  VFUReduction *Red = getFUDesc<VFUReduction>();
+  unsigned LL = Red->lookupLogicLevels(SrcWidth);
+  return SrcEntryTy(DelayFromSrc.first, D.addLLWorst(LL, LL));
+}
+
+BitlevelDelayEsitmator::SrcEntryTy
+BitlevelDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
+                                           uint8_t DstUB, uint8_t DstLB,
+                                           const SrcEntryTy &DelayFromSrc) {
+  assert(DstUB == 1 && DstLB == 0 && "Bad UB and LB!");
+  TNLDelay D = DelayFromSrc.second;
+  VASTExpr *CmpExpr = cast<VASTExpr>(Dst);
+  unsigned SrcWidth = CmpExpr->getOperand(SrcPos)->getBitWidth();
+  VFUICmp *Cmp = getFUDesc<VFUICmp>();
+  unsigned LL = Cmp->lookupLogicLevels(SrcWidth);
+  // The pre-bit logic level increment for comparison is 1;
+  unsigned LLPreBit = 1;
+  D.addLLMSB2LSB(LL, LLPreBit, LLPreBit).syncLL();
+  return SrcEntryTy(DelayFromSrc.first, D);
+}
+
+void
+BitlevelDelayEsitmator::accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst,
+                                                 unsigned ThuPos,
+                                                 uint8_t DstUB, uint8_t DstLB,
+                                                 SrcDelayInfo &CurInfo) {
+  VASTExpr *BitSliceExpr = cast<VASTExpr>(Dst);
+  // Translate the (UB, LB] against the bitslice to the (UB, LB] against the
+  // Src value.
+  uint8_t UB = DstUB + BitSliceExpr->LB, LB = DstLB + BitSliceExpr->LB;
+  assert(LB >= BitSliceExpr->LB && UB <= BitSliceExpr->UB && "Bad bitslice!");
+
+  // Handle the trivial case trivially.
+  if (VASTExpr *ThuExpr = dyn_cast<VASTExpr>(Thu)) {
+    // Accumulate the scaled delay of ThuExpr to the current bitslice expression.
+    accumulateDelayTo(ThuExpr, UB, LB, CurInfo);
+  }
+
+  // Build the delay from Thu to Dst.
+  accumulateDelayThu(Thu, Dst, ThuPos, UB, LB, CurInfo, AccumulateZeroDelay);
 }
