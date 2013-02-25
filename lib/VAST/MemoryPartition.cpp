@@ -189,7 +189,7 @@ bool MemoryPartition::runOnFunction(Function &F) {
         AllocateNewPort &= GV->hasInternalLinkage() || GV->hasPrivateLinkage();
     }
 
-    unsigned Num = F.getName() != "main" ? 0 : 1;//AllocateNewPort ? CurPortNum++ : 0;
+    unsigned Num = AllocateNewPort ? CurPortNum : 0;
 
     // Create the allocation.
     while (!Pointers.empty()) {
@@ -203,6 +203,8 @@ bool MemoryPartition::runOnFunction(Function &F) {
       assert(inserted && "Allocation not inserted!");
       (void) inserted;
     }
+
+    if (AllocateNewPort) ++CurPortNum;
   }
 
   NumMemBanks += (CurPortNum - 1);
