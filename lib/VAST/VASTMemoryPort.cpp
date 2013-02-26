@@ -308,11 +308,8 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
         " $finish(\"Write access out of bound!\");\n";
   OS.exit_block();
 
-
-  for (unsigned i = 0; i < 8; ++i)
-    OS << "mem" << Idx << "rdata1r[" << (i * 8 + 7 ) << ':' << (i * 8) << "]"
-          " <= mem" << Idx << "ram[mem" << Idx << "raddr"
-       << VASTValue::printBitRange(getAddrWidth(), 3) << "][" << i << "];\n";
+  OS << "mem" << Idx << "rdata1r <= mem" << Idx << "ram[mem" << Idx << "raddr"
+     << VASTValue::printBitRange(getAddrWidth(), 3) << "];\n";
 
   OS.if_() << "mem" << Idx << "ren";
   OS._then();
