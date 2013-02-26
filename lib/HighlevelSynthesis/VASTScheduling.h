@@ -230,7 +230,7 @@ public:
   bool isLatch() const { return BB.getInt(); }
   bool isLaunch() const { return !BB.getInt(); }
   bool isTerminator() const {
-    return Ptr.is<Instruction*>() && isa<TerminatorInst>(getInst());
+    return SeqOp && isa<VASTSlotCtrl>(SeqOp) && isa<TerminatorInst>(getInst());
   }
 
   BasicBlock *getIncomingBlock() const {
