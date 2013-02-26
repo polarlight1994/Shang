@@ -17,7 +17,7 @@
 #include "shang/VASTModulePass.h"
 
 #include "llvm/IR/Value.h"
-#include "llvm/Support/Allocator.h"
+#include "llvm/ADT/ilist.h"
 #include "llvm/ADT/SparseBitVector.h"
 #include "llvm/ADT/PointerIntPair.h"
 
@@ -44,7 +44,7 @@ public:
 
   SeqLiveVariables();
 
-  struct VarInfo {
+  struct VarInfo : public ilist_node<VarInfo> {
     // TODO: For the VASTSeqVal definition that does not corresponding to
     // an instruction, identify them by a extend PseudoSourceValue.
     PointerIntPair<Value*, 1, bool> V;
@@ -54,6 +54,7 @@ public:
     bool hasMultiDef() const { return V.getInt(); }
     Value *getValue() const { return V.getPointer(); }
     void setMultiDef() { V.setInt(true); }
+    bool isDead() const { return DefSlots == Kills; }
     /// AliveSlots - Set of Slots at which this value is defined.  This is a bit
     /// set which uses the Slot number as an index.
     ///
@@ -74,7 +75,7 @@ public:
     SparseBitVector<> Kills;
 
     void verify() const;
-
+    void verifyKillAndAlive() const;
     void print(raw_ostream &OS) const;
     void dump() const;
   };
@@ -91,6 +92,7 @@ private:
   void handleSlot(VASTSlot *S, PathVector &PathFromEntry);
   void handleUse(VASTSeqValue *Use, VASTSlot *UseSlot, PathVector &PathFromEntry);
   void handleDef(VASTSeqDef D);
+  void fixLiveInSlots();
 
   struct VarName {
     VASTSeqValue *Dst;
@@ -110,10 +112,11 @@ private:
     }
   };
 
-  BumpPtrAllocator Allocator;
   // The value information for each definitions.
   std::map<VarName, VarInfo*> VarInfos;
-
+  iplist<VarInfo> VarList;
+  typedef iplist<VarInfo>::iterator var_iterator;
+  typedef iplist<VarInfo>::const_iterator const_var_iterator;
   // Get the corresponding VarInfo, create the VarInfo if necessary.
   VarInfo *getVarInfo(VarName VN) const {
     std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(VN);
