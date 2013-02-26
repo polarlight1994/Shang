@@ -437,9 +437,6 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
 
   if (ReturnInst *Ret = dyn_cast<ReturnInst>(Inst)) {
     buildFlowDependencies(Ret, U);
-    // Also add the dependencies form the return instruction to the exit of
-    // the scheduling graph.
-    G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
     return;
   }
 
@@ -470,12 +467,8 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   }
 
   // Nothing to do with Unreachable.
-  if (isa<UnreachableInst>(Inst)) {
-    // Also add the dependencies form the return instruction to the exit of
-    // the scheduling graph.
-    G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
+  if (isa<UnreachableInst>(Inst))
     return;
-  }
 
   VASTSeqInst *SeqInst = cast<VASTSeqInst>(U->getSeqOp());
   unsigned Latency = SeqInst->getCyclesFromLaunch();
@@ -609,6 +602,11 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
       U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
 
       buildFlowDependencies(U);
+
+      if (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))
+        // Also add the dependencies form the return instruction to the exit of
+        // the scheduling graph.
+        G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
 
       IR2SUMap[Inst].push_back(U);
       continue;
