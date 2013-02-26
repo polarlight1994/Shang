@@ -246,7 +246,13 @@ public:
   }
 
   bool isLatching(Value *V) const {
-    return isLatch() && Ptr.dyn_cast<Instruction*>() == V;
+    if (!isLatch()) return false;
+
+    VASTSeqInst *SeqOp = dyn_cast_or_null<VASTSeqInst>(getSeqOp());
+
+    if (SeqOp == 0) return false;
+
+    return SeqOp->getValue() == V;
   }
 
   BasicBlock *getParent() const;
