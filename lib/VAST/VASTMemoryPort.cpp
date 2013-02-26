@@ -287,8 +287,8 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   // use a multi-dimensional packed array to model individual bytes within the
   // word. Please note that the bytes is ordered from 0 to 7 ([0:7]) because
   // so that the byte address can access the correct byte.
-  OS << "(* ramstyle = \"no_rw_check\", max_depth = " << NumWords << " *)"
-        "logic [0:" << (NumBytes - 1) << ']' << VASTValue::printBitRange(8)
+  OS << "(* ramstyle = \"no_rw_check\", max_depth = " << NumWords << " *) logic"
+     << VASTValue::printBitRange(NumBytes) << VASTValue::printBitRange(8)
      << " mem" << Idx << "ram[0:" << NumWords << "-1];\n";
 
   writeInitializeFile(OS);
@@ -334,52 +334,45 @@ static inline int base_addr_less(const void *P1, const void *P2) {
   return T(P2)->second - T(P1)->second;
 }
 
-static unsigned printConstant(raw_ostream &OS, uint64_t Val, unsigned SizeInBytes) {
+typedef SmallVector<uint8_t, 1024> ByteBuffer;
+
+static unsigned FillByteBuffer(ByteBuffer &Buf, uint64_t Val, unsigned SizeInBytes) {
   SizeInBytes = std::max(1u, SizeInBytes);
   for (unsigned i = 0; i < SizeInBytes; ++i) {
-    OS << format("%02llx", Val & 0xff);
+    Buf.push_back(Val & 0xff);
     Val >>= 8;
   }
 
   return SizeInBytes;
 }
 
-static unsigned WriteInitializer(raw_ostream &OS, const Constant *C,
-                                 unsigned CurByteAddr, unsigned WordSizeInBytes)
-{
+static void FillByteBuffer(ByteBuffer &Buf, const Constant *C) {
   if (const ConstantInt *CI = dyn_cast<ConstantInt>(C)) {
-    CurByteAddr += printConstant(OS, CI->getZExtValue(), CI->getBitWidth() / 8);
-    if (CurByteAddr % WordSizeInBytes == 0)
-      OS << "// " << CurByteAddr << '\n';
-    return CurByteAddr;
+    FillByteBuffer(Buf, CI->getZExtValue(), CI->getBitWidth() / 8);
+    return;
   }
 
   if (isa<ConstantPointerNull>(C)) {
-    CurByteAddr += printConstant(OS, 0, getFUDesc<VFUMemBus>()->getAddrWidth() / 8);
-    if (CurByteAddr % WordSizeInBytes == 0)
-      OS << "// " << CurByteAddr << '\n';
-    return CurByteAddr;
+    unsigned PtrSizeInBytes = getFUDesc<VFUMemBus>()->getAddrWidth() / 8;
+    FillByteBuffer(Buf, 0, PtrSizeInBytes);
+    return;
   }
 
   if (const ConstantDataSequential *CDS = dyn_cast<ConstantDataSequential>(C)) {
     for (unsigned i = 0, e = CDS->getNumElements(); i != e; ++i)
-      CurByteAddr = WriteInitializer(OS, CDS->getElementAsConstant(i),
-                                     CurByteAddr, WordSizeInBytes);
+      FillByteBuffer(Buf, CDS->getElementAsConstant(i));
 
-    return CurByteAddr;
+    return;
   }
 
   if (const ConstantArray *CA = dyn_cast<ConstantArray>(C)) {
     for (unsigned i = 0, e = CA->getNumOperands(); i != e; ++i)
-      CurByteAddr = WriteInitializer(OS, cast<Constant>(CA->getOperand(i)),
-                                     CurByteAddr, WordSizeInBytes);
+      FillByteBuffer(Buf, cast<Constant>(CA->getOperand(i)));
 
-    return CurByteAddr;
+    return;
   }
 
   llvm_unreachable("Unsupported constant type to bind to script engine!");
-  OS << '0';
-  return 0;
 }
 
 static unsigned padZeroToByteAddr(raw_ostream &OS, unsigned CurByteAddr,
@@ -430,6 +423,8 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
 
   unsigned CurByteAddr = 0;
   unsigned WordSizeInByte = getDataWidth() / 8;
+  ByteBuffer Buffer;
+
   while (!Vars.empty()) {
     std::pair<GlobalVariable*, unsigned> Var = Vars.pop_back_val();
 
@@ -442,9 +437,25 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
     InitFileO << "//" << GV->getName() << " start byte address "
               << StartOffset << '\n';
     if (GV->hasInitializer() && !GV->getInitializer()->isNullValue()) {
-      CurByteAddr = WriteInitializer(InitFileO, GV->getInitializer(),
-                                      CurByteAddr, WordSizeInByte);
+      FillByteBuffer(Buffer, GV->getInitializer());
+      unsigned BytesToPad = OffsetToAlignment(Buffer.size(), WordSizeInByte);
+      for (unsigned i = 0; i < BytesToPad; ++i)
+        Buffer.push_back(0);
+
+      // Directly write out the buffer in little endian!
+      assert(Buffer.size() % WordSizeInByte == 0 && "Buffer does not padded!");
+      for (unsigned i = 0, e = (Buffer.size() / WordSizeInByte); i != e; ++i) {
+        for (unsigned j = 0; j < WordSizeInByte; ++j) {
+          unsigned Idx = i * WordSizeInByte + (WordSizeInByte - j - 1);
+          InitFileO << format("%02x", Buffer[Idx]);
+          ++CurByteAddr;
+        }
+        InitFileO << "// " << CurByteAddr << '\n';
+      }
+
+      assert((CurByteAddr % WordSizeInByte) == 0 && "Bad ByteBuffer size!");
       DEBUG(dbgs() << "Write initializer: " << CurByteAddr << '\n');
+      Buffer.clear();
     }
   }
 
