@@ -226,8 +226,10 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 
   OS.always_ff_end(false);
 
-  OS << "assign " << cast<VASTWire>(getRData(0))->getName() << " = "
-     << VFUBRAM::getArrayName(getBlockRAMNum()) << "_rdata0r;\n\n";
+  // Only print the assignment to the read data if there is any use.
+  if (!getRData(0)->use_empty())
+    OS << "assign " << cast<VASTWire>(getRData(0))->getName() << " = "
+       << VFUBRAM::getArrayName(getBlockRAMNum()) << "_rdata0r;\n\n";
 }
 
 void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {
