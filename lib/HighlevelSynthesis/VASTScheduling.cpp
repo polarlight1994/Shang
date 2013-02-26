@@ -331,14 +331,6 @@ Pass *llvm::createVASTSchedulingPass() {
 }
 
 bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
-  if (Argument *Arg = dyn_cast<Argument>(V)) {
-    // Lookup the VASTValue corresponding to Arg.
-    (void) Arg;
-
-    U->addDep(G->getEntry(), VASTDep::CreateFlowDep(0));
-    return true;
-  }
-
   IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
 
   if (at == IR2SUMap.end()) return false;
@@ -528,7 +520,15 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
     Instruction *Inst = dyn_cast_or_null<Instruction>(Op->getValue());
     // We can safely ignore the SeqOp that does not correspond to any LLVM
     // Value, their will be rebuilt when we emit the scheduling.
-    if (Inst == 0) continue;
+    if (Inst == 0) {
+      if (BB == 0) {
+        if (Argument *Arg = dyn_cast_or_null<Argument>(Op->getValue()))
+          // Map the Arg to the entry scheduling SU.
+          IR2SUMap[Arg].push_back(BBEntry);
+      }
+
+      continue;
+    }
 
     if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op)) {
       VASTSchedUnit *U = 0;
