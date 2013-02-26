@@ -31,7 +31,7 @@ char BBLandingSlots::ID = 0;
 
 INITIALIZE_PASS(BBLandingSlots, "vast-bb-landing-slots",
                 "Compute the Landing Slots for the BasicBlocks",
-                false, true);
+                false, true)
 
 BBLandingSlots::BBLandingSlots() : VASTModulePass(ID), VM(0) {
   initializeBBLandingSlotsPass(*PassRegistry::getPassRegistry());

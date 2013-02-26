@@ -38,6 +38,7 @@ class Value;
 
 class SeqLiveVariables : public VASTModulePass {
   VASTModule *VM;
+
 public:
   static char ID;
 
