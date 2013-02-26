@@ -3,9 +3,6 @@ dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
 -- load platform information script
 dofile('@VTS_SOURCE_ROOT@/' .. 'AlteraCommon.lua')
 dofile('@VTS_SOURCE_ROOT@/' .. 'Altera4LUTFUs.lua')
-FUs.LUTDelay = 0.5 / PERIOD
--- Enable simple dual-port mode
-FUs.BRam.Mode = 1
 
 Functions.@SYN_FUNC@ = RTLModuleName
 -- ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
