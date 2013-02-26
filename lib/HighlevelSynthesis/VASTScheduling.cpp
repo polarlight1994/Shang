@@ -713,6 +713,14 @@ void VASTScheduling::fixSchedulingGraph() {
 
     // TODO: Constrain the dangling nodes by all terminators.
     VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].front();
+
+    // Ignore the return value latching operation here. We will add the fix
+    // timing constraints between it and the actual terminator.
+    if (BBExit == U) {
+      assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
+      continue;
+    }
+
     if (!BBExit->isTerminator()) {
       assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
       BBExit = IR2SUMap[BB->getTerminator()][1];
@@ -742,14 +750,17 @@ void VASTScheduling::fixSchedulingGraph() {
     ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[Inst]);
     assert(!SUs.empty() && "Scheduling Units for terminator not built?");
     VASTSchedUnit *U = SUs[0];
+    VASTSchedUnit *LastSU = U;
+
+    for (unsigned i = 1; i < SUs.size(); ++i) {
+      LastSU = SUs[i];
+      LastSU->addDep(U, VASTDep::CreateFixTimingConstraint(0));
+    }
 
     // Also add the dependencies form the return instruction to the exit of
     // the scheduling graph.
     if (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))
-      G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
-
-    for (unsigned i = 1; i < SUs.size(); ++i)
-      SUs[i]->addDep(U, VASTDep::CreateFixTimingConstraint(0));
+      G->getExit()->addDep(LastSU, VASTDep::CreateCtrlDep(0));
   }
 
   // Prevent the scheduler from generating 1 slot loop, that is the loop can be
