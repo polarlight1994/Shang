@@ -48,6 +48,10 @@ public:
     return getFanin(PortNum * 3);
   }
 
+  VASTValue *getRData(unsigned PortNum) const {
+    return getFanout(PortNum);
+  }
+
   VASTSeqValue *getWAddr(unsigned PortNum) const {
     return getFanin(PortNum * 3 + 1);
   }
@@ -55,8 +59,6 @@ public:
   VASTSeqValue *getWData(unsigned PortNum) const {
     return getFanin(PortNum * 3 + 2);
   }
-
-  void printDecl(raw_ostream &OS) const;
 
   void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 

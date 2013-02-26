@@ -896,9 +896,8 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
                                 VASTSeqInst::Launch);
 
   VASTSeqValue *AddrPort = IsWrite ? BRAM->getWAddr(0) : BRAM->getRAddr(0);
-  // DIRTY HACK: Because the Read address are also use as the data ouput port of
-  // the block RAM, the block RAM read define its result at the address port.
-  Op->addSrc(AddrVal, 0, !IsWrite, AddrPort);
+
+  Op->addSrc(AddrVal, 0, false, AddrPort);
   // Also assign the data to write to the dataport of the block RAM.
   if (IsWrite) {
     VASTSeqValue *DataPort = BRAM->getWData(0);
@@ -915,7 +914,7 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
     assert(Result->getBitWidth() == BRAM->getWordSize()
            && "Read from BRAM data width not match!");
     // Use the the value from address port as the result of the block RAM read.
-    VM->latchValue(Result, AddrPort, Slot, VASTImmediate::True, &I, 1);
+    VM->latchValue(Result, BRAM->getRData(0), Slot, VASTImmediate::True, &I, 1);
   }
   // Move the the next slot so that the other operations are not conflict with
   // the current memory operations.

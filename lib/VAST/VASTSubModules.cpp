@@ -97,18 +97,19 @@ void VASTBlockRAM::addPorts(VASTModule *VM) {
   std::string BRamArrayName = VFUBRAM::getArrayName(getBlockRAMNum());
   
   // Add the address port and the data port.
-  VASTSeqValue *ReadAddrA = VM->createSeqValue(BRamArrayName + "_rdata0",
-                                               getWordSize(), VASTSeqValue::BRAM,
+  VASTSeqValue *ReadAddrA = VM->createSeqValue(BRamArrayName + "_raddr0r",
+                                               getAddrWidth(), VASTSeqValue::BRAM,
                                                getBlockRAMNum(), this);
   addFanin(ReadAddrA);
-  addFanout(ReadAddrA);
+  VASTWire *ReadDataA = VM->addWire(BRamArrayName + "_rdata0w", getWordSize());
+  addFanout(ReadDataA);
 
-  VASTSeqValue *WriteAddrA = VM->createSeqValue(BRamArrayName + "_waddr0",
+  VASTSeqValue *WriteAddrA = VM->createSeqValue(BRamArrayName + "_waddr0r",
                                                 getAddrWidth(), VASTSeqValue::BRAM,
                                                 getBlockRAMNum(), this);
   addFanin(WriteAddrA);
 
-  VASTSeqValue *WriteDataA = VM->createSeqValue(BRamArrayName + "_wdata0",
+  VASTSeqValue *WriteDataA = VM->createSeqValue(BRamArrayName + "_wdata0r",
                                                 getWordSize(), VASTSeqValue::BRAM,
                                                 getBlockRAMNum(), this);
   addFanin(WriteDataA);
@@ -155,11 +156,6 @@ static void WriteBRAMInitializer(raw_ostream &OS, const Constant *C,
   llvm_unreachable("Unsupported constant type to bind to script engine!");
   OS << '0';
 }
-
-void VASTBlockRAM::printDecl(raw_ostream &OS) const {
-  getRAddr(0)->printDecl(OS, true);
-}
-
 void
 VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   bool HasInitializer = Initializer != 0;
@@ -208,15 +204,18 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
              << "' for writing block RAM initialize file!\n";
   }
 
+  // Declare the internal register.
+  OS << "reg " << VASTValue::printBitRange(getWordSize(), 1)
+     << VFUBRAM::getArrayName(getBlockRAMNum()) << "_rdata0r\;n";
+
   // Print the selectors.
-  getRAddr(0)->printSelector(OS, getAddrWidth());
+  getRAddr(0)->printSelector(OS);
   getWAddr(0)->printSelector(OS);
   getWData(0)->printSelector(OS);
 
   OS.always_ff_begin(false);
   // Print the first port.
   printPort(OS, 0);
-
 
   OS << "// synthesis translate_off\n";
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
@@ -226,6 +225,9 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   OS << "// synthesis translate_on\n\n";
 
   OS.always_ff_end(false);
+
+  OS << "assign " << cast<VASTWire>(getRData(0))->getName() << " = "
+     << VFUBRAM::getArrayName(getBlockRAMNum()) << "_rdata0r;\n\n";
 }
 
 void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {
@@ -236,7 +238,7 @@ void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {
   if (!RAddr->empty()) {
     OS.if_begin(Twine(RAddr->getName()) + "_selector_enable");
 
-    OS << RAddr->getName()
+    OS << VFUBRAM::getArrayName(getBlockRAMNum()) << "_rdata0r"
        << VASTValue::printBitRange(getWordSize(), 0, false) << " <= "
        << BRAMArray << '[' << RAddr->getName() << "_selector_wire"
        << VASTValue::printBitRange(getAddrWidth() , 0, false) << "];\n";
