@@ -341,9 +341,6 @@ static T *check(T *X) {
 }
 
 bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
-  IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
-
-  if (at == IR2SUMap.end()) return false;
 
   bool IsPHI = isa<PHINode>(V);
 
@@ -354,6 +351,10 @@ bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
     SrcSeqVal = ArgMap[Arg];
     SrcSU = G->getEntry();
   } else {
+    IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
+
+    if (at == IR2SUMap.end()) return false;
+
     // Get the corresponding latch SeqOp.
     ArrayRef<VASTSchedUnit*> SUs(at->second);
     for (unsigned i = 0; i < SUs.size(); ++i) {
