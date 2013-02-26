@@ -491,7 +491,9 @@ void SeqLiveVariables::fixLiveInSlots() {
     typedef VASTSlot::succ_iterator succ_iterator;
     for (succ_iterator SI = S->succ_begin(), SE = S->succ_end(); SI != SE; ++SI) {
       VASTSlot *Succ = *SI;
-      if (Succ != VM->getFinishSlot()) Succs.set(Succ->SlotNum);
+      // The the definitions will never live-in Finish Slot and Start Slot.
+      if (Succ != VM->getFinishSlot() && Succ != VM->getStartSlot())
+        Succs.set(Succ->SlotNum);
     }
   }
 
