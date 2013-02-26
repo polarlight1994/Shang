@@ -85,8 +85,7 @@ void VASTNamedValue::printDecl(raw_ostream &OS, bool declAsRegister,
   else
     OS << "wire";
 
-  if (getBitWidth() > 1)
-    OS << "[" << (getBitWidth() - 1) << ":0]";
+  OS << VASTValue::printBitRange(getBitWidth(), 0, false);
 
   OS << ' ' << getName();
 
