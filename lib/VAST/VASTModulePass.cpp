@@ -423,8 +423,9 @@ VASTNode *VASTModuleBuilder::emitBlockRAM(unsigned BRAMNum,
     assert((CI == 0 || CI->getBitWidth() <= 64) && "Initializer not supported!");
     if (CI) InitVal = CI->getZExtValue();
 
-    VASTRegister *R = VM->addDataRegister(VFUBRAM::getOutDataBusName(BRAMNum),
-                                          ElementSizeInBits, BRAMNum, InitVal);
+    VASTRegister *R = VM->addRegister(VFUBRAM::getOutDataBusName(BRAMNum),
+                                      ElementSizeInBits, InitVal,
+                                      VASTSeqValue::StaticRegister, BRAMNum);
     bool Inserted = AllocatedBRAMs.insert(std::make_pair(BRAMNum, R)).second;
     assert(Inserted && "Creating the same BRAM twice?");
     (void) Inserted;

@@ -32,7 +32,8 @@ public:
     Slot,       // Slot register which hold the enable signals for each slot.
     IO,         // The I/O port of the module.
     BRAM,       // Port of the block RAM
-    Enable      // The Enable Signal.
+    Enable,      // The Enable Signal.
+    StaticRegister // The register for the static global variables.
   };
 
   typedef ArrayRef<VASTValPtr> AndCndVec;
