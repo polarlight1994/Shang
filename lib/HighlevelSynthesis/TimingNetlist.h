@@ -73,8 +73,8 @@ public:
   TNLDelay &scale(float RHS) {
     MSB_LLx1024 = ceil(MSB_LLx1024 / RHS);
     LSB_LLx1024 = ceil(LSB_LLx1024 / RHS);
+    return *this;
   }
-
 
   TNLDelay &addLLParallel(const TNLDelay &RHS) {
     MSB_LLx1024 += RHS.MSB_LLx1024;
