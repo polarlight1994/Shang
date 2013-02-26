@@ -388,6 +388,9 @@ bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
   assert(DstOp && "Unexpected DstOp in addFlowDepandency");
   for (unsigned i = 0; i < DstOp->size(); ++i) {
     VASTValue *V = DstOp->getOperand(i).getAsLValue<VASTValue>();
+    // It is safe to ignore the "delay" between the identical nodes.
+    if (V == SrcSeqVal) continue;
+
     if (const TNLDelay *D = TNL->getDelayOrNull(SrcSeqVal, V))
       MaxCycles = std::max(MaxCycles, D->getNumCycles());
   }
@@ -604,11 +607,6 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 
       buildFlowDependencies(U);
 
-      if (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))
-        // Also add the dependencies form the return instruction to the exit of
-        // the scheduling graph.
-        G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
-
       IR2SUMap[Inst].push_back(U);
       continue;
     }
@@ -735,9 +733,16 @@ void VASTScheduling::fixSchedulingGraph() {
 
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
     Instruction *Inst = I->getTerminator();
+
     ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[Inst]);
     assert(!SUs.empty() && "Scheduling Units for terminator not built?");
     VASTSchedUnit *U = SUs[0];
+
+    // Also add the dependencies form the return instruction to the exit of
+    // the scheduling graph.
+    if (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))
+      G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
+
     for (unsigned i = 1; i < SUs.size(); ++i)
       SUs[i]->addDep(U, VASTDep::CreateFixTimingConstraint(0));
   }
@@ -831,6 +836,8 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   buildSchedulingGraph();
 
   G->schedule();
+
+  // TODO: Fix or check the interval of cross BB chain.
 
   G->emitSchedule(VM);
 
