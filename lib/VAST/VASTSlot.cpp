@@ -183,6 +183,9 @@ struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
     std::string Str;
     raw_string_ostream ss(Str);
     ss << Node->getName();
+    if (BasicBlock *BB = Node->getParent())
+      ss << '(' << BB->getName() << ')';
+
     DEBUG(Node->print(ss));
     return ss.str();
   }
