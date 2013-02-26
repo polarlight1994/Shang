@@ -100,9 +100,13 @@ always $('#')<half-period>ns clk = ~clk;
 
 reg [31:0] cnt = 0;
 
+import "DPI-C" function int raise (int sig);
+
 always_comb begin
   if (!succ) begin
     $('$')display ("The result is incorrect!");
+    // Abort.
+    raise(6);
     $('$')stop;
   end
 
