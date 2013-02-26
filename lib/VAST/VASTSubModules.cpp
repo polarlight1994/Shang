@@ -205,8 +205,8 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   }
 
   // Declare the internal register.
-  OS << "reg " << VASTValue::printBitRange(getWordSize(), 1)
-     << VFUBRAM::getArrayName(getBlockRAMNum()) << "_rdata0r\;n";
+  OS << "reg " << VASTValue::printBitRange(getWordSize(), 0)
+     << ' ' << VFUBRAM::getArrayName(getBlockRAMNum()) << "_rdata0r;\n";
 
   // Print the selectors.
   getRAddr(0)->printSelector(OS);
