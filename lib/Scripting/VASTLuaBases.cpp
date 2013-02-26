@@ -133,7 +133,7 @@ void VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
     }
 
     // If ChildNode is a not data-path operand list, it may be the SeqVal.
-    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(ChildNode))
+    if (VASTSeqValue *SeqVal = dyn_cast_or_null<VASTSeqValue>(ChildNode))
       SeqVals.insert(SeqVal);
   }
 }
