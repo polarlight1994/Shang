@@ -34,37 +34,38 @@ SeqLiveVariables::VarName::VarName(VASTSeqUse U)
 SeqLiveVariables::VarName::VarName(VASTSeqDef D)
   : Dst(D), S(D->getSlot()) {}
 
-bool SeqLiveVariables::VarInfo::isPHI() const {
-  return isa<PHINode>(V);
-}
 
-void SeqLiveVariables::VarInfo::dump() const {
-  if (isPHI()) dbgs() << "  [PHI]";
+void SeqLiveVariables::VarInfo::print(raw_ostream &OS) const {
+  if (hasMultiDef()) OS << "  [Multi-Def]";
 
-  if (V) V->print(dbgs());
+  if (Value *Val = getValue()) Val->print(OS);
 
-  dbgs() << "  Defined in Slots: ";
+  OS << "  Defined in Slots: ";
 
   typedef SparseBitVector<>::iterator iterator;
   for (iterator I = DefSlots.begin(), E = DefSlots.end(); I != E; ++I)
-    dbgs() << *I << ", ";
+    OS << *I << ", ";
 
-  dbgs() << "\n  Alive in Slots: ";
+  OS << "\n  Alive in Slots: ";
 
   typedef SparseBitVector<>::iterator iterator;
   for (iterator I = AliveSlots.begin(), E = AliveSlots.end(); I != E; ++I)
-    dbgs() << *I << ", ";
+    OS << *I << ", ";
 
-  dbgs() << "\n  Killed by:";
+  OS << "\n  Killed by:";
 
   if (Kills.empty())
-    dbgs() << " No VASTSeqOp.\n";
+    OS << " No VASTSeqOp.\n";
   else {
     for (iterator I = Kills.begin(), E = Kills.end(); I != E; ++I)
-      dbgs() << *I << ", ";
+      OS << *I << ", ";
 
-    dbgs() << "\n";
+    OS << "\n";
   }
+}
+
+void SeqLiveVariables::VarInfo::dump() const {
+  print(dbgs());
 }
 
 void SeqLiveVariables::VarInfo::verify() const {
@@ -98,6 +99,19 @@ void SeqLiveVariables::releaseMemory() {
   VarInfos.clear();
   WrittenSlots.clear();
   Allocator.Reset();
+}
+
+void SeqLiveVariables::print(raw_ostream &OS) const {
+  typedef std::map<VarName, VarInfo*>::const_iterator iterator;
+  OS << "\n\nSeqLiveVariables:\n";
+
+  for (iterator I = VarInfos.begin(), E = VarInfos.end(); I != E; ++I) {
+    OS << I->first.Dst->getName() << '@' << I->first.S->SlotNum << "\n\t";
+    I->second->print(OS);
+    OS << '\n';
+  }
+
+  OS << "\n\n\n";
 }
 
 void SeqLiveVariables::dumpVarInfoSet(SmallPtrSet<VarInfo*, 8> VIs) {
@@ -223,10 +237,6 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector &PathFromEntry) {
 void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
   typedef VASTModule::seqop_iterator seqop_iterator;
 
-  // Compute the join slots for corresponding to a basic block.
-  // Because of BB bypassing during VAST construction, there may be no any
-  // VASTSlot corresponding to a BB
-  std::map<std::pair<BasicBlock*, VASTSeqValue*>, VarInfo*> PHIInfos;
   // Remeber the VarInfo defined
   std::map<Value*, VarInfo*> InstVarInfo;
   for (seqop_iterator I = VM->seqop_begin(), E = VM->seqop_end(); I != E; ++I) {
@@ -237,28 +247,18 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
 
     unsigned SlotNum = SeqOp->getSlotNum();
 
-    // Only compute the PHIJoins for VOpMvPhi.
-    if (PHINode *PN = dyn_cast<PHINode>(V)) {
-      VASTSeqDef Def = SeqOp->getDef(0);
-      BasicBlock *TargetBB = SeqOp->getSlot()->getParent();
-
-      // Create the VarInfo for the PHI.
-      VarInfo *&VI = PHIInfos[std::make_pair(TargetBB, Def)];
-      if (VI == 0) VI = new (Allocator) VarInfo(PN);
-      // Set the defined slot.
-      VI->DefSlots.set(SlotNum);
-      VI->Kills.set(SlotNum);
-      WrittenSlots[Def].set(SlotNum);
-      VarInfos[Def] = VI;
-    } else if (SeqOp->getNumDefs()) {
+    if (SeqOp->getNumDefs()) {
       assert(SeqOp->getNumDefs() == 1 && "Multi-definition not supported yet!");
       VASTSeqDef Def = SeqOp->getDef(0);
 
       VarInfo *&VI = InstVarInfo[V];
       if (VI == 0) VI = new (Allocator) VarInfo(V);
+      else VI->setMultiDef();
+
       // Set the defined slot.
       VI->DefSlots.set(SlotNum);
       VI->Kills.set(SlotNum);
+      // TODO: Compute the live-in slots.
       WrittenSlots[Def].set(SlotNum);
       VarInfos[Def] = VI;
     }

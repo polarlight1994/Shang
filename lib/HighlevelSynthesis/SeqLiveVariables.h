@@ -16,6 +16,7 @@
 
 #include "shang/VASTModulePass.h"
 
+#include "llvm/IR/Value.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/ADT/SparseBitVector.h"
 #include "llvm/ADT/PointerIntPair.h"
@@ -43,13 +44,15 @@ public:
   SeqLiveVariables();
 
   struct VarInfo {
-    // DefinedByPHI - Set to true if this variable defined by PHI node.
-    Value *V;
+    // TODO: For the VASTSeqVal definition that does not corresponding to
+    // an instruction, identify them by a extend PseudoSourceValue.
+    PointerIntPair<Value*, 1, bool> V;
 
-    explicit VarInfo(Value *V = 0) : V(V) {}
+    explicit VarInfo(Value *V = 0) : V(V, 0) {}
 
-    bool isPHI() const;
-
+    bool hasMultiDef() const { return V.getInt(); }
+    Value *getValue() const { return V.getPointer(); }
+    void setMultiDef() { V.setInt(true); }
     /// AliveSlots - Set of Slots at which this value is defined.  This is a bit
     /// set which uses the Slot number as an index.
     ///
@@ -71,6 +74,7 @@ public:
 
     void verify() const;
 
+    void print(raw_ostream &OS) const;
     void dump() const;
   };
 
@@ -79,6 +83,8 @@ public:
   void getAnalysisUsage(AnalysisUsage &AU) const;
   void releaseMemory();
   void verifyAnalysis() const;
+
+  void print(raw_ostream &OS) const;
 private:
   typedef const std::vector<VASTSlot*> PathVector;
   void handleSlot(VASTSlot *S, PathVector &PathFromEntry);
