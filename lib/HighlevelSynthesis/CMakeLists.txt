@@ -7,6 +7,7 @@ add_llvm_library(ShangHLS
   ScheduleEmitter.cpp
   SchedulerBase.cpp
   SDCScheduler.cpp
+  BBLandingSlots.cpp
   SeqLiveVariables.cpp
 )
 
