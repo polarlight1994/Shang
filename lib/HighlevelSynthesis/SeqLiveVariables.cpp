@@ -263,6 +263,25 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
       VarInfos[Def] = VI;
     }
   }
+
+  // Also add the VarInfo for the static registers.
+  typedef VASTModule::seqval_iterator seqval_iterator;
+  for (seqval_iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I)
+  {
+    VASTSeqValue *V = I;
+
+    if (V->getValType() != VASTSeqValue::StaticRegister) continue;
+
+    VarInfo *VI = new (Allocator) VarInfo(0);
+    // The static register is implicitly defined at the entry slot.
+    VASTSlot *S = VM->getStartSlot();
+    VI->DefSlots.set(S->SlotNum);
+    VI->Kills.set(S->SlotNum);
+
+    VarName VN(V, S);
+    VarInfos[VN] = VI;
+    WrittenSlots[V].set(S->SlotNum);
+  }
 }
 
 void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
