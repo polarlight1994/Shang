@@ -133,8 +133,11 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
     VASTSeqValue *SVal = I;
 
-    unsigned MUXLL = Mux->getMuxLogicLevels(SVal->size(), SVal->getBitWidth());
-    unsigned MUXCost = Mux->getMuxCost(SVal->size(), SVal->getBitWidth());
+    unsigned MUXLL = 0;
+
+    if (TimingModel != TimingEstimatorBase::ZeroDelay)
+      MUXLL = Mux->getMuxLogicLevels(SVal->size(), SVal->getBitWidth());
+
     // Calculate the delay of the Fanin MUX.
     delay_type MUXDelay = delay_type(MUXLL, MUXLL);
 
