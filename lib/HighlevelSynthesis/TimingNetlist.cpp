@@ -50,6 +50,15 @@ void TNLDelay::dump() const {
 
 TimingNetlist::delay_type
 TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
+  // TODO:
+  //if (VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(Dst)) {
+  //  for each fanin fi of Dst,
+  //    get the CRITICAL path delay from Src to fi
+  //    max reduction
+
+  //  return CRITICAL delay to all fanins + Mux delay?
+  //}
+
   const_path_iterator path_end_at = PathInfo.find(Dst);
   assert(path_end_at != PathInfo.end() && "Path not exist!");
   src_iterator path_start_from = path_end_at->second.find(Src);

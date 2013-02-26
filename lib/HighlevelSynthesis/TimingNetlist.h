@@ -187,6 +187,16 @@ public:
     return at != PathInfo.end() ? &at->second : 0;
   }
 
+  const TNLDelay *getDelayOrNull(VASTValue *Src, VASTValue *Dst) const {
+    const SrcDelayInfo *Srcs = getSrcInfo(Dst);
+    if (Srcs == 0) return 0;
+
+    src_iterator path_start_from = Srcs->find(Src);
+    if (path_start_from == Srcs->end()) return 0;
+
+    return &path_start_from->second;
+  }
+
   path_iterator path_begin() { return PathInfo.begin(); }
   const_path_iterator path_begin() const { return PathInfo.begin(); }
 

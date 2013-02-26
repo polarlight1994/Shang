@@ -270,6 +270,9 @@ struct VASTScheduling : public VASTModulePass {
   static char ID;
   typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
   IR2SUMapTy IR2SUMap;
+  typedef std::map<Argument*, VASTSeqValue*> ArgMapTy;
+  ArgMapTy ArgMap;
+
   VASTSchedGraph *G;
   TimingNetlist *TNL;
   VASTModule *VM;
@@ -307,6 +310,7 @@ struct VASTScheduling : public VASTModulePass {
 
   void releaseMemory() {
     IR2SUMap.clear();
+    ArgMap.clear();
     G = 0;
     TNL = 0;
   }
@@ -330,6 +334,12 @@ Pass *llvm::createVASTSchedulingPass() {
   return new VASTScheduling();
 }
 
+template<typename T>
+static T *check(T *X) {
+  assert(X && "Unexpected NULL ptr!");
+  return X;
+}
+
 bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
   IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
 
@@ -337,16 +347,54 @@ bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
 
   bool IsPHI = isa<PHINode>(V);
 
-  // Get the corresponding latch SeqOp.
-  ArrayRef<VASTSchedUnit*> SUs(at->second);
-  for (unsigned i = 0; i < SUs.size(); ++i)
-    if (IsPHI ? SUs[i]->isPHI() : SUs[i]->isLatching(V)) {
-      U->addDep(SUs[i], VASTDep::CreateFlowDep(0));
-      return true;
-    }
+  VASTSeqValue *SrcSeqVal = 0;
+  VASTSchedUnit *SrcSU = 0;
 
-  llvm_unreachable("Source SU not found!");
-  return false;
+  if (Argument *Arg = dyn_cast<Argument>(V)) {
+    SrcSeqVal = ArgMap[Arg];
+    SrcSU = G->getEntry();
+  } else {
+    // Get the corresponding latch SeqOp.
+    ArrayRef<VASTSchedUnit*> SUs(at->second);
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSchedUnit *CurSU = SUs[i];
+      // Are we got the VASTSeqVal corresponding to V?
+      if (CurSU->isLatching(V)) {
+        assert((SrcSeqVal == 0 || SrcSeqVal == check(CurSU->getSeqOp())->getDef(0))
+              && "All PHI latching SeqOp should define the same SeqOp!");
+        SrcSeqVal = check(CurSU->getSeqOp())->getDef(0);
+
+        if (IsPHI) continue;
+
+        // We are done if we are looking for the Scheduling Unit for common
+        // instruction.
+        SrcSU = CurSU;
+        break;
+      }
+
+      if (IsPHI && CurSU->isPHI()) {
+        assert(SrcSeqVal && "PHI Latching SU should be placed before the PHI SU!");
+        SrcSU = CurSU;
+        break;
+      }
+    }
+  }
+
+  assert(SrcSU && SrcSeqVal && "Cannot find the source of the dependencies!");
+
+  unsigned MaxCycles = 0;
+  VASTSeqOp *DstOp =U->getSeqOp();
+  assert(DstOp && "Unexpected DstOp in addFlowDepandency");
+  for (unsigned i = 0; i < DstOp->size(); ++i) {
+    VASTValue *V = DstOp->getOperand(i).getAsLValue<VASTValue>();
+    if (const TNLDelay *D = TNL->getDelayOrNull(SrcSeqVal, V))
+      MaxCycles = std::max(MaxCycles, D->getNumCycles());
+  }
+
+  // TODO: Also get the MUX delay!
+
+  U->addDep(SrcSU, VASTDep::CreateFlowDep(MaxCycles));
+  return true;
 }
 
 void VASTScheduling::buildFlowDependencies(Instruction *I, VASTSchedUnit *U) {
@@ -522,9 +570,13 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
     // Value, their will be rebuilt when we emit the scheduling.
     if (Inst == 0) {
       if (BB == 0) {
-        if (Argument *Arg = dyn_cast_or_null<Argument>(Op->getValue()))
-          // Map the Arg to the entry scheduling SU.
-          IR2SUMap[Arg].push_back(BBEntry);
+        if (Argument *Arg = dyn_cast_or_null<Argument>(Op->getValue())) {
+          // Remember the corresponding SeqVal.
+          bool inserted
+            = ArgMap.insert(std::make_pair(Arg, Op->getDef(0))).second;
+          assert(inserted && "SeqVal for argument not inserted!");
+          (void) inserted;
+        }
       }
 
       continue;
@@ -553,6 +605,7 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
       } else
         U = G->createSUnit(Inst, IsLatch, 0, SeqInst);
 
+      // TODO: Add the MUX delay between the entry and the scheduling unit!
       U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
 
       buildFlowDependencies(U);
@@ -772,9 +825,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   OwningPtr<VASTSchedGraph> GPtr(new VASTSchedGraph());
   G = GPtr.get();
 
-  TimingNetlist &TNL = getAnalysis<TimingNetlist>();
-  (void) TNL;
-
+  TNL = &getAnalysis<TimingNetlist>();
   DA = &getAnalysis<DependenceAnalysis>();
   LI = &getAnalysis<LoopInfo>();
 
