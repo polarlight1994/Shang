@@ -14,8 +14,6 @@ set_global_assignment -name DEVICE EP4CE75F29C6
 set_global_assignment -name TOP_LEVEL_ENTITY DUT_TOP
 set_global_assignment -name SOURCE_FILE @MAIN_RTL_SRC@
 set_global_assignment -name SOURCE_FILE @MAIN_INT_TOP@
-set_global_assignment -name SOURCE_FILE @MAIN_INT_BRAM@
-set_global_assignment -name SOURCE_FILE @MAIN_INT_BRAMINIT@
 set_global_assignment -name SDC_FILE @MAIN_SDC_SRC@
 set_global_assignment -name VERILOG_MACRO "quartus_synthesis"
 
