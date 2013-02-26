@@ -3,7 +3,7 @@ $('#')!/bin/bash
 PATH=~/altera/10.1/modelsim_ase/bin/:~/altera/modelsim_ase/bin/:$PATH
 vdel -lib work -all
 vlib work
-vlog +define+quartus_synthesis -sv $(RTLModuleName).v
+vlog +define+quartus_synthesis $(RTLModuleName).sv
 vlog INTF_$(RTLModuleName).v
 sed -e 's/<half-period>/5/' DUT_TOP_tb.sv > DUT_TOP_tb_5ns.sv
 vlog -sv DUT_TOP_tb_5ns.sv
