@@ -876,7 +876,10 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
     VASTSeqValue *V = R->getValue();
     if (IsWrite) {
       VASTValPtr Src = getAsOperandImpl(Data);
-      VM->latchValue(V, Src, Slot, VASTImmediate::True, &I);
+      VASTSeqInst *SeqInst
+        = VM->lauchInst(Slot, VASTImmediate::True, 1, &I, VASTSeqInst::Latch);
+      // The static registers only be written when the function exit.
+      SeqInst->addSrc(Src, 0, false, V);
     } else {
       // Also index the address port as the result of the block RAM read.
       Builder.indexVASTExpr(&I, V);
