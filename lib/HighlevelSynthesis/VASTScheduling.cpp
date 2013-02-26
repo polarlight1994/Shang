@@ -713,6 +713,11 @@ void VASTScheduling::fixSchedulingGraph() {
 
     // TODO: Constrain the dangling nodes by all terminators.
     VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].front();
+    if (!BBExit->isTerminator()) {
+      assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
+      BBExit = IR2SUMap[BB->getTerminator()][1];
+      assert(BBExit->isTerminator() && "BBExit is not terminator!");
+    }
 
     // The SU maybe a PHI incoming copy targeting a back edge.
     if (BBExit->getIdx() < U->getIdx()) {
