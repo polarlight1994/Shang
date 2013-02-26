@@ -118,7 +118,7 @@ public:
     return *this;
   }
 
-  virtual void print(raw_ostream &OS) const;
+  void print(raw_ostream &OS) const;
   void dump() const;
 };
 
