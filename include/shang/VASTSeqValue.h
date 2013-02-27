@@ -122,6 +122,7 @@ public:
   typedef FaninVector::const_iterator const_fanin_iterator;
   const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
   const_fanin_iterator fanin_end() const { return Fanins.end(); }
+  bool isSelectorSynthesized() const { return !EnableU.isInvalid(); }
 
   // Functions to write the verilog code.
   void verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,

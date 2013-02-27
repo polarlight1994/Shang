@@ -133,13 +133,25 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
     VASTSeqValue *SVal = I;
 
+    // Calculate the delay of the Fanin MUX.
     unsigned MUXLL = 0;
 
     if (TimingModel != TimingEstimatorBase::ZeroDelay)
       MUXLL = Mux->getMuxLogicLevels(SVal->size(), SVal->getBitWidth());
 
-    // Calculate the delay of the Fanin MUX.
     delay_type MUXDelay = delay_type(MUXLL, MUXLL);
+
+    if (SVal->isSelectorSynthesized()) {
+      typedef VASTSeqValue::fanin_iterator fanin_iterator;
+      for (fanin_iterator I = SVal->fanin_begin(), E = SVal->fanin_end();
+           I != E; ++I){
+        const VASTSeqValue::Fanin *FI = *I;
+
+        buildTimingPath(FI->Pred.unwrap().get(), SVal, MUXDelay);
+        buildTimingPath(FI->FI.unwrap().get(), SVal, MUXDelay);
+      }
+      continue;
+    }
 
     typedef VASTSeqValue::iterator fanin_iterator;
     for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {

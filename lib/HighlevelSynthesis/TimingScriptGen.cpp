@@ -21,6 +21,7 @@
 #include "STGShortestPath.h"
 #include "TimingNetlist.h"
 
+#include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
 #include "shang/VASTSubModules.h"
 #include "shang/VASTModule.h"
@@ -36,7 +37,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/Statistic.h"
-#define DEBUG_TYPE "shang-comb-path-interval"
+#define DEBUG_TYPE "shang-timing-script"
 #include "llvm/Support/Debug.h"
 using namespace llvm;
 
@@ -518,8 +519,12 @@ unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Dst,
   raw_string_ostream SS(Script);
   SS << "RTLDatapath.Slack = " << Interval << '\n';
   SS << "RTLDatapath.EstimatiedDelay = ";
-  if (TNL)  SS << TNL->getDelay(Src, Dst).getNumCycles();
-  else      SS << "<TNL not provided>";
+  // DIRTYHACK: Do not mess up with the IP core interval right now.
+  if (TNL && Src->getValType() != VASTSeqValue::IO
+          && Src->getValType() != VASTSeqValue::Enable)
+    SS << TNL->getDelay(Src, Dst).getNumCycles();
+  else
+    SS << "'<TNL not provided>'";
   SS << '\n';
   SS << "RTLDatapath.isCriticalPath = " << (SkipThu || IsCritical) << '\n';
   SS.flush();
@@ -611,8 +616,13 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
   //Write the timing constraints.
   typedef VASTModule::seqval_iterator seqval_iterator;
-  for (seqval_iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
-    writeConstraintsForDst(I, SLV, SSP, TNL);
+  for (seqval_iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
+    VASTSeqValue *V = I;
+
+    if (V->empty()) continue;
+
+    writeConstraintsForDst(V, SLV, SSP, TNL);
+  }
 
   return false;
 }
@@ -621,24 +631,16 @@ void TimingScriptGen::writeConstraintsForDst(VASTSeqValue *Dst,
                                              SeqLiveVariables &SLV,
                                              STGShortestPath &SSP,
                                              TimingNetlist *TNL) {
-  DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> > DatapathMap;
-
-  typedef VASTSeqValue::const_iterator vn_itertor;
-  for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
-    const VASTSeqUse &DstUse = *I;
-    VASTSlot *ReadSlot = DstUse.getSlot();
-    // Paths for the condition.
-    DatapathMap[((VASTValPtr)DstUse.getPred()).get()].push_back(ReadSlot);
-    if (VASTValPtr SlotActive = DstUse.getSlotActive())
-      DatapathMap[SlotActive.get()].push_back(ReadSlot);
-    // Paths for the assigning value
-    DatapathMap[((VASTValPtr)DstUse).get()].push_back(ReadSlot);
-  }
-
+  assert(Dst->isSelectorSynthesized() && "Expected synthesized selector!");
   PathIntervalQueryCache Cache(SLV, SSP, TNL);
-  typedef DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> >::iterator it;
-  for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
-    extractTimingPaths(Cache, I->second, I->first);
+
+  typedef VASTSeqValue::fanin_iterator fanin_iterator;
+  for (fanin_iterator I = Dst->fanin_begin(), E = Dst->fanin_end(); I != E; ++I){
+    const VASTSeqValue::Fanin *FI = *I;
+
+    extractTimingPaths(Cache, FI->Slots, FI->Pred.unwrap().get());
+    extractTimingPaths(Cache, FI->Slots, FI->FI.unwrap().get());
+  }
 
   Cache.bindAllPath2ScriptEngine(Dst);
 }
