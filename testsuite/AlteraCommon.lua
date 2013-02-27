@@ -29,6 +29,10 @@ foreach SrcPattern $(SrcNameSet) {
   if { [get_collection_size $src] } { break }
 }
 
+#if RTLDatapath.EstimatiedDelay ~= '<TNL not provided>' and RTLDatapath.Slack < RTLDatapath.EstimatiedDelay then
+$(_put('#')) Arrival time violation detected!
+#end
+
 if {[get_collection_size $src] && [get_collection_size $dst]} {
 #if (RTLDatapath.isCriticalPath == 1) then
 $(_put('#')) $(DstNameSet) <- $(SrcNameSet) Slack $(Slack) EstimatiedDelay $(EstimatiedDelay)
