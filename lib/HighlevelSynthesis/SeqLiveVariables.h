@@ -90,6 +90,16 @@ public:
     ///
     SparseBitVector<> Kills;
 
+    void initializeDefSlot(unsigned SlotNum) {
+      // Initialize the define slot.
+      Defs.set(SlotNum);
+      // If vr is not alive in any block, then defaults to dead.
+      Kills.set(SlotNum);
+      // Explicitly mark the dead define slot.
+      DeadDefs.set(SlotNum);
+
+    }
+
     void verify() const;
     void verifyKillAndAlive() const;
     void print(raw_ostream &OS) const;

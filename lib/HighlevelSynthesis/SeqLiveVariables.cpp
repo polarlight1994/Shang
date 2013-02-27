@@ -240,21 +240,21 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
 }
 
 void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector &PathFromEntry) {
-  std::set<VASTSeqValue*> UsedAtSlot;
+  std::set<VASTSeqValue*> ReadAtSlot;
 
   typedef VASTSlot::const_op_iterator op_iterator;
   for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
     VASTSeqOp *SeqOp = *I;
 
     // Process all uses.
-    typedef VASTOperandList::const_op_iterator use_itetator;
-    for (use_itetator UI = SeqOp->op_begin(), UE = SeqOp->op_end();
+    typedef VASTOperandList::const_op_iterator read_itetator;
+    for (read_itetator UI = SeqOp->op_begin(), UE = SeqOp->op_end();
           UI != UE; ++UI)
       if (VASTValue *V = UI->unwrap().get())
-        V->extractSupporingSeqVal(UsedAtSlot);
+        V->extractSupporingSeqVal(ReadAtSlot);
 
     // The Slot Register are also used.
-    UsedAtSlot.insert(SeqOp->getSlot()->getValue());
+    ReadAtSlot.insert(SeqOp->getSlot()->getValue());
 
     // Process defines.
     for (unsigned i = 0, e = SeqOp->getNumDefs(); i != e; ++i)
@@ -263,7 +263,7 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector &PathFromEntry) {
 
   // Process uses.
   typedef std::set<VASTSeqValue*>::iterator iterator;
-  for (iterator I = UsedAtSlot.begin(), E = UsedAtSlot.end(); I != E; ++I)
+  for (iterator I = ReadAtSlot.begin(), E = ReadAtSlot.end(); I != E; ++I)
     handleUse(*I, S, PathFromEntry);
 }
 
@@ -300,9 +300,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
       VI->setMultiDef();
 
     // Set the defined slot.
-    VI->Defs.set(SlotNum);
-    VI->Kills.set(SlotNum);
-    VI->DeadDefs.set(SlotNum);
+    VI->initializeDefSlot(SlotNum);
 
     WrittenSlots[Def].set(SlotNum);
     VarInfos[Def] = VI;
@@ -328,27 +326,56 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
   {
     VASTSeqValue *V = I;
 
-    if (V->getValType() != VASTSeqValue::StaticRegister) continue;
+    if (V->getValType() == VASTSeqValue::StaticRegister) {
+      VarInfo *VI = new VarInfo(0);
+      VarList.push_back(VI);
 
-    VarInfo *VI = new VarInfo(0);
-    VarList.push_back(VI);
+      // The static register is implicitly defined at the entry slot.
+      VASTSlot *S = VM->getStartSlot();
+      VI->initializeDefSlot(S->SlotNum);
 
-    // The static register is implicitly defined at the entry slot.
-    VASTSlot *S = VM->getStartSlot();
-    VI->Defs.set(S->SlotNum);
-    VI->Kills.set(S->SlotNum);
-    VI->DeadDefs.set(S->SlotNum);
+      VarName VN(V, S);
+      VarInfos[VN] = VI;
+      WrittenSlots[V].set(S->SlotNum);
+      continue;
+    } else if (V->getValType() == VASTSeqValue::Slot) {
+      unsigned SlotNum = V->getSlotNum();
 
-    VarName VN(V, S);
-    VarInfos[VN] = VI;
-    WrittenSlots[V].set(S->SlotNum);
+      VarInfo *VI = new VarInfo(0);
+      VarList.push_back(VI);
+      // The definition of the Slot register always and only live-in to its slot!
+      VI->LiveIns.set(SlotNum);
+
+      typedef VASTSeqValue::const_iterator iterator;
+      for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
+        VASTSeqUse U = *DI;
+        VASTSlot *DefSlot = U.getSlot();
+        // Create anther VarInfo for the disable operation to the slot.
+        if (DefSlot->SlotNum == SlotNum) {
+          VarInfo *VI = new VarInfo(0);
+          VarList.push_back(VI);
+          VI->initializeDefSlot(SlotNum);
+          WrittenSlots[V].set(SlotNum);
+
+          VarName VN(V, DefSlot);
+          VarInfos[VN] = VI;
+          continue;
+        }
+
+        // Initialize the definition slot.
+        VI->initializeDefSlot(DefSlot->SlotNum);
+        WrittenSlots[V].set(DefSlot->SlotNum);
+        VarName VN(V, DefSlot);
+        VarInfos[VN] = VI;
+      }
+    }
   }
 }
 
 void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
                                  PathVector &PathFromEntry) {
   // The timing information is not avaliable.
-  if (Use->empty() || Use->getValType() == VASTSeqValue::Slot) return;
+  if (Use->empty()) return;
 
   assert(Use && "Bad Use pointer!");
   VASTSlot *DefSlot = 0;
@@ -457,14 +484,7 @@ void SeqLiveVariables::handleDef(VASTSeqDef Def) {
   VarList.push_back(V);
 
   unsigned SlotNum = Def->getSlotNum();
-
-  // Initialize the define slot.
-  V->Defs.set(SlotNum);
-
-  // If vr is not alive in any block, then defaults to dead.
-  V->Kills.set(SlotNum);
-  // Assume the definition is dead.
-  V->DeadDefs.set(SlotNum);
+  V->initializeDefSlot(SlotNum);
 
   // Remember the written slots.
   WrittenSlots[Def].set(SlotNum);
