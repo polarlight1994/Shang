@@ -62,7 +62,7 @@ void SeqLiveVariables::VarInfo::dump() const {
 }
 
 void SeqLiveVariables::VarInfo::verifyKillAndAlive() const {
-  if (Alives.intersects(Kills) || Alives.intersects(Defs - DefAlive)
+  if (Alives.intersects(Kills) || Alives.intersects(Defs)
       || Alives.intersects(DefKills)) {
     dbgs() << "Bad VarInfo: \n";
     dump();
@@ -396,14 +396,18 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
     VASTSlot *S = *I;
 
     // Find the nearest written slot in the path.
-    if (isWrittenAt(Use, S)) DefSlot = S;
+    if (isWrittenAt(Use, S)) {
+      DefSlot = S;
+      break;
+    }
   }
 
   if (!DefSlot) {
     DEBUG(dbgs() << "Dumping path:\n";
       typedef PathVector::const_iterator iterator;
       for (iterator I = PathFromEntry.begin(), E = PathFromEntry.end(); I != E; ++I)
-      (*I)->dump());
+        dbgs() << (*I)->SlotNum << '\n';
+    );
 
     llvm_unreachable("Define of VASTSeqVal not dominates all its uses!");
   }
@@ -447,19 +451,6 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
 
   // The value not killed at define slot anymore.
   VI->Kills.reset(DefSlot->SlotNum);
-
-  // All the Slot in the path from UseSlot to the Def Slot is alive.
-  typedef PathVector::const_reverse_iterator path_iterator;
-  for (path_iterator I = PathFromEntry.rbegin(); (*I) != DefSlot; ++I) {
-    VASTSlot *S = *I;
-
-    // No need to move forward any further if we reach a alive slot.
-    if (VI->Alives.test(S->SlotNum)) break;
-
-    VI->Alives.set(S->SlotNum);
-    if (VI->Defs.test(S->SlotNum)) VI->DefAlive.set(S->SlotNum);
-    VI->Kills.reset(S->SlotNum);
-  }
 
   typedef VASTSlot::pred_iterator ChildIt;
   std::vector<std::pair<VASTSlot*, ChildIt> > VisitStack;

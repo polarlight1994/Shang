@@ -82,7 +82,7 @@ public:
     /// AliveSlots - Set of Slots in which this value is alive completely
     /// through.  This is a bit set which uses the Slot number as an index.
     ///
-    SparseBitVector<> Alives, DefAlive;
+    SparseBitVector<> Alives;
 
     /// Kills - Set of Slots which are the last use of this VASTSeqDef.
     ///
