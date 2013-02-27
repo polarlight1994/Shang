@@ -403,11 +403,12 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   }
 
   if (!DefSlot) {
-    DEBUG(dbgs() << "Dumping path:\n";
+    dbgs() << "Dumping path:\n";
       typedef PathVector::const_iterator iterator;
       for (iterator I = PathFromEntry.begin(), E = PathFromEntry.end(); I != E; ++I)
         dbgs() << (*I)->SlotNum << '\n';
-    );
+
+    Use->dumpFanins();
 
     llvm_unreachable("Define of VASTSeqVal not dominates all its uses!");
   }
