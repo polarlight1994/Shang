@@ -36,10 +36,11 @@ class STGShortestPath;
 template<class PtrType, unsigned SmallSize> class SmallPtrSet;
 class BasicBlock;
 class Value;
+class DominatorTree;
 
 class SeqLiveVariables : public VASTModulePass {
   VASTModule *VM;
-
+  DominatorTree *DT;
 public:
   static char ID;
 
@@ -81,7 +82,7 @@ public:
     /// AliveSlots - Set of Slots in which this value is alive completely
     /// through.  This is a bit set which uses the Slot number as an index.
     ///
-    SparseBitVector<> Alives;
+    SparseBitVector<> Alives, DefAlive;
 
     /// Kills - Set of Slots which are the last use of this VASTSeqDef.
     ///

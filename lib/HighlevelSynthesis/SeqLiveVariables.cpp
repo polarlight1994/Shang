@@ -24,6 +24,7 @@
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/Analysis/Dominators.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #define DEBUG_TYPE "shang-live-variables"
@@ -61,7 +62,7 @@ void SeqLiveVariables::VarInfo::dump() const {
 }
 
 void SeqLiveVariables::VarInfo::verifyKillAndAlive() const {
-  if (Alives.intersects(Kills) || Alives.intersects(Defs)
+  if (Alives.intersects(Kills) || Alives.intersects(Defs - DefAlive)
       || Alives.intersects(DefKills)) {
     dbgs() << "Bad VarInfo: \n";
     dump();
@@ -103,6 +104,7 @@ char &llvm::SeqLiveVariablesID = SeqLiveVariables::ID;
 INITIALIZE_PASS_BEGIN(SeqLiveVariables, "SeqLiveVariables", "SeqLiveVariables",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(BBLandingSlots)
+  INITIALIZE_PASS_DEPENDENCY(DominatorTree)
 INITIALIZE_PASS_END(SeqLiveVariables, "SeqLiveVariables", "SeqLiveVariables",
                     false, true)
 
@@ -117,6 +119,7 @@ SeqLiveVariables::SeqLiveVariables() : VASTModulePass(ID) {
 void SeqLiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequired<BBLandingSlots>();
+  AU.addRequired<DominatorTree>();
   AU.setPreservesAll();
 }
 
@@ -195,6 +198,7 @@ void SeqLiveVariables::verifyAnalysis() const {
 
 bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
   VM = &M;
+  DT = &getAnalysis<DominatorTree>();
 
   // Compute the PHI joins.
   createInstVarInfo(VM);
@@ -392,10 +396,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
     VASTSlot *S = *I;
 
     // Find the nearest written slot in the path.
-    if (isWrittenAt(Use, S)) {
-      DefSlot = S;
-      break;
-    }
+    if (isWrittenAt(Use, S)) DefSlot = S;
   }
 
   if (!DefSlot) {
@@ -420,6 +421,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
 
     // If we can reach a define slot, the define slot is not dead.
     VI->Kills.reset(UseSlot->SlotNum);
+
     return;
   }
 
@@ -445,6 +447,19 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
 
   // The value not killed at define slot anymore.
   VI->Kills.reset(DefSlot->SlotNum);
+
+  // All the Slot in the path from UseSlot to the Def Slot is alive.
+  typedef PathVector::const_reverse_iterator path_iterator;
+  for (path_iterator I = PathFromEntry.rbegin(); (*I) != DefSlot; ++I) {
+    VASTSlot *S = *I;
+
+    // No need to move forward any further if we reach a alive slot.
+    if (VI->Alives.test(S->SlotNum)) break;
+
+    VI->Alives.set(S->SlotNum);
+    if (VI->Defs.test(S->SlotNum)) VI->DefAlive.set(S->SlotNum);
+    VI->Kills.reset(S->SlotNum);
+  }
 
   typedef VASTSlot::pred_iterator ChildIt;
   std::vector<std::pair<VASTSlot*, ChildIt> > VisitStack;
@@ -472,6 +487,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
 
       // If we can reach a define slot, the define slot is not dead.
       VI->Kills.reset(ChildNode->SlotNum);
+
       // Do not move across the define slot.
       continue;
     }
@@ -480,13 +496,24 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
     // Please note that test_and_set will return true if the bit is newly set.
     if (VI->Alives.test(ChildNode->SlotNum)) continue;
 
+    // We had got a loop!
+    if (UseSlot == ChildNode) continue;
+
+    // If we reach a Slot that dominated by UseSlot, skip it. Otherwise we will
+    // get a cycle and setting the unecessary alive slots.
+    //if (BasicBlock *BB = ChildNode->getParent()) {
+    //  if (DT->dominates(UseSlot->getParent(), BB))
+    //    continue;
+    //}
+
     // Update the live slots.
     VI->Alives.set(ChildNode->SlotNum);
     VI->Kills.reset(ChildNode->SlotNum);
 
+
     VisitStack.push_back(std::make_pair(ChildNode, ChildNode->pred_begin()));
   }
-
+  
   DEBUG(VI->verifyKillAndAlive();VI->dump(); dbgs() << '\n');
 }
 
@@ -503,6 +530,8 @@ void SeqLiveVariables::handleDef(VASTSeqDef Def) {
 
   // Remember the written slots.
   WrittenSlots[Def].set(SlotNum);
+
+  verifyAnalysis();
 }
 
 bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot *S) {
@@ -545,10 +574,16 @@ void SeqLiveVariables::fixLiveInSlots() {
         unsigned LiveDefSlot = *I;
         VI->LiveIns |= STGBitMap[LiveDefSlot];
       }
+
+      assert((!VI->LiveIns.empty() || VI->Alives.empty()) && "There is no livein?");
     }
 
+    SparseBitVector<> ReachableSlots(VI->Alives | VI->Kills | VI->DefKills);
+    assert((ReachableSlots.intersects(VI->LiveIns) || VI->Defs == VI->Kills)
+           && "Bad liveins!");
+
     // Trim the dead live-ins.
-    VI->LiveIns &= (VI->Alives | VI->Kills | VI->DefKills);
+    VI->LiveIns &= ReachableSlots;
     DEBUG(VI->dump());
   }
 }
