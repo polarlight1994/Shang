@@ -42,7 +42,7 @@ public:
       LSB_LLx1024(ceil(delay/VFUs::LUTDelay) * 1024) {}
 
   static unsigned toInt(unsigned X) {
-    return X == 0 ? 0 : (X - 1) / 1024 + 1;
+    return (X + 1024 - 1) / 1024;
   }
 
   unsigned getLSBLL() const { return toInt(LSB_LLx1024); }
@@ -51,16 +51,15 @@ public:
   unsigned getMinLL() const { return std::min(getLSBLL(), getMSBLL()); }
 
   float getNormalizedDelay() const {
-    return std::max(MSB_LLx1024, LSB_LLx1024) * VFUs::LUTDelay / 1024;
+    return (std::max(MSB_LLx1024, LSB_LLx1024) * VFUs::LUTDelay + 1024 - 1) / 1024;
   }
 
   unsigned getNumCycles() const {
-    return ceil(std::max(MSB_LLx1024, LSB_LLx1024) * VFUs::LUTDelay / 1024);
+    return toInt(ceil(std::max(MSB_LLx1024, LSB_LLx1024) * VFUs::LUTDelay));
   }
 
   float getDelay() const {
-    return std::max(MSB_LLx1024, LSB_LLx1024) * VFUs::LUTDelay * VFUs::Period
-            / 1024;
+    return getNormalizedDelay() * VFUs::Period;
   }
 
   static TNLDelay max(TNLDelay LHS, TNLDelay RHS) {
