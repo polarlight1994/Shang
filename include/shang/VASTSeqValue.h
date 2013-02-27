@@ -134,6 +134,8 @@ public:
     printSelector(OS, getBitWidth(), PrintEnable);
   }
 
+  void dumpFanins() const;
+
   void dropUses() {
     assert(0 && "Function not implemented!");
   }

@@ -25,6 +25,13 @@
 
 using namespace llvm;
 //----------------------------------------------------------------------------//
+void VASTSeqValue::dumpFanins() const {
+  for (const_iterator I = begin(), E = end(); I != E; ++I) {
+    VASTSeqUse U = *I;
+    U.Op->dump();
+  }
+}
+
 bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr,
                                         std::vector<const VASTSeqOp*> >
                                &CSEMap) const {
