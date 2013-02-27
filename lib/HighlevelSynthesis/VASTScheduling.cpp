@@ -15,6 +15,7 @@
 
 #include "TimingNetlist.h"
 #include "VASTScheduling.h"
+#include "SDCScheduler.h"
 #include "ScheduleDOT.h"
 
 #include "shang/Passes.h"
@@ -188,10 +189,6 @@ VASTSchedGraph::VASTSchedGraph() {
 
 VASTSchedGraph::~VASTSchedGraph() {}
 
-void VASTSchedGraph::schedule() {
-  scheduleSDC();
-}
-
 void VASTSchedGraph::resetSchedule() {
   for (iterator I = begin(), E = end(); I != E; ++I)
     I->resetSchedule();
@@ -305,6 +302,8 @@ struct VASTScheduling : public VASTModulePass {
 
   void buildSchedulingGraph();
   void buildSchedulingUnits(VASTSlot *S);
+
+  void scheduleGlobal();
 
   bool runOnVASTModule(VASTModule &VM);
 
@@ -802,6 +801,56 @@ void VASTScheduling::fixSchedulingGraph() {
   }
 }
 
+void VASTScheduling::scheduleGlobal() {
+  SDCScheduler Scheduler(*G, 1);
+
+  Scheduler.buildTimeFrameAndResetSchedule(true);
+  BasicLinearOrderGenerator::addLinOrdEdge(Scheduler);
+
+  // Build the step variables, and no need to schedule at all if all SUs have
+  // been scheduled.
+  if (Scheduler.createLPAndVariables()) {
+    Scheduler.addObjectCoeff(G->getExit(), -1024.0);
+
+    Function &F = *VM;
+    typedef Function::iterator iterator;
+    for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
+      BasicBlock *BB = I;
+
+      ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[BB]);
+      VASTSchedUnit *BBEntry = 0;
+
+      // First of all we need to locate the header.
+      for (unsigned i = 0; i < SUs.size(); ++i) {
+        VASTSchedUnit *SU = SUs[i];
+        if (SU->isBBEntry()) {
+          BBEntry = SU;
+          break;
+        }
+      }
+
+      assert(BBEntry && "Cannot find BB Entry!");
+
+      VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].front();
+
+      if (!BBExit->isTerminator()) {
+        assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
+        BBExit = IR2SUMap[BB->getTerminator()][1];
+        assert(BBExit->isTerminator() && "BBExit is not terminator!");
+      }
+
+      Scheduler.addObjectCoeff(BBEntry, 1024.0);
+      Scheduler.addObjectCoeff(BBExit, -1024.0);
+    }
+
+    bool success = Scheduler.schedule();
+    assert(success && "SDCScheduler fail!");
+    (void) success;
+  }
+
+  DEBUG(G->viewGraph());
+}
+
 void VASTScheduling::buildSchedulingGraph() {
   Function &F = *VM;
 
@@ -851,7 +900,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
 
   buildSchedulingGraph();
 
-  G->schedule();
+  scheduleGlobal();
 
   // TODO: Fix or check the interval of cross BB chain.
 

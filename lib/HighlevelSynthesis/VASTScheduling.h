@@ -356,8 +356,6 @@ class VASTSchedGraph {
   typedef iplist<VASTSchedUnit> SUList;
   SUList SUnits;
 
-  void scheduleSDC();
-
 public:
   VASTSchedGraph();
   ~VASTSchedGraph();
@@ -410,10 +408,6 @@ public:
   /// Sort the scheduling units in topological order.
   ///
   void topologicalSortSUs();
-
-  /// Schedule the scheduling graph.
-  ///
-  void schedule();
 
   /// Reset the schedule of all the scheduling units in the scheduling graph.
   ///
