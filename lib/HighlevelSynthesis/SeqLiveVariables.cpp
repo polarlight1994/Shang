@@ -489,10 +489,12 @@ void SeqLiveVariables::fixLiveInSlots() {
 
   for (var_iterator I = VarList.begin(), E = VarList.end(); I != E; ++I) {
     VarInfo *VI = I;
+    SparseBitVector<> LiveKill(VI->Kills);
+    LiveKill.intersectWithComplement(VI->DefSlots);
 
     // Trim the dead live-ins.
     if (!VI->LiveInSlots.empty()) {
-      VI->LiveInSlots &= VI->AliveSlots;
+      VI->LiveInSlots &= (VI->AliveSlots | LiveKill);
       continue;
     }
 
@@ -501,17 +503,16 @@ void SeqLiveVariables::fixLiveInSlots() {
     SparseBitVector<> LiveDef(VI->DefSlots);
     LiveDef.intersectWithComplement(VI->Kills);
 
-    SparseBitVector<> LiveLiveIn;
     typedef SparseBitVector<>::iterator iterator;
     for (iterator I = LiveDef.begin(), E = LiveDef.end(); I != E; ++I) {
       unsigned LiveDefSlot = *I;
-      LiveLiveIn |= STGBitMap[LiveDefSlot];
+      VI->LiveInSlots |= STGBitMap[LiveDefSlot];
     }
 
     // If the live-ins are empty, the latching operation is unpredicated.
     // This mean the definition can reach all successors of the defining slot.
     // But we need to trim the dead live-ins according to its alive slots.
-    VI->LiveInSlots |= LiveLiveIn & VI->AliveSlots;
+    VI->LiveInSlots &= (VI->AliveSlots | LiveKill);
 
     DEBUG(VI->dump());
   }
