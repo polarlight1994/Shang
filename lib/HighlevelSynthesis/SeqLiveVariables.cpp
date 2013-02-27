@@ -356,7 +356,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
         VASTSeqUse U = *DI;
         VASTSlot *DefSlot = U.getSlot();
         // Create anther VarInfo for the disable operation to the slot.
-        if (DefSlot->SlotNum == SlotNum) {
+        if (DefSlot->SlotNum == SlotNum && !DefSlot->hasNextSlot(DefSlot)) {
           VarInfo *VI = new VarInfo(0);
           VarList.push_back(VI);
           VI->initializeDefSlot(SlotNum);
