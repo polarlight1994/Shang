@@ -17,6 +17,8 @@
 // the slack is 0. But if we read the data at cycle 3, the slack is 1.
 //
 //===----------------------------------------------------------------------===//
+#include "SeqLiveVariables.h"
+#include "STGShortestPath.h"
 #include "TimingNetlist.h"
 
 #include "shang/VASTModulePass.h"
@@ -56,6 +58,8 @@ namespace{
 struct TimingScriptGen;
 
 struct PathIntervalQueryCache {
+  SeqLiveVariables &SLV;
+  STGShortestPath &SSP;
   TimingNetlist *TNL;
 
   typedef std::map<unsigned, DenseSet<VASTSeqValue*> > IntervalStatsMapTy;
@@ -65,7 +69,9 @@ struct PathIntervalQueryCache {
   // Statistics for simple path and complex paths.
   IntervalStatsMapTy Stats[2];
 
-  explicit PathIntervalQueryCache(TimingNetlist *TNL) : TNL(TNL) {}
+  PathIntervalQueryCache(SeqLiveVariables &SLV,  STGShortestPath &SSP,
+                         TimingNetlist *TNL)
+    : SLV(SLV), SSP(SSP), TNL(TNL) {}
 
   void reset() {
     QueryCache.clear();
@@ -79,11 +85,13 @@ struct PathIntervalQueryCache {
 
   bool annotateSubmoduleLatency(VASTSeqValue * V);
 
-  void annotatePathInterval(/*SeqReachingDefAnalysis *R,*/ VASTValue *Tree,
-                         ArrayRef<VASTSeqUse> DstUses);
+  void annotatePathInterval(VASTValue *Tree, ArrayRef<VASTSlot*> ReadSlots);
+
+  unsigned getMinimalInterval(VASTSeqValue *Src, VASTSlot *ReadSlot);
+  unsigned getMinimalInterval(VASTSeqValue *Src, ArrayRef<VASTSlot*> ReadSlots);
 
   bool updateInterval(SeqValSetTy &To, const SeqValSetTy &From,
-                   const SeqValSetTy &LocalIntervalMap) {
+                      const SeqValSetTy &LocalIntervalMap) {
     bool Changed = false;
 
     typedef SeqValSetTy::const_iterator it;
@@ -136,15 +144,18 @@ struct TimingScriptGen : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    //AU.addRequired<SeqLiveVariables>();
+    AU.addRequired<STGShortestPath>();
+    AU.addRequired<SeqLiveVariables>();
     AU.addRequired<DataLayout>();
     AU.addRequired<TimingNetlist>();
     AU.setPreservesAll();
   }
 
-  void writeConstraintsForDst(VASTSeqValue *Dst, TimingNetlist *TNL);
+  void writeConstraintsForDst(VASTSeqValue *Dst, SeqLiveVariables &SLV,
+                              STGShortestPath &SSP,TimingNetlist *TNL);
 
-  void extractTimingPaths(PathIntervalQueryCache &Cache, ArrayRef<VASTSeqUse> Uses,
+  void extractTimingPaths(PathIntervalQueryCache &Cache,
+                          ArrayRef<VASTSlot*> ReadSlots,
                           VASTValue *DepTree);
 
   bool runOnVASTModule(VASTModule &VM);
@@ -166,31 +177,22 @@ struct TimingScriptGen : public VASTModulePass {
 };
 }
 
-static unsigned getMinimalInterval(/*SeqReachingDefAnalysis *R,*/ VASTSeqValue *Src,
-                                const VASTSeqUse &Dst) {
-  unsigned PathInterval = 2;
-  VASTSlot *DstSlot = Dst.getSlot();
+unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
+                                                    VASTSlot *ReadSlot) {
+  // Try to get the live variable at (Src, ReadSlot), calculate its distance
+  // from its defining slots to the read slot.
+  if (unsigned Interval = SLV.getIntervalFromDef(Src, ReadSlot, &SSP))
+    return Interval;
 
-  typedef VASTSeqValue::const_iterator vn_itertor;
-  for (vn_itertor I = Src->begin(), E = Src->end(); I != E; ++I) {
-    VASTSeqUse Def = *I;
-
-    // Update the PathInterval if the source VAS reaches DstSlot.
-    //if (unsigned Distance = DstSI->getCyclesFromDef(Def)) {
-    //  assert(Distance < 10000 && "Distance too large!");
-    //  PathInterval = std::min(PathInterval, Distance);
-    //}
-  }
-
-  return PathInterval;
+  return 10000;
 }
 
-static unsigned getMinimalInterval(/*SeqReachingDefAnalysis *R,*/ VASTSeqValue *Src,
-                                ArrayRef<VASTSeqUse> DstUses) {
+unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
+                                                    ArrayRef<VASTSlot*> ReadSlots) {
   unsigned PathInterval = 10000;
-  typedef ArrayRef<VASTSeqUse>::iterator iterator;
-  for (iterator I = DstUses.begin(), E = DstUses.end(); I != E; ++I)
-    PathInterval = std::min(PathInterval, getMinimalInterval(/*R,*/ Src, *I));
+  typedef ArrayRef<VASTSlot*>::iterator iterator;
+  for (iterator I = ReadSlots.begin(), E = ReadSlots.end(); I != E; ++I)
+    PathInterval = std::min(PathInterval, getMinimalInterval(Src, *I));
 
   return PathInterval;
 }
@@ -254,9 +256,8 @@ bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   return true;
 }
 
-void PathIntervalQueryCache::annotatePathInterval(/*SeqReachingDefAnalysis *R,*/
-                                            VASTValue *Root,
-                                            ArrayRef<VASTSeqUse> DstUses) {
+void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
+                                                  ArrayRef<VASTSlot*> ReadSlots) {
   assert((isa<VASTWire>(Root) || isa<VASTExpr>(Root)) && "Bad root type!");
   typedef VASTValue::dp_dep_it ChildIt;
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
@@ -297,7 +298,12 @@ void PathIntervalQueryCache::annotatePathInterval(/*SeqReachingDefAnalysis *R,*/
     }
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
-      unsigned Interval = getMinimalInterval(/*R,*/ V, DstUses);
+      if (V->empty()) {
+        assert(V->getValType() == VASTSeqValue::IO && "Unexpected empty SeqVal!");
+        continue;
+      }
+
+      unsigned Interval = getMinimalInterval(V, ReadSlots);
 
       bool inserted = LocalInterval.insert(std::make_pair(V, Interval)).second;
       assert(inserted && "Node had already been visited?");
@@ -397,6 +403,14 @@ static bool printDelayRecord(raw_ostream &OS, VASTSeqValue *Dst,
                              VASTSeqValue *Src, VASTValue *Thu,
                              const TNLDelay &delay) {
   // Record: {Src = '', Dst = '', THU = '', delay = '', max_ll = '', min_ll = ''}
+  DEBUG(dbgs() << Src->getName() << " -> ";
+
+  if (Thu == 0 || !printBindingLuaCode(dbgs(), Thu))
+    dbgs() << "<null>";
+
+  dbgs()  << " -> " << Dst->getName() << " " << delay << '\n';
+  );
+
   OS << "{ Src=";
   printBindingLuaCode(OS, Src);
   OS << ", ";
@@ -496,10 +510,8 @@ unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Dst,
   if (!runScriptStr("RTLDatapath = {}\n", Err))
     llvm_unreachable("Cannot create RTLDatapath table in scripting pass!");
 
-  // Hack the interval.
-  // DIRTY HACK: Ignore the div/rem
-  if (Interval < 32)
-    Interval = std::max<unsigned>(TNL->getDelay(Src, Dst).getNumCycles(), 1);
+  // Check the interval if necessary.
+  //  Interval = std::max<unsigned>(TNL->getDelay(Src, Dst).getNumCycles(), 1);
 
   std::string Script;
   raw_string_ostream SS(Script);
@@ -564,6 +576,7 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimpl
         ++NumMaskedMultiCyclesTimingPath;
 
       // Try to verify the result of the timing netlist.
+      // DIRTY HACK: Only extract the critical path between two registers.
       if (TNL && Interval < 32)
         bindDelay2ScriptEngine(Dst, Src, Interval, IsSimple, !Visited);
     }
@@ -587,33 +600,38 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
   bindFunctionToScriptEngine(getAnalysis<DataLayout>(), &VM);
 
-  TimingNetlist &TNL = getAnalysis<TimingNetlist>();
+  SeqLiveVariables &SLV = getAnalysis<SeqLiveVariables>();
+  STGShortestPath &SSP = getAnalysis<STGShortestPath>();
+  TimingNetlist *TNL = getAnalysisIfAvailable<TimingNetlist>();
 
   //Write the timing constraints.
   typedef VASTModule::seqval_iterator seqval_iterator;
   for (seqval_iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
-    writeConstraintsForDst(I, &TNL);
+    writeConstraintsForDst(I, SLV, SSP, TNL);
 
   return false;
 }
 
 void TimingScriptGen::writeConstraintsForDst(VASTSeqValue *Dst,
+                                             SeqLiveVariables &SLV,
+                                             STGShortestPath &SSP,
                                              TimingNetlist *TNL) {
-  DenseMap<VASTValue*, SmallVector<VASTSeqUse, 8> > DatapathMap;
+  DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> > DatapathMap;
 
   typedef VASTSeqValue::const_iterator vn_itertor;
   for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
     const VASTSeqUse &DstUse = *I;
+    VASTSlot *ReadSlot = DstUse.getSlot();
     // Paths for the condition.
-    DatapathMap[((VASTValPtr)DstUse.getPred()).get()].push_back(DstUse);
+    DatapathMap[((VASTValPtr)DstUse.getPred()).get()].push_back(ReadSlot);
     if (VASTValPtr SlotActive = DstUse.getSlotActive())
-      DatapathMap[SlotActive.get()].push_back(DstUse);
+      DatapathMap[SlotActive.get()].push_back(ReadSlot);
     // Paths for the assigning value
-    DatapathMap[((VASTValPtr)DstUse).get()].push_back(DstUse);
+    DatapathMap[((VASTValPtr)DstUse).get()].push_back(ReadSlot);
   }
 
-  PathIntervalQueryCache Cache(TNL);
-  typedef DenseMap<VASTValue*, SmallVector<VASTSeqUse, 8> >::iterator it;
+  PathIntervalQueryCache Cache(SLV, SSP, TNL);
+  typedef DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> >::iterator it;
   for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
     extractTimingPaths(Cache, I->second, I->first);
 
@@ -621,8 +639,8 @@ void TimingScriptGen::writeConstraintsForDst(VASTSeqValue *Dst,
 }
 
 void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
-                                               ArrayRef<VASTSeqUse> Uses,
-                                               VASTValue *DepTree) {
+                                         ArrayRef<VASTSlot*> ReadSlots,
+                                         VASTValue *DepTree) {
   VASTValue *SrcValue = DepTree;
 
   // Trivial case: register to register path.
@@ -630,7 +648,12 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
     // Src may be the return_value of the submodule.
     if (Cache.annotateSubmoduleLatency(Src)) return;
 
-    int Interval = getMinimalInterval(/*ReachingDef,*/ Src, Uses);
+    if (Src->empty()) {
+      assert(Src->getValType() == VASTSeqValue::IO && "Unexpected empty SeqVal!");
+      return;
+    }
+
+    int Interval = Cache.getMinimalInterval(Src, ReadSlots);
     Cache.addIntervalFromToStats(Src, Interval, true);
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
@@ -644,17 +667,20 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
   // If Define Value is immediate or symbol, skip it.
   if (!isa<VASTWire>(SrcValue) && !isa<VASTExpr>(SrcValue)) return;
 
-  Cache.annotatePathInterval(/*ReachingDef,*/ DepTree, Uses);
+  Cache.annotatePathInterval(DepTree, ReadSlots);
 }
 
 char TimingScriptGen::ID = 0;
-INITIALIZE_PASS_BEGIN(TimingScriptGen, "CombPathDelayAnalysis",
-                      "CombPathDelayAnalysis", false, false)
+INITIALIZE_PASS_BEGIN(TimingScriptGen, "vast-timing-script-generation",
+                      "Generate timing script to export the behavior-level timing",
+                      false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
-  //INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables);
-INITIALIZE_PASS_END(TimingScriptGen, "CombPathDelayAnalysis",
-                    "CombPathDelayAnalysis", false, false)
+  INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
+  INITIALIZE_PASS_DEPENDENCY(STGShortestPath)
+INITIALIZE_PASS_END(TimingScriptGen, "vast-timing-script-generation",
+                    "Generate timing script to export the behavior-level timing",
+                    false, true)
 
 Pass *llvm::createTimingScriptGenPass() {
   return new TimingScriptGen();
