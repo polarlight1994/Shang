@@ -30,7 +30,7 @@ using namespace llvm;
 
 char STGShortestPath::ID = 0;
 
-INITIALIZE_PASS(STGShortestPath, "vast-bb-landing-slots",
+INITIALIZE_PASS(STGShortestPath, "vast-stg-shortest-path",
                 "Compute the Landing Slots for the BasicBlocks",
                 false, true)
 
@@ -53,6 +53,8 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
   for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
     VASTSlot *Src = I;
 
+    STPMatrix[Idx(Src->SlotNum, Src->SlotNum)] = 0;
+
     typedef VASTSlot::succ_iterator succ_iterator;
     for (succ_iterator SI = Src->succ_begin(), SE = Src->succ_end(); SI != SE; ++SI) {
       VASTSlot *Dst = *SI;
@@ -72,14 +74,27 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
   // Use the Floyd Warshal algorithm to compute the shortest path.
   for (slot_iterator K = VM.slot_begin(), KE = VM.slot_end(); K != KE; ++K)
     for (slot_iterator I = VM.slot_begin(), IE = VM.slot_end(); I != IE; ++I)
-      for (slot_iterator J = VM.slot_begin(), JE = VM.slot_end(); J != JE; ++J)
+      for (slot_iterator J = VM.slot_begin(), JE = VM.slot_end(); J != JE; ++J) {
         //D[i][j] = min( D[i][j], D[i][k] + D[k][j]
+        unsigned DistanceThu = getShortestPath(I->SlotNum, K->SlotNum)
+                             + getShortestPath(K->SlotNum, J->SlotNum);
+
+        if (DistanceThu >= Inf) continue;
+
         STPMatrix[Idx(I->SlotNum, J->SlotNum)]
-          = std::max(STPMatrix[Idx(I->SlotNum, J->SlotNum)],
-                     STPMatrix[Idx(I->SlotNum, K->SlotNum)]
-                     + STPMatrix[Idx(K->SlotNum, J->SlotNum)]);
+          = std::min(getShortestPath(I->SlotNum, J->SlotNum), DistanceThu);
+      }
 
   return false;
 }
 
 void STGShortestPath::print(raw_ostream &OS) const { }
+
+unsigned STGShortestPath::getShortestPath(unsigned From, unsigned To) const {
+  std::map<std::pair<unsigned, unsigned>, unsigned>::const_iterator
+    at = STPMatrix.find(Idx(From, To));
+
+  if (at == STPMatrix.end()) return Inf;
+
+  return at->second;
+}

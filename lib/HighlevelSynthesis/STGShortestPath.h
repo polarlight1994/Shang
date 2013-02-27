@@ -28,6 +28,10 @@ class STGShortestPath : public VASTModulePass {
   std::map<std::pair<unsigned, unsigned>, unsigned> STPMatrix;
   typedef std::pair<unsigned, unsigned> Idx;
 public:
+  enum InfType {
+    Inf = UINT16_MAX
+  };
+
   static char ID;
 
   STGShortestPath();
@@ -37,7 +41,7 @@ public:
   void releaseMemory();
   void print(raw_ostream &OS) const;
 
-  int getShortestPath(unsigned From, unsigned To) const;
+  unsigned getShortestPath(unsigned From, unsigned To) const;
 };
 }
 
