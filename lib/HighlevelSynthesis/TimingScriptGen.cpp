@@ -145,8 +145,8 @@ struct TimingScriptGen : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequired<STGShortestPath>();
     AU.addRequired<SeqLiveVariables>();
+    AU.addRequired<STGShortestPath>();
     AU.addRequired<DataLayout>();
     AU.addRequired<TimingNetlist>();
     AU.setPreservesAll();

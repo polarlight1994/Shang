@@ -234,6 +234,7 @@ int main(int argc, char **argv) {
       HLSPasses.add(createPromoteMemoryToRegisterPass());
       HLSPasses.add(createCFGSimplificationPass());
       HLSPasses.add(createCorrelatedValuePropagationPass());
+      HLSPasses.add(createGlobalOptimizerPass());
       HLSPasses.add(createSROAPass());
       HLSPasses.add(createDatapathHoistingPass());
       HLSPasses.add(createGVNPass());
@@ -250,6 +251,7 @@ int main(int argc, char **argv) {
     HLSPasses.add(createInstructionCombiningPass());
     HLSPasses.add(createCFGSimplificationPass());
     HLSPasses.add(createDeadInstEliminationPass());
+    HLSPasses.add(createGlobalOptimizerPass());
     HLSPasses.add(createSROAPass());
     HLSPasses.add(createInstructionCombiningPass());
     HLSPasses.add(createMemoryAccessAlignerPass());
@@ -297,6 +299,7 @@ int main(int argc, char **argv) {
 
     // Analyse the slack between registers.
     HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
+    if (isMainSynthesis) HLSPasses.add(createTimingScriptGenPass());
 
     // Run some scripting passes.
     typedef std::map<std::string, std::pair<std::string, std::string> >::iterator
