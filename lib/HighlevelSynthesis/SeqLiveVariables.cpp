@@ -307,7 +307,8 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
     WrittenSlots[Def].set(SlotNum);
     VarInfos[Def] = VI;
 
-    // Compute the live-in slots.
+    // Compute the live-in slots if the operation is predicated. For the
+    // unpredicated operations, their live-ins are computed in fixLiveInSlots.
     if (Instruction *Inst = dyn_cast<Instruction>(V)) {
       BasicBlock *BB = Inst->getParent();
       if (BB != S->getParent()) {
@@ -317,18 +318,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
         typedef BBLandingSlots::SlotSet::const_iterator landing_iterator;
         for (landing_iterator LI = S.begin(), LE = S.end(); LI != LE; ++LI)
           VI->LiveInSlots.set((*LI)->SlotNum);
-
-        continue;
       }
-    }
-
-    typedef VASTSlot::succ_iterator succ_iterator;
-    for (succ_iterator SI = S->succ_begin(), SE = S->succ_end(); SI != SE; ++SI) {
-      VASTSlot *SuccSlot = *SI;
-      // A value will never live-in to the exit slot.
-      if (SuccSlot == VM->getFinishSlot()) continue;
-
-      VI->LiveInSlots.set(SuccSlot->SlotNum);
     }
   }
 
@@ -499,6 +489,14 @@ void SeqLiveVariables::fixLiveInSlots() {
 
   for (var_iterator I = VarList.begin(), E = VarList.end(); I != E; ++I) {
     VarInfo *VI = I;
+
+    // Trim the dead live-ins.
+    if (!VI->LiveInSlots.empty()) {
+      VI->LiveInSlots &= VI->AliveSlots;
+      continue;
+    }
+
+    // Otherwise compute the live-ins now.
     SparseBitVector<> LiveDef(VI->DefSlots);
     LiveDef.intersectWithComplement(VI->Kills);
 
@@ -509,11 +507,10 @@ void SeqLiveVariables::fixLiveInSlots() {
       LiveLiveIn |= STGBitMap[LiveDefSlot];
     }
 
-    // If the live-ins are not calculated, calculate it now.
-    if (VI->LiveInSlots.empty())
-      VI->LiveInSlots |= LiveLiveIn;
-    else // Trim the dead live-ins.
-      VI->LiveInSlots &= LiveLiveIn;
+    // If the live-ins are empty, the latching operation is unpredicated.
+    // This mean the definition can reach all successors of the defining slot.
+    // But we need to trim the dead live-ins according to its alive slots.
+    VI->LiveInSlots |= LiveLiveIn & VI->AliveSlots;
 
     DEBUG(VI->dump());
   }
