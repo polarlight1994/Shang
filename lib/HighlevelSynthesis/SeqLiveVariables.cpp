@@ -496,6 +496,7 @@ void SeqLiveVariables::fixLiveInSlots() {
       continue;
     }
 
+    assert(!VI->hasMultiDef() && "Unexpected multi define VI!");
     // Otherwise compute the live-ins now.
     SparseBitVector<> LiveDef(VI->DefSlots);
     LiveDef.intersectWithComplement(VI->Kills);
