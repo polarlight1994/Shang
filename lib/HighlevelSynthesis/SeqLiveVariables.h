@@ -32,6 +32,7 @@ class VASTSeqOp;
 class VASTSeqValue;
 class VASTSlot;
 class VASTModule;
+class STGShortestPath;
 template<class PtrType, unsigned SmallSize> class SmallPtrSet;
 class BasicBlock;
 class Value;
@@ -52,9 +53,24 @@ public:
     explicit VarInfo(Value *V = 0) : V(V, 0) {}
 
     bool hasMultiDef() const { return V.getInt(); }
+
     Value *getValue() const { return V.getPointer(); }
+
     void setMultiDef() { V.setInt(true); }
+
     bool isDead() const { return DefSlots == Kills; }
+
+    // Test the Read slot is reachable from the definition.
+    // Please note that even the ReadSlotNum is equal to a define slot, it is
+    // still not reachable if the slot is not in the alive slots.
+    bool isSlotReachable(unsigned SlotNum) const {
+      SparseBitVector<> TestBit;
+      TestBit.set(SlotNum);
+      return AliveSlots.contains(TestBit)
+             // If the VI is dead at SlotNum, then it is not reachable.
+             || (Kills.contains(TestBit) && !DefSlots.contains(TestBit));
+    }
+
     /// AliveSlots - Set of Slots at which this value is defined.  This is a bit
     /// set which uses the Slot number as an index.
     ///
@@ -85,6 +101,9 @@ public:
   void getAnalysisUsage(AnalysisUsage &AU) const;
   void releaseMemory();
   void verifyAnalysis() const;
+
+  unsigned getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlot,
+                              STGShortestPath *SSP) const;
 
   void print(raw_ostream &OS) const;
 private:

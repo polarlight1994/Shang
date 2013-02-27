@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "STGShortestPath.h"
 #include "BBLandingSlots.h"
 #include "SeqLiveVariables.h"
 
@@ -516,4 +517,44 @@ void SeqLiveVariables::fixLiveInSlots() {
 
     DEBUG(VI->dump());
   }
+}
+
+unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlot,
+                                              STGShortestPath *SSP) const {
+  const VarInfo *VI = 0;
+  unsigned ReadSlotNum = ReadSlot->SlotNum;
+
+  typedef VASTSeqValue::const_iterator iterator;
+  for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
+    std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
+    if (at == VarInfos.end()) continue;
+
+    const VarInfo *CurVI = at->second;
+
+    if (!CurVI->isSlotReachable(ReadSlotNum)) continue;
+
+    // No need to check multiple VI reachable to this slot. We will check it
+    // in verifyAnalysis.
+    VI = CurVI;
+    break;
+  }
+
+  // The SeqVal is kill before readslot.
+  if (VI == 0) return 0;
+
+  // Calculate the Shortest path distance from all live-in slot.
+  unsigned IntervalFromLiveIn = STGShortestPath::Inf;
+  typedef SparseBitVector<>::iterator livein_iterator;
+  for (livein_iterator I = VI->LiveInSlots.begin(), E = VI->LiveInSlots.end();
+       I != E; ++I) {
+    unsigned LiveInSlotNum = *I;
+    unsigned CurInterval = SSP->getShortestPath(LiveInSlotNum, ReadSlotNum);
+    assert(CurInterval < STGShortestPath::Inf && "Alive slot not reachable?");
+    IntervalFromLiveIn = std::min(IntervalFromLiveIn, CurInterval);
+  }
+
+  assert(IntervalFromLiveIn < STGShortestPath::Inf && "No live-in?");
+
+  // The is 1 extra cycle from the definition to live in.
+  return IntervalFromLiveIn + 1;
 }
