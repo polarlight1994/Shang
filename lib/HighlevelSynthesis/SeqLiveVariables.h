@@ -93,6 +93,11 @@ public:
     ///
     SparseBitVector<> DefKills;
 
+    /// DefAlives - The slot that the define is read, and the new define is
+    /// available at the same time.
+    ///
+    SparseBitVector<> DefAlives;
+
     void initializeDefSlot(unsigned SlotNum) {
       // Initialize the define slot.
       Defs.set(SlotNum);

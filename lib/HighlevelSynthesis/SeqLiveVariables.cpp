@@ -54,6 +54,8 @@ void SeqLiveVariables::VarInfo::print(raw_ostream &OS) const {
   ::dump(Kills, OS);
   OS << "\n  Killed-Defined: ";
   ::dump(DefKills, OS);
+  OS << "\n  Alive-Defined: ";
+  ::dump(DefAlives, OS);
   OS << "\n";
 }
 
@@ -62,8 +64,8 @@ void SeqLiveVariables::VarInfo::dump() const {
 }
 
 void SeqLiveVariables::VarInfo::verifyKillAndAlive() const {
-  if (Alives.intersects(Kills) || Alives.intersects(Defs)
-      || Alives.intersects(DefKills)) {
+  if (Alives.intersects(Kills) || Alives.intersects(Defs - DefAlives)
+      || Alives.intersects(DefKills - DefAlives)) {
     dbgs() << "Bad VarInfo: \n";
     dump();
     llvm_unreachable("Kills and Alives should not intersect!");
@@ -458,6 +460,8 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
 
   VisitStack.push_back(std::make_pair(UseSlot, UseSlot->pred_begin()));
 
+  bool HasMultiDef = VI->hasMultiDef();
+
   while (!VisitStack.empty()) {
     VASTSlot *Node = VisitStack.back().first;
     ChildIt It = VisitStack.back().second;
@@ -480,8 +484,25 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
       // If we can reach a define slot, the define slot is not dead.
       VI->Kills.reset(ChildNode->SlotNum);
 
+      if (HasMultiDef) {
+        SparseBitVector<> ReachableSlots(VI->Alives | VI->Kills | VI->DefKills);
+        assert(!VI->LiveIns.empty() && "LiveIns should be provided for MultDef!");
+        if (!ReachableSlots.intersects(VI->LiveIns)) {
+#ifndef NDEBUG
+          for (unsigned i = 0, e = PathFromEntry.size(); i != e; ++i) {
+            if (VI->Defs.test(PathFromEntry[i]->SlotNum)) {
+              assert(PathFromEntry[i] != DefSlot && "Expected more than 1 define!");
+              break;
+            }
+          }
+#endif
+
+          VI->DefAlives.set(ChildNode->SlotNum);
+        }
+      }
+      
       // Do not move across the define slot.
-      continue;
+      if (!VI->DefAlives.test(ChildNode->SlotNum)) continue;
     }
 
     // Reach the alive slot, no need to further visit other known AliveSlots.
