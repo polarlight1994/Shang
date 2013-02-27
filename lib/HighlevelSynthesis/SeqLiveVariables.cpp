@@ -298,8 +298,6 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
             && "Launch Inst should not define anything!");
     VASTSeqDef Def = SeqOp->getDef(0);
 
-    VASTSeqValue *SeqVal = Def;
-
     VarInfo *&VI = InstVarInfo[V];
     if (VI == 0) {
       VI = new VarInfo(V);
