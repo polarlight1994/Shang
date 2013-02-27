@@ -810,7 +810,7 @@ void VASTScheduling::scheduleGlobal() {
   // Build the step variables, and no need to schedule at all if all SUs have
   // been scheduled.
   if (Scheduler.createLPAndVariables()) {
-    Scheduler.addObjectCoeff(G->getExit(), -1024.0);
+    unsigned NumBB = 0;
 
     Function &F = *VM;
     typedef Function::iterator iterator;
@@ -841,7 +841,11 @@ void VASTScheduling::scheduleGlobal() {
 
       Scheduler.addObjectCoeff(BBEntry, 1024.0);
       Scheduler.addObjectCoeff(BBExit, -1024.0);
+
+      ++NumBB;
     }
+
+    Scheduler.addObjectCoeff(G->getExit(), -1024.0 * (NumBB + 1));
 
     bool success = Scheduler.schedule();
     assert(success && "SDCScheduler fail!");
