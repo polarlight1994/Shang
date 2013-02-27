@@ -162,7 +162,6 @@ int main(int argc, char **argv) {
 
   // Create the output files.
   tool_output_file SoftwareIROutput(ConfigTable["SoftwareIROutput"].c_str(), error);
-  tool_output_file RTLOutput(ConfigTable["RTLOutput"].c_str(), error);
 
   Module &mod = *M.get();
 
@@ -188,6 +187,11 @@ int main(int argc, char **argv) {
     PreHLSPasses.run(mod);
   }
 
+  if (mod.empty()) {
+    report_fatal_error("Module become empty after Software/Hardware paritioning!");
+    return 0;
+  }
+
   // Stage 2, perform high-level synthesis related IR optimizations.
   {
     PassManager HLSIRPasses;
@@ -199,6 +203,7 @@ int main(int argc, char **argv) {
   }
 
   bool isMainSynthesis = TopHWFunctions.count("main");
+  tool_output_file RTLOutput(ConfigTable["RTLOutput"].c_str(), error);
   // Stage 3, perform high-level synthesis.
   // Build up all of the passes that we want to do to the module.
   {
