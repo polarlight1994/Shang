@@ -58,23 +58,20 @@ public:
 
     void setMultiDef() { V.setInt(true); }
 
-    bool isDead() const { return Defs == DeadDefs; }
-
     // Test the Read slot is reachable from the definition.
     // Please note that even the ReadSlotNum is equal to a define slot, it is
     // still not reachable if the slot is not in the alive slots.
     bool isSlotReachable(unsigned SlotNum) const {
       SparseBitVector<> TestBit;
       TestBit.set(SlotNum);
-      return Alives.contains(TestBit)
-             // If the VI is dead at SlotNum, then it is not reachable.
-             || (Kills.contains(TestBit) && !DeadDefs.contains(TestBit));
+      return Alives.contains(TestBit) || Kills.contains(TestBit)
+            || DefKills.contains(TestBit);
     }
 
     /// AliveSlots - Set of Slots at which this value is defined.  This is a bit
     /// set which uses the Slot number as an index.
     ///
-    SparseBitVector<> Defs, DeadDefs;
+    SparseBitVector<> Defs;
 
     /// LiveInSlots - Set of the Slot that this variable just live-in from the
     /// def slots. Please note that some definition is conditional and hence
@@ -86,18 +83,20 @@ public:
     ///
     SparseBitVector<> Alives;
 
-    /// Kills - List of VASTSeqOp's which are the last use of this VASTSeqDef.
+    /// Kills - Set of Slots which are the last use of this VASTSeqDef.
     ///
     SparseBitVector<> Kills;
+
+    /// DefKill - The slot that the define is read, and the new define is
+    /// available at the same time.
+    ///
+    SparseBitVector<> DefKills;
 
     void initializeDefSlot(unsigned SlotNum) {
       // Initialize the define slot.
       Defs.set(SlotNum);
       // If vr is not alive in any block, then defaults to dead.
       Kills.set(SlotNum);
-      // Explicitly mark the dead define slot.
-      DeadDefs.set(SlotNum);
-
     }
 
     void verify() const;
