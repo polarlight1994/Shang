@@ -503,6 +503,7 @@ unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Dst,
   // Path table:
   // Datapath: {
   //  unsigned Slack,
+  //  unsigned Estimated Delay
   //  table NodesInPath
   // }
   SMDiagnostic Err;
@@ -516,6 +517,10 @@ unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Dst,
   std::string Script;
   raw_string_ostream SS(Script);
   SS << "RTLDatapath.Slack = " << Interval << '\n';
+  SS << "RTLDatapath.EstimatiedDelay = ";
+  if (TNL)  SS << TNL->getDelay(Src, Dst).getNumCycles();
+  else      SS << "<TNL not provided>";
+  SS << '\n';
   SS << "RTLDatapath.isCriticalPath = " << (SkipThu || IsCritical) << '\n';
   SS.flush();
   if (!runScriptStr(Script, Err))

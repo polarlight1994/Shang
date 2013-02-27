@@ -13,6 +13,7 @@ initial
 
 RunOnDatapath = [=[
 #local Slack = RTLDatapath.Slack
+#local EstimatiedDelay = RTLDatapath.EstimatiedDelay
 #local DstNameSet = RTLDatapath.Nodes[1].NameSet
 #local SrcNameSet = RTLDatapath.Nodes[table.getn(RTLDatapath.Nodes)].NameSet
 
@@ -30,13 +31,13 @@ foreach SrcPattern $(SrcNameSet) {
 
 if {[get_collection_size $src] && [get_collection_size $dst]} {
 #if (RTLDatapath.isCriticalPath == 1) then
-$(_put('#')) $(DstNameSet) <- $(SrcNameSet) Slack $(Slack)
+$(_put('#')) $(DstNameSet) <- $(SrcNameSet) Slack $(Slack) EstimatiedDelay $(EstimatiedDelay)
   set_multicycle_path -from $src -to $dst -setup -end $(Slack)
 #end -- Only generate constraits with -though if the current path is not critical.
 #for i, n in pairs(RTLDatapath.Nodes) do
 #  if (i~=1 and i~= table.getn(RTLDatapath.Nodes)) then
 #local ThuNameSet = n.NameSet
-$(_put('#')) $(DstNameSet) <- $(ThuNameSet) <- $(SrcNameSet) Slack $(Slack)
+$(_put('#')) $(DstNameSet) <- $(ThuNameSet) <- $(SrcNameSet) Slack $(Slack) EstimatiedDelay $(EstimatiedDelay)
 #    if (RTLDatapath.isCriticalPath ~= 1) then
   foreach ThuPattern $(ThuNameSet) {
     set thu [get_nets "*$(CurModule:getName())_inst|$ThuPattern*"]
