@@ -67,10 +67,6 @@ void SeqLiveVariables::VarInfo::verifyKillAndAlive() const {
     dump();
     llvm_unreachable("Kills and Alives should not intersect!");
   }
-}
-
-void SeqLiveVariables::VarInfo::verify() const {
-  verifyKillAndAlive();
 
   if (Kills.empty() && DefKills.empty()) {
     dbgs() << "Bad VarInfo: \n";
@@ -78,6 +74,10 @@ void SeqLiveVariables::VarInfo::verify() const {
     llvm_unreachable("There should always be a kill!");
     return;
   }
+}
+
+void SeqLiveVariables::VarInfo::verify() const {
+  verifyKillAndAlive();
 
   if (LiveIns.empty() && Defs != Kills) {
     dbgs() << "Bad VarInfo: \n";
