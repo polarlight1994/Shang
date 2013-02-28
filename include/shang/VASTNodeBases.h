@@ -89,12 +89,12 @@ protected:
 
   // Drop this VASTNode from the userlist of all its uses.
   virtual void dropUses();
-  void setDead() { IsDead = true; }
 public:
   virtual ~VASTNode() {}
 
   VASTTypes getASTType() const { return VASTTypes(NodeT); }
   bool isDead() const { return IsDead; }
+  void setDead() { IsDead = true; }
 
   void dump() const;
 
