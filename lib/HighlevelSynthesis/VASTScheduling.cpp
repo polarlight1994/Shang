@@ -34,6 +34,7 @@
 
 using namespace llvm;
 STATISTIC(NumMemDep, "Number of Memory Dependencies Added");
+STATISTIC(NumForceBrSync, "Number of Dependencies add to sync the loop exit");
 
 //===----------------------------------------------------------------------===//
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
@@ -750,21 +751,56 @@ void VASTScheduling::fixSchedulingGraph() {
   // Also add the dependencies form the return instruction to the exit of
   // the scheduling graph.
   Function &F = *VM;
+  bool AnyLinearOrder = false;
 
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    Instruction *Inst = I->getTerminator();
+    TerminatorInst *Inst = I->getTerminator();
 
-    if (!(isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))) continue;
+    if ((isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))) {
+      ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[Inst]);
+      assert(!SUs.empty() && "Scheduling Units for terminator not built?");
+      VASTSchedUnit *U = SUs[0];
+      VASTSchedUnit *LastSU = U;
 
-    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[Inst]);
-    assert(!SUs.empty() && "Scheduling Units for terminator not built?");
-    VASTSchedUnit *U = SUs[0];
-    VASTSchedUnit *LastSU = U;
+      for (unsigned i = 1; i < SUs.size(); ++i)
+        LastSU = SUs[i];
 
-    for (unsigned i = 1; i < SUs.size(); ++i)
-      LastSU = SUs[i];
+      G->getExit()->addDep(LastSU, VASTDep::CreateCtrlDep(0));
+      continue;
+    }
 
-    G->getExit()->addDep(LastSU, VASTDep::CreateCtrlDep(0));
+    if (Loop *L = LI->getLoopFor(I)) {
+      if (!L->isLoopExiting(I)) continue;
+
+      // Synchronize the terminator of Loop exiting block. Otherwise we need
+      // chain breaking.
+      ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[Inst]);
+      VASTSchedUnit *BackEdgeOp = 0;
+      for (unsigned i = 0; i < SUs.size(); ++i) {
+        VASTSchedUnit *U = SUs[i];
+        assert(U->isTerminator() && "Unexpected SU type!");
+        if (U->getTargetBlock() == L->getHeader()) {
+          BackEdgeOp = U;
+          break;
+        }
+      }
+
+      if (BackEdgeOp == 0) continue;
+
+      // Add the linear order to make sure the BackEdgeOp is not scheduled
+      // earlier than the exiting branch, otherwise the RAW dependency will be
+      // broken. We can remove this once we have the chain breaker.
+      for (unsigned i = 0; i < SUs.size(); ++i) {
+        VASTSchedUnit *U = SUs[i];
+        assert(U->isTerminator() && "Unexpected SU type!");
+        if (U == BackEdgeOp) continue;
+        assert(!U->isDependsOn(BackEdgeOp)
+               && "Unexpected dependencies between terminators!");
+        BackEdgeOp->addDep(U, VASTDep::CreateDep<VASTDep::LinearOrder>(0));
+        AnyLinearOrder = true;
+        ++NumForceBrSync;
+      }
+    }
   }
 
   // Prevent the scheduler from generating 1 slot loop, that is the loop can be
@@ -804,6 +840,10 @@ void VASTScheduling::fixSchedulingGraph() {
       Terminator->addDep(Header, VASTDep::CreateCtrlDep(1));
     }
   }
+
+  // DIRTYHACK: As we add linear order for the from the exiting branch to the
+  // backedge branch we may destroy the SU ordering. Fix it by topologicalSortSUs
+  if (AnyLinearOrder)  G->topologicalSortSUs();
 }
 
 void VASTScheduling::scheduleGlobal() {
