@@ -490,14 +490,19 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
       if (HasMultiDef) {
         SparseBitVector<> ReachableSlots(VI->Alives | VI->Kills | VI->DefKills);
         assert(!VI->LiveIns.empty() && "LiveIns should be provided for MultDef!");
+
+        // For the MultiDef LiveVariable, it is the LiveIns that dominate all
+        // its use.
         if (!ReachableSlots.intersects(VI->LiveIns)) {
 #ifndef NDEBUG
-          for (unsigned i = 0, e = PathFromEntry.size(); i != e; ++i) {
-            if (VI->Defs.test(PathFromEntry[i]->SlotNum)) {
-              assert(PathFromEntry[i] != DefSlot && "Expected more than 1 define!");
+          bool AnyLiveIn = false;
+          for (unsigned i = 0, e = PathFromEntry.size(); i != e; ++i)
+            if (VI->LiveIns.test(PathFromEntry[i]->SlotNum)) {
+              AnyLiveIn = true;
               break;
             }
-          }
+
+          assert(AnyLiveIn && "Even livein not dominates all its use!");
 #endif
 
           VI->DefAlives.set(ChildNode->SlotNum);
