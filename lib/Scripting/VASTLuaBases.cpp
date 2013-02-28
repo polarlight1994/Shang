@@ -592,9 +592,9 @@ void VASTModule::eraseSeqOp(VASTSeqOp *SeqOp) {
   // assigning the Dst.
   if (SeqOp->getASTType() != VASTNode::vastSlotCtrl)
     for (unsigned i = 0, e = SeqOp->getNumSrcs(); i != e; ++i) {
-      VASTSeqUse U = SeqOp->getSrc(i);
+      VASTLatch U = SeqOp->getSrc(i);
       VASTSeqValue *V = U.getDst();
-      V->eraseUse(U);
+      V->eraseLatch(U);
     }
 
   SeqOp->dropUses();

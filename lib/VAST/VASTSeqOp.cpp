@@ -20,45 +20,36 @@
 #include "llvm/Support/Debug.h"
 using namespace llvm;
 //===----------------------------------------------------------------------===//
-VASTSeqUse::operator VASTUse &() const {
+VASTLatch::operator VASTUse &() const {
   return Op->getUseInteranal(No);
 }
 
-VASTSeqUse::operator VASTValPtr() const {
+VASTLatch::operator VASTValPtr() const {
   return Op->getUseInteranal(No);
 }
 
-VASTUse &VASTSeqUse::operator ->() const {
+VASTUse &VASTLatch::operator ->() const {
   return Op->getUseInteranal(No);
 }
 
-VASTSlot *VASTSeqUse::getSlot() const {
+VASTSlot *VASTLatch::getSlot() const {
   return Op->getSlot();
 }
 
-VASTUse &VASTSeqUse::getPred() const {
+unsigned VASTLatch::getSlotNum() const {
+  return getSlot()->SlotNum;
+}
+
+VASTUse &VASTLatch::getPred() const {
   return Op->getPred();
 }
 
-VASTValPtr VASTSeqUse::getSlotActive() const {
+VASTValPtr VASTLatch::getSlotActive() const {
   return Op->getSlotActive();
 }
 
-VASTSeqValue *VASTSeqUse::getDst() const {
+VASTSeqValue *VASTLatch::getDst() const {
   return cast<VASTSeqValue>(&Op->getUseInteranal(No).getUser());
-}
-
-//===----------------------------------------------------------------------===//
-VASTSeqOp *VASTSeqDef::operator ->() const {
-  return Op;
-}
-
-VASTSeqDef::operator VASTSeqValue *() const {
-  return Op->Defs[No];
-}
-
-const char *VASTSeqDef::getName() const {
-  return Op->Defs[No]->getName();
 }
 
 //----------------------------------------------------------------------------//
@@ -69,6 +60,11 @@ bool VASTSeqOp::operator <(const VASTSeqOp &RHS) const  {
 
   // Same slot?
   return getSlot() < RHS.getSlot();
+}
+
+VASTLatch VASTSeqOp::getDef(unsigned No) {
+  assert(No < getNumDefs() && "Bad define number!");
+  return VASTLatch(this, No);
 }
 
 void VASTSeqOp::addDefDst(VASTSeqValue *Def) {

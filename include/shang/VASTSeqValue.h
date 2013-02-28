@@ -60,7 +60,7 @@ private:
   const unsigned Idx  : 30;
 
   // Map the transaction condition to transaction value.
-  typedef std::vector<VASTSeqUse> AssignmentVector;
+  typedef std::vector<VASTLatch> AssignmentVector;
   AssignmentVector Assigns;
 
   typedef std::vector<Fanin*> FaninVector;
@@ -102,7 +102,7 @@ public:
   VASTNode *getParent() const { return Parent; }
 
   void addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef);
-  void eraseUse(VASTSeqUse U);
+  void eraseLatch(VASTLatch U);
 
   bool isTimingUndef() const { return getValType() == VASTSeqValue::Slot; }
 

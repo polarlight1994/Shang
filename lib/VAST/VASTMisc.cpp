@@ -185,7 +185,7 @@ void VASTModule::gc() {
 
     SmallVector<VASTSeqOp*, 4> DeadOps;
     for (VASTSeqValue::iterator I = V->begin(), E = V->end(); I != E; ++I) {
-      VASTSeqUse U = *I;
+      VASTLatch U = *I;
       DeadOps.push_back(U.Op);
     }
 

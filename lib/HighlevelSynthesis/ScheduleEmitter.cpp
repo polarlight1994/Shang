@@ -414,7 +414,7 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
     VASTSeqValue *S = NewInst->getDef(0);
 
     for (VASTSeqValue::iterator I = S->begin(), E = S->end(); I != E; ++I) {
-      VASTSeqUse U = *I;
+      VASTLatch U = *I;
       std::map<VASTSeqInst*, CFGPred*>::iterator at
         = PredMap.find(cast<VASTSeqInst>(U.Op));
       if (at == PredMap.end()) continue;
@@ -447,7 +447,7 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
 
   typedef VASTSeqValue::iterator iterator;
   for (iterator I = SeqVal->begin(), E = SeqVal->end(); I != E; ++I) {
-    VASTSeqUse U = *I;
+    VASTLatch U = *I;
 
     // Only retime across the latch operation.
     if (cast<VASTSeqInst>(U.Op)->getSeqOpType() != VASTSeqInst::Latch)

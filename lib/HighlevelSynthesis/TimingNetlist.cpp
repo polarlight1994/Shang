@@ -155,7 +155,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
 
     typedef VASTSeqValue::iterator fanin_iterator;
     for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
-      VASTSeqUse U = *FI;
+      VASTLatch U = *FI;
       // Estimate the delay for each fanin.
       buildTimingPath(VASTValPtr(U).get(), SVal, MUXDelay);
       // And the predicate expression.

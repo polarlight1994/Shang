@@ -23,13 +23,13 @@ class VASTSeqOp;
 class VASTSlot;
 class VASTSeqInst;
 
-/// VASTSeqUse - The value at used by the VASTSeqOp at a specific slot. Where
-///  "used" means we assign the value to some register.
-struct VASTSeqUse {
+/// VASTLatch - The value at latch by the VASTSeqOp at a specific slot. Where
+///  "latch" means we assign the value to some register.
+struct VASTLatch {
   VASTSeqOp *Op;
   unsigned No;
 
-  VASTSeqUse(VASTSeqOp *Op, unsigned No) : Op(Op), No(No) {}
+  VASTLatch(VASTSeqOp *Op, unsigned No) : Op(Op), No(No) {}
 
   operator VASTUse &() const;
   operator VASTValPtr () const;
@@ -40,25 +40,13 @@ struct VASTSeqUse {
 
   // Forward the functions from VASTSeqOp;
   VASTSlot *getSlot() const;
+  unsigned getSlotNum() const;
   VASTUse &getPred() const;
   VASTValPtr getSlotActive() const;
 
-  bool operator==(VASTSeqUse RHS) const {
+  bool operator==(VASTLatch RHS) const {
     return Op == RHS.Op && No == RHS.No;
   }
-};
-
-/// VASTSeqDef - The value at produced by the VASTSeqOp at a specific slot.
-struct VASTSeqDef {
-  VASTSeqOp *Op;
-  unsigned No;
-
-  VASTSeqDef(VASTSeqOp *Op, unsigned No) : Op(Op), No(No) {}
-
-  VASTSeqOp *operator->() const;
-  operator VASTSeqValue *() const;
-
-  const char *getName() const;
 };
 
 /// VASTSeqOp - Represent an operation in sequential logic, it read some value
@@ -69,7 +57,7 @@ class VASTSeqOp : public VASTOperandList, public VASTNode,
   PointerIntPair<VASTSlot*, 1, bool> S;
 
   friend struct VASTSeqDef;
-  friend struct VASTSeqUse;
+  friend struct VASTLatch;
   friend struct ilist_sentinel_traits<VASTSeqOp>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
   VASTSeqOp() : VASTOperandList(0), VASTNode(VASTNode::VASTTypes(-1)) {}
@@ -85,7 +73,7 @@ protected:
   VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive, unsigned Size);
 public:
   void addDefDst(VASTSeqValue *Def);
-  VASTSeqDef getDef(unsigned No) { return VASTSeqDef(this, No); }
+  VASTLatch getDef(unsigned No);
   unsigned getNumDefs() const { return Defs.size(); }
 
   // Active Slot accessor
@@ -110,7 +98,7 @@ public:
   const VASTUse &getPred() const { return getOperand(0); }
 
   // Get the source of the transaction.
-  VASTSeqUse getSrc(unsigned Idx) { return VASTSeqUse(this, Idx); };
+  VASTLatch getSrc(unsigned Idx) { return VASTLatch(this, Idx); };
   // Add a source value to the SeqOp.
   void addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef, VASTSeqValue *Dst);
 

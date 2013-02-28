@@ -89,7 +89,7 @@ static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
     O.indent(Indent + 2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
     typedef VASTSeqValue::const_iterator fanin_iterator;
     for (fanin_iterator FI = V->begin(), FE = V->end(); FI != FE; ++FI) {
-      VASTSeqUse U = *FI;
+      VASTLatch U = *FI;
 
       O.indent(Indent + 2) << '(' << U.getSlot()->getName() << "): begin ";
       O << V->getName() << " <= ";

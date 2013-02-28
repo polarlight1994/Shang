@@ -27,7 +27,7 @@ using namespace llvm;
 //----------------------------------------------------------------------------//
 void VASTSeqValue::dumpFanins() const {
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
-    VASTSeqUse U = *I;
+    VASTLatch U = *I;
     U.Op->dump();
   }
 }
@@ -36,7 +36,7 @@ bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr,
                                         std::vector<const VASTSeqOp*> >
                                &CSEMap) const {
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
-    VASTSeqUse U = *I;
+    VASTLatch U = *I;
     CSEMap[U].push_back(U.Op);
   }
 
@@ -47,7 +47,7 @@ bool VASTSeqValue::verify() const {
   std::set<VASTSeqOp*, less_ptr<VASTSeqOp> > UniqueDefs;
 
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
-    VASTSeqUse U = *I;
+    VASTLatch U = *I;
     if (!UniqueDefs.insert(U.Op).second)
       return false;
   }
@@ -118,10 +118,10 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
 
 void VASTSeqValue::addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef) {
   if (IsDef)  Op->addDefDst(this);
-  Assigns.push_back(VASTSeqUse(Op, SrcNo));
+  Assigns.push_back(VASTLatch(Op, SrcNo));
 }
 
-void VASTSeqValue::eraseUse(VASTSeqUse U) {
+void VASTSeqValue::eraseLatch(VASTLatch U) {
   iterator at = std::find(begin(), end(), U);
   assert(at != end() && "U is not in the assignment vector!");
   Assigns.erase(at);

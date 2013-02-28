@@ -33,11 +33,8 @@
 
 using namespace llvm;
 
-SeqLiveVariables::VarName::VarName(VASTSeqUse U)
+SeqLiveVariables::VarName::VarName(VASTLatch U)
   : Dst(U.getDst()), S(U.Op->getSlot()) {}
-
-SeqLiveVariables::VarName::VarName(VASTSeqDef D)
-  : Dst(D), S(D->getSlot()) {}
 
 
 void SeqLiveVariables::VarInfo::print(raw_ostream &OS) const {
@@ -303,7 +300,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
     assert((!isa<VASTSeqInst>(SeqOp)
             || cast<VASTSeqInst>(SeqOp)->getSeqOpType() != VASTSeqInst::Launch)
             && "Launch Inst should not define anything!");
-    VASTSeqDef Def = SeqOp->getDef(0);
+    VASTLatch Def = SeqOp->getDef(0);
 
     VarInfo *&VI = InstVarInfo[V];
     if (VI == 0) {
@@ -315,7 +312,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
     // Set the defined slot.
     VI->initializeDefSlot(SlotNum);
 
-    WrittenSlots[Def].set(SlotNum);
+    WrittenSlots[Def.getDst()].set(SlotNum);
     VarInfos[Def] = VI;
 
     // Compute the live-in slots if the operation is predicated. For the
@@ -360,7 +357,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
 
       typedef VASTSeqValue::const_iterator iterator;
       for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
-        VASTSeqUse U = *DI;
+        VASTLatch U = *DI;
         VASTSlot *DefSlot = U.getSlot();
         // Create anther VarInfo for the disable operation to the slot.
         if (DefSlot->SlotNum == SlotNum && !DefSlot->hasNextSlot(DefSlot)) {
@@ -538,7 +535,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   DEBUG(VI->verifyKillAndAlive();VI->dump(); dbgs() << '\n');
 }
 
-void SeqLiveVariables::handleDef(VASTSeqDef Def) {
+void SeqLiveVariables::handleDef(VASTLatch Def) {
   VarInfo *&V = VarInfos[Def];
   if (V) return;
 
@@ -546,13 +543,11 @@ void SeqLiveVariables::handleDef(VASTSeqDef Def) {
   V = new VarInfo();
   VarList.push_back(V);
 
-  unsigned SlotNum = Def->getSlotNum();
+  unsigned SlotNum = Def.getSlotNum();
   V->initializeDefSlot(SlotNum);
 
   // Remember the written slots.
-  WrittenSlots[Def].set(SlotNum);
-
-  verifyAnalysis();
+  WrittenSlots[Def.getDst()].set(SlotNum);
 }
 
 bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot *S) {

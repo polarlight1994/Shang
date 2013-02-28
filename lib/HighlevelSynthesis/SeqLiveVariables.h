@@ -26,8 +26,7 @@
 
 namespace llvm {
 class VASTValue;
-struct VASTSeqUse;
-struct VASTSeqDef;
+struct VASTLatch;
 class VASTSeqOp;
 class VASTSeqValue;
 class VASTSlot;
@@ -125,16 +124,14 @@ private:
   typedef const std::vector<VASTSlot*> PathVector;
   void handleSlot(VASTSlot *S, PathVector &PathFromEntry);
   void handleUse(VASTSeqValue *Use, VASTSlot *UseSlot, PathVector &PathFromEntry);
-  void handleDef(VASTSeqDef D);
+  void handleDef(VASTLatch D);
   void fixLiveInSlots();
 
   struct VarName {
     VASTSeqValue *Dst;
     VASTSlot *S;
 
-    /*implicit*/ VarName(VASTSeqDef D);
-
-    /*implicit*/ VarName(VASTSeqUse U);
+    /*implicit*/ VarName(VASTLatch U);
 
     VarName(VASTSeqValue *Dst, VASTSlot *S) : Dst(Dst), S(S) {}
 
