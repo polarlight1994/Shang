@@ -198,7 +198,6 @@ void ScheduleEmitter::clearUp() {
 void ScheduleEmitter::takeOldSlots() {
   OldSlots.splice(OldSlots.begin(), VM.getSLotList(),
                   VM.slot_begin(), VM.slot_end());
-
   // Remove the successors of the start slot, we will reconstruct them.
   VM.createStartSlot();
   VASTSlot *StartSlot = VM.getStartSlot();
@@ -216,6 +215,13 @@ void ScheduleEmitter::takeOldSlots() {
 
   VASTValPtr StartPort = VM.getPort(VASTModule::Start).getValue();
   addSuccSlot(StartSlot, StartSlot, Builder.buildNotExpr(StartPort));
+
+#ifndef NDEBUG
+  // Mark the old slots.
+  for (ilist<VASTSlot>::iterator I = OldSlots.begin(), E = OldSlots.end();
+       I != E; ++I)
+    I->setDead();
+#endif
 }
 
 static
@@ -477,6 +483,18 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
            && "Bitwidth implicitly changed!");
     ++NumRetimed;
   }
+
+#ifndef NDEBUG
+  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(ForwardedValue.get())) {
+    bool AnySrcEmitted = true;
+
+    for (iterator I = SeqVal->begin(), E = SeqVal->end(); I != E; ++I) {
+      AnySrcEmitted |= !(*I).getSlot()->isDead();
+    }
+
+    assert(AnySrcEmitted && "Bad emit order!");
+  }
+#endif
 
   return ForwardedValue;
 }
