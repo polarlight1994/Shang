@@ -169,8 +169,9 @@ struct ConstraintHelper {
       Coeff.push_back(1.0);
     }
 
-    int EqTy = (Edge.getEdgeType() == VASTDep::FixedTiming) ? EQ : GE;
-
+    int EqTy = (Edge.getEdgeType() == VASTDep::FixedTiming) ? EQ :
+               (Edge.getEdgeType() == VASTDep::Conditional) ? LE :
+               GE;
 
     if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EqTy, RHS))
       report_fatal_error("SDCScheduler: Can NOT add dependency constraints"

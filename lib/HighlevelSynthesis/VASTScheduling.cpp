@@ -340,7 +340,6 @@ static T *check(T *X) {
 }
 
 bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
-
   bool IsPHI = isa<PHINode>(V);
 
   VASTSeqValue *SrcSeqVal = 0;
@@ -513,6 +512,11 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
     assert(SUs[i]->getTargetBlock() == BB && "Wrong target BB!");
     Entry->addDep(SUs[i], VASTDep::CreateCndDep());
   }
+
+  // Also constraint the BB entry by the entry of the whole scheduling graph.
+  // But this is actually not needed because we will set a lower bound on the
+  // scheduling variable in the SDC scheduler.
+  //Entry->addDep(G->getEntry(), VASTDep::CreateCtrlDep(0));
 
   if (SUs.empty()) {
     assert(pred_begin(BB) == pred_end(BB)
@@ -701,14 +705,19 @@ void VASTScheduling::fixSchedulingGraph() {
     BasicBlock *BB = U->getParent();
 
     // Constrain the SU by the exit of the same BB if it is not constrained yet.
-    bool ConstrainedByExit = false;
+    // bool ConstrainedByExit = false;
 
-    typedef VASTSchedUnit::use_iterator use_iterator;
-    for (use_iterator UI = U->use_begin(), UE = U->use_end(); UI != UE; ++UI)
-      if ((ConstrainedByExit = /*Assignment*/((*UI)->getParent() == BB)))
-        break;
+    //typedef VASTSchedUnit::use_iterator use_iterator;
+    //for (use_iterator UI = U->use_begin(), UE = U->use_end(); UI != UE; ++UI) {
+    //  VASTSchedUnit *User = *UI;
+    //  if ((ConstrainedByExit = /*Assignment*/(User->getParent() == BB)))
+    //    break;
+    //}
 
-    if (ConstrainedByExit) continue;
+    //if (ConstrainedByExit) continue;
+
+    // Always constraints the latch with the exit SUs.
+    // if (U->isLaunch()) continue;
 
     // Constrain the dangling nodes by all terminators.
     ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
@@ -738,27 +747,24 @@ void VASTScheduling::fixSchedulingGraph() {
     }
   }
 
-  // Assign constraint to the terminators in the same BB so that their are
-  // scheduled to the same slot.
+  // Also add the dependencies form the return instruction to the exit of
+  // the scheduling graph.
   Function &F = *VM;
 
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
     Instruction *Inst = I->getTerminator();
+
+    if (!(isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))) continue;
 
     ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[Inst]);
     assert(!SUs.empty() && "Scheduling Units for terminator not built?");
     VASTSchedUnit *U = SUs[0];
     VASTSchedUnit *LastSU = U;
 
-    for (unsigned i = 1; i < SUs.size(); ++i) {
+    for (unsigned i = 1; i < SUs.size(); ++i)
       LastSU = SUs[i];
-      LastSU->addDep(U, VASTDep::CreateFixTimingConstraint(0));
-    }
 
-    // Also add the dependencies form the return instruction to the exit of
-    // the scheduling graph.
-    if (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))
-      G->getExit()->addDep(LastSU, VASTDep::CreateCtrlDep(0));
+    G->getExit()->addDep(LastSU, VASTDep::CreateCtrlDep(0));
   }
 
   // Prevent the scheduler from generating 1 slot loop, that is the loop can be
@@ -816,6 +822,23 @@ void VASTScheduling::scheduleGlobal() {
     for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
       BasicBlock *BB = I;
 
+      unsigned NumExits = 0;
+      ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
+      for (unsigned i = 0; i < Exits.size(); ++i) {
+        VASTSchedUnit *BBExit = Exits[i];
+        // Ignore the return value latching operation here. We will add the fix
+        // timing constraints between it and the actual terminator.
+        if (!BBExit->isTerminator()) {
+          assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
+          continue;
+        }
+
+        Scheduler.addObjectCoeff(BBExit, -1024.0);
+
+        ++NumExits;
+        ++NumBB;
+      }
+
       ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[BB]);
       VASTSchedUnit *BBEntry = 0;
 
@@ -830,18 +853,7 @@ void VASTScheduling::scheduleGlobal() {
 
       assert(BBEntry && "Cannot find BB Entry!");
 
-      VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].front();
-
-      if (!BBExit->isTerminator()) {
-        assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
-        BBExit = IR2SUMap[BB->getTerminator()][1];
-        assert(BBExit->isTerminator() && "BBExit is not terminator!");
-      }
-
-      Scheduler.addObjectCoeff(BBEntry, 1024.0);
-      Scheduler.addObjectCoeff(BBExit, -1024.0);
-
-      ++NumBB;
+      Scheduler.addObjectCoeff(BBEntry, (NumExits) * 1024.0);
     }
 
     Scheduler.addObjectCoeff(G->getExit(), -1024.0 * (NumBB + 1));
@@ -872,13 +884,6 @@ void VASTScheduling::buildSchedulingGraph() {
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I)
     buildMemoryDependencies(I);
-
-  // Connect the conditional dependencies.
-
-
-  // Build the dependencies edges.
-  // When the BranchInst looping back, we need to wait for the last instruction?
-  // Or just build another conditional dependencies?
 
   // Constraint all nodes that do not have a user by the terminator in its parent
   // BB.
