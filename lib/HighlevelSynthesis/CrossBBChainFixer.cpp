@@ -39,7 +39,33 @@ struct IntervalFixer {
 
   unsigned computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs);
   unsigned allocateWaitStates(VASTSchedUnit *Entry, unsigned ExpectedSPD);
+
+  void ensureNoFlowDepFrom(BasicBlock *FromBB, BasicBlock *ToBB);
 };
+}
+
+void IntervalFixer::ensureNoFlowDepFrom(BasicBlock *FromBB, BasicBlock *ToBB) {
+#ifndef NDEBUG
+  ArrayRef<VASTSchedUnit*> SUs(BBMap.getSUInBB(ToBB));
+
+  for (unsigned i = 0, e = SUs.size(); i != e; ++i) {
+    VASTSchedUnit *U = SUs[i];
+
+    typedef VASTSchedUnit::dep_iterator dep_iterator;
+    for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
+      VASTSchedUnit *Src = *I;
+
+      if (Src->isEntry()) continue;
+
+      if (I.getEdgeType() == VASTDep::LinearOrder
+          || I.getEdgeType() == VASTDep::Conditional)
+       continue;
+
+      if (Src->getParent() == FromBB)
+        llvm_unreachable("Source of flow dependencies not dominates all its use!");
+    }
+  }
+#endif
 }
 
 unsigned IntervalFixer::allocateWaitStates(VASTSchedUnit *Entry,
@@ -56,11 +82,19 @@ unsigned IntervalFixer::allocateWaitStates(VASTSchedUnit *Entry,
     
     BasicBlock *SrcBB = Src->getParent();
     unsigned SrcSPDFromEntry = SPDFromEntry[SrcBB];
+
+    // For the nonstructural CFG, we may get a back edge. For this kind of edge
+    // the flow-dependencies from the source BB should be break by a PHI node.
+    // And it is ok to ignore such incoming block.
+    if (SrcSPDFromEntry == 0) {
+      ensureNoFlowDepFrom(SrcBB, Entry->getParent());
+      continue;
+    }
+
     VASTSchedUnit *SrcEntry = BBMap.getSUInBB(SrcBB).front();
     assert(SrcEntry->isBBEntry() && "Bad SU order!");
     unsigned TotalSlots = Src->getSchedule() - SrcEntry->getSchedule();
-
-    assert(SrcSPDFromEntry && "Src not visited?");
+    
     // Get the distance from the entry of IDom to the exit of predecessor BB.
     // It is also the distance from the entry of IDom through predecessor BB
     // to the entry of current BB.
@@ -98,7 +132,6 @@ IntervalFixer::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
 
     typedef VASTSchedUnit::dep_iterator dep_iterator;
     for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
-
       VASTSchedUnit *Src = *I;
 
       // When the U depends on the function argument, there is a dependency
@@ -161,6 +194,8 @@ void IntervalFixer::fixInterval() {
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
+
+    dbgs() << "Visiting: " << BB->getName() << '\n';
 
     if (BB == &F.getEntryBlock()) continue;
 
