@@ -299,7 +299,7 @@ int main(int argc, char **argv) {
 
     // Analyse the slack between registers.
     HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
-    if (isMainSynthesis) HLSPasses.add(createTimingScriptGenPass());
+    HLSPasses.add(createTimingScriptGenPass());
 
     // Run some scripting passes.
     typedef std::map<std::string, std::pair<std::string, std::string> >::iterator
