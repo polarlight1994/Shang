@@ -486,7 +486,7 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
 
 #ifndef NDEBUG
   if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(ForwardedValue.get())) {
-    bool AnySrcEmitted = false;
+    bool AnySrcEmitted = SV->empty();
 
     for (iterator I = SV->begin(), E = SV->end(); I != E; ++I) {
       AnySrcEmitted |= !(*I).getSlot()->isDead();
