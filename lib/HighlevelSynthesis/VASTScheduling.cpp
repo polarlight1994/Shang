@@ -710,33 +710,32 @@ void VASTScheduling::fixSchedulingGraph() {
 
     if (ConstrainedByExit) continue;
 
-    // TODO: Constrain the dangling nodes by all terminators.
-    VASTSchedUnit *BBExit = IR2SUMap[BB->getTerminator()].front();
+    // Constrain the dangling nodes by all terminators.
+    ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
+    for (unsigned i = 0; i < Exits.size(); ++i) {
+      VASTSchedUnit *BBExit = Exits[i];
+      // Ignore the return value latching operation here. We will add the fix
+      // timing constraints between it and the actual terminator.
+      if (!BBExit->isTerminator()) {
+        assert(isa<ReturnInst>(BB->getTerminator())
+               && "BBExit is not terminator!");
+        // We need to add the dependencies even the BB return is not a
+        // terminator. But becareful, do not add the cycle dependencies.
+        if (BBExit == U) continue;
+      }
 
-    // Ignore the return value latching operation here. We will add the fix
-    // timing constraints between it and the actual terminator.
-    if (BBExit == U) {
-      assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
-      continue;
+      // The SU maybe a PHI incoming copy targeting a back edge.
+      if (BBExit->getIdx() < U->getIdx()) {
+        assert(isa<PHINode>(U->getInst()) && "Unexpected instruction type!");
+        // Create the pseudo dependencies to the exit node.
+        G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
+        continue;
+      }
+
+      // Allocate 1 cycles for the scheduling units that launching some operations.
+      unsigned Latency = U->isLatch() ? 0 : 1;
+      BBExit->addDep(U, VASTDep::CreateCtrlDep(Latency));
     }
-
-    if (!BBExit->isTerminator()) {
-      assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
-      BBExit = IR2SUMap[BB->getTerminator()][1];
-      assert(BBExit->isTerminator() && "BBExit is not terminator!");
-    }
-
-    // The SU maybe a PHI incoming copy targeting a back edge.
-    if (BBExit->getIdx() < U->getIdx()) {
-      assert(isa<PHINode>(U->getInst()) && "Unexpected instruction type!");
-      // Create the pseudo dependencies to the exit node.
-      G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
-      continue;
-    }
-
-    // Allocate 1 cycles for the scheduling units that launching some operations.
-    unsigned Latency = U->isLatch() ? 0 : 1;
-    BBExit->addDep(U, VASTDep::CreateCtrlDep(Latency));
   }
 
   // Assign constraint to the terminators in the same BB so that their are
