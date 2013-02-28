@@ -453,7 +453,7 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
     if (cast<VASTSeqInst>(U.Op)->getSeqOpType() != VASTSeqInst::Latch)
       continue;
 
-    // Wrong slot to retime.
+    // Wrong slot to retime?
     if (U.getSlot() != ToSlot) continue;
 
     Value *Val = U.Op->getValue();
@@ -486,13 +486,16 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
 
 #ifndef NDEBUG
   if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(ForwardedValue.get())) {
-    bool AnySrcEmitted = true;
+    bool AnySrcEmitted = false;
 
-    for (iterator I = SeqVal->begin(), E = SeqVal->end(); I != E; ++I) {
+    for (iterator I = SV->begin(), E = SV->end(); I != E; ++I) {
       AnySrcEmitted |= !(*I).getSlot()->isDead();
     }
 
-    assert(AnySrcEmitted && "Bad emit order!");
+    if (!AnySrcEmitted) {
+      SV->dumpFanins();
+      dbgs() << "Retiming performed before source value emitted!";
+    }
   }
 #endif
 
