@@ -27,6 +27,7 @@
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/Support/ErrorHandling.h"
 #define DEBUG_TYPE "shang-live-variables"
 #include "llvm/Support/Debug.h"
 
@@ -412,6 +413,8 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
 
     Use->dumpFanins();
 
+    UseSlot->dump();
+
     llvm_unreachable("Define of VASTSeqVal not dominates all its uses!");
   }
 
@@ -631,7 +634,12 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
        I != E; ++I) {
     unsigned LiveInSlotNum = *I;
     unsigned CurInterval = SSP->getShortestPath(LiveInSlotNum, ReadSlotNum);
-    assert(CurInterval < STGShortestPath::Inf && "Alive slot not reachable?");
+    if (CurInterval >= STGShortestPath::Inf) {
+      dbgs() << "Read at slot: " << ReadSlotNum << '\n';
+      dbgs() << "Livein slot: " << LiveInSlotNum << '\n';
+      VI->dump();
+      llvm_unreachable("Alive slot not reachable?");
+    }
     IntervalFromLiveIn = std::min(IntervalFromLiveIn, CurInterval);
   }
 
