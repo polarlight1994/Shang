@@ -905,7 +905,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
 
   scheduleGlobal();
 
-  // TODO: Fix or check the interval of cross BB chain.
+  G->fixIntervalForCrossBBChains(VM);
 
   G->emitSchedule(VM);
 

@@ -413,6 +413,8 @@ public:
   ///
   void resetSchedule();
 
+  void fixIntervalForCrossBBChains(VASTModule &VM);
+
   /// Emit the schedule by reimplementing the state-transition graph according
   /// the new scheduling results.
   ///
