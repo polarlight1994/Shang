@@ -10,7 +10,7 @@ dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
 -- load platform information script
 dofile('@VTS_SOURCE_ROOT@/' .. 'AlteraCommon.lua')
 dofile('@VTS_SOURCE_ROOT@/' .. 'Altera4LUTFUs.lua')
-FUs.LUTDelay = 0.125 / PERIOD
+FUs.LUTDelay = 0.3 / PERIOD
 
 Functions.main = RTLModuleName
 
