@@ -101,6 +101,7 @@ public:
 
   VASTNode *getParent() const { return Parent; }
 
+  VASTLatch latchFront() const { return Assigns.front(); }
   void addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef);
   void eraseLatch(VASTLatch U);
 

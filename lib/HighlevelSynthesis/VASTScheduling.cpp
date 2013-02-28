@@ -26,6 +26,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Support/CFG.h"
+#include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/Statistic.h"
@@ -291,9 +292,11 @@ struct VASTScheduling : public VASTModulePass {
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
-  void buildFlowDependencies(Instruction *I, VASTSchedUnit *U);
-  void buildFlowDependencies(VASTSchedUnit *U);
-  bool addFlowDepandency(Value *V, VASTSchedUnit *U);
+  void buildFlowDependencies(VASTSeqValue *Dst, VASTSeqValue *Src,
+                             VASTSchedUnit *U);
+  unsigned buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);
+  unsigned buildFlowDependencies(VASTSchedUnit *U);
+  VASTSchedUnit *getFlowDepSU(Value *V);
 
   void buildMemoryDependencies(Instruction *Src, Instruction *Dst);
   void buildLoopDependencies(Instruction *Src, Instruction *Dst);
@@ -340,138 +343,99 @@ static T *check(T *X) {
   return X;
 }
 
-bool VASTScheduling::addFlowDepandency(Value *V, VASTSchedUnit *U) {
+VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   bool IsPHI = isa<PHINode>(V);
 
   VASTSeqValue *SrcSeqVal = 0;
   VASTSchedUnit *SrcSU = 0;
 
-  if (Argument *Arg = dyn_cast<Argument>(V)) {
-    SrcSeqVal = ArgMap[Arg];
-    SrcSU = G->getEntry();
-  } else {
-    IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
+  if (Argument *Arg = dyn_cast<Argument>(V))
+    return G->getEntry();
 
-    if (at == IR2SUMap.end()) return false;
 
-    // Get the corresponding latch SeqOp.
-    ArrayRef<VASTSchedUnit*> SUs(at->second);
-    for (unsigned i = 0; i < SUs.size(); ++i) {
-      VASTSchedUnit *CurSU = SUs[i];
-      // Are we got the VASTSeqVal corresponding to V?
-      if (CurSU->isLatching(V)) {
-        assert((SrcSeqVal == 0 || SrcSeqVal == check(CurSU->getSeqOp())->getDef(0))
-              && "All PHI latching SeqOp should define the same SeqOp!");
-        SrcSeqVal = check(CurSU->getSeqOp())->getDef(0);
+  IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
+  assert(at != IR2SUMap.end() && "Flow dependencies missed!");
 
-        if (IsPHI) continue;
+  // Get the corresponding latch SeqOp.
+  ArrayRef<VASTSchedUnit*> SUs(at->second);
+  for (unsigned i = 0; i < SUs.size(); ++i) {
+    VASTSchedUnit *CurSU = SUs[i];
+    // Are we got the VASTSeqVal corresponding to V?
+    if (CurSU->isLatching(V)) {
+      assert((SrcSeqVal == 0
+              || SrcSeqVal == check(CurSU->getSeqOp())->getDef(0).getDst())
+            && "All PHI latching SeqOp should define the same SeqOp!");
+      SrcSeqVal = check(CurSU->getSeqOp())->getDef(0).getDst();
 
-        // We are done if we are looking for the Scheduling Unit for common
-        // instruction.
-        SrcSU = CurSU;
-        break;
-      }
+      if (IsPHI) continue;
 
-      if (IsPHI && CurSU->isPHI()) {
-        assert(SrcSeqVal && "PHI Latching SU should be placed before the PHI SU!");
-        SrcSU = CurSU;
-        break;
-      }
-    }
-  }
-
-  assert(SrcSU && SrcSeqVal && "Cannot find the source of the dependencies!");
-
-  unsigned MaxCycles = 0;
-  VASTSeqOp *DstOp =U->getSeqOp();
-  assert(DstOp && "Unexpected DstOp in addFlowDepandency");
-  for (unsigned i = 0; i < DstOp->size(); ++i) {
-    VASTValue *V = DstOp->getOperand(i).getAsLValue<VASTValue>();
-    // It is safe to ignore the "delay" between the identical nodes.
-    if (V == SrcSeqVal) continue;
-
-    if (const TNLDelay *D = TNL->getDelayOrNull(SrcSeqVal, V))
-      MaxCycles = std::max(MaxCycles, D->getNumCycles());
-  }
-
-  // TODO: Also get the MUX delay!
-
-  U->addDep(SrcSU, VASTDep::CreateFlowDep(MaxCycles));
-  return true;
-}
-
-void VASTScheduling::buildFlowDependencies(Instruction *I, VASTSchedUnit *U) {
-  // Ignore the trivial case.
-  if (I == 0) return;
-
-  SmallVector<std::pair<Instruction*, Instruction::op_iterator>, 8> VisitStack;
-  std::set<Value*> Visited;
-
-  VisitStack.push_back(std::make_pair(I, I->op_begin()));
-
-  while (!VisitStack.empty()) {
-    Instruction *CurInst = VisitStack.back().first;
-
-    if (CurInst->op_end() == VisitStack.back().second) {
-      VisitStack.pop_back();
-      continue;
+      // We are done if we are looking for the Scheduling Unit for common
+      // instruction.
+      return CurSU;
     }
 
-    Value *ChildNode = *VisitStack.back().second++;
-
-    // Are we reach the leaf of the dependencies tree?
-    if (addFlowDepandency(ChildNode, U))
-      continue;
-
-    if (Instruction *ChildInst = dyn_cast<Instruction>(ChildNode))
-      VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
+    if (IsPHI && CurSU->isPHI()) return CurSU;
   }
+
+  llvm_unreachable("No source SU?");
+  return 0;
 }
 
-void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
+void VASTScheduling::buildFlowDependencies(VASTSeqValue *Dst, VASTSeqValue *Src,
+                                           VASTSchedUnit *U) {
+  VASTLatch L = Src->latchFront();
+  Value *V = L.Op->getValue();
+  assert(V && "Cannot get the corresponding value!");
+  assert((Src->size() == 1 || isa<PHINode>(V)) && "SeqVal not in SSA!");
+  VASTSchedUnit *SrcSU = getFlowDepSU(V);
+
+  unsigned NumCylces = TNL->getDelay(Src, Dst).getNumCycles();
+
+  U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
+}
+
+unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
+  std::set<VASTSeqValue*> Srcs, PredSrc;
+  unsigned MuxDelay = 0;
+
+  Op->getPred()->extractSupporingSeqVal(PredSrc);
+
+  typedef VASTOperandList::const_op_iterator read_itetator;
+  for (unsigned i = 0, e = Op->getNumSrcs(); i != e; ++i) {
+    VASTLatch L = Op->getSrc(i);
+    VASTValue *FI = VASTValPtr(L).get();
+    VASTSeqValue *Dst = L.getDst();
+
+    FI->extractSupporingSeqVal(Srcs);
+    // The Srcs set will be empty if FI is not a constant.
+    if (Srcs.empty()) continue;
+
+    set_union(Srcs, PredSrc);
+
+    MuxDelay = std::max(MuxDelay, TNL->getDelay(FI, Dst).getNumCycles());
+
+    typedef std::set<VASTSeqValue*>::iterator iterator;
+    for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
+      buildFlowDependencies(Dst, *I, U);
+
+    Srcs.clear();
+  }
+
+  // There is originally 1 cycle available for the selector mux, we need to
+  // return the extra mux delay required by the selector mux.
+  return std::max(int(MuxDelay) - 1, 0);
+}
+
+unsigned VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   Instruction *Inst = U->getInst();
 
-  if (U->isLaunch()) {
-    buildFlowDependencies(Inst, U);
-    return;
-  }
+  if (U->isLaunch())
+    return buildFlowDependencies(U->getSeqOp(), U);
 
   assert(U->isLatch() && "Unexpected scheduling unit type!");
 
-  if (ReturnInst *Ret = dyn_cast<ReturnInst>(Inst)) {
-    buildFlowDependencies(Ret, U);
-    return;
-  }
-
-  if (BranchInst *Br = dyn_cast<BranchInst>(Inst)) {
-    // Add the dependencies from the condition.
-    if (Br->isConditional() && !addFlowDepandency(Br->getCondition(), U))
-        buildFlowDependencies(dyn_cast<Instruction>(Br->getCondition()), U);
-
-    return;
-  }
-
-  if (SwitchInst *SW = dyn_cast<SwitchInst>(Inst)) {
-    // Add the dependencies from the condition.
-    if (!addFlowDepandency(SW->getCondition(), U))
-      buildFlowDependencies(dyn_cast<Instruction>(SW->getCondition()), U);
-
-    return;
-  }
-
-  // Add the dependencies from the incoming value.
-  if (PHINode *PN = dyn_cast<PHINode>(Inst)) {
-    BasicBlock *IncomingBB = U->getParent();
-    BasicBlock *PNParent = PN->getParent();
-    Value *V = PN->DoPHITranslation(PNParent, IncomingBB);
-    if (!addFlowDepandency(V, U))
-      buildFlowDependencies(dyn_cast<Instruction>(V), U);
-    return;
-  }
-
-  // Nothing to do with Unreachable.
-  if (isa<UnreachableInst>(Inst))
-    return;
+  if (isa<TerminatorInst>(Inst) || isa<PHINode>(Inst))
+    return buildFlowDependencies(U->getSeqOp(), U);
 
   VASTSeqInst *SeqInst = cast<VASTSeqInst>(U->getSeqOp());
   unsigned Latency = SeqInst->getCyclesFromLaunch();
@@ -480,8 +444,7 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
     assert(isa<StoreInst>(Inst)
            && isa<GlobalVariable>(cast<StoreInst>(Inst)->getPointerOperand())
            && "Zero latency latching is not allowed!");
-    buildFlowDependencies(Inst, U);
-    return;
+    return buildFlowDependencies(U->getSeqOp(), U);
   }
 
   // Simply build the dependencies from the launch instruction.
@@ -491,6 +454,7 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   assert(LaunchU->isLaunch() && "Bad SU type!");
 
   U->addDep(LaunchU, VASTDep::CreateFixTimingConstraint(Latency));
+  return 0;
 }
 
 VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
@@ -574,7 +538,7 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
         if (Argument *Arg = dyn_cast_or_null<Argument>(Op->getValue())) {
           // Remember the corresponding SeqVal.
           bool inserted
-            = ArgMap.insert(std::make_pair(Arg, Op->getDef(0))).second;
+            = ArgMap.insert(std::make_pair(Arg, Op->getDef(0).getDst())).second;
           assert(inserted && "SeqVal for argument not inserted!");
           (void) inserted;
         }
@@ -606,11 +570,8 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
       } else
         U = G->createSUnit(Inst, IsLatch, 0, SeqInst);
 
-      // TODO: Add the MUX delay between the entry and the scheduling unit!
-      U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
-
-      buildFlowDependencies(U);
-
+      unsigned ExtraMuxDelay = buildFlowDependencies(U);
+      U->addDep(BBEntry, VASTDep::CreateCtrlDep(ExtraMuxDelay));
       IR2SUMap[Inst].push_back(U);
       continue;
     }
@@ -624,8 +585,8 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
         // Also map the target BB to this terminator.
         IR2SUMap[TargetBB].push_back(U);
 
-        U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
-        buildFlowDependencies(U);
+        unsigned ExtraMuxDelay = buildFlowDependencies(U);
+        U->addDep(BBEntry, VASTDep::CreateCtrlDep(ExtraMuxDelay));
         continue;
       }
 
