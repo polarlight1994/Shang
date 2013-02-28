@@ -195,7 +195,7 @@ void IntervalFixer::fixInterval() {
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
 
-    dbgs() << "Visiting: " << BB->getName() << '\n';
+    DEBUG(dbgs() << "Visiting: " << BB->getName() << '\n');
 
     if (BB == &F.getEntryBlock()) continue;
 
