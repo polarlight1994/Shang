@@ -638,8 +638,10 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
       dbgs() << "Read at slot: " << ReadSlotNum << '\n';
       dbgs() << "Livein slot: " << LiveInSlotNum << '\n';
       VI->dump();
-      llvm_unreachable("Alive slot not reachable?");
+      dbgs() <<  "Alive slot not reachable?\n";
+      continue;
     }
+
     IntervalFromLiveIn = std::min(IntervalFromLiveIn, CurInterval);
   }
 
