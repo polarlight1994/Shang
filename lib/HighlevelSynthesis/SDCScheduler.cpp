@@ -14,6 +14,7 @@
 
 #include "SDCScheduler.h"
 #include "shang/VASTSubModules.h"
+#include "shang/Utilities.h"
 
 #include "llvm/ADT/StringExtras.h"
 #include "lpsolve/lp_lib.h"
@@ -188,7 +189,18 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   bool inserted = SUIdx.insert(std::make_pair(U, Col)).second;
   assert(inserted && "Index already existed!");
   (void) inserted;
-  std::string SVStart = "sv" + utostr_32(U->getIdx());
+  std::string SVStart;
+  if (U->isBBEntry())
+    SVStart = "entry_" + ShangMangle(U->getParent()->getName());
+  else if (U->isTerminator()) {
+    SVStart = "br_" + ShangMangle(U->getParent()->getName()) + "_";
+    if (BasicBlock *TargetBB = U->getTargetBlock())
+      SVStart += ShangMangle(U->getTargetBlock()->getName());
+    else
+      SVStart += "exit";
+  } else
+    SVStart = "sv" + utostr_32(U->getIdx());
+
   DEBUG(dbgs() <<"Col#" << Col << " name: " <<SVStart << "\n");
   set_col_name(lp, Col, const_cast<char*>(SVStart.c_str()));
   set_int(lp, Col, TRUE);
