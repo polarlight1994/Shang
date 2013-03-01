@@ -45,10 +45,9 @@ struct alap_less {
 
 void BasicLinearOrderGenerator::addLinOrdEdge() {
   ConflictListTy ConflictList;
-  SUBBMap Map;
-  Map.buildMap(*G);
 
-  for (SUBBMap::iterator I = Map.begin(), E = Map.end(); I != E; ++I) {
+  typedef VASTSchedGraph::bb_iterator bb_iterator;
+  for (bb_iterator I = G->bb_begin(), E = G->bb_end(); I != E; ++I) {
     MutableArrayRef<VASTSchedUnit*> SUs(I->second);
     ConflictList.clear();
 

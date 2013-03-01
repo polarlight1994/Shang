@@ -356,6 +356,9 @@ class VASTSchedGraph {
   typedef iplist<VASTSchedUnit> SUList;
   SUList SUnits;
 
+  /// Helper class to arrange the scheduling units according to their parent BB,
+  /// we will emit the schedule or build the linear order BB by BB.
+  std::map<BasicBlock*, std::vector<VASTSchedUnit*> > BBMap;
 public:
   VASTSchedGraph();
   ~VASTSchedGraph();
@@ -370,6 +373,10 @@ public:
     VASTSchedUnit *U = new VASTSchedUnit(SUnits.size(), BB);
     // Insert the newly create SU before the exit.
     SUnits.insert(SUnits.back(), U);
+    // Also put the scheduling unit in the BBMap.
+    assert(BB && "Expect a parent BB!");
+    BBMap[U->getParent()].push_back(U);
+
     return U;
   }
 
@@ -379,6 +386,9 @@ public:
                                          SeqOp);
     // Insert the newly create SU before the exit.
     SUnits.insert(SUnits.back(), U);
+    // Also put the scheduling unit in the BBMap.
+    BBMap[U->getParent()].push_back(U);
+
     return U;
   }
 
@@ -400,6 +410,24 @@ public:
   const_reverse_iterator rend() const { return SUnits.rend(); }
 
   unsigned size() const { return SUnits.size(); }
+
+  typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator bb_iterator;
+  bb_iterator bb_begin() { return BBMap.begin(); }
+  bb_iterator bb_end() { return BBMap.end(); }
+
+  MutableArrayRef<VASTSchedUnit*> getSUInBB(BasicBlock *BB);
+
+  template<typename T>
+  void sortSUs(T F) {
+    typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator
+      iterator;
+
+    for (iterator I = BBMap.begin(), E = BBMap.end(); I != E; ++I) {
+      std::vector<VASTSchedUnit*> &SUs = I->second;
+
+      array_pod_sort(SUs.begin(), SUs.end(), F);
+    }
+  }
 
   /// Fix the scheduling graph after it is built.
   ///
@@ -430,35 +458,6 @@ public:
 
   void dump() const;
 };
-
-/// Helper class to arrange the scheduling units according to their parent BB, 
-/// we will emit the schedule or build the linear order BB by BB.
-struct SUBBMap {
-  std::map<BasicBlock*, std::vector<VASTSchedUnit*> > Map;
-
-  typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator iterator;
-  iterator begin() { return Map.begin(); }
-  iterator end() { return Map.end(); }
-
-  void buildMap(VASTSchedGraph &G);
-
-  MutableArrayRef<VASTSchedUnit*> getSUInBB(BasicBlock *BB);
-
-  void clear() { Map.clear(); }
-
-  template<typename T>
-  void sortSUs(T F) {
-    typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator
-    iterator;
-
-    for (iterator I = Map.begin(), E = Map.end(); I != E; ++I) {
-      std::vector<VASTSchedUnit*> &SUs = I->second;
-
-      array_pod_sort(SUs.begin(), SUs.end(), F);
-    }
-  }
-};
-
 
 template<>
 struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {

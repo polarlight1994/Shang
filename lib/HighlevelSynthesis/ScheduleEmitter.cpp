@@ -83,8 +83,6 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
   BumpPtrAllocator PredAllocator;
   FoldingSet<CFGPred> UniqueCFGPreds;
 
-  SUBBMap BBMap;
-
   void takeOldSlots();
 
   void clearUp();
@@ -261,8 +259,7 @@ static int top_sort_schedule_wrapper(const void *LHS, const void *RHS) {
 }
 
 void ScheduleEmitter::initialize() {
-  BBMap.buildMap(G);
-  BBMap.sortSUs(top_sort_schedule_wrapper);
+  G.sortSUs(top_sort_schedule_wrapper);
 
   takeOldSlots();
 
@@ -274,7 +271,7 @@ void ScheduleEmitter::initialize() {
   unsigned CurLandingSlot = 1;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
-    ArrayRef<VASTSchedUnit*> SUs(BBMap.getSUInBB(BB));
+    ArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(BB));
     unsigned SlotIncr = SUs.back()->getSchedule() - SUs.front()->getSchedule();
     LandingSlotNum[BB] = SlotIncr == 0 ? 0 : CurLandingSlot;
     CurLandingSlot += SlotIncr;
@@ -332,7 +329,7 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
   // Emit the the SUs in the first slot in the target BB.
   // Connect to the landing slot if not all SU in the target BB emitted to
   // current slot.
-  if (emitToFirstSlot(Pred, ToSlot, BBMap.getSUInBB(TargetBB), RetimingPath)) {
+  if (emitToFirstSlot(Pred, ToSlot, G.getSUInBB(TargetBB), RetimingPath)) {
     // There is some SeqOp need to be emitted to TargetBB, build the control
     // flow.
     VASTSlot *&LandingSlot = LandingSlots[TargetBB];
@@ -674,7 +671,7 @@ void ScheduleEmitter::emitSchedule() {
 
   VASTValPtr StartPort = VM.getPort(VASTModule::Start).getValue();
   VASTSlot *StartSlot = VM.getStartSlot();
-  MutableArrayRef<VASTSchedUnit*> EntrySUs = BBMap.getSUInBB(&Entry);
+  MutableArrayRef<VASTSchedUnit*> EntrySUs = G.getSUInBB(&Entry);
 
   if (emitToFirstSlot(StartPort, StartSlot, EntrySUs, RetimingPath)) {
     // Create the landing slot of entry BB if not all SUs in the Entry BB
@@ -691,7 +688,7 @@ void ScheduleEmitter::emitSchedule() {
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
-    MutableArrayRef<VASTSchedUnit*> SUs(BBMap.getSUInBB(BB));
+    MutableArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(BB));
     emitScheduleInBB(SUs);
   }
 }

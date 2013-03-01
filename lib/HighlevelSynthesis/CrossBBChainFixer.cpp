@@ -29,7 +29,7 @@ struct IntervalFixer {
   VASTModule &VM;
   Function &F;
   VASTSchedGraph &G;
-  SUBBMap BBMap;
+
   std::map<BasicBlock*, unsigned> SPDFromEntry;
 
   IntervalFixer(VASTModule &VM, VASTSchedGraph &G) : VM(VM), F(VM), G(G) {}
@@ -46,7 +46,7 @@ struct IntervalFixer {
 
 void IntervalFixer::ensureNoFlowDepFrom(BasicBlock *FromBB, BasicBlock *ToBB) {
 #ifndef NDEBUG
-  ArrayRef<VASTSchedUnit*> SUs(BBMap.getSUInBB(ToBB));
+  ArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(ToBB));
 
   for (unsigned i = 0, e = SUs.size(); i != e; ++i) {
     VASTSchedUnit *U = SUs[i];
@@ -91,7 +91,7 @@ unsigned IntervalFixer::allocateWaitStates(VASTSchedUnit *Entry,
       continue;
     }
 
-    VASTSchedUnit *SrcEntry = BBMap.getSUInBB(SrcBB).front();
+    VASTSchedUnit *SrcEntry = G.getSUInBB(SrcBB).front();
     assert(SrcEntry->isBBEntry() && "Bad SU order!");
     unsigned TotalSlots = Src->getSchedule() - SrcEntry->getSchedule();
     
@@ -146,7 +146,7 @@ IntervalFixer::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
           || I.getEdgeType() == VASTDep::Conditional)
        continue;
 
-      VASTSchedUnit *SrcEntry = BBMap.getSUInBB(SrcBB).front();
+      VASTSchedUnit *SrcEntry = G.getSUInBB(SrcBB).front();
       assert(SrcEntry->isBBEntry() && "BBMap broken!");
 
       // Get the required entry-to-entry distance from source BB to current BB.
@@ -181,11 +181,10 @@ static int top_sort_idx_wrapper(const void *LHS, const void *RHS) {
 }
 
 void IntervalFixer::initialize() {
-  BBMap.buildMap(G);
-  BBMap.sortSUs(top_sort_idx_wrapper);
+  G.sortSUs(top_sort_idx_wrapper);
 
   BasicBlock *Entry = &F.getEntryBlock();
-  VASTSchedUnit *EntrySU = BBMap.getSUInBB(Entry).front();
+  VASTSchedUnit *EntrySU = G.getSUInBB(Entry).front();
   assert(EntrySU->isBBEntry() && "BBEntry not placed at the beginning!");
   SPDFromEntry[Entry] = EntrySU->getSchedule();
 }
@@ -199,7 +198,7 @@ void IntervalFixer::fixInterval() {
 
     if (BB == &F.getEntryBlock()) continue;
 
-    ArrayRef<VASTSchedUnit*> SUs(BBMap.getSUInBB(BB));
+    ArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(BB));
     unsigned ExpectedSPD = computeExpectedSPDFromEntry(SUs);
     unsigned ActualSPD = allocateWaitStates(SUs.front(), ExpectedSPD);
 

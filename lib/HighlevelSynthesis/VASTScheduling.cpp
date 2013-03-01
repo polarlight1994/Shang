@@ -247,18 +247,10 @@ void VASTSchedGraph::dump() const {
   print(dbgs());
 }
 
-//===----------------------------------------------------------------------===//
-void SUBBMap::buildMap(VASTSchedGraph &G) {
-  typedef VASTSchedGraph::iterator iterator;
-  for (iterator I = llvm::next(G.begin()), E = G.getExit(); I != E; ++I)
-    Map[I->getParent()].push_back(I);
-}
+MutableArrayRef<VASTSchedUnit*> VASTSchedGraph::getSUInBB(BasicBlock *BB) {
+  bb_iterator at = BBMap.find(BB);
 
-MutableArrayRef<VASTSchedUnit*> SUBBMap::getSUInBB(BasicBlock *BB) {
-  std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator
-    at = Map.find(BB);
-
-  assert(at != Map.end() && "BB not found!");
+  assert(at != BBMap.end() && "BB not found!");
 
   return MutableArrayRef<VASTSchedUnit*>(at->second);
 }
