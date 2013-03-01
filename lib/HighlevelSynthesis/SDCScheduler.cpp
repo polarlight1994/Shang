@@ -24,6 +24,22 @@
 using namespace llvm;
 
 namespace {
+/// Generate the linear order to resolve the
+struct BasicLinearOrderGenerator {
+  SchedulerBase &G;
+
+  typedef std::vector<VASTSchedUnit*> SUVecTy;
+  typedef std::map<VASTNode*, SUVecTy> ConflictListTy;
+
+  void addLinOrdEdge(ConflictListTy &ConflictList);
+  // Add the linear ordering edges to the SUs in the vector and return the first
+  // SU.
+  void addLinOrdEdge(SUVecTy &SUs);
+
+  explicit BasicLinearOrderGenerator(SchedulerBase &G) : G(G) {}
+
+  virtual void addLinOrdEdge();
+};
 
 struct alap_less {
   SchedulerBase &S;
@@ -108,6 +124,11 @@ void BasicLinearOrderGenerator::addLinOrdEdge(SUVecTy &SUs) {
 
     LaterSU = EalierSU;
   }
+}
+
+void SDCScheduler::addLinOrdEdge() {
+  buildTimeFrameAndResetSchedule(true);
+  BasicLinearOrderGenerator(*this).addLinOrdEdge();
 }
 
 void SDCScheduler::LPObjFn::setLPObj(lprec *lp) const {

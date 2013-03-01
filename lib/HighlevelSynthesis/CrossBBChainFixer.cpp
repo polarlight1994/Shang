@@ -26,13 +26,12 @@ STATISTIC(AllocatedWaitStates,
 
 namespace {
 struct IntervalFixer {
-  VASTModule &VM;
   Function &F;
   VASTSchedGraph &G;
 
   std::map<BasicBlock*, unsigned> SPDFromEntry;
 
-  IntervalFixer(VASTModule &VM, VASTSchedGraph &G) : VM(VM), F(VM), G(G) {}
+  IntervalFixer(VASTSchedGraph &G) : F(G.getFunction()), G(G) {}
 
   void initialize();
   void fixInterval();
@@ -208,8 +207,8 @@ void IntervalFixer::fixInterval() {
 }
 
 //===----------------------------------------------------------------------===//
-void VASTSchedGraph::fixIntervalForCrossBBChains(VASTModule &VM) {
-  IntervalFixer Fixer(VM, *this);
+void VASTSchedGraph::fixIntervalForCrossBBChains() {
+  IntervalFixer Fixer(*this);
 
   Fixer.initialize();
   Fixer.fixInterval();

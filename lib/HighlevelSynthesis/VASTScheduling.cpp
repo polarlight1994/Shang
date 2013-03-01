@@ -180,7 +180,7 @@ void VASTSchedUnit::dump() const {
 }
 
 //===----------------------------------------------------------------------===//
-VASTSchedGraph::VASTSchedGraph() {
+VASTSchedGraph::VASTSchedGraph(Function &F) : F(F) {
   // Create the entry SU.
   SUnits.push_back(new VASTSchedUnit(0, reinterpret_cast<BasicBlock*>(0)));
 
@@ -806,8 +806,7 @@ void VASTScheduling::fixSchedulingGraph() {
 void VASTScheduling::scheduleGlobal() {
   SDCScheduler Scheduler(*G, 1);
 
-  Scheduler.buildTimeFrameAndResetSchedule(true);
-  BasicLinearOrderGenerator::addLinOrdEdge(Scheduler);
+  Scheduler.addLinOrdEdge();
 
   // Build the step variables, and no need to schedule at all if all SUs have
   // been scheduled.
@@ -896,7 +895,7 @@ void VASTScheduling::buildSchedulingGraph() {
 bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   this->VM = &VM;
 
-  OwningPtr<VASTSchedGraph> GPtr(new VASTSchedGraph());
+  OwningPtr<VASTSchedGraph> GPtr(new VASTSchedGraph(VM));
   G = GPtr.get();
 
   TNL = &getAnalysis<TimingNetlist>();
@@ -907,7 +906,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
 
   scheduleGlobal();
 
-  G->fixIntervalForCrossBBChains(VM);
+  G->fixIntervalForCrossBBChains();
 
   G->emitSchedule(VM);
 

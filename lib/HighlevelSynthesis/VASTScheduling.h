@@ -33,6 +33,7 @@
 namespace llvm {
 class raw_ostream;
 class VASTModule;
+class SchedulerBase;
 
 class VASTDep {
 public:
@@ -353,6 +354,8 @@ struct GraphTraits<VASTSchedUnit*> {
 
 // The container of the VASTSUnits
 class VASTSchedGraph {
+  Function &F;
+
   typedef iplist<VASTSchedUnit> SUList;
   SUList SUnits;
 
@@ -360,8 +363,10 @@ class VASTSchedGraph {
   /// we will emit the schedule or build the linear order BB by BB.
   std::map<BasicBlock*, std::vector<VASTSchedUnit*> > BBMap;
 public:
-  VASTSchedGraph();
+  VASTSchedGraph(Function &F);
   ~VASTSchedGraph();
+
+  Function &getFunction() const { return F; }
 
   VASTSchedUnit *getEntry() { return &SUnits.front(); }
   const VASTSchedUnit *getEntry() const { return &SUnits.front(); }
@@ -441,7 +446,9 @@ public:
   ///
   void resetSchedule();
 
-  void fixIntervalForCrossBBChains(VASTModule &VM);
+  /// Fix (Check) the interval for cross BB chains.
+  ///
+  void fixIntervalForCrossBBChains();
 
   /// Emit the schedule by reimplementing the state-transition graph according
   /// the new scheduling results.

@@ -18,28 +18,6 @@
 #include "SchedulerBase.h"
 
 namespace llvm {
-/// Generate the linear order to resolve the
-class BasicLinearOrderGenerator {
-protected:
-  SchedulerBase &G;
-
-  typedef std::vector<VASTSchedUnit*> SUVecTy;
-  typedef std::map<VASTNode*, SUVecTy> ConflictListTy;
-
-  void addLinOrdEdge(ConflictListTy &ConflictList);
-  // Add the linear ordering edges to the SUs in the vector and return the first
-  // SU.
-  void addLinOrdEdge(SUVecTy &SUs);
-
-  explicit BasicLinearOrderGenerator(SchedulerBase &G) : G(G) {}
-
-  virtual void addLinOrdEdge();
-public:
-
-  static void addLinOrdEdge(SchedulerBase &S) {
-    BasicLinearOrderGenerator(S).addLinOrdEdge();
-  }
-};
 
 class SDCScheduler : public SchedulerBase {
   struct SoftConstraint {
@@ -72,6 +50,10 @@ public:
     assert(at != SUIdx.end() && "Idx not existed!");
     return at->second;
   }
+
+  /// Add linear order edges to resolve resource conflict.
+  //
+  void addLinOrdEdge();
 
 private:
   lprec *lp;
