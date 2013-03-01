@@ -433,6 +433,10 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
 
   if (SeqVal == 0) return V;
 
+  // Never retime to the value of static registers.
+  if (SeqVal->getValType() == VASTSeqValue::StaticRegister)
+    return V;
+
   DEBUG(dbgs() << "Current Retiming Path: ";
   for (unsigned i = 0; i < RetimingPath.size(); ++i)
     if (BasicBlock *BB = RetimingPath[i]) dbgs() << BB->getName() << ", ";
