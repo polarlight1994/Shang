@@ -87,6 +87,7 @@ proc runOnPath { path max_ll min_ll from thu to } {
   }
 
   puts $PlotXY "$cur_path_ll $cur_path_delay $cur_total_ic_delay $cur_slack $max_ll $min_ll $from $thu $to $status"
+  post_message -type info "$cur_path_ll $cur_path_delay $cur_total_ic_delay $cur_slack $max_ll $min_ll $from $thu $to $status"
   
   close $PlotXY
 }

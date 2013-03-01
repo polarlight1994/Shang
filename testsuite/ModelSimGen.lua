@@ -1,6 +1,5 @@
 ModelsimGenTemplate = [=[
 $('#')!/bin/bash
-PATH=~/altera/10.1/modelsim_ase/bin/:~/altera/modelsim_ase/bin/:$PATH
 vdel -lib work -all
 vlib work
 vlog +define+quartus_synthesis $(RTLModuleName).sv
@@ -13,7 +12,6 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f"
 
 ModelsimGenTemplatePostRoutedSim = [=[
 $('#')!/bin/bash
-PATH=~/altera/10.1/modelsim_ase/bin/:~/altera/modelsim_ase/bin/:$PATH
 cd ./simulation/modelsim
 vdel -lib work -all
 vlib work
