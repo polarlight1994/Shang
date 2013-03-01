@@ -49,11 +49,11 @@ private:
   // Iterate distance.
   int16_t Distance : 13;
   // The latancy of this edge.
-  int16_t Latancy;
+  uint16_t Latancy;
   int32_t Data;
 
 public:
-  VASTDep(enum Types T, int latancy, int Dst)
+  VASTDep(enum Types T, unsigned latancy, int Dst)
     : EdgeType(T), Distance(Dst), Latancy(latancy) {}
 
   Types getEdgeType() const { return Types(EdgeType); }
@@ -63,7 +63,6 @@ public:
     return Latancy - int(II) * getDistance();
   }
 
-  void setLatency(unsigned latency) { Latancy = latency; }
   // Get the distance between iterations in a loop.
   int getDistance() const {
     return Distance;
