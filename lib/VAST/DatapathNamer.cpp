@@ -105,6 +105,7 @@ char &llvm::DatapathNamerID = DatapathNamer::ID;
 bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
   std::set<VASTOperandList*> Visited;
   std::map<VASTExpr*, unsigned> ExprSize;
+  Namer N(ExprSize);
 
   typedef VASTModule::const_slot_iterator slot_iterator;
 
@@ -114,7 +115,7 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
     typedef VASTSlot::const_op_iterator op_iterator;
 
     // Print the logic of slot ready and active.
-    VASTOperandList::visitTopOrder(S->getActive(), Visited, Namer(ExprSize));
+    VASTOperandList::visitTopOrder(S->getActive(), Visited, N);
 
     // Print the logic of the datapath used by the SeqOps.
     for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
@@ -123,7 +124,7 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
       typedef VASTOperandList::op_iterator op_iterator;
       for (op_iterator OI = L->op_begin(), OE = L->op_end(); OI != OE; ++OI) {
         VASTValue *V = OI->unwrap().get();
-        VASTOperandList::visitTopOrder(V, Visited, Namer(ExprSize));
+        VASTOperandList::visitTopOrder(V, Visited, N);
       }
     }
   }
@@ -135,7 +136,8 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
 
     if (P->isInput() || P->isRegister()) continue;
     VASTWire *W = cast<VASTWire>(P->getValue());
-    VASTOperandList::visitTopOrder(W, Visited, Namer(ExprSize));
+    VASTOperandList::visitTopOrder(W, Visited, N);
   }
+
   return false;
 }

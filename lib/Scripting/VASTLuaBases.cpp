@@ -37,23 +37,6 @@ std::string VASTNode::ParallelCaseAttr = "";
 std::string VASTNode::FullCaseAttr = "";
 
 //----------------------------------------------------------------------------//
-VASTValue::dp_dep_it VASTValue::dp_dep_begin(const VASTValue *V) {
-  switch (V->getASTType()) {
-  case VASTNode::vastExpr: return cast<VASTExpr>(V)->op_begin();
-  case VASTNode::vastWire: return cast<VASTWire>(V)->op_begin();
-  default:  return VASTValue::dp_dep_it(0);
-  }
-
-}
-
-VASTValue::dp_dep_it VASTValue::dp_dep_end(const VASTValue *V) {
-  switch (V->getASTType()) {
-  case VASTNode::vastExpr: return cast<VASTExpr>(V)->op_end();
-  case VASTNode::vastWire: return cast<VASTWire>(V)->op_end();
-  default:  return VASTValue::dp_dep_it(0);
-  }
-}
-
 void VASTValue::print(raw_ostream &OS) const {
   printAsOperandImpl(OS);
 }
@@ -261,7 +244,7 @@ VASTWire *VASTModule::createWrapperWire(const Twine &Name, unsigned SizeInBits,
   // Reuse the old wire if we had create one.
   VASTWire *W = cast_or_null<VASTWire>(lookupSymbol(WrapperName));
   if (W == 0) {
-    W = addWire(WrapperName, SizeInBits, "", false, true);
+    W = addWire(WrapperName, SizeInBits, "", true);
     if (V) W->assign(V);
   }
 
@@ -275,13 +258,12 @@ VASTWire *VASTModule::createWrapperWire(GlobalVariable *GV, unsigned SizeInBits)
 }
 
 VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
-                              const char *Attr, bool IsPinned, bool IsWrapper) {
+                              const char *Attr, bool IsWrapper) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   // Allocate the wire and the use.
 
-  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, Attr, IsPinned,
-                                IsWrapper);
+  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, Attr, IsWrapper);
   Entry.second = Wire;
   Wires.push_back(Wire);
 
@@ -416,6 +398,7 @@ struct DatapathPrinter {
 
 void VASTModule::printDatapath(raw_ostream &OS) const{
   std::set<VASTOperandList*> Visited;
+  DatapathPrinter Printer(OS);
 
   for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
     const VASTSlot *S = SI;
@@ -427,7 +410,7 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
     OS << '\n';
 
     // Print the logic of slot ready and active.
-    VASTOperandList::visitTopOrder(S->getActive(), Visited, DatapathPrinter(OS));
+    VASTOperandList::visitTopOrder(S->getActive(), Visited, Printer);
 
     // Print the logic of the datapath used by the SeqOps.
     for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
@@ -436,7 +419,7 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
       typedef VASTOperandList::op_iterator op_iterator;
       for (op_iterator OI = L->op_begin(), OE = L->op_end(); OI != OE; ++OI) {
         VASTValue *V = OI->unwrap().get();
-        VASTOperandList::visitTopOrder(V, Visited, DatapathPrinter(OS));
+        VASTOperandList::visitTopOrder(V, Visited, Printer);
       }
 
       OS << "// ";
@@ -450,7 +433,7 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
 
     if (P->isInput() || P->isRegister()) continue;
     VASTWire *W = cast<VASTWire>(P->getValue());
-    VASTOperandList::visitTopOrder(W->getDriver().get(), Visited, DatapathPrinter(OS));
+    VASTOperandList::visitTopOrder(W->getDriver().get(), Visited, Printer);
     W->printAssignment(OS);
   }
 }
@@ -613,15 +596,15 @@ void VASTModule::print(raw_ostream &OS) const {
 
 VASTPort *VASTModule::createPort(const Twine &Name, unsigned BitWidth,
                               bool isReg, bool isInput, VASTSeqValue::Type T) {
+  VASTPort *Port = getAllocator().Allocate<VASTPort>();
   VASTNamedValue *V;
-  if (isInput || isReg)
+
+  if (isReg)
     V = addRegister(Name, BitWidth, 0, T, 0, "// ")->getValue();
   else
-    V = addWire(Name, BitWidth, "// ", true);
+    V = createSeqValue(Name, BitWidth, VASTSeqValue::IO, 0, Port);
 
-  VASTPort *Port = new (getAllocator()) VASTPort(V, isInput);
-
-  return Port;
+  return new (Port) VASTPort(V, isInput);;
 }
 
 VASTPort *VASTModule::createPort(VASTSeqValue *SeqVal, bool IsInput, PortTypes T)

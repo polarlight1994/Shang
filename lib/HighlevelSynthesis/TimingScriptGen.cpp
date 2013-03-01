@@ -282,13 +282,17 @@ bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
 
 void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
                                                   ArrayRef<VASTSlot*> ReadSlots) {
-  assert((isa<VASTWire>(Root) || isa<VASTExpr>(Root)) && "Bad root type!");
-  typedef VASTValue::dp_dep_it ChildIt;
+  VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
+
+  if (L == 0) return;
+
+  typedef  VASTOperandList::op_iterator ChildIt;
+
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
   std::set<VASTValue*> Visited;
   SeqValSetTy LocalInterval;
 
-  VisitStack.push_back(std::make_pair(Root, VASTValue::dp_dep_begin(Root)));
+  VisitStack.push_back(std::make_pair(Root, L->op_begin()));
   while (!VisitStack.empty()) {
     VASTValue *Node = VisitStack.back().first;
     ChildIt It = VisitStack.back().second;
@@ -296,7 +300,7 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
     SeqValSetTy &ParentReachableRegs = QueryCache[Node];
 
     // All sources of this node is visited.
-    if (It == VASTValue::dp_dep_end(Node)) {
+    if (It ==  VASTOperandList::GetDatapathOperandList(Node)->op_end()) {
       VisitStack.pop_back();
       // Add the supporting register of current node to its parent's
       // supporting register set.
@@ -340,10 +344,8 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
       continue;
     }
 
-    if (!isa<VASTWire>(ChildNode) && !isa<VASTExpr>(ChildNode)) continue;
-
-    VisitStack.push_back(std::make_pair(ChildNode,
-                                        VASTValue::dp_dep_begin(ChildNode)));
+    if (VASTOperandList *L = VASTOperandList::GetDatapathOperandList(ChildNode))
+      VisitStack.push_back(std::make_pair(ChildNode, L->op_begin()));
   }
 
   // Check the result, debug only.

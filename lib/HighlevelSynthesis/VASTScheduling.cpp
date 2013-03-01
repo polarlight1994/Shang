@@ -338,18 +338,15 @@ static T *check(T *X) {
 VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   bool IsPHI = isa<PHINode>(V);
 
-  VASTSeqValue *SrcSeqVal = 0;
-  VASTSchedUnit *SrcSU = 0;
 
-  if (Argument *Arg = dyn_cast<Argument>(V))
-    return G->getEntry();
-
+  if (isa<Argument>(V)) return G->getEntry();
 
   IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
   assert(at != IR2SUMap.end() && "Flow dependencies missed!");
 
   // Get the corresponding latch SeqOp.
   ArrayRef<VASTSchedUnit*> SUs(at->second);
+  VASTSeqValue *SrcSeqVal = 0;
   for (unsigned i = 0; i < SUs.size(); ++i) {
     VASTSchedUnit *CurSU = SUs[i];
     // Are we got the VASTSeqVal corresponding to V?
@@ -368,6 +365,8 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
 
     if (IsPHI && CurSU->isPHI()) return CurSU;
   }
+
+  (void) SrcSeqVal;
 
   llvm_unreachable("No source SU?");
   return 0;

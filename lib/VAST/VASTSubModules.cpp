@@ -156,6 +156,7 @@ static void WriteBRAMInitializer(raw_ostream &OS, const Constant *C,
   llvm_unreachable("Unsupported constant type to bind to script engine!");
   OS << '0';
 }
+
 void
 VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   bool HasInitializer = Initializer != 0;
@@ -230,6 +231,12 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   if (!getRData(0)->use_empty())
     OS << "assign " << cast<VASTWire>(getRData(0))->getName() << " = "
        << VFUBRAM::getArrayName(getBlockRAMNum()) << "_rdata0r;\n\n";
+}
+
+
+void VASTBlockRAM::printDecl(raw_ostream &OS) const {
+  if (!getRData(0)->use_empty())
+    cast<VASTWire>(getRData(0))->printDecl(OS, false);
 }
 
 void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {

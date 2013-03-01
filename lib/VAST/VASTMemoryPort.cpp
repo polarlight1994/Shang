@@ -57,7 +57,7 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
     addFanout(RData);
     VM->createPort(RData, true);
   } else
-    addFanout(VM->addWire(getRDataName(Idx), getDataWidth(), "", true));
+    addFanout(VM->addWire(getRDataName(Idx), getDataWidth(), ""));
 
   // The write ports.
   VASTSeqValue *WEn = VM->createSeqValue(getWEnName(Idx), 1,
@@ -177,6 +177,8 @@ void VASTMemoryBus::printDecl(raw_ostream &OS) const {
   getREnable()->printDecl(OS, true);
   getRByteEn()->printDecl(OS, true);
   getRAddr()->printDecl(OS, true);
+  if (!getRData()->use_empty())
+    cast<VASTWire>(getRData())->printDecl(OS, false);
 
   getWEnable()->printDecl(OS, true);
   getWByteEn()->printDecl(OS, true);

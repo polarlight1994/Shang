@@ -114,7 +114,7 @@ struct LogicNetwork {
   Abc_Obj_t *getOrCreateObj(VASTValue *V);
 
   bool buildAIG(VASTExpr *E);
-  bool buildAIG(VASTValue *Root, std::set<VASTValue*> &Visited);
+  bool buildAIG(VASTValue *Root, std::set<VASTOperandList*> &Visited);
   bool buildAIG(DatapathContainer &DP);
 
   VASTValPtr getAsOperand(Abc_Obj_t *O) const;
@@ -180,47 +180,34 @@ struct LogicNetwork {
 };
 }
 
-bool LogicNetwork::buildAIG(VASTValue *Root, std::set<VASTValue*> &Visited) {
-  typedef VASTValue::dp_dep_it ChildIt;
-  std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
-  bool AnyNodeCreated = false;
+namespace {
+struct AIGBuilder {
+  LogicNetwork &Ntk;
+  bool AnyNodeCreated;
 
-  VisitStack.push_back(std::make_pair(Root, VASTValue::dp_dep_begin(Root)));
+  AIGBuilder(LogicNetwork &Ntk) : Ntk(Ntk), AnyNodeCreated(false) {}
 
-  while (!VisitStack.empty()) {
-    VASTValue *Node = VisitStack.back().first;
-    ChildIt It = VisitStack.back().second;
-
-    // We have visited all children of current node.
-    if (It == VASTValue::dp_dep_end(Node)) {
-      VisitStack.pop_back();
-
-      // Break down the current expression.
-      if (VASTExpr *E = dyn_cast<VASTExpr>(Node))
-        AnyNodeCreated |= buildAIG(E);
-
-      continue;
-    }
-
-    // Otherwise, remember the node and visit its children first.
-    VASTValue *ChildNode = It->getAsLValue<VASTValue>();
-    ++VisitStack.back().second;
-
-    // Do not visit the same value twice.
-    if (!Visited.insert(ChildNode).second) continue;
-
-    if (!isa<VASTExpr>(ChildNode)) continue;
-
-    VisitStack.push_back(std::make_pair(ChildNode,
-                                        VASTValue::dp_dep_begin(ChildNode)));
+  void operator()(VASTNode *N) {
+    if (VASTExpr *E = dyn_cast<VASTExpr>(N))
+      AnyNodeCreated |= Ntk.buildAIG(E);
   }
+};
+}
 
-  return AnyNodeCreated;
+bool LogicNetwork::buildAIG(VASTValue *Root, std::set<VASTOperandList*> &Visited)
+{
+  typedef VASTOperandList::op_iterator ChildIt;
+  std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
+
+  AIGBuilder Builder(*this);
+  VASTOperandList::visitTopOrder(Root, Visited, Builder);
+
+  return Builder.AnyNodeCreated;
 }
 
 bool LogicNetwork::buildAIG(DatapathContainer &DP) {
   // Remember the visited values so that we wont visit the same value twice.
-  std::set<VASTValue*> Visited;
+  std::set<VASTOperandList*> Visited;
   bool AnyNodeCreated = false;
 
   typedef DatapathContainer::expr_iterator expr_iterator;

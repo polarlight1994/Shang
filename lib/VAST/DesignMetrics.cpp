@@ -65,8 +65,8 @@ class DesignMetricsImpl : public DatapathBuilderContext {
 
   // Visit the expression tree whose root is Root and return the cost of the
   // tree, insert all visited data-path nodes into Visited.
-  uint64_t getExprTreeFUCost(VASTValPtr Root, ValSetTy &Visited) const;
-  uint64_t getFUCost(VASTValue *V) const;
+  uint64_t
+  getExprTreeFUCost(VASTValPtr Root, std::set<VASTOperandList*> &Visited) const;
 
   // Collect the fanin information of the memory bus.
   void visitLoadInst(LoadInst &I);
@@ -87,6 +87,8 @@ public:
     StepLB = 0;
     NumCalls = 0;
   }
+
+  uint64_t getFUCost(VASTValue *V) const;
 
   // Visit all data-path expression and compute the cost.
   uint64_t getDatapathFUCost() const;
@@ -241,49 +243,33 @@ uint64_t DesignMetricsImpl::getFUCost(VASTValue *V) const {
   return 0;
 }
 
-uint64_t DesignMetricsImpl::getExprTreeFUCost(VASTValPtr Root, ValSetTy &Visited)
-                                          const {
-  uint64_t Cost = 0;
-  // FIXME: Provide a generic depth-first search iterator for VASTValue tree.
-  typedef VASTValue::dp_dep_it ChildIt;
-  std::vector<std::pair<VASTValue*, ChildIt> > WorkStack;
+namespace {
+struct CostAccumulator {
+  const DesignMetricsImpl &Impl;
+  uint64_t Cost;
 
-  WorkStack.push_back(std::make_pair(Root.get(),
-                                     VASTValue::dp_dep_begin(Root.get())));
+  CostAccumulator(const DesignMetricsImpl &Impl) : Impl(Impl), Cost(0) {}
 
-  Cost += getFUCost(Root.get());
-  
-  while (!WorkStack.empty()) {
-    VASTValue *N;
-    ChildIt It;
-    tie(N, It) = WorkStack.back();
-
-    // All children are visited.  
-    if (It == VASTValue::dp_dep_end(N)) {
-      WorkStack.pop_back();
-      continue;
-    }
-
-    // Depth first traverse the child of current node.
-    VASTValue *ChildNode = It->get().get();
-    ++WorkStack.back().second;
-
-    // Had we visited this node?
-    if (!Visited.insert(ChildNode).second) continue;
-
-    // Visit the node and compute its FU cost.
-    Cost += getFUCost(ChildNode);
-
-    WorkStack.push_back(std::make_pair(ChildNode,
-                                       VASTValue::dp_dep_begin(ChildNode)));
+  void operator()(VASTNode *N) {
+    if (VASTValue *V = dyn_cast<VASTValue>(N))
+      Cost += Impl.getFUCost(V);
   }
+};
+}
 
-  return Cost;
+uint64_t
+DesignMetricsImpl::getExprTreeFUCost(VASTValPtr Root,
+                                      std::set<VASTOperandList*> &Visited)
+                                      const {
+  CostAccumulator Accumulator(*this);
+  VASTOperandList::visitTopOrder(Root.get(), Visited, Accumulator);
+
+  return Accumulator.Cost;
 }
 
 uint64_t DesignMetricsImpl::getDatapathFUCost() const {
   uint64_t Cost = 0;
-  ValSetTy Visited;
+  std::set<VASTOperandList*> Visited;
 
   typedef ValSetTy::const_iterator iterator;
   for (iterator I = LiveOutedVal.begin(), E = LiveOutedVal.end(); I != E; ++I)

@@ -321,9 +321,6 @@ public:
   }
 
   VASTValPtr unwrap() const { return V; }
-
-  // Prevent the user from being removed.
-  void PinUser() const;
 };
 
 template<>
@@ -413,7 +410,8 @@ public:
   static VASTOperandList *GetOperandList(VASTNode *N);
 
   template<typename T>
-  static void visitTopOrder(VASTValue *Root, std::set<VASTOperandList*> &Visited, T F);
+  static void visitTopOrder(VASTValue *Root, std::set<VASTOperandList*> &Visited,
+                            T &F);
 };
 
 class VASTValue : public VASTNode {
@@ -458,14 +456,6 @@ public:
 
   virtual void print(raw_ostream &OS) const;
 
-  typedef const VASTUse *dp_dep_it;
-  static dp_dep_it dp_dep_begin(const VASTValue *V);
-  static dp_dep_it dp_dep_end(const VASTValue *V);
-
-  static bool is_dp_leaf(const VASTValue *V) {
-    return dp_dep_begin(V) == dp_dep_end(V);
-  }
-
   // Helper function.
   static std::string printBitRange(unsigned UB, unsigned LB = 0,
                                    bool printOneBit = false);
@@ -499,7 +489,7 @@ template<> struct simplify_type<VASTUse> {
 
 template<typename T>
 void VASTOperandList::visitTopOrder(VASTValue *Root,
-                                    std::set<VASTOperandList*> &Visited, T F) {
+                                    std::set<VASTOperandList*> &Visited, T &F) {
   VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
   // The entire tree had been visited.
   if (!(L && Visited.insert(L).second)) return;

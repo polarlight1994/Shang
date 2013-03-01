@@ -293,9 +293,9 @@ public:
   const char *const AttrStr;
 
   VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "",
-           bool IsPinned = false, bool IsWrapper = false)
+           bool IsWrapper = false)
     : VASTSignal(vastWire, Name, BitWidth), VASTOperandList(1),
-      Idx(0), IsPinned(IsPinned), IsWrapper(IsWrapper), AttrStr(Attr) {
+      Idx(0), IsWrapper(IsWrapper), AttrStr(Attr) {
     new (Operands) VASTUse(this);
   }
 
@@ -304,7 +304,6 @@ public:
   }
 
   bool isWrapper() const { return IsWrapper; }
-  void Pin(bool isPinned = true ) { IsPinned = isPinned; }
 
   VASTValPtr getDriver() const { return getOperand(0).unwrap(); }
 

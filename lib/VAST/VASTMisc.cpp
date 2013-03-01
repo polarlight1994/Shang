@@ -138,10 +138,6 @@ bool VASTUse::operator==(const VASTValPtr RHS) const {
   return V == RHS;
 }
 
-void VASTUse::PinUser() const {
-  if (VASTWire *S = getAsLValue<VASTWire>())
-    S->Pin();
-}
 //===----------------------------------------------------------------------===//
 void VASTHandle::print(raw_ostream &OS) const {
   if (U.isInvalid()) OS << "<null>";

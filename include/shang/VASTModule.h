@@ -273,8 +273,7 @@ public:
                                 const char *Attr = "");
 
   VASTWire *addWire(const Twine &Name, unsigned BitWidth,
-                    const char *Attr = "", bool IsPinned = false,
-                    bool IsWrapper = false);
+                    const char *Attr = "", bool IsWrapper = false);
   VASTWire *createWrapperWire(const Twine &Name, unsigned SizeInBits,
                               VASTValPtr V = VASTValPtr());
   VASTWire *createWrapperWire(GlobalVariable *GV, unsigned SizeInBits);

@@ -30,7 +30,7 @@ void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
   // The entire tree had been visited or the root is some trivial node..
   if (hasPathInfo(Root)) return;
 
-  typedef VASTValue::dp_dep_it ChildIt;
+  typedef VASTOperandList::op_iterator ChildIt;
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
 
   VisitStack.push_back(std::make_pair(Root, L->op_begin()));
