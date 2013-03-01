@@ -62,6 +62,7 @@ struct PathIntervalQueryCache {
   SeqLiveVariables &SLV;
   STGShortestPath &SSP;
   TimingNetlist *TNL;
+  VASTSeqValue *Dst;
 
   typedef std::map<unsigned, DenseSet<VASTSeqValue*> > IntervalStatsMapTy;
   typedef DenseMap<VASTSeqValue*, unsigned> SeqValSetTy;
@@ -71,8 +72,8 @@ struct PathIntervalQueryCache {
   IntervalStatsMapTy Stats[2];
 
   PathIntervalQueryCache(SeqLiveVariables &SLV,  STGShortestPath &SSP,
-                         TimingNetlist *TNL)
-    : SLV(SLV), SSP(SSP), TNL(TNL) {}
+                         TimingNetlist *TNL, VASTSeqValue *Dst)
+    : SLV(SLV), SSP(SSP), TNL(TNL), Dst(Dst) {}
 
   void reset() {
     QueryCache.clear();
@@ -113,19 +114,18 @@ struct PathIntervalQueryCache {
     return Changed;
   }
 
-  void bindAllPath2ScriptEngine(VASTSeqValue *Dst) const;
-  void bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimple,
-                                DenseSet<VASTSeqValue*> &BoundSrc) const;
+  void bindAllPath2ScriptEngine() const;
+  void
+  bindAllPath2ScriptEngine(bool IsSimple, DenseSet<VASTSeqValue*> &BoundSrc) const;
   // Bind multi-cycle path constraints to the scripting engine.
-  unsigned bindMCPC2ScriptEngine(VASTSeqValue *Dst, VASTSeqValue *Src,
+  unsigned bindMCPC2ScriptEngine(VASTSeqValue *Src,
                                  unsigned Interval, bool SkipThu,
                                  bool IsCritical) const;
 
   // Bind the combinational delay to the scripting engine to verify the timing
   // analysis.
-  unsigned bindDelay2ScriptEngine(VASTSeqValue *Dst, VASTSeqValue *Src,
-                                  unsigned Interval, bool SkipThu,
-                                  bool IsCritical) const;
+  unsigned bindDelay2ScriptEngine(VASTSeqValue *Src, unsigned Interval,
+                                  bool SkipThu, bool IsCritical) const;
 
   unsigned printPathWithIntervalFrom(raw_ostream &OS, VASTSeqValue *Src,
                                      unsigned Interval) const;
@@ -436,8 +436,7 @@ static bool printDelayRecord(raw_ostream &OS, VASTSeqValue *Dst,
   return Thu != 0;
 }
 
-unsigned PathIntervalQueryCache::bindDelay2ScriptEngine(VASTSeqValue *Dst,
-                                                        VASTSeqValue *Src,
+unsigned PathIntervalQueryCache::bindDelay2ScriptEngine(VASTSeqValue *Src,
                                                         unsigned Interval,
                                                         bool SkipThu,
                                                         bool IsCritical) const {
@@ -496,8 +495,7 @@ unsigned PathIntervalQueryCache::bindDelay2ScriptEngine(VASTSeqValue *Dst,
 
 // The first node of the path is the use node and the last node of the path is
 // the define node.
-unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Dst,
-                                                       VASTSeqValue *Src,
+unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Src,
                                                        unsigned Interval,
                                                        bool SkipThu,
                                                        bool IsCritical) const {
@@ -558,9 +556,9 @@ unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Dst,
 }
 
 void
-PathIntervalQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimple,
-                                              DenseSet<VASTSeqValue*> &BoundSrc)
-                                              const {
+PathIntervalQueryCache::bindAllPath2ScriptEngine(bool IsSimple,
+                                                 DenseSet<VASTSeqValue*>
+                                                 &BoundSrc) const {
   DEBUG(dbgs() << "Binding path for dst register: "
                << Dst->getName() << '\n');
   for (delay_it I = stats_begin(IsSimple), E = stats_end(IsSimple);I != E;++I) {
@@ -580,28 +578,28 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst, bool IsSimpl
       // If we not visited the path before, this path is the critical path,
       // since we are iteration the path from the smallest delay to biggest
       // delay.
-      unsigned NumConstraints = bindMCPC2ScriptEngine(Dst, Src, Interval,
-                                                      IsSimple, !Visited);
+      unsigned NumConstraints = bindMCPC2ScriptEngine(Src, Interval, IsSimple,
+                                                      !Visited);
       if (NumConstraints == 0 && !IsSimple && Interval > 1)
         ++NumMaskedMultiCyclesTimingPath;
 
       // Try to verify the result of the timing netlist.
       // DIRTY HACK: Only extract the critical path between two registers.
       if (TNL && Interval < 32)
-        bindDelay2ScriptEngine(Dst, Src, Interval, IsSimple, !Visited);
+        bindDelay2ScriptEngine(Src, Interval, IsSimple, !Visited);
     }
   }
 }
 
-void PathIntervalQueryCache::bindAllPath2ScriptEngine(VASTSeqValue *Dst) const {
+void PathIntervalQueryCache::bindAllPath2ScriptEngine() const {
   DenseSet<VASTSeqValue*> BoundSrc;
   DEBUG(dbgs() << "Going to bind delay information of graph: \n");
   DEBUG(dump());
   // Bind the simple paths first, they apply the constraints to all paths
   // between two registers.
-  bindAllPath2ScriptEngine(Dst, true, BoundSrc);
+  bindAllPath2ScriptEngine(true, BoundSrc);
   // Then we refine the constraints by applying the constraints with thu nodes.
-  bindAllPath2ScriptEngine(Dst, false, BoundSrc);
+  bindAllPath2ScriptEngine(false, BoundSrc);
 }
 
 bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
@@ -632,7 +630,7 @@ void TimingScriptGen::writeConstraintsForDst(VASTSeqValue *Dst,
                                              STGShortestPath &SSP,
                                              TimingNetlist *TNL) {
   assert(Dst->isSelectorSynthesized() && "Expected synthesized selector!");
-  PathIntervalQueryCache Cache(SLV, SSP, TNL);
+  PathIntervalQueryCache Cache(SLV, SSP, TNL, Dst);
 
   typedef VASTSeqValue::fanin_iterator fanin_iterator;
   for (fanin_iterator I = Dst->fanin_begin(), E = Dst->fanin_end(); I != E; ++I){
@@ -642,7 +640,7 @@ void TimingScriptGen::writeConstraintsForDst(VASTSeqValue *Dst,
     extractTimingPaths(Cache, FI->Slots, FI->FI.unwrap().get());
   }
 
-  Cache.bindAllPath2ScriptEngine(Dst);
+  Cache.bindAllPath2ScriptEngine();
 }
 
 void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
