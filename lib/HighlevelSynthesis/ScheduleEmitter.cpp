@@ -489,10 +489,7 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
       AnySrcEmitted |= !(*I).getSlot()->isDead();
     }
 
-    if (!AnySrcEmitted) {
-      SV->dumpFanins();
-      dbgs() << "\nRetiming performed before source value emitted!\n";
-    }
+    assert(AnySrcEmitted && "Retiming performed before source value emitted!");
   }
 #endif
 
