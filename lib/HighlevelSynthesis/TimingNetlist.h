@@ -27,14 +27,14 @@ class BitlevelDelayEsitmator;
 
 struct TNLDelay {
 private:
-  TNLDelay(uint16_t MSB_LLx1024, uint16_t LSB_LLx1024, bool)
+  TNLDelay(uint32_t MSB_LLx1024, uint32_t LSB_LLx1024, bool)
     : MSB_LLx1024(MSB_LLx1024), LSB_LLx1024(LSB_LLx1024) {}
 
 public:
   uint32_t MSB_LLx1024, LSB_LLx1024;
 
   TNLDelay() : MSB_LLx1024(0), LSB_LLx1024(0) {}
-  TNLDelay(uint16_t MSB_LL, uint16_t LSB_LL)
+  TNLDelay(uint32_t MSB_LL, uint32_t LSB_LL)
     : MSB_LLx1024(MSB_LL * 1024), LSB_LLx1024(LSB_LL * 1024) {}
 
   TNLDelay(float delay)
