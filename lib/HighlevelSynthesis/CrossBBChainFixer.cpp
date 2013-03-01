@@ -107,6 +107,7 @@ unsigned IntervalFixer::allocateWaitStates(VASTSchedUnit *Entry,
              << Entry->getParent()->getName() <<'\n';
       llvm_unreachable("As we support conditional dependencies in ILP model,"
                         "we should not get a cross bb interval violation!");
+      ++AllocatedWaitStates;
     }
 
     ActualSPD = std::min(ActualSPD, Entry2ExitDistanceFromEntry);

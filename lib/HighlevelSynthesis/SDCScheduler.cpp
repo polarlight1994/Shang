@@ -195,7 +195,7 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   else if (U->isTerminator()) {
     SVStart = "br_" + ShangMangle(U->getParent()->getName()) + "_";
     if (BasicBlock *TargetBB = U->getTargetBlock())
-      SVStart += ShangMangle(U->getTargetBlock()->getName());
+      SVStart += ShangMangle(TargetBB->getName());
     else
       SVStart += "exit";
   } else
