@@ -146,6 +146,9 @@ void VASTSlot::print(raw_ostream &OS) const {
   for (const_pred_iterator I = pred_begin(), E = pred_end(); I != E; ++I)
     OS << "S#" << (*I)->SlotNum << ", ";
 
+  if (BasicBlock *BB = getParent())
+    OS << "BB: " << BB->getName();
+
   OS << '\n';
 
   for (const_op_iterator I = op_begin(), E = op_end(); I != E; ++I)

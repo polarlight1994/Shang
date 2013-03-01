@@ -106,7 +106,14 @@ void VASTSeqOp::print(raw_ostream &OS) const {
   }
   OS << "} ";
 
-  if (getValue()) getValue()->print(OS);
+  if (Value *V = getValue()) {
+    V->print(OS);
+    if (Instruction *Inst = dyn_cast<Instruction>(V))
+      OS << " Inst Parent: " << Inst->getParent()->getName();
+  }
+
+  if (BasicBlock *BB = getSlot()->getParent())
+    OS << " Slot Parent: " << BB->getName();
 }
 
 void VASTSeqOp::printPredicate(raw_ostream &OS) const {
