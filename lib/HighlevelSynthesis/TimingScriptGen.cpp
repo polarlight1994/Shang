@@ -45,6 +45,11 @@ static cl::opt<bool>
 DisableTimingScriptGeneration("shang-disable-timing-script",
                               cl::desc("Disable timing script generation"),
                               cl::init(false));
+static cl::opt<bool>
+CheckTiming("shang-check-timing",
+            cl::desc("Detect arrival time violation by comparing the interval"
+                     " and estimated delay"),
+            cl::init(true));
 
 STATISTIC(NumTimingPath, "Number of timing paths analyzed (From->To pair)");
 STATISTIC(NumMultiCyclesTimingPath, "Number of multicycles timing paths "
@@ -54,6 +59,7 @@ STATISTIC(NumMaskedMultiCyclesTimingPath,
           "(From->To pair)");
 STATISTIC(NumFalseTimingPath,
           "Number of false timing paths detected (From->To pair)");
+STATISTIC(NumTimingViolation, "Number of Timing violation");
 
 namespace{
 struct TimingScriptGen;
@@ -148,7 +154,7 @@ struct TimingScriptGen : public VASTModulePass {
     AU.addRequired<SeqLiveVariables>();
     AU.addRequired<STGShortestPath>();
     AU.addRequired<DataLayout>();
-    AU.addRequired<TimingNetlist>();
+    if (CheckTiming) AU.addRequired<TimingNetlist>();
     AU.setPreservesAll();
   }
 
@@ -182,8 +188,25 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
                                                     VASTSlot *ReadSlot) {
   // Try to get the live variable at (Src, ReadSlot), calculate its distance
   // from its defining slots to the read slot.
-  if (unsigned Interval = SLV.getIntervalFromDef(Src, ReadSlot, &SSP))
+  if (unsigned Interval = SLV.getIntervalFromDef(Src, ReadSlot, &SSP)) {
+    if (TNL) {
+      unsigned EstimatedCycles = TNL->getDelay(Src, Dst).getNumCycles();
+      if (EstimatedCycles > Interval) {
+        dbgs() << "Timing violation detected: "
+               << Src->getName() << " -> " << Dst->getName() <<  "\n"
+               << "\tSrc, Read at slot#" << ReadSlot->SlotNum << ": ";
+        Src->dumpFanins();
+        dbgs() << "\tDst: ";
+        Dst->dumpFanins();
+        dbgs() << "\tExpected " << EstimatedCycles << " available: "
+          << Interval << '\n';
+        Interval = SLV.getIntervalFromDef(Src, ReadSlot, &SSP);
+        ++NumTimingViolation;
+      }
+    }
+
     return Interval;
+  }
 
   return 10000;
 }
