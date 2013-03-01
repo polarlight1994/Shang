@@ -192,7 +192,7 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
     if (TNL) {
       unsigned EstimatedCycles = TNL->getDelay(Src, Dst).getNumCycles();
       if (EstimatedCycles > Interval) {
-        dbgs() << "Timing violation detected: "
+        DEBUG(dbgs() << "Timing violation detected: "
                << Src->getName() << " -> " << Dst->getName() <<  "\n"
                << "\tSrc, Read at slot#" << ReadSlot->SlotNum << ": ";
         Src->dumpFanins();
@@ -200,7 +200,7 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
         Dst->dumpFanins();
         dbgs() << "\tExpected " << EstimatedCycles << " available: "
           << Interval << '\n';
-        Interval = SLV.getIntervalFromDef(Src, ReadSlot, &SSP);
+        Interval = SLV.getIntervalFromDef(Src, ReadSlot, &SSP););
         ++NumTimingViolation;
       }
     }
