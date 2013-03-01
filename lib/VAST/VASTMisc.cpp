@@ -157,7 +157,10 @@ VASTOperandList *VASTOperandList::GetDatapathOperandList(VASTNode *N) {
   if (VASTExpr *E = dyn_cast_or_null<VASTExpr>(N))
     return E;
 
-  return dyn_cast_or_null<VASTWire>(N);
+  if (VASTWire *W = dyn_cast_or_null<VASTWire>(N))
+    if (W->getDriver()) return W;
+
+  return 0;
 }
 
 VASTOperandList::VASTOperandList(unsigned Size)

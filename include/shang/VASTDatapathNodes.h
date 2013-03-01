@@ -278,8 +278,7 @@ inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
 
 class VASTWire :public VASTSignal, public VASTOperandList,
                 public ilist_node<VASTWire> {
-  unsigned Idx : 30;
-  bool IsPinned : 1;
+  unsigned Idx : 31;
   bool IsWrapper : 1;
   friend class VASTModule;
 
@@ -287,7 +286,7 @@ class VASTWire :public VASTSignal, public VASTOperandList,
 
   friend struct ilist_sentinel_traits<VASTWire>;
   VASTWire() : VASTSignal(vastWire, 0, 0), VASTOperandList(0), Idx(0),
-    IsPinned(false), IsWrapper(false), AttrStr(0) {}
+    IsWrapper(false), AttrStr(0) {}
 
   virtual void dropUses();
 public:
@@ -304,7 +303,7 @@ public:
     getOperand(0).set(V);
   }
 
-  bool isPinned() const { return IsPinned; }
+  bool isWrapper() const { return IsWrapper; }
   void Pin(bool isPinned = true ) { IsPinned = isPinned; }
 
   VASTValPtr getDriver() const { return getOperand(0).unwrap(); }
