@@ -127,6 +127,7 @@ public:
 
     if (SrcInfo == 0) return;
 
+    assert(!SrcInfo->empty() && "Unexpected empty source delay info!");
     for (src_iterator I = SrcInfo->begin(), E = SrcInfo->end(); I != E; ++I)
       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, *I));
 
@@ -141,6 +142,7 @@ public:
     SrcDelayInfo &CurInfo = PathDelay[Dst];
     accumulateDelayThu(Src, Dst, 0, Dst->getBitWidth(), 0, CurInfo,
                        AccumulateZeroDelay);
+    assert(!CurInfo.empty() && "Unexpected empty source!");
   }
 
   void estimateTimingOnTree(VASTValue *Root);
@@ -156,9 +158,14 @@ protected:
 public:
 
   void accumulateExprDelay(VASTExpr *Expr, unsigned UB, unsigned LB) {
-    SrcDelayInfo &CurSrcInfo = PathDelay[Expr];
-    assert(CurSrcInfo.empty() && "We are visiting the same Expr twice?");
+    SrcDelayInfo CurSrcInfo;
     accumulateDelayTo(Expr, UB, LB, CurSrcInfo);
+    // It looks like that all the operands are constant.
+    if (CurSrcInfo.empty()) return;
+
+    bool inserted = PathDelay.insert(std::make_pair(Expr, CurSrcInfo)).second;
+    assert(inserted && "We are visiting the same Expr twice?");
+    (void) inserted;
   }
 
   void accumulateDelayTo(VASTExpr *Expr, unsigned UB, unsigned LB,
