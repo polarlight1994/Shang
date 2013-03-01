@@ -294,10 +294,11 @@ public:
     if (at == Deps.end()) {
       Deps.insert(std::make_pair(Src, EdgeBundle(NewE)));
       Src->addToUseList(this);
-      return;
-    }
+    } else
+      at->second.addEdge(NewE);
 
-    at->second.addEdge(NewE);
+    assert(getEdgeFrom(Src).getLatency() >= NewE.getLatency()
+           && "Edge not isnerted?");
   }
 
   /// Debug Helper functions.
