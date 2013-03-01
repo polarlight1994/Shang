@@ -6,6 +6,7 @@ add_llvm_library(ShangHLS
   VASTScheduling.cpp
   ScheduleEmitter.cpp
   CrossBBChainFixer.cpp
+  CFGFoldingAnalysis.cpp
   SchedulerBase.cpp
   SDCScheduler.cpp
   BBLandingSlots.cpp
