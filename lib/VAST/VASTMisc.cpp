@@ -202,6 +202,9 @@ void VASTModule::gc() {
   for (seqop_iterator I = seqop_begin(); I != seqop_end(); /*++I*/) {
     VASTSeqOp *Op = I++;
     if (Op->getPred() == VASTImmediate::False) {
+      DEBUG(dbgs() << "Removing SeqOp whose predicate is always false:\n";
+      Op->dump(););
+
       Op->removeFromParent();
       eraseSeqOp(Op);
     }
