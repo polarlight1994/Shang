@@ -420,7 +420,17 @@ public:
   bb_iterator bb_begin() { return BBMap.begin(); }
   bb_iterator bb_end() { return BBMap.end(); }
 
+  typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::const_iterator
+          const_bb_iterator;
+
   MutableArrayRef<VASTSchedUnit*> getSUInBB(BasicBlock *BB);
+  ArrayRef<VASTSchedUnit*> getSUInBB(BasicBlock *BB) const;
+
+  VASTSchedUnit *getEntrySU(BasicBlock *BB) const {
+    VASTSchedUnit *Entry = getSUInBB(BB).front();
+    assert(Entry->isBBEntry() && "Bad SU order, do you sort the SUs?");
+    return Entry;
+  }
 
   template<typename T>
   void sortSUs(T F) {

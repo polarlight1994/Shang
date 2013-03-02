@@ -90,8 +90,7 @@ unsigned IntervalFixer::allocateWaitStates(VASTSchedUnit *Entry,
       continue;
     }
 
-    VASTSchedUnit *SrcEntry = G.getSUInBB(SrcBB).front();
-    assert(SrcEntry->isBBEntry() && "Bad SU order!");
+    VASTSchedUnit *SrcEntry = G.getEntrySU(SrcBB);
     unsigned TotalSlots = Src->getSchedule() - SrcEntry->getSchedule();
     
     // Get the distance from the entry of IDom to the exit of predecessor BB.
@@ -146,8 +145,7 @@ IntervalFixer::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
           || I.getEdgeType() == VASTDep::Conditional)
        continue;
 
-      VASTSchedUnit *SrcEntry = G.getSUInBB(SrcBB).front();
-      assert(SrcEntry->isBBEntry() && "BBMap broken!");
+      VASTSchedUnit *SrcEntry = G.getEntrySU(SrcBB);
 
       // Get the required entry-to-entry distance from source BB to current BB.
       int E2EDistance = I.getLatency() - UOffset
@@ -184,8 +182,7 @@ void IntervalFixer::initialize() {
   G.sortSUs(top_sort_idx_wrapper);
 
   BasicBlock *Entry = &F.getEntryBlock();
-  VASTSchedUnit *EntrySU = G.getSUInBB(Entry).front();
-  assert(EntrySU->isBBEntry() && "BBEntry not placed at the beginning!");
+  VASTSchedUnit *EntrySU = G.getEntrySU(Entry);
   SPDFromEntry[Entry] = EntrySU->getSchedule();
 }
 

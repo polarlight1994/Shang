@@ -255,6 +255,15 @@ MutableArrayRef<VASTSchedUnit*> VASTSchedGraph::getSUInBB(BasicBlock *BB) {
   return MutableArrayRef<VASTSchedUnit*>(at->second);
 }
 
+
+ArrayRef<VASTSchedUnit*> VASTSchedGraph::getSUInBB(BasicBlock *BB) const {
+  const_bb_iterator at = BBMap.find(BB);
+
+  assert(at != BBMap.end() && "BB not found!");
+
+  return ArrayRef<VASTSchedUnit*>(at->second);
+}
+
 //===----------------------------------------------------------------------===//
 namespace {
 struct VASTScheduling : public VASTModulePass {
