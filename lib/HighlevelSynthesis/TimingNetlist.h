@@ -146,12 +146,14 @@ private:
   PathDelayInfo PathInfo;
   BitlevelDelayEsitmator *Estimator;
 
-  void buildTimingPath(VASTValue *Thu, VASTSeqValue *Dst, delay_type MUXDelay);
-public:
+  void buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst, delay_type MUXDelay);
+public: 
   static char ID;
 
   TimingNetlist();
   ~TimingNetlist();
+
+  TNLDelay getMuxDelay(unsigned Fanins, unsigned Bitwidth) const;
 
   delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTValue *Dst) const;
