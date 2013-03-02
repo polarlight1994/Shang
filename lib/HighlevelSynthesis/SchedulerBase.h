@@ -20,13 +20,14 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SmallSet.h"
 #include <map>
-using namespace llvm;
 
 //Dirty Hack
 struct _lprec;
 typedef _lprec lprec;
 
 namespace llvm {
+class TimingNetlist;
+
 class SchedulerBase {
 public:
     typedef std::pair<unsigned, unsigned> TimeFrame;
@@ -92,6 +93,11 @@ public:
     return getALAPStep(A) - getASAPStep(A) + 1;
   }
   //}
+
+  /// Add constraints to prevent the seqops from being duplicate too much by
+  /// the CFG folding.
+  ///
+  void addCFGFoldingConstraints(TimingNetlist &TNL);
 
   unsigned computeRecMII();
 
