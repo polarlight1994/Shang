@@ -39,7 +39,7 @@ MuxDelayIncThreshold("vast-cfg-folding-mux-delay-inc",
 static cl::opt<unsigned>
 MaxAnalysisDepth("vast-cfg-folding-max-analysis-depth",
                  cl::desc("The Analysis depth for CFG folding"),
-                 cl::init(0));
+                 cl::init(8));
 namespace {
 struct CFGFoldingAnalysis {
   SchedulerBase &G;
