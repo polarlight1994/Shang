@@ -294,10 +294,11 @@ struct VASTScheduling : public VASTModulePass {
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
-  void buildFlowDependencies(VASTSeqValue *Dst, VASTSeqValue *Src,
-                             VASTSchedUnit *U);
+  void buildFlowDependencies(VASTValue *Dst, VASTSeqValue *Src,
+                             VASTSchedUnit *U, unsigned ExtraDelay);
   unsigned buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);
   unsigned buildFlowDependencies(VASTSchedUnit *U);
+  unsigned buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U);
   VASTSchedUnit *getFlowDepSU(Value *V);
 
   void buildMemoryDependencies(Instruction *Src, Instruction *Dst);
@@ -382,8 +383,9 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   return 0;
 }
 
-void VASTScheduling::buildFlowDependencies(VASTSeqValue *Dst, VASTSeqValue *Src,
-                                           VASTSchedUnit *U) {
+void VASTScheduling::buildFlowDependencies(VASTValue *Dst, VASTSeqValue *Src,
+                                           VASTSchedUnit *U, unsigned ExtraDelay)
+{
   VASTLatch L = Src->latchFront();
   Value *V = L.Op->getValue();
   assert(V && "Cannot get the corresponding value!");
@@ -395,18 +397,18 @@ void VASTScheduling::buildFlowDependencies(VASTSeqValue *Dst, VASTSeqValue *Src,
     = Src->getValType() == VASTSeqValue::StaticRegister ? G->getEntry()
                                                         : getFlowDepSU(V);
 
-  unsigned NumCylces = TNL->getDelay(Src, Dst).getNumCycles();
+  unsigned NumCylces = Src == Dst ? 0 : TNL->getDelay(Src, Dst).getNumCycles();
 
-  U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
+  U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces + ExtraDelay));
 }
 
 unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
-  std::set<VASTSeqValue*> Srcs, PredSrc;
+  std::set<VASTSeqValue*> Srcs;
+  typedef std::set<VASTSeqValue*>::iterator iterator;
   unsigned MuxDelay = 0;
 
-  Op->getPred()->extractSupporingSeqVal(PredSrc);
+  assert(Op->getNumSrcs() && "No operand for flow dependencies!");
 
-  typedef VASTOperandList::const_op_iterator read_itetator;
   for (unsigned i = 0, e = Op->getNumSrcs(); i != e; ++i) {
     VASTLatch L = Op->getSrc(i);
     VASTValue *FI = VASTValPtr(L).get();
@@ -416,16 +418,39 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) 
     // The Srcs set will be empty if FI is not a constant.
     if (Srcs.empty()) continue;
 
-    set_union(Srcs, PredSrc);
+    unsigned CurMuxDelay
+      = TNL->getMuxDelay(Dst->size(), Dst->getBitWidth()).getNumCycles();
+    MuxDelay = std::max(MuxDelay, CurMuxDelay);
 
-    MuxDelay = std::max(MuxDelay, TNL->getDelay(FI, Dst).getNumCycles());
-
-    typedef std::set<VASTSeqValue*>::iterator iterator;
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-      buildFlowDependencies(Dst, *I, U);
+      buildFlowDependencies(FI, *I, U, CurMuxDelay);
 
     Srcs.clear();
   }
+
+  VASTValue *V = VASTValPtr(Op->getPred()).get();
+  V->extractSupporingSeqVal(Srcs);
+  for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
+    buildFlowDependencies(V, *I, U, MuxDelay);
+
+  // There is originally 1 cycle available for the selector mux, we need to
+  // return the extra mux delay required by the selector mux.
+  return std::max(int(MuxDelay) - 1, 0);
+}
+
+unsigned VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
+  VASTSlotCtrl *SlotCtrl = cast<VASTSlotCtrl>(U->getSeqOp());
+  std::set<VASTSeqValue*> Srcs;
+  
+  VASTValue *V = VASTValPtr(SlotCtrl->getPred()).get();
+  V->extractSupporingSeqVal(Srcs);
+
+  unsigned NumFIs = SlotCtrl->getTargetSlot()->pred_size();
+  unsigned MuxDelay = TNL->getMuxDelay(NumFIs, 1).getNumCycles();
+
+  typedef std::set<VASTSeqValue*>::iterator iterator;
+  for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
+    buildFlowDependencies(V, *I, U, MuxDelay);
 
   // There is originally 1 cycle available for the selector mux, we need to
   // return the extra mux delay required by the selector mux.
@@ -436,11 +461,15 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   Instruction *Inst = U->getInst();
 
   if (U->isLaunch())
+    // Prevent the launch from being duplicate with CFG folding.
     return buildFlowDependencies(U->getSeqOp(), U);
 
   assert(U->isLatch() && "Unexpected scheduling unit type!");
 
-  if (isa<TerminatorInst>(Inst) || isa<PHINode>(Inst))
+  if (isa<PHINode>(Inst))
+    return buildFlowDependencies(U->getSeqOp(), U);
+
+  if (isa<TerminatorInst>(Inst))
     return buildFlowDependencies(U->getSeqOp(), U);
 
   VASTSeqInst *SeqInst = cast<VASTSeqInst>(U->getSeqOp());
@@ -591,7 +620,8 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
         // Also map the target BB to this terminator.
         IR2SUMap[TargetBB].push_back(U);
 
-        unsigned ExtraMuxDelay = buildFlowDependencies(U);
+        unsigned ExtraMuxDelay = buildFlowDependenciesForSlotCtrl(U);
+        // add extra dele
         U->addDep(BBEntry, VASTDep::CreateCtrlDep(ExtraMuxDelay));
         continue;
       }
@@ -816,6 +846,7 @@ void VASTScheduling::fixSchedulingGraph() {
 void VASTScheduling::scheduleGlobal() {
   SDCScheduler Scheduler(*G, 1);
 
+  Scheduler.addCFGFoldingConstraints(*TNL);
   Scheduler.addLinOrdEdge();
 
   // Build the step variables, and no need to schedule at all if all SUs have
@@ -917,6 +948,8 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   scheduleGlobal();
 
   G->fixIntervalForCrossBBChains();
+
+  DEBUG(G->viewGraph());
 
   G->emitSchedule(VM);
 
