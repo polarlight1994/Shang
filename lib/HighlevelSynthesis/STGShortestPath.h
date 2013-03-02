@@ -18,15 +18,16 @@
 
 #include "shang/VASTModulePass.h"
 
-#include <map>
+#include "llvm/ADT/DenseMap.h"
 
 namespace llvm {
 class VASTSlot;
 class VASTModule;
 
 class STGShortestPath : public VASTModulePass {
-  std::map<std::pair<unsigned, unsigned>, unsigned> STPMatrix;
+  DenseMap<std::pair<unsigned, unsigned>, unsigned> STPMatrix;
   typedef std::pair<unsigned, unsigned> Idx;
+  VASTModule *VM;
 public:
   static const unsigned Inf;
 
