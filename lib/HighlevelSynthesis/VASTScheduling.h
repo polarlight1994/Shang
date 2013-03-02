@@ -224,6 +224,10 @@ public:
     return Ptr.is<Instruction*>() && isa<PHINode>(getInst()) && isLaunch();
   }
 
+  bool isPHILatch() const {
+    return isa<PHINode>(getInst()) && isLatch();
+  }
+
   Instruction *getInst() const { return Ptr.get<Instruction*>(); }
   VASTSeqOp *getSeqOp() const { return SeqOp; }
 
@@ -234,14 +238,12 @@ public:
   }
 
   BasicBlock *getIncomingBlock() const {
-    assert(isa<PHINode>(getInst()) && isLatch()
-           && "Call getIncomingBlock on the wrong type!");
+    assert(isPHILatch() && "Call getIncomingBlock on the wrong type!");
     return BB.getPointer();
   }
 
   BasicBlock *getTargetBlock() const {
-    assert(isa<TerminatorInst>(getInst())
-           && "Call getTargetBlock on the wrong type!");
+    assert(isTerminator() && "Call getTargetBlock on the wrong type!");
     return BB.getPointer();
   }
 
@@ -294,8 +296,12 @@ public:
     if (at == Deps.end()) {
       Deps.insert(std::make_pair(Src, EdgeBundle(NewE)));
       Src->addToUseList(this);
-    } else
+    } else {
+      int OldLatency = getEdgeFrom(Src).getLatency();
       at->second.addEdge(NewE);
+      assert(OldLatency <= getEdgeFrom(Src).getLatency() && "Edge lost!");
+      (void) OldLatency;
+    }
 
     assert(getEdgeFrom(Src).getLatency() >= NewE.getLatency()
            && "Edge not isnerted?");

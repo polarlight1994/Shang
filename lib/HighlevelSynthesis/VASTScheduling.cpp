@@ -160,8 +160,9 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
     if (isa<PHINode>(Inst) && isLatch())
       OS << " From: " << getIncomingBlock()->getName();
 
-    if (isa<TerminatorInst>(Inst) && getTargetBlock())
-      OS << " Targeting: " << getTargetBlock()->getName();
+    if (isTerminator())
+      if (BasicBlock *BB =  getTargetBlock())
+        OS << " Targeting: " << BB->getName();
   }
 
   OS << " Scheduled to " << Schedule;
