@@ -190,25 +190,8 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
                                                     VASTSlot *ReadSlot) {
   // Try to get the live variable at (Src, ReadSlot), calculate its distance
   // from its defining slots to the read slot.
-  if (unsigned Interval = SLV.getIntervalFromDef(Src, ReadSlot, &SSP)) {
-    if (TNL) {
-      unsigned EstimatedCycles = TNL->getDelay(Src, Dst).getNumCycles();
-      if (EstimatedCycles > Interval) {
-        /*DEBUG(*/dbgs() << "Timing violation detected: "
-               << Src->getName() << " -> " << Dst->getName() <<  "\n"
-               << "\tSrc, Read at slot#" << ReadSlot->SlotNum << ": ";
-        Src->dumpFanins();
-        dbgs() << "\tDst: ";
-        Dst->dumpFanins();
-        dbgs() << "\tExpected " << EstimatedCycles << " available: "
-          << Interval << '\n';
-        Interval = SLV.getIntervalFromDef(Src, ReadSlot, &SSP);/*);*/
-        ++NumTimingViolation;
-      }
-    }
-
+  if (unsigned Interval = SLV.getIntervalFromDef(Src, ReadSlot, &SSP))
     return Interval;
-  }
 
   return 10000;
 }
@@ -334,6 +317,20 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
       }
 
       unsigned Interval = getMinimalInterval(V, ReadSlots);
+
+      //if (TNL) {
+      //  unsigned EstimatedCycles = TNL->getDelay(V, Root, Dst).getNumCycles();
+      //  if (EstimatedCycles > Interval) {
+      //    /*DEBUG(*/dbgs() << "Timing violation detected: "
+      //      << V->getName() << " -> " << Dst->getName() <<  "\n";
+      //    V->dumpFanins();
+      //    dbgs() << "\tDst: ";
+      //    Dst->dumpFanins();
+      //    dbgs() << "\tExpected " << EstimatedCycles << " available: "
+      //           << Interval << '\n';
+      //    ++NumTimingViolation;
+      //  }
+      //}
 
       bool inserted = LocalInterval.insert(std::make_pair(V, Interval)).second;
       assert(inserted && "Node had already been visited?");
@@ -543,13 +540,7 @@ unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Src,
   std::string Script;
   raw_string_ostream SS(Script);
   SS << "RTLDatapath.Slack = " << Interval << '\n';
-  SS << "RTLDatapath.EstimatiedDelay = ";
-  // DIRTYHACK: Do not mess up with the IP core interval right now.
-  if (TNL && Src->getValType() != VASTSeqValue::IO
-          && Src->getValType() != VASTSeqValue::Enable)
-    SS << TNL->getDelay(Src, Dst).getNumCycles();
-  else
-    SS << "'<TNL not provided>'";
+  SS << "RTLDatapath.EstimatiedDelay = " << "'<TNL not provided>'";
   SS << '\n';
   SS << "RTLDatapath.isCriticalPath = " << (SkipThu || IsCritical) << '\n';
   SS.flush();
