@@ -29,6 +29,7 @@
 using namespace llvm;
 
 char STGShortestPath::ID = 0;
+const unsigned STGShortestPath::Inf = UINT16_MAX;
 
 INITIALIZE_PASS(STGShortestPath, "vast-stg-shortest-path",
                 "Compute the Landing Slots for the BasicBlocks",
