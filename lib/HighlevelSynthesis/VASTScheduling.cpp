@@ -461,7 +461,6 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   Instruction *Inst = U->getInst();
 
   if (U->isLaunch())
-    // Prevent the launch from being duplicate with CFG folding.
     return buildFlowDependencies(U->getSeqOp(), U);
 
   assert(U->isLatch() && "Unexpected scheduling unit type!");

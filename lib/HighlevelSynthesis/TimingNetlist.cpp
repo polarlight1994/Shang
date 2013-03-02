@@ -116,7 +116,7 @@ void TimingNetlist::buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst,
   }
 
   // We need to handle the wires here.
-  if (VASTWire *W = dyn_cast<VASTWire>(Thu))
+  if (isa<VASTWire>(Thu))
     Estimator->estimateTimingOnTree(Thu);
 
   // If this expression if not driven by any register, there is not timing path.
