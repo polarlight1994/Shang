@@ -91,6 +91,9 @@ void CFGFoldingAnalysis::computeFoldingSize(BasicBlock *BB, BasicBlock *FoldTo,
 
     if (G.getASAPStep(SU) != EntryASAP && BB != FoldTo) continue;
 
+    // Do not fold the loop body more than once.
+    if (TargetBB == BB && FoldTo == BB) continue;
+
     computeFoldingSize(TargetBB, FoldTo, Depth + 1);
   }  
 }
@@ -209,7 +212,6 @@ void SchedulerBase::addCFGFoldingConstraints(TimingNetlist &TNL) {
   CFGFoldingAnalysis CFA(*this, TNL);
 
   CFA.computeFoldingSize();
-  CFA.dump();
 
   CFA.addConstraints();
 }
