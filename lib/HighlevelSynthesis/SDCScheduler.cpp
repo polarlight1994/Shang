@@ -451,6 +451,14 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
 }
 
 bool SDCScheduler::schedule() {
+  DEBUG(
+  int majorversion, minorversion, release, build;
+  lp_solve_version(&majorversion, &minorversion, &release, &build);
+  dbgs() << "Perform SDC scheduling with LPSolve "
+         << majorversion << '.' << minorversion
+         << '.' << release << '.' << build << '\n';
+  );
+
   ObjFn.setLPObj(lp);
 
   set_add_rowmode(lp, TRUE);
