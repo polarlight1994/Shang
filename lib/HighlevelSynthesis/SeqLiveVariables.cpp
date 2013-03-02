@@ -266,7 +266,8 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector &PathFromEntry) {
         V->extractSupporingSeqVal(ReadAtSlot);
 
     // The Slot Register are also used.
-    ReadAtSlot.insert(SeqOp->getSlot()->getValue());
+    if (SeqOp->getSlot()->isSynthesized())
+      ReadAtSlot.insert(SeqOp->getSlot()->getValue());
 
     // Process defines.
     for (unsigned i = 0, e = SeqOp->getNumDefs(); i != e; ++i)

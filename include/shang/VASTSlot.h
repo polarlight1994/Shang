@@ -101,6 +101,8 @@ public:
   bool hasNextSlot(VASTSlot *NextSlot) const;
   void addSuccSlot(VASTSlot *NextSlot);
 
+  bool isSynthesized() const { return !SlotReg.isInvalid(); }
+
   // Successor slots of this slot.
   succ_iterator succ_begin() {
     return NextSlots.begin();
