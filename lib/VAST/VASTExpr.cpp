@@ -251,7 +251,7 @@ static bool printBinFU(raw_ostream &OS, const VASTExpr *E, const VASTValue *LHS)
 
 VASTExpr::VASTExpr(Opcode Opc, uint8_t NumOps, unsigned UB, unsigned LB)
   : VASTValue(vastExpr, UB - LB), VASTOperandList(NumOps),
-    IsNamed(0), Opc(Opc), UB(UB), LB(LB) {
+    IsNamed(true), Opc(Opc), UB(UB), LB(LB) {
   Contents.Name = 0;
   assert(NumOps && "Unexpected empty operand list!");
 }
