@@ -287,6 +287,7 @@ struct VASTScheduling : public VASTModulePass {
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequiredID(BasicBlockTopOrderID);
+    AU.addRequiredID(DatapathNamerID);
     AU.addRequired<TimingNetlist>();
     AU.addRequired<DependenceAnalysis>();
     AU.addRequired<LoopInfo>();
@@ -329,6 +330,7 @@ INITIALIZE_PASS_BEGIN(VASTScheduling,
                       "vast-scheduling", "Perfrom Scheduling on the VAST",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
+  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
   INITIALIZE_PASS_DEPENDENCY(BasicBlockTopOrder)
   INITIALIZE_PASS_DEPENDENCY(DependenceAnalysis)
   INITIALIZE_PASS_DEPENDENCY(LoopInfo);

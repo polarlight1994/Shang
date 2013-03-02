@@ -185,6 +185,8 @@ void CFGFoldingAnalysis::addConstraints(BasicBlock *BB) {
   unsigned EntryASAP = G.getASAPStep(Entry);
   unsigned Size = FoldingSize[BB];
 
+  dbgs() << "Run on BB: " << BB->getName() << " Size: " << Size << "\n";
+
   for (unsigned i = 1; i < SUs.size(); ++i) {
     VASTSchedUnit *SU = SUs[i];
 
