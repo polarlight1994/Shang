@@ -124,6 +124,7 @@ public:
   const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
   const_fanin_iterator fanin_end() const { return Fanins.end(); }
   bool isSelectorSynthesized() const { return !EnableU.isInvalid(); }
+  VASTValPtr getEnable() const { return VASTValPtr(EnableU); }
 
   // Functions to write the verilog code.
   void verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
