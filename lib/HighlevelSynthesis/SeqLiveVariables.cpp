@@ -626,7 +626,7 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
   }
 
   // The SeqVal is kill before readslot.
-  if (VI == 0) return 0;
+  if (VI == 0) return STGShortestPath::Inf;
 
   // Calculate the Shortest path distance from all live-in slot.
   unsigned IntervalFromLiveIn = STGShortestPath::Inf;

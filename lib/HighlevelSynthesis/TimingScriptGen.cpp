@@ -69,6 +69,7 @@ struct PathIntervalQueryCache {
   STGShortestPath &SSP;
   TimingNetlist *TNL;
   VASTSeqValue *Dst;
+  const uint32_t Inf;
 
   typedef std::map<unsigned, DenseSet<VASTSeqValue*> > IntervalStatsMapTy;
   typedef DenseMap<VASTSeqValue*, unsigned> SeqValSetTy;
@@ -79,7 +80,7 @@ struct PathIntervalQueryCache {
 
   PathIntervalQueryCache(SeqLiveVariables &SLV,  STGShortestPath &SSP,
                          TimingNetlist *TNL, VASTSeqValue *Dst)
-    : SLV(SLV), SSP(SSP), TNL(TNL), Dst(Dst) {}
+    : SLV(SLV), SSP(SSP), TNL(TNL), Dst(Dst), Inf(STGShortestPath::Inf) {}
 
   void reset() {
     QueryCache.clear();
@@ -190,15 +191,12 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
                                                     VASTSlot *ReadSlot) {
   // Try to get the live variable at (Src, ReadSlot), calculate its distance
   // from its defining slots to the read slot.
-  if (unsigned Interval = SLV.getIntervalFromDef(Src, ReadSlot, &SSP))
-    return Interval;
-
-  return 10000;
+  return SLV.getIntervalFromDef(Src, ReadSlot, &SSP);
 }
 
 unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
                                                     ArrayRef<VASTSlot*> ReadSlots) {
-  unsigned PathInterval = 10000;
+  unsigned PathInterval = Inf;
   typedef ArrayRef<VASTSlot*>::iterator iterator;
   for (iterator I = ReadSlots.begin(), E = ReadSlots.end(); I != E; ++I)
     PathInterval = std::min(PathInterval, getMinimalInterval(Src, *I));
@@ -275,6 +273,7 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
 
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
   std::set<VASTValue*> Visited;
+  // Remember the number of cycles from the reachable register to the read slot.
   SeqValSetTy LocalInterval;
 
   VisitStack.push_back(std::make_pair(Root, L->op_begin()));
@@ -464,7 +463,7 @@ unsigned PathIntervalQueryCache::bindDelay2ScriptEngine(VASTSeqValue *Src,
                                                         bool IsCritical) const {
   // Delay table:
   // Datapath: {
-  //  {Src = '', Dst = '', THU = '', delay = '', max_ll = '', min_ll = ''}
+  //  {Src = '', Dst = '', THU = '', delay = '', max_ll = '', hop = ''}
   // }
   // }
   SMDiagnostic Err;
@@ -596,8 +595,11 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine(bool IsSimple,
       // delay.
       unsigned NumConstraints = bindMCPC2ScriptEngine(Src, Interval, IsSimple,
                                                       !Visited);
-      if (NumConstraints == 0 && !IsSimple && Interval > 1)
+      if (NumConstraints == 0 && !IsSimple && Interval > 1 && Interval != Inf) {
         ++NumMaskedMultiCyclesTimingPath;
+        errs() << "Path hidden: " << Src->getName() << " -> "
+               << Dst->getName() << " Interval " << Interval << '\n';
+      }
 
       // Try to verify the result of the timing netlist.
       // DIRTY HACK: Only extract the critical path between two registers.
