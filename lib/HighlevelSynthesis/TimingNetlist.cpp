@@ -171,7 +171,10 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
       }
 
       buildTimingPathToReg(SVal->getEnable().get(), SVal, MUXDelay);
-      continue;
+
+      // Dirty HACK: Also run on the Latching operation of the registers, so that
+      // we can build the timing path for the SlotActive wires.
+      // continue;
     } // else
 
     typedef VASTSeqValue::iterator fanin_iterator;
