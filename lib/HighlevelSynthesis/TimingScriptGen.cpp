@@ -427,7 +427,7 @@ void PathIntervalQueryCache::dump() const {
 static bool printDelayRecord(raw_ostream &OS, VASTSeqValue *Dst,
                              VASTSeqValue *Src, VASTValue *Thu,
                              const TNLDelay &delay) {
-  // Record: {Src = '', Dst = '', THU = '', delay = '', max_ll = '', min_ll = ''}
+  // Record: {Src = '', Dst = '', THU = '', delay = ''}
   DEBUG(dbgs() << Src->getName() << " -> ";
 
   if (Thu == 0 || !printBindingLuaCode(dbgs(), Thu))
@@ -451,10 +451,7 @@ static bool printDelayRecord(raw_ostream &OS, VASTSeqValue *Dst,
     OS << "'<null>'";
   OS << ", ";
 
-  OS << "Delay = '" << delay.getDelay() << "', ";
-
-  OS << "MaxLL = '" << delay.getMaxLL() << "', ";
-  OS << "MinLL = '" << delay.getMinLL() << '\'';
+  OS << "Delay = '" << delay.getDelay() << '\'';
 
   OS << " }";
   return Thu != 0;

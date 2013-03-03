@@ -139,10 +139,10 @@ void CFGFoldingAnalysis::handleCommonSU(unsigned FoldingSize, VASTSchedUnit *SU,
     // Calculate the MuxSize after the current Fanin are duplicated.
     unsigned FoldedMuxSize = Dst->size() + FoldingSize - 1;
     unsigned CurFoldedDelay
-      = TNL.getMuxDelay(FoldedMuxSize).getNumCycles();
+      = TNL.getMuxDelay(FoldedMuxSize, Dst).getNumCycles();
     FoldedMuxDelay = std::max(FoldedMuxDelay, CurFoldedDelay);
     unsigned CurMuxDelay
-      = TNL.getMuxDelay(Dst->size()).getNumCycles();
+      = TNL.getMuxDelay(Dst->size(), Dst).getNumCycles();
     OriginMuxDelay = std::max(OriginMuxDelay, CurMuxDelay);
   }
 
@@ -163,8 +163,8 @@ void CFGFoldingAnalysis::handleSlotCtrl(unsigned FoldingSize, VASTSchedUnit *SU,
   VASTSlotCtrl *SlotCtrl = cast<VASTSlotCtrl>(SU->getSeqOp());
   unsigned OriginMuxSize = SlotCtrl->getTargetSlot()->pred_size();
   unsigned FoldedMuxSize = OriginMuxSize + FoldingSize - 1;
-  unsigned FoldedMuxDelay = TNL.getMuxDelay(FoldedMuxSize).getNumCycles();
-  unsigned OriginMuxDelay = TNL.getMuxDelay(OriginMuxSize).getNumCycles();
+  unsigned FoldedMuxDelay = TNL.getMuxDelay(FoldedMuxSize, 0).getNumCycles();
+  unsigned OriginMuxDelay = TNL.getMuxDelay(OriginMuxSize, 0).getNumCycles();
 
   DEBUG(dbgs() << "SU: ";
   SU->dump();

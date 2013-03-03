@@ -40,7 +40,7 @@ TimingModel("timing-model", cl::Hidden,
   clEnumValEnd));
 
 void TNLDelay::print(raw_ostream &OS) const {
-  OS << "MSB: " << getMSBLL() << " LSB: " << getLSBLL() << " Delay(ns): "
+  OS << "MSB: " << getMSB() << " LSB: " << getLSB() << " Delay(ns): "
      << getDelay();
 }
 
@@ -128,15 +128,21 @@ void TimingNetlist::buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst,
   Estimator->accumulateDelayFrom(Thu, Dst);
 }
 
-TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins) const {
-  VFUMux *Mux = getFUDesc<VFUMux>();
-
+TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, VASTSeqValue *SVal) const {
   float MUXDelay = 0.0f;
 
-  if (TimingModel != TimingEstimatorBase::ZeroDelay)
+  if (TimingModel != TimingEstimatorBase::ZeroDelay) {
+    VFUMux *Mux = getFUDesc<VFUMux>();
     MUXDelay = Mux->getMuxLatency(Fanins);
 
-  return delay_type(MUXDelay);
+    // Also accumulate the delay of the block RAM.
+    if (SVal && SVal->getValType() == VASTSeqValue::BRAM) {
+      VFUBRAM *RAM = getFUDesc<VFUBRAM>();
+      MUXDelay += RAM->Latency;
+    }
+  }
+
+  return delay_type(MUXDelay, MUXDelay);
 }
 
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
@@ -151,8 +157,8 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
     VASTSeqValue *SVal = I;
 
     // Calculate the delay of the Fanin MUX.
-    delay_type MUXDelay = getMuxDelay(SVal->size());
-
+    delay_type MUXDelay = getMuxDelay(SVal->size(), SVal);
+    
     if (SVal->isSelectorSynthesized()) {
       typedef VASTSeqValue::fanin_iterator fanin_iterator;
       for (fanin_iterator I = SVal->fanin_begin(), E = SVal->fanin_end();

@@ -162,9 +162,10 @@ protected:
     : ResourceType(type), StartInt(startInt), ChainingThreshold(0) {}
 
   VFUDesc(VFUs::FUTypes type, const luabind::object &FUTable,
-          unsigned *LogicLevels, unsigned *Cost);
+          unsigned *LogicLevels, float *Latencies, unsigned *Cost);
 
   static unsigned lookupLogicLevels(const unsigned *Table, unsigned SizeInBits);
+  static float    lookupLatency(const float *Table, unsigned SizeInBits);
   static unsigned lookupCost(const unsigned *Table, unsigned SizeInBits);
 public:
 
@@ -261,10 +262,11 @@ public:
 template<enum VFUs::FUTypes T>
 class VSimpleFUDesc : public VFUDesc {
   unsigned LogicLevels[5];
+  float    Latencies[5];
   unsigned Cost[64];
 public:
   explicit VSimpleFUDesc(const luabind::object &FUTable)
-    : VFUDesc(T, FUTable, LogicLevels, Cost) {}
+    : VFUDesc(T, FUTable, LogicLevels, Latencies, Cost) {}
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   template<enum VFUs::FUTypes OtherT>
   static inline bool classof(const VSimpleFUDesc<OtherT> *A) {
@@ -276,6 +278,10 @@ public:
 
   static VFUs::FUTypes getType() { return T; };
   static const char *getTypeName() { return VFUs::VFUNames[getType()]; }
+
+  float lookupLatency(unsigned SizeInBits) const {
+    return VFUDesc::lookupLatency(Latencies, SizeInBits);
+  }
 
   unsigned lookupLogicLevels(unsigned SizeInBits) const {
     return VFUDesc::lookupLogicLevels(LogicLevels, SizeInBits);
@@ -310,6 +316,7 @@ public:
   };
 
   const unsigned DataWidth;
+  const float Latency;
   const BRAMMode Mode;
   const std::string Prefix;   // Prefix of the block RAM object in timing constraints.
   const std::string Template; // Template for inferring block ram.

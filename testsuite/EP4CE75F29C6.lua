@@ -1,3 +1,11 @@
+FUs.AddSub.Latencies = { 1.000 / PERIOD, 1.747 / PERIOD, 2.357 / PERIOD, 3.361 / PERIOD, 5.140 / PERIOD } --Add
+FUs.Shift.Latencies = { 0.827 / PERIOD, 2.541 / PERIOD, 2.609 / PERIOD, 3.708 / PERIOD, 4.690 / PERIOD } --Shift
+FUs.Mult.Latencies = { 0.827 / PERIOD, 2.620 / PERIOD, 3.170 / PERIOD, 6.806 / PERIOD, 9.087 / PERIOD } --Mul 
+FUs.ICmp.Latencies = { 0.827 / PERIOD, 1.845 / PERIOD, 2.306 / PERIOD, 3.264 / PERIOD, 5.091 / PERIOD } --Cmp 
+FUs.Sel.Latencies = { 0.931 / PERIOD, 1.144 / PERIOD, 1.288 / PERIOD, 1.453 / PERIOD, 2.115 / PERIOD } --Sel
+FUs.Reduction.Latencies = { 0.689 / PERIOD, 1.380 / PERIOD, 1.485 / PERIOD, 2.031 / PERIOD, 2.424 / PERIOD } --Red
+
+FUs.BRam.Latency = 1.0 / PERIOD -- Block RAM
 
 FUs.Mux.Latencies = { 1.151 / PERIOD, --2-input 
                       1.935 / PERIOD, --3-input 
