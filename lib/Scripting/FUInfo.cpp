@@ -28,7 +28,7 @@ using namespace llvm;
 // Helper functions for reading function unit table from script.
 template<typename PropType, typename IdxType>
 static PropType getProperty(const luabind::object &FUTable, IdxType PropName,
-  PropType DefaultRetVal = PropType()) {
+                            PropType DefaultRetVal = PropType()) {
     if (luabind::type(FUTable) != LUA_TTABLE) return DefaultRetVal;
 
     boost::optional<PropType> Result =
@@ -44,10 +44,17 @@ static unsigned ComputeOperandSizeInByteLog2Ceil(unsigned SizeInBits) {
 }
 
 static void initLogicLevelsTable(luabind::object LuaLatTable, unsigned *LLTable,
-                             unsigned Size) {
+                                 unsigned Size) {
   for (unsigned i = 0; i < Size; ++i)
     // Lua array starts from 1
     LLTable[i] = getProperty<unsigned>(LuaLatTable, i + 1, LLTable[i]);
+}
+
+static void initLatenciesTable(luabind::object LuaLatTable, float *LatTable,
+                               unsigned Size) {
+  for (unsigned i = 0; i < Size; ++i)
+    // Lua array starts from 1
+    LatTable[i] = getProperty<float>(LuaLatTable, i + 1, LatTable[i]);
 }
 
 //===----------------------------------------------------------------------===//
@@ -136,8 +143,14 @@ unsigned VFUDesc::lookupCost(const unsigned *Table, unsigned SizeInBits) {
 VFUMux::VFUMux(luabind::object FUTable)
   : VFUDesc(VFUs::Mux, 1),
     MaxAllowedMuxSize(getProperty<unsigned>(FUTable, "MaxAllowedMuxSize", 1)) {
-  luabind::object LatTable = FUTable["LogicLevels"];
-  initLogicLevelsTable(LatTable, MuxLogicLevels, MaxAllowedMuxSize);
+  assert(MaxAllowedMuxSize <= array_lengthof(MuxLatencies)
+         && MaxAllowedMuxSize <= array_lengthof(MuxLogicLevels)
+         && "MaxAllowedMuxSize too big!");
+
+  luabind::object LLTable = FUTable["LogicLevels"];
+  initLogicLevelsTable(LLTable, MuxLogicLevels, MaxAllowedMuxSize);
+  luabind::object LatTable = FUTable["Latencies"];
+  initLatenciesTable(LatTable, MuxLatencies, MaxAllowedMuxSize);
 
   for (unsigned i = 0; i < MaxAllowedMuxSize - 1; i++) {
     luabind::object CostTable = FUTable["Costs"][i+1];
@@ -145,12 +158,20 @@ VFUMux::VFUMux(luabind::object FUTable)
   }
 }
 
-unsigned VFUMux::getMuxLogicLevels(unsigned Size) {
+float VFUMux::getMuxLatency(unsigned Size) {
   if (Size < 2) return 0;
 
   float ratio = std::min(float(Size) / float(MaxAllowedMuxSize), 1.0f);
   Size = std::min(Size, MaxAllowedMuxSize);
 
+  return ceil(MuxLatencies[Size - 2] * ratio);
+}
+
+unsigned VFUMux::getMuxLogicLevels(unsigned Size) {
+  if (Size < 2) return 0;
+
+  float ratio = std::min(float(Size) / float(MaxAllowedMuxSize), 1.0f);
+  Size = std::min(Size, MaxAllowedMuxSize);
 
   return ceil(MuxLogicLevels[Size - 2] * ratio);
 }

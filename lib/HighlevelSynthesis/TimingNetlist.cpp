@@ -131,12 +131,12 @@ void TimingNetlist::buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst,
 TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins) const {
   VFUMux *Mux = getFUDesc<VFUMux>();
 
-  unsigned MUXLL = 0;
+  float MUXDelay = 0.0f;
 
   if (TimingModel != TimingEstimatorBase::ZeroDelay)
-    MUXLL = Mux->getMuxLogicLevels(Fanins);
+    MUXDelay = Mux->getMuxLatency(Fanins);
 
-  return delay_type(MUXLL, MUXLL);
+  return delay_type(MUXDelay);
 }
 
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {

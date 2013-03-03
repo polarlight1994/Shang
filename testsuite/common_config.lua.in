@@ -124,3 +124,7 @@ endmodule
 -- Define some function
 dofile('@VTS_SOURCE_ROOT@/' .. 'FuncDefine.lua')
 dofile('@VTS_SOURCE_ROOT@/' .. 'AddModules.lua')
+-- load platform information script
+dofile('@VTS_SOURCE_ROOT@/' .. 'AlteraCommon.lua')
+dofile('@VTS_SOURCE_ROOT@/' .. 'Altera4LUTFUs.lua')
+dofile('@VTS_SOURCE_ROOT@/' .. 'EP4CE75F29C6.lua')

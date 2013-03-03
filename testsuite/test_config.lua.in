@@ -1,8 +1,5 @@
 -- Load bram initfile
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
--- load platform information script
-dofile('@VTS_SOURCE_ROOT@/' .. 'AlteraCommon.lua')
-dofile('@VTS_SOURCE_ROOT@/' .. 'Altera4LUTFUs.lua')
 
 Functions.@SYN_FUNC@ = RTLModuleName
 -- ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
