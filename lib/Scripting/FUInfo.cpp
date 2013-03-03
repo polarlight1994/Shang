@@ -47,7 +47,7 @@ static void initLogicLevelsTable(luabind::object LuaLatTable, unsigned *LLTable,
                              unsigned Size) {
   for (unsigned i = 0; i < Size; ++i)
     // Lua array starts from 1
-    LLTable[i] = getProperty<float>(LuaLatTable, i + 1, LLTable[i]);
+    LLTable[i] = getProperty<unsigned>(LuaLatTable, i + 1, LLTable[i]);
 }
 
 //===----------------------------------------------------------------------===//
