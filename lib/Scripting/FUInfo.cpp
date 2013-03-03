@@ -184,16 +184,16 @@ VFUMux::VFUMux(luabind::object FUTable)
 float VFUMux::getMuxLatency(unsigned Size) {
   if (Size < 2) return 0;
 
-  float ratio = std::min(float(Size) / float(MaxAllowedMuxSize), 1.0f);
+  float ratio = std::max(float(Size) / float(MaxAllowedMuxSize), 1.0f);
   Size = std::min(Size, MaxAllowedMuxSize);
 
-  return ceil(MuxLatencies[Size - 2] * ratio);
+  return MuxLatencies[Size - 2] * ratio;
 }
 
 unsigned VFUMux::getMuxLogicLevels(unsigned Size) {
   if (Size < 2) return 0;
 
-  float ratio = std::min(float(Size) / float(MaxAllowedMuxSize), 1.0f);
+  float ratio = std::max(float(Size) / float(MaxAllowedMuxSize), 1.0f);
   Size = std::min(Size, MaxAllowedMuxSize);
 
   return ceil(MuxLogicLevels[Size - 2] * ratio);
