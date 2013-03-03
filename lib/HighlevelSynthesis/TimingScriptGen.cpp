@@ -159,9 +159,7 @@ struct TimingScriptGen : public VASTModulePass {
     AU.setPreservesAll();
   }
 
-  void writeConstraintsForDstPreSelSyn(VASTSeqValue *Dst, SeqLiveVariables &SLV,
-                                       STGShortestPath &SSP,TimingNetlist *TNL);
-  void writeConstraintsForDstPostSelSyn(VASTSeqValue *Dst, SeqLiveVariables &SLV,
+  void writeConstraintsFor(VASTSeqValue *Dst, SeqLiveVariables &SLV,
                                        STGShortestPath &SSP,TimingNetlist *TNL);
 
   void extractTimingPaths(PathIntervalQueryCache &Cache,
@@ -641,46 +639,15 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
     if (V->empty()) continue;
 
-    if (V->isSelectorSynthesized())
-      writeConstraintsForDstPostSelSyn(V, SLV, SSP, TNL);
-    else
-      writeConstraintsForDstPreSelSyn(V, SLV, SSP, TNL);
+    writeConstraintsFor(V, SLV, SSP, TNL);
   }
 
   return false;
 }
 
-void TimingScriptGen::writeConstraintsForDstPostSelSyn(VASTSeqValue *Dst,
-                                                       SeqLiveVariables &SLV,
-                                                       STGShortestPath &SSP,
-                                                       TimingNetlist *TNL) {
-  PathIntervalQueryCache Cache(SLV, SSP, TNL, Dst);
-  VASTSlot *CurReadSlot[] = { 0 };
-
-  typedef VASTSeqValue::fanin_iterator fi_iterator;
-  for (fi_iterator I = Dst->fanin_begin(), E = Dst->fanin_end(); I != E; ++I){
-    const VASTSeqValue::Fanin *FI = *I;
-    for (unsigned i = 0, e = FI->Slots.size(); i < e; ++i) {
-      CurReadSlot[0] = FI->Slots[i];
-      extractTimingPaths(Cache, CurReadSlot, FI->Pred.unwrap().get());
-    }
-
-    extractTimingPaths(Cache, FI->Slots, FI->FI.unwrap().get());
-  }
-
-  typedef VASTSeqValue::const_iterator vn_itertor;
-  for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
-    CurReadSlot[0] = (*I).getSlot();
-    extractTimingPaths(Cache, CurReadSlot, Dst->getEnable().get());
-  }
-
-  Cache.bindAllPath2ScriptEngine();
-}
-
-void TimingScriptGen::writeConstraintsForDstPreSelSyn(VASTSeqValue *Dst,
-                                                      SeqLiveVariables &SLV,
-                                                      STGShortestPath &SSP,
-                                                      TimingNetlist *TNL) {
+void
+TimingScriptGen::writeConstraintsFor(VASTSeqValue *Dst, SeqLiveVariables &SLV,
+                                     STGShortestPath &SSP, TimingNetlist *TNL) {
   DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> > DatapathMap;
 
   typedef VASTSeqValue::const_iterator vn_itertor;
