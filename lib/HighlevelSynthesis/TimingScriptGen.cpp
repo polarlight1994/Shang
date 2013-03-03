@@ -660,6 +660,13 @@ void TimingScriptGen::writeConstraintsForDstPostSelSyn(VASTSeqValue *Dst,
     extractTimingPaths(Cache, FI->Slots, FI->FI.unwrap().get());
   }
 
+  SmallVector<VASTSlot*, 8> EnableSlots;
+  typedef VASTSeqValue::const_iterator vn_itertor;
+  for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I)
+    EnableSlots.push_back((*I).getSlot());
+
+  extractTimingPaths(Cache, EnableSlots, Dst->getEnable().get());
+
   Cache.bindAllPath2ScriptEngine();
 }
 
