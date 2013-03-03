@@ -162,6 +162,8 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
         buildTimingPathToReg(FI->Pred.unwrap().get(), SVal, MUXDelay);
         buildTimingPathToReg(FI->FI.unwrap().get(), SVal, MUXDelay);
       }
+
+      buildTimingPathToReg(SVal->getEnable().get(), SVal, MUXDelay);
       continue;
     } // else
 
