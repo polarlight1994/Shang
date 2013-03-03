@@ -84,7 +84,7 @@ BitlevelDelayEsitmator::AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
                                            const SrcEntryTy &DelayFromSrc) {
   TNLDelay D = DelayFromSrc.second;
   TNLDelay Inc(VFUs::LUTDelay, VFUs::LUTDelay, 1, 1);
-  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(Inc));
+  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(Inc).Hop());
 }
 
 BitlevelDelayEsitmator::SrcEntryTy
@@ -96,7 +96,7 @@ BitlevelDelayEsitmator::AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
   unsigned NumFanins = AndExpr->size();
   unsigned LL = Log2_32_Ceil(NumFanins) / Log2_32_Ceil(VFUs::MaxLutSize);
   TNLDelay Inc(LL * VFUs::LUTDelay, LL * VFUs::LUTDelay, LL, LL);
-  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(Inc));
+  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(Inc).Hop());
 }
 
 BitlevelDelayEsitmator::SrcEntryTy
@@ -111,7 +111,7 @@ BitlevelDelayEsitmator::AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
   float Latency = Red->lookupLatency(FUWidth);
   unsigned LL = Red->lookupLogicLevels(FUWidth);
   TNLDelay Inc(Latency, Latency, LL, LL);
-  return SrcEntryTy(DelayFromSrc.first, D.addLLWorst(Inc));
+  return SrcEntryTy(DelayFromSrc.first, D.addLLWorst(Inc).Hop());
 }
 
 BitlevelDelayEsitmator::SrcEntryTy
@@ -130,7 +130,7 @@ BitlevelDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
   unsigned LLPreBitx1024 = TNLDelay::toX1024(LL) / FUWidth;
   TNLDelay Inc(LatencyPreBit, Latency, TNLDelay::toInt(LLPreBitx1024), LL);
   D.addLLMSB2LSB(Inc, LatencyPreBit, LLPreBitx1024).syncLL();
-  return SrcEntryTy(DelayFromSrc.first, D);
+  return SrcEntryTy(DelayFromSrc.first, D.Hop());
 }
 
 void

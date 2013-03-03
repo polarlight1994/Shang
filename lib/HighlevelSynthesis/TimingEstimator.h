@@ -273,7 +273,7 @@ class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator
                              / (DstUB - DstLB);
     TNLDelay Inc(MSBLatency, LSBLatency, MSBLL, LSBLL);
     D.addLLLSB2MSB(Inc, LatencyPreBit, LLPreBitx1024);
-    return SrcEntryTy(DelayFromSrc.first, D);
+    return SrcEntryTy(DelayFromSrc.first, D.Hop());
   }
 
   template<typename VFUTy>
@@ -287,7 +287,7 @@ class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator
     unsigned LL = FU->lookupLogicLevels(FUWidth);
     TNLDelay Inc(Latency, Latency, LL, LL);
     D.syncLL().addLLParallel(Inc);
-    return SrcEntryTy(DelayFromSrc.first, D);
+    return SrcEntryTy(DelayFromSrc.first, D.Hop());
   }
 
 public:

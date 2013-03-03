@@ -451,6 +451,7 @@ static bool printDelayRecord(raw_ostream &OS, VASTSeqValue *Dst,
   OS << ", ";
 
   OS << "Delay = '" << delay.getDelay() << "', ";
+  OS << "Hop = '" << delay.hop << "', ";
   OS << "MaxLL = '" << delay.getMaxLL() << '\'';
 
   OS << " }";

@@ -28,8 +28,10 @@ class BitlevelDelayEsitmator;
 struct TNLDelay {
 private:
 
-  TNLDelay(float MSB, float LSB, uint32_t MSBLLx1024, uint32_t LSBLLx1024, bool)
-    : MSB(MSB), LSB(LSB), MSBLLx1024(MSBLLx1024), LSBLLx1024(LSBLLx1024) {}
+  TNLDelay(float MSB, float LSB, uint32_t MSBLLx1024, uint32_t LSBLLx1024,
+           uint16_t hop)
+    : MSB(MSB), LSB(LSB), MSBLLx1024(MSBLLx1024), LSBLLx1024(LSBLLx1024),
+      hop(hop) {}
 
   float getWireDelay() const {
     return float(std::max(MSBLLx1024, LSBLLx1024)) / 1024;
@@ -38,11 +40,13 @@ private:
 public:
   float MSB, LSB;
   uint32_t MSBLLx1024, LSBLLx1024;
+  uint16_t hop;
 
-  TNLDelay() : MSB(0), LSB(0), MSBLLx1024(0), LSBLLx1024(0) {}
+  TNLDelay() : MSB(0), LSB(0), MSBLLx1024(0), LSBLLx1024(0), hop(0) {}
 
   TNLDelay(float MSB, float LSB, uint32_t MSB_LL, uint32_t LSB_LL)
-    : MSB(MSB), LSB(LSB), MSBLLx1024(MSB_LL * 1024), LSBLLx1024(LSB_LL * 1024) {}
+    : MSB(MSB), LSB(LSB), MSBLLx1024(MSB_LL * 1024), LSBLLx1024(LSB_LL * 1024),
+      hop(0) {}
 
   static unsigned toInt(unsigned X) {
     return (X + 1024 - 1) / 1024;
@@ -78,7 +82,7 @@ public:
                     std::max(LHS.LSB, RHS.LSB),
                     std::max(LHS.MSBLLx1024, RHS.MSBLLx1024),
                     std::max(LHS.LSBLLx1024, RHS.LSBLLx1024),
-                    true);
+                    std::max(LHS.hop, RHS.hop));
   }
 
   TNLDelay &scale(float RHS) {
@@ -129,6 +133,8 @@ public:
 
     return *this;
   }
+
+  TNLDelay &Hop() { ++hop; return *this; }
 
   void print(raw_ostream &OS) const;
   void dump() const;
