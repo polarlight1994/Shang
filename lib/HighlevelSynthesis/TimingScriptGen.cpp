@@ -651,21 +651,24 @@ void TimingScriptGen::writeConstraintsForDstPostSelSyn(VASTSeqValue *Dst,
                                                        STGShortestPath &SSP,
                                                        TimingNetlist *TNL) {
   PathIntervalQueryCache Cache(SLV, SSP, TNL, Dst);
+  VASTSlot *CurReadSlot[] = { 0 };
 
   typedef VASTSeqValue::fanin_iterator fi_iterator;
   for (fi_iterator I = Dst->fanin_begin(), E = Dst->fanin_end(); I != E; ++I){
     const VASTSeqValue::Fanin *FI = *I;
+    for (unsigned i = 0, e = FI->Slots.size(); i < e; ++i) {
+      CurReadSlot[0] = FI->Slots[i];
+      extractTimingPaths(Cache, CurReadSlot, FI->Pred.unwrap().get());
+    }
 
-    extractTimingPaths(Cache, FI->Slots, FI->Pred.unwrap().get());
     extractTimingPaths(Cache, FI->Slots, FI->FI.unwrap().get());
   }
 
-  SmallVector<VASTSlot*, 8> EnableSlots;
   typedef VASTSeqValue::const_iterator vn_itertor;
-  for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I)
-    EnableSlots.push_back((*I).getSlot());
-
-  extractTimingPaths(Cache, EnableSlots, Dst->getEnable().get());
+  for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
+    CurReadSlot[0] = (*I).getSlot();
+    extractTimingPaths(Cache, CurReadSlot, Dst->getEnable().get());
+  }
 
   Cache.bindAllPath2ScriptEngine();
 }
