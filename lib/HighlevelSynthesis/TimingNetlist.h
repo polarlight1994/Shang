@@ -26,20 +26,39 @@ class VASTValue;
 class BitlevelDelayEsitmator;
 
 struct TNLDelay {
+private:
+
+  TNLDelay(float MSB, float LSB, uint32_t MSBLLx1024, uint32_t LSBLLx1024, bool)
+    : MSB(MSB), LSB(LSB), MSBLLx1024(MSBLLx1024), LSBLLx1024(LSBLLx1024) {}
+
+  float getWireDelay() const {
+    return float(std::max(MSBLLx1024, LSBLLx1024)) / 1024;
+  }
 
 public:
   float MSB, LSB;
-  VASTValue *From;
+  uint32_t MSBLLx1024, LSBLLx1024;
 
-  TNLDelay() : MSB(0), LSB(0), From(0) {}
-  TNLDelay(uint32_t MSB_LL, uint32_t LSB_LL)
-    : MSB(MSB_LL * VFUs::LUTDelay), LSB(LSB_LL * VFUs::LUTDelay), From(0) {}
+  TNLDelay() : MSB(0), LSB(0), MSBLLx1024(0), LSBLLx1024(0) {}
 
-  TNLDelay(float MSB, float LSB) : MSB(MSB), LSB(LSB), From(0) {}
+  TNLDelay(float MSB, float LSB, uint32_t MSB_LL, uint32_t LSB_LL)
+    : MSB(MSB), LSB(LSB), MSBLLx1024(MSB_LL * 1024), LSBLLx1024(LSB_LL * 1024) {}
+
+  static unsigned toInt(unsigned X) {
+    return (X + 1024 - 1) / 1024;
+  }
+
+  static unsigned toX1024(unsigned X) {
+    return X * 1024;
+  }
 
   float getLSB() const { return LSB; }
   float getMSB() const { return MSB; }
   float getMinDelay() const { return std::min(getLSB(), getMSB()); }
+
+  unsigned getMaxLL () const {
+    return toInt(std::max(MSBLLx1024, LSBLLx1024));
+  }
 
   float getNormalizedDelay() const {
     return std::max(MSB, LSB);
@@ -56,7 +75,10 @@ public:
   static TNLDelay max(TNLDelay LHS, TNLDelay RHS) {
     // TODO: Extend the bit range and and max?
     return TNLDelay(std::max(LHS.MSB, RHS.MSB),
-                    std::max(LHS.LSB, RHS.LSB));
+                    std::max(LHS.LSB, RHS.LSB),
+                    std::max(LHS.MSBLLx1024, RHS.MSBLLx1024),
+                    std::max(LHS.LSBLLx1024, RHS.LSBLLx1024),
+                    true);
   }
 
   TNLDelay &scale(float RHS) {
@@ -65,41 +87,46 @@ public:
     return *this;
   }
 
-  TNLDelay &addLLParallel(const TNLDelay &RHS) {
-    MSB += RHS.MSB;
-    LSB += RHS.LSB;
-    return *this;
-  }
-
-  TNLDelay &addLLParallel(float MSB, float LSB) {
-    TNLDelay RHS(MSB, LSB);
+  TNLDelay &addLLParallel(TNLDelay RHS) {
     this->MSB += RHS.MSB;
     this->LSB += RHS.LSB;
+    this->MSBLLx1024 += RHS.MSBLLx1024;
+    this->LSBLLx1024 += RHS.LSBLLx1024;
     return *this;
   }
 
   TNLDelay &syncLL() {
     MSB = LSB = std::max(MSB, LSB);
+    MSBLLx1024 = LSBLLx1024 = std::max(MSBLLx1024, LSBLLx1024);
     return *this;
   }
 
-  TNLDelay &addLLWorst(float MSB, float LSB) {
-    return addLLParallel(MSB, LSB).syncLL();
+  TNLDelay &addLLWorst(TNLDelay RHS) {
+    return addLLParallel(RHS).syncLL();
   }
 
-  TNLDelay &addLLMSB2LSB(float MSB, float LSB, float Bit) {
-    TNLDelay RHS(MSB, LSB);
+  TNLDelay &addLLMSB2LSB(TNLDelay RHS, float Bit, unsigned BitLLx1024) {
     float NewMSB = RHS.MSB + this->MSB;
     this->LSB =  std::max(this->LSB + Bit, RHS.LSB + this->MSB);
     this->MSB = NewMSB;
+
+    unsigned NewMSB_LLx1024 = RHS.MSBLLx1024 + MSBLLx1024;
+    LSBLLx1024 =  std::max(LSBLLx1024 + BitLLx1024, RHS.LSBLLx1024 + MSBLLx1024);
+    MSBLLx1024 = NewMSB_LLx1024;
+
     return *this;
   }
 
-  TNLDelay &addLLLSB2MSB(float MSB, float LSB, float Bit) {
-    TNLDelay RHS(MSB, LSB);
+  TNLDelay &addLLLSB2MSB(TNLDelay RHS, float Bit, unsigned BitLLx1024) {
     float NewLSB = RHS.LSB + this->LSB;
     this->MSB =  std::max(this->MSB + Bit, RHS.MSB + this->LSB);
     this->LSB = NewLSB;
+
+    unsigned NewLSB_LLx1024 = RHS.LSBLLx1024 + LSBLLx1024;
+    MSBLLx1024 =  std::max(MSBLLx1024 + BitLLx1024,
+                            RHS.MSBLLx1024 + LSBLLx1024);
+    LSBLLx1024 = NewLSB_LLx1024;
+
     return *this;
   }
 

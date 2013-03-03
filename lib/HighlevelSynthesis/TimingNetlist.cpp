@@ -130,11 +130,12 @@ void TimingNetlist::buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst,
 
 TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, VASTSeqValue *SVal) const {
   float MUXDelay = 0.0f;
+  unsigned MuxLL = 0;
 
   if (TimingModel != TimingEstimatorBase::ZeroDelay) {
     VFUMux *Mux = getFUDesc<VFUMux>();
     MUXDelay = Mux->getMuxLatency(Fanins);
-
+    MuxLL = Mux->getMuxLogicLevels(Fanins);
     // Also accumulate the delay of the block RAM.
     if (SVal && SVal->getValType() == VASTSeqValue::BRAM) {
       VFUBRAM *RAM = getFUDesc<VFUBRAM>();
@@ -142,7 +143,7 @@ TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, VASTSeqValue *SVal) const {
     }
   }
 
-  return delay_type(MUXDelay, MUXDelay);
+  return delay_type(MUXDelay, MUXDelay, MuxLL, MuxLL);
 }
 
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {

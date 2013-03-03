@@ -66,7 +66,7 @@ set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
 ]=]
 
 VerifyHeader = [=[
-proc runOnPath { path delay from thu to } {
+proc runOnPath { path delay max_ll from thu to } {
   # Accumulate the number of logic levels.
   set cur_path_ll [get_path_info $path -num_logic_levels]
   set cur_path_delay [get_path_info $path -data_delay]
@@ -86,8 +86,8 @@ proc runOnPath { path delay from thu to } {
     set status "overestimated"
   }
 
-  puts $PlotXY "$cur_path_ll $cur_path_delay $cur_total_ic_delay $cur_slack $delay $from $thu $to $status"
-  post_message -type info "$cur_path_ll $cur_path_delay $cur_total_ic_delay $cur_slack $delay $from $thu $to $status"
+  puts $PlotXY "$cur_path_ll $cur_path_delay $cur_total_ic_delay $cur_slack $delay $max_ll $from $thu $to $status"
+  post_message -type info "$cur_path_ll $cur_path_delay $cur_total_ic_delay $cur_slack $delay $max_ll $from $thu $to $status"
   
   close $PlotXY
 }
@@ -152,7 +152,7 @@ $(_put('#')) $(DstNameSet) <- $(ThuNameSet) <- $(SrcNameSet) delay $(Delay)
 
   if {[get_collection_size $thu]} {
     foreach_in_collection path [ get_timing_paths -from $src -through $thu -to $dst -nworst 1 -pairs_only -setup ] {
-      runOnPath $path $(Delay) "$(SrcNameSet)" "$(ThuNameSet)" "$(DstNameSet)"
+      runOnPath $path $(Delay) $(n.MaxLL) "$(SrcNameSet)" "$(ThuNameSet)" "$(DstNameSet)"
     }
   }
 
@@ -160,7 +160,7 @@ $(_put('#')) $(DstNameSet) <- $(ThuNameSet) <- $(SrcNameSet) delay $(Delay)
 
 $(_put('#')) $(DstNameSet) <- $(SrcNameSet) delay $(Delay)
   foreach_in_collection path [ get_timing_paths -from $src -to $dst -nworst 1 -pairs_only -setup ] {
-    runOnPath $path $(Delay) "$(SrcNameSet)" "<null>" "$(DstNameSet)"
+    runOnPath $path $(Delay) $(n.MaxLL) "$(SrcNameSet)" "<null>" "$(DstNameSet)"
   }
 #    end
 }

@@ -83,7 +83,8 @@ BitlevelDelayEsitmator::AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
                                            uint8_t DstUB, uint8_t DstLB,
                                            const SrcEntryTy &DelayFromSrc) {
   TNLDelay D = DelayFromSrc.second;
-  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(VFUs::LUTDelay, VFUs::LUTDelay));
+  TNLDelay Inc(VFUs::LUTDelay, VFUs::LUTDelay, 1, 1);
+  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(Inc));
 }
 
 BitlevelDelayEsitmator::SrcEntryTy
@@ -94,8 +95,8 @@ BitlevelDelayEsitmator::AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
   VASTExpr *AndExpr = cast<VASTExpr>(Dst);
   unsigned NumFanins = AndExpr->size();
   unsigned LL = Log2_32_Ceil(NumFanins) / Log2_32_Ceil(VFUs::MaxLutSize);
-  TNLDelay Latency(LL, LL);
-  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(Latency.MSB, Latency.LSB));
+  TNLDelay Inc(LL * VFUs::LUTDelay, LL * VFUs::LUTDelay, LL, LL);
+  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(Inc));
 }
 
 BitlevelDelayEsitmator::SrcEntryTy
@@ -108,7 +109,9 @@ BitlevelDelayEsitmator::AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
   unsigned FUWidth = RedExpr->getOperand(0)->getBitWidth();
   VFUReduction *Red = getFUDesc<VFUReduction>();
   float Latency = Red->lookupLatency(FUWidth);
-  return SrcEntryTy(DelayFromSrc.first, D.addLLWorst(Latency, Latency));
+  unsigned LL = Red->lookupLogicLevels(FUWidth);
+  TNLDelay Inc(Latency, Latency, LL, LL);
+  return SrcEntryTy(DelayFromSrc.first, D.addLLWorst(Inc));
 }
 
 BitlevelDelayEsitmator::SrcEntryTy
@@ -121,9 +124,12 @@ BitlevelDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
   unsigned FUWidth = CmpExpr->getOperand(SrcPos)->getBitWidth();
   VFUICmp *Cmp = getFUDesc<VFUICmp>();
   float Latency = Cmp->lookupLatency(FUWidth);
+  unsigned LL = Cmp->lookupLogicLevels(FUWidth);
   // The pre-bit logic level increment for comparison is 1;
   float LatencyPreBit = Latency / FUWidth;
-  D.addLLMSB2LSB(LatencyPreBit, Latency, LatencyPreBit).syncLL();
+  unsigned LLPreBitx1024 = TNLDelay::toX1024(LL) / FUWidth;
+  TNLDelay Inc(LatencyPreBit, Latency, TNLDelay::toInt(LLPreBitx1024), LL);
+  D.addLLMSB2LSB(Inc, LatencyPreBit, LLPreBitx1024).syncLL();
   return SrcEntryTy(DelayFromSrc.first, D);
 }
 
