@@ -22,11 +22,14 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CFG.h"
-#define DEBUG_TYPE "vast-bb-landing-slots"
+#define DEBUG_TYPE "vast-stg-shortest-path"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+
+STATISTIC(NumIterations, "Number of iterations in the STP algorithm");
 
 char STGShortestPath::ID = 0;
 const unsigned STGShortestPath::Inf = UINT16_MAX;
@@ -56,37 +59,51 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
   for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
     VASTSlot *Src = I;
 
-    STPMatrix[Idx(Src->SlotNum, Src->SlotNum)] = 0;
+    STPMatrix[Src->SlotNum][Src->SlotNum] = 0;
 
     typedef VASTSlot::succ_iterator succ_iterator;
     for (succ_iterator SI = Src->succ_begin(), SE = Src->succ_end(); SI != SE; ++SI) {
       VASTSlot *Dst = *SI;
-      if (Src != Dst) STPMatrix[Idx(Src->SlotNum, Dst->SlotNum)] = 1;
+      if (Src != Dst) STPMatrix[Dst->SlotNum][Src->SlotNum] = 1;
     }
   }
 
   // Visit the slots in topological order.
-  //ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >
-  //  RPO(VM.getStartSlot());
+  ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >
+    RPO(VM.getStartSlot());
 
-  //typedef
-  //ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >::rpo_iterator
-  //slot_top_iterator;
+  typedef
+  ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >::rpo_iterator
+  slot_top_iterator;
 
-  // Use the Floyd Warshal algorithm to compute the shortest path.
-  for (slot_iterator K = VM.slot_begin(), KE = VM.slot_end(); K != KE; ++K)
-    for (slot_iterator I = VM.slot_begin(), IE = VM.slot_end(); I != IE; ++I)
-      for (slot_iterator J = VM.slot_begin(), JE = VM.slot_end(); J != JE; ++J) {
-        //D[i][j] = min( D[i][j], D[i][k] + D[k][j]
-        unsigned DistanceThu = getShortestPath(I->SlotNum, K->SlotNum)
-                             + getShortestPath(K->SlotNum, J->SlotNum);
+  bool changed = true;
 
-        if (DistanceThu >= Inf) continue;
+  while (changed) {
+    changed = false;
+    ++NumIterations;
 
-        unsigned NewDistance = std::min(getShortestPath(I->SlotNum, J->SlotNum),
-                                        DistanceThu);
-        STPMatrix[Idx(I->SlotNum, J->SlotNum)] = NewDistance;
+    // Use the Floyd Warshal algorithm to compute the shortest path.
+    for (slot_top_iterator I =RPO.begin(), E = RPO.end(); I != E; ++I) {
+      VASTSlot *To = *I;
+
+      typedef VASTSlot::pred_iterator pred_iterator;
+      for (pred_iterator PI = To->pred_begin(), PE = To->pred_end(); PI != PE; ++PI) {
+        VASTSlot *Thu = *PI;
+
+        DenseMap<unsigned, unsigned> &Srcs = STPMatrix[Thu->SlotNum];
+        typedef DenseMap<unsigned, unsigned>::iterator from_iterator;
+        for (from_iterator FI = Srcs.begin(), FE = Srcs.end(); FI != FE; ++FI) {
+          //D[i][j] = min( D[i][j], D[i][k] + D[k][j]
+          unsigned DistanceToThuFI = FI->second + 1;
+          unsigned DistanceToFI = getShortestPath(FI->first, To->SlotNum);
+          if (DistanceToThuFI < DistanceToFI) {
+            STPMatrix[To->SlotNum][FI->first] = DistanceToThuFI;
+            changed = true;
+          }
+        }
       }
+    }
+  }
 
   return false;
 }
@@ -106,10 +123,14 @@ void STGShortestPath::print(raw_ostream &OS) const {
 }
 
 unsigned STGShortestPath::getShortestPath(unsigned From, unsigned To) const {
-  DenseMap<std::pair<unsigned, unsigned>, unsigned>::const_iterator
-    at = STPMatrix.find(Idx(From, To));
+  DenseMap<unsigned, DenseMap<unsigned, unsigned> >::const_iterator
+    to_at = STPMatrix.find(To);
 
-  if (at == STPMatrix.end()) return Inf;
+  if (to_at == STPMatrix.end()) return Inf;
 
-  return at->second;
+  DenseMap<unsigned, unsigned>::const_iterator from_at = to_at->second.find(From);
+
+  if (from_at == to_at->second.end()) return Inf;
+
+  return from_at->second;
 }

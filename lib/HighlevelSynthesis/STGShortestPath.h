@@ -25,7 +25,7 @@ class VASTSlot;
 class VASTModule;
 
 class STGShortestPath : public VASTModulePass {
-  DenseMap<std::pair<unsigned, unsigned>, unsigned> STPMatrix;
+  DenseMap<unsigned, DenseMap<unsigned, unsigned> > STPMatrix;
   typedef std::pair<unsigned, unsigned> Idx;
   VASTModule *VM;
 public:
