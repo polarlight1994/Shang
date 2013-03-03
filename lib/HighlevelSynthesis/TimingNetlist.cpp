@@ -128,13 +128,13 @@ void TimingNetlist::buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst,
   Estimator->accumulateDelayFrom(Thu, Dst);
 }
 
-TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, unsigned Bitwidth) const {
+TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins) const {
   VFUMux *Mux = getFUDesc<VFUMux>();
 
   unsigned MUXLL = 0;
 
   if (TimingModel != TimingEstimatorBase::ZeroDelay)
-    MUXLL = Mux->getMuxLogicLevels(Fanins, Bitwidth);
+    MUXLL = Mux->getMuxLogicLevels(Fanins);
 
   return delay_type(MUXLL, MUXLL);
 }
@@ -151,7 +151,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
     VASTSeqValue *SVal = I;
 
     // Calculate the delay of the Fanin MUX.
-    delay_type MUXDelay = getMuxDelay(SVal->size(), SVal->getBitWidth());
+    delay_type MUXDelay = getMuxDelay(SVal->size());
 
     if (SVal->isSelectorSynthesized()) {
       typedef VASTSeqValue::fanin_iterator fanin_iterator;

@@ -26,37 +26,37 @@ FUs.Reduction = { LogicLevels = { 1, 2, 2, 3, 3 }, --Red
                   ChainingThreshold = REDUCTION_ChainingThreshold}
 FUs.Mux    = { MaxAllowedMuxSize = 16,
                LogicLevels = {
-                { 1, 1, 1, 1, 1 }, --2-input
-                { 1, 1, 1, 1, 1 }, --3-input
-                { 3, 3, 3, 3, 3 }, --4-input
-                { 3, 3, 3, 3, 3 }, --5-input
-                { 3, 3, 3, 3, 3 }, --6-input
-                { 3, 3, 3, 3, 3 }, --7-input
-                { 4, 4, 4, 4, 4 }, --8-input
-                { 4, 4, 5, 4, 4 }, --9-input
-                { 4, 4, 4, 4, 4 }, --10-input
-                { 4, 4, 5, 4, 4 }, --11-input
-                { 5, 5, 5, 5, 5 }, --12-input
-                { 5, 5, 5, 5, 5 }, --13-input
-                { 5, 5, 6, 6, 6 }, --14-input
-                { 5, 6, 7, 6, 5 }, --15-input
-                { 7, 5, 6, 6, 6 }, --16-input
-                { 7, 6, 6, 7, 7 }, --17-input
-                { 6, 6, 7, 7, 6 }, --18-input
-                { 7, 7, 7, 7, 6 }, --19-input
-                { 7, 7, 8, 7, 7 }, --20-input
-                { 9, 7, 8, 8, 8 }, --21-input
-                { 9, 9, 8, 7, 8 }, --22-input
-                { 8, 8, 8, 8, 8 }, --23-input
-                { 9, 9, 9, 9, 9 }, --24-input
-                { 9, 9, 9, 9, 9 }, --25-input
-                { 9, 9, 8, 9, 9 }, --26-input
-                { 10, 10, 9, 10 }, --27-input
-                { 9, 10, 10, 10 }, --28-input
-                { 10, 10, 10, 10 }, --29-input
-                { 10, 11, 11, 11 }, --30-input
-                { 11, 11, 11, 11 }, --31-input
-                { 11, 11, 11, 11 }, --32-input
+                1, --2-input
+                1, --3-input
+                3, --4-input
+                3, --5-input
+                3, --6-input
+                3, --7-input
+                4, --8-input
+                4, --9-input
+                4, --10-input
+                4, --11-input
+                5, --12-input
+                5, --13-input
+                5, --14-input
+                5, --15-input
+                7, --16-input
+                7, --17-input
+                6, --18-input
+                7, --19-input
+                7, --20-input
+                9, --21-input
+                9, --22-input
+                8, --23-input
+                9, --24-input
+                9, --25-input
+                9, --26-input
+                10, --27-input
+                10, --28-input
+                10, --29-input
+                10, --30-input
+                11, --31-input
+                11 --32-input
                },
                Costs = {{64 , 512 , 1024 , 2048 , 4096},--2-input
                 {128 , 128 , 128 , 128 , 128},--3-input

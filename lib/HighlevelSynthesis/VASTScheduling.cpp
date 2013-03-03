@@ -420,8 +420,7 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) 
     // The Srcs set will be empty if FI is not a constant.
     if (Srcs.empty()) continue;
 
-    unsigned CurMuxDelay
-      = TNL->getMuxDelay(Dst->size(), Dst->getBitWidth()).getNumCycles();
+    unsigned CurMuxDelay = TNL->getMuxDelay(Dst->size()).getNumCycles();
     MuxDelay = std::max(MuxDelay, CurMuxDelay);
 
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
@@ -448,7 +447,7 @@ unsigned VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
   V->extractSupporingSeqVal(Srcs);
 
   unsigned NumFIs = SlotCtrl->getTargetSlot()->pred_size();
-  unsigned MuxDelay = TNL->getMuxDelay(NumFIs, 1).getNumCycles();
+  unsigned MuxDelay = TNL->getMuxDelay(NumFIs).getNumCycles();
 
   typedef std::set<VASTSeqValue*>::iterator iterator;
   for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)

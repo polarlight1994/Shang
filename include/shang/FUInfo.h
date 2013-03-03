@@ -186,14 +186,14 @@ public:
 
 class VFUMux : public VFUDesc {
   unsigned MuxCost[31][64];
-  unsigned MuxLogicLevels[31][5];
+  unsigned MuxLogicLevels[64];
 
 public:
   const unsigned MaxAllowedMuxSize;
 
   VFUMux(luabind::object FUTable);
 
-  unsigned getMuxLogicLevels(unsigned Size, unsigned BitWidth);
+  unsigned getMuxLogicLevels(unsigned Size);
   unsigned getMuxCost(unsigned Size, unsigned BitWidth);
 
   static VFUs::FUTypes getType() { return VFUs::Mux; };

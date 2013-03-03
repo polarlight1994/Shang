@@ -153,7 +153,7 @@ public:
   TimingNetlist();
   ~TimingNetlist();
 
-  TNLDelay getMuxDelay(unsigned Fanins, unsigned Bitwidth) const;
+  TNLDelay getMuxDelay(unsigned Fanins) const;
 
   delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTValue *Dst) const;

@@ -136,23 +136,23 @@ unsigned VFUDesc::lookupCost(const unsigned *Table, unsigned SizeInBits) {
 VFUMux::VFUMux(luabind::object FUTable)
   : VFUDesc(VFUs::Mux, 1),
     MaxAllowedMuxSize(getProperty<unsigned>(FUTable, "MaxAllowedMuxSize", 1)) {
+  luabind::object LatTable = FUTable["LogicLevels"];
+  initLogicLevelsTable(LatTable, MuxLogicLevels, MaxAllowedMuxSize);
+
   for (unsigned i = 0; i < MaxAllowedMuxSize - 1; i++) {
-    luabind::object LatTable = FUTable["LogicLevels"][i+1];
-    initLogicLevelsTable(LatTable, MuxLogicLevels[i], 5);
     luabind::object CostTable = FUTable["Costs"][i+1];
     VFUs::initCostTable(CostTable, MuxCost[i], 5);
   }
 }
 
-unsigned VFUMux::getMuxLogicLevels(unsigned Size, unsigned BitWidth) {
+unsigned VFUMux::getMuxLogicLevels(unsigned Size) {
   if (Size < 2) return 0;
 
   float ratio = std::min(float(Size) / float(MaxAllowedMuxSize), 1.0f);
   Size = std::min(Size, MaxAllowedMuxSize);
 
-  assert(BitWidth <= 64 && "Bad Mux Size!");
 
-  return VFUDesc::lookupLogicLevels(MuxLogicLevels[Size - 2], BitWidth) * ratio;
+  return ceil(MuxLogicLevels[Size - 2] * ratio);
 }
 
 unsigned VFUMux::getMuxCost(unsigned Size, unsigned BitWidth) {
