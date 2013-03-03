@@ -12,6 +12,7 @@ add_llvm_library(ShangHLS
   BBLandingSlots.cpp
   SeqLiveVariables.cpp
   STGShortestPath.cpp
+  SeqSelectorSynthesis.cpp
 )
 
 IF (NOT MSVC)

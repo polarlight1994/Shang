@@ -11,6 +11,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "TimingNetlist.h"
+#include "SeqLiveVariables.h"
+
 #include "shang/VASTExprBuilder.h"
 
 #include "shang/VASTModulePass.h"
@@ -45,6 +48,9 @@ struct SeqSelectorSynthesis : public VASTModulePass {
 
 INITIALIZE_PASS_BEGIN(SeqSelectorSynthesis, "sequential-selector-synthesis",
                       "Implement the MUX for the Sequantal Logic", false, true)
+  INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
+  INITIALIZE_PASS_DEPENDENCY(STGShortestPath)
+  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
 INITIALIZE_PASS_END(SeqSelectorSynthesis, "sequential-selector-synthesis",
                       "Implement the MUX for the Sequantal Logic", false, true)

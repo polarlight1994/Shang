@@ -21,7 +21,6 @@ add_llvm_library(ShangVAST
   VASTMisc.cpp
   ScriptingPass.cpp
   ControlLogicSynthesis.cpp
-  SeqSelectorSynthesis.cpp
   DatapathNamer.cpp
   RTLCodeGen.cpp
 )
