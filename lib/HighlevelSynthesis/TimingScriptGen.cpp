@@ -577,8 +577,11 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine(bool IsSimple,
                                                  &BoundSrc) const {
   DEBUG(dbgs() << "Binding path for dst register: "
                << Dst->getName() << '\n');
+  unsigned LastInterval = 0;
   for (delay_it I = stats_begin(IsSimple), E = stats_end(IsSimple);I != E;++I) {
     unsigned Interval = I->first;
+    assert(Interval > LastInterval && "Bad iterate order!");
+    LastInterval = Interval;
 
     for (src_it SI = I->second.begin(), SE = I->second.end(); SI != SE; ++SI) {
       VASTSeqValue *Src = *SI;
