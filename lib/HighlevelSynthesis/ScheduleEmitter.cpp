@@ -580,10 +580,10 @@ void ScheduleEmitter::handleNewSeqOp(VASTSlotCtrl *SeqOp) {}
 void ScheduleEmitter::emitToSlot(VASTSeqOp *Op, VASTValPtr Pred,
                                  VASTSlot *ToSlot,
                                  SmallVectorImpl<BasicBlock*> &RetimingPath) {
-  if (RetimingPath.size() > 1) {
+  DEBUG(if (RetimingPath.size() > 1) {
     dbgs() << "Duplicating: ";
     Op->dump();
-  }
+  });
 
   // Create the new SeqOp.
   switch (Op->getASTType()) {
