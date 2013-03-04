@@ -62,20 +62,21 @@ bool loadConfig(const std::string &Path,
 static cl::opt<std::string>
 InputFilename(cl::Positional, cl::desc("<input lua script>"), cl::init("-"));
 
-static cl::opt<bool> BaselineSchedulingOnly(
-"shang-baseline-scheduling-only",
-cl::desc("Only use the scheduling derive from the LLVM IR"),
-cl::init(false));
+static cl::opt<bool> BaselineSchedulingOnly( "shang-baseline-scheduling-only",
+  cl::desc("Only use the scheduling derive from the LLVM IR"),
+  cl::init(false));
 
-static cl::opt<bool> EnableGotoExpansion(
-  "shang-enable-goto-expansion",
+static cl::opt<bool> EnableGotoExpansion("shang-enable-goto-expansion",
   cl::desc("Perform goto expansion to generate a function that include all code"),
   cl::init(true));
 
-static cl::opt<bool> DumpIRBeforeHLS(
-"shang-enable-dump-ir-before-hls",
-cl::desc("Print the IR before HLS"),
-cl::init(false));
+static cl::opt<bool> DumpIRBeforeHLS("shang-enable-dump-ir-before-hls",
+  cl::desc("Print the IR before HLS"),
+  cl::init(false));
+
+static cl::opt<bool> EnbleIROptimzation("shang-enable-ir-optimization",
+  cl::desc("Perform extra LLVM IR optimization"),
+  cl::init(true));
 
 static void addHLSPreparePasses(PassManager &PM) {
   // Basic AliasAnalysis support.
@@ -197,7 +198,7 @@ int main(int argc, char **argv) {
     PassManager HLSIRPasses;
     HLSIRPasses.add(new DataLayout(ConfigTable["DataLayout"]));
     HLSIRPasses.add(createShangTargetTransformInfoPass());
-    addIROptimizationPasses(HLSIRPasses);
+    if (EnbleIROptimzation) addIROptimizationPasses(HLSIRPasses);
     addHLSPreparePasses(HLSIRPasses);
     HLSIRPasses.run(mod);
   }
