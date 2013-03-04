@@ -594,8 +594,8 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine(bool IsSimple,
                                                       !Visited);
       if (NumConstraints == 0 && !IsSimple && Interval > 1 && Interval != Inf) {
         ++NumMaskedMultiCyclesTimingPath;
-        errs() << "Path hidden: " << Src->getName() << " -> "
-               << Dst->getName() << " Interval " << Interval << '\n';
+        DEBUG(errs() << "Path hidden: " << Src->getName() << " -> "
+               << Dst->getName() << " Interval " << Interval << '\n');
       }
 
       // Try to verify the result of the timing netlist.

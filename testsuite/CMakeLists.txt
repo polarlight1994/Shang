@@ -72,6 +72,9 @@ add_custom_target(CoSimExe
 add_custom_target(main_sim
           COMMENT "Compiling all the main test obj file into exe file")
 
+add_custom_target(legup_sim
+          COMMENT "Compiling all the main test obj file into exe file")
+
 add_custom_target(orig_bc
           COMMENT "Compiling llvm ir to bytecode file")
 
@@ -408,7 +411,7 @@ if(SYNTHESIS_DUT AND TARGET benchmark_synthesis_main)
     COMMENT "Simulating RTL module and interface for ${SYN_FUNC}"
   )
   add_custom_target(${TEST}_simulate_main DEPENDS ${CycleCounter})
-  add_dependencies(main_sim ${TEST}_simulate_main)
+  add_dependencies(legup_sim ${TEST}_simulate_main)
 
   add_custom_command(OUTPUT ${MAIN_RTL_STA}
     COMMAND ${QUARTUS_BIN_DIR}/quartus_sh -t ${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl
