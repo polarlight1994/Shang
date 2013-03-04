@@ -1,0 +1,24 @@
+INTFFILE = [[@MAIN_INT_TOP@]]
+BRAMFILE = [[@MAIN_INT_BRAM@]]
+BRAMINIT = [[@MAIN_INT_BRAMINIT@]]
+MODELDOFILE = [[@MAIN_MODELDO_FILE@]]
+TBFILE = [[@MAIN_TB_FILE@]]
+
+ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
+
+local FMAX = 100
+PERIOD = 1000.0 / FMAX
+FUs.Period = PERIOD
+
+dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
+dofile('@VTS_SOURCE_ROOT@/' .. 'EP2C70F896C6.lua')
+
+Functions.main = RTLModuleName
+
+-- Load ip module and simulation interface script.
+dofile('@VTS_SOURCE_ROOT@/' .. 'InterfaceGen.lua')
+dofile('@VTS_SOURCE_ROOT@/' .. 'ModelSimGen.lua')
+
+Misc.RTLGlobalScript = [=[
+RTLGlobalCode = FUs.CommonTemplate
+]=]

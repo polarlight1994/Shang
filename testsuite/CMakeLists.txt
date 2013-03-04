@@ -442,8 +442,8 @@ endmacro(add_test_main_cases)
 macro(add_test_legup_cases benchmark bc_file)
   add_general_legup_test(${benchmark}
           ${bc_file}
-          "${VTS_SOURCE_ROOT}/test_config_main.lua.in"
-          "${VTS_SOURCE_ROOT}/setup_proj_symain.tcl.in"
+          "${VTS_SOURCE_ROOT}/test_legup.lua.in"
+          "${VTS_SOURCE_ROOT}/setup_legup_symain.tcl.in"
           )
 endmacro(add_test_legup_cases)
 
