@@ -44,8 +44,14 @@ struct VASTLatch {
   VASTUse &getPred() const;
   VASTValPtr getSlotActive() const;
 
-  bool operator==(VASTLatch RHS) const {
+  bool operator==(const VASTLatch &RHS) const {
     return Op == RHS.Op && No == RHS.No;
+  }
+
+  bool operator<(const VASTLatch &RHS) const {
+    if (Op != RHS.Op) return Op < RHS.Op;
+
+    return No < RHS.No;
   }
 };
 
