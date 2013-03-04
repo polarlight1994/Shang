@@ -19,3 +19,4 @@ endmacro(add_benchmark_symain_stats)
 
 add_subdirectory(DSPStone)
 add_subdirectory(ChStone)
+add_subdirectory(legup_chstone)
