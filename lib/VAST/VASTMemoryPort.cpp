@@ -267,7 +267,6 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   if (isDefault()) return;
 
   OS << "reg " << VASTValue::printBitRange(getAddrWidth())
-     << " mem" << Idx << "waddr1r,"
      << " mem" << Idx << "raddr1r;\n";
   OS << "reg mem" << Idx << "ren1r;\n";
   OS << "reg "<< VASTValue::printBitRange(getDataWidth()) // [2:0]
