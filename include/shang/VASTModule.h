@@ -301,9 +301,9 @@ public:
                           VASTValPtr GuardCnd, Value *V, unsigned Latency = 0);
 
   /// Create an assignment on the control logic.
-  void assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,
-                       VASTValPtr GuardCnd, bool UseSlotActive,
-                       bool ExportDefine = true);
+  VASTSeqCtrlOp *assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
+                                 VASTSlot *Slot, VASTValPtr GuardCnd,
+                                 bool UseSlotActive, bool ExportDefine = true);
   /// Create an assignment on the control logic which may need further conflict
   /// resolution.
   VASTSlotCtrl *createSlotCtrl(VASTNode *N, VASTSlot *Slot, VASTValPtr GuardCnd);
@@ -322,6 +322,7 @@ public:
   // Iterate over all SeqVals in the module.
   seqval_iterator seqval_begin()  { return SeqVals.begin(); }
   seqval_iterator seqval_end()    { return SeqVals.end(); }
+  unsigned num_seqvals() const { return SeqVals.size(); }
 
   void print(raw_ostream &OS) const;
 

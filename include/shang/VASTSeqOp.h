@@ -29,11 +29,13 @@ struct VASTLatch {
   VASTSeqOp *Op;
   unsigned No;
 
-  VASTLatch(VASTSeqOp *Op, unsigned No) : Op(Op), No(No) {}
+  VASTLatch(VASTSeqOp *Op = 0, unsigned No = 0) : Op(Op), No(No) {}
 
+  operator bool() const { return Op; }
   operator VASTUse &() const;
   operator VASTValPtr () const;
   VASTUse &operator->() const;
+  void replaceUsedBy(VASTValPtr V) const;
 
   // Get the destination of the transaction.
   VASTSeqValue *getDst() const;

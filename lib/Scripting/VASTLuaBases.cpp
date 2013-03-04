@@ -532,9 +532,9 @@ VASTModule::lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps, Value *V
   return SeqInst;
 }
 
-void VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
-                                 VASTSlot *Slot, VASTValPtr GuardCnd,
-                                 bool UseSlotActive,bool ExportDefine) {
+VASTSeqCtrlOp *VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
+                                           VASTSlot *Slot, VASTValPtr GuardCnd,
+                                           bool UseSlotActive,bool ExportDefine) {
   VASTSeqCtrlOp *CtrlOp = new VASTSeqCtrlOp(Slot, UseSlotActive);
   // Create the predicate operand.
   new (CtrlOp->Operands) VASTUse(CtrlOp, GuardCnd);
@@ -543,6 +543,7 @@ void VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
 
   // Add the SeqOp to the the all SeqOp list.
   SeqOps.push_back(CtrlOp);
+  return CtrlOp;
 }
 
 VASTSlotCtrl *VASTModule::createSlotCtrl(VASTNode *N, VASTSlot *Slot,

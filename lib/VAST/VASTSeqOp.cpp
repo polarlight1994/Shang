@@ -32,6 +32,10 @@ VASTUse &VASTLatch::operator ->() const {
   return Op->getUseInteranal(No);
 }
 
+void VASTLatch::replaceUsedBy(VASTValPtr V) const {
+  Op->getUseInteranal(No).replaceUseBy(V);
+}
+
 VASTSlot *VASTLatch::getSlot() const {
   return Op->getSlot();
 }
