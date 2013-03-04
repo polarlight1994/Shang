@@ -15,15 +15,12 @@ add_subdirectory(dfsin)
 add_subdirectory(sha)
 add_subdirectory(aes)
 add_subdirectory(adpcm)
-add_subdirectory(blowfish)
 
 ##################################
 #Add the benchmark of other categories
 
 add_subdirectory(gsm)
 add_subdirectory(mips)
-add_subdirectory(jpeg)
-add_subdirectory(motion)
 
 ##################################
 #Add Deming's benchmarks
@@ -39,5 +36,11 @@ add_subdirectory(pr)
 add_subdirectory(u5ml)
 add_subdirectory(wang)
 
+##################################
+#Huge design gol last
+add_subdirectory(blowfish)
+add_subdirectory(jpeg)
 #message(STATUS "Chstore Benchmarks : " ${Benchmarks})
 
+# This is actually the first run
+add_subdirectory(motion)
