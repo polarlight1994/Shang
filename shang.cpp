@@ -74,10 +74,6 @@ static cl::opt<bool> DumpIRBeforeHLS("shang-enable-dump-ir-before-hls",
   cl::desc("Print the IR before HLS"),
   cl::init(false));
 
-static cl::opt<bool> EnbleIROptimzation("shang-enable-ir-optimization",
-  cl::desc("Perform extra LLVM IR optimization"),
-  cl::init(true));
-
 static void addHLSPreparePasses(PassManager &PM) {
   // Basic AliasAnalysis support.
   // Add TypeBasedAliasAnalysis before BasicAliasAnalysis so that
@@ -198,7 +194,7 @@ int main(int argc, char **argv) {
     PassManager HLSIRPasses;
     HLSIRPasses.add(new DataLayout(ConfigTable["DataLayout"]));
     HLSIRPasses.add(createShangTargetTransformInfoPass());
-    if (EnbleIROptimzation) addIROptimizationPasses(HLSIRPasses);
+    addIROptimizationPasses(HLSIRPasses);
     addHLSPreparePasses(HLSIRPasses);
     HLSIRPasses.run(mod);
   }
