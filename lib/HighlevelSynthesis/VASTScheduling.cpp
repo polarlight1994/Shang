@@ -25,6 +25,7 @@
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
+#include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/SetOperations.h"
@@ -284,6 +285,7 @@ struct VASTScheduling : public VASTModulePass {
   VASTModule *VM;
   DependenceAnalysis *DA;
   LoopInfo *LI;
+  BranchProbabilityInfo *BPI;
 
   VASTScheduling() : VASTModulePass(ID) {
     initializeVASTSchedulingPass(*PassRegistry::getPassRegistry());
@@ -296,6 +298,7 @@ struct VASTScheduling : public VASTModulePass {
     AU.addRequired<TimingNetlist>();
     AU.addRequired<DependenceAnalysis>();
     AU.addRequired<LoopInfo>();
+    AU.addRequired<BranchProbabilityInfo>();
   }
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
@@ -338,7 +341,8 @@ INITIALIZE_PASS_BEGIN(VASTScheduling,
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
   INITIALIZE_PASS_DEPENDENCY(BasicBlockTopOrder)
   INITIALIZE_PASS_DEPENDENCY(DependenceAnalysis)
-  INITIALIZE_PASS_DEPENDENCY(LoopInfo);
+  INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+  INITIALIZE_PASS_DEPENDENCY(BranchProbabilityInfo)
 INITIALIZE_PASS_END(VASTScheduling,
                     "vast-scheduling", "Perfrom Scheduling on the VAST",
                     false, true)
@@ -861,14 +865,15 @@ void VASTScheduling::scheduleGlobal() {
   // Build the step variables, and no need to schedule at all if all SUs have
   // been scheduled.
   if (Scheduler.createLPAndVariables()) {
-    unsigned NumBB = 0;
+    unsigned TotalWeight = 0;
 
     Function &F = *VM;
     typedef Function::iterator iterator;
     for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
       BasicBlock *BB = I;
+      dbgs() << "Applying constraints to BB: " << BB->getName() << '\n';
 
-      unsigned NumExits = 0;
+      unsigned ExitWeigthSum = 0;
       ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
       for (unsigned i = 0; i < Exits.size(); ++i) {
         VASTSchedUnit *BBExit = Exits[i];
@@ -879,10 +884,17 @@ void VASTScheduling::scheduleGlobal() {
           continue;
         }
 
-        Scheduler.addObjectCoeff(BBExit, -1024.0);
+        unsigned ExitWeight = 1024;
+        BranchProbability BP = BranchProbability::getOne();
+        if (BasicBlock *TargetBB = BBExit->getTargetBlock())
+          BP = BPI->getEdgeProbability(BB, TargetBB);
 
-        ++NumExits;
-        ++NumBB;
+        ExitWeight = ExitWeight * BP.getNumerator() / BP.getDenominator();
+        Scheduler.addObjectCoeff(BBExit, - 1.0 * ExitWeight);
+        dbgs().indent(4) << "Setting Exit Weight: " << ExitWeight << ' ' << BP << '\n';
+
+        ExitWeigthSum += ExitWeight;
+        TotalWeight += ExitWeight;
       }
 
       ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[BB]);
@@ -899,10 +911,12 @@ void VASTScheduling::scheduleGlobal() {
 
       assert(BBEntry && "Cannot find BB Entry!");
 
-      Scheduler.addObjectCoeff(BBEntry, (NumExits) * 1024.0);
+      assert(ExitWeigthSum && "Unexpected zero weight!");
+      Scheduler.addObjectCoeff(BBEntry, ExitWeigthSum);
+      dbgs().indent(2) << "Setting Entry Weight: " << ExitWeigthSum << '\n';
     }
 
-    Scheduler.addObjectCoeff(G->getExit(), -1024.0 * (NumBB + 1));
+    Scheduler.addObjectCoeff(G->getExit(), - 1.0 * (TotalWeight + 1024));
 
     bool success = Scheduler.schedule();
     assert(success && "SDCScheduler fail!");
@@ -951,6 +965,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   TNL = &getAnalysis<TimingNetlist>();
   DA = &getAnalysis<DependenceAnalysis>();
   LI = &getAnalysis<LoopInfo>();
+  BPI = &getAnalysis<BranchProbabilityInfo>();
 
   buildSchedulingGraph();
 
