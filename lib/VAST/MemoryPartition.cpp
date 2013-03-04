@@ -142,9 +142,13 @@ bool MemoryPartition::runOnFunction(Function &F) {
   typedef Module::global_iterator iterator;
   for (iterator I = M->global_begin(), E = M->global_end(); I != E; ++I) {
     GlobalVariable *GV = I;
+
     // Ignore the block rams that is already assign to block RAM.
     if (HLSAllocation::getMemoryPort(*GV).getFUType() == VFUs::BRam)
       continue;
+
+    // DIRTYHACK: Make sure the GV is aligned.
+    GV->setAlignment(std::max(8u, GV->getAlignment()));
 
     AST.add(GV, AliasAnalysis::UnknownSize, 0);
   }
