@@ -355,8 +355,8 @@ endif(SYNTHESIS_DUT AND TARGET benchmark_synthesis_main)
 endmacro(add_general_main_test)
 
 
-macro(add_general_legup_test name bc_file config_file altera_setup_prj_file)
-  set(TEST_NAME "${name})
+macro(add_general_legup_test benchmark bc_file config_file altera_setup_prj_file)
+  set(TEST_NAME "${benchmark}")
   set(TEST     "${TEST_NAME}")
   set(DUT_NAME "${TEST_NAME}_main_DUT")
 
@@ -420,7 +420,7 @@ if(SYNTHESIS_DUT AND TARGET benchmark_synthesis_main)
 
 endif(SYNTHESIS_DUT AND TARGET benchmark_synthesis_main)
 
-endmacro(add_general_main_test)
+endmacro(add_general_legup_test)
 
 macro(add_test_cases file_name)
 	add_general_test(${file_name}
@@ -436,11 +436,12 @@ macro(add_test_main_cases file_name)
           "cpp")
 endmacro(add_test_main_cases)
 
-
-macro(add_test_legup_cases name bc_file)
-  add_general_main_test(${name} ${bc_file}
+macro(add_test_legup_cases benchmark bc_file)
+  add_general_legup_test(${benchmark}
+          ${bc_file}
           "${VTS_SOURCE_ROOT}/test_config_main.lua.in"
-          "${VTS_SOURCE_ROOT}/setup_proj_symain.tcl.in")
+          "${VTS_SOURCE_ROOT}/setup_proj_symain.tcl.in"
+          )
 endmacro(add_test_legup_cases)
 
 add_subdirectory(SimpleTest)
