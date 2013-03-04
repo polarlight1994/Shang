@@ -26,6 +26,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Support/CFG.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/PostOrderIterator.h"
@@ -34,6 +35,10 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+static cl::opt<bool> DisableMUXSlack("vast-disable-mux-slack",
+  cl::desc("Do not allocate the slack for the MUX before/during scheduling"),
+  cl::init(false));
+
 STATISTIC(NumMemDep, "Number of Memory Dependencies Added");
 STATISTIC(NumForceBrSync, "Number of Dependencies add to sync the loop exit");
 
@@ -606,6 +611,8 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
         U = G->createSUnit(Inst, IsLatch, 0, SeqInst);
 
       unsigned ExtraMuxDelay = buildFlowDependencies(U);
+      if (DisableMUXSlack) ExtraMuxDelay = 0;
+
       U->addDep(BBEntry, VASTDep::CreateCtrlDep(ExtraMuxDelay));
       IR2SUMap[Inst].push_back(U);
       continue;
@@ -621,6 +628,8 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
         IR2SUMap[TargetBB].push_back(U);
 
         unsigned ExtraMuxDelay = buildFlowDependenciesForSlotCtrl(U);
+        if (DisableMUXSlack) ExtraMuxDelay = 0;
+
         // add extra dele
         U->addDep(BBEntry, VASTDep::CreateCtrlDep(ExtraMuxDelay));
         continue;
