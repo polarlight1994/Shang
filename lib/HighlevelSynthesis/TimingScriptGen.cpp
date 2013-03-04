@@ -208,25 +208,25 @@ static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {
     if (const VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V)) {
       if (SeqVal->getValType() == VASTSeqValue::BRAM) {
         const VASTBlockRAM *RAM = cast<VASTBlockRAM>(SeqVal->getParent());
-        OS << " { NameSet =[=[ [ list "
+        OS << " { NameSet =[=[ {\""
           // BlockRam name with prefix
           << getFUDesc<VFUBRAM>()->Prefix
-          << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << ' '
+          << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << "\" \""
           // Or simply the name of the output register.
           << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
-          << " ] ]=] }";
+          << "\"} ]=] }";
         return true;
       }
     }
 
     if (const char *N = NV->getName()) {
-      OS << " { NameSet =[=[ [ list " << N << " ] ]=] }";
+      OS << " { NameSet =[=[ {\"" << N << "\"} ]=] }";
       return true;
     }
   } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
     std::string Name = E->getSubModName();
     if (!Name.empty()) {
-      OS << " { NameSet =[=[ [ list " << E->getSubModName() << " ] ]=] }";
+      OS << " { NameSet =[=[ {\"" << E->getSubModName() << "\"} ]=] }";
       return true;
     }
   }
