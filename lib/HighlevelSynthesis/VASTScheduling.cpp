@@ -871,7 +871,7 @@ void VASTScheduling::scheduleGlobal() {
     typedef Function::iterator iterator;
     for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
       BasicBlock *BB = I;
-      dbgs() << "Applying constraints to BB: " << BB->getName() << '\n';
+      DEBUG(dbgs() << "Applying constraints to BB: " << BB->getName() << '\n');
 
       unsigned ExitWeigthSum = 0;
       ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
@@ -891,7 +891,8 @@ void VASTScheduling::scheduleGlobal() {
 
         ExitWeight = ExitWeight * BP.getNumerator() / BP.getDenominator();
         Scheduler.addObjectCoeff(BBExit, - 1.0 * ExitWeight);
-        dbgs().indent(4) << "Setting Exit Weight: " << ExitWeight << ' ' << BP << '\n';
+        DEBUG(dbgs().indent(4) << "Setting Exit Weight: " << ExitWeight
+                               << ' ' << BP << '\n');
 
         ExitWeigthSum += ExitWeight;
         TotalWeight += ExitWeight;
@@ -913,7 +914,8 @@ void VASTScheduling::scheduleGlobal() {
 
       assert(ExitWeigthSum && "Unexpected zero weight!");
       Scheduler.addObjectCoeff(BBEntry, ExitWeigthSum);
-      dbgs().indent(2) << "Setting Entry Weight: " << ExitWeigthSum << '\n';
+      DEBUG(dbgs().indent(2) << "Setting Entry Weight: "
+                             << ExitWeigthSum << '\n');
     }
 
     Scheduler.addObjectCoeff(G->getExit(), - 1.0 * (TotalWeight + 1024));
