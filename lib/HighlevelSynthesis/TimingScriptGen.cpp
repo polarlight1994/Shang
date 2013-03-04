@@ -353,11 +353,11 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
            && "Interval information not applied?");
     if (ActualIntervalAt->second == I->second) continue;
 
-    dbgs() << "Timing path masked: Root is";
+    DEBUG(dbgs() << "Timing path masked: Root is";
     Root->printAsOperand(dbgs(), false);
     dbgs() << " end node is " << I->first->getName()
            << " masked delay: " << I->second
-           << " actual delay: " << ActualIntervalAt->second << '\n';
+           << " actual delay: " << ActualIntervalAt->second << '\n');
     IntervalMasked = true;
   }
 
