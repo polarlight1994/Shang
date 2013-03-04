@@ -17,9 +17,6 @@ SEL_ChainingThreshold = -1
 REDUCTION_ChainingThreshold = -1
 MUX_ChainingThreshold = -1
 
-local FMAX = @FMAX@
-PERIOD = 1000.0 / FMAX
-FUs.Period = PERIOD
 
 POINTER_SIZE_IN_BITS = @POINTER_SIZE_IN_BITS@
 
@@ -127,4 +124,3 @@ dofile('@VTS_SOURCE_ROOT@/' .. 'AddModules.lua')
 -- load platform information script
 dofile('@VTS_SOURCE_ROOT@/' .. 'AlteraCommon.lua')
 dofile('@VTS_SOURCE_ROOT@/' .. 'Altera4LUTFUs.lua')
-dofile('@VTS_SOURCE_ROOT@/' .. 'EP4CE75F29C6.lua')

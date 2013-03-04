@@ -1,5 +1,10 @@
 -- Load bram initfile
+local FMAX = @FMAX@
+PERIOD = 1000.0 / FMAX
+FUs.Period = PERIOD
+
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
+dofile('@VTS_SOURCE_ROOT@/' .. 'EP4CE75F29C6.lua')
 
 Functions.@SYN_FUNC@ = RTLModuleName
 -- ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
