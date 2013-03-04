@@ -1,3 +1,5 @@
+FUs.LUTDelay = 0.3 / PERIOD
+
 FUs.AddSub.Latencies = { 1.000 / PERIOD, 1.747 / PERIOD, 2.357 / PERIOD, 3.361 / PERIOD, 5.140 / PERIOD } --Add
 FUs.Shift.Latencies = { 0.827 / PERIOD, 2.541 / PERIOD, 2.609 / PERIOD, 3.708 / PERIOD, 4.690 / PERIOD } --Shift
 FUs.Mult.Latencies = { 0.827 / PERIOD, 2.620 / PERIOD, 3.170 / PERIOD, 6.806 / PERIOD, 9.087 / PERIOD } --Mul 

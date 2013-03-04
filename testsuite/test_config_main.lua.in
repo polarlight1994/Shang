@@ -8,8 +8,6 @@ ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
 
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
 
-FUs.LUTDelay = 0.3 / PERIOD
-
 Functions.main = RTLModuleName
 
 -- Load ip module and simulation interface script.
