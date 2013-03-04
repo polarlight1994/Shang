@@ -394,7 +394,7 @@ macro(add_general_legup_test benchmark bc_file config_file altera_setup_prj_file
     COMMAND ${SHANG} ${TEST_BINARY_ROOT}/${TEST}_config_main.lua  -timing-model=bit-level ${EXTRA_HLS_OPTION}
     DEPENDS ${MAIN_ORIG_BC} ${SHANG} "${TEST_BINARY_ROOT}/${TEST}_config_main.lua"
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
-    COMMENT "High-levle Synthesising RTL module and interface for ${SYN_FUNC}"
+    COMMENT "High-levle Synthesising RTL module and interface for ${benchmark}"
   )
   add_custom_target(${TEST}_main_hls DEPENDS ${MAIN_RTL_SRC})
   add_dependencies(main_hls ${TEST}_main_hls)
@@ -408,7 +408,7 @@ if(SYNTHESIS_DUT AND TARGET benchmark_synthesis_main)
     COMMAND timeout ${TIMEOUTS}s sh "${MAIN_MODELDO_FILE}"
     DEPENDS ${MAIN_RTL_SRC} ${MAIN_INT_TOP} ${MAIN_INT_BRAM} ${MAIN_INT_BRAMINIT}
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
-    COMMENT "Simulating RTL module and interface for ${SYN_FUNC}"
+    COMMENT "Simulating RTL module and interface for ${benchmark}"
   )
   add_custom_target(${TEST}_simulate_main DEPENDS ${CycleCounter})
   add_dependencies(legup_sim ${TEST}_simulate_main)
@@ -417,7 +417,7 @@ if(SYNTHESIS_DUT AND TARGET benchmark_synthesis_main)
     COMMAND ${QUARTUS_BIN_DIR}/quartus_sh -t ${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl
     DEPENDS ${MAIN_RTL_SRC} "${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl" ${MAIN_SDC_SRC} ${MAIN_INT_TOP} ${MAIN_INT_BRAM} ${MAIN_INT_BRAMINIT}
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
-    COMMENT "Synthesising RTL module and interface for ${SYN_FUNC}"
+    COMMENT "Synthesising RTL module and interface for ${benchmark}"
   )
   add_custom_target(${TEST}_synthesis_main DEPENDS ${MAIN_RTL_STA})
 
