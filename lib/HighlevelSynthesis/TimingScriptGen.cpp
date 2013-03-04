@@ -229,11 +229,6 @@ static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {
       OS << " { NameSet =[=[ [ list " << E->getSubModName() << " ] ]=] }";
       return true;
     }
-
-    if (E->hasName()) {
-      OS << " { NameSet =[=[ [ list " << E->getTempName() << " ] ]=] }";
-      return true;
-    }
   }
 
   return false;
