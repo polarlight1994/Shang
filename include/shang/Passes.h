@@ -78,6 +78,7 @@ void initializeFunctionFilterPass(PassRegistry &Registry);
 void initializeHLSInlinerPass(PassRegistry &Registry);
 void initializeGotoExpansionPass(PassRegistry &Registry);
 void initializeTrivialLoopUnrollPass(PassRegistry &Registry);
+void initializeMemoryAccessAlignerPass(PassRegistry &Registry);
 
 void initializeMemoryAccessCoalescingPass(PassRegistry &Registry);
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);

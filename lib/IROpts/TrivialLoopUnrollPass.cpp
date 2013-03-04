@@ -116,7 +116,9 @@ public:
 struct MemoryAccessAligner : public FunctionPass {
   static char ID;
 
-  MemoryAccessAligner() : FunctionPass(ID) {}
+  MemoryAccessAligner() : FunctionPass(ID) {
+    initializeMemoryAccessAlignerPass(*PassRegistry::getPassRegistry());
+  }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.setPreservesCFG();
@@ -654,6 +656,11 @@ Pass *llvm::createMemoryAccessAlignerPass() {
 }
 
 char MemoryAccessAligner::ID = 0;
+INITIALIZE_PASS_BEGIN(MemoryAccessAligner, "memory-access-aligner",
+                      "Align the memory access", false, false)
+INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
+INITIALIZE_PASS_END(MemoryAccessAligner, "memory-access-aligner",
+                    "Align the memory access", false, false)
 
 char TrivialLoopUnroll::ID = 0;
 INITIALIZE_PASS_BEGIN(TrivialLoopUnroll, "trivial-loop-unroll",
