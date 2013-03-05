@@ -360,6 +360,13 @@ public:
     return LHS;
   }
 
+  // Simulate the "&=" operator.
+  VASTValPtr andEqual(VASTValPtr &LHS, VASTValPtr RHS) {
+    if (!LHS)  LHS = RHS;
+    else       LHS = buildAndExpr(LHS, RHS, RHS->getBitWidth());
+    return LHS;
+  }
+
   VASTValPtr buildOrExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
   VASTValPtr buildOrExpr(VASTValPtr LHS, VASTValPtr RHS, unsigned BitWidth) {
     VASTValPtr Ops[] = { LHS, RHS };
