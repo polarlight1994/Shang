@@ -47,7 +47,8 @@ sheet1.write(9,0,"lut3")
 sheet1.write(10,0,"lut2")
 sheet1.write(11,0,"regs")
 sheet1.write(12,0,"mult9")
-sheet1.write(13,0,"equ_le")
+sheet1.write(13,0,"mem_bit")
+sheet1.write(14,0,"equ_le")
 all_freq = []
 all_cycles = []
 all_run_time = []
@@ -60,6 +61,7 @@ all_lut3 = []
 all_lut2 = []
 all_regs = []
 all_mult9 = []
+all_membits = []
 all_equ_le = []
 ColNumber = 1
 for data in json_read:	
@@ -100,9 +102,11 @@ for data in json_read:
       #mult9
       mult9 = getOthers(data["mult9"])
       sheet1.write(12,ColNumber,mult9)
+      membits = getOthers(data["mem_bit"])
+      sheet1.write(13,ColNumber,membits)
       #equ LEs
       equ_le = mult9 * 115 + les
-      sheet1.write(13,ColNumber,equ_le)
+      sheet1.write(14,ColNumber,equ_le)
       append(all_freq, freq)
       append(all_cycles, cycles)
       append(all_run_time, run_time)
@@ -115,6 +119,7 @@ for data in json_read:
       append(all_lut2, lut2)
       append(all_regs, regs)
       append(all_mult9, mult9)
+      append(all_membits, membits)
       append(all_equ_le, equ_le)
 			#the column is changed after a loop
       ColNumber = ColNumber + 1
@@ -133,7 +138,8 @@ sheet1.write(9,ColNumber,geomean(all_lut3))
 sheet1.write(10,ColNumber,geomean(all_lut2))
 sheet1.write(11,ColNumber,geomean(all_regs))
 sheet1.write(12,ColNumber,geomean(all_mult9))
-sheet1.write(13,ColNumber,geomean(all_equ_le))
+sheet1.write(13,ColNumber,geomean(all_membits))
+sheet1.write(14,ColNumber,geomean(all_equ_le))
 #save the excel with the name which given by user
 ColNumber = ColNumber + 1
 sheet1.write(0,ColNumber,"sum")
@@ -160,7 +166,9 @@ all_regs_sum = sum(all_regs)
 sheet1.write(11,ColNumber,all_regs_sum)
 all_mult9_sum = sum(all_mult9)
 sheet1.write(12,ColNumber,all_mult9_sum)
+all_membits_sum = sum(all_membits)
+sheet1.write(13,ColNumber,all_membits_sum)
 all_equ_le_sum = sum(all_equ_le)
-sheet1.write(13,ColNumber,all_equ_le_sum)
+sheet1.write(14,ColNumber,all_equ_le_sum)
 print("Test results { freq_mean: %d total_cycles: %d total_time: %d total_les: %d total_mults: %d total_equ_les: %d delay-area: %d }" %(freq_mean,cycles_sum,delay_sum, les_sum, all_mult9_sum, all_equ_le_sum, all_equ_le_sum * delay_sum))
 book.save(OutFile)	
