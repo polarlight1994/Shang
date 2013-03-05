@@ -13,22 +13,3 @@ if {"@IsMux@" == "testMux"} {
 	  puts $FileTmp "\"delay\":\"$Data_Delay\","
 	}
 }
-
-for {set i 0} {$i < @WIDTH@} {incr i} {
-  for {set j 0} {$j < @WIDTH@} {incr j} {
-    set paths [get_timing_paths -setup  -npath 1000 -detail summary -from a_reg1[$i] -to c_reg0[$j]]
-    set num_paths [get_collection_size $paths]
-    post_message -type info "a_reg1[$i] -> c_reg0[$j] num_paths: $num_paths"
-    if { $num_paths } {
-      set max_ll 0
-      foreach_in_collection path $paths {
-        set cur_ll [get_path_info $path -num_logic_levels]
-        set max_ll [expr {max($cur_ll, $max_ll)}]
-      }
-      puts "a_reg1[$i] -> c_reg0[$j] : $max_ll"
-      post_message -type info "FU-DELAY-CHARACTERIZE: From $i"
-      post_message -type info "FU-DELAY-CHARACTERIZE: TO $j"
-      post_message -type info "FU-DELAY-CHARACTERIZE: LOGIC LEVEL $max_ll"
-    }
-  }
-}
