@@ -65,19 +65,11 @@ struct SeqSelectorSynthesis : public VASTModulePass {
   unsigned getCriticalDelay(const SVSet &S, VASTValue *V);
   unsigned getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot);
   unsigned getSlotSlack(VASTSlot *S);
-  VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level);
 
   typedef std::map<VASTLatch, unsigned> FaninSlackMap;
   void buildFISlackMap(VASTSeqValue *SV, FaninSlackMap &FISlack);
 
-  typedef std::map<VASTLatch, VASTValPtr> FaninMap;
-  typedef std::map<VASTLatch, VASTSeqValue*> PredMap;
   void AssignMUXPort(FaninSlackMap &SlackMap, VASTSeqValue *SV);
-
-  typedef MutableArrayRef<FaninSlackMap::value_type> FISlackVector;
-
-  void AssignMUXPort(FISlackVector FIs, unsigned Level, unsigned FIsAvailable,
-                     FaninMap &NewFIs, PredMap &NewPreds);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
@@ -96,6 +88,31 @@ struct SeqSelectorSynthesis : public VASTModulePass {
     SlotSlack.clear();
     RetimedEnables.clear();
   }
+};
+
+struct MUXPipeliner {
+  typedef std::map<VASTLatch, VASTValPtr> FaninMap;
+  typedef std::map<VASTLatch, VASTSeqValue*> PredMap;
+  FaninMap NewFIs;
+  PredMap NewPreds;
+
+  std::string BaseName;
+  unsigned BitWidth;
+  VASTSeqValue::Type ValTy;
+  unsigned MaxSingleCyleFINum;
+  VASTModule *VM;
+
+  MUXPipeliner(std::string BaseName, unsigned BitWidth, VASTSeqValue::Type T,
+               unsigned MaxSingleCyleFINum, VASTModule *VM)
+    : BaseName(BaseName), BitWidth(BitWidth), ValTy(T),
+      MaxSingleCyleFINum(MaxSingleCyleFINum), VM(VM) {}
+
+  typedef
+  MutableArrayRef<SeqSelectorSynthesis::FaninSlackMap::value_type> FISlackVector;
+
+  void AssignMUXPort(FISlackVector FIs, unsigned Level, unsigned FIsAvailable);
+
+  static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level);
 };
 }
 
@@ -128,13 +145,13 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
     pipelineFanins(I);
 
-  typedef VASTModule::seqop_iterator op_iterator;
-  for (op_iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
-    VASTSeqOp *Op = I;
-    std::map<VASTSeqOp*, VASTValPtr>::iterator at = RetimedEnables.find(Op);
-    if (at != RetimedEnables.end())
-      Op->replacePredBy(at->second, false);
-  }
+  //typedef VASTModule::seqop_iterator op_iterator;
+  //for (op_iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
+  //  VASTSeqOp *Op = I;
+  //  std::map<VASTSeqOp*, VASTValPtr>::iterator at = RetimedEnables.find(Op);
+  //  if (at != RetimedEnables.end())
+  //    Op->replacePredBy(at->second, false);
+  //}
 
   // Eliminate the identical SeqOps.
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
@@ -176,7 +193,7 @@ sort_by_slot(const VASTSlot *LHS, const VASTSlot *RHS) {
 
 static int
 sort_by_fi(const void *LHS, const void *RHS) {
-  typedef const SeqSelectorSynthesis::FaninMap::value_type T;
+  typedef const MUXPipeliner::FaninMap::value_type T;
   const VASTValPtr &LHSV = reinterpret_cast<T*>(LHS)->second;
   const VASTValPtr &RHSV = reinterpret_cast<T*>(RHS)->second;
 
@@ -219,14 +236,14 @@ SeqSelectorSynthesis::AssignMUXPort(FaninSlackMap &SlackMap, VASTSeqValue *SV) {
   // Pick the fanins that must be implemented at this level.
   array_pod_sort(SlackVector.begin(), SlackVector.end(), sort_by_slack);
 
-  FaninMap NewFIs;
-  PredMap NewPreds;
-  AssignMUXPort(SlackVector, 0, MaxSingleCyleFINum, NewFIs, NewPreds);
+  MUXPipeliner P(std::string(SV->getName()), SV->getBitWidth(), SV->getValType(),
+                 MaxSingleCyleFINum, VM); 
+  P.AssignMUXPort(SlackVector, 0, MaxSingleCyleFINum);
 
   typedef VASTSeqValue::iterator vn_itertor;
   for (vn_itertor I = SV->begin(), E = SV->end(); I != E; ++I) {
     VASTLatch L = *I;
-    VASTValPtr NewFI = NewFIs[L];
+    VASTValPtr NewFI = P.NewFIs[L];
 
     if (!NewFI) continue;
 
@@ -235,7 +252,7 @@ SeqSelectorSynthesis::AssignMUXPort(FaninSlackMap &SlackMap, VASTSeqValue *SV) {
 
     L.replaceUsedBy(NewFI);
 
-    VASTSeqValue *PipelinedEnable = NewPreds[L];
+    VASTSeqValue *PipelinedEnable = P.NewPreds[L];
     assert(PipelinedEnable && "Fanin without pipelined enable!");
     // DO not perform the enable retiming now, do it after all the MUX are retimed
     // because there maybe more than 1 mux using the same SeqOp.
@@ -247,9 +264,8 @@ SeqSelectorSynthesis::AssignMUXPort(FaninSlackMap &SlackMap, VASTSeqValue *SV) {
   }
 }
 
-void SeqSelectorSynthesis::AssignMUXPort(FISlackVector FIs, unsigned Level,
-                                         unsigned FIsAvailable, FaninMap &NewFIs,
-                                         PredMap &NewPreds) {
+void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
+                                 unsigned FIsAvailable) {
   // Special case: If the slack of the Fanins are equal to the level number, it
   // means we can only assign the fanins to the current level and cannot pipeline
   // it anymore.
@@ -271,8 +287,7 @@ void SeqSelectorSynthesis::AssignMUXPort(FISlackVector FIs, unsigned Level,
 
   // We have to goto next level if the number of FIs are not enought.
   if (FIsAvailable < NextLevelFISlacks.size())
-    AssignMUXPort(NextLevelFISlacks, Level + 1,  FIsAvailable * MaxSingleCyleFINum,
-                  NewFIs, NewPreds);
+    AssignMUXPort(NextLevelFISlacks, Level + 1,  FIsAvailable * MaxSingleCyleFINum);
 
   if (Level == 0) return;
 
@@ -320,13 +335,11 @@ void SeqSelectorSynthesis::AssignMUXPort(FISlackVector FIs, unsigned Level,
         CurUsedFI = 0;
         // We need to create a new register for the new fanin.
         unsigned RegNum = VM->num_seqvals();
-        VASTSeqValue *DstSV = DstLatch.getDst();
         std::string Name = "l" + utostr_32(Level)
-                            + std::string(DstSV->getName())
+                            + BaseName
                             + "n" + utostr_32(VM->num_seqvals());
 
-        VASTRegister *R = VM->addRegister(Name + "r", DstSV->getBitWidth(), 0,
-                                          DstSV->getValType(), RegNum);
+        VASTRegister *R = VM->addRegister(Name + "r", BitWidth, 0, ValTy, RegNum);
         LastNextLevelFI = R->getValue();
         NumPipelineRegBits += LastNextLevelFI->getBitWidth();
 
@@ -489,7 +502,7 @@ unsigned SeqSelectorSynthesis::getSlotSlack(VASTSlot *S) {
   return (SlotSlack[CurSlotNum] = Slack);
 }
 
-VASTSlot *SeqSelectorSynthesis::getSlotAtLevel(VASTSlot *S, unsigned Level) {
+VASTSlot *MUXPipeliner::getSlotAtLevel(VASTSlot *S, unsigned Level) {
   assert(Level && "Bad level!");
   // Otherwise we need to calculate it now.
   while (S->pred_size() == 1) {
