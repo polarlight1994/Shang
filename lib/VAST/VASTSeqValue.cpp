@@ -43,23 +43,38 @@ bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr,
   return !CSEMap.empty();
 }
 
-bool VASTSeqValue::verify() const {
-  std::set<VASTSeqOp*, less_ptr<VASTSeqOp> > UniqueDefs;
-
+bool VASTSeqValue::getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const {
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
     VASTLatch U = *I;
-    if (!UniqueDefs.insert(U.Op).second)
-      return false;
+    std::set<VASTLatch>::iterator at = UniqueLatches.find(U);
+    if (at == UniqueLatches.end()) {
+      UniqueLatches.insert(U);
+      continue;
+    }
+
+    // If we find the latch with the same predicate, their fanin must be
+    // identical.
+    if (VASTValPtr(*at) != VASTValPtr(U))  return false;
   }
 
   return true;
+}
+
+bool VASTSeqValue::verify() const {
+  std::set<VASTLatch> UniqueLatches;
+
+  return getUniqueLatches(UniqueLatches);
 }
 
 void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
                                    const VASTModule *Mod) const {
   if (empty()) return;
 
-  assert(verify() && "Assignement conflict detected!");
+  std::set<VASTLatch> UniqueLatches;
+
+  bool Unique = getUniqueLatches(UniqueLatches);
+  assert(Unique && "Assignement conflict detected!");
+  (void) Unique;
 
   // Concatenate all condition together to detect the case that more than one
   // case is activated.
@@ -86,7 +101,8 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
         << AllPred << ");\n";
 
   // Display the conflicted condition and its slot.
-  for (const_iterator I = begin(), E = end(); I != E; ++I) {
+  typedef std::set<VASTLatch>::iterator iterator;
+  for (iterator I = UniqueLatches.begin(), E = UniqueLatches.end(); I != E; ++I) {
     const VASTSeqOp &Op = *(*I).Op;
     OS.indent(2) << "if (";
     Op.printPredicate(OS);

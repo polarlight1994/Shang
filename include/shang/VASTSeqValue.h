@@ -79,6 +79,7 @@ private:
     : VASTSignal(vastSeqValue, 0, 0), T(VASTSeqValue::IO), Idx(0),
       EnableU(this), Parent(this) {}
 
+  bool getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const;
 public:
   VASTSeqValue(const char *Name, unsigned Bitwidth, Type T, unsigned Idx,
                VASTNode *Parent)
