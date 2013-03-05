@@ -119,7 +119,8 @@ void CFGFoldingAnalysis::addConstraints() {
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
-
+    // FIXME: It looks like that the CFG folding analysis can reduce the
+    // performance siginficantly.
     addConstraints(BB);
   }
 }
