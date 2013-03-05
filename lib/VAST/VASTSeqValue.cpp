@@ -76,6 +76,10 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
   assert(Unique && "Assignement conflict detected!");
   (void) Unique;
 
+  typedef std::set<VASTLatch>::iterator iterator;
+  std::set<VASTValPtr> UniquePreds;
+  typedef std::set<VASTValPtr>::iterator pred_iterator;
+
   // Concatenate all condition together to detect the case that more than one
   // case is activated.
   std::string AllPred;
@@ -84,10 +88,22 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
     raw_string_ostream AllPredSS(AllPred);
 
     AllPredSS << '{';
-    for (const_iterator I = begin(), E = end(); I != E; ++I) {
-      (*I).Op->printPredicate(AllPredSS);
+    for (iterator I = UniqueLatches.begin(), E = UniqueLatches.end();
+         I != E; ++I) {
+      VASTLatch L = *I;
+      if (!L.getSlotActive()) {
+        UniquePreds.insert(L.getPred());
+        continue;
+      }
+
+      L.Op->printPredicate(AllPredSS);
       AllPredSS << ", ";
     }
+
+    for (pred_iterator I = UniquePreds.begin(), E = UniquePreds.end();
+         I != E; ++I)
+      AllPredSS << *I << ", ";
+
     AllPredSS << "1'b0 }";
   }
 
@@ -101,7 +117,6 @@ void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
         << AllPred << ");\n";
 
   // Display the conflicted condition and its slot.
-  typedef std::set<VASTLatch>::iterator iterator;
   for (iterator I = UniqueLatches.begin(), E = UniqueLatches.end(); I != E; ++I) {
     const VASTSeqOp &Op = *(*I).Op;
     OS.indent(2) << "if (";
