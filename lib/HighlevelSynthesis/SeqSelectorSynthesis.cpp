@@ -240,7 +240,7 @@ SeqSelectorSynthesis::AssignMUXPort(FaninSlackMap &SlackMap, VASTSeqValue *SV) {
     // DO not perform the enable retiming now, do it after all the MUX are retimed
     // because there maybe more than 1 mux using the same SeqOp.
     // FIXME: If we have the real retimeing, we do not need to worry about this.
-    Builder->andEqual(RetimedEnables[L.Op], PipelinedEnable);
+    //Builder->andEqual(RetimedEnables[L.Op], PipelinedEnable);
     DEBUG(dbgs() << "Retimed to:\t";
     L.Op->dump();
     dbgs() << '\n';);

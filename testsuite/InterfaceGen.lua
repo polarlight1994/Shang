@@ -89,6 +89,7 @@ initial begin
   $('#')<half-period>ns;
   $('#')<half-period>ns;
   start = 1;
+  $('$')display ("Start at %t!\n", $('$')time());
   $('#')<half-period>ns;
   $('#')<half-period>ns;
   start = 0;
