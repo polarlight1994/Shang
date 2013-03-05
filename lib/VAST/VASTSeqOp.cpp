@@ -36,6 +36,10 @@ void VASTLatch::replaceUsedBy(VASTValPtr V) const {
   Op->getUseInteranal(No).replaceUseBy(V);
 }
 
+void VASTLatch::replacePredBy(VASTValPtr V, bool UseSlotActive) const {
+  Op->replacePredBy(V, UseSlotActive);
+}
+
 VASTSlot *VASTLatch::getSlot() const {
   return Op->getSlot();
 }
@@ -136,6 +140,11 @@ VASTSeqOp::VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive, unsigned Size
   : VASTOperandList(Size + 1), VASTNode(T), S(S, UseSlotActive) {
   S->addOperation(this);
   Contents.LLVMValue = 0;
+}
+
+void VASTSeqOp::replacePredBy(VASTValPtr V, bool UseSlotActive) {
+  getPred().replaceUseBy(V);
+  S.setInt(UseSlotActive);
 }
 
 unsigned VASTSeqOp::getSlotNum() const { return getSlot()->SlotNum; }

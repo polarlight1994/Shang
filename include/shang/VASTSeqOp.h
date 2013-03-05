@@ -36,6 +36,7 @@ struct VASTLatch {
   operator VASTValPtr () const;
   VASTUse &operator->() const;
   void replaceUsedBy(VASTValPtr V) const;
+  void replacePredBy(VASTValPtr V, bool UseSlotActive = true) const;
 
   // Get the destination of the transaction.
   VASTSeqValue *getDst() const;
@@ -64,7 +65,6 @@ class VASTSeqOp : public VASTOperandList, public VASTNode,
   SmallVector<VASTSeqValue*, 1> Defs;
   PointerIntPair<VASTSlot*, 1, bool> S;
 
-  friend struct VASTSeqDef;
   friend struct VASTLatch;
   friend struct ilist_sentinel_traits<VASTSeqOp>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
@@ -104,6 +104,7 @@ public:
   // Get the predicate operand of the transaction.
   VASTUse &getPred() { return getOperand(0); }
   const VASTUse &getPred() const { return getOperand(0); }
+  void replacePredBy(VASTValPtr V, bool UseSlotActive = true);
 
   // Get the source of the transaction.
   VASTLatch getSrc(unsigned Idx) { return VASTLatch(this, Idx); };
