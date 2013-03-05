@@ -44,7 +44,7 @@ struct SeqSelectorSynthesis : public VASTModulePass {
   VASTModule *VM;
   // Number of cycles at a specificed slot that we can move back unconditionally.
   std::map<unsigned, unsigned> SlotSlack;
-  std::map<VASTSeqOp*, VASTSeqValue*> RetimedEnables;
+  std::map<VASTSeqOp*, VASTValPtr> RetimedEnables;
 
   static char ID;
 
@@ -131,8 +131,9 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   typedef VASTModule::seqop_iterator op_iterator;
   for (op_iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
     VASTSeqOp *Op = I;
-    if (VASTSeqValue *EnableSVal = RetimedEnables[Op])
-      Op->replacePredBy(EnableSVal, false);
+    std::map<VASTSeqOp*, VASTValPtr>::iterator at = RetimedEnables.find(Op);
+    if (at != RetimedEnables.end())
+      Op->replacePredBy(at->second, false);
   }
 
   // Eliminate the identical SeqOps.
@@ -200,15 +201,15 @@ sort_by_slack(const void *LHS, const void *RHS) {
   return 0;
 }
 
-static bool isLatchIdentical(const VASTLatch &LHS, const VASTLatch &RHS) {
-  if (LHS.getDst() != RHS.getDst()) return false;
-
-  if (LHS.getSlot() != RHS.getSlot()) return false;
-
-  if (LHS.getPred() != RHS.getPred()) return false;
-
-  return true;
-}
+//static bool isLatchIdentical(const VASTLatch &LHS, const VASTLatch &RHS) {
+//  if (LHS.getDst() != RHS.getDst()) return false;
+//
+//  if (LHS.getSlot() != RHS.getSlot()) return false;
+//
+//  if (LHS.getPred() != RHS.getPred()) return false;
+//
+//  return true;
+//}
 
 void
 SeqSelectorSynthesis::AssignMUXPort(FaninSlackMap &SlackMap, VASTSeqValue *SV) {
@@ -239,7 +240,7 @@ SeqSelectorSynthesis::AssignMUXPort(FaninSlackMap &SlackMap, VASTSeqValue *SV) {
     // DO not perform the enable retiming now, do it after all the MUX are retimed
     // because there maybe more than 1 mux using the same SeqOp.
     // FIXME: If we have the real retimeing, we do not need to worry about this.
-    RetimedEnables[L.Op] = PipelinedEnable;
+    Builder->andEqual(RetimedEnables[L.Op], PipelinedEnable);
     DEBUG(dbgs() << "Retimed to:\t";
     L.Op->dump();
     dbgs() << '\n';);
@@ -275,15 +276,14 @@ void SeqSelectorSynthesis::AssignMUXPort(FISlackVector FIs, unsigned Level,
 
   if (Level == 0) return;
 
-
-  typedef std::vector<FaninMap::value_type> FaninVector;
+  typedef std::vector<std::pair<VASTLatch, VASTValPtr> > FaninVector;
   FaninVector PreviousLevelFIs;
   // We must assign the FIs in NextLevelFis to #FIsAvailable fanins.
   for (unsigned i = 0; i < NextLevelFISlacks.size(); ++i) {
     VASTLatch L = FIs[i].first;
     FaninMap::const_iterator at = NewFIs.find(L);
     if (at == NewFIs.end()) {
-      PreviousLevelFIs.push_back(std::make_pair(L,VASTValPtr(L)));
+      PreviousLevelFIs.push_back(FaninMap::value_type(L,VASTValPtr(L)));
       continue;
     }
 
@@ -312,18 +312,18 @@ void SeqSelectorSynthesis::AssignMUXPort(FISlackVector FIs, unsigned Level,
     }
     
     // Count the number of fanins by the enables.
-    if (CurPreviousLevelEn != LastPreviousLevelEn) {
+    if (CurPreviousLevelEn != LastPreviousLevelEn || EnablePipelined == false) {
       ++CurUsedFI;
 
       // We use all fanins of the MUX, create a new target register for the MUX.
-      if (CurUsedFI > MaxSingleCyleFINum)  {
+      if (CurUsedFI >= MaxSingleCyleFINum)  {
         CurUsedFI = 0;
         // We need to create a new register for the new fanin.
         unsigned RegNum = VM->num_seqvals();
         VASTSeqValue *DstSV = DstLatch.getDst();
-        std::string Name = std::string(DstSV->getName())
-                                       + "l" + utostr_32(Level)
-                                       + "n" + utostr_32(CurUsedFI);
+        std::string Name = "l" + utostr_32(Level)
+                            + std::string(DstSV->getName())
+                            + "n" + utostr_32(VM->num_seqvals());
 
         VASTRegister *R = VM->addRegister(Name + "r", DstSV->getBitWidth(), 0,
                                           DstSV->getValType(), RegNum);
