@@ -94,8 +94,7 @@ endmacro(test_mux)
 
 foreach(loop_input_num RANGE 2 32 [1])
 	foreach(loop_bit_width ${bit_width})
-		test_mux(${loop_input_num} 
-				 ${loop_bit_width})
+		test_mux(${loop_input_num} ${loop_bit_width})
 	endforeach(loop_bit_width)
 endforeach(loop_input_num)
 
