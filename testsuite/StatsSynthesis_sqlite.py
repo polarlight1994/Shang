@@ -38,11 +38,11 @@ sql_db = sys.argv[1]
 conn = sqlite3.connect(sql_db)
 cursor = conn.cursor()
 
-cursor.execute("INSERT INTO experiment_comment VALUES ('%s', '%s', '%s')" % (import_time, experiment_comment, experiment_url))
+cursor.execute("INSERT INTO experiment_comment(datetime, comments, url) VALUES ('%s', '%s', '%s')" % (import_time, experiment_comment, experiment_url))
 experiment_id = cursor.lastrowid
 
 for data in json_read:	
-  cursor.execute("INSERT INTO synthesis_run VALUES ('%s',%s,%s,%s,%s,%s,%s, %s)" % (data["name"], getOthers(data["restricted_fmax"]), getOthers(data["cycles"]), getOthers(data["les"]), getOthers(data["regs"]), getOthers(data["mult9"]), getOthers(data["mem_bit"]), experiment_id))
+  cursor.execute("INSERT INTO synthesis_run(name, fmax, cycles, les, regs, mults, membits, experiment_id) VALUES ('%s',%s,%s,%s,%s,%s,%s, %s)" % (data["name"], getOthers(data["restricted_fmax"]), getOthers(data["cycles"]), getOthers(data["les"]), getOthers(data["regs"]), getOthers(data["mult9"]), getOthers(data["mem_bit"]), experiment_id))
 
 conn.commit()
 conn.close()
