@@ -35,6 +35,44 @@ using namespace llvm;
 STATISTIC(NumPipelineRegBits, "Number of Pipeline register created");
 
 namespace {
+struct MUXFI {
+  VASTSeqOp *Op;
+  VASTValPtr FIVal;
+  MUXFI(const VASTLatch &L) : Op(L.Op), FIVal(L) {}
+  
+  bool operator<(const MUXFI &RHS) const {
+    return Op < RHS.Op;
+  }
+};
+
+typedef std::map<MUXFI, unsigned> FaninSlackMap;
+
+struct MUXPipeliner {
+  typedef std::map<MUXFI, VASTValPtr> FaninMap;
+  typedef std::map<MUXFI, VASTSeqValue*> PredMap;
+  FaninMap NewFIs;
+  PredMap NewPreds;
+
+
+  std::string BaseName;
+  unsigned BitWidth;
+  VASTSeqValue::Type ValTy;
+  unsigned MaxSingleCyleFINum;
+  VASTModule *VM;
+
+  MUXPipeliner(std::string BaseName, unsigned BitWidth, VASTSeqValue::Type T,
+               unsigned MaxSingleCyleFINum, VASTModule *VM)
+    : BaseName(BaseName), BitWidth(BitWidth), ValTy(T),
+      MaxSingleCyleFINum(MaxSingleCyleFINum), VM(VM) {}
+
+  typedef
+  MutableArrayRef<FaninSlackMap::value_type> FISlackVector;
+
+  void AssignMUXPort(FISlackVector FIs, unsigned Level, unsigned FIsAvailable);
+
+  static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level);
+};
+
 struct SeqSelectorSynthesis : public VASTModulePass {
   TimingNetlist *TNL;
   SeqLiveVariables *SLV;
@@ -66,7 +104,6 @@ struct SeqSelectorSynthesis : public VASTModulePass {
   unsigned getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot);
   unsigned getSlotSlack(VASTSlot *S);
 
-  typedef std::map<VASTLatch, unsigned> FaninSlackMap;
   void buildFISlackMap(VASTSeqValue *SV, FaninSlackMap &FISlack);
 
   void AssignMUXPort(FaninSlackMap &SlackMap, VASTSeqValue *SV);
@@ -88,31 +125,6 @@ struct SeqSelectorSynthesis : public VASTModulePass {
     SlotSlack.clear();
     RetimedEnables.clear();
   }
-};
-
-struct MUXPipeliner {
-  typedef std::map<VASTLatch, VASTValPtr> FaninMap;
-  typedef std::map<VASTLatch, VASTSeqValue*> PredMap;
-  FaninMap NewFIs;
-  PredMap NewPreds;
-
-  std::string BaseName;
-  unsigned BitWidth;
-  VASTSeqValue::Type ValTy;
-  unsigned MaxSingleCyleFINum;
-  VASTModule *VM;
-
-  MUXPipeliner(std::string BaseName, unsigned BitWidth, VASTSeqValue::Type T,
-               unsigned MaxSingleCyleFINum, VASTModule *VM)
-    : BaseName(BaseName), BitWidth(BitWidth), ValTy(T),
-      MaxSingleCyleFINum(MaxSingleCyleFINum), VM(VM) {}
-
-  typedef
-  MutableArrayRef<SeqSelectorSynthesis::FaninSlackMap::value_type> FISlackVector;
-
-  void AssignMUXPort(FISlackVector FIs, unsigned Level, unsigned FIsAvailable);
-
-  static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level);
 };
 }
 
@@ -201,13 +213,13 @@ sort_by_fi(const void *LHS, const void *RHS) {
 
   if (LHSV > RHSV) return  1;
 
-  return sort_by_slot(reinterpret_cast<T*>(LHS)->first.getSlot(),
-                      reinterpret_cast<T*>(RHS)->first.getSlot());
+  return sort_by_slot(reinterpret_cast<T*>(LHS)->first.Op->getSlot(),
+                      reinterpret_cast<T*>(RHS)->first.Op->getSlot());
 }
 
 static int
 sort_by_slack(const void *LHS, const void *RHS) {
-  typedef const SeqSelectorSynthesis::FaninSlackMap::value_type T;
+  typedef const FaninSlackMap::value_type T;
 
   if (reinterpret_cast<T*>(LHS)->second < reinterpret_cast<T*>(RHS)->second)
     return -1;
@@ -420,7 +432,6 @@ void SeqSelectorSynthesis::buildFISlackMap(VASTSeqValue *SV,
 
     FISlack[DstLatch] = RetimeSlack;
   }
-
 }
 
 unsigned SeqSelectorSynthesis::getCriticalDelay(const SVSet &S, VASTValue *V) {
