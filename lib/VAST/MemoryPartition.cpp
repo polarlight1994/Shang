@@ -44,7 +44,8 @@ STATISTIC(NumMemBanks, "Number of Local Memory Bank Allocated");
 namespace {
 struct MemoryPartition : public FunctionPass, public HLSAllocation {
   static char ID;
-  
+  bool EnableBanking;
+
   ValueMap<const Value*, FuncUnitId>  Allocation;
 
   // Look up the memory port allocation if the pointers are not allocated
@@ -73,7 +74,8 @@ struct MemoryPartition : public FunctionPass, public HLSAllocation {
     return Allocation.lookup(&GV);
   }
 
-  MemoryPartition() : FunctionPass(ID) {
+  MemoryPartition(bool EnableBanking = true)
+    : FunctionPass(ID), EnableBanking(EnableBanking) {
     initializeMemoryPartitionPass(*PassRegistry::getPassRegistry());
   }
 
@@ -110,7 +112,7 @@ INITIALIZE_AG_PASS_END(MemoryPartition, HLSAllocation,
 
 char MemoryPartition::ID = 0;
 
-Pass *llvm::createMemoryPartitionPass() {
+Pass *llvm::createMemoryPartitionPass(bool EnableBanking) {
   return new MemoryPartition();
 }
 
@@ -209,7 +211,7 @@ bool MemoryPartition::runOnFunction(Function &F) {
       (void) inserted;
     }
 
-    if (AllocateNewPort) ++CurPortNum;
+    if (EnableBanking && AllocateNewPort) ++CurPortNum;
   }
 
   NumMemBanks += (CurPortNum - 1);

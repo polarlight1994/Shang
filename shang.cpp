@@ -69,6 +69,9 @@ static cl::opt<bool> BaselineSchedulingOnly( "shang-baseline-scheduling-only",
 static cl::opt<bool> EnableGotoExpansion("shang-enable-goto-expansion",
   cl::desc("Perform goto expansion to generate a function that include all code"),
   cl::init(true));
+static cl::opt<bool> EnableMemoryOptimization("shang-enable-memory-optimization",
+  cl::desc("Perform memory optimizations e.g. coalescing or banking"),
+  cl::init(true));
 
 static cl::opt<bool> DumpIRBeforeHLS("shang-enable-dump-ir-before-hls",
   cl::desc("Print the IR before HLS"),
@@ -240,27 +243,28 @@ int main(int argc, char **argv) {
     }
 
     HLSPasses.add(createDatapathHoistingPass());
-    HLSPasses.add(createMemoryAccessAlignerPass());
 
     // Unroll the loop to expose more coalescing opportunities.
-    HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
-    HLSPasses.add(createTrivialLoopUnrollPass());
-    HLSPasses.add(createInstructionCombiningPass());
-    HLSPasses.add(createCFGSimplificationPass());
-    HLSPasses.add(createDeadInstEliminationPass());
-    HLSPasses.add(createGlobalOptimizerPass());
-    HLSPasses.add(createSROAPass());
-    HLSPasses.add(createInstructionCombiningPass());
-    HLSPasses.add(createMemoryAccessAlignerPass());
-
-    // Run the SCEVAA pass to compute more accurate alias information.
-    HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
-    HLSPasses.add(createMemoryAccessCoalescingPass());
-    // Verifier the IR produced by the Coalescer.
-    HLSPasses.add(createVerifierPass());
-    HLSPasses.add(createGVNPass());
-    HLSPasses.add(createInstructionCombiningPass());
-    HLSPasses.add(createDeadStoreEliminationPass());
+    if (EnableMemoryOptimization) {
+      HLSPasses.add(createMemoryAccessAlignerPass());
+      HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
+      HLSPasses.add(createTrivialLoopUnrollPass());
+      HLSPasses.add(createInstructionCombiningPass());
+      HLSPasses.add(createCFGSimplificationPass());
+      HLSPasses.add(createDeadInstEliminationPass());
+      HLSPasses.add(createGlobalOptimizerPass());
+      HLSPasses.add(createSROAPass());
+      HLSPasses.add(createInstructionCombiningPass());
+      HLSPasses.add(createMemoryAccessAlignerPass());
+      // Run the SCEVAA pass to compute more accurate alias information.
+      HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
+      HLSPasses.add(createMemoryAccessCoalescingPass());
+      // Verifier the IR produced by the Coalescer.
+      HLSPasses.add(createVerifierPass());
+      HLSPasses.add(createGVNPass());
+      HLSPasses.add(createInstructionCombiningPass());
+      HLSPasses.add(createDeadStoreEliminationPass());
+    }
 
     // Try to optimize the computation.
     HLSPasses.add(createInstructionCombiningPass());
@@ -281,7 +285,8 @@ int main(int argc, char **argv) {
 
     // Run the SCEVAA pass to compute more accurate alias information.
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
-    if (isMainSynthesis) HLSPasses.add(createMemoryPartitionPass());
+    if (isMainSynthesis)
+      HLSPasses.add(createMemoryPartitionPass(EnableMemoryOptimization));
 
     HLSPasses.add(createLUTMappingPass());
 
