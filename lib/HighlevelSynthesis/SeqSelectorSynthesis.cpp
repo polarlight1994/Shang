@@ -40,6 +40,9 @@ struct MUXFI {
   VASTValPtr FIVal;
   MUXFI(const VASTLatch &L) : Op(L.Op), FIVal(L) {}
   
+  VASTValPtr getPred() const { return Op->getPred(); }
+  VASTSlot *getSlot() const { return Op->getSlot(); }
+
   bool operator<(const MUXFI &RHS) const {
     return Op < RHS.Op;
   }
@@ -143,8 +146,8 @@ char SeqSelectorSynthesis::ID = 0;
 char &llvm::SeqSelectorSynthesisID = SeqSelectorSynthesis::ID;
 
 bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
-  MinimalExprBuilderContext Context(VM);
-  Builder = new VASTExprBuilder(Context);
+  //MinimalExprBuilderContext Context(VM);
+  //Builder = new VASTExprBuilder(Context);
   this->VM = &VM;
 
   SLV = &getAnalysis<SeqLiveVariables>();
@@ -154,8 +157,8 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   // Building the Slot active signals.
   typedef VASTModule::seqval_iterator iterator;
 
-  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
-    pipelineFanins(I);
+  //for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
+  //  pipelineFanins(I);
 
   //typedef VASTModule::seqop_iterator op_iterator;
   //for (op_iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
@@ -166,12 +169,12 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   //}
 
   // Eliminate the identical SeqOps.
-  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
-    I->synthesisSelector(*Builder);
+  //for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
+  //  I->synthesisSelector(*Builder);
 
-  delete Builder;
+  //delete Builder;
 
-  return true;
+  return false;
 }
 
 bool SeqSelectorSynthesis::pipelineFanins(VASTSeqValue *SV) {
@@ -292,7 +295,7 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
       break;
     }
 
-    VASTLatch L = FIs[i].first;
+    MUXFI FI = FIs[i].first;
   }
 
   if (NextLevelFISlacks.empty()) return;
@@ -303,14 +306,14 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
 
   if (Level == 0) return;
 
-  typedef std::vector<std::pair<VASTLatch, VASTValPtr> > FaninVector;
+  typedef std::vector<std::pair<MUXFI, VASTValPtr> > FaninVector;
   FaninVector PreviousLevelFIs;
   // We must assign the FIs in NextLevelFis to #FIsAvailable fanins.
   for (unsigned i = 0; i < NextLevelFISlacks.size(); ++i) {
-    VASTLatch L = FIs[i].first;
-    FaninMap::const_iterator at = NewFIs.find(L);
+    MUXFI FI = FIs[i].first;
+    FaninMap::const_iterator at = NewFIs.find(FI);
     if (at == NewFIs.end()) {
-      PreviousLevelFIs.push_back(FaninMap::value_type(L,VASTValPtr(L)));
+      PreviousLevelFIs.push_back(FaninMap::value_type(FI, FI.FIVal));
       continue;
     }
 
@@ -327,10 +330,10 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
   VASTSeqValue *LastNextLevelEn = 0;
 
   for (unsigned i = 0; i < PreviousLevelFIs.size(); ++i) {
-    VASTLatch DstLatch = PreviousLevelFIs[i].first;
+    MUXFI CurFI = PreviousLevelFIs[i].first;
     VASTValPtr CurPreviousLevelFI = PreviousLevelFIs[i].second;
-    VASTValPtr CurPreviousLevelEn = DstLatch.getPred();
-    PredMap::iterator at = NewPreds.find(DstLatch);
+    VASTValPtr CurPreviousLevelEn = CurFI.getPred();
+    PredMap::iterator at = NewPreds.find(CurFI);
     bool EnablePipelined = false;
     // Use the pipelined pred whenever possible.
     if (at != NewPreds.end()) {
@@ -363,8 +366,8 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
     }
 
     dbgs().indent(Level * 2)
-      << "Retime the assignment at Slot#" << DstLatch.getSlot()->SlotNum;
-    VASTSlot *S = getSlotAtLevel(DstLatch.getSlot(), Level);
+      << "Retime the assignment at Slot#" << CurFI.getSlot()->SlotNum;
+    VASTSlot *S = getSlotAtLevel(CurFI.getSlot(), Level);
     dbgs() << " to " << S->SlotNum << "\n";
 
     // Create the register assignment enable by the previous pipelined enable.
@@ -373,16 +376,16 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
       = VM->assignCtrlLogic(LastNextLevelFI, CurPreviousLevelFI, S,
                             CurPreviousLevelEn, !EnablePipelined);
     // Update the mapping, the new Fanin is assigned to a new pipeline register.
-    NewFIs[DstLatch] = LastNextLevelFI;
+    NewFIs[CurFI] = LastNextLevelFI;
     dbgs().indent(Level * 2) << "Inserting pipeline register: ";
     Op->dump();
     dbgs().indent(Level * 2) << "For: ";
-    DstLatch.Op->dump();
+    CurFI.Op->dump();
 
     // Also assign to the current level pipeline enable.
     VM->assignCtrlLogic(LastNextLevelEn, VASTImmediate::True, S,
                         CurPreviousLevelEn, !EnablePipelined);
-    NewPreds[DstLatch] = LastNextLevelEn;
+    NewPreds[CurFI] = LastNextLevelEn;
     LastPreviousLevelEn = CurPreviousLevelEn;
   }
 }
