@@ -1,3 +1,4 @@
+#!/usr/bin/python
 import json
 from optparse import OptionParser
 
@@ -31,6 +32,8 @@ for name, bits in FUs.iteritems() :
   print "\tLatencies = { %s / PERIOD, %s / PERIOD, %s / PERIOD, %s / PERIOD, %s / PERIOD }, --%s " % (bits['1']['Delay'],bits['8']['Delay'],bits['16']['Delay'],bits['32']['Delay'],bits['64']['Delay'], name)
   print "\tCosts = {%s * 64, %s * 64, %s * 64, %s * 64, %s * 64}, --%s " % (bits['1']['LEs'] , bits['8']['LEs'], bits['16']['LEs'], bits['32']['LEs'], bits['64']['LEs'], name)
 
+for name, bits in FUs.iteritems() :
+  print "FUs.%s.Latencies = { %s / PERIOD, %s / PERIOD, %s / PERIOD, %s / PERIOD, %s / PERIOD }, --%s " % (name, bits['1']['Delay'],bits['8']['Delay'],bits['16']['Delay'],bits['32']['Delay'],bits['64']['Delay'], name)
 
 Writefile.close()
 
