@@ -69,8 +69,14 @@ static cl::opt<bool> BaselineSchedulingOnly( "shang-baseline-scheduling-only",
 static cl::opt<bool> EnableGotoExpansion("shang-enable-goto-expansion",
   cl::desc("Perform goto expansion to generate a function that include all code"),
   cl::init(true));
+
 static cl::opt<bool> EnableMemoryOptimization("shang-enable-memory-optimization",
   cl::desc("Perform memory optimizations e.g. coalescing or banking"),
+  cl::init(true));
+
+static cl::opt<bool>
+EnablePreScheduleLUTMapping("shang-enable-pre-schedule-lut-mapping",
+  cl::desc("Perform lut mapping before scheduling"),
   cl::init(true));
 
 static cl::opt<bool> DumpIRBeforeHLS("shang-enable-dump-ir-before-hls",
@@ -288,7 +294,7 @@ int main(int argc, char **argv) {
     if (isMainSynthesis)
       HLSPasses.add(createMemoryPartitionPass(EnableMemoryOptimization));
 
-    HLSPasses.add(createLUTMappingPass());
+    if (EnablePreScheduleLUTMapping) HLSPasses.add(createLUTMappingPass());
 
     if (!BaselineSchedulingOnly) {
       // Perform the scheduling.
