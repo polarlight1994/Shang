@@ -85,7 +85,6 @@ struct SeqSelectorSynthesis : public VASTModulePass {
   VASTModule *VM;
   // Number of cycles at a specificed slot that we can move back unconditionally.
   std::map<unsigned, unsigned> SlotSlack;
-  std::map<VASTSeqOp*, VASTValPtr> RetimedEnables;
 
   static char ID;
 
@@ -126,7 +125,6 @@ struct SeqSelectorSynthesis : public VASTModulePass {
 
   void releaseMemory() {
     SlotSlack.clear();
-    RetimedEnables.clear();
   }
 };
 }
@@ -146,8 +144,8 @@ char SeqSelectorSynthesis::ID = 0;
 char &llvm::SeqSelectorSynthesisID = SeqSelectorSynthesis::ID;
 
 bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
-  //MinimalExprBuilderContext Context(VM);
-  //Builder = new VASTExprBuilder(Context);
+  MinimalExprBuilderContext Context(VM);
+  Builder = new VASTExprBuilder(Context);
   this->VM = &VM;
 
   SLV = &getAnalysis<SeqLiveVariables>();
@@ -157,22 +155,14 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   // Building the Slot active signals.
   typedef VASTModule::seqval_iterator iterator;
 
-  //for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
-  //  pipelineFanins(I);
-
-  //typedef VASTModule::seqop_iterator op_iterator;
-  //for (op_iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
-  //  VASTSeqOp *Op = I;
-  //  std::map<VASTSeqOp*, VASTValPtr>::iterator at = RetimedEnables.find(Op);
-  //  if (at != RetimedEnables.end())
-  //    Op->replacePredBy(at->second, false);
-  //}
+  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
+    pipelineFanins(I);
 
   // Eliminate the identical SeqOps.
-  //for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
-  //  I->synthesisSelector(*Builder);
+  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
+    I->synthesisSelector(*Builder);
 
-  //delete Builder;
+  delete Builder;
 
   return false;
 }
@@ -267,12 +257,6 @@ SeqSelectorSynthesis::AssignMUXPort(FaninSlackMap &SlackMap, VASTSeqValue *SV) {
 
     L.replaceUsedBy(NewFI);
 
-    VASTSeqValue *PipelinedEnable = P.NewPreds[L];
-    assert(PipelinedEnable && "Fanin without pipelined enable!");
-    // DO not perform the enable retiming now, do it after all the MUX are retimed
-    // because there maybe more than 1 mux using the same SeqOp.
-    // FIXME: If we have the real retimeing, we do not need to worry about this.
-    //Builder->andEqual(RetimedEnables[L.Op], PipelinedEnable);
     DEBUG(dbgs() << "Retimed to:\t";
     L.Op->dump();
     dbgs() << '\n';);
@@ -294,8 +278,6 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
       NextLevelFISlacks = FIs.slice(i, FIs.size() - i);
       break;
     }
-
-    MUXFI FI = FIs[i].first;
   }
 
   if (NextLevelFISlacks.empty()) return;
@@ -358,10 +340,13 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
         LastNextLevelFI = R->getValue();
         NumPipelineRegBits += LastNextLevelFI->getBitWidth();
 
-        R = VM->addRegister(Name + "en", 1, 0,  VASTSeqValue::Enable,
-                            VM->num_seqvals());
-        LastNextLevelEn = R->getValue();
-        NumPipelineRegBits += LastNextLevelEn->getBitWidth();
+        // Do not build the enable for the SeqVal to be pipelined.
+        if (Level > 1 && ValTy != VASTSeqValue::Enable) {
+          R = VM->addRegister(Name + "en", 1, 0,  VASTSeqValue::Enable,
+                              VM->num_seqvals());
+          LastNextLevelEn = R->getValue();
+          NumPipelineRegBits += LastNextLevelEn->getBitWidth();
+        }
       }
     }
 
@@ -383,10 +368,12 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
     CurFI.Op->dump();
 
     // Also assign to the current level pipeline enable.
-    VM->assignCtrlLogic(LastNextLevelEn, VASTImmediate::True, S,
-                        CurPreviousLevelEn, !EnablePipelined);
-    NewPreds[CurFI] = LastNextLevelEn;
-    LastPreviousLevelEn = CurPreviousLevelEn;
+    if (LastNextLevelEn) {
+      VM->assignCtrlLogic(LastNextLevelEn, VASTImmediate::True, S,
+                          CurPreviousLevelEn, !EnablePipelined);
+      NewPreds[CurFI] = LastNextLevelEn;
+      LastPreviousLevelEn = CurPreviousLevelEn;
+    }
   }
 }
 
