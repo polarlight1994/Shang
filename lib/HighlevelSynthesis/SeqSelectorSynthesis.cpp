@@ -506,8 +506,13 @@ unsigned SeqSelectorSynthesis::getAvailableInterval(const SVSet &S,
                                                     VASTSlot *ReadSlot) {
   unsigned Interval = STGShortestPath::Inf;
   typedef SVSet::const_iterator iterator;
-  for (iterator I = S.begin(), E = S.end(); I != E; ++I)
-    Interval = std::min(Interval, SLV->getIntervalFromDef(*I, ReadSlot, SSP));
+  for (iterator I = S.begin(), E = S.end(); I != E; ++I) {
+    VASTSeqValue *SV = *I;
+    // Do not retime if we do not have any timing information.
+    if (SV->empty()) return 0;
+
+    Interval = std::min(Interval, SLV->getIntervalFromDef(SV, ReadSlot, SSP));
+  }
 
   assert(Interval && "Unexpected interval!");
   // Dirty HACK: Avoid retime to the assignment slot of the FI for now.
