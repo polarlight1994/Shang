@@ -511,6 +511,10 @@ unsigned SeqSelectorSynthesis::getAvailableInterval(const SVSet &S,
     // Do not retime if we do not have any timing information.
     if (SV->empty()) return 0;
 
+    // Do not retime across the static register as well, we do not have the
+    // accurate timing information for them.
+    if (SV->getValType() == VASTSeqValue::StaticRegister) return 0;
+
     Interval = std::min(Interval, SLV->getIntervalFromDef(SV, ReadSlot, SSP));
   }
 
