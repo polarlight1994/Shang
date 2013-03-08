@@ -14,7 +14,13 @@ set_global_assignment -name DEVICE EP4CE75F29C6
 set_global_assignment -name TOP_LEVEL_ENTITY DUT_TOP
 set_global_assignment -name SOURCE_FILE @MAIN_RTL_SRC@
 set_global_assignment -name SOURCE_FILE @MAIN_INT_TOP@
-set_global_assignment -name SDC_FILE @MAIN_SDC_SRC@
+if [string match "*blowfish*" "@MAIN_SDC_SRC@"] {
+  post_message -type warning "blowfish's SDC file is disabled in Legup experiment!"
+} elseif [string match "*jpeg*" "@MAIN_SDC_SRC@"] {
+  post_message -type warning "jpeg's SDC file is disabled in Legup experiment!"
+} else {
+  set_global_assignment -name SDC_FILE @MAIN_SDC_SRC@
+}
 set_global_assignment -name VERILOG_MACRO "quartus_synthesis"
 
 #set_location_assignment PIN_T29 -to rstN
