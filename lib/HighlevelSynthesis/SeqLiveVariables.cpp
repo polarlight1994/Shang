@@ -609,6 +609,7 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
                                               STGShortestPath *SSP) const {
   const VarInfo *VI = 0;
   unsigned ReadSlotNum = ReadSlot->SlotNum;
+  bool AnyFound = false;
 
   typedef VASTSeqValue::const_iterator iterator;
   for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
@@ -616,6 +617,7 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
     if (at == VarInfos.end()) continue;
 
     const VarInfo *CurVI = at->second;
+    AnyFound = true;
 
     if (!CurVI->isSlotReachable(ReadSlotNum)) continue;
 
@@ -624,6 +626,8 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
     VI = CurVI;
     break;
   }
+
+  assert(AnyFound && "LiveVariable not exisited!");
 
   // The SeqVal is kill before readslot.
   if (VI == 0) return STGShortestPath::Inf;
