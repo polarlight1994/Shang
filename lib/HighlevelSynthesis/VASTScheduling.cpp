@@ -425,9 +425,8 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) 
     VASTValue *FI = VASTValPtr(L).get();
     VASTSeqValue *Dst = L.getDst();
 
-    FI->extractSupporingSeqVal(Srcs);
     // The Srcs set will be empty if FI is not a constant.
-    if (Srcs.empty()) continue;
+    if (!FI->extractSupporingSeqVal(Srcs)) continue;
 
     unsigned CurMuxDelay = TNL->getMuxDelay(Dst->size(), Dst).getNumCycles();
     MuxDelay = std::max(MuxDelay, CurMuxDelay);

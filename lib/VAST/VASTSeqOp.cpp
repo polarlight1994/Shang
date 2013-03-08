@@ -102,6 +102,8 @@ void VASTSeqOp::print(raw_ostream &OS) const {
   if (getNumDefs()) OS << "<- ";
 
   OS << '@' << getSlotNum() << "{ pred";
+  if (getSlotActive()) OS << " SlotActive#" << getSlotNum() << ' '; 
+
   for (unsigned i = 0; i < Size; ++i) {
     VASTValPtr V = getOperand(i);
     V.printAsOperand(OS);

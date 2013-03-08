@@ -75,7 +75,7 @@ std::string VASTValue::printBitRange(unsigned UB, unsigned LB, bool printOneBit)
   return ret;
 }
 
-void VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
+bool VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
   VASTValue *Root = this;
 
   std::set<VASTOperandList*> Visited;
@@ -86,7 +86,7 @@ void VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
     if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Root))
       SeqVals.insert(SeqVal);
 
-    return;
+    return !SeqVals.empty();
   }
 
   typedef VASTOperandList::op_iterator ChildIt;
@@ -119,6 +119,8 @@ void VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
     if (VASTSeqValue *SeqVal = dyn_cast_or_null<VASTSeqValue>(ChildNode))
       SeqVals.insert(SeqVal);
   }
+
+  return !SeqVals.empty();
 }
 
 VASTValue::VASTValue(VASTTypes T, unsigned BitWidth)
