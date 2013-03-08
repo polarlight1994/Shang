@@ -422,12 +422,14 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
         = VM->assignCtrlLogic(LastNextLevelEn, VASTImmediate::True, S,
                               CurPreviousLevelEn, !EnablePipelined);
       NewPreds[CurFI] = LastNextLevelEn;
-      LastPreviousLevelEn = CurPreviousLevelEn;
       dbgs().indent(Level * 2) << "Inserting pipeline register: ";
       Op->dump();
       dbgs().indent(Level * 2) << "For: ";
       CurFI.Op->dump();
     }
+
+    // Update the enable.
+    LastPreviousLevelEn = CurPreviousLevelEn;
   }
 }
 
