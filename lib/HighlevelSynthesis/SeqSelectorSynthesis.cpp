@@ -456,45 +456,49 @@ void SeqSelectorSynthesis::buildFISlackMap(VASTSeqValue *SV,
   typedef VASTSeqValue::iterator vn_itertor;
   for (vn_itertor I = SV->begin(), E = SV->end(); I != E; ++I) {
     VASTLatch &DstLatch = *I;
+    // Assume the slack is zero.
+    FISlack[DstLatch] = 0;
+
+    // Do not mess up with the operations that is guarded by the strange control
+    // signals.
+    if (!DstLatch.getSlotActive()) continue;
+
     VASTSlot *ReadSlot = DstLatch.getSlot();
 
-    int RetimeSlack = getSlotSlack(ReadSlot);
+    unsigned RetimeSlack = getSlotSlack(ReadSlot);
+    if (RetimeSlack == 0) continue;
 
     unsigned CriticalDelay = 0;
     unsigned AvailableInterval = STGShortestPath::Inf;
 
-    // Do not mess up with the operations that is guarded by the strange control
-    // signals.
     // Also do not retime across the SVal without liveness information.
-    if (DstLatch.getSlotActive()) {
-      VASTValPtr FI = DstLatch;
+    VASTValPtr FI = DstLatch;
 
-      if (FI->extractSupporingSeqVal(Srcs)) {
-        CriticalDelay = std::max(CriticalDelay, getCriticalDelay(Srcs, FI.get()));
-        AvailableInterval
-          = std::min(AvailableInterval, getAvailableInterval(Srcs, ReadSlot));
-        Srcs.clear();
-      }
+    if (FI->extractSupporingSeqVal(Srcs)) {
+      CriticalDelay = std::max(CriticalDelay, getCriticalDelay(Srcs, FI.get()));
+      AvailableInterval
+        = std::min(AvailableInterval, getAvailableInterval(Srcs, ReadSlot));
+      Srcs.clear();
+    }
 
-      VASTValPtr Pred = DstLatch.getPred();
-      // We should also retime the predicate together with the fanin.
-      if (Pred->extractSupporingSeqVal(Srcs)) {
-        CriticalDelay = std::max(CriticalDelay, getCriticalDelay(Srcs, Pred.get()));
-        AvailableInterval
-          = std::min(AvailableInterval, getAvailableInterval(Srcs, ReadSlot));
-        Srcs.clear();
-      }
-    } else
-      AvailableInterval = 0;
+    VASTValPtr Pred = DstLatch.getPred();
+    // We should also retime the predicate together with the fanin.
+    if (Pred->extractSupporingSeqVal(Srcs)) {
+      CriticalDelay = std::max(CriticalDelay, getCriticalDelay(Srcs, Pred.get()));
+      AvailableInterval
+        = std::min(AvailableInterval, getAvailableInterval(Srcs, ReadSlot));
+      Srcs.clear();
+    }
+
+    // Make sure the Retime slack is not negative
+    if (AvailableInterval < CriticalDelay) continue;
 
     DEBUG(dbgs() << "Fanin Pipelining opportnity: Slack: "
             << (AvailableInterval - CriticalDelay)
             << " RetimeSlack: " << RetimeSlack << '\n');
 
     // Adjust the retime slack according to the timing slack.
-    RetimeSlack = std::min(RetimeSlack, int(AvailableInterval - CriticalDelay));
-    // Make sure the Retime slack is not negative
-    RetimeSlack = std::max(RetimeSlack, 0);
+    RetimeSlack = std::min(RetimeSlack, AvailableInterval - CriticalDelay);
 
     FISlack[DstLatch] = RetimeSlack;
   }
