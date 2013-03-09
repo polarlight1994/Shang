@@ -188,14 +188,17 @@ void VASTMemoryBus::printDecl(raw_ostream &OS) const {
 
 static void printAssigment(vlang_raw_ostream &OS, VASTSeqValue *SeqVal,
                            const VASTModule *Mod) {
-  OS << SeqVal->getName() << " <= ";
-  if (SeqVal->empty()) {
-    OS << VASTImmediate::buildLiteral(0, SeqVal->getBitWidth(), false) << ";\n";
-    return;
-  }
+  if (!SeqVal->empty())
+    OS.if_begin(Twine(SeqVal->getName()) + Twine("_selector_enable"));
 
-  OS << SeqVal->getName() << "_selector_wire"
-     << VASTValue::printBitRange(SeqVal->getBitWidth(), 0, false) << ";\n";
+  OS << SeqVal->getName() << " <= ";
+  if (SeqVal->empty())
+    OS << VASTImmediate::buildLiteral(0, SeqVal->getBitWidth(), false) << ";\n";
+  else
+    OS << SeqVal->getName() << "_selector_wire"
+       << VASTValue::printBitRange(SeqVal->getBitWidth(), 0, false) << ";\n";
+
+  if (!SeqVal->empty()) OS.exit_block();
 }
 
 void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
@@ -203,8 +206,8 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   VASTSeqValue *ReadEnable = getREnable();
   if (!ReadEnable->empty()) {
     ReadEnable->printSelector(OS);
-    getRAddr()->printSelector(OS, false);
-    getRByteEn()->printSelector(OS, false);
+    getRAddr()->printSelector(OS);
+    getRByteEn()->printSelector(OS);
   } else
     ++NumUnusedRead;
 
@@ -212,19 +215,16 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   OS << ReadEnable->getName() <<  " <= ";
   if (ReadEnable->empty())
     OS << "1'b0;\n";
-  else {
+  else
     OS << ReadEnable->getName() << "_selector_enable" << ";\n";
-    OS.if_begin(Twine(ReadEnable->getName()) + "_selector_enable");
-  }
 
   printAssigment(OS, getRAddr(), Mod);
   printAssigment(OS, getRByteEn(), Mod);
-  if (!ReadEnable->empty()) OS.exit_block();
 
   OS << "// synthesis translate_off\n";
-  ReadEnable->verifyAssignCnd(OS, "memory_bus_read_" + utostr(Idx) , Mod);
-  getRAddr()->verifyAssignCnd(OS, "memory_bus_read_" + utostr(Idx) , Mod);
-  getRByteEn()->verifyAssignCnd(OS, "memory_bus_read_" + utostr(Idx) , Mod);
+  ReadEnable->verifyAssignCnd(OS, ReadEnable->getName() , Mod);
+  getRAddr()->verifyAssignCnd(OS, getRAddr()->getName(), Mod);
+  getRByteEn()->verifyAssignCnd(OS, getRByteEn()->getName() , Mod);
   OS << "// synthesis translate_on\n\n";
 
   OS.always_ff_end(false);
@@ -233,9 +233,9 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   VASTSeqValue *WriteEnable = getWEnable();
   if (!WriteEnable->empty()) {
     WriteEnable->printSelector(OS);
-    getWAddr()->printSelector(OS, false);
-    getWData()->printSelector(OS, false);
-    getWByteEn()->printSelector(OS, false);
+    getWAddr()->printSelector(OS);
+    getWData()->printSelector(OS);
+    getWByteEn()->printSelector(OS);
   } else
     ++NumUnusedWrite;
 
@@ -244,21 +244,18 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   OS << WriteEnable->getName() <<  " <= ";
   if (WriteEnable->empty())
     OS << "1'b0;\n";
-  else {
+  else
     OS << WriteEnable->getName() << "_selector_enable" << ";\n";
-    OS.if_begin(Twine(WriteEnable->getName()) + "_selector_enable");
-  }
 
   printAssigment(OS, getWAddr(), Mod);
   printAssigment(OS, getWData(), Mod);
   printAssigment(OS, getWByteEn(), Mod);
-  if (!WriteEnable->empty()) OS.exit_block();
 
   OS << "// synthesis translate_off\n";
-  WriteEnable->verifyAssignCnd(OS, "memory_bus_write_" + utostr(Idx) , Mod);
-  getWAddr()->verifyAssignCnd(OS, "memory_bus_write_" + utostr(Idx) , Mod);
-  getWData()->verifyAssignCnd(OS, "memory_bus_write_" + utostr(Idx) , Mod);
-  getWByteEn()->verifyAssignCnd(OS, "memory_bus_write_" + utostr(Idx) , Mod);
+  WriteEnable->verifyAssignCnd(OS, WriteEnable->getName(), Mod);
+  getWAddr()->verifyAssignCnd(OS, getWAddr()->getName(), Mod);
+  getWData()->verifyAssignCnd(OS, getWData()->getName(), Mod);
+  getWByteEn()->verifyAssignCnd(OS, getWByteEn()->getName(), Mod);
   OS << "// synthesis translate_on\n\n";
 
   OS.always_ff_end(false);
