@@ -74,6 +74,22 @@ struct MUXPipeliner {
   void AssignMUXPort(FISlackVector FIs, unsigned Level, unsigned FIsAvailable);
 
   static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level);
+
+  VASTValPtr getFIVal(MUXFI FI) {
+    FaninMap::const_iterator at = NewFIs.find(FI);
+
+    if (at == NewFIs.end()) return FI.FIVal;
+
+    return at->second;
+  }
+
+  VASTValPtr getFIPred(MUXFI FI) {
+    PredMap::const_iterator at = NewPreds.find(FI);
+
+    if (at == NewPreds.end()) return FI.getPred();
+
+    return at->second;
+  }
 };
 
 struct SeqSelectorSynthesis : public VASTModulePass {
@@ -333,6 +349,7 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
   if (FIsAvailable < NextLevelFISlacks.size())
     AssignMUXPort(NextLevelFISlacks, Level + 1,  FIsAvailable * MaxPerCyleFINum);
 
+  // No need to insert pipeline register at level 0.
   if (Level == 0) return;
 
   DEBUG(dbgs().indent(Level * 2) << "NextLevelFISlacks Size: "
@@ -343,19 +360,7 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
   // We must assign the FIs in NextLevelFis to #FIsAvailable fanins.
   for (unsigned i = 0; i < NextLevelFISlacks.size(); ++i) {
     MUXFI FI = NextLevelFISlacks[i].first;
-
-    DEBUG(dbgs().indent(Level * 2) << "for Op:"; FI.Op->dump(););
-
-    FaninMap::const_iterator at = NewFIs.find(FI);
-    if (at == NewFIs.end()) {
-      PreviousLevelFIs.push_back(FaninMap::value_type(FI, FI.FIVal));
-      continue;
-    }
-
-    DEBUG(dbgs().indent(Level * 2 + 2) << "Get FI from previous level "
-          << at->second << '\n';);
-
-    PreviousLevelFIs.push_back(*at);
+    PreviousLevelFIs.push_back(FaninMap::value_type(FI, getFIVal(FI)));
   }
 
   // Initialize CurUsedFI to MaxSingleCyleFINum to force fanin creation at the
@@ -370,21 +375,12 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
   for (unsigned i = 0; i < PreviousLevelFIs.size(); ++i) {
     MUXFI CurFI = PreviousLevelFIs[i].first;
     VASTValPtr CurPreviousLevelFI = PreviousLevelFIs[i].second;
-    VASTValPtr CurPreviousLevelEn = CurFI.getPred();
+    VASTValPtr CurPreviousLevelEn = getFIPred(CurFI);
+    bool EnablePipelined = CurFI.getPred() != CurPreviousLevelEn;
 
     DEBUG(dbgs().indent(Level * 2) << "Handling FI for Op:";
     CurFI.Op->dump();
     dbgs().indent(Level * 2) << "Get enable: " << CurPreviousLevelEn << '\n';);
-
-    PredMap::iterator at = NewPreds.find(CurFI);
-    bool EnablePipelined = false;
-    // Use the pipelined pred whenever possible.
-    if (at != NewPreds.end()) {
-      EnablePipelined = true;
-      DEBUG(dbgs().indent(Level * 2) << "Get pipelined enable: "
-            << at->second << '\n');
-      CurPreviousLevelEn = at->second;
-    }
     
     // Count the number of fanins by the enables.
     if (CurPreviousLevelEn != LastPreviousLevelEn || EnablePipelined == false) {
