@@ -28,11 +28,16 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "shang-selector-mux-synthesis"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
 STATISTIC(NumPipelineRegBits, "Number of Pipeline register created");
+
+static cl::opt<bool> EnableMUXPipelining("shang-enable-mux-pipelining",
+  cl::desc("Perform MUX pipelining"),
+  cl::init(true));
 
 namespace {
 struct MUXFI {
@@ -129,10 +134,13 @@ struct SeqSelectorSynthesis : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequiredID(DatapathNamerID);
-    AU.addRequired<TimingNetlist>();
-    AU.addRequired<SeqLiveVariables>();
-    AU.addRequired<STGShortestPath>();
+    if (EnableMUXPipelining) {
+      AU.addRequiredID(DatapathNamerID);
+      AU.addRequired<TimingNetlist>();
+      AU.addRequired<SeqLiveVariables>();
+      AU.addRequired<STGShortestPath>();
+    }
+
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
     AU.addPreserved<STGShortestPath>();
@@ -165,42 +173,43 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   Builder = new VASTExprBuilder(Context);
   this->VM = &VM;
 
-  SLV = &getAnalysis<SeqLiveVariables>();
-  TNL = &getAnalysis<TimingNetlist>();
-  SSP = &getAnalysis<STGShortestPath>();
-
-  std::vector<VASTSeqInst*> Worklist;
-
-  typedef VASTModule::seqop_iterator seqop_iterator;
-  for (seqop_iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I)
-    if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(I))
-      if (SeqInst->getNumSrcs() > 1)
-        Worklist.push_back(SeqInst);
-
-  while (!Worklist.empty()) {
-    VASTSeqInst *SeqInst = Worklist.back();
-    Worklist.pop_back();
-
-    descomposeSeqInst(SeqInst);
-  }
-
-  DEBUG(dbgs() << "Before MUX pipelining:\n"; VM.dump(););
-
-  // Building the Slot active signals.
   typedef VASTModule::seqval_iterator iterator;
 
-  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
-    // Dirty hack: only try to pipeline the fanin of the memory port at this moment.
-    if (!isa<VASTMemoryBus>(I->getParent())) continue;
+  if (EnableMUXPipelining) {
+    SLV = &getAnalysis<SeqLiveVariables>();
+    TNL = &getAnalysis<TimingNetlist>();
+    SSP = &getAnalysis<STGShortestPath>();
 
-    pipelineFanins(I);
+    std::vector<VASTSeqInst*> Worklist;
+
+    typedef VASTModule::seqop_iterator seqop_iterator;
+    for (seqop_iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I)
+      if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(I))
+        if (SeqInst->getNumSrcs() > 1)
+          Worklist.push_back(SeqInst);
+
+    while (!Worklist.empty()) {
+      VASTSeqInst *SeqInst = Worklist.back();
+      Worklist.pop_back();
+
+      descomposeSeqInst(SeqInst);
+    }
+
+    DEBUG(dbgs() << "Before MUX pipelining:\n"; VM.dump(););
+
+    for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
+      if (!isa<VASTMemoryBus>(I->getParent())) continue;
+
+      pipelineFanins(I);
+    }
+
+    DEBUG(dbgs() << "After MUX pipelining:\n"; VM.dump(););
   }
-
+  
   // Eliminate the identical SeqOps.
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
     I->synthesisSelector(*Builder);
 
-  DEBUG(dbgs() << "After MUX pipelining:\n"; VM.dump(););
 
   delete Builder;
   return false;
