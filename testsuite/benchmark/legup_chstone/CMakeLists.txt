@@ -39,7 +39,7 @@ macro(add_general_legup_test benchmark bc_file config_file altera_setup_prj_file
   add_custom_command(OUTPUT ${MAIN_RTL_SRC} ${MAIN_SDC_SRC} ${MAIN_UCF_SRC} ${MAIN_INT_TOP} ${MAIN_INT_BRAM} 
                             ${MAIN_INT_BRAMINIT} ${MAIN_TB_FILE} ${MAIN_MODELDO_FILE}
     COMMAND echo "Bad RTL source!" > ${MAIN_RTL_SRC}
-    COMMAND ${SHANG} ${TEST_BINARY_ROOT}/${TEST}_config_main.lua  -timing-model=bit-level -vast-disable-mux-slack ${EXTRA_HLS_OPTION}
+    COMMAND ${SHANG} ${TEST_BINARY_ROOT}/${TEST}_config_main.lua  -timing-model=bit-level -vast-disable-mux-slack  -shang-enable-mux-pipelining=false ${EXTRA_HLS_OPTION}
     DEPENDS ${MAIN_ORIG_BC} ${SHANG} "${TEST_BINARY_ROOT}/${TEST}_config_main.lua"
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
     COMMENT "High-levle Synthesising RTL module and interface for ${benchmark}"
