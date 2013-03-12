@@ -75,8 +75,8 @@ endmacro(add_general_legup_test)
 macro(add_test_legup_cases benchmark bc_file)
   add_general_legup_test(${benchmark}
           ${bc_file}
-          "${VTS_SOURCE_ROOT}/test_legup.lua.in"
-          "${VTS_SOURCE_ROOT}/setup_legup_symain.tcl.in"
+          "${CMAKE_CURRENT_SOURCE_DIR}/test_legup.lua.in"
+          "${CMAKE_CURRENT_SOURCE_DIR}/setup_legup_symain.tcl.in"
           )
 endmacro(add_test_legup_cases)
 
@@ -91,6 +91,20 @@ add_test_legup_cases(mpeg2 mpeg2.bc)
 
 add_test_legup_cases(sha sha_driver.bc)
 add_test_legup_cases(aes aes.bc)
+
+#Deming's benchmark
+add_test_legup_cases(pr pr.bc)
+add_test_legup_cases(wang wang.bc)
+add_test_legup_cases(dir dir.bc)
+add_test_legup_cases(chem chem.bc)
+add_test_legup_cases(arai arai.bc)
+add_test_legup_cases(feig_dct feig_dct.bc)
+add_test_legup_cases(u5ml u5ml.bc)
+add_test_legup_cases(mcm mcm.bc)
+add_test_legup_cases(lee lee.bc)
+add_test_legup_cases(aircraft aircraft.bc)
+add_test_legup_cases(wang wang.bc)
+add_test_legup_cases(dir dir.bc)
 
 #These there are very large design
 add_test_legup_cases(adpcm adpcm.bc)
