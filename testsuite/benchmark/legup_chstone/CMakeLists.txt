@@ -64,7 +64,7 @@ macro(add_general_legup_test benchmark bc_file config_file altera_setup_prj_file
   add_dependencies(legup_simulation ${TEST}_simulate_main)
 
   add_custom_command(OUTPUT ${MAIN_RTL_STA}
-    COMMAND ${QUARTUS_BIN_DIR}/quartus_sh --64bit -t ${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl
+    COMMAND qsub -cwd -j y -n "${benchmark}" ${QUARTUS_BIN_DIR}/quartus_sh --64bit -t ${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl
     DEPENDS ${MAIN_RTL_SRC} "${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl" ${MAIN_SDC_SRC} ${MAIN_INT_TOP} ${MAIN_INT_BRAM} ${MAIN_INT_BRAMINIT}
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
     COMMENT "Synthesising RTL module and interface for ${benchmark}"
