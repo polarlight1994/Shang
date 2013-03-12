@@ -1,0 +1,6 @@
+#!/bin/bash
+#$ -S /bin/bash
+#-j y
+#$ -cwd
+
+quartus_sh --64bit -t @TEST_BINARY_ROOT@/@TEST@_setup_prj_symain.tcl

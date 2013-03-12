@@ -63,8 +63,12 @@ macro(add_general_legup_test benchmark bc_file config_file altera_setup_prj_file
   add_custom_target(${TEST}_simulate_main DEPENDS ${CycleCounter})
   add_dependencies(legup_simulation ${TEST}_simulate_main)
 
+  configure_file (
+    "${CMAKE_CURRENT_SOURCE_DIR}/run.sge.in" "${TEST_BINARY_ROOT}/${TEST}_run.sge"
+  )
+
   add_custom_command(OUTPUT ${MAIN_RTL_STA}
-    COMMAND qsub -cwd -j y -N "${benchmark}" ${QUARTUS_BIN_DIR}/quartus_sh --64bit -t ${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl
+    COMMAND qsub -N "$${TEST}" -j y "${TEST_BINARY_ROOT}/${TEST}_run.sge"
     DEPENDS ${MAIN_RTL_SRC} "${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl" ${MAIN_SDC_SRC} ${MAIN_INT_TOP} ${MAIN_INT_BRAM} ${MAIN_INT_BRAMINIT}
     WORKING_DIRECTORY ${TEST_BINARY_ROOT}
     COMMENT "Synthesising RTL module and interface for ${benchmark}"
@@ -95,7 +99,7 @@ endmacro(add_test_legup_cases_period)
 macro(add_test_legup_cases benchmark bc_file)
   foreach(period RANGE 5 20 [1])
     add_test_legup_cases_period(${benchmark} ${bc_file} ${period})
-  endforeach(period)
+  endforeach(loop_input_num)
 endmacro(add_test_legup_cases)
 
 add_test_legup_cases(dfadd dfadd.bc)
