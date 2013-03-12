@@ -6,6 +6,9 @@ add_custom_target(legup_simulation
 add_custom_target(legup_synthesis
           COMMENT "Compiling all the main test obj file into exe file")
 
+add_custom_target(legup_hls
+          COMMENT "Compiling all the main test obj file into exe file")
+
 macro(add_general_legup_test benchmark bc_file config_file altera_setup_prj_file)
   set(TEST_NAME "${benchmark}")
   set(TEST     "${TEST_NAME}")
@@ -45,7 +48,7 @@ macro(add_general_legup_test benchmark bc_file config_file altera_setup_prj_file
     COMMENT "High-levle Synthesising RTL module and interface for ${benchmark}"
   )
   add_custom_target(${TEST}_main_hls DEPENDS ${MAIN_RTL_SRC})
-  add_dependencies(main_hls ${TEST}_main_hls)
+  add_dependencies(legup_hls ${TEST}_main_hls)
 
   configure_file (
     "${altera_setup_prj_file}" "${TEST_BINARY_ROOT}/${TEST}_setup_prj_symain.tcl"
@@ -72,12 +75,27 @@ macro(add_general_legup_test benchmark bc_file config_file altera_setup_prj_file
   
 endmacro(add_general_legup_test)
 
+macro(add_test_legup_cases_impl benchmark bc_file family_name device period)
+set(FAMILY_NAME ${family_name})
+set(DEVICE ${device})
+set(Period ${period})
+
+add_general_legup_test("${benchmark}${period}${device}"
+        ${bc_file}
+        "${CMAKE_CURRENT_SOURCE_DIR}/test_legup.lua.in"
+        "${CMAKE_CURRENT_SOURCE_DIR}/setup_legup_symain.tcl.in"
+        )
+endmacro(add_test_legup_cases_impl)
+
+macro(add_test_legup_cases_period benchmark bc_file period)
+add_test_legup_cases_impl(${benchmark} ${bc_file} "Cyclone II" "EP2C70F896C6" ${period})
+add_test_legup_cases_impl(${benchmark} ${bc_file} "Cyclone IV E" "EP4CE75F29C6" ${period})
+endmacro(add_test_legup_cases_period)
+
 macro(add_test_legup_cases benchmark bc_file)
-  add_general_legup_test(${benchmark}
-          ${bc_file}
-          "${CMAKE_CURRENT_SOURCE_DIR}/test_legup.lua.in"
-          "${CMAKE_CURRENT_SOURCE_DIR}/setup_legup_symain.tcl.in"
-          )
+  foreach(period RANGE 5 20 [1])
+    add_test_legup_cases_period(${benchmark} ${bc_file} ${period})
+  endforeach(loop_input_num)
 endmacro(add_test_legup_cases)
 
 add_test_legup_cases(dfadd dfadd.bc)

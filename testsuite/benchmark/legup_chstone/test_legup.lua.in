@@ -6,12 +6,11 @@ TBFILE = [[@MAIN_TB_FILE@]]
 
 ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
 
-local FMAX = 100
-PERIOD = 1000.0 / FMAX
+PERIOD = @Period@
 FUs.Period = PERIOD
 
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
-dofile('@VTS_SOURCE_ROOT@/' .. 'EP2C70F896C6.lua')
+dofile('@VTS_SOURCE_ROOT@/' .. '@DEVICE@.lua')
 
 Functions.main = RTLModuleName
 

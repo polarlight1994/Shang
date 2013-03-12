@@ -6,8 +6,8 @@ load_package report
 project_new DUT_TOP -overwrite
 
 # Target: DE2-70 Board
-set_global_assignment -name FAMILY "CycloneII"
-set_global_assignment -name DEVICE EP2C70F896C6
+set_global_assignment -name FAMILY "@FAMILY_NAME@"
+set_global_assignment -name DEVICE @DEVICE@
 
 # Build project and specify some confige
 # =====================
@@ -75,7 +75,7 @@ load_report
 #qsta_utility::generate_top_failures_per_clock 10 
 
 # Summary
-set DataJSON [open "@BenchmarkSummaryTmp@" a+]
+set DataJSON [open "@TEST_NAME@.json" a+]
 
 puts $DataJSON ",\n\{\"name\":\"@TEST_NAME@\","
 
