@@ -75,7 +75,7 @@ load_report
 #qsta_utility::generate_top_failures_per_clock 10 
 
 # Summary
-set DataJSON [open "@TEST_NAME@.json" a+]
+set DataJSON [open "@TEST_NAME@.json" w]
 
 puts $DataJSON ",\n\{\"name\":\"@TEST_NAME@\","
 

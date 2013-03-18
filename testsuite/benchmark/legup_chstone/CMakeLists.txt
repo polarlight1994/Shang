@@ -99,7 +99,7 @@ endmacro(add_test_legup_cases_period)
 macro(add_test_legup_cases benchmark bc_file)
   foreach(period RANGE 5 20 [1])
     add_test_legup_cases_period(${benchmark} ${bc_file} ${period})
-  endforeach(loop_input_num)
+  endforeach(period)
 endmacro(add_test_legup_cases)
 
 add_test_legup_cases(dfadd dfadd.bc)
