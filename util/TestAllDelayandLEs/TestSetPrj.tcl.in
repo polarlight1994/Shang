@@ -9,8 +9,8 @@ load_package ::quartus::incremental_compilation
 
 project_new @TEST_NAMES@ -overwrite
 
-set_global_assignment -name FAMILY "Cyclone IV E"
-set_global_assignment -name DEVICE EP4CE75F29C6
+set_global_assignment -name FAMILY "Stratix IV"
+set_global_assignment -name DEVICE EP4SGX530KH40C2
 
 # Build project and specify some confige
 # =====================
@@ -64,10 +64,12 @@ load_report
 ################################################################################
 # Summary
 if { "@IsMux@" == "testMux"} { 
-set DataJSON [open "@TIMING_REPORT_JSON_MUX@" a+]
+set DataJSON [open "@TEST_NAMES@_mux.json" a+]
+# "@TIMING_REPORT_JSON_MUX@" a+]
 puts $DataJSON "\"Input_Num\":\"@INPUT_NUM@\","
 } else {
-set DataJSON [open "@TIMING_REPORT_JSON@" a+]
+set DataJSON [open "@TEST_NAMES@.json" a+]
+#"@TIMING_REPORT_JSON@" a+]
 }
 unload_report
 
@@ -79,7 +81,8 @@ if { "@IsMux@" != "testMux"} {
 
   # Also extract the LE ussage.
   load_report
-  puts $DataJSON "\"Total_LEs\":\"[get_fitter_resource_usage -le -used]\","
+  puts $DataJSON "\"Total_alut\":\"[get_fitter_resource_usage -alut -used]\","
+  puts $DataJSON "\"Total_alm\":\"[get_fitter_resource_usage -alm -used]\","
   unload_report
 }
 

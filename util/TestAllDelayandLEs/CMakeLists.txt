@@ -74,15 +74,20 @@ configure_file(
 )
 add_custom_command(OUTPUT ${TEST_VERILOG}
 	COMMAND python ${PYTHON_FILE}
-	WORKING_DIRECTORY ${TEST_ROOT}
+ORKING_DIRECTORY ${TEST_ROOT}
 	DEPENDS ${PYTHON_FILE}
 	COMMENT "Generate verilog file"
 	)
 add_custom_target(${input_num}_get_verilog_${width} DEPENDS ${TEST_VERILOG})
 add_dependencies(get_mux_verilog_file ${input_num}_get_verilog_${width})
 
+configure_file(
+        "${FU_EST_SOUCE_ROOT}/run.sge.in"
+        "${TEST_ROOT}/${TEST_NAMES}.sge"
+)
+
 add_custom_command(OUTPUT ${PseudoTarget}
-	COMMAND quartus_sh -t ${SETUP_PRJ_TCL}
+        COMMAND qsub ${TEST_ROOT}/${TEST_NAMES}.sge
 	COMMAND python ${PYTHON_READ_RPT}
 	WORKING_DIRECTORY ${TEST_ROOT}
 	DEPENDS ${TEST_VERILOG} ${TEST_ROOT}/MuxReadRpt.py ${TEST_ROOT}/extract_timing.tcl ${TEST_ROOT}/TestSetPrj.tcl
@@ -128,9 +133,13 @@ configure_file(
 	"${FU_EST_SOUCE_ROOT}/extract_timing.tcl.in"
 	"${TEST_ROOT}/extract_timing.tcl"
 )
+configure_file(
+        "${FU_EST_SOUCE_ROOT}/run.sge.in"
+        "${TEST_ROOT}/${TEST_NAMES}.sge"
+)
 
 add_custom_command(OUTPUT ${PseudoTarget}
-	COMMAND quartus_sh -t ${SETUP_PRJ_TCL}
+	COMMAND qsub ${TEST_ROOT}/${TEST_NAMES}.sge
 	WORKING_DIRECTORY ${TEST_ROOT}
 	DEPENDS ${TEST_VERILOG} ${TEST_ROOT}/extract_timing.tcl ${TEST_ROOT}/TestSetPrj.tcl ${TEST_ROOT}/${DUT_NAME}test.v
 	COMMENT "Extract timing infomation and LE usage for ${TEST_NAMES}"
