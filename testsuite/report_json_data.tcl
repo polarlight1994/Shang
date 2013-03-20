@@ -2,8 +2,11 @@
 #
 #############################################################################
 puts $DataJSON "\"les\":\"[get_fitter_resource_usage -resource {Total logic elements}]\","
+puts $DataJSON "\"comb\":\"[get_fitter_resource_usage -comb -used]]\","
 # for stratix LE = ALM, comb = ALUT
-#puts $DataJSON "\"les\":\"[get_fitter_resource_usage -alm -used]]\","
+puts $DataJSON "\"alm\":\"[get_fitter_resource_usage -alm -used]]\","
+puts $DataJSON "\"alut\":\"[get_fitter_resource_usage -alut -used]]\","
+
 puts $DataJSON "\"les_wo_reg\":\"[get_fitter_resource_usage -resource {*Combinational with no register}]\","
 puts $DataJSON "\"les_w_reg_only\":\"[get_fitter_resource_usage -resource {*Register only}]\","
 puts $DataJSON "\"les_and_reg\":\"[get_fitter_resource_usage -resource {*Combinational with a register}]\","

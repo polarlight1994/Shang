@@ -582,7 +582,7 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine(bool IsSimple,
       assert((!IsSimple || !Visited)
              && "A simple path should not have been visited!");
       ++NumTimingPath;
-      if (Interval == 10000) ++NumFalseTimingPath;
+      if (Interval >= Inf) ++NumFalseTimingPath;
       else if (Interval > 1) ++NumMultiCyclesTimingPath;
 
       DEBUG(dbgs().indent(2) << "from: " << Src->getName() << '#'
