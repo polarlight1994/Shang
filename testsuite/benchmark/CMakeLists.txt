@@ -17,6 +17,6 @@ add_dependencies(benchmark_synthesis_main ${TESTNAME}_synthesis_main)
 endmacro(add_benchmark_symain_stats)
 
 
-add_subdirectory(DSPStone)
-add_subdirectory(ChStone)
-#add_subdirectory(legup_chstone)
+#add_subdirectory(DSPStone)
+#add_subdirectory(ChStone)
+add_subdirectory(legup_chstone)

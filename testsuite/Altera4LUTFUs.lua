@@ -1,4 +1,4 @@
-FUs.MaxLutSize = 4
+FUs.MaxLutSize = 6
 -- Latency table for EP4CE75F29C6
 FUs.AddSub = { LogicLevels = { 1, 8, 16, 32, 64 }, --Add
 	             Costs = {2 * 64, 10 * 64, 18 * 64, 34 * 64, 66 * 64}, --Add
