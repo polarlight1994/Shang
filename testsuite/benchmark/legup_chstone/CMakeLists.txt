@@ -103,7 +103,6 @@ macro(add_test_legup_cases benchmark bc_file)
   #endforeach(period)
 endmacro(add_test_legup_cases)
 
-add_test_legup_cases(dfadd dfadd.bc)
 add_test_legup_cases(dfmul dfmul.bc)
 add_test_legup_cases(dfdiv dfdiv.bc)
 add_test_legup_cases(dfsin dfsin.bc)
@@ -134,3 +133,5 @@ add_test_legup_cases(jpeg main.bc)
 add_test_legup_cases(blowfish bf.bc)
 
 add_test_legup_cases(mips mips.bc)
+
+add_test_legup_cases(dfadd dfadd.bc)
