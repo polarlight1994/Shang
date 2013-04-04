@@ -93,8 +93,8 @@ endmacro(add_test_legup_cases_impl)
 
 macro(add_test_legup_cases_period benchmark bc_file period)
 #add_test_legup_cases_impl(${benchmark} ${bc_file} "Cyclone II" "EP2C70F896C6" ${period})
-#add_test_legup_cases_impl(${benchmark} ${bc_file} "Cyclone IV E" "EP4CE75F29C6" ${period})
-add_test_legup_cases_impl(${benchmark} ${bc_file} "Stratix IV" "EP4SGX530KH40C2" ${period})
+add_test_legup_cases_impl(${benchmark} ${bc_file} "Cyclone IV E" "EP4CE75F29C6" ${period})
+#add_test_legup_cases_impl(${benchmark} ${bc_file} "Stratix IV" "EP4SGX530KH40C2" ${period})
 endmacro(add_test_legup_cases_period)
 
 macro(add_test_legup_cases benchmark bc_file)
