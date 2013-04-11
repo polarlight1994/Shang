@@ -48,6 +48,10 @@ macro(add_shang_test test_file test_name)
   add_dependencies(test_ir ${TEST}_ir)
 endmacro(add_shang_test)
 
+macro(add_test_cases file_name)
+	add_shang_test("${file_name}.cpp" ${file_name})
+endmacro(add_test_cases)
+
 add_subdirectory(SimpleTest)
 add_subdirectory(Loops)
 add_subdirectory(benchmark)
