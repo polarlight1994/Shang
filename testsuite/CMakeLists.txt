@@ -79,4 +79,5 @@ add_custom_target(trivial_tests
                   DEPENDS test_ir
                           --tests=$ENV{all_trivial_tests}
                           --tests_base=${VTS_SOURCE_ROOT}
+                          --ptr_size=${POINTER_SIZE_IN_BITS}
                   COMMENT "Run all trivial tests")

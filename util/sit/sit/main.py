@@ -13,6 +13,7 @@ def ParseOptions() :
   parser.add_argument("--mode", type=str, choices=["trivial"], help="the mode of sit", required=True)
   parser.add_argument("--tests", type=str, help="tests to run", required=True)
   parser.add_argument("--tests_base", type=str, help="base dir of the test suit (to locate the config templates)", required=True)
+  parser.add_argument("--ptr_size", type=int, help="pointer size in bits", required=True)
   #parser.add_argument("--configs", type=str, help="config files", required=True)
 
   return parser.parse_args()
@@ -40,7 +41,8 @@ def main(builtinParameters = {}):
 
     #Global dict for the common configurations
     test_config = { "SYN_FUNC": test_name,
-                    "config_dir" : args.tests_base}
+                    "config_dir" : args.tests_base,
+                    "ptr_size" : args.ptr_size}
 
     #Generate the synthesis configuration
     loadConfig(args.tests_base, basedir, test_config.copy())
