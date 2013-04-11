@@ -20,11 +20,6 @@ set(SHANG ${LLVM_TOOLS_BINARY_DIR}/shang)
 set(SIT ${SHANG_SOURCE_DIR}/util/sit/sit.py)
 
 add_custom_target(test_ir COMMENT "Compiling all source to llvm ir")
-# Run all trivial tests.
-add_custom_target(trivial_tests
-                  COMMAND ${SIT}
-                  DEPENDS test_ir
-                  COMMENT "Run all trivial tests")
 
 set(ENV{all_trivial_tests} "")
 
@@ -67,4 +62,8 @@ add_subdirectory(Loops)
 add_subdirectory(benchmark)
 add_subdirectory(regresstests)
 
-message(STATUS "All trivial tests: $ENV{all_trivial_tests}")
+# Run all trivial tests.
+add_custom_target(trivial_tests
+                  COMMAND ${SIT} --mode=trivial --tests=$ENV{all_trivial_tests}
+                  DEPENDS test_ir
+                  COMMENT "Run all trivial tests")
