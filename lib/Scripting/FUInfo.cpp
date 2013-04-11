@@ -107,8 +107,7 @@ namespace llvm {
 
 VFUDesc::VFUDesc(VFUs::FUTypes type, const luabind::object &FUTable,
                  unsigned *LogicLevels, float *Latencies, unsigned *Cost)
-  : ResourceType(type), StartInt(getProperty<unsigned>(FUTable, "StartInterval")),
-    ChainingThreshold(getProperty<unsigned>(FUTable, "ChainingThreshold")) {
+  : ResourceType(type), StartInt(getProperty<unsigned>(FUTable, "StartInterval")) {
   luabind::object LatenciesTable = FUTable["Latencies"];
   initLatenciesTable(LatenciesTable, Latencies, 5);
   luabind::object LogicLevelsTable = FUTable["LogicLevels"];

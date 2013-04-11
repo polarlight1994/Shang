@@ -2,28 +2,22 @@ FUs.MaxLutSize = 6
 -- Latency table for EP4CE75F29C6
 FUs.AddSub = { LogicLevels = { 1, 8, 16, 32, 64 }, --Add
 	             Costs = {2 * 64, 10 * 64, 18 * 64, 34 * 64, 66 * 64}, --Add
-               StartInterval=1,
-			         ChainingThreshold = ADDSUB_ChainingThreshold}
+               StartInterval=1}
 FUs.Shift = { LogicLevels = { 1, 4, 3, 5, 6 }, --Shift
               Costs = {1 * 64, 27 * 64, 70 * 64, 171 * 64, 393 * 64}, --Shift
-              StartInterval=1,
-			        ChainingThreshold = SHIFT_ChainingThreshold}
+              StartInterval=1}
 FUs.Mult = { LogicLevels = { 1, 8, 16, 32, 64 }, --Mul
 	           Costs = {1 * 64, 103 * 64, 344 * 64, 1211 * 64, 4478 * 64}, --Mul
-             StartInterval=1,
-			       ChainingThreshold = MULT_ChainingThreshold}
+             StartInterval=1}
 FUs.ICmp   = { 	LogicLevels = { 1, 8, 16, 32, 64 }, --Cmp
 	              Costs = {1 * 64, 8 * 64, 16 * 64, 32 * 64, 64 * 64}, --Cmp
-               StartInterval=1,
-			         ChainingThreshold = ICMP_ChainingThreshold}
+                StartInterval=1}
 FUs.Sel = { LogicLevels = { 1, 1, 1, 1, 1 }, --Sel
 	          Costs = {1 * 64, 8 * 64, 16 * 64, 32 * 64, 64 * 64}, --Sel
-            StartInterval=1,
-            ChainingThreshold = SEL_ChainingThreshold}
+            StartInterval=1}
 FUs.Reduction = { LogicLevels = { 1, 2, 2, 3, 3 }, --Red
 	                Costs = {0 * 64, 3 * 64, 5 * 64, 11 * 64, 21 * 64}, --Red
-                  StartInterval=1,
-                  ChainingThreshold = REDUCTION_ChainingThreshold}
+                  StartInterval=1}
 FUs.Mux    = { MaxAllowedMuxSize = 16,
                LogicLevels = {
                 1, --2-input
@@ -89,5 +83,4 @@ FUs.Mux    = { MaxAllowedMuxSize = 16,
                 {2432 , 14016 , 24896 , 49408 , 92672},--30-input
                 {2688 , 14528 , 25984 , 51712 , 97152},--31-input
                 {2688 , 14784 , 28224 , 51712 , 105984},--32-input
-               }, StartInterval=1,
-			         ChainingThreshold = MUX_ChainingThreshold}
+               }, StartInterval=1 }

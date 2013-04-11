@@ -9,15 +9,6 @@ CounterFile = [[@CycleCounter@]]
 BenchmarkCycles = [[@BenchmarkCyclesTmp@]]
 test_binary_root = [[@TEST_BINARY_ROOT@]]
 
-ADDSUB_ChainingThreshold = @ADDSUB_ChainingThreshold@
-SHIFT_ChainingThreshold = @SHIFT_ChainingThreshold@
-MULT_ChainingThreshold = @MULT_ChainingThreshold@
-ICMP_ChainingThreshold = @ICMP_ChainingThreshold@
-SEL_ChainingThreshold = -1
-REDUCTION_ChainingThreshold = -1
-MUX_ChainingThreshold = -1
-
-
 POINTER_SIZE_IN_BITS = @POINTER_SIZE_IN_BITS@
 
 FUs.MemoryBus = { ReadLatency = 2, StartInterval=1, AddressWidth=@POINTER_SIZE_IN_BITS@, DataWidth=64 }

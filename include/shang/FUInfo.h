@@ -156,10 +156,9 @@ protected:
   const unsigned ResourceType;
   // Start interval
   const unsigned StartInt;
-  // Chain the operation if its size smaller than the threshold;
-  unsigned ChainingThreshold;
+
   VFUDesc(VFUs::FUTypes type, unsigned startInt)
-    : ResourceType(type), StartInt(startInt), ChainingThreshold(0) {}
+    : ResourceType(type), StartInt(startInt) {}
 
   VFUDesc(VFUs::FUTypes type, const luabind::object &FUTable,
           unsigned *LogicLevels, float *Latencies, unsigned *Cost);
@@ -176,10 +175,6 @@ public:
   unsigned getType() const { return ResourceType; }
   const char *getTypeName() const {
     return getTypeName((VFUs::FUTypes)getType());
-  }
-
-  bool shouldBeChained(unsigned FUSize) const {
-    return FUSize <= ChainingThreshold;
   }
 
   virtual void print(raw_ostream &OS) const;
