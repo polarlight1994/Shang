@@ -17,8 +17,14 @@ set(LLVM_DIS ${LLVM_TOOLS_BINARY_DIR}/llvm-dis)
 set(LLVM_LINK ${LLVM_TOOLS_BINARY_DIR}/llvm-link)
 #FIXME: Support the standalone build.
 set(SHANG ${LLVM_TOOLS_BINARY_DIR}/shang)
+set(SIT ${SHANG_SOURCE_DIR}/util/sit/sit.py)
 
 add_custom_target(test_ir COMMENT "Compiling all source to llvm ir")
+# Run all trivial tests.
+add_custom_target(trivial_tests
+                  COMMAND ${SIT}
+                  DEPENDS test_ir
+                  COMMENT "Run all trivial tests")
 
 set(ENV{all_trivial_tests} "")
 
