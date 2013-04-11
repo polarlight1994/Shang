@@ -21,8 +21,8 @@ set(SHANG ${LLVM_TOOLS_BINARY_DIR}/shang)
 add_custom_target(test_ir COMMENT "Compiling all source to llvm ir")
 
 macro(add_shang_test test_file test_name)
-  set(TEST_NAME "${test_name}")
-  set(DUT_NAME "${TEST_NAME}_DUT")
+  set(TEST "${test_name}")
+  set(DUT_NAME "${TEST}_DUT")
 
   set(TEST_SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
   set(TEST_BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR})
