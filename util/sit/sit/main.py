@@ -24,9 +24,14 @@ def loadConfig(config_dir, dst_dir, test_config) :
   env = Environment(loader=FileSystemLoader(config_dir))
 
   env.filters['joinpath'] = lambda list: os.path.join(*list)
+  env.filters['get_output_file'] = lambda test_name, dst_dir='', ext='': os.path.join(dst_dir, test_name + ext)
 
   template= env.get_template('test_config.lua.in')
-  print template.render(test_config)
+
+  local_config = test_config.copy()
+  local_config['test_binary_root'] = dst_dir
+
+  print template.render(local_config)
 
 def main(builtinParameters = {}):
   args = ParseOptions()
@@ -40,12 +45,13 @@ def main(builtinParameters = {}):
     print "Running", args.mode, "test in", basedir, "for", test_name
 
     #Global dict for the common configurations
-    test_config = { "SYN_FUNC": test_name,
+    test_config = { "hardware_function": test_name,
+                    "test_file" : test_path,
                     "config_dir" : args.tests_base,
                     "ptr_size" : args.ptr_size}
 
     #Generate the synthesis configuration
-    loadConfig(args.tests_base, basedir, test_config.copy())
+    loadConfig(args.tests_base, basedir, test_config)
 
 if __name__=='__main__':
     main()
