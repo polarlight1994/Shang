@@ -19,7 +19,11 @@ def ParseOptions() :
 
 def loadConfig(config_dir, dst_dir, test_config) :
   from jinja2 import Environment, FileSystemLoader
+
   env = Environment(loader=FileSystemLoader(config_dir))
+
+  env.filters['joinpath'] = lambda list: os.path.join(*list)
+
   template= env.get_template('test_config.lua.in')
   print template.render(test_config)
 
@@ -35,7 +39,8 @@ def main(builtinParameters = {}):
     print "Running", args.mode, "test in", basedir, "for", test_name
 
     #Global dict for the common configurations
-    test_config = { "SYN_FUNC": test_name}
+    test_config = { "SYN_FUNC": test_name,
+                    "config_dir" : args.tests_base}
 
     #Generate the synthesis configuration
     loadConfig(args.tests_base, basedir, test_config.copy())

@@ -17,23 +17,23 @@ local FMAX = {{ FMAX }}
 PERIOD = 1000.0 / FMAX
 FUs.Period = PERIOD
 
-dofile('{{ VTS_SOURCE_ROOT }}/' .. 'common_config.lua')
+dofile([[{{ [config_dir, 'common_config.lua']|joinpath }}]])
 
 -- Define some function
-dofile('{{ VTS_SOURCE_ROOT }}/' .. 'FuncDefine.lua')
-dofile('{{ VTS_SOURCE_ROOT }}/' .. 'AddModules.lua')
+dofile([[{{ [config_dir, 'FuncDefine.lua']|joinpath }}]])
+dofile([[{{ [config_dir, 'AddModules.lua']|joinpath }}]])
 -- load platform information script
-dofile('{{ VTS_SOURCE_ROOT }}/' .. 'AlteraCommon.lua')
-dofile('{{ VTS_SOURCE_ROOT }}/' .. 'Altera4LUTFUs.lua')
-dofile('{{ VTS_SOURCE_ROOT }}/' .. 'EP4CE75F29C6.lua')
+dofile([[{{ [config_dir, 'AlteraCommon.lua']|joinpath }}]])
+dofile([[{{ [config_dir, 'Altera4LUTFUs.lua']|joinpath }}]])
+dofile([[{{ [config_dir, 'EP4CE75F29C6.lua']|joinpath }}]])
 
 -- ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
 
 {% if SYN_FUNC == 'main' %}
 
 -- Load ip module and simulation interface script.
-dofile('{{ VTS_SOURCE_ROOT }}/' .. 'InterfaceGen.lua')
-dofile('{{ VTS_SOURCE_ROOT }}/' .. 'ModelSimGen.lua')
+dofile([[{{ [config_dir, 'InterfaceGen.lua']|joinpath }}]])
+dofile([[{{ [config_dir, 'ModelSimGen.lua']|joinpath }}]])
 
 Misc.RTLGlobalScript = [=[
 RTLGlobalCode = FUs.CommonTemplate
@@ -42,7 +42,7 @@ RTLGlobalCode = FUs.CommonTemplate
 {% else %}
 
 -- Load ip module and simulation interface script.
-dofile('{{ VTS_SOURCE_ROOT }}/' .. 'SCIfCodegen.lua')
+dofile([[{{ [config_dir, 'SCIfCodegen.lua']|joinpath }}]])
 
 --Code for globalvariable symbols.
 RTLGlobalTemplate = [=[
