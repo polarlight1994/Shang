@@ -20,7 +20,7 @@ set(SHANG ${LLVM_TOOLS_BINARY_DIR}/shang)
 
 add_custom_target(test_ir COMMENT "Compiling all source to llvm ir")
 
-macro(add_shang_test test_file test_name)
+macro(add_shang_test test_ll test_file test_name )
   set(TEST "${test_name}")
   set(DUT_NAME "${TEST}_DUT")
 
@@ -30,6 +30,7 @@ macro(add_shang_test test_file test_name)
   set(TEST_SRC       "${TEST_SOURCE_ROOT}/${test_file}")
   set(TEST_BC        "${TEST_BINARY_ROOT}/${TEST}.bc")
   set(TEST_LL        "${TEST_BINARY_ROOT}/${TEST}.ll")
+  set(test_ll        "${TEST_LL}")
 
   #Compile the source file to IR.
   add_custom_command(OUTPUT ${TEST_LL}
@@ -49,7 +50,8 @@ macro(add_shang_test test_file test_name)
 endmacro(add_shang_test)
 
 macro(add_test_cases file_name)
-	add_shang_test("${file_name}.cpp" ${file_name})
+	add_shang_test(test_ll "${file_name}.cpp" ${file_name})
+  #message(STATUS "Test ll file: ${test_ll}")
 endmacro(add_test_cases)
 
 add_subdirectory(SimpleTest)
