@@ -1,16 +1,48 @@
--- Load bram initfile
-local FMAX = @FMAX@
+-- Initialize the global variables.
+POINTER_SIZE_IN_BITS = {{ POINTER_SIZE_IN_BITS }}
+InputFile = [[{{ MAIN_ORIG_BC }}]]
+RTLOutput = [[{{ MAIN_RTL_SRC }}]]
+MainSDCOutput = [[{{ MAIN_SDC_SRC }}]]
+--MainDelayVerifyOutput = [[{{ MAIN_DELAY_VERIFY_SRC }}]]
+SoftwareIROutput = [[{{ MAIN_SW_LL }}]]
+IFFileName = [[{{ MAIN_IF_SRC }}]]
+RTLModuleName = [[{{ MAIN_RTL_ENTITY }}]]
+CounterFile = [[{{ CycleCounter }}]]
+BenchmarkCycles = [[{{ BenchmarkCyclesTmp }}]]
+test_binary_root = [[{{ TEST_BINARY_ROOT }}]]
+
+Functions.{{ SYN_FUNC }} = RTLModuleName
+
+local FMAX = {{ FMAX }}
 PERIOD = 1000.0 / FMAX
 FUs.Period = PERIOD
 
-dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
-dofile('@VTS_SOURCE_ROOT@/' .. 'EP4CE75F29C6.lua')
+dofile('{{ VTS_SOURCE_ROOT }}/' .. 'common_config.lua')
 
-Functions.@SYN_FUNC@ = RTLModuleName
+-- Define some function
+dofile('{{ VTS_SOURCE_ROOT }}/' .. 'FuncDefine.lua')
+dofile('{{ VTS_SOURCE_ROOT }}/' .. 'AddModules.lua')
+-- load platform information script
+dofile('{{ VTS_SOURCE_ROOT }}/' .. 'AlteraCommon.lua')
+dofile('{{ VTS_SOURCE_ROOT }}/' .. 'Altera4LUTFUs.lua')
+dofile('{{ VTS_SOURCE_ROOT }}/' .. 'EP4CE75F29C6.lua')
+
 -- ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
 
+{% if SYN_FUNC == 'main' %}
+
 -- Load ip module and simulation interface script.
-dofile('@VTS_SOURCE_ROOT@/' .. 'SCIfCodegen.lua')  
+dofile('{{ VTS_SOURCE_ROOT }}/' .. 'InterfaceGen.lua')
+dofile('{{ VTS_SOURCE_ROOT }}/' .. 'ModelSimGen.lua')
+
+Misc.RTLGlobalScript = [=[
+RTLGlobalCode = FUs.CommonTemplate
+]=]
+
+{% else %}
+
+-- Load ip module and simulation interface script.
+dofile('{{ VTS_SOURCE_ROOT }}/' .. 'SCIfCodegen.lua')
 
 --Code for globalvariable symbols.
 RTLGlobalTemplate = [=[
@@ -44,3 +76,4 @@ if message ~= nil then print(message) end
 
 RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
 ]=]
+{% endif %}

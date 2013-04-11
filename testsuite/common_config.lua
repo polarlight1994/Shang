@@ -1,17 +1,4 @@
-InputFile = [[@MAIN_ORIG_BC@]]
-RTLOutput = [[@MAIN_RTL_SRC@]]
-MainSDCOutput = [[@MAIN_SDC_SRC@]]
-MainDelayVerifyOutput = [[@MAIN_DELAY_VERIFY_SRC@]]
-SoftwareIROutput = [[@MAIN_SW_LL@]]
-IFFileName = [[@MAIN_IF_SRC@]]
-RTLModuleName = [[@MAIN_RTL_ENTITY@]]
-CounterFile = [[@CycleCounter@]]
-BenchmarkCycles = [[@BenchmarkCyclesTmp@]]
-test_binary_root = [[@TEST_BINARY_ROOT@]]
-
-POINTER_SIZE_IN_BITS = @POINTER_SIZE_IN_BITS@
-
-FUs.MemoryBus = { ReadLatency = 2, StartInterval=1, AddressWidth=@POINTER_SIZE_IN_BITS@, DataWidth=64 }
+FUs.MemoryBus = { ReadLatency = 2, StartInterval=1, AddressWidth=POINTER_SIZE_IN_BITS, DataWidth=64 }
 
 -- Please note that the template of the block RAM is provided in <TargetPlatform>Common.lua
 FUs.BRam = { StepsToWait =1, StartInterval=1, DataWidth = 64, InitFileDir = [[@TEST_BINARY_ROOT@]] }
@@ -108,10 +95,3 @@ module shang_reduction#(parameter A_WIDTH = 0, B_WIDTH = 0) (
 	assign b = &a;
 endmodule
 ]=]
-
--- Define some function
-dofile('@VTS_SOURCE_ROOT@/' .. 'FuncDefine.lua')
-dofile('@VTS_SOURCE_ROOT@/' .. 'AddModules.lua')
--- load platform information script
-dofile('@VTS_SOURCE_ROOT@/' .. 'AlteraCommon.lua')
-dofile('@VTS_SOURCE_ROOT@/' .. 'Altera4LUTFUs.lua')

@@ -8,6 +8,16 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${VTS_SOURCE_ROOT}/cmake")
 FIND_PACKAGE(Verilator  REQUIRED)
 FIND_PACKAGE(SystemC    REQUIRED)
 
+if (CMAKE_SIZEOF_VOID_P MATCHES 8)
+  set(POINTER_SIZE_IN_BITS 64)
+  set(SYSTEMC_LIB_PATH ${SYSTEMC}/lib-linux64)
+  set(LLC_MARCH "x86-64")
+else (CMAKE_SIZEOF_VOID_P MATCHES 8)
+  set(POINTER_SIZE_IN_BITS 32)
+  set(SYSTEMC_LIB_PATH ${SYSTEMC}/lib-linux)
+  set(LLC_MARCH "x86")
+endif(CMAKE_SIZEOF_VOID_P MATCHES 8)
+
 #Set up the llvm binaries.
 set(LLC ${LLVM_TOOLS_BINARY_DIR}/llc)
 set(LLI ${LLVM_TOOLS_BINARY_DIR}/lli)
@@ -64,6 +74,9 @@ add_subdirectory(regresstests)
 
 # Run all trivial tests.
 add_custom_target(trivial_tests
-                  COMMAND ${SIT} --mode=trivial --tests=$ENV{all_trivial_tests}
+                  COMMAND ${SIT}
+                          --mode=trivial
                   DEPENDS test_ir
+                          --tests=$ENV{all_trivial_tests}
+                          --tests_base=${VTS_SOURCE_ROOT}
                   COMMENT "Run all trivial tests")
