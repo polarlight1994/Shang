@@ -20,6 +20,8 @@ set(SHANG ${LLVM_TOOLS_BINARY_DIR}/shang)
 
 add_custom_target(test_ir COMMENT "Compiling all source to llvm ir")
 
+set(ENV{all_trivial_tests} "")
+
 macro(add_shang_test test_ll test_file test_name )
   set(TEST "${test_name}")
   set(DUT_NAME "${TEST}_DUT")
@@ -51,10 +53,12 @@ endmacro(add_shang_test)
 
 macro(add_test_cases file_name)
 	add_shang_test(test_ll "${file_name}.cpp" ${file_name})
-  #message(STATUS "Test ll file: ${test_ll}")
+  set(ENV{all_trivial_tests} "$ENV{all_trivial_tests} ${test_ll}")
 endmacro(add_test_cases)
 
 add_subdirectory(SimpleTest)
 add_subdirectory(Loops)
 add_subdirectory(benchmark)
 add_subdirectory(regresstests)
+
+message(STATUS "All trivial tests: $ENV{all_trivial_tests}")
