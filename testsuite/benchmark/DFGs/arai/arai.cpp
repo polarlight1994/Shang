@@ -25,8 +25,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-int arai(short x10, short x11, short x12, short x13,
-	 short x14, short x15, short x16, short x17) __attribute__ ((noinline));
 
 
 int arai(short x10, short x11, short x12, short x13,
@@ -107,15 +105,16 @@ int main()
   short x14, x15, x16, x17;
    int return_value=0;
   //  int result_out;  
-  for (int idx=0;idx<NUM;idx++)
+   int idx;
+  for (idx=0;idx<NUM;idx++)
     {
       i = inputs[idx];
-      j = inputs[idx];
-      k = inputs[idx];
-      l = inputs[idx];
+      j = inputs[idx+1];
+      k = inputs[idx+2];
+      l = inputs[idx+3];
       
   x10 = i++; x11 = j++; x12 = k++; x13 = l++;
-  x14 = j++; x15 = i++; x16 = l++; x17 = k++;
+  x14 = (i+k); x15 = (j+l); x16 = (l+i); x17 = (k+l);
 
   result_out[idx] = arai(x10, x11, x12, x13,
 			 x14, x15, x16,x17);
@@ -127,7 +126,7 @@ int main()
     //    printf("%d\n", main_result);
     //    return main_result;
 
-  //    printf("return return_value != %d", return_value);
+  //    printf("return return_value != %d\n", return_value);
   //  return return_value; 
-return return_value != 592956;
+return return_value != 138852;
 }
