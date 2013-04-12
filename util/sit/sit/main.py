@@ -19,8 +19,9 @@ def ParseOptions() :
   parser.add_argument("--ptr_size", type=int, help="pointer size in bits", required=True)
   parser.add_argument("--shang", type=str, help="path to shang executable", required=True)
   parser.add_argument("--llc", type=str, help="path to llc executable")
+  parser.add_argument("--lli", type=str, help="path to lli executable")
   parser.add_argument("--verilator", type=str, help="path to verilator executable")
-
+  parser.add_argument("--systemc", type=str, help="path to systemc folder")
 
   return parser.parse_args()
 
@@ -109,7 +110,9 @@ def main(builtinParameters = {}):
                     "config_dir" : args.tests_base,
                     "ptr_size" : args.ptr_size,
                     "llc" : args.llc,
-                    "verilator" : args.verilator }
+                    "lli" : args.lli,
+                    "verilator" : args.verilator,
+                    "systemc" : args.systemc }
 
     #Generate the synthesis configuration and run the test
     for hls_config in buildHLSConfig(test_name, basedir, test_config, env) :

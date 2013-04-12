@@ -116,13 +116,7 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
 
 			sw_main();
 
-      ofstream outfile;
-      outfile.open ("$(CounterFile)"); 
-      outfile <<"$(CurRTLModuleName) hardware run cycles " << cnt << " wait cycles " << memcnt <<endl;
-      outfile.close();
-      outfile.open ("$(BenchmarkCycles)", ios_base::app); 
-      outfile <<",\n{\"name\":\"$(CurRTLModuleName)\", \"total\":" << cnt << ", \"wait\":" << memcnt << '}' <<endl;
-      outfile.close();
+      std::cerr <<"$(CurRTLModuleName) hardware run cycles " << cnt << " wait cycles " << memcnt <<endl;
       exit(0);
     }
 
