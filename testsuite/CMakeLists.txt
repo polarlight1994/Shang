@@ -33,7 +33,24 @@ add_custom_target(test_ir COMMENT "Compiling all source to llvm ir")
 
 set(ENV{all_trivial_tests} "")
 
-macro(add_shang_test test_ll test_file test_name )
+macro(add_trivial_test name test_lls depends)
+  add_custom_target(${name}
+                    COMMAND ${SIT}
+                            --mode=trivial
+                            --tests=${test_lls}
+                            --tests_base=${VTS_SOURCE_ROOT}
+                            --ptr_size=${POINTER_SIZE_IN_BITS}
+                            --verilator=${VERILATOR_EXECUTABLE}
+                            --systemc=${SYSTEMC}
+                            --shang=${SHANG}
+                            --llc=${LLC}
+                            --lli=${LLI}
+                    DEPENDS ${depends} ${SHANG}
+                    COMMENT "Run trivial tests")
+
+endmacro(add_trivial_test)
+
+macro(add_shang_test test_ll test_file test_name)
   set(TEST "${test_name}")
   set(DUT_NAME "${TEST}_DUT")
 
@@ -60,6 +77,8 @@ macro(add_shang_test test_ll test_file test_name )
   )
   add_custom_target(${TEST}_ir DEPENDS ${TEST_LL})
   add_dependencies(test_ir ${TEST}_ir)
+
+  add_trivial_test("${TEST}_trivial_test" ${TEST_LL} ${TEST}_ir)
 endmacro(add_shang_test)
 
 macro(add_test_cases file_name)
@@ -73,16 +92,4 @@ add_subdirectory(benchmark)
 add_subdirectory(regresstests)
 
 # Run all trivial tests.
-add_custom_target(trivial_tests
-                  COMMAND ${SIT}
-                          --mode=trivial
-                          --tests=$ENV{all_trivial_tests}
-                          --tests_base=${VTS_SOURCE_ROOT}
-                          --ptr_size=${POINTER_SIZE_IN_BITS}
-                          --verilator=${VERILATOR_EXECUTABLE}
-                          --systemc=${SYSTEMC}
-                          --shang=${SHANG}
-                          --llc=${LLC}
-                          --lli=${LLI}
-                  DEPENDS test_ir ${SHANG}
-                  COMMENT "Run all trivial tests")
+add_trivial_test("trivial_tests" $ENV{all_trivial_tests} "test_ir")
