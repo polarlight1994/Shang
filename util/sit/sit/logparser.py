@@ -17,8 +17,7 @@ class SimLogParser(LogParserBase):
 
   def dump(self) :
     with open(self.logpath,"r") as logfile:
-      for line in logfile :
-        print line
+      print logfile.read()
 
   def parse(self) :
     correct = False

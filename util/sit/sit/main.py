@@ -131,15 +131,31 @@ def main(builtinParameters = {}):
       logfiles.append(runHybridSimulation(s, hls_base, hls_jid, hls_config.copy(), env))
       # Run the simulation
 
-  # Wait untill all HLS jobs finish
-  s.synchronize([ drmaa.Session.JOB_IDS_SESSION_ALL ], drmaa.Session.TIMEOUT_WAIT_FOREVER)
+  active_jobs = logfiles
+  while active_jobs :
+    next_active_jobs = []
+    for logfile in active_jobs:
+      status = s.jobStatus(logfile.jobid)
+      if status == drmaa.JobState.DONE or status == drmaa.JobState.FAILED:
+        retval = s.wait(logfile.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
+        if not retval.hasExited or retval.exitStatus != 0 :
+          print "Test", logfile.test_name, "Fail, dumping logfile:",  logfile.logpath
+          logfile.dump()
+        else :
+          print "Test", logfile.test_name, "passed"
+        continue
 
-  for logfile in logfiles:
-    #print 'Collecting job ' + logfile.jobid
-    retval = s.wait(logfile.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
-    if not retval.hasExited or retval.exitStatus != 0 :
-      logfile.dump()
-    #print 'Job: ' + str(retval.jobId) + ' finished with status ' + str(retval.hasExited)
+      next_active_jobs.append(logfile)
+
+    time.sleep(5)
+    active_jobs = next_active_jobs[:]
+    print len(active_jobs), "tests left"
+    sys.stdout.flush()
+
+  # Wait untill all HLS jobs finish
+  #s.synchronize([ drmaa.Session.JOB_IDS_SESSION_ALL ], drmaa.Session.TIMEOUT_WAIT_FOREVER)
+
+  #  #print 'Job: ' + str(retval.jobId) + ' finished with status ' + str(retval.hasExited)
 
   # Finialize the gridengine
   s.exit()
