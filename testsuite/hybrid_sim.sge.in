@@ -1,0 +1,17 @@
+#!/bin/bash
+#$ -S /bin/bash
+
+# Generate native code for the software part.
+llc={{ llc }}
+{{ llc }} -march={{ llc_march}} \
+          {{ [test_binary_root, hardware_function + "_soft.ll"]|joinpath }} \
+          -filetype=obj \
+          -mc-relax-all \
+          -o {{ [bybrid_sim_root, hardware_function + "_soft.o"]|joinpath }} \
+|| exit 1
+
+# Generate cpp files from the rtl
+{{ verilator }} {{ [test_binary_root, hardware_function + ".sv"]|joinpath }} \
+                -Wall --sc -D__DEBUG_IF +define+__VERILATOR_SIM \
+                --top-module {{ [hardware_function, "_RTL_DUT"]|join }} \
+|| exit 1

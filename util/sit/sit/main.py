@@ -6,7 +6,9 @@ sit - Shang Integrated Tester.
 """
 
 import math, os, platform, random, re, sys, time, threading, traceback
+
 import drmaa
+from jinja2 import Environment, FileSystemLoader, Template
 
 def ParseOptions() :
   import argparse
@@ -16,35 +18,65 @@ def ParseOptions() :
   parser.add_argument("--tests_base", type=str, help="base dir of the test suit (to locate the config templates)", required=True)
   parser.add_argument("--ptr_size", type=int, help="pointer size in bits", required=True)
   parser.add_argument("--shang", type=str, help="path to shang executable", required=True)
+  parser.add_argument("--llc", type=str, help="path to llc executable")
+  parser.add_argument("--verilator", type=str, help="path to verilator executable")
+
 
   return parser.parse_args()
 
-def generateHLSConfig(test_name, dst_dir_base, test_config, template_env) :
+def buildHLSConfig(test_name, dst_dir_base, test_config, template_env) :
   # Create the local folder for the current test.
   from datetime import datetime
   dst_dir = os.path.join(dst_dir_base, test_name, datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
   os.makedirs(dst_dir)
+  #print "Created folder: ", dst_dir
 
+  # Fork the cofiguration
   local_config = test_config.copy()
   local_config['test_binary_root'] = dst_dir
   #TODO: Scan the fmax.
   local_config['fmax'] = 100.0
 
-  synthesis_config = os.path.join(dst_dir, 'test_config.lua')
-  template_env.get_template('test_config.lua.in').stream(local_config).dump(synthesis_config)
-  yield synthesis_config
+  yield local_config
 
 def runHLS(session, shang, hls_config) :
   # Create the HLS job.
   jt = session.createJobTemplate()
-  jt.remoteCommand = shang
-  jt.args = [hls_config]
+  jt.remoteCommand = 'timeout'
+  jt.args = ['300s', shang, hls_config]
   #Set up the correct working directory and the output path
   jt.workingDirectory = os.path.dirname(hls_config)
-  jt.outputPath = ':' + os.path.join(os.path.dirname(hls_config), 'output')
+  jt.outputPath = ':' + os.path.join(os.path.dirname(hls_config), 'hls.output')
   jt.joinFiles=True
   #Set up the environment variables
   #jt.env = ...
+
+  jobid = session.runJob(jt)
+  session.deleteJobTemplate(jt)
+
+  return jobid
+
+def runHybridSimulation(session, hls_base, hls_jid, hls_config, template_env) :
+  # Create the hybrid simulation job.
+  jt = session.createJobTemplate()
+  workingDirectory = os.path.join(hls_base, 'hybrid_sim')
+  os.makedirs(workingDirectory)
+
+  #Generate the simulate script
+  hls_config['bybrid_sim_root'] = workingDirectory
+  sim_script = os.path.join(workingDirectory, 'hybrid_sim.sge')
+  template_env.get_template('hybrid_sim.sge.in').stream(hls_config).dump(sim_script)
+
+  jt.remoteCommand = 'bash'
+  jt.args = [ sim_script ]
+  #Set up the correct working directory and the output path
+  jt.workingDirectory = workingDirectory
+  jt.outputPath = ':' + os.path.join(workingDirectory, 'hybrid_sim.output')
+  jt.joinFiles=True
+  # Wait untill HLS finished.
+  jt.nativeSpecification = "-hold_jid %s" % hls_jid
+  #Set up the environment variables
+  jt.environment = {'VERILATOR_ROOT': os.path.dirname(os.path.dirname(hls_config['verilator'])) }
 
   jobid = session.runJob(jt)
   session.deleteJobTemplate(jt)
@@ -57,8 +89,6 @@ def main(builtinParameters = {}):
   print "Starting the Shang Integrated Tester in", args.mode, "mode..."
 
   # Get the synthesis configuration templates.
-  from jinja2 import Environment, FileSystemLoader
-
   env = Environment(loader=FileSystemLoader(args.tests_base))
   env.filters['joinpath'] = lambda list: os.path.join(*list)
 
@@ -77,18 +107,24 @@ def main(builtinParameters = {}):
     test_config = { "hardware_function": test_name,
                     "test_file" : test_path,
                     "config_dir" : args.tests_base,
-                    "ptr_size" : args.ptr_size}
+                    "ptr_size" : args.ptr_size,
+                    "llc" : args.llc,
+                    "verilator" : args.verilator }
 
     #Generate the synthesis configuration and run the test
-    for hls_config in generateHLSConfig(test_name, basedir, test_config, env) :
-      hls_jobs.append(runHLS(s, args.shang, hls_config))
+    for hls_config in buildHLSConfig(test_name, basedir, test_config, env) :
+      hls_base = hls_config['test_binary_root']
+      synthesis_config_file = os.path.join(hls_base, 'test_config.lua')
+      env.get_template('test_config.lua.in').stream(hls_config).dump(synthesis_config_file)
+
+      #Submit the HLS job
+      hls_jid = runHLS(s, args.shang, synthesis_config_file)
+      # Fork the cofiguration
+      runHybridSimulation(s, hls_base, hls_jid, hls_config.copy(), env)
+      # Run the simulation
 
   # Wait untill all HLS jobs finish
-  s.synchronize(hls_jobs, drmaa.Session.TIMEOUT_WAIT_FOREVER)
-  for curjob in hls_jobs:
-    print 'Collecting job ' + curjob
-    retval = s.wait(curjob, drmaa.Session.TIMEOUT_WAIT_FOREVER)
-    print 'Job: ' + str(retval.jobId) + ' finished with status ' + str(retval.hasExited)
+  s.synchronize([ drmaa.Session.JOB_IDS_SESSION_ALL ], drmaa.Session.TIMEOUT_WAIT_FOREVER)
 
   # Finialize the gridengine
   s.exit()
