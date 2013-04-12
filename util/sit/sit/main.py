@@ -24,7 +24,6 @@ def loadConfig(config_dir, dst_dir, test_config) :
   env = Environment(loader=FileSystemLoader(config_dir))
 
   env.filters['joinpath'] = lambda list: os.path.join(*list)
-  env.filters['get_output_file'] = lambda test_name, dst_dir='', ext='': os.path.join(dst_dir, test_name + ext)
 
   template= env.get_template('test_config.lua.in')
 

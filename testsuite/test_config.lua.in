@@ -2,11 +2,11 @@
 ptr_size = {{ ptr_size }}
 test_binary_root = [[{{ test_binary_root }}]]
 InputFile = [[{{ test_file }}]]
-RTLOutput = [[{{ hardware_function|get_output_file(test_binary_root, ".sv") }}]]
-MainSDCOutput =  [[{{ hardware_function|get_output_file(test_binary_root, ".sdc") }}]]
+RTLOutput = [[{{ [test_binary_root, hardware_function + ".sv"]|joinpath }}]]
+MainSDCOutput =  [[{{ [test_binary_root, hardware_function + ".sdc"]|joinpath }}]]
 --MainDelayVerifyOutput = [[{{ MAIN_DELAY_VERIFY_SRC }}]]
-SoftwareIROutput =  [[{{ hardware_function|get_output_file(test_binary_root, "_soft.ll") }}]]
-IFFileName =  [[{{ hardware_function|get_output_file(test_binary_root, ".cpp") }}]]
+SoftwareIROutput =  [[{{ [test_binary_root, hardware_function + "_soft.ll"]|joinpath }}]]
+IFFileName =  [[{{ [test_binary_root, hardware_function + "_if.cpp"]|joinpath }}]]
 RTLModuleName = [[{{ [hardware_function, "_RTL_DUT"]|join }}]]
 
 Functions.{{ hardware_function }} = RTLModuleName
