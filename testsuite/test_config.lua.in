@@ -11,7 +11,7 @@ RTLModuleName = [[{{ [hardware_function, "_RTL_DUT"]|join }}]]
 
 Functions.{{ hardware_function }} = RTLModuleName
 
-local FMAX = {{ FMAX }}
+local FMAX = {{ fmax }}
 PERIOD = 1000.0 / FMAX
 FUs.Period = PERIOD
 

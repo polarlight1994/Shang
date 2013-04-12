@@ -30,6 +30,8 @@ def loadConfig(config_dir, dst_dir, test_config) :
 
   local_config = test_config.copy()
   local_config['test_binary_root'] = dst_dir
+  #TODO: Scan the fmax.
+  local_config['fmax'] = 100.0
 
   print template.render(local_config)
 
