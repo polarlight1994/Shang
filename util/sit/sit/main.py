@@ -39,7 +39,12 @@ def runHLS(session, shang, hls_config) :
   jt = session.createJobTemplate()
   jt.remoteCommand = shang
   jt.args = [hls_config]
+  #Set up the correct working directory and the output path
+  jt.workingDirectory = os.path.dirname(hls_config)
+  jt.outputPath = ':' + os.path.join(os.path.dirname(hls_config), 'output')
   jt.joinFiles=True
+  #Set up the environment variables
+  #jt.env = ...
 
   jobid = session.runJob(jt)
   session.deleteJobTemplate(jt)
