@@ -10,6 +10,8 @@ import math, os, platform, random, re, sys, time, threading, traceback
 import drmaa
 from jinja2 import Environment, FileSystemLoader, Template
 
+from logparser import SimLogParser
+
 def ParseOptions() :
   import argparse
   parser = argparse.ArgumentParser(description='The Shang Integrated Tester')
@@ -72,7 +74,8 @@ def runHybridSimulation(session, hls_base, hls_jid, hls_config, template_env) :
   jt.args = [ sim_script ]
   #Set up the correct working directory and the output path
   jt.workingDirectory = workingDirectory
-  jt.outputPath = ':' + os.path.join(workingDirectory, 'hybrid_sim.output')
+  hybrid_sim_log = os.path.join(workingDirectory, 'hybrid_sim.output')
+  jt.outputPath = ':' + hybrid_sim_log
   jt.joinFiles=True
   # Wait untill HLS finished.
   jt.nativeSpecification = "-hold_jid %s" % hls_jid
@@ -82,7 +85,8 @@ def runHybridSimulation(session, hls_base, hls_jid, hls_config, template_env) :
   jobid = session.runJob(jt)
   session.deleteJobTemplate(jt)
 
-  return jobid
+  #TODO: Wait until the simulation finish and parse the output.
+  return SimLogParser(hybrid_sim_log, jobid)
 
 def main(builtinParameters = {}):
   args = ParseOptions()
@@ -96,7 +100,7 @@ def main(builtinParameters = {}):
   # Initialize the gridengine
   s = drmaa.Session()
   s.initialize()
-  hls_jobs = []
+  logfiles = []
 
   for test_path in args.tests.split() :
     basedir = os.path.dirname(test_path)
@@ -123,11 +127,18 @@ def main(builtinParameters = {}):
       #Submit the HLS job
       hls_jid = runHLS(s, args.shang, synthesis_config_file)
       # Fork the cofiguration
-      runHybridSimulation(s, hls_base, hls_jid, hls_config.copy(), env)
+      logfiles.append(runHybridSimulation(s, hls_base, hls_jid, hls_config.copy(), env))
       # Run the simulation
 
   # Wait untill all HLS jobs finish
   s.synchronize([ drmaa.Session.JOB_IDS_SESSION_ALL ], drmaa.Session.TIMEOUT_WAIT_FOREVER)
+
+  for logfile in logfiles:
+    print 'Collecting job ' + logfile.jobid
+    retval = s.wait(logfile.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
+    print 'Job: ' + str(retval.jobId) + ' finished with status ' + str(retval.hasExited)
+
+    logfile.parse()
 
   # Finialize the gridengine
   s.exit()
