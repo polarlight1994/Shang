@@ -16,14 +16,15 @@ class SimLogParser(LogParserBase):
   def parse(self) :
     correct = False
 
-    print 'Parsing', self.logpath
-    with open(self.logpath,"r") as logfile:
-      for line in logfile:
-        if ("incorrect!" in line) :
-          correct = False
-        elif ("correct!" in line) :
-          correct = True
-    logfile.closed
+    logfile = open(self.logpath,"r")
+    for line in logfile:
+      if ("incorrect!" in line) :
+        correct = False
+      elif ("correct!" in line) :
+        correct = True
 
-    if correct :
-      print 'Correct!'
+    if not correct :
+      print self.logpath, '...Incorrect!'
+      print logfile.read()
+
+    logfile.closed

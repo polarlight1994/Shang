@@ -76,7 +76,6 @@ add_subdirectory(regresstests)
 add_custom_target(trivial_tests
                   COMMAND ${SIT}
                           --mode=trivial
-                  DEPENDS test_ir
                           --tests=$ENV{all_trivial_tests}
                           --tests_base=${VTS_SOURCE_ROOT}
                           --ptr_size=${POINTER_SIZE_IN_BITS}
@@ -85,4 +84,5 @@ add_custom_target(trivial_tests
                           --shang=${SHANG}
                           --llc=${LLC}
                           --lli=${LLI}
+                  DEPENDS test_ir ${SHANG}
                   COMMENT "Run all trivial tests")

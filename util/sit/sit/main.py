@@ -46,7 +46,7 @@ def runHLS(session, shang, hls_config) :
   # Create the HLS job.
   jt = session.createJobTemplate()
   jt.remoteCommand = 'timeout'
-  jt.args = ['300s', shang, hls_config]
+  jt.args = ['60s', shang, hls_config]
   #Set up the correct working directory and the output path
   jt.workingDirectory = os.path.dirname(hls_config)
   jt.outputPath = ':' + os.path.join(os.path.dirname(hls_config), 'hls.output')
@@ -106,7 +106,7 @@ def main(builtinParameters = {}):
     basedir = os.path.dirname(test_path)
     test_file = os.path.basename(test_path)
     test_name = os.path.splitext(test_file)[0]
-    print "Running", args.mode, "test in", basedir, "for", test_name
+    #print "Running", args.mode, "test in", basedir, "for", test_name
 
     #Global dict for the common configurations
     test_config = { "hardware_function": test_name,
@@ -134,9 +134,9 @@ def main(builtinParameters = {}):
   s.synchronize([ drmaa.Session.JOB_IDS_SESSION_ALL ], drmaa.Session.TIMEOUT_WAIT_FOREVER)
 
   for logfile in logfiles:
-    print 'Collecting job ' + logfile.jobid
+    #print 'Collecting job ' + logfile.jobid
     retval = s.wait(logfile.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
-    print 'Job: ' + str(retval.jobId) + ' finished with status ' + str(retval.hasExited)
+    #print 'Job: ' + str(retval.jobId) + ' finished with status ' + str(retval.hasExited)
 
     logfile.parse()
 
