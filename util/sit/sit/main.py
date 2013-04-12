@@ -86,7 +86,7 @@ def runHybridSimulation(session, hls_base, hls_jid, hls_config, template_env) :
   session.deleteJobTemplate(jt)
 
   #TODO: Wait until the simulation finish and parse the output.
-  return SimLogParser(hybrid_sim_log, jobid)
+  return SimLogParser(hls_config['test_name'], hybrid_sim_log, jobid)
 
 def main(builtinParameters = {}):
   args = ParseOptions()
@@ -109,7 +109,8 @@ def main(builtinParameters = {}):
     #print "Running", args.mode, "test in", basedir, "for", test_name
 
     #Global dict for the common configurations
-    test_config = { "hardware_function": test_name,
+    test_config = { "test_name": test_name,
+                    "hardware_function": test_name,
                     "test_file" : test_path,
                     "config_dir" : args.tests_base,
                     "ptr_size" : args.ptr_size,
@@ -136,9 +137,9 @@ def main(builtinParameters = {}):
   for logfile in logfiles:
     #print 'Collecting job ' + logfile.jobid
     retval = s.wait(logfile.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
+    if not retval.hasExited or retval.exitStatus != 0 :
+      logfile.dump()
     #print 'Job: ' + str(retval.jobId) + ' finished with status ' + str(retval.hasExited)
-
-    logfile.parse()
 
   # Finialize the gridengine
   s.exit()

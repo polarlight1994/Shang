@@ -1,17 +1,24 @@
 #!/usr/bin/env python
 
 class LogParserBase :
+  test_name = ''
   logpath = ''
   jobid = 0
 
-  def __init__(self, logpath, jobid) :
+  def __init__(self, test_name, logpath, jobid) :
+    self.test_name = test_name
     self.logpath = logpath
     self.jobid = jobid
 
 class SimLogParser(LogParserBase):
 
-  def __init__(self, logpath, jobid) :
-    LogParserBase.__init__(self, logpath, jobid)
+  def __init__(self, test_name, logpath, jobid) :
+    LogParserBase.__init__(self, test_name, logpath, jobid)
+
+  def dump(self) :
+    with open(self.logpath,"r") as logfile:
+      for line in logfile :
+        print line
 
   def parse(self) :
     correct = False
