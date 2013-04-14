@@ -88,13 +88,13 @@ set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
 
 proc apply_from_to { Src Dst Slack } {
   foreach DstPattern $Dst {
-    set dst [get_keepers "*main_inst|$DstPattern*"]
+    set dst [get_keepers "*$DstPattern*"]
 
     if { [get_collection_size $dst] } { break }
   }
 
   foreach SrcPattern $Src {
-    set src [get_keepers "*main_inst|$SrcPattern*"]
+    set src [get_keepers "*$SrcPattern*"]
 
     if { [get_collection_size $src] } { break }
   }
@@ -106,13 +106,13 @@ proc apply_from_to { Src Dst Slack } {
 
 proc apply_from_thu_to { Src Dst Slack ThuNodes } {
   foreach DstPattern $Dst {
-    set dst [get_keepers "*main_inst|$DstPattern*"]
+    set dst [get_keepers "*$DstPattern*"]
 
     if { [get_collection_size $dst] } { break }
   }
 
   foreach SrcPattern $Src {
-    set src [get_keepers "*main_inst|$SrcPattern*"]
+    set src [get_keepers "*$SrcPattern*"]
 
     if { [get_collection_size $src] } { break }
   }
@@ -120,7 +120,7 @@ proc apply_from_thu_to { Src Dst Slack ThuNodes } {
   if {[get_collection_size $src] && [get_collection_size $dst]} {
     foreach thu_node $ThuNodes {
       foreach ThuPattern $thu_node {
-        set thu [get_nets "*main_inst|$ThuPattern*"]
+        set thu [get_nets "*$ThuPattern*"]
 
         if { [get_collection_size $thu] } { break }
       }
