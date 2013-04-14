@@ -17,7 +17,7 @@ from teststeps import TestStep, HLSStep
 def ParseOptions() :
   import argparse
   parser = argparse.ArgumentParser(description='The Shang Integrated Tester')
-  parser.add_argument("--mode", type=str, choices=[TestStep.HybridSim, TestStep.PureHWSim], help="the mode of sit", required=True)
+  parser.add_argument("--mode", type=str, choices=[TestStep.HybridSim, TestStep.PureHWSim, TestStep.AlteraSyn], help="the mode of sit", required=True)
   parser.add_argument("--tests", type=str, help="tests to run", required=True)
   parser.add_argument("--config_dir", type=str, help="base dir of the test suit (to locate the config templates)", required=True)
   parser.add_argument("--ptr_size", type=int, help="pointer size in bits", required=True)
@@ -70,11 +70,9 @@ def main(builtinParameters = {}):
         retval = s.wait(job.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
         if not retval.hasExited or retval.exitStatus != 0 :
           print "Test", job.test_name, "FAIL"
-          #job.dumplog()
         else :
           print "Test", job.test_name, "passed"
 
-        job.dumplog()
         # Generate subtest.
         # FIXME: Only generate the subtest if the previous test passed.
         for subtest in job.generateSubTests() :

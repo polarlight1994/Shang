@@ -27,6 +27,7 @@ class TestStep :
 
   HybridSim = 'hybrid_sim'
   PureHWSim = 'pure_hw_sim'
+  AlteraSyn = 'altera_syn'
 
   def __init__(self, config):
     self.__dict__ = config.copy()
@@ -177,7 +178,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     #If test type == hybrid simulation
     if self.mode == TestStep.HybridSim :
       return self.generateHybridSim()
-    elif self.mode == TestStep.PureHWSim :
+    elif self.mode == TestStep.PureHWSim or self.mode == TestStep.AlteraSyn :
       return self.generatePureHWSim()
 
     return []
@@ -186,8 +187,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     return [ HybridSimStep(self) ]
 
   def generatePureHWSim(self) :
-    #return [ PureHWSimStep(self) ]
-    return [ AlteraSynStep(self) ]
+    return [ PureHWSimStep(self) ]
 
 # The test step for hybrid simulation.
 class HybridSimStep(TestStep) :
@@ -429,6 +429,13 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
     print 'Submitted pure hardware simulation', self.test_name
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
+
+  def generateSubTests(self) :
+    #If test type == hybrid simulation
+    if self.mode == TestStep.AlteraSyn :
+      return [ AlteraSynStep(self) ]
+
+    return []
 
 class AlteraSynStep(TestStep) :
 
