@@ -186,7 +186,8 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     return [ HybridSimStep(self) ]
 
   def generatePureHWSim(self) :
-    return [ PureHWSimStep(self) ]
+    #return [ PureHWSimStep(self) ]
+    return [ AlteraSynStep(self) ]
 
 # The test step for hybrid simulation.
 class HybridSimStep(TestStep) :
@@ -277,7 +278,6 @@ class PureHWSimStep(TestStep) :
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
-
   def prepareTest(self) :
     self.pure_hw_sim_base_dir = os.path.join(self.hls_base_dir, 'pure_hw_sim')
     os.makedirs(self.pure_hw_sim_base_dir)
@@ -427,5 +427,72 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
 
 
     print 'Submitted pure hardware simulation', self.test_name
+    self.jobid = session.runJob(jt)
+    session.deleteJobTemplate(jt)
+
+class AlteraSynStep(TestStep) :
+
+  def __init__(self, hls_step):
+    TestStep.__init__(self, hls_step.__dict__)
+    self.quartus_bin = '/nfs/app/altera/quartus12x64_web/quartus/bin/'
+
+  def prepareTest(self) :
+    self.altera_synthesis_base_dir = os.path.join(self.hls_base_dir, 'altera_synthesis')
+    os.makedirs(self.altera_synthesis_base_dir)
+    # Generate the testbench
+
+    self.altera_synthesis_script = os.path.join(self.altera_synthesis_base_dir, 'setup_prj.tcl')
+    self.generateFileFromTemplate('''# Load necessary package.
+load_package flow
+load_package report
+
+project_new {{ test_name }} -overwrite
+
+set_global_assignment -name FAMILY "Cyclone IV E"
+set_global_assignment -name DEVICE EP4CE75F29C6
+
+set_global_assignment -name TOP_LEVEL_ENTITY main
+set_global_assignment -name SOURCE_FILE {{ [hls_base_dir, test_name + ".sv"]|joinpath }}
+set_global_assignment -name SDC_FILE {{ [hls_base_dir, test_name + ".sdc"]|joinpath }}
+
+set_global_assignment -name RESERVE_ALL_UNUSED_PINS "AS INPUT TRI-STATED"
+set_global_assignment -name RESERVE_ASDO_AFTER_CONFIGURATION "AS OUTPUT DRIVING AN UNSPECIFIED SIGNAL"
+set_global_assignment -name RESERVE_ALL_UNUSED_PINS_NO_OUTPUT_GND "AS INPUT TRI-STATED"
+
+#Power estimation settings
+set_global_assignment -name EDA_SIMULATION_TOOL "ModelSim-Altera (Verilog)"
+set_global_assignment -name EDA_OUTPUT_DATA_FORMAT "VERILOG HDL" -section_id eda_simulation
+set_global_assignment -name EDA_TEST_BENCH_DESIGN_INSTANCE_NAME DUT_TOP_tb -section_id eda_simulation
+set_global_assignment -name EDA_WRITE_NODES_FOR_POWER_ESTIMATION ALL_NODES -section_id eda_simulation
+set_global_assignment -name EDA_MAP_ILLEGAL_CHARACTERS ON -section_id eda_simulation
+set_global_assignment -name EDA_TIME_SCALE "1 ps" -section_id eda_simulation
+set_global_assignment -name EDA_ENABLE_GLITCH_FILTERING ON -section_id eda_simulation
+
+set ENABLE_PHYSICAL_SYNTHESIS "OFF"
+
+source {{ [config_dir, 'quartus_compile.tcl']|joinpath }}
+execute_module -tool sta -args {--report_script {{ [config_dir, 'extract_timing.tcl']|joinpath }} }
+
+#Write the netlist
+execute_module -tool eda
+
+project_close
+''', self.altera_synthesis_script)
+
+  def runTest(self, session) :
+    # Create the simulation job.
+    jt = session.createJobTemplate()
+
+    jt.remoteCommand = 'timeout'
+    jt.args = [ '%ds' % (3600 * 4), os.path.join(self.quartus_bin, 'quartus_sh'), '-t',  self.altera_synthesis_script]
+    #Set up the correct working directory and the output path
+    jt.workingDirectory = self.altera_synthesis_base_dir
+    self.stdout = os.path.join(self.altera_synthesis_base_dir, 'altera_synthesis.output')
+    jt.outputPath = ':' + self.stdout
+    self.stderr = os.path.join(self.altera_synthesis_base_dir, 'altera_synthesis.stderr')
+    jt.errorPath = ':' + self.stderr
+
+
+    print 'Submitted altera synthesis', self.test_name
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
