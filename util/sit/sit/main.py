@@ -19,7 +19,7 @@ def ParseOptions() :
   parser = argparse.ArgumentParser(description='The Shang Integrated Tester')
   parser.add_argument("--mode", type=str, choices=[TestStep.HybridSim, TestStep.PureHWSim], help="the mode of sit", required=True)
   parser.add_argument("--tests", type=str, help="tests to run", required=True)
-  parser.add_argument("--tests_base", type=str, help="base dir of the test suit (to locate the config templates)", required=True)
+  parser.add_argument("--config_dir", type=str, help="base dir of the test suit (to locate the config templates)", required=True)
   parser.add_argument("--ptr_size", type=int, help="pointer size in bits", required=True)
   parser.add_argument("--shang", type=str, help="path to shang executable", required=True)
   parser.add_argument("--llc", type=str, help="path to llc executable")
@@ -29,80 +29,10 @@ def ParseOptions() :
 
   return parser.parse_args()
 
-def buildHLSConfig(test_name, dst_dir_base, test_config, template_env) :
-  # Fork the cofiguration
-  local_config = test_config.copy()
-
-  #for period in range(5, 21) :
-  #TODO: Scan the fmax.
-  local_config['fmax'] = 100.0 #1000.0 / float(period)
-
-  # Create the local folder for the current test.
-  from datetime import datetime
-  dst_dir = os.path.join(dst_dir_base, test_name, datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
-  os.makedirs(dst_dir)
-  #print "Created folder: ", dst_dir
-
-  local_config['test_binary_root'] = dst_dir
-
-  yield local_config
-
-def runHLS(session, shang, hls_config) :
-  # Create the HLS job.
-  jt = session.createJobTemplate()
-  jt.remoteCommand = 'timeout'
-  jt.args = ['60s', shang, hls_config]
-  #Set up the correct working directory and the output path
-  jt.workingDirectory = os.path.dirname(hls_config)
-  jt.outputPath = ':' + os.path.join(os.path.dirname(hls_config), 'hls.output')
-  jt.joinFiles=True
-  #Set up the environment variables
-  #jt.env = ...
-
-  jobid = session.runJob(jt)
-  session.deleteJobTemplate(jt)
-
-  return jobid
-
-def runHybridSimulation(session, hls_base, hls_jid, hls_config, template_env) :
-  # Create the hybrid simulation job.
-  jt = session.createJobTemplate()
-  workingDirectory = os.path.join(hls_base, 'hybrid_sim')
-  os.makedirs(workingDirectory)
-
-  #Generate the simulate script
-  hls_config['bybrid_sim_root'] = workingDirectory
-  sim_script = os.path.join(workingDirectory, 'hybrid_sim.sge')
-  template_env.get_template('hybrid_sim.sge.in').stream(hls_config).dump(sim_script)
-
-  jt.remoteCommand = 'bash'
-  jt.args = [ sim_script ]
-  #Set up the correct working directory and the output path
-  jt.workingDirectory = workingDirectory
-  hybrid_sim_log = os.path.join(workingDirectory, 'hybrid_sim.output')
-  jt.outputPath = ':' + hybrid_sim_log
-  jt.joinFiles=True
-  # Wait untill HLS finished.
-  jt.nativeSpecification = "-hold_jid %s" % hls_jid
-  #Set up the environment variables
-  jt.environment = {'VERILATOR_ROOT': os.path.dirname(os.path.dirname(hls_config['verilator'])) }
-
-  jobid = session.runJob(jt)
-  session.deleteJobTemplate(jt)
-
-  #TODO: Wait until the simulation finish and parse the output.
-  return SimLogParser(hls_config['test_name'], hybrid_sim_log, jobid)
-
-
-
 def main(builtinParameters = {}):
   args = ParseOptions()
 
   print "Starting the Shang Integrated Tester in", args.mode, "mode..."
-
-  # Get the synthesis configuration templates.
-  env = Environment(loader=FileSystemLoader(args.tests_base))
-  env.filters['joinpath'] = lambda list: os.path.join(*list)
 
   # Initialize the gridengine
   s = drmaa.Session()
@@ -111,26 +41,15 @@ def main(builtinParameters = {}):
 
 
   #Global dict for the common configurations
-  global_config = { #"test_name": test_name,
-                    #"hardware_function": test_name,
-                    #"test_file" : test_path,
-                    "config_dir" : args.tests_base,
-                    "ptr_size" : args.ptr_size,
-                    "llc" : args.llc,
-                    "lli" : args.lli,
-                    "shang" : args.shang,
-                    "verilator" : args.verilator,
-                    "systemc" : args.systemc }
+
 
   for test_path in args.tests.split() :
     basedir = os.path.dirname(test_path)
     test_file = os.path.basename(test_path)
     test_name = os.path.splitext(test_file)[0]
 
-    hls_config = global_config.copy()
-
     # TODO: Provide the keyword constructor
-    hls_step = HLSStep(hls_config)
+    hls_step = HLSStep(vars(args))
     hls_step.test_name = test_name
     hls_step.hardware_function = test_name
     hls_step.test_file = test_path

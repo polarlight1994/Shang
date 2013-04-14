@@ -181,7 +181,10 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
 
   def generateSubTests(self) :
     #If test type == hybrid simulation
-    return [ HybridSimStep(self) ]
+    if self.mode == TestStep.HybridSim :
+      return [ HybridSimStep(self) ]
+
+    return []
 
 # The test step for hybrid simulation.
 class HybridSimStep(TestStep) :

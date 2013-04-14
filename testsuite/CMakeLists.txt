@@ -38,7 +38,7 @@ macro(add_trivial_test name test_lls depends)
                     COMMAND ${SIT}
                             --mode=hybrid_sim
                             --tests=${test_lls}
-                            --tests_base=${VTS_SOURCE_ROOT}
+                            --config_dir=${VTS_SOURCE_ROOT}
                             --ptr_size=${POINTER_SIZE_IN_BITS}
                             --verilator=${VERILATOR_EXECUTABLE}
                             --systemc=${SYSTEMC}
