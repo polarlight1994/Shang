@@ -366,15 +366,21 @@ module DUT_TOP_tb();
 
   import "DPI-C" function int raise (int sig);
 
-  always_comb begin
-    if (!succ) begin
-      $display ("The result is incorrect!");
-      // Abort.
-      raise(6);
-      $stop;
-    end
+  integer cntfile;
 
+  always_comb begin
     if (fin) begin
+      if (!succ) begin
+        $display ("The result is incorrect!");
+        // Abort.
+        raise(6);
+        $stop;
+      end
+
+      cntfile = $fopen("num_cycle.txt");
+      $fwrite (cntfile, "%0d\\n",cnt);
+      $fclose(cntfile);
+
       // cnt
       $stop;
     end
@@ -385,7 +391,7 @@ module DUT_TOP_tb();
     // Produce the heard beat of the simulation.
     if (cnt % 80 == 0) $write(".");
     // Do not exceed 80 columns.
-    if (cnt % 6400 == 0) $write("%t\n", $time());
+    if (cnt % 6400 == 0) $write("%t\\n", $time());
   end
 
 endmodule''', os.path.join(self.pure_hw_sim_base_dir, 'DUT_TOP_tb.sv'))
@@ -397,10 +403,13 @@ endmodule''', os.path.join(self.pure_hw_sim_base_dir, 'DUT_TOP_tb.sv'))
 
 export PATH=/nfs/app/altera/modelsim_ase_12_x64/modelsim_ase/bin/:$PATH
 
-vlib work
-vlog +define+quartus_synthesis {{ [hls_base_dir, test_name + ".sv"]|joinpath }}
-vlog -sv DUT_TOP_tb.sv
-vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f"
+vlib work || exit 1
+vlog -sv {{ [hls_base_dir, test_name + ".sv"]|joinpath }} || exit 1
+vlog -sv DUT_TOP_tb.sv || exit 1
+vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
+
+# num_cycle.txt will only generate when the simulation produce a correct result.
+[ -f num_cycle.txt ] || exit 1
 ''', self.pure_hw_sim_script)
 
   def runTest(self, session) :
