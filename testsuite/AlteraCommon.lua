@@ -179,11 +179,11 @@ local _, message = preprocess {input=SDCHeader, output=SlackFile}
 if message ~= nil then print(message) end
 SlackFile:close()
 
-local VerifyFile = assert(io.open (MainDelayVerifyOutput, "w"))
-local preprocess = require "luapp" . preprocess
-local _, message = preprocess {input=VerifyHeader, output=VerifyFile}
-if message ~= nil then print(message) end
-VerifyFile:close()
+--local VerifyFile = assert(io.open (MainDelayVerifyOutput, "w"))
+--local preprocess = require "luapp" . preprocess
+--local _, message = preprocess {input=VerifyHeader, output=VerifyFile}
+--if message ~= nil then print(message) end
+--VerifyFile:close()
 ]=]
 
 SynAttr.ParallelCaseAttr = '/* parallel_case */'
@@ -237,9 +237,9 @@ $(_put('#')) $(DstNameSet) <- $(SrcNameSet) delay $(Delay)
 ]=]
 
 Misc.DelayVerifyScript = [=[
-local VerifyFile = assert(io.open (MainDelayVerifyOutput, "a+"))
-local preprocess = require "luapp" . preprocess
-local _, message = preprocess {input=VerifyDatapathDelay, output=VerifyFile}
-if message ~= nil then print(message) end
-VerifyFile:close()
+--local VerifyFile = assert(io.open (MainDelayVerifyOutput, "a+"))
+--local preprocess = require "luapp" . preprocess
+--local _, message = preprocess {input=VerifyDatapathDelay, output=VerifyFile}
+--if message ~= nil then print(message) end
+--VerifyFile:close()
 ]=]

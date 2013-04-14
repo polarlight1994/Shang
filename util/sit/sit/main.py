@@ -51,7 +51,7 @@ def main(builtinParameters = {}):
     # TODO: Provide the keyword constructor
     hls_step = HLSStep(vars(args))
     hls_step.test_name = test_name
-    hls_step.hardware_function = test_name
+    hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
     hls_step.test_file = test_path
     hls_step.fmax = 100.0
 
@@ -70,11 +70,11 @@ def main(builtinParameters = {}):
         retval = s.wait(job.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
         if not retval.hasExited or retval.exitStatus != 0 :
           print "Test", job.test_name, "FAIL"
-          job.dumplog()
+          #job.dumplog()
         else :
           print "Test", job.test_name, "passed"
 
-
+        job.dumplog()
         # Generate subtest.
         # FIXME: Only generate the subtest if the previous test passed.
         for subtest in job.generateSubTests() :

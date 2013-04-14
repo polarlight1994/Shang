@@ -33,10 +33,10 @@ add_custom_target(test_ir COMMENT "Compiling all source to llvm ir")
 
 set(ENV{all_trivial_tests} "")
 
-macro(add_trivial_test name test_lls depends)
+macro(add_test_config name test_lls depends mode)
   add_custom_target(${name}
                     COMMAND ${SIT}
-                            --mode=hybrid_sim
+                            --mode=${mode}
                             --tests=${test_lls}
                             --config_dir=${VTS_SOURCE_ROOT}
                             --ptr_size=${POINTER_SIZE_IN_BITS}
@@ -48,7 +48,7 @@ macro(add_trivial_test name test_lls depends)
                     DEPENDS ${depends} ${SHANG}
                     COMMENT "Run trivial tests")
 
-endmacro(add_trivial_test)
+endmacro(add_test_config)
 
 macro(add_shang_test test_ll test_file test_name)
   set(TEST "${test_name}")
@@ -77,13 +77,12 @@ macro(add_shang_test test_ll test_file test_name)
   )
   add_custom_target(${TEST}_ir DEPENDS ${TEST_LL})
   add_dependencies(test_ir ${TEST}_ir)
-
-  add_trivial_test("${TEST}_trivial_test" ${TEST_LL} ${TEST}_ir)
 endmacro(add_shang_test)
 
 macro(add_test_cases file_name)
 	add_shang_test(test_ll "${file_name}.cpp" ${file_name})
   set(ENV{all_trivial_tests} "$ENV{all_trivial_tests} ${test_ll}")
+  add_test_config("${file_name}_trivial_test" ${test_ll} ${file_name}_ir hybrid_sim)
 endmacro(add_test_cases)
 
 add_subdirectory(SimpleTest)
@@ -92,4 +91,4 @@ add_subdirectory(benchmark)
 add_subdirectory(regresstests)
 
 # Run all trivial tests.
-add_trivial_test("trivial_tests" $ENV{all_trivial_tests} "test_ir")
+add_test_config(trivial_tests $ENV{all_trivial_tests} test_ir hybrid_sim)

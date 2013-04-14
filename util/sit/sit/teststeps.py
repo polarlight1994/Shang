@@ -46,6 +46,9 @@ class TestStep :
 
   # Optionally, lauch the subtests
 
+  def generateFileFromTemplate(self, template_str, output_file_path) :
+    self.config_template_env.from_string(template_str).stream(self.__dict__).dump(output_file_path)
+
   def dumplog(self) :
     print "stdout of", self.test_name, "begin"
     with open(self.stdout, "r") as logfile:
@@ -74,9 +77,9 @@ class HLSStep(TestStep) :
                            datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
     os.makedirs(self.hls_base_dir)
 
-    # Create the template
-    template = self.config_template_env.from_string('''
--- Initialize the global variables.
+    #Generate the HLS config.
+    self.synthesis_config_file = os.path.join(self.hls_base_dir, 'test_config.lua')
+    self.generateFileFromTemplate('''-- Initialize the global variables.
 ptr_size = {{ ptr_size }}
 test_binary_root = [[{{ hls_base_dir }}]]
 InputFile = [[{{ test_file }}]]
@@ -106,11 +109,6 @@ dofile([[{{ [config_dir, 'EP4CE75F29C6.lua']|joinpath }}]])
 -- ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
 
 {% if hardware_function == 'main' %}
-
--- Load ip module and simulation interface script.
-dofile([[{{ [config_dir, 'InterfaceGen.lua']|joinpath }}]])
-dofile([[{{ [config_dir, 'ModelSimGen.lua']|joinpath }}]])
-
 Misc.RTLGlobalScript = [=[
 RTLGlobalCode = FUs.CommonTemplate
 ]=]
@@ -153,11 +151,7 @@ if message ~= nil then print(message) end
 RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
 ]=]
 {% endif %}
-''')
-
-    #Generate the HLS config.
-    self.synthesis_config_file = os.path.join(self.hls_base_dir, 'test_config.lua')
-    template.stream(self.__dict__).dump(self.synthesis_config_file)
+''', self.synthesis_config_file)
 
   # Run the test
   def runTest(self, session) :
@@ -182,9 +176,17 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
   def generateSubTests(self) :
     #If test type == hybrid simulation
     if self.mode == TestStep.HybridSim :
-      return [ HybridSimStep(self) ]
+      return self.generateHybridSim()
+    elif self.mode == TestStep.PureHWSim :
+      return self.generatePureHWSim()
 
     return []
+
+  def generateHybridSim(self) :
+    return [ HybridSimStep(self) ]
+
+  def generatePureHWSim(self) :
+    return [ PureHWSimStep(self) ]
 
 # The test step for hybrid simulation.
 class HybridSimStep(TestStep) :
@@ -197,8 +199,9 @@ class HybridSimStep(TestStep) :
     self.hybrid_sim_base_dir = os.path.join(self.hls_base_dir, 'hybrid_sim')
     os.makedirs(self.hybrid_sim_base_dir)
 
-    # Create the template
-    template = self.config_template_env.from_string('''#!/bin/bash
+    #Generate the hybrid simulation script.
+    self.hybrid_sim_script = os.path.join(self.hls_base_dir, 'hybrid_sim.sge')
+    self.generateFileFromTemplate('''#!/bin/bash
 #$ -S /bin/bash
 
 export VERILATOR_ROOT=$(dirname $(dirname {{ verilator }}))
@@ -249,11 +252,7 @@ timeout 1200s {{ [hls_base_dir, test_name + "_systemc_testbench"]|joinpath }} > 
 
 [ -f hardware.output ]  && exit 1
 diff expected.output hardware.out || exit 1
-    ''')
-
-    #Generate the hybrid simulation script.
-    self.hybrid_sim_script = os.path.join(self.hls_base_dir, 'test_config.lua')
-    template.stream(self.__dict__).dump(self.hybrid_sim_script)
+    ''', self.hybrid_sim_script)
 
   def runTest(self, session) :
     # Create the hybrid simulation job.
@@ -270,5 +269,154 @@ diff expected.output hardware.out || exit 1
 
 
     print 'Submitted hybrid simulation', self.test_name
+    self.jobid = session.runJob(jt)
+    session.deleteJobTemplate(jt)
+
+
+class PureHWSimStep(TestStep) :
+
+  def __init__(self, hls_step):
+    TestStep.__init__(self, hls_step.__dict__)
+
+  def prepareTest(self) :
+    self.pure_hw_sim_base_dir = os.path.join(self.hls_base_dir, 'pure_hw_sim')
+    os.makedirs(self.pure_hw_sim_base_dir)
+    # Generate the testbench
+
+    self.generateFileFromTemplate('''`timescale 1ns/1ps
+module DUT_TOP(
+  input wire clk,
+  input wire rstN,
+  input wire start,
+  output reg[7:0] LED7,
+  output wire succ,
+  output wire fin
+);
+
+wire  [31:0]         return_value;
+wire                 start_N =~start;
+
+// The module successfully complete its execution if return_value is 0.
+assign succ = ~(|return_value);
+
+  main main_inst(
+  .clk(clk),
+  .rstN(rstN),
+  .start(start_N),
+  .fin(fin),
+  .return_value(return_value)
+  );
+
+  always@(posedge clk, negedge rstN) begin
+    if(!rstN)begin
+      LED7 <= 8'b10101010;
+    end else begin
+      if(fin)begin
+        LED7 <= (|return_value) ? 8'b00000000 : 8'b11111111;
+      end
+    end
+  end
+
+endmodule
+
+module DUT_TOP_tb();
+  reg clk;
+  reg rstN;
+  reg start;
+  wire [7:0] LED7;
+  wire succ;
+  wire fin;
+  reg startcnt;
+
+  DUT_TOP i1 (
+    .clk(clk),
+    .rstN(rstN),
+      .start(start),
+    .LED7(LED7),
+    .succ(succ),
+    .fin(fin)
+  );
+
+  // integer wfile,wtmpfile;
+  initial begin
+    clk = 0;
+    rstN = 1;
+    start = 0;
+    startcnt = 0;
+    #{{ (1000.0 / fmax) / 2 }}ns;
+    #1ns;
+    rstN = 0;
+    #{{ (1000.0 / fmax) / 2 }}ns;
+    #{{ (1000.0 / fmax) / 2 }}ns;
+    rstN = 1;
+    #{{ (1000.0 / fmax) / 2 }}ns;
+    #{{ (1000.0 / fmax) / 2 }}ns;
+    start = 1;
+    $display ("Start at %t!", $time());
+    #{{ (1000.0 / fmax) / 2 }}ns;
+    #{{ (1000.0 / fmax) / 2 }}ns;
+    start = 0;
+    startcnt = 1;
+  end
+
+  // Generate the 100MHz clock.
+  always #{{ (1000.0 / fmax) / 2 }}ns clk = ~clk;
+
+  reg [31:0] cnt = 0;
+
+  import "DPI-C" function int raise (int sig);
+
+  always_comb begin
+    if (!succ) begin
+      $display ("The result is incorrect!");
+      // Abort.
+      raise(6);
+      $stop;
+    end
+
+    if (fin) begin
+      // cnt
+      $stop;
+    end
+  end
+
+  always@(posedge clk) begin
+    if (startcnt) cnt <= cnt + 1;
+    // Produce the heard beat of the simulation.
+    if (cnt % 80 == 0) $write(".");
+    // Do not exceed 80 columns.
+    if (cnt % 6400 == 0) $write("%t\n", $time());
+  end
+
+endmodule''', os.path.join(self.pure_hw_sim_base_dir, 'DUT_TOP_tb.sv'))
+
+    #Generate the simulation script.
+    self.pure_hw_sim_script = os.path.join(self.pure_hw_sim_base_dir, 'pure_hw_sim.sge')
+    self.generateFileFromTemplate('''#!/bin/bash
+#$ -S /bin/bash
+
+export PATH=/nfs/app/altera/modelsim_ase_12_x64/modelsim_ase/bin/:$PATH
+
+vlib work
+vlog +define+quartus_synthesis {{ [hls_base_dir, test_name + ".sv"]|joinpath }}
+vlog -sv DUT_TOP_tb.sv
+vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f"
+''', self.pure_hw_sim_script)
+
+  def runTest(self, session) :
+    # Create the simulation job.
+    jt = session.createJobTemplate()
+
+    jt.remoteCommand = 'bash'
+    jt.args = [ self.pure_hw_sim_script ]
+    #Set up the correct working directory and the output path
+    jt.workingDirectory = self.pure_hw_sim_base_dir
+    self.stdout = os.path.join(self.pure_hw_sim_base_dir, 'pure_hw_sim.output')
+    jt.outputPath = ':' + self.stdout
+    self.stderr = os.path.join(self.pure_hw_sim_base_dir, 'pure_hw_sim.stderr')
+    jt.errorPath = ':' + self.stderr
+
+
+    print 'Submitted pure hardware simulation', self.test_name
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
