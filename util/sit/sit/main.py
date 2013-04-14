@@ -93,6 +93,8 @@ def runHybridSimulation(session, hls_base, hls_jid, hls_config, template_env) :
   #TODO: Wait until the simulation finish and parse the output.
   return SimLogParser(hls_config['test_name'], hybrid_sim_log, jobid)
 
+
+
 def main(builtinParameters = {}):
   args = ParseOptions()
 
@@ -105,7 +107,7 @@ def main(builtinParameters = {}):
   # Initialize the gridengine
   s = drmaa.Session()
   s.initialize()
-  tests = []
+  active_jobs = []
 
 
   #Global dict for the common configurations
@@ -128,7 +130,7 @@ def main(builtinParameters = {}):
     hls_config = global_config.copy()
 
     # TODO: Provide the keyword constructor
-    hls_step = HLSStep(hls_config, None)
+    hls_step = HLSStep(hls_config)
     hls_step.test_name = test_name
     hls_step.hardware_function = test_name
     hls_step.test_file = test_path
@@ -137,11 +139,10 @@ def main(builtinParameters = {}):
     hls_step.prepareTest()
     hls_step.runTest(s)
 
-    tests.append(hls_step)
+    active_jobs.append(hls_step)
 
 
   # Examinate the status of the jobs
-  active_jobs = tests
   while active_jobs :
     next_active_jobs = []
     for job in active_jobs:
@@ -152,6 +153,15 @@ def main(builtinParameters = {}):
           print "Test", job.test_name, "FAIL"
         else :
           print "Test", job.test_name, "passed"
+
+        job.dumplog()
+
+        # Generate subtest.
+        for subtest in job.generateSubTests() :
+          subtest.prepareTest()
+          subtest.runTest(s)
+          next_active_jobs.append(subtest)
+
         continue
 
       next_active_jobs.append(job)

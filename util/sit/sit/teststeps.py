@@ -16,13 +16,16 @@
 #  The function to parse the output
 
 from jinja2 import Environment, FileSystemLoader, Template
-import os
+import os, sys
 
 # Base class of test step.
 class TestStep :
   config_template_env = Environment()
+  jobid = 0
+  stdout = ''
+  stderr = ''
 
-  def __init__(self, config, config_template_env):
+  def __init__(self, config):
     self.__dict__ = config.copy()
     self.config_template_env.filters['joinpath'] = lambda list: os.path.join(*list)
 
@@ -40,11 +43,25 @@ class TestStep :
 
   # Optionally, lauch the subtests
 
+  def dumplog(self) :
+    print "stdout of", self.test_name, "begin"
+    with open(self.stdout, "r") as logfile:
+      sys.stdout.write(logfile.read())
+    print "stdout of", self.test_name, "end"
+
+    print "stderr of", self.test_name, "begin"
+    with open(self.stderr, "r") as logfile:
+      sys.stdout.write(logfile.read())
+    print "stderr of", self.test_name, "end"
+
+  def generateSubTests(self) :
+    return []
+
 # High-level synthesis step.
 class HLSStep(TestStep) :
 
-  def __init__(self, config, config_template_env):
-    TestStep.__init__(self, config, config_template_env)
+  def __init__(self, config):
+    TestStep.__init__(self, config)
 
   def prepareTest(self) :
     # Create the local folder for the current test.
@@ -135,7 +152,6 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
 {% endif %}
 ''')
 
-    #print template.render(self.__dict__)
     #Generate the HLS config.
     self.synthesis_config_file = os.path.join(self.hls_base_dir, 'test_config.lua')
     template.stream(self.__dict__).dump(self.synthesis_config_file)
@@ -149,13 +165,104 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     #Set up the correct working directory and the output path
     jt.workingDirectory = os.path.dirname(self.synthesis_config_file)
 
-    self.hls_stdout = os.path.join(self.hls_base_dir, 'hls.stdout')
-    jt.outputPath = ':' + self.hls_stdout
+    self.stdout = os.path.join(self.hls_base_dir, 'hls.stdout')
+    jt.outputPath = ':' + self.stdout
 
-    self.hls_stderr = os.path.join(self.hls_base_dir, 'hls.stderr')
-    jt.errorPath = ':' + self.hls_stderr
+    self.stderr = os.path.join(self.hls_base_dir, 'hls.stderr')
+    jt.errorPath = ':' + self.stderr
 
-    print 'Submitted', self.test_name
+    print 'Submitted HLS', self.test_name
     #Submit the job.
+    self.jobid = session.runJob(jt)
+    session.deleteJobTemplate(jt)
+
+  def generateSubTests(self) :
+    #If test type == hybrid simulation
+    return [ HybridSimStep(self) ]
+
+# The test step for hybrid simulation.
+class HybridSimStep(TestStep) :
+
+  def __init__(self, hls_step):
+    TestStep.__init__(self, hls_step.__dict__)
+
+
+  def prepareTest(self) :
+    self.hybrid_sim_base_dir = os.path.join(self.hls_base_dir, 'hybrid_sim')
+    os.makedirs(self.hybrid_sim_base_dir)
+
+    # Create the template
+    template = self.config_template_env.from_string('''#!/bin/bash
+#$ -S /bin/bash
+
+export VERILATOR_ROOT=$(dirname $(dirname {{ verilator }}))
+export SYSTEMC={{ systemc }}
+export LD_LIBRARY_PATH=$SYSTEMC/lib-linux{{ ptr_size }}:$LD_LIBRARY_PATH
+
+# Generate native code for the software part.
+llc={{ llc }}
+{{ llc }} -march={{ llc_march}} \
+          {{ [hls_base_dir, test_name + "_soft.ll"]|joinpath }} \
+          -filetype=obj \
+          -mc-relax-all \
+          -o {{ [hybrid_sim_base_dir, test_name + "_soft.o"]|joinpath }} \
+|| exit 1
+
+# Generate cpp files from the rtl
+{{ verilator }} {{ [hls_base_dir, test_name + ".sv"]|joinpath }} \
+                -Wall --sc -D__DEBUG_IF +define+__VERILATOR_SIM \
+                --top-module {{ [test_name, "_RTL_DUT"]|join }} \
+|| exit 1
+
+# Compile the verilator objects
+make -C "{{ hybrid_sim_base_dir }}/obj_dir/"\
+      -j -f "V{{ [test_name, "_RTL_DUT"]|join }}.mk" \
+     "V{{ [test_name, "_RTL_DUT"]|join }}__ALL.a" \
+|| exit 1
+
+make -C "{{ hybrid_sim_base_dir }}/obj_dir/" \
+     -j -f "V{{ [test_name, "_RTL_DUT"]|join }}.mk" \
+     {{ [hls_base_dir, test_name + "_if.o"]|joinpath }} "verilated.o" \
+|| exit 1
+
+# Generate the testbench executables.
+g++ -L$SYSTEMC/lib-linux{{ ptr_size }}  -lsystemc \
+    {{ [hls_base_dir, test_name + "_if.o"]|joinpath }} \
+    {{ [hybrid_sim_base_dir, test_name + "_soft.o"]|joinpath }} \
+    {{ [hybrid_sim_base_dir, "obj_dir", 'V' + test_name + "_RTL_DUT__ALL*.o"]|joinpath }} \
+    {{ [hybrid_sim_base_dir, "obj_dir", "verilated.o"]|joinpath }} \
+    -o {{ [hls_base_dir, test_name + "_systemc_testbench"]|joinpath }} \
+|| exit 1
+
+# Run the systemc testbench
+timeout 1200s {{ [hls_base_dir, test_name + "_systemc_testbench"]|joinpath }} > hardware.out \
+|| exit 1
+
+# Compare the hardware output with the standar output
+{{ lli }} {{ test_file }} > expected.output || exit 1
+
+[ -f hardware.output ]  && exit 1
+diff expected.output hardware.out || exit 1
+    ''')
+
+    #Generate the hybrid simulation script.
+    self.hybrid_sim_script = os.path.join(self.hls_base_dir, 'test_config.lua')
+    template.stream(self.__dict__).dump(self.hybrid_sim_script)
+
+  def runTest(self, session) :
+    # Create the hybrid simulation job.
+    jt = session.createJobTemplate()
+
+    jt.remoteCommand = 'bash'
+    jt.args = [ self.hybrid_sim_script ]
+    #Set up the correct working directory and the output path
+    jt.workingDirectory = self.hybrid_sim_base_dir
+    self.stdout = os.path.join(self.hybrid_sim_base_dir, 'hybrid_sim.output')
+    jt.outputPath = ':' + self.stdout
+    self.stderr = os.path.join(self.hybrid_sim_base_dir, 'hybrid_sim.stderr')
+    jt.errorPath = ':' + self.stderr
+
+
+    print 'Submitted hybrid simulation', self.test_name
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
