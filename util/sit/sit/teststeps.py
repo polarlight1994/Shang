@@ -25,6 +25,9 @@ class TestStep :
   stdout = ''
   stderr = ''
 
+  HybridSim = 'hybrid_sim'
+  PureHWSim = 'pure_hw_sim'
+
   def __init__(self, config):
     self.__dict__ = config.copy()
     self.config_template_env.filters['joinpath'] = lambda list: os.path.join(*list)

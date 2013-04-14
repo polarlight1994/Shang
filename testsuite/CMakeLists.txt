@@ -36,7 +36,7 @@ set(ENV{all_trivial_tests} "")
 macro(add_trivial_test name test_lls depends)
   add_custom_target(${name}
                     COMMAND ${SIT}
-                            --mode=trivial
+                            --mode=hybrid_sim
                             --tests=${test_lls}
                             --tests_base=${VTS_SOURCE_ROOT}
                             --ptr_size=${POINTER_SIZE_IN_BITS}
