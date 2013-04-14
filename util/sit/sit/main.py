@@ -11,6 +11,8 @@ import drmaa
 from jinja2 import Environment, FileSystemLoader, Template
 
 from logparser import SimLogParser
+from teststeps import HLSStep
+
 
 def ParseOptions() :
   import argparse
@@ -28,17 +30,20 @@ def ParseOptions() :
   return parser.parse_args()
 
 def buildHLSConfig(test_name, dst_dir_base, test_config, template_env) :
+  # Fork the cofiguration
+  local_config = test_config.copy()
+
+  #for period in range(5, 21) :
+  #TODO: Scan the fmax.
+  local_config['fmax'] = 100.0 #1000.0 / float(period)
+
   # Create the local folder for the current test.
   from datetime import datetime
   dst_dir = os.path.join(dst_dir_base, test_name, datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
   os.makedirs(dst_dir)
   #print "Created folder: ", dst_dir
 
-  # Fork the cofiguration
-  local_config = test_config.copy()
   local_config['test_binary_root'] = dst_dir
-  #TODO: Scan the fmax.
-  local_config['fmax'] = 100.0
 
   yield local_config
 
@@ -100,52 +105,56 @@ def main(builtinParameters = {}):
   # Initialize the gridengine
   s = drmaa.Session()
   s.initialize()
-  logfiles = []
+  tests = []
+
+
+  #Global dict for the common configurations
+  global_config = { #"test_name": test_name,
+                    #"hardware_function": test_name,
+                    #"test_file" : test_path,
+                    "config_dir" : args.tests_base,
+                    "ptr_size" : args.ptr_size,
+                    "llc" : args.llc,
+                    "lli" : args.lli,
+                    "shang" : args.shang,
+                    "verilator" : args.verilator,
+                    "systemc" : args.systemc }
 
   for test_path in args.tests.split() :
     basedir = os.path.dirname(test_path)
     test_file = os.path.basename(test_path)
     test_name = os.path.splitext(test_file)[0]
-    #print "Running", args.mode, "test in", basedir, "for", test_name
 
-    #Global dict for the common configurations
-    test_config = { "test_name": test_name,
-                    "hardware_function": test_name,
-                    "test_file" : test_path,
-                    "config_dir" : args.tests_base,
-                    "ptr_size" : args.ptr_size,
-                    "llc" : args.llc,
-                    "lli" : args.lli,
-                    "verilator" : args.verilator,
-                    "systemc" : args.systemc }
+    hls_config = global_config.copy()
 
-    #Generate the synthesis configuration and run the test
-    for hls_config in buildHLSConfig(test_name, basedir, test_config, env) :
-      hls_base = hls_config['test_binary_root']
-      synthesis_config_file = os.path.join(hls_base, 'test_config.lua')
-      env.get_template('test_config.lua.in').stream(hls_config).dump(synthesis_config_file)
+    # TODO: Provide the keyword constructor
+    hls_step = HLSStep(hls_config, None)
+    hls_step.test_name = test_name
+    hls_step.hardware_function = test_name
+    hls_step.test_file = test_path
+    hls_step.fmax = 100.0
 
-      #Submit the HLS job
-      hls_jid = runHLS(s, args.shang, synthesis_config_file)
-      # Fork the cofiguration
-      logfiles.append(runHybridSimulation(s, hls_base, hls_jid, hls_config.copy(), env))
-      # Run the simulation
+    hls_step.prepareTest()
+    hls_step.runTest(s)
 
-  active_jobs = logfiles
+    tests.append(hls_step)
+
+
+  # Examinate the status of the jobs
+  active_jobs = tests
   while active_jobs :
     next_active_jobs = []
-    for logfile in active_jobs:
-      status = s.jobStatus(logfile.jobid)
+    for job in active_jobs:
+      status = s.jobStatus(job.jobid)
       if status == drmaa.JobState.DONE or status == drmaa.JobState.FAILED:
-        retval = s.wait(logfile.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
+        retval = s.wait(job.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
         if not retval.hasExited or retval.exitStatus != 0 :
-          print "Test", logfile.test_name, "Fail, dumping logfile:",  logfile.logpath
-          logfile.dump()
+          print "Test", job.test_name, "FAIL"
         else :
-          print "Test", logfile.test_name, "passed"
+          print "Test", job.test_name, "passed"
         continue
 
-      next_active_jobs.append(logfile)
+      next_active_jobs.append(job)
 
     time.sleep(5)
     active_jobs = next_active_jobs[:]
