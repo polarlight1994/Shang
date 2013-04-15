@@ -438,6 +438,13 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
 
+  def parseResults(self) :
+    with open(os.path.join(self.pure_hw_sim_base_dir, 'num_cycle.txt')) as counter_file:
+      num_cycles = int(counter_file.read())
+
+    self.results['num_cycles'] = num_cycles
+    print self.results
+
   def generateSubTests(self) :
     #If test type == hybrid simulation
     if self.mode == TestStep.AlteraSyn :
