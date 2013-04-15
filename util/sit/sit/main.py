@@ -67,9 +67,11 @@ def main(builtinParameters = {}):
         if not retval.hasExited or retval.exitStatus != 0 :
           print "Test", job.test_name, "FAIL"
           job.dumplog()
-        else :
-          print "Test", job.test_name, "passed"
-          job.parseResults()
+          continue
+
+        # Now the job finished successfully
+        print "Test", job.test_name, "passed"
+        job.parseResults()
 
         # Generate subtest.
         # FIXME: Only generate the subtest if the previous test passed.

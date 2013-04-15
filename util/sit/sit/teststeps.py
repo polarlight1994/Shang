@@ -443,9 +443,8 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
 
   def parseResults(self) :
     with open(os.path.join(self.pure_hw_sim_base_dir, 'cycles.rpt')) as cycles_rpt:
-      num_cycles = int(cycles_rpt.read())
+      self.results['num_cycles'] = int(cycles_rpt.read())
 
-    self.results['num_cycles'] = num_cycles
     print self.results
 
   def generateSubTests(self) :
