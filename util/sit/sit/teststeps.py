@@ -56,6 +56,9 @@ class TestStep :
   def generateFileFromTemplate(self, template_str, output_file_path) :
     self.config_template_env.from_string(template_str).stream(self.__dict__).dump(output_file_path)
 
+  def parseResults(self) :
+    print self.results
+
   def dumplog(self) :
     print "stdout of", self.test_name, "begin"
     with open(self.stdout, "r") as logfile:
@@ -165,7 +168,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     # Create the HLS job.
     jt = session.createJobTemplate()
     jt.remoteCommand = 'timeout'
-    jt.args = ['60s', self.shang, self.synthesis_config_file]
+    jt.args = ['60s', self.shang, self.synthesis_config_file, '-stats']
     #Set up the correct working directory and the output path
     jt.workingDirectory = os.path.dirname(self.synthesis_config_file)
 
@@ -385,7 +388,7 @@ module DUT_TOP_tb();
         $stop;
       end
 
-      cntfile = $fopen("num_cycle.txt");
+      cntfile = $fopen("cycles.rpt");
       $fwrite (cntfile, "%0d\\n",cnt);
       $fclose(cntfile);
 
@@ -416,8 +419,8 @@ vlog -sv {{ [hls_base_dir, test_name + ".sv"]|joinpath }} || exit 1
 vlog -sv DUT_TOP_tb.sv || exit 1
 vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
 
-# num_cycle.txt will only generate when the simulation produce a correct result.
-[ -f num_cycle.txt ] || exit 1
+# cycles.rpt will only generate when the simulation produce a correct result.
+[ -f cycles.rpt ] || exit 1
 ''', self.pure_hw_sim_script)
 
   def runTest(self, session) :
@@ -439,8 +442,8 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
     session.deleteJobTemplate(jt)
 
   def parseResults(self) :
-    with open(os.path.join(self.pure_hw_sim_base_dir, 'num_cycle.txt')) as counter_file:
-      num_cycles = int(counter_file.read())
+    with open(os.path.join(self.pure_hw_sim_base_dir, 'cycles.rpt')) as cycles_rpt:
+      num_cycles = int(cycles_rpt.read())
 
     self.results['num_cycles'] = num_cycles
     print self.results
@@ -507,15 +510,23 @@ project_close
     jt = session.createJobTemplate()
 
     jt.remoteCommand = 'timeout'
-    jt.args = [ '%ds' % (3600 * 4), os.path.join(self.quartus_bin, 'quartus_sh'), '-t',  self.altera_synthesis_script]
+    jt.args = [ '%ds' % (3600 * 4), os.path.join(self.quartus_bin, 'quartus_sh'), '--64bit', '-t',  self.altera_synthesis_script]
     #Set up the correct working directory and the output path
     jt.workingDirectory = self.altera_synthesis_base_dir
     self.stdout = os.path.join(self.altera_synthesis_base_dir, 'altera_synthesis.output')
     jt.outputPath = ':' + self.stdout
     self.stderr = os.path.join(self.altera_synthesis_base_dir, 'altera_synthesis.stderr')
     jt.errorPath = ':' + self.stderr
-
+    #jt.nativeSpecification = '-v LM_LICENSE_FILE=1800@adsc-linux'
 
     print 'Submitted altera synthesis', self.test_name
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
+
+  def parseResults(self) :
+    # Read the fmax
+    with open(os.path.join(self.altera_synthesis_base_dir, 'clk_fmax.rpt')) as fmax_rpt:
+      fmax = float(fmax_rpt.read())
+
+    self.results['fmax'] = fmax
+    print self.results
