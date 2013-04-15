@@ -1,4 +1,5 @@
 {
+  "config_dir":"@VTS_SOURCE_ROOT@",
   "ptr_size":"@POINTER_SIZE_IN_BITS@",
   "verilator":"@VERILATOR_EXECUTABLE@",
   "systemc":"@SYSTEMC@",

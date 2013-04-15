@@ -43,7 +43,6 @@ macro(add_test_config name test_lls depends mode)
                     COMMAND ${SIT}
                             --mode=${mode}
                             --tests=${test_lls}
-                            --config_dir=${VTS_SOURCE_ROOT}
                             --config_bin_dir=${VTS_BINARY_ROOT}
                     DEPENDS ${depends} ${SHANG}
                     COMMENT "Run trivial tests")
