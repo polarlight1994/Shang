@@ -94,17 +94,20 @@ def main(builtinParameters = {}):
     test_file = os.path.basename(test_path)
     test_name = os.path.splitext(test_file)[0]
 
-    # TODO: Provide the keyword constructor
-    hls_step = HLSStep(basic_config)
-    hls_step.test_name = test_name
-    hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
-    hls_step.test_file = test_path
-    hls_step.fmax = 100.0
+    for fmax in [100.0, 200.0] :
+      # TODO: Provide the keyword constructor
+      hls_step = HLSStep(basic_config)
+      hls_step.test_name = test_name
+      hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
+      hls_step.test_file = test_path
+      hls_step.fmax = fmax
 
-    hls_step.prepareTest()
-    hls_step.runTest(s)
+      hls_step.parameter = "f%s" % fmax
 
-    active_jobs.append(hls_step)
+      hls_step.prepareTest()
+      hls_step.runTest(s)
+
+      active_jobs.append(hls_step)
 
 
   # Examinate the status of the jobs
@@ -146,6 +149,15 @@ def main(builtinParameters = {}):
 
   # Finialize the gridengine
   s.exit()
+
+  cur = con.cursor()
+  # Report the experimental results
+  cur.execute('''select sim.name, sim.cycles, syn.fmax, syn.les, syn.mult9, syn.parameter, sim.parameter
+               from simulation sim, synthesis syn
+               where sim.name == syn.name and syn.parameter like sim.parameter''')
+
+  for row in cur.fetchall() :
+    print row
 
 if __name__=='__main__':
     main()

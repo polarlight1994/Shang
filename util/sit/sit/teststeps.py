@@ -36,7 +36,7 @@ class TestStep :
     self.stdout = ''
     self.stderr = ''
     # The configuration string
-    self.config = ''
+    self.parameter = ''
     # The results dict, for debug use
     self.results = {}
 
@@ -205,6 +205,7 @@ class HybridSimStep(TestStep) :
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
     self.results.update(hls_step.results)
+    self.parameter = hls_step.parameter
 
   def prepareTest(self) :
     self.hybrid_sim_base_dir = os.path.join(self.hls_base_dir, 'hybrid_sim')
@@ -289,6 +290,7 @@ class PureHWSimStep(TestStep) :
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
     self.results.update(hls_step.results)
+    self.parameter = hls_step.parameter
 
   def prepareTest(self) :
     self.pure_hw_sim_base_dir = os.path.join(self.hls_base_dir, 'pure_hw_sim')
@@ -447,7 +449,7 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
       num_cycles = int(cycles_rpt.read())
       self.results["cycles"] = num_cycles
       connection.execute("INSERT INTO simulation(name, parameter, cycles) VALUES (:test_name, :parameter, :cycles)",
-                         {"test_name" : self.test_name,  "parameter" : "n/a", "cycles": num_cycles})
+                         {"test_name" : self.test_name,  "parameter" : self.parameter, "cycles": num_cycles})
 
   def generateSubTests(self) :
     #If test type == hybrid simulation
@@ -461,7 +463,7 @@ class AlteraSynStep(TestStep) :
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
     self.quartus_bin = '/nfs/app/altera/quartus12x64_web/quartus/bin/'
-
+    self.parameter = hls_step.parameter
     self.results.update(hls_step.results)
 
   def prepareTest(self) :
@@ -528,7 +530,7 @@ project_close
     session.deleteJobTemplate(jt)
 
   def submitResults(self, connection) :
-    results = {"test_name" : self.test_name,  "parameter" : "n/a" }
+    results = {"test_name" : self.test_name,  "parameter" : self.parameter }
     # Read the fmax
     with open(os.path.join(self.altera_synthesis_base_dir, 'clk_fmax.rpt')) as fmax_rpt:
       fmax = float(fmax_rpt.read())
