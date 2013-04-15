@@ -11,7 +11,7 @@ int u5ml (int X_0_1, int X_1_1, int X_2_1, int X_3_1, int X_4_1,
 int X_5_1,  int S_1_1, int S_2_1, int S_3_1,int S_4_1, int S_5_1,
            int S_6_1, int S_7_1, int S_8_1, int S_9_1, int S_10_1,
   int S_11_1, int  S_12_1, int S_13_1, int S_14_1, int S_15_1, int
-           S_16_1, int S_17_1, int S_18_1)  __attribute__ ((noinline));
+           S_16_1, int S_17_1, int S_18_1);
 
 int u5ml (int X_0_1, int X_1_1, int X_2_1, int X_3_1, int X_4_1,
 int X_5_1,  int S_1_1, int S_2_1, int S_3_1,int S_4_1, int S_5_1,

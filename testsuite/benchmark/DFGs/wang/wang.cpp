@@ -33,7 +33,7 @@ extern "C" {
 #endif
 
 int wang (short x11, short x12, short x13, short x14, short x15,
-           short x16, short x17, short x18) __attribute__ ((noinline));
+           short x16, short x17, short x18);
 
 
 int wang (short x11, short x12, short x13, short x14, short x15,

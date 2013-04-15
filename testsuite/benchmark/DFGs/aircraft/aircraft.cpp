@@ -10,7 +10,7 @@ int aircraft (int X_0_1, int X_0_2, int X_0_3,
                 int X_3_1, int X_3_2, int X_3_3,
                 int X_4_1, int X_4_2, int X_4_3,
                 int X_5_1, int X_5_2, int X_5_3,
-                int X_6_1, int X_6_2, int X_6_3)  __attribute__ ((noinline));
+                int X_6_1, int X_6_2, int X_6_3);
 
 int aircraft (int X_0_1, int X_0_2, int X_0_3,
                 int X_1_1, int X_1_2, int X_1_3,

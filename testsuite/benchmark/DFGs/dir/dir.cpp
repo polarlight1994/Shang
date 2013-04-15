@@ -107,7 +107,7 @@
 extern "C" {
 #endif
 int  dir(short x0, short x1, short x2, short x3,
-          short x4, short x5, short x6, short x7) __attribute__ ((noinline));
+          short x4, short x5, short x6, short x7);
 
 int  dir(short x0, short x1, short x2, short x3,
           short x4, short x5, short x6, short x7)

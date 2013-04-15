@@ -39,7 +39,7 @@
 extern "C" {
 #endif
 int  mcm(short X0, short X1, short X2, short X3,
-         short X4, short X5, short X6, short X7)  __attribute__ ((noinline));
+         short X4, short X5, short X6, short X7);
 
 int  mcm(short X0, short X1, short X2, short X3,
          short X4, short X5, short X6, short X7)

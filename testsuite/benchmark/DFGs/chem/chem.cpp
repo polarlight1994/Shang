@@ -8,7 +8,7 @@ extern "C" {
 int chem(int S_1_1, int S_2_1, int S_3_1, int S_4_1, int S_5_1,
           int S_6_1, int S_7_1, int S_8_1, int S_9_1, int S_10_1,
           int X_0_1, int X_1_1, int X_2_1, int X_3_1, int X_4_1,
-          int X_0_2, int X_1_2, int X_2_2, int X_3_2, int X_4_2) __attribute__ ((noinline));
+          int X_0_2, int X_1_2, int X_2_2, int X_3_2, int X_4_2);
 
 
 

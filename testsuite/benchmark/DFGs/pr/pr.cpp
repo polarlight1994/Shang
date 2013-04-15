@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 int pr(short x10, short x11, short x12, short x13,
-        short x14, short x15, short x16, short x17)  __attribute__ ((noinline));
+        short x14, short x15, short x16, short x17);
 
 int pr(short x10, short x11, short x12, short x13,
         short x14, short x15, short x16, short x17)

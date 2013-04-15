@@ -138,7 +138,7 @@ int feig_dct(short in00, short in01, short in02, short in03,
               short in60, short in61, short in62, short in63,
               short in64, short in65, short in66, short in67,
               short in70, short in71, short in72, short in73,
-              short in74, short in75, short in76, short in77) __attribute__ ((noinline));
+              short in74, short in75, short in76, short in77);
    
 int feig_dct(short in00, short in01, short in02, short in03,
               short in04, short in05, short in06, short in07,

@@ -6,7 +6,7 @@ extern "C" {
 #endif
 int honda(short X_0_1, short X_1_1, 
            short S_1_1, short S_2_1, short S_3_1, short S_4_1,
-           short S_5_1, short S_6_1, short S_7_1) __attribute__ ((noinline));
+           short S_5_1, short S_6_1, short S_7_1);
 
 int honda(short X_0_1, short X_1_1, 
            short S_1_1, short S_2_1, short S_3_1, short S_4_1,
