@@ -20,16 +20,6 @@ import os, sys
 
 # Base class of test step.
 class TestStep :
-  config_template_env = Environment()
-  # jobid of the step
-  jobid = 0
-  # The path to the stdout and stderr logfile.
-  stdout = ''
-  stderr = ''
-  # The result dict
-  results = {}
-  # The configuration string
-  config = ''
 
   HybridSim = 'hybrid_sim'
   PureHWSim = 'pure_hw_sim'
@@ -37,7 +27,18 @@ class TestStep :
 
   def __init__(self, config):
     self.__dict__.update(config)
+    #
+    self.config_template_env = Environment()
     self.config_template_env.filters['joinpath'] = lambda list: os.path.join(*list)
+    # jobid of the step
+    self.jobid = 0
+    # The path to the stdout and stderr logfile.
+    self.stdout = ''
+    self.stderr = ''
+    # The result dict
+    self.results = {}
+    # The configuration string
+    self.config = ''
 
   def __getitem__(self, key):
     return self.__dict__[key]
