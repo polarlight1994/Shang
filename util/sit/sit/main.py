@@ -70,6 +70,7 @@ def main(builtinParameters = {}):
         else :
           print "Test", job.test_name, "passed"
 
+        job.parseResults()
         # Generate subtest.
         # FIXME: Only generate the subtest if the previous test passed.
         for subtest in job.generateSubTests() :
