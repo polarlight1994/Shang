@@ -37,6 +37,8 @@ class TestStep :
     self.stderr = ''
     # The configuration string
     self.config = ''
+    # The results dict, for debug use
+    self.results = {}
 
   def __getitem__(self, key):
     return self.__dict__[key]
@@ -202,6 +204,7 @@ class HybridSimStep(TestStep) :
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
+    self.results.update(hls_step.results)
 
   def prepareTest(self) :
     self.hybrid_sim_base_dir = os.path.join(self.hls_base_dir, 'hybrid_sim')
@@ -285,6 +288,7 @@ class PureHWSimStep(TestStep) :
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
+    self.results.update(hls_step.results)
 
   def prepareTest(self) :
     self.pure_hw_sim_base_dir = os.path.join(self.hls_base_dir, 'pure_hw_sim')
@@ -441,6 +445,7 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
   def submitResults(self, connection) :
     with open(os.path.join(self.pure_hw_sim_base_dir, 'cycles.rpt')) as cycles_rpt:
       num_cycles = int(cycles_rpt.read())
+      self.results["cycles"] = num_cycles
       connection.execute("INSERT INTO simulation(name, parameter, cycles) VALUES (:test_name, :parameter, :cycles)",
                          {"test_name" : self.test_name,  "parameter" : "n/a", "cycles": num_cycles})
 
@@ -456,6 +461,8 @@ class AlteraSynStep(TestStep) :
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
     self.quartus_bin = '/nfs/app/altera/quartus12x64_web/quartus/bin/'
+
+    self.results.update(hls_step.results)
 
   def prepareTest(self) :
     self.altera_synthesis_base_dir = os.path.join(self.hls_base_dir, 'altera_synthesis')
@@ -526,6 +533,7 @@ project_close
     with open(os.path.join(self.altera_synthesis_base_dir, 'clk_fmax.rpt')) as fmax_rpt:
       fmax = float(fmax_rpt.read())
       results['fmax'] = fmax
+      self.results['fmax'] = fmax
 
     with open(os.path.join(self.altera_synthesis_base_dir, 'resource.rpt')) as resource_rpt:
       from json import load
@@ -539,6 +547,9 @@ project_close
           v = '0'
 
         results[k] = int(v)
+        self.results[k] = v
+
+    print self.results
 
     connection.execute('''INSERT INTO synthesis(
           name,
