@@ -35,8 +35,6 @@ class TestStep :
     # The path to the stdout and stderr logfile.
     self.stdout = ''
     self.stderr = ''
-    # The result dict
-    self.results = {}
     # The configuration string
     self.config = ''
 
@@ -57,8 +55,8 @@ class TestStep :
   def generateFileFromTemplate(self, template_str, output_file_path) :
     self.config_template_env.from_string(template_str).stream(self.__dict__).dump(output_file_path)
 
-  def parseResults(self) :
-    print self.results
+  def submitResults(self, connection) :
+    return
 
   def dumplog(self) :
     print "stdout of", self.test_name, "begin"
@@ -204,7 +202,6 @@ class HybridSimStep(TestStep) :
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
-    self.results.update(hls_step.results)
 
   def prepareTest(self) :
     self.hybrid_sim_base_dir = os.path.join(self.hls_base_dir, 'hybrid_sim')
@@ -288,7 +285,6 @@ class PureHWSimStep(TestStep) :
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
-    self.results.update(hls_step.results)
 
   def prepareTest(self) :
     self.pure_hw_sim_base_dir = os.path.join(self.hls_base_dir, 'pure_hw_sim')
@@ -442,11 +438,11 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
 
-  def parseResults(self) :
+  def submitResults(self, connection) :
     with open(os.path.join(self.pure_hw_sim_base_dir, 'cycles.rpt')) as cycles_rpt:
-      self.results['num_cycles'] = int(cycles_rpt.read())
-
-    print self.results
+      num_cycles = int(cycles_rpt.read())
+      connection.execute("INSERT INTO simulation(name, parameter, cycles) VALUES (:test_name, :parameter, :cycles)",
+                         {"test_name" : self.test_name,  "parameter" : "n/a", "cycles": num_cycles})
 
   def generateSubTests(self) :
     #If test type == hybrid simulation
@@ -459,7 +455,6 @@ class AlteraSynStep(TestStep) :
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
-    self.results.update(hls_step.results)
     self.quartus_bin = '/nfs/app/altera/quartus12x64_web/quartus/bin/'
 
   def prepareTest(self) :
@@ -525,11 +520,12 @@ project_close
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
 
-  def parseResults(self) :
+  def submitResults(self, connection) :
+    results = {"test_name" : self.test_name,  "parameter" : "n/a" }
     # Read the fmax
     with open(os.path.join(self.altera_synthesis_base_dir, 'clk_fmax.rpt')) as fmax_rpt:
       fmax = float(fmax_rpt.read())
-      self.results['fmax'] = fmax
+      results['fmax'] = fmax
 
     with open(os.path.join(self.altera_synthesis_base_dir, 'resource.rpt')) as resource_rpt:
       from json import load
@@ -542,6 +538,61 @@ project_close
         if v == '' :
           v = '0'
 
-        self.results[k] = int(v)
+        results[k] = int(v)
 
-    print self.results
+    connection.execute('''INSERT INTO synthesis(
+          name,
+          parameter,
+
+          fmax,
+
+          mem_bit,
+
+          regs,
+
+          alut,
+          alm,
+
+          les,
+          les_wo_reg,
+          les_w_reg_only,
+          les_and_reg,
+          les_normal,
+          les_arit,
+
+          lut2,
+          lut3,
+          lut4,
+          lut6,
+
+          mult9,
+          mult18)
+
+        VALUES (
+          :test_name,
+          :parameter,
+
+          :fmax,
+
+          :mem_bit,
+
+          :regs,
+
+          :alut,
+          :alm,
+
+          :les,
+          :les_wo_reg,
+          :les_w_reg_only,
+          :les_and_reg,
+          :les_normal,
+          :les_arit,
+
+          :lut2,
+          :lut3,
+          :lut4,
+          :lut6,
+
+          :mult9,
+          :mult18)''',
+    results)

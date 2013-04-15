@@ -8,6 +8,8 @@ sit - Shang Integrated Tester.
 import math, os, platform, random, re, sys, time, threading, traceback
 
 import drmaa
+import sqlite3
+
 from jinja2 import Environment, FileSystemLoader, Template
 
 from logparser import SimLogParser
@@ -38,6 +40,54 @@ def main(builtinParameters = {}):
   s = drmaa.Session()
   s.initialize()
   active_jobs = []
+
+  # Initialize the database connection
+  con = sqlite3.connect(":memory:")
+  con.cursor()
+
+  # Create the tables for the experimental results.
+  # We create 3 tables: HLS results, simulation results, and synthesis results
+  con.executescript('''
+    create table simulation(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        parameter TEXT,
+        cycles INTEGER,
+        mem_cycles INTEGER
+    );
+
+    create table synthesis(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        parameter TEXT,
+
+        fmax REAL,
+
+        mem_bit INTEGER,
+
+        regs INTEGER,
+
+        alut INTEGER,
+        alm  INTEGER,
+
+        les        INTEGER,
+        les_wo_reg INTEGER,
+        les_w_reg_only INTEGER,
+        les_and_reg    INTEGER,
+        les_normal INTEGER,
+        les_arit   INTEGER,
+
+        lut2 INTEGER,
+        lut3 INTEGER,
+        lut4 INTEGER,
+        lut6 INTEGER,
+
+        mult9  INTEGER,
+        mult18 INTEGER
+    );
+  ''')
+  # This is not necessary since we only have 1 connection.
+  con.commit()
 
   for test_path in args.tests.split() :
     basedir = os.path.dirname(test_path)
@@ -71,7 +121,7 @@ def main(builtinParameters = {}):
 
         # Now the job finished successfully
         print "Test", job.test_name, "passed"
-        job.parseResults()
+        job.submitResults(con)
 
         # Generate subtest.
         # FIXME: Only generate the subtest if the previous test passed.
