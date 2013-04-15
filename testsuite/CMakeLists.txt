@@ -33,18 +33,18 @@ add_custom_target(test_ir COMMENT "Compiling all source to llvm ir")
 
 set(ENV{all_trivial_tests} "")
 
+configure_file(
+  ${VTS_SOURCE_ROOT}/basic_config.json.in
+  ${VTS_BINARY_ROOT}/basic_config.json
+)
+
 macro(add_test_config name test_lls depends mode)
   add_custom_target(${name}
                     COMMAND ${SIT}
                             --mode=${mode}
                             --tests=${test_lls}
                             --config_dir=${VTS_SOURCE_ROOT}
-                            --ptr_size=${POINTER_SIZE_IN_BITS}
-                            --verilator=${VERILATOR_EXECUTABLE}
-                            --systemc=${SYSTEMC}
-                            --shang=${SHANG}
-                            --llc=${LLC}
-                            --lli=${LLI}
+                            --config_bin_dir=${VTS_BINARY_ROOT}
                     DEPENDS ${depends} ${SHANG}
                     COMMENT "Run trivial tests")
 

@@ -20,17 +20,18 @@ def ParseOptions() :
   parser.add_argument("--mode", type=str, choices=[TestStep.HybridSim, TestStep.PureHWSim, TestStep.AlteraSyn], help="the mode of sit", required=True)
   parser.add_argument("--tests", type=str, help="tests to run", required=True)
   parser.add_argument("--config_dir", type=str, help="base dir of the test suit (to locate the config templates)", required=True)
-  parser.add_argument("--ptr_size", type=int, help="pointer size in bits", required=True)
-  parser.add_argument("--shang", type=str, help="path to shang executable", required=True)
-  parser.add_argument("--llc", type=str, help="path to llc executable")
-  parser.add_argument("--lli", type=str, help="path to lli executable")
-  parser.add_argument("--verilator", type=str, help="path to verilator executable")
-  parser.add_argument("--systemc", type=str, help="path to systemc folder")
+  parser.add_argument("--config_bin_dir", type=str, help="base binary dir of the test suit (to locate the config templates)", required=True)
 
   return parser.parse_args()
 
 def main(builtinParameters = {}):
   args = ParseOptions()
+  basic_config = vars(args).copy()
+
+  # Load the basic configuration.
+  with open(os.path.join(args.config_bin_dir, 'basic_config.json'), 'r') as jsondata :
+    from json import load
+    basic_config.update(load(jsondata))
 
   print "Starting the Shang Integrated Tester in", args.mode, "mode..."
 
@@ -39,17 +40,13 @@ def main(builtinParameters = {}):
   s.initialize()
   active_jobs = []
 
-
-  #Global dict for the common configurations
-
-
   for test_path in args.tests.split() :
     basedir = os.path.dirname(test_path)
     test_file = os.path.basename(test_path)
     test_name = os.path.splitext(test_file)[0]
 
     # TODO: Provide the keyword constructor
-    hls_step = HLSStep(vars(args))
+    hls_step = HLSStep(basic_config)
     hls_step.test_name = test_name
     hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
     hls_step.test_file = test_path

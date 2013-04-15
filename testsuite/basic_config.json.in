@@ -1,0 +1,8 @@
+{
+  "ptr_size":"@POINTER_SIZE_IN_BITS@",
+  "verilator":"@VERILATOR_EXECUTABLE@",
+  "systemc":"@SYSTEMC@",
+  "shang":"@SHANG@",
+  "llc":"@LLC@",
+  "lli":"@LLI@"
+}
