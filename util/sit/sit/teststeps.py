@@ -21,9 +21,15 @@ import os, sys
 # Base class of test step.
 class TestStep :
   config_template_env = Environment()
+  # jobid of the step
   jobid = 0
+  # The path to the stdout and stderr logfile.
   stdout = ''
   stderr = ''
+  # The result dict
+  results = {}
+  # The configuration string
+  config = ''
 
   HybridSim = 'hybrid_sim'
   PureHWSim = 'pure_hw_sim'
@@ -194,7 +200,7 @@ class HybridSimStep(TestStep) :
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
-
+    self.results.update(hls_step.results)
 
   def prepareTest(self) :
     self.hybrid_sim_base_dir = os.path.join(self.hls_base_dir, 'hybrid_sim')
@@ -278,6 +284,8 @@ class PureHWSimStep(TestStep) :
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
+    self.results.update(hls_step.results)
+
   def prepareTest(self) :
     self.pure_hw_sim_base_dir = os.path.join(self.hls_base_dir, 'pure_hw_sim')
     os.makedirs(self.pure_hw_sim_base_dir)
@@ -441,6 +449,7 @@ class AlteraSynStep(TestStep) :
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
+    self.results.update(hls_step.results)
     self.quartus_bin = '/nfs/app/altera/quartus12x64_web/quartus/bin/'
 
   def prepareTest(self) :
