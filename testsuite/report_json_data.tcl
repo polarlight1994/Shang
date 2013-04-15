@@ -24,7 +24,7 @@ puts $resource_rpt "\"mem_bit\":\"[get_fitter_resource_usage -mem_bit]\","
 puts $resource_rpt "\"les_normal\":\"[get_fitter_resource_usage -resource {*normal mode}]\","
 puts $resource_rpt "\"les_arit\":\"[get_fitter_resource_usage -resource {*arithmetic mode}]\","
 
-puts $resource_rpt "\"regs\":\"[get_fitter_resource_usage -resource {*Total registers}]\","
+puts $resource_rpt "\"regs\":\"[get_fitter_resource_usage -resource {*Dedicated logic registers}]\","
 
 puts $resource_rpt "\"mult9\":\"[get_fitter_resource_usage -resource {*Embedded Multiplier 9-bit elements}]\","
 puts $resource_rpt "\"mult18\":\"[get_fitter_resource_usage -resource {*DSP block 18-bit elements}]\","
