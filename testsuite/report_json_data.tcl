@@ -27,9 +27,7 @@ puts $resource_rpt "\"les_arit\":\"[get_fitter_resource_usage -resource {*arithm
 puts $resource_rpt "\"regs\":\"[get_fitter_resource_usage -resource {*Dedicated logic registers}]\","
 
 puts $resource_rpt "\"mult9\":\"[get_fitter_resource_usage -resource {*Embedded Multiplier 9-bit elements}]\","
-puts $resource_rpt "\"mult18\":\"[get_fitter_resource_usage -resource {*DSP block 18-bit elements}]\","
-puts $resource_rpt "\"ave_ic\":\"[get_fitter_resource_usage -resource {*Average interconnect usage (total/H/V)}]\","
-puts $resource_rpt "\"peak_ic\":\"[get_fitter_resource_usage -resource {*Peak interconnect usage (total/H/V)}]\""
+puts $resource_rpt "\"mult18\":\"[get_fitter_resource_usage -resource {*DSP block 18-bit elements}]\""
 
 unload_report
 
