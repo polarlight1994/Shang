@@ -499,6 +499,8 @@ set ENABLE_PHYSICAL_SYNTHESIS "OFF"
 source {{ [config_dir, 'quartus_compile.tcl']|joinpath }}
 execute_module -tool sta -args {--report_script {{ [config_dir, 'extract_timing.tcl']|joinpath }} }
 
+source {{ [config_dir, 'report_json_data.tcl']|joinpath }}
+
 #Write the netlist
 execute_module -tool eda
 
@@ -527,6 +529,10 @@ project_close
     # Read the fmax
     with open(os.path.join(self.altera_synthesis_base_dir, 'clk_fmax.rpt')) as fmax_rpt:
       fmax = float(fmax_rpt.read())
+      self.results['fmax'] = fmax
 
-    self.results['fmax'] = fmax
+    with open(os.path.join(self.altera_synthesis_base_dir, 'resource.rpt')) as resource_rpt:
+      from json import load
+      self.results.update(load(resource_rpt))
+
     print self.results

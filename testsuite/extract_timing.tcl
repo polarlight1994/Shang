@@ -21,6 +21,8 @@ foreach domain $domain_list {
 	#puts $fmax_rpt "Clock $name : Fmax = $fmax (Restricted Fmax = $restricted_fmax)"
 }
 
+close $fmax_rpt
+
 save_report_database
 unload_report
 
