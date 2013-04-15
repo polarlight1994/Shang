@@ -29,14 +29,7 @@ puts $resource_rpt "\"regs\":\"[get_fitter_resource_usage -resource {*Total regi
 puts $resource_rpt "\"mult9\":\"[get_fitter_resource_usage -resource {*Embedded Multiplier 9-bit elements}]\","
 puts $resource_rpt "\"mult18\":\"[get_fitter_resource_usage -resource {*DSP block 18-bit elements}]\","
 puts $resource_rpt "\"ave_ic\":\"[get_fitter_resource_usage -resource {*Average interconnect usage (total/H/V)}]\","
-puts $resource_rpt "\"peak_ic\":\"[get_fitter_resource_usage -resource {*Peak interconnect usage (total/H/V)}]\","
-
-#puts $resource_rpt "\"max_fanout_node\":\"[get_fitter_resource_usage -resource {*Maximum fan-out node}]\","
-#puts $resource_rpt "\"max_fanout\":\"[get_fitter_resource_usage -resource {*Maximum fan-out}]\","
-#puts $resource_rpt "\"max_fanout_non-global_node\":\"[get_fitter_resource_usage -resource {*Highest non-global fan-out signal}]\","
-#puts $resource_rpt "\"max_fanout_non-global\":\"[get_fitter_resource_usage -resource {*Highest non-global fan-out}]\","
-#puts $resource_rpt "\"total_fanout\":\"[get_fitter_resource_usage -resource {*Total fan-out}]\","
-#puts $resource_rpt "\"ave_fanout\":\"[get_fitter_resource_usage -resource {*Average fan-out}]\""
+puts $resource_rpt "\"peak_ic\":\"[get_fitter_resource_usage -resource {*Peak interconnect usage (total/H/V)}]\""
 
 unload_report
 

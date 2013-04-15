@@ -36,7 +36,7 @@ class TestStep :
   AlteraSyn = 'altera_syn'
 
   def __init__(self, config):
-    self.__dict__ = config.copy()
+    self.__dict__.update(config)
     self.config_template_env.filters['joinpath'] = lambda list: os.path.join(*list)
 
   def __getitem__(self, key):
@@ -533,6 +533,15 @@ project_close
 
     with open(os.path.join(self.altera_synthesis_base_dir, 'resource.rpt')) as resource_rpt:
       from json import load
-      self.results.update(load(resource_rpt))
+      import re
+
+      # Read the results into the result dict.
+      for k, v in load(resource_rpt).items() :
+        v = re.match(r"(^\d*)",v.replace(',','')).group(1)
+
+        if v == '' :
+          v = '0'
+
+        self.results[k] = int(v)
 
     print self.results
