@@ -16,7 +16,9 @@
 #  The function to parse the output
 
 from jinja2 import Environment, FileSystemLoader, Template
-import os, sys
+
+import os, sys, json, re
+from datetime import datetime
 
 # Base class of test step.
 class TestStep :
@@ -86,7 +88,6 @@ class HLSStep(TestStep) :
 
   def prepareTest(self) :
     # Create the local folder for the current test.
-    from datetime import datetime
     self.hls_base_dir = os.path.join(os.path.dirname(self.test_file),
                            self.test_name,
                            datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
@@ -545,11 +546,8 @@ project_close
       self.results['fmax'] = fmax
 
     with open(os.path.join(self.altera_synthesis_base_dir, 'resource.rpt')) as resource_rpt:
-      from json import load
-      import re
-
       # Read the results into the result dict.
-      for k, v in load(resource_rpt).items() :
+      for k, v in json.load(resource_rpt).items() :
         v = re.match(r"(^\d*)",v.replace(',','')).group(1)
 
         if v == '' :
