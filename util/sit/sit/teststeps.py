@@ -60,6 +60,9 @@ class TestStep :
   def submitResults(self, connection) :
     return
 
+  def getStepDesc(self) :
+    return ' '.join([self.step_name, self.test_name, self.parameter])
+
   def dumplog(self) :
     print "stdout of", self.test_name, "begin"
     with open(self.stdout, "r") as logfile:
@@ -76,6 +79,7 @@ class TestStep :
 
 # High-level synthesis step.
 class HLSStep(TestStep) :
+  step_name = 'high-level synthesis'
 
   def __init__(self, config):
     TestStep.__init__(self, config)
@@ -179,7 +183,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     self.stderr = os.path.join(self.hls_base_dir, 'hls.stderr')
     jt.errorPath = ':' + self.stderr
 
-    print 'Submitted HLS', self.test_name
+    print "Submitted", self.getStepDesc()
     #Submit the job.
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
@@ -201,6 +205,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
 
 # The test step for hybrid simulation.
 class HybridSimStep(TestStep) :
+  step_name = 'software/hardware co-simulation'
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
@@ -280,12 +285,13 @@ diff expected.output hardware.out || exit 1
     jt.errorPath = ':' + self.stderr
 
 
-    print 'Submitted hybrid simulation', self.test_name
+    print "Submitted", self.getStepDesc()
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
 
 
 class PureHWSimStep(TestStep) :
+  step_name = 'hardware simulation'
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
@@ -440,7 +446,7 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
     jt.errorPath = ':' + self.stderr
 
 
-    print 'Submitted pure hardware simulation', self.test_name
+    print "Submitted", self.getStepDesc()
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
 
@@ -459,6 +465,7 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
     return []
 
 class AlteraSynStep(TestStep) :
+  step_name = 'altera synthesis'
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
@@ -525,7 +532,7 @@ project_close
     jt.errorPath = ':' + self.stderr
     #jt.nativeSpecification = '-v LM_LICENSE_FILE=1800@adsc-linux'
 
-    print 'Submitted altera synthesis', self.test_name
+    print "Submitted", self.getStepDesc()
     self.jobid = session.runJob(jt)
     session.deleteJobTemplate(jt)
 

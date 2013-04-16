@@ -109,6 +109,7 @@ def main(builtinParameters = {}):
 
       active_jobs.append(hls_step)
 
+  fail_steps = []
 
   # Examinate the status of the jobs
   while active_jobs :
@@ -118,12 +119,13 @@ def main(builtinParameters = {}):
       if status == drmaa.JobState.DONE or status == drmaa.JobState.FAILED:
         retval = s.wait(job.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
         if not retval.hasExited or retval.exitStatus != 0 :
-          print "Test", job.test_name, "FAIL"
+          print "Test", job.getStepDesc(), "FAIL"
           job.dumplog()
+          fail_steps.append(job.getStepDesc())
           continue
 
         # Now the job finished successfully
-        print "Test", job.test_name, "passed"
+        print "Test", job.getStepDesc(), "passed"
         job.submitResults(con)
 
         # Generate subtest.
@@ -158,6 +160,8 @@ def main(builtinParameters = {}):
 
   for row in cur.fetchall() :
     print row
+
+  print 'fail cases:', '\n'.join(fail_steps)
 
 if __name__=='__main__':
     main()
