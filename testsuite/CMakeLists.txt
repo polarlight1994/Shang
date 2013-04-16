@@ -46,7 +46,6 @@ macro(add_test_config name test_lls depends mode)
                             --config_bin_dir=${VTS_BINARY_ROOT}
                     DEPENDS ${depends} ${SHANG}
                     COMMENT "Run trivial tests")
-
 endmacro(add_test_config)
 
 macro(add_shang_test test_ll test_file test_name)
