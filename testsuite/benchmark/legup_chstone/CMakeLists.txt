@@ -13,9 +13,11 @@ macro(add_test_legup_cases benchmark bc_file)
     COMMENT "Copying ${src_bc_path} ..."
   )
 
-  add_dependencies(legup_ir ${dst_bc_path})
-  add_test_config("legup_${benchmark}_hardware_sim" ${dst_bc_path} ${dst_bc_path} pure_hw_sim)
-  add_test_config("legup_${benchmark}_altera_syn" ${dst_bc_path} ${dst_bc_path} altera_syn)
+  add_custom_target(legup_${benchmark}_ir DEPENDS ${dst_bc_path})
+  add_dependencies(legup_ir legup_${benchmark}_ir)
+
+  add_test_config("legup_${benchmark}_hardware_sim" ${dst_bc_path} legup_${benchmark}_ir pure_hw_sim)
+  add_test_config("legup_${benchmark}_altera_syn" ${dst_bc_path} legup_${benchmark}_ir altera_syn)
   set(ENV{all_legup_benchmark} "$ENV{all_legup_benchmark} ${dst_bc_path}")
 endmacro(add_test_legup_cases)
 
