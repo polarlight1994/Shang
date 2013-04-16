@@ -1,10 +1,56 @@
+add_custom_target(legup_ir)
 
+set(ENV{all_legup_benchmark} "")
+macro(add_test_legup_cases benchmark bc_file)
+  set(src_bc_path "${CMAKE_CURRENT_SOURCE_DIR}/${bc_file}")
+  set(dst_bc_path "${CMAKE_CURRENT_BINARY_DIR}/${bc_file}")
+  add_custom_command(OUTPUT ${dst_bc_path}
+    # Only update the real output file if there are any differences.
+    # This prevents recompilation of all the files depending on it if there
+    # aren't any.
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${src_bc_path} ${dst_bc_path}
+    DEPENDS ${src_bc_path}
+    COMMENT "Copying ${src_bc_path} ..."
+  )
 
-add_custom_target(legup_simulation
-          COMMENT "Compiling all the main test obj file into exe file")
+  add_dependencies(legup_ir ${dst_bc_path})
+  add_test_config("legup_${benchmark}_hardware_sim" ${dst_bc_path} ${dst_bc_path} pure_hw_sim)
+  add_test_config("legup_${benchmark}_altera_syn" ${dst_bc_path} ${dst_bc_path} altera_syn)
+  set(ENV{all_legup_benchmark} "$ENV{all_legup_benchmark} ${dst_bc_path}")
+endmacro(add_test_legup_cases)
 
-add_custom_target(legup_synthesis
-          COMMENT "Compiling all the main test obj file into exe file")
+add_test_legup_cases(dfmul dfmul.bc)
+add_test_legup_cases(dfdiv dfdiv.bc)
+add_test_legup_cases(dfsin dfsin.bc)
 
-add_custom_target(legup_hls
-          COMMENT "Compiling all the main test obj file into exe file")
+add_test_legup_cases(gsm gsm.bc)
+
+add_test_legup_cases(mpeg2 mpeg2.bc)
+
+add_test_legup_cases(sha sha_driver.bc)
+add_test_legup_cases(aes aes.bc)
+
+#Deming's benchmark
+add_test_legup_cases(pr pr.bc)
+add_test_legup_cases(wang wang.bc)
+add_test_legup_cases(chem chem.bc)
+add_test_legup_cases(arai arai.bc)
+add_test_legup_cases(feig_dct feig_dct.bc)
+add_test_legup_cases(u5ml u5ml.bc)
+add_test_legup_cases(mcm mcm.bc)
+add_test_legup_cases(lee lee.bc)
+add_test_legup_cases(aircraft aircraft.bc)
+add_test_legup_cases(dir dir.bc)
+
+#These there are very large design
+add_test_legup_cases(adpcm adpcm.bc)
+
+add_test_legup_cases(jpeg main.bc)
+add_test_legup_cases(blowfish bf.bc)
+
+add_test_legup_cases(mips mips.bc)
+
+add_test_legup_cases(dfadd dfadd.bc)
+
+add_test_config(legup_simulation $ENV{all_legup_benchmark} legup_ir pure_hw_sim)
+add_test_config(legup_synthesis  $ENV{all_legup_benchmark} legup_ir altera_syn)
