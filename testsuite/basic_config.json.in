@@ -17,7 +17,7 @@
       { "family":"CycloneII", "family_name":"Cyclone II",   "device_name":"EP2C70F896C6" },
       { "family":"CycloneIV", "family_name":"Cyclone IV E", "device_name":"EP4CE75F29C6" },
       { "family":"StratixIV", "family_name":"Stratix IV",   "device_name":"EP4SGX530KH40C2" }
-    ]
+    ],
 
     "timing_model" : ["zero-delay", "blackbox", "bit-level"],
     "vast_disable_mux_slack" : [ "true", "false"],
