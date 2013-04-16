@@ -28,10 +28,8 @@ set(OTHER_FU_STAT_SCRIPT			"${FU_EST_SOUCE_ROOT}/Json2LuaScript_Others.py")
 add_custom_target(get_mux_verilog_file
 				  COMMENT "Get all the Verilog files for MUXs")
 add_custom_target(get_mux_data
-				  COMMAND python ${MUX_STAT_SCRIPT} -t ${TIMING_REPORT_JSON_MUX} -l ${LE_REPORT_FILE_MUX} -o ${LUA_SCRIPT_MUX}
 				  COMMENT "Get the data for MUXs")
 add_custom_target(get_others_data
-				  COMMAND python ${OTHER_FU_STAT_SCRIPT} -t ${TIMING_REPORT_JSON} -o ${LUA_SCRIPT_OTHERS}
 				  COMMENT "Get the data for FUs except MUXs")
 add_custom_target(get_all_data
 				  COMMENT "Get all data for all FUs")
