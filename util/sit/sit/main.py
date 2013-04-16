@@ -5,7 +5,7 @@ sit - Shang Integrated Tester.
 
 """
 
-import math, os, platform, random, re, sys, time, threading, traceback
+import math, os, platform, random, re, sys, time, threading, itertools
 
 import drmaa
 import sqlite3
@@ -14,7 +14,6 @@ from jinja2 import Environment, FileSystemLoader, Template
 
 from logparser import SimLogParser
 from teststeps import TestStep, HLSStep
-
 
 def ParseOptions() :
   import argparse
@@ -89,25 +88,30 @@ def main(builtinParameters = {}):
   # This is not necessary since we only have 1 connection.
   con.commit()
 
+  # Build the opation space from the configuration.
+  option_space = basic_config['option_space']
+  option_space = [ dict(itertools.izip(option_space, opt))  for opt in itertools.product(*option_space.itervalues()) ]
+
   for test_path in args.tests.split() :
     basedir = os.path.dirname(test_path)
     test_file = os.path.basename(test_path)
     test_name = os.path.splitext(test_file)[0]
 
-    for fmax in [100.0, 200.0] :
-      # TODO: Provide the keyword constructor
-      hls_step = HLSStep(basic_config)
-      hls_step.test_name = test_name
-      hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
-      hls_step.test_file = test_path
-      hls_step.fmax = fmax
+    test_option = random.choice(option_space)
 
-      hls_step.parameter = "f%s" % fmax
+    # TODO: Provide the keyword constructor
+    hls_step = HLSStep(basic_config)
+    hls_step.test_name = test_name
+    hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
+    hls_step.test_file = test_path
+    hls_step.fmax = test_option['fmax']
 
-      hls_step.prepareTest()
-      hls_step.runTest(s)
+    hls_step.parameter = "f%(fmax)s" % test_option
 
-      active_jobs.append(hls_step)
+    hls_step.prepareTest()
+    hls_step.runTest(s)
+
+    active_jobs.append(hls_step)
 
   fail_steps = []
 
