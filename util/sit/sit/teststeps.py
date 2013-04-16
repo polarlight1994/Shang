@@ -173,7 +173,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     # Create the HLS job.
     jt = session.createJobTemplate()
     jt.remoteCommand = 'timeout'
-    jt.args = ['60s', self.shang, self.synthesis_config_file, '-stats', '-timing-model=blackbox']
+    jt.args = ['%ds' % self.hls_timeout, self.shang, self.synthesis_config_file, '-stats', '-timing-model=blackbox']
     #Set up the correct working directory and the output path
     jt.workingDirectory = os.path.dirname(self.synthesis_config_file)
 
@@ -436,8 +436,8 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
     # Create the simulation job.
     jt = session.createJobTemplate()
 
-    jt.remoteCommand = 'bash'
-    jt.args = [ self.pure_hw_sim_script ]
+    jt.remoteCommand = 'timeout'
+    jt.args = [ '%ds' % self.sim_timeout, 'bash', self.pure_hw_sim_script ]
     #Set up the correct working directory and the output path
     jt.workingDirectory = self.pure_hw_sim_base_dir
     self.stdout = os.path.join(self.pure_hw_sim_base_dir, 'pure_hw_sim.output')
@@ -523,7 +523,7 @@ project_close
     jt = session.createJobTemplate()
 
     jt.remoteCommand = 'timeout'
-    jt.args = [ '%ds' % (3600 * 4), os.path.join(self.quartus_bin, 'quartus_sh'), '--64bit', '-t',  self.altera_synthesis_script]
+    jt.args = [ '%ds' % self.syn_timeout, os.path.join(self.quartus_bin, 'quartus_sh'), '--64bit', '-t',  self.altera_synthesis_script]
     #Set up the correct working directory and the output path
     jt.workingDirectory = self.altera_synthesis_base_dir
     self.stdout = os.path.join(self.altera_synthesis_base_dir, 'altera_synthesis.output')

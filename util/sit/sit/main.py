@@ -161,7 +161,7 @@ def main(builtinParameters = {}):
   for row in cur.fetchall() :
     print row
 
-  print 'fail cases:', '\n'.join(fail_steps)
+  print 'fail cases:\n', '\n'.join(fail_steps)
 
 if __name__=='__main__':
     main()

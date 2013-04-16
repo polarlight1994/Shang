@@ -5,5 +5,9 @@
   "systemc":"@SYSTEMC@",
   "shang":"@SHANG@",
   "llc":"@LLC@",
-  "lli":"@LLI@"
+  "lli":"@LLI@",
+
+  "hls_timeout" : 600,
+  "sim_timeout" : 1200,
+  "syn_timeout" : 14400
 }
