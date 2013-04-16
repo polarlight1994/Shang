@@ -169,7 +169,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     # Create the HLS job.
     jt = session.createJobTemplate()
     jt.remoteCommand = 'timeout'
-    jt.args = ['60s', self.shang, self.synthesis_config_file, '-stats']
+    jt.args = ['60s', self.shang, self.synthesis_config_file, '-stats', '-timing-model=blackbox']
     #Set up the correct working directory and the output path
     jt.workingDirectory = os.path.dirname(self.synthesis_config_file)
 
