@@ -3,7 +3,7 @@ add_custom_target(legup_ir)
 set(ENV{all_legup_benchmark} "")
 macro(add_test_legup_cases benchmark bc_file)
   set(src_bc_path "${CMAKE_CURRENT_SOURCE_DIR}/${bc_file}")
-  set(dst_bc_path "${CMAKE_CURRENT_BINARY_DIR}/${bc_file}")
+  set(dst_bc_path "${CMAKE_CURRENT_BINARY_DIR}/${benchmark}.bc")
   add_custom_command(OUTPUT ${dst_bc_path}
     # Only update the real output file if there are any differences.
     # This prevents recompilation of all the files depending on it if there
