@@ -69,7 +69,6 @@ set DataJSON [open "@TEST_NAMES@_mux.json" a+]
 puts $DataJSON "\"Input_Num\":\"@INPUT_NUM@\","
 } else {
 set DataJSON [open "@TEST_NAMES@.json" a+]
-#"@TIMING_REPORT_JSON@" a+]
 }
 unload_report
 
