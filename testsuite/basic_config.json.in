@@ -7,7 +7,7 @@
   "llc":"@LLC@",
   "lli":"@LLI@",
 
-  "xfails" : [ "op_shl" ]
+  "xfails" : [ "op_shl" ],
   
   "hls_timeout" : 600,
   "sim_timeout" : 1200,
