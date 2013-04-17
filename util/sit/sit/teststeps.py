@@ -221,7 +221,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
 
 # The test step for hybrid simulation.
 class HybridSimStep(TestStep) :
-  step_name = 'software/hardware co-simulation'
+  step_name = 'software-hardware co-simulation'
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
