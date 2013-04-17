@@ -125,7 +125,7 @@ def main(builtinParameters = {}):
       if status == drmaa.JobState.DONE or status == drmaa.JobState.FAILED:
         retval = s.wait(job.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
         if not retval.hasExited or retval.exitStatus != 0 :
-          if job.test_name in basic_config.xfails :
+          if job.test_name in basic_config['xfails'] :
             print "Test", job.getStepDesc(), "FAIL"
             fail_steps.append(job.getStepDict())
           continue
