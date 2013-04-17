@@ -491,9 +491,12 @@ class AlteraSynStep(TestStep) :
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
-    self.quartus_bin = '/nfs/app/altera/quartus12x64_web/quartus/bin/'
     self.parameter = hls_step.parameter
     self.results.update(hls_step.results)
+    self.require_license = (self.option['device']['family'] == 'StratixIV')
+
+    #Use full version for stratix devices.
+    self.quartus_bin = '/nfs/app/altera/quartus12x64_%s/quartus/bin/' % ('full' if self.require_license else 'web')
 
   def prepareTest(self) :
     self.altera_synthesis_base_dir = os.path.join(self.hls_base_dir, 'altera_synthesis')
@@ -546,17 +549,18 @@ project_close
 
     jt.jobName = self.getStepDesc()
     jt.remoteCommand = 'timeout'
-    jt.args = [ '%ds' % self.syn_timeout, os.path.join(self.quartus_bin, 'quartus_sh'), '--64bit', '-t',  self.altera_synthesis_script]
+    jt.args = [ '%ds' % self.syn_timeout, os.path.join(self.quartus_bin, 'quartus_sh'), '--64bit', '-t',  self.altera_synthesis_script] #self.syn_timeout
     #Set up the correct working directory and the output path
     jt.workingDirectory = self.altera_synthesis_base_dir
     self.stdout = os.path.join(self.altera_synthesis_base_dir, 'altera_synthesis.output')
     jt.outputPath = ':' + self.stdout
     self.stderr = os.path.join(self.altera_synthesis_base_dir, 'altera_synthesis.stderr')
     jt.errorPath = ':' + self.stderr
-    #jt.nativeSpecification = '-v LM_LICENSE_FILE=1800@adsc-linux'
     jt.joinFiles=True
 
     jt.nativeSpecification = '-q %s' % self.sge_queue
+    if self.require_license :
+      jt.nativeSpecification += ' -v LM_LICENSE_FILE=1800@adsc-linux -l quartus_full=1'
 
     print "Submitted", self.getStepDesc()
     self.jobid = session.runJob(jt)

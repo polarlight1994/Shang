@@ -107,6 +107,7 @@ def main(builtinParameters = {}):
     hls_step.test_file = test_path
     hls_step.fmax = test_option['fmax']
 
+    hls_step.option = test_option
     hls_step.parameter = "f%(fmax)s" % test_option
 
     hls_step.prepareTest()
@@ -124,8 +125,9 @@ def main(builtinParameters = {}):
       if status == drmaa.JobState.DONE or status == drmaa.JobState.FAILED:
         retval = s.wait(job.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
         if not retval.hasExited or retval.exitStatus != 0 :
-          print "Test", job.getStepDesc(), "FAIL"
-          fail_steps.append(job.getStepDict())
+          if job.test_name in basic_config.xfails :
+            print "Test", job.getStepDesc(), "FAIL"
+            fail_steps.append(job.getStepDict())
           continue
 
         # Now the job finished successfully
