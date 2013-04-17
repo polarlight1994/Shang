@@ -44,6 +44,7 @@ macro(add_test_config name test_lls depends mode)
                             --mode=${mode}
                             --tests=${test_lls}
                             --config_bin_dir=${VTS_BINARY_ROOT}
+                            --sge_queue=\${QUEUE}
                     DEPENDS ${depends} ${SHANG}
                     COMMENT "Run trivial tests")
 endmacro(add_test_config)

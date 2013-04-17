@@ -193,6 +193,9 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
 
     self.stderr = os.path.join(self.hls_base_dir, 'hls.stderr')
     jt.errorPath = ':' + self.stderr
+    jt.joinFiles=True
+
+    jt.nativeSpecification = '-q %s' % self.sge_queue
 
     print "Submitted", self.getStepDesc()
     #Submit the job.
@@ -294,7 +297,9 @@ diff expected.output hardware.out || exit 1
     jt.outputPath = ':' + self.stdout
     self.stderr = os.path.join(self.hybrid_sim_base_dir, 'hybrid_sim.stderr')
     jt.errorPath = ':' + self.stderr
+    jt.joinFiles=True
 
+    jt.nativeSpecification = '-q %s' % self.sge_queue
 
     print "Submitted", self.getStepDesc()
     self.jobid = session.runJob(jt)
@@ -455,7 +460,9 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
     jt.outputPath = ':' + self.stdout
     self.stderr = os.path.join(self.pure_hw_sim_base_dir, 'pure_hw_sim.stderr')
     jt.errorPath = ':' + self.stderr
+    jt.joinFiles=True
 
+    jt.nativeSpecification = '-q %s' % self.sge_queue
 
     print "Submitted", self.getStepDesc()
     self.jobid = session.runJob(jt)
@@ -542,6 +549,9 @@ project_close
     self.stderr = os.path.join(self.altera_synthesis_base_dir, 'altera_synthesis.stderr')
     jt.errorPath = ':' + self.stderr
     #jt.nativeSpecification = '-v LM_LICENSE_FILE=1800@adsc-linux'
+    jt.joinFiles=True
+
+    jt.nativeSpecification = '-q %s' % self.sge_queue
 
     print "Submitted", self.getStepDesc()
     self.jobid = session.runJob(jt)
