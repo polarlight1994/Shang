@@ -63,7 +63,7 @@ execute_module -tool sta -args {--report_script @TEST_ROOT@/extract_timing.tcl}
 load_report
 ################################################################################
 # Summary
-if { "@IsMux@" == "testMux"} { 
+if { "@IsMux@" == "testMux"} {
 set DataJSON [open "@TEST_NAMES@_mux.json" a+]
 # "@TIMING_REPORT_JSON_MUX@" a+]
 puts $DataJSON "\"Input_Num\":\"@INPUT_NUM@\","
@@ -72,7 +72,7 @@ set DataJSON [open "@TEST_NAMES@.json" a+]
 }
 unload_report
 
-if { "@IsMux@" != "testMux"} { 
+#if { "@IsMux@" != "testMux"} {
   set_global_assignment -name TOP_LEVEL_ENTITY @DUT_NAME@
 
   export_assignments
@@ -83,7 +83,7 @@ if { "@IsMux@" != "testMux"} {
   puts $DataJSON "\"Total_alut\":\"[get_fitter_resource_usage -alut -used]\","
   puts $DataJSON "\"Total_alm\":\"[get_fitter_resource_usage -alm -used]\","
   unload_report
-}
+#}
 
 puts $DataJSON "\"Bit_Width\":\"@WIDTH@\""
 puts $DataJSON "\}"

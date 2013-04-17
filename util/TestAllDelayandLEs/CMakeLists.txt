@@ -81,7 +81,7 @@ add_dependencies(get_mux_verilog_file ${input_num}_get_verilog_${width})
 
 add_custom_command(OUTPUT ${PseudoTarget}
 	COMMAND quartus_sh -t ${SETUP_PRJ_TCL}
-	COMMAND python ${PYTHON_READ_RPT}
+	#COMMAND python ${PYTHON_READ_RPT}
 	WORKING_DIRECTORY ${TEST_ROOT}
 	DEPENDS ${TEST_VERILOG} ${TEST_ROOT}/MuxReadRpt.py ${TEST_ROOT}/extract_timing.tcl ${TEST_ROOT}/TestSetPrj.tcl
 	COMMENT "Setup quartus project to extract timing infomation"
