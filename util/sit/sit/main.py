@@ -30,8 +30,8 @@ def main(builtinParameters = {}):
 
   # Load the basic configuration.
   with open(os.path.join(args.config_bin_dir, 'basic_config.json'), 'r') as jsondata :
-
     basic_config.update(json.load(jsondata))
+  jsondata.close()
 
   print "Starting the Shang Integrated Tester in", args.mode, "mode..."
 
@@ -155,21 +155,16 @@ def main(builtinParameters = {}):
   # Finialize the gridengine
   s.exit()
 
-  for line in con.iterdump():
-    print line
+  with open(os.path.join(args.config_bin_dir, 'data.sql'), 'w') as database_script:
+    for line in con.iterdump():
+      database_script.write(line)
+      database_script.write('\n')
+  database_script.close()
 
-  #cur = con.cursor()
-  # Report the experimental results
-  #cur.execute('''select sim.name, sim.cycles, syn.fmax, syn.les, syn.mult9, syn.parameter, sim.parameter
-  #             from simulation sim, synthesis syn
-  #             where sim.name == syn.name and syn.parameter like sim.parameter''')
+  with open(os.path.join(args.config_bin_dir, 'failcases.json'), 'w') as json_file:
+    json.dump(fail_steps, json_file, indent = 2)
+  json_file.close()
 
-  #for row in cur.fetchall() :
-  #  print row
-
-  json.dump(fail_steps,
-            open(os.path.join(args.config_bin_dir, 'failcases.json'), 'w'),
-            indent = 2)
 
 if __name__=='__main__':
     main()
