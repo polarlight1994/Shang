@@ -65,6 +65,16 @@ class TestStep :
   def getStepDesc(self) :
     return ' '.join([self.step_name, self.test_name, self.parameter])
 
+  def getStepDict(self) :
+    return  {
+              'test_name' : self.test_name,
+              'parameter' : self.parameter,
+              'stdout' :  self.stdout,
+              'stderr' : self.stderr,
+              'test_file' : self.test_file,
+              'synthesis_config_file' : self.synthesis_config_file
+            }
+
   def dumplog(self) :
     print "stdout of", self.test_name, "begin"
     with open(self.stdout, "r") as logfile:
@@ -174,7 +184,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     # Create the HLS job.
     jt = session.createJobTemplate()
     jt.remoteCommand = 'timeout'
-    jt.args = ['%ds' % self.hls_timeout, self.shang, self.synthesis_config_file, '-stats', '-timing-model=blackbox']
+    jt.args = ['%ds' % self.hls_timeout, self.shang, self.synthesis_config_file, '-stats', '-timing-model=blackbox', '-vast-disable-mux-slack',  '-shang-enable-mux-pipelining=false']
     #Set up the correct working directory and the output path
     jt.workingDirectory = os.path.dirname(self.synthesis_config_file)
 

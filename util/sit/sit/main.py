@@ -5,7 +5,7 @@ sit - Shang Integrated Tester.
 
 """
 
-import math, os, platform, random, re, sys, time, threading, itertools
+import math, os, platform, random, re, sys, time, threading, itertools, json
 
 import drmaa
 import sqlite3
@@ -30,8 +30,8 @@ def main(builtinParameters = {}):
 
   # Load the basic configuration.
   with open(os.path.join(args.config_bin_dir, 'basic_config.json'), 'r') as jsondata :
-    from json import load
-    basic_config.update(load(jsondata))
+
+    basic_config.update(json.load(jsondata))
 
   print "Starting the Shang Integrated Tester in", args.mode, "mode..."
 
@@ -124,8 +124,7 @@ def main(builtinParameters = {}):
         retval = s.wait(job.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
         if not retval.hasExited or retval.exitStatus != 0 :
           print "Test", job.getStepDesc(), "FAIL"
-          job.dumplog()
-          fail_steps.append(job.getStepDesc())
+          fail_steps.append(job.getStepDict())
           continue
 
         # Now the job finished successfully
@@ -156,16 +155,21 @@ def main(builtinParameters = {}):
   # Finialize the gridengine
   s.exit()
 
-  cur = con.cursor()
+  for line in con.iterdump():
+    print line
+
+  #cur = con.cursor()
   # Report the experimental results
-  cur.execute('''select sim.name, sim.cycles, syn.fmax, syn.les, syn.mult9, syn.parameter, sim.parameter
-               from simulation sim, synthesis syn
-               where sim.name == syn.name and syn.parameter like sim.parameter''')
+  #cur.execute('''select sim.name, sim.cycles, syn.fmax, syn.les, syn.mult9, syn.parameter, sim.parameter
+  #             from simulation sim, synthesis syn
+  #             where sim.name == syn.name and syn.parameter like sim.parameter''')
 
-  for row in cur.fetchall() :
-    print row
+  #for row in cur.fetchall() :
+  #  print row
 
-  print 'fail cases:\n', '\n'.join(fail_steps)
+  json.dump(fail_steps,
+            open(os.path.join(args.config_bin_dir, 'failcases.json'), 'w'),
+            indent = 2)
 
 if __name__=='__main__':
     main()
