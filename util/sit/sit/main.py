@@ -90,30 +90,38 @@ def main(builtinParameters = {}):
   con.commit()
 
   # Build the opation space from the configuration.
-  option_space = basic_config['option_space']
-  option_space = [ dict(itertools.izip(option_space, opt))  for opt in itertools.product(*option_space.itervalues()) ]
+  option_space_dict = basic_config['option_space']
+  option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]
+
+  # Constrains the option space
+  option_space = [ opt for opt in option_space if opt['fmax'] == 100 and opt['device_family'] == 'CycloneII']
+  #
+  option_space = [ opt for opt in option_space if opt['vast_disable_mux_slack'] == 'true' and opt['shang_enable_mux_pipelining'] == 'false' and opt['shang_baseline_scheduling_only'] == 'false' and opt['shang_enable_memory_optimization'] == 'true']
+
+  # Collect the option space of the fail cases
+  fail_space = dict([ (k, set()) for k in option_space_dict.iterkeys() ])
 
   for test_path in args.tests.split() :
     basedir = os.path.dirname(test_path)
     test_file = os.path.basename(test_path)
     test_name = os.path.splitext(test_file)[0]
 
-    test_option = random.choice(option_space)
+    #test_option = random.choice(option_space)
+    for test_option in option_space :
+      # TODO: Provide the keyword constructor
+      hls_step = HLSStep(basic_config)
+      hls_step.test_name = test_name
+      hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
+      hls_step.test_file = test_path
+      hls_step.fmax = test_option['fmax']
 
-    # TODO: Provide the keyword constructor
-    hls_step = HLSStep(basic_config)
-    hls_step.test_name = test_name
-    hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
-    hls_step.test_file = test_path
-    hls_step.fmax = test_option['fmax']
+      hls_step.option = test_option
+      hls_step.parameter = "%s" % test_option
 
-    hls_step.option = test_option
-    hls_step.parameter = "f%(fmax)s" % test_option
+      hls_step.prepareTest()
+      hls_step.runTest(s)
 
-    hls_step.prepareTest()
-    hls_step.runTest(s)
-
-    active_jobs.append(hls_step)
+      active_jobs.append(hls_step)
 
   fail_steps = []
 
@@ -128,6 +136,9 @@ def main(builtinParameters = {}):
           if not job.test_name in basic_config['xfails'] :
             print "Test", job.getStepDesc(), "FAIL"
             fail_steps.append(job.getStepDict())
+            # Remember the options on the fail case
+            for k, v in job.option.iteritems() :
+              fail_space[k].add(v)
           else :
             print "Test", job.getStepDesc(), "XFAIL"
 
@@ -171,6 +182,9 @@ def main(builtinParameters = {}):
     json.dump(fail_steps, json_file, indent = 2)
   json_file.close()
 
+  # Analysis the fail cases
+  if fail_steps:
+    print 'Fail space:', [ (k, v) for k, v in fail_space.iteritems() if v < set(option_space_dict[k]) ]
 
 if __name__=='__main__':
     main()
