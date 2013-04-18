@@ -493,7 +493,7 @@ class AlteraSynStep(TestStep) :
     TestStep.__init__(self, hls_step.__dict__)
     self.parameter = hls_step.parameter
     self.results.update(hls_step.results)
-    self.require_license = (self.option['device']['family'] == 'StratixIV')
+    self.require_license = (self.option['device_family'] == 'StratixIV')
 
     #Use full version for stratix devices.
     self.quartus_bin = '/nfs/app/altera/quartus12x64_%s/quartus/bin/' % ('full' if self.require_license else 'web')

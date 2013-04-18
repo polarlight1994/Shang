@@ -15,11 +15,8 @@
 
   "option_space" : {
     "fmax" : [200.0, 166.66666666666666, 142.85714285714286, 125.0, 111.11111111111111, 100.0, 90.9090909090909, 83.33333333333333, 76.92307692307692, 71.42857142857143, 66.66666666666667, 62.5, 58.8235294117647, 55.55555555555556, 52.63157894736842, 50.0],
-    "device" : [
-      { "family":"CycloneII", "family_name":"Cyclone II",   "device_name":"EP2C70F896C6" },
-      { "family":"CycloneIV", "family_name":"Cyclone IV E", "device_name":"EP4CE75F29C6" },
-      { "family":"StratixIV", "family_name":"Stratix IV",   "device_name":"EP4SGX530KH40C2" }
-    ],
+
+    "device_family" : [ "CycloneII", "CycloneIV", "StratixIV" ],
 
     "timing_model" : ["zero-delay", "blackbox", "bit-level"],
     "vast_disable_mux_slack" : [ "true", "false" ],
