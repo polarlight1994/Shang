@@ -22,7 +22,9 @@
     ],
 
     "timing_model" : ["zero-delay", "blackbox", "bit-level"],
-    "vast_disable_mux_slack" : [ "true", "false"],
-    "shang_enable_mux_pipelining" : [ "true", "false"]
+    "vast_disable_mux_slack" : [ "true", "false" ],
+    "shang_enable_mux_pipelining" : [ "true", "false" ],
+    "shang_baseline_scheduling_only" : [ "true", "false" ],
+    "shang_enable_memory_optimization" : [ "true", "false" ]
   }
 }

@@ -62,7 +62,7 @@ bool loadConfig(const std::string &Path,
 static cl::opt<std::string>
 InputFilename(cl::Positional, cl::desc("<input lua script>"), cl::init("-"));
 
-static cl::opt<bool> BaselineSchedulingOnly( "shang-baseline-scheduling-only",
+static cl::opt<bool> BaselineSchedulingOnly("shang-baseline-scheduling-only",
   cl::desc("Only use the scheduling derive from the LLVM IR"),
   cl::init(false));
 
