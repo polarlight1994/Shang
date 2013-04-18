@@ -63,7 +63,7 @@ class TestStep :
     return
 
   def getStepDesc(self) :
-    return ' '.join([self.test_name, self.step_name, self.parameter])
+    return ' '.join([self.test_name, self.step_name, self.parameter]).replace(':', '-')
 
   def getStepDict(self) :
     return  {
