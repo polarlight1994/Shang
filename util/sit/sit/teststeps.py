@@ -186,7 +186,12 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
 
     jt.jobName = self.getStepDesc()
     jt.remoteCommand = 'timeout'
-    jt.args = ['%ds' % self.hls_timeout, self.shang, self.synthesis_config_file, '-stats', '-timing-model=blackbox', '-vast-disable-mux-slack',  '-shang-enable-mux-pipelining=false']
+    jt.args = ['%ds' % self.hls_timeout, self.shang, self.synthesis_config_file, '-stats',
+               '-timing-model=%(timing_model)s' % self.option,
+               '-vast-disable-mux-slack=%(vast_disable_mux_slack)s' % self.option,
+               '-shang-enable-mux-pipelining=%(shang_enable_mux_pipelining)s' % self.option,
+               '-shang-baseline-scheduling-only=%(shang_baseline_scheduling_only)s' % self.option,
+               '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self.option]
     #Set up the correct working directory and the output path
     jt.workingDirectory = os.path.dirname(self.synthesis_config_file)
 
