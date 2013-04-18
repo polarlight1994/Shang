@@ -128,6 +128,9 @@ def main(builtinParameters = {}):
           if not job.test_name in basic_config['xfails'] :
             print "Test", job.getStepDesc(), "FAIL"
             fail_steps.append(job.getStepDict())
+          else :
+            print "Test", job.getStepDesc(), "XFAIL"
+
           continue
 
         # Now the job finished successfully
