@@ -90,12 +90,21 @@ def main(builtinParameters = {}):
 
   # Build the opation space from the configuration.
   option_space_dict = basic_config['option_space']
-  option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]
-
   # Constrains the option space
-  option_space = [ opt for opt in option_space if opt['fmax'] == 100 and opt['device_family'] == 'CycloneII']
-  #
-  option_space = [ opt for opt in option_space if opt['vast_disable_mux_slack'] == 'true' and opt['shang_enable_mux_pipelining'] == 'false' and opt['shang_baseline_scheduling_only'] == 'false' and opt['shang_enable_memory_optimization'] == 'true']
+  # HLS options
+  option_space_dict['vast_disable_mux_slack'] = [ 'true' ]
+  option_space_dict['shang_enable_mux_pipelining'] = [ 'false' ]
+  option_space_dict['shang_baseline_scheduling_only'] = [ 'false' ]
+  option_space_dict['shang_enable_memory_optimization'] = [ 'true' ]
+  option_space_dict['shang_enable_memory_partition'] = [ 'true' ]
+  option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
+
+  option_space_dict['timing_model'] = [ 'bit-level' ]
+
+  option_space_dict['fmax'] = [ 100 ]
+  option_space_dict['device_family'] = [ 'CycloneII' ]
+
+  option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]
 
   # Collect the option space of the fail cases
   fail_space = dict([ (k, set()) for k in option_space_dict.iterkeys() ])
