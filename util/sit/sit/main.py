@@ -5,7 +5,7 @@ sit - Shang Integrated Tester.
 
 """
 
-import math, os, platform, random, re, sys, time, threading, itertools, json
+import math, os, platform, random, re, sys, time, threading, itertools, json, argparse
 
 import drmaa
 import sqlite3
@@ -16,7 +16,6 @@ from logparser import SimLogParser
 from teststeps import TestStep, HLSStep
 
 def ParseOptions() :
-  import argparse
   parser = argparse.ArgumentParser(description='The Shang Integrated Tester')
   parser.add_argument("--mode", type=str, choices=[TestStep.HybridSim, TestStep.PureHWSim, TestStep.AlteraSyn], help="the mode of sit", required=True)
   parser.add_argument("--tests", type=str, help="tests to run", required=True)
