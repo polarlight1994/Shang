@@ -192,6 +192,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
                '-shang-enable-mux-pipelining=%(shang_enable_mux_pipelining)s' % self.option,
                '-shang-baseline-scheduling-only=%(shang_baseline_scheduling_only)s' % self.option,
                '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self.option,
+               '-shang-enable-memory-partition=%(shang_enable_memory_partition)s' % self.option,
                '-shang-enable-pre-schedule-lut-mapping=%(shang_enable_pre_schedule_lut_mapping)s' % self.option
               ]
 

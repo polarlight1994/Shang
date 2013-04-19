@@ -41,6 +41,11 @@ STATISTIC(NumLoad, "Number of Load");
 STATISTIC(NumStore, "Number of Store");
 STATISTIC(NumMemBanks, "Number of Local Memory Bank Allocated");
 
+static cl::opt<bool>
+EnableMemoryPartition("shang-enable-memory-partition",
+  cl::desc("Perform memory partition"),
+  cl::init(true));
+
 namespace {
 struct MemoryPartition : public FunctionPass, public HLSAllocation {
   static char ID;
@@ -75,7 +80,7 @@ struct MemoryPartition : public FunctionPass, public HLSAllocation {
   }
 
   MemoryPartition(bool EnableBanking = true)
-    : FunctionPass(ID), EnableBanking(EnableBanking) {
+    : FunctionPass(ID), EnableBanking(EnableBanking && EnableMemoryPartition) {
     initializeMemoryPartitionPass(*PassRegistry::getPassRegistry());
   }
 
