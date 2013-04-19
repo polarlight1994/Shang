@@ -13,7 +13,7 @@ import sqlite3
 from jinja2 import Environment, FileSystemLoader, Template
 
 from logparser import SimLogParser
-from teststeps import TestStep, HLSStep
+from teststeps import TestStep, HLSStep, Session
 
 def ParseOptions() :
   parser = argparse.ArgumentParser(description='The Shang Integrated Tester')
@@ -35,9 +35,7 @@ def main(builtinParameters = {}):
 
   print "Starting the Shang Integrated Tester in", args.mode, "mode..."
 
-  # Initialize the gridengine
-  s = drmaa.Session()
-  s.initialize()
+
   active_jobs = []
 
   # Initialize the database connection
@@ -127,7 +125,7 @@ def main(builtinParameters = {}):
       hls_step.parameter = "%s" % test_option
 
       hls_step.prepareTest()
-      hls_step.runTest(s)
+      hls_step.runTest()
 
       active_jobs.append(hls_step)
 
@@ -137,9 +135,9 @@ def main(builtinParameters = {}):
   while active_jobs :
     next_active_jobs = []
     for job in active_jobs:
-      status = s.jobStatus(job.jobid)
+      status = Session.jobStatus(job.jobid)
       if status == drmaa.JobState.DONE or status == drmaa.JobState.FAILED:
-        retval = s.wait(job.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
+        retval = Session.wait(job.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
         if not retval.hasExited or retval.exitStatus != 0 :
           if not job.test_name in basic_config['xfails'] :
             print "Test", job.getStepDesc(), "FAIL"
@@ -160,7 +158,7 @@ def main(builtinParameters = {}):
         # FIXME: Only generate the subtest if the previous test passed.
         for subtest in job.generateSubTests() :
           subtest.prepareTest()
-          subtest.runTest(s)
+          subtest.runTest()
           next_active_jobs.append(subtest)
 
         continue
@@ -178,7 +176,7 @@ def main(builtinParameters = {}):
   #  #print 'Job: ' + str(retval.jobId) + ' finished with status ' + str(retval.hasExited)
 
   # Finialize the gridengine
-  s.exit()
+  Session.exit()
 
   with open(os.path.join(args.config_bin_dir, 'data.sql'), 'w') as database_script:
     for line in con.iterdump():

@@ -20,6 +20,12 @@ from jinja2 import Environment, FileSystemLoader, Template
 import os, sys, json, re
 from datetime import datetime
 
+import drmaa
+
+# Initialize the gridengine
+Session = drmaa.Session()
+Session.initialize()
+
 # Base class of test step.
 class TestStep :
 
@@ -180,9 +186,9 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
 ''', self.synthesis_config_file)
 
   # Run the test
-  def runTest(self, session) :
+  def runTest(self) :
     # Create the HLS job.
-    jt = session.createJobTemplate()
+    jt = Session.createJobTemplate()
 
     jt.jobName = self.getStepDesc()
     jt.remoteCommand = 'timeout'
@@ -210,8 +216,8 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
 
     print "Submitted", self.getStepDesc()
     #Submit the job.
-    self.jobid = session.runJob(jt)
-    session.deleteJobTemplate(jt)
+    self.jobid = Session.runJob(jt)
+    Session.deleteJobTemplate(jt)
 
   def generateSubTests(self) :
     #If test type == hybrid simulation
@@ -296,9 +302,9 @@ timeout 1200s {{ [hls_base_dir, test_name + "_systemc_testbench"]|joinpath }} > 
 diff expected.output hardware.out || exit 1
     ''', self.hybrid_sim_script)
 
-  def runTest(self, session) :
+  def runTest(self) :
     # Create the hybrid simulation job.
-    jt = session.createJobTemplate()
+    jt = Session.createJobTemplate()
 
     jt.jobName = self.getStepDesc()
     jt.remoteCommand = 'bash'
@@ -314,8 +320,8 @@ diff expected.output hardware.out || exit 1
     jt.nativeSpecification = '-q %s' % self.sge_queue
 
     print "Submitted", self.getStepDesc()
-    self.jobid = session.runJob(jt)
-    session.deleteJobTemplate(jt)
+    self.jobid = Session.runJob(jt)
+    Session.deleteJobTemplate(jt)
 
 
 class PureHWSimStep(TestStep) :
@@ -460,9 +466,9 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
 [ -f cycles.rpt ] || exit 1
 ''', self.pure_hw_sim_script)
 
-  def runTest(self, session) :
+  def runTest(self) :
     # Create the simulation job.
-    jt = session.createJobTemplate()
+    jt = Session.createJobTemplate()
 
     jt.jobName = self.getStepDesc()
     jt.remoteCommand = 'timeout'
@@ -478,8 +484,8 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
     jt.nativeSpecification = '-q %s' % self.sge_queue
 
     print "Submitted", self.getStepDesc()
-    self.jobid = session.runJob(jt)
-    session.deleteJobTemplate(jt)
+    self.jobid = Session.runJob(jt)
+    Session.deleteJobTemplate(jt)
 
   def submitResults(self, connection) :
     with open(os.path.join(self.pure_hw_sim_base_dir, 'cycles.rpt')) as cycles_rpt:
@@ -552,9 +558,9 @@ execute_module -tool eda
 project_close
 ''', self.altera_synthesis_script)
 
-  def runTest(self, session) :
+  def runTest(self) :
     # Create the simulation job.
-    jt = session.createJobTemplate()
+    jt = Session.createJobTemplate()
 
     jt.jobName = self.getStepDesc()
     jt.remoteCommand = 'timeout'
@@ -572,8 +578,8 @@ project_close
       jt.nativeSpecification += ' -v LM_LICENSE_FILE=1800@adsc-linux -l quartus_full=1'
 
     print "Submitted", self.getStepDesc()
-    self.jobid = session.runJob(jt)
-    session.deleteJobTemplate(jt)
+    self.jobid = Session.runJob(jt)
+    Session.deleteJobTemplate(jt)
 
   def submitResults(self, connection) :
     results = {"test_name" : self.test_name,  "parameter" : self.parameter }
