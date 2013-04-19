@@ -191,7 +191,10 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
                '-vast-disable-mux-slack=%(vast_disable_mux_slack)s' % self.option,
                '-shang-enable-mux-pipelining=%(shang_enable_mux_pipelining)s' % self.option,
                '-shang-baseline-scheduling-only=%(shang_baseline_scheduling_only)s' % self.option,
-               '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self.option]
+               '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self.option,
+               '-shang-enable-pre-schedule-lut-mapping=%(shang_enable_pre_schedule_lut_mapping)s' % self.option
+              ]
+
     #Set up the correct working directory and the output path
     jt.workingDirectory = os.path.dirname(self.synthesis_config_file)
 

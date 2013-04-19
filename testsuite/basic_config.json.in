@@ -22,6 +22,7 @@
     "vast_disable_mux_slack" : [ "true", "false" ],
     "shang_enable_mux_pipelining" : [ "true", "false" ],
     "shang_baseline_scheduling_only" : [ "true", "false" ],
-    "shang_enable_memory_optimization" : [ "true", "false" ]
+    "shang_enable_memory_optimization" : [ "true", "false" ],
+    "shang_enable_pre-schedule_lut_mapping" : [ "true", "false" ]
   }
 }
