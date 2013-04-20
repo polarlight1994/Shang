@@ -129,41 +129,36 @@ def main(builtinParameters = {}):
 
       active_jobs.append(hls_step)
 
-  fail_steps = []
+  finished_jobs = []
 
   # Examinate the status of the jobs
   while active_jobs :
     next_active_jobs = []
     for job in active_jobs:
-      status = Session.jobStatus(job.jobid)
-      if status == drmaa.JobState.DONE or status == drmaa.JobState.FAILED:
-        retval = Session.wait(job.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
-        if not retval.hasExited or retval.exitStatus != 0 :
-          if not job.test_name in basic_config['xfails'] :
-            print "Test", job.getStepDesc(), "FAIL"
-            fail_steps.append(job.getStepDict())
-            # Remember the options on the fail case
-            for k, v in job.option.iteritems() :
-              fail_space[k].add(v)
-          else :
-            print "Test", job.getStepDesc(), "XFAIL"
+      status = job.jobStatus()
 
-          continue
+      if status == 'running' :
+        next_active_jobs.append(job)
+        continue
 
+      if status == 'passed' :
         # Now the job finished successfully
         print "Test", job.getStepDesc(), "passed"
         job.submitResults(con)
-
         # Generate subtest.
         # FIXME: Only generate the subtest if the previous test passed.
         for subtest in job.generateSubTests() :
           subtest.prepareTest()
           subtest.runTest()
           next_active_jobs.append(subtest)
-
-        continue
-
-      next_active_jobs.append(job)
+      elif status == 'failed' :
+        print "Test", job.getStepDesc(), "failed"
+        # Remember the options on the fail case
+        for k, v in job.option.iteritems() :
+          fail_space[k].add(v)
+          
+      result = job.getStepResult(status)
+      finished_jobs.append(result)
 
     time.sleep(5)
     active_jobs = next_active_jobs[:]
@@ -184,13 +179,12 @@ def main(builtinParameters = {}):
       database_script.write('\n')
   database_script.close()
 
-  with open(os.path.join(args.config_bin_dir, 'failcases.json'), 'w') as json_file:
-    json.dump(fail_steps, json_file, indent = 2)
+  with open(os.path.join(args.config_bin_dir, 'failedcases.json'), 'w') as json_file:
+    json.dump(finished_jobs, json_file, indent = 2)
   json_file.close()
 
   # Analysis the fail cases
-  if fail_steps:
-    print 'Fail space:', [ (k, v) for k, v in fail_space.iteritems() if v < set(option_space_dict[k]) ]
+  print 'Fail space:', [ (k, v) for k, v in fail_space.iteritems() if v < set(option_space_dict[k]) ]
 
 if __name__=='__main__':
     main()

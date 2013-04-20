@@ -65,20 +65,34 @@ class TestStep :
   def generateFileFromTemplate(self, template_str, output_file_path) :
     self.config_template_env.from_string(template_str).stream(self.__dict__).dump(output_file_path)
 
-  def submitResults(self, connection) :
-    return
+  def submitResults(self, connection) : pass
 
   def getStepDesc(self) :
     return ' '.join([self.test_name, self.step_name, self.parameter]).replace(':', '-')
 
-  def getStepDict(self) :
+  def jobStatus(self) :
+    status = Session.jobStatus(self.jobid)
+    if status == drmaa.JobState.DONE or status == drmaa.JobState.FAILED:
+      retval = Session.wait(self.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
+      if not retval.hasExited or retval.exitStatus != 0 :
+        if self.test_name in self.xfails :
+          return 'xfailed'
+        else :
+          return 'failed'
+
+      return 'passed'
+
+    return 'running'
+
+  def getStepResult(self, status) :
     return  {
               'test_name' : self.test_name,
               'parameter' : self.parameter,
               'stdout' :  self.stdout,
               'stderr' : self.stderr,
               'test_file' : self.test_file,
-              'synthesis_config_file' : self.synthesis_config_file
+              'synthesis_config_file' : self.synthesis_config_file,
+              'status' : status
             }
 
   def dumplog(self) :
