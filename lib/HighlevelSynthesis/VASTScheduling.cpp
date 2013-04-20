@@ -23,6 +23,8 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
 
+#include "llvm/IR/DataLayout.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
@@ -284,6 +286,7 @@ struct VASTScheduling : public VASTModulePass {
   TimingNetlist *TNL;
   VASTModule *VM;
   DependenceAnalysis *DA;
+  AliasAnalysis *AA;
   LoopInfo *LI;
   BranchProbabilityInfo *BPI;
 
@@ -296,6 +299,7 @@ struct VASTScheduling : public VASTModulePass {
     AU.addRequiredID(BasicBlockTopOrderID);
     AU.addRequiredID(DatapathNamerID);
     AU.addRequired<TimingNetlist>();
+    AU.addRequired<AliasAnalysis>();
     AU.addRequired<DependenceAnalysis>();
     AU.addRequired<LoopInfo>();
     AU.addRequired<BranchProbabilityInfo>();
@@ -650,6 +654,24 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
   }
 }
 
+static
+AliasAnalysis::Location getPointerOperand(Instruction *I, AliasAnalysis *AA) {
+  Value *Ptr = 0;
+  if (LoadInst *LI = dyn_cast<LoadInst>(I))
+    Ptr = LI->getPointerOperand();
+  else if (StoreInst *SI = dyn_cast<StoreInst>(I))
+    Ptr = SI->getPointerOperand();
+
+  assert(Ptr && "Value is not load or store instruction");
+  Type *ElmentTy = cast<PointerType>(Ptr->getType())->getElementType();
+  unsigned Size =  AA->getDataLayout()->getTypeStoreSize(ElmentTy);
+  return AliasAnalysis::Location(Ptr, Size);
+}
+
+static bool isNoAlias(Instruction *Src, Instruction *Dst, AliasAnalysis *AA) {
+  return AA->isNoAlias(getPointerOperand(Src, AA), getPointerOperand(Dst, AA));
+}
+
 //===----------------------------------------------------------------------===//
 void VASTScheduling::buildMemoryDependencies(Instruction *Src, Instruction *Dst)
 {
@@ -658,7 +680,8 @@ void VASTScheduling::buildMemoryDependencies(Instruction *Src, Instruction *Dst)
   Dependence *D = DA->depends(Src, Dst, true);
 
   // No dependencies at all.
-  if ((D == 0 || D->isInput()) && !isCall(Src) && !isCall(Dst))
+  if (!isCall(Src) && !isCall(Dst) && isNoAlias(Src, Dst, AA)
+      && ((D == 0 || D->isInput())))
     return;
 
   VASTSchedUnit *SrcU = IR2SUMap[Src].front(), *DstU = IR2SUMap[Dst].front();
@@ -963,7 +986,9 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   OwningPtr<VASTSchedGraph> GPtr(new VASTSchedGraph(VM));
   G = GPtr.get();
 
+  // Initialize the analyses
   TNL = &getAnalysis<TimingNetlist>();
+  AA = &getAnalysis<AliasAnalysis>();
   DA = &getAnalysis<DependenceAnalysis>();
   LI = &getAnalysis<LoopInfo>();
   BPI = &getAnalysis<BranchProbabilityInfo>();
