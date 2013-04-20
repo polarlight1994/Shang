@@ -652,7 +652,7 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 }
 
 static
-AliasAnalysis::Location getPointerOperand(Instruction *I, AliasAnalysis *AA) {
+AliasAnalysis::Location getPointerLocation(Instruction *I, AliasAnalysis *AA) {
   Value *Ptr = 0;
   if (LoadInst *LI = dyn_cast<LoadInst>(I))
     Ptr = LI->getPointerOperand();
@@ -666,7 +666,7 @@ AliasAnalysis::Location getPointerOperand(Instruction *I, AliasAnalysis *AA) {
 }
 
 static bool isNoAlias(Instruction *Src, Instruction *Dst, AliasAnalysis *AA) {
-  return AA->isNoAlias(getPointerOperand(Src, AA), getPointerOperand(Dst, AA));
+  return AA->isNoAlias(getPointerLocation(Src, AA), getPointerLocation(Dst, AA));
 }
 
 //===----------------------------------------------------------------------===//
