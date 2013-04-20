@@ -21,7 +21,6 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
-#include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -37,16 +36,16 @@ namespace {
 struct MemoryAccessCoalescing : public FunctionPass {
   static char ID;
   ScalarEvolution *SE;
-  DependenceAnalysis *DA;
+  AliasAnalysis *AA;
   DataLayout *TD;
 
-  MemoryAccessCoalescing() : FunctionPass(ID), SE(0), DA(0), TD(0) {
+  MemoryAccessCoalescing() : FunctionPass(ID), SE(0), AA(0), TD(0) {
     initializeMemoryAccessCoalescingPass(*PassRegistry::getPassRegistry());
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.addRequired<ScalarEvolution>();
-    AU.addRequired<DependenceAnalysis>();
+    AU.addRequired<AliasAnalysis>();
     AU.addRequired<DataLayout>();
     AU.setPreservesCFG();
   }
@@ -54,7 +53,7 @@ struct MemoryAccessCoalescing : public FunctionPass {
   bool runOnFunction(Function &F) {
     bool changed = false;
     SE = &getAnalysis<ScalarEvolution>();
-    DA = &getAnalysis<DependenceAnalysis>();
+    AA = &getAnalysis<AliasAnalysis>();
     TD = &getAnalysis<DataLayout>();
 
     DEBUG(dbgs() << "Run Memory Access Coalescer on " << F.getName() << '\n');
@@ -95,6 +94,20 @@ struct MemoryAccessCoalescing : public FunctionPass {
       return S->getPointerOperand();
 
     return 0;
+  }
+
+  AliasAnalysis::Location getPointerLocation(Instruction *I) const {
+    Value *Ptr = getPointerOperand(I);
+    assert(Ptr && "Value is not load or store instruction");
+
+    assert(Ptr && "Value is not load or store instruction");
+    Type *ElmentTy = cast<PointerType>(Ptr->getType())->getElementType();
+    unsigned Size =  AA->getDataLayout()->getTypeStoreSize(ElmentTy);
+    return AliasAnalysis::Location(Ptr, Size);
+  }
+
+  bool isNoAlias(Instruction *Src, Instruction *Dst) const {
+    return AA->isNoAlias(getPointerLocation(Src), getPointerLocation(Dst));
   }
 
   static bool isWritingTheSameValue(Instruction *LHS, Instruction *RHS) {
@@ -285,9 +298,7 @@ bool MemoryAccessCoalescing::hasMemDependency(Instruction *DstInst,
   if (!SrcMayWrite && ! DstMayWrite) return false;
 
   // Is DstInst depends on SrcInst?
-  Dependence *D = DA->depends(SrcInst, DstInst, true);
-  // Input dependencies are already ignored in the above code.
-  return D != 0 /*&& D->isInput()*/;
+  return !isNoAlias(SrcInst, DstInst);
 }
 
 bool MemoryAccessCoalescing::trackUsesOfSrc(InstSetTy &UseSet, Instruction *Src,
