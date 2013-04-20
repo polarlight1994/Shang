@@ -26,7 +26,6 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/CommandLine.h"
@@ -285,7 +284,6 @@ struct VASTScheduling : public VASTModulePass {
   VASTSchedGraph *G;
   TimingNetlist *TNL;
   VASTModule *VM;
-  DependenceAnalysis *DA;
   AliasAnalysis *AA;
   LoopInfo *LI;
   BranchProbabilityInfo *BPI;
@@ -300,7 +298,6 @@ struct VASTScheduling : public VASTModulePass {
     AU.addRequiredID(DatapathNamerID);
     AU.addRequired<TimingNetlist>();
     AU.addRequired<AliasAnalysis>();
-    AU.addRequired<DependenceAnalysis>();
     AU.addRequired<LoopInfo>();
     AU.addRequired<BranchProbabilityInfo>();
   }
@@ -675,13 +672,14 @@ static bool isNoAlias(Instruction *Src, Instruction *Dst, AliasAnalysis *AA) {
 //===----------------------------------------------------------------------===//
 void VASTScheduling::buildMemoryDependencies(Instruction *Src, Instruction *Dst)
 {
-  // The control flow can reach from Src to Dst without traversing a loop back
-  // edge.
-  Dependence *D = DA->depends(Src, Dst, true);
 
-  // No dependencies at all.
-  if (!isCall(Src) && !isCall(Dst) && isNoAlias(Src, Dst, AA)
-      && ((D == 0 || D->isInput())))
+  // No dependencies at all if:
+  // 1. both of them are not call instructions
+  // 2. both of them are not writing memory
+  // 3. their pointer locations do not alias each others.
+  if (!isCall(Src) && !isCall(Dst)
+      && (!Src->mayWriteToMemory() && !Dst->mayWriteToMemory())
+      && isNoAlias(Src, Dst, AA))
     return;
 
   VASTSchedUnit *SrcU = IR2SUMap[Src].front(), *DstU = IR2SUMap[Dst].front();
@@ -989,7 +987,6 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   // Initialize the analyses
   TNL = &getAnalysis<TimingNetlist>();
   AA = &getAnalysis<AliasAnalysis>();
-  DA = &getAnalysis<DependenceAnalysis>();
   LI = &getAnalysis<LoopInfo>();
   BPI = &getAnalysis<BranchProbabilityInfo>();
 
