@@ -65,11 +65,13 @@ struct PathIntervalQueryCache {
   const uint32_t Inf;
 
   typedef std::map<unsigned, DenseSet<VASTSeqValue*> > IntervalStatsMapTy;
+  IntervalStatsMapTy CyclesFromSrc;
+
   typedef DenseMap<VASTSeqValue*, unsigned> SeqValSetTy;
+  SeqValSetTy LBFromSrc;
+
   typedef DenseMap<VASTValue*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
-  // Statistics for simple path and complex paths.
-  IntervalStatsMapTy CyclesFromSrc[2];
 
   PathIntervalQueryCache(SeqLiveVariables &SLV,  STGShortestPath &SSP,
                          VASTSeqValue *Dst)
@@ -77,12 +79,24 @@ struct PathIntervalQueryCache {
 
   void reset() {
     QueryCache.clear();
-    CyclesFromSrc[0].clear();
-    CyclesFromSrc[1].clear();
+    CyclesFromSrc.clear();
+    LBFromSrc.clear();
   }
 
-  void addIntervalFromSrc(VASTSeqValue *Src, unsigned Interval, bool isSimple) {
-    CyclesFromSrc[isSimple][Interval].insert(Src);
+  void addIntervalFromSrc(VASTSeqValue *Src, unsigned Interval) {
+    assert(Interval && "unexpected zero interval!");
+    CyclesFromSrc[Interval].insert(Src);
+
+    unsigned &LB = LBFromSrc[Src];
+
+    if (LB == 0) LB = Interval;
+    else         LB = std::min(LB, Interval);
+  }
+
+  unsigned getIntervalLBFrom(VASTSeqValue *Src) const {
+    unsigned LB = LBFromSrc.lookup(Src);
+    assert(LB && "Unexpected lowerbound!");
+    return LB;
   }
 
   bool annotateSubmoduleLatency(VASTSeqValue * V);
@@ -115,8 +129,6 @@ struct PathIntervalQueryCache {
   }
 
   void bindAllPath2ScriptEngine() const;
-  void
-  bindAllPath2ScriptEngine(bool IsSimple, DenseSet<VASTSeqValue*> &BoundSrc) const;
   // Bind multi-cycle path constraints to the scripting engine.
   unsigned bindMCPC2ScriptEngine(VASTSeqValue *Src,
                                  unsigned Interval, bool SkipThu,
@@ -127,8 +139,8 @@ struct PathIntervalQueryCache {
 
   typedef DenseSet<VASTSeqValue*>::const_iterator src_it;
   typedef IntervalStatsMapTy::const_iterator delay_it;
-  delay_it stats_begin(bool IsSimple) const { return CyclesFromSrc[IsSimple].begin(); }
-  delay_it stats_end(bool IsSimple) const { return CyclesFromSrc[IsSimple].end(); }
+  delay_it stats_begin() const { return CyclesFromSrc.begin(); }
+  delay_it stats_end() const { return CyclesFromSrc.end(); }
 
   void dump() const;
 };
@@ -237,7 +249,7 @@ bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
        I != E; ++I) {
     VASTSeqValue *Operand = *I;
-    addIntervalFromSrc(Operand, Latency, true);
+    addIntervalFromSrc(Operand, Latency);
   }
 
   return true;
@@ -318,7 +330,7 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
         ExistedInterval = Interval;
 
       // Add the information to statistics.
-      addIntervalFromSrc(V, Interval, false);
+      addIntervalFromSrc(V, Interval);
       continue;
     }
 
@@ -457,22 +469,25 @@ unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Src,
 }
 
 void
-PathIntervalQueryCache::bindAllPath2ScriptEngine(bool IsSimple,
-                                                 DenseSet<VASTSeqValue*>
-                                                 &BoundSrc) const {
+PathIntervalQueryCache::bindAllPath2ScriptEngine() const {
+  DenseSet<VASTSeqValue*> VisitedSrc;
+  DEBUG(dbgs() << "Going to bind delay information of graph: \n");
+  DEBUG(dump());
   DEBUG(dbgs() << "Binding path for dst register: "
                << Dst->getName() << '\n');
   unsigned LastInterval = 0;
-  for (delay_it I = stats_begin(IsSimple), E = stats_end(IsSimple);I != E;++I) {
+  for (delay_it I = stats_begin(), E = stats_end();I != E;++I) {
     unsigned Interval = I->first;
     assert(Interval > LastInterval && "Bad iterate order!");
     LastInterval = Interval;
 
     for (src_it SI = I->second.begin(), SE = I->second.end(); SI != SE; ++SI) {
       VASTSeqValue *Src = *SI;
-      bool Visited = !BoundSrc.insert(Src).second;
-      assert((!IsSimple || !Visited)
-             && "A simple path should not have been visited!");
+      bool IsLB = (Interval == getIntervalLBFrom(Src));
+      bool Visited = !VisitedSrc.insert(Src).second;
+
+      assert((!IsLB || !Visited)
+             && "A lowerbound path should not have been visited!");
       ++NumTimingPath;
       if (Interval >= Inf) ++NumFalseTimingPath;
       else if (Interval > 1) ++NumMultiCyclesTimingPath;
@@ -481,29 +496,21 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine(bool IsSimple,
                              << I->first << '\n');
       // If we not visited the path before, this path is the critical path,
       // since we are iteration the path from the smallest delay to biggest
-      // delay.
-      unsigned NumThuNodes = bindMCPC2ScriptEngine(Src, Interval, IsSimple,
+      // delay. For the critical path, we do not generate the constraints with
+      // through nodes, this make quartus assume that all paths from src to dst
+      // are at least have N cycles available, where N equals to the value of
+      // variable "Interval".
+      unsigned NumThuNodes = bindMCPC2ScriptEngine(Src, Interval, IsLB,
                                                    !Visited);
       NumConstraints += std::max(1u, NumThuNodes);
 
-      if (NumThuNodes == 0 && !IsSimple && Interval > 1 && Interval != Inf) {
+      if (NumThuNodes == 0 && !IsLB && Interval > 1 && Interval != Inf) {
         ++NumMaskedMultiCyclesTimingPath;
-        DEBUG(errs() << "Path hidden: " << Src->getName() << " -> "
+        DEBUG(dbgs() << "Path hidden: " << Src->getName() << " -> "
                << Dst->getName() << " Interval " << Interval << '\n');
       }
     }
   }
-}
-
-void PathIntervalQueryCache::bindAllPath2ScriptEngine() const {
-  DenseSet<VASTSeqValue*> BoundSrc;
-  DEBUG(dbgs() << "Going to bind delay information of graph: \n");
-  DEBUG(dump());
-  // Bind the simple paths first, they apply the constraints to all paths
-  // between two registers.
-  bindAllPath2ScriptEngine(true, BoundSrc);
-  // Then we refine the constraints by applying the constraints with thu nodes.
-  bindAllPath2ScriptEngine(false, BoundSrc);
 }
 
 bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
@@ -569,7 +576,7 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
     }
 
     int Interval = Cache.getMinimalInterval(Src, ReadSlots);
-    Cache.addIntervalFromSrc(Src, Interval, true);
+    Cache.addIntervalFromSrc(Src, Interval);
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
     // reg_a <= c + x;
