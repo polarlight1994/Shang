@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file define the LiveVariable Analysis on the state-transition graph.
+// This file implement the LiveVariable Analysis on the state-transition graph.
 //
 //===----------------------------------------------------------------------===//
 
