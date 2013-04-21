@@ -132,8 +132,6 @@ proc apply_from_thu_to { Src Dst Slack ThuNodes } {
   }
 }
 ]=]
-
-VerifyHeader = [=[
 proc runOnPath { path delay max_ll hop from thu to } {
   # Accumulate the number of logic levels.
   set cur_path_ll [get_path_info $path -num_logic_levels]
@@ -178,68 +176,7 @@ local preprocess = require "luapp" . preprocess
 local _, message = preprocess {input=SDCHeader, output=SlackFile}
 if message ~= nil then print(message) end
 SlackFile:close()
-
---local VerifyFile = assert(io.open (MainDelayVerifyOutput, "w"))
---local preprocess = require "luapp" . preprocess
---local _, message = preprocess {input=VerifyHeader, output=VerifyFile}
---if message ~= nil then print(message) end
---VerifyFile:close()
 ]=]
 
 SynAttr.ParallelCaseAttr = '/* parallel_case */'
 SynAttr.FullCaseAttr = '/* full_case */'
-
-VerifyDatapathDelay = [=[
-#for i, n in pairs(RTLDatapathDelay) do
-
-#-- Ignore the invalid record
-#  if n.Thu ~= '<null>' then
-#    local DstNameSet = n.Dst.NameSet
-#    local SrcNameSet = n.Src.NameSet
-#    local Delay = n.Delay
-
-foreach DstPattern $(DstNameSet) {
-  set dst [get_keepers "*$(CurModule:getName())_inst|$DstPattern*"]
-  if { [get_collection_size $dst] } { break }
-}
-
-foreach SrcPattern $(SrcNameSet) {
-  set src [get_keepers "*$(CurModule:getName())_inst|$SrcPattern*"]
-  if { [get_collection_size $src] } { break }
-}
-
-if {[get_collection_size $src] && [get_collection_size $dst]} {
-#    if n.Thu ~= nil then
-#    local ThuNameSet = n.Thu.NameSet
-  foreach ThuPattern $(ThuNameSet) {
-    set thu [get_nets "*$(CurModule:getName())_inst|$ThuPattern*"]
-    if { [get_collection_size $thu] } { break }
-  }
-
-$(_put('#')) $(DstNameSet) <- $(ThuNameSet) <- $(SrcNameSet) delay $(Delay)
-
-  if {[get_collection_size $thu]} {
-    foreach_in_collection path [ get_timing_paths -from $src -through $thu -to $dst -nworst 1 -pairs_only -setup ] {
-      runOnPath $path $(Delay) $(n.MaxLL) $(n.Hop) "$(SrcNameSet)" "$(ThuNameSet)" "$(DstNameSet)"
-    }
-  }
-
-#    else
-
-$(_put('#')) $(DstNameSet) <- $(SrcNameSet) delay $(Delay)
-  foreach_in_collection path [ get_timing_paths -from $src -to $dst -nworst 1 -pairs_only -setup ] {
-    runOnPath $path $(Delay) $(n.MaxLL) $(n.Hop) "$(SrcNameSet)" "<null>" "$(DstNameSet)"
-  }
-#    end
-}
-#  end
-#end -- for
-]=]
-
-Misc.DelayVerifyScript = [=[
---local VerifyFile = assert(io.open (MainDelayVerifyOutput, "a+"))
---local preprocess = require "luapp" . preprocess
---local _, message = preprocess {input=VerifyDatapathDelay, output=VerifyFile}
---if message ~= nil then print(message) end
---VerifyFile:close()
-]=]

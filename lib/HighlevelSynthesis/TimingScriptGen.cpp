@@ -19,7 +19,6 @@
 //===----------------------------------------------------------------------===//
 #include "SeqLiveVariables.h"
 #include "STGShortestPath.h"
-#include "TimingNetlist.h"
 
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
@@ -45,11 +44,6 @@ static cl::opt<bool>
 DisableTimingScriptGeneration("shang-disable-timing-script",
                               cl::desc("Disable timing script generation"),
                               cl::init(false));
-static cl::opt<bool>
-CheckTiming("shang-check-timing",
-            cl::desc("Detect arrival time violation by comparing the interval"
-                     " and estimated delay"),
-            cl::init(true));
 
 STATISTIC(NumTimingPath, "Number of timing paths analyzed (From->To pair)");
 STATISTIC(NumMultiCyclesTimingPath, "Number of multicycles timing paths "
@@ -67,7 +61,6 @@ struct TimingScriptGen;
 struct PathIntervalQueryCache {
   SeqLiveVariables &SLV;
   STGShortestPath &SSP;
-  TimingNetlist *TNL;
   VASTSeqValue *Dst;
   const uint32_t Inf;
 
@@ -79,8 +72,8 @@ struct PathIntervalQueryCache {
   IntervalStatsMapTy Stats[2];
 
   PathIntervalQueryCache(SeqLiveVariables &SLV,  STGShortestPath &SSP,
-                         TimingNetlist *TNL, VASTSeqValue *Dst)
-    : SLV(SLV), SSP(SSP), TNL(TNL), Dst(Dst), Inf(STGShortestPath::Inf) {}
+                         VASTSeqValue *Dst)
+    : SLV(SLV), SSP(SSP), Dst(Dst), Inf(STGShortestPath::Inf) {}
 
   void reset() {
     QueryCache.clear();
@@ -129,11 +122,6 @@ struct PathIntervalQueryCache {
                                  unsigned Interval, bool SkipThu,
                                  bool IsCritical) const;
 
-  // Bind the combinational delay to the scripting engine to verify the timing
-  // analysis.
-  unsigned bindDelay2ScriptEngine(VASTSeqValue *Src, unsigned Interval,
-                                  bool SkipThu, bool IsCritical) const;
-
   unsigned printPathWithIntervalFrom(raw_ostream &OS, VASTSeqValue *Src,
                                      unsigned Interval) const;
 
@@ -155,12 +143,11 @@ struct TimingScriptGen : public VASTModulePass {
     AU.addRequired<SeqLiveVariables>();
     AU.addRequired<STGShortestPath>();
     AU.addRequired<DataLayout>();
-    if (CheckTiming) AU.addRequired<TimingNetlist>();
     AU.setPreservesAll();
   }
 
   void writeConstraintsFor(VASTSeqValue *Dst, SeqLiveVariables &SLV,
-                                       STGShortestPath &SSP,TimingNetlist *TNL);
+                           STGShortestPath &SSP);
 
   void extractTimingPaths(PathIntervalQueryCache &Cache,
                           ArrayRef<VASTSlot*> ReadSlots,
@@ -416,98 +403,6 @@ void PathIntervalQueryCache::dump() const {
   }
 }
 
-static bool printDelayRecord(raw_ostream &OS, VASTSeqValue *Dst,
-                             VASTSeqValue *Src, VASTValue *Thu,
-                             const TNLDelay &delay) {
-  // Record: {Src = '', Dst = '', THU = '', delay = '', max_ll = ''}
-  DEBUG(dbgs() << Src->getName() << " -> ";
-
-  if (Thu == 0 || !printBindingLuaCode(dbgs(), Thu))
-    dbgs() << "<null>";
-
-  dbgs()  << " -> " << Dst->getName() << " " << delay << '\n';
-  );
-
-  OS << "{ Src=";
-  printBindingLuaCode(OS, Src);
-  OS << ", ";
-
-  OS << "Dst=";
-  printBindingLuaCode(OS, Dst);
-  OS << ", ";
-
-  OS << "Thu=";
-  if (Thu == 0)
-    OS << "nil";
-  else if (!printBindingLuaCode(OS, Thu))
-    OS << "'<null>'";
-  OS << ", ";
-
-  OS << "Delay = '" << delay.getDelay() << "', ";
-  OS << "Hop = '" << delay.hop << "', ";
-  OS << "MaxLL = '" << delay.getMaxLL() << '\'';
-
-  OS << " }";
-  return Thu != 0;
-}
-
-unsigned PathIntervalQueryCache::bindDelay2ScriptEngine(VASTSeqValue *Src,
-                                                        unsigned Interval,
-                                                        bool SkipThu,
-                                                        bool IsCritical) const {
-  // Delay table:
-  // Datapath: {
-  //  {Src = '', Dst = '', THU = '', delay = '', max_ll = '', hop = ''}
-  // }
-  // }
-  SMDiagnostic Err;
-
-  if (!runScriptStr("RTLDatapathDelay = {}\n", Err))
-    llvm_unreachable("Cannot create RTLDatapath table in scripting pass!");
-
-  std::string Script;
-  raw_string_ostream SS(Script);
-
-  Script.clear();
-
-  unsigned NumThuNodePrinted = 0;
-  SS << "RTLDatapathDelay = { ";
-
-  // Only print the source and the dst.
-  if (SkipThu) {
-    printDelayRecord(SS, Dst, Src, 0, TNL->getDelay(Src, Dst));
-  } else {
-    typedef QueryCacheTy::const_iterator it;
-    for (it I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I) {
-      const SeqValSetTy &Set = I->second;
-      SeqValSetTy::const_iterator at = Set.find(Src);
-      // The register may be not reachable from this node.
-      if (at == Set.end() || at->second != Interval) continue;
-      if (NumThuNodePrinted) SS << ", ";
-
-      const TNLDelay &Delay = TNL->getDelay(Src, I->first, Dst);
-
-      if (printDelayRecord(SS, Dst, Src, I->first, Delay)) {
-        ++NumThuNodePrinted;
-      }
-    }
-  }
-
-  SS << " }";
-
-  SS.flush();
-  if (!runScriptStr(Script, Err))
-    llvm_unreachable("Cannot create node table of RTLDatapath!");
-
-  // Get the script from script engine.
-  const char *DatapathScriptPath[] = { "Misc", "DelayVerifyScript" };
-  if (!runScriptStr(getStrValueFromEngine(DatapathScriptPath), Err))
-    report_fatal_error("Error occur while running datapath script:\n"
-                       + Err.getMessage());
-
-  return NumThuNodePrinted;
-}
-
 // The first node of the path is the use node and the last node of the path is
 // the define node.
 unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Src,
@@ -597,11 +492,6 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine(bool IsSimple,
         DEBUG(errs() << "Path hidden: " << Src->getName() << " -> "
                << Dst->getName() << " Interval " << Interval << '\n');
       }
-
-      // Try to verify the result of the timing netlist.
-      // DIRTY HACK: Only extract the critical path between two registers.
-      if (TNL && Interval < 32)
-        bindDelay2ScriptEngine(Src, Interval, IsSimple, !Visited);
     }
   }
 }
@@ -625,7 +515,6 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
   SeqLiveVariables &SLV = getAnalysis<SeqLiveVariables>();
   STGShortestPath &SSP = getAnalysis<STGShortestPath>();
-  TimingNetlist *TNL = getAnalysisIfAvailable<TimingNetlist>();
 
   //Write the timing constraints.
   typedef VASTModule::seqval_iterator seqval_iterator;
@@ -634,7 +523,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
     if (V->empty()) continue;
 
-    writeConstraintsFor(V, SLV, SSP, TNL);
+    writeConstraintsFor(V, SLV, SSP);
   }
 
   return false;
@@ -642,7 +531,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
 void
 TimingScriptGen::writeConstraintsFor(VASTSeqValue *Dst, SeqLiveVariables &SLV,
-                                     STGShortestPath &SSP, TimingNetlist *TNL) {
+                                     STGShortestPath &SSP) {
   DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> > DatapathMap;
 
   typedef VASTSeqValue::const_iterator vn_itertor;
@@ -657,7 +546,7 @@ TimingScriptGen::writeConstraintsFor(VASTSeqValue *Dst, SeqLiveVariables &SLV,
     DatapathMap[((VASTValPtr)DstLatch).get()].push_back(ReadSlot);
   }
 
-  PathIntervalQueryCache Cache(SLV, SSP, TNL, Dst);
+  PathIntervalQueryCache Cache(SLV, SSP, Dst);
   typedef DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> >::iterator it;
   for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
     extractTimingPaths(Cache, I->second, I->first);
