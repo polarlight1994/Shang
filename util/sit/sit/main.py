@@ -126,6 +126,7 @@ def main(builtinParameters = {}):
 
       hls_step.prepareTest()
       hls_step.runTest()
+      time.sleep(1)
 
       active_jobs.append(hls_step)
 
@@ -150,6 +151,7 @@ def main(builtinParameters = {}):
         for subtest in job.generateSubTests() :
           subtest.prepareTest()
           subtest.runTest()
+          time.sleep(1)
           next_active_jobs.append(subtest)
       elif status == 'failed' :
         print "Test", job.getStepDesc(), "failed"

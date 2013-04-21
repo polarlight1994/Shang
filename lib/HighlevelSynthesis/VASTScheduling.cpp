@@ -672,7 +672,6 @@ static bool isNoAlias(Instruction *Src, Instruction *Dst, AliasAnalysis *AA) {
 //===----------------------------------------------------------------------===//
 void VASTScheduling::buildMemoryDependencies(Instruction *Src, Instruction *Dst)
 {
-
   // No dependencies at all if:
   // 1. both of them are not call instructions
   // 2. both of them are not writing memory
