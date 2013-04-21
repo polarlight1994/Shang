@@ -44,6 +44,10 @@ static cl::opt<bool>
 DisableTimingScriptGeneration("shang-disable-timing-script",
                               cl::desc("Disable timing script generation"),
                               cl::init(false));
+static cl::opt<bool>
+DisableSingleCycleConstraints("shang-disable-single-cycle-constraints",
+                              cl::desc("Disable single cycle constraints generation"),
+                              cl::init(true));
 
 STATISTIC(NumTimingPath, "Number of timing paths analyzed (From->To pair)");
 STATISTIC(NumMultiCyclesTimingPath, "Number of multicycles timing paths "
@@ -491,6 +495,9 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine() const {
       ++NumTimingPath;
       if (Interval >= Inf) ++NumFalseTimingPath;
       else if (Interval > 1) ++NumMultiCyclesTimingPath;
+
+      // Do not generate constraints for single-cycle path.
+      if (DisableSingleCycleConstraints && Interval == 1) continue;
 
       DEBUG(dbgs().indent(2) << "from: " << Src->getName() << '#'
                              << I->first << '\n');
