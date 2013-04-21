@@ -10,7 +10,7 @@
   "xfails" : [ "op_shl" ],
   
   "hls_timeout" : 600,
-  "sim_timeout" : 1200,
+  "sim_timeout" : 2400,
   "syn_timeout" : 28800,
 
   "option_space" : {
