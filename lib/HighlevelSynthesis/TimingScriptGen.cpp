@@ -53,7 +53,7 @@ STATISTIC(NumMaskedMultiCyclesTimingPath,
           "(From->To pair)");
 STATISTIC(NumFalseTimingPath,
           "Number of false timing paths detected (From->To pair)");
-STATISTIC(NumTimingViolation, "Number of Timing violation");
+STATISTIC(NumConstraints, "Number of timing constraints generated");
 
 namespace{
 struct TimingScriptGen;
@@ -69,7 +69,7 @@ struct PathIntervalQueryCache {
   typedef DenseMap<VASTValue*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
   // Statistics for simple path and complex paths.
-  IntervalStatsMapTy Stats[2];
+  IntervalStatsMapTy CyclesFromSrc[2];
 
   PathIntervalQueryCache(SeqLiveVariables &SLV,  STGShortestPath &SSP,
                          VASTSeqValue *Dst)
@@ -77,12 +77,12 @@ struct PathIntervalQueryCache {
 
   void reset() {
     QueryCache.clear();
-    Stats[0].clear();
-    Stats[1].clear();
+    CyclesFromSrc[0].clear();
+    CyclesFromSrc[1].clear();
   }
 
-  void addIntervalFromToStats(VASTSeqValue *Src, unsigned Interval, bool isSimple) {
-    Stats[isSimple][Interval].insert(Src);
+  void addIntervalFromSrc(VASTSeqValue *Src, unsigned Interval, bool isSimple) {
+    CyclesFromSrc[isSimple][Interval].insert(Src);
   }
 
   bool annotateSubmoduleLatency(VASTSeqValue * V);
@@ -127,8 +127,8 @@ struct PathIntervalQueryCache {
 
   typedef DenseSet<VASTSeqValue*>::const_iterator src_it;
   typedef IntervalStatsMapTy::const_iterator delay_it;
-  delay_it stats_begin(bool IsSimple) const { return Stats[IsSimple].begin(); }
-  delay_it stats_end(bool IsSimple) const { return Stats[IsSimple].end(); }
+  delay_it stats_begin(bool IsSimple) const { return CyclesFromSrc[IsSimple].begin(); }
+  delay_it stats_end(bool IsSimple) const { return CyclesFromSrc[IsSimple].end(); }
 
   void dump() const;
 };
@@ -237,7 +237,7 @@ bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
        I != E; ++I) {
     VASTSeqValue *Operand = *I;
-    addIntervalFromToStats(Operand, Latency, true);
+    addIntervalFromSrc(Operand, Latency, true);
   }
 
   return true;
@@ -318,7 +318,7 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
         ExistedInterval = Interval;
 
       // Add the information to statistics.
-      addIntervalFromToStats(V, Interval, false);
+      addIntervalFromSrc(V, Interval, false);
       continue;
     }
 
@@ -420,9 +420,6 @@ unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Src,
   if (!runScriptStr("RTLDatapath = {}\n", Err))
     llvm_unreachable("Cannot create RTLDatapath table in scripting pass!");
 
-  // Check the interval if necessary.
-  //  Interval = std::max<unsigned>(TNL->getDelay(Src, Dst).getNumCycles(), 1);
-
   std::string Script;
   raw_string_ostream SS(Script);
   SS << "RTLDatapath.Slack = " << Interval << '\n';
@@ -485,9 +482,11 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine(bool IsSimple,
       // If we not visited the path before, this path is the critical path,
       // since we are iteration the path from the smallest delay to biggest
       // delay.
-      unsigned NumConstraints = bindMCPC2ScriptEngine(Src, Interval, IsSimple,
-                                                      !Visited);
-      if (NumConstraints == 0 && !IsSimple && Interval > 1 && Interval != Inf) {
+      unsigned NumThuNodes = bindMCPC2ScriptEngine(Src, Interval, IsSimple,
+                                                   !Visited);
+      NumConstraints += std::max(1u, NumThuNodes);
+
+      if (NumThuNodes == 0 && !IsSimple && Interval > 1 && Interval != Inf) {
         ++NumMaskedMultiCyclesTimingPath;
         DEBUG(errs() << "Path hidden: " << Src->getName() << " -> "
                << Dst->getName() << " Interval " << Interval << '\n');
@@ -570,7 +569,7 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
     }
 
     int Interval = Cache.getMinimalInterval(Src, ReadSlots);
-    Cache.addIntervalFromToStats(Src, Interval, true);
+    Cache.addIntervalFromSrc(Src, Interval, true);
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
     // reg_a <= c + x;
