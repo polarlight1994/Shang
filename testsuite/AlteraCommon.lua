@@ -127,6 +127,7 @@ proc apply_from_thu_to { Src Dst Slack ThuNodes } {
     
       if {[get_collection_size $thu]} {
         set_multicycle_path -from $src -through $thu -to $dst -setup -end $Slack
+        break
       }
     }
   }
