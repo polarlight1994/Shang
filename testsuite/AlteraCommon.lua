@@ -133,7 +133,7 @@ proc apply_from_thu_to { Src Dst Slack ThuNodes } {
 }
 ]=]
 
-Misc.DatapathScript = [=[
+Misc.GenerateMultiCycleConstraint = [=[
 local SlackFile = assert(io.open (MainSDCOutput, "a+"))
 local preprocess = require "luapp" . preprocess
 local _, message = preprocess {input=RunOnDatapathCompact, output=SlackFile}

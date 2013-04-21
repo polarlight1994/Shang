@@ -464,7 +464,7 @@ unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Src,
     llvm_unreachable("Cannot create node table of RTLDatapath!");
 
   // Get the script from script engine.
-  const char *DatapathScriptPath[] = { "Misc", "DatapathScript" };
+  const char *DatapathScriptPath[] = { "Misc", "GenerateMultiCycleConstraint" };
   if (!runScriptStr(getStrValueFromEngine(DatapathScriptPath), Err))
     report_fatal_error("Error occur while running datapath script:\n"
                        + Err.getMessage());
