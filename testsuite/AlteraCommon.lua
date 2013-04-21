@@ -132,35 +132,6 @@ proc apply_from_thu_to { Src Dst Slack ThuNodes } {
   }
 }
 ]=]
-proc runOnPath { path delay max_ll hop from thu to } {
-  # Accumulate the number of logic levels.
-  set cur_path_ll [get_path_info $path -num_logic_levels]
-  set cur_path_delay [get_path_info $path -data_delay]
-  set cur_total_ic_delay 0
-  set cur_slack [ get_path_info $path -slack]
-
-  set PlotXY [open "[pwd]/PlotXY.data" a+]
-  foreach_in_collection point [ get_path_info $path -arrival_points ] {
-    if { [ get_point_info $point -type ] eq "ic" } {
-      set cur_total_ic_delay [expr {$cur_total_ic_delay + [ get_point_info $point -incr     ]}]
-    }
-  }
-
-  if [ expr $delay < $cur_path_delay ] {
-    set status "underestimated"
-  } else {
-    set status "overestimated"
-  }
-
-  puts $PlotXY "$cur_path_ll $cur_path_delay $cur_total_ic_delay $cur_slack $delay $max_ll $hop $from $thu $to $status"
-  post_message -type info "$cur_path_ll $cur_path_delay $cur_total_ic_delay $cur_slack $delay $max_ll $hop $from $thu $to $status"
-  
-  close $PlotXY
-}
-
-set PlotXY [open "[pwd]/PlotXY.data" w]
-close $PlotXY
-]=]
 
 Misc.DatapathScript = [=[
 local SlackFile = assert(io.open (MainSDCOutput, "a+"))
