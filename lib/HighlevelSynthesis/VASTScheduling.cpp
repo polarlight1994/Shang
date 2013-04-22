@@ -653,16 +653,14 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 
 static
 AliasAnalysis::Location getPointerLocation(Instruction *I, AliasAnalysis *AA) {
-  Value *Ptr = 0;
   if (LoadInst *LI = dyn_cast<LoadInst>(I))
-    Ptr = LI->getPointerOperand();
-  else if (StoreInst *SI = dyn_cast<StoreInst>(I))
-    Ptr = SI->getPointerOperand();
+    return AA->getLocation(LI);
 
-  assert(Ptr && "Value is not load or store instruction");
-  Type *ElmentTy = cast<PointerType>(Ptr->getType())->getElementType();
-  unsigned Size =  AA->getDataLayout()->getTypeStoreSize(ElmentTy);
-  return AliasAnalysis::Location(Ptr, Size);
+  if (StoreInst *SI = dyn_cast<StoreInst>(I))
+    return AA->getLocation(SI);
+
+  llvm_unreachable("Unexpected instruction type!");
+  return AliasAnalysis::Location();
 }
 
 static bool isNoAlias(Instruction *Src, Instruction *Dst, AliasAnalysis *AA) {

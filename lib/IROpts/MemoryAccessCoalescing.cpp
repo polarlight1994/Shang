@@ -97,13 +97,14 @@ struct MemoryAccessCoalescing : public FunctionPass {
   }
 
   AliasAnalysis::Location getPointerLocation(Instruction *I) const {
-    Value *Ptr = getPointerOperand(I);
-    assert(Ptr && "Value is not load or store instruction");
+    if (LoadInst *LI = dyn_cast<LoadInst>(I))
+      return AA->getLocation(LI);
 
-    assert(Ptr && "Value is not load or store instruction");
-    Type *ElmentTy = cast<PointerType>(Ptr->getType())->getElementType();
-    unsigned Size =  AA->getDataLayout()->getTypeStoreSize(ElmentTy);
-    return AliasAnalysis::Location(Ptr, Size);
+    if (StoreInst *SI = dyn_cast<StoreInst>(I))
+      return AA->getLocation(SI);
+
+    llvm_unreachable("Unexpected instruction type!");
+    return AliasAnalysis::Location();
   }
 
   bool isNoAlias(Instruction *Src, Instruction *Dst) const {
