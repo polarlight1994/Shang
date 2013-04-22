@@ -131,7 +131,7 @@ private:
     VASTSeqValue *Dst;
     VASTSlot *S;
 
-    /*implicit*/ VarName(VASTLatch U);
+    /*implicit*/ VarName(const VASTLatch &U);
 
     VarName(VASTSeqValue *Dst, VASTSlot *S) : Dst(Dst), S(S) {}
 
@@ -165,6 +165,12 @@ private:
 
   // Debug Helper functions.
   static void dumpVarInfoSet(SmallPtrSet<VarInfo*, 8> VIs);
+
+public:
+
+  VarInfo *getVarInfo(const VASTLatch &L) const {
+    return getVarInfo(VarName(L));
+  }
 };
 }
 

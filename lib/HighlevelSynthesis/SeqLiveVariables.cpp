@@ -33,7 +33,7 @@
 
 using namespace llvm;
 
-SeqLiveVariables::VarName::VarName(VASTLatch U)
+SeqLiveVariables::VarName::VarName(const VASTLatch &U)
   : Dst(U.getDst()), S(U.Op->getSlot()) {}
 
 
