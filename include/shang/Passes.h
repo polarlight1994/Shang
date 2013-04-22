@@ -63,7 +63,7 @@ Pass *createTimingScriptGenPass();
 
 // Analysis the dependency between registers
 Pass *createSeqLiveVariablesPass();
-Pass *createSeqReachingDefAnalysisPass();
+Pass *createRegisterSharingPass();
 
 // RTL code generation.
 Pass *createRTLCodeGenPass(raw_ostream &O);
@@ -102,7 +102,8 @@ void initializeSeqSelectorSynthesisPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
 void initializeTimingScriptGenPass(PassRegistry &Registry);
 void initializeSeqLiveVariablesPass(PassRegistry &Registry);
-void initializeSeqReachingDefAnalysisPass(PassRegistry &Registry);
+void initializeRegisterSharingPass(PassRegistry &Registry);
+
 void initializeRTLCodeGenPass(PassRegistry &Registry);
 } // end namespace
 

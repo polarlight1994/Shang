@@ -65,7 +65,7 @@ public:
       SparseBitVector<> TestBit;
       TestBit.set(SlotNum);
       return Alives.contains(TestBit) || Kills.contains(TestBit)
-            || DefKills.contains(TestBit);
+             || DefKills.contains(TestBit);
     }
 
     /// AliveSlots - Set of Slots at which this value is defined.  This is a bit

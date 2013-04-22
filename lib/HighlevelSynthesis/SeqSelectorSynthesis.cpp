@@ -162,7 +162,7 @@ INITIALIZE_PASS_BEGIN(SeqSelectorSynthesis, "sequential-selector-synthesis",
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
 INITIALIZE_PASS_END(SeqSelectorSynthesis, "sequential-selector-synthesis",
-                      "Implement the MUX for the Sequantal Logic", false, true)
+                    "Implement the MUX for the Sequantal Logic", false, true)
 
 char SeqSelectorSynthesis::ID = 0;
 
