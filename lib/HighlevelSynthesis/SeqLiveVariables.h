@@ -171,6 +171,8 @@ public:
   VarInfo *getVarInfo(const VASTLatch &L) const {
     return getVarInfo(VarName(L));
   }
+
+  void transferVarInfo(const VASTLatch &From, const VASTLatch &To);
 };
 }
 

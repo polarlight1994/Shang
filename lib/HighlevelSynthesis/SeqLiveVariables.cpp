@@ -152,7 +152,7 @@ void SeqLiveVariables::dumpVarInfoSet(SmallPtrSet<VarInfo*, 8> VIs) {
 }
 
 void SeqLiveVariables::verifyAnalysis() const {
-  SparseBitVector<> OverlapMask;
+  SparseBitVector<> UnionMask;
   SmallPtrSet<VarInfo*, 8> VIs;
 
   // Verify the VarInfo itself first.
@@ -166,7 +166,7 @@ void SeqLiveVariables::verifyAnalysis() const {
     VASTSeqValue *V = I;
     // Reset the context.
     VIs.clear();
-    OverlapMask.clear();
+    UnionMask.clear();
 
     typedef VASTSeqValue::const_iterator iterator;
     for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
@@ -178,20 +178,24 @@ void SeqLiveVariables::verifyAnalysis() const {
     for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
       VarInfo *VInfo = *VI;
 
-      if (OverlapMask.intersects(VInfo->Alives)) {
+      if (UnionMask.intersects(VInfo->Alives)) {
         dbgs() << "Current VASTSeqVal: " << V->getName() << '\n';
         dumpVarInfoSet(VIs);
         dbgs() << "Overlap slots:\n";
-        typedef SparseBitVector<>::iterator iterator;
-        for (iterator I = OverlapMask.begin(), E = OverlapMask.end(); I != E; ++I)
-          dbgs() << *I << ", ";
+
+        SparseBitVector<> Overlap = UnionMask & VInfo->Alives;
+        ::dump(Overlap, dbgs());
+
+        dbgs() << "All slots:\n";
+        ::dump(UnionMask, dbgs());
+
         llvm_unreachable("VarInfo of the same SeqVal alive slot overlap!");
       }
 
       // Construct the union.
-      OverlapMask |= VInfo->Alives;
-      OverlapMask |= VInfo->Kills;
-      OverlapMask |= VInfo->DefKills;
+      UnionMask |= VInfo->Alives;
+      UnionMask |= VInfo->Kills;
+      UnionMask |= VInfo->DefKills;
     }
   }
 }
@@ -329,6 +333,9 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
           VI->LiveIns.set((*LI)->SlotNum);
       }
     }
+
+    assert((!VI->hasMultiDef() || !VI->LiveIns.empty())
+           && "LiveIns should be provided for MultDef!");
   }
 
   // Also add the VarInfo for the static registers.
@@ -654,4 +661,40 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
 
   // The is 1 extra cycle from the definition to live in.
   return IntervalFromLiveIn + 1;
+}
+
+void SeqLiveVariables::transferVarInfo(const VASTLatch &From,
+                                       const VASTLatch &To) {
+  VarName FromVN(From), ToVN(To);
+  assert((FromVN < ToVN || ToVN < FromVN)  && "Bad VarName!");
+
+  std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(FromVN);
+  assert(at != VarInfos.end() && "Value use before define!");
+
+  VarInfo *SrcVI = at->second;
+  //VarInfos.erase(at);
+
+  VarInfo *&DstVI = VarInfos[ToVN];
+  if (DstVI == 0) {
+    DstVI = SrcVI;
+    return;
+  }
+
+  llvm_unreachable("VI merging is not supported yet!");
+  DstVI->Defs |= SrcVI->Defs;
+
+  DstVI->LiveIns |= SrcVI->LiveIns;
+
+  DstVI->Alives |= SrcVI->Alives;
+
+  DstVI->Kills |= SrcVI->Kills;
+  DstVI->Kills.intersectWithComplement(DstVI->Alives);
+
+  DstVI->DefAlives |= SrcVI->DefAlives;
+  DstVI->DefAlives |= (DstVI->Defs & DstVI->Alives);
+
+  DstVI->DefKills |= SrcVI->DefKills;
+  DstVI->DefKills.intersectWithComplement(DstVI->Alives);
+
+  DstVI->verify();
 }
