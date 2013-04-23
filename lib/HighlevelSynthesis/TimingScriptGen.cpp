@@ -445,7 +445,6 @@ void PathIntervalQueryCache::insertMCPEntries() const {
     VASTSeqValue *Src = I->first;
     const SrcIntervalMapTy::mapped_type &Intervals = I->second;
     unsigned LastInterval = 0;
-    bool IsLB = true;
 
     for (interval_iterator SI = Intervals.begin(), SE = Intervals.end();
          SI != SE; ++SI) {
@@ -460,6 +459,9 @@ void PathIntervalQueryCache::insertMCPEntries() const {
       // Do not generate constraints for single-cycle path.
       if (DisableSingleCycleConstraints && Interval == 1) continue;
 
+      // The interval is lowerbound if it is the first element of the interval
+      // set.
+      bool IsLB = (LastInterval == 0);
       DEBUG(dbgs().indent(2) << "from: " << Src->getName() << '#'
                              << I->first << '\n');
       // If we not visited the path before, this path is the critical path,
@@ -470,8 +472,6 @@ void PathIntervalQueryCache::insertMCPEntries() const {
       // variable "Interval".
       unsigned NumThuNodes = insertMCPWithInterval(Src, Interval, IsLB);
       NumConstraints += std::max(1u, NumThuNodes);
-
-      IsLB = false;
 
       if (NumThuNodes == 0 && !IsLB && Interval > 1 && Interval != Inf) {
         ++NumMaskedMultiCyclesTimingPath;
