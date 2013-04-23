@@ -74,8 +74,6 @@ struct PathIntervalQueryCache {
   SrcIntervalMapTy CyclesFromSrc;
 
   typedef DenseMap<VASTSeqValue*, unsigned> SeqValSetTy;
-  SeqValSetTy LBFromSrc;
-
   typedef DenseMap<VASTValue*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
 
@@ -86,23 +84,11 @@ struct PathIntervalQueryCache {
   void reset() {
     QueryCache.clear();
     CyclesFromSrc.clear();
-    LBFromSrc.clear();
   }
 
   void addIntervalFromSrc(VASTSeqValue *Src, unsigned Interval) {
     assert(Interval && "unexpected zero interval!");
     CyclesFromSrc[Src].insert(Interval);
-
-    unsigned &LB = LBFromSrc[Src];
-
-    if (LB == 0) LB = Interval;
-    else         LB = std::min(LB, Interval);
-  }
-
-  unsigned getIntervalLBFrom(VASTSeqValue *Src) const {
-    unsigned LB = LBFromSrc.lookup(Src);
-    assert(LB && "Unexpected lowerbound!");
-    return LB;
   }
 
   bool annotateSubmoduleLatency(VASTSeqValue * V);
@@ -352,6 +338,38 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
   });
 }
 
+static bool writeObjectName(raw_ostream &OS, const VASTValue *V) {
+  if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
+    // The block RAM should be printed as Prefix + ArrayName in the script.
+    if (const VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V)) {
+      if (SeqVal->getValType() == VASTSeqValue::BRAM) {
+        const VASTBlockRAM *RAM = cast<VASTBlockRAM>(SeqVal->getParent());
+        OS << " *"
+          // BlockRam name with prefix
+          << getFUDesc<VFUBRAM>()->Prefix
+          << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << "* *"
+          // Or simply the name of the output register.
+          << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
+          << "* ";
+        return true;
+      }
+    }
+
+    if (const char *N = NV->getName()) {
+      OS << " *" << N << "* ";
+      return true;
+    }
+  } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
+    std::string Name = E->getSubModName();
+    if (!Name.empty()) {
+      OS << " *" << E->getSubModName() << "* ";
+      return true;
+    }
+  }
+
+  return false;
+}
+
 void PathIntervalQueryCache::dump() const {
   dbgs() << "\nCurrent data-path timing:\n";
   typedef QueryCacheTy::const_iterator it;
@@ -373,47 +391,6 @@ void PathIntervalQueryCache::dump() const {
   }
 }
 
-static
-void writeInsertStatement(raw_ostream &OS, unsigned Interval, StringRef Thu,
-                          const VASTSeqValue *Src, const VASTSeqValue *Dst) {
-  OS << "INSERT INTO mcps(src, dst, thu, cycles) VALUES(\""
-     << Src->getName() << "\", \"" << Dst->getName() << "\", \"" << Thu << "\", "
-     << Interval << ");\n";
-}
-
-static
-bool writeInsertStatement(raw_ostream &OS, unsigned Interval, const VASTValue *V,
-                          const VASTSeqValue *Src, const VASTSeqValue *Dst) {
-  if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
-    // The block RAM should be printed as Prefix + ArrayName in the script.
-    if (const VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V)) {
-      if (SeqVal->getValType() == VASTSeqValue::BRAM) {
-        const VASTBlockRAM *RAM = cast<VASTBlockRAM>(SeqVal->getParent());
-        std::string ArrayName(VFUBRAM::getArrayName(RAM->getBlockRAMNum()));
-        // Simply the name of the output register.
-        writeInsertStatement(OS, Interval, ArrayName, Src, Dst);
-        // BlockRam name with prefix.
-        ArrayName = getFUDesc<VFUBRAM>()->Prefix + ArrayName;
-        writeInsertStatement(OS, Interval, ArrayName, Src, Dst);
-        return true;
-      }
-    }
-
-    if (const char *N = NV->getName()) {
-      writeInsertStatement(OS, Interval, N, Src, Dst);
-      return true;
-    }
-  } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
-    std::string Name = E->getSubModName();
-    if (!Name.empty()) {
-      writeInsertStatement(OS, Interval, E->getSubModName(), Src, Dst);
-      return true;
-    }
-  }
-
-  return false;
-}
-
 unsigned PathIntervalQueryCache::writeInsertWithIntervalFrom(raw_ostream &OS,
                                                              VASTSeqValue *Src,
                                                              unsigned Interval)
@@ -427,7 +404,7 @@ unsigned PathIntervalQueryCache::writeInsertWithIntervalFrom(raw_ostream &OS,
     // The register may be not reachable from this node.
     if (at == Set.end() || at->second != Interval) continue;
 
-    if (writeInsertStatement(OS, Interval, I->first, Src, Dst))
+    if (writeObjectName(OS, I->first))
       ++NumNodesPrinted;
   }
 
@@ -438,13 +415,25 @@ unsigned PathIntervalQueryCache::writeInsertWithIntervalFrom(raw_ostream &OS,
 // the define node.
 unsigned PathIntervalQueryCache::insertMCPWithInterval(VASTSeqValue *Src,
                                                        unsigned Interval,
-                                                       bool SkipThu) const {
-  if (SkipThu) {
-    writeInsertStatement(OS, Interval, "shang-critical-path-node", Src, Dst);
-    return 1;
-  }
+                                                       bool IsLB) const {
+  OS << "INSERT INTO mcps(src, dst, thu, cycles) VALUES(\n";
+  
+  OS << '\'';
+  writeObjectName(OS, Src);
+  OS << "', \n";
 
-  return writeInsertWithIntervalFrom(OS, Src, Interval);
+  OS << '\'';
+  writeObjectName(OS, Dst);
+  OS << "', \n";
+
+  OS << '\'';
+  if (IsLB || (writeInsertWithIntervalFrom(OS, Src, Interval) == 0))
+    OS << "shang-null-node";
+  OS << "', \n";
+
+  OS << Interval << ");\n";
+
+  return 1;
 }
 
 void PathIntervalQueryCache::insertMCPEntries() const {
@@ -456,14 +445,13 @@ void PathIntervalQueryCache::insertMCPEntries() const {
     VASTSeqValue *Src = I->first;
     const SrcIntervalMapTy::mapped_type &Intervals = I->second;
     unsigned LastInterval = 0;
+    bool IsLB = true;
 
     for (interval_iterator SI = Intervals.begin(), SE = Intervals.end();
          SI != SE; ++SI) {
       unsigned Interval = *SI;
       assert(Interval > LastInterval && "Bad iterate order!");
       LastInterval = Interval;
-
-      bool IsLB = (Interval == getIntervalLBFrom(Src));
 
       ++NumTimingPath;
       if (Interval >= Inf) ++NumFalseTimingPath;
@@ -482,6 +470,8 @@ void PathIntervalQueryCache::insertMCPEntries() const {
       // variable "Interval".
       unsigned NumThuNodes = insertMCPWithInterval(Src, Interval, IsLB);
       NumConstraints += std::max(1u, NumThuNodes);
+
+      IsLB = false;
 
       if (NumThuNodes == 0 && !IsLB && Interval > 1 && Interval != Inf) {
         ++NumMaskedMultiCyclesTimingPath;
