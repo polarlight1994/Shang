@@ -68,8 +68,8 @@ struct PathIntervalQueryCache {
   VASTSeqValue *Dst;
   const uint32_t Inf;
 
-  typedef std::map<unsigned, DenseSet<VASTSeqValue*> > IntervalStatsMapTy;
-  IntervalStatsMapTy CyclesFromSrc;
+  typedef std::map<VASTSeqValue*, std::set<unsigned> > SrcIntervalMapTy;
+  SrcIntervalMapTy CyclesFromSrc;
 
   typedef DenseMap<VASTSeqValue*, unsigned> SeqValSetTy;
   SeqValSetTy LBFromSrc;
@@ -89,7 +89,7 @@ struct PathIntervalQueryCache {
 
   void addIntervalFromSrc(VASTSeqValue *Src, unsigned Interval) {
     assert(Interval && "unexpected zero interval!");
-    CyclesFromSrc[Interval].insert(Src);
+    CyclesFromSrc[Src].insert(Interval);
 
     unsigned &LB = LBFromSrc[Src];
 
@@ -141,10 +141,10 @@ struct PathIntervalQueryCache {
   unsigned printPathWithIntervalFrom(raw_ostream &OS, VASTSeqValue *Src,
                                      unsigned Interval) const;
 
-  typedef DenseSet<VASTSeqValue*>::const_iterator src_it;
-  typedef IntervalStatsMapTy::const_iterator delay_it;
-  delay_it stats_begin() const { return CyclesFromSrc.begin(); }
-  delay_it stats_end() const { return CyclesFromSrc.end(); }
+  typedef SrcIntervalMapTy::mapped_type::const_iterator interval_iterator;
+  typedef SrcIntervalMapTy::const_iterator src_iterator;
+  src_iterator src_begin() const { return CyclesFromSrc.begin(); }
+  src_iterator stats_end() const { return CyclesFromSrc.end(); }
 
   void dump() const;
 };
@@ -479,14 +479,17 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine() const {
   DEBUG(dump());
   DEBUG(dbgs() << "Binding path for dst register: "
                << Dst->getName() << '\n');
-  unsigned LastInterval = 0;
-  for (delay_it I = stats_begin(), E = stats_end();I != E;++I) {
-    unsigned Interval = I->first;
-    assert(Interval > LastInterval && "Bad iterate order!");
-    LastInterval = Interval;
+  for (src_iterator I = src_begin(), E = stats_end();I != E;++I) {
+    VASTSeqValue *Src = I->first;
+    const SrcIntervalMapTy::mapped_type &Intervals = I->second;
+    unsigned LastInterval = 0;
 
-    for (src_it SI = I->second.begin(), SE = I->second.end(); SI != SE; ++SI) {
-      VASTSeqValue *Src = *SI;
+    for (interval_iterator SI = Intervals.begin(), SE = Intervals.end();
+         SI != SE; ++SI) {
+      unsigned Interval = *SI;
+      assert(Interval > LastInterval && "Bad iterate order!");
+      LastInterval = Interval;
+
       bool IsLB = (Interval == getIntervalLBFrom(Src));
       bool Visited = !VisitedSrc.insert(Src).second;
 
