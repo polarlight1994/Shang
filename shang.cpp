@@ -214,6 +214,7 @@ int main(int argc, char **argv) {
 
   bool isMainSynthesis = TopHWFunctions.count("main");
   tool_output_file RTLOutput(ConfigTable["RTLOutput"].c_str(), error);
+  tool_output_file MCPDatabase(ConfigTable["MCPDataBase"].c_str(), error);
   // Stage 3, perform high-level synthesis.
   // Build up all of the passes that we want to do to the module.
   {
@@ -313,7 +314,8 @@ int main(int argc, char **argv) {
 
     // Analyse the slack between registers.
     HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
-    if (isMainSynthesis) HLSPasses.add(createTimingScriptGenPass());
+    if (isMainSynthesis)
+      HLSPasses.add(createTimingScriptGenPass(MCPDatabase.os()));
 
     // Run some scripting passes.
     typedef std::map<std::string, std::pair<std::string, std::string> >::iterator
@@ -330,6 +332,7 @@ int main(int argc, char **argv) {
   // If no error occur, keep the files.
   SoftwareIROutput.keep();
   RTLOutput.keep();
+  MCPDatabase.keep();
 
   return 0;
 }

@@ -130,6 +130,7 @@ ptr_size = {{ ptr_size }}
 test_binary_root = [[{{ hls_base_dir }}]]
 InputFile = [[{{ test_file }}]]
 RTLOutput = [[{{ [hls_base_dir, test_name + ".sv"]|joinpath }}]]
+MCPDataBase =  [[{{ [hls_base_dir, test_name + ".sql"]|joinpath }}]]
 MainSDCOutput =  [[{{ [hls_base_dir, test_name + ".sdc"]|joinpath }}]]
 --MainDelayVerifyOutput = [[{{ MAIN_DELAY_VERIFY_SRC }}]]
 SoftwareIROutput =  [[{{ [hls_base_dir, test_name + "_soft.ll"]|joinpath }}]]

@@ -218,6 +218,7 @@ bool loadConfig(const std::string &Path,
   ConfigTable["InputFile"] = Script->getValueStr("InputFile");
   ConfigTable["SoftwareIROutput"] = Script->getValueStr("SoftwareIROutput");
   ConfigTable["RTLOutput"] = Script->getValueStr("RTLOutput");
+  ConfigTable["MCPDataBase"] = Script->getValueStr("MCPDataBase");
   ConfigTable["DataLayout"] = Script->getDataLayout();
 
   typedef luabind::iterator iterator;

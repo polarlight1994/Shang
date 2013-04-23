@@ -40,7 +40,6 @@ def main(builtinParameters = {}):
 
   # Initialize the database connection
   con = sqlite3.connect(":memory:")
-  con.cursor()
 
   # Create the tables for the experimental results.
   # We create 3 tables: HLS results, simulation results, and synthesis results

@@ -212,7 +212,7 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
 
 
   delete Builder;
-  return false;
+  return true;
 }
 
 void SeqSelectorSynthesis::descomposeSeqInst(VASTSeqInst *SeqInst) {

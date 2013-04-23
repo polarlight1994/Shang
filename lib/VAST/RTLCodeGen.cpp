@@ -49,7 +49,7 @@ struct RTLCodeGen : public VASTModulePass {
   static char ID;
   RTLCodeGen(raw_ostream &O);
   RTLCodeGen() : VASTModulePass(ID) {
-    assert( 0 && "Cannot construct the class without the raw_stream!");
+    llvm_unreachable("Bad constructor!");
   }
 
   ~RTLCodeGen(){}

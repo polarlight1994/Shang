@@ -59,7 +59,7 @@ Pass *createTimingNetlistPass();
 Pass *createVASTSchedulingPass();
 
 // Analyse the Combination Path Delay.
-Pass *createTimingScriptGenPass();
+Pass *createTimingScriptGenPass(raw_ostream &O);
 
 // Analysis the dependency between registers
 Pass *createSeqLiveVariablesPass();

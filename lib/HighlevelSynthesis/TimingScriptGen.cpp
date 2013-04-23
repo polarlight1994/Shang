@@ -29,13 +29,14 @@
 
 #include "llvm/Pass.h"
 #include "llvm/IR/DataLayout.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FormattedStream.h"
 #define DEBUG_TYPE "shang-timing-script"
 #include "llvm/Support/Debug.h"
 using namespace llvm;
@@ -66,6 +67,7 @@ struct PathIntervalQueryCache {
   SeqLiveVariables &SLV;
   STGShortestPath &SSP;
   VASTSeqValue *Dst;
+  raw_ostream &OS;
   const uint32_t Inf;
 
   typedef std::map<VASTSeqValue*, std::set<unsigned> > SrcIntervalMapTy;
@@ -78,8 +80,8 @@ struct PathIntervalQueryCache {
   QueryCacheTy QueryCache;
 
   PathIntervalQueryCache(SeqLiveVariables &SLV,  STGShortestPath &SSP,
-                         VASTSeqValue *Dst)
-    : SLV(SLV), SSP(SSP), Dst(Dst), Inf(STGShortestPath::Inf) {}
+                         VASTSeqValue *Dst, raw_ostream &OS)
+    : SLV(SLV), SSP(SSP), Dst(Dst), OS(OS), Inf(STGShortestPath::Inf) {}
 
   void reset() {
     QueryCache.clear();
@@ -132,26 +134,26 @@ struct PathIntervalQueryCache {
     return Changed;
   }
 
-  void bindAllPath2ScriptEngine() const;
+  void insertMCPEntries() const;
   // Bind multi-cycle path constraints to the scripting engine.
-  unsigned bindMCPC2ScriptEngine(VASTSeqValue *Src,
-                                 unsigned Interval, bool SkipThu,
-                                 bool IsCritical) const;
+  unsigned insertMCPWithInterval(VASTSeqValue *Src,
+                                 unsigned Interval, bool SkipThu) const;
 
-  unsigned printPathWithIntervalFrom(raw_ostream &OS, VASTSeqValue *Src,
+  unsigned writeInsertWithIntervalFrom(raw_ostream &OS, VASTSeqValue *Src,
                                      unsigned Interval) const;
 
   typedef SrcIntervalMapTy::mapped_type::const_iterator interval_iterator;
   typedef SrcIntervalMapTy::const_iterator src_iterator;
   src_iterator src_begin() const { return CyclesFromSrc.begin(); }
-  src_iterator stats_end() const { return CyclesFromSrc.end(); }
+  src_iterator src_end() const { return CyclesFromSrc.end(); }
 
   void dump() const;
 };
 
 struct TimingScriptGen : public VASTModulePass {
-  VASTModule *VM;
+  raw_ostream &OS;
 
+  VASTModule *VM;
   static char ID;
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -172,17 +174,23 @@ struct TimingScriptGen : public VASTModulePass {
   bool runOnVASTModule(VASTModule &VM);
 
   bool doInitialization(Module &) {
-    SMDiagnostic Err;
-    // Get the script from script engine.
-    const char *HeaderScriptPath[] = { "Misc",
-                                       "TimingConstraintsHeaderScript" };
-    if (!runScriptStr(getStrValueFromEngine(HeaderScriptPath), Err))
-      report_fatal_error("Error occur while running timing header script:\n"
-                         + Err.getMessage());
+    OS <<
+      "CREATE TABLE mcps( \
+       id INTEGER PRIMARY KEY AUTOINCREMENT, \
+       src TEXT, \
+       dst TEXT, \
+       thu TEXT, \
+       cycles INTEGER \
+       );\n";
+
     return false;
   }
+  
+  TimingScriptGen() : VASTModulePass(ID), OS(nulls()) {
+    llvm_unreachable("Bad constructor!");
+  }
 
-  TimingScriptGen() : VASTModulePass(ID), VM(0) {
+  TimingScriptGen(raw_ostream &O) : VASTModulePass(ID), OS(O), VM(0) {
     initializeTimingScriptGenPass(*PassRegistry::getPassRegistry());
   }
 };
@@ -203,38 +211,6 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
     PathInterval = std::min(PathInterval, getMinimalInterval(Src, *I));
 
   return PathInterval;
-}
-
-static bool printBindingLuaCode(raw_ostream &OS, const VASTValue *V) {
-  if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
-    // The block RAM should be printed as Prefix + ArrayName in the script.
-    if (const VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V)) {
-      if (SeqVal->getValType() == VASTSeqValue::BRAM) {
-        const VASTBlockRAM *RAM = cast<VASTBlockRAM>(SeqVal->getParent());
-        OS << " { NameSet =[=[ {\""
-          // BlockRam name with prefix
-          << getFUDesc<VFUBRAM>()->Prefix
-          << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << "\" \""
-          // Or simply the name of the output register.
-          << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
-          << "\"} ]=] }";
-        return true;
-      }
-    }
-
-    if (const char *N = NV->getName()) {
-      OS << " { NameSet =[=[ {\"" << N << "\"} ]=] }";
-      return true;
-    }
-  } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
-    std::string Name = E->getSubModName();
-    if (!Name.empty()) {
-      OS << " { NameSet =[=[ {\"" << E->getSubModName() << "\"} ]=] }";
-      return true;
-    }
-  }
-
-  return false;
 }
 
 bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
@@ -376,10 +352,72 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
   });
 }
 
-unsigned PathIntervalQueryCache::printPathWithIntervalFrom(raw_ostream &OS,
-                                                           VASTSeqValue *Src,
-                                                           unsigned Interval)
-                                                           const {
+void PathIntervalQueryCache::dump() const {
+  dbgs() << "\nCurrent data-path timing:\n";
+  typedef QueryCacheTy::const_iterator it;
+  for (it I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I) {
+    const SeqValSetTy &Set = I->second;
+    typedef SeqValSetTy::const_iterator reg_it;
+
+    //if (!printBindingLuaCode(dbgs(), I->first))
+    //  continue;
+
+    dbgs() << "\n\t{ ";
+    for (reg_it RI = Set.begin(), RE = Set.end(); RI != RE; ++RI) {
+      dbgs() << '(';
+      //printBindingLuaCode(dbgs(), RI->first);
+      dbgs() << '#' << RI->second << "), ";
+    }
+
+    dbgs() << "}\n";
+  }
+}
+
+static
+void writeInsertStatement(raw_ostream &OS, unsigned Interval, StringRef Thu,
+                          const VASTSeqValue *Src, const VASTSeqValue *Dst) {
+  OS << "INSERT INTO mcps(src, dst, thu, cycles) VALUES(\""
+     << Src->getName() << "\", \"" << Dst->getName() << "\", \"" << Thu << "\", "
+     << Interval << ");\n";
+}
+
+static
+bool writeInsertStatement(raw_ostream &OS, unsigned Interval, const VASTValue *V,
+                          const VASTSeqValue *Src, const VASTSeqValue *Dst) {
+  if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
+    // The block RAM should be printed as Prefix + ArrayName in the script.
+    if (const VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V)) {
+      if (SeqVal->getValType() == VASTSeqValue::BRAM) {
+        const VASTBlockRAM *RAM = cast<VASTBlockRAM>(SeqVal->getParent());
+        std::string ArrayName(VFUBRAM::getArrayName(RAM->getBlockRAMNum()));
+        // Simply the name of the output register.
+        writeInsertStatement(OS, Interval, ArrayName, Src, Dst);
+        // BlockRam name with prefix.
+        ArrayName = getFUDesc<VFUBRAM>()->Prefix + ArrayName;
+        writeInsertStatement(OS, Interval, ArrayName, Src, Dst);
+        return true;
+      }
+    }
+
+    if (const char *N = NV->getName()) {
+      writeInsertStatement(OS, Interval, N, Src, Dst);
+      return true;
+    }
+  } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
+    std::string Name = E->getSubModName();
+    if (!Name.empty()) {
+      writeInsertStatement(OS, Interval, E->getSubModName(), Src, Dst);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+unsigned PathIntervalQueryCache::writeInsertWithIntervalFrom(raw_ostream &OS,
+                                                             VASTSeqValue *Src,
+                                                             unsigned Interval)
+                                                             const {
   unsigned NumNodesPrinted = 0;
 
   typedef QueryCacheTy::const_iterator it;
@@ -389,97 +427,32 @@ unsigned PathIntervalQueryCache::printPathWithIntervalFrom(raw_ostream &OS,
     // The register may be not reachable from this node.
     if (at == Set.end() || at->second != Interval) continue;
 
-    if (printBindingLuaCode(OS, I->first)) {
-      OS << ", ";
+    if (writeInsertStatement(OS, Interval, I->first, Src, Dst))
       ++NumNodesPrinted;
-    }
   }
 
   return NumNodesPrinted;
 }
 
-void PathIntervalQueryCache::dump() const {
-  dbgs() << "\nCurrent data-path timing:\n";
-  typedef QueryCacheTy::const_iterator it;
-  for (it I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I) {
-    const SeqValSetTy &Set = I->second;
-    typedef SeqValSetTy::const_iterator reg_it;
-
-    if (!printBindingLuaCode(dbgs(), I->first))
-      continue;
-
-    dbgs() << "\n\t{ ";
-    for (reg_it RI = Set.begin(), RE = Set.end(); RI != RE; ++RI) {
-      dbgs() << '(';
-      printBindingLuaCode(dbgs(), RI->first);
-      dbgs() << '#' << RI->second << "), ";
-    }
-
-    dbgs() << "}\n";
-  }
-}
-
 // The first node of the path is the use node and the last node of the path is
 // the define node.
-unsigned PathIntervalQueryCache::bindMCPC2ScriptEngine(VASTSeqValue *Src,
+unsigned PathIntervalQueryCache::insertMCPWithInterval(VASTSeqValue *Src,
                                                        unsigned Interval,
-                                                       bool SkipThu,
-                                                       bool IsCritical) const {
-  // Path table:
-  // Datapath: {
-  //  unsigned Slack,
-  //  unsigned Estimated Delay
-  //  table NodesInPath
-  // }
-  SMDiagnostic Err;
+                                                       bool SkipThu) const {
+  if (SkipThu) {
+    writeInsertStatement(OS, Interval, "shang-critical-path-node", Src, Dst);
+    return 1;
+  }
 
-  if (!runScriptStr("RTLDatapath = {}\n", Err))
-    llvm_unreachable("Cannot create RTLDatapath table in scripting pass!");
-
-  std::string Script;
-  raw_string_ostream SS(Script);
-  SS << "RTLDatapath.Slack = " << Interval << '\n';
-  SS << "RTLDatapath.EstimatiedDelay = " << "'<TNL not provided>'";
-  SS << '\n';
-  SS << "RTLDatapath.isCriticalPath = " << (SkipThu || IsCritical) << '\n';
-  SS.flush();
-  if (!runScriptStr(Script, Err))
-    llvm_unreachable("Cannot create slack of RTLDatapath!");
-
-  Script.clear();
-
-  unsigned NumThuNodePrinted = 0;
-  SS << "RTLDatapath.Nodes = { ";
-  printBindingLuaCode(SS, Dst);
-  SS << ", ";
-
-  if (!SkipThu)
-    NumThuNodePrinted = printPathWithIntervalFrom(SS, Src, Interval);
-
-  printBindingLuaCode(SS, Src);
-  SS << " }";
-
-  SS.flush();
-  if (!runScriptStr(Script, Err))
-    llvm_unreachable("Cannot create node table of RTLDatapath!");
-
-  // Get the script from script engine.
-  const char *DatapathScriptPath[] = { "Misc", "GenerateMultiCycleConstraint" };
-  if (!runScriptStr(getStrValueFromEngine(DatapathScriptPath), Err))
-    report_fatal_error("Error occur while running datapath script:\n"
-                       + Err.getMessage());
-
-  return NumThuNodePrinted;
+  return writeInsertWithIntervalFrom(OS, Src, Interval);
 }
 
-void
-PathIntervalQueryCache::bindAllPath2ScriptEngine() const {
-  DenseSet<VASTSeqValue*> VisitedSrc;
+void PathIntervalQueryCache::insertMCPEntries() const {
   DEBUG(dbgs() << "Going to bind delay information of graph: \n");
   DEBUG(dump());
   DEBUG(dbgs() << "Binding path for dst register: "
                << Dst->getName() << '\n');
-  for (src_iterator I = src_begin(), E = stats_end();I != E;++I) {
+  for (src_iterator I = src_begin(), E = src_end();I != E;++I) {
     VASTSeqValue *Src = I->first;
     const SrcIntervalMapTy::mapped_type &Intervals = I->second;
     unsigned LastInterval = 0;
@@ -491,10 +464,7 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine() const {
       LastInterval = Interval;
 
       bool IsLB = (Interval == getIntervalLBFrom(Src));
-      bool Visited = !VisitedSrc.insert(Src).second;
 
-      assert((!IsLB || !Visited)
-             && "A lowerbound path should not have been visited!");
       ++NumTimingPath;
       if (Interval >= Inf) ++NumFalseTimingPath;
       else if (Interval > 1) ++NumMultiCyclesTimingPath;
@@ -510,8 +480,7 @@ PathIntervalQueryCache::bindAllPath2ScriptEngine() const {
       // through nodes, this make quartus assume that all paths from src to dst
       // are at least have N cycles available, where N equals to the value of
       // variable "Interval".
-      unsigned NumThuNodes = bindMCPC2ScriptEngine(Src, Interval, IsLB,
-                                                   !Visited);
+      unsigned NumThuNodes = insertMCPWithInterval(Src, Interval, IsLB);
       NumConstraints += std::max(1u, NumThuNodes);
 
       if (NumThuNodes == 0 && !IsLB && Interval > 1 && Interval != Inf) {
@@ -562,12 +531,12 @@ TimingScriptGen::writeConstraintsFor(VASTSeqValue *Dst, SeqLiveVariables &SLV,
     DatapathMap[((VASTValPtr)DstLatch).get()].push_back(ReadSlot);
   }
 
-  PathIntervalQueryCache Cache(SLV, SSP, Dst);
+  PathIntervalQueryCache Cache(SLV, SSP, Dst, OS);
   typedef DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> >::iterator it;
   for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
     extractTimingPaths(Cache, I->second, I->first);
 
-  Cache.bindAllPath2ScriptEngine();
+  Cache.insertMCPEntries();
 }
 
 void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
@@ -614,6 +583,6 @@ INITIALIZE_PASS_END(TimingScriptGen, "vast-timing-script-generation",
                     "Generate timing script to export the behavior-level timing",
                     false, true)
 
-Pass *llvm::createTimingScriptGenPass() {
-  return new TimingScriptGen();
+Pass *llvm::createTimingScriptGenPass(raw_ostream &O) {
+  return new TimingScriptGen(O);
 }
