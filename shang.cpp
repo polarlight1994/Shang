@@ -74,6 +74,10 @@ static cl::opt<bool> EnableMemoryOptimization("shang-enable-memory-optimization"
   cl::desc("Perform memory optimizations e.g. coalescing or banking"),
   cl::init(true));
 
+static cl::opt<bool> EnableRegisterSharing("shang-enable-register-sharing",
+  cl::desc("Perform register sharing"),
+  cl::init(false));
+
 static cl::opt<bool>
 EnablePreScheduleLUTMapping("shang-enable-pre-schedule-lut-mapping",
   cl::desc("Perform lut mapping before scheduling"),
@@ -304,6 +308,8 @@ int main(int argc, char **argv) {
       // after scheduling.
       HLSPasses.add(createLUTMappingPass());
     }
+
+    if (EnableRegisterSharing) HLSPasses.add(createRegisterSharingPass());
 
     // Analyse the slack between registers.
     HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
