@@ -172,6 +172,8 @@ public:
     return getVarInfo(VarName(L));
   }
 
+  VarInfo *getUniqueVarInfo(VASTSeqValue *V);
+
   void transferVarInfo(const VASTLatch &From, const VASTLatch &To);
 };
 }

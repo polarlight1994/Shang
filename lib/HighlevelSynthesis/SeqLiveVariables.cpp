@@ -62,11 +62,31 @@ void SeqLiveVariables::VarInfo::dump() const {
 }
 
 void SeqLiveVariables::VarInfo::verifyKillAndAlive() const {
-  if (Alives.intersects(Kills) || Alives.intersects(Defs - DefAlives)
-      || Alives.intersects(DefKills - DefAlives)) {
+  if (Alives.intersects(Kills)) {
     dbgs() << "Bad VarInfo: \n";
     dump();
+    SparseBitVector<> OverlapMask = Alives & Kills;
+    dbgs() << "Overlap:\n";
+    ::dump(OverlapMask, dbgs());
     llvm_unreachable("Kills and Alives should not intersect!");
+  }
+
+  if (Alives.intersects(Defs - DefAlives)) {
+      dbgs() << "Bad VarInfo: \n";
+      dump();
+      SparseBitVector<> OverlapMask = Alives & (Defs - DefAlives);
+      dbgs() << "Overlap:\n";
+      ::dump(OverlapMask, dbgs());
+      llvm_unreachable("Alives and Defs - DefAlives should not intersect!");
+  }
+
+  if (Alives.intersects(DefKills - DefAlives)) {
+      dbgs() << "Bad VarInfo: \n";
+      dump();
+      SparseBitVector<> OverlapMask = Alives & (DefKills - DefAlives);
+      dbgs() << "Overlap:\n";
+      ::dump(OverlapMask, dbgs());
+      llvm_unreachable("DefKills - DefAlives and Alives should not intersect!");
   }
 
   if (Kills.empty() && DefKills.empty()) {
@@ -661,6 +681,20 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
 
   // The is 1 extra cycle from the definition to live in.
   return IntervalFromLiveIn + 1;
+}
+
+SeqLiveVariables::VarInfo *SeqLiveVariables::getUniqueVarInfo(VASTSeqValue *V) {
+  SeqLiveVariables::VarInfo *VI = 0;
+
+  typedef VASTSeqValue::const_iterator iterator;
+  for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
+    SeqLiveVariables::VarInfo *CurVI = getVarInfo(*DI);
+
+    if (VI == 0) VI = CurVI;
+    assert(VI == CurVI && "Live variable not unique!");
+  }
+
+  return VI;
 }
 
 void SeqLiveVariables::transferVarInfo(const VASTLatch &From,
