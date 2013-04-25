@@ -133,6 +133,18 @@ public:
   }
 };
 
+class VASTUDef : public VASTValue {
+  void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
+public:
+  explicit VASTUDef(unsigned Size);
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTUDef *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastUDef;
+  }
+};
+
 // Wrapper for the LLVM values.
 class VASTLLVMValue : public VASTValue {
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;

@@ -93,6 +93,13 @@ void VASTNamedValue::printDecl(raw_ostream &OS, bool declAsRegister,
 
   return;
 }
+//===----------------------------------------------------------------------===//
+VASTUDef::VASTUDef(unsigned Size) : VASTValue(vastUDef, Size) {}
+
+void
+VASTUDef::printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const {
+  OS << getBitWidth() << "'bx";
+}
 
 //===----------------------------------------------------------------------===//
 VASTLLVMValue::VASTLLVMValue(Value *V, unsigned Size)

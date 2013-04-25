@@ -45,6 +45,7 @@ public:
     vastImmediate,
     vastFirstValueType = vastImmediate,
     vastSymbol,
+    vastUDef,
     vastLLVMValue,
     vastExpr,
     vastWire,

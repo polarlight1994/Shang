@@ -275,7 +275,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
     unsigned SizeInBit = getValueSizeInBits(UDef);
     // TEMPORARY HACK: Create random value for UndefValue.
     // TODO: Create 'x' for UndefValue.
-    return getOrCreateImmediate(intptr_t(V), SizeInBit);
+    return VM->createUDef(SizeInBit);
   }
 
   if (ConstantPointerNull *PtrNull = dyn_cast<ConstantPointerNull>(V)) {

@@ -90,6 +90,9 @@ public:
   typedef SlotVecTy::iterator slot_iterator;
   typedef SlotVecTy::const_iterator const_slot_iterator;
 
+  typedef DenseMap<unsigned, VASTUDef*> UDefMapTy;
+  UDefMapTy UDefMap;
+
   enum PortTypes {
     Clk = 0,
     RST,
@@ -277,6 +280,8 @@ public:
   VASTWire *createWrapperWire(const Twine &Name, unsigned SizeInBits,
                               VASTValPtr V = VASTValPtr());
   VASTWire *createWrapperWire(GlobalVariable *GV, unsigned SizeInBits);
+
+  VASTUDef *createUDef(unsigned Size);
 
   reg_iterator reg_begin() { return Registers.begin(); }
   reg_iterator reg_end() { return Registers.end(); }

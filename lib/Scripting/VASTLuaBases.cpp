@@ -259,6 +259,14 @@ VASTWire *VASTModule::createWrapperWire(GlobalVariable *GV, unsigned SizeInBits)
   return createWrapperWire(WrapperName, SizeInBits, ValueOp);
 }
 
+VASTUDef *VASTModule::createUDef(unsigned Size) {
+  VASTUDef *&UDef = UDefMap[Size];
+
+  if (UDef == 0) UDef = new VASTUDef(Size);
+
+  return UDef;
+}
+
 VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
                               const char *Attr, bool IsWrapper) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
@@ -341,10 +349,12 @@ void VASTModule::reset() {
 
   // Release the datapath after all other contexts released.
   Datapath->reset();
+  DeleteContainerSeconds(UDefMap);
 }
 
 VASTModule::~VASTModule() {
   delete Datapath;
+  DeleteContainerSeconds(UDefMap);
 }
 
 namespace {
