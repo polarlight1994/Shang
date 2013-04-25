@@ -134,12 +134,15 @@ struct SeqSelectorSynthesis : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
+
     if (EnableMUXPipelining) {
+      AU.addRequired<SeqLiveVariables>();
       AU.addRequiredID(DatapathNamerID);
       AU.addRequired<TimingNetlist>();
-      AU.addRequired<SeqLiveVariables>();
       AU.addRequired<STGShortestPath>();
     }
+
+    AU.addPreserved<SeqLiveVariables>();
 
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
@@ -176,9 +179,9 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   typedef VASTModule::seqval_iterator iterator;
 
   if (EnableMUXPipelining) {
-    SLV = &getAnalysis<SeqLiveVariables>();
     TNL = &getAnalysis<TimingNetlist>();
     SSP = &getAnalysis<STGShortestPath>();
+    SLV = &getAnalysis<SeqLiveVariables>();
 
     std::vector<VASTSeqInst*> Worklist;
 
@@ -209,7 +212,6 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   // Eliminate the identical SeqOps.
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I)
     I->synthesisSelector(*Builder);
-
 
   delete Builder;
   return true;

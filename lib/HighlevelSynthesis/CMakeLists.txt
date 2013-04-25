@@ -13,6 +13,7 @@ add_llvm_library(ShangHLS
   SeqLiveVariables.cpp
   STGShortestPath.cpp
   SeqSelectorSynthesis.cpp
+  LowerPseudoPHIs.cpp
   RegisterSharing.cpp
 )
 
