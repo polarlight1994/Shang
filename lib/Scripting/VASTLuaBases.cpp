@@ -509,8 +509,7 @@ VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
   // Create a wrapper wire to break the cycle.
   if (Src == SeqVal) {
     unsigned BitWidth = Src->getBitWidth();
-    Twine WrapperName = Twine(SeqVal->getName()) + "_Wrapper";
-    Src = createWrapperWire(WrapperName, BitWidth, Src);
+    Src = createWrapperWire(SeqVal->getName(), BitWidth, Src);
     ++NumCycles;
   }
 

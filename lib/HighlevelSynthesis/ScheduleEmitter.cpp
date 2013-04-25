@@ -381,8 +381,7 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
     // Create a wrapper wire to break the cycle.
     if (Src == Dst) {
       unsigned BitWidth = Src->getBitWidth();
-      Twine WrapperName = Twine(Dst->getName()) + "_Wrapper";
-      Src = VM.createWrapperWire(WrapperName, BitWidth, Src);
+      Src = VM.createWrapperWire(Dst->getName(), BitWidth, Src);
     }
 
     NewInst->addSrc(Src, i, i < Op->getNumDefs(), Dst);

@@ -504,8 +504,7 @@ void RegisterSharing::mergeLI(SeqLiveInterval *From, SeqLiveInterval *To) {
     if (Src != FromV) continue;;
 
     unsigned BitWidth = Src->getBitWidth();
-    Twine WrapperName = Twine(ToV->getName()) + "_Wrapper";
-    Src = VM->createWrapperWire(WrapperName, BitWidth, ToV);
+    Src = VM->createWrapperWire(ToV->getName(), BitWidth, ToV);
     L.replaceUsedBy(Src);
   }
 
