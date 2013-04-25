@@ -36,14 +36,10 @@ struct ScriptingPass : public VASTModulePass {
   static char ID;
   std::string PassName, GlobalScript, FunctionScript;
   DataLayout *TD;
-  // DIRTY HACK: Make sure we can run the global script after the HLSAllocation
-  // pass.
-  bool FirstTimeRun;
 
   ScriptingPass(const char *Name, const char *FScript, const char *GScript)
     : VASTModulePass(ID), PassName(Name),
-      GlobalScript(GScript), FunctionScript(FScript), TD(0), FirstTimeRun(true)
-  {}
+      GlobalScript(GScript), FunctionScript(FScript), TD(0) {}
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
@@ -243,34 +239,29 @@ bool ScriptingPass::runOnVASTModule(VASTModule &VM)  {
   TD = getAnalysisIfAvailable<DataLayout>();
   assert(TD && "TD not avaialbe?");
 
-  if (FirstTimeRun) {
-    Function &F = VM;
-    Module *M = F.getParent();
+  Function &F = VM;
+  Module *M = F.getParent();
 
-    HLSAllocation &Allocation = getAnalysis<HLSAllocation>();
+  HLSAllocation &Allocation = getAnalysis<HLSAllocation>();
 
-    SmallVector<GlobalVariable*, 32> GVs;
+  SmallVector<GlobalVariable*, 32> GVs;
 
-    for (Module::global_iterator I = M->global_begin(), E = M->global_end();
-         I != E; ++I) {
-      GlobalVariable *GV = I;
-      // The GlobalVariables that bound to block RAM are not "Global" anymore.
-      if (Allocation.getMemoryPort(*GV).getFUType() == VFUs::MemoryBus)
-        GVs.push_back(I);
-    }
-
-    SMDiagnostic Err;
-    if (!runScriptOnGlobalVariables(GVs, TD, GlobalScript, Err))
-      report_fatal_error("In Scripting pass[" + PassName + "]:\n"
-                         + Err.getMessage());
-
-
-    FirstTimeRun = false;
+  for (Module::global_iterator I = M->global_begin(), E = M->global_end();
+        I != E; ++I) {
+    GlobalVariable *GV = I;
+    // The GlobalVariables that bound to block RAM are not "Global" anymore.
+    if (Allocation.getMemoryPort(*GV).getFUType() == VFUs::MemoryBus)
+      GVs.push_back(I);
   }
+
+  SMDiagnostic Err;
+  if (!runScriptOnGlobalVariables(GVs, TD, GlobalScript, Err))
+    report_fatal_error("In Scripting pass[" + PassName + "]:\n"
+                        + Err.getMessage());
+
 
   bindFunctionToScriptEngine(*TD, &VM);
 
-  SMDiagnostic Err;
   if (!runScriptStr(FunctionScript, Err))
     report_fatal_error("In Scripting pass[" + PassName + "]:\n"
                        + Err.getMessage());

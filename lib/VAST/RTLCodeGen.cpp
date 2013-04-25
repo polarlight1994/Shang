@@ -39,11 +39,6 @@ namespace {
 struct RTLCodeGen : public VASTModulePass {
   vlang_raw_ostream Out;
 
-  // DIRTY HACK: Make sure we can run the global script after the HLSAllocation
-  // pass.
-  // We can move this to the VASTModulePass.
-  bool FirstTimeRun;
-
   /// @name FunctionPass interface
   //{
   static char ID;
@@ -86,8 +81,7 @@ INITIALIZE_PASS_END(RTLCodeGen, "shang-verilog-writer",
                     "Write the RTL verilog code to output file.",
                     false, true)
 
-RTLCodeGen::RTLCodeGen(raw_ostream &O) : VASTModulePass(ID), Out(O),
-                                         FirstTimeRun(true) {
+RTLCodeGen::RTLCodeGen(raw_ostream &O) : VASTModulePass(ID), Out(O) {
   initializeRTLCodeGenPass(*PassRegistry::getPassRegistry());
 }
 
@@ -121,11 +115,7 @@ void RTLCodeGen::generateCodeForTopModule(Module *M) {
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   Function &F = VM;
 
-  // Is this the top module?
-  if (FirstTimeRun) {
-    generateCodeForTopModule(F.getParent());
-    FirstTimeRun = false;
-  }
+  generateCodeForTopModule(F.getParent());
 
   if (EnalbeDumpIR) {
     Out << "`ifdef wtf_is_this\n" << "Function for RTL Codegen:\n";
