@@ -159,6 +159,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   //===--------------------------------------------------------------------===//
   void visitBasicBlock(BasicBlock *BB);
+  void visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd, BasicBlock *CurBB);
 
   // Build the SeqOps from the LLVM Instruction.
   void visitReturnInst(ReturnInst &I);
@@ -516,28 +517,23 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
     // Otherwise build the SeqOp for this operation.
     visit(I);
   }
+}
 
-  // Emit the operation that copy the incoming value of PHIs at the last slot.
-  // TODO: Optimize the PHIs in the datapath hoist pass.
-  VASTSlot *LatestSlot = getLatestSlot(BB);
-  // Please note that the successor blocks enumed by succ_iterator is not unique.
-  std::set<BasicBlock*> UniqueSuccs(succ_begin(BB), succ_end(BB));
-  typedef std::set<BasicBlock*>::iterator succ_it;
-  for (succ_it SI = UniqueSuccs.begin(), SE = UniqueSuccs.end(); SI != SE; ++SI) {
-    BasicBlock *SuccBB = *SI;
-    VASTSlot *SuccSlot = getOrCreateLandingSlot(SuccBB);
+void VASTModuleBuilder::visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd,
+                                        BasicBlock *CurBB) {
+  BasicBlock *BB = S->getParent();
+  assert(BB && "Unexpected null BB!");
 
-    for (iterator I = SuccBB->begin(), E = SuccBB->getFirstNonPHI(); I != E; ++I) {
-      PHINode *PN = cast<PHINode>(I);
+  typedef BasicBlock::iterator iterator;
+  for (iterator I = BB->begin(), E = BB->getFirstNonPHI(); I != E; ++I) {
+    PHINode *PN = cast<PHINode>(I);
 
-      Value *LiveOutedFromBB = PN->DoPHITranslation(SuccBB, BB);
-      VASTValPtr LiveOut = getAsOperandImpl(LiveOutedFromBB);
-      VASTValPtr Pred;// = LatestSlot->getSuccCnd(SuccSlot);
-      llvm_unreachable("Not implemented!");
-      VASTSeqValue *PHISeqVal = getOrCreateSeqVal(PN, PN->getName());
-      // Latch the incoming value when we are branching to the succ slot.
-      VM->latchValue(PHISeqVal, LiveOut, LatestSlot,  Pred, PN);
-    }
+    Value *LiveOutedFromBB = PN->DoPHITranslation(BB, CurBB);
+    VASTValPtr LiveOut = getAsOperandImpl(LiveOutedFromBB);
+
+    VASTSeqValue *PHISeqVal = getOrCreateSeqVal(PN, PN->getName());
+    // Latch the incoming value when we are branching to the succ slot.
+    VM->latchValue(PHISeqVal, LiveOut, S,  Cnd, PN);
   }
 }
 
@@ -576,16 +572,28 @@ void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
   // TODO: Create alias operations.
   if (I.isUnconditional()) {
     BasicBlock *DstBB = I.getSuccessor(0);
-    addSuccSlot(CurSlot, getOrCreateLandingSlot(DstBB), VASTImmediate::True, &I);
+
+    // Create the virtual slot represent the launch of the design.
+    VASTSlot *SubGrp = createSubGroup(DstBB, VASTImmediate::True, CurSlot);
+
+    visitPHIsInSucc(SubGrp, VASTImmediate::True, I.getParent());
+
+    addSuccSlot(SubGrp, getOrCreateLandingSlot(DstBB), VASTImmediate::True, &I);
     return;
   }
 
   // Connect the slots according to the condition.
   VASTValPtr Cnd = getAsOperandImpl(I.getCondition());
   BasicBlock *TrueBB = I.getSuccessor(0);
-  addSuccSlot(CurSlot, getOrCreateLandingSlot(TrueBB), Cnd, &I);
+
+  VASTSlot *TSubGrp = createSubGroup(TrueBB, Cnd, CurSlot);
+  visitPHIsInSucc(TSubGrp, Cnd, I.getParent());
+  addSuccSlot(TSubGrp, getOrCreateLandingSlot(TrueBB), Cnd, &I);
+
   BasicBlock *FalseBB = I.getSuccessor(1);
-  addSuccSlot(CurSlot, getOrCreateLandingSlot(FalseBB),
+  VASTSlot *FSubGrp = createSubGroup(FalseBB, Builder.buildNotExpr(Cnd), CurSlot);
+  visitPHIsInSucc(FSubGrp, Cnd, I.getParent());
+  addSuccSlot(FSubGrp, getOrCreateLandingSlot(FalseBB),
               Builder.buildNotExpr(Cnd), &I);
 }
 
@@ -674,17 +682,22 @@ void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
   typedef std::map<BasicBlock*, VASTValPtr>::iterator CaseIt;
   for (CaseIt CI = CaseMap.begin(), CE = CaseMap.end(); CI != CE; ++CI) {
     BasicBlock *SuccBB = CI->first;
-    VASTSlot *SuccSlot = getOrCreateLandingSlot(SuccBB);
     VASTValPtr Pred = CI->second;
     CasePreds.push_back(Pred);
-    addSuccSlot(CurSlot, SuccSlot, Pred, &I);
+
+    VASTSlot *SubGrp = createSubGroup(SuccBB, Pred, CurSlot);
+    visitPHIsInSucc(SubGrp, Pred, I.getParent());
+    addSuccSlot(SubGrp, getOrCreateLandingSlot(SuccBB), Pred, &I);
   }
 
   // Jump to the default block when all the case value not match, i.e. all case
   // predicate is false.
   VASTValPtr DefaultPred = Builder.buildNotExpr(Builder.buildOrExpr(CasePreds, 1));
-  VASTSlot *DefLandingSlot = getOrCreateLandingSlot(I.getDefaultDest());
-  addSuccSlot(CurSlot, DefLandingSlot, DefaultPred, &I);
+  BasicBlock *DefBB = I.getDefaultDest();
+
+  VASTSlot *SubGrp = createSubGroup(DefBB, DefaultPred, CurSlot);
+  visitPHIsInSucc(SubGrp, DefaultPred, I.getParent());
+  addSuccSlot(SubGrp, getOrCreateLandingSlot(DefBB), DefaultPred, &I);
 }
 
 void VASTModuleBuilder::visitCallSite(CallSite CS) {
@@ -1025,6 +1038,7 @@ bool VASTModulePass::runOnFunction(Function &F) {
   VASTModule &VM = *getAnalysis<VASTModuleAnalysis>();
   bool changed = runOnVASTModule(VM);
   if (changed) VM.gc();
+
   return changed;
 }
 
