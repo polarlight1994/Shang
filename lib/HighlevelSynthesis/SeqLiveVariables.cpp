@@ -479,6 +479,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   // may become a PROBLEM. However, such CFG should only be generated when user
   // is using the goto statement.
   VI->Kills.set(UseSlot->SlotNum);
+  //assert(!VI->Defs.test(UseSlot->SlotNum));
 
   // The value not killed at define slot anymore.
   VI->Kills.reset(DefSlot->SlotNum);
