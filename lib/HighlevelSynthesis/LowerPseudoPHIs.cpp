@@ -191,8 +191,10 @@ void LowerPseudoPHIs::extendLiveInterval(VASTSeqValue *SrcV, VASTSeqValue *DstV)
     if (isa<VASTUDef>(Val)) DstDefs.reset(L.getSlotNum());
     // Mark the loop incoming
     else if (VASTWire *W = dyn_cast<VASTWire>(Val)) {
-      if (W->isWrapper() && W->getDriver() == DstV)
+      if (W->isWrapper() && W->getDriver() == DstV) {
         LoopDefs.set(L.getSlotNum());
+        DstDefs.reset(L.getSlotNum());
+      }
     }
   }
 
