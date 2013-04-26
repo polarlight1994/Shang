@@ -94,8 +94,6 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name);
 
   VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand = true);
-  //===--------------------------------------------------------------------===//
-  void connectEntryState(BasicBlock *EntryBB);
 
   // Remember the landing slot and the latest slot of a basic block.
   std::map<BasicBlock*, std::pair<VASTSlot*, VASTSlot*> > BB2SlotMap;
@@ -137,6 +135,12 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
       S = advanceToNextSlot(S);
 
     return S;
+  }
+
+  VASTSlot *createSubGroup(BasicBlock *BB, VASTValPtr Cnd, VASTSlot *S) {
+    VASTSlot *SubGrp = VM->createSlot(++NumSlots, BB, Cnd, true);
+    S->addSuccSlot(SubGrp);
+    return SubGrp;
   }
 
   void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
@@ -188,26 +192,6 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     : MinimalDatapathContext(*Module, TD), Builder(*this),
       VM(Module), TD(TD), Allocation(Allocation), NumSlots(0)  {}
 };
-}
-
-void VASTModuleBuilder::connectEntryState(BasicBlock *EntryBB) {
-  VASTSlot *IdleSlot = VM->getStartSlot();
-
-  // Create the virtual slot representing the idle loop.
-  VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
-  VASTSlot *IdleLoopBack = VM->createSlot(++NumSlots, 0,
-                                          Builder.buildNotExpr(StartPort),
-                                          true);
-  IdleSlot->addSuccSlot(IdleLoopBack);
-  IdleLoopBack->addSuccSlot(IdleSlot);
-
-  // Create the virtual slot represent the launch of the design.
-  VASTSlot *LaunchSlot = VM->createSlot(++NumSlots, EntryBB, StartPort, true);
-  IdleSlot->addSuccSlot(LaunchSlot);
-
-  // Connect the launch slot to the landing slot, with a real edge (which
-  // represent a state transition)
-  addSuccSlot(LaunchSlot, getOrCreateLandingSlot(EntryBB), StartPort);
 }
 
 //===----------------------------------------------------------------------===//
@@ -306,7 +290,6 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
 //===----------------------------------------------------------------------===//
 void VASTModuleBuilder::emitFunctionSignature(Function *F,
                                               VASTSubModule *SubMod) {
-  VASTSlot *StartSlot = VM->getStartSlot();
   SmallVector<VASTSeqValue*, 4> ArgRegs;
   SmallVector<VASTValPtr, 4> ArgPorts;
   SmallVector<Value*, 4> Args;
@@ -354,10 +337,25 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
     (void) Inserted;
   }
 
-  // Copy the value to the register.
+  VASTSlot *IdleSlot = VM->getStartSlot();
+
+  // Create the virtual slot representing the idle loop.
   VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
+  VASTSlot *IdleSlotGrp
+    = createSubGroup(0, Builder.buildNotExpr(StartPort), IdleSlot);
+  addSuccSlot(IdleSlotGrp, IdleSlot, Builder.buildNotExpr(StartPort));
+
+  // Create the virtual slot represent the entry of the CFG.
+  BasicBlock *EntryBB = &F->getEntryBlock();
+  VASTSlot *EntryGrp = createSubGroup(EntryBB, StartPort, IdleSlot);
+
+  // Connect the launch slot to the landing slot, with a real edge (which
+  // represent a state transition)
+  addSuccSlot(EntryGrp, getOrCreateLandingSlot(EntryBB), StartPort);
+
+  // Copy the value to the register.
   for (unsigned i = 0, e = ArgRegs.size(); i != e; ++i)
-    VM->latchValue(ArgRegs[i], ArgPorts[i], StartSlot, StartPort, Args[i]);
+    VM->latchValue(ArgRegs[i], ArgPorts[i], EntryGrp, StartPort, Args[i]);
 }
 
 void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
@@ -985,9 +983,6 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
 
   // Allocate the submodules.
   Builder.allocateSubModules();
-
-  // Build the Submodule.
-  Builder.connectEntryState(&F.getEntryBlock());
 
   // Build the slot for each BB.
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I)
