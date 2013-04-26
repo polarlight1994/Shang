@@ -197,10 +197,14 @@ void LowerPseudoPHIs::extendLiveInterval(VASTSeqValue *SrcV, VASTSeqValue *DstV)
   }
 
   SparseBitVector<> ConnectedDefs = CachedSrc.Kills & DstDefs;
+  // FIXME: Assert the fanins of CachedSrc.DefKills and
+  // CachedSrc.DefKills & DstDefs must be identical.
+  ConnectedDefs |= CachedSrc.DefKills & DstDefs;
   dbgs() << "Get connected defines: (The define of dst that kills src)\n";
   ::dump(ConnectedDefs, dbgs());
 
-  assert(!ConnectedDefs.empty() && "Not able to extand the disjointed interval!");
+  assert((!ConnectedDefs.empty() || DstDefs.intersects(CachedSrc.Alives))
+         && "Not able to extand the disjointed interval!");
   assert(!CachedSrc.Alives.intersects(Dst->Alives)
          && "Unexpected live slots overlap!");
 
