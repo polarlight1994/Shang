@@ -281,6 +281,16 @@ void VASTSeqValue::synthesisSelector(VASTExprBuilder &Builder) {
   bool IsEnable = (getValType() == VASTSeqValue::Enable);
 
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    VASTValPtr Val = I->first;
+
+    // Ignore the undefined fanin.
+    if (isa<VASTUDef>(Val)) continue;
+
+    // Ignore the assignment loop
+    if (VASTWire *W = dyn_cast<VASTWire>(Val))
+      if (W->isWrapper() && (W->getDriver() == this))
+        continue;
+
     Fanin *FI = 0;
     if (!IsEnable) {
       FaninPreds.clear();
@@ -312,7 +322,7 @@ void VASTSeqValue::synthesisSelector(VASTExprBuilder &Builder) {
 
     VASTValPtr CurPred = Builder.buildOrExpr(FaninPreds, 1);
     FI->Pred.set(CurPred);
-    FI->FI.set(I->first);
+    FI->FI.set(Val);
     Fanins.push_back(FI);
   }
 
