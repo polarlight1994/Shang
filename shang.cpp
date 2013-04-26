@@ -310,9 +310,10 @@ int main(int argc, char **argv) {
       HLSPasses.add(createLUTMappingPass());
     }
 
-    HLSPasses.add(createLowerPseudoPHIsPass());
-
-    if (EnableRegisterSharing) HLSPasses.add(createRegisterSharingPass());
+    if (EnableRegisterSharing) {
+      HLSPasses.add(createLowerPseudoPHIsPass());
+      HLSPasses.add(createRegisterSharingPass());
+    }
 
     // Analyse the slack between registers.
     HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
