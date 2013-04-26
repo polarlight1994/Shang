@@ -555,7 +555,9 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
     // Update the live slots.
     VI->Alives.set(ChildNode->SlotNum);
     VI->Kills.reset(ChildNode->SlotNum);
-
+    // We reach all define slot if we reach live-in slot.
+    if (VI->LiveIns.test(ChildNode->SlotNum))
+      VI->Kills.intersectWithComplement(VI->Defs);
 
     VisitStack.push_back(std::make_pair(ChildNode, ChildNode->pred_begin()));
   }
