@@ -99,8 +99,6 @@ public:
   op_iterator removeOp(op_iterator where);
   void removeOp(VASTSeqOp *Op);
 
-  VASTSlotCtrl *getBrToSucc(const VASTSlot *DstSlot) const;
-  VASTValPtr getSuccCnd(const VASTSlot *DstSlot) const;
   bool hasNextSlot(VASTSlot *NextSlot) const;
 
   void addSuccSlot(VASTSlot *NextSlot);

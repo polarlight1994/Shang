@@ -282,14 +282,16 @@ void ScheduleEmitter::initialize() {
 VASTSlotCtrl *ScheduleEmitter::addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
                                            VASTValPtr Cnd, Value *V) {
   // If the Br is already exist, simply or the conditions together.
-  if (VASTSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
-    VASTValPtr Pred = SlotBr->getPred();
-    SlotBr->getPred().replaceUseBy(Builder.buildOrExpr(Pred, Cnd, 1));
-    //SlotBr->annotateValue(V);
-    return 0;
-  }
+  // if (VASTSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
+  //  VASTValPtr Pred = SlotBr->getPred();
+  //  SlotBr->getPred().replaceUseBy(Builder.buildOrExpr(Pred, Cnd, 1));
+  // SlotBr->annotateValue(V);
+  //  return 0;
+  // }
 
-  S->addSuccSlot(NextSlot);
+  llvm_unreachable("not implemented!");
+
+  //S->addSuccSlot(NextSlot);
   VASTSlotCtrl *SlotBr = VM.createSlotCtrl(NextSlot, S, Cnd);
   if (V) SlotBr->annotateValue(V);
 
@@ -336,7 +338,7 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
     // There maybe more than one branch instruction targeting the landing
     // slot. Only create the slot once.
     if (LandingSlot == 0) {
-      LandingSlot = VM.createSlot(LandingSlotNum[TargetBB], TargetBB);
+      //LandingSlot = VM.createSlot(LandingSlotNum[TargetBB], TargetBB);
       ++NumSlots;
     }
 
@@ -650,10 +652,10 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
     unsigned CurSlotNum = EntrySlotNum + LatestSlot - EntrySlot - 1;
     // Create the slot if it is not created.
     while (CurSlotNum != CurSlot->SlotNum) {
-      VASTSlot *NextSlot = VM.createSlot(CurSlot->SlotNum + 1, BB);
+      //VASTSlot *NextSlot = VM.createSlot(CurSlot->SlotNum + 1, BB);
       ++NumSlots;
-      addSuccSlot(CurSlot, NextSlot, VASTImmediate::True);
-      CurSlot = NextSlot;
+      //addSuccSlot(CurSlot, NextSlot, VASTImmediate::True);
+      //CurSlot = NextSlot;
     }
 
     emitToSlot(CurSU->getSeqOp(), VASTImmediate::True, CurSlot, RetimingPath);
@@ -679,10 +681,10 @@ void ScheduleEmitter::emitSchedule() {
     // Create the landing slot of entry BB if not all SUs in the Entry BB
     // emitted to the idle slot.
     ++NumSlots;
-    VASTSlot *S = VM.createSlot(LandingSlotNum[&Entry], &Entry);
-    LandingSlots[&Entry] = S;
+    // VASTSlot *S = VM.createSlot(LandingSlotNum[&Entry], &Entry);
+    // LandingSlots[&Entry] = S;
     // Go to the new slot if the start port is true.
-    addSuccSlot(VM.getStartSlot(), S, StartPort);
+    // addSuccSlot(VM.getStartSlot(), S, StartPort);
   }
 
   assert(RetimingPath.size() == 1 && "Path stack corrupt!");

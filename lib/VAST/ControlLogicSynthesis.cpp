@@ -18,6 +18,7 @@
 #include "shang/Passes.h"
 
 #include "llvm/IR/DataLayout.h"
+#include "llvm/ADT/DepthFirstIterator.h"
 #define DEBUG_TYPE "shang-control-logic-synthesis"
 #include "llvm/Support/Debug.h"
 
@@ -31,40 +32,40 @@ struct ControlLogicSynthesis : public VASTModulePass {
   VASTModule *VM;
 
   void addSlotDisable(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    Builder->orEqual(SlotDisables[S][P], Cnd);
+    Builder->orEqual(SlotDisables[S->getValue()][P], Cnd);
   }
 
   void addSlotReady(VASTSlot *S, VASTValue *V, VASTValPtr Cnd) {
-    Builder->orEqual(SlotReadys[S][V], Cnd);
+    Builder->orEqual(SlotReadys[S->getValue()][V], Cnd);
   }
 
   void addSlotEnable(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    Builder->orEqual(SlotEnables[S][P], Cnd);
+    Builder->orEqual(SlotEnables[S->getValue()][P], Cnd);
   }
 
   void addSlotSucc(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    Builder->orEqual(SlotSuccs[S][P], Cnd);
+    Builder->orEqual(SlotSuccs[S->getValue()][P], Cnd);
   }
 
   typedef std::map<VASTSeqValue*, VASTValPtr> FUCtrlVecTy;
   typedef FUCtrlVecTy::const_iterator const_fu_ctrl_it;
-  std::map<const VASTSlot*, FUCtrlVecTy> SlotEnables, SlotDisables, SlotSuccs;
+  std::map<const VASTSeqValue*, FUCtrlVecTy> SlotEnables, SlotDisables, SlotSuccs;
 
   typedef std::map<VASTValue*, VASTValPtr> FUReadyVecTy;
   typedef FUReadyVecTy::const_iterator const_fu_rdy_it;
-  std::map<const VASTSlot*, FUReadyVecTy> SlotReadys;
+  std::map<const VASTSeqValue*, FUReadyVecTy> SlotReadys;
 
   const FUCtrlVecTy &getSlotSucc(const VASTSlot *S) {
-    std::map<const VASTSlot*, FUCtrlVecTy>::const_iterator at
-      = SlotSuccs.find(S);
+    std::map<const VASTSeqValue*, FUCtrlVecTy>::const_iterator at
+      = SlotSuccs.find(S->getValue());
     assert(at != SlotSuccs.end() && "Slot do not have successor!");
     return at->second;
   }
 
   // Signals need to be enabled at this slot.
   const FUCtrlVecTy *getEnableSet(const VASTSlot *S) const {
-    std::map<const VASTSlot*, FUCtrlVecTy>::const_iterator at
-      = SlotEnables.find(S);
+    std::map<const VASTSeqValue*, FUCtrlVecTy>::const_iterator at
+      = SlotEnables.find(S->getValue());
 
     if (at == SlotEnables.end()) return 0;
 
@@ -80,8 +81,8 @@ struct ControlLogicSynthesis : public VASTModulePass {
 
   // Signals need to set before this slot is ready.
   const FUReadyVecTy *getReadySet(const VASTSlot *S) const {
-    std::map<const VASTSlot*, FUReadyVecTy>::const_iterator at
-      = SlotReadys.find(S);
+    std::map<const VASTSeqValue*, FUReadyVecTy>::const_iterator at
+      = SlotReadys.find(S->getValue());
 
     if (at == SlotReadys.end()) return 0;
 
@@ -90,8 +91,8 @@ struct ControlLogicSynthesis : public VASTModulePass {
 
   // Signals need to be disabled at this slot.
   const FUCtrlVecTy *getDisableSet(const VASTSlot *S) const {
-    std::map<const VASTSlot*, FUCtrlVecTy>::const_iterator at
-      = SlotDisables.find(S);
+    std::map<const VASTSeqValue*, FUCtrlVecTy>::const_iterator at
+      = SlotDisables.find(S->getValue());
 
     if (at == SlotDisables.end()) return 0;
 
@@ -266,8 +267,38 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
 
   // Build the signals corresponding to the slots.
   for (slot_iterator I = VM->slot_begin(), E = llvm::prior(VM->slot_end());
-       I != E; ++I)
-    I->createSignals(VM);
+       I != E; ++I) {
+    VASTSlot *S = I;
+
+    if (S->IsVirtual) continue;
+
+    S->createSignals(VM);
+
+    // Share the signal to the virtual slots, because the virtual slot reachable
+    // from this slot without visiting any non-virtual slots are sharing the
+    // same state in the STG with the current slot.
+    typedef df_iterator<VASTSlot*> slot_df_iterator;
+    for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
+      VASTSlot *Child = *DI;
+
+      // Ignore the current slot.
+      if (Child == S) {
+        ++DI;
+        continue;
+      }
+
+      // share the signal with the virtual slots.
+      if (Child->IsVirtual) {
+        Child->copySignals(S);
+        ++DI;
+        continue;
+      }
+
+      // Skip all children when we reach a non-virtual slot, because we cannot
+      // share the signal with them.
+      DI.skipChildren();
+    }
+  }
 
   VM->getFinishSlot()->copySignals(VM->getStartSlot());
 
@@ -279,6 +310,9 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
        I != E; ++I) {
     VASTSlot *S = I;
 
+    // No need to synthesize the control logic for virtual slots.
+    if (S->IsVirtual) continue;
+    
     // Build the ready logic.
     buildSlotReadyLogic(S);
     // Build the state-transfer logic and the functional unit controlling logic.

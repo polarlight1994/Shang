@@ -97,6 +97,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   //===--------------------------------------------------------------------===//
   void connectEntryState(BasicBlock *EntryBB);
 
+  // Remember the landing slot and the latest slot of a basic block.
   std::map<BasicBlock*, std::pair<VASTSlot*, VASTSlot*> > BB2SlotMap;
   unsigned NumSlots;
   VASTSlot *getOrCreateLandingSlot(BasicBlock *BB) {
@@ -104,7 +105,8 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
     if (Slots.first == 0) {
       assert(Slots.second == 0 && "Unexpected Latest slot without landing slot!");
-      Slots.first = (Slots.second = VM->createSlot(++NumSlots, BB));
+      Slots.first
+        = (Slots.second = VM->createSlot(++NumSlots, BB));
     }
 
     return Slots.first;
@@ -125,7 +127,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     assert(CurSlot->succ_empty() && "CurSlot already have successors!");
     Slot = VM->createSlot(++NumSlots, BB);
     // Connect the slots.
-    addSuccSlot(CurSlot, Slot, VASTImmediate::True);
+    addSuccSlot(CurSlot, Slot);
     return Slot;
   }
 
@@ -137,10 +139,14 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     return S;
   }
 
-  void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd,
+  void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
+                   VASTValPtr Cnd = VASTImmediate::True,
                    TerminatorInst *Inst = 0) {
     // If the Br is already exist, simply or the conditions together.
-    assert (S->getBrToSucc(NextSlot) == 0 && "Branching to target slot existed!");
+   assert(!S->hasNextSlot(NextSlot) && "Edge had already existed!");
+   assert((S->getParent() == NextSlot->getParent()
+           || NextSlot == VM->getFinishSlot())
+          && "Cannot change Slot and BB at the same time!");
 
     S->addSuccSlot(NextSlot);
     VASTSlotCtrl *SlotBr = VM->createSlotCtrl(NextSlot, S, Cnd);
@@ -186,11 +192,22 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
 void VASTModuleBuilder::connectEntryState(BasicBlock *EntryBB) {
   VASTSlot *IdleSlot = VM->getStartSlot();
-  VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
-  addSuccSlot(IdleSlot, IdleSlot, Builder.buildNotExpr(StartPort));
 
-  SmallVector<VASTValPtr, 1> Cnds(1, StartPort);
-  addSuccSlot(IdleSlot, getOrCreateLandingSlot(EntryBB), StartPort);
+  // Create the virtual slot representing the idle loop.
+  VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
+  VASTSlot *IdleLoopBack = VM->createSlot(++NumSlots, 0,
+                                          Builder.buildNotExpr(StartPort),
+                                          true);
+  IdleSlot->addSuccSlot(IdleLoopBack);
+  IdleLoopBack->addSuccSlot(IdleSlot);
+
+  // Create the virtual slot represent the launch of the design.
+  VASTSlot *LaunchSlot = VM->createSlot(++NumSlots, EntryBB, StartPort, true);
+  IdleSlot->addSuccSlot(LaunchSlot);
+
+  // Connect the launch slot to the landing slot, with a real edge (which
+  // represent a state transition)
+  addSuccSlot(LaunchSlot, getOrCreateLandingSlot(EntryBB), StartPort);
 }
 
 //===----------------------------------------------------------------------===//
@@ -517,7 +534,8 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
 
       Value *LiveOutedFromBB = PN->DoPHITranslation(SuccBB, BB);
       VASTValPtr LiveOut = getAsOperandImpl(LiveOutedFromBB);
-      VASTValPtr Pred = LatestSlot->getSuccCnd(SuccSlot);
+      VASTValPtr Pred;// = LatestSlot->getSuccCnd(SuccSlot);
+      llvm_unreachable("Not implemented!");
       VASTSeqValue *PHISeqVal = getOrCreateSeqVal(PN, PN->getName());
       // Latch the incoming value when we are branching to the succ slot.
       VM->latchValue(PHISeqVal, LiveOut, LatestSlot,  Pred, PN);

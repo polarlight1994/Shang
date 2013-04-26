@@ -34,11 +34,13 @@ VASTSlot::VASTSlot(unsigned slotNum, BasicBlock *ParentBB,  VASTValPtr Pred,
 VASTSlot::VASTSlot(unsigned slotNum)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
     SlotReady(this, 0), SlotPred(this, VASTImmediate::True), SlotNum(slotNum),
-    IsVirtual(true) {
+    IsVirtual(false) {
   Contents.ParentBB = 0;
 }
 
 void VASTSlot::createSignals(VASTModule *VM) {
+  assert(!IsVirtual && "Cannot create signal for virtual slots!");
+
   // Create the relative signals.
   std::string SlotName = "Slot" + utostr_32(SlotNum);
   VASTRegister *R = VM->addRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0,
@@ -105,28 +107,11 @@ VASTRegister *VASTSlot::getRegister() const {
 }
 
 VASTSeqValue *VASTSlot::getValue() const {
-  return cast<VASTSeqValue>(SlotReg);
+  return SlotReg.unwrap().getAsLValue<VASTSeqValue>();
 }
 
 const char *VASTSlot::getName() const {
   return getValue()->getName();
-}
-
-VASTSlotCtrl *VASTSlot::getBrToSucc(const VASTSlot *DstSlot) const {
-  // Find the SeqOp that branching to DstSlot and return the condition.
-  for (const_op_iterator I = op_begin(), E = op_end(); I != E; ++I)
-    if (VASTSlotCtrl *SlotCtrl = dyn_cast<VASTSlotCtrl>(*I))
-      if (SlotCtrl->isBranch() && SlotCtrl->getTargetSlot() == DstSlot)
-          return SlotCtrl;
-
-  return 0;
-}
-
-VASTValPtr VASTSlot::getSuccCnd(const VASTSlot *DstSlot) const {
-  // Find the SeqOp that branching to DstSlot and return the condition.
-  VASTSlotCtrl *SlotCtrl = getBrToSucc(DstSlot);
-  assert(SlotCtrl &&  "DstSlot is not the successor of current slot!");
-  return SlotCtrl->getPred();
 }
 
 void VASTSlot::addSuccSlot(VASTSlot *NextSlot) {
@@ -185,8 +170,12 @@ struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
     std::string Str;
     raw_string_ostream ss(Str);
     ss << Node->SlotNum;
+
+    if (VASTSeqValue *V =Node->getValue())
+      ss << " [" << V->getName() << ']';
+
     if (BasicBlock *BB = Node->getParent())
-      ss << '(' << BB->getName() << ')';
+      ss << " (" << BB->getName() << ')';
 
     DEBUG(Node->print(ss));
     return ss.str();
