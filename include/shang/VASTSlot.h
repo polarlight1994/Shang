@@ -44,6 +44,7 @@ private:
   VASTUse SlotReg;
   VASTUse SlotActive;
   VASTUse SlotReady;
+  VASTUse SlotPred;
 
   // The link to other slots.
   PredVecTy PredSlots;
@@ -58,17 +59,19 @@ private:
   }
 
   friend class VASTModule;
-  VASTSlot(unsigned slotNum, BasicBlock *ParentBB);
+  VASTSlot(unsigned slotNum, BasicBlock *ParentBB, VASTValPtr Pred,
+           bool IsVirtual);
 
   VASTSlot() : VASTNode(vastSlot), SlotReg(this), SlotActive(this),
-    SlotReady(this), SlotNum(0) {}
+    SlotReady(this), SlotPred(this), SlotNum(0), IsVirtual(true) {}
 
   friend struct ilist_sentinel_traits<VASTSlot>;
 public:
   // Create the finish slot.
   explicit VASTSlot(unsigned slotNum);
 
-  const uint16_t SlotNum;
+  const uint16_t SlotNum : 15;
+  const bool     IsVirtual : 1;
 
   void createSignals(VASTModule *VM);
   void copySignals(VASTSlot *S);
@@ -99,6 +102,7 @@ public:
   VASTSlotCtrl *getBrToSucc(const VASTSlot *DstSlot) const;
   VASTValPtr getSuccCnd(const VASTSlot *DstSlot) const;
   bool hasNextSlot(VASTSlot *NextSlot) const;
+
   void addSuccSlot(VASTSlot *NextSlot);
 
   bool isSynthesized() const { return !SlotReg.isInvalid(); }

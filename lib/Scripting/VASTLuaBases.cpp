@@ -291,11 +291,12 @@ namespace {
   };
 }
 
-VASTSlot *VASTModule::createSlot(unsigned SlotNum, BasicBlock *ParentBB) {
+VASTSlot *VASTModule::createSlot(unsigned SlotNum, BasicBlock *ParentBB,
+                                 VASTValPtr Pred, bool IsVirtual) {
   assert(std::find_if(Slots.begin(), Slots.end(), SlotNumEqual(SlotNum)) == Slots.end()
          && "The same slot had already been created!");
 
-  VASTSlot *Slot = new VASTSlot(SlotNum, ParentBB);
+  VASTSlot *Slot = new VASTSlot(SlotNum, ParentBB, Pred, IsVirtual);
   // Insert the newly created slot before the finish slot.
   Slots.insert(Slots.back(), Slot);
 
@@ -303,7 +304,7 @@ VASTSlot *VASTModule::createSlot(unsigned SlotNum, BasicBlock *ParentBB) {
 }
 
 VASTSlot *VASTModule::createStartSlot() {
-  VASTSlot *StartSlot = new VASTSlot(0, 0);
+  VASTSlot *StartSlot = new VASTSlot(0, 0, VASTImmediate::True, false);
   Slots.push_back(StartSlot);
   // Also create the finish slot.
   Slots.push_back(new VASTSlot(-1));

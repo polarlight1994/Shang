@@ -180,7 +180,9 @@ public:
   /// one if it does not exists.
   VASTNamedValue *getOrCreateSymbol(const Twine &Name, unsigned Bitwidth);
 
-  VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB);
+  VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB,
+                       VASTValPtr Pred = VASTImmediate::True,
+                       bool IsVirtual = false);
 
   VASTSlot *createStartSlot();
   VASTSlot *getStartSlot();

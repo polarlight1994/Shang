@@ -23,15 +23,18 @@
 
 using namespace llvm;
 
-VASTSlot::VASTSlot(unsigned slotNum, BasicBlock *ParentBB)
+VASTSlot::VASTSlot(unsigned slotNum, BasicBlock *ParentBB,  VASTValPtr Pred,
+                   bool IsVirtual)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
-    SlotReady(this, 0), SlotNum(slotNum) {
+    SlotReady(this, 0), SlotPred(this, Pred), SlotNum(slotNum),
+    IsVirtual(IsVirtual) {
   Contents.ParentBB = ParentBB;
 }
 
 VASTSlot::VASTSlot(unsigned slotNum)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
-    SlotReady(this, 0), SlotNum(slotNum){
+    SlotReady(this, 0), SlotPred(this, VASTImmediate::True), SlotNum(slotNum),
+    IsVirtual(true) {
   Contents.ParentBB = 0;
 }
 
@@ -72,11 +75,7 @@ void VASTSlot::unlinkSuccs() {
 
   for (succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
     VASTSlot *SuccSlot = *I;
-
-    if (SuccSlot == this) {
-      hasLoop = true;
-      continue;
-    }
+    assert(SuccSlot != this && "Unexpected loop!");
 
     // Find the this slot in the PredSlot of the successor and erase it.
     pred_iterator at
@@ -85,8 +84,6 @@ void VASTSlot::unlinkSuccs() {
   }
 
   NextSlots.clear();
-
-  if (hasLoop) NextSlots.push_back(this);
 }
 
 VASTSlot::op_iterator VASTSlot::removeOp(op_iterator where) {
@@ -136,6 +133,8 @@ void VASTSlot::addSuccSlot(VASTSlot *NextSlot) {
   // Do not add the same successor slot twice.
   if (hasNextSlot(NextSlot)) return;
 
+  assert(NextSlot != this && "Unexpected loop!");
+
   // Connect the slots.
   NextSlot->PredSlots.push_back(this);
   NextSlots.push_back(NextSlot);
@@ -157,7 +156,7 @@ void VASTSlot::print(raw_ostream &OS) const {
   OS << "Succ: ";
 
   for (const_succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I)
-    OS << "S#" << (*I)->SlotNum << ", ";
+    OS << "S#" << (*I)->SlotNum << '(' << (*I)->IsVirtual << ")v, ";
 }
 
 //===----------------------------------------------------------------------===//
@@ -185,7 +184,7 @@ struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
   std::string getNodeLabel(NodeTy *Node, GraphTy *Graph) {
     std::string Str;
     raw_string_ostream ss(Str);
-    ss << Node->getName();
+    ss << Node->SlotNum;
     if (BasicBlock *BB = Node->getParent())
       ss << '(' << BB->getName() << ')';
 
@@ -194,7 +193,11 @@ struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
   }
 
   static std::string getNodeAttributes(NodeTy *Node, GraphTy *Graph) {
-      return "shape=Mrecord";
+    std::string Attr = "shape=Mrecord";
+
+    if (Node->IsVirtual) Attr += ", style=dotted";
+
+    return Attr;
   }
 };
 }
