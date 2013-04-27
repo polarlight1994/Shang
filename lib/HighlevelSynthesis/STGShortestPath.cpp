@@ -59,12 +59,11 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
   for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
     VASTSlot *Src = I;
 
-    STPMatrix[Src->SlotNum][Src->SlotNum] = 0;
-
     typedef VASTSlot::succ_iterator succ_iterator;
     for (succ_iterator SI = Src->succ_begin(), SE = Src->succ_end(); SI != SE; ++SI) {
       VASTSlot *Dst = *SI;
-      if (Src != Dst) STPMatrix[Dst->SlotNum][Src->SlotNum] = 1;
+      assert(Src != Dst && "Unexpected loop!");
+      STPMatrix[Dst->SlotNum][Src->SlotNum] = Dst->IsVirtual ? 0 : 1;
     }
   }
 

@@ -229,10 +229,6 @@ void LowerPseudoPHIs::extendLiveInterval(VASTSeqValue *SrcV, VASTSeqValue *DstV)
   Src->Alives |= ConnectedDefs;
   Src->Alives |= Dst->Alives;
 
-  // Set the define alive slots according to the alive slots of Dst.
-  Src->DefAlives |= ConnectedDefs & CachedSrc.Defs;
-  Src->DefAlives |= Dst->Alives & CachedSrc.Defs;
-
   dbgs() << "After extantion:\n";
   Src->dump();
 

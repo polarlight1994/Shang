@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "STGShortestPath.h"
-#include "BBLandingSlots.h"
 #include "SeqLiveVariables.h"
 
 #include "shang/Passes.h"
@@ -24,7 +23,6 @@
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/Analysis/Dominators.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -44,16 +42,12 @@ void SeqLiveVariables::VarInfo::print(raw_ostream &OS) const {
 
   OS << "\n  Defined in Slots: ";
   ::dump(Defs, OS);
-  OS << "\n  Live-in Slots: ";
-  ::dump(LiveIns, OS);
   OS << "\n  Alive in Slots: ";
   ::dump(Alives, OS);
   OS << "\n  Killed by:";
   ::dump(Kills, OS);
   OS << "\n  Killed-Defined: ";
   ::dump(DefKills, OS);
-  OS << "\n  Alive-Defined: ";
-  ::dump(DefAlives, OS);
   OS << "\n";
 }
 
@@ -71,24 +65,6 @@ void SeqLiveVariables::VarInfo::verifyKillAndAlive() const {
     llvm_unreachable("Kills and Alives should not intersect!");
   }
 
-  if (Alives.intersects(Defs - DefAlives)) {
-      dbgs() << "Bad VarInfo: \n";
-      dump();
-      SparseBitVector<> OverlapMask = Alives & (Defs - DefAlives);
-      dbgs() << "Overlap:\n";
-      ::dump(OverlapMask, dbgs());
-      llvm_unreachable("Alives and Defs - DefAlives should not intersect!");
-  }
-
-  if (Alives.intersects(DefKills - DefAlives)) {
-      dbgs() << "Bad VarInfo: \n";
-      dump();
-      SparseBitVector<> OverlapMask = Alives & (DefKills - DefAlives);
-      dbgs() << "Overlap:\n";
-      ::dump(OverlapMask, dbgs());
-      llvm_unreachable("DefKills - DefAlives and Alives should not intersect!");
-  }
-
   if (Kills.empty() && DefKills.empty()) {
     dbgs() << "Bad VarInfo: \n";
     dump();
@@ -99,23 +75,6 @@ void SeqLiveVariables::VarInfo::verifyKillAndAlive() const {
 
 void SeqLiveVariables::VarInfo::verify() const {
   verifyKillAndAlive();
-
-  if (LiveIns.empty() && Defs != Kills) {
-    dbgs() << "Bad VarInfo: \n";
-    dump();
-    llvm_unreachable("There should always be a livein!");
-    return;
-  }
-
-  SparseBitVector<> ReachableSlots(Alives);
-  ReachableSlots |= Kills;
-  ReachableSlots |= DefKills;
-
-  if (ReachableSlots.contains(LiveIns)) return;
-
-  dbgs() << "Bad VarInfo: \n";
-  dump();
-  llvm_unreachable("Live-in slots unreachable!");
 }
 
 char SeqLiveVariables::ID = 0;
@@ -138,8 +97,6 @@ SeqLiveVariables::SeqLiveVariables() : VASTModulePass(ID) {
 
 void SeqLiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
-  AU.addRequired<BBLandingSlots>();
-  AU.addRequired<DominatorTree>();
   AU.setPreservesAll();
 }
 
@@ -222,7 +179,6 @@ void SeqLiveVariables::verifyAnalysis() const {
 
 bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
   VM = &M;
-  DT = &getAnalysis<DominatorTree>();
 
   // Compute the PHI joins.
   createInstVarInfo(VM);
@@ -266,8 +222,6 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
     ChildItStack.push_back(NodeStack.back()->succ_begin());
   }
 
-  fixLiveInSlots();
-
 #ifndef NDEBUG
   verifyAnalysis();
 #endif
@@ -306,7 +260,6 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector &PathFromEntry) {
 
 void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
   typedef VASTModule::seqop_iterator seqop_iterator;
-  BBLandingSlots &LandingSlots = getAnalysis<BBLandingSlots>();
 
   // Remeber the VarInfo defined
   std::map<Value*, VarInfo*> InstVarInfo;
@@ -339,23 +292,6 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
 
     WrittenSlots[Def.getDst()].set(SlotNum);
     VarInfos[Def] = VI;
-
-    // Compute the live-in slots if the operation is predicated. For the
-    // unpredicated operations, their live-ins are computed in fixLiveInSlots.
-    if (Instruction *Inst = dyn_cast<Instruction>(V)) {
-      BasicBlock *BB = Inst->getParent();
-      if (BB != S->getParent()) {
-        // The instruction is predicated, the live-in slots of the current
-        // definition is not all the successor slots of the current slot.
-        const BBLandingSlots::SlotSet &S = LandingSlots.getLandingSlots(BB);
-        typedef BBLandingSlots::SlotSet::const_iterator landing_iterator;
-        for (landing_iterator LI = S.begin(), LE = S.end(); LI != LE; ++LI)
-          VI->LiveIns.set((*LI)->SlotNum);
-      }
-    }
-
-    assert((!VI->hasMultiDef() || !VI->LiveIns.empty())
-           && "LiveIns should be provided for MultDef!");
   }
 
   // Also add the VarInfo for the static registers.
@@ -380,8 +316,6 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
 
       VarInfo *VI = new VarInfo(0);
       VarList.push_back(VI);
-      // The definition of the Slot register always and only live-in to its slot!
-      VI->LiveIns.set(SlotNum);
 
       typedef VASTSeqValue::const_iterator iterator;
       for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
@@ -508,35 +442,13 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
     // Is the value defined in this slot?
     if (VI->Defs.test(ChildNode->SlotNum)) {
       // The current slot is defined, but also killed!
-      if (ChildNode == UseSlot) VI->DefKills.set(UseSlot->SlotNum);
+      // if (ChildNode == UseSlot) VI->DefKills.set(UseSlot->SlotNum);
 
       // If we can reach a define slot, the define slot is not dead.
       VI->Kills.reset(ChildNode->SlotNum);
 
-      if (HasMultiDef) {
-        SparseBitVector<> ReachableSlots(VI->Alives | VI->Kills | VI->DefKills);
-        assert(!VI->LiveIns.empty() && "LiveIns should be provided for MultDef!");
-
-        // For the MultiDef LiveVariable, it is the LiveIns that dominate all
-        // its use.
-        if (!ReachableSlots.intersects(VI->LiveIns)) {
-#ifndef NDEBUG
-          bool AnyLiveIn = false;
-          for (unsigned i = 0, e = PathFromEntry.size(); i != e; ++i)
-            if (VI->LiveIns.test(PathFromEntry[i]->SlotNum)) {
-              AnyLiveIn = true;
-              break;
-            }
-
-          assert(AnyLiveIn && "Even livein not dominates all its use!");
-#endif
-
-          VI->DefAlives.set(ChildNode->SlotNum);
-        }
-      }
-      
       // Do not move across the define slot.
-      if (!VI->DefAlives.test(ChildNode->SlotNum)) continue;
+      continue;
     }
 
     // Reach the alive slot, no need to further visit other known AliveSlots.
@@ -546,19 +458,9 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
     // We had got a loop!
     if (UseSlot == ChildNode) continue;
 
-    // If we reach a Slot that dominated by UseSlot, skip it. Otherwise we will
-    // get a cycle and setting the unecessary alive slots.
-    //if (BasicBlock *BB = ChildNode->getParent()) {
-    //  if (DT->dominates(UseSlot->getParent(), BB))
-    //    continue;
-    //}
-
     // Update the live slots.
     VI->Alives.set(ChildNode->SlotNum);
     VI->Kills.reset(ChildNode->SlotNum);
-    // We reach all define slot if we reach live-in slot.
-    if (VI->LiveIns.test(ChildNode->SlotNum))
-      VI->Kills.intersectWithComplement(VI->Defs);
 
     VisitStack.push_back(std::make_pair(ChildNode, ChildNode->pred_begin()));
   }
@@ -587,52 +489,6 @@ bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot *S) {
   assert(at != WrittenSlots.end() && "Definition of V not visited yet!");
 
   return at->second.test(S->SlotNum);
-}
-
-void SeqLiveVariables::fixLiveInSlots() {
-  std::map<unsigned, SparseBitVector<> > STGBitMap;
-  typedef VASTModule::slot_iterator slot_iterator;
-  for (slot_iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
-    VASTSlot *S = I;
-    SparseBitVector<> &Succs = STGBitMap[S->SlotNum];
-
-    typedef VASTSlot::succ_iterator succ_iterator;
-    for (succ_iterator SI = S->succ_begin(), SE = S->succ_end(); SI != SE; ++SI) {
-      VASTSlot *Succ = *SI;
-      // The the definitions will never live-in Finish Slot.
-      if (Succ != VM->getFinishSlot()) Succs.set(Succ->SlotNum);
-    }
-  }
-
-  for (var_iterator I = VarList.begin(), E = VarList.end(); I != E; ++I) {
-    VarInfo *VI = I;
-
-    if (VI->LiveIns.empty()) {
-      assert(!VI->hasMultiDef() && "Unexpected multi define VI!");
-      // Otherwise compute the live-ins now.
-      SparseBitVector<> LiveDef(VI->Defs);
-      LiveDef.intersectWithComplement(VI->Kills);
-
-      // If the live-ins are empty, the latching operation is unpredicated.
-      // This mean the definition can reach all successors of the defining slot.
-      // But we need to trim the dead live-ins according to its alive slots.
-      typedef SparseBitVector<>::iterator iterator;
-      for (iterator I = LiveDef.begin(), E = LiveDef.end(); I != E; ++I) {
-        unsigned LiveDefSlot = *I;
-        VI->LiveIns |= STGBitMap[LiveDefSlot];
-      }
-
-      assert((!VI->LiveIns.empty() || VI->Alives.empty()) && "There is no livein?");
-    }
-
-    SparseBitVector<> ReachableSlots(VI->Alives | VI->Kills | VI->DefKills);
-    assert((ReachableSlots.intersects(VI->LiveIns) || VI->Defs == VI->Kills)
-           && "Bad liveins!");
-
-    // Trim the dead live-ins.
-    VI->LiveIns &= ReachableSlots;
-    DEBUG(VI->dump());
-  }
 }
 
 unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlot,
@@ -664,14 +520,14 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
 
   // Calculate the Shortest path distance from all live-in slot.
   unsigned IntervalFromLiveIn = STGShortestPath::Inf;
-  typedef SparseBitVector<>::iterator livein_iterator;
-  for (livein_iterator I = VI->LiveIns.begin(), E = VI->LiveIns.end();
+  typedef SparseBitVector<>::iterator def_iterator;
+  for (def_iterator I = VI->Defs.begin(), E = VI->Defs.end();
        I != E; ++I) {
-    unsigned LiveInSlotNum = *I;
-    unsigned CurInterval = SSP->getShortestPath(LiveInSlotNum, ReadSlotNum);
+    unsigned DefSlotNum = *I;
+    unsigned CurInterval = SSP->getShortestPath(DefSlotNum, ReadSlotNum);
     if (CurInterval >= STGShortestPath::Inf) {
       dbgs() << "Read at slot: " << ReadSlotNum << '\n';
-      dbgs() << "Livein slot: " << LiveInSlotNum << '\n';
+      dbgs() << "Def slot: " << DefSlotNum << '\n';
       VI->dump();
       dbgs() <<  "Alive slot not reachable?\n";
       continue;
@@ -681,9 +537,9 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
   }
 
   assert(IntervalFromLiveIn < STGShortestPath::Inf && "No live-in?");
-
+  // assert(IntervalFromLiveIn);
   // The is 1 extra cycle from the definition to live in.
-  return IntervalFromLiveIn + 1;
+  return 1;
 }
 
 SeqLiveVariables::VarInfo *SeqLiveVariables::getUniqueVarInfo(VASTSeqValue *V) {
@@ -718,20 +574,4 @@ void SeqLiveVariables::transferVarInfo(const VASTLatch &From,
   }
 
   llvm_unreachable("VI merging is not supported yet!");
-  DstVI->Defs |= SrcVI->Defs;
-
-  DstVI->LiveIns |= SrcVI->LiveIns;
-
-  DstVI->Alives |= SrcVI->Alives;
-
-  DstVI->Kills |= SrcVI->Kills;
-  DstVI->Kills.intersectWithComplement(DstVI->Alives);
-
-  DstVI->DefAlives |= SrcVI->DefAlives;
-  DstVI->DefAlives |= (DstVI->Defs & DstVI->Alives);
-
-  DstVI->DefKills |= SrcVI->DefKills;
-  DstVI->DefKills.intersectWithComplement(DstVI->Alives);
-
-  DstVI->verify();
 }

@@ -35,11 +35,10 @@ class STGShortestPath;
 template<class PtrType, unsigned SmallSize> class SmallPtrSet;
 class BasicBlock;
 class Value;
-class DominatorTree;
 
 class SeqLiveVariables : public VASTModulePass {
   VASTModule *VM;
-  DominatorTree *DT;
+
 public:
   static char ID;
 
@@ -73,11 +72,6 @@ public:
     ///
     SparseBitVector<> Defs;
 
-    /// LiveInSlots - Set of the Slot that this variable just live-in from the
-    /// def slots. Please note that some definition is conditional and hence
-    /// the live-in slots are not equal to the union of def slot's successors.
-    SparseBitVector<> LiveIns;
-
     /// AliveSlots - Set of Slots in which this value is alive completely
     /// through.  This is a bit set which uses the Slot number as an index.
     ///
@@ -91,11 +85,6 @@ public:
     /// available at the same time.
     ///
     SparseBitVector<> DefKills;
-
-    /// DefAlives - The slot that the define is read, and the new define is
-    /// available at the same time.
-    ///
-    SparseBitVector<> DefAlives;
 
     void initializeDefSlot(unsigned SlotNum) {
       // Initialize the define slot.
@@ -125,7 +114,6 @@ private:
   void handleSlot(VASTSlot *S, PathVector &PathFromEntry);
   void handleUse(VASTSeqValue *Use, VASTSlot *UseSlot, PathVector &PathFromEntry);
   void handleDef(VASTLatch D);
-  void fixLiveInSlots();
 
   struct VarName {
     VASTSeqValue *Dst;
