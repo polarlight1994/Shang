@@ -548,10 +548,10 @@ void VASTModuleBuilder::buildConditionaTransition(BasicBlock *DstBB,
                                                   TerminatorInst &I) {
   // Create the virtual slot represent the launch of the design.
   VASTSlot *SubGrp = createSubGroup(DstBB, Cnd, CurSlot);
-
-  visitPHIsInSucc(SubGrp, Cnd, CurSlot->getParent());
-
+  // Build the branch operation before building the PHIs, make sure the PHIs
+  // are placed after the branch operation targeting the same BB with PHIs.
   addSuccSlot(SubGrp, getOrCreateLandingSlot(DstBB), Cnd, &I);
+  visitPHIsInSucc(SubGrp, Cnd, CurSlot->getParent());
 }
 
 void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
