@@ -164,6 +164,10 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   // Build the SeqOps from the LLVM Instruction.
   void visitReturnInst(ReturnInst &I);
   void visitBranchInst(BranchInst &I);
+
+  void buildConditionaTransition(BasicBlock *DstBB, VASTSlot *CurSlot,
+                                       VASTValPtr Cnd, TerminatorInst &I);
+
   void visitSwitchInst(SwitchInst &I);
   void visitUnreachableInst(UnreachableInst &I);
 
@@ -537,6 +541,19 @@ void VASTModuleBuilder::visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd,
   }
 }
 
+
+void VASTModuleBuilder::buildConditionaTransition(BasicBlock *DstBB,
+                                                  VASTSlot *CurSlot,
+                                                  VASTValPtr Cnd,
+                                                  TerminatorInst &I) {
+  // Create the virtual slot represent the launch of the design.
+  VASTSlot *SubGrp = createSubGroup(DstBB, Cnd, CurSlot);
+
+  visitPHIsInSucc(SubGrp, Cnd, CurSlot->getParent());
+
+  addSuccSlot(SubGrp, getOrCreateLandingSlot(DstBB), Cnd, &I);
+}
+
 void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
   unsigned NumOperands = I.getNumOperands();
@@ -573,12 +590,7 @@ void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
   if (I.isUnconditional()) {
     BasicBlock *DstBB = I.getSuccessor(0);
 
-    // Create the virtual slot represent the launch of the design.
-    VASTSlot *SubGrp = createSubGroup(DstBB, VASTImmediate::True, CurSlot);
-
-    visitPHIsInSucc(SubGrp, VASTImmediate::True, I.getParent());
-
-    addSuccSlot(SubGrp, getOrCreateLandingSlot(DstBB), VASTImmediate::True, &I);
+    buildConditionaTransition(DstBB, CurSlot, VASTImmediate::True, I);
     return;
   }
 
@@ -586,15 +598,10 @@ void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
   VASTValPtr Cnd = getAsOperandImpl(I.getCondition());
   BasicBlock *TrueBB = I.getSuccessor(0);
 
-  VASTSlot *TSubGrp = createSubGroup(TrueBB, Cnd, CurSlot);
-  visitPHIsInSucc(TSubGrp, Cnd, I.getParent());
-  addSuccSlot(TSubGrp, getOrCreateLandingSlot(TrueBB), Cnd, &I);
+  buildConditionaTransition(TrueBB, CurSlot, Cnd, I);
 
   BasicBlock *FalseBB = I.getSuccessor(1);
-  VASTSlot *FSubGrp = createSubGroup(FalseBB, Builder.buildNotExpr(Cnd), CurSlot);
-  visitPHIsInSucc(FSubGrp, Cnd, I.getParent());
-  addSuccSlot(FSubGrp, getOrCreateLandingSlot(FalseBB),
-              Builder.buildNotExpr(Cnd), &I);
+  buildConditionaTransition(FalseBB, CurSlot, Builder.buildNotExpr(Cnd), I);
 }
 
 // Copy from LowerSwitch.cpp.
@@ -685,9 +692,7 @@ void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
     VASTValPtr Pred = CI->second;
     CasePreds.push_back(Pred);
 
-    VASTSlot *SubGrp = createSubGroup(SuccBB, Pred, CurSlot);
-    visitPHIsInSucc(SubGrp, Pred, I.getParent());
-    addSuccSlot(SubGrp, getOrCreateLandingSlot(SuccBB), Pred, &I);
+    buildConditionaTransition(SuccBB, CurSlot, Pred, I);
   }
 
   // Jump to the default block when all the case value not match, i.e. all case
@@ -695,9 +700,7 @@ void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
   VASTValPtr DefaultPred = Builder.buildNotExpr(Builder.buildOrExpr(CasePreds, 1));
   BasicBlock *DefBB = I.getDefaultDest();
 
-  VASTSlot *SubGrp = createSubGroup(DefBB, DefaultPred, CurSlot);
-  visitPHIsInSucc(SubGrp, DefaultPred, I.getParent());
-  addSuccSlot(SubGrp, getOrCreateLandingSlot(DefBB), DefaultPred, &I);
+  buildConditionaTransition(DefBB, CurSlot, DefaultPred, I);
 }
 
 void VASTModuleBuilder::visitCallSite(CallSite CS) {
