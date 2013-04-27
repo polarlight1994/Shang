@@ -562,7 +562,8 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 }
 
 void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
-  typedef VASTSlot::op_iterator op_iterator;
+  // Ignore the subgroups.
+  if (S->IsVirtual) return;
 
   BasicBlock *BB = S->getParent();
 
@@ -572,7 +573,25 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
   if (BB == 0) BBEntry = G->getEntry();
   else         BBEntry = getOrCreateBBEntry(BB);
 
-  for (op_iterator OI = S->op_begin(), OE = S->op_end(); OI != OE; ++OI) {
+  std::vector<VASTSeqOp*> Ops;
+  typedef df_iterator<VASTSlot*> slot_df_iterator;
+  for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
+    VASTSlot *Child = *DI;
+
+    // Skip all children when we reach a non-virtual slot, because we cannot
+    // share the signal with them.
+    if (!Child->IsVirtual && Child != S) {
+      DI.skipChildren();
+      continue;
+    }
+
+    // Collect the operation in the current slot and the subgroups.
+    Ops.insert(Ops.end(), Child->op_begin(), Child->op_end());
+    ++DI;
+  }
+
+  typedef std::vector<VASTSeqOp*>::iterator op_iterator;
+  for (op_iterator OI = Ops.begin(), OE = Ops.end(); OI != OE; ++OI) {
     VASTSeqOp *Op = *OI;
     Instruction *Inst = dyn_cast_or_null<Instruction>(Op->getValue());
     // We can safely ignore the SeqOp that does not correspond to any LLVM
