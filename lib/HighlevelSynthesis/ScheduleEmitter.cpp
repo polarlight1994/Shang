@@ -20,6 +20,7 @@
 #include "shang/VASTModule.h"
 
 #include "llvm/IR/Function.h"
+#include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-schedule-emitter"
@@ -33,113 +34,105 @@ STATISTIC(NumRejectedRetiming,
 STATISTIC(NumFalsePathSkip,
           "Number of False Paths skipped during the CFG folding");
 STATISTIC(NumSlots, "Number of States created in the State-transition Graph");
+STATISTIC(NumSubGropus, "Number of guarding condition equivalent state groups");
 
 namespace {
-/// VASTCFGPred - Represent the predicate by the path in the CFG.
-struct CFGPred : public FoldingSetNode {
-  BasicBlock *const*BBList;
-  unsigned Size;
-public:
-  CFGPred(BasicBlock *const*BBList, unsigned Size) : BBList(BBList), Size(Size) {}
-
-  /// Profile - Used to insert VASTCFGPred objects, or objects that contain
-  /// VASTExpr objects, into FoldingSets.
-  void Profile(FoldingSetNodeID& ID) const {
-    for (unsigned i = 0; i < size(); ++i)
-      ID.AddPointer(BBList[i]);
-  }
-  unsigned size() const { return Size; }
-
-  bool isCompatible(ArrayRef<BasicBlock*> RetimingPath) const {
-    // This Pred is more restricted and hence not compatible with RetimingPath.
-    if (size() > RetimingPath.size()) return false;
-
-    // Now we have size() < RetimingPath.size()
-    for (unsigned i = 0; i < size(); ++i)
-      // Not compatible because RetimingPath following a different path.
-      if (BBList[i] != RetimingPath[i]) return false;
-
-    return true;
-  }
-
-  void dump() const {
-    dbgs() << "Current Pred Path: ";
-    for (unsigned i = 0; i < size(); ++i)
-      if (BasicBlock *BB = BBList[i]) dbgs() << BB->getName() << ", ";
-      else                            dbgs() << "<entry>, ";
-    dbgs()<< '\n';
-  }
-};
-
 class ScheduleEmitter : public MinimalExprBuilderContext {
   VASTExprBuilder Builder;
   VASTModule &VM;
   ilist<VASTSlot> OldSlots;
   VASTSchedGraph &G;
   std::map<BasicBlock*, VASTSlot*> LandingSlots;
-  std::map<BasicBlock*, unsigned> LandingSlotNum;
-
-  std::map<VASTSeqInst*, CFGPred*> PredMap;
-  BumpPtrAllocator PredAllocator;
-  FoldingSet<CFGPred> UniqueCFGPreds;
-
-  void takeOldSlots();
+  unsigned CurrentSlotNum;
 
   void clearUp();
   void clearUp(VASTSlot *S);
 
-  CFGPred *getCFGPred(ArrayRef<BasicBlock*> RetimingPath) {
-    unsigned NumBBs = RetimingPath.size();
-    FoldingSetNodeID ID;
-    for (unsigned i = 0; i < NumBBs; ++i)
-      ID.AddPointer(RetimingPath[i]);
+  // return true if the guarding condition of LHS is compatible with the
+  // guarding condition of RHS, false otherwise.
+  static bool isReachable(VASTSlot *LHS, VASTSlot *RHS) {
+    typedef df_iterator<VASTSlot*> slot_df_iterator;
+    for (slot_df_iterator DI = df_begin(LHS), DE = df_end(LHS);
+         DI != DE; /*++DI*/) {
+      VASTSlot *Child = *DI;
 
-    void *IP = 0;
-    if (CFGPred *P = UniqueCFGPreds.FindNodeOrInsertPos(ID, IP))
-      return P;
+      // Skip all children when we reach a non-virtual slot, because we cannot
+      // share the signal with them.
+      if (!Child->IsVirtual && Child != LHS) {
+        DI.skipChildren();
+        continue;
+      }
 
-    // Allocate the BB list.
-    BasicBlock **BBList = PredAllocator.Allocate<BasicBlock*>(NumBBs);
-    std::uninitialized_copy(RetimingPath.begin(), RetimingPath.end(), BBList);
-    CFGPred *P = new (PredAllocator) CFGPred(BBList, NumBBs);
-    UniqueCFGPreds.InsertNode(P, IP);
+      // The guarding condition is compatible if LHS could reach RHS based on
+      // the guarding condition relationship.
+      if (Child == RHS) return true;
 
-    return P;
+      ++DI;
+    }
+
+    return false;
   }
 
-  VASTValPtr retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
-                             ArrayRef<BasicBlock*> RetimingPath);
+  VASTValPtr retimeValToSlot(VASTValue *V, VASTSlot *ToSlot);
 
-  VASTValPtr retimeDatapath(VASTValue *V, VASTSlot *ToSlot,
-                            ArrayRef<BasicBlock*> RetimingPath);
+  VASTValPtr retimeDatapath(VASTValue *V, VASTSlot *ToSlot);
 
-  VASTValPtr retimeDatapath(VASTValPtr V, VASTSlot *ToSlot,
-                            ArrayRef<BasicBlock*> RetimingPath) {
+  VASTValPtr retimeDatapath(VASTValPtr V, VASTSlot *ToSlot) {
     VASTValue *Val = V.get();
-    VASTValPtr RetimedV = retimeDatapath(Val, ToSlot, RetimingPath);
+    VASTValPtr RetimedV = retimeDatapath(Val, ToSlot);
     if (V.isInverted()) RetimedV = Builder.buildNotExpr(RetimedV);
     return RetimedV;
+  }
+
+  VASTSlot *createSubGroup(BasicBlock *BB, VASTValPtr Cnd, VASTSlot *S) {
+    ++NumSubGropus;
+    VASTSlot *SubGrp = VM.createSlot(++CurrentSlotNum, BB, Cnd, true);
+    S->addSuccSlot(SubGrp);
+    return SubGrp;
+  }
+
+  VASTSlot *createSlot(BasicBlock *BB) {
+    ++NumSlots;
+    return VM.createSlot(++CurrentSlotNum, BB);
+  }
+
+  VASTSlot *getOrCreateLandingSlot(BasicBlock *BB) {
+    VASTSlot *&S = LandingSlots[BB];
+    if (S == 0) S = createSlot(BB);
+    return S;
+  }
+
+  static VASTSlot *findSubGroup(VASTSlot *S, BasicBlock *BB) {
+    VASTSlot *SubGrp = 0;
+    typedef VASTSlot::succ_iterator iterator;
+    for (iterator I = S->succ_begin(), E = S->succ_end(); I != E; ++I){
+      VASTSlot *Succ = *I;
+
+      if (!Succ->IsVirtual || Succ->getParent() != BB) continue;
+
+      assert(SubGrp == 0 && "Unexpected multiple subgroup with the same BB!");
+      SubGrp = Succ;
+    }
+
+    assert(SubGrp && "Subgroup not created yet?");
+    return SubGrp;
   }
 
   VASTSlotCtrl *addSuccSlot(VASTSlot *S, VASTSlot *NextSlot, VASTValPtr Cnd,
                             Value *V = 0);
 
-  VASTSeqInst *cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot, VASTValPtr Pred,
-                            SmallVectorImpl<BasicBlock*> &RetimingPath);
-  VASTSlotCtrl *cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
-                              VASTValPtr Pred,
-                              SmallVectorImpl<BasicBlock*> &RetimingPath);
+  VASTSeqInst *cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot, VASTValPtr Pred);
+
+  VASTSlotCtrl *cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot, VASTValPtr Pred);
 
   /// Emit the scheduling units in the same BB.
   ///
   void emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs);
 
   bool emitToFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
-                       MutableArrayRef<VASTSchedUnit*> SUs,
-                       SmallVectorImpl<BasicBlock*> &RetimingPath);
+                       MutableArrayRef<VASTSchedUnit*> SUs);
 
-  void emitToSlot(VASTSeqOp *Op, VASTValPtr Pred, VASTSlot *ToSlot,
-                  SmallVectorImpl<BasicBlock*> &RetimingPath);
+  void emitToSlot(VASTSeqOp *Op, VASTValPtr Pred, VASTSlot *ToSlot);
 
   void handleNewSeqOp(VASTSeqInst *SeqOp);
   void handleNewSeqOp(VASTSlotCtrl *SeqOp);
@@ -147,14 +140,13 @@ public:
   ScheduleEmitter(VASTModule &VM, VASTSchedGraph &G);
   ~ScheduleEmitter() { clearUp(); }
 
-  void initialize();
-
   void emitSchedule();
 };
 }
 
 ScheduleEmitter::ScheduleEmitter(VASTModule &VM, VASTSchedGraph &G)
-  : MinimalExprBuilderContext(VM), Builder(*this), VM(VM), G(G) {}
+  : MinimalExprBuilderContext(VM), Builder(*this), VM(VM), G(G),
+    CurrentSlotNum(0) {}
 
 //===----------------------------------------------------------------------===//
 void ScheduleEmitter::clearUp(VASTSlot *S) {
@@ -176,6 +168,9 @@ void ScheduleEmitter::clearUp(VASTSlot *S) {
     SeqOp->clearParent();
     VM.eraseSeqOp(*I);
   }
+
+  // Drop the reference to the guarding condition.
+  S->getPred().unlinkUseFromUser();
 }
 
 void ScheduleEmitter::clearUp() {
@@ -193,35 +188,6 @@ void ScheduleEmitter::clearUp() {
 }
 
 //===----------------------------------------------------------------------===//
-void ScheduleEmitter::takeOldSlots() {
-  OldSlots.splice(OldSlots.begin(), VM.getSLotList(),
-                  VM.slot_begin(), VM.slot_end());
-  // Remove the successors of the start slot, we will reconstruct them.
-  VM.createStartSlot();
-  VASTSlot *StartSlot = VM.getStartSlot();
-  VASTSlot *OldStart = OldSlots.begin();
-  StartSlot->unlinkSuccs();
-
-  // Build a path from the entry slot.
-  SmallVector<BasicBlock*, 4> RetimingPath;
-  RetimingPath.push_back(0);
-  typedef VASTSlot::op_iterator op_iterator;
-  for (op_iterator I = OldStart->op_begin(); I != OldStart->op_end(); ++I)
-    if (VASTSeqInst *SeqOp = dyn_cast<VASTSeqInst>(*I))
-      if (isa<Argument>(SeqOp->getValue()))
-        cloneSeqInst(SeqOp, StartSlot, SeqOp->getPred(), RetimingPath);
-
-  VASTValPtr StartPort = VM.getPort(VASTModule::Start).getValue();
-  addSuccSlot(StartSlot, StartSlot, Builder.buildNotExpr(StartPort));
-
-#ifndef NDEBUG
-  // Mark the old slots.
-  for (ilist<VASTSlot>::iterator I = OldSlots.begin(), E = OldSlots.end();
-       I != E; ++I)
-    I->setDead();
-#endif
-}
-
 static
 int top_sort_schedule(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) {
   if (LHS->getSchedule() != RHS->getSchedule())
@@ -258,40 +224,16 @@ static int top_sort_schedule_wrapper(const void *LHS, const void *RHS) {
                            *reinterpret_cast<const VASTSchedUnit* const *>(RHS));
 }
 
-void ScheduleEmitter::initialize() {
-  G.sortSUs(top_sort_schedule_wrapper);
-
-  takeOldSlots();
-
-  // Assign the landing slot number for each BB.
-  Function &F = VM;
-  typedef Function::iterator iterator;
-
-  // Allocate the landing slots.
-  unsigned CurLandingSlot = 1;
-  for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    BasicBlock *BB = I;
-    ArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(BB));
-    unsigned SlotIncr = SUs.back()->getSchedule() - SUs.front()->getSchedule();
-    LandingSlotNum[BB] = SlotIncr == 0 ? 0 : CurLandingSlot;
-    CurLandingSlot += SlotIncr;
-  }
-}
-
 //===----------------------------------------------------------------------===//
 VASTSlotCtrl *ScheduleEmitter::addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
                                            VASTValPtr Cnd, Value *V) {
   // If the Br is already exist, simply or the conditions together.
-  // if (VASTSlotCtrl *SlotBr = S->getBrToSucc(NextSlot)) {
-  //  VASTValPtr Pred = SlotBr->getPred();
-  //  SlotBr->getPred().replaceUseBy(Builder.buildOrExpr(Pred, Cnd, 1));
-  // SlotBr->annotateValue(V);
-  //  return 0;
-  // }
+  assert(!S->hasNextSlot(NextSlot) && "Edge had already existed!");
+  assert((S->getParent() == NextSlot->getParent()
+          || NextSlot == VM.getFinishSlot())
+        && "Cannot change Slot and BB at the same time!");
 
-  llvm_unreachable("not implemented!");
-
-  //S->addSuccSlot(NextSlot);
+  S->addSuccSlot(NextSlot);
   VASTSlotCtrl *SlotBr = VM.createSlotCtrl(NextSlot, S, Cnd);
   if (V) SlotBr->annotateValue(V);
 
@@ -299,12 +241,9 @@ VASTSlotCtrl *ScheduleEmitter::addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
 }
 
 VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
-                                             VASTValPtr Pred,
-                                             SmallVectorImpl<BasicBlock*> &
-                                             RetimingPath) {
+                                             VASTValPtr Pred) {
   // Retime the predicate operand.
-  Pred = Builder.buildAndExpr(retimeDatapath(Op->getPred(), ToSlot, RetimingPath),
-                              Pred, 1);
+  Pred = Builder.buildAndExpr(retimeDatapath(Op->getPred(), ToSlot), Pred, 1);
 
   // Some times we may even try to fold the BB through a 'false path' ... such
   // folding can be safely skipped.
@@ -327,22 +266,15 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
     return addSuccSlot(ToSlot, VM.getFinishSlot(), Pred, V);
 
   BasicBlock *TargetBB = Op->getTargetSlot()->getParent();
-
+  VASTSlot *SubGrp = createSubGroup(TargetBB, Pred, ToSlot);
   // Emit the the SUs in the first slot in the target BB.
   // Connect to the landing slot if not all SU in the target BB emitted to
   // current slot.
-  if (emitToFirstSlot(Pred, ToSlot, G.getSUInBB(TargetBB), RetimingPath)) {
+  if (emitToFirstSlot(Pred, SubGrp, G.getSUInBB(TargetBB))) {
     // There is some SeqOp need to be emitted to TargetBB, build the control
     // flow.
-    VASTSlot *&LandingSlot = LandingSlots[TargetBB];
-    // There maybe more than one branch instruction targeting the landing
-    // slot. Only create the slot once.
-    if (LandingSlot == 0) {
-      //LandingSlot = VM.createSlot(LandingSlotNum[TargetBB], TargetBB);
-      ++NumSlots;
-    }
-
-    return addSuccSlot(ToSlot, LandingSlot, Pred, V);
+    VASTSlot *LandingSlot = getOrCreateLandingSlot(TargetBB);
+    return addSuccSlot(SubGrp, LandingSlot, Pred, V);
   }
 
   // Else all scheduling unit of target block are emitted to current slot
@@ -353,13 +285,16 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
 
 //===----------------------------------------------------------------------===//
 VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
-                                           VASTValPtr Pred,
-                                           SmallVectorImpl<BasicBlock*> &
-                                           RetimingPath) {
+                                           VASTValPtr Pred) {
   SmallVector<VASTValPtr, 4> RetimedOperands;
+
+  // Find the subgroup for the PHI node. It is supposed to be existed because we
+  // expected the branch operation is emitted prior to the PNI node.
+  if (PHINode *PN = dyn_cast<PHINode>(Op->getValue()))
+    ToSlot = findSubGroup(ToSlot, PN->getParent());
+
   // Retime the predicate operand.
-  Pred = Builder.buildAndExpr(retimeDatapath(Op->getPred(), ToSlot, RetimingPath),
-                              Pred, 1);
+  Pred = Builder.buildAndExpr(retimeDatapath(Op->getPred(), ToSlot), Pred, 1);
 
   // Some times we may even try to fold the BB through a 'false path' ... such
   // folding can be safely skipped.
@@ -371,7 +306,7 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
   // Retime all the operand to the specificed slot.
   typedef VASTOperandList::op_iterator iterator;
   for (iterator I = Op->src_begin(), E = Op->src_end(); I != E; ++I)
-    RetimedOperands.push_back(retimeDatapath(*I, ToSlot, RetimingPath));
+    RetimedOperands.push_back(retimeDatapath(*I, ToSlot));
 
   VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Pred, Op->getNumSrcs(),
                                       Op->getValue(), Op->getSeqOpType());
@@ -388,21 +323,6 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
 
     NewInst->addSrc(Src, i, i < Op->getNumDefs(), Dst);
   }
-
-  // PHINode have extra predicate.
-  if (PHINode *PN = dyn_cast<PHINode>(NewInst->getValue())) {
-    assert(PN->getBasicBlockIndex(RetimingPath.back()) >= 0
-           && "Not from incoming block?");
-    RetimingPath.push_back(PN->getParent());
-  }
-
-  bool inserted
-    = PredMap.insert(std::make_pair(NewInst, getCFGPred(RetimingPath))).second;
-  assert(inserted && "Cannot insert Pred!");
-  (void) inserted;
-
-  // Pop the extra predicate.
-  if (isa<PHINode>(NewInst->getValue())) RetimingPath.pop_back();
 
 #ifdef XDEBUG
   // Verify if we have the CFGPred conflict.
@@ -427,18 +347,11 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
   return NewInst;
 }
 
-VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
-                                            ArrayRef<BasicBlock*> RetimingPath) {
+VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot) {
   // TODO: Check the predicate of the assignment.
   VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V);
 
   if (SeqVal == 0) return V;
-
-  DEBUG(dbgs() << "Current Retiming Path: ";
-  for (unsigned i = 0; i < RetimingPath.size(); ++i)
-    if (BasicBlock *BB = RetimingPath[i]) dbgs() << BB->getName() << ", ";
-    else                                  dbgs() << "<entry>, ";
-  dbgs()<< '\n';);
 
   // Try to forward the value which is assigned to SeqVal at the same slot.
   VASTValPtr ForwardedValue = SeqVal;
@@ -452,27 +365,15 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
       continue;
 
     // Wrong slot to retime?
-    if (U.getSlot() != ToSlot) continue;
-
-    Value *Val = U.Op->getValue();
-
-    CFGPred *Pred = PredMap[cast<VASTSeqInst>(U.Op)];
-    assert(Pred && "CFGPred not found!");
-
-    // Do not perform the retiming if the path is not matched.
-    if (!Pred->isCompatible(RetimingPath)) {
-      DEBUG(dbgs() << "Reject retiming:\n";
-      CFGPred(RetimingPath.data(), RetimingPath.size()).dump();
-      Pred->dump(););
-
+    if (!isReachable(U.getSlot(), ToSlot)) {
       ++NumRejectedRetiming;
       continue;
     }
 
-    DEBUG(dbgs() << "Goning to forward " /*<< VASTValPtr(U) << ", "*/ << *Val
-                 << "\n Retiming path and pred path:\n";
-          CFGPred(RetimingPath.data(), RetimingPath.size()).dump();
-          Pred->dump(););
+    Value *Val = U.Op->getValue();
+
+    DEBUG(dbgs() << "Goning to forward " /*<< VASTValPtr(U) << ", "*/
+                 << *U.Op->getValue());
 
     assert (ForwardedValue == SeqVal && "Unexpected multiple compatible source!");
     ForwardedValue = VASTValPtr(U);
@@ -498,15 +399,14 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot,
   return ForwardedValue;
 }
 
-VASTValPtr ScheduleEmitter::retimeDatapath(VASTValue *Root, VASTSlot *ToSlot,
-                                           ArrayRef<BasicBlock*> RetimingPath) {
+VASTValPtr ScheduleEmitter::retimeDatapath(VASTValue *Root, VASTSlot *ToSlot) {
   std::map<VASTValue*, VASTValPtr> RetimedMap;
   std::set<VASTValue*> Visited;
 
   VASTExpr *RootExpr = dyn_cast<VASTExpr>(Root);
 
   // The Root is already the leaf of the expr tree.
-  if (RootExpr == 0) return retimeValToSlot(Root, ToSlot, RetimingPath);
+  if (RootExpr == 0) return retimeValToSlot(Root, ToSlot);
 
   typedef VASTOperandList::op_iterator ChildIt;
   std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
@@ -563,7 +463,7 @@ VASTValPtr ScheduleEmitter::retimeDatapath(VASTValue *Root, VASTSlot *ToSlot,
 
     // Retime the leaf if it is not retimed yet.
     VASTValPtr &Retimed = RetimedMap[ChildNode];
-    if (!Retimed) Retimed = retimeValToSlot(ChildNode, ToSlot, RetimingPath);
+    if (!Retimed) Retimed = retimeValToSlot(ChildNode, ToSlot);
   }
 
   VASTValPtr RetimedRoot = RetimedMap[RootExpr];
@@ -578,49 +478,37 @@ void ScheduleEmitter::handleNewSeqOp(VASTSeqInst *SeqOp) {
 
 void ScheduleEmitter::handleNewSeqOp(VASTSlotCtrl *SeqOp) {}
 
-void ScheduleEmitter::emitToSlot(VASTSeqOp *Op, VASTValPtr Pred,
-                                 VASTSlot *ToSlot,
-                                 SmallVectorImpl<BasicBlock*> &RetimingPath) {
-  DEBUG(if (RetimingPath.size() > 1) {
-    dbgs() << "Duplicating: ";
-    Op->dump();
-  });
-
+void
+ScheduleEmitter::emitToSlot(VASTSeqOp *Op, VASTValPtr Pred, VASTSlot *ToSlot) {
   // Create the new SeqOp.
   switch (Op->getASTType()) {
   case VASTNode::vastSeqInst:
-    cloneSeqInst(cast<VASTSeqInst>(Op), ToSlot, Pred, RetimingPath);
+    cloneSeqInst(cast<VASTSeqInst>(Op), ToSlot, Pred);
     break;
   case VASTNode::vastSlotCtrl:
-    cloneSlotCtrl(cast<VASTSlotCtrl>(Op), ToSlot, Pred, RetimingPath);
+    cloneSlotCtrl(cast<VASTSlotCtrl>(Op), ToSlot, Pred);
     break;
   default: llvm_unreachable("Unexpected SeqOp type!");
   }
 }
 
 bool ScheduleEmitter::emitToFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
-                                      MutableArrayRef<VASTSchedUnit*> SUs,
-                                      SmallVectorImpl<BasicBlock*> &RetimingPath) {
+                                      MutableArrayRef<VASTSchedUnit*> SUs) {
   assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
   unsigned EntrySlot = SUs[0]->getSchedule();
-  RetimingPath.push_back(SUs[0]->getParent());
 
   for (unsigned i = 1; i < SUs.size(); ++i) {
     VASTSchedUnit *SU = SUs[i];
 
     // Only emit the SUs in the same slot with the entry.
-    if (SU->getSchedule() != EntrySlot) {
-      RetimingPath.pop_back();
-      return true;
-    }
+    if (SU->getSchedule() != EntrySlot) return true;
 
     // Ignore the pseudo scheduling units.
     if (SU->isPHI()) continue;
 
-    emitToSlot(SU->getSeqOp(), Pred, ToSlot, RetimingPath);
+    emitToSlot(SU->getSeqOp(), Pred, ToSlot);
   }
 
-  RetimingPath.pop_back();
   return false;
 }
 
@@ -638,7 +526,8 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   VASTSlot *CurSlot = LandingSlots[BB];
   assert(CurSlot && "Landing Slot not created?");
   unsigned EntrySlotNum = CurSlot->SlotNum;
-
+  unsigned EmittedSlotNum = CurrentSlotNum;
+  
   for (unsigned i = 1; i < SUs.size(); ++i) {
     VASTSchedUnit *CurSU = SUs[i];
     LatestSlot = CurSU->getSchedule();
@@ -651,14 +540,14 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
     // last slot, hence we need to minus EntrySlot by 1
     unsigned CurSlotNum = EntrySlotNum + LatestSlot - EntrySlot - 1;
     // Create the slot if it is not created.
-    while (CurSlotNum != CurSlot->SlotNum) {
-      //VASTSlot *NextSlot = VM.createSlot(CurSlot->SlotNum + 1, BB);
-      ++NumSlots;
-      //addSuccSlot(CurSlot, NextSlot, VASTImmediate::True);
-      //CurSlot = NextSlot;
+    while (CurSlotNum != EmittedSlotNum) {
+      VASTSlot *NextSlot = createSlot(BB);
+      ++EmittedSlotNum;
+      addSuccSlot(CurSlot, NextSlot, VASTImmediate::True);
+      CurSlot = NextSlot;
     }
 
-    emitToSlot(CurSU->getSeqOp(), VASTImmediate::True, CurSlot, RetimingPath);
+    emitToSlot(CurSU->getSeqOp(), VASTImmediate::True, CurSlot);
   }
 
   assert(RetimingPath.size() == 1 && "Path stack corrupt!");
@@ -667,27 +556,52 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
 
 void ScheduleEmitter::emitSchedule() {
   Function &F = VM;
-
   BasicBlock &Entry = F.getEntryBlock();
 
-  SmallVector<BasicBlock*, 4> RetimingPath;
-  RetimingPath.push_back(0);
+  G.sortSUs(top_sort_schedule_wrapper);
 
-  VASTValPtr StartPort = VM.getPort(VASTModule::Start).getValue();
+  OldSlots.splice(OldSlots.begin(), VM.getSLotList(),
+                  VM.slot_begin(), VM.slot_end());
+  // Remove the successors of the start slot, we will reconstruct them.
+  VM.createStartSlot();
   VASTSlot *StartSlot = VM.getStartSlot();
+  StartSlot->unlinkSuccs();
+
+  VASTSlot *OldStart = OldSlots.begin();
+
+  // Create the virtual slot representing the idle loop.
+  VASTValue *StartPort = VM.getPort(VASTModule::Start).getValue();
+  VASTSlot *IdleSlotGrp
+    = createSubGroup(0, Builder.buildNotExpr(StartPort), StartSlot);
+  addSuccSlot(IdleSlotGrp, StartSlot, Builder.buildNotExpr(StartPort));
+
+  // Create the virtual slot represent the entry of the CFG.
+  VASTSlot *EntryGrp = createSubGroup(&Entry, StartPort, StartSlot);
+
+  // Emit the copy operation for argument registers.
+  VASTSlot *OldEntryGrp = findSubGroup(OldStart, &Entry);
+  typedef VASTSlot::op_iterator op_iterator;
+  for (op_iterator I = OldEntryGrp->op_begin(); I != OldEntryGrp->op_end(); ++I)
+    if (VASTSeqInst *SeqOp = dyn_cast<VASTSeqInst>(*I))
+      if (isa<Argument>(SeqOp->getValue()))
+        cloneSeqInst(SeqOp, EntryGrp, SeqOp->getPred());
+
+#ifndef NDEBUG
+  // Mark the old slots.
+  for (ilist<VASTSlot>::iterator I = OldSlots.begin(), E = OldSlots.end();
+    I != E; ++I)
+    I->setDead();
+#endif
+
   MutableArrayRef<VASTSchedUnit*> EntrySUs = G.getSUInBB(&Entry);
 
-  if (emitToFirstSlot(StartPort, StartSlot, EntrySUs, RetimingPath)) {
+  if (emitToFirstSlot(StartPort, EntryGrp, EntrySUs)) {
     // Create the landing slot of entry BB if not all SUs in the Entry BB
     // emitted to the idle slot.
-    ++NumSlots;
-    // VASTSlot *S = VM.createSlot(LandingSlotNum[&Entry], &Entry);
-    // LandingSlots[&Entry] = S;
+    VASTSlot *S = getOrCreateLandingSlot(&Entry);
     // Go to the new slot if the start port is true.
-    // addSuccSlot(VM.getStartSlot(), S, StartPort);
+    addSuccSlot(EntryGrp, S, StartPort);
   }
-
-  assert(RetimingPath.size() == 1 && "Path stack corrupt!");
 
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
@@ -701,8 +615,6 @@ void ScheduleEmitter::emitSchedule() {
 
 void VASTSchedGraph::emitSchedule(VASTModule &VM) {
   ScheduleEmitter Emitter(VM, *this);
-
-  Emitter.initialize();
 
   Emitter.emitSchedule();
 }

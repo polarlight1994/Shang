@@ -86,6 +86,7 @@ public:
   VASTRegister *getRegister() const;
   VASTValue *getReady() const { return cast<VASTValue>(SlotReady); }
   VASTValue *getActive() const { return cast<VASTValue>(SlotActive); }
+  VASTUse &getPred() { return SlotPred; }
 
   void addOperation(VASTSeqOp *D) { Operations.push_back(D); }
   typedef OpVector::const_iterator const_op_iterator;

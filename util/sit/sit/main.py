@@ -91,7 +91,7 @@ def main(builtinParameters = {}):
   # HLS options
   option_space_dict['vast_disable_mux_slack'] = [ 'true' ]
   option_space_dict['shang_enable_mux_pipelining'] = [ 'false' ]
-  option_space_dict['shang_baseline_scheduling_only'] = [ 'true' ]
+  option_space_dict['shang_baseline_scheduling_only'] = [ 'false' ]
   option_space_dict['shang_enable_memory_optimization'] = [ 'true' ]
   option_space_dict['shang_enable_memory_partition'] = [ 'true' ]
   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
