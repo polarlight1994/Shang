@@ -442,7 +442,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
     // Is the value defined in this slot?
     if (VI->Defs.test(ChildNode->SlotNum)) {
       // The current slot is defined, but also killed!
-      // if (ChildNode == UseSlot) VI->DefKills.set(UseSlot->SlotNum);
+      if (ChildNode == UseSlot) VI->DefKills.set(UseSlot->SlotNum);
 
       // If we can reach a define slot, the define slot is not dead.
       VI->Kills.reset(ChildNode->SlotNum);
