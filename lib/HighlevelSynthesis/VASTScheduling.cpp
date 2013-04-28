@@ -780,13 +780,16 @@ void VASTScheduling::fixSchedulingGraph() {
         if (BBExit == U) continue;
       }
 
-      // The SU maybe a PHI incoming copy targeting a back edge.
-      if (BBExit->getIdx() < U->getIdx()) {
-        assert(isa<PHINode>(U->getInst()) && "Unexpected instruction type!");
-        // Create the pseudo dependencies to the exit node.
+      // Only need to create the pseudo dependencies to the exit node. Because
+      // the PHI node will always be scheduled to the same slot as the terminator.
+      if (U->isPHILatch()) {
         G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
         continue;
       }
+
+      // The only chance that U's idx bigger than BBExit's idx is when U is
+      // a PHI node, which is handled above.
+      assert(BBExit->getIdx() >= U->getIdx() && "Unexpected index order!");
 
       // Allocate 1 cycles for the scheduling units that launching some operations.
       unsigned Latency = U->isLatch() ? 0 : 1;

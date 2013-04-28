@@ -225,7 +225,7 @@ public:
   }
 
   bool isPHILatch() const {
-    return isa<PHINode>(getInst()) && isLatch();
+    return SeqOp && isa<PHINode>(getInst()) && isLatch();
   }
 
   Instruction *getInst() const { return Ptr.get<Instruction*>(); }
