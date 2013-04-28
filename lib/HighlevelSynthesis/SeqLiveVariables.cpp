@@ -186,18 +186,24 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
   // register before its uses due to dominance properties of SSA (except for PHI
   // nodes, which are treated as a special case).
   VASTSlot *Entry = VM->getStartSlot();
+  VASTSlot *IdleSubGrp = Entry->getSubGroup(0);
+  assert(IdleSubGrp && "Idle subgroup does not exist?");
+
   std::set<VASTSlot*> Visited;
   std::vector<VASTSlot*> NodeStack;
   std::vector<VASTSlot::succ_iterator> ChildItStack;
 
+  // Start from the Idle subgroup.
+  NodeStack.push_back(IdleSubGrp);
+  // Visit the child of the entry slot: Idle Group.
+  handleSlot(Entry, NodeStack);
   NodeStack.push_back(Entry);
   ChildItStack.push_back(NodeStack.back()->succ_begin());
 
   // Prevent the entry node from being visited twice.
   Visited.insert(Entry);
-  handleSlot(Entry, NodeStack);
 
-  while (!NodeStack.empty()) {
+  while (NodeStack.size() > 1) {
     VASTSlot *CurSlot = NodeStack.back();
     VASTSlot::succ_iterator It = ChildItStack.back();
 
@@ -229,7 +235,6 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
   return false;
 }
 
-void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector &PathFromEntry) {
 static void setLandingSlots(VASTSlot *S, SparseBitVector<> &Landings) {
   typedef df_iterator<VASTSlot*> slot_df_iterator;
   for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
@@ -280,6 +285,7 @@ void SeqLiveVariables::initializeLandingSlot() {
   }
 }
 
+void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
   std::set<VASTSeqValue*> ReadAtSlot;
 
   typedef VASTSlot::const_op_iterator op_iterator;
@@ -394,7 +400,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
 }
 
 void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
-                                 PathVector &PathFromEntry) {
+                                 PathVector PathFromEntry) {
   // The timing information is not avaliable.
   if (Use->empty()) return;
 
@@ -402,10 +408,27 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   VASTSlot *DefSlot = 0;
 
   // Walking backward to find the corresponding definition.
-  typedef PathVector::const_reverse_iterator path_iterator;
+  // Provide the path which stop at prior slot (not a subgroup of the slot),
+  // otherwise we will calculate a wrong define slot when the current slot is
+  // a virtual slot. Consider the following example:
+  //   S1 <- D1
+  //   S2 <- D2
+  //   S3' <- U1
+  // In the example, there is definition D1 at S1 and definition D2 at S2.
+  // There is a read U1 at S3', the subgroup of S2. For U1, it reads the value
+  // produced by D1 instead of D2, because D2 and U1 are actually scheduled
+  // to the same slot, hence the assignment at S2 is not available at S3'.
+  bool IgnoreDefSlot = UseSlot->IsVirtual;
+  typedef PathVector::reverse_iterator path_iterator;
   for (path_iterator I = PathFromEntry.rbegin(), E = PathFromEntry.rend();
        I != E; ++I) {
     VASTSlot *S = *I;
+    if (IgnoreDefSlot) {
+
+      if (!S->IsVirtual) IgnoreDefSlot = false;
+
+      continue;
+    }
 
     // Find the nearest written slot in the path.
     if (isWrittenAt(Use, S)) {
@@ -415,10 +438,11 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   }
 
   if (!DefSlot) {
-    dbgs() << "Dumping path:\n";
-      typedef PathVector::const_iterator iterator;
-      for (iterator I = PathFromEntry.begin(), E = PathFromEntry.end(); I != E; ++I)
-        dbgs() << (*I)->SlotNum << '\n';
+    dbgs() << "Dumping path:[\n";
+    typedef PathVector::iterator iterator;
+    for (iterator I = PathFromEntry.begin(), E = PathFromEntry.end(); I != E; ++I)
+      dbgs() << (*I)->SlotNum << '\n';
+    dbgs() << "]\n";
 
     Use->dumpFanins();
 
@@ -435,7 +459,8 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   VarInfo *VI = getVarInfo(VarName(Use, DefSlot));
 
   if (UseSlot == DefSlot) {
-    assert(UseSlot->SlotNum == 0 && "Unexpected Cycle!");
+    assert(UseSlot->IsVirtual && UseSlot->getParent() == 0
+           && "Unexpected Cycle!");
     VI->DefKills.set(UseSlot->SlotNum);
 
     // If we can reach a define slot, the define slot is not dead.

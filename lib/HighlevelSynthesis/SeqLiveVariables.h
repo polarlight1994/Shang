@@ -17,6 +17,7 @@
 #include "shang/VASTModulePass.h"
 
 #include "llvm/IR/Value.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/ilist.h"
 #include "llvm/ADT/SparseBitVector.h"
 #include "llvm/ADT/PointerIntPair.h"
@@ -113,10 +114,11 @@ public:
 
   void print(raw_ostream &OS) const;
 private:
-  typedef const std::vector<VASTSlot*> PathVector;
-  void handleSlot(VASTSlot *S, PathVector &PathFromEntry);
-  void handleUse(VASTSeqValue *Use, VASTSlot *UseSlot, PathVector &PathFromEntry);
+  typedef ArrayRef<VASTSlot*> PathVector;
+  void handleSlot(VASTSlot *S, PathVector PathFromEntry);
+  void handleUse(VASTSeqValue *Use, VASTSlot *UseSlot, PathVector PathFromEntry);
   void handleDef(VASTLatch D);
+  void initializeLandingSlot();
 
   struct VarName {
     VASTSeqValue *Dst;
