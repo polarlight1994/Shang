@@ -102,6 +102,8 @@ public:
 
   bool hasNextSlot(VASTSlot *NextSlot) const;
 
+  VASTSlot *getSubGroup(BasicBlock *BB) const;
+
   void addSuccSlot(VASTSlot *NextSlot);
 
   bool isSynthesized() const { return !SlotReg.isInvalid(); }

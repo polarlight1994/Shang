@@ -95,23 +95,8 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
     return S;
   }
 
-  static VASTSlot *findSubGroup(VASTSlot *S, BasicBlock *BB) {
-    VASTSlot *SubGrp = 0;
-    typedef VASTSlot::succ_iterator iterator;
-    for (iterator I = S->succ_begin(), E = S->succ_end(); I != E; ++I){
-      VASTSlot *Succ = *I;
-
-      if (!Succ->IsVirtual || Succ->getParent() != BB) continue;
-
-      assert(SubGrp == 0 && "Unexpected multiple subgroup with the same BB!");
-      SubGrp = Succ;
-    }
-
-    return SubGrp;
-  }
-
   VASTSlot *getOrCreateSubGroup(BasicBlock *BB, VASTValPtr Cnd, VASTSlot *S) {
-    VASTSlot *SubGrp = findSubGroup(S, BB);
+    VASTSlot *SubGrp = S->getSubGroup(BB);
 
     if (SubGrp) {
       assert(SubGrp->getPred() == Cnd && "Inconsistent guarding conditions!");
@@ -582,7 +567,7 @@ void ScheduleEmitter::emitSchedule() {
   VASTSlot *EntryGrp = getOrCreateSubGroup(&Entry, StartPort, StartSlot);
 
   // Emit the copy operation for argument registers.
-  VASTSlot *OldEntryGrp = findSubGroup(OldStart, &Entry);
+  VASTSlot *OldEntryGrp = OldStart->getSubGroup(&Entry);
   typedef VASTSlot::op_iterator op_iterator;
   for (op_iterator I = OldEntryGrp->op_begin(); I != OldEntryGrp->op_end(); ++I)
     if (VASTSeqInst *SeqOp = dyn_cast<VASTSeqInst>(*I))

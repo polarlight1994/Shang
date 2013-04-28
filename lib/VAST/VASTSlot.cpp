@@ -125,6 +125,21 @@ void VASTSlot::addSuccSlot(VASTSlot *NextSlot) {
   NextSlots.push_back(NextSlot);
 }
 
+VASTSlot *VASTSlot::getSubGroup(BasicBlock *BB) const {
+  VASTSlot *SubGrp = 0;
+  typedef VASTSlot::const_succ_iterator iterator;
+  for (iterator I = succ_begin(), E = succ_end(); I != E; ++I){
+    VASTSlot *Succ = *I;
+
+    if (!Succ->IsVirtual || Succ->getParent() != BB) continue;
+
+    assert(SubGrp == 0 && "Unexpected multiple subgroup with the same BB!");
+    SubGrp = Succ;
+  }
+
+  return SubGrp;
+}
+
 void VASTSlot::print(raw_ostream &OS) const {
   OS << "Slot#"<< SlotNum << " Pred: ";
   for (const_pred_iterator I = pred_begin(), E = pred_end(); I != E; ++I)
