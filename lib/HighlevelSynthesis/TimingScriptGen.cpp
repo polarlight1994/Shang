@@ -19,6 +19,7 @@
 //===----------------------------------------------------------------------===//
 #include "SeqLiveVariables.h"
 #include "STGShortestPath.h"
+#include "TimingNetlist.h"
 
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
@@ -64,31 +65,35 @@ namespace{
 struct TimingScriptGen;
 
 struct PathIntervalQueryCache {
+  TimingNetlist &TNL;
   SeqLiveVariables &SLV;
   STGShortestPath &SSP;
   VASTSeqValue *Dst;
   raw_ostream &OS;
   const uint32_t Inf;
 
-  typedef std::map<VASTSeqValue*, std::set<unsigned> > SrcIntervalMapTy;
+  typedef std::map<VASTSeqValue*, std::map<unsigned, float> > SrcIntervalMapTy;
   SrcIntervalMapTy CyclesFromSrc;
 
   typedef DenseMap<VASTSeqValue*, unsigned> SeqValSetTy;
   typedef DenseMap<VASTValue*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
 
-  PathIntervalQueryCache(SeqLiveVariables &SLV,  STGShortestPath &SSP,
-                         VASTSeqValue *Dst, raw_ostream &OS)
-    : SLV(SLV), SSP(SSP), Dst(Dst), OS(OS), Inf(STGShortestPath::Inf) {}
+  PathIntervalQueryCache(TimingNetlist &TNL, SeqLiveVariables &SLV,
+                         STGShortestPath &SSP, VASTSeqValue *Dst,
+                         raw_ostream &OS)
+    : TNL(TNL), SLV(SLV), SSP(SSP), Dst(Dst), OS(OS), Inf(STGShortestPath::Inf)
+  {}
 
   void reset() {
     QueryCache.clear();
     CyclesFromSrc.clear();
   }
 
-  void addIntervalFromSrc(VASTSeqValue *Src, unsigned Interval) {
+  void addIntervalFromSrc(VASTSeqValue *Src, unsigned Interval, float Delay) {
     assert(Interval && "unexpected zero interval!");
-    CyclesFromSrc[Src].insert(Interval);
+    float &OldDelay = CyclesFromSrc[Src][Interval];
+    OldDelay = std::max(OldDelay, Delay);
   }
 
   bool annotateSubmoduleLatency(VASTSeqValue * V);
@@ -122,11 +127,11 @@ struct PathIntervalQueryCache {
 
   void insertMCPEntries() const;
   // Bind multi-cycle path constraints to the scripting engine.
-  unsigned insertMCPWithInterval(VASTSeqValue *Src,
+  unsigned insertMCPWithInterval(VASTSeqValue *Src, float NormalizedDelay,
                                  unsigned Interval, bool SkipThu) const;
 
-  unsigned writeInsertWithIntervalFrom(raw_ostream &OS, VASTSeqValue *Src,
-                                     unsigned Interval) const;
+  unsigned writeThuNodes(raw_ostream &OS, VASTSeqValue *Src,
+                                       unsigned Interval) const;
 
   typedef SrcIntervalMapTy::mapped_type::const_iterator interval_iterator;
   typedef SrcIntervalMapTy::const_iterator src_iterator;
@@ -146,12 +151,13 @@ struct TimingScriptGen : public VASTModulePass {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequired<SeqLiveVariables>();
     AU.addRequired<STGShortestPath>();
+    AU.addRequired<TimingNetlist>();
     AU.addRequired<DataLayout>();
     AU.setPreservesAll();
   }
 
-  void writeConstraintsFor(VASTSeqValue *Dst, SeqLiveVariables &SLV,
-                           STGShortestPath &SSP);
+  void writeConstraintsFor(VASTSeqValue *Dst, TimingNetlist &TNL,
+                           SeqLiveVariables &SLV, STGShortestPath &SSP);
 
   void extractTimingPaths(PathIntervalQueryCache &Cache,
                           ArrayRef<VASTSlot*> ReadSlots,
@@ -166,7 +172,8 @@ struct TimingScriptGen : public VASTModulePass {
        src TEXT, \
        dst TEXT, \
        thu TEXT, \
-       cycles INTEGER \
+       cycles INTEGER, \
+       normalized_delay REAL \
        );\n";
 
     return false;
@@ -215,7 +222,7 @@ bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
        I != E; ++I) {
     VASTSeqValue *Operand = *I;
-    addIntervalFromSrc(Operand, Latency);
+    addIntervalFromSrc(Operand, Latency, float(Latency));
   }
 
   return true;
@@ -275,28 +282,15 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
 
       unsigned Interval = getMinimalInterval(V, ReadSlots);
 
-      //if (TNL) {
-      //  unsigned EstimatedCycles = TNL->getDelay(V, Root, Dst).getNumCycles();
-      //  if (EstimatedCycles > Interval) {
-      //    /*DEBUG(*/dbgs() << "Timing violation detected: "
-      //      << V->getName() << " -> " << Dst->getName() <<  "\n";
-      //    V->dumpFanins();
-      //    dbgs() << "\tDst: ";
-      //    Dst->dumpFanins();
-      //    dbgs() << "\tExpected " << EstimatedCycles << " available: "
-      //           << Interval << '\n';
-      //    ++NumTimingViolation;
-      //  }
-      //}
-
       bool inserted = LocalInterval.insert(std::make_pair(V, Interval)).second;
       assert(inserted && "Node had already been visited?");
       unsigned &ExistedInterval = ParentReachableRegs[V];
       if (ExistedInterval == 0 || Interval < ExistedInterval)
         ExistedInterval = Interval;
 
+      float EstimatedDelay = TNL.getDelay(V, Root, Dst).getNormalizedDelay();
       // Add the information to statistics.
-      addIntervalFromSrc(V, Interval);
+      addIntervalFromSrc(V, Interval, EstimatedDelay);
       continue;
     }
 
@@ -391,10 +385,8 @@ void PathIntervalQueryCache::dump() const {
   }
 }
 
-unsigned PathIntervalQueryCache::writeInsertWithIntervalFrom(raw_ostream &OS,
-                                                             VASTSeqValue *Src,
-                                                             unsigned Interval)
-                                                             const {
+unsigned PathIntervalQueryCache::writeThuNodes(raw_ostream &OS, VASTSeqValue *Src,
+                                               unsigned Interval) const {
   unsigned NumNodesPrinted = 0;
 
   typedef QueryCacheTy::const_iterator it;
@@ -414,9 +406,10 @@ unsigned PathIntervalQueryCache::writeInsertWithIntervalFrom(raw_ostream &OS,
 // The first node of the path is the use node and the last node of the path is
 // the define node.
 unsigned PathIntervalQueryCache::insertMCPWithInterval(VASTSeqValue *Src,
+                                                       float NormalizedDelay,
                                                        unsigned Interval,
                                                        bool IsLB) const {
-  OS << "INSERT INTO mcps(src, dst, thu, cycles) VALUES(\n";
+  OS << "INSERT INTO mcps(src, dst, thu, cycles, normalized_delay) VALUES(\n";
   
   OS << '\'';
   writeObjectName(OS, Src);
@@ -427,11 +420,12 @@ unsigned PathIntervalQueryCache::insertMCPWithInterval(VASTSeqValue *Src,
   OS << "', \n";
 
   OS << '\'';
-  if (IsLB || (writeInsertWithIntervalFrom(OS, Src, Interval) == 0))
+  if (IsLB || (writeThuNodes(OS, Src, Interval) == 0))
     OS << "shang-null-node";
   OS << "', \n";
 
-  OS << Interval << ");\n";
+  OS << Interval << ", \n";
+  OS << NormalizedDelay << ");\n";
 
   return 1;
 }
@@ -448,7 +442,8 @@ void PathIntervalQueryCache::insertMCPEntries() const {
 
     for (interval_iterator SI = Intervals.begin(), SE = Intervals.end();
          SI != SE; ++SI) {
-      unsigned Interval = *SI;
+      unsigned Interval = SI->first;
+      float CriticalDelay = SI->second;
       assert(Interval > LastInterval && "Bad iterate order!");
       LastInterval = Interval;
 
@@ -470,7 +465,8 @@ void PathIntervalQueryCache::insertMCPEntries() const {
       // through nodes, this make quartus assume that all paths from src to dst
       // are at least have N cycles available, where N equals to the value of
       // variable "Interval".
-      unsigned NumThuNodes = insertMCPWithInterval(Src, Interval, IsLB);
+      unsigned NumThuNodes
+        = insertMCPWithInterval(Src, CriticalDelay, Interval, IsLB);
       NumConstraints += std::max(1u, NumThuNodes);
 
       if (NumThuNodes == 0 && !IsLB && Interval > 1 && Interval != Inf) {
@@ -490,6 +486,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
   SeqLiveVariables &SLV = getAnalysis<SeqLiveVariables>();
   STGShortestPath &SSP = getAnalysis<STGShortestPath>();
+  TimingNetlist &TNL =getAnalysis<TimingNetlist>();
 
   //Write the timing constraints.
   typedef VASTModule::seqval_iterator seqval_iterator;
@@ -498,14 +495,15 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
     if (V->empty()) continue;
 
-    writeConstraintsFor(V, SLV, SSP);
+    writeConstraintsFor(V, TNL, SLV, SSP);
   }
 
   return false;
 }
 
 void
-TimingScriptGen::writeConstraintsFor(VASTSeqValue *Dst, SeqLiveVariables &SLV,
+TimingScriptGen::writeConstraintsFor(VASTSeqValue *Dst, TimingNetlist &TNL,
+                                     SeqLiveVariables &SLV,
                                      STGShortestPath &SSP) {
   DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> > DatapathMap;
 
@@ -521,7 +519,7 @@ TimingScriptGen::writeConstraintsFor(VASTSeqValue *Dst, SeqLiveVariables &SLV,
     DatapathMap[((VASTValPtr)DstLatch).get()].push_back(ReadSlot);
   }
 
-  PathIntervalQueryCache Cache(SLV, SSP, Dst, OS);
+  PathIntervalQueryCache Cache(TNL, SLV, SSP, Dst, OS);
   typedef DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> >::iterator it;
   for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
     extractTimingPaths(Cache, I->second, I->first);
@@ -545,7 +543,7 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
     }
 
     int Interval = Cache.getMinimalInterval(Src, ReadSlots);
-    Cache.addIntervalFromSrc(Src, Interval);
+    Cache.addIntervalFromSrc(Src, Interval, 0);
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
     // reg_a <= c + x;
