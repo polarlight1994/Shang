@@ -32,7 +32,9 @@ struct ControlLogicSynthesis : public VASTModulePass {
   VASTModule *VM;
 
   void addSlotDisable(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    Builder->orEqual(SlotDisables[S->getValue()][P], Cnd);
+    bool inserted
+      = SlotDisables[S->getValue()][P].insert(std::make_pair(S, Cnd)).second;
+    assert(inserted && "Predicated value had already existed!");
   }
 
   void addSlotReady(VASTSlot *S, VASTValue *V, VASTValPtr Cnd) {
@@ -40,14 +42,19 @@ struct ControlLogicSynthesis : public VASTModulePass {
   }
 
   void addSlotEnable(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    Builder->orEqual(SlotEnables[S->getValue()][P], Cnd);
+    bool inserted
+      = SlotEnables[S->getValue()][P].insert(std::make_pair(S, Cnd)).second;
+    assert(inserted && "Predicated value had already existed!");
   }
 
   void addSlotSucc(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    Builder->orEqual(SlotSuccs[S->getValue()][P], Cnd);
+    bool inserted
+      = SlotSuccs[S->getValue()][P].insert(std::make_pair(S, Cnd)).second;
+    assert(inserted && "Predicated value had already existed!");
   }
 
-  typedef std::map<VASTSeqValue*, VASTValPtr> FUCtrlVecTy;
+  typedef std::map<VASTSlot*, VASTValPtr> ConditionVector;
+  typedef std::map<VASTSeqValue*, ConditionVector> FUCtrlVecTy;
   typedef FUCtrlVecTy::const_iterator const_fu_ctrl_it;
   std::map<const VASTSeqValue*, FUCtrlVecTy> SlotEnables, SlotDisables, SlotSuccs;
 
@@ -167,27 +174,30 @@ void ControlLogicSynthesis::buildSlotReadyLogic(VASTSlot *S) {
 
 void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
   typedef const_fu_ctrl_it succ_cnd_iterator;
+  typedef ConditionVector::const_iterator cnd_iterator;
 
-  VASTValPtr SelfLoopCnd;
+  SmallVector<VASTValPtr, 2> LoopCndVector;
   VASTValPtr AlwaysTrue = VASTImmediate::True;
 
   assert(!S->succ_empty() && "Expect at least 1 next slot!");
   const FUCtrlVecTy &NextSlots = getSlotSucc(S);
   for (succ_cnd_iterator I = NextSlots.begin(),E = NextSlots.end(); I != E; ++I) {
     VASTSeqValue *NextSlotReg = I->first;
-    if (NextSlotReg == S->getValue()) SelfLoopCnd = I->second;
-    // Build the assignment and update the successor branching condition.
-    VM->assignCtrlLogic(NextSlotReg, AlwaysTrue, S, I->second, true);
-  }
+    bool IsLoop = NextSlotReg == S->getValue();
+    const ConditionVector &Cnds = I->second;
+    for (cnd_iterator CI = Cnds.begin(), CE = Cnds.end(); CI != CE; ++CI) {
+      VASTValPtr Cnd = CI->second;
+      // Disable the current slot when we are not looping back.
+      if (IsLoop) LoopCndVector.push_back(Builder->buildNotExpr(Cnd));
 
-  SmallVector<VASTValPtr, 2> CndVector;
-  // Disable the current slot when we are not looping back.
-  if (SelfLoopCnd)
-    CndVector.push_back(Builder->buildNotExpr(SelfLoopCnd));
+      // Build the assignment and update the successor branching condition.
+      VM->assignCtrlLogic(NextSlotReg, AlwaysTrue, CI->first, Cnd, true);
+    }
+  }
 
   // Disable the current slot. Do not export the definition of the assignment.
   VM->assignCtrlLogic(S->getValue(), VASTImmediate::False, S,
-                      Builder->buildAndExpr(CndVector, 1),
+                      Builder->buildAndExpr(LoopCndVector, 1),
                       true/*, false*/);
 
   if (const FUCtrlVecTy *EnableSet = getEnableSet(S))
@@ -195,16 +205,17 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
          I != E; ++I) {
       // No need to wait for the slot ready.
       // We may try to enable and disable the same port at the same slot.
-      CndVector.clear();
-      CndVector.push_back(S->getValue());
-      VASTValPtr ReadyCnd
-        = Builder->buildAndExpr(S->getReady()->getAsInlineOperand(false),
-                                I->second.getAsInlineOperand(), 1);
-      // No need to export the definition of the enable assignment, it is never
-      // use inside the module.
-      VM->assignCtrlLogic(I->first, ReadyCnd, S,
-                          Builder->buildAndExpr(CndVector, 1),
-                          false, false);
+      const ConditionVector &Cnds = I->second;
+      for (cnd_iterator CI = Cnds.begin(), CE = Cnds.end(); CI != CE; ++CI) {
+        VASTValPtr Cnd = CI->second;
+        VASTValPtr ReadyCnd
+          = Builder->buildAndExpr(S->getReady()->getAsInlineOperand(false),
+                                  Cnd.getAsInlineOperand(), 1);
+        // No need to export the definition of the enable assignment, it is never
+        // use inside the module.
+        VM->assignCtrlLogic(I->first, ReadyCnd, CI->first, S->getValue(),
+                            false, false);
+      }
     }
 
   SmallVector<VASTValPtr, 4> DisableAndCnds;
@@ -218,16 +229,21 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
       // ok that the port is enabled.
       if (isEnabled(S, I->first)) continue;
 
-      DisableAndCnds.push_back(S->getValue());
-      DisableAndCnds.push_back(I->second);
+      const ConditionVector &Cnds = I->second;
+      for (cnd_iterator CI = Cnds.begin(), CE = Cnds.end(); CI != CE; ++CI) {
+        VASTValPtr Cnd = CI->second;
 
-      VASTSeqValue *En = I->first;
-      // No need to export the definition of the disable assignment, it is never
-      // use inside the module.
-      VM->assignCtrlLogic(En, VASTImmediate::False, S,
-                          Builder->buildAndExpr(DisableAndCnds, 1),
-                          false, true);
-      DisableAndCnds.clear();
+        DisableAndCnds.push_back(S->getValue());
+        DisableAndCnds.push_back(Cnd);
+
+        VASTSeqValue *En = I->first;
+        // No need to export the definition of the disable assignment, it is never
+        // use inside the module.
+        VM->assignCtrlLogic(En, VASTImmediate::False, CI->first,
+                            Builder->buildAndExpr(DisableAndCnds, 1),
+                            false, true);
+        DisableAndCnds.clear();
+      }
     }
 }
 
