@@ -48,6 +48,8 @@ void SeqLiveVariables::VarInfo::print(raw_ostream &OS) const {
   ::dump(Kills, OS);
   OS << "\n  Killed-Defined: ";
   ::dump(DefKills, OS);
+  OS << "\n  Landings: ";
+  ::dump(Landings, OS);
   OS << "\n";
 }
 
@@ -218,6 +220,8 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
     ChildItStack.push_back(NodeStack.back()->succ_begin());
   }
 
+  initializeLandingSlot();
+
 #ifndef NDEBUG
   verifyAnalysis();
 #endif
@@ -226,6 +230,56 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
 }
 
 void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector &PathFromEntry) {
+static void setLandingSlots(VASTSlot *S, SparseBitVector<> &Landings) {
+  typedef df_iterator<VASTSlot*> slot_df_iterator;
+  for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
+    VASTSlot *Child = *DI;
+
+    // Ignore the current slot and any immediate reachable subgroups.
+    if (Child == S || Child->IsVirtual) {
+      ++DI;
+      continue;
+    }
+
+    Landings.set(Child->SlotNum);
+    DI.skipChildren();
+  }
+
+  DEBUG(dbgs() << "Slot #" << S->SlotNum << " landing: ";
+  ::dump(Landings, dbgs()));
+}
+
+void SeqLiveVariables::initializeLandingSlot() {
+  // Setup the linding slot map.
+  std::map<unsigned, SparseBitVector<> > LandingMap;
+  typedef VASTModule::slot_iterator slot_iterator;
+  for (slot_iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
+    VASTSlot *S = I;
+    setLandingSlots(S, LandingMap[S->SlotNum]);
+  }
+
+  for (var_iterator I = VarList.begin(), E = VarList.end(); I != E; ++I) {
+    VarInfo *VI = I;
+
+    typedef SparseBitVector<>::iterator iterator;
+    SparseBitVector<> CurLandings;
+    for (iterator DI = VI->Defs.begin(), DE = VI->Defs.end(); DI != DE; ++DI) {
+      unsigned DefSlotNum = *DI;
+      std::map<unsigned, SparseBitVector<> >::const_iterator
+        at = LandingMap.find(DefSlotNum);
+      assert(at != LandingMap.end() && "Landing information does not exist!");
+      CurLandings |= at->second;
+    }
+
+    // Trim the unreachable slots from the landing slot.
+    for (iterator LI = CurLandings.begin(), LE = CurLandings.end();
+         LI != LE; ++LI) {
+      unsigned Landing = *LI;
+      if (VI->isSlotReachable(Landing)) VI->Landings.set(Landing);
+    }
+  }
+}
+
   std::set<VASTSeqValue*> ReadAtSlot;
 
   typedef VASTSlot::const_op_iterator op_iterator;
@@ -515,27 +569,34 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
   if (VI == 0) return STGShortestPath::Inf;
 
   // Calculate the Shortest path distance from all live-in slot.
-  unsigned IntervalFromLiveIn = STGShortestPath::Inf;
+  unsigned IntervalFromLanding = STGShortestPath::Inf;
   typedef SparseBitVector<>::iterator def_iterator;
-  for (def_iterator I = VI->Defs.begin(), E = VI->Defs.end();
+  for (def_iterator I = VI->Landings.begin(), E = VI->Landings.end();
        I != E; ++I) {
-    unsigned DefSlotNum = *I;
-    unsigned CurInterval = SSP->getShortestPath(DefSlotNum, ReadSlotNum);
+    unsigned LandingSlotNum = *I;
+
+    // Directly read at the landing slot, the interval is 0.
+    if (LandingSlotNum == ReadSlotNum) {
+      IntervalFromLanding = 0;
+      break;
+    }
+
+    unsigned CurInterval = SSP->getShortestPath(LandingSlotNum, ReadSlotNum);
     if (CurInterval >= STGShortestPath::Inf) {
       dbgs() << "Read at slot: " << ReadSlotNum << '\n';
-      dbgs() << "Def slot: " << DefSlotNum << '\n';
+      dbgs() << "Landing slot: " << LandingSlotNum << '\n';
       VI->dump();
       dbgs() <<  "Alive slot not reachable?\n";
       continue;
     }
 
-    IntervalFromLiveIn = std::min(IntervalFromLiveIn, CurInterval);
+    IntervalFromLanding = std::min(IntervalFromLanding, CurInterval);
   }
 
-  assert(IntervalFromLiveIn < STGShortestPath::Inf && "No live-in?");
-  // assert(IntervalFromLiveIn);
+  assert(IntervalFromLanding < STGShortestPath::Inf && "No live-in?");
+
   // The is 1 extra cycle from the definition to live in.
-  return 1;
+  return IntervalFromLanding + 1;
 }
 
 SeqLiveVariables::VarInfo *SeqLiveVariables::getUniqueVarInfo(VASTSeqValue *V) {

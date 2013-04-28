@@ -86,6 +86,9 @@ public:
     ///
     SparseBitVector<> DefKills;
 
+    /// Landings - The slots immediately reachable by the define slot.
+    SparseBitVector<> Landings;
+
     void initializeDefSlot(unsigned SlotNum) {
       // Initialize the define slot.
       Defs.set(SlotNum);
