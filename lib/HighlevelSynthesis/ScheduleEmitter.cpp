@@ -514,31 +514,29 @@ bool ScheduleEmitter::emitToFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
 
 void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
-  unsigned EntrySlot = SUs[0]->getSchedule();
+  unsigned EntrySchedSlot = SUs[0]->getSchedule();
   // All SUs are scheduled to the same slot with the entry, hence they are all
   // folded to the predecessor of this BB.
-  if (SUs.back()->getSchedule() == EntrySlot) return;
+  if (SUs.back()->getSchedule() == EntrySchedSlot) return;
 
   BasicBlock *BB = SUs[0]->getParent();
-  SmallVector<BasicBlock*, 4> RetimingPath(1, BB);
 
-  unsigned LatestSlot = EntrySlot;
   VASTSlot *CurSlot = LandingSlots[BB];
   assert(CurSlot && "Landing Slot not created?");
   unsigned EntrySlotNum = CurSlot->SlotNum;
-  unsigned EmittedSlotNum = CurrentSlotNum;
+  unsigned EmittedSlotNum = EntrySlotNum;
   
   for (unsigned i = 1; i < SUs.size(); ++i) {
     VASTSchedUnit *CurSU = SUs[i];
-    LatestSlot = CurSU->getSchedule();
+    unsigned CurSchedSlot = CurSU->getSchedule();
 
     // Do not emit the scheduling units at the first slot of the BB. They had
     // already folded in the the last slot of its predecessors.
-    if (LatestSlot == EntrySlot) continue;
+    if (CurSchedSlot == EntrySchedSlot) continue;
 
     // Please note that the EntrySlot is actually folded into its predecessor's
     // last slot, hence we need to minus EntrySlot by 1
-    unsigned CurSlotNum = EntrySlotNum + LatestSlot - EntrySlot - 1;
+    unsigned CurSlotNum = EntrySlotNum + CurSchedSlot - EntrySchedSlot - 1;
     // Create the slot if it is not created.
     while (CurSlotNum != EmittedSlotNum) {
       VASTSlot *NextSlot = createSlot(BB);
@@ -549,8 +547,6 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
 
     emitToSlot(CurSU->getSeqOp(), VASTImmediate::True, CurSlot);
   }
-
-  assert(RetimingPath.size() == 1 && "Path stack corrupt!");
 }
 
 
