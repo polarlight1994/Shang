@@ -43,6 +43,7 @@ print constraints_to_generate
 
 for i in range(0, constraints_to_generate):
   row = rows[i]
-  generate_constraint(src=row[1], dst=row[2], thu=row[3], cycles=row[4])
+  for thu in row[3].split() :
+    generate_constraint(src=row[1], dst=row[2], thu=thu, cycles=row[4])
 
 sdc_script.close()
