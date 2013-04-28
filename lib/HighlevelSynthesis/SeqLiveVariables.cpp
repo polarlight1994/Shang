@@ -80,12 +80,8 @@ void SeqLiveVariables::VarInfo::verify() const {
 char SeqLiveVariables::ID = 0;
 char &llvm::SeqLiveVariablesID = SeqLiveVariables::ID;
 
-INITIALIZE_PASS_BEGIN(SeqLiveVariables, "SeqLiveVariables", "SeqLiveVariables",
-                      false, true)
-  INITIALIZE_PASS_DEPENDENCY(BBLandingSlots)
-  INITIALIZE_PASS_DEPENDENCY(DominatorTree)
-INITIALIZE_PASS_END(SeqLiveVariables, "SeqLiveVariables", "SeqLiveVariables",
-                    false, true)
+INITIALIZE_PASS(SeqLiveVariables, "shang-seq-live-variables",
+                "Seq Live Variables Analysis", false, true)
 
 Pass *llvm::createSeqLiveVariablesPass() {
   return new SeqLiveVariables();

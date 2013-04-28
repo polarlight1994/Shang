@@ -9,7 +9,6 @@ add_llvm_library(ShangHLS
   CFGFoldingAnalysis.cpp
   SchedulerBase.cpp
   SDCScheduler.cpp
-  BBLandingSlots.cpp
   SeqLiveVariables.cpp
   STGShortestPath.cpp
   SeqSelectorSynthesis.cpp
