@@ -84,13 +84,6 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
     return RetimedV;
   }
 
-  VASTSlot *createSubGroup(BasicBlock *BB, VASTValPtr Cnd, VASTSlot *S) {
-    ++NumSubGropus;
-    VASTSlot *SubGrp = VM.createSlot(++CurrentSlotNum, BB, Cnd, true);
-    S->addSuccSlot(SubGrp);
-    return SubGrp;
-  }
-
   VASTSlot *createSlot(BasicBlock *BB) {
     ++NumSlots;
     return VM.createSlot(++CurrentSlotNum, BB);
@@ -114,7 +107,21 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
       SubGrp = Succ;
     }
 
-    assert(SubGrp && "Subgroup not created yet?");
+    return SubGrp;
+  }
+
+  VASTSlot *getOrCreateSubGroup(BasicBlock *BB, VASTValPtr Cnd, VASTSlot *S) {
+    VASTSlot *SubGrp = findSubGroup(S, BB);
+
+    if (SubGrp) {
+      assert(SubGrp->getPred() == Cnd && "Inconsistent guarding conditions!");
+      return SubGrp;
+    }
+
+    // Create the subgroup if it does not exist.
+    ++NumSubGropus;
+    SubGrp = VM.createSlot(++CurrentSlotNum, BB, Cnd, true);
+    S->addSuccSlot(SubGrp);
     return SubGrp;
   }
 
@@ -227,7 +234,7 @@ static int top_sort_schedule_wrapper(const void *LHS, const void *RHS) {
 //===----------------------------------------------------------------------===//
 VASTSlotCtrl *ScheduleEmitter::addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
                                            VASTValPtr Cnd, Value *V) {
-  // If the Br is already exist, simply or the conditions together.
+  // If the Br already exist, simply or the conditions together.
   assert(!S->hasNextSlot(NextSlot) && "Edge had already existed!");
   assert((S->getParent() == NextSlot->getParent()
           || NextSlot == VM.getFinishSlot())
@@ -266,7 +273,7 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
     return addSuccSlot(ToSlot, VM.getFinishSlot(), Pred, V);
 
   BasicBlock *TargetBB = Op->getTargetSlot()->getParent();
-  VASTSlot *SubGrp = createSubGroup(TargetBB, Pred, ToSlot);
+  VASTSlot *SubGrp = getOrCreateSubGroup(TargetBB, Pred, ToSlot);
   // Emit the the SUs in the first slot in the target BB.
   // Connect to the landing slot if not all SU in the target BB emitted to
   // current slot.
@@ -288,11 +295,6 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
                                            VASTValPtr Pred) {
   SmallVector<VASTValPtr, 4> RetimedOperands;
 
-  // Find the subgroup for the PHI node. It is supposed to be existed because we
-  // expected the branch operation is emitted prior to the PNI node.
-  if (PHINode *PN = dyn_cast<PHINode>(Op->getValue()))
-    ToSlot = findSubGroup(ToSlot, PN->getParent());
-
   // Retime the predicate operand.
   Pred = Builder.buildAndExpr(retimeDatapath(Op->getPred(), ToSlot), Pred, 1);
 
@@ -307,6 +309,11 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
   typedef VASTOperandList::op_iterator iterator;
   for (iterator I = Op->src_begin(), E = Op->src_end(); I != E; ++I)
     RetimedOperands.push_back(retimeDatapath(*I, ToSlot));
+
+  // Find the subgroup for the PHI node. It is supposed to be existed because we
+  // expected the branch operation is emitted prior to the PNI node.
+  if (PHINode *PN = dyn_cast<PHINode>(Op->getValue()))
+    ToSlot = getOrCreateSubGroup(PN->getParent(), Pred, ToSlot);
 
   VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Pred, Op->getNumSrcs(),
                                       Op->getValue(), Op->getSeqOpType());
@@ -568,11 +575,11 @@ void ScheduleEmitter::emitSchedule() {
   // Create the virtual slot representing the idle loop.
   VASTValue *StartPort = VM.getPort(VASTModule::Start).getValue();
   VASTSlot *IdleSlotGrp
-    = createSubGroup(0, Builder.buildNotExpr(StartPort), StartSlot);
+    = getOrCreateSubGroup(0, Builder.buildNotExpr(StartPort), StartSlot);
   addSuccSlot(IdleSlotGrp, StartSlot, Builder.buildNotExpr(StartPort));
 
   // Create the virtual slot represent the entry of the CFG.
-  VASTSlot *EntryGrp = createSubGroup(&Entry, StartPort, StartSlot);
+  VASTSlot *EntryGrp = getOrCreateSubGroup(&Entry, StartPort, StartSlot);
 
   // Emit the copy operation for argument registers.
   VASTSlot *OldEntryGrp = findSubGroup(OldStart, &Entry);
