@@ -230,8 +230,9 @@ void VASTSchedGraph::prepareForScheduling() {
 }
 
 void VASTSchedGraph::topologicalSortSUs() {
-  for (po_iterator<VASTSchedUnit*> I = po_begin(getEntry()),
-       E = po_end(getEntry()); I != E; ++I) {
+  VASTSchedUnit *Entry = getEntry();
+  typedef po_iterator<VASTSchedUnit*> top_iterator;
+  for (top_iterator I = po_begin(Entry), E = po_end(Entry); I != E; ++I) {
     VASTSchedUnit *U = *I;
     SUnits.splice(SUnits.begin(), SUnits, U);
   }

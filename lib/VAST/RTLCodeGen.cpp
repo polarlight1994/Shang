@@ -120,6 +120,7 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   if (EnalbeDumpIR) {
     Out << "`ifdef wtf_is_this\n" << "Function for RTL Codegen:\n";
     F.print(Out);
+    VM.print(Out);
     Out << "`endif\n";
   }
 
