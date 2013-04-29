@@ -377,17 +377,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
       for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
         VASTLatch U = *DI;
         VASTSlot *DefSlot = U.getSlot();
-        // Create anther VarInfo for the disable operation to the slot.
-        if (DefSlot->SlotNum == SlotNum && !DefSlot->hasNextSlot(DefSlot)) {
-          VarInfo *VI = new VarInfo(0);
-          VarList.push_back(VI);
-          VI->initializeDefSlot(SlotNum);
-          WrittenSlots[V].set(SlotNum);
-
-          VarName VN(V, DefSlot);
-          VarInfos[VN] = VI;
-          continue;
-        }
+        if (DefSlot->SlotNum == SlotNum) continue;
 
         // Initialize the definition slot.
         VI->initializeDefSlot(DefSlot->SlotNum);
