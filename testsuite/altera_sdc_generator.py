@@ -62,7 +62,7 @@ for row in rows:
   normalized_delay = row[5]
   src_pattern = row[1]
   src = "keepers%s" % keeper_map[src_pattern]
-  dst_pattern = row[1]
+  dst_pattern = row[2]
   dst = "keepers%s" % keeper_map[dst_pattern]
   thu_patterns = row[3]
   thu = "nets%s" % net_map[thu_patterns]
