@@ -66,11 +66,22 @@ print constraints_to_generate
 for i in range(0, constraints_to_generate):
   row = rows[i]
   normalized_delay = row[5]
+  thu_patterns = row[3]
+  cycles = row[4]
 #  if normalized_delay > 1.0:
-  for thu_patterns in row[3].split() :
-    src = "keepers%s" % keeper_map[row[1]]
-    dst = "keepers%s" % keeper_map[row[2]]
-    thu = "nets%s" % net_map[thu_patterns]
-    generate_constraint(src=src, dst=dst, thu=thu, cycles=row[4])
+  for thu_pattern in thu_patterns.split() :
+    src_pattern = row[1]
+    src = "keepers%s" % keeper_map[src_pattern]
+    dst_pattern = row[1]
+    dst = "keepers%s" % keeper_map[dst_pattern]
+    thu = "nets%s" % net_map[thu_pattern]
+    generate_constraint(src=src, dst=dst, thu=thu, cycles=cycles)
+    sdc_script.write('else')
+  sdc_script.write(''' { post_message -type warning {Constraints are not able to applied to %(src)s->%(thu)s->%(dst)s cycles:%(cycles)s normalized_delay:%(normalized_delay)s } }\n\n''' % {
+    'src' : src_pattern,
+    'dst' : dst_pattern,
+    'thu' : thu_patterns,
+    'cycles' : cycles,
+    'normalized_delay' : normalized_delay })
 
 sdc_script.close()
