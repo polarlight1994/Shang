@@ -6,7 +6,6 @@ parser = argparse.ArgumentParser(description='Altera SDC Script Generator')
 parser.add_argument("--sql", type=str, help="The script to build the sql database")
 parser.add_argument("--sdc", type=str, help="The path to which the sdc script will be written")
 parser.add_argument("--period", type=float, help="The clock period")
-parser.add_argument("--ratio", type=float, help="The clock period", default=1.0)
 
 args = parser.parse_args()
 
@@ -60,12 +59,9 @@ def generate_constraint(**kwargs) :
 
 rows = cusor.execute('''SELECT * FROM mcps ORDER BY dst, src, cycles ASC''').fetchall()
 
-constraints_to_generate = int(args.ratio * len(rows))
+num_constraint_left = len(rows)
 
-print constraints_to_generate
-
-for i in range(0, constraints_to_generate):
-  row = rows[i]
+for row in rows:
   normalized_delay = row[5]
   thu_patterns = row[3]
   cycles = row[4]
@@ -89,6 +85,10 @@ incr num_not_applied
     'cycles' : cycles,
     'normalized_delay' : normalized_delay })
 
+  num_constraint_left -= 1
+  sdc_script.write('''post_message -type info "%d constraints left"\n''' % num_constraint_left)
+
+# Report the finish of script
 sdc_script.write('''post_message -type info "$num_not_applied constraints are not applied"\n''')
 
 sdc_script.close()
