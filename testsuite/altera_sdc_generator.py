@@ -57,7 +57,7 @@ def generate_constraint(**kwargs) :
   else :
     sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s] } { set_multicycle_path -from $%(src)s -through $%(thu)s -to $%(dst)s -setup -end %(cycles)d }\n''' % kwargs)
 
-rows = cusor.execute('''SELECT * FROM mcps ORDER BY cycles''').fetchall()
+rows = cusor.execute('''SELECT * FROM mcps ORDER BY dst, src, cycles ASC''').fetchall()
 
 constraints_to_generate = int(args.ratio * len(rows))
 
