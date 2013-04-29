@@ -43,12 +43,9 @@ net_id = 0;
 net_map = { 'shang-null-node' : None }
 for net_row in cusor.execute('''SELECT DISTINCT thu FROM mcps where thu not like 'shang-null-node' '''):
   nets = net_row[0]
-  for net in nets.split():
-    if net in net_map: continue
-
-    net_map[net] = net_id
-    sdc_script.write('''set nets%(id)s [get_nets {%(net_patterns)s}]\n''' % { 'id':net_id, 'net_patterns' : net })
-    net_id += 1
+  net_map[nets] = net_id
+  sdc_script.write('''set nets%(id)s [get_nets {%(net_patterns)s}]\n''' % { 'id':net_id, 'net_patterns' : nets })
+  net_id += 1
 
 # Generate the multi-cycle path constraints.
 def generate_constraint(**kwargs) :
@@ -63,17 +60,16 @@ num_constraint_left = len(rows)
 
 for row in rows:
   normalized_delay = row[5]
+  src_pattern = row[1]
+  src = "keepers%s" % keeper_map[src_pattern]
+  dst_pattern = row[1]
+  dst = "keepers%s" % keeper_map[dst_pattern]
   thu_patterns = row[3]
+  thu = "nets%s" % net_map[thu_patterns]
   cycles = row[4]
 #  if normalized_delay > 1.0:
-  for thu_pattern in thu_patterns.split() :
-    src_pattern = row[1]
-    src = "keepers%s" % keeper_map[src_pattern]
-    dst_pattern = row[1]
-    dst = "keepers%s" % keeper_map[dst_pattern]
-    thu = "nets%s" % net_map[thu_pattern]
-    generate_constraint(src=src, dst=dst, thu=thu, cycles=cycles)
-    sdc_script.write('} else')
+  generate_constraint(src=src, dst=dst, thu=thu, cycles=cycles)
+  sdc_script.write('} else')
   sdc_script.write(''' { post_message -type warning {Constraints are not applied to %(src)s->%(thu)s->%(dst)s cycles:%(cycles)s normalized_delay:%(normalized_delay)s }
 incr num_not_applied
 }
