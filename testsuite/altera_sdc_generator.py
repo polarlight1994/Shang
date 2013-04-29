@@ -26,14 +26,36 @@ con = sqlite3.connect(":memory:")
 con.executescript(sql_script.read())
 con.commit()
 
-# Generate the path for the critical constraints.
 cusor = con.cursor()
 
+# Generate the collection for keepers.
+keeper_id = 0;
+keeper_map = {}
+
+for keeper_row in cusor.execute('''SELECT DISTINCT src FROM mcps UNION SELECT DISTINCT dst FROM mcps'''):
+  keeper = keeper_row[0]
+  keeper_map[keeper] = keeper_id
+  sdc_script.write('''set keepers%(id)s [get_keepers {%(keeper_patterns)s}]\n''' % { 'id':keeper_id, 'keeper_patterns' : keeper })
+  keeper_id += 1
+
+# Generate the collection for nets
+net_id = 0;
+net_map = { 'shang-null-node' : None }
+for net_row in cusor.execute('''SELECT DISTINCT thu FROM mcps where thu not like 'shang-null-node' '''):
+  nets = net_row[0]
+  for net in nets.split():
+    if net in net_map: continue
+
+    net_map[net] = net_id
+    sdc_script.write('''set nets%(id)s [get_nets {%(net_patterns)s}]\n''' % { 'id':net_id, 'net_patterns' : net })
+    net_id += 1
+
+# Generate the multi-cycle path constraints.
 def generate_constraint(**kwargs) :
-  if kwargs['thu'] == "shang-null-node" :
-    sdc_script.write('''set_multicycle_path -from {%(src)s} -to {%(dst)s} -setup -end %(cycles)d\n''' % kwargs)
+  if kwargs['thu'] == 'netsNone' :
+    sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] } { set_multicycle_path -from $%(src)s -to $%(dst)s -setup -end %(cycles)d }\n''' % kwargs)
   else :
-    sdc_script.write('''set_multicycle_path -from {%(src)s} -through {%(thu)s} -to {%(dst)s} -setup -end %(cycles)d\n''' % kwargs)
+    sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s] } { set_multicycle_path -from $%(src)s -through $%(thu)s -to $%(dst)s -setup -end %(cycles)d }\n''' % kwargs)
 
 rows = cusor.execute('''SELECT * FROM mcps ORDER BY cycles''').fetchall()
 
@@ -44,8 +66,11 @@ print constraints_to_generate
 for i in range(0, constraints_to_generate):
   row = rows[i]
   normalized_delay = row[5]
-  if normalized_delay >= 1.0:
-    for thu in row[3].split() :
-      generate_constraint(src=row[1], dst=row[2], thu=thu, cycles=row[4])
+#  if normalized_delay > 1.0:
+  for thu_patterns in row[3].split() :
+    src = "keepers%s" % keeper_map[row[1]]
+    dst = "keepers%s" % keeper_map[row[2]]
+    thu = "nets%s" % net_map[thu_patterns]
+    generate_constraint(src=src, dst=dst, thu=thu, cycles=row[4])
 
 sdc_script.close()
