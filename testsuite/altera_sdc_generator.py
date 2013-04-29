@@ -18,6 +18,7 @@ create_clock -name "clk" -period %sns [get_ports {clk}]
 derive_pll_clocks -create_base_clocks
 derive_clock_uncertainty
 set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
+set num_not_applied 0
 ''' % args.period)
 
 con = sqlite3.connect(":memory:")
@@ -53,9 +54,9 @@ for net_row in cusor.execute('''SELECT DISTINCT thu FROM mcps where thu not like
 # Generate the multi-cycle path constraints.
 def generate_constraint(**kwargs) :
   if kwargs['thu'] == 'netsNone' :
-    sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] } { set_multicycle_path -from $%(src)s -to $%(dst)s -setup -end %(cycles)d }\n''' % kwargs)
+    sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] } { set_multicycle_path -from $%(src)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
   else :
-    sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s] } { set_multicycle_path -from $%(src)s -through $%(thu)s -to $%(dst)s -setup -end %(cycles)d }\n''' % kwargs)
+    sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s] } { set_multicycle_path -from $%(src)s -through $%(thu)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
 
 rows = cusor.execute('''SELECT * FROM mcps ORDER BY dst, src, cycles ASC''').fetchall()
 
@@ -76,12 +77,18 @@ for i in range(0, constraints_to_generate):
     dst = "keepers%s" % keeper_map[dst_pattern]
     thu = "nets%s" % net_map[thu_pattern]
     generate_constraint(src=src, dst=dst, thu=thu, cycles=cycles)
-    sdc_script.write('else')
-  sdc_script.write(''' { post_message -type warning {Constraints are not able to applied to %(src)s->%(thu)s->%(dst)s cycles:%(cycles)s normalized_delay:%(normalized_delay)s } }\n\n''' % {
+    sdc_script.write('} else')
+  sdc_script.write(''' { post_message -type warning {Constraints are not applied to %(src)s->%(thu)s->%(dst)s cycles:%(cycles)s normalized_delay:%(normalized_delay)s }
+incr num_not_applied
+}
+
+''' % {
     'src' : src_pattern,
     'dst' : dst_pattern,
     'thu' : thu_patterns,
     'cycles' : cycles,
     'normalized_delay' : normalized_delay })
+
+sdc_script.write('''post_message -type info "$num_not_applied constraints are not applied"\n''')
 
 sdc_script.close()
