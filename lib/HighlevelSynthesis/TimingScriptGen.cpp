@@ -530,10 +530,8 @@ TimingScriptGen::writeConstraintsFor(VASTSeqValue *Dst, TimingNetlist &TNL,
 void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
                                          ArrayRef<VASTSlot*> ReadSlots,
                                          VASTValue *DepTree) {
-  VASTValue *SrcValue = DepTree;
-
   // Trivial case: register to register path.
-  if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(SrcValue)){
+  if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(DepTree)){
     // Src may be the return_value of the submodule.
     if (Cache.annotateSubmoduleLatency(Src)) return;
 
@@ -554,7 +552,15 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
   }
 
   // If Define Value is immediate or symbol, skip it.
-  if (!isa<VASTWire>(SrcValue) && !isa<VASTExpr>(SrcValue)) return;
+  if (!isa<VASTWire>(DepTree) && !isa<VASTExpr>(DepTree)) return;
+
+  if (VASTWire *W = dyn_cast<VASTWire>(DepTree)) {
+    if (W->isWrapper()) {
+      // Strip the wrapper and try again.
+      extractTimingPaths(Cache, ReadSlots, W->getDriver().get());
+      return;
+    }
+  }
 
   Cache.annotatePathInterval(DepTree, ReadSlots);
 }
