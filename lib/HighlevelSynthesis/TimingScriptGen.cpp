@@ -537,6 +537,10 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
 
     int Interval = Cache.getMinimalInterval(Src, ReadSlots);
     Cache.addIntervalFromSrc(Src, Interval, 0);
+
+    assert((Src->getValType() != VASTSeqValue::Slot || Interval <= 1)
+            && "Bad interval for slot registers!");
+
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
     // reg_a <= c + x;
