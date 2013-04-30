@@ -43,9 +43,12 @@ net_id = 0;
 net_map = { 'shang-null-node' : None }
 for net_row in cusor.execute('''SELECT DISTINCT thu FROM mcps where thu not like 'shang-null-node' '''):
   nets = net_row[0]
-  net_map[nets] = net_id
-  sdc_script.write('''set nets%(id)s [get_nets {%(net_patterns)s}]\n''' % { 'id':net_id, 'net_patterns' : nets })
-  net_id += 1
+  for net in nets.split():
+    if net in net_map: continue
+
+    net_map[net] = net_id
+    sdc_script.write('''set nets%(id)s [get_nets {%(net_patterns)s}]\n''' % { 'id':net_id, 'net_patterns' : net })
+    net_id += 1
 
 # Generate the multi-cycle path constraints.
 def generate_constraint(**kwargs) :
@@ -53,36 +56,27 @@ def generate_constraint(**kwargs) :
     sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] } { set_multicycle_path -from $%(src)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
   else :
     sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s] } { set_multicycle_path -from $%(src)s -through $%(thu)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
+  sdc_script.write('''} else { incr num_not_applied }\n''')
 
 rows = cusor.execute('''SELECT * FROM mcps ORDER BY dst, src, cycles ASC''').fetchall()
 
 num_constraint_left = len(rows)
 
 for row in rows:
+  cycles = row[4]
   normalized_delay = row[5]
   src_pattern = row[1]
   src = "keepers%s" % keeper_map[src_pattern]
   dst_pattern = row[2]
   dst = "keepers%s" % keeper_map[dst_pattern]
   thu_patterns = row[3]
-  thu = "nets%s" % net_map[thu_patterns]
-  cycles = row[4]
 #  if normalized_delay > 1.0:
-  generate_constraint(src=src, dst=dst, thu=thu, cycles=cycles)
-  sdc_script.write('} else')
-  sdc_script.write(''' { post_message -type warning {Constraints are not applied to %(src)s->%(thu)s->%(dst)s cycles:%(cycles)s normalized_delay:%(normalized_delay)s }
-incr num_not_applied
-}
-
-''' % {
-    'src' : src_pattern,
-    'dst' : dst_pattern,
-    'thu' : thu_patterns,
-    'cycles' : cycles,
-    'normalized_delay' : normalized_delay })
+  for thu_pattern in thu_patterns.split():
+    thu = "nets%s" % net_map[thu_pattern]
+    generate_constraint(src=src, dst=dst, thu=thu, cycles=cycles)
 
   num_constraint_left -= 1
-  sdc_script.write('''post_message -type info "%d constraints left"\n''' % num_constraint_left)
+  sdc_script.write('''post_message -type info "%d constraints left"\n\n''' % num_constraint_left)
 
 # Report the finish of script
 sdc_script.write('''post_message -type info "$num_not_applied constraints are not applied"\n''')
