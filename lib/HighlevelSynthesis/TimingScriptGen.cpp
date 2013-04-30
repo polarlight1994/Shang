@@ -556,8 +556,10 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
 
   if (VASTWire *W = dyn_cast<VASTWire>(DepTree)) {
     if (W->isWrapper()) {
-      // Strip the wrapper and try again.
-      extractTimingPaths(Cache, ReadSlots, W->getDriver().get());
+      VASTValPtr Src = W->getDriver();
+      // Strip the wrapper and try again, also ignore the loop.
+      if (Src.get() != Cache.Dst)
+        extractTimingPaths(Cache, ReadSlots, W->getDriver().get());
       return;
     }
   }
