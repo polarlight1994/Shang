@@ -277,6 +277,8 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
       }
 
       unsigned Interval = getMinimalInterval(V, ReadSlots);
+      assert((V->getValType() != VASTSeqValue::Slot || Interval <= 1)
+             && "Bad interval for slot registers!");
 
       bool inserted = LocalInterval.insert(std::make_pair(V, Interval)).second;
       assert(inserted && "Node had already been visited?");
