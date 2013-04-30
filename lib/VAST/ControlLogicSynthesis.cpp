@@ -198,7 +198,7 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
   // Disable the current slot. Do not export the definition of the assignment.
   VM->assignCtrlLogic(S->getValue(), VASTImmediate::False, S,
                       Builder->buildAndExpr(LoopCndVector, 1),
-                      true/*, false*/);
+                      true, false);
 
   if (const FUCtrlVecTy *EnableSet = getEnableSet(S))
     for (const_fu_ctrl_it I = EnableSet->begin(), E = EnableSet->end();
