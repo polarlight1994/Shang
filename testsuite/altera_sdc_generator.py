@@ -58,7 +58,6 @@ def generate_constraint(**kwargs) :
     sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] } { set_multicycle_path -from $%(src)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
   else :
     sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s] } { set_multicycle_path -from $%(src)s -through $%(thu)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
-  sdc_script.write('''} else { incr num_not_applied }\n''')
 
 rows = cusor.execute('''SELECT * FROM mcps where %(constraint)s ORDER BY dst, src, cycles ASC''' % { 'constraint' : path_constraints}).fetchall()
 
@@ -76,6 +75,8 @@ for row in rows:
   for thu_pattern in thu_patterns.split():
     thu = "nets%s" % net_map[thu_pattern]
     generate_constraint(src=src, dst=dst, thu=thu, cycles=cycles)
+    sdc_script.write('''} else''')
+    sdc_script.write(''' { incr num_not_applied }\n''')
 
   num_constraint_left -= 1
   sdc_script.write('''post_message -type info "%d constraints left"\n\n''' % num_constraint_left)

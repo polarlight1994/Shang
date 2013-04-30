@@ -526,7 +526,7 @@ class AlteraSynStep(TestStep) :
     self.require_license = (self.option['device_family'] == 'StratixIV')
 
     #Use full version for stratix devices.
-    self.quartus_bin = '/nfs/app/altera/quartus12x64_%s/quartus/bin/' % ('full' if self.require_license else 'web')
+    self.quartus_bin = '/nfs/app/altera/quartus12.1x64_%s/quartus/bin/' % ('full' if self.require_license else 'web')
 
   def prepareTest(self) :
     self.altera_synthesis_base_dir = os.path.join(self.hls_base_dir, 'altera_synthesis')
