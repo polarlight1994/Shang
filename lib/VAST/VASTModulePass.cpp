@@ -26,9 +26,10 @@
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/InstIterator.h"
-#include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-vast-module-analysis"
 #include "llvm/Support/Debug.h"
 
@@ -91,7 +92,42 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   //===--------------------------------------------------------------------===//
   void allocateSubModules();
   //===--------------------------------------------------------------------===//
-  VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name);
+  VASTSeqValue *getOrCreateSeqValImpl(Value *V, const Twine &Name);
+  VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name) {
+    std::string SeqValName = "v_" + Name.str() + "_r";
+    SeqValName = ShangMangle(SeqValName);
+    return getOrCreateSeqValImpl(V, SeqValName);
+  }
+
+  static inline void intToStr(intptr_t V, SmallString<36> &S) {
+    static char encoding_table[] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+                                    'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+                                    'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+                                    'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+                                    'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+                                    'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+                                    'w', 'x', 'y', 'z', '0', '1', '2', '3',
+                                    '4', '5', '6', '7', '8', '9'}; //, '+', '/'};
+    const unsigned table_size = array_lengthof(encoding_table);
+
+    assert(V && "Cannot convert 0 yet!");
+    while (V) {
+      unsigned char Digit = V % table_size;
+      S += encoding_table[Digit];
+      V /= table_size;
+    }
+  }
+
+  VASTSeqValue *getOrCreateSeqVal(Value *V) {
+    SmallString<36> S;
+    S.push_back('_');
+    intToStr(intptr_t(V), S);
+    S.push_back('_');
+    // DirtyHack: Terminate the string manually.
+    S.push_back(0);
+
+    return getOrCreateSeqValImpl(V, S.data());
+  }
 
   VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand = true);
 
@@ -200,7 +236,8 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 }
 
 //===----------------------------------------------------------------------===//
-VASTSeqValue *VASTModuleBuilder::getOrCreateSeqVal(Value *V, const Twine &Name) {
+VASTSeqValue *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
+                                                       const Twine &Name) {
   assert(!V->getType()->isVoidTy() && "Cannot create SeqVal for Inst!");
   VASTValPtr Val = Builder.lookupExpr(V);
 
@@ -211,10 +248,8 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqVal(Value *V, const Twine &Name) 
 
   // Create the SeqVal now.
   unsigned BitWidth = Builder.getValueSizeInBits(V);
-  std::string SeqValName = "v_" + Name.str() + "_r";
-  SeqValName = ShangMangle(SeqValName);
   VASTRegister *R
-    =  VM->addRegister(SeqValName, BitWidth, 0, VASTSeqValue::Data, 0);
+    =  VM->addRegister(Name, BitWidth, 0, VASTSeqValue::Data, 0);
   // V = VM->createSeqValue("v" + utostr_32(RegNo) + "r", BitWidth,
   //                        VASTNode::Data, RegNo, 0);
 
@@ -535,7 +570,7 @@ void VASTModuleBuilder::visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd,
     Value *LiveOutedFromBB = PN->DoPHITranslation(BB, CurBB);
     VASTValPtr LiveOut = getAsOperandImpl(LiveOutedFromBB);
 
-    VASTSeqValue *PHISeqVal = getOrCreateSeqVal(PN, PN->getName());
+    VASTSeqValue *PHISeqVal = getOrCreateSeqVal(PN);
     // Latch the incoming value when we are branching to the succ slot.
     VM->latchValue(PHISeqVal, LiveOut, S,  Cnd, PN);
   }
@@ -788,8 +823,7 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
 
   // Read the return value from the function if there is any.
   if (VASTSeqValue *RetPort = SubMod->getRetPort()) {
-    VASTSeqValue *Result
-      = getOrCreateSeqVal(Inst->getValue(), Inst->getValue()->getName());
+    VASTSeqValue *Result = getOrCreateSeqVal(Inst->getValue());
     VM->latchValue(Result, RetPort, Slot, VASTImmediate::True, V, 1);
     // Move the the next slot so that the operation can correctly read the
     // returned value
@@ -883,7 +917,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     // slots to get the result.
     Slot = advanceToNextSlot(Slot, Latency - 1);
     // Get the input port from the memory bus.
-    VASTSeqValue *Result = getOrCreateSeqVal(&I, I.getName());
+    VASTSeqValue *Result = getOrCreateSeqVal(&I);
     assert(Result->getBitWidth() <= Bus->getDataWidth()
            && "Loading data that exceed the width of databus!");
     VASTValPtr V
@@ -945,7 +979,7 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
   // Wait for 1 cycles and get the result for the read operation.
   if (!IsWrite) {
     Slot = advanceToNextSlot(Slot);
-    VASTSeqValue *Result = getOrCreateSeqVal(&I, I.getName());
+    VASTSeqValue *Result = getOrCreateSeqVal(&I);
     assert(Result->getBitWidth() == BRAM->getWordSize()
            && "Read from BRAM data width not match!");
     // Use the the value from address port as the result of the block RAM read.
