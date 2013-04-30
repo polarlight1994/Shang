@@ -46,10 +46,6 @@ static cl::opt<bool>
 DisableTimingScriptGeneration("shang-disable-timing-script",
                               cl::desc("Disable timing script generation"),
                               cl::init(false));
-static cl::opt<bool>
-DisableSingleCycleConstraints("shang-disable-single-cycle-constraints",
-                              cl::desc("Disable single cycle constraints generation"),
-                              cl::init(true));
 
 STATISTIC(NumTimingPath, "Number of timing paths analyzed (From->To pair)");
 STATISTIC(NumMultiCyclesTimingPath, "Number of multicycles timing paths "
@@ -450,9 +446,6 @@ void PathIntervalQueryCache::insertMCPEntries() const {
       ++NumTimingPath;
       if (Interval >= Inf) ++NumFalseTimingPath;
       else if (Interval > 1) ++NumMultiCyclesTimingPath;
-
-      // Do not generate constraints for single-cycle path.
-      if (DisableSingleCycleConstraints && Interval == 1) continue;
 
       // The interval is lowerbound if it is the first element of the interval
       // set.

@@ -28,11 +28,13 @@ con.commit()
 
 cusor = con.cursor()
 
+path_constraints = ''' cycles > 1 '''
+
 # Generate the collection for keepers.
 keeper_id = 0;
 keeper_map = {}
 
-for keeper_row in cusor.execute('''SELECT DISTINCT src FROM mcps UNION SELECT DISTINCT dst FROM mcps'''):
+for keeper_row in cusor.execute('''SELECT DISTINCT src FROM mcps where %(constraint)s UNION SELECT DISTINCT dst FROM mcps where %(constraint)s''' % { 'constraint' : path_constraints}):
   keeper = keeper_row[0]
   keeper_map[keeper] = keeper_id
   sdc_script.write('''set keepers%(id)s [get_keepers {%(keeper_patterns)s}]\n''' % { 'id':keeper_id, 'keeper_patterns' : keeper })
@@ -41,7 +43,7 @@ for keeper_row in cusor.execute('''SELECT DISTINCT src FROM mcps UNION SELECT DI
 # Generate the collection for nets
 net_id = 0;
 net_map = { 'shang-null-node' : None }
-for net_row in cusor.execute('''SELECT DISTINCT thu FROM mcps where thu not like 'shang-null-node' '''):
+for net_row in cusor.execute('''SELECT DISTINCT thu FROM mcps where thu not like 'shang-null-node' and %(constraint)s''' % { 'constraint' : path_constraints}):
   nets = net_row[0]
   for net in nets.split():
     if net in net_map: continue
@@ -58,7 +60,7 @@ def generate_constraint(**kwargs) :
     sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s] } { set_multicycle_path -from $%(src)s -through $%(thu)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
   sdc_script.write('''} else { incr num_not_applied }\n''')
 
-rows = cusor.execute('''SELECT * FROM mcps ORDER BY dst, src, cycles ASC''').fetchall()
+rows = cusor.execute('''SELECT * FROM mcps where %(constraint)s ORDER BY dst, src, cycles ASC''' % { 'constraint' : path_constraints}).fetchall()
 
 num_constraint_left = len(rows)
 
