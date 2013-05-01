@@ -174,6 +174,17 @@ def main(builtinParameters = {}):
   # Finialize the gridengine
   Session.exit()
 
+  cur = con.cursor()
+  # Report the experimental results
+  cur.execute('''select sim.name, sim.cycles, syn.fmax, sim.cycles / syn.fmax, syn.les, syn.mult9, syn.parameter
+                   from simulation sim
+                     left join synthesis syn
+                       on sim.name = syn.name and syn.parameter = sim.parameter
+                 order by syn.les DESC''')
+  for name, cycles, fmax, run_time, les, mult9, parameter in cur.fetchall() :
+    print name, cycles, fmax, run_time, les, mult9
+    print parameter
+
   with open(os.path.join(args.config_bin_dir, 'data.sql'), 'w') as database_script:
     for line in con.iterdump():
       database_script.write(line)
