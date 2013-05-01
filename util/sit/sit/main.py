@@ -86,7 +86,7 @@ def main(builtinParameters = {}):
   con.commit()
 
   # Build the opation space from the configuration.
-  option_space_dict = basic_config['option_space']
+  option_space_dict = {}
   # Constrains the option space
   # HLS options
   option_space_dict['vast_disable_mux_slack'] = [ 'true' ]

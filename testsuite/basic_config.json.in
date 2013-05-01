@@ -11,19 +11,5 @@
   
   "hls_timeout" : 600,
   "sim_timeout" : 2400,
-  "syn_timeout" : 28800,
-
-  "option_space" : {
-    "fmax" : [200.0, 166.66666666666666, 142.85714285714286, 125.0, 111.11111111111111, 100.0, 90.9090909090909, 83.33333333333333, 76.92307692307692, 71.42857142857143, 66.66666666666667, 62.5, 58.8235294117647, 55.55555555555556, 52.63157894736842, 50.0],
-
-    "device_family" : [ "CycloneII", "CycloneIV", "StratixIV" ],
-
-    "timing_model" : ["zero-delay", "blackbox", "bit-level"],
-    "vast_disable_mux_slack" : [ "true", "false" ],
-    "shang_enable_mux_pipelining" : [ "true", "false" ],
-    "shang_baseline_scheduling_only" : [ "true", "false" ],
-    "shang_enable_memory_optimization" : [ "true", "false" ],
-    "shang_enable_memory_partition" : [ "true", "false" ],
-    "shang_enable_pre_schedule_lut_mapping" : [ "true", "false" ]
-  }
+  "syn_timeout" : 28800
 }
