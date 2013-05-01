@@ -31,20 +31,8 @@ struct ControlLogicSynthesis : public VASTModulePass {
   DatapathBuilder *Builder;
   VASTModule *VM;
 
-  void addSlotDisable(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    bool inserted
-      = SlotDisables[S->getValue()][P].insert(std::make_pair(S, Cnd)).second;
-    assert(inserted && "Predicated value had already existed!");
-  }
-
   void addSlotReady(VASTSlot *S, VASTValue *V, VASTValPtr Cnd) {
     Builder->orEqual(SlotReadys[S->getValue()][V], Cnd);
-  }
-
-  void addSlotEnable(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    bool inserted
-      = SlotEnables[S->getValue()][P].insert(std::make_pair(S, Cnd)).second;
-    assert(inserted && "Predicated value had already existed!");
   }
 
   void addSlotSucc(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
@@ -56,7 +44,7 @@ struct ControlLogicSynthesis : public VASTModulePass {
   typedef std::map<VASTSlot*, VASTValPtr> ConditionVector;
   typedef std::map<VASTSeqValue*, ConditionVector> FUCtrlVecTy;
   typedef FUCtrlVecTy::const_iterator const_fu_ctrl_it;
-  std::map<const VASTSeqValue*, FUCtrlVecTy> SlotEnables, SlotDisables, SlotSuccs;
+  std::map<const VASTSeqValue*, FUCtrlVecTy> SlotSuccs;
 
   typedef std::map<VASTValue*, VASTValPtr> FUReadyVecTy;
   typedef FUReadyVecTy::const_iterator const_fu_rdy_it;
@@ -69,23 +57,6 @@ struct ControlLogicSynthesis : public VASTModulePass {
     return at->second;
   }
 
-  // Signals need to be enabled at this slot.
-  const FUCtrlVecTy *getEnableSet(const VASTSlot *S) const {
-    std::map<const VASTSeqValue*, FUCtrlVecTy>::const_iterator at
-      = SlotEnables.find(S->getValue());
-
-    if (at == SlotEnables.end()) return 0;
-
-    return &at->second;
-  }
-
-  bool isEnabled(const VASTSlot *S, VASTSeqValue *P) const {
-    if (const FUCtrlVecTy *EnableSet = getEnableSet(S))
-      return EnableSet->count(P);
-
-    return false;
-  }
-
   // Signals need to set before this slot is ready.
   const FUReadyVecTy *getReadySet(const VASTSlot *S) const {
     std::map<const VASTSeqValue*, FUReadyVecTy>::const_iterator at
@@ -94,23 +65,6 @@ struct ControlLogicSynthesis : public VASTModulePass {
     if (at == SlotReadys.end()) return 0;
 
     return &at->second;
-  }
-
-  // Signals need to be disabled at this slot.
-  const FUCtrlVecTy *getDisableSet(const VASTSlot *S) const {
-    std::map<const VASTSeqValue*, FUCtrlVecTy>::const_iterator at
-      = SlotDisables.find(S->getValue());
-
-    if (at == SlotDisables.end()) return 0;
-
-    return &at->second;
-  }
-
-  bool isDisabled(const VASTSlot *S, VASTSeqValue *P) const {
-    if (const FUCtrlVecTy *DisableSet = getDisableSet(S))
-      return DisableSet->count(P);
-
-    return false;
   }
 
   // State-transition graph building functions.
@@ -127,8 +81,6 @@ struct ControlLogicSynthesis : public VASTModulePass {
   bool runOnVASTModule(VASTModule &VM);
 
   void releaseMemory() {
-    SlotEnables.clear();
-    SlotDisables.clear();
     SlotReadys.clear();
     SlotSuccs.clear();
   }
@@ -199,52 +151,6 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
   VM->assignCtrlLogic(S->getValue(), VASTImmediate::False, S,
                       Builder->buildAndExpr(LoopCndVector, 1),
                       true, false);
-
-  if (const FUCtrlVecTy *EnableSet = getEnableSet(S))
-    for (const_fu_ctrl_it I = EnableSet->begin(), E = EnableSet->end();
-         I != E; ++I) {
-      // No need to wait for the slot ready.
-      // We may try to enable and disable the same port at the same slot.
-      const ConditionVector &Cnds = I->second;
-      for (cnd_iterator CI = Cnds.begin(), CE = Cnds.end(); CI != CE; ++CI) {
-        VASTValPtr Cnd = CI->second;
-        VASTValPtr ReadyCnd
-          = Builder->buildAndExpr(S->getReady()->getAsInlineOperand(false),
-                                  Cnd.getAsInlineOperand(), 1);
-        // No need to export the definition of the enable assignment, it is never
-        // use inside the module.
-        VM->assignCtrlLogic(I->first, ReadyCnd, CI->first, S->getValue(),
-                            false, false);
-      }
-    }
-
-  SmallVector<VASTValPtr, 4> DisableAndCnds;
-
-  if (const FUCtrlVecTy *DisableSet = getDisableSet(S))
-    for (const_fu_ctrl_it I = DisableSet->begin(), E = DisableSet->end();
-         I != E; ++I) {
-      // Look at the current enable set and alias enables set;
-      // The port assigned at the current slot, and it will be disabled if
-      // The slot is not ready or the enable condition is false. And it is
-      // ok that the port is enabled.
-      if (isEnabled(S, I->first)) continue;
-
-      const ConditionVector &Cnds = I->second;
-      for (cnd_iterator CI = Cnds.begin(), CE = Cnds.end(); CI != CE; ++CI) {
-        VASTValPtr Cnd = CI->second;
-
-        DisableAndCnds.push_back(S->getValue());
-        DisableAndCnds.push_back(Cnd);
-
-        VASTSeqValue *En = I->first;
-        // No need to export the definition of the disable assignment, it is never
-        // use inside the module.
-        VM->assignCtrlLogic(En, VASTImmediate::False, CI->first,
-                            Builder->buildAndExpr(DisableAndCnds, 1),
-                            false, true);
-        DisableAndCnds.clear();
-      }
-    }
 }
 
 void ControlLogicSynthesis::collectControlLogicInfo(VASTSlot *S) {
