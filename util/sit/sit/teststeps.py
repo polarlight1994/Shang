@@ -43,8 +43,6 @@ class TestStep :
     # The path to the stdout and stderr logfile.
     self.stdout = ''
     self.stderr = ''
-    # The configuration string
-    self.parameter = ''
     # The results dict, for debug use
     self.results = {}
 
@@ -68,7 +66,7 @@ class TestStep :
   def submitResults(self, connection) : pass
 
   def getStepDesc(self) :
-    return ' '.join([self.test_name, self.step_name, self.parameter]).replace(':', '-')
+    return ' '.join([self.test_name, self.step_name, str(self.option)]).replace(':', '-')
 
   def jobStatus(self) :
     status = Session.jobStatus(self.jobid)
@@ -87,7 +85,7 @@ class TestStep :
   def getStepResult(self, status) :
     return  {
               'test_name' : self.test_name,
-              'parameter' : self.parameter,
+              'parameter' : json.dumps(self.option),
               'stdout' :  self.stdout,
               'stderr' : self.stderr,
               'test_file' : self.test_file,
@@ -256,7 +254,6 @@ class HybridSimStep(TestStep) :
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
     self.results.update(hls_step.results)
-    self.parameter = hls_step.parameter
 
   def prepareTest(self) :
     self.hybrid_sim_base_dir = os.path.join(self.hls_base_dir, 'hybrid_sim')
@@ -345,7 +342,6 @@ class PureHWSimStep(TestStep) :
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
     self.results.update(hls_step.results)
-    self.parameter = hls_step.parameter
 
   def prepareTest(self) :
     self.pure_hw_sim_base_dir = os.path.join(self.hls_base_dir, 'pure_hw_sim')
@@ -507,7 +503,7 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
       num_cycles = int(cycles_rpt.read())
       self.results["cycles"] = num_cycles
       connection.execute("INSERT INTO simulation(name, parameter, cycles) VALUES (:test_name, :parameter, :cycles)",
-                         {"test_name" : self.test_name,  "parameter" : self.parameter, "cycles": num_cycles})
+                         {"test_name" : self.test_name,  "parameter" : json.dumps(self.option), "cycles": num_cycles})
 
   def generateSubTests(self) :
     #If test type == hybrid simulation
@@ -521,7 +517,6 @@ class AlteraSynStep(TestStep) :
 
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
-    self.parameter = hls_step.parameter
     self.results.update(hls_step.results)
     self.require_license = (self.option['device_family'] == 'StratixIV')
 
@@ -599,7 +594,7 @@ project_close
     Session.deleteJobTemplate(jt)
 
   def submitResults(self, connection) :
-    results = {"test_name" : self.test_name,  "parameter" : self.parameter }
+    results = {"test_name" : self.test_name,  "parameter" : json.dumps(self.option) }
     # Read the fmax
     with open(os.path.join(self.altera_synthesis_base_dir, 'clk_fmax.rpt')) as fmax_rpt:
       fmax = float(fmax_rpt.read())

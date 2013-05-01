@@ -121,7 +121,6 @@ def main(builtinParameters = {}):
       hls_step.fmax = test_option['fmax']
 
       hls_step.option = test_option
-      hls_step.parameter = "%s" % test_option
 
       hls_step.prepareTest()
       hls_step.runTest()
@@ -175,15 +174,18 @@ def main(builtinParameters = {}):
   Session.exit()
 
   cur = con.cursor()
+  
   # Report the experimental results
-  cur.execute('''select sim.name, sim.cycles, syn.fmax, sim.cycles / syn.fmax, syn.les, syn.mult9, syn.parameter
+  print 'name, cycles, fmax, run_time, les, mult9'
+  cur.execute('''select sim.name, sim.cycles, syn.fmax, sim.cycles / syn.fmax, syn.les, syn.mult9, sim.parameter, syn.parameter
                    from simulation sim
                      left join synthesis syn
                        on sim.name = syn.name and syn.parameter = sim.parameter
                  order by syn.les DESC''')
-  for name, cycles, fmax, run_time, les, mult9, parameter in cur.fetchall() :
-    print name, cycles, fmax, run_time, les, mult9
-    print parameter
+  for name, cycles, fmax, run_time, les, mult9, sim_parameter, syn_parameter in cur.fetchall() :
+    parameter = sim_parameter if not syn_parameter else syn_parameter
+    # Print the option if it is a subset of its value space
+    print name, cycles, fmax, run_time, les, mult9, [ (k, v) for k, v in json.loads(parameter).iteritems() if set([v]) < set(option_space_dict[k]) ]
 
   with open(os.path.join(args.config_bin_dir, 'data.sql'), 'w') as database_script:
     for line in con.iterdump():
