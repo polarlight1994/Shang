@@ -88,11 +88,14 @@ def generate_constraints_from_src_to_dst(src, dst) :
 
 
 def generate_constraints_for_dst(dst) :
-  for src in [ row[0] for row in cusor.execute('''SELECT DISTINCT src FROM mcps where %(constraint)s and dst = '%(dst)s' ''' % { 'constraint' : path_constraints, 'dst' : dst}) ]:
+  query = '''SELECT DISTINCT src FROM mcps where %(constraint)s and dst = '%(dst)s' ''' % {
+             'constraint' : path_constraints, 'dst' : dst}
+  for src in [ row[0] for row in cusor.execute(query) ]:
     generate_constraints_from_src_to_dst(src, dst)
 
 # Get all dst nodes.
-for dst in [ row[0] for row in cusor.execute('''SELECT DISTINCT dst FROM mcps where %(constraint)s''' % { 'constraint' : path_constraints}) ]:
+dst_query = '''SELECT DISTINCT dst FROM mcps where %(constraint)s''' % { 'constraint' : path_constraints}
+for dst in [ row[0] for row in cusor.execute(dst_query) ]:
   generate_constraints_for_dst(dst)
 
 # Report the finish of script
