@@ -34,23 +34,34 @@ path_constraints = ''' cycles > 1 '''
 keeper_id = 0;
 keeper_map = {}
 
-for keeper_row in cusor.execute('''SELECT DISTINCT src FROM mcps where %(constraint)s UNION SELECT DISTINCT dst FROM mcps where %(constraint)s''' % { 'constraint' : path_constraints}):
+keeper_query = '''SELECT DISTINCT src FROM mcps where %(constraint)s
+                    UNION
+                  SELECT DISTINCT dst FROM mcps where %(constraint)s''' % {
+                    'constraint' : path_constraints
+                }
+for keeper_row in cusor.execute(keeper_query):
   keeper = keeper_row[0]
   keeper_map[keeper] = keeper_id
-  sdc_script.write('''set keepers%(id)s [get_keepers {%(keeper_patterns)s}]\n''' % { 'id':keeper_id, 'keeper_patterns' : keeper })
+  sdc_script.write('''set keepers%(id)s [get_keepers {%(keeper_patterns)s}]\n''' % {
+                   'id':keeper_id, 'keeper_patterns' : keeper
+                   })
   keeper_id += 1
 
 # Generate the collection for nets
 net_id = 0;
 net_map = { 'shang-null-node' : None }
-for net_row in cusor.execute('''SELECT DISTINCT thu FROM mcps where thu not like 'shang-null-node' and %(constraint)s''' % { 'constraint' : path_constraints}):
-  nets = net_row[0]
-  for net in nets.split():
-    if net in net_map: continue
+net_query = '''SELECT DISTINCT thu FROM mcps where thu not like 'shang-null-node' and %(constraint)s''' % {
+               'constraint' : path_constraints
+            }
+for net_row in cusor.execute(net_query):
+  net = net_row[0]
+  if net in net_map: continue
 
-    net_map[net] = net_id
-    sdc_script.write('''set nets%(id)s [get_nets {%(net_patterns)s}]\n''' % { 'id':net_id, 'net_patterns' : net })
-    net_id += 1
+  net_map[net] = net_id
+  sdc_script.write('''set nets%(id)s [get_nets {%(net_patterns)s}]\n''' % {
+                   'id':net_id, 'net_patterns' : net }
+                  )
+  net_id += 1
 
 # Generate the multi-cycle path constraints.
 def generate_constraint(**kwargs) :
@@ -59,27 +70,30 @@ def generate_constraint(**kwargs) :
   else :
     sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s] } { set_multicycle_path -from $%(src)s -through $%(thu)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
 
-rows = cusor.execute('''SELECT * FROM mcps where %(constraint)s ORDER BY dst, src, cycles ASC''' % { 'constraint' : path_constraints}).fetchall()
-
-num_constraint_left = len(rows)
-
-for row in rows:
-  cycles = row[4]
-  normalized_delay = row[5]
-  src_pattern = row[1]
-  src = "keepers%s" % keeper_map[src_pattern]
-  dst_pattern = row[2]
-  dst = "keepers%s" % keeper_map[dst_pattern]
-  thu_patterns = row[3]
-#  if normalized_delay > 1.0:
-  for thu_pattern in thu_patterns.split():
-    thu = "nets%s" % net_map[thu_pattern]
-    generate_constraint(src=src, dst=dst, thu=thu, cycles=cycles)
+def generate_constraints_from_src_to_dst(src, dst) :
+  query = '''SELECT thu, cycles FROM mcps
+             where %(constraint)s and dst = '%(dst)s' and src = '%(src)s'
+             ORDER BY cycles ASC ''' % {
+             'constraint' : path_constraints,
+             'dst' : dst,
+             'src' : src
+          }
+  for thu, cycles in [ (row[0], row[1]) for row in cusor.execute(query) ]:
+    sdc_script.write('''# %(src)s -> %(thu)s -> %(dst)s %(cycles)s\n''' % {
+                        'src' : src, 'dst' : dst, 'thu' : thu, 'cycles' : cycles})
+    generate_constraint(src="keepers%s" % keeper_map[src], dst="keepers%s" % keeper_map[dst], thu="nets%s" % net_map[thu], cycles=cycles)
     sdc_script.write('''} else''')
     sdc_script.write(''' { incr num_not_applied }\n''')
+    sdc_script.write('''post_message -type info "."\n\n''')
 
-  num_constraint_left -= 1
-  sdc_script.write('''post_message -type info "%d constraints left"\n\n''' % num_constraint_left)
+
+def generate_constraints_for_dst(dst) :
+  for src in [ row[0] for row in cusor.execute('''SELECT DISTINCT src FROM mcps where %(constraint)s and dst = '%(dst)s' ''' % { 'constraint' : path_constraints, 'dst' : dst}) ]:
+    generate_constraints_from_src_to_dst(src, dst)
+
+# Get all dst nodes.
+for dst in [ row[0] for row in cusor.execute('''SELECT DISTINCT dst FROM mcps where %(constraint)s''' % { 'constraint' : path_constraints}) ]:
+  generate_constraints_for_dst(dst)
 
 # Report the finish of script
 sdc_script.write('''post_message -type info "$num_not_applied constraints are not applied"\n''')
