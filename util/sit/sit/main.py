@@ -191,7 +191,7 @@ def main(builtinParameters = {}):
       json.dump([ name,
                   cycles,
                   fmax,
-                  run_time,
+                  '%.2f' % run_time,
                   les,
                   mult9,
                   [ (k, v) for k, v in json.loads(parameter).iteritems()
