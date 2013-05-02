@@ -187,6 +187,8 @@ def main(builtinParameters = {}):
                    order by syn.les DESC''')
     for name, cycles, fmax, run_time, les, mult9, sim_parameter, syn_parameter in cur.fetchall() :
       parameter = sim_parameter if not syn_parameter else syn_parameter
+      run_time = 0.0 if not run_time else run_time
+
       # Print the option if it is a subset of its value space
       json.dump([ name,
                   cycles,
