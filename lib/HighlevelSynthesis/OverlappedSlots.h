@@ -24,6 +24,7 @@ class VASTSlot;
 class VASTModule;
 
 class OverlappedSlots : public VASTModulePass {
+
 public:
   static const unsigned Inf;
 
