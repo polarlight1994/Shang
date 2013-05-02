@@ -212,7 +212,8 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
                '-shang-baseline-scheduling-only=%(shang_baseline_scheduling_only)s' % self.option,
                '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self.option,
                '-shang-enable-memory-partition=%(shang_enable_memory_partition)s' % self.option,
-               '-shang-enable-pre-schedule-lut-mapping=%(shang_enable_pre_schedule_lut_mapping)s' % self.option
+               '-shang-enable-pre-schedule-lut-mapping=%(shang_enable_pre_schedule_lut_mapping)s' % self.option,
+               '-shang-enable-register-sharing=%(shang_enable_register_sharing)s' % self.option
               ]
 
     #Set up the correct working directory and the output path
