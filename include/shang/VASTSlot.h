@@ -70,8 +70,9 @@ public:
   // Create the finish slot.
   explicit VASTSlot(unsigned slotNum);
 
-  const uint16_t SlotNum : 15;
-  const bool     IsVirtual : 1;
+  typedef uint16_t SlotNumTy;
+  const SlotNumTy SlotNum : 15;
+  const bool      IsVirtual : 1;
 
   void createSignals(VASTModule *VM);
   void copySignals(VASTSlot *S);
