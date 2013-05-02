@@ -84,6 +84,7 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
     // Use the Floyd Warshal algorithm to compute the shortest path.
     for (slot_top_iterator I =RPO.begin(), E = RPO.end(); I != E; ++I) {
       VASTSlot *To = *I;
+      unsigned EdgeDistance = To->IsVirtual ? 0 : 1;
 
       typedef VASTSlot::pred_iterator pred_iterator;
       for (pred_iterator PI = To->pred_begin(), PE = To->pred_end(); PI != PE; ++PI) {
@@ -93,7 +94,7 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
         typedef DenseMap<unsigned, unsigned>::iterator from_iterator;
         for (from_iterator FI = Srcs.begin(), FE = Srcs.end(); FI != FE; ++FI) {
           //D[i][j] = min( D[i][j], D[i][k] + D[k][j]
-          unsigned DistanceToThuFI = FI->second + 1;
+          unsigned DistanceToThuFI = FI->second + EdgeDistance;
           unsigned DistanceToFI = getShortestPath(FI->first, To->SlotNum);
           if (DistanceToThuFI < DistanceToFI) {
             STPMatrix[To->SlotNum][FI->first] = DistanceToThuFI;
