@@ -96,6 +96,7 @@ void initializeLUTMappingPass(PassRegistry &Registry);
 void initializeTimingNetlistPass(PassRegistry &Registry);
 void initializeVASTSchedulingPass(PassRegistry &Registry);
 void initializeSTGShortestPathPass(PassRegistry &Registry);
+void initializeOverlappedSlotsPass(PassRegistry &Registry);
 
 void initializeControlLogicSynthesisPass(PassRegistry &Registry);
 void initializeSeqSelectorSynthesisPass(PassRegistry &Registry);

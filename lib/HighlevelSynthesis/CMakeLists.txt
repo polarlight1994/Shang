@@ -10,6 +10,7 @@ add_llvm_library(ShangHLS
   SchedulerBase.cpp
   SDCScheduler.cpp
   SeqLiveVariables.cpp
+  OverlappedSlots.cpp
   STGShortestPath.cpp
   SeqSelectorSynthesis.cpp
   LowerPseudoPHIs.cpp
