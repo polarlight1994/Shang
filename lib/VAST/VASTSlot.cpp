@@ -203,6 +203,40 @@ struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
 
     return Attr;
   }
+
+  // Print the cluster of the subregions. This groups the single basic blocks
+  // and adds a different background color for each group.
+  static void printSubgrpCluster(const VASTSlot *S,
+                                 GraphWriter<const VASTModule*> &GW,
+                                 unsigned depth = 0) {
+    raw_ostream &O = GW.getOStream();
+    O.indent(2 * depth) << "subgraph cluster_" << static_cast<const void*>(S)
+      << " {\n";
+    O.indent(2 * (depth + 1)) << "label = \"\";\n";
+
+    O.indent(2 * (depth + 1)) << "style = solid;\n";
+    //O.indent(2 * (depth + 1)) << "style = filled;\n";
+    //O.indent(2 * (depth + 1)) << "color = "
+    //  << ((R->getDepth() * 2 % 12) + 1) << "\n";
+
+    typedef VASTSlot::const_subgrp_iterator iterator;
+    for (iterator I = S->subgrp_begin(), E = S->subgrp_end(); I != E; ++I)
+      O.indent(2 * (depth + 1)) << "Node" << static_cast<const void*>(*I)
+        << ";\n";
+
+    O.indent(2 * depth) << "}\n";
+  }
+
+  static void addCustomGraphFeatures(const VASTModule *VM,
+                                     GraphWriter<const VASTModule*> &GW) {
+    raw_ostream &O = GW.getOStream();
+    // O << "\tcolorscheme = \"paired12\"\n";
+    //typedef VASTModule::const_slot_iterator iterator;
+    //for (iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
+    //  const VASTSlot *S = I;
+    //  if (!S->IsVirtual) printSubgrpCluster(S, GW, 4);
+    //}
+  }
 };
 }
 
