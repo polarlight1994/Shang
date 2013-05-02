@@ -20,7 +20,6 @@
 #include "shang/VASTModule.h"
 
 #include "llvm/IR/Function.h"
-#include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-schedule-emitter"
@@ -51,23 +50,13 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
   // return true if the guarding condition of LHS is compatible with the
   // guarding condition of RHS, false otherwise.
   static bool isReachable(VASTSlot *LHS, VASTSlot *RHS) {
-    typedef df_iterator<VASTSlot*> slot_df_iterator;
-    for (slot_df_iterator DI = df_begin(LHS), DE = df_end(LHS);
-         DI != DE; /*++DI*/) {
-      VASTSlot *Child = *DI;
-
-      // Skip all children when we reach a non-virtual slot, because we cannot
-      // share the signal with them.
-      if (!Child->IsVirtual && Child != LHS) {
-        DI.skipChildren();
-        continue;
-      }
+    typedef VASTSlot::subgrp_iterator subgrp_iterator;
+    for (subgrp_iterator SI = LHS->subgrp_begin(), SE = LHS->subgrp_end();
+         SI != SE; ++SI) {
 
       // The guarding condition is compatible if LHS could reach RHS based on
       // the guarding condition relationship.
-      if (Child == RHS) return true;
-
-      ++DI;
+      if (*SI == RHS) return true;
     }
 
     return false;

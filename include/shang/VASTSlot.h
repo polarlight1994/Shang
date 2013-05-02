@@ -20,6 +20,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/PointerUnion.h"
+#include "llvm/ADT/DepthFirstIterator.h"
 
 namespace llvm {
 class VASTRegister;
@@ -66,7 +67,57 @@ private:
     SlotReady(this), SlotPred(this), SlotNum(0), IsVirtual(true) {}
 
   friend struct ilist_sentinel_traits<VASTSlot>;
+
 public:
+  template<bool IsConst>
+  class SubGrpIterator
+    : public std::iterator<std::forward_iterator_tag,
+                           typename conditional<IsConst,
+                                                const VASTSlot*,
+                                                VASTSlot*>::type,
+                           ptrdiff_t> {
+    typedef SubGrpIterator<IsConst> _Self;
+    typedef std::iterator<std::forward_iterator_tag,
+                          typename conditional<IsConst,
+                                               const VASTSlot*,
+                                               VASTSlot*>::type,
+                          ptrdiff_t> supper;
+    typedef typename supper::value_type value_type;
+    typedef df_iterator<value_type> iterator_impl;
+    iterator_impl IT;
+  public:
+    // Begin iterator.
+    SubGrpIterator(value_type V) : IT(iterator_impl::begin(V)) {}
+    // End iterator.
+    SubGrpIterator() : IT(iterator_impl::end(0)) {}
+
+    bool operator== (const _Self &RHS) const { return IT == RHS.IT; }
+    bool operator!= (const _Self &RHS) const { return IT != RHS.IT; }
+
+    value_type operator*() const { return *IT; }
+    value_type operator->() const { return operator*(); }
+
+    _Self &operator++ () {
+      ++IT;
+
+      // Skip the boundaries of the current slot.
+      while (IT != iterator_impl::end(0)) {
+        value_type NextSlot = *IT;
+
+        // Skip all children of next slot if it is not a subgroup.
+        if (NextSlot->IsVirtual) break;
+
+        IT.skipChildren();
+      }
+
+      return *this;
+    }
+
+    _Self operator++ (int) {
+      _Self tmp = *this; ++*this; return tmp;
+    }
+  };
+
   // Create the finish slot.
   explicit VASTSlot(unsigned slotNum);
 
@@ -138,6 +189,14 @@ public:
 
   void unlinkSuccs();
 
+  typedef SubGrpIterator<false> subgrp_iterator;
+  inline subgrp_iterator subgrp_begin();
+  inline subgrp_iterator subgrp_end();
+
+  typedef SubGrpIterator<true> const_subgrp_iterator;
+  inline const_subgrp_iterator subgrp_begin() const;
+  inline const_subgrp_iterator subgrp_end() const;
+
   bool operator<(const VASTSlot &RHS) const {
     return SlotNum < RHS.SlotNum;
   }
@@ -171,6 +230,23 @@ template<> struct GraphTraits<const VASTSlot*> {
     return N->succ_end();
   }
 };
+
+VASTSlot::subgrp_iterator VASTSlot::subgrp_begin() {
+  return subgrp_iterator(this);
+}
+
+VASTSlot::subgrp_iterator VASTSlot::subgrp_end() {
+  return subgrp_iterator();
+}
+
+VASTSlot::const_subgrp_iterator VASTSlot::subgrp_begin() const {
+  return const_subgrp_iterator(this);
+}
+
+VASTSlot::const_subgrp_iterator VASTSlot::subgrp_end() const {
+  return const_subgrp_iterator();
+}
+
 } // end namespace
 
 #endif

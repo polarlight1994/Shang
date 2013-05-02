@@ -575,20 +575,11 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
   else         BBEntry = getOrCreateBBEntry(BB);
 
   std::vector<VASTSeqOp*> Ops;
-  typedef df_iterator<VASTSlot*> slot_df_iterator;
-  for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
-    VASTSlot *Child = *DI;
-
-    // Skip all children when we reach a non-virtual slot, because we cannot
-    // share the signal with them.
-    if (!Child->IsVirtual && Child != S) {
-      DI.skipChildren();
-      continue;
-    }
-
+  typedef VASTSlot::subgrp_iterator subgrp_iterator;
+  for (subgrp_iterator SI = S->subgrp_begin(), SE = S->subgrp_end();
+       SI != SE; ++SI) {
     // Collect the operation in the current slot and the subgroups.
-    Ops.insert(Ops.end(), Child->op_begin(), Child->op_end());
-    ++DI;
+    Ops.insert(Ops.end(), SI->op_begin(), SI->op_end());
   }
 
   typedef std::vector<VASTSeqOp*>::iterator op_iterator;

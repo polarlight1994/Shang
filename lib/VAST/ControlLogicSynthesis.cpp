@@ -18,7 +18,6 @@
 #include "shang/Passes.h"
 
 #include "llvm/IR/DataLayout.h"
-#include "llvm/ADT/DepthFirstIterator.h"
 #define DEBUG_TYPE "shang-control-logic-synthesis"
 #include "llvm/Support/Debug.h"
 
@@ -199,26 +198,11 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
     // Share the signal to the virtual slots, because the virtual slot reachable
     // from this slot without visiting any non-virtual slots are sharing the
     // same state in the STG with the current slot.
-    typedef df_iterator<VASTSlot*> slot_df_iterator;
-    for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
-      VASTSlot *Child = *DI;
-
-      // Ignore the current slot.
-      if (Child == S) {
-        ++DI;
-        continue;
-      }
-
-      // share the signal with the virtual slots.
-      if (Child->IsVirtual) {
-        Child->copySignals(S);
-        ++DI;
-        continue;
-      }
-
-      // Skip all children when we reach a non-virtual slot, because we cannot
-      // share the signal with them.
-      DI.skipChildren();
+    typedef VASTSlot::subgrp_iterator subgrp_iterator;
+    for (subgrp_iterator SI = S->subgrp_begin(), SE = S->subgrp_end();
+         SI != SE; ++SI) {
+      VASTSlot *Child = *SI;
+      if (Child != S) Child->copySignals(S);
     }
   }
 
