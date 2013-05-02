@@ -68,7 +68,26 @@ struct PathIntervalQueryCache {
   raw_ostream &OS;
   const uint32_t Inf;
 
-  typedef DenseMap<VASTSeqValue*, unsigned> SeqValSetTy;
+  struct SrcInfo {
+    unsigned NumCycles;
+    float CriticalDelay;
+    explicit SrcInfo(unsigned NumCycles = STGShortestPath::Inf,
+                     float CriticalDelay = 0.0f)
+      : NumCycles(NumCycles), CriticalDelay(CriticalDelay) {}
+
+    // Update the source information with tighter cycles constraint and larger
+    // critical delay
+    void update(unsigned NumCycles, float CriticalDelay) {
+      this->NumCycles = std::min(this->NumCycles, NumCycles);
+      this->CriticalDelay = std::max(this->CriticalDelay, CriticalDelay);
+    }
+
+    void update(const SrcInfo &RHS) {
+      update(RHS.NumCycles, RHS.CriticalDelay);
+    }
+  };
+
+  typedef DenseMap<VASTSeqValue*, SrcInfo> SeqValSetTy;
   SeqValSetTy CyclesFromSrcLB;
 
   typedef DenseMap<VASTValue*, SeqValSetTy> QueryCacheTy;
@@ -85,14 +104,12 @@ struct PathIntervalQueryCache {
     CyclesFromSrcLB.clear();
   }
 
-  void addIntervalFromSrc(VASTSeqValue *Src, unsigned Interval) {
+  void addIntervalFromSrc(VASTSeqValue *Src,  unsigned Interval,
+                          float NormalizedDelay) {
     assert(Interval && "unexpected zero interval!");
-    unsigned &OldInterval = CyclesFromSrcLB[Src];
-    if (OldInterval == 0 || Interval < OldInterval)
-      OldInterval = Interval;
-
     assert((Src->getValType() != VASTSeqValue::Slot || Interval <= 1)
            && "Bad interval for slot registers!");
+    CyclesFromSrcLB[Src].update(Interval, NormalizedDelay);
   }
 
   bool annotateSubmoduleLatency(VASTSeqValue * V);
@@ -102,32 +119,25 @@ struct PathIntervalQueryCache {
   unsigned getMinimalInterval(VASTSeqValue *Src, VASTSlot *ReadSlot);
   unsigned getMinimalInterval(VASTSeqValue *Src, ArrayRef<VASTSlot*> ReadSlots);
 
-  bool updateInterval(SeqValSetTy &To, const SeqValSetTy &From,
+  void updateInterval(SeqValSetTy &To, const SeqValSetTy &From,
                       const SeqValSetTy &LocalIntervalMap) {
-    bool Changed = false;
-
     typedef SeqValSetTy::const_iterator it;
     for (it I = From.begin(), E = From.end(); I != E; ++I) {
-      assert(I->second && "Unexpected zero delay!");
+      assert(I->second.NumCycles && "Unexpected zero delay!");
 
-      unsigned &ExistInterval = To[I->first];
+      SrcInfo &SI = To[I->first];
       // Look up the delay from local delay map, because the delay of the From
       // map may correspond to another data-path with different destination.
       SeqValSetTy::const_iterator at = LocalIntervalMap.find(I->first);
       assert(at != LocalIntervalMap.end() && "Node not visited yet?");
-      if (ExistInterval == 0 || ExistInterval > at->second) {
-        ExistInterval = at->second;
-        Changed |= true;
-      }
+      SI.update(at->second);
     }
-
-    return Changed;
   }
 
   void insertMCPEntries() const;
   // Bind multi-cycle path constraints to the scripting engine.
   void insertMCPWithInterval(VASTSeqValue *Src, const std::string &ThuName,
-                             unsigned Interval) const;
+                             const SrcInfo &SI) const;
   unsigned insertMCPThough(VASTValue *Thu, const SeqValSetTy &SrcSet) const;
 
   typedef SeqValSetTy::const_iterator src_iterator;
@@ -218,7 +228,7 @@ bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
        I != E; ++I) {
     VASTSeqValue *Operand = *I;
-    addIntervalFromSrc(Operand, Latency);
+    addIntervalFromSrc(Operand, Latency, float(Latency));
   }
 
   return true;
@@ -277,16 +287,14 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
       }
 
       unsigned Interval = getMinimalInterval(V, ReadSlots);
+      float EstimatedDelay = TNL.getDelay(V, Root, Dst).getNormalizedDelay();
+      SrcInfo CurInfo(Interval, EstimatedDelay);
 
-      bool inserted = LocalInterval.insert(std::make_pair(V, Interval)).second;
+      bool inserted = LocalInterval.insert(std::make_pair(V, CurInfo)).second;
       assert(inserted && "Node had already been visited?");
-      unsigned &ExistedInterval = ParentReachableRegs[V];
-      if (ExistedInterval == 0 || Interval < ExistedInterval)
-        ExistedInterval = Interval;
-
-      // float EstimatedDelay = TNL.getDelay(V, Root, Dst).getNormalizedDelay();
+      ParentReachableRegs[V].update(CurInfo);
       // Add the information to statistics.
-      addIntervalFromSrc(V, Interval);
+      addIntervalFromSrc(V, Interval, EstimatedDelay);
       continue;
     }
 
@@ -304,15 +312,15 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
   for (it I = LocalInterval.begin(), E = LocalInterval.end(); I != E; ++I) {
     SeqValSetTy::const_iterator ActualIntervalAt = RootSet.find(I->first);
     assert(ActualIntervalAt != RootSet.end() && "Timing path entire missed!");
-    assert(ActualIntervalAt->second <= I->second
+    assert(ActualIntervalAt->second.NumCycles <= I->second.NumCycles
            && "Interval information not applied?");
-    if (ActualIntervalAt->second == I->second) continue;
+    if (ActualIntervalAt->second.NumCycles == I->second.NumCycles) continue;
 
-    DEBUG(dbgs() << "Timing path masked: Root is";
+    dbgs() << "Timing path masked: Root is";
     Root->printAsOperand(dbgs(), false);
     dbgs() << " end node is " << I->first->getName()
-           << " masked delay: " << I->second
-           << " actual delay: " << ActualIntervalAt->second << '\n');
+           << " masked delay: " << I->second.NumCycles
+           << " actual delay: " << ActualIntervalAt->second.NumCycles << '\n';
     IntervalMasked = true;
   }
 
@@ -376,7 +384,7 @@ void PathIntervalQueryCache::dump() const {
     for (reg_it RI = Set.begin(), RE = Set.end(); RI != RE; ++RI) {
       dbgs() << '(';
       //printBindingLuaCode(dbgs(), RI->first);
-      dbgs() << '#' << RI->second << "), ";
+      dbgs() << '#' << RI->second.NumCycles << "), ";
     }
 
     dbgs() << "}\n";
@@ -386,14 +394,14 @@ void PathIntervalQueryCache::dump() const {
 // the define node.
 void PathIntervalQueryCache::insertMCPWithInterval(VASTSeqValue *Src,
                                                    const std::string &ThuName,
-                                                   unsigned Interval) const {
+                                                   const SrcInfo &SI) const {
   assert(!ThuName.empty() && "Bad through node name!");
   OS << "INSERT INTO mcps(src, dst, thu, cycles, normalized_delay) VALUES(\n"
      << '\'' << getObjectName(Src) << "', \n"
      << '\'' << getObjectName(Dst) << "', \n"
      << '\'' << ThuName << "', \n"
-     << Interval << ", \n"
-     << 0.0f << ");\n";
+     << SI.NumCycles << ", \n"
+     << SI.CriticalDelay << ");\n";
 }
 
 unsigned PathIntervalQueryCache::insertMCPThough(VASTValue *Thu,
@@ -487,8 +495,8 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
       return;
     }
 
-    int Interval = Cache.getMinimalInterval(Src, ReadSlots);
-    Cache.addIntervalFromSrc(Src, Interval);
+    unsigned Interval = Cache.getMinimalInterval(Src, ReadSlots);
+    Cache.addIntervalFromSrc(Src, Interval, 0.0f);
 
     // Even a trivial path can be a false path, e.g.:
     // slot 1:

@@ -533,7 +533,7 @@ class AlteraSynStep(TestStep) :
 load_package flow
 load_package report
 
-exec python {{ [config_dir, "altera_sdc_generator.py"]|joinpath }} --sql {{ [hls_base_dir, test_name + ".sql"]|joinpath }} --sdc {{ [hls_base_dir, test_name + ".sdc"]|joinpath }} --period {{ 1000.0 / fmax}}
+exec python {{ [config_dir, "altera_sdc_generator.py"]|joinpath }} --sql {{ [hls_base_dir, test_name + ".sql"]|joinpath }} --sdc {{ [hls_base_dir, test_name + ".sdc"]|joinpath }} --period {{ 1000.0 / fmax}} --factor {{ option['shang_constraints_factor'] }}
 
 project_new {{ test_name }} -overwrite
 

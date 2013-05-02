@@ -95,6 +95,7 @@ def main(builtinParameters = {}):
   option_space_dict['shang_enable_memory_optimization'] = [ 'true' ]
   option_space_dict['shang_enable_memory_partition'] = [ 'true' ]
   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
+  option_space_dict['shang_constraints_factor'] = [ -0.1 ]
 
   option_space_dict['timing_model'] = [ 'bit-level' ]
 

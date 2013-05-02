@@ -6,6 +6,7 @@ parser = argparse.ArgumentParser(description='Altera SDC Script Generator')
 parser.add_argument("--sql", type=str, help="The script to build the sql database")
 parser.add_argument("--sdc", type=str, help="The path to which the sdc script will be written")
 parser.add_argument("--period", type=float, help="The clock period")
+parser.add_argument("--factor", type=float, help="The factor to the critical delay", default=0.0)
 
 args = parser.parse_args()
 
@@ -28,7 +29,8 @@ con.commit()
 
 cusor = con.cursor()
 
-path_constraints = ''' cycles > 1 '''
+path_constraints = ''' cycles > 1 and (thu like 'shang-null-node' or normalized_delay > %f) ''' % args.factor
+num_constraints_generated = 0
 
 # Generate the collection for keepers.
 keeper_id = 0;
@@ -50,7 +52,7 @@ for keeper_row in cusor.execute(keeper_query):
 # Generate the collection for nets
 net_id = 0;
 net_map = { 'shang-null-node' : None }
-net_query = '''SELECT DISTINCT thu FROM mcps where thu not like 'shang-null-node' and %(constraint)s''' % {
+net_query = '''SELECT DISTINCT thu FROM mcps where %(constraint)s''' % {
                'constraint' : path_constraints
             }
 for net_row in cusor.execute(net_query):
@@ -69,6 +71,8 @@ def generate_constraint(**kwargs) :
     sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] } { set_multicycle_path -from $%(src)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
   else :
     sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s] } { set_multicycle_path -from $%(src)s -through $%(thu)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
+  global num_constraints_generated
+  num_constraints_generated = num_constraints_generated + 1
 
 def generate_constraints_from_src_to_dst(src, dst) :
   query = '''SELECT thu, cycles FROM mcps
@@ -102,3 +106,4 @@ for dst in [ row[0] for row in cusor.execute(dst_query) ]:
 sdc_script.write('''post_message -type info "$num_not_applied constraints are not applied"\n''')
 
 sdc_script.close()
+print num_constraints_generated, ' constraints genrated'
