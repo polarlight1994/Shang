@@ -85,6 +85,7 @@ public:
 
   typedef ilist<VASTSeqValue> SeqValueVector;
   typedef SeqValueVector::iterator seqval_iterator;
+  typedef SeqValueVector::const_iterator const_seqval_iterator;
 
   typedef ilist<VASTSlot> SlotVecTy;
   typedef SlotVecTy::iterator slot_iterator;
@@ -329,6 +330,8 @@ public:
   // Iterate over all SeqVals in the module.
   seqval_iterator seqval_begin()  { return SeqVals.begin(); }
   seqval_iterator seqval_end()    { return SeqVals.end(); }
+  const_seqval_iterator seqval_begin() const { return SeqVals.begin(); }
+  const_seqval_iterator seqval_end()   const { return SeqVals.end(); }
   unsigned num_seqvals() const { return SeqVals.size(); }
 
   void print(raw_ostream &OS) const;
