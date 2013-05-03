@@ -30,8 +30,9 @@ class Value;
 class VASTNamedValue;
 class VASTValue;
 class VASTExpr;
-class VASTRegister;
+class VASTSeqValue;
 class VASTSymbol;
+class VASTRegister;
 class VASTSeqOp;
 class VASTModule;
 class vlang_raw_ostream;
@@ -462,7 +463,7 @@ public:
 
   // Extract all SeqVals which are connect to this VASTValue through data-path.
   // Return true if there is any supporting sval.
-  bool extractSupporingSeqVal(std::set<VASTRegister*> &SeqVals);
+  bool extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals);
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTValue *A) { return true; }
@@ -557,8 +558,22 @@ public:
   }
 };
 
+class VASTSignal : public VASTNamedValue {
+protected:
+  VASTSignal(VASTTypes DeclType, const char *Name, unsigned BitWidth);
+
+  virtual void anchor() const;
+public:
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTSignal *A) { return true; }
+  static inline bool classof(const VASTSeqValue *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastWire || A->getASTType() == vastSeqValue;
+  }
+};
+
 class VASTSubModuleBase : public VASTNode {
-  SmallVector<VASTRegister*, 8> Fanins;
+  SmallVector<VASTSeqValue*, 8> Fanins;
   SmallVector<VASTValue*, 4> Fanouts;
 protected:
   const unsigned Idx;
@@ -569,24 +584,24 @@ protected:
   }
 
 public:
-  typedef SmallVectorImpl<VASTRegister*>::iterator fanin_iterator;
+  typedef SmallVectorImpl<VASTSeqValue*>::iterator fanin_iterator;
   fanin_iterator fanin_begin() { return Fanins.begin(); }
   fanin_iterator fanin_end() { return Fanins.end(); }
 
-  typedef SmallVectorImpl<VASTRegister*>::const_iterator const_fanin_iterator;
+  typedef SmallVectorImpl<VASTSeqValue*>::const_iterator const_fanin_iterator;
   const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
   const_fanin_iterator fanin_end()   const { return Fanins.end(); }
 
   typedef SmallVectorImpl<VASTValue*>::iterator fanout_iterator;
 
-  void addFanin(VASTRegister *V);
+  void addFanin(VASTSeqValue *V);
   void addFanout(VASTValue *V);
 
   VASTValue *getFanout(unsigned Idx) const {
     return Fanouts[Idx];
   }
 
-  VASTRegister *getFanin(unsigned Idx) const {
+  VASTSeqValue *getFanin(unsigned Idx) const {
     return Fanins[Idx];
   }
 

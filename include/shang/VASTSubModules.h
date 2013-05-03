@@ -14,7 +14,7 @@
 #ifndef VAST_SUBMODULES_H
 #define VAST_SUBMODULES_H
 
-#include "shang/VASTRegister.h"
+#include "shang/VASTSeqValue.h"
 
 #include "llvm/ADT/StringMap.h"
 
@@ -44,7 +44,7 @@ public:
   unsigned getAddrWidth() const { return Log2_32_Ceil(getDepth()); }
 
   // Get the buses to block RAM.
-  VASTRegister *getRAddr(unsigned PortNum) const {
+  VASTSeqValue *getRAddr(unsigned PortNum) const {
     return getFanin(PortNum * 3);
   }
 
@@ -52,11 +52,11 @@ public:
     return getFanout(PortNum);
   }
 
-  VASTRegister *getWAddr(unsigned PortNum) const {
+  VASTSeqValue *getWAddr(unsigned PortNum) const {
     return getFanin(PortNum * 3 + 1);
   }
 
-  VASTRegister *getWData(unsigned PortNum) const {
+  VASTSeqValue *getWData(unsigned PortNum) const {
     return getFanin(PortNum * 3 + 2);
   }
 
@@ -77,7 +77,7 @@ class VASTSubModule : public VASTSubModuleBase {
   // Can the submodule be simply instantiated?
   bool IsSimple;
   // Special ports in the submodule.
-  VASTRegister *StartPort, *FinPort, *RetPort;
+  VASTSeqValue *StartPort, *FinPort, *RetPort;
 
   // The latency of the submodule.
   unsigned Latency;
@@ -102,7 +102,7 @@ public:
   const_port_iterator port_begin() const { return PortMap.begin(); }
   const_port_iterator port_end() const { return PortMap.end(); }
 
-  void addInPort(const std::string &Name, VASTRegister *V) {
+  void addInPort(const std::string &Name, VASTSeqValue *V) {
     addPort(Name, V, true);
   }
 
@@ -110,15 +110,15 @@ public:
     addPort(Name, V, false);
   }
 
-  VASTRegister *createStartPort(VASTModule *VM);
-  VASTRegister *getStartPort() const { return StartPort; }
+  VASTSeqValue *createStartPort(VASTModule *VM);
+  VASTSeqValue *getStartPort() const { return StartPort; }
 
-  VASTRegister *createFinPort(VASTModule *VM);
-  VASTRegister *getFinPort() const { return FinPort; }
+  VASTSeqValue *createFinPort(VASTModule *VM);
+  VASTSeqValue *getFinPort() const { return FinPort; }
 
-  VASTRegister *createRetPort(VASTModule *VM, unsigned Bitwidth,
+  VASTSeqValue *createRetPort(VASTModule *VM, unsigned Bitwidth,
                               unsigned Latency = 0);
-  VASTRegister *getRetPort() const { return RetPort; }
+  VASTSeqValue *getRetPort() const { return RetPort; }
 
   void printDecl(raw_ostream &OS) const;
 
@@ -136,6 +136,35 @@ public:
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSubmodule;
   }
+};
+
+class VASTRegister : public VASTNode {
+  VASTSeqValue *Value;
+  uint64_t InitVal;
+
+  VASTRegister(VASTSeqValue *V, uint64_t initVal, const char *Attr = "");
+  friend class VASTModule;
+public:
+  const char *const AttrStr;
+
+  VASTSeqValue *getValue() const { return Value; }
+  VASTSeqValue *operator->() { return getValue(); }
+
+  const char *getName() const { return getValue()->getName(); }
+  unsigned getBitWidth() const { return getValue()->getBitWidth(); }
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTRegister *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastRegister;
+  }
+
+  typedef VASTSeqValue::AndCndVec AndCndVec;
+
+  void printDecl(raw_ostream &OS) const;
+
+  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void print(raw_ostream &OS) const;
 };
 }
 #endif

@@ -1,4 +1,4 @@
-//===--- VASTRegister.h - Represent Registers and its Timing ----*- C++ -*-===//
+//===----- VASTSeqValue.h - The Value in the Sequential Logic ---*- C++ -*-===//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -7,9 +7,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines the VASTRegister. The VASTRegister represent the value in
+// This file defines the VASTSeqValue. The VASTSeqValue represent the value in
 // the sequential logic, it is not necessary SSA. The VASTSeqOp that define
-// the values is available from the VASTRegister.
+// the values is available from the VASTSeqValue.
 //
 //===----------------------------------------------------------------------===//
 
@@ -24,7 +24,7 @@ class Twine;
 class VASTExprBuilder;
 
 // Represent value in the sequential logic.
-class VASTRegister : public VASTNamedValue, public ilist_node<VASTRegister> {
+class VASTSeqValue : public VASTSignal, public ilist_node<VASTSeqValue> {
 public:
 
   enum Type {
@@ -47,7 +47,7 @@ public:
     VASTUse Pred;
     VASTUse FI;
 
-    Fanin(VASTRegister *V);
+    Fanin(VASTSeqValue *V);
 
     void AddSlot(VASTSlot *S);
     typedef std::vector<VASTSlot*>::iterator slot_iterator;
@@ -73,26 +73,22 @@ private:
                             std::vector<const VASTSeqOp*> >
                    &CSEMap) const;
 
-  friend struct ilist_sentinel_traits<VASTRegister>;
+  friend struct ilist_sentinel_traits<VASTSeqValue>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
-  VASTRegister()
-    : VASTNamedValue(vastSeqValue, 0, 0), T(VASTRegister::IO), Idx(0),
-      EnableU(this), Parent(this), InitialValue(0) {}
+  VASTSeqValue()
+    : VASTSignal(vastSeqValue, 0, 0), T(VASTSeqValue::IO), Idx(0),
+      EnableU(this), Parent(this) {}
 
   bool getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const;
 public:
-  const uint64_t InitialValue;
+  VASTSeqValue(const char *Name, unsigned Bitwidth, Type T, unsigned Idx,
+               VASTNode *Parent)
+    : VASTSignal(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx), EnableU(this),
+      Parent(Parent) {}
 
-  VASTRegister(const char *Name, unsigned Bitwidth, Type T, unsigned Idx,
-               VASTNode *Parent, uint64_t InitialValue)
-    : VASTNamedValue(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx), EnableU(this),
-      Parent(Parent), InitialValue(InitialValue) {}
+  ~VASTSeqValue();
 
-  ~VASTRegister();
-
-  bool isStandAlone() const { return Parent == 0; }
-
-  VASTRegister::Type getValType() const { return VASTRegister::Type(T); }
+  VASTSeqValue::Type getValType() const { return VASTSeqValue::Type(T); }
 
   unsigned getDataRegNum() const {
     assert((getValType() == Data) && "Wrong accessor!");
@@ -110,7 +106,7 @@ public:
   void addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef);
   void eraseLatch(VASTLatch U);
 
-  bool isTimingUndef() const { return getValType() == VASTRegister::Slot; }
+  bool isTimingUndef() const { return getValType() == VASTSeqValue::Slot; }
 
   typedef AssignmentVector::const_iterator const_iterator;
   const_iterator begin() const { return Assigns.begin(); }
@@ -141,9 +137,6 @@ public:
     printSelector(OS, getBitWidth(), PrintEnable);
   }
 
-  void printStandAloneDecl(raw_ostream &OS) const;
-  void printStandAlone(vlang_raw_ostream &OS, const VASTModule *Mod) const;
-
   void dumpFanins() const;
 
   void dropUses() {
@@ -153,7 +146,7 @@ public:
   void synthesisSelector(VASTExprBuilder &Builder);
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTRegister *A) { return true; }
+  static inline bool classof(const VASTSeqValue *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSeqValue;
   }

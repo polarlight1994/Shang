@@ -15,7 +15,7 @@
 #include "SchedulerBase.h"
 #include "TimingNetlist.h"
 
-#include "shang/VASTRegister.h"
+#include "shang/VASTSeqValue.h"
 #include "shang/VASTSeqOp.h"
 #include "shang/VASTSlot.h"
 
@@ -134,7 +134,7 @@ void CFGFoldingAnalysis::handleCommonSU(unsigned FoldingSize, VASTSchedUnit *SU,
 
   for (unsigned i = 0, e = Op->getNumSrcs(); i != e; ++i) {
     VASTLatch L = Op->getSrc(i);
-    VASTRegister *Dst = L.getDst();
+    VASTSeqValue *Dst = L.getDst();
 
     // Calculate the MuxSize after the current Fanin are duplicated.
     unsigned FoldedMuxSize = Dst->size() + FoldingSize - 1;

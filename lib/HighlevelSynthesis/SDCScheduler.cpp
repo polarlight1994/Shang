@@ -80,10 +80,10 @@ void BasicLinearOrderGenerator::addLinOrdEdge() {
       if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op))
         if (SeqInst->getSeqOpType() == VASTSeqInst::Latch) continue;
 
-      VASTRegister *Dst = Op->getSrc(Op->getNumSrcs() - 1).getDst();
+      VASTSeqValue *Dst = Op->getSrc(Op->getNumSrcs() - 1).getDst();
 
       // Ignore the common resource.
-      if (Dst->getValType() == VASTRegister::Data) continue;
+      if (Dst->getValType() == VASTSeqValue::Data) continue;
 
       // Assign the linear order.
       ConflictList[Dst].push_back(SU);

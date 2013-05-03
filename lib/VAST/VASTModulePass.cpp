@@ -92,8 +92,8 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   //===--------------------------------------------------------------------===//
   void allocateSubModules();
   //===--------------------------------------------------------------------===//
-  VASTRegister *getOrCreateSeqValImpl(Value *V, const Twine &Name);
-  VASTRegister *getOrCreateSeqVal(Value *V, const Twine &Name) {
+  VASTSeqValue *getOrCreateSeqValImpl(Value *V, const Twine &Name);
+  VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name) {
     std::string SeqValName = "v_" + Name.str() + "_r";
     SeqValName = ShangMangle(SeqValName);
     return getOrCreateSeqValImpl(V, SeqValName);
@@ -118,7 +118,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     }
   }
 
-  VASTRegister *getOrCreateSeqVal(Value *V) {
+  VASTSeqValue *getOrCreateSeqVal(Value *V) {
     SmallString<36> S;
     S.push_back('_');
     intToStr(intptr_t(V), S);
@@ -236,23 +236,26 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 }
 
 //===----------------------------------------------------------------------===//
-VASTRegister *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
+VASTSeqValue *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
                                                        const Twine &Name) {
   assert(!V->getType()->isVoidTy() && "Cannot create SeqVal for Inst!");
   VASTValPtr Val = Builder.lookupExpr(V);
 
   if (Val) {
-    assert(!Val.isInverted() && isa<VASTRegister>(Val.get()) && "Bad value type!");
-    return cast<VASTRegister>(Val.get());
+    assert(!Val.isInverted() && isa<VASTSeqValue>(Val.get()) && "Bad value type!");
+    return cast<VASTSeqValue>(Val.get());
   }
 
   // Create the SeqVal now.
   unsigned BitWidth = Builder.getValueSizeInBits(V);
-  VASTRegister *R =  VM->addRegister(Name, BitWidth, 0, VASTRegister::Data, 0);
+  VASTRegister *R
+    =  VM->addRegister(Name, BitWidth, 0, VASTSeqValue::Data, 0);
+  // V = VM->createSeqValue("v" + utostr_32(RegNo) + "r", BitWidth,
+  //                        VASTNode::Data, RegNo, 0);
 
   // Index the value.
-  Builder.indexVASTExpr(V, R);
-  return R;
+  Builder.indexVASTExpr(V, R->getValue());
+  return R->getValue();
 }
 
 
@@ -327,7 +330,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
 //===----------------------------------------------------------------------===//
 void VASTModuleBuilder::emitFunctionSignature(Function *F,
                                               VASTSubModule *SubMod) {
-  SmallVector<VASTRegister*, 4> ArgRegs;
+  SmallVector<VASTSeqValue*, 4> ArgRegs;
   SmallVector<VASTValPtr, 4> ArgPorts;
   SmallVector<Value*, 4> Args;
 
@@ -340,14 +343,14 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
     if (SubMod) {
       std::string RegName = SubMod->getPortName(Name);
       VASTRegister *R = VM->addIORegister(RegName, BitWidth, SubMod->getNum());
-      SubMod->addInPort(Name, R);
+      SubMod->addInPort(Name, R->getValue());
       continue;
     }
 
     VASTValPtr V
       = VM->addInputPort(Name, BitWidth, VASTModule::ArgPort)->getValue();
     // Remember the expression for the argument input.
-    VASTRegister *SeqVal = getOrCreateSeqVal(Arg, Name);
+    VASTSeqValue *SeqVal = getOrCreateSeqVal(Arg, Name);
     ArgRegs.push_back(SeqVal);
     ArgPorts.push_back(V);
     Args.push_back(Arg);
@@ -477,7 +480,7 @@ VASTNode *VASTModuleBuilder::emitBlockRAM(unsigned BRAMNum,
 
     VASTRegister *R = VM->addRegister(VFUBRAM::getOutDataBusName(BRAMNum),
                                       ElementSizeInBits, InitVal,
-                                      VASTRegister::StaticRegister, BRAMNum);
+                                      VASTSeqValue::StaticRegister, BRAMNum);
     bool Inserted = AllocatedBRAMs.insert(std::make_pair(BRAMNum, R)).second;
     assert(Inserted && "Creating the same BRAM twice?");
     (void) Inserted;
@@ -519,8 +522,8 @@ VASTModuleBuilder::emitIPFromTemplate(const char *Name, unsigned ResultSize)
   // Add the fanin registers.
   for (unsigned i = 0, e = OpInfo.size(); i < e; ++i) {
     VASTRegister *R = VM->addIORegister(OpInfo[i].first, OpInfo[i].second, FNNum);
-    SubMod->addInPort(OpInfo[i].first, R);
-    Ops.push_back(R);
+    SubMod->addInPort(OpInfo[i].first, R->getValue());
+    Ops.push_back(R->getValue());
   }
   // Add the start register.
   SubMod->createStartPort(VM);
@@ -567,7 +570,7 @@ void VASTModuleBuilder::visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd,
     Value *LiveOutedFromBB = PN->DoPHITranslation(BB, CurBB);
     VASTValPtr LiveOut = getAsOperandImpl(LiveOutedFromBB);
 
-    VASTRegister *PHISeqVal = getOrCreateSeqVal(PN);
+    VASTSeqValue *PHISeqVal = getOrCreateSeqVal(PN);
     // Latch the incoming value when we are branching to the succ slot.
     VM->latchValue(PHISeqVal, LiveOut, S,  Cnd, PN);
   }
@@ -595,7 +598,7 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
 
   // Assign the return port if necessary.
   if (NumOperands) {
-    VASTRegister *RetPort = VM->getRetPort().getSeqVal();
+    VASTSeqValue *RetPort = VM->getRetPort().getSeqVal();
     // Please note that we do not need to export the definition of the value
     // on the return port.
     SeqInst->addSrc(getAsOperandImpl(I.getReturnValue()), 0, false, RetPort);
@@ -819,8 +822,8 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
       ->annotateValue(V);
 
   // Read the return value from the function if there is any.
-  if (VASTRegister *RetPort = SubMod->getRetPort()) {
-    VASTRegister *Result = getOrCreateSeqVal(Inst->getValue());
+  if (VASTSeqValue *RetPort = SubMod->getRetPort()) {
+    VASTSeqValue *Result = getOrCreateSeqVal(Inst->getValue());
     VM->latchValue(Result, RetPort, Slot, VASTImmediate::True, V, 1);
     // Move the the next slot so that the operation can correctly read the
     // returned value
@@ -914,7 +917,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     // slots to get the result.
     Slot = advanceToNextSlot(Slot, Latency - 1);
     // Get the input port from the memory bus.
-    VASTRegister *Result = getOrCreateSeqVal(&I);
+    VASTSeqValue *Result = getOrCreateSeqVal(&I);
     assert(Result->getBitWidth() <= Bus->getDataWidth()
            && "Loading data that exceed the width of databus!");
     VASTValPtr V
@@ -935,7 +938,8 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
   VASTSlot *Slot = getLatestSlot(ParentBB);
 
   // The block RAM maybe degraded.
-  if (VASTRegister *V = dyn_cast<VASTRegister>(Node)) {
+  if (VASTRegister *R = dyn_cast<VASTRegister>(Node)) {
+    VASTSeqValue *V = R->getValue();
     if (IsWrite) {
       VASTValPtr Src = getAsOperandImpl(Data);
       VASTSeqInst *SeqInst
@@ -960,12 +964,12 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
   VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, IsWrite ? 2 : 1, &I,
                                 VASTSeqInst::Launch);
 
-  VASTRegister *AddrPort = IsWrite ? BRAM->getWAddr(0) : BRAM->getRAddr(0);
+  VASTSeqValue *AddrPort = IsWrite ? BRAM->getWAddr(0) : BRAM->getRAddr(0);
 
   Op->addSrc(AddrVal, 0, false, AddrPort);
   // Also assign the data to write to the dataport of the block RAM.
   if (IsWrite) {
-    VASTRegister *DataPort = BRAM->getWData(0);
+    VASTSeqValue *DataPort = BRAM->getWData(0);
     VASTValPtr DataToStore = getAsOperandImpl(Data);
     assert(DataToStore->getBitWidth() == BRAM->getWordSize()
            && "Write to BRAM data width not match!");
@@ -975,7 +979,7 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
   // Wait for 1 cycles and get the result for the read operation.
   if (!IsWrite) {
     Slot = advanceToNextSlot(Slot);
-    VASTRegister *Result = getOrCreateSeqVal(&I);
+    VASTSeqValue *Result = getOrCreateSeqVal(&I);
     assert(Result->getBitWidth() == BRAM->getWordSize()
            && "Read from BRAM data width not match!");
     // Use the the value from address port as the result of the block RAM read.

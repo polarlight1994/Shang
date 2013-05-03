@@ -13,7 +13,7 @@
 #include "LangSteam.h"
 
 #include "shang/VASTSlot.h"
-#include "shang/VASTRegister.h"
+#include "shang/VASTSeqValue.h"
 #include "shang/VASTSubModules.h"
 #include "shang/VASTModule.h"
 
@@ -44,8 +44,9 @@ void VASTSlot::createSignals(VASTModule *VM) {
   // Create the relative signals.
   std::string SlotName = "Slot" + utostr_32(SlotNum);
   VASTRegister *R = VM->addRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0,
-                                    VASTRegister::Slot, SlotNum);
-  SlotReg.set(R);
+                                    VASTSeqValue::Slot, SlotNum,
+                                    VASTModule::DirectClkEnAttr.c_str());
+  SlotReg.set(R->getValue());
 
   VASTWire *Ready = VM->addWire(SlotName + "Ready", 1,
                                 VASTModule::DirectClkEnAttr.c_str());
@@ -99,12 +100,12 @@ void VASTSlot::removeOp(VASTSeqOp *Op) {
   removeOp(at);
 }
 
-//VASTRegister *VASTSlot::getRegister() const {
-//  return cast<VASTRegister>(getValue()->getParent());
-//}
+VASTRegister *VASTSlot::getRegister() const {
+  return cast<VASTRegister>(getValue()->getParent());
+}
 
-VASTRegister *VASTSlot::getValue() const {
-  return SlotReg.unwrap().getAsLValue<VASTRegister>();
+VASTSeqValue *VASTSlot::getValue() const {
+  return SlotReg.unwrap().getAsLValue<VASTSeqValue>();
 }
 
 const char *VASTSlot::getName() const {
@@ -183,7 +184,7 @@ struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
     raw_string_ostream ss(Str);
     ss << Node->SlotNum;
 
-    if (VASTRegister *V =Node->getValue())
+    if (VASTSeqValue *V =Node->getValue())
       ss << " [" << V->getName() << ']';
 
     if (BasicBlock *BB = Node->getParent())

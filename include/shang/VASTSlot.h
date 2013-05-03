@@ -23,6 +23,7 @@
 #include "llvm/ADT/DepthFirstIterator.h"
 
 namespace llvm {
+class VASTRegister;
 class VASTExprBuilder;
 class vlang_raw_ostream;
 class VASTSlot;
@@ -131,10 +132,10 @@ public:
 
   void print(raw_ostream &OS) const;
 
-  VASTRegister *getValue() const;
+  VASTSeqValue *getValue() const;
   const char *getName() const;
   // Getting the relative signals.
-  // VASTRegister *getRegister() const;
+  VASTRegister *getRegister() const;
   VASTValue *getReady() const { return cast<VASTValue>(SlotReady); }
   VASTValue *getActive() const { return cast<VASTValue>(SlotActive); }
   VASTUse &getPred() { return SlotPred; }

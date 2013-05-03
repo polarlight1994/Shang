@@ -29,7 +29,7 @@ namespace llvm {
 class VASTValue;
 struct VASTLatch;
 class VASTSeqOp;
-class VASTRegister;
+class VASTSeqValue;
 class VASTSlot;
 class VASTModule;
 class STGShortestPath;
@@ -114,26 +114,26 @@ public:
   void releaseMemory();
   void verifyAnalysis() const;
 
-  unsigned getIntervalFromDef(VASTRegister *V, VASTSlot *ReadSlot,
+  unsigned getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlot,
                               STGShortestPath *SSP) const;
 
   void print(raw_ostream &OS) const;
 private:
   typedef ArrayRef<VASTSlot*> PathVector;
   void handleSlot(VASTSlot *S, PathVector PathFromEntry);
-  void handleUse(VASTRegister *Use, VASTSlot *UseSlot, PathVector PathFromEntry);
+  void handleUse(VASTSeqValue *Use, VASTSlot *UseSlot, PathVector PathFromEntry);
   void handleDef(VASTLatch D);
 
   void initializeLandingSlots();
   void initializeOverlappedSlots();
 
   struct VarName {
-    VASTRegister *Dst;
+    VASTSeqValue *Dst;
     VASTSlot *S;
 
     /*implicit*/ VarName(const VASTLatch &U);
 
-    VarName(VASTRegister *Dst, VASTSlot *S) : Dst(Dst), S(S) {}
+    VarName(VASTSeqValue *Dst, VASTSlot *S) : Dst(Dst), S(S) {}
 
     bool operator<(const VarName &RHS) const {
       if (Dst < RHS.Dst) return true;
@@ -156,9 +156,9 @@ private:
   }
 
   // The Slots the writing a specific SeqValue.
-  std::map<VASTRegister*, SparseBitVector<> > WrittenSlots;
+  std::map<VASTSeqValue*, SparseBitVector<> > WrittenSlots;
 
-  bool isWrittenAt(VASTRegister *V, VASTSlot *S);
+  bool isWrittenAt(VASTSeqValue *V, VASTSlot *S);
 
   // Create the VarInfo for PHINodes.
   void createInstVarInfo(VASTModule *VM);
@@ -172,7 +172,7 @@ public:
     return getVarInfo(VarName(L));
   }
 
-  VarInfo *getUniqueVarInfo(VASTRegister *V);
+  VarInfo *getUniqueVarInfo(VASTSeqValue *V);
 };
 }
 

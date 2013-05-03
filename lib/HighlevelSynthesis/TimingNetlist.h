@@ -21,7 +21,7 @@
 #include <map>
 
 namespace llvm {
-class VASTRegister;
+class VASTSeqValue;
 class VASTValue;
 class BitlevelDelayEsitmator;
 
@@ -165,14 +165,14 @@ private:
   PathDelayInfo PathInfo;
   BitlevelDelayEsitmator *Estimator;
 
-  void buildTimingPathToReg(VASTValue *Thu, VASTRegister *Dst, delay_type MUXDelay);
+  void buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst, delay_type MUXDelay);
 public: 
   static char ID;
 
   TimingNetlist();
   ~TimingNetlist();
 
-  TNLDelay getMuxDelay(unsigned Fanins, VASTRegister *SVal = 0) const;
+  TNLDelay getMuxDelay(unsigned Fanins, VASTSeqValue *SVal = 0) const;
 
   delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTValue *Dst) const;

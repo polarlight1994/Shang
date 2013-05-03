@@ -16,7 +16,7 @@
 #include "shang/VASTNodeBases.h"
 #include "shang/VASTDatapathNodes.h"
 #include "shang/VASTSeqOp.h"
-#include "shang/VASTRegister.h"
+#include "shang/VASTSeqValue.h"
 #include "shang/VASTSlot.h"
 
 #include "shang/FUInfo.h"
@@ -45,7 +45,7 @@ public:
   VASTPort(VASTNamedValue *V, bool isInput);
 
   VASTNamedValue *getValue() const { return Contents.NamedValue; }
-  VASTRegister *getSeqVal() const;
+  VASTSeqValue *getSeqVal() const;
 
   const char *getName() const { return getValue()->getName(); }
   bool isInput() const { return IsInput; }
@@ -79,7 +79,7 @@ public:
   typedef SmallVector<VASTSubModuleBase*, 16> SubmoduleVector;
   typedef SubmoduleVector::iterator submod_iterator;
 
-  typedef ilist<VASTRegister> SeqValueVector;
+  typedef ilist<VASTSeqValue> SeqValueVector;
   typedef SeqValueVector::iterator seqval_iterator;
   typedef SeqValueVector::const_iterator const_seqval_iterator;
 
@@ -114,12 +114,12 @@ private:
   // Input/Output ports of the design.
   PortVector Ports;
   // Wires and Registers of the design.
-  // RegisterVector Registers;
+  RegisterVector Registers;
   SubmoduleVector Submodules;
 
-  typedef StringMap<VASTNode*> SymTabTy;
+  typedef StringMap<VASTNamedValue*> SymTabTy;
   SymTabTy SymbolTable;
-  typedef StringMapEntry<VASTNode*> SymEntTy;
+  typedef StringMapEntry<VASTNamedValue*> SymEntTy;
 
   // The Name of the Design.
   std::string Name;
@@ -131,7 +131,7 @@ private:
   BumpPtrAllocator &getAllocator();
 
   VASTPort *createPort(const Twine &Name, unsigned BitWidth, bool isReg,
-                       bool isInput, VASTRegister::Type T);
+                       bool isInput, VASTSeqValue::Type T);
 public:
 
   VASTModule(Function &F);
@@ -149,7 +149,13 @@ public:
   void printModuleDecl(raw_ostream &OS) const;
   void printSignalDecl(raw_ostream &OS);
 
-  VASTNode *lookupSymbol(const Twine &Name) const {
+  VASTValue *getSymbol(const Twine &Name) const {
+    SymTabTy::const_iterator at = SymbolTable.find(Name.str());
+    assert(at != SymbolTable.end() && "Symbol not found!");
+    return at->second;
+  }
+
+  VASTValue *lookupSymbol(const Twine &Name) const {
     SymTabTy::const_iterator at = SymbolTable.find(Name.str());
     if (at == SymbolTable.end()) return 0;
 
@@ -161,9 +167,14 @@ public:
     return cast_or_null<T>(lookupSymbol(Name));
   }
 
+  template<class T>
+  T *getSymbol(const Twine &Name) const {
+    return cast<T>(getSymbol(Name));
+  }
+
   /// getOrCreateSymbol - Get the symbol with the specified name, create a new
   /// one if it does not exists.
-  VASTSymbol *createSymbol(const Twine &Name, unsigned Bitwidth);
+  VASTNamedValue *getOrCreateSymbol(const Twine &Name, unsigned Bitwidth);
 
   VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB,
                        VASTValPtr Pred = VASTImmediate::True,
@@ -183,7 +194,7 @@ public:
 
 
   // Allow user to add ports.
-  VASTPort *createPort(VASTRegister *SeqVal, bool IsInput, PortTypes T = Others);
+  VASTPort *createPort(VASTSeqValue *SeqVal, bool IsInput, PortTypes T = Others);
   VASTPort *addInputPort(const Twine &Name, unsigned BitWidth,
                          PortTypes T = Others);
 
@@ -238,9 +249,9 @@ public:
     return Ports.begin() + VASTModule::SpecialOutPortEnd;
   }
 
-  VASTRegister *createSeqValue(const Twine &Name, unsigned BitWidth,
-                               VASTRegister::Type T, unsigned Idx,
-                               VASTNode *Parent, uint64_t InitialValue = 0);
+  VASTSeqValue *createSeqValue(const Twine &Name, unsigned BitWidth,
+                               VASTSeqValue::Type T, unsigned Idx,
+                               VASTNode *Parent);
 
   VASTMemoryBus *createDefaultMemBus();
   VASTMemoryBus *createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth);
@@ -252,14 +263,15 @@ public:
 
   VASTRegister *addRegister(const Twine &Name, unsigned BitWidth,
                             unsigned InitVal = 0,
-                            VASTRegister::Type T = VASTRegister::Data,
-                            uint16_t RegData = 0);
+                            VASTSeqValue::Type T = VASTSeqValue::Data,
+                            uint16_t RegData = 0, const char *Attr = "");
 
   VASTRegister *addIORegister(const Twine &Name, unsigned BitWidth,
-                              unsigned FUNum);
+                              unsigned FUNum, const char *Attr = "");
 
   VASTRegister *addDataRegister(const Twine &Name, unsigned BitWidth,
-                                unsigned RegNum = 0, unsigned InitVal = 0);
+                                unsigned RegNum = 0, unsigned InitVal = 0,
+                                const char *Attr = "");
 
   VASTWire *addWire(const Twine &Name, unsigned BitWidth,
                     const char *Attr = "", bool IsWrapper = false);
@@ -268,6 +280,9 @@ public:
   VASTWire *createWrapperWire(GlobalVariable *GV, unsigned SizeInBits);
 
   VASTUDef *createUDef(unsigned Size);
+
+  reg_iterator reg_begin() { return Registers.begin(); }
+  reg_iterator reg_end() { return Registers.end(); }
 
   slot_iterator slot_begin() { return Slots.begin(); }
   slot_iterator slot_end() { return Slots.end(); }
@@ -285,11 +300,11 @@ public:
   VASTSeqInst *lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps,
                          Value *V, VASTSeqInst::Type T);
 
-  VASTSeqInst *latchValue(VASTRegister *SeqVal, VASTValPtr Src, VASTSlot *Slot,
+  VASTSeqInst *latchValue(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,
                           VASTValPtr GuardCnd, Value *V, unsigned Latency = 0);
 
   /// Create an assignment on the control logic.
-  VASTSeqCtrlOp *assignCtrlLogic(VASTRegister *SeqVal, VASTValPtr Src,
+  VASTSeqCtrlOp *assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
                                  VASTSlot *Slot, VASTValPtr GuardCnd,
                                  bool UseSlotActive, bool ExportDefine = true);
   /// Create an assignment on the control logic which may need further conflict
@@ -300,7 +315,7 @@ public:
   /// the SeqOp should be remove from its parent slot before we erase it.
   void eraseSeqOp(VASTSeqOp *SeqOp);
 
-  void eraseSeqVal(VASTRegister *Val);
+  void eraseSeqVal(VASTSeqValue *Val);
 
   // Iterate over all SeqOps in the module.
   typedef ilist<VASTSeqOp>::iterator seqop_iterator;

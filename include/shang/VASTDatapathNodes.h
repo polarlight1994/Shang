@@ -288,7 +288,7 @@ inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
   return get()->getOperand(i).get().invert(isInverted());
 }
 
-class VASTWire :public VASTNamedValue, public VASTOperandList,
+class VASTWire :public VASTSignal, public VASTOperandList,
                 public ilist_node<VASTWire> {
   unsigned Idx : 31;
   bool IsWrapper : 1;
@@ -297,7 +297,7 @@ class VASTWire :public VASTNamedValue, public VASTOperandList,
   VASTValPtr getAsInlineOperandImpl();
 
   friend struct ilist_sentinel_traits<VASTWire>;
-  VASTWire() : VASTNamedValue(vastWire, 0, 0), VASTOperandList(0), Idx(0),
+  VASTWire() : VASTSignal(vastWire, 0, 0), VASTOperandList(0), Idx(0),
     IsWrapper(false), AttrStr(0) {}
 
   virtual void dropUses();
@@ -306,7 +306,7 @@ public:
 
   VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "",
            bool IsWrapper = false)
-    : VASTNamedValue(vastWire, Name, BitWidth), VASTOperandList(1),
+    : VASTSignal(vastWire, Name, BitWidth), VASTOperandList(1),
       Idx(0), IsWrapper(IsWrapper), AttrStr(Attr) {
     new (Operands) VASTUse(this);
   }

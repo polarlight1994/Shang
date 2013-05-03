@@ -20,6 +20,7 @@
 
 #include "shang/Passes.h"
 #include "shang/VASTModule.h"
+#include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
 
 #include "llvm/IR/DataLayout.h"
@@ -278,7 +279,7 @@ struct VASTScheduling : public VASTModulePass {
   static char ID;
   typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
   IR2SUMapTy IR2SUMap;
-  typedef std::map<Argument*, VASTRegister*> ArgMapTy;
+  typedef std::map<Argument*, VASTSeqValue*> ArgMapTy;
   ArgMapTy ArgMap;
 
   VASTSchedGraph *G;
@@ -304,7 +305,7 @@ struct VASTScheduling : public VASTModulePass {
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
-  void buildFlowDependencies(VASTValue *Dst, VASTRegister *Src,
+  void buildFlowDependencies(VASTValue *Dst, VASTSeqValue *Src,
                              VASTSchedUnit *U, unsigned ExtraDelay);
   unsigned buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);
   unsigned buildFlowDependencies(VASTSchedUnit *U);
@@ -369,7 +370,7 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
 
   // Get the corresponding latch SeqOp.
   ArrayRef<VASTSchedUnit*> SUs(at->second);
-  VASTRegister *SrcSeqVal = 0;
+  VASTSeqValue *SrcSeqVal = 0;
   for (unsigned i = 0; i < SUs.size(); ++i) {
     VASTSchedUnit *CurSU = SUs[i];
     // Are we got the VASTSeqVal corresponding to V?
@@ -395,7 +396,7 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   return 0;
 }
 
-void VASTScheduling::buildFlowDependencies(VASTValue *Dst, VASTRegister *Src,
+void VASTScheduling::buildFlowDependencies(VASTValue *Dst, VASTSeqValue *Src,
                                            VASTSchedUnit *U, unsigned ExtraDelay)
 {
   VASTLatch L = Src->latchFront();
@@ -406,7 +407,7 @@ void VASTScheduling::buildFlowDependencies(VASTValue *Dst, VASTRegister *Src,
       // The static register is virtually defined at the entry slot. Because
       // we only write it when the function exit. Whe we read is the value from
       // last function execution.
-    = Src->getValType() == VASTRegister::StaticRegister ? G->getEntry()
+    = Src->getValType() == VASTSeqValue::StaticRegister ? G->getEntry()
                                                         : getFlowDepSU(V);
 
   unsigned NumCylces = Src == Dst ? 0 : TNL->getDelay(Src, Dst).getNumCycles();
@@ -415,8 +416,8 @@ void VASTScheduling::buildFlowDependencies(VASTValue *Dst, VASTRegister *Src,
 }
 
 unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
-  std::set<VASTRegister*> Srcs;
-  typedef std::set<VASTRegister*>::iterator iterator;
+  std::set<VASTSeqValue*> Srcs;
+  typedef std::set<VASTSeqValue*>::iterator iterator;
   unsigned MuxDelay = 0;
 
   assert(Op->getNumSrcs() && "No operand for flow dependencies!");
@@ -424,7 +425,7 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) 
   for (unsigned i = 0, e = Op->getNumSrcs(); i != e; ++i) {
     VASTLatch L = Op->getSrc(i);
     VASTValue *FI = VASTValPtr(L).get();
-    VASTRegister *Dst = L.getDst();
+    VASTSeqValue *Dst = L.getDst();
 
     // The Srcs set will be empty if FI is not a constant.
     if (!FI->extractSupporingSeqVal(Srcs)) continue;
@@ -450,7 +451,7 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) 
 
 unsigned VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
   VASTSlotCtrl *SlotCtrl = cast<VASTSlotCtrl>(U->getSeqOp());
-  std::set<VASTRegister*> Srcs;
+  std::set<VASTSeqValue*> Srcs;
   
   VASTValue *V = VASTValPtr(SlotCtrl->getPred()).get();
   V->extractSupporingSeqVal(Srcs);
@@ -458,7 +459,7 @@ unsigned VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
   unsigned NumFIs = SlotCtrl->getTargetSlot()->pred_size();
   unsigned MuxDelay = TNL->getMuxDelay(NumFIs, 0).getNumCycles();
 
-  typedef std::set<VASTRegister*>::iterator iterator;
+  typedef std::set<VASTSeqValue*>::iterator iterator;
   for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
     buildFlowDependencies(V, *I, U, MuxDelay);
 

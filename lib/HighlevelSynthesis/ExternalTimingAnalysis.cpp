@@ -77,7 +77,7 @@ raw_ostream &printAsLHS(raw_ostream &O, const VASTNamedValue *V,
 }
 
 static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
-                                                 const VASTRegister *V,
+                                                 const VASTSeqValue *V,
                                                  const VASTValue *LastV,
                                                  unsigned Indent) {
   unsigned Bitwidth = V->getBitWidth();
@@ -87,7 +87,7 @@ static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
     O.indent(Indent) << "if (read_netlist) begin\n";
     // For each fanin, print the datapath, selected by the slot register.
     O.indent(Indent + 2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
-    typedef VASTRegister::const_iterator fanin_iterator;
+    typedef VASTSeqValue::const_iterator fanin_iterator;
     for (fanin_iterator FI = V->begin(), FE = V->end(); FI != FE; ++FI) {
       VASTLatch U = *FI;
 
@@ -165,16 +165,16 @@ static std::string getName(const VASTValue *V) {
   return cast<VASTExpr>(V)->getTempName();
 }
 
-static void setTerminatorCollection(raw_ostream & O, const VASTRegister *V,
+static void setTerminatorCollection(raw_ostream & O, const VASTSeqValue *V,
                                     const char *CollectionName) {
   O << "set " << CollectionName << " [" << "get_keepers \"*" << V->getName()
     << "*\"]\n";
 }
 
 void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
-                                                  const VASTRegister *Dst,
+                                                  const VASTSeqValue *Dst,
                                                   const VASTValue *Thu,
-                                                  const VASTRegister *Src)
+                                                  const VASTSeqValue *Src)
                                                   const {
   // Get the source and destination nodes.
   setTerminatorCollection(O, Dst, "dst");
@@ -204,13 +204,13 @@ void ExternalTimingAnalysis::extractTimingForPair(raw_ostream &O,
 }
 
 void ExternalTimingAnalysis::extractTimingToDst(raw_ostream &O,
-                                                const VASTRegister *Dst,
+                                                const VASTSeqValue *Dst,
                                                 const VASTValue *Thu,
                                                 const SrcDelayInfo &Paths) const
 {
   typedef TimingNetlist::src_iterator iterator;
   for (iterator I = Paths.begin(), E = Paths.end(); I != E; ++I) {
-    if (VASTRegister *SeqVal = dyn_cast<VASTRegister>(I->first))
+    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(I->first))
       extractTimingForPair(O, Dst, Thu, SeqVal);
   }
 }
@@ -226,9 +226,9 @@ void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
        "puts $JSONFile \"\\[\"\n";
 
   typedef VASTModule::seqval_iterator iterator;
-  typedef VASTRegister::iterator fanin_iterator;
+  typedef VASTSeqValue::iterator fanin_iterator;
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
-    VASTRegister *SVal = I;    
+    VASTSeqValue *SVal = I;    
 
     for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
       VASTValue *Thu = VASTValPtr(*FI).get();
@@ -248,7 +248,7 @@ static bool exitWithError(const sys::Path &FileName) {
   return false;
 }
 
-static VASTRegister *readPathDst(KeyValueNode *N) {
+static VASTSeqValue *readPathDst(KeyValueNode *N) {
   assert(cast<ScalarNode>(N->getKey())->getRawValue() == "\"to\""
          && "Bad Key name!");
 
@@ -259,10 +259,10 @@ static VASTRegister *readPathDst(KeyValueNode *N) {
   if (Pin->getRawValue().getAsInteger<intptr_t>(10, Ptr))
     return 0;
 
-  return (VASTRegister*)Ptr;
+  return (VASTSeqValue*)Ptr;
 }
 
-static VASTRegister *readPathSrc(KeyValueNode *N) {
+static VASTSeqValue *readPathSrc(KeyValueNode *N) {
   assert(cast<ScalarNode>(N->getKey())->getRawValue() == "\"from\""
          && "Bad Key name!");
 
@@ -273,7 +273,7 @@ static VASTRegister *readPathSrc(KeyValueNode *N) {
   if (Pin->getRawValue().getAsInteger<intptr_t>(10, Ptr))
     return 0;
 
-  return (VASTRegister*)Ptr;
+  return (VASTSeqValue*)Ptr;
 }
 
 static double readDelay(KeyValueNode *N) {
@@ -301,8 +301,8 @@ bool ExternalTimingAnalysis::readPathDelay(MappingNode *N) {
   KeyValueNode *To = readAndAdvance(CurPtr);
   KeyValueNode *Delay = readAndAdvance(CurPtr);
 
-  VASTRegister *Src = readPathSrc(From);
-  VASTRegister *Dst = readPathDst(To);
+  VASTSeqValue *Src = readPathSrc(From);
+  VASTSeqValue *Dst = readPathDst(To);
 
   // Ignore the the trivial entry.
   if (!Src && !Dst) return true;

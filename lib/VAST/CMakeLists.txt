@@ -15,7 +15,7 @@ add_llvm_library(ShangVAST
   DesignMetrics.cpp
   LUTMapping.cpp
   VASTSeqOp.cpp
-  VASTRegister.cpp
+  VASTSeqValue.cpp
   VASTSlot.cpp
   VASTSubModules.cpp
   VASTMisc.cpp

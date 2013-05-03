@@ -34,23 +34,23 @@ struct ControlLogicSynthesis : public VASTModulePass {
     Builder->orEqual(SlotReadys[S->getValue()][V], Cnd);
   }
 
-  void addSlotSucc(VASTSlot *S, VASTRegister *P, VASTValPtr Cnd) {
+  void addSlotSucc(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
     bool inserted
       = SlotSuccs[S->getValue()][P].insert(std::make_pair(S, Cnd)).second;
     assert(inserted && "Predicated value had already existed!");
   }
 
   typedef std::map<VASTSlot*, VASTValPtr> ConditionVector;
-  typedef std::map<VASTRegister*, ConditionVector> FUCtrlVecTy;
+  typedef std::map<VASTSeqValue*, ConditionVector> FUCtrlVecTy;
   typedef FUCtrlVecTy::const_iterator const_fu_ctrl_it;
-  std::map<const VASTRegister*, FUCtrlVecTy> SlotSuccs;
+  std::map<const VASTSeqValue*, FUCtrlVecTy> SlotSuccs;
 
   typedef std::map<VASTValue*, VASTValPtr> FUReadyVecTy;
   typedef FUReadyVecTy::const_iterator const_fu_rdy_it;
-  std::map<const VASTRegister*, FUReadyVecTy> SlotReadys;
+  std::map<const VASTSeqValue*, FUReadyVecTy> SlotReadys;
 
   const FUCtrlVecTy &getSlotSucc(const VASTSlot *S) {
-    std::map<const VASTRegister*, FUCtrlVecTy>::const_iterator at
+    std::map<const VASTSeqValue*, FUCtrlVecTy>::const_iterator at
       = SlotSuccs.find(S->getValue());
     assert(at != SlotSuccs.end() && "Slot do not have successor!");
     return at->second;
@@ -58,7 +58,7 @@ struct ControlLogicSynthesis : public VASTModulePass {
 
   // Signals need to set before this slot is ready.
   const FUReadyVecTy *getReadySet(const VASTSlot *S) const {
-    std::map<const VASTRegister*, FUReadyVecTy>::const_iterator at
+    std::map<const VASTSeqValue*, FUReadyVecTy>::const_iterator at
       = SlotReadys.find(S->getValue());
 
     if (at == SlotReadys.end()) return 0;
@@ -133,7 +133,7 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
   assert(!S->succ_empty() && "Expect at least 1 next slot!");
   const FUCtrlVecTy &NextSlots = getSlotSucc(S);
   for (succ_cnd_iterator I = NextSlots.begin(),E = NextSlots.end(); I != E; ++I) {
-    VASTRegister *NextSlotReg = I->first;
+    VASTSeqValue *NextSlotReg = I->first;
     bool IsLoop = NextSlotReg == S->getValue();
     const ConditionVector &Cnds = I->second;
     for (cnd_iterator CI = Cnds.begin(), CE = Cnds.end(); CI != CE; ++CI) {

@@ -36,47 +36,47 @@ VASTMemoryBus::VASTMemoryBus(unsigned BusNum, unsigned AddrSize,
 void VASTMemoryBus::addPorts(VASTModule *VM) {
   unsigned ByteEnSize = getByteEnWdith();
   // The read ports.
-  VASTRegister *REn = VM->createSeqValue(getREnName(Idx), 1,
-                                         VASTRegister::Enable, 0, this);
+  VASTSeqValue *REn = VM->createSeqValue(getREnName(Idx), 1,
+                                         VASTSeqValue::Enable, 0, this);
   addFanin(REn);
   if (isDefault()) VM->createPort(REn, false);
 
-  VASTRegister *RBEn = VM->createSeqValue(getRByteEnName(Idx), ByteEnSize,
-                                          VASTRegister::IO, 0, this);
+  VASTSeqValue *RBEn = VM->createSeqValue(getRByteEnName(Idx), ByteEnSize,
+                                          VASTSeqValue::IO, 0, this);
   addFanin(RBEn);
   if (isDefault()) VM->createPort(RBEn, false);
 
-  VASTRegister *RAddr = VM->createSeqValue(getRAddrName(Idx), getAddrWidth(),
-                                          VASTRegister::IO, 0, this);
+  VASTSeqValue *RAddr = VM->createSeqValue(getRAddrName(Idx), getAddrWidth(),
+                                          VASTSeqValue::IO, 0, this);
   addFanin(RAddr);
   if (isDefault()) VM->createPort(RAddr, false);
 
   if (isDefault()) {
-    VASTRegister *RData = VM->createSeqValue(getRDataName(Idx), getDataWidth(),
-                                             VASTRegister::IO, 0, this);
+    VASTSeqValue *RData = VM->createSeqValue(getRDataName(Idx), getDataWidth(),
+                                             VASTSeqValue::IO, 0, this);
     addFanout(RData);
     VM->createPort(RData, true);
   } else
     addFanout(VM->addWire(getRDataName(Idx), getDataWidth(), ""));
 
   // The write ports.
-  VASTRegister *WEn = VM->createSeqValue(getWEnName(Idx), 1,
-                                         VASTRegister::Enable, 0, this);
+  VASTSeqValue *WEn = VM->createSeqValue(getWEnName(Idx), 1,
+                                         VASTSeqValue::Enable, 0, this);
   addFanin(WEn);
   if (isDefault()) VM->createPort(WEn, false);
 
-  VASTRegister *WBEn = VM->createSeqValue(getWByteEnName(Idx), ByteEnSize,
-                                          VASTRegister::IO, 0, this);
+  VASTSeqValue *WBEn = VM->createSeqValue(getWByteEnName(Idx), ByteEnSize,
+                                          VASTSeqValue::IO, 0, this);
   addFanin(WBEn);
   if (isDefault()) VM->createPort(WBEn, false);
 
-  VASTRegister *WAddr = VM->createSeqValue(getWAddrName(Idx), getAddrWidth(),
-                                           VASTRegister::IO, 0, this);
+  VASTSeqValue *WAddr = VM->createSeqValue(getWAddrName(Idx), getAddrWidth(),
+                                           VASTSeqValue::IO, 0, this);
   addFanin(WAddr);
   if (isDefault()) VM->createPort(WAddr, false);
 
-  VASTRegister *WData = VM->createSeqValue(getWDataName(Idx), getDataWidth(),
-                                           VASTRegister::IO, 0, this);
+  VASTSeqValue *WData = VM->createSeqValue(getWDataName(Idx), getDataWidth(),
+                                           VASTSeqValue::IO, 0, this);
   addFanin(WData);
   if (isDefault()) VM->createPort(WData, false);
 }
@@ -106,15 +106,15 @@ unsigned VASTMemoryBus::getStartOffset(GlobalVariable *GV) const {
 }
 
 // The read port of the memory bus.
-VASTRegister *VASTMemoryBus::getREnable() const {
+VASTSeqValue *VASTMemoryBus::getREnable() const {
   return getFanin(0);
 }
 
-VASTRegister *VASTMemoryBus::getRByteEn() const {
+VASTSeqValue *VASTMemoryBus::getRByteEn() const {
   return getFanin(1);
 }
 
-VASTRegister *VASTMemoryBus::getRAddr() const {
+VASTSeqValue *VASTMemoryBus::getRAddr() const {
   return getFanin(2);
 }
 
@@ -123,19 +123,19 @@ VASTValue    *VASTMemoryBus::getRData() const {
 }
 
 // The write port of the memory bus.
-VASTRegister *VASTMemoryBus::getWEnable() const {
+VASTSeqValue *VASTMemoryBus::getWEnable() const {
   return getFanin(3);
 }
 
-VASTRegister *VASTMemoryBus::getWByteEn() const {
+VASTSeqValue *VASTMemoryBus::getWByteEn() const {
   return getFanin(4);
 }
 
-VASTRegister *VASTMemoryBus::getWAddr() const {
+VASTSeqValue *VASTMemoryBus::getWAddr() const {
   return getFanin(5);
 }
 
-VASTRegister *VASTMemoryBus::getWData() const {
+VASTSeqValue *VASTMemoryBus::getWData() const {
   return getFanin(6);
 }
 
@@ -186,7 +186,7 @@ void VASTMemoryBus::printDecl(raw_ostream &OS) const {
   getWData()->printDecl(OS,   true);
 }
 
-static void printAssigment(vlang_raw_ostream &OS, VASTRegister *SeqVal,
+static void printAssigment(vlang_raw_ostream &OS, VASTSeqValue *SeqVal,
                            const VASTModule *Mod) {
   if (!SeqVal->empty())
     OS.if_begin(Twine(SeqVal->getName()) + Twine("_selector_enable"));
@@ -203,7 +203,7 @@ static void printAssigment(vlang_raw_ostream &OS, VASTRegister *SeqVal,
 
 void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   // Print the read port.
-  VASTRegister *ReadEnable = getREnable();
+  VASTSeqValue *ReadEnable = getREnable();
   if (!ReadEnable->empty()) {
     ReadEnable->printSelector(OS);
     getRAddr()->printSelector(OS);
@@ -230,7 +230,7 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   OS.always_ff_end(false);
 
   // Print the write port.
-  VASTRegister *WriteEnable = getWEnable();
+  VASTSeqValue *WriteEnable = getWEnable();
   if (!WriteEnable->empty()) {
     WriteEnable->printSelector(OS);
     getWAddr()->printSelector(OS);

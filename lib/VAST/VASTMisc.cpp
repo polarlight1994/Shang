@@ -120,6 +120,11 @@ void VASTLLVMValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
 }
 
 //===----------------------------------------------------------------------===//
+VASTSignal::VASTSignal(VASTTypes DeclType, const char *Name, unsigned BitWidth)
+  : VASTNamedValue(DeclType, Name, BitWidth) {}
+
+void VASTSignal::anchor() const {}
+
 VASTUse::VASTUse(VASTNode *U, VASTValPtr V) : User(*U), V(V) {
   linkUseToUser();
 }
@@ -178,14 +183,14 @@ void VASTOperandList::dropOperands() {
 
 //===----------------------------------------------------------------------===//
 void VASTModule::gc() {
-  // Clear up the dead VASTRegisters.
+  // Clear up the dead VASTSeqValues.
   for (seqval_iterator I = seqval_begin(); I != seqval_end(); /*++I*/) {
-    VASTRegister *V = I++;
+    VASTSeqValue *V = I++;
 
-    if (!V->use_empty() || V->getValType() != VASTRegister::Data) continue;;
+    if (!V->use_empty() || V->getValType() != VASTSeqValue::Data) continue;;
 
     SmallVector<VASTSeqOp*, 4> DeadOps;
-    for (VASTRegister::iterator I = V->begin(), E = V->end(); I != E; ++I) {
+    for (VASTSeqValue::iterator I = V->begin(), E = V->end(); I != E; ++I) {
       VASTLatch U = *I;
       DeadOps.push_back(U.Op);
     }

@@ -1,4 +1,4 @@
-//===--- VASTRegister.cpp - The Value in the Sequential Logic ---*- C++ -*-===//
+//===--- VASTSeqValue.cpp - The Value in the Sequential Logic ---*- C++ -*-===//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -7,16 +7,16 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implement the VASTRegister. The VASTRegister represent the value in
+// This file implement the VASTSeqValue. The VASTSeqValue represent the value in
 // the sequential logic, it is not necessary SSA. The VASTSeqOp that define
-// the values is available from the VASTRegister.
+// the values is available from the VASTSeqValue.
 //
 //===----------------------------------------------------------------------===//
 
 #include "LangSteam.h"
 
 #include "shang/VASTExprBuilder.h"
-#include "shang/VASTRegister.h"
+#include "shang/VASTSeqValue.h"
 #include "shang/VASTSlot.h"
 #include "shang/VASTModule.h"
 #define DEBUG_TYPE "vast-seq-value"
@@ -25,14 +25,14 @@
 
 using namespace llvm;
 //----------------------------------------------------------------------------//
-void VASTRegister::dumpFanins() const {
+void VASTSeqValue::dumpFanins() const {
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
     VASTLatch U = *I;
     U.Op->dump();
   }
 }
 
-bool VASTRegister::buildCSEMap(std::map<VASTValPtr,
+bool VASTSeqValue::buildCSEMap(std::map<VASTValPtr,
                                         std::vector<const VASTSeqOp*> >
                                &CSEMap) const {
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
@@ -43,7 +43,7 @@ bool VASTRegister::buildCSEMap(std::map<VASTValPtr,
   return !CSEMap.empty();
 }
 
-bool VASTRegister::getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const {
+bool VASTSeqValue::getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const {
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
     VASTLatch U = *I;
     std::set<VASTLatch>::iterator at = UniqueLatches.find(U);
@@ -60,13 +60,13 @@ bool VASTRegister::getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const {
   return true;
 }
 
-bool VASTRegister::verify() const {
+bool VASTSeqValue::verify() const {
   std::set<VASTLatch> UniqueLatches;
 
   return getUniqueLatches(UniqueLatches);
 }
 
-void VASTRegister::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
+void VASTSeqValue::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
                                    const VASTModule *Mod) const {
   if (empty()) return;
 
@@ -149,23 +149,23 @@ void VASTRegister::verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
   OS.indent(2) << "$finish();\nend\n";
 }
 
-void VASTRegister::addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef) {
+void VASTSeqValue::addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef) {
   if (IsDef)  Op->addDefDst(this);
   Assigns.push_back(VASTLatch(Op, SrcNo));
 }
 
-void VASTRegister::eraseLatch(VASTLatch U) {
+void VASTSeqValue::eraseLatch(VASTLatch U) {
   iterator at = std::find(begin(), end(), U);
   assert(at != end() && "U is not in the assignment vector!");
   Assigns.erase(at);
 }
 
-void VASTRegister::printSelector(raw_ostream &OS, unsigned Bitwidth,
+void VASTSeqValue::printSelector(raw_ostream &OS, unsigned Bitwidth,
                                  bool PrintEnable) const {
   if (empty()) return;
 
   if (!EnableU.isInvalid()) {
-    assert((getValType() == VASTRegister::Enable || !Fanins.empty())
+    assert((getValType() == VASTSeqValue::Enable || !Fanins.empty())
             && "Bad Fanin numder!");
     OS << "// Synthesized MUX\n";
 
@@ -173,7 +173,7 @@ void VASTRegister::printSelector(raw_ostream &OS, unsigned Bitwidth,
       OS << "wire " << ' ' << getName() << "_selector_enable = "
          << VASTValPtr(EnableU) << ";\n\n";
 
-    if (getValType() == VASTRegister::Enable) return;
+    if (getValType() == VASTSeqValue::Enable) return;
 
     OS << "reg " << VASTValue::printBitRange(Bitwidth, 0, false)
        << ' ' << getName() << "_selector_wire;\n";
@@ -212,7 +212,7 @@ void VASTRegister::printSelector(raw_ostream &OS, unsigned Bitwidth,
   // Create the temporary signal.
   OS << "// Combinational MUX\n";
 
-  if (getValType() != VASTRegister::Enable)
+  if (getValType() != VASTSeqValue::Enable)
     OS << "reg " << VASTValue::printBitRange(Bitwidth, 0, false)
        << ' ' << getName() << "_selector_wire;\n";
 
@@ -235,7 +235,7 @@ void VASTRegister::printSelector(raw_ostream &OS, unsigned Bitwidth,
 
     OS << "1'b0): begin\n";
     // Print the assignment under the condition.
-    if (getValType() != VASTRegister::Enable)
+    if (getValType() != VASTSeqValue::Enable)
       OS.indent(6) << getName() << "_selector_wire = " << I->first << ";\n";
 
     // Print the enable.
@@ -246,7 +246,7 @@ void VASTRegister::printSelector(raw_ostream &OS, unsigned Bitwidth,
   // Write the default condition, otherwise latch will be inferred.
   OS.indent(4) << "default: begin\n";
 
-  if (getValType() != VASTRegister::Enable)
+  if (getValType() != VASTSeqValue::Enable)
     OS.indent(6) << getName() << "_selector_wire = " << Bitwidth << "'bx;\n";
 
   if (PrintEnable) OS.indent(6) << getName() << "_selector_enable = 1'b0;\n";
@@ -254,19 +254,19 @@ void VASTRegister::printSelector(raw_ostream &OS, unsigned Bitwidth,
   OS.indent(2) << "endcase\nend  // end mux logic\n\n";
 }
 
-void VASTRegister::anchor() const {}
+void VASTSeqValue::anchor() const {}
 
-VASTRegister::~VASTRegister() {
+VASTSeqValue::~VASTSeqValue() {
   DeleteContainerPointers(Fanins);
 }
 
-VASTRegister::Fanin::Fanin(VASTRegister *V) : Pred(V), FI(V) {}
+VASTSeqValue::Fanin::Fanin(VASTSeqValue *V) : Pred(V), FI(V) {}
 
-void VASTRegister::Fanin::AddSlot(VASTSlot *S) {
+void VASTSeqValue::Fanin::AddSlot(VASTSlot *S) {
   Slots.push_back(S);
 }
 
-void VASTRegister::synthesisSelector(VASTExprBuilder &Builder) {
+void VASTSeqValue::synthesisSelector(VASTExprBuilder &Builder) {
   typedef std::vector<const VASTSeqOp*> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator it;
@@ -280,7 +280,7 @@ void VASTRegister::synthesisSelector(VASTExprBuilder &Builder) {
   SmallVector<VASTValPtr, 8> FaninPreds;
   SmallVector<VASTValPtr, 16> EnablePreds;
 
-  bool IsEnable = (getValType() == VASTRegister::Enable);
+  bool IsEnable = (getValType() == VASTSeqValue::Enable);
 
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     Fanin *FI = 0;
@@ -320,45 +320,4 @@ void VASTRegister::synthesisSelector(VASTExprBuilder &Builder) {
 
   assert((!IsEnable || Fanins.empty()) && "Enable should has only 1 fanin!");
   EnableU.set(Builder.buildOrExpr(EnablePreds, 1));
-}
-
-void VASTRegister::printStandAloneDecl(raw_ostream &OS) const {
-  printDecl(OS, true, "");
-  OS << " = "
-     << VASTImmediate::buildLiteral(InitialValue, getBitWidth(), false)
-     <<  ";\n";
-}
-
-void VASTRegister::printStandAlone(vlang_raw_ostream &OS,
-                                   const VASTModule *Mod) const {
-  VASTNode *Parent = getParent();
-  if (Parent && !isa<VASTPort>(Parent)) return;
-
-  if (empty()) return;
-
-  // Print the data selector of the register.
-  printSelector(OS);
-
-  OS.always_ff_begin();
-  // Reset the register.
-  OS << getName()  << " <= "
-     << VASTImmediate::buildLiteral(InitialValue, getBitWidth(), false)
-     << ";\n";
-  OS.else_begin();
-
-  // Print the assignment.
-  if (getValType() == VASTRegister::Enable)
-    OS << getName() << " <= " << getName() << "_selector_enable" << ";\n";
-  else {
-    OS.if_begin(Twine(getName()) + Twine("_selector_enable"));
-    OS << getName() << " <= " << getName() << "_selector_wire"
-       << VASTValue::printBitRange(getBitWidth(), 0, false) << ";\n";
-    OS.exit_block();
-  }
-
-  OS << "// synthesis translate_off\n";
-  verifyAssignCnd(OS, getName(), Mod);
-  OS << "// synthesis translate_on\n\n";
-
-  OS.always_ff_end();
 }
