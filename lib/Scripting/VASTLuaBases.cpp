@@ -244,7 +244,7 @@ VASTWire *VASTModule::createWrapperWire(const Twine &Name, unsigned SizeInBits,
                                         VASTValPtr V) {
   Twine WrapperName = Name + "_wrapper";
   // Reuse the old wire if we had create one.
-  VASTWire *W = cast_or_null<VASTWire>(lookupSymbol(WrapperName));
+  VASTWire *W = lookupSymbol<VASTWire>(WrapperName);
   if (W == 0) {
     W = addWire(WrapperName, SizeInBits, "", true);
     if (V) W->assign(V);
@@ -490,8 +490,7 @@ void VASTModule::printSignalDecl(raw_ostream &OS) {
     (*I)->printDecl(OS);
 }
 
-VASTNamedValue *VASTModule::getOrCreateSymbol(const Twine &Name,
-                                              unsigned BitWidth) {
+VASTSymbol *VASTModule::getOrCreateSymbol(const Twine &Name, unsigned BitWidth) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   VASTNamedValue *&V = Entry.second;
   if (V == 0) {
@@ -502,7 +501,7 @@ VASTNamedValue *VASTModule::getOrCreateSymbol(const Twine &Name,
 
   assert(V->getBitWidth() == BitWidth && "Getting symbol with wrong bitwidth!");
 
-  return V;
+  return cast<VASTSymbol>(V);
 }
 
 VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V) {
