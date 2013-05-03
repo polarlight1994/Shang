@@ -77,16 +77,20 @@ private:
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
   VASTSeqValue()
     : VASTSignal(vastSeqValue, 0, 0), T(VASTSeqValue::IO), Idx(0),
-      EnableU(this), Parent(this) {}
+      EnableU(this), Parent(this), InitialValue(0) {}
 
   bool getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const;
 public:
+  const uint64_t InitialValue;
+
   VASTSeqValue(const char *Name, unsigned Bitwidth, Type T, unsigned Idx,
-               VASTNode *Parent)
+               VASTNode *Parent, uint64_t InitialValue)
     : VASTSignal(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx), EnableU(this),
-      Parent(Parent) {}
+      Parent(Parent), InitialValue(InitialValue) {}
 
   ~VASTSeqValue();
+
+  bool isStandAlone() const { return Parent == 0; }
 
   VASTSeqValue::Type getValType() const { return VASTSeqValue::Type(T); }
 
@@ -136,6 +140,9 @@ public:
   void printSelector(raw_ostream &OS, bool PrintEnable = true) const {
     printSelector(OS, getBitWidth(), PrintEnable);
   }
+
+  void printStandAloneDecl(raw_ostream &OS) const;
+  void printStandAlone(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 
   void dumpFanins() const;
 

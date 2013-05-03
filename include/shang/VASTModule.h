@@ -114,7 +114,7 @@ private:
   // Input/Output ports of the design.
   PortVector Ports;
   // Wires and Registers of the design.
-  RegisterVector Registers;
+  // RegisterVector Registers;
   SubmoduleVector Submodules;
 
   typedef StringMap<VASTNamedValue*> SymTabTy;
@@ -251,7 +251,7 @@ public:
 
   VASTSeqValue *createSeqValue(const Twine &Name, unsigned BitWidth,
                                VASTSeqValue::Type T, unsigned Idx,
-                               VASTNode *Parent);
+                               VASTNode *Parent, uint64_t InitialValue = 0);
 
   VASTMemoryBus *createDefaultMemBus();
   VASTMemoryBus *createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth);
@@ -261,15 +261,15 @@ public:
 
   VASTSubModule *addSubmodule(const char *Name, unsigned Num);
 
-  VASTRegister *addRegister(const Twine &Name, unsigned BitWidth,
+  VASTSeqValue *addRegister(const Twine &Name, unsigned BitWidth,
                             unsigned InitVal = 0,
                             VASTSeqValue::Type T = VASTSeqValue::Data,
                             uint16_t RegData = 0, const char *Attr = "");
 
-  VASTRegister *addIORegister(const Twine &Name, unsigned BitWidth,
+  VASTSeqValue *addIORegister(const Twine &Name, unsigned BitWidth,
                               unsigned FUNum, const char *Attr = "");
 
-  VASTRegister *addDataRegister(const Twine &Name, unsigned BitWidth,
+  VASTSeqValue *addDataRegister(const Twine &Name, unsigned BitWidth,
                                 unsigned RegNum = 0, unsigned InitVal = 0,
                                 const char *Attr = "");
 
@@ -280,9 +280,6 @@ public:
   VASTWire *createWrapperWire(GlobalVariable *GV, unsigned SizeInBits);
 
   VASTUDef *createUDef(unsigned Size);
-
-  reg_iterator reg_begin() { return Registers.begin(); }
-  reg_iterator reg_end() { return Registers.end(); }
 
   slot_iterator slot_begin() { return Slots.begin(); }
   slot_iterator slot_end() { return Slots.end(); }

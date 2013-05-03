@@ -406,16 +406,15 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
                             + BaseName
                             + "n" + utostr_32(VM->num_seqvals());
         if (ValTy != VASTSeqValue::Enable) {
-          VASTRegister *R = VM->addRegister(Name + "r", BitWidth, 0, ValTy, RegNum);
-          LastNextLevelFI = R->getValue();
+          LastNextLevelFI
+            = VM->addRegister(Name + "r", BitWidth, 0, ValTy, RegNum);
           NumPipelineRegBits += LastNextLevelFI->getBitWidth();
         }
 
         // Do not build the enable for the SeqVal to be pipelined.
-        VASTRegister *R = VM->addRegister(Name + "en", 1, 0,
+        LastNextLevelEn = VM->addRegister(Name + "en", 1, 0,
                                           VASTSeqValue::Enable,
                                           VM->num_seqvals());
-        LastNextLevelEn = R->getValue();
         NumPipelineRegBits += LastNextLevelEn->getBitWidth();
       }
     }

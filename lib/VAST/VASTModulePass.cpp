@@ -248,14 +248,11 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
 
   // Create the SeqVal now.
   unsigned BitWidth = Builder.getValueSizeInBits(V);
-  VASTRegister *R
-    =  VM->addRegister(Name, BitWidth, 0, VASTSeqValue::Data, 0);
-  // V = VM->createSeqValue("v" + utostr_32(RegNo) + "r", BitWidth,
-  //                        VASTNode::Data, RegNo, 0);
+  VASTSeqValue *R =  VM->addRegister(Name, BitWidth, 0, VASTSeqValue::Data, 0);
 
   // Index the value.
-  Builder.indexVASTExpr(V, R->getValue());
-  return R->getValue();
+  Builder.indexVASTExpr(V, R);
+  return R;
 }
 
 
@@ -342,8 +339,8 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
     // Add port declaration.
     if (SubMod) {
       std::string RegName = SubMod->getPortName(Name);
-      VASTRegister *R = VM->addIORegister(RegName, BitWidth, SubMod->getNum());
-      SubMod->addInPort(Name, R->getValue());
+      VASTSeqValue *R = VM->addIORegister(RegName, BitWidth, SubMod->getNum());
+      SubMod->addInPort(Name, R);
       continue;
     }
 
@@ -478,7 +475,7 @@ VASTNode *VASTModuleBuilder::emitBlockRAM(unsigned BRAMNum,
     assert((CI == 0 || CI->getBitWidth() <= 64) && "Initializer not supported!");
     if (CI) InitVal = CI->getZExtValue();
 
-    VASTRegister *R = VM->addRegister(VFUBRAM::getOutDataBusName(BRAMNum),
+    VASTSeqValue *R = VM->addRegister(VFUBRAM::getOutDataBusName(BRAMNum),
                                       ElementSizeInBits, InitVal,
                                       VASTSeqValue::StaticRegister, BRAMNum);
     bool Inserted = AllocatedBRAMs.insert(std::make_pair(BRAMNum, R)).second;
@@ -521,9 +518,9 @@ VASTModuleBuilder::emitIPFromTemplate(const char *Name, unsigned ResultSize)
   SmallVector<VASTValPtr, 4> Ops;
   // Add the fanin registers.
   for (unsigned i = 0, e = OpInfo.size(); i < e; ++i) {
-    VASTRegister *R = VM->addIORegister(OpInfo[i].first, OpInfo[i].second, FNNum);
-    SubMod->addInPort(OpInfo[i].first, R->getValue());
-    Ops.push_back(R->getValue());
+    VASTSeqValue *R = VM->addIORegister(OpInfo[i].first, OpInfo[i].second, FNNum);
+    SubMod->addInPort(OpInfo[i].first, R);
+    Ops.push_back(R);
   }
   // Add the start register.
   SubMod->createStartPort(VM);
@@ -938,8 +935,7 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
   VASTSlot *Slot = getLatestSlot(ParentBB);
 
   // The block RAM maybe degraded.
-  if (VASTRegister *R = dyn_cast<VASTRegister>(Node)) {
-    VASTSeqValue *V = R->getValue();
+  if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(Node)) {
     if (IsWrite) {
       VASTValPtr Src = getAsOperandImpl(Data);
       VASTSeqInst *SeqInst

@@ -321,3 +321,41 @@ void VASTSeqValue::synthesisSelector(VASTExprBuilder &Builder) {
   assert((!IsEnable || Fanins.empty()) && "Enable should has only 1 fanin!");
   EnableU.set(Builder.buildOrExpr(EnablePreds, 1));
 }
+
+void VASTSeqValue::printStandAloneDecl(raw_ostream &OS) const {
+  printDecl(OS, true, "");
+  OS << " = "
+     << VASTImmediate::buildLiteral(InitialValue, getBitWidth(), false)
+     <<  ";\n";
+}
+
+void VASTSeqValue::printStandAlone(vlang_raw_ostream &OS,
+                                   const VASTModule *Mod) const {
+  if (empty()) return;
+
+  // Print the data selector of the register.
+  printSelector(OS);
+
+  OS.always_ff_begin();
+  // Reset the register.
+  OS << getName()  << " <= "
+     << VASTImmediate::buildLiteral(InitialValue, getBitWidth(), false)
+     << ";\n";
+  OS.else_begin();
+
+  // Print the assignment.
+  if (getValType() == VASTSeqValue::Enable)
+    OS << getName() << " <= " << getName() << "_selector_enable" << ";\n";
+  else {
+    OS.if_begin(Twine(getName()) + Twine("_selector_enable"));
+    OS << getName() << " <= " << getName() << "_selector_wire"
+       << VASTValue::printBitRange(getBitWidth(), 0, false) << ";\n";
+    OS.exit_block();
+  }
+
+  OS << "// synthesis translate_off\n";
+  verifyAssignCnd(OS, getName(), Mod);
+  OS << "// synthesis translate_on\n\n";
+
+  OS.always_ff_end();
+}

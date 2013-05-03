@@ -201,9 +201,11 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 
 VASTSeqValue *
 VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
-                           VASTSeqValue::Type T, unsigned Idx, VASTNode *P) {
+                           VASTSeqValue::Type T, unsigned Idx, VASTNode *P,
+                           uint64_t InitialValue) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
-  VASTSeqValue *V = new VASTSeqValue(Entry.getKeyData(), BitWidth, T, Idx, P);
+  VASTSeqValue *V
+    = new VASTSeqValue(Entry.getKeyData(), BitWidth, T, Idx, P, InitialValue);
   Entry.second = V;
   SeqVals.push_back(V);
 
@@ -343,7 +345,6 @@ void VASTModule::reset() {
 
   // Release all ports.
   Ports.clear();
-  Registers.clear();
   SymbolTable.clear();
   NumArgPorts = 0;
   RetPortIdx = 0;
@@ -465,10 +466,8 @@ void VASTModule::printSubmodules(vlang_raw_ostream &OS) const {
 void VASTModule::printRegisterBlocks(vlang_raw_ostream &OS) const {
   typedef RegisterVector::const_iterator iterator;
 
-  for (iterator I = Registers.begin(), E = Registers.end(); I != E; ++I) {
-    VASTRegister *R = *I;
-    R->print(OS, this);
-  }
+  for (const_seqval_iterator I = seqval_begin(), E = seqval_end(); I != E; ++I)
+    if (I->isStandAlone()) I->printStandAlone(OS, this);
 }
 
 void VASTModule::printModuleDecl(raw_ostream &OS) const {
@@ -483,8 +482,8 @@ void VASTModule::printModuleDecl(raw_ostream &OS) const {
 }
 
 void VASTModule::printSignalDecl(raw_ostream &OS) {
-  for (reg_iterator I = Registers.begin(), E = Registers.end(); I != E; ++I)
-    (*I)->printDecl(OS);
+  for (const_seqval_iterator I = seqval_begin(), E = seqval_end(); I != E; ++I)
+    if (I->isStandAlone()) I->printStandAloneDecl(OS);
 
   for (submod_iterator I = Submodules.begin(),E = Submodules.end();I != E;++I)
     (*I)->printDecl(OS);
@@ -572,10 +571,7 @@ VASTSlotCtrl *VASTModule::createSlotCtrl(VASTNode *N, VASTSlot *Slot,
 
 void VASTModule::eraseSeqVal(VASTSeqValue *Val) {
   assert(Val->use_empty() && "Val still stuck at some user!");
-
-  // Also try to erase the parent registr.
-  if (VASTRegister *R = dyn_cast<VASTRegister>(Val->getParent()))
-    Registers.erase(std::find(reg_begin(), reg_end(), R));
+  assert(Val->isStandAlone() && "Cannot remove register!");
 
   SeqVals.erase(Val);
 }
@@ -613,7 +609,7 @@ VASTPort *VASTModule::createPort(const Twine &Name, unsigned BitWidth,
   VASTNamedValue *V;
 
   if (isReg)
-    V = addRegister(Name, BitWidth, 0, T, 0, "// ")->getValue();
+    V = addRegister(Name, BitWidth, 0, T, 0, "// ");
   else
     V = createSeqValue(Name, BitWidth, VASTSeqValue::IO, 0, Port);
 
@@ -675,25 +671,18 @@ VASTPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
   return Port;
 }
 
-VASTRegister *VASTModule::addRegister(const Twine &Name, unsigned BitWidth,
+VASTSeqValue *VASTModule::addRegister(const Twine &Name, unsigned BitWidth,
                                       unsigned InitVal, VASTSeqValue::Type T,
                                       uint16_t RegData, const char *Attr) {
-  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
-  assert(Entry.second == 0 && "Symbol already exist!");
-  VASTRegister *Reg = getAllocator().Allocate<VASTRegister>();
-  VASTSeqValue *V = createSeqValue(Entry.getKeyData(), BitWidth, T, RegData, Reg);
-  new (Reg) VASTRegister(V, InitVal, Attr);
-
-  Registers.push_back(Reg);
-  return Reg;
+  return createSeqValue(Name, BitWidth, T, RegData, 0, InitVal);
 }
 
-VASTRegister *VASTModule::addIORegister(const Twine &Name, unsigned BitWidth,
+VASTSeqValue *VASTModule::addIORegister(const Twine &Name, unsigned BitWidth,
                                         unsigned FUNum, const char *Attr) {
   return addRegister(Name, BitWidth, 0, VASTSeqValue::IO, FUNum, Attr);
 }
 
-VASTRegister *VASTModule::addDataRegister(const Twine &Name, unsigned BitWidth,
+VASTSeqValue *VASTModule::addDataRegister(const Twine &Name, unsigned BitWidth,
                                           unsigned RegNum, unsigned InitVal,
                                           const char *Attr) {
   return addRegister(Name, BitWidth, InitVal, VASTSeqValue::Data, RegNum, Attr);

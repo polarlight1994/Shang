@@ -213,7 +213,8 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
 }
 
 bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
-  VASTSubModule *SubMod = dyn_cast<VASTSubModule>(V->getParent());
+  VASTNode *Parent = V->getParent();
+  VASTSubModule *SubMod = dyn_cast_or_null<VASTSubModule>(Parent);
   if (SubMod == 0) return false;
 
   assert(V->getValType() == VASTSeqValue::IO && "Bad Seqvalue type!");

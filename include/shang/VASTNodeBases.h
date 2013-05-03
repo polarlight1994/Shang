@@ -32,7 +32,6 @@ class VASTValue;
 class VASTExpr;
 class VASTSeqValue;
 class VASTSymbol;
-class VASTRegister;
 class VASTSeqOp;
 class VASTModule;
 class vlang_raw_ostream;
