@@ -19,12 +19,21 @@
 
 #include "shang/VASTModulePass.h"
 
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SparseBitVector.h"
+#include "llvm/ADT/ArrayRef.h"
+
 namespace llvm {
 class VASTSlot;
 class VASTModule;
+class STGShortestPath;
 
 class OverlappedSlots : public VASTModulePass {
+  STGShortestPath *STP;
+  DenseMap<unsigned, SparseBitVector<> > Overlappeds;
 
+  void buildOverlappedMap(VASTSlot *S);
+  void buildOverlappedMap(VASTSlot *S, ArrayRef<VASTSlot*> StraightFlow);
 public:
   static const unsigned Inf;
 
