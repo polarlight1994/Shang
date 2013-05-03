@@ -68,7 +68,7 @@ void OverlappedSlots::buildOverlappedMap(VASTSlot *S,
       continue;
     }
 
-    if (Distance && !Child->IsVirtual) {
+    if (Distance) {
       unsigned Offset = Distance - 1;
       VASTSlot *OverlappedSlot = StraightFlow[Offset];
       Overlappeds[OverlappedSlot->SlotNum].set(Child->SlotNum);
