@@ -118,7 +118,6 @@ void SeqLiveVariables::print(raw_ostream &OS) const {
   typedef VASTModule::const_seqval_iterator iterator;
   for (iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
     const VASTSeqValue *V = I;
-    OS << V->getName() << ":\n";
     VIs.clear();
 
     typedef VASTSeqValue::const_iterator latch_iterator;
@@ -126,6 +125,10 @@ void SeqLiveVariables::print(raw_ostream &OS) const {
       std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
       if (at != VarInfos.end()) VIs.insert(getVarInfo(*DI));
     }
+
+    if (VIs.empty()) continue;
+
+    OS << V->getName() << ":\n";
 
     typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
     for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
