@@ -31,7 +31,6 @@ class VASTWire;
 class VASTRegister;
 class VASTBlockRAM;
 class VASTSubModule;
-class VASTSeqCode;
 class VASTSeqInst;
 class DatapathContainer;
 class VASTExprBuilder;
@@ -80,9 +79,6 @@ public:
   typedef SmallVector<VASTSubModuleBase*, 16> SubmoduleVector;
   typedef SubmoduleVector::iterator submod_iterator;
 
-  typedef SmallVector<VASTSeqCode*, 16> SeqCodeVector;
-  typedef SeqCodeVector::iterator seqcode_iterator;
-
   typedef ilist<VASTSeqValue> SeqValueVector;
   typedef SeqValueVector::iterator seqval_iterator;
   typedef SeqValueVector::const_iterator const_seqval_iterator;
@@ -120,7 +116,6 @@ private:
   // Wires and Registers of the design.
   RegisterVector Registers;
   SubmoduleVector Submodules;
-  SeqCodeVector SeqCode;
 
   typedef StringMap<VASTNamedValue*> SymTabTy;
   SymTabTy SymbolTable;
