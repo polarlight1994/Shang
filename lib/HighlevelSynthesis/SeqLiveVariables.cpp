@@ -627,23 +627,3 @@ SeqLiveVariables::VarInfo *SeqLiveVariables::getUniqueVarInfo(VASTSeqValue *V) {
 
   return VI;
 }
-
-void SeqLiveVariables::transferVarInfo(const VASTLatch &From,
-                                       const VASTLatch &To) {
-  VarName FromVN(From), ToVN(To);
-  assert((FromVN < ToVN || ToVN < FromVN)  && "Bad VarName!");
-
-  std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(FromVN);
-  assert(at != VarInfos.end() && "Value use before define!");
-
-  VarInfo *SrcVI = at->second;
-  //VarInfos.erase(at);
-
-  VarInfo *&DstVI = VarInfos[ToVN];
-  if (DstVI == 0) {
-    DstVI = SrcVI;
-    return;
-  }
-
-  llvm_unreachable("VI merging is not supported yet!");
-}
