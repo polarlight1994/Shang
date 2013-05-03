@@ -41,6 +41,7 @@ class SeqLiveInterval {
   // The underlying data.
   VASTSeqValue *SV;
   SparseBitVector<> Alives;
+  SparseBitVector<> Overlappeds;
 
   typedef SmallPtrSet<SeqLiveInterval*, 8> NodeVecTy;
   // Predecessors and Successors.
@@ -54,7 +55,7 @@ public:
   static const int TINY_VAL = 1;
 
   SeqLiveInterval(VASTSeqValue *SV, SeqLiveVariables *LVS) : SV(SV) {
-    if (LVS == 0) return;
+    if (SV == 0) return;
 
     typedef VASTSeqValue::const_iterator iterator;
     for (iterator DI = SV->begin(), DE = SV->end(); DI != DE; ++DI) {
@@ -62,6 +63,7 @@ public:
       Alives |= LV->Alives;
       Alives |= LV->Kills;
       Alives |= LV->DefKills;
+      Overlappeds |= LV->Overlappeds;
     }
   }
 
@@ -97,11 +99,14 @@ public:
 
   void merge(const SeqLiveInterval *RHS) {
     Alives |= RHS->Alives;
+    Overlappeds |= RHS->Overlappeds;
   }
 
   bool compatibleWith(const SeqLiveInterval *RHS) const {
     return SV->getBitWidth() == RHS->SV->getBitWidth()
-           && !Alives.intersects(RHS->Alives);
+           && !Alives.intersects(RHS->Alives)
+           && !Alives.intersects(RHS->Overlappeds)
+           && !Overlappeds.intersects(RHS->Alives);
   }
 
   bool isNeighbor(SeqLiveInterval *RHS) const {
@@ -493,7 +498,6 @@ SeqLiveInterval *GetNeighborToCombine(SeqLiveInterval *P) {
 }
 
 void RegisterSharing::mergeLI(SeqLiveInterval *From, SeqLiveInterval *To) {
-
   assert(From->compatibleWith(To) && "Cannot merge incompatible LiveIntervals!");
   VASTSeqValue *FromV = From->get(), *ToV = To->get();
   DEBUG(dbgs() << "Merge " << FromV->getName() << " to " << ToV->getName()
