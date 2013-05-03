@@ -331,6 +331,9 @@ void VASTSeqValue::printStandAloneDecl(raw_ostream &OS) const {
 
 void VASTSeqValue::printStandAlone(vlang_raw_ostream &OS,
                                    const VASTModule *Mod) const {
+  VASTNode *Parent = getParent();
+  if (Parent && !isa<VASTPort>(Parent)) return;
+
   if (empty()) return;
 
   // Print the data selector of the register.

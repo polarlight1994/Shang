@@ -467,7 +467,7 @@ void VASTModule::printRegisterBlocks(vlang_raw_ostream &OS) const {
   typedef RegisterVector::const_iterator iterator;
 
   for (const_seqval_iterator I = seqval_begin(), E = seqval_end(); I != E; ++I)
-    if (I->isStandAlone()) I->printStandAlone(OS, this);
+    I->printStandAlone(OS, this);
 }
 
 void VASTModule::printModuleDecl(raw_ostream &OS) const {
