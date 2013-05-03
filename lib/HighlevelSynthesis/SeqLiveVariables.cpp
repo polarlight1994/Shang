@@ -112,13 +112,27 @@ void SeqLiveVariables::releaseMemory() {
 }
 
 void SeqLiveVariables::print(raw_ostream &OS) const {
-  typedef std::map<VarName, VarInfo*>::const_iterator iterator;
   OS << "\n\nSeqLiveVariables:\n";
+  SmallPtrSet<VarInfo*, 8> VIs;
 
-  for (iterator I = VarInfos.begin(), E = VarInfos.end(); I != E; ++I) {
-    OS << I->first.Dst->getName() << '@' << I->first.S->SlotNum << "\n\t";
-    I->second->print(OS);
-    OS << '\n';
+  typedef VASTModule::const_seqval_iterator iterator;
+  for (iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
+    const VASTSeqValue *V = I;
+    OS << V->getName() << ":\n";
+    VIs.clear();
+
+    typedef VASTSeqValue::const_iterator latch_iterator;
+    for (latch_iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
+      std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
+      if (at != VarInfos.end()) VIs.insert(getVarInfo(*DI));
+    }
+
+    typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
+    for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
+      VarInfo *VInfo = *VI;
+      VInfo->print(OS);
+      OS << '\n';
+    }
   }
 
   OS << "\n\n\n";
