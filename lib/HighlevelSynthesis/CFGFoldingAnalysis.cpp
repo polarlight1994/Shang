@@ -118,7 +118,7 @@ void CFGFoldingAnalysis::addConstraints() {
   // frequency first.
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    BasicBlock *BB = I;
+    //BasicBlock *BB = I;
 
     //addConstraints(BB);
   }

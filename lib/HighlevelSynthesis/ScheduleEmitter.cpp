@@ -351,8 +351,6 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot) {
       continue;
     }
 
-    Value *Val = U.Op->getValue();
-
     DEBUG(dbgs() << "Goning to forward " /*<< VASTValPtr(U) << ", "*/
                  << *U.Op->getValue());
 

@@ -528,8 +528,6 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
 
   VisitStack.push_back(std::make_pair(UseSlot, UseSlot->pred_begin()));
 
-  bool HasMultiDef = VI->hasMultiDef();
-
   while (!VisitStack.empty()) {
     VASTSlot *Node = VisitStack.back().first;
     ChildIt It = VisitStack.back().second;

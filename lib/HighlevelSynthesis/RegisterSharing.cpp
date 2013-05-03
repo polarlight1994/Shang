@@ -556,8 +556,8 @@ void RegisterSharing::mergeSeqVal(VASTSeqValue *ToV, VASTSeqValue *FromV) {
     }
 
     // Also transfer the live variable information.
-    VASTLatch NewL = NewInst->getSrc(L.No);
-    //LVS->transferVarInfo(L, NewL);
+    // VASTLatch NewL = NewInst->getSrc(L.No);
+    // LVS->transferVarInfo(L, NewL);
 
     // Rememeber the dead ops.
     DeadOps.push_back(Op);

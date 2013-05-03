@@ -73,8 +73,6 @@ bool VASTSlot::hasNextSlot(VASTSlot *NextSlot) const {
 }
 
 void VASTSlot::unlinkSuccs() {
-  bool hasLoop = false;
-
   for (succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
     VASTSlot *SuccSlot = *I;
     assert(SuccSlot != this && "Unexpected loop!");
@@ -229,7 +227,7 @@ struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
 
   static void addCustomGraphFeatures(const VASTModule *VM,
                                      GraphWriter<const VASTModule*> &GW) {
-    raw_ostream &O = GW.getOStream();
+    // raw_ostream &O = GW.getOStream();
     // O << "\tcolorscheme = \"paired12\"\n";
     //typedef VASTModule::const_slot_iterator iterator;
     //for (iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
