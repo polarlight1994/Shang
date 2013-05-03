@@ -268,7 +268,7 @@ static void setLandingSlots(VASTSlot *S, SparseBitVector<> &Landings) {
     VASTSlot *Child = *DI;
 
     // Ignore the current slot and any immediate reachable subgroups.
-    if (Child == S || Child->IsVirtual) {
+    if (Child == S || Child->IsSubGrp) {
       ++DI;
       continue;
     }
@@ -448,14 +448,14 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   // There is a read U1 at S3', the subgroup of S2. For U1, it reads the value
   // produced by D1 instead of D2, because D2 and U1 are actually scheduled
   // to the same slot, hence the assignment at S2 is not available at S3'.
-  bool IgnoreSlot = UseSlot->IsVirtual;
+  bool IgnoreSlot = UseSlot->IsSubGrp;
   typedef PathVector::reverse_iterator path_iterator;
   for (path_iterator I = PathFromEntry.rbegin(), E = PathFromEntry.rend();
        I != E; ++I) {
     VASTSlot *S = *I;
     if (IgnoreSlot) {
 
-      if (!S->IsVirtual) IgnoreSlot = false;
+      if (!S->IsSubGrp) IgnoreSlot = false;
 
       continue;
     }
@@ -489,7 +489,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   VarInfo *VI = getVarInfo(VarName(Use, DefSlot));
 
   if (UseSlot == DefSlot) {
-    assert(UseSlot->IsVirtual && UseSlot->getParent() == 0
+    assert(UseSlot->IsSubGrp && UseSlot->getParent() == 0
            && "Unexpected Cycle!");
     VI->DefKills.set(UseSlot->SlotNum);
 

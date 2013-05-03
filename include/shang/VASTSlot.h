@@ -61,10 +61,10 @@ private:
 
   friend class VASTModule;
   VASTSlot(unsigned slotNum, BasicBlock *ParentBB, VASTValPtr Pred,
-           bool IsVirtual);
+           bool IsSubGrp);
 
   VASTSlot() : VASTNode(vastSlot), SlotReg(this), SlotActive(this),
-    SlotReady(this), SlotPred(this), SlotNum(0), IsVirtual(true) {}
+    SlotReady(this), SlotPred(this), SlotNum(0), IsSubGrp(true) {}
 
   friend struct ilist_sentinel_traits<VASTSlot>;
 
@@ -105,7 +105,7 @@ public:
         value_type NextSlot = *IT;
 
         // Skip all children of next slot if it is not a subgroup.
-        if (NextSlot->IsVirtual) break;
+        if (NextSlot->IsSubGrp) break;
 
         IT.skipChildren();
       }
@@ -123,7 +123,7 @@ public:
 
   typedef uint16_t SlotNumTy;
   const SlotNumTy SlotNum : 15;
-  const bool      IsVirtual : 1;
+  const bool      IsSubGrp : 1;
 
   void createSignals(VASTModule *VM);
   void copySignals(VASTSlot *S);

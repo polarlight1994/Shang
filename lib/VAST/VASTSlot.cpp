@@ -24,22 +24,22 @@
 using namespace llvm;
 
 VASTSlot::VASTSlot(unsigned slotNum, BasicBlock *ParentBB,  VASTValPtr Pred,
-                   bool IsVirtual)
+                   bool IsSubGrp)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
     SlotReady(this, 0), SlotPred(this, Pred), SlotNum(slotNum),
-    IsVirtual(IsVirtual) {
+    IsSubGrp(IsSubGrp) {
   Contents.ParentBB = ParentBB;
 }
 
 VASTSlot::VASTSlot(unsigned slotNum)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
     SlotReady(this, 0), SlotPred(this, VASTImmediate::True), SlotNum(slotNum),
-    IsVirtual(false) {
+    IsSubGrp(false) {
   Contents.ParentBB = 0;
 }
 
 void VASTSlot::createSignals(VASTModule *VM) {
-  assert(!IsVirtual && "Cannot create signal for virtual slots!");
+  assert(!IsSubGrp && "Cannot create signal for virtual slots!");
 
   // Create the relative signals.
   std::string SlotName = "Slot" + utostr_32(SlotNum);
@@ -131,7 +131,7 @@ VASTSlot *VASTSlot::getSubGroup(BasicBlock *BB) const {
   for (iterator I = succ_begin(), E = succ_end(); I != E; ++I){
     VASTSlot *Succ = *I;
 
-    if (!Succ->IsVirtual || Succ->getParent() != BB) continue;
+    if (!Succ->IsSubGrp || Succ->getParent() != BB) continue;
 
     assert(SubGrp == 0 && "Unexpected multiple subgroup with the same BB!");
     SubGrp = Succ;
@@ -156,7 +156,7 @@ void VASTSlot::print(raw_ostream &OS) const {
   OS << "Succ: ";
 
   for (const_succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I)
-    OS << "S#" << (*I)->SlotNum << '(' << (*I)->IsVirtual << ")v, ";
+    OS << "S#" << (*I)->SlotNum << '(' << (*I)->IsSubGrp << ")v, ";
 }
 
 //===----------------------------------------------------------------------===//
@@ -199,7 +199,7 @@ struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
   static std::string getNodeAttributes(NodeTy *Node, GraphTy *Graph) {
     std::string Attr = "shape=Mrecord";
 
-    if (Node->IsVirtual) Attr += ", style=dotted";
+    if (Node->IsSubGrp) Attr += ", style=dotted";
 
     return Attr;
   }

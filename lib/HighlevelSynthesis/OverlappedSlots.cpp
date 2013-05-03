@@ -95,7 +95,7 @@ void OverlappedSlots::buildOverlappedMap(VASTSlot *S) {
     }
 
     // The edges to the successors of a subgroup are all conditional.
-    if (Child->IsVirtual) {
+    if (Child->IsSubGrp) {
       // Collect the (conditional) successor of S.
       if (DI.getPathLength() == 2)
         ConditionalBroundaries.push_back(Child);
@@ -120,8 +120,8 @@ static bool HasSideBranch(VASTSlot *S) {
   typedef VASTSlot::succ_iterator iterator;
   for (iterator I = S->succ_begin(), E = S->succ_end(); I != E; ++I) {
     VASTSlot *Succ = *I;
-    HasVirtualSucc |= Succ->IsVirtual;
-    HasNonVirtualSucc |= !Succ->IsVirtual;
+    HasVirtualSucc |= Succ->IsSubGrp;
+    HasNonVirtualSucc |= !Succ->IsSubGrp;
   }
 
   return HasNonVirtualSucc && HasVirtualSucc;
@@ -140,7 +140,7 @@ bool OverlappedSlots::runOnVASTModule(VASTModule &VM) {
   for (iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
     VASTSlot *S = I;
 
-    if (S->IsVirtual) continue;
+    if (S->IsSubGrp) continue;
 
     if (HasSideBranch(S)) buildOverlappedMap(S);
   }

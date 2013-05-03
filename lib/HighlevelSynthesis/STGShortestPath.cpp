@@ -64,7 +64,7 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
     for (succ_iterator SI = Src->succ_begin(), SE = Src->succ_end(); SI != SE; ++SI) {
       VASTSlot *Dst = *SI;
       assert(Src != Dst && "Unexpected loop!");
-      STPMatrix[Dst->SlotNum][Src->SlotNum] = Dst->IsVirtual ? 0 : 1;
+      STPMatrix[Dst->SlotNum][Src->SlotNum] = Dst->IsSubGrp ? 0 : 1;
     }
   }
 
@@ -85,7 +85,7 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
     // Use the Floyd Warshal algorithm to compute the shortest path.
     for (slot_top_iterator I =RPO.begin(), E = RPO.end(); I != E; ++I) {
       VASTSlot *To = *I;
-      unsigned EdgeDistance = To->IsVirtual ? 0 : 1;
+      unsigned EdgeDistance = To->IsSubGrp ? 0 : 1;
 
       typedef VASTSlot::pred_iterator pred_iterator;
       for (pred_iterator PI = To->pred_begin(), PE = To->pred_end(); PI != PE; ++PI) {

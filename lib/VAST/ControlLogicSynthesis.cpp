@@ -191,7 +191,7 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
        I != E; ++I) {
     VASTSlot *S = I;
 
-    if (S->IsVirtual) continue;
+    if (S->IsSubGrp) continue;
 
     S->createSignals(VM);
 
@@ -217,7 +217,7 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
     VASTSlot *S = I;
 
     // No need to synthesize the control logic for virtual slots.
-    if (S->IsVirtual) continue;
+    if (S->IsSubGrp) continue;
     
     // Build the ready logic.
     buildSlotReadyLogic(S);

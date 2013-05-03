@@ -564,7 +564,7 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 
 void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
   // Ignore the subgroups.
-  if (S->IsVirtual) return;
+  if (S->IsSubGrp) return;
 
   BasicBlock *BB = S->getParent();
 
