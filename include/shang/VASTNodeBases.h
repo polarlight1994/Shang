@@ -558,20 +558,6 @@ public:
   }
 };
 
-class VASTSignal : public VASTNamedValue {
-protected:
-  VASTSignal(VASTTypes DeclType, const char *Name, unsigned BitWidth);
-
-  virtual void anchor() const;
-public:
-  /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTSignal *A) { return true; }
-  static inline bool classof(const VASTSeqValue *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastWire || A->getASTType() == vastSeqValue;
-  }
-};
-
 class VASTSubModuleBase : public VASTNode {
   SmallVector<VASTSeqValue*, 8> Fanins;
   SmallVector<VASTValue*, 4> Fanouts;

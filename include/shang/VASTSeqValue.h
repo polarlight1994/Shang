@@ -24,7 +24,7 @@ class Twine;
 class VASTExprBuilder;
 
 // Represent value in the sequential logic.
-class VASTSeqValue : public VASTSignal, public ilist_node<VASTSeqValue> {
+class VASTSeqValue : public VASTNamedValue, public ilist_node<VASTSeqValue> {
 public:
 
   enum Type {
@@ -76,14 +76,14 @@ private:
   friend struct ilist_sentinel_traits<VASTSeqValue>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
   VASTSeqValue()
-    : VASTSignal(vastSeqValue, 0, 0), T(VASTSeqValue::IO), Idx(0),
+    : VASTNamedValue(vastSeqValue, 0, 0), T(VASTSeqValue::IO), Idx(0),
       EnableU(this), Parent(this) {}
 
   bool getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const;
 public:
   VASTSeqValue(const char *Name, unsigned Bitwidth, Type T, unsigned Idx,
                VASTNode *Parent)
-    : VASTSignal(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx), EnableU(this),
+    : VASTNamedValue(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx), EnableU(this),
       Parent(Parent) {}
 
   ~VASTSeqValue();

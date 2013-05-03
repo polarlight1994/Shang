@@ -120,11 +120,6 @@ void VASTLLVMValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
 }
 
 //===----------------------------------------------------------------------===//
-VASTSignal::VASTSignal(VASTTypes DeclType, const char *Name, unsigned BitWidth)
-  : VASTNamedValue(DeclType, Name, BitWidth) {}
-
-void VASTSignal::anchor() const {}
-
 VASTUse::VASTUse(VASTNode *U, VASTValPtr V) : User(*U), V(V) {
   linkUseToUser();
 }
