@@ -21,7 +21,6 @@
 #include "STGShortestPath.h"
 #include "TimingNetlist.h"
 
-#include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
 #include "shang/VASTSubModules.h"
 #include "shang/VASTModule.h"
@@ -64,7 +63,7 @@ struct PathIntervalQueryCache {
   TimingNetlist &TNL;
   SeqLiveVariables &SLV;
   STGShortestPath &SSP;
-  VASTSeqValue *Dst;
+  VASTRegister *Dst;
   raw_ostream &OS;
   const uint32_t Inf;
 
@@ -87,14 +86,14 @@ struct PathIntervalQueryCache {
     }
   };
 
-  typedef DenseMap<VASTSeqValue*, SrcInfo> SeqValSetTy;
+  typedef DenseMap<VASTRegister*, SrcInfo> SeqValSetTy;
   SeqValSetTy CyclesFromSrcLB;
 
   typedef DenseMap<VASTValue*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
 
   PathIntervalQueryCache(TimingNetlist &TNL, SeqLiveVariables &SLV,
-                         STGShortestPath &SSP, VASTSeqValue *Dst,
+                         STGShortestPath &SSP, VASTRegister *Dst,
                          raw_ostream &OS)
     : TNL(TNL), SLV(SLV), SSP(SSP), Dst(Dst), OS(OS), Inf(STGShortestPath::Inf)
   {}
@@ -104,20 +103,20 @@ struct PathIntervalQueryCache {
     CyclesFromSrcLB.clear();
   }
 
-  void addIntervalFromSrc(VASTSeqValue *Src,  unsigned Interval,
+  void addIntervalFromSrc(VASTRegister *Src,  unsigned Interval,
                           float NormalizedDelay) {
     assert(Interval && "unexpected zero interval!");
-    assert((Src->getValType() != VASTSeqValue::Slot || Interval <= 1)
+    assert((Src->getValType() != VASTRegister::Slot || Interval <= 1)
            && "Bad interval for slot registers!");
     CyclesFromSrcLB[Src].update(Interval, NormalizedDelay);
   }
 
-  bool annotateSubmoduleLatency(VASTSeqValue * V);
+  bool annotateSubmoduleLatency(VASTRegister * V);
 
   void annotatePathInterval(VASTValue *Tree, ArrayRef<VASTSlot*> ReadSlots);
 
-  unsigned getMinimalInterval(VASTSeqValue *Src, VASTSlot *ReadSlot);
-  unsigned getMinimalInterval(VASTSeqValue *Src, ArrayRef<VASTSlot*> ReadSlots);
+  unsigned getMinimalInterval(VASTRegister *Src, VASTSlot *ReadSlot);
+  unsigned getMinimalInterval(VASTRegister *Src, ArrayRef<VASTSlot*> ReadSlots);
 
   void updateInterval(SeqValSetTy &To, const SeqValSetTy &From,
                       const SeqValSetTy &LocalIntervalMap) {
@@ -136,7 +135,7 @@ struct PathIntervalQueryCache {
 
   void insertMCPEntries() const;
   // Bind multi-cycle path constraints to the scripting engine.
-  void insertMCPWithInterval(VASTSeqValue *Src, const std::string &ThuName,
+  void insertMCPWithInterval(VASTRegister *Src, const std::string &ThuName,
                              const SrcInfo &SI) const;
   unsigned insertMCPThough(VASTValue *Thu, const SeqValSetTy &SrcSet) const;
 
@@ -162,7 +161,7 @@ struct TimingScriptGen : public VASTModulePass {
     AU.setPreservesAll();
   }
 
-  void writeConstraintsFor(VASTSeqValue *Dst, TimingNetlist &TNL,
+  void writeConstraintsFor(VASTRegister *Dst, TimingNetlist &TNL,
                            SeqLiveVariables &SLV, STGShortestPath &SSP);
 
   void extractTimingPaths(PathIntervalQueryCache &Cache,
@@ -195,14 +194,14 @@ struct TimingScriptGen : public VASTModulePass {
 };
 }
 
-unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
+unsigned PathIntervalQueryCache::getMinimalInterval(VASTRegister *Src,
                                                     VASTSlot *ReadSlot) {
   // Try to get the live variable at (Src, ReadSlot), calculate its distance
   // from its defining slots to the read slot.
   return SLV.getIntervalFromDef(Src, ReadSlot, &SSP);
 }
 
-unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
+unsigned PathIntervalQueryCache::getMinimalInterval(VASTRegister *Src,
                                                     ArrayRef<VASTSlot*> ReadSlots) {
   unsigned PathInterval = Inf;
   typedef ArrayRef<VASTSlot*>::iterator iterator;
@@ -212,12 +211,12 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
   return PathInterval;
 }
 
-bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
+bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTRegister * V) {
   VASTNode *Parent = V->getParent();
   VASTSubModule *SubMod = dyn_cast_or_null<VASTSubModule>(Parent);
   if (SubMod == 0) return false;
 
-  assert(V->getValType() == VASTSeqValue::IO && "Bad Seqvalue type!");
+  assert(V->getValType() == VASTRegister::IO && "Bad Seqvalue type!");
   assert(V->empty() && "Unexpected assigement to return value!");
 
   unsigned Latency = SubMod->getLatency();
@@ -228,7 +227,7 @@ bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
   typedef VASTSubModule::fanin_iterator fanin_iterator;
   for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
        I != E; ++I) {
-    VASTSeqValue *Operand = *I;
+    VASTRegister *Operand = *I;
     addIntervalFromSrc(Operand, Latency, float(Latency));
   }
 
@@ -281,9 +280,9 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
       continue;
     }
 
-    if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
+    if (VASTRegister *V = dyn_cast<VASTRegister>(ChildNode)) {
       if (V->empty()) {
-        assert(V->getValType() == VASTSeqValue::IO && "Unexpected empty SeqVal!");
+        assert(V->getValType() == VASTRegister::IO && "Unexpected empty SeqVal!");
         continue;
       }
 
@@ -342,8 +341,8 @@ static std::string getObjectName(const VASTValue *V) {
   raw_string_ostream OS(Name);
   if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
     // The block RAM should be printed as Prefix + ArrayName in the script.
-    if (const VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V)) {
-      if (SeqVal->getValType() == VASTSeqValue::BRAM) {
+    if (const VASTRegister *SeqVal = dyn_cast<VASTRegister>(V)) {
+      if (SeqVal->getValType() == VASTRegister::BRAM) {
         const VASTBlockRAM *RAM = cast<VASTBlockRAM>(SeqVal->getParent());
         OS << " *"
           // BlockRam name with prefix
@@ -393,7 +392,7 @@ void PathIntervalQueryCache::dump() const {
 }
 // The first node of the path is the use node and the last node of the path is
 // the define node.
-void PathIntervalQueryCache::insertMCPWithInterval(VASTSeqValue *Src,
+void PathIntervalQueryCache::insertMCPWithInterval(VASTRegister *Src,
                                                    const std::string &ThuName,
                                                    const SrcInfo &SI) const {
   assert(!ThuName.empty() && "Bad through node name!");
@@ -447,7 +446,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
   //Write the timing constraints.
   typedef VASTModule::seqval_iterator seqval_iterator;
   for (seqval_iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
-    VASTSeqValue *V = I;
+    VASTRegister *V = I;
 
     if (V->empty()) continue;
 
@@ -458,12 +457,12 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 }
 
 void
-TimingScriptGen::writeConstraintsFor(VASTSeqValue *Dst, TimingNetlist &TNL,
+TimingScriptGen::writeConstraintsFor(VASTRegister *Dst, TimingNetlist &TNL,
                                      SeqLiveVariables &SLV,
                                      STGShortestPath &SSP) {
   DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> > DatapathMap;
 
-  typedef VASTSeqValue::const_iterator vn_itertor;
+  typedef VASTRegister::const_iterator vn_itertor;
   for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
     const VASTLatch &DstLatch = *I;
     VASTSlot *ReadSlot = DstLatch.getSlot();
@@ -487,12 +486,12 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
                                          ArrayRef<VASTSlot*> ReadSlots,
                                          VASTValue *DepTree) {
   // Trivial case: register to register path.
-  if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(DepTree)){
+  if (VASTRegister *Src = dyn_cast<VASTRegister>(DepTree)){
     // Src may be the return_value of the submodule.
     if (Cache.annotateSubmoduleLatency(Src)) return;
 
     if (Src->empty()) {
-      assert(Src->getValType() == VASTSeqValue::IO && "Unexpected empty SeqVal!");
+      assert(Src->getValType() == VASTRegister::IO && "Unexpected empty SeqVal!");
       return;
     }
 

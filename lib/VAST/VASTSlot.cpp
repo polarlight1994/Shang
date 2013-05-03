@@ -43,8 +43,8 @@ void VASTSlot::createSignals(VASTModule *VM) {
 
   // Create the relative signals.
   std::string SlotName = "Slot" + utostr_32(SlotNum);
-  VASTSeqValue *R = VM->addRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0,
-                                    VASTSeqValue::Slot, SlotNum);
+  VASTRegister *R = VM->addRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0,
+                                    VASTRegister::Slot, SlotNum);
   SlotReg.set(R);
 
   VASTWire *Ready = VM->addWire(SlotName + "Ready", 1,
@@ -103,8 +103,8 @@ void VASTSlot::removeOp(VASTSeqOp *Op) {
 //  return cast<VASTRegister>(getValue()->getParent());
 //}
 
-VASTSeqValue *VASTSlot::getValue() const {
-  return SlotReg.unwrap().getAsLValue<VASTSeqValue>();
+VASTRegister *VASTSlot::getValue() const {
+  return SlotReg.unwrap().getAsLValue<VASTRegister>();
 }
 
 const char *VASTSlot::getName() const {
@@ -183,7 +183,7 @@ struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
     raw_string_ostream ss(Str);
     ss << Node->SlotNum;
 
-    if (VASTSeqValue *V =Node->getValue())
+    if (VASTRegister *V =Node->getValue())
       ss << " [" << V->getName() << ']';
 
     if (BasicBlock *BB = Node->getParent())

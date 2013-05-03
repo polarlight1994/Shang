@@ -294,7 +294,7 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
   typedef VASTSeqOp::op_iterator iterator;
 
   for (unsigned i = 0, e = Op->getNumSrcs(); i < e; ++i) {
-    VASTSeqValue *Dst = Op->getSrc(i).getDst();
+    VASTRegister *Dst = Op->getSrc(i).getDst();
     VASTValPtr Src = RetimedOperands[i];
     // Create a wrapper wire to break the cycle.
     if (Src == Dst) {
@@ -310,9 +310,9 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
   std::set<std::pair<CFGPred*, VASTSlot*> > UniqueCFGPreds;
   if (NewInst->getNumDefs()) {
     assert(NewInst->getNumDefs() == 1 && "Unexpected multi-define SeqOp!");
-    VASTSeqValue *S = NewInst->getDef(0);
+    VASTRegister *S = NewInst->getDef(0);
 
-    for (VASTSeqValue::iterator I = S->begin(), E = S->end(); I != E; ++I) {
+    for (VASTRegister::iterator I = S->begin(), E = S->end(); I != E; ++I) {
       VASTLatch U = *I;
       std::map<VASTSeqInst*, CFGPred*>::iterator at
         = PredMap.find(cast<VASTSeqInst>(U.Op));
@@ -330,14 +330,14 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
 
 VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot) {
   // TODO: Check the predicate of the assignment.
-  VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V);
+  VASTRegister *SeqVal = dyn_cast<VASTRegister>(V);
 
   if (SeqVal == 0) return V;
 
   // Try to forward the value which is assigned to SeqVal at the same slot.
   VASTValPtr ForwardedValue = SeqVal;
 
-  typedef VASTSeqValue::iterator iterator;
+  typedef VASTRegister::iterator iterator;
   for (iterator I = SeqVal->begin(), E = SeqVal->end(); I != E; ++I) {
     VASTLatch U = *I;
 
@@ -363,14 +363,14 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot) {
   }
 
 #ifndef NDEBUG
-  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(ForwardedValue.get())) {
+  if (VASTRegister *SV = dyn_cast<VASTRegister>(ForwardedValue.get())) {
     bool AnySrcEmitted = SV->empty();
 
     for (iterator I = SV->begin(), E = SV->end(); I != E; ++I) {
       AnySrcEmitted |= !(*I).getSlot()->isDead();
     }
 
-    assert((AnySrcEmitted || SV->getValType() == VASTSeqValue::StaticRegister)
+    assert((AnySrcEmitted || SV->getValType() == VASTRegister::StaticRegister)
            && "Retiming performed before source value emitted!");
   }
 #endif

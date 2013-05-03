@@ -44,7 +44,7 @@ public:
   unsigned getAddrWidth() const { return Log2_32_Ceil(getDepth()); }
 
   // Get the buses to block RAM.
-  VASTSeqValue *getRAddr(unsigned PortNum) const {
+  VASTRegister *getRAddr(unsigned PortNum) const {
     return getFanin(PortNum * 3);
   }
 
@@ -52,11 +52,11 @@ public:
     return getFanout(PortNum);
   }
 
-  VASTSeqValue *getWAddr(unsigned PortNum) const {
+  VASTRegister *getWAddr(unsigned PortNum) const {
     return getFanin(PortNum * 3 + 1);
   }
 
-  VASTSeqValue *getWData(unsigned PortNum) const {
+  VASTRegister *getWData(unsigned PortNum) const {
     return getFanin(PortNum * 3 + 2);
   }
 
@@ -77,7 +77,7 @@ class VASTSubModule : public VASTSubModuleBase {
   // Can the submodule be simply instantiated?
   bool IsSimple;
   // Special ports in the submodule.
-  VASTSeqValue *StartPort, *FinPort, *RetPort;
+  VASTRegister *StartPort, *FinPort, *RetPort;
 
   // The latency of the submodule.
   unsigned Latency;
@@ -102,7 +102,7 @@ public:
   const_port_iterator port_begin() const { return PortMap.begin(); }
   const_port_iterator port_end() const { return PortMap.end(); }
 
-  void addInPort(const std::string &Name, VASTSeqValue *V) {
+  void addInPort(const std::string &Name, VASTRegister *V) {
     addPort(Name, V, true);
   }
 
@@ -110,15 +110,15 @@ public:
     addPort(Name, V, false);
   }
 
-  VASTSeqValue *createStartPort(VASTModule *VM);
-  VASTSeqValue *getStartPort() const { return StartPort; }
+  VASTRegister *createStartPort(VASTModule *VM);
+  VASTRegister *getStartPort() const { return StartPort; }
 
-  VASTSeqValue *createFinPort(VASTModule *VM);
-  VASTSeqValue *getFinPort() const { return FinPort; }
+  VASTRegister *createFinPort(VASTModule *VM);
+  VASTRegister *getFinPort() const { return FinPort; }
 
-  VASTSeqValue *createRetPort(VASTModule *VM, unsigned Bitwidth,
+  VASTRegister *createRetPort(VASTModule *VM, unsigned Bitwidth,
                               unsigned Latency = 0);
-  VASTSeqValue *getRetPort() const { return RetPort; }
+  VASTRegister *getRetPort() const { return RetPort; }
 
   void printDecl(raw_ostream &OS) const;
 

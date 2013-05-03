@@ -131,7 +131,7 @@ public:
 
   void print(raw_ostream &OS) const;
 
-  VASTSeqValue *getValue() const;
+  VASTRegister *getValue() const;
   const char *getName() const;
   // Getting the relative signals.
   // VASTRegister *getRegister() const;

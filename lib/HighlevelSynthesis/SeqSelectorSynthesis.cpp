@@ -58,17 +58,17 @@ typedef std::map<MUXFI, unsigned> FaninSlackMap;
 
 struct MUXPipeliner {
   typedef std::map<MUXFI, VASTValPtr> FaninMap;
-  typedef std::map<MUXFI, VASTSeqValue*> PredMap;
+  typedef std::map<MUXFI, VASTRegister*> PredMap;
   FaninMap NewFIs;
   PredMap NewPreds;
 
   std::string BaseName;
   unsigned BitWidth;
-  VASTSeqValue::Type ValTy;
+  VASTRegister::Type ValTy;
   unsigned MaxPerCyleFINum;
   VASTModule *VM;
 
-  MUXPipeliner(std::string BaseName, unsigned BitWidth, VASTSeqValue::Type T,
+  MUXPipeliner(std::string BaseName, unsigned BitWidth, VASTRegister::Type T,
                unsigned MaxPerCyleFINum, VASTModule *VM)
     : BaseName(BaseName), BitWidth(BitWidth), ValTy(T),
       MaxPerCyleFINum(MaxPerCyleFINum), VM(VM) {}
@@ -119,18 +119,18 @@ struct SeqSelectorSynthesis : public VASTModulePass {
       ++MaxSingleCyleFINum;
   }
 
-  bool pipelineFanins(VASTSeqValue *SV);
+  bool pipelineFanins(VASTRegister *SV);
   // Decompose a SeqInst latching more than one SeqVal to several SeqInsts
   // where each of them only latching one SeqVal.
   void descomposeSeqInst(VASTSeqInst *SeqInst);
 
-  typedef std::set<VASTSeqValue*> SVSet;
+  typedef std::set<VASTRegister*> SVSet;
 
   unsigned getCriticalDelay(const SVSet &S, VASTValue *V);
   unsigned getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot);
   unsigned getSlotSlack(VASTSlot *S);
 
-  void buildFISlackMap(VASTSeqValue *SV, FaninSlackMap &FISlack);
+  void buildFISlackMap(VASTRegister *SV, FaninSlackMap &FISlack);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
@@ -279,7 +279,7 @@ sort_by_slack(const void *LHS, const void *RHS) {
 //  return true;
 //}
 
-bool SeqSelectorSynthesis::pipelineFanins(VASTSeqValue *SV) {
+bool SeqSelectorSynthesis::pipelineFanins(VASTRegister *SV) {
   // Iterate over all fanins to build the Fanin Slack Map.
   // Try to build the pipeline register by inserting the map.
   FaninSlackMap SlackMap;
@@ -298,7 +298,7 @@ bool SeqSelectorSynthesis::pipelineFanins(VASTSeqValue *SV) {
                  MaxSingleCyleFINum, VM); 
   P.AssignMUXPort(SlackVector, 0, MaxSingleCyleFINum);
 
-  typedef VASTSeqValue::iterator vn_itertor;
+  typedef VASTRegister::iterator vn_itertor;
   for (vn_itertor I = SV->begin(), E = SV->end(); I != E; ++I) {
     VASTLatch L = *I;
     VASTValPtr NewPred = P.NewPreds[L];
@@ -308,7 +308,7 @@ bool SeqSelectorSynthesis::pipelineFanins(VASTSeqValue *SV) {
     L.Op->replacePredBy(NewPred, false);
 
     VASTValPtr NewFI = P.NewFIs[L];
-    assert((NewFI || SV->getValType() == VASTSeqValue::Enable)
+    assert((NewFI || SV->getValType() == VASTRegister::Enable)
            && "Cannot find the corresponding fanin!");
 
     if (!NewFI) continue;
@@ -380,8 +380,8 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
   // Group the new FIs by the fanout register.
   array_pod_sort(PreviousLevelFIs.begin(), PreviousLevelFIs.end(), sort_by_fi);
   VASTValPtr LastPreviousLevelEn;
-  VASTSeqValue *LastNextLevelFI = 0;
-  VASTSeqValue *LastNextLevelEn = 0;
+  VASTRegister *LastNextLevelFI = 0;
+  VASTRegister *LastNextLevelEn = 0;
 
   for (unsigned i = 0; i < PreviousLevelFIs.size(); ++i) {
     MUXFI CurFI = PreviousLevelFIs[i].first;
@@ -405,7 +405,7 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
         std::string Name = "l" + utostr_32(Level)
                             + BaseName
                             + "n" + utostr_32(VM->num_seqvals());
-        if (ValTy != VASTSeqValue::Enable) {
+        if (ValTy != VASTRegister::Enable) {
           LastNextLevelFI
             = VM->addRegister(Name + "r", BitWidth, 0, ValTy, RegNum);
           NumPipelineRegBits += LastNextLevelFI->getBitWidth();
@@ -413,7 +413,7 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
 
         // Do not build the enable for the SeqVal to be pipelined.
         LastNextLevelEn = VM->addRegister(Name + "en", 1, 0,
-                                          VASTSeqValue::Enable,
+                                          VASTRegister::Enable,
                                           VM->num_seqvals());
         NumPipelineRegBits += LastNextLevelEn->getBitWidth();
       }
@@ -455,11 +455,11 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
   }
 }
 
-void SeqSelectorSynthesis::buildFISlackMap(VASTSeqValue *SV,
+void SeqSelectorSynthesis::buildFISlackMap(VASTRegister *SV,
                                            FaninSlackMap &FISlack) {
   SVSet Srcs;
 
-  typedef VASTSeqValue::iterator vn_itertor;
+  typedef VASTRegister::iterator vn_itertor;
   for (vn_itertor I = SV->begin(), E = SV->end(); I != E; ++I) {
     VASTLatch &DstLatch = *I;
     // Assume the slack is zero.
@@ -514,7 +514,7 @@ unsigned SeqSelectorSynthesis::getCriticalDelay(const SVSet &S, VASTValue *V) {
   unsigned Delay = 0;
   typedef SVSet::const_iterator iterator;
   for (iterator I = S.begin(), E = S.end(); I != E; ++I) {
-    VASTSeqValue *Src = *I;
+    VASTRegister *Src = *I;
     // The register to register assignment can be directly retime.
     if (Src == V) continue;
 
@@ -529,13 +529,13 @@ unsigned SeqSelectorSynthesis::getAvailableInterval(const SVSet &S,
   unsigned Interval = STGShortestPath::Inf;
   typedef SVSet::const_iterator iterator;
   for (iterator I = S.begin(), E = S.end(); I != E; ++I) {
-    VASTSeqValue *SV = *I;
+    VASTRegister *SV = *I;
     // Do not retime if we do not have any timing information.
     if (SV->empty()) return 0;
 
     // Do not retime across the static register as well, we do not have the
     // accurate timing information for them.
-    if (SV->getValType() == VASTSeqValue::StaticRegister) return 0;
+    if (SV->getValType() == VASTRegister::StaticRegister) return 0;
 
     Interval = std::min(Interval, SLV->getIntervalFromDef(SV, ReadSlot, SSP));
   }
@@ -560,7 +560,7 @@ unsigned SeqSelectorSynthesis::getSlotSlack(VASTSlot *S) {
     VASTSlot *PredSlot = *S->pred_begin();
     // Find the assignment operation that enable the current slot, check if
     // the guarding condition is always true.
-    VASTSeqValue *CurSlotReg = S->getValue();
+    VASTRegister *CurSlotReg = S->getValue();
 
     typedef VASTSlot::op_iterator op_iterator;
 
@@ -572,7 +572,7 @@ unsigned SeqSelectorSynthesis::getSlotSlack(VASTSlot *S) {
       VASTSeqCtrlOp *CtrlOp = dyn_cast<VASTSeqCtrlOp>(*I);
       if (CtrlOp == 0 || CtrlOp->getNumDefs() == 0)  continue;
 
-      VASTSeqValue *Dst = CtrlOp->getDef(0).getDst();
+      VASTRegister *Dst = CtrlOp->getDef(0).getDst();
       if (Dst != CurSlotReg) continue;
 
       // Ok, we find the operation that assign the slot register.
@@ -606,7 +606,7 @@ VASTSlot *MUXPipeliner::getSlotAtLevel(VASTSlot *S, unsigned Level) {
     VASTSlot *PredSlot = *S->pred_begin();
     // Find the assignment operation that enable the current slot, check if
     // the guarding condition is always true.
-    VASTSeqValue *CurSlotReg = S->getValue();
+    VASTRegister *CurSlotReg = S->getValue();
 
     typedef VASTSlot::op_iterator op_iterator;
 
@@ -618,7 +618,7 @@ VASTSlot *MUXPipeliner::getSlotAtLevel(VASTSlot *S, unsigned Level) {
       VASTSeqCtrlOp *CtrlOp = dyn_cast<VASTSeqCtrlOp>(*I);
       if (CtrlOp == 0 || CtrlOp->getNumDefs() == 0)  continue;
 
-      VASTSeqValue *Dst = CtrlOp->getDef(0).getDst();
+      VASTRegister *Dst = CtrlOp->getDef(0).getDst();
       if (Dst != CurSlotReg) continue;
 
       // Ok, we find the operation that assign the slot register.

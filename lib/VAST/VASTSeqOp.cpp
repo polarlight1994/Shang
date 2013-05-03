@@ -56,8 +56,8 @@ VASTValPtr VASTLatch::getSlotActive() const {
   return Op->getSlotActive();
 }
 
-VASTSeqValue *VASTLatch::getDst() const {
-  return cast<VASTSeqValue>(&Op->getUseInteranal(No).getUser());
+VASTRegister *VASTLatch::getDst() const {
+  return cast<VASTRegister>(&Op->getUseInteranal(No).getUser());
 }
 
 //----------------------------------------------------------------------------//
@@ -75,14 +75,14 @@ VASTLatch VASTSeqOp::getDef(unsigned No) {
   return VASTLatch(this, No);
 }
 
-void VASTSeqOp::addDefDst(VASTSeqValue *Def) {
+void VASTSeqOp::addDefDst(VASTRegister *Def) {
   assert(std::find(Defs.begin(), Defs.end(), Def) == Defs.end()
          && "Define the same seqval twice!");
   Defs.push_back(Def);
 }
 
 void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef,
-                       VASTSeqValue *D) {
+                       VASTRegister *D) {
   assert(SrcIdx < getNumSrcs() && "Bad source index!");
   // The source value of assignment is used by the SeqValue.
   VASTNode *DstUser = D ? (VASTNode*)D : (VASTNode*)this;

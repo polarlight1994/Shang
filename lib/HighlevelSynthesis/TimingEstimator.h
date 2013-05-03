@@ -64,7 +64,7 @@ protected:
     return at == PathDelay.end() ? 0 : &at->second;
   }
 
-  delay_type getDelayFrom(VASTSeqValue *Src, const SrcDelayInfo &SrcInfo) const {
+  delay_type getDelayFrom(VASTRegister *Src, const SrcDelayInfo &SrcInfo) const {
     const_src_iterator at = SrcInfo.find(Src);
     return at == SrcInfo.end() ? delay_type() : at->second;
   }
@@ -115,7 +115,7 @@ public:
                           uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo,
                           DelayAccumulatorTy F) {
     // Do not lookup the source across the SeqValue.
-    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Thu)) {
+    if (VASTRegister *SeqVal = dyn_cast<VASTRegister>(Thu)) {
       assert(!isa<VASTExpr>(Thu) && "Not SrcInfo from Src find!");
       delay_type D;
       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(SeqVal, D)));

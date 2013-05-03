@@ -134,7 +134,7 @@ void CFGFoldingAnalysis::handleCommonSU(unsigned FoldingSize, VASTSchedUnit *SU,
 
   for (unsigned i = 0, e = Op->getNumSrcs(); i != e; ++i) {
     VASTLatch L = Op->getSrc(i);
-    VASTSeqValue *Dst = L.getDst();
+    VASTRegister *Dst = L.getDst();
 
     // Calculate the MuxSize after the current Fanin are duplicated.
     unsigned FoldedMuxSize = Dst->size() + FoldingSize - 1;

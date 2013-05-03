@@ -178,14 +178,14 @@ void VASTOperandList::dropOperands() {
 
 //===----------------------------------------------------------------------===//
 void VASTModule::gc() {
-  // Clear up the dead VASTSeqValues.
+  // Clear up the dead VASTRegisters.
   for (seqval_iterator I = seqval_begin(); I != seqval_end(); /*++I*/) {
-    VASTSeqValue *V = I++;
+    VASTRegister *V = I++;
 
-    if (!V->use_empty() || V->getValType() != VASTSeqValue::Data) continue;;
+    if (!V->use_empty() || V->getValType() != VASTRegister::Data) continue;;
 
     SmallVector<VASTSeqOp*, 4> DeadOps;
-    for (VASTSeqValue::iterator I = V->begin(), E = V->end(); I != E; ++I) {
+    for (VASTRegister::iterator I = V->begin(), E = V->end(); I != E; ++I) {
       VASTLatch U = *I;
       DeadOps.push_back(U.Op);
     }

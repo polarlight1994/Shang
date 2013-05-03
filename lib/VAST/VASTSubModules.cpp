@@ -25,7 +25,7 @@
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
-void VASTSubModuleBase::addFanin(VASTSeqValue *V) {
+void VASTSubModuleBase::addFanin(VASTRegister *V) {
   Fanins.push_back(V);
 }
 
@@ -52,20 +52,20 @@ void VASTBlockRAM::addPorts(VASTModule *VM) {
   std::string BRamArrayName = VFUBRAM::getArrayName(getBlockRAMNum());
   
   // Add the address port and the data port.
-  VASTSeqValue *ReadAddrA = VM->createSeqValue(BRamArrayName + "_raddr0r",
-                                               getAddrWidth(), VASTSeqValue::BRAM,
+  VASTRegister *ReadAddrA = VM->createSeqValue(BRamArrayName + "_raddr0r",
+                                               getAddrWidth(), VASTRegister::BRAM,
                                                getBlockRAMNum(), this);
   addFanin(ReadAddrA);
   VASTWire *ReadDataA = VM->addWire(BRamArrayName + "_rdata0w", getWordSize());
   addFanout(ReadDataA);
 
-  VASTSeqValue *WriteAddrA = VM->createSeqValue(BRamArrayName + "_waddr0r",
-                                                getAddrWidth(), VASTSeqValue::BRAM,
+  VASTRegister *WriteAddrA = VM->createSeqValue(BRamArrayName + "_waddr0r",
+                                                getAddrWidth(), VASTRegister::BRAM,
                                                 getBlockRAMNum(), this);
   addFanin(WriteAddrA);
 
-  VASTSeqValue *WriteDataA = VM->createSeqValue(BRamArrayName + "_wdata0r",
-                                                getWordSize(), VASTSeqValue::BRAM,
+  VASTRegister *WriteDataA = VM->createSeqValue(BRamArrayName + "_wdata0r",
+                                                getWordSize(), VASTRegister::BRAM,
                                                 getBlockRAMNum(), this);
   addFanin(WriteDataA);
 }
@@ -175,7 +175,7 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 
   OS << "// synthesis translate_off\n";
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
-    VASTSeqValue *V = *I;
+    VASTRegister *V = *I;
     V->verifyAssignCnd(OS, V->getName(), Mod);
   }
   OS << "// synthesis translate_on\n\n";
@@ -198,7 +198,7 @@ void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {
   const std::string &BRAMArray = VFUBRAM::getArrayName(getBlockRAMNum());
 
   // Print the read port.
-  VASTSeqValue *RAddr = getRAddr(Num);
+  VASTRegister *RAddr = getRAddr(Num);
   if (!RAddr->empty()) {
     OS.if_begin(Twine(RAddr->getName()) + "_selector_enable");
 
@@ -211,7 +211,7 @@ void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {
   }
 
   // Print the write port.
-  VASTSeqValue *WAddr = getWAddr(Num);
+  VASTRegister *WAddr = getWAddr(Num);
   if (!WAddr->empty()) {
     OS.if_begin(Twine(WAddr->getName()) + "_selector_enable");
     OS << BRAMArray << '[' << WAddr->getName() << "_selector_wire"
@@ -228,22 +228,22 @@ VASTSubModule::getPortName(unsigned FNNum, const std::string &PortName) {
   return "SubMod" + utostr(FNNum) + "_" + PortName;
 }
 
-VASTSeqValue *VASTSubModule::createStartPort(VASTModule *VM) {
-  StartPort = VM->addRegister(getPortName("start"), 1, 0, VASTSeqValue::Enable);
+VASTRegister *VASTSubModule::createStartPort(VASTModule *VM) {
+  StartPort = VM->addRegister(getPortName("start"), 1, 0, VASTRegister::Enable);
   addInPort("start", StartPort);
   return StartPort;
 }
 
-VASTSeqValue *VASTSubModule::createFinPort(VASTModule *VM) {
-  FinPort = VM->createSeqValue(getPortName("fin"), 1, VASTSeqValue::IO, 0, this);
+VASTRegister *VASTSubModule::createFinPort(VASTModule *VM) {
+  FinPort = VM->createSeqValue(getPortName("fin"), 1, VASTRegister::IO, 0, this);
   addOutPort("fin", FinPort);
   return FinPort;
 }
 
-VASTSeqValue *VASTSubModule::createRetPort(VASTModule *VM, unsigned Bitwidth,
+VASTRegister *VASTSubModule::createRetPort(VASTModule *VM, unsigned Bitwidth,
                                            unsigned Latency) {
   RetPort = VM->createSeqValue(getPortName("return_value"),
-                               Bitwidth, VASTSeqValue::IO, 0, this);
+                               Bitwidth, VASTRegister::IO, 0, this);
   addOutPort("return_value", RetPort);
   // Also update the latency.
   this->Latency = Latency;
@@ -259,7 +259,7 @@ void VASTSubModule::addPort(const std::string &Name, VASTValue *V, bool IsInput)
   // Do not add the pseudo drivers to the fanin/fanout list.
   if (V == 0) return;
 
-  if (IsInput) addFanin(cast<VASTSeqValue>(V));
+  if (IsInput) addFanin(cast<VASTRegister>(V));
   else         addFanout(V);
 }
 
@@ -309,10 +309,10 @@ void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 
 void VASTSubModule::printDecl(raw_ostream &OS) const {
   // Declare the output of submodule.
-  if (VASTSeqValue *Ret = getRetPort())
+  if (VASTRegister *Ret = getRetPort())
     Ret->printDecl(OS, false);
 
   // Declare the finish signal of submodule.
-  if (VASTSeqValue *Fin = getFinPort())
+  if (VASTRegister *Fin = getFinPort())
     Fin->printDecl(OS, false);
 }

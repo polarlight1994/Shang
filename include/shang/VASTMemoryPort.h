@@ -56,16 +56,16 @@ public:
   bool isDefault() const { return Idx == 0; }
 
   // The read port of the memory bus.
-  VASTSeqValue *getREnable() const;
-  VASTSeqValue *getRByteEn() const;
-  VASTSeqValue *getRAddr() const;
+  VASTRegister *getREnable() const;
+  VASTRegister *getRByteEn() const;
+  VASTRegister *getRAddr() const;
   VASTValue    *getRData() const;
 
   // The write port of the memory bus.
-  VASTSeqValue *getWEnable() const;
-  VASTSeqValue *getWByteEn() const;
-  VASTSeqValue *getWAddr() const;
-  VASTSeqValue *getWData() const;
+  VASTRegister *getWEnable() const;
+  VASTRegister *getWByteEn() const;
+  VASTRegister *getWAddr() const;
+  VASTRegister *getWData() const;
 
   void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
   unsigned getStartOffset(GlobalVariable *GV) const;

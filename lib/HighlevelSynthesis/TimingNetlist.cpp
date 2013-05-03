@@ -51,7 +51,7 @@ void TNLDelay::dump() const {
 TimingNetlist::delay_type
 TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
   // TODO:
-  //if (VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(Dst)) {
+  //if (VASTRegister *SVal = dyn_cast<VASTSeqValue>(Dst)) {
   //  for each fanin fi of Dst,
   //    get the CRITICAL path delay from Src to fi
   //    max reduction
@@ -104,10 +104,10 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 //===----------------------------------------------------------------------===//
-void TimingNetlist::buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst,
+void TimingNetlist::buildTimingPathToReg(VASTValue *Thu, VASTRegister *Dst,
                                          delay_type MUXDelay) {
   if (VASTOperandList::GetDatapathOperandList(Thu) == 0) {
-    if (isa<VASTSeqValue>(Thu)) {
+    if (isa<VASTRegister>(Thu)) {
       TimingNetlist::delay_type &d = PathInfo[Dst][Thu];
       d = TNLDelay::max(MUXDelay, d);
     }
@@ -128,7 +128,7 @@ void TimingNetlist::buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst,
   Estimator->accumulateDelayFrom(Thu, Dst);
 }
 
-TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, VASTSeqValue *SVal) const {
+TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, VASTRegister *SVal) const {
   float MUXDelay = 0.0f;
   unsigned MuxLL = 0;
 
@@ -137,7 +137,7 @@ TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, VASTSeqValue *SVal) const {
     MUXDelay = Mux->getMuxLatency(Fanins);
     MuxLL = Mux->getMuxLogicLevels(Fanins);
     // Also accumulate the delay of the block RAM.
-    if (SVal && SVal->getValType() == VASTSeqValue::BRAM) {
+    if (SVal && SVal->getValType() == VASTRegister::BRAM) {
       VFUBRAM *RAM = getFUDesc<VFUBRAM>();
       MUXDelay += RAM->Latency;
     }
@@ -155,16 +155,16 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   // Build the timing path for registers.
   typedef VASTModule::seqval_iterator iterator;
   for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
-    VASTSeqValue *SVal = I;
+    VASTRegister *SVal = I;
 
     // Calculate the delay of the Fanin MUX.
     delay_type MUXDelay = getMuxDelay(SVal->size(), SVal);
     
     if (SVal->isSelectorSynthesized()) {
-      typedef VASTSeqValue::fanin_iterator fanin_iterator;
+      typedef VASTRegister::fanin_iterator fanin_iterator;
       for (fanin_iterator I = SVal->fanin_begin(), E = SVal->fanin_end();
            I != E; ++I){
-        const VASTSeqValue::Fanin *FI = *I;
+        const VASTRegister::Fanin *FI = *I;
 
         buildTimingPathToReg(FI->Pred.unwrap().get(), SVal, MUXDelay);
         buildTimingPathToReg(FI->FI.unwrap().get(), SVal, MUXDelay);
@@ -177,7 +177,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
       // continue;
     } // else
 
-    typedef VASTSeqValue::iterator fanin_iterator;
+    typedef VASTRegister::iterator fanin_iterator;
     for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
       VASTLatch U = *FI;
       // Estimate the delay for each fanin.

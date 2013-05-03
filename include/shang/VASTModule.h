@@ -45,7 +45,7 @@ public:
   VASTPort(VASTNamedValue *V, bool isInput);
 
   VASTNamedValue *getValue() const { return Contents.NamedValue; }
-  VASTSeqValue *getSeqVal() const;
+  VASTRegister *getSeqVal() const;
 
   const char *getName() const { return getValue()->getName(); }
   bool isInput() const { return IsInput; }
@@ -79,7 +79,7 @@ public:
   typedef SmallVector<VASTSubModuleBase*, 16> SubmoduleVector;
   typedef SubmoduleVector::iterator submod_iterator;
 
-  typedef ilist<VASTSeqValue> SeqValueVector;
+  typedef ilist<VASTRegister> SeqValueVector;
   typedef SeqValueVector::iterator seqval_iterator;
   typedef SeqValueVector::const_iterator const_seqval_iterator;
 
@@ -131,7 +131,7 @@ private:
   BumpPtrAllocator &getAllocator();
 
   VASTPort *createPort(const Twine &Name, unsigned BitWidth, bool isReg,
-                       bool isInput, VASTSeqValue::Type T);
+                       bool isInput, VASTRegister::Type T);
 public:
 
   VASTModule(Function &F);
@@ -194,7 +194,7 @@ public:
 
 
   // Allow user to add ports.
-  VASTPort *createPort(VASTSeqValue *SeqVal, bool IsInput, PortTypes T = Others);
+  VASTPort *createPort(VASTRegister *SeqVal, bool IsInput, PortTypes T = Others);
   VASTPort *addInputPort(const Twine &Name, unsigned BitWidth,
                          PortTypes T = Others);
 
@@ -249,8 +249,8 @@ public:
     return Ports.begin() + VASTModule::SpecialOutPortEnd;
   }
 
-  VASTSeqValue *createSeqValue(const Twine &Name, unsigned BitWidth,
-                               VASTSeqValue::Type T, unsigned Idx,
+  VASTRegister *createSeqValue(const Twine &Name, unsigned BitWidth,
+                               VASTRegister::Type T, unsigned Idx,
                                VASTNode *Parent, uint64_t InitialValue = 0);
 
   VASTMemoryBus *createDefaultMemBus();
@@ -261,15 +261,15 @@ public:
 
   VASTSubModule *addSubmodule(const char *Name, unsigned Num);
 
-  VASTSeqValue *addRegister(const Twine &Name, unsigned BitWidth,
+  VASTRegister *addRegister(const Twine &Name, unsigned BitWidth,
                             unsigned InitVal = 0,
-                            VASTSeqValue::Type T = VASTSeqValue::Data,
+                            VASTRegister::Type T = VASTRegister::Data,
                             uint16_t RegData = 0);
 
-  VASTSeqValue *addIORegister(const Twine &Name, unsigned BitWidth,
+  VASTRegister *addIORegister(const Twine &Name, unsigned BitWidth,
                               unsigned FUNum);
 
-  VASTSeqValue *addDataRegister(const Twine &Name, unsigned BitWidth,
+  VASTRegister *addDataRegister(const Twine &Name, unsigned BitWidth,
                                 unsigned RegNum = 0, unsigned InitVal = 0);
 
   VASTWire *addWire(const Twine &Name, unsigned BitWidth,
@@ -296,11 +296,11 @@ public:
   VASTSeqInst *lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps,
                          Value *V, VASTSeqInst::Type T);
 
-  VASTSeqInst *latchValue(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,
+  VASTSeqInst *latchValue(VASTRegister *SeqVal, VASTValPtr Src, VASTSlot *Slot,
                           VASTValPtr GuardCnd, Value *V, unsigned Latency = 0);
 
   /// Create an assignment on the control logic.
-  VASTSeqCtrlOp *assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
+  VASTSeqCtrlOp *assignCtrlLogic(VASTRegister *SeqVal, VASTValPtr Src,
                                  VASTSlot *Slot, VASTValPtr GuardCnd,
                                  bool UseSlotActive, bool ExportDefine = true);
   /// Create an assignment on the control logic which may need further conflict
@@ -311,7 +311,7 @@ public:
   /// the SeqOp should be remove from its parent slot before we erase it.
   void eraseSeqOp(VASTSeqOp *SeqOp);
 
-  void eraseSeqVal(VASTSeqValue *Val);
+  void eraseSeqVal(VASTRegister *Val);
 
   // Iterate over all SeqOps in the module.
   typedef ilist<VASTSeqOp>::iterator seqop_iterator;

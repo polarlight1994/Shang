@@ -39,7 +39,7 @@ struct VASTLatch {
   void replacePredBy(VASTValPtr V, bool UseSlotActive = true) const;
 
   // Get the destination of the transaction.
-  VASTSeqValue *getDst() const;
+  VASTRegister *getDst() const;
 
   // Forward the functions from VASTSeqOp;
   VASTSlot *getSlot() const;
@@ -62,7 +62,7 @@ struct VASTLatch {
 /// and define some others.
 class VASTSeqOp : public VASTOperandList, public VASTNode,
                   public ilist_node<VASTSeqOp> {
-  SmallVector<VASTSeqValue*, 1> Defs;
+  SmallVector<VASTRegister*, 1> Defs;
   PointerIntPair<VASTSlot*, 1, bool> S;
 
   friend struct VASTLatch;
@@ -80,7 +80,7 @@ class VASTSeqOp : public VASTOperandList, public VASTNode,
 protected:
   VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive, unsigned Size);
 public:
-  void addDefDst(VASTSeqValue *Def);
+  void addDefDst(VASTRegister *Def);
   VASTLatch getDef(unsigned No);
   unsigned getNumDefs() const { return Defs.size(); }
 
@@ -109,7 +109,7 @@ public:
   // Get the source of the transaction.
   VASTLatch getSrc(unsigned Idx) { return VASTLatch(this, Idx); };
   // Add a source value to the SeqOp.
-  void addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef, VASTSeqValue *Dst);
+  void addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef, VASTRegister *Dst);
 
   // Iterate over the source value of register transaction.
   const_op_iterator src_begin() const { return Operands + 1; }
@@ -201,7 +201,7 @@ private:
   PointerUnion<VASTSlot*, VASTValue*> Ptr;
 public:
   // VASTSeqSlotCtrl may not use slot active, it is a part of the control logic.
-  // VASTSeqSlotCtrl only assign 1 or 0 to the destination VASTSeqValue.
+  // VASTSeqSlotCtrl only assign 1 or 0 to the destination VASTRegister.
   VASTSlotCtrl(VASTSlot *S, VASTNode *N);
 
   bool isBranch() const;

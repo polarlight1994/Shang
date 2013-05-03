@@ -30,7 +30,7 @@ class Value;
 class VASTNamedValue;
 class VASTValue;
 class VASTExpr;
-class VASTSeqValue;
+class VASTRegister;
 class VASTSymbol;
 class VASTSeqOp;
 class VASTModule;
@@ -462,7 +462,7 @@ public:
 
   // Extract all SeqVals which are connect to this VASTValue through data-path.
   // Return true if there is any supporting sval.
-  bool extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals);
+  bool extractSupporingSeqVal(std::set<VASTRegister*> &SeqVals);
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTValue *A) { return true; }
@@ -558,7 +558,7 @@ public:
 };
 
 class VASTSubModuleBase : public VASTNode {
-  SmallVector<VASTSeqValue*, 8> Fanins;
+  SmallVector<VASTRegister*, 8> Fanins;
   SmallVector<VASTValue*, 4> Fanouts;
 protected:
   const unsigned Idx;
@@ -569,24 +569,24 @@ protected:
   }
 
 public:
-  typedef SmallVectorImpl<VASTSeqValue*>::iterator fanin_iterator;
+  typedef SmallVectorImpl<VASTRegister*>::iterator fanin_iterator;
   fanin_iterator fanin_begin() { return Fanins.begin(); }
   fanin_iterator fanin_end() { return Fanins.end(); }
 
-  typedef SmallVectorImpl<VASTSeqValue*>::const_iterator const_fanin_iterator;
+  typedef SmallVectorImpl<VASTRegister*>::const_iterator const_fanin_iterator;
   const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
   const_fanin_iterator fanin_end()   const { return Fanins.end(); }
 
   typedef SmallVectorImpl<VASTValue*>::iterator fanout_iterator;
 
-  void addFanin(VASTSeqValue *V);
+  void addFanin(VASTRegister *V);
   void addFanout(VASTValue *V);
 
   VASTValue *getFanout(unsigned Idx) const {
     return Fanouts[Idx];
   }
 
-  VASTSeqValue *getFanin(unsigned Idx) const {
+  VASTRegister *getFanin(unsigned Idx) const {
     return Fanins[Idx];
   }
 

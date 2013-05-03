@@ -12,7 +12,6 @@
 //
 //===----------------------------------------------------------------------===//
 #include "shang/VASTDatapathNodes.h"
-#include "shang/VASTSeqValue.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTModulePass.h"
 #include "shang/Passes.h"

@@ -18,7 +18,6 @@
 #include "shang/Passes.h"
 
 #include "shang/VASTSeqOp.h"
-#include "shang/VASTSeqValue.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTModulePass.h"
 
@@ -117,10 +116,10 @@ void SeqLiveVariables::print(raw_ostream &OS) const {
 
   typedef VASTModule::const_seqval_iterator iterator;
   for (iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
-    const VASTSeqValue *V = I;
+    const VASTRegister *V = I;
     VIs.clear();
 
-    typedef VASTSeqValue::const_iterator latch_iterator;
+    typedef VASTRegister::const_iterator latch_iterator;
     for (latch_iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
       std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
       if (at != VarInfos.end()) VIs.insert(getVarInfo(*DI));
@@ -162,13 +161,13 @@ void SeqLiveVariables::verifyAnalysis() const {
   // not overlap.
   typedef VASTModule::seqval_iterator seqval_iterator;
   for (seqval_iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
-    VASTSeqValue *V = I;
+    VASTRegister *V = I;
     // Reset the context.
     VIs.clear();
     UnionMask.clear();
     OverlappedMask.clear();
 
-    typedef VASTSeqValue::const_iterator iterator;
+    typedef VASTRegister::const_iterator iterator;
     for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
       std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
       if (at != VarInfos.end()) VIs.insert(getVarInfo(*DI));
@@ -329,7 +328,7 @@ void SeqLiveVariables::initializeOverlappedSlots() {
 }
 
 void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
-  std::set<VASTSeqValue*> ReadAtSlot;
+  std::set<VASTRegister*> ReadAtSlot;
 
   typedef VASTSlot::const_op_iterator op_iterator;
   for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
@@ -352,7 +351,7 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
   }
 
   // Process uses.
-  typedef std::set<VASTSeqValue*>::iterator iterator;
+  typedef std::set<VASTRegister*>::iterator iterator;
   for (iterator I = ReadAtSlot.begin(), E = ReadAtSlot.end(); I != E; ++I)
     handleUse(*I, S, PathFromEntry);
 }
@@ -397,9 +396,9 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
   typedef VASTModule::seqval_iterator seqval_iterator;
   for (seqval_iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I)
   {
-    VASTSeqValue *V = I;
+    VASTRegister *V = I;
 
-    if (V->getValType() == VASTSeqValue::StaticRegister) {
+    if (V->getValType() == VASTRegister::StaticRegister) {
       VarInfo *VI = new VarInfo(0);
       VarList.push_back(VI);
 
@@ -410,13 +409,13 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
       VarName VN(V, S);
       VarInfos[VN] = VI;
       WrittenSlots[V].set(S->SlotNum);
-    } else if (V->getValType() == VASTSeqValue::Slot) {
+    } else if (V->getValType() == VASTRegister::Slot) {
       unsigned SlotNum = V->getSlotNum();
 
       VarInfo *VI = new VarInfo(0);
       VarList.push_back(VI);
 
-      typedef VASTSeqValue::const_iterator iterator;
+      typedef VASTRegister::const_iterator iterator;
       for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
         VASTLatch U = *DI;
         VASTSlot *DefSlot = U.getSlot();
@@ -432,7 +431,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
   }
 }
 
-void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
+void SeqLiveVariables::handleUse(VASTRegister *Use, VASTSlot *UseSlot,
                                  PathVector PathFromEntry) {
   // The timing information is not avaliable.
   if (Use->empty()) return;
@@ -589,21 +588,21 @@ void SeqLiveVariables::handleDef(VASTLatch Def) {
   WrittenSlots[Def.getDst()].set(SlotNum);
 }
 
-bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot *S) {
-  std::map<VASTSeqValue*, SparseBitVector<> >::iterator at
+bool SeqLiveVariables::isWrittenAt(VASTRegister *V, VASTSlot *S) {
+  std::map<VASTRegister*, SparseBitVector<> >::iterator at
     = WrittenSlots.find(V);
   assert(at != WrittenSlots.end() && "Definition of V not visited yet!");
 
   return at->second.test(S->SlotNum);
 }
 
-unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlot,
+unsigned SeqLiveVariables::getIntervalFromDef(VASTRegister *V, VASTSlot *ReadSlot,
                                               STGShortestPath *SSP) const {
   const VarInfo *VI = 0;
   unsigned ReadSlotNum = ReadSlot->SlotNum;
   bool AnyFound = false;
 
-  typedef VASTSeqValue::const_iterator iterator;
+  typedef VASTRegister::const_iterator iterator;
   for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
     std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
     if (at == VarInfos.end()) continue;
@@ -655,10 +654,10 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
   return IntervalFromLanding + 1;
 }
 
-SeqLiveVariables::VarInfo *SeqLiveVariables::getUniqueVarInfo(VASTSeqValue *V) {
+SeqLiveVariables::VarInfo *SeqLiveVariables::getUniqueVarInfo(VASTRegister *V) {
   SeqLiveVariables::VarInfo *VI = 0;
 
-  typedef VASTSeqValue::const_iterator iterator;
+  typedef VASTRegister::const_iterator iterator;
   for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
     SeqLiveVariables::VarInfo *CurVI = getVarInfo(*DI);
 
