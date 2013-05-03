@@ -117,9 +117,9 @@ private:
   // RegisterVector Registers;
   SubmoduleVector Submodules;
 
-  typedef StringMap<VASTNamedValue*> SymTabTy;
+  typedef StringMap<VASTNode*> SymTabTy;
   SymTabTy SymbolTable;
-  typedef StringMapEntry<VASTNamedValue*> SymEntTy;
+  typedef StringMapEntry<VASTNode*> SymEntTy;
 
   // The Name of the Design.
   std::string Name;
@@ -149,13 +149,7 @@ public:
   void printModuleDecl(raw_ostream &OS) const;
   void printSignalDecl(raw_ostream &OS);
 
-  VASTValue *getSymbol(const Twine &Name) const {
-    SymTabTy::const_iterator at = SymbolTable.find(Name.str());
-    assert(at != SymbolTable.end() && "Symbol not found!");
-    return at->second;
-  }
-
-  VASTValue *lookupSymbol(const Twine &Name) const {
+  VASTNode *lookupSymbol(const Twine &Name) const {
     SymTabTy::const_iterator at = SymbolTable.find(Name.str());
     if (at == SymbolTable.end()) return 0;
 
@@ -167,14 +161,9 @@ public:
     return cast_or_null<T>(lookupSymbol(Name));
   }
 
-  template<class T>
-  T *getSymbol(const Twine &Name) const {
-    return cast<T>(getSymbol(Name));
-  }
-
   /// getOrCreateSymbol - Get the symbol with the specified name, create a new
   /// one if it does not exists.
-  VASTNamedValue *getOrCreateSymbol(const Twine &Name, unsigned Bitwidth);
+  VASTSymbol *createSymbol(const Twine &Name, unsigned Bitwidth);
 
   VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB,
                        VASTValPtr Pred = VASTImmediate::True,
