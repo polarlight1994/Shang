@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "shang/VASTSeqOp.h"
-#include "shang/VASTSeqValue.h"
+#include "shang/VASTRegister.h"
 #include "shang/VASTSlot.h"
 
 #include "llvm/IR/Instruction.h"

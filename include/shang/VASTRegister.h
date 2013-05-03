@@ -1,4 +1,4 @@
-//===----- VASTSeqValue.h - The Value in the Sequential Logic ---*- C++ -*-===//
+//===--- VASTRegister.h - Represent Registers and its Timing ----*- C++ -*-===//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines the VASTRegister. The VASTSeqValue represent the value in
+// This file defines the VASTRegister. The VASTRegister represent the value in
 // the sequential logic, it is not necessary SSA. The VASTSeqOp that define
 // the values is available from the VASTRegister.
 //

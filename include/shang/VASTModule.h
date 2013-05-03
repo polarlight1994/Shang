@@ -16,7 +16,7 @@
 #include "shang/VASTNodeBases.h"
 #include "shang/VASTDatapathNodes.h"
 #include "shang/VASTSeqOp.h"
-#include "shang/VASTSeqValue.h"
+#include "shang/VASTRegister.h"
 #include "shang/VASTSlot.h"
 
 #include "shang/FUInfo.h"

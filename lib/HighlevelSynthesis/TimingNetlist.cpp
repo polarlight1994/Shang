@@ -51,7 +51,7 @@ void TNLDelay::dump() const {
 TimingNetlist::delay_type
 TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
   // TODO:
-  //if (VASTRegister *SVal = dyn_cast<VASTSeqValue>(Dst)) {
+  //if (VASTRegister *SVal = dyn_cast<VASTRegister>(Dst)) {
   //  for each fanin fi of Dst,
   //    get the CRITICAL path delay from Src to fi
   //    max reduction

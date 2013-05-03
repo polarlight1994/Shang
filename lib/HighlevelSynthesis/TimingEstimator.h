@@ -16,7 +16,7 @@
 
 #include "TimingNetlist.h"
 #include "shang/VASTDatapathNodes.h"
-#include "shang/VASTSeqValue.h"
+#include "shang/VASTRegister.h"
 
 #include "llvm/Support/ErrorHandling.h"
 

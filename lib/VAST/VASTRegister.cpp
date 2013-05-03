@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implement the VASTRegister. The VASTSeqValue represent the value in
+// This file implement the VASTRegister. The VASTRegister represent the value in
 // the sequential logic, it is not necessary SSA. The VASTSeqOp that define
 // the values is available from the VASTRegister.
 //
@@ -16,7 +16,7 @@
 #include "LangSteam.h"
 
 #include "shang/VASTExprBuilder.h"
-#include "shang/VASTSeqValue.h"
+#include "shang/VASTRegister.h"
 #include "shang/VASTSlot.h"
 #include "shang/VASTModule.h"
 #define DEBUG_TYPE "vast-seq-value"

@@ -15,7 +15,7 @@
 #include "SchedulerBase.h"
 #include "TimingNetlist.h"
 
-#include "shang/VASTSeqValue.h"
+#include "shang/VASTRegister.h"
 #include "shang/VASTSeqOp.h"
 #include "shang/VASTSlot.h"
 
