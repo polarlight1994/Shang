@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "STGShortestPath.h"
+#include "OverlappedSlots.h"
 #include "SeqLiveVariables.h"
 
 #include "shang/Passes.h"
@@ -50,6 +51,8 @@ void SeqLiveVariables::VarInfo::print(raw_ostream &OS) const {
   ::dump(DefKills, OS);
   OS << "\n  Landings: ";
   ::dump(Landings, OS);
+  OS << "\n  Overlappeds: ";
+  ::dump(Overlappeds, OS);
   OS << "\n";
 }
 
@@ -82,8 +85,11 @@ void SeqLiveVariables::VarInfo::verify() const {
 char SeqLiveVariables::ID = 0;
 char &llvm::SeqLiveVariablesID = SeqLiveVariables::ID;
 
-INITIALIZE_PASS(SeqLiveVariables, "shang-seq-live-variables",
-                "Seq Live Variables Analysis", false, true)
+INITIALIZE_PASS_BEGIN(SeqLiveVariables, "shang-seq-live-variables",
+                      "Seq Live Variables Analysis", false, true)
+  INITIALIZE_PASS_DEPENDENCY(OverlappedSlots)
+INITIALIZE_PASS_END(SeqLiveVariables, "shang-seq-live-variables",
+                    "Seq Live Variables Analysis", false, true)
 
 Pass *llvm::createSeqLiveVariablesPass() {
   return new SeqLiveVariables();
@@ -95,6 +101,7 @@ SeqLiveVariables::SeqLiveVariables() : VASTModulePass(ID) {
 
 void SeqLiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
+  AU.addRequired<OverlappedSlots>();
   AU.setPreservesAll();
 }
 
@@ -127,7 +134,7 @@ void SeqLiveVariables::dumpVarInfoSet(SmallPtrSet<VarInfo*, 8> VIs) {
 }
 
 void SeqLiveVariables::verifyAnalysis() const {
-  SparseBitVector<> UnionMask;
+  SparseBitVector<> UnionMask, OverlappedMask;
   SmallPtrSet<VarInfo*, 8> VIs;
 
   // Verify the VarInfo itself first.
@@ -142,6 +149,7 @@ void SeqLiveVariables::verifyAnalysis() const {
     // Reset the context.
     VIs.clear();
     UnionMask.clear();
+    OverlappedMask.clear();
 
     typedef VASTSeqValue::const_iterator iterator;
     for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
@@ -153,7 +161,10 @@ void SeqLiveVariables::verifyAnalysis() const {
     for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
       VarInfo *VInfo = *VI;
 
-      if (UnionMask.intersects(VInfo->Alives)) {
+      // FIXME: Check the overlapped slots more carefully.
+      if (UnionMask.intersects(VInfo->Alives)
+          || OverlappedMask.intersects(VInfo->Alives)
+          || UnionMask.intersects(VInfo->Overlappeds)) {
         dbgs() << "Current VASTSeqVal: " << V->getName() << '\n';
         dumpVarInfoSet(VIs);
         dbgs() << "Overlap slots:\n";
@@ -171,6 +182,7 @@ void SeqLiveVariables::verifyAnalysis() const {
       UnionMask |= VInfo->Alives;
       UnionMask |= VInfo->Kills;
       UnionMask |= VInfo->DefKills;
+      OverlappedMask |= VInfo->Overlappeds;
     }
   }
 }
@@ -226,7 +238,8 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
     ChildItStack.push_back(NodeStack.back()->succ_begin());
   }
 
-  initializeLandingSlot();
+  initializeLandingSlots();
+  initializeOverlappedSlots();
 
 #ifndef NDEBUG
   verifyAnalysis();
@@ -254,7 +267,7 @@ static void setLandingSlots(VASTSlot *S, SparseBitVector<> &Landings) {
   ::dump(Landings, dbgs()));
 }
 
-void SeqLiveVariables::initializeLandingSlot() {
+void SeqLiveVariables::initializeLandingSlots() {
   // Setup the linding slot map.
   std::map<unsigned, SparseBitVector<> > LandingMap;
   typedef VASTModule::slot_iterator slot_iterator;
@@ -282,6 +295,19 @@ void SeqLiveVariables::initializeLandingSlot() {
       unsigned Landing = *LI;
       if (VI->isSlotReachable(Landing)) VI->Landings.set(Landing);
     }
+  }
+}
+
+void SeqLiveVariables::initializeOverlappedSlots() {
+  OverlappedSlots &Overlappeds = getAnalysis<OverlappedSlots>();
+
+  for (var_iterator I = VarList.begin(), E = VarList.end(); I != E; ++I) {
+    VarInfo *VI = I;
+
+    // Iterate over all reachable slots to set the overlapped slots.
+    Overlappeds.setOverlappedSlots(VI->Alives, VI->Overlappeds);
+    Overlappeds.setOverlappedSlots(VI->Kills, VI->Overlappeds);
+    Overlappeds.setOverlappedSlots(VI->DefKills, VI->Overlappeds);
   }
 }
 

@@ -41,6 +41,18 @@ public:
 
   OverlappedSlots();
 
+  void setOverlappedSlots(unsigned SlotNum, SparseBitVector<> &LHS) const {
+    LHS |= Overlappeds.lookup(SlotNum);
+  }
+
+  void setOverlappedSlots(SparseBitVector<> &LHS,
+                          const SparseBitVector<> &RHS) const {
+    typedef SparseBitVector<>::iterator slot_iterator;
+
+    for (slot_iterator SI = RHS.begin(), SE = RHS.end(); SI != SE; ++SI)
+      setOverlappedSlots(*SI, LHS);
+  }
+
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnVASTModule(VASTModule &VM);
   void releaseMemory();

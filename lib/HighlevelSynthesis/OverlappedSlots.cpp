@@ -144,6 +144,7 @@ bool OverlappedSlots::runOnVASTModule(VASTModule &VM) {
     if (HasSideBranch(S)) buildOverlappedMap(S);
   }
 
+  dump();
 
   return false;
 }
