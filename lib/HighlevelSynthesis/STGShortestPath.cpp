@@ -32,6 +32,7 @@ using namespace llvm;
 STATISTIC(NumIterations, "Number of iterations in the STP algorithm");
 
 char STGShortestPath::ID = 0;
+char &llvm::STGShortestPathID = STGShortestPath::ID;
 const unsigned STGShortestPath::Inf = UINT16_MAX;
 
 INITIALIZE_PASS(STGShortestPath, "vast-stg-shortest-path",

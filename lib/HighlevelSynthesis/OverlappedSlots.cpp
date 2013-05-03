@@ -33,6 +33,7 @@ using namespace llvm;
 STATISTIC(NumOverlappeds, "Number of overlapped slots");
 
 char OverlappedSlots::ID = 0;
+char &llvm::OverlappedSlotsID = OverlappedSlots::ID;
 
 INITIALIZE_PASS_BEGIN(OverlappedSlots, "vast-overlapped-slot",
                       "Identify the timeframe overlapped slots",

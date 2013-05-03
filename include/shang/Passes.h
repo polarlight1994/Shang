@@ -30,6 +30,8 @@ extern char &ControlLogicSynthesisID;
 extern char &SeqSelectorSynthesisID;
 extern char &DatapathNamerID;
 extern char &SeqLiveVariablesID;
+extern char &STGShortestPathID;
+extern char &OverlappedSlotsID;
 
 FunctionPass *createDesignMetricsPass();
 
