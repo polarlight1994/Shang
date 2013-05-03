@@ -606,14 +606,7 @@ void VASTModule::print(raw_ostream &OS) const {
 VASTPort *VASTModule::createPort(const Twine &Name, unsigned BitWidth,
                               bool isReg, bool isInput, VASTSeqValue::Type T) {
   VASTPort *Port = getAllocator().Allocate<VASTPort>();
-  VASTNamedValue *V;
-
-  if (isReg)
-    V = addRegister(Name, BitWidth, 0, T, 0, "// ");
-  else
-    V = createSeqValue(Name, BitWidth, VASTSeqValue::IO, 0, Port);
-
-  return new (Port) VASTPort(V, isInput);;
+  return new (Port) VASTPort(createSeqValue(Name, BitWidth, T, 0, Port), isInput);
 }
 
 VASTPort *VASTModule::createPort(VASTSeqValue *SeqVal, bool IsInput, PortTypes T)
@@ -651,8 +644,9 @@ VASTPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
                                     PortTypes T /*= Others*/,
                                     bool isReg /*= true*/) {
   VASTPort *Port = createPort(Name, BitWidth, isReg, false,
-                           T == VASTModule::Finish ? VASTSeqValue::Enable
-                                                   : VASTSeqValue::IO);
+                              T == VASTModule::Finish
+                              ? VASTSeqValue::Enable
+                              : VASTSeqValue::IO);
 
   if (SpecialInPortEnd <= T && T < SpecialOutPortEnd) {
     assert(Ports[T] == 0 && "Special port exist!");
@@ -673,19 +667,18 @@ VASTPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
 
 VASTSeqValue *VASTModule::addRegister(const Twine &Name, unsigned BitWidth,
                                       unsigned InitVal, VASTSeqValue::Type T,
-                                      uint16_t RegData, const char *Attr) {
+                                      uint16_t RegData) {
   return createSeqValue(Name, BitWidth, T, RegData, 0, InitVal);
 }
 
 VASTSeqValue *VASTModule::addIORegister(const Twine &Name, unsigned BitWidth,
-                                        unsigned FUNum, const char *Attr) {
-  return addRegister(Name, BitWidth, 0, VASTSeqValue::IO, FUNum, Attr);
+                                        unsigned FUNum) {
+  return addRegister(Name, BitWidth, 0, VASTSeqValue::IO, FUNum);
 }
 
 VASTSeqValue *VASTModule::addDataRegister(const Twine &Name, unsigned BitWidth,
-                                          unsigned RegNum, unsigned InitVal,
-                                          const char *Attr) {
-  return addRegister(Name, BitWidth, InitVal, VASTSeqValue::Data, RegNum, Attr);
+                                          unsigned RegNum, unsigned InitVal) {
+  return addRegister(Name, BitWidth, InitVal, VASTSeqValue::Data, RegNum);
 }
 
 BumpPtrAllocator &VASTModule::getAllocator() {

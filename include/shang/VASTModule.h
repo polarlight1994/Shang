@@ -264,14 +264,13 @@ public:
   VASTSeqValue *addRegister(const Twine &Name, unsigned BitWidth,
                             unsigned InitVal = 0,
                             VASTSeqValue::Type T = VASTSeqValue::Data,
-                            uint16_t RegData = 0, const char *Attr = "");
+                            uint16_t RegData = 0);
 
   VASTSeqValue *addIORegister(const Twine &Name, unsigned BitWidth,
-                              unsigned FUNum, const char *Attr = "");
+                              unsigned FUNum);
 
   VASTSeqValue *addDataRegister(const Twine &Name, unsigned BitWidth,
-                                unsigned RegNum = 0, unsigned InitVal = 0,
-                                const char *Attr = "");
+                                unsigned RegNum = 0, unsigned InitVal = 0);
 
   VASTWire *addWire(const Twine &Name, unsigned BitWidth,
                     const char *Attr = "", bool IsWrapper = false);

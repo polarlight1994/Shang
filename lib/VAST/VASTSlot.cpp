@@ -44,8 +44,7 @@ void VASTSlot::createSignals(VASTModule *VM) {
   // Create the relative signals.
   std::string SlotName = "Slot" + utostr_32(SlotNum);
   VASTSeqValue *R = VM->addRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0,
-                                    VASTSeqValue::Slot, SlotNum,
-                                    VASTModule::DirectClkEnAttr.c_str());
+                                    VASTSeqValue::Slot, SlotNum);
   SlotReg.set(R);
 
   VASTWire *Ready = VM->addWire(SlotName + "Ready", 1,
