@@ -154,6 +154,34 @@ public:
   virtual void anchor() const;
 };
 
+class VASTRegister : public VASTNode {
+  VASTSeqValue *Value;
+  uint64_t InitVal;
+
+  VASTRegister(VASTSeqValue *V, uint64_t initVal, const char *Attr = "");
+  friend class VASTModule;
+public:
+  const char *const AttrStr;
+
+  VASTSeqValue *getValue() const { return Value; }
+  VASTSeqValue *operator->() { return getValue(); }
+
+  const char *getName() const { return getValue()->getName(); }
+  unsigned getBitWidth() const { return getValue()->getBitWidth(); }
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTRegister *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastRegister;
+  }
+
+  typedef VASTSeqValue::AndCndVec AndCndVec;
+
+  void printDecl(raw_ostream &OS) const;
+
+  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void print(raw_ostream &OS) const;
+};
 }
 
 #endif

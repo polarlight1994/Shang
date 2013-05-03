@@ -48,51 +48,6 @@ void VASTSubModuleBase::printDecl(raw_ostream &OS) const {
 }
 
 //===----------------------------------------------------------------------===//
-VASTRegister::VASTRegister(VASTSeqValue *V, uint64_t initVal, const char *Attr)
-  : VASTNode(vastRegister), Value(V), InitVal(initVal), AttrStr(Attr) {}
-
-void VASTRegister::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
-  if (getValue()->empty()) return;
-
-  // Print the data selector of the register.
-  getValue()->printSelector(OS);
-
-  OS.always_ff_begin();
-  // Reset the register.
-  OS << getName()  << " <= "
-    << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false) << ";\n";
-  OS.else_begin();
-
-  // Print the assignment.
-  if (getValue()->getValType() == VASTSeqValue::Enable)
-    OS << getName() << " <= " << getName() << "_selector_enable" << ";\n";
-  else {
-    OS.if_begin(Twine(getName()) + Twine("_selector_enable"));
-    OS << getName() << " <= " << getName() << "_selector_wire"
-       << VASTValue::printBitRange(getBitWidth(), 0, false) << ";\n";
-    OS.exit_block();
-  }
-
-  OS << "// synthesis translate_off\n";
-  getValue()->verifyAssignCnd(OS, getName(), Mod);
-  OS << "// synthesis translate_on\n\n";
-
-  OS.always_ff_end();
-}
-
-void VASTRegister::print(raw_ostream &OS) const {
-  vlang_raw_ostream S(dbgs());
-  print(S, 0);
-}
-
-
-void VASTRegister::printDecl(raw_ostream &OS) const {
-  OS << AttrStr << ' ';
-  getValue()->printDecl(OS, true, "");
-  OS << " = " << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false) <<  ";\n";
-}
-
-//===----------------------------------------------------------------------===//
 void VASTBlockRAM::addPorts(VASTModule *VM) {
   std::string BRamArrayName = VFUBRAM::getArrayName(getBlockRAMNum());
   
