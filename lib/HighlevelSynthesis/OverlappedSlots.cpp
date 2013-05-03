@@ -55,6 +55,8 @@ void OverlappedSlots::getAnalysisUsage(AnalysisUsage &AU) const {
 
 void OverlappedSlots::buildOverlappedMap(VASTSlot *S,
                                          ArrayRef<VASTSlot*> StraightFlow) {
+  DEBUG(dbgs() << "Starting from #" << S->SlotNum << '\n');
+
   typedef df_iterator<VASTSlot*> slot_df_iterator;
   for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
     VASTSlot *Child = *DI;
@@ -72,6 +74,8 @@ void OverlappedSlots::buildOverlappedMap(VASTSlot *S,
       unsigned Offset = Distance - 1;
       VASTSlot *OverlappedSlot = StraightFlow[Offset];
       Overlappeds[OverlappedSlot->SlotNum].set(Child->SlotNum);
+      DEBUG(dbgs() << "Overlap: #" << OverlappedSlot->SlotNum << " -> #"
+             << Child->SlotNum << " distance: " << Distance << '\n');
       ++NumOverlappeds;
     }
 
@@ -83,6 +87,9 @@ void OverlappedSlots::buildOverlappedMap(VASTSlot *S) {
   // Build the straight line control flow.
   SmallVector<VASTSlot*, 8> StraightFlow;
   SmallVector<VASTSlot*, 8> ConditionalBroundaries;
+  assert(!S->IsSubGrp && "Unexpected subgroup!");
+
+  DEBUG(dbgs() << "Handling #" << S->SlotNum << '\n';);
 
   typedef df_iterator<VASTSlot*> slot_df_iterator;
   for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
@@ -109,9 +116,15 @@ void OverlappedSlots::buildOverlappedMap(VASTSlot *S) {
     ++DI;
   }
 
+  DEBUG(for (unsigned i = 0, e = StraightFlow.size(); i != e; ++i)
+    dbgs() << "  Straight: " << (i + 1) << " #"
+           << StraightFlow[i]->SlotNum << '\n';);
+
   // Build the overlapped map from the target of side branch.
   while (!ConditionalBroundaries.empty())
     buildOverlappedMap(ConditionalBroundaries.pop_back_val(), StraightFlow);
+
+  DEBUG(dbgs() << "\n\n");
 }
 
 static bool HasSideBranch(VASTSlot *S) {
@@ -145,7 +158,7 @@ bool OverlappedSlots::runOnVASTModule(VASTModule &VM) {
     if (HasSideBranch(S)) buildOverlappedMap(S);
   }
 
-  dump();
+  DEBUG(dbgs() << "Overlapped Slots:\n"; dump(););
 
   return false;
 }
