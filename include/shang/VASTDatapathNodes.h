@@ -298,16 +298,14 @@ class VASTWire :public VASTNamedValue, public VASTOperandList,
 
   friend struct ilist_sentinel_traits<VASTWire>;
   VASTWire() : VASTNamedValue(vastWire, 0, 0), VASTOperandList(0), Idx(0),
-    IsWrapper(false), AttrStr(0) {}
+    IsWrapper(false) {}
 
   virtual void dropUses();
 public:
-  const char *const AttrStr;
 
-  VASTWire(const char *Name, unsigned BitWidth, const char *Attr = "",
-           bool IsWrapper = false)
+  VASTWire(const char *Name, unsigned BitWidth, bool IsWrapper = false)
     : VASTNamedValue(vastWire, Name, BitWidth), VASTOperandList(1),
-      Idx(0), IsWrapper(IsWrapper), AttrStr(Attr) {
+      Idx(0), IsWrapper(IsWrapper) {
     new (Operands) VASTUse(this);
   }
 

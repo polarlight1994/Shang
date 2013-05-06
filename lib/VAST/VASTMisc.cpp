@@ -78,20 +78,24 @@ void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   if (UB) OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
 }
 
-void VASTNamedValue::printDecl(raw_ostream &OS, bool declAsRegister,
-                               const char *Terminator) const {
+void VASTNamedValue::PrintDecl(raw_ostream &OS, const Twine &Name,
+                               unsigned BitWidth, bool declAsRegister,
+                               const char *Terminator /* = ";" */) {
   if (declAsRegister)
     OS << "reg";
   else
     OS << "wire";
 
-  OS << VASTValue::printBitRange(getBitWidth(), 0, false);
+  OS << VASTValue::printBitRange(BitWidth, 0, false);
 
-  OS << ' ' << getName();
+  OS << ' ' << Name;
 
   OS << Terminator;
+}
 
-  return;
+void VASTNamedValue::printDecl(raw_ostream &OS, bool declAsRegister,
+                               const char *Terminator) const {
+  PrintDecl(OS, getName(), getBitWidth(), declAsRegister, Terminator);
 }
 //===----------------------------------------------------------------------===//
 VASTUDef::VASTUDef(unsigned Size) : VASTValue(vastUDef, Size) {}
@@ -179,14 +183,16 @@ void VASTOperandList::dropOperands() {
 //===----------------------------------------------------------------------===//
 void VASTModule::gc() {
   // Clear up the dead VASTSeqValues.
-  for (seqval_iterator I = seqval_begin(); I != seqval_end(); /*++I*/) {
-    VASTSeqValue *V = I++;
+  for (seqval_iterator VI = seqval_begin(); VI != seqval_end(); /*++I*/) {
+    VASTSeqValue *V = VI++;
 
     if (!V->use_empty() || V->getValType() != VASTSeqValue::Data) continue;;
 
     SmallVector<VASTSeqOp*, 4> DeadOps;
-    for (VASTSeqValue::iterator I = V->begin(), E = V->end(); I != E; ++I) {
+    typedef VASTSeqValue::fanin_iterator iterator;
+    for (iterator I = V->fanin_begin(), E = V->fanin_end(); I != E; ++I) {
       VASTLatch U = *I;
+      assert(U.Op->getNumDefs() == 1 && "Bad number of define!");
       DeadOps.push_back(U.Op);
     }
 

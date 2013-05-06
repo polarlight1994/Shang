@@ -25,7 +25,7 @@
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
-void VASTSubModuleBase::addFanin(VASTSeqValue *V) {
+void VASTSubModuleBase::addFanin(VASTSelector *V) {
   Fanins.push_back(V);
 }
 
@@ -50,24 +50,22 @@ void VASTSubModuleBase::printDecl(raw_ostream &OS) const {
 //===----------------------------------------------------------------------===//
 void VASTBlockRAM::addPorts(VASTModule *VM) {
   std::string BRamArrayName = VFUBRAM::getArrayName(getBlockRAMNum());
-  
+
   // Add the address port and the data port.
-  VASTSeqValue *ReadAddrA = VM->createSeqValue(BRamArrayName + "_raddr0r",
-                                               getAddrWidth(), VASTSeqValue::BRAM,
-                                               getBlockRAMNum(), this);
-  addFanin(ReadAddrA);
+
+  VASTSelector *RAddr
+    = VM->createSelector(BRamArrayName + "_raddr0r", getAddrWidth(), false, this);
+  addFanin(RAddr);
   VASTWire *ReadDataA = VM->addWire(BRamArrayName + "_rdata0w", getWordSize());
   addFanout(ReadDataA);
 
-  VASTSeqValue *WriteAddrA = VM->createSeqValue(BRamArrayName + "_waddr0r",
-                                                getAddrWidth(), VASTSeqValue::BRAM,
-                                                getBlockRAMNum(), this);
-  addFanin(WriteAddrA);
+  VASTSelector *WAddr
+    = VM->createSelector(BRamArrayName + "_waddr0r", getAddrWidth(), false, this);
+  addFanin(WAddr);
 
-  VASTSeqValue *WriteDataA = VM->createSeqValue(BRamArrayName + "_wdata0r",
-                                                getWordSize(), VASTSeqValue::BRAM,
-                                                getBlockRAMNum(), this);
-  addFanin(WriteDataA);
+  VASTSelector *WData
+    = VM->createSelector(BRamArrayName + "_wdata0r", getWordSize(), false, this);
+  addFanin(WData);
 }
 
 static void printConstant(raw_ostream &OS, uint64_t Val, unsigned SizeInBits) {
@@ -167,7 +165,7 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   // Print the selectors.
   getRAddr(0)->printSelector(OS);
   getWAddr(0)->printSelector(OS);
-  getWData(0)->printSelector(OS);
+  getWData(0)->printSelector(OS, false);
 
   OS.always_ff_begin(false);
   // Print the first port.
@@ -175,8 +173,8 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 
   OS << "// synthesis translate_off\n";
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
-    VASTSeqValue *V = *I;
-    V->verifyAssignCnd(OS, V->getName(), Mod);
+    VASTSelector *V = *I;
+    V->verifyAssignCnd(OS, Mod);
   }
   OS << "// synthesis translate_on\n\n";
 
@@ -198,7 +196,7 @@ void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {
   const std::string &BRAMArray = VFUBRAM::getArrayName(getBlockRAMNum());
 
   // Print the read port.
-  VASTSeqValue *RAddr = getRAddr(Num);
+  VASTSelector *RAddr = getRAddr(Num);
   if (!RAddr->empty()) {
     OS.if_begin(Twine(RAddr->getName()) + "_selector_enable");
 
@@ -211,7 +209,7 @@ void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {
   }
 
   // Print the write port.
-  VASTSeqValue *WAddr = getWAddr(Num);
+  VASTSelector *WAddr = getWAddr(Num);
   if (!WAddr->empty()) {
     OS.if_begin(Twine(WAddr->getName()) + "_selector_enable");
     OS << BRAMArray << '[' << WAddr->getName() << "_selector_wire"
@@ -224,64 +222,51 @@ void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {
 
 //===----------------------------------------------------------------------===//
 std::string
-VASTSubModule::getPortName(unsigned FNNum, const std::string &PortName) {
-  return "SubMod" + utostr(FNNum) + "_" + PortName;
+VASTSubModule::getPortName(unsigned FNNum, const Twine &PortName) {
+  return "SubMod" + utostr(FNNum) + "_" + PortName.str();
 }
 
-VASTSeqValue *VASTSubModule::createStartPort(VASTModule *VM) {
+VASTSelector *VASTSubModule::createStartPort(VASTModule *VM) {
   StartPort
-    = VM->addRegister(getPortName("start"), 1, 0, VASTSeqValue::Enable)->getValue();
-  addInPort("start", StartPort);
+    = VM->createRegister(getPortName("start"), 1, 0, true)->getSelector();
+  VASTSubModuleBase::addFanin(StartPort);
   return StartPort;
 }
 
-VASTSeqValue *VASTSubModule::createFinPort(VASTModule *VM) {
-  FinPort = VM->createSeqValue(getPortName("fin"), 1, VASTSeqValue::IO, 0, this);
-  addOutPort("fin", FinPort);
+VASTWire *VASTSubModule::createFinPort(VASTModule *VM) {
+  FinPort = VM->addWire(getPortName("fin"), 1);
+  addFanout(FinPort);
   return FinPort;
 }
 
-VASTSeqValue *VASTSubModule::createRetPort(VASTModule *VM, unsigned Bitwidth,
+VASTWire *VASTSubModule::createRetPort(VASTModule *VM, unsigned Bitwidth,
                                            unsigned Latency) {
-  RetPort = VM->createSeqValue(getPortName("return_value"),
-                               Bitwidth, VASTSeqValue::IO, 0, this);
-  addOutPort("return_value", RetPort);
+  RetPort = VM->addWire(getPortName("return_value"), Bitwidth);
+  addFanout(RetPort);
   // Also update the latency.
   this->Latency = Latency;
   return RetPort;
 }
 
-void VASTSubModule::addPort(const std::string &Name, VASTValue *V, bool IsInput) {
-  VASTSubModulePortPtr Ptr(V, IsInput);
-  VASTSubModulePortPtr Inserted = PortMap.GetOrCreateValue(Name, Ptr).second;
-  assert(Inserted == Ptr && "Already inserted!");
-  (void) Inserted;
-
-  // Do not add the pseudo drivers to the fanin/fanout list.
-  if (V == 0) return;
-
-  if (IsInput) addFanin(cast<VASTSeqValue>(V));
-  else         addFanout(V);
-}
-
 void VASTSubModule::printSimpleInstantiation(vlang_raw_ostream &OS,
                                              const VASTModule *Mod) const {
-  OS << getName() << ' ' << getName() << "_inst" << "(\n";
+  //OS << getName() << ' ' << getName() << "_inst" << "(\n";
 
-  // Print the port connections.
-  for (const_port_iterator I = port_begin(), E = port_end(); I != E; ++I) {
-    OS.indent(4) << "." << I->first() << '(';
-    if (const VASTValue *Driver = I->second.getPointer())
-      Driver->printAsOperand(OS, false);
-    else
-      // Simply repeat the port name for the pseudo drivers.
-      OS << I->first();
+  //// Print the port connections.
+  //for (const_port_iterator I = port_begin(), E = port_end(); I != E; ++I) {
+  //  OS.indent(4) << "." << I->first() << '(';
+  //  if (const VASTValue *Driver = I->second.getPointer())
+  //    Driver->printAsOperand(OS, false);
+  //  else
+  //    // Simply repeat the port name for the pseudo drivers.
+  //    OS << I->first();
 
-    OS << "), //" << (I->second.getInt() ? "Input" : "Output") << "\n";
-  }
+  //  OS << "), //" << (I->second.getInt() ? "Input" : "Output") << "\n";
+  //}
 
-  // Write the clock and the reset signal at last.
-  OS.indent(4) << ".clk(clk), .rstN(rstN));\n";
+  //// Write the clock and the reset signal at last.
+  //OS.indent(4) << ".clk(clk), .rstN(rstN));\n";
+  llvm_unreachable("Not implemented yet!");
 }
 
 void VASTSubModule::printInstantiationFromTemplate(vlang_raw_ostream &OS,
@@ -310,10 +295,11 @@ void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 
 void VASTSubModule::printDecl(raw_ostream &OS) const {
   // Declare the output of submodule.
-  if (VASTSeqValue *Ret = getRetPort())
+  if (VASTWire *Ret = getRetPort())
     Ret->printDecl(OS, false);
 
   // Declare the finish signal of submodule.
-  if (VASTSeqValue *Fin = getFinPort())
-    Fin->printDecl(OS, false);
+  VASTWire *Fin = getFinPort();
+  assert(Fin && "Finish port not available?");
+  Fin->printDecl(OS, false);
 }

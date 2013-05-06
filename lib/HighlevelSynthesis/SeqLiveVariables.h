@@ -114,7 +114,7 @@ public:
   void releaseMemory();
   void verifyAnalysis() const;
 
-  unsigned getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlot,
+  unsigned getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot,
                               STGShortestPath *SSP) const;
 
   void print(raw_ostream &OS) const;
@@ -171,8 +171,6 @@ public:
   VarInfo *getVarInfo(const VASTLatch &L) const {
     return getVarInfo(VarName(L));
   }
-
-  VarInfo *getUniqueVarInfo(VASTSeqValue *V);
 };
 }
 

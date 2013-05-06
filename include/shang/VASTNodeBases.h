@@ -17,6 +17,7 @@
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Casting.h"
@@ -30,12 +31,15 @@ class Value;
 class VASTNamedValue;
 class VASTValue;
 class VASTExpr;
+class VASTWire;
 class VASTSeqValue;
+class VASTSelector;
 class VASTSymbol;
 class VASTRegister;
 class VASTSeqOp;
 class VASTModule;
 class vlang_raw_ostream;
+class Twine;
 template<typename T> class ArrayRef;
 
 class VASTNode {
@@ -52,18 +56,19 @@ public:
     vastSeqValue,
 
     vastLastValueType = vastSeqValue,
-    vastPort,
+    vastInPort,
+    vastOutPort,
     vastSlot,
     vastRegister,
     vastBlockRAM,
     vastSubmodule,
     vastMemoryBus,
 
+    vastSelector,
     // Fine-grain control flow.
     vastSeqInst,
     vastSeqCtrlOp,
     vastSlotCtrl,
-    vastSeqCode,
 
     // Handle of the VASTValPtr, make sure the replacement in the datapath do
     // not invalid the external use.
@@ -75,9 +80,10 @@ public:
 protected:
   union {
     const char *Name;
-    VASTNamedValue *NamedValue;
     BasicBlock *ParentBB;
     Value *LLVMValue;
+    VASTSelector *Sel;
+    VASTWire *Wire;
   } Contents;
 
   const uint8_t NodeT : 7;
@@ -270,8 +276,7 @@ public:
   }
 
   // Get the user of this use.
-  VASTNode &getUser() { return User; }
-  const VASTNode &getUser() const { return User; }
+  VASTNode &getUser() const { return User; }
 
   // Remove this use from use list.
   void unlinkUseFromUser();
@@ -545,6 +550,9 @@ protected:
   }
 public:
   const char *getName() const { return Contents.Name; }
+
+  static void PrintDecl(raw_ostream &OS, const Twine &Name, unsigned BitWidth,
+                        bool declAsRegister, const char *Terminator = ";\n");
   void printDecl(raw_ostream &OS, bool declAsRegister,
                  const char *Terminator = ";\n") const;
 
@@ -559,7 +567,8 @@ public:
 };
 
 class VASTSubModuleBase : public VASTNode {
-  SmallVector<VASTSeqValue*, 8> Fanins;
+  SmallVector<VASTSelector*, 8> Fanins;
+
   SmallVector<VASTValue*, 4> Fanouts;
 protected:
   const unsigned Idx;
@@ -569,25 +578,26 @@ protected:
     Contents.Name = Name;
   }
 
+  void addFanin(VASTSelector *S);
+  void addFanout(VASTValue *V);
 public:
-  typedef SmallVectorImpl<VASTSeqValue*>::iterator fanin_iterator;
+  ~VASTSubModuleBase() {}
+
+  typedef SmallVectorImpl<VASTSelector*>::iterator fanin_iterator;
   fanin_iterator fanin_begin() { return Fanins.begin(); }
   fanin_iterator fanin_end() { return Fanins.end(); }
 
-  typedef SmallVectorImpl<VASTSeqValue*>::const_iterator const_fanin_iterator;
+  typedef SmallVectorImpl<VASTSelector*>::const_iterator const_fanin_iterator;
   const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
   const_fanin_iterator fanin_end()   const { return Fanins.end(); }
 
   typedef SmallVectorImpl<VASTValue*>::iterator fanout_iterator;
 
-  void addFanin(VASTSeqValue *V);
-  void addFanout(VASTValue *V);
-
   VASTValue *getFanout(unsigned Idx) const {
     return Fanouts[Idx];
   }
 
-  VASTSeqValue *getFanin(unsigned Idx) const {
+  VASTSelector *getFanin(unsigned Idx) const {
     return Fanins[Idx];
   }
 

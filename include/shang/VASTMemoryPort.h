@@ -15,6 +15,7 @@
 #define VAST_MEMORY_PORT_H
 
 #include "shang/VASTSubModules.h"
+#include <map>
 
 namespace llvm {
 class GlobalVariable;
@@ -56,16 +57,16 @@ public:
   bool isDefault() const { return Idx == 0; }
 
   // The read port of the memory bus.
-  VASTSeqValue *getREnable() const;
-  VASTSeqValue *getRByteEn() const;
-  VASTSeqValue *getRAddr() const;
+  VASTSelector *getREnable() const;
+  VASTSelector *getRByteEn() const;
+  VASTSelector *getRAddr() const;
   VASTValue    *getRData() const;
 
   // The write port of the memory bus.
-  VASTSeqValue *getWEnable() const;
-  VASTSeqValue *getWByteEn() const;
-  VASTSeqValue *getWAddr() const;
-  VASTSeqValue *getWData() const;
+  VASTSelector *getWEnable() const;
+  VASTSelector *getWByteEn() const;
+  VASTSelector *getWAddr() const;
+  VASTSelector *getWData() const;
 
   void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
   unsigned getStartOffset(GlobalVariable *GV) const;

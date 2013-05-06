@@ -376,9 +376,9 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
     // Are we got the VASTSeqVal corresponding to V?
     if (CurSU->isLatching(V)) {
       assert((SrcSeqVal == 0
-              || SrcSeqVal == check(CurSU->getSeqOp())->getDef(0).getDst())
+              || SrcSeqVal == check(CurSU->getSeqOp())->getDef(0))
             && "All PHI latching SeqOp should define the same SeqOp!");
-      SrcSeqVal = check(CurSU->getSeqOp())->getDef(0).getDst();
+      SrcSeqVal = check(CurSU->getSeqOp())->getDef(0);
 
       if (IsPHI) continue;
 
@@ -399,10 +399,9 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
 void VASTScheduling::buildFlowDependencies(VASTValue *Dst, VASTSeqValue *Src,
                                            VASTSchedUnit *U, unsigned ExtraDelay)
 {
-  VASTLatch L = Src->latchFront();
-  Value *V = L.Op->getValue();
+  Value *V = Src->getLLVMValue();
   assert(V && "Cannot get the corresponding value!");
-  assert((Src->size() == 1 || isa<PHINode>(V)) && "SeqVal not in SSA!");
+  assert((Src->num_fanins() == 1 || isa<PHINode>(V)) && "SeqVal not in SSA!");
   VASTSchedUnit *SrcSU
       // The static register is virtually defined at the entry slot. Because
       // we only write it when the function exit. Whe we read is the value from
@@ -425,12 +424,13 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) 
   for (unsigned i = 0, e = Op->getNumSrcs(); i != e; ++i) {
     VASTLatch L = Op->getSrc(i);
     VASTValue *FI = VASTValPtr(L).get();
-    VASTSeqValue *Dst = L.getDst();
+    // FIXME: Assert the selector is in SSA form!
+    VASTSelector *Sel = L.getSelector();
 
     // The Srcs set will be empty if FI is not a constant.
     if (!FI->extractSupporingSeqVal(Srcs)) continue;
 
-    unsigned CurMuxDelay = TNL->getMuxDelay(Dst->size(), Dst).getNumCycles();
+    unsigned CurMuxDelay = TNL->getMuxDelay(Sel->size(), Sel).getNumCycles();
     MuxDelay = std::max(MuxDelay, CurMuxDelay);
 
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
@@ -593,7 +593,7 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
         if (Argument *Arg = dyn_cast_or_null<Argument>(Op->getValue())) {
           // Remember the corresponding SeqVal.
           bool inserted
-            = ArgMap.insert(std::make_pair(Arg, Op->getDef(0).getDst())).second;
+            = ArgMap.insert(std::make_pair(Arg, Op->getDef(0))).second;
           assert(inserted && "SeqVal for argument not inserted!");
           (void) inserted;
         }

@@ -43,17 +43,13 @@ void VASTSlot::createSignals(VASTModule *VM) {
 
   // Create the relative signals.
   std::string SlotName = "Slot" + utostr_32(SlotNum);
-  VASTRegister *R = VM->addRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0,
-                                    VASTSeqValue::Slot, SlotNum,
-                                    VASTModule::DirectClkEnAttr.c_str());
-  SlotReg.set(R->getValue());
+  VASTRegister *R = VM->createRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0);
+  SlotReg.set(VM->createSeqValue(R->getSelector(), VASTSeqValue::Slot, SlotNum));
 
-  VASTWire *Ready = VM->addWire(SlotName + "Ready", 1,
-                                VASTModule::DirectClkEnAttr.c_str());
+  VASTWire *Ready = VM->addWire(SlotName + "Ready", 1);
   SlotReady.set(Ready);
 
-  VASTWire *Active = VM->addWire(SlotName + "Active", 1,
-                                 VASTModule::DirectClkEnAttr.c_str());
+  VASTWire *Active = VM->addWire(SlotName + "Active", 1);
   SlotActive.set(Active);
 }
 

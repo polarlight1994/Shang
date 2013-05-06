@@ -39,28 +39,58 @@ class vlang_raw_ostream;
 
 class VASTPort : public VASTNode {
 
+protected:
+  VASTPort(VASTTypes Type);
+
+  virtual const char *getNameImpl() const;
+  virtual unsigned getBitWidthImpl() const;
 public:
-  const bool IsInput;
+  virtual ~VASTPort();
 
-  VASTPort(VASTNamedValue *V, bool isInput);
-
-  VASTNamedValue *getValue() const { return Contents.NamedValue; }
-  VASTSeqValue *getSeqVal() const;
-
-  const char *getName() const { return getValue()->getName(); }
-  bool isInput() const { return IsInput; }
+  const char *getName() const { return getNameImpl(); }
+  bool isInput() const { return getASTType() == vastInPort; }
   bool isRegister() const;
-  unsigned getBitWidth() const { return getValue()->getBitWidth(); }
+  unsigned getBitWidth() const { return getBitWidthImpl(); }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTPort *A) { return true; }
   static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastPort;
+    return A->getASTType() == vastInPort || A->getASTType() == vastOutPort;
   }
 
   void print(raw_ostream &OS) const;
   void printExternalDriver(raw_ostream &OS, uint64_t InitVal = 0) const;
   std::string getExternalDriverStr(unsigned InitVal = 0) const;
+};
+
+class VASTOutPort : public VASTPort {
+  const char *getNameImpl() const;
+  unsigned getBitWidthImpl() const;
+public:
+  explicit VASTOutPort(VASTSelector *Sel);
+
+  VASTSelector *getSelector() const;
+  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTOutPort *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastOutPort;
+  }
+};
+
+class VASTInPort : public VASTPort {
+  const char *getNameImpl() const;
+  unsigned getBitWidthImpl() const;
+public:
+  explicit VASTInPort(VASTWire *Sel);
+  VASTWire *getValue() const;
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTInPort *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastInPort;
+  }
 };
 
 // The class that represent Verilog modulo.
@@ -73,11 +103,13 @@ public:
   typedef ilist<VASTWire> WireVector;
   typedef WireVector::iterator wire_iterator;
 
-  typedef SmallVector<VASTRegister*, 128> RegisterVector;
-  typedef RegisterVector::iterator reg_iterator;
+  typedef ilist<VASTRegister> RegisterVector;
 
   typedef SmallVector<VASTSubModuleBase*, 16> SubmoduleVector;
-  typedef SubmoduleVector::iterator submod_iterator;
+
+  typedef ilist<VASTSelector> SelectorVector;
+  typedef SelectorVector::iterator selector_iterator;
+  typedef SelectorVector::const_iterator const_selector_iterator;
 
   typedef ilist<VASTSeqValue> SeqValueVector;
   typedef SeqValueVector::iterator seqval_iterator;
@@ -108,18 +140,18 @@ private:
 
   // The slots vector, each slot represent a state in the FSM of the design.
   SlotVecTy Slots;
+  SelectorVector Selectors;
+  RegisterVector Registers;
   SeqValueVector SeqVals;
   ilist<VASTSeqOp> SeqOps;
 
   // Input/Output ports of the design.
   PortVector Ports;
-  // Wires and Registers of the design.
-  RegisterVector Registers;
   SubmoduleVector Submodules;
 
-  typedef StringMap<VASTNamedValue*> SymTabTy;
+  typedef StringMap<VASTNode*> SymTabTy;
   SymTabTy SymbolTable;
-  typedef StringMapEntry<VASTNamedValue*> SymEntTy;
+  typedef StringMapEntry<VASTNode*> SymEntTy;
 
   // The Name of the Design.
   std::string Name;
@@ -128,10 +160,9 @@ private:
 
   unsigned NumArgPorts, RetPortIdx;
 
-  BumpPtrAllocator &getAllocator();
-
-  VASTPort *createPort(const Twine &Name, unsigned BitWidth, bool isReg,
-                       bool isInput, VASTSeqValue::Type T);
+  VASTSeqCtrlOp *createCtrlLogic(VASTValPtr Src, VASTSlot *Slot,
+                                 VASTValPtr GuardCnd, bool UseSlotActive);
+  VASTPort *createPort(VASTNode *Node);
 public:
 
   VASTModule(Function &F);
@@ -147,7 +178,7 @@ public:
   void printRegisterBlocks(vlang_raw_ostream &OS) const;
   void printSubmodules(vlang_raw_ostream &OS) const;
   void printModuleDecl(raw_ostream &OS) const;
-  void printSignalDecl(raw_ostream &OS);
+  void printSignalDecl(raw_ostream &OS) const;
 
   template<class T>
   T *lookupSymbol(const Twine &Name) const {
@@ -179,12 +210,12 @@ public:
 
 
   // Allow user to add ports.
-  VASTPort *createPort(VASTSeqValue *SeqVal, bool IsInput, PortTypes T = Others);
-  VASTPort *addInputPort(const Twine &Name, unsigned BitWidth,
-                         PortTypes T = Others);
+  VASTPort *addPort(VASTNode *Node);
+  VASTInPort *addInputPort(const Twine &Name, unsigned BitWidth,
+                           PortTypes T = Others);
 
-  VASTPort *addOutputPort(const Twine &Name, unsigned BitWidth,
-                          PortTypes T = Others, bool isReg = true);
+  VASTOutPort *addOutputPort(const Twine &Name, unsigned BitWidth,
+                             PortTypes T = Others);
 
   // Get all ports of this moudle.
   const PortVector &getPorts() const { return Ports; }
@@ -234,9 +265,10 @@ public:
     return Ports.begin() + VASTModule::SpecialOutPortEnd;
   }
 
-  VASTSeqValue *createSeqValue(const Twine &Name, unsigned BitWidth,
-                               VASTSeqValue::Type T, unsigned Idx,
-                               VASTNode *Parent);
+  VASTSelector *createSelector(const Twine &Name, unsigned BitWidth,
+                               bool IsEnable, VASTNode *Parent);
+  VASTSeqValue *createSeqValue(VASTSelector *Selector, VASTSeqValue::Type T,
+                               unsigned Idx, Value *V = 0);
 
   VASTMemoryBus *createDefaultMemBus();
   VASTMemoryBus *createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth);
@@ -246,28 +278,22 @@ public:
 
   VASTSubModule *addSubmodule(const char *Name, unsigned Num);
 
-  VASTRegister *addRegister(const Twine &Name, unsigned BitWidth,
-                            unsigned InitVal = 0,
-                            VASTSeqValue::Type T = VASTSeqValue::Data,
-                            uint16_t RegData = 0, const char *Attr = "");
-
-  VASTRegister *addIORegister(const Twine &Name, unsigned BitWidth,
-                              unsigned FUNum, const char *Attr = "");
-
-  VASTRegister *addDataRegister(const Twine &Name, unsigned BitWidth,
-                                unsigned RegNum = 0, unsigned InitVal = 0,
-                                const char *Attr = "");
+  VASTRegister *createRegister(const Twine &Name, unsigned BitWidth,
+                               unsigned InitVal = 0, bool IsEnable = false);
 
   VASTWire *addWire(const Twine &Name, unsigned BitWidth,
-                    const char *Attr = "", bool IsWrapper = false);
+                    bool IsWrapper = false);
   VASTWire *createWrapperWire(const Twine &Name, unsigned SizeInBits,
                               VASTValPtr V = VASTValPtr());
   VASTWire *createWrapperWire(GlobalVariable *GV, unsigned SizeInBits);
 
   VASTUDef *createUDef(unsigned Size);
 
-  reg_iterator reg_begin() { return Registers.begin(); }
-  reg_iterator reg_end() { return Registers.end(); }
+  selector_iterator selector_begin() { return Selectors.begin(); }
+  selector_iterator selector_end() { return Selectors.end(); }
+
+  const_selector_iterator selector_begin() const { return Selectors.begin(); }
+  const_selector_iterator selector_end() const { return Selectors.end(); }
 
   slot_iterator slot_begin() { return Slots.begin(); }
   slot_iterator slot_end() { return Slots.end(); }
@@ -291,7 +317,10 @@ public:
   /// Create an assignment on the control logic.
   VASTSeqCtrlOp *assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
                                  VASTSlot *Slot, VASTValPtr GuardCnd,
-                                 bool UseSlotActive, bool ExportDefine = true);
+                                 bool UseSlotActive);
+  VASTSeqCtrlOp *assignCtrlLogic(VASTSelector *Selector, VASTValPtr Src,
+                                 VASTSlot *Slot, VASTValPtr GuardCnd,
+                                 bool UseSlotActive);
   /// Create an assignment on the control logic which may need further conflict
   /// resolution.
   VASTSlotCtrl *createSlotCtrl(VASTNode *N, VASTSlot *Slot, VASTValPtr GuardCnd);

@@ -15,6 +15,7 @@
 #include "SDCScheduler.h"
 #include "shang/VASTSubModules.h"
 #include "shang/Utilities.h"
+#include "shang/VASTSeqValue.h"
 
 #include "llvm/ADT/StringExtras.h"
 #include "lpsolve/lp_lib.h"
@@ -80,13 +81,13 @@ void BasicLinearOrderGenerator::addLinOrdEdge() {
       if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op))
         if (SeqInst->getSeqOpType() == VASTSeqInst::Latch) continue;
 
-      VASTSeqValue *Dst = Op->getSrc(Op->getNumSrcs() - 1).getDst();
+      VASTSelector *Sel = Op->getSrc(Op->getNumSrcs() - 1).getSelector();
 
       // Ignore the common resource.
-      if (Dst->getValType() == VASTSeqValue::Data) continue;
+      if (isa<VASTRegister>(Sel->getParent())) continue;
 
       // Assign the linear order.
-      ConflictList[Dst].push_back(SU);
+      ConflictList[Sel].push_back(SU);
     }
 
     addLinOrdEdge(ConflictList);

@@ -14,12 +14,14 @@
 #ifndef VAST_SUBMODULES_H
 #define VAST_SUBMODULES_H
 
-#include "shang/VASTSeqValue.h"
+#include "shang/VASTNodeBases.h"
 
 #include "llvm/ADT/StringMap.h"
 
 namespace llvm {
 class GlobalVariable;
+class VASTWire;
+class VASTSelector;
 
 class VASTBlockRAM : public VASTSubModuleBase {
   unsigned Depth;
@@ -44,7 +46,7 @@ public:
   unsigned getAddrWidth() const { return Log2_32_Ceil(getDepth()); }
 
   // Get the buses to block RAM.
-  VASTSeqValue *getRAddr(unsigned PortNum) const {
+  VASTSelector *getRAddr(unsigned PortNum) const {
     return getFanin(PortNum * 3);
   }
 
@@ -52,11 +54,11 @@ public:
     return getFanout(PortNum);
   }
 
-  VASTSeqValue *getWAddr(unsigned PortNum) const {
+  VASTSelector *getWAddr(unsigned PortNum) const {
     return getFanin(PortNum * 3 + 1);
   }
 
-  VASTSeqValue *getWData(unsigned PortNum) const {
+  VASTSelector *getWData(unsigned PortNum) const {
     return getFanin(PortNum * 3 + 2);
   }
 
@@ -72,12 +74,14 @@ public:
 
 class VASTSubModule : public VASTSubModuleBase {
   // Remember the input/output flag in the pointer.
-  typedef PointerIntPair<VASTValue*, 1, bool> VASTSubModulePortPtr;
-  StringMap<VASTSubModulePortPtr> PortMap;
+  // typedef PointerIntPair<VASTNode*, 1, bool> VASTSubModulePortPtr;
+  // StringMap<VASTSubModulePortPtr> PortMap;
+
   // Can the submodule be simply instantiated?
   bool IsSimple;
   // Special ports in the submodule.
-  VASTSeqValue *StartPort, *FinPort, *RetPort;
+  VASTSelector *StartPort;
+  VASTWire *FinPort, *RetPort;
 
   // The latency of the submodule.
   unsigned Latency;
@@ -87,7 +91,6 @@ class VASTSubModule : public VASTSubModuleBase {
       RetPort(0), Latency(0) {}
 
   friend class VASTModule;
-  void addPort(const std::string &Name, VASTValue *V, bool IsInput);
   void
   printSimpleInstantiation(vlang_raw_ostream &OS, const VASTModule *Mod) const;
   void printInstantiationFromTemplate(vlang_raw_ostream &OS,
@@ -98,35 +101,28 @@ public:
 
   void setIsSimple(bool isSimple = true) { IsSimple = isSimple; }
 
-  typedef StringMap<VASTSubModulePortPtr>::const_iterator const_port_iterator;
-  const_port_iterator port_begin() const { return PortMap.begin(); }
-  const_port_iterator port_end() const { return PortMap.end(); }
-
-  void addInPort(const std::string &Name, VASTSeqValue *V) {
-    addPort(Name, V, true);
+  void addFanin(VASTSelector *S) {
+    // FIXME: Build the port mapping.
+    VASTSubModuleBase::addFanin(S);
   }
 
-  void addOutPort(const std::string &Name, VASTValue *V) {
-    addPort(Name, V, false);
-  }
+  VASTSelector *createStartPort(VASTModule *VM);
+  VASTSelector *getStartPort() const { return StartPort; }
 
-  VASTSeqValue *createStartPort(VASTModule *VM);
-  VASTSeqValue *getStartPort() const { return StartPort; }
+  VASTWire *createFinPort(VASTModule *VM);
+  VASTWire *getFinPort() const { return FinPort; }
 
-  VASTSeqValue *createFinPort(VASTModule *VM);
-  VASTSeqValue *getFinPort() const { return FinPort; }
-
-  VASTSeqValue *createRetPort(VASTModule *VM, unsigned Bitwidth,
-                              unsigned Latency = 0);
-  VASTSeqValue *getRetPort() const { return RetPort; }
+  VASTWire *createRetPort(VASTModule *VM, unsigned Bitwidth,
+                          unsigned Latency = 0);
+  VASTWire *getRetPort() const { return RetPort; }
 
   void printDecl(raw_ostream &OS) const;
 
   // Get the latency of the submodule.
   unsigned getLatency() const { return Latency; }
 
-  static std::string getPortName(unsigned FNNum, const std::string &PortName);
-  std::string getPortName(const std::string &PortName) const {
+  static std::string getPortName(unsigned FNNum, const Twine &PortName);
+  std::string getPortName(const Twine &PortName) const {
     return getPortName(getNum(), PortName);
   }
 

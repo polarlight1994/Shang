@@ -21,6 +21,7 @@
 #include <map>
 
 namespace llvm {
+class VASTSelector;
 class VASTSeqValue;
 class VASTValue;
 class BitlevelDelayEsitmator;
@@ -160,28 +161,36 @@ public:
   typedef PathDelayInfo::iterator path_iterator;
   typedef PathDelayInfo::const_iterator const_path_iterator;
 
+  typedef std::map<VASTSelector*, SrcDelayInfo> FaninDelayInfo;
+  typedef FaninDelayInfo::value_type FaninTy;
+  typedef FaninDelayInfo::iterator fanin_iterator;
+  typedef FaninDelayInfo::const_iterator const_fanin_iterator;
+
 private:
   // The path delay information.
   PathDelayInfo PathInfo;
+  FaninDelayInfo FaninInfo;
   BitlevelDelayEsitmator *Estimator;
 
-  void buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst, delay_type MUXDelay);
+  void buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst, delay_type MUXDelay);
 public: 
   static char ID;
 
   TimingNetlist();
   ~TimingNetlist();
 
-  TNLDelay getMuxDelay(unsigned Fanins, VASTSeqValue *SVal = 0) const;
+  TNLDelay getMuxDelay(unsigned Fanins, VASTSelector *Sel = 0) const;
 
+  delay_type getDelay(VASTValue *Src, VASTSelector *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;
-  delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTValue *Dst) const;
+  delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTSelector *Dst) const;
 
-  float getNormalizedDelay(VASTValue *Src, VASTValue *Dst) const {
+  float getNormalizedDelay(VASTValue *Src, VASTSelector *Dst) const {
     return getDelay(Src, Dst).getNormalizedDelay();
   }
 
-  float getNormalizedDelay(VASTValue *Src, VASTValue *Thu, VASTValue *Dst) const {
+  float getNormalizedDelay(VASTValue *Src, VASTValue *Thu,
+                           VASTSelector *Dst) const {
     return getDelay(Src, Thu, Dst).getNormalizedDelay();
   }
 

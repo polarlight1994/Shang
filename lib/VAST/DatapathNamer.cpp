@@ -129,15 +129,5 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
     }
   }
 
-  // Also print the driver of the wire outputs.
-  typedef VASTModule::const_port_iterator port_iterator;
-  for (port_iterator I = VM.ports_begin(), E = VM.ports_end(); I != E; ++I) {
-    VASTPort *P = *I;
-
-    if (P->isInput() || P->isRegister()) continue;
-    VASTWire *W = cast<VASTWire>(P->getValue());
-    VASTOperandList::visitTopOrder(W, Visited, N);
-  }
-
   return false;
 }

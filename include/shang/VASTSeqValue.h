@@ -23,21 +23,8 @@ namespace llvm {
 class Twine;
 class VASTExprBuilder;
 
-// Represent value in the sequential logic.
-class VASTSeqValue : public VASTNamedValue, public ilist_node<VASTSeqValue> {
+class VASTSelector : public VASTNode, public ilist_node<VASTSelector> {
 public:
-
-  enum Type {
-    Data,           // Common registers which hold data for data-path.
-    Slot,           // Slot register which hold the enable signals for each slot.
-    IO,             // The I/O port of the module.
-    BRAM,           // Port of the block RAM
-    Enable,         // The Enable Signal.
-    StaticRegister // The register for the static global variables.
-  };
-
-  typedef ArrayRef<VASTValPtr> AndCndVec;
-
   // Synthesized Fanin.
   struct Fanin {
     Fanin(const Fanin&) LLVM_DELETED_FUNCTION;
@@ -47,17 +34,19 @@ public:
     VASTUse Pred;
     VASTUse FI;
 
-    Fanin(VASTSeqValue *V);
+    Fanin(VASTNode *Node);
 
     void AddSlot(VASTSlot *S);
     typedef std::vector<VASTSlot*>::iterator slot_iterator;
   };
+
 private:
-  // For common registers, the Idx is the corresponding register number in the
-  // MachineFunction. With this register number we can get the define/use/kill
-  // information of transaction to this local storage.
-  const unsigned T    : 3;
-  const unsigned Idx  : 30;
+  VASTSelector(const VASTSelector&) LLVM_DELETED_FUNCTION;
+  void operator=(const VASTSelector&) LLVM_DELETED_FUNCTION;
+
+  VASTNode *Parent;
+  const uint8_t BitWidth;
+  const bool  IsEnable;
 
   // Map the transaction condition to transaction value.
   typedef std::vector<VASTLatch> AssignmentVector;
@@ -67,46 +56,22 @@ private:
   FaninVector Fanins;
   VASTUse EnableU;
 
-  VASTNode *Parent;
-
   bool buildCSEMap(std::map<VASTValPtr,
                             std::vector<const VASTSeqOp*> >
                    &CSEMap) const;
-
-  friend struct ilist_sentinel_traits<VASTSeqValue>;
-  // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
-  VASTSeqValue()
-    : VASTNamedValue(vastSeqValue, 0, 0), T(VASTSeqValue::IO), Idx(0),
-      EnableU(this), Parent(this) {}
-
   bool getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const;
 public:
-  VASTSeqValue(const char *Name, unsigned Bitwidth, Type T, unsigned Idx,
-               VASTNode *Parent)
-    : VASTNamedValue(vastSeqValue, Name, Bitwidth), T(T), Idx(Idx), EnableU(this),
-      Parent(Parent) {}
+  VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
+               bool IsEnable = false, VASTNode *Node = 0);
 
-  ~VASTSeqValue();
+  ~VASTSelector();
 
-  VASTSeqValue::Type getValType() const { return VASTSeqValue::Type(T); }
+  VASTNode *getParent() const;
+  void setParent(VASTNode *N);
 
-  unsigned getDataRegNum() const {
-    assert((getValType() == Data) && "Wrong accessor!");
-    return Idx;
-  }
-
-  unsigned getSlotNum() const {
-    assert(getValType() == Slot && "Wrong accessor!");
-    return Idx;
-  }
-
-  VASTNode *getParent() const { return Parent; }
-
-  VASTLatch latchFront() const { return Assigns.front(); }
-  void addAssignment(VASTSeqOp *Op, unsigned SrcNo, bool IsDef);
-  void eraseLatch(VASTLatch U);
-
-  bool isTimingUndef() const { return getValType() == VASTSeqValue::Slot; }
+  const char *getName() const { return Contents.Name; }
+  unsigned getBitWidth() const { return BitWidth; }
+  bool isEnable() const { return IsEnable; }
 
   typedef AssignmentVector::const_iterator const_iterator;
   const_iterator begin() const { return Assigns.begin(); }
@@ -124,18 +89,126 @@ public:
   typedef FaninVector::const_iterator const_fanin_iterator;
   const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
   const_fanin_iterator fanin_end() const { return Fanins.end(); }
+
+  void synthesisSelector(VASTExprBuilder &Builder);
+
   bool isSelectorSynthesized() const { return !EnableU.isInvalid(); }
   VASTValPtr getEnable() const { return VASTValPtr(EnableU); }
 
+  VASTSeqValue *getSSAValue() const;
+
   // Functions to write the verilog code.
-  void verifyAssignCnd(vlang_raw_ostream &OS, const Twine &Name,
-                       const VASTModule *Mod) const;
+  void verifyAssignCnd(vlang_raw_ostream &OS, const VASTModule *Mod) const;
   bool verify() const;
-  void printSelector(raw_ostream &OS, unsigned Bitwidth,
-                     bool PrintEnable = true) const;
-  void printSelector(raw_ostream &OS, bool PrintEnable = true) const {
-    printSelector(OS, getBitWidth(), PrintEnable);
+  void printSelector(raw_ostream &OS, bool PrintEnable = true) const;
+
+  void addAssignment(VASTSeqOp *Op, unsigned SrcNo);
+
+  void eraseFanin(VASTLatch U);
+
+  void print(raw_ostream &OS) const;
+
+  void printDecl(raw_ostream &OS) const;
+  void printRegisterBlock(vlang_raw_ostream &OS, const VASTModule *Mod,
+                          uint64_t InitVal) const;
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTSelector *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastSelector;
   }
+};
+
+// Represent value in the sequential logic.
+class VASTSeqValue : public VASTNamedValue, public ilist_node<VASTSeqValue> {
+public:
+  enum Type {
+    Data,           // Common registers which hold data for data-path.
+    Slot,           // Slot register which hold the enable signals for each slot.
+    StaticRegister // The register for the static global variables.
+  };
+
+  template<typename Iterator>
+  class FaninIterator
+    : public std::iterator<std::forward_iterator_tag,
+                           typename Iterator::value_type,
+                           ptrdiff_t,
+                           typename Iterator::pointer,
+                           typename Iterator::reference> {
+    typedef FaninIterator<Iterator> _Self;
+    const VASTSeqValue *V;
+    Iterator I, E;
+
+    void skipUnrelated() {
+      while (I != E && (*I).getDst() != V)
+        ++I;
+    }
+
+  public:
+    FaninIterator(Iterator I, Iterator E, const VASTSeqValue *V)
+      : V(V), I(I), E(E)
+    {
+      skipUnrelated();
+    }
+
+    bool operator== (const _Self &RHS) const { return I == RHS.I; }
+    bool operator!= (const _Self &RHS) const { return I != RHS.I; }
+
+    typename Iterator::reference operator*() const { return *I; }
+    typename Iterator::pointer operator->() const { return operator*(); }
+
+    _Self &operator++ () {
+      ++I;
+      skipUnrelated();
+      return *this;
+    }
+
+    _Self operator++ (int) {
+      _Self tmp = *this; ++*this; return tmp;
+    }
+  };
+
+private:
+  // Use pointer to to the Selector, this allow us to change the selector at
+  // will.
+  VASTSelector *Selector;
+  Value *V;
+
+  // For common registers, the Idx is the corresponding register number in the
+  // MachineFunction. With this register number we can get the define/use/kill
+  // information of transaction to this local storage.
+  const unsigned T    : 2;
+  const unsigned Idx  : 30;
+
+  friend struct ilist_sentinel_traits<VASTSeqValue>;
+  // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
+  VASTSeqValue()
+    : VASTNamedValue(vastSeqValue, 0, 0), Selector(0), V(0),
+      T(0), Idx(0) {}
+
+public:
+  VASTSeqValue(VASTSelector *Selector, Type T, unsigned Idx, Value *V);
+
+  ~VASTSeqValue();
+
+  VASTSelector *getSelector() const;
+
+  VASTSeqValue::Type getValType() const { return VASTSeqValue::Type(T); }
+
+  unsigned getDataRegNum() const {
+    assert((getValType() == Data) && "Wrong accessor!");
+    return Idx;
+  }
+
+  unsigned getSlotNum() const {
+    assert(getValType() == Slot && "Wrong accessor!");
+    return Idx;
+  }
+
+  VASTNode *getParent() const;
+  Value *getLLVMValue() const;
+
+  bool isTimingUndef() const { return getValType() == VASTSeqValue::Slot; }
 
   void dumpFanins() const;
 
@@ -143,31 +216,45 @@ public:
     assert(0 && "Function not implemented!");
   }
 
-  void synthesisSelector(VASTExprBuilder &Builder);
+  typedef FaninIterator<VASTSelector::iterator> fanin_iterator;
+  typedef FaninIterator<VASTSelector::const_iterator> const_fanin_iterator;
+
+  fanin_iterator fanin_begin() {
+    return fanin_iterator(getSelector()->begin(), getSelector()->end(), this);
+  }
+
+  fanin_iterator fanin_end() {
+    return fanin_iterator(getSelector()->end(), getSelector()->end(), this);
+  }
+
+  const_fanin_iterator fanin_begin() const {
+    return const_fanin_iterator(getSelector()->begin(), getSelector()->end(), this);
+  }
+
+  const_fanin_iterator fanin_end() const {
+    return const_fanin_iterator(getSelector()->end(), getSelector()->end(), this);
+  }
+
+  size_t num_fanins() const { return std::distance(fanin_begin(), fanin_end()); }
+  bool   fanin_empty() const { return num_fanins() == 0; }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSeqValue *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSeqValue;
   }
-
-  virtual void anchor() const;
 };
 
-class VASTRegister : public VASTNode {
-  VASTSeqValue *Value;
-  uint64_t InitVal;
+class VASTRegister : public VASTNode, public ilist_node<VASTRegister> {
+  const uint64_t InitVal;
+  VASTSelector *Sel;
 
-  VASTRegister(VASTSeqValue *V, uint64_t initVal, const char *Attr = "");
+  VASTRegister();
+  VASTRegister(VASTSelector *Sel, uint64_t InitVal);
   friend class VASTModule;
+  friend struct ilist_sentinel_traits<VASTRegister>;
 public:
-  const char *const AttrStr;
-
-  VASTSeqValue *getValue() const { return Value; }
-  VASTSeqValue *operator->() { return getValue(); }
-
-  const char *getName() const { return getValue()->getName(); }
-  unsigned getBitWidth() const { return getValue()->getBitWidth(); }
+  VASTSelector *getSelector() const { return Sel; }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTRegister *A) { return true; }
@@ -175,12 +262,10 @@ public:
     return A->getASTType() == vastRegister;
   }
 
-  typedef VASTSeqValue::AndCndVec AndCndVec;
-
   void printDecl(raw_ostream &OS) const;
 
-  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
   void print(raw_ostream &OS) const;
+  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 };
 }
 

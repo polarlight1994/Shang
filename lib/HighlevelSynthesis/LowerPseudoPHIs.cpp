@@ -14,7 +14,7 @@
 // Once such phis are identified, the pass replace pn by incoming.
 //
 //===----------------------------------------------------------------------===//
-
+/*
 #include "SeqLiveVariables.h"
 
 #include "shang/VASTHandle.h"
@@ -130,7 +130,7 @@ bool LowerPseudoPHIs::runOnVASTModule(VASTModule &VM) {
 
   typedef VASTModule::seqval_iterator iterator;
 
-  for (iterator I = VM.seqval_begin(), IE = VM.seqval_end(); I != IE; /*++I*/) {
+  for (iterator I = VM.seqval_begin(), IE = VM.seqval_end(); I != IE; /*++I*//*) {
     VASTSeqValue *V = I++;
     VASTValPtr Forwarded = isPseudoPHI(V);
 
@@ -154,8 +154,8 @@ bool LowerPseudoPHIs::runOnVASTModule(VASTModule &VM) {
 // Extend the live interval of Src by Dst.
 void LowerPseudoPHIs::extendLiveInterval(VASTSeqValue *SrcV, VASTSeqValue *DstV)
 {
-  SeqLiveVariables::VarInfo *Src = LVS->getUniqueVarInfo(SrcV);
-  SeqLiveVariables::VarInfo *Dst = LVS->getUniqueVarInfo(DstV);
+  SeqLiveVariables::VarInfo *Src = 0; // LVS->getUniqueVarInfo(SrcV);
+  SeqLiveVariables::VarInfo *Dst = 0; // LVS->getUniqueVarInfo(DstV);
   SeqLiveVariables::VarInfo &CachedSrc = getCachedVI(SrcV);
   // Initialize the cached VI if it is not yet intialized.
   if (CachedSrc.Defs.empty()) CachedSrc = *Src;
@@ -254,3 +254,4 @@ void LowerPseudoPHIs::lowerPseudoPHI(VASTSeqValue *V, VASTValPtr ForwardedValue)
     extendLiveInterval(SrcV, V);
   }
 }
+*/

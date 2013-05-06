@@ -18,7 +18,6 @@
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "vast-lua-bases"
 #include "llvm/Support/Debug.h"
-STATISTIC(NumCycles, "Number of Cycles in Register Assignment");
 
 using namespace llvm;
 //----------------------------------------------------------------------------//
@@ -140,14 +139,12 @@ VASTValue::~VASTValue() {
 }
 
 //----------------------------------------------------------------------------//
-VASTPort::VASTPort(VASTNamedValue *V, bool isInput)
-  : VASTNode(vastPort), IsInput(isInput)
-{
-  Contents.NamedValue = V;
-}
+VASTPort::VASTPort(VASTTypes Type) : VASTNode(Type) {}
+
+VASTPort::~VASTPort() {}
 
 void VASTPort::print(raw_ostream &OS) const {
-  if (IsInput)
+  if (isInput())
     OS << "input ";
   else
     OS << "output ";
@@ -163,15 +160,58 @@ void VASTPort::print(raw_ostream &OS) const {
 }
 
 bool VASTPort::isRegister() const {
-  return !isInput() && !isa<VASTWire>(getValue());
+  return isa<VASTOutPort>(this);
 }
 
-VASTSeqValue *VASTPort::getSeqVal() const {
-  return cast<VASTSeqValue>(getValue());
+const char *VASTPort::getNameImpl() const {
+  llvm_unreachable("Subclass should override this!");
+  return 0;
+}
+
+unsigned VASTPort::getBitWidthImpl() const {
+  llvm_unreachable("Subclass should override this!");
+  return 0;
+}
+
+VASTOutPort::VASTOutPort(VASTSelector *Sel) : VASTPort(vastOutPort) {
+  Contents.Sel = Sel;
+  Sel->setParent(this);
+}
+
+VASTSelector *VASTOutPort::getSelector() const {
+  return Contents.Sel;
+}
+
+const char *VASTOutPort::getNameImpl() const {
+  return getSelector()->getName();
+}
+
+unsigned VASTOutPort::getBitWidthImpl() const {
+  return getSelector()->getBitWidth();
+}
+
+void VASTOutPort::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
+  getSelector()->printRegisterBlock(OS, Mod, 0);
+}
+
+VASTInPort::VASTInPort(VASTWire *Wire) : VASTPort(vastInPort) {
+  Contents.Wire = Wire;
+}
+
+VASTWire *VASTInPort::getValue() const {
+  return Contents.Wire;
+}
+
+const char *VASTInPort::getNameImpl() const {
+  return getValue()->getName();
+}
+
+unsigned VASTInPort::getBitWidthImpl() const {
+  return getValue()->getBitWidth();
 }
 
 void VASTPort::printExternalDriver(raw_ostream &OS, uint64_t InitVal) const {
-  if (IsInput)
+  if (isInput())
     // We need a reg to drive input port.
     OS << "reg";
   else
@@ -183,7 +223,7 @@ void VASTPort::printExternalDriver(raw_ostream &OS, uint64_t InitVal) const {
 
   OS << ' ' << getName();
 
-  if (IsInput)
+  if (isInput())
     OS << " = " << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false);
 
   OS << ';';
@@ -200,14 +240,12 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 //----------------------------------------------------------------------------//
 
 VASTSeqValue *
-VASTModule::createSeqValue(const Twine &Name, unsigned BitWidth,
-                           VASTSeqValue::Type T, unsigned Idx, VASTNode *P) {
-  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
-  VASTSeqValue *V = new VASTSeqValue(Entry.getKeyData(), BitWidth, T, Idx, P);
-  Entry.second = V;
-  SeqVals.push_back(V);
-
-  return V;
+VASTModule::createSeqValue(VASTSelector *Selector, VASTSeqValue::Type T,
+                           unsigned Idx, Value *V) {
+  VASTSeqValue *SeqVal = new VASTSeqValue(Selector, T, Idx, V);
+  SeqVals.push_back(SeqVal);
+                              
+  return SeqVal;
 }
 
 VASTMemoryBus *VASTModule::createDefaultMemBus() {
@@ -217,7 +255,7 @@ VASTMemoryBus *VASTModule::createDefaultMemBus() {
 
 VASTMemoryBus *VASTModule::createMemBus(unsigned Num, unsigned AddrWidth,
                                         unsigned DataWidth) {
-  VASTMemoryBus *Bus = getAllocator().Allocate<VASTMemoryBus>();
+  VASTMemoryBus *Bus = Datapath->getAllocator().Allocate<VASTMemoryBus>();
   new (Bus) VASTMemoryBus(Num, AddrWidth, DataWidth);
   Bus->addPorts(this);
   Submodules.push_back(Bus);
@@ -226,8 +264,7 @@ VASTMemoryBus *VASTModule::createMemBus(unsigned Num, unsigned AddrWidth,
 
 VASTBlockRAM *VASTModule::addBlockRAM(unsigned BRamNum, unsigned Bitwidth,
                                       unsigned Size, const GlobalVariable *Init){
-  VASTBlockRAM *RAM
-    = new (getAllocator()) VASTBlockRAM("", BRamNum, Bitwidth, Size, Init);
+  VASTBlockRAM *RAM = new VASTBlockRAM("", BRamNum, Bitwidth, Size, Init);
   // Build the ports.
   RAM->addPorts(this);
   Submodules.push_back(RAM);
@@ -235,7 +272,7 @@ VASTBlockRAM *VASTModule::addBlockRAM(unsigned BRamNum, unsigned Bitwidth,
 }
 
 VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {
-  VASTSubModule *M = new (getAllocator()) VASTSubModule(Name, Num);
+  VASTSubModule *M = new VASTSubModule(Name, Num);
   Submodules.push_back(M);
   return M;
 }
@@ -246,7 +283,7 @@ VASTWire *VASTModule::createWrapperWire(const Twine &Name, unsigned SizeInBits,
   // Reuse the old wire if we had create one.
   VASTWire *W = lookupSymbol<VASTWire>(WrapperName);
   if (W == 0) {
-    W = addWire(WrapperName, SizeInBits, "", true);
+    W = addWire(WrapperName, SizeInBits, true);
     if (V) W->assign(V);
   }
 
@@ -255,7 +292,8 @@ VASTWire *VASTModule::createWrapperWire(const Twine &Name, unsigned SizeInBits,
 
 VASTWire *VASTModule::createWrapperWire(GlobalVariable *GV, unsigned SizeInBits){
   std::string WrapperName = "gv_" + ShangMangle(GV->getName());
-  VASTLLVMValue *ValueOp = new (getAllocator()) VASTLLVMValue(GV, SizeInBits);
+  VASTLLVMValue *ValueOp
+    = new (Datapath->getAllocator()) VASTLLVMValue(GV, SizeInBits);
   return createWrapperWire(WrapperName, SizeInBits, ValueOp);
 }
 
@@ -268,12 +306,12 @@ VASTUDef *VASTModule::createUDef(unsigned Size) {
 }
 
 VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
-                              const char *Attr, bool IsWrapper) {
+                              bool IsWrapper) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   // Allocate the wire and the use.
 
-  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, Attr, IsWrapper);
+  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, IsWrapper);
   Entry.second = Wire;
   Wires.push_back(Wire);
 
@@ -337,13 +375,14 @@ VASTModule::VASTModule(Function &F)
 
 void VASTModule::reset() {
   Wires.clear();
+  Registers.clear();
   SeqOps.clear();
   SeqVals.clear();
   Slots.clear();
 
   // Release all ports.
   Ports.clear();
-  Registers.clear();
+  Selectors.clear();
   SymbolTable.clear();
   NumArgPorts = 0;
   RetPortIdx = 0;
@@ -351,6 +390,8 @@ void VASTModule::reset() {
   // Release the datapath after all other contexts released.
   Datapath->reset();
   DeleteContainerSeconds(UDefMap);
+  DeleteContainerPointers(Ports);
+  DeleteContainerPointers(Submodules);
 }
 
 VASTModule::~VASTModule() {
@@ -439,16 +480,6 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
       L->print(OS);
     }
   }
-
-  // Also print the driver of the wire outputs.
-  for (const_port_iterator I = ports_begin(), E = ports_end(); I != E; ++I) {
-    VASTPort *P = *I;
-
-    if (P->isInput() || P->isRegister()) continue;
-    VASTWire *W = cast<VASTWire>(P->getValue());
-    VASTOperandList::visitTopOrder(W->getDriver().get(), Visited, Printer);
-    W->printAssignment(OS);
-  }
 }
 
 void VASTModule::printSubmodules(vlang_raw_ostream &OS) const {
@@ -463,12 +494,16 @@ void VASTModule::printSubmodules(vlang_raw_ostream &OS) const {
 }
 
 void VASTModule::printRegisterBlocks(vlang_raw_ostream &OS) const {
-  typedef RegisterVector::const_iterator iterator;
+  typedef const_selector_iterator iterator;
+  
+  typedef RegisterVector::const_iterator const_reg_iterator;
+  for (const_reg_iterator I = Registers.begin(), E = Registers.end();
+       I != E; ++I)
+    I->print(OS, this);
 
-  for (iterator I = Registers.begin(), E = Registers.end(); I != E; ++I) {
-    VASTRegister *R = *I;
-    R->print(OS, this);
-  }
+  for (const_port_iterator I = Ports.begin(), E = Ports.end(); I != E; ++I)
+    if (VASTOutPort *P = dyn_cast<VASTOutPort>(*I))
+      P->print(OS, this);
 }
 
 void VASTModule::printModuleDecl(raw_ostream &OS) const {
@@ -482,24 +517,29 @@ void VASTModule::printModuleDecl(raw_ostream &OS) const {
   OS << ");\n";
 }
 
-void VASTModule::printSignalDecl(raw_ostream &OS) {
-  for (reg_iterator I = Registers.begin(), E = Registers.end(); I != E; ++I)
-    (*I)->printDecl(OS);
+void VASTModule::printSignalDecl(raw_ostream &OS) const {
+  typedef RegisterVector::const_iterator const_reg_iterator;
+  for (const_reg_iterator I = Registers.begin(), E = Registers.end();
+       I != E; ++I)
+    I->printDecl(OS);
 
-  for (submod_iterator I = Submodules.begin(),E = Submodules.end();I != E;++I)
+  typedef SubmoduleVector::const_iterator const_submod_iterator;
+  for (const_submod_iterator I = Submodules.begin(),E = Submodules.end();
+       I != E;++I)
     (*I)->printDecl(OS);
 }
 
 VASTSymbol *VASTModule::getOrCreateSymbol(const Twine &Name, unsigned BitWidth) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
-  VASTNamedValue *&V = Entry.second;
+  VASTNode *&V = Entry.second;
   if (V == 0) {
     const char *S = Entry.getKeyData();
     unsigned SymbolWidth = BitWidth;
-    V = new (getAllocator()) VASTSymbol(S, SymbolWidth);
+    V = new (Datapath->getAllocator()) VASTSymbol(S, SymbolWidth);
   }
 
-  assert(V->getBitWidth() == BitWidth && "Getting symbol with wrong bitwidth!");
+  assert(cast<VASTSymbol>(V)->getBitWidth() == BitWidth
+         && "Getting symbol with wrong bitwidth!");
 
   return cast<VASTSymbol>(V);
 }
@@ -516,14 +556,7 @@ VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
                        VASTValPtr GuardCnd, Value *V, unsigned Latency) {
   assert(Src && "Bad assignment source!");
   VASTSeqInst *Inst = lauchInst(Slot, GuardCnd, 1, V, VASTSeqInst::Latch);
-  // Create a wrapper wire to break the cycle.
-  if (Src == SeqVal) {
-    unsigned BitWidth = Src->getBitWidth();
-    Src = createWrapperWire(SeqVal->getName(), BitWidth, Src);
-    ++NumCycles;
-  }
-
-  Inst->addSrc(Src, 0, true, SeqVal);
+  Inst->addSrc(Src, 0, SeqVal);
   Inst->setCyclesFromLaunch(Latency);
 
   return Inst;
@@ -543,17 +576,34 @@ VASTModule::lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps, Value *V
   return SeqInst;
 }
 
-VASTSeqCtrlOp *VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
-                                           VASTSlot *Slot, VASTValPtr GuardCnd,
-                                           bool UseSlotActive,bool ExportDefine) {
+VASTSeqCtrlOp *VASTModule::createCtrlLogic(VASTValPtr Src, VASTSlot *Slot,
+                                           VASTValPtr GuardCnd,
+                                           bool UseSlotActive) {
   VASTSeqCtrlOp *CtrlOp = new VASTSeqCtrlOp(Slot, UseSlotActive);
   // Create the predicate operand.
   new (CtrlOp->Operands) VASTUse(CtrlOp, GuardCnd);
-  // Create the source of the assignment
-  CtrlOp->addSrc(Src, 0, ExportDefine, SeqVal);
 
   // Add the SeqOp to the the all SeqOp list.
   SeqOps.push_back(CtrlOp);
+  return CtrlOp;
+
+}
+
+VASTSeqCtrlOp *VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
+                                           VASTSlot *Slot, VASTValPtr GuardCnd,
+                                           bool UseSlotActive) {
+  VASTSeqCtrlOp *CtrlOp = createCtrlLogic(Src, Slot, GuardCnd, UseSlotActive);
+  // Create the source of the assignment
+  CtrlOp->addSrc(Src, 0, SeqVal);
+  return CtrlOp;
+}
+
+VASTSeqCtrlOp *VASTModule::assignCtrlLogic(VASTSelector *Selector, VASTValPtr Src,
+                                           VASTSlot *Slot, VASTValPtr GuardCnd,
+                                           bool UseSlotActive) {
+  VASTSeqCtrlOp *CtrlOp = createCtrlLogic(Src, Slot, GuardCnd, UseSlotActive);
+  // Create the source of the assignment
+  CtrlOp->addSrc(Src, 0, Selector);
   return CtrlOp;
 }
 
@@ -571,10 +621,16 @@ VASTSlotCtrl *VASTModule::createSlotCtrl(VASTNode *N, VASTSlot *Slot,
 
 void VASTModule::eraseSeqVal(VASTSeqValue *Val) {
   assert(Val->use_empty() && "Val still stuck at some user!");
+  assert(Val->fanin_empty() && "Val still using something!");
+  // Also erase the selector if it become empty.
+  VASTSelector *Sel = Val->getSelector();
+  if (Sel->empty()) {
+    // Try to erase the corresponding register as well.
+    if (VASTRegister *R = dyn_cast<VASTRegister>(Sel->getParent()))
+      Registers.erase(R);
 
-  // Also try to erase the parent registr.
-  if (VASTRegister *R = dyn_cast<VASTRegister>(Val->getParent()))
-    Registers.erase(std::find(reg_begin(), reg_end(), R));
+    Selectors.erase(Sel);
+  }
 
   SeqVals.erase(Val);
 }
@@ -588,8 +644,7 @@ void VASTModule::eraseSeqOp(VASTSeqOp *SeqOp) {
   if (SeqOp->getASTType() != VASTNode::vastSlotCtrl)
     for (unsigned i = 0, e = SeqOp->getNumSrcs(); i != e; ++i) {
       VASTLatch U = SeqOp->getSrc(i);
-      VASTSeqValue *V = U.getDst();
-      V->eraseLatch(U);
+      U.removeFromParent();
     }
 
   SeqOp->dropUses();
@@ -606,36 +661,15 @@ void VASTModule::print(raw_ostream &OS) const {
   }
 }
 
-VASTPort *VASTModule::createPort(const Twine &Name, unsigned BitWidth,
-                              bool isReg, bool isInput, VASTSeqValue::Type T) {
-  VASTPort *Port = getAllocator().Allocate<VASTPort>();
-  VASTNamedValue *V;
-
-  if (isReg)
-    V = addRegister(Name, BitWidth, 0, T, 0, "// ")->getValue();
-  else
-    V = createSeqValue(Name, BitWidth, VASTSeqValue::IO, 0, Port);
-
-  return new (Port) VASTPort(V, isInput);;
-}
-
-VASTPort *VASTModule::createPort(VASTSeqValue *SeqVal, bool IsInput, PortTypes T)
-{
-  VASTPort *Port = new (getAllocator()) VASTPort(SeqVal, IsInput);
-  assert(T == VASTModule::Others && "The author is too lazy to implement this!");
-  Ports.push_back(Port);
-
-  return Port;
-}
-
-VASTPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
-                                   PortTypes T /*= Others*/) {
-  VASTPort *Port = createPort(Name, BitWidth, false, true, VASTSeqValue::IO);
+VASTInPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
+                                     PortTypes T /*= Others*/) {
+  VASTWire *Wire = addWire(Name, BitWidth, false);
+  VASTPort *Port = createPort(Wire);
 
   if (T < SpecialInPortEnd) {
     assert(Ports[T] == 0 && "Special port exist!");
     Ports[T] = Port;
-    return Port;
+    return cast<VASTInPort>(Port);
   }
 
   // Return port is a output port.
@@ -647,20 +681,18 @@ VASTPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
   }
 
   Ports.push_back(Port);
-  return Port;
+  return cast<VASTInPort>(Port);
 }
 
-VASTPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
-                                    PortTypes T /*= Others*/,
-                                    bool isReg /*= true*/) {
-  VASTPort *Port = createPort(Name, BitWidth, isReg, false,
-                           T == VASTModule::Finish ? VASTSeqValue::Enable
-                                                   : VASTSeqValue::IO);
+VASTOutPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
+                                       PortTypes T /*= Others*/) {
+  VASTSelector *Sel = createSelector(Name, BitWidth, T == VASTModule::Finish, 0);
+  VASTPort *Port = createPort(Sel);
 
   if (SpecialInPortEnd <= T && T < SpecialOutPortEnd) {
     assert(Ports[T] == 0 && "Special port exist!");
     Ports[T] = Port;
-    return Port;
+    return cast<VASTOutPort>(Port);
   }
 
   assert(T <= RetPort && "Wrong port type!");
@@ -671,33 +703,53 @@ VASTPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
   }
 
   Ports.push_back(Port);
-  return Port;
+  return cast<VASTOutPort>(Port);
 }
 
-VASTRegister *VASTModule::addRegister(const Twine &Name, unsigned BitWidth,
-                                      unsigned InitVal, VASTSeqValue::Type T,
-                                      uint16_t RegData, const char *Attr) {
-  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
-  assert(Entry.second == 0 && "Symbol already exist!");
-  VASTRegister *Reg = getAllocator().Allocate<VASTRegister>();
-  VASTSeqValue *V = createSeqValue(Entry.getKeyData(), BitWidth, T, RegData, Reg);
-  new (Reg) VASTRegister(V, InitVal, Attr);
+VASTRegister *VASTModule::createRegister(const Twine &Name, unsigned BitWidth,
+                                         unsigned InitVal /* = 0 */,
+                                         bool IsEnable /* = false */) {
+  // Create the selector before we create the register.
+  VASTSelector *Sel = createSelector(Name, BitWidth, IsEnable, 0);
+  VASTRegister *Reg = new VASTRegister(Sel, InitVal);
 
   Registers.push_back(Reg);
+
   return Reg;
 }
 
-VASTRegister *VASTModule::addIORegister(const Twine &Name, unsigned BitWidth,
-                                        unsigned FUNum, const char *Attr) {
-  return addRegister(Name, BitWidth, 0, VASTSeqValue::IO, FUNum, Attr);
+VASTSelector *VASTModule::createSelector(const Twine &Name, unsigned BitWidth,
+                                         bool IsEnable, VASTNode *Parent) {
+  // Allocate the entry from the symbol table.
+  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
+  // Make sure the each symbol is for 1 node only.
+  assert(Entry.second == 0 && "Symbol had already taken!");
+  VASTSelector *Sel
+    = new VASTSelector(Entry.getKeyData(), BitWidth, IsEnable, Parent);
+  Entry.second = Sel;
+  // Put the newly create selector into the list, so that we can release it.
+  Selectors.push_back(Sel);
+
+  return Sel;
 }
 
-VASTRegister *VASTModule::addDataRegister(const Twine &Name, unsigned BitWidth,
-                                          unsigned RegNum, unsigned InitVal,
-                                          const char *Attr) {
-  return addRegister(Name, BitWidth, InitVal, VASTSeqValue::Data, RegNum, Attr);
+VASTPort *VASTModule::createPort(VASTNode *Node) {
+  VASTPort *P = 0;
+
+  // Create a output port for the selector.
+  if (VASTSelector *Sel = dyn_cast<VASTSelector>(Node))
+    P = new VASTOutPort(Sel);
+  else {
+    // Else it must be a wire for the input port.
+    VASTWire *Wire = cast<VASTWire>(Node);
+    P = new VASTInPort(Wire);
+  }
+
+  return P;
 }
 
-BumpPtrAllocator &VASTModule::getAllocator() {
-  return Datapath->getAllocator();
+VASTPort *VASTModule::addPort(VASTNode *Node) {
+  VASTPort *P = createPort(Node);
+  Ports.push_back(P);
+  return P;
 }

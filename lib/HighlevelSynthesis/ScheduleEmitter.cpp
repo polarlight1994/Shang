@@ -294,15 +294,10 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
   typedef VASTSeqOp::op_iterator iterator;
 
   for (unsigned i = 0, e = Op->getNumSrcs(); i < e; ++i) {
-    VASTSeqValue *Dst = Op->getSrc(i).getDst();
+    const VASTLatch &L = Op->getSrc(i);
+    VASTSeqValue *Dst = L.getDst();
     VASTValPtr Src = RetimedOperands[i];
-    // Create a wrapper wire to break the cycle.
-    if (Src == Dst) {
-      unsigned BitWidth = Src->getBitWidth();
-      Src = VM.createWrapperWire(Dst->getName(), BitWidth, Src);
-    }
-
-    NewInst->addSrc(Src, i, i < Op->getNumDefs(), Dst);
+    NewInst->addSrc(Src, i, L.getSelector(), Dst);
   }
 
 #ifdef XDEBUG
@@ -337,9 +332,9 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot) {
   // Try to forward the value which is assigned to SeqVal at the same slot.
   VASTValPtr ForwardedValue = SeqVal;
 
-  typedef VASTSeqValue::iterator iterator;
-  for (iterator I = SeqVal->begin(), E = SeqVal->end(); I != E; ++I) {
-    VASTLatch U = *I;
+  typedef VASTSeqValue::fanin_iterator iterator;
+  for (iterator I = SeqVal->fanin_begin(), E = SeqVal->fanin_end(); I != E; ++I) {
+    const VASTLatch &U = *I;
 
     // Only retime across the latch operation.
     if (cast<VASTSeqInst>(U.Op)->getSeqOpType() != VASTSeqInst::Latch)
@@ -364,9 +359,9 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot) {
 
 #ifndef NDEBUG
   if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(ForwardedValue.get())) {
-    bool AnySrcEmitted = SV->empty();
+    bool AnySrcEmitted = SV->fanin_empty();
 
-    for (iterator I = SV->begin(), E = SV->end(); I != E; ++I) {
+    for (iterator I = SV->fanin_begin(), E = SV->fanin_end(); I != E; ++I) {
       AnySrcEmitted |= !(*I).getSlot()->isDead();
     }
 
@@ -545,7 +540,8 @@ void ScheduleEmitter::emitSchedule() {
   VASTSlot *OldStart = OldSlots.begin();
 
   // Create the virtual slot representing the idle loop.
-  VASTValue *StartPort = VM.getPort(VASTModule::Start).getValue();
+  VASTValue *StartPort
+    = cast<VASTInPort>(VM.getPort(VASTModule::Start)).getValue();
   VASTSlot *IdleSlotGrp
     = getOrCreateSubGroup(0, Builder.buildNotExpr(StartPort), StartSlot);
   addSuccSlot(IdleSlotGrp, StartSlot, Builder.buildNotExpr(StartPort));

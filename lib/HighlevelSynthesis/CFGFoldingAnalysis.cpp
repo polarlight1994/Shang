@@ -137,12 +137,13 @@ void CFGFoldingAnalysis::handleCommonSU(unsigned FoldingSize, VASTSchedUnit *SU,
     VASTSeqValue *Dst = L.getDst();
 
     // Calculate the MuxSize after the current Fanin are duplicated.
-    unsigned FoldedMuxSize = Dst->size() + FoldingSize - 1;
+    VASTSelector *Sel = Dst->getSelector();
+    unsigned FoldedMuxSize = Sel->size() + FoldingSize - 1;
     unsigned CurFoldedDelay
-      = TNL.getMuxDelay(FoldedMuxSize, Dst).getNumCycles();
+      = TNL.getMuxDelay(FoldedMuxSize, Sel).getNumCycles();
     FoldedMuxDelay = std::max(FoldedMuxDelay, CurFoldedDelay);
     unsigned CurMuxDelay
-      = TNL.getMuxDelay(Dst->size(), Dst).getNumCycles();
+      = TNL.getMuxDelay(Sel->size(), Sel).getNumCycles();
     OriginMuxDelay = std::max(OriginMuxDelay, CurMuxDelay);
   }
 

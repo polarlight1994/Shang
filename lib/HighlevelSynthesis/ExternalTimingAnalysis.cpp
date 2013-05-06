@@ -17,7 +17,7 @@
 //   {"from":<src-reg>,"to":<dst-reg>,"delay":<delay-in-nanosecond>}
 //
 //===----------------------------------------------------------------------===//
-
+/*
 #include "ExternalTimingAnalysis.h"
 #include "shang/VASTModule.h"
 
@@ -420,3 +420,4 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
 
   return true;
 }
+*/

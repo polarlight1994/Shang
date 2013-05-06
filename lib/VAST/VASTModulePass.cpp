@@ -248,14 +248,13 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
 
   // Create the SeqVal now.
   unsigned BitWidth = Builder.getValueSizeInBits(V);
-  VASTRegister *R
-    =  VM->addRegister(Name, BitWidth, 0, VASTSeqValue::Data, 0);
-  // V = VM->createSeqValue("v" + utostr_32(RegNo) + "r", BitWidth,
-  //                        VASTNode::Data, RegNo, 0);
+  VASTRegister *R = VM->createRegister(Name, BitWidth, 0);
+  VASTSeqValue *SeqVal
+    = VM->createSeqValue(R->getSelector(), VASTSeqValue::Data, 0, V);
 
   // Index the value.
-  Builder.indexVASTExpr(V, R->getValue());
-  return R->getValue();
+  Builder.indexVASTExpr(V, SeqVal);
+  return SeqVal;
 }
 
 
@@ -342,8 +341,8 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
     // Add port declaration.
     if (SubMod) {
       std::string RegName = SubMod->getPortName(Name);
-      VASTRegister *R = VM->addIORegister(RegName, BitWidth, SubMod->getNum());
-      SubMod->addInPort(Name, R->getValue());
+      VASTRegister *R = VM->createRegister(RegName, BitWidth);
+      SubMod->addFanin(R->getSelector());
       continue;
     }
 
@@ -380,7 +379,8 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
   VASTSlot *IdleSlot = VM->getStartSlot();
 
   // Create the virtual slot representing the idle loop.
-  VASTValue *StartPort = VM->getPort(VASTModule::Start).getValue();
+  VASTValue *StartPort
+    = cast<VASTInPort>(VM->getPort(VASTModule::Start)).getValue();
   VASTSlot *IdleSlotGrp
     = createSubGroup(0, Builder.buildNotExpr(StartPort), IdleSlot);
   addSuccSlot(IdleSlotGrp, IdleSlot, Builder.buildNotExpr(StartPort));
@@ -478,9 +478,8 @@ VASTNode *VASTModuleBuilder::emitBlockRAM(unsigned BRAMNum,
     assert((CI == 0 || CI->getBitWidth() <= 64) && "Initializer not supported!");
     if (CI) InitVal = CI->getZExtValue();
 
-    VASTRegister *R = VM->addRegister(VFUBRAM::getOutDataBusName(BRAMNum),
-                                      ElementSizeInBits, InitVal,
-                                      VASTSeqValue::StaticRegister, BRAMNum);
+    VASTRegister *R = VM->createRegister(VFUBRAM::getOutDataBusName(BRAMNum),
+                                         ElementSizeInBits, InitVal);
     bool Inserted = AllocatedBRAMs.insert(std::make_pair(BRAMNum, R)).second;
     assert(Inserted && "Creating the same BRAM twice?");
     (void) Inserted;
@@ -518,13 +517,12 @@ VASTModuleBuilder::emitIPFromTemplate(const char *Name, unsigned ResultSize)
   SubMod->setIsSimple(false);
   SubModules.GetOrCreateValue(Name, SubMod);
 
-  SmallVector<VASTValPtr, 4> Ops;
   // Add the fanin registers.
   for (unsigned i = 0, e = OpInfo.size(); i < e; ++i) {
-    VASTRegister *R = VM->addIORegister(OpInfo[i].first, OpInfo[i].second, FNNum);
-    SubMod->addInPort(OpInfo[i].first, R->getValue());
-    Ops.push_back(R->getValue());
+    VASTRegister *Reg = VM->createRegister(OpInfo[i].first, OpInfo[i].second);
+    SubMod->addFanin(Reg->getSelector());
   }
+
   // Add the start register.
   SubMod->createStartPort(VM);
   // Create the finish signal from the submodule.
@@ -598,15 +596,16 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
 
   // Assign the return port if necessary.
   if (NumOperands) {
-    VASTSeqValue *RetPort = VM->getRetPort().getSeqVal();
+    VASTSelector *RetPort = cast<VASTOutPort>(VM->getRetPort()).getSelector();
     // Please note that we do not need to export the definition of the value
     // on the return port.
-    SeqInst->addSrc(getAsOperandImpl(I.getReturnValue()), 0, false, RetPort);
+    SeqInst->addSrc(getAsOperandImpl(I.getReturnValue()), 0, RetPort);
   }
 
   // Enable the finish port.
-  SeqInst->addSrc(VASTImmediate::True, NumOperands, false,
-                  VM->getPort(VASTModule::Finish).getSeqVal());
+  VASTSelector *FinPort
+    = cast<VASTOutPort>(VM->getPort(VASTModule::Finish)).getSelector();
+  SeqInst->addSrc(VASTImmediate::True, NumOperands, FinPort);
 
   // Construct the control flow.
   addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True, &I);
@@ -810,9 +809,9 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
                                                 VASTSubModule *SubMod,
                                                 ArrayRef<VASTValPtr> Args) {
   for (unsigned i = 0; i < Args.size(); ++i)
-    Inst->addSrc(Args[i], i, false, SubMod->getFanin(i));
+    Inst->addSrc(Args[i], i, SubMod->getFanin(i));
   // Assign to the enable port.
-  Inst->addSrc(VASTImmediate::True, Args.size(), false, SubMod->getStartPort());
+  Inst->addSrc(VASTImmediate::True, Args.size(), SubMod->getStartPort());
 
   Value *V = Inst->getValue();
   VASTSlot *Slot = Inst->getSlot();
@@ -822,7 +821,7 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
       ->annotateValue(V);
 
   // Read the return value from the function if there is any.
-  if (VASTSeqValue *RetPort = SubMod->getRetPort()) {
+  if (VASTWire *RetPort = SubMod->getRetPort()) {
     VASTSeqValue *Result = getOrCreateSeqVal(Inst->getValue());
     VM->latchValue(Result, RetPort, Slot, VASTImmediate::True, V, 1);
     // Move the the next slot so that the operation can correctly read the
@@ -882,10 +881,10 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   // Build the logic to start the transaction.
   VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, Data ? 4 : 3, &I,
                                 VASTSeqInst::Launch);
-  unsigned CurOperandIdx = 0;
+  unsigned CurSrcIdx = 0;
 
   // Emit Address.
-  Op->addSrc(getAsOperandImpl(Addr), CurOperandIdx++, false,
+  Op->addSrc(getAsOperandImpl(Addr), CurSrcIdx++, 
              Data ? Bus->getWAddr() : Bus->getRAddr());
 
   if (Data) {
@@ -893,17 +892,17 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     VASTValPtr ValToStore = getAsOperandImpl(Data);
     assert(ValToStore->getBitWidth() <= Bus->getDataWidth()
            && "Storing data that exceed the width of databus!");
-    Op->addSrc(ValToStore, CurOperandIdx++, false, Bus->getWData());
+    ValToStore = Builder.buildZExtExprOrSelf(ValToStore, Bus->getDataWidth());
+    Op->addSrc(ValToStore, CurSrcIdx++, Bus->getWData());
   }
 
   // Compute the byte enable.
   VASTValPtr ByteEn
     = Builder.getImmediate(getByteEnable(Addr), Bus->getByteEnWdith());
-  Op->addSrc(ByteEn, CurOperandIdx++, false,
-             Data ? Bus->getWByteEn() : Bus->getRByteEn());
+  Op->addSrc(ByteEn, CurSrcIdx++, Data ? Bus->getWByteEn() : Bus->getRByteEn());
 
   // Enable the memory bus at the same slot.
-  Op->addSrc(VASTImmediate::True, CurOperandIdx, false,
+  Op->addSrc(VASTImmediate::True, CurSrcIdx,
              Data ? Bus->getWEnable() : Bus->getREnable());
 
   // Disable the memory bus at the next slot.
@@ -939,16 +938,15 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
 
   // The block RAM maybe degraded.
   if (VASTRegister *R = dyn_cast<VASTRegister>(Node)) {
-    VASTSeqValue *V = R->getValue();
     if (IsWrite) {
       VASTValPtr Src = getAsOperandImpl(Data);
       VASTSeqInst *SeqInst
         = VM->lauchInst(Slot, VASTImmediate::True, 1, &I, VASTSeqInst::Latch);
       // The static registers only be written when the function exit.
-      SeqInst->addSrc(Src, 0, false, V);
+      SeqInst->addSrc(Src, 0, R->getSelector());
     } else {
       // Also index the address port as the result of the block RAM read.
-      Builder.indexVASTExpr(&I, V);
+      Builder.indexVASTExpr(&I, R->getSelector()->getSSAValue());
     }
 
     return;
@@ -959,21 +957,22 @@ void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
   VASTValPtr AddrVal = getAsOperandImpl(Addr);
   unsigned SizeInBytes = BRAM->getWordSize() / 8;
   unsigned Alignment = Log2_32_Ceil(SizeInBytes);
-  AddrVal = Builder.buildBitSliceExpr(AddrVal, AddrVal->getBitWidth(), Alignment);
+  unsigned AddrWidth = BRAM->getAddrWidth();
+  AddrVal = Builder.buildBitSliceExpr(AddrVal, AddrWidth + Alignment, Alignment);
 
   VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, IsWrite ? 2 : 1, &I,
                                 VASTSeqInst::Launch);
 
-  VASTSeqValue *AddrPort = IsWrite ? BRAM->getWAddr(0) : BRAM->getRAddr(0);
+  VASTSelector *AddrPort = IsWrite ? BRAM->getWAddr(0) : BRAM->getRAddr(0);
 
-  Op->addSrc(AddrVal, 0, false, AddrPort);
+  Op->addSrc(AddrVal, 0, AddrPort);
   // Also assign the data to write to the dataport of the block RAM.
   if (IsWrite) {
-    VASTSeqValue *DataPort = BRAM->getWData(0);
+    VASTSelector *DataPort = BRAM->getWData(0);
     VASTValPtr DataToStore = getAsOperandImpl(Data);
     assert(DataToStore->getBitWidth() == BRAM->getWordSize()
            && "Write to BRAM data width not match!");
-    Op->addSrc(DataToStore, 1, false, DataPort);
+    Op->addSrc(DataToStore, 1, DataPort);
   }
 
   // Wait for 1 cycles and get the result for the read operation.

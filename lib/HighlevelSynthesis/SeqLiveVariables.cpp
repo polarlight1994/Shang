@@ -115,28 +115,29 @@ void SeqLiveVariables::print(raw_ostream &OS) const {
   OS << "\n\nSeqLiveVariables:\n";
   SmallPtrSet<VarInfo*, 8> VIs;
 
-  typedef VASTModule::const_seqval_iterator iterator;
-  for (iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
-    const VASTSeqValue *V = I;
-    VIs.clear();
+  typedef VASTModule::const_selector_iterator iterator;
+  llvm_unreachable("Not implemented!");
+  //for (iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
+  //  const VASTSelector *V = I;
+  //  VIs.clear();
 
-    typedef VASTSeqValue::const_iterator latch_iterator;
-    for (latch_iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
-      std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
-      if (at != VarInfos.end()) VIs.insert(getVarInfo(*DI));
-    }
+  //  typedef VASTSelector::const_iterator latch_iterator;
+  //  for (latch_iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
+  //    std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
+  //    if (at != VarInfos.end()) VIs.insert(getVarInfo(*DI));
+  //  }
 
-    if (VIs.empty()) continue;
+  //  if (VIs.empty()) continue;
 
-    OS << V->getName() << ":\n";
+  //  OS << V->getName() << ":\n";
 
-    typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
-    for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
-      VarInfo *VInfo = *VI;
-      VInfo->print(OS);
-      OS << '\n';
-    }
-  }
+  //  typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
+  //  for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
+  //    VarInfo *VInfo = *VI;
+  //    VInfo->print(OS);
+  //    OS << '\n';
+  //  }
+  //}
 
   OS << "\n\n\n";
 }
@@ -160,48 +161,48 @@ void SeqLiveVariables::verifyAnalysis() const {
 
   // The liveness of the variable information derived from the same SeqVal should
   // not overlap.
-  typedef VASTModule::seqval_iterator seqval_iterator;
-  for (seqval_iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
-    VASTSeqValue *V = I;
-    // Reset the context.
-    VIs.clear();
-    UnionMask.clear();
-    OverlappedMask.clear();
+  //typedef VASTModule::selector_iterator seqval_iterator;
+  //for (seqval_iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
+  //  VASTSelector *V = I;
+  //  // Reset the context.
+  //  VIs.clear();
+  //  UnionMask.clear();
+  //  OverlappedMask.clear();
 
-    typedef VASTSeqValue::const_iterator iterator;
-    for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
-      std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
-      if (at != VarInfos.end()) VIs.insert(getVarInfo(*DI));
-    }
+  //  typedef VASTSelector::const_iterator iterator;
+  //  for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
+  //    std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
+  //    if (at != VarInfos.end()) VIs.insert(getVarInfo(*DI));
+  //  }
 
-    typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
-    for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
-      VarInfo *VInfo = *VI;
+  //  typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
+  //  for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
+  //    VarInfo *VInfo = *VI;
 
-      // FIXME: Check the overlapped slots more carefully.
-      if (UnionMask.intersects(VInfo->Alives)
-          || OverlappedMask.intersects(VInfo->Alives)
-          || UnionMask.intersects(VInfo->Overlappeds)) {
-        dbgs() << "Current VASTSeqVal: " << V->getName() << '\n';
-        dumpVarInfoSet(VIs);
-        dbgs() << "Overlap slots:\n";
+  //    // FIXME: Check the overlapped slots more carefully.
+  //    if (UnionMask.intersects(VInfo->Alives)
+  //        || OverlappedMask.intersects(VInfo->Alives)
+  //        || UnionMask.intersects(VInfo->Overlappeds)) {
+  //      dbgs() << "Current VASTSeqVal: " << V->getName() << '\n';
+  //      dumpVarInfoSet(VIs);
+  //      dbgs() << "Overlap slots:\n";
 
-        SparseBitVector<> Overlap = UnionMask & VInfo->Alives;
-        ::dump(Overlap, dbgs());
+  //      SparseBitVector<> Overlap = UnionMask & VInfo->Alives;
+  //      ::dump(Overlap, dbgs());
 
-        dbgs() << "All slots:\n";
-        ::dump(UnionMask, dbgs());
+  //      dbgs() << "All slots:\n";
+  //      ::dump(UnionMask, dbgs());
 
-        llvm_unreachable("VarInfo of the same SeqVal alive slot overlap!");
-      }
+  //      llvm_unreachable("VarInfo of the same SeqVal alive slot overlap!");
+  //    }
 
-      // Construct the union.
-      UnionMask |= VInfo->Alives;
-      UnionMask |= VInfo->Kills;
-      UnionMask |= VInfo->DefKills;
-      OverlappedMask |= VInfo->Overlappeds;
-    }
-  }
+  //    // Construct the union.
+  //    UnionMask |= VInfo->Alives;
+  //    UnionMask |= VInfo->Kills;
+  //    UnionMask |= VInfo->DefKills;
+  //    OverlappedMask |= VInfo->Overlappeds;
+  //  }
+  //}
 }
 
 bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
@@ -348,7 +349,7 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
 
     // Process defines.
     for (unsigned i = 0, e = SeqOp->getNumDefs(); i != e; ++i)
-      handleDef(SeqOp->getDef(i));
+      handleDef(SeqOp->getSrc(i));
   }
 
   // Process uses.
@@ -377,7 +378,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
     assert((!isa<VASTSeqInst>(SeqOp)
             || cast<VASTSeqInst>(SeqOp)->getSeqOpType() != VASTSeqInst::Launch)
             && "Launch Inst should not define anything!");
-    VASTLatch Def = SeqOp->getDef(0);
+    VASTLatch Def = SeqOp->getSrc(0);
 
     VarInfo *&VI = InstVarInfo[V];
     if (VI == 0) {
@@ -416,8 +417,8 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
       VarInfo *VI = new VarInfo(0);
       VarList.push_back(VI);
 
-      typedef VASTSeqValue::const_iterator iterator;
-      for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
+      typedef VASTSeqValue::fanin_iterator iterator;
+      for (iterator DI = V->fanin_begin(), DE = V->fanin_end(); DI != DE; ++DI) {
         VASTLatch U = *DI;
         VASTSlot *DefSlot = U.getSlot();
         if (DefSlot->SlotNum == SlotNum) continue;
@@ -435,7 +436,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
 void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
                                  PathVector PathFromEntry) {
   // The timing information is not avaliable.
-  if (Use->empty()) return;
+  // if (Use->empty()) return;
 
   assert(Use && "Bad Use pointer!");
   VASTSlot *DefSlot = 0;
@@ -597,14 +598,15 @@ bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot *S) {
   return at->second.test(S->SlotNum);
 }
 
-unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlot,
+unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
+                                              VASTSlot *ReadSlot,
                                               STGShortestPath *SSP) const {
   const VarInfo *VI = 0;
   unsigned ReadSlotNum = ReadSlot->SlotNum;
   bool AnyFound = false;
 
-  typedef VASTSeqValue::const_iterator iterator;
-  for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
+  typedef VASTSeqValue::const_fanin_iterator iterator;
+  for (iterator DI = V->fanin_begin(), DE = V->fanin_end(); DI != DE; ++DI) {
     std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
     if (at == VarInfos.end()) continue;
 
@@ -653,18 +655,4 @@ unsigned SeqLiveVariables::getIntervalFromDef(VASTSeqValue *V, VASTSlot *ReadSlo
 
   // The is 1 extra cycle from the definition to live in.
   return IntervalFromLanding + 1;
-}
-
-SeqLiveVariables::VarInfo *SeqLiveVariables::getUniqueVarInfo(VASTSeqValue *V) {
-  SeqLiveVariables::VarInfo *VI = 0;
-
-  typedef VASTSeqValue::const_iterator iterator;
-  for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
-    SeqLiveVariables::VarInfo *CurVI = getVarInfo(*DI);
-
-    if (VI == 0) VI = CurVI;
-    assert(VI == CurVI && "Live variable not unique!");
-  }
-
-  return VI;
 }

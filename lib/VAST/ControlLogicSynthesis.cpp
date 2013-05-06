@@ -147,9 +147,8 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
   }
 
   // Disable the current slot. Do not export the definition of the assignment.
-  VM->assignCtrlLogic(S->getValue(), VASTImmediate::False, S,
-                      Builder->buildAndExpr(LoopCndVector, 1),
-                      true, false);
+  VM->assignCtrlLogic(S->getRegister()->getSelector(), VASTImmediate::False, S,
+                      Builder->buildAndExpr(LoopCndVector, 1), true);
 }
 
 void ControlLogicSynthesis::collectControlLogicInfo(VASTSlot *S) {

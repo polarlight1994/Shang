@@ -57,7 +57,15 @@ VASTValPtr VASTLatch::getSlotActive() const {
 }
 
 VASTSeqValue *VASTLatch::getDst() const {
-  return cast<VASTSeqValue>(&Op->getUseInteranal(No).getUser());
+  return Op->getDef(No);
+}
+
+VASTSelector *VASTLatch::getSelector() const {
+  return &cast<VASTSelector>(Op->getUseInteranal(No).getUser());
+}
+
+void VASTLatch::removeFromParent() {
+  getSelector()->eraseFanin(*this);
 }
 
 //----------------------------------------------------------------------------//
@@ -70,28 +78,36 @@ bool VASTSeqOp::operator <(const VASTSeqOp &RHS) const  {
   return getSlot() < RHS.getSlot();
 }
 
-VASTLatch VASTSeqOp::getDef(unsigned No) {
-  assert(No < getNumDefs() && "Bad define number!");
-  return VASTLatch(this, No);
+VASTSeqValue *VASTSeqOp::getDef(unsigned No) {
+  return No < getNumDefs() ? Defs[No] : 0;
 }
 
-void VASTSeqOp::addDefDst(VASTSeqValue *Def) {
-  assert(std::find(Defs.begin(), Defs.end(), Def) == Defs.end()
-         && "Define the same seqval twice!");
-  Defs.push_back(Def);
-}
-
-void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef,
-                       VASTSeqValue *D) {
+void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, VASTSelector *Sel,
+                       VASTSeqValue *Dst) {
+  assert(Src && "Bad source value!");
   assert(SrcIdx < getNumSrcs() && "Bad source index!");
-  // The source value of assignment is used by the SeqValue.
-  VASTNode *DstUser = D ? (VASTNode*)D : (VASTNode*)this;
-  // DIRTYHACK: Temporary allow cycles in register assignment.
-  assert(D != Src && "Unexpected cycle!");
 
-  new (src_begin() + SrcIdx) VASTUse(DstUser, Src);
-  // Do not add the assignment if the source is invalid.
-  if (Src && D) D->addAssignment(this, SrcIdx, IsDef);
+  new (src_begin() + SrcIdx) VASTUse(Sel, Src);
+
+  // Remember the defined SeqVal if it exists.
+  if (Dst)  {
+    assert(Dst->getBitWidth() == Sel->getBitWidth()
+           && "Bitwidth not matched in assignment!");
+    assert(std::find(Defs.begin(), Defs.end(), Dst) == Defs.end()
+          && "Define the same seqval twice!");
+    Defs.push_back(Dst);
+  }
+
+  // At the assignment as a fanin to the selector.
+  Sel->addAssignment(this, SrcIdx);
+}
+
+void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, VASTSeqValue *Dst) {
+  addSrc(Src, SrcIdx, Dst->getSelector(), Dst);
+}
+
+void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, VASTSelector *Sel) {
+  addSrc(Src, SrcIdx, Sel, 0);
 }
 
 void VASTSeqOp::print(raw_ostream &OS) const {

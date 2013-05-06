@@ -15,6 +15,7 @@
 #include "TimingEstimator.h"
 #include "ExternalTimingAnalysis.h"
 
+#include "shang/VASTSubModules.h"
 #include "shang/VASTModule.h"
 #include "shang/Passes.h"
 #include "shang/FUInfo.h"
@@ -49,6 +50,16 @@ void TNLDelay::dump() const {
 }
 
 TimingNetlist::delay_type
+TimingNetlist::getDelay(VASTValue *Src, VASTSelector *Dst) const {
+  const_fanin_iterator at = FaninInfo.find(Dst);
+  assert(at != FaninInfo.end() && "Path not exist!");
+
+  src_iterator path_start_from = at->second.find(Src);
+  assert(path_start_from != at->second.end() && "Path not exist!");
+  return path_start_from->second;
+}
+
+TimingNetlist::delay_type
 TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
   // TODO:
   //if (VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(Dst)) {
@@ -67,7 +78,8 @@ TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
 }
 
 TimingNetlist::delay_type
-TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu, VASTValue *Dst) const {
+TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu,
+                        VASTSelector *Dst) const {
   if (Thu == 0) return getDelay(Src, Dst);
 
   delay_type S2T = getDelay(Src, Thu), T2D = getDelay(Thu, Dst);
@@ -104,12 +116,12 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 //===----------------------------------------------------------------------===//
-void TimingNetlist::buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst,
-                                         delay_type MUXDelay) {
+void TimingNetlist::buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst,
+                                      delay_type MUXDelay) {
   if (VASTOperandList::GetDatapathOperandList(Thu) == 0) {
     if (isa<VASTSeqValue>(Thu)) {
-      TimingNetlist::delay_type &d = PathInfo[Dst][Thu];
-      d = TNLDelay::max(MUXDelay, d);
+      TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Thu];
+      OldDelay = TNLDelay::max(MUXDelay, OldDelay);
     }
 
     return;
@@ -119,16 +131,24 @@ void TimingNetlist::buildTimingPathToReg(VASTValue *Thu, VASTSeqValue *Dst,
   if (isa<VASTWire>(Thu))
     Estimator->estimateTimingOnTree(Thu);
 
-  // If this expression if not driven by any register, there is not timing path.
   if (src_empty(Thu)) return;
 
-  // Accumulate the delay of the fanin MUX.
-  TimingNetlist::delay_type &d = PathInfo[Dst][Thu];
-  d = TNLDelay::max(MUXDelay, d);
-  Estimator->accumulateDelayFrom(Thu, Dst);
+  TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Thu];
+  OldDelay =TNLDelay::max(OldDelay, MUXDelay);
+  
+  // If this expression if not driven by any register, there is not timing path.
+  for (src_iterator I = src_begin(Thu), E = src_end(Thu); I != E; ++I) {
+    VASTValue *Src = I->first;
+    TimingNetlist::delay_type NewDelay = I->second;
+    // Accumulate the delay of the fanin MUX.
+    NewDelay.addLLWorst(MUXDelay);
+
+    TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Src];
+    OldDelay =TNLDelay::max(OldDelay, NewDelay);
+  }  
 }
 
-TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, VASTSeqValue *SVal) const {
+TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, VASTSelector *Sel) const {
   float MUXDelay = 0.0f;
   unsigned MuxLL = 0;
 
@@ -137,7 +157,7 @@ TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, VASTSeqValue *SVal) const {
     MUXDelay = Mux->getMuxLatency(Fanins);
     MuxLL = Mux->getMuxLogicLevels(Fanins);
     // Also accumulate the delay of the block RAM.
-    if (SVal && SVal->getValType() == VASTSeqValue::BRAM) {
+    if (Sel && isa<VASTBlockRAM>(Sel->getParent())) {
       VFUBRAM *RAM = getFUDesc<VFUBRAM>();
       MUXDelay += RAM->Latency;
     }
@@ -153,39 +173,39 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
     if (!I->use_empty()) Estimator->estimateTimingOnTree(I);
   
   // Build the timing path for registers.
-  typedef VASTModule::seqval_iterator iterator;
-  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
-    VASTSeqValue *SVal = I;
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+    VASTSelector *Sel = I;
 
     // Calculate the delay of the Fanin MUX.
-    delay_type MUXDelay = getMuxDelay(SVal->size(), SVal);
+    delay_type MUXDelay = getMuxDelay(Sel->size(), Sel);
     
-    if (SVal->isSelectorSynthesized()) {
-      typedef VASTSeqValue::fanin_iterator fanin_iterator;
-      for (fanin_iterator I = SVal->fanin_begin(), E = SVal->fanin_end();
+    if (Sel->isSelectorSynthesized()) {
+      typedef VASTSelector::fanin_iterator fanin_iterator;
+      for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
            I != E; ++I){
-        const VASTSeqValue::Fanin *FI = *I;
+        const VASTSelector::Fanin *FI = *I;
 
-        buildTimingPathToReg(FI->Pred.unwrap().get(), SVal, MUXDelay);
-        buildTimingPathToReg(FI->FI.unwrap().get(), SVal, MUXDelay);
+        buildTimingPathTo(FI->Pred.unwrap().get(), Sel, MUXDelay);
+        buildTimingPathTo(FI->FI.unwrap().get(), Sel, MUXDelay);
       }
 
-      buildTimingPathToReg(SVal->getEnable().get(), SVal, MUXDelay);
+      buildTimingPathTo(Sel->getEnable().get(), Sel, MUXDelay);
 
       // Dirty HACK: Also run on the Latching operation of the registers, so that
       // we can build the timing path for the SlotActive wires.
       // continue;
     } // else
 
-    typedef VASTSeqValue::iterator fanin_iterator;
-    for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
+    typedef VASTSelector::iterator fanin_iterator;
+    for (fanin_iterator FI = Sel->begin(), FE = Sel->end(); FI != FE; ++FI) {
       VASTLatch U = *FI;
       // Estimate the delay for each fanin.
-      buildTimingPathToReg(VASTValPtr(U).get(), SVal, MUXDelay);
+      buildTimingPathTo(VASTValPtr(U).get(), Sel, MUXDelay);
       // And the predicate expression.
-      buildTimingPathToReg(VASTValPtr(U.getPred()).get(), SVal, MUXDelay);
+      buildTimingPathTo(VASTValPtr(U.getPred()).get(), Sel, MUXDelay);
       if (VASTValPtr SlotActive = U.getSlotActive())
-        buildTimingPathToReg(SlotActive.get(), SVal, MUXDelay);
+        buildTimingPathTo(SlotActive.get(), Sel, MUXDelay);
     }
   }
 

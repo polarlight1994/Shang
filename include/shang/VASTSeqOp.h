@@ -37,9 +37,11 @@ struct VASTLatch {
   VASTUse &operator->() const;
   void replaceUsedBy(VASTValPtr V) const;
   void replacePredBy(VASTValPtr V, bool UseSlotActive = true) const;
+  void removeFromParent();
 
   // Get the destination of the transaction.
   VASTSeqValue *getDst() const;
+  VASTSelector *getSelector() const;
 
   // Forward the functions from VASTSeqOp;
   VASTSlot *getSlot() const;
@@ -80,8 +82,7 @@ class VASTSeqOp : public VASTOperandList, public VASTNode,
 protected:
   VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive, unsigned Size);
 public:
-  void addDefDst(VASTSeqValue *Def);
-  VASTLatch getDef(unsigned No);
+  VASTSeqValue *getDef(unsigned No);
   unsigned getNumDefs() const { return Defs.size(); }
 
   // Active Slot accessor
@@ -108,8 +109,12 @@ public:
 
   // Get the source of the transaction.
   VASTLatch getSrc(unsigned Idx) { return VASTLatch(this, Idx); };
+
   // Add a source value to the SeqOp.
-  void addSrc(VASTValPtr Src, unsigned SrcIdx, bool IsDef, VASTSeqValue *Dst);
+  void addSrc(VASTValPtr Src, unsigned SrcIdx, VASTSelector *Sel,
+              VASTSeqValue *Dst);
+  void addSrc(VASTValPtr Src, unsigned SrcIdx, VASTSelector *Sel);
+  void addSrc(VASTValPtr Src, unsigned SrcIdx, VASTSeqValue *Dst);
 
   // Iterate over the source value of register transaction.
   const_op_iterator src_begin() const { return Operands + 1; }
