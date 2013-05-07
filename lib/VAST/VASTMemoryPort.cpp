@@ -200,6 +200,9 @@ static void printAssigment(vlang_raw_ostream &OS, VASTSelector *Selector,
 }
 
 void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
+  // The default memory bus are printed as module ports.
+  if (isDefault()) return;
+
   // Print the read port.
   VASTSelector *ReadEnable = getREnable();
   if (!ReadEnable->empty()) {
