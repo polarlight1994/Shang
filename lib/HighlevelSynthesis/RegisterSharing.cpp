@@ -39,7 +39,7 @@ STATISTIC(NumRegMerge, "Number of register pairs merged");
 namespace llvm {
 class SeqLiveInterval {
   // The underlying data.
-  VASTSeqValue *SV;
+  VASTSelector *Sel;
   SparseBitVector<> Alives;
   SparseBitVector<> Overlappeds;
 
@@ -54,20 +54,20 @@ public:
   static const int HUGE_NEG_VAL = -1000000000;
   static const int TINY_VAL = 1;
 
-  SeqLiveInterval(VASTSeqValue *SV, SeqLiveVariables *LVS) : SV(SV) {
-    if (SV == 0) return;
-    llvm_unreachable("Not yet implemented!");
-    //typedef VASTSeqValue::const_iterator iterator;
-    //for (iterator DI = SV->begin(), DE = SV->end(); DI != DE; ++DI) {
-    //  const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*DI);
-    //  Alives |= LV->Alives;
-    //  Alives |= LV->Kills;
-    //  Alives |= LV->DefKills;
-    //  Overlappeds |= LV->Overlappeds;
-    //}
+  SeqLiveInterval() : Sel(0) { }
+
+  SeqLiveInterval(VASTSelector *Sel, SeqLiveVariables *LVS) : Sel(Sel) {
+    typedef VASTSelector::use_iterator iterator;
+    for (iterator I = Sel->use_begin(), E = Sel->use_end(); I != E; ++I) {
+      const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*I);
+      Alives |= LV->Alives;
+      Alives |= LV->Kills;
+      Alives |= LV->DefKills;
+      Overlappeds |= LV->Overlappeds;
+    }
   }
 
-  bool isTrivial() const { return SV == 0; }
+  bool isTrivial() const { return Sel == 0; }
 
   void dropAllEdges() {
     Preds.clear();
@@ -75,9 +75,9 @@ public:
     SuccWeights.clear();
   }
 
-  VASTSeqValue *get() const { return SV; }
-  VASTSeqValue *operator*() const { return get(); }
-  VASTSeqValue *operator->() const { return get(); }
+  VASTSelector *get() const { return Sel; }
+  VASTSelector *operator*() const { return get(); }
+  VASTSelector *operator->() const { return get(); }
 
   //void print(raw_ostream &OS) const;
   //void dump() const;
@@ -103,7 +103,7 @@ public:
   }
 
   bool compatibleWith(const SeqLiveInterval *RHS) const {
-    return SV->getBitWidth() == RHS->SV->getBitWidth()
+    return Sel->getBitWidth() == RHS->Sel->getBitWidth()
            && !Alives.intersects(RHS->Alives)
            && !Alives.intersects(RHS->Overlappeds)
            && !Overlappeds.intersects(RHS->Alives);
@@ -252,14 +252,14 @@ public:
   typedef SeqLiveInterval NodeTy;
 
 private:
-  typedef DenseMap<VASTSeqValue*, NodeTy*> NodeMapTy;
+  typedef DenseMap<VASTSelector*, NodeTy*> NodeMapTy;
   // The dummy entry node of the graph.
   NodeTy Entry, Exit;
   // Nodes vector.
   NodeMapTy Nodes;
 
 public:
-  LICompGraph() : Entry(0, 0), Exit(0, 0) {}
+  LICompGraph() : Entry(), Exit() {}
 
   ~LICompGraph() {
     DeleteContainerSeconds(Nodes);
@@ -277,14 +277,14 @@ public:
   bool empty() const { return Entry.succ_empty(); }
   bool hasMoreThanOneNode() const { return Entry.num_succ() > 1; }
 
-  NodeTy *operator[](VASTSeqValue *N) const { return Nodes.lookup(N); }
+  NodeTy *operator[](VASTSelector *N) const { return Nodes.lookup(N); }
 
-  NodeTy *GetOrCreateNode(VASTSeqValue *V, SeqLiveVariables *LVS) {
-    assert(V && "Unexpected null pointer pass to GetOrCreateNode!");
-    NodeTy *&Node = Nodes[V];
+  NodeTy *GetOrCreateNode(VASTSelector *Sel, SeqLiveVariables *LVS) {
+    assert(Sel && "Unexpected null pointer pass to GetOrCreateNode!");
+    NodeTy *&Node = Nodes[Sel];
     // Create the node if it not exists yet.
     if (Node == 0) {
-      Node = new NodeTy(V, LVS);
+      Node = new NodeTy(Sel, LVS);
       // And insert the node into the graph.
       for (iterator I = begin(), E = end(); I != E; ++I) {
         NodeTy *Other = *I;
@@ -413,7 +413,7 @@ struct RegisterSharing : public VASTModulePass {
 
   bool performRegisterSharing();
   void mergeLI(SeqLiveInterval *From, SeqLiveInterval *To);
-  void mergeSeqVal(VASTSeqValue *ToV, VASTSeqValue *FromV);
+  void mergeSelector(VASTSelector *ToV, VASTSelector *FromV);
 };
 }
 
@@ -441,17 +441,16 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   VASTExprBuilder Builder(C);
   this->Builder = &Builder;
 
-  typedef VASTModule::seqval_iterator iterator;
+  typedef VASTModule::selector_iterator iterator;
 
-  //llvm_unreachable("Build the compatiblity graph for register!");
-  // for (iterator I = VM.seqval_begin(), IE = VM.seqval_end(); I != IE; ++I) {
-  //  if (I->getValType() != VASTSeqValue::Data) continue;
+   for (iterator I = VM.selector_begin(), IE = VM.selector_end(); I != IE; ++I) {
+     VASTSelector *Sel = I;
     
-  //  G.GetOrCreateNode(I, LVS);
-  //}
+    G.GetOrCreateNode(Sel, LVS);
+  }
 
-  //while (performRegisterSharing())
-  //  ;
+  while (performRegisterSharing())
+    ;
 
   return false;
 }
@@ -500,11 +499,11 @@ SeqLiveInterval *GetNeighborToCombine(SeqLiveInterval *P) {
 
 void RegisterSharing::mergeLI(SeqLiveInterval *From, SeqLiveInterval *To) {
   assert(From->compatibleWith(To) && "Cannot merge incompatible LiveIntervals!");
-  VASTSeqValue *FromV = From->get(), *ToV = To->get();
+  VASTSelector *FromV = From->get(), *ToV = To->get();
   DEBUG(dbgs() << "Merge " << FromV->getName() << " to " << ToV->getName()
                << '\n');
 
-  mergeSeqVal(ToV, FromV);
+  mergeSelector(ToV, FromV);
 
   // Merge the interval.
   To->merge(From);
@@ -515,9 +514,7 @@ void RegisterSharing::mergeLI(SeqLiveInterval *From, SeqLiveInterval *To) {
   ++NumRegMerge;
 }
 
-void RegisterSharing::mergeSeqVal(VASTSeqValue *ToV, VASTSeqValue *FromV) {
-  Builder->replaceAllUseWith(FromV, ToV);
-
+void RegisterSharing::mergeSelector(VASTSelector *ToV, VASTSelector *FromV) {
   SmallVector<VASTSeqOp*, 8> DeadOps;
 
   llvm_unreachable("Not implemented!");
