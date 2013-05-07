@@ -290,22 +290,20 @@ inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
 
 class VASTWire :public VASTNamedValue, public VASTOperandList,
                 public ilist_node<VASTWire> {
-  unsigned Idx : 31;
-  bool IsWrapper : 1;
-  friend class VASTModule;
+  PointerIntPair<VASTNode*, 1, bool> Data;
 
   VASTValPtr getAsInlineOperandImpl();
 
   friend struct ilist_sentinel_traits<VASTWire>;
-  VASTWire() : VASTNamedValue(vastWire, 0, 0), VASTOperandList(0), Idx(0),
-    IsWrapper(false) {}
+  VASTWire() : VASTNamedValue(vastWire, 0, 0), VASTOperandList(0) {}
 
   virtual void dropUses();
 public:
 
-  VASTWire(const char *Name, unsigned BitWidth, bool IsWrapper = false)
+  VASTWire(const char *Name, unsigned BitWidth, bool IsWrapper = false,
+           VASTNode *Parent = 0)
     : VASTNamedValue(vastWire, Name, BitWidth), VASTOperandList(1),
-      Idx(0), IsWrapper(IsWrapper) {
+      Data(Parent, IsWrapper) {
     new (Operands) VASTUse(this);
   }
 
@@ -313,7 +311,8 @@ public:
     getOperand(0).set(V);
   }
 
-  bool isWrapper() const { return IsWrapper; }
+  bool isWrapper() const { return Data.getInt(); }
+  VASTNode *getParent() const { return Data.getPointer(); }
 
   VASTValPtr getDriver() const { return getOperand(0).unwrap(); }
 

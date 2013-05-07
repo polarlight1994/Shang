@@ -112,7 +112,7 @@ struct PathIntervalQueryCache {
     CyclesFromSrcLB[Src].update(Interval, NormalizedDelay);
   }
 
-  bool annotateSubmoduleLatency(VASTSeqValue * V);
+  bool generateSubmoduleConstraints(VASTWire *W);
 
   void annotatePathInterval(VASTValue *Tree, ArrayRef<VASTSlot*> ReadSlots);
 
@@ -136,7 +136,8 @@ struct PathIntervalQueryCache {
 
   void insertMCPEntries() const;
   // Bind multi-cycle path constraints to the scripting engine.
-  void insertMCPWithInterval(VASTSeqValue *Src, const std::string &ThuName,
+  template<typename SrcTy>
+  void insertMCPWithInterval(SrcTy *Src, const std::string &ThuName,
                              const SrcInfo &SI) const;
   unsigned insertMCPThough(VASTValue *Thu, const SeqValSetTy &SrcSet) const;
 
@@ -212,29 +213,6 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
   return PathInterval;
 }
 
-bool PathIntervalQueryCache::annotateSubmoduleLatency(VASTSeqValue * V) {
-  VASTSubModule *SubMod = dyn_cast<VASTSubModule>(V->getParent());
-  if (SubMod == 0) return false;
-
-  llvm_unreachable("Not implemented yet!");
-  // assert(V->getValType() == VASTSeqValue::IO && "Bad Seqvalue type!");
-  // assert(V->empty() && "Unexpected assigement to return value!");
-
-  unsigned Latency = SubMod->getLatency();
-  // No latency information available.
-  if (Latency == 0) return true;
-
-  // Add the timing constraints from operand registers to the output registers.
-  typedef VASTSubModule::fanin_iterator fanin_iterator;
-  for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
-       I != E; ++I) {
-    // VASTSelector *Operand = *I;
-    // addIntervalFromSrc(Operand, Latency, float(Latency));
-  }
-
-  return true;
-}
-
 void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
                                                   ArrayRef<VASTSlot*> ReadSlots) {
   VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
@@ -292,7 +270,7 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
       // Add the information to statistics.
       addIntervalFromSrc(V, Interval, EstimatedDelay);
       continue;
-    }
+    }  
 
     if (VASTOperandList *L = VASTOperandList::GetDatapathOperandList(ChildNode))
       VisitStack.push_back(std::make_pair(ChildNode, L->op_begin()));
@@ -394,7 +372,8 @@ void PathIntervalQueryCache::dump() const {
 }
 // The first node of the path is the use node and the last node of the path is
 // the define node.
-void PathIntervalQueryCache::insertMCPWithInterval(VASTSeqValue *Src,
+template<typename SrcTy>
+void PathIntervalQueryCache::insertMCPWithInterval(SrcTy *Src,
                                                    const std::string &ThuName,
                                                    const SrcInfo &SI) const {
   assert(!ThuName.empty() && "Bad through node name!");
@@ -433,6 +412,26 @@ void PathIntervalQueryCache::insertMCPEntries() const {
   typedef QueryCacheTy::const_iterator iterator;
   for (iterator I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I)
     NumConstraints += insertMCPThough(I->first, I->second);
+}
+
+bool PathIntervalQueryCache::generateSubmoduleConstraints(VASTWire *W) {
+  VASTSubModule *SubMod = dyn_cast_or_null<VASTSubModule>(W->getParent());
+  if (SubMod == 0) return false;
+
+  unsigned Latency = SubMod->getLatency();
+  // No latency information available.
+  if (Latency == 0) return true;
+
+  // Add the timing constraints from operand registers to the output registers.
+  typedef VASTSubModule::fanin_iterator fanin_iterator;
+  for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
+       I != E; ++I) {
+    VASTSelector *Operand = *I;
+    insertMCPWithInterval(Operand, "shang-null-node",
+                          SrcInfo(Latency, float(Latency)));
+  }
+
+  return true;
 }
 
 bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
@@ -489,9 +488,6 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
                                          VASTValue *DepTree) {
   // Trivial case: register to register path.
   if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(DepTree)){
-    // Src may be the return_value of the submodule.
-    if (Cache.annotateSubmoduleLatency(Src)) return;
-
     unsigned Interval = Cache.getMinimalInterval(Src, ReadSlots);
     Cache.addIntervalFromSrc(Src, Interval, 0.0f);
 
@@ -515,6 +511,9 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
         extractTimingPaths(Cache, ReadSlots, W->getDriver().get());
       return;
     }
+
+    // Src may be the return_value of the submodule.
+    if (Cache.generateSubmoduleConstraints(W)) return;  
   }
 
   Cache.annotatePathInterval(DepTree, ReadSlots);

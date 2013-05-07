@@ -241,7 +241,7 @@ VASTWire *VASTSubModule::createFinPort(VASTModule *VM) {
 
 VASTWire *VASTSubModule::createRetPort(VASTModule *VM, unsigned Bitwidth,
                                            unsigned Latency) {
-  RetPort = VM->addWire(getPortName("return_value"), Bitwidth);
+  RetPort = VM->addWire(getPortName("return_value"), Bitwidth, false, this);
   addFanout(RetPort);
   // Also update the latency.
   this->Latency = Latency;

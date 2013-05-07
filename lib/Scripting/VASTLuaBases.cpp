@@ -306,12 +306,12 @@ VASTUDef *VASTModule::createUDef(unsigned Size) {
 }
 
 VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
-                              bool IsWrapper) {
+                              bool IsWrapper, VASTNode *Parent) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   // Allocate the wire and the use.
 
-  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, IsWrapper);
+  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, IsWrapper, Parent);
   Entry.second = Wire;
   Wires.push_back(Wire);
 
