@@ -420,6 +420,8 @@ VASTValPtr VASTWire::getAsInlineOperandImpl() {
 }
 
 void VASTWire::printDecl(raw_ostream &OS) const {
+  if (use_empty()) return;
+
   // Print the wrapper for the LLVM Values.
   if (Value *V = getValue()) {
     VASTNamedValue::printDecl(OS, false, " = ");
@@ -429,7 +431,10 @@ void VASTWire::printDecl(raw_ostream &OS) const {
       OS << getBitWidth() << "'bx";
 
     OS << ";\n";
-  } else if (getParent() && !use_empty())
+    return;
+  }
+
+  if (getParent())
     // Print the ouput wire for the submodules.
     VASTNamedValue::printDecl(OS, false);
 }
