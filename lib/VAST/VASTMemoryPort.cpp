@@ -175,8 +175,6 @@ void VASTMemoryBus::printDecl(raw_ostream &OS) const {
   getREnable()->printDecl(OS);
   getRByteEn()->printDecl(OS);
   getRAddr()->printDecl(OS);
-  if (!getRData()->use_empty())
-    cast<VASTWire>(getRData())->printDecl(OS, false);
 
   getWEnable()->printDecl(OS);
   getWByteEn()->printDecl(OS);

@@ -52,10 +52,11 @@ void VASTBlockRAM::addPorts(VASTModule *VM) {
   std::string BRamArrayName = VFUBRAM::getArrayName(getBlockRAMNum());
 
   // Add the address port and the data port.
-
   VASTSelector *RAddr
     = VM->createSelector(BRamArrayName + "_raddr0r", getAddrWidth(), false, this);
   addFanin(RAddr);
+  // No need to worry about timing of the output port, because the corresponding
+  // datapath are supposed to be single cycle.
   VASTWire *ReadDataA = VM->addWire(BRamArrayName + "_rdata0w", getWordSize());
   addFanout(ReadDataA);
 
@@ -186,11 +187,7 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
        << VFUBRAM::getArrayName(getBlockRAMNum()) << "_rdata0r;\n\n";
 }
 
-
-void VASTBlockRAM::printDecl(raw_ostream &OS) const {
-  if (!getRData(0)->use_empty())
-    cast<VASTWire>(getRData(0))->printDecl(OS, false);
-}
+void VASTBlockRAM::printDecl(raw_ostream &OS) const {}
 
 void VASTBlockRAM::printPort(vlang_raw_ostream &OS, unsigned Num) const {
   const std::string &BRAMArray = VFUBRAM::getArrayName(getBlockRAMNum());
@@ -294,12 +291,4 @@ void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 }
 
 void VASTSubModule::printDecl(raw_ostream &OS) const {
-  // Declare the output of submodule.
-  if (VASTWire *Ret = getRetPort())
-    Ret->printDecl(OS, false);
-
-  // Declare the finish signal of submodule.
-  VASTWire *Fin = getFinPort();
-  assert(Fin && "Finish port not available?");
-  Fin->printDecl(OS, false);
 }
