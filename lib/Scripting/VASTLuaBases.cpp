@@ -578,6 +578,8 @@ void VASTModule::eraseSeqVal(VASTSeqValue *Val) {
   assert(Val->fanin_empty() && "Val still using something!");
   // Also erase the selector if it become empty.
   VASTSelector *Sel = Val->getSelector();
+  Val->changeSelector(0);
+
   if (Sel->empty()) {
     // Try to erase the corresponding register as well.
     if (VASTRegister *R = dyn_cast<VASTRegister>(Sel->getParent()))

@@ -314,8 +314,19 @@ VASTNode *VASTSelector::getParent() const {
 }
 
 VASTSeqValue *VASTSelector::getSSAValue() const {
-  llvm_unreachable("Not implemented!");
-  return 0;
+  assert(num_uses() == 1 && "Not single assignment!");
+  return *Users.begin();
+}
+
+void VASTSelector::addUser(VASTSeqValue *V) {
+  assert(!Users.count(V) && "User existed!");
+  Users.insert(V);
+}
+
+void VASTSelector::removeUser(VASTSeqValue *V) {
+  bool erased = Users.erase(V);
+  assert(erased && "V is not a user of the current selector!");
+  (void) erased;
 }
 
 void VASTSelector::printDecl(raw_ostream &OS) const {
@@ -337,7 +348,9 @@ void VASTSelector::eraseFanin(VASTLatch U) {
 VASTSeqValue::VASTSeqValue(VASTSelector *Selector, Type T, unsigned Idx, 
                            Value *V)
   : VASTNamedValue(vastSeqValue, Selector->getName(), Selector->getBitWidth()),
-    Selector(Selector), V(V), T(T), Idx(Idx) {}
+    Selector(Selector), V(V), T(T), Idx(Idx) {
+  Selector->addUser(this);
+}
 
 void VASTSeqValue::dumpFanins() const {
   typedef VASTSeqValue::const_fanin_iterator iterator;
@@ -351,6 +364,13 @@ void VASTSeqValue::dumpFanins() const {
 VASTSelector *VASTSeqValue::getSelector() const {
   assert(Selector && "Unexpected null selector!");
   return Selector;
+}
+
+void VASTSeqValue::changeSelector(VASTSelector *NewSel) {
+  assert(NewSel != getSelector() && "Selector not changed!");
+  getSelector()->removeUser(this);
+  Selector = NewSel;
+  if (Selector) Selector->addUser(this);
 }
 
 VASTSeqValue::~VASTSeqValue() {}

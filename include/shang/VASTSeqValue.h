@@ -17,11 +17,14 @@
 #define SHANG_VAST_SEQ_VALUE_H
 
 #include "shang/VASTSeqOp.h"
+
+#include "llvm/ADT/SmallPtrSet.h"
 #include <map>
 
 namespace llvm {
 class Twine;
 class VASTExprBuilder;
+class VASTSeqValue;
 
 class VASTSelector : public VASTNode, public ilist_node<VASTSelector> {
 public:
@@ -47,6 +50,11 @@ private:
   VASTNode *Parent;
   const uint8_t BitWidth;
   const bool  IsEnable;
+  SmallPtrSet<VASTSeqValue*, 8> Users;
+
+  friend class VASTSeqValue;
+  void addUser(VASTSeqValue *V);
+  void removeUser(VASTSeqValue *V);
 
   // Map the transaction condition to transaction value.
   typedef std::vector<VASTLatch> AssignmentVector;
@@ -72,6 +80,11 @@ public:
   const char *getName() const { return Contents.Name; }
   unsigned getBitWidth() const { return BitWidth; }
   bool isEnable() const { return IsEnable; }
+
+  typedef SmallPtrSet<VASTSeqValue*, 8>::const_iterator use_iterator;
+  use_iterator use_begin() const { return Users.begin(); }
+  use_iterator use_end() const { return Users.end(); }
+  unsigned num_uses() const { return Users.size(); }
 
   typedef AssignmentVector::const_iterator const_iterator;
   const_iterator begin() const { return Assigns.begin(); }
@@ -192,6 +205,7 @@ public:
   ~VASTSeqValue();
 
   VASTSelector *getSelector() const;
+  void changeSelector(VASTSelector *NewSel);
 
   VASTSeqValue::Type getValType() const { return VASTSeqValue::Type(T); }
 
@@ -207,8 +221,6 @@ public:
 
   VASTNode *getParent() const;
   Value *getLLVMValue() const;
-
-  bool isTimingUndef() const { return getValType() == VASTSeqValue::Slot; }
 
   void dumpFanins() const;
 
