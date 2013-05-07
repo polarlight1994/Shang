@@ -28,6 +28,12 @@ class VASTSeqValue;
 
 class VASTSelector : public VASTNode, public ilist_node<VASTSelector> {
 public:
+  enum Type {
+    Temp,           // Common registers which hold data for data-path.
+    Static,         // The register for the static global variables.
+    Slot,           // Slot register which hold the enable signals for each slot.
+    Enable          // Register for enable signals.
+  };
   // Synthesized Fanin.
   struct Fanin {
     Fanin(const Fanin&) LLVM_DELETED_FUNCTION;
@@ -47,7 +53,7 @@ private:
   VASTSelector(const VASTSelector&) LLVM_DELETED_FUNCTION;
   void operator=(const VASTSelector&) LLVM_DELETED_FUNCTION;
 
-  PointerIntPair<VASTNode*, 1, bool> Parent;
+  PointerIntPair<VASTNode*, 2, Type> Parent;
   const uint8_t BitWidth;
   SmallPtrSet<VASTSeqValue*, 8> Users;
 
@@ -69,7 +75,7 @@ private:
   bool getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const;
 public:
   VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
-               bool IsEnable = false, VASTNode *Node = 0);
+               Type T = Temp, VASTNode *Node = 0);
 
   ~VASTSelector();
 
@@ -78,7 +84,11 @@ public:
 
   const char *getName() const { return Contents.Name; }
   unsigned getBitWidth() const { return BitWidth; }
-  bool isEnable() const { return Parent.getInt(); }
+
+  bool isEnable() const { return Parent.getInt() == Enable; }
+  bool isSlot() const { return Parent.getInt() == Slot; }
+  bool isTemp() const { return Parent.getInt() == Temp; }
+  bool isStatic() const { return Parent.getInt() == Static; }
 
   typedef SmallPtrSet<VASTSeqValue*, 8>::const_iterator use_iterator;
   use_iterator use_begin() const { return Users.begin(); }
@@ -134,12 +144,6 @@ public:
 // Represent values, in SSA form, in the sequential logic.
 class VASTSeqValue : public VASTNamedValue, public ilist_node<VASTSeqValue> {
 public:
-  enum Type {
-    Data,           // Common registers which hold data for data-path.
-    Slot,           // Slot register which hold the enable signals for each slot.
-    StaticRegister // The register for the static global variables.
-  };
-
   template<typename Iterator>
   class FaninIterator
     : public std::iterator<std::forward_iterator_tag,
@@ -189,31 +193,33 @@ private:
   // For common registers, the Idx is the corresponding register number in the
   // MachineFunction. With this register number we can get the define/use/kill
   // information of transaction to this local storage.
-  const unsigned T    : 2;
-  const unsigned Idx  : 30;
+  const unsigned Idx;
 
   friend struct ilist_sentinel_traits<VASTSeqValue>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
   VASTSeqValue()
-    : VASTNamedValue(vastSeqValue, 0, 0), Selector(0), V(0), T(0), Idx(0) {}
+    : VASTNamedValue(vastSeqValue, 0, 0), Selector(0), V(0), Idx(0) {}
 
 public:
-  VASTSeqValue(VASTSelector *Selector, Type T, unsigned Idx, Value *V);
+  VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V);
 
   ~VASTSeqValue();
 
   VASTSelector *getSelector() const;
   void changeSelector(VASTSelector *NewSel);
 
-  VASTSeqValue::Type getValType() const { return VASTSeqValue::Type(T); }
+  bool isEnable() const { return getSelector()->isEnable(); }
+  bool isSlot() const { return getSelector()->isSlot(); }
+  bool isTemp() const { return getSelector()->isTemp(); }
+  bool isStatic() const { return getSelector()->isStatic(); }
 
   unsigned getDataRegNum() const {
-    assert((getValType() == Data) && "Wrong accessor!");
+    assert(isTemp() && "Wrong accessor!");
     return Idx;
   }
 
   unsigned getSlotNum() const {
-    assert(getValType() == Slot && "Wrong accessor!");
+    assert(isSlot() && "Wrong accessor!");
     return Idx;
   }
 

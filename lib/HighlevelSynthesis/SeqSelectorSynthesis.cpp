@@ -413,7 +413,8 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
         }
 
         // Do not build the enable for the SeqVal to be pipelined.
-        VASTRegister *R = VM->createRegister(Name + "en", 1, 0, true);
+        VASTRegister *R
+          = VM->createRegister(Name + "en", 1, 0, VASTSelector::Enable);
         //LastNextLevelEn = R->getValue();
         llvm_unreachable("Not implemented!");
         NumPipelineRegBits += LastNextLevelEn->getBitWidth();
@@ -537,7 +538,7 @@ unsigned SeqSelectorSynthesis::getAvailableInterval(const SVSet &S,
 
     // Do not retime across the static register as well, we do not have the
     // accurate timing information for them.
-    if (SV->getValType() == VASTSeqValue::StaticRegister) return 0;
+    if (SV->isStatic()) return 0;
 
     Interval = std::min(Interval, SLV->getIntervalFromDef(SV, ReadSlot, SSP));
   }

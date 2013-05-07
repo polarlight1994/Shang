@@ -263,9 +263,9 @@ public:
   }
 
   VASTSelector *createSelector(const Twine &Name, unsigned BitWidth,
-                               bool IsEnable, VASTNode *Parent);
-  VASTSeqValue *createSeqValue(VASTSelector *Selector, VASTSeqValue::Type T,
-                               unsigned Idx, Value *V = 0);
+                               VASTNode *Parent,
+                               VASTSelector::Type T = VASTSelector::Temp);
+  VASTSeqValue *createSeqValue(VASTSelector *Selector, unsigned Idx, Value *V = 0);
 
   VASTMemoryBus *createDefaultMemBus();
   VASTMemoryBus *createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth);
@@ -276,7 +276,8 @@ public:
   VASTSubModule *addSubmodule(const char *Name, unsigned Num);
 
   VASTRegister *createRegister(const Twine &Name, unsigned BitWidth,
-                               unsigned InitVal = 0, bool IsEnable = false);
+                               unsigned InitVal = 0,
+                               VASTSelector::Type T = VASTSelector::Temp);
 
   VASTWire *addWire(const Twine &Name, unsigned BitWidth,
                     VASTWire::DataTy Data = VASTWire::DataTy());

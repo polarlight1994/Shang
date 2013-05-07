@@ -107,7 +107,7 @@ struct PathIntervalQueryCache {
   void addIntervalFromSrc(VASTSeqValue *Src,  unsigned Interval,
                           float NormalizedDelay) {
     assert(Interval && "unexpected zero interval!");
-    assert((Src->getValType() != VASTSeqValue::Slot || Interval <= 1)
+    assert((!Src->isSlot() || Interval <= 1)
            && "Bad interval for slot registers!");
     CyclesFromSrcLB[Src].update(Interval, NormalizedDelay);
   }

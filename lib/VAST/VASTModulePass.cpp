@@ -250,8 +250,7 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
   // Create the SeqVal now.
   unsigned BitWidth = Builder.getValueSizeInBits(V);
   VASTRegister *R = VM->createRegister(Name, BitWidth, 0);
-  VASTSeqValue *SeqVal
-    = VM->createSeqValue(R->getSelector(), VASTSeqValue::Data, 0, V);
+  VASTSeqValue *SeqVal = VM->createSeqValue(R->getSelector(), 0, V);
 
   // Index the value.
   Builder.indexVASTExpr(V, SeqVal);

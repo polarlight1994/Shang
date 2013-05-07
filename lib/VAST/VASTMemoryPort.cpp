@@ -38,17 +38,18 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
   VASTNode *Parent = isDefault() ? 0 : this;
 
   // The read ports.
-  VASTSelector *REn = VM->createSelector(getREnName(Idx), 1, true, Parent);
+  VASTSelector *REn = VM->createSelector(getREnName(Idx), 1, Parent,
+                                         VASTSelector::Enable);
   addFanin(REn);
   if (isDefault()) VM->addPort(REn);
 
   VASTSelector *RBEn
-    = VM->createSelector(getRByteEnName(Idx), ByteEnSize, false, Parent);
+    = VM->createSelector(getRByteEnName(Idx), ByteEnSize, Parent);
   addFanin(RBEn);
   if (isDefault()) VM->addPort(RBEn);
 
   VASTSelector *RAddr
-    = VM->createSelector(getRAddrName(Idx), getAddrWidth(), false, Parent);
+    = VM->createSelector(getRAddrName(Idx), getAddrWidth(), Parent);
   addFanin(RAddr);
   if (isDefault()) VM->addPort(RAddr);
 
@@ -59,22 +60,23 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
     addFanout(VM->addWire(getRDataName(Idx), getDataWidth(), this));
 
   // The write ports.
-  VASTSelector *WEn = VM->createSelector(getWEnName(Idx), 1, true, Parent);
+  VASTSelector *WEn = VM->createSelector(getWEnName(Idx), 1, Parent,
+                                         VASTSelector::Enable);
   addFanin(WEn);
   if (isDefault()) VM->addPort(WEn);
 
   VASTSelector *WBEn
-    = VM->createSelector(getWByteEnName(Idx), ByteEnSize, false, Parent);
+    = VM->createSelector(getWByteEnName(Idx), ByteEnSize, Parent);
   addFanin(WBEn);
   if (isDefault()) VM->addPort(WBEn);
 
   VASTSelector *WAddr
-    = VM->createSelector(getWAddrName(Idx), getAddrWidth(), false, Parent);
+    = VM->createSelector(getWAddrName(Idx), getAddrWidth(), Parent);
   addFanin(WAddr);
   if (isDefault()) VM->addPort(WAddr);
 
   VASTSelector *WData
-    = VM->createSelector(getWDataName(Idx), getDataWidth(), false, Parent);
+    = VM->createSelector(getWDataName(Idx), getDataWidth(), Parent);
   addFanin(WData);
   if (isDefault()) VM->addPort(WData);
 }

@@ -365,7 +365,7 @@ VASTValPtr ScheduleEmitter::retimeValToSlot(VASTValue *V, VASTSlot *ToSlot) {
       AnySrcEmitted |= !(*I).getSlot()->isDead();
     }
 
-    assert((AnySrcEmitted || SV->getValType() == VASTSeqValue::StaticRegister)
+    assert((AnySrcEmitted || SV->isStatic())
            && "Retiming performed before source value emitted!");
   }
 #endif

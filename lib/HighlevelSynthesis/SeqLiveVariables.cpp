@@ -355,7 +355,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
   for (iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
     VASTSeqValue *V = I;
 
-    if (V->getValType() == VASTSeqValue::StaticRegister) {
+    if (V->isStatic()) {
       VarInfo *VI = new VarInfo(0);
       VarList.push_back(VI);
 

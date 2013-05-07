@@ -43,8 +43,10 @@ void VASTSlot::createSignals(VASTModule *VM) {
 
   // Create the relative signals.
   std::string SlotName = "Slot" + utostr_32(SlotNum);
-  VASTRegister *R = VM->createRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0);
-  SlotReg.set(VM->createSeqValue(R->getSelector(), VASTSeqValue::Slot, SlotNum));
+  uint64_t InitVal = SlotNum == 0 ? 1 : 0;
+  VASTRegister *R =
+    VM->createRegister(SlotName + "r", 1, InitVal, VASTSelector::Slot);
+  SlotReg.set(VM->createSeqValue(R->getSelector(), SlotNum));
 }
 
 void VASTSlot::copySignals(VASTSlot *S) {

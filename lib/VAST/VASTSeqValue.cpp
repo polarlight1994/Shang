@@ -25,9 +25,9 @@
 
 using namespace llvm;
 //----------------------------------------------------------------------------//
-VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, bool IsEnable,
+VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
                            VASTNode *Node)
-  : VASTNode(vastSelector), Parent(Node, IsEnable), BitWidth(BitWidth),
+  : VASTNode(vastSelector), Parent(Node, T), BitWidth(BitWidth),
     EnableU(this) {
   Contents.Name = Name;
 }
@@ -345,10 +345,9 @@ void VASTSelector::eraseFanin(VASTLatch U) {
 }
 
 //===----------------------------------------------------------------------===//
-VASTSeqValue::VASTSeqValue(VASTSelector *Selector, Type T, unsigned Idx, 
-                           Value *V)
+VASTSeqValue::VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V)
   : VASTNamedValue(vastSeqValue, Selector->getName(), Selector->getBitWidth()),
-    Selector(Selector), V(V), T(T), Idx(Idx) {
+    Selector(Selector), V(V), Idx(Idx) {
   Selector->addUser(this);
 }
 

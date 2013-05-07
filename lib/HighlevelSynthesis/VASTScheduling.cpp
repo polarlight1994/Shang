@@ -402,12 +402,10 @@ void VASTScheduling::buildFlowDependencies(VASTValue *Dst, VASTSeqValue *Src,
   Value *V = Src->getLLVMValue();
   assert(V && "Cannot get the corresponding value!");
   assert((Src->num_fanins() == 1 || isa<PHINode>(V)) && "SeqVal not in SSA!");
-  VASTSchedUnit *SrcSU
-      // The static register is virtually defined at the entry slot. Because
-      // we only write it when the function exit. Whe we read is the value from
-      // last function execution.
-    = Src->getValType() == VASTSeqValue::StaticRegister ? G->getEntry()
-                                                        : getFlowDepSU(V);
+  // The static register is virtually defined at the entry slot. Because
+  // we only write it when the function exit. Whe we read is the value from
+  // last function execution.
+  VASTSchedUnit *SrcSU = Src->isStatic() ? G->getEntry() : getFlowDepSU(V);
 
   unsigned NumCylces = Src == Dst ? 0 : TNL->getDelay(Src, Dst).getNumCycles();
 

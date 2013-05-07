@@ -240,9 +240,8 @@ std::string VASTPort::getExternalDriverStr(unsigned InitVal) const {
 //----------------------------------------------------------------------------//
 
 VASTSeqValue *
-VASTModule::createSeqValue(VASTSelector *Selector, VASTSeqValue::Type T,
-                           unsigned Idx, Value *V) {
-  VASTSeqValue *SeqVal = new VASTSeqValue(Selector, T, Idx, V);
+VASTModule::createSeqValue(VASTSelector *Selector, unsigned Idx, Value *V) {
+  VASTSeqValue *SeqVal = new VASTSeqValue(Selector, Idx, V);
   SeqVals.push_back(SeqVal);
                               
   return SeqVal;
@@ -642,7 +641,9 @@ VASTInPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
 
 VASTOutPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
                                        PortTypes T /*= Others*/) {
-  VASTSelector *Sel = createSelector(Name, BitWidth, T == VASTModule::Finish, 0);
+  VASTSelector::Type SelTy = T == VASTModule::Finish ? VASTSelector::Enable
+                                                     : VASTSelector::Temp;
+  VASTSelector *Sel = createSelector(Name, BitWidth, 0, SelTy);
   VASTPort *Port = createPort(Sel);
 
   if (SpecialInPortEnd <= T && T < SpecialOutPortEnd) {
@@ -663,10 +664,10 @@ VASTOutPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
 }
 
 VASTRegister *VASTModule::createRegister(const Twine &Name, unsigned BitWidth,
-                                         unsigned InitVal /* = 0 */,
-                                         bool IsEnable /* = false */) {
+                                         unsigned InitVal, VASTSelector::Type T)
+{
   // Create the selector before we create the register.
-  VASTSelector *Sel = createSelector(Name, BitWidth, IsEnable, 0);
+  VASTSelector *Sel = createSelector(Name, BitWidth, 0, T);
   VASTRegister *Reg = new VASTRegister(Sel, InitVal);
 
   Registers.push_back(Reg);
@@ -675,13 +676,14 @@ VASTRegister *VASTModule::createRegister(const Twine &Name, unsigned BitWidth,
 }
 
 VASTSelector *VASTModule::createSelector(const Twine &Name, unsigned BitWidth,
-                                         bool IsEnable, VASTNode *Parent) {
+                                         VASTNode *Parent, VASTSelector::Type T)
+{
   // Allocate the entry from the symbol table.
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   // Make sure the each symbol is for 1 node only.
   assert(Entry.second == 0 && "Symbol had already taken!");
   VASTSelector *Sel
-    = new VASTSelector(Entry.getKeyData(), BitWidth, IsEnable, Parent);
+    = new VASTSelector(Entry.getKeyData(), BitWidth, T, Parent);
   Entry.second = Sel;
   // Put the newly create selector into the list, so that we can release it.
   Selectors.push_back(Sel);
