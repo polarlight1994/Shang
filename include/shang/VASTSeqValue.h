@@ -94,6 +94,7 @@ public:
   use_iterator use_begin() const { return Users.begin(); }
   use_iterator use_end() const { return Users.end(); }
   unsigned num_uses() const { return Users.size(); }
+  bool defines(VASTSeqValue *V) const { return Users.count(V); }
 
   typedef AssignmentVector::const_iterator const_iterator;
   const_iterator begin() const { return Assigns.begin(); }

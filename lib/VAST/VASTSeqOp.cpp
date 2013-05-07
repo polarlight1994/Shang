@@ -91,10 +91,14 @@ void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, VASTSelector *Sel,
 
   // Remember the defined SeqVal if it exists.
   if (Dst)  {
+    assert(Sel->defines(Dst)
+           && "Selector didn't defines Dst, forget to transfer?");
     assert(Dst->getBitWidth() == Sel->getBitWidth()
            && "Bitwidth not matched in assignment!");
     assert(std::find(Defs.begin(), Defs.end(), Dst) == Defs.end()
           && "Define the same seqval twice!");
+    assert(SrcIdx == Defs.size()
+           && "Define index and source index not synchronized!");
     Defs.push_back(Dst);
   }
 
