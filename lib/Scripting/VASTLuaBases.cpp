@@ -386,18 +386,6 @@ struct DatapathPrinter {
   DatapathPrinter(raw_ostream &OS) : OS(OS) {}
 
   void operator()(VASTNode *N) const {
-    if (VASTWire *W = dyn_cast<VASTWire>(N))  {
-      // Declare the wire if necessary.
-      W->printDecl(OS, false, "");
-
-      if (VASTValPtr V= W->getDriver()) {
-        OS << " = ";
-        V.printAsOperand(OS);
-      }
-
-      OS << ";\n";
-    }
-
     if (VASTExpr *E = dyn_cast<VASTExpr>(N))
       if (E->hasName()) {
         OS << "wire ";

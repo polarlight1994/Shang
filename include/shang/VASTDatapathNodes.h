@@ -275,8 +275,7 @@ inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
   return get()->getOperand(i).get().invert(isInverted());
 }
 
-class VASTWire :public VASTNamedValue, public VASTOperandList,
-                public ilist_node<VASTWire> {
+class VASTWire :public VASTNamedValue, public ilist_node<VASTWire> {
 public:
   typedef PointerUnion<VASTNode*, Value*> DataTy;
 private:
@@ -285,31 +284,15 @@ private:
   VASTValPtr getAsInlineOperandImpl();
 
   friend struct ilist_sentinel_traits<VASTWire>;
-  VASTWire() : VASTNamedValue(vastWire, 0, 0), VASTOperandList(0) {}
+  VASTWire() : VASTNamedValue(vastWire, 0, 0) {}
 
-  virtual void dropUses();
 public:
 
   VASTWire(const char *Name, unsigned BitWidth, DataTy Data = DataTy())
-    : VASTNamedValue(vastWire, Name, BitWidth), VASTOperandList(1), Data(Data) {
-    new (Operands) VASTUse(this);
-  }
-
-  void assign(VASTValPtr V) {
-    getOperand(0).set(V);
-  }
+    : VASTNamedValue(vastWire, Name, BitWidth), Data(Data) {}
 
   VASTNode *getParent() const { return Data.dyn_cast<VASTNode*>(); }
   Value *getValue() const { return Data.dyn_cast<Value*>();}
-
-  VASTValPtr getDriver() const { return getOperand(0).unwrap(); }
-
-  VASTExprPtr getExpr() const {
-    return getDriver() ? dyn_cast<VASTExprPtr>(getDriver()) : 0;
-  }
-
-  // Print the logic to the output stream.
-  void printAssignment(raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTWire *A) { return true; }
@@ -319,11 +302,6 @@ public:
 };
 
 typedef PtrInvPair<VASTWire> VASTWirePtr;
-
-template<>
-inline VASTExprPtr PtrInvPair<VASTWire>::getExpr() const {
-  return get()->getExpr().invert(isInverted());
-}
 
 // The container to hold all VASTExprs in data-path of the design.
 class DatapathContainer {

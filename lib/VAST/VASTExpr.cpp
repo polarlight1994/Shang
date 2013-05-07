@@ -414,65 +414,6 @@ void VASTExpr::dropUses() {
 }
 
 //----------------------------------------------------------------------------//
-// Helper function for Verilog RTL printing.
-
-static raw_ostream &printAssign(raw_ostream &OS, const VASTWire *Wire) {
-  return printAssign(OS, Wire->getName(), Wire->getBitWidth());
-}
-
-static void printCombMux(raw_ostream &OS, const VASTWire *W) {
-  assert(!W->getExpr().isInverted() && "Unexpected inverted mux!");
-  VASTExpr *E = W->getExpr().get();
-  unsigned NumOperands = E->size();
-  assert((NumOperands & 0x1) == 0 && "Expect even operand number for CombMUX!");
-
-  printCombMux(OS, E->getOperands(), W->getName(), W->getBitWidth());
-
-  // Assign the temporary signal to the wire.
-  printAssign(OS, W) << W->getName() << "_mux_wire;\n";
-}
-
-void VASTWire::dropUses() {
-  dropOperands();
-}
-
-void VASTWire::printAssignment(raw_ostream &OS) const {
-  VASTValPtr V = getDriver();
-  assert(V && "Cannot print the wire!");
-
-  if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
-    switch (Expr->getOpcode()) {
-    default: break;
-    case VASTExpr::dpAdd:
-      if (InstSubModForFU && !Expr->hasName() && printFUAdd(OS, Expr, this))
-        return;
-      break;
-    case VASTExpr::dpMul:
-    case VASTExpr::dpShl:
-    case VASTExpr::dpSRA:
-    case VASTExpr::dpSRL:
-    case VASTExpr::dpSGT:
-    case VASTExpr::dpUGT:
-      if (InstSubModForFU && !Expr->hasName() && printBinFU(OS, Expr, this))
-        return;
-      break;
-    case VASTExpr::dpMux: printCombMux(OS, this); return;
-    }
-  }
-
-  printAssign(OS, this);
-  V.printAsOperand(OS);
-  OS << ";\n";
-}
-
 VASTValPtr VASTWire::getAsInlineOperandImpl() {
-  if (VASTValPtr V = getDriver()) {
-    // Can the expression be printed inline?
-    if (VASTExprPtr E = dyn_cast<VASTExprPtr>(V)) {
-      if (E->isInlinable()) return E.getAsInlineOperand();
-    } else
-      return V.getAsInlineOperand();
-  }
-
   return this;
 }

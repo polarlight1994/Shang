@@ -123,18 +123,7 @@ void VASTExprBuilder::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
   }
 
   VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
-  if (!Expr) {
-    if (VASTWire *W = dyn_cast_or_null<VASTWire>(V.get()))
-      if (VASTValPtr Driver = W->getDriver()) {
-        // Be careful of the zero-width symbol.
-        if (Driver->getBitWidth())
-          // Compute the bitmask of underlying expression if name is actually
-          // stripped.
-          calculateBitMask(Driver.invert(V.isInverted()), KnownZeros, KnownOnes);
-      }
-
-    return;
-  }
+  if (!Expr) return;
 
   switch(Expr->getOpcode()) {
   default: return;

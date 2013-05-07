@@ -504,17 +504,9 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
   // If Define Value is immediate or symbol, skip it.
   if (!isa<VASTWire>(DepTree) && !isa<VASTExpr>(DepTree)) return;
 
-  if (VASTWire *W = dyn_cast<VASTWire>(DepTree)) {
-      // Strip the wrapper and try again, also ignore the loop.
-      // if (Src.get() != Cache.Dst)
-      if (VASTValPtr Src = W->getDriver()) {
-        extractTimingPaths(Cache, ReadSlots, W->getDriver().get());
-        return;
-      }
-
-    // Src may be the return_value of the submodule.
+  // Src may be the return_value of the submodule.
+  if (VASTWire *W = dyn_cast<VASTWire>(DepTree))
     if (Cache.generateSubmoduleConstraints(W)) return;  
-  }
 
   Cache.annotatePathInterval(DepTree, ReadSlots);
 }

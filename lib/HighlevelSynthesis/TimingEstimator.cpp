@@ -49,19 +49,6 @@ void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
         continue;
       }
 
-      VASTWire *W = cast<VASTWire>(Node);
-      SrcDelayInfo CurInfo;
-      if (VASTValPtr V= W->getDriver()) {
-        accumulateDelayThu(V.get(), W, 0, W->getBitWidth(), 0, CurInfo,
-                            AccumulateZeroDelay);
-        // It looks like that all the operands are constant.
-        if (CurInfo.empty()) continue;
-
-        bool inserted = PathDelay.insert(std::make_pair(W, CurInfo)).second;
-        assert(inserted && "We are visiting the same Expr twice?");
-        (void) inserted;
-      }
-
       continue;
     }
 
