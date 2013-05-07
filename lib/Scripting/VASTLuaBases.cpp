@@ -533,13 +533,6 @@ VASTSymbol *VASTModule::getOrCreateSymbol(const Twine &Name, unsigned BitWidth) 
   return cast<VASTSymbol>(V);
 }
 
-VASTWire *VASTModule::assign(VASTWire *W, VASTValPtr V) {
-  // TODO: Replace the W by the new value.
-  if (W->getDriver() != V) W->assign(V);
-
-  return W;
-}
-
 VASTSeqInst *
 VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
                        VASTValPtr GuardCnd, Value *V, unsigned Latency) {

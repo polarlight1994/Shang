@@ -300,8 +300,6 @@ public:
 
   void viewGraph() const;
 
-  VASTWire *assign(VASTWire *W, VASTValPtr V);
-
   // Fine-grain Control-flow creation functions.
   // Create a SeqOp that contains NumOps operands, please note that the predicate
   // operand is excluded from NumOps.
