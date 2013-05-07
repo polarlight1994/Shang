@@ -313,7 +313,18 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
 static std::string GetObjectName(const VASTSelector *Sel) {
   std::string Name;
   raw_string_ostream OS(Name);
-  OS << " *" << Sel->getName() << "* ";
+
+  if (const VASTBlockRAM *RAM = dyn_cast<VASTBlockRAM>(Sel->getParent())) {
+    OS << " *"
+      // BlockRam name with prefix
+      << getFUDesc<VFUBRAM>()->Prefix
+      << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << "* *"
+      // Or simply the name of the output register.
+      << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
+      << "* ";
+  } else
+    OS << " *" << Sel->getName() << "* ";
+
   return OS.str();
 }
 
@@ -321,20 +332,10 @@ static std::string GetObjectName(const VASTValue *V) {
   std::string Name;
   raw_string_ostream OS(Name);
   if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
-    // The block RAM should be printed as Prefix + ArrayName in the script.
-    if (const VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(V)) {
-      if (const VASTBlockRAM *RAM = dyn_cast<VASTBlockRAM>(SeqVal->getParent())) {
-        OS << " *"
-          // BlockRam name with prefix
-          << getFUDesc<VFUBRAM>()->Prefix
-          << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << "* *"
-          // Or simply the name of the output register.
-          << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
-          << "* ";
-        return OS.str();
-      }
-    }
+    if (const VASTSeqValue *SV = dyn_cast<VASTSeqValue>(NV))
+      return GetObjectName(SV->getSelector());
 
+    // The block RAM should be printed as Prefix + ArrayName in the script.
     if (const char *N = NV->getName()) {
       OS << " *" << N << "* ";
       return OS.str();
