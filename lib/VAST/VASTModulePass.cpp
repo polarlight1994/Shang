@@ -306,21 +306,20 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
       VASTValPtr Operand = getAsOperandImpl(CExpr->getOperand(0));
       assert(getValueSizeInBits(V) == Operand->getBitWidth()
              && "Cast between types with different size found!");
-      return Operand;
+      return indexVASTExpr(V, Operand);
     }
     }
   }
 
   if (UndefValue *UDef = dyn_cast<UndefValue>(V)) {
-    unsigned SizeInBit = getValueSizeInBits(UDef);
-    // TEMPORARY HACK: Create random value for UndefValue.
-    // TODO: Create 'x' for UndefValue.
-    return VM->createUDef(SizeInBit);
+    unsigned SizeInBits = getValueSizeInBits(UDef);
+    Twine WrapperName = "Undefine" + utostr_32(SizeInBits) + "w";
+    return indexVASTExpr(V, VM->addWire(WrapperName, SizeInBits, UDef));
   }
 
   if (ConstantPointerNull *PtrNull = dyn_cast<ConstantPointerNull>(V)) {
     unsigned SizeInBit = getValueSizeInBits(PtrNull);
-    return getOrCreateImmediate(APInt::getNullValue(SizeInBit));
+    return indexVASTExpr(V, getOrCreateImmediate(APInt::getNullValue(SizeInBit)));
   }
 
   llvm_unreachable("Unhandle value!");

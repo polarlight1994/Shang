@@ -97,13 +97,6 @@ void VASTNamedValue::printDecl(raw_ostream &OS, bool declAsRegister,
                                const char *Terminator) const {
   PrintDecl(OS, getName(), getBitWidth(), declAsRegister, Terminator);
 }
-//===----------------------------------------------------------------------===//
-VASTUDef::VASTUDef(unsigned Size) : VASTValue(vastUDef, Size) {}
-
-void
-VASTUDef::printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const {
-  OS << getBitWidth() << "'bx";
-}
 
 //===----------------------------------------------------------------------===//
 VASTUse::VASTUse(VASTNode *U, VASTValPtr V) : User(*U), V(V) {

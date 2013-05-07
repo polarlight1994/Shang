@@ -277,14 +277,6 @@ VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {
   return M;
 }
 
-VASTUDef *VASTModule::createUDef(unsigned Size) {
-  VASTUDef *&UDef = UDefMap[Size];
-
-  if (UDef == 0) UDef = new VASTUDef(Size);
-
-  return UDef;
-}
-
 VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
                               VASTWire::DataTy Data) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
@@ -369,14 +361,14 @@ void VASTModule::reset() {
 
   // Release the datapath after all other contexts released.
   Datapath->reset();
-  DeleteContainerSeconds(UDefMap);
   DeleteContainerPointers(Ports);
   DeleteContainerPointers(Submodules);
 }
 
 VASTModule::~VASTModule() {
   delete Datapath;
-  DeleteContainerSeconds(UDefMap);
+  DeleteContainerPointers(Ports);
+  DeleteContainerPointers(Submodules);
 }
 
 namespace {

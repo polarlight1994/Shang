@@ -425,6 +425,9 @@ void VASTWire::printDecl(raw_ostream &OS) const {
     VASTNamedValue::printDecl(OS, false, " = ");
     if (isa<GlobalVariable>(V))
       OS << "(`gv" << ShangMangle(V->getName()) << ')';
+    else if (isa<UndefValue>(V))
+      OS << getBitWidth() << "'bx";
+
     OS << ";\n";
   } else if (getParent() && !use_empty())
     // Print the ouput wire for the submodules.
