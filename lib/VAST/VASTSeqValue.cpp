@@ -264,6 +264,10 @@ void VASTSelector::synthesisSelector(VASTExprBuilder &Builder) {
   SmallVector<VASTValPtr, 16> EnablePreds;
 
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    VASTValPtr FIVal = I->first;
+    if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(FIVal))
+      if (V->getSelector() == this) continue;
+
     Fanin *FI = 0;
     if (!isEnable()) {
       FaninPreds.clear();
@@ -295,7 +299,7 @@ void VASTSelector::synthesisSelector(VASTExprBuilder &Builder) {
 
     VASTValPtr CurPred = Builder.buildOrExpr(FaninPreds, 1);
     FI->Pred.set(CurPred);
-    FI->FI.set(I->first);
+    FI->FI.set(FIVal);
     Fanins.push_back(FI);
   }
 
