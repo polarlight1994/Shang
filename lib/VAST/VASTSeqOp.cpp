@@ -169,7 +169,7 @@ unsigned VASTSeqOp::getSlotNum() const { return getSlot()->SlotNum; }
 
 VASTValPtr VASTSeqOp::getSlotActive() const {
   if (S.getInt())
-    return getSlot()->getActive();
+    return getSlot()->getActive().unwrap();
 
   return VASTValPtr();
 }

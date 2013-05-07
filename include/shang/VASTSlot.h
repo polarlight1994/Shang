@@ -135,7 +135,7 @@ public:
   const char *getName() const;
   // Getting the relative signals.
   VASTRegister *getRegister() const;
-  VASTValPtr getActive() const { return SlotActive; }
+  VASTValPtr getActive() const { return SlotActive.unwrap(); }
   VASTUse &getActive() { return SlotActive; }
   VASTUse &getPred() { return SlotPred; }
 

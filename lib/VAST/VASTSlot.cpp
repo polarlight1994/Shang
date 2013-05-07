@@ -50,7 +50,6 @@ void VASTSlot::createSignals(VASTModule *VM) {
 void VASTSlot::copySignals(VASTSlot *S) {
   // Finish slot alias with the start slot.
   SlotReg.set(S->SlotReg);
-  SlotActive.set(S->SlotActive);
 }
 
 BasicBlock *VASTSlot::getParent() const {
