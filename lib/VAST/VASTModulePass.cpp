@@ -287,9 +287,8 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
       VASTMemoryBus *Bus = getMemBus(PortNum);
       unsigned StartOffset = Bus->getStartOffset(GV);
       VASTImmediate *Imm = getOrCreateImmediate(StartOffset, SizeInBits);
-      VASTWire *W = VM->addWire(WrapperName, SizeInBits);
-      W->assign(Imm);
-      return indexVASTExpr(GV, W);
+      // FIXME: Annotate the GV to the Immediate.
+      return indexVASTExpr(GV, Imm);
     }
     
     // If the GV is assigned to the memory port 0, create a wrapper wire for it.
