@@ -26,14 +26,14 @@ using namespace llvm;
 VASTSlot::VASTSlot(unsigned slotNum, BasicBlock *ParentBB,  VASTValPtr Pred,
                    bool IsSubGrp)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
-    SlotReady(this, 0), SlotPred(this, Pred), SlotNum(slotNum),
+    SlotPred(this, Pred), SlotNum(slotNum),
     IsSubGrp(IsSubGrp) {
   Contents.ParentBB = ParentBB;
 }
 
 VASTSlot::VASTSlot(unsigned slotNum)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
-    SlotReady(this, 0), SlotPred(this, VASTImmediate::True), SlotNum(slotNum),
+    SlotPred(this, VASTImmediate::True), SlotNum(slotNum),
     IsSubGrp(false) {
   Contents.ParentBB = 0;
 }
@@ -46,9 +46,6 @@ void VASTSlot::createSignals(VASTModule *VM) {
   VASTRegister *R = VM->createRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0);
   SlotReg.set(VM->createSeqValue(R->getSelector(), VASTSeqValue::Slot, SlotNum));
 
-  VASTWire *Ready = VM->addWire(SlotName + "Ready", 1);
-  SlotReady.set(Ready);
-
   VASTWire *Active = VM->addWire(SlotName + "Active", 1);
   SlotActive.set(Active);
 }
@@ -56,7 +53,6 @@ void VASTSlot::createSignals(VASTModule *VM) {
 void VASTSlot::copySignals(VASTSlot *S) {
   // Finish slot alias with the start slot.
   SlotReg.set(S->SlotReg);
-  SlotReady.set(S->SlotReady);
   SlotActive.set(S->SlotActive);
 }
 

@@ -44,7 +44,6 @@ private:
   // The relative signal of the slot: Slot register, Slot active and Slot ready.
   VASTUse SlotReg;
   VASTUse SlotActive;
-  VASTUse SlotReady;
   VASTUse SlotPred;
 
   // The link to other slots.
@@ -64,7 +63,7 @@ private:
            bool IsSubGrp);
 
   VASTSlot() : VASTNode(vastSlot), SlotReg(this), SlotActive(this),
-    SlotReady(this), SlotPred(this), SlotNum(0), IsSubGrp(true) {}
+    SlotPred(this), SlotNum(0), IsSubGrp(true) {}
 
   friend struct ilist_sentinel_traits<VASTSlot>;
 
@@ -136,7 +135,6 @@ public:
   const char *getName() const;
   // Getting the relative signals.
   VASTRegister *getRegister() const;
-  VASTValue *getReady() const { return cast<VASTValue>(SlotReady); }
   VASTValue *getActive() const { return cast<VASTValue>(SlotActive); }
   VASTUse &getPred() { return SlotPred; }
 

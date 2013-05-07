@@ -116,7 +116,6 @@ void ControlLogicSynthesis::buildSlotReadyLogic(VASTSlot *S) {
 
   // All signals should be 1 before the slot is ready.
   VASTValPtr ReadyExpr = Builder->buildAndExpr(Ops, 1);
-  VM->assign(cast<VASTWire>(S->getReady()), ReadyExpr);
   // The slot is activated when the slot is enable and all waiting signal is
   // ready.
   VM->assign(cast<VASTWire>(S->getActive()),
