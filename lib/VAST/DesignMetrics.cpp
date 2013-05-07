@@ -128,10 +128,10 @@ VASTValPtr DesignMetricsImpl::getAsOperandImpl(Value *Op,
   unsigned NumBits = Builder.getValueSizeInBits(Op);
 
   // Else we need to create a leaf node for the expression tree.
-  VASTLLVMValue *ValueOp
-    = DPContainer.getAllocator().Allocate<VASTLLVMValue>();
+  VASTWire *ValueOp
+    = DPContainer.getAllocator().Allocate<VASTWire>();
     
-  new (ValueOp) VASTLLVMValue(Op, NumBits);
+  new (ValueOp) VASTWire("", NumBits, Op);
 
   // Remember the newly create VASTLLVMValue, so that it will not be created
   // again.

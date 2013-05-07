@@ -40,12 +40,8 @@ MinimalDatapathContext::getAsOperandImpl(Value *Op, bool GetAsInlineOperand) {
   }
 
   // Else we need to create a leaf node for the expression tree.
-  VASTLLVMValue *ValueOp = new (Datapath.getAllocator()) VASTLLVMValue(Op, NumBits);
-
-  // Remember the newly create VASTLLVMValue, so that it will not be created
-  // again.
-  indexVASTExpr(Op, ValueOp);
-  return ValueOp;
+  llvm_unreachable("Cannot create VASTValPtr for Value!");
+  return VASTValPtr();
 }
 
 void MinimalDatapathContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {

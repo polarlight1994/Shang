@@ -277,26 +277,6 @@ VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {
   return M;
 }
 
-VASTWire *VASTModule::createWrapperWire(const Twine &Name, unsigned SizeInBits,
-                                        VASTValPtr V) {
-  Twine WrapperName = Name + "_wrapper";
-  // Reuse the old wire if we had create one.
-  VASTWire *W = lookupSymbol<VASTWire>(WrapperName);
-  if (W == 0) {
-    W = addWire(WrapperName, SizeInBits, true);
-    if (V) W->assign(V);
-  }
-
-  return W;
-}
-
-VASTWire *VASTModule::createWrapperWire(GlobalVariable *GV, unsigned SizeInBits){
-  std::string WrapperName = "gv_" + ShangMangle(GV->getName());
-  VASTLLVMValue *ValueOp
-    = new (Datapath->getAllocator()) VASTLLVMValue(GV, SizeInBits);
-  return createWrapperWire(WrapperName, SizeInBits, ValueOp);
-}
-
 VASTUDef *VASTModule::createUDef(unsigned Size) {
   VASTUDef *&UDef = UDefMap[Size];
 
@@ -306,12 +286,12 @@ VASTUDef *VASTModule::createUDef(unsigned Size) {
 }
 
 VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
-                              bool IsWrapper, VASTNode *Parent) {
+                              VASTWire::DataTy Data) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   // Allocate the wire and the use.
 
-  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, IsWrapper, Parent);
+  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, Data);
   Entry.second = Wire;
   Wires.push_back(Wire);
 
@@ -413,6 +393,10 @@ struct DatapathPrinter {
       if (VASTValPtr V= W->getDriver()) {
         OS << " = ";
         V.printAsOperand(OS);
+      } else if (Value *V = W->getValue()) {
+        // Print the symbol of the global variable.
+        if (isa<GlobalVariable>(V))
+          OS << "(`gv" << ShangMangle(V->getName()) << ')';
       }
 
       OS << ";\n";
@@ -663,7 +647,7 @@ void VASTModule::print(raw_ostream &OS) const {
 
 VASTInPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
                                      PortTypes T /*= Others*/) {
-  VASTWire *Wire = addWire(Name, BitWidth, false);
+  VASTWire *Wire = addWire(Name, BitWidth);
   VASTPort *Port = createPort(Wire);
 
   if (T < SpecialInPortEnd) {

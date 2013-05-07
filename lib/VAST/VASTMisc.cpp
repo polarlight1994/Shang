@@ -106,24 +106,6 @@ VASTUDef::printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const {
 }
 
 //===----------------------------------------------------------------------===//
-VASTLLVMValue::VASTLLVMValue(Value *V, unsigned Size)
-  : VASTValue(vastLLVMValue, Size)
-{
-  Contents.LLVMValue = V;
-}
-
-void VASTLLVMValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
-                                       unsigned LB) const {
-  if (isa<GlobalVariable>(getValue())) {
-    assert(LB == 0 && UB == getBitWidth() && "Cannot print bitslice of GV!");
-    OS << "(`gv" << ShangMangle(getValue()->getName()) << ')';
-    return;
-  }
-
-  OS << "LLVM IR " << *getValue() << "<Dont know how to print the value!>";
-}
-
-//===----------------------------------------------------------------------===//
 VASTUse::VASTUse(VASTNode *U, VASTValPtr V) : User(*U), V(V) {
   linkUseToUser();
 }

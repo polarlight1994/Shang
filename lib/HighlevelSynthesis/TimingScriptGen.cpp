@@ -504,13 +504,12 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
   if (!isa<VASTWire>(DepTree) && !isa<VASTExpr>(DepTree)) return;
 
   if (VASTWire *W = dyn_cast<VASTWire>(DepTree)) {
-    if (W->isWrapper()) {
       // Strip the wrapper and try again, also ignore the loop.
       // if (Src.get() != Cache.Dst)
-      if (VASTValPtr Src = W->getDriver())
+      if (VASTValPtr Src = W->getDriver()) {
         extractTimingPaths(Cache, ReadSlots, W->getDriver().get());
-      return;
-    }
+        return;
+      }
 
     // Src may be the return_value of the submodule.
     if (Cache.generateSubmoduleConstraints(W)) return;  

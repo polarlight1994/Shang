@@ -50,7 +50,6 @@ public:
     vastFirstValueType = vastImmediate,
     vastSymbol,
     vastUDef,
-    vastLLVMValue,
     vastExpr,
     vastWire,
     vastSeqValue,
@@ -537,8 +536,7 @@ class VASTNamedValue : public VASTValue {
 protected:
   VASTNamedValue(VASTTypes T, const char *Name, unsigned BitWidth)
     : VASTValue(T, BitWidth) {
-    assert((T == vastSymbol || T == vastWire || T == vastSeqValue
-            || T == vastLLVMValue)
+    assert((T == vastSymbol || T == vastWire || T == vastSeqValue)
            && "Bad DeclType!");
     Contents.Name = Name;
   }
@@ -548,6 +546,7 @@ protected:
   void printAsOperandImpl(raw_ostream &OS) const {
     printAsOperandImpl(OS, getBitWidth(), 0);
   }
+
 public:
   const char *getName() const { return Contents.Name; }
 
@@ -561,8 +560,7 @@ public:
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSymbol ||
            A->getASTType() == vastWire ||
-           A->getASTType() == vastSeqValue ||
-           A->getASTType() == vastLLVMValue;
+           A->getASTType() == vastSeqValue;
   }
 };
 

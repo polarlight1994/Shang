@@ -282,10 +282,7 @@ public:
                                unsigned InitVal = 0, bool IsEnable = false);
 
   VASTWire *addWire(const Twine &Name, unsigned BitWidth,
-                    bool IsWrapper = false, VASTNode *Parent = 0);
-  VASTWire *createWrapperWire(const Twine &Name, unsigned SizeInBits,
-                              VASTValPtr V = VASTValPtr());
-  VASTWire *createWrapperWire(GlobalVariable *GV, unsigned SizeInBits);
+                    VASTWire::DataTy Data = VASTWire::DataTy());
 
   VASTUDef *createUDef(unsigned Size);
 

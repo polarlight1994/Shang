@@ -282,17 +282,18 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
       return indexVASTExpr(GV, getOrCreateImmediate(0, SizeInBits));
 
     assert(ID.getFUType() == VFUs::MemoryBus && "Bad FU type!");
+    const std::string WrapperName = ShangMangle(GV->getName());
     if (unsigned PortNum = ID.getFUNum()) {
       VASTMemoryBus *Bus = getMemBus(PortNum);
       unsigned StartOffset = Bus->getStartOffset(GV);
       VASTImmediate *Imm = getOrCreateImmediate(StartOffset, SizeInBits);
-      VASTWire *W = VM->createWrapperWire(ShangMangle(GV->getName()), SizeInBits);
+      VASTWire *W = VM->addWire(WrapperName, SizeInBits);
       W->assign(Imm);
       return indexVASTExpr(GV, W);
     }
     
     // If the GV is assigned to the memory port 0, create a wrapper wire for it.
-    return indexVASTExpr(GV, VM->createWrapperWire(GV, SizeInBits));
+    return indexVASTExpr(GV, VM->addWire(WrapperName, SizeInBits, GV));
   }
 
   if (GEPOperator *GEP = dyn_cast<GEPOperator>(V))

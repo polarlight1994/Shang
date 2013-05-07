@@ -470,10 +470,8 @@ VASTValPtr VASTWire::getAsInlineOperandImpl() {
     // Can the expression be printed inline?
     if (VASTExprPtr E = dyn_cast<VASTExprPtr>(V)) {
       if (E->isInlinable()) return E.getAsInlineOperand();
-    } else if (!isWrapper()) {
-      assert(!isa<VASTLLVMValue>(V.get()) && "Cannot inline VASTLLVMValue!");
+    } else
       return V.getAsInlineOperand();
-    }
   }
 
   return this;

@@ -15,6 +15,8 @@
 
 #include "shang/VASTNodeBases.h"
 
+#include "llvm/IR/Value.h"
+#include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
@@ -24,7 +26,6 @@
 
 namespace llvm {
 class Value;
-class VASTModule;
 
 class VASTImmediate : public VASTValue, public FoldingSetNode  {
   const APInt Int;
@@ -142,20 +143,6 @@ public:
   static inline bool classof(const VASTUDef *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastUDef;
-  }
-};
-
-// Wrapper for the LLVM values.
-class VASTLLVMValue : public VASTValue {
-  void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
-public:
-  VASTLLVMValue(Value *V, unsigned Size);
-  Value *getValue() const { return Contents.LLVMValue; }
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTLLVMValue *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastLLVMValue;
   }
 };
 
@@ -290,7 +277,10 @@ inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
 
 class VASTWire :public VASTNamedValue, public VASTOperandList,
                 public ilist_node<VASTWire> {
-  PointerIntPair<VASTNode*, 1, bool> Data;
+public:
+  typedef PointerUnion<VASTNode*, Value*> DataTy;
+private:
+  DataTy Data;
 
   VASTValPtr getAsInlineOperandImpl();
 
@@ -300,10 +290,8 @@ class VASTWire :public VASTNamedValue, public VASTOperandList,
   virtual void dropUses();
 public:
 
-  VASTWire(const char *Name, unsigned BitWidth, bool IsWrapper = false,
-           VASTNode *Parent = 0)
-    : VASTNamedValue(vastWire, Name, BitWidth), VASTOperandList(1),
-      Data(Parent, IsWrapper) {
+  VASTWire(const char *Name, unsigned BitWidth, DataTy Data = DataTy())
+    : VASTNamedValue(vastWire, Name, BitWidth), VASTOperandList(1), Data(Data) {
     new (Operands) VASTUse(this);
   }
 
@@ -311,8 +299,8 @@ public:
     getOperand(0).set(V);
   }
 
-  bool isWrapper() const { return Data.getInt(); }
-  VASTNode *getParent() const { return Data.getPointer(); }
+  VASTNode *getParent() const { return Data.dyn_cast<VASTNode*>(); }
+  Value *getValue() const { return Data.dyn_cast<Value*>();}
 
   VASTValPtr getDriver() const { return getOperand(0).unwrap(); }
 
