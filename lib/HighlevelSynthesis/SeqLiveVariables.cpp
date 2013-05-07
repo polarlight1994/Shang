@@ -163,10 +163,10 @@ void SeqLiveVariables::verifyAnalysis() const {
     UnionMask.clear();
     OverlappedMask.clear();
 
-    typedef VASTSelector::const_iterator iterator;
-    for (iterator DI = Sel->begin(), DE = Sel->end(); DI != DE; ++DI) {
-      if (VASTSeqValue *V = (*DI).getDst())
-        VIs.insert(getVarInfo(V));
+    typedef VASTSelector::def_iterator def_iterator;
+    for (def_iterator DI = Sel->def_begin(), DE = Sel->def_end(); DI != DE; ++DI) {
+      VASTSeqValue *V = *DI;
+      VIs.insert(getVarInfo(V));
     }
 
     typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
