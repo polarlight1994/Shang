@@ -119,7 +119,7 @@ public:
   }
 };
 
-// Represent value in the sequential logic.
+// Represent values, in SSA form, in the sequential logic.
 class VASTSeqValue : public VASTNamedValue, public ilist_node<VASTSeqValue> {
 public:
   enum Type {

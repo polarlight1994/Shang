@@ -229,8 +229,8 @@ void VASTSeqCtrlOp::print(raw_ostream &OS) const {
 //----------------------------------------------------------------------------//
 VASTSlotCtrl::VASTSlotCtrl(VASTSlot *S, VASTNode *N)
   : VASTSeqOp(vastSlotCtrl, S, false, 0), Ptr() {
-  if (VASTSlot *S = dyn_cast<VASTSlot>(N)) Ptr = S;
-  else                                     Ptr = cast<VASTValue>(N);
+  if (VASTSlot *Slot = dyn_cast<VASTSlot>(N)) Ptr = Slot;
+  else                                        Ptr = cast<VASTValue>(N);
 }
 
 bool VASTSlotCtrl::isBranch() const { return Ptr.is<VASTSlot*>(); }
