@@ -485,15 +485,8 @@ void VASTModule::printModuleDecl(raw_ostream &OS) const {
 void VASTModule::printSignalDecl(raw_ostream &OS) const {
   typedef WireVector::const_iterator const_wire_iterator;
   // Print the symbol of the global variable.
-  for (const_wire_iterator I = Wires.begin(), E = Wires.end(); I != E; ++I) {
-    const VASTWire *W = I;
-    if (Value *V = W->getValue()) {
-      W->printDecl(OS, false, " = ");
-      if (isa<GlobalVariable>(V))
-        OS << "(`gv" << ShangMangle(V->getName()) << ')';
-      OS << ";\n";
-    }
-  }
+  for (const_wire_iterator I = Wires.begin(), E = Wires.end(); I != E; ++I)
+    I->printDecl(OS);
 
   typedef RegisterVector::const_iterator const_reg_iterator;
   for (const_reg_iterator I = Registers.begin(), E = Registers.end();

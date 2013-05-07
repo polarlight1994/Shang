@@ -294,6 +294,8 @@ public:
   VASTNode *getParent() const { return Data.dyn_cast<VASTNode*>(); }
   Value *getValue() const { return Data.dyn_cast<Value*>();}
 
+  void printDecl(raw_ostream &OS) const;
+
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTWire *A) { return true; }
   static inline bool classof(const VASTNode *A) {

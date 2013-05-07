@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "shang/VASTDatapathNodes.h"
+#include "shang/Utilities.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
@@ -416,4 +417,13 @@ void VASTExpr::dropUses() {
 //----------------------------------------------------------------------------//
 VASTValPtr VASTWire::getAsInlineOperandImpl() {
   return this;
+}
+
+void VASTWire::printDecl(raw_ostream &OS) const {
+  if (Value *V = getValue()) {
+    VASTNamedValue::printDecl(OS, false, " = ");
+    if (isa<GlobalVariable>(V))
+      OS << "(`gv" << ShangMangle(V->getName()) << ')';
+    OS << ";\n";
+  }
 }
