@@ -313,7 +313,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
 
   if (UndefValue *UDef = dyn_cast<UndefValue>(V)) {
     unsigned SizeInBits = getValueSizeInBits(UDef);
-    Twine WrapperName = "Undefine" + utostr_32(SizeInBits) + "w";
+    std::string WrapperName = "Undefine" + utostr_32(SizeInBits) + "w";
     return indexVASTExpr(V, VM->addWire(WrapperName, SizeInBits, UDef));
   }
 
