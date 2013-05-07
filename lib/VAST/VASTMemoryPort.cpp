@@ -56,7 +56,7 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
     VASTInPort *RData = VM->addInputPort(getRDataName(Idx), getDataWidth());
     addFanout(RData->getValue());
   } else
-    addFanout(VM->addWire(getRDataName(Idx), getDataWidth()));
+    addFanout(VM->addWire(getRDataName(Idx), getDataWidth(), this));
 
   // The write ports.
   VASTSelector *WEn = VM->createSelector(getWEnName(Idx), 1, true, Parent);

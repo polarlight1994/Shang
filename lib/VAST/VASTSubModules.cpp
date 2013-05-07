@@ -57,7 +57,8 @@ void VASTBlockRAM::addPorts(VASTModule *VM) {
   addFanin(RAddr);
   // No need to worry about timing of the output port, because the corresponding
   // datapath are supposed to be single cycle.
-  VASTWire *ReadDataA = VM->addWire(BRamArrayName + "_rdata0w", getWordSize());
+  VASTWire *ReadDataA
+    = VM->addWire(BRamArrayName + "_rdata0w", getWordSize(), this);
   addFanout(ReadDataA);
 
   VASTSelector *WAddr
@@ -231,7 +232,7 @@ VASTSelector *VASTSubModule::createStartPort(VASTModule *VM) {
 }
 
 VASTWire *VASTSubModule::createFinPort(VASTModule *VM) {
-  FinPort = VM->addWire(getPortName("fin"), 1);
+  FinPort = VM->addWire(getPortName("fin"), 1, this);
   addFanout(FinPort);
   return FinPort;
 }
