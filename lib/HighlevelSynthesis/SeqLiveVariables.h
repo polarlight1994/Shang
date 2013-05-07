@@ -48,15 +48,9 @@ public:
   struct VarInfo : public ilist_node<VarInfo> {
     // TODO: For the VASTSeqVal definition that does not corresponding to
     // an instruction, identify them by a extend PseudoSourceValue.
-    PointerIntPair<Value*, 1, bool> V;
+    Value *V;
 
-    explicit VarInfo(Value *V = 0) : V(V, 0) {}
-
-    bool hasMultiDef() const { return V.getInt(); }
-
-    Value *getValue() const { return V.getPointer(); }
-
-    void setMultiDef() { V.setInt(true); }
+    explicit VarInfo(Value *V = 0) : V(V) {}
 
     // Test the Read slot is reachable from the definition.
     // Please note that even the ReadSlotNum is equal to a define slot, it is
@@ -122,38 +116,16 @@ private:
   typedef ArrayRef<VASTSlot*> PathVector;
   void handleSlot(VASTSlot *S, PathVector PathFromEntry);
   void handleUse(VASTSeqValue *Use, VASTSlot *UseSlot, PathVector PathFromEntry);
-  void handleDef(VASTLatch D);
 
   void initializeLandingSlots();
   void initializeOverlappedSlots();
 
-  struct VarName {
-    VASTSeqValue *Dst;
-    VASTSlot *S;
-
-    /*implicit*/ VarName(const VASTLatch &U);
-
-    VarName(VASTSeqValue *Dst, VASTSlot *S) : Dst(Dst), S(S) {}
-
-    bool operator<(const VarName &RHS) const {
-      if (Dst < RHS.Dst) return true;
-      else if (Dst > RHS.Dst) return false;
-
-      return S < RHS.S;
-    }
-  };
-
-  // The value information for each definitions.
-  std::map<VarName, VarInfo*> VarInfos;
+  // The value information for each definitions. Please note that the
+  // VASTSeqValue is supposed to be in SSA form.
+  std::map<const VASTSeqValue*, VarInfo*> VarInfos;
   iplist<VarInfo> VarList;
   typedef iplist<VarInfo>::iterator var_iterator;
   typedef iplist<VarInfo>::const_iterator const_var_iterator;
-  // Get the corresponding VarInfo, create the VarInfo if necessary.
-  VarInfo *getVarInfo(VarName VN) const {
-    std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(VN);
-    assert(at != VarInfos.end() && "Value use before define!");
-    return at->second;
-  }
 
   // The Slots the writing a specific SeqValue.
   std::map<VASTSeqValue*, SparseBitVector<> > WrittenSlots;
@@ -167,9 +139,12 @@ private:
   static void dumpVarInfoSet(SmallPtrSet<VarInfo*, 8> VIs);
 
 public:
-
-  VarInfo *getVarInfo(const VASTLatch &L) const {
-    return getVarInfo(VarName(L));
+  // Get the corresponding VarInfo, create the VarInfo if necessary.
+  VarInfo *getVarInfo(const VASTSeqValue *Val) const {
+    std::map<const VASTSeqValue*, VarInfo*>::const_iterator
+      at = VarInfos.find(Val);
+    assert(at != VarInfos.end() && "Value use before define!");
+    return at->second;
   }
 };
 }

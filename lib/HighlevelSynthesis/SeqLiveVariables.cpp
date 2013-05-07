@@ -32,14 +32,8 @@
 
 using namespace llvm;
 
-SeqLiveVariables::VarName::VarName(const VASTLatch &U)
-  : Dst(U.getDst()), S(U.Op->getSlot()) {}
-
-
 void SeqLiveVariables::VarInfo::print(raw_ostream &OS) const {
-  if (hasMultiDef()) OS << "  [Multi-Def]";
-
-  if (Value *Val = getValue()) Val->print(OS);
+  if (V) V->print(OS);
 
   OS << "\n  Defined in Slots: ";
   ::dump(Defs, OS);
@@ -161,48 +155,48 @@ void SeqLiveVariables::verifyAnalysis() const {
 
   // The liveness of the variable information derived from the same SeqVal should
   // not overlap.
-  //typedef VASTModule::selector_iterator seqval_iterator;
-  //for (seqval_iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
-  //  VASTSelector *V = I;
-  //  // Reset the context.
-  //  VIs.clear();
-  //  UnionMask.clear();
-  //  OverlappedMask.clear();
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = VM->selector_begin(), E = VM->selector_end(); I != E; ++I) {
+    VASTSelector *Sel = I;
+    // Reset the context.
+    VIs.clear();
+    UnionMask.clear();
+    OverlappedMask.clear();
 
-  //  typedef VASTSelector::const_iterator iterator;
-  //  for (iterator DI = V->begin(), DE = V->end(); DI != DE; ++DI) {
-  //    std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
-  //    if (at != VarInfos.end()) VIs.insert(getVarInfo(*DI));
-  //  }
+    typedef VASTSelector::const_iterator iterator;
+    for (iterator DI = Sel->begin(), DE = Sel->end(); DI != DE; ++DI) {
+      if (VASTSeqValue *V = (*DI).getDst())
+        VIs.insert(getVarInfo(V));
+    }
 
-  //  typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
-  //  for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
-  //    VarInfo *VInfo = *VI;
+    typedef SmallPtrSet<VarInfo*, 8>::iterator vi_iterator;
+    for (vi_iterator VI = VIs.begin(), VE = VIs.end(); VI != VE; ++VI) {
+      VarInfo *VInfo = *VI;
 
-  //    // FIXME: Check the overlapped slots more carefully.
-  //    if (UnionMask.intersects(VInfo->Alives)
-  //        || OverlappedMask.intersects(VInfo->Alives)
-  //        || UnionMask.intersects(VInfo->Overlappeds)) {
-  //      dbgs() << "Current VASTSeqVal: " << V->getName() << '\n';
-  //      dumpVarInfoSet(VIs);
-  //      dbgs() << "Overlap slots:\n";
+      // FIXME: Check the overlapped slots more carefully.
+      if (UnionMask.intersects(VInfo->Alives)
+          || OverlappedMask.intersects(VInfo->Alives)
+          || UnionMask.intersects(VInfo->Overlappeds)) {
+        dbgs() << "Current VASTSeqVal: " << Sel->getName() << '\n';
+        dumpVarInfoSet(VIs);
+        dbgs() << "Overlap slots:\n";
 
-  //      SparseBitVector<> Overlap = UnionMask & VInfo->Alives;
-  //      ::dump(Overlap, dbgs());
+        SparseBitVector<> Overlap = UnionMask & VInfo->Alives;
+        ::dump(Overlap, dbgs());
 
-  //      dbgs() << "All slots:\n";
-  //      ::dump(UnionMask, dbgs());
+        dbgs() << "All slots:\n";
+        ::dump(UnionMask, dbgs());
 
-  //      llvm_unreachable("VarInfo of the same SeqVal alive slot overlap!");
-  //    }
+        llvm_unreachable("VarInfo of the same SeqVal alive slot overlap!");
+      }
 
-  //    // Construct the union.
-  //    UnionMask |= VInfo->Alives;
-  //    UnionMask |= VInfo->Kills;
-  //    UnionMask |= VInfo->DefKills;
-  //    OverlappedMask |= VInfo->Overlappeds;
-  //  }
-  //}
+      // Construct the union.
+      UnionMask |= VInfo->Alives;
+      UnionMask |= VInfo->Kills;
+      UnionMask |= VInfo->DefKills;
+      OverlappedMask |= VInfo->Overlappeds;
+    }
+  }
 }
 
 bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
@@ -346,10 +340,6 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
     // The Slot Register are also used.
     if (SeqOp->getSlot()->isSynthesized())
       ReadAtSlot.insert(SeqOp->getSlot()->getValue());
-
-    // Process defines.
-    for (unsigned i = 0, e = SeqOp->getNumDefs(); i != e; ++i)
-      handleDef(SeqOp->getSrc(i));
   }
 
   // Process uses.
@@ -359,45 +349,10 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
 }
 
 void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
-  typedef VASTModule::seqop_iterator seqop_iterator;
-
-  // Remeber the VarInfo defined
-  std::map<Value*, VarInfo*> InstVarInfo;
-  for (seqop_iterator I = VM->seqop_begin(), E = VM->seqop_end(); I != E; ++I) {
-    VASTSeqOp *SeqOp = I;
-    Value *V = SeqOp->getValue();
-
-    if (V == 0) continue;
-
-    VASTSlot *S = SeqOp->getSlot();
-    unsigned SlotNum = S->SlotNum;
-
-    if (SeqOp->getNumDefs() == 0) continue;
-
-    assert(SeqOp->getNumDefs() == 1 && "Multi-definition not supported yet!");
-    assert((!isa<VASTSeqInst>(SeqOp)
-            || cast<VASTSeqInst>(SeqOp)->getSeqOpType() != VASTSeqInst::Launch)
-            && "Launch Inst should not define anything!");
-    VASTLatch Def = SeqOp->getSrc(0);
-
-    VarInfo *&VI = InstVarInfo[V];
-    if (VI == 0) {
-      VI = new VarInfo(V);
-      VarList.push_back(VI);
-    } else
-      VI->setMultiDef();
-
-    // Set the defined slot.
-    VI->initializeDefSlot(SlotNum);
-
-    WrittenSlots[Def.getDst()].set(SlotNum);
-    VarInfos[Def] = VI;
-  }
-
   // Also add the VarInfo for the static registers.
-  typedef VASTModule::seqval_iterator seqval_iterator;
-  for (seqval_iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I)
-  {
+  typedef VASTModule::seqval_iterator iterator;
+
+  for (iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
     VASTSeqValue *V = I;
 
     if (V->getValType() == VASTSeqValue::StaticRegister) {
@@ -408,28 +363,25 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
       VASTSlot *S = VM->getStartSlot();
       VI->initializeDefSlot(S->SlotNum);
 
-      VarName VN(V, S);
-      VarInfos[VN] = VI;
+      VarInfos[V] = VI;
       WrittenSlots[V].set(S->SlotNum);
-    } else if (V->getValType() == VASTSeqValue::Slot) {
-      unsigned SlotNum = V->getSlotNum();
+      continue;
+    } 
 
-      VarInfo *VI = new VarInfo(0);
-      VarList.push_back(VI);
+    VarInfo *VI = new VarInfo(0);
+    VarList.push_back(VI);
 
-      typedef VASTSeqValue::fanin_iterator iterator;
-      for (iterator DI = V->fanin_begin(), DE = V->fanin_end(); DI != DE; ++DI) {
-        VASTLatch U = *DI;
-        VASTSlot *DefSlot = U.getSlot();
-        if (DefSlot->SlotNum == SlotNum) continue;
+    typedef VASTSeqValue::fanin_iterator iterator;
+    for (iterator DI = V->fanin_begin(), DE = V->fanin_end(); DI != DE; ++DI) {
+      VASTLatch U = *DI;
+      VASTSlot *DefSlot = U.getSlot();
 
-        // Initialize the definition slot.
-        VI->initializeDefSlot(DefSlot->SlotNum);
-        WrittenSlots[V].set(DefSlot->SlotNum);
-        VarName VN(V, DefSlot);
-        VarInfos[VN] = VI;
-      }
+      // Initialize the definition slot.
+      VI->initializeDefSlot(DefSlot->SlotNum);
+      WrittenSlots[V].set(DefSlot->SlotNum);
     }
+
+    VarInfos[V] = VI;
   }
 }
 
@@ -490,7 +442,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
                << '\n');
 
   // Get the corresponding VarInfo defined at DefSlot.
-  VarInfo *VI = getVarInfo(VarName(Use, DefSlot));
+  VarInfo *VI = getVarInfo(Use);
 
   if (UseSlot == DefSlot) {
     assert(UseSlot->IsSubGrp && UseSlot->getParent() == 0
@@ -575,21 +527,6 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   DEBUG(VI->verifyKillAndAlive();VI->dump(); dbgs() << '\n');
 }
 
-void SeqLiveVariables::handleDef(VASTLatch Def) {
-  VarInfo *&V = VarInfos[Def];
-  if (V) return;
-
-  // Create and initialize the VarInfo if necessary.
-  V = new VarInfo();
-  VarList.push_back(V);
-
-  unsigned SlotNum = Def.getSlotNum();
-  V->initializeDefSlot(SlotNum);
-
-  // Remember the written slots.
-  WrittenSlots[Def.getDst()].set(SlotNum);
-}
-
 bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot *S) {
   std::map<VASTSeqValue*, SparseBitVector<> >::iterator at
     = WrittenSlots.find(V);
@@ -601,30 +538,8 @@ bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot *S) {
 unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
                                               VASTSlot *ReadSlot,
                                               STGShortestPath *SSP) const {
-  const VarInfo *VI = 0;
+  const VarInfo *VI = getVarInfo(V);
   unsigned ReadSlotNum = ReadSlot->SlotNum;
-  bool AnyFound = false;
-
-  typedef VASTSeqValue::const_fanin_iterator iterator;
-  for (iterator DI = V->fanin_begin(), DE = V->fanin_end(); DI != DE; ++DI) {
-    std::map<VarName, VarInfo*>::const_iterator at = VarInfos.find(*DI);
-    if (at == VarInfos.end()) continue;
-
-    const VarInfo *CurVI = at->second;
-    AnyFound = true;
-
-    if (!CurVI->isSlotReachable(ReadSlotNum)) continue;
-
-    // No need to check multiple VI reachable to this slot. We will check it
-    // in verifyAnalysis.
-    VI = CurVI;
-    break;
-  }
-
-  assert(AnyFound && "LiveVariable not exisited!");
-
-  // The SeqVal is kill before readslot.
-  if (VI == 0) return STGShortestPath::Inf;
 
   // Calculate the Shortest path distance from all live-in slot.
   unsigned IntervalFromLanding = STGShortestPath::Inf;
