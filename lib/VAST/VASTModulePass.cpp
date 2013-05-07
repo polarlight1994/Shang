@@ -118,15 +118,16 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     }
   }
 
-  VASTSeqValue *getOrCreateSeqVal(Value *V) {
-    SmallString<36> S;
+  static StringRef translatePtr2Str(void *V, SmallString<36> &S) {
     S.push_back('_');
     intToStr(intptr_t(V), S);
     S.push_back('_');
-    // DirtyHack: Terminate the string manually.
-    S.push_back(0);
+    return S.str();
+  }
 
-    return getOrCreateSeqValImpl(V, S.data());
+  VASTSeqValue *getOrCreateSeqVal(Value *V) {
+    SmallString<36> S;
+    return getOrCreateSeqValImpl(V, translatePtr2Str(V, S));
   }
 
   VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand = true);
@@ -313,8 +314,8 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand
 
   if (UndefValue *UDef = dyn_cast<UndefValue>(V)) {
     unsigned SizeInBits = getValueSizeInBits(UDef);
-    std::string WrapperName = "Undefine" + utostr_32(SizeInBits) + "w";
-    return indexVASTExpr(V, VM->addWire(WrapperName, SizeInBits, UDef));
+    SmallString<36> S;
+    return indexVASTExpr(V, VM->addWire(translatePtr2Str(V, S), SizeInBits, UDef));
   }
 
   if (ConstantPointerNull *PtrNull = dyn_cast<ConstantPointerNull>(V)) {
