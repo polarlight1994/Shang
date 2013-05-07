@@ -255,8 +255,7 @@ VASTMemoryBus *VASTModule::createDefaultMemBus() {
 
 VASTMemoryBus *VASTModule::createMemBus(unsigned Num, unsigned AddrWidth,
                                         unsigned DataWidth) {
-  VASTMemoryBus *Bus = Datapath->getAllocator().Allocate<VASTMemoryBus>();
-  new (Bus) VASTMemoryBus(Num, AddrWidth, DataWidth);
+  VASTMemoryBus *Bus = new VASTMemoryBus(Num, AddrWidth, DataWidth);
   Bus->addPorts(this);
   Submodules.push_back(Bus);
   return Bus;
