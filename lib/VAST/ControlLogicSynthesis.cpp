@@ -118,8 +118,13 @@ void ControlLogicSynthesis::buildSlotReadyLogic(VASTSlot *S) {
   VASTValPtr ReadyExpr = Builder->buildAndExpr(Ops, 1);
   // The slot is activated when the slot is enable and all waiting signal is
   // ready.
-  VM->assign(cast<VASTWire>(S->getActive()),
-             Builder->buildAndExpr(S->getValue(), ReadyExpr, 1));
+  assert(!S->IsSubGrp && "Unexpected subgroup!");
+  typedef VASTSlot::subgrp_iterator subgrp_iterator;
+  for (subgrp_iterator SI = S->subgrp_begin(), SE = S->subgrp_end();
+        SI != SE; ++SI) {
+    VASTSlot *Child = *SI;
+    Child->getActive().set(Builder->buildAndExpr(S->getValue(), ReadyExpr, 1));
+  }
 }
 
 void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {

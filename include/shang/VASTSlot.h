@@ -135,7 +135,8 @@ public:
   const char *getName() const;
   // Getting the relative signals.
   VASTRegister *getRegister() const;
-  VASTValue *getActive() const { return cast<VASTValue>(SlotActive); }
+  VASTValPtr getActive() const { return SlotActive; }
+  VASTUse &getActive() { return SlotActive; }
   VASTUse &getPred() { return SlotPred; }
 
   void addOperation(VASTSeqOp *D) { Operations.push_back(D); }

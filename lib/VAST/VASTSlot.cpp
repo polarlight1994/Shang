@@ -45,9 +45,6 @@ void VASTSlot::createSignals(VASTModule *VM) {
   std::string SlotName = "Slot" + utostr_32(SlotNum);
   VASTRegister *R = VM->createRegister(SlotName + "r", 1, SlotNum == 0 ? 1 : 0);
   SlotReg.set(VM->createSeqValue(R->getSelector(), VASTSeqValue::Slot, SlotNum));
-
-  VASTWire *Active = VM->addWire(SlotName + "Active", 1);
-  SlotActive.set(Active);
 }
 
 void VASTSlot::copySignals(VASTSlot *S) {
