@@ -93,6 +93,7 @@ public:
   typedef SmallPtrSet<VASTSeqValue*, 8>::const_iterator def_iterator;
   def_iterator def_begin() const { return Defs.begin(); }
   def_iterator def_end() const { return Defs.end(); }
+  bool def_empty() const { return Defs.empty(); }
   unsigned num_defs() const { return Defs.size(); }
   bool defines(VASTSeqValue *V) const { return Defs.count(V); }
 
