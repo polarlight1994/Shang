@@ -55,7 +55,7 @@ private:
 
   PointerIntPair<VASTNode*, 2, Type> Parent;
   const uint8_t BitWidth;
-  SmallPtrSet<VASTSeqValue*, 8> Users;
+  SmallPtrSet<VASTSeqValue*, 8> Defs;
 
   friend class VASTSeqValue;
   void addUser(VASTSeqValue *V);
@@ -90,11 +90,11 @@ public:
   bool isTemp() const { return Parent.getInt() == Temp; }
   bool isStatic() const { return Parent.getInt() == Static; }
 
-  typedef SmallPtrSet<VASTSeqValue*, 8>::const_iterator use_iterator;
-  use_iterator use_begin() const { return Users.begin(); }
-  use_iterator use_end() const { return Users.end(); }
-  unsigned num_uses() const { return Users.size(); }
-  bool defines(VASTSeqValue *V) const { return Users.count(V); }
+  typedef SmallPtrSet<VASTSeqValue*, 8>::const_iterator def_iterator;
+  def_iterator def_begin() const { return Defs.begin(); }
+  def_iterator def_end() const { return Defs.end(); }
+  unsigned num_defs() const { return Defs.size(); }
+  bool defines(VASTSeqValue *V) const { return Defs.count(V); }
 
   typedef AssignmentVector::const_iterator const_iterator;
   const_iterator begin() const { return Assigns.begin(); }

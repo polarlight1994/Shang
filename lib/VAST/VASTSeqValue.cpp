@@ -318,17 +318,17 @@ VASTNode *VASTSelector::getParent() const {
 }
 
 VASTSeqValue *VASTSelector::getSSAValue() const {
-  assert(num_uses() == 1 && "Not single assignment!");
-  return *Users.begin();
+  assert(num_defs() == 1 && "Not single assignment!");
+  return *Defs.begin();
 }
 
 void VASTSelector::addUser(VASTSeqValue *V) {
-  assert(!Users.count(V) && "User existed!");
-  Users.insert(V);
+  assert(!Defs.count(V) && "User existed!");
+  Defs.insert(V);
 }
 
 void VASTSelector::removeUser(VASTSeqValue *V) {
-  bool erased = Users.erase(V);
+  bool erased = Defs.erase(V);
   assert(erased && "V is not a user of the current selector!");
   (void) erased;
 }

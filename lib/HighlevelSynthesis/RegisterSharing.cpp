@@ -57,8 +57,8 @@ public:
   SeqLiveInterval() : Sel(0) { }
 
   SeqLiveInterval(VASTSelector *Sel, SeqLiveVariables *LVS) : Sel(Sel) {
-    typedef VASTSelector::use_iterator iterator;
-    for (iterator I = Sel->use_begin(), E = Sel->use_end(); I != E; ++I) {
+    typedef VASTSelector::def_iterator iterator;
+    for (iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
       const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*I);
       Alives |= LV->Alives;
       Alives |= LV->Kills;
