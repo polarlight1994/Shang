@@ -443,9 +443,6 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
     if (BasicBlock *BB = S->getParent()) OS << ", BB: " << BB->getName();
     OS << '\n';
 
-    // Print the logic of slot ready and active.
-    VASTOperandList::visitTopOrder(S->getActive(), Visited, Printer);
-
     // Print the logic of the datapath used by the SeqOps.
     for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
       VASTSeqOp *L = *I;

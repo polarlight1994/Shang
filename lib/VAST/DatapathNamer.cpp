@@ -114,9 +114,6 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
 
     typedef VASTSlot::const_op_iterator op_iterator;
 
-    // Print the logic of slot ready and active.
-    VASTOperandList::visitTopOrder(S->getActive(), Visited, N);
-
     // Print the logic of the datapath used by the SeqOps.
     for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
       VASTSeqOp *L = *I;
