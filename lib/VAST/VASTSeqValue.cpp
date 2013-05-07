@@ -205,7 +205,17 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
                                       const VASTModule *Mod,
                                       uint64_t InitVal) const {
 
-  if (empty()) return;
+  if (empty()) {
+    // Print the driver of the output ports.
+    if (isa<VASTOutPort>(getParent())) {
+      OS.always_ff_begin();
+      OS << getName()  << " <= "
+         << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false) << ";\n";
+      OS.always_ff_end();
+    }
+
+    return;
+  }
 
   // Print the data selector of the register.
   printSelector(OS);
