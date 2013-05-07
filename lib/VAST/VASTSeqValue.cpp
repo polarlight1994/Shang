@@ -27,7 +27,7 @@ using namespace llvm;
 //----------------------------------------------------------------------------//
 VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, bool IsEnable,
                            VASTNode *Node)
-  : VASTNode(vastSelector), Parent(Node), BitWidth(BitWidth), IsEnable(IsEnable),
+  : VASTNode(vastSelector), Parent(Node, IsEnable), BitWidth(BitWidth),
     EnableU(this) {
   Contents.Name = Name;
 }
@@ -304,13 +304,13 @@ void VASTSelector::synthesisSelector(VASTExprBuilder &Builder) {
 }
 
 void VASTSelector::setParent(VASTNode *N) {
-  assert(Parent == 0 && "Parent had already existed!");
-  Parent = N;
+  assert(Parent.getPointer() == 0 && "Parent had already existed!");
+  Parent.setPointer(N);
 }
 
 VASTNode *VASTSelector::getParent() const {
-  assert(Parent && "Unexpected null parent!");
-  return Parent;
+  assert(Parent.getPointer() && "Unexpected null parent!");
+  return Parent.getPointer();
 }
 
 VASTSeqValue *VASTSelector::getSSAValue() const {

@@ -47,9 +47,8 @@ private:
   VASTSelector(const VASTSelector&) LLVM_DELETED_FUNCTION;
   void operator=(const VASTSelector&) LLVM_DELETED_FUNCTION;
 
-  VASTNode *Parent;
+  PointerIntPair<VASTNode*, 1, bool> Parent;
   const uint8_t BitWidth;
-  const bool  IsEnable;
   SmallPtrSet<VASTSeqValue*, 8> Users;
 
   friend class VASTSeqValue;
@@ -79,7 +78,7 @@ public:
 
   const char *getName() const { return Contents.Name; }
   unsigned getBitWidth() const { return BitWidth; }
-  bool isEnable() const { return IsEnable; }
+  bool isEnable() const { return Parent.getInt(); }
 
   typedef SmallPtrSet<VASTSeqValue*, 8>::const_iterator use_iterator;
   use_iterator use_begin() const { return Users.begin(); }
@@ -196,8 +195,7 @@ private:
   friend struct ilist_sentinel_traits<VASTSeqValue>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
   VASTSeqValue()
-    : VASTNamedValue(vastSeqValue, 0, 0), Selector(0), V(0),
-      T(0), Idx(0) {}
+    : VASTNamedValue(vastSeqValue, 0, 0), Selector(0), V(0), T(0), Idx(0) {}
 
 public:
   VASTSeqValue(VASTSelector *Selector, Type T, unsigned Idx, Value *V);
