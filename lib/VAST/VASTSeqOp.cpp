@@ -232,9 +232,12 @@ void VASTSeqCtrlOp::print(raw_ostream &OS) const {
 
 //----------------------------------------------------------------------------//
 VASTSlotCtrl::VASTSlotCtrl(VASTSlot *S, VASTNode *N)
-  : VASTSeqOp(vastSlotCtrl, S, false, 0), Ptr() {
+  : VASTSeqOp(vastSlotCtrl, S, true, isa<VASTSlot>(N) ? 1 : 0), Ptr() {
   if (VASTSlot *Slot = dyn_cast<VASTSlot>(N)) Ptr = Slot;
   else                                        Ptr = cast<VASTValue>(N);
+
+  // Initialize the operand.
+  if (num_srcs()) new (src_begin() + 0) VASTUse(this, VASTImmediate::True);
 }
 
 bool VASTSlotCtrl::isBranch() const { return Ptr.is<VASTSlot*>(); }

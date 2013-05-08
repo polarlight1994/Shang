@@ -8,7 +8,23 @@
 //===----------------------------------------------------------------------===//
 //
 // This file implement the control logic synthesis pass.
+// The control logic synthesis pass implement (or, synthesize) the
+// state-transition graph (STG). Specifically, it create a 1 bit register to
+// represent each state in the STG and synthesize the transition conditions.
+// The transition conditions are further decompose to two part:
+//   1) Waiting condition.
+//   The condition that the current state is finish (for example we may have a
+//   state wait the divider finish) and it is ready to transit to the next state.
+//   2) Branching condition.
+//   The condition that select the correct next state.
 //
+// The waiting conditions are represented by the waiting VASTSlotCtrls while
+// the Branching conditions are represented by the branching VASTSlotCtrls.
+// During the control logic synthesis process, the waiting condition of a state
+// is the OR of all waiting signal of VASTSlotCtrls in that state.
+// At the same time, the branching condition to a given next state is the
+// guarding condition of the branching VASTSlotCtrl that targeting the specified
+// next state.
 //===----------------------------------------------------------------------===//
 
 #include "MinimalDatapathContext.h"
@@ -34,23 +50,20 @@ struct ControlLogicSynthesis : public VASTModulePass {
     Builder->orEqual(SlotReadys[S->getValue()][V], Cnd);
   }
 
-  void addSlotSucc(VASTSlot *S, VASTSeqValue *P, VASTValPtr Cnd) {
-    bool inserted
-      = SlotSuccs[S->getValue()][P].insert(std::make_pair(S, Cnd)).second;
-    assert(inserted && "Predicated value had already existed!");
+  void addSlotSucc(VASTSlot *S, VASTSlotCtrl *Br) {
+    SlotSuccs[S->getValue()].push_back(Br);
   }
 
-  typedef std::map<VASTSlot*, VASTValPtr> ConditionVector;
-  typedef std::map<VASTSeqValue*, ConditionVector> FUCtrlVecTy;
-  typedef FUCtrlVecTy::const_iterator const_fu_ctrl_it;
-  std::map<const VASTSeqValue*, FUCtrlVecTy> SlotSuccs;
+  typedef SmallVector<VASTSlotCtrl*, 4> SuccVecTy;
+  typedef SuccVecTy::const_iterator const_succ_it;
+  std::map<const VASTSeqValue*, SuccVecTy> SlotSuccs;
 
   typedef std::map<VASTValue*, VASTValPtr> FUReadyVecTy;
   typedef FUReadyVecTy::const_iterator const_fu_rdy_it;
   std::map<const VASTSeqValue*, FUReadyVecTy> SlotReadys;
 
-  const FUCtrlVecTy &getSlotSucc(const VASTSlot *S) {
-    std::map<const VASTSeqValue*, FUCtrlVecTy>::const_iterator at
+  const SuccVecTy &getSlotSucc(const VASTSlot *S) {
+    std::map<const VASTSeqValue*, SuccVecTy>::const_iterator at
       = SlotSuccs.find(S->getValue());
     assert(at != SlotSuccs.end() && "Slot do not have successor!");
     return at->second;
@@ -135,26 +148,26 @@ void ControlLogicSynthesis::buildSlotReadyLogic(VASTSlot *S) {
 }
 
 void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
-  typedef const_fu_ctrl_it succ_cnd_iterator;
-  typedef ConditionVector::const_iterator cnd_iterator;
-
   SmallVector<VASTValPtr, 2> LoopCndVector;
   VASTValPtr AlwaysTrue = VASTImmediate::True;
 
   assert(!S->succ_empty() && "Expect at least 1 next slot!");
-  const FUCtrlVecTy &NextSlots = getSlotSucc(S);
-  for (succ_cnd_iterator I = NextSlots.begin(),E = NextSlots.end(); I != E; ++I) {
-    VASTSeqValue *NextSlotReg = I->first;
+  const SuccVecTy &NextSlots = getSlotSucc(S);
+  for (const_succ_it I = NextSlots.begin(),E = NextSlots.end(); I != E; ++I) {
+    VASTSlotCtrl *Br = (*I);
+    VASTSeqValue *NextSlotReg = Br->getTargetSlot()->getValue();
     bool IsLoop = NextSlotReg == S->getValue();
-    const ConditionVector &Cnds = I->second;
-    for (cnd_iterator CI = Cnds.begin(), CE = Cnds.end(); CI != CE; ++CI) {
-      VASTValPtr Cnd = CI->second;
-      // Disable the current slot when we are not looping back.
-      if (IsLoop) LoopCndVector.push_back(Builder->buildNotExpr(Cnd));
+    VASTValPtr Cnd = Br->getPred();
 
-      // Build the assignment and update the successor branching condition.
-      VM->assignCtrlLogic(NextSlotReg, AlwaysTrue, CI->first, Cnd, true);
-    }
+    // Disable the current slot when we are not looping back.
+    if (IsLoop) LoopCndVector.push_back(Builder->buildNotExpr(Cnd));
+
+    VASTUse &U = Br->getSrc(0);
+    assert(isa<VASTSlotCtrl>(U.getUser()) && "Unexpected user!");
+    U.unlinkUseFromUser();
+
+    // Build the assignment and update the successor branching condition.
+    Br->addSrc(AlwaysTrue, 0, NextSlotReg);
   }
 
   // Disable the current slot. Do not export the definition of the assignment.
@@ -167,24 +180,15 @@ void ControlLogicSynthesis::collectControlLogicInfo(VASTSlot *S) {
 
   // We need to read the S->op_end() at every iteration because it may be
   // changed by removeOp.
-  for (op_iterator I = S->op_begin(); I != S->op_end(); /*++I*/) {
+  for (op_iterator I = S->op_begin(); I != S->op_end(); ++I) {
     if (VASTSlotCtrl *SeqOp = dyn_cast<VASTSlotCtrl>(*I)) {
       VASTValPtr Pred = SeqOp->getPred();
 
       if (SeqOp->isBranch())
-        addSlotSucc(S, SeqOp->getTargetSlot()->getValue(), Pred);
+        addSlotSucc(S, SeqOp);
       else
         addSlotReady(S, SeqOp->getWaitingSignal(), Pred);
-
-      // TODO: Do not remove these operation, so that we can build the control
-      // logic again after we reschedule the design.
-      // This SeqOp is not used any more.
-      I = S->removeOp(I);
-      VM->eraseSeqOp(SeqOp);
-      continue;
     }
-
-    ++I;
   }
 }
 
