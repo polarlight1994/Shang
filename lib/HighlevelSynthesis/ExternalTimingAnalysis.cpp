@@ -17,8 +17,10 @@
 //   {"from":<src-reg>,"to":<dst-reg>,"delay":<delay-in-nanosecond>}
 //
 //===----------------------------------------------------------------------===//
-/*
-#include "ExternalTimingAnalysis.h"
+
+#include "TimingNetlist.h"
+
+#include "shang/Passes.h"
 #include "shang/VASTModule.h"
 
 #include "llvm/ADT/SetOperations.h"
@@ -62,74 +64,90 @@ struct TempDir {
     //if (!Dirname.isEmpty()) Dirname.eraseFromDisk(true);
   }
 };
-}
 
+struct ExternalTimingAnalysis : public VASTModulePass {
+  VASTModule *VM;
+  TimingNetlist *TNL;
+  typedef TimingNetlist::PathTy PathTy;
+  typedef TimingNetlist::SrcDelayInfo SrcDelayInfo;
 
-raw_ostream &printAsLHS(raw_ostream &O, const VASTNamedValue *V,
-                        unsigned UB, unsigned LB) {
-  O << V->getName() << VASTValue::printBitRange(UB, LB, V->getBitWidth() > 1);
+  // Write the wrapper of the netlist.
+  void writeNetlist(raw_ostream &O) const;
 
-  return O;
-}
+  // Write the project file to perform the timing analysis.
+  void writeProjectScript(raw_ostream &O, const sys::Path &NetlistPath,
+                          const sys::Path &ExtractScript) const;
 
-static const VASTNamedValue *printScanChainLogic(raw_ostream &O,
-                                                 const VASTSeqValue *V,
-                                                 const VASTValue *LastV,
-                                                 unsigned Indent) {
-  unsigned Bitwidth = V->getBitWidth();
-  bool MultiBits = Bitwidth > 1;
+  void extractTimingForPair(raw_ostream &O, const VASTSeqValue *Dst,
+                            const VASTValue *Thu,
+                            const VASTSeqValue *Src) const;
 
-  if (!V->empty()) {
-    O.indent(Indent) << "if (read_netlist) begin\n";
-    // For each fanin, print the datapath, selected by the slot register.
-    O.indent(Indent + 2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
-    typedef VASTSeqValue::const_iterator fanin_iterator;
-    for (fanin_iterator FI = V->begin(), FE = V->end(); FI != FE; ++FI) {
-      VASTLatch U = *FI;
+  void extractTimingToDst(raw_ostream &O, const VASTSeqValue *Dst,
+                          const VASTValue *Thu, const SrcDelayInfo &Paths) const;
 
-      O.indent(Indent + 2) << '(' << U.getSlot()->getName() << "): begin ";
-      O << V->getName() << " <= ";
-      if (U->getASTType() == VASTNode::vastWire)
-        // Ignore the wrapper wire and print some random value.
-        O << intptr_t(VASTValPtr(U).getOpaqueValue());
-        else
-        VASTValPtr(U).printAsOperand(O);
-      O << "; end\n";
-    }
+  // Write the script to extract the timing analysis results from quartus.
+  void writeTimingExtractionScript(raw_ostream &O,
+                                   const sys::Path &ResultPath) const;
+  // Read the JSON file written by the timing extraction script.
+  bool readTimingAnalysisResult(const sys::Path &ResultPath);
+  bool readPathDelay(yaml::MappingNode *N);
 
-    O.indent(Indent + 2) << "endcase\n";
+  static char ID;
 
-    O.indent(Indent) << "end\n";
+  ExternalTimingAnalysis() : VASTModulePass(ID), VM(0), TNL(0) {
+    initializeExternalTimingAnalysisPass(*PassRegistry::getPassRegistry());
   }
 
-  // Active the scan chain shifting.
-  O.indent(Indent) << "if (shift) begin\n";
-
-  // Connect the last register to current register.
-  printAsLHS(O.indent(Indent + 2), V, Bitwidth, Bitwidth - 1) << " <= ";
-
-  if (LastV)
-    LastV->printAsOperand(O, 1, 0, false);
-  else // We are in the beginning of the chain.
-    O << "scan_chain_in";
-
-  O << ";\n";
-
-  // Shift the register.
-  if (MultiBits) {
-    printAsLHS(O.indent(Indent + 2), V, Bitwidth - 1, 0) << " <= ";
-    V->printAsOperand(O, Bitwidth, 1, false);    
-    O << ";\n";
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    VASTModulePass::getAnalysisUsage(AU);
+    AU.addRequiredTransitiveID(ControlLogicSynthesisID);
+    AU.addRequiredTransitive<TimingNetlist>();
+    AU.addRequiredTransitiveID(DatapathNamerID);
+    AU.setPreservesAll();
   }
 
-  O.indent(Indent) << "end\n";
-
-  O << '\n';
-
-  return V;
+  bool runOnVASTModule(VASTModule &VM);
+};
 }
 
-void ExternalTimingAnalysis::writeNetlist(raw_ostream &O) const {
+char ExternalTimingAnalysis::ID = 0;
+char &llvm::ExternalTimingAnalysisID = ExternalTimingAnalysis::ID;
+
+INITIALIZE_PASS_BEGIN(ExternalTimingAnalysis,
+                      "vast-ext-timing-analysis",
+                      "Perfrom External Timing Analysis",
+                      false, true)
+  INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
+  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
+INITIALIZE_PASS_END(ExternalTimingAnalysis,
+                    "vast-ext-timing-analysis",
+                    "Perfrom External Timing Analysis",
+                    false, true)
+
+void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {
+  // Read the result from the scripting engine.
+  const char *GlobalCodePath[] = { "FUs", "CommonTemplate" };
+  std::string GlobalCode = getStrValueFromEngine(GlobalCodePath);
+  Out << GlobalCode << '\n';
+
+  // Write buffers to output
+  VM->printModuleDecl(Out);
+  Out << "\n\n";
+  // Reg and wire
+  Out << "// Reg and wire decl\n";
+  VM->printSignalDecl(Out);
+  Out << "\n\n";
+  // Datapath
+  Out << "// Datapath\n";
+  VM->printDatapath(Out);
+
+  // Sequential logic of the registers.
+  VM->printSubmodules(Out);
+  VM->printRegisterBlocks(Out);
+
+  Out << "endmodule\n";
+  Out.flush();
 }
 
 void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
@@ -138,10 +156,11 @@ void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
                                                 const {
   O << "load_package flow\n"
        "load_package report\n"
-    << "project_new " << VM.getName() << " -overwrite\n"
+    << "project_new  -overwrite " << VM->getName()
+    << " -family \"Cyclone IV E\" -part \"EP4CE75F29C6\" \n"
     << "set_global_assignment -name FAMILY \"Cyclone IV E\"\n"
        "set_global_assignment -name DEVICE EP4CE75F29C6\n"
-       "set_global_assignment -name TOP_LEVEL_ENTITY " << VM.getName() << "_wapper\n"
+       "set_global_assignment -name TOP_LEVEL_ENTITY " << VM->getName() << "\n"
        "set_global_assignment -name SOURCE_FILE \""<< NetlistPath.str() <<"\"\n"
        //"set_global_assignment -name SDC_FILE @SDC_FILE@\n"
        "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
@@ -150,9 +169,10 @@ void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
        // Start the processes.
        "execute_module -tool map\n"
        "execute_module -tool fit -arg --early_timing_estimate\n";
-       "execute_module -tool sta -args {--report_script \""
-       << ExtractScript.str() << "\"}\n"
-       "project_close\n";
+       // "execute_module -tool fit\n"
+       // "execute_module -tool sta -args {--report_script \""
+       // << ExtractScript.str() << "\"}\n";
+       // "project_close\n";
 }
 static std::string getName(const VASTValue *V) {
   if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V))
@@ -220,18 +240,6 @@ void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
   // Open the file and start the array.
        "set JSONFile [open \"" << ResultPath.str() <<"\" w+]\n"
        "puts $JSONFile \"\\[\"\n";
-
-  typedef VASTModule::seqval_iterator iterator;
-  typedef VASTSeqValue::iterator fanin_iterator;
-  for (iterator I = VM.seqval_begin(), E = VM.seqval_end(); I != E; ++I) {
-    VASTSeqValue *SVal = I;    
-
-    for (fanin_iterator FI = SVal->begin(), FE = SVal->end(); FI != FE; ++FI) {
-      VASTValue *Thu = VASTValPtr(*FI).get();
-      if (const SrcDelayInfo *Src = TNL.getSrcInfo(Thu))
-        extractTimingToDst(O, SVal, Thu, *Src);
-    }
-  }
 
   // Close the array and the file object.
   O << "puts $JSONFile \"\\{\\\"from\\\":0,\\\"to\\\":0,\\\"delay\\\":0\\}\"\n"
@@ -344,12 +352,15 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(const sys::Path &ResultPat
   return true;
 }
 
-bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
+bool ExternalTimingAnalysis::runOnVASTModule(VASTModule &M) {
+  TNL = &getAnalysis<TimingNetlist>();
+  VM = &M;
+
   TempDir Dir;
   std::string ErrorInfo;
 
   // Write the Nestlist and the wrapper.
-  sys::Path Netlist = Dir.buildPath(VM.getName(), ".sv");
+  sys::Path Netlist = Dir.buildPath(VM->getName(), ".sv");
   if (Netlist.empty()) return false;
 
   errs() << "Writing '" << Netlist.str() << "'... ";
@@ -364,7 +375,7 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
   errs() << " done. \n";
 
   // Write the SDC and the delay query script.
-  sys::Path TimingExtractTcl = Dir.buildPath(VM.getName(), "_extract.tcl");
+  sys::Path TimingExtractTcl = Dir.buildPath(VM->getName(), "_extract.tcl");
   if (TimingExtractTcl.empty()) return false;
 
   errs() << "Writing '" << TimingExtractTcl.str() << "'... ";
@@ -373,7 +384,7 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
 
   if (!ErrorInfo.empty())  return exitWithError(TimingExtractTcl);
 
-  sys::Path TimingExtractResult = Dir.buildPath(VM.getName(), "_result.json");
+  sys::Path TimingExtractResult = Dir.buildPath(VM->getName(), "_result.json");
   if (TimingExtractResult.empty()) return false;
 
   writeTimingExtractionScript(TimingExtractTclO, TimingExtractResult);
@@ -381,7 +392,7 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
   errs() << " done. \n";
 
   // Write the project script.
-  sys::Path PrjTcl = Dir.buildPath(VM.getName(), ".tcl");
+  sys::Path PrjTcl = Dir.buildPath(VM->getName(), ".tcl");
   if (PrjTcl.empty()) return false;
 
   errs() << "Writing '" << PrjTcl.str() << "'... ";
@@ -414,6 +425,5 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
   if (!readTimingAnalysisResult(TimingExtractResult))
     return false;
 
-  return true;
+  return false;
 }
-*/

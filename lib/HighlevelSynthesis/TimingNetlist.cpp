@@ -13,7 +13,6 @@
 
 #include "TimingNetlist.h"
 #include "TimingEstimator.h"
-#include "ExternalTimingAnalysis.h"
 
 #include "shang/VASTSubModules.h"
 #include "shang/VASTModule.h"
