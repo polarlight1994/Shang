@@ -132,7 +132,7 @@ ScheduleEmitter::ScheduleEmitter(VASTModule &VM, VASTSchedGraph &G)
 //===----------------------------------------------------------------------===//
 void ScheduleEmitter::clearUp(VASTSlot *S) {
   typedef VASTSlot::op_iterator op_iterator;
-  for (op_iterator I = S->op_begin(); I != S->op_end(); ++I) {
+  for (op_iterator I = S->op_begin(); I != S->op_end(); /*++I*/) {
     VASTSeqOp *SeqOp = *I;
 
     // Delete the dead Exprs used by this SeqOp.
@@ -147,8 +147,8 @@ void ScheduleEmitter::clearUp(VASTSlot *S) {
         VM->recursivelyDeleteTriviallyDeadExprs(Child);
     }
 
-    SeqOp->clearParent();
-    VM.eraseSeqOp(*I);
+    I = S->removeOp(I);
+    VM.eraseSeqOp(SeqOp);
   }
 }
 
