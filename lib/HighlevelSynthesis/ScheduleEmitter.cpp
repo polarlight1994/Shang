@@ -290,11 +290,11 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
   if (PHINode *PN = dyn_cast<PHINode>(Op->getValue()))
     ToSlot = getOrCreateSubGroup(PN->getParent(), Pred, ToSlot);
 
-  VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Pred, Op->getNumSrcs(),
+  VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Pred, Op->num_srcs(),
                                       Op->getValue(), Op->getSeqOpType());
   typedef VASTSeqOp::op_iterator iterator;
 
-  for (unsigned i = 0, e = Op->getNumSrcs(); i < e; ++i) {
+  for (unsigned i = 0, e = Op->num_srcs(); i < e; ++i) {
     const VASTLatch &L = Op->getSrc(i);
     VASTSeqValue *Dst = L.getDst();
     VASTValPtr Src = RetimedOperands[i];

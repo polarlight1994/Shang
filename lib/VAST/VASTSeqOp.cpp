@@ -85,7 +85,7 @@ VASTSeqValue *VASTSeqOp::getDef(unsigned No) {
 void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, VASTSelector *Sel,
                        VASTSeqValue *Dst) {
   assert(Src && "Bad source value!");
-  assert(SrcIdx < getNumSrcs() && "Bad source index!");
+  assert(SrcIdx < num_srcs() && "Bad source index!");
 
   new (src_begin() + SrcIdx) VASTUse(Sel, Src);
 

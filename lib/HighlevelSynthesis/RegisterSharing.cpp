@@ -583,11 +583,11 @@ void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From) {
     VASTSeqOp *Op = L.Op;
 
     VASTSeqInst *NewInst
-      = VM->lauchInst(Op->getSlot(), Op->getPred(), Op->getNumSrcs(),
+      = VM->lauchInst(Op->getSlot(), Op->getPred(), Op->num_srcs(),
       Op->getValue(), cast<VASTSeqInst>(Op)->getSeqOpType());
     typedef VASTSeqOp::op_iterator iterator;
 
-    for (unsigned i = 0, e = Op->getNumSrcs(); i < e; ++i) {
+    for (unsigned i = 0, e = Op->num_srcs(); i < e; ++i) {
       VASTSeqValue *DstVal = Op->getSrc(i).getDst();
       VASTSelector *DstSel = Op->getSrc(i).getSelector();
       // Redirect the target of the assignment.

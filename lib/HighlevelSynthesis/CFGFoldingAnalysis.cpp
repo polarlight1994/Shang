@@ -132,7 +132,7 @@ void CFGFoldingAnalysis::handleCommonSU(unsigned FoldingSize, VASTSchedUnit *SU,
 
   unsigned FoldedMuxDelay = 0, OriginMuxDelay = 0;
 
-  for (unsigned i = 0, e = Op->getNumSrcs(); i != e; ++i) {
+  for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
     VASTLatch L = Op->getSrc(i);
     VASTSeqValue *Dst = L.getDst();
 

@@ -125,8 +125,8 @@ public:
 
   // Return the used values for the register assignments, the predicate is
   // excluded.
-  unsigned getNumSrcs() const { return size() - 1; }
-  bool src_empty() const { return getNumSrcs() == 0; }
+  unsigned num_srcs() const { return size() - 1; }
+  bool src_empty() const { return num_srcs() == 0; }
 
   // Provide the < operator to support set of VASTSeqDef.
   bool operator<(const VASTSeqOp &RHS) const;

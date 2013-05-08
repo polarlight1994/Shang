@@ -62,7 +62,7 @@ struct alap_less {
 
 static bool hasLinearOrder(VASTSeqOp *Op) {
   if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op)) {
-    if (SeqInst->getNumSrcs() == 0) return false;
+    if (SeqInst->num_srcs() == 0) return false;
 
     // Ignore the Latch, they will not cause a resource conflict.
     if (SeqInst->getSeqOpType() == VASTSeqInst::Latch) return false;
@@ -73,7 +73,7 @@ static bool hasLinearOrder(VASTSeqOp *Op) {
     if (I->mayReadFromMemory()) return true;
 
     // The launch operation to enable a module also requires linear order.
-    VASTSelector *Sel = SeqInst->getSrc(SeqInst->getNumSrcs() - 1).getSelector();
+    VASTSelector *Sel = SeqInst->getSrc(SeqInst->num_srcs() - 1).getSelector();
     return Sel->isEnable();
   }
 
@@ -95,7 +95,7 @@ void BasicLinearOrderGenerator::addLinOrdEdge() {
 
       if (Op == 0 || !hasLinearOrder(Op)) continue;
 
-      VASTSelector *Sel = Op->getSrc(Op->getNumSrcs() - 1).getSelector();
+      VASTSelector *Sel = Op->getSrc(Op->num_srcs() - 1).getSelector();
 
       // Assign the linear order.
       ConflictList[Sel].push_back(SU);

@@ -417,9 +417,9 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) 
   typedef std::set<VASTSeqValue*>::iterator iterator;
   unsigned MuxDelay = 0;
 
-  assert(Op->getNumSrcs() && "No operand for flow dependencies!");
+  assert(Op->num_srcs() && "No operand for flow dependencies!");
 
-  for (unsigned i = 0, e = Op->getNumSrcs(); i != e; ++i) {
+  for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
     VASTLatch L = Op->getSrc(i);
     VASTValue *FI = VASTValPtr(L).get();
     // FIXME: Assert the selector is in SSA form!

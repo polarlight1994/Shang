@@ -188,7 +188,7 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
     typedef VASTModule::seqop_iterator seqop_iterator;
     for (seqop_iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I)
       if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(I))
-        if (SeqInst->getNumSrcs() > 1)
+        if (SeqInst->num_srcs() > 1)
           Worklist.push_back(SeqInst);
 
     while (!Worklist.empty()) {
@@ -220,7 +220,7 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
 void SeqSelectorSynthesis::descomposeSeqInst(VASTSeqInst *SeqInst) {
   unsigned NumDefs = SeqInst->getNumDefs();
 
-  for (unsigned i = 0, e = SeqInst->getNumSrcs(); i != e; ++i) {
+  for (unsigned i = 0, e = SeqInst->num_srcs(); i != e; ++i) {
     VASTLatch L = SeqInst->getSrc(i);
 
     VASTSeqInst *NewSeqInst = VM->lauchInst(L.getSlot(), L.getPred(), 1,
@@ -316,7 +316,7 @@ bool SeqSelectorSynthesis::pipelineFanins(VASTSelector *Sel) {
     DEBUG(dbgs() << "Orignal FI:\t";
     L.Op->dump(););
 
-    assert(L.Op->getNumSrcs() == 1
+    assert(L.Op->num_srcs() == 1
            && "Cannot pipeline FI in the SeqOp with more than 1 sources!");
 
     L.replaceUsedBy(NewFI);
