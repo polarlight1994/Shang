@@ -138,6 +138,7 @@ void ScheduleEmitter::clearUp(VASTSlot *S) {
     // Delete the dead Exprs used by this SeqOp.
     for (unsigned i = 0, e = SeqOp->size(); i != e; ++i) {
       VASTValue *V = SeqOp->getOperand(i).unwrap().get();
+
       SeqOp->getOperand(i).unlinkUseFromUser();
 
       if (!V->use_empty()) continue;

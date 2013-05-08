@@ -94,7 +94,7 @@ void BasicLinearOrderGenerator::addLinOrdEdge() {
       VASTSeqOp *Op = SU->getSeqOp();
 
       if (Op == 0 || !hasLinearOrder(Op)) continue;
-      
+
       VASTSelector *Sel = Op->getSrc(Op->getNumSrcs() - 1).getSelector();
 
       // Assign the linear order.
