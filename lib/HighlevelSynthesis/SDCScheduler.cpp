@@ -72,19 +72,18 @@ void BasicLinearOrderGenerator::addLinOrdEdge() {
     for (unsigned i = 0; i < SUs.size(); ++i) {
       VASTSchedUnit *SU = SUs[i];
 
-      VASTSeqOp *Op = SU->getSeqOp();
+      VASTSeqInst *SeqInst = dyn_cast_or_null<VASTSeqInst>(SU->getSeqOp());
 
       // Ignore the trivial operations.
-      if (Op == 0 || Op->getNumSrcs() == 0) continue;
+      if (SeqInst == 0 || SeqInst->getNumSrcs() == 0) continue;
 
       // Ignore the Latch, they will not cause a resource conflict.
-      if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op))
-        if (SeqInst->getSeqOpType() == VASTSeqInst::Latch) continue;
+      if (SeqInst->getSeqOpType() == VASTSeqInst::Latch) continue;
 
-      VASTSelector *Sel = Op->getSrc(Op->getNumSrcs() - 1).getSelector();
+      VASTSelector *Sel = SeqInst->getSrc(SeqInst->getNumSrcs() - 1).getSelector();
 
       // Ignore the common resource.
-      if (isa<VASTRegister>(Sel->getParent())) continue;
+      if (!Sel->isEnable()) continue;
 
       // Assign the linear order.
       ConflictList[Sel].push_back(SU);
