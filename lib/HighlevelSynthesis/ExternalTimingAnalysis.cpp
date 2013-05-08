@@ -153,7 +153,7 @@ void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
        "export_assignments\n"
        // Start the processes.
        "execute_module -tool map\n"
-       "execute_module -tool fit\n"
+       "execute_module -tool fit -arg --early_timing_estimate\n";
        "execute_module -tool sta -args {--report_script \""
        << ExtractScript.str() << "\"}\n"
        "project_close\n";
