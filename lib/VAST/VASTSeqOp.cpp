@@ -65,7 +65,10 @@ VASTSelector *VASTLatch::getSelector() const {
 }
 
 void VASTLatch::removeFromParent() {
-  getSelector()->eraseFanin(*this);
+  VASTNode &N = Op->getUseInteranal(No).getUser();
+
+  if (VASTSelector *Sel = dyn_cast<VASTSelector>(&N))
+    Sel->eraseFanin(*this);
 }
 
 //----------------------------------------------------------------------------//
