@@ -8,8 +8,9 @@
 //===----------------------------------------------------------------------===//
 //
 // This file implement the VASTSeqValue. The VASTSeqValue represent the value in
-// the sequential logic, it is not necessary SSA. The VASTSeqOp that define
-// the values is available from the VASTSeqValue.
+// the sequential logic, it is in SSA form.
+// This file also implement the VASTSelector, which defines VASTSeqValues by
+// its fanins.
 //
 //===----------------------------------------------------------------------===//
 
@@ -29,6 +30,11 @@ using namespace llvm;
 static cl::opt<bool> IgnoreTrivialLoops("shang-selector-ignore-trivial-loops",
   cl::desc("Ignore the trivial loops (R -> R) in the selector"),
   cl::init(true));
+
+static cl::opt<bool> IgnoreXFanins("shang-selector-ignore-x-fanins",
+  cl::desc("Ignore the undefined fanins (x) in the selector"),
+  cl::init(true));
+
 //----------------------------------------------------------------------------//
 VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
                            VASTNode *Node)
@@ -270,8 +276,15 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
 
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     VASTValPtr FIVal = I->first;
+
+    // Ignore the trivial loops.
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(FIVal))
       if (V->getSelector() == this && IgnoreTrivialLoops)
+        continue;
+
+    // Ignore the X values.
+    if (VASTWire *W = dyn_cast<VASTWire>(FIVal.get()))
+      if (W->isX() && IgnoreXFanins)
         continue;
 
     Fanin *FI = 0;

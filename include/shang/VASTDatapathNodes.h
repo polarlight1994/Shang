@@ -281,6 +281,8 @@ public:
 
   VASTNode *getParent() const { return Data.dyn_cast<VASTNode*>(); }
   Value *getValue() const { return Data.dyn_cast<Value*>();}
+  // Return true if the wire represents
+  bool isX() const;
 
   void printDecl(raw_ostream &OS) const;
 

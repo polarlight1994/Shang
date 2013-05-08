@@ -419,6 +419,12 @@ VASTValPtr VASTWire::getAsInlineOperandImpl() {
   return this;
 }
 
+bool VASTWire::isX() const {
+  Value *V = getValue();
+
+  return V && isa<UndefValue>(V);
+}
+
 void VASTWire::printDecl(raw_ostream &OS) const {
   if (use_empty()) return;
 
