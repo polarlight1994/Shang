@@ -73,6 +73,7 @@ private:
                             std::vector<const VASTSeqOp*> >
                    &CSEMap) const;
   bool getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const;
+  void printFanins(raw_ostream &OS, bool PrintEnable) const;
 public:
   VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
                Type T = Temp, VASTNode *Node = 0);

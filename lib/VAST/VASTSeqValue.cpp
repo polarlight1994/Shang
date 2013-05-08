@@ -181,10 +181,68 @@ void VASTSelector::addAssignment(VASTSeqOp *Op, unsigned SrcNo) {
   Assigns.push_back(L);
 }
 
+void VASTSelector::printFanins(raw_ostream &OS, bool PrintEnable) const {
+  typedef std::vector<const VASTSeqOp*> OrVec;
+  typedef std::map<VASTValPtr, OrVec> CSEMapTy;
+  typedef CSEMapTy::const_iterator it;
+
+  CSEMapTy CSEMap;
+
+  if (!buildCSEMap(CSEMap)) return;
+
+  // Create the temporary signal.
+  OS << "// Combinational MUX\n";
+
+  if (!isEnable())
+    OS << "reg " << VASTValue::printBitRange(getBitWidth(), 0, false)
+       << ' ' << getName() << "_selector_wire;\n";
+
+  if (PrintEnable)
+    OS << "reg " << ' ' << getName() << "_selector_enable = 0;\n\n";
+
+  // Print the mux logic.
+  OS << "always @(*)begin  // begin mux logic\n";
+  OS.indent(2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
+
+  for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    OS.indent(4) << '(';
+    VASTValPtr FI = I->first;
+
+    const OrVec &Ors = I->second;
+    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI)
+    {
+      (*OI)->printPredicate(OS);
+      OS << '|';
+    }
+
+    OS << "1'b0): begin\n";
+    // Print the assignment under the condition.
+    if (!isEnable())
+      OS.indent(6) << getName() << "_selector_wire = " << FI << ";\n";
+
+    // Print the enable.
+    if (PrintEnable) OS.indent(6) << getName() << "_selector_enable = 1'b1;\n";
+    OS.indent(4) << "end\n";
+  }
+
+  // Write the default condition, otherwise latch will be inferred.
+  OS.indent(4) << "default: begin\n";
+
+  if (!isEnable())
+    OS.indent(6) << getName() << "_selector_wire = " << getBitWidth() << "'bx;\n";
+
+  if (PrintEnable) OS.indent(6) << getName() << "_selector_enable = 1'b0;\n";
+  OS.indent(4) << "end\n";
+  OS.indent(2) << "endcase\nend  // end mux logic\n\n";
+}
+
 void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
   if (empty()) return;
 
-  assert(isSelectorSynthesized() && "Cannot print unsynthesized selector!");
+  if (!isSelectorSynthesized()) {
+    printFanins(OS, PrintEnable);
+    return;
+  }
 
   assert((isEnable() || !Fanins.empty())  && "Bad Fanin numder!");
   OS << "// Synthesized MUX\n";
