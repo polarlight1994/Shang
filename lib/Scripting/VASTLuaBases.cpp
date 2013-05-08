@@ -578,7 +578,7 @@ VASTSlotCtrl *VASTModule::createSlotCtrl(VASTNode *N, VASTSlot *Slot,
 
 void VASTModule::eraseSelector(VASTSelector *Sel) {
   assert(Sel->def_empty() && Sel->empty()
-    && "Cannot erase the Sel that is still in use!");
+         && "Cannot erase the Sel that is still in use!");
 
   // Try to erase the corresponding register as well.
   if (VASTRegister *R = dyn_cast<VASTRegister>(Sel->getParent()))
