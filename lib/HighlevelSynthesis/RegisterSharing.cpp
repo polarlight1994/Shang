@@ -607,6 +607,8 @@ void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From) {
     Op->getSlot()->removeOp(Op);
     VM->eraseSeqOp(Op);
   }
+
+  VM->eraseSelector(From);
 }
 
 bool RegisterSharing::performRegisterSharing() {

@@ -572,6 +572,20 @@ VASTSlotCtrl *VASTModule::createSlotCtrl(VASTNode *N, VASTSlot *Slot,
   return CtrlOp;
 }
 
+void VASTModule::eraseSelector(VASTSelector *Sel) {
+  assert(Sel->def_empty() && Sel->empty()
+    && "Cannot erase the Sel that is still in use!");
+
+  // Try to erase the corresponding register as well.
+  if (VASTRegister *R = dyn_cast<VASTRegister>(Sel->getParent()))
+    Registers.erase(R);
+
+  // Also erase the selector from the symbol table.
+  SymbolTable.erase(Sel->getName());
+
+  Selectors.erase(Sel);
+}
+
 void VASTModule::eraseSeqVal(VASTSeqValue *Val) {
   assert(Val->use_empty() && "Val still stuck at some user!");
   assert(Val->fanin_empty() && "Val still using something!");
@@ -579,13 +593,7 @@ void VASTModule::eraseSeqVal(VASTSeqValue *Val) {
   VASTSelector *Sel = Val->getSelector();
   Val->changeSelector(0);
 
-  if (Sel->empty()) {
-    // Try to erase the corresponding register as well.
-    if (VASTRegister *R = dyn_cast<VASTRegister>(Sel->getParent()))
-      Registers.erase(R);
-
-    Selectors.erase(Sel);
-  }
+  if (Sel->empty()) eraseSelector(Sel);
 
   SeqVals.erase(Val);
 }

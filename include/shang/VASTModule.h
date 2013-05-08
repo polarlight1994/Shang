@@ -319,7 +319,7 @@ public:
   /// Remove the VASTSeqOp from the module and delete it. Please note that
   /// the SeqOp should be remove from its parent slot before we erase it.
   void eraseSeqOp(VASTSeqOp *SeqOp);
-
+  void eraseSelector(VASTSelector *Sel);
   void eraseSeqVal(VASTSeqValue *Val);
 
   // Iterate over all SeqOps in the module.
