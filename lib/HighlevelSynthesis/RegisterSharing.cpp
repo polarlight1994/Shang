@@ -60,6 +60,7 @@ public:
     typedef VASTSelector::def_iterator iterator;
     for (iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
       const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*I);
+      //Alives |= LV->Defs;
       Alives |= LV->Alives;
       Alives |= LV->Kills;
       Alives |= LV->DefKills;
@@ -79,8 +80,12 @@ public:
   VASTSelector *operator*() const { return get(); }
   VASTSelector *operator->() const { return get(); }
 
-  //void print(raw_ostream &OS) const;
-  //void dump() const;
+  void print(raw_ostream &OS) const {
+    ::dump(Alives, OS);
+    ::dump(Overlappeds, OS);
+  }
+
+  void dump() const { print(dbgs()); }
 
   //typedef NodeVecTy::iterator iterator;
   typedef NodeVecTy::const_iterator iterator;
@@ -430,6 +435,16 @@ Pass *llvm::createRegisterSharingPass() {
 
 char RegisterSharing::ID = 0;
 
+static bool IsSharingCandidate(VASTSelector *Sel) {
+  // Do not share the register without corresponding live variable.
+  if (Sel->num_defs() == 0) return false;
+
+  if (!isa<VASTRegister>(Sel->getParent())) return false;
+
+  // Do not share the enable as well.
+  return Sel->isTemp();
+}
+
 bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   LVS = &getAnalysis<SeqLiveVariables>();
   this->VM = &VM;
@@ -443,16 +458,15 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
 
   typedef VASTModule::selector_iterator iterator;
 
-   for (iterator I = VM.selector_begin(), IE = VM.selector_end(); I != IE; ++I) {
-     VASTSelector *Sel = I;
-    
-    G.GetOrCreateNode(Sel, LVS);
+  for (iterator I = VM.selector_begin(), IE = VM.selector_end(); I != IE; ++I) {
+    VASTSelector *Sel = I;
+    if (IsSharingCandidate(Sel)) G.GetOrCreateNode(Sel, LVS);
   }
 
   while (performRegisterSharing())
     ;
 
-  return false;
+  return true;
 }
 
 static void UpdateQ(SeqLiveInterval *N, SeqLiveInterval *P, SeqLiveInterval *&Q,
@@ -500,8 +514,10 @@ SeqLiveInterval *GetNeighborToCombine(SeqLiveInterval *P) {
 void RegisterSharing::mergeLI(SeqLiveInterval *From, SeqLiveInterval *To) {
   assert(From->compatibleWith(To) && "Cannot merge incompatible LiveIntervals!");
   VASTSelector *FromV = From->get(), *ToV = To->get();
-  DEBUG(dbgs() << "Merge " << FromV->getName() << " to " << ToV->getName()
-               << '\n');
+  dbgs() << "Merge " << FromV->getName() << " to " << ToV->getName()
+         << '\n';
+  // From->dump();
+  // To->dump();
 
   mergeSelector(ToV, FromV);
 
@@ -514,37 +530,36 @@ void RegisterSharing::mergeLI(SeqLiveInterval *From, SeqLiveInterval *To) {
   ++NumRegMerge;
 }
 
-void RegisterSharing::mergeSelector(VASTSelector *ToV, VASTSelector *FromV) {
+void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From) {
   SmallVector<VASTSeqOp*, 8> DeadOps;
 
-  llvm_unreachable("Not implemented!");
+  while (!From->def_empty())
+    (*From->def_begin())->changeSelector(To);
 
   // Clone the assignments targeting FromV, and change the target to ToV.
-  //for (iterator I = FromV->begin(), E = FromV->end(); I != E; ++I) {
-  //  VASTLatch L = *I;
-  //  VASTSeqOp *Op = L.Op;
+  typedef VASTSelector::iterator iterator;
+  for (iterator I = From->begin(), E = From->end(); I != E; ++I) {
+    VASTLatch L = *I;
+    VASTSeqOp *Op = L.Op;
 
-  //  VASTSeqInst *NewInst
-  //    = VM->lauchInst(Op->getSlot(), Op->getPred(), Op->getNumSrcs(),
-  //    Op->getValue(), cast<VASTSeqInst>(Op)->getSeqOpType());
-  //  typedef VASTSeqOp::op_iterator iterator;
+    VASTSeqInst *NewInst
+      = VM->lauchInst(Op->getSlot(), Op->getPred(), Op->getNumSrcs(),
+      Op->getValue(), cast<VASTSeqInst>(Op)->getSeqOpType());
+    typedef VASTSeqOp::op_iterator iterator;
 
-  //  for (unsigned i = 0, e = Op->getNumSrcs(); i < e; ++i) {
-  //    VASTSeqValue *Dst = Op->getSrc(i).getDst();
-  //    // Redirect the target of the assignment.
-  //    if (Dst == FromV) Dst = ToV;
+    for (unsigned i = 0, e = Op->getNumSrcs(); i < e; ++i) {
+      VASTSeqValue *DstVal = Op->getSrc(i).getDst();
+      VASTSelector *DstSel = Op->getSrc(i).getSelector();
+      // Redirect the target of the assignment.
+      if (DstSel == From) DstSel = To;
 
-  //    VASTValPtr Src = Op->getSrc(i);
-  //    NewInst->addSrc(Src, i, i < Op->getNumDefs(), Dst);
-  //  }
+      VASTValPtr Src = Op->getSrc(i);
+      NewInst->addSrc(Src, i, DstSel, DstVal);
+    }
 
-  //  // Also transfer the live variable information.
-  //  // VASTLatch NewL = NewInst->getSrc(L.No);
-  //  // LVS->transferVarInfo(L, NewL);
-
-  //  // Rememeber the dead ops.
-  //  DeadOps.push_back(Op);
-  //}
+    // Rememeber the dead ops.
+    DeadOps.push_back(Op);
+  }
 
   // Erase the dead ops.
   while (!DeadOps.empty()) {
