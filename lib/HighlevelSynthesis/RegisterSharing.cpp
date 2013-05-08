@@ -40,7 +40,10 @@ namespace llvm {
 class SeqLiveInterval {
   // The underlying data.
   VASTSelector *Sel;
+  SparseBitVector<> Defs;
   SparseBitVector<> Alives;
+  SparseBitVector<> Kills;
+  SparseBitVector<> DefKills;
   SparseBitVector<> Overlappeds;
 
   typedef SmallPtrSet<SeqLiveInterval*, 8> NodeVecTy;
@@ -49,6 +52,14 @@ class SeqLiveInterval {
 
   typedef std::map<const SeqLiveInterval*, int> WeightVecTy;
   WeightVecTy SuccWeights;
+
+  bool
+  intersects(const SparseBitVector<> &LHSBits, const SparseBitVector<> &RHSBits,
+             const SparseBitVector<> &RHSOverlaps) const {
+    return LHSBits.intersects(RHSBits)
+           || LHSBits.intersects(RHSOverlaps)
+           || Overlappeds.intersects(RHSBits);
+  }
 
 public:
   static const int HUGE_NEG_VAL = -1000000000;
@@ -60,10 +71,10 @@ public:
     typedef VASTSelector::def_iterator iterator;
     for (iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
       const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*I);
-      //Alives |= LV->Defs;
-      Alives |= LV->Alives;
-      Alives |= LV->Kills;
-      Alives |= LV->DefKills;
+      Defs        |= LV->Defs;
+      Alives      |= LV->Alives;
+      Kills       |= LV->Kills;
+      DefKills    |= LV->DefKills;
       Overlappeds |= LV->Overlappeds;
     }
   }
@@ -103,15 +114,44 @@ public:
   unsigned degree() const { return num_succ() + num_pred(); }
 
   void merge(const SeqLiveInterval *RHS) {
-    Alives |= RHS->Alives;
+    Defs        |= RHS->Defs;
+    Alives      |= RHS->Alives;
+    Kills       |= RHS->Kills;
+    DefKills    |= RHS->DefKills;
     Overlappeds |= RHS->Overlappeds;
   }
 
   bool compatibleWith(const SeqLiveInterval *RHS) const {
-    return Sel->getBitWidth() == RHS->Sel->getBitWidth()
-           && !Alives.intersects(RHS->Alives)
-           && !Alives.intersects(RHS->Overlappeds)
-           && !Overlappeds.intersects(RHS->Alives);
+    // Bitwidth should be the same.
+    if (Sel->getBitWidth() != RHS->Sel->getBitWidth())
+      return false;
+
+    // Defines should not intersects.
+    if (intersects(Defs, RHS->Defs, RHS->Overlappeds))
+      return false;
+
+    // Defines and alives should not intersects.
+    if (intersects(Defs, RHS->Alives, RHS->Overlappeds))
+      return false;
+
+    if (intersects(Alives, RHS->Defs, RHS->Overlappeds))
+      return false;
+
+    // Alives should not intersects.
+    if (intersects(Alives, RHS->Alives, RHS->Overlappeds))
+      return false;
+
+    // Kills should not intersects.
+    // Not need to check the DefKills because they are a part of Defs.
+    if (intersects(Kills, RHS->Kills, RHS->Overlappeds))
+      return false;
+
+    // Kills and Alives should not intersects.
+    // TODO: Ignore the dead slots.
+    if (intersects(Kills, RHS->Kills, RHS->Overlappeds))
+      return false;
+
+    return true;
   }
 
   bool isNeighbor(SeqLiveInterval *RHS) const {
