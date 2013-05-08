@@ -52,6 +52,18 @@ bool VASTSelector::buildCSEMap(std::map<VASTValPtr,
                                &CSEMap) const {
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
     VASTLatch U = *I;
+    VASTValPtr FIVal = U;
+
+    // Ignore the trivial loops.
+    if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(FIVal))
+      if (V->getSelector() == this && IgnoreTrivialLoops)
+        continue;
+
+    // Ignore the X values.
+    if (VASTWire *W = dyn_cast<VASTWire>(FIVal.get()))
+      if (W->isX() && IgnoreXFanins)
+        continue;
+
     CSEMap[U].push_back(U.Op);
   }
 
@@ -276,16 +288,6 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
 
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     VASTValPtr FIVal = I->first;
-
-    // Ignore the trivial loops.
-    if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(FIVal))
-      if (V->getSelector() == this && IgnoreTrivialLoops)
-        continue;
-
-    // Ignore the X values.
-    if (VASTWire *W = dyn_cast<VASTWire>(FIVal.get()))
-      if (W->isX() && IgnoreXFanins)
-        continue;
 
     Fanin *FI = 0;
     if (!isEnable()) {
