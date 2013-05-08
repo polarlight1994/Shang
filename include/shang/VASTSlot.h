@@ -119,6 +119,7 @@ public:
 
   // Create the finish slot.
   explicit VASTSlot(unsigned slotNum);
+  ~VASTSlot();
 
   typedef uint16_t SlotNumTy;
   const SlotNumTy SlotNum : 15;

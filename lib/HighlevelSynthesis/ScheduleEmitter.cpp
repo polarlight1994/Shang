@@ -150,9 +150,6 @@ void ScheduleEmitter::clearUp(VASTSlot *S) {
     SeqOp->clearParent();
     VM.eraseSeqOp(*I);
   }
-
-  // Drop the reference to the guarding condition.
-  S->getPred().unlinkUseFromUser();
 }
 
 void ScheduleEmitter::clearUp() {

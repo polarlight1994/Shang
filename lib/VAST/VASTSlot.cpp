@@ -38,6 +38,13 @@ VASTSlot::VASTSlot(unsigned slotNum)
   Contents.ParentBB = 0;
 }
 
+VASTSlot::~VASTSlot() {
+  // Release the uses.
+  if (!SlotReg.isInvalid()) SlotReg.unlinkUseFromUser();
+  if (!SlotActive.isInvalid()) SlotActive.unlinkUseFromUser();
+  if (!SlotPred.isInvalid()) SlotPred.unlinkUseFromUser();
+}
+
 void VASTSlot::createSignals(VASTModule *VM) {
   assert(!IsSubGrp && "Cannot create signal for virtual slots!");
 

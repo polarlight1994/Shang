@@ -364,6 +364,9 @@ void VASTModule::reset() {
 }
 
 VASTModule::~VASTModule() {
+  // To prevent we releasing deleted uses in the destructor of VASTSlots, we
+  // release the slots before all other values.
+  Slots.clear();
   delete Datapath;
   DeleteContainerPointers(Ports);
   DeleteContainerPointers(Submodules);
