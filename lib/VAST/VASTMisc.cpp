@@ -11,6 +11,7 @@
 // common Verilog HDL writing task.
 //
 //===----------------------------------------------------------------------===//
+#include "LangSteam.h"
 #include "shang/VASTHandle.h"
 #include "shang/VASTDatapathNodes.h"
 #include "shang/VASTModule.h"
@@ -153,6 +154,20 @@ void VASTOperandList::dropOperands() {
 }
 
 //===----------------------------------------------------------------------===//
+void VASTModule::printSubmodules(raw_ostream &OS) const {
+  vlang_raw_ostream O(OS);
+  O.enter_block("\n", "");
+  printSubmodules(O);
+  O.exit_block("\n", "");
+}
+
+void VASTModule::printRegisterBlocks(raw_ostream &OS) const {
+  vlang_raw_ostream O(OS);
+  O.enter_block("\n", "");
+  printRegisterBlocks(O);
+  O.exit_block("\n", "");
+}
+
 void VASTModule::gc() {
   // Clear up the dead VASTSeqValues.
   for (seqval_iterator VI = seqval_begin(); VI != seqval_end(); /*++I*/) {

@@ -173,7 +173,9 @@ public:
   // Functions to generate verilog code.
   void printDatapath(raw_ostream &OS) const;
   void printRegisterBlocks(vlang_raw_ostream &OS) const;
+  void printRegisterBlocks(raw_ostream &OS) const;
   void printSubmodules(vlang_raw_ostream &OS) const;
+  void printSubmodules(raw_ostream &OS) const;
   void printModuleDecl(raw_ostream &OS) const;
   void printSignalDecl(raw_ostream &OS) const;
 
