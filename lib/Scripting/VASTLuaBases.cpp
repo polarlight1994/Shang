@@ -431,8 +431,9 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
         VASTOperandList::visitTopOrder(V, Visited, Printer);
       }
 
-      OS << "// ";
+      OS << "/* ";
       L->print(OS);
+      OS << "*/\n";
     }
   }
 }
