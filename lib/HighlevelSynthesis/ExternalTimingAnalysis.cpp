@@ -54,16 +54,12 @@ struct TempDir {
     }
 
     Filename.appendComponent((Name + Ext).str());
-    if (Filename.makeUnique(true, &ErrMsg)) {
-      errs() << "Error: " << ErrMsg << "\n";
-      return sys::Path();
-    }
 
     return Filename;
   }
 
   ~TempDir() {
-    if (!Dirname.isEmpty()) Dirname.eraseFromDisk(true);
+    //if (!Dirname.isEmpty()) Dirname.eraseFromDisk(true);
   }
 };
 }
@@ -353,7 +349,7 @@ bool ExternalTimingAnalysis::runExternalTimingAnalysis() {
   std::string ErrorInfo;
 
   // Write the Nestlist and the wrapper.
-  sys::Path Netlist = Dir.buildPath(VM.getName(), ".v");
+  sys::Path Netlist = Dir.buildPath(VM.getName(), ".sv");
   if (Netlist.empty()) return false;
 
   errs() << "Writing '" << Netlist.str() << "'... ";
