@@ -373,7 +373,10 @@ void VASTSeqValue::changeSelector(VASTSelector *NewSel) {
   assert(NewSel != getSelector() && "Selector not changed!");
   getSelector()->removeUser(this);
   Selector = NewSel;
-  if (Selector) Selector->addUser(this);
+  if (Selector) {
+    Contents.Name = Selector->getName();
+    Selector->addUser(this);
+  }
 }
 
 VASTSeqValue::~VASTSeqValue() {}
