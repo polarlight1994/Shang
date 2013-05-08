@@ -173,7 +173,7 @@ void VASTModule::gc() {
   for (seqval_iterator VI = seqval_begin(); VI != seqval_end(); /*++I*/) {
     VASTSeqValue *V = VI++;
 
-    if (!V->use_empty() || !V->isTemp()) continue;;
+    if (!V->use_empty()) continue;;
 
     SmallVector<VASTSeqOp*, 4> DeadOps;
     typedef VASTSeqValue::fanin_iterator iterator;
