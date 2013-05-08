@@ -160,16 +160,14 @@ void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
 
     if (BasicBlock *BB = S->getParent()) OS << BB->getName() << ',';
 
-    OS << "\"); // ";
+    OS << "\"); /* ";
     if (Value *V = Op.getValue()) {
       OS << *V;
-      if (Instruction *Inst = dyn_cast<Instruction>(V)) {
+      if (Instruction *Inst = dyn_cast<Instruction>(V))
         OS << ", BB: " << Inst->getParent()->getName();
-        OS << ' ' << *Inst;
-      }
     }
 
-    OS << "\n";
+    OS << "*/\n";
     OS.indent(2) << "end\n";
   }
 
