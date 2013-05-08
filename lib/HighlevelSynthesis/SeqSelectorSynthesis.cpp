@@ -211,7 +211,7 @@ bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   
   // Eliminate the identical SeqOps.
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-    I->synthesisSelector(*Builder);
+    I->synthesizeSelector(*Builder);
 
   delete Builder;
   return true;

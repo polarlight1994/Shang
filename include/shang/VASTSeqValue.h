@@ -114,7 +114,7 @@ public:
   const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
   const_fanin_iterator fanin_end() const { return Fanins.end(); }
 
-  void synthesisSelector(VASTExprBuilder &Builder);
+  void synthesizeSelector(VASTExprBuilder &Builder);
 
   bool isSelectorSynthesized() const { return !EnableU.isInvalid(); }
   VASTValPtr getEnable() const { return VASTValPtr(EnableU); }

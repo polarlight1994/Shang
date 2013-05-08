@@ -249,7 +249,7 @@ void VASTSelector::Fanin::AddSlot(VASTSlot *S) {
   Slots.push_back(S);
 }
 
-void VASTSelector::synthesisSelector(VASTExprBuilder &Builder) {
+void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
   typedef std::vector<const VASTSeqOp*> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator it;
