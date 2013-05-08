@@ -19,11 +19,16 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTSlot.h"
 #include "shang/VASTModule.h"
+
+#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "vast-seq-value"
 #include "llvm/Support/Debug.h"
 
-
 using namespace llvm;
+
+static cl::opt<bool> IgnoreTrivialLoops("shang-selector-ignore-trivial-loops",
+  cl::desc("Ignore the trivial loops (R -> R) in the selector"),
+  cl::init(true));
 //----------------------------------------------------------------------------//
 VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
                            VASTNode *Node)
@@ -266,7 +271,8 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     VASTValPtr FIVal = I->first;
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(FIVal))
-      if (V->getSelector() == this) continue;
+      if (V->getSelector() == this && IgnoreTrivialLoops)
+        continue;
 
     Fanin *FI = 0;
     if (!isEnable()) {
