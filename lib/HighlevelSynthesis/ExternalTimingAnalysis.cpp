@@ -283,7 +283,7 @@ static std::string GetObjectName(const VASTValue *V) {
   } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
     std::string Name = E->getSubModName();
     if (!Name.empty()) {
-      OS << " *" << Name << "* ";
+      OS << " *" << Name << "|* ";
       return OS.str();
     } else if (E->hasName()) {
       OS << " *" << E->getTempName() << "* ";
@@ -294,34 +294,43 @@ static std::string GetObjectName(const VASTValue *V) {
   return "";
 }
 
-static void setTerminatorCollection(raw_ostream & O, const VASTSeqValue *V,
-  const char *CollectionName) {
-    O << "set " << CollectionName << " [" << "get_keepers \"*" << V->getName()
-      << "*\"]\n";
+static std::string GetCollection(const VASTSelector *Sel) {
+  std::string Name;
+  raw_string_ostream OS(Name);
+  OS << "[get_keepers \"" << GetObjectName(Sel) << "\"]";
+  return OS.str();
 }
 
+static std::string GetCollection(const VASTValue *V) {
+  if (const VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V))
+    return GetCollection(SV->getSelector());
 
-static void extractTimingForPath(raw_ostream &O, VASTSelector *Dst,
-                                 VASTValue *Thu, VASTSeqValue *Src) {
-  // Get the source and destination nodes.
-  O << "set dst [ get_keepers \"" << GetObjectName(Dst)  << "\"]\n";
-  O << "set src [ get_keepers \"" << GetObjectName(Src)  << "\"]\n";
-  O << "set thu [ get_nets \"" << GetObjectName(Thu) << "\"]\n";
+  if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
+    std::string Name;
+    raw_string_ostream OS(Name);
+    OS << "[get_cells -compatibility_mode \"" << GetObjectName(V) << "\"]";
+    return OS.str();
+  }
 
-  O <<
-    "set paths [get_timing_paths -from $src -to $dst -through $thu -setup -npath 1 -detail path_only]\n"
-    "set delay -1\n"
+  llvm_unreachable("Bad node type!");
+  return "";
+}
+
+template<typename T0, typename T1, typename T2>
+static void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Thu, T2 *Src) {
+  O << "set paths [get_timing_paths -from " << GetCollection(Src)
+    << " -to " << GetCollection(Dst);
+  if (Thu) O << " -through " << GetCollection(Thu);
+  O << " -setup -npath 1 -detail path_only]\n"
     // Only extract the delay from source to destination when these node are
     // not optimized.
-    "if {[get_collection_size $src] && [get_collection_size $dst] && [get_collection_size $paths]} {\n"
+    "if {[get_collection_size $paths]} {\n"
     "  foreach_in_collection path $paths {\n"
     "    set delay [get_path_info $path -data_delay]\n"
-    "    post_message -type info \"" << GetObjectName(Src)
-    << " -> " << GetObjectName(Dst) << " delay: $delay\"\n"
+    "    post_message -type info \"" << GetObjectName(Src);
+  if (Thu) O << " -> " << GetObjectName(Thu);
+  O << " -> " << GetObjectName(Dst) << " delay: $delay\"\n"
     "  }\n"
-    "} else {\n"
-    "    post_message -type info \"" << GetObjectName(Src)<<  " -> "
-    << GetObjectName(Dst) << " path not found!\"\n"
     "}\n";
     // "puts $JSONFile \"\\{\\\"from\\\":" << GetObjectName(Src) << ",\\\"to\\\":"
     // <<  GetObjectName(Dst) << ",\\\"delay\\\":$delay\\},\"\n";
