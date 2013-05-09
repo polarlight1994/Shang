@@ -362,8 +362,11 @@ void ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
                                                          const sys::Path &ResultPath)
                                                          const {
   // Print the critical path in the datapath to debug the TimingNetlist.
-  O << "report_timing -from_clock { scan_clk } -to_clock { scan_clk }"
-       " -setup -npaths 1 -detail full_path -stdout\n"
+  O << "create_clock -name \"clk\" -period 1ns [get_ports {clk}]\n"
+       "derive_pll_clocks -create_base_clocks\n"
+       "derive_clock_uncertainty\n"
+       "report_timing -from_clock { clk } -to_clock { clk }"
+         " -setup -npaths 1 -detail full_path -stdout\n"
   // Open the file and start the array.
        "set JSONFile [open \"" << ResultPath.str() <<"\" w+]\n"
        "puts $JSONFile \"\\[\"\n";
