@@ -126,10 +126,6 @@ void TimingNetlist::buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst,
     return;
   }
 
-  // We need to handle the wires here.
-  if (isa<VASTWire>(Thu))
-    Estimator->estimateTimingOnTree(Thu);
-
   if (src_empty(Thu)) return;
 
   TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Thu];
