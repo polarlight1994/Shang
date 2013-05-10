@@ -26,6 +26,9 @@ import drmaa
 Session = drmaa.Session()
 Session.initialize()
 
+FamilyNames = { "CycloneII" : "Cyclone II", "CycloneIV" : "Cyclone IV E", "StratixIV" : "Stratix IV" }
+FamilyDevices = { "CycloneII" : "EP2C70F896C6", "CycloneIV" : "EP4CE75F29C6", "StratixIV" : "EP4SGX530KH40C2" }
+
 # Base class of test step.
 class TestStep :
 
