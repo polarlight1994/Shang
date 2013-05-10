@@ -46,6 +46,13 @@ class TestStep :
     # The path to the stdout and stderr logfile.
     self.stdout = ''
     self.stderr = ''
+    # The FPGA parameter.
+    self.fpga_family = FamilyNames[config['device_family']]
+    self.fpga_device = FamilyDevices[config['device_family']]
+    self.require_license = (self.option['device_family'] == 'StratixIV')
+    #Use full version for stratix devices.
+    self.quartus_bin = '/nfs/app/altera/quartus12.1x64_%s/quartus/bin/' % ('full' if self.require_license else 'web')
+
     # The results dict, for debug use
     self.results = {}
 
@@ -96,6 +103,9 @@ class TestStep :
               'status' : status
             }
 
+  def getLicenseSpecification(self) :
+    return ' -v LM_LICENSE_FILE=1800@adsc-linux -l quartus_full=1'
+
   def dumplog(self) :
     print "stdout of", self.test_name, "begin"
     with open(self.stdout, "r") as logfile:
@@ -140,6 +150,9 @@ RTLModuleName = [[{{ [test_name, "_RTL_DUT"]|join }}]]
 
 Functions.{{ hardware_function }} = RTLModuleName
 
+TimingAnalysis.ExternalTool = [[{{ quartus_bin }}]]
+TimingAnalysis.Device = [[{{ fpga_device }}]]
+
 local FMAX = {{ fmax }}
 PERIOD = 1000.0 / FMAX
 FUs.Period = PERIOD
@@ -152,9 +165,7 @@ dofile([[{{ [config_dir, 'AddModules.lua']|joinpath }}]])
 -- load platform information script
 dofile([[{{ [config_dir, 'AlteraCommon.lua']|joinpath }}]])
 dofile([[{{ [config_dir, 'Altera4LUTFUs.lua']|joinpath }}]])
-dofile([[{{ [config_dir, 'EP4CE75F29C6.lua']|joinpath }}]])
-
--- ExternalTool.Path = [[@QUARTUS_BIN_DIR@/quartus_sh]]
+dofile([[{{ [config_dir, fpga_device + ".lua"]|joinpath }}]])
 
 {% if hardware_function == 'main' %}
 Misc.RTLGlobalScript = [=[
@@ -232,6 +243,9 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     jt.joinFiles=True
 
     jt.nativeSpecification = '-q %s' % self.sge_queue
+
+    if self.require_license :
+      jt.nativeSpecification += self.getLicenseSpecification()
 
     print "Submitted", self.getStepDesc()
     #Submit the job.
@@ -524,10 +538,6 @@ class AlteraSynStep(TestStep) :
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
     self.results.update(hls_step.results)
-    self.require_license = (self.option['device_family'] == 'StratixIV')
-
-    #Use full version for stratix devices.
-    self.quartus_bin = '/nfs/app/altera/quartus12.1x64_%s/quartus/bin/' % ('full' if self.require_license else 'web')
 
   def prepareTest(self) :
     self.altera_synthesis_base_dir = os.path.join(self.hls_base_dir, 'altera_synthesis')
@@ -543,8 +553,8 @@ exec python {{ [config_dir, "altera_sdc_generator.py"]|joinpath }} --sql {{ [hls
 
 project_new {{ test_name }} -overwrite
 
-set_global_assignment -name FAMILY "Cyclone IV E"
-set_global_assignment -name DEVICE EP4CE75F29C6
+set_global_assignment -name FAMILY {{ fpga_family }}
+set_global_assignment -name DEVICE {{ fpga_device }}
 
 set_global_assignment -name TOP_LEVEL_ENTITY main
 set_global_assignment -name SOURCE_FILE {{ [hls_base_dir, test_name + ".sv"]|joinpath }}
@@ -593,7 +603,7 @@ project_close
 
     jt.nativeSpecification = '-q %s' % self.sge_queue
     if self.require_license :
-      jt.nativeSpecification += ' -v LM_LICENSE_FILE=1800@adsc-linux -l quartus_full=1'
+      jt.nativeSpecification += self.getLicenseSpecification()
 
     print "Submitted", self.getStepDesc()
     self.jobid = Session.runJob(jt)
