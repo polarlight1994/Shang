@@ -267,13 +267,9 @@ class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator
     float MSBLatency = FU->lookupLatency(DstUB);
     float LSBLatency = FU->lookupLatency(DstLB);
     float LatencyPreBit = (MSBLatency - LSBLatency) / (DstUB - DstLB);
-    unsigned MSBLL = FU->lookupLogicLevels(DstUB);
-    unsigned LSBLL = FU->lookupLogicLevels(DstLB);
-    unsigned LLPreBitx1024 = (TNLDelay::toX1024(MSBLL) - TNLDelay::toX1024(LSBLL))
-                             / (DstUB - DstLB);
-    TNLDelay Inc(MSBLatency, LSBLatency, MSBLL, LSBLL);
-    D.addLLLSB2MSB(Inc, LatencyPreBit, LLPreBitx1024);
-    return SrcEntryTy(DelayFromSrc.first, D.Hop());
+    TNLDelay Inc(MSBLatency, LSBLatency);
+    D.addLLLSB2MSB(Inc, LatencyPreBit);
+    return SrcEntryTy(DelayFromSrc.first, D);
   }
 
   template<typename VFUTy>
@@ -284,10 +280,9 @@ class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator
     unsigned FUWidth = Dst->getBitWidth();
     VFUTy *FU = getFUDesc<VFUTy>();
     float Latency = FU->lookupLatency(FUWidth);
-    unsigned LL = FU->lookupLogicLevels(FUWidth);
-    TNLDelay Inc(Latency, Latency, LL, LL);
+    TNLDelay Inc(Latency, Latency);
     D.syncLL().addLLParallel(Inc);
-    return SrcEntryTy(DelayFromSrc.first, D.Hop());
+    return SrcEntryTy(DelayFromSrc.first, D);
   }
 
 public:
