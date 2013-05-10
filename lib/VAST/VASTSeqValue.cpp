@@ -262,7 +262,6 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
 
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
     Fanin *FI = *I;
-    VASTValPtr Src = VASTValPtr(FI->FI);
 
     OS.indent(4) << '(' << VASTValPtr(FI->Pred) << "): begin\n";
     // Print the assignment under the condition.
@@ -468,11 +467,11 @@ Value *VASTSeqValue::getLLVMValue() const {
 
 //===----------------------------------------------------------------------===//
 VASTRegister::VASTRegister(VASTSelector *Sel, uint64_t InitVal)
-  : VASTNode(vastRegister), Sel(Sel), InitVal(InitVal) {
+  : VASTNode(vastRegister), InitVal(InitVal), Sel(Sel) {
   Sel->setParent(this);
 }
 
-VASTRegister::VASTRegister() : VASTNode(vastRegister), Sel(0), InitVal(0) {}
+VASTRegister::VASTRegister() : VASTNode(vastRegister), InitVal(0), Sel(0) {}
 
 void VASTRegister::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   Sel->printRegisterBlock(OS, Mod, InitVal);

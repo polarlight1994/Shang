@@ -96,7 +96,6 @@ BitlevelDelayEsitmator::AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
   unsigned FUWidth = RedExpr->getOperand(0)->getBitWidth();
   VFUReduction *Red = getFUDesc<VFUReduction>();
   float Latency = Red->lookupLatency(FUWidth);
-  unsigned LL = Red->lookupLogicLevels(FUWidth);
   TNLDelay Inc(Latency, Latency);
   return SrcEntryTy(DelayFromSrc.first, D.addLLWorst(Inc));
 }
@@ -111,7 +110,6 @@ BitlevelDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
   unsigned FUWidth = CmpExpr->getOperand(SrcPos)->getBitWidth();
   VFUICmp *Cmp = getFUDesc<VFUICmp>();
   float Latency = Cmp->lookupLatency(FUWidth);
-  unsigned LL = Cmp->lookupLogicLevels(FUWidth);
   // The pre-bit logic level increment for comparison is 1;
   float LatencyPreBit = Latency / FUWidth;
   TNLDelay Inc(LatencyPreBit, Latency);

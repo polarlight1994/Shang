@@ -433,7 +433,7 @@ static std::string GetCollection(const VASTValue *V) {
   if (const VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V))
     return GetCollection(SV->getSelector());
 
-  if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
+  if (isa<VASTExpr>(V)) {
     std::string Name;
     raw_string_ostream OS(Name);
     OS << "[get_cells -nowarn \"" << GetObjectName(V) << "\"]";
