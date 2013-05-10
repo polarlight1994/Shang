@@ -150,7 +150,7 @@ RTLModuleName = [[{{ [test_name, "_RTL_DUT"]|join }}]]
 
 Functions.{{ hardware_function }} = RTLModuleName
 
-TimingAnalysis.ExternalTool = [[{{ quartus_bin }}]]
+TimingAnalysis.ExternalTool = [[{{ [quartus_bin, 'quartus_sh']|joinpath }}]]
 TimingAnalysis.Device = [[{{ fpga_device }}]]
 
 local FMAX = {{ fmax }}
@@ -554,7 +554,7 @@ exec python {{ [config_dir, "altera_sdc_generator.py"]|joinpath }} --sql {{ [hls
 
 project_new {{ test_name }} -overwrite
 
-set_global_assignment -name FAMILY {{ fpga_family }}
+set_global_assignment -name FAMILY "{{ fpga_family }}"
 set_global_assignment -name DEVICE {{ fpga_device }}
 
 set_global_assignment -name TOP_LEVEL_ENTITY main
