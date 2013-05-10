@@ -346,6 +346,7 @@ char VASTScheduling::ID = 0;
 INITIALIZE_PASS_BEGIN(VASTScheduling,
                       "vast-scheduling", "Perfrom Scheduling on the VAST",
                       false, true)
+  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(ExternalTimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(BasicBlockTopOrder)
   INITIALIZE_PASS_DEPENDENCY(DependenceAnalysis)
