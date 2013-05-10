@@ -41,6 +41,11 @@ static cl::opt<bool> DisableMUXSlack("vast-disable-mux-slack",
   cl::desc("Do not allocate the slack for the MUX before/during scheduling"),
   cl::init(false));
 
+static cl::opt<bool>
+  EnableExternalTiming("shang-external-timing-analysis",
+  cl::desc("Perform external timing analysis"),
+  cl::init(false));
+
 STATISTIC(NumMemDep, "Number of Memory Dependencies Added");
 STATISTIC(NumForceBrSync, "Number of Dependencies add to sync the loop exit");
 
@@ -284,20 +289,22 @@ struct VASTScheduling : public VASTModulePass {
 
   VASTSchedGraph *G;
   TimingNetlist *TNL;
+  char &TimingNetlistID;
   VASTModule *VM;
   AliasAnalysis *AA;
   LoopInfo *LI;
   BranchProbabilityInfo *BPI;
 
-  VASTScheduling() : VASTModulePass(ID) {
+  VASTScheduling() : VASTModulePass(ID),
+    TimingNetlistID(EnableExternalTiming ? ExternalTimingNetlistID
+                                         : TimingNetlist::ID) {
     initializeVASTSchedulingPass(*PassRegistry::getPassRegistry());
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequiredID(BasicBlockTopOrderID);
-    AU.addRequiredID(DatapathNamerID);
-    AU.addRequired<TimingNetlist>();
+    AU.addRequiredID(TimingNetlistID);
     AU.addRequired<AliasAnalysis>();
     AU.addRequired<LoopInfo>();
     AU.addRequired<BranchProbabilityInfo>();
@@ -339,8 +346,7 @@ char VASTScheduling::ID = 0;
 INITIALIZE_PASS_BEGIN(VASTScheduling,
                       "vast-scheduling", "Perfrom Scheduling on the VAST",
                       false, true)
-  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
-  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
+  INITIALIZE_PASS_DEPENDENCY(ExternalTimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(BasicBlockTopOrder)
   INITIALIZE_PASS_DEPENDENCY(DependenceAnalysis)
   INITIALIZE_PASS_DEPENDENCY(LoopInfo)
@@ -361,7 +367,6 @@ static T *check(T *X) {
 
 VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   bool IsPHI = isa<PHINode>(V);
-
 
   if (isa<Argument>(V)) return G->getEntry();
 
@@ -994,7 +999,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   G = GPtr.get();
 
   // Initialize the analyses
-  TNL = &getAnalysis<TimingNetlist>();
+  TNL = &getAnalysisID<TimingNetlist>(&TimingNetlistID);
   AA = &getAnalysis<AliasAnalysis>();
   LI = &getAnalysis<LoopInfo>();
   BPI = &getAnalysis<BranchProbabilityInfo>();
