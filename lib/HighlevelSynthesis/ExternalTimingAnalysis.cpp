@@ -637,6 +637,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   std::vector<const char*> args;
 
   args.push_back(quartus.c_str());
+  args.push_back("--64bit");
   args.push_back("-t");
   args.push_back(PrjTcl.c_str());
   args.push_back(0);
