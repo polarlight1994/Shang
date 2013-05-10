@@ -115,13 +115,12 @@ def main(builtinParameters = {}):
 
     #test_option = random.choice(option_space)
     for test_option in option_space :
+      test_option.update(basic_config)
       # TODO: Provide the keyword constructor
-      hls_step = HLSStep(basic_config)
+      hls_step = HLSStep(test_option)
       hls_step.test_name = test_name
       hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
       hls_step.test_file = test_path
-      hls_step.fmax = test_option['fmax']
-
       hls_step.option = test_option
 
       hls_step.prepareTest()

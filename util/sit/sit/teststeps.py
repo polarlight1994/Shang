@@ -49,7 +49,7 @@ class TestStep :
     # The FPGA parameter.
     self.fpga_family = FamilyNames[config['device_family']]
     self.fpga_device = FamilyDevices[config['device_family']]
-    self.require_license = (self.option['device_family'] == 'StratixIV')
+    self.require_license = (config['device_family'] == 'StratixIV')
     #Use full version for stratix devices.
     self.quartus_bin = '/nfs/app/altera/quartus12.1x64_%s/quartus/bin/' % ('full' if self.require_license else 'web')
 
@@ -220,14 +220,14 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     jt.jobName = self.getStepDesc()
     jt.remoteCommand = 'timeout'
     jt.args = ['%ds' % self.hls_timeout, self.shang, self.synthesis_config_file, '-stats',
-               '-timing-model=%(timing_model)s' % self.option,
-               '-vast-disable-mux-slack=%(vast_disable_mux_slack)s' % self.option,
-               '-shang-enable-mux-pipelining=%(shang_enable_mux_pipelining)s' % self.option,
-               '-shang-baseline-scheduling-only=%(shang_baseline_scheduling_only)s' % self.option,
-               '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self.option,
-               '-shang-enable-memory-partition=%(shang_enable_memory_partition)s' % self.option,
-               '-shang-enable-pre-schedule-lut-mapping=%(shang_enable_pre_schedule_lut_mapping)s' % self.option,
-               '-shang-enable-register-sharing=%(shang_enable_register_sharing)s' % self.option,
+               '-timing-model=%(timing_model)s' % self,
+               '-vast-disable-mux-slack=%(vast_disable_mux_slack)s' % self,
+               '-shang-enable-mux-pipelining=%(shang_enable_mux_pipelining)s' % self,
+               '-shang-baseline-scheduling-only=%(shang_baseline_scheduling_only)s' % self,
+               '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self,
+               '-shang-enable-memory-partition=%(shang_enable_memory_partition)s' % self,
+               '-shang-enable-pre-schedule-lut-mapping=%(shang_enable_pre_schedule_lut_mapping)s' % self,
+               '-shang-enable-register-sharing=%(shang_enable_register_sharing)s' % self,
                '-shang-selector-ignore-trivial-loops=true',
                '-shang-selector-ignore-x-fanins=true'
               ]
@@ -549,7 +549,7 @@ class AlteraSynStep(TestStep) :
 load_package flow
 load_package report
 
-exec python {{ [config_dir, "altera_sdc_generator.py"]|joinpath }} --sql {{ [hls_base_dir, test_name + ".sql"]|joinpath }} --sdc {{ [hls_base_dir, test_name + ".sdc"]|joinpath }} --period {{ 1000.0 / fmax}} --factor {{ option['shang_constraints_factor'] }}
+exec python {{ [config_dir, "altera_sdc_generator.py"]|joinpath }} --sql {{ [hls_base_dir, test_name + ".sql"]|joinpath }} --sdc {{ [hls_base_dir, test_name + ".sdc"]|joinpath }} --period {{ 1000.0 / fmax}} --factor {{ shang_constraints_factor }}
 
 project_new {{ test_name }} -overwrite
 
