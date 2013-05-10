@@ -24,7 +24,7 @@
 using namespace llvm;
 
 static cl::opt<bool>
-  InstSubModForFU("vtm-instantiate-submod-for-fu",
+  InstSubModForFU("shang-instantiate-submod-for-fu",
   cl::desc("Instantiate submodule for each functional unit"),
   cl::init(true));
 
