@@ -217,7 +217,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     # Create the HLS job.
     jt = Session.createJobTemplate()
 
-    jt.jobName = self.getStepDesc()
+    #jt.jobName = self.getStepDesc()
     jt.remoteCommand = 'timeout'
     jt.args = ['%ds' % self.hls_timeout, self.shang, self.synthesis_config_file, '-stats',
                '-timing-model=%(timing_model)s' % self,
@@ -339,7 +339,7 @@ diff expected.output hardware.out || exit 1
     # Create the hybrid simulation job.
     jt = Session.createJobTemplate()
 
-    jt.jobName = self.getStepDesc()
+    #jt.jobName = self.getStepDesc()
     jt.remoteCommand = 'bash'
     jt.args = [ self.hybrid_sim_script ]
     #Set up the correct working directory and the output path
@@ -502,7 +502,7 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
     # Create the simulation job.
     jt = Session.createJobTemplate()
 
-    jt.jobName = self.getStepDesc()
+    #jt.jobName = self.getStepDesc()
     jt.remoteCommand = 'timeout'
     jt.args = [ '%ds' % self.sim_timeout, 'bash', self.pure_hw_sim_script ]
     #Set up the correct working directory and the output path
@@ -591,7 +591,7 @@ project_close
     # Create the simulation job.
     jt = Session.createJobTemplate()
 
-    jt.jobName = self.getStepDesc()
+    #jt.jobName = self.getStepDesc()
     jt.remoteCommand = 'timeout'
     jt.args = [ '%ds' % self.syn_timeout, os.path.join(self.quartus_bin, 'quartus_sh'), '--64bit', '-t',  self.altera_synthesis_script] #self.syn_timeout
     #Set up the correct working directory and the output path
