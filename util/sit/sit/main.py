@@ -116,9 +116,9 @@ def main(builtinParameters = {}):
 
     #test_option = random.choice(option_space)
     for test_option in option_space :
-      test_option.update(basic_config)
       # TODO: Provide the keyword constructor
-      hls_step = HLSStep(test_option)
+      # Expand the test_option so that the test option always override the basic_config.
+      hls_step = HLSStep(dict(basic_config, **test_option))
       hls_step.test_name = test_name
       hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
       hls_step.test_file = test_path
