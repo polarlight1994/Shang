@@ -72,7 +72,7 @@ void LuaScript::init() {
   ];
 
   // Bind the object.
-  luabind::globals(State)["ExternalTool"] = luabind::newtable(State);
+  luabind::globals(State)["TimingAnalysis"] = luabind::newtable(State);
   luabind::globals(State)["FUs"] = luabind::newtable(State);
   luabind::globals(State)["Functions"] = luabind::newtable(State);
   luabind::globals(State)["Modules"] = luabind::newtable(State);

@@ -301,11 +301,14 @@ void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
                                                 const sys::Path &NetlistPath,
                                                 const sys::Path &ExtractScript)
                                                 const {
+  const char *LUAPath[] = { "TimingAnalysis", "Device" };
+  const std::string &DeviceName = getStrValueFromEngine(LUAPath);
+
   O << "load_package flow\n"
        "load_package report\n"
     << "project_new  -overwrite " << VM.getName() << " \n"
 //       "set_global_assignment -name FAMILY \"Cyclone IV E\"\n"
-       "set_global_assignment -name DEVICE EP4CE75F29C6\n"
+       "set_global_assignment -name DEVICE " << DeviceName << "\n"
        "set_global_assignment -name TOP_LEVEL_ENTITY " << VM.getName() << "\n"
        "set_global_assignment -name SOURCE_FILE \""<< NetlistPath.str() <<"\"\n"
        //"set_global_assignment -name SDC_FILE @SDC_FILE@\n"
@@ -629,7 +632,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   PrjTclO.close();
   errs() << " done. \n";
 
-  const char *LUAPath[] = { "ExternalTool", "Path" };
+  const char *LUAPath[] = { "TimingAnalysis", "ExternalTool" };
   sys::Path quartus(getStrValueFromEngine(LUAPath));
   std::vector<const char*> args;
 
