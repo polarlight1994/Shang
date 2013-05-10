@@ -199,8 +199,8 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
       buildTimingPathTo(VASTValPtr(U).get(), Sel, MUXDelay);
       // And the predicate expression.
       buildTimingPathTo(VASTValPtr(U.getPred()).get(), Sel, MUXDelay);
-      // Ignore the slot active because it is just the expression from the ready
-      // signal, and we cannot do anything with the ready signal.
+      if (VASTValPtr SlotActive = U.getSlotActive())
+        buildTimingPathTo(SlotActive.get(), Sel, MUXDelay);
     }
   }
 

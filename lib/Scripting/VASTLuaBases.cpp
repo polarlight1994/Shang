@@ -420,6 +420,9 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
 
     typedef VASTSlot::const_op_iterator op_iterator;
 
+    // Write the expression of the slot ready signal.
+    VASTOperandList::visitTopOrder(S->getActive().get(), Visited, Printer);
+
     OS << "\n// At slot " << S->SlotNum;
     if (BasicBlock *BB = S->getParent()) OS << ", BB: " << BB->getName();
     OS << '\n';

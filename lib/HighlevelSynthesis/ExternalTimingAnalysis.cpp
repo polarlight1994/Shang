@@ -254,9 +254,13 @@ bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
       VASTValue *Cnd = VASTValPtr(U.getPred()).get();
       // Visit the cone rooted on the guarding condition.
       VASTOperandList::visitTopOrder(Cnd, Visited, ETA);
-      buildTimingPathTo(FI, Sel, TNLDelay());
-      // Ignore the slot active because it is just the expression from the ready
-      // signal, and we cannot do anything with the ready signal.
+      buildTimingPathTo(Cnd, Sel, TNLDelay());
+
+      if (VASTValue *SlotActive = U.getSlotActive().get()) {
+        // Visit the cone rooted on the ready signal.
+        VASTOperandList::visitTopOrder(SlotActive, Visited, ETA);
+        buildTimingPathTo(SlotActive, Sel, TNLDelay());
+      }
     }
   }
 
@@ -519,9 +523,12 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
     VASTValue *Cnd = VASTValPtr(U.getPred()).get();
     // Visit the cone rooted on the guarding condition.
     buildPathInfoForCone(O, Cnd);
-    extractPathDelay(O, Sel, FI);
-    // Ignore the slot active because it is just the expression from the ready
-    // signal, and we cannot do anything with the ready signal.
+    extractPathDelay(O, Sel, Cnd);
+
+    if (VASTValue *SlotActive = U.getSlotActive().get()) {
+      buildPathInfoForCone(O, SlotActive);
+      extractPathDelay(O, Sel, SlotActive);
+    }
   }
 }
 
