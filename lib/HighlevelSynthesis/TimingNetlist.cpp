@@ -85,15 +85,15 @@ TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu,
   return S2T.addLLParallel(T2D);
 }
 
-TimingNetlist::TimingNetlist() : VASTModulePass(ID),
-  Estimator(new BitlevelDelayEsitmator(PathInfo, TimingModel))
-{
+TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
   initializeTimingNetlistPass(*PassRegistry::getPassRegistry());
 }
 
-TimingNetlist::~TimingNetlist() {
-  delete Estimator;
+TimingNetlist::TimingNetlist(char &ID) : VASTModulePass(ID) {
+  initializeTimingNetlistPass(*PassRegistry::getPassRegistry());
 }
+
+TimingNetlist::~TimingNetlist() {}
 
 char TimingNetlist::ID = 0;
 
@@ -160,10 +160,12 @@ TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, VASTSelector *Sel) const {
 }
 
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
+  BitlevelDelayEsitmator Estimator(PathInfo, TimingModel);
+
   // Build the timing path for datapath nodes.
   typedef DatapathContainer::expr_iterator expr_iterator;
   for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
-    if (!I->use_empty()) Estimator->estimateTimingOnTree(I);
+    if (!I->use_empty()) Estimator.estimateTimingOnTree(I);
   
   // Build the timing path for registers.
   typedef VASTModule::selector_iterator iterator;
@@ -197,8 +199,8 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
       buildTimingPathTo(VASTValPtr(U).get(), Sel, MUXDelay);
       // And the predicate expression.
       buildTimingPathTo(VASTValPtr(U.getPred()).get(), Sel, MUXDelay);
-      if (VASTValPtr SlotActive = U.getSlotActive())
-        buildTimingPathTo(SlotActive.get(), Sel, MUXDelay);
+      // Ignore the slot active because it is just the expression from the ready
+      // signal, and we cannot do anything with the ready signal.
     }
   }
 

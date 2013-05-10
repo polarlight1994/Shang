@@ -39,7 +39,7 @@ using namespace llvm;
 STATISTIC(NumQueriesWritten, "Number of path delay queries written");
 STATISTIC(NumQueriesRead, "Number of path delay queries read");
 
-namespace llvm {
+namespace {
 struct TempDir {
   sys::Path Dirname;
 
@@ -124,7 +124,6 @@ public:
 
 struct ExternalTimingAnalysis : TimingEstimatorBase {
   VASTModule &VM;
-  TimingNetlist &TNL;
   SpecificBumpPtrAllocator<float> Allocator;
   std::vector<float*> DelayRefs;
   typedef std::map<VASTValue*, float*> SrcInfo;
@@ -166,53 +165,103 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
   // Read the JSON file written by the timing extraction script.
   bool readTimingAnalysisResult(const sys::Path &ResultPath);
 
-  void updateTimingNetlist();
-
   SrcDelayInfo &getOrCreateSrcDelayInfo(VASTValue *Src) {
     return PathDelay[Src];
   }
 
-  ExternalTimingAnalysis(VASTModule &VM, TimingNetlist &TNL)
-    : TimingEstimatorBase(TNL.PathInfo, TimingEstimatorBase::ZeroDelay),
-      VM(VM), TNL(TNL) {}
+  ExternalTimingAnalysis(VASTModule &VM, TimingNetlist::PathDelayInfo &PathInfo)
+    : TimingEstimatorBase(PathInfo, TimingEstimatorBase::ZeroDelay), VM(VM) {}
 
-  bool run();
-};
+  bool analysisWithSynthesisTool();
 
-struct NetlistUpdator {
-  typedef ExternalTimingAnalysis::SrcInfo SrcInfo;
-  typedef ExternalTimingAnalysis::SrcDelayInfo SrcDelayInfo;
-  typedef ExternalTimingAnalysis::SrcEntryTy SrcEntryTy;
-  typedef ExternalTimingAnalysis::delay_type delay_type;
-
-  ExternalTimingAnalysis &ETA;
-  NetlistUpdator(ExternalTimingAnalysis &ETA) : ETA(ETA) {}
-
-  void operator()(VASTNode *N) const {
+  // Update the arrival time information of a VASTNode.
+  void operator()(VASTNode *N) {
     VASTExpr *Expr = dyn_cast<VASTExpr>(N);
 
     if (Expr == 0) return;
 
     // Update the timing netlist according to the delay matrix.
-    SrcInfo &Srcs = ETA.DelayMatrix[Expr];
-    SrcDelayInfo &CurInfo = ETA.getOrCreateSrcDelayInfo(Expr);
+    SrcInfo &Srcs = DelayMatrix[Expr];
+    SrcDelayInfo &CurInfo = getOrCreateSrcDelayInfo(Expr);
 
     typedef SrcInfo::iterator iterator;
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       float delay = *I->second;
-      ETA.updateDelay(CurInfo, SrcEntryTy(I->first, delay_type(delay, delay)));
+      updateDelay(CurInfo, SrcEntryTy(I->first, delay_type(delay, delay)));
     }
 
     // Also accumlate the delay from the operands.
     typedef VASTExpr::op_iterator op_iterator;
     for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
       VASTValPtr Op = *I;
-      ETA.accumulateDelayFrom(Expr, Op.get());
+      accumulateDelayFrom(Expr, Op.get());
     }
   }
 };
+
+struct ExternalTimingNetlist : public TimingNetlist {
+  static char ID;
+
+  ExternalTimingNetlist() : TimingNetlist(ID) {
+    initializeExternalTimingNetlistPass(*PassRegistry::getPassRegistry());
+  }
+
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    // Perform the control logic synthesis because we need to write the netlist.
+    AU.addRequiredID(ControlLogicSynthesisID);
+    TimingNetlist::getAnalysisUsage(AU);
+  }
+
+  bool runOnVASTModule(VASTModule &VM);
+};
 }
 
+char ExternalTimingNetlist::ID = 0;
+char &llvm::ExternalTimingNetlistID = ExternalTimingNetlist::ID;
+
+INITIALIZE_PASS_BEGIN(ExternalTimingNetlist, "shang-external-timing-netlist",
+                      "Preform Timing Estimation on the RTL Netlist"
+                      " with the synthesis tool",
+                      false, true)
+  INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
+INITIALIZE_PASS_END(ExternalTimingNetlist, "shang-external-timing-netlist",
+                    "Preform Timing Estimation on the RTL Netlist"
+                    " with the synthesis tool",
+                    false, true)
+
+bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
+  ExternalTimingAnalysis ETA(VM, PathInfo);
+
+  // Run the synthesis tool to get the arrival time estimation, fall back to
+  // the internal estimator if the external tool fail.
+  if (!ETA.analysisWithSynthesisTool())
+    return TimingNetlist::runOnVASTModule(VM);
+
+  // Update the timing netlist.
+  std::set<VASTOperandList*> Visited;
+
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+    VASTSelector *Sel = I;
+    typedef VASTSelector::iterator fanin_iterator;
+    for (fanin_iterator SI = Sel->begin(), SE = Sel->end(); SI != SE; ++SI) {
+      VASTLatch U = *SI;
+      VASTValue *FI = VASTValPtr(U).get();
+      // Visit the cone rooted on the fanin.
+      VASTOperandList::visitTopOrder(FI, Visited, ETA);
+      buildTimingPathTo(FI, Sel, TNLDelay());
+
+      VASTValue *Cnd = VASTValPtr(U.getPred()).get();
+      // Visit the cone rooted on the guarding condition.
+      VASTOperandList::visitTopOrder(Cnd, Visited, ETA);
+      buildTimingPathTo(FI, Sel, TNLDelay());
+      // Ignore the slot active because it is just the expression from the ready
+      // signal, and we cannot do anything with the ready signal.
+    }
+  }
+
+  return false;
+}
 
 void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {
   // Name all expressions before writting the netlist.
@@ -523,31 +572,7 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(const sys::Path &ResultPat
   return true;
 }
 
-void ExternalTimingAnalysis::updateTimingNetlist() {
-  std::set<VASTOperandList*> Visited;
-
-  typedef VASTModule::selector_iterator iterator;
-  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
-    VASTSelector *Sel = I;
-    typedef VASTSelector::iterator fanin_iterator;
-    for (fanin_iterator SI = Sel->begin(), SE = Sel->end(); SI != SE; ++SI) {
-      VASTLatch U = *SI;
-      VASTValue *FI = VASTValPtr(U).get();
-      // Visit the cone rooted on the fanin.
-      VASTOperandList::visitTopOrder(FI, Visited, NetlistUpdator(*this));
-      TNL.buildTimingPathTo(FI, Sel, TNLDelay());
-
-      VASTValue *Cnd = VASTValPtr(U.getPred()).get();
-      // Visit the cone rooted on the guarding condition.
-      VASTOperandList::visitTopOrder(Cnd, Visited, NetlistUpdator(*this));
-      TNL.buildTimingPathTo(FI, Sel, TNLDelay());
-      // Ignore the slot active because it is just the expression from the ready
-      // signal, and we cannot do anything with the ready signal.
-    }
-  }
-}
-
-bool ExternalTimingAnalysis::run() {
+bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   TempDir Dir;
   std::string ErrorInfo;
 
@@ -616,8 +641,6 @@ bool ExternalTimingAnalysis::run() {
 
   if (!readTimingAnalysisResult(TimingExtractResult))
     return false;
-
-  updateTimingNetlist();
 
   return true;
 }

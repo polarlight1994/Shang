@@ -24,7 +24,6 @@ namespace llvm {
 class VASTSelector;
 class VASTSeqValue;
 class VASTValue;
-class BitlevelDelayEsitmator;
 
 struct TNLDelay {
   float MSB, LSB;
@@ -130,18 +129,19 @@ public:
   typedef FaninDelayInfo::iterator fanin_iterator;
   typedef FaninDelayInfo::const_iterator const_fanin_iterator;
 
-private:
+protected:
   // The path delay information.
   PathDelayInfo PathInfo;
   FaninDelayInfo FaninInfo;
-  BitlevelDelayEsitmator *Estimator;
 
   void buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst, delay_type MUXDelay);
+
+  explicit TimingNetlist(char &ID);
 public: 
   static char ID;
 
   TimingNetlist();
-  ~TimingNetlist();
+  virtual ~TimingNetlist();
 
   TNLDelay getMuxDelay(unsigned Fanins, VASTSelector *Sel = 0) const;
 
@@ -196,9 +196,9 @@ public:
   path_iterator path_end() { return PathInfo.end(); }
   const_path_iterator path_end() const { return PathInfo.end(); }
 
-  void releaseMemory();
-  bool runOnVASTModule(VASTModule &VM);
-  void getAnalysisUsage(AnalysisUsage &AU) const;
+  virtual void releaseMemory();
+  virtual bool runOnVASTModule(VASTModule &VM);
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const;
   void print(raw_ostream &OS) const;
 
   void printPathsTo(raw_ostream &OS, VASTValue *Dst) const;
