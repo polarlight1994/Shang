@@ -193,8 +193,8 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
     // Also accumlate the delay from the operands.
     typedef VASTExpr::op_iterator op_iterator;
     for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
-      VASTValPtr Op = *I;
-      accumulateDelayFrom(Expr, Op.get());
+      VASTValue *Op = VASTValPtr(*I).get();
+      if (hasPathInfo(Op)) accumulateDelayFrom(Expr, Op);
     }
   }
 };
