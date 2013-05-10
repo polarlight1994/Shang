@@ -574,7 +574,7 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(const sys::Path &ResultPat
 
   while (!Parser.finish()) {
     unsigned idx = Parser.getPathRef();
-    float delay = Parser.getPathDelay();
+    float delay = Parser.getPathDelay() / VFUs::Period;
     setDelay(idx, delay);
     ++NumQueriesRead;
   }
