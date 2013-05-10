@@ -103,6 +103,10 @@ public:
 
   void dump() const;
 
+  // Get the name of the object in timequest timing netlist.
+  // FIXME: Make this a virtual function.
+  std::string getSTAObjectName() const;
+
   static std::string DirectClkEnAttr, ParallelCaseAttr, FullCaseAttr;
 };
 

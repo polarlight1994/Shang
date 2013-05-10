@@ -31,6 +31,60 @@ void VASTNode::dropUses() {
   llvm_unreachable("Subclass should implement this function!");
 }
 
+static std::string GetSTAObjectName(const VASTSelector *Sel) {
+  std::string Name;
+  raw_string_ostream OS(Name);
+
+  if (const VASTBlockRAM *RAM = dyn_cast<VASTBlockRAM>(Sel->getParent())) {
+    OS << " *"
+      // BlockRam name with prefix
+      << getFUDesc<VFUBRAM>()->Prefix
+      << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << "* *"
+      // Or simply the name of the output register.
+      << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
+      << "* ";
+  } else
+    OS << " *" << Sel->getName() << "* ";
+
+  return OS.str();
+}
+
+static std::string GetSTAObjectName(const VASTValue *V) {
+  std::string Name;
+  raw_string_ostream OS(Name);
+  if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
+    if (const VASTSeqValue *SV = dyn_cast<VASTSeqValue>(NV))
+      return GetSTAObjectName(SV->getSelector());
+
+    // The block RAM should be printed as Prefix + ArrayName in the script.
+    if (const char *N = NV->getName()) {
+      OS << " *" << N << "* ";
+      return OS.str();
+    }
+  } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
+    std::string Name = E->getSubModName();
+    if (!Name.empty()) {
+      OS << " *" << Name << "|* ";
+      return OS.str();
+    } else if (E->hasName()) {
+      OS << " *" << E->getTempName() << "* ";
+      return OS.str();
+    }
+  }
+
+  return "";
+}
+
+std::string VASTNode::getSTAObjectName() const {
+  if (const VASTValue *V = dyn_cast<VASTValue>(this))
+    return GetSTAObjectName(V);
+
+  if (const VASTSelector *Sel = dyn_cast<VASTSelector>(this))
+    return GetSTAObjectName(Sel);
+
+  return "";
+}
+
 std::string VASTNode::DirectClkEnAttr = "";
 std::string VASTNode::ParallelCaseAttr = "";
 std::string VASTNode::FullCaseAttr = "";

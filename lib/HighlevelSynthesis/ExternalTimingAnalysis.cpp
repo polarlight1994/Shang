@@ -378,65 +378,21 @@ ExternalTimingAnalysis::buildPathInfoForCone(raw_ostream &O, VASTValue *Root) {
   }
 }
 
-static std::string GetObjectName(const VASTSelector *Sel) {
+static std::string GetSTACollection(const VASTSelector *Sel) {
   std::string Name;
   raw_string_ostream OS(Name);
-
-  if (const VASTBlockRAM *RAM = dyn_cast<VASTBlockRAM>(Sel->getParent())) {
-    OS << " *"
-      // BlockRam name with prefix
-      << getFUDesc<VFUBRAM>()->Prefix
-      << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << "* *"
-      // Or simply the name of the output register.
-      << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
-      << "* ";
-  } else
-    OS << " *" << Sel->getName() << "* ";
-
+  OS << "[get_keepers -nowarn \"" << Sel->getSTAObjectName() << "\"]";
   return OS.str();
 }
 
-static std::string GetObjectName(const VASTValue *V) {
-  std::string Name;
-  raw_string_ostream OS(Name);
-  if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
-    if (const VASTSeqValue *SV = dyn_cast<VASTSeqValue>(NV))
-      return GetObjectName(SV->getSelector());
-
-    // The block RAM should be printed as Prefix + ArrayName in the script.
-    if (const char *N = NV->getName()) {
-      OS << " *" << N << "* ";
-      return OS.str();
-    }
-  } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
-    std::string Name = E->getSubModName();
-    if (!Name.empty()) {
-      OS << " *" << Name << "|* ";
-      return OS.str();
-    } else if (E->hasName()) {
-      OS << " *" << E->getTempName() << "* ";
-      return OS.str();
-    }
-  }
-
-  return "";
-}
-
-static std::string GetCollection(const VASTSelector *Sel) {
-  std::string Name;
-  raw_string_ostream OS(Name);
-  OS << "[get_keepers -nowarn \"" << GetObjectName(Sel) << "\"]";
-  return OS.str();
-}
-
-static std::string GetCollection(const VASTValue *V) {
+static std::string GetSTACollection(const VASTValue *V) {
   if (const VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V))
-    return GetCollection(SV->getSelector());
+    return GetSTACollection(SV->getSelector());
 
   if (isa<VASTExpr>(V)) {
     std::string Name;
     raw_string_ostream OS(Name);
-    OS << "[get_cells -nowarn \"" << GetObjectName(V) << "\"]";
+    OS << "[get_cells -nowarn \"" << V->getSTAObjectName() << "\"]";
     return OS.str();
   }
 
@@ -448,9 +404,9 @@ template<typename T0, typename T1, typename T2>
 static
 void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Thu, T2 *Src,
                           unsigned RefIdx, bool ExtractMinDelay = false) {
-  O << "set src " << GetCollection(Src) << '\n';
-  O << "set dst " << GetCollection(Dst) << '\n';
-  if (Thu) O << "set thu " << GetCollection(Thu) << '\n';
+  O << "set src " << GetSTACollection(Src) << '\n';
+  O << "set dst " << GetSTACollection(Dst) << '\n';
+  if (Thu) O << "set thu " << GetSTACollection(Thu) << '\n';
   O << "if {[get_collection_size $src] && [get_collection_size $dst]} {\n";
   if (Thu) O << "if {[get_collection_size $thu]} {\n";
   // Use get_path instead of get_timing_path to get the longest delay paths
@@ -467,9 +423,9 @@ void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Thu, T2 *Src,
     "if {[get_collection_size $paths]} {\n"
     "  foreach_in_collection path $paths {\n"
     "    set delay [get_path_info $path -data_delay]\n"
-    "    post_message -type info \"" << GetObjectName(Src);
-  if (Thu) O << " -> " << GetObjectName(Thu);
-  O << " -> " << GetObjectName(Dst) << " delay: $delay\"\n"
+    "    post_message -type info \"" << Src->getSTAObjectName();
+  if (Thu) O << " -> " << Thu->getSTAObjectName();
+  O << " -> " << Dst->getSTAObjectName() << " delay: $delay\"\n"
     "puts $JSONFile \"" << RefIdx << " $delay\"\n" <<
     "  }\n"
     "}\n"; // Path Size

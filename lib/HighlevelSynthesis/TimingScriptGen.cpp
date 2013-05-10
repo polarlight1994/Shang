@@ -310,47 +310,6 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
   });
 }
 
-static std::string GetObjectName(const VASTSelector *Sel) {
-  std::string Name;
-  raw_string_ostream OS(Name);
-
-  if (const VASTBlockRAM *RAM = dyn_cast<VASTBlockRAM>(Sel->getParent())) {
-    OS << " *"
-      // BlockRam name with prefix
-      << getFUDesc<VFUBRAM>()->Prefix
-      << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << "* *"
-      // Or simply the name of the output register.
-      << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
-      << "* ";
-  } else
-    OS << " *" << Sel->getName() << "* ";
-
-  return OS.str();
-}
-
-static std::string GetObjectName(const VASTValue *V) {
-  std::string Name;
-  raw_string_ostream OS(Name);
-  if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
-    if (const VASTSeqValue *SV = dyn_cast<VASTSeqValue>(NV))
-      return GetObjectName(SV->getSelector());
-
-    // The block RAM should be printed as Prefix + ArrayName in the script.
-    if (const char *N = NV->getName()) {
-      OS << " *" << N << "* ";
-      return OS.str();
-    }
-  } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
-    std::string Name = E->getSubModName();
-    if (!Name.empty()) {
-      OS << " *" << E->getSubModName() << "* ";
-      return OS.str();
-    }
-  }
-
-  return "";
-}
-
 void PathIntervalQueryCache::dump() const {
   dbgs() << "\nCurrent data-path timing:\n";
   typedef QueryCacheTy::const_iterator it;
@@ -379,8 +338,8 @@ void PathIntervalQueryCache::insertMCPWithInterval(SrcTy *Src,
                                                    const SrcInfo &SI) const {
   assert(!ThuName.empty() && "Bad through node name!");
   OS << "INSERT INTO mcps(src, dst, thu, cycles, normalized_delay) VALUES(\n"
-     << '\'' << GetObjectName(Src) << "', \n"
-     << '\'' << GetObjectName(Dst) << "', \n"
+     << '\'' << Src->getSTAObjectName() << "', \n"
+     << '\'' << Dst->getSTAObjectName() << "', \n"
      << '\'' << ThuName << "', \n"
      << SI.NumCycles << ", \n"
      << SI.CriticalDelay << ");\n";
@@ -390,7 +349,7 @@ unsigned PathIntervalQueryCache::insertMCPThough(VASTValue *Thu,
                                                  const SeqValSetTy &SrcSet)
                                                  const {
   std::string ThuName = "shang-null-node";
-  if (Thu) ThuName = GetObjectName(Thu);
+  if (Thu) ThuName = Thu->getSTAObjectName();
   
   if (ThuName.empty()) return 0;
 
