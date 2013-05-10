@@ -144,7 +144,7 @@ def main(builtinParameters = {}):
 
       if status == 'passed' :
         # Now the job finished successfully
-        print "Test", job.getStepDesc(), "passed"
+        print "Test", job.test_name, job.step_name(), "passed"
         job.submitResults(con)
         # Generate subtest.
         # FIXME: Only generate the subtest if the previous test passed.
