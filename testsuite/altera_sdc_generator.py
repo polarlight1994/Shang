@@ -5,6 +5,7 @@ import sqlite3, argparse
 parser = argparse.ArgumentParser(description='Altera SDC Script Generator')
 parser.add_argument("--sql", type=str, help="The script to build the sql database")
 parser.add_argument("--sdc", type=str, help="The path to which the sdc script will be written")
+parser.add_argument("--report", type=str, help="The path to which the report script will be written")
 parser.add_argument("--period", type=float, help="The clock period")
 parser.add_argument("--factor", type=float, help="The factor to the critical delay", default=0.0)
 
@@ -12,7 +13,9 @@ args = parser.parse_args()
 
 sql_script = open(args.sql, 'r')
 sdc_script = open(args.sdc, 'w')
+report_script = open(args.report, 'w')
 
+#Write the header of the sdc
 sdc_script.write('''
 create_clock -name "clk" -period %sns [get_ports {clk}]
 derive_pll_clocks -create_base_clocks
@@ -20,6 +23,44 @@ derive_clock_uncertainty
 set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
 set num_not_applied 0
 ''' % args.period)
+
+#Write the header of the report script
+report_script.write('''
+load_package report
+load_report
+
+#Output the fail path
+#report_timing -from_clock { clk } -to_clock { clk } -setup -npaths 1 -detail full_path -stdout
+
+qsta_utility::generate_all_summary_tables
+report_clock_fmax_summary -panel_name "Fmax Summary"
+
+# Write the fmax report.
+set fmax_rpt [open "clk_fmax.rpt" w]
+
+set domain_list [get_clock_fmax_info]
+foreach domain $domain_list {
+	set name [lindex $domain 0]
+	set fmax [lindex $domain 1]
+	set restricted_fmax [lindex $domain 2]
+
+  # Write the restricted_fmax
+  puts $fmax_rpt $restricted_fmax
+	#puts $fmax_rpt "Clock $name : Fmax = $fmax (Restricted Fmax = $restricted_fmax)"
+}
+
+close $fmax_rpt
+
+save_report_database
+unload_report
+
+set worst_slack 0.0
+set worst_paths [get_timing_paths -nworst 1 -less_tan_slack 0.0 ]
+foreach_in_collection path $worst_paths {
+  set worst_slack [get_path_info $path -slack]
+  post_message -type info "Worst slack: $worst_slack"
+}
+''')
 
 con = sqlite3.connect(":memory:")
 
@@ -44,9 +85,11 @@ keeper_query = '''SELECT DISTINCT src FROM mcps where %(constraint)s
 for keeper_row in cusor.execute(keeper_query):
   keeper = keeper_row[0]
   keeper_map[keeper] = keeper_id
-  sdc_script.write('''set keepers%(id)s [get_keepers {%(keeper_patterns)s}]\n''' % {
+  keeper_line = '''set keepers%(id)s [get_keepers {%(keeper_patterns)s}]\n''' % {
                    'id':keeper_id, 'keeper_patterns' : keeper
-                   })
+                }
+  sdc_script.write(keeper_line)
+  report_script.write(keeper_line)
   keeper_id += 1
 
 # Generate the collection for nets
@@ -60,9 +103,10 @@ for net_row in cusor.execute(net_query):
   if net in net_map: continue
 
   net_map[net] = net_id
-  sdc_script.write('''set nets%(id)s [get_nets {%(net_patterns)s}]\n''' % {
-                   'id':net_id, 'net_patterns' : net }
-                  )
+  net_line = '''set nets%(id)s [get_nets {%(net_patterns)s}]\n''' % {
+             'id':net_id, 'net_patterns' : net }
+  sdc_script.write(net_line)
+  report_script.write(net_line)
   net_id += 1
 
 # Generate the multi-cycle path constraints.

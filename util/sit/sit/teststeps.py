@@ -553,7 +553,7 @@ class AlteraSynStep(TestStep) :
 load_package flow
 load_package report
 
-exec python {{ [config_dir, "altera_sdc_generator.py"]|joinpath }} --sql {{ [hls_base_dir, test_name + ".sql"]|joinpath }} --sdc {{ [hls_base_dir, test_name + ".sdc"]|joinpath }} --period {{ 1000.0 / fmax}} --factor {{ shang_constraints_factor }}
+exec python {{ [config_dir, "altera_sdc_generator.py"]|joinpath }} --sql {{ [hls_base_dir, test_name + ".sql"]|joinpath }} --sdc {{ [hls_base_dir, test_name + ".sdc"]|joinpath }} --report {{ [hls_base_dir, test_name + "_report_timing.tcl"]|joinpath }} --period {{ 1000.0 / fmax}} --factor {{ shang_constraints_factor }}
 
 project_new {{ test_name }} -overwrite
 
@@ -580,7 +580,7 @@ set_global_assignment -name EDA_ENABLE_GLITCH_FILTERING ON -section_id eda_simul
 set ENABLE_PHYSICAL_SYNTHESIS "OFF"
 
 source {{ [config_dir, 'quartus_compile.tcl']|joinpath }}
-execute_module -tool sta -args {--report_script {{ [config_dir, 'extract_timing.tcl']|joinpath }} }
+execute_module -tool sta -args {--report_script {{ [hls_base_dir, test_name + "_report_timing.tcl"]|joinpath }} }
 
 source {{ [config_dir, 'report_json_data.tcl']|joinpath }}
 
