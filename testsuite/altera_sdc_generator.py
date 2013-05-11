@@ -127,7 +127,7 @@ def generate_constraint(**kwargs) :
   foreach_in_collection path $fail_paths {
     set slack [get_path_info $path -slack]
     set delay [get_path_info $path -data_delay]
-    post_message -type info "Available cycles: %(cycles)d, estimated delay: [expr %(delay)f * %(period)f], actual delay: $delay, slack: $slack path begin:"
+    post_message -type info "Timing violation: available cycles: %(cycles)d, estimated delay: [expr %(delay)f * %(period)f], actual delay: $delay, slack: $slack path begin:"
     report_timing %(path_fileter)s -setup -npaths 1 -less_than_slack $slack_threshold -detail full_path -stdout
     post_message -type info "end path"
   }
