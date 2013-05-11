@@ -55,11 +55,12 @@ save_report_database
 unload_report
 
 set worst_slack 0.0
-set worst_paths [get_timing_paths -nworst 1 -less_tan_slack 0.0 ]
+set worst_paths [get_timing_paths -nworst 1 -less_than_slack 0.0 ]
 foreach_in_collection path $worst_paths {
   set worst_slack [get_path_info $path -slack]
   post_message -type info "Worst slack: $worst_slack"
 }
+set slack_threshold [expr $worst_slack * 0.9]
 ''')
 
 con = sqlite3.connect(":memory:")
@@ -112,24 +113,39 @@ for net_row in cusor.execute(net_query):
 # Generate the multi-cycle path constraints.
 def generate_constraint(**kwargs) :
   if kwargs['thu'] == 'netsNone' :
-    sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] } { set_multicycle_path -from $%(src)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
+    kwargs['cnd_string'] = '''[get_collection_size $%(src)s] && [get_collection_size $%(dst)s]''' % kwargs
+    kwargs['path_fileter'] = '''-from $%(src)s -to $%(dst)s''' % kwargs
   else :
-    sdc_script.write('''if { [get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s] } { set_multicycle_path -from $%(src)s -through $%(thu)s -to $%(dst)s -setup -end %(cycles)d \n''' % kwargs)
+    kwargs['cnd_string'] = '''[get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s]''' % kwargs
+    kwargs['path_fileter'] = '''-from $%(src)s -through $%(thu)s -to $%(dst)s''' % kwargs
+
+  sdc_script.write('''if { %(cnd_string)s } { set_multicycle_path %(path_fileter)s -setup -end %(cycles)d \n''' % kwargs)
+  report_script.write(
+'''if { %(cnd_string)s } {
+  set fail_paths [get_timing_paths %(path_fileter)s -setup -npaths 1 -less_than_slack $slack_threshold ]
+  foreach_in_collection path $fail_paths {
+    set slack [get_path_info $path -slack]
+    set delay [get_path_info $path -data_delay]
+    post_message -type info "Available cycles: %(cycles)d, estimated delay: %(delay)f, actual delay: $delay, slack: $slack"
+    report_timing %(path_fileter)s -setup -npaths 1 -less_than_slack $slack_threshold -detail full_path -stdout
+  }
+}\n''' % kwargs)
+
   global num_constraints_generated
   num_constraints_generated = num_constraints_generated + 1
 
 def generate_constraints_from_src_to_dst(src, dst) :
-  query = '''SELECT thu, cycles FROM mcps
+  query = '''SELECT thu, cycles, normalized_delay FROM mcps
              where %(constraint)s and dst = '%(dst)s' and src = '%(src)s'
              ORDER BY cycles ASC ''' % {
              'constraint' : path_constraints,
              'dst' : dst,
              'src' : src
           }
-  for thu, cycles in [ (row[0], row[1]) for row in cusor.execute(query) ]:
+  for thu, cycles, delay in [ (row[0], row[1], row[2] ) for row in cusor.execute(query) ]:
     sdc_script.write('''# %(src)s -> %(thu)s -> %(dst)s %(cycles)s\n''' % {
                         'src' : src, 'dst' : dst, 'thu' : thu, 'cycles' : cycles})
-    generate_constraint(src="keepers%s" % keeper_map[src], dst="keepers%s" % keeper_map[dst], thu="nets%s" % net_map[thu], cycles=cycles)
+    generate_constraint(src="keepers%s" % keeper_map[src], dst="keepers%s" % keeper_map[dst], thu="nets%s" % net_map[thu], cycles=cycles, delay=delay)
     sdc_script.write('''} else''')
     sdc_script.write(''' { incr num_not_applied }\n''')
     sdc_script.write('''post_message -type info "."\n\n''')
