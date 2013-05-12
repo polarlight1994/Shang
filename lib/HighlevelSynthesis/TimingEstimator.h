@@ -71,17 +71,6 @@ protected:
 public:
   virtual ~TimingEstimatorBase() {}
 
-  void annotateDelay(VASTValue *Dst, SrcDelayInfo &SrcInfo) const {
-    const SrcDelayInfo *Srcs = getPathTo(Dst);
-    // It maybe not path to Dst.
-    if (Srcs == 0) return;
-
-    for (const_src_iterator I = Srcs->begin(), E = Srcs->end(); I != E; ++I) {
-      TimingNetlist::delay_type &d = SrcInfo[I->first];
-      d = TNLDelay::max(d, I->second);
-    }
-  }
-
   void updateDelay(SrcDelayInfo &Info, SrcEntryTy NewValue) {
     // If we force the BlackBox Module, we synchronize the MSB_LL and LSB_LL
     // every time before we put it into the path delay table.
@@ -143,11 +132,22 @@ public:
   }
 
   void accumulateDelayFrom(VASTValue *Src, VASTValue *Dst) {
-    SrcDelayInfo &CurInfo = PathDelay[Dst];
+    SrcDelayInfo CurInfo;
     bool updated = accumulateDelayThu(Src, Dst, 0, Dst->getBitWidth(), 0,
                                       CurInfo, AccumulateZeroDelay);
-    assert((!CurInfo.empty() || !updated) && "Unexpected empty source!");
     (void) updated;
+
+    if (CurInfo.empty()) {
+      assert(!updated && "Unexpected empty source!");
+      return;
+    }
+
+    // Annotate the arrival time information to the matrix.
+    SrcDelayInfo &SrcInfo = PathDelay[Dst];
+    for (const_src_iterator I = CurInfo.begin(), E = CurInfo.end(); I != E; ++I) {
+      TimingNetlist::delay_type &d = SrcInfo[I->first];
+      d = TNLDelay::max(d, I->second);
+    }
   }
 
   void estimateTimingOnTree(VASTValue *Root);
