@@ -119,18 +119,28 @@ struct PathIntervalQueryCache {
   unsigned getMinimalInterval(VASTSeqValue *Src, VASTSlot *ReadSlot);
   unsigned getMinimalInterval(VASTSeqValue *Src, ArrayRef<VASTSlot*> ReadSlots);
 
-  void updateInterval(SeqValSetTy &To, const SeqValSetTy &From,
-                      const SeqValSetTy &LocalIntervalMap) {
-    typedef SeqValSetTy::const_iterator it;
-    for (it I = From.begin(), E = From.end(); I != E; ++I) {
-      assert(I->second.NumCycles && "Unexpected zero delay!");
+  // Propagate the timing information of the current combinational cone.
+  void propagateInterval(VASTValue *V, const SeqValSetTy &LocalIntervalMap) {
+    typedef VASTOperandList::op_iterator iterator;
+    VASTOperandList *L = VASTOperandList::GetDatapathOperandList(V);
+    assert(L && "Expect subclass of operand list!");
+    SeqValSetTy &CurSet = QueryCache[V];
+    for (iterator I = L->op_begin(), E = L->op_end(); I != E; ++I) {
+      VASTValue *V = VASTValPtr(*I).get();
+      QueryCacheTy::const_iterator at = QueryCache.find(V);
+      if (at == QueryCache.end()) continue;
 
-      SrcInfo &SI = To[I->first];
-      // Look up the delay from local delay map, because the delay of the From
-      // map may correspond to another data-path with different destination.
-      SeqValSetTy::const_iterator at = LocalIntervalMap.find(I->first);
-      assert(at != LocalIntervalMap.end() && "Node not visited yet?");
-      SI.update(at->second);
+      const SeqValSetTy &Srcs = at->second;
+      typedef SeqValSetTy::const_iterator src_iterator;
+      for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+        assert(I->second.NumCycles && "Unexpected zero delay!");
+
+        SrcInfo &SI = CurSet[I->first];
+        // Look up the timing information from the map of current cone.
+        SeqValSetTy::const_iterator at = LocalIntervalMap.find(I->first);
+        assert(at != LocalIntervalMap.end() && "Node not visited yet?");
+        SI.update(at->second);
+      }
     }
   }
 
@@ -222,8 +232,10 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
   typedef  VASTOperandList::op_iterator ChildIt;
 
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
+  // Remember the visited node for the current cone.
   std::set<VASTValue*> Visited;
-  // Remember the number of cycles from the reachable register to the read slot.
+  // Remember the number of cycles from the reachable register to the read slot
+  // for the current cone.
   SeqValSetTy LocalInterval;
 
   VisitStack.push_back(std::make_pair(Root, L->op_begin()));
@@ -231,17 +243,12 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
     VASTValue *Node = VisitStack.back().first;
     ChildIt It = VisitStack.back().second;
 
-    SeqValSetTy &ParentReachableRegs = QueryCache[Node];
-
     // All sources of this node is visited.
     if (It ==  VASTOperandList::GetDatapathOperandList(Node)->op_end()) {
       VisitStack.pop_back();
-      // Add the supporting register of current node to its parent's
-      // supporting register set.
-      if (!VisitStack.empty())
-        updateInterval(QueryCache[VisitStack.back().first], ParentReachableRegs,
-                       LocalInterval);
-
+      // Propagate the interval information from the operands of the current
+      // value.
+      propagateInterval(Node, LocalInterval);
       continue;
     }
 
@@ -252,12 +259,7 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
     if (ChildNode == 0) continue;
 
     // And do not visit a node twice.
-    if (!Visited.insert(ChildNode).second) {
-      // If there are tighter delay from the child, it means we had already
-      // visited the sub-tree.
-      updateInterval(ParentReachableRegs, QueryCache[ChildNode], LocalInterval);
-      continue;
-    }
+    if (!Visited.insert(ChildNode).second) continue;
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
       unsigned Interval = getMinimalInterval(V, ReadSlots);
@@ -266,7 +268,7 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
 
       bool inserted = LocalInterval.insert(std::make_pair(V, CurInfo)).second;
       assert(inserted && "Node had already been visited?");
-      ParentReachableRegs[V].update(CurInfo);
+      QueryCache[Node][V].update(CurInfo);
       // Add the information to statistics.
       addIntervalFromSrc(V, Interval, EstimatedDelay);
       continue;
