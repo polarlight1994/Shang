@@ -111,7 +111,7 @@ public:
   //                               uint8_t DstUB, uint8_t DstLB,
   //                               SrcEntryTy DelayFromSrc)
   template<typename DelayAccumulatorTy>
-  void accumulateDelayThu(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+  bool accumulateDelayThu(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
                           uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo,
                           DelayAccumulatorTy F) {
     // Do not lookup the source across the SeqValue.
@@ -119,14 +119,15 @@ public:
       assert(!isa<VASTExpr>(Thu) && "Not SrcInfo from Src find!");
       delay_type D;
       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(SeqVal, D)));
-      return;
+      return true;
     }
 
     // Lookup the source of the timing path.
     const SrcDelayInfo *SrcInfo = getPathTo(Thu);
 
-    if (SrcInfo == 0) return;
+    if (SrcInfo == 0) return false;
 
+    bool updated = false;
     assert(!SrcInfo->empty() && "Unexpected empty source delay info!");
     for (src_iterator I = SrcInfo->begin(), E = SrcInfo->end(); I != E; ++I)
       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, *I));
@@ -135,14 +136,18 @@ public:
     if (VASTOperandList::GetOperandList(Thu) && hasPathInfo(Thu)) {
       delay_type D;
       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(Thu, D)));
+      updated = true;
     }
+
+    return updated;
   }
 
   void accumulateDelayFrom(VASTValue *Src, VASTValue *Dst) {
     SrcDelayInfo &CurInfo = PathDelay[Dst];
-    accumulateDelayThu(Src, Dst, 0, Dst->getBitWidth(), 0, CurInfo,
-                       AccumulateZeroDelay);
-    assert(!CurInfo.empty() && "Unexpected empty source!");
+    bool updated = accumulateDelayThu(Src, Dst, 0, Dst->getBitWidth(), 0,
+                                      CurInfo, AccumulateZeroDelay);
+    assert((!CurInfo.empty() || !updated) && "Unexpected empty source!");
+    (void) updated;
   }
 
   void estimateTimingOnTree(VASTValue *Root);
