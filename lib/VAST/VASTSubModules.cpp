@@ -142,8 +142,9 @@ VASTBlockRAM::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 
     if (ErrorInfo.empty()) {
       DEBUG(dbgs() << "writing" << CFullInitFilePath << '\n');
-      OS << "initial $readmemh(\"" << CFullInitFilePath << "\", "
-         << VFUBRAM::getArrayName(getBlockRAMNum()) << ");\n";
+      OS << "initial $readmemh(\"";
+      OS.write_escaped(FullInitFilePath);
+      OS << "\", " << VFUBRAM::getArrayName(getBlockRAMNum()) << ");\n";
 
       // Initialize the block RAM with the array or zeros.
       if (Initializer->hasInitializer() &&

@@ -412,8 +412,9 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
   if (ErrorInfo.empty()) {
     DEBUG(dbgs() << "writing" << CFullInitFilePath << '\n');
 
-    OS << "initial  $readmemh(\"" << CFullInitFilePath << "\","
-          " mem" << Idx << "ram);\n";
+    OS << "initial  $readmemh(\"";
+    OS.write_escaped(FullInitFilePath);
+    OS << "\", mem" << Idx << "ram);\n";
   } else {
     errs() << "error opening file '" << FullInitFilePath.data()
            << "' for writing block RAM initialize file!\n";
