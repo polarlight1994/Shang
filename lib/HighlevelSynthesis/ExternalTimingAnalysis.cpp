@@ -193,11 +193,20 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
       updateDelay(CurInfo, SrcEntryTy(I->first, delay_type(delay, delay)));
     }
 
-    // Also accumlate the delay from the operands.
+    // Also accumulate the delay from the operands.
     typedef VASTExpr::op_iterator op_iterator;
     for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
       VASTValue *Op = VASTValPtr(*I).get();
-      if (hasPathInfo(Op)) accumulateDelayFrom(Expr, Op);
+      const SrcDelayInfo *OpSrcs = getPathTo(Op);
+
+      if (OpSrcs == 0) continue;
+
+      // Forward the arrival time information from the operands.
+      // This make sure the arrival time from any register to current node are
+      // no smaller than the arrival time from the same register.
+      // Equivalent to accumulateDelayFrom(Op, Expr);
+      for (src_iterator SI = OpSrcs->begin(), SE = OpSrcs->end(); SI != SE; ++SI)
+        updateDelay(CurInfo, *SI);
     }
 
     assert(!CurInfo.empty() && "Unexpected empty arrival times set!");
