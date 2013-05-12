@@ -230,6 +230,11 @@ INITIALIZE_PASS_END(ExternalTimingNetlist, "shang-external-timing-netlist",
                     false, true)
 
 bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
+  // Name all expressions before writting the netlist.
+  typedef DatapathContainer::expr_iterator expr_iterator;
+  for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
+    I->nameExpr();
+
   ExternalTimingAnalysis ETA(VM, PathInfo);
 
   // Run the synthesis tool to get the arrival time estimation, fall back to
@@ -264,15 +269,15 @@ bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
     }
   }
 
+  // Strip the name of all expressions.
+  for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I) {
+    I->nameExpr(false);
+  }
+
   return false;
 }
 
 void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {
-  // Name all expressions before writting the netlist.
-  typedef DatapathContainer::expr_iterator iterator;
-  for (iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
-    I->nameExpr();
-
   // Read the result from the scripting engine.
   const char *GlobalCodePath[] = { "FUs", "CommonTemplate" };
   std::string GlobalCode = getStrValueFromEngine(GlobalCodePath);
