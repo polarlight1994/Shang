@@ -281,6 +281,21 @@ bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
         buildTimingPathTo(SlotActive, Sel, TNLDelay());
       }
     }
+
+    if (Sel->isSelectorSynthesized()) {
+      typedef VASTSelector::fanin_iterator fanin_iterator;
+      for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
+           I != E; ++I){
+        const VASTSelector::Fanin *FI = *I;
+        VASTValue *FIVal = FI->FI.unwrap().get();
+        buildTimingPathTo(FIVal, Sel, TNLDelay());
+        VASTValue *FICnd = FI->Pred.unwrap().get();
+        buildTimingPathTo(FICnd, Sel, TNLDelay());
+      }
+
+      VASTValue *SelEnable = Sel->getEnable().get();
+      buildTimingPathTo(SelEnable, Sel, TNLDelay());
+    }
   }
 
   // Strip the name of all expressions.
@@ -507,6 +522,22 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
       buildPathInfoForCone(O, SlotActive);
       extractPathDelay(O, Sel, SlotActive);
     }
+  }
+
+  // Also extract the arrival time for the synthesized selector.
+  if (Sel->isSelectorSynthesized()) {
+    typedef VASTSelector::fanin_iterator fanin_iterator;
+    for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
+         I != E; ++I){
+      const VASTSelector::Fanin *FI = *I;
+      VASTValue *FIVal = FI->FI.unwrap().get();
+      buildPathInfoForCone(O, FIVal);
+      VASTValue *FICnd = FI->Pred.unwrap().get();
+      buildPathInfoForCone(O, FICnd);
+    }
+
+    VASTValue *SelEnable = Sel->getEnable().get();
+    buildPathInfoForCone(O, SelEnable);
   }
 }
 
