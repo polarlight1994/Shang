@@ -181,10 +181,13 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
     if (Expr == 0) return;
 
     // Update the timing netlist according to the delay matrix.
-    SrcInfo &Srcs = DelayMatrix[Expr];
+    const SrcInfo &Srcs = DelayMatrix[Expr];
+    // No need to build the source arrival times set if there is no source.
+    if (Srcs.empty()) return;
+
     SrcDelayInfo &CurInfo = getOrCreateSrcDelayInfo(Expr);
 
-    typedef SrcInfo::iterator iterator;
+    typedef SrcInfo::const_iterator iterator;
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       float delay = *I->second;
       updateDelay(CurInfo, SrcEntryTy(I->first, delay_type(delay, delay)));
@@ -196,6 +199,8 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
       VASTValue *Op = VASTValPtr(*I).get();
       if (hasPathInfo(Op)) accumulateDelayFrom(Expr, Op);
     }
+
+    assert(!CurInfo.empty() && "Unexpected empty arrival times set!");
   }
 };
 
