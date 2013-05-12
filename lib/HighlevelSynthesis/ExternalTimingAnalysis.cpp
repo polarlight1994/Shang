@@ -592,21 +592,6 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   TempDir Dir;
   std::string ErrorInfo;
 
-  // Write the Nestlist and the wrapper.
-  sys::Path Netlist = Dir.buildPath(VM.getName(), ".sv");
-  if (Netlist.empty()) return false;
-
-  errs() << "Writing '" << Netlist.str() << "'... ";
-
-  raw_fd_ostream NetlistO(Netlist.c_str(), ErrorInfo);
-
-  if (!ErrorInfo.empty())  return exitWithError(Netlist);
-
-  // Write the netlist.
-  writeNetlist(NetlistO);
-  NetlistO.close();
-  errs() << " done. \n";
-
   // Write the SDC and the delay query script.
   sys::Path TimingExtractTcl = Dir.buildPath(VM.getName(), "_extract.tcl");
   if (TimingExtractTcl.empty()) return false;
@@ -622,6 +607,21 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
 
   writeTimingExtractionScript(TimingExtractTclO, TimingExtractResult);
   TimingExtractTclO.close();
+  errs() << " done. \n";
+
+  // Write the Nestlist and the wrapper.
+  sys::Path Netlist = Dir.buildPath(VM.getName(), ".sv");
+  if (Netlist.empty()) return false;
+
+  errs() << "Writing '" << Netlist.str() << "'... ";
+
+  raw_fd_ostream NetlistO(Netlist.c_str(), ErrorInfo);
+
+  if (!ErrorInfo.empty())  return exitWithError(Netlist);
+
+  // Write the netlist.
+  writeNetlist(NetlistO);
+  NetlistO.close();
   errs() << " done. \n";
 
   // Write the project script.
