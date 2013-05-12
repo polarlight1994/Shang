@@ -435,6 +435,7 @@ struct DatapathPrinter {
   void operator()(VASTNode *N) const {
     if (VASTExpr *E = dyn_cast<VASTExpr>(N))
       if (E->hasName()) {
+        if (E->keep()) OS << "(* keep *) ";
         OS << "wire ";
 
         if (E->getBitWidth() > 1)
