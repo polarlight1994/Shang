@@ -496,6 +496,28 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
       OS << "*/\n";
     }
   }
+
+  // Print the logic for the selectors.
+  for (const_selector_iterator I = selector_begin(), E = selector_end();
+       I != E; ++I) {
+    const VASTSelector *Sel = I;
+
+    if (!Sel->isSelectorSynthesized()) continue;
+
+    typedef VASTSelector::const_fanin_iterator fanin_iterator;
+    for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
+      I != E; ++I){
+        const VASTSelector::Fanin *FI = *I;
+        VASTValue *FIVal = FI->FI.unwrap().get();
+        VASTOperandList::visitTopOrder(FIVal, Visited, Printer);
+
+        VASTValue *FICnd = FI->Pred.unwrap().get();
+        VASTOperandList::visitTopOrder(FICnd, Visited, Printer);
+    }
+
+    VASTValue *SelEnable = Sel->getEnable().get();
+    VASTOperandList::visitTopOrder(SelEnable, Visited, Printer);
+  }
 }
 
 void VASTModule::printSubmodules(vlang_raw_ostream &OS) const {
