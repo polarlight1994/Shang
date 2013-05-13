@@ -47,15 +47,13 @@ DisableTimingScriptGeneration("shang-disable-timing-script",
                               cl::desc("Disable timing script generation"),
                               cl::init(false));
 
-STATISTIC(NumTimingPath, "Number of timing paths analyzed (From->To pair)");
-STATISTIC(NumMultiCyclesTimingPath, "Number of multicycles timing paths "
-                                    "analyzed (From->To pair)");
-STATISTIC(NumMaskedMultiCyclesTimingPath,
-          "Number of timing paths that masked by path with smaller slack "
-          "(From->To pair)");
+STATISTIC(NumMultiCyclesConstraints, "Number of multicycles timing constraints "
+                                     "generated");
 STATISTIC(NumFalseTimingPath,
           "Number of false timing paths detected (From->To pair)");
+STATISTIC(NumRequiredConstraints, "Number of required timing constraints generated");
 STATISTIC(NumConstraints, "Number of timing constraints generated");
+STATISTIC(NumTimgViolation, "Number of timing paths with negative slack");
 
 namespace{
 struct TimingScriptGen;
@@ -345,6 +343,14 @@ void PathIntervalQueryCache::insertMCPWithInterval(SrcTy *Src,
      << '\'' << ThuName << "', \n"
      << SI.NumCycles << ", \n"
      << SI.CriticalDelay << ");\n";
+
+  // Perform the Statistic.
+  if (SI.NumCycles > 1) {
+    ++NumMultiCyclesConstraints;
+    if (SI.CriticalDelay > 1.0f) ++NumRequiredConstraints;
+  }
+  if (SI.NumCycles == PathIntervalQueryCache::Inf) ++NumFalseTimingPath;
+  if (SI.NumCycles < SI.CriticalDelay) ++NumTimgViolation;
 }
 
 unsigned PathIntervalQueryCache::insertMCPThough(VASTValue *Thu,
