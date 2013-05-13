@@ -71,7 +71,7 @@ con.commit()
 
 cusor = con.cursor()
 
-path_constraints = ''' cycles >= 0 and (thu like 'shang-null-node' or normalized_delay > %f) ''' % args.factor
+path_constraints = ''' cycles > 1 and (thu like 'shang-null-node' or normalized_delay > %f) ''' % args.factor
 num_constraints_generated = 0
 
 # Generate the collection for keepers.
