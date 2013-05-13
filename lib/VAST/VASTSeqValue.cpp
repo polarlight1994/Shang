@@ -181,7 +181,7 @@ void VASTSelector::addAssignment(VASTSeqOp *Op, unsigned SrcNo) {
   Assigns.push_back(L);
 }
 
-void VASTSelector::printFanins(raw_ostream &OS, bool PrintEnable) const {
+void VASTSelector::printFanins(raw_ostream &OS) const {
   typedef std::vector<const VASTSeqOp*> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator it;
@@ -233,7 +233,7 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
   if (empty()) return;
 
   if (forcePrintSelModule()) {
-    printFanins(OS, PrintEnable);
+    printFanins(OS);
     return;
   }
 
