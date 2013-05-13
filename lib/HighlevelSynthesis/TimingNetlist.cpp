@@ -143,12 +143,13 @@ void TimingNetlist::buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst,
   }  
 }
 
-TNLDelay TimingNetlist::getMuxDelay(unsigned Fanins, VASTSelector *Sel) const {
+TNLDelay TimingNetlist::getSelectorDelayImpl(unsigned NumFannins,
+                                             VASTSelector *Sel) const {
   float MUXDelay = 0.0f;
 
   if (TimingModel != TimingEstimatorBase::ZeroDelay) {
     VFUMux *Mux = getFUDesc<VFUMux>();
-    MUXDelay = Mux->getMuxLatency(Fanins);
+    MUXDelay = Mux->getMuxLatency(NumFannins);
     // Also accumulate the delay of the block RAM.
     if (Sel && isa<VASTBlockRAM>(Sel->getParent())) {
       VFUBRAM *RAM = getFUDesc<VFUBRAM>();
@@ -171,9 +172,8 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
-
     // Calculate the delay of the Fanin MUX.
-    delay_type MUXDelay = getMuxDelay(Sel->size(), Sel);
+    delay_type MUXDelay = getSelectorDelayImpl(Sel->size(), Sel);
     
     if (Sel->isSelectorSynthesized()) {
       typedef VASTSelector::fanin_iterator fanin_iterator;

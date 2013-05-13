@@ -129,6 +129,7 @@ public:
   typedef FaninDelayInfo::iterator fanin_iterator;
   typedef FaninDelayInfo::const_iterator const_fanin_iterator;
 
+  TNLDelay getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) const;
 protected:
   // The path delay information.
   PathDelayInfo PathInfo;
@@ -142,8 +143,6 @@ public:
 
   TimingNetlist();
   virtual ~TimingNetlist();
-
-  TNLDelay getMuxDelay(unsigned Fanins, VASTSelector *Sel = 0) const;
 
   delay_type getDelay(VASTValue *Src, VASTSelector *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;

@@ -139,12 +139,12 @@ void CFGFoldingAnalysis::handleCommonSU(unsigned FoldingSize, VASTSchedUnit *SU,
     // Calculate the MuxSize after the current Fanin are duplicated.
     VASTSelector *Sel = Dst->getSelector();
     unsigned FoldedMuxSize = Sel->size() + FoldingSize - 1;
-    unsigned CurFoldedDelay
-      = TNL.getMuxDelay(FoldedMuxSize, Sel).getNumCycles();
-    FoldedMuxDelay = std::max(FoldedMuxDelay, CurFoldedDelay);
-    unsigned CurMuxDelay
-      = TNL.getMuxDelay(Sel->size(), Sel).getNumCycles();
-    OriginMuxDelay = std::max(OriginMuxDelay, CurMuxDelay);
+    //unsigned CurFoldedDelay
+    //  = TNL.getMuxDelay(FoldedMuxSize, Sel).getNumCycles();
+    //FoldedMuxDelay = std::max(FoldedMuxDelay, CurFoldedDelay);
+    //unsigned CurMuxDelay
+    //  = TNL.getMuxDelay(Sel->size(), Sel).getNumCycles();
+    //OriginMuxDelay = std::max(OriginMuxDelay, CurMuxDelay);
   }
 
   DEBUG(dbgs() << "SU: ";
@@ -153,10 +153,10 @@ void CFGFoldingAnalysis::handleCommonSU(unsigned FoldingSize, VASTSchedUnit *SU,
 
   // Add (soft?) constraints to prevent the SU from being scheduled to the
   // first slot and duplicated by CFG folding.
-  if (FoldedMuxDelay - OriginMuxDelay > MuxDelayIncThreshold) {
-    SU->addDep(Entry, VASTDep::CreateCtrlDep(1));
-    ++NumAntiFoldingConstraints;
-  }
+  //if (FoldedMuxDelay - OriginMuxDelay > MuxDelayIncThreshold) {
+  //  SU->addDep(Entry, VASTDep::CreateCtrlDep(1));
+  //  ++NumAntiFoldingConstraints;
+  //}
 }
 
 void CFGFoldingAnalysis::handleSlotCtrl(unsigned FoldingSize, VASTSchedUnit *SU,
@@ -164,19 +164,19 @@ void CFGFoldingAnalysis::handleSlotCtrl(unsigned FoldingSize, VASTSchedUnit *SU,
   VASTSlotCtrl *SlotCtrl = cast<VASTSlotCtrl>(SU->getSeqOp());
   unsigned OriginMuxSize = SlotCtrl->getTargetSlot()->pred_size();
   unsigned FoldedMuxSize = OriginMuxSize + FoldingSize - 1;
-  unsigned FoldedMuxDelay = TNL.getMuxDelay(FoldedMuxSize, 0).getNumCycles();
-  unsigned OriginMuxDelay = TNL.getMuxDelay(OriginMuxSize, 0).getNumCycles();
+  //unsigned FoldedMuxDelay = TNL.getMuxDelay(FoldedMuxSize, 0).getNumCycles();
+  //unsigned OriginMuxDelay = TNL.getMuxDelay(OriginMuxSize, 0).getNumCycles();
 
-  DEBUG(dbgs() << "SU: ";
-  SU->dump();
-  dbgs() << " MuxDelay after folding: " << FoldedMuxDelay << '\n');
+  //DEBUG(dbgs() << "SU: ";
+  //SU->dump();
+  //dbgs() << " MuxDelay after folding: " << FoldedMuxDelay << '\n');
 
   // Add (soft?) constraints to prevent the SU from being scheduled to the
   // first slot and duplicated by CFG folding.
-  if (FoldedMuxDelay - OriginMuxDelay > MuxDelayIncThreshold) {
-    SU->addDep(Entry, VASTDep::CreateCtrlDep(1));
-    ++NumAntiFoldingConstraints;
-  }
+  //if (FoldedMuxDelay - OriginMuxDelay > MuxDelayIncThreshold) {
+  //  SU->addDep(Entry, VASTDep::CreateCtrlDep(1));
+  //  ++NumAntiFoldingConstraints;
+  //}
 }
 
 void CFGFoldingAnalysis::addConstraints(BasicBlock *BB) {
