@@ -259,6 +259,10 @@ bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
   for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
     I->nameExpr();
 
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
+    I->setPrintSelModule();
+
   ExternalTimingAnalysis ETA(VM, PathInfo);
 
   // Run the synthesis tool to get the arrival time estimation, fall back to
@@ -269,7 +273,6 @@ bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
   // Update the timing netlist.
   std::set<VASTOperandList*> Visited;
 
-  typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
     float SelDelay = ETA.getSelDelay(Sel);
@@ -312,6 +315,9 @@ bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
   // Strip the name of all expressions.
   for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
     I->nameExpr(false);
+
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
+    I->setPrintSelModule(false);
 
   return false;
 }
@@ -665,7 +671,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   std::vector<const char*> args;
 
   args.push_back(quartus.c_str());
-  args.push_back("--64bit");
+  //args.push_back("--64bit");
   args.push_back("-t");
   args.push_back(PrjTcl.c_str());
   args.push_back(0);

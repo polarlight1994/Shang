@@ -56,6 +56,7 @@ private:
   PointerIntPair<VASTNode*, 2, Type> Parent;
   SmallPtrSet<VASTSeqValue*, 8> Defs;
   const uint8_t BitWidth;
+  bool PrintSelModule;
 
   friend class VASTSeqValue;
   void addUser(VASTSeqValue *V);
@@ -82,6 +83,9 @@ public:
 
   VASTNode *getParent() const;
   void setParent(VASTNode *N);
+
+  bool forcePrintSelModule() const { return PrintSelModule; }
+  void setPrintSelModule(bool Print = true) { PrintSelModule = Print; }
 
   const char *getName() const { return Contents.Name; }
   unsigned getBitWidth() const { return BitWidth; }

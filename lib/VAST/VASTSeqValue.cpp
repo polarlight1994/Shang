@@ -38,7 +38,8 @@ static cl::opt<bool> IgnoreXFanins("shang-selector-ignore-x-fanins",
 //----------------------------------------------------------------------------//
 VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
                            VASTNode *Node)
-  : VASTNode(vastSelector), Parent(Node, T), BitWidth(BitWidth), EnableU(this) {
+  : VASTNode(vastSelector), Parent(Node, T), BitWidth(BitWidth),
+    PrintSelModule(false), EnableU(this) {
   Contents.Name = Name;
 }
 
@@ -231,7 +232,7 @@ void VASTSelector::printFanins(raw_ostream &OS, bool PrintEnable) const {
 void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
   if (empty()) return;
 
-  if (!isSelectorSynthesized()) {
+  if (forcePrintSelModule()) {
     printFanins(OS, PrintEnable);
     return;
   }
