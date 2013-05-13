@@ -94,4 +94,28 @@ module shang_reduction#(parameter A_WIDTH = 0, B_WIDTH = 0) (
 );
 	assign b = &a;
 endmodule
+
+module shang_selector#(parameter INPUTS = 4, WIDTH = 2)(
+  input wire[INPUTS * WIDTH - 1 : 0]  inputs,
+  input wire[INPUTS - 1 : 0]          sels,
+  output wire               enable,
+  output reg[WIDTH - 1 : 0] sel_output);
+
+  assign enable = |sels;
+
+  wire[WIDTH - 1 : 0]  expanded_inputs [INPUTS];
+  genvar i;
+  generate for(i = 0; i < INPUTS; i = i + 1) begin : EXPAND
+    assign expanded_inputs[i] = inputs[(WIDTH * (i + 1) - 1):((WIDTH * i))];
+  end
+  endgenerate
+
+  integer j;
+  always @(*) begin
+    sel_output = {WIDTH{1'b0}};
+    for(j = 0; j < INPUTS; j = j + 1)
+      sel_output = sel_output | ({WIDTH{sels[j]}} & expanded_inputs[j]);
+  end
+
+endmodule
 ]=]

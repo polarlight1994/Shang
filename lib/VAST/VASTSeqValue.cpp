@@ -192,47 +192,40 @@ void VASTSelector::printFanins(raw_ostream &OS, bool PrintEnable) const {
   // Create the temporary signal.
   OS << "// Combinational MUX\n";
 
-  if (!isEnable())
-    OS << "reg " << VASTValue::printBitRange(getBitWidth(), 0, false)
-       << ' ' << getName() << "_selector_wire;\n";
+  OS << "wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
+     << ' ' << getName() << "_selector_wire;\n";
 
-  if (PrintEnable)
-    OS << "reg " << ' ' << getName() << "_selector_enable = 0;\n\n";
+  OS << "wire " << ' ' << getName() << "_selector_enable;\n\n";
 
-  // Print the mux logic.
-  OS << "always @(*)begin  // begin mux logic\n";
-  OS.indent(2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
+  const unsigned NumFIs = CSEMap.size();
 
+  OS << "shang_selector#(" << CSEMap.size() << ", " << getBitWidth() << ") "
+     << getName() << "_selector(\n{";
+  unsigned CurFI = 0;
+  // Print the inputs of the mux.
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    OS.indent(4) << '(';
     VASTValPtr FI = I->first;
-
+    OS << FI;
+    if (++CurFI < NumFIs) OS << ", ";
+  }
+  OS << "},\n{";
+  // Print the selection signals.
+  unsigned CurEn = 0;
+  for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    OS << '(';
     const OrVec &Ors = I->second;
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI)
     {
       (*OI)->printPredicate(OS);
       OS << '|';
     }
+    OS << "1'b0)";
 
-    OS << "1'b0): begin\n";
-    // Print the assignment under the condition.
-    if (!isEnable())
-      OS.indent(6) << getName() << "_selector_wire = " << FI << ";\n";
-
-    // Print the enable.
-    if (PrintEnable) OS.indent(6) << getName() << "_selector_enable = 1'b1;\n";
-    OS.indent(4) << "end\n";
+    if (++CurEn < NumFIs) OS << ", ";
   }
-
-  // Write the default condition, otherwise latch will be inferred.
-  OS.indent(4) << "default: begin\n";
-
-  if (!isEnable())
-    OS.indent(6) << getName() << "_selector_wire = " << getBitWidth() << "'bx;\n";
-
-  if (PrintEnable) OS.indent(6) << getName() << "_selector_enable = 1'b0;\n";
-  OS.indent(4) << "end\n";
-  OS.indent(2) << "endcase\nend  // end mux logic\n\n";
+  OS << "}, \n"
+     << getName() << "_selector_enable,\n"
+     << getName() << "_selector_wire);\n";
 }
 
 void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {

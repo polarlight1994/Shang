@@ -130,6 +130,16 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
   typedef std::map<VASTNode*, SrcInfo> PathInfo;
   PathInfo DelayMatrix;
 
+  // The delay from the selector wire and the selector enable.
+  std::map<VASTSelector*, float*> SelectorDelay;
+  float getSelDelay(VASTSelector *S) const {
+    std::map<VASTSelector*, float*>::const_iterator
+      at = SelectorDelay.find(S);
+
+    assert(at != SelectorDelay.end() && "Selector delay not allocated!");
+    return *at->second;
+  }
+
   typedef TimingNetlist::PathTy PathTy;
   typedef TimingNetlist::SrcDelayInfo SrcDelayInfo;
 
@@ -143,7 +153,7 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
   // Write the script to extract the timing analysis results from quartus.
   void writeTimingExtractionScript(raw_ostream &O, const sys::Path &ResultPath);
   void extractTimingForSelector(raw_ostream &O, VASTSelector *Sel);
-  void extractPathDelay(raw_ostream &O, VASTSelector *Sel, VASTValue *FI);
+  void extractSelectorDelay(raw_ostream &O, VASTSelector *Sel);
 
   void buildPathInfoForCone(raw_ostream &O, VASTValue *Root);
   void propagateSrcInfo(raw_ostream &O, VASTValue *V);
@@ -262,23 +272,24 @@ bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
+    float SelDelay = ETA.getSelDelay(Sel);
     typedef VASTSelector::iterator fanin_iterator;
     for (fanin_iterator SI = Sel->begin(), SE = Sel->end(); SI != SE; ++SI) {
       VASTLatch U = *SI;
       VASTValue *FI = VASTValPtr(U).get();
       // Visit the cone rooted on the fanin.
       VASTOperandList::visitTopOrder(FI, Visited, ETA);
-      buildTimingPathTo(FI, Sel, TNLDelay());
+      buildTimingPathTo(FI, Sel, TNLDelay(SelDelay, SelDelay));
 
       VASTValue *Cnd = VASTValPtr(U.getPred()).get();
       // Visit the cone rooted on the guarding condition.
       VASTOperandList::visitTopOrder(Cnd, Visited, ETA);
-      buildTimingPathTo(Cnd, Sel, TNLDelay());
+      buildTimingPathTo(Cnd, Sel, TNLDelay(SelDelay, SelDelay));
 
       if (VASTValue *SlotActive = U.getSlotActive().get()) {
         // Visit the cone rooted on the ready signal.
         VASTOperandList::visitTopOrder(SlotActive, Visited, ETA);
-        buildTimingPathTo(SlotActive, Sel, TNLDelay());
+        buildTimingPathTo(SlotActive, Sel, TNLDelay(SelDelay, SelDelay));
       }
     }
 
@@ -299,9 +310,8 @@ bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
   }
 
   // Strip the name of all expressions.
-  for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I) {
+  for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
     I->nameExpr(false);
-  }
 
   return false;
 }
@@ -434,37 +444,45 @@ static std::string GetSTACollection(const VASTValue *V) {
   return "";
 }
 
-template<typename T0, typename T1, typename T2>
 static
-void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Thu, T2 *Src,
-                          unsigned RefIdx, bool ExtractMinDelay = false) {
-  O << "set src " << GetSTACollection(Src) << '\n';
-  O << "set dst " << GetSTACollection(Dst) << '\n';
-  if (Thu) O << "set thu " << GetSTACollection(Thu) << '\n';
+void extractTimingForPath(raw_ostream &O, const Twine &DstName,
+                          const Twine &SrcName, unsigned RefIdx,
+                          bool ExtractMinDelay = false) {
   O << "if {[get_collection_size $src] && [get_collection_size $dst]} {\n";
-  if (Thu) O << "if {[get_collection_size $thu]} {\n";
+  //if (!ThuName.isTriviallyEmpty()) O << "if {[get_collection_size $thu]} {\n";
   // Use get_path instead of get_timing_path to get the longest delay paths
   // between arbitrary points in the netlist.
   // See "get_path -help" for more information.
   O << "set paths [get_path -from $src -to $dst ";
-  if (Thu) O << " -through $thu";
+  //if (!ThuName.isTriviallyEmpty()) O << " -through $thu";
   // Sometimes we may need to extract the minimal delay.
   if (ExtractMinDelay) O << " -min_path -npath 1 ";
   else                 O << " -nworst 1 ";
   O << " -pairs_only]\n"
     // Only extract the delay from source to destination when these node are
     // not optimized.
-    "if {[get_collection_size $paths]} {\n"
-    "  foreach_in_collection path $paths {\n"
-    "    set delay [get_path_info $path -data_delay]\n"
-    "    post_message -type info \"" << Src->getSTAObjectName();
-  if (Thu) O << " -> " << Thu->getSTAObjectName();
-  O << " -> " << Dst->getSTAObjectName() << " delay: $delay\"\n"
+       "if {[get_collection_size $paths]} {\n"
+       "  foreach_in_collection path $paths {\n"
+       "    set delay [get_path_info $path -data_delay]\n"
+       "    post_message -type info \"" << SrcName;
+  //if (!ThuName.isTriviallyEmpty()) O << " -> " << ThuName;
+  O << " -> " << DstName << " delay: $delay\"\n"
     "puts $JSONFile \"" << RefIdx << " $delay\"\n" <<
     "  }\n"
     "}\n"; // Path Size
-  if (Thu) O << "}\n"; // Thu Size
+  //if (!ThuName.isTriviallyEmpty()) O << "}\n"; // Thu Size
   O << "}\n"; // Src and Dst Size
+}
+
+template<typename T0, typename T1>
+static
+void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Src, unsigned RefIdx,
+                          bool ExtractMinDelay = false) {
+  O << "set src " << GetSTACollection(Src) << '\n';
+  O << "set dst " << GetSTACollection(Dst) << '\n';
+  // if (Thu) O << "set thu " << GetSTACollection(Thu) << '\n';
+  extractTimingForPath(O, Dst->getSTAObjectName(), Src->getSTAObjectName(),
+                       RefIdx, ExtractMinDelay);
 }
 
 void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTValue *V) {
@@ -493,35 +511,39 @@ void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTValue *V) {
       unsigned Idx = 0;
       P = allocateDelayRef(Idx);
       // Generate the corresponding delay extraction script.
-      extractTimingForPath(O, V, (VASTValue*)0, Src, Idx);
+      extractTimingForPath(O, V, Src, Idx);
     }
   }
 }
 
-void ExternalTimingAnalysis::extractPathDelay(raw_ostream &O, VASTSelector *Sel,
-                                              VASTValue *FI) {
-  // TODO: Extract the mux delay from FI to Sel.
+void
+ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O, VASTSelector *Sel) {
+  // Get the delay from the selector wire of the selector.
+  O << "set dst " << GetSTACollection(Sel) << '\n';
+  O << "set src [get_cells -nowarn \"*"
+    << Sel->getName() << "_selector|*" << "\"]\n";
+  unsigned Idx = 0;
+  SelectorDelay[Sel] = allocateDelayRef(Idx);
+  extractTimingForPath(O, Sel->getSTAObjectName(), "selector", Idx);
 }
 
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
                                                       VASTSelector *Sel) {
+  extractSelectorDelay(O, Sel);
+
   typedef VASTSelector::iterator fanin_iterator;
   for (fanin_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch U = *I;
     VASTValue *FI = VASTValPtr(U).get();
     // Visit the cone rooted on the fanin.
     buildPathInfoForCone(O, FI);
-    extractPathDelay(O, Sel, FI);
 
     VASTValue *Cnd = VASTValPtr(U.getPred()).get();
     // Visit the cone rooted on the guarding condition.
     buildPathInfoForCone(O, Cnd);
-    extractPathDelay(O, Sel, Cnd);
 
-    if (VASTValue *SlotActive = U.getSlotActive().get()) {
+    if (VASTValue *SlotActive = U.getSlotActive().get())
       buildPathInfoForCone(O, SlotActive);
-      extractPathDelay(O, Sel, SlotActive);
-    }
   }
 
   // Also extract the arrival time for the synthesized selector.
