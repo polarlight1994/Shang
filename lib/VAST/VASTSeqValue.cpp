@@ -38,8 +38,7 @@ static cl::opt<bool> IgnoreXFanins("shang-selector-ignore-x-fanins",
 //----------------------------------------------------------------------------//
 VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
                            VASTNode *Node)
-  : VASTNode(vastSelector), Parent(Node, T), BitWidth(BitWidth),
-    EnableU(this) {
+  : VASTNode(vastSelector), Parent(Node, T), BitWidth(BitWidth), EnableU(this) {
   Contents.Name = Name;
 }
 

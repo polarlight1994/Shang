@@ -54,8 +54,8 @@ private:
   void operator=(const VASTSelector&) LLVM_DELETED_FUNCTION;
 
   PointerIntPair<VASTNode*, 2, Type> Parent;
-  const uint8_t BitWidth;
   SmallPtrSet<VASTSeqValue*, 8> Defs;
+  const uint8_t BitWidth;
 
   friend class VASTSeqValue;
   void addUser(VASTSeqValue *V);

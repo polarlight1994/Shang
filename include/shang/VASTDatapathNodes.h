@@ -175,7 +175,6 @@ private:
 
   // The total operand of this expression.
   bool     IsNamed    : 1;
-  bool     Keep       : 1;
 
   VASTExpr(const VASTExpr&);              // Do not implement
   void operator=(const VASTExpr&);        // Do not implement
@@ -227,11 +226,6 @@ public:
   void nameExpr(bool NameExpr = true) {
     //assert(!hasName() && "Expr already have name!");
     IsNamed = NameExpr;
-  }
-
-  bool keep() const { return Keep; }
-  void keepExpr(bool keep = true) {
-    Keep = keep;
   }
 
   std::string getTempName() const;
