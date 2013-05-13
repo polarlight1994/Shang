@@ -184,7 +184,7 @@ void VASTSelector::addAssignment(VASTSeqOp *Op, unsigned SrcNo) {
 void VASTSelector::printFanins(raw_ostream &OS) const {
   typedef std::vector<const VASTSeqOp*> OrVec;
   typedef std::map<VASTValPtr, OrVec> CSEMapTy;
-  typedef CSEMapTy::const_iterator it;
+  typedef CSEMapTy::const_iterator fanin_iterator;
 
   CSEMapTy CSEMap;
 
@@ -198,35 +198,47 @@ void VASTSelector::printFanins(raw_ostream &OS) const {
 
   OS << "wire " << ' ' << getName() << "_selector_enable;\n\n";
 
-  const unsigned NumFIs = CSEMap.size();
-
-  OS << "shang_selector#(" << CSEMap.size() << ", " << getBitWidth() << ") "
-     << getName() << "_selector(\n{";
-  unsigned CurFI = 0;
-  // Print the inputs of the mux.
-  for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    VASTValPtr FI = I->first;
-    OS << FI;
-    if (++CurFI < NumFIs) OS << ", ";
-  }
-  OS << "},\n{";
-  // Print the selection signals.
-  unsigned CurEn = 0;
-  for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    OS << '(';
+  OS << "shang_selector#("
+     << CSEMap.size() << ", \"";
+  unsigned NumSels = 0;
+  for (fanin_iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     const OrVec &Ors = I->second;
-    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI)
-    {
-      (*OI)->printPredicate(OS);
-      OS << '|';
+    OS << '1';
+    for (unsigned i = 1, e = Ors.size(); i < e; ++i)
+      OS << '0';
+    NumSels += Ors.size();
+  }
+  OS << "\", "
+     << NumSels << ", "
+     << getBitWidth() << ") "
+     << getName() << "_selector(\n{" << getBitWidth() << "'b0";
+  // Print the inputs of the mux.
+  for (fanin_iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    VASTValPtr FI = I->first;
+    OS   << ", " << FI;
+  }
+  OS << "},\n{1'b0";
+  // Print the selection signals.
+  for (fanin_iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    const OrVec &Ors = I->second;
+    typedef OrVec::const_iterator pred_iterator;
+    for (pred_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI)
+      OS   << ", " << VASTValPtr((*OI)->getPred());
+  }
+  OS << "},\n{1'b0";
+  // Print the selection signals.
+  for (fanin_iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    const OrVec &Ors = I->second;
+    typedef OrVec::const_iterator pred_iterator;
+    for (pred_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
+      OS   << ", ";
+      if (VASTValPtr SlotActive = (*OI)->getSlotActive()) OS << SlotActive;
+      else                                                OS << "1'b1";
     }
-    OS << "1'b0)";
-
-    if (++CurEn < NumFIs) OS << ", ";
   }
   OS << "}, \n"
-     << getName() << "_selector_enable,\n"
-     << getName() << "_selector_wire);\n";
+     << getName() << "_selector_wire,\n"
+     << getName() << "_selector_enable);\n";
 }
 
 void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
