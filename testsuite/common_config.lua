@@ -103,7 +103,7 @@ module shang_selector#(parameter INPUTS = 4, WIDTH = 2)(
 
   assign enable = |sels;
 
-  wire[WIDTH - 1 : 0]  expanded_inputs [INPUTS];
+  wire[WIDTH - 1 : 0]  expanded_inputs [0:INPUTS - 1];
   genvar i;
   generate for(i = 0; i < INPUTS; i = i + 1) begin : EXPAND
     assign expanded_inputs[i] = inputs[(WIDTH * (i + 1) - 1):((WIDTH * i))];
