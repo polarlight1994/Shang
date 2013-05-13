@@ -222,7 +222,9 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
 
     jt.jobName = self.getJobName()
     jt.remoteCommand = 'timeout'
-    jt.args = ['%ds' % self.hls_timeout, self.shang, self.synthesis_config_file, '-stats',
+    # Use a bigger timeout if we are runing the feedback flow.
+    timeout = self.hls_feedback_flow_timeout if self.shang_external_timing_analysis else self.hls_timeout
+    jt.args = ['%ds' % timeout, self.shang, self.synthesis_config_file, '-stats',
                '-timing-model=%(timing_model)s' % self,
                '-vast-disable-mux-slack=%(vast_disable_mux_slack)s' % self,
                '-shang-enable-mux-pipelining=%(shang_enable_mux_pipelining)s' % self,

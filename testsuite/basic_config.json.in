@@ -10,6 +10,7 @@
   "xfails" : [ "op_shl" ],
   
   "hls_timeout" : 600,
+  "hls_feedback_flow_timeout" : 3000,
   "sim_timeout" : 2400,
-  "syn_timeout" : 28800
+  "syn_timeout" : 36000
 }
