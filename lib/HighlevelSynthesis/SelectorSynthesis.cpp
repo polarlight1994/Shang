@@ -1,5 +1,4 @@
-
-//===-- SeqSelectorSynthesis.cpp - Implement Fanin Mux for Regs -*- C++ -*-===//
+//===- SelectorSynthesis.cpp - Implement the Fanin Mux for Regs -*- C++ -*-===//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -35,7 +34,7 @@ using namespace llvm;
 
 namespace {
 
-struct SeqSelectorSynthesis : public VASTModulePass {
+struct SelectorSynthesis : public VASTModulePass {
   TimingNetlist *TNL;
   SeqLiveVariables *SLV;
   STGShortestPath *SSP;
@@ -47,8 +46,8 @@ struct SeqSelectorSynthesis : public VASTModulePass {
 
   static char ID;
 
-  SeqSelectorSynthesis() : VASTModulePass(ID), TNL(0), SLV(0), SSP(0) {
-    initializeSeqSelectorSynthesisPass(*PassRegistry::getPassRegistry());
+  SelectorSynthesis() : VASTModulePass(ID), TNL(0), SLV(0), SSP(0) {
+    initializeSelectorSynthesisPass(*PassRegistry::getPassRegistry());
 
     VFUMux *Mux = getFUDesc<VFUMux>();
     MaxSingleCyleFINum = 2;
@@ -73,17 +72,17 @@ struct SeqSelectorSynthesis : public VASTModulePass {
 };
 }
 
-INITIALIZE_PASS_BEGIN(SeqSelectorSynthesis, "sequential-selector-synthesis",
+INITIALIZE_PASS_BEGIN(SelectorSynthesis, "sequential-selector-synthesis",
                       "Implement the MUX for the Sequantal Logic", false, true)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
-INITIALIZE_PASS_END(SeqSelectorSynthesis, "sequential-selector-synthesis",
+INITIALIZE_PASS_END(SelectorSynthesis, "sequential-selector-synthesis",
                     "Implement the MUX for the Sequantal Logic", false, true)
 
-char SeqSelectorSynthesis::ID = 0;
+char SelectorSynthesis::ID = 0;
 
-char &llvm::SeqSelectorSynthesisID = SeqSelectorSynthesis::ID;
+char &llvm::SelectorSynthesisID = SelectorSynthesis::ID;
 
-bool SeqSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
+bool SelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   MinimalExprBuilderContext Context(VM);
   Builder = new VASTExprBuilder(Context);
   this->VM = &VM;
