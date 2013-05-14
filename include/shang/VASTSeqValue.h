@@ -216,6 +216,8 @@ public:
   VASTSelector *getSelector() const;
   void changeSelector(VASTSelector *NewSel);
 
+  // Forward the functions from the Selector.
+  VASTSelector::Type getType() const { return getSelector()->getType(); }
   bool isEnable() const { return getSelector()->isEnable(); }
   bool isSlot() const { return getSelector()->isSlot(); }
   bool isTemp() const { return getSelector()->isTemp(); }
@@ -279,6 +281,9 @@ class VASTRegister : public VASTNode, public ilist_node<VASTRegister> {
   friend struct ilist_sentinel_traits<VASTRegister>;
 public:
   VASTSelector *getSelector() const { return Sel; }
+
+  // Forward the functions from the Selector.
+  unsigned getBitWidth() const { return getSelector()->getBitWidth(); }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTRegister *A) { return true; }
