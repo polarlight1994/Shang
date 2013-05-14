@@ -90,10 +90,11 @@ public:
   const char *getName() const { return Contents.Name; }
   unsigned getBitWidth() const { return BitWidth; }
 
-  bool isEnable() const { return Parent.getInt() == Enable; }
-  bool isSlot() const { return Parent.getInt() == Slot; }
-  bool isTemp() const { return Parent.getInt() == Temp; }
-  bool isStatic() const { return Parent.getInt() == Static; }
+  Type getType() const { return Parent.getInt(); }
+  bool isEnable() const { return getType() == Enable; }
+  bool isSlot() const { return getType() == Slot; }
+  bool isTemp() const { return getType() == Temp; }
+  bool isStatic() const { return getType() == Static; }
 
   typedef SmallPtrSet<VASTSeqValue*, 8>::const_iterator def_iterator;
   def_iterator def_begin() const { return Defs.begin(); }
