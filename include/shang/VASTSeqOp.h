@@ -93,11 +93,13 @@ public:
   void removeFromParent();
 
   unsigned getSlotNum() const;
-  VASTValPtr getSlotActive() const;
 
   // Get the underlying object.
   Value *getValue() const;
   void annotateValue(Value *V);
+
+  VASTValPtr getSlotActive() const;
+  bool guardedBySlotActive() const { return S.getInt(); }
 
   virtual void print(raw_ostream &OS) const;
   void printPredicate(raw_ostream &OS) const;

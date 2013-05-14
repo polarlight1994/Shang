@@ -86,7 +86,7 @@ void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
     for (const_iterator I = begin(), E = end(); I != E; ++I) {
       const VASTLatch &L = *I;
       const VASTSeqOp *Op = L.Op;
-      if (!Op->getSlotActive()) {
+      if (!Op->guardedBySlotActive()) {
         bool visited = IdenticalCnds.insert(Op->getPred()).second;
         // For the guarding condition without slot active, only print them
         // once.

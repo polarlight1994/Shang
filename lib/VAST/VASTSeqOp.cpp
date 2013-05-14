@@ -175,7 +175,7 @@ void VASTSeqOp::replacePredBy(VASTValPtr V, bool UseSlotActive) {
 unsigned VASTSeqOp::getSlotNum() const { return getSlot()->SlotNum; }
 
 VASTValPtr VASTSeqOp::getSlotActive() const {
-  if (S.getInt())
+  if (guardedBySlotActive())
     return getSlot()->getActive().unwrap();
 
   return VASTValPtr();
