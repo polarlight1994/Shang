@@ -155,6 +155,7 @@ public:
   bool hasNextSlot(VASTSlot *NextSlot) const;
 
   VASTSlot *getSubGroup(BasicBlock *BB) const;
+  VASTSlot *getParentState();
 
   void addSuccSlot(VASTSlot *NextSlot);
 

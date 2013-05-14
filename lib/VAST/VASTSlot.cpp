@@ -135,6 +135,21 @@ VASTSlot *VASTSlot::getSubGroup(BasicBlock *BB) const {
   return SubGrp;
 }
 
+VASTSlot *VASTSlot::getParentState() {
+  // The VASTSlot represent the entire state if it is not a sub group.
+  if (!IsSubGrp) return this;
+
+  // Else the State is the first State reachable from this SubGrp via the
+  // predecessors tree.
+  VASTSlot *S = this;
+  while (S->pred_size() == 1 && S->IsSubGrp) {
+    VASTSlot *PredSlot = PredSlots.front();
+    S = PredSlot;
+  }
+
+  return S;
+}
+
 void VASTSlot::print(raw_ostream &OS) const {
   OS << "Slot#"<< SlotNum << " Pred: ";
   for (const_pred_iterator I = pred_begin(), E = pred_end(); I != E; ++I)
