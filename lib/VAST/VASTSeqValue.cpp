@@ -138,7 +138,7 @@ void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
     OS.indent(2) << "end\n";
   }
 
-  OS.indent(2) << "$finish();\nend\n";
+  OS.indent(2) << "$finish(1);\nend\n";
 }
 
 void VASTSelector::addAssignment(VASTSeqOp *Op, unsigned SrcNo) {
