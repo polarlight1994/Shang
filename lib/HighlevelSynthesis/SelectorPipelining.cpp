@@ -129,14 +129,11 @@ struct SelectorPipelining : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-
-    AU.addRequired<SeqLiveVariables>();
-    AU.addRequiredID(DatapathNamerID);
-    AU.addRequired<TimingNetlist>();
-    AU.addRequired<STGShortestPath>();
-
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
+    AU.addRequired<TimingNetlist>();
+    AU.addRequired<STGShortestPath>();
+    AU.addRequired<SeqLiveVariables>();
     AU.addPreserved<STGShortestPath>();
   }
 
