@@ -97,7 +97,6 @@ void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
       AllPredSS << ", ";
     }
 
-
     AllPredSS << "1'b0 }";
   }
 

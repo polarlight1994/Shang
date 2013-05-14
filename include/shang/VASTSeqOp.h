@@ -104,7 +104,7 @@ public:
 
   // Get the predicate operand of the transaction.
   VASTUse &getPred() { return getOperand(0); }
-  const VASTUse &getPred() const { return getOperand(0); }
+  VASTValPtr getPred() const { return getOperand(0); }
   void replacePredBy(VASTValPtr V, bool UseSlotActive = true);
 
   // Get the source of the transaction.
