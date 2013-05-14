@@ -202,8 +202,6 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
 }
 
 void SelectorPipelining::descomposeSeqInst(VASTSeqInst *SeqInst) {
-  unsigned NumDefs = SeqInst->getNumDefs();
-
   for (unsigned i = 0, e = SeqInst->num_srcs(); i != e; ++i) {
     VASTLatch L = SeqInst->getSrc(i);
 
@@ -398,7 +396,6 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
       if (CurUsedFI >= MaxPerCyleFINum)  {
         CurUsedFI = 0;
         // We need to create a new register for the new fanin.
-        unsigned RegNum = VM->num_seqvals();
         std::string Name = "l" + utostr_32(Level)
                             + BaseName
                             + "n" + utostr_32(VM->num_seqvals());
