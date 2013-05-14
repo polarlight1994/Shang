@@ -73,7 +73,7 @@ private:
   bool buildCSEMap(std::map<VASTValPtr,
                             std::vector<const VASTSeqOp*> >
                    &CSEMap) const;
-  bool getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const;
+
   void printFanins(raw_ostream &OS) const;
 public:
   VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
@@ -129,7 +129,6 @@ public:
 
   // Functions to write the verilog code.
   void verifyAssignCnd(vlang_raw_ostream &OS, const VASTModule *Mod) const;
-  bool verify() const;
   void printSelector(raw_ostream &OS, bool PrintEnable = true) const;
 
   void addAssignment(VASTSeqOp *Op, unsigned SrcNo);

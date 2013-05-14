@@ -70,42 +70,9 @@ bool VASTSelector::buildCSEMap(std::map<VASTValPtr,
   return !CSEMap.empty();
 }
 
-bool VASTSelector::getUniqueLatches(std::set<VASTLatch> &UniqueLatches) const {
-  for (const_iterator I = begin(), E = end(); I != E; ++I) {
-    VASTLatch U = *I;
-    std::set<VASTLatch>::iterator at = UniqueLatches.find(U);
-    if (at == UniqueLatches.end()) {
-      UniqueLatches.insert(U);
-      continue;
-    }
-
-    // If we find the latch with the same predicate, their fanin must be
-    // identical.
-    if (VASTValPtr(*at) != VASTValPtr(U))  return false;
-  }
-
-  return true;
-}
-
-bool VASTSelector::verify() const {
-  std::set<VASTLatch> UniqueLatches;
-
-  return getUniqueLatches(UniqueLatches);
-}
-
 void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
                                    const VASTModule *Mod) const {
   if (empty()) return;
-
-  std::set<VASTLatch> UniqueLatches;
-
-  bool Unique = getUniqueLatches(UniqueLatches);
-  assert(Unique && "Assignement conflict detected!");
-  (void) Unique;
-
-  typedef std::set<VASTLatch>::iterator iterator;
-  std::set<VASTValPtr> UniquePreds;
-  typedef std::set<VASTValPtr>::iterator pred_iterator;
 
   // Concatenate all condition together to detect the case that more than one
   // case is activated.
@@ -113,23 +80,23 @@ void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
 
   {
     raw_string_ostream AllPredSS(AllPred);
+    std::set<VASTValPtr> IdenticalCnds;
 
     AllPredSS << '{';
-    for (iterator I = UniqueLatches.begin(), E = UniqueLatches.end();
-         I != E; ++I) {
-      VASTLatch L = *I;
-      if (!L.getSlotActive()) {
-        UniquePreds.insert(L.getPred());
-        continue;
+    for (const_iterator I = begin(), E = end(); I != E; ++I) {
+      const VASTLatch &L = *I;
+      const VASTSeqOp *Op = L.Op;
+      if (!Op->getSlotActive()) {
+        bool visited = IdenticalCnds.insert(Op->getPred()).second;
+        // For the guarding condition without slot active, only print them
+        // once.
+        if (visited) continue;
       }
 
-      L.Op->printPredicate(AllPredSS);
+      Op->printPredicate(AllPredSS);
       AllPredSS << ", ";
     }
 
-    for (pred_iterator I = UniquePreds.begin(), E = UniquePreds.end();
-         I != E; ++I)
-      AllPredSS << *I << ", ";
 
     AllPredSS << "1'b0 }";
   }
@@ -144,24 +111,25 @@ void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
         << AllPred << ");\n";
 
   // Display the conflicted condition and its slot.
-  for (iterator I = UniqueLatches.begin(), E = UniqueLatches.end(); I != E; ++I) {
-    const VASTSeqOp &Op = *(*I).Op;
+  for (const_iterator I = begin(), E = end(); I != E; ++I) {
+    const VASTLatch &L = *I;
+    const VASTSeqOp *Op = L.Op;
     OS.indent(2) << "if (";
-    Op.printPredicate(OS);
+    Op->printPredicate(OS);
     OS << ") begin\n";
 
     OS.indent(4) << "$display(\"Condition: ";
-    Op.printPredicate(OS);
+    Op->printPredicate(OS);
 
-    OS << ",  Src: " << VASTValPtr(*I);
+    OS << ",  Src: " << VASTValPtr(L);
 
-    VASTSlot *S = Op.getSlot();
-    OS << ", current slot: " << Op.getSlotNum() << ", ";
+    VASTSlot *S = Op->getSlot();
+    OS << ", current slot: " << Op->getSlotNum() << ", ";
 
     if (BasicBlock *BB = S->getParent()) OS << BB->getName() << ',';
 
     OS << "\"); /* ";
-    if (Value *V = Op.getValue()) {
+    if (Value *V = Op->getValue()) {
       OS << *V;
       if (Instruction *Inst = dyn_cast<Instruction>(V))
         OS << ", BB: " << Inst->getParent()->getName();
