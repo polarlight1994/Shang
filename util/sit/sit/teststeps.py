@@ -223,7 +223,7 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     jt.jobName = self.getJobName()
     jt.remoteCommand = 'timeout'
     # Use a bigger timeout if we are runing the feedback flow.
-    timeout = self.hls_feedback_flow_timeout if self.shang_external_timing_analysis else self.hls_timeout
+    timeout = self.hls_feedback_flow_timeout if self.timing_model == 'external' else self.hls_timeout
     jt.args = ['%ds' % timeout, self.shang, self.synthesis_config_file, '-stats',
                '-timing-model=%(timing_model)s' % self,
                '-vast-disable-mux-slack=%(vast_disable_mux_slack)s' % self,
@@ -233,7 +233,6 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
                '-shang-enable-memory-partition=%(shang_enable_memory_partition)s' % self,
                '-shang-enable-pre-schedule-lut-mapping=%(shang_enable_pre_schedule_lut_mapping)s' % self,
                '-shang-enable-register-sharing=%(shang_enable_register_sharing)s' % self,
-               '-shang-external-timing-analysis=%(shang_external_timing_analysis)s' % self,
                '-shang-selector-ignore-trivial-loops=true',
                '-shang-selector-ignore-x-fanins=true'
               ]

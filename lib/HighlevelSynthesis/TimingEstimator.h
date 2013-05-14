@@ -39,7 +39,7 @@ public:
   typedef TimingNetlist::const_path_iterator const_path_iterator;
 
   enum ModelType {
-    ZeroDelay, BlackBox, Bitlevel
+    ZeroDelay, BlackBox, Bitlevel, External
   };
 
 protected:

@@ -222,38 +222,9 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
     assert(!CurInfo.empty() && "Unexpected empty arrival times set!");
   }
 };
-
-struct ExternalTimingNetlist : public TimingNetlist {
-  static char ID;
-
-  ExternalTimingNetlist() : TimingNetlist(ID) {
-    initializeExternalTimingNetlistPass(*PassRegistry::getPassRegistry());
-  }
-
-  void getAnalysisUsage(AnalysisUsage &AU) const {
-    // Perform the control logic synthesis because we need to write the netlist.
-    AU.addRequiredID(ControlLogicSynthesisID);
-    TimingNetlist::getAnalysisUsage(AU);
-  }
-
-  bool runOnVASTModule(VASTModule &VM);
-};
 }
 
-char ExternalTimingNetlist::ID = 0;
-char &llvm::ExternalTimingNetlistID = ExternalTimingNetlist::ID;
-
-INITIALIZE_PASS_BEGIN(ExternalTimingNetlist, "shang-external-timing-netlist",
-                      "Preform Timing Estimation on the RTL Netlist"
-                      " with the synthesis tool",
-                      false, true)
-  INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
-INITIALIZE_PASS_END(ExternalTimingNetlist, "shang-external-timing-netlist",
-                    "Preform Timing Estimation on the RTL Netlist"
-                    " with the synthesis tool",
-                    false, true)
-
-bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
+bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
   // Name all expressions before writting the netlist.
   typedef DatapathContainer::expr_iterator expr_iterator;
   for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
@@ -265,10 +236,8 @@ bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
 
   ExternalTimingAnalysis ETA(VM, PathInfo);
 
-  // Run the synthesis tool to get the arrival time estimation, fall back to
-  // the internal estimator if the external tool fail.
-  if (!ETA.analysisWithSynthesisTool())
-    return TimingNetlist::runOnVASTModule(VM);
+  // Run the synthesis tool to get the arrival time estimation.
+  if (!ETA.analysisWithSynthesisTool()) return false;
 
   // Update the timing netlist.
   std::set<VASTOperandList*> Visited;
@@ -319,7 +288,8 @@ bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
     I->setPrintSelModule(false);
 
-  return false;
+  // External timing analysis successfully completed.
+  return true;
 }
 
 void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {

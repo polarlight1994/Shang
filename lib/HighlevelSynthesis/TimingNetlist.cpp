@@ -31,6 +31,8 @@ static cl::opt<enum TimingEstimatorBase::ModelType>
 TimingModel("timing-model", cl::Hidden,
             cl::desc("The Timing Model of the Delay Estimator"),
             cl::values(
+  clEnumValN(TimingEstimatorBase::External, "external",
+            "Perform delay estimation with synthesis tool"),
   clEnumValN(TimingEstimatorBase::Bitlevel, "bit-level",
             "Bit-level delay estimation with linear approximation"),
   clEnumValN(TimingEstimatorBase::BlackBox, "blackbox",
@@ -89,17 +91,15 @@ TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
   initializeTimingNetlistPass(*PassRegistry::getPassRegistry());
 }
 
-TimingNetlist::TimingNetlist(char &ID) : VASTModulePass(ID) {
-  initializeTimingNetlistPass(*PassRegistry::getPassRegistry());
-}
-
-TimingNetlist::~TimingNetlist() {}
-
 char TimingNetlist::ID = 0;
 
-INITIALIZE_PASS(TimingNetlist, "shang-timing-netlist",
-                "Preform Timing Estimation on the RTL Netlist",
-                false, true)
+INITIALIZE_PASS_BEGIN(TimingNetlist, "shang-timing-netlist",
+                      "Preform Timing Estimation on the RTL Netlist",
+                      false, true)
+  INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
+INITIALIZE_PASS_END(TimingNetlist, "shang-timing-netlist",
+                    "Preform Timing Estimation on the RTL Netlist",
+                    false, true)
 
 Pass *llvm::createTimingNetlistPass() {
   return new TimingNetlist();
@@ -111,6 +111,9 @@ void TimingNetlist::releaseMemory() {
 
 void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
+  // Perform the control logic synthesis because we need to write the netlist.
+  if (TimingModel == TimingEstimatorBase::External)
+    AU.addRequiredID(ControlLogicSynthesisID);  
   AU.setPreservesAll();
 }
 
@@ -161,6 +164,13 @@ TNLDelay TimingNetlist::getSelectorDelayImpl(unsigned NumFannins,
 }
 
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
+  if (TimingModel == TimingEstimatorBase::External) {
+    if (!performExternalAnalysis(VM))
+      report_fatal_error("External timing analysis fail!");
+
+    return false;
+  }
+  
   BitlevelDelayEsitmator Estimator(PathInfo, TimingModel);
 
   // Build the timing path for datapath nodes.

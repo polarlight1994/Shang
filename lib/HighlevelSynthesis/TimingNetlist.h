@@ -130,19 +130,18 @@ public:
   typedef FaninDelayInfo::const_iterator const_fanin_iterator;
 
   TNLDelay getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) const;
-protected:
+
   // The path delay information.
   PathDelayInfo PathInfo;
   FaninDelayInfo FaninInfo;
 
   void buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst, delay_type MUXDelay);
+  bool performExternalAnalysis(VASTModule &VM);
 
-  explicit TimingNetlist(char &ID);
 public: 
   static char ID;
 
   TimingNetlist();
-  virtual ~TimingNetlist();
 
   delay_type getDelay(VASTValue *Src, VASTSelector *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;

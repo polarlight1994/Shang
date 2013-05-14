@@ -32,7 +32,6 @@ extern char &DatapathNamerID;
 extern char &SeqLiveVariablesID;
 extern char &STGShortestPathID;
 extern char &OverlappedSlotsID;
-extern char &ExternalTimingNetlistID;
 
 FunctionPass *createDesignMetricsPass();
 
@@ -98,7 +97,6 @@ void initializeGlobalToStackPass(PassRegistry &Registry);
 void initializeLowerIntrinsicPass(PassRegistry &Registry);
 void initializeLUTMappingPass(PassRegistry &Registry);
 void initializeTimingNetlistPass(PassRegistry &Registry);
-void initializeExternalTimingNetlistPass(PassRegistry &Registry);
 void initializeVASTSchedulingPass(PassRegistry &Registry);
 void initializeSTGShortestPathPass(PassRegistry &Registry);
 void initializeOverlappedSlotsPass(PassRegistry &Registry);
