@@ -57,6 +57,17 @@ struct MUXPipeliner {
   FaninMap NewFIs;
   PredMap NewPreds;
 
+  typedef std::map<VASTSelector*, std::map<VASTSlot*, VASTSeqValue*> > ValueMap;
+  ValueMap ValueCache;
+
+  // Lookup or create the SeqValue for the selector.
+  VASTSeqValue *getValueAt(VASTSelector *Sel, VASTSlot *S) {
+    VASTSeqValue *&V = ValueCache[Sel][S];
+    // TODO: Index the pipelined SeqVal!
+    if (V == 0) V = VM->createSeqValue(Sel, 0);
+    return V;
+  }
+
   std::string BaseName;
   unsigned BitWidth;
   VASTSelector::Type SelType;
@@ -388,8 +399,8 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
     dbgs().indent(Level * 2) << "Get enable: " << CurPreviousLevelEn << '\n';);
     
     // Count the number of fanins by the enables.
-    if (fromDifferentRegister(CurPreviousLevelEn, LastPreviousLevelEn)
-        || !EnablePipelined) {
+    if (!LastPreviousLevelEn || !EnablePipelined
+        || fromDifferentRegister(CurPreviousLevelEn, LastPreviousLevelEn)) {
       ++CurUsedFI;
 
       // We use all fanins of the MUX, create a new target register for the MUX.
@@ -421,8 +432,7 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
     // Create the register assignment enable by the previous pipelined enable.
     // without the slot active if the predicte is from a pipeline register.
     if (LastNextLevelFI) {
-      // TODO: Index the pipelined SeqVal!
-      VASTSeqValue *FIVal = VM->createSeqValue(LastNextLevelFI, 0);
+      VASTSeqValue *FIVal = getValueAt(LastNextLevelFI, S);
       VASTSeqCtrlOp *Op = VM->assignCtrlLogic(FIVal, CurPreviousLevelFI, S,
                                               CurPreviousLevelEn,
                                               !EnablePipelined);
@@ -436,8 +446,7 @@ void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
     }
 
     // Also assign to the current level pipeline enable.
-    // TODO: Index the pipelined SeqVal!
-    VASTSeqValue *FIEn = VM->createSeqValue(LastNextLevelEn, 0);
+    VASTSeqValue *FIEn = getValueAt(LastNextLevelEn, S);
     VASTSeqCtrlOp *Op = VM->assignCtrlLogic(FIEn, VASTImmediate::True, S,
                                             CurPreviousLevelEn,
                                             !EnablePipelined);
