@@ -67,6 +67,7 @@ Pass *createTimingScriptGenPass(raw_ostream &O);
 // Analysis the dependency between registers
 Pass *createSeqLiveVariablesPass();
 Pass *createRegisterSharingPass();
+Pass *createSelectorPipeliningPass();
 Pass *createLowerPseudoPHIsPass();
 
 // RTL code generation.
@@ -104,6 +105,7 @@ void initializeOverlappedSlotsPass(PassRegistry &Registry);
 
 void initializeControlLogicSynthesisPass(PassRegistry &Registry);
 void initializeSelectorSynthesisPass(PassRegistry &Registry);
+void initializeSelectorPipeliningPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
 void initializeTimingScriptGenPass(PassRegistry &Registry);
 void initializeSeqLiveVariablesPass(PassRegistry &Registry);

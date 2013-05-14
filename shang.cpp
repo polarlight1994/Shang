@@ -83,6 +83,10 @@ EnablePreScheduleLUTMapping("shang-enable-pre-schedule-lut-mapping",
   cl::desc("Perform lut mapping before scheduling"),
   cl::init(true));
 
+static cl::opt<bool> EnableMUXPipelining("shang-enable-mux-pipelining",
+  cl::desc("Perform MUX pipelining"),
+  cl::init(false));
+
 static cl::opt<bool> DumpIRBeforeHLS("shang-enable-dump-ir-before-hls",
   cl::desc("Print the IR before HLS"),
   cl::init(false));
@@ -310,7 +314,8 @@ int main(int argc, char **argv) {
       HLSPasses.add(createLUTMappingPass());
     }
 
-   if (EnableRegisterSharing) HLSPasses.add(createRegisterSharingPass());
+    if (EnableRegisterSharing) HLSPasses.add(createRegisterSharingPass());
+    if (EnableMUXPipelining) HLSPasses.add(createSelectorPipeliningPass());
 
     // Analyse the slack between registers.
     HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
