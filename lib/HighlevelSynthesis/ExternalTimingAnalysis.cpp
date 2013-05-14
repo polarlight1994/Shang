@@ -324,9 +324,13 @@ bool ExternalTimingNetlist::runOnVASTModule(VASTModule &VM) {
 
 void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {
   // Read the result from the scripting engine.
-  const char *GlobalCodePath[] = { "FUs", "CommonTemplate" };
-  std::string GlobalCode = getStrValueFromEngine(GlobalCodePath);
-  Out << GlobalCode << '\n';
+  const char *FUTemplatePath[] = { "FUs", "CommonTemplate" };
+  std::string FUTemplate = getStrValueFromEngine(FUTemplatePath);
+  Out << FUTemplate << '\n';
+
+  const char *SelectorTemplatePath[] = { "FUs", "SelectorTemplate" };
+  std::string SelectorTemplate = getStrValueFromEngine(SelectorTemplatePath);
+  Out << SelectorTemplate << '\n';
 
   // Write buffers to output
   VM.printModuleDecl(Out);

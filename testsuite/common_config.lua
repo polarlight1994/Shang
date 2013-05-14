@@ -73,7 +73,9 @@ module shang_uge#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
 );
 	assign c = (a >= b)  ? 1'b1 : 1'b0;
 endmodule
+]=]
 
+FUs.SelectorTemplate = [=[
 module shang_selector#(parameter integer INPUTS = 8, string SELSTR = "100101100100101100", integer SELS = 16, integer WIDTH = 8)(
   input wire[INPUTS * WIDTH - 1 : 0]  inputs,
   input wire[SELS - 1 : 0]            sel_cnds,
