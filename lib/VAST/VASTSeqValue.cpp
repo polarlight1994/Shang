@@ -70,6 +70,23 @@ bool VASTSelector::buildCSEMap(std::map<VASTValPtr,
   return !CSEMap.empty();
 }
 
+// Compare the guarding condition which is not guarded by slot active. In this
+// case two VASTSeqValues are considered as identical if their parent selector
+// are identical.
+namespace {
+struct LessGC : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
+bool operator()(VASTValPtr LHS, VASTValPtr RHS) const {
+  VASTSeqValue *LHSSV = dyn_cast<VASTSeqValue>(LHS.get());
+  VASTSeqValue *RHSSV = dyn_cast<VASTSeqValue>(RHS.get());
+
+  if (LHSSV && RHSSV && LHS.isInverted() == RHS.isInverted())
+    return LHSSV->getSelector() < RHSSV->getSelector();
+
+  return LHS < RHS;
+}
+};
+}
+
 void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
                                    const VASTModule *Mod) const {
   if (empty()) return;
@@ -80,14 +97,14 @@ void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
 
   {
     raw_string_ostream AllPredSS(AllPred);
-    std::set<VASTValPtr> IdenticalCnds;
+    std::set<VASTValPtr, LessGC> IdenticalCnds;
 
     AllPredSS << '{';
     for (const_iterator I = begin(), E = end(); I != E; ++I) {
       const VASTLatch &L = *I;
       const VASTSeqOp *Op = L.Op;
       if (!Op->guardedBySlotActive()) {
-        bool visited = IdenticalCnds.insert(Op->getPred()).second;
+        bool visited = !IdenticalCnds.insert(Op->getPred()).second;
         // For the guarding condition without slot active, only print them
         // once.
         if (visited) continue;
