@@ -47,22 +47,29 @@ VASTSelector::~VASTSelector() {
   DeleteContainerPointers(Fanins);
 }
 
+bool VASTSelector::isTrivialFannin(const VASTLatch &L) const {
+  VASTValPtr FIVal = L;
+
+  // Ignore the trivial loops.
+  if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(FIVal))
+    if (V->getSelector() == this && IgnoreTrivialLoops)
+      return true;
+
+  // Ignore the X values.
+  if (VASTWire *W = dyn_cast<VASTWire>(FIVal.get()))
+    if (W->isX() && IgnoreXFanins)
+      return true;
+
+  return false;
+}
+
 bool VASTSelector::buildCSEMap(std::map<VASTValPtr,
                                         std::vector<const VASTSeqOp*> >
                                &CSEMap) const {
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
     VASTLatch U = *I;
-    VASTValPtr FIVal = U;
 
-    // Ignore the trivial loops.
-    if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(FIVal))
-      if (V->getSelector() == this && IgnoreTrivialLoops)
-        continue;
-
-    // Ignore the X values.
-    if (VASTWire *W = dyn_cast<VASTWire>(FIVal.get()))
-      if (W->isX() && IgnoreXFanins)
-        continue;
+    if (isTrivialFannin(U)) continue;
 
     CSEMap[U].push_back(U.Op);
   }

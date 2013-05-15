@@ -120,6 +120,10 @@ public:
   const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
   const_fanin_iterator fanin_end() const { return Fanins.end(); }
 
+  // Return true if the latched value is X (undefined value) or the SeqVal from
+  // the same selector.
+  bool isTrivialFannin(const VASTLatch &L) const;
+
   void synthesizeSelector(VASTExprBuilder &Builder);
 
   bool isSelectorSynthesized() const { return !EnableU.isInvalid(); }
