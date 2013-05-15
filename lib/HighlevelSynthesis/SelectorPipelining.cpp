@@ -474,7 +474,7 @@ SelectorPipelining::buildFISlackMap(VASTSelector *Sel, FaninSlackMap &FISlack) {
 
     // Do not mess up with the operations that is guarded by the strange control
     // signals.
-    if (!DstLatch.getSlotActive()) continue;
+    if (!DstLatch.Op->guardedBySlotActive()) continue;
 
     VASTSlot *ReadSlot = DstLatch.getSlot();
 
