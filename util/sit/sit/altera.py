@@ -142,6 +142,7 @@ post_message -type info "$num_not_applied constraints are not applied"
 
   report_generator = ConstraintGenerator(
     sql_connection = con,
+    # Just include every path.
     path_constraints = ''' cycles >= 0 ''',
     output_script_path = args.report,
     script_prologue = '''
