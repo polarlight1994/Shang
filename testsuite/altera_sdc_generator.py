@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import sqlite3, argparse
 
-class ConstraintsGenerator:
+class ConstraintGenerator:
   def __init__(self, sql_connection, path_constraints, output_script_path, script_prologue, script_on_path, script_epilog, period):
     self.path_constraints = path_constraints
     self.num_constraints_generated = 0
@@ -116,9 +116,8 @@ def main() :
   con.commit()
   sql_script.close();
 
-
   #def __init__(self, path_constraints, sql_path, output_script, script_on_path, period):
-  sdc_generator = ConstraintsGenerator(
+  sdc_generator = ConstraintGenerator(
     sql_connection = con,
     path_constraints = ''' cycles > 1 and (thu like 'shang-null-node' or normalized_delay > %f) ''' % args.factor,
     output_script_path = args.sdc,
@@ -144,7 +143,7 @@ post_message -type info "$num_not_applied constraints are not applied"
   print sdc_generator.generate_script(), " scripts generated"
 
 
-  report_generator = ConstraintsGenerator(
+  report_generator = ConstraintGenerator(
     sql_connection = con,
     path_constraints = ''' TRUE ''',
     output_script_path = args.report,
