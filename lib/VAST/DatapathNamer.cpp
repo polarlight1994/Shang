@@ -126,5 +126,24 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
     }
   }
 
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+    VASTSelector *Sel = I;
+    if (!Sel->isSelectorSynthesized()) continue;
+
+    typedef VASTSelector::fanin_iterator fanin_iterator;
+    for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
+         I != E; ++I){
+      const VASTSelector::Fanin *FI = *I;
+      VASTValue *FIVal = FI->FI.unwrap().get();
+      VASTOperandList::visitTopOrder(FIVal, Visited, N);
+      VASTValue *FICnd = FI->Pred.unwrap().get();
+      VASTOperandList::visitTopOrder(FICnd, Visited, N);
+    }
+
+    VASTValue *SelEnable = Sel->getEnable().get();
+    VASTOperandList::visitTopOrder(SelEnable, Visited, N);
+  }
+
   return false;
 }
