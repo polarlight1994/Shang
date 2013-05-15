@@ -14,6 +14,9 @@ class ConstraintsGenerator:
     self.script_on_path = script_on_path
     self.script_epilog = script_epilog
 
+  def __getitem__(self, key):
+    return self.__dict__[key]
+
   def generate_node_sets(self) :
     # Generate the collection for keepers.
     keeper_id = 0;
