@@ -22,6 +22,8 @@ from datetime import datetime
 
 import drmaa
 
+import altera
+
 # Initialize the gridengine
 Session = drmaa.Session()
 Session.initialize()
@@ -547,14 +549,18 @@ class AlteraSynStep(TestStep) :
   def prepareTest(self) :
     self.altera_synthesis_base_dir = os.path.join(self.hls_base_dir, 'altera_synthesis')
     os.makedirs(self.altera_synthesis_base_dir)
-    # Generate the testbench
+
+    #Generate the scripts
+    altera.generate_scripts(sql_path = os.path.join(self.hls_base_dir, self.test_name + ".sql"),
+                            sdc_path = os.path.join(self.hls_base_dir, self.test_name + ".sdc"),
+                            report_path = os.path.join(self.hls_base_dir, self.test_name + "_report_timing.tcl"),
+                            period = 1000.0 / self.fmax,
+                            factor = self.shang_constraints_factor)
 
     self.altera_synthesis_script = os.path.join(self.altera_synthesis_base_dir, 'setup_prj.tcl')
     self.generateFileFromTemplate('''# Load necessary package.
 load_package flow
 load_package report
-
-exec python {{ [config_dir, "altera_sdc_generator.py"]|joinpath }} --sql {{ [hls_base_dir, test_name + ".sql"]|joinpath }} --sdc {{ [hls_base_dir, test_name + ".sdc"]|joinpath }} --report {{ [hls_base_dir, test_name + "_report_timing.tcl"]|joinpath }} --period {{ 1000.0 / fmax}} --factor {{ shang_constraints_factor }}
 
 project_new {{ test_name }} -overwrite
 

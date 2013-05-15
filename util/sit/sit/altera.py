@@ -94,18 +94,9 @@ class ConstraintGenerator:
 
     return self.num_path_script_generated
 
-def main() :
-  parser = argparse.ArgumentParser(description='Altera SDC Script Generator')
-  parser.add_argument("--sql", type=str, help="The script to build the sql database")
-  parser.add_argument("--sdc", type=str, help="The path to which the sdc script will be written")
-  parser.add_argument("--report", type=str, help="The path to which the report script will be written")
-  parser.add_argument("--period", type=float, help="The clock period")
-  parser.add_argument("--factor", type=float, help="The factor to the critical delay", default=0.0)
-
-  args = parser.parse_args()
-
+def generate_scripts(sql_path, sdc_path, report_path, period, factor) :
   # Initialize the sql database.
-  sql_script = open(args.sql, 'r')
+  sql_script = open(sql_path, 'r')
   con = sqlite3.connect(":memory:")
 
   # Build the multi-cycle path database.
@@ -116,8 +107,8 @@ def main() :
   #def __init__(self, path_constraints, sql_path, output_script, script_on_path, period):
   sdc_generator = ConstraintGenerator(
     sql_connection = con,
-    path_constraints = ''' cycles > 1 and (thu like 'shang-null-node' or normalized_delay > %f) ''' % args.factor,
-    output_script_path = args.sdc,
+    path_constraints = ''' cycles > 1 and (thu like 'shang-null-node' or normalized_delay > %f) ''' % factor,
+    output_script_path = sdc_path,
     script_prologue = '''
 create_clock -name "clk" -period %(period)sns [get_ports {clk}]
 derive_pll_clocks -create_base_clocks
@@ -135,7 +126,7 @@ post_message -type info "."
     script_epilog = '''
 post_message -type info "$num_not_applied constraints are not applied"
 ''',
-    period = args.period)
+    period = period)
 
   # Report the finish of script
   print sdc_generator.generate_script(), " scripts generated"
@@ -144,7 +135,7 @@ post_message -type info "$num_not_applied constraints are not applied"
     sql_connection = con,
     # Just include every path.
     path_constraints = ''' cycles >= 0 ''',
-    output_script_path = args.report,
+    output_script_path = report_path,
     script_prologue = '''
 load_package report
 load_report
@@ -195,7 +186,7 @@ if { %(cnd_string)s } {
 }
 ''',
     script_epilog = '',
-    period = args.period)
+    period = period)
 
   report_generator.generate_script()
 
@@ -203,4 +194,12 @@ if { %(cnd_string)s } {
   con.close()
 
 if __name__=='__main__':
-  main()
+  parser = argparse.ArgumentParser(description='Altera SDC Script Generator')
+  parser.add_argument("--sql", type=str, help="The script to build the sql database")
+  parser.add_argument("--sdc", type=str, help="The path to which the sdc script will be written")
+  parser.add_argument("--report", type=str, help="The path to which the report script will be written")
+  parser.add_argument("--period", type=float, help="The clock period")
+  parser.add_argument("--factor", type=float, help="The factor to the critical delay", default=0.0)
+
+  args = parser.parse_args()
+  generate_scripts(sql_path = args.sql, sdc_path = args.sdc, report_path = args.report, period = args.period, factor = args.factor)
