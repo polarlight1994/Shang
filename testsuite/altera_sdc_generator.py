@@ -4,7 +4,7 @@ import sqlite3, argparse
 class ConstraintGenerator:
   def __init__(self, sql_connection, path_constraints, output_script_path, script_prologue, script_on_path, script_epilog, period):
     self.path_constraints = path_constraints
-    self.num_constraints_generated = 0
+    self.num_path_script_generated = 0
     self.cusor = sql_connection.cursor()
 
     #Other variables
@@ -20,14 +20,14 @@ class ConstraintGenerator:
   def generate_node_sets(self) :
     # Generate the collection for keepers.
     keeper_id = 0;
-    keeper_map = {}
+    self.keeper_map = {}
 
     keeper_query = '''SELECT DISTINCT src FROM mcps where %(path_constraints)s
                         UNION
                       SELECT DISTINCT dst FROM mcps where %(path_constraints)s''' % self
     for keeper_row in self.cusor.execute(keeper_query):
       keeper = keeper_row[0]
-      keeper_map[keeper] = keeper_id
+      self.keeper_map[keeper] = keeper_id
       keeper_line = '''set keepers%(id)s [get_keepers {%(keeper_patterns)s}]\n''' % {
                        'id':keeper_id, 'keeper_patterns' : keeper
                     }
@@ -36,14 +36,14 @@ class ConstraintGenerator:
 
     # Generate the collection for nets
     net_id = 0;
-    net_map = { 'shang-null-node' : None }
+    self.net_map = { 'shang-null-node' : None }
     net_query = '''SELECT DISTINCT thu FROM mcps where %(path_constraints)s''' % self
 
     for net_row in self.cusor.execute(net_query):
       net = net_row[0]
-      if net in net_map: continue
+      if net in self.net_map: continue
 
-      net_map[net] = net_id
+      self.net_map[net] = net_id
       net_line = '''set nets%(id)s [get_nets {%(net_patterns)s}]\n''' % {
                  'id':net_id, 'net_patterns' : net }
       self.output_script.write(net_line)
@@ -59,8 +59,8 @@ class ConstraintGenerator:
       kwargs['cnd_string'] = '''[get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s]''' % kwargs
       kwargs['path_fileter'] = '''-from $%(src)s -through $%(thu)s -to $%(dst)s''' % kwargs
 
-    self.output_script.write(script_on_path % kwargs)
-    self.num_constraints_generated = self.num_constraints_generated + 1
+    self.output_script.write(self.script_on_path % kwargs)
+    self.num_path_script_generated = self.num_path_script_generated + 1
 
   def generate_script_from_src_to_dst(self, src, dst) :
     query = '''SELECT thu, cycles, normalized_delay FROM mcps
@@ -71,10 +71,7 @@ class ConstraintGenerator:
                'src' : src
             }
     for thu, cycles, delay in [ (row[0], row[1], row[2] ) for row in self.cusor.execute(query) ]:
-      sdc_script.write('''# %(src)s -> %(thu)s -> %(dst)s %(cycles)s\n''' % {
-                          'src' : src, 'dst' : dst, 'thu' : thu, 'cycles' : cycles})
-      self.generate_script_for_path(src="keepers%s" % keeper_map[src], dst="keepers%s" % keeper_map[dst], thu="nets%s" % net_map[thu], cycles=cycles, delay=delay)
-
+      self.generate_script_for_path(src="keepers%s" % self.keeper_map[src], dst="keepers%s" % self.keeper_map[dst], thu="nets%s" % self.net_map[thu], cycles=cycles, delay=delay)
 
   def generate_script_for_dst(self, dst) :
     query = '''SELECT DISTINCT src FROM mcps where %(constraint)s and dst = '%(dst)s' ''' % {
@@ -89,7 +86,7 @@ class ConstraintGenerator:
     # Get all dst nodes.
     dst_query = '''SELECT DISTINCT dst FROM mcps where %(path_constraints)s''' % self
     for dst in [ row[0] for row in self.cusor.execute(dst_query) ]:
-      self.generate_constraints_for_dst(dst)
+      self.generate_script_for_dst(dst)
 
     self.output_script.write(self.script_epilog % self)
     self.output_script.close()
@@ -122,13 +119,14 @@ def main() :
     path_constraints = ''' cycles > 1 and (thu like 'shang-null-node' or normalized_delay > %f) ''' % args.factor,
     output_script_path = args.sdc,
     script_prologue = '''
-create_clock -name "clk" -period %sns [get_ports {clk}]
+create_clock -name "clk" -period %(period)sns [get_ports {clk}]
 derive_pll_clocks -create_base_clocks
 derive_clock_uncertainty
 set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
 set num_not_applied 0
 ''',
     script_on_path = '''
+# %(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s
 if { %(cnd_string)s } { set_multicycle_path %(path_fileter)s -setup -end %(cycles)d
 } else { incr num_not_applied }
 post_message -type info "."
@@ -142,10 +140,9 @@ post_message -type info "$num_not_applied constraints are not applied"
   # Report the finish of script
   print sdc_generator.generate_script(), " scripts generated"
 
-
   report_generator = ConstraintGenerator(
     sql_connection = con,
-    path_constraints = ''' TRUE ''',
+    path_constraints = ''' cycles >= 0 ''',
     output_script_path = args.report,
     script_prologue = '''
 load_package report
@@ -198,6 +195,8 @@ if { %(cnd_string)s } {
 ''',
     script_epilog = '',
     period = args.period)
+
+  report_generator.generate_script()
 
   #Close the connection.
   con.close()
