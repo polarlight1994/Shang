@@ -36,71 +36,57 @@ STATISTIC(NumPipelineRegBits, "Number of Pipeline register created");
 
 namespace {
 struct MUXFI {
-  VASTSeqOp *Op;
-  VASTValPtr FIVal;
-  MUXFI(const VASTLatch &L) : Op(L.Op), FIVal(L) {}
-  MUXFI(VASTSeqOp *Op) : Op(Op), FIVal(Op->getPred()) {}
-  
-  VASTValPtr getPred() const { return Op->getPred(); }
-  VASTSlot *getSlot() const { return Op->getSlot(); }
+  VASTLatch &L;
+  unsigned Slack;
+  unsigned StateNum;
 
-  bool operator<(const MUXFI &RHS) const {
-    return Op < RHS.Op;
-  }
+  MUXFI(VASTLatch &L, unsigned Slack) : L(L), Slack(Slack),
+    StateNum(L.getSlot()->getParentState()->SlotNum) {}
+
+  VASTSlot *getSlot() const { return L.getSlot(); }
+  VASTValPtr getCnd() const { return L.getPred(); }
+  VASTValPtr getFI() const { return L; }
 };
 
-typedef std::map<MUXFI, unsigned> FaninSlackMap;
-
 struct MUXPipeliner {
-  typedef std::map<MUXFI, VASTValPtr> FaninMap;
-  typedef std::map<MUXFI, VASTSeqValue*> PredMap;
-  FaninMap NewFIs;
-  PredMap NewPreds;
+  static unsigned RegCounter;
+
+  std::vector<MUXFI*> Fannins;
 
   typedef std::map<VASTSelector*, std::map<VASTSlot*, VASTSeqValue*> > ValueMap;
   ValueMap ValueCache;
 
   // Lookup or create the SeqValue for the selector.
-  VASTSeqValue *getValueAt(VASTSelector *Sel, VASTSlot *S) {
+  VASTSeqValue *getValueAt(VASTRegister *R, VASTSlot *S) {
+    VASTSelector *Sel = R->getSelector();
     VASTSeqValue *&V = ValueCache[Sel][S];
     // TODO: Index the pipelined SeqVal!
     if (V == 0) V = VM->createSeqValue(Sel, 0);
     return V;
   }
 
-  std::string BaseName;
-  unsigned BitWidth;
-  VASTSelector::Type SelType;
+  VASTSelector *Sel;
   unsigned MaxPerCyleFINum;
   VASTModule *VM;
 
-  MUXPipeliner(std::string BaseName, unsigned BitWidth, VASTSelector::Type T,
-               unsigned MaxPerCyleFINum, VASTModule *VM)
-    : BaseName(BaseName), BitWidth(BitWidth), SelType(T),
-      MaxPerCyleFINum(MaxPerCyleFINum), VM(VM) {}
+  MUXPipeliner(VASTSelector *Sel, unsigned MaxPerCyleFINum, VASTModule *VM)
+    : Sel(Sel), MaxPerCyleFINum(MaxPerCyleFINum), VM(VM) {}
 
-  typedef
-  MutableArrayRef<FaninSlackMap::value_type> FISlackVector;
-
-  void AssignMUXPort(FISlackVector FIs, unsigned Level, unsigned FIsAvailable);
-
-  static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level);
-
-  VASTValPtr getFIVal(MUXFI FI) {
-    FaninMap::const_iterator at = NewFIs.find(FI);
-
-    if (at == NewFIs.end()) return FI.FIVal;
-
-    return at->second;
+  ~MUXPipeliner() {
+    DeleteContainerPointers(Fannins);
   }
 
-  VASTValPtr getFIPred(MUXFI FI) {
-    PredMap::const_iterator at = NewPreds.find(FI);
-
-    if (at == NewPreds.end()) return FI.getPred();
-
-    return at->second;
+  void addFannin(VASTLatch &L, unsigned Slack) {
+    assert(Slack && "Unexpected slack!");
+    Fannins.push_back(new MUXFI(L, Slack));
   }
+
+  bool pipelineGreedy();
+
+  // Retime to read all FIs 1 cycles earlier
+  template<typename iterator>
+  void retimeLatchesOneCycleEarlier(iterator I, iterator E);
+  void retimeLatchesOneCycleEarlier(ArrayRef<MUXFI*> FIs);
 };
 
 struct SelectorPipelining : public VASTModulePass {
@@ -134,9 +120,9 @@ struct SelectorPipelining : public VASTModulePass {
 
   unsigned getCriticalDelay(const SVSet &S, VASTValue *V);
   unsigned getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot);
-  unsigned getSlotSlack(VASTSlot *S);
 
-  void buildFISlackMap(VASTSelector *Sel, FaninSlackMap &FISlack);
+  unsigned getSlotSlack(VASTSlot *S);
+  void buildPipelineFIs(VASTSelector *Sel, MUXPipeliner &Pipeliner);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
@@ -201,7 +187,9 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
   DEBUG(dbgs() << "Before MUX pipelining:\n"; VM.dump(););
 
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
-    if (!isa<VASTMemoryBus>(I->getParent())) continue;
+    // The slot assignments cannot be retime, the selectors with small fannin
+    // number do not need to be retime.
+    if (I->isSlot() || I->size() < MaxSingleCyleFINum) continue;
 
     pipelineFanins(I);
   }
@@ -226,42 +214,6 @@ void SelectorPipelining::descomposeSeqInst(VASTSeqInst *SeqInst) {
   VM->eraseSeqOp(SeqInst);
 }
 
-static int
-sort_by_slot(const VASTSlot *LHS, const VASTSlot *RHS) {
-  if (LHS < RHS) return -1;
-
-  if (LHS > RHS) return  1;
-
-  return 0;
-}
-
-static int
-sort_by_fi(const void *LHS, const void *RHS) {
-  typedef const MUXPipeliner::FaninMap::value_type T;
-  const VASTValPtr &LHSV = reinterpret_cast<T*>(LHS)->second;
-  const VASTValPtr &RHSV = reinterpret_cast<T*>(RHS)->second;
-
-  if (LHSV < RHSV) return -1;
-
-  if (LHSV > RHSV) return  1;
-
-  return sort_by_slot(reinterpret_cast<T*>(LHS)->first.Op->getSlot(),
-                      reinterpret_cast<T*>(RHS)->first.Op->getSlot());
-}
-
-static int
-sort_by_slack(const void *LHS, const void *RHS) {
-  typedef const FaninSlackMap::value_type T;
-
-  if (reinterpret_cast<T*>(LHS)->second < reinterpret_cast<T*>(RHS)->second)
-    return -1;
-
-  if (reinterpret_cast<T*>(LHS)->second > reinterpret_cast<T*>(RHS)->second)
-    return 1;
-
-  return 0;
-}
-
 //static bool isLatchIdentical(const VASTLatch &LHS, const VASTLatch &RHS) {
 //  if (LHS.getDst() != RHS.getDst()) return false;
 //
@@ -275,58 +227,17 @@ sort_by_slack(const void *LHS, const void *RHS) {
 bool SelectorPipelining::pipelineFanins(VASTSelector *Sel) {
   // Iterate over all fanins to build the Fanin Slack Map.
   // Try to build the pipeline register by inserting the map.
-  FaninSlackMap SlackMap;
-  buildFISlackMap(Sel, SlackMap);
+  MUXPipeliner P(Sel, MaxSingleCyleFINum, VM);
+  buildPipelineFIs(Sel, P);
 
-  // For now, we can build the single cycle MUX, Later we can build multi-cycle
-  // MUX to save the registers.
-  // FIXME: We can also reuse the assignment.
-  SmallVector<FaninSlackMap::value_type, 32>
-    SlackVector(SlackMap.begin(), SlackMap.end());
-
-  // Pick the fanins that must be implemented at this level.
-  array_pod_sort(SlackVector.begin(), SlackVector.end(), sort_by_slack);
-
-  MUXPipeliner P(std::string(Sel->getName()), Sel->getBitWidth(), Sel->getType(),
-                 MaxSingleCyleFINum, VM); 
-  P.AssignMUXPort(SlackVector, 0, MaxSingleCyleFINum);
-
-  typedef VASTSelector::iterator vn_itertor;
-  for (vn_itertor I = Sel->begin(), E = Sel->end(); I != E; ++I) {
-    VASTLatch L = *I;
-    VASTValPtr NewPred = P.NewPreds[L];
-
-    if (!NewPred) continue;
-
-    L.Op->replacePredBy(NewPred, false);
-
-    VASTValPtr NewFI = P.NewFIs[L];
-    assert((NewFI || Sel->getType() == VASTSelector::Enable)
-           && "Cannot find the corresponding fanin!");
-
-    if (!NewFI) continue;
-
-    DEBUG(dbgs() << "Orignal FI:\t";
-    L.Op->dump(););
-
-    assert(L.Op->num_srcs() == 1
-           && "Cannot pipeline FI in the SeqOp with more than 1 sources!");
-
-    L.replaceUsedBy(NewFI);
-
-    DEBUG(dbgs() << "Retimed to:\t";
-    L.Op->dump();
-    dbgs() << '\n';);
-  }
-
-  return false;
+  return P.pipelineGreedy();
 }
 
 static bool fromDifferentRegister(VASTValPtr LHS, VASTValPtr RHS) {
   VASTSeqValue *LHSSV = dyn_cast<VASTSeqValue>(LHS);
 
   if (LHSSV == 0) return true;
-  
+
   VASTSeqValue *RHSSV = dyn_cast<VASTSeqValue>(RHS);
 
   if (RHSSV == 0) return true;
@@ -334,143 +245,39 @@ static bool fromDifferentRegister(VASTValPtr LHS, VASTValPtr RHS) {
   return LHSSV->getSelector() != RHSSV->getSelector();
 }
 
-void MUXPipeliner::AssignMUXPort(FISlackVector FIs, unsigned Level,
-                                 unsigned FIsAvailable) {
-  // Special case: If the slack of the Fanins are equal to the level number, it
-  // means we can only assign the fanins to the current level and cannot pipeline
-  // it anymore.
-  FISlackVector NextLevelFISlacks;
+unsigned SelectorPipelining::getSlotSlack(VASTSlot *S) {
+  S = S->getParentState();
 
-  for (unsigned i = 0; i < FIs.size(); ++i) {
-    assert(FIs[i].second >= Level && "Bad Slack!");
-    if (FIs[i].second > Level) {
-      FIsAvailable -= i;
-      NextLevelFISlacks = FIs.slice(i);
-      break;
-    }
+  unsigned CurSlotNum = S->SlotNum;
+  // If we had calculated the slack?
+  std::map<unsigned, unsigned>::iterator at = SlotSlack.find(CurSlotNum);
+
+  if (at != SlotSlack.end()) return at->second;
+
+  // Otherwise we need to calculate it now.
+  unsigned Slack = 0;
+  while (S->pred_size() == 1) {
+    VASTSlot *PredSlot = *S->pred_begin();
+
+    if (PredSlot->IsSubGrp) break;
+
+    S = PredSlot;
+    ++Slack;
   }
 
-  if (NextLevelFISlacks.empty()) return;
-
-  DEBUG(dbgs().indent(Level * 2) << "NextLevelFISlacks Size: "
-        << NextLevelFISlacks.size() << '\n';
-  for (unsigned i = 0; i < NextLevelFISlacks.size(); ++i) {
-    MUXFI FI = NextLevelFISlacks[i].first;
-
-    dbgs().indent(Level * 2) << "Putting Op to next level:";
-    FI.Op->dump();
-  });
-
-  // We have to goto next level if the number of FIs are not enought.
-  if (FIsAvailable < NextLevelFISlacks.size())
-    AssignMUXPort(NextLevelFISlacks, Level + 1,  FIsAvailable * MaxPerCyleFINum);
-
-  // No need to insert pipeline register at level 0.
-  if (Level == 0) return;
-
-  DEBUG(dbgs().indent(Level * 2) << "NextLevelFISlacks Size: "
-        << NextLevelFISlacks.size() << '\n');
-
-  typedef std::vector<std::pair<MUXFI, VASTValPtr> > FaninVector;
-  FaninVector PreviousLevelFIs;
-  // We must assign the FIs in NextLevelFis to #FIsAvailable fanins.
-  for (unsigned i = 0; i < NextLevelFISlacks.size(); ++i) {
-    MUXFI FI = NextLevelFISlacks[i].first;
-    PreviousLevelFIs.push_back(FaninMap::value_type(FI, getFIVal(FI)));
-  }
-
-  // Initialize CurUsedFI to MaxSingleCyleFINum to force fanin creation at the
-  // first iteration.
-  unsigned CurUsedFI = MaxPerCyleFINum;
-  // Group the new FIs by the fanout register.
-  array_pod_sort(PreviousLevelFIs.begin(), PreviousLevelFIs.end(), sort_by_fi);
-  VASTValPtr LastPreviousLevelEn;
-  VASTSelector *LastNextLevelFI = 0;
-  VASTSelector *LastNextLevelEn = 0;
-
-  for (unsigned i = 0; i < PreviousLevelFIs.size(); ++i) {
-    MUXFI CurFI = PreviousLevelFIs[i].first;
-    VASTValPtr CurPreviousLevelFI = PreviousLevelFIs[i].second;
-    VASTValPtr CurPreviousLevelEn = getFIPred(CurFI);
-    bool EnablePipelined = CurFI.getPred() != CurPreviousLevelEn;
-
-    DEBUG(dbgs().indent(Level * 2) << "Handling FI for Op:";
-    CurFI.Op->dump();
-    dbgs().indent(Level * 2) << "Get enable: " << CurPreviousLevelEn << '\n';);
-    
-    // Count the number of fanins by the enables.
-    if (!LastPreviousLevelEn || !EnablePipelined
-        || fromDifferentRegister(CurPreviousLevelEn, LastPreviousLevelEn)) {
-      ++CurUsedFI;
-
-      // We use all fanins of the MUX, create a new target register for the MUX.
-      if (CurUsedFI >= MaxPerCyleFINum)  {
-        CurUsedFI = 0;
-        // We need to create a new register for the new fanin.
-        std::string Name = "l" + utostr_32(Level)
-                            + BaseName
-                            + "n" + utostr_32(VM->num_seqvals());
-        if (SelType != VASTSelector::Enable) {
-          VASTRegister *R = VM->createRegister(Name + "r", BitWidth, 0, SelType);
-          LastNextLevelFI = R->getSelector();
-          NumPipelineRegBits += LastNextLevelFI->getBitWidth();
-        }
-
-        // Do not build the enable for the SeqVal to be pipelined.
-        VASTRegister *R = VM->createRegister(Name + "en", 1, 0,
-                                             VASTSelector::Enable);
-        LastNextLevelEn = R->getSelector();
-        NumPipelineRegBits += LastNextLevelEn->getBitWidth();
-      }
-    }
-
-    VASTSlot *S = getSlotAtLevel(CurFI.getSlot(), Level);
-    DEBUG(dbgs().indent(Level * 2)
-      << "Retime the assignment at Slot#" << CurFI.getSlot()->SlotNum
-      << " to " << S->SlotNum << " for " << BaseName << '\n');
-
-    // Create the register assignment enable by the previous pipelined enable.
-    // without the slot active if the predicte is from a pipeline register.
-    if (LastNextLevelFI) {
-      VASTSeqValue *FIVal = getValueAt(LastNextLevelFI, S);
-      VASTSeqCtrlOp *Op = VM->assignCtrlLogic(FIVal, CurPreviousLevelFI, S,
-                                              CurPreviousLevelEn,
-                                              !EnablePipelined);
-      // Update the mapping, the new Fanin is assigned to a new pipeline register.
-      NewFIs[CurFI] = FIVal;
-
-      DEBUG(dbgs().indent(Level * 2) << "Inserting pipeline register: ";
-      Op->dump();
-      dbgs().indent(Level * 2) << "For: ";
-      CurFI.Op->dump(););
-    }
-
-    // Also assign to the current level pipeline enable.
-    VASTSeqValue *FIEn = getValueAt(LastNextLevelEn, S);
-    VASTSeqCtrlOp *Op = VM->assignCtrlLogic(FIEn, VASTImmediate::True, S,
-                                            CurPreviousLevelEn,
-                                            !EnablePipelined);
-    NewPreds[CurFI] = FIEn;
-
-    DEBUG(dbgs().indent(Level * 2) << "Inserting pipeline register: ";
-    Op->dump();
-    dbgs().indent(Level * 2) << "For: ";
-    CurFI.Op->dump(););
-
-    // Update the enable.
-    LastPreviousLevelEn = CurPreviousLevelEn;
-  }
+  return (SlotSlack[CurSlotNum] = Slack);
 }
 
 void
-SelectorPipelining::buildFISlackMap(VASTSelector *Sel, FaninSlackMap &FISlack) {
+SelectorPipelining::buildPipelineFIs(VASTSelector *Sel, MUXPipeliner &Pipeliner) {
   SVSet Srcs;
 
   typedef VASTSelector::iterator vn_itertor;
   for (vn_itertor I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch &DstLatch = *I;
-    // Assume the slack is zero.
-    FISlack[DstLatch] = 0;
+
+    // Ignore the trivial fannins.
+    if (Sel->isTrivialFannin(DstLatch)) continue;
 
     // Do not mess up with the operations that is guarded by the strange control
     // signals.
@@ -511,9 +318,8 @@ SelectorPipelining::buildFISlackMap(VASTSelector *Sel, FaninSlackMap &FISlack) {
             << " RetimeSlack: " << RetimeSlack << '\n');
 
     // Adjust the retime slack according to the timing slack.
-    RetimeSlack = std::min(RetimeSlack, AvailableInterval - CriticalDelay);
-
-    FISlack[DstLatch] = RetimeSlack;
+    unsigned FISlack = std::min(RetimeSlack, AvailableInterval - CriticalDelay);
+    if (FISlack) Pipeliner.addFannin(DstLatch, FISlack);
   }
 }
 
@@ -554,30 +360,7 @@ SelectorPipelining::getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot) {
   return Interval;
 }
 
-unsigned SelectorPipelining::getSlotSlack(VASTSlot *S) {
-  S = S->getParentState();
-
-  unsigned CurSlotNum = S->SlotNum;
-  // If we had calculated the slack?
-  std::map<unsigned, unsigned>::iterator at = SlotSlack.find(CurSlotNum);
-
-  if (at != SlotSlack.end()) return at->second;
-
-  // Otherwise we need to calculate it now.
-  unsigned Slack = 0;
-  while (S->pred_size() == 1) {
-    VASTSlot *PredSlot = *S->pred_begin();
-
-    if (PredSlot->IsSubGrp) break;
-
-    S = PredSlot;
-    ++Slack;
-  }
-
-  return (SlotSlack[CurSlotNum] = Slack);
-}
-
-VASTSlot *MUXPipeliner::getSlotAtLevel(VASTSlot *S, unsigned Level) {
+static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level) {
   S = S->getParentState();
 
   assert(Level && "Bad level!");
@@ -590,4 +373,95 @@ VASTSlot *MUXPipeliner::getSlotAtLevel(VASTSlot *S, unsigned Level) {
   }
 
   return S;
+}
+
+unsigned MUXPipeliner::RegCounter = 0;
+
+template<typename iterator>
+void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
+  VASTRegister *EnSel
+    = VM->createRegister("enable_" + utostr_32(RegCounter) + "r", 1, 0,
+                         VASTSelector::Enable);
+
+  VASTRegister *FISel = 0;
+  if (!Sel->isEnable())
+    FISel = VM->createRegister("fannin_" + utostr_32(RegCounter) + "r",
+                               Sel->getBitWidth(), 0, VASTSelector::Temp);
+  ++RegCounter;
+
+  for ( ; I != E; ++I) {
+    MUXFI *FI = *I;
+    // Copy the Fannin value and condition to local variables, we will perform
+    // replacement on FI later.
+    VASTValPtr FIVal = FI->getFI(), FICnd = FI->getCnd();
+    VASTSlot *S = getSlotAtLevel(FI->getSlot(), 1);
+
+    DEBUG(dbgs() << "Retime the assignment at Slot#" << FI->getSlot()->SlotNum
+                 << " to " << S->SlotNum << " for " << Sel->getName() << '\n');
+
+    // Pipeline the guarding condition.
+    VASTSeqValue *PipelinedEn = getValueAt(EnSel, S);
+    VM->assignCtrlLogic(PipelinedEn, VASTImmediate::True, S, FICnd, true);
+    // Read the pipelined guarding condition instead.
+    FI->L.replacePredBy(PipelinedEn, false);
+
+    // Pipeline the fannin value.
+    if (FISel) {
+      VASTSeqValue *PipelinedFI = getValueAt(FISel, S);
+      VM->assignCtrlLogic(PipelinedFI, FIVal, S, FICnd, true);
+      FI->L.replaceUsedBy(PipelinedFI);
+    }
+  }
+
+  assert(!EnSel->getSelector()->empty());
+}
+
+void MUXPipeliner::retimeLatchesOneCycleEarlier(ArrayRef<MUXFI*> FIs) {
+  retimeLatchesOneCycleEarlier(FIs.begin(), FIs.end());
+}
+
+static int
+sort_by_slot(const void *LHS, const void *RHS) {
+  typedef const MUXFI T;
+
+  if (reinterpret_cast<T*>(LHS)->Slack < reinterpret_cast<T*>(RHS)->Slack)
+    return -1;
+
+  if (reinterpret_cast<T*>(LHS)->Slack > reinterpret_cast<T*>(RHS)->Slack)
+    return 1;
+
+  return 0;
+}
+
+bool MUXPipeliner::pipelineGreedy() {
+  if (Fannins.empty()) return false;
+  ArrayRef<MUXFI*> FanninsRef(Fannins);
+
+  unsigned UsedFINum = Sel->size() - Fannins.size();
+  int AvailableFINum = std::max(int(MaxPerCyleFINum - UsedFINum), 1);
+  dbgs() << Sel->getName()
+         << " #Not pipelinable FIs: " << UsedFINum
+         << " #Pipelinable FIs: " << Fannins.size()
+         << " #FI left: " << AvailableFINum << '\n';
+
+  // Handle the trivial case trivially.
+  if (AvailableFINum == 1) {
+    retimeLatchesOneCycleEarlier(FanninsRef);
+    return true;
+  }
+
+  // Iterate over the fannins, divide them into MaxSingleCyleFINum groups.
+  // Put the fanins in the successive slots together.
+  array_pod_sort(Fannins.begin(), Fannins.end(), sort_by_slot);
+
+  unsigned NextLevelFINum = 1 + ((Fannins.size() - 1) / AvailableFINum);
+
+  dbgs().indent(2) << " #Nextlevel FIs: " << NextLevelFINum << '\n';
+
+  for (unsigned i = 0, e = FanninsRef.size(); i < e; i += NextLevelFINum) {
+    unsigned n = std::min(NextLevelFINum, e - i);
+    retimeLatchesOneCycleEarlier(FanninsRef.slice(i, n));
+  }
+
+  return true;
 }
