@@ -184,7 +184,6 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
   // Get the profile pointer with the inverted flag.
   void *getProfilePtr() const {
     VASTNode *Ptr = getPointer()->getProfilePtr();
-    typedef PointerIntPair<VASTNode*, 1, bool> T;
     return PtrInvPair<VASTNode>(Ptr, getInt()).getOpaqueValue();
   }
 
