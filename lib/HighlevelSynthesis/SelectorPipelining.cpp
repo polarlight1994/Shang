@@ -382,11 +382,15 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
   VASTRegister *EnSel
     = VM->createRegister("enable_" + utostr_32(RegCounter) + "r", 1, 0,
                          VASTSelector::Enable);
+  ++NumPipelineRegBits;
 
   VASTRegister *FISel = 0;
-  if (!Sel->isEnable())
+  if (!Sel->isEnable()) {
     FISel = VM->createRegister("fannin_" + utostr_32(RegCounter) + "r",
                                Sel->getBitWidth(), 0, VASTSelector::Temp);
+    NumPipelineRegBits += Sel->getBitWidth();
+  }
+
   ++RegCounter;
 
   for ( ; I != E; ++I) {
