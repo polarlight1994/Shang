@@ -443,10 +443,10 @@ bool MUXPipeliner::pipelineGreedy() {
 
   unsigned UsedFINum = Sel->size() - Fannins.size();
   int AvailableFINum = std::max(int(MaxPerCyleFINum - UsedFINum), 1);
-  dbgs() << Sel->getName()
+  DEBUG(dbgs() << Sel->getName()
          << " #Not pipelinable FIs: " << UsedFINum
          << " #Pipelinable FIs: " << Fannins.size()
-         << " #FI left: " << AvailableFINum << '\n';
+         << " #FI left: " << AvailableFINum << '\n');
 
   // Handle the trivial case trivially.
   if (AvailableFINum == 1) {
@@ -455,12 +455,12 @@ bool MUXPipeliner::pipelineGreedy() {
   }
 
   // Iterate over the fannins, divide them into MaxSingleCyleFINum groups.
-  // Put the fanins in the successive slots together.
+  // TODO: Put the fanins in the successive slots together.
   array_pod_sort(Fannins.begin(), Fannins.end(), sort_by_slot);
 
   unsigned NextLevelFINum = 1 + ((Fannins.size() - 1) / AvailableFINum);
 
-  dbgs().indent(2) << " #Nextlevel FIs: " << NextLevelFINum << '\n';
+  DEBUG(dbgs().indent(2) << " #Nextlevel FIs: " << NextLevelFINum << '\n');
 
   for (unsigned i = 0, e = FanninsRef.size(); i < e; i += NextLevelFINum) {
     unsigned n = std::min(NextLevelFINum, e - i);
