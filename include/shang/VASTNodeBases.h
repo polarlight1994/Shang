@@ -181,6 +181,13 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
   template<typename T1>
   bool isa() const { return llvm::isa<T1>(get()); }
 
+  // Get the profile pointer with the inverted flag.
+  void *getProfilePtr() const {
+    VASTNode *Ptr = getPointer()->getProfilePtr();
+    typedef PointerIntPair<VASTNode*, 1, bool> T;
+    return PtrInvPair<VASTNode>(Ptr, getInt()).getOpaqueValue();
+  }
+
   static bool type_less(PtrInvPair<T> LHS, PtrInvPair<T> RHS) {
     if (LHS->getASTType() < RHS->getASTType()) return true;
     else if (LHS->getASTType() > RHS->getASTType()) return false;
@@ -460,6 +467,12 @@ public:
 
   VASTValPtr getAsInlineOperand(bool isInverted) {
     return getAsInlineOperandImpl().invert(isInverted);
+  }
+
+  /// Called when we are building the FoldingSetNodeID for the VASTExpr.
+  ///
+  virtual VASTNode *getProfilePtr() const {
+    return const_cast<VASTValue*>(this);
   }
 
   virtual void print(raw_ostream &OS) const;

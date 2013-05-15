@@ -267,6 +267,8 @@ public:
   size_t num_fanins() const { return std::distance(fanin_begin(), fanin_end()); }
   bool   fanin_empty() const { return num_fanins() == 0; }
 
+  VASTNode *getProfilePtr() const { return getSelector(); }
+
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSeqValue *A) { return true; }
   static inline bool classof(const VASTNode *A) {
