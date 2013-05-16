@@ -394,7 +394,7 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
   for ( ; I != E; ++I) {
     MUXFI *FI = *I;
 
-    dbgs() << "Going to retime the input of:\n\t";
+    DEBUG(dbgs() << "Going to retime the input of:\n\t");
     FI->L.Op->dump();
 
     // Copy the Fannin value and condition to local variables, we will perform
