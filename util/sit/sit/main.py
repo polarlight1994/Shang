@@ -44,6 +44,17 @@ def main(builtinParameters = {}):
   # Create the tables for the experimental results.
   # We create 3 tables: HLS results, simulation results, and synthesis results
   con.executescript('''
+    create table logfile(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        parameter TEXT,
+        stdout TEXT,
+        stderr TEXT,
+        test_file TEXT,
+        synthesis_config_file TEXT,
+        status TEXT
+    );
+
     create table simulation(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
@@ -157,7 +168,7 @@ def main(builtinParameters = {}):
         for k, v in job.option.iteritems() :
           fail_space[k].add(v)
 
-      job.submitResults(con, status == 'passed')
+      job.submitResults(con, status)
       result = job.getStepResult(status)
       finished_jobs.append(result)
 
