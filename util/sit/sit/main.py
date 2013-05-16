@@ -166,6 +166,7 @@ def main(builtinParameters = {}):
         # Remember the options on the fail case
         for k, v in job.option.iteritems() :
           fail_space[k].add(v)
+        job.dumplog()
 
       job.submitResults(con, status)
 
