@@ -345,7 +345,8 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
   // Process uses.
   typedef std::set<VASTSeqValue*>::iterator iterator;
   for (iterator I = ReadAtSlot.begin(), E = ReadAtSlot.end(); I != E; ++I)
-    handleUse(*I, S, PathFromEntry);
+    // Ignore the placeholder for node without timing information.
+    if (VASTSeqValue *V = *I) handleUse(V, S, PathFromEntry);
 }
 
 void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {

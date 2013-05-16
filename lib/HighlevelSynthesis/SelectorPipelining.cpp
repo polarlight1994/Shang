@@ -319,6 +319,10 @@ unsigned SelectorPipelining::getCriticalDelay(const SVSet &S, VASTValue *V) {
   for (iterator I = S.begin(), E = S.end(); I != E; ++I) {
     VASTSeqValue *Src = *I;
 
+    // Do not retime if there is a placeholder for the node without timing
+    // information.
+    if (Src == 0) return STGShortestPath::Inf;
+
     // The ignore the trivial path.
     if (Src == V) continue;    
 
@@ -335,7 +339,7 @@ SelectorPipelining::getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot) {
   for (iterator I = S.begin(), E = S.end(); I != E; ++I) {
     VASTSeqValue *SV = *I;
     // Do not retime if we do not have any timing information.
-    if (SV->getSelector() == 0) return 0;
+    if (SV == 0) return 0;
 
     // Do not retime across the static register as well, we do not have the
     // accurate timing information for them.
@@ -390,8 +394,8 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
   for ( ; I != E; ++I) {
     MUXFI *FI = *I;
 
-    DEBUG(dbgs() << "Going to retime the input of:\n\t";
-    FI->L.Op->dump(););
+    dbgs() << "Going to retime the input of:\n\t";
+    FI->L.Op->dump();
 
     // Copy the Fannin value and condition to local variables, we will perform
     // replacement on FI later.

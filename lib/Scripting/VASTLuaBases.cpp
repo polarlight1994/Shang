@@ -139,6 +139,14 @@ bool VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
     if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Root))
       SeqVals.insert(SeqVal);
 
+    // The wire connected to the output of submodules are actually connecting to
+    // the output register of the submodules.
+    if (VASTWire *W = dyn_cast<VASTWire>(Root)) {
+      VASTNode *Parent = W->getParent();
+      if (Parent && isa<VASTSubModuleBase>(Parent))
+        SeqVals.insert((VASTSeqValue*)0);
+    }
+
     return !SeqVals.empty();
   }
 
@@ -171,6 +179,14 @@ bool VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
     // If ChildNode is a not data-path operand list, it may be the SeqVal.
     if (VASTSeqValue *SeqVal = dyn_cast_or_null<VASTSeqValue>(ChildNode))
       SeqVals.insert(SeqVal);
+
+    // The wire connected to the output of submodules are actually connecting to
+    // the output register of the submodules.
+    if (VASTWire *W = dyn_cast_or_null<VASTWire>(ChildNode)) {
+      VASTNode *Parent = W->getParent();
+      if (Parent && isa<VASTSubModuleBase>(Parent))
+        SeqVals.insert((VASTSeqValue*)0);
+    }
   }
 
   return !SeqVals.empty();
