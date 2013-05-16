@@ -621,6 +621,14 @@ public:
 
   virtual void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
   void print(raw_ostream &OS) const;
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTSubModuleBase *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() == vastSubmodule ||
+           A->getASTType() == vastBlockRAM ||
+           A->getASTType() == vastMemoryBus;
+  }
 };
 } // end namespace
 
