@@ -75,6 +75,8 @@ class TestStep :
   def generateFileFromTemplate(self, template_str, output_file_path) :
     self.config_template_env.from_string(template_str).stream(self.__dict__).dump(output_file_path)
 
+  def getOptionCompack(self) :
+    return [ (k, v) for k, v in self.option.iteritems() if set([v]) < set(self.option_space_dict[k])]
 
   def submitLogfiles(self, connection, status) :
     connection.execute('''
@@ -83,7 +85,7 @@ INSERT INTO
   VALUES (:test_name, :parameter, :stdout, :stderr, :test_file, :synthesis_config_file, :status)
 ''',{
       'test_name' : self.test_name,
-      'parameter' : json.dumps(self.option),
+      'parameter' : json.dumps(self.getOptionCompack()),
       'stdout' :  self.stdout,
       'stderr' : self.stderr,
       'test_file' : self.test_file,
@@ -97,7 +99,7 @@ INSERT INTO
     self.submitLogfiles(connection, status)
 
   def getStepDesc(self) :
-    return ' '.join([self.test_name, self.step_name, str(self.option)]).replace(':', '-')
+    return ' '.join([self.test_name, self.step_name, str(self.getOptionCompack())]).replace(':', '-')
 
   def getJobName(self) :
     return ' '.join([self.test_name, self.step_name])
@@ -119,7 +121,7 @@ INSERT INTO
   def getStepResult(self, status) :
     return  {
               'test_name' : self.test_name,
-              'parameter' : json.dumps(self.option),
+              'parameter' : json.dumps(self.getOptionCompack()),
               'stdout' :  self.stdout,
               'stderr' : self.stderr,
               'test_file' : self.test_file,
@@ -551,7 +553,7 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
       num_cycles = int(cycles_rpt.read())
       self.results["cycles"] = num_cycles
       connection.execute("INSERT INTO simulation(name, parameter, cycles) VALUES (:test_name, :parameter, :cycles)",
-                         {"test_name" : self.test_name,  "parameter" : json.dumps(self.option), "cycles": num_cycles})
+                         {"test_name" : self.test_name,  "parameter" : json.dumps(self.getOptionCompack()), "cycles": num_cycles})
     cycles_rpt.close()
 
   def generateSubTests(self) :
@@ -645,7 +647,7 @@ project_close
   def submitResults(self, connection, status) :
     if (not self.submitLogfiles(connection, status)) : return
 
-    results = {"test_name" : self.test_name,  "parameter" : json.dumps(self.option) }
+    results = {"test_name" : self.test_name,  "parameter" : json.dumps(self.getOptionCompack()) }
     # Read the fmax
     with open(os.path.join(self.altera_synthesis_base_dir, 'clk_fmax.rpt')) as fmax_rpt:
       fmax = float(fmax_rpt.read())
