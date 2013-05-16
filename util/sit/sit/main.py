@@ -190,12 +190,12 @@ def main(builtinParameters = {}):
   # Report the experimental results
   with open(os.path.join(args.config_bin_dir, 'results.txt'), 'w') as summary_file:
     summary_file.write('name, cycles, fmax, run_time, les, mult9\n')
-    cur.execute('''select sim.name, sim.cycles, syn.fmax, sim.cycles / syn.fmax, syn.les, syn.mult9, sim.parameter, syn.parameter
-                     from simulation sim
-                       left join synthesis syn
-                         on sim.name = syn.name and syn.parameter = sim.parameter
-                   order by syn.les DESC''')
-    for name, cycles, fmax, run_time, les, mult9, sim_parameter, syn_parameter in cur.fetchall() :
+    rows = cur.execute('''select sim.name, sim.cycles, syn.fmax, sim.cycles / syn.fmax, syn.les, syn.mult9, sim.parameter, syn.parameter
+                            from simulation sim
+                              left join synthesis syn
+                                on sim.name = syn.name and syn.parameter = sim.parameter
+                          order by syn.les DESC''').fetchall()
+    for name, cycles, fmax, run_time, les, mult9, sim_parameter, syn_parameter in rows :
       parameter = sim_parameter if not syn_parameter else syn_parameter
       run_time = 0.0 if not run_time else run_time
 
