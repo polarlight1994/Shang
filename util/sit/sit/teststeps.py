@@ -127,10 +127,10 @@ INSERT INTO
       sys.stdout.write(logfile.read())
     print "stdout of", self.test_name, "end"
 
-    print "stderr of", self.test_name, "begin"
-    with open(self.stderr, "r") as logfile:
-      sys.stdout.write(logfile.read())
-    print "stderr of", self.test_name, "end"
+    #print "stderr of", self.test_name, "begin"
+    #with open(self.stderr, "r") as logfile:
+    #  sys.stdout.write(logfile.read())
+    #print "stderr of", self.test_name, "end"
 
   def generateSubTests(self) :
     return []
