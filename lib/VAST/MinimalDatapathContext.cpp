@@ -28,8 +28,6 @@ MinimalDatapathContext::createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Op
 
 VASTValPtr 
 MinimalDatapathContext::getAsOperandImpl(Value *Op, bool GetAsInlineOperand) {
-  unsigned NumBits = getValueSizeInBits(Op);
-
   if (ConstantInt *Int = dyn_cast<ConstantInt>(Op))
     return getOrCreateImmediate(Int->getValue());
 
