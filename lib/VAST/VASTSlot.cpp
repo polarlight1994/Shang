@@ -151,7 +151,9 @@ VASTSlot *VASTSlot::getParentState() {
 }
 
 void VASTSlot::print(raw_ostream &OS) const {
-  OS << "Slot#"<< SlotNum << " Pred: ";
+  OS << "Slot#"<< SlotNum;
+  if (IsSubGrp) OS << " subgroup";
+  OS << " Pred: ";
   for (const_pred_iterator I = pred_begin(), E = pred_end(); I != E; ++I)
     OS << "S#" << (*I)->SlotNum << ", ";
 
