@@ -141,8 +141,6 @@ def main(builtinParameters = {}):
 
       active_jobs.append(hls_step)
 
-  finished_jobs = []
-
   # Examinate the status of the jobs
   while active_jobs :
     next_active_jobs = []
@@ -170,8 +168,6 @@ def main(builtinParameters = {}):
           fail_space[k].add(v)
 
       job.submitResults(con, status)
-      result = job.getStepResult(status)
-      finished_jobs.append(result)
 
     time.sleep(5)
     active_jobs = next_active_jobs[:]
@@ -187,40 +183,12 @@ def main(builtinParameters = {}):
   Session.exit()
 
   cur = con.cursor()
-  
-  # Report the experimental results
-  with open(os.path.join(args.config_bin_dir, 'results.txt'), 'w') as summary_file:
-    summary_file.write('name, cycles, fmax, run_time, les, mult9\n')
-    rows = cur.execute('''select sim.name, sim.cycles, syn.fmax, sim.cycles / syn.fmax, syn.les, syn.mult9, sim.parameter, syn.parameter
-                            from simulation sim
-                              left join synthesis syn
-                                on sim.name = syn.name and syn.parameter = sim.parameter
-                          order by syn.les DESC''').fetchall()
-    for name, cycles, fmax, run_time, les, mult9, sim_parameter, syn_parameter in rows :
-      parameter = sim_parameter if not syn_parameter else syn_parameter
-      run_time = 0.0 if not run_time else run_time
-
-      # Print the option if it is a subset of its value space
-      json.dump([ name,
-                  cycles,
-                  fmax,
-                  '%.2f' % run_time,
-                  les,
-                  mult9,
-                  parameter,
-                ], summary_file)
-      summary_file.write('\n');
-  summary_file.close()
 
   with open(os.path.join(args.config_bin_dir, 'data.sql'), 'w') as database_script:
     for line in con.iterdump():
       database_script.write(line)
       database_script.write('\n')
   database_script.close()
-
-  with open(os.path.join(args.config_bin_dir, 'failedcases.json'), 'w') as json_file:
-    json.dump(finished_jobs, json_file, indent = 2)
-  json_file.close()
 
   # Analysis the fail cases
   print 'Fail space:', [ (k, v) for k, v in fail_space.iteritems() if v < set(option_space_dict[k]) ]

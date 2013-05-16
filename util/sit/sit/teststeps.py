@@ -118,17 +118,6 @@ INSERT INTO
 
     return 'running'
 
-  def getStepResult(self, status) :
-    return  {
-              'test_name' : self.test_name,
-              'parameter' : json.dumps(self.getOptionCompack()),
-              'stdout' :  self.stdout,
-              'stderr' : self.stderr,
-              'test_file' : self.test_file,
-              'synthesis_config_file' : self.synthesis_config_file,
-              'status' : status
-            }
-
   def getLicenseSpecification(self) :
     return ' -v LM_LICENSE_FILE=1800@adsc-linux -l quartus_full=1'
 
