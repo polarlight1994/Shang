@@ -353,12 +353,15 @@ static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level) {
 
   assert(Level && "Bad level!");
   // Otherwise we need to calculate it now.
-  while (S->pred_size() == 1 && Level--) {
+  while (S->pred_size() == 1 && Level) {
     VASTSlot *PredSlot = *S->pred_begin();
     assert(!PredSlot->IsSubGrp && "Unexpected conditional edge!");
 
     S = PredSlot;
+    --Level;
   }
+
+  assert(Level == 0 && "Cannot get slot specificed slot!");
 
   return S;
 }
