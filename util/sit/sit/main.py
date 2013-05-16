@@ -133,6 +133,7 @@ def main(builtinParameters = {}):
       hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
       hls_step.test_file = test_path
       hls_step.option = test_option
+      hls_step.option_space_dict = option_space_dict
 
       hls_step.prepareTest()
       hls_step.runTest()
