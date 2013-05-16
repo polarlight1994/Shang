@@ -75,7 +75,7 @@ class TestStep :
   def generateFileFromTemplate(self, template_str, output_file_path) :
     self.config_template_env.from_string(template_str).stream(self.__dict__).dump(output_file_path)
 
-  def submitResults(self, connection) : pass
+  def submitResults(self, connection, passed) : pass
 
   def getStepDesc(self) :
     return ' '.join([self.test_name, self.step_name, str(self.option)]).replace(':', '-')
@@ -525,7 +525,10 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
     self.jobid = Session.runJob(jt)
     Session.deleteJobTemplate(jt)
 
-  def submitResults(self, connection) :
+  def submitResults(self, connection, passed) :
+
+    if (not passed) : return
+
     with open(os.path.join(self.pure_hw_sim_base_dir, 'cycles.rpt')) as cycles_rpt:
       num_cycles = int(cycles_rpt.read())
       self.results["cycles"] = num_cycles
@@ -620,7 +623,10 @@ project_close
     self.jobid = Session.runJob(jt)
     Session.deleteJobTemplate(jt)
 
-  def submitResults(self, connection) :
+  def submitResults(self, connection, passed) :
+
+    if (not passed) : return
+
     results = {"test_name" : self.test_name,  "parameter" : json.dumps(self.option) }
     # Read the fmax
     with open(os.path.join(self.altera_synthesis_base_dir, 'clk_fmax.rpt')) as fmax_rpt:
