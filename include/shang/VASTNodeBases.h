@@ -182,7 +182,7 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
   bool isa() const { return llvm::isa<T1>(get()); }
 
   // Get the profile pointer with the inverted flag.
-  void *getProfilePtr() const;
+  inline void *getProfilePtr() const;
 
   static bool type_less(PtrInvPair<T> LHS, PtrInvPair<T> RHS) {
     if (LHS->getASTType() < RHS->getASTType()) return true;
@@ -505,7 +505,8 @@ template<> struct simplify_type<VASTUse> {
   }
 };
 
-void *VASTValPtr::getProfilePtr() const  {
+template<>
+inline void *PtrInvPair<VASTValue>::getProfilePtr() const  {
   VASTNode *Ptr = getPointer()->getProfilePtr();
   return PtrInvPair<VASTNode>(Ptr, getInt()).getOpaqueValue();
 }
