@@ -187,6 +187,8 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
   DEBUG(dbgs() << "Before MUX pipelining:\n"; VM.dump(););
 
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+    // FIXME: Get the MUX delay from the timing estimator.
+
     // The slot assignments cannot be retime, the selectors with small fannin
     // number do not need to be retime.
     if (I->isSlot() || I->size() < MaxSingleCyleFINum) continue;
@@ -316,8 +318,9 @@ unsigned SelectorPipelining::getCriticalDelay(const SVSet &S, VASTValue *V) {
   typedef SVSet::const_iterator iterator;
   for (iterator I = S.begin(), E = S.end(); I != E; ++I) {
     VASTSeqValue *Src = *I;
-    // The register to register assignment can be directly retime.
-    if (Src == V) continue;
+
+    // The ignore the trivial path.
+    if (Src == V) continue;    
 
     Delay = std::max(Delay, TNL->getDelay(Src, V).getNumCycles());
   }
@@ -386,13 +389,17 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
 
   for ( ; I != E; ++I) {
     MUXFI *FI = *I;
+
+    DEBUG(dbgs() << "Going to retime the input of:\n\t";
+    FI->L.Op->dump(););
+
     // Copy the Fannin value and condition to local variables, we will perform
     // replacement on FI later.
     VASTValPtr FIVal = FI->getFI(), FICnd = FI->getCnd();
     VASTSlot *S = getSlotAtLevel(FI->getSlot(), 1);
 
     DEBUG(dbgs() << "Retime the assignment at Slot#" << FI->getSlot()->SlotNum
-                 << " to " << S->SlotNum << " for " << Sel->getName() << '\n');
+           << " to " << S->SlotNum << " for " << Sel->getName() << '\n');
 
     // Pipeline the guarding condition.
     VASTSeqValue *PipelinedEn = getValueAt(EnSel, S);
@@ -408,7 +415,10 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
     }
   }
 
-  assert(!EnSel->getSelector()->empty());
+  assert(!EnSel->getSelector()->empty()
+         && (!FISel
+             || FISel->getSelector()->size() == EnSel->getSelector()->size())
+         && "Bad Pipelining!");
 }
 
 void MUXPipeliner::retimeLatchesOneCycleEarlier(ArrayRef<MUXFI*> FIs) {
