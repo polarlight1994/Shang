@@ -207,8 +207,7 @@ def main(builtinParameters = {}):
                   '%.2f' % run_time,
                   les,
                   mult9,
-                  [ (k, v) for k, v in json.loads(parameter).iteritems()
-                           if set([v]) < set(option_space_dict[k])]
+                  parameter,
                 ], summary_file)
       summary_file.write('\n');
   summary_file.close()
