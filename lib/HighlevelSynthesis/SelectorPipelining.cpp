@@ -233,18 +233,6 @@ bool SelectorPipelining::pipelineFanins(VASTSelector *Sel) {
   return P.pipelineGreedy();
 }
 
-static bool fromDifferentRegister(VASTValPtr LHS, VASTValPtr RHS) {
-  VASTSeqValue *LHSSV = dyn_cast<VASTSeqValue>(LHS);
-
-  if (LHSSV == 0) return true;
-
-  VASTSeqValue *RHSSV = dyn_cast<VASTSeqValue>(RHS);
-
-  if (RHSSV == 0) return true;
-
-  return LHSSV->getSelector() != RHSSV->getSelector();
-}
-
 unsigned SelectorPipelining::getSlotSlack(VASTSlot *S) {
   S = S->getParentState();
 
