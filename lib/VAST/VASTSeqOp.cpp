@@ -132,8 +132,8 @@ void VASTSeqOp::print(raw_ostream &OS) const {
     V.printAsOperand(OS);
 
     const VASTNode *User = &getOperand(i).getUser();
-    if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(User))
-      OS << '[' << NV->getName() << ']';
+    if (const VASTSelector *Sel = dyn_cast<VASTSelector>(User))
+      OS << '[' << Sel->getName() << ']';
 
     OS << ", ";
   }
