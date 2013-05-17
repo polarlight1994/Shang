@@ -98,7 +98,10 @@ void VASTSlot::removeOp(VASTSeqOp *Op) {
 }
 
 VASTRegister *VASTSlot::getRegister() const {
-  return cast<VASTRegister>(getValue()->getParent());
+  if (VASTSeqValue *V = getValue())
+    return cast<VASTRegister>(getValue()->getParent());
+
+  return 0;
 }
 
 VASTSeqValue *VASTSlot::getValue() const {
