@@ -180,7 +180,6 @@ dofile([[{{ [config_dir, 'FuncDefine.lua']|joinpath }}]])
 dofile([[{{ [config_dir, 'AddModules.lua']|joinpath }}]])
 -- load platform information script
 dofile([[{{ [config_dir, 'AlteraCommon.lua']|joinpath }}]])
-dofile([[{{ [config_dir, 'Altera4LUTFUs.lua']|joinpath }}]])
 dofile([[{{ [config_dir, fpga_device + ".lua"]|joinpath }}]])
 
 {% if hardware_function == 'main' %}

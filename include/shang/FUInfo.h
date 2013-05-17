@@ -43,11 +43,10 @@ namespace VFUs {
     Shift = 2,
     Mult = 3,
     ICmp = 4,
-    Sel = 5,
-    Reduction = 6,
-    MemoryBus = 7,
-    BRam = 8,
-    Mux = 9,
+    Reduction = 5,
+    MemoryBus = 6,
+    BRam = 7,
+    Mux = 8,
     FirstFUType = Trivial,
     FirstNonTrivialFUType = AddSub,
     LastBitLevelChainingFUType = Mult,
@@ -59,7 +58,7 @@ namespace VFUs {
     // Special function unit.
     // RTL module corresponding to callee functions of function corresponding to
     // current RTL module.
-    CalleeFN = 10,
+    CalleeFN = 9,
     LastFUType = CalleeFN,
     NumFUs = LastFUType - FirstFUType + 1,
     // Helper enumeration value, just for internal use as a flag to indicate
@@ -161,9 +160,8 @@ protected:
     : ResourceType(type), StartInt(startInt) {}
 
   VFUDesc(VFUs::FUTypes type, const luabind::object &FUTable,
-          unsigned *LogicLevels, float *Latencies, unsigned *Cost);
+          float *Latencies, unsigned *Cost);
 
-  static unsigned lookupLogicLevels(const unsigned *Table, unsigned SizeInBits);
   static float    lookupLatency(const float *Table, unsigned SizeInBits);
   static unsigned lookupCost(const unsigned *Table, unsigned SizeInBits);
 public:
@@ -182,14 +180,12 @@ public:
 
 class VFUMux : public VFUDesc {
   unsigned MuxCost[31][64];
-  unsigned MuxLogicLevels[64];
   float    MuxLatencies[64];
 public:
   const unsigned MaxAllowedMuxSize;
 
   VFUMux(luabind::object FUTable);
 
-  unsigned getMuxLogicLevels(unsigned Size);
   float    getMuxLatency(unsigned Size);
   unsigned getMuxCost(unsigned Size, unsigned BitWidth);
 
@@ -256,12 +252,11 @@ public:
 
 template<enum VFUs::FUTypes T>
 class VSimpleFUDesc : public VFUDesc {
-  unsigned LogicLevels[5];
   float    Latencies[5];
   unsigned Cost[64];
 public:
   explicit VSimpleFUDesc(const luabind::object &FUTable)
-    : VFUDesc(T, FUTable, LogicLevels, Latencies, Cost) {}
+    : VFUDesc(T, FUTable, Latencies, Cost) {}
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   template<enum VFUs::FUTypes OtherT>
   static inline bool classof(const VSimpleFUDesc<OtherT> *A) {
@@ -278,10 +273,6 @@ public:
     return VFUDesc::lookupLatency(Latencies, SizeInBits);
   }
 
-  unsigned lookupLogicLevels(unsigned SizeInBits) const {
-    return VFUDesc::lookupLogicLevels(LogicLevels, SizeInBits);
-  }
-
   unsigned lookupCost(unsigned SizeInBits) {
     return VFUDesc::lookupCost(Cost, SizeInBits);
   }
@@ -291,7 +282,6 @@ typedef VSimpleFUDesc<VFUs::AddSub>  VFUAddSub;
 typedef VSimpleFUDesc<VFUs::Shift>   VFUShift;
 typedef VSimpleFUDesc<VFUs::Mult>    VFUMult;
 typedef VSimpleFUDesc<VFUs::ICmp>    VFUICmp;
-typedef VSimpleFUDesc<VFUs::Sel>     VFUSel;
 typedef VSimpleFUDesc<VFUs::Reduction>     VFUReduction;
 
 class VFUBRAM : public  VFUDesc {
