@@ -416,7 +416,8 @@ static std::string GetSTACollection(const VASTValue *V) {
   if (isa<VASTExpr>(V)) {
     std::string Name;
     raw_string_ostream OS(Name);
-    OS << "[get_cells -nowarn \"" << V->getSTAObjectName() << "\"]";
+    OS << "[get_cells  -compatibility_mode -nowarn \""
+       << V->getSTAObjectName() << "\"]";
     return OS.str();
   }
 

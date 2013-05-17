@@ -36,15 +36,15 @@ static std::string GetSTAObjectName(const VASTSelector *Sel) {
   raw_string_ostream OS(Name);
 
   if (const VASTBlockRAM *RAM = dyn_cast<VASTBlockRAM>(Sel->getParent())) {
-    OS << " *"
+    OS << ' '
       // BlockRam name with prefix
       << getFUDesc<VFUBRAM>()->Prefix
-      << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << "* *"
+      << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << "* "
       // Or simply the name of the output register.
       << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
       << "* ";
   } else
-    OS << " *" << Sel->getName() << "* ";
+    OS << ' ' << Sel->getName() << "* ";
 
   return OS.str();
 }
@@ -58,16 +58,16 @@ static std::string GetSTAObjectName(const VASTValue *V) {
 
     // The block RAM should be printed as Prefix + ArrayName in the script.
     if (const char *N = NV->getName()) {
-      OS << " *" << N << "* ";
+      OS << ' ' << N << "* ";
       return OS.str();
     }
   } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
     std::string Name = E->getSubModName();
     if (!Name.empty()) {
-      OS << " *" << Name << "|* ";
+      OS << ' ' << Name << "* ";
       return OS.str();
     } else if (E->hasName()) {
-      OS << " *" << E->getTempName() << "* ";
+      OS << ' ' << E->getTempName() << "* ";
       return OS.str();
     }
   }
