@@ -301,8 +301,8 @@ struct VASTScheduling : public VASTModulePass {
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
-  void buildFlowDependencies(VASTValue *Dst, VASTSeqValue *Src,
-                             VASTSchedUnit *U, unsigned ExtraDelay);
+  void buildFlowDependencies(VASTSelector *Dst, VASTValue *FI, VASTSeqValue *Src,
+                             VASTSchedUnit *U);
   void buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);
   void buildFlowDependencies(VASTSchedUnit *U);
   void buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U);
@@ -390,9 +390,8 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   return 0;
 }
 
-void VASTScheduling::buildFlowDependencies(VASTValue *Dst, VASTSeqValue *Src,
-                                           VASTSchedUnit *U, unsigned ExtraDelay)
-{
+void VASTScheduling::buildFlowDependencies(VASTSelector *Dst, VASTValue *FI,
+                                           VASTSeqValue *Src, VASTSchedUnit *U) {
   Value *V = Src->getLLVMValue();
   assert(V && "Cannot get the corresponding value!");
   assert((Src->num_fanins() == 1 || isa<PHINode>(V)) && "SeqVal not in SSA!");
@@ -401,17 +400,33 @@ void VASTScheduling::buildFlowDependencies(VASTValue *Dst, VASTSeqValue *Src,
   // last function execution.
   VASTSchedUnit *SrcSU = Src->isStatic() ? G->getEntry() : getFlowDepSU(V);
 
-  unsigned NumCylces = Src == Dst ? 0 : TNL->getDelay(Src, Dst).getNumCycles();
+  // We had to ignore the selector delay if the selector is not provided.
+  if (Dst == 0) {
+    unsigned NumCylces = TNL->getDelay(Src, FI).getNumCycles();
+    U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
+    return;
+  }
 
-  U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces + ExtraDelay));
+  // Handle the trivial path.
+  if (Src == FI) {
+    unsigned NumCylces = TNL->getDelay(Src, Dst).getNumCycles();
+    U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
+    return;
+  }
+
+  // Calculate the full path (from-through-to) delay.
+  unsigned NumCylces = TNL->getDelay(Src, FI, Dst).getNumCycles();
+  U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
 }
 
 void VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
-  std::set<VASTSeqValue*> Srcs;
+  std::set<VASTSeqValue*> Srcs, CndSrcs;
   typedef std::set<VASTSeqValue*>::iterator iterator;
-  unsigned MuxDelay = 0;
 
   assert(Op->num_srcs() && "No operand for flow dependencies!");
+
+  VASTValue *Cnd = VASTValPtr(Op->getGuard()).get();
+  Cnd->extractSupporingSeqVal(CndSrcs);
 
   for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
     VASTLatch L = Op->getSrc(i);
@@ -422,36 +437,30 @@ void VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
     // The Srcs set will be empty if FI is not a constant.
     if (!FI->extractSupporingSeqVal(Srcs)) continue;
 
-    unsigned CurMuxDelay = TNL->getDelay(FI, Sel).getNumCycles();
-    MuxDelay = std::max(MuxDelay, CurMuxDelay);
-
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-      buildFlowDependencies(FI, *I, U, CurMuxDelay);
+      buildFlowDependencies(Sel, FI, *I, U);
 
     Srcs.clear();
-  }
 
-  VASTValue *V = VASTValPtr(Op->getGuard()).get();
-  V->extractSupporingSeqVal(Srcs);
-  for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-    buildFlowDependencies(V, *I, U, MuxDelay);
+    // Also calculate the path for the guarding condition.
+    for (iterator I = CndSrcs.begin(), E = CndSrcs.end(); I != E; ++I)
+      buildFlowDependencies(Sel, Cnd, *I, U);
+  }
 }
 
 void VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
   VASTSlotCtrl *SlotCtrl = cast<VASTSlotCtrl>(U->getSeqOp());
   std::set<VASTSeqValue*> Srcs;
   
-  VASTValue *V = VASTValPtr(SlotCtrl->getGuard()).get();
-  V->extractSupporingSeqVal(Srcs);
+  VASTValue *Cnd = VASTValPtr(SlotCtrl->getGuard()).get();
+  Cnd->extractSupporingSeqVal(Srcs);
 
-  unsigned NumFIs = SlotCtrl->getTargetSlot()->pred_size();
-
-  VFUMux *Mux = getFUDesc<VFUMux>();
-  unsigned MuxDelay = ceil(Mux->getMuxLatency(NumFIs));
+  VASTRegister *Slot = SlotCtrl->getTargetSlot()->getRegister();
+  VASTSelector *Sel = Slot ? Slot->getSelector() : 0;
 
   typedef std::set<VASTSeqValue*>::iterator iterator;
   for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-    buildFlowDependencies(V, *I, U, MuxDelay);
+    buildFlowDependencies(Sel, Cnd, *I, U);
 }
 
 void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
