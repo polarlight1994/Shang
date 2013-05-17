@@ -323,35 +323,32 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
   if (!buildCSEMap(CSEMap)) return;
 
   // Print the mux logic.
-  SmallVector<VASTValPtr, 2> SeqOpPreds;
-  SmallVector<VASTValPtr, 8> FaninPreds;
-  SmallVector<VASTValPtr, 16> EnablePreds;
+  SmallVector<VASTValPtr, 2> SeqOpCnds;
+  std::set<VASTValPtr, StructualLess> FaninCnds;
+  std::set<VASTValPtr, StructualLess> EnableCnds;
 
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     VASTValPtr FIVal = I->first;
 
     Fanin *FI = 0;
     if (!isEnable()) {
-      FaninPreds.clear();
+      FaninCnds.clear();
       FI = new Fanin(this);
     }
 
     const OrVec &Ors = I->second;
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
-      SeqOpPreds.clear();
+      SeqOpCnds.clear();
       const VASTSeqOp *Op = *OI;
-      if (VASTValPtr SlotActive = Op->getSlotActive()) {
-        VASTValPtr V = SlotActive.getAsInlineOperand();
-        if (V != this) SeqOpPreds.push_back(V);
-        else           SeqOpPreds.push_back(SlotActive);
-      }
+      if (VASTValPtr SlotActive = Op->getSlotActive())
+        SeqOpCnds.push_back(SlotActive.getAsInlineOperand());
 
-      SeqOpPreds.push_back(Op->getPred());
+      SeqOpCnds.push_back(Op->getPred());
 
-      VASTValPtr FIPred = Builder.buildAndExpr(SeqOpPreds, 1);
-      EnablePreds.push_back(FIPred);
+      VASTValPtr FICnd = Builder.buildAndExpr(SeqOpCnds, 1);
+      EnableCnds.insert(FICnd);
       if (FI) {
-        FaninPreds.push_back(FIPred);
+        FaninCnds.insert(FICnd);
         FI->AddSlot(Op->getSlot());
       }
     }
@@ -359,14 +356,16 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
     // For enables, there is only 1 fanin, which is the Or of all predicated.
     if (FI == 0) continue;
 
-    VASTValPtr CurPred = Builder.buildOrExpr(FaninPreds, 1);
-    FI->Pred.set(CurPred);
+    SmallVector<VASTValPtr, 4> Array(FaninCnds.begin(), FaninCnds.end());
+    VASTValPtr CurCnd = Builder.buildOrExpr(Array, 1);
+    FI->Pred.set(CurCnd);
     FI->FI.set(FIVal);
     Fanins.push_back(FI);
   }
 
   assert((!isEnable() || Fanins.empty()) && "Enable should has only 1 fanin!");
-  EnableU.set(Builder.buildOrExpr(EnablePreds, 1));
+  SmallVector<VASTValPtr, 4> Array(EnableCnds.begin(), EnableCnds.end());
+  EnableU.set(Builder.buildOrExpr(Array, 1));
 }
 
 void VASTSelector::setParent(VASTNode *N) {
