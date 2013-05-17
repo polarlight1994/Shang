@@ -405,7 +405,8 @@ void VASTScheduling::buildFlowDependencies(VASTSelector *Dst, VASTValue *FI,
 
   // We had to ignore the selector delay if the selector is not provided.
   if (Dst == 0) {
-    unsigned NumCylces = TNL->getDelay(Src, FI).getNumCycles();
+    // Be careful of the trivial paths.
+    unsigned NumCylces = Src == FI ? 0 : TNL->getDelay(Src, FI).getNumCycles();
     U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
     return;
   }
