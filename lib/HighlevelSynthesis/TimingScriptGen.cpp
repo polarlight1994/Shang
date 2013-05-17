@@ -436,11 +436,11 @@ TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
     const VASTLatch &DstLatch = *I;
     VASTSlot *ReadSlot = DstLatch.getSlot();
     // Paths for the condition.
-    DatapathMap[((VASTValPtr)DstLatch.getPred()).get()].push_back(ReadSlot);
+    DatapathMap[VASTValPtr(DstLatch.getPred()).get()].push_back(ReadSlot);
     if (VASTValPtr SlotActive = DstLatch.getSlotActive())
       DatapathMap[SlotActive.get()].push_back(ReadSlot);
     // Paths for the assigning value
-    DatapathMap[((VASTValPtr)DstLatch).get()].push_back(ReadSlot);
+    DatapathMap[VASTValPtr(DstLatch).get()].push_back(ReadSlot);
   }
 
   PathIntervalQueryCache Cache(TNL, SLV, SSP, Dst, OS);
