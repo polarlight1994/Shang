@@ -274,12 +274,6 @@ public:
     linkUseToUser();
   }
 
-  void replaceUseByOrKeep(VASTValPtr RHS) {
-    if (V == RHS) return;
-
-    replaceUseBy(RHS);
-  }
-
   // Get the user of this use.
   VASTNode &getUser() const { return User; }
 
