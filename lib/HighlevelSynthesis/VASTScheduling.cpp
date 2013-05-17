@@ -37,9 +37,6 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
-static cl::opt<bool> DisableMUXSlack("vast-disable-mux-slack",
-  cl::desc("Do not allocate the slack for the MUX before/during scheduling"),
-  cl::init(false));
 
 STATISTIC(NumMemDep, "Number of Memory Dependencies Added");
 STATISTIC(NumForceBrSync, "Number of Dependencies add to sync the loop exit");
@@ -306,9 +303,9 @@ struct VASTScheduling : public VASTModulePass {
 
   void buildFlowDependencies(VASTValue *Dst, VASTSeqValue *Src,
                              VASTSchedUnit *U, unsigned ExtraDelay);
-  unsigned buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);
-  unsigned buildFlowDependencies(VASTSchedUnit *U);
-  unsigned buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U);
+  void buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);
+  void buildFlowDependencies(VASTSchedUnit *U);
+  void buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U);
   VASTSchedUnit *getFlowDepSU(Value *V);
 
   void buildMemoryDependencies(Instruction *Src, Instruction *Dst);
@@ -409,7 +406,7 @@ void VASTScheduling::buildFlowDependencies(VASTValue *Dst, VASTSeqValue *Src,
   U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces + ExtraDelay));
 }
 
-unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
+void VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
   std::set<VASTSeqValue*> Srcs;
   typedef std::set<VASTSeqValue*>::iterator iterator;
   unsigned MuxDelay = 0;
@@ -438,13 +435,9 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) 
   V->extractSupporingSeqVal(Srcs);
   for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
     buildFlowDependencies(V, *I, U, MuxDelay);
-
-  // There is originally 1 cycle available for the selector mux, we need to
-  // return the extra mux delay required by the selector mux.
-  return std::max(int(MuxDelay) - 1, 0);
 }
 
-unsigned VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
+void VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
   VASTSlotCtrl *SlotCtrl = cast<VASTSlotCtrl>(U->getSeqOp());
   std::set<VASTSeqValue*> Srcs;
   
@@ -459,25 +452,27 @@ unsigned VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
   typedef std::set<VASTSeqValue*>::iterator iterator;
   for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
     buildFlowDependencies(V, *I, U, MuxDelay);
-
-  // There is originally 1 cycle available for the selector mux, we need to
-  // return the extra mux delay required by the selector mux.
-  return std::max(int(MuxDelay) - 1, 0);
 }
 
-unsigned VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
+void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   Instruction *Inst = U->getInst();
 
-  if (U->isLaunch())
-    return buildFlowDependencies(U->getSeqOp(), U);
+  if (U->isLaunch()) {
+    buildFlowDependencies(U->getSeqOp(), U);
+    return;
+  }
 
   assert(U->isLatch() && "Unexpected scheduling unit type!");
 
-  if (isa<PHINode>(Inst))
-    return buildFlowDependencies(U->getSeqOp(), U);
+  if (isa<PHINode>(Inst)) {
+    buildFlowDependencies(U->getSeqOp(), U);
+    return;
+  }
 
-  if (isa<TerminatorInst>(Inst))
-    return buildFlowDependencies(U->getSeqOp(), U);
+  if (isa<TerminatorInst>(Inst)) {
+    buildFlowDependencies(U->getSeqOp(), U);
+    return;
+  }
 
   VASTSeqInst *SeqInst = cast<VASTSeqInst>(U->getSeqOp());
   unsigned Latency = SeqInst->getCyclesFromLaunch();
@@ -486,7 +481,8 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
     assert(isa<StoreInst>(Inst)
            && isa<GlobalVariable>(cast<StoreInst>(Inst)->getPointerOperand())
            && "Zero latency latching is not allowed!");
-    return buildFlowDependencies(U->getSeqOp(), U);
+    buildFlowDependencies(U->getSeqOp(), U);
+    return;
   }
 
   // Simply build the dependencies from the launch instruction.
@@ -496,7 +492,6 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   assert(LaunchU->isLaunch() && "Bad SU type!");
 
   U->addDep(LaunchU, VASTDep::CreateFixTimingConstraint(Latency));
-  return 0;
 }
 
 VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
@@ -622,10 +617,9 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
       } else
         U = G->createSUnit(Inst, IsLatch, 0, SeqInst);
 
-      unsigned ExtraMuxDelay = buildFlowDependencies(U);
-      if (DisableMUXSlack) ExtraMuxDelay = 0;
+      buildFlowDependencies(U);
 
-      U->addDep(BBEntry, VASTDep::CreateCtrlDep(ExtraMuxDelay));
+      U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
       IR2SUMap[Inst].push_back(U);
       continue;
     }
@@ -639,11 +633,10 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
         // Also map the target BB to this terminator.
         IR2SUMap[TargetBB].push_back(U);
 
-        unsigned ExtraMuxDelay = buildFlowDependenciesForSlotCtrl(U);
-        if (DisableMUXSlack) ExtraMuxDelay = 0;
+        buildFlowDependenciesForSlotCtrl(U);
 
         // add extra dele
-        U->addDep(BBEntry, VASTDep::CreateCtrlDep(ExtraMuxDelay));
+        U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
         continue;
       }
 

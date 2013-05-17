@@ -239,7 +239,6 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     timeout = self.hls_feedback_flow_timeout if self.timing_model == 'external' else self.hls_timeout
     jt.args = ['%ds' % timeout, self.shang, self.synthesis_config_file, '-stats',
                '-timing-model=%(timing_model)s' % self,
-               '-vast-disable-mux-slack=%(vast_disable_mux_slack)s' % self,
                '-shang-enable-mux-pipelining=%(shang_enable_mux_pipelining)s' % self,
                '-shang-baseline-scheduling-only=%(shang_baseline_scheduling_only)s' % self,
                '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self,
