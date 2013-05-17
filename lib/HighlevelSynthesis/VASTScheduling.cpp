@@ -392,8 +392,7 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
 
 void VASTScheduling::buildFlowDependencies(VASTSelector *Dst, VASTValue *FI,
                                            VASTSeqValue *Src, VASTSchedUnit *U) {
-  // Ignore the placeholder for timing undefined nodes.
-  if (Src == 0) return;
+  assert(Src && "Not a valid source!");
 
   Value *V = Src->getLLVMValue();
   assert(V && "Cannot get the corresponding value!");
@@ -405,7 +404,7 @@ void VASTScheduling::buildFlowDependencies(VASTSelector *Dst, VASTValue *FI,
 
   // We had to ignore the selector delay if the selector is not provided.
   if (Dst == 0) {
-    // Be careful of the trivial paths.
+    // There is no path (Reg -> The SameReg) in the timing netlist.
     unsigned NumCylces = Src == FI ? 0 : TNL->getDelay(Src, FI).getNumCycles();
     U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
     return;
