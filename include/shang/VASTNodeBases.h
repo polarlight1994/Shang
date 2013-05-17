@@ -511,6 +511,14 @@ inline void *PtrInvPair<VASTValue>::getProfilePtr() const  {
   return PtrInvPair<VASTNode>(Ptr, getInt()).getOpaqueValue();
 }
 
+struct PtrofilePtrLess
+  : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
+
+  bool operator()(VASTValPtr LHS, VASTValPtr RHS) const {
+    return LHS.getProfilePtr() < RHS.getProfilePtr();
+  }
+};
+
 template<typename T>
 void VASTOperandList::visitTopOrder(VASTValue *Root,
                                     std::set<VASTOperandList*> &Visited, T &F) {

@@ -70,9 +70,10 @@ private:
   FaninVector Fanins;
   VASTUse EnableU;
 
-  bool buildCSEMap(std::map<VASTValPtr,
-                            std::vector<const VASTSeqOp*> >
-                   &CSEMap) const;
+  typedef std::map<VASTValPtr, std::vector<const VASTSeqOp*>, PtrofilePtrLess>
+          CSEMapTy;
+
+  bool buildCSEMap(CSEMapTy &CSEMap) const;
 
   void printFanins(raw_ostream &OS) const;
 public:

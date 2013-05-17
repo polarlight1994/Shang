@@ -63,9 +63,7 @@ bool VASTSelector::isTrivialFannin(const VASTLatch &L) const {
   return false;
 }
 
-bool VASTSelector::buildCSEMap(std::map<VASTValPtr,
-                                        std::vector<const VASTSeqOp*> >
-                               &CSEMap) const {
+bool VASTSelector::buildCSEMap(CSEMapTy &CSEMap) const {
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
     VASTLatch U = *I;
 
@@ -75,23 +73,6 @@ bool VASTSelector::buildCSEMap(std::map<VASTValPtr,
   }
 
   return !CSEMap.empty();
-}
-
-// Compare the guarding condition which is not guarded by slot active. In this
-// case two VASTSeqValues are considered as identical if their parent selector
-// are identical.
-namespace {
-struct LessGC : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
-bool operator()(VASTValPtr LHS, VASTValPtr RHS) const {
-  VASTSeqValue *LHSSV = dyn_cast<VASTSeqValue>(LHS.get());
-  VASTSeqValue *RHSSV = dyn_cast<VASTSeqValue>(RHS.get());
-
-  if (LHSSV && RHSSV && LHS.isInverted() == RHS.isInverted())
-    return LHSSV->getSelector() < RHSSV->getSelector();
-
-  return LHS < RHS;
-}
-};
 }
 
 void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
@@ -104,7 +85,7 @@ void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
 
   {
     raw_string_ostream AllPredSS(AllPred);
-    std::set<VASTValPtr, LessGC> IdenticalCnds;
+    std::set<VASTValPtr, PtrofilePtrLess> IdenticalCnds;
 
     AllPredSS << '{';
     for (const_iterator I = begin(), E = end(); I != E; ++I) {
@@ -174,7 +155,6 @@ void VASTSelector::addAssignment(VASTSeqOp *Op, unsigned SrcNo) {
 
 void VASTSelector::printFanins(raw_ostream &OS) const {
   typedef std::vector<const VASTSeqOp*> OrVec;
-  typedef std::map<VASTValPtr, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator fanin_iterator;
 
   CSEMapTy CSEMap;
@@ -325,7 +305,6 @@ void VASTSelector::Fanin::AddSlot(VASTSlot *S) {
 
 void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
   typedef std::vector<const VASTSeqOp*> OrVec;
-  typedef std::map<VASTValPtr, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator it;
 
   CSEMapTy CSEMap;
