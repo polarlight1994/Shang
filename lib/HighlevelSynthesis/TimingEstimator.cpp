@@ -69,21 +69,21 @@ BitlevelDelayEsitmator::SrcEntryTy
 BitlevelDelayEsitmator::AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
                                            uint8_t DstUB, uint8_t DstLB,
                                            const SrcEntryTy &DelayFromSrc) {
-  TNLDelay D = DelayFromSrc.second;
-  TNLDelay Inc(VFUs::LUTDelay, VFUs::LUTDelay);
-  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(Inc));
+  delay_type D = DelayFromSrc.second;
+  delay_type Inc(VFUs::LUTDelay);
+  return SrcEntryTy(DelayFromSrc.first, D + Inc);
 }
 
 BitlevelDelayEsitmator::SrcEntryTy
 BitlevelDelayEsitmator::AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
                                            uint8_t DstUB, uint8_t DstLB,
                                            const SrcEntryTy &DelayFromSrc) {
-  TNLDelay D = DelayFromSrc.second;
+  delay_type D = DelayFromSrc.second;
   VASTExpr *AndExpr = cast<VASTExpr>(Dst);
   unsigned NumFanins = AndExpr->size();
   unsigned LL = Log2_32_Ceil(NumFanins) / Log2_32_Ceil(VFUs::MaxLutSize);
-  TNLDelay Inc(LL * VFUs::LUTDelay, LL * VFUs::LUTDelay);
-  return SrcEntryTy(DelayFromSrc.first, D.addLLParallel(Inc));
+  delay_type Inc(LL * VFUs::LUTDelay);
+  return SrcEntryTy(DelayFromSrc.first, D + Inc);
 }
 
 BitlevelDelayEsitmator::SrcEntryTy
@@ -91,13 +91,13 @@ BitlevelDelayEsitmator::AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
                                            uint8_t DstUB, uint8_t DstLB,
                                            const SrcEntryTy &DelayFromSrc) {
   assert(DstUB == 1 && DstLB == 0 && "Bad UB and LB!");
-  TNLDelay D = DelayFromSrc.second;
+  delay_type D = DelayFromSrc.second;
   VASTExpr *RedExpr = cast<VASTExpr>(Dst);
   unsigned FUWidth = RedExpr->getOperand(0)->getBitWidth();
   VFUReduction *Red = getFUDesc<VFUReduction>();
   float Latency = Red->lookupLatency(FUWidth);
-  TNLDelay Inc(Latency, Latency);
-  return SrcEntryTy(DelayFromSrc.first, D.addLLWorst(Inc));
+  delay_type Inc(Latency);
+  return SrcEntryTy(DelayFromSrc.first, D + Inc);
 }
 
 BitlevelDelayEsitmator::SrcEntryTy
@@ -105,16 +105,13 @@ BitlevelDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
                                            uint8_t DstUB, uint8_t DstLB,
                                            const SrcEntryTy &DelayFromSrc) {
   assert(DstUB == 1 && DstLB == 0 && "Bad UB and LB!");
-  TNLDelay D = DelayFromSrc.second;
+  delay_type D = DelayFromSrc.second;
   VASTExpr *CmpExpr = cast<VASTExpr>(Dst);
   unsigned FUWidth = CmpExpr->getOperand(SrcPos)->getBitWidth();
   VFUICmp *Cmp = getFUDesc<VFUICmp>();
   float Latency = Cmp->lookupLatency(FUWidth);
-  // The pre-bit logic level increment for comparison is 1;
-  float LatencyPreBit = Latency / FUWidth;
-  TNLDelay Inc(LatencyPreBit, Latency);
-  D.addLLMSB2LSB(Inc, LatencyPreBit).syncLL();
-  return SrcEntryTy(DelayFromSrc.first, D);
+  delay_type Inc(Latency);
+  return SrcEntryTy(DelayFromSrc.first, D + Inc);
 }
 
 void

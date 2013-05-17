@@ -261,7 +261,7 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
       unsigned Interval = getMinimalInterval(V, ReadSlots);
-      float EstimatedDelay = TNL.getDelay(V, Root, Dst).getNormalizedDelay();
+      float EstimatedDelay = TNL.getDelay(V, Root, Dst);
       SrcInfo CurInfo(Interval, EstimatedDelay);
 
       bool inserted = LocalInterval.insert(std::make_pair(V, CurInfo)).second;

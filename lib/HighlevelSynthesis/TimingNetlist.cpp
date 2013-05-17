@@ -33,22 +33,11 @@ TimingModel("timing-model", cl::Hidden,
             cl::values(
   clEnumValN(TimingEstimatorBase::External, "external",
             "Perform delay estimation with synthesis tool"),
-  clEnumValN(TimingEstimatorBase::Bitlevel, "bit-level",
-            "Bit-level delay estimation with linear approximation"),
   clEnumValN(TimingEstimatorBase::BlackBox, "blackbox",
             "Only accumulate the critical path delay of each FU"),
   clEnumValN(TimingEstimatorBase::ZeroDelay, "zero-delay",
             "Assume all datapath delay is zero"),
   clEnumValEnd));
-
-void TNLDelay::print(raw_ostream &OS) const {
-  OS << "MSB: " << getMSB() << " LSB: " << getLSB() << " Delay(ns): "
-     << getDelay();
-}
-
-void TNLDelay::dump() const {
-  print(dbgs());
-}
 
 TimingNetlist::delay_type
 TimingNetlist::getDelay(VASTValue *Src, VASTSelector *Dst) const {
@@ -84,7 +73,7 @@ TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu,
   if (Thu == 0) return getDelay(Src, Dst);
 
   delay_type S2T = getDelay(Src, Thu), T2D = getDelay(Thu, Dst);
-  return S2T.addLLParallel(T2D);
+  return S2T + T2D;
 }
 
 TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
@@ -123,7 +112,7 @@ void TimingNetlist::buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst,
   if (VASTOperandList::GetDatapathOperandList(Thu) == 0) {
     if (isa<VASTSeqValue>(Thu)) {
       TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Thu];
-      OldDelay = TNLDelay::max(MUXDelay, OldDelay);
+      OldDelay = std::max(MUXDelay, OldDelay);
     }
 
     return;
@@ -132,22 +121,22 @@ void TimingNetlist::buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst,
   if (src_empty(Thu)) return;
 
   TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Thu];
-  OldDelay =TNLDelay::max(OldDelay, MUXDelay);
+  OldDelay =std::max(OldDelay, MUXDelay);
   
   // If this expression if not driven by any register, there is not timing path.
   for (src_iterator I = src_begin(Thu), E = src_end(Thu); I != E; ++I) {
     VASTValue *Src = I->first;
     TimingNetlist::delay_type NewDelay = I->second;
     // Accumulate the delay of the fanin MUX.
-    NewDelay.addLLWorst(MUXDelay);
+    NewDelay += MUXDelay;
 
     TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Src];
-    OldDelay =TNLDelay::max(OldDelay, NewDelay);
+    OldDelay =std::max(OldDelay, NewDelay);
   }  
 }
 
-TNLDelay TimingNetlist::getSelectorDelayImpl(unsigned NumFannins,
-                                             VASTSelector *Sel) const {
+TimingNetlist::delay_type
+TimingNetlist::getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) const {
   float MUXDelay = 0.0f;
 
   if (TimingModel != TimingEstimatorBase::ZeroDelay) {
@@ -160,7 +149,7 @@ TNLDelay TimingNetlist::getSelectorDelayImpl(unsigned NumFannins,
     }
   }
 
-  return delay_type(MUXDelay, MUXDelay);
+  return delay_type(MUXDelay);
 }
 
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {

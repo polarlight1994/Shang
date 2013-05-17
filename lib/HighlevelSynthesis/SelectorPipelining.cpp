@@ -326,7 +326,7 @@ unsigned SelectorPipelining::getCriticalDelay(const SVSet &S, VASTValue *V) {
     // The ignore the trivial path.
     if (Src == V) continue;    
 
-    Delay = std::max(Delay, TNL->getDelay(Src, V).getNumCycles());
+    Delay = std::max<unsigned>(Delay, ceil(TNL->getDelay(Src, V)));
   }
 
   return Delay;

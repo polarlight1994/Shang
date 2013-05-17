@@ -114,7 +114,7 @@ def main(builtinParameters = {}):
   option_space_dict['shang_enable_register_sharing'] = [ 'false' ]
   option_space_dict['shang_constraints_factor'] = [ -0.1 ]
 
-  option_space_dict['timing_model'] = [ 'external' if args.mode == TestStep.AlteraSyn else 'bit-level' ]
+  option_space_dict['timing_model'] = [ 'external' if args.mode == TestStep.AlteraSyn else 'blackbox' ]
 
   option_space_dict['fmax'] = [ 100 ]
   option_space_dict['device_family'] = [ 'CycloneII' ]

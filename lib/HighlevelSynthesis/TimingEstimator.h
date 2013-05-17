@@ -27,7 +27,7 @@ class VASTExpr;
 /// TimingEstimatorBase - Calculate the datapath delay and fill the PathDelay.
 class TimingEstimatorBase {
 public:
-  typedef TNLDelay delay_type;
+  typedef TimingNetlist::delay_type delay_type;
   typedef TimingNetlist::SrcDelayInfo SrcDelayInfo;
   typedef TimingNetlist::SrcEntryTy SrcEntryTy;
   typedef TimingNetlist::src_iterator src_iterator;
@@ -72,12 +72,8 @@ public:
   virtual ~TimingEstimatorBase() {}
 
   void updateDelay(SrcDelayInfo &Info, SrcEntryTy NewValue) {
-    // If we force the BlackBox Module, we synchronize the MSB_LL and LSB_LL
-    // every time before we put it into the path delay table.
-    if (T == BlackBox) NewValue.second.syncLL();
-
     delay_type &OldDelay = Info[NewValue.first];
-    OldDelay = TNLDelay::max(OldDelay, NewValue.second);
+    OldDelay = std::max(OldDelay, NewValue.second);
   }
 
   // For trivial expressions, the delay is zero.
@@ -146,7 +142,7 @@ public:
     SrcDelayInfo &SrcInfo = PathDelay[Dst];
     for (const_src_iterator I = CurInfo.begin(), E = CurInfo.end(); I != E; ++I) {
       TimingNetlist::delay_type &d = SrcInfo[I->first];
-      d = TNLDelay::max(d, I->second);
+      d = std::max(d, I->second);
     }
   }
 
@@ -267,27 +263,24 @@ class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator
   static SrcEntryTy AccumulateAddMulDelay(VASTValue *Dst, unsigned SrcPos,
                                           uint8_t DstUB, uint8_t DstLB,
                                           const SrcEntryTy &DelayFromSrc) {
-    TNLDelay D = DelayFromSrc.second;
+    delay_type D = DelayFromSrc.second;
     VFUTy *FU = getFUDesc<VFUTy>();
     float MSBLatency = FU->lookupLatency(DstUB);
     float LSBLatency = FU->lookupLatency(DstLB);
-    float LatencyPreBit = (MSBLatency - LSBLatency) / (DstUB - DstLB);
-    TNLDelay Inc(MSBLatency, LSBLatency);
-    D.addLLLSB2MSB(Inc, LatencyPreBit);
-    return SrcEntryTy(DelayFromSrc.first, D);
+    delay_type Inc(std::max(MSBLatency, LSBLatency));
+    return SrcEntryTy(DelayFromSrc.first, D + Inc);
   }
 
   template<typename VFUTy>
   static SrcEntryTy AccumulateBlackBoxDelay(VASTValue *Dst, unsigned SrcPos,
                                             uint8_t DstUB, uint8_t DstLB,
                                             const SrcEntryTy &DelayFromSrc) {
-    TNLDelay D = DelayFromSrc.second;
+    delay_type D = DelayFromSrc.second;
     unsigned FUWidth = Dst->getBitWidth();
     VFUTy *FU = getFUDesc<VFUTy>();
     float Latency = FU->lookupLatency(FUWidth);
-    TNLDelay Inc(Latency, Latency);
-    D.syncLL().addLLParallel(Inc);
-    return SrcEntryTy(DelayFromSrc.first, D);
+    delay_type Inc(Latency);
+    return SrcEntryTy(DelayFromSrc.first, D + Inc);
   }
 
 public:

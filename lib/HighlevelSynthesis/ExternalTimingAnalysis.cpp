@@ -200,7 +200,7 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
     typedef SrcInfo::const_iterator iterator;
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       float delay = *I->second;
-      updateDelay(CurInfo, SrcEntryTy(I->first, delay_type(delay, delay)));
+      updateDelay(CurInfo, SrcEntryTy(I->first, delay_type(delay)));
     }
 
     // Also accumulate the delay from the operands.
@@ -251,17 +251,17 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
       VASTValue *FI = VASTValPtr(U).get();
       // Visit the cone rooted on the fanin.
       VASTOperandList::visitTopOrder(FI, Visited, ETA);
-      buildTimingPathTo(FI, Sel, TNLDelay(SelDelay, SelDelay));
+      buildTimingPathTo(FI, Sel, delay_type(SelDelay));
 
       VASTValue *Cnd = VASTValPtr(U.getGuard()).get();
       // Visit the cone rooted on the guarding condition.
       VASTOperandList::visitTopOrder(Cnd, Visited, ETA);
-      buildTimingPathTo(Cnd, Sel, TNLDelay(SelDelay, SelDelay));
+      buildTimingPathTo(Cnd, Sel, delay_type(SelDelay));
 
       if (VASTValue *SlotActive = U.getSlotActive().get()) {
         // Visit the cone rooted on the ready signal.
         VASTOperandList::visitTopOrder(SlotActive, Visited, ETA);
-        buildTimingPathTo(SlotActive, Sel, TNLDelay(SelDelay, SelDelay));
+        buildTimingPathTo(SlotActive, Sel, delay_type(SelDelay));
       }
     }
 
@@ -271,13 +271,13 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
            I != E; ++I){
         const VASTSelector::Fanin *FI = *I;
         VASTValue *FIVal = FI->FI.unwrap().get();
-        buildTimingPathTo(FIVal, Sel, TNLDelay());
+        buildTimingPathTo(FIVal, Sel, delay_type(0.0f));
         VASTValue *FICnd = FI->Cnd.unwrap().get();
-        buildTimingPathTo(FICnd, Sel, TNLDelay());
+        buildTimingPathTo(FICnd, Sel, delay_type(0.0f));
       }
 
       VASTValue *SelEnable = Sel->getEnable().get();
-      buildTimingPathTo(SelEnable, Sel, TNLDelay());
+      buildTimingPathTo(SelEnable, Sel, delay_type(0.0f));
     }
   }
 

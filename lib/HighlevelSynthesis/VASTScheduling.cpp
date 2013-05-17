@@ -405,20 +405,20 @@ void VASTScheduling::buildFlowDependencies(VASTSelector *Dst, VASTValue *FI,
   // We had to ignore the selector delay if the selector is not provided.
   if (Dst == 0) {
     // There is no path (Reg -> The SameReg) in the timing netlist.
-    unsigned NumCylces = Src == FI ? 0 : TNL->getDelay(Src, FI).getNumCycles();
+    unsigned NumCylces = Src == FI ? 0 : ceil(TNL->getDelay(Src, FI));
     U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
     return;
   }
 
   // Handle the trivial path.
   if (Src == FI) {
-    unsigned NumCylces = TNL->getDelay(Src, Dst).getNumCycles();
+    unsigned NumCylces = ceil(TNL->getDelay(Src, Dst));
     U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
     return;
   }
 
   // Calculate the full path (from-through-to) delay.
-  unsigned NumCylces = TNL->getDelay(Src, FI, Dst).getNumCycles();
+  unsigned NumCylces = ceil(TNL->getDelay(Src, FI, Dst));
   U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
 }
 

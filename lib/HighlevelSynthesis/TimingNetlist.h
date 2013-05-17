@@ -25,94 +25,10 @@ class VASTSelector;
 class VASTSeqValue;
 class VASTValue;
 
-struct TNLDelay {
-  float MSB, LSB;
-
-  TNLDelay() : MSB(0), LSB(0) {}
-
-  TNLDelay(float MSB, float LSB)
-    : MSB(MSB), LSB(LSB) {}
-
-  static unsigned toInt(unsigned X) {
-    return (X + 1024 - 1) / 1024;
-  }
-
-  static unsigned toX1024(unsigned X) {
-    return X * 1024;
-  }
-
-  float getLSB() const { return LSB; }
-  float getMSB() const { return MSB; }
-  float getMinDelay() const { return std::min(getLSB(), getMSB()); }
-
-  float getNormalizedDelay() const {
-    return std::max(MSB, LSB);
-  }
-
-  unsigned getNumCycles() const {
-    return ceil(getNormalizedDelay());
-  }
-
-  float getDelay() const {
-    return getNormalizedDelay() * VFUs::Period;
-  }
-
-  static TNLDelay max(TNLDelay LHS, TNLDelay RHS) {
-    // TODO: Extend the bit range and and max?
-    return TNLDelay(std::max(LHS.MSB, RHS.MSB),
-                    std::max(LHS.LSB, RHS.LSB));
-  }
-
-  TNLDelay &scale(float RHS) {
-    MSB = ceil(MSB / RHS);
-    LSB = ceil(LSB / RHS);
-    return *this;
-  }
-
-  TNLDelay &addLLParallel(TNLDelay RHS) {
-    this->MSB += RHS.MSB;
-    this->LSB += RHS.LSB;
-    return *this;
-  }
-
-  TNLDelay &syncLL() {
-    MSB = LSB = std::max(MSB, LSB);
-    return *this;
-  }
-
-  TNLDelay &addLLWorst(TNLDelay RHS) {
-    return addLLParallel(RHS).syncLL();
-  }
-
-  TNLDelay &addLLMSB2LSB(TNLDelay RHS, float Bit) {
-    float NewMSB = RHS.MSB + this->MSB;
-    this->LSB =  std::max(this->LSB + Bit, RHS.LSB + this->MSB);
-    this->MSB = NewMSB;
-
-    return *this;
-  }
-
-  TNLDelay &addLLLSB2MSB(TNLDelay RHS, float Bit) {
-    float NewLSB = RHS.LSB + this->LSB;
-    this->MSB =  std::max(this->MSB + Bit, RHS.MSB + this->LSB);
-    this->LSB = NewLSB;
-
-    return *this;
-  }
-
-  void print(raw_ostream &OS) const;
-  void dump() const;
-};
-
-inline raw_ostream &operator<<(raw_ostream &OS, const TNLDelay &D) {
-  D.print(OS);
-  return OS;
-}
-
 /// Timinging Netlist - Annotate the timing information to the RTL netlist.
 class TimingNetlist : public VASTModulePass {
 public:
-  typedef TNLDelay delay_type;
+  typedef float delay_type;
   // TODO: For each bitslice of the source, allocate a delay record!
   typedef std::map<VASTValue*, delay_type> SrcDelayInfo;
   typedef SrcDelayInfo::value_type SrcEntryTy;
@@ -129,7 +45,7 @@ public:
   typedef FaninDelayInfo::iterator fanin_iterator;
   typedef FaninDelayInfo::const_iterator const_fanin_iterator;
 
-  TNLDelay getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) const;
+  delay_type getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) const;
 
   // The path delay information.
   PathDelayInfo PathInfo;
@@ -146,15 +62,6 @@ public:
   delay_type getDelay(VASTValue *Src, VASTSelector *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTSelector *Dst) const;
-
-  float getNormalizedDelay(VASTValue *Src, VASTSelector *Dst) const {
-    return getDelay(Src, Dst).getNormalizedDelay();
-  }
-
-  float getNormalizedDelay(VASTValue *Src, VASTValue *Thu,
-                           VASTSelector *Dst) const {
-    return getDelay(Src, Thu, Dst).getNormalizedDelay();
-  }
 
   // Iterate over the source node reachable to DstReg.
   src_iterator src_begin(VASTValue *Dst) const {
@@ -176,16 +83,6 @@ public:
   const SrcDelayInfo *getSrcInfo(VASTValue *Dst) const {
     const_path_iterator at = PathInfo.find(Dst);
     return at != PathInfo.end() ? &at->second : 0;
-  }
-
-  const TNLDelay *getDelayOrNull(VASTValue *Src, VASTValue *Dst) const {
-    const SrcDelayInfo *Srcs = getSrcInfo(Dst);
-    if (Srcs == 0) return 0;
-
-    src_iterator path_start_from = Srcs->find(Src);
-    if (path_start_from == Srcs->end()) return 0;
-
-    return &path_start_from->second;
   }
 
   path_iterator path_begin() { return PathInfo.begin(); }
