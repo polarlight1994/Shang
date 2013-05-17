@@ -47,6 +47,17 @@ VASTSelector::~VASTSelector() {
   DeleteContainerPointers(Fanins);
 }
 
+bool
+VASTSelector::StructualLess::operator()(VASTValPtr LHS, VASTValPtr RHS) const {
+  VASTSeqValue *LHSSV = dyn_cast<VASTSeqValue>(LHS.get());
+  VASTSeqValue *RHSSV = dyn_cast<VASTSeqValue>(RHS.get());
+
+  if (LHSSV && RHSSV && LHS.isInverted() == RHS.isInverted())
+    return LHSSV->getSelector() < RHSSV->getSelector();
+
+  return LHS < RHS;
+}
+
 bool VASTSelector::isTrivialFannin(const VASTLatch &L) const {
   VASTValPtr FIVal = L;
 
@@ -85,7 +96,7 @@ void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
 
   {
     raw_string_ostream AllPredSS(AllPred);
-    std::set<VASTValPtr, PtrofilePtrLess> IdenticalCnds;
+    std::set<VASTValPtr, StructualLess> IdenticalCnds;
 
     AllPredSS << '{';
     for (const_iterator I = begin(), E = end(); I != E; ++I) {

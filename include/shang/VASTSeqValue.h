@@ -70,7 +70,13 @@ private:
   FaninVector Fanins;
   VASTUse EnableU;
 
-  typedef std::map<VASTValPtr, std::vector<const VASTSeqOp*>, PtrofilePtrLess>
+  struct StructualLess
+    : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
+
+    bool operator()(VASTValPtr LHS, VASTValPtr RHS) const;
+  };
+
+  typedef std::map<VASTValPtr, std::vector<const VASTSeqOp*>, StructualLess>
           CSEMapTy;
 
   bool buildCSEMap(CSEMapTy &CSEMap) const;

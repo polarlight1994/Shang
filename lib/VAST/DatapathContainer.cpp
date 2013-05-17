@@ -124,7 +124,7 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
   ID.AddInteger(UB);
   ID.AddInteger(LB);
   for (unsigned i = 0; i < Ops.size(); ++i)
-    ID.AddPointer(Ops[i].getProfilePtr());
+    ID.AddPointer(Ops[i]);
 
   void *IP = 0;
   if (VASTExpr *E = UniqueExprs->FindNodeOrInsertPos(ID, IP))

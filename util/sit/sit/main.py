@@ -35,7 +35,6 @@ def main(builtinParameters = {}):
 
   print "Starting the Shang Integrated Tester in", args.mode, "mode..."
 
-
   active_jobs = []
 
   # Initialize the database connection
