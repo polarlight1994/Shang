@@ -148,6 +148,7 @@ class HLSStep(TestStep) :
                            self.test_name,
                            datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
     os.makedirs(self.hls_base_dir)
+    self.rtl_output = os.path.join(self.hls_base_dir, self.test_name + ".sv")
 
     #Generate the HLS config.
     self.synthesis_config_file = os.path.join(self.hls_base_dir, 'test_config.lua')
@@ -155,7 +156,7 @@ class HLSStep(TestStep) :
 ptr_size = {{ ptr_size }}
 test_binary_root = [[{{ hls_base_dir }}]]
 InputFile = [[{{ test_file }}]]
-RTLOutput = [[{{ [hls_base_dir, test_name + ".sv"]|joinpath }}]]
+RTLOutput = [[{{ rtl_output }}]]
 MCPDataBase =  [[{{ [hls_base_dir, test_name + ".sql"]|joinpath }}]]
 MainSDCOutput =  [[{{ [hls_base_dir, test_name + ".sdc"]|joinpath }}]]
 --MainDelayVerifyOutput = [[{{ MAIN_DELAY_VERIFY_SRC }}]]
@@ -315,7 +316,7 @@ llc={{ llc }}
 || exit 1
 
 # Generate cpp files from the rtl
-{{ verilator }} {{ [hls_base_dir, test_name + ".sv"]|joinpath }} \
+{{ verilator }} {{ rtl_output }} \
                 -Wall --sc -D__DEBUG_IF +define+__VERILATOR_SIM \
                 --top-module {{ [test_name, "_RTL_DUT"]|join }} \
 || exit 1
@@ -506,7 +507,7 @@ endmodule''', os.path.join(self.pure_hw_sim_base_dir, 'DUT_TOP_tb.sv'))
 export PATH=/nfs/app/altera/modelsim_ase_12_x64/modelsim_ase/bin/:$PATH
 
 vlib work || exit 1
-vlog -sv {{ [hls_base_dir, test_name + ".sv"]|joinpath }} || exit 1
+vlog -sv {{ rtl_output }} || exit 1
 vlog -sv DUT_TOP_tb.sv || exit 1
 vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
 
@@ -581,7 +582,7 @@ set_global_assignment -name FAMILY "{{ fpga_family }}"
 set_global_assignment -name DEVICE {{ fpga_device }}
 
 set_global_assignment -name TOP_LEVEL_ENTITY main
-set_global_assignment -name SOURCE_FILE {{ [hls_base_dir, test_name + ".sv"]|joinpath }}
+set_global_assignment -name SOURCE_FILE {{ rtl_output }}
 set_global_assignment -name SDC_FILE {{ [hls_base_dir, test_name + ".sdc"]|joinpath }}
 
 set_global_assignment -name RESERVE_ALL_UNUSED_PINS "AS INPUT TRI-STATED"
