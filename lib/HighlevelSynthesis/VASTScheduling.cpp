@@ -392,6 +392,9 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
 
 void VASTScheduling::buildFlowDependencies(VASTSelector *Dst, VASTValue *FI,
                                            VASTSeqValue *Src, VASTSchedUnit *U) {
+  // Ignore the placeholder for timing undefined nodes.
+  if (Src == 0) return;
+
   Value *V = Src->getLLVMValue();
   assert(V && "Cannot get the corresponding value!");
   assert((Src->num_fanins() == 1 || isa<PHINode>(V)) && "SeqVal not in SSA!");
