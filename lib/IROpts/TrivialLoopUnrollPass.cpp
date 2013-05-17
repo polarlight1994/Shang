@@ -386,6 +386,8 @@ void LoopDepGraph::buildTransitiveClosure(ArrayRef<const Instruction*> MemOps) {
       DepInfoTy &CurDep = DepMap[CurInst];
       assert(!CurDep.empty() && "Unexpected empty dependency map!");
 
+      // Iterate over the source of the dependencies to
+      // forward the dependencies of sources to current node.
       typedef DepInfoTy::iterator iterator;
       for (iterator I = CurDep.begin(), E = CurDep.end(); I != E; ++I) {
         const Value *Src = I->first;
@@ -395,12 +397,12 @@ void LoopDepGraph::buildTransitiveClosure(ArrayRef<const Instruction*> MemOps) {
         assert((!SrcDep.empty() || isa<BasicBlock>(Src))
                && "Unexpected empty dependency map!");
 
-        // Forward the dependencies of Src.
+        // Build the dependencies from (Source of Src) -> Src -> CurInst.
         typedef DepInfoTy::const_iterator const_iterator;
         for (const_iterator SI = SrcDep.begin(), SE = SrcDep.end();
              SI != SE; ++SI) {
           unsigned NewDistance = Distance + SI->second;
-          Changed |= insertDep(CurDep, I->first, NewDistance);
+          Changed |= insertDep(CurDep, SI->first, NewDistance);
         }
       }
     }
