@@ -270,6 +270,20 @@ RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
     self.jobid = Session.runJob(jt)
     Session.deleteJobTemplate(jt)
 
+  def submitResults(self, connection, status) :
+    if (not self.submitLogfiles(connection, status)) : return
+
+    # TODO: Extract other statistics
+    connection.execute('''
+INSERT INTO
+  highlevelsynthesis(name, parameter, rtl_output)
+  VALUES (:test_name, :parameter, :rtl_output)
+''',{
+      'test_name' : self.test_name,
+      'parameter' : json.dumps(self.getOptionCompack()),
+      'rtl_output' :  self.rtl_output
+    })
+
   def generateSubTests(self) :
     #If test type == hybrid simulation
     if self.mode == TestStep.HybridSim :
@@ -497,7 +511,8 @@ module DUT_TOP_tb();
     if (cnt % 6400 == 0) $write("%t\\n", $time());
   end
 
-endmodule''', os.path.join(self.pure_hw_sim_base_dir, 'DUT_TOP_tb.sv'))
+endmodule
+''', os.path.join(self.pure_hw_sim_base_dir, 'DUT_TOP_tb.sv'))
 
     #Generate the simulation script.
     self.pure_hw_sim_script = os.path.join(self.pure_hw_sim_base_dir, 'pure_hw_sim.sge')

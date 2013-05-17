@@ -44,6 +44,13 @@ def main(builtinParameters = {}):
   # Create the tables for the experimental results.
   # We create 3 tables: HLS results, simulation results, and synthesis results
   con.executescript('''
+    create table highlevelsynthesis(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        parameter TEXT,
+        rtl_output TEXT
+    );
+
     create table logfile(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
