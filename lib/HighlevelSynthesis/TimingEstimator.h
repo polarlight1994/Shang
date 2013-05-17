@@ -102,7 +102,7 @@ public:
     // Do not lookup the source across the SeqValue.
     if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Thu)) {
       assert(!isa<VASTExpr>(Thu) && "Not SrcInfo from Src find!");
-      delay_type D;
+      delay_type D(0.0f);
       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(SeqVal, D)));
       return true;
     }
@@ -119,7 +119,7 @@ public:
 
     // FIXME: Also add the delay from Src to Dst.
     if (VASTOperandList::GetOperandList(Thu) && hasPathInfo(Thu)) {
-      delay_type D;
+      delay_type D(0.0f);
       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(Thu, D)));
       updated = true;
     }
