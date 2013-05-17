@@ -37,7 +37,7 @@ void VASTLatch::replaceUsedBy(VASTValPtr V) const {
 }
 
 void VASTLatch::replacePredBy(VASTValPtr V, bool UseSlotActive) const {
-  Op->replacePredBy(V, UseSlotActive);
+  Op->replaceGuardBy(V, UseSlotActive);
 }
 
 VASTSlot *VASTLatch::getSlot() const {
@@ -48,8 +48,8 @@ unsigned VASTLatch::getSlotNum() const {
   return getSlot()->SlotNum;
 }
 
-VASTUse &VASTLatch::getPred() const {
-  return Op->getPred();
+VASTUse &VASTLatch::getGuard() const {
+  return Op->getGuard();
 }
 
 VASTValPtr VASTLatch::getSlotActive() const {
@@ -74,8 +74,8 @@ void VASTLatch::removeFromParent() {
 //----------------------------------------------------------------------------//
 bool VASTSeqOp::operator <(const VASTSeqOp &RHS) const  {
   // Same predicate?
-  if (getPred() < RHS.getPred()) return true;
-  else if (getPred() > RHS.getPred()) return false;
+  if (getGuard() < RHS.getGuard()) return true;
+  else if (getGuard() > RHS.getGuard()) return false;
 
   // Same slot?
   return getSlot() < RHS.getSlot();
@@ -149,14 +149,14 @@ void VASTSeqOp::print(raw_ostream &OS) const {
     OS << " Slot Parent: " << BB->getName();
 }
 
-void VASTSeqOp::printPredicate(raw_ostream &OS) const {
+void VASTSeqOp::printGuard(raw_ostream &OS) const {
   OS << '(';
   if (VASTValPtr SlotActive = getSlotActive()) {
     SlotActive.printAsOperand(OS);
     OS << '&';
   }
 
-  getPred().printAsOperand(OS);
+  getGuard().printAsOperand(OS);
 
   OS << ')';
 }
@@ -167,8 +167,8 @@ VASTSeqOp::VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive, unsigned Size
   Contents.LLVMValue = 0;
 }
 
-void VASTSeqOp::replacePredBy(VASTValPtr V, bool UseSlotActive) {
-  getPred().replaceUseBy(V);
+void VASTSeqOp::replaceGuardBy(VASTValPtr V, bool UseSlotActive) {
+  getGuard().replaceUseBy(V);
   S.setInt(UseSlotActive);
 }
 

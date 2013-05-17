@@ -527,7 +527,7 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
         VASTValue *FIVal = FI->FI.unwrap().get();
         VASTOperandList::visitTopOrder(FIVal, Visited, Printer);
 
-        VASTValue *FICnd = FI->Pred.unwrap().get();
+        VASTValue *FICnd = FI->Cnd.unwrap().get();
         VASTOperandList::visitTopOrder(FICnd, Visited, Printer);
     }
 

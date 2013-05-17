@@ -44,7 +44,7 @@ private:
   // The relative signal of the slot: Slot register, Slot active and Slot ready.
   VASTUse SlotReg;
   VASTUse SlotActive;
-  VASTUse SlotPred;
+  VASTUse SlotGuard;
 
   // The link to other slots.
   PredVecTy PredSlots;
@@ -63,7 +63,7 @@ private:
            bool IsSubGrp);
 
   VASTSlot() : VASTNode(vastSlot), SlotReg(this), SlotActive(this),
-    SlotPred(this), SlotNum(0), IsSubGrp(true) {}
+    SlotGuard(this), SlotNum(0), IsSubGrp(true) {}
 
   friend struct ilist_sentinel_traits<VASTSlot>;
 
@@ -138,7 +138,7 @@ public:
   VASTRegister *getRegister() const;
   VASTValPtr getActive() const { return SlotActive.unwrap(); }
   VASTUse &getActive() { return SlotActive; }
-  VASTUse &getPred() { return SlotPred; }
+  VASTUse &getGuard() { return SlotGuard; }
 
   void addOperation(VASTSeqOp *D) { Operations.push_back(D); }
   typedef OpVector::const_iterator const_op_iterator;

@@ -46,7 +46,7 @@ struct VASTLatch {
   // Forward the functions from VASTSeqOp;
   VASTSlot *getSlot() const;
   unsigned getSlotNum() const;
-  VASTUse &getPred() const;
+  VASTUse &getGuard() const;
   VASTValPtr getSlotActive() const;
 
   bool operator==(const VASTLatch &RHS) const {
@@ -102,12 +102,12 @@ public:
   bool guardedBySlotActive() const { return S.getInt(); }
 
   virtual void print(raw_ostream &OS) const;
-  void printPredicate(raw_ostream &OS) const;
+  void printGuard(raw_ostream &OS) const;
 
   // Get the predicate operand of the transaction.
-  VASTUse &getPred() { return getOperand(0); }
-  VASTValPtr getPred() const { return getOperand(0); }
-  void replacePredBy(VASTValPtr V, bool UseSlotActive = true);
+  VASTUse &getGuard() { return getOperand(0); }
+  VASTValPtr getGuard() const { return getOperand(0); }
+  void replaceGuardBy(VASTValPtr V, bool UseSlotActive = true);
 
   // Get the source of the transaction.
   VASTLatch getSrc(unsigned Idx) { return VASTLatch(this, Idx); };

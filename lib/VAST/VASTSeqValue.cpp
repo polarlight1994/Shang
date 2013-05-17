@@ -92,49 +92,49 @@ void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
 
   // Concatenate all condition together to detect the case that more than one
   // case is activated.
-  std::string AllPred;
+  std::string AllCnd;
 
   {
-    raw_string_ostream AllPredSS(AllPred);
+    raw_string_ostream AllCndSS(AllCnd);
     std::set<VASTValPtr, StructualLess> IdenticalCnds;
 
-    AllPredSS << '{';
+    AllCndSS << '{';
     for (const_iterator I = begin(), E = end(); I != E; ++I) {
       const VASTLatch &L = *I;
       const VASTSeqOp *Op = L.Op;
       if (!Op->guardedBySlotActive()) {
-        bool visited = !IdenticalCnds.insert(Op->getPred()).second;
+        bool visited = !IdenticalCnds.insert(Op->getGuard()).second;
         // For the guarding condition without slot active, only print them
         // once.
         if (visited) continue;
       }
 
-      Op->printPredicate(AllPredSS);
-      AllPredSS << ", ";
+      Op->printGuard(AllCndSS);
+      AllCndSS << ", ";
     }
 
-    AllPredSS << "1'b0 }";
+    AllCndSS << "1'b0 }";
   }
 
   // As long as $onehot0(expr) returns true if at most one bit of expr is high,
   // we can use it to detect if more one case condition is true at the same
   // time.
-  OS << "if (!$onehot0(" << AllPred << ")) begin\n"
+  OS << "if (!$onehot0(" << AllCnd << ")) begin\n"
         "  $display(\"At time %t, register "
         << getName() << " in module " << ( Mod ? Mod->getName() : "Unknown")
         << " has more than one active assignment: %b!\", $time(), "
-        << AllPred << ");\n";
+        << AllCnd << ");\n";
 
   // Display the conflicted condition and its slot.
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
     const VASTLatch &L = *I;
     const VASTSeqOp *Op = L.Op;
     OS.indent(2) << "if (";
-    Op->printPredicate(OS);
+    Op->printGuard(OS);
     OS << ") begin\n";
 
     OS.indent(4) << "$display(\"Condition: ";
-    Op->printPredicate(OS);
+    Op->printGuard(OS);
 
     OS << ",  Src: " << VASTValPtr(L);
 
@@ -205,7 +205,7 @@ void VASTSelector::printFanins(raw_ostream &OS) const {
     const OrVec &Ors = I->second;
     typedef OrVec::const_iterator pred_iterator;
     for (pred_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI)
-      OS   << ", " << VASTValPtr((*OI)->getPred());
+      OS   << ", " << VASTValPtr((*OI)->getGuard());
   }
   OS << "},\n{1'b0";
   // Print the selection signals.
@@ -250,7 +250,7 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
     Fanin *FI = *I;
 
-    OS.indent(4) << '(' << VASTValPtr(FI->Pred) << "): begin\n";
+    OS.indent(4) << '(' << VASTValPtr(FI->Cnd) << "): begin\n";
     // Print the assignment under the condition.
     OS.indent(6) << getName() << "_selector_wire = "
                   << VASTValPtr(FI->FI) << ";\n";
@@ -308,7 +308,7 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   OS.always_ff_end();
 }
 
-VASTSelector::Fanin::Fanin(VASTNode *N) : Pred(N), FI(N) {}
+VASTSelector::Fanin::Fanin(VASTNode *N) : Cnd(N), FI(N) {}
 
 void VASTSelector::Fanin::AddSlot(VASTSlot *S) {
   Slots.push_back(S);
@@ -343,7 +343,7 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
       if (VASTValPtr SlotActive = Op->getSlotActive())
         SeqOpCnds.push_back(SlotActive.getAsInlineOperand());
 
-      SeqOpCnds.push_back(Op->getPred());
+      SeqOpCnds.push_back(Op->getGuard());
 
       VASTValPtr FICnd = Builder.buildAndExpr(SeqOpCnds, 1);
       EnableCnds.insert(FICnd);
@@ -358,7 +358,7 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
 
     SmallVector<VASTValPtr, 4> Array(FaninCnds.begin(), FaninCnds.end());
     VASTValPtr CurCnd = Builder.buildOrExpr(Array, 1);
-    FI->Pred.set(CurCnd);
+    FI->Cnd.set(CurCnd);
     FI->FI.set(FIVal);
     Fanins.push_back(FI);
   }

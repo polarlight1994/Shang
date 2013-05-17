@@ -26,14 +26,14 @@ using namespace llvm;
 VASTSlot::VASTSlot(unsigned slotNum, BasicBlock *ParentBB,  VASTValPtr Pred,
                    bool IsSubGrp)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
-    SlotPred(this, Pred), SlotNum(slotNum),
+    SlotGuard(this, Pred), SlotNum(slotNum),
     IsSubGrp(IsSubGrp) {
   Contents.ParentBB = ParentBB;
 }
 
 VASTSlot::VASTSlot(unsigned slotNum)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
-    SlotPred(this, VASTImmediate::True), SlotNum(slotNum),
+    SlotGuard(this, VASTImmediate::True), SlotNum(slotNum),
     IsSubGrp(false) {
   Contents.ParentBB = 0;
 }
@@ -42,7 +42,7 @@ VASTSlot::~VASTSlot() {
   // Release the uses.
   if (!SlotReg.isInvalid()) SlotReg.unlinkUseFromUser();
   if (!SlotActive.isInvalid()) SlotActive.unlinkUseFromUser();
-  if (!SlotPred.isInvalid()) SlotPred.unlinkUseFromUser();
+  if (!SlotGuard.isInvalid()) SlotGuard.unlinkUseFromUser();
 }
 
 void VASTSlot::createSignals(VASTModule *VM) {

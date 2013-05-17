@@ -434,7 +434,7 @@ unsigned VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) 
     Srcs.clear();
   }
 
-  VASTValue *V = VASTValPtr(Op->getPred()).get();
+  VASTValue *V = VASTValPtr(Op->getGuard()).get();
   V->extractSupporingSeqVal(Srcs);
   for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
     buildFlowDependencies(V, *I, U, MuxDelay);
@@ -448,7 +448,7 @@ unsigned VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
   VASTSlotCtrl *SlotCtrl = cast<VASTSlotCtrl>(U->getSeqOp());
   std::set<VASTSeqValue*> Srcs;
   
-  VASTValue *V = VASTValPtr(SlotCtrl->getPred()).get();
+  VASTValue *V = VASTValPtr(SlotCtrl->getGuard()).get();
   V->extractSupporingSeqVal(Srcs);
 
   unsigned NumFIs = SlotCtrl->getTargetSlot()->pred_size();

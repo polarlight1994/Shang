@@ -40,7 +40,7 @@ public:
     void operator=(const Fanin&) LLVM_DELETED_FUNCTION;
 
     std::vector<VASTSlot*> Slots;
-    VASTUse Pred;
+    VASTUse Cnd;
     VASTUse FI;
 
     Fanin(VASTNode *Node);

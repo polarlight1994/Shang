@@ -137,7 +137,7 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
       const VASTSelector::Fanin *FI = *I;
       VASTValue *FIVal = FI->FI.unwrap().get();
       VASTOperandList::visitTopOrder(FIVal, Visited, N);
-      VASTValue *FICnd = FI->Pred.unwrap().get();
+      VASTValue *FICnd = FI->Cnd.unwrap().get();
       VASTOperandList::visitTopOrder(FICnd, Visited, N);
     }
 

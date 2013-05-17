@@ -253,7 +253,7 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
       VASTOperandList::visitTopOrder(FI, Visited, ETA);
       buildTimingPathTo(FI, Sel, TNLDelay(SelDelay, SelDelay));
 
-      VASTValue *Cnd = VASTValPtr(U.getPred()).get();
+      VASTValue *Cnd = VASTValPtr(U.getGuard()).get();
       // Visit the cone rooted on the guarding condition.
       VASTOperandList::visitTopOrder(Cnd, Visited, ETA);
       buildTimingPathTo(Cnd, Sel, TNLDelay(SelDelay, SelDelay));
@@ -272,7 +272,7 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
         const VASTSelector::Fanin *FI = *I;
         VASTValue *FIVal = FI->FI.unwrap().get();
         buildTimingPathTo(FIVal, Sel, TNLDelay());
-        VASTValue *FICnd = FI->Pred.unwrap().get();
+        VASTValue *FICnd = FI->Cnd.unwrap().get();
         buildTimingPathTo(FICnd, Sel, TNLDelay());
       }
 
@@ -518,7 +518,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
     // Visit the cone rooted on the fanin.
     buildPathInfoForCone(O, FI);
 
-    VASTValue *Cnd = VASTValPtr(U.getPred()).get();
+    VASTValue *Cnd = VASTValPtr(U.getGuard()).get();
     // Visit the cone rooted on the guarding condition.
     buildPathInfoForCone(O, Cnd);
 
@@ -534,7 +534,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
       const VASTSelector::Fanin *FI = *I;
       VASTValue *FIVal = FI->FI.unwrap().get();
       buildPathInfoForCone(O, FIVal);
-      VASTValue *FICnd = FI->Pred.unwrap().get();
+      VASTValue *FICnd = FI->Cnd.unwrap().get();
       buildPathInfoForCone(O, FICnd);
     }
 

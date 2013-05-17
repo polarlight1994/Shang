@@ -191,7 +191,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
            I != E; ++I){
         const VASTSelector::Fanin *FI = *I;
 
-        buildTimingPathTo(FI->Pred.unwrap().get(), Sel, MUXDelay);
+        buildTimingPathTo(FI->Cnd.unwrap().get(), Sel, MUXDelay);
         buildTimingPathTo(FI->FI.unwrap().get(), Sel, MUXDelay);
       }
 
@@ -208,7 +208,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
       // Estimate the delay for each fanin.
       buildTimingPathTo(VASTValPtr(U).get(), Sel, MUXDelay);
       // And the predicate expression.
-      buildTimingPathTo(VASTValPtr(U.getPred()).get(), Sel, MUXDelay);
+      buildTimingPathTo(VASTValPtr(U.getGuard()).get(), Sel, MUXDelay);
       if (VASTValPtr SlotActive = U.getSlotActive())
         buildTimingPathTo(SlotActive.get(), Sel, MUXDelay);
     }

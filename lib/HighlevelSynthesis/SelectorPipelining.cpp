@@ -44,7 +44,7 @@ struct MUXFI {
     StateNum(L.getSlot()->getParentState()->SlotNum) {}
 
   VASTSlot *getSlot() const { return L.getSlot(); }
-  VASTValPtr getCnd() const { return L.getPred(); }
+  VASTValPtr getCnd() const { return L.getGuard(); }
   VASTValPtr getFI() const { return L; }
 };
 
@@ -206,7 +206,7 @@ void SelectorPipelining::descomposeSeqInst(VASTSeqInst *SeqInst) {
   for (unsigned i = 0, e = SeqInst->num_srcs(); i != e; ++i) {
     VASTLatch L = SeqInst->getSrc(i);
 
-    VASTSeqInst *NewSeqInst = VM->lauchInst(L.getSlot(), L.getPred(), 1,
+    VASTSeqInst *NewSeqInst = VM->lauchInst(L.getSlot(), L.getGuard(), 1,
                                             SeqInst->getValue(),
                                             VASTSeqInst::Latch);
     NewSeqInst->addSrc(VASTValPtr(L), 0, L.getSelector(), L.getDst());
@@ -291,7 +291,7 @@ SelectorPipelining::buildPipelineFIs(VASTSelector *Sel, MUXPipeliner &Pipeliner)
       Srcs.clear();
     }
 
-    VASTValPtr Pred = DstLatch.getPred();
+    VASTValPtr Pred = DstLatch.getGuard();
     // We should also retime the predicate together with the fanin.
     if (Pred->extractSupporingSeqVal(Srcs)) {
       CriticalDelay = std::max(CriticalDelay, getCriticalDelay(Srcs, Pred.get()));

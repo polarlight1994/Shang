@@ -88,7 +88,7 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
     VASTSlot *SubGrp = S->getSubGroup(BB);
 
     if (SubGrp) {
-      assert(SubGrp->getPred() == Cnd && "Inconsistent guarding conditions!");
+      assert(SubGrp->getGuard() == Cnd && "Inconsistent guarding conditions!");
       return SubGrp;
     }
 
@@ -220,13 +220,13 @@ VASTSlotCtrl *ScheduleEmitter::addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
 }
 
 VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
-                                             VASTValPtr Pred) {
+                                             VASTValPtr Cnd) {
   // Retime the predicate operand.
-  Pred = Builder.buildAndExpr(retimeDatapath(Op->getPred(), ToSlot), Pred, 1);
+  Cnd = Builder.buildAndExpr(retimeDatapath(Op->getGuard(), ToSlot), Cnd, 1);
 
   // Some times we may even try to fold the BB through a 'false path' ... such
   // folding can be safely skipped.
-  if (Pred == VASTImmediate::False) {
+  if (Cnd == VASTImmediate::False) {
     ++NumFalsePathSkip;
     return 0;
   }
@@ -236,24 +236,24 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
   // Handle the trivial case
   if (!Op->isBranch()) {
     VASTSlotCtrl *NewSlotCtrl
-      = VM.createSlotCtrl(Op->getNode(), ToSlot, Pred);
+      = VM.createSlotCtrl(Op->getNode(), ToSlot, Cnd);
     NewSlotCtrl->annotateValue(V);
     return NewSlotCtrl;
   }
 
   if (isa<ReturnInst>(V) || isa<UnreachableInst>(V))
-    return addSuccSlot(ToSlot, VM.getFinishSlot(), Pred, V);
+    return addSuccSlot(ToSlot, VM.getFinishSlot(), Cnd, V);
 
   BasicBlock *TargetBB = Op->getTargetSlot()->getParent();
-  VASTSlot *SubGrp = getOrCreateSubGroup(TargetBB, Pred, ToSlot);
+  VASTSlot *SubGrp = getOrCreateSubGroup(TargetBB, Cnd, ToSlot);
   // Emit the the SUs in the first slot in the target BB.
   // Connect to the landing slot if not all SU in the target BB emitted to
   // current slot.
-  if (emitToFirstSlot(Pred, SubGrp, G.getSUInBB(TargetBB))) {
+  if (emitToFirstSlot(Cnd, SubGrp, G.getSUInBB(TargetBB))) {
     // There is some SeqOp need to be emitted to TargetBB, build the control
     // flow.
     VASTSlot *LandingSlot = getOrCreateLandingSlot(TargetBB);
-    return addSuccSlot(SubGrp, LandingSlot, Pred, V);
+    return addSuccSlot(SubGrp, LandingSlot, Cnd, V);
   }
 
   // Else all scheduling unit of target block are emitted to current slot
@@ -264,15 +264,15 @@ VASTSlotCtrl *ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot,
 
 //===----------------------------------------------------------------------===//
 VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
-                                           VASTValPtr Pred) {
+                                           VASTValPtr Cnd) {
   SmallVector<VASTValPtr, 4> RetimedOperands;
 
   // Retime the predicate operand.
-  Pred = Builder.buildAndExpr(retimeDatapath(Op->getPred(), ToSlot), Pred, 1);
+  Cnd = Builder.buildAndExpr(retimeDatapath(Op->getGuard(), ToSlot), Cnd, 1);
 
   // Some times we may even try to fold the BB through a 'false path' ... such
   // folding can be safely skipped.
-  if (Pred == VASTImmediate::False) {
+  if (Cnd == VASTImmediate::False) {
     ++NumFalsePathSkip;
     return 0;
   }
@@ -285,9 +285,9 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
   // Find the subgroup for the PHI node. It is supposed to be existed because we
   // expected the branch operation is emitted prior to the PNI node.
   if (PHINode *PN = dyn_cast<PHINode>(Op->getValue()))
-    ToSlot = getOrCreateSubGroup(PN->getParent(), Pred, ToSlot);
+    ToSlot = getOrCreateSubGroup(PN->getParent(), Cnd, ToSlot);
 
-  VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Pred, Op->num_srcs(),
+  VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Cnd, Op->num_srcs(),
                                       Op->getValue(), Op->getSeqOpType());
   typedef VASTSeqOp::op_iterator iterator;
 
@@ -299,21 +299,21 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot,
   }
 
 #ifdef XDEBUG
-  // Verify if we have the CFGPred conflict.
-  std::set<std::pair<CFGPred*, VASTSlot*> > UniqueCFGPreds;
+  // Verify if we have the CFGCnd conflict.
+  std::set<std::pair<CFGCnd*, VASTSlot*> > UniqueCFGCnds;
   if (NewInst->getNumDefs()) {
     assert(NewInst->getNumDefs() == 1 && "Unexpected multi-define SeqOp!");
     VASTSeqValue *S = NewInst->getDef(0);
 
     for (VASTSeqValue::iterator I = S->begin(), E = S->end(); I != E; ++I) {
       VASTLatch U = *I;
-      std::map<VASTSeqInst*, CFGPred*>::iterator at
-        = PredMap.find(cast<VASTSeqInst>(U.Op));
-      if (at == PredMap.end()) continue;
-      CFGPred *Pred = at->second;
-      Pred->dump();
-      assert(UniqueCFGPreds.insert(std::make_pair(at->second, U.getSlot())).second
-             && "CFGPred conflict detected!");
+      std::map<VASTSeqInst*, CFGCnd*>::iterator at
+        = CndMap.find(cast<VASTSeqInst>(U.Op));
+      if (at == CndMap.end()) continue;
+      CFGCnd *Cnd = at->second;
+      Cnd->dump();
+      assert(UniqueCFGCnds.insert(std::make_pair(at->second, U.getSlot())).second
+             && "CFGCnd conflict detected!");
     }
   }
 #endif
@@ -451,20 +451,20 @@ void ScheduleEmitter::handleNewSeqOp(VASTSeqInst *SeqOp) {
 void ScheduleEmitter::handleNewSeqOp(VASTSlotCtrl *SeqOp) {}
 
 void
-ScheduleEmitter::emitToSlot(VASTSeqOp *Op, VASTValPtr Pred, VASTSlot *ToSlot) {
+ScheduleEmitter::emitToSlot(VASTSeqOp *Op, VASTValPtr Cnd, VASTSlot *ToSlot) {
   // Create the new SeqOp.
   switch (Op->getASTType()) {
   case VASTNode::vastSeqInst:
-    cloneSeqInst(cast<VASTSeqInst>(Op), ToSlot, Pred);
+    cloneSeqInst(cast<VASTSeqInst>(Op), ToSlot, Cnd);
     break;
   case VASTNode::vastSlotCtrl:
-    cloneSlotCtrl(cast<VASTSlotCtrl>(Op), ToSlot, Pred);
+    cloneSlotCtrl(cast<VASTSlotCtrl>(Op), ToSlot, Cnd);
     break;
   default: llvm_unreachable("Unexpected SeqOp type!");
   }
 }
 
-bool ScheduleEmitter::emitToFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
+bool ScheduleEmitter::emitToFirstSlot(VASTValPtr Cnd, VASTSlot *ToSlot,
                                       MutableArrayRef<VASTSchedUnit*> SUs) {
   assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
   unsigned EntrySlot = SUs[0]->getSchedule();
@@ -478,7 +478,7 @@ bool ScheduleEmitter::emitToFirstSlot(VASTValPtr Pred, VASTSlot *ToSlot,
     // Ignore the pseudo scheduling units.
     if (SU->isPHI()) continue;
 
-    emitToSlot(SU->getSeqOp(), Pred, ToSlot);
+    emitToSlot(SU->getSeqOp(), Cnd, ToSlot);
   }
 
   return false;
@@ -553,7 +553,7 @@ void ScheduleEmitter::emitSchedule() {
   for (op_iterator I = OldEntryGrp->op_begin(); I != OldEntryGrp->op_end(); ++I)
     if (VASTSeqInst *SeqOp = dyn_cast<VASTSeqInst>(*I))
       if (isa<Argument>(SeqOp->getValue()))
-        cloneSeqInst(SeqOp, EntryGrp, SeqOp->getPred());
+        cloneSeqInst(SeqOp, EntryGrp, SeqOp->getGuard());
 
 #ifndef NDEBUG
   // Mark the old slots.

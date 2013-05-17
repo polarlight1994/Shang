@@ -157,7 +157,7 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
     VASTSlotCtrl *Br = (*I);
     VASTSeqValue *NextSlotReg = Br->getTargetSlot()->getValue();
     bool IsLoop = NextSlotReg == S->getValue();
-    VASTValPtr Cnd = Br->getPred();
+    VASTValPtr Cnd = Br->getGuard();
 
     // Disable the current slot when we are not looping back.
     if (IsLoop) LoopCndVector.push_back(Builder->buildNotExpr(Cnd));
@@ -182,7 +182,7 @@ void ControlLogicSynthesis::collectControlLogicInfo(VASTSlot *S) {
   // changed by removeOp.
   for (op_iterator I = S->op_begin(); I != S->op_end(); ++I) {
     if (VASTSlotCtrl *SeqOp = dyn_cast<VASTSlotCtrl>(*I)) {
-      VASTValPtr Pred = SeqOp->getPred();
+      VASTValPtr Pred = SeqOp->getGuard();
 
       if (SeqOp->isBranch())
         addSlotSucc(S, SeqOp);
