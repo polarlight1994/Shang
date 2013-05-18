@@ -43,13 +43,6 @@ static unsigned ComputeOperandSizeInByteLog2Ceil(unsigned SizeInBits) {
   return std::max(Log2_32_Ceil(SizeInBits), 3u) - 3;
 }
 
-static void initLogicLevelsTable(luabind::object LuaLatTable, unsigned *LLTable,
-                                 unsigned Size) {
-  for (unsigned i = 0; i < Size; ++i)
-    // Lua array starts from 1
-    LLTable[i] = getProperty<unsigned>(LuaLatTable, i + 1, LLTable[i]);
-}
-
 static void initLatenciesTable(luabind::object LuaLatTable, float *LatTable,
                                unsigned Size) {
   for (unsigned i = 0; i < Size; ++i)
