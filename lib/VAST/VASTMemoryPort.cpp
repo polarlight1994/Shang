@@ -266,7 +266,6 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 
   OS << "reg " << VASTValue::printBitRange(getAddrWidth())
      << " mem" << Idx << "raddr1r;\n";
-  OS << "reg mem" << Idx << "ren1r;\n";
   OS << "reg "<< VASTValue::printBitRange(getDataWidth()) // [2:0]
      << " mem" << Idx << "rdata1r;\n";
 
@@ -307,8 +306,12 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
         " $finish(\"Write access out of bound!\");\n";
   OS.exit_block();
 
+  // No need to guard the read operation if it only takes only 2 cycles to read
+  // the memory. In this cause, the output dependencies will never be broken
+  // in pipeline mode even though there are bubbles in the pipeline.
   OS << "mem" << Idx << "rdata1r <= mem" << Idx << "ram[mem" << Idx << "raddr"
      << VASTValue::printBitRange(getAddrWidth(), 3) << "];\n";
+  OS << "mem" << Idx << "raddr1r <= mem" << Idx << "raddr;\n";
 
   OS.if_() << "mem" << Idx << "ren";
   OS._then();
@@ -316,11 +319,6 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
      << VASTValue::printBitRange(getAddrWidth(), 3) << ">= "<< NumWords <<")"
         " $finish(\"Read access out of bound!\");\n";
   OS.exit_block();
-  OS.always_ff_end(false);
-
-  OS.always_ff_begin(false);
-  OS << "mem" << Idx << "raddr1r <= mem" << Idx << "raddr;\n";
-  OS << "mem" << Idx << "ren1r <= mem" << Idx << "ren;\n";
   OS.always_ff_end(false);
 
   OS << "assign mem" << Idx << "rdata "
