@@ -99,7 +99,7 @@ void VASTSlot::removeOp(VASTSeqOp *Op) {
 
 VASTRegister *VASTSlot::getRegister() const {
   if (VASTSeqValue *V = getValue())
-    return cast<VASTRegister>(getValue()->getParent());
+    return cast<VASTRegister>(V->getParent());
 
   return 0;
 }
