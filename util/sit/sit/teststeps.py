@@ -186,7 +186,7 @@ dofile([[{{ [config_dir, fpga_device + ".lua"]|joinpath }}]])
 Misc.RTLGlobalScript = [=[
 RTLGlobalCode = FUs.CommonTemplate
 ]=]
-
+Misc.RTLTopModuleScript = [=[ ]=]
 {% else %}
 
 -- Load ip module and simulation interface script.
@@ -223,6 +223,20 @@ RTLGlobalCode, message = preprocess {input=RTLGlobalTemplate}
 if message ~= nil then print(message) end
 
 RTLGlobalCode = RTLGlobalCode .. FUs.CommonTemplate
+
+local IfFile = assert(io.open (IFFileName, "w"))
+local preprocess = require "luapp" . preprocess
+local _, message = preprocess {input=SCIFGScript, output=IfFile}
+if message ~= nil then print(message) end
+IfFile:close()
+]=]
+
+Misc.RTLTopModuleScript = [=[
+local IfFile = assert(io.open (IFFileName, "a+"))
+local preprocess = require "luapp" . preprocess
+local _, message = preprocess {input=SCIFFScript, output=IfFile}
+if message ~= nil then print(message) end
+IfFile:close()
 ]=]
 {% endif %}
 ''', self.synthesis_config_file)

@@ -54,9 +54,7 @@ class LuaScript {
 
   friend bool loadConfig(const std::string &Path,
                          std::map<std::string, std::string> &ConfigTable,
-                         StringMap<std::string> &TopHWFunctions,
-                         std::map<std::string, std::pair<std::string, std::string> >
-                         &Passes);
+                         StringMap<std::string> &TopHWFunctions);
 
   void init();
   // Read the Function units information from script engine

@@ -49,7 +49,7 @@ struct RTLCodeGen : public VASTModulePass {
 
   ~RTLCodeGen(){}
 
-  void generateCodeForTopModule(Module *M);
+  void generateCodeForTopModule(Module *M, VASTModule &VM);
   bool runOnVASTModule(VASTModule &VM);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -85,7 +85,7 @@ RTLCodeGen::RTLCodeGen(raw_ostream &O) : VASTModulePass(ID), Out(O) {
   initializeRTLCodeGenPass(*PassRegistry::getPassRegistry());
 }
 
-void RTLCodeGen::generateCodeForTopModule(Module *M) {
+void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
   DataLayout *TD = getAnalysisIfAvailable<DataLayout>();
   HLSAllocation &Allocation = getAnalysis<HLSAllocation>();
 
@@ -103,19 +103,26 @@ void RTLCodeGen::generateCodeForTopModule(Module *M) {
   }
 
   if (!runScriptOnGlobalVariables(GVs, TD, GlobalScript, Err))
-    report_fatal_error("VerilogASTWriter: Cannot run globalvariable script:\n"
+    report_fatal_error("RTLCodeGen: Cannot run globalvariable script:\n"
                        + Err.getMessage());
 
   // Read the result from the scripting engine.
   const char *GlobalCodePath[] = { "RTLGlobalCode" };
   std::string GlobalCode = getStrValueFromEngine(GlobalCodePath);
   Out << GlobalCode << '\n';
+
+  bindFunctionToScriptEngine(*TD, &VM);
+  const char *TopModuleScriptPath[] = { "Misc", "RTLTopModuleScript" };
+  std::string TopModuleScript = getStrValueFromEngine(TopModuleScriptPath);
+  if (!runScriptStr(TopModuleScript, Err))
+    report_fatal_error("RTLCodeGen: Cannot run top module script:\n"
+                       + Err.getMessage());
 }
 
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   Function &F = VM;
 
-  generateCodeForTopModule(F.getParent());
+  generateCodeForTopModule(F.getParent(), VM);
 
   if (EnalbeDumpIR) {
     Out << "`ifdef wtf_is_this\n" << "Function for RTL Codegen:\n";

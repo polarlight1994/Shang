@@ -50,9 +50,7 @@ using namespace llvm;
 namespace llvm {
 bool loadConfig(const std::string &Path,
                 std::map<std::string, std::string> &ConfigTable,
-                StringMap<std::string> &TopHWFunctions,
-                std::map<std::string, std::pair<std::string, std::string> >
-                &Passes);
+                StringMap<std::string> &TopHWFunctions);
 }
 
 // General options for sync.  Other pass-specific options are specified
@@ -158,10 +156,9 @@ int main(int argc, char **argv) {
 
   std::map<std::string, std::string> ConfigTable;
   StringMap<std::string> TopHWFunctions;
-  std::map<std::string, std::pair<std::string, std::string> > Scripts;
   std::string error;
 
-  if (loadConfig(InputFilename, ConfigTable, TopHWFunctions, Scripts))
+  if (loadConfig(InputFilename, ConfigTable, TopHWFunctions))
     return 1;
 
   // Load the module to be compiled...
@@ -321,14 +318,6 @@ int main(int argc, char **argv) {
     HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
     if (isMainSynthesis)
       HLSPasses.add(createTimingScriptGenPass(MCPDatabase.os()));
-
-    // Run some scripting passes.
-    typedef std::map<std::string, std::pair<std::string, std::string> >::iterator
-      iterator;
-    for (iterator I = Scripts.begin(), E = Scripts.end(); I != E; ++I)
-      HLSPasses.add(createScriptingPass(I->first.c_str(),
-      I->second.first.c_str(),
-      I->second.second.c_str()));
 
     // Run the passes.
     HLSPasses.run(mod);

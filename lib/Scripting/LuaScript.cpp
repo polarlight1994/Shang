@@ -76,8 +76,6 @@ void LuaScript::init() {
   luabind::globals(State)["FUs"] = luabind::newtable(State);
   luabind::globals(State)["Functions"] = luabind::newtable(State);
   luabind::globals(State)["Modules"] = luabind::newtable(State);
-  // The scripting pass table.
-  luabind::globals(State)["Passes"] = luabind::newtable(State);
   // Synthesis attribute
   luabind::globals(State)["SynAttr"] = luabind::newtable(State);
   // Table for Miscellaneous information
@@ -201,9 +199,7 @@ bool llvm::runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err) {
 namespace llvm {
 bool loadConfig(const std::string &Path,
                 std::map<std::string, std::string> &ConfigTable,
-                StringMap<std::string> &TopHWFunctions,
-                std::map<std::string, std::pair<std::string, std::string> >
-                &Passes) {
+                StringMap<std::string> &TopHWFunctions) {
   Script->init();
 
   SMDiagnostic Err;
@@ -225,14 +221,6 @@ bool loadConfig(const std::string &Path,
        I != iterator(); ++I)
     TopHWFunctions.GetOrCreateValue(luabind::object_cast<std::string>(I.key()),
                                     luabind::object_cast<std::string>(*I));
-
-  for (iterator I = iterator(luabind::globals(Script->State)["Passes"]);
-       I != iterator(); ++I) {
-    const luabind::object &o = *I;
-    Passes.insert(std::make_pair(luabind::object_cast<std::string>(I.key()),
-                  std::make_pair(luabind::object_cast<std::string>(o["FunctionScript"]),
-                                 luabind::object_cast<std::string>(o["GlobalScript"]))));
-  }
 
   return false;
 }

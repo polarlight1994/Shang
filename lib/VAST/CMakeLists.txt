@@ -19,7 +19,7 @@ add_llvm_library(ShangVAST
   VASTSlot.cpp
   VASTSubModules.cpp
   VASTMisc.cpp
-  ScriptingPass.cpp
+  ScriptingSupport.cpp
   ControlLogicSynthesis.cpp
   DatapathNamer.cpp
   RTLCodeGen.cpp

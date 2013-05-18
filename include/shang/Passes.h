@@ -72,9 +72,6 @@ Pass *createLowerPseudoPHIsPass();
 // RTL code generation.
 Pass *createRTLCodeGenPass(raw_ostream &O);
 
-Pass *createScriptingPass(const char *Name, const char *FScript,
-                          const char *GScript);
-
 void initializeShangTTIPass(PassRegistry &Registry);
 
 void initializeDatapathHoistingPass(PassRegistry &Registry);

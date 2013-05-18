@@ -230,17 +230,3 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
   }
 #end
 ]=]
-
-Passes.SCIFCodegen = { FunctionScript = [=[
-local IfFile = assert(io.open (IFFileName, "a+"))
-local preprocess = require "luapp" . preprocess
-local _, message = preprocess {input=SCIFFScript, output=IfFile}
-if message ~= nil then print(message) end
-IfFile:close()
-]=], GlobalScript =[=[
-local IfFile = assert(io.open (IFFileName, "w"))
-local preprocess = require "luapp" . preprocess
-local _, message = preprocess {input=SCIFGScript, output=IfFile}
-if message ~= nil then print(message) end
-IfFile:close()
-]=]}
