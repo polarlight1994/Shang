@@ -504,8 +504,8 @@ void
 ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O, VASTSelector *Sel) {
   // Get the delay from the selector wire of the selector.
   O << "set dst " << GetSTACollection(Sel) << '\n';
-  O << "set src [get_cells -nowarn \"*"
-    << Sel->getName() << "_selector|*" << "\"]\n";
+  O << "set src [get_cells -compatibility_mode -nowarn \"*"
+    << Sel->getName() << "_selector*" << "\"]\n";
   unsigned Idx = 0;
   SelectorDelay[Sel] = allocateDelayRef(Idx);
   extractTimingForPath(O, Idx);
