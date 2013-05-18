@@ -377,6 +377,22 @@ ExternalTimingAnalysis::buildPathInfoForCone(raw_ostream &O, VASTValue *Root) {
       VisitStack.pop_back();
 
       propagateSrcInfo(O, Node);
+
+#ifdef XDEBUG
+      // Verify if we include all registers which are reachable to this node.
+      std::set<VASTSeqValue*> SrcRegs;
+      Node->extractSupporingSeqVal(SrcRegs);
+      SrcRegs.erase(0);
+
+      SrcInfo &Srcs = DelayMatrix[Node];
+
+      typedef SrcInfo::iterator source_iterator;
+      for (source_iterator SI = Srcs.begin(), SE = Srcs.end(); SI != SE; ++SI)
+        SrcRegs.erase(dyn_cast_or_null<VASTSeqValue>(SI->first));
+
+      assert(SrcRegs.empty() && "Some source register missed!");
+#endif
+
       continue;
     }
 
