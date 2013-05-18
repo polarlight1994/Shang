@@ -11,27 +11,6 @@ IF (NOT LUA_LIBRARY)
   MESSAGE(FATAL_ERROR "Cannot find LUA libraries!")
 ENDIF (NOT LUA_LIBRARY)
 
-#Use luac->bin2c in windows to generate c code for luapp.
-IF (MSVC)
-  FIND_PROGRAM(LUA_LUAC luac)
-
-  IF (NOT LUA_LUAC)
-    MESSAGE(FATAL_ERROR "Cannot find luac!")
-  ENDIF (NOT LUA_LUAC)
-
-  FIND_PROGRAM(LUA_BIN2C bin2c)
-
-  IF (NOT LUA_BIN2C)
-    MESSAGE(FATAL_ERROR "Cannot find bin2c!")
-  ENDIF (NOT LUA_BIN2C)
-ELSE(MSVC)
-  FIND_PROGRAM(LUA_INTERPRETER lua)
-
-  IF (NOT LUA_INTERPRETER)
-    MESSAGE(FATAL_ERROR "Cannot find interpreter!")
-  ENDIF (NOT LUA_INTERPRETER)
-ENDIF(MSVC)
-
 IF (NOT Lua_FIND_QUIETLY)
   MESSAGE(STATUS "Found Lua: ${LUA_LIBRARY}")
 ENDIF (NOT Lua_FIND_QUIETLY)
