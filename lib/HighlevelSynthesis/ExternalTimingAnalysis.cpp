@@ -442,44 +442,31 @@ static std::string GetSTACollection(const VASTValue *V) {
 }
 
 static
-void extractTimingForPath(raw_ostream &O, const Twine &DstName,
-                          const Twine &SrcName, unsigned RefIdx,
-                          bool ExtractMinDelay = false) {
+void extractTimingForPath(raw_ostream &O, unsigned RefIdx) {
+  O << "set delay \"No-path\"\n";
   O << "if {[get_collection_size $src] && [get_collection_size $dst]} {\n";
-  //if (!ThuName.isTriviallyEmpty()) O << "if {[get_collection_size $thu]} {\n";
   // Use get_path instead of get_timing_path to get the longest delay paths
   // between arbitrary points in the netlist.
   // See "get_path -help" for more information.
-  O << "set paths [get_path -from $src -to $dst ";
-  //if (!ThuName.isTriviallyEmpty()) O << " -through $thu";
-  // Sometimes we may need to extract the minimal delay.
-  if (ExtractMinDelay) O << " -min_path -npath 1 ";
-  else                 O << " -nworst 1 ";
-  O << " -pairs_only]\n"
+  O << "  set paths [get_path -from $src -to $dst -nworst 1 -pairs_only]\n"
     // Only extract the delay from source to destination when these node are
     // not optimized.
-       "if {[get_collection_size $paths]} {\n"
-       "  foreach_in_collection path $paths {\n"
-       "    set delay [get_path_info $path -data_delay]\n"
-       "    post_message -type info \"" << SrcName;
-  //if (!ThuName.isTriviallyEmpty()) O << " -> " << ThuName;
-  O << " -> " << DstName << " delay: $delay\"\n"
-    "puts $JSONFile \"" << RefIdx << " $delay\"\n" <<
-    "  }\n"
-    "}\n"; // Path Size
-  //if (!ThuName.isTriviallyEmpty()) O << "}\n"; // Thu Size
-  O << "}\n"; // Src and Dst Size
+       "  if {[get_collection_size $paths]} {\n"
+       "    foreach_in_collection path $paths {\n"
+       "      set delay [get_path_info $path -data_delay]\n"
+       "      puts $JSONFile \"" << RefIdx << " $delay\"\n" <<
+       "    }\n"
+       "  }\n" // Path Size
+       "}\n"; // Src and Dst Size
 }
 
 template<typename T0, typename T1>
 static
-void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Src, unsigned RefIdx,
-                          bool ExtractMinDelay = false) {
+void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Src, unsigned RefIdx) {
   O << "set src " << GetSTACollection(Src) << '\n';
   O << "set dst " << GetSTACollection(Dst) << '\n';
   // if (Thu) O << "set thu " << GetSTACollection(Thu) << '\n';
-  extractTimingForPath(O, Dst->getSTAObjectName(), Src->getSTAObjectName(),
-                       RefIdx, ExtractMinDelay);
+  extractTimingForPath(O, RefIdx);
 }
 
 void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTValue *V) {
@@ -521,7 +508,7 @@ ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O, VASTSelector *Sel) 
     << Sel->getName() << "_selector|*" << "\"]\n";
   unsigned Idx = 0;
   SelectorDelay[Sel] = allocateDelayRef(Idx);
-  extractTimingForPath(O, Sel->getSTAObjectName(), "selector", Idx);
+  extractTimingForPath(O, Idx);
 }
 
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
