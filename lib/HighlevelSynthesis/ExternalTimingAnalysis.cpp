@@ -432,7 +432,7 @@ static std::string GetSTACollection(const VASTValue *V) {
   if (isa<VASTExpr>(V)) {
     std::string Name;
     raw_string_ostream OS(Name);
-    OS << "[get_cells  -compatibility_mode -nowarn \""
+    OS << "[get_cells -compatibility_mode -nowarn \""
        << V->getSTAObjectName() << "\"]";
     return OS.str();
   }
@@ -467,6 +467,8 @@ void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Src, unsigned RefIdx) {
   O << "set dst " << GetSTACollection(Dst) << '\n';
   // if (Thu) O << "set thu " << GetSTACollection(Thu) << '\n';
   extractTimingForPath(O, RefIdx);
+  DEBUG(O << "post_message -type info \"" << Src->getSTAObjectName()
+    << " -> " << Dst->getSTAObjectName() << " delay: $delay\"\n");
 }
 
 void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTValue *V) {
@@ -509,6 +511,8 @@ ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O, VASTSelector *Sel) 
   unsigned Idx = 0;
   SelectorDelay[Sel] = allocateDelayRef(Idx);
   extractTimingForPath(O, Idx);
+  DEBUG(O << "post_message -type info \" selector -> "
+    << Sel->getSTAObjectName() << " delay: $delay\"\n");
 }
 
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
