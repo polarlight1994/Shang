@@ -786,6 +786,9 @@ void VASTScheduling::fixSchedulingGraph() {
     // Always constraints the latch with the exit SUs.
     // if (U->isLaunch()) continue;
 
+    // Allocate 1 cycles for the scheduling units that launching some operations.
+    unsigned Latency = U->isLatch() ? 0 : 1;
+
     // Constrain the dangling nodes by all terminators.
     ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
     for (unsigned i = 0; i < Exits.size(); ++i) {
@@ -811,8 +814,6 @@ void VASTScheduling::fixSchedulingGraph() {
       // a PHI node, which is handled above.
       assert(BBExit->getIdx() >= U->getIdx() && "Unexpected index order!");
 
-      // Allocate 1 cycles for the scheduling units that launching some operations.
-      unsigned Latency = U->isLatch() ? 0 : 1;
       BBExit->addDep(U, VASTDep::CreateCtrlDep(Latency));
     }
   }
