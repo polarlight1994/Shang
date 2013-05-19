@@ -18,6 +18,7 @@
 #include "SchedulerBase.h"
 
 namespace llvm {
+class DominatorTree;
 
 class SDCScheduler : public SchedulerBase {
   struct SoftConstraint {
@@ -53,7 +54,9 @@ public:
 
   /// Add linear order edges to resolve resource conflict.
   //
-  void addLinOrdEdge();
+  void addLinOrdEdge(DominatorTree &DT,
+                     std::map<Value*, SmallVector<VASTSchedUnit*, 4> >
+                     &IR2SUMap);
 
 private:
   lprec *lp;

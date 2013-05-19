@@ -309,6 +309,7 @@ struct VASTScheduling : public VASTModulePass {
   AliasAnalysis *AA;
   LoopInfo *LI;
   BranchProbabilityInfo *BPI;
+  DominatorTree *DT;
 
   VASTScheduling() : VASTModulePass(ID) {
     initializeVASTSchedulingPass(*PassRegistry::getPassRegistry());
@@ -319,6 +320,7 @@ struct VASTScheduling : public VASTModulePass {
     AU.addRequiredID(BasicBlockTopOrderID);
     AU.addRequired<TimingNetlist>();
     AU.addRequired<AliasAnalysis>();
+    AU.addRequired<DominatorTree>();
     AU.addRequired<LoopInfo>();
     AU.addRequired<BranchProbabilityInfo>();
   }
@@ -916,7 +918,7 @@ void VASTScheduling::fixSchedulingGraph() {
 void VASTScheduling::scheduleGlobal() {
   SDCScheduler Scheduler(*G, 1);
 
-  Scheduler.addLinOrdEdge();
+  Scheduler.addLinOrdEdge(*DT, IR2SUMap);
 
   // Build the step variables, and no need to schedule at all if all SUs have
   // been scheduled.
@@ -1025,6 +1027,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   AA = &getAnalysis<AliasAnalysis>();
   LI = &getAnalysis<LoopInfo>();
   BPI = &getAnalysis<BranchProbabilityInfo>();
+  DT = &getAnalysis<DominatorTree>();
 
   buildSchedulingGraph();
 

@@ -7,6 +7,7 @@ add_llvm_library(ShangHLS
   ScheduleEmitter.cpp
   CrossBBChainFixer.cpp
   SchedulerBase.cpp
+  LinearOrderBuilder.cpp
   SDCScheduler.cpp
   SeqLiveVariables.cpp
   OverlappedSlots.cpp
