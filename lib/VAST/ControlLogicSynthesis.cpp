@@ -151,6 +151,11 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
   SmallVector<VASTValPtr, 2> LoopCndVector;
   VASTValPtr AlwaysTrue = VASTImmediate::True;
 
+  // Since LoopCndVector holds the operands for an AND expression, it does not
+  // hurt if we put an extra always true. This prevent us from passing an empty
+  // operand list to build the AND expression.
+  LoopCndVector.push_back(AlwaysTrue);
+
   assert(!S->succ_empty() && "Expect at least 1 next slot!");
   const SuccVecTy &NextSlots = getSlotSucc(S);
   for (const_succ_it I = NextSlots.begin(),E = NextSlots.end(); I != E; ++I) {
