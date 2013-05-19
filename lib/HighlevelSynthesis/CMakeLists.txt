@@ -6,7 +6,6 @@ add_llvm_library(ShangHLS
   VASTScheduling.cpp
   ScheduleEmitter.cpp
   CrossBBChainFixer.cpp
-  CFGFoldingAnalysis.cpp
   SchedulerBase.cpp
   SDCScheduler.cpp
   SeqLiveVariables.cpp
@@ -14,7 +13,6 @@ add_llvm_library(ShangHLS
   STGShortestPath.cpp
   SelectorPipelining.cpp
   SelectorSynthesis.cpp
-  LowerPseudoPHIs.cpp
   RegisterSharing.cpp
 )
 

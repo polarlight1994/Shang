@@ -892,7 +892,6 @@ void VASTScheduling::fixSchedulingGraph() {
 void VASTScheduling::scheduleGlobal() {
   SDCScheduler Scheduler(*G, 1);
 
-  Scheduler.addCFGFoldingConstraints(*TNL);
   Scheduler.addLinOrdEdge();
 
   // Build the step variables, and no need to schedule at all if all SUs have

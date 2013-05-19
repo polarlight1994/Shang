@@ -94,11 +94,6 @@ public:
   }
   //}
 
-  /// Add constraints to prevent the seqops from being duplicate too much by
-  /// the CFG folding.
-  ///
-  void addCFGFoldingConstraints(TimingNetlist &TNL);
-
   unsigned computeRecMII();
 
   void setMII(unsigned II) { MII = II; }
