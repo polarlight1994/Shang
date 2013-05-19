@@ -789,6 +789,22 @@ void VASTScheduling::fixSchedulingGraph() {
     // Allocate 1 cycles for the scheduling units that launching some operations.
     unsigned Latency = U->isLatch() ? 0 : 1;
 
+#ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
+    // At least constrain the scheduling unit with something.
+    if (U->use_empty())  {
+      BasicBlock *BB = U->getParent();
+
+      if (isa<ReturnInst>(BB->getTerminator())) {
+        // We need to wait everything in the returning block.
+        ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
+        assert(Exits.back()->isTerminator() && "Expect terminator!");
+        Exits.back()->addDep(U, VASTDep::CreateCtrlDep(Latency));
+        continue;
+      }
+
+      G->getExit()->addDep(U, VASTDep::CreateCtrlDep(Latency));
+    }
+#else
     // Constrain the dangling nodes by all terminators.
     ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
     for (unsigned i = 0; i < Exits.size(); ++i) {
@@ -816,6 +832,7 @@ void VASTScheduling::fixSchedulingGraph() {
 
       BBExit->addDep(U, VASTDep::CreateCtrlDep(Latency));
     }
+#endif
   }
 
   // Also add the dependencies form the return instruction to the exit of

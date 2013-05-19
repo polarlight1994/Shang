@@ -157,6 +157,8 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
   LoopCndVector.push_back(AlwaysTrue);
 
   assert(!S->succ_empty() && "Expect at least 1 next slot!");
+
+  // if (!S->succ_empty()) {
   const SuccVecTy &NextSlots = getSlotSucc(S);
   for (const_succ_it I = NextSlots.begin(),E = NextSlots.end(); I != E; ++I) {
     VASTSlotCtrl *Br = (*I);
@@ -174,6 +176,7 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
     // Build the assignment and update the successor branching condition.
     Br->addSrc(AlwaysTrue, 0, NextSlotReg);
   }
+  //}
 
   // Disable the current slot. Do not export the definition of the assignment.
   VM->assignCtrlLogic(S->getRegister()->getSelector(), VASTImmediate::False, S,
