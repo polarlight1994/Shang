@@ -60,26 +60,6 @@ struct alap_less {
 };
 }
 
-static bool hasLinearOrder(VASTSeqOp *Op) {
-  if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op)) {
-    if (SeqInst->num_srcs() == 0) return false;
-
-    // Ignore the Latch, they will not cause a resource conflict.
-    if (SeqInst->getSeqOpType() == VASTSeqInst::Latch) return false;
-
-    Instruction *I = dyn_cast<Instruction>(SeqInst->getValue());
-
-    // Linear order is required for the accesses to memory bus.
-    if (I->mayReadFromMemory()) return true;
-
-    // The launch operation to enable a module also requires linear order.
-    VASTSelector *Sel = SeqInst->getSrc(SeqInst->num_srcs() - 1).getSelector();
-    return Sel->isEnable();
-  }
-
-  return false;
-}
-
 void BasicLinearOrderGenerator::addLinOrdEdge() {
   ConflictListTy ConflictList;
 
@@ -91,9 +71,12 @@ void BasicLinearOrderGenerator::addLinOrdEdge() {
     // Iterate the scheduling units in the same BB to assign linear order.
     for (unsigned i = 0; i < SUs.size(); ++i) {
       VASTSchedUnit *SU = SUs[i];
-      VASTSeqOp *Op = SU->getSeqOp();
 
-      if (Op == 0 || !hasLinearOrder(Op)) continue;
+      if (!SU->requireLinearOrder()) continue;
+
+      VASTSeqOp *Op = SU->getSeqOp();
+      assert(Op && "Only the SU corresponds to a VASTSeqOp requires"
+                   " linear order!");
 
       VASTSelector *Sel = Op->getSrc(Op->num_srcs() - 1).getSelector();
 

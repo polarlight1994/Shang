@@ -122,6 +122,30 @@ VASTDep VASTSchedUnit::EdgeBundle::getEdge(unsigned II) const {
   return CurEdge;
 }
 
+bool VASTSchedUnit::requireLinearOrder() const {
+  VASTSeqOp *Op = getSeqOp();
+
+  if (Op == 0) return false;
+
+  if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op)) {
+    if (SeqInst->num_srcs() == 0) return false;
+
+    // Ignore the Latch, they will not cause a resource conflict.
+    if (SeqInst->getSeqOpType() == VASTSeqInst::Latch) return false;
+
+    Instruction *I = dyn_cast<Instruction>(SeqInst->getValue());
+
+    // Linear order is required for the accesses to memory bus.
+    if (I->mayReadFromMemory()) return true;
+
+    // The launch operation to enable a module also requires linear order.
+    VASTSelector *Sel = SeqInst->getSrc(SeqInst->num_srcs() - 1).getSelector();
+    return Sel->isEnable();
+  }
+
+  return false;
+}
+
 BasicBlock *VASTSchedUnit::getParent() const {
   assert(!isEntry() && !isExit() && "Call getParent on the wrong SUnit type!");
 

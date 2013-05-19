@@ -307,6 +307,9 @@ public:
            && "Edge not isnerted?");
   }
 
+  /// Return true if the node should be constrained by linear order.
+  bool requireLinearOrder() const;
+
   /// Debug Helper functions.
 
   /// print - Print out the internal representation of this atom to the
