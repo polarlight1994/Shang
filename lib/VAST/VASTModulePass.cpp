@@ -904,16 +904,14 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   Op->addSrc(VASTImmediate::True, CurSrcIdx,
              Data ? Bus->getWEnable() : Bus->getREnable());
 
-  // Disable the memory bus at the next slot.
-  Slot = advanceToNextSlot(Slot);
-
   // Read the result of the memory transaction.
   if (Data == 0) {
     unsigned Latency = getFUDesc<VFUMemBus>()->getReadLatency();
+    // TODO: Enable each pipeline stage individually.
     // Please note that we had already advance 1 slot after we lauch the
     // load/store to disable the load/store. Now we need only wait Latency - 1
     // slots to get the result.
-    Slot = advanceToNextSlot(Slot, Latency - 1);
+    Slot = advanceToNextSlot(Slot, Latency);
     // Get the input port from the memory bus.
     VASTSeqValue *Result = getOrCreateSeqVal(&I);
     assert(Result->getBitWidth() <= Bus->getDataWidth()
@@ -921,10 +919,11 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     VASTValPtr V
       = Builder.buildBitSliceExpr(Bus->getRData(), Result->getBitWidth(), 0);
     VM->latchValue(Result, V, Slot, VASTImmediate::True, &I, Latency);
-    // Move the the next slot so that the other operations are not conflict with
-    // the current memory operations.
-    advanceToNextSlot(Slot);
   }
+
+  // Move the the next slot so that the other operations are not conflict with
+  // the current memory operations.
+  advanceToNextSlot(Slot);
 }
 
 void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
