@@ -35,7 +35,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
-#define DEBUG_TYPE "shang-synchronize-cfg"
+#define DEBUG_TYPE "shang-linear-order-builder"
 #include "llvm/Support/Debug.h"
 
 #include <queue>
@@ -44,7 +44,6 @@ using namespace llvm;
 
 namespace {
 typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
-
 
 typedef SmallPtrSet<BasicBlock*, 32> BBSet;
 typedef DomTreeNode::iterator dt_child_iterator;
@@ -378,7 +377,6 @@ void SingleFULinearOrder::buildLinearOrder() {
   // blocks may be activated at the same time.
   for (BBSet::iterator I = DFBlocks.begin(), E = DFBlocks.end(); I != E; ++I)
     buildLinearOrderOnJEdge(*I);
-
 }
 
 void BasicLinearOrderGenerator::initializeDomTreeLevel() {
@@ -419,4 +417,5 @@ void BasicLinearOrderGenerator::buildLinearOrder() {
 void SDCScheduler::addLinOrdEdge(DominatorTree &DT, IR2SUMapTy &IR2SUMap) {
   buildTimeFrameAndResetSchedule(true);
   BasicLinearOrderGenerator(*this, DT, IR2SUMap).buildLinearOrder();
+  G.topologicalSortSUs();
 }
