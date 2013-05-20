@@ -100,7 +100,7 @@ struct SingleFULinearOrder {
   // Build the dependencies to a specified scheduling unit.
   void buildLinearOrdingFromDom(VASTSchedUnit *SU, BasicBlock *UseBB);
 
-  void buildLinearOrderInBB(BasicBlock *BB, MutableArrayRef<VASTSchedUnit*> SUs);
+  void buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs);
 
   SingleFULinearOrder(VASTSelector *Sel, SchedulerBase &G,
                       IR2SUMapTy &IR2SUMap, DominatorTree &DT,
@@ -335,8 +335,7 @@ void SingleFULinearOrder::buildLinearOrderOnDEdge(VASTSchedUnit *FirstSU,
 }
 
 void
-SingleFULinearOrder::buildLinearOrderInBB(BasicBlock *BB,
-                                          MutableArrayRef<VASTSchedUnit*> SUs) {
+SingleFULinearOrder::buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   // Sort the schedule units.
   std::sort(SUs.begin(), SUs.end(), alap_less(G));
 
@@ -360,7 +359,7 @@ void SingleFULinearOrder::buildLinearOrder() {
   // Build the linear order within each BB.
   typedef DefMapTy::iterator def_iterator;
   for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
-    buildLinearOrderInBB(I->first, I->second);
+    buildLinearOrderInBB(I->second);
 
 
 #ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
