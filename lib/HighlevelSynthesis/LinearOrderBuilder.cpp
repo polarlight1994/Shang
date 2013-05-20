@@ -362,6 +362,8 @@ void SingleFULinearOrder::buildLinearOrder() {
   for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
     buildLinearOrderInBB(I->first, I->second);
 
+
+#ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
   // Build the linear order within each BB.
   typedef DefMapTy::iterator def_iterator;
   for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
@@ -377,6 +379,7 @@ void SingleFULinearOrder::buildLinearOrder() {
   // blocks may be activated at the same time.
   for (BBSet::iterator I = DFBlocks.begin(), E = DFBlocks.end(); I != E; ++I)
     buildLinearOrderOnJEdge(*I);
+#endif
 }
 
 void BasicLinearOrderGenerator::initializeDomTreeLevel() {
