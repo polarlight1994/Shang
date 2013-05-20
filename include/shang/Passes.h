@@ -59,6 +59,7 @@ Pass *createDatapathHoistingPass();
 Pass *createLUTMappingPass();
 Pass *createTimingNetlistPass();
 Pass *createVASTSchedulingPass();
+Pass *createRegisterFoldingPass();
 
 // Analyse the Combination Path Delay.
 Pass *createTimingScriptGenPass(raw_ostream &O);
@@ -95,6 +96,7 @@ void initializeLowerIntrinsicPass(PassRegistry &Registry);
 void initializeLUTMappingPass(PassRegistry &Registry);
 void initializeTimingNetlistPass(PassRegistry &Registry);
 void initializeVASTSchedulingPass(PassRegistry &Registry);
+void initializeRegisterFoldingPass(PassRegistry &Registry);
 void initializeSTGShortestPathPass(PassRegistry &Registry);
 void initializeOverlappedSlotsPass(PassRegistry &Registry);
 

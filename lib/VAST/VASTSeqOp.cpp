@@ -61,7 +61,7 @@ VASTSeqValue *VASTLatch::getDst() const {
 }
 
 VASTSelector *VASTLatch::getSelector() const {
-  return &cast<VASTSelector>(Op->getUseInteranal(No).getUser());
+  return dyn_cast<VASTSelector>(&Op->getUseInteranal(No).getUser());
 }
 
 void VASTLatch::removeFromParent() {
