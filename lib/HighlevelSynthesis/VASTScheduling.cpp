@@ -136,7 +136,7 @@ bool VASTSchedUnit::requireLinearOrder() const {
     Instruction *I = dyn_cast<Instruction>(SeqInst->getValue());
 
     // Linear order is required for the accesses to memory bus.
-    if (I->mayReadFromMemory()) return true;
+    if (I->mayReadOrWriteMemory()) return true;
 
     // The launch operation to enable a module also requires linear order.
     VASTSelector *Sel = SeqInst->getSrc(SeqInst->num_srcs() - 1).getSelector();
