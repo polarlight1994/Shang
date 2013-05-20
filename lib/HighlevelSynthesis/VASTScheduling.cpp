@@ -890,9 +890,9 @@ void VASTScheduling::fixSchedulingGraph() {
     }
   }
 
-  // Prevent the scheduler from generating 1 slot loop, that is the loop can be
-  // entirely folded into its predecessors. If this happen, the schedule emitter
-  // will try to unroll the loop.
+  // Prevent the scheduler from generating 1 slot loop, in which case the loop
+  // can be entirely folded into its predecessors. If this happen, the schedule
+  // emitter will try to unroll the loop.
   SmallVector<Loop*, 64> Worklist(LI->begin(), LI->end());
   while (!Worklist.empty()) {
     Loop *L = Worklist.pop_back_val();
@@ -914,7 +914,7 @@ void VASTScheduling::fixSchedulingGraph() {
       }
     }
 
-    // Try to prevent the other part of the loop being folded across the
+    // Try to prevent the other part of the loop from being folded across the
     // loop header.
     ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[HeaderBB->getTerminator()]);
     for (unsigned i = 0; i < Terminators.size(); ++i) {
