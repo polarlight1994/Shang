@@ -1627,8 +1627,9 @@ int load_luapp_lo(lua_State* L) {
           0,  0,  0,  0,  0,  0,  0,
     };
 
-    int result = luaL_loadbuffer(L, (const char*)content,
-                                 23875, "/nfs/home/hongbin.zheng/buildbot/shang-slave/LongTerm/build/shang-build/tools/shang/lib/Scripting/luapp.lo");
+    int result
+	 = luaL_loadbuffer(L, (const char*)content, 23875,
+					   "http://lua-users.org/wiki/SlightlyLessSimpleLuaPreprocessor");
     if (!result) {
         result = lua_pcall(L, 0, 0, 0);
     }
