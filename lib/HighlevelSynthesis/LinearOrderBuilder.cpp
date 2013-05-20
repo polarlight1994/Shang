@@ -86,8 +86,11 @@ struct SingleFULinearOrder {
     DefMap[BB].push_back(SU);
   }
 
+  // The dominance frontiers of DefBlocks.
+  BBSet DFBlocks;
+
   // Determinate the insertion points for the PHIs.
-  void determineInsertionPoint(BBSet &DFBlocks);
+  void determineInsertionPoint();
   void compuateLiveInBlocks(BBSet &LiveInBlocks);
 
   // Build the linear order between Join Edges (the edges across the dominance
@@ -170,7 +173,7 @@ void BasicLinearOrderGenerator::buildFUInfo() {
   }
 }
 
-void SingleFULinearOrder::determineInsertionPoint(BBSet &DFBlocks) {
+void SingleFULinearOrder::determineInsertionPoint() {
   // Determine in which blocks the FU's flow is alive.
   SmallPtrSet<BasicBlock*, 32> LiveInBlocks;
   compuateLiveInBlocks(LiveInBlocks);
@@ -285,28 +288,39 @@ SingleFULinearOrder::buildLinearOrdingFromDom(VASTSchedUnit *SU,
                                               BasicBlock *UseBB) {
   // Traversal the dominator tree bottom up and find the fisrt block in which
   // the FU is visited.
-  DefMapTy::iterator at = DefMap.find(UseBB);
-  while (at == DefMap.end()) {
-    DomTreeNode *IDom = DT.getNode(UseBB)->getIDom();
-    // No operation that dominates UseBB accesses the FU.
-    if (IDom == 0) return;
+  DomTreeNode *Node = DT.getNode(UseBB);
+  while (Node) {
+    BasicBlock *BB = Node->getBlock();
+    DefMapTy::iterator at = DefMap.find(BB);
+    if (at != DefMap.end()) {
+      ArrayRef<VASTSchedUnit*> SUs(at->second);
+      unsigned IntialInterval = 1;
+      VASTDep Edge = VASTDep::CreateDep<VASTDep::LinearOrder>(IntialInterval);
+      SU->addDep(SUs.back(), Edge);
+      return;
+    }
 
-    UseBB = IDom->getBlock();
-    at = DefMap.find(UseBB);
+    if (DFBlocks.count(BB)) {
+      // At one hand, later we will add edges to make sure the FU accesses will
+      // finish before the control flow reach (the entry of) the dominance
+      // frontiers (i.e. DFBlocks). At the otehr hand, all operation is
+      // constrained by the entry of their parent basic block, which means
+      // (the entry of) the dominance frontiers implicitly predecease all
+      // the blocks (as well as the FU access operations inside) dominated by
+      // them. Hence, All FU accesses reachable to dominance frontiers
+      // implicitly predecease all blocks (as well as the FU access operations
+      // inside) dominated by the dominance frontiers, and we do not need to
+      // add any dependencies in this case.
+      return;
+    }
+
+    Node = Node->getIDom();
   }
-
-  ArrayRef<VASTSchedUnit*> SUs(at->second);
-  unsigned IntialInterval = 1;
-  VASTDep Edge = VASTDep::CreateDep<VASTDep::LinearOrder>(IntialInterval);
-  SU->addDep(SUs.back(), Edge);
 }
 
 void SingleFULinearOrder::buildLinearOrderOnJEdge(BasicBlock *DF) {
   for (pred_iterator I = pred_begin(DF), E = pred_end(DF); I != E; ++I) {
     BasicBlock *Incoming = *I;
-
-    // Ignore the dominate edges, only handle the join edges here.
-    if (DT.dominates(Incoming, DF)) continue;
 
     // Find the branching operation targeting the dominance frontier, wait until
     // all operations that dominate and reachable (not killed) to the incoming
@@ -363,16 +377,13 @@ void SingleFULinearOrder::buildLinearOrder() {
 
 
 #ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
+  // Build the linear order across the basic block boundaries.
+  determineInsertionPoint();
+
   // Build the linear order within each BB.
   typedef DefMapTy::iterator def_iterator;
   for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
     buildLinearOrderOnDEdge(I->second.front(), I->first);
-
-  // The dominance frontiers of DefBlocks.
-  BBSet DFBlocks;
-
-  // Build the linear order across the basic block boundaries.
-  determineInsertionPoint(DFBlocks);
 
   // Build the dependencies to ensure the linear orders even states in different
   // blocks may be activated at the same time.
