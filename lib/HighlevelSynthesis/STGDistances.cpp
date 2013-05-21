@@ -168,7 +168,7 @@ const unsigned STGDistances::Inf = UINT16_MAX;
 INITIALIZE_PASS(STGDistances, "vast-stg-distances",
                 "Compute the distances in the STG", false, true)
 
-STGDistances::STGDistances() : VASTModulePass(ID), STPImpl(0), VM(0) {
+STGDistances::STGDistances() : VASTModulePass(ID), SPImpl(0), VM(0) {
   initializeSTGDistancesPass(*PassRegistry::getPassRegistry());
 }
 
@@ -178,9 +178,9 @@ void STGDistances::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 void STGDistances::releaseMemory() {
-  if (STPImpl) {
-    delete STPImpl;
-    STPImpl = 0;
+  if (SPImpl) {
+    delete SPImpl;
+    SPImpl = 0;
   }
 
   VM = 0;
@@ -190,20 +190,20 @@ bool STGDistances::runOnVASTModule(VASTModule &VM) {
   releaseMemory();
 
   this->VM = &VM;
-  STPImpl = new ShortestPathImpl();
+  SPImpl = new ShortestPathImpl();
 
   return false;
 }
 
 void STGDistances::print(raw_ostream &OS) const {
-  assert(STPImpl && "Print after releaseMemory?");
-  STPImpl->print(OS, *VM);
+  assert(SPImpl && "Print after releaseMemory?");
+  SPImpl->print(OS, *VM);
 }
 
 unsigned STGDistances::getShortestPath(unsigned From, unsigned To) const {
-  assert(STPImpl && "Get shortest path after releaseMemory?");
+  assert(SPImpl && "Get shortest path after releaseMemory?");
   // Calculate the distances on the fly.
-  if (STPImpl->empty()) STPImpl->run(*VM);
+  if (SPImpl->empty()) SPImpl->run(*VM);
 
-  return STPImpl->getDistance(From, To);
+  return SPImpl->getDistance(From, To);
 }

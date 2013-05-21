@@ -26,7 +26,7 @@ class VASTModule;
 struct ShortestPathImpl;
 
 class STGDistances : public VASTModulePass {
-  ShortestPathImpl *STPImpl;
+  ShortestPathImpl *SPImpl;
   VASTModule *VM;
 public:
   static const unsigned Inf;
