@@ -375,21 +375,24 @@ void SingleFULinearOrder::buildLinearOrder() {
   for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
     buildLinearOrderInBB(I->second);
 
-
-#ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
   // Build the linear order across the basic block boundaries.
   determineInsertionPoint();
 
   // Build the linear order within each BB.
   typedef DefMapTy::iterator def_iterator;
-  for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
-    buildLinearOrderOnDEdge(I->second.front(), I->first);
+  for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I) {
+    BasicBlock *BB = I->first;
+
+    // Do not build the edges across the DFBlocks.
+    if (DFBlocks.count(BB)) continue;
+
+    buildLinearOrderOnDEdge(I->second.front(), BB);
+  }
 
   // Build the dependencies to ensure the linear orders even states in different
   // blocks may be activated at the same time.
   for (BBSet::iterator I = DFBlocks.begin(), E = DFBlocks.end(); I != E; ++I)
     buildLinearOrderOnJEdge(*I);
-#endif
 }
 
 void BasicLinearOrderGenerator::initializeDomTreeLevel() {
