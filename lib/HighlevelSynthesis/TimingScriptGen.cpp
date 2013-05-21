@@ -61,7 +61,6 @@ struct TimingScriptGen;
 struct PathIntervalQueryCache {
   TimingNetlist &TNL;
   SeqLiveVariables &SLV;
-  STGShortestPath &SSP;
   VASTSelector *Dst;
   raw_ostream &OS;
   const uint32_t Inf;
@@ -92,9 +91,8 @@ struct PathIntervalQueryCache {
   QueryCacheTy QueryCache;
 
   PathIntervalQueryCache(TimingNetlist &TNL, SeqLiveVariables &SLV,
-                         STGShortestPath &SSP, VASTSelector *Dst,
-                         raw_ostream &OS)
-    : TNL(TNL), SLV(SLV), SSP(SSP), Dst(Dst), OS(OS), Inf(STGShortestPath::Inf)
+                         VASTSelector *Dst, raw_ostream &OS)
+    : TNL(TNL), SLV(SLV), Dst(Dst), OS(OS), Inf(STGShortestPath::Inf)
   {}
 
   void reset() {
@@ -172,7 +170,7 @@ struct TimingScriptGen : public VASTModulePass {
   }
 
   void writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
-                           SeqLiveVariables &SLV, STGShortestPath &SSP);
+                           SeqLiveVariables &SLV);
 
   void extractTimingPaths(PathIntervalQueryCache &Cache,
                           ArrayRef<VASTSlot*> ReadSlots,
@@ -208,7 +206,7 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
                                                     VASTSlot *ReadSlot) {
   // Try to get the live variable at (Src, ReadSlot), calculate its distance
   // from its defining slots to the read slot.
-  return SLV.getIntervalFromDef(Src, ReadSlot, &SSP);
+  return SLV.getIntervalFromDef(Src, ReadSlot);
 }
 
 unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
@@ -409,7 +407,6 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
   bindFunctionToScriptEngine(getAnalysis<DataLayout>(), &VM);
 
   SeqLiveVariables &SLV = getAnalysis<SeqLiveVariables>();
-  STGShortestPath &SSP = getAnalysis<STGShortestPath>();
   TimingNetlist &TNL =getAnalysis<TimingNetlist>();
 
   //Write the timing constraints.
@@ -419,7 +416,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
     if (Sel->empty()) continue;
 
-    writeConstraintsFor(Sel, TNL, SLV, SSP);
+    writeConstraintsFor(Sel, TNL, SLV);
   }
 
   return false;
@@ -427,8 +424,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
 void
 TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
-                                     SeqLiveVariables &SLV,
-                                     STGShortestPath &SSP) {
+                                     SeqLiveVariables &SLV) {
   DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> > DatapathMap;
 
   typedef VASTSelector::const_iterator vn_itertor;
@@ -443,7 +439,7 @@ TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
     DatapathMap[VASTValPtr(DstLatch).get()].push_back(ReadSlot);
   }
 
-  PathIntervalQueryCache Cache(TNL, SLV, SSP, Dst, OS);
+  PathIntervalQueryCache Cache(TNL, SLV, Dst, OS);
   typedef DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> >::iterator it;
   for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
     extractTimingPaths(Cache, I->second, I->first);

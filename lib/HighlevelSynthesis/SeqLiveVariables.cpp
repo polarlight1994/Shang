@@ -82,6 +82,7 @@ char &llvm::SeqLiveVariablesID = SeqLiveVariables::ID;
 INITIALIZE_PASS_BEGIN(SeqLiveVariables, "shang-seq-live-variables",
                       "Seq Live Variables Analysis", false, true)
   INITIALIZE_PASS_DEPENDENCY(OverlappedSlots)
+  INITIALIZE_PASS_DEPENDENCY(STGShortestPath)
 INITIALIZE_PASS_END(SeqLiveVariables, "shang-seq-live-variables",
                     "Seq Live Variables Analysis", false, true)
 
@@ -96,6 +97,7 @@ SeqLiveVariables::SeqLiveVariables() : VASTModulePass(ID) {
 void SeqLiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequired<OverlappedSlots>();
+  AU.addRequiredTransitive<STGShortestPath>();
   AU.setPreservesAll();
 }
 
@@ -200,6 +202,7 @@ void SeqLiveVariables::verifyAnalysis() const {
 }
 
 bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
+  Distances = &getAnalysis<STGShortestPath>();
   VM = &M;
 
   // Compute the PHI joins.
@@ -537,8 +540,7 @@ bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot *S) {
 }
 
 unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
-                                              VASTSlot *ReadSlot,
-                                              STGShortestPath *SSP) const {
+                                              VASTSlot *ReadSlot) const {
   const VarInfo *VI = getVarInfo(V);
   unsigned ReadSlotNum = ReadSlot->SlotNum;
 
@@ -555,7 +557,8 @@ unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
       break;
     }
 
-    unsigned CurInterval = SSP->getShortestPath(LandingSlotNum, ReadSlotNum);
+    unsigned CurInterval
+      = Distances->getShortestPath(LandingSlotNum, ReadSlotNum);
     if (CurInterval >= STGShortestPath::Inf) {
       dbgs() << "Read at slot: " << ReadSlotNum << '\n';
       dbgs() << "Landing slot: " << LandingSlotNum << '\n';

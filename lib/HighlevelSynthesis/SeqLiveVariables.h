@@ -39,7 +39,7 @@ class Value;
 
 class SeqLiveVariables : public VASTModulePass {
   VASTModule *VM;
-
+  STGShortestPath *Distances;
 public:
   static char ID;
 
@@ -108,8 +108,7 @@ public:
   void releaseMemory();
   void verifyAnalysis() const;
 
-  unsigned getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot,
-                              STGShortestPath *SSP) const;
+  unsigned getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) const;
 
   void print(raw_ostream &OS) const;
 private:
