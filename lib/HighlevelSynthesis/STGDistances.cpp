@@ -36,6 +36,7 @@ struct ShortestPathImpl {
   typedef std::pair<unsigned, unsigned> Idx;
   DenseMap<unsigned, DenseMap<unsigned, unsigned> > STPMatrix;
 
+  bool empty() const { return STPMatrix.empty(); }
   unsigned getShortestPath(unsigned From, unsigned To) const;
   bool updateDistance(unsigned DistanceSrcThuDst,
                       unsigned DstSlot, unsigned SrcSlot);
@@ -171,8 +172,6 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
   this->VM = &VM;
   STPImpl = new ShortestPathImpl();
 
-  STPImpl->run(VM);
-
   return false;
 }
 
@@ -183,5 +182,8 @@ void STGShortestPath::print(raw_ostream &OS) const {
 
 unsigned STGShortestPath::getShortestPath(unsigned From, unsigned To) const {
   assert(STPImpl && "Get shortest path after releaseMemory?");
+  // Calculate the distances on the fly.
+  if (STPImpl->empty()) STPImpl->run(*VM);
+
   return STPImpl->getShortestPath(From, To);
 }
