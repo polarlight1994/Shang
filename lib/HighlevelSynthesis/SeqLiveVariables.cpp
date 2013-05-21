@@ -82,7 +82,7 @@ char &llvm::SeqLiveVariablesID = SeqLiveVariables::ID;
 INITIALIZE_PASS_BEGIN(SeqLiveVariables, "shang-seq-live-variables",
                       "Seq Live Variables Analysis", false, true)
   INITIALIZE_PASS_DEPENDENCY(OverlappedSlots)
-  INITIALIZE_PASS_DEPENDENCY(STGShortestPath)
+  INITIALIZE_PASS_DEPENDENCY(STGDistances)
 INITIALIZE_PASS_END(SeqLiveVariables, "shang-seq-live-variables",
                     "Seq Live Variables Analysis", false, true)
 
@@ -97,7 +97,7 @@ SeqLiveVariables::SeqLiveVariables() : VASTModulePass(ID) {
 void SeqLiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequired<OverlappedSlots>();
-  AU.addRequiredTransitive<STGShortestPath>();
+  AU.addRequiredTransitive<STGDistances>();
   AU.setPreservesAll();
 }
 
@@ -202,7 +202,7 @@ void SeqLiveVariables::verifyAnalysis() const {
 }
 
 bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
-  Distances = &getAnalysis<STGShortestPath>();
+  Distances = &getAnalysis<STGDistances>();
   VM = &M;
 
   // Compute the PHI joins.
@@ -545,7 +545,7 @@ unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
   unsigned ReadSlotNum = ReadSlot->SlotNum;
 
   // Calculate the Shortest path distance from all live-in slot.
-  unsigned IntervalFromLanding = STGShortestPath::Inf;
+  unsigned IntervalFromLanding = STGDistances::Inf;
   typedef SparseBitVector<>::iterator def_iterator;
   for (def_iterator I = VI->Landings.begin(), E = VI->Landings.end();
        I != E; ++I) {
@@ -559,7 +559,7 @@ unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
 
     unsigned CurInterval
       = Distances->getShortestPath(LandingSlotNum, ReadSlotNum);
-    if (CurInterval >= STGShortestPath::Inf) {
+    if (CurInterval >= STGDistances::Inf) {
       dbgs() << "Read at slot: " << ReadSlotNum << '\n';
       dbgs() << "Landing slot: " << LandingSlotNum << '\n';
       VI->dump();
@@ -570,7 +570,7 @@ unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
     IntervalFromLanding = std::min(IntervalFromLanding, CurInterval);
   }
 
-  assert(IntervalFromLanding < STGShortestPath::Inf && "No live-in?");
+  assert(IntervalFromLanding < STGDistances::Inf && "No live-in?");
 
   // The is 1 extra cycle from the definition to live in.
   return IntervalFromLanding + 1;

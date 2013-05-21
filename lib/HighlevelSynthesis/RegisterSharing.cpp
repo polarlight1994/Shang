@@ -447,7 +447,7 @@ struct RegisterSharing : public VASTModulePass {
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
 
-    AU.addPreservedID(STGShortestPathID);
+    AU.addPreservedID(STGDistancesID);
     AU.addPreservedID(OverlappedSlotsID);
 
     AU.addRequired<SeqLiveVariables>();

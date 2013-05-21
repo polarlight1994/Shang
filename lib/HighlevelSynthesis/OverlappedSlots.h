@@ -26,10 +26,10 @@
 namespace llvm {
 class VASTSlot;
 class VASTModule;
-class STGShortestPath;
+class STGDistances;
 
 class OverlappedSlots : public VASTModulePass {
-  STGShortestPath *STP;
+  STGDistances *STP;
   DenseMap<unsigned, SparseBitVector<> > Overlappeds;
 
   void buildOverlappedMap(VASTSlot *S);

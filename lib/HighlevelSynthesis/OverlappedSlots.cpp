@@ -38,7 +38,7 @@ char &llvm::OverlappedSlotsID = OverlappedSlots::ID;
 INITIALIZE_PASS_BEGIN(OverlappedSlots, "vast-overlapped-slot",
                       "Identify the timeframe overlapped slots",
                       false, true)
-  INITIALIZE_PASS_DEPENDENCY(STGShortestPath)
+  INITIALIZE_PASS_DEPENDENCY(STGDistances)
 INITIALIZE_PASS_END(OverlappedSlots, "vast-overlapped-slot",
                     "Identify the timeframe overlapped slots",
                     false, true)
@@ -49,7 +49,7 @@ OverlappedSlots::OverlappedSlots() : VASTModulePass(ID), STP(0) {
 
 void OverlappedSlots::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
-  AU.addRequired<STGShortestPath>();
+  AU.addRequired<STGDistances>();
   AU.setPreservesAll();
 }
 
@@ -141,7 +141,7 @@ static bool HasSideBranch(VASTSlot *S) {
 }
 
 bool OverlappedSlots::runOnVASTModule(VASTModule &VM) {
-  STP = &getAnalysis<STGShortestPath>();
+  STP = &getAnalysis<STGDistances>();
 
   // 1. Collect find all side-branching slot like this:
   //  S1

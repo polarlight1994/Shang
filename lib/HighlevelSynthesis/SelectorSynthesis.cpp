@@ -37,7 +37,7 @@ namespace {
 struct SelectorSynthesis : public VASTModulePass {
   TimingNetlist *TNL;
   SeqLiveVariables *SLV;
-  STGShortestPath *SSP;
+  STGDistances *SSP;
   unsigned MaxSingleCyleFINum;
   VASTExprBuilder *Builder;
   VASTModule *VM;
@@ -61,7 +61,7 @@ struct SelectorSynthesis : public VASTModulePass {
     AU.addPreserved<SeqLiveVariables>();
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
-    AU.addPreserved<STGShortestPath>();
+    AU.addPreserved<STGDistances>();
   }
 
   bool runOnVASTModule(VASTModule &VM);

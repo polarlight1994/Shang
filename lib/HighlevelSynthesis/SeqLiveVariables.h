@@ -32,14 +32,14 @@ class VASTSeqOp;
 class VASTSeqValue;
 class VASTSlot;
 class VASTModule;
-class STGShortestPath;
+class STGDistances;
 template<class PtrType, unsigned SmallSize> class SmallPtrSet;
 class BasicBlock;
 class Value;
 
 class SeqLiveVariables : public VASTModulePass {
   VASTModule *VM;
-  STGShortestPath *Distances;
+  STGDistances *Distances;
 public:
   static char ID;
 

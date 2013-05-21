@@ -128,9 +128,9 @@ struct SelectorPipelining : public VASTModulePass {
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
     AU.addRequired<TimingNetlist>();
-    AU.addRequired<STGShortestPath>();
+    AU.addRequired<STGDistances>();
     AU.addRequired<SeqLiveVariables>();
-    AU.addPreserved<STGShortestPath>();
+    AU.addPreserved<STGDistances>();
   }
 
   bool runOnVASTModule(VASTModule &VM);
@@ -144,7 +144,7 @@ struct SelectorPipelining : public VASTModulePass {
 INITIALIZE_PASS_BEGIN(SelectorPipelining, "sequential-selector-pipelining",
                       "Implement the MUX for the Sequantal Logic", false, true)
   INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
-  INITIALIZE_PASS_DEPENDENCY(STGShortestPath)
+  INITIALIZE_PASS_DEPENDENCY(STGDistances)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
@@ -277,7 +277,7 @@ SelectorPipelining::buildPipelineFIs(VASTSelector *Sel, MUXPipeliner &Pipeliner)
     if (RetimeSlack == 0) continue;
 
     unsigned CriticalDelay = 0;
-    unsigned AvailableInterval = STGShortestPath::Inf;
+    unsigned AvailableInterval = STGDistances::Inf;
 
     // Also do not retime across the SVal without liveness information.
     VASTValPtr FI = DstLatch;
@@ -319,7 +319,7 @@ unsigned SelectorPipelining::getCriticalDelay(const SVSet &S, VASTValue *V) {
 
     // Do not retime if there is a placeholder for the node without timing
     // information.
-    if (Src == 0) return STGShortestPath::Inf;
+    if (Src == 0) return STGDistances::Inf;
 
     // The ignore the trivial path.
     if (Src == V) continue;    
@@ -332,7 +332,7 @@ unsigned SelectorPipelining::getCriticalDelay(const SVSet &S, VASTValue *V) {
 
 unsigned
 SelectorPipelining::getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot) {
-  unsigned Interval = STGShortestPath::Inf;
+  unsigned Interval = STGDistances::Inf;
   typedef SVSet::const_iterator iterator;
   for (iterator I = S.begin(), E = S.end(); I != E; ++I) {
     VASTSeqValue *SV = *I;

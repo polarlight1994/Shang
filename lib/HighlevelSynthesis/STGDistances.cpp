@@ -1,4 +1,4 @@
-//==- STGShortestPath.cpp - Shortest Path Distance between States -*-C++ -*-==//
+//===--- STGDistances.cpp - Calculate the distances in the STG ---*-C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -46,11 +46,11 @@ struct STGDistanceBase {
     DenseMap<unsigned, DenseMap<unsigned, unsigned> >::const_iterator
       to_at = DistanceMatrix.find(To);
 
-    if (to_at == DistanceMatrix.end()) return STGShortestPath::Inf;
+    if (to_at == DistanceMatrix.end()) return STGDistances::Inf;
 
     DenseMap<unsigned, unsigned>::const_iterator from_at = to_at->second.find(From);
 
-    if (from_at == to_at->second.end()) return STGShortestPath::Inf;
+    if (from_at == to_at->second.end()) return STGDistances::Inf;
 
     return from_at->second;
   }
@@ -92,7 +92,7 @@ void STGDistanceBase::print(raw_ostream &OS, VASTModule &VM) const {
     for (slot_iterator J = VM.slot_begin(), JE = VM.slot_end(); J != JE; ++J) {
       OS << '[' << I->SlotNum << ',' << J->SlotNum << "] = ";
       unsigned Distance = getDistance(I->SlotNum, J->SlotNum);
-      if (Distance == STGShortestPath::Inf) OS << "Inf";
+      if (Distance == STGDistances::Inf) OS << "Inf";
       else                                  OS << Distance;
       OS << ",\t";
     }
@@ -160,24 +160,24 @@ bool ShortestPathImpl::updateDistance(unsigned DistanceSrcThuDst,
 }
 
 //===----------------------------------------------------------------------===//
-char STGShortestPath::ID = 0;
-char &llvm::STGShortestPathID = STGShortestPath::ID;
-const unsigned STGShortestPath::Inf = UINT16_MAX;
+//===----------------------------------------------------------------------===//
+char STGDistances::ID = 0;
+char &llvm::STGDistancesID = STGDistances::ID;
+const unsigned STGDistances::Inf = UINT16_MAX;
 
-INITIALIZE_PASS(STGShortestPath, "vast-stg-shortest-path",
-                "Compute the Landing Slots for the BasicBlocks",
-                false, true)
+INITIALIZE_PASS(STGDistances, "vast-stg-distances",
+                "Compute the distances in the STG", false, true)
 
-STGShortestPath::STGShortestPath() : VASTModulePass(ID), STPImpl(0), VM(0) {
-  initializeSTGShortestPathPass(*PassRegistry::getPassRegistry());
+STGDistances::STGDistances() : VASTModulePass(ID), STPImpl(0), VM(0) {
+  initializeSTGDistancesPass(*PassRegistry::getPassRegistry());
 }
 
-void STGShortestPath::getAnalysisUsage(AnalysisUsage &AU) const {
+void STGDistances::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   AU.setPreservesAll();
 }
 
-void STGShortestPath::releaseMemory() {
+void STGDistances::releaseMemory() {
   if (STPImpl) {
     delete STPImpl;
     STPImpl = 0;
@@ -186,7 +186,7 @@ void STGShortestPath::releaseMemory() {
   VM = 0;
 }
 
-bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
+bool STGDistances::runOnVASTModule(VASTModule &VM) {
   releaseMemory();
 
   this->VM = &VM;
@@ -195,12 +195,12 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
   return false;
 }
 
-void STGShortestPath::print(raw_ostream &OS) const {
+void STGDistances::print(raw_ostream &OS) const {
   assert(STPImpl && "Print after releaseMemory?");
   STPImpl->print(OS, *VM);
 }
 
-unsigned STGShortestPath::getShortestPath(unsigned From, unsigned To) const {
+unsigned STGDistances::getShortestPath(unsigned From, unsigned To) const {
   assert(STPImpl && "Get shortest path after releaseMemory?");
   // Calculate the distances on the fly.
   if (STPImpl->empty()) STPImpl->run(*VM);

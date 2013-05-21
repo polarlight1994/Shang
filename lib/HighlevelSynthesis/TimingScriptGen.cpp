@@ -68,7 +68,7 @@ struct PathIntervalQueryCache {
   struct SrcInfo {
     unsigned NumCycles;
     float CriticalDelay;
-    explicit SrcInfo(unsigned NumCycles = STGShortestPath::Inf,
+    explicit SrcInfo(unsigned NumCycles = STGDistances::Inf,
                      float CriticalDelay = 0.0f)
       : NumCycles(NumCycles), CriticalDelay(CriticalDelay) {}
 
@@ -92,7 +92,7 @@ struct PathIntervalQueryCache {
 
   PathIntervalQueryCache(TimingNetlist &TNL, SeqLiveVariables &SLV,
                          VASTSelector *Dst, raw_ostream &OS)
-    : TNL(TNL), SLV(SLV), Dst(Dst), OS(OS), Inf(STGShortestPath::Inf)
+    : TNL(TNL), SLV(SLV), Dst(Dst), OS(OS), Inf(STGDistances::Inf)
   {}
 
   void reset() {
@@ -163,7 +163,7 @@ struct TimingScriptGen : public VASTModulePass {
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequired<SeqLiveVariables>();
-    AU.addRequired<STGShortestPath>();
+    AU.addRequired<STGDistances>();
     AU.addRequired<TimingNetlist>();
     AU.addRequired<DataLayout>();
     AU.setPreservesAll();
@@ -481,7 +481,7 @@ INITIALIZE_PASS_BEGIN(TimingScriptGen, "vast-timing-script-generation",
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
-  INITIALIZE_PASS_DEPENDENCY(STGShortestPath)
+  INITIALIZE_PASS_DEPENDENCY(STGDistances)
 INITIALIZE_PASS_END(TimingScriptGen, "vast-timing-script-generation",
                     "Generate timing script to export the behavior-level timing",
                     false, true)

@@ -1,4 +1,4 @@
-//===- STGShortestPath.h - Shortest Path Distance between States -*-C++ -*-===//
+//===- STGDistances.h - Calculate the distances in the STG -*-C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines the STGShortestPath pass. The STGShortestPath compute the
+// This file defines the STGDistances pass. The STGDistances compute the
 // shortest path distance bewteen the states (VASTSlots) in the State-transition
 // graph.
 //
@@ -25,7 +25,7 @@ class VASTSlot;
 class VASTModule;
 struct ShortestPathImpl;
 
-class STGShortestPath : public VASTModulePass {
+class STGDistances : public VASTModulePass {
   ShortestPathImpl *STPImpl;
   VASTModule *VM;
 public:
@@ -33,8 +33,8 @@ public:
 
   static char ID;
 
-  STGShortestPath();
-  ~STGShortestPath() { releaseMemory(); }
+  STGDistances();
+  ~STGDistances() { releaseMemory(); }
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnVASTModule(VASTModule &VM);
