@@ -29,32 +29,47 @@
 
 using namespace llvm;
 
-STATISTIC(NumIterations, "Number of iterations in the STP algorithm");
+STATISTIC(NumSTPIterations, "Number of iterations in the STP algorithm");
 
-char STGShortestPath::ID = 0;
-char &llvm::STGShortestPathID = STGShortestPath::ID;
-const unsigned STGShortestPath::Inf = UINT16_MAX;
+namespace llvm {
+struct ShortestPathImpl {
+  typedef std::pair<unsigned, unsigned> Idx;
+  DenseMap<unsigned, DenseMap<unsigned, unsigned> > STPMatrix;
 
-INITIALIZE_PASS(STGShortestPath, "vast-stg-shortest-path",
-                "Compute the Landing Slots for the BasicBlocks",
-                false, true)
-
-STGShortestPath::STGShortestPath() : VASTModulePass(ID), VM(0) {
-  initializeSTGShortestPathPass(*PassRegistry::getPassRegistry());
+  unsigned getShortestPath(unsigned From, unsigned To) const;
+  void run(VASTModule &VM);
+  void print(raw_ostream &OS, VASTModule &VM) const;
+};
 }
 
-void STGShortestPath::getAnalysisUsage(AnalysisUsage &AU) const {
-  VASTModulePass::getAnalysisUsage(AU);
-  AU.setPreservesAll();
+unsigned ShortestPathImpl::getShortestPath(unsigned From, unsigned To) const {
+  DenseMap<unsigned, DenseMap<unsigned, unsigned> >::const_iterator
+    to_at = STPMatrix.find(To);
+
+  if (to_at == STPMatrix.end()) return STGShortestPath::Inf;
+
+  DenseMap<unsigned, unsigned>::const_iterator from_at = to_at->second.find(From);
+
+  if (from_at == to_at->second.end()) return STGShortestPath::Inf;
+
+  return from_at->second;
 }
 
-void STGShortestPath::releaseMemory() {
-  STPMatrix.clear();
-  VM = 0;
+void ShortestPathImpl::print(raw_ostream &OS, VASTModule &VM) const {
+  typedef VASTModule::slot_iterator slot_iterator;
+  for (slot_iterator I = VM.slot_begin(), IE = VM.slot_end(); I != IE; ++I) {
+    for (slot_iterator J = VM.slot_begin(), JE = VM.slot_end(); J != JE; ++J) {
+      OS << '[' << I->SlotNum << ',' << J->SlotNum << "] = ";
+      unsigned Distance = getShortestPath(I->SlotNum, J->SlotNum);
+      if (Distance == STGShortestPath::Inf) OS << "Inf";
+      else                                  OS << Distance;
+      OS << ",\t";
+    }
+    OS << '\n';
+  }
 }
 
-bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
-  this->VM = &VM;
+void ShortestPathImpl::run(VASTModule &VM) {
   // Initialize the neighbor weight.
   typedef VASTModule::slot_iterator slot_iterator;
   for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
@@ -80,7 +95,7 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
 
   while (changed) {
     changed = false;
-    ++NumIterations;
+    ++NumSTPIterations;
 
     // Use the Floyd Warshal algorithm to compute the shortest path.
     for (slot_top_iterator I =RPO.begin(), E = RPO.end(); I != E; ++I) {
@@ -106,32 +121,52 @@ bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
     }
   }
 
+}
+
+//===----------------------------------------------------------------------===//
+char STGShortestPath::ID = 0;
+char &llvm::STGShortestPathID = STGShortestPath::ID;
+const unsigned STGShortestPath::Inf = UINT16_MAX;
+
+INITIALIZE_PASS(STGShortestPath, "vast-stg-shortest-path",
+                "Compute the Landing Slots for the BasicBlocks",
+                false, true)
+
+STGShortestPath::STGShortestPath() : VASTModulePass(ID), STPImpl(0), VM(0) {
+  initializeSTGShortestPathPass(*PassRegistry::getPassRegistry());
+}
+
+void STGShortestPath::getAnalysisUsage(AnalysisUsage &AU) const {
+  VASTModulePass::getAnalysisUsage(AU);
+  AU.setPreservesAll();
+}
+
+void STGShortestPath::releaseMemory() {
+  if (STPImpl) {
+    delete STPImpl;
+    STPImpl = 0;
+  }
+
+  VM = 0;
+}
+
+bool STGShortestPath::runOnVASTModule(VASTModule &VM) {
+  releaseMemory();
+
+  this->VM = &VM;
+  STPImpl = new ShortestPathImpl();
+
+  STPImpl->run(VM);
+
   return false;
 }
 
 void STGShortestPath::print(raw_ostream &OS) const {
-  typedef VASTModule::slot_iterator slot_iterator;
-  for (slot_iterator I = VM->slot_begin(), IE = VM->slot_end(); I != IE; ++I) {
-    for (slot_iterator J = VM->slot_begin(), JE = VM->slot_end(); J != JE; ++J) {
-      OS << '[' << I->SlotNum << ',' << J->SlotNum << "] = ";
-      unsigned Distance = getShortestPath(I->SlotNum, J->SlotNum);
-      if (Distance == Inf) OS << "Inf";
-      else                 OS << Distance;
-      OS << ",\t";
-    }
-    OS << '\n';
-  }
+  assert(STPImpl && "Print after releaseMemory?");
+  STPImpl->print(OS, *VM);
 }
 
 unsigned STGShortestPath::getShortestPath(unsigned From, unsigned To) const {
-  DenseMap<unsigned, DenseMap<unsigned, unsigned> >::const_iterator
-    to_at = STPMatrix.find(To);
-
-  if (to_at == STPMatrix.end()) return Inf;
-
-  DenseMap<unsigned, unsigned>::const_iterator from_at = to_at->second.find(From);
-
-  if (from_at == to_at->second.end()) return Inf;
-
-  return from_at->second;
+  assert(STPImpl && "Get shortest path after releaseMemory?");
+  return STPImpl->getShortestPath(From, To);
 }

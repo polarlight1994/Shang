@@ -23,10 +23,10 @@
 namespace llvm {
 class VASTSlot;
 class VASTModule;
+struct ShortestPathImpl;
 
 class STGShortestPath : public VASTModulePass {
-  DenseMap<unsigned, DenseMap<unsigned, unsigned> > STPMatrix;
-  typedef std::pair<unsigned, unsigned> Idx;
+  ShortestPathImpl *STPImpl;
   VASTModule *VM;
 public:
   static const unsigned Inf;
@@ -34,6 +34,7 @@ public:
   static char ID;
 
   STGShortestPath();
+  ~STGShortestPath() { releaseMemory(); }
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnVASTModule(VASTModule &VM);
