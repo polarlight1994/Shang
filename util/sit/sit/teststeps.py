@@ -369,7 +369,7 @@ g++ -L$SYSTEMC/lib-linux{{ ptr_size }}  -lsystemc \
 || exit 1
 
 # Run the systemc testbench
-timeout 1200s {{ [hls_base_dir, test_name + "_systemc_testbench"]|joinpath }} > hardware.out \
+timeout 60s {{ [hls_base_dir, test_name + "_systemc_testbench"]|joinpath }} > hardware.out \
 || exit 1
 
 # Compare the hardware output with the standar output
