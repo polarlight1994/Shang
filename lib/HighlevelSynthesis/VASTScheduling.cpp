@@ -792,8 +792,6 @@ void VASTScheduling::fixSchedulingGraph() {
 #ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
     // At least constrain the scheduling unit with something.
     if (U->use_empty())  {
-      BasicBlock *BB = U->getParent();
-
       if (isa<ReturnInst>(BB->getTerminator())) {
         // We need to wait everything in the returning block.
         ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
