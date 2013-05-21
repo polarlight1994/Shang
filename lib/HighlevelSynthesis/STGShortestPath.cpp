@@ -37,6 +37,9 @@ struct ShortestPathImpl {
   DenseMap<unsigned, DenseMap<unsigned, unsigned> > STPMatrix;
 
   unsigned getShortestPath(unsigned From, unsigned To) const;
+  bool updateDistance(unsigned DistanceSrcThuDst,
+                      unsigned DstSlot, unsigned SrcSlot);
+
   void run(VASTModule &VM);
   void print(raw_ostream &OS, VASTModule &VM) const;
 };
@@ -76,7 +79,8 @@ void ShortestPathImpl::run(VASTModule &VM) {
     VASTSlot *Src = I;
 
     typedef VASTSlot::succ_iterator succ_iterator;
-    for (succ_iterator SI = Src->succ_begin(), SE = Src->succ_end(); SI != SE; ++SI) {
+    for (succ_iterator SI = Src->succ_begin(), SE = Src->succ_end();
+         SI != SE; ++SI) {
       VASTSlot *Dst = *SI;
       assert(Src != Dst && "Unexpected loop!");
       STPMatrix[Dst->SlotNum][Src->SlotNum] = Dst->IsSubGrp ? 0 : 1;
@@ -98,30 +102,41 @@ void ShortestPathImpl::run(VASTModule &VM) {
     ++NumSTPIterations;
 
     // Use the Floyd Warshal algorithm to compute the shortest path.
-    for (slot_top_iterator I =RPO.begin(), E = RPO.end(); I != E; ++I) {
-      VASTSlot *To = *I;
-      unsigned EdgeDistance = To->IsSubGrp ? 0 : 1;
+    for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
+      VASTSlot *Dst = *I;
+      unsigned DstSlot = Dst->SlotNum;
+      unsigned EdgeDistance = Dst->IsSubGrp ? 0 : 1;
 
       typedef VASTSlot::pred_iterator pred_iterator;
-      for (pred_iterator PI = To->pred_begin(), PE = To->pred_end(); PI != PE; ++PI) {
+      for (pred_iterator PI = Dst->pred_begin(), PE = Dst->pred_end();
+           PI != PE; ++PI) {
         VASTSlot *Thu = *PI;
 
         DenseMap<unsigned, unsigned> &Srcs = STPMatrix[Thu->SlotNum];
         typedef DenseMap<unsigned, unsigned>::iterator from_iterator;
         for (from_iterator FI = Srcs.begin(), FE = Srcs.end(); FI != FE; ++FI) {
           //D[i][j] = min( D[i][j], D[i][k] + D[k][j]
-          unsigned DistanceToThuFI = FI->second + EdgeDistance;
-          unsigned DistanceToFI = getShortestPath(FI->first, To->SlotNum);
-          if (DistanceToThuFI < DistanceToFI) {
-            STPMatrix[To->SlotNum][FI->first] = DistanceToThuFI;
-            changed = true;
-          }
+          unsigned SrcSlot = FI->first;
+          unsigned DistanceSrcThu = FI->second;
+          unsigned DistanceSrcThuDst = DistanceSrcThu + EdgeDistance;
+          changed |= updateDistance(DistanceSrcThuDst, DstSlot, SrcSlot);
         }
       }
     }
   }
-
 }
+
+bool ShortestPathImpl::updateDistance(unsigned DistanceSrcThuDst,
+                                      unsigned DstSlot, unsigned SrcSlot) {
+  unsigned DistanceSrcDst = getShortestPath(SrcSlot, DstSlot);
+  if (DistanceSrcThuDst < DistanceSrcDst) {
+    STPMatrix[DstSlot][SrcSlot] = DistanceSrcThuDst;
+    return true;
+  }
+
+  return false;
+}
+
 
 //===----------------------------------------------------------------------===//
 char STGShortestPath::ID = 0;
