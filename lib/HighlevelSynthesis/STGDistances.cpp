@@ -34,9 +34,9 @@ STATISTIC(NumSTPIterations, "Number of iterations in the STP algorithm");
 namespace llvm {
 struct ShortestPathImpl {
   typedef std::pair<unsigned, unsigned> Idx;
-  DenseMap<unsigned, DenseMap<unsigned, unsigned> > STPMatrix;
+  DenseMap<unsigned, DenseMap<unsigned, unsigned> > DistanceMatrix;
 
-  bool empty() const { return STPMatrix.empty(); }
+  bool empty() const { return DistanceMatrix.empty(); }
   unsigned getShortestPath(unsigned From, unsigned To) const;
   bool updateDistance(unsigned DistanceSrcThuDst,
                       unsigned DstSlot, unsigned SrcSlot);
@@ -48,9 +48,9 @@ struct ShortestPathImpl {
 
 unsigned ShortestPathImpl::getShortestPath(unsigned From, unsigned To) const {
   DenseMap<unsigned, DenseMap<unsigned, unsigned> >::const_iterator
-    to_at = STPMatrix.find(To);
+    to_at = DistanceMatrix.find(To);
 
-  if (to_at == STPMatrix.end()) return STGShortestPath::Inf;
+  if (to_at == DistanceMatrix.end()) return STGShortestPath::Inf;
 
   DenseMap<unsigned, unsigned>::const_iterator from_at = to_at->second.find(From);
 
@@ -84,7 +84,7 @@ void ShortestPathImpl::run(VASTModule &VM) {
          SI != SE; ++SI) {
       VASTSlot *Dst = *SI;
       assert(Src != Dst && "Unexpected loop!");
-      STPMatrix[Dst->SlotNum][Src->SlotNum] = Dst->IsSubGrp ? 0 : 1;
+      DistanceMatrix[Dst->SlotNum][Src->SlotNum] = Dst->IsSubGrp ? 0 : 1;
     }
   }
 
@@ -113,7 +113,7 @@ void ShortestPathImpl::run(VASTModule &VM) {
            PI != PE; ++PI) {
         VASTSlot *Thu = *PI;
 
-        DenseMap<unsigned, unsigned> &Srcs = STPMatrix[Thu->SlotNum];
+        DenseMap<unsigned, unsigned> &Srcs = DistanceMatrix[Thu->SlotNum];
         typedef DenseMap<unsigned, unsigned>::iterator from_iterator;
         for (from_iterator FI = Srcs.begin(), FE = Srcs.end(); FI != FE; ++FI) {
           //D[i][j] = min( D[i][j], D[i][k] + D[k][j]
@@ -131,7 +131,7 @@ bool ShortestPathImpl::updateDistance(unsigned DistanceSrcThuDst,
                                       unsigned DstSlot, unsigned SrcSlot) {
   unsigned DistanceSrcDst = getShortestPath(SrcSlot, DstSlot);
   if (DistanceSrcThuDst < DistanceSrcDst) {
-    STPMatrix[DstSlot][SrcSlot] = DistanceSrcThuDst;
+    DistanceMatrix[DstSlot][SrcSlot] = DistanceSrcThuDst;
     return true;
   }
 
