@@ -14,7 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "STGShortestPath.h"
+#include "STGDistances.h"
 
 #include "shang/Passes.h"
 #include "shang/VASTModule.h"

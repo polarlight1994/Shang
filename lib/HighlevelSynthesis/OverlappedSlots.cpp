@@ -15,7 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "OverlappedSlots.h"
-#include "STGShortestPath.h"
+#include "STGDistances.h"
 
 #include "shang/VASTSlot.h"
 #include "shang/VASTModule.h"

@@ -18,7 +18,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "SeqLiveVariables.h"
-#include "STGShortestPath.h"
+#include "STGDistances.h"
 #include "TimingNetlist.h"
 
 #include "shang/VASTSeqValue.h"

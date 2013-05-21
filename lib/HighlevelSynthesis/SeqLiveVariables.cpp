@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "STGShortestPath.h"
+#include "STGDistances.h"
 #include "OverlappedSlots.h"
 #include "SeqLiveVariables.h"
 
