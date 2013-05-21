@@ -29,51 +29,48 @@
 
 using namespace llvm;
 
-STATISTIC(NumSTPIterations, "Number of iterations in the STP algorithm");
+STATISTIC(NumSTPIterations,
+          "Number of iterations in the shortest path algorithm");
 
 namespace llvm {
-struct ShortestPathImpl {
+
+struct STGDistanceBase {
   typedef std::pair<unsigned, unsigned> Idx;
   DenseMap<unsigned, DenseMap<unsigned, unsigned> > DistanceMatrix;
 
+  void initialize(VASTModule &VM);
+
   bool empty() const { return DistanceMatrix.empty(); }
-  unsigned getShortestPath(unsigned From, unsigned To) const;
+
+  unsigned getDistance(unsigned From, unsigned To) const {
+    DenseMap<unsigned, DenseMap<unsigned, unsigned> >::const_iterator
+      to_at = DistanceMatrix.find(To);
+
+    if (to_at == DistanceMatrix.end()) return STGShortestPath::Inf;
+
+    DenseMap<unsigned, unsigned>::const_iterator from_at = to_at->second.find(From);
+
+    if (from_at == to_at->second.end()) return STGShortestPath::Inf;
+
+    return from_at->second;
+  }
+
+  void print(raw_ostream &OS, VASTModule &VM) const;
+};
+
+template<typename SubClass>
+struct STGDistanceImpl : public STGDistanceBase {
+  void run(VASTModule &VM);
+};
+
+struct ShortestPathImpl : public STGDistanceImpl<ShortestPathImpl> {
   bool updateDistance(unsigned DistanceSrcThuDst,
                       unsigned DstSlot, unsigned SrcSlot);
 
-  void run(VASTModule &VM);
-  void print(raw_ostream &OS, VASTModule &VM) const;
 };
 }
 
-unsigned ShortestPathImpl::getShortestPath(unsigned From, unsigned To) const {
-  DenseMap<unsigned, DenseMap<unsigned, unsigned> >::const_iterator
-    to_at = DistanceMatrix.find(To);
-
-  if (to_at == DistanceMatrix.end()) return STGShortestPath::Inf;
-
-  DenseMap<unsigned, unsigned>::const_iterator from_at = to_at->second.find(From);
-
-  if (from_at == to_at->second.end()) return STGShortestPath::Inf;
-
-  return from_at->second;
-}
-
-void ShortestPathImpl::print(raw_ostream &OS, VASTModule &VM) const {
-  typedef VASTModule::slot_iterator slot_iterator;
-  for (slot_iterator I = VM.slot_begin(), IE = VM.slot_end(); I != IE; ++I) {
-    for (slot_iterator J = VM.slot_begin(), JE = VM.slot_end(); J != JE; ++J) {
-      OS << '[' << I->SlotNum << ',' << J->SlotNum << "] = ";
-      unsigned Distance = getShortestPath(I->SlotNum, J->SlotNum);
-      if (Distance == STGShortestPath::Inf) OS << "Inf";
-      else                                  OS << Distance;
-      OS << ",\t";
-    }
-    OS << '\n';
-  }
-}
-
-void ShortestPathImpl::run(VASTModule &VM) {
+void STGDistanceBase::initialize(VASTModule &VM) {
   // Initialize the neighbor weight.
   typedef VASTModule::slot_iterator slot_iterator;
   for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
@@ -87,6 +84,27 @@ void ShortestPathImpl::run(VASTModule &VM) {
       DistanceMatrix[Dst->SlotNum][Src->SlotNum] = Dst->IsSubGrp ? 0 : 1;
     }
   }
+}
+
+void STGDistanceBase::print(raw_ostream &OS, VASTModule &VM) const {
+  typedef VASTModule::slot_iterator slot_iterator;
+  for (slot_iterator I = VM.slot_begin(), IE = VM.slot_end(); I != IE; ++I) {
+    for (slot_iterator J = VM.slot_begin(), JE = VM.slot_end(); J != JE; ++J) {
+      OS << '[' << I->SlotNum << ',' << J->SlotNum << "] = ";
+      unsigned Distance = getDistance(I->SlotNum, J->SlotNum);
+      if (Distance == STGShortestPath::Inf) OS << "Inf";
+      else                                  OS << Distance;
+      OS << ",\t";
+    }
+    OS << '\n';
+  }
+}
+
+//===----------------------------------------------------------------------===//
+
+template<typename SubClass>
+void STGDistanceImpl<SubClass>::run(VASTModule &VM) {
+  reinterpret_cast<SubClass*>(this)->initialize(VM);
 
   // Visit the slots in topological order.
   ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >
@@ -120,16 +138,19 @@ void ShortestPathImpl::run(VASTModule &VM) {
           unsigned SrcSlot = FI->first;
           unsigned DistanceSrcThu = FI->second;
           unsigned DistanceSrcThuDst = DistanceSrcThu + EdgeDistance;
-          changed |= updateDistance(DistanceSrcThuDst, DstSlot, SrcSlot);
+          changed |=
+            reinterpret_cast<SubClass*>(this)->updateDistance(DistanceSrcThuDst,
+                                                              DstSlot, SrcSlot);
         }
       }
     }
   }
 }
 
+//===----------------------------------------------------------------------===//
 bool ShortestPathImpl::updateDistance(unsigned DistanceSrcThuDst,
                                       unsigned DstSlot, unsigned SrcSlot) {
-  unsigned DistanceSrcDst = getShortestPath(SrcSlot, DstSlot);
+  unsigned DistanceSrcDst = getDistance(SrcSlot, DstSlot);
   if (DistanceSrcThuDst < DistanceSrcDst) {
     DistanceMatrix[DstSlot][SrcSlot] = DistanceSrcThuDst;
     return true;
@@ -137,7 +158,6 @@ bool ShortestPathImpl::updateDistance(unsigned DistanceSrcThuDst,
 
   return false;
 }
-
 
 //===----------------------------------------------------------------------===//
 char STGShortestPath::ID = 0;
@@ -185,5 +205,5 @@ unsigned STGShortestPath::getShortestPath(unsigned From, unsigned To) const {
   // Calculate the distances on the fly.
   if (STPImpl->empty()) STPImpl->run(*VM);
 
-  return STPImpl->getShortestPath(From, To);
+  return STPImpl->getDistance(From, To);
 }
