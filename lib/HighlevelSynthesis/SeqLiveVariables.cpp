@@ -208,40 +208,41 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
   assert(IdleSubGrp && "Idle subgroup does not exist?");
 
   std::set<VASTSlot*> Visited;
-  std::vector<VASTSlot*> NodeStack;
+  std::vector<VASTSlot::EdgePtr> STGPath;
   std::vector<VASTSlot::succ_iterator> ChildItStack;
 
   // Start from the Idle subgroup.
-  NodeStack.push_back(IdleSubGrp);
+  STGPath.push_back(VASTSlot::EdgePtr(IdleSubGrp, VASTSlot::SubGrp));
   // Visit the child of the entry slot: Idle Group.
-  handleSlot(Entry, NodeStack);
-  NodeStack.push_back(Entry);
-  ChildItStack.push_back(NodeStack.back()->succ_begin());
+  handleSlot(Entry, STGPath);
+  STGPath.push_back(VASTSlot::EdgePtr(Entry, VASTSlot::Sucessor));
+  ChildItStack.push_back(STGPath.back()->succ_begin());
 
   // Prevent the entry node from being visited twice.
   Visited.insert(Entry);
 
-  while (NodeStack.size() > 1) {
-    VASTSlot *CurSlot = NodeStack.back();
+  while (STGPath.size() > 1) {
+    VASTSlot *CurSlot = STGPath.back();
     VASTSlot::succ_iterator It = ChildItStack.back();
 
     if (It == CurSlot->succ_end()) {
-      NodeStack.pop_back();
+      STGPath.pop_back();
       ChildItStack.pop_back();
       continue;
     }
 
-    VASTSlot *ChildNode = *It;
+    VASTSlot::EdgePtr Edge = *It;
+    VASTSlot *ChildNode = Edge;
     ++ChildItStack.back();
 
     // Is the Slot visited?
     if (!Visited.insert(ChildNode).second)  continue;
 
     // Visit the slots in depth-first order.
-    handleSlot(ChildNode, NodeStack);
+    handleSlot(ChildNode, STGPath);
 
-    NodeStack.push_back(ChildNode);
-    ChildItStack.push_back(NodeStack.back()->succ_begin());
+    STGPath.push_back(Edge);
+    ChildItStack.push_back(STGPath.back()->succ_begin());
   }
 
   initializeLandingSlots();
@@ -392,7 +393,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   // if (Use->empty()) return;
 
   assert(Use && "Bad Use pointer!");
-  VASTSlot *DefSlot = 0;
+  VASTSlot::EdgePtr DefEdge(0, VASTSlot::SubGrp);
 
   // Walking backward to find the corresponding definition.
   // Provide the path which stop at prior slot (not a subgroup of the slot),
@@ -409,22 +410,22 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   typedef PathVector::reverse_iterator path_iterator;
   for (path_iterator I = PathFromEntry.rbegin(), E = PathFromEntry.rend();
        I != E; ++I) {
-    VASTSlot *S = *I;
+    VASTSlot::EdgePtr Edge = *I;
     if (IgnoreSlot) {
 
-      if (!S->IsSubGrp) IgnoreSlot = false;
+      if (Edge.getDistance()) IgnoreSlot = false;
 
       continue;
     }
 
     // Find the nearest written slot in the path.
-    if (isWrittenAt(Use, S)) {
-      DefSlot = S;
+    if (isWrittenAt(Use, Edge)) {
+      DefEdge = Edge;
       break;
     }
   }
 
-  if (!DefSlot) {
+  if (!DefEdge) {
     dbgs() << "Dumping path:[\n";
     typedef PathVector::iterator iterator;
     for (iterator I = PathFromEntry.begin(), E = PathFromEntry.end(); I != E; ++I)
@@ -439,13 +440,13 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   }
 
   DEBUG(dbgs() << "SeqVal: " << Use->getName() << " Used at Slot "
-               << UseSlot->SlotNum << " Def at slot " << DefSlot->SlotNum
+               << UseSlot->SlotNum << " Def at slot " << DefEdge->SlotNum
                << '\n');
 
   // Get the corresponding VarInfo defined at DefSlot.
   VarInfo *VI = getVarInfo(Use);
 
-  if (UseSlot == DefSlot) {
+  if (UseSlot == DefEdge) {
     assert(UseSlot->IsSubGrp && UseSlot->getParent() == 0
            && "Unexpected Cycle!");
     VI->DefKills.set(UseSlot->SlotNum);
@@ -478,7 +479,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
   //assert(!VI->Defs.test(UseSlot->SlotNum));
 
   // The value not killed at define slot anymore.
-  VI->Kills.reset(DefSlot->SlotNum);
+  VI->Kills.reset(DefEdge->SlotNum);
 
   typedef VASTSlot::pred_iterator ChildIt;
   std::vector<std::pair<VASTSlot*, ChildIt> > VisitStack;

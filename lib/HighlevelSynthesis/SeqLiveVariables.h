@@ -15,6 +15,7 @@
 #define SEQ_LIVEVARIABLES_H
 
 #include "shang/VASTModulePass.h"
+#include "shang/VASTSlot.h"
 
 #include "llvm/IR/Value.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -108,7 +109,7 @@ public:
 
   void print(raw_ostream &OS) const;
 private:
-  typedef ArrayRef<VASTSlot*> PathVector;
+  typedef ArrayRef<VASTSlot::EdgePtr> PathVector;
   void handleSlot(VASTSlot *S, PathVector PathFromEntry);
   void handleUse(VASTSeqValue *Use, VASTSlot *UseSlot, PathVector PathFromEntry);
 
