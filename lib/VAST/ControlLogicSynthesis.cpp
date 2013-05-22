@@ -62,13 +62,6 @@ struct ControlLogicSynthesis : public VASTModulePass {
   typedef FUReadyVecTy::const_iterator const_fu_rdy_it;
   std::map<const VASTSeqValue*, FUReadyVecTy> SlotReadys;
 
-  const SuccVecTy &getSlotSucc(const VASTSlot *S) {
-    std::map<const VASTSeqValue*, SuccVecTy>::const_iterator at
-      = SlotSuccs.find(S->getValue());
-    assert(at != SlotSuccs.end() && "Slot do not have successor!");
-    return at->second;
-  }
-
   // Signals need to set before this slot is ready.
   const FUReadyVecTy *getReadySet(const VASTSlot *S) const {
     std::map<const VASTSeqValue*, FUReadyVecTy>::const_iterator at
@@ -156,27 +149,29 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
   // operand list to build the AND expression.
   LoopCndVector.push_back(AlwaysTrue);
 
-  assert(!S->succ_empty() && "Expect at least 1 next slot!");
+  std::map<const VASTSeqValue*, SuccVecTy>::const_iterator at
+    = SlotSuccs.find(S->getValue());
 
-  // if (!S->succ_empty()) {
-  const SuccVecTy &NextSlots = getSlotSucc(S);
-  for (const_succ_it I = NextSlots.begin(),E = NextSlots.end(); I != E; ++I) {
-    VASTSlotCtrl *Br = (*I);
-    VASTSeqValue *NextSlotReg = Br->getTargetSlot()->getValue();
-    bool IsLoop = NextSlotReg == S->getValue();
-    VASTValPtr Cnd = Br->getGuard();
+  // TODO: Assert there is implicit flow if the successors set cannot be found.
+  if (at != SlotSuccs.end()) {
+    const SuccVecTy &NextSlots = at->second;
+    for (const_succ_it I = NextSlots.begin(),E = NextSlots.end(); I != E; ++I) {
+      VASTSlotCtrl *Br = (*I);
+      VASTSeqValue *NextSlotReg = Br->getTargetSlot()->getValue();
+      bool IsLoop = NextSlotReg == S->getValue();
+      VASTValPtr Cnd = Br->getGuard();
 
-    // Disable the current slot when we are not looping back.
-    if (IsLoop) LoopCndVector.push_back(Builder->buildNotExpr(Cnd));
+      // Disable the current slot when we are not looping back.
+      if (IsLoop) LoopCndVector.push_back(Builder->buildNotExpr(Cnd));
 
-    VASTUse &U = Br->getSrc(0);
-    assert(isa<VASTSlotCtrl>(U.getUser()) && "Unexpected user!");
-    U.unlinkUseFromUser();
+      VASTUse &U = Br->getSrc(0);
+      assert(isa<VASTSlotCtrl>(U.getUser()) && "Unexpected user!");
+      U.unlinkUseFromUser();
 
-    // Build the assignment and update the successor branching condition.
-    Br->addSrc(AlwaysTrue, 0, NextSlotReg);
+      // Build the assignment and update the successor branching condition.
+      Br->addSrc(AlwaysTrue, 0, NextSlotReg);
+    }
   }
-  //}
 
   // Disable the current slot. Do not export the definition of the assignment.
   VM->assignCtrlLogic(S->getRegister()->getSelector(), VASTImmediate::False, S,
