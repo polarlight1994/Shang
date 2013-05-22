@@ -32,15 +32,22 @@ class VASTSlotCtrl;
 
 class VASTSlot : public VASTNode, public ilist_node<VASTSlot> {
 public:
+  enum EdgeType {
+    SubGrp = 0,
+    Sucessor = 1,
+    ImplicitFlow = 3
+  };
+
   // The pointer to successor which is also encoded with the distance.
-  struct EdgePtr : public PointerIntPair<VASTSlot*, 1> {
+  struct EdgePtr : public PointerIntPair<VASTSlot*, 2, EdgeType> {
   private:
-    unsigned getInt() const { return PointerIntPair<VASTSlot*, 1>::getInt(); }
+    typedef PointerIntPair<VASTSlot*, 2, EdgeType> _Self;
+
+    unsigned getInt() const { return _Self::getInt(); }
   public:
     operator VASTSlot*() const { return getPointer(); }
     VASTSlot *operator->() const { return getPointer(); }
-    EdgePtr(VASTSlot *S, unsigned Distance)
-      : PointerIntPair<VASTSlot*, 1>(S, Distance) {}
+    EdgePtr(VASTSlot *S, EdgeType T) : _Self(S, T) {}
 
     unsigned getDistance() const { return 0x1 & getInt(); }
   };
@@ -170,7 +177,7 @@ public:
   VASTSlot *getSubGroup(BasicBlock *BB) const;
   VASTSlot *getParentState();
 
-  void addSuccSlot(VASTSlot *NextSlot, unsigned Distance);
+  void addSuccSlot(VASTSlot *NextSlot, EdgeType T);
 
   bool isSynthesized() const { return !SlotReg.isInvalid(); }
 

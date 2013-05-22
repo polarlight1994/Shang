@@ -115,16 +115,16 @@ const char *VASTSlot::getName() const {
   return getValue()->getName();
 }
 
-void VASTSlot::addSuccSlot(VASTSlot *NextSlot, unsigned Distance) {
-  assert(Distance <= 1 && "Unexpected distance!");
+void VASTSlot::addSuccSlot(VASTSlot *NextSlot, EdgeType T) {
+  assert(T <= 3 && "Unexpected distance!");
   // Do not add the same successor slot twice.
   if (hasNextSlot(NextSlot)) return;
 
   assert(NextSlot != this && "Unexpected loop!");
 
   // Connect the slots.
-  NextSlot->PredSlots.push_back(EdgePtr(this, Distance));
-  NextSlots.push_back(EdgePtr(NextSlot, Distance));
+  NextSlot->PredSlots.push_back(EdgePtr(this, T));
+  NextSlots.push_back(EdgePtr(NextSlot, T));
 }
 
 VASTSlot *VASTSlot::getSubGroup(BasicBlock *BB) const {

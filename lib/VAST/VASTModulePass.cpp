@@ -177,7 +177,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   VASTSlot *createSubGroup(BasicBlock *BB, VASTValPtr Cnd, VASTSlot *S) {
     VASTSlot *SubGrp = VM->createSlot(++NumSlots, BB, Cnd, true);
     // The subgroups are not actually the successors of S in the control flow.
-    S->addSuccSlot(SubGrp, 0);
+    S->addSuccSlot(SubGrp, VASTSlot::SubGrp);
     return SubGrp;
   }
 
@@ -190,7 +190,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
            || NextSlot == VM->getFinishSlot())
           && "Cannot change Slot and BB at the same time!");
     assert(!NextSlot->IsSubGrp && "Unexpected subgroup!");
-    S->addSuccSlot(NextSlot, 1);
+    S->addSuccSlot(NextSlot, VASTSlot::Sucessor);
     VASTSlotCtrl *SlotBr = VM->createSlotCtrl(NextSlot, S, Cnd);
     if (Inst) SlotBr->annotateValue(Inst);
   }
