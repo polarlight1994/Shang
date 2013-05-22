@@ -432,7 +432,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
       dbgs() << (*I)->SlotNum << '\n';
     dbgs() << "]\n";
 
-    Use->dumpFanins();
+    Use->dumpFaninns();
 
     UseSlot->dump();
 

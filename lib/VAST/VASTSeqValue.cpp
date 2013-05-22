@@ -440,7 +440,7 @@ VASTSeqValue::VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V)
   Selector->addUser(this);
 }
 
-void VASTSeqValue::dumpFanins() const {
+void VASTSeqValue::dumpFaninns() const {
   typedef VASTSeqValue::const_fanin_iterator iterator;
 
   for (iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
