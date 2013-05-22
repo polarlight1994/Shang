@@ -78,6 +78,7 @@ struct SingleFULinearOrder {
   IR2SUMapTy &IR2SUMap;
   DominatorTree &DT;
   const DenseMap<DomTreeNode*, unsigned> &DomLevels;
+  SmallVector<BasicBlock*, 8> &ReturnBlocks;
 
   typedef DenseMap<BasicBlock*, SmallVector<VASTSchedUnit*, 8> > DefMapTy;
   DefMapTy DefMap;
@@ -105,10 +106,15 @@ struct SingleFULinearOrder {
 
   void buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs);
 
+  // Wait until alls operation finish before we return.
+  void buildEdgesToWaitAll(BasicBlock *ReturnBlock);
+
   SingleFULinearOrder(VASTSelector *Sel, SchedulerBase &G,
                       IR2SUMapTy &IR2SUMap, DominatorTree &DT,
-                      const DenseMap<DomTreeNode*, unsigned> &DomLevels)
-    : Sel(Sel), G(G), IR2SUMap(IR2SUMap), DT(DT), DomLevels(DomLevels) {}
+                      const DenseMap<DomTreeNode*, unsigned> &DomLevels,
+                      SmallVector<BasicBlock*, 8> &ReturnBlocks)
+    : Sel(Sel), G(G), IR2SUMap(IR2SUMap), DT(DT), DomLevels(DomLevels),
+      ReturnBlocks(ReturnBlocks) {}
 
   void buildLinearOrder();
 };
@@ -117,6 +123,8 @@ struct BasicLinearOrderGenerator {
   SchedulerBase &G;
   DominatorTree &DT;
   IR2SUMapTy &IR2SUMap;
+  SmallVector<BasicBlock*, 8> ReturnBlocks;
+
   BasicLinearOrderGenerator(SchedulerBase &G, DominatorTree &DT,
                             IR2SUMapTy &IR2SUMap)
     : G(G), DT(DT), IR2SUMap(IR2SUMap) {}
@@ -149,6 +157,11 @@ void BasicLinearOrderGenerator::buildFUInfo() {
   typedef VASTSchedGraph::bb_iterator bb_iterator;
   for (bb_iterator I = G->bb_begin(), E = G->bb_end(); I != E; ++I) {
     BasicBlock *BB = I->first;
+    TerminatorInst *Inst = BB->getTerminator();
+
+    if ((isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst)))
+      ReturnBlocks.push_back(BB);
+
     MutableArrayRef<VASTSchedUnit*> SUs(I->second);
 
     // Iterate the scheduling units in the same BB to assign linear order.
@@ -165,7 +178,9 @@ void BasicLinearOrderGenerator::buildFUInfo() {
       SingleFULinearOrder *&S = Builders[Sel];
 
       // Create the Synchronizer if it is not yet created.
-      if (S == 0) S = new SingleFULinearOrder(Sel, G, IR2SUMap, DT, DomLevels);
+      if (S == 0)
+        S = new SingleFULinearOrder(Sel, G, IR2SUMap, DT, DomLevels,
+                                    ReturnBlocks);
 
       // Add the FU visiting information.
       S->addVisitingSU(SU, BB);
@@ -369,6 +384,13 @@ SingleFULinearOrder::buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   }
 }
 
+void SingleFULinearOrder::buildEdgesToWaitAll(BasicBlock *ReturnBlock) {
+  ArrayRef<VASTSchedUnit*> Returns(IR2SUMap[ReturnBlock->getTerminator()]);
+
+  // FIXIME: Set the edge latency to the return operation to 0.
+  buildLinearOrdingFromDom(Returns.front(), ReturnBlock);
+}
+
 void SingleFULinearOrder::buildLinearOrder() {
   // Build the linear order within each BB.
   typedef DefMapTy::iterator def_iterator;
@@ -393,6 +415,10 @@ void SingleFULinearOrder::buildLinearOrder() {
   // blocks may be activated at the same time.
   for (BBSet::iterator I = DFBlocks.begin(), E = DFBlocks.end(); I != E; ++I)
     buildLinearOrderOnJEdge(*I);
+
+  typedef SmallVectorImpl<BasicBlock*>::iterator bb_iterator;
+  for (bb_iterator I = ReturnBlocks.begin(), E = ReturnBlocks.end(); I != E; ++I)
+    buildEdgesToWaitAll(*I);
 }
 
 void BasicLinearOrderGenerator::initializeDomTreeLevel() {
