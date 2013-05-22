@@ -61,25 +61,31 @@ void OverlappedSlots::buildOverlappedMap(VASTSlot *S,
   for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
     VASTSlot *Child = *DI;
 
-    unsigned Distance = Child == S ? 0
-                        : STP->getShortestPath(S->SlotNum, Child->SlotNum);
+    unsigned SPDistance = Child == S ? 0
+                          : STP->getShortestPath(S->SlotNum, Child->SlotNum);
+    unsigned LPDistance = Child == S ? 0
+                          : STP->getLongestPath(S->SlotNum, Child->SlotNum);
 
     // Ignore the slots that not overlap with any of the slot in StraightFlow.
-    if (Distance > StraightFlow.size()) {
+    if (SPDistance > StraightFlow.size()) {
       DI.skipChildren();
       continue;
     }
 
-    if (Distance) {
-      unsigned Offset = Distance - 1;
-      VASTSlot *OverlappedSlot = StraightFlow[Offset];
+    ++DI;
+
+    if (SPDistance == 0) continue;
+
+    for (unsigned i = SPDistance - 1, e = StraightFlow.size(); i != e; ++i) {
+      VASTSlot *OverlappedSlot = StraightFlow[i];
+      unsigned CurLongestPathUB = i + 1;
+      if (CurLongestPathUB > LPDistance) continue;
+
       Overlappeds[OverlappedSlot->SlotNum].set(Child->SlotNum);
       DEBUG(dbgs() << "Overlap: #" << OverlappedSlot->SlotNum << " -> #"
-             << Child->SlotNum << " distance: " << Distance << '\n');
+                   << Child->SlotNum << " distance: " << SPDistance << '\n');
       ++NumOverlappeds;
     }
-
-    ++DI;
   }
 }
 
