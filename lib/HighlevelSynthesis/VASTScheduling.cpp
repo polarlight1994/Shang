@@ -766,8 +766,17 @@ void VASTScheduling::fixSchedulingGraph() {
   typedef VASTSchedGraph::iterator iterator;
   for (iterator I = llvm::next(G->begin()), E = G->getExit(); I != E; ++I) {
     VASTSchedUnit *U = I;
+
+    // Ignore the entries.
+    if (U->isBBEntry()) continue;
+
     // Terminators will be handled later.
     if (U->isTerminator()) continue;
+
+    Instruction *Inst = U->getInst();
+    // Returns will be handled later, too.
+    if (Inst && (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst)))
+      continue;
 
     BasicBlock *BB = U->getParent();
 
@@ -844,11 +853,13 @@ void VASTScheduling::fixSchedulingGraph() {
     if ((isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))) {
       ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[Inst]);
       assert(!SUs.empty() && "Scheduling Units for terminator not built?");
-      VASTSchedUnit *U = SUs[0];
-      VASTSchedUnit *LastSU = U;
+      VASTSchedUnit *LastSU = SUs[0];
 
-      for (unsigned i = 1; i < SUs.size(); ++i)
-        LastSU = SUs[i];
+      for (unsigned i = 1; i < SUs.size(); ++i) {
+        VASTSchedUnit *U = SUs[i];
+        U->addDep(LastSU, VASTDep::CreateFixTimingConstraint(0));
+        LastSU = U;
+      }
 
       G->getExit()->addDep(LastSU, VASTDep::CreateCtrlDep(0));
       continue;
