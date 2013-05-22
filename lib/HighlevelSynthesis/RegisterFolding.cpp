@@ -267,13 +267,38 @@ VASTValPtr RegisterFolding::retimeExpr(VASTValue *Root, VASTSlot *S) {
 // return true if the guarding condition of LHS is compatible with the
 // guarding condition of RHS, false otherwise.
 static bool isReachable(VASTSlot *LHS, VASTSlot *RHS) {
-  typedef VASTSlot::subgrp_iterator subgrp_iterator;
-  for (subgrp_iterator SI = LHS->subgrp_begin(), SE = LHS->subgrp_end();
-       SI != SE; ++SI) {
+  // Handle the trivial case trivially.
+  if (LHS == RHS) return true;
 
-    // The guarding condition is compatible if LHS could reach RHS based on
-    // the guarding condition relationship.
-    if (*SI == RHS) return true;
+  // Perform depth first search to check if we can reach RHS from LHS with
+  // 0-distance edges.
+  SmallPtrSet<VASTSlot*, 8> Visited;
+  SmallVector<std::pair<VASTSlot*, VASTSlot::succ_iterator>, 4> WorkStack;
+  WorkStack.push_back(std::make_pair(LHS, LHS->succ_begin()));
+
+  while (!WorkStack.empty()) {
+    VASTSlot *S = WorkStack.back().first;
+    VASTSlot::succ_iterator ChildIt = WorkStack.back().second;
+
+    if (ChildIt == S->succ_end()) {
+      WorkStack.pop_back();
+      continue;
+    }
+
+    VASTSlot::EdgePtr Edge = *ChildIt;
+    ++WorkStack.back().second;
+    VASTSlot *Child = Edge;
+
+    // Skip the children require 1-distance edges to be reached.
+    if (Edge.getDistance()) continue;
+
+    // Now we reach RHS!
+    if (Child == RHS) return true;
+
+    // Do not visit a node twice.
+    if (!Visited.insert(Child)) continue;
+
+    WorkStack.push_back(std::make_pair(Child, Child->succ_begin()));
   }
 
   return false;
