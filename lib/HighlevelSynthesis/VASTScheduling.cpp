@@ -1064,7 +1064,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
 
   DEBUG(G->viewGraph());
 
-  G->emitSchedule(VM);
+  G->emitSchedule(VM, DT);
 
   return true;
 }

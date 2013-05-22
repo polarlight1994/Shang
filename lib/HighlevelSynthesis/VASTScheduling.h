@@ -34,6 +34,7 @@ namespace llvm {
 class raw_ostream;
 class VASTModule;
 class SchedulerBase;
+class DominatorTree;
 
 class VASTDep {
 public:
@@ -472,7 +473,7 @@ public:
   /// Emit the schedule by reimplementing the state-transition graph according
   /// the new scheduling results.
   ///
-  void emitSchedule(VASTModule &VM);
+  void emitSchedule(VASTModule &VM, DominatorTree *DT);
 
   void viewGraph();
 

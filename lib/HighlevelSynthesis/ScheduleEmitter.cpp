@@ -14,12 +14,14 @@
 //===----------------------------------------------------------------------===//
 //
 #include "VASTScheduling.h"
+#include "STGDistances.h"
 
 #include "shang/VASTModulePass.h"
 #include "shang/VASTExprBuilder.h"
 #include "shang/VASTModule.h"
 
 #include "llvm/IR/Function.h"
+#include "llvm/Analysis/Dominators.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-schedule-emitter"
@@ -96,11 +98,11 @@ public:
 };
 }
 
+//===----------------------------------------------------------------------===//
 ScheduleEmitter::ScheduleEmitter(VASTModule &VM, VASTSchedGraph &G)
   : MinimalExprBuilderContext(VM), Builder(*this), VM(VM), G(G),
     CurrentSlotNum(0) {}
 
-//===----------------------------------------------------------------------===//
 void ScheduleEmitter::clearUp(VASTSlot *S) {
   typedef VASTSlot::op_iterator op_iterator;
   for (op_iterator I = S->op_begin(); I != S->op_end(); /*++I*/) {
@@ -403,9 +405,143 @@ void ScheduleEmitter::emitSchedule() {
 }
 
 //===----------------------------------------------------------------------===//
+namespace {
+class ImplicitFlowBuilder {
+  DominatorTree *DT;
+  VASTModule &VM;
+  STGDistanceBase ShortesPaths;
+  std::map<VASTSlot*, std::set<VASTSlot*> > ImplicitEdges;
 
-void VASTSchedGraph::emitSchedule(VASTModule &VM) {
-  ScheduleEmitter Emitter(VM, *this);
+  void buildImplicitFlow(VASTSlot *S);
+  void buildImplicitFlow(VASTSlot *S, ArrayRef<VASTSlot*> StraightFlow);
 
-  Emitter.emitSchedule();
+public:
+  ImplicitFlowBuilder(DominatorTree *DT, VASTModule &VM) : DT(DT), VM(VM),
+    ShortesPaths(STGDistanceBase::CalculateShortestPathDistance(VM)) {}
+
+  void run();
+};
+}
+
+void ImplicitFlowBuilder::buildImplicitFlow(VASTSlot *S,
+                                            ArrayRef<VASTSlot*> StraightFlow) {
+  DEBUG(dbgs() << "Starting from #" << S->SlotNum << '\n');
+  assert(S->IsSubGrp && "Expect subgroup as root!");
+
+  typedef df_iterator<VASTSlot*> slot_df_iterator;
+  for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
+    VASTSlot *Child = *DI;
+
+    if (Child == S) {
+      ++DI;
+      continue;
+    }
+
+    unsigned SPDistance = ShortesPaths.getDistance(S->SlotNum, Child->SlotNum);
+
+    // Ignore the slots that not overlap with any of the slot in StraightFlow.
+    if (SPDistance >= StraightFlow.size()) {
+      DI.skipChildren();
+      continue;
+    }
+
+    ++DI;
+
+    if (Child->IsSubGrp) continue;
+
+    assert(SPDistance && "Bad distance to child state!");
+    VASTSlot *Src = StraightFlow[SPDistance];
+
+    if (!DT->dominates(Src->getParent(), Child->getParent())) continue;
+
+    ImplicitEdges[Src].insert(Child);
+
+    DEBUG(dbgs() << "Overlap: #" << Src->SlotNum << " -> #"
+                 << Child->SlotNum << " distance: " << SPDistance << '\n');
+    // ++NumOverlappeds;
+  }
+}
+
+void ImplicitFlowBuilder::buildImplicitFlow(VASTSlot *S) {
+  // Build the straight line control flow.
+  SmallVector<VASTSlot*, 8> StraightFlow;
+  SmallVector<VASTSlot*, 8> ConditionalBroundaries;
+
+  DEBUG(dbgs() << "Handling #" << S->SlotNum << '\n';);
+
+  typedef df_iterator<VASTSlot*> slot_df_iterator;
+  for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
+    VASTSlot *Child = *DI;
+
+    // The edges to the successors of a subgroup are all conditional.
+    // TODO: Do not skip the unconditional subgroup.
+    if (Child->IsSubGrp && Child != S) {
+      // Collect the (conditional) successor of S.
+      if (DI.getPathLength() == 2)
+        ConditionalBroundaries.push_back(Child);
+
+      DI.skipChildren();
+      continue;
+    }
+
+    // Now child is a part of the straight line control flow.
+    StraightFlow.push_back(Child);
+    ++DI;
+  }
+
+  DEBUG(for (unsigned i = 0, e = StraightFlow.size(); i != e; ++i)
+    dbgs() << "  Straight: " << (i + 1) << " #"
+           << StraightFlow[i]->SlotNum << '\n';);
+
+  // Build the overlapped map from the target of side branch.
+  while (!ConditionalBroundaries.empty())
+    buildImplicitFlow(ConditionalBroundaries.pop_back_val(), StraightFlow);
+
+  DEBUG(dbgs() << "\n\n");
+}
+
+static bool HasSideBranch(VASTSlot *S) {
+  bool HasNonVirtualSucc = false;
+  bool HasVirtualSucc = false;
+  typedef VASTSlot::succ_iterator iterator;
+  for (iterator I = S->succ_begin(), E = S->succ_end(); I != E; ++I) {
+    VASTSlot *Succ = *I;
+    // FIXME: Assert Non-virtual edges must have a non-zero distance!
+    HasVirtualSucc |= Succ->IsSubGrp;
+    HasNonVirtualSucc |= !Succ->IsSubGrp;
+  }
+
+  return HasNonVirtualSucc && HasVirtualSucc;
+}
+
+void ImplicitFlowBuilder::run() {
+  // 1. Find all side-branching slot like this:
+  //  S1
+  //  | \
+  //  S2 S3
+  // Where edge (S1, S2) is unconditional while edge (S1, S2) is conditional.
+
+  typedef VASTModule::slot_iterator slot_iterator;
+  for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
+    VASTSlot *S = I;
+
+    if (HasSideBranch(S)) buildImplicitFlow(S);
+  }
+
+  typedef std::map<VASTSlot*, std::set<VASTSlot*> >::iterator iterator;
+  for (iterator I = ImplicitEdges.begin(), E = ImplicitEdges.end(); I != E; ++I)
+  {
+    VASTSlot *Src = I->first;
+    std::set<VASTSlot*> &Dsts = I->second;
+    typedef std::set<VASTSlot*>::iterator dst_iterator;
+    for (dst_iterator DI = Dsts.begin(), DE = Dsts.end(); DI != DE; ++DI)
+      Src->addSuccSlot(*DI, VASTSlot::ImplicitFlow);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+
+void VASTSchedGraph::emitSchedule(VASTModule &VM, DominatorTree *DT) {
+  ScheduleEmitter(VM, *this).emitSchedule();
+  ImplicitFlowBuilder(DT, VM).run();
 }
