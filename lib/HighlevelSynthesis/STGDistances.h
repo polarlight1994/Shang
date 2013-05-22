@@ -41,6 +41,8 @@ public:
   unsigned getDistance(unsigned From, unsigned To) const;
 
   void print(raw_ostream &OS, VASTModule &VM) const;
+
+  static STGDistanceBase CalculateShortestPathDistance(VASTModule &VM);
 };
 
 class STGDistances : public VASTModulePass {

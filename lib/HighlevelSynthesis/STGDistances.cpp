@@ -263,3 +263,9 @@ unsigned STGDistances::getLongestPath(unsigned From, unsigned To) const {
 
   return LPImpl->getDistance(From, To);
 }
+
+STGDistanceBase STGDistanceBase::CalculateShortestPathDistance(VASTModule &VM){
+  ShortestPathImpl Impl;
+  Impl.run(VM);
+  return Impl;
+}
