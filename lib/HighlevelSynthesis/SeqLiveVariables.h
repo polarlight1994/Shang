@@ -126,7 +126,8 @@ private:
   // The Slots the writing a specific SeqValue.
   std::map<VASTSeqValue*, SparseBitVector<> > WrittenSlots;
 
-  bool isWrittenAt(VASTSeqValue *V, VASTSlot *S);
+  bool isWrittenAt(VASTSeqValue *V, VASTSlot::EdgePtr Edge);
+  bool isWrittenViaImplicitFlow(VASTSeqValue *V, VASTSlot::EdgePtr Edge);
 
   // Create the VarInfo for PHINodes.
   void createInstVarInfo(VASTModule *VM);

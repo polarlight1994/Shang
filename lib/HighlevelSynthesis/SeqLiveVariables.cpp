@@ -79,6 +79,7 @@ char &llvm::SeqLiveVariablesID = SeqLiveVariables::ID;
 INITIALIZE_PASS_BEGIN(SeqLiveVariables, "shang-seq-live-variables",
                       "Seq Live Variables Analysis", false, true)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
+  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
 INITIALIZE_PASS_END(SeqLiveVariables, "shang-seq-live-variables",
                     "Seq Live Variables Analysis", false, true)
 
@@ -93,6 +94,7 @@ SeqLiveVariables::SeqLiveVariables() : VASTModulePass(ID) {
 void SeqLiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequiredTransitive<STGDistances>();
+  AU.addRequiredID(DatapathNamerID);
   AU.setPreservesAll();
 }
 
@@ -278,6 +280,7 @@ static void setLandingSlots(VASTSlot *S, SparseBitVector<> &Landings) {
     // Now we land with the 1-distance edge.
     if (Edge.getDistance()) {
       Landings.set(Child->SlotNum);
+      // Skip the children of the current node as we had already reach the leave.
       continue;
     }
 
@@ -414,15 +417,16 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
     if (IgnoreSlot) {
 
       if (Edge.getDistance()) IgnoreSlot = false;
-
-      continue;
     }
 
     // Find the nearest written slot in the path.
-    if (isWrittenAt(Use, Edge)) {
-      DefEdge = Edge;
-      break;
-    }
+    // First check the implicit flow, then check the normal flow.
+    if (!(!IgnoreSlot && isWrittenAt(Use, Edge))
+        && !isWrittenViaImplicitFlow(Use, Edge))
+      continue;
+
+    DefEdge = Edge;
+    break;
   }
 
   if (!DefEdge) {
@@ -523,18 +527,69 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
     VI->Alives.set(ChildNode->SlotNum);
     VI->Kills.reset(ChildNode->SlotNum);
 
+    // Is the flow reach the define slot via implicit edges?
+    // If so we need to carefully prune the edges: Only traversal the implicit
+    // flow edges, otherwise we will reach a point that not necessary dominated
+    // by the defines of the current SeqVal.
+    if (DefEdge->SlotNum == ChildNode->SlotNum) {
+      bool ReachedDef = false;
+      for (ChildIt I = ChildNode->pred_begin(), E = ChildNode->pred_end();
+           I != E; ++I) {
+        VASTSlot::EdgePtr SrcEdge = *I;
+
+        // Only traversal backward via the implicit flow.
+        if (SrcEdge.getType() != VASTSlot::ImplicitFlow) continue;
+
+        // Check if we reach the definition via the implicit edges.
+        if (VI->Defs.test(SrcEdge->SlotNum)) {
+          // The current slot is defined, but also killed!
+          if (SrcEdge == UseSlot) VI->DefKills.set(UseSlot->SlotNum);
+
+          // If we can reach a define slot, the define slot is not dead.
+          VI->Kills.reset(SrcEdge->SlotNum);
+          ReachedDef = true;
+        }
+      }
+
+      assert(ReachedDef && "Bad define edge!");
+      (void) ReachedDef;
+      // Do not move across the define slot.
+      continue;
+    }
+
     VisitStack.push_back(std::make_pair(ChildNode, ChildNode->pred_begin()));
   }
   
   DEBUG(VI->verifyKillAndAlive();VI->dump(); dbgs() << '\n');
 }
 
-bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot *S) {
+bool SeqLiveVariables::isWrittenViaImplicitFlow(VASTSeqValue *V,
+                                                VASTSlot::EdgePtr Edge) {
+  VASTSlot *Dst = Edge;
+
+  typedef VASTSlot::pred_iterator pred_iterator;
+  for (pred_iterator I = Dst->pred_begin(), E = Dst->pred_end(); I != E; ++I) {
+    VASTSlot::EdgePtr SrcEdge = *I;
+
+    // Only traversal backward via the implicit flow.
+    if (SrcEdge.getType() != VASTSlot::ImplicitFlow) continue;
+
+    if (isWrittenAt(V, SrcEdge)) {
+      assert(!isWrittenAt(V, Edge) && "Find overlapped write!");
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot::EdgePtr Edge) {
+  VASTSlot *Dst = Edge;
   std::map<VASTSeqValue*, SparseBitVector<> >::iterator at
     = WrittenSlots.find(V);
   assert(at != WrittenSlots.end() && "Definition of V not visited yet!");
 
-  return at->second.test(S->SlotNum);
+  return at->second.test(Dst->SlotNum);
 }
 
 unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
