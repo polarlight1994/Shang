@@ -150,7 +150,7 @@ VASTSlot *VASTSlot::getParentState() {
   // predecessors tree.
   VASTSlot *S = this;
   while (S->pred_size() == 1 && S->IsSubGrp) {
-    VASTSlot *PredSlot = PredSlots.front();
+    VASTSlot *PredSlot = *S->pred_begin();
     S = PredSlot;
   }
 
