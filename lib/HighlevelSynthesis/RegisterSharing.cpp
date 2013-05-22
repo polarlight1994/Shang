@@ -44,7 +44,6 @@ class SeqLiveInterval {
   SparseBitVector<> Alives;
   SparseBitVector<> Kills;
   SparseBitVector<> DefKills;
-  SparseBitVector<> Overlappeds;
 
   typedef SmallPtrSet<SeqLiveInterval*, 8> NodeVecTy;
   // Predecessors and Successors.
@@ -54,11 +53,8 @@ class SeqLiveInterval {
   WeightVecTy SuccWeights;
 
   bool
-  intersects(const SparseBitVector<> &LHSBits, const SparseBitVector<> &RHSBits,
-             const SparseBitVector<> &RHSOverlaps) const {
-    return LHSBits.intersects(RHSBits)
-           || LHSBits.intersects(RHSOverlaps)
-           || Overlappeds.intersects(RHSBits);
+  intersects(const SparseBitVector<> &LHSBits, const SparseBitVector<> &RHSBits) const {
+    return LHSBits.intersects(RHSBits);
   }
 
 public:
@@ -75,7 +71,6 @@ public:
       Alives      |= LV->Alives;
       Kills       |= LV->Kills;
       DefKills    |= LV->DefKills;
-      Overlappeds |= LV->Overlappeds;
     }
   }
 
@@ -93,7 +88,6 @@ public:
 
   void print(raw_ostream &OS) const {
     ::dump(Alives, OS);
-    ::dump(Overlappeds, OS);
   }
 
   void dump() const { print(dbgs()); }
@@ -118,7 +112,6 @@ public:
     Alives      |= RHS->Alives;
     Kills       |= RHS->Kills;
     DefKills    |= RHS->DefKills;
-    Overlappeds |= RHS->Overlappeds;
   }
 
   bool compatibleWith(const SeqLiveInterval *RHS) const {
@@ -127,28 +120,28 @@ public:
       return false;
 
     // Defines should not intersects.
-    if (intersects(Defs, RHS->Defs, RHS->Overlappeds))
+    if (intersects(Defs, RHS->Defs))
       return false;
 
     // Defines and alives should not intersects.
-    if (intersects(Defs, RHS->Alives, RHS->Overlappeds))
+    if (intersects(Defs, RHS->Alives))
       return false;
 
-    if (intersects(Alives, RHS->Defs, RHS->Overlappeds))
+    if (intersects(Alives, RHS->Defs))
       return false;
 
     // Alives should not intersects.
-    if (intersects(Alives, RHS->Alives, RHS->Overlappeds))
+    if (intersects(Alives, RHS->Alives))
       return false;
 
     // Kills should not intersects.
     // Not need to check the DefKills because they are a part of Defs.
-    if (intersects(Kills, RHS->Kills, RHS->Overlappeds))
+    if (intersects(Kills, RHS->Kills))
       return false;
 
     // Kills and Alives should not intersects.
     // TODO: Ignore the dead slots.
-    if (intersects(Kills, RHS->Kills, RHS->Overlappeds))
+    if (intersects(Kills, RHS->Kills))
       return false;
 
     return true;
@@ -448,7 +441,6 @@ struct RegisterSharing : public VASTModulePass {
     AU.addPreservedID(ControlLogicSynthesisID);
 
     AU.addPreservedID(STGDistancesID);
-    AU.addPreservedID(OverlappedSlotsID);
 
     AU.addRequired<SeqLiveVariables>();
     //AU.addPreserved<SeqLiveVariables>();

@@ -31,7 +31,6 @@ extern char &SelectorSynthesisID;
 extern char &DatapathNamerID;
 extern char &SeqLiveVariablesID;
 extern char &STGDistancesID;
-extern char &OverlappedSlotsID;
 
 FunctionPass *createDesignMetricsPass();
 
@@ -98,7 +97,6 @@ void initializeTimingNetlistPass(PassRegistry &Registry);
 void initializeVASTSchedulingPass(PassRegistry &Registry);
 void initializeRegisterFoldingPass(PassRegistry &Registry);
 void initializeSTGDistancesPass(PassRegistry &Registry);
-void initializeOverlappedSlotsPass(PassRegistry &Registry);
 
 void initializeControlLogicSynthesisPass(PassRegistry &Registry);
 void initializeSelectorSynthesisPass(PassRegistry &Registry);

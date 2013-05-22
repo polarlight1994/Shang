@@ -11,7 +11,6 @@ add_llvm_library(ShangHLS
   LinearOrderBuilder.cpp
   SDCScheduler.cpp
   SeqLiveVariables.cpp
-  OverlappedSlots.cpp
   STGDistances.cpp
   SelectorPipelining.cpp
   SelectorSynthesis.cpp

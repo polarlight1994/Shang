@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "STGDistances.h"
-#include "OverlappedSlots.h"
 #include "SeqLiveVariables.h"
 
 #include "shang/Passes.h"
@@ -45,8 +44,6 @@ void SeqLiveVariables::VarInfo::print(raw_ostream &OS) const {
   ::dump(DefKills, OS);
   OS << "\n  Landings: ";
   ::dump(Landings, OS);
-  OS << "\n  Overlappeds: ";
-  ::dump(Overlappeds, OS);
   OS << "\n";
 }
 
@@ -81,7 +78,6 @@ char &llvm::SeqLiveVariablesID = SeqLiveVariables::ID;
 
 INITIALIZE_PASS_BEGIN(SeqLiveVariables, "shang-seq-live-variables",
                       "Seq Live Variables Analysis", false, true)
-  INITIALIZE_PASS_DEPENDENCY(OverlappedSlots)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
 INITIALIZE_PASS_END(SeqLiveVariables, "shang-seq-live-variables",
                     "Seq Live Variables Analysis", false, true)
@@ -96,7 +92,6 @@ SeqLiveVariables::SeqLiveVariables() : VASTModulePass(ID) {
 
 void SeqLiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
-  AU.addRequired<OverlappedSlots>();
   AU.addRequiredTransitive<STGDistances>();
   AU.setPreservesAll();
 }
@@ -163,7 +158,6 @@ void SeqLiveVariables::verifyAnalysis() const {
     // Reset the context.
     VIs.clear();
     UnionMask.clear();
-    OverlappedMask.clear();
 
     typedef VASTSelector::def_iterator def_iterator;
     for (def_iterator DI = Sel->def_begin(), DE = Sel->def_end(); DI != DE; ++DI) {
@@ -176,9 +170,7 @@ void SeqLiveVariables::verifyAnalysis() const {
       VarInfo *VInfo = *VI;
 
       // FIXME: Check the overlapped slots more carefully.
-      if (UnionMask.intersects(VInfo->Alives)
-          || OverlappedMask.intersects(VInfo->Alives)
-          || UnionMask.intersects(VInfo->Overlappeds)) {
+      if (UnionMask.intersects(VInfo->Alives)) {
         dbgs() << "Current VASTSeqVal: " << Sel->getName() << '\n';
         dumpVarInfoSet(VIs);
         dbgs() << "Overlap slots:\n";
@@ -196,7 +188,6 @@ void SeqLiveVariables::verifyAnalysis() const {
       UnionMask |= VInfo->Alives;
       UnionMask |= VInfo->Kills;
       UnionMask |= VInfo->DefKills;
-      OverlappedMask |= VInfo->Overlappeds;
     }
   }
 }
@@ -313,18 +304,7 @@ void SeqLiveVariables::initializeLandingSlots() {
   }
 }
 
-void SeqLiveVariables::initializeOverlappedSlots() {
-  OverlappedSlots &Overlappeds = getAnalysis<OverlappedSlots>();
-
-  for (var_iterator I = VarList.begin(), E = VarList.end(); I != E; ++I) {
-    VarInfo *VI = I;
-
-    // Iterate over all reachable slots to set the overlapped slots.
-    Overlappeds.setOverlappedSlots(VI->Alives, VI->Overlappeds);
-    Overlappeds.setOverlappedSlots(VI->Kills, VI->Overlappeds);
-    Overlappeds.setOverlappedSlots(VI->DefKills, VI->Overlappeds);
-  }
-}
+void SeqLiveVariables::initializeOverlappedSlots() {}
 
 void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
   std::set<VASTSeqValue*> ReadAtSlot;

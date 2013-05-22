@@ -85,10 +85,6 @@ public:
     /// Landings - The slots immediately reachable by the define slot.
     SparseBitVector<> Landings;
 
-    /// Overlappeds - The slots overlaps with the reachable slot of the current
-    /// live variable.
-    SparseBitVector<> Overlappeds;
-
     void initializeDefSlot(unsigned SlotNum) {
       // Initialize the define slot.
       Defs.set(SlotNum);
