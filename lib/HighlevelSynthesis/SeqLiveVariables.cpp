@@ -255,18 +255,35 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
 }
 
 static void setLandingSlots(VASTSlot *S, SparseBitVector<> &Landings) {
-  typedef df_iterator<VASTSlot*> slot_df_iterator;
-  for (slot_df_iterator DI = df_begin(S), DE = df_end(S); DI != DE; /*++DI*/) {
-    VASTSlot *Child = *DI;
+  // Perform depth first search to check if we can reach RHS from LHS with
+  // 0-distance edges.
+  SmallPtrSet<VASTSlot*, 8> Visited;
+  SmallVector<std::pair<VASTSlot*, VASTSlot::succ_iterator>, 4> WorkStack;
+  WorkStack.push_back(std::make_pair(S, S->succ_begin()));
 
-    // Ignore the current slot and any immediate reachable subgroups.
-    if (Child == S || Child->IsSubGrp) {
-      ++DI;
+  while (!WorkStack.empty()) {
+    VASTSlot *S = WorkStack.back().first;
+    VASTSlot::succ_iterator ChildIt = WorkStack.back().second;
+
+    if (ChildIt == S->succ_end()) {
+      WorkStack.pop_back();
       continue;
     }
 
-    Landings.set(Child->SlotNum);
-    DI.skipChildren();
+    VASTSlot::EdgePtr Edge = *ChildIt;
+    ++WorkStack.back().second;
+    VASTSlot *Child = Edge;
+
+    // Now we land with the 1-distance edge.
+    if (Edge.getDistance()) {
+      Landings.set(Child->SlotNum);
+      continue;
+    }
+
+    // Do not visit a node twice.
+    if (!Visited.insert(Child)) continue;
+
+    WorkStack.push_back(std::make_pair(Child, Child->succ_begin()));
   }
 
   DEBUG(dbgs() << "Slot #" << S->SlotNum << " landing: ";
