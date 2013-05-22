@@ -32,11 +32,19 @@ class VASTSlotCtrl;
 
 class VASTSlot : public VASTNode, public ilist_node<VASTSlot> {
 public:
-  typedef SmallVector<VASTSlot*, 4> SuccVecTy;
+  // The pointer to successor which is also encoded with the distance.
+  struct EdgePtr : public PointerIntPair<VASTSlot*, 1> {
+    operator VASTSlot*() const { return getPointer(); }
+    VASTSlot *operator->() const { return getPointer(); }
+    EdgePtr(VASTSlot *S, unsigned Distance)
+      : PointerIntPair<VASTSlot*, 1>(S, Distance) {}
+  };
+
+  typedef SmallVector<EdgePtr, 4> SuccVecTy;
   typedef SuccVecTy::iterator succ_iterator;
   typedef SuccVecTy::const_iterator const_succ_iterator;
 
-  typedef SmallVector<VASTSlot*, 4> PredVecTy;
+  typedef SmallVector<EdgePtr, 4> PredVecTy;
   typedef PredVecTy::iterator pred_iterator;
   typedef PredVecTy::const_iterator const_pred_iterator;
 
@@ -157,7 +165,7 @@ public:
   VASTSlot *getSubGroup(BasicBlock *BB) const;
   VASTSlot *getParentState();
 
-  void addSuccSlot(VASTSlot *NextSlot);
+  void addSuccSlot(VASTSlot *NextSlot, unsigned Distance);
 
   bool isSynthesized() const { return !SlotReg.isInvalid(); }
 

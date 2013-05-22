@@ -66,7 +66,8 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
     // Create the subgroup if it does not exist.
     ++NumSubGropus;
     SubGrp = VM.createSlot(++CurrentSlotNum, BB, Cnd, true);
-    S->addSuccSlot(SubGrp);
+    // The subgroups are not actually the successors of S in the control flow.
+    S->addSuccSlot(SubGrp, 0);
     return SubGrp;
   }
 
@@ -182,7 +183,8 @@ VASTSlotCtrl *ScheduleEmitter::addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
           || NextSlot == VM.getFinishSlot())
         && "Cannot change Slot and BB at the same time!");
 
-  S->addSuccSlot(NextSlot);
+  assert(!NextSlot->IsSubGrp && "Unexpected subgroup!");
+  S->addSuccSlot(NextSlot, 1);
   VASTSlotCtrl *SlotBr = VM.createSlotCtrl(NextSlot, S, Cnd);
   if (V) SlotBr->annotateValue(V);
 

@@ -86,9 +86,9 @@ void STGDistanceBase::initialize(VASTModule &VM) {
     typedef VASTSlot::succ_iterator succ_iterator;
     for (succ_iterator SI = Src->succ_begin(), SE = Src->succ_end();
          SI != SE; ++SI) {
-      VASTSlot *Dst = *SI;
+      VASTSlot::EdgePtr Dst = *SI;
       assert(Src != Dst && "Unexpected loop!");
-      DistanceMatrix[Dst->SlotNum][Src->SlotNum] = Dst->IsSubGrp ? 0 : 1;
+      DistanceMatrix[Dst->SlotNum][Src->SlotNum] = Dst.getInt();
     }
   }
 }
@@ -131,12 +131,12 @@ void STGDistanceImpl<SubClass>::run(VASTModule &VM) {
     for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
       VASTSlot *Dst = *I;
       unsigned DstSlot = Dst->SlotNum;
-      unsigned EdgeDistance = Dst->IsSubGrp ? 0 : 1;
 
       typedef VASTSlot::pred_iterator pred_iterator;
       for (pred_iterator PI = Dst->pred_begin(), PE = Dst->pred_end();
            PI != PE; ++PI) {
-        VASTSlot *Thu = *PI;
+        VASTSlot::EdgePtr Thu = *PI;
+        unsigned EdgeDistance = Thu.getInt();
 
         DenseMap<unsigned, unsigned> &Srcs = DistanceMatrix[Thu->SlotNum];
         typedef DenseMap<unsigned, unsigned>::iterator from_iterator;

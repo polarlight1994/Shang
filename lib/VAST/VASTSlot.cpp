@@ -66,7 +66,10 @@ BasicBlock *VASTSlot::getParent() const {
 }
 
 bool VASTSlot::hasNextSlot(VASTSlot *NextSlot) const {
-  return std::find(NextSlots.begin(), NextSlots.end(), NextSlot) != NextSlots.end();
+  for (const_succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I)
+    if (NextSlot == EdgePtr(*I)) return true;
+
+  return false;
 }
 
 void VASTSlot::unlinkSuccs() {
@@ -112,15 +115,16 @@ const char *VASTSlot::getName() const {
   return getValue()->getName();
 }
 
-void VASTSlot::addSuccSlot(VASTSlot *NextSlot) {
+void VASTSlot::addSuccSlot(VASTSlot *NextSlot, unsigned Distance) {
+  assert(Distance <= 1 && "Unexpected distance!");
   // Do not add the same successor slot twice.
   if (hasNextSlot(NextSlot)) return;
 
   assert(NextSlot != this && "Unexpected loop!");
 
   // Connect the slots.
-  NextSlot->PredSlots.push_back(this);
-  NextSlots.push_back(NextSlot);
+  NextSlot->PredSlots.push_back(EdgePtr(this, Distance));
+  NextSlots.push_back(EdgePtr(NextSlot, Distance));
 }
 
 VASTSlot *VASTSlot::getSubGroup(BasicBlock *BB) const {
