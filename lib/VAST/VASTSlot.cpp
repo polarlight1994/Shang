@@ -223,6 +223,21 @@ struct DOTGraphTraits<const VASTModule*> : public DefaultDOTGraphTraits{
     return Attr;
   }
 
+  /// If you want to override the dot attributes printed for a particular
+  /// edge, override this method.
+  static std::string getEdgeAttributes(NodeTy *,
+                                       VASTSlot::const_succ_iterator EI,
+                                       GraphTy *) {
+    switch ((*EI).getType()) {
+    case VASTSlot::Sucessor:        return "";
+    case VASTSlot::SubGrp:          return "style=dashed";
+    case VASTSlot::ImplicitFlow:    return "color=blue,style=dashed";
+    }
+
+    llvm_unreachable("Unexpected edge type!");
+    return "";
+  }
+
   // Print the cluster of the subregions. This groups the single basic blocks
   // and adds a different background color for each group.
   static void printSubgrpCluster(const VASTSlot *S,

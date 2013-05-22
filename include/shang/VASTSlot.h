@@ -41,15 +41,17 @@ public:
   // The pointer to successor which is also encoded with the distance.
   struct EdgePtr : public PointerIntPair<VASTSlot*, 2, EdgeType> {
   private:
-    typedef PointerIntPair<VASTSlot*, 2, EdgeType> _Self;
+    typedef PointerIntPair<VASTSlot*, 2, EdgeType> _Base;
 
-    unsigned getInt() const { return _Self::getInt(); }
+    // Hide the function getInt from PointerIntPair.
+    void getInt() const { }
   public:
     operator VASTSlot*() const { return getPointer(); }
     VASTSlot *operator->() const { return getPointer(); }
-    EdgePtr(VASTSlot *S, EdgeType T) : _Self(S, T) {}
+    EdgePtr(VASTSlot *S, EdgeType T) : _Base(S, T) {}
 
-    unsigned getDistance() const { return 0x1 & getInt(); }
+    EdgeType getType() const { return _Base::getInt(); }
+    unsigned getDistance() const { return 0x1 & _Base::getInt(); }
   };
 
   typedef SmallVector<EdgePtr, 4> SuccVecTy;
