@@ -79,7 +79,6 @@ char &llvm::SeqLiveVariablesID = SeqLiveVariables::ID;
 INITIALIZE_PASS_BEGIN(SeqLiveVariables, "shang-seq-live-variables",
                       "Seq Live Variables Analysis", false, true)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
-  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
 INITIALIZE_PASS_END(SeqLiveVariables, "shang-seq-live-variables",
                     "Seq Live Variables Analysis", false, true)
 
@@ -94,7 +93,6 @@ SeqLiveVariables::SeqLiveVariables() : VASTModulePass(ID) {
 void SeqLiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequiredTransitive<STGDistances>();
-  AU.addRequiredID(DatapathNamerID);
   AU.setPreservesAll();
 }
 
