@@ -34,10 +34,15 @@ class VASTSlot : public VASTNode, public ilist_node<VASTSlot> {
 public:
   // The pointer to successor which is also encoded with the distance.
   struct EdgePtr : public PointerIntPair<VASTSlot*, 1> {
+  private:
+    unsigned getInt() const { return PointerIntPair<VASTSlot*, 1>::getInt(); }
+  public:
     operator VASTSlot*() const { return getPointer(); }
     VASTSlot *operator->() const { return getPointer(); }
     EdgePtr(VASTSlot *S, unsigned Distance)
       : PointerIntPair<VASTSlot*, 1>(S, Distance) {}
+
+    unsigned getDistance() const { return 0x1 & getInt(); }
   };
 
   typedef SmallVector<EdgePtr, 4> SuccVecTy;
