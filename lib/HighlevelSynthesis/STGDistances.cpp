@@ -68,6 +68,13 @@ struct ShortestPathImpl : public STGDistanceImpl<ShortestPathImpl> {
                       unsigned DstSlot, unsigned SrcSlot);
 
 };
+
+struct LongestPathImpl : public STGDistanceImpl<LongestPathImpl> {
+  bool updateDistance(unsigned DistanceSrcThuDst,
+                      unsigned DstSlot, unsigned SrcSlot);
+
+  void initialize(VASTModule &VM);
+};
 }
 
 void STGDistanceBase::initialize(VASTModule &VM) {
@@ -160,6 +167,53 @@ bool ShortestPathImpl::updateDistance(unsigned DistanceSrcThuDst,
 }
 
 //===----------------------------------------------------------------------===//
+void LongestPathImpl::initialize(VASTModule &VM) {
+  STGDistanceBase::initialize(VM);
+
+  // Handle the backedges.
+  std::set<VASTSlot*> Visited;
+
+  // Visit the slots in topological order.
+  ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >
+    RPO(VM.getStartSlot());
+
+  typedef
+  ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >::rpo_iterator
+  slot_top_iterator;
+
+  for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
+    VASTSlot *Dst = *I;
+    Visited.insert(Dst);
+
+    typedef VASTSlot::pred_iterator pred_iterator;
+    for (pred_iterator PI = Dst->pred_begin(), PE = Dst->pred_end();
+         PI != PE; ++PI) {
+      VASTSlot *Src = *PI;
+
+      if (Visited.count(Src)) continue;
+
+      // Now we get a back-edge, for each backedge Src -> Dst, there must be
+      // a path from Dst to Src, set the distance of this path to Infinite.
+      // Because there is a loop: Src->Dst->Src, and the longest path distance
+      // will be infinite because of the loop.
+      DistanceMatrix[Src->SlotNum][Dst->SlotNum] = STGDistances::Inf;
+    }
+  }
+}
+
+bool LongestPathImpl::updateDistance(unsigned DistanceSrcThuDst,
+                                     unsigned DstSlot, unsigned SrcSlot) {
+  // Saturate the longest path distance at Infinite.
+  DistanceSrcThuDst = std::min(STGDistances::Inf, DistanceSrcThuDst);
+  unsigned DistanceSrcDst = getDistance(SrcSlot, DstSlot);
+  if (DistanceSrcThuDst > DistanceSrcDst) {
+    DistanceMatrix[DstSlot][SrcSlot] = DistanceSrcThuDst;
+    return true;
+  }
+
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 char STGDistances::ID = 0;
 char &llvm::STGDistancesID = STGDistances::ID;
@@ -168,7 +222,7 @@ const unsigned STGDistances::Inf = UINT16_MAX;
 INITIALIZE_PASS(STGDistances, "vast-stg-distances",
                 "Compute the distances in the STG", false, true)
 
-STGDistances::STGDistances() : VASTModulePass(ID), SPImpl(0), VM(0) {
+STGDistances::STGDistances() : VASTModulePass(ID), SPImpl(0), LPImpl(0), VM(0) {
   initializeSTGDistancesPass(*PassRegistry::getPassRegistry());
 }
 
@@ -177,12 +231,17 @@ void STGDistances::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
 }
 
-void STGDistances::releaseMemory() {
-  if (SPImpl) {
-    delete SPImpl;
-    SPImpl = 0;
+template<typename T>
+static void DeleteAndReset(T *&Ptr) {
+  if (Ptr) {
+    delete Ptr;
+    Ptr = 0;
   }
+}
 
+void STGDistances::releaseMemory() {
+  DeleteAndReset(SPImpl);
+  DeleteAndReset(LPImpl);
   VM = 0;
 }
 
@@ -191,6 +250,7 @@ bool STGDistances::runOnVASTModule(VASTModule &VM) {
 
   this->VM = &VM;
   SPImpl = new ShortestPathImpl();
+  LPImpl = new LongestPathImpl();
 
   return false;
 }
@@ -206,4 +266,12 @@ unsigned STGDistances::getShortestPath(unsigned From, unsigned To) const {
   if (SPImpl->empty()) SPImpl->run(*VM);
 
   return SPImpl->getDistance(From, To);
+}
+
+unsigned STGDistances::getLongestPath(unsigned From, unsigned To) const {
+  assert(LPImpl && "Get longest path after releaseMemory?");
+  // Calculate the distances on the fly.
+  if (LPImpl->empty()) LPImpl->run(*VM);
+
+  return LPImpl->getDistance(From, To);
 }

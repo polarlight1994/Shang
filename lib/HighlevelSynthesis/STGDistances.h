@@ -1,4 +1,4 @@
-//===- STGDistances.h - Calculate the distances in the STG -*-C++ -*-===//
+//===---- STGDistances.h - Calculate the distances in the STG ----*-C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -24,9 +24,11 @@ namespace llvm {
 class VASTSlot;
 class VASTModule;
 struct ShortestPathImpl;
+struct LongestPathImpl;
 
 class STGDistances : public VASTModulePass {
   ShortestPathImpl *SPImpl;
+  LongestPathImpl *LPImpl;
   VASTModule *VM;
 public:
   static const unsigned Inf;
@@ -42,6 +44,7 @@ public:
   void print(raw_ostream &OS) const;
 
   unsigned getShortestPath(unsigned From, unsigned To) const;
+  unsigned getLongestPath(unsigned From, unsigned To) const;
 };
 }
 
