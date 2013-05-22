@@ -33,31 +33,6 @@ STATISTIC(NumSTPIterations,
           "Number of iterations in the shortest path algorithm");
 
 namespace llvm {
-
-struct STGDistanceBase {
-  typedef std::pair<unsigned, unsigned> Idx;
-  DenseMap<unsigned, DenseMap<unsigned, unsigned> > DistanceMatrix;
-
-  void initialize(VASTModule &VM);
-
-  bool empty() const { return DistanceMatrix.empty(); }
-
-  unsigned getDistance(unsigned From, unsigned To) const {
-    DenseMap<unsigned, DenseMap<unsigned, unsigned> >::const_iterator
-      to_at = DistanceMatrix.find(To);
-
-    if (to_at == DistanceMatrix.end()) return STGDistances::Inf;
-
-    DenseMap<unsigned, unsigned>::const_iterator from_at = to_at->second.find(From);
-
-    if (from_at == to_at->second.end()) return STGDistances::Inf;
-
-    return from_at->second;
-  }
-
-  void print(raw_ostream &OS, VASTModule &VM) const;
-};
-
 template<typename SubClass>
 struct STGDistanceImpl : public STGDistanceBase {
   void run(VASTModule &VM);
@@ -91,6 +66,19 @@ void STGDistanceBase::initialize(VASTModule &VM) {
       DistanceMatrix[Dst->SlotNum][Src->SlotNum] = Dst.getInt();
     }
   }
+}
+
+unsigned STGDistanceBase::getDistance(unsigned From, unsigned To) const  {
+  DenseMap<unsigned, DenseMap<unsigned, unsigned> >::const_iterator
+    to_at = DistanceMatrix.find(To);
+
+  if (to_at == DistanceMatrix.end()) return STGDistances::Inf;
+
+  DenseMap<unsigned, unsigned>::const_iterator from_at = to_at->second.find(From);
+
+  if (from_at == to_at->second.end()) return STGDistances::Inf;
+
+  return from_at->second;
 }
 
 void STGDistanceBase::print(raw_ostream &OS, VASTModule &VM) const {

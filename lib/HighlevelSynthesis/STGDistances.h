@@ -26,6 +26,23 @@ class VASTModule;
 struct ShortestPathImpl;
 struct LongestPathImpl;
 
+class STGDistanceBase {
+protected:
+  typedef std::pair<unsigned, unsigned> Idx;
+  DenseMap<unsigned, DenseMap<unsigned, unsigned> > DistanceMatrix;
+
+  void initialize(VASTModule &VM);
+
+  STGDistanceBase() {}
+
+public:
+  bool empty() const { return DistanceMatrix.empty(); }
+
+  unsigned getDistance(unsigned From, unsigned To) const;
+
+  void print(raw_ostream &OS, VASTModule &VM) const;
+};
+
 class STGDistances : public VASTModulePass {
   ShortestPathImpl *SPImpl;
   LongestPathImpl *LPImpl;
