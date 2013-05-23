@@ -339,6 +339,7 @@ struct VASTScheduling : public VASTModulePass {
   void buildLoopDependencies(Instruction *Src, Instruction *Dst);
   void buildMemoryDependencies(BasicBlock *BB);
 
+  void preventInfinitUnrolling(Loop *L);
   void fixSchedulingGraph();
 
   void buildSchedulingGraph();
@@ -761,6 +762,35 @@ void VASTScheduling::buildMemoryDependencies(BasicBlock *BB) {
 }
 
 //===----------------------------------------------------------------------===//
+void VASTScheduling::preventInfinitUnrolling(Loop *L) {
+  // Build the constraints from the entry to the branch of the backedges.
+  BasicBlock *HeaderBB = L->getHeader();
+  ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[HeaderBB]);
+  VASTSchedUnit *Header = 0;
+
+  // First of all we need to locate the header.
+  for (unsigned i = 0; i < SUs.size(); ++i) {
+    VASTSchedUnit *SU = SUs[i];
+    if (SU->isBBEntry()) {
+      Header = SU;
+      break;
+    }
+  }
+
+  // Try to prevent the other part of the loop from being folded across the
+  // loop header.
+  ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[HeaderBB->getTerminator()]);
+  for (unsigned i = 0; i < Terminators.size(); ++i) {
+    VASTSchedUnit *Terminator = Terminators[i];
+    BasicBlock *TargetBB = Terminator->getTargetBlock();
+    // Folding the block that is outside the loop through the header is
+    // allowed.
+    if (!L->contains(TargetBB)) continue;
+
+    Terminator->addDep(Header, VASTDep::CreateCtrlDep(1));
+  }
+}
+
 void VASTScheduling::fixSchedulingGraph() {
   // Try to fix the dangling nodes.
   typedef VASTSchedGraph::iterator iterator;
@@ -872,9 +902,6 @@ void VASTScheduling::fixSchedulingGraph() {
     }
   }
 
-  // Prevent the scheduler from generating 1 slot loop, in which case the loop
-  // can be entirely folded into its predecessors. If this happen, the schedule
-  // emitter will try to unroll the loop.
   SmallVector<Loop*, 64> Worklist(LI->begin(), LI->end());
   while (!Worklist.empty()) {
     Loop *L = Worklist.pop_back_val();
@@ -882,32 +909,10 @@ void VASTScheduling::fixSchedulingGraph() {
     // Also push the children of L into the work list.
     if (!L->empty()) Worklist.append(L->begin(), L->end());
 
-    // Build the constraints from the entry to the branch of the backedges.
-    BasicBlock *HeaderBB = L->getHeader();
-    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[HeaderBB]);
-    VASTSchedUnit *Header = 0;
-
-    // First of all we need to locate the header.
-    for (unsigned i = 0; i < SUs.size(); ++i) {
-      VASTSchedUnit *SU = SUs[i];
-      if (SU->isBBEntry()) {
-        Header = SU;
-        break;
-      }
-    }
-
-    // Try to prevent the other part of the loop from being folded across the
-    // loop header.
-    ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[HeaderBB->getTerminator()]);
-    for (unsigned i = 0; i < Terminators.size(); ++i) {
-      VASTSchedUnit *Terminator = Terminators[i];
-      BasicBlock *TargetBB = Terminator->getTargetBlock();
-      // Folding the block that is outside the loop through the header is
-      // allowed.
-      if (!L->contains(TargetBB)) continue;
-
-      Terminator->addDep(Header, VASTDep::CreateCtrlDep(1));
-    }
+    // Prevent the scheduler from generating 1 slot loop, in which case the loop
+    // can be entirely folded into its predecessors. If this happen, the schedule
+    // emitter will try to unroll the loop.
+    preventInfinitUnrolling(L);
   }
 }
 
