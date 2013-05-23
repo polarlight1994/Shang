@@ -177,7 +177,8 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
     return;
   }
 
-  OS << '#' << InstIdx << ' ' << (isLaunch() ? "Launch" : "Latch");
+  OS << '#' << InstIdx << ' ' << (isLaunch() ? "Launch" : "Latch")
+     << " Parent: " << getParent()->getName();
 
   if (BasicBlock *BB = Ptr.dyn_cast<BasicBlock*>())
     OS << " BB: " << BB->getName();
@@ -834,7 +835,6 @@ void VASTScheduling::fixSchedulingGraph() {
   // Also add the dependencies form the return instruction to the exit of
   // the scheduling graph.
   Function &F = *VM;
-  bool AnyLinearOrder = false;
 
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
     TerminatorInst *Inst = I->getTerminator();
@@ -882,7 +882,6 @@ void VASTScheduling::fixSchedulingGraph() {
         assert(!U->isDependsOn(BackEdgeOp)
                && "Unexpected dependencies between terminators!");
         BackEdgeOp->addDep(U, VASTDep::CreateDep<VASTDep::LinearOrder>(0));
-        AnyLinearOrder = true;
         ++NumForceBrSync;
       }
     }
@@ -925,10 +924,6 @@ void VASTScheduling::fixSchedulingGraph() {
       Terminator->addDep(Header, VASTDep::CreateCtrlDep(1));
     }
   }
-
-  // DIRTYHACK: As we add linear order for the from the exiting branch to the
-  // backedge branch we may destroy the SU ordering. Fix it by topologicalSortSUs
-  if (AnyLinearOrder)  G->topologicalSortSUs();
 }
 
 void VASTScheduling::scheduleGlobal() {
@@ -1028,6 +1023,11 @@ void VASTScheduling::buildSchedulingGraph() {
 #ifndef NDEBUG
   G->verify();
 #endif
+
+  // Rebuild the topological order after the verification process, because the
+  // topological sort implicitly eliminate the SUs that do not have any
+  // dependencies.
+  G->topologicalSortSUs();
 
   DEBUG(G->viewGraph());
 }
