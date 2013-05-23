@@ -778,8 +778,6 @@ void VASTScheduling::fixSchedulingGraph() {
     if (Inst && (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst)))
       continue;
 
-    BasicBlock *BB = U->getParent();
-
     // Constrain the SU by the exit of the same BB if it is not constrained yet.
     // bool ConstrainedByExit = false;
 
@@ -795,15 +793,14 @@ void VASTScheduling::fixSchedulingGraph() {
     // Always constraints the latch with the exit SUs.
     // if (U->isLaunch()) continue;
 
+#ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
+    // At least constrain the scheduling unit with something.
+    if (U->use_empty()) G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
+#else
+    BasicBlock *BB = U->getParent();
     // Allocate 1 cycles for the scheduling units that launching some operations.
     unsigned Latency = U->isLatch() ? 0 : 1;
 
-#ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
-    // At least constrain the scheduling unit with something.
-    if (U->use_empty())  {
-      G->getExit()->addDep(U, VASTDep::CreateCtrlDep(Latency));
-    }
-#else
     // Constrain the dangling nodes by all terminators.
     ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
     for (unsigned i = 0; i < Exits.size(); ++i) {
