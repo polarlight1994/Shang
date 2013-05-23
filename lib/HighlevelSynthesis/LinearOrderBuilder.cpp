@@ -298,6 +298,12 @@ void SingleFULinearOrder::compuateLiveInBlocks(BBSet &LiveInBlocks) {
   }
 }
 
+static void BuildLinearOrder(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
+  unsigned IntialInterval = 1;
+  VASTDep Edge = VASTDep::CreateDep<VASTDep::LinearOrder>(IntialInterval);
+  Dst->addDep(Src, Edge);
+}
+
 void
 SingleFULinearOrder::buildLinearOrdingFromDom(VASTSchedUnit *SU,
                                               BasicBlock *UseBB) {
@@ -309,9 +315,7 @@ SingleFULinearOrder::buildLinearOrdingFromDom(VASTSchedUnit *SU,
     DefMapTy::iterator at = DefMap.find(BB);
     if (at != DefMap.end()) {
       ArrayRef<VASTSchedUnit*> SUs(at->second);
-      unsigned IntialInterval = 1;
-      VASTDep Edge = VASTDep::CreateDep<VASTDep::LinearOrder>(IntialInterval);
-      SU->addDep(SUs.back(), Edge);
+      BuildLinearOrder(SUs.back(), SU);
       return;
     }
 
@@ -376,9 +380,7 @@ SingleFULinearOrder::buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
     // Build a dependence edge from EalierSU to LaterSU.
     // TODO: Add an new kind of edge: Constraint Edge, and there should be
     // hard constraint and soft constraint.
-    unsigned IntialInterval = 1;
-    VASTDep Edge = VASTDep::CreateDep<VASTDep::LinearOrder>(IntialInterval);
-    LaterSU->addDep(EalierSU, Edge);
+    BuildLinearOrder(EalierSU, LaterSU);
 
     EalierSU = LaterSU;
   }
