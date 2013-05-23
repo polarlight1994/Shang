@@ -347,7 +347,7 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
 
 
 void ScheduleEmitter::emitSchedule() {
-  Function &F = VM;
+  Function &F = VM.getLLVMFunction();
   BasicBlock &Entry = F.getEntryBlock();
 
   G.sortSUs(top_sort_schedule_wrapper);

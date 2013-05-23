@@ -412,7 +412,7 @@ void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
 }
 
 void VASTModuleBuilder::allocateSubModules() {
-  Function &F = *VM;
+  Function &F = VM->getLLVMFunction();
 
   // Allocate the block RAMs.
   ArrayRef<const GlobalVariable*> GVs = Allocation.getBRAMAllocation(&F);

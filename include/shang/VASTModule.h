@@ -204,7 +204,7 @@ public:
   ilist<VASTSlot> &getSLotList() { return Slots; }
 
   operator DatapathContainer &() const { return *Datapath; }
-  operator Function &() { return F; }
+  Function &getLLVMFunction() { return F; }
   DatapathContainer *operator->() const { return Datapath; }
 
 

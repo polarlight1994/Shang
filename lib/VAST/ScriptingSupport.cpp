@@ -167,7 +167,7 @@ bool llvm::runScriptOnGlobalVariables(ArrayRef<GlobalVariable*> GVs,
 
 void llvm::bindFunctionToScriptEngine(DataLayout &TD, VASTModule *Module) {
   SMDiagnostic Err;
-  Function &F = *Module;
+  Function &F = Module->getLLVMFunction();
   // Push the function information into the script engine.
   // FuncInfo {
   //   String Name,

@@ -834,7 +834,7 @@ void VASTScheduling::fixSchedulingGraph() {
 
   // Also add the dependencies form the return instruction to the exit of
   // the scheduling graph.
-  Function &F = *VM;
+  Function &F = VM->getLLVMFunction();
 
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
     TerminatorInst *Inst = I->getTerminator();
@@ -936,7 +936,7 @@ void VASTScheduling::scheduleGlobal() {
   if (Scheduler.createLPAndVariables()) {
     unsigned TotalWeight = 0;
 
-    Function &F = *VM;
+    Function &F = VM->getLLVMFunction();
     typedef Function::iterator iterator;
     for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
       BasicBlock *BB = I;
@@ -998,7 +998,7 @@ void VASTScheduling::scheduleGlobal() {
 }
 
 void VASTScheduling::buildSchedulingGraph() {
-  Function &F = *VM;
+  Function &F = VM->getLLVMFunction();
 
   // Build the scheduling units according to the original scheduling.
   ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >
@@ -1034,8 +1034,9 @@ void VASTScheduling::buildSchedulingGraph() {
 
 bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   this->VM = &VM;
+  Function &F = VM.getLLVMFunction();
 
-  OwningPtr<VASTSchedGraph> GPtr(new VASTSchedGraph(VM));
+  OwningPtr<VASTSchedGraph> GPtr(new VASTSchedGraph(F));
   G = GPtr.get();
 
   // Initialize the analyses

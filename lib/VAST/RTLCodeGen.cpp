@@ -120,7 +120,7 @@ void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
 }
 
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
-  Function &F = VM;
+  Function &F = VM.getLLVMFunction();
 
   generateCodeForTopModule(F.getParent(), VM);
 
