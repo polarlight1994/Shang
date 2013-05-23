@@ -340,6 +340,7 @@ struct VASTScheduling : public VASTModulePass {
   void buildMemoryDependencies(BasicBlock *BB);
 
   void preventInfinitUnrolling(Loop *L);
+  void preventImplicitPipelining(Loop *L);
   void fixSchedulingGraph();
 
   void buildSchedulingGraph();
@@ -791,6 +792,46 @@ void VASTScheduling::preventInfinitUnrolling(Loop *L) {
   }
 }
 
+void VASTScheduling::preventImplicitPipelining(Loop *L) {
+  BasicBlock *Header = L->getHeader();
+
+  SmallVector<VASTSchedUnit*, 8> BackEdges, ExitingEdges;
+  typedef Loop::block_iterator block_iterator;
+
+  for (block_iterator I = L->block_begin(), E = L->block_end(); I != E; ++I) {
+    BasicBlock *BB = *I;
+    TerminatorInst *Inst = BB->getTerminator();
+
+    // Ignore the Return and Unreachable, which will wait for the whole function.
+    if (!isa<BranchInst>(Inst) && !isa<SwitchInst>(Inst)) continue;
+
+    ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[Inst]);
+    for (unsigned i = 0; i < Terminators.size(); ++i) {
+      VASTSchedUnit *Terminator = Terminators[i];
+      assert(Terminator->isTerminator() && "Unexpected scheduling unit type!");
+      BasicBlock *Dst = Terminator->getTargetBlock();
+
+      // Collect the branching operations targetting the header of the loop,
+      // the corresponding edges are backedges.
+      if (Dst == Header) BackEdges.push_back(Terminator);
+      // Also collect the extining edges.
+      else if (!L->contains(Dst)) ExitingEdges.push_back(Terminator);
+    }
+  }
+
+  // Add dependencies to prevent the the backedges being activatived before
+  // we reach the exiting edges.
+  typedef SmallVector<VASTSchedUnit*, 8>::iterator iterator;
+  for (iterator EI = ExitingEdges.begin(), EE = ExitingEdges.end();
+       EI != EE; ++EI) {
+    VASTSchedUnit *Exiting = *EI;
+    for (iterator BI = BackEdges.begin(), BE = BackEdges.end(); BI != BE; ++BI) {
+      VASTSchedUnit *BackEdge = *BI;
+      BackEdge->addDep(Exiting, VASTDep::CreateCtrlDep(0));
+    }
+  }
+}
+
 void VASTScheduling::fixSchedulingGraph() {
   // Try to fix the dangling nodes.
   typedef VASTSchedGraph::iterator iterator;
@@ -868,38 +909,6 @@ void VASTScheduling::fixSchedulingGraph() {
       G->getExit()->addDep(LastSU, VASTDep::CreateCtrlDep(0));
       continue;
     }
-
-    if (Loop *L = LI->getLoopFor(I)) {
-      if (!L->isLoopExiting(I)) continue;
-
-      // Synchronize the terminator of Loop exiting block. Otherwise we need
-      // chain breaking.
-      ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[Inst]);
-      VASTSchedUnit *BackEdgeOp = 0;
-      for (unsigned i = 0; i < SUs.size(); ++i) {
-        VASTSchedUnit *U = SUs[i];
-        assert(U->isTerminator() && "Unexpected SU type!");
-        if (U->getTargetBlock() == L->getHeader()) {
-          BackEdgeOp = U;
-          break;
-        }
-      }
-
-      if (BackEdgeOp == 0) continue;
-
-      // Add the linear order to make sure the BackEdgeOp is not scheduled
-      // earlier than the exiting branch, otherwise the RAW dependency will be
-      // broken. We can remove this once we have the chain breaker.
-      for (unsigned i = 0; i < SUs.size(); ++i) {
-        VASTSchedUnit *U = SUs[i];
-        assert(U->isTerminator() && "Unexpected SU type!");
-        if (U == BackEdgeOp) continue;
-        assert(!U->isDependsOn(BackEdgeOp)
-               && "Unexpected dependencies between terminators!");
-        BackEdgeOp->addDep(U, VASTDep::CreateDep<VASTDep::LinearOrder>(0));
-        ++NumForceBrSync;
-      }
-    }
   }
 
   SmallVector<Loop*, 64> Worklist(LI->begin(), LI->end());
@@ -913,6 +922,12 @@ void VASTScheduling::fixSchedulingGraph() {
     // can be entirely folded into its predecessors. If this happen, the schedule
     // emitter will try to unroll the loop.
     preventInfinitUnrolling(L);
+
+    // If the branch operations for the backedges are scheduled before the whole
+    // loop body is finished, we will get a pipelined loop, which is not what we
+    // want as the SDC scheduling cannot correctly model the modulo resource
+    // reservation at the moment.
+    preventImplicitPipelining(L);
   }
 }
 

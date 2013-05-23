@@ -142,7 +142,8 @@ IntervalFixer::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
       if (SrcBB == BB) continue;
 
       if (I.getEdgeType() == VASTDep::LinearOrder
-          || I.getEdgeType() == VASTDep::Conditional)
+          || I.getEdgeType() == VASTDep::Conditional
+          || I.getEdgeType() == VASTDep::CtrlDep)
        continue;
 
       VASTSchedUnit *SrcEntry = G.getEntrySU(SrcBB);
