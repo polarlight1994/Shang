@@ -801,14 +801,6 @@ void VASTScheduling::fixSchedulingGraph() {
 #ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
     // At least constrain the scheduling unit with something.
     if (U->use_empty())  {
-      if (isa<ReturnInst>(BB->getTerminator())) {
-        // We need to wait everything in the returning block.
-        ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
-        assert(Exits.back()->isTerminator() && "Expect terminator!");
-        Exits.back()->addDep(U, VASTDep::CreateCtrlDep(Latency));
-        continue;
-      }
-
       G->getExit()->addDep(U, VASTDep::CreateCtrlDep(Latency));
     }
 #else
