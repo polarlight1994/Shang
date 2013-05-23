@@ -203,7 +203,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void visitReturnInst(ReturnInst &I);
   void visitBranchInst(BranchInst &I);
 
-  void buildConditionaTransition(BasicBlock *DstBB, VASTSlot *CurSlot,
+  void buildConditionalTransition(BasicBlock *DstBB, VASTSlot *CurSlot,
                                        VASTValPtr Cnd, TerminatorInst &I);
 
   void visitSwitchInst(SwitchInst &I);
@@ -575,7 +575,7 @@ void VASTModuleBuilder::visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd,
 }
 
 
-void VASTModuleBuilder::buildConditionaTransition(BasicBlock *DstBB,
+void VASTModuleBuilder::buildConditionalTransition(BasicBlock *DstBB,
                                                   VASTSlot *CurSlot,
                                                   VASTValPtr Cnd,
                                                   TerminatorInst &I) {
@@ -624,7 +624,7 @@ void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
   if (I.isUnconditional()) {
     BasicBlock *DstBB = I.getSuccessor(0);
 
-    buildConditionaTransition(DstBB, CurSlot, VASTImmediate::True, I);
+    buildConditionalTransition(DstBB, CurSlot, VASTImmediate::True, I);
     return;
   }
 
@@ -632,10 +632,10 @@ void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
   VASTValPtr Cnd = getAsOperandImpl(I.getCondition());
   BasicBlock *TrueBB = I.getSuccessor(0);
 
-  buildConditionaTransition(TrueBB, CurSlot, Cnd, I);
+  buildConditionalTransition(TrueBB, CurSlot, Cnd, I);
 
   BasicBlock *FalseBB = I.getSuccessor(1);
-  buildConditionaTransition(FalseBB, CurSlot, Builder.buildNotExpr(Cnd), I);
+  buildConditionalTransition(FalseBB, CurSlot, Builder.buildNotExpr(Cnd), I);
 }
 
 // Copy from LowerSwitch.cpp.
@@ -726,7 +726,7 @@ void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
     VASTValPtr Pred = CI->second;
     CasePreds.push_back(Pred);
 
-    buildConditionaTransition(SuccBB, CurSlot, Pred, I);
+    buildConditionalTransition(SuccBB, CurSlot, Pred, I);
   }
 
   // Jump to the default block when all the case value not match, i.e. all case
@@ -734,7 +734,7 @@ void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
   VASTValPtr DefaultPred = Builder.buildNotExpr(Builder.buildOrExpr(CasePreds, 1));
   BasicBlock *DefBB = I.getDefaultDest();
 
-  buildConditionaTransition(DefBB, CurSlot, DefaultPred, I);
+  buildConditionalTransition(DefBB, CurSlot, DefaultPred, I);
 }
 
 void VASTModuleBuilder::visitCallSite(CallSite CS) {

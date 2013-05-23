@@ -183,7 +183,7 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
     OS << " BB: " << BB->getName();
   else {
     Instruction *Inst = Ptr.get<Instruction*>();
-    OS << *Inst;
+    OS << ' ' << Inst->getName();
 
     if (isa<PHINode>(Inst) && isLatch())
       OS << " From: " << getIncomingBlock()->getName();
@@ -193,7 +193,7 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
         OS << " Targeting: " << BB->getName();
   }
 
-  OS << " Scheduled to " << Schedule;
+  OS << " Parent: " << getParent()->getName() << " Scheduled to " << Schedule;
 }
 
 void VASTSchedUnit::viewNeighbourGraph() {
