@@ -674,7 +674,6 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 
         buildFlowDependenciesForSlotCtrl(U);
 
-        // add extra dele
         U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
         continue;
       }
@@ -779,21 +778,6 @@ void VASTScheduling::fixSchedulingGraph() {
     if (Inst && (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst)))
       continue;
 
-    // Constrain the SU by the exit of the same BB if it is not constrained yet.
-    // bool ConstrainedByExit = false;
-
-    //typedef VASTSchedUnit::use_iterator use_iterator;
-    //for (use_iterator UI = U->use_begin(), UE = U->use_end(); UI != UE; ++UI) {
-    //  VASTSchedUnit *User = *UI;
-    //  if ((ConstrainedByExit = /*Assignment*/(User->getParent() == BB)))
-    //    break;
-    //}
-
-    //if (ConstrainedByExit) continue;
-
-    // Always constraints the latch with the exit SUs.
-    // if (U->isLaunch()) continue;
-
 #ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
     // At least constrain the scheduling unit with something.
     if (U->use_empty()) G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
@@ -810,14 +794,15 @@ void VASTScheduling::fixSchedulingGraph() {
       // timing constraints between it and the actual terminator.
       if (!BBExit->isTerminator()) {
         assert(isa<ReturnInst>(BB->getTerminator())
-               && "BBExit is not terminator!");
+                && "BBExit is not terminator!");
         // We need to add the dependencies even the BB return is not a
         // terminator. But becareful, do not add the cycle dependencies.
         if (BBExit == U) continue;
       }
 
       // Only need to create the pseudo dependencies to the exit node. Because
-      // the PHI node will always be scheduled to the same slot as the terminator.
+      // the PHI node will always be scheduled to the same slot as the
+      // terminator.
       if (U->isPHILatch()) {
         G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
         continue;
