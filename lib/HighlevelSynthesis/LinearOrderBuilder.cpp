@@ -72,12 +72,145 @@ struct alap_less {
   }
 };
 
+struct SingleFULinearOrder;
+
+struct GlobalFlowAnalyzer {
+  explicit GlobalFlowAnalyzer(DominatorTree &DT) : DT(DT) {}
+
+  DominatorTree &DT;
+  /// DomLevels - Maps DomTreeNodes to their level in the dominator tree.
+  /// Please refer the following paper for more detials.
+  ///
+  ///   Sreedhar and Gao. A linear time algorithm for placing phi-nodes.
+  ///   In Proceedings of the 22nd ACM SIGPLAN-SIGACT Symposium on Principles of
+  ///   Programming Languages
+  ///   POPL '95. ACM, New York, NY, 62-73.
+  ///
+  /// Also refer PromoteMemoryToRegister.cpp
+  ///
+  DenseMap<DomTreeNode*, unsigned> DomLevels;
+  void initializeDomTreeLevel();
+
+  // Determinate the insertion points for the PHIs.
+  template<typename DefMapTy>
+  void determineInsertionPoint(BBSet &DFBlocks, const DefMapTy &DefMap) {
+    initializeDomTreeLevel();
+
+    // Determine in which blocks the FU's flow is alive.
+    SmallPtrSet<BasicBlock*, 32> LiveInBlocks;
+    compuateLiveInBlocks<DefMapTy>(LiveInBlocks, DefMap);
+
+    // Use a priority queue keyed on dominator tree level so that inserted nodes
+    // are handled from the bottom of the dominator tree upwards.
+    typedef std::priority_queue<DomTreeNodePair, SmallVector<DomTreeNodePair, 32>,
+                                DomTreeNodeCompare>
+            IDFPriorityQueue;
+    IDFPriorityQueue PQ;
+
+    typedef typename DefMapTy::const_iterator def_iterator;
+    for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I) {
+      if (DomTreeNode *Node = DT.getNode(I->first))
+        PQ.push(std::make_pair(Node, DomLevels.lookup(Node)));
+    }
+
+    SmallPtrSet<DomTreeNode*, 32> Visited;
+    SmallVector<DomTreeNode*, 32> Worklist;
+    while (!PQ.empty()) {
+      DomTreeNodePair RootPair = PQ.top();
+      PQ.pop();
+      DomTreeNode *Root = RootPair.first;
+      unsigned RootLevel = RootPair.second;
+
+      // Walk all dominator tree children of Root, inspecting their CFG edges
+      // with targets elsewhere on the dominator tree. Only targets whose level
+      // is at most Root's level are added to the iterated dominance frontier of
+      // the definition set.
+      Worklist.clear();
+      Worklist.push_back(Root);
+
+      while (!Worklist.empty()) {
+        DomTreeNode *Node = Worklist.pop_back_val();
+        BasicBlock *BB = Node->getBlock();
+
+        for (succ_iterator SI = succ_begin(BB), SE = succ_end(BB); SI != SE;
+             ++SI) {
+          DomTreeNode *SuccNode = DT.getNode(*SI);
+
+          // Quickly skip all CFG edges that are also dominator tree edges
+          // instead of catching them below.
+          if (SuccNode->getIDom() == Node)
+            continue;
+
+          unsigned SuccLevel = DomLevels.lookup(SuccNode);
+          if (SuccLevel > RootLevel)
+            continue;
+
+          if (!Visited.insert(SuccNode))
+            continue;
+
+          BasicBlock *SuccBB = SuccNode->getBlock();
+          if (!LiveInBlocks.count(SuccBB))
+            continue;
+
+          // Insert the block into the IDF set, i.e. the blocks into which the
+          // PHIs are inserted.
+          DFBlocks.insert(SuccBB);
+
+          if (!DefMap.count(SuccBB))
+            PQ.push(std::make_pair(SuccNode, SuccLevel));
+        }
+
+        for (dt_child_iterator CI = Node->begin(), CE = Node->end();
+             CI != CE; ++CI)
+          if (!Visited.count(*CI)) Worklist.push_back(*CI);
+      }
+    }
+  }
+
+  template<typename DefMapTy>
+  void compuateLiveInBlocks(BBSet &LiveInBlocks, const DefMapTy &DefMap) {
+    // To determine liveness, we must iterate through the predecessors of blocks
+    // where the def is live.  Blocks are added to the worklist if we need to
+    // check their predecessors.  Start with all the using blocks.
+    // Because we *update*, i.e. read then write, the status in each define
+    // block, the define block is also a live-in block.
+    SmallVector<BasicBlock*, 64> LiveInBlockWorklist;
+
+    typedef typename DefMapTy::const_iterator def_iterator;
+    for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
+      LiveInBlockWorklist.push_back(I->first);
+
+    // Now that we have a set of blocks where the phi is live-in, recursively
+    // add their predecessors until we find the full region the value is live.
+    while (!LiveInBlockWorklist.empty()) {
+      BasicBlock *BB = LiveInBlockWorklist.pop_back_val();
+
+      // The block really is live in here, insert it into the set.  If already
+      // in the set, then it has already been processed.
+      if (!LiveInBlocks.insert(BB))
+        continue;
+
+      // Since the value is live into BB, it is either defined in a predecessor
+      // or live into it to.  Add the preds to the worklist unless they are a
+      // defining block.
+      for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI) {
+        BasicBlock *P = *PI;
+
+        // The value is not live into a predecessor if it defines the value.
+        if (DefMap.count(P)) continue;
+
+        // Otherwise it is, add to the worklist.
+        LiveInBlockWorklist.push_back(P);
+      }
+    }
+  }
+};
+
 struct SingleFULinearOrder {
   VASTSelector *Sel;
   SchedulerBase &G;
   IR2SUMapTy &IR2SUMap;
-  DominatorTree &DT;
-  const DenseMap<DomTreeNode*, unsigned> &DomLevels;
+  GlobalFlowAnalyzer &GFA;
   const DenseMap<BasicBlock*, VASTSchedUnit*> &Returns;
 
   typedef DenseMap<BasicBlock*, SmallVector<VASTSchedUnit*, 8> > DefMapTy;
@@ -89,10 +222,6 @@ struct SingleFULinearOrder {
 
   // The dominance frontiers of DefBlocks.
   BBSet DFBlocks;
-
-  // Determinate the insertion points for the PHIs.
-  void determineInsertionPoint();
-  void compuateLiveInBlocks(BBSet &LiveInBlocks);
 
   // Build the linear order between Join Edges (the edges across the dominance
   // frontier).
@@ -107,40 +236,39 @@ struct SingleFULinearOrder {
   void buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs);
 
   SingleFULinearOrder(VASTSelector *Sel, SchedulerBase &G,
-                      IR2SUMapTy &IR2SUMap, DominatorTree &DT,
-                      const DenseMap<DomTreeNode*, unsigned> &DomLevels,
+                      IR2SUMapTy &IR2SUMap, GlobalFlowAnalyzer &GFA,
                       DenseMap<BasicBlock*, VASTSchedUnit*> &ReturnBlocks)
-    : Sel(Sel), G(G), IR2SUMap(IR2SUMap), DT(DT), DomLevels(DomLevels),
+    : Sel(Sel), G(G), IR2SUMap(IR2SUMap), GFA(GFA),
       Returns(ReturnBlocks) {}
 
   void buildLinearOrder();
+
+  virtual void dump() const {
+    typedef DefMapTy::const_iterator def_iterator;
+    dbgs() << "Defs:\n\t";
+    for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
+      dbgs() << I->first->getName() << ", ";
+
+    dbgs() << "\nDFs:\n\t";
+    typedef BBSet::const_iterator bb_iterator;
+    for (bb_iterator I = DFBlocks.begin(), E = DFBlocks.end(); I != E; ++I)
+      dbgs() << (*I)->getName() << ", ";
+  }
 };
 
 struct BasicLinearOrderGenerator {
   SchedulerBase &G;
-  DominatorTree &DT;
   IR2SUMapTy &IR2SUMap;
   DenseMap<BasicBlock*, VASTSchedUnit*> ReturnBlocks;
+  GlobalFlowAnalyzer GFA;
 
   BasicLinearOrderGenerator(SchedulerBase &G, DominatorTree &DT,
-                            IR2SUMapTy &IR2SUMap)
-    : G(G), DT(DT), IR2SUMap(IR2SUMap) {}
+    IR2SUMapTy &IR2SUMap)
+    : G(G), IR2SUMap(IR2SUMap), GFA(DT) {}
 
   // The FUs whose accesses need to be synchronized, and the basic blocks in
   // which the FU is accessed.
   DenseMap<VASTSelector*, SingleFULinearOrder*> Builders;
-  /// DomLevels - Maps DomTreeNodes to their level in the dominator tree.
-  /// Please refer the following paper for more detials.
-  ///
-  ///   Sreedhar and Gao. A linear time algorithm for placing phi-nodes.
-  ///   In Proceedings of the 22nd ACM SIGPLAN-SIGACT Symposium on Principles of
-  ///   Programming Languages
-  ///   POPL '95. ACM, New York, NY, 62-73.
-  ///
-  /// Also refer PromoteMemoryToRegister.cpp
-  ///
-  DenseMap<DomTreeNode*, unsigned> DomLevels;
-  void initializeDomTreeLevel();
 
   void buildFUInfo();
 
@@ -148,6 +276,26 @@ struct BasicLinearOrderGenerator {
 
   ~BasicLinearOrderGenerator() { DeleteContainerSeconds(Builders); }
 };
+}
+
+void GlobalFlowAnalyzer::initializeDomTreeLevel() {
+  if (!DomLevels.empty()) return;
+
+  SmallVector<DomTreeNode*, 32> Worklist;
+
+  DomTreeNode *Root = DT.getRootNode();
+  DomLevels[Root] = 0;
+  Worklist.push_back(Root);
+
+  while (!Worklist.empty()) {
+    DomTreeNode *Node = Worklist.pop_back_val();
+    unsigned ChildLevel = DomLevels[Node] + 1;
+    for (dt_child_iterator CI = Node->begin(), CE = Node->end(); CI != CE; ++CI)
+    {
+      DomLevels[*CI] = ChildLevel;
+      Worklist.push_back(*CI);
+    }
+  }
 }
 
 void BasicLinearOrderGenerator::buildFUInfo() {
@@ -181,121 +329,10 @@ void BasicLinearOrderGenerator::buildFUInfo() {
 
       // Create the Synchronizer if it is not yet created.
       if (S == 0)
-        S = new SingleFULinearOrder(Sel, G, IR2SUMap, DT, DomLevels,
-                                    ReturnBlocks);
+        S = new SingleFULinearOrder(Sel, G, IR2SUMap, GFA, ReturnBlocks);
 
       // Add the FU visiting information.
       S->addVisitingSU(SU, BB);
-    }
-  }
-}
-
-void SingleFULinearOrder::determineInsertionPoint() {
-  // Determine in which blocks the FU's flow is alive.
-  SmallPtrSet<BasicBlock*, 32> LiveInBlocks;
-  compuateLiveInBlocks(LiveInBlocks);
-
-  // Use a priority queue keyed on dominator tree level so that inserted nodes
-  // are handled from the bottom of the dominator tree upwards.
-  typedef std::priority_queue<DomTreeNodePair, SmallVector<DomTreeNodePair, 32>,
-                              DomTreeNodeCompare>
-          IDFPriorityQueue;
-  IDFPriorityQueue PQ;
-
-  typedef DefMapTy::const_iterator def_iterator;
-  for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I) {
-    if (DomTreeNode *Node = DT.getNode(I->first))
-      PQ.push(std::make_pair(Node, DomLevels.lookup(Node)));
-  }
-
-  SmallPtrSet<DomTreeNode*, 32> Visited;
-  SmallVector<DomTreeNode*, 32> Worklist;
-  while (!PQ.empty()) {
-    DomTreeNodePair RootPair = PQ.top();
-    PQ.pop();
-    DomTreeNode *Root = RootPair.first;
-    unsigned RootLevel = RootPair.second;
-
-    // Walk all dominator tree children of Root, inspecting their CFG edges with
-    // targets elsewhere on the dominator tree. Only targets whose level is at
-    // most Root's level are added to the iterated dominance frontier of the
-    // definition set.
-
-    Worklist.clear();
-    Worklist.push_back(Root);
-
-    while (!Worklist.empty()) {
-      DomTreeNode *Node = Worklist.pop_back_val();
-      BasicBlock *BB = Node->getBlock();
-
-      for (succ_iterator SI = succ_begin(BB), SE = succ_end(BB); SI != SE;
-           ++SI) {
-        DomTreeNode *SuccNode = DT.getNode(*SI);
-
-        // Quickly skip all CFG edges that are also dominator tree edges instead
-        // of catching them below.
-        if (SuccNode->getIDom() == Node)
-          continue;
-
-        unsigned SuccLevel = DomLevels.lookup(SuccNode);
-        if (SuccLevel > RootLevel)
-          continue;
-
-        if (!Visited.insert(SuccNode))
-          continue;
-
-        BasicBlock *SuccBB = SuccNode->getBlock();
-        if (!LiveInBlocks.count(SuccBB))
-          continue;
-
-        // Insert the block into the IDF set, i.e. the blocks into which the PHIs
-        // are inserted.
-        DFBlocks.insert(SuccBB);
-
-        if (!DefMap.count(SuccBB))
-          PQ.push(std::make_pair(SuccNode, SuccLevel));
-      }
-
-      for (dt_child_iterator CI = Node->begin(), CE = Node->end();
-           CI != CE; ++CI)
-        if (!Visited.count(*CI)) Worklist.push_back(*CI);
-    }
-  }
-}
-
-void SingleFULinearOrder::compuateLiveInBlocks(BBSet &LiveInBlocks) {
-  // To determine liveness, we must iterate through the predecessors of blocks
-  // where the def is live.  Blocks are added to the worklist if we need to
-  // check their predecessors.  Start with all the using blocks.
-  // Because we *update*, i.e. read then write, the status in each define block,
-  // the define block is also a live-in block.
-  SmallVector<BasicBlock*, 64> LiveInBlockWorklist;
-
-  typedef DefMapTy::const_iterator def_iterator;
-  for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
-    LiveInBlockWorklist.push_back(I->first);
-
-  // Now that we have a set of blocks where the phi is live-in, recursively add
-  // their predecessors until we find the full region the value is live.
-  while (!LiveInBlockWorklist.empty()) {
-    BasicBlock *BB = LiveInBlockWorklist.pop_back_val();
-
-    // The block really is live in here, insert it into the set.  If already in
-    // the set, then it has already been processed.
-    if (!LiveInBlocks.insert(BB))
-      continue;
-
-    // Since the value is live into BB, it is either defined in a predecessor or
-    // live into it to.  Add the preds to the worklist unless they are a
-    // defining block.
-    for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI) {
-      BasicBlock *P = *PI;
-
-      // The value is not live into a predecessor if it defines the value.
-      if (DefMap.count(P)) continue;
-
-      // Otherwise it is, add to the worklist.
-      LiveInBlockWorklist.push_back(P);
     }
   }
 }
@@ -311,7 +348,7 @@ SingleFULinearOrder::buildLinearOrdingFromDom(VASTSchedUnit *SU,
                                               BasicBlock *UseBB) {
   // Traversal the dominator tree bottom up and find the fisrt block in which
   // the FU is visited.
-  DomTreeNode *Node = DT.getNode(UseBB);
+  DomTreeNode *Node = GFA.DT.getNode(UseBB);
   while (Node) {
     BasicBlock *BB = Node->getBlock();
     DefMapTy::iterator at = DefMap.find(BB);
@@ -362,7 +399,7 @@ void SingleFULinearOrder::buildLinearOrderOnJEdge(BasicBlock *DF) {
 
 void SingleFULinearOrder::buildLinearOrderOnDEdge(VASTSchedUnit *FirstSU,
                                                   BasicBlock *BB) {
-  DomTreeNode *IDom = DT.getNode(BB)->getIDom();
+  DomTreeNode *IDom = GFA.DT.getNode(BB)->getIDom();
   // Ignore the unreachable BB.
   if (IDom == 0) return;
 
@@ -417,7 +454,7 @@ void SingleFULinearOrder::buildLinearOrder() {
   }
 
   // Build the linear order across the basic block boundaries.
-  determineInsertionPoint();
+  GFA.determineInsertionPoint(DFBlocks, DefMap);
 
   // Build the linear order within each BB.
   typedef DefMapTy::iterator def_iterator;
@@ -436,25 +473,6 @@ void SingleFULinearOrder::buildLinearOrder() {
     buildLinearOrderOnJEdge(*I);
 }
 
-void BasicLinearOrderGenerator::initializeDomTreeLevel() {
-  assert(DomLevels.empty() && "DomLevels had already been initialized!");
-  SmallVector<DomTreeNode*, 32> Worklist;
-
-  DomTreeNode *Root = DT.getRootNode();
-  DomLevels[Root] = 0;
-  Worklist.push_back(Root);
-
-  while (!Worklist.empty()) {
-    DomTreeNode *Node = Worklist.pop_back_val();
-    unsigned ChildLevel = DomLevels[Node] + 1;
-    for (dt_child_iterator CI = Node->begin(), CE = Node->end(); CI != CE; ++CI)
-    {
-      DomLevels[*CI] = ChildLevel;
-      Worklist.push_back(*CI);
-    }
-  }
-}
-
 void BasicLinearOrderGenerator::buildLinearOrder() {
   // Collect the functional units which require dependencies to avoid multiple
   // accesses in the overlap slots, and the blocks in which the FU is accessed.
@@ -464,8 +482,6 @@ void BasicLinearOrderGenerator::buildLinearOrder() {
   typedef DenseMap<VASTSelector*, SingleFULinearOrder*>::const_iterator
           iterator;
   for (iterator I = Builders.begin(), E = Builders.end(); I != E; ++I) {
-    if (DomLevels.empty()) initializeDomTreeLevel();
-
     SingleFULinearOrder *Builder = I->second;
     Builder->buildLinearOrder();
   }
