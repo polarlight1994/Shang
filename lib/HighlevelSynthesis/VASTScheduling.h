@@ -115,6 +115,7 @@ public:
 
 //
 class VASTSchedUnit : public ilist_node<VASTSchedUnit> {
+public:
   enum Type {
     // Entry and Exit of the whole scheduling graph.
     Entry, Exit,
@@ -122,7 +123,7 @@ class VASTSchedUnit : public ilist_node<VASTSchedUnit> {
     BlockEntry,
     Launch, Latch,
     // Virtual supper sink and supper source.
-    VSSrc, VSSnk,
+    Virtual,
     // Invalide node for the ilist sentinel
     Invalid
   };
@@ -230,11 +231,12 @@ public:
   VASTSchedUnit(Type T = Invalid, unsigned InstIdx = 0, BasicBlock *Parent = 0);
   VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
                 BasicBlock *BB, VASTSeqOp *SeqOp);
-  VASTSchedUnit(unsigned InstIdx, BasicBlock *BB);
+  VASTSchedUnit(unsigned InstIdx, BasicBlock *BB, Type T);
 
   bool isEntry() const { return T == Entry; }
   bool isExit() const { return T == Exit; }
   bool isBBEntry() const { return T == BlockEntry; }
+  bool isVirtual() const { return T == Virtual; }
   bool isPHI() const {
     return Inst && isa<PHINode>(getInst()) && isLaunch();
   }
@@ -398,13 +400,16 @@ public:
   VASTSchedUnit *getExit() { return &SUnits.back(); }
   const VASTSchedUnit *getExit() const { return &SUnits.back(); }
 
-  VASTSchedUnit *createSUnit(BasicBlock *BB) {
-    VASTSchedUnit *U = new VASTSchedUnit(SUnits.size(), BB);
+  VASTSchedUnit *createSUnit(BasicBlock *BB, VASTSchedUnit::Type T) {
+    VASTSchedUnit *U = new VASTSchedUnit(SUnits.size(), BB, T);
     // Insert the newly create SU before the exit.
     SUnits.insert(SUnits.back(), U);
     // Also put the scheduling unit in the BBMap.
     assert(BB && "Expect a parent BB!");
-    BBMap[U->getParent()].push_back(U);
+    assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::Virtual)
+           && "Unexpected type!");
+    // Ignore the virtual nodes.
+    if (T == VASTSchedUnit::BlockEntry) BBMap[U->getParent()].push_back(U);
 
     return U;
   }

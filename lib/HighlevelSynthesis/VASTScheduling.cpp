@@ -44,8 +44,8 @@ VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
   : T(IsLatch ? Latch : Launch), Schedule(0),  InstIdx(InstIdx), Inst(Inst),
     BB(BB), SeqOp(SeqOp) {}
 
-VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, BasicBlock *BB)
-  : T(BlockEntry), Schedule(0),  InstIdx(InstIdx), Inst(0), BB(BB), SeqOp(0) {}
+VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, BasicBlock *BB, Type T)
+  : T(T), Schedule(0),  InstIdx(InstIdx), Inst(0), BB(BB), SeqOp(0) {}
 
 VASTSchedUnit::VASTSchedUnit(Type T, unsigned InstIdx, BasicBlock *Parent)
   : T(T), Schedule(0), InstIdx(InstIdx), Inst(0), BB(Parent), SeqOp(0)
@@ -536,7 +536,7 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
   if (!SUs.empty() && SUs.back()->isBBEntry())
     return SUs.back();
 
-  VASTSchedUnit *Entry = G->createSUnit(BB);
+  VASTSchedUnit *Entry = G->createSUnit(BB, VASTSchedUnit::BlockEntry);
 
   // Add the conditional dependencies from the branch instructions that
   // targeting this BB.
@@ -767,6 +767,9 @@ void VASTScheduling::fixSchedulingGraph() {
 
     // Terminators will be handled later.
     if (U->isTerminator()) continue;
+
+    // Ignore the virtual nodes.
+    if (U->isVirtual()) continue;
 
     Instruction *Inst = U->getInst();
     // Returns will be handled later, too.
