@@ -115,6 +115,19 @@ public:
 
 //
 class VASTSchedUnit : public ilist_node<VASTSchedUnit> {
+  enum Type {
+    // Entry and Exit of the whole scheduling graph.
+    Entry, Exit,
+    // The supper source node of the basic block.
+    BlockEntry,
+    Launch, Latch,
+    // Virtual supper sink and supper source.
+    VSSrc, VSSnk,
+    // Invalide node for the ilist sentinel
+    Invalid
+  };
+private:
+  const Type T;
   // TODO: typedef SlotType
   uint16_t Schedule;
   uint16_t InstIdx;
@@ -197,11 +210,9 @@ private:
 
   void addToUseList(VASTSchedUnit *User) { UseList.insert(User); }
 
-  const PointerUnion<BasicBlock*, Instruction*> Ptr;
-  const PointerIntPair<BasicBlock*, 1, bool> BB;
+  Instruction *Inst;
+  BasicBlock *BB;
   VASTSeqOp *SeqOp;
-
-  VASTSchedUnit();
 
   friend struct ilist_sentinel_traits<VASTSchedUnit>;
   friend class VASTSchedGraph;
@@ -215,38 +226,40 @@ private:
     return Deps.find(const_cast<VASTSchedUnit*>(A));
   }
 public:
+  // Create the virtual SUs.
+  VASTSchedUnit(Type T = Invalid, unsigned InstIdx = 0, BasicBlock *Parent = 0);
   VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
                 BasicBlock *BB, VASTSeqOp *SeqOp);
   VASTSchedUnit(unsigned InstIdx, BasicBlock *BB);
 
-  bool isEntry() const { return Ptr.is<BasicBlock*>() && Ptr.isNull(); }
-  bool isExit() const { return Ptr.is<Instruction*>() && Ptr.isNull(); }
-  bool isBBEntry() const { return Ptr.is<BasicBlock*>() && !Ptr.isNull(); }
+  bool isEntry() const { return T == Entry; }
+  bool isExit() const { return T == Exit; }
+  bool isBBEntry() const { return T == BlockEntry; }
   bool isPHI() const {
-    return Ptr.is<Instruction*>() && isa<PHINode>(getInst()) && isLaunch();
+    return Inst && isa<PHINode>(getInst()) && isLaunch();
   }
 
   bool isPHILatch() const {
     return SeqOp && isa<PHINode>(getInst()) && isLatch();
   }
 
-  Instruction *getInst() const { return Ptr.get<Instruction*>(); }
+  Instruction *getInst() const;
   VASTSeqOp *getSeqOp() const { return SeqOp; }
 
-  bool isLatch() const { return BB.getInt(); }
-  bool isLaunch() const { return !BB.getInt(); }
+  bool isLatch() const { return T == Latch; }
+  bool isLaunch() const { return T == Launch; }
   bool isTerminator() const {
     return SeqOp && isa<VASTSlotCtrl>(SeqOp) && isa<TerminatorInst>(getInst());
   }
 
   BasicBlock *getIncomingBlock() const {
     assert(isPHILatch() && "Call getIncomingBlock on the wrong type!");
-    return BB.getPointer();
+    return BB;
   }
 
   BasicBlock *getTargetBlock() const {
     assert(isTerminator() && "Call getTargetBlock on the wrong type!");
-    return BB.getPointer();
+    return BB;
   }
 
   bool isLatching(Value *V) const {

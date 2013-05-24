@@ -41,14 +41,14 @@ using namespace llvm;
 //===----------------------------------------------------------------------===//
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
                              BasicBlock *BB, VASTSeqOp *SeqOp)
-  : Schedule(0),  InstIdx(InstIdx), Ptr(Inst), BB(BB, IsLatch), SeqOp(SeqOp) {}
+  : T(IsLatch ? Latch : Launch), Schedule(0),  InstIdx(InstIdx), Inst(Inst),
+    BB(BB), SeqOp(SeqOp) {}
 
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, BasicBlock *BB)
-  : Schedule(0),  InstIdx(InstIdx), Ptr(BB), BB(0, false), SeqOp(0) {}
+  : T(BlockEntry), Schedule(0),  InstIdx(InstIdx), Inst(0), BB(BB), SeqOp(0) {}
 
-VASTSchedUnit::VASTSchedUnit()
-  : Schedule(0), InstIdx(0), Ptr(reinterpret_cast<BasicBlock*>(-1024)),
-    BB(0), SeqOp(0)
+VASTSchedUnit::VASTSchedUnit(Type T, unsigned InstIdx, BasicBlock *Parent)
+  : T(T), Schedule(0), InstIdx(InstIdx), Inst(0), BB(Parent), SeqOp(0)
 {}
 
 void VASTSchedUnit::EdgeBundle::addEdge(VASTDep NewEdge) {
@@ -143,15 +143,19 @@ bool VASTSchedUnit::requireLinearOrder() const {
   return false;
 }
 
+Instruction *VASTSchedUnit::getInst() const {
+  assert(Inst && "Inst not available!");
+  return Inst;
+}
+
 BasicBlock *VASTSchedUnit::getParent() const {
   assert(!isEntry() && !isExit() && "Call getParent on the wrong SUnit type!");
 
-  if (BasicBlock *BB = Ptr.dyn_cast<BasicBlock*>())
-    return BB;
+  if (Inst == 0) return BB;
 
   if (isa<PHINode>(getInst()) && isLatch()) return getIncomingBlock();
 
-  return Ptr.get<Instruction*>()->getParent();
+  return Inst->getParent();
 }
 
 void VASTSchedUnit::scheduleTo(unsigned Step) {
@@ -177,11 +181,10 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
   OS << '#' << InstIdx << ' ' << (isLaunch() ? "Launch" : "Latch")
      << " Parent: " << getParent()->getName();
 
-  if (BasicBlock *BB = Ptr.dyn_cast<BasicBlock*>())
+  if (BB)
     OS << " BB: " << BB->getName();
-  else {
-    Instruction *Inst = Ptr.get<Instruction*>();
-    OS << ' ' << Inst->getName();
+  else if (Inst) {
+    OS << ' ' << *Inst; //Inst->getName();
 
     if (isa<PHINode>(Inst) && isLatch())
       OS << " From: " << getIncomingBlock()->getName();
@@ -191,7 +194,7 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
         OS << " Targeting: " << BB->getName();
   }
 
-  OS << " Parent: " << getParent()->getName() << " Scheduled to " << Schedule;
+  OS << " Scheduled to " << Schedule << ' ' << this;
 }
 
 void VASTSchedUnit::viewNeighbourGraph() {
@@ -209,11 +212,9 @@ void VASTSchedUnit::dump() const {
 //===----------------------------------------------------------------------===//
 VASTSchedGraph::VASTSchedGraph(Function &F) : F(F) {
   // Create the entry SU.
-  SUnits.push_back(new VASTSchedUnit(0, reinterpret_cast<BasicBlock*>(0)));
-
+  SUnits.push_back(new VASTSchedUnit(VASTSchedUnit::Entry, 0, 0));
   // Create the exit SU.
-  SUnits.push_back(new VASTSchedUnit(-1, reinterpret_cast<Instruction*>(0),
-                                     false, 0, 0));
+  SUnits.push_back(new VASTSchedUnit(VASTSchedUnit::Exit, -1, 0));
 }
 
 VASTSchedGraph::~VASTSchedGraph() {}
