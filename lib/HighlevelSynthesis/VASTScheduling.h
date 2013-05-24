@@ -35,6 +35,7 @@ class raw_ostream;
 class VASTModule;
 class SchedulerBase;
 class DominatorTree;
+class AliasAnalysis;
 
 class VASTDep {
 public:
@@ -453,6 +454,12 @@ public:
       array_pod_sort(SUs.begin(), SUs.end(), F);
     }
   }
+
+  /// Build the CFG-wide memory dependencies.
+  ///
+  typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
+  void buildMemoryDependencies(AliasAnalysis *AA, DominatorTree *DT,
+                               IR2SUMapTy &IR2SUMap);
 
   /// Fix the scheduling graph after it is built.
   ///

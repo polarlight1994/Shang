@@ -27,13 +27,16 @@
 
 #include "SDCScheduler.h"
 
+#include "shang/Utilities.h"
 #include "shang/VASTSeqValue.h"
 
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/Analysis/AliasSetTracker.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-linear-order-builder"
 #include "llvm/Support/Debug.h"
 
@@ -516,4 +519,110 @@ void SDCScheduler::addLinOrdEdge(DominatorTree &DT, IR2SUMapTy &IR2SUMap) {
   buildTimeFrameAndResetSchedule(true);
   BasicLinearOrderGenerator(*this, DT, IR2SUMap).buildLinearOrder();
   G.topologicalSortSUs();
+}
+
+//===----------------------------------------------------------------------===//
+STATISTIC(NumMemDep, "Number of Memory Dependencies Added");
+
+namespace {
+struct MemoryDepBuilder {
+  VASTSchedGraph &G;
+  IR2SUMapTy &IR2SUMap;
+  GlobalFlowAnalyzer GFA;
+  AliasAnalysis &AA;
+  AliasSetTracker AST;
+
+  MemoryDepBuilder(VASTSchedGraph &G, IR2SUMapTy &IR2SUMap, DominatorTree &DT,
+                   AliasAnalysis &AA)
+    : G(G), IR2SUMap(IR2SUMap), GFA(DT), AA(AA), AST(AA) {}
+
+  void buildLocalDependencies(BasicBlock *BB);
+  void buildDependency(Instruction *Src, Instruction *Dst);
+
+  void buildDependencies();
+};
+}
+
+static
+AliasAnalysis::Location getPointerLocation(Instruction *I, AliasAnalysis *AA) {
+  if (LoadInst *LI = dyn_cast<LoadInst>(I))
+    return AA->getLocation(LI);
+
+  if (StoreInst *SI = dyn_cast<StoreInst>(I))
+    return AA->getLocation(SI);
+
+  llvm_unreachable("Unexpected instruction type!");
+  return AliasAnalysis::Location();
+}
+
+static bool isNoAlias(Instruction *Src, Instruction *Dst, AliasAnalysis *AA) {
+  return AA->isNoAlias(getPointerLocation(Src, AA), getPointerLocation(Dst, AA));
+}
+
+void MemoryDepBuilder::buildDependency(Instruction *Src, Instruction *Dst) {
+  // No dependencies at all if:
+  // 1. both of them are not call instructions
+  // 2. both of them are not writing memory
+  // 3. their pointer locations do not alias each others.
+  if (!isCall(Src) && !isCall(Dst)
+      && (!Src->mayWriteToMemory() && !Dst->mayWriteToMemory())
+      && isNoAlias(Src, Dst, &AA))
+    return;
+
+  VASTSchedUnit *SrcU = IR2SUMap[Src].front(), *DstU = IR2SUMap[Dst].front();
+  assert(SrcU->isLaunch() && DstU->isLaunch() && "Bad scheduling unit type!");
+
+  unsigned Latency = 1;
+
+  // We must flush the memory bus pipeline before starting the call.
+  if (isa<CallInst>(Dst)) {
+    VASTSchedUnit *SrcLatch = IR2SUMap[Src].back();
+    // Make the call dependence on the latch operation instead.
+    if (SrcLatch->isLatch()) {
+      SrcU = SrcLatch;
+      Latency = 0;
+    }
+  }
+
+  DstU->addDep(SrcU, VASTDep::CreateMemDep(Latency, 0));
+  ++NumMemDep;
+
+}
+
+void MemoryDepBuilder::buildLocalDependencies(BasicBlock *BB) {
+  typedef BasicBlock::iterator iterator;
+  SmallVector<Instruction*, 16> PiorMemInsts;
+
+  for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+    Instruction *Inst = I;
+
+    if (!isLoadStore(Inst) && !isCall(Inst)) continue;
+
+    // The load/store to single element block RAM will be lowered to register
+    // access by the VASTModuleBuilder.
+    if (!IR2SUMap.count(Inst) || IR2SUMap[Inst].front()->isLatch()) {
+      DEBUG(dbgs() << "Ignore " << *Inst << " in dependencies graph\n");
+      continue;
+    }
+
+    for (unsigned i = 0, e = PiorMemInsts.size(); i < e; ++i)
+      buildDependency(PiorMemInsts[i], Inst);
+
+    PiorMemInsts.push_back(Inst);
+  }
+}
+
+void MemoryDepBuilder::buildDependencies() {
+  Function &F = G.getFunction();
+
+  // Build the memory dependencies.
+  typedef Function::iterator iterator;
+  for (iterator I = F.begin(), E = F.end(); I != E; ++I)
+    buildLocalDependencies(I);
+}
+
+void VASTSchedGraph::buildMemoryDependencies(AliasAnalysis *AA,
+                                             DominatorTree *DT,
+                                             IR2SUMapTy &IR2SUMap) {
+  MemoryDepBuilder(*this, IR2SUMap, *DT, *AA).buildDependencies();
 }
