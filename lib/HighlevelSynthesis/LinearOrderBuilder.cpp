@@ -206,39 +206,151 @@ struct GlobalFlowAnalyzer {
   }
 };
 
-struct SingleFULinearOrder {
-  VASTSelector *Sel;
-  SchedulerBase &G;
-  IR2SUMapTy &IR2SUMap;
+template<typename SubClass>
+struct GlobalDependenciesBuilderBase  {
   GlobalFlowAnalyzer &GFA;
-  const DenseMap<BasicBlock*, VASTSchedUnit*> &Returns;
+  IR2SUMapTy &IR2SUMap;
+  GlobalDependenciesBuilderBase(GlobalFlowAnalyzer &GFA, IR2SUMapTy &IR2SUMap)
+    : GFA(GFA), IR2SUMap(IR2SUMap) {}
 
   typedef DenseMap<BasicBlock*, SmallVector<VASTSchedUnit*, 8> > DefMapTy;
   DefMapTy DefMap;
 
-  void addVisitingSU(VASTSchedUnit *SU, BasicBlock *BB) {
-    DefMap[BB].push_back(SU);
-  }
-
   // The dominance frontiers of DefBlocks.
   BBSet DFBlocks;
 
-  // Build the linear order between Join Edges (the edges across the dominance
-  // frontier).
-  void buildLinearOrderOnJEdge(BasicBlock *DF);
+  void addDef(VASTSchedUnit *SU, BasicBlock *BB) {
+    DefMap[BB].push_back(SU);
+  }
 
-  // Build the linear order between the dominance edges.
-  void buildLinearOrderOnDEdge(VASTSchedUnit *FirstSU, BasicBlock *BB);
+  // Build the dependency between Join Edges (the edges across the dominance
+  // frontier).
+  void buildDepOnJEdge(BasicBlock *DF) {
+    for (pred_iterator I = pred_begin(DF), E = pred_end(DF); I != E; ++I) {
+      BasicBlock *Incoming = *I;
+
+      // Find the branching operation targeting the dominance frontier, wait until
+      // all operations that dominate and reachable (not killed) to the incoming
+      // block finish before we leave the block.
+      // TODO: We can also insert a "Join" operation, and wait the join operation
+      // just before we access the functional unit.
+      ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[Incoming->getTerminator()]);
+      for (unsigned i = 0; i < Exits.size(); ++i) {
+        VASTSchedUnit *Exit = Exits[i];
+        assert(Exit->isTerminator() && "Expect terminator!");
+        if (Exit->getTargetBlock() != DF) continue;
+
+        buildDepFromDom(Exit, Incoming);
+        break;
+      }
+    }
+  }
+
+  // Build the dependency between the dominance edges.
+  void buildDepFromDom(VASTSchedUnit *Dst, BasicBlock *SrcBB) {
+    // Traversal the dominator tree bottom up and find the fisrt block in which
+    // the FU is visited.
+    DomTreeNode *Node = GFA.DT.getNode(SrcBB);
+    while (Node) {
+      BasicBlock *BB = Node->getBlock();
+      if (DefMap.count(BB)) {
+        VASTSchedUnit *Snk = static_cast<SubClass*>(this)->getSnkAt(BB);
+        static_cast<SubClass*>(this)->buildDep(Snk, Dst);
+        return;
+      }
+
+      if (DFBlocks.count(BB)) {
+        static_cast<SubClass*>(this)->buildDepFromDFBlock(Dst, BB);
+        return;
+      }
+
+      Node = Node->getIDom();
+    }
+  }
 
   // Build the dependencies to a specified scheduling unit.
-  void buildLinearOrdingFromDom(VASTSchedUnit *SU, BasicBlock *UseBB);
+  void buildDepOnDEdge(VASTSchedUnit *Dst, BasicBlock *SrcBB) {
+    DomTreeNode *IDom = GFA.DT.getNode(SrcBB)->getIDom();
+    // Ignore the unreachable BB.
+    if (IDom == 0) return;
+
+    buildDepFromDom(Dst, IDom->getBlock());
+  }
+
+  void constructGlobalFlow() {
+    // Build the dependency across the basic block boundaries.
+    GFA.determineInsertionPoint(DFBlocks, DefMap);
+
+    // Build the dependency within each BB.
+    typedef DefMapTy::iterator def_iterator;
+    for (def_iterator I = DefMap.begin() , E = DefMap.end(); I != E; ++I) {
+      BasicBlock *BB = I->first;
+      VASTSchedUnit *Src = static_cast<SubClass*>(this)->getSrcAt(BB);
+
+      // Do not build the edges across the DFBlocks.
+      if (DFBlocks.count(BB)) {
+        static_cast<SubClass*>(this)->buildDepFromDFBlock(Src, BB);
+        continue;
+      }
+
+      buildDepOnDEdge(Src, BB);
+    }
+
+    // Build the dependencies to ensure the linear orders even states in different
+    // blocks may be activated at the same time.
+    for (BBSet::iterator I = DFBlocks.begin(), E = DFBlocks.end(); I != E; ++I)
+      buildDepOnJEdge(*I);
+  }
+};
+
+struct SingleFULinearOrder
+  : public GlobalDependenciesBuilderBase<SingleFULinearOrder> {
+
+  VASTSelector *Sel;
+  SchedulerBase &G;
+  const DenseMap<BasicBlock*, VASTSchedUnit*> &Returns;
+
+  void buildDep(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
+    unsigned IntialInterval = 1;
+    VASTDep Edge = VASTDep::CreateDep<VASTDep::LinearOrder>(IntialInterval);
+    Dst->addDep(Src, Edge);
+  }
+
+  void buildDepFromDFBlock(VASTSchedUnit *Dst, BasicBlock *DFBlock) {
+    // At one hand, later we will add edges to make sure the FU accesses will
+    // finish before the control flow reach (the entry of) the dominance
+    // frontiers (i.e. DFBlocks). At the other hand, all operation is
+    // constrained by the entry of their parent basic block, which means
+    // (the entry of) the dominance frontiers implicitly predecease all
+    // the blocks (as well as the FU access operations inside) dominated by
+    // them. Hence, All FU accesses reachable to dominance frontiers
+    // implicitly predecease all blocks (as well as the FU access operations
+    // inside) dominated by the dominance frontiers, and we do not need to
+    // add any dependencies in this case.
+  }
+
+  VASTSchedUnit *getSnkAt(BasicBlock *BB) {
+    DefMapTy::iterator at = DefMap.find(BB);
+    assert(at != DefMap.end() && "Not a define block!");
+    // At this point, the intra-BB linear order had already constructed, and
+    // hence the back of the SU array is the 'last' SU in the block.
+    return at->second.back();
+  }
+
+  VASTSchedUnit *getSrcAt(BasicBlock *BB) {
+    DefMapTy::iterator at = DefMap.find(BB);
+    assert(at != DefMap.end() && "Not a define block!");
+    // At this point, the intra-BB linear order had already constructed, and
+    // hence the front of the SU array is the 'first' SU in the block.
+    return at->second.front();
+  }
 
   void buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs);
 
   SingleFULinearOrder(VASTSelector *Sel, SchedulerBase &G,
                       IR2SUMapTy &IR2SUMap, GlobalFlowAnalyzer &GFA,
                       DenseMap<BasicBlock*, VASTSchedUnit*> &ReturnBlocks)
-    : Sel(Sel), G(G), IR2SUMap(IR2SUMap), GFA(GFA),
+    : GlobalDependenciesBuilderBase(GFA, IR2SUMap), Sel(Sel), G(G),
       Returns(ReturnBlocks) {}
 
   void buildLinearOrder();
@@ -263,7 +375,7 @@ struct BasicLinearOrderGenerator {
   GlobalFlowAnalyzer GFA;
 
   BasicLinearOrderGenerator(SchedulerBase &G, DominatorTree &DT,
-    IR2SUMapTy &IR2SUMap)
+                            IR2SUMapTy &IR2SUMap)
     : G(G), IR2SUMap(IR2SUMap), GFA(DT) {}
 
   // The FUs whose accesses need to be synchronized, and the basic blocks in
@@ -332,78 +444,9 @@ void BasicLinearOrderGenerator::buildFUInfo() {
         S = new SingleFULinearOrder(Sel, G, IR2SUMap, GFA, ReturnBlocks);
 
       // Add the FU visiting information.
-      S->addVisitingSU(SU, BB);
+      S->addDef(SU, BB);
     }
   }
-}
-
-static void BuildLinearOrder(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
-  unsigned IntialInterval = 1;
-  VASTDep Edge = VASTDep::CreateDep<VASTDep::LinearOrder>(IntialInterval);
-  Dst->addDep(Src, Edge);
-}
-
-void
-SingleFULinearOrder::buildLinearOrdingFromDom(VASTSchedUnit *SU,
-                                              BasicBlock *UseBB) {
-  // Traversal the dominator tree bottom up and find the fisrt block in which
-  // the FU is visited.
-  DomTreeNode *Node = GFA.DT.getNode(UseBB);
-  while (Node) {
-    BasicBlock *BB = Node->getBlock();
-    DefMapTy::iterator at = DefMap.find(BB);
-    if (at != DefMap.end()) {
-      ArrayRef<VASTSchedUnit*> SUs(at->second);
-      BuildLinearOrder(SUs.back(), SU);
-      return;
-    }
-
-    if (DFBlocks.count(BB)) {
-      // At one hand, later we will add edges to make sure the FU accesses will
-      // finish before the control flow reach (the entry of) the dominance
-      // frontiers (i.e. DFBlocks). At the otehr hand, all operation is
-      // constrained by the entry of their parent basic block, which means
-      // (the entry of) the dominance frontiers implicitly predecease all
-      // the blocks (as well as the FU access operations inside) dominated by
-      // them. Hence, All FU accesses reachable to dominance frontiers
-      // implicitly predecease all blocks (as well as the FU access operations
-      // inside) dominated by the dominance frontiers, and we do not need to
-      // add any dependencies in this case.
-      return;
-    }
-
-    Node = Node->getIDom();
-  }
-}
-
-void SingleFULinearOrder::buildLinearOrderOnJEdge(BasicBlock *DF) {
-  for (pred_iterator I = pred_begin(DF), E = pred_end(DF); I != E; ++I) {
-    BasicBlock *Incoming = *I;
-
-    // Find the branching operation targeting the dominance frontier, wait until
-    // all operations that dominate and reachable (not killed) to the incoming
-    // block finish before we leave the block.
-    // TODO: We can also insert a "Join" operation, and wait the join operation
-    // just before we access the functional unit.
-    ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[Incoming->getTerminator()]);
-    for (unsigned i = 0; i < Exits.size(); ++i) {
-      VASTSchedUnit *Exit = Exits[i];
-      assert(Exit->isTerminator() && "Expect terminator!");
-      if (Exit->getTargetBlock() != DF) continue;
-
-      buildLinearOrdingFromDom(Exit, Incoming);
-      break;
-    }
-  }
-}
-
-void SingleFULinearOrder::buildLinearOrderOnDEdge(VASTSchedUnit *FirstSU,
-                                                  BasicBlock *BB) {
-  DomTreeNode *IDom = GFA.DT.getNode(BB)->getIDom();
-  // Ignore the unreachable BB.
-  if (IDom == 0) return;
-
-  buildLinearOrdingFromDom(FirstSU, IDom->getBlock());
 }
 
 void
@@ -419,7 +462,7 @@ SingleFULinearOrder::buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
     // Build a dependence edge from EalierSU to LaterSU.
     // TODO: Add an new kind of edge: Constraint Edge, and there should be
     // hard constraint and soft constraint.
-    BuildLinearOrder(EalierSU, LaterSU);
+    buildDep(EalierSU, LaterSU);
 
     EalierSU = LaterSU;
   }
@@ -450,27 +493,10 @@ void SingleFULinearOrder::buildLinearOrder() {
 
     // Otherwise simply build an edge from the last FU access operation in the
     // same block, so that they are finished before we return.
-    BuildLinearOrder(ExistSUs.back(), ReturnSU);
+    buildDep(ExistSUs.back(), ReturnSU);
   }
 
-  // Build the linear order across the basic block boundaries.
-  GFA.determineInsertionPoint(DFBlocks, DefMap);
-
-  // Build the linear order within each BB.
-  typedef DefMapTy::iterator def_iterator;
-  for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I) {
-    BasicBlock *BB = I->first;
-
-    // Do not build the edges across the DFBlocks.
-    if (DFBlocks.count(BB)) continue;
-
-    buildLinearOrderOnDEdge(I->second.front(), BB);
-  }
-
-  // Build the dependencies to ensure the linear orders even states in different
-  // blocks may be activated at the same time.
-  for (BBSet::iterator I = DFBlocks.begin(), E = DFBlocks.end(); I != E; ++I)
-    buildLinearOrderOnJEdge(*I);
+  constructGlobalFlow();
 }
 
 void BasicLinearOrderGenerator::buildLinearOrder() {
