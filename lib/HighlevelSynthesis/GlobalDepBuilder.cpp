@@ -1,4 +1,4 @@
-//===-- LinearOrderBuilder.cpp - Build the Linear Order for SDC scheduler -===//
+//===--------- GlobalDepBuilder.cpp - Build the dependencies on CFG -------===//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -7,8 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// The linear order builder in this file not only build the "always occur"
-// linear orders, but also build the conditional linear order.
+// Build the CFG-wide dependencies based on the flow analysis.
 //
 // In the fine-grain CFG scheduling, the nodes can be scheduled across the
 // boundaries, i.e. the terminators(sinks), of the BasicBlocks. In this case, the

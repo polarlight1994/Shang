@@ -8,7 +8,7 @@ add_llvm_library(ShangHLS
   RegisterFolding.cpp
   CrossBBChainFixer.cpp
   SchedulerBase.cpp
-  LinearOrderBuilder.cpp
+  GlobalDepBuilder.cpp
   SDCScheduler.cpp
   SeqLiveVariables.cpp
   STGDistances.cpp
