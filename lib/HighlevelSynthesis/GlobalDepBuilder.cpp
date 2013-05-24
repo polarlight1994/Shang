@@ -525,6 +525,63 @@ void SDCScheduler::addLinOrdEdge(DominatorTree &DT, IR2SUMapTy &IR2SUMap) {
 STATISTIC(NumMemDep, "Number of Memory Dependencies Added");
 
 namespace {
+struct AliasRegionDepBuilder
+  : public GlobalDependenciesBuilderBase<AliasRegionDepBuilder> {
+  VASTSchedGraph &G;
+  DenseMap<BasicBlock*, VASTSchedUnit*> SSnks, SSrcs;
+
+  AliasRegionDepBuilder(VASTSchedGraph &G, GlobalFlowAnalyzer &GFA,
+                        IR2SUMapTy &IR2SUMap)
+    : GlobalDependenciesBuilderBase(GFA, IR2SUMap), G(G) {}
+
+  void initializeRegion(AliasSet &AS);
+
+  void buildDepFromDFBlock(VASTSchedUnit *Dst, BasicBlock *DFBlock) {}
+
+  VASTSchedUnit *getSnkAt(BasicBlock *BB) {
+    VASTSchedUnit *&Snk = SSnks[BB];
+
+    if (Snk) return Snk;
+
+    // Create the sink node if it is not created yet.
+    Snk = G.createSUnit(BB, VASTSchedUnit::Virtual);
+
+    DefMapTy::iterator at = DefMap.find(BB);
+    assert(at != DefMap.end() && "Not a define block!");
+    ArrayRef<VASTSchedUnit*> SUs(at->second);
+    for (unsigned i = 0; i < SUs.size(); ++i)
+      Snk->addDep(SUs[i], VASTDep::CreateCtrlDep(0));
+
+    return Snk;
+  }
+
+  VASTSchedUnit *getSrcAt(BasicBlock *BB) {
+    VASTSchedUnit *&Src = SSrcs[BB];
+
+    if (Src) return Src;
+
+    // Create the sink node if it is not created yet.
+    Src = G.createSUnit(BB, VASTSchedUnit::Virtual);
+    // Make src depends on something.
+    Src->addDep(G.getEntry(), VASTDep::CreateCtrlDep(0));
+
+    DefMapTy::iterator at = DefMap.find(BB);
+    assert(at != DefMap.end() && "Not a define block!");
+    ArrayRef<VASTSchedUnit*> SUs(at->second);
+    for (unsigned i = 0; i < SUs.size(); ++i)
+      SUs[i]->addDep(Src, VASTDep::CreateCtrlDep(0));
+
+    return Src;
+  }
+
+  static void buildDep(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
+    Dst->addDep(Src, VASTDep::CreateMemDep(1, 0));
+  }
+};
+
+/// MemoryDepBuilder - Divide the memories into a set of alias regions, then
+/// for each region, perform the flow analysis on the instructions that visit
+/// the region and build the dependencies.
 struct MemoryDepBuilder {
   VASTSchedGraph &G;
   IR2SUMapTy &IR2SUMap;
@@ -542,7 +599,33 @@ struct MemoryDepBuilder {
   void buildDependencies();
 };
 }
+//===----------------------------------------------------------------------===//
+void AliasRegionDepBuilder::initializeRegion(AliasSet &AS) {
+  DEBUG(dbgs() << "AST:\n");
 
+  for (AliasSet::iterator AI = AS.begin(), AE = AS.end(); AI != AE; ++AI) {
+    Value *V = AI.getPointer();
+
+    DEBUG(dbgs().indent(2) << *V << "\n");
+
+    // Get the loads/stores that refer the pointer
+    typedef Value::use_iterator use_iterator;
+    for (use_iterator I = V->use_begin(), E = V->use_end(); I != E; ++I) {
+      Instruction *Inst = dyn_cast<Instruction>(*I);
+
+      if (Inst == 0 || !isLoadStore(Inst)) continue;
+
+      VASTSchedUnit *SU = IR2SUMap[Inst].front();
+      assert(SU->isLaunch() && "Bad scheduling unit type!");
+      // Remember the scheduling unit and the corresponding basic block.
+      addDef(SU, Inst->getParent());
+    }
+  }
+
+  DEBUG(dbgs() << "\n");
+}
+
+//===----------------------------------------------------------------------===//
 static
 AliasAnalysis::Location getPointerLocation(Instruction *I, AliasAnalysis *AA) {
   if (LoadInst *LI = dyn_cast<LoadInst>(I))
@@ -586,7 +669,6 @@ void MemoryDepBuilder::buildDependency(Instruction *Src, Instruction *Dst) {
 
   DstU->addDep(SrcU, VASTDep::CreateMemDep(Latency, 0));
   ++NumMemDep;
-
 }
 
 void MemoryDepBuilder::buildLocalDependencies(BasicBlock *BB) {
@@ -609,16 +691,32 @@ void MemoryDepBuilder::buildLocalDependencies(BasicBlock *BB) {
       buildDependency(PiorMemInsts[i], Inst);
 
     PiorMemInsts.push_back(Inst);
+    // Collect the instructions to build the alias regions.
+    AST.add(Inst);
   }
 }
 
 void MemoryDepBuilder::buildDependencies() {
   Function &F = G.getFunction();
 
-  // Build the memory dependencies.
+  // Build the memory dependencies inside basic blocks.
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I)
     buildLocalDependencies(I);
+
+  // Build the memory dependencies flow.
+  // TODO: Ignore RAR dependencies.
+  for (AliasSetTracker::iterator I = AST.begin(), E = AST.end(); I != E; ++I) {
+    AliasSet *AS = I;
+
+    // Ignore the set that does not contain any load/store.
+    if (AS->isForwardingAliasSet() || !(AS->isMod() || AS->isRef()))
+      continue;
+
+    AliasRegionDepBuilder Builder(G, GFA, IR2SUMap);
+    Builder.initializeRegion(*AS);
+    Builder.constructGlobalFlow();
+  }
 }
 
 void VASTSchedGraph::buildMemoryDependencies(AliasAnalysis *AA,
