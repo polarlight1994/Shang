@@ -5,7 +5,6 @@ add_llvm_library(ShangHLS
   ExternalTimingAnalysis.cpp
   VASTScheduling.cpp
   ScheduleEmitter.cpp
-  RegisterFolding.cpp
   CrossBBChainFixer.cpp
   SchedulerBase.cpp
   GlobalDepBuilder.cpp
