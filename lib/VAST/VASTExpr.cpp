@@ -204,9 +204,6 @@ static bool printFUAdd(raw_ostream &OS, const VASTExpr *E, const VASTValue *LHS)
 
   const VASTUse &OpA = E->getOperand(0), &OpB = E->getOperand(1);
 
-  if (OpA.isa<VASTImmediate>() || OpA.isa<VASTSymbol>()) return false;
-  if (OpB.isa<VASTImmediate>() || OpB.isa<VASTSymbol>()) return false;
-
   OS << E->getFUName() << "#("
      << OpA->getBitWidth() << ", "
      << OpB->getBitWidth() << ", "
@@ -230,9 +227,6 @@ static bool printBinFU(raw_ostream &OS, const VASTExpr *E, const VASTValue *LHS)
   if (E == 0) return false;
 
   const VASTUse &OpA = E->getOperand(0), &OpB = E->getOperand(1);
-
-  if (OpA.isa<VASTImmediate>() || OpA.isa<VASTSymbol>()) return false;
-  if (OpB.isa<VASTImmediate>() || OpB.isa<VASTSymbol>()) return false;
 
   OS << E->getFUName() << "#("
      << OpA->getBitWidth() << ", "
