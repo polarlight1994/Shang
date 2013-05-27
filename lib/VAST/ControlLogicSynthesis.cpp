@@ -105,7 +105,7 @@ VASTValPtr ControlLogicSynthesis::buildSlotReadyExpr(VASTSlot *S) {
   if (ReadySet)
     for (const_fu_rdy_it I = ReadySet->begin(), E = ReadySet->end();I != E; ++I) {
       // If the condition is true then the signal must be 1 to ready.
-      VASTValPtr ReadyCnd = Builder->buildNotExpr(I->second.getAsInlineOperand());
+      VASTValPtr ReadyCnd = Builder->buildNotExpr(I->second);
       Ops.push_back(Builder->buildOrExpr(I->first, ReadyCnd, 1));
     }
 

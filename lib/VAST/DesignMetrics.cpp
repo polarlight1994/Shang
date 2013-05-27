@@ -61,7 +61,7 @@ class DesignMetricsImpl : public DatapathBuilderContext {
     return DPContainer.createExprImpl(Opc, Ops, UB, LB);;
   }
 
-  VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand);
+  VASTValPtr getAsOperandImpl(Value *Op);
 
   // Visit the expression tree whose root is Root and return the cost of the
   // tree, insert all visited data-path nodes into Visited.
@@ -114,16 +114,11 @@ struct DesignMetricsPass : public FunctionPass {
 };
 }
 
-VASTValPtr DesignMetricsImpl::getAsOperandImpl(Value *Op,
-                                               bool GetAsInlineOperand) {
+VASTValPtr DesignMetricsImpl::getAsOperandImpl(Value *Op) {
   if (ConstantInt *Int = dyn_cast<ConstantInt>(Op))
     return getOrCreateImmediate(Int->getValue());
 
-  if (VASTValPtr V = Builder.lookupExpr(Op)) {
-    // Try to inline the operand if user ask to.
-    if (GetAsInlineOperand) V = V.getAsInlineOperand();
-    return V;
-  }
+  if (VASTValPtr V = Builder.lookupExpr(Op)) return V;
 
   unsigned NumBits = Builder.getValueSizeInBits(Op);
 
@@ -141,17 +136,17 @@ VASTValPtr DesignMetricsImpl::getAsOperandImpl(Value *Op,
 
 void DesignMetricsImpl::visitLoadInst(LoadInst &I) {
   Value *Address = I.getPointerOperand();
-  if (VASTValPtr V = getAsOperandImpl(Address, true))
+  if (VASTValPtr V = getAsOperandImpl(Address))
     AddressBusFanins.insert(V.get());
 }
 
 void DesignMetricsImpl::visitStoreInst(StoreInst &I) {
   Value *Address = I.getPointerOperand();
-  if (VASTValPtr V = getAsOperandImpl(Address, true))
+  if (VASTValPtr V = getAsOperandImpl(Address))
     AddressBusFanins.insert(V.get());
 
   Value *Data = I.getValueOperand();
-  if (VASTValPtr V = getAsOperandImpl(Data, true))
+  if (VASTValPtr V = getAsOperandImpl(Data))
     DataBusFanins.insert(V.get());
 }
 

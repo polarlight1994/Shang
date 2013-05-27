@@ -130,7 +130,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     return getOrCreateSeqValImpl(V, translatePtr2Str(V, S));
   }
 
-  VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand = true);
+  VASTValPtr getAsOperandImpl(Value *Op);
 
   // Remember the landing slot and the latest slot of a basic block.
   std::map<BasicBlock*, std::pair<VASTSlot*, VASTSlot*> > BB2SlotMap;
@@ -259,13 +259,8 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
 }
 
 
-VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V, bool GetAsInlineOperand)
-{
-  if (VASTValPtr Val = lookupExpr(V)) {
-    // Try to inline the operand if user ask to.
-    if (GetAsInlineOperand) Val = Val.getAsInlineOperand();
-    return Val;
-  }
+VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
+  if (VASTValPtr Val = lookupExpr(V)) return Val;
 
   // The VASTValPtr of the instruction should had been created when we trying
   // to get it as operand.

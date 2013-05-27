@@ -399,10 +399,6 @@ void VASTExpr::dropUses() {
 }
 
 //----------------------------------------------------------------------------//
-VASTValPtr VASTWire::getAsInlineOperandImpl() {
-  return this;
-}
-
 bool VASTWire::isX() const {
   Value *V = getValue();
 

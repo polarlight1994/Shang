@@ -189,14 +189,6 @@ private:
 
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 
-  VASTValPtr getAsInlineOperandImpl() {
-    // Can the expression be printed inline?
-    if (getOpcode() == VASTExpr::dpAssign && !isSubBitSlice())
-      return getOperand(0).getAsInlineOperand();
-
-    return this;
-  }
-
 public:
   ~VASTExpr();
 
@@ -266,8 +258,6 @@ public:
 private:
   DataTy Data;
 
-  VASTValPtr getAsInlineOperandImpl();
-
   friend struct ilist_sentinel_traits<VASTWire>;
   VASTWire() : VASTNamedValue(vastWire, 0, 0) {}
 
@@ -281,7 +271,7 @@ public:
   // Return true if the wire represents
   bool isX() const;
 
-  void printDecl(raw_ostream &OS) const;
+  virtual void printDecl(raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTWire *A) { return true; }

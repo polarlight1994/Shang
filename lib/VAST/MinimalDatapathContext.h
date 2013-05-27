@@ -33,7 +33,7 @@ public:
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                         unsigned UB, unsigned LB);
 
-  virtual VASTValPtr getAsOperandImpl(Value *Op, bool GetAsInlineOperand = true);
+  virtual VASTValPtr getAsOperandImpl(Value *Op);
 
   void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 };

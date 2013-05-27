@@ -41,8 +41,7 @@ public:
     return getValueSizeInBits(&V);
   }
 
-  virtual VASTValPtr getAsOperandImpl(Value *Op,
-                                      bool GetAsInlineOperand = true) {
+  virtual VASTValPtr getAsOperandImpl(Value *Op) {
     llvm_unreachable("Function not implemented!");
     return 0;
   }
@@ -76,8 +75,8 @@ public:
     return getValueSizeInBits(&V);
   }
 
-  VASTValPtr getAsOperand(Value *Op, bool GetAsInlineOperand = true) {
-    return getContext().getAsOperandImpl(Op, GetAsInlineOperand);
+  VASTValPtr getAsOperand(Value *Op) {
+    return getContext().getAsOperandImpl(Op);
   }
 
   // Value mapping.

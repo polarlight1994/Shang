@@ -365,7 +365,7 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
       SeqOpCnds.clear();
       const VASTSeqOp *Op = *OI;
       if (VASTValPtr SlotActive = Op->getSlotActive())
-        SeqOpCnds.push_back(SlotActive.getAsInlineOperand());
+        SeqOpCnds.push_back(SlotActive);
 
       SeqOpCnds.push_back(Op->getGuard());
 

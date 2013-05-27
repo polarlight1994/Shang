@@ -109,7 +109,7 @@ class VASTExprBuilder {
       typedef VASTExpr::op_iterator op_iterator;
       if (Expr->getOpcode() == Opcode && shouldExprBeFlatten(Expr)) {
         for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
-          flattenExpr<Opcode>(I->getAsInlineOperand(), F);
+          flattenExpr<Opcode>(*I, F);
 
         return;
       }

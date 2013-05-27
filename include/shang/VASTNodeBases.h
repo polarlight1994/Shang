@@ -164,12 +164,6 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
   template<typename T1>
   bool operator>(const T1 *RHS) const { return this->getOpaqueValue() > RHS; }
 
-  // getAsInlineOperand, with the invert flag.
-  inline PtrInvPair<VASTValue> getAsInlineOperand() const {
-    // Get the underlying value, and invert the underlying value if necessary.
-    return get()->getAsInlineOperand(isInverted());
-  }
-
   inline void printAsOperand(raw_ostream &OS, unsigned UB, unsigned LB) const {
     get()->printAsOperand(OS, UB, LB, isInverted());
   }
@@ -310,10 +304,6 @@ public:
   bool isInverted() const { return get().isInverted(); }
   VASTValPtr invert(bool Invert = true) const { return get().invert(Invert); }
 
-  inline VASTValPtr getAsInlineOperand() const {
-    return get().getAsInlineOperand();
-  }
-
   inline void printAsOperand(raw_ostream &OS, unsigned UB, unsigned LB) const {
     get().printAsOperand(OS, UB, LB);
   }
@@ -434,8 +424,6 @@ protected:
     printAsOperandImpl(OS, getBitWidth(), 0);
   }
 
-  // Print the value as inline operand.
-  virtual VASTValPtr getAsInlineOperandImpl() { return this; }
 public:
   virtual ~VASTValue();
   const uint8_t BitWidth;
@@ -451,10 +439,6 @@ public:
   void printAsOperand(raw_ostream &OS, unsigned UB, unsigned LB,
                       bool isInverted) const;
   void printAsOperand(raw_ostream &OS, bool isInverted) const;
-
-  VASTValPtr getAsInlineOperand(bool isInverted) {
-    return getAsInlineOperandImpl().invert(isInverted);
-  }
 
   virtual void print(raw_ostream &OS) const;
 

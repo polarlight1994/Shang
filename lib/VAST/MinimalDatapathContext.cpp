@@ -27,15 +27,11 @@ MinimalDatapathContext::createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Op
 }
 
 VASTValPtr 
-MinimalDatapathContext::getAsOperandImpl(Value *Op, bool GetAsInlineOperand) {
+MinimalDatapathContext::getAsOperandImpl(Value *Op) {
   if (ConstantInt *Int = dyn_cast<ConstantInt>(Op))
     return getOrCreateImmediate(Int->getValue());
 
-  if (VASTValPtr V = lookupExpr(Op)) {
-    // Try to inline the operand if user ask to.
-    if (GetAsInlineOperand) V = V.getAsInlineOperand();
-    return V;
-  }
+  if (VASTValPtr V = lookupExpr(Op)) return V;
 
   // Else we need to create a leaf node for the expression tree.
   llvm_unreachable("Cannot create VASTValPtr for Value!");
