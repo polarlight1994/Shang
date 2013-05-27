@@ -81,11 +81,10 @@ VASTValPtr DatapathBuilder::visitIntToPtrInst(IntToPtrInst &I) {
 }
 
 VASTValPtr DatapathBuilder::visitSelectInst(SelectInst &I) {
-  return buildExpr(VASTExpr::dpSel,
-                   getAsOperand(I.getOperand(0)),
-                   getAsOperand(I.getOperand(1)),
-                   getAsOperand(I.getOperand(2)),
-                   getValueSizeInBits(I));
+  return buildSelExpr(getAsOperand(I.getOperand(0)),
+                      getAsOperand(I.getOperand(1)),
+                      getAsOperand(I.getOperand(2)),
+                      getValueSizeInBits(I));
 }
 
 VASTValPtr DatapathBuilder::visitICmpInst(ICmpInst &I) {

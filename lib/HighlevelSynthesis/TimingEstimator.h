@@ -216,8 +216,6 @@ public:
       case VASTExpr::dpSRA:
         SCThis->accumulateDelayThuSRA(Op, Expr, i, UB, LB, CurSrcInfo);
         break;
-      case VASTExpr::dpSel:
-        SCThis->accumulateDelayThuSel(Op, Expr, i, UB, LB, CurSrcInfo);
         break;
       case VASTExpr::dpAssign:
         SCThis->accumulateDelayThuAssign(Op, Expr, i, UB, LB, CurSrcInfo);
@@ -350,13 +348,6 @@ public:
   {
     accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo,
                        AccumulateBlackBoxDelay<VFUShift>);
-  }
-
-  void accumulateDelayThuSel(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                             uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo,
-                       AccumulateAndDelay);
   }
 
   void accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,

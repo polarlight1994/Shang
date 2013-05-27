@@ -136,15 +136,6 @@ void VASTExprBuilder::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
     KnownOnes = VASTImmediate::getBitSlice(KnownOnes, Expr->UB, Expr->LB);
     KnownZeros = VASTImmediate::getBitSlice(KnownZeros, Expr->UB, Expr->LB);
     return;
-  case VASTExpr::dpSel: {
-    VASTValPtr OpTrue = Expr.getOperand(1), OpFalse = Expr.getOperand(2);;
-    calculateBitMask(OpTrue, KnownZeros, KnownOnes);
-    APInt OpFalseKnownOnes, OpFalseKnownZeros;
-    calculateBitMask(OpFalse, OpFalseKnownZeros, OpFalseKnownOnes);
-    KnownOnes &= OpFalseKnownOnes;
-    KnownZeros &= OpFalseKnownZeros;
-    return;
-  }
   }
 }
 
@@ -418,8 +409,6 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr LHS,
 VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op0,
                                        VASTValPtr Op1, VASTValPtr Op2,
                                        unsigned BitWidth) {
-  if (Opc == VASTExpr::dpSel) return buildSelExpr(Op0, Op1, Op2, BitWidth);
-
   VASTValPtr Ops[] = { Op0, Op1, Op2 };
   return buildExpr(Opc, Ops, BitWidth);
 }
@@ -433,7 +422,6 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
   case VASTExpr::dpMul:  return buildMulExpr(Ops, BitWidth);
   case VASTExpr::dpAnd:  return buildAndExpr(Ops, BitWidth);
   case VASTExpr::dpBitCat: return buildBitCatExpr(Ops, BitWidth);
-  case VASTExpr::dpSel:  return buildSelExpr(Ops[0], Ops[1], Ops[2], BitWidth);
   case VASTExpr::dpShl:
   case VASTExpr::dpSRA:
   case VASTExpr::dpSRL:

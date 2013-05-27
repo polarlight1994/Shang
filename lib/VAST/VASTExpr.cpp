@@ -130,14 +130,6 @@ static void printSRAOp(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
   Ops[1].printAsOperand(OS);
 }
 
-static void printSel(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
- printOperand(OS, Ops[0]);
- OS << '?';
- printOperand(OS, Ops[1]);
- OS << ':';
- printOperand(OS, Ops[2]);
-}
-
 static void printBitCat(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
   OS << '{';
   printSimpleOp(OS, Ops, " , ");
@@ -313,8 +305,6 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   case dpShl: printSimpleUnsignedOp(OS, getOperands(), " << ");break;
   case dpSRL: printSimpleUnsignedOp(OS, getOperands(), " >> ");break;
   case dpSRA: printSRAOp(OS, getOperands());                   break;
-
-  case dpSel: printSel(OS, getOperands());                     break;
 
   case dpAssign: getOperand(0).printAsOperand(OS, UB, LB); break;
 
