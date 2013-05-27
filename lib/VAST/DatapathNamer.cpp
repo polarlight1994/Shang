@@ -41,8 +41,7 @@ struct Namer {
   void nameExpr(VASTExpr *Expr) const {
     // The size of named expression is 1.
     ExprSize[Expr] = 1;
-    // Dirty hack: Do not name the MUX, they should be print with a wire.
-    if (Expr->getOpcode() != VASTExpr::dpMux) Expr->nameExpr();
+    Expr->nameExpr();
   }
 
   void operator()(VASTNode *N) const {

@@ -163,9 +163,7 @@ public:
     LastFUOpc = dpUGT,
     LastICmpOpc = dpUGT,
     // Lookup-tables.
-    dpLUT,
-    // Mux in datapath.
-    dpMux
+    dpLUT
   };
 private:
   // Operands, right after this VASTExpr.
