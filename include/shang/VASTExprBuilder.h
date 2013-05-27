@@ -17,23 +17,6 @@
 #include "llvm/Support/Allocator.h"
 
 namespace llvm {
-struct VASTExprHelper {
-  SmallVector<VASTValPtr, 4> Operands;
-  VASTExpr::Opcode Opc;
-  unsigned BitWidth;
-  bool BuildNot;
-
-  void init(VASTExpr::Opcode opc, unsigned bitWidth, bool buildNot = false) {
-    Opc = opc;
-    BitWidth = bitWidth;
-    BuildNot = buildNot;
-  }
-
-  void addOperand(VASTValPtr V) {
-    Operands.push_back(V.getAsInlineOperand());
-  }
-};
-
 class VASTExprBuilderContext {
 public:
   virtual ~VASTExprBuilderContext() {}
@@ -268,14 +251,6 @@ public:
 
   VASTValPtr buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op0, VASTValPtr Op1,
                        VASTValPtr Op2, unsigned BitWidth);
-  VASTValPtr buildExpr(VASTExprHelper &Builder) {
-    VASTValPtr V = buildExpr(Builder.Opc, Builder.Operands, Builder.BitWidth);
-
-    // If opc is dpAnd and BuildNot is true. It mean Or in And Invert Graph.
-    if (Builder.BuildNot) V = buildNotExpr(V);
-
-    return V;
-  }
 
   VASTValPtr buildBitSliceExpr(VASTValPtr U, uint8_t UB, uint8_t LB);
 
