@@ -49,7 +49,7 @@ class StrashTable : public ImmutablePass {
 public:
   static char ID;
 
-  StrashTable() : ImmutablePass(ID), LastID(0) {}
+  StrashTable();
 
   unsigned getOrInsertNode(VASTValPtr Ptr);
 };

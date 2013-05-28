@@ -225,11 +225,6 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
 }
 
 bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
-  // Name all expressions before writting the netlist.
-  typedef DatapathContainer::expr_iterator expr_iterator;
-  for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
-    I->nameExpr();
-
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
     I->setPrintSelModule();
@@ -280,10 +275,6 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
       buildTimingPathTo(SelEnable, Sel, delay_type(0.0f));
     }
   }
-
-  // Strip the name of all expressions.
-  for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
-    I->nameExpr(false);
 
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
     I->setPrintSelModule(false);

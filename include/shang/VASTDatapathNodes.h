@@ -138,16 +138,16 @@ class VASTExpr : public VASTValue, public VASTOperandList,
                  public FoldingSetNode, public ilist_node<VASTExpr> {
 public:
   enum Opcode {
-    // bitwise logic datapath
-    dpAnd,
-    dpRAnd,
-    dpRXor,
     // bit level assignment.
     dpBitCat,
     dpBitRepeat,
     // Simple wire assignment.
     dpAssign,
-    LastInlinableOpc = dpAssign,
+    LastAnonymousOpc = dpAssign,
+    // bitwise logic datapath
+    dpAnd,
+    dpRAnd,
+    dpRXor,
     // Cannot inline.
     // FU datapath
     dpAdd,
@@ -209,17 +209,14 @@ public:
     return isSubBitSlice() && LB == 0;
   }
 
-  bool hasName() const { return IsNamed != 0; }
+  bool hasName() const;
 
   // Assign a name to this expression.
-  void nameExpr(bool NameExpr = true) {
-    //assert(!hasName() && "Expr already have name!");
-    IsNamed = NameExpr;
-  }
+  void nameExpr(const char *Name);
 
-  std::string getTempName() const;
+  const char *getTempName() const;
 
-  bool isInlinable() const;
+  bool isAnonymous() const;
 
   void print(raw_ostream &OS) const { printAsOperandInteral(OS); }
 

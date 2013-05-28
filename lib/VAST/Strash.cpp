@@ -11,14 +11,13 @@
 
 #include "Strash.h"
 
+#include "shang/Passes.h"
 #include "shang/VASTDatapathNodes.h"
 #include "shang/VASTSeqValue.h"
 
 #include "llvm/ADT/STLExtras.h"
 
 using namespace llvm;
-
-char StrashTable::ID = 0;
 
 void StrashTable::calculateLeafID(VASTValue *Ptr, FoldingSetNodeID &ID) {
   if (VASTNamedValue *NV = dyn_cast<VASTNamedValue>(Ptr)) {
@@ -87,3 +86,12 @@ unsigned llvm::StrashTable::getOrInsertNode(VASTValPtr Ptr) {
 
   return unsigned(*N);
 }
+
+StrashTable::StrashTable() : ImmutablePass(ID), LastID(0) {
+  initializeStrashTablePass(*PassRegistry::getPassRegistry());
+}
+
+char StrashTable::ID = 0;
+
+INITIALIZE_PASS(StrashTable, "shang-strash",
+                "The structural hash table for the datapath nodes", false, true)

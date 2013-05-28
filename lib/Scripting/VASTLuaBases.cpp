@@ -445,12 +445,18 @@ VASTModule::~VASTModule() {
 namespace {
 struct DatapathPrinter {
   raw_ostream &OS;
+  std::set<const char*> PrintedNames;
 
   DatapathPrinter(raw_ostream &OS) : OS(OS) {}
 
-  void operator()(VASTNode *N) const {
+  void operator()(VASTNode *N) {
     if (VASTExpr *E = dyn_cast<VASTExpr>(N))
-      if (E->hasName()) {
+      if (const char *Name =  E->getTempName()) {
+        // If the we get an expression with the same name as some other
+        // expressions, do not print them as their are structural identical
+        // expressions and one of them been printed before.
+        if (!PrintedNames.insert(Name).second) return;
+
         OS << "wire ";
 
         if (E->getBitWidth() > 1)
@@ -470,10 +476,10 @@ struct DatapathPrinter {
 
         OS << " = ";
 
-        // Temporary unname the rexpression so that we can print its logic.
-        E->nameExpr(false);
+        // Temporary unname the expression so that we can print its logic.
+        E->nameExpr(0);
         E->printAsOperand(OS, false);
-        E->nameExpr();
+        E->nameExpr(Name);
 
         OS << ";\n";
       }

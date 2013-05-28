@@ -251,12 +251,20 @@ VASTExpr::VASTExpr()
 
 VASTExpr::~VASTExpr() {}
 
-bool VASTExpr::isInlinable() const {
-  return getOpcode() <= LastInlinableOpc;
+bool VASTExpr::isAnonymous() const {
+  return getOpcode() <= LastAnonymousOpc;
 }
 
-std::string VASTExpr::getTempName() const {
-  return "t" + utohexstr(intptr_t(this)) + "t";
+bool VASTExpr::hasName() const {
+  return Contents.Name != 0;
+}
+
+void VASTExpr::nameExpr(const char *Name) {
+  Contents.Name = Name;
+}
+
+const char *VASTExpr::getTempName() const {
+  return Contents.Name;
 }
 
 void

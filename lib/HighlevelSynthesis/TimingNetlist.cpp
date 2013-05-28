@@ -101,8 +101,11 @@ void TimingNetlist::releaseMemory() {
 void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   // Perform the control logic synthesis because we need to write the netlist.
-  if (TimingModel == TimingEstimatorBase::External)
-    AU.addRequiredID(ControlLogicSynthesisID);  
+  if (TimingModel == TimingEstimatorBase::External) {
+    AU.addRequiredID(ControlLogicSynthesisID);
+    AU.addRequiredID(DatapathNamerID);
+  }
+
   AU.setPreservesAll();
 }
 

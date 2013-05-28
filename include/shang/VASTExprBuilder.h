@@ -21,10 +21,6 @@ class VASTExprBuilderContext {
 public:
   virtual ~VASTExprBuilderContext() {}
 
-  virtual bool shouldExprBeFlatten(VASTExpr *E) const {
-    return E->isInlinable();
-  }
-
   VASTValPtr stripZeroBasedBitSlize(VASTValPtr V) {
     VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
     if (Expr.get() && Expr->isSubBitSlice() && Expr->LB == 0)
@@ -107,7 +103,7 @@ class VASTExprBuilder {
   void flattenExpr(VASTValPtr V, visitor F) {
     if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
       typedef VASTExpr::op_iterator op_iterator;
-      if (Expr->getOpcode() == Opcode && shouldExprBeFlatten(Expr)) {
+      if (Expr->getOpcode() == Opcode) {
         for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
           flattenExpr<Opcode>(*I, F);
 
@@ -122,6 +118,11 @@ class VASTExprBuilder {
   void flattenExpr(iterator begin, iterator end, visitor F) {
     while (begin != end)
       flattenExpr<Opcode>(*begin++, F);
+  }
+
+  template<VASTExpr::Opcode Opcode, typename iterator, typename visitor>
+  void collectOperands(iterator begin, iterator end, visitor F) {
+    while (begin != end) F++ = *begin++;
   }
 
   // The helper iterator class to collect all leaf operand of an expression tree.
@@ -217,10 +218,6 @@ public:
 
   VASTImmediate *getImmediate(const APInt &Value) {
     return Context.getOrCreateImmediate(Value);
-  }
-
-  bool shouldExprBeFlatten(VASTExpr *E) const {
-    return Context.shouldExprBeFlatten(E);
   }
 
   VASTValPtr getOrCreateCommutativeExpr(VASTExpr::Opcode Opc,

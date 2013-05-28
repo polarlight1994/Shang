@@ -636,8 +636,9 @@ VASTValPtr VASTExprBuilder::buildMulExpr(ArrayRef<VASTValPtr> Ops,
   SmallVector<VASTValPtr, 8> NewOps;
   VASTExprOpInfo<VASTExpr::dpMul> OpInfo(*this, BitWidth);
 
-  flattenExpr<VASTExpr::dpMul>(Ops.begin(), Ops.end(),
-                                op_filler<VASTExpr::dpMul>(NewOps, OpInfo));
+  // Do not flatten Mult at the moment.
+  collectOperands<VASTExpr::dpMul>(Ops.begin(), Ops.end(),
+                                   op_filler<VASTExpr::dpMul>(NewOps, OpInfo));
 
   if (OpInfo.ZeroDetected) return getImmediate(UINT64_C(0), BitWidth);
 
@@ -677,8 +678,9 @@ VASTValPtr VASTExprBuilder::buildAddExpr(ArrayRef<VASTValPtr> Ops,
                                          unsigned BitWidth) {
   SmallVector<VASTValPtr, 8> NewOps;
   VASTExprOpInfo<VASTExpr::dpAdd> OpInfo(*this, BitWidth);
-  flattenExpr<VASTExpr::dpAdd>(Ops.begin(), Ops.end(),
-                               op_filler<VASTExpr::dpAdd>(NewOps, OpInfo));
+  // Do not flatten Add at the moment.
+  collectOperands<VASTExpr::dpAdd>(Ops.begin(), Ops.end(),
+                                   op_filler<VASTExpr::dpAdd>(NewOps, OpInfo));
 
   // Add the immediate value back to the operand list.
   if (VASTValPtr V = OpInfo.flushImmOperand())

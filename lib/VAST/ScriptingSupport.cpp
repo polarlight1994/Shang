@@ -11,8 +11,6 @@
 // manipulate some data such as current generated RTL module with external script
 //
 //===----------------------------------------------------------------------===//
-#include "Allocation.h"
-
 #include "shang/Passes.h"
 #include "shang/Utilities.h"
 #include "shang/VASTModule.h"
