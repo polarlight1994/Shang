@@ -7,69 +7,36 @@
 //
 //===----------------------------------------------------------------------===//
 //
+// This file defines the interface of StrashTable, which calculate the ID of the
+// nodes in datapath based on their "structure".
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef STRUCTRURAL_HASH_TABLE_H
 #define STRUCTRURAL_HASH_TABLE_H
 
 #include "shang/VASTNodeBases.h"
-
-#include "llvm/Pass.h"
-#include "llvm/ADT/FoldingSet.h"
+#include "shang/VASTModulePass.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/Support/Allocator.h"
 
 namespace llvm {
-class StrashTable : public ImmutablePass {
+class StrashTable;
+class CachedStrashTable : public VASTModulePass {
 public:
   typedef DenseMap<VASTValPtr, unsigned> CacheTy;
 private:
-  struct Node : public FoldingSetNode {
-    /// FastID - A reference to an Interned FoldingSetNodeID for this node.
-    /// The StrashTable's BumpPtrAllocator holds the data.
-    FoldingSetNodeIDRef FastID;
-
-    unsigned ID;
-
-    Node(const FoldingSetNodeIDRef IDRef, unsigned ID)
-      : FastID(IDRef), ID(ID) {}
-
-    operator unsigned() const { return ID; }
-  };
-  friend struct FoldingSetTrait<StrashTable::Node>;
-
-  unsigned LastID;
-  FoldingSet<Node> Set;
-  BumpPtrAllocator Allocator;
-
-  void calculateLeafID(VASTValue *Ptr, FoldingSetNodeID &ID);
-  void calculateExprID(VASTExpr *Expr, FoldingSetNodeID &ID, CacheTy &Cache);
-  void calculateID(VASTValue *Ptr, FoldingSetNodeID &ID, CacheTy &Cache);
-  void calculateID(VASTValPtr Ptr, FoldingSetNodeID &ID, CacheTy &Cache);
-
+  CacheTy Cache;
+  StrashTable *Strash;
 public:
   static char ID;
 
-  StrashTable();
+  CachedStrashTable();
 
-  unsigned getOrInsertNode(VASTValPtr Ptr, CacheTy &Cache);
-};
+  unsigned getOrCreateStrashID(VASTValPtr Ptr);
 
-// Specialize FoldingSetTrait for StrashNode to avoid needing to compute
-// temporary FoldingSetNodeID values.
-template<> struct FoldingSetTrait<StrashTable::Node> {
-  static void Profile(const StrashTable::Node &X, FoldingSetNodeID& ID) {
-    ID = X.FastID;
-  }
-  static bool Equals(const StrashTable::Node &X, const FoldingSetNodeID &ID,
-                     unsigned IDHash, FoldingSetNodeID &TempID) {
-    return ID == X.FastID;
-  }
-
-  static
-  unsigned ComputeHash(const StrashTable::Node &X, FoldingSetNodeID &TempID) {
-    return X.FastID.ComputeHash();
-  }
+  void getAnalysisUsage(AnalysisUsage &AU) const;
+  bool runOnVASTModule(VASTModule &VM);
+  void releaseMemory();
 };
 }
 #endif

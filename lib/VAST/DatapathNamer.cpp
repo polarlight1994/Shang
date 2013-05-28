@@ -30,9 +30,8 @@ using namespace llvm;
 namespace {
 struct DatapathNamer : public VASTModulePass {
   static char ID;
-  StrashTable *Strash;
+  CachedStrashTable *Strash;
   StringSet<> Names;
-  StrashTable::CacheTy Cache;
 
   DatapathNamer() : VASTModulePass(ID) {
     initializeDatapathNamerPass(*PassRegistry::getPassRegistry());
@@ -40,7 +39,7 @@ struct DatapathNamer : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequiredTransitive<StrashTable>();
+    AU.addRequiredTransitive<CachedStrashTable>();
     AU.setPreservesAll();
   }
 
@@ -48,12 +47,11 @@ struct DatapathNamer : public VASTModulePass {
 
   void releaseMemory() {
     Names.clear();
-    Cache.clear();
     Strash = 0;
   }
 
   void nameExpr(VASTExpr *Expr) {
-    unsigned StrashID = Strash->getOrInsertNode(Expr, Cache);
+    unsigned StrashID = Strash->getOrCreateStrashID(Expr);
     StringSet<>::MapEntryTy &Entry
       = Names.GetOrCreateValue("t" + utostr_32(StrashID) + "t");
     Expr->nameExpr(Entry.getKeyData());
@@ -78,14 +76,14 @@ struct DatapathNamer : public VASTModulePass {
 
 INITIALIZE_PASS_BEGIN(DatapathNamer, "datapath-namer",
                       "Assign name to the datapath node", false, true)
-  INITIALIZE_PASS_DEPENDENCY(StrashTable);
+  INITIALIZE_PASS_DEPENDENCY(CachedStrashTable);
 INITIALIZE_PASS_END(DatapathNamer, "datapath-namer",
                     "Assign name to the datapath node", false, true)
 char DatapathNamer::ID = 0;
 char &llvm::DatapathNamerID = DatapathNamer::ID;
 
 bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
-  Strash = &getAnalysis<StrashTable>();
+  Strash = &getAnalysis<CachedStrashTable>();
   std::set<VASTOperandList*> Visited;
 
   typedef VASTModule::const_slot_iterator slot_iterator;
