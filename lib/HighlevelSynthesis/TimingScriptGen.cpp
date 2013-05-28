@@ -165,6 +165,7 @@ struct TimingScriptGen : public VASTModulePass {
     AU.addRequired<SeqLiveVariables>();
     AU.addRequired<STGDistances>();
     AU.addRequired<TimingNetlist>();
+    AU.addRequiredID(DatapathNamerID);
     AU.addRequired<DataLayout>();
     AU.setPreservesAll();
   }
@@ -479,6 +480,7 @@ INITIALIZE_PASS_BEGIN(TimingScriptGen, "vast-timing-script-generation",
                       "Generate timing script to export the behavior-level timing",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
+  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
