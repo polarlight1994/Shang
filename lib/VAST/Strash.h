@@ -12,17 +12,18 @@
 #ifndef STRUCTRURAL_HASH_TABLE_H
 #define STRUCTRURAL_HASH_TABLE_H
 
+#include "shang/VASTNodeBases.h"
+
 #include "llvm/Pass.h"
 #include "llvm/ADT/FoldingSet.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/Allocator.h"
 
 namespace llvm {
-class VASTValue;
-template<typename T> struct PtrInvPair;
-typedef PtrInvPair<VASTValue> VASTValPtr;
-class VASTExpr;
-
 class StrashTable : public ImmutablePass {
+public:
+  typedef DenseMap<VASTValPtr, unsigned> CacheTy;
+private:
   struct Node : public FoldingSetNode {
     /// FastID - A reference to an Interned FoldingSetNodeID for this node.
     /// The StrashTable's BumpPtrAllocator holds the data.
@@ -42,16 +43,16 @@ class StrashTable : public ImmutablePass {
   BumpPtrAllocator Allocator;
 
   void calculateLeafID(VASTValue *Ptr, FoldingSetNodeID &ID);
-  void calculateExprID(VASTExpr *Expr, FoldingSetNodeID &ID);
-  void calculateID(VASTValue *Ptr, FoldingSetNodeID &ID);
-  void calculateID(VASTValPtr Ptr, FoldingSetNodeID &ID);
+  void calculateExprID(VASTExpr *Expr, FoldingSetNodeID &ID, CacheTy &Cache);
+  void calculateID(VASTValue *Ptr, FoldingSetNodeID &ID, CacheTy &Cache);
+  void calculateID(VASTValPtr Ptr, FoldingSetNodeID &ID, CacheTy &Cache);
 
 public:
   static char ID;
 
   StrashTable();
 
-  unsigned getOrInsertNode(VASTValPtr Ptr);
+  unsigned getOrInsertNode(VASTValPtr Ptr, CacheTy &Cache);
 };
 
 // Specialize FoldingSetTrait for StrashNode to avoid needing to compute

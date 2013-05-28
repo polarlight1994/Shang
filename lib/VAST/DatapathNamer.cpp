@@ -32,6 +32,7 @@ struct DatapathNamer : public VASTModulePass {
   static char ID;
   StrashTable *Strash;
   StringSet<> Names;
+  StrashTable::CacheTy Cache;
 
   DatapathNamer() : VASTModulePass(ID) {
     initializeDatapathNamerPass(*PassRegistry::getPassRegistry());
@@ -47,11 +48,12 @@ struct DatapathNamer : public VASTModulePass {
 
   void releaseMemory() {
     Names.clear();
+    Cache.clear();
     Strash = 0;
   }
 
   void nameExpr(VASTExpr *Expr) {
-    unsigned StrashID = Strash->getOrInsertNode(Expr);
+    unsigned StrashID = Strash->getOrInsertNode(Expr, Cache);
     StringSet<>::MapEntryTy &Entry
       = Names.GetOrCreateValue("t" + utostr_32(StrashID) + "t");
     Expr->nameExpr(Entry.getKeyData());

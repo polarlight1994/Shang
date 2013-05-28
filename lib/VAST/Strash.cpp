@@ -29,7 +29,8 @@ void StrashTable::calculateLeafID(VASTValue *Ptr, FoldingSetNodeID &ID) {
   ID.Add(Imm->getAPInt());
 }
 
-void StrashTable::calculateExprID(VASTExpr *Expr, FoldingSetNodeID &ID) {
+void StrashTable::calculateExprID(VASTExpr *Expr, FoldingSetNodeID &ID,
+                                  DenseMap<VASTValPtr, unsigned> &Cache) {
   VASTExpr::Opcode Opcode = Expr->getOpcode();
   ID.AddInteger(Opcode);
   ID.AddInteger(Expr->UB);
@@ -40,7 +41,7 @@ void StrashTable::calculateExprID(VASTExpr *Expr, FoldingSetNodeID &ID) {
 
   for (unsigned i = 0; i < Expr->size(); ++i) {
     VASTValPtr Operand = Expr->getOperand(i);
-    unsigned NodeID = getOrInsertNode(Operand);
+    unsigned NodeID = getOrInsertNode(Operand, Cache);
     //unsigned Data = (NodeID << 8) | (Operand->getBitWidth() & 0xff);
     //assert((Data >> 8) == NodeID && "NodeID overflow!");
     Operands.push_back(NodeID);
@@ -55,36 +56,46 @@ void StrashTable::calculateExprID(VASTExpr *Expr, FoldingSetNodeID &ID) {
     ID.AddInteger(Operands[i]);
 }
 
-void StrashTable::calculateID(VASTValue *Ptr, FoldingSetNodeID &ID) {
+void
+StrashTable::calculateID(VASTValue *Ptr, FoldingSetNodeID &ID, CacheTy &Cache) {
   if (VASTExpr *E = dyn_cast<VASTExpr>(Ptr)) {
-    calculateExprID(E, ID);
+    calculateExprID(E, ID, Cache);
     return;
   }
 
   calculateLeafID(Ptr, ID);
 }
 
-void StrashTable::calculateID(VASTValPtr Ptr, FoldingSetNodeID &ID) {
+void
+StrashTable::calculateID(VASTValPtr Ptr, FoldingSetNodeID &ID, CacheTy &Cache) {
   unsigned NodeType = Ptr->getASTType();
   unsigned Data = (NodeType & 0x1f) | ((Ptr.isInverted() ? 0x1 : 0x0) << 5);
   assert(NodeType == (Data & 0x1f) && "NodeType overflow!");
   ID.AddInteger(Data);
-  calculateID(Ptr.get(), ID);
+  calculateID(Ptr.get(), ID, Cache);
 }
 
-unsigned llvm::StrashTable::getOrInsertNode(VASTValPtr Ptr) {
+unsigned StrashTable::getOrInsertNode(VASTValPtr Ptr, CacheTy &Cache) {
+  if (unsigned NodeId = Cache.lookup(Ptr))
+    return NodeId;
+  
   // Now look it up in the Hash Table. 
   FoldingSetNodeID ID;
-  calculateID(Ptr, ID);
+  calculateID(Ptr, ID, Cache);
 
   void *IP = 0;
-  if (Node *N = Set.FindNodeOrInsertPos(ID, IP))
-    return unsigned(*N);
+  if (Node *N = Set.FindNodeOrInsertPos(ID, IP)) {
+    unsigned NodeId = unsigned(*N);
+    Cache.insert(std::make_pair(Ptr, NodeId));
+    return NodeId;
+  }
 
   Node *N = new (Allocator) Node(ID.Intern(Allocator), ++LastID);
   Set.InsertNode(N, IP);
 
-  return unsigned(*N);
+  unsigned NodeId = unsigned(*N);
+  Cache.insert(std::make_pair(Ptr, NodeId));
+  return NodeId;
 }
 
 StrashTable::StrashTable() : ImmutablePass(ID), LastID(0) {

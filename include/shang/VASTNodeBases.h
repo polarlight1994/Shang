@@ -113,6 +113,9 @@ public:
 template<typename T>
 struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
   typedef PointerIntPair<T*, 1, bool> Base;
+
+  PtrInvPair(Base V) : PointerIntPair<T*, 1, bool>(V) {}
+
   PtrInvPair(T *V = 0, bool IsInvert = false)
     : PointerIntPair<T*, 1, bool>(V, IsInvert) {}
 
@@ -185,6 +188,10 @@ private:
   // Hide the confusing getInt function.
   bool getInt() const { return Base::getInt(); }
 };
+
+template<typename T>
+struct DenseMapInfo<PtrInvPair<T> >
+  : public DenseMapInfo<PointerIntPair<T*, 1, bool> > {};
 
 template<typename T>
 inline raw_ostream &operator<<(raw_ostream &OS, PtrInvPair<T> V) {
