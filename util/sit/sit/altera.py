@@ -133,8 +133,8 @@ post_message -type info "$num_not_applied constraints are not applied"
 
   report_generator = ConstraintGenerator(
     sql_connection = con,
-    # Just include every path.
-    path_constraints = ''' cycles >= 0 ''',
+    # Check the path whose slack is smaller than 20% of the cycles.
+    path_constraints = ''' normalized_delay / cycles >= 0.9 ''',
     output_script_path = report_path,
     script_prologue = '''
 load_package report
