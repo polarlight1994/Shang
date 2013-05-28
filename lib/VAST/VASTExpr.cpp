@@ -348,7 +348,7 @@ const std::string VASTExpr::getSubModName() const {
 
   std::string Name(FUName);
   raw_string_ostream SS(Name);
-  SS << this << 'w' ;
+  SS << getTempName() << 'w' ;
   switch (getOpcode()) {
   default:
     SS << getBitWidth();
@@ -358,6 +358,8 @@ const std::string VASTExpr::getSubModName() const {
     SS << getOperand(0)->getBitWidth();
     break;
   }
+
+  SS << 'b';
 
   SS.flush();
   return Name;
