@@ -507,6 +507,20 @@ struct AddMultOpInfoBase {
     }
   }
 
+  VASTValPtr analyzeImmOperand() {
+    if (ImmVal.getBoolValue()) {
+      VASTImmPtr Imm = Builder.getImmediate(ImmVal.zextOrTrunc(ImmSize));
+      APInt KnownZeros = ~Imm.getAPInt();
+      unsigned CurTailingZeros = KnownZeros.countTrailingOnes();
+
+      updateTailingZeros(Imm, CurTailingZeros);
+
+      return Imm;
+    }
+
+    return 0;
+  }
+
   static bool sort(const VASTValPtr LHS, const VASTValPtr RHS) {
     if (LHS->getBitWidth() > RHS->getBitWidth()) return true;
     else if (LHS->getBitWidth() < RHS->getBitWidth()) return false;
@@ -555,24 +569,6 @@ struct VASTExprOpInfo<VASTExpr::dpAdd> : public AddMultOpInfoBase {
     updateTailingZeros(V, CurTailingZeros);
 
     return V;
-  }
-
-  VASTValPtr flushImmOperand() {
-    if (ImmVal.getBoolValue()) {
-      VASTImmPtr Imm = Builder.getImmediate(ImmVal.zextOrTrunc(ImmSize));
-      APInt KnownZeros = ~Imm.getAPInt();
-      unsigned CurTailingZeros = KnownZeros.countTrailingOnes();
-
-      updateTailingZeros(Imm, CurTailingZeros);
-
-      // Reset the Immediate context.
-      ImmSize = 0;
-      ImmVal = 0;
-
-      return Imm;
-    }
-
-    return 0;
   }
 };
 
@@ -683,7 +679,7 @@ VASTValPtr VASTExprBuilder::buildAddExpr(ArrayRef<VASTValPtr> Ops,
                                    op_filler<VASTExpr::dpAdd>(NewOps, OpInfo));
 
   // Add the immediate value back to the operand list.
-  if (VASTValPtr V = OpInfo.flushImmOperand())
+  if (VASTValPtr V = OpInfo.analyzeImmOperand())
     NewOps.push_back(V);
 
   // Sort the operands excluding carry bit, we want to place the carry bit at
@@ -730,7 +726,7 @@ VASTValPtr VASTExprBuilder::buildAddExpr(ArrayRef<VASTValPtr> Ops,
   }
 
   if (NewOps.size() == 1)
-    // Pad the higer bits by zeros.
+    // Pad the higher bits by zeros.
     return padHigherBits(NewOps.back(), BitWidth, false);
 
   if (OpInfo.ActualResultSize < BitWidth) {
