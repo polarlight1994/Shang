@@ -120,7 +120,7 @@ set num_not_applied 0
 # %(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s
 if { %(cnd_string)s } { set_multicycle_path %(path_fileter)s -setup -end %(cycles)d
 } else { incr num_not_applied }
-post_message -type info "."
+post_message -type info "%(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s"
 
 ''',
     script_epilog = '''
