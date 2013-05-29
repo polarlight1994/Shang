@@ -506,6 +506,16 @@ struct AddMultOpInfoBase {
       OpWithTailingZeros = V;
     }
   }
+
+  static bool sort(const VASTValPtr LHS, const VASTValPtr RHS) {
+    if (LHS->getBitWidth() > RHS->getBitWidth()) return true;
+    else if (LHS->getBitWidth() < RHS->getBitWidth()) return false;
+
+    if (LHS->getASTType() < RHS->getASTType()) return true;
+    else if (LHS->getASTType() > RHS->getASTType()) return false;
+
+    return LHS < RHS;
+  }
 };
 
 template<>
@@ -563,17 +573,6 @@ struct VASTExprOpInfo<VASTExpr::dpAdd> : public AddMultOpInfoBase {
     }
 
     return 0;
-  }
-
-
-  static bool sort(const VASTValPtr LHS, const VASTValPtr RHS) {
-    if (LHS->getBitWidth() > RHS->getBitWidth()) return true;
-    else if (LHS->getBitWidth() < RHS->getBitWidth()) return false;
-
-    if (LHS->getASTType() < RHS->getASTType()) return true;
-    else if (LHS->getASTType() > RHS->getASTType()) return false;
-
-    return LHS < RHS;
   }
 };
 
@@ -689,7 +688,7 @@ VASTValPtr VASTExprBuilder::buildAddExpr(ArrayRef<VASTValPtr> Ops,
 
   // Sort the operands excluding carry bit, we want to place the carry bit at
   // last.
-  std::sort(NewOps.begin(), NewOps.end(), VASTExprOpInfo<VASTExpr::dpAdd>::sort);
+  std::sort(NewOps.begin(), NewOps.end(), AddMultOpInfoBase::sort);
 
   // All operands are zero?
   if (NewOps.empty())
