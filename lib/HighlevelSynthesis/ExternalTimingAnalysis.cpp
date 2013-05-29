@@ -156,7 +156,7 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
   void extractSelectorDelay(raw_ostream &O, VASTSelector *Sel);
 
   void buildPathInfoForCone(raw_ostream &O, VASTValue *Root);
-  void propagateSrcInfo(raw_ostream &O, VASTValue *V);
+  void propagateSrcInfo(raw_ostream &O, VASTExpr *V);
 
   void setDelay(unsigned Idx, float Delay) const {
     *DelayRefs[Idx] = Delay;
@@ -344,9 +344,9 @@ ExternalTimingAnalysis::buildPathInfoForCone(raw_ostream &O, VASTValue *Root) {
   // Do nothing if the cone is visited.
   if (DelayMatrix.count(Root)) return;
 
-  VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
+  VASTExpr *Expr = dyn_cast<VASTExpr>(Root);
 
-  if (L == 0) {
+  if (Expr == 0) {
     // Insert the trivial path information.
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(Root))
       DelayMatrix[V].insert(std::make_pair(V, (float*)0));
@@ -356,15 +356,15 @@ ExternalTimingAnalysis::buildPathInfoForCone(raw_ostream &O, VASTValue *Root) {
 
   typedef  VASTOperandList::op_iterator ChildIt;
 
-  std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
-  VisitStack.push_back(std::make_pair(Root, L->op_begin()));
+  std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
+  VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
 
   while (!VisitStack.empty()) {
-    VASTValue *Node = VisitStack.back().first;
+    VASTExpr *Node = VisitStack.back().first;
     ChildIt It = VisitStack.back().second;
 
     // All sources of this node is visited, now propagete the source information.
-    if (It ==  VASTOperandList::GetDatapathOperandList(Node)->op_end()) {
+    if (It ==  Node->op_end()) {
       VisitStack.pop_back();
 
       propagateSrcInfo(O, Node);
@@ -396,24 +396,23 @@ ExternalTimingAnalysis::buildPathInfoForCone(raw_ostream &O, VASTValue *Root) {
       continue;
     }
 
-    if (VASTOperandList *L = VASTOperandList::GetDatapathOperandList(ChildNode)){
+    if (VASTExpr *SubExpr = dyn_cast<VASTExpr>(ChildNode)){
       // Mark the ChildNode as visited.
       bool inserted
-        = DelayMatrix.insert(std::make_pair(ChildNode, SrcInfo())).second;
+        = DelayMatrix.insert(std::make_pair(SubExpr, SrcInfo())).second;
 
       // Do not visit the same node more than once.
       if (!inserted) continue;
 
-      VisitStack.push_back(std::make_pair(ChildNode, L->op_begin()));
+      VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
     }
   }
 }
 
 static std::string GetSTACollection(const VASTSelector *Sel) {
-  std::string Name;
-  raw_string_ostream OS(Name);
-  OS << "[get_keepers -nowarn \"" << Sel->getSTAObjectName() << "\"]";
-  return OS.str();
+  const std::string &Name = Sel->getSTAObjectName();
+  assert(!Name.empty() && "Unexpected anonymous selector!");
+  return "[get_keepers -nowarn \"" + Name +  "\"]";
 }
 
 static std::string GetSTACollection(const VASTValue *V) {
@@ -421,11 +420,9 @@ static std::string GetSTACollection(const VASTValue *V) {
     return GetSTACollection(SV->getSelector());
 
   if (isa<VASTExpr>(V)) {
-    std::string Name;
-    raw_string_ostream OS(Name);
-    OS << "[get_cells -compatibility_mode -nowarn \""
-       << V->getSTAObjectName() << "\"]";
-    return OS.str();
+    const std::string &Name = V->getSTAObjectName();
+    if (!Name.empty())
+      return "[get_cells -compatibility_mode -nowarn \"" + Name + "\"]";
   }
 
   llvm_unreachable("Bad node type!");
@@ -462,7 +459,7 @@ void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Src, unsigned RefIdx) {
     << " -> " << Dst->getSTAObjectName() << " delay: $delay\"\n");
 }
 
-void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTValue *V) {
+void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTExpr *V) {
   VASTOperandList *L = VASTOperandList::GetDatapathOperandList(V);
   assert(L && "Bad Value!");
 
@@ -488,7 +485,7 @@ void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTValue *V) {
       unsigned Idx = 0;
       P = allocateDelayRef(Idx);
       // Generate the corresponding delay extraction script.
-      extractTimingForPath(O, V, Src, Idx);
+      if (V->hasName()) extractTimingForPath(O, V, Src, Idx);
     }
   }
 }
