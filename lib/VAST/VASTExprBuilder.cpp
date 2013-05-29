@@ -466,9 +466,10 @@ struct AddMultOpInfoBase {
   unsigned MaxTailingZeros;
   VASTValPtr OpWithTailingZeros;
 
-  AddMultOpInfoBase(VASTExprBuilder &Builder, unsigned ResultSize)
+  AddMultOpInfoBase(VASTExprBuilder &Builder, unsigned ResultSize,
+                    unsigned InitializeImmVal)
     : Builder(Builder), ResultSize(ResultSize), ActualResultSize(0),
-      ImmVal(ResultSize, 0), ImmSize(0), MaxTailingZeros(0),
+      ImmVal(ResultSize, InitializeImmVal), ImmSize(0), MaxTailingZeros(0),
       OpWithTailingZeros(0) {}
 
   VASTValPtr analyzeBitMask(VASTValPtr V,  unsigned &CurTailingZeros) {
@@ -511,7 +512,7 @@ template<>
 struct VASTExprOpInfo<VASTExpr::dpAdd> : public AddMultOpInfoBase {
 
   VASTExprOpInfo(VASTExprBuilder &Builder, unsigned ResultSize)
-    : AddMultOpInfoBase(Builder, ResultSize) {}
+    : AddMultOpInfoBase(Builder, ResultSize, 0) {}
 
   void updateActualResultSize(unsigned OperandSize) {
     if (ActualResultSize == 0)
@@ -581,7 +582,7 @@ struct VASTExprOpInfo<VASTExpr::dpMul> : public AddMultOpInfoBase {
   bool ZeroDetected;
 
   VASTExprOpInfo(VASTExprBuilder &Builder, unsigned ResultSize)
-    : AddMultOpInfoBase(Builder, ResultSize), ZeroDetected(false) {}
+    : AddMultOpInfoBase(Builder, ResultSize, 1), ZeroDetected(false) {}
 
   void updateActualResultSize(unsigned OperandSize) {
     if (ActualResultSize == 0)
