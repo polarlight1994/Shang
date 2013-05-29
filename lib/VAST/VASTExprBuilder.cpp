@@ -484,7 +484,7 @@ struct AddMultOpInfoBase {
     Builder.calculateBitMask(V, KnownZeros, KnownOnes);
     // Any known zeros?
     if (KnownZeros.getBoolValue()) {
-      // Ignore the zero operand for the addition.
+      // Ignore the zero operand for the addition and multiplication.
       if (KnownZeros.isAllOnesValue()) return 0;
 
       // Any known leading zeros?
@@ -601,12 +601,22 @@ struct VASTExprOpInfo<VASTExpr::dpMul> : public AddMultOpInfoBase {
     updateActualResultSize(V->getBitWidth());
 
     if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(V)) {
-      // Ignore multiply by 1.
-      if (Imm.getAPInt() == 1) return 0;
+      // Fold the immediate.
+      ImmSize = std::min(ResultSize, ImmSize + Imm->getBitWidth());
+
+      ImmVal *= Imm->getAPInt().zextOrSelf(ResultSize);
+      return 0;
     }
 
     updateTailingZeros(V, CurTailingZeros);
     return V;
+  }
+
+  VASTValPtr analyzeImmOperand() {
+    // Ignore the Immediate operand if it equals to 1, because A * 1 = A.
+    if (ImmVal == 1) return VASTValPtr();
+
+    return AddMultOpInfoBase::analyzeImmOperand();
   }
 };
 }
@@ -627,6 +637,10 @@ VASTValPtr VASTExprBuilder::padHeadOrTail(VASTValPtr V, unsigned BitWidth,
   return buildBitCatExpr(Ops, BitWidth);
 }
 
+static inline bool isMask(APInt Value) {
+  return Value.getBoolValue() && (!((Value + 1) & Value).getBoolValue());
+}
+
 VASTValPtr VASTExprBuilder::buildMulExpr(ArrayRef<VASTValPtr> Ops,
                                          unsigned BitWidth) {
   SmallVector<VASTValPtr, 8> NewOps;
@@ -637,6 +651,41 @@ VASTValPtr VASTExprBuilder::buildMulExpr(ArrayRef<VASTValPtr> Ops,
                                    op_filler<VASTExpr::dpMul>(NewOps, OpInfo));
 
   if (OpInfo.ZeroDetected) return getImmediate(UINT64_C(0), BitWidth);
+
+  // Add the immediate value back to the operand list.
+  if (VASTValPtr V = OpInfo.analyzeImmOperand()) {
+    APInt Imm = cast<VASTImmPtr>(V).getAPInt();
+    if (Imm.isPowerOf2()) {
+      unsigned lg2 = Imm.countTrailingZeros();
+      VASTValPtr SubExpr = buildMulExpr(NewOps, BitWidth);
+      // Implement the multiplication by shift.
+      return buildShiftExpr(VASTExpr::dpShl,
+                            SubExpr, getImmediate(lg2, BitWidth),
+                            BitWidth);
+    }
+
+    // Implement the multiplication by shift and addition if the immediate is
+    // bit mask, i.e. A * <N lower bits set> = (A << N) - A.
+    if (isMask(Imm)) {
+      unsigned lg2 = Imm.countTrailingOnes();
+      // Lower A * -1 = A.
+      if(lg2 == BitWidth)
+        return buildNegative(buildMulExpr(NewOps, BitWidth));
+
+      VASTValPtr SubExpr = buildMulExpr(NewOps, BitWidth);
+
+      VASTValPtr ShiftedSubExpr
+        = buildShiftExpr(VASTExpr::dpShl, SubExpr, getImmediate(lg2, BitWidth),
+                         BitWidth);
+      // Construct the subtraction: A - B = A + ~B + 1.
+      VASTValPtr AddOps[] = {
+        ShiftedSubExpr, buildNotExpr(SubExpr), VASTImmediate::True
+      };
+      return buildAddExpr(AddOps, BitWidth);
+    }
+
+    NewOps.push_back(V);
+  }
 
   if (OpInfo.ActualResultSize < BitWidth) {
     VASTValPtr NarrowedMul = buildMulExpr(NewOps, OpInfo.ActualResultSize);
