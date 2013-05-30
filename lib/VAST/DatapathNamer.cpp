@@ -62,14 +62,7 @@ struct DatapathNamer : public VASTModulePass {
 
     if (Expr == 0) return;
 
-    // Remove the naming, we will recalculate them.
-    Expr->nameExpr(0);
-
-    // Even dpAssign is inlinable, we should assign a name to it.
-    // Otherwise we may lost the UB and LB information when we print it.
-    // Another solution is name the operand of the dpAssign.
-    if (!Expr->isAnonymous() || Expr->getOpcode() == VASTExpr::dpAssign)
-      nameExpr(Expr);
+    nameExpr(Expr);
   }
 };
 }
