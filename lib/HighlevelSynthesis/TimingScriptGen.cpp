@@ -87,7 +87,7 @@ struct PathIntervalQueryCache {
   typedef DenseMap<VASTSeqValue*, SrcInfo> SeqValSetTy;
   SeqValSetTy CyclesFromSrcLB;
 
-  typedef DenseMap<VASTValue*, SeqValSetTy> QueryCacheTy;
+  typedef DenseMap<VASTExpr*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
 
   PathIntervalQueryCache(TimingNetlist &TNL, SeqLiveVariables &SLV,
@@ -116,14 +116,14 @@ struct PathIntervalQueryCache {
   unsigned getMinimalInterval(VASTSeqValue *Src, ArrayRef<VASTSlot*> ReadSlots);
 
   // Propagate the timing information of the current combinational cone.
-  void propagateInterval(VASTValue *V, const SeqValSetTy &LocalIntervalMap) {
+  void propagateInterval(VASTExpr *Expr, const SeqValSetTy &LocalIntervalMap) {
     typedef VASTOperandList::op_iterator iterator;
-    VASTOperandList *L = VASTOperandList::GetDatapathOperandList(V);
-    assert(L && "Expect subclass of operand list!");
-    SeqValSetTy &CurSet = QueryCache[V];
-    for (iterator I = L->op_begin(), E = L->op_end(); I != E; ++I) {
-      VASTValue *V = VASTValPtr(*I).get();
-      QueryCacheTy::const_iterator at = QueryCache.find(V);
+    SeqValSetTy &CurSet = QueryCache[Expr];
+    for (iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
+      VASTExpr *SubExpr = dyn_cast<VASTExpr>(VASTValPtr(*I).get());
+      if (SubExpr == 0) continue;
+
+      QueryCacheTy::const_iterator at = QueryCache.find(SubExpr);
       if (at == QueryCache.end()) continue;
 
       const SeqValSetTy &Srcs = at->second;
@@ -145,7 +145,7 @@ struct PathIntervalQueryCache {
   template<typename SrcTy>
   void insertMCPWithInterval(SrcTy *Src, const std::string &ThuName,
                              const SrcInfo &SI) const;
-  unsigned insertMCPThough(VASTValue *Thu, const SeqValSetTy &SrcSet) const;
+  unsigned insertMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const;
 
   typedef SeqValSetTy::const_iterator src_iterator;
   src_iterator src_begin() const { return CyclesFromSrcLB.begin(); }
@@ -222,30 +222,30 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
 
 void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
                                                   ArrayRef<VASTSlot*> ReadSlots) {
-  VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
+  VASTExpr *Expr = dyn_cast<VASTExpr>(Root);
 
-  if (L == 0) return;
+  if (Expr == 0) return;
 
   typedef  VASTOperandList::op_iterator ChildIt;
 
-  std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
+  std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
   // Remember the visited node for the current cone.
   std::set<VASTValue*> Visited;
   // Remember the number of cycles from the reachable register to the read slot
   // for the current cone.
   SeqValSetTy LocalInterval;
 
-  VisitStack.push_back(std::make_pair(Root, L->op_begin()));
+  VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
   while (!VisitStack.empty()) {
-    VASTValue *Node = VisitStack.back().first;
+    VASTExpr *Expr = VisitStack.back().first;
     ChildIt It = VisitStack.back().second;
 
     // All sources of this node is visited.
-    if (It ==  VASTOperandList::GetDatapathOperandList(Node)->op_end()) {
+    if (It == Expr->op_end()) {
       VisitStack.pop_back();
       // Propagate the interval information from the operands of the current
       // value.
-      propagateInterval(Node, LocalInterval);
+      propagateInterval(Expr, LocalInterval);
       continue;
     }
 
@@ -265,18 +265,18 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
 
       bool inserted = LocalInterval.insert(std::make_pair(V, CurInfo)).second;
       assert(inserted && "Node had already been visited?");
-      QueryCache[Node][V].update(CurInfo);
+      QueryCache[Expr][V].update(CurInfo);
       // Add the information to statistics.
       addIntervalFromSrc(V, Interval, EstimatedDelay);
       continue;
     }  
 
-    if (VASTOperandList *L = VASTOperandList::GetDatapathOperandList(ChildNode))
-      VisitStack.push_back(std::make_pair(ChildNode, L->op_begin()));
+    if (VASTExpr *SubExpr = dyn_cast<VASTExpr>(ChildNode))
+      VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
   }
 
   // Check the result, debug only.
-  DEBUG(QueryCacheTy::iterator at = QueryCache.find(Root);
+  DEBUG(QueryCacheTy::iterator at = QueryCache.find(Expr);
   assert(at != QueryCache.end()
          && "Timing path information for root not found!");
   const SeqValSetTy &RootSet = at->second;
@@ -352,11 +352,11 @@ void PathIntervalQueryCache::insertMCPWithInterval(SrcTy *Src,
   if (SI.NumCycles < SI.CriticalDelay) ++NumTimgViolation;
 }
 
-unsigned PathIntervalQueryCache::insertMCPThough(VASTValue *Thu,
+unsigned PathIntervalQueryCache::insertMCPThough(VASTExpr *Thu,
                                                  const SeqValSetTy &SrcSet)
                                                  const {
   std::string ThuName = "shang-null-node";
-  if (Thu) ThuName = Thu->getSTAObjectName();
+  if (Thu && !Thu->isAnonymous()) ThuName = Thu->getSTAObjectName();
   
   if (ThuName.empty()) return 0;
 
