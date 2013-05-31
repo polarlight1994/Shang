@@ -43,14 +43,12 @@ namespace VFUs {
     Shift = 2,
     Mult = 3,
     ICmp = 4,
-    Reduction = 5,
-    MemoryBus = 6,
-    BRam = 7,
-    Mux = 8,
+    MemoryBus = 5,
+    BRam = 6,
+    Mux = 7,
     FirstFUType = Trivial,
     FirstNonTrivialFUType = AddSub,
-    LastBitLevelChainingFUType = Mult,
-    LastPostBindFUType = Reduction,
+    LastPostBindFUType = ICmp,
     NumPostBindFUs = LastPostBindFUType - FirstNonTrivialFUType + 1,
     LastCommonFUType = Mux,
     NumCommonFUs = LastCommonFUType - FirstFUType + 1,
@@ -58,7 +56,7 @@ namespace VFUs {
     // Special function unit.
     // RTL module corresponding to callee functions of function corresponding to
     // current RTL module.
-    CalleeFN = 9,
+    CalleeFN = 8,
     LastFUType = CalleeFN,
     NumFUs = LastFUType - FirstFUType + 1,
     // Helper enumeration value, just for internal use as a flag to indicate
@@ -282,7 +280,6 @@ typedef VSimpleFUDesc<VFUs::AddSub>  VFUAddSub;
 typedef VSimpleFUDesc<VFUs::Shift>   VFUShift;
 typedef VSimpleFUDesc<VFUs::Mult>    VFUMult;
 typedef VSimpleFUDesc<VFUs::ICmp>    VFUICmp;
-typedef VSimpleFUDesc<VFUs::Reduction>     VFUReduction;
 
 class VFUBRAM : public  VFUDesc {
 public:

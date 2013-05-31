@@ -94,9 +94,8 @@ BitlevelDelayEsitmator::AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
   delay_type D = DelayFromSrc.second;
   VASTExpr *RedExpr = cast<VASTExpr>(Dst);
   unsigned FUWidth = RedExpr->getOperand(0)->getBitWidth();
-  VFUReduction *Red = getFUDesc<VFUReduction>();
-  float Latency = Red->lookupLatency(FUWidth);
-  delay_type Inc(Latency);
+  unsigned LL = Log2_32_Ceil(FUWidth) / Log2_32_Ceil(VFUs::MaxLutSize);
+  delay_type Inc(LL * VFUs::LUTDelay);
   return SrcEntryTy(DelayFromSrc.first, D + Inc);
 }
 

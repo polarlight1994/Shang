@@ -112,7 +112,6 @@ void LuaScript::updateFUs() {
   initSimpleFU<VFUs::Shift>(FUs);
   initSimpleFU<VFUs::Mult>(FUs);
   initSimpleFU<VFUs::ICmp>(FUs);
-  initSimpleFU<VFUs::Reduction>(FUs);
 
   FUSet[VFUs::Mux] = new VFUMux(FUs[VFUDesc::getTypeName(VFUs::Mux)]);
 

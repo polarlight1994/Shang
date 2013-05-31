@@ -17,9 +17,6 @@ FUs.Mult = { Latencies = { 0.908 / PERIOD, 2.181 / PERIOD, 2.504 / PERIOD, 6.580
 FUs.ICmp   = { Latencies = { 0.912 / PERIOD, 1.906 / PERIOD, 2.612 / PERIOD, 4.050 / PERIOD, 6.660 / PERIOD }, --Cmp
 	              Costs = {1 * 64, 8 * 64, 16 * 64, 32 * 64, 64 * 64}, --Cmp
                 StartInterval=1} --Cmp
-FUs.Reduction = { Latencies = { 0.785 / PERIOD, 1.597 / PERIOD, 1.744 / PERIOD, 2.172 / PERIOD, 2.733 / PERIOD }, --Red
-	                Costs = {0 * 64, 3 * 64, 5 * 64, 11 * 64, 21 * 64}, --Red
-                  StartInterval=1 } --Red
 FUs.Mux    = { MaxAllowedMuxSize = 16,
                Latencies = { 1.296 / PERIOD,
                       1.353 / PERIOD,

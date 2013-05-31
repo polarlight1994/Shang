@@ -58,8 +58,8 @@ void VFUDesc::print(raw_ostream &OS) const {
 namespace llvm {
   namespace VFUs {
     const char *VFUNames[] = {
-      "Trivial", "AddSub", "Shift", "Mult", "ICmp", "Reduction",
-      "MemoryBus", "BRam", "Mux", "CalleeFN"
+      "Trivial", "AddSub", "Shift", "Mult", "ICmp",  "MemoryBus", "BRam", "Mux",
+      "CalleeFN"
     };
 
     // Default area cost parameter.
