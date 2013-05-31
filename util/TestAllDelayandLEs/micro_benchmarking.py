@@ -297,9 +297,66 @@ endmodule
 '''
 }
 
+MuxHDL = '''
+module %(name)s(
+  input wire[%(bitwidth)s-1:0] inputs,
+  input wire[%(bitwidth)s-1:0] ens,
+  output wire sel_output
+);
+  integer l;
+  reg sel_output_internal;
+  always @(*) begin
+    sel_output_internal = 1'b0;
+    for(l = 0; l < %(bitwidth)s; l = l + 1) 
+      sel_output_internal = sel_output_internal | (inputs[l] & ens[l]);
+  end
+
+  assign sel_output = sel_output_internal;
+endmodule
+
+
+module top(
+  input clk,
+  input wire ens,
+  input wire inputs,
+  output reg sel_output
+);
+
+  reg [%(bitwidth)s-1:0] ens_reg0;
+  reg [%(bitwidth)s-1:0] ens_reg1;
+
+  reg [%(bitwidth)s-1:0] inputs_reg0;
+  reg [%(bitwidth)s-1:0] inputs_reg1;
+
+  reg  sel_output_reg0;
+  wire  sel_output_wire;
+
+always@(posedge clk) begin
+  ens_reg0[0] <= ens;
+  ens_reg0[%(bitwidth)s-1:1] <= ens_reg0[%(bitwidth)s-1-1:0];
+  ens_reg1 <= ens_reg0;
+
+  inputs_reg0[0] <= inputs;
+  inputs_reg0[%(bitwidth)s-1:1] <= inputs_reg0[%(bitwidth)s-1-1:0];
+  inputs_reg1 <= inputs_reg0;
+
+  sel_output_reg0 <= sel_output_wire;
+  sel_output <= sel_output_reg0;
+end
+
+%(name)s dut(
+  .inputs(inputs_reg1),
+  .ens(ens_reg1),
+  .sel_output(sel_output_wire)
+);
+
+endmodule
+
+'''
+
 Bitwidths = [ 1, 8, 16, 32, 64 ]
 
-Devices = [ "EP2C70F896C6" ] #, "EP4CE75F29C6", "EP4SGX530KH40C2" ]
+Devices = [ "EP2C70F896C6", "EP4CE75F29C6", "EP4SGX530KH40C2" ]
 
 # Initialize the database connection
 con = sqlite3.connect(":memory:")
@@ -319,13 +376,20 @@ con.commit()
 
 active_jobs = []
 
-for name, hdl in FUs.items():
-  for bitwidth in Bitwidths:
-    for fpga_device in Devices:
+for fpga_device in Devices:
+  for name, hdl in FUs.items() :
+    for bitwidth in Bitwidths:
       benchmark = MicroBenchmark(name=name, bitwidth=bitwidth, design_hdl=hdl, fpga_device=fpga_device)
       benchmark.generate_files(os.getcwd())
       benchmark.submit_job()
       active_jobs.append(benchmark)
+
+for fpga_device in Devices:
+  for bitwidth in  range(2, 513) :
+    benchmark = MicroBenchmark(name="Mux", bitwidth=bitwidth, design_hdl=MuxHDL, fpga_device=fpga_device)
+    benchmark.generate_files(os.getcwd())
+    benchmark.submit_job()
+    active_jobs.append(benchmark)
 
 while active_jobs :
   next_active_jobs = []
@@ -351,11 +415,11 @@ INSERT INTO
     else:
       next_active_jobs.append(job)
 
-    sys.stdout.write(' ')
-    sys.stdout.write(str(len(active_jobs)))
-    time.sleep(1)
-    active_jobs = next_active_jobs[:]
-    sys.stdout.flush()
+  sys.stdout.write(' ')
+  sys.stdout.write(str(len(active_jobs)))
+  time.sleep(1)
+  active_jobs = next_active_jobs[:]
+  sys.stdout.flush()
 
 with open('data.sql', 'w') as database_script:
   for line in con.iterdump():
