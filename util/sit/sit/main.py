@@ -35,8 +35,6 @@ def main(builtinParameters = {}):
 
   print "Starting the Shang Integrated Tester in", args.mode, "mode..."
 
-  active_jobs = []
-
   # Initialize the database connection
   con = sqlite3.connect(":memory:")
 
@@ -123,6 +121,8 @@ def main(builtinParameters = {}):
 
   # Collect the option space of the fail cases
   fail_space = dict([ (k, set()) for k in option_space_dict.iterkeys() ])
+
+  active_jobs = []
 
   for test_path in args.tests.split() :
     basedir = os.path.dirname(test_path)
