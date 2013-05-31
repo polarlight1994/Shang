@@ -23,8 +23,6 @@
 #define DEBUG_TYPE "vast-datapath-namer"
 #include "llvm/Support/Debug.h"
 
-#include <sstream>
-
 using namespace llvm;
 
 namespace {
