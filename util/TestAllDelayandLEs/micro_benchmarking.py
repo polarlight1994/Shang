@@ -116,7 +116,9 @@ project_close
 
     print self.name, self.bitwidth
     with open(self.delay_json_path, 'r') as delay_json:
-      print json.load(delay_json)['delay']
+      return json.load(delay_json)['delay']
+
+    return 0.0
 
 FUs = { 'Add' : '''
 module %(name)s(
@@ -166,12 +168,70 @@ end
 );
 
 endmodule
+''',
+'Mult' : '''
+module %(name)s(
+  input wire[%(bitwidth)s-1:0] a,
+  input wire[%(bitwidth)s-1:0] b,
+  output wire[%(bitwidth)s - 1:0] c
+);
+
+assign c = a * b;
+
+endmodule
+
+module top(
+  input clk,
+  input wire[%(bitwidth)s-1:0] a,
+  input wire[%(bitwidth)s-1:0] b,
+  output reg[%(bitwidth)s-1:0] c
+);
+
+  reg [%(bitwidth)s-1:0] a_reg0;
+  reg [%(bitwidth)s-1:0] a_reg1;
+  reg [%(bitwidth)s-1:0] b_reg0;
+  reg [%(bitwidth)s-1:0] b_reg1;
+  reg [%(bitwidth)s-1:0] c_reg0;
+  wire [%(bitwidth)s-1:0] c_wire;
+
+always@(posedge clk) begin
+  a_reg0 <= a;
+  a_reg1 <= a_reg0;
+  b_reg0 <= b;
+  b_reg1 <= b_reg0;
+  c_reg0 <= c_wire;
+  c <= c_reg0;
+end
+
+%(name)s dut(
+  .a(a_reg1),
+  .b(b_reg1),
+  .c(c_wire)
+);
+
+endmodule
 '''
 }
 
-Bitwidths = [ 128 ]
+Bitwidths = [ 1, 8, 16, 32, 64 ]
 
 Devices = [ "EP2C70F896C6" ] #, "EP4CE75F29C6", "EP4SGX530KH40C2" ]
+
+# Initialize the database connection
+con = sqlite3.connect(":memory:")
+
+# Create the tables for the experimental results.
+# We create 3 tables: HLS results, simulation results, and synthesis results
+con.executescript('''
+  create table delays(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      fpga_device TEXT,
+      bitwidth INTEGER,
+      delay REAL
+  );''')
+# This is not necessary since we only have 1 connection.
+con.commit()
 
 active_jobs = []
 
@@ -191,7 +251,17 @@ while active_jobs :
       retval = Session.wait(job.jobid, drmaa.Session.TIMEOUT_WAIT_FOREVER)
       try:
         sys.stdout.write('\n')
-        job.processResults()
+        delay = job.processResults()
+        con.execute('''
+INSERT INTO
+  delays(name, fpga_device, bitwidth, delay)
+  VALUES (:name, :fpga_device, :bitwidth, :delay)
+''', {
+  'name' : job.name,
+  'fpga_device' : job.fpga_device,
+  'bitwidth' : job.bitwidth,
+  'delay' : delay
+})
       except:
         pass
     else:
@@ -204,4 +274,7 @@ while active_jobs :
     sys.stdout.flush()
 
 with open('data.sql', 'w') as database_script:
-  database_script.write('\n')
+  for line in con.iterdump():
+    database_script.write(line)
+    database_script.write('\n')
+    print line
