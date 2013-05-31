@@ -194,7 +194,6 @@ def main(builtinParameters = {}):
     for line in con.iterdump():
       database_script.write(line)
       database_script.write('\n')
-  database_script.close()
 
   # Analysis the fail cases
   print 'Fail space:', [ (k, v) for k, v in fail_space.iteritems() if v < set(option_space_dict[k]) ]
