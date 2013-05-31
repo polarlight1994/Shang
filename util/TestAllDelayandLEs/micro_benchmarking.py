@@ -210,6 +210,90 @@ end
 );
 
 endmodule
+''',
+'Shift' : '''
+
+module %(name)s(
+  input wire[%(bitwidth)s-1:0] a,
+  input wire[%(bitwidth)s-1:0] b,
+  output wire[%(bitwidth)s-1:0] c
+);
+
+assign c = a >> b;
+
+endmodule
+
+module top(
+  input clk,
+  input wire[%(bitwidth)s-1:0] a,
+  input wire[%(bitwidth)s-1:0] b,
+  output reg[%(bitwidth)s-1:0] c
+);
+
+  reg [%(bitwidth)s-1:0] a_reg0;
+  reg [%(bitwidth)s-1:0] a_reg1;
+  reg [%(bitwidth)s-1:0] b_reg0;
+  reg [%(bitwidth)s-1:0] b_reg1;
+  reg [%(bitwidth)s-1:0] c_reg0;
+  wire [%(bitwidth)s-1:0] c_wire;
+
+always@(posedge clk) begin
+  a_reg0 <= a;
+  a_reg1 <= a_reg0;
+  b_reg0 <= b;
+  b_reg1 <= b_reg0;
+  c_reg0 <= c_wire;
+  c <= c_reg0;
+end
+
+%(name)s dut(
+  .a(a_reg1),
+  .b(b_reg1),
+  .c(c_wire)
+);
+
+endmodule
+''',
+'ICmp' : '''
+module %(name)s(
+  input wire[%(bitwidth)s-1:0] a,
+  input wire[%(bitwidth)s-1:0] b,
+  output wire c
+);
+
+assign c = (a > b)? 1:0;
+
+endmodule
+
+module top(
+  input clk,
+  input wire[%(bitwidth)s-1:0] a,
+  input wire[%(bitwidth)s-1:0] b,
+  output reg c
+);
+
+  reg [%(bitwidth)s-1:0] a_reg0;
+  reg [%(bitwidth)s-1:0] a_reg1;
+  reg [%(bitwidth)s-1:0] b_reg0;
+  reg [%(bitwidth)s-1:0] b_reg1;
+  reg  c_reg0;
+  wire  c_wire;
+always@(posedge clk) begin
+  a_reg0 <= a;
+  a_reg1 <= a_reg0;
+  b_reg0 <= b;
+  b_reg1 <= b_reg0;
+  c_reg0 <= c_wire;
+  c <= c_reg0;
+end
+
+%(name)s dut(
+  .a(a_reg1),
+  .b(b_reg1),
+  .c(c_wire)
+);
+
+endmodule
 '''
 }
 
