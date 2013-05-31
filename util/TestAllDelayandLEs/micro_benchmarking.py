@@ -36,13 +36,11 @@ class MicroBenchmark:
     self.timing_extraction_path = os.path.join(self.working_dir, self.name + "_extract_timing.tcl")
     with open(self.timing_extraction_path, 'w') as timing_extraction_file:
       timing_extraction_file.write('''#Extract the delay
-  set JSONFile [open "%(delay_json_path)s" w]
-	foreach_in_collection path [get_timing_paths -setup  -npath 1 -detail path_only -from "%(name)s:dut*" -to "%(name)s:dut*"] {
-	  set delay [get_path_info $path -data_delay]
-	  set logic_level [get_path_info $path -num_logic_levels]
-	  puts $JSONFile "{ "\"delay\":\"$delay\", \"ll\":\"$logic_level\"}\n"
-	}
-''' % self.__dict__)
+set JSONFile [open "%s" w]
+set results [ report_path -nworst 1 -from [get_cells -compatibility_mode {dut*}] -to [get_cells -compatibility_mode {dut*}] ]
+set delay [lindex $results 1]
+puts $JSONFile "{ \\"delay\\":\\"$delay\\" }"
+''' % self.delay_json_path)
 
     # 2. The project script
     self.synthesis_script_path = os.path.join(self.working_dir, self.name + "_synhtesis.tcl")
@@ -79,6 +77,7 @@ set_global_assignment -name LL_MEMBER_STATE LOCKED -section_id "Root Region"
 create_partition -partition "%(name)s:dut" -contents %(name)s:dut
 
 execute_module -tool map
+execute_module -tool cdb -args {--merge=on}
 execute_module -tool fit
 execute_module -tool sta -args {--report_script "%(timing_extraction_path)s" }
 
@@ -170,7 +169,7 @@ endmodule
 '''
 }
 
-Bitwidths = [ 8 ]
+Bitwidths = [ 128 ]
 
 Devices = [ "EP2C70F896C6" ] #, "EP4CE75F29C6", "EP4SGX530KH40C2" ]
 
@@ -193,7 +192,7 @@ while active_jobs :
       try:
         sys.stdout.write('\n')
         job.processResults()
-      except IOError:
+      except:
         pass
     else:
       next_active_jobs.append(job)
