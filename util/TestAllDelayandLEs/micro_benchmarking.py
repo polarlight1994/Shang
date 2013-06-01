@@ -37,7 +37,7 @@ class MicroBenchmark:
     with open(self.timing_extraction_path, 'w') as timing_extraction_file:
       timing_extraction_file.write('''#Extract the delay
 set JSONFile [open "%s" w]
-set results [ report_path -nworst 1 -from {input*} -to {resilt*} ]
+set results [ report_path -nworst 1 -from {input*} -to {result*} -through {dut*} ]
 set delay [lindex $results 1]
 puts $JSONFile "{ \\"delay\\":\\"$delay\\" }"
 ''' % self.delay_json_path)
