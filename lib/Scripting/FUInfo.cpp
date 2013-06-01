@@ -43,11 +43,12 @@ static unsigned ComputeOperandSizeInByteLog2Ceil(unsigned SizeInBits) {
   return std::max(Log2_32_Ceil(SizeInBits), 3u) - 3;
 }
 
+template<typename T>
 static void
-initLatenciesTable(luabind::object LuaLatTable, float *LatTable, unsigned Size) {
+initializeArray(luabind::object LuaLatTable, T *LatTable, unsigned Size) {
   for (unsigned i = 0; i < Size; ++i)
     // Lua array starts from 1
-    LatTable[i] = getProperty<float>(LuaLatTable, i + 1, LatTable[i]);
+    LatTable[i] = getProperty<T>(LuaLatTable, i + 1, LatTable[i]);
 }
 
 //===----------------------------------------------------------------------===//
@@ -102,7 +103,7 @@ VFUDesc::VFUDesc(VFUs::FUTypes type, const luabind::object &FUTable,
                  float *Latencies, unsigned *Cost)
   : ResourceType(type), StartInt(getProperty<unsigned>(FUTable, "StartInterval")) {
   luabind::object LatenciesTable = FUTable["Latencies"];
-  initLatenciesTable(LatenciesTable, Latencies, 5);
+  initializeArray(LatenciesTable, Latencies, 5);
   luabind::object CostTable = FUTable["Costs"];
   VFUs::initCostTable(CostTable, Cost, 5);
 }
@@ -139,12 +140,9 @@ VFUMux::VFUMux(luabind::object FUTable)
          && "MaxAllowedMuxSize too big!");
 
   luabind::object LatTable = FUTable["Latencies"];
-  initLatenciesTable(LatTable, MuxLatencies, MaxAllowedMuxSize);
-
-  for (unsigned i = 0; i < MaxAllowedMuxSize - 1; i++) {
-    luabind::object CostTable = FUTable["Costs"][i+1];
-    VFUs::initCostTable(CostTable, MuxCost[i], 5);
-  }
+  initializeArray(LatTable, MuxLatencies, MaxAllowedMuxSize);
+  luabind::object CostTable = FUTable["Costs"];
+  initializeArray(CostTable, MuxCost, MaxAllowedMuxSize);
 }
 
 float VFUMux::getMuxLatency(unsigned Size) {
@@ -166,7 +164,7 @@ unsigned VFUMux::getMuxCost(unsigned Size, unsigned BitWidth) {
   assert(BitWidth <= 65 && "Bad Mux Size!");
   BitWidth = std::max(BitWidth, 64u);
 
-  return std::ceil(MuxCost[Size - 2][BitWidth] * ratio);
+  return MuxCost[Size - 2] * BitWidth * ratio;
 }
 
 VFUMemBus::VFUMemBus(luabind::object FUTable)

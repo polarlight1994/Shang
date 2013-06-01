@@ -177,7 +177,7 @@ public:
 };
 
 class VFUMux : public VFUDesc {
-  unsigned MuxCost[31][64];
+  unsigned MuxCost[64];
   float    MuxLatencies[64];
 public:
   const unsigned MaxAllowedMuxSize;
