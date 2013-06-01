@@ -422,7 +422,7 @@ static std::string GetSTACollection(const VASTValue *V) {
   if (isa<VASTExpr>(V)) {
     const std::string &Name = V->getSTAObjectName();
     if (!Name.empty())
-      return "[get_cells -compatibility_mode -nowarn \"" + Name + "\"]";
+      return "[get_pins -compatibility_mode -nowarn \"" + Name + "\"]";
   }
 
   llvm_unreachable("Bad node type!");
