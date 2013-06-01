@@ -21,7 +21,7 @@ class MicroBenchmark:
 
   def generate_files(self, pwd) :
     #Create the directory
-    self.working_dir = os.path.join(pwd, self.name + str(self.bitwidth))
+    self.working_dir = os.path.join(pwd, self.name + str(self.bitwidth) + self.fpga_device)
     if os.path.exists(self.working_dir): shutil.rmtree(self.working_dir)
     os.makedirs(self.working_dir)
     #Generate the design file
@@ -37,7 +37,7 @@ class MicroBenchmark:
     with open(self.timing_extraction_path, 'w') as timing_extraction_file:
       timing_extraction_file.write('''#Extract the delay
 set JSONFile [open "%s" w]
-set results [ report_path -nworst 1 -from [get_cells -compatibility_mode {dut*}] -to [get_cells -compatibility_mode {dut*}] ]
+set results [ report_path -nworst 1 -from {input*} -to {resilt*} ]
 set delay [lindex $results 1]
 puts $JSONFile "{ \\"delay\\":\\"$delay\\" }"
 ''' % self.delay_json_path)
@@ -122,175 +122,222 @@ project_close
 
 FUs = { 'Add' : '''
 module %(name)s(
-  input wire[%(bitwidth)s-1:0] a,
-  input wire[%(bitwidth)s-1:0] b,
-  input wire d,
-  output wire[%(bitwidth)s:0] c
+  input wire[%(bitwidth)s-1:0] lhs,
+  input wire[%(bitwidth)s-1:0] rhs,
+  input wire carry,
+  output wire[%(bitwidth)s:0] result
 );
 
-assign c = a + b + d;
+assign result = lhs + rhs + carry;
 
 endmodule
 
 module top(
   input clk,
-  input wire[%(bitwidth)s-1:0] a,
-  input wire[%(bitwidth)s-1:0] b,
-  input wire d,
-  output reg[%(bitwidth)s:0] c
+  input wire chain_in,
+  input wire chain_in_en,
+  input wire chain_out_en,
+  output reg chain_out
 );
 
-  reg [%(bitwidth)s-1:0] a_reg0;
-  reg [%(bitwidth)s-1:0] a_reg1;
-  reg [%(bitwidth)s-1:0] b_reg0;
-  reg [%(bitwidth)s-1:0] b_reg1;
-  reg d_reg0;
-  reg d_reg1;
-  reg [%(bitwidth)s:0] c_reg0;
-  wire [%(bitwidth)s:0] c_wire;
-
+  reg [%(bitwidth)s-1:0] lhs_pipe0;
+  reg [%(bitwidth)s-1:0] input_lhs;
+  reg [%(bitwidth)s-1:0] rhs_pipe0;
+  reg [%(bitwidth)s-1:0] input_rhs;
+  reg carry_pipe0;
+  reg input_carry;
+  reg  [%(bitwidth)s:0]result_pipe0;
+  reg  [%(bitwidth)s:0]result_pipe1;
+  wire [%(bitwidth)s:0]result_wire;
 always@(posedge clk) begin
-  a_reg0 <= a;
-  a_reg1 <= a_reg0;
-  b_reg0 <= b;
-  b_reg1 <= b_reg0;
-  d_reg0 <= d;
-  d_reg1 <= d_reg0;
-  c_reg0 <= c_wire;
-  c <= c_reg0;
+  if (chain_in_en) begin
+    lhs_pipe0[0] <= chain_in;
+    lhs_pipe0[%(bitwidth)s-1:1] <= lhs_pipe0[%(bitwidth)s-1-1:0];
+
+    rhs_pipe0[0] <= lhs_pipe0[%(bitwidth)s-1];
+    rhs_pipe0[%(bitwidth)s-1:1] <= rhs_pipe0[%(bitwidth)s-1-1:0];
+
+    carry_pipe0 <= rhs_pipe0[%(bitwidth)s-1];
+  end
+
+  input_lhs <= lhs_pipe0;
+  input_rhs <= rhs_pipe0;
+  input_carry <= carry_pipe0;
+  result_pipe0 <= result_wire;
+
+  if (chain_out_en) begin
+    result_pipe1[%(bitwidth)s:1] <= result_pipe1[%(bitwidth)s-1:0];
+    chain_out <= result_pipe1[%(bitwidth)s];
+  end else begin
+    result_pipe1 <= result_pipe0;
+  end
 end
 
 %(name)s dut(
-  .a(a_reg1),
-  .b(b_reg1),
-  .d(d_reg1),
-  .c(c_wire)
+  .lhs(input_lhs),
+  .rhs(input_rhs),
+  .carry(input_carry),
+  .result(result_wire)
 );
 
 endmodule
 ''',
 'Mult' : '''
 module %(name)s(
-  input wire[%(bitwidth)s-1:0] a,
-  input wire[%(bitwidth)s-1:0] b,
-  output wire[%(bitwidth)s - 1:0] c
+  input wire[%(bitwidth)s-1:0] lhs,
+  input wire[%(bitwidth)s-1:0] rhs,
+  output wire[%(bitwidth)s - 1:0] result
 );
 
-assign c = a * b;
+assign result = lhs * rhs;
 
 endmodule
 
 module top(
   input clk,
-  input wire[%(bitwidth)s-1:0] a,
-  input wire[%(bitwidth)s-1:0] b,
-  output reg[%(bitwidth)s-1:0] c
+  input wire chain_in,
+  input wire chain_in_en,
+  input wire chain_out_en,
+  output reg chain_out
 );
 
-  reg [%(bitwidth)s-1:0] a_reg0;
-  reg [%(bitwidth)s-1:0] a_reg1;
-  reg [%(bitwidth)s-1:0] b_reg0;
-  reg [%(bitwidth)s-1:0] b_reg1;
-  reg [%(bitwidth)s-1:0] c_reg0;
-  wire [%(bitwidth)s-1:0] c_wire;
-
+  reg [%(bitwidth)s-1:0] lhs_pipe0;
+  reg [%(bitwidth)s-1:0] input_lhs;
+  reg [%(bitwidth)s-1:0] rhs_pipe0;
+  reg [%(bitwidth)s-1:0] input_rhs;
+  reg  [%(bitwidth)s-1:0]result_pipe0;
+  reg  [%(bitwidth)s-1:0]result_pipe1;
+  wire [%(bitwidth)s-1:0]result_wire;
 always@(posedge clk) begin
-  a_reg0 <= a;
-  a_reg1 <= a_reg0;
-  b_reg0 <= b;
-  b_reg1 <= b_reg0;
-  c_reg0 <= c_wire;
-  c <= c_reg0;
+  if (chain_in_en) begin
+    lhs_pipe0[0] <= chain_in;
+    lhs_pipe0[%(bitwidth)s-1:1] <= lhs_pipe0[%(bitwidth)s-1-1:0];
+
+    rhs_pipe0[0] <= lhs_pipe0[%(bitwidth)s-1];
+    rhs_pipe0[%(bitwidth)s-1:1] <= rhs_pipe0[%(bitwidth)s-1-1:0];
+  end
+
+  input_lhs <= lhs_pipe0;
+  input_rhs <= rhs_pipe0;
+
+  result_pipe0 <= result_wire;
+
+  if (chain_out_en) begin
+    result_pipe1[%(bitwidth)s-1:1] <= result_pipe1[%(bitwidth)s-1-1:0];
+    chain_out <= result_pipe1[%(bitwidth)s-1];
+  end else begin
+    result_pipe1 <= result_pipe0;
+  end
 end
 
 %(name)s dut(
-  .a(a_reg1),
-  .b(b_reg1),
-  .c(c_wire)
+  .lhs(input_lhs),
+  .rhs(input_rhs),
+  .result(result_wire)
 );
 
 endmodule
 ''',
 'Shift' : '''
-
 module %(name)s(
-  input wire[%(bitwidth)s-1:0] a,
-  input wire[%(bitwidth)s-1:0] b,
-  output wire[%(bitwidth)s-1:0] c
+  input wire[%(bitwidth)s-1:0] lhs,
+  input wire[%(bitwidth)s-1:0] rhs,
+  output wire[%(bitwidth)s-1:0] result
 );
 
-assign c = a >> b;
+assign result = lhs >> rhs;
 
 endmodule
 
 module top(
   input clk,
-  input wire[%(bitwidth)s-1:0] a,
-  input wire[%(bitwidth)s-1:0] b,
-  output reg[%(bitwidth)s-1:0] c
+  input wire chain_in,
+  input wire chain_in_en,
+  input wire chain_out_en,
+  output reg chain_out
 );
 
-  reg [%(bitwidth)s-1:0] a_reg0;
-  reg [%(bitwidth)s-1:0] a_reg1;
-  reg [%(bitwidth)s-1:0] b_reg0;
-  reg [%(bitwidth)s-1:0] b_reg1;
-  reg [%(bitwidth)s-1:0] c_reg0;
-  wire [%(bitwidth)s-1:0] c_wire;
-
+  reg [%(bitwidth)s-1:0] lhs_pipe0;
+  reg [%(bitwidth)s-1:0] input_lhs;
+  reg [%(bitwidth)s-1:0] rhs_pipe0;
+  reg [%(bitwidth)s-1:0] input_rhs;
+  reg  [%(bitwidth)s-1:0]result_pipe0;
+  reg  [%(bitwidth)s-1:0]result_pipe1;
+  wire [%(bitwidth)s-1:0]result_wire;
 always@(posedge clk) begin
-  a_reg0 <= a;
-  a_reg1 <= a_reg0;
-  b_reg0 <= b;
-  b_reg1 <= b_reg0;
-  c_reg0 <= c_wire;
-  c <= c_reg0;
+  if (chain_in_en) begin
+    lhs_pipe0[0] <= chain_in;
+    lhs_pipe0[%(bitwidth)s-1:1] <= lhs_pipe0[%(bitwidth)s-1-1:0];
+
+    rhs_pipe0[0] <= lhs_pipe0[%(bitwidth)s-1];
+    rhs_pipe0[%(bitwidth)s-1:1] <= rhs_pipe0[%(bitwidth)s-1-1:0];
+  end
+
+  input_lhs <= lhs_pipe0;
+  input_rhs <= rhs_pipe0;
+
+  result_pipe0 <= result_wire;
+
+  if (chain_out_en) begin
+    result_pipe1[%(bitwidth)s-1:1] <= result_pipe1[%(bitwidth)s-1-1:0];
+    chain_out <= result_pipe1[%(bitwidth)s-1];
+  end else begin
+    result_pipe1 <= result_pipe0;
+  end
 end
 
 %(name)s dut(
-  .a(a_reg1),
-  .b(b_reg1),
-  .c(c_wire)
+  .lhs(input_lhs),
+  .rhs(input_rhs),
+  .result(result_wire)
 );
 
 endmodule
 ''',
 'ICmp' : '''
 module %(name)s(
-  input wire[%(bitwidth)s-1:0] a,
-  input wire[%(bitwidth)s-1:0] b,
-  output wire c
+  input wire[%(bitwidth)s-1:0] lhs,
+  input wire[%(bitwidth)s-1:0] rhs,
+  output wire result
 );
 
-assign c = (a > b)? 1:0;
+assign result = (lhs > rhs)? 1:0;
 
 endmodule
 
 module top(
   input clk,
-  input wire[%(bitwidth)s-1:0] a,
-  input wire[%(bitwidth)s-1:0] b,
-  output reg c
+  input wire chain_in,
+  input wire chain_in_en,
+  output reg chain_out
 );
 
-  reg [%(bitwidth)s-1:0] a_reg0;
-  reg [%(bitwidth)s-1:0] a_reg1;
-  reg [%(bitwidth)s-1:0] b_reg0;
-  reg [%(bitwidth)s-1:0] b_reg1;
-  reg  c_reg0;
-  wire  c_wire;
+  reg [%(bitwidth)s-1:0] lhs_pipe0;
+  reg [%(bitwidth)s-1:0] input_lhs;
+  reg [%(bitwidth)s-1:0] rhs_pipe0;
+  reg [%(bitwidth)s-1:0] input_rhs;
+  reg  result_pipe0;
+  wire  result_wire;
 always@(posedge clk) begin
-  a_reg0 <= a;
-  a_reg1 <= a_reg0;
-  b_reg0 <= b;
-  b_reg1 <= b_reg0;
-  c_reg0 <= c_wire;
-  c <= c_reg0;
+  if (chain_in_en) begin
+    lhs_pipe0[0] <= chain_in;
+    lhs_pipe0[%(bitwidth)s-1:1] <= lhs_pipe0[%(bitwidth)s-1-1:0];
+
+    rhs_pipe0[0] <= lhs_pipe0[%(bitwidth)s-1];
+    rhs_pipe0[%(bitwidth)s-1:1] <= rhs_pipe0[%(bitwidth)s-1-1:0];
+  end
+
+  input_lhs <= lhs_pipe0;
+  input_rhs <= rhs_pipe0;
+
+  result_pipe0 <= result_wire;
+  chain_out <= result_pipe0;
 end
 
 %(name)s dut(
-  .a(a_reg1),
-  .b(b_reg1),
-  .c(c_wire)
+  .lhs(input_lhs),
+  .rhs(input_rhs),
+  .result(result_wire)
 );
 
 endmodule
@@ -299,7 +346,7 @@ endmodule
 
 MuxHDL = '''
 module %(name)s(
-  input wire[%(bitwidth)s-1:0] inputs,
+  input wire[%(bitwidth)s-1:0] fis,
   input wire[%(bitwidth)s-1:0] ens,
   output wire sel_output
 );
@@ -308,7 +355,7 @@ module %(name)s(
   always @(*) begin
     sel_output_internal = 1'b0;
     for(l = 0; l < %(bitwidth)s; l = l + 1) 
-      sel_output_internal = sel_output_internal | (inputs[l] & ens[l]);
+      sel_output_internal = sel_output_internal | (fis[l] & ens[l]);
   end
 
   assign sel_output = sel_output_internal;
@@ -317,37 +364,40 @@ endmodule
 
 module top(
   input clk,
-  input wire ens,
-  input wire inputs,
-  output reg sel_output
+  input wire chain_in,
+  input wire chain_in_en,
+  output reg chain_out
 );
 
-  reg [%(bitwidth)s-1:0] ens_reg0;
-  reg [%(bitwidth)s-1:0] ens_reg1;
+  reg [%(bitwidth)s-1:0] ens_pipe0;
+  reg [%(bitwidth)s-1:0] input_ens;
 
-  reg [%(bitwidth)s-1:0] inputs_reg0;
-  reg [%(bitwidth)s-1:0] inputs_reg1;
+  reg [%(bitwidth)s-1:0] fis_pipe0;
+  reg [%(bitwidth)s-1:0] input_fis;
 
-  reg  sel_output_reg0;
-  wire  sel_output_wire;
+  reg  result_pipe0;
+  wire  result_wire;
 
 always@(posedge clk) begin
-  ens_reg0[0] <= ens;
-  ens_reg0[%(bitwidth)s-1:1] <= ens_reg0[%(bitwidth)s-1-1:0];
-  ens_reg1 <= ens_reg0;
+  if (chain_in_en) begin
+    ens_pipe0[0] <= chain_in;
+    ens_pipe0[%(bitwidth)s-1:1] <= ens_pipe0[%(bitwidth)s-1-1:0];
 
-  inputs_reg0[0] <= inputs;
-  inputs_reg0[%(bitwidth)s-1:1] <= inputs_reg0[%(bitwidth)s-1-1:0];
-  inputs_reg1 <= inputs_reg0;
+    fis_pipe0[0] <= ens_pipe0[%(bitwidth)s-1];
+    fis_pipe0[%(bitwidth)s-1:1] <= fis_pipe0[%(bitwidth)s-1-1:0];
+  end
 
-  sel_output_reg0 <= sel_output_wire;
-  sel_output <= sel_output_reg0;
+  input_ens <= ens_pipe0;
+  input_fis <= fis_pipe0;
+
+  result_pipe0 <= result_wire;
+  chain_out <= result_pipe0;
 end
 
 %(name)s dut(
-  .inputs(inputs_reg1),
-  .ens(ens_reg1),
-  .sel_output(sel_output_wire)
+  .fis(input_fis),
+  .ens(input_ens),
+  .sel_output(result_wire)
 );
 
 endmodule
