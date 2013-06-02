@@ -51,7 +51,7 @@ Pass *createLowerIntrinsicPass();
 Pass *createGlobalToStackPass();
 Pass *createMemoryAccessCoalescingPass();
 Pass *createSimpleBlockRAMAllocationPass();
-Pass *createMemoryPartitionPass(bool EnableBanking);
+Pass *createMemoryPartitionPass();
 Pass *createShangTargetTransformInfoPass();
 Pass *createDatapathHoistingPass();
 

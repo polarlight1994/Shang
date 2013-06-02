@@ -72,6 +72,11 @@ static cl::opt<bool> EnableMemoryOptimization("shang-enable-memory-optimization"
   cl::desc("Perform memory optimizations e.g. coalescing or banking"),
   cl::init(true));
 
+static cl::opt<bool>
+EnableMemoryPartition("shang-enable-memory-partition",
+  cl::desc("Perform memory partition"),
+  cl::init(true));
+
 static cl::opt<bool> EnableRegisterSharing("shang-enable-register-sharing",
   cl::desc("Perform register sharing"),
   cl::init(false));
@@ -298,8 +303,8 @@ int main(int argc, char **argv) {
 
     // Run the SCEVAA pass to compute more accurate alias information.
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
-    if (isMainSynthesis)
-      HLSPasses.add(createMemoryPartitionPass(EnableMemoryOptimization));
+    if (isMainSynthesis && EnableMemoryPartition)
+      HLSPasses.add(createMemoryPartitionPass());
 
     if (EnablePreScheduleLUTMapping) HLSPasses.add(createLUTMappingPass());
 

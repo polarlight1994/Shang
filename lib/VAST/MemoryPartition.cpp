@@ -30,7 +30,6 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/InstIterator.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-memory-partition"
 #include "llvm/Support/Debug.h"
@@ -41,15 +40,10 @@ STATISTIC(NumLoad, "Number of Load");
 STATISTIC(NumStore, "Number of Store");
 STATISTIC(NumMemBanks, "Number of Local Memory Bank Allocated");
 
-static cl::opt<bool>
-EnableMemoryPartition("shang-enable-memory-partition",
-  cl::desc("Perform memory partition"),
-  cl::init(true));
 
 namespace {
 struct MemoryPartition : public FunctionPass, public HLSAllocation {
   static char ID;
-  bool EnableBanking;
 
   ValueMap<const Value*, FuncUnitId>  Allocation;
 
@@ -79,8 +73,7 @@ struct MemoryPartition : public FunctionPass, public HLSAllocation {
     return Allocation.lookup(&GV);
   }
 
-  MemoryPartition(bool EnableBanking = true)
-    : FunctionPass(ID), EnableBanking(EnableBanking && EnableMemoryPartition) {
+  MemoryPartition() : FunctionPass(ID) {
     initializeMemoryPartitionPass(*PassRegistry::getPassRegistry());
   }
 
@@ -117,7 +110,7 @@ INITIALIZE_AG_PASS_END(MemoryPartition, HLSAllocation,
 
 char MemoryPartition::ID = 0;
 
-Pass *llvm::createMemoryPartitionPass(bool EnableBanking) {
+Pass *llvm::createMemoryPartitionPass() {
   return new MemoryPartition();
 }
 
@@ -216,7 +209,7 @@ bool MemoryPartition::runOnFunction(Function &F) {
       (void) inserted;
     }
 
-    if (EnableBanking && AllocateNewPort) ++CurPortNum;
+    if (AllocateNewPort) ++CurPortNum;
   }
 
   NumMemBanks += (CurPortNum - 1);
