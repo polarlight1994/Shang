@@ -59,7 +59,7 @@ public:
   struct MemBank {
     uint8_t Number;
     uint8_t WordSizeInBytes;
-    uint8_t AddrWdith;
+    uint8_t AddrWidth;
     bool RequireByteEnable;
 
     MemBank(unsigned Number = 0, unsigned WordSizeInBytes = 0,

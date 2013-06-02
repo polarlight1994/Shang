@@ -26,7 +26,7 @@ using namespace llvm;
 
 HLSAllocation::MemBank::MemBank(unsigned Number, unsigned WordSizeInBytes,
                                 unsigned AddrWdith, bool RequireByteEnable)
-  : Number(Number), WordSizeInBytes(WordSizeInBytes), AddrWdith(AddrWdith),
+  : Number(Number), WordSizeInBytes(WordSizeInBytes), AddrWidth(AddrWdith),
     RequireByteEnable(RequireByteEnable) {}
 
 unsigned HLSAllocation::getBlockRAMNum(const StoreInst &I) const {

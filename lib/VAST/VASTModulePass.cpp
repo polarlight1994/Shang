@@ -73,13 +73,19 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   }
 
   std::map<unsigned, VASTMemoryBus*> MemBuses;
-  VASTMemoryBus *getOrCreateMemBus(unsigned Num) {
-    VASTMemoryBus *&Bus = MemBuses[Num];
+  VASTMemoryBus *getOrCreateMemBus(const HLSAllocation::MemBank &Bank) {
+    unsigned ByteEnWidth = Log2_32_Ceil(Bank.WordSizeInBytes);
+    // Dirty Hack: Make the word address part not empty.
+    unsigned AddrWidth = std::max<unsigned>(ByteEnWidth + 1, Bank.AddrWidth);
+    VASTMemoryBus *&Bus = MemBuses[Bank.Number];
     if (Bus == 0) {
-      VFUMemBus *Desc = getFUDesc<VFUMemBus>();
-      Bus = VM->createMemBus(Num, Desc->getAddrWidth(), Desc->getDataWidth());
+      Bus = VM->createMemBus(Bank.Number, AddrWidth,
+                             Bank.WordSizeInBytes * 8);
     }
 
+    assert(Bus->getAddrWidth() == AddrWidth
+           && Bus->getDataWidth() == Bank.WordSizeInBytes * 8
+           && "Bank parameter doesn't match!");
     return Bus;
   }
 
@@ -422,12 +428,13 @@ void VASTModuleBuilder::allocateSubModules() {
   for (global_iterator I = M->global_begin(), E = M->global_end(); I != E; ++I) {
     GlobalVariable *GV = I;
 
-    unsigned BankNum = Allocation.getMemoryBankNum(*GV);
-    // Ignore the block rams that is already assign to block RAM.
-    if (BankNum == 0) continue;
+    const HLSAllocation::MemBank &Bank = Allocation.getMemoryBank(*GV);
+    // Ignore the default memory port.
+    if (Bank.Number == 0) continue;
 
-    VASTMemoryBus *Bus = getOrCreateMemBus(BankNum);
+    VASTMemoryBus *Bus = getOrCreateMemBus(Bank);
 
+    // TODO: Remember the size of the objects in the MemBank.
     Type *ElemTy = GV->getType()->getElementType();
     unsigned NumElem = 1;
 
@@ -874,9 +881,13 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
                                 VASTSeqInst::Launch);
   unsigned CurSrcIdx = 0;
 
+  VASTValPtr AddrVal = getAsOperandImpl(Addr);
+  // Clamp the address width, to the address width of the memory bank.
+  // Please note that we are using the byte address in the memory banks, so
+  // the lower bound of the bitslice is 0.
+  AddrVal = Builder.buildBitSliceExpr(AddrVal, Bus->getAddrWidth(), 0);
   // Emit Address.
-  Op->addSrc(getAsOperandImpl(Addr), CurSrcIdx++, 
-             Data ? Bus->getWAddr() : Bus->getRAddr());
+  Op->addSrc(AddrVal, CurSrcIdx++, Data ? Bus->getWAddr() : Bus->getRAddr());
 
   if (Data) {
     // Assign store data.
