@@ -58,12 +58,12 @@ public:
 
   struct MemBank {
     uint8_t Number;
+    uint8_t WordSizeInBytes;
     uint8_t AddrWdith;
-    uint8_t WordSize;
     bool RequireByteEnable;
 
-    MemBank(unsigned Number = 0, unsigned WordSize = 0, unsigned AddrWdith = 0,
-             bool RequireByteEnable = true);
+    MemBank(unsigned Number = 0, unsigned WordSizeInBytes = 0,
+            unsigned AddrWdith = 0, bool RequireByteEnable = true);
   };
 
   // Memory Bank allocation queries.

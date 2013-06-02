@@ -45,29 +45,21 @@ namespace {
 struct MemoryPartition : public FunctionPass, public HLSAllocation {
   static char ID;
 
-  ValueMap<const Value*, unsigned>  Allocation;
+  ValueMap<const Value*, unsigned>  Binding;
+  ValueMap<const GlobalVariable*, MemBank>  Banks;
 
   // Look up the memory port allocation if the pointers are not allocated
   // to the BlockRAM.
   virtual unsigned getMemoryBankNum(const LoadInst &I) const {
-    if (unsigned Num = Allocation.lookup(I.getPointerOperand()))
-      return Num;
-
-    return HLSAllocation::getMemoryBankNum(I);
+    return Binding.lookup(I.getPointerOperand());
   }
 
   virtual unsigned getMemoryBankNum(const StoreInst &I) const {
-    if (unsigned Num = Allocation.lookup(I.getPointerOperand()))
-      return Num;
-
-    return HLSAllocation::getMemoryBankNum(I);
+    return Binding.lookup(I.getPointerOperand());
   }
 
   virtual MemBank getMemoryBank(const GlobalVariable &GV) const {
-    if (unsigned Num = Allocation.lookup(&GV))
-      return MemBank(Num);
-
-    return HLSAllocation::getMemoryBank(GV);
+    return Banks.lookup(&GV);
   }
 
   MemoryPartition() : FunctionPass(ID) {
@@ -82,7 +74,10 @@ struct MemoryPartition : public FunctionPass, public HLSAllocation {
 
   bool runOnFunction(Function &F);
 
-  void releaseMemory() { Allocation.clear(); }
+  void releaseMemory() {
+    Binding.clear();
+    Banks.clear();
+  }
 
   /// getAdjustedAnalysisPointer - This method is used when a pass implements
   /// an analysis interface through multiple inheritance.  If needed, it
@@ -177,14 +172,40 @@ bool MemoryPartition::runOnFunction(Function &F) {
 
     bool AllocateNewPort = true;
     SmallVector<Value*, 8> Pointers;
+    SmallPtrSet<Type*, 8> AccessedTypes;
+    SmallVector<GlobalVariable*, 8> Objects;
+    unsigned BankSizeInBytes = 0, MaxElementSizeInBytes = 0;
 
     for (AliasSet::iterator AI = AS->begin(), AE = AS->end(); AI != AE; ++AI) {
       Value *V = AI.getPointer();
-      Pointers.push_back(V);
-      // Do not allocate local memory port if the pointers alias with external
-      // global variables.
-      if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V))
+      Type *ElemTy = cast<PointerType>(V->getType())->getElementType();
+      unsigned ElementSizeInBytes = TD->getTypeStoreSize(ElemTy);
+
+      if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
+        // Do not allocate local memory port if the pointers alias with external
+        // global variables.
         AllocateNewPort &= GV->hasInternalLinkage() || GV->hasPrivateLinkage();
+        Objects.push_back(GV);
+
+        // Calculate the size of the object.
+        unsigned NumElem = 1;
+
+        // Try to expand multi-dimension array to single dimension array.
+        while (const ArrayType *AT = dyn_cast<ArrayType>(ElemTy)) {
+          ElemTy = AT->getElementType();
+          NumElem *= AT->getNumElements();
+        }
+
+        ElementSizeInBytes = TD->getTypeStoreSize(ElemTy);
+
+        // Accumulate the element size.
+        BankSizeInBytes += NumElem * ElementSizeInBytes;
+      } else
+        Pointers.push_back(V);
+
+      AccessedTypes.insert(ElemTy);
+      // Update the max size of the accessed type.
+      MaxElementSizeInBytes = std::max(MaxElementSizeInBytes, ElementSizeInBytes);
     }
 
     unsigned Num = AllocateNewPort ? CurPortNum : 0;
@@ -193,15 +214,26 @@ bool MemoryPartition::runOnFunction(Function &F) {
     while (!Pointers.empty()) {
       Value *Ptr = Pointers.pop_back_val();
 
-      DEBUG(if (GlobalVariable *GV = dyn_cast<GlobalVariable>(Ptr))
-              dbgs() << "Assign " << *GV << " to Memory #" << Num << "\n";
-      );
-
-      bool inserted = Allocation.insert(std::make_pair(Ptr, Num)).second;
+      bool inserted = Binding.insert(std::make_pair(Ptr, Num)).second;
       assert(inserted && "Allocation not inserted!");
       (void) inserted;
     }
 
+    MemBank Bank(Num, MaxElementSizeInBytes, Log2_32_Ceil(BankSizeInBytes),
+                 AccessedTypes.size() == 1);
+    while (!Objects.empty()) {
+      GlobalVariable *GV = Objects.pop_back_val();
+      DEBUG(dbgs() << "Assign " << *GV << " to Memory #" << Num << "\n");
+
+      bool inserted = Banks.insert(std::make_pair(GV, Bank)).second;
+      assert(inserted && "Allocation not inserted!");
+
+      // Also bind the GV to the bank number.
+      inserted = Binding.insert(std::make_pair(GV, Num)).second;
+      assert(inserted && "Allocation not inserted!");
+      (void) inserted;
+    }
+    
     if (AllocateNewPort) ++CurPortNum;
   }
 
