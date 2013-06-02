@@ -86,16 +86,6 @@ struct MemoryAccessCoalescing : public FunctionPass {
     return false;
   }
 
-  static Value *getPointerOperand(Instruction *I) {
-    if (LoadInst *L = dyn_cast<LoadInst>(I))
-      return L->getPointerOperand();
-
-    if (StoreInst *S = dyn_cast<StoreInst>(I))
-      return S->getPointerOperand();
-
-    return 0;
-  }
-
   AliasAnalysis::Location getPointerLocation(Instruction *I) const {
     if (LoadInst *LI = dyn_cast<LoadInst>(I))
       return AA->getLocation(LI);

@@ -139,6 +139,16 @@ inline bool isCall(const Instruction *Inst, bool IgnoreExternalCall = true) {
 inline bool isLoadStore(const Instruction *Inst) {
   return isa<LoadInst>(Inst) || isa<StoreInst>(Inst);
 }
+
+inline Value *getPointerOperand(Instruction *I) {
+  if (LoadInst *L = dyn_cast<LoadInst>(I))
+    return L->getPointerOperand();
+
+  if (StoreInst *S = dyn_cast<StoreInst>(I))
+    return S->getPointerOperand();
+
+  return 0;
+}
 }
 
 #endif
