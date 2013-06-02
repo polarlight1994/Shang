@@ -32,8 +32,8 @@ extern char &DatapathNamerID;
 extern char &SeqLiveVariablesID;
 extern char &STGDistancesID;
 
+Pass *createObjectBasedAliasAnalyaisPass();
 FunctionPass *createDesignMetricsPass();
-
 // Always inline function.
 Pass *createHLSInlinerPass();
 Pass *createGotoExpansionPass();
@@ -72,6 +72,7 @@ Pass *createLowerPseudoPHIsPass();
 Pass *createRTLCodeGenPass(raw_ostream &O);
 
 void initializeShangTTIPass(PassRegistry &Registry);
+void initializeObjectBasedAliasAnalyaisPass(PassRegistry &Registry);
 
 void initializeDatapathHoistingPass(PassRegistry &Registry);
 void initializeFunctionFilterPass(PassRegistry &Registry);

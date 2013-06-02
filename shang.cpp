@@ -226,6 +226,7 @@ int main(int argc, char **argv) {
     HLSPasses.add(createShangTargetTransformInfoPass());
     HLSPasses.add(createBasicAliasAnalysisPass());
     HLSPasses.add(createTypeBasedAliasAnalysisPass());
+    HLSPasses.add(createObjectBasedAliasAnalyaisPass());
     // Name the instructions to make the LLVM IR easier for debugging.
     HLSPasses.add(createInstructionNamerPass());
 
