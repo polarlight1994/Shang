@@ -175,6 +175,10 @@ std::string VASTMemoryBus::getREnName(unsigned Idx) {
   return "mem" + utostr(Idx) + "ren";
 }
 
+std::string VASTMemoryBus::getArrayName() const {
+  return "mem" + utostr(Idx) + "ram";
+}
+
 void VASTMemoryBus::printDecl(raw_ostream &OS) const {
   if (isDefault()) return;
 
@@ -301,7 +305,7 @@ void VASTMemoryBus::printBank(vlang_raw_ostream &OS, const VASTModule *Mod) cons
   // so that the byte address can access the correct byte.
   OS << "(* ramstyle = \"no_rw_check\", max_depth = " << NumWords << " *) logic"
      << VASTValue::printBitRange(BytesPerWord) << VASTValue::printBitRange(8)
-     << " mem" << Idx << "ram[0:" << NumWords << "-1];\n";
+     << ' ' << getArrayName() << "[0:" << NumWords << "-1];\n";
 
   writeInitializeFile(OS);
 
@@ -310,8 +314,8 @@ void VASTMemoryBus::printBank(vlang_raw_ostream &OS, const VASTModule *Mod) cons
   OS._then();
 
   for (unsigned i = 0; i < BytesPerWord; ++i)
-    OS << "if(mem" << Idx << "interanal_wbe0w[" << i << "])"
-          " mem" << Idx << "ram[mem" << Idx << "waddr"
+    OS << "if(mem" << Idx << "interanal_wbe0w[" << i << "]) "
+       << getArrayName() << "[mem" << Idx << "waddr"
        << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "]"
           "[" << i << "]"
           " <= mem" << Idx << "interanal_wdata0w"
@@ -323,7 +327,7 @@ void VASTMemoryBus::printBank(vlang_raw_ostream &OS, const VASTModule *Mod) cons
   OS.exit_block();
 
   // TODO: Guard the read pipeline stages by stage enable signal.
-  OS << "mem" << Idx << "interanal_rdata1r <= mem" << Idx << "ram[mem" << Idx << "raddr"
+  OS << "mem" << Idx << "interanal_rdata1r <= " << getArrayName() << "[mem" << Idx << "raddr"
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
   OS << "mem" << Idx << "interanal_raddr1r <= mem" << Idx << "raddr;\n";
 
@@ -429,7 +433,7 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
 
     OS << "initial  $readmemh(\"";
     OS.write_escaped(FullInitFilePath);
-    OS << "\", mem" << Idx << "ram);\n";
+    OS << "\", " << getArrayName() << ");\n";
   } else {
     errs() << "error opening file '" << FullInitFilePath.data()
            << "' for writing block RAM initialize file!\n";
@@ -490,13 +494,13 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
   OS << "(* ramstyle = \"no_rw_check\", max_depth = " << NumWords << " *) logic"
      << VASTValue::printBitRange(getDataWidth())
      //<< VASTValue::printBitRange(BytesPerWord) << VASTValue::printBitRange(8)
-     << " mem" << Idx << "ram[0:" << NumWords << "-1];\n";
+     << ' ' << getArrayName() << "[0:" << NumWords << "-1];\n";
 
   writeInitializeFile(OS);
 
   // Declare the internal register.
   OS << "reg " << VASTValue::printBitRange(getDataWidth(), 0)
-     << " mem" << Idx << "ram_rdata0r;\n";
+     << ' ' << getArrayName() << "_rdata0r;\n";
 
   // Print the selectors.
   getRAddr()->printSelector(OS);
@@ -510,9 +514,9 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
   if (!RAddr->empty()) {
     OS.if_begin(Twine(RAddr->getName()) + "_selector_enable");
 
-    OS << "mem" << Idx << "ram_rdata0r"
+    OS << ' ' << getArrayName() << "_rdata0r"
        << VASTValue::printBitRange(getDataWidth(), 0, false) << " <= "
-       << "mem" << Idx << "ram[" << RAddr->getName() << "_selector_wire"
+       << ' ' << getArrayName() << "[" << RAddr->getName() << "_selector_wire"
        << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
 
     OS.exit_block();
@@ -522,7 +526,7 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
   VASTSelector *WAddr = getWAddr();
   if (!WAddr->empty()) {
     OS.if_begin(Twine(WAddr->getName()) + "_selector_enable");
-    OS << "mem" << Idx << "ram[" << WAddr->getName() << "_selector_wire"
+    OS << ' ' << getArrayName() << "[" << WAddr->getName() << "_selector_wire"
       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ']'
       << " <= " << getWData()->getName() << "_selector_wire"
       << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
@@ -565,7 +569,7 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
   // Only print the assignment to the read data if there is any use.
   if (!getRData()->use_empty())
     OS << "assign " << cast<VASTWire>(getRData())->getName() << " = "
-       << "mem" << Idx << "ram_rdata0r;\n\n";
+       << ' ' << getArrayName() << "_rdata0r;\n\n";
 }
 
 void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {

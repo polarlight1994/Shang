@@ -43,8 +43,17 @@ static std::string GetSTAObjectName(const VASTSelector *Sel) {
       // Or simply the name of the output register.
       << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
       << "* ";
-  } else
-    OS << ' ' << Sel->getName() << "* ";
+    return OS.str();
+  }
+
+  if (const VASTMemoryBus *RAM = dyn_cast<VASTMemoryBus>(Sel->getParent())) {
+    if (RAM->requireByteEnable()) {
+      OS << " *" << RAM->getArrayName() << "* ";
+      return OS.str();
+    }
+  }
+
+  OS << ' ' << Sel->getName() << "* ";
 
   return OS.str();
 }

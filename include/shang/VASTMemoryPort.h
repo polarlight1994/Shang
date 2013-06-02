@@ -60,6 +60,8 @@ public:
   unsigned getAddrWidth() const { return AddrSize; }
   unsigned getByteEnWdith() const { return getDataWidth() / 8; }
 
+  std::string getArrayName() const;
+
   bool isDefault() const { return Idx == 0; }
   bool requireByteEnable() const { return RequireByteEnable; }
 
