@@ -63,11 +63,11 @@ struct MemoryPartition : public FunctionPass, public HLSAllocation {
     return HLSAllocation::getMemoryBankNum(I);
   }
 
-  virtual unsigned getMemoryBankNum(const GlobalVariable &GV) const {
+  virtual MemBank getMemoryBank(const GlobalVariable &GV) const {
     if (unsigned Num = Allocation.lookup(&GV))
-      return Num;
+      return MemBank(Num);
 
-    return HLSAllocation::getMemoryBankNum(GV);
+    return HLSAllocation::getMemoryBank(GV);
   }
 
   MemoryPartition() : FunctionPass(ID) {

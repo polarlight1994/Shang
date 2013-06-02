@@ -24,6 +24,11 @@
 
 using namespace llvm;
 
+HLSAllocation::MemBank::MemBank(unsigned Number, unsigned WordSize,
+                                  unsigned AddrWdith, bool RequireByteEnable)
+  : Number(Number), WordSize(WordSize), AddrWdith(AddrWdith),
+    RequireByteEnable(RequireByteEnable) {}
+
 unsigned HLSAllocation::getBlockRAMNum(const StoreInst &I) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
@@ -74,10 +79,11 @@ unsigned HLSAllocation::getMemoryBankNum(const LoadInst &I) const {
   return Allocation->getMemoryBankNum(I);
 }
 
-unsigned HLSAllocation::getMemoryBankNum(const GlobalVariable &GV) const {
+HLSAllocation::MemBank
+HLSAllocation::getMemoryBank(const GlobalVariable &GV) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
-  return Allocation->getMemoryBankNum(GV);
+  return Allocation->getMemoryBank(GV);
 }
 
 unsigned HLSAllocation::getMemoryBankNum(const Value &V) const {
@@ -88,7 +94,7 @@ unsigned HLSAllocation::getMemoryBankNum(const Value &V) const {
     return getMemoryBankNum(*S);
 
   if (const GlobalVariable *G = dyn_cast<GlobalVariable>(&V))
-    return getMemoryBankNum(*G);
+    return getMemoryBank(*G).Number;
 
   return 0;
 }
@@ -121,7 +127,7 @@ struct BasicAllocation : public ImmutablePass, public HLSAllocation {
   unsigned getBlockRAMNum(const StoreInst &I) const { return 0;  }
   unsigned getBlockRAMNum(const GlobalVariable &GV) const { return 0;  }
 
-  unsigned getMemoryBankNum(const GlobalVariable &GV) const { return 0; }
+  MemBank  getMemoryBank(const GlobalVariable &GV) const { return MemBank(); }
   unsigned getMemoryBankNum(const LoadInst &I) const { return 0; }
   unsigned getMemoryBankNum(const StoreInst &I) const { return 0; }
 

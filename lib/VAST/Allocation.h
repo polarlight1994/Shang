@@ -56,8 +56,18 @@ public:
   virtual ArrayRef<const GlobalVariable*>
   getBlockRAMAllocation(const Function *F) const;
 
+  struct MemBank {
+    uint8_t Number;
+    uint8_t AddrWdith;
+    uint8_t WordSize;
+    bool RequireByteEnable;
+
+    MemBank(unsigned Number = 0, unsigned WordSize = 0, unsigned AddrWdith = 0,
+             bool RequireByteEnable = true);
+  };
+
   // Memory Bank allocation queries.
-  virtual unsigned getMemoryBankNum(const GlobalVariable &GV) const;
+  virtual MemBank  getMemoryBank(const GlobalVariable &GV) const;
   virtual unsigned getMemoryBankNum(const LoadInst &I) const;
   virtual unsigned getMemoryBankNum(const StoreInst &I) const;
   unsigned getMemoryBankNum(const Value &V) const;
