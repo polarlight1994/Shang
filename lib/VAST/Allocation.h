@@ -47,15 +47,6 @@ public:
 
   virtual ~HLSAllocation() {}
 
-  // Block RAM allocation queries.
-  virtual unsigned getBlockRAMNum(const LoadInst &I) const;
-  virtual unsigned getBlockRAMNum(const StoreInst &I) const;
-  virtual unsigned getBlockRAMNum(const GlobalVariable &GV) const;
-  unsigned getBlockRAMNum(const Value &V) const;
-
-  virtual ArrayRef<const GlobalVariable*>
-  getBlockRAMAllocation(const Function *F) const;
-
   struct MemBank {
     uint8_t Number;
     uint8_t WordSizeInBytes;

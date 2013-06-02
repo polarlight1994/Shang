@@ -42,39 +42,26 @@ cl::init(true));
 namespace {
 struct SimpleBlockRAMAllocation : public ModulePass, public HLSAllocation {
   static char ID;
-  ValueMap<const Value*, unsigned> BlockRAMBinding;
-  typedef ValueMap<const Function*, SmallVector<const GlobalVariable*, 4> >
-  BRAMMap;
-  BRAMMap AllocatedBRAMs;
 
   SimpleBlockRAMAllocation() : ModulePass(ID) {
     initializeSimpleBlockRAMAllocationPass(*PassRegistry::getPassRegistry());
   }
 
-  template<typename T>
-  unsigned getBlockRAMNumImpl(const T &V) const {
-    if (unsigned Num = BlockRAMBinding.lookup(&V))
-      return Num;
+  ValueMap<const Value*, unsigned>  Binding;
+  ValueMap<const GlobalVariable*, MemBank>  Banks;
 
-    return HLSAllocation::getBlockRAMNum(V);
+  // Look up the memory port allocation if the pointers are not allocated
+  // to the BlockRAM.
+  virtual unsigned getMemoryBankNum(const LoadInst &I) const {
+    return Binding.lookup(I.getPointerOperand());
   }
 
-  unsigned getBlockRAMNum(const LoadInst &I) const {
-    return getBlockRAMNumImpl(I);
+  virtual unsigned getMemoryBankNum(const StoreInst &I) const {
+    return Binding.lookup(I.getPointerOperand());
   }
 
-  unsigned getBlockRAMNum(const StoreInst &I) const {
-    return getBlockRAMNumImpl(I);
-  }
-
-  unsigned getBlockRAMNum(const GlobalVariable &GV) const {
-    return getBlockRAMNumImpl(GV);
-  }
-
-  ArrayRef<const GlobalVariable*> getBlockRAMAllocation(const Function *F) const {
-    BRAMMap::const_iterator I = AllocatedBRAMs.find(F);
-    return I == AllocatedBRAMs.end() ? ArrayRef<const GlobalVariable*>()
-                                     : I->second;
+  virtual MemBank getMemoryBank(const GlobalVariable &GV) const {
+    return Banks.lookup(&GV);
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -102,9 +89,6 @@ struct GVUseCollector {
   // Modify information, Is the GV written in a function?
   DenseSet<const Function*> WrittenFunctions;
   DenseSet<const Function*> VisitedFunctions;
-  typedef DenseSet<const Function*>::const_iterator fn_iterator;
-  fn_iterator fn_begin() const { return VisitedFunctions.begin(); }
-  fn_iterator fn_end() const { return VisitedFunctions.end(); }
 
   bool operator()(Value *ValUser, const Value *V)  {
     if (Instruction *I = dyn_cast<Instruction>(ValUser)) {
@@ -211,7 +195,9 @@ void SimpleBlockRAMAllocation::localizeGV(GlobalVariable *GV) {
 
   if (!Collector.canBeLocalized()) return;
 
-  if (!isa<ArrayType>(GV->getType()->getElementType()) && NoSingleElementBRAM) {
+  Type *ElemTy = cast<PointerType>(GV->getType())->getElementType();
+
+  if (!isa<ArrayType>(ElemTy) && NoSingleElementBRAM) {
     for (unsigned i = 0, e = Collector.Uses.size(); i != e; ++i) {
       Instruction *I = dyn_cast<Instruction>(Collector.Uses[i]);
 
@@ -224,21 +210,30 @@ void SimpleBlockRAMAllocation::localizeGV(GlobalVariable *GV) {
     }
   }
 
-  // Allocate the FUID for the GV.
-  unsigned CurNum = BlockRAMBinding.size() + 1;
-  BlockRAMBinding[GV] = CurNum;
+  unsigned ElementSizeInBytes = TD->getTypeStoreSize(ElemTy);
+  // Calculate the size of the object.
+  unsigned NumElem = 1;
+
+  // Try to expand multi-dimension array to single dimension array.
+  while (const ArrayType *AT = dyn_cast<ArrayType>(ElemTy)) {
+    ElemTy = AT->getElementType();
+    NumElem *= AT->getNumElements();
+  }
+
+  ElementSizeInBytes = TD->getTypeStoreSize(ElemTy);
+  unsigned ObjectSizeInBytes = NumElem * ElementSizeInBytes;
+
+  // Allocate the bank for GV.
+  unsigned CurNum = Banks.size() + 1;
+  MemBank Bank(CurNum, ElementSizeInBytes, Log2_32_Ceil(ObjectSizeInBytes),
+               false);
+  Banks[GV] = Bank;
 
   // Remember the assignment for the load/stores.
   while (!Collector.Uses.empty()) {
     Value *V = Collector.Uses.pop_back_val();
-    BlockRAMBinding[V] = CurNum;
+    Binding[V] = CurNum;
   }
-
-  // Remember the allocation for each function.
-  typedef GVUseCollector::fn_iterator fn_iterator;
-  for (fn_iterator I = Collector.fn_begin(), E = Collector.fn_end();
-       I != E; ++I)
-    AllocatedBRAMs[*I].push_back(GV);
 
   ++NumLocalizedGV;
 }

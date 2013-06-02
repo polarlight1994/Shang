@@ -23,55 +23,6 @@ class GlobalVariable;
 class VASTWire;
 class VASTSelector;
 
-class VASTBlockRAM : public VASTSubModuleBase {
-  unsigned Depth;
-  unsigned WordSize;
-  // TODO: Support multiple initializers.
-  const GlobalVariable *Initializer;
-
-  VASTBlockRAM(const char *Name, unsigned BRamNum, unsigned WordSize,
-               unsigned Depth, const GlobalVariable *Initializer)
-    : VASTSubModuleBase(vastBlockRAM, Name, BRamNum), Depth(Depth),
-      WordSize(WordSize), Initializer(Initializer)
-  {}
-
-  friend class VASTModule;
-
-  void printPort(vlang_raw_ostream &OS, unsigned Num) const;
-  void addPorts(VASTModule *VM);
-public:
-  unsigned getBlockRAMNum() const { return Idx; }
-  unsigned getWordSize() const { return WordSize; }
-  unsigned getDepth() const { return Depth; }
-  unsigned getAddrWidth() const { return Log2_32_Ceil(getDepth()); }
-
-  // Get the buses to block RAM.
-  VASTSelector *getRAddr(unsigned PortNum) const {
-    return getFanin(PortNum * 3);
-  }
-
-  VASTValue *getRData(unsigned PortNum) const {
-    return getFanout(PortNum);
-  }
-
-  VASTSelector *getWAddr(unsigned PortNum) const {
-    return getFanin(PortNum * 3 + 1);
-  }
-
-  VASTSelector *getWData(unsigned PortNum) const {
-    return getFanin(PortNum * 3 + 2);
-  }
-
-  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
-  void printDecl(raw_ostream &OS) const;
-
-  /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTBlockRAM *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastBlockRAM;
-  }
-};
-
 class VASTSubModule : public VASTSubModuleBase {
   // Remember the input/output flag in the pointer.
   // typedef PointerIntPair<VASTNode*, 1, bool> VASTSubModulePortPtr;

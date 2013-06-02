@@ -61,17 +61,6 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   VASTSubModule *emitIPFromTemplate(const char *Name, unsigned ResultSize);
   //===--------------------------------------------------------------------===//
-  // TODO: Support putting multiple GVs in a single BRAM.
-  std::map<unsigned, VASTNode*> AllocatedBRAMs;
-
-  VASTNode *emitBlockRAM(unsigned BRAMNum, const GlobalVariable *GV);
-  VASTNode *getBlockRAM(unsigned BRAMNum) const {
-    std::map<unsigned, VASTNode*>::const_iterator at
-      = AllocatedBRAMs.find(BRAMNum);
-    assert(at != AllocatedBRAMs.end() && "BlockRAM not existed!");
-    return at->second;
-  }
-
   std::map<unsigned, VASTMemoryBus*> MemBuses;
   VASTMemoryBus *getOrCreateMemBus(const HLSAllocation::MemBank &Bank) {
     unsigned ByteEnWidth = Log2_32_Ceil(Bank.WordSizeInBytes);
@@ -231,9 +220,6 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
                               Instruction &Inst);
   unsigned getByteEnable(Value *Addr) const;
 
-  void buildBRAMTransaction(Value *Addr, Value *Data, unsigned BRAMNum,
-                            Instruction &Inst);
-
   void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
                                ArrayRef<VASTValPtr> Args);
   //===--------------------------------------------------------------------===//
@@ -277,10 +263,6 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
 
   if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
     unsigned SizeInBits = getValueSizeInBits(GV);
-
-    if (Allocation.getBlockRAMNum(*GV))
-      // FIXIME: Calculate the offset of the GV in the block RAM.
-      return indexVASTExpr(GV, getOrCreateImmediate(0, SizeInBits));
 
     unsigned BankNum = Allocation.getMemoryBankNum(*GV);
     const std::string WrapperName = ShangMangle(GV->getName());
@@ -414,15 +396,6 @@ void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
 void VASTModuleBuilder::allocateSubModules() {
   Function &F = VM->getLLVMFunction();
 
-  // Allocate the block RAMs.
-  ArrayRef<const GlobalVariable*> GVs = Allocation.getBlockRAMAllocation(&F);
-  for (unsigned i = 0; i < GVs.size(); ++i) {
-    const GlobalVariable *GV = GVs[i];
-    unsigned BRAMNum = Allocation.getBlockRAMNum(*GV);
-    assert(BRAMNum && "Bad block RAM allocation!");
-    emitBlockRAM(BRAMNum, GV);
-  }
-
   typedef Module::global_iterator global_iterator;
   Module *M = F.getParent();
   for (global_iterator I = M->global_begin(), E = M->global_end(); I != E; ++I) {
@@ -448,52 +421,6 @@ void VASTModuleBuilder::allocateSubModules() {
 
     Bus->addGlobalVariable(GV, NumElem * ElementSizeInBytes);
   }
-}
-
-VASTNode *VASTModuleBuilder::emitBlockRAM(unsigned BRAMNum,
-                                          const GlobalVariable *GV) {
-  // Count the number of elements and the size of a single element.
-  // Assume the Allocated type is a scalar.
-  Type *ElemTy = GV->getType()->getElementType();
-  unsigned NumElem = 1;
-
-  // Try to expand multi-dimension array to single dimension array.
-  while (const ArrayType *AT = dyn_cast<ArrayType>(ElemTy)) {
-    ElemTy = AT->getElementType();
-    NumElem *= AT->getNumElements();
-  }
-
-  unsigned ElementSizeInBits = TD->getTypeStoreSizeInBits(ElemTy);
-
-  // If there is only 1 element, simply replace the block RAM by a register.
-  if (NumElem == 1) {
-    uint64_t InitVal = 0;
-    // Try to retrieve the initialize value of the register, it may be a
-    // ConstantInt or ConstPointerNull, we can safely ignore the later case
-    // since the InitVal is default to 0.
-    const ConstantInt *CI
-      = dyn_cast_or_null<ConstantInt>(GV->getInitializer());
-    assert((CI || isa<ConstantPointerNull>(GV->getInitializer()))
-            && "Unexpected initialier!");
-    assert((CI == 0 || CI->getBitWidth() <= 64) && "Initializer not supported!");
-    if (CI) InitVal = CI->getZExtValue();
-
-    VASTRegister *R = VM->createRegister(VFUBRAM::getOutDataBusName(BRAMNum),
-                                         ElementSizeInBits, InitVal);
-    bool Inserted = AllocatedBRAMs.insert(std::make_pair(BRAMNum, R)).second;
-    assert(Inserted && "Creating the same BRAM twice?");
-    (void) Inserted;
-    ++NumBRam2Reg;
-    return 0;
-  }
-
-  // Create the block RAM object.
-  VASTBlockRAM *BRAM = VM->addBlockRAM(BRAMNum, ElementSizeInBits, NumElem, GV);
-  bool Inserted = AllocatedBRAMs.insert(std::make_pair(BRAMNum, BRAM)).second;
-  assert(Inserted && "Creating the same BRAM twice?");
-  (void) Inserted;
-
-  return BRAM;
 }
 
 VASTSubModule *
@@ -837,22 +764,11 @@ void VASTModuleBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 }
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
-  if (unsigned BRAMNum = Allocation.getBlockRAMNum(I)) {
-    buildBRAMTransaction(I.getPointerOperand(), 0, BRAMNum, I);
-    return;
-  }
-
   unsigned BankNum = Allocation.getMemoryBankNum(I);
   buildMemoryTransaction(I.getPointerOperand(), 0, BankNum, I);
 }
 
 void VASTModuleBuilder::visitStoreInst(StoreInst &I) {
-  if (unsigned BRAMNum = Allocation.getBlockRAMNum(I)) {
-    buildBRAMTransaction(I.getPointerOperand(), I.getValueOperand(),
-                         BRAMNum, I);
-    return;
-  }
-
   unsigned BankNum = Allocation.getMemoryBankNum(I);
   buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(),
                           BankNum, I);
@@ -931,67 +847,6 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     VM->latchValue(Result, V, Slot, VASTImmediate::True, &I, Latency);
   }
 
-  // Move the the next slot so that the other operations are not conflict with
-  // the current memory operations.
-  advanceToNextSlot(Slot);
-}
-
-void VASTModuleBuilder::buildBRAMTransaction(Value *Addr, Value *Data,
-                                             unsigned BRAMNum, Instruction &I) {
-  bool IsWrite = Data != 0;
-  VASTNode *Node = getBlockRAM(BRAMNum);
-
-  BasicBlock *ParentBB = I.getParent();
-  VASTSlot *Slot = getLatestSlot(ParentBB);
-
-  // The block RAM maybe degraded.
-  if (VASTRegister *R = dyn_cast<VASTRegister>(Node)) {
-    if (IsWrite) {
-      VASTValPtr Src = getAsOperandImpl(Data);
-      VASTSeqInst *SeqInst
-        = VM->lauchInst(Slot, VASTImmediate::True, 1, &I, VASTSeqInst::Latch);
-      // The static registers only be written when the function exit.
-      SeqInst->addSrc(Src, 0, R->getSelector());
-    } else {
-      // Also index the address port as the result of the block RAM read.
-      Builder.indexVASTExpr(&I, R->getSelector()->getSSAValue());
-    }
-
-    return;
-  }
-
-  VASTBlockRAM *BRAM = cast<VASTBlockRAM>(Node);
-  // Get the address port and build the assignment.
-  VASTValPtr AddrVal = getAsOperandImpl(Addr);
-  unsigned SizeInBytes = BRAM->getWordSize() / 8;
-  unsigned Alignment = Log2_32_Ceil(SizeInBytes);
-  unsigned AddrWidth = BRAM->getAddrWidth();
-  AddrVal = Builder.buildBitSliceExpr(AddrVal, AddrWidth + Alignment, Alignment);
-
-  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, IsWrite ? 2 : 1, &I,
-                                VASTSeqInst::Launch);
-
-  VASTSelector *AddrPort = IsWrite ? BRAM->getWAddr(0) : BRAM->getRAddr(0);
-
-  Op->addSrc(AddrVal, 0, AddrPort);
-  // Also assign the data to write to the dataport of the block RAM.
-  if (IsWrite) {
-    VASTSelector *DataPort = BRAM->getWData(0);
-    VASTValPtr DataToStore = getAsOperandImpl(Data);
-    assert(DataToStore->getBitWidth() == BRAM->getWordSize()
-           && "Write to BRAM data width not match!");
-    Op->addSrc(DataToStore, 1, DataPort);
-  }
-
-  // Wait for 1 cycles and get the result for the read operation.
-  if (!IsWrite) {
-    Slot = advanceToNextSlot(Slot);
-    VASTSeqValue *Result = getOrCreateSeqVal(&I);
-    assert(Result->getBitWidth() == BRAM->getWordSize()
-           && "Read from BRAM data width not match!");
-    // Use the the value from address port as the result of the block RAM read.
-    VM->latchValue(Result, BRAM->getRData(0), Slot, VASTImmediate::True, &I, 1);
-  }
   // Move the the next slot so that the other operations are not conflict with
   // the current memory operations.
   advanceToNextSlot(Slot);

@@ -14,7 +14,7 @@
 #include "TimingNetlist.h"
 #include "TimingEstimator.h"
 
-#include "shang/VASTSubModules.h"
+#include "shang/VASTMemoryPort.h"
 #include "shang/VASTModule.h"
 #include "shang/Passes.h"
 #include "shang/FUInfo.h"
@@ -146,10 +146,14 @@ TimingNetlist::getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) cons
   if (TimingModel != TimingEstimatorBase::ZeroDelay) {
     VFUMux *Mux = getFUDesc<VFUMux>();
     MUXDelay = Mux->getMuxLatency(NumFannins);
-    // Also accumulate the delay of the block RAM.
-    if (Sel && isa<VASTBlockRAM>(Sel->getParent())) {
-      VFUBRAM *RAM = getFUDesc<VFUBRAM>();
-      MUXDelay += RAM->Latency;
+    if (Sel) {
+      // Also accumulate the delay of the block RAM.
+      if (VASTMemoryBus *Mem = dyn_cast<VASTMemoryBus>(Sel->getParent())) {
+        if (!Mem->requireByteEnable()) {
+          VFUBRAM *RAM = getFUDesc<VFUBRAM>();
+          MUXDelay += RAM->Latency;
+        }
+      }
     }
   }
 

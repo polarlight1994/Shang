@@ -29,44 +29,6 @@ HLSAllocation::MemBank::MemBank(unsigned Number, unsigned WordSizeInBytes,
   : Number(Number), WordSizeInBytes(WordSizeInBytes), AddrWidth(AddrWdith),
     RequireByteEnable(RequireByteEnable) {}
 
-unsigned HLSAllocation::getBlockRAMNum(const StoreInst &I) const {
-  assert(Allocation
-         && "Allocation didn't call InitializeHLSAllocation in its run method!");
-  return Allocation->getBlockRAMNum(I);
-}
-
-unsigned HLSAllocation::getBlockRAMNum(const LoadInst &I) const {
-  assert(Allocation
-         && "Allocation didn't call InitializeHLSAllocation in its run method!");
-  return Allocation->getBlockRAMNum(I);
-}
-
-unsigned HLSAllocation::getBlockRAMNum(const GlobalVariable &GV) const {
-  assert(Allocation
-         && "Allocation didn't call InitializeHLSAllocation in its run method!");
-  return Allocation->getBlockRAMNum(GV);
-}
-
-unsigned HLSAllocation::getBlockRAMNum(const Value &V) const {
-  if (const LoadInst *L = dyn_cast<LoadInst>(&V))
-    return getBlockRAMNum(*L);
-
-  if (const StoreInst *S = dyn_cast<StoreInst>(&V))
-    return getBlockRAMNum(*S);
-
-  if (const GlobalVariable *G = dyn_cast<GlobalVariable>(&V))
-    return getBlockRAMNum(*G);
-
-  return 0;
-}
-
-ArrayRef<const GlobalVariable*>
-HLSAllocation::getBlockRAMAllocation(const Function *F) const {
-  assert(Allocation
-         && "Allocation didn't call InitializeHLSAllocation in its run method!");
-  return Allocation->getBlockRAMAllocation(F);
-}
-
 unsigned HLSAllocation::getMemoryBankNum(const StoreInst &I) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
@@ -122,10 +84,6 @@ struct BasicAllocation : public ImmutablePass, public HLSAllocation {
   static char ID;
 
   BasicAllocation();
-
-  unsigned getBlockRAMNum(const LoadInst &I) const { return 0;  }
-  unsigned getBlockRAMNum(const StoreInst &I) const { return 0;  }
-  unsigned getBlockRAMNum(const GlobalVariable &GV) const { return 0;  }
 
   MemBank  getMemoryBank(const GlobalVariable &GV) const { return MemBank(); }
   unsigned getMemoryBankNum(const LoadInst &I) const { return 0; }

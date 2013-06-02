@@ -58,7 +58,6 @@ public:
     vastOutPort,
     vastSlot,
     vastRegister,
-    vastBlockRAM,
     vastSubmodule,
     vastMemoryBus,
 
@@ -596,7 +595,6 @@ public:
   static inline bool classof(const VASTSubModuleBase *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSubmodule ||
-           A->getASTType() == vastBlockRAM ||
            A->getASTType() == vastMemoryBus;
   }
 };

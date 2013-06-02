@@ -273,9 +273,6 @@ public:
   VASTMemoryBus *createMemBus(unsigned Num, unsigned AddrWidth,
                               unsigned DataWidth, bool RequireByteEnable);
 
-  VASTBlockRAM *addBlockRAM(unsigned BRamNum, unsigned Bitwidth, unsigned Size,
-                            const GlobalVariable *Initializer);
-
   VASTSubModule *addSubmodule(const char *Name, unsigned Num);
 
   VASTRegister *createRegister(const Twine &Name, unsigned BitWidth,

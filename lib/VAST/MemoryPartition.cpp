@@ -135,9 +135,6 @@ bool MemoryPartition::runOnFunction(Function &F) {
   for (iterator I = M->global_begin(), E = M->global_end(); I != E; ++I) {
     GlobalVariable *GV = I;
 
-    // Ignore the block rams that is already assign to block RAM.
-    if (getBlockRAMNum(*GV)) continue;
-
     // DIRTYHACK: Make sure the GV is aligned.
     GV->setAlignment(std::max(8u, GV->getAlignment()));
 
@@ -149,9 +146,6 @@ bool MemoryPartition::runOnFunction(Function &F) {
     assert(!isCall(Inst) && "MemoryPartition can only run after goto-expansion!");
 
     if (!isLoadStore(Inst)) continue;
-
-    // Ignore the block RAM accesses.
-    if (getBlockRAMNum(*Inst)) continue;
 
     ++NumMemoryAccess;
 

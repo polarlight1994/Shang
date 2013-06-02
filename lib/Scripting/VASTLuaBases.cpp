@@ -35,19 +35,8 @@ static std::string GetSTAObjectName(const VASTSelector *Sel) {
   std::string Name;
   raw_string_ostream OS(Name);
 
-  if (const VASTBlockRAM *RAM = dyn_cast<VASTBlockRAM>(Sel->getParent())) {
-    OS << ' '
-      // BlockRam name with prefix
-      << getFUDesc<VFUBRAM>()->Prefix
-      << VFUBRAM::getArrayName(RAM->getBlockRAMNum()) << "* "
-      // Or simply the name of the output register.
-      << VFUBRAM::getArrayName(RAM->getBlockRAMNum())
-      << "* ";
-    return OS.str();
-  }
-
   if (const VASTMemoryBus *RAM = dyn_cast<VASTMemoryBus>(Sel->getParent())) {
-    if (RAM->requireByteEnable()) {
+    if (!RAM->requireByteEnable()) {
       OS << " *" << RAM->getArrayName() << "* ";
       return OS.str();
     }
@@ -339,15 +328,6 @@ VASTModule::createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth,
   Bus->addPorts(this);
   Submodules.push_back(Bus);
   return Bus;
-}
-
-VASTBlockRAM *VASTModule::addBlockRAM(unsigned BRamNum, unsigned Bitwidth,
-                                      unsigned Size, const GlobalVariable *Init){
-  VASTBlockRAM *RAM = new VASTBlockRAM("", BRamNum, Bitwidth, Size, Init);
-  // Build the ports.
-  RAM->addPorts(this);
-  Submodules.push_back(RAM);
-  return RAM;
 }
 
 VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {

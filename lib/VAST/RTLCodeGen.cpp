@@ -98,7 +98,7 @@ void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
        I != E; ++I) {
     GlobalVariable *GV = I;
 
-    if (Allocation.getBlockRAMNum(*GV) == 0)
+    if (Allocation.getMemoryBankNum(*GV) == 0)
       GVs.push_back(I);
   }
 
