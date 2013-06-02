@@ -270,7 +270,8 @@ public:
   VASTSeqValue *createSeqValue(VASTSelector *Selector, unsigned Idx, Value *V = 0);
 
   VASTMemoryBus *createDefaultMemBus();
-  VASTMemoryBus *createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth);
+  VASTMemoryBus *createMemBus(unsigned Num, unsigned AddrWidth,
+                              unsigned DataWidth, bool RequireByteEnable);
 
   VASTBlockRAM *addBlockRAM(unsigned BRamNum, unsigned Bitwidth, unsigned Size,
                             const GlobalVariable *Initializer);

@@ -220,7 +220,7 @@ bool MemoryPartition::runOnFunction(Function &F) {
     }
 
     MemBank Bank(Num, MaxElementSizeInBytes, Log2_32_Ceil(BankSizeInBytes),
-                 AccessedTypes.size() == 1);
+                 AccessedTypes.size() != 1);
     while (!Objects.empty()) {
       GlobalVariable *GV = Objects.pop_back_val();
       DEBUG(dbgs() << "Assign " << *GV << " to Memory #" << Num << "\n");

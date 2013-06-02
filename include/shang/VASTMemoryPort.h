@@ -22,11 +22,13 @@ class GlobalVariable;
 
 class VASTMemoryBus : public VASTSubModuleBase {
   unsigned AddrSize, DataSize;
+  bool RequireByteEnable;
 
   std::map<GlobalVariable*, unsigned> BaseAddrs;
   unsigned CurrentOffset;
 
-  VASTMemoryBus(unsigned BusNum, unsigned AddrSize, unsigned DataSize);
+  VASTMemoryBus(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
+                bool RequireByteEnable);
   friend class VASTModule;
 
   void addPorts(VASTModule *VM);
@@ -49,12 +51,17 @@ class VASTMemoryBus : public VASTSubModuleBase {
   static std::string getREnName(unsigned Idx);
 
   void writeInitializeFile(vlang_raw_ostream &OS) const;
+  // Print the implementation of the memory blocks according to the requirement
+  // of the byte enable.
+  void printBank(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void printBlockRAM(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 public:
   unsigned getDataWidth() const { return DataSize; }
   unsigned getAddrWidth() const { return AddrSize; }
   unsigned getByteEnWdith() const { return getDataWidth() / 8; }
 
   bool isDefault() const { return Idx == 0; }
+  bool requireByteEnable() const { return RequireByteEnable; }
 
   // The read port of the memory bus.
   VASTSelector *getREnable() const;

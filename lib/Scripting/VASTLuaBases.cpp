@@ -319,12 +319,14 @@ VASTModule::createSeqValue(VASTSelector *Selector, unsigned Idx, Value *V) {
 
 VASTMemoryBus *VASTModule::createDefaultMemBus() {
   VFUMemBus *Desc = getFUDesc<VFUMemBus>();
-  return createMemBus(0, Desc->getAddrWidth(), Desc->getDataWidth());
+  return createMemBus(0, Desc->getAddrWidth(), Desc->getDataWidth(), true);
 }
 
-VASTMemoryBus *VASTModule::createMemBus(unsigned Num, unsigned AddrWidth,
-                                        unsigned DataWidth) {
-  VASTMemoryBus *Bus = new VASTMemoryBus(Num, AddrWidth, DataWidth);
+VASTMemoryBus *
+VASTModule::createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth,
+                         bool RequireByteEnable) {
+  VASTMemoryBus *Bus = new VASTMemoryBus(Num, AddrWidth, DataWidth,
+                                         RequireByteEnable);
   Bus->addPorts(this);
   Submodules.push_back(Bus);
   return Bus;

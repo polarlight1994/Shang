@@ -79,8 +79,8 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     unsigned AddrWidth = std::max<unsigned>(ByteEnWidth + 1, Bank.AddrWidth);
     VASTMemoryBus *&Bus = MemBuses[Bank.Number];
     if (Bus == 0) {
-      Bus = VM->createMemBus(Bank.Number, AddrWidth,
-                             Bank.WordSizeInBytes * 8);
+      Bus = VM->createMemBus(Bank.Number, AddrWidth, Bank.WordSizeInBytes * 8,
+                             Bank.RequireByteEnable);
     }
 
     assert(Bus->getAddrWidth() == AddrWidth
@@ -877,7 +877,10 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   VASTMemoryBus *Bus = getMemBus(PortNum);
 
   // Build the logic to start the transaction.
-  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, Data ? 4 : 3, &I,
+  unsigned NumOperands = Data ? 4 : 3;
+  if (!Bus->requireByteEnable()) NumOperands -= 2;
+
+  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, NumOperands, &I,
                                 VASTSeqInst::Launch);
   unsigned CurSrcIdx = 0;
 
@@ -899,17 +902,21 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   }
 
   // Compute the byte enable.
-  VASTValPtr ByteEn
-    = Builder.getImmediate(getByteEnable(Addr), Bus->getByteEnWdith());
-  Op->addSrc(ByteEn, CurSrcIdx++, Data ? Bus->getWByteEn() : Bus->getRByteEn());
-
-  // Enable the memory bus at the same slot.
-  Op->addSrc(VASTImmediate::True, CurSrcIdx,
-             Data ? Bus->getWEnable() : Bus->getREnable());
+  if (Bus->requireByteEnable()) {
+    VASTValPtr ByteEn
+      = Builder.getImmediate(getByteEnable(Addr), Bus->getByteEnWdith());
+    Op->addSrc(ByteEn, CurSrcIdx++, Data ? Bus->getWByteEn() : Bus->getRByteEn());
+    // Enable the memory bus at the same slot.
+    Op->addSrc(VASTImmediate::True, CurSrcIdx,
+               Data ? Bus->getWEnable() : Bus->getREnable());
+  }
 
   // Read the result of the memory transaction.
   if (Data == 0) {
-    unsigned Latency = getFUDesc<VFUMemBus>()->getReadLatency();
+    // The latency of the read operation is fixed to 1 if the byteenable is not
+    // required.
+    unsigned Latency = Bus->requireByteEnable() ?
+                       getFUDesc<VFUMemBus>()->getReadLatency() : 1;
     // TODO: Enable each pipeline stage individually.
     // Please note that we had already advance 1 slot after we lauch the
     // load/store to disable the load/store. Now we need only wait Latency - 1
