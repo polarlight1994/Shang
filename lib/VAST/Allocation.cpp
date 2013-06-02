@@ -24,42 +24,73 @@
 
 using namespace llvm;
 
-FuncUnitId HLSAllocation::getMemoryPort(const StoreInst &I) const {
+unsigned HLSAllocation::getBlockRAMNum(const StoreInst &I) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
-  return Allocation->getMemoryPort(I);
+  return Allocation->getBlockRAMNum(I);
 }
 
-FuncUnitId HLSAllocation::getMemoryPort(const LoadInst &I) const {
+unsigned HLSAllocation::getBlockRAMNum(const LoadInst &I) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
-  return Allocation->getMemoryPort(I);
+  return Allocation->getBlockRAMNum(I);
 }
 
-FuncUnitId HLSAllocation::getMemoryPort(const GlobalVariable &GV) const {
+unsigned HLSAllocation::getBlockRAMNum(const GlobalVariable &GV) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
-  return Allocation->getMemoryPort(GV);
+  return Allocation->getBlockRAMNum(GV);
 }
 
-FuncUnitId HLSAllocation::getMemoryPort(const Value &V) const {
+unsigned HLSAllocation::getBlockRAMNum(const Value &V) const {
   if (const LoadInst *L = dyn_cast<LoadInst>(&V))
-    return getMemoryPort(*L);
+    return getBlockRAMNum(*L);
 
   if (const StoreInst *S = dyn_cast<StoreInst>(&V))
-    return getMemoryPort(*S);
+    return getBlockRAMNum(*S);
 
   if (const GlobalVariable *G = dyn_cast<GlobalVariable>(&V))
-    return getMemoryPort(*G);
+    return getBlockRAMNum(*G);
 
-  return FuncUnitId();
+  return 0;
 }
 
 ArrayRef<const GlobalVariable*>
-HLSAllocation::getBRAMAllocation(const Function *F) const {
+HLSAllocation::getBlockRAMAllocation(const Function *F) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
-  return Allocation->getBRAMAllocation(F);
+  return Allocation->getBlockRAMAllocation(F);
+}
+
+unsigned HLSAllocation::getMemoryBankNum(const StoreInst &I) const {
+  assert(Allocation
+         && "Allocation didn't call InitializeHLSAllocation in its run method!");
+  return Allocation->getMemoryBankNum(I);
+}
+
+unsigned HLSAllocation::getMemoryBankNum(const LoadInst &I) const {
+  assert(Allocation
+         && "Allocation didn't call InitializeHLSAllocation in its run method!");
+  return Allocation->getMemoryBankNum(I);
+}
+
+unsigned HLSAllocation::getMemoryBankNum(const GlobalVariable &GV) const {
+  assert(Allocation
+         && "Allocation didn't call InitializeHLSAllocation in its run method!");
+  return Allocation->getMemoryBankNum(GV);
+}
+
+unsigned HLSAllocation::getMemoryBankNum(const Value &V) const {
+  if (const LoadInst *L = dyn_cast<LoadInst>(&V))
+    return getMemoryBankNum(*L);
+
+  if (const StoreInst *S = dyn_cast<StoreInst>(&V))
+    return getMemoryBankNum(*S);
+
+  if (const GlobalVariable *G = dyn_cast<GlobalVariable>(&V))
+    return getMemoryBankNum(*G);
+
+  return 0;
 }
 
 void HLSAllocation::getAnalysisUsage(AnalysisUsage &AU) const {
@@ -86,19 +117,15 @@ struct BasicAllocation : public ImmutablePass, public HLSAllocation {
 
   BasicAllocation();
 
-  FuncUnitId getMemoryPort(const LoadInst &I) const {
-    return FuncUnitId(VFUs::MemoryBus, 0);
-  }
+  unsigned getBlockRAMNum(const LoadInst &I) const { return 0;  }
+  unsigned getBlockRAMNum(const StoreInst &I) const { return 0;  }
+  unsigned getBlockRAMNum(const GlobalVariable &GV) const { return 0;  }
 
-  FuncUnitId getMemoryPort(const StoreInst &I) const {
-    return FuncUnitId(VFUs::MemoryBus, 0);
-  }
+  unsigned getMemoryBankNum(const GlobalVariable &GV) const { return 0; }
+  unsigned getMemoryBankNum(const LoadInst &I) const { return 0; }
+  unsigned getMemoryBankNum(const StoreInst &I) const { return 0; }
 
-  FuncUnitId getMemoryPort(const GlobalVariable &GV) const {
-    return FuncUnitId(VFUs::MemoryBus, 0);
-  }
-
-  ArrayRef<const GlobalVariable*> getBRAMAllocation(const Function *F) const {
+  ArrayRef<const GlobalVariable*> getBlockRAMAllocation(const Function *F) const {
     return ArrayRef<const GlobalVariable*>();
   }
 

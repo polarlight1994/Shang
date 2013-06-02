@@ -45,32 +45,29 @@ namespace {
 struct MemoryPartition : public FunctionPass, public HLSAllocation {
   static char ID;
 
-  ValueMap<const Value*, FuncUnitId>  Allocation;
+  ValueMap<const Value*, unsigned>  Allocation;
 
   // Look up the memory port allocation if the pointers are not allocated
   // to the BlockRAM.
-  virtual FuncUnitId getMemoryPort(const LoadInst &I) const {
-    FuncUnitId ID = HLSAllocation::getMemoryPort(I);
+  virtual unsigned getMemoryBankNum(const LoadInst &I) const {
+    if (unsigned Num = Allocation.lookup(I.getPointerOperand()))
+      return Num;
 
-    if (ID.getFUType() == VFUs::BRam) return ID;
-
-    return Allocation.lookup(I.getPointerOperand());
+    return HLSAllocation::getMemoryBankNum(I);
   }
 
-  virtual FuncUnitId getMemoryPort(const StoreInst &I) const {
-    FuncUnitId ID = HLSAllocation::getMemoryPort(I);
+  virtual unsigned getMemoryBankNum(const StoreInst &I) const {
+    if (unsigned Num = Allocation.lookup(I.getPointerOperand()))
+      return Num;
 
-    if (ID.getFUType() == VFUs::BRam) return ID;
-
-    return Allocation.lookup(I.getPointerOperand());
+    return HLSAllocation::getMemoryBankNum(I);
   }
 
-  virtual FuncUnitId getMemoryPort(const GlobalVariable &GV) const {
-    FuncUnitId ID = HLSAllocation::getMemoryPort(GV);
+  virtual unsigned getMemoryBankNum(const GlobalVariable &GV) const {
+    if (unsigned Num = Allocation.lookup(&GV))
+      return Num;
 
-    if (ID.getFUType() == VFUs::BRam) return ID;
-
-    return Allocation.lookup(&GV);
+    return HLSAllocation::getMemoryBankNum(GV);
   }
 
   MemoryPartition() : FunctionPass(ID) {
@@ -144,8 +141,7 @@ bool MemoryPartition::runOnFunction(Function &F) {
     GlobalVariable *GV = I;
 
     // Ignore the block rams that is already assign to block RAM.
-    if (HLSAllocation::getMemoryPort(*GV).getFUType() == VFUs::BRam)
-      continue;
+    if (getBlockRAMNum(*GV)) continue;
 
     // DIRTYHACK: Make sure the GV is aligned.
     GV->setAlignment(std::max(8u, GV->getAlignment()));
@@ -160,9 +156,7 @@ bool MemoryPartition::runOnFunction(Function &F) {
     if (!isLoadStore(Inst)) continue;
 
     // Ignore the block RAM accesses.
-    VFUs::FUTypes T = HLSAllocation::getMemoryPort(*Inst).getFUType();
-
-    if (T == VFUs::BRam) continue;
+    if (getBlockRAMNum(*Inst)) continue;
 
     ++NumMemoryAccess;
 
@@ -197,14 +191,13 @@ bool MemoryPartition::runOnFunction(Function &F) {
 
     // Create the allocation.
     while (!Pointers.empty()) {
-      FuncUnitId Id = FuncUnitId(VFUs::MemoryBus, Num);
       Value *Ptr = Pointers.pop_back_val();
 
       DEBUG(if (GlobalVariable *GV = dyn_cast<GlobalVariable>(Ptr))
               dbgs() << "Assign " << *GV << " to Memory #" << Num << "\n";
       );
 
-      bool inserted = Allocation.insert(std::make_pair(Ptr, Id)).second;
+      bool inserted = Allocation.insert(std::make_pair(Ptr, Num)).second;
       assert(inserted && "Allocation not inserted!");
       (void) inserted;
     }

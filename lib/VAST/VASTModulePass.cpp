@@ -270,17 +270,16 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
     return indexVASTExpr(V, getOrCreateImmediate(Int->getValue()));
 
   if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
-    FuncUnitId ID = Allocation.getMemoryPort(*GV);
     unsigned SizeInBits = getValueSizeInBits(GV);
 
-    if (ID.getFUType() == VFUs::BRam)
+    if (Allocation.getBlockRAMNum(*GV))
       // FIXIME: Calculate the offset of the GV in the block RAM.
       return indexVASTExpr(GV, getOrCreateImmediate(0, SizeInBits));
 
-    assert(ID.getFUType() == VFUs::MemoryBus && "Bad FU type!");
+    unsigned BankNum = Allocation.getMemoryBankNum(*GV);
     const std::string WrapperName = ShangMangle(GV->getName());
-    if (unsigned PortNum = ID.getFUNum()) {
-      VASTMemoryBus *Bus = getMemBus(PortNum);
+    if (BankNum) {
+      VASTMemoryBus *Bus = getMemBus(BankNum);
       unsigned StartOffset = Bus->getStartOffset(GV);
       VASTImmediate *Imm = getOrCreateImmediate(StartOffset, SizeInBits);
       // FIXME: Annotate the GV to the Immediate.
@@ -410,12 +409,12 @@ void VASTModuleBuilder::allocateSubModules() {
   Function &F = VM->getLLVMFunction();
 
   // Allocate the block RAMs.
-  ArrayRef<const GlobalVariable*> GVs = Allocation.getBRAMAllocation(&F);
+  ArrayRef<const GlobalVariable*> GVs = Allocation.getBlockRAMAllocation(&F);
   for (unsigned i = 0; i < GVs.size(); ++i) {
     const GlobalVariable *GV = GVs[i];
-    FuncUnitId ID = Allocation.getMemoryPort(*GV);
-    assert(ID.getFUType() == VFUs::BRam && "Bad block RAM allocation!");
-    emitBlockRAM(ID.getFUNum(), GV);
+    unsigned BRAMNum = Allocation.getBlockRAMNum(*GV);
+    assert(BRAMNum && "Bad block RAM allocation!");
+    emitBlockRAM(BRAMNum, GV);
   }
 
   typedef Module::global_iterator global_iterator;
@@ -423,12 +422,11 @@ void VASTModuleBuilder::allocateSubModules() {
   for (global_iterator I = M->global_begin(), E = M->global_end(); I != E; ++I) {
     GlobalVariable *GV = I;
 
-    FuncUnitId Id = Allocation.getMemoryPort(*GV);
+    unsigned BankNum = Allocation.getMemoryBankNum(*GV);
     // Ignore the block rams that is already assign to block RAM.
-    if (Id.getFUType() != VFUs::MemoryBus || Id.getFUNum() == 0)
-      continue;
+    if (BankNum == 0) continue;
 
-    VASTMemoryBus *Bus = getOrCreateMemBus(Id.getFUNum());
+    VASTMemoryBus *Bus = getOrCreateMemBus(BankNum);
 
     Type *ElemTy = GV->getType()->getElementType();
     unsigned NumElem = 1;
@@ -832,27 +830,25 @@ void VASTModuleBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 }
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
-  FuncUnitId FU = Allocation.getMemoryPort(I);
-  if (FU.getFUType() == VFUs::MemoryBus) {
-    buildMemoryTransaction(I.getPointerOperand(), 0, FU.getFUNum(), I);
+  if (unsigned BRAMNum = Allocation.getBlockRAMNum(I)) {
+    buildBRAMTransaction(I.getPointerOperand(), 0, BRAMNum, I);
     return;
   }
 
-  assert(FU.getFUType() == VFUs::BRam && "Unexpected FU type for memory access!");
-  buildBRAMTransaction(I.getPointerOperand(), 0, FU.getFUNum(), I);
+  unsigned BankNum = Allocation.getMemoryBankNum(I);
+  buildMemoryTransaction(I.getPointerOperand(), 0, BankNum, I);
 }
 
 void VASTModuleBuilder::visitStoreInst(StoreInst &I) {
-  FuncUnitId FU = Allocation.getMemoryPort(I);
-  if (FU.getFUType() == VFUs::MemoryBus) {
-    buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(),
-                           FU.getFUNum(), I);
+  if (unsigned BRAMNum = Allocation.getBlockRAMNum(I)) {
+    buildBRAMTransaction(I.getPointerOperand(), I.getValueOperand(),
+                         BRAMNum, I);
     return;
   }
 
-  assert(FU.getFUType() == VFUs::BRam && "Unexpected FU type for memory access!");
-  buildBRAMTransaction(I.getPointerOperand(), I.getValueOperand(),
-                       FU.getFUNum(), I);
+  unsigned BankNum = Allocation.getMemoryBankNum(I);
+  buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(),
+                          BankNum, I);
 }
 
 //===----------------------------------------------------------------------===//

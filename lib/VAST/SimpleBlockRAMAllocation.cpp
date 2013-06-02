@@ -42,7 +42,7 @@ cl::init(true));
 namespace {
 struct SimpleBlockRAMAllocation : public ModulePass, public HLSAllocation {
   static char ID;
-  ValueMap<const Value*, FuncUnitId> BlockRAMBinding;
+  ValueMap<const Value*, unsigned> BlockRAMBinding;
   typedef ValueMap<const Function*, SmallVector<const GlobalVariable*, 4> >
   BRAMMap;
   BRAMMap AllocatedBRAMs;
@@ -52,27 +52,26 @@ struct SimpleBlockRAMAllocation : public ModulePass, public HLSAllocation {
   }
 
   template<typename T>
-  FuncUnitId getMemoryPortImpl(const T &V) const {
-    FuncUnitId ID = BlockRAMBinding.lookup(&V);
+  unsigned getBlockRAMNumImpl(const T &V) const {
+    if (unsigned Num = BlockRAMBinding.lookup(&V))
+      return Num;
 
-    if (!ID.isTrivial()) return ID;
-
-    return HLSAllocation::getMemoryPort(V);
+    return HLSAllocation::getBlockRAMNum(V);
   }
 
-  FuncUnitId getMemoryPort(const LoadInst &I) const {
-    return getMemoryPortImpl(I);
+  unsigned getBlockRAMNum(const LoadInst &I) const {
+    return getBlockRAMNumImpl(I);
   }
 
-  FuncUnitId getMemoryPort(const StoreInst &I) const {
-    return getMemoryPortImpl(I);
+  unsigned getBlockRAMNum(const StoreInst &I) const {
+    return getBlockRAMNumImpl(I);
   }
 
-  FuncUnitId getMemoryPort(const GlobalVariable &GV) const {
-    return getMemoryPortImpl(GV);
+  unsigned getBlockRAMNum(const GlobalVariable &GV) const {
+    return getBlockRAMNumImpl(GV);
   }
 
-  ArrayRef<const GlobalVariable*> getBRAMAllocation(const Function *F) const {
+  ArrayRef<const GlobalVariable*> getBlockRAMAllocation(const Function *F) const {
     BRAMMap::const_iterator I = AllocatedBRAMs.find(F);
     return I == AllocatedBRAMs.end() ? ArrayRef<const GlobalVariable*>()
                                      : I->second;
@@ -226,13 +225,13 @@ void SimpleBlockRAMAllocation::localizeGV(GlobalVariable *GV) {
   }
 
   // Allocate the FUID for the GV.
-  FuncUnitId ID = FuncUnitId(VFUs::BRam, BlockRAMBinding.size());
-  BlockRAMBinding[GV] = ID;
+  unsigned CurNum = BlockRAMBinding.size() + 1;
+  BlockRAMBinding[GV] = CurNum;
 
   // Remember the assignment for the load/stores.
   while (!Collector.Uses.empty()) {
     Value *V = Collector.Uses.pop_back_val();
-    BlockRAMBinding[V] = ID;
+    BlockRAMBinding[V] = CurNum;
   }
 
   // Remember the allocation for each function.

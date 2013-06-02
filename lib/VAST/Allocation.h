@@ -47,14 +47,20 @@ public:
 
   virtual ~HLSAllocation() {}
 
-  virtual FuncUnitId getMemoryPort(const LoadInst &I) const;
-  virtual FuncUnitId getMemoryPort(const StoreInst &I) const;
-  virtual FuncUnitId getMemoryPort(const GlobalVariable &GV) const;
-
-  FuncUnitId getMemoryPort(const Value &V) const;
+  // Block RAM allocation queries.
+  virtual unsigned getBlockRAMNum(const LoadInst &I) const;
+  virtual unsigned getBlockRAMNum(const StoreInst &I) const;
+  virtual unsigned getBlockRAMNum(const GlobalVariable &GV) const;
+  unsigned getBlockRAMNum(const Value &V) const;
 
   virtual ArrayRef<const GlobalVariable*>
-  getBRAMAllocation(const Function *F) const;
+  getBlockRAMAllocation(const Function *F) const;
+
+  // Memory Bank allocation queries.
+  virtual unsigned getMemoryBankNum(const GlobalVariable &GV) const;
+  virtual unsigned getMemoryBankNum(const LoadInst &I) const;
+  virtual unsigned getMemoryBankNum(const StoreInst &I) const;
+  unsigned getMemoryBankNum(const Value &V) const;
 };
 }
 
