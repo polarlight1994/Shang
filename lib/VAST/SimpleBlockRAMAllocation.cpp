@@ -13,6 +13,7 @@
 
 #include "Allocation.h"
 
+#include "shang/Utilities.h"
 #include "shang/Passes.h"
 #include "shang/FUInfo.h"
 
@@ -85,7 +86,7 @@ struct SimpleBlockRAMAllocation : public ModulePass, public HLSAllocation {
 };
 
 struct GVUseCollector {
-  SmallVector<Value*, 8> Uses;
+  SmallVector<Instruction*, 8> Uses;
   // Modify information, Is the GV written in a function?
   DenseSet<const Function*> WrittenFunctions;
   DenseSet<const Function*> VisitedFunctions;
@@ -97,11 +98,11 @@ struct GVUseCollector {
         return true;
         // The pointer must use as pointer operand in load/store.
       case Instruction::Load:
-        Uses.push_back(ValUser);
+        Uses.push_back(I);
         VisitedFunctions.insert(I->getParent()->getParent());
         return cast<LoadInst>(I)->getPointerOperand() == V;
       case Instruction::Store:
-        Uses.push_back(ValUser);
+        Uses.push_back(I);
         WrittenFunctions.insert(I->getParent()->getParent());
         VisitedFunctions.insert(I->getParent()->getParent());
         return cast<StoreInst>(I)->getPointerOperand() == V;
@@ -231,8 +232,8 @@ void SimpleBlockRAMAllocation::localizeGV(GlobalVariable *GV) {
 
   // Remember the assignment for the load/stores.
   while (!Collector.Uses.empty()) {
-    Value *V = Collector.Uses.pop_back_val();
-    Binding[V] = CurNum;
+    Instruction *I = Collector.Uses.pop_back_val();
+    Binding[getPointerOperand(I)] = CurNum;
   }
 
   ++NumLocalizedGV;
