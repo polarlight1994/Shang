@@ -476,6 +476,9 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
       DEBUG(dbgs() << "Write initializer: " << CurByteAddr << '\n');
       Buffer.clear();
     }
+
+    // Print the information about the globalvariable in the memory.
+    OS << "/* Offset: " << StartOffset << ' ' << *GV << "*/\n";
   }
 
   padZeroToByteAddr(InitFileO, CurByteAddr, CurrentOffset, WordSizeInByte);
@@ -546,7 +549,7 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
     // Verify the addresses.
     OS << "if (" << WAddr->getName() << "_selector_wire"
        << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true)
-       << ">= "<< NumWords <<") $finish(\"Read access out of bound!\");\n";
+       << ">= "<< NumWords <<") $finish(\"Write access out of bound!\");\n";
     if (ByteAddrWidth)
       OS << "if (" << WAddr->getName() << "_selector_wire"
          << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
