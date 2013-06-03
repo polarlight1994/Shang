@@ -172,9 +172,11 @@ foreach_in_collection path $worst_paths {
   post_message -type info "Worst slack: $worst_slack"
 }
 set slack_threshold [expr $worst_slack * 0.9]
+
+set report_path_info 0
 ''',
     script_on_path = '''
-if { %(cnd_string)s } {
+if { $report_path_info && (%(cnd_string)s) } {
     set fail_paths [get_timing_paths %(path_fileter)s -setup -npaths 1 -less_than_slack $slack_threshold ]
     foreach_in_collection path $fail_paths {
       set slack [get_path_info $path -slack]
