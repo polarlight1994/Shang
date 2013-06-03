@@ -526,8 +526,8 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
 
     if (ByteAddrWidth) {
       OS << "if (" << RAddr->getName() << "_selector_wire"
-         << VASTValue::printBitRange(ByteAddrWidth, 0) << " != " << ByteAddrWidth
-         << "'b0) $finish(\"Read access out of bound!\");\n";
+         << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
+         << ByteAddrWidth << "'b0) $finish(\"Read access out of bound!\");\n";
     }
 
     OS.exit_block();
@@ -549,8 +549,8 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
        << ">= "<< NumWords <<") $finish(\"Read access out of bound!\");\n";
     if (ByteAddrWidth)
       OS << "if (" << WAddr->getName() << "_selector_wire"
-         << VASTValue::printBitRange(ByteAddrWidth, 0) << " != " << ByteAddrWidth
-         << "'b0) $finish(\"Write access out of bound!\");\n";
+         << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
+         << ByteAddrWidth << "'b0) $finish(\"Write access out of bound!\");\n";
     OS.exit_block();
   }
 
