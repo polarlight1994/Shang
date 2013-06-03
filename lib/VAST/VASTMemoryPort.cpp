@@ -478,7 +478,8 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
     }
 
     // Print the information about the globalvariable in the memory.
-    OS << "/* Offset: " << StartOffset << ' ' << *GV << "*/\n";
+    OS << "/* Offset: " << StartOffset << ' ' << *GV->getType() << ' '
+       << GV->getName() << "*/\n";
   }
 
   padZeroToByteAddr(InitFileO, CurByteAddr, CurrentOffset, WordSizeInByte);
