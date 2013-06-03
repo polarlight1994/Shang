@@ -519,28 +519,7 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
        << ' ' << getArrayName() << "[" << RAddr->getName() << "_selector_wire"
        << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
 
-    OS.exit_block();
-  }
-
-  // Print the write port.
-  VASTSelector *WAddr = getWAddr();
-  if (!WAddr->empty()) {
-    OS.if_begin(Twine(WAddr->getName()) + "_selector_enable");
-    OS << ' ' << getArrayName() << "[" << WAddr->getName() << "_selector_wire"
-      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ']'
-      << " <= " << getWData()->getName() << "_selector_wire"
-      << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
-    OS.exit_block();
-  }
-
-  OS << "// synthesis translate_off\n";
-  for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
-    VASTSelector *V = *I;
-    V->verifyAssignCnd(OS, Mod);
-  }
-
-  // Verify the addresses.
-  if (!RAddr->empty()) {
+    // Verify the addresses.
     OS << "if (" << RAddr->getName() << "_selector_wire"
        << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true)
        << ">= "<< NumWords <<") $finish(\"Read access out of bound!\");\n";
@@ -550,16 +529,35 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
          << VASTValue::printBitRange(ByteAddrWidth, 0) << " != " << ByteAddrWidth
          << "'b0) $finish(\"Read access out of bound!\");\n";
     }
+
+    OS.exit_block();
   }
 
+  // Print the write port.
+  VASTSelector *WAddr = getWAddr();
   if (!WAddr->empty()) {
+    OS.if_begin(Twine(WAddr->getName()) + "_selector_enable");
+
+    OS << ' ' << getArrayName() << "[" << WAddr->getName() << "_selector_wire"
+       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ']'
+       << " <= " << getWData()->getName() << "_selector_wire"
+       << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
+
+    // Verify the addresses.
     OS << "if (" << WAddr->getName() << "_selector_wire"
-        << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true)
-        << ">= "<< NumWords <<") $finish(\"Read access out of bound!\");\n";
+       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true)
+       << ">= "<< NumWords <<") $finish(\"Read access out of bound!\");\n";
     if (ByteAddrWidth)
       OS << "if (" << WAddr->getName() << "_selector_wire"
          << VASTValue::printBitRange(ByteAddrWidth, 0) << " != " << ByteAddrWidth
          << "'b0) $finish(\"Write access out of bound!\");\n";
+    OS.exit_block();
+  }
+
+  OS << "// synthesis translate_off\n";
+  for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
+    VASTSelector *V = *I;
+    V->verifyAssignCnd(OS, Mod);
   }
 
   OS << "// synthesis translate_on\n\n";
