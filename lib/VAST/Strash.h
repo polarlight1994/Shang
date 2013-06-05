@@ -20,13 +20,13 @@
 #include "llvm/ADT/DenseMap.h"
 
 namespace llvm {
-class StrashTable;
+struct Strash;
 class CachedStrashTable : public VASTModulePass {
 public:
   typedef DenseMap<VASTValPtr, unsigned> CacheTy;
 private:
   CacheTy Cache;
-  StrashTable *Strash;
+  Strash *Table;
 public:
   static char ID;
 

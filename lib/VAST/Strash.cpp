@@ -26,7 +26,7 @@
 using namespace llvm;
 
 namespace llvm {
-class StrashTable : public ImmutablePass {
+class StrashTable {
   typedef CachedStrashTable::CacheTy CacheTy;
 
   struct Node : public FoldingSetNode {
@@ -53,9 +53,7 @@ class StrashTable : public ImmutablePass {
   void calculateID(VASTValPtr Ptr, FoldingSetNodeID &ID, CacheTy &Cache);
 
 public:
-  static char ID;
-
-  StrashTable();
+  StrashTable() : LastID(0) {}
 
   unsigned getOrCreateStrashID(VASTValPtr Ptr, CacheTy &Cache);
 };
@@ -76,6 +74,14 @@ template<> struct FoldingSetTrait<StrashTable::Node> {
     return X.FastID.ComputeHash();
   }
 };
+
+struct Strash : public ImmutablePass {
+  static char ID;
+  StrashTable Table;
+  Strash();
+};
+
+void initializeStrashPass(PassRegistry &Registry);
 }
 
 void StrashTable::calculateLeafID(VASTValue *Ptr, FoldingSetNodeID &ID) {
@@ -159,13 +165,13 @@ unsigned StrashTable::getOrCreateStrashID(VASTValPtr Ptr, CacheTy &Cache) {
   return NodeId;
 }
 
-StrashTable::StrashTable() : ImmutablePass(ID), LastID(0) {
-  initializeStrashTablePass(*PassRegistry::getPassRegistry());
+Strash::Strash() : ImmutablePass(ID) {
+  initializeStrashPass(*PassRegistry::getPassRegistry());
 }
 
-char StrashTable::ID = 0;
+char Strash::ID = 0;
 
-INITIALIZE_PASS(StrashTable, "shang-strash",
+INITIALIZE_PASS(Strash, "shang-strash",
                 "The structural hash table for the datapath nodes",
                 false, true)
 
@@ -175,7 +181,7 @@ char CachedStrashTable::ID = 0;
 INITIALIZE_PASS_BEGIN(CachedStrashTable, "shang-cached-strash",
                       "The structural hash table for the datapath nodes",
                       false, true)
-  INITIALIZE_PASS_DEPENDENCY(StrashTable);
+  INITIALIZE_PASS_DEPENDENCY(Strash);
 INITIALIZE_PASS_END(CachedStrashTable, "shang-cached-strash",
                     "The structural hash table for the datapath nodes",
                     false, true)
@@ -186,12 +192,12 @@ CachedStrashTable::CachedStrashTable() : VASTModulePass(ID) {
 
 void CachedStrashTable::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
-  AU.addRequiredTransitive<StrashTable>();
+  AU.addRequiredTransitive<Strash>();
   AU.setPreservesAll();
 }
 
 bool CachedStrashTable::runOnVASTModule(VASTModule &VM) {
-  Strash = &getAnalysis<StrashTable>();
+  Table = &getAnalysis<Strash>();
   return false;
 }
 
@@ -200,5 +206,5 @@ void CachedStrashTable::releaseMemory() {
 }
 
 unsigned CachedStrashTable::getOrCreateStrashID(VASTValPtr Ptr) {
-  return Strash->getOrCreateStrashID(Ptr, Cache);
+  return Table->Table.getOrCreateStrashID(Ptr, Cache);
 }
