@@ -20,6 +20,7 @@
 #define VAST_SCHEDULING_H
 
 #include "shang/VASTSeqOp.h"
+#include "shang/VASTModulePass.h"
 
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/BasicBlock.h"
@@ -528,6 +529,63 @@ struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {
 
   static nodes_iterator nodes_end(VASTSchedGraph *G) {
     return G->end();
+  }
+};
+
+class TimingNetlist;
+
+class Loop;
+class LoopInfo;
+class BranchProbabilityInfo;
+class DominatorTree;
+
+class VASTScheduling : public VASTModulePass {
+  // Mapping between LLVM IR and VAST IR.
+  typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
+  IR2SUMapTy IR2SUMap;
+  typedef std::map<Argument*, VASTSeqValue*> ArgMapTy;
+  ArgMapTy ArgMap;
+
+  VASTSchedGraph *G;
+  TimingNetlist *TNL;
+  VASTModule *VM;
+
+  // Analysis for the scheduler
+  AliasAnalysis *AA;
+  LoopInfo *LI;
+  BranchProbabilityInfo *BPI;
+  DominatorTree *DT;
+
+  VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
+
+  void buildFlowDependencies(VASTSelector *Dst, VASTValue *FI, VASTSeqValue *Src,
+    VASTSchedUnit *U);
+  void buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);
+  void buildFlowDependencies(VASTSchedUnit *U);
+  void buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U);
+  VASTSchedUnit *getFlowDepSU(Value *V);
+
+  void preventInfinitUnrolling(Loop *L);
+  void preventImplicitPipelining(Loop *L);
+  void fixSchedulingGraph();
+
+  void buildSchedulingGraph();
+  void buildSchedulingUnits(VASTSlot *S);
+
+  void scheduleGlobal();
+public:
+  static char ID;
+  VASTScheduling();
+
+  void getAnalysisUsage(AnalysisUsage &AU) const;
+
+  bool runOnVASTModule(VASTModule &VM);
+
+  void releaseMemory() {
+    IR2SUMap.clear();
+    ArgMap.clear();
+    G = 0;
+    TNL = 0;
   }
 };
 }

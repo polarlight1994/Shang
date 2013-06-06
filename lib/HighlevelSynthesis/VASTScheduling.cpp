@@ -294,66 +294,21 @@ ArrayRef<VASTSchedUnit*> VASTSchedGraph::getSUInBB(BasicBlock *BB) const {
 }
 
 //===----------------------------------------------------------------------===//
-namespace {
-struct VASTScheduling : public VASTModulePass {
-  static char ID;
-  typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
-  IR2SUMapTy IR2SUMap;
-  typedef std::map<Argument*, VASTSeqValue*> ArgMapTy;
-  ArgMapTy ArgMap;
+char VASTScheduling::ID = 0;
 
-  VASTSchedGraph *G;
-  TimingNetlist *TNL;
-  VASTModule *VM;
-  AliasAnalysis *AA;
-  LoopInfo *LI;
-  BranchProbabilityInfo *BPI;
-  DominatorTree *DT;
-
-  VASTScheduling() : VASTModulePass(ID) {
-    initializeVASTSchedulingPass(*PassRegistry::getPassRegistry());
-  }
-
-  void getAnalysisUsage(AnalysisUsage &AU) const {
-    VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequiredID(BasicBlockTopOrderID);
-    AU.addRequired<TimingNetlist>();
-    AU.addRequired<AliasAnalysis>();
-    AU.addRequired<DominatorTree>();
-    AU.addRequired<LoopInfo>();
-    AU.addRequired<BranchProbabilityInfo>();
-  }
-
-  VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
-
-  void buildFlowDependencies(VASTSelector *Dst, VASTValue *FI, VASTSeqValue *Src,
-                             VASTSchedUnit *U);
-  void buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);
-  void buildFlowDependencies(VASTSchedUnit *U);
-  void buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U);
-  VASTSchedUnit *getFlowDepSU(Value *V);
-
-  void preventInfinitUnrolling(Loop *L);
-  void preventImplicitPipelining(Loop *L);
-  void fixSchedulingGraph();
-
-  void buildSchedulingGraph();
-  void buildSchedulingUnits(VASTSlot *S);
-
-  void scheduleGlobal();
-
-  bool runOnVASTModule(VASTModule &VM);
-
-  void releaseMemory() {
-    IR2SUMap.clear();
-    ArgMap.clear();
-    G = 0;
-    TNL = 0;
-  }
-};
+VASTScheduling::VASTScheduling() : VASTModulePass(ID) {
+  initializeVASTSchedulingPass(*PassRegistry::getPassRegistry());
 }
 
-char VASTScheduling::ID = 0;
+void VASTScheduling::getAnalysisUsage(AnalysisUsage &AU) const  {
+  VASTModulePass::getAnalysisUsage(AU);
+  AU.addRequiredID(BasicBlockTopOrderID);
+  AU.addRequired<TimingNetlist>();
+  AU.addRequired<AliasAnalysis>();
+  AU.addRequired<DominatorTree>();
+  AU.addRequired<LoopInfo>();
+  AU.addRequired<BranchProbabilityInfo>();
+}
 
 INITIALIZE_PASS_BEGIN(VASTScheduling,
                       "vast-scheduling", "Perfrom Scheduling on the VAST",
