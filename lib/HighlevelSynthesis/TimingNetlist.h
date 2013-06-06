@@ -24,24 +24,23 @@ namespace llvm {
 class VASTSelector;
 class VASTSeqValue;
 class VASTValue;
-class CachedSequashTable;
 
 /// Timinging Netlist - Annotate the timing information to the RTL netlist.
 class TimingNetlist : public VASTModulePass {
 public:
   typedef float delay_type;
   // TODO: For each bitslice of the source, allocate a delay record!
-  typedef std::map<unsigned, delay_type> SrcDelayInfo;
+  typedef std::map<VASTValue*, delay_type> SrcDelayInfo;
   typedef SrcDelayInfo::value_type SrcEntryTy;
   typedef SrcDelayInfo::const_iterator src_iterator;
   typedef SrcDelayInfo::const_iterator const_src_iterator;
 
-  typedef std::map<unsigned, SrcDelayInfo> PathDelayInfo;
+  typedef std::map<VASTValue*, SrcDelayInfo> PathDelayInfo;
   typedef PathDelayInfo::value_type PathTy;
   typedef PathDelayInfo::iterator path_iterator;
   typedef PathDelayInfo::const_iterator const_path_iterator;
 
-  typedef std::map<unsigned, SrcDelayInfo> FaninDelayInfo;
+  typedef std::map<VASTSelector*, SrcDelayInfo> FaninDelayInfo;
   typedef FaninDelayInfo::value_type FaninTy;
   typedef FaninDelayInfo::iterator fanin_iterator;
   typedef FaninDelayInfo::const_iterator const_fanin_iterator;
@@ -55,7 +54,6 @@ public:
   void buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst, delay_type MUXDelay);
   bool performExternalAnalysis(VASTModule &VM);
 
-  CachedSequashTable *CachedSequash;
 public: 
   static char ID;
 
@@ -64,6 +62,28 @@ public:
   delay_type getDelay(VASTValue *Src, VASTSelector *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTSelector *Dst) const;
+
+  // Iterate over the source node reachable to DstReg.
+  src_iterator src_begin(VASTValue *Dst) const {
+    const_path_iterator at = PathInfo.find(Dst);
+    assert(at != PathInfo.end() && "DstReg not find!");
+    return at->second.begin();
+  }
+
+  src_iterator src_end(VASTValue *Dst) const {
+    const_path_iterator at = PathInfo.find(Dst);
+    assert(at != PathInfo.end() && "DstReg not find!");
+    return at->second.end();
+  }
+
+  bool src_empty(VASTValue *Dst) const {
+    return !PathInfo.count(Dst);
+  }
+
+  const SrcDelayInfo *getSrcInfo(VASTValue *Dst) const {
+    const_path_iterator at = PathInfo.find(Dst);
+    return at != PathInfo.end() ? &at->second : 0;
+  }
 
   path_iterator path_begin() { return PathInfo.begin(); }
   const_path_iterator path_begin() const { return PathInfo.begin(); }

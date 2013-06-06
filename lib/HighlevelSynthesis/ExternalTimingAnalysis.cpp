@@ -176,13 +176,11 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
   bool readTimingAnalysisResult(const sys::Path &ResultPath);
 
   SrcDelayInfo &getOrCreateSrcDelayInfo(VASTValue *Src) {
-    return PathDelay[CachedSequash->getOrCreateSequashID(Src)];
+    return PathDelay[Src];
   }
 
-  ExternalTimingAnalysis(VASTModule &VM, TimingNetlist::PathDelayInfo &PathInfo,
-                         CachedSequashTable *CachedSequash)
-    : TimingEstimatorBase(PathInfo, TimingEstimatorBase::ZeroDelay, CachedSequash),
-      VM(VM) {}
+  ExternalTimingAnalysis(VASTModule &VM, TimingNetlist::PathDelayInfo &PathInfo)
+    : TimingEstimatorBase(PathInfo, TimingEstimatorBase::ZeroDelay), VM(VM) {}
 
   bool analysisWithSynthesisTool();
 
@@ -202,16 +200,14 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
     typedef SrcInfo::const_iterator iterator;
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       float delay = *I->second;
-      unsigned SrcID = CachedSequash->getOrCreateSequashID(I->first);
-      updateDelay(CurInfo, SrcEntryTy(SrcID, delay_type(delay)));
+      updateDelay(CurInfo, SrcEntryTy(I->first, delay_type(delay)));
     }
 
     // Also accumulate the delay from the operands.
     typedef VASTExpr::op_iterator op_iterator;
     for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
       VASTValue *Op = VASTValPtr(*I).get();
-      unsigned OpID = CachedSequash->getOrCreateSequashID(Op);
-      const SrcDelayInfo *OpSrcs = getPathTo(OpID);
+      const SrcDelayInfo *OpSrcs = getPathTo(Op);
 
       if (OpSrcs == 0) continue;
 
@@ -233,7 +229,7 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
     I->setPrintSelModule();
 
-  ExternalTimingAnalysis ETA(VM, PathInfo, CachedSequash);
+  ExternalTimingAnalysis ETA(VM, PathInfo);
 
   // Run the synthesis tool to get the arrival time estimation.
   if (!ETA.analysisWithSynthesisTool()) return false;

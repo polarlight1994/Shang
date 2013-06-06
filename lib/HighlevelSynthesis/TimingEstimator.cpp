@@ -19,14 +19,12 @@
 
 using namespace llvm;
 
-TimingEstimatorBase::TimingEstimatorBase(PathDelayInfo &PathDelay, ModelType T,
-                                         CachedSequashTable *CachedSequash)
-  : CachedSequash(CachedSequash), PathDelay(PathDelay), T(T) {}
+TimingEstimatorBase::TimingEstimatorBase(PathDelayInfo &PathDelay, ModelType T)
+  : PathDelay(PathDelay), T(T) {}
 
 void TimingEstimatorBase::estimateTimingOnCone(VASTExpr *Root) {
-  // The entire tree had been visited or the root is some trivial node.
-  unsigned RootID = CachedSequash->getOrCreateSequashID(Root);
-  if (hasPathInfo(RootID)) return;
+  // The entire tree had been visited or the root is some trivial node..
+  if (hasPathInfo(Root)) return;
 
   typedef VASTOperandList::op_iterator ChildIt;
   std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
@@ -55,8 +53,7 @@ void TimingEstimatorBase::estimateTimingOnCone(VASTExpr *Root) {
     ++VisitStack.back().second;
 
     // We had already build the delay information to this node.
-    unsigned ChildID = CachedSequash->getOrCreateSequashID(ChildNode);
-    if (hasPathInfo(ChildID)) continue;
+    if (hasPathInfo(ChildNode)) continue;
 
     if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode))
       VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
