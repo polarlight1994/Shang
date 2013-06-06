@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "LangSteam.h"
+#include "shang/Strash.h"
 #include "shang/VASTHandle.h"
 #include "shang/VASTDatapathNodes.h"
 #include "shang/VASTModule.h"
@@ -159,6 +160,76 @@ void VASTModule::printRegisterBlocks(raw_ostream &OS) const {
   O.enter_block("\n", "");
   printRegisterBlocks(O);
   O.exit_block("\n", "");
+}
+
+namespace {
+struct Namer {
+  CachedStrashTable *Strash;
+  StringSet<> &Names;
+  Namer(CachedStrashTable *Strash, StringSet<> &Names)
+    : Strash(Strash), Names(Names) {}
+
+  void nameExpr(VASTExpr *Expr) {
+    unsigned StrashID = Strash->getOrCreateStrashID(Expr);
+    StringSet<>::MapEntryTy &Entry
+      = Names.GetOrCreateValue("t" + utostr_32(StrashID) + "t");
+    Expr->nameExpr(Entry.getKeyData());
+  }
+
+  void operator()(VASTNode *N) {
+    VASTExpr *Expr = dyn_cast<VASTExpr>(N);
+
+    if (Expr == 0) return;
+
+    nameExpr(Expr);
+  }
+};
+}
+
+void VASTModule::nameDatapath(StringSet<> &Names, CachedStrashTable *Strash) {
+  Namer N(Strash, Names);
+  std::set<VASTExpr*> Visited;
+
+  for (slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
+    const VASTSlot *S = SI;
+
+    typedef VASTSlot::const_op_iterator op_iterator;
+
+    // Print the logic of the datapath used by the SeqOps.
+    for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
+      VASTSeqOp *L = *I;
+
+      typedef VASTOperandList::op_iterator op_iterator;
+      for (op_iterator OI = L->op_begin(), OE = L->op_end(); OI != OE; ++OI) {
+        VASTValue *V = OI->unwrap().get();
+        if (VASTExpr *Expr = dyn_cast<VASTExpr>(V))
+          Expr->visitConeTopOrder(Visited, N);
+      }
+    }
+  }
+
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = selector_begin(), E = selector_end(); I != E; ++I) {
+    VASTSelector *Sel = I;
+    if (!Sel->isSelectorSynthesized()) continue;
+
+    typedef VASTSelector::fanin_iterator fanin_iterator;
+    for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
+         I != E; ++I){
+      const VASTSelector::Fanin *FI = *I;
+      VASTValue *FIVal = FI->FI.unwrap().get();
+      if (VASTExpr *Expr = dyn_cast<VASTExpr>(FIVal))
+        Expr->visitConeTopOrder(Visited, N);
+      VASTValue *FICnd = FI->Cnd.unwrap().get();
+      if (VASTExpr *Expr = dyn_cast<VASTExpr>(FICnd))
+        Expr->visitConeTopOrder(Visited, N);
+    }
+
+    VASTValue *SelEnable = Sel->getEnable().get();
+    if (VASTExpr *Expr = dyn_cast<VASTExpr>(SelEnable))
+      Expr->visitConeTopOrder(Visited, N);
+  }
+
 }
 
 void VASTModule::gc() {

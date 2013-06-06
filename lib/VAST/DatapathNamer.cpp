@@ -28,7 +28,6 @@ using namespace llvm;
 namespace {
 struct DatapathNamer : public VASTModulePass {
   static char ID;
-  CachedStrashTable *Strash;
   StringSet<> Names;
 
   DatapathNamer() : VASTModulePass(ID) {
@@ -45,22 +44,6 @@ struct DatapathNamer : public VASTModulePass {
 
   void releaseMemory() {
     Names.clear();
-    Strash = 0;
-  }
-
-  void nameExpr(VASTExpr *Expr) {
-    unsigned StrashID = Strash->getOrCreateStrashID(Expr);
-    StringSet<>::MapEntryTy &Entry
-      = Names.GetOrCreateValue("t" + utostr_32(StrashID) + "t");
-    Expr->nameExpr(Entry.getKeyData());
-  }
-
-  void operator()(VASTNode *N) {
-    VASTExpr *Expr = dyn_cast<VASTExpr>(N);
-
-    if (Expr == 0) return;
-
-    nameExpr(Expr);
   }
 };
 }
@@ -74,50 +57,7 @@ char DatapathNamer::ID = 0;
 char &llvm::DatapathNamerID = DatapathNamer::ID;
 
 bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
-  Strash = &getAnalysis<CachedStrashTable>();
-  std::set<VASTExpr*> Visited;
-
-  typedef VASTModule::const_slot_iterator slot_iterator;
-
-  for (slot_iterator SI = VM.slot_begin(), SE = VM.slot_end(); SI != SE; ++SI) {
-    const VASTSlot *S = SI;
-
-    typedef VASTSlot::const_op_iterator op_iterator;
-
-    // Print the logic of the datapath used by the SeqOps.
-    for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
-      VASTSeqOp *L = *I;
-
-      typedef VASTOperandList::op_iterator op_iterator;
-      for (op_iterator OI = L->op_begin(), OE = L->op_end(); OI != OE; ++OI) {
-        VASTValue *V = OI->unwrap().get();
-        if (VASTExpr *Expr = dyn_cast<VASTExpr>(V))
-          Expr->visitConeTopOrder(Visited, *this);
-      }
-    }
-  }
-
-  typedef VASTModule::selector_iterator iterator;
-  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
-    VASTSelector *Sel = I;
-    if (!Sel->isSelectorSynthesized()) continue;
-
-    typedef VASTSelector::fanin_iterator fanin_iterator;
-    for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
-         I != E; ++I){
-      const VASTSelector::Fanin *FI = *I;
-      VASTValue *FIVal = FI->FI.unwrap().get();
-      if (VASTExpr *Expr = dyn_cast<VASTExpr>(FIVal))
-        Expr->visitConeTopOrder(Visited, *this);
-      VASTValue *FICnd = FI->Cnd.unwrap().get();
-      if (VASTExpr *Expr = dyn_cast<VASTExpr>(FICnd))
-        Expr->visitConeTopOrder(Visited, *this);
-    }
-
-    VASTValue *SelEnable = Sel->getEnable().get();
-    if (VASTExpr *Expr = dyn_cast<VASTExpr>(SelEnable))
-      Expr->visitConeTopOrder(Visited, *this);
-  }
-
+  CachedStrashTable &Strash = getAnalysis<CachedStrashTable>();
+  VM.nameDatapath(Names, &Strash);
   return false;
 }

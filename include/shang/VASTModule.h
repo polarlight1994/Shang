@@ -22,6 +22,7 @@
 #include "shang/FUInfo.h"
 
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringSet.h"
 
 #include <map>
 
@@ -35,6 +36,7 @@ class VASTSeqInst;
 class DatapathContainer;
 class VASTExprBuilder;
 class VASTMemoryBus;
+class CachedStrashTable;
 class vlang_raw_ostream;
 
 class VASTPort : public VASTNode {
@@ -335,6 +337,9 @@ public:
   unsigned num_seqvals() const { return SeqVals.size(); }
 
   void print(raw_ostream &OS) const;
+
+  /// Assign name to the nodes in datapath.
+  void nameDatapath(StringSet<> &Names, CachedStrashTable *Strash);
 
   /// Perform the Garbage Collection to release the dead objects on the
   /// VASTModule
