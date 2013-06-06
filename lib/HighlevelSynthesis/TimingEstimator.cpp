@@ -23,26 +23,22 @@ TimingEstimatorBase::TimingEstimatorBase(PathDelayInfo &PathDelay, ModelType T,
                                          CachedSequashTable *CachedSequash)
   : CachedSequash(CachedSequash), PathDelay(PathDelay), T(T) {}
 
-void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
-  VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
-
-  assert(L && "Root is not a datapath node!");
-
+void TimingEstimatorBase::estimateTimingOnCone(VASTExpr *Root) {
   // The entire tree had been visited or the root is some trivial node.
   unsigned RootID = CachedSequash->getOrCreateSequashID(Root);
   if (hasPathInfo(RootID)) return;
 
   typedef VASTOperandList::op_iterator ChildIt;
-  std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
+  std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
 
-  VisitStack.push_back(std::make_pair(Root, L->op_begin()));
+  VisitStack.push_back(std::make_pair(Root, Root->op_begin()));
 
   while (!VisitStack.empty()) {
-    VASTValue *Node = VisitStack.back().first;
+    VASTExpr *Node = VisitStack.back().first;
     ChildIt It = VisitStack.back().second;
 
     // We have visited all children of current node.
-    if (It == VASTOperandList::GetDatapathOperandList(Node)->op_end()) {
+    if (It == Node->op_end()) {
       VisitStack.pop_back();
 
       // Accumulate the delay of the current node from all the source.
@@ -62,8 +58,8 @@ void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
     unsigned ChildID = CachedSequash->getOrCreateSequashID(ChildNode);
     if (hasPathInfo(ChildID)) continue;
 
-    if (VASTOperandList *L = VASTOperandList::GetDatapathOperandList(ChildNode))
-      VisitStack.push_back(std::make_pair(ChildNode, L->op_begin()));
+    if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode))
+      VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
   }
 }
 

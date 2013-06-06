@@ -129,10 +129,10 @@ std::string VASTValue::printBitRange(unsigned UB, unsigned LB, bool printOneBit)
 bool VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
   VASTValue *Root = this;
 
-  std::set<VASTOperandList*> Visited;
-  VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
+  std::set<VASTExpr*> Visited;
+  VASTExpr *Expr = dyn_cast<VASTExpr>(Root);
   // The entire tree had been visited.
-  if (!L) {
+  if (Expr == 0) {
     // If ChildNode is a not data-path operand list, it may be the SeqVal.
     if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Root))
       SeqVals.insert(SeqVal);
@@ -149,16 +149,16 @@ bool VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
   }
 
   typedef VASTOperandList::op_iterator ChildIt;
-  std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
+  std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
 
-  VisitStack.push_back(std::make_pair(Root, L->op_begin()));
+  VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
 
   while (!VisitStack.empty()) {
-    VASTValue *Node = VisitStack.back().first;
+    VASTExpr *Node = VisitStack.back().first;
     ChildIt It = VisitStack.back().second;
 
     // We have visited all children of current node.
-    if (It == VASTOperandList::GetDatapathOperandList(Node)->op_end()) {
+    if (It == Node->op_end()) {
       VisitStack.pop_back();
       continue;
     }
@@ -167,11 +167,11 @@ bool VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
     VASTValue *ChildNode = It->unwrap().get();
     ++VisitStack.back().second;
 
-    if (VASTOperandList *L = VASTOperandList::GetDatapathOperandList(ChildNode)) {
+    if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
       // ChildNode has a name means we had already visited it.
-      if (!Visited.insert(L).second) continue;
+      if (!Visited.insert(ChildExpr).second) continue;
 
-      VisitStack.push_back(std::make_pair(ChildNode, L->op_begin()));
+      VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
     }
 
     // If ChildNode is a not data-path operand list, it may be the SeqVal.
@@ -479,7 +479,7 @@ struct DatapathPrinter {
 }
 
 void VASTModule::printDatapath(raw_ostream &OS) const{
-  std::set<VASTOperandList*> Visited;
+  std::set<VASTExpr*> Visited;
   DatapathPrinter Printer(OS);
 
   for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
@@ -488,7 +488,8 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
     typedef VASTSlot::const_op_iterator op_iterator;
 
     // Write the expression of the slot ready signal.
-    VASTOperandList::visitTopOrder(S->getActive().get(), Visited, Printer);
+    if (VASTExpr *Expr = dyn_cast<VASTExpr>(S->getActive().get()))
+      Expr->visitConeTopOrder(Visited, Printer);
 
     OS << "\n// At slot " << S->SlotNum;
     if (BasicBlock *BB = S->getParent()) OS << ", BB: " << BB->getName();
@@ -500,8 +501,8 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
 
       typedef VASTOperandList::op_iterator op_iterator;
       for (op_iterator OI = L->op_begin(), OE = L->op_end(); OI != OE; ++OI) {
-        VASTValue *V = OI->unwrap().get();
-        VASTOperandList::visitTopOrder(V, Visited, Printer);
+        if (VASTExpr *Expr = dyn_cast<VASTExpr>(OI->unwrap().get()))
+          Expr->visitConeTopOrder(Visited, Printer);
       }
 
       OS << "/* ";
@@ -522,14 +523,17 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
       I != E; ++I){
         const VASTSelector::Fanin *FI = *I;
         VASTValue *FIVal = FI->FI.unwrap().get();
-        VASTOperandList::visitTopOrder(FIVal, Visited, Printer);
+        if (VASTExpr *Expr = dyn_cast<VASTExpr>(FIVal))
+          Expr->visitConeTopOrder(Visited, Printer);
 
         VASTValue *FICnd = FI->Cnd.unwrap().get();
-        VASTOperandList::visitTopOrder(FICnd, Visited, Printer);
+        if (VASTExpr *Expr = dyn_cast<VASTExpr>(FICnd))
+          Expr->visitConeTopOrder(Visited, Printer);
     }
 
     VASTValue *SelEnable = Sel->getEnable().get();
-    VASTOperandList::visitTopOrder(SelEnable, Visited, Printer);
+    if (VASTExpr *Expr = dyn_cast<VASTExpr>(SelEnable))
+      Expr->visitConeTopOrder(Visited, Printer);
   }
 }
 

@@ -241,12 +241,53 @@ public:
     case dpRAnd:  case dpRXor: case dpSGT:   case dpUGT:   return 1;
     }
   }
+
+  template<typename T>
+  void visitConeTopOrder(std::set<VASTExpr*> &Visited, T &F);
 };
 
 typedef PtrInvPair<VASTExpr> VASTExprPtr;
 template<>
 inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
   return get()->getOperand(i).get().invert(isInverted());
+}
+
+template<typename T>
+void
+VASTExpr::visitConeTopOrder(std::set<VASTExpr*> &Visited, T &F) {
+  // The entire tree had been visited.
+  if (!Visited.insert(this).second) return;
+
+  typedef VASTOperandList::op_iterator ChildIt;
+  std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
+
+  VisitStack.push_back(std::make_pair(this, this->op_begin()));
+
+  while (!VisitStack.empty()) {
+    VASTExpr *Node = VisitStack.back().first;
+    ChildIt It = VisitStack.back().second;
+
+    // We have visited all children of current node.
+    if (It == Node->op_end()) {
+      VisitStack.pop_back();
+
+      // Visit the current Node.
+      F(Node);
+
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    VASTValue *ChildNode = It->unwrap().get();
+    ++VisitStack.back().second;
+
+    if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
+      // ChildNode has a name means we had already visited it.
+      if (!Visited.insert(ChildExpr).second) continue;
+
+      VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
+    }
+  }
 }
 
 class VASTWire :public VASTNamedValue, public ilist_node<VASTWire> {

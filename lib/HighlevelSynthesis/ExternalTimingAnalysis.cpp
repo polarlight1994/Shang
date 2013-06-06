@@ -239,7 +239,7 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
   if (!ETA.analysisWithSynthesisTool()) return false;
 
   // Update the timing netlist.
-  std::set<VASTOperandList*> Visited;
+  std::set<VASTExpr*> Visited;
 
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
@@ -249,17 +249,20 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
       VASTLatch U = *SI;
       VASTValue *FI = VASTValPtr(U).get();
       // Visit the cone rooted on the fanin.
-      VASTOperandList::visitTopOrder(FI, Visited, ETA);
+      if (VASTExpr *Expr = dyn_cast<VASTExpr>(FI))
+        Expr->visitConeTopOrder(Visited, ETA);
       buildTimingPathTo(FI, Sel, delay_type(SelDelay));
 
       VASTValue *Cnd = VASTValPtr(U.getGuard()).get();
       // Visit the cone rooted on the guarding condition.
-      VASTOperandList::visitTopOrder(Cnd, Visited, ETA);
+      if (VASTExpr *Expr = dyn_cast<VASTExpr>(Cnd))
+        Expr->visitConeTopOrder(Visited, ETA);
       buildTimingPathTo(Cnd, Sel, delay_type(SelDelay));
 
       if (VASTValue *SlotActive = U.getSlotActive().get()) {
         // Visit the cone rooted on the ready signal.
-        VASTOperandList::visitTopOrder(SlotActive, Visited, ETA);
+        if (VASTExpr *Expr = dyn_cast<VASTExpr>(SlotActive))
+          Expr->visitConeTopOrder(Visited, ETA);
         buildTimingPathTo(SlotActive, Sel, delay_type(SelDelay));
       }
     }
@@ -464,13 +467,10 @@ void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Src, unsigned RefIdx) {
 }
 
 void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTExpr *V) {
-  VASTOperandList *L = VASTOperandList::GetDatapathOperandList(V);
-  assert(L && "Bad Value!");
-
   SrcInfo &PI = DelayMatrix[V];
 
   typedef VASTOperandList::op_iterator iterator;
-  for (iterator I = L->op_begin(), E = L->op_end(); I != E; ++I) {
+  for (iterator I = V->op_begin(), E = V->op_end(); I != E; ++I) {
     VASTValPtr Op = *I;
     PathInfo::iterator at = DelayMatrix.find(Op.get());
     // TODO: Assert Op is the leaf of the cone.

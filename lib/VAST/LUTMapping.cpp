@@ -114,7 +114,7 @@ struct LogicNetwork {
   Abc_Obj_t *getOrCreateObj(VASTValue *V);
 
   bool buildAIG(VASTExpr *E);
-  bool buildAIG(VASTValue *Root, std::set<VASTOperandList*> &Visited);
+  bool buildAIG(VASTValue *Root, std::set<VASTExpr*> &Visited);
   bool buildAIG(DatapathContainer &DP);
 
   VASTValPtr getAsOperand(Abc_Obj_t *O) const;
@@ -194,20 +194,20 @@ struct AIGBuilder {
 };
 }
 
-bool LogicNetwork::buildAIG(VASTValue *Root, std::set<VASTOperandList*> &Visited)
-{
+bool LogicNetwork::buildAIG(VASTValue *Root, std::set<VASTExpr*> &Visited) {
   typedef VASTOperandList::op_iterator ChildIt;
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
 
   AIGBuilder Builder(*this);
-  VASTOperandList::visitTopOrder(Root, Visited, Builder);
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(Root))
+    Expr->visitConeTopOrder(Visited, Builder);
 
   return Builder.AnyNodeCreated;
 }
 
 bool LogicNetwork::buildAIG(DatapathContainer &DP) {
   // Remember the visited values so that we wont visit the same value twice.
-  std::set<VASTOperandList*> Visited;
+  std::set<VASTExpr*> Visited;
   bool AnyNodeCreated = false;
 
   typedef DatapathContainer::expr_iterator expr_iterator;

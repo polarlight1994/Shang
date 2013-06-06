@@ -75,7 +75,7 @@ char &llvm::DatapathNamerID = DatapathNamer::ID;
 
 bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
   Strash = &getAnalysis<CachedStrashTable>();
-  std::set<VASTOperandList*> Visited;
+  std::set<VASTExpr*> Visited;
 
   typedef VASTModule::const_slot_iterator slot_iterator;
 
@@ -91,7 +91,8 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
       typedef VASTOperandList::op_iterator op_iterator;
       for (op_iterator OI = L->op_begin(), OE = L->op_end(); OI != OE; ++OI) {
         VASTValue *V = OI->unwrap().get();
-        VASTOperandList::visitTopOrder(V, Visited, *this);
+        if (VASTExpr *Expr = dyn_cast<VASTExpr>(V))
+          Expr->visitConeTopOrder(Visited, *this);
       }
     }
   }
@@ -106,13 +107,16 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
          I != E; ++I){
       const VASTSelector::Fanin *FI = *I;
       VASTValue *FIVal = FI->FI.unwrap().get();
-      VASTOperandList::visitTopOrder(FIVal, Visited, *this);
+      if (VASTExpr *Expr = dyn_cast<VASTExpr>(FIVal))
+        Expr->visitConeTopOrder(Visited, *this);
       VASTValue *FICnd = FI->Cnd.unwrap().get();
-      VASTOperandList::visitTopOrder(FICnd, Visited, *this);
+      if (VASTExpr *Expr = dyn_cast<VASTExpr>(FICnd))
+        Expr->visitConeTopOrder(Visited, *this);
     }
 
     VASTValue *SelEnable = Sel->getEnable().get();
-    VASTOperandList::visitTopOrder(SelEnable, Visited, *this);
+    if (VASTExpr *Expr = dyn_cast<VASTExpr>(SelEnable))
+      Expr->visitConeTopOrder(Visited, *this);
   }
 
   return false;

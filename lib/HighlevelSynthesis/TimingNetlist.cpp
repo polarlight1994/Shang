@@ -121,7 +121,7 @@ void TimingNetlist::buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst,
   unsigned ThuID = CachedSequash->getOrCreateSequashID(Thu),
            DstID = CachedSequash->getOrCreateSequashID(Dst);
 
-  if (VASTOperandList::GetDatapathOperandList(Thu) == 0) {
+  if (!isa<VASTExpr>(Thu)) {
     if (isa<VASTSeqValue>(Thu)) {
       TimingNetlist::delay_type &OldDelay = FaninInfo[DstID][ThuID];
       OldDelay = std::max(MUXDelay, OldDelay);
@@ -189,7 +189,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   // Build the timing path for datapath nodes.
   typedef DatapathContainer::expr_iterator expr_iterator;
   for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
-    if (!I->use_empty()) Estimator.estimateTimingOnTree(I);
+    if (!I->use_empty()) Estimator.estimateTimingOnCone(I);
   
   // Build the timing path for registers.
   typedef VASTModule::selector_iterator iterator;

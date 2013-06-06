@@ -402,14 +402,6 @@ public:
   ArrayRef<VASTUse> getOperands() const;
 
   void dropOperands();
-
-  // Convert the VASTNode to VASTOperandList.
-  static VASTOperandList *GetDatapathOperandList(VASTNode *N);
-  static VASTOperandList *GetOperandList(VASTNode *N);
-
-  template<typename T>
-  static void visitTopOrder(VASTValue *Root, std::set<VASTOperandList*> &Visited,
-                            T &F);
 };
 
 class VASTValue : public VASTNode {
@@ -479,45 +471,6 @@ template<> struct simplify_type<VASTUse> {
     return Val.unwrap();
   }
 };
-
-template<typename T>
-void VASTOperandList::visitTopOrder(VASTValue *Root,
-                                    std::set<VASTOperandList*> &Visited, T &F) {
-  VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
-  // The entire tree had been visited.
-  if (!(L && Visited.insert(L).second)) return;
-
-  typedef VASTOperandList::op_iterator ChildIt;
-  std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
-
-  VisitStack.push_back(std::make_pair(Root, L->op_begin()));
-
-  while (!VisitStack.empty()) {
-    VASTValue *Node = VisitStack.back().first;
-    ChildIt It = VisitStack.back().second;
-
-    // We have visited all children of current node.
-    if (It == VASTOperandList::GetDatapathOperandList(Node)->op_end()) {
-      VisitStack.pop_back();
-
-      // Visit the current Node.
-      F(Node);
-
-      continue;
-    }
-
-    // Otherwise, remember the node and visit its children first.
-    VASTValue *ChildNode = It->unwrap().get();
-    ++VisitStack.back().second;
-
-    if (VASTOperandList *L = VASTOperandList::GetDatapathOperandList(ChildNode)) {
-      // ChildNode has a name means we had already visited it.
-      if (!Visited.insert(L).second) continue;
-
-      VisitStack.push_back(std::make_pair(ChildNode, L->op_begin()));
-    }
-  }
-}
 
 class VASTNamedValue : public VASTValue {
 protected:

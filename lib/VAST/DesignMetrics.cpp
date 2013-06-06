@@ -65,8 +65,7 @@ class DesignMetricsImpl : public DatapathBuilderContext {
 
   // Visit the expression tree whose root is Root and return the cost of the
   // tree, insert all visited data-path nodes into Visited.
-  uint64_t
-  getExprTreeFUCost(VASTValPtr Root, std::set<VASTOperandList*> &Visited) const;
+  uint64_t getExprTreeFUCost(VASTValPtr Root, std::set<VASTExpr*> &Visited) const;
 
   // Collect the fanin information of the memory bus.
   void visitLoadInst(LoadInst &I);
@@ -250,19 +249,19 @@ struct CostAccumulator {
 };
 }
 
-uint64_t
-DesignMetricsImpl::getExprTreeFUCost(VASTValPtr Root,
-                                      std::set<VASTOperandList*> &Visited)
-                                      const {
+uint64_t DesignMetricsImpl::getExprTreeFUCost(VASTValPtr Root,
+                                              std::set<VASTExpr*> &Visited)
+                                              const {
   CostAccumulator Accumulator(*this);
-  VASTOperandList::visitTopOrder(Root.get(), Visited, Accumulator);
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(Root.get()))
+    Expr->visitConeTopOrder(Visited, Accumulator);
 
   return Accumulator.Cost;
 }
 
 uint64_t DesignMetricsImpl::getDatapathFUCost() const {
   uint64_t Cost = 0;
-  std::set<VASTOperandList*> Visited;
+  std::set<VASTExpr*> Visited;
 
   typedef ValSetTy::const_iterator iterator;
   for (iterator I = LiveOutedVal.begin(), E = LiveOutedVal.end(); I != E; ++I)

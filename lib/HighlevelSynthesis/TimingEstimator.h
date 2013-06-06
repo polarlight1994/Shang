@@ -124,7 +124,7 @@ public:
       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, *I));
 
     // FIXME: Also add the delay from Src to Dst.
-    if (VASTOperandList::GetOperandList(Thu) && hasPathInfo(ThuID)) {
+    if (isa<VASTExpr>(Thu) && hasPathInfo(ThuID)) {
       delay_type D(0.0f);
       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(ThuID, D)));
       updated = true;
@@ -153,7 +153,7 @@ public:
     }
   }
 
-  void estimateTimingOnTree(VASTValue *Root);
+  void estimateTimingOnCone(VASTExpr *Root);
 };
 
 template<typename SubClass>

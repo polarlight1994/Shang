@@ -131,13 +131,6 @@ ArrayRef<VASTUse> VASTOperandList::getOperands() const {
   return ArrayRef<VASTUse>(Operands, Size);
 }
 
-VASTOperandList *VASTOperandList::GetDatapathOperandList(VASTNode *N) {
-  if (VASTExpr *E = dyn_cast_or_null<VASTExpr>(N))
-    return E;
-
-  return 0;
-}
-
 VASTOperandList::VASTOperandList(unsigned Size)
   : Operands(0), Size(Size) {
   if (Size)
