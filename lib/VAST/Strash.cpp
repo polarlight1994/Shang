@@ -153,33 +153,57 @@ template<> struct FoldingSetTrait<StrashNode> {
   }
 };
 
+// The structural hash table which compute the hash of the datapath node based
+// on the structural of the combinational cone rooted on that node.
+void initializeStrashPass(PassRegistry &Registry);
+
 struct Strash : public ImmutablePass, public StrashTable<Strash> {
   static char ID;
 
-  Strash();
+  Strash() : ImmutablePass(ID) {
+    initializeStrashPass(*PassRegistry::getPassRegistry());
+  }
 
   void profileNonTrivialLeaf(VASTValue *Ptr, FoldingSetNodeID &ID) {
-    VASTNamedValue *NV = dyn_cast<VASTNamedValue>(Ptr);
+    VASTNamedValue *NV = cast<VASTNamedValue>(Ptr);
     ID.AddString(NV->getName());
   }
 };
 
-void initializeStrashPass(PassRegistry &Registry);
-}
 
-Strash::Strash() : ImmutablePass(ID) {
-  initializeStrashPass(*PassRegistry::getPassRegistry());
+// The structural hash table which compute the hash of the datapath node based
+// on the structural of the combinational cone rooted on that node, but use a
+// different leaf profiling function.
+void initializeSequashPass(PassRegistry &Registry);
+
+struct Sequash : public ImmutablePass, public StrashTable<Sequash> {
+  static char ID;
+
+  Sequash(): ImmutablePass(ID) {
+    initializeSequashPass(*PassRegistry::getPassRegistry());
+  }
+
+  void profileNonTrivialLeaf(VASTValue *Ptr, FoldingSetNodeID &ID) {
+    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Ptr)) {
+      if (Value *V = SeqVal->getLLVMValue()) {
+        ID.Add(V);
+        return;
+      }
+    }
+    
+    VASTNamedValue *NV = cast<VASTNamedValue>(Ptr);
+    ID.AddString(NV->getName());
+  }
+};
 }
+//===----------------------------------------------------------------------===//
 
 char Strash::ID = 0;
-
 INITIALIZE_PASS(Strash, "shang-strash",
                 "The structural hash table for the datapath nodes",
                 false, true)
 
-//===----------------------------------------------------------------------===//
 char CachedStrashTable::ID = 0;
-
 INITIALIZE_PASS_BEGIN(CachedStrashTable, "shang-cached-strash",
                       "The structural hash table for the datapath nodes",
                       false, true)
@@ -208,5 +232,43 @@ void CachedStrashTable::releaseMemory() {
 }
 
 unsigned CachedStrashTable::getOrCreateStrashID(VASTValPtr Ptr) {
+  return Table->getOrCreateStrashID(Ptr, Cache);
+}
+
+//===----------------------------------------------------------------------===//
+char Sequash::ID = 0;
+INITIALIZE_PASS(Sequash, "shang-sequash",
+                "The sequential hash table for the datapath nodes",
+                false, true)
+
+char CachedSequashTable::ID = 0;
+INITIALIZE_PASS_BEGIN(CachedSequashTable, "shang-cached-sequash",
+                      "The sequential hash table for the datapath nodes",
+                      false, true)
+  INITIALIZE_PASS_DEPENDENCY(Sequash);
+INITIALIZE_PASS_END(CachedSequashTable, "shang-cached-sequash",
+                    "The sequential hash table for the datapath nodes",
+                    false, true)
+
+CachedSequashTable::CachedSequashTable() : VASTModulePass(ID) {
+  initializeCachedStrashTablePass(*PassRegistry::getPassRegistry());
+}
+
+void CachedSequashTable::getAnalysisUsage(AnalysisUsage &AU) const {
+  VASTModulePass::getAnalysisUsage(AU);
+  AU.addRequiredTransitive<Sequash>();
+  AU.setPreservesAll();
+}
+
+bool CachedSequashTable::runOnVASTModule(VASTModule &VM) {
+  Table = &getAnalysis<Sequash>();
+  return false;
+}
+
+void CachedSequashTable::releaseMemory() {
+  Cache.clear();
+}
+
+unsigned CachedSequashTable::getOrCreateSequashID(VASTValPtr Ptr) {
   return Table->getOrCreateStrashID(Ptr, Cache);
 }
