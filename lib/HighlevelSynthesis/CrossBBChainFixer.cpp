@@ -205,8 +205,8 @@ void IntervalFixer::fixInterval() {
 }
 
 //===----------------------------------------------------------------------===//
-void VASTSchedGraph::fixIntervalForCrossBBChains() {
-  IntervalFixer Fixer(*this);
+void VASTScheduling::fixIntervalForCrossBBChains() {
+  IntervalFixer Fixer(*G);
 
   Fixer.initialize();
   Fixer.fixInterval();

@@ -841,8 +841,8 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
 
 //===----------------------------------------------------------------------===//
 
-void VASTSchedGraph::emitSchedule(VASTModule &VM, DominatorTree *DT) {
-  ScheduleEmitter(VM, *this).emitSchedule();
-  ImplicitFlowBuilder(DT, VM).run();
-  RegisterFolding(VM).run();
+void VASTScheduling::emitSchedule() {
+  ScheduleEmitter(*VM, *G).emitSchedule();
+  ImplicitFlowBuilder(DT, *VM).run();
+  RegisterFolding(*VM).run();
 }

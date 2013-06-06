@@ -719,8 +719,6 @@ void MemoryDepBuilder::buildDependencies() {
   }
 }
 
-void VASTSchedGraph::buildMemoryDependencies(AliasAnalysis *AA,
-                                             DominatorTree *DT,
-                                             IR2SUMapTy &IR2SUMap) {
-  MemoryDepBuilder(*this, IR2SUMap, *DT, *AA).buildDependencies();
+void VASTScheduling::buildMemoryDependencies() {
+  MemoryDepBuilder(*G, IR2SUMap, *DT, *AA).buildDependencies();
 }

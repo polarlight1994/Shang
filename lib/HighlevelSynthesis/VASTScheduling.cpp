@@ -896,7 +896,7 @@ void VASTScheduling::buildSchedulingGraph() {
   for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     buildSchedulingUnits(*I);
 
-  G->buildMemoryDependencies(AA, DT, IR2SUMap);
+  buildMemoryDependencies();
 
   // Constraint all nodes that do not have a user by the terminator in its parent
   // BB.
@@ -932,11 +932,11 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
 
   scheduleGlobal();
 
-  G->fixIntervalForCrossBBChains();
+  fixIntervalForCrossBBChains();
 
   DEBUG(G->viewGraph());
 
-  G->emitSchedule(VM, DT);
+  emitSchedule();
 
   return true;
 }

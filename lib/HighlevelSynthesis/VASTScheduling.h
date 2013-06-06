@@ -474,12 +474,6 @@ public:
     }
   }
 
-  /// Build the CFG-wide memory dependencies.
-  ///
-  typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
-  void buildMemoryDependencies(AliasAnalysis *AA, DominatorTree *DT,
-                               IR2SUMapTy &IR2SUMap);
-
   /// Fix the scheduling graph after it is built.
   ///
   void prepareForScheduling();
@@ -491,15 +485,6 @@ public:
   /// Reset the schedule of all the scheduling units in the scheduling graph.
   ///
   void resetSchedule();
-
-  /// Fix (Check) the interval for cross BB chains.
-  ///
-  void fixIntervalForCrossBBChains();
-
-  /// Emit the schedule by reimplementing the state-transition graph according
-  /// the new scheduling results.
-  ///
-  void emitSchedule(VASTModule &VM, DominatorTree *DT);
 
   void viewGraph();
 
@@ -569,10 +554,22 @@ class VASTScheduling : public VASTModulePass {
   void preventImplicitPipelining(Loop *L);
   void fixSchedulingGraph();
 
-  void buildSchedulingGraph();
   void buildSchedulingUnits(VASTSlot *S);
+  void buildSchedulingGraph();
+  /// Build the CFG-wide memory dependencies.
+  ///
+  void buildMemoryDependencies();
 
   void scheduleGlobal();
+
+  /// Fix (Check) the interval for cross BB chains.
+  ///
+  void fixIntervalForCrossBBChains();
+
+  /// Emit the schedule by reimplementing the state-transition graph according
+  /// the new scheduling results.
+  ///
+  void emitSchedule();
 public:
   static char ID;
   VASTScheduling();
