@@ -11,7 +11,7 @@
 // datapath in the constraints script.
 //
 //===----------------------------------------------------------------------===//
-#include "Strash.h"
+#include "shang/Strash.h"
 
 #include "shang/VASTDatapathNodes.h"
 #include "shang/VASTSeqValue.h"
