@@ -38,10 +38,7 @@ public:
   typedef TimingNetlist::path_iterator path_iterator;
   typedef TimingNetlist::const_path_iterator const_path_iterator;
 
-  enum ModelType {
-    ZeroDelay, BlackBox, Bitlevel, External
-  };
-
+  typedef TimingNetlist::ModelType ModelType;
 protected:
   PathDelayInfo &PathDelay;
   const ModelType T;
@@ -178,7 +175,7 @@ public:
       VASTValue *Op = Expr->getOperand(i).getAsLValue<VASTValue>();
 
       // Do nothing if we are using the zero delay-model.
-      if (T == TimingEstimatorBase::ZeroDelay) {
+      if (T == TimingNetlist::ZeroDelay) {
         accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
                            AccumulateZeroDelay);
         continue;

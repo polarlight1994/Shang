@@ -27,15 +27,15 @@
 
 using namespace llvm;
 
-static cl::opt<enum TimingEstimatorBase::ModelType>
+static cl::opt<enum TimingNetlist::ModelType>
 TimingModel("timing-model", cl::Hidden,
             cl::desc("The Timing Model of the Delay Estimator"),
             cl::values(
-  clEnumValN(TimingEstimatorBase::External, "external",
+  clEnumValN(TimingNetlist::External, "external",
             "Perform delay estimation with synthesis tool"),
-  clEnumValN(TimingEstimatorBase::BlackBox, "blackbox",
+  clEnumValN(TimingNetlist::BlackBox, "blackbox",
             "Only accumulate the critical path delay of each FU"),
-  clEnumValN(TimingEstimatorBase::ZeroDelay, "zero-delay",
+  clEnumValN(TimingNetlist::ZeroDelay, "zero-delay",
             "Assume all datapath delay is zero"),
   clEnumValEnd));
 
@@ -102,7 +102,7 @@ void TimingNetlist::releaseMemory() {
 void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   // Perform the control logic synthesis because we need to write the netlist.
-  if (TimingModel == TimingEstimatorBase::External) {
+  if (TimingModel == TimingNetlist::External) {
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addRequiredID(DatapathNamerID);
   }
@@ -143,7 +143,7 @@ TimingNetlist::delay_type
 TimingNetlist::getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) const {
   float MUXDelay = 0.0f;
 
-  if (TimingModel != TimingEstimatorBase::ZeroDelay) {
+  if (TimingModel != TimingNetlist::ZeroDelay) {
     VFUMux *Mux = getFUDesc<VFUMux>();
     MUXDelay = Mux->getMuxLatency(NumFannins);
     if (Sel) {
@@ -161,7 +161,7 @@ TimingNetlist::getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) cons
 }
 
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
-  if (TimingModel == TimingEstimatorBase::External) {
+  if (TimingModel == TimingNetlist::External) {
     if (!performExternalAnalysis(VM))
       report_fatal_error("External timing analysis fail!");
 

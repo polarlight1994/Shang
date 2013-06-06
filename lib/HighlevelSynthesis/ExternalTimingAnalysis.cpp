@@ -180,7 +180,7 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
   }
 
   ExternalTimingAnalysis(VASTModule &VM, TimingNetlist::PathDelayInfo &PathInfo)
-    : TimingEstimatorBase(PathInfo, TimingEstimatorBase::ZeroDelay), VM(VM) {}
+    : TimingEstimatorBase(PathInfo, TimingNetlist::ZeroDelay), VM(VM) {}
 
   bool analysisWithSynthesisTool();
 

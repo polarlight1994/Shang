@@ -55,6 +55,10 @@ public:
   bool performExternalAnalysis(VASTModule &VM);
 
 public: 
+  enum ModelType {
+    ZeroDelay, BlackBox, Bitlevel, External
+  };
+
   static char ID;
 
   TimingNetlist();
@@ -90,6 +94,7 @@ public:
 
   path_iterator path_end() { return PathInfo.end(); }
   const_path_iterator path_end() const { return PathInfo.end(); }
+
 
   virtual void releaseMemory();
   virtual bool runOnVASTModule(VASTModule &VM);
