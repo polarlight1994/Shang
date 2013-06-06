@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "TimingNetlist.h"
 #include "TimingEstimator.h"
 
 #include "shang/VASTMemoryPort.h"
@@ -41,16 +40,20 @@ TimingModel("timing-model", cl::Hidden,
 
 TimingNetlist::delay_type
 TimingNetlist::getDelay(VASTValue *Src, VASTSelector *Dst) const {
-  const_fanin_iterator at = FaninInfo.find(Dst);
+  unsigned SrcID = CachedSequash->getOrCreateSequashID(Src),
+           DstID = CachedSequash->getOrCreateSequashID(Dst);
+  const_fanin_iterator at = FaninInfo.find(DstID);
   assert(at != FaninInfo.end() && "Path not exist!");
 
-  src_iterator path_start_from = at->second.find(Src);
+  src_iterator path_start_from = at->second.find(SrcID);
   assert(path_start_from != at->second.end() && "Path not exist!");
   return path_start_from->second;
 }
 
 TimingNetlist::delay_type
 TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
+  unsigned SrcID = CachedSequash->getOrCreateSequashID(Src),
+           DstID = CachedSequash->getOrCreateSequashID(Dst);
   // TODO:
   //if (VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(Dst)) {
   //  for each fanin fi of Dst,
@@ -60,9 +63,9 @@ TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
   //  return CRITICAL delay to all fanins + Mux delay?
   //}
 
-  const_path_iterator path_end_at = PathInfo.find(Dst);
+  const_path_iterator path_end_at = PathInfo.find(DstID);
   assert(path_end_at != PathInfo.end() && "Path not exist!");
-  src_iterator path_start_from = path_end_at->second.find(Src);
+  src_iterator path_start_from = path_end_at->second.find(SrcID);
   assert(path_start_from != path_end_at->second.end() && "Path not exist!");
   return path_start_from->second;
 }
@@ -87,6 +90,7 @@ INITIALIZE_PASS_BEGIN(TimingNetlist, "shang-timing-netlist",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
+  INITIALIZE_PASS_DEPENDENCY(CachedSequashTable)
 INITIALIZE_PASS_END(TimingNetlist, "shang-timing-netlist",
                     "Preform Timing Estimation on the RTL Netlist",
                     false, true)
@@ -107,34 +111,44 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
     AU.addRequiredID(DatapathNamerID);
   }
 
+  AU.addRequiredTransitive<CachedSequashTable>();
+
   AU.setPreservesAll();
 }
 
-//===----------------------------------------------------------------------===//
 void TimingNetlist::buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst,
                                       delay_type MUXDelay) {
+  unsigned ThuID = CachedSequash->getOrCreateSequashID(Thu),
+           DstID = CachedSequash->getOrCreateSequashID(Dst);
+
   if (VASTOperandList::GetDatapathOperandList(Thu) == 0) {
     if (isa<VASTSeqValue>(Thu)) {
-      TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Thu];
+      TimingNetlist::delay_type &OldDelay = FaninInfo[DstID][ThuID];
       OldDelay = std::max(MUXDelay, OldDelay);
     }
 
     return;
   }
 
-  if (src_empty(Thu)) return;
+  // Get the nodes which are reachable to Thu.
+  const_path_iterator at = PathInfo.find(ThuID);
 
-  TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Thu];
+  // There is no node reachable to Thu.
+  if (at == PathInfo.end()) return;
+
+  TimingNetlist::delay_type &OldDelay = FaninInfo[DstID][ThuID];
   OldDelay =std::max(OldDelay, MUXDelay);
   
+  const SrcDelayInfo &Srcs = at->second;
+
   // If this expression if not driven by any register, there is not timing path.
-  for (src_iterator I = src_begin(Thu), E = src_end(Thu); I != E; ++I) {
-    VASTValue *Src = I->first;
+  for (const_src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+    unsigned SrcID = I->first;
     TimingNetlist::delay_type NewDelay = I->second;
     // Accumulate the delay of the fanin MUX.
     NewDelay += MUXDelay;
 
-    TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Src];
+    TimingNetlist::delay_type &OldDelay = FaninInfo[DstID][SrcID];
     OldDelay =std::max(OldDelay, NewDelay);
   }  
 }
@@ -161,6 +175,8 @@ TimingNetlist::getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) cons
 }
 
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
+  CachedSequash = &getAnalysis<CachedSequashTable>();
+
   if (TimingModel == TimingEstimatorBase::External) {
     if (!performExternalAnalysis(VM))
       report_fatal_error("External timing analysis fail!");
@@ -168,7 +184,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
     return false;
   }
   
-  BitlevelDelayEsitmator Estimator(PathInfo, TimingModel);
+  BitlevelDelayEsitmator Estimator(PathInfo, TimingModel, CachedSequash);
 
   // Build the timing path for datapath nodes.
   typedef DatapathContainer::expr_iterator expr_iterator;
@@ -230,21 +246,21 @@ void TimingNetlist::dumpPathsTo(VASTValue *Dst) const {
 }
 
 void TimingNetlist::printPathsTo(raw_ostream &OS, VASTValue *Dst) const {
-  const_path_iterator at = PathInfo.find(Dst);
-  assert(at != PathInfo.end() && "DstReg not find!");
-  printPathsTo(OS, *at);
+  //const_path_iterator at = PathInfo.find(Dst);
+  //assert(at != PathInfo.end() && "DstReg not find!");
+  //printPathsTo(OS, *at);
 }
 
 void TimingNetlist::printPathsTo(raw_ostream &OS, const PathTy &Path) const {
-  VASTValue *Dst = Path.first;
-  OS << "Dst: ";
-  Dst->printAsOperand(OS, false);
-  OS << " {\n";
-  for (src_iterator I = Path.second.begin(), E = Path.second.end(); I != E; ++I)
-  {
-    OS.indent(2);
-    I->first->printAsOperand(OS, false);
-    OS << '(' << I->second << ")\n";
-  }
-  OS << "}\n";
+  //VASTValue *Dst = Path.first;
+  //OS << "Dst: ";
+  //Dst->printAsOperand(OS, false);
+  //OS << " {\n";
+  //for (src_iterator I = Path.second.begin(), E = Path.second.end(); I != E; ++I)
+  //{
+  //  OS.indent(2);
+  //  I->first->printAsOperand(OS, false);
+  //  OS << '(' << I->second << ")\n";
+  //}
+  //OS << "}\n";
 }

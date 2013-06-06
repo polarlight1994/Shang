@@ -19,16 +19,18 @@
 
 using namespace llvm;
 
-TimingEstimatorBase::TimingEstimatorBase(PathDelayInfo &PathDelay, ModelType T)
-  : PathDelay(PathDelay), T(T) {}
+TimingEstimatorBase::TimingEstimatorBase(PathDelayInfo &PathDelay, ModelType T,
+                                         CachedSequashTable *CachedSequash)
+  : CachedSequash(CachedSequash), PathDelay(PathDelay), T(T) {}
 
 void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
   VASTOperandList *L = VASTOperandList::GetDatapathOperandList(Root);
 
   assert(L && "Root is not a datapath node!");
 
-  // The entire tree had been visited or the root is some trivial node..
-  if (hasPathInfo(Root)) return;
+  // The entire tree had been visited or the root is some trivial node.
+  unsigned RootID = CachedSequash->getOrCreateSequashID(Root);
+  if (hasPathInfo(RootID)) return;
 
   typedef VASTOperandList::op_iterator ChildIt;
   std::vector<std::pair<VASTValue*, ChildIt> > VisitStack;
@@ -57,7 +59,8 @@ void TimingEstimatorBase::estimateTimingOnTree(VASTValue *Root) {
     ++VisitStack.back().second;
 
     // We had already build the delay information to this node.
-    if (hasPathInfo(ChildNode)) continue;
+    unsigned ChildID = CachedSequash->getOrCreateSequashID(ChildNode);
+    if (hasPathInfo(ChildID)) continue;
 
     if (VASTOperandList *L = VASTOperandList::GetDatapathOperandList(ChildNode))
       VisitStack.push_back(std::make_pair(ChildNode, L->op_begin()));

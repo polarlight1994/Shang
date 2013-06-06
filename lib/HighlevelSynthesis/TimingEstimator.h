@@ -15,8 +15,10 @@
 #define TIMING_ESTIMATOR_LINEAR_APPROXIMATION_H
 
 #include "TimingNetlist.h"
+
 #include "shang/VASTDatapathNodes.h"
 #include "shang/VASTSeqValue.h"
+#include "shang/Strash.h"
 
 #include "llvm/Support/ErrorHandling.h"
 
@@ -43,29 +45,31 @@ public:
   };
 
 protected:
+  CachedSequashTable *CachedSequash;
   PathDelayInfo &PathDelay;
   const ModelType T;
 
-  explicit TimingEstimatorBase(PathDelayInfo &PathDelay, ModelType T);
+  explicit TimingEstimatorBase(PathDelayInfo &PathDelay, ModelType T,
+                               CachedSequashTable *CachedSequash);
 
   virtual void accumulateExprDelay(VASTExpr *Expr, unsigned UB, unsigned LB) {}
 
-  bool hasPathInfo(VASTValue *V) const {
-    return getPathTo(V) != 0;
+  bool hasPathInfo(unsigned NodeID) const {
+    return getPathTo(NodeID) != 0;
   }
 
-  SrcDelayInfo *getPathTo(VASTValue *Dst) {
-    path_iterator at = PathDelay.find(Dst);
+  SrcDelayInfo *getPathTo(unsigned DstID) {
+    path_iterator at = PathDelay.find(DstID);
     return at == PathDelay.end() ? 0 : &at->second;
   }
 
-  const SrcDelayInfo *getPathTo(VASTValue *Dst) const {
-    const_path_iterator at = PathDelay.find(Dst);
+  const SrcDelayInfo *getPathTo(unsigned DstID) const {
+    const_path_iterator at = PathDelay.find(DstID);
     return at == PathDelay.end() ? 0 : &at->second;
   }
 
-  delay_type getDelayFrom(VASTSeqValue *Src, const SrcDelayInfo &SrcInfo) const {
-    const_src_iterator at = SrcInfo.find(Src);
+  delay_type getDelayFrom(unsigned SrcID, const SrcDelayInfo &SrcInfo) const {
+    const_src_iterator at = SrcInfo.find(SrcID);
     return at == SrcInfo.end() ? delay_type() : at->second;
   }
 public:
@@ -103,12 +107,14 @@ public:
     if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Thu)) {
       assert(!isa<VASTExpr>(Thu) && "Not SrcInfo from Src find!");
       delay_type D(0.0f);
-      updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(SeqVal, D)));
+      unsigned SrcID = CachedSequash->getOrCreateSequashID(SeqVal);
+      updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(SrcID, D)));
       return true;
     }
 
     // Lookup the source of the timing path.
-    const SrcDelayInfo *SrcInfo = getPathTo(Thu);
+    unsigned ThuID = CachedSequash->getOrCreateSequashID(Thu);
+    const SrcDelayInfo *SrcInfo = getPathTo(ThuID);
 
     if (SrcInfo == 0) return false;
 
@@ -118,9 +124,9 @@ public:
       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, *I));
 
     // FIXME: Also add the delay from Src to Dst.
-    if (VASTOperandList::GetOperandList(Thu) && hasPathInfo(Thu)) {
+    if (VASTOperandList::GetOperandList(Thu) && hasPathInfo(ThuID)) {
       delay_type D(0.0f);
-      updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(Thu, D)));
+      updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(ThuID, D)));
       updated = true;
     }
 
@@ -139,7 +145,8 @@ public:
     }
 
     // Annotate the arrival time information to the matrix.
-    SrcDelayInfo &SrcInfo = PathDelay[Dst];
+    unsigned DstID = CachedSequash->getOrCreateSequashID(Dst);
+    SrcDelayInfo &SrcInfo = PathDelay[DstID];
     for (const_src_iterator I = CurInfo.begin(), E = CurInfo.end(); I != E; ++I) {
       TimingNetlist::delay_type &d = SrcInfo[I->first];
       d = std::max(d, I->second);
@@ -153,8 +160,9 @@ template<typename SubClass>
 class TimingEstimatorImpl : public TimingEstimatorBase {
 protected:
 
-  explicit TimingEstimatorImpl(PathDelayInfo &PathDelay, ModelType T)
-    : TimingEstimatorBase(PathDelay, T) {}
+  explicit TimingEstimatorImpl(PathDelayInfo &PathDelay, ModelType T,
+                               CachedSequashTable *CachedSequash)
+    : TimingEstimatorBase(PathDelay, T, CachedSequash) {}
 
 public:
 
@@ -164,7 +172,8 @@ public:
     // It looks like that all the operands are constant.
     if (CurSrcInfo.empty()) return;
 
-    bool inserted = PathDelay.insert(std::make_pair(Expr, CurSrcInfo)).second;
+    unsigned ExprID = CachedSequash->getOrCreateSequashID(Expr);
+    bool inserted = PathDelay.insert(std::make_pair(ExprID, CurSrcInfo)).second;
     assert(inserted && "We are visiting the same Expr twice?");
     (void) inserted;
   }
@@ -282,8 +291,9 @@ class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator
   }
 
 public:
-  BitlevelDelayEsitmator(PathDelayInfo &PathDelay, ModelType T)
-    : Base(PathDelay, T) {}
+  BitlevelDelayEsitmator(PathDelayInfo &PathDelay, ModelType T,
+                         CachedSequashTable *CachedSequash)
+    : Base(PathDelay, T, CachedSequash) {}
 
   void accumulateDelayThuLUT(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
                              uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
