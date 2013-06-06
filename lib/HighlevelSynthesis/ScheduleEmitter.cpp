@@ -580,15 +580,6 @@ struct RegisterFolding : public MinimalExprBuilderContext {
 }
 
 //===----------------------------------------------------------------------===//
-static VASTSlot *getParentGroup(VASTSlot *S) {
-  // Get the parent group of the current subgroup, to prevent us from
-  // unnecessary retiming.
-  assert(S->IsSubGrp && "Unexpected parent slot of conditional operation!");
-  assert(S->pred_size() == 1 && "Unexpected parent state size for"
-                                " subgroup ofPN!");
-  return *S->pred_begin();
-}
-
 static VASTSlot *getRetimingSlot(VASTSeqOp *Op) {
   VASTSlot *S = Op->getSlot();
 
@@ -612,7 +603,7 @@ static VASTSlot *getRetimingSlot(VASTSeqOp *Op) {
 
   // Get the parent group of the current subgroup, to prevent us from
   // unnecessary retiming.
-  return getParentGroup(S);
+  return S->getParentGroup();
 }
 
 static bool replaceIfDifferent(VASTUse &U, VASTValPtr V) {
@@ -647,7 +638,7 @@ void RegisterFolding::run() {
       // guarding of the current group across the assignments in the current
       // subgroup, which themselves is guarded by the current guarding condition
       // ... Hence, there is logically a infinite loop if we do so ...
-      VASTSlot *ParentGrp = getParentGroup(Child);
+      VASTSlot *ParentGrp = Child->getParentGroup();
 
       // Retime the guarding condition of the current subgroup by using the
       // values produced by the parent subgroups.

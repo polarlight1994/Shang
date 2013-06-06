@@ -178,6 +178,7 @@ public:
 
   VASTSlot *getSubGroup(BasicBlock *BB) const;
   VASTSlot *getParentState();
+  VASTSlot *getParentGroup() const;
 
   void addSuccSlot(VASTSlot *NextSlot, EdgeType T);
 

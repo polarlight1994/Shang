@@ -157,6 +157,15 @@ VASTSlot *VASTSlot::getParentState() {
   return S;
 }
 
+VASTSlot *VASTSlot::getParentGroup() const {
+  // Get the parent group of the current subgroup, to prevent us from
+  // unnecessary retiming.
+  assert(IsSubGrp && "Unexpected parent slot of conditional operation!");
+  assert(pred_size() == 1 && "Unexpected parent state size for"
+                             " subgroup ofPN!");
+  return *pred_begin();
+}
+
 void VASTSlot::print(raw_ostream &OS) const {
   OS << "Slot#"<< SlotNum;
   if (IsSubGrp) OS << " subgroup";
