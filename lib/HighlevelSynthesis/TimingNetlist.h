@@ -67,28 +67,6 @@ public:
   delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTSelector *Dst) const;
 
-  // Iterate over the source node reachable to DstReg.
-  src_iterator src_begin(VASTValue *Dst) const {
-    const_path_iterator at = PathInfo.find(Dst);
-    assert(at != PathInfo.end() && "DstReg not find!");
-    return at->second.begin();
-  }
-
-  src_iterator src_end(VASTValue *Dst) const {
-    const_path_iterator at = PathInfo.find(Dst);
-    assert(at != PathInfo.end() && "DstReg not find!");
-    return at->second.end();
-  }
-
-  bool src_empty(VASTValue *Dst) const {
-    return !PathInfo.count(Dst);
-  }
-
-  const SrcDelayInfo *getSrcInfo(VASTValue *Dst) const {
-    const_path_iterator at = PathInfo.find(Dst);
-    return at != PathInfo.end() ? &at->second : 0;
-  }
-
   path_iterator path_begin() { return PathInfo.begin(); }
   const_path_iterator path_begin() const { return PathInfo.begin(); }
 

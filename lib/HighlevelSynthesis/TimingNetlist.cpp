@@ -122,13 +122,16 @@ void TimingNetlist::buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst,
     return;
   }
 
-  if (src_empty(Thu)) return;
+  path_iterator at = PathInfo.find(Thu);
+  if (at == PathInfo.end()) return;
 
   TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Thu];
   OldDelay =std::max(OldDelay, MUXDelay);
   
+  SrcDelayInfo &Srcs = at->second;
+
   // If this expression if not driven by any register, there is not timing path.
-  for (src_iterator I = src_begin(Thu), E = src_end(Thu); I != E; ++I) {
+  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
     VASTValue *Src = I->first;
     TimingNetlist::delay_type NewDelay = I->second;
     // Accumulate the delay of the fanin MUX.
