@@ -102,7 +102,6 @@ void initializeSelectorSynthesisPass(PassRegistry &Registry);
 void initializeSelectorPipeliningPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
 void initializeCachedStrashTablePass(PassRegistry &Registry);
-void initializeCachedSequashTablePass(PassRegistry &Registry);
 void initializeTimingScriptGenPass(PassRegistry &Registry);
 void initializeSeqLiveVariablesPass(PassRegistry &Registry);
 void initializeRegisterSharingPass(PassRegistry &Registry);

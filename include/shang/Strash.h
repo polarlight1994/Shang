@@ -40,26 +40,5 @@ public:
   bool runOnVASTModule(VASTModule &VM);
   void releaseMemory();
 };
-
-// The sequential hash table and the cached version.
-struct Sequash;
-class CachedSequashTable : public VASTModulePass {
-public:
-  typedef DenseMap<VASTValPtr, unsigned> CacheTy;
-private:
-  CacheTy Cache;
-  Sequash *Table;
-public:
-  static char ID;
-
-  CachedSequashTable();
-
-  unsigned getOrCreateSequashID(VASTValPtr Ptr);
-  unsigned getOrCreateSequashID(VASTSelector *Sel);
-
-  void getAnalysisUsage(AnalysisUsage &AU) const;
-  bool runOnVASTModule(VASTModule &VM);
-  void releaseMemory();
-};
 }
 #endif

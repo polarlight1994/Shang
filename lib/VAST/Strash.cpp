@@ -188,32 +188,6 @@ struct Strash : public ImmutablePass, public StrashTable<Strash> {
     ID.AddString(NV->getName());
   }
 };
-
-
-// The structural hash table which compute the hash of the datapath node based
-// on the structural of the combinational cone rooted on that node, but use a
-// different leaf profiling function.
-void initializeSequashPass(PassRegistry &Registry);
-
-struct Sequash : public ImmutablePass, public StrashTable<Sequash> {
-  static char ID;
-
-  Sequash(): ImmutablePass(ID) {
-    initializeSequashPass(*PassRegistry::getPassRegistry());
-  }
-
-  void profileNonTrivialLeaf(VASTValue *Ptr, FoldingSetNodeID &ID) {
-    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Ptr)) {
-      if (Value *V = SeqVal->getLLVMValue()) {
-        ID.Add(V);
-        return;
-      }
-    }
-    
-    VASTNamedValue *NV = cast<VASTNamedValue>(Ptr);
-    ID.AddString(NV->getName());
-  }
-};
 }
 //===----------------------------------------------------------------------===//
 
@@ -255,47 +229,5 @@ unsigned CachedStrashTable::getOrCreateStrashID(VASTValPtr Ptr) {
 }
 
 unsigned CachedStrashTable::getOrCreateStrashID(VASTSelector *Sel) {
-  return Table->getOrCreateStrashID(Sel);
-}
-
-//===----------------------------------------------------------------------===//
-char Sequash::ID = 0;
-INITIALIZE_PASS(Sequash, "shang-sequash",
-                "The sequential hash table for the datapath nodes",
-                false, true)
-
-char CachedSequashTable::ID = 0;
-INITIALIZE_PASS_BEGIN(CachedSequashTable, "shang-cached-sequash",
-                      "The sequential hash table for the datapath nodes",
-                      false, true)
-  INITIALIZE_PASS_DEPENDENCY(Sequash);
-INITIALIZE_PASS_END(CachedSequashTable, "shang-cached-sequash",
-                    "The sequential hash table for the datapath nodes",
-                    false, true)
-
-CachedSequashTable::CachedSequashTable() : VASTModulePass(ID) {
-  initializeCachedStrashTablePass(*PassRegistry::getPassRegistry());
-}
-
-void CachedSequashTable::getAnalysisUsage(AnalysisUsage &AU) const {
-  VASTModulePass::getAnalysisUsage(AU);
-  AU.addRequiredTransitive<Sequash>();
-  AU.setPreservesAll();
-}
-
-bool CachedSequashTable::runOnVASTModule(VASTModule &VM) {
-  Table = &getAnalysis<Sequash>();
-  return false;
-}
-
-void CachedSequashTable::releaseMemory() {
-  Cache.clear();
-}
-
-unsigned CachedSequashTable::getOrCreateSequashID(VASTValPtr Ptr) {
-  return Table->getOrCreateStrashID(Ptr, Cache);
-}
-
-unsigned CachedSequashTable::getOrCreateSequashID(VASTSelector *Sel) {
   return Table->getOrCreateStrashID(Sel);
 }
