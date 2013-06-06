@@ -129,6 +129,26 @@ public:
     return NodeId;
   }
 
+  // Add the selector to the table according to its name.
+  unsigned getOrCreateStrashID(VASTSelector *Sel) {
+    FoldingSetNodeID ID;
+    ID.AddString(Sel->getName());
+
+    void *IP = 0;
+    if (StrashNode *N = Set.FindNodeOrInsertPos(ID, IP)) {
+      unsigned NodeId = unsigned(*N);
+      assert(NodeId && "Bad ID!");
+      return NodeId;
+    }
+
+    StrashNode *N = new (Allocator) StrashNode(ID.Intern(Allocator), ++LastID);
+    Set.InsertNode(N, IP);
+
+    unsigned NodeId = unsigned(*N);
+
+    return NodeId;
+  }
+
   void reset() {
     Set.clear();
     Allocator.Reset();
@@ -235,6 +255,10 @@ unsigned CachedStrashTable::getOrCreateStrashID(VASTValPtr Ptr) {
   return Table->getOrCreateStrashID(Ptr, Cache);
 }
 
+unsigned CachedStrashTable::getOrCreateStrashID(VASTSelector *Sel) {
+  return Table->getOrCreateStrashID(Sel);
+}
+
 //===----------------------------------------------------------------------===//
 char Sequash::ID = 0;
 INITIALIZE_PASS(Sequash, "shang-sequash",
@@ -271,4 +295,8 @@ void CachedSequashTable::releaseMemory() {
 
 unsigned CachedSequashTable::getOrCreateSequashID(VASTValPtr Ptr) {
   return Table->getOrCreateStrashID(Ptr, Cache);
+}
+
+unsigned CachedSequashTable::getOrCreateSequashID(VASTSelector *Sel) {
+  return Table->getOrCreateStrashID(Sel);
 }

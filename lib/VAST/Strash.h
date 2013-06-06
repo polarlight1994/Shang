@@ -34,6 +34,7 @@ public:
   CachedStrashTable();
 
   unsigned getOrCreateStrashID(VASTValPtr Ptr);
+  unsigned getOrCreateStrashID(VASTSelector *Sel);
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnVASTModule(VASTModule &VM);
@@ -54,6 +55,7 @@ public:
   CachedSequashTable();
 
   unsigned getOrCreateSequashID(VASTValPtr Ptr);
+  unsigned getOrCreateSequashID(VASTSelector *Sel);
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnVASTModule(VASTModule &VM);
