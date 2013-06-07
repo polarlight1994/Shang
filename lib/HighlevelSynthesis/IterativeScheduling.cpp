@@ -381,14 +381,15 @@ bool IterativeScheduling::runOnVASTModule(VASTModule &VM) {
 
     // Build a new module for the current iteration of scheduling.
     Mod = rebuildModule();
-    // Also reset the caches.
+    // Reset the contents after the module is rebuilt.
     CachedStrash.releaseMemory();
+    TNL.releaseMemory();
+    Scheduler.releaseMemory();
 
     // Backannotate the delay after the module is rebuilt.
     STE.annotateDelay(*Mod);
 
     // Schedule the module again.
-    Scheduler.releaseMemory();
     Scheduler.runOnVASTModule(*Mod);
   }
 
