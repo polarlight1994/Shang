@@ -31,6 +31,12 @@ class VASTModulePass : public FunctionPass {
 protected:
   explicit VASTModulePass(char &ID);
 
+  /// rebuildModule - Delete the current VASTModule and rebuild it from scratch.
+  /// this is supposed to be used by the driver of the iterative scheduling only.
+  ///
+  VASTModule *rebuildModule();
+
+public:
   /// runOnVASTModule - This method must be overloaded to perform the
   /// desired VAST transformation or analysis.
   ///
@@ -48,6 +54,7 @@ protected:
   }
 
   virtual void print(raw_ostream &OS) const;
+
 private:
   bool runOnFunction(Function &F);
 

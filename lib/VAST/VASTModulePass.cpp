@@ -923,6 +923,7 @@ char VASTModuleAnalysis::ID = 0;
 
 //===----------------------------------------------------------------------===//
 void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
+  AU.addRequiredTransitive<HLSAllocation>();
   AU.addRequiredTransitive<VASTModuleAnalysis>();
   AU.addPreserved<VASTModuleAnalysis>();
   AU.addPreservedID(BasicBlockTopOrderID);
@@ -939,6 +940,20 @@ bool VASTModulePass::runOnFunction(Function &F) {
   if (changed) VM.gc();
 
   return changed;
+}
+
+VASTModule *VASTModulePass::rebuildModule() {
+  // Get the old VASTModule
+  VASTModuleAnalysis &VMA = getAnalysis<VASTModuleAnalysis>();
+  // And the corresponding LLVM Function, we will rebuild the VASTModule based
+  // on the LLVM FUnction.
+  Function &F = (*VMA).getLLVMFunction();
+
+  // Release and rebuild.
+  VMA.releaseMemory();
+  VMA.runOnFunction(F);
+
+  return &*VMA;
 }
 
 void VASTModulePass::print(raw_ostream &OS) const {
