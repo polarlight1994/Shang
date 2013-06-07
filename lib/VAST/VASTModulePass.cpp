@@ -873,6 +873,7 @@ struct VASTModuleAnalysis : public FunctionPass {
   void getAnalysisUsage(AnalysisUsage &AU) const;
 
   operator VASTModule*() const { return VM; }
+  VASTModule *operator->() const { return VM; }
 };
 }
 
@@ -937,9 +938,11 @@ void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 bool VASTModulePass::runOnFunction(Function &F) {
-  VASTModule &VM = *getAnalysis<VASTModuleAnalysis>();
-  bool changed = runOnVASTModule(VM);
-  if (changed) VM.gc();
+  VASTModuleAnalysis &VMA = getAnalysis<VASTModuleAnalysis>();
+
+  bool changed = runOnVASTModule(*VMA);
+
+  if (changed) VMA->gc();
 
   return changed;
 }
