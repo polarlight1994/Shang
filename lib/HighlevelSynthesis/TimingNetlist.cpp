@@ -76,6 +76,39 @@ TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu,
   return S2T + T2D;
 }
 
+TimingNetlist::delay_type
+TimingNetlist::accumulateSelDelay(VASTSelector *Sel, VASTSeqValue *V,
+                                  VASTValue *Thu, delay_type delay) {
+  if (Sel)  delay += getDelay(Thu, Sel);
+
+  return delay;
+}
+
+void TimingNetlist::extractDelay(VASTSelector *Sel, VASTValue *Src,
+                                 RegDelaySet &Set) {
+  const_path_iterator cone_rooted_on = PathInfo.find(Src);
+  if (cone_rooted_on == PathInfo.end()) {
+    // Handle the trivial path.
+    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Src)) {
+      delay_type &OldDelay = Set[SeqVal];
+      OldDelay = std::max(accumulateSelDelay(Sel, SeqVal, Src, delay_type(0.0f)),
+                          OldDelay);
+    }
+
+    return;
+  }
+
+  // Extract the delay from the leaves of the cone.
+  const SrcDelayInfo &Srcs = cone_rooted_on->second;
+  for (const_src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I){
+    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(I->first)) {
+      delay_type &OldDelay = Set[SeqVal];
+      OldDelay = std::max(accumulateSelDelay(Sel, SeqVal, Src, I->second),
+                          OldDelay);
+    }
+  }
+}
+
 void
 TimingNetlist::annotateDelay(VASTValue *Src, VASTValue *Dst, delay_type delay) {
   delay_type &old_delay = PathInfo[Dst][Src];

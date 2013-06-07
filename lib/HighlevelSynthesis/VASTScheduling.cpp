@@ -368,8 +368,9 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   return 0;
 }
 
-void VASTScheduling::buildFlowDependencies(VASTSelector *Dst, VASTValue *FI,
-                                           VASTSeqValue *Src, VASTSchedUnit *U) {
+void
+VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
+                                      unsigned NumCycles) {
   assert(Src && "Not a valid source!");
 
   Value *V = Src->getLLVMValue();
@@ -380,35 +381,16 @@ void VASTScheduling::buildFlowDependencies(VASTSelector *Dst, VASTValue *FI,
   // last function execution.
   VASTSchedUnit *SrcSU = Src->isStatic() ? G->getEntry() : getFlowDepSU(V);
 
-  // We had to ignore the selector delay if the selector is not provided.
-  if (Dst == 0) {
-    // There is no path (Reg -> The SameReg) in the timing netlist.
-    unsigned NumCylces = Src == FI ? 0 : ceil(TNL->getDelay(Src, FI));
-    U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
-    return;
-  }
-
-  // Handle the trivial path.
-  if (Src == FI) {
-    unsigned NumCylces = ceil(TNL->getDelay(Src, Dst));
-    U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
-    return;
-  }
-
-  // Calculate the full path (from-through-to) delay.
-  unsigned NumCylces = ceil(TNL->getDelay(Src, FI, Dst));
-  U->addDep(SrcSU, VASTDep::CreateFlowDep(NumCylces));
+  DstU->addDep(SrcSU, VASTDep::CreateFlowDep(NumCycles));
 }
 
 void VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
-  std::set<VASTSeqValue*> Srcs, CndSrcs;
-  typedef std::set<VASTSeqValue*>::iterator iterator;
+  TimingNetlist::RegDelaySet Srcs;
+  typedef TimingNetlist::RegDelaySet::iterator src_iterator;
 
   assert(Op->num_srcs() && "No operand for flow dependencies!");
 
   VASTValue *Cnd = VASTValPtr(Op->getGuard()).get();
-  // FIXME: Ask the timing netlist for supporting SeqVal!
-  Cnd->extractSupporingSeqVal(CndSrcs);
 
   for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
     VASTLatch L = Op->getSrc(i);
@@ -416,35 +398,29 @@ void VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
     // FIXME: Assert the selector is in SSA form!
     VASTSelector *Sel = L.getSelector();
 
-    // The Srcs set will be empty if FI is not a constant.
-    // FIXME: Ask the timing netlist for supporting SeqVal!
-    if (!FI->extractSupporingSeqVal(Srcs)) continue;
-
-    for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-      buildFlowDependencies(Sel, FI, *I, U);
-
-    Srcs.clear();
-
-    // Also calculate the path for the guarding condition.
-    for (iterator I = CndSrcs.begin(), E = CndSrcs.end(); I != E; ++I)
-      buildFlowDependencies(Sel, Cnd, *I, U);
+    // Extract the delay from the fanin and the guarding condition.
+    TNL->extractDelay(Sel, FI, Srcs);
+    TNL->extractDelay(Sel, Cnd, Srcs);
   }
+
+  // Also calculate the path for the guarding condition.
+  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
+    buildFlowDependencies(U, I->first, ceil(I->second));
 }
 
 void VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
   VASTSlotCtrl *SlotCtrl = cast<VASTSlotCtrl>(U->getSeqOp());
-  std::set<VASTSeqValue*> Srcs;
+  TimingNetlist::RegDelaySet Srcs;
+  typedef TimingNetlist::RegDelaySet::iterator src_iterator;
   
   VASTValue *Cnd = VASTValPtr(SlotCtrl->getGuard()).get();
-  // FIXME: Ask the timing netlist for supporting SeqVal!
-  Cnd->extractSupporingSeqVal(Srcs);
-
   VASTRegister *Slot = SlotCtrl->getTargetSlot()->getRegister();
   VASTSelector *Sel = Slot ? Slot->getSelector() : 0;
 
-  typedef std::set<VASTSeqValue*>::iterator iterator;
-  for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-    buildFlowDependencies(Sel, Cnd, *I, U);
+  TNL->extractDelay(Sel, Cnd, Srcs);
+
+  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
+    buildFlowDependencies(U, I->first, ceil(I->second));
 }
 
 void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {

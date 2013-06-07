@@ -45,6 +45,11 @@ public:
   typedef FaninDelayInfo::iterator fanin_iterator;
   typedef FaninDelayInfo::const_iterator const_fanin_iterator;
 
+  typedef std::map<VASTSeqValue*, delay_type> RegDelaySet;
+
+  delay_type accumulateSelDelay(VASTSelector *Sel, VASTSeqValue *Src,
+                                     VASTValue *Thu, delay_type delay);
+
   delay_type getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) const;
 
   // The path delay information.
@@ -73,6 +78,11 @@ public:
   ///
   void annotateDelay(VASTValue *Src, VASTSelector *Dst, delay_type delay);
   void annotateDelay(VASTValue *Src, VASTValue *Dst, delay_type delay);
+
+  /// getDelaySrcs - Extract the all register reachable to Src, and the
+  /// corresponding delay from the register to Src.
+  ///
+  void extractDelay(VASTSelector *Sel, VASTValue *Src, RegDelaySet &Set);
 
   path_iterator path_begin() { return PathInfo.begin(); }
   const_path_iterator path_begin() const { return PathInfo.begin(); }
