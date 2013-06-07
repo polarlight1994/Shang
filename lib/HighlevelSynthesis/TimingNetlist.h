@@ -63,16 +63,22 @@ public:
 
   TimingNetlist();
 
+  /// Get the delay between nodes in the timing netlist.
+  ///
   delay_type getDelay(VASTValue *Src, VASTSelector *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTSelector *Dst) const;
+
+  /// Back-annotate delay to the timing netlist.
+  ///
+  void annotateDelay(VASTValue *Src, VASTSelector *Dst, delay_type delay);
+  void annotateDelay(VASTValue *Src, VASTValue *Dst, delay_type delay);
 
   path_iterator path_begin() { return PathInfo.begin(); }
   const_path_iterator path_begin() const { return PathInfo.begin(); }
 
   path_iterator path_end() { return PathInfo.end(); }
   const_path_iterator path_end() const { return PathInfo.end(); }
-
 
   virtual void releaseMemory();
   virtual bool runOnVASTModule(VASTModule &VM);

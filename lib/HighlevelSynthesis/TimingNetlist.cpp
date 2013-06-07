@@ -76,6 +76,19 @@ TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu,
   return S2T + T2D;
 }
 
+void
+TimingNetlist::annotateDelay(VASTValue *Src, VASTValue *Dst, delay_type delay) {
+  delay_type &old_delay = PathInfo[Dst][Src];
+  old_delay = std::max(old_delay, delay);
+}
+
+void
+TimingNetlist::annotateDelay(VASTValue *Src, VASTSelector *Dst, delay_type delay)
+{
+  delay_type &old_delay = FaninInfo[Dst][Src];
+  old_delay = std::max(old_delay, delay);
+}
+
 TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
   initializeTimingNetlistPass(*PassRegistry::getPassRegistry());
 }
