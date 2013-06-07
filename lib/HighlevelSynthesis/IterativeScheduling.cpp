@@ -174,6 +174,11 @@ struct DatapathVisitor {
     // There is not a cone at all if the Root is a SeqValue.
     if (isa<VASTSeqValue>(Root)) return true;
 
+    // Dirty Hack: Temporary ignore the place holder for the direct output of
+    // block RAMs/some functional units.
+    // TODO: Add the delay from the corresponding launch operation?
+    if (isa<VASTWire>(Root)) return false;
+
     // Annotate/Extract the delay from the leaves of this cone.
     std::set<VASTSeqValue*> Srcs;
     Root->extractSupporingSeqVal(Srcs);
@@ -182,7 +187,10 @@ struct DatapathVisitor {
 
     typedef std::set<VASTSeqValue*>::iterator iterator;
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-      visitPair(Root, Operand, *I);
+      // Dirty Hack: Temporary ignore the place holder for the direct output of
+      // block RAMs/some functional units.
+      // TODO: Add the delay from the corresponding launch operation?
+      if (VASTSeqValue *Src = *I) visitPair(Root, Operand, Src);
 
     return true;
   }
