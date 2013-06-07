@@ -544,7 +544,7 @@ class VASTScheduling : public VASTModulePass {
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
   void buildFlowDependencies(VASTSelector *Dst, VASTValue *FI, VASTSeqValue *Src,
-    VASTSchedUnit *U);
+                             VASTSchedUnit *U);
   void buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);
   void buildFlowDependencies(VASTSchedUnit *U);
   void buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U);
@@ -581,8 +581,6 @@ public:
   void releaseMemory() {
     IR2SUMap.clear();
     ArgMap.clear();
-    G = 0;
-    TNL = 0;
   }
 };
 }
