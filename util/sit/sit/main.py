@@ -110,6 +110,7 @@ def main(builtinParameters = {}):
   option_space_dict['shang_enable_memory_partition'] = [ 'true' ]
   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
   option_space_dict['shang_enable_register_sharing'] = [ 'false' ]
+  option_space_dict['shang_max_scheduling_iteration'] = [ 1 ]
   option_space_dict['shang_constraints_factor'] = [ -0.1 ]
 
   option_space_dict['timing_model'] = [ 'external' if args.mode == TestStep.AlteraSyn else 'blackbox' ]

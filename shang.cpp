@@ -309,7 +309,7 @@ int main(int argc, char **argv) {
     if (!BaselineSchedulingOnly) {
       // Perform the scheduling.
       HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
-      HLSPasses.add(createVASTSchedulingPass());
+      HLSPasses.add(createIterativeSchedulingPass());
       // Scheduling will restruct the datapath. Optimize the datapath again
       // after scheduling.
       HLSPasses.add(createLUTMappingPass());

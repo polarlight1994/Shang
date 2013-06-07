@@ -258,6 +258,7 @@ IfFile:close()
                '-shang-enable-memory-partition=%(shang_enable_memory_partition)s' % self,
                '-shang-enable-pre-schedule-lut-mapping=%(shang_enable_pre_schedule_lut_mapping)s' % self,
                '-shang-enable-register-sharing=%(shang_enable_register_sharing)s' % self,
+               '-shang-max-scheduling-iteration=%(shang_max_scheduling_iteration)s' % self,
                '-shang-selector-ignore-trivial-loops=true',
                '-shang-selector-ignore-x-fanins=true',
                '-shang-print-selector-as-parallel-case=false'
