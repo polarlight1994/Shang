@@ -564,6 +564,7 @@ struct RegisterFolding : public MinimalExprBuilderContext {
 
   explicit RegisterFolding(VASTModule &VM)
     : MinimalExprBuilderContext(VM), VM(VM), Builder(*this) {}
+  ~RegisterFolding() { VM.gc(); }
 
   void run();
   bool retimeFannin(VASTUse &U, VASTSlot *S);
