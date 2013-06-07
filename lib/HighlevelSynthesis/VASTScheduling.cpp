@@ -373,7 +373,7 @@ void VASTScheduling::buildFlowDependencies(VASTSelector *Dst, VASTValue *FI,
   assert(Src && "Not a valid source!");
 
   Value *V = Src->getLLVMValue();
-  assert(V && "Cannot get the corresponding value!");
+  assert(V && "Expect LLVM Value for flow dependencies!");
   assert((Src->num_fanins() == 1 || isa<PHINode>(V)) && "SeqVal not in SSA!");
   // The static register is virtually defined at the entry slot. Because
   // we only write it when the function exit. Whe we read is the value from
@@ -407,6 +407,7 @@ void VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
   assert(Op->num_srcs() && "No operand for flow dependencies!");
 
   VASTValue *Cnd = VASTValPtr(Op->getGuard()).get();
+  // FIXME: Ask the timing netlist for supporting SeqVal!
   Cnd->extractSupporingSeqVal(CndSrcs);
 
   for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
@@ -416,6 +417,7 @@ void VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
     VASTSelector *Sel = L.getSelector();
 
     // The Srcs set will be empty if FI is not a constant.
+    // FIXME: Ask the timing netlist for supporting SeqVal!
     if (!FI->extractSupporingSeqVal(Srcs)) continue;
 
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
@@ -434,6 +436,7 @@ void VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
   std::set<VASTSeqValue*> Srcs;
   
   VASTValue *Cnd = VASTValPtr(SlotCtrl->getGuard()).get();
+  // FIXME: Ask the timing netlist for supporting SeqVal!
   Cnd->extractSupporingSeqVal(Srcs);
 
   VASTRegister *Slot = SlotCtrl->getTargetSlot()->getRegister();

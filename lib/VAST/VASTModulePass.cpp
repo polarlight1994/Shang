@@ -26,6 +26,7 @@
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CFG.h"
@@ -931,6 +932,7 @@ void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<ScalarEvolution>();
   AU.addPreserved<HLSAllocation>();
   AU.addPreserved<DependenceAnalysis>();
+  AU.addPreserved<BranchProbabilityInfo>();
   AU.setPreservesCFG();
 }
 

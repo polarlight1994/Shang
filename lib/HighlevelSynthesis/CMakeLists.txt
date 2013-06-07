@@ -9,6 +9,7 @@ add_llvm_library(ShangHLS
   SchedulerBase.cpp
   GlobalDepBuilder.cpp
   SDCScheduler.cpp
+  IterativeScheduling.cpp
   SeqLiveVariables.cpp
   STGDistances.cpp
   SelectorPipelining.cpp
