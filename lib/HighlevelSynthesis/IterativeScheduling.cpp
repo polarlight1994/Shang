@@ -64,7 +64,7 @@ struct DatapathVisitor {
         // Also extract the transition condition between states.
         if (VASTSlotCtrl *SlotCtrl = dyn_cast<VASTSlotCtrl>(*I)) {
           Instruction *Inst = dyn_cast_or_null<Instruction>(SlotCtrl->getValue());
-          if (Inst == 0) continue;
+          if (Inst == 0 || isa<UnreachableInst>(Inst)) continue;
 
           assert(Inst->getNumOperands() && "Expect operand for the condition!");
           visitCone(VASTValPtr(SlotCtrl->getGuard()).get(), Inst->getOperand(0));
@@ -138,6 +138,20 @@ struct DatapathVisitor {
       assert(RI->getNumOperands() && "'ret void' should not be a VASTSeqInst!");
       VASTLatch Addr = Op->getSrc(0);
       visitConeAndSelector(Addr, RI, RI->getReturnValue());
+      return;
+    }
+    case Instruction::UDiv:
+    case Instruction::SDiv:
+    case Instruction::URem:
+    case Instruction::SRem: {
+      // Handle the binary operators.
+      if (Op->getSeqOpType() == VASTSeqInst::Latch) return;
+
+      visitConeAndSelector(Op->getSrc(0), Inst, Inst->getOperand(0));
+      visitGuardingConditionCone(Op->getSrc(0), ParentSlot, Inst);
+
+      visitConeAndSelector(Op->getSrc(1), Inst, Inst->getOperand(1));
+      visitGuardingConditionCone(Op->getSrc(1), ParentSlot, Inst);
       return;
     }
     default: llvm_unreachable("Unexpected opcode!"); return;
