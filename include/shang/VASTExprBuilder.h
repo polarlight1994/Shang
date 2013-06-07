@@ -75,7 +75,7 @@ public:
   VASTImmediate *getOrCreateImmediate(const APInt &Value);
 
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-    unsigned UB, unsigned LB);
+                        unsigned UB, unsigned LB);
 
   void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 };
