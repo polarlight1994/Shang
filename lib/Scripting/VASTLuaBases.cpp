@@ -172,11 +172,14 @@ bool VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
       if (!Visited.insert(ChildExpr).second) continue;
 
       VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
+      continue;
     }
 
     // If ChildNode is a not data-path operand list, it may be the SeqVal.
-    if (VASTSeqValue *SeqVal = dyn_cast_or_null<VASTSeqValue>(ChildNode))
+    if (VASTSeqValue *SeqVal = dyn_cast_or_null<VASTSeqValue>(ChildNode)) {
       SeqVals.insert(SeqVal);
+      continue;
+    }
 
     // The wire connected to the output of submodules are actually connecting to
     // the output register of the submodules.
