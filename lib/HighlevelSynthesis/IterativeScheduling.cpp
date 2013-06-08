@@ -199,14 +199,18 @@ struct DatapathVisitor {
 
     if (Srcs.empty()) return false;
 
+    bool AnySrc = false;
     typedef std::set<VASTSeqValue*>::iterator iterator;
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
       // Dirty Hack: Temporary ignore the place holder for the direct output of
       // block RAMs/some functional units.
       // TODO: Add the delay from the corresponding launch operation?
-      if (VASTSeqValue *Src = *I) visitPair(Root, Operand, Src);
+      if (VASTSeqValue *Src = *I) {
+        visitPair(Root, Operand, Src);
+        AnySrc = true;
+      }
 
-    return true;
+    return AnySrc;
   }
 
   void visitPair(VASTValue *Dst, Value *DstV, VASTSeqValue *Src) {
