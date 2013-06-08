@@ -143,6 +143,7 @@ Pass *llvm::createTimingNetlistPass() {
 
 void TimingNetlist::releaseMemory() {
   PathInfo.clear();
+  FaninInfo.clear();
 }
 
 void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
