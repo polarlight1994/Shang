@@ -259,6 +259,10 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
     if (!Visited.insert(ChildNode).second) continue;
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
+      // FUOutputs are not associated with slots for now, so do not try to get
+      // the number of cycles.
+      if (V->isFUOutput()) continue;
+
       unsigned Interval = getMinimalInterval(V, ReadSlots);
       float EstimatedDelay = TNL.getDelay(V, Root, Dst);
       SrcInfo CurInfo(Interval, EstimatedDelay);
@@ -385,7 +389,7 @@ bool PathIntervalQueryCache::generateSubmoduleConstraints(VASTSeqValue *SeqVal) 
   if (!SeqVal->isFUOutput()) return false;
 
   VASTSubModule *SubMod = dyn_cast<VASTSubModule>(SeqVal->getParent());
-  if (SubMod == 0) return false;
+  if (SubMod == 0) return true;
 
   unsigned Latency = SubMod->getLatency();
   // No latency information available.
