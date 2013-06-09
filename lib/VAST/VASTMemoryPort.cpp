@@ -181,6 +181,9 @@ std::string VASTMemoryBus::getArrayName() const {
 void VASTMemoryBus::printDecl(raw_ostream &OS) const {
   if (isDefault()) return;
 
+  VASTSelector *RData = getRData();
+  VASTNamedValue::PrintDecl(OS, RData->getName(), RData->getBitWidth(), false);
+
   if (requireByteEnable()) {
     getREnable()->printDecl(OS);
     getRAddr()->printDecl(OS);

@@ -124,4 +124,8 @@ void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 }
 
 void VASTSubModule::printDecl(raw_ostream &OS) const {
+  VASTSelector *Fin = getFinPort();
+  VASTNamedValue::PrintDecl(OS, Fin->getName(), Fin->getBitWidth(), false);
+  if (VASTSelector *Ret = getRetPort())
+    VASTNamedValue::PrintDecl(OS, Ret->getName(), Ret->getBitWidth(), false);
 }
