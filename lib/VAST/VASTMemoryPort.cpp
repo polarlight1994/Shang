@@ -42,46 +42,45 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
   VASTSelector *REn = VM->createSelector(getREnName(Idx), 1, Parent,
                                           VASTSelector::Enable);
   addFanin(REn);
-  if (isDefault()) VM->addPort(REn);
+  if (isDefault()) VM->addPort(REn, false);
 
   VASTSelector *RAddr
     = VM->createSelector(getRAddrName(Idx), getAddrWidth(), Parent);
   addFanin(RAddr);
-  if (isDefault()) VM->addPort(RAddr);
+  if (isDefault()) VM->addPort(RAddr, false);
 
-  if (isDefault()) {
-    VASTInPort *RData = VM->addInputPort(getRDataName(Idx), getDataWidth());
-    addFanout(RData->getValue());
-  } else
-    addFanout(VM->addWire(getRDataName(Idx), getDataWidth(), this));
+  VASTSelector *RData = VM->createSelector(getRDataName(Idx), getDataWidth(),
+                                           Parent, VASTSelector::FUOutput);
+  addFanout(RData);
+  if (isDefault()) VM->addPort(RData, true);
 
   // The write ports.
   VASTSelector *WEn = VM->createSelector(getWEnName(Idx), 1, Parent,
                                          VASTSelector::Enable);
   addFanin(WEn);
-  if (isDefault()) VM->addPort(WEn);
+  if (isDefault()) VM->addPort(WEn, false);
 
 
   VASTSelector *WAddr
     = VM->createSelector(getWAddrName(Idx), getAddrWidth(), Parent);
   addFanin(WAddr);
-  if (isDefault()) VM->addPort(WAddr);
+  if (isDefault()) VM->addPort(WAddr, false);
 
   VASTSelector *WData
     = VM->createSelector(getWDataName(Idx), getDataWidth(), Parent);
   addFanin(WData);
-  if (isDefault()) VM->addPort(WData);
+  if (isDefault()) VM->addPort(WData, false);
 
   if (requireByteEnable()) {
     VASTSelector *RBEn
       = VM->createSelector(getRByteEnName(Idx), ByteEnSize, Parent);
     addFanin(RBEn);
-    if (isDefault()) VM->addPort(RBEn);
+    if (isDefault()) VM->addPort(RBEn, false);
 
     VASTSelector *WBEn
       = VM->createSelector(getWByteEnName(Idx), ByteEnSize, Parent);
     addFanin(WBEn);
-    if (isDefault()) VM->addPort(WBEn);
+    if (isDefault()) VM->addPort(WBEn, false);
   }
 }
 
@@ -118,7 +117,7 @@ VASTSelector *VASTMemoryBus::getRAddr() const {
   return getFanin(1);
 }
 
-VASTValue    *VASTMemoryBus::getRData() const {
+VASTSelector *VASTMemoryBus::getRData() const {
   return getFanout(0);
 }
 
@@ -569,8 +568,8 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
   OS.always_ff_end(false);
 
   // Only print the assignment to the read data if there is any use.
-  if (!getRData()->use_empty())
-    OS << "assign " << cast<VASTWire>(getRData())->getName() << " = "
+  if (!getRData()->def_empty())
+    OS << "assign " << getRData()->getName() << " = "
        << ' ' << getArrayName() << "_rdata0r;\n\n";
 }
 

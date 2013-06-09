@@ -33,6 +33,7 @@ public:
     Static,         // The register for the static global variables.
     Slot,           // Slot register which hold the enable signals for each slot.
     Enable,         // Register for enable signals.
+    FUInput,        // Represent the input of functional unit
     FUOutput        // Represent the output of functional unit
   };
   // Synthesized Fanin.

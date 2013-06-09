@@ -265,20 +265,26 @@ void VASTOutPort::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   getSelector()->printRegisterBlock(OS, Mod, 0);
 }
 
-VASTInPort::VASTInPort(VASTWire *Wire) : VASTPort(vastInPort) {
-  Contents.Wire = Wire;
+VASTInPort::VASTInPort(VASTNode *Node) : VASTPort(vastInPort) {
+  Contents.Node = Node;
 }
 
 VASTWire *VASTInPort::getValue() const {
-  return Contents.Wire;
+  return cast<VASTWire>(Contents.Node);
 }
 
 const char *VASTInPort::getNameImpl() const {
-  return getValue()->getName();
+  if (VASTNamedValue *V = dyn_cast<VASTNamedValue>(Contents.Node))
+    return V->getName();
+
+  return cast<VASTSelector>(Contents.Node)->getName();
 }
 
 unsigned VASTInPort::getBitWidthImpl() const {
-  return getValue()->getBitWidth();
+  if (VASTNamedValue *V = dyn_cast<VASTNamedValue>(Contents.Node))
+    return V->getBitWidth();
+
+  return cast<VASTSelector>(Contents.Node)->getBitWidth();
 }
 
 void VASTPort::printExternalDriver(raw_ostream &OS, uint64_t InitVal) const {
@@ -724,10 +730,29 @@ void VASTModule::print(raw_ostream &OS) const {
   }
 }
 
+VASTPort *VASTModule::createPort(VASTNode *Node, bool IsInput) {
+  VASTPort *P = 0;
+
+  // Create a output port for the selector.
+  if (IsInput)
+    // Else it must be a Selector for the output port.
+    P = new VASTOutPort(cast<VASTSelector>(Node));
+  else
+    P = new VASTInPort(Node);
+
+  return P;
+}
+
+VASTPort *VASTModule::addPort(VASTNode *Node, bool IsInput) {
+  VASTPort *P = createPort(Node, IsInput);
+  Ports.push_back(P);
+  return P;
+}
+
 VASTInPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
                                      PortTypes T /*= Others*/) {
   VASTWire *Wire = addWire(Name, BitWidth);
-  VASTPort *Port = createPort(Wire);
+  VASTPort *Port = createPort(Wire, true);
 
   if (T < SpecialInPortEnd) {
     assert(Ports[T] == 0 && "Special port exist!");
@@ -752,7 +777,7 @@ VASTOutPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
   VASTSelector::Type SelTy = T == VASTModule::Finish ? VASTSelector::Enable
                                                      : VASTSelector::Temp;
   VASTSelector *Sel = createSelector(Name, BitWidth, 0, SelTy);
-  VASTPort *Port = createPort(Sel);
+  VASTPort *Port = createPort(Sel, false);
 
   if (SpecialInPortEnd <= T && T < SpecialOutPortEnd) {
     assert(Ports[T] == 0 && "Special port exist!");
@@ -797,25 +822,4 @@ VASTSelector *VASTModule::createSelector(const Twine &Name, unsigned BitWidth,
   Selectors.push_back(Sel);
 
   return Sel;
-}
-
-VASTPort *VASTModule::createPort(VASTNode *Node) {
-  VASTPort *P = 0;
-
-  // Create a output port for the selector.
-  if (VASTSelector *Sel = dyn_cast<VASTSelector>(Node))
-    P = new VASTOutPort(Sel);
-  else {
-    // Else it must be a wire for the input port.
-    VASTWire *Wire = cast<VASTWire>(Node);
-    P = new VASTInPort(Wire);
-  }
-
-  return P;
-}
-
-VASTPort *VASTModule::addPort(VASTNode *Node) {
-  VASTPort *P = createPort(Node);
-  Ports.push_back(P);
-  return P;
 }

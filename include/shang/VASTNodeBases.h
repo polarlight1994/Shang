@@ -80,7 +80,7 @@ protected:
     BasicBlock *ParentBB;
     Value *LLVMValue;
     VASTSelector *Sel;
-    VASTWire *Wire;
+    VASTNode *Node;
   } Contents;
 
   const uint8_t NodeT : 7;
@@ -507,7 +507,7 @@ public:
 class VASTSubModuleBase : public VASTNode {
   SmallVector<VASTSelector*, 8> Fanins;
 
-  SmallVector<VASTValue*, 4> Fanouts;
+  SmallVector<VASTSelector*, 4> Fanouts;
 protected:
   const unsigned Idx;
 
@@ -517,7 +517,7 @@ protected:
   }
 
   void addFanin(VASTSelector *S);
-  void addFanout(VASTValue *V);
+  void addFanout(VASTSelector *V);
 public:
   ~VASTSubModuleBase() {}
 
@@ -531,7 +531,7 @@ public:
 
   typedef SmallVectorImpl<VASTValue*>::iterator fanout_iterator;
 
-  VASTValue *getFanout(unsigned Idx) const {
+  VASTSelector *getFanout(unsigned Idx) const {
     return Fanouts[Idx];
   }
 

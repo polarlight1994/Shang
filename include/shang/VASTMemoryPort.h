@@ -69,7 +69,7 @@ public:
   VASTSelector *getREnable() const;
   VASTSelector *getRByteEn() const;
   VASTSelector *getRAddr() const;
-  VASTValue    *getRData() const;
+  VASTSelector *getRData() const;
 
   // The write port of the memory bus.
   VASTSelector *getWEnable() const;

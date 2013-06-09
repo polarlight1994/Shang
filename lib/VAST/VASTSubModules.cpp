@@ -29,7 +29,7 @@ void VASTSubModuleBase::addFanin(VASTSelector *V) {
   Fanins.push_back(V);
 }
 
-void VASTSubModuleBase::addFanout(VASTValue *V) {
+void VASTSubModuleBase::addFanout(VASTSelector *V) {
   Fanouts.push_back(V);
 }
 
@@ -61,15 +61,17 @@ VASTSelector *VASTSubModule::createStartPort(VASTModule *VM) {
   return StartPort;
 }
 
-VASTWire *VASTSubModule::createFinPort(VASTModule *VM) {
-  FinPort = VM->addWire(getPortName("fin"), 1, this);
+VASTSelector *VASTSubModule::createFinPort(VASTModule *VM) {
+  FinPort = VM->createSelector(getPortName("fin"), 1, this,
+                               VASTSelector::FUOutput);
   addFanout(FinPort);
   return FinPort;
 }
 
-VASTWire *VASTSubModule::createRetPort(VASTModule *VM, unsigned Bitwidth,
+VASTSelector *VASTSubModule::createRetPort(VASTModule *VM, unsigned Bitwidth,
                                            unsigned Latency) {
-  RetPort = VM->addWire(getPortName("return_value"), Bitwidth, this);
+  RetPort = VM->createSelector(getPortName("return_value"), Bitwidth, this,
+                               VASTSelector::FUOutput);
   addFanout(RetPort);
   // Also update the latency.
   this->Latency = Latency;

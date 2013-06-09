@@ -31,8 +31,7 @@ class VASTSubModule : public VASTSubModuleBase {
   // Can the submodule be simply instantiated?
   bool IsSimple;
   // Special ports in the submodule.
-  VASTSelector *StartPort;
-  VASTWire *FinPort, *RetPort;
+  VASTSelector *StartPort, *FinPort, *RetPort;
 
   // The latency of the submodule.
   unsigned Latency;
@@ -60,12 +59,12 @@ public:
   VASTSelector *createStartPort(VASTModule *VM);
   VASTSelector *getStartPort() const { return StartPort; }
 
-  VASTWire *createFinPort(VASTModule *VM);
-  VASTWire *getFinPort() const { return FinPort; }
+  VASTSelector *createFinPort(VASTModule *VM);
+  VASTSelector *getFinPort() const { return FinPort; }
 
-  VASTWire *createRetPort(VASTModule *VM, unsigned Bitwidth,
-                          unsigned Latency = 0);
-  VASTWire *getRetPort() const { return RetPort; }
+  VASTSelector *createRetPort(VASTModule *VM, unsigned Bitwidth,
+                              unsigned Latency = 0);
+  VASTSelector *getRetPort() const { return RetPort; }
 
   void printDecl(raw_ostream &OS) const;
 

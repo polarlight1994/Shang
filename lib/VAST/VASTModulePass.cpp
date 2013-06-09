@@ -749,9 +749,10 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
       ->annotateValue(V);
 
   // Read the return value from the function if there is any.
-  if (VASTWire *RetPort = SubMod->getRetPort()) {
+  if (VASTSelector *RetPort = SubMod->getRetPort()) {
+    VASTSeqValue *TimedOutput = VM->createSeqValue(RetPort, 0, V);
     VASTSeqValue *Result = getOrCreateSeqVal(Inst->getValue());
-    VM->latchValue(Result, RetPort, Slot, VASTImmediate::True, V, 1);
+    VM->latchValue(Result, TimedOutput, Slot, VASTImmediate::True, V, 1);
     // Move the the next slot so that the operation can correctly read the
     // returned value
     advanceToNextSlot(Slot);
@@ -843,8 +844,10 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     VASTSeqValue *Result = getOrCreateSeqVal(&I);
     assert(Result->getBitWidth() <= Bus->getDataWidth()
            && "Loading data that exceed the width of databus!");
+
+    VASTSeqValue *TimedOutput = VM->createSeqValue(Bus->getRData(), 0, &I);
     VASTValPtr V
-      = Builder.buildBitSliceExpr(Bus->getRData(), Result->getBitWidth(), 0);
+      = Builder.buildBitSliceExpr(TimedOutput, Result->getBitWidth(), 0);
     VM->latchValue(Result, V, Slot, VASTImmediate::True, &I, Latency);
   }
 

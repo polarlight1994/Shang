@@ -85,7 +85,7 @@ class VASTInPort : public VASTPort {
   const char *getNameImpl() const;
   unsigned getBitWidthImpl() const;
 public:
-  explicit VASTInPort(VASTWire *Sel);
+  explicit VASTInPort(VASTNode *N);
   VASTWire *getValue() const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
@@ -161,7 +161,7 @@ private:
 
   VASTSeqCtrlOp *createCtrlLogic(VASTValPtr Src, VASTSlot *Slot,
                                  VASTValPtr GuardCnd, bool UseSlotActive);
-  VASTPort *createPort(VASTNode *Node);
+  VASTPort *createPort(VASTNode *Node, bool IsInput);
 public:
 
   VASTModule(Function &F);
@@ -211,7 +211,7 @@ public:
 
 
   // Allow user to add ports.
-  VASTPort *addPort(VASTNode *Node);
+  VASTPort *addPort(VASTNode *Node, bool IsInput);
   VASTInPort *addInputPort(const Twine &Name, unsigned BitWidth,
                            PortTypes T = Others);
 
