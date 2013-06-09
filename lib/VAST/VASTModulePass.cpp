@@ -745,14 +745,14 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
   VASTSlot *Slot = Inst->getSlot();
   // Disable the start port of the submodule at the next slot.
   Slot = advanceToNextSlot(Slot);
-  VM->createSlotCtrl(SubMod->getFinPort(), Slot, VASTImmediate::True)
-      ->annotateValue(V);
+  VASTSeqValue *TimedFin = VM->createSeqValue(SubMod->getFinPort(), 0, V);
+  VM->createSlotCtrl(TimedFin, Slot, VASTImmediate::True)->annotateValue(V);
 
   // Read the return value from the function if there is any.
   if (VASTSelector *RetPort = SubMod->getRetPort()) {
-    VASTSeqValue *TimedOutput = VM->createSeqValue(RetPort, 0, V);
+    VASTSeqValue *TimedReturn = VM->createSeqValue(RetPort, 0, V);
     VASTSeqValue *Result = getOrCreateSeqVal(Inst->getValue());
-    VM->latchValue(Result, TimedOutput, Slot, VASTImmediate::True, V, 1);
+    VM->latchValue(Result, TimedReturn, Slot, VASTImmediate::True, V, 1);
     // Move the the next slot so that the operation can correctly read the
     // returned value
     advanceToNextSlot(Slot);
