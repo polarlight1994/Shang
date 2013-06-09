@@ -32,7 +32,8 @@ public:
     Temp,           // Common registers which hold data for data-path.
     Static,         // The register for the static global variables.
     Slot,           // Slot register which hold the enable signals for each slot.
-    Enable          // Register for enable signals.
+    Enable,         // Register for enable signals.
+    FUOutput        // Represent the output of functional unit
   };
   // Synthesized Fanin.
   struct Fanin {
@@ -53,10 +54,11 @@ private:
   VASTSelector(const VASTSelector&) LLVM_DELETED_FUNCTION;
   void operator=(const VASTSelector&) LLVM_DELETED_FUNCTION;
 
-  PointerIntPair<VASTNode*, 2, Type> Parent;
+  VASTNode* Parent;
   SmallPtrSet<VASTSeqValue*, 8> Defs;
   const uint8_t BitWidth;
-  bool PrintSelModule;
+  const uint8_t T : 3;
+  bool PrintSelModule : 1;
 
   friend class VASTSeqValue;
   void addUser(VASTSeqValue *V);
@@ -108,7 +110,7 @@ public:
   const char *getName() const { return Contents.Name; }
   unsigned getBitWidth() const { return BitWidth; }
 
-  Type getType() const { return Parent.getInt(); }
+  Type getType() const { return Type(T); }
   bool isEnable() const { return getType() == Enable; }
   bool isSlot() const { return getType() == Slot; }
   bool isTemp() const { return getType() == Temp; }

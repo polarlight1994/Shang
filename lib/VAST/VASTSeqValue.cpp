@@ -42,7 +42,7 @@ static cl::opt<bool> PrintMUXAsParallelCase("shang-print-selector-as-parallel-ca
 //----------------------------------------------------------------------------//
 VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
                            VASTNode *Node)
-  : VASTNode(vastSelector), Parent(Node, T), BitWidth(BitWidth),
+  : VASTNode(vastSelector), Parent(Node), BitWidth(BitWidth), T(T),
     PrintSelModule(false), EnableU(this) {
   Contents.Name = Name;
 }
@@ -393,13 +393,13 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
 }
 
 void VASTSelector::setParent(VASTNode *N) {
-  assert(Parent.getPointer() == 0 && "Parent had already existed!");
-  Parent.setPointer(N);
+  assert(Parent == 0 && "Parent had already existed!");
+  Parent = N;
 }
 
 VASTNode *VASTSelector::getParent() const {
-  assert(Parent.getPointer() && "Unexpected null parent!");
-  return Parent.getPointer();
+  assert(Parent && "Unexpected null parent!");
+  return Parent;
 }
 
 VASTSeqValue *VASTSelector::getSSAValue() const {
