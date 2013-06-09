@@ -155,6 +155,10 @@ void SeqLiveVariables::verifyAnalysis() const {
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM->selector_begin(), E = VM->selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
+
+    // Ignore the FUOutputs, they are not actually associated with slots.
+    if (Sel->isFUOutput()) continue;
+
     // Reset the context.
     VIs.clear();
     UnionMask.clear();
@@ -364,6 +368,9 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
 
   for (iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
     VASTSeqValue *V = I;
+
+    // Ignore the FUOutputs, they are not actually associated with slots.
+    if (V->isFUOutput()) continue;
 
     if (V->isStatic()) {
       VarInfo *VI = new VarInfo(0);
