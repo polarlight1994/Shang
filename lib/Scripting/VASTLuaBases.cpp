@@ -719,10 +719,10 @@ VASTPort *VASTModule::createPort(VASTNode *Node, bool IsInput) {
 
   // Create a output port for the selector.
   if (IsInput)
-    // Else it must be a Selector for the output port.
-    P = new VASTOutPort(cast<VASTSelector>(Node));
-  else
     P = new VASTInPort(Node);
+  else
+    // It must be a Selector for the output port.
+    P = new VASTOutPort(cast<VASTSelector>(Node));
 
   return P;
 }
