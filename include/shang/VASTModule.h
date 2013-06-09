@@ -281,8 +281,7 @@ public:
                                unsigned InitVal = 0,
                                VASTSelector::Type T = VASTSelector::Temp);
 
-  VASTWire *addWire(const Twine &Name, unsigned BitWidth,
-                    VASTWire::DataTy Data = VASTWire::DataTy());
+  VASTWire *addWire(const Twine &Name, unsigned BitWidth, Value* LLVMValue = 0);
 
   selector_iterator selector_begin() { return Selectors.begin(); }
   selector_iterator selector_end() { return Selectors.end(); }

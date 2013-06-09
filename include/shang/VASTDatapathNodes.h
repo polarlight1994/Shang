@@ -291,21 +291,17 @@ VASTExpr::visitConeTopOrder(std::set<VASTExpr*> &Visited, T &F) {
 }
 
 class VASTWire :public VASTNamedValue, public ilist_node<VASTWire> {
-public:
-  typedef PointerUnion<VASTNode*, Value*> DataTy;
-private:
-  DataTy Data;
+  Value *LLVMValue;
 
   friend struct ilist_sentinel_traits<VASTWire>;
   VASTWire() : VASTNamedValue(vastWire, 0, 0) {}
 
 public:
 
-  VASTWire(const char *Name, unsigned BitWidth, DataTy Data = DataTy())
-    : VASTNamedValue(vastWire, Name, BitWidth), Data(Data) {}
+  VASTWire(const char *Name, unsigned BitWidth, Value* LLVMValue = 0)
+    : VASTNamedValue(vastWire, Name, BitWidth), LLVMValue(LLVMValue) {}
 
-  VASTNode *getParent() const { return Data.dyn_cast<VASTNode*>(); }
-  Value *getValue() const { return Data.dyn_cast<Value*>();}
+  Value *getValue() const { return LLVMValue; }
   // Return true if the wire represents
   bool isX() const;
 

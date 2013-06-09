@@ -108,7 +108,7 @@ struct PathIntervalQueryCache {
     CyclesFromSrcLB[Src].update(Interval, NormalizedDelay);
   }
 
-  bool generateSubmoduleConstraints(VASTWire *W);
+  bool generateSubmoduleConstraints(VASTSeqValue *SeqVal);
 
   void annotatePathInterval(VASTValue *Tree, ArrayRef<VASTSlot*> ReadSlots);
 
@@ -381,8 +381,10 @@ void PathIntervalQueryCache::insertMCPEntries() const {
     NumConstraints += insertMCPThough(I->first, I->second);
 }
 
-bool PathIntervalQueryCache::generateSubmoduleConstraints(VASTWire *W) {
-  VASTSubModule *SubMod = dyn_cast_or_null<VASTSubModule>(W->getParent());
+bool PathIntervalQueryCache::generateSubmoduleConstraints(VASTSeqValue *SeqVal) {
+  if (!SeqVal->isFUOutput()) return false;
+
+  VASTSubModule *SubMod = dyn_cast<VASTSubModule>(SeqVal->getParent());
   if (SubMod == 0) return false;
 
   unsigned Latency = SubMod->getLatency();
@@ -453,6 +455,8 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
                                          VASTValue *DepTree) {
   // Trivial case: register to register path.
   if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(DepTree)){
+    if (Cache.generateSubmoduleConstraints(Src)) return;
+
     unsigned Interval = Cache.getMinimalInterval(Src, ReadSlots);
     Cache.addIntervalFromSrc(Src, Interval, 0.0f);
 
@@ -467,10 +471,6 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
 
   // If Define Value is immediate or symbol, skip it.
   if (!isa<VASTWire>(DepTree) && !isa<VASTExpr>(DepTree)) return;
-
-  // Src may be the return_value of the submodule.
-  if (VASTWire *W = dyn_cast<VASTWire>(DepTree))
-    if (Cache.generateSubmoduleConstraints(W)) return;  
 
   Cache.annotatePathInterval(DepTree, ReadSlots);
 }

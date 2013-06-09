@@ -137,14 +137,6 @@ bool VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
     if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Root))
       SeqVals.insert(SeqVal);
 
-    // The wire connected to the output of submodules are actually connecting to
-    // the output register of the submodules.
-    if (VASTWire *W = dyn_cast<VASTWire>(Root)) {
-      VASTNode *Parent = W->getParent();
-      if (Parent && isa<VASTSubModuleBase>(Parent))
-        SeqVals.insert((VASTSeqValue*)0);
-    }
-
     return !SeqVals.empty();
   }
 
@@ -179,14 +171,6 @@ bool VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
     if (VASTSeqValue *SeqVal = dyn_cast_or_null<VASTSeqValue>(ChildNode)) {
       SeqVals.insert(SeqVal);
       continue;
-    }
-
-    // The wire connected to the output of submodules are actually connecting to
-    // the output register of the submodules.
-    if (VASTWire *W = dyn_cast_or_null<VASTWire>(ChildNode)) {
-      VASTNode *Parent = W->getParent();
-      if (Parent && isa<VASTSubModuleBase>(Parent))
-        SeqVals.insert((VASTSeqValue*)0);
     }
   }
 
@@ -346,12 +330,12 @@ VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {
 }
 
 VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
-                              VASTWire::DataTy Data) {
+                              Value* LLVMValue) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   // Allocate the wire and the use.
 
-  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, Data);
+  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, LLVMValue);
   Entry.second = Wire;
   Wires.push_back(Wire);
 

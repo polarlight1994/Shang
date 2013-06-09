@@ -429,8 +429,4 @@ void VASTWire::printDecl(raw_ostream &OS) const {
     OS << ";\n";
     return;
   }
-
-  if (getParent())
-    // Print the ouput wire for the submodules.
-    VASTNamedValue::printDecl(OS, false);
 }
