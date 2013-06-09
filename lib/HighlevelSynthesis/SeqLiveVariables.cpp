@@ -346,9 +346,16 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
 
   // Process uses.
   typedef std::set<VASTSeqValue*>::iterator iterator;
-  for (iterator I = ReadAtSlot.begin(), E = ReadAtSlot.end(); I != E; ++I)
+  for (iterator I = ReadAtSlot.begin(), E = ReadAtSlot.end(); I != E; ++I) {
+    VASTSeqValue *V = *I;
+
+    // Ignore the directly output of functional units, there should be always
+    // single cycle paths between it and the registers.
+    if (V->isFUOutput()) continue;
+
     // Ignore the placeholder for node without timing information.
-    if (VASTSeqValue *V = *I) handleUse(V, S, PathFromEntry);
+    handleUse(V, S, PathFromEntry);
+  }
 }
 
 void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {

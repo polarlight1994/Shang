@@ -317,9 +317,8 @@ unsigned SelectorPipelining::getCriticalDelay(const SVSet &S, VASTValue *V) {
   for (iterator I = S.begin(), E = S.end(); I != E; ++I) {
     VASTSeqValue *Src = *I;
 
-    // Do not retime if there is a placeholder for the node without timing
-    // information.
-    if (Src == 0) return STGDistances::Inf;
+    // Do not retime across the direct output of the functional unit.
+    if (Src->isFUOutput()) return STGDistances::Inf;
 
     // The ignore the trivial path.
     if (Src == V) continue;    
@@ -339,9 +338,9 @@ SelectorPipelining::getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot) {
     // Do not retime if we do not have any timing information.
     if (SV == 0) return 0;
 
-    // Do not retime across the static register as well, we do not have the
-    // accurate timing information for them.
-    if (SV->getType() == VASTSelector::Static) return 0;
+    // Do not retime across the static register and the output of functional
+    // units, we do not have the accurate timing information for them.
+    if (SV->isStatic() || SV->isFUOutput()) return 0;
 
     Interval = std::min(Interval, SLV->getIntervalFromDef(SV, ReadSlot));
   }
