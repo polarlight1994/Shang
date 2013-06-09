@@ -686,7 +686,8 @@ void VASTModule::eraseSeqVal(VASTSeqValue *Val) {
   VASTSelector *Sel = Val->getSelector();
   Val->changeSelector(0);
 
-  if (Sel->empty()) eraseSelector(Sel);
+  // Do not delete the output of the FU, because it is always there.
+  if (Sel->empty() && !Sel->isFUOutput()) eraseSelector(Sel);
 
   SeqVals.erase(Val);
 }
