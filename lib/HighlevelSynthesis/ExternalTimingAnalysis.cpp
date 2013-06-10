@@ -239,6 +239,9 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
 
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
+
+    if (Sel->isFUOutput()) continue;
+
     float SelDelay = ETA.getSelDelay(Sel);
     typedef VASTSelector::iterator fanin_iterator;
     for (fanin_iterator SI = Sel->begin(), SE = Sel->end(); SI != SE; ++SI) {
@@ -505,6 +508,8 @@ ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O, VASTSelector *Sel) 
 
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
                                                       VASTSelector *Sel) {
+  if (Sel->isFUOutput()) return;
+
   extractSelectorDelay(O, Sel);
 
   typedef VASTSelector::iterator fanin_iterator;
