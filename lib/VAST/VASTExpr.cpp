@@ -331,8 +331,8 @@ const char *VASTExpr::getFUName() const {
   case dpAdd: return "shang_addc";
   case dpMul: return "shang_mult";
   case dpShl: return "shang_shl";
-  case dpSRL: return "shang_sra";
-  case dpSRA: return "shang_srl";
+  case dpSRL: return "shang_srl";
+  case dpSRA: return "shang_sra";
   case dpSGT: return "shang_sgt";
   case dpUGT: return "shang_ugt";
   default: break;
