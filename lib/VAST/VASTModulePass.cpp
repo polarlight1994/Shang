@@ -848,7 +848,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     VASTValPtr TimedRData = VM->createSeqValue(Bus->getRData(), 0, &I);
 
     // Build the shift to shift the bytes to LSB.
-    if (Bus->requireByteEnable()) {
+    if (Bus->requireByteEnable() && !Bus->isDefault()) {
       TimedRData
         = Builder.buildShiftExpr(VASTExpr::dpSRL, TimedRData,
                                  Bus->getFinalRDataShiftAmountOperand(VM),
