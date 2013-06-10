@@ -34,21 +34,21 @@ class VASTMemoryBus : public VASTSubModuleBase {
   void addPorts(VASTModule *VM);
 
   // Signal names of the function unit.
-  static std::string getRAddrName(unsigned Idx);
+  std::string getRAddrName() const;
 
-  static std::string getWAddrName(unsigned Idx);
+  std::string getWAddrName() const;
 
-  static std::string getRDataName(unsigned Idx);
+  std::string getRDataName() const;
 
-  static std::string getWDataName(unsigned Idx);
+  std::string getWDataName() const;
 
-  static std::string getWByteEnName(unsigned Idx);
+  std::string getWByteEnName() const;
 
-  static std::string getRByteEnName(unsigned Idx);
+  std::string getRByteEnName() const;
 
-  static std::string getWEnName(unsigned Idx);
+  std::string getWEnName() const;
 
-  static std::string getREnName(unsigned Idx);
+  std::string getREnName() const;
 
   void writeInitializeFile(vlang_raw_ostream &OS) const;
   // Print the implementation of the memory blocks according to the requirement

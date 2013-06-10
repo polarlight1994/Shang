@@ -39,46 +39,46 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
   VASTNode *Parent = isDefault() ? 0 : this;
 
   // The read ports.
-  VASTSelector *REn = VM->createSelector(getREnName(Idx), 1, Parent,
+  VASTSelector *REn = VM->createSelector(getREnName(), 1, Parent,
                                           VASTSelector::Enable);
   addFanin(REn);
   if (isDefault()) VM->addPort(REn, false);
 
   VASTSelector *RAddr
-    = VM->createSelector(getRAddrName(Idx), getAddrWidth(), Parent);
+    = VM->createSelector(getRAddrName(), getAddrWidth(), Parent);
   addFanin(RAddr);
   if (isDefault()) VM->addPort(RAddr, false);
 
-  VASTSelector *RData = VM->createSelector(getRDataName(Idx), getDataWidth(),
+  VASTSelector *RData = VM->createSelector(getRDataName(), getDataWidth(),
                                            Parent, VASTSelector::FUOutput);
   addFanout(RData);
   if (isDefault()) VM->addPort(RData, true);
 
   // The write ports.
-  VASTSelector *WEn = VM->createSelector(getWEnName(Idx), 1, Parent,
+  VASTSelector *WEn = VM->createSelector(getWEnName(), 1, Parent,
                                          VASTSelector::Enable);
   addFanin(WEn);
   if (isDefault()) VM->addPort(WEn, false);
 
 
   VASTSelector *WAddr
-    = VM->createSelector(getWAddrName(Idx), getAddrWidth(), Parent);
+    = VM->createSelector(getWAddrName(), getAddrWidth(), Parent);
   addFanin(WAddr);
   if (isDefault()) VM->addPort(WAddr, false);
 
   VASTSelector *WData
-    = VM->createSelector(getWDataName(Idx), getDataWidth(), Parent);
+    = VM->createSelector(getWDataName(), getDataWidth(), Parent);
   addFanin(WData);
   if (isDefault()) VM->addPort(WData, false);
 
   if (requireByteEnable()) {
     VASTSelector *RBEn
-      = VM->createSelector(getRByteEnName(Idx), ByteEnSize, Parent);
+      = VM->createSelector(getRByteEnName(), ByteEnSize, Parent);
     addFanin(RBEn);
     if (isDefault()) VM->addPort(RBEn, false);
 
     VASTSelector *WBEn
-      = VM->createSelector(getWByteEnName(Idx), ByteEnSize, Parent);
+      = VM->createSelector(getWByteEnName(), ByteEnSize, Parent);
     addFanin(WBEn);
     if (isDefault()) VM->addPort(WBEn, false);
   }
@@ -142,35 +142,37 @@ VASTSelector *VASTMemoryBus::getWByteEn() const {
   return getFanin(6);
 }
 
-std::string VASTMemoryBus::getRAddrName(unsigned Idx) {
+std::string VASTMemoryBus::getRAddrName() const {
   return "mem" + utostr(Idx) + "raddr";
 }
 
-std::string VASTMemoryBus::getWAddrName(unsigned Idx) {
+std::string VASTMemoryBus::getWAddrName() const {
   return "mem" + utostr(Idx) + "waddr";
 }
 
-std::string VASTMemoryBus::getRDataName(unsigned Idx) {
+std::string VASTMemoryBus::getRDataName() const {
+  if (isDefault()) return "mem" + utostr(Idx) + "rdata";
+  
   return "mem" + utostr(Idx) + "ram_rdata";
 }
 
-std::string VASTMemoryBus::getWDataName(unsigned Idx) {
+std::string VASTMemoryBus::getWDataName() const {
   return "mem" + utostr(Idx) + "wdata";
 }
 
-std::string VASTMemoryBus::getWByteEnName(unsigned Idx) {
+std::string VASTMemoryBus::getWByteEnName() const {
   return "mem" + utostr(Idx) + "wbe";
 }
 
-std::string VASTMemoryBus::getRByteEnName(unsigned Idx) {
+std::string VASTMemoryBus::getRByteEnName() const {
   return "mem" + utostr(Idx) + "rbe";
 }
 
-std::string VASTMemoryBus::getWEnName(unsigned Idx) {
+std::string VASTMemoryBus::getWEnName() const {
   return "mem" + utostr(Idx) + "wen";
 }
 
-std::string VASTMemoryBus::getREnName(unsigned Idx) {
+std::string VASTMemoryBus::getREnName() const {
   return "mem" + utostr(Idx) + "ren";
 }
 
@@ -287,13 +289,13 @@ void VASTMemoryBus::printBank(vlang_raw_ostream &OS, const VASTModule *Mod) cons
   OS << "wire " << VASTValue::printBitRange(getByteEnWdith())
      << " mem" << Idx << "pipe0_wbe0w = "
         "mem" << Idx << "wbe << "
-     << getWAddrName(Idx) << VASTValue::printBitRange(ByteAddrWidth)
+     << getWAddrName() << VASTValue::printBitRange(ByteAddrWidth)
      << ";\n";
   // Shift the data according to the byte address also.
   OS << "wire "<< VASTValue::printBitRange(getDataWidth())
      << " mem" << Idx << "pipe0_wdata0w = "
         "(mem" << Idx << "wdata"
-        " << { " << getWAddrName(Idx) << VASTValue::printBitRange(ByteAddrWidth)
+        " << { " << getWAddrName() << VASTValue::printBitRange(ByteAddrWidth)
      << ", 3'b0 });\n";
 
   // Stage 2: Access the block ram.
@@ -309,29 +311,29 @@ void VASTMemoryBus::printBank(vlang_raw_ostream &OS, const VASTModule *Mod) cons
   writeInitializeFile(OS);
 
   OS.always_ff_begin(false);
-  OS.if_begin(getWEnName(Idx));
+  OS.if_begin(getWEnName());
 
   for (unsigned i = 0; i < BytesPerWord; ++i)
     OS << "if(mem" << Idx << "pipe0_wbe0w[" << i << "]) "
-       << getArrayName() << "[" << getWAddrName(Idx)
+       << getArrayName() << "[" << getWAddrName()
        << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "]"
           "[" << i << "]"
           " <= mem" << Idx << "pipe0_wdata0w"
        << VASTValue::printBitRange((i + 1) * 8, i * 8) << ";\n";
 
-  OS << "if (" << getWAddrName(Idx)
+  OS << "if (" << getWAddrName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
      << NumWords << ")  $finish(\"Write access out of bound!\");\n";
   OS.exit_block();
 
   // TODO: Guard the read pipeline stages by stage enable signal.
-  OS << getRDataName(Idx) << " <= " << getArrayName() << "[" << getRAddrName(Idx)
+  OS << getRDataName() << " <= " << getArrayName() << "[" << getRAddrName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
-  OS << "mem" << Idx << "pipe1_raddr1r <= " << getRAddrName(Idx) << ";\n";
+  OS << "mem" << Idx << "pipe1_raddr1r <= " << getRAddrName() << ";\n";
 
-  OS.if_() << getREnName(Idx);
+  OS.if_() << getREnName();
   OS._then();
-  OS << "if (" << getRAddrName(Idx)
+  OS << "if (" << getRAddrName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true)
      << ">= "<< NumWords <<") $finish(\"Read access out of bound!\");\n";
   OS.exit_block();
