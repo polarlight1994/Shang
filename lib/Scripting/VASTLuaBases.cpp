@@ -251,6 +251,8 @@ void VASTOutPort::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
 
 VASTInPort::VASTInPort(VASTNode *Node) : VASTPort(vastInPort) {
   Contents.Node = Node;
+  if (VASTSelector *Sel = dyn_cast<VASTSelector>(Node))
+    Sel->setParent(this);
 }
 
 VASTWire *VASTInPort::getValue() const {
