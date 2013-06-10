@@ -228,22 +228,33 @@ void VASTSeqCtrlOp::print(raw_ostream &OS) const {
 
 //----------------------------------------------------------------------------//
 VASTSlotCtrl::VASTSlotCtrl(VASTSlot *S, VASTNode *N)
-  : VASTSeqOp(vastSlotCtrl, S, true, isa<VASTSlot>(N) ? 1 : 0), Ptr() {
-  if (VASTSlot *Slot = dyn_cast<VASTSlot>(N)) Ptr = Slot;
-  else                                        Ptr = cast<VASTValue>(N);
+  : VASTSeqOp(vastSlotCtrl, S, true, 1), TargetSlot(0) {
+  VASTValue *Src = VASTImmediate::True;
+  if (VASTSlot *S = dyn_cast<VASTSlot>(N)) TargetSlot = S;
+  else                                     Src = cast<VASTValue>(N);
 
   // Initialize the operand.
-  if (num_srcs()) new (src_begin() + 0) VASTUse(this, VASTImmediate::True);
+  new (src_begin() + 0) VASTUse(this, Src);
 }
 
-bool VASTSlotCtrl::isBranch() const { return Ptr.is<VASTSlot*>(); }
+bool VASTSlotCtrl::isBranch() const { return TargetSlot != 0; }
 
 VASTSlot *VASTSlotCtrl::getTargetSlot() const {
-  return Ptr.get<VASTSlot*>();
+  assert(isBranch() && "Wrong accessor!");
+  return TargetSlot;
 }
 
 VASTValue *VASTSlotCtrl::getWaitingSignal() const {
-  return Ptr.get<VASTValue*>();
+  assert(!isBranch() && "Wrong accessor!");
+  VASTValPtr WaitingSignal = *src_begin();
+  assert(!WaitingSignal.isInverted() && "Unexpected inverted waiting signal!");
+  return WaitingSignal.get();
+}
+
+VASTNode *VASTSlotCtrl::getNode() const {
+  if (isBranch()) return getTargetSlot();
+
+  return getWaitingSignal();
 }
 
 void VASTSlotCtrl::print(raw_ostream &OS) const {

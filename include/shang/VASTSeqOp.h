@@ -202,10 +202,7 @@ public:
 /// ControlLogicSynthesis pass.
 /// Please note that UseSlotActive does not make sense in VASTSeqSlotCtrl.
 class VASTSlotCtrl : public VASTSeqOp {
-public:
-
-private:
-  PointerUnion<VASTSlot*, VASTValue*> Ptr;
+  VASTSlot *TargetSlot;
 public:
   // VASTSeqSlotCtrl may not use slot active, it is a part of the control logic.
   // VASTSeqSlotCtrl only assign 1 or 0 to the destination VASTSeqValue.
@@ -214,10 +211,7 @@ public:
   bool isBranch() const;
   VASTSlot *getTargetSlot() const;
   VASTValue *getWaitingSignal() const;
-  VASTNode *getNode() const {
-    return isBranch() ? (VASTNode*)getTargetSlot()
-                      : (VASTNode*)getWaitingSignal();
-  }
+  VASTNode *getNode() const;
 
   virtual void print(raw_ostream &OS) const;
   static inline bool classof(const VASTSlotCtrl *A) { return true; }

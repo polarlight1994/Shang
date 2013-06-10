@@ -46,7 +46,7 @@ struct ControlLogicSynthesis : public VASTModulePass {
   DatapathBuilder *Builder;
   VASTModule *VM;
 
-  void addSlotReady(VASTSlot *S, VASTValue *V, VASTValPtr Cnd) {
+  void addSlotReady(VASTSlot *S, VASTValPtr V, VASTValPtr Cnd) {
     Builder->orEqual(SlotReadys[S->getValue()][V], Cnd);
   }
 
@@ -58,7 +58,7 @@ struct ControlLogicSynthesis : public VASTModulePass {
   typedef SuccVecTy::const_iterator const_succ_it;
   std::map<const VASTSeqValue*, SuccVecTy> SlotSuccs;
 
-  typedef std::map<VASTValue*, VASTValPtr> FUReadyVecTy;
+  typedef std::map<VASTValPtr, VASTValPtr> FUReadyVecTy;
   typedef FUReadyVecTy::const_iterator const_fu_rdy_it;
   std::map<const VASTSeqValue*, FUReadyVecTy> SlotReadys;
 
@@ -187,10 +187,8 @@ void ControlLogicSynthesis::collectControlLogicInfo(VASTSlot *S) {
     if (VASTSlotCtrl *SeqOp = dyn_cast<VASTSlotCtrl>(*I)) {
       VASTValPtr Pred = SeqOp->getGuard();
 
-      if (SeqOp->isBranch())
-        addSlotSucc(S, SeqOp);
-      else
-        addSlotReady(S, SeqOp->getWaitingSignal(), Pred);
+      if (SeqOp->isBranch()) addSlotSucc(S, SeqOp);
+      else                   addSlotReady(S, SeqOp->getWaitingSignal(), Pred);
     }
   }
 }
