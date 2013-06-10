@@ -381,22 +381,7 @@ VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
   // last function execution.
   VASTSchedUnit *SrcSU = Src->isStatic() ? G->getEntry() : getFlowDepSU(V);
 
-  if (Src->isFUOutput()) {
-    VASTSeqInst *SeqInst = cast<VASTSeqInst>(SrcSU->getSeqOp());
-    assert(SeqInst->getSeqOpType() == VASTSeqInst::Latch && "Unexpected type!");
-    unsigned Latency = SeqInst->getCyclesFromLaunch();
-    assert(Latency && "Unexpected zero latency");
-    // Remove the latency of the single cycle path from the output to the
-    // latching register.
-    Latency -= 1;
-    // Get the launch operation.
-    SrcSU = IR2SUMap[V].front();
-    assert(SeqInst->getSeqOpType() == VASTSeqInst::Launch && "Unexpected type!");
-    // Now we are going to build the dependencies from the launching operation,
-    // add the extra latency to NumCycles.
-    NumCycles += Latency;
-  }
-
+  assert(!Src->isFUOutput() && "Unexpected FU output!");
   DstU->addDep(SrcSU, VASTDep::CreateFlowDep(NumCycles));
 }
 
