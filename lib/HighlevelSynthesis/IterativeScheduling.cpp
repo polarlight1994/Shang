@@ -64,7 +64,8 @@ struct DatapathVisitor {
         // Also extract the transition condition between states.
         if (VASTSlotCtrl *SlotCtrl = dyn_cast<VASTSlotCtrl>(*I)) {
           Instruction *Inst = dyn_cast_or_null<Instruction>(SlotCtrl->getValue());
-          if (Inst == 0 || isa<UnreachableInst>(Inst)) continue;
+          if (Inst == 0 || isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))
+            continue;
 
           assert(Inst->getNumOperands() && "Expect operand for the condition!");
           visitCone(VASTValPtr(SlotCtrl->getGuard()).get(), Inst->getOperand(0));
@@ -135,9 +136,16 @@ struct DatapathVisitor {
     }
     case Instruction::Ret: {
       ReturnInst *RI = cast<ReturnInst>(Inst);
-      assert(RI->getNumOperands() && "'ret void' should not be a VASTSeqInst!");
-      VASTLatch Addr = Op->getSrc(0);
-      visitConeAndSelector(Addr, RI, RI->getReturnValue());
+      unsigned FinIdx = RI->getNumOperands();
+      // If the finish port is not assigned at the first operand, we are
+      // assigning the return value at the first operand.
+      if (FinIdx) {
+        VASTLatch RetVal = Op->getSrc(0);
+        visitConeAndSelector(RetVal, RI, RI->getReturnValue());
+        visitGuardingConditionCone(RetVal, ParentSlot, RI);
+      }
+
+      visitGuardingConditionCone(Op->getSrc(FinIdx), ParentSlot, RI);
       return;
     }
     case Instruction::UDiv:
