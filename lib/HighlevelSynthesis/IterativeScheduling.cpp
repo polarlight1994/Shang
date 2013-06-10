@@ -225,10 +225,16 @@ struct DelayExtractor : public DatapathVisitor<DelayExtractor> {
     : TNL(TNL), PathInfo(PathInfo), FaninInfo(FaninInfo) {}
 
   void visitPair(VASTValue *Dst, Value *DstV, VASTSeqValue *Src, Value *SrcV) {
-    delay_type &delay = PathInfo[DstV][SrcV];
+    delay_type &OldDelay = PathInfo[DstV][SrcV];
+    delay_type NewDelay = TNL.getDelay(Src, Dst);
+
+    // Remove the latency of the single cycle path from the output to the
+    // latching register.
+    if (Src->isFUOutput())
+      NewDelay = std::max(0.0f, NewDelay - 1.0f);
 
     // FIXME: Use better update algorithm, e.g. somekinds of iir filter.
-    delay = std::max(delay, TNL.getDelay(Src, Dst));
+    OldDelay = std::max(OldDelay, NewDelay);
   }
 
   void visitSelFanin(VASTSelector *Sel, Value *User,
