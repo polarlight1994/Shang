@@ -125,6 +125,7 @@ inline bool PtrInvPair<VASTImmediate>::isMinSigned() const {
 class VASTSymbol : public VASTNamedValue {
   VASTSymbol(const char *Name, unsigned BitWidth);
 
+  void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
   friend class VASTModule;
 public:
   /// Methods for support type inquiry through isa, cast, and dyn_cast:

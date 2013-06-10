@@ -61,6 +61,7 @@ public:
   unsigned getByteEnWdith() const { return getDataWidth() / 8; }
 
   std::string getArrayName() const;
+  VASTValPtr getFinalRDataShiftAmountOperand(VASTModule *VM) const;
 
   bool isDefault() const { return Idx == 0; }
   bool requireByteEnable() const { return RequireByteEnable; }

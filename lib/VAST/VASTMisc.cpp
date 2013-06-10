@@ -74,6 +74,13 @@ VASTImmediate *VASTImmediate::False = 0;
 VASTSymbol::VASTSymbol(const char *Name, unsigned BitWidth)
   : VASTNamedValue(VASTNode::vastSymbol, Name, BitWidth) {}
 
+void VASTSymbol::printAsOperandImpl(raw_ostream &OS,
+                                    unsigned UB, unsigned LB) const {
+  OS << getName();
+  if (UB != getBitWidth() || LB != 0)
+    OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
+}
+
 void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                         unsigned LB) const{
   OS << getName();

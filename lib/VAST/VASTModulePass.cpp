@@ -845,9 +845,17 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     assert(Result->getBitWidth() <= Bus->getDataWidth()
            && "Loading data that exceed the width of databus!");
 
-    VASTSeqValue *TimedOutput = VM->createSeqValue(Bus->getRData(), 0, &I);
-    VASTValPtr V
-      = Builder.buildBitSliceExpr(TimedOutput, Result->getBitWidth(), 0);
+    VASTValPtr TimedRData = VM->createSeqValue(Bus->getRData(), 0, &I);
+
+    // Build the shift to shift the bytes to LSB.
+    if (Bus->requireByteEnable()) {
+      TimedRData
+        = Builder.buildShiftExpr(VASTExpr::dpSRL, TimedRData,
+                                 Bus->getFinalRDataShiftAmountOperand(VM),
+                                 TimedRData->getBitWidth());
+    }
+
+    VASTValPtr V = Builder.buildBitSliceExpr(TimedRData, Result->getBitWidth(), 0);
     VM->latchValue(Result, V, Slot, VASTImmediate::True, &I, Latency);
   }
 
