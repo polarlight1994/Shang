@@ -235,9 +235,9 @@ public:
   }
 };
 
-// Estimate the bit-level delay with linear approximation.
-class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator> {
-  typedef TimingEstimatorImpl<BitlevelDelayEsitmator> Base;
+// The timing estimator based on the black box model.
+class BlackBoxDelayEsitmator : public TimingEstimatorImpl<BlackBoxDelayEsitmator> {
+  typedef TimingEstimatorImpl<BlackBoxDelayEsitmator> Base;
   typedef Base::delay_type delay_type;
 
   static SrcEntryTy AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
@@ -279,7 +279,7 @@ class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator
   }
 
 public:
-  BitlevelDelayEsitmator(PathDelayInfo &PathDelay, ModelType T)
+  BlackBoxDelayEsitmator(PathDelayInfo &PathDelay, ModelType T)
     : Base(PathDelay, T) {}
 
   void accumulateDelayThuLUT(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,

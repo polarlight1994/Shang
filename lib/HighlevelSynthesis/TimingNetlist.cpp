@@ -218,7 +218,7 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
     return false;
   }
   
-  BitlevelDelayEsitmator Estimator(PathInfo, TimingModel);
+  BlackBoxDelayEsitmator Estimator(PathInfo, TimingModel);
 
   // Build the timing path for datapath nodes.
   typedef DatapathContainer::expr_iterator expr_iterator;

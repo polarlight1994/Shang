@@ -61,8 +61,8 @@ void TimingEstimatorBase::estimateTimingOnCone(VASTExpr *Root) {
 }
 
 //===----------------------------------------------------------------------===//
-BitlevelDelayEsitmator::SrcEntryTy
-BitlevelDelayEsitmator::AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
+BlackBoxDelayEsitmator::SrcEntryTy
+BlackBoxDelayEsitmator::AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
                                            uint8_t DstUB, uint8_t DstLB,
                                            const SrcEntryTy &DelayFromSrc) {
   delay_type D = DelayFromSrc.second;
@@ -70,8 +70,8 @@ BitlevelDelayEsitmator::AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
   return SrcEntryTy(DelayFromSrc.first, D + Inc);
 }
 
-BitlevelDelayEsitmator::SrcEntryTy
-BitlevelDelayEsitmator::AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
+BlackBoxDelayEsitmator::SrcEntryTy
+BlackBoxDelayEsitmator::AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
                                            uint8_t DstUB, uint8_t DstLB,
                                            const SrcEntryTy &DelayFromSrc) {
   delay_type D = DelayFromSrc.second;
@@ -82,8 +82,8 @@ BitlevelDelayEsitmator::AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
   return SrcEntryTy(DelayFromSrc.first, D + Inc);
 }
 
-BitlevelDelayEsitmator::SrcEntryTy
-BitlevelDelayEsitmator::AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
+BlackBoxDelayEsitmator::SrcEntryTy
+BlackBoxDelayEsitmator::AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
                                            uint8_t DstUB, uint8_t DstLB,
                                            const SrcEntryTy &DelayFromSrc) {
   assert(DstUB == 1 && DstLB == 0 && "Bad UB and LB!");
@@ -95,8 +95,8 @@ BitlevelDelayEsitmator::AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
   return SrcEntryTy(DelayFromSrc.first, D + Inc);
 }
 
-BitlevelDelayEsitmator::SrcEntryTy
-BitlevelDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
+BlackBoxDelayEsitmator::SrcEntryTy
+BlackBoxDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
                                            uint8_t DstUB, uint8_t DstLB,
                                            const SrcEntryTy &DelayFromSrc) {
   assert(DstUB == 1 && DstLB == 0 && "Bad UB and LB!");
@@ -110,7 +110,7 @@ BitlevelDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
 }
 
 void
-BitlevelDelayEsitmator::accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst,
+BlackBoxDelayEsitmator::accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst,
                                                  unsigned ThuPos,
                                                  uint8_t DstUB, uint8_t DstLB,
                                                  SrcDelayInfo &CurInfo) {
