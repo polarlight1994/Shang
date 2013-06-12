@@ -736,7 +736,7 @@ void VASTScheduling::fixSchedulingGraph() {
       // Only need to create the pseudo dependencies to the exit node. Because
       // the PHI node will always be scheduled to the same slot as the
       // terminator.
-      if (U->isPHILatch()) {
+      if (U->isPHILatch() || U->isPHI()) {
         G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
         continue;
       }
