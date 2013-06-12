@@ -5,18 +5,18 @@ FUs.BRam.Latency = 1.0 / PERIOD -- Block RAM
 
 
 -- Latency table for EP2C35F672C6
-FUs.Shift = { Latencies = { 0.912 / PERIOD, 2.922 / PERIOD, 3.612 / PERIOD, 4.623 / PERIOD, 5.537 / PERIOD }, --Shift
+FUs.Shift = { Latencies = { 0 , 2.910 / PERIOD , 3.619 / PERIOD , 4.397 / PERIOD , 5.868 / PERIOD }, --Shift
               Costs = {1 * 64, 27 * 64, 70 * 64, 171 * 64, 393 * 64}, --Shift
               StartInterval=1} --Shift
-FUs.AddSub = { Latencies = { 1.066 / PERIOD, 2.139 / PERIOD, 2.835 / PERIOD, 4.138 / PERIOD, 6.753 / PERIOD }, --Add
+FUs.AddSub = { Latencies = { 0 , 2.573 / PERIOD , 3.111 / PERIOD , 4.597 / PERIOD , 7.192 / PERIOD }, --Add
 	             Costs = {2 * 64, 10 * 64, 18 * 64, 34 * 64, 66 * 64}, --Add
                StartInterval=1}
-FUs.Mult = { Latencies = { 0.908 / PERIOD, 2.181 / PERIOD, 2.504 / PERIOD, 6.580 / PERIOD, 9.377 / PERIOD }, --Mul
+FUs.Mult = { Latencies = { 0 , 4.082 / PERIOD , 4.630 / PERIOD , 7.952 / PERIOD , 11.140 / PERIOD }, --Mult
 	           Costs = {1 * 64, 103 * 64, 344 * 64, 1211 * 64, 4478 * 64}, --Mul
              StartInterval=1} --Mul
-FUs.ICmp   = { Latencies = { 0.912 / PERIOD, 1.906 / PERIOD, 2.612 / PERIOD, 4.050 / PERIOD, 6.660 / PERIOD }, --Cmp
-	              Costs = {1 * 64, 8 * 64, 16 * 64, 32 * 64, 64 * 64}, --Cmp
-                StartInterval=1} --Cmp
+FUs.ICmp   = { Latencies = { 0 , 2.143 / PERIOD , 3.044 / PERIOD , 4.376 / PERIOD , 6.982 / PERIOD }, --ICmp
+               Costs = {1 * 64, 8 * 64, 16 * 64, 32 * 64, 64 * 64}, --Cmp
+               StartInterval=1} --Cmp
 FUs.Mux    = { MaxAllowedMuxSize = 16,
                Latencies = { 1.296 / PERIOD,
                       1.353 / PERIOD,

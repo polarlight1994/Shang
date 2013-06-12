@@ -2,16 +2,16 @@ FUs.LUTDelay = 0.2 / PERIOD
 FUs.MaxLutSize = 6
 FUs.BRam.Latency = 1.0 / PERIOD -- Block RAM
 
-FUs.AddSub = { Latencies = { 0.653 / PERIOD, 1.242 / PERIOD, 1.342 / PERIOD, 1.727 / PERIOD, 2.289 / PERIOD }, --Add
+FUs.AddSub = { Latencies = { 0 , 1.450 / PERIOD , 1.631 / PERIOD , 1.953 / PERIOD , 2.601 / PERIOD }, --Add
 	             Costs = {2 * 64, 10 * 64, 18 * 64, 34 * 64, 66 * 64}, --Add
                StartInterval=1}
-FUs.Shift = { Latencies = { 0.528 / PERIOD, 1.262 / PERIOD, 1.554 / PERIOD, 2.108 / PERIOD, 2.471 / PERIOD }, --Shift
+FUs.Shift = { Latencies = { 0 , 1.352 / PERIOD , 1.742 / PERIOD , 2.251 / PERIOD , 2.751 / PERIOD }, --Shift
               Costs = {1 * 64, 27 * 64, 70 * 64, 171 * 64, 393 * 64}, --Shift
               StartInterval=1} --Shift
-FUs.Mult = { Latencies = { 0.511 / PERIOD, 1.714 / PERIOD, 1.346 / PERIOD, 2.775 / PERIOD, 5.273 / PERIOD }, --Mul
+FUs.Mult = { Latencies = { 0 , 3.873 / PERIOD , 3.620 / PERIOD , 4.783 / PERIOD , 6.504 / PERIOD }, --Mult
 	           Costs = {1 * 64, 103 * 64, 344 * 64, 1211 * 64, 4478 * 64}, --Mul
              StartInterval=1} --Mul 
-FUs.ICmp   = { Latencies = { 0.528 / PERIOD, 1.024 / PERIOD, 1.646 / PERIOD, 1.825 / PERIOD, 2.159 / PERIOD }, --Cmp
+FUs.ICmp   = { Latencies = { 0 , 1.163 / PERIOD , 1.622 / PERIOD , 2.020 / PERIOD , 2.253 / PERIOD }, --ICmp
 	             Costs = {1 * 64, 8 * 64, 16 * 64, 32 * 64, 64 * 64}, --Cmp
                StartInterval=1} --Cmp 
 
