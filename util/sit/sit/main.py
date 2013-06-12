@@ -13,7 +13,7 @@ import sqlite3
 from jinja2 import Environment, FileSystemLoader, Template
 
 from logparser import SimLogParser
-from teststeps import TestStep, HLSStep, Session
+from teststeps import TestStep, ShangHLSStep, Session
 
 def ParseOptions() :
   parser = argparse.ArgumentParser(description='The Shang Integrated Tester')
@@ -134,7 +134,7 @@ def main(builtinParameters = {}):
     for test_option in option_space :
       # TODO: Provide the keyword constructor
       # Expand the test_option so that the test option always override the basic_config.
-      hls_step = HLSStep(dict(basic_config, **test_option))
+      hls_step = ShangHLSStep(dict(basic_config, **test_option))
       hls_step.test_name = test_name
       hls_step.hardware_function = test_name if args.mode == TestStep.HybridSim else 'main'
       hls_step.test_file = test_path

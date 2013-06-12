@@ -142,12 +142,309 @@ class HLSStep(TestStep) :
   def __init__(self, config):
     TestStep.__init__(self, config)
 
-  def prepareTest(self) :
+  def prepareTestDIR(self) :
     # Create the local folder for the current test.
     self.hls_base_dir = os.path.join(os.path.dirname(self.test_file),
                            self.test_name,
                            datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
     os.makedirs(self.hls_base_dir)
+
+  def submitResults(self, connection, status) :
+    if (not self.submitLogfiles(connection, status)) : return
+
+    # TODO: Extract other statistics
+    connection.execute('''
+INSERT INTO
+  highlevelsynthesis(name, parameter, rtl_output)
+  VALUES (:test_name, :parameter, :rtl_output)
+''',{
+      'test_name' : self.test_name,
+      'parameter' : json.dumps(self.getOptionCompack()),
+      'rtl_output' :  self.rtl_output
+    })
+
+  def createJobTemplate(self) :
+    # Create the HLS job.
+    jt = Session.createJobTemplate()
+
+    jt.jobName = self.getJobName()
+
+    #Set up the correct working directory and the output path
+    jt.workingDirectory = os.path.dirname(self.synthesis_config_file)
+
+    self.stdout = os.path.join(self.hls_base_dir, 'hls.stdout')
+    jt.outputPath = ':' + self.stdout
+
+    self.stderr = os.path.join(self.hls_base_dir, 'hls.stderr')
+    jt.errorPath = ':' + self.stderr
+    jt.joinFiles=True
+
+    jt.nativeSpecification = '-q %s' % self.sge_queue
+
+    if self.require_license :
+      jt.nativeSpecification += self.getLicenseSpecification()
+
+    return jt
+
+class LegUpHLSStep(HLSStep) :
+  step_name = 'LegUp high-level synthesis'
+
+  def __init__(self, config):
+    HLSStep.__init__(self, config)
+    self.legup_llc = '''/nfs/app/legup/3.0/legup/llvm/Release+Asserts/bin/llc'''
+    self.legup_families_config = '''/nfs/app/legup/3.0/legup/hwtest/%(device_family)s.tcl''' % config
+    self.legup_family = config['device_family']
+
+  def prepareTest(self) :
+    self.prepareTestDIR()
+    self.rtl_output = os.path.join(self.hls_base_dir, self.test_name + ".sv")
+
+    with open(os.path.join(self.hls_base_dir, self.test_name + ".sql"), 'w') as dummy_sql:
+      dummy_sql.write('''
+CREATE TABLE mcps(
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       src TEXT,
+       dst TEXT,
+       thu TEXT,
+       cycles INTEGER,
+       normalized_delay REAL
+       );
+''')
+
+    #Generate the HLS config.
+    self.period = int(1000.0/self.fmax)
+    self.synthesis_config_file = os.path.join(self.hls_base_dir, 'test_config.tcl')
+    with open(self.synthesis_config_file, 'w') as tcl_config:
+      tcl_config.write('''
+# legup.tcl - LegUp configuration file for test suite
+#
+# These variables can be overridden by environment variables using the naming
+# convention:
+#
+#       LEGUP_($VARIABLE_NAME)
+#
+# ie. to turn off divider sharing:
+#
+#       export LEGUP_SHARE_DIV=0
+#
+# See Makefile.config for more examples
+#
+
+if { [get_device_family] != "CycloneII" &&
+     [get_device_family] != "CycloneIV" &&
+     [get_device_family] != "StratixIV" } {
+    puts stderr "Unrecognized Family. Make to you include the ../hwtest/(family).tcl\n";
+}
+
+# if set, div/rem will be shared with any required mux width (as in Legup 1.0)
+set_parameter SHARE_DIV 1 
+set_parameter SHARE_REM 1
+
+# only turn on multiplier sharing with DSPs off
+#set_parameter SHARE_MUL 1
+
+# set to ensure that muxing will be placed on multipliers if max DSPs
+# are exceeded (as opposed to performing multiplication with logic)
+set_parameter RESTRICT_TO_MAXDSP 0
+
+# Enable multi-pumping of multipliers that use DSPs
+#set_parameter MULTIPUMPING 0
+
+# Only schedule one multiplier per cycle
+# now deprecated in favour of SDC_RES_CONSTRAINTS
+set_parameter MINIMIZE_MULTIPLIERS 0
+
+# Override DSP infer estimation algorithm - assume multiply-by-constant
+# always infers DSPs
+set_parameter MULT_BY_CONST_INFER_DSP 0
+
+# use local block rams for every array and remove global memory controller
+# WARNING: only works with simple pointers and only one function (main)
+#set_parameter LOCAL_RAMS 1
+
+# when LOCAL_RAMS is on try to schedule independent load/stores in parallel
+#set_parameter PARALLEL_LOCAL_RAMS 1
+
+# Explicitly instantiate all multipliers as lpm_mult modules
+# Setting MULTIPLIER_PIPELINE_STAGES > 0 will also turn this on
+#set_parameter EXPLICIT_LPM_MULTS 1
+
+# Number of pipeline stages for a multiplier
+set_parameter MULTIPLIER_PIPELINE_STAGES 0
+
+# Don't chain multipliers
+#set_parameter MULTIPLIER_NO_CHAIN 1
+
+# Maximum chain size to consider. Setting to 0 uses Legup 1.0 original binding
+# SET TO 0 TO DISABLE PATTERN SHARING
+# (setting to 0 shares only dividers and remainders, as in LegUp 1.0)
+set_parameter MAX_SIZE 10
+
+# The settings below should all be nonzero, but can be disabled when debugging
+# if set, these will be included in patterns and shared with 2-to-1 muxing
+if { [get_device_family] == "StratixIV" } {
+    # these aren't worth sharing on CycloneII
+    set_parameter SHARE_ADD 1
+    set_parameter SHARE_SUB 1
+} 
+
+set_parameter SHARE_BITOPS 1
+set_parameter SHARE_SHIFT 1
+
+# Two operations will only be shared if the difference of their true bit widths
+# is below this threshold: e.g. an 8-bit adder will not be shared with 
+# a 32-bit adder unless BIT_DIFF_THRESHOLD >= 24
+set_parameter BIT_DIFF_THRESHOLD 10
+set_parameter BIT_DIFF_THRESHOLD_PREDS 30
+
+# The minimum bit width of an instruction to consider
+# (e.g. don't bother sharing 1 bit adders)
+set_parameter MIN_WIDTH 2
+
+# write patterns to dot file
+#set_parameter WRITE_TO_DOT 1
+
+# write patterns to verilog file
+#set_parameter WRITE_TO_VERILOG 1
+
+# MinimizeBitwidth parameters
+#set to 1 to print bitwidth minimization stats
+#set_parameter MB_PRINT_STATS 1
+#set to filename from which to read initial data ranges.  If it's
+#undefined, then no initial ranges are assumed
+#set_parameter MB_RANGE_FILE "range.profile"
+#max number of backward passes to execute (-1 for infinite)
+set_parameter MB_MAX_BACK_PASSES -1
+set_parameter MB_MINIMIZE_HW 0
+
+
+# Minimum pattern frequency written to dot/v file
+#set_parameter FREQ_THRESHOLD 1
+
+# disable register sharing based on live variable analysis
+#set_parameter DISABLE_REG_SHARING 1
+
+#
+# Scheduling Variables
+#
+
+# Setting this environment variable to a particular integer value in ns will
+# set the clock period constraint.
+# WARNING: This gets overriden by the environment variable LEGUP_SDC_PERIOD in
+# Makefile.config based on the target family. 
+set_parameter SDC_PERIOD %(period)s
+
+# Disable chaining of operations in a clock cycle. This will achieve the
+# maximum amount of pipelining. 
+# Note: this overrides SDC_PERIOD 
+#set_parameter SDC_NO_CHAINING 1
+
+# Perform as-late-as-possible (ALAP) scheduling instead of as-soon-as-possible
+# (ASAP).
+#set_parameter SDC_ALAP 1
+
+# Cause debugging information to be printed from the scheduler.
+#set_parameter SDC_DEBUG 1
+
+# Disable SDC scheduling and use the original scheduling that was in the LegUp
+# 1.0 release.
+#set_parameter NO_SDC 1
+
+# Push more multipliers into the same state for multi-pumping
+#set_parameter SDC_MULTIPUMP 1
+
+#
+# Debugging
+#
+
+# prepend every printf with the number of cycle elapsed
+#set_parameter PRINTF_CYCLES 1
+
+# print all signals to the verilog file even if they don't drive outputs
+#set_parameter KEEP_SIGNALS_WITH_NO_FANOUT 1
+
+# display cur_state on each cycle for each function
+#set_parameter PRINT_STATES 1
+
+# turn off getelementptr instructions chaining
+#set_parameter DONT_CHAIN_GET_ELEM_PTR 0
+
+# SDC resource constraints
+set_parameter SDC_RES_CONSTRAINTS 1
+
+# number of multipliers - SDC resource constraints must be on
+#set_parameter NUM_MULTIPLIERS 2
+
+# number of memory ports - SDC resource constraints must be on
+# to enable dual port    - DUAL_PORT_BINDING must be on 
+#                        - ALIAS_ANALYSIS must be on
+set_parameter NUM_MEM_PORTS 2
+
+# number of divider/remainder functional units in the hardware
+set_parameter NUM_DIVIDERS 1
+
+# enable dual port binding
+set_parameter DUAL_PORT_BINDING 1
+
+# create load/store dependencies based on LLVM alias analysis
+set_parameter ALIAS_ANALYSIS 1
+
+# turn off generating data flow graph dot files for every basic block
+#set_parameter NO_DFG_DOT_FILES 1
+
+# turn off minimize bitwidth path
+#set_parameter NO_MIN_BITWIDTH 1
+
+# pipeline a loop
+# use the optional ii parameter to force a specific pipeline initiation
+# interval
+#loop_pipeline "loop1"
+#loop_pipeline "loop2" -ii 1
+
+# turn off all loop pipelining
+#set_parameter NO_LOOP_PIPELINING 1
+''' % self)
+
+  # Run the test
+  def runTest(self) :
+    jt = self.createJobTemplate()
+    jt.remoteCommand = 'timeout'
+    # Use a bigger timeout if we are runing the feedback flow.
+    timeout = self.hls_feedback_flow_timeout * self.shang_max_scheduling_iteration if self.timing_model == 'external' else self.hls_timeout
+
+    # Setup the device family and the period, need to reset the nativeSpecification
+    jt.nativeSpecification = '-q %s' % self.sge_queue
+    jt.nativeSpecification += ' -v SDC_PERIOD=%(period)s,FAMILY=%(legup_family)s,DEVICE_FAMILY=%(fpga_family)s,DEVICE=%(fpga_device)s'
+    if self.require_license :
+      jt.nativeSpecification += ',LM_LICENSE_FILE=1800@adsc-linux -l quartus_full=1 '
+
+    #$(LLVM_HOME)llc $(LLC_FLAGS) -march=v $(NAME).bc -o $(VFILE)
+    jt.args = ['%ds' % timeout, self.legup_llc,
+               '-legup-config=%s' % self.legup_families_config,
+               '-legup-config=%s' % self.synthesis_config_file,
+               '-march=v',
+               self.test_file,
+               '-o',
+               self.rtl_output
+              ]
+
+    print "Submitted", self.getStepDesc()
+    #Submit the job.
+    self.jobid = Session.runJob(jt)
+    Session.deleteJobTemplate(jt)
+
+  def generateSubTests(self) :
+    return [ LegUpHWSimStep(self) ]
+
+# High-level synthesis step.
+class ShangHLSStep(HLSStep) :
+  step_name = 'shang high-level synthesis'
+
+  def __init__(self, config):
+    HLSStep.__init__(self, config)
+
+  def prepareTest(self) :
+    self.prepareTestDIR()
     self.rtl_output = os.path.join(self.hls_base_dir, self.test_name + ".sv")
 
     #Generate the HLS config.
@@ -243,10 +540,7 @@ IfFile:close()
 
   # Run the test
   def runTest(self) :
-    # Create the HLS job.
-    jt = Session.createJobTemplate()
-
-    jt.jobName = self.getJobName()
+    jt = self.createJobTemplate()
     jt.remoteCommand = 'timeout'
     # Use a bigger timeout if we are runing the feedback flow.
     timeout = self.hls_feedback_flow_timeout * self.shang_max_scheduling_iteration if self.timing_model == 'external' else self.hls_timeout
@@ -264,39 +558,10 @@ IfFile:close()
                '-shang-print-selector-as-parallel-case=false'
               ]
 
-    #Set up the correct working directory and the output path
-    jt.workingDirectory = os.path.dirname(self.synthesis_config_file)
-
-    self.stdout = os.path.join(self.hls_base_dir, 'hls.stdout')
-    jt.outputPath = ':' + self.stdout
-
-    self.stderr = os.path.join(self.hls_base_dir, 'hls.stderr')
-    jt.errorPath = ':' + self.stderr
-    jt.joinFiles=True
-
-    jt.nativeSpecification = '-q %s' % self.sge_queue
-
-    if self.require_license :
-      jt.nativeSpecification += self.getLicenseSpecification()
-
     print "Submitted", self.getStepDesc()
     #Submit the job.
     self.jobid = Session.runJob(jt)
     Session.deleteJobTemplate(jt)
-
-  def submitResults(self, connection, status) :
-    if (not self.submitLogfiles(connection, status)) : return
-
-    # TODO: Extract other statistics
-    connection.execute('''
-INSERT INTO
-  highlevelsynthesis(name, parameter, rtl_output)
-  VALUES (:test_name, :parameter, :rtl_output)
-''',{
-      'test_name' : self.test_name,
-      'parameter' : json.dumps(self.getOptionCompack()),
-      'rtl_output' :  self.rtl_output
-    })
 
   def generateSubTests(self) :
     #If test type == hybrid simulation
@@ -311,7 +576,7 @@ INSERT INTO
     return [ HybridSimStep(self) ]
 
   def generatePureHWSim(self) :
-    return [ PureHWSimStep(self) ]
+    return [ ShangHWSimStep(self) ]
 
 # The test step for hybrid simulation.
 class HybridSimStep(TestStep) :
@@ -401,19 +666,53 @@ diff expected.output hardware.out || exit 1
     self.jobid = Session.runJob(jt)
     Session.deleteJobTemplate(jt)
 
-
-class PureHWSimStep(TestStep) :
-  step_name = 'hardware simulation'
-
+class HWSimStep(TestStep) :
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
     self.results.update(hls_step.results)
 
-  def prepareTest(self) :
+  def prepareTestDIR(self) :
     self.pure_hw_sim_base_dir = os.path.join(self.hls_base_dir, 'pure_hw_sim')
     os.makedirs(self.pure_hw_sim_base_dir)
-    # Generate the testbench
 
+  def runTest(self) :
+    # Create the simulation job.
+    jt = Session.createJobTemplate()
+
+    jt.jobName = self.getJobName()
+    jt.remoteCommand = 'timeout'
+    jt.args = [ '%ds' % self.sim_timeout, 'bash', self.pure_hw_sim_script ]
+    #Set up the correct working directory and the output path
+    jt.workingDirectory = self.pure_hw_sim_base_dir
+    self.stdout = os.path.join(self.pure_hw_sim_base_dir, 'pure_hw_sim.output')
+    jt.outputPath = ':' + self.stdout
+    self.stderr = os.path.join(self.pure_hw_sim_base_dir, 'pure_hw_sim.stderr')
+    jt.errorPath = ':' + self.stderr
+    jt.joinFiles=True
+
+    jt.nativeSpecification = '-q %s' % self.sge_queue
+
+    print "Submitted", self.getStepDesc()
+    self.jobid = Session.runJob(jt)
+    Session.deleteJobTemplate(jt)
+
+  def generateSubTests(self) :
+    #If test type == hybrid simulation
+    if self.mode == TestStep.AlteraSyn :
+      return [ AlteraSynStep(self) ]
+
+    return []
+
+class ShangHWSimStep(HWSimStep) :
+  step_name = 'shang hardware simulation'
+
+  def __init__(self, hls_step):
+    HWSimStep.__init__(self, hls_step)
+
+  def prepareTest(self) :
+    self.prepareTestDIR()
+
+    # Generate the testbench
     self.generateFileFromTemplate('''`timescale 1ns/1ps
 module DUT_TOP(
   input wire clk,
@@ -544,26 +843,37 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
 [ -f cycles.rpt ] || exit 1
 ''', self.pure_hw_sim_script)
 
-  def runTest(self) :
-    # Create the simulation job.
-    jt = Session.createJobTemplate()
+  def submitResults(self, connection, status) :
+    if (not self.submitLogfiles(connection, status)) : return
 
-    jt.jobName = self.getJobName()
-    jt.remoteCommand = 'timeout'
-    jt.args = [ '%ds' % self.sim_timeout, 'bash', self.pure_hw_sim_script ]
-    #Set up the correct working directory and the output path
-    jt.workingDirectory = self.pure_hw_sim_base_dir
-    self.stdout = os.path.join(self.pure_hw_sim_base_dir, 'pure_hw_sim.output')
-    jt.outputPath = ':' + self.stdout
-    self.stderr = os.path.join(self.pure_hw_sim_base_dir, 'pure_hw_sim.stderr')
-    jt.errorPath = ':' + self.stderr
-    jt.joinFiles=True
+    with open(os.path.join(self.pure_hw_sim_base_dir, 'cycles.rpt')) as cycles_rpt:
+      num_cycles = int(cycles_rpt.read())
+      self.results["cycles"] = num_cycles
+      connection.execute("INSERT INTO simulation(name, parameter, cycles) VALUES (:test_name, :parameter, :cycles)",
+                         {"test_name" : self.test_name,  "parameter" : json.dumps(self.getOptionCompack()), "cycles": num_cycles})
+    cycles_rpt.close()
 
-    jt.nativeSpecification = '-q %s' % self.sge_queue
+class LegUpHWSimStep(HWSimStep) :
+  step_name = 'LegUp hardware simulation'
 
-    print "Submitted", self.getStepDesc()
-    self.jobid = Session.runJob(jt)
-    Session.deleteJobTemplate(jt)
+  def __init__(self, hls_step):
+    HWSimStep.__init__(self, hls_step)
+
+  def prepareTest(self) :
+    self.pure_hw_sim_base_dir = self.hls_base_dir
+
+    #Generate the simulation script.
+    self.pure_hw_sim_script = os.path.join(self.pure_hw_sim_base_dir, 'pure_hw_sim.sge')
+    self.generateFileFromTemplate('''#!/bin/bash
+#$ -S /bin/bash
+
+export PATH=/nfs/app/altera/modelsim_ase_12_x64/modelsim_ase/bin/:$PATH
+
+vlib work || exit 1
+vlog -sv {{ rtl_output }} || exit 1
+vsim -L altera_mf_ver -L lpm_ver -t 1ps work.main_tb -c -do "run 7000000000000000ns; exit;" || exit 1
+
+''', self.pure_hw_sim_script)
 
   def submitResults(self, connection, status) :
     if (not self.submitLogfiles(connection, status)) : return
