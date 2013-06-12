@@ -166,10 +166,27 @@ public:
     (void) inserted;
   }
 
+  void accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                                uint8_t DstUB, uint8_t DstLB,
+                                SrcDelayInfo &CurInfo) {
+    VASTExpr *BitSliceExpr = cast<VASTExpr>(Dst);
+    // Translate the (UB, LB] against the bitslice to the (UB, LB] against the
+    // Src value.
+    uint8_t UB = DstUB + BitSliceExpr->LB, LB = DstLB + BitSliceExpr->LB;
+    assert(LB >= BitSliceExpr->LB && UB <= BitSliceExpr->UB && "Bad bitslice!");
+
+    // Handle the trivial case trivially.
+    if (VASTExpr *ThuExpr = dyn_cast<VASTExpr>(Thu)) {
+      // Accumulate the scaled delay of ThuExpr to the current bitslice expression.
+      accumulateDelayTo(ThuExpr, UB, LB, CurInfo);
+    }
+
+    // Build the delay from Thu to Dst.
+    accumulateDelayThu(Thu, Dst, ThuPos, UB, LB, CurInfo, AccumulateZeroDelay);
+  }
+
   void accumulateDelayTo(VASTExpr *Expr, unsigned UB, unsigned LB,
                          SrcDelayInfo &CurSrcInfo) {
-    SubClass *SCThis = reinterpret_cast<SubClass*>(this);
-
     typedef VASTExpr::const_op_iterator op_iterator;
     for (unsigned i = 0; i < Expr->size(); ++i) {
       VASTValue *Op = Expr->getOperand(i).getAsLValue<VASTValue>();
@@ -183,55 +200,52 @@ public:
 
       switch (Expr->getOpcode()) {
       case VASTExpr::dpLUT:
-        SCThis->accumulateDelayThuLUT(Op, Expr, i, UB, LB, CurSrcInfo);
+        accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                           SubClass::AccumulateLUTDelay);
         break;
       case VASTExpr::dpAnd:
-        SCThis->accumulateDelayThuAnd(Op, Expr, i, UB, LB, CurSrcInfo);
-        break;
-      case VASTExpr::dpRAnd:
-        SCThis->accumulateDelayThuRAnd(Op, Expr, i, UB, LB, CurSrcInfo);
+        accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                           SubClass::AccumulateAndDelay);
         break;
       case VASTExpr::dpRXor:
-        SCThis->accumulateDelayThuRXor(Op, Expr, i, UB, LB, CurSrcInfo);
+      case VASTExpr::dpRAnd:
+        accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                           SubClass::AccumulateRedDelay);
         break;
       case VASTExpr::dpSGT:
       case VASTExpr::dpUGT:
-        SCThis->accumulateDelayThuCmp(Op, Expr, i, UB, LB, CurSrcInfo);
+        accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                           SubClass::AccumulateCmpDelay);
         break;
       case VASTExpr::dpAdd:
-        SCThis->accumulateDelayThuAdd(Op, Expr, i, UB, LB, CurSrcInfo);
+        accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                           SubClass::AccumulateAddDelay);
         break;
       case VASTExpr::dpMul:
-        SCThis->accumulateDelayThuMul(Op, Expr, i, UB, LB, CurSrcInfo);
+        accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                           SubClass::AccumulateMulDelay);
         break;
       case VASTExpr::dpShl:
-        SCThis->accumulateDelayThuShl(Op, Expr, i, UB, LB, CurSrcInfo);
-        break;
       case VASTExpr::dpSRL:
-        SCThis->accumulateDelayThuSRL(Op, Expr, i, UB, LB, CurSrcInfo);
-        break;
       case VASTExpr::dpSRA:
-        SCThis->accumulateDelayThuSRA(Op, Expr, i, UB, LB, CurSrcInfo);
+        accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                           SubClass::AccumulateShiftDelay);
         break;
         break;
       case VASTExpr::dpAssign:
-        SCThis->accumulateDelayThuAssign(Op, Expr, i, UB, LB, CurSrcInfo);
+        accumulateDelayThuAssign(Op, Expr, i, UB, LB, CurSrcInfo);
         break;
       case VASTExpr::dpBitCat:
-        SCThis->accumulateDelayThuBitCat(Op, Expr, i, UB, LB, CurSrcInfo);
+        accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                           SubClass::AccumulateBitCatDelay);
         break;
       case VASTExpr::dpBitRepeat:
-        SCThis->accumulateDelayBitRepeat(Op, Expr, i, UB, LB, CurSrcInfo);
+        accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                           SubClass::AccumulateBitRepeatDelay);
         break;
       default: llvm_unreachable("Unknown datapath opcode!"); break;
       }
     }
-  }
-
-  delay_type getPathDelay(VASTValue *From, VASTValue *To) {
-    const SrcDelayInfo *SrcInfo = getPathTo(To);
-    assert(SrcInfo && "SrcInfo not available!");
-    return getDelayFrom(From, *SrcInfo);
   }
 };
 
@@ -240,12 +254,15 @@ class BlackBoxDelayEsitmator : public TimingEstimatorImpl<BlackBoxDelayEsitmator
   typedef TimingEstimatorImpl<BlackBoxDelayEsitmator> Base;
   typedef Base::delay_type delay_type;
 
+public:
   static SrcEntryTy AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
                                        uint8_t DstUB, uint8_t DstLB,
                                        const SrcEntryTy &DelayFromSrc);
+
   static SrcEntryTy AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
                                        uint8_t DstUB, uint8_t DstLB,
                                        const SrcEntryTy &DelayFromSrc);
+
   static SrcEntryTy AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
                                        uint8_t DstUB, uint8_t DstLB,
                                        const SrcEntryTy &DelayFromSrc);
@@ -255,21 +272,9 @@ class BlackBoxDelayEsitmator : public TimingEstimatorImpl<BlackBoxDelayEsitmator
                                        const SrcEntryTy &DelayFromSrc);
 
   template<typename VFUTy>
-  static SrcEntryTy AccumulateAddMulDelay(VASTValue *Dst, unsigned SrcPos,
-                                          uint8_t DstUB, uint8_t DstLB,
-                                          const SrcEntryTy &DelayFromSrc) {
-    delay_type D = DelayFromSrc.second;
-    VFUTy *FU = getFUDesc<VFUTy>();
-    float MSBLatency = FU->lookupLatency(DstUB);
-    float LSBLatency = FU->lookupLatency(DstLB);
-    delay_type Inc(std::max(MSBLatency, LSBLatency));
-    return SrcEntryTy(DelayFromSrc.first, D + Inc);
-  }
-
-  template<typename VFUTy>
-  static SrcEntryTy AccumulateBlackBoxDelay(VASTValue *Dst, unsigned SrcPos,
-                                            uint8_t DstUB, uint8_t DstLB,
-                                            const SrcEntryTy &DelayFromSrc) {
+  static SrcEntryTy AccumulateDelay(VASTValue *Dst, unsigned SrcPos,
+                                    uint8_t DstUB, uint8_t DstLB,
+                                    const SrcEntryTy &DelayFromSrc) {
     delay_type D = DelayFromSrc.second;
     unsigned FUWidth = Dst->getBitWidth();
     VFUTy *FU = getFUDesc<VFUTy>();
@@ -278,91 +283,38 @@ class BlackBoxDelayEsitmator : public TimingEstimatorImpl<BlackBoxDelayEsitmator
     return SrcEntryTy(DelayFromSrc.first, D + Inc);
   }
 
-public:
+  static SrcEntryTy AccumulateAddDelay(VASTValue *Dst, unsigned SrcPos,
+                                       uint8_t DstUB, uint8_t DstLB,
+                                       const SrcEntryTy &DelayFromSrc) {
+    return AccumulateDelay<VFUAddSub>(Dst, SrcPos, DstUB, DstLB, DelayFromSrc);
+  }
+
+  static SrcEntryTy AccumulateMulDelay(VASTValue *Dst, unsigned SrcPos,
+                                       uint8_t DstUB, uint8_t DstLB,
+                                       const SrcEntryTy &DelayFromSrc) {
+    return AccumulateDelay<VFUMult>(Dst, SrcPos, DstUB, DstLB, DelayFromSrc);
+  }
+
+  static SrcEntryTy AccumulateShiftDelay(VASTValue *Dst, unsigned SrcPos,
+                                       uint8_t DstUB, uint8_t DstLB,
+                                       const SrcEntryTy &DelayFromSrc) {
+    return AccumulateDelay<VFUShift>(Dst, SrcPos, DstUB, DstLB, DelayFromSrc);
+  }
+
+  static SrcEntryTy AccumulateBitCatDelay(VASTValue *Dst, unsigned SrcPos,
+                                       uint8_t DstUB, uint8_t DstLB,
+                                       const SrcEntryTy &DelayFromSrc) {
+    return AccumulateZeroDelay(Dst, SrcPos, DstUB, DstLB, DelayFromSrc);
+  }
+  
+  static SrcEntryTy AccumulateBitRepeatDelay(VASTValue *Dst, unsigned SrcPos,
+                                             uint8_t DstUB, uint8_t DstLB,
+                                             const SrcEntryTy &DelayFromSrc) {
+    return AccumulateZeroDelay(Dst, SrcPos, DstUB, DstLB, DelayFromSrc);
+  }
+
   BlackBoxDelayEsitmator(PathDelayInfo &PathDelay, ModelType T)
     : Base(PathDelay, T) {}
-
-  void accumulateDelayThuLUT(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                             uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo, AccumulateLUTDelay);
-  }
-
-  void accumulateDelayThuAnd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                             uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo, AccumulateAndDelay);
-  }
-
-  void accumulateDelayThuRAnd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                              uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo, AccumulateRedDelay);
-  }
-
-  void accumulateDelayThuRXor(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                              uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo, AccumulateRedDelay);
-  }
-
-  void accumulateDelayThuCmp(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                             uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo, AccumulateCmpDelay);
-  }
-
-  void accumulateDelayThuAdd(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                             uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo,
-                       AccumulateAddMulDelay<VFUAddSub>);
-  }
-
-  void accumulateDelayThuMul(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                             uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo,
-                       AccumulateAddMulDelay<VFUMult>);
-  }
-
-  void accumulateDelayThuShl(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                             uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo,
-                       AccumulateBlackBoxDelay<VFUShift>);
-  }
-
-  void accumulateDelayThuSRL(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                             uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo,
-                       AccumulateBlackBoxDelay<VFUShift>);
-  }
-
-  void accumulateDelayThuSRA(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                             uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo,
-                       AccumulateBlackBoxDelay<VFUShift>);
-  }
-
-  void accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                                uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo);
-
-  void accumulateDelayThuBitCat(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                                uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo,
-                       AccumulateZeroDelay);
-  }
-
-  void accumulateDelayBitRepeat(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
-                                uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo)
-  {
-    accumulateDelayThu(Thu, Dst, ThuPos, DstUB, DstLB, CurInfo,
-                       AccumulateZeroDelay);
-  }
 };
 }
 

@@ -108,24 +108,3 @@ BlackBoxDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
   delay_type Inc(Latency);
   return SrcEntryTy(DelayFromSrc.first, D + Inc);
 }
-
-void
-BlackBoxDelayEsitmator::accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst,
-                                                 unsigned ThuPos,
-                                                 uint8_t DstUB, uint8_t DstLB,
-                                                 SrcDelayInfo &CurInfo) {
-  VASTExpr *BitSliceExpr = cast<VASTExpr>(Dst);
-  // Translate the (UB, LB] against the bitslice to the (UB, LB] against the
-  // Src value.
-  uint8_t UB = DstUB + BitSliceExpr->LB, LB = DstLB + BitSliceExpr->LB;
-  assert(LB >= BitSliceExpr->LB && UB <= BitSliceExpr->UB && "Bad bitslice!");
-
-  // Handle the trivial case trivially.
-  if (VASTExpr *ThuExpr = dyn_cast<VASTExpr>(Thu)) {
-    // Accumulate the scaled delay of ThuExpr to the current bitslice expression.
-    accumulateDelayTo(ThuExpr, UB, LB, CurInfo);
-  }
-
-  // Build the delay from Thu to Dst.
-  accumulateDelayThu(Thu, Dst, ThuPos, UB, LB, CurInfo, AccumulateZeroDelay);
-}
