@@ -313,8 +313,8 @@ public:
     return AccumulateZeroDelay(Dst, SrcPos, DstUB, DstLB, DelayFromSrc);
   }
 
-  BlackBoxDelayEsitmator(PathDelayInfo &PathDelay, ModelType T)
-    : Base(PathDelay, T) {}
+  BlackBoxDelayEsitmator(PathDelayInfo &PathDelay)
+    : Base(PathDelay, TimingNetlist::BlackBox) {}
 };
 }
 
