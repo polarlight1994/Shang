@@ -405,6 +405,7 @@ bool IterativeScheduling::runOnVASTModule(VASTModule &VM) {
 
     // Name the datapath nodes.
     ExprNames.clear();
+    CachedStrash.releaseMemory();
     Mod->nameDatapath(ExprNames, &CachedStrash);
 
     // Run the timing estimation again.
