@@ -32,6 +32,8 @@ add_test_legup_cases(mpeg2 mpeg2.bc)
 add_test_legup_cases(sha sha_driver.bc)
 add_test_legup_cases(aes aes.bc)
 
+add_test_legup_cases(mips mips.bc)
+
 #Deming's benchmark
 add_test_legup_cases(pr pr.bc)
 add_test_legup_cases(wang wang.bc)
@@ -47,11 +49,9 @@ add_test_legup_cases(dir dir.bc)
 #These there are very large design
 add_test_legup_cases(adpcm adpcm.bc)
 
-add_test_legup_cases(jpeg main.bc)
 add_test_legup_cases(blowfish bf.bc)
 
-add_test_legup_cases(mips mips.bc)
-
+add_test_legup_cases(jpeg main.bc)
 add_test_legup_cases(dfadd dfadd.bc)
 
 add_test_config(legup_simulation $ENV{all_legup_benchmark} legup_ir pure_hw_sim)
