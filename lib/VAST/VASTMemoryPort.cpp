@@ -25,63 +25,53 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
-STATISTIC(NumUnusedRead, "Number of unused read ports in memory bus");
-STATISTIC(NumUnusedWrite, "Number of unused write ports in memory bus");
+STATISTIC(NumUnusedPorts, "Number of unused ports in memory bus");
 
 VASTMemoryBus::VASTMemoryBus(unsigned BusNum, unsigned AddrSize,
-                             unsigned DataSize, bool RequireByteEnable)
+                             unsigned DataSize, bool RequireByteEnable,
+                             bool IsDualPort)
   : VASTSubModuleBase(VASTNode::vastMemoryBus, "", BusNum),
     AddrSize(AddrSize), DataSize(DataSize),
-    RequireByteEnable(RequireByteEnable), CurrentOffset(0) {}
+    RequireByteEnable(RequireByteEnable), IsDualPort(IsDualPort),
+    CurrentOffset(0) {}
 
-
-void VASTMemoryBus::addBasicPorts(VASTModule *VM, VASTNode *Parent) {
-  // The read ports.
-  VASTSelector *REn = VM->createSelector(getREnName(), 1, Parent,
+void VASTMemoryBus::addBasicPins(VASTModule *VM, VASTNode *Parent,
+                                  unsigned PortNum) {
+  assert((!isDefault() || PortNum == 0)
+          && "Dual port external memory is not supported");
+  // Enable pin
+  VASTSelector *En = VM->createSelector(getEnName(PortNum), 1, Parent,
                                          VASTSelector::Enable);
-  addFanin(REn);
-  if (isDefault()) VM->addPort(REn, false);
+  addFanin(En);
+  if (isDefault()) VM->addPort(En, false);
 
-  VASTSelector *RAddr
-    = VM->createSelector(getRAddrName(), getAddrWidth(), Parent);
-  addFanin(RAddr);
-  if (isDefault()) VM->addPort(RAddr, false);
+  // Address pin
+  VASTSelector *Address
+    = VM->createSelector(getAddrName(PortNum), getAddrWidth(), Parent);
+  addFanin(Address);
+  if (isDefault()) VM->addPort(Address, false);
 
-  VASTSelector *RData = VM->createSelector(getRDataName(), getDataWidth(),
+  // Read (from memory) data pin
+  VASTSelector *RData = VM->createSelector(getRDataName(PortNum), getDataWidth(),
                                            Parent, VASTSelector::FUOutput);
   addFanout(RData);
   if (isDefault()) VM->addPort(RData, true);
 
-  // The write ports.
-  VASTSelector *WEn = VM->createSelector(getWEnName(), 1, Parent,
-                                         VASTSelector::Enable);
-  addFanin(WEn);
-  if (isDefault()) VM->addPort(WEn, false);
-
-  VASTSelector *WAddr
-    = VM->createSelector(getWAddrName(), getAddrWidth(), Parent);
-  addFanin(WAddr);
-  if (isDefault()) VM->addPort(WAddr, false);
-
+  // Write (to memory) data pin
   VASTSelector *WData
-    = VM->createSelector(getWDataName(), getDataWidth(), Parent);
+    = VM->createSelector(getWDataName(PortNum), getDataWidth(), Parent);
   addFanin(WData);
   if (isDefault()) VM->addPort(WData, false);
 }
 
-void VASTMemoryBus::addByteEnables(VASTModule *VM, VASTNode *Parent) {
+void VASTMemoryBus::addByteEnables(VASTModule *VM, VASTNode *Parent,
+                                  unsigned PortNum) {
   unsigned ByteEnSize = getByteEnWdith();
 
-  VASTSelector *RBEn
-    = VM->createSelector(getRByteEnName(), ByteEnSize, Parent);
-  addFanin(RBEn);
-  if (isDefault()) VM->addPort(RBEn, false);
-
-  VASTSelector *WBEn
-    = VM->createSelector(getWByteEnName(), ByteEnSize, Parent);
-  addFanin(WBEn);
-  if (isDefault()) VM->addPort(WBEn, false);
-
+  VASTSelector *ByteEnable
+    = VM->createSelector(getByteEnName(PortNum), ByteEnSize, Parent);
+  addFanin(ByteEnable);
+  if (isDefault()) VM->addPort(ByteEnable, false);
 }
 
 void VASTMemoryBus::addPorts(VASTModule *VM) {
@@ -89,9 +79,13 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
   // VASTInPort/VASTOutPort, do not set the current MemBus as their parent.
   VASTNode *Parent = isDefault() ? 0 : this;
 
-  addBasicPorts(VM, Parent);
+  addBasicPins(VM, Parent, 0);
+  if (isDualPort()) addBasicPins(VM, Parent, 1);
 
-  if (requireByteEnable()) addByteEnables(VM, Parent);
+  if (requireByteEnable()) {
+    addByteEnables(VM, Parent, 0);
+    if (isDualPort()) addByteEnables(VM, Parent, 1);
+  }
 }
 
 void VASTMemoryBus::addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes) {
@@ -118,176 +112,88 @@ unsigned VASTMemoryBus::getStartOffset(GlobalVariable *GV) const {
   return at->second;
 }
 
-// The read port of the memory bus.
-VASTSelector *VASTMemoryBus::getREnable() const {
-  return getFanin(0);
+VASTSelector *VASTMemoryBus::getEnable(unsigned PortNum) const {
+  return getFanin(InputsPerPort * PortNum + 0);
 }
 
-VASTSelector *VASTMemoryBus::getRAddr() const {
-  return getFanin(1);
+VASTSelector *VASTMemoryBus::getAddr(unsigned PortNum) const {
+  return getFanin(InputsPerPort * PortNum + 1);
 }
 
-VASTSelector *VASTMemoryBus::getRData() const {
-  return getFanout(0);
+VASTSelector *VASTMemoryBus::getWData(unsigned PortNum) const {
+  return getFanin(InputsPerPort * PortNum + 2);
 }
 
-// The write port of the memory bus.
-VASTSelector *VASTMemoryBus::getWEnable() const {
-  return getFanin(2);
+VASTSelector *VASTMemoryBus::getRData(unsigned PortNum) const {
+  return getFanout(PortNum);
 }
 
-VASTSelector *VASTMemoryBus::getWAddr() const {
-  return getFanin(3);
+VASTSelector *VASTMemoryBus::getByteEn(unsigned PortNum) const {
+  unsigned Offset = InputsPerPort;
+  if (isDualPort()) Offset += InputsPerPort;
+
+  return getFanin(Offset + PortNum);
 }
 
-VASTSelector *VASTMemoryBus::getWData() const {
-  return getFanin(4);
+std::string VASTMemoryBus::getEnName(unsigned PortNum) const {
+  return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "en";
 }
 
-VASTSelector *VASTMemoryBus::getRByteEn() const {
-  return getFanin(5);
+std::string VASTMemoryBus::getAddrName(unsigned PortNum) const {
+  return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "addr";
 }
 
-VASTSelector *VASTMemoryBus::getWByteEn() const {
-  return getFanin(6);
-}
-
-std::string VASTMemoryBus::getRAddrName() const {
-  return "mem" + utostr(Idx) + "raddr";
-}
-
-std::string VASTMemoryBus::getWAddrName() const {
-  return "mem" + utostr(Idx) + "waddr";
-}
-
-std::string VASTMemoryBus::getRDataName() const {
+std::string VASTMemoryBus::getRDataName(unsigned PortNum) const {
   if (isDefault()) return "mem" + utostr(Idx) + "rdata";
   
-  return "mem" + utostr(Idx) + "ram_rdata";
+  return getArrayName() + "p" + utostr(PortNum) + "rdata";
 }
 
-std::string VASTMemoryBus::getWDataName() const {
-  return "mem" + utostr(Idx) + "wdata";
+std::string VASTMemoryBus::getWDataName(unsigned PortNum) const {
+  return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "wdata";
 }
 
-std::string VASTMemoryBus::getWByteEnName() const {
-  return "mem" + utostr(Idx) + "wbe";
+std::string VASTMemoryBus::getByteEnName(unsigned PortNum) const {
+  return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "be";
 }
 
-std::string VASTMemoryBus::getRByteEnName() const {
-  return "mem" + utostr(Idx) + "rbe";
+std::string VASTMemoryBus::getLastStageAddrName(unsigned PortNum) const {
+  return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "pipe1_raddr1r";
 }
 
-std::string VASTMemoryBus::getWEnName() const {
-  return "mem" + utostr(Idx) + "wen";
-}
-
-std::string VASTMemoryBus::getREnName() const {
-  return "mem" + utostr(Idx) + "ren";
+std::string VASTMemoryBus::getInternalWEnName(unsigned PortNum) const {
+  return "mem"+ utostr(Idx) + "p" + utostr(PortNum) + "pipe1_enable";
 }
 
 std::string VASTMemoryBus::getArrayName() const {
   return "mem" + utostr(Idx) + "ram";
 }
 
-void VASTMemoryBus::printDecl(raw_ostream &OS) const {
-  if (isDefault()) return;
-
-  getRData()->printDecl(OS);
+void VASTMemoryBus::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
+  getRData(PortNum)->printDecl(OS);
 
   if (requireByteEnable()) {
-    getREnable()->printDecl(OS);
-    getRAddr()->printDecl(OS);
-    getRByteEn()->printDecl(OS);
+    getEnable(PortNum)->printDecl(OS);
+    getAddr(PortNum)->printDecl(OS);
+    getByteEn(PortNum)->printDecl(OS);
+    getWData(PortNum)->printDecl(OS);
     // Also need to declare the register at last stage.
-    OS << "reg " << VASTValue::printBitRange(getAddrWidth())
-       << " mem" << Idx << "pipe1_raddr1r;\n";
-
-    getWEnable()->printDecl(OS);
-    getWByteEn()->printDecl(OS);
-    getWAddr()->printDecl(OS);
-    getWData()->printDecl(OS);
+    unsigned BytesPerWord = getDataWidth() / 8;
+    unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
+    VASTNamedValue::PrintDecl(OS, getLastStageAddrName(PortNum),
+                              ByteAddrWidth, true);
   }
 }
 
-static void printAssigment(vlang_raw_ostream &OS, VASTSelector *Selector,
-                           const Twine &Enable, const VASTModule *Mod) {
-  if (!Selector->empty())
-    OS.if_begin(Enable + "_selector_enable");
+void VASTMemoryBus::printDecl(raw_ostream &OS) const {
+  if (isDefault()) return;
 
-  OS << Selector->getName() << " <= ";
-  if (Selector->empty())
-    OS << VASTImmediate::buildLiteral(0, Selector->getBitWidth(), false) << ";\n";
-  else
-    OS << Selector->getName() << "_selector_wire"
-       << VASTValue::printBitRange(Selector->getBitWidth(), 0, false) << ";\n";
-
-  if (!Selector->empty()) OS.exit_block();
+  printPortDecl(OS, 0);
+  if (isDualPort()) printPortDecl(OS, 1);
 }
 
 void VASTMemoryBus::printBank(vlang_raw_ostream &OS, const VASTModule *Mod) const {
   // The default memory bus are printed as module ports.
-  if (isDefault()) return;
-
-  // Print the read port.
-  VASTSelector *ReadEnable = getREnable();
-  if (!ReadEnable->empty()) {
-    ReadEnable->printSelector(OS);
-    getRAddr()->printSelector(OS, false);
-    getRByteEn()->printSelector(OS, false);
-  } else
-    ++NumUnusedRead;
-
-  OS.always_ff_begin(false);
-  OS << ReadEnable->getName() <<  " <= ";
-  if (ReadEnable->empty())
-    OS << "1'b0;\n";
-  else
-    OS << ReadEnable->getName() << "_selector_enable" << ";\n";
-
-  printAssigment(OS, getRAddr(), ReadEnable->getName(), Mod);
-  printAssigment(OS, getRByteEn(), ReadEnable->getName(), Mod);
-
-  OS << "// synthesis translate_off\n";
-  ReadEnable->verifyAssignCnd(OS, Mod);
-  getRAddr()->verifyAssignCnd(OS, Mod);
-  getRByteEn()->verifyAssignCnd(OS, Mod);
-  OS << "// synthesis translate_on\n\n";
-
-  OS.always_ff_end(false);
-
-  // Print the write port.
-  VASTSelector *WriteEnable = getWEnable();
-  if (!WriteEnable->empty()) {
-    WriteEnable->printSelector(OS);
-    getWAddr()->printSelector(OS, false);
-    getWData()->printSelector(OS, false);
-    getWByteEn()->printSelector(OS, false);
-  } else
-    ++NumUnusedWrite;
-
-  OS.always_ff_begin(false);
-
-  OS << WriteEnable->getName() <<  " <= ";
-  if (WriteEnable->empty())
-    OS << "1'b0;\n";
-  else
-    OS << WriteEnable->getName() << "_selector_enable" << ";\n";
-
-  printAssigment(OS, getWAddr(), WriteEnable->getName(), Mod);
-  printAssigment(OS, getWData(), WriteEnable->getName(), Mod);
-  printAssigment(OS, getWByteEn(), WriteEnable->getName(), Mod);
-
-  OS << "// synthesis translate_off\n";
-  WriteEnable->verifyAssignCnd(OS, Mod);
-  getWAddr()->verifyAssignCnd(OS, Mod);
-  getWData()->verifyAssignCnd(OS, Mod);
-  getWByteEn()->verifyAssignCnd(OS, Mod);
-  OS << "// synthesis translate_on\n\n";
-
-  OS.always_ff_end(false);
-
-  // Print the implementation of the block RAM.
   if (isDefault()) return;
 
   // The width of the byte address in a word.
@@ -295,62 +201,100 @@ void VASTMemoryBus::printBank(vlang_raw_ostream &OS, const VASTModule *Mod) cons
   unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
   assert(ByteAddrWidth && "Should print as block RAM!");
 
-  // Shift the byte enable according to the byte address in a word.
-  OS << "wire " << VASTValue::printBitRange(getByteEnWdith())
-     << " mem" << Idx << "pipe0_wbe0w = "
-        "mem" << Idx << "wbe << "
-     << getWAddrName() << VASTValue::printBitRange(ByteAddrWidth)
-     << ";\n";
-  // Shift the data according to the byte address also.
-  OS << "wire "<< VASTValue::printBitRange(getDataWidth())
-     << " mem" << Idx << "pipe0_wdata0w = "
-        "(mem" << Idx << "wdata"
-        " << { " << getWAddrName() << VASTValue::printBitRange(ByteAddrWidth)
-     << ", 3'b0 });\n";
-
-  // Stage 2: Access the block ram.
   assert(CurrentOffset % BytesPerWord == 0 && "CurrentOffset not aligned!");
   unsigned NumWords = (CurrentOffset / BytesPerWord);
   // use a multi-dimensional packed array to model individual bytes within the
   // word. Please note that the bytes is ordered from 0 to 7 ([0:7]) because
   // so that the byte address can access the correct byte.
   OS << "(* ramstyle = \"no_rw_check\", max_depth = " << NumWords << " *) logic"
-     << VASTValue::printBitRange(BytesPerWord) << VASTValue::printBitRange(8)
-     << ' ' << getArrayName() << "[0:" << NumWords << "-1];\n";
+    << VASTValue::printBitRange(BytesPerWord) << VASTValue::printBitRange(8)
+    << ' ' << getArrayName() << "[0:" << NumWords << "-1];\n";
 
   writeInitializeFile(OS);
 
+  printBanksPort(OS, Mod, 0, BytesPerWord, ByteAddrWidth, NumWords);
+  if (isDualPort())
+    printBanksPort(OS, Mod, 1, BytesPerWord, ByteAddrWidth, NumWords);
+}
+
+void
+VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
+                              unsigned PortNum, unsigned BytesPerWord,
+                              unsigned ByteAddrWidth, unsigned NumWords) const {
+  // Print the read port.
+  VASTSelector *Enable = getEnable(PortNum);
+  if (Enable->empty()) {
+    ++NumUnusedPorts;
+    return;
+  }
+
+  VASTSelector *Addr = getAddr(PortNum);
+  VASTSelector *WData = getWData(PortNum);
+  VASTSelector *ByteEn = getByteEn(PortNum);
+
+  Enable->printRegisterBlock(OS, Mod, 0);
+  Addr->printRegisterBlock(OS, Mod, 0);
+  WData->printRegisterBlock(OS, Mod, 0);
+  ByteEn->printRegisterBlock(OS, Mod, 0);
+
+  // Print the pipeline stages of the block RAM.
+  // Shift the byte enable according to the byte address in a word.
+  OS << "wire " << VASTValue::printBitRange(getByteEnWdith())
+     << " mem" << Idx << 'p' << PortNum << "pipe0_be0w = " << ByteEn->getName()
+     << " << " << Addr->getName() << VASTValue::printBitRange(ByteAddrWidth)
+     << ";\n";
+  // Shift the data according to the byte address also.
+  OS << "wire "<< VASTValue::printBitRange(getDataWidth())
+     << " mem" << Idx << 'p' << PortNum << "pipe0_wdata0w = ("
+     << WData->getName() << " << { " << Addr->getName()
+     << VASTValue::printBitRange(ByteAddrWidth) << ", 3'b0 });\n";
+  OS << "reg " << getInternalWEnName(PortNum) << ";\n";
+
+  // Access the block ram.
   OS.always_ff_begin(false);
-  OS.if_begin(getWEnName());
+  if (!WData->empty()) {
+    // Use the enable of the write data as the write enable.
+    OS << getInternalWEnName(PortNum) << " <= "
+       << WData->getName() << "_selector_enable;\n";
 
-  for (unsigned i = 0; i < BytesPerWord; ++i)
-    OS << "if(mem" << Idx << "pipe0_wbe0w[" << i << "]) "
-       << getArrayName() << "[" << getWAddrName()
-       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "]"
-          "[" << i << "]"
-          " <= mem" << Idx << "pipe0_wdata0w"
-       << VASTValue::printBitRange((i + 1) * 8, i * 8) << ";\n";
+    // TODO: Guard the read pipeline stages by stage enable signal.
+    OS.if_begin(getInternalWEnName(PortNum));
 
-  OS << "if (" << getWAddrName()
+    for (unsigned i = 0; i < BytesPerWord; ++i) {
+      OS.if_() << "mem" << Idx << 'p' << PortNum << "pipe0_be0w[" << i << "]";
+      OS._then() << getArrayName() << "[" << Addr->getName()
+         << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "]"
+            "[" << i << "]"
+            " <= mem" << Idx << 'p' << PortNum << "pipe0_wdata0w"
+         << VASTValue::printBitRange((i + 1) * 8, i * 8) << ";\n";
+
+      // Need to assign the RData according to the coding style recommendation.
+      OS << getRDataName(PortNum) << VASTValue::printBitRange((i + 1) * 8, i * 8)
+         << " <= mem" << Idx << 'p' << PortNum << "pipe0_wdata0w"
+         << VASTValue::printBitRange((i + 1) * 8, i * 8) << ";\n";
+      OS.exit_block();
+    }
+
+    OS.else_begin();
+  }
+
+  OS << getRDataName(PortNum) << " <= " << getArrayName() << "[" << Addr->getName()
+     << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
+  OS << "mem" << Idx << 'p' << PortNum << "pipe1_raddr1r <= "
+     << Addr->getName() << ";\n";
+
+  // The read is guarded only the write port is not empty.
+  if (!WData->empty()) OS.exit_block();
+
+  OS << "if (" << Addr->getName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
      << NumWords << ")  $finish(\"Write access out of bound!\");\n";
-  OS.exit_block();
-
-  // TODO: Guard the read pipeline stages by stage enable signal.
-  OS << getRDataName() << " <= " << getArrayName() << "[" << getRAddrName()
-     << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
-  OS << "mem" << Idx << "pipe1_raddr1r <= " << getRAddrName() << ";\n";
-
-  OS.if_() << getREnName();
-  OS._then();
-  OS << "if (" << getRAddrName()
-     << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true)
-     << ">= "<< NumWords <<") $finish(\"Read access out of bound!\");\n";
-  OS.exit_block();
   OS.always_ff_end(false);
 }
 
-VASTValPtr VASTMemoryBus::getFinalRDataShiftAmountOperand(VASTModule *VM) const {
+VASTValPtr
+VASTMemoryBus::getFinalRDataShiftAmountOperand(VASTModule *VM,
+                                               unsigned PortNum) const {
   assert(requireByteEnable() && "Shift is only required for byteenable!");
   unsigned BytesPerWord = getDataWidth() / 8;
   unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
@@ -358,8 +302,8 @@ VASTValPtr VASTMemoryBus::getFinalRDataShiftAmountOperand(VASTModule *VM) const 
 
   std::string Operand;
   raw_string_ostream OS(Operand);
-  OS << "{ mem" << Idx << "pipe1_raddr1r"
-     << VASTValue::printBitRange(ByteAddrWidth) << ", 3'b0}";
+  OS << "{ " << getLastStageAddrName(PortNum)
+     << VASTValue::printBitRange(ByteAddrWidth) << ", 3'b0 }";
 
   return VM->getOrCreateSymbol(OS.str(), BitWidth);
 }
@@ -495,7 +439,7 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
       Buffer.clear();
     }
 
-    // Print the information about the globalvariable in the memory.
+    // Print the information about the global variable in the memory.
     OS << "/* Offset: " << StartOffset << ' ' << *GV->getType() << ' '
        << GV->getName() << "*/\n";
   }
@@ -520,56 +464,56 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
 
   writeInitializeFile(OS);
 
+  printBlockPort(OS, Mod, 0, ByteAddrWidth, NumWords);
+  if (isDualPort()) printBlockPort(OS, Mod, 1, ByteAddrWidth, NumWords);
+}
+
+void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
+                                   unsigned PortNum, unsigned ByteAddrWidth,
+                                   unsigned NumWords) const {
+  VASTSelector *Addr = getAddr(PortNum),
+               *RData = getRData(PortNum),
+               *WData = getWData(PortNum);
+
   // Print the selectors.
-  getRAddr()->printSelector(OS);
-  getWAddr()->printSelector(OS);
-  getWData()->printSelector(OS, false);
+  Addr->printSelector(OS);
+  RData->printSelector(OS);
+  WData->printSelector(OS);
 
   OS.always_ff_begin(false);
 
   // Print the read port.
-  VASTSelector *RAddr = getRAddr();
-  if (!RAddr->empty()) {
-    OS.if_begin(Twine(RAddr->getName()) + "_selector_enable");
+  if (!Addr->empty()) {
+    if (!WData->empty()) {
+      OS.if_begin(Twine(WData->getName()) + "_selector_enable");
+      OS << getArrayName() << "[" << Addr->getName() << "_selector_wire"
+         << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ']'
+         << " <= " << WData->getName() << "_selector_wire"
+         << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
 
-    OS << getRData()->getName()
-       << VASTValue::printBitRange(getDataWidth(), 0, false) << " <= "
-       << ' ' << getArrayName() << "[" << RAddr->getName() << "_selector_wire"
-       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
+      // Need to assign the RData according to the coding style recommendation.
+      OS << RData->getName()
+         << " <= " << WData->getName() << "_selector_wire;\n";
 
-    // Verify the addresses.
-    OS << "if (" << RAddr->getName() << "_selector_wire"
-       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true)
-       << ">= "<< NumWords <<") $finish(\"Read access out of bound!\");\n";
-
-    if (ByteAddrWidth) {
-      OS << "if (" << RAddr->getName() << "_selector_wire"
-         << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
-         << ByteAddrWidth << "'b0) $finish(\"Read access out of bound!\");\n";
+      OS.else_begin();
     }
 
-    OS.exit_block();
-  }
+    OS << RData->getName()
+      << VASTValue::printBitRange(getDataWidth(), 0, false) << " <= "
+      << ' ' << getArrayName() << "[" << Addr->getName() << "_selector_wire"
+      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
 
-  // Print the write port.
-  VASTSelector *WAddr = getWAddr();
-  if (!WAddr->empty()) {
-    OS.if_begin(Twine(WAddr->getName()) + "_selector_enable");
-
-    OS << ' ' << getArrayName() << "[" << WAddr->getName() << "_selector_wire"
-       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ']'
-       << " <= " << getWData()->getName() << "_selector_wire"
-       << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
+    // The read is guarded only the write port is not empty.
+    if (!WData->empty()) OS.exit_block();
 
     // Verify the addresses.
-    OS << "if (" << WAddr->getName() << "_selector_wire"
+    OS << "if (" << Addr->getName() << "_selector_wire"
        << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true)
        << ">= "<< NumWords <<") $finish(\"Write access out of bound!\");\n";
     if (ByteAddrWidth)
-      OS << "if (" << WAddr->getName() << "_selector_wire"
+      OS << "if (" << Addr->getName() << "_selector_wire"
          << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
          << ByteAddrWidth << "'b0) $finish(\"Write access out of bound!\");\n";
-    OS.exit_block();
   }
 
   OS << "// synthesis translate_off\n";

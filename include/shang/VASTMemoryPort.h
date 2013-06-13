@@ -21,65 +21,65 @@ namespace llvm {
 class GlobalVariable;
 
 class VASTMemoryBus : public VASTSubModuleBase {
-  unsigned AddrSize, DataSize;
-  bool RequireByteEnable;
-
+  const unsigned AddrSize, DataSize;
+  const bool RequireByteEnable;
+  const bool IsDualPort;
+  static const unsigned InputsPerPort = 3;
   std::map<GlobalVariable*, unsigned> BaseAddrs;
   unsigned CurrentOffset;
 
   VASTMemoryBus(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
-                bool RequireByteEnable);
+                bool RequireByteEnable, bool IsDualPort);
   friend class VASTModule;
 
   void addPorts(VASTModule *VM);
   // Add all ports except byte enables.
-  void addBasicPorts(VASTModule *VM, VASTNode *Parent);
-  void addByteEnables(VASTModule *VM, VASTNode *Parent);
+  void addBasicPins(VASTModule *VM, VASTNode *Parent, unsigned PortNum);
+  void addByteEnables(VASTModule *VM, VASTNode *Parent, unsigned PortNum);
 
   // Signal names of the function unit.
-  std::string getRAddrName() const;
+  std::string getAddrName(unsigned PortNum) const;
+  std::string getRDataName(unsigned PortNum) const;
+  std::string getWDataName(unsigned PortNum) const;
+  std::string getEnName(unsigned PortNum) const;
+  std::string getByteEnName(unsigned PortNum) const;
+  std::string getLastStageAddrName(unsigned PortNum) const;
+  std::string getInternalWEnName(unsigned PortNum) const;
 
-  std::string getWAddrName() const;
-
-  std::string getRDataName() const;
-
-  std::string getWDataName() const;
-
-  std::string getWByteEnName() const;
-
-  std::string getRByteEnName() const;
-
-  std::string getWEnName() const;
-
-  std::string getREnName() const;
+  void printPortDecl(raw_ostream &OS, unsigned PortNum) const;
 
   void writeInitializeFile(vlang_raw_ostream &OS) const;
+
   // Print the implementation of the memory blocks according to the requirement
   // of the byte enable.
   void printBank(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
+                      unsigned PortNum, unsigned BytesPerWord,
+                      unsigned ByteAddrWidth, unsigned NumWords) const;
+
   void printBlockRAM(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
+                      unsigned PortNum, unsigned ByteAddrWidth,
+                      unsigned NumWords) const;
 public:
   unsigned getDataWidth() const { return DataSize; }
   unsigned getAddrWidth() const { return AddrSize; }
   unsigned getByteEnWdith() const { return getDataWidth() / 8; }
 
   std::string getArrayName() const;
-  VASTValPtr getFinalRDataShiftAmountOperand(VASTModule *VM) const;
+  VASTValPtr getFinalRDataShiftAmountOperand(VASTModule *VM,
+                                             unsigned PortNum) const;
 
   bool isDefault() const { return Idx == 0; }
   bool requireByteEnable() const { return RequireByteEnable; }
+  bool isDualPort() const { return IsDualPort; }
 
-  // The read port of the memory bus.
-  VASTSelector *getREnable() const;
-  VASTSelector *getRByteEn() const;
-  VASTSelector *getRAddr() const;
-  VASTSelector *getRData() const;
-
-  // The write port of the memory bus.
-  VASTSelector *getWEnable() const;
-  VASTSelector *getWByteEn() const;
-  VASTSelector *getWAddr() const;
-  VASTSelector *getWData() const;
+  // The ports of the memory bus.
+  VASTSelector *getEnable(unsigned PortNum) const;
+  VASTSelector *getByteEn(unsigned PortNum) const;
+  VASTSelector *getAddr(unsigned PortNum) const;
+  VASTSelector *getRData(unsigned PortNum) const;
+  VASTSelector *getWData(unsigned PortNum) const;
 
   void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
   unsigned getStartOffset(GlobalVariable *GV) const;

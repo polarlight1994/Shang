@@ -273,7 +273,8 @@ public:
 
   VASTMemoryBus *createDefaultMemBus();
   VASTMemoryBus *createMemBus(unsigned Num, unsigned AddrWidth,
-                              unsigned DataWidth, bool RequireByteEnable);
+                              unsigned DataWidth, bool RequireByteEnable,
+                              bool IsDualPort);
 
   VASTSubModule *addSubmodule(const char *Name, unsigned Num);
 

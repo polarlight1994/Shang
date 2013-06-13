@@ -70,7 +70,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     VASTMemoryBus *&Bus = MemBuses[Bank.Number];
     if (Bus == 0) {
       Bus = VM->createMemBus(Bank.Number, AddrWidth, Bank.WordSizeInBytes * 8,
-                             Bank.RequireByteEnable);
+                             Bank.RequireByteEnable, false);
     }
 
     assert(Bus->getAddrWidth() == AddrWidth
@@ -807,26 +807,25 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   // Please note that we are using the byte address in the memory banks, so
   // the lower bound of the bitslice is 0.
   AddrVal = Builder.buildBitSliceExpr(AddrVal, Bus->getAddrWidth(), 0);
-  // Emit Address.
-  Op->addSrc(AddrVal, CurSrcIdx++, Data ? Bus->getWAddr() : Bus->getRAddr());
+  // Emit Address, use port 0.
+  Op->addSrc(AddrVal, CurSrcIdx++, Bus->getAddr(0));
 
   if (Data) {
-    // Assign store data.
+    // Assign store data, use port 0..
     VASTValPtr ValToStore = getAsOperandImpl(Data);
     assert(ValToStore->getBitWidth() <= Bus->getDataWidth()
            && "Storing data that exceed the width of databus!");
     ValToStore = Builder.buildZExtExprOrSelf(ValToStore, Bus->getDataWidth());
-    Op->addSrc(ValToStore, CurSrcIdx++, Bus->getWData());
+    Op->addSrc(ValToStore, CurSrcIdx++, Bus->getWData(0));
   }
 
-  // Compute the byte enable.
+  // Compute the byte enable, use port 0..
   if (Bus->requireByteEnable()) {
     VASTValPtr ByteEn
       = Builder.getImmediate(getByteEnable(Addr), Bus->getByteEnWdith());
-    Op->addSrc(ByteEn, CurSrcIdx++, Data ? Bus->getWByteEn() : Bus->getRByteEn());
+    Op->addSrc(ByteEn, CurSrcIdx++, Bus->getByteEn(0));
     // Enable the memory bus at the same slot.
-    Op->addSrc(VASTImmediate::True, CurSrcIdx,
-               Data ? Bus->getWEnable() : Bus->getREnable());
+    Op->addSrc(VASTImmediate::True, CurSrcIdx, Bus->getEnable(0));
   }
 
   // Read the result of the memory transaction.
@@ -845,13 +844,14 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     assert(Result->getBitWidth() <= Bus->getDataWidth()
            && "Loading data that exceed the width of databus!");
 
-    VASTValPtr TimedRData = VM->createSeqValue(Bus->getRData(), 0, &I);
+    // Use port 0 of the memory
+    VASTValPtr TimedRData = VM->createSeqValue(Bus->getRData(0), 0, &I);
 
     // Build the shift to shift the bytes to LSB.
     if (Bus->requireByteEnable() && !Bus->isDefault()) {
       TimedRData
         = Builder.buildShiftExpr(VASTExpr::dpSRL, TimedRData,
-                                 Bus->getFinalRDataShiftAmountOperand(VM),
+                                 Bus->getFinalRDataShiftAmountOperand(VM, 0),
                                  TimedRData->getBitWidth());
     }
 
