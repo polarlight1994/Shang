@@ -268,10 +268,6 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
             " <= mem" << Idx << 'p' << PortNum << "pipe0_wdata0w"
          << VASTValue::printBitRange((i + 1) * 8, i * 8) << ";\n";
 
-      // Need to assign the RData according to the coding style recommendation.
-      OS << getRDataName(PortNum) << VASTValue::printBitRange((i + 1) * 8, i * 8)
-         << " <= mem" << Idx << 'p' << PortNum << "pipe0_wdata0w"
-         << VASTValue::printBitRange((i + 1) * 8, i * 8) << ";\n";
       OS.exit_block();
     }
 
