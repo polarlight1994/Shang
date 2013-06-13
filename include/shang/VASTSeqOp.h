@@ -146,30 +146,22 @@ public:
 
 /// VASTSeqInst - Represent the LLVM Instruction in the sequential logic.
 class VASTSeqInst : public VASTSeqOp {
-public:
-  enum Type {
-    Launch, // Launch the LLVM Instruction, e.g. start the memory transaction.
-    Latch  // Latch the result of the Launched LLVM Instruction.
-  };
-private:
-  unsigned T    : 1;
-  unsigned Data : 15;
+  unsigned IsLatch: 1;
+  unsigned Data   : 15;
 public:
   // VASTSeqInst always use slot active, it is not a part of the control logic.
-  VASTSeqInst(Value *V, VASTSlot *S, unsigned Size,
-              VASTSeqInst::Type T);
+  VASTSeqInst(Value *V, VASTSlot *S, unsigned Size, bool IsLatch);
 
-  VASTSeqInst::Type getSeqOpType() const { return VASTSeqInst::Type(T); }
+  bool isLatch() const { return IsLatch; }
+  bool isLaunch() const { return !IsLatch; }
 
   unsigned getCyclesFromLaunch() const {
-    assert(getSeqOpType() == Latch
-           && "Call getCyclesFromLaunch on the wrong type!");
+    assert(isLatch() && "Call getCyclesFromLaunch on the wrong type!");
     return Data;
   }
 
   void setCyclesFromLaunch(unsigned Cycles) {
-    assert(getSeqOpType() == Latch
-           && "Call setCyclesFromLaunch on the wrong type!");
+    assert(isLatch() && "Call setCyclesFromLaunch on the wrong type!");
     Data = Cycles;
   }
 

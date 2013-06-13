@@ -15,7 +15,6 @@
 
 #include "shang/VASTNodeBases.h"
 #include "shang/VASTDatapathNodes.h"
-#include "shang/VASTSeqOp.h"
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTSlot.h"
 
@@ -302,7 +301,7 @@ public:
   // Create a SeqOp that contains NumOps operands, please note that the predicate
   // operand is excluded from NumOps.
   VASTSeqInst *lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps,
-                         Value *V, VASTSeqInst::Type T);
+                         Value *V, bool IsLatch);
 
   VASTSeqInst *latchValue(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,
                           VASTValPtr GuardCnd, Value *V, unsigned Latency = 0);

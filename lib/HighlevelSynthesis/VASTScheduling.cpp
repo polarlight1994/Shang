@@ -128,7 +128,7 @@ bool VASTSchedUnit::requireLinearOrder() const {
     if (SeqInst->num_srcs() == 0) return false;
 
     // Ignore the Latch, they will not cause a resource conflict.
-    if (SeqInst->getSeqOpType() == VASTSeqInst::Latch) return false;
+    if (SeqInst->isLatch()) return false;
 
     Instruction *I = dyn_cast<Instruction>(SeqInst->getValue());
 
@@ -566,7 +566,7 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 
     if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op)) {
       VASTSchedUnit *U = 0;
-      bool IsLatch = SeqInst->getSeqOpType() == VASTSeqInst::Latch;
+      bool IsLatch = SeqInst->isLatch();
 
       if (PHINode *PN = dyn_cast<PHINode>(Inst)) {
         U = G->createSUnit(PN, IsLatch, BB, SeqInst);

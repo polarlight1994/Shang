@@ -576,7 +576,7 @@ void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From) {
 
     VASTSeqInst *NewInst
       = VM->lauchInst(Op->getSlot(), Op->getGuard(), Op->num_srcs(),
-      Op->getValue(), cast<VASTSeqInst>(Op)->getSeqOpType());
+                      Op->getValue(), cast<VASTSeqInst>(Op)->isLatch());
     typedef VASTSeqOp::op_iterator iterator;
 
     for (unsigned i = 0, e = Op->num_srcs(); i < e; ++i) {

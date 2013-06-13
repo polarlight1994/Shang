@@ -100,7 +100,7 @@ struct DatapathVisitor {
     // underlying LLVM Instruction.
     switch (Inst->getOpcode()) {
     case Instruction::Load: {
-      if (Op->getSeqOpType() == VASTSeqInst::Latch) return;
+      if (Op->isLatch()) return;
 
       LoadInst *LI = cast<LoadInst>(Inst);
       VASTLatch Addr = Op->getSrc(0);
@@ -153,7 +153,7 @@ struct DatapathVisitor {
     case Instruction::URem:
     case Instruction::SRem: {
       // Handle the binary operators.
-      if (Op->getSeqOpType() == VASTSeqInst::Latch) return;
+      if (Op->isLatch()) return;
 
       visitConeAndSelector(Op->getSrc(0), Inst, Inst->getOperand(0));
       visitGuardingConditionCone(Op->getSrc(0), ParentSlot, Inst);

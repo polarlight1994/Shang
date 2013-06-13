@@ -604,7 +604,7 @@ VASTSeqInst *
 VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
                        VASTValPtr GuardCnd, Value *V, unsigned Latency) {
   assert(Src && "Bad assignment source!");
-  VASTSeqInst *Inst = lauchInst(Slot, GuardCnd, 1, V, VASTSeqInst::Latch);
+  VASTSeqInst *Inst = lauchInst(Slot, GuardCnd, 1, V, true);
   Inst->addSrc(Src, 0, SeqVal);
   Inst->setCyclesFromLaunch(Latency);
 
@@ -613,9 +613,9 @@ VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
 
 VASTSeqInst *
 VASTModule::lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps, Value *V,
-                      VASTSeqInst::Type T) {
+                      bool IsLatch) {
   // Create the uses in the list.
-  VASTSeqInst *SeqInst = new VASTSeqInst(V, Slot, NumOps, T);
+  VASTSeqInst *SeqInst = new VASTSeqInst(V, Slot, NumOps, IsLatch);
   // Create the predicate operand.
   new (SeqInst->Operands) VASTUse(SeqInst, Pred);
 

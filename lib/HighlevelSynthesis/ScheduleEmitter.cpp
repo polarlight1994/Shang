@@ -259,7 +259,7 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot) {
     ToSlot = getOrCreateSubGroup(PN->getParent(), Cnd, ToSlot);
 
   VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Cnd, Op->num_srcs(),
-                                      Op->getValue(), Op->getSeqOpType());
+                                      Op->getValue(), Op->isLatch());
   typedef VASTSeqOp::op_iterator iterator;
 
   for (unsigned i = 0, e = Op->num_srcs(); i < e; ++i) {
@@ -808,8 +808,7 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
     // if (U.Op == Op) continue;
 
     // Only retime across the latch operation.
-    if (cast<VASTSeqInst>(U.Op)->getSeqOpType() != VASTSeqInst::Latch)
-      continue;
+    if (cast<VASTSeqInst>(U.Op)->isLaunch()) continue;
 
     // Wrong slot to retime?
     if (!isReachable(U.getSlot(), S)) {

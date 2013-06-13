@@ -201,18 +201,16 @@ void VASTSeqOp::removeFromParent() {
 
 //----------------------------------------------------------------------------//
 
-VASTSeqInst::VASTSeqInst(Value *V, VASTSlot *S, unsigned Size, VASTSeqInst::Type T)
-  : VASTSeqOp(vastSeqInst, S, true, Size), T(T), Data(0) {
+VASTSeqInst::VASTSeqInst(Value *V, VASTSlot *S, unsigned Size, bool IsLatch)
+  : VASTSeqOp(vastSeqInst, S, true, Size), IsLatch(IsLatch), Data(0) {
   annotateValue(V);
 }
 
 void VASTSeqInst::print(raw_ostream &OS) const {
   VASTSeqOp::print(OS);
 
-  switch (getSeqOpType()) {
-  case Launch: OS << " <Launch> "; break;
-  case Latch:  OS << " <Latch> ";  break;
-  }
+  if (isLatch()) OS << " <Latch> ";
+  else           OS << " <Launch> ";
 
   OS << '\n';
 }

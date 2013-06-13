@@ -519,8 +519,7 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
   unsigned NumOperands = I.getNumOperands();
   VASTSeqInst *SeqInst =
-    VM->lauchInst(CurSlot, VASTImmediate::True, NumOperands + 1, &I,
-                  VASTSeqInst::Latch);
+    VM->lauchInst(CurSlot, VASTImmediate::True, NumOperands + 1, &I, true);
 
   // Assign the return port if necessary.
   if (NumOperands) {
@@ -683,8 +682,8 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
 
   BasicBlock *ParentBB = CS->getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
-  VASTSeqInst *Op = VM->lauchInst(Slot, VASTImmediate::True, Args.size() + 1,
-                                  Inst, VASTSeqInst::Launch);
+  VASTSeqInst *Op
+    = VM->lauchInst(Slot, VASTImmediate::True, Args.size() + 1, Inst, false);
   // Build the logic to lauch the module and read the result.
   buildSubModuleOperation(Op, SubMod, Args);
 }
@@ -729,7 +728,7 @@ void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
   BasicBlock *ParentBB = I.getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
   VASTSeqInst *Op
-    = VM->lauchInst(Slot, VASTImmediate::True, 2 + 1, &I, VASTSeqInst::Launch);
+    = VM->lauchInst(Slot, VASTImmediate::True, 2 + 1, &I, false);
   buildSubModuleOperation(Op, SubMod, Ops);
 }
 
@@ -798,8 +797,8 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   unsigned NumOperands = Data ? 4 : 3;
   if (!Bus->requireByteEnable()) NumOperands -= 2;
 
-  VASTSeqOp *Op = VM->lauchInst(Slot, VASTImmediate::True, NumOperands, &I,
-                                VASTSeqInst::Launch);
+  VASTSeqOp *Op
+    = VM->lauchInst(Slot, VASTImmediate::True, NumOperands, &I, false);
   unsigned CurSrcIdx = 0;
 
   VASTValPtr AddrVal = getAsOperandImpl(Addr);

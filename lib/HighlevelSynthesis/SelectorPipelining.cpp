@@ -205,8 +205,7 @@ void SelectorPipelining::descomposeSeqInst(VASTSeqInst *SeqInst) {
     VASTLatch L = SeqInst->getSrc(i);
 
     VASTSeqInst *NewSeqInst = VM->lauchInst(L.getSlot(), L.getGuard(), 1,
-                                            SeqInst->getValue(),
-                                            VASTSeqInst::Latch);
+                                            SeqInst->getValue(), true);
     NewSeqInst->addSrc(VASTValPtr(L), 0, L.getSelector(), L.getDst());
   }
 
