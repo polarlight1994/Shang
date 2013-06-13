@@ -34,13 +34,11 @@ VASTMemoryBus::VASTMemoryBus(unsigned BusNum, unsigned AddrSize,
     AddrSize(AddrSize), DataSize(DataSize),
     RequireByteEnable(RequireByteEnable), CurrentOffset(0) {}
 
-void VASTMemoryBus::addPorts(VASTModule *VM) {
-  unsigned ByteEnSize = getByteEnWdith();
-  VASTNode *Parent = isDefault() ? 0 : this;
 
+void VASTMemoryBus::addBasicPorts(VASTModule *VM, VASTNode *Parent) {
   // The read ports.
   VASTSelector *REn = VM->createSelector(getREnName(), 1, Parent,
-                                          VASTSelector::Enable);
+                                         VASTSelector::Enable);
   addFanin(REn);
   if (isDefault()) VM->addPort(REn, false);
 
@@ -60,7 +58,6 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
   addFanin(WEn);
   if (isDefault()) VM->addPort(WEn, false);
 
-
   VASTSelector *WAddr
     = VM->createSelector(getWAddrName(), getAddrWidth(), Parent);
   addFanin(WAddr);
@@ -70,18 +67,31 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
     = VM->createSelector(getWDataName(), getDataWidth(), Parent);
   addFanin(WData);
   if (isDefault()) VM->addPort(WData, false);
+}
 
-  if (requireByteEnable()) {
-    VASTSelector *RBEn
-      = VM->createSelector(getRByteEnName(), ByteEnSize, Parent);
-    addFanin(RBEn);
-    if (isDefault()) VM->addPort(RBEn, false);
+void VASTMemoryBus::addByteEnables(VASTModule *VM, VASTNode *Parent) {
+  unsigned ByteEnSize = getByteEnWdith();
 
-    VASTSelector *WBEn
-      = VM->createSelector(getWByteEnName(), ByteEnSize, Parent);
-    addFanin(WBEn);
-    if (isDefault()) VM->addPort(WBEn, false);
-  }
+  VASTSelector *RBEn
+    = VM->createSelector(getRByteEnName(), ByteEnSize, Parent);
+  addFanin(RBEn);
+  if (isDefault()) VM->addPort(RBEn, false);
+
+  VASTSelector *WBEn
+    = VM->createSelector(getWByteEnName(), ByteEnSize, Parent);
+  addFanin(WBEn);
+  if (isDefault()) VM->addPort(WBEn, false);
+
+}
+
+void VASTMemoryBus::addPorts(VASTModule *VM) {
+  // The parent of the default memory port objects will be the
+  // VASTInPort/VASTOutPort, do not set the current MemBus as their parent.
+  VASTNode *Parent = isDefault() ? 0 : this;
+
+  addBasicPorts(VM, Parent);
+
+  if (requireByteEnable()) addByteEnables(VM, Parent);
 }
 
 void VASTMemoryBus::addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes) {

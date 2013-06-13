@@ -32,6 +32,9 @@ class VASTMemoryBus : public VASTSubModuleBase {
   friend class VASTModule;
 
   void addPorts(VASTModule *VM);
+  // Add all ports except byte enables.
+  void addBasicPorts(VASTModule *VM, VASTNode *Parent);
+  void addByteEnables(VASTModule *VM, VASTNode *Parent);
 
   // Signal names of the function unit.
   std::string getRAddrName() const;
