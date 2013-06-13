@@ -551,6 +551,7 @@ IfFile:close()
                '-shang-baseline-scheduling-only=%(shang_baseline_scheduling_only)s' % self,
                '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self,
                '-shang-enable-memory-partition=%(shang_enable_memory_partition)s' % self,
+               '-shang-enable-dual-port-ram=%(shang_enable_dual_port_ram)s' % self,
                '-shang-enable-pre-schedule-lut-mapping=%(shang_enable_pre_schedule_lut_mapping)s' % self,
                '-shang-enable-register-sharing=%(shang_enable_register_sharing)s' % self,
                '-shang-max-scheduling-iteration=%(shang_max_scheduling_iteration)s' % self,

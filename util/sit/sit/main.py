@@ -108,6 +108,7 @@ def main(builtinParameters = {}):
   option_space_dict['shang_baseline_scheduling_only'] = [ 'false' ]
   option_space_dict['shang_enable_memory_optimization'] = [ 'true' ]
   option_space_dict['shang_enable_memory_partition'] = [ 'true' ]
+  option_space_dict['shang_enable_dual_port_ram'] = [ 'true' ]
   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
   option_space_dict['shang_enable_register_sharing'] = [ 'false' ]
   option_space_dict['shang_max_scheduling_iteration'] = [ 1 ]

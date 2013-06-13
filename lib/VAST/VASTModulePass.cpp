@@ -31,6 +31,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/InstIterator.h"
+#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "shang-vast-module-analysis"
 #include "llvm/Support/Debug.h"
 
@@ -39,6 +40,11 @@
 using namespace llvm;
 STATISTIC(NumIPs, "Number of IPs Instantiated");
 STATISTIC(NumBRam2Reg, "Number of Single Element Block RAM lowered to Register");
+
+static cl::opt<bool>
+EnalbeDualPortRAM("shang-enable-dual-port-ram",
+                  cl::desc("Enable dual port ram in the design."),
+                  cl::init(true));
 
 namespace {
 struct VASTModuleBuilder : public MinimalDatapathContext,
@@ -70,7 +76,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     VASTMemoryBus *&Bus = MemBuses[Bank.Number];
     if (Bus == 0) {
       Bus = VM->createMemBus(Bank.Number, AddrWidth, Bank.WordSizeInBytes * 8,
-                             Bank.RequireByteEnable, false);
+                             Bank.RequireByteEnable, EnalbeDualPortRAM);
     }
 
     assert(Bus->getAddrWidth() == AddrWidth
@@ -848,10 +854,9 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
 
     // Build the shift to shift the bytes to LSB.
     if (Bus->requireByteEnable() && !Bus->isDefault()) {
-      TimedRData
-        = Builder.buildShiftExpr(VASTExpr::dpSRL, TimedRData,
-                                 Bus->getFinalRDataShiftAmountOperand(VM, 0),
-                                 TimedRData->getBitWidth());
+      VASTValPtr Amt = Bus->getFinalRDataShiftAmountOperand(VM, 0);
+      TimedRData = Builder.buildShiftExpr(VASTExpr::dpSRL, TimedRData, Amt,
+                                          TimedRData->getBitWidth());
     }
 
     VASTValPtr V = Builder.buildBitSliceExpr(TimedRData, Result->getBitWidth(), 0);
