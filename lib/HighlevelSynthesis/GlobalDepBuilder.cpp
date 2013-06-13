@@ -29,6 +29,7 @@
 
 #include "shang/Utilities.h"
 #include "shang/VASTSeqValue.h"
+#include "shang/VASTMemoryPort.h"
 
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/AliasSetTracker.h"
@@ -443,8 +444,14 @@ void BasicLinearOrderGenerator::buildFUInfo() {
       SingleFULinearOrder *&S = Builders[Sel];
 
       // Create the Synchronizer if it is not yet created.
-      if (S == 0)
-        S = new SingleFULinearOrder(Sel, 1, G, IR2SUMap, GFA, ReturnBlocks);
+      if (S == 0) {
+        unsigned Parallelism = 1;
+        if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(Sel->getParent()))
+          if (Bus->isDualPort()) Parallelism = 2;
+
+        S = new SingleFULinearOrder(Sel, Parallelism, G, IR2SUMap, GFA,
+                                    ReturnBlocks);
+      }
 
       // Add the FU visiting information.
       S->addDef(SU, BB);
