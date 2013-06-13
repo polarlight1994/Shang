@@ -309,6 +309,7 @@ struct SingleFULinearOrder
   : public GlobalDependenciesBuilderBase<SingleFULinearOrder> {
 
   VASTSelector *Sel;
+  const unsigned Parallelism;
   SchedulerBase &G;
   const DenseMap<BasicBlock*, VASTSchedUnit*> &Returns;
 
@@ -349,11 +350,11 @@ struct SingleFULinearOrder
 
   void buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs);
 
-  SingleFULinearOrder(VASTSelector *Sel, SchedulerBase &G,
+  SingleFULinearOrder(VASTSelector *Sel, unsigned Parallelism, SchedulerBase &G,
                       IR2SUMapTy &IR2SUMap, GlobalFlowAnalyzer &GFA,
                       DenseMap<BasicBlock*, VASTSchedUnit*> &ReturnBlocks)
-    : GlobalDependenciesBuilderBase(GFA, IR2SUMap), Sel(Sel), G(G),
-      Returns(ReturnBlocks) {}
+    : GlobalDependenciesBuilderBase(GFA, IR2SUMap), Sel(Sel),
+      Parallelism(Parallelism), G(G), Returns(ReturnBlocks) {}
 
   void buildLinearOrder();
 
@@ -443,7 +444,7 @@ void BasicLinearOrderGenerator::buildFUInfo() {
 
       // Create the Synchronizer if it is not yet created.
       if (S == 0)
-        S = new SingleFULinearOrder(Sel, G, IR2SUMap, GFA, ReturnBlocks);
+        S = new SingleFULinearOrder(Sel, 1, G, IR2SUMap, GFA, ReturnBlocks);
 
       // Add the FU visiting information.
       S->addDef(SU, BB);
@@ -456,17 +457,16 @@ SingleFULinearOrder::buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   // Sort the schedule units.
   std::sort(SUs.begin(), SUs.end(), alap_less(G));
 
-  VASTSchedUnit *EalierSU = SUs.front();
-
-  for (unsigned i = 1; i < SUs.size(); ++i) {
+  for (unsigned i = Parallelism; i < SUs.size(); ++i) {
+    // Allow parallelism of N by building linear order from N operation before
+    // the current operation, so that the operation in between EalierSU and
+    // LaterSU can execute in parallel with the current operation.
     VASTSchedUnit *LaterSU = SUs[i];
-
+    VASTSchedUnit *EalierSU = SUs[i - Parallelism];
     // Build a dependence edge from EalierSU to LaterSU.
     // TODO: Add an new kind of edge: Constraint Edge, and there should be
     // hard constraint and soft constraint.
     buildDep(EalierSU, LaterSU);
-
-    EalierSU = LaterSU;
   }
 }
 
