@@ -650,14 +650,15 @@ static bool isNoAlias(Instruction *Src, Instruction *Dst, AliasAnalysis *AA) {
 }
 
 void MemoryDepBuilder::buildDependency(Instruction *Src, Instruction *Dst) {
-  // No dependencies at all if:
-  // 1. both of them are not call instructions
-  // 2. both of them are not writing memory
-  // 3. their pointer locations do not alias each others.
-  if (!isCall(Src) && !isCall(Dst)
-      && (!Src->mayWriteToMemory() && !Dst->mayWriteToMemory())
-      && isNoAlias(Src, Dst, &AA))
-    return;
+  // If either of them are call instruction, we need a dependencies, because
+  // we are not sure the memory locations accessed by the call.
+  if (!isCall(Src) && !isCall(Dst)) {
+    // Ignore the RAR dependencies.
+    if (!Src->mayWriteToMemory() && !Dst->mayWriteToMemory()) return;
+
+    // There is no dependencies if the memory loactions do not alias each other.
+    if (isNoAlias(Src, Dst, &AA)) return;
+  }
 
   VASTSchedUnit *SrcU = IR2SUMap[Src].front(), *DstU = IR2SUMap[Dst].front();
   assert(SrcU->isLaunch() && DstU->isLaunch() && "Bad scheduling unit type!");
