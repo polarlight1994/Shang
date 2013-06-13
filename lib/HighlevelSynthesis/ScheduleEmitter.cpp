@@ -18,6 +18,7 @@
 
 #include "shang/VASTModulePass.h"
 #include "shang/VASTExprBuilder.h"
+#include "shang/VASTMemoryPort.h"
 #include "shang/VASTModule.h"
 
 #include "llvm/IR/Function.h"
@@ -38,9 +39,48 @@ STATISTIC(NumRejectedRetiming,
           "Number of reject retiming because the predicates are not compatible");
 
 namespace {
+class NaiveMemoryPortReservationTable {
+  // The memory port that will assign to next memory access.
+  DenseMap<VASTMemoryBus*, unsigned> PortForNextAccess;
+  // Map the instruction to the corresponding memory port, the map is actually
+  // mapping the instruction to PortNum + 1, so when we try to lookup the map
+  // and get a zero, we know the instruction is not bound to a port yet.
+  DenseMap<Instruction*, unsigned> PortMapping;
+  DenseMap<Instruction*, VASTMemoryBus*> BusMapping;
+public:
+  unsigned getOrCreateMapping(VASTSeqInst *Op) {
+    Instruction *Inst = cast<Instruction>(Op->getValue());
+    assert(isLoadStore(Inst) && "Unexpected Inst type!");
+    // Lookup the mapping, please note that we will get PortNum + 1 if the
+    // mapping exists.
+    unsigned &PortNum = PortMapping[Inst];
+    if (PortNum) return PortNum - 1;
+
+    VASTSelector *Addr = Op->getSrc(0).getSelector();
+    VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(Addr->getParent());
+
+    // Ignore the default memory bus or the signle port Bus.
+    if (Bus == 0 || !Bus->isDualPort()) return 0;
+
+    BusMapping[Inst] = Bus;
+    unsigned &NextPort = PortForNextAccess[Bus];
+    // Store Port + 1 to the mapping.
+    PortNum = NextPort + 1;
+    // Flip the port number of the next query.
+    NextPort ^= 0x1;
+
+    return PortNum - 1;
+  }
+
+  VASTMemoryBus *getMemBus(Instruction *Inst) const {
+    return BusMapping.lookup(Inst);
+  }
+};
+
 class ScheduleEmitter : public MinimalExprBuilderContext {
   VASTExprBuilder Builder;
   VASTModule &VM;
+  NaiveMemoryPortReservationTable PRT;
   ilist<VASTSlot> OldSlots;
   VASTSchedGraph &G;
   std::map<BasicBlock*, VASTSlot*> LandingSlots;
@@ -80,6 +120,9 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
                             Value *V = 0);
 
   VASTSeqInst *cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot);
+  // We may need to remap the memory port for the memory accesses, if dual port
+  // RAM is enabled.
+  VASTSeqInst *remapToPort1(VASTSeqInst *Op, VASTSlot *ToSlot);
 
   VASTSlotCtrl *cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot);
 
@@ -238,6 +281,51 @@ ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot) {
   ++NumBBByPassed;
   return 0;
 }
+//===----------------------------------------------------------------------===//
+VASTSeqInst *ScheduleEmitter::remapToPort1(VASTSeqInst *Op, VASTSlot *ToSlot) {
+  if (Op->isLatch()) {
+    Instruction *Inst = cast<Instruction>(Op->getValue());
+    VASTMemoryBus *Bus = PRT.getMemBus(Inst);
+    assert(Bus && "Port reservation table is broken?");
+    VASTLatch RData = Op->getSrc(0);
+    VASTValPtr TimedRData = VM.createSeqValue(Bus->getRData(1), 0, Inst);
+    if (Bus->requireByteEnable()) {
+      VASTValPtr Amt = Bus->getFinalRDataShiftAmountOperand(&VM, 1);
+      TimedRData = Builder.buildShiftExpr(VASTExpr::dpSRL, TimedRData, Amt,
+                                          TimedRData->getBitWidth());
+    }
+
+    VASTSeqValue *Dst = RData.getDst();
+    VASTValPtr V = Builder.buildBitSliceExpr(TimedRData, Dst->getBitWidth(), 0);
+    return VM.latchValue(Dst, V, ToSlot, Op->getGuard(), Inst,
+                         Op->getCyclesFromLaunch());
+  }
+
+  unsigned CurSrcIdx = 0;
+  unsigned NumSrcs = Op->num_srcs();
+
+  VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Op->getGuard(), NumSrcs,
+                                      Op->getValue(), Op->isLatch());
+  VASTLatch Addr = Op->getSrc(CurSrcIdx);
+  VASTSelector *AddrPort = Addr.getSelector();
+  VASTMemoryBus *Bus = cast<VASTMemoryBus>(AddrPort->getParent());
+  NewInst->addSrc(Addr, CurSrcIdx++, Bus->getAddr(1));
+
+  if (isa<StoreInst>(Op->getValue())) {
+    VASTValPtr Data = Op->getSrc(CurSrcIdx);
+    Data = Builder.buildZExtExprOrSelf(Data, Bus->getDataWidth());
+    NewInst->addSrc(Data, CurSrcIdx++, Bus->getWData(1));
+  }
+
+  if (Bus->requireByteEnable()) {
+    // Remap the byte enable and the enable.
+    VASTValPtr ByteEn = Op->getSrc(CurSrcIdx);
+    NewInst->addSrc(ByteEn, CurSrcIdx++, Bus->getByteEn(1));
+    NewInst->addSrc(VASTImmediate::True, CurSrcIdx++, Bus->getEnable(1));
+  }
+
+  return NewInst;
+}
 
 //===----------------------------------------------------------------------===//
 VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot) {
@@ -253,10 +341,17 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot) {
     return 0;
   }
 
-  // Find the subgroup for the PHI node. It is supposed to be existed because we
-  // expected the branch operation is emitted prior to the PNI node.
-  if (PHINode *PN = dyn_cast<PHINode>(Op->getValue()))
-    ToSlot = getOrCreateSubGroup(PN->getParent(), Cnd, ToSlot);
+  Value *V = Op->getValue();
+
+  if (Instruction *Inst = dyn_cast<Instruction>(V)) {
+    if (isLoadStore(Inst) && PRT.getOrCreateMapping(Op))
+      return remapToPort1(Op, ToSlot);
+
+    // Find the subgroup for the PHI node. It is supposed to be existed because we
+    // expected the branch operation is emitted prior to the PNI node.
+    if (PHINode *PN = dyn_cast<PHINode>(V))
+      ToSlot = getOrCreateSubGroup(PN->getParent(), Cnd, ToSlot);
+  }
 
   VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Cnd, Op->num_srcs(),
                                       Op->getValue(), Op->isLatch());
@@ -266,8 +361,12 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot) {
     const VASTLatch &L = Op->getSrc(i);
     VASTSeqValue *Dst = L.getDst();
     VASTValPtr Src = L;
-    NewInst->addSrc(Src, i, L.getSelector(), Dst);
+    VASTSelector *Sel = L.getSelector();
+    NewInst->addSrc(Src, i, Sel, Dst);
   }
+
+  if (NewInst->isLatch())
+    NewInst->setCyclesFromLaunch(Op->getCyclesFromLaunch());
 
   return NewInst;
 }
