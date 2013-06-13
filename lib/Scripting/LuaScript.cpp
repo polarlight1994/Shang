@@ -106,7 +106,6 @@ void LuaScript::updateFUs() {
   // Initialize the functional unit descriptions.
   FUSet[VFUs::MemoryBus]
     = new VFUMemBus(FUs[VFUDesc::getTypeName(VFUs::MemoryBus)]);
-  FUSet[VFUs::BRam] = new VFUBRAM(FUs[VFUDesc::getTypeName(VFUs::BRam)]);
 
   initSimpleFU<VFUs::AddSub>(FUs);
   initSimpleFU<VFUs::Shift>(FUs);

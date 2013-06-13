@@ -115,6 +115,3 @@ endmodule
 ]=]
 
 FUs.MemoryBus = { ReadLatency = 2, StartInterval=1, AddressWidth=ptr_size, DataWidth=64 }
-
--- Please note that the template of the block RAM is provided in <TargetPlatform>Common.lua
-FUs.BRam = { StepsToWait =1, StartInterval=1, DataWidth = 64, InitFileDir = test_binary_root }

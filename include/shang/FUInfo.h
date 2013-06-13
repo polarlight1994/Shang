@@ -44,8 +44,7 @@ namespace VFUs {
     Mult = 3,
     ICmp = 4,
     MemoryBus = 5,
-    BRam = 6,
-    Mux = 7,
+    Mux = 6,
     FirstFUType = Trivial,
     FirstNonTrivialFUType = AddSub,
     LastPostBindFUType = ICmp,
@@ -53,11 +52,7 @@ namespace VFUs {
     LastCommonFUType = Mux,
     NumCommonFUs = LastCommonFUType - FirstFUType + 1,
     NumNonTrivialCommonFUs = LastCommonFUType - FirstNonTrivialFUType + 1,
-    // Special function unit.
-    // RTL module corresponding to callee functions of function corresponding to
-    // current RTL module.
-    CalleeFN = 8,
-    LastFUType = CalleeFN,
+    LastFUType = Mux,
     NumFUs = LastFUType - FirstFUType + 1,
     // Helper enumeration value, just for internal use as a flag to indicate
     // all kind of function units are selected.
@@ -200,6 +195,9 @@ class VFUMemBus : public VFUDesc {
   unsigned DataWidth;
   unsigned ReadLatency;
 public:
+  // The latency of the address MUX of the block RAM.
+  const float AddrLatency;
+
   VFUMemBus(luabind::object FUTable);
 
   unsigned getAddrWidth() const { return AddrWidth; }
@@ -280,57 +278,6 @@ typedef VSimpleFUDesc<VFUs::AddSub>  VFUAddSub;
 typedef VSimpleFUDesc<VFUs::Shift>   VFUShift;
 typedef VSimpleFUDesc<VFUs::Mult>    VFUMult;
 typedef VSimpleFUDesc<VFUs::ICmp>    VFUICmp;
-
-class VFUBRAM : public  VFUDesc {
-public:
-  // Various Block RAM modes supported FPGA.
-  enum BRAMMode {
-    // Single-port mode supports non-simultaneous read and write operations from
-    // a single address.
-    Default = 0,
-    // Simple dual-port mode supports simultaneous read and write operations to
-    // different locations.
-    SimpleDualPort = 1,
-    // True dual-port mode supports any combination of two-port operations: two
-    // reads, two writes, or one read and one write, at two different clock
-    // frequencies.
-    TrueDualPort = 2
-  };
-
-  const unsigned DataWidth;
-  const float Latency;
-  const BRAMMode Mode;
-  const std::string Prefix;   // Prefix of the block RAM object in timing constraints.
-  const std::string Template; // Template for inferring block ram.
-  const std::string InitFileDir; // Template for readmemh dir.
-
-  VFUBRAM(luabind::object FUTable);
-
-  static inline bool classof(const VFUBRAM *A) {
-    return true;
-  }
-
-  template<enum VFUs::FUTypes OtherT>
-  static inline bool classof(const VSimpleFUDesc<OtherT> *A) {
-    return getType() == OtherT;
-  }
-
-  static inline bool classof(const VFUDesc *A) {
-    return A->getType() == VFUs::BRam;
-  }
-
-  static VFUs::FUTypes getType() { return VFUs::BRam; };
-  static const char *getTypeName() { return VFUs::VFUNames[getType()]; }
-
-  // Signal names of the function unit.
-  inline static std::string getOutDataBusName(unsigned FUNum) {
-    return "bram" + utostr(FUNum) + "arrayout";
-  }
-
-  inline static std::string getArrayName(unsigned FUNum) {
-    return "bram" + utostr(FUNum) + "array";
-  }
-};
 
 struct CommonFUIdentityFunctor
   : public std::unary_function<enum VFUs::FUTypes, unsigned>{

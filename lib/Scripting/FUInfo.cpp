@@ -59,8 +59,7 @@ void VFUDesc::print(raw_ostream &OS) const {
 namespace llvm {
   namespace VFUs {
     const char *VFUNames[] = {
-      "Trivial", "AddSub", "Shift", "Mult", "ICmp",  "MemoryBus", "BRam", "Mux",
-      "CalleeFN"
+      "Trivial", "AddSub", "Shift", "Mult", "ICmp",  "MemoryBus", "Mux"
     };
 
     // Default area cost parameter.
@@ -171,16 +170,8 @@ VFUMemBus::VFUMemBus(luabind::object FUTable)
   : VFUDesc(VFUs::MemoryBus, getProperty<unsigned>(FUTable, "StartInterval")),
     AddrWidth(getProperty<unsigned>(FUTable, "AddressWidth")),
     DataWidth(getProperty<unsigned>(FUTable, "DataWidth")),
-    ReadLatency(getProperty<float>(FUTable, "ReadLatency")) {}
-
-VFUBRAM::VFUBRAM(luabind::object FUTable)
-  : VFUDesc(VFUs::BRam, getProperty<unsigned>(FUTable, "StartInterval")),
-    DataWidth(getProperty<unsigned>(FUTable, "DataWidth")),
-    Latency(getProperty<float>(FUTable, "Latency")),
-    Mode(BRAMMode(getProperty<unsigned>(FUTable, "Mode"))),
-    Prefix(getProperty<std::string>(FUTable, "Prefix")),
-    Template(getProperty<std::string>(FUTable, "Template")),
-    InitFileDir(getProperty<std::string>(FUTable, "InitFileDir")) {}
+    ReadLatency(getProperty<float>(FUTable, "ReadLatency")),
+    AddrLatency(getProperty<float>(FUTable, "AddrLatency")) {}
 
 void FuncUnitId::print(raw_ostream &OS) const {
   OS << VFUs::VFUNames[getFUType()];

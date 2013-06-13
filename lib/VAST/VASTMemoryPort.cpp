@@ -427,10 +427,10 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
 
   std::string InitFileName = "mem" + utostr_32(Idx) + "ram_init.txt";
 
-  // Dirty Hack: Use the same initialize directory with the bram.
+  const char *BRamInitFileDIRPath[] = { "Misc", "BRamInitFileDIR" };
+  std::string BRamInitFileDIR = getStrValueFromEngine(BRamInitFileDIRPath);
   SmallString<1024> FullInitFilePath;
-  sys::path::append(FullInitFilePath,
-                    getFUDesc<VFUBRAM>()->InitFileDir, InitFileName);
+  sys::path::append(FullInitFilePath, BRamInitFileDIR, InitFileName);
 
   std::string ErrorInfo;
   const char *CFullInitFilePath = FullInitFilePath.c_str();

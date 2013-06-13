@@ -451,7 +451,6 @@ class ShangHLSStep(HLSStep) :
     self.synthesis_config_file = os.path.join(self.hls_base_dir, 'test_config.lua')
     self.generateFileFromTemplate('''-- Initialize the global variables.
 ptr_size = {{ ptr_size }}
-test_binary_root = [[{{ hls_base_dir }}]]
 InputFile = [[{{ test_file }}]]
 RTLOutput = [[{{ rtl_output }}]]
 MCPDataBase =  [[{{ [hls_base_dir, test_name + ".sql"]|joinpath }}]]
@@ -469,6 +468,8 @@ TimingAnalysis.Device = [[{{ fpga_device }}]]
 local FMAX = {{ fmax }}
 PERIOD = 1000.0 / FMAX
 FUs.Period = PERIOD
+
+Misc.BRamInitFileDIR = [[{{ hls_base_dir }}]]
 
 dofile([[{{ [config_dir, 'common_config.lua']|joinpath }}]])
 
