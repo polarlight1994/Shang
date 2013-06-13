@@ -491,10 +491,6 @@ void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
          << " <= " << WData->getName() << "_selector_wire"
          << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
 
-      // Need to assign the RData according to the coding style recommendation.
-      OS << RData->getName()
-         << " <= " << WData->getName() << "_selector_wire;\n";
-
       OS.else_begin();
     }
 
