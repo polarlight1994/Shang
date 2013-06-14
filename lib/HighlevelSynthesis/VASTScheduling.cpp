@@ -380,11 +380,13 @@ float VASTScheduling::slackFromPrevStage(VASTSeqInst *SrcOp) {
   if (Srcs.empty()) return 0.0f;
 
   float MinimalSlack = 1.0f;
+  // For a latch from FU, there is at least 1 cycle available.
+  float CycleSlack = (SrcOp->isLatch() && SrcOp->getCyclesFromLaunch()) ?
+                     1.0f : 0.0f;
   typedef TimingNetlist::RegDelaySet::iterator src_iterator;
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
     float CurDelay = I->second;
-    // For a pipeline stage, there is at least 1 cycle available.
-    float CurSlack = std::max<float>(ceil(CurDelay), 1.0f) - CurDelay;
+    float CurSlack = std::max<float>(ceil(CurDelay), CycleSlack) - CurDelay;
     MinimalSlack = std::min(MinimalSlack, CurSlack);
   }
 
