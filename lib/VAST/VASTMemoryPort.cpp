@@ -463,7 +463,6 @@ void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
 
   OS.always_ff_begin(false);
 
-  OS.if_begin(Twine(Addr->getName()) + "_selector_enable");
   if (!WData->empty()) {
     OS.if_begin(Twine(WData->getName()) + "_selector_enable");
     OS << getArrayName() << "[" << Addr->getName() << "_selector_wire"
@@ -487,7 +486,6 @@ void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
     OS << "if (" << Addr->getName() << "_selector_wire"
         << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
         << ByteAddrWidth << "'b0) $finish(\"Write access out of bound!\");\n";
-  OS.exit_block();
 
   OS << "// synthesis translate_off\n";
   Addr->verifyAssignCnd(OS, Mod);
