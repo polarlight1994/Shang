@@ -244,13 +244,16 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
   // Use the enable of the address as the enable.
   OS << getInternalEnName(PortNum) << " <= "
       << Addr->getName() << "_selector_enable;\n";
-  OS.if_begin(getInternalEnName(PortNum));
 
   if (!WData->empty()) {
     // Use the enable of the write data as the write enable.
     OS << getInternalWEnName(PortNum) << " <= "
-       << WData->getName() << "_selector_enable;\n";
+        << WData->getName() << "_selector_enable;\n";
+  }
 
+  OS.if_begin(getInternalEnName(PortNum));
+
+  if (!WData->empty()) {
     // TODO: Guard the read pipeline stages by stage enable signal.
     OS.if_begin(getInternalWEnName(PortNum));
 
