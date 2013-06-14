@@ -213,6 +213,8 @@ template<typename SubClass>
 struct GlobalDependenciesBuilderBase  {
   GlobalFlowAnalyzer &GFA;
   IR2SUMapTy &IR2SUMap;
+  DenseMap<BasicBlock*, VASTSchedUnit*> SSnks, SSrcs;
+
   GlobalDependenciesBuilderBase(GlobalFlowAnalyzer &GFA, IR2SUMapTy &IR2SUMap)
     : GFA(GFA), IR2SUMap(IR2SUMap) {}
 
@@ -334,19 +336,44 @@ struct SingleFULinearOrder
   }
 
   VASTSchedUnit *getSnkAt(BasicBlock *BB) {
+    VASTSchedUnit *&Snk = SSnks[BB];
+
+    if (Snk) return Snk;
+
+    // Create the sink node if it is not created yet.
+    Snk = G->createSUnit(BB, VASTSchedUnit::Virtual);
     DefMapTy::iterator at = DefMap.find(BB);
     assert(at != DefMap.end() && "Not a define block!");
     // At this point, the intra-BB linear order had already constructed, and
-    // hence the back of the SU array is the 'last' SU in the block.
-    return at->second.back();
+    // hence the back of the SU array is the 'last' N SU in the block.
+    ArrayRef<VASTSchedUnit*> SUs(at->second);
+    for (unsigned i = std::max<int>(0, SUs.size() - Parallelism), e = SUs.size();
+         i < e; ++i)
+      Snk->addDep(SUs[i], VASTDep::CreateCtrlDep(0));
+
+    return Snk;
   }
 
   VASTSchedUnit *getSrcAt(BasicBlock *BB) {
+    VASTSchedUnit *&Src = SSrcs[BB];
+
+    if (Src) return Src;
+
+    // Create the source node if it is not created yet.
+    Src = G->createSUnit(BB, VASTSchedUnit::Virtual);
+    // Make src depends on something.
+    Src->addDep(G->getEntry(), VASTDep::CreateCtrlDep(0));
+
     DefMapTy::iterator at = DefMap.find(BB);
     assert(at != DefMap.end() && "Not a define block!");
     // At this point, the intra-BB linear order had already constructed, and
-    // hence the front of the SU array is the 'first' SU in the block.
-    return at->second.front();
+    // hence the front of the SU array is the 'first' N SUs in the block.
+    ArrayRef<VASTSchedUnit*> SUs(at->second);
+    for (unsigned i = 0, e = std::min<unsigned>(SUs.size(), Parallelism);
+         i < e; ++i)
+      SUs[i]->addDep(Src, VASTDep::CreateCtrlDep(0));
+
+    return Src;
   }
 
   void buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs);
@@ -535,7 +562,6 @@ namespace {
 struct AliasRegionDepBuilder
   : public GlobalDependenciesBuilderBase<AliasRegionDepBuilder> {
   VASTSchedGraph &G;
-  DenseMap<BasicBlock*, VASTSchedUnit*> SSnks, SSrcs;
 
   AliasRegionDepBuilder(VASTSchedGraph &G, GlobalFlowAnalyzer &GFA,
                         IR2SUMapTy &IR2SUMap)
@@ -567,7 +593,7 @@ struct AliasRegionDepBuilder
 
     if (Src) return Src;
 
-    // Create the sink node if it is not created yet.
+    // Create the source node if it is not created yet.
     Src = G.createSUnit(BB, VASTSchedUnit::Virtual);
     // Make src depends on something.
     Src->addDep(G.getEntry(), VASTDep::CreateCtrlDep(0));
