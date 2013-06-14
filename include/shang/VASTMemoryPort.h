@@ -24,7 +24,7 @@ class VASTMemoryBus : public VASTSubModuleBase {
   const unsigned AddrSize, DataSize;
   const bool RequireByteEnable;
   const bool IsDualPort;
-  static const unsigned InputsPerPort = 3;
+  static const unsigned InputsPerPort = 2;
   std::map<GlobalVariable*, unsigned> BaseAddrs;
   unsigned CurrentOffset;
 
@@ -41,7 +41,6 @@ class VASTMemoryBus : public VASTSubModuleBase {
   std::string getAddrName(unsigned PortNum) const;
   std::string getRDataName(unsigned PortNum) const;
   std::string getWDataName(unsigned PortNum) const;
-  std::string getEnName(unsigned PortNum) const;
   std::string getByteEnName(unsigned PortNum) const;
   std::string getLastStageAddrName(unsigned PortNum) const;
   std::string getInternalWEnName(unsigned PortNum) const;
@@ -75,7 +74,6 @@ public:
   bool isDualPort() const { return IsDualPort; }
 
   // The ports of the memory bus.
-  VASTSelector *getEnable(unsigned PortNum) const;
   VASTSelector *getByteEn(unsigned PortNum) const;
   VASTSelector *getAddr(unsigned PortNum) const;
   VASTSelector *getRData(unsigned PortNum) const;

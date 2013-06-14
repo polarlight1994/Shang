@@ -39,12 +39,6 @@ void VASTMemoryBus::addBasicPins(VASTModule *VM, VASTNode *Parent,
                                   unsigned PortNum) {
   assert((!isDefault() || PortNum == 0)
           && "Dual port external memory is not supported");
-  // Enable pin
-  VASTSelector *En = VM->createSelector(getEnName(PortNum), 1, Parent,
-                                         VASTSelector::Enable);
-  addFanin(En);
-  if (isDefault()) VM->addPort(En, false);
-
   // Address pin
   VASTSelector *Address
     = VM->createSelector(getAddrName(PortNum), getAddrWidth(), Parent);
@@ -112,16 +106,12 @@ unsigned VASTMemoryBus::getStartOffset(GlobalVariable *GV) const {
   return at->second;
 }
 
-VASTSelector *VASTMemoryBus::getEnable(unsigned PortNum) const {
+VASTSelector *VASTMemoryBus::getAddr(unsigned PortNum) const {
   return getFanin(InputsPerPort * PortNum + 0);
 }
 
-VASTSelector *VASTMemoryBus::getAddr(unsigned PortNum) const {
-  return getFanin(InputsPerPort * PortNum + 1);
-}
-
 VASTSelector *VASTMemoryBus::getWData(unsigned PortNum) const {
-  return getFanin(InputsPerPort * PortNum + 2);
+  return getFanin(InputsPerPort * PortNum + 1);
 }
 
 VASTSelector *VASTMemoryBus::getRData(unsigned PortNum) const {
@@ -133,10 +123,6 @@ VASTSelector *VASTMemoryBus::getByteEn(unsigned PortNum) const {
   if (isDualPort()) Offset += InputsPerPort;
 
   return getFanin(Offset + PortNum);
-}
-
-std::string VASTMemoryBus::getEnName(unsigned PortNum) const {
-  return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "en";
 }
 
 std::string VASTMemoryBus::getAddrName(unsigned PortNum) const {
@@ -173,7 +159,6 @@ void VASTMemoryBus::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
   getRData(PortNum)->printDecl(OS);
 
   if (requireByteEnable()) {
-    getEnable(PortNum)->printDecl(OS);
     getAddr(PortNum)->printDecl(OS);
     getByteEn(PortNum)->printDecl(OS);
     getWData(PortNum)->printDecl(OS);
@@ -222,17 +207,15 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
                               unsigned PortNum, unsigned BytesPerWord,
                               unsigned ByteAddrWidth, unsigned NumWords) const {
   // Print the read port.
-  VASTSelector *Enable = getEnable(PortNum);
-  if (Enable->empty()) {
+  VASTSelector *Addr = getAddr(PortNum);
+  if (Addr->empty()) {
     ++NumUnusedPorts;
     return;
   }
 
-  VASTSelector *Addr = getAddr(PortNum);
   VASTSelector *WData = getWData(PortNum);
   VASTSelector *ByteEn = getByteEn(PortNum);
 
-  Enable->printRegisterBlock(OS, Mod, 0);
   Addr->printRegisterBlock(OS, Mod, 0);
   WData->printRegisterBlock(OS, Mod, 0);
   ByteEn->printRegisterBlock(OS, Mod, 0);

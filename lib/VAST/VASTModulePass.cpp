@@ -800,8 +800,8 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   VASTMemoryBus *Bus = getMemBus(PortNum);
 
   // Build the logic to start the transaction.
-  unsigned NumOperands = Data ? 4 : 3;
-  if (!Bus->requireByteEnable()) NumOperands -= 2;
+  unsigned NumOperands = Data ? 3 : 2;
+  if (!Bus->requireByteEnable()) NumOperands -= 1;
 
   VASTSeqOp *Op
     = VM->lauchInst(Slot, VASTImmediate::True, NumOperands, &I, false);
@@ -829,8 +829,6 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     VASTValPtr ByteEn
       = Builder.getImmediate(getByteEnable(Addr), Bus->getByteEnWdith());
     Op->addSrc(ByteEn, CurSrcIdx++, Bus->getByteEn(0));
-    // Enable the memory bus at the same slot.
-    Op->addSrc(VASTImmediate::True, CurSrcIdx, Bus->getEnable(0));
   }
 
   // Read the result of the memory transaction.

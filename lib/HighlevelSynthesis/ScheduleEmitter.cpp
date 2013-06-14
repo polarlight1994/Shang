@@ -321,7 +321,6 @@ VASTSeqInst *ScheduleEmitter::remapToPort1(VASTSeqInst *Op, VASTSlot *ToSlot) {
     // Remap the byte enable and the enable.
     VASTValPtr ByteEn = Op->getSrc(CurSrcIdx);
     NewInst->addSrc(ByteEn, CurSrcIdx++, Bus->getByteEn(1));
-    NewInst->addSrc(VASTImmediate::True, CurSrcIdx++, Bus->getEnable(1));
   }
 
   return NewInst;
