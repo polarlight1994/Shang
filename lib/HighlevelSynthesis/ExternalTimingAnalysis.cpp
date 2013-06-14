@@ -250,19 +250,19 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
       // Visit the cone rooted on the fanin.
       if (VASTExpr *Expr = dyn_cast<VASTExpr>(FI))
         Expr->visitConeTopOrder(Visited, ETA);
-      buildTimingPathTo(FI, Sel, delay_type(SelDelay));
+      buildTimingPath(FI, Sel, delay_type(SelDelay));
 
       VASTValue *Cnd = VASTValPtr(U.getGuard()).get();
       // Visit the cone rooted on the guarding condition.
       if (VASTExpr *Expr = dyn_cast<VASTExpr>(Cnd))
         Expr->visitConeTopOrder(Visited, ETA);
-      buildTimingPathTo(Cnd, Sel, delay_type(SelDelay));
+      buildTimingPath(Cnd, Sel, delay_type(SelDelay));
 
       if (VASTValue *SlotActive = U.getSlotActive().get()) {
         // Visit the cone rooted on the ready signal.
         if (VASTExpr *Expr = dyn_cast<VASTExpr>(SlotActive))
           Expr->visitConeTopOrder(Visited, ETA);
-        buildTimingPathTo(SlotActive, Sel, delay_type(SelDelay));
+        buildTimingPath(SlotActive, Sel, delay_type(SelDelay));
       }
     }
 
@@ -272,13 +272,13 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
            I != E; ++I){
         const VASTSelector::Fanin *FI = *I;
         VASTValue *FIVal = FI->FI.unwrap().get();
-        buildTimingPathTo(FIVal, Sel, delay_type(0.0f));
+        buildTimingPath(FIVal, Sel, delay_type(0.0f));
         VASTValue *FICnd = FI->Cnd.unwrap().get();
-        buildTimingPathTo(FICnd, Sel, delay_type(0.0f));
+        buildTimingPath(FICnd, Sel, delay_type(0.0f));
       }
 
       VASTValue *SelEnable = Sel->getEnable().get();
-      buildTimingPathTo(SelEnable, Sel, delay_type(0.0f));
+      buildTimingPath(SelEnable, Sel, delay_type(0.0f));
     }
   }
 

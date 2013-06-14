@@ -158,11 +158,11 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 //===----------------------------------------------------------------------===//
-void TimingNetlist::buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst,
+void TimingNetlist::buildTimingPath(VASTValue *Thu, VASTSelector *Dst,
                                       delay_type MUXDelay) {
   if (!isa<VASTExpr>(Thu)) {
-    if (isa<VASTSeqValue>(Thu)) {
-      TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Thu];
+    if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(Thu)){
+      TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][SV];
       OldDelay = std::max(MUXDelay, OldDelay);
     }
 
@@ -234,11 +234,11 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
            I != E; ++I){
         const VASTSelector::Fanin *FI = *I;
 
-        buildTimingPathTo(FI->Cnd.unwrap().get(), Sel, MUXDelay);
-        buildTimingPathTo(FI->FI.unwrap().get(), Sel, MUXDelay);
+        buildTimingPath(FI->Cnd.unwrap().get(), Sel, MUXDelay);
+        buildTimingPath(FI->FI.unwrap().get(), Sel, MUXDelay);
       }
 
-      buildTimingPathTo(Sel->getEnable().get(), Sel, MUXDelay);
+      buildTimingPath(Sel->getEnable().get(), Sel, MUXDelay);
 
       // Dirty HACK: Also run on the Latching operation of the registers, so that
       // we can build the timing path for the SlotActive wires.
@@ -249,11 +249,11 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
     for (fanin_iterator FI = Sel->begin(), FE = Sel->end(); FI != FE; ++FI) {
       VASTLatch U = *FI;
       // Estimate the delay for each fanin.
-      buildTimingPathTo(VASTValPtr(U).get(), Sel, MUXDelay);
+      buildTimingPath(VASTValPtr(U).get(), Sel, MUXDelay);
       // And the predicate expression.
-      buildTimingPathTo(VASTValPtr(U.getGuard()).get(), Sel, MUXDelay);
+      buildTimingPath(VASTValPtr(U.getGuard()).get(), Sel, MUXDelay);
       if (VASTValPtr SlotActive = U.getSlotActive())
-        buildTimingPathTo(SlotActive.get(), Sel, MUXDelay);
+        buildTimingPath(SlotActive.get(), Sel, MUXDelay);
     }
   }
 

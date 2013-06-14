@@ -56,7 +56,7 @@ public:
   PathDelayInfo PathInfo;
   FaninDelayInfo FaninInfo;
 
-  void buildTimingPathTo(VASTValue *Thu, VASTSelector *Dst, delay_type MUXDelay);
+  void buildTimingPath(VASTValue *Thu, VASTSelector *Dst, delay_type MUXDelay);
   bool performExternalAnalysis(VASTModule &VM);
 
 public: 
