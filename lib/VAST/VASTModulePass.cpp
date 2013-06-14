@@ -66,7 +66,8 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     return SubMod;
   }
 
-  VASTSubModule *emitIPFromTemplate(const char *Name, unsigned ResultSize);
+  VASTSubModule *getOrCreateSubModuleFromBinOp(BinaryOperator &BinOp);
+
   //===--------------------------------------------------------------------===//
   std::map<unsigned, VASTMemoryBus*> MemBuses;
   VASTMemoryBus *getOrCreateMemBus(const HLSAllocation::MemBank &Bank) {
@@ -430,45 +431,6 @@ void VASTModuleBuilder::allocateSubModules() {
   }
 }
 
-VASTSubModule *
-VASTModuleBuilder::emitIPFromTemplate(const char *Name, unsigned ResultSize)
-{
-  if (VASTSubModule *SubMod = SubModules.lookup(Name))
-    return SubMod;
-
-  SmallVector<VFUs::ModOpInfo, 4> OpInfo;
-  unsigned Latency = VFUs::getModuleOperands(Name, SubModules.size(), OpInfo);
-
-  // Submodule information not available, create the sequential code.
-  if (OpInfo.empty()) {
-    //N = VM->addSeqCode(Name);
-    return 0;
-  }
-
-  // Create and insert the submodule.
-  unsigned FNNum = SubModules.size();
-  VASTSubModule *SubMod = VM->addSubmodule(Name, FNNum);
-  SubMod->setIsSimple(false);
-  SubModules.GetOrCreateValue(Name, SubMod);
-
-  // Add the fanin registers.
-  for (unsigned i = 0, e = OpInfo.size(); i < e; ++i) {
-    VASTRegister *Reg = VM->createRegister(OpInfo[i].first, OpInfo[i].second);
-    SubMod->addFanin(Reg->getSelector());
-  }
-
-  // Add the start register.
-  SubMod->createStartPort(VM);
-  // Create the finish signal from the submodule.
-  SubMod->createFinPort(VM);
-
-  // Dose the submodule have a return port?
-  if (ResultSize) SubMod->createRetPort(VM, ResultSize, Latency);
-
-  ++NumIPs;
-  return SubMod;
-}
-
 //===----------------------------------------------------------------------===//
 void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
   // Create the landing slot for this BB.
@@ -701,26 +663,7 @@ void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
   I.dump();
 
   unsigned SizeInBits = getValueSizeInBits(I);
-  VASTSubModule *SubMod = 0;
-
-  switch (I.getOpcode()) {
-  default: break;;
-  case Instruction::UDiv: {
-    static const char *IPNames[] = { "__ip_udiv_i64", "__ip_udiv_i32" };
-    SubMod = emitIPFromTemplate(IPNames[6 - Log2_32_Ceil(SizeInBits)], SizeInBits);
-    break;
-  }
-  case Instruction::SDiv: {
-    static const char *IPNames[] = { "__ip_sdiv_i64", "__ip_sdiv_i32" };
-    SubMod = emitIPFromTemplate(IPNames[6 - Log2_32_Ceil(SizeInBits)], SizeInBits);
-    break;
-  }
-  case Instruction::SRem: {
-    static const char *IPNames[] = { "__ip_srem_i64", "__ip_srem_i32" };
-    SubMod = emitIPFromTemplate(IPNames[6 - Log2_32_Ceil(SizeInBits)], SizeInBits);
-    break;
-  }
-  }
+  VASTSubModule *SubMod = getOrCreateSubModuleFromBinOp(I);
 
   if (SubMod == 0) {
     errs() << "Warning: Cannot generate IP to implement instruction:\n";
@@ -734,8 +677,39 @@ void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
   BasicBlock *ParentBB = I.getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
   VASTSeqInst *Op
-    = VM->lauchInst(Slot, VASTImmediate::True, 2 + 1, &I, false);
+    = VM->lauchInst(Slot, VASTImmediate::True, I.getNumOperands(), &I, false);
   buildSubModuleOperation(Op, SubMod, Ops);
+}
+
+VASTSubModule *
+VASTModuleBuilder::getOrCreateSubModuleFromBinOp(BinaryOperator &BinOp) {
+  unsigned ResultSize = getValueSizeInBits(BinOp);
+  std::string SizeStr = utostr(ResultSize);
+  std::string SubModuleName = BinOp.getOpcodeName() + SizeStr;
+
+  VASTSubModule *&Mod = SubModules[SubModuleName];
+
+  // Create the SubModuleNow if it didn't exist yet.
+  if (Mod == 0) {
+    unsigned FNNum = SubModules.size();
+    Mod = VM->addSubmodule(SubModuleName.c_str(), FNNum);
+    // Build up the operand and outputs.
+    VASTRegister *LHS = VM->createRegister(SubModuleName + "lhs", ResultSize);
+    Mod->addFanin(LHS->getSelector());
+    VASTRegister *RHS = VM->createRegister(SubModuleName + "rhs", ResultSize);
+    Mod->addFanin(RHS->getSelector());
+
+    // Look up the functional unit latency from the scripting engine.
+    const char *FUDelayPath[] = { "FUs", BinOp.getOpcodeName(), "Latencies",
+                                  SizeStr.c_str() };
+    float Latency = getFloatValueFromEngine(FUDelayPath);
+    Mod->createRetPort(VM, ResultSize, ceil(Latency));
+
+    ++NumIPs;
+  }
+
+  Mod->addInstuction(&BinOp);
+  return Mod;
 }
 
 void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
@@ -743,21 +717,17 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
                                                 ArrayRef<VASTValPtr> Args) {
   for (unsigned i = 0; i < Args.size(); ++i)
     Inst->addSrc(Args[i], i, SubMod->getFanin(i));
-  // Assign to the enable port.
-  Inst->addSrc(VASTImmediate::True, Args.size(), SubMod->getStartPort());
 
   Value *V = Inst->getValue();
   VASTSlot *Slot = Inst->getSlot();
-  // Disable the start port of the submodule at the next slot.
-  Slot = advanceToNextSlot(Slot);
-  VASTSeqValue *TimedFin = VM->createSeqValue(SubMod->getFinPort(), 0, V);
-  VM->createSlotCtrl(TimedFin, Slot, VASTImmediate::True)->annotateValue(V);
+  unsigned Latency = std::max(1u, SubMod->getLatency());
+  Slot = advanceToNextSlot(Slot, Latency);
 
   // Read the return value from the function if there is any.
   if (VASTSelector *RetPort = SubMod->getRetPort()) {
     VASTSeqValue *TimedReturn = VM->createSeqValue(RetPort, 0, V);
     VASTSeqValue *Result = getOrCreateSeqVal(Inst->getValue());
-    VM->latchValue(Result, TimedReturn, Slot, VASTImmediate::True, V, 1);
+    VM->latchValue(Result, TimedReturn, Slot, VASTImmediate::True, V, Latency);
     // Move the the next slot so that the operation can correctly read the
     // returned value
     advanceToNextSlot(Slot);

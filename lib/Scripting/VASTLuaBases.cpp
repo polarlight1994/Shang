@@ -326,8 +326,11 @@ VASTModule::createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth,
   return Bus;
 }
 
-VASTSubModule *VASTModule::addSubmodule(const char *Name, unsigned Num) {
-  VASTSubModule *M = new VASTSubModule(Name, Num);
+VASTSubModule *VASTModule::addSubmodule(const Twine &Name, unsigned Num) {
+  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
+  assert(Entry.second == 0 && "Symbol already exist!");
+  VASTSubModule *M = new VASTSubModule(Entry.getKeyData(), Num);
+  Entry.second = M;
   Submodules.push_back(M);
   return M;
 }

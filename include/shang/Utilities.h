@@ -100,6 +100,7 @@ bool runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err);
 bool runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err);
 //
 unsigned getIntValueFromEngine(ArrayRef<const char*> Path);
+float getFloatValueFromEngine(ArrayRef<const char*> Path);
 std::string getStrValueFromEngine(ArrayRef<const char*> Path);
 
 class SCEV;

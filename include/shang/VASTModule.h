@@ -275,7 +275,7 @@ public:
                               unsigned DataWidth, bool RequireByteEnable,
                               bool IsDualPort);
 
-  VASTSubModule *addSubmodule(const char *Name, unsigned Num);
+  VASTSubModule *addSubmodule(const Twine &Name, unsigned Num);
 
   VASTRegister *createRegister(const Twine &Name, unsigned BitWidth,
                                unsigned InitVal = 0,

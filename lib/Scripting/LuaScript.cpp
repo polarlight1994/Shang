@@ -176,6 +176,10 @@ unsigned llvm::getIntValueFromEngine(ArrayRef<const char*> Path) {
   return Script->getValue<unsigned>(Path);
 }
 
+float llvm::getFloatValueFromEngine(ArrayRef<const char*> Path) {
+  return Script->getValue<float>(Path);
+}
+
 std::string llvm::getStrValueFromEngine(ArrayRef<const char*> Path) {
   return Script->getValue<std::string>(Path);
 }

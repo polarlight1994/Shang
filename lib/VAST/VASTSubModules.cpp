@@ -99,33 +99,33 @@ void VASTSubModule::printSimpleInstantiation(vlang_raw_ostream &OS,
   llvm_unreachable("Not implemented yet!");
 }
 
-void VASTSubModule::printInstantiationFromTemplate(vlang_raw_ostream &OS,
-                                                   const VASTModule *Mod)
-                                                   const {
-  std::string Ports[5] = {
-    "clk", "rstN",
-    getPortName("start"),
-    getPortName("fin"),
-    getPortName("return_value")
-  };
-
-  // ask the constraint about how to instantiates this submodule.
-  OS << "// External module: " << getName() << '\n';
-  OS << VFUs::instantiatesModule(getName(), getNum(), Ports);
+void VASTSubModule::printSubModuleLogic(vlang_raw_ostream &OS,
+                                        const VASTModule *Mod)
+                                        const {
+  // Print the code for simple modules.
+  switch (Insts.front()->getOpcode()) {
+  case Instruction::UDiv:
+    OS << "assign " << getRetPort()->getName() << " = "
+       << getFanin(0)->getName() << " / " << getFanin(1)->getName() << ";\n";
+    break;
+  default:
+    llvm_unreachable("Not implemented yet!");
+    break;
+  }
 }
 
 void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
-  if (IsSimple) {
+  if (isa<CallInst>(Insts.front())) {
     printSimpleInstantiation(OS, Mod);
     return;
   }
 
-  printInstantiationFromTemplate(OS, Mod);
+  printSubModuleLogic(OS, Mod);
 }
 
 void VASTSubModule::printDecl(raw_ostream &OS) const {
-  VASTSelector *Fin = getFinPort();
-  VASTNamedValue::PrintDecl(OS, Fin->getName(), Fin->getBitWidth(), false);
+  if (VASTSelector *Fin = getFinPort())
+    VASTNamedValue::PrintDecl(OS, Fin->getName(), Fin->getBitWidth(), false);
   if (VASTSelector *Ret = getRetPort())
     VASTNamedValue::PrintDecl(OS, Ret->getName(), Ret->getBitWidth(), false);
 }

@@ -61,20 +61,6 @@ namespace VFUs {
 
   extern const char *VFUNames[];
 
-  enum ICmpFUType {
-    CmpEQ, CmpSigned, CmpUnsigned
-  };
-
-  static const int RetPortOffset = 1;
-
-  // Ports layout: Clk, Rst, En, Fin, ouput0, output1 ...
-  std::string instantiatesModule(const std::string &ModName, unsigned ModNum,
-                                 ArrayRef<std::string> Ports);
-
-  typedef std::pair<std::string, unsigned> ModOpInfo;
-  unsigned getModuleOperands(const std::string &ModName, unsigned FNNum,
-                             SmallVectorImpl<ModOpInfo> &OpInfo);
-
   extern unsigned LUTCost;
   extern unsigned RegCost;
   extern unsigned MaxLutSize;

@@ -2,6 +2,8 @@ FUs.LUTDelay = 0.4 / PERIOD
 FUs.MaxLutSize = 4
 FUs.MemoryBus.AddrLatency = 1.0 / PERIOD -- Block RAM
 
+FUs.udiv = { Latencies = { ['64'] =  345.607 / PERIOD  } }
+
 -- Latency table for EP2C35F672C6
 FUs.Shift = { Latencies = { 0 , 2.910 / PERIOD , 3.619 / PERIOD , 4.397 / PERIOD , 5.868 / PERIOD }, --Shift
               Costs = {1 * 64, 27 * 64, 70 * 64, 171 * 64, 393 * 64}, --Shift

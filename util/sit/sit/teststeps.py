@@ -475,7 +475,6 @@ dofile([[{{ [config_dir, 'common_config.lua']|joinpath }}]])
 
 -- Define some function
 dofile([[{{ [config_dir, 'FuncDefine.lua']|joinpath }}]])
-dofile([[{{ [config_dir, 'AddModules.lua']|joinpath }}]])
 -- load platform information script
 dofile([[{{ [config_dir, 'AlteraCommon.lua']|joinpath }}]])
 dofile([[{{ [config_dir, fpga_device + ".lua"]|joinpath }}]])

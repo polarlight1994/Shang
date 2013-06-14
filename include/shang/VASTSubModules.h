@@ -22,14 +22,16 @@ namespace llvm {
 class GlobalVariable;
 class VASTWire;
 class VASTSelector;
+class Instruction;
 
 class VASTSubModule : public VASTSubModuleBase {
   // Remember the input/output flag in the pointer.
   // typedef PointerIntPair<VASTNode*, 1, bool> VASTSubModulePortPtr;
   // StringMap<VASTSubModulePortPtr> PortMap;
 
-  // Can the submodule be simply instantiated?
-  bool IsSimple;
+  // Remember the instructions that access this SubModule.
+  SmallVector<Instruction*, 4> Insts;
+
   // Special ports in the submodule.
   VASTSelector *StartPort, *FinPort, *RetPort;
 
@@ -43,13 +45,12 @@ class VASTSubModule : public VASTSubModuleBase {
   friend class VASTModule;
   void
   printSimpleInstantiation(vlang_raw_ostream &OS, const VASTModule *Mod) const;
-  void printInstantiationFromTemplate(vlang_raw_ostream &OS,
-                                      const VASTModule *Mod) const;
+  void printSubModuleLogic(vlang_raw_ostream &OS, const VASTModule *Mod) const;
 public:
   unsigned getNum() const { return Idx; }
   const char *getName() const { return Contents.Name; }
 
-  void setIsSimple(bool isSimple = true) { IsSimple = isSimple; }
+  void addInstuction(Instruction *I) { Insts.push_back(I); }
 
   void addFanin(VASTSelector *S) {
     // FIXME: Build the port mapping.
