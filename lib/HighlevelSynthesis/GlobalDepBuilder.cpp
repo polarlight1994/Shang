@@ -311,7 +311,7 @@ struct GlobalDependenciesBuilderBase  {
 struct SingleFULinearOrder
   : public GlobalDependenciesBuilderBase<SingleFULinearOrder> {
 
-  VASTSelector *Sel;
+  VASTNode *FU;
   const unsigned Parallelism;
   SchedulerBase &G;
   const DenseMap<BasicBlock*, VASTSchedUnit*> &Returns;
@@ -378,10 +378,10 @@ struct SingleFULinearOrder
 
   void buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs);
 
-  SingleFULinearOrder(VASTSelector *Sel, unsigned Parallelism, SchedulerBase &G,
+  SingleFULinearOrder(VASTNode *FU, unsigned Parallelism, SchedulerBase &G,
                       IR2SUMapTy &IR2SUMap, GlobalFlowAnalyzer &GFA,
                       DenseMap<BasicBlock*, VASTSchedUnit*> &ReturnBlocks)
-    : GlobalDependenciesBuilderBase(GFA, IR2SUMap), Sel(Sel),
+    : GlobalDependenciesBuilderBase(GFA, IR2SUMap), FU(FU),
       Parallelism(Parallelism), G(G), Returns(ReturnBlocks) {}
 
   void buildLinearOrder();
@@ -411,7 +411,7 @@ struct BasicLinearOrderGenerator {
 
   // The FUs whose accesses need to be synchronized, and the basic blocks in
   // which the FU is accessed.
-  DenseMap<VASTSelector*, SingleFULinearOrder*> Builders;
+  DenseMap<VASTNode*, SingleFULinearOrder*> Builders;
 
   void buildFUInfo();
 
@@ -467,16 +467,16 @@ void BasicLinearOrderGenerator::buildFUInfo() {
       assert(Op && "Only the SU corresponds to a VASTSeqOp requires"
                    " linear order!");
 
-      VASTSelector *Sel = Op->getSrc(Op->num_srcs() - 1).getSelector();
-      SingleFULinearOrder *&S = Builders[Sel];
+      VASTNode *FU = Op->getSrc(0).getSelector()->getParent();
+      SingleFULinearOrder *&S = Builders[FU];
 
       // Create the Synchronizer if it is not yet created.
       if (S == 0) {
         unsigned Parallelism = 1;
-        if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(Sel->getParent()))
+        if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(FU))
           if (Bus->isDualPort()) Parallelism = 2;
 
-        S = new SingleFULinearOrder(Sel, Parallelism, G, IR2SUMap, GFA,
+        S = new SingleFULinearOrder(FU, Parallelism, G, IR2SUMap, GFA,
                                     ReturnBlocks);
       }
 
@@ -541,7 +541,7 @@ void BasicLinearOrderGenerator::buildLinearOrder() {
   buildFUInfo();
 
   // Calculate the BB to insert PHI nodes for each FU.
-  typedef DenseMap<VASTSelector*, SingleFULinearOrder*>::const_iterator
+  typedef DenseMap<VASTNode*, SingleFULinearOrder*>::const_iterator
           iterator;
   for (iterator I = Builders.begin(), E = Builders.end(); I != E; ++I) {
     SingleFULinearOrder *Builder = I->second;
