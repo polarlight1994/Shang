@@ -43,7 +43,6 @@ class VASTMemoryBus : public VASTSubModuleBase {
   std::string getWDataName(unsigned PortNum) const;
   std::string getByteEnName(unsigned PortNum) const;
   std::string getLastStageAddrName(unsigned PortNum) const;
-  std::string getInternalEnName(unsigned PortNum) const;
   std::string getInternalWEnName(unsigned PortNum) const;
 
   void printPortDecl(raw_ostream &OS, unsigned PortNum) const;

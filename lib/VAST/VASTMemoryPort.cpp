@@ -144,11 +144,7 @@ std::string VASTMemoryBus::getByteEnName(unsigned PortNum) const {
 }
 
 std::string VASTMemoryBus::getLastStageAddrName(unsigned PortNum) const {
-  return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "pipe1_raddr1r";
-}
-
-std::string VASTMemoryBus::getInternalEnName(unsigned PortNum) const {
-  return getAddrName(PortNum) + "_pipe1_enable";
+  return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "pipe1_addr";
 }
 
 std::string VASTMemoryBus::getInternalWEnName(unsigned PortNum) const {
@@ -236,24 +232,16 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
      << WData->getName() << " << { " << Addr->getName()
      << VASTValue::printBitRange(ByteAddrWidth) << ", 3'b0 });\n"
   // The enables.
-     << "reg " << getInternalEnName(PortNum) << ", "
-     << getInternalWEnName(PortNum) << ";\n";
+     << "reg " << getInternalWEnName(PortNum) << ";\n";
 
   // Access the block ram.
   OS.always_ff_begin(false);
-  // Use the enable of the address as the enable.
-  OS << getInternalEnName(PortNum) << " <= "
-      << Addr->getName() << "_selector_enable;\n";
 
   if (!WData->empty()) {
     // Use the enable of the write data as the write enable.
     OS << getInternalWEnName(PortNum) << " <= "
         << WData->getName() << "_selector_enable;\n";
-  }
 
-  OS.if_begin(getInternalEnName(PortNum));
-
-  if (!WData->empty()) {
     // TODO: Guard the read pipeline stages by stage enable signal.
     OS.if_begin(getInternalWEnName(PortNum));
 
@@ -273,13 +261,12 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
 
   OS << getRDataName(PortNum) << " <= " << getArrayName() << "[" << Addr->getName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
-  OS << "mem" << Idx << 'p' << PortNum << "pipe1_raddr1r <= "
-     << Addr->getName() << ";\n";
+  OS << getLastStageAddrName(PortNum) << " <= " << Addr->getName() << ";\n";
 
   OS << "if (" << Addr->getName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
      << NumWords << ")  $finish(\"Write access out of bound!\");\n";
-  OS.exit_block();
+
   OS.always_ff_end(false);
 }
 
