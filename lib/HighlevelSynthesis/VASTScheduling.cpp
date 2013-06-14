@@ -724,8 +724,6 @@ void VASTScheduling::fixSchedulingGraph() {
     }
 
     BasicBlock *BB = U->getParent();
-    // Allocate 1 cycles for the scheduling units that launching some operations.
-    unsigned Latency = U->isLatch() ? 0 : 1;
 
     // Constrain the dangling nodes by all terminators.
     ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
@@ -745,7 +743,9 @@ void VASTScheduling::fixSchedulingGraph() {
       // a PHI node, which is handled above.
       assert(BBExit->getIdx() >= U->getIdx() && "Unexpected index order!");
 
-      BBExit->addDep(U, VASTDep::CreateCtrlDep(Latency));
+      // Protected by the later linear order builder, we do not need add
+      // dependence to wait the launch operation finish here.
+      BBExit->addDep(U, VASTDep::CreateCtrlDep(0));
     }
 #endif
   }
