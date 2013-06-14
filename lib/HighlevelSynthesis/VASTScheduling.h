@@ -544,7 +544,7 @@ class VASTScheduling : public VASTModulePass {
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
   void buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
-                             unsigned NumCycles);
+                             float delay);
   void buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);
   void buildFlowDependencies(VASTSchedUnit *U);
   void buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U);

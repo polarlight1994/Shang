@@ -370,7 +370,7 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
 
 void
 VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
-                                      unsigned NumCycles) {
+                                      float delay) {
   assert(Src && "Not a valid source!");
 
   Value *V = Src->getLLVMValue();
@@ -382,7 +382,7 @@ VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
   VASTSchedUnit *SrcSU = Src->isStatic() ? G->getEntry() : getFlowDepSU(V);
 
   assert(!Src->isFUOutput() && "Unexpected FU output!");
-  DstU->addDep(SrcSU, VASTDep::CreateFlowDep(NumCycles));
+  DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay)));
 }
 
 void VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
@@ -406,7 +406,7 @@ void VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
 
   // Also calculate the path for the guarding condition.
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-    buildFlowDependencies(U, I->first, ceil(I->second));
+    buildFlowDependencies(U, I->first, I->second);
 }
 
 void VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
@@ -421,7 +421,7 @@ void VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
   TNL->extractDelay(Sel, Cnd, Srcs);
 
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-    buildFlowDependencies(U, I->first, ceil(I->second));
+    buildFlowDependencies(U, I->first, I->second);
 }
 
 void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
@@ -715,6 +715,14 @@ void VASTScheduling::fixSchedulingGraph() {
     // At least constrain the scheduling unit with something.
     if (U->use_empty()) G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
 #else
+    // Only need to create the pseudo dependencies to the exit node. Because
+    // the PHI node will always be scheduled to the same slot as the
+    // terminator.
+    if (U->isPHILatch() || U->isPHI()) {
+      G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
+      continue;
+    }
+
     BasicBlock *BB = U->getParent();
     // Allocate 1 cycles for the scheduling units that launching some operations.
     unsigned Latency = U->isLatch() ? 0 : 1;
@@ -731,14 +739,6 @@ void VASTScheduling::fixSchedulingGraph() {
         // We need to add the dependencies even the BB return is not a
         // terminator. But becareful, do not add the cycle dependencies.
         if (BBExit == U) continue;
-      }
-
-      // Only need to create the pseudo dependencies to the exit node. Because
-      // the PHI node will always be scheduled to the same slot as the
-      // terminator.
-      if (U->isPHILatch() || U->isPHI()) {
-        G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
-        continue;
       }
 
       // The only chance that U's idx bigger than BBExit's idx is when U is
