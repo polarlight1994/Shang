@@ -162,7 +162,7 @@ std::string VASTMemoryBus::getLastStageAddrName(unsigned PortNum) const {
 }
 
 std::string VASTMemoryBus::getInternalWEnName(unsigned PortNum) const {
-  return "mem"+ utostr(Idx) + "p" + utostr(PortNum) + "pipe1_enable";
+  return getWDataName(PortNum) + "_pipe1_enable";
 }
 
 std::string VASTMemoryBus::getArrayName() const {
