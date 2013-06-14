@@ -271,16 +271,13 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
       OS.exit_block();
     }
 
-    OS.else_begin();
+    OS.exit_block();
   }
 
   OS << getRDataName(PortNum) << " <= " << getArrayName() << "[" << Addr->getName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
   OS << "mem" << Idx << 'p' << PortNum << "pipe1_raddr1r <= "
      << Addr->getName() << ";\n";
-
-  // The read is guarded only the write port is not empty.
-  if (!WData->empty()) OS.exit_block();
 
   OS << "if (" << Addr->getName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
@@ -487,16 +484,13 @@ void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
          << " <= " << WData->getName() << "_selector_wire"
          << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
 
-      OS.else_begin();
+      OS.exit_block();
     }
 
     OS << RData->getName()
       << VASTValue::printBitRange(getDataWidth(), 0, false) << " <= "
       << ' ' << getArrayName() << "[" << Addr->getName() << "_selector_wire"
       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
-
-    // The read is guarded only the write port is not empty.
-    if (!WData->empty()) OS.exit_block();
 
     // Verify the addresses.
     OS << "if (" << Addr->getName() << "_selector_wire"
