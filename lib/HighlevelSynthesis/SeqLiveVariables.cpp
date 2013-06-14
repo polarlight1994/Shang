@@ -156,8 +156,8 @@ void SeqLiveVariables::verifyAnalysis() const {
   for (iterator I = VM->selector_begin(), E = VM->selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
 
-    // Ignore the FUOutputs, they are not actually associated with slots.
-    if (Sel->isFUOutput()) continue;
+    // Ignore the Selectors that is never assigned.
+    if (Sel->empty()) continue;
 
     // Reset the context.
     VIs.clear();
@@ -355,7 +355,7 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
 
     // Ignore the directly output of functional units, there should be always
     // single cycle paths between it and the registers.
-    if (V->isFUOutput()) continue;
+    if (V->fanin_empty()) continue;
 
     // Ignore the placeholder for node without timing information.
     handleUse(V, S, PathFromEntry);
@@ -369,8 +369,8 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
   for (iterator I = VM->seqval_begin(), E = VM->seqval_end(); I != E; ++I) {
     VASTSeqValue *V = I;
 
-    // Ignore the FUOutputs, they are not actually associated with slots.
-    if (V->isFUOutput()) continue;
+    // Ignore the SeqValue that is never assigned.
+    if (V->fanin_empty()) continue;
 
     if (V->isStatic()) {
       VarInfo *VI = new VarInfo(0);
