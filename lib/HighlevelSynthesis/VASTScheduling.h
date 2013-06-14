@@ -543,6 +543,8 @@ class VASTScheduling : public VASTModulePass {
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
+  // Calculate the maximal slack available from the previous pipeline stage.
+  float slackFromPrevStage(VASTSeqInst *SrcOp);
   void buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
                              float delay);
   void buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);

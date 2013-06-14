@@ -368,6 +368,29 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   return 0;
 }
 
+float VASTScheduling::slackFromPrevStage(VASTSeqInst *SrcOp) {
+  if (!SrcOp->isLatch()) return 0.0f;
+
+  TimingNetlist::RegDelaySet Srcs;
+  VASTLatch CurLatch = SrcOp->getSrc(0);
+  VASTValPtr LatchSrc = CurLatch;
+  TNL->extractDelay(CurLatch.getSelector(), LatchSrc.get(), Srcs);
+
+  // We do not have any delay information from the previous pipeline stage.
+  if (Srcs.empty()) return 0.0f;
+
+  float MinimalSlack = 1.0f;
+  typedef TimingNetlist::RegDelaySet::iterator src_iterator;
+  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+    float CurDelay = I->second;
+    // For a pipeline stage, there is at least 1 cycle available.
+    float CurSlack = std::max<float>(ceil(CurDelay), 1.0f) - CurDelay;
+    MinimalSlack = std::min(MinimalSlack, CurSlack);
+  }
+
+  return MinimalSlack;
+}
+
 void
 VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
                                       float delay) {
@@ -380,6 +403,11 @@ VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
   // we only write it when the function exit. Whe we read is the value from
   // last function execution.
   VASTSchedUnit *SrcSU = Src->isStatic() ? G->getEntry() : getFlowDepSU(V);
+
+  // Try to fold the delay of current pipeline stage to the previous pipeline
+  // stage, if the previous pipeline stage has enough slack.
+  if (VASTSeqInst *SrcOp = dyn_cast_or_null<VASTSeqInst>(SrcSU->getSeqOp()))
+    delay = std::max(0.0f, delay - slackFromPrevStage(SrcOp));
 
   assert(!Src->isFUOutput() && "Unexpected FU output!");
   DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay)));
@@ -711,7 +739,7 @@ void VASTScheduling::fixSchedulingGraph() {
     if (Inst && (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst)))
       continue;
 
-#ifndef DISABLE_FINE_GRAIN_CFG_SCHEDULING
+#ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
     // At least constrain the scheduling unit with something.
     if (U->use_empty()) G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
 #else

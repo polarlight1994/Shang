@@ -79,9 +79,9 @@ public:
   void annotateDelay(VASTValue *Src, VASTSelector *Dst, delay_type delay);
   void annotateDelay(VASTValue *Src, VASTValue *Dst, delay_type delay);
 
-  /// getDelaySrcs - Extract the all register reachable to Src, and the
-  /// corresponding delay from the register to Src.
-  ///
+  /// getDelaySrcs - Extract the all registers such that there exists a path
+  /// from these register, goes though Src, to Sel, and the corresponding
+  /// critical path delay.
   void extractDelay(VASTSelector *Sel, VASTValue *Src, RegDelaySet &Set);
 
   path_iterator path_begin() { return PathInfo.begin(); }

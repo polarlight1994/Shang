@@ -100,7 +100,10 @@ struct DatapathVisitor {
     // underlying LLVM Instruction.
     switch (Inst->getOpcode()) {
     case Instruction::Load: {
-      if (Op->isLatch()) return;
+      if (Op->isLatch()) {
+        visitFULatchAndSelector( Op->getSrc(0), Inst);
+        return;
+      }
 
       LoadInst *LI = cast<LoadInst>(Inst);
       VASTLatch Addr = Op->getSrc(0);
@@ -128,6 +131,7 @@ struct DatapathVisitor {
       VASTSlot *IncomingSlot = ParentSlot->getParentGroup();
       BasicBlock *BB = IncomingSlot->getParent();
       Value *Incoming = PN->getIncomingValueForBlock(BB);
+
       VASTLatch L = Op->getSrc(0);
 
       visitConeAndSelector(L, PN, Incoming);
@@ -153,7 +157,10 @@ struct DatapathVisitor {
     case Instruction::URem:
     case Instruction::SRem: {
       // Handle the binary operators.
-      if (Op->isLatch()) return;
+      if (Op->isLatch()) {
+        visitFULatchAndSelector( Op->getSrc(0), Inst);
+        return;
+      }
 
       visitConeAndSelector(Op->getSrc(0), Inst, Inst->getOperand(0));
       visitGuardingConditionCone(Op->getSrc(0), ParentSlot, Inst);
@@ -164,6 +171,15 @@ struct DatapathVisitor {
     }
     default: llvm_unreachable("Unexpected opcode!"); return;
     }
+  }
+
+  void visitFULatchAndSelector(const VASTLatch &L, Instruction *Inst) {
+    static_cast<SubClass*>(this)->visitFULatch(L, Inst);
+
+    // If the cone exsit, also extract/annotate the delay from root of the
+    // cone to the selector.
+    static_cast<SubClass*>(this)->visitSelFanin(L.getSelector(), Inst,
+                                                VASTValPtr(L).get(), Inst);
   }
 
   void visitGuardingConditionCone(VASTLatch L, VASTSlot *ParentSlot,
@@ -233,13 +249,21 @@ struct DelayExtractor : public DatapathVisitor<DelayExtractor> {
     : TNL(TNL), PathInfo(PathInfo), FaninInfo(FaninInfo) {}
 
   void visitPair(VASTValue *Dst, Value *DstV, VASTSeqValue *Src, Value *SrcV) {
-    delay_type &OldDelay = PathInfo[DstV][SrcV];
     delay_type NewDelay = TNL.getDelay(Src, Dst);
+    delay_type &OldDelay = PathInfo[DstV][SrcV];
 
-    // Remove the latency of the single cycle path from the output to the
-    // latching register.
-    if (Src->isFUOutput())
-      NewDelay = std::max(0.0f, NewDelay - 1.0f);
+    if (Src->isFUOutput() && SrcV != DstV) {
+      // Remove the latency of the single cycle path from the output to the
+      // latching register.
+      delay_type NextStageDelay = std::max(0.0f, NewDelay - 1.0f);
+      // Calculate the delay from the FU output to the latch pipeline stage.
+      delay_type &CurStageDelay = PathInfo[SrcV][SrcV];
+      // Move the removed delay to current stage.
+      CurStageDelay = std::max(CurStageDelay, NewDelay - NextStageDelay);
+      // Always extract the delay from the latch register instead of the FU
+      // output.
+      NewDelay = NextStageDelay;
+    }
 
     // FIXME: Use better update algorithm, e.g. somekinds of iir filter.
     OldDelay = std::max(OldDelay, NewDelay);
@@ -257,6 +281,23 @@ struct DelayExtractor : public DatapathVisitor<DelayExtractor> {
 
     delay_type &delay = FaninInfo[SelName][Operand];
     delay = std::max(delay, TNL.getDelay(FI, Sel));
+  }
+
+  void visitFULatch(const VASTLatch &L, Instruction *Inst) {
+    VASTValPtr Src = L;
+
+    TimingNetlist::RegDelaySet Srcs;
+    typedef TimingNetlist::RegDelaySet::iterator src_iterator;
+
+    // Extract the delay from the FU output.
+    TNL.extractDelay(L.getSelector(), Src.get(), Srcs);
+    for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+      VASTSeqValue *SrcV = I->first;
+      // The sources must be FU output.
+      assert(SrcV->isFUOutput() && SrcV->getLLVMValue() == Inst && "Bad latch!");
+      delay_type &OldDelay = PathInfo[Inst][Inst];
+      OldDelay = std::max(OldDelay, I->second);
+    }
   }
 };
 
@@ -286,6 +327,23 @@ struct DelayAnnotator : public DatapathVisitor<DelayAnnotator> {
     }
 
     TNL.annotateDelay(FI, Sel, FaninInfo[SelName][Operand]);
+  }
+
+  void visitFULatch(const VASTLatch &L, Instruction *Inst) {
+    VASTValue *Src = VASTValPtr(L).get();
+
+    // Extract the source registers.
+    std::set<VASTSeqValue*> Srcs;
+    if (VASTExpr *Expr = dyn_cast<VASTExpr>(Src))
+      Expr->extractSupporingSeqVal(Srcs);
+
+    typedef std::set<VASTSeqValue*>::iterator src_iterator;
+    for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+      VASTSeqValue *SrcV = *I;
+      // The sources must be FU output.
+      assert(SrcV->isFUOutput() && SrcV->getLLVMValue() == Inst && "Bad latch!");
+      TNL.annotateDelay(SrcV, Src, PathInfo[Inst][Inst]);
+    }
   }
 };
 
