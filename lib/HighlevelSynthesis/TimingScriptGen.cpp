@@ -259,9 +259,7 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
     if (!Visited.insert(ChildNode).second) continue;
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
-      // FUOutputs are not associated with slots for now, so do not try to get
-      // the number of cycles.
-      if (V->isFUOutput()) continue;
+      if (generateSubmoduleConstraints(V)) continue;
 
       unsigned Interval = getMinimalInterval(V, ReadSlots);
       float EstimatedDelay = TNL.getDelay(V, Root, Dst);
