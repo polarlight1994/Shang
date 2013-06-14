@@ -473,7 +473,7 @@ void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
 
   OS.always_ff_begin(false);
 
-  OS.if_begin(Twine(Addr->getName()) + "_selector_enable")
+  OS.if_begin(Twine(Addr->getName()) + "_selector_enable");
   if (!WData->empty()) {
     OS.if_begin(Twine(WData->getName()) + "_selector_enable");
     OS << getArrayName() << "[" << Addr->getName() << "_selector_wire"
