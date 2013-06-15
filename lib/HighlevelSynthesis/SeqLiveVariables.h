@@ -111,7 +111,7 @@ public:
 private:
   typedef ArrayRef<VASTSlot::EdgePtr> PathVector;
   void handleSlot(VASTSlot *S, PathVector PathFromEntry);
-  void handleUse(VASTSeqValue *Use, VASTSlot *UseSlot, PathVector PathFromEntry);
+  void handleUse(VASTSeqValue *Def, VASTSlot *UseSlot, PathVector PathFromEntry);
 
   void initializeLandingSlots();
   void initializeOverlappedSlots();

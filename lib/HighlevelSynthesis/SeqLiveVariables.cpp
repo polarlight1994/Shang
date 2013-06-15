@@ -402,12 +402,12 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
   }
 }
 
-void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
+void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
                                  PathVector PathFromEntry) {
   // The timing information is not avaliable.
-  // if (Use->empty()) return;
+  // if (Def->empty()) return;
 
-  assert(Use && "Bad Use pointer!");
+  assert(Def && "Bad Def pointer!");
   VASTSlot::EdgePtr DefEdge(0, VASTSlot::SubGrp);
 
   // Walking backward to find the corresponding definition.
@@ -433,8 +433,8 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
 
     // Find the nearest written slot in the path.
     // First check the implicit flow, then check the normal flow.
-    if (!(!IgnoreSlot && isWrittenAt(Use, Edge))
-        && !isWrittenViaImplicitFlow(Use, Edge))
+    if (!(!IgnoreSlot && isWrittenAt(Def, Edge))
+        && !isWrittenViaImplicitFlow(Def, Edge))
       continue;
 
     DefEdge = Edge;
@@ -448,19 +448,19 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
       dbgs() << (*I)->SlotNum << '\n';
     dbgs() << "]\n";
 
-    Use->dumpFaninns();
+    Def->dumpFaninns();
 
     UseSlot->dump();
 
     llvm_unreachable("Define of VASTSeqVal not dominates all its uses!");
   }
 
-  DEBUG(dbgs() << "SeqVal: " << Use->getName() << " Used at Slot "
+  DEBUG(dbgs() << "SeqVal: " << Def->getName() << " Used at Slot "
                << UseSlot->SlotNum << " Def at slot " << DefEdge->SlotNum
                << '\n');
 
   // Get the corresponding VarInfo defined at DefSlot.
-  VarInfo *VI = getVarInfo(Use);
+  VarInfo *VI = getVarInfo(Def);
 
   if (UseSlot == DefEdge) {
     assert(UseSlot->IsSubGrp && UseSlot->getParent() == 0
