@@ -34,6 +34,9 @@ VASTValPtr VASTExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
   return 0;
 }
 
+void VASTExprBuilderContext::onReplaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+  BitMaskCache.erase(From);
+}
 
 void VASTExprBuilderContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
   llvm_unreachable("Function not implemented!");
@@ -115,8 +118,14 @@ VASTValPtr MinimalExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
   return Datapath.createExprImpl(Opc, Ops, UB, LB);
 }
 
+void MinimalExprBuilderContext::onReplaceAllUseWith(VASTValPtr From,
+                                                    VASTValPtr To) {
+  VASTExprBuilderContext::onReplaceAllUseWith(From, To);
+}
+
 void MinimalExprBuilderContext::replaceAllUseWith(VASTValPtr From,
                                                   VASTValPtr To) {
+  onReplaceAllUseWith(From, To);
   Datapath.replaceAllUseWithImpl(From, To);
 }
 

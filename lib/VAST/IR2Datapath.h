@@ -30,6 +30,8 @@ public:
 private:
   ValueMapTy Value2Expr;
   DataLayout *TD;
+protected:
+  virtual void onReplaceAllUseWith(VASTValPtr From, VASTValPtr To);
 
 public:
   explicit DatapathBuilderContext(DataLayout *TD) : TD(TD) {}

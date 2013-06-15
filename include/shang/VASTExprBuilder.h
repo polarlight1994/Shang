@@ -18,6 +18,12 @@
 
 namespace llvm {
 class VASTExprBuilderContext {
+  typedef DenseMap<VASTValPtr, std::pair<APInt, APInt> > BitMaskCacheTy;
+  BitMaskCacheTy BitMaskCache;
+
+protected:
+  virtual void onReplaceAllUseWith(VASTValPtr From, VASTValPtr To);
+
 public:
   virtual ~VASTExprBuilderContext() {}
 
@@ -77,6 +83,9 @@ class DataLayout;
 
 class MinimalExprBuilderContext : public VASTExprBuilderContext {
   DatapathContainer &Datapath;
+protected:
+  virtual void onReplaceAllUseWith(VASTValPtr From, VASTValPtr To);
+
 public:
   explicit MinimalExprBuilderContext(DatapathContainer &Datapath)
     : Datapath(Datapath) {}

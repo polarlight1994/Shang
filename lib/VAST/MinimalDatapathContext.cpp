@@ -37,8 +37,14 @@ MinimalDatapathContext::getAsOperandImpl(Value *Op) {
   llvm_unreachable("Cannot create VASTValPtr for Value!");
   return VASTValPtr();
 }
+void MinimalDatapathContext::onReplaceAllUseWith(VASTValPtr From, VASTValPtr To)
+{
+  DatapathBuilderContext::onReplaceAllUseWith(From, To);
+}
 
 void MinimalDatapathContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+  // Notify the DatapathBuilderContext before actually perform the replacement.
+  onReplaceAllUseWith(From, To);
   Datapath.replaceAllUseWithImpl(From, To);
 }
 
