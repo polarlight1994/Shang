@@ -39,6 +39,70 @@ void VASTExprBuilderContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
   llvm_unreachable("Function not implemented!");
 }
 
+void VASTExprBuilderContext::calculateBitCatBitMask(VASTExprPtr Expr,
+                                                    APInt &KnownZeros,
+                                                    APInt &KnownOnes) {
+  unsigned CurUB = Expr->getBitWidth();
+  unsigned ExprSize = Expr->getBitWidth();
+  // Clear the mask.
+  KnownOnes = KnownZeros = APInt::getNullValue(ExprSize);
+
+  // Concatenate the bit mask together.
+  for (unsigned i = 0; i < Expr->size(); ++i) {
+    VASTValPtr CurBitSlice = Expr.getOperand(i);
+    unsigned CurSize = CurBitSlice->getBitWidth();
+    unsigned CurLB = CurUB - CurSize;
+    APInt CurKnownZeros , CurKnownOnes;
+    calculateBitMask(CurBitSlice, CurKnownZeros, CurKnownOnes);
+    KnownZeros  |= CurKnownZeros.zextOrSelf(ExprSize).shl(CurLB);
+    KnownOnes   |= CurKnownOnes.zextOrSelf(ExprSize).shl(CurLB);
+
+    CurUB = CurLB;
+  }
+}
+
+void VASTExprBuilderContext::calculateImmediateBitMask(VASTImmPtr Imm,
+                                                       APInt &KnownZeros,
+                                                       APInt &KnownOnes) {
+  KnownOnes = Imm.getAPInt();
+  KnownZeros = ~Imm.getAPInt();
+}
+
+void VASTExprBuilderContext::calculateAssignBitMask(VASTExprPtr Expr,
+                                                    APInt &KnownZeros,
+                                                    APInt &KnownOnes) {
+  calculateBitMask(Expr.getOperand(0), KnownZeros, KnownOnes);
+  // Adjust the bitmask by LB.
+  KnownOnes = VASTImmediate::getBitSlice(KnownOnes, Expr->UB, Expr->LB);
+  KnownZeros = VASTImmediate::getBitSlice(KnownZeros, Expr->UB, Expr->LB);
+}
+
+// The implementation of basic bit mark calucation.
+void VASTExprBuilderContext::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
+                                              APInt &KnownOnes) {
+  // Clear the mask.
+  KnownOnes = KnownZeros = APInt::getNullValue(V->getBitWidth());
+
+  // Most simple case: Immediate.
+  if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(V)) {
+    calculateImmediateBitMask(Imm, KnownZeros, KnownOnes);
+    return;
+  }
+
+  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
+  if (!Expr) return;
+
+  switch(Expr->getOpcode()) {
+  default: return;
+  case VASTExpr::dpBitCat:
+    calculateBitCatBitMask(Expr, KnownZeros, KnownOnes);
+    return;
+  case VASTExpr::dpAssign:
+    calculateAssignBitMask(Expr, KnownZeros, KnownOnes);
+    return;
+  }
+}
+
 //===--------------------------------------------------------------------===//
 
 VASTImmediate *MinimalExprBuilderContext::getOrCreateImmediate(const APInt &Value) {
@@ -86,57 +150,6 @@ VASTExprBuilder::GetMaskSplitPoints(APInt Mask, unsigned &HiPt, unsigned &LoPt) 
   assert(HiPt > LoPt && "Illegal spliting point!");
 
   return true;
-}
-
-void VASTExprBuilder::calculateBitCatBitMask(VASTExprPtr Expr,
-                                             APInt &KnownZeros,
-                                             APInt &KnownOnes) {
-  unsigned CurUB = Expr->getBitWidth();
-  unsigned ExprSize = Expr->getBitWidth();
-  // Clear the mask.
-  KnownOnes = KnownZeros = APInt::getNullValue(ExprSize);
-
-  // Concatenate the bit mask together.
-  for (unsigned i = 0; i < Expr->size(); ++i) {
-    VASTValPtr CurBitSlice = Expr.getOperand(i);
-    unsigned CurSize = CurBitSlice->getBitWidth();
-    unsigned CurLB = CurUB - CurSize;
-    APInt CurKnownZeros , CurKnownOnes;
-    calculateBitMask(CurBitSlice, CurKnownZeros, CurKnownOnes);
-    KnownZeros  |= CurKnownZeros.zextOrSelf(ExprSize).shl(CurLB);
-    KnownOnes   |= CurKnownOnes.zextOrSelf(ExprSize).shl(CurLB);
-
-    CurUB = CurLB;
-  }
-}
-
-void VASTExprBuilder::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
-                                       APInt &KnownOnes) {
-  // Clear the mask.
-  KnownOnes = KnownZeros = APInt::getNullValue(V->getBitWidth());
-
-  // Most simple case: Immediate.
-  if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(V)) {
-    KnownOnes = Imm.getAPInt();
-    KnownZeros = ~Imm.getAPInt();
-    return;
-  }
-
-  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
-  if (!Expr) return;
-
-  switch(Expr->getOpcode()) {
-  default: return;
-  case VASTExpr::dpBitCat:
-    calculateBitCatBitMask(Expr, KnownZeros, KnownOnes);
-    return;
-  case VASTExpr::dpAssign:
-    calculateBitMask(Expr.getOperand(0), KnownZeros, KnownOnes);
-    // Adjust the bitmask by LB.
-    KnownOnes = VASTImmediate::getBitSlice(KnownOnes, Expr->UB, Expr->LB);
-    KnownZeros = VASTImmediate::getBitSlice(KnownZeros, Expr->UB, Expr->LB);
-    return;
-  }
 }
 
 VASTValPtr VASTExprBuilder::buildNotExpr(VASTValPtr U) {

@@ -21,6 +21,18 @@ class VASTExprBuilderContext {
 public:
   virtual ~VASTExprBuilderContext() {}
 
+  // Bit mask analyzing, bitmask_collecting_iterator.
+  virtual void calculateBitMask(VASTValPtr V, APInt &KnownZeros,
+                                APInt &KnownOnes);
+
+  // Simple bit mask calculation functions.
+  void calculateBitCatBitMask(VASTExprPtr Expr, APInt &KnownZeros,
+                              APInt &KnownOnes);
+  void calculateAssignBitMask(VASTExprPtr Expr, APInt &KnownZeros,
+                              APInt &KnownOnes);
+  void calculateImmediateBitMask(VASTImmPtr Imm, APInt &KnownZeros,
+                                 APInt &KnownOnes);
+
   VASTValPtr stripZeroBasedBitSlize(VASTValPtr V) {
     VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
     if (Expr.get() && Expr->isSubBitSlice() && Expr->LB == 0)
@@ -202,10 +214,10 @@ public:
     return createExpr(Opc, Ops, UB, LB);
   }
 
-  // Bit mask analyzing, bitmask_collecting_iterator.
-  void calculateBitMask(VASTValPtr V, APInt &KnownZeros, APInt &KnownOnes);
-  void calculateBitCatBitMask(VASTExprPtr Expr, APInt &KnownZeros,
-                              APInt &KnownOnes);
+  void calculateBitMask(VASTValPtr V, APInt &KnownZeros, APInt &KnownOnes) {
+    Context.calculateBitMask(V, KnownZeros, KnownOnes);
+  }
+
   static bool GetMaskSplitPoints(APInt Mask, unsigned &HiPt, unsigned &LoPt);
 
   VASTValPtr getBoolImmediate(bool Val) {
