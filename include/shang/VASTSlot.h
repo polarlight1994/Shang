@@ -54,7 +54,9 @@ public:
     EdgePtr(VASTSlot *S, EdgeType T) : _Base(S, T) {}
 
     EdgeType getType() const { return _Base::getInt(); }
-    unsigned getDistance() const { return 0x1 & _Base::getInt(); }
+    unsigned getDistance() const {
+      return _Base::getInt() == Sucessor ? 1 : 0;
+    }
   };
 
   typedef SmallVector<EdgePtr, 4> SuccVecTy;
