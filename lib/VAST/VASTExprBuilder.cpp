@@ -35,14 +35,14 @@ VASTValPtr VASTExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
 }
 
 void VASTExprBuilderContext::onReplaceAllUseWith(VASTValPtr From, VASTValPtr To) {
-  BitMaskCache.erase(From);
+  BitMaskCache.erase(From.get());
 }
 
 void VASTExprBuilderContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
   llvm_unreachable("Function not implemented!");
 }
 
-void VASTExprBuilderContext::calculateBitCatBitMask(VASTExprPtr Expr,
+void VASTExprBuilderContext::calculateBitCatBitMask(VASTExpr *Expr,
                                                     APInt &KnownZeros,
                                                     APInt &KnownOnes) {
   unsigned CurUB = Expr->getBitWidth();
@@ -52,7 +52,7 @@ void VASTExprBuilderContext::calculateBitCatBitMask(VASTExprPtr Expr,
 
   // Concatenate the bit mask together.
   for (unsigned i = 0; i < Expr->size(); ++i) {
-    VASTValPtr CurBitSlice = Expr.getOperand(i);
+    VASTValPtr CurBitSlice = Expr->getOperand(i);
     unsigned CurSize = CurBitSlice->getBitWidth();
     unsigned CurLB = CurUB - CurSize;
     APInt CurKnownZeros , CurKnownOnes;
@@ -64,35 +64,35 @@ void VASTExprBuilderContext::calculateBitCatBitMask(VASTExprPtr Expr,
   }
 }
 
-void VASTExprBuilderContext::calculateImmediateBitMask(VASTImmPtr Imm,
+void VASTExprBuilderContext::calculateImmediateBitMask(VASTImmediate *Imm,
                                                        APInt &KnownZeros,
                                                        APInt &KnownOnes) {
-  KnownOnes = Imm.getAPInt();
-  KnownZeros = ~Imm.getAPInt();
+  KnownOnes = Imm->getAPInt();
+  KnownZeros = ~Imm->getAPInt();
 }
 
-void VASTExprBuilderContext::calculateAssignBitMask(VASTExprPtr Expr,
+void VASTExprBuilderContext::calculateAssignBitMask(VASTExpr *Expr,
                                                     APInt &KnownZeros,
                                                     APInt &KnownOnes) {
-  calculateBitMask(Expr.getOperand(0), KnownZeros, KnownOnes);
+  calculateBitMask(Expr->getOperand(0), KnownZeros, KnownOnes);
   // Adjust the bitmask by LB.
   KnownOnes = VASTImmediate::getBitSlice(KnownOnes, Expr->UB, Expr->LB);
   KnownZeros = VASTImmediate::getBitSlice(KnownZeros, Expr->UB, Expr->LB);
 }
 
 // The implementation of basic bit mark calucation.
-void VASTExprBuilderContext::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
+void VASTExprBuilderContext::calculateBitMask(VASTValue *V, APInt &KnownZeros,
                                               APInt &KnownOnes) {
   // Clear the mask.
   KnownOnes = KnownZeros = APInt::getNullValue(V->getBitWidth());
 
   // Most simple case: Immediate.
-  if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(V)) {
+  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(V)) {
     calculateImmediateBitMask(Imm, KnownZeros, KnownOnes);
     return;
   }
 
-  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
+  VASTExpr *Expr = dyn_cast<VASTExpr>(V);
   if (!Expr) return;
 
   switch(Expr->getOpcode()) {
@@ -104,6 +104,13 @@ void VASTExprBuilderContext::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
     calculateAssignBitMask(Expr, KnownZeros, KnownOnes);
     return;
   }
+}
+
+void VASTExprBuilderContext::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
+                                              APInt &KnownOnes) {
+  calculateBitMask(V.get(), KnownZeros, KnownOnes);
+  // Flip the bitmask if the value is inverted.
+  if (V.isInverted()) std::swap(KnownOnes, KnownZeros);
 }
 
 //===--------------------------------------------------------------------===//

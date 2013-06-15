@@ -18,7 +18,7 @@
 
 namespace llvm {
 class VASTExprBuilderContext {
-  typedef DenseMap<VASTValPtr, std::pair<APInt, APInt> > BitMaskCacheTy;
+  typedef DenseMap<VASTValue*, std::pair<APInt, APInt> > BitMaskCacheTy;
   BitMaskCacheTy BitMaskCache;
 
 protected:
@@ -28,15 +28,16 @@ public:
   virtual ~VASTExprBuilderContext() {}
 
   // Bit mask analyzing, bitmask_collecting_iterator.
-  virtual void calculateBitMask(VASTValPtr V, APInt &KnownZeros,
-                                APInt &KnownOnes);
+  void calculateBitMask(VASTValue *V, APInt &KnownZeros, APInt &KnownOnes);
+
+  void calculateBitMask(VASTValPtr V, APInt &KnownZeros, APInt &KnownOnes);
 
   // Simple bit mask calculation functions.
-  void calculateBitCatBitMask(VASTExprPtr Expr, APInt &KnownZeros,
+  void calculateBitCatBitMask(VASTExpr *Expr, APInt &KnownZeros,
                               APInt &KnownOnes);
-  void calculateAssignBitMask(VASTExprPtr Expr, APInt &KnownZeros,
+  void calculateAssignBitMask(VASTExpr *Expr, APInt &KnownZeros,
                               APInt &KnownOnes);
-  void calculateImmediateBitMask(VASTImmPtr Imm, APInt &KnownZeros,
+  void calculateImmediateBitMask(VASTImmediate *Imm, APInt &KnownZeros,
                                  APInt &KnownOnes);
 
   VASTValPtr stripZeroBasedBitSlize(VASTValPtr V) {
