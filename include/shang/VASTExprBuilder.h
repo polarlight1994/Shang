@@ -18,7 +18,13 @@
 
 namespace llvm {
 class VASTExprBuilderContext {
-  typedef DenseMap<VASTValue*, std::pair<APInt, APInt> > BitMaskCacheTy;
+  struct BitMasks {
+    APInt KnownZeros, KnownOnes;
+    BitMasks(APInt KnownZeros = APInt(), APInt KnownOnes = APInt())
+      : KnownZeros(KnownZeros), KnownOnes(KnownOnes) {}
+  };
+
+  typedef DenseMap<VASTValue*, BitMasks> BitMaskCacheTy;
   BitMaskCacheTy BitMaskCache;
 
 protected:
@@ -26,6 +32,8 @@ protected:
 
 public:
   virtual ~VASTExprBuilderContext() {}
+
+  void setBitMask(VASTValue *V, const APInt &KnownZeros, const APInt &KnownOnes);
 
   // Bit mask analyzing, bitmask_collecting_iterator.
   void calculateBitMask(VASTValue *V, APInt &KnownZeros, APInt &KnownOnes);

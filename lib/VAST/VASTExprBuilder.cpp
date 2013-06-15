@@ -83,12 +83,21 @@ void VASTExprBuilderContext::calculateAssignBitMask(VASTExpr *Expr,
 // The implementation of basic bit mark calucation.
 void VASTExprBuilderContext::calculateBitMask(VASTValue *V, APInt &KnownZeros,
                                               APInt &KnownOnes) {
+  BitMaskCacheTy::iterator I = BitMaskCache.find(V);
+  // Return the cached version if possible.
+  if (I != BitMaskCache.end()) {
+    KnownZeros = I->second.KnownZeros;
+    KnownOnes = I->second.KnownOnes;
+    return;
+  }
+
   // Clear the mask.
   KnownOnes = KnownZeros = APInt::getNullValue(V->getBitWidth());
 
   // Most simple case: Immediate.
   if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(V)) {
     calculateImmediateBitMask(Imm, KnownZeros, KnownOnes);
+    setBitMask(V, KnownZeros, KnownOnes);
     return;
   }
 
@@ -99,11 +108,13 @@ void VASTExprBuilderContext::calculateBitMask(VASTValue *V, APInt &KnownZeros,
   default: return;
   case VASTExpr::dpBitCat:
     calculateBitCatBitMask(Expr, KnownZeros, KnownOnes);
-    return;
+    break;
   case VASTExpr::dpAssign:
     calculateAssignBitMask(Expr, KnownZeros, KnownOnes);
-    return;
+    break;
   }
+
+  setBitMask(V, KnownZeros, KnownOnes);
 }
 
 void VASTExprBuilderContext::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
@@ -111,6 +122,14 @@ void VASTExprBuilderContext::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
   calculateBitMask(V.get(), KnownZeros, KnownOnes);
   // Flip the bitmask if the value is inverted.
   if (V.isInverted()) std::swap(KnownOnes, KnownZeros);
+}
+
+void VASTExprBuilderContext::setBitMask(VASTValue *V,
+                                        const APInt &KnownZeros,
+                                        const APInt &KnownOnes) {
+  std::pair<BitMaskCacheTy::iterator, bool> Pair
+    = BitMaskCache.insert(std::make_pair(V, BitMasks(KnownZeros, KnownOnes)));
+  if (!Pair.second) Pair.first->second = BitMasks(KnownZeros, KnownOnes);
 }
 
 //===--------------------------------------------------------------------===//
