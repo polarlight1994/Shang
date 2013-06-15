@@ -32,10 +32,13 @@ class VASTSlotCtrl;
 
 class VASTSlot : public VASTNode, public ilist_node<VASTSlot> {
 public:
+  // The types of the edges in the STG, the lsb representing the timing distance
+  // of the edge, only the successor edge represents a real state transition
+  // which have a timing distance of 1.
   enum EdgeType {
     SubGrp = 0,
     Sucessor = 1,
-    ImplicitFlow = 3
+    ImplicitFlow = 2
   };
 
   // The pointer to successor which is also encoded with the distance.
