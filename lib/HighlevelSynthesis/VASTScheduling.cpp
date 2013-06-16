@@ -741,7 +741,7 @@ void VASTScheduling::fixSchedulingGraph() {
     if (Inst && (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst)))
       continue;
 
-#ifndef DISABLE_FINE_GRAIN_CFG_SCHEDULING
+#ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
     // At least constrain the scheduling unit with something.
     if (U->use_empty()) G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
 #else
