@@ -28,11 +28,12 @@ struct VASTExprOpInfo<VASTExpr::dpAnd> {
   unsigned OperandWidth;
   // We only care about the known zeros because we assume all unknown bits are
   // 1s.
-  APInt KnownZeros, KnownOnes;
+  VASTExprBuilder::BitMasks Masks;
 
   VASTExprOpInfo(VASTExprBuilder &Builder, unsigned OperandWidth)
-    : Builder(Builder), OperandWidth(OperandWidth), KnownZeros(OperandWidth, 0),
-      KnownOnes(APInt::getAllOnesValue(OperandWidth))
+    : Builder(Builder), OperandWidth(OperandWidth),
+      Masks(APInt::getNullValue(OperandWidth),
+            APInt::getAllOnesValue(OperandWidth))
   {}
 
   VASTValPtr analyzeOperand(VASTValPtr V) {
@@ -40,32 +41,31 @@ struct VASTExprOpInfo<VASTExpr::dpAnd> {
 
     if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(V)) {
       // The bit is known zero if the bit of any operand are zero.
-      KnownZeros |= ~Imm.getAPInt();
-      KnownOnes  &= Imm.getAPInt();
+      Masks.KnownZeros |= ~Imm.getAPInt();
+      Masks.KnownOnes  &= Imm.getAPInt();
       return 0;
     }
 
-    APInt OpKnownZeros, OpKnownOnes;
-    Builder.calculateBitMask(V, OpKnownZeros, OpKnownOnes);
-    KnownZeros |= OpKnownZeros;
-    KnownOnes &= OpKnownOnes;
-    assert(!KnownZeros.intersects(KnownOnes) && "Got bad bitmask!");
+    VASTExprBuilder::BitMasks OpMasks = Builder.calculateBitMask(V);
+    Masks.KnownZeros |= OpMasks.KnownZeros;
+    Masks.KnownOnes &= OpMasks.KnownOnes;
+    assert(!Masks.KnownZeros.intersects(Masks.KnownOnes) && "Got bad bitmask!");
     // Do nothing by default.
     return V;
   }
 
   // Functions about constant mask.
-  bool isAllZeros() const { return KnownZeros.isAllOnesValue(); }
-  bool hasAnyZero() const  { return KnownZeros.getBoolValue(); }
-  bool isAllOnes() const { return KnownOnes.isAllOnesValue(); }
-  APInt getKnownBits() const { return KnownZeros | KnownOnes; }
+  bool isAllZeros() const { return Masks.KnownZeros.isAllOnesValue(); }
+  bool hasAnyZero() const  { return Masks.KnownZeros.getBoolValue(); }
+  bool isAllOnes() const { return Masks.KnownOnes.isAllOnesValue(); }
+  APInt getKnownBits() const { return Masks.getKnownBits(); }
   bool isAllBitsKnown() const {
     return getKnownBits().isAllOnesValue();
   }
 
   // For the and expression, only zero is known, and we assume all other bits
   // are 1s.
-  APInt getZeros() const { return ~KnownZeros; }
+  APInt getZeros() const { return ~Masks.KnownZeros; }
 };
 }
 
@@ -118,8 +118,8 @@ VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
     return getImmediate(OpInfo.getZeros());
 
   DEBUG(
-    dbgs() << "KnownZeros: " << OpInfo.KnownZeros.toString(16, false) << '\n'
-           << "KnownOnes: " << OpInfo.KnownOnes.toString(16, false) << '\n';
+    dbgs() << "KnownZeros: " << OpInfo.Masks.KnownZeros.toString(16, false) << '\n'
+           << "KnownOnes: " << OpInfo.Masks.KnownOnes.toString(16, false) << '\n';
   );
 
   // Add the Constant back to the Operands.

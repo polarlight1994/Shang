@@ -18,35 +18,46 @@
 
 namespace llvm {
 class VASTExprBuilderContext {
+public:
   struct BitMasks {
     APInt KnownZeros, KnownOnes;
+    explicit BitMasks(unsigned Size)
+      : KnownZeros(APInt::getNullValue(Size)),
+        KnownOnes(APInt::getNullValue(Size))
+    {}
+
     BitMasks(APInt KnownZeros = APInt(), APInt KnownOnes = APInt())
       : KnownZeros(KnownZeros), KnownOnes(KnownOnes) {}
-  };
 
+    APInt getKnownBits() const { return KnownZeros | KnownOnes; }
+  };
+private:
   typedef DenseMap<VASTValue*, BitMasks> BitMaskCacheTy;
   BitMaskCacheTy BitMaskCache;
 
 protected:
   virtual void onReplaceAllUseWith(VASTValPtr From, VASTValPtr To);
 
+  // Simple bit mask calculation functions.
+  BitMasks calculateBitCatBitMask(VASTExpr *Expr);
+  BitMasks calculateAssignBitMask(VASTExpr *Expr);
+  BitMasks calculateImmediateBitMask(VASTImmediate *Imm);
+
 public:
   virtual ~VASTExprBuilderContext() {}
 
-  void setBitMask(VASTValue *V, const APInt &KnownZeros, const APInt &KnownOnes);
+  inline BitMasks setBitMask(VASTValue *V, const BitMasks &Masks) {
+    std::pair<BitMaskCacheTy::iterator, bool> Pair
+      = BitMaskCache.insert(std::make_pair(V, Masks));
+    if (!Pair.second) Pair.first->second = Masks;
+
+    return Masks;
+  }
 
   // Bit mask analyzing, bitmask_collecting_iterator.
-  void calculateBitMask(VASTValue *V, APInt &KnownZeros, APInt &KnownOnes);
+  BitMasks calculateBitMask(VASTValue *V);
 
-  void calculateBitMask(VASTValPtr V, APInt &KnownZeros, APInt &KnownOnes);
-
-  // Simple bit mask calculation functions.
-  void calculateBitCatBitMask(VASTExpr *Expr, APInt &KnownZeros,
-                              APInt &KnownOnes);
-  void calculateAssignBitMask(VASTExpr *Expr, APInt &KnownZeros,
-                              APInt &KnownOnes);
-  void calculateImmediateBitMask(VASTImmediate *Imm, APInt &KnownZeros,
-                                 APInt &KnownOnes);
+  BitMasks calculateBitMask(VASTValPtr V);
 
   VASTValPtr stripZeroBasedBitSlize(VASTValPtr V) {
     VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
@@ -232,8 +243,9 @@ public:
     return createExpr(Opc, Ops, UB, LB);
   }
 
-  void calculateBitMask(VASTValPtr V, APInt &KnownZeros, APInt &KnownOnes) {
-    Context.calculateBitMask(V, KnownZeros, KnownOnes);
+  typedef VASTExprBuilderContext::BitMasks BitMasks;
+  BitMasks calculateBitMask(VASTValPtr V) {
+    return Context.calculateBitMask(V);
   }
 
   static bool GetMaskSplitPoints(APInt Mask, unsigned &HiPt, unsigned &LoPt);

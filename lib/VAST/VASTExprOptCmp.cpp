@@ -246,11 +246,10 @@ VASTValPtr VASTExprBuilder::buildICmpExpr(VASTExpr::Opcode Opc,
     return V;
   }
 
-  APInt LHSKnownZeros, LHSKnownOnes, RHSKnownZeros, RHSKnownOnes;
-  calculateBitMask(LHS, LHSKnownZeros, LHSKnownOnes);
-  calculateBitMask(RHS, RHSKnownZeros, RHSKnownOnes);
-  APInt LHSKnownBits = LHSKnownZeros | LHSKnownOnes,
-        RHSKnownBits = RHSKnownZeros | RHSKnownOnes;
+  BitMasks LHSMasks = calculateBitMask(LHS);
+  BitMasks RHSMasks = calculateBitMask(RHS);
+  APInt LHSKnownBits = LHSMasks.getKnownBits(),
+        RHSKnownBits = RHSMasks.getKnownBits();
   APInt AllKnownBits = LHSKnownBits & RHSKnownBits;
 
   DEBUG(

@@ -35,7 +35,7 @@ using namespace llvm;
 
 static cl::opt<unsigned> MaxIteration("shang-max-scheduling-iteration",
   cl::desc("Perform memory optimizations e.g. coalescing or banking"),
-  cl::init(2));
+  cl::init(1));
 
 namespace {
 typedef TimingNetlist::delay_type delay_type;
