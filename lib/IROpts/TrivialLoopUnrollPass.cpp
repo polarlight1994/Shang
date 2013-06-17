@@ -502,9 +502,13 @@ unsigned LoopMetrics::getSaturateCount(Value *Val, Value *Ptr) {
   // The distance between pointer in successive iterations, in bytes.
   unsigned Distance = Stride64 * SizeInBytes;
   unsigned BusSizeInBits = getFUDesc<VFUMemBus>()->getDataWidth();
+  unsigned BusSizeInBytes = BusSizeInBits / 8;
+  // Dual port RAM double the data bandwitdh!
+  // BusSizeInBytes *= 2;
 
-  // Get the number of instances causing the bandwidth of memory bus saturate.
-  return std::max<unsigned>(BusSizeInBits / (Distance * 8), 1);
+  // Get the number of instances causing the bandwidth of memory bus saturate,
+  // based on the byte address.
+  return std::max<unsigned>(BusSizeInBytes / Distance, 1);
 }
 
 bool LoopMetrics::initialize(LoopInfo *LI, AliasAnalysis *AA) {
