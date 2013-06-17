@@ -196,11 +196,9 @@ TimingNetlist::getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) cons
   if (TimingModel != TimingNetlist::ZeroDelay) {
     VFUMux *Mux = getFUDesc<VFUMux>();
     MUXDelay = Mux->getMuxLatency(NumFannins);
-    if (Sel) {
+    if (Sel && isa<VASTMemoryBus>(Sel->getParent()))
       // Also accumulate the delay of the block RAM.
-      if (VASTMemoryBus *Mem = dyn_cast<VASTMemoryBus>(Sel->getParent()))
-          MUXDelay += getFUDesc<VFUMemBus>()->AddrLatency;
-    }
+      MUXDelay += getFUDesc<VFUMemBus>()->AddrLatency;
   }
 
   return delay_type(MUXDelay);
