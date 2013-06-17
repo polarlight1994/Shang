@@ -11,11 +11,28 @@
 //
 //===----------------------------------------------------------------------===//
 #include "shang/VASTDatapathNodes.h"
+#include "shang/VASTExprBuilder.h"
 
 #define DEBUG_TYPE "vast-datapath-container"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+
+//----------------------------------------------------------------------------//
+void DatapathContainer::pushContext(VASTExprBuilderContext *Context) {
+  assert(CurContexts == 0 && "There can be only 1 context at a time!");
+  CurContexts = Context;
+}
+
+void DatapathContainer::popContext(VASTExprBuilderContext *Context) {
+  assert(CurContexts == Context && "Bad context popping order!");
+  CurContexts = 0;
+  (void) Context;
+}
+
+void DatapathContainer::notifyDeletion(VASTExpr *Expr) {
+  if (CurContexts) CurContexts->deleteContenxt(Expr);
+}
 
 //----------------------------------------------------------------------------//
 void DatapathContainer::removeValueFromCSEMaps(VASTNode *N) {
@@ -26,6 +43,7 @@ void DatapathContainer::removeValueFromCSEMaps(VASTNode *N) {
 
   if (VASTExpr *Expr = dyn_cast<VASTExpr>(N)) {
     UniqueExprs->RemoveNode(Expr);
+    notifyDeletion(Expr);
     return;
   }
 
@@ -154,7 +172,7 @@ void DatapathContainer::reset() {
   VASTImmediate::False = getOrCreateImmediateImpl(0, 1);
 }
 
-DatapathContainer::DatapathContainer() {
+DatapathContainer::DatapathContainer() : CurContexts(0) {
   UniqueImms = new FoldingSet<VASTImmediate>();
   UniqueExprs = new FoldingSet<VASTExpr>();
   VASTImmediate::True = getOrCreateImmediateImpl(1, 1);

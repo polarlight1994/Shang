@@ -34,9 +34,8 @@ VASTValPtr VASTExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
   return 0;
 }
 
-void VASTExprBuilderContext::onReplaceAllUseWith(VASTValPtr From, VASTValPtr To) {
-  BitMaskCache.erase(From.get());
-  BitMaskCache.erase(To.get());
+void VASTExprBuilderContext::deleteContenxt(VASTValue *V) {
+  BitMaskCache.erase(V);
 }
 
 void VASTExprBuilderContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
@@ -118,6 +117,11 @@ VASTExprBuilderContext::calculateBitMask(VASTValPtr V) {
 
 //===--------------------------------------------------------------------===//
 
+MinimalExprBuilderContext::MinimalExprBuilderContext(DatapathContainer &Datapath)
+  : Datapath(Datapath) {
+  Datapath.pushContext(this);
+}
+
 VASTImmediate *MinimalExprBuilderContext::getOrCreateImmediate(const APInt &Value) {
   return Datapath.getOrCreateImmediateImpl(Value);
 }
@@ -128,18 +132,13 @@ VASTValPtr MinimalExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
   return Datapath.createExprImpl(Opc, Ops, UB, LB);
 }
 
-void MinimalExprBuilderContext::onReplaceAllUseWith(VASTValPtr From,
-                                                    VASTValPtr To) {
-  VASTExprBuilderContext::onReplaceAllUseWith(From, To);
-}
-
 void MinimalExprBuilderContext::replaceAllUseWith(VASTValPtr From,
                                                   VASTValPtr To) {
-  onReplaceAllUseWith(From, To);
   Datapath.replaceAllUseWithImpl(From, To);
 }
 
 MinimalExprBuilderContext::~MinimalExprBuilderContext() {
+  Datapath.popContext(this);
   Datapath.gc();
 }
 

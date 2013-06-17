@@ -21,8 +21,7 @@ class DataLayout;
 
 class MinimalDatapathContext : public DatapathBuilderContext {
   DatapathContainer &Datapath;
-protected:
-  virtual void onReplaceAllUseWith(VASTValPtr From, VASTValPtr To);
+
 public:
   MinimalDatapathContext(DatapathContainer &Datapath, DataLayout *TD);
   ~MinimalDatapathContext();

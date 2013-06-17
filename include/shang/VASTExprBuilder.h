@@ -27,7 +27,10 @@ public:
     {}
 
     BitMasks(APInt KnownZeros = APInt(), APInt KnownOnes = APInt())
-      : KnownZeros(KnownZeros), KnownOnes(KnownOnes) {}
+      : KnownZeros(KnownZeros), KnownOnes(KnownOnes) {
+      assert(KnownOnes.getBitWidth() == KnownZeros.getBitWidth()
+             && "Bitwidths are not agreed!");
+    }
 
     APInt getKnownBits() const { return KnownZeros | KnownOnes; }
   };
@@ -36,8 +39,6 @@ private:
   BitMaskCacheTy BitMaskCache;
 
 protected:
-  virtual void onReplaceAllUseWith(VASTValPtr From, VASTValPtr To);
-
   // Simple bit mask calculation functions.
   BitMasks calculateBitCatBitMask(VASTExpr *Expr);
   BitMasks calculateAssignBitMask(VASTExpr *Expr);
@@ -96,6 +97,8 @@ public:
                                 unsigned UB, unsigned LB);
 
   virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
+
+  virtual void deleteContenxt(VASTValue *V);
 };
 
 class DatapathContainer;
@@ -103,12 +106,9 @@ class DataLayout;
 
 class MinimalExprBuilderContext : public VASTExprBuilderContext {
   DatapathContainer &Datapath;
-protected:
-  virtual void onReplaceAllUseWith(VASTValPtr From, VASTValPtr To);
 
 public:
-  explicit MinimalExprBuilderContext(DatapathContainer &Datapath)
-    : Datapath(Datapath) {}
+  explicit MinimalExprBuilderContext(DatapathContainer &Datapath);
   ~MinimalExprBuilderContext();
 
   using VASTExprBuilderContext::getOrCreateImmediate;

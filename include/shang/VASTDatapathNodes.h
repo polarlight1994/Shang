@@ -316,6 +316,7 @@ public:
 };
 
 typedef PtrInvPair<VASTWire> VASTWirePtr;
+class VASTExprBuilderContext;
 
 // The container to hold all VASTExprs in data-path of the design.
 class DatapathContainer {
@@ -326,6 +327,7 @@ class DatapathContainer {
   // Expression in data-path
   FoldingSet<VASTExpr> *UniqueExprs;
 
+  VASTExprBuilderContext* CurContexts;
 protected:
   BumpPtrAllocator Allocator;
 
@@ -336,6 +338,7 @@ protected:
 
   iplist<VASTExpr> Exprs;
 
+  void notifyDeletion(VASTExpr *E);
 public:
   DatapathContainer();
   ~DatapathContainer();
@@ -364,6 +367,10 @@ public:
   void reset();
 
   void recursivelyDeleteTriviallyDeadExprs(VASTExpr *L);
+
+  // Context management.
+  void pushContext(VASTExprBuilderContext *Context);
+  void popContext(VASTExprBuilderContext *Context);
 
   /// Perform the Garbage Collection to release the dead objects on the
   /// VASTModule

@@ -36,10 +36,6 @@ unsigned DatapathBuilderContext::getValueSizeInBits(const Value *V) const {
   return SizeInBits;
 }
 
-void DatapathBuilderContext::onReplaceAllUseWith(VASTValPtr From, VASTValPtr To) {
-  VASTExprBuilderContext::onReplaceAllUseWith(From, To);
-}
-
 VASTValPtr DatapathBuilder::visitTruncInst(TruncInst &I) {
   // Truncate the value by bitslice expression.
   return buildBitSliceExpr(getAsOperand(I.getOperand(0)),
