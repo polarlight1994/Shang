@@ -35,50 +35,82 @@ VASTMemoryBus::VASTMemoryBus(unsigned BusNum, unsigned AddrSize,
     RequireByteEnable(RequireByteEnable), IsDualPort(IsDualPort),
     CurrentOffset(0) {}
 
-void VASTMemoryBus::addBasicPins(VASTModule *VM, VASTNode *Parent,
-                                  unsigned PortNum) {
-  assert((!isDefault() || PortNum == 0)
-          && "Dual port external memory is not supported");
+void VASTMemoryBus::addBasicPins(VASTModule *VM, unsigned PortNum) {
+  assert(!isDefault() && "Just handle internal memory here");
+
   // Address pin
   VASTSelector *Address
-    = VM->createSelector(getAddrName(PortNum), getAddrWidth(), Parent);
+    = VM->createSelector(getAddrName(PortNum), getAddrWidth(), this);
   addFanin(Address);
-  if (isDefault()) VM->addPort(Address, false);
 
   // Read (from memory) data pin
   VASTSelector *RData = VM->createSelector(getRDataName(PortNum), getDataWidth(),
-                                           Parent, VASTSelector::FUOutput);
+                                           this, VASTSelector::FUOutput);
   addFanout(RData);
-  if (isDefault()) VM->addPort(RData, true);
 
   // Write (to memory) data pin
   VASTSelector *WData
-    = VM->createSelector(getWDataName(PortNum), getDataWidth(), Parent);
-  addFanin(WData);
-  if (isDefault()) VM->addPort(WData, false);
+    = VM->createSelector(getWDataName(PortNum), getDataWidth(), this);
+  addFanin(WData);  
+}
+
+void VASTMemoryBus::addExternalPins(VASTModule *VM) {
+    assert(isDefault() && "Just handle external memory here");
+
+    // Address pin
+    VASTSelector *Address
+      = VM->createSelector(getAddrName(0), getAddrWidth(), 0);
+    addFanin(Address);
+    VM->addPort(Address, false);
+
+    // Read (from memory) data pin
+    VASTSelector *RData = VM->createSelector(getRDataName(0), getDataWidth(),
+      0, VASTSelector::FUOutput);
+    addFanout(RData);
+    VM->addPort(RData, true);
+
+    // Write (to memory) data pin
+    VASTSelector *WData
+      = VM->createSelector(getWDataName(0), getDataWidth(), 0);
+    addFanin(WData);
+    VM->addPort(WData, false);
+
+    // Byte enable pin
+    assert(requireByteEnable() && "External always require byte enable pin");
+    addByteEnables(VM, 0, 0);
+
+    // Enable pin
+    VASTSelector *Enable
+      = VM->createSelector(getEnableName(0), 1, 0);
+    addFanin(Enable);
+    VM->addPort(Enable, false);
+
+    // Write enable pin
+    VASTSelector *WriteEn
+      = VM->createSelector(getWriteEnName(0), 1, 0);
+    addFanin(WriteEn);
+    VM->addPort(WriteEn, false);
 }
 
 void VASTMemoryBus::addByteEnables(VASTModule *VM, VASTNode *Parent,
                                   unsigned PortNum) {
-  unsigned ByteEnSize = getByteEnWdith();
-
   VASTSelector *ByteEnable
-    = VM->createSelector(getByteEnName(PortNum), ByteEnSize, Parent);
+    = VM->createSelector(getByteEnName(PortNum), getByteEnWidth(), Parent);
   addFanin(ByteEnable);
   if (isDefault()) VM->addPort(ByteEnable, false);
 }
 
 void VASTMemoryBus::addPorts(VASTModule *VM) {
-  // The parent of the default memory port objects will be the
-  // VASTInPort/VASTOutPort, do not set the current MemBus as their parent.
-  VASTNode *Parent = isDefault() ? 0 : this;
-
-  addBasicPins(VM, Parent, 0);
-  if (isDualPort()) addBasicPins(VM, Parent, 1);
+  if (isDefault()) {
+    addExternalPins(VM);
+    return;
+  }
+  addBasicPins(VM, 0);
+  if (isDualPort()) addBasicPins(VM, 1);
 
   if (requireByteEnable()) {
-    addByteEnables(VM, Parent, 0);
-    if (isDualPort()) addByteEnables(VM, Parent, 1);
+    addByteEnables(VM, this, 0);
+    if (isDualPort()) addByteEnables(VM, this, 1);
   }
 }
 
@@ -126,6 +158,8 @@ VASTSelector *VASTMemoryBus::getByteEn(unsigned PortNum) const {
 }
 
 std::string VASTMemoryBus::getAddrName(unsigned PortNum) const {
+  if (isDefault()) return "mem" + utostr(Idx) + "addr";
+
   return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "addr";
 }
 
@@ -136,11 +170,27 @@ std::string VASTMemoryBus::getRDataName(unsigned PortNum) const {
 }
 
 std::string VASTMemoryBus::getWDataName(unsigned PortNum) const {
+  if (isDefault()) return "mem" + utostr(Idx) + "wdata";
+
   return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "wdata";
 }
 
 std::string VASTMemoryBus::getByteEnName(unsigned PortNum) const {
+  if (isDefault()) return "mem" + utostr(Idx) + "be";
+
   return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "be";
+}
+
+std::string VASTMemoryBus::getEnableName(unsigned PortNum) const {
+  if (isDefault()) return "mem" + utostr(Idx) + "en";
+
+  return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "en";
+}
+
+std::string VASTMemoryBus::getWriteEnName(unsigned PortNum) const {
+  if (isDefault()) return "mem" + utostr(Idx) + "wen";
+
+  return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "wen";
 }
 
 std::string VASTMemoryBus::getLastStageAddrName(unsigned PortNum) const {
@@ -222,7 +272,7 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
 
   // Print the pipeline stages of the block RAM.
   // Shift the byte enable according to the byte address in a word.
-  OS << "wire " << VASTValue::printBitRange(getByteEnWdith())
+  OS << "wire " << VASTValue::printBitRange(getByteEnWidth())
      << " mem" << Idx << 'p' << PortNum << "pipe0_be0w = " << ByteEn->getName()
      << " << " << Addr->getName() << VASTValue::printBitRange(ByteAddrWidth)
      << ";\n"

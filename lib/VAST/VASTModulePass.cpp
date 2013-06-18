@@ -797,7 +797,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   // Compute the byte enable, use port 0..
   if (Bus->requireByteEnable()) {
     VASTValPtr ByteEn
-      = Builder.getImmediate(getByteEnable(Addr), Bus->getByteEnWdith());
+      = Builder.getImmediate(getByteEnable(Addr), Bus->getByteEnWidth());
     Op->addSrc(ByteEn, CurSrcIdx++, Bus->getByteEn(0));
   }
 

@@ -90,13 +90,10 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
   public:
     sc_in_clk clk;
     sc_signal<bool> fin;
-    sc_signal<bool> mem0ren;
-    sc_signal<bool> mem0wen;
-    sc_signal<uint32_t> mem0rbe;
-    sc_signal<uint32_t> mem0wbe;
+    sc_signal<bool> mem0en;
+    sc_signal<uint32_t> mem0be; 
     $(getRetPort(FuncInfo.ReturnSize));
-    sc_signal<uint$(FUs.MemoryBus.AddressWidth)_t> mem0raddr;
-    sc_signal<uint$(FUs.MemoryBus.AddressWidth)_t> mem0waddr;
+    sc_signal<uint$(FUs.MemoryBus.AddressWidth)_t> mem0addr;
     sc_signal<uint64_t> mem0rdata;
     sc_signal<uint64_t> mem0wdata;
     sc_signal<bool> rstN;
@@ -126,24 +123,24 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
     void brige_pipe_1() {
       unsigned char addrmask = 0;
       while (true){
-        if (mem0ren.read()) {
-          switch (mem0rbe.read()){
-          case 1:  (mem0rdata) = *((uint8_t*)(mem0raddr.read()));  addrmask = 0; break;
-          case 3:  (mem0rdata) = *((uint16_t*)(mem0raddr.read())); addrmask = 1; break;
-          case 15: (mem0rdata) = *((uint32_t*)(mem0raddr.read()));   addrmask = 3; break;
-          case 255: (mem0rdata)= *((uint64_t*)(mem0raddr.read())); addrmask = 7; break;
+        if (mem0en.read()) {
+          switch (mem0be.read()){
+          case 1:  (mem0rdata) = *((uint8_t*)(mem0addr.read()));  addrmask = 0; break;
+          case 3:  (mem0rdata) = *((uint16_t*)(mem0addr.read())); addrmask = 1; break;
+          case 15: (mem0rdata) = *((uint32_t*)(mem0addr.read()));   addrmask = 3; break;
+          case 255: (mem0rdata)= *((uint64_t*)(mem0addr.read())); addrmask = 7; break;
           default: assert(0 && "Unsupported size!"); break;
           }
         } else {
           mem0rdata = 0x0123456789abcdef;
         }
 
-        if(mem0wen.read()) { // Write memory
-          switch (mem0wbe.read()){
-          case 1:  *((unsigned char *)(mem0waddr.read())) = ((uint8_t) (mem0wdata.read()));   addrmask = 0; break;
-          case 3:  *((uint16_t*)(mem0waddr.read())) = ((uint16_t) (mem0wdata.read())); addrmask = 1; break;
-          case 15: *((uint32_t*)(mem0waddr.read())) = ((uint32_t) (mem0wdata.read()));     addrmask = 3; break;
-          case 255: *((uint64_t*)(mem0waddr.read())) = ((uint64_t) (mem0wdata.read())); addrmask = 7; break;
+        if(mem0en.read()) { // Write memory
+          switch (mem0be.read()){
+          case 1:  *((unsigned char *)(mem0addr.read())) = ((uint8_t) (mem0wdata.read()));   addrmask = 0; break;
+          case 3:  *((uint16_t*)(mem0addr.read())) = ((uint16_t) (mem0wdata.read())); addrmask = 1; break;
+          case 15: *((uint32_t*)(mem0addr.read())) = ((uint32_t) (mem0wdata.read()));     addrmask = 3; break;
+          case 255: *((uint64_t*)(mem0addr.read())) = ((uint64_t) (mem0wdata.read())); addrmask = 7; break;
           default: assert(0 && "Unsupported size!"); break;
           }
         }
@@ -171,14 +168,12 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
 #end
         DUT.start(start);
         DUT.rstN(rstN);
-        DUT.mem0ren(mem0ren);
-        DUT.mem0wen(mem0wen);
-        DUT.mem0rbe(mem0rbe);
-        DUT.mem0wbe(mem0wbe);
+        DUT.mem0en(mem0en);
+        DUT.mem0be(mem0be);
+		DUT.mem0en(mem0en);
         DUT.mem0rdata(mem0rdata);
         DUT.mem0wdata(mem0wdata);
-        DUT.mem0raddr(mem0raddr);
-        DUT.mem0waddr(mem0waddr);
+        DUT.mem0addr(mem0addr);
         SC_CTHREAD(sw_main_entry,clk.pos());
         SC_CTHREAD(brige_pipe_1,clk.pos());
       }

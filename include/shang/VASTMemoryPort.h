@@ -34,7 +34,8 @@ class VASTMemoryBus : public VASTSubModuleBase {
 
   void addPorts(VASTModule *VM);
   // Add all ports except byte enables.
-  void addBasicPins(VASTModule *VM, VASTNode *Parent, unsigned PortNum);
+  void addBasicPins(VASTModule *VM, unsigned PortNum);
+  void addExternalPins(VASTModule *VM);
   void addByteEnables(VASTModule *VM, VASTNode *Parent, unsigned PortNum);
 
   // Signal names of the function unit.
@@ -42,6 +43,8 @@ class VASTMemoryBus : public VASTSubModuleBase {
   std::string getRDataName(unsigned PortNum) const;
   std::string getWDataName(unsigned PortNum) const;
   std::string getByteEnName(unsigned PortNum) const;
+  std::string getEnableName(unsigned PortNum) const;
+  std::string getWriteEnName(unsigned PortNum) const;
   std::string getLastStageAddrName(unsigned PortNum) const;
   std::string getInternalWEnName(unsigned PortNum) const;
 
@@ -63,7 +66,7 @@ class VASTMemoryBus : public VASTSubModuleBase {
 public:
   unsigned getDataWidth() const { return DataSize; }
   unsigned getAddrWidth() const { return AddrSize; }
-  unsigned getByteEnWdith() const { return getDataWidth() / 8; }
+  unsigned getByteEnWidth() const { return getDataWidth() / 8; }
 
   std::string getArrayName() const;
   VASTValPtr getFinalRDataShiftAmountOperand(VASTModule *VM,
