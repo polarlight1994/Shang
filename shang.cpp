@@ -60,10 +60,6 @@ bool loadConfig(const std::string &Path,
 static cl::opt<std::string>
 InputFilename(cl::Positional, cl::desc("<input lua script>"), cl::init("-"));
 
-static cl::opt<bool> BaselineSchedulingOnly("shang-baseline-scheduling-only",
-  cl::desc("Only use the scheduling derive from the LLVM IR"),
-  cl::init(false));
-
 static cl::opt<bool> EnableGotoExpansion("shang-enable-goto-expansion",
   cl::desc("Perform goto expansion to generate a function that include all code"),
   cl::init(true));
@@ -306,14 +302,12 @@ int main(int argc, char **argv) {
 
     if (EnablePreScheduleLUTMapping) HLSPasses.add(createLUTMappingPass());
 
-    if (!BaselineSchedulingOnly) {
-      // Perform the scheduling.
-      HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
-      HLSPasses.add(createIterativeSchedulingPass());
-      // Scheduling will restruct the datapath. Optimize the datapath again
-      // after scheduling.
-      HLSPasses.add(createLUTMappingPass());
-    }
+    // Perform the scheduling.
+    HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
+    HLSPasses.add(createIterativeSchedulingPass());
+    // Scheduling will restruct the datapath. Optimize the datapath again
+    // after scheduling.
+    HLSPasses.add(createLUTMappingPass());
 
     if (EnableRegisterSharing) HLSPasses.add(createRegisterSharingPass());
     if (EnableMUXPipelining) HLSPasses.add(createSelectorPipeliningPass());

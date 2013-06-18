@@ -433,6 +433,8 @@ void IterativeScheduling::synthesisControlLogic(VASTModule &VM) {
 }
 
 bool IterativeScheduling::runOnVASTModule(VASTModule &VM) {
+  if (MaxIteration == 0) return false;
+
   StringSet<> ExprNames;
   VASTModule *Mod = &VM;
 
