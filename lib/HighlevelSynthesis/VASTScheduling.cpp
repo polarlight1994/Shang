@@ -401,6 +401,9 @@ VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
   Value *V = Src->getLLVMValue();
   assert(V && "Expect LLVM Value for flow dependencies!");
   assert((Src->num_fanins() == 1 || isa<PHINode>(V)) && "SeqVal not in SSA!");
+  assert((!isa<Instruction>(V)
+          || DT->dominates(cast<Instruction>(V)->getParent(), DstU->getParent()))
+         && "Flow dependency should be a dominance edge!");
   // The static register is virtually defined at the entry slot. Because
   // we only write it when the function exit. Whe we read is the value from
   // last function execution.
