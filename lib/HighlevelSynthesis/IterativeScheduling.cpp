@@ -22,6 +22,7 @@
 #include "shang/VASTModule.h"
 #include "shang/VASTModulePass.h"
 
+#include "llvm/PassManagers.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
@@ -347,34 +348,35 @@ struct DelayAnnotator : public DatapathVisitor<DelayAnnotator> {
   }
 };
 
-/// The table to hold the data-path delay across the scheduling iteration.
-class StatisticTimingEstimator {
-public:
-private:
-  PathDelayInfo PathInfo;
-  FaninDelayInfo FaninInfo;
-
-  TimingNetlist &TNL;
-public:
-  explicit StatisticTimingEstimator(TimingNetlist &TNL) : TNL(TNL) {}
-
-  void reset() {
-    PathInfo.clear();
-    FaninInfo.clear();
+struct OnTheFlyFPPassManager : public FPPassManager {
+  explicit OnTheFlyFPPassManager(PMDataManager &Parent) {
+    assert(Parent.getPassManagerType() == PMT_FunctionPassManager
+           && "Unexpected parent!");
+    // Setup the pass managers stack.
+    setDepth(Parent.getDepth() + 1);
+    setTopLevelManager(Parent.getTopLevelManager());
+    populateInheritedAnalysis(getTopLevelManager()->activeStack);
   }
 
-  void extractDelay(VASTModule &VM) {
-    DelayExtractor(TNL, PathInfo, FaninInfo).visit(VM);
-  }
+  void addLowerLevelRequiredPass(Pass *P, Pass *RequiredPass) {
+    // Do not add the same pass more than once!
+    if (findAnalysisPass(RequiredPass->getPassID(), true))  {
+      delete RequiredPass;
+      return;
+    }
 
-  void annotateDelay(VASTModule &VM) {
-    DelayAnnotator(TNL, PathInfo, FaninInfo).visit(VM);
+    add(RequiredPass);
   }
 };
 
 struct IterativeScheduling : public VASTModulePass {
+  VASTModule *VM;
+  TimingNetlist *TNL;
+  PathDelayInfo PathInfo;
+  FaninDelayInfo FaninInfo;
+
   static char ID;
-  IterativeScheduling() : VASTModulePass(ID) {
+  IterativeScheduling() : VASTModulePass(ID), VM(0), TNL(0) {
     initializeIterativeSchedulingPass(*PassRegistry::getPassRegistry());
   }
 
@@ -385,16 +387,39 @@ struct IterativeScheduling : public VASTModulePass {
     AU.addRequired<DominatorTree>();
     AU.addRequired<LoopInfo>();
     AU.addRequired<BranchProbabilityInfo>();
-
-    // The passes required by Timing netlist rewriting.
-    AU.addRequired<CachedStrashTable>();
     AU.addRequired<TimingNetlist>();
   }
 
-  void remapLUT(VASTModule &VM);
-  void synthesisControlLogic(VASTModule &VM);
-
   bool runOnVASTModule(VASTModule &VM);
+
+  void releaseMemory() {
+    PathInfo.clear();
+    FaninInfo.clear();
+  }
+
+  void initializeDelay() {
+    DelayExtractor(*TNL, PathInfo, FaninInfo).visit(*VM);
+  }
+
+  void extractDelay(PMDataManager &PMD) {
+    // The pass manager to manage the passes in each single iteration.
+    OnTheFlyFPPassManager FPM(PMD);
+
+    FPM.add(createLUTMappingPass());
+    // The timing netlist for the delay extraction.
+    TimingNetlist *PostScheduleTNL = new TimingNetlist();
+    FPM.add(PostScheduleTNL);
+
+    // Run the passes to get the delay estimation.
+    FPM.runOnFunction(VM->getLLVMFunction());
+
+    // Extract the delay from the post schedule timing netlist.
+    DelayExtractor(*PostScheduleTNL, PathInfo, FaninInfo).visit(*VM);
+  }
+
+  void annotateDelay() {
+    DelayAnnotator(*TNL, PathInfo, FaninInfo).visit(*VM);
+  }
 };
 }
 //===----------------------------------------------------------------------===//
@@ -404,7 +429,6 @@ char IterativeScheduling::ID = 0;
 INITIALIZE_PASS_BEGIN(IterativeScheduling, "shang-iterative-scheduling",
                       "Preform iterative scheduling",
                       false, true)
-  INITIALIZE_PASS_DEPENDENCY(CachedStrashTable)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(VASTScheduling)
 INITIALIZE_PASS_END(IterativeScheduling, "shang-iterative-scheduling",
@@ -415,28 +439,10 @@ Pass *llvm::createIterativeSchedulingPass() {
   return new IterativeScheduling();
 }
 
-void IterativeScheduling::remapLUT(VASTModule &VM) {
-  Pass *P = createLUTMappingPass();
-  AnalysisResolver *AR = new AnalysisResolver(*getResolver());
-  P->setResolver(AR);
-  static_cast<VASTModulePass*>(P)->runOnVASTModule(VM);
-  delete P;
-}
-
-void IterativeScheduling::synthesisControlLogic(VASTModule &VM) {
-  PassRegistry *Registry = PassRegistry::getPassRegistry();
-  Pass *P = Registry->getPassInfo(&ControlLogicSynthesisID)->createPass();
-  AnalysisResolver *AR = new AnalysisResolver(*getResolver());
-  P->setResolver(AR);
-  static_cast<VASTModulePass*>(P)->runOnVASTModule(VM);
-  delete P;
-}
-
-bool IterativeScheduling::runOnVASTModule(VASTModule &VM) {
+bool IterativeScheduling::runOnVASTModule(VASTModule &Mod) {
   if (MaxIteration == 0) return false;
 
-  StringSet<> ExprNames;
-  VASTModule *Mod = &VM;
+  VM = &Mod;
 
   VASTScheduling Scheduler;
   AnalysisResolver *AR = new AnalysisResolver(*getResolver());
@@ -444,50 +450,30 @@ bool IterativeScheduling::runOnVASTModule(VASTModule &VM) {
 
   // Fast path for the trivial case.
   if (MaxIteration == 1) {
-    Scheduler.runOnVASTModule(*Mod);
+    Scheduler.runOnVASTModule(*VM);
     return true;
   }
 
-  CachedStrashTable &CachedStrash = getAnalysis<CachedStrashTable>();
-  TimingNetlist &TNL = getAnalysis<TimingNetlist>();
-  StatisticTimingEstimator STE(TNL);
+  TNL = &getAnalysis<TimingNetlist>();
 
-  // Run the StatisticTimingEstimator on the unscheduled module.
-  STE.extractDelay(*Mod);
-
-  Scheduler.runOnVASTModule(*Mod);
+  Scheduler.runOnVASTModule(*VM);
 
   for (unsigned i = 1, e = MaxIteration; i < e; ++i) {
-    // Build the necessary logic for netlist generation.
-    remapLUT(*Mod);
-    synthesisControlLogic(*Mod);
-    Mod->gc();
-
-    // Name the datapath nodes.
-    ExprNames.clear();
-    CachedStrash.releaseMemory();
-    Mod->nameDatapath(ExprNames, &CachedStrash);
-
-    // Run the timing estimation again.
-    TNL.releaseMemory();
-    TNL.runOnVASTModule(*Mod);
-    STE.extractDelay(*Mod);
+    // Extract the delay from the scheduled design.
+    extractDelay(AR->getPMDataManager());
 
     // Build a new module for the current iteration of scheduling.
-    Mod = rebuildModule();
+    VM = rebuildModule();
     // Reset the contents after the module is rebuilt.
-    CachedStrash.releaseMemory();
-    TNL.releaseMemory();
+    TNL->releaseMemory();
     Scheduler.releaseMemory();
 
     // Backannotate the delay after the module is rebuilt.
-    STE.annotateDelay(*Mod);
+    annotateDelay();
 
     // Schedule the module again.
-    Scheduler.runOnVASTModule(*Mod);
+    Scheduler.runOnVASTModule(*VM);
   }
 
   return true;
 }
-
-//===----------------------------------------------------------------------===//
