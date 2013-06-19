@@ -34,7 +34,7 @@ protected:
   /// rebuildModule - Delete the current VASTModule and rebuild it from scratch.
   /// this is supposed to be used by the driver of the iterative scheduling only.
   ///
-  VASTModule *rebuildModule();
+  VASTModule &rebuildModule();
 
 public:
   /// runOnVASTModule - This method must be overloaded to perform the

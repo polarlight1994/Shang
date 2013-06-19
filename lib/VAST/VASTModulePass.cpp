@@ -662,7 +662,6 @@ void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
 
   I.dump();
 
-  unsigned SizeInBits = getValueSizeInBits(I);
   VASTSubModule *SubMod = getOrCreateSubModuleFromBinOp(I);
 
   if (SubMod == 0) {
@@ -930,7 +929,7 @@ bool VASTModulePass::runOnFunction(Function &F) {
   return changed;
 }
 
-VASTModule *VASTModulePass::rebuildModule() {
+VASTModule &VASTModulePass::rebuildModule() {
   // Get the old VASTModule
   VASTModuleAnalysis &VMA = getAnalysis<VASTModuleAnalysis>();
   // And the corresponding LLVM Function, we will rebuild the VASTModule based
@@ -941,7 +940,7 @@ VASTModule *VASTModulePass::rebuildModule() {
   VMA.releaseMemory();
   VMA.runOnFunction(F);
 
-  return &*VMA;
+  return *VMA;
 }
 
 void VASTModulePass::print(raw_ostream &OS) const {
