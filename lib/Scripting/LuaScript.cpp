@@ -184,6 +184,11 @@ std::string llvm::getStrValueFromEngine(ArrayRef<const char*> Path) {
   return Script->getValue<std::string>(Path);
 }
 
+std::string llvm::getStrValueFromEngine(const char *VariableName) {
+  const char *Path[] = { VariableName };
+  return getStrValueFromEngine(Path);
+}
+
 bool llvm::runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err) {
   return Script->runScriptFile(ScriptPath, Err);
 }
@@ -193,9 +198,11 @@ bool llvm::runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err) {
 }
 
 namespace llvm {
-bool loadConfig(const std::string &Path,
-                std::map<std::string, std::string> &ConfigTable,
-                StringMap<std::string> &TopHWFunctions) {
+std::string getDataLayoutFromEngine() {
+  return Script->getDataLayout();
+}
+
+bool loadConfig(const std::string &Path) {
   Script->init();
 
   SMDiagnostic Err;
@@ -205,18 +212,6 @@ bool loadConfig(const std::string &Path,
   }
 
   Script->updateStatus();
-
-  ConfigTable["InputFile"] = Script->getValueStr("InputFile");
-  ConfigTable["SoftwareIROutput"] = Script->getValueStr("SoftwareIROutput");
-  ConfigTable["RTLOutput"] = Script->getValueStr("RTLOutput");
-  ConfigTable["MCPDataBase"] = Script->getValueStr("MCPDataBase");
-  ConfigTable["DataLayout"] = Script->getDataLayout();
-
-  typedef luabind::iterator iterator;
-  for (iterator I = iterator(luabind::globals(Script->State)["Functions"]);
-       I != iterator(); ++I)
-    TopHWFunctions.GetOrCreateValue(luabind::object_cast<std::string>(I.key()),
-                                    luabind::object_cast<std::string>(*I));
 
   return false;
 }

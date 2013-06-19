@@ -42,10 +42,7 @@ struct RTLCodeGen : public VASTModulePass {
   /// @name FunctionPass interface
   //{
   static char ID;
-  RTLCodeGen(raw_ostream &O);
-  RTLCodeGen() : VASTModulePass(ID) {
-    llvm_unreachable("Bad constructor!");
-  }
+  RTLCodeGen();
 
   ~RTLCodeGen(){}
 
@@ -66,8 +63,8 @@ struct RTLCodeGen : public VASTModulePass {
 //===----------------------------------------------------------------------===//
 char RTLCodeGen::ID = 0;
 
-Pass *llvm::createRTLCodeGenPass(raw_ostream &O) {
-  return new RTLCodeGen(O);
+Pass *llvm::createRTLCodeGenPass() {
+  return new RTLCodeGen();
 }
 
 INITIALIZE_PASS_BEGIN(RTLCodeGen, "shang-verilog-writer",
@@ -81,7 +78,12 @@ INITIALIZE_PASS_END(RTLCodeGen, "shang-verilog-writer",
                     "Write the RTL verilog code to output file.",
                     false, true)
 
-RTLCodeGen::RTLCodeGen(raw_ostream &O) : VASTModulePass(ID), Out(O) {
+RTLCodeGen::RTLCodeGen() : VASTModulePass(ID), Out() {
+  std::string RTLOutputPath = getStrValueFromEngine("RTLOutput");
+  std::string Error;
+  raw_fd_ostream *Output = new raw_fd_ostream(RTLOutputPath.c_str(), Error);
+  Out.setStream(*Output, true);
+
   initializeRTLCodeGenPass(*PassRegistry::getPassRegistry());
 }
 

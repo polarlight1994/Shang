@@ -13,6 +13,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "shang/Passes.h"
+#include "shang/Utilities.h"
 
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -48,9 +49,8 @@
 
 using namespace llvm;
 namespace llvm {
-bool loadConfig(const std::string &Path,
-                std::map<std::string, std::string> &ConfigTable,
-                StringMap<std::string> &TopHWFunctions);
+bool loadConfig(const std::string &Path);
+std::string getDataLayoutFromEngine();
 }
 
 // General options for sync.  Other pass-specific options are specified
@@ -155,25 +155,22 @@ int main(int argc, char **argv) {
 
   SMDiagnostic Err;
 
-  std::map<std::string, std::string> ConfigTable;
-  StringMap<std::string> TopHWFunctions;
   std::string error;
 
-  if (loadConfig(InputFilename, ConfigTable, TopHWFunctions))
-    return 1;
+  if (loadConfig(InputFilename))
+    report_fatal_error("Cannot load synthesis configuration file!");
 
   // Load the module to be compiled...
   std::auto_ptr<Module> M;
 
-  M.reset(ParseIRFile(ConfigTable["InputFile"], Err, Context));
+  M.reset(ParseIRFile(getStrValueFromEngine("InputFile"), Err, Context));
 
   if (M.get() == 0) {
     Err.print(argv[0], errs());
     return 1;
   }
 
-  // Create the output files.
-  tool_output_file SoftwareIROutput(ConfigTable["SoftwareIROutput"].c_str(), error);
+  std::string DataLayoutStr = getDataLayoutFromEngine();
 
   Module &mod = *M.get();
 
@@ -182,7 +179,7 @@ int main(int argc, char **argv) {
     // Make sure the PassManager is deleted before the tool_output_file otherwise
     // we may delete the raw_fd_ostream before the other streams that using it.
     PassManager PreHLSPasses;
-    PreHLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
+    PreHLSPasses.add(new DataLayout(DataLayoutStr));
 
     PreHLSPasses.add(createVerifierPass());
 
@@ -193,7 +190,7 @@ int main(int argc, char **argv) {
     PreHLSPasses.add(createInternalizePass(ExportList));
 
     // Perform Software/Hardware partition.
-    PreHLSPasses.add(createFunctionFilterPass(SoftwareIROutput.os(), TopHWFunctions));
+    PreHLSPasses.add(createFunctionFilterPass());
     PreHLSPasses.add(createGlobalDCEPass());
 
     PreHLSPasses.run(mod);
@@ -207,23 +204,22 @@ int main(int argc, char **argv) {
   // Stage 2, perform high-level synthesis related IR optimizations.
   {
     PassManager HLSIRPasses;
-    HLSIRPasses.add(new DataLayout(ConfigTable["DataLayout"]));
+    HLSIRPasses.add(new DataLayout(DataLayoutStr));
     HLSIRPasses.add(createShangTargetTransformInfoPass());
     addIROptimizationPasses(HLSIRPasses);
     addHLSPreparePasses(HLSIRPasses);
     HLSIRPasses.run(mod);
   }
 
-  bool isMainSynthesis = TopHWFunctions.count("main");
-  tool_output_file RTLOutput(ConfigTable["RTLOutput"].c_str(), error);
-  tool_output_file MCPDatabase(ConfigTable["MCPDataBase"].c_str(), error);
+  const char *MainSynthesisInfoPath[2] = { "Functions", "main" };
+  bool isMainSynthesis = !getStrValueFromEngine(MainSynthesisInfoPath).empty();
   // Stage 3, perform high-level synthesis.
   // Build up all of the passes that we want to do to the module.
   {
     // Make sure the PassManager is deleted before the tool_output_file otherwise
     // we may delete the raw_fd_ostream before the other streams that using it.
     PassManager HLSPasses;
-    HLSPasses.add(new DataLayout(ConfigTable["DataLayout"]));
+    HLSPasses.add(new DataLayout(DataLayoutStr));
     HLSPasses.add(createShangTargetTransformInfoPass());
     HLSPasses.add(createBasicAliasAnalysisPass());
     HLSPasses.add(createTypeBasedAliasAnalysisPass());
@@ -313,18 +309,12 @@ int main(int argc, char **argv) {
     if (EnableMUXPipelining) HLSPasses.add(createSelectorPipeliningPass());
 
     // Analyse the slack between registers.
-    HLSPasses.add(createRTLCodeGenPass(RTLOutput.os()));
-    if (isMainSynthesis)
-      HLSPasses.add(createTimingScriptGenPass(MCPDatabase.os()));
+    HLSPasses.add(createRTLCodeGenPass());
+    HLSPasses.add(createTimingScriptGenPass());
 
     // Run the passes.
     HLSPasses.run(mod);
   }
-
-  // If no error occur, keep the files.
-  SoftwareIROutput.keep();
-  RTLOutput.keep();
-  MCPDatabase.keep();
 
   return 0;
 }

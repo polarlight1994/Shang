@@ -52,9 +52,7 @@ class LuaScript {
   template<enum VFUs::FUTypes T>
   void initSimpleFU(luabind::object FUs);
 
-  friend bool loadConfig(const std::string &Path,
-                         std::map<std::string, std::string> &ConfigTable,
-                         StringMap<std::string> &TopHWFunctions);
+  friend bool loadConfig(const std::string &Path);
 
   void init();
   // Read the Function units information from script engine

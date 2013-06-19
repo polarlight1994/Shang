@@ -42,19 +42,22 @@ namespace {
 struct FunctionFilter : public ModulePass {
   static char ID;
   // The output stream for software part.
-  raw_ostream &SwOut;
-  typedef StringMap<std::string> HWFnMap;
-  const HWFnMap &TopHWFns;
+  raw_fd_ostream *SwOut;
+  std::map<Function*, std::string> TopFunctions;
 
-  FunctionFilter(): ModulePass(ID), SwOut(nulls()),
-    TopHWFns(*reinterpret_cast<const StringMap<std::string>*>(0))
-  {
+  FunctionFilter(): ModulePass(ID), SwOut(0) {
+    std::string SoftwareIROutputPath = getStrValueFromEngine("SoftwareIROutput");
+    std::string Error;
+    SwOut = new raw_fd_ostream(SoftwareIROutputPath.c_str(), Error);
     initializeFunctionFilterPass(*PassRegistry::getPassRegistry());
   }
-  FunctionFilter(raw_ostream &O, const StringMap<std::string> &TopHWFunctions)
-    : ModulePass(ID), SwOut(O), TopHWFns(TopHWFunctions)
-  {
-    initializeFunctionFilterPass(*PassRegistry::getPassRegistry());
+
+  ~FunctionFilter() {
+    delete SwOut;
+  }
+
+  void releaseMemory() {
+    TopFunctions.clear();
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -70,23 +73,30 @@ struct FunctionFilter : public ModulePass {
 } // end anonymous.
 
 bool FunctionFilter::runOnModule(Module &M) {
-  for (Module::global_iterator I = M.global_begin(), E = M.global_end(); I != E;
-       ++I)
+  typedef Module::global_iterator global_iterator;
+  for (global_iterator I = M.global_begin(), E = M.global_end(); I != E; ++I)
     I->setAlignment(std::max(8u, I->getAlignment()));
 
   bool isSyntesizingMain = false;
   SmallPtrSet<const Function*, 32> HWFunctions;
   CallGraph &CG = getAnalysis<CallGraph>();
 
-  for (HWFnMap::const_iterator I = TopHWFns.begin(), E = TopHWFns.end();
-       I != E; ++I) {
-    Function *F = M.getFunction(I->first());
-    // The function does not exisit.
-    // TODO: Issue a warning.
-    if (F == 0 || F->isDeclaration()) continue;
+  for (Module::iterator I = M.begin(), E = M.end();I != E; ++I) {
+    Function *F = I;
 
-    if (F->getName()=="main")
-      isSyntesizingMain = true;
+    if (F->isDeclaration()) continue;
+
+    // Try to retrieve the synthesis configuration of the current function. 
+    const char *FunctionInfoPath[2] = { "Functions",
+                                        F->getValueName()->getKeyData() };
+    std::string DesignName = getStrValueFromEngine(FunctionInfoPath);
+
+    // Ignore the function if the synthesis configuration is not available.
+    if (DesignName.empty()) continue;
+
+    TopFunctions.insert(std::make_pair(F, DesignName));
+
+    if (F->getName()=="main") isSyntesizingMain = true;
 
     // Export the hardware function, so that it can be called from the software
     // side.
@@ -111,14 +121,17 @@ bool FunctionFilter::runOnModule(Module &M) {
   if (!isSyntesizingMain) partition(M, *SWM, HWFunctions);
 
   // Rename the function after we split the module.
-  for (HWFnMap::const_iterator I = TopHWFns.begin(), E = TopHWFns.end();
-       I != E; ++I) {
-    Function *HWF = M.getFunction(I->first());
-    if (HWF == 0 || HWF->isDeclaration() || HWF->getName() == "main") continue;
+  typedef std::map<Function*, std::string>::iterator iterator;
+  for (iterator I = TopFunctions.begin(), E = TopFunctions.end(); I != E; ++I) {
+    Function *HWF = I->first;
+    StringRef OriginalName = HWF->getName();
+
+    if (HWF == 0 || HWF->isDeclaration() || HWF->getName() == "main")
+      continue;
 
     HWF->setName(I->second);
 
-    Function *SWF = SWM->getFunction(I->first());
+    Function *SWF = SWM->getFunction(OriginalName);
     if (SWF == 0 || !SWF->isDeclaration()) continue;
 
     // Call the interface function from the software side instead.
@@ -128,7 +141,7 @@ bool FunctionFilter::runOnModule(Module &M) {
   if (!isSyntesizingMain) {
     // Write the module out.
     OwningPtr<AssemblyAnnotationWriter> Annotator;
-    SWM->print(SwOut, Annotator.get());
+    SWM->print(*SwOut, Annotator.get());
   }
 
   return true;
@@ -142,10 +155,8 @@ INITIALIZE_PASS_BEGIN(FunctionFilter, "FunctionFilter",
 INITIALIZE_PASS_END(FunctionFilter, "FunctionFilter",
                     "Function Filter", false, false)
 
-Pass *
-llvm::createFunctionFilterPass(raw_ostream &O,
-                               const StringMap<std::string> &TopHWFUnctions) {
-  return new FunctionFilter(O, TopHWFUnctions);
+Pass *llvm::createFunctionFilterPass() {
+  return new FunctionFilter();
 }
 
 void FunctionFilter::partition(Module &HWM, Module &SWM,
@@ -158,7 +169,7 @@ void FunctionFilter::partition(Module &HWM, Module &SWM,
     // The function is s software function, delete it from the hardware module.
     if (!HWFunctions.count(FHW))
       FHW->deleteBody();
-    else if (TopHWFns.count(FSW->getName()))
+    else if (TopFunctions.count(FHW))
       // Remove hardware functions in software module and leave the declaretion
       // only.
       FSW->deleteBody();

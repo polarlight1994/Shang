@@ -155,7 +155,7 @@ struct PathIntervalQueryCache {
 };
 
 struct TimingScriptGen : public VASTModulePass {
-  raw_ostream &OS;
+  formatted_raw_ostream OS;
 
   VASTModule *VM;
   static char ID;
@@ -192,12 +192,13 @@ struct TimingScriptGen : public VASTModulePass {
 
     return false;
   }
-  
-  TimingScriptGen() : VASTModulePass(ID), OS(nulls()) {
-    llvm_unreachable("Bad constructor!");
-  }
 
-  TimingScriptGen(raw_ostream &O) : VASTModulePass(ID), OS(O), VM(0) {
+  TimingScriptGen() : VASTModulePass(ID), OS(), VM(0) {
+    std::string MCPDataBasePath = getStrValueFromEngine("MCPDataBase");
+    std::string Error;
+    raw_fd_ostream *Output = new raw_fd_ostream(MCPDataBasePath.c_str(), Error);
+    OS.setStream(*Output, true);
+
     initializeTimingScriptGenPass(*PassRegistry::getPassRegistry());
   }
 };
@@ -490,6 +491,6 @@ INITIALIZE_PASS_END(TimingScriptGen, "vast-timing-script-generation",
                     "Generate timing script to export the behavior-level timing",
                     false, true)
 
-Pass *llvm::createTimingScriptGenPass(raw_ostream &O) {
-  return new TimingScriptGen(O);
+Pass *llvm::createTimingScriptGenPass() {
+  return new TimingScriptGen();
 }

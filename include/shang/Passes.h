@@ -42,9 +42,7 @@ Pass *createTrivialLoopUnrollPass();
 
 Pass *createMemoryAccessAlignerPass();
 
-Pass *createFunctionFilterPass(raw_ostream &O,
-                               const StringMap<std::string, MallocAllocator> &
-                               TopHWFUnctions);
+Pass *createFunctionFilterPass();
 
 Pass *createLowerAllocaPass();
 Pass *createLowerIntrinsicPass();
@@ -60,8 +58,8 @@ Pass *createTimingNetlistPass();
 Pass *createVASTSchedulingPass();
 Pass *createIterativeSchedulingPass();
 
-// Analyse the Combination Path Delay.
-Pass *createTimingScriptGenPass(raw_ostream &O);
+// Generate the multi-cycle path constraints.
+Pass *createTimingScriptGenPass();
 
 // Analysis the dependency between registers
 Pass *createSeqLiveVariablesPass();
@@ -70,7 +68,7 @@ Pass *createSelectorPipeliningPass();
 Pass *createLowerPseudoPHIsPass();
 
 // RTL code generation.
-Pass *createRTLCodeGenPass(raw_ostream &O);
+Pass *createRTLCodeGenPass();
 
 void initializeShangTTIPass(PassRegistry &Registry);
 void initializeObjectBasedAliasAnalyaisPass(PassRegistry &Registry);
