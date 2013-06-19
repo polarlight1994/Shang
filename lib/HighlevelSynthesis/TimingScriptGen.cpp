@@ -194,11 +194,6 @@ struct TimingScriptGen : public VASTModulePass {
   }
 
   TimingScriptGen() : VASTModulePass(ID), OS(), VM(0) {
-    std::string MCPDataBasePath = getStrValueFromEngine("MCPDataBase");
-    std::string Error;
-    raw_fd_ostream *Output = new raw_fd_ostream(MCPDataBasePath.c_str(), Error);
-    OS.setStream(*Output, true);
-
     initializeTimingScriptGenPass(*PassRegistry::getPassRegistry());
   }
 };
@@ -410,6 +405,11 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
   // No need to write timing script at all.
   if (DisableTimingScriptGeneration) return false;
 
+  std::string MCPDataBasePath = getStrValueFromEngine("MCPDataBase");
+  std::string Error;
+  raw_fd_ostream Output(MCPDataBasePath.c_str(), Error);
+  OS.setStream(Output);
+
   bindFunctionToScriptEngine(getAnalysis<DataLayout>(), &VM);
 
   SeqLiveVariables &SLV = getAnalysis<SeqLiveVariables>();
@@ -425,6 +425,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
     writeConstraintsFor(Sel, TNL, SLV);
   }
 
+  OS.setStream(nulls());
   return false;
 }
 

@@ -79,11 +79,6 @@ INITIALIZE_PASS_END(RTLCodeGen, "shang-verilog-writer",
                     false, true)
 
 RTLCodeGen::RTLCodeGen() : VASTModulePass(ID), Out() {
-  std::string RTLOutputPath = getStrValueFromEngine("RTLOutput");
-  std::string Error;
-  raw_fd_ostream *Output = new raw_fd_ostream(RTLOutputPath.c_str(), Error);
-  Out.setStream(*Output, true);
-
   initializeRTLCodeGenPass(*PassRegistry::getPassRegistry());
 }
 
@@ -123,6 +118,10 @@ void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
 
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   Function &F = VM.getLLVMFunction();
+  std::string RTLOutputPath = getStrValueFromEngine("RTLOutput");
+  std::string Error;
+  raw_fd_ostream Output(RTLOutputPath.c_str(), Error);
+  Out.setStream(Output);
 
   generateCodeForTopModule(F.getParent(), VM);
 
@@ -150,7 +149,7 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   VM.printRegisterBlocks(Out);
 
   Out.module_end();
-  Out.flush();
 
+  Out.setStream(nulls());
   return false;
 }
