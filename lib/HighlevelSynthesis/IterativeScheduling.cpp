@@ -29,6 +29,10 @@
 
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Timer.h"
+#include "llvm/Support/SourceMgr.h"
 #define DEBUG_TYPE "shang-iterative-scheduling"
 #include "llvm/Support/Debug.h"
 
@@ -38,11 +42,56 @@ static cl::opt<unsigned> MaxIteration("shang-max-scheduling-iteration",
   cl::desc("Perform memory optimizations e.g. coalescing or banking"),
   cl::init(1));
 
-namespace {
+static cl::opt<bool> DumpIntermediateNetlist("shang-dump-intermediate-netlist",
+  cl::desc("Dump the netlists produced by each iteration"),
+  cl::init(false));
+
+namespace llvm {
 typedef TimingNetlist::delay_type delay_type;
 typedef std::map<Value*, delay_type> SrcDelayInfo;
 typedef std::map<Value*, SrcDelayInfo> PathDelayInfo;
 typedef StringMap<SrcDelayInfo> FaninDelayInfo;
+
+void initializeDelayInfoStoragePass(PassRegistry &Registry);
+
+class DelayInfoStorage : public ImmutablePass {
+  PathDelayInfo PathInfo;
+  FaninDelayInfo FaninInfo;
+
+  delay_type getDelayFromSrc(const SrcDelayInfo &SrcInfo, Value *SrcV) const {
+    SrcDelayInfo::const_iterator I = SrcInfo.find(SrcV);
+    if (I == SrcInfo.end()) return delay_type(0.0f);
+
+    return I->second;
+  }
+public:
+  static char ID;
+  DelayInfoStorage() : ImmutablePass(ID) {
+    initializeDelayInfoStoragePass(*PassRegistry::getPassRegistry());
+  }
+
+  delay_type getPathDelay(Value *DstV, Value *SrcV) const {
+    PathDelayInfo::const_iterator I = PathInfo.find(DstV);
+    if (I == PathInfo.end()) return delay_type(0.0f);
+
+    return getDelayFromSrc(I->second, SrcV);
+  }
+
+  void annotatePathDelay(Value *DstV, Value *SrcV, delay_type delay) {
+    PathInfo[DstV][SrcV] = delay;
+  }
+
+  delay_type getFaninDelay(StringRef SelName, Value *SrcV) const {
+    FaninDelayInfo::const_iterator I = FaninInfo.find(SelName);
+    if (I == FaninInfo.end()) return delay_type(0.0f);
+
+    return getDelayFromSrc(I->second, SrcV);
+  }
+
+  void annotateFaninDelay(StringRef SelName, Value *SrcV, delay_type delay) {
+    FaninInfo[SelName][SrcV] = delay;
+  }
+};
 
 template<typename SubClass>
 struct DatapathVisitor {
@@ -238,36 +287,52 @@ struct DatapathVisitor {
   }
 };
 
+void initializeDelayExtractorPass(PassRegistry &Registry);
 /// DelayExtractor - Extract the delay from the timing netlist.
 ///
-struct DelayExtractor : public DatapathVisitor<DelayExtractor> {
-  TimingNetlist &TNL;
-  PathDelayInfo &PathInfo;
-  FaninDelayInfo &FaninInfo;
+struct DelayExtractor : public VASTModulePass,
+                        DatapathVisitor<DelayExtractor> {
+  static char ID;
+  TimingNetlist *TNL;
+  DelayInfoStorage *DIS;
+  DelayExtractor() : VASTModulePass(ID), TNL(0) {
+    initializeDelayExtractorPass(*PassRegistry::getPassRegistry());
+  }
 
-  DelayExtractor(TimingNetlist &TNL, PathDelayInfo &PathInfo,
-                 FaninDelayInfo &FaninInfo)
-    : TNL(TNL), PathInfo(PathInfo), FaninInfo(FaninInfo) {}
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    VASTModulePass::getAnalysisUsage(AU);
+    AU.addRequired<DelayInfoStorage>();
+    AU.addRequired<TimingNetlist>();
+    AU.setPreservesAll();
+  }
+
+  bool runOnVASTModule(VASTModule &VM) {
+    TNL = &getAnalysis<TimingNetlist>();
+    DIS = &getAnalysis<DelayInfoStorage>();
+    visit(VM);
+    return false;
+  }
 
   void visitPair(VASTValue *Dst, Value *DstV, VASTSeqValue *Src, Value *SrcV) {
-    delay_type NewDelay = TNL.getDelay(Src, Dst);
-    delay_type &OldDelay = PathInfo[DstV][SrcV];
+    delay_type NewDelay = TNL->getDelay(Src, Dst);
+    delay_type OldDelay = DIS->getPathDelay(DstV, SrcV);
 
     if (Src->isFUOutput() && SrcV != DstV) {
       // Remove the latency of the single cycle path from the output to the
       // latching register.
       delay_type NextStageDelay = std::max(0.0f, NewDelay - 1.0f);
       // Calculate the delay from the FU output to the latch pipeline stage.
-      delay_type &CurStageDelay = PathInfo[SrcV][SrcV];
+      delay_type CurStageDelay = DIS->getPathDelay(SrcV, SrcV);
       // Move the removed delay to current stage.
-      CurStageDelay = std::max(CurStageDelay, NewDelay - NextStageDelay);
+      DIS->annotatePathDelay(SrcV, SrcV,
+                             std::max(CurStageDelay, NewDelay - NextStageDelay));
       // Always extract the delay from the latch register instead of the FU
       // output.
       NewDelay = NextStageDelay;
     }
 
     // FIXME: Use better update algorithm, e.g. somekinds of iir filter.
-    OldDelay = std::max(OldDelay, NewDelay);
+    DIS->annotatePathDelay(DstV, SrcV, std::max(OldDelay, NewDelay));
   }
 
   void visitSelFanin(VASTSelector *Sel, Value *User,
@@ -280,8 +345,9 @@ struct DelayExtractor : public DatapathVisitor<DelayExtractor> {
       SelName = User->getName();
     }
 
-    delay_type &delay = FaninInfo[SelName][Operand];
-    delay = std::max(delay, TNL.getDelay(FI, Sel));
+    delay_type NewDelay = TNL->getDelay(FI, Sel);
+    delay_type OldDelay = DIS->getFaninDelay(SelName, Operand);
+    DIS->annotateFaninDelay(SelName, Operand, std::max(OldDelay, NewDelay));
   }
 
   void visitFULatch(const VASTLatch &L, Instruction *Inst) {
@@ -291,13 +357,13 @@ struct DelayExtractor : public DatapathVisitor<DelayExtractor> {
     typedef TimingNetlist::RegDelaySet::iterator src_iterator;
 
     // Extract the delay from the FU output.
-    TNL.extractDelay(L.getSelector(), Src.get(), Srcs);
+    TNL->extractDelay(L.getSelector(), Src.get(), Srcs);
     for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       VASTSeqValue *SrcV = I->first;
       // The sources must be FU output.
       assert(SrcV->isFUOutput() && SrcV->getLLVMValue() == Inst && "Bad latch!");
-      delay_type &OldDelay = PathInfo[Inst][Inst];
-      OldDelay = std::max(OldDelay, I->second);
+      delay_type OldDelay = DIS->getPathDelay(Inst, Inst);
+      DIS->annotatePathDelay(Inst, Inst, std::max(OldDelay, I->second));
     }
   }
 };
@@ -306,15 +372,13 @@ struct DelayExtractor : public DatapathVisitor<DelayExtractor> {
 ///
 struct DelayAnnotator : public DatapathVisitor<DelayAnnotator> {
   TimingNetlist &TNL;
-  PathDelayInfo &PathInfo;
-  FaninDelayInfo &FaninInfo;
+  DelayInfoStorage &DIS;
 
-  DelayAnnotator(TimingNetlist &TNL, PathDelayInfo &PathInfo,
-                 FaninDelayInfo &FaninInfo)
-    : TNL(TNL), PathInfo(PathInfo), FaninInfo(FaninInfo) {}
+  DelayAnnotator(TimingNetlist &TNL, DelayInfoStorage &DIS)
+    : TNL(TNL), DIS(DIS) {}
 
   void visitPair(VASTValue *Dst, Value *DstV, VASTSeqValue *Src, Value *SrcV) {
-    TNL.annotateDelay(Src, Dst, PathInfo[DstV][SrcV]);
+    TNL.annotateDelay(Src, Dst, DIS.getPathDelay(DstV, SrcV));
   }
 
   void visitSelFanin(VASTSelector *Sel, Value *User,
@@ -327,7 +391,7 @@ struct DelayAnnotator : public DatapathVisitor<DelayAnnotator> {
       SelName = User->getName();
     }
 
-    TNL.annotateDelay(FI, Sel, FaninInfo[SelName][Operand]);
+    TNL.annotateDelay(FI, Sel, DIS.getFaninDelay(SelName, Operand));
   }
 
   void visitFULatch(const VASTLatch &L, Instruction *Inst) {
@@ -343,86 +407,177 @@ struct DelayAnnotator : public DatapathVisitor<DelayAnnotator> {
       VASTSeqValue *SrcV = *I;
       // The sources must be FU output.
       assert(SrcV->isFUOutput() && SrcV->getLLVMValue() == Inst && "Bad latch!");
-      TNL.annotateDelay(SrcV, Src, PathInfo[Inst][Inst]);
+      TNL.annotateDelay(SrcV, Src, DIS.getPathDelay(Inst, Inst));
     }
   }
 };
 
-struct OnTheFlyFPPassManager : public FPPassManager {
-  explicit OnTheFlyFPPassManager(PMDataManager &Parent) {
-    assert(Parent.getPassManagerType() == PMT_FunctionPassManager
-           && "Unexpected parent!");
-    // Setup the pass managers stack.
-    setDepth(Parent.getDepth() + 1);
-    setTopLevelManager(Parent.getTopLevelManager());
-    populateInheritedAnalysis(getTopLevelManager()->activeStack);
-  }
-
-  void addLowerLevelRequiredPass(Pass *P, Pass *RequiredPass) {
-    // Do not add the same pass more than once!
-    if (findAnalysisPass(RequiredPass->getPassID(), true))  {
-      delete RequiredPass;
-      return;
-    }
-
-    add(RequiredPass);
-  }
-};
-
-struct IterativeScheduling : public VASTModulePass {
-  VASTModule *VM;
-  TimingNetlist *TNL;
-  PathDelayInfo PathInfo;
-  FaninDelayInfo FaninInfo;
-
+class IterativeScheduling : public VASTModulePass, public PMDataManager {
+  const std::string OriginalRTLOutput, OriginalMCPOutput;
+  const StringRef RTLFileName;
+public:
   static char ID;
-  IterativeScheduling() : VASTModulePass(ID), VM(0), TNL(0) {
+  IterativeScheduling() : VASTModulePass(ID), PMDataManager(),
+    OriginalRTLOutput(getStrValueFromEngine("RTLOutput")),
+    OriginalMCPOutput(getStrValueFromEngine("MCPDataBase")),
+    RTLFileName(sys::path::filename(OriginalRTLOutput)) {
     initializeIterativeSchedulingPass(*PassRegistry::getPassRegistry());
   }
 
-  void getAnalysisUsage(AnalysisUsage &AU) const  {
+  void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    // The passes required by VASTScheduling.
     AU.addRequired<AliasAnalysis>();
     AU.addRequired<DominatorTree>();
     AU.addRequired<LoopInfo>();
     AU.addRequired<BranchProbabilityInfo>();
     AU.addRequired<TimingNetlist>();
+    AU.addRequired<DelayInfoStorage>();
+    // Initialize the DelayInfoStorage by the unscheduled netlist.
+    AU.addRequired<DelayExtractor>();
   }
 
-  bool runOnVASTModule(VASTModule &VM);
+  void recoverOutputPath();
+  void changeOutputPaths(unsigned i);
 
-  void releaseMemory() {
-    PathInfo.clear();
-    FaninInfo.clear();
+  bool runSingleIteration(Function &F) {
+    bool Changed = false;
+
+    // Collect inherited analysis from Module level pass manager.
+    populateInheritedAnalysis(TPM->activeStack);
+
+    for (unsigned Index = 0; Index < getNumContainedPasses(); ++Index) {
+      FunctionPass *FP = getContainedPass(Index);
+      bool LocalChanged = false;
+
+      dumpPassInfo(FP, EXECUTION_MSG, ON_FUNCTION_MSG, F.getName());
+      dumpRequiredSet(FP);
+
+      initializeAnalysisImpl(FP);
+
+      {
+        PassManagerPrettyStackEntry X(FP, F);
+        TimeRegion PassTimer(getPassTimer(FP));
+
+        LocalChanged |= FP->runOnFunction(F);
+      }
+
+      Changed |= LocalChanged;
+      if (LocalChanged)
+        dumpPassInfo(FP, MODIFICATION_MSG, ON_FUNCTION_MSG, F.getName());
+      dumpPreservedSet(FP);
+
+      verifyPreservedAnalysis(FP);
+      removeNotPreservedAnalysis(FP);
+      recordAvailableAnalysis(FP);
+      removeDeadPasses(FP, F.getName(), ON_FUNCTION_MSG);
+    }
+
+    return Changed;
   }
 
-  void initializeDelay() {
-    DelayExtractor(*TNL, PathInfo, FaninInfo).visit(*VM);
+  bool runOnVASTModule(VASTModule &VM) {
+    bool Changed = false;
+    TimingNetlist &TNL = getAnalysis<TimingNetlist>();
+    DelayInfoStorage &DIS = getAnalysis<DelayInfoStorage>();
+    Function &F = VM.getLLVMFunction();
+
+    VASTScheduling Scheduler;
+    AnalysisResolver *AR = new AnalysisResolver(*getResolver());
+    Scheduler.setResolver(AR);
+    Scheduler.runOnVASTModule(VM);
+
+    for (unsigned i = 1, e = MaxIteration; i < e; ++i) {
+      // Redirect the output path for the intermediate netlist.
+      if (DumpIntermediateNetlist) changeOutputPaths(i - 1);
+
+      runSingleIteration(F);
+      TNL.releaseMemory();
+      Scheduler.releaseMemory();
+
+      VASTModule &NextVM = rebuildModule();
+      DelayAnnotator(TNL, DIS).visit(NextVM);
+      Scheduler.runOnVASTModule(NextVM);
+    }
+
+    // Fix the output pass if necessary.
+    if (DumpIntermediateNetlist) recoverOutputPath();
+
+    return Changed;
   }
 
-  void extractDelay(PMDataManager &PMD) {
-    // The pass manager to manage the passes in each single iteration.
-    OnTheFlyFPPassManager FPM(PMD);
+  void assignPassManager(PMStack &PMS, PassManagerType T) {
+    FunctionPass::assignPassManager(PMS, T);
 
-    FPM.add(createLUTMappingPass());
-    // The timing netlist for the delay extraction.
-    TimingNetlist *PostScheduleTNL = new TimingNetlist();
-    FPM.add(PostScheduleTNL);
+    // Inherit the existing analyses
+    populateInheritedAnalysis(PMS);
 
-    // Run the passes to get the delay estimation.
-    FPM.runOnFunction(VM->getLLVMFunction());
+    // Setup the pass managers stack.
+    PMDataManager *PMD = PMS.top();
+    PMTopLevelManager *TPM = PMD->getTopLevelManager();
+    TPM->addIndirectPassManager(this);
+    PMS.push(this);
 
-    // Extract the delay from the post schedule timing netlist.
-    DelayExtractor(*PostScheduleTNL, PathInfo, FaninInfo).visit(*VM);
+    // Add the passes for each single iteration.
+    schedulePass(createLUTMappingPass());
+    schedulePass(new DelayExtractor());
+
+    // Finish the whole HLS process if we want to dump the intermediate netlist
+    // for each iteration.
+    if (DumpIntermediateNetlist) {
+      schedulePass(createSelectorPipeliningPass());
+      schedulePass(createRTLCodeGenPass());
+      schedulePass(createTimingScriptGenPass());
+    }
   }
 
-  void annotateDelay() {
-    DelayAnnotator(*TNL, PathInfo, FaninInfo).visit(*VM);
+  VASTModulePass *getContainedPass(unsigned N) {
+    assert ( N < PassVector.size() && "Pass number out of range!");
+    VASTModulePass *FP = static_cast<VASTModulePass *>(PassVector[N]);
+    return FP;
+  }
+
+  /// cleanup - After running all passes, clean up pass manager cache.
+  void cleanup() {
+    for (unsigned Index = 0; Index < getNumContainedPasses(); ++Index) {
+      FunctionPass *FP = getContainedPass(Index);
+      AnalysisResolver *AR = FP->getResolver();
+      assert(AR && "Analysis Resolver is not set");
+      AR->clearAnalysisImpls();
+    }
+  }
+
+  void schedulePass(Pass *P);
+
+  virtual PMDataManager *getAsPMDataManager() { return this; }
+  virtual Pass *getAsPass() { return this; }
+
+  virtual const char *getPassName() const {
+    return "Iterative Scheduling Driver";
+  }
+
+  // Pretend we are a basic block pass manager to prevent the normal passes
+  // from using this pass as their manager.
+  PassManagerType getPassManagerType() const {
+    return PMT_BasicBlockPassManager;
   }
 };
 }
 //===----------------------------------------------------------------------===//
+char DelayInfoStorage::ID = 0;
+INITIALIZE_PASS(DelayInfoStorage, "shang-delay-information-storage",
+                "The Storage to maintian the delay information across"
+                " scheduling iterations",
+                false, true)
+
+char DelayExtractor::ID = 0;
+INITIALIZE_PASS_BEGIN(DelayExtractor, "shang-delay-information-extractor",
+                      "Extract the delay information to cross-iteration storage",
+                      false, true)
+  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
+  INITIALIZE_PASS_DEPENDENCY(DelayInfoStorage)
+INITIALIZE_PASS_END(DelayExtractor, "shang-delay-information-extractor",
+                    "Extract the delay information to cross-iteration storage",
+                    false, true)
 
 char IterativeScheduling::ID = 0;
 
@@ -430,7 +585,10 @@ INITIALIZE_PASS_BEGIN(IterativeScheduling, "shang-iterative-scheduling",
                       "Preform iterative scheduling",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
-  INITIALIZE_PASS_DEPENDENCY(VASTScheduling)
+  INITIALIZE_PASS_DEPENDENCY(DelayInfoStorage)
+  INITIALIZE_PASS_DEPENDENCY(DelayExtractor)
+  INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+  INITIALIZE_PASS_DEPENDENCY(BranchProbabilityInfo)
 INITIALIZE_PASS_END(IterativeScheduling, "shang-iterative-scheduling",
                     "Preform iterative scheduling",
                     false, true)
@@ -439,41 +597,96 @@ Pass *llvm::createIterativeSchedulingPass() {
   return new IterativeScheduling();
 }
 
-bool IterativeScheduling::runOnVASTModule(VASTModule &Mod) {
-  if (MaxIteration == 0) return false;
-
-  VM = &Mod;
-
-  VASTScheduling Scheduler;
-  AnalysisResolver *AR = new AnalysisResolver(*getResolver());
-  Scheduler.setResolver(AR);
-
-  // Fast path for the trivial case.
-  if (MaxIteration == 1) {
-    Scheduler.runOnVASTModule(*VM);
-    return true;
+void IterativeScheduling::schedulePass(Pass *P) {
+  // If P is an analysis pass and it is available then do not
+  // generate the analysis again. Stale analysis info should not be
+  // available at this point.
+  const PassInfo *PI =
+    PassRegistry::getPassRegistry()->getPassInfo(P->getPassID());
+  if (PI && PI->isAnalysis() && findAnalysisPass(P->getPassID(), true)) {
+    delete P;
+    return;
   }
 
-  TNL = &getAnalysis<TimingNetlist>();
+  AnalysisUsage *AnUsage = TPM->findAnalysisUsage(P);
+  PassManagerType CurPMT = P->getPotentialPassManagerType();
 
-  Scheduler.runOnVASTModule(*VM);
+  bool checkAnalysis = true;
+  while (checkAnalysis) {
+    checkAnalysis = false;
 
-  for (unsigned i = 1, e = MaxIteration; i < e; ++i) {
-    // Extract the delay from the scheduled design.
-    extractDelay(AR->getPMDataManager());
+    const AnalysisUsage::VectorType &RequiredSet = AnUsage->getRequiredSet();
+    typedef AnalysisUsage::VectorType::const_iterator iterator;
+    for (iterator I = RequiredSet.begin(), E = RequiredSet.end(); I != E; ++I) {
+      Pass *AnalysisPass = findAnalysisPass(*I, true);
+      if (AnalysisPass) continue;
 
-    // Build a new module for the current iteration of scheduling.
-    VM = rebuildModule();
-    // Reset the contents after the module is rebuilt.
-    TNL->releaseMemory();
-    Scheduler.releaseMemory();
+      const PassInfo *PI = PassRegistry::getPassRegistry()->getPassInfo(*I);
 
-    // Backannotate the delay after the module is rebuilt.
-    annotateDelay();
+      assert(PI && "Expected required passes to be initialized");
+      AnalysisPass = PI->createPass();
+      PassManagerType AnalysisPMT = AnalysisPass->getPotentialPassManagerType();
 
-    // Schedule the module again.
-    Scheduler.runOnVASTModule(*VM);
+      if (CurPMT == AnalysisPMT)
+        // Schedule analysis pass that is managed by the same pass manager.
+        schedulePass(AnalysisPass);
+      else if (CurPMT > AnalysisPMT) {
+        // Schedule analysis pass that is managed by a new manager.
+        schedulePass(AnalysisPass);
+        // Recheck analysis passes to ensure that required analyses that
+        // are already checked are still available.
+        checkAnalysis = true;
+      }
+      else
+        // Do not schedule this analysis. Lower level analsyis
+        // passes are run on the fly.
+        delete AnalysisPass;
+    }
   }
 
-  return true;
+  // Now all required passes are available.
+  if (ImmutablePass *IP = P->getAsImmutablePass()) {
+    // P is a immutable pass and it will be managed by this
+    // top level manager. Set up analysis resolver to connect them.
+    PMDataManager &ParentDM = getResolver()->getPMDataManager();
+    AnalysisResolver *AR = new AnalysisResolver(ParentDM);
+    P->setResolver(AR);
+    initializeAnalysisImpl(P);
+    TPM->addImmutablePass(IP);
+    recordAvailableAnalysis(IP);
+    return;
+  }
+
+  // Add the requested pass to the current manager.
+  add(P);
+}
+
+void IterativeScheduling::changeOutputPaths(unsigned i) {
+  SmallString<256> NewPath = sys::path::parent_path(OriginalRTLOutput);
+  sys::path::append(NewPath, utostr_32(i));
+  bool Existed;
+  sys::fs::create_directories(StringRef(NewPath), Existed);
+  (void)Existed;
+  sys::path::append(NewPath, RTLFileName);
+
+  std::string Script;
+  raw_string_ostream SS(Script);
+  SS << "RTLOutput = [[" << NewPath << "]]\n";
+  sys::path::replace_extension(NewPath, ".sql");
+  SS << "MCPDataBase = [[" << NewPath << "]]\n";
+
+  SMDiagnostic Err;
+  if (!runScriptStr(SS.str(), Err))
+    report_fatal_error("Cannot set output paths for intermediate netlist!");
+}
+
+void IterativeScheduling::recoverOutputPath() {
+  std::string Script;
+  raw_string_ostream SS(Script);
+  SS << "InputFile = [[" << OriginalRTLOutput << "]]\n"
+        "MCPDataBase = [[" << OriginalMCPOutput << "]]\n";
+
+  SMDiagnostic Err;
+  if (!runScriptStr(SS.str(), Err))
+    report_fatal_error("Cannot recover output paths!");
 }
