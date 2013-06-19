@@ -149,6 +149,7 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   VM.printRegisterBlocks(Out);
 
   Out.module_end();
+  Out.flush();
 
   Out.setStream(nulls());
   return false;

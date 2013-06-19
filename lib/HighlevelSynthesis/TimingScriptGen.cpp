@@ -425,6 +425,8 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
     writeConstraintsFor(Sel, TNL, SLV);
   }
 
+  OS.flush();
+
   OS.setStream(nulls());
   return false;
 }
