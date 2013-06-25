@@ -476,7 +476,8 @@ public:
   }
 
   bool runOnVASTModule(VASTModule &VM) {
-    bool Changed = false;
+    if (MaxIteration == 0) return false;
+    
     TimingNetlist &TNL = getAnalysis<TimingNetlist>();
     DelayInfoStorage &DIS = getAnalysis<DelayInfoStorage>();
     Function &F = VM.getLLVMFunction();
@@ -502,7 +503,7 @@ public:
     // Fix the output pass if necessary.
     if (DumpIntermediateNetlist) recoverOutputPath();
 
-    return Changed;
+    return true;
   }
 
   void assignPassManager(PMStack &PMS, PassManagerType T) {
@@ -683,7 +684,7 @@ void IterativeScheduling::changeOutputPaths(unsigned i) {
 void IterativeScheduling::recoverOutputPath() {
   std::string Script;
   raw_string_ostream SS(Script);
-  SS << "InputFile = [[" << OriginalRTLOutput << "]]\n"
+  SS << "RTLOutput = [[" << OriginalRTLOutput << "]]\n"
         "MCPDataBase = [[" << OriginalMCPOutput << "]]\n";
 
   SMDiagnostic Err;
