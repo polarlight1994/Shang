@@ -179,20 +179,6 @@ struct TimingScriptGen : public VASTModulePass {
 
   bool runOnVASTModule(VASTModule &VM);
 
-  bool doInitialization(Module &) {
-    OS <<
-      "CREATE TABLE mcps( \
-       id INTEGER PRIMARY KEY AUTOINCREMENT, \
-       src TEXT, \
-       dst TEXT, \
-       thu TEXT, \
-       cycles INTEGER, \
-       normalized_delay REAL \
-       );\n";
-
-    return false;
-  }
-
   TimingScriptGen() : VASTModulePass(ID), OS(), VM(0) {
     initializeTimingScriptGenPass(*PassRegistry::getPassRegistry());
   }
@@ -409,6 +395,15 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
   std::string Error;
   raw_fd_ostream Output(MCPDataBasePath.c_str(), Error);
   OS.setStream(Output);
+
+  OS << "CREATE TABLE mcps( \
+          id INTEGER PRIMARY KEY AUTOINCREMENT, \
+          src TEXT, \
+          dst TEXT, \
+          thu TEXT, \
+          cycles INTEGER, \
+          normalized_delay REAL \
+          );\n";
 
   bindFunctionToScriptEngine(getAnalysis<DataLayout>(), &VM);
 
