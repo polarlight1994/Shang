@@ -76,7 +76,7 @@ class TestStep :
     self.config_template_env.from_string(template_str).stream(self.__dict__).dump(output_file_path)
 
   def getOptionCompack(self) :
-    return [ (k, v) for k, v in self.option.iteritems() if set([v]) < set(self.option_space_dict[k])]
+    return [ (k, v) for k, v in self.option.iteritems() if set([v]) != set(self.option_space_dict[k])]
 
   def submitLogfiles(self, connection, status) :
     connection.execute('''
@@ -553,6 +553,7 @@ IfFile:close()
                '-shang-enable-pre-schedule-lut-mapping=%(shang_enable_pre_schedule_lut_mapping)s' % self,
                '-shang-enable-register-sharing=%(shang_enable_register_sharing)s' % self,
                '-shang-max-scheduling-iteration=%(shang_max_scheduling_iteration)s' % self,
+               '-shang-dump-intermediate-netlist=%(shang_dump_intermediate_netlist)s' % self,
                '-shang-selector-ignore-trivial-loops=true',
                '-shang-selector-ignore-x-fanins=true',
                '-shang-print-selector-as-parallel-case=false'
@@ -576,7 +577,17 @@ IfFile:close()
     return [ HybridSimStep(self) ]
 
   def generatePureHWSim(self) :
-    return [ ShangHWSimStep(self) ]
+    num_iter = self.shang_max_scheduling_iteration
+    if self.shang_dump_intermediate_netlist == 'true' and num_iter > 1 :
+      for i in range(num_iter - 1) :
+        sim_step = ShangHWSimStep(self)
+        sim_step.option = self.option.copy()
+        sim_step.hls_base_dir = os.path.join(sim_step.hls_base_dir, str(i))
+        sim_step.rtl_output = os.path.join(sim_step.hls_base_dir, sim_step.test_name + ".sv")
+        sim_step.option['shang_max_scheduling_iteration'] = i + 1
+        yield sim_step
+    
+    yield ShangHWSimStep(self)
 
 # The test step for hybrid simulation.
 class HybridSimStep(TestStep) :
