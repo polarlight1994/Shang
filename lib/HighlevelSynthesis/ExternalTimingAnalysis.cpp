@@ -24,6 +24,7 @@
 #include "shang/Passes.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTSubModules.h"
+#include "shang/VASTMemoryPort.h"
 
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/Statistic.h"
@@ -130,13 +131,39 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
   PathInfo DelayMatrix;
 
   // The delay from the selector wire and the selector enable.
-  std::map<VASTSelector*, float*> SelectorDelay;
-  float getSelDelay(VASTSelector *S) const {
-    std::map<VASTSelector*, float*>::const_iterator
-      at = SelectorDelay.find(S);
+  DenseMap<VASTSelector*, float*> SelectorDelay;
+  DenseMap<unsigned, float*> BRAMInputDelay, BRAMOutputDelay;
 
-    assert(at != SelectorDelay.end() && "Selector delay not allocated!");
-    return *at->second;
+  float getSelDelay(VASTSelector *S) const {
+    float *ptr = SelectorDelay.lookup(S);
+
+    assert(ptr && "Selector delay not allocated!");
+    float delay = *ptr;
+
+    // Also accumulate the input delay of the BRAM.
+    if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(S->getParent())) {
+      float *ptr = BRAMInputDelay.lookup(Bus->getNumber());
+      assert(ptr && "BRAM input delay not allocated!");
+      delay += *ptr;
+    }
+
+    return delay;
+  }
+
+  float getFUOutputDelay(VASTValue *V) const {
+    VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(V);
+    if (!SVal) return 0.0f;
+
+    VASTSelector *Sel = SVal->getSelector();
+    if (Sel->isFUOutput()) return 0.0f;
+
+    // We only extract the FU output delay of BRAm for now.
+    VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(Sel->getParent());
+    if (!Bus) return 0.0f;
+
+    float *ptr = BRAMOutputDelay.lookup(Bus->getNumber());
+    assert(ptr && "BRAM input delay not allocated!");
+    return *ptr;
   }
 
   typedef TimingNetlist::PathTy PathTy;
@@ -153,6 +180,7 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
   void writeTimingExtractionScript(raw_ostream &O, const sys::Path &ResultPath);
   void extractTimingForSelector(raw_ostream &O, VASTSelector *Sel);
   void extractSelectorDelay(raw_ostream &O, VASTSelector *Sel);
+  void extractFUOutputDelay(raw_ostream &O, VASTSelector *Sel);
 
   void buildPathInfoForCone(raw_ostream &O, VASTValue *Root);
   void propagateSrcInfo(raw_ostream &O, VASTExpr *V);
@@ -495,18 +523,48 @@ void
 ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O, VASTSelector *Sel) {
   // Get the delay from the selector wire of the selector.
   O << "set dst " << GetSTACollection(Sel) << '\n';
-  O << "set src [get_cells -compatibility_mode -nowarn \"*"
+  O << "set src [get_pins -compatibility_mode -nowarn \"*"
     << Sel->getName() << "_selector*" << "\"]\n";
   unsigned Idx = 0;
   SelectorDelay[Sel] = allocateDelayRef(Idx);
   extractTimingForPath(O, Idx);
   DEBUG(O << "post_message -type info \" selector -> "
     << Sel->getSTAObjectName() << " delay: $delay\"\n");
+
+  if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(Sel->getParent())) {
+    O << "set dst [get_keepers " << Bus->getArrayName() << "*]\n"
+         "set src [get_pins -compatibility_mode "
+      << Bus->getArrayName() << "*port*]\n";
+    unsigned Idx = 0;
+    BRAMInputDelay[Bus->getNumber()] = allocateDelayRef(Idx);
+    extractTimingForPath(O, Idx);
+    DEBUG(O << "post_message -type info \" mem_fanin -> "
+      << Sel->getSTAObjectName() << " delay: $delay\"\n");
+  }
+}
+
+void
+ExternalTimingAnalysis::extractFUOutputDelay(raw_ostream &O, VASTSelector *Sel) {
+  assert(Sel->isFUOutput() && "Bad selector type!");
+
+  if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(Sel->getParent())) {
+    O << "set dst [get_pins -compatibility_mode "
+      << Bus->getArrayName() << "*port*]\n"
+      << "set dst [get_keepers " << Bus->getArrayName() << "*]\n";
+    unsigned Idx = 0;
+    BRAMOutputDelay[Bus->getNumber()] = allocateDelayRef(Idx);
+    extractTimingForPath(O, Idx);
+    DEBUG(O << "post_message -type info \" "
+      << Sel->getSTAObjectName() << " ->  mem_fanout delay: $delay\"\n");
+  }
 }
 
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
                                                       VASTSelector *Sel) {
-  if (Sel->isFUOutput()) return;
+  if (Sel->isFUOutput()) {
+    extractFUOutputDelay(O, Sel);
+    return;
+  }
 
   extractSelectorDelay(O, Sel);
 

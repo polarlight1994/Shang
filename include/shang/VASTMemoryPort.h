@@ -75,6 +75,7 @@ public:
   bool isDefault() const { return Idx == 0; }
   bool requireByteEnable() const { return RequireByteEnable; }
   bool isDualPort() const { return IsDualPort; }
+  unsigned getNumber() const { return Idx; }
 
   // The ports of the memory bus.
   VASTSelector *getByteEn(unsigned PortNum) const;
