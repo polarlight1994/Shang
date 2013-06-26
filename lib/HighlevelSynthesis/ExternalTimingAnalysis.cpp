@@ -224,10 +224,6 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
 }
 
 bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
-  typedef VASTModule::selector_iterator iterator;
-  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-    I->setPrintSelModule();
-
   ExternalTimingAnalysis ETA(VM, PathInfo);
 
   // Run the synthesis tool to get the arrival time estimation.
@@ -236,6 +232,7 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
   // Update the timing netlist.
   std::set<VASTExpr*> Visited;
 
+  typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
 
@@ -281,9 +278,6 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
     }
   }
 
-  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-    I->setPrintSelModule(false);
-
   // External timing analysis successfully completed.
   return true;
 }
@@ -294,9 +288,11 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {
   std::string FUTemplate = getStrValueFromEngine(FUTemplatePath);
   Out << FUTemplate << '\n';
 
-  const char *SelectorTemplatePath[] = { "FUs", "SelectorTemplate" };
-  std::string SelectorTemplate = getStrValueFromEngine(SelectorTemplatePath);
-  Out << SelectorTemplate << '\n';
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+    I->setPrintSelModule();
+    I->printSelectorModule(Out);
+  }
 
   // Write buffers to output
   VM.printModuleDecl(Out);
@@ -315,6 +311,9 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {
 
   Out << "endmodule\n";
   Out.flush();
+
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
+    I->setPrintSelModule(false);
 }
 
 void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,

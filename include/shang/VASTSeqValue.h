@@ -89,7 +89,7 @@ private:
 
   bool buildCSEMap(CSEMapTy &CSEMap) const;
 
-  void printFanins(raw_ostream &OS) const;
+  void instantiateSelector(raw_ostream &OS) const;
 
   void printMuxAsParallelCase(raw_ostream &OS) const;
 
@@ -107,6 +107,7 @@ public:
 
   bool forcePrintSelModule() const { return PrintSelModule; }
   void setPrintSelModule(bool Print = true) { PrintSelModule = Print; }
+  void printSelectorModule(raw_ostream &OS) const;
 
   const char *getName() const { return Contents.Name; }
   unsigned getBitWidth() const { return BitWidth; }

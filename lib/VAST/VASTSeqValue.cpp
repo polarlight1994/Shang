@@ -168,13 +168,42 @@ void VASTSelector::addAssignment(VASTSeqOp *Op, unsigned SrcNo) {
   Assigns.push_back(L);
 }
 
-void VASTSelector::printFanins(raw_ostream &OS) const {
-  typedef std::vector<const VASTSeqOp*> OrVec;
-  typedef CSEMapTy::const_iterator fanin_iterator;
+void VASTSelector::printSelectorModule(raw_ostream &O) const {
+  vlang_raw_ostream OS(O);
 
-  CSEMapTy CSEMap;
+  if (empty()) return;
 
-  if (!buildCSEMap(CSEMap)) return;
+  OS << "module shang_" << getName() << "_selector(";
+  OS.module_begin();
+  // Print the input ports.
+  for (unsigned i = 0, e = size(); i < e; ++i) {
+    OS << "input wire" << VASTValue::printBitRange(getBitWidth())
+       << " fi" << i << ",\n";
+    OS << "input wire sel" << i << ",\n";
+  }
+
+  OS << "output wire" << VASTValue::printBitRange(getBitWidth()) << " fo,\n"
+     << "output wire en);\n\n";
+
+  // Build the enalbe.
+  OS << "assign en = sel0";
+  for (unsigned i = 1, e = size(); i < e; ++i)
+    OS << " | sel" << i;
+  OS << ";\n";
+
+  // Build the data output.
+  OS << "assign fo = ({" << getBitWidth() << "{sel0}} & fi0)";
+  for (unsigned i = 1, e = size(); i < e; ++i)
+    OS << "| ({" << getBitWidth() << "{sel" << i << "}} & fi" << i << ')';
+  OS << ";\n";
+
+  OS.module_end();
+  OS << '\n';
+  OS.flush();
+}
+
+void VASTSelector::instantiateSelector(raw_ostream &OS) const {
+  if (empty()) return;
 
   // Create the temporary signal.
   OS << "// Combinational MUX\n";
@@ -184,46 +213,20 @@ void VASTSelector::printFanins(raw_ostream &OS) const {
 
   OS << "wire " << ' ' << getName() << "_selector_enable;\n\n";
 
-  OS << "shang_selector#("
-     << CSEMap.size() << ", \"";
-  unsigned NumSels = 0;
-  for (fanin_iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    const OrVec &Ors = I->second;
-    OS << '1';
-    for (unsigned i = 1, e = Ors.size(); i < e; ++i)
-      OS << '0';
-    NumSels += Ors.size();
-  }
-  OS << "\", "
-     << NumSels << ", "
-     << getBitWidth() << ") "
-     << getName() << "_selector(\n{" << getBitWidth() << "'b0";
+  OS << "shang_" << getName() << "_selector " << getName() << "_selector(";
   // Print the inputs of the mux.
-  for (fanin_iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    VASTValPtr FI = I->first;
-    OS   << ", " << FI;
-  }
-  OS << "},\n{1'b0";
-  // Print the selection signals.
-  for (fanin_iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    const OrVec &Ors = I->second;
-    typedef OrVec::const_iterator pred_iterator;
-    for (pred_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI)
-      OS   << ", " << VASTValPtr((*OI)->getGuard());
-  }
-  OS << "},\n{1'b0";
-  // Print the selection signals.
-  for (fanin_iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    const OrVec &Ors = I->second;
-    typedef OrVec::const_iterator pred_iterator;
-    for (pred_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
-      OS   << ", ";
-      if (VASTValPtr SlotActive = (*OI)->getSlotActive()) OS << SlotActive;
-      else                                                OS << "1'b1";
+  for (const_iterator I = begin(), E = end(); I != E; ++I) {
+    const VASTLatch &L = *I;
+    // Ignore the trivial fanins.
+    if (isTrivialFannin(L)) {
+      OS << VASTImmediate::buildLiteral(0, getBitWidth(), false) << ", 1'b0, ";
+      continue;
     }
+
+    OS   << VASTValPtr(L) << ", " << VASTValPtr(L.getGuard()) << ",\n";
   }
-  OS << "}, \n"
-     << getName() << "_selector_wire,\n"
+
+  OS << getName() << "_selector_wire,\n"
      << getName() << "_selector_enable);\n";
 }
 
@@ -273,7 +276,7 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
   if (empty()) return;
 
   if (forcePrintSelModule()) {
-    printFanins(OS);
+    instantiateSelector(OS);
     return;
   }
 
