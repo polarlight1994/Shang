@@ -126,7 +126,7 @@ std::string VASTValue::printBitRange(unsigned UB, unsigned LB, bool printOneBit)
   return ret;
 }
 
-bool VASTValue::extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
+bool VASTValue::extractSupportingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
   VASTValue *Root = this;
 
   std::set<VASTExpr*> Visited;

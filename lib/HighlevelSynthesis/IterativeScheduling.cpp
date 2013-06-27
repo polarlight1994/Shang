@@ -151,7 +151,7 @@ struct DatapathVisitor {
     switch (Inst->getOpcode()) {
     case Instruction::Load: {
       if (Op->isLatch()) {
-        visitFULatchAndSelector( Op->getSrc(0), Inst);
+        visitFULatchAndSelector(Op->getSrc(0), Inst);
         return;
       }
 
@@ -269,7 +269,7 @@ struct DatapathVisitor {
 
     // Annotate/Extract the delay from the leaves of this cone.
     std::set<VASTSeqValue*> Srcs;
-    Root->extractSupporingSeqVal(Srcs);
+    Root->extractSupportingSeqVal(Srcs);
 
     if (Srcs.empty()) return false;
 
@@ -399,8 +399,7 @@ struct DelayAnnotator : public DatapathVisitor<DelayAnnotator> {
 
     // Extract the source registers.
     std::set<VASTSeqValue*> Srcs;
-    if (VASTExpr *Expr = dyn_cast<VASTExpr>(Src))
-      Expr->extractSupporingSeqVal(Srcs);
+    Src->extractSupportingSeqVal(Srcs);
 
     typedef std::set<VASTSeqValue*>::iterator src_iterator;
     for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
@@ -641,7 +640,8 @@ void IterativeScheduling::schedulePass(Pass *P) {
       else
         // Do not schedule this analysis. Lower level analsyis
         // passes are run on the fly.
-        delete AnalysisPass;
+        // delete AnalysisPass;
+        llvm_unreachable("On the fly analysis is not supported!");
     }
   }
 

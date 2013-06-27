@@ -446,7 +446,7 @@ public:
 
   // Extract all SeqVals which are connect to this VASTValue through data-path.
   // Return true if there is any supporting sval.
-  bool extractSupporingSeqVal(std::set<VASTSeqValue*> &SeqVals);
+  bool extractSupportingSeqVal(std::set<VASTSeqValue*> &SeqVals);
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTValue *A) { return true; }

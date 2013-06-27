@@ -281,7 +281,7 @@ SelectorPipelining::buildPipelineFIs(VASTSelector *Sel, MUXPipeliner &Pipeliner)
     // Also do not retime across the SVal without liveness information.
     VASTValPtr FI = DstLatch;
 
-    if (FI->extractSupporingSeqVal(Srcs)) {
+    if (FI->extractSupportingSeqVal(Srcs)) {
       CriticalDelay = std::max(CriticalDelay, getCriticalDelay(Srcs, FI.get()));
       AvailableInterval
         = std::min(AvailableInterval, getAvailableInterval(Srcs, ReadSlot));
@@ -290,7 +290,7 @@ SelectorPipelining::buildPipelineFIs(VASTSelector *Sel, MUXPipeliner &Pipeliner)
 
     VASTValPtr Pred = DstLatch.getGuard();
     // We should also retime the predicate together with the fanin.
-    if (Pred->extractSupporingSeqVal(Srcs)) {
+    if (Pred->extractSupportingSeqVal(Srcs)) {
       CriticalDelay = std::max(CriticalDelay, getCriticalDelay(Srcs, Pred.get()));
       AvailableInterval
         = std::min(AvailableInterval, getAvailableInterval(Srcs, ReadSlot));

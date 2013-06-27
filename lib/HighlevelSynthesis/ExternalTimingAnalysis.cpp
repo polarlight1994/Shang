@@ -403,7 +403,7 @@ ExternalTimingAnalysis::buildPathInfoForCone(raw_ostream &O, VASTValue *Root) {
 #ifdef XDEBUG
       // Verify if we include all registers which are reachable to this node.
       std::set<VASTSeqValue*> SrcRegs;
-      Node->extractSupporingSeqVal(SrcRegs);
+      Node->extractSupportingSeqVal(SrcRegs);
       SrcRegs.erase(0);
 
       SrcInfo &Srcs = DelayMatrix[Node];
