@@ -159,7 +159,7 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
 
 //===----------------------------------------------------------------------===//
 void TimingNetlist::buildTimingPath(VASTValue *Thu, VASTSelector *Dst,
-                                      delay_type MUXDelay) {
+                                    delay_type MUXDelay) {
   if (!isa<VASTExpr>(Thu)) {
     if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(Thu)){
       TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][SV];
@@ -173,7 +173,7 @@ void TimingNetlist::buildTimingPath(VASTValue *Thu, VASTSelector *Dst,
   if (at == PathInfo.end()) return;
 
   TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Thu];
-  OldDelay =std::max(OldDelay, MUXDelay);
+  OldDelay = std::max(OldDelay, MUXDelay);
   
   SrcDelayInfo &Srcs = at->second;
 
