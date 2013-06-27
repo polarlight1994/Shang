@@ -548,8 +548,8 @@ ExternalTimingAnalysis::extractFUOutputDelay(raw_ostream &O, VASTSelector *Sel) 
 
   if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(Sel->getParent())) {
     O << "set dst [get_pins -compatibility_mode "
-      << Bus->getArrayName() << "*port*]\n"
-      << "set dst [get_keepers " << Bus->getArrayName() << "*]\n";
+      << Bus->getArrayName() << "*dataout*]\n"
+      << "set src [get_keepers " << Bus->getArrayName() << "*]\n";
     unsigned Idx = 0;
     BRAMOutputDelay[Bus->getNumber()] = allocateDelayRef(Idx);
     extractTimingForPath(O, Idx);
