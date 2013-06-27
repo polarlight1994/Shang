@@ -318,17 +318,13 @@ struct DelayExtractor : public VASTModulePass,
     delay_type OldDelay = DIS->getPathDelay(DstV, SrcV);
 
     if (Src->isFUOutput() && SrcV != DstV) {
+      delay_type FUDelay = TNL->getFUOutputDelay(Src->getSelector());
+      delay_type OldFUDelay = DIS->getPathDelay(SrcV, SrcV);
+      DIS->annotatePathDelay(SrcV, SrcV, std::max(FUDelay, OldFUDelay));
       // Remove the latency of the single cycle path from the output to the
       // latching register.
-      delay_type NextStageDelay = std::max(0.0f, NewDelay - 1.0f);
-      // Calculate the delay from the FU output to the latch pipeline stage.
-      delay_type CurStageDelay = DIS->getPathDelay(SrcV, SrcV);
-      // Move the removed delay to current stage.
-      DIS->annotatePathDelay(SrcV, SrcV,
-                             std::max(CurStageDelay, NewDelay - NextStageDelay));
-      // Always extract the delay from the latch register instead of the FU
-      // output.
-      NewDelay = NextStageDelay;
+      // FIXME: Use the updated FU delay which considers the previous iteration.
+      NewDelay = std::max(0.0f, NewDelay - FUDelay);
     }
 
     // FIXME: Use better update algorithm, e.g. somekinds of iir filter.
