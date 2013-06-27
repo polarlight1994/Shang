@@ -150,12 +150,8 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
     return delay;
   }
 
-  float getFUOutputDelay(VASTValue *V) const {
-    VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(V);
-    if (!SVal) return 0.0f;
-
-    VASTSelector *Sel = SVal->getSelector();
-    if (Sel->isFUOutput()) return 0.0f;
+  float getFUOutputDelay(VASTSelector *Sel) const {
+    assert(Sel->isFUOutput() && "Bad selector type!");
 
     // We only extract the FU output delay of BRAm for now.
     VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(Sel->getParent());
@@ -264,7 +260,10 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
 
-    if (Sel->isFUOutput()) continue;
+    if (Sel->isFUOutput()) {
+      annotateDelay(Sel, ETA.getFUOutputDelay(Sel));
+      continue;
+    }
 
     float SelDelay = ETA.getSelDelay(Sel);
     typedef VASTSelector::iterator fanin_iterator;

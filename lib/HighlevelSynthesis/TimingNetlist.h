@@ -45,10 +45,13 @@ public:
   typedef FaninDelayInfo::iterator fanin_iterator;
   typedef FaninDelayInfo::const_iterator const_fanin_iterator;
 
+  typedef std::map<VASTSelector*, delay_type> FUOutputDelayInfo;
+  FUOutputDelayInfo FUOutputDelay;
+
   typedef std::map<VASTSeqValue*, delay_type> RegDelaySet;
 
   delay_type accumulateSelDelay(VASTSelector *Sel, VASTSeqValue *Src,
-                                     VASTValue *Thu, delay_type delay);
+                                VASTValue *Thu, delay_type delay);
 
   delay_type getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) const;
 
@@ -73,11 +76,13 @@ public:
   delay_type getDelay(VASTValue *Src, VASTSelector *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Dst) const;
   delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTSelector *Dst) const;
+  delay_type getFUOutputDelay(VASTSelector *Src) const;
 
   /// Back-annotate delay to the timing netlist.
   ///
   void annotateDelay(VASTValue *Src, VASTSelector *Dst, delay_type delay);
   void annotateDelay(VASTValue *Src, VASTValue *Dst, delay_type delay);
+  void annotateDelay(VASTSelector *Src, delay_type delay);
 
   /// getDelaySrcs - Extract the all registers such that there exists a path
   /// from these register, goes though Src, to Sel, and the corresponding

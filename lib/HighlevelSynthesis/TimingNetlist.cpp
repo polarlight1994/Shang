@@ -77,6 +77,13 @@ TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu,
 }
 
 TimingNetlist::delay_type
+TimingNetlist::getFUOutputDelay(VASTSelector *Src) const {
+  assert(Src->isFUOutput() && "Bad selector type!");
+  FUOutputDelayInfo::const_iterator at = FUOutputDelay.find(Src);
+  return at == FUOutputDelay.end() ? 0.0f : at->second;
+}
+
+TimingNetlist::delay_type
 TimingNetlist::accumulateSelDelay(VASTSelector *Sel, VASTSeqValue *V,
                                   VASTValue *Thu, delay_type delay) {
   if (Sel)  delay += getDelay(Thu, Sel);
@@ -122,6 +129,11 @@ TimingNetlist::annotateDelay(VASTValue *Src, VASTSelector *Dst, delay_type delay
   old_delay = std::max(old_delay, delay);
 }
 
+void TimingNetlist::annotateDelay(VASTSelector *Src, delay_type delay) {
+  assert(Src->isFUOutput() && "Bad selector type!");
+  FUOutputDelay[Src] = delay;
+}
+
 TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
   initializeTimingNetlistPass(*PassRegistry::getPassRegistry());
 }
@@ -144,6 +156,7 @@ Pass *llvm::createTimingNetlistPass() {
 void TimingNetlist::releaseMemory() {
   PathInfo.clear();
   FaninInfo.clear();
+  FUOutputDelay.clear();
 }
 
 void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
