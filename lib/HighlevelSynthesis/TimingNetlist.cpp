@@ -174,7 +174,11 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
 void TimingNetlist::buildTimingPath(VASTValue *Thu, VASTSelector *Dst,
                                     delay_type MUXDelay) {
   if (!isa<VASTExpr>(Thu)) {
-    if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(Thu)){
+    if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(Thu)) {
+      // Include the output delay.
+      if (SV->isFUOutput())
+        MUXDelay += getFUOutputDelay(SV->getSelector());
+
       TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][SV];
       OldDelay = std::max(MUXDelay, OldDelay);
     }
@@ -194,6 +198,11 @@ void TimingNetlist::buildTimingPath(VASTValue *Thu, VASTSelector *Dst,
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
     VASTValue *Src = I->first;
     TimingNetlist::delay_type NewDelay = I->second;
+    // Do not miss the output delay.
+    if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(Src))
+      if (SV->isFUOutput())
+        NewDelay = std::max(NewDelay, getFUOutputDelay(SV->getSelector()));
+
     // Accumulate the delay of the fanin MUX.
     NewDelay += MUXDelay;
 
