@@ -1,5 +1,4 @@
 FUs.CommonTemplate =[=[
-
 module shang_addc#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
   input wire[A_WIDTH-1:0] a,
   input wire[B_WIDTH-1:0] b,
@@ -65,13 +64,26 @@ module shang_ugt#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
 	assign c = (a > b)  ? 1'b1 : 1'b0;
 endmodule
 
-
 module shang_uge#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
   input wire[A_WIDTH-1:0] a,
   input wire[B_WIDTH-1:0] b,
   output wire c
 );
 	assign c = (a >= b)  ? 1'b1 : 1'b0;
+endmodule
+
+module shang_rand#(parameter WIDTH = 0) (
+  input wire[WIDTH-1:0] a,
+  output wire b
+);
+	assign b = &a;
+endmodule
+
+module shang_rxor#(parameter WIDTH = 0) (
+  input wire[WIDTH-1:0] a,
+  output wire b
+);
+	assign b = ^a;
 endmodule
 ]=]
 

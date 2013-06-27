@@ -188,9 +188,7 @@ static void printLUT(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *LUT) {
   OS << ')';
 }
 
-static bool printFUAdd(raw_ostream &OS, const VASTExpr *E, const VASTValue *LHS){
-  if (E == 0) return false;
-
+static bool printFUAdd(raw_ostream &OS, const VASTExpr *E) {
   assert(E->size() >= 2 && E->size() <=3 && "bad operand number!");
   if (E->size() > 3) return false;
 
@@ -199,7 +197,7 @@ static bool printFUAdd(raw_ostream &OS, const VASTExpr *E, const VASTValue *LHS)
   OS << E->getFUName() << "#("
      << OpA->getBitWidth() << ", "
      << OpB->getBitWidth() << ", "
-     << LHS->getBitWidth() << ") "
+     << E->getBitWidth() << ") "
      << E->getSubModName() << '(';
 
   OpA.printAsOperand(OS);
@@ -209,29 +207,41 @@ static bool printFUAdd(raw_ostream &OS, const VASTExpr *E, const VASTValue *LHS)
   if (E->size() == 3) E->getOperand(2).printAsOperand(OS);
   else                OS << "1'b0";
   OS << ", ";
-  LHS->printAsOperand(OS, false);
+  E->printAsOperand(OS, false);
   OS << ");\n";
   return true;
 }
 
-static bool printBinFU(raw_ostream &OS, const VASTExpr *E, const VASTValue *LHS){
+static bool printBinaryFU(raw_ostream &OS, const VASTExpr *E) {
   assert(E->size() == 2 && "Not a binary expression!");
-  if (E == 0) return false;
-
   const VASTUse &OpA = E->getOperand(0), &OpB = E->getOperand(1);
 
   OS << E->getFUName() << "#("
      << OpA->getBitWidth() << ", "
      << OpB->getBitWidth() << ", "
-     << LHS->getBitWidth() << ") "
+     << E->getBitWidth() << ") "
      << E->getSubModName() << '(';
 
   OpA.printAsOperand(OS);
   OS << ", ";
   OpB.printAsOperand(OS);
   OS << ", ";
-  LHS->printAsOperand(OS, false);
+  E->printAsOperand(OS, false);
   OS << ");\n";
+  return true;
+}
+
+static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
+  assert(E->size() == 1 && "Not a unary expression!");
+  const VASTUse &Op = E->getOperand(0);
+
+  OS << E->getFUName() << "#(" << Op->getBitWidth() << ") "
+     << E->getSubModName() << '(';
+  Op.printAsOperand(OS);
+  OS << ", ";
+  E->printAsOperand(OS, false);
+  OS << ");\n";
+
   return true;
 }
 //===----------------------------------------------------------------------===//
@@ -328,13 +338,15 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
 
 const char *VASTExpr::getFUName() const {
   switch (getOpcode()) {
-  case dpAdd: return "shang_addc";
-  case dpMul: return "shang_mult";
-  case dpShl: return "shang_shl";
-  case dpSRL: return "shang_srl";
-  case dpSRA: return "shang_sra";
-  case dpSGT: return "shang_sgt";
-  case dpUGT: return "shang_ugt";
+  case dpAdd:   return "shang_addc";
+  case dpMul:   return "shang_mult";
+  case dpShl:   return "shang_shl";
+  case dpSRL:   return "shang_srl";
+  case dpSRA:   return "shang_sra";
+  case dpSGT:   return "shang_sgt";
+  case dpUGT:   return "shang_ugt";
+  case dpRAnd:  return "shang_rand";
+  case dpRXor:  return "shang_rxor";
   default: break;
   }
 
@@ -355,6 +367,8 @@ const std::string VASTExpr::getSubModName() const {
     break;
   case dpSGT:
   case dpUGT:
+  case dpRAnd:
+  case dpRXor:
     SS << getOperand(0)->getBitWidth();
     break;
   }
@@ -369,7 +383,7 @@ bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
   switch (getOpcode()) {
   default: break;
   case VASTExpr::dpAdd:
-    if (InstSubModForFU && hasName() && printFUAdd(OS, this, this))
+    if (InstSubModForFU && hasName() && printFUAdd(OS, this))
       return true;
     break;
   case VASTExpr::dpMul:
@@ -378,7 +392,12 @@ bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
   case VASTExpr::dpSRL:
   case VASTExpr::dpSGT:
   case VASTExpr::dpUGT:
-    if (InstSubModForFU && hasName() && printBinFU(OS, this, this))
+    if (InstSubModForFU && hasName() && printBinaryFU(OS, this))
+      return true;
+    break;
+  case VASTExpr::dpRXor:
+  case VASTExpr::dpRAnd:
+    if (InstSubModForFU && hasName() && printUnaryFU(OS, this))
       return true;
     break;
   }
