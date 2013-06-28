@@ -69,28 +69,25 @@ struct VASTExprOpInfo<VASTExpr::dpAnd> {
 };
 }
 
-static VASTValPtr splitByMask(VASTExprBuilder &Builder, APInt Mask,
-                              ArrayRef<VASTValPtr> NewOps) {
+VASTValPtr
+VASTExprBuilder::splitAndByMask(APInt Mask, ArrayRef<VASTValPtr> NewOps) {
   // Split the word according to known bits.
   unsigned HiPt, LoPt;
   unsigned BitWidth = Mask.getBitWidth();
 
-  if (VASTExprBuilder::GetMaskSplitPoints(Mask, HiPt, LoPt)) {
+  if (GetMaskSplitPoints(Mask, HiPt, LoPt)) {
     assert(BitWidth >= HiPt && HiPt > LoPt && "Bad split point!");
     SmallVector<VASTValPtr, 4> Ops;
 
     if (HiPt != BitWidth)
-      Ops.push_back(Builder.buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps,
-                                                  BitWidth, HiPt));
+      Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, BitWidth, HiPt));
 
-    Ops.push_back(Builder.buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps,
-                                                HiPt, LoPt));
+    Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, HiPt, LoPt));
 
     if (LoPt != 0)
-      Ops.push_back(Builder.buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps,
-                                                  LoPt, 0));
+      Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, LoPt, 0));
 
-    return Builder.buildBitCatExpr(Ops, BitWidth);
+    return buildBitCatExpr(Ops, BitWidth);
   }
 
   return VASTValPtr();
@@ -127,7 +124,7 @@ VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
     NewOps.push_back(getImmediate(OpInfo.getZeros()));
 
   // Split the word according to known zero bits.
-  if (VASTValPtr V = splitByMask(*this, OpInfo.getKnownBits(), NewOps))
+  if (VASTValPtr V = splitAndByMask(OpInfo.getKnownBits(), NewOps))
     return V;
 
   std::sort(NewOps.begin(), NewOps.end(), VASTValPtr::type_less);

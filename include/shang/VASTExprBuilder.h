@@ -137,6 +137,7 @@ class VASTExprBuilder {
   void operator=(const VASTExprBuilder &RHS); // DO NOT IMPLEMENT
   VASTExprBuilder(const VASTExprBuilder &RHS); // DO NOT IMPLEMENT
 
+  VASTValPtr splitAndByMask(APInt Mask, ArrayRef<VASTValPtr> NewOps);
   VASTValPtr foldBitSliceExpr(VASTValPtr U, uint8_t UB, uint8_t LB);
 
   // Inline all operands in the expression whose Opcode is the same as Opc
