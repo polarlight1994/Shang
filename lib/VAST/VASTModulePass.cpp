@@ -769,8 +769,12 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   VASTMemoryBus *Bus = getMemBus(PortNum);
 
   // Build the logic to start the transaction.
-  unsigned NumOperands = Data ? 3 : 2;
-  if (!Bus->requireByteEnable()) NumOperands -= 1;
+  unsigned NumOperands = Data ? 2 : 1;
+  // Double the operand number for default bus, because it requires the enable
+  // (corresponding to the enable of the address) and the the write enable
+  // (corresponding to the enable of the data).
+  if (Bus->isDefault()) NumOperands *= 2;
+  if (Bus->requireByteEnable()) NumOperands += 1;
 
   VASTSeqOp *Op
     = VM->lauchInst(Slot, VASTImmediate::True, NumOperands, &I, false);
@@ -783,6 +787,8 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   AddrVal = Builder.buildBitSliceExpr(AddrVal, Bus->getAddrWidth(), 0);
   // Emit Address, use port 0.
   Op->addSrc(AddrVal, CurSrcIdx++, Bus->getAddr(0));
+  if (Bus->isDefault())
+    Op->addSrc(VASTImmediate::True, CurSrcIdx++, Bus->getEnable());
 
   if (Data) {
     // Assign store data, use port 0..
@@ -791,6 +797,8 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
            && "Storing data that exceed the width of databus!");
     ValToStore = Builder.buildZExtExprOrSelf(ValToStore, Bus->getDataWidth());
     Op->addSrc(ValToStore, CurSrcIdx++, Bus->getWData(0));
+    if (Bus->isDefault())
+      Op->addSrc(VASTImmediate::True, CurSrcIdx++, Bus->getWriteEnable());
   }
 
   // Compute the byte enable, use port 0..

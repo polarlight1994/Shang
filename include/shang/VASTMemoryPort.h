@@ -82,6 +82,8 @@ public:
   VASTSelector *getAddr(unsigned PortNum) const;
   VASTSelector *getRData(unsigned PortNum) const;
   VASTSelector *getWData(unsigned PortNum) const;
+  VASTSelector *getEnable() const;
+  VASTSelector *getWriteEnable() const;
 
   void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
   unsigned getStartOffset(GlobalVariable *GV) const;

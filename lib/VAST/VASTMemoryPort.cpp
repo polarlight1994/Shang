@@ -157,6 +157,18 @@ VASTSelector *VASTMemoryBus::getByteEn(unsigned PortNum) const {
   return getFanin(Offset + PortNum);
 }
 
+VASTSelector *VASTMemoryBus::getEnable() const {
+  assert(isDefault() && "Enable only exists in default memory bus!");
+  unsigned Offset = InputsPerPort + 1;
+  return getFanin(Offset);
+}
+
+VASTSelector *VASTMemoryBus::getWriteEnable() const {
+  assert(isDefault() && "Write enable only exists in default memory bus!");
+  unsigned Offset = InputsPerPort + 2;
+  return getFanin(Offset);
+}
+
 std::string VASTMemoryBus::getAddrName(unsigned PortNum) const {
   if (isDefault()) return "mem" + utostr(Idx) + "addr";
 
