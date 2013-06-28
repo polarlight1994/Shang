@@ -136,7 +136,7 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
           mem0rdata = 0x0123456789abcdef;
         }
 
-        if(mem0en.read()) { // Write memory
+        if(mem0wen.read()) { // Write memory
           switch (mem0be.read()){
           case 1:  *((unsigned char *)(mem0addr.read())) = ((uint8_t) (mem0wdata.read()));   addrmask = 0; break;
           case 3:  *((uint16_t*)(mem0addr.read())) = ((uint16_t) (mem0wdata.read())); addrmask = 1; break;
