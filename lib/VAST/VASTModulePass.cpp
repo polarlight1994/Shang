@@ -787,8 +787,6 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   AddrVal = Builder.buildBitSliceExpr(AddrVal, Bus->getAddrWidth(), 0);
   // Emit Address, use port 0.
   Op->addSrc(AddrVal, CurSrcIdx++, Bus->getAddr(0));
-  if (Bus->isDefault())
-    Op->addSrc(VASTImmediate::True, CurSrcIdx++, Bus->getEnable());
 
   if (Data) {
     // Assign store data, use port 0..
@@ -800,6 +798,10 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     if (Bus->isDefault())
       Op->addSrc(VASTImmediate::True, CurSrcIdx++, Bus->getWriteEnable());
   }
+
+  // Explicitly enable the memory bus is required if the bus is external.
+  if (Bus->isDefault())
+    Op->addSrc(VASTImmediate::True, CurSrcIdx++, Bus->getEnable());
 
   // Compute the byte enable, use port 0..
   if (Bus->requireByteEnable()) {
