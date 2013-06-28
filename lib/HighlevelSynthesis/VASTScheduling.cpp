@@ -366,8 +366,10 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   return 0;
 }
 
-float VASTScheduling::slackFromPrevStage(VASTSeqInst *SrcOp) {
-  if (!SrcOp->isLatch()) return 0.0f;
+float VASTScheduling::slackFromPrevStage(VASTSeqOp *Op) {
+  VASTSeqInst *SrcOp = dyn_cast_or_null<VASTSeqInst>(Op);
+
+  if (SrcOp == 0 || !SrcOp->isLatch()) return 0.0f;
 
   TimingNetlist::RegDelaySet Srcs;
   VASTLatch CurLatch = SrcOp->getSrc(0);
@@ -377,10 +379,12 @@ float VASTScheduling::slackFromPrevStage(VASTSeqInst *SrcOp) {
   // We do not have any delay information from the previous pipeline stage.
   if (Srcs.empty()) return 0.0f;
 
+  // Do not know how to compute the slack ...
+  if (!SrcOp->isLatch() || SrcOp->getCyclesFromLaunch() == 0) return 0.0f;
+
   float MinimalSlack = 1.0f;
   // For a latch from FU, there is at least 1 cycle available.
-  float CycleSlack = (SrcOp->isLatch() && SrcOp->getCyclesFromLaunch()) ?
-                     1.0f : 0.0f;
+  float CycleSlack = 1.0f;
   typedef TimingNetlist::RegDelaySet::iterator src_iterator;
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
     float CurDelay = I->second;
@@ -409,8 +413,8 @@ VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
 
   // Try to fold the delay of current pipeline stage to the previous pipeline
   // stage, if the previous pipeline stage has enough slack.
-  if (VASTSeqInst *SrcOp = dyn_cast_or_null<VASTSeqInst>(SrcSU->getSeqOp()))
-    delay = std::max(0.0f, delay - slackFromPrevStage(SrcOp));
+  if (slackFromPrevStage(SrcSU->getSeqOp()) > delay)
+    delay = 0.0f;
 
   assert(!Src->isFUOutput() && "Unexpected FU output!");
   DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay)));
