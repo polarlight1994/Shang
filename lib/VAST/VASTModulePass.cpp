@@ -23,6 +23,7 @@
 #include "shang/Passes.h"
 
 #include "llvm/IR/DataLayout.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -460,6 +461,14 @@ VASTValPtr VASTModuleBuilder::replaceKnownBits(Value *Val, VASTValPtr V) {
 }
 
 VASTValPtr VASTModuleBuilder::indexVASTExpr(Value *Val, VASTValPtr V) {
+  BitMasks StructuralMask = calculateBitMask(V);
+  BitMasks BehaviorMask(getValueSizeInBits(Val));
+  ComputeMaskedBits(Val, BehaviorMask.KnownZeros, BehaviorMask.KnownOnes, TD);
+
+  assert(!(StructuralMask.KnownOnes & BehaviorMask.KnownZeros)
+         && !(StructuralMask.KnownZeros & BehaviorMask.KnownOnes)
+         && "Bit masks contradict!");
+
   // Replace the known bits before we index the expressions.
   return DatapathBuilderContext::indexVASTExpr(Val, replaceKnownBits(Val, V));
 }
