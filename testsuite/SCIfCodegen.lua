@@ -170,7 +170,6 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
         DUT.rstN(rstN);
         DUT.mem0en(mem0en);
         DUT.mem0be(mem0be);
-		DUT.mem0en(mem0en);
         DUT.mem0rdata(mem0rdata);
         DUT.mem0wdata(mem0wdata);
         DUT.mem0addr(mem0addr);
