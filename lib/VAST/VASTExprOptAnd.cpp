@@ -75,22 +75,20 @@ VASTExprBuilder::splitAndByMask(APInt Mask, ArrayRef<VASTValPtr> NewOps) {
   unsigned HiPt, LoPt;
   unsigned BitWidth = Mask.getBitWidth();
 
-  if (GetMaskSplitPoints(Mask, HiPt, LoPt)) {
-    assert(BitWidth >= HiPt && HiPt > LoPt && "Bad split point!");
-    SmallVector<VASTValPtr, 4> Ops;
+  if (!GetMaskSplitPoints(Mask, HiPt, LoPt)) return VASTValPtr();
 
-    if (HiPt != BitWidth)
-      Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, BitWidth, HiPt));
+  assert(BitWidth >= HiPt && HiPt > LoPt && "Bad split point!");
+  SmallVector<VASTValPtr, 4> Ops;
 
-    Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, HiPt, LoPt));
+  if (HiPt != BitWidth)
+    Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, BitWidth, HiPt));
 
-    if (LoPt != 0)
-      Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, LoPt, 0));
+  Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, HiPt, LoPt));
 
-    return buildBitCatExpr(Ops, BitWidth);
-  }
+  if (LoPt != 0)
+    Ops.push_back(buildExprByOpBitSlice(VASTExpr::dpAnd, NewOps, LoPt, 0));
 
-  return VASTValPtr();
+  return buildBitCatExpr(Ops, BitWidth);
 }
 
 VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
