@@ -22,6 +22,10 @@
 using namespace llvm;
 
 //===--------------------------------------------------------------------===//
+APInt VASTExprBuilderContext::BitMasks::getKnownBits() const {
+  return KnownZeros | KnownOnes;
+}
+
 VASTImmediate *VASTExprBuilderContext::getOrCreateImmediate(const APInt &Value) {
   llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
   return 0;

@@ -32,7 +32,7 @@ public:
              && "Bitwidths are not agreed!");
     }
 
-    APInt getKnownBits() const { return KnownZeros | KnownOnes; }
+    APInt getKnownBits() const;
   };
 private:
   typedef DenseMap<VASTValue*, BitMasks> BitMaskCacheTy;
