@@ -33,6 +33,11 @@ public:
     }
 
     APInt getKnownBits() const;
+    // Return true if the known bits in the current mask is a subset of the known
+    // bits in RHS.
+    bool isSubSetOf(const BitMasks &RHS) const;
+
+    void dump() const;
   };
 private:
   typedef DenseMap<VASTValue*, BitMasks> BitMaskCacheTy;
@@ -251,6 +256,7 @@ public:
   }
 
   static bool GetMaskSplitPoints(APInt Mask, unsigned &HiPt, unsigned &LoPt);
+  VASTValPtr replaceKnownBits(VASTValPtr V, APInt Mask, APInt KnownBits);
 
   VASTValPtr getBoolImmediate(bool Val) {
     return Context.getOrCreateImmediate(Val, 1);

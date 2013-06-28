@@ -15,6 +15,7 @@
 #include "shang/VASTExprBuilder.h"
 #include "shang/Utilities.h"
 
+#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/ErrorHandling.h"
 #define DEBUG_TYPE "vast-expr-builder"
 #include "llvm/Support/Debug.h"
@@ -24,6 +25,29 @@ using namespace llvm;
 //===--------------------------------------------------------------------===//
 APInt VASTExprBuilderContext::BitMasks::getKnownBits() const {
   return KnownZeros | KnownOnes;
+}
+
+bool VASTExprBuilderContext::BitMasks::isSubSetOf(const BitMasks &RHS) const {
+  assert(!(KnownOnes & RHS.KnownZeros)
+        && !(KnownZeros & RHS.KnownOnes)
+        && "Bit masks contradict!");
+
+  APInt KnownBits = getKnownBits(), RHSKnownBits = RHS.getKnownBits();
+  if (KnownBits == RHSKnownBits) return false;
+
+  return (KnownBits | RHSKnownBits) == RHSKnownBits;
+}
+
+void VASTExprBuilderContext::BitMasks::dump() const {
+  SmallString<128> Str;
+  KnownZeros.toString(Str, 2, false, true);
+  dbgs() << "Known Zeros\t" << Str << '\n';
+  Str.clear();
+  KnownOnes.toString(Str, 2, false, true);
+  dbgs() << "Known Ones\t" << Str << '\n';
+  Str.clear();
+  getKnownBits().toString(Str, 2, false, true);
+  dbgs() << "Known Bits\t" << Str << '\n';
 }
 
 VASTImmediate *VASTExprBuilderContext::getOrCreateImmediate(const APInt &Value) {
@@ -432,6 +456,37 @@ VASTExprBuilder::getOrCreateCommutativeExpr(VASTExpr::Opcode Opc,
   return createExpr(Opc, Ops, BitWidth, 0);
 }
 
+VASTValPtr
+VASTExprBuilder::replaceKnownBits(VASTValPtr V, APInt Mask, APInt KnownBits) {
+  // Split the word according to known bits.
+  unsigned HiPt, LoPt;
+  unsigned BitWidth = Mask.getBitWidth();
+
+  if (!GetMaskSplitPoints(Mask, HiPt, LoPt)) return VASTValPtr();
+
+  VASTImmediate *Imm = getImmediate(KnownBits);
+  assert(BitWidth >= HiPt && HiPt > LoPt && "Bad split point!");
+  SmallVector<VASTValPtr, 4> Ops;
+
+  if (HiPt != BitWidth) {
+    bool BitsKnown
+      = VASTImmediate::getBitSlice(Mask, BitWidth, HiPt).getBoolValue();
+    Ops.push_back(buildBitSliceExpr(BitsKnown ? Imm : V, BitWidth, HiPt));
+  }
+
+  {
+    bool BitsKnown = VASTImmediate::getBitSlice(Mask, HiPt, LoPt).getBoolValue();
+    Ops.push_back(buildBitSliceExpr(BitsKnown ? Imm : V, HiPt, LoPt));
+  }
+
+  if (LoPt != 0) {
+    bool BitsKnown = VASTImmediate::getBitSlice(Mask, LoPt, 0).getBoolValue();
+    Ops.push_back(buildBitSliceExpr(BitsKnown ? Imm : V, LoPt, 0));
+  }
+
+  return buildBitCatExpr(Ops, BitWidth);
+}
+
 VASTValPtr VASTExprBuilder::buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes){
   if (RepeatTimes == 1) return Op;
 
@@ -448,10 +503,23 @@ VASTValPtr VASTExprBuilder::buildSelExpr(VASTValPtr Cnd, VASTValPtr TrueV,
   if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(Cnd))
     return Imm.getAPInt().getBoolValue() ? TrueV : FalseV;
 
+
   Cnd = buildBitRepeat(Cnd, BitWidth);
-  return buildOrExpr(buildAndExpr(Cnd, TrueV, BitWidth),
-                     buildAndExpr(buildNotExpr(Cnd), FalseV, BitWidth),
-                     BitWidth);
+  VASTValPtr V = buildOrExpr(buildAndExpr(Cnd, TrueV, BitWidth),
+                             buildAndExpr(buildNotExpr(Cnd), FalseV, BitWidth),
+                             BitWidth);
+
+  // Use the known bits if possible.
+  BitMasks TrueBits = calculateBitMask(TrueV);
+  BitMasks FalseBits = calculateBitMask(FalseV);
+  BitMasks Knowns(TrueBits.KnownZeros & FalseBits.KnownZeros,
+                  TrueBits.KnownOnes & FalseBits.KnownOnes);
+
+  if (VASTValPtr NewV = replaceKnownBits(V, Knowns.getKnownBits(),
+                                         Knowns.KnownOnes))
+    return NewV;
+
+  return V;
 }
 
 VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr LHS,
