@@ -91,6 +91,7 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
     sc_in_clk clk;
     sc_signal<bool> fin;
     sc_signal<bool> mem0en;
+    sc_signal<bool> mem0wen;
     sc_signal<uint32_t> mem0be; 
     $(getRetPort(FuncInfo.ReturnSize));
     sc_signal<uint$(FUs.MemoryBus.AddressWidth)_t> mem0addr;
@@ -169,6 +170,7 @@ SC_MODULE(V$(CurRTLModuleName)_tb){
         DUT.start(start);
         DUT.rstN(rstN);
         DUT.mem0en(mem0en);
+        DUT.mem0wen(mem0wen);
         DUT.mem0be(mem0be);
         DUT.mem0rdata(mem0rdata);
         DUT.mem0wdata(mem0wdata);
