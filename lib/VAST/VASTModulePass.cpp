@@ -202,6 +202,9 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void visitBasicBlock(BasicBlock *BB);
   void visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd, BasicBlock *CurBB);
 
+  VASTValPtr replaceKnownBits(Value *Val, VASTValPtr V);
+  VASTValPtr indexVASTExpr(Value *Val, VASTValPtr V);
+
   // Build the SeqOps from the LLVM Instruction.
   void visitReturnInst(ReturnInst &I);
   void visitBranchInst(BranchInst &I);
@@ -450,6 +453,15 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
     // Otherwise build the SeqOp for this operation.
     visit(I);
   }
+}
+
+VASTValPtr VASTModuleBuilder::replaceKnownBits(Value *Val, VASTValPtr V) {
+  return V;
+}
+
+VASTValPtr VASTModuleBuilder::indexVASTExpr(Value *Val, VASTValPtr V) {
+  // Replace the known bits before we index the expressions.
+  return DatapathBuilderContext::indexVASTExpr(Val, replaceKnownBits(Val, V));
 }
 
 void VASTModuleBuilder::visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd,
