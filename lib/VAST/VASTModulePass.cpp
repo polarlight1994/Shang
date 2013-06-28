@@ -254,7 +254,7 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
   VASTSeqValue *SeqVal = VM->createSeqValue(R->getSelector(), 0, V);
 
   // Index the value.
-  Builder.indexVASTExpr(V, SeqVal);
+  indexVASTExpr(V, SeqVal);
   return SeqVal;
 }
 
@@ -443,7 +443,7 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
 
     // Try to build the datapath expressions.
     if (VASTValPtr V = Builder.visit(I)) {
-      Builder.indexVASTExpr(I, V);
+      indexVASTExpr(I, V);
       continue;
     }
 

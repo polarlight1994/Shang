@@ -129,7 +129,7 @@ VASTValPtr DesignMetricsImpl::getAsOperandImpl(Value *Op) {
 
   // Remember the newly create VASTLLVMValue, so that it will not be created
   // again.
-  Builder.indexVASTExpr(Op, ValueOp);
+  indexVASTExpr(Op, ValueOp);
   return ValueOp;
 }
 
@@ -151,7 +151,7 @@ void DesignMetricsImpl::visitStoreInst(StoreInst &I) {
 
 void DesignMetricsImpl::visit(Instruction &Inst) {
   if (VASTValPtr V = Builder.visit(Inst)) {
-    Builder.indexVASTExpr(&Inst, V);
+    indexVASTExpr(&Inst, V);
     return;
   }
 

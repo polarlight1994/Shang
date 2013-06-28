@@ -84,10 +84,6 @@ public:
     return getContext().lookupExpr(Val);
   }
 
-  VASTValPtr indexVASTExpr(Value *Val, VASTValPtr V) {
-    return getContext().indexVASTExpr(Val, V);
-  }
-
   // Converting CastInst
   VASTValPtr visitTruncInst(TruncInst &I);
   VASTValPtr visitZExtInst(ZExtInst &I);
