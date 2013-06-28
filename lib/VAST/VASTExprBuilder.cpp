@@ -83,6 +83,24 @@ VASTExprBuilderContext::calculateAssignBitMask(VASTExpr *Expr) {
                   VASTImmediate::getBitSlice(CurMask.KnownOnes, UB, LB));
 }
 
+VASTExprBuilderContext::BitMasks
+VASTExprBuilderContext::calculateAndBitMask(VASTExpr *Expr) {
+  unsigned BitWidth = Expr->getBitWidth();
+  // Assume all bits are 1s.
+  BitMasks Mask(APInt::getNullValue(BitWidth),
+                APInt::getAllOnesValue(BitWidth));
+
+  for (unsigned i = 0; i < Expr->size(); ++i) {
+    BitMasks OperandMask = calculateBitMask(Expr->getOperand(i));
+    // The bit become zero if the same bit in any operand is zero.
+    Mask.KnownZeros |= OperandMask.KnownZeros;
+    // The bit is one only if the same bit in all operand are zeros.
+    Mask.KnownOnes &= OperandMask.KnownOnes;
+  }
+
+  return Mask;
+}
+
 // The implementation of basic bit mark calucation.
 VASTExprBuilderContext::BitMasks
 VASTExprBuilderContext::calculateBitMask(VASTValue *V) {
@@ -105,6 +123,8 @@ VASTExprBuilderContext::calculateBitMask(VASTValue *V) {
     return setBitMask(V, calculateBitCatBitMask(Expr));
   case VASTExpr::dpAssign:
     return setBitMask(V, calculateAssignBitMask(Expr));
+  case VASTExpr::dpAnd:
+    return setBitMask(V, calculateAndBitMask(Expr));
   }
 
   return BitMasks(Expr->getBitWidth());

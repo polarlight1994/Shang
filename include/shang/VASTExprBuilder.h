@@ -42,6 +42,7 @@ protected:
   // Simple bit mask calculation functions.
   BitMasks calculateBitCatBitMask(VASTExpr *Expr);
   BitMasks calculateAssignBitMask(VASTExpr *Expr);
+  BitMasks calculateAndBitMask(VASTExpr *Expr);
   BitMasks calculateImmediateBitMask(VASTImmediate *Imm);
 
 public:
