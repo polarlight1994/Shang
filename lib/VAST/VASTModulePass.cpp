@@ -248,7 +248,19 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
   VASTValPtr Val = Builder.lookupExpr(V);
 
   if (Val) {
-    assert(!Val.isInverted() && isa<VASTSeqValue>(Val.get()) && "Bad value type!");
+    assert(!Val.isInverted() && "Bad value type!");
+    if (VASTExpr *Expr = dyn_cast<VASTExpr>(Val)) {
+      // The only case that Val is not a SeqVal is that the SeqVal is replaced
+      // by some known bits.
+      assert(Expr->getOpcode() == VASTExpr::dpBitCat && "Unexpected expr type!");
+      std::set<VASTSeqValue*> SeqVals;
+      Expr->extractSupportingSeqVal(SeqVals);
+      assert(SeqVals.size() == 1 && "Bad supporting seqvalue!");
+      VASTSeqValue *SV = *SeqVals.begin();
+      assert(SV->getLLVMValue() == V && "LLVM Value not match!");
+      return SV;
+    }
+
     return cast<VASTSeqValue>(Val.get());
   }
 
@@ -457,18 +469,23 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
 }
 
 VASTValPtr VASTModuleBuilder::replaceKnownBits(Value *Val, VASTValPtr V) {
-  return V;
-}
+  // Nothing to do with the global address.
+  if (isa<GlobalVariable>(Val)) return V;
 
-VASTValPtr VASTModuleBuilder::indexVASTExpr(Value *Val, VASTValPtr V) {
   BitMasks StructuralMask = calculateBitMask(V);
   BitMasks BehaviorMask(getValueSizeInBits(Val));
   ComputeMaskedBits(Val, BehaviorMask.KnownZeros, BehaviorMask.KnownOnes, TD);
 
-  assert(!(StructuralMask.KnownOnes & BehaviorMask.KnownZeros)
-         && !(StructuralMask.KnownZeros & BehaviorMask.KnownOnes)
-         && "Bit masks contradict!");
+  if (StructuralMask.isSubSetOf(BehaviorMask)) {
+    // Replace the known bits in the Value.
+    if (VASTValPtr NewV = Builder.replaceKnownBits(V, BehaviorMask))
+      return NewV;
+  }
 
+  return V;
+}
+
+VASTValPtr VASTModuleBuilder::indexVASTExpr(Value *Val, VASTValPtr V) {
   // Replace the known bits before we index the expressions.
   return DatapathBuilderContext::indexVASTExpr(Val, replaceKnownBits(Val, V));
 }

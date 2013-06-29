@@ -457,30 +457,33 @@ VASTExprBuilder::getOrCreateCommutativeExpr(VASTExpr::Opcode Opc,
 }
 
 VASTValPtr
-VASTExprBuilder::replaceKnownBits(VASTValPtr V, APInt Mask, APInt KnownBits) {
+VASTExprBuilder::replaceKnownBits(VASTValPtr V, const BitMasks &Mask) {
   // Split the word according to known bits.
   unsigned HiPt, LoPt;
-  unsigned BitWidth = Mask.getBitWidth();
+  unsigned BitWidth = V->getBitWidth();
+  APInt Knowns = Mask.getKnownBits();
 
-  if (!GetMaskSplitPoints(Mask, HiPt, LoPt)) return VASTValPtr();
+  if (!GetMaskSplitPoints(Knowns, HiPt, LoPt)) return VASTValPtr();
 
-  VASTImmediate *Imm = getImmediate(KnownBits);
+  VASTImmediate *Imm = getImmediate(Mask.KnownOnes);
   assert(BitWidth >= HiPt && HiPt > LoPt && "Bad split point!");
   SmallVector<VASTValPtr, 4> Ops;
 
   if (HiPt != BitWidth) {
     bool BitsKnown
-      = VASTImmediate::getBitSlice(Mask, BitWidth, HiPt).getBoolValue();
+      = VASTImmediate::getBitSlice(Knowns, BitWidth, HiPt).isAllOnesValue();
     Ops.push_back(buildBitSliceExpr(BitsKnown ? Imm : V, BitWidth, HiPt));
   }
 
   {
-    bool BitsKnown = VASTImmediate::getBitSlice(Mask, HiPt, LoPt).getBoolValue();
+    bool BitsKnown
+      = VASTImmediate::getBitSlice(Knowns, HiPt, LoPt).isAllOnesValue();
     Ops.push_back(buildBitSliceExpr(BitsKnown ? Imm : V, HiPt, LoPt));
   }
 
   if (LoPt != 0) {
-    bool BitsKnown = VASTImmediate::getBitSlice(Mask, LoPt, 0).getBoolValue();
+    bool BitsKnown
+      = VASTImmediate::getBitSlice(Knowns, LoPt, 0).isAllOnesValue();
     Ops.push_back(buildBitSliceExpr(BitsKnown ? Imm : V, LoPt, 0));
   }
 
@@ -515,8 +518,7 @@ VASTValPtr VASTExprBuilder::buildSelExpr(VASTValPtr Cnd, VASTValPtr TrueV,
   BitMasks Knowns(TrueBits.KnownZeros & FalseBits.KnownZeros,
                   TrueBits.KnownOnes & FalseBits.KnownOnes);
 
-  if (VASTValPtr NewV = replaceKnownBits(V, Knowns.getKnownBits(),
-                                         Knowns.KnownOnes))
+  if (VASTValPtr NewV = replaceKnownBits(V, Knowns))
     return NewV;
 
   return V;

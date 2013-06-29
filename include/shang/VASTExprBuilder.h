@@ -256,7 +256,7 @@ public:
   }
 
   static bool GetMaskSplitPoints(APInt Mask, unsigned &HiPt, unsigned &LoPt);
-  VASTValPtr replaceKnownBits(VASTValPtr V, APInt Mask, APInt KnownBits);
+  VASTValPtr replaceKnownBits(VASTValPtr V, const BitMasks &Mask);
 
   VASTValPtr getBoolImmediate(bool Val) {
     return Context.getOrCreateImmediate(Val, 1);
