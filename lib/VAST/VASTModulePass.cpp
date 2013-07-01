@@ -229,7 +229,8 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   }
   //===--------------------------------------------------------------------===//
   unsigned getByteEnable(Value *Addr) const;
-  VASTValPtr alignLoadResult(VASTSeqValue *Result, VASTMemoryBus *Bus);
+  VASTValPtr alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
+                             VASTMemoryBus *Bus);
   void buildMemoryTransaction(Value *Addr, Value *Data, unsigned PortNum,
                               Instruction &Inst);
 
@@ -802,16 +803,21 @@ unsigned VASTModuleBuilder::getByteEnable(Value *Addr) const {
 }
 
 VASTValPtr
-VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTMemoryBus *Bus) {
+VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
+                                   VASTMemoryBus *Bus) {
   VASTValPtr V = Builder.buildBitSliceExpr(Result, Bus->getDataWidth(), 0);
 
   // Build the shift to shift the bytes to LSB.
   if (Bus->requireByteEnable() && !Bus->isDefault()) {
     unsigned DataWidth = Bus->getDataWidth();
     unsigned ByteAddrWidth = Bus->getByteAddrWidth();
-    // Get the shift amount from the higher part of the bus output.
-    VASTValPtr ShiftAmt
-      = Builder.buildBitSliceExpr(Result, DataWidth + ByteAddrWidth, DataWidth);
+    // Use the known byte offset from address whenever possible.
+    VASTValPtr ShiftAmt = ByteOffset;
+    // If the byte offset is unknown in compile time, get the shift amount from
+    // the higher part of the bus output.
+    if (!isa<VASTImmediate>(ByteOffset.get()))
+      ShiftAmt = Builder.buildBitSliceExpr(Result, DataWidth + ByteAddrWidth,
+                                           DataWidth);
     // Again, convert the shift amount in bytes to shift amount in bits.
     VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getImmediate(0, 3) };
     ShiftAmt = Builder.buildBitCatExpr(ShiftAmtBits, ByteAddrWidth + 3);
@@ -848,6 +854,8 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   // Emit Address, use port 0.
   Op->addSrc(AddrVal, CurSrcIdx++, Bus->getAddr(0));
 
+  VASTValPtr ByteOffset;
+
   if (Data) {
     // Assign store data, use port 0..
     VASTValPtr ValToStore = getAsOperandImpl(Data);
@@ -858,7 +866,8 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
       // We need to align the data based on its byte offset if byteenable
       // presents.
       unsigned ByteAddrWidth = Bus->getByteAddrWidth();
-      VASTValPtr ShiftAmt = Builder.buildBitSliceExpr(AddrVal, ByteAddrWidth, 0);
+      ByteOffset = Builder.buildBitSliceExpr(AddrVal, ByteAddrWidth, 0);
+      VASTValPtr ShiftAmt = ByteOffset;
       // Shift the data by Bytes requires the ShiftAmt multiplied by 8.
       VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getImmediate(0, 3) };
       ShiftAmt = Builder.buildBitCatExpr(ShiftAmtBits, ByteAddrWidth + 3);
@@ -882,8 +891,8 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     if (!Bus->isDefault()) {
       // We also need to align the byte enables.
       unsigned ByteAddrWidth = Bus->getByteAddrWidth();
-      VASTValPtr ShiftAmt = Builder.buildBitSliceExpr(AddrVal, ByteAddrWidth, 0);
-      ByteEn = Builder.buildShiftExpr(VASTExpr::dpShl, ByteEn, ShiftAmt,
+      ByteOffset = Builder.buildBitSliceExpr(AddrVal, ByteAddrWidth, 0);
+      ByteEn = Builder.buildShiftExpr(VASTExpr::dpShl, ByteEn, ByteOffset,
                                       Bus->getByteEnWidth());
     }
 
@@ -911,7 +920,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     VM->latchValue(Result, TimedRData, Slot, VASTImmediate::True, &I, Latency);
 
     // Alignment is required if the Bus has byteenable.
-    VASTValPtr V = alignLoadResult(Result, Bus);
+    VASTValPtr V = alignLoadResult(Result, ByteOffset, Bus);
     // Trim the unused bits.
     V = Builder.buildBitSliceExpr(V, getValueSizeInBits(&I), 0);
     // Index the aligned and trimed result.
