@@ -855,7 +855,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     assert(ValToStore->getBitWidth() <= Bus->getDataWidth()
            && "Storing data that exceed the width of databus!");
     ValToStore = Builder.buildZExtExprOrSelf(ValToStore, Bus->getDataWidth());
-    if (Bus->requireByteEnable()) {
+    if (Bus->requireByteEnable() && !Bus->isDefault()) {
       // We need to align the data based on its byte offset if byteenable
       // presents.
       unsigned ByteAddrWidth = Bus->getByteAddrWidth();
@@ -880,11 +880,14 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   if (Bus->requireByteEnable()) {
     VASTValPtr ByteEn
       = Builder.getImmediate(getByteEnable(Addr), Bus->getByteEnWidth());
-    // We also need to align the byte enables.
-    unsigned ByteAddrWidth = Bus->getByteAddrWidth();
-    VASTValPtr ShiftAmt = Builder.buildBitSliceExpr(AddrVal, ByteAddrWidth, 0);
-    ByteEn = Builder.buildShiftExpr(VASTExpr::dpShl, ByteEn, ShiftAmt,
-                                    Bus->getByteEnWidth());
+    if (!Bus->isDefault()) {
+      // We also need to align the byte enables.
+      unsigned ByteAddrWidth = Bus->getByteAddrWidth();
+      VASTValPtr ShiftAmt = Builder.buildBitSliceExpr(AddrVal, ByteAddrWidth, 0);
+      ByteEn = Builder.buildShiftExpr(VASTExpr::dpShl, ByteEn, ShiftAmt,
+                                      Bus->getByteEnWidth());
+    }
+
     Op->addSrc(ByteEn, CurSrcIdx++, Bus->getByteEn(0));
   }
 
