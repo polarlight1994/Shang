@@ -803,7 +803,7 @@ unsigned VASTModuleBuilder::getByteEnable(Value *Addr) const {
 
 VASTValPtr
 VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTMemoryBus *Bus) {
-  VASTValPtr V = Result;
+  VASTValPtr V = Builder.buildBitSliceExpr(Result, Bus->getDataWidth(), 0);
 
   // Build the shift to shift the bytes to LSB.
   if (Bus->requireByteEnable() && !Bus->isDefault()) {
@@ -816,8 +816,7 @@ VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTMemoryBus *Bus) {
     VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getImmediate(0, 3) };
     ShiftAmt = Builder.buildBitCatExpr(ShiftAmtBits, ByteAddrWidth + 3);
     // Align the result.
-    V = Builder.buildShiftExpr(VASTExpr::dpSRL, Result, ShiftAmt,
-      Bus->getDataWidth());
+    V = Builder.buildShiftExpr(VASTExpr::dpSRL, V, ShiftAmt, Bus->getDataWidth());
   }
 
   return V;
