@@ -228,9 +228,10 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     I.dump();
   }
   //===--------------------------------------------------------------------===//
+  unsigned getByteEnable(Value *Addr) const;
+  VASTValPtr alignLoadResult(VASTSeqValue *Result, VASTMemoryBus *Bus);
   void buildMemoryTransaction(Value *Addr, Value *Data, unsigned PortNum,
                               Instruction &Inst);
-  unsigned getByteEnable(Value *Addr) const;
 
   void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
                                ArrayRef<VASTValPtr> Args);
@@ -800,6 +801,28 @@ unsigned VASTModuleBuilder::getByteEnable(Value *Addr) const {
   return GetByteEnable(TD->getTypeStoreSize(DataTy));
 }
 
+VASTValPtr
+VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTMemoryBus *Bus) {
+  VASTValPtr V = Result;
+
+  // Build the shift to shift the bytes to LSB.
+  if (Bus->requireByteEnable() && !Bus->isDefault()) {
+    unsigned DataWidth = Bus->getDataWidth();
+    unsigned ByteAddrWidth = Bus->getByteAddrWidth();
+    // Get the shift amount from the higher part of the bus output.
+    VASTValPtr ShiftAmt
+      = Builder.buildBitSliceExpr(Result, DataWidth + ByteAddrWidth, DataWidth);
+    // Again, convert the shift amount in bytes to shift amount in bits.
+    VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getImmediate(0, 3) };
+    ShiftAmt = Builder.buildBitCatExpr(ShiftAmtBits, ByteAddrWidth + 3);
+    // Align the result.
+    V = Builder.buildShiftExpr(VASTExpr::dpSRL, Result, ShiftAmt,
+      Bus->getDataWidth());
+  }
+
+  return V;
+}
+
 void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
                                                unsigned PortNum, Instruction &I){
   BasicBlock *ParentBB = I.getParent();
@@ -832,6 +855,18 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     assert(ValToStore->getBitWidth() <= Bus->getDataWidth()
            && "Storing data that exceed the width of databus!");
     ValToStore = Builder.buildZExtExprOrSelf(ValToStore, Bus->getDataWidth());
+    if (Bus->requireByteEnable()) {
+      // We need to align the data based on its byte offset if byteenable
+      // presents.
+      unsigned ByteAddrWidth = Bus->getByteAddrWidth();
+      VASTValPtr ShiftAmt = Builder.buildBitSliceExpr(AddrVal, ByteAddrWidth, 0);
+      // Shift the data by Bytes requires the ShiftAmt multiplied by 8.
+      VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getImmediate(0, 3) };
+      ShiftAmt = Builder.buildBitCatExpr(ShiftAmtBits, ByteAddrWidth + 3);
+      ValToStore = Builder.buildShiftExpr(VASTExpr::dpShl, ValToStore, ShiftAmt,
+                                          Bus->getDataWidth());
+    }
+
     Op->addSrc(ValToStore, CurSrcIdx++, Bus->getWData(0));
     if (Bus->isDefault())
       Op->addSrc(VASTImmediate::True, CurSrcIdx++, Bus->getWriteEnable());
@@ -845,6 +880,11 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   if (Bus->requireByteEnable()) {
     VASTValPtr ByteEn
       = Builder.getImmediate(getByteEnable(Addr), Bus->getByteEnWidth());
+    // We also need to align the byte enables.
+    unsigned ByteAddrWidth = Bus->getByteAddrWidth();
+    VASTValPtr ShiftAmt = Builder.buildBitSliceExpr(AddrVal, ByteAddrWidth, 0);
+    ByteEn = Builder.buildShiftExpr(VASTExpr::dpShl, ByteEn, ShiftAmt,
+                                    Bus->getByteEnWidth());
     Op->addSrc(ByteEn, CurSrcIdx++, Bus->getByteEn(0));
   }
 
@@ -859,23 +899,21 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     // load/store to disable the load/store. Now we need only wait Latency - 1
     // slots to get the result.
     Slot = advanceToNextSlot(Slot, Latency);
-    // Get the input port from the memory bus.
-    VASTSeqValue *Result = getOrCreateSeqVal(&I);
-    assert(Result->getBitWidth() <= Bus->getDataWidth()
-           && "Loading data that exceed the width of databus!");
 
     // Use port 0 of the memory
     VASTValPtr TimedRData = VM->createSeqValue(Bus->getRData(0), 0, &I);
+    SmallString<36> S;
+    VASTRegister *ResultRegister = VM->createRegister(translatePtr2Str(&I, S),
+                                                      TimedRData->getBitWidth());
+    VASTSeqValue *Result = VM->createSeqValue(ResultRegister->getSelector(), 0, &I);
+    VM->latchValue(Result, TimedRData, Slot, VASTImmediate::True, &I, Latency);
 
-    // Build the shift to shift the bytes to LSB.
-    if (Bus->requireByteEnable() && !Bus->isDefault()) {
-      VASTValPtr Amt = Bus->getFinalRDataShiftAmountOperand(VM, 0);
-      TimedRData = Builder.buildShiftExpr(VASTExpr::dpSRL, TimedRData, Amt,
-                                          TimedRData->getBitWidth());
-    }
-
-    VASTValPtr V = Builder.buildBitSliceExpr(TimedRData, Result->getBitWidth(), 0);
-    VM->latchValue(Result, V, Slot, VASTImmediate::True, &I, Latency);
+    // Alignment is required if the Bus has byteenable.
+    VASTValPtr V = alignLoadResult(Result, Bus);
+    // Trim the unused bits.
+    V = Builder.buildBitSliceExpr(V, getValueSizeInBits(&I), 0);
+    // Index the aligned and trimed result.
+    indexVASTExpr(&I, V);
   }
 
   // Move the the next slot so that the other operations are not conflict with

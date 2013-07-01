@@ -44,7 +44,10 @@ void VASTMemoryBus::addBasicPins(VASTModule *VM, unsigned PortNum) {
   addFanin(Address);
 
   // Read (from memory) data pin
-  VASTSelector *RData = VM->createSelector(getRDataName(PortNum), getDataWidth(),
+  unsigned RDataWidth = getDataWidth();
+  // Also register the byte address so that we can align the result.
+  if (requireByteEnable()) RDataWidth += getByteAddrWidth();
+  VASTSelector *RData = VM->createSelector(getRDataName(PortNum), RDataWidth,
                                            this, VASTSelector::FUOutput);
   addFanout(RData);
 
@@ -65,7 +68,7 @@ void VASTMemoryBus::addExternalPins(VASTModule *VM) {
 
     // Read (from memory) data pin
     VASTSelector *RData = VM->createSelector(getRDataName(0), getDataWidth(),
-      0, VASTSelector::FUOutput);
+                                             0, VASTSelector::FUOutput);
     addFanout(RData);
     VM->addPort(RData, true);
 
@@ -291,13 +294,11 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
   // Shift the byte enable according to the byte address in a word.
   OS << "wire " << VASTValue::printBitRange(getByteEnWidth())
      << " mem" << Idx << 'p' << PortNum << "pipe0_be0w = " << ByteEn->getName()
-     << " << " << Addr->getName() << VASTValue::printBitRange(ByteAddrWidth)
      << ";\n"
   // Shift the data according to the byte address also.
      << "wire "<< VASTValue::printBitRange(getDataWidth())
-     << " mem" << Idx << 'p' << PortNum << "pipe0_wdata0w = ("
-     << WData->getName() << " << { " << Addr->getName()
-     << VASTValue::printBitRange(ByteAddrWidth) << ", 3'b0 });\n"
+     << " mem" << Idx << 'p' << PortNum << "pipe0_wdata0w = "
+     << WData->getName() << ";\n"
   // The enables.
      << "reg " << getInternalWEnName(PortNum) << ";\n";
 
@@ -326,31 +327,19 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
     OS.exit_block();
   }
 
-  OS << getRDataName(PortNum) << " <= " << getArrayName() << "[" << Addr->getName()
+  OS << getRDataName(PortNum) << VASTValue::printBitRange(getDataWidth(), 0, true)
+     << " <= " << getArrayName() << "[" << Addr->getName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
-  OS << getLastStageAddrName(PortNum) << " <= " << Addr->getName() << ";\n";
+  OS << getRDataName(PortNum)
+     << VASTValue::printBitRange(getDataWidth() + ByteAddrWidth, getDataWidth(), true)
+     << " <= " << Addr->getName() << VASTValue::printBitRange(ByteAddrWidth, 0)
+     << ";\n";
 
   OS << "if (" << Addr->getName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
      << NumWords << ")  $finish(\"Write access out of bound!\");\n";
 
   OS.always_ff_end(false);
-}
-
-VASTValPtr
-VASTMemoryBus::getFinalRDataShiftAmountOperand(VASTModule *VM,
-                                               unsigned PortNum) const {
-  assert(requireByteEnable() && "Shift is only required for byteenable!");
-  unsigned BytesPerWord = getDataWidth() / 8;
-  unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
-  unsigned BitWidth = ByteAddrWidth + 3;
-
-  std::string Operand;
-  raw_string_ostream OS(Operand);
-  OS << "{ " << getLastStageAddrName(PortNum)
-     << VASTValue::printBitRange(ByteAddrWidth) << ", 3'b0 }";
-
-  return VM->getOrCreateSymbol(OS.str(), BitWidth);
 }
 
 static inline int base_addr_less(const void *P1, const void *P2) {

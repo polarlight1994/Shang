@@ -70,8 +70,6 @@ public:
   unsigned getByteAddrWidth() const;
 
   std::string getArrayName() const;
-  VASTValPtr getFinalRDataShiftAmountOperand(VASTModule *VM,
-                                             unsigned PortNum) const;
 
   bool isDefault() const { return Idx == 0; }
   bool requireByteEnable() const { return RequireByteEnable; }

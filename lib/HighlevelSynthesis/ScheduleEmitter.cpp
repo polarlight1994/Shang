@@ -289,11 +289,6 @@ VASTSeqInst *ScheduleEmitter::remapToPort1(VASTSeqInst *Op, VASTSlot *ToSlot) {
     assert(Bus && "Port reservation table is broken?");
     VASTLatch RData = Op->getSrc(0);
     VASTValPtr TimedRData = VM.createSeqValue(Bus->getRData(1), 0, Inst);
-    if (Bus->requireByteEnable()) {
-      VASTValPtr Amt = Bus->getFinalRDataShiftAmountOperand(&VM, 1);
-      TimedRData = Builder.buildShiftExpr(VASTExpr::dpSRL, TimedRData, Amt,
-                                          TimedRData->getBitWidth());
-    }
 
     VASTSeqValue *Dst = RData.getDst();
     VASTValPtr V = Builder.buildBitSliceExpr(TimedRData, Dst->getBitWidth(), 0);
