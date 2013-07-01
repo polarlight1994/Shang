@@ -895,7 +895,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   if (Data == 0) {
     // The latency of the read operation is fixed to 1 if the byteenable is not
     // required.
-    unsigned Latency = Bus->requireByteEnable() ?
+    unsigned Latency = Bus->isDefault() ?
                        getFUDesc<VFUMemBus>()->getReadLatency() : 1;
     // TODO: Enable each pipeline stage individually.
     // Please note that we had already advance 1 slot after we lauch the

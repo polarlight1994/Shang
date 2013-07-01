@@ -215,14 +215,6 @@ std::string VASTMemoryBus::getWriteEnName(unsigned PortNum) const {
   return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "wen";
 }
 
-std::string VASTMemoryBus::getLastStageAddrName(unsigned PortNum) const {
-  return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "pipe1_addr";
-}
-
-std::string VASTMemoryBus::getInternalWEnName(unsigned PortNum) const {
-  return getWDataName(PortNum) + "_pipe1_enable";
-}
-
 std::string VASTMemoryBus::getArrayName() const {
   return "mem" + utostr(Idx) + "ram";
 }
@@ -234,9 +226,6 @@ void VASTMemoryBus::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
     getAddr(PortNum)->printDecl(OS);
     getByteEn(PortNum)->printDecl(OS);
     getWData(PortNum)->printDecl(OS);
-    // Also need to declare the register at last stage.
-    VASTNamedValue::PrintDecl(OS, getLastStageAddrName(PortNum),
-                              getByteAddrWidth(), true);
   }
 }
 
@@ -286,39 +275,22 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
   VASTSelector *WData = getWData(PortNum);
   VASTSelector *ByteEn = getByteEn(PortNum);
 
-  Addr->printRegisterBlock(OS, Mod, 0);
-  WData->printRegisterBlock(OS, Mod, 0);
-  ByteEn->printRegisterBlock(OS, Mod, 0);
-
-  // Print the pipeline stages of the block RAM.
-  // Shift the byte enable according to the byte address in a word.
-  OS << "wire " << VASTValue::printBitRange(getByteEnWidth())
-     << " mem" << Idx << 'p' << PortNum << "pipe0_be0w = " << ByteEn->getName()
-     << ";\n"
-  // Shift the data according to the byte address also.
-     << "wire "<< VASTValue::printBitRange(getDataWidth())
-     << " mem" << Idx << 'p' << PortNum << "pipe0_wdata0w = "
-     << WData->getName() << ";\n"
-  // The enables.
-     << "reg " << getInternalWEnName(PortNum) << ";\n";
+  Addr->printSelector(OS);
+  WData->printSelector(OS);
+  ByteEn->printSelector(OS);
 
   // Access the block ram.
   OS.always_ff_begin(false);
 
   if (!WData->empty()) {
     // Use the enable of the write data as the write enable.
-    OS << getInternalWEnName(PortNum) << " <= "
-        << WData->getName() << "_selector_enable;\n";
-
-    // TODO: Guard the read pipeline stages by stage enable signal.
-    OS.if_begin(getInternalWEnName(PortNum));
+    OS.if_begin(Twine(WData->getName()) + "_selector_enable");
 
     for (unsigned i = 0; i < BytesPerWord; ++i) {
-      OS.if_() << "mem" << Idx << 'p' << PortNum << "pipe0_be0w[" << i << "]";
-      OS._then() << getArrayName() << "[" << Addr->getName()
+      OS.if_() << ByteEn->getName() << "_selector_wire[" << i << "]";
+      OS._then() << getArrayName() << "[" << Addr->getName() << "_selector_wire"
          << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "]"
-            "[" << i << "]"
-            " <= mem" << Idx << 'p' << PortNum << "pipe0_wdata0w"
+            "[" << i << "] <= " << WData->getName() << "_selector_wire"
          << VASTValue::printBitRange((i + 1) * 8, i * 8) << ";\n";
 
       OS.exit_block();
@@ -328,14 +300,14 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
   }
 
   OS << getRDataName(PortNum) << VASTValue::printBitRange(getDataWidth(), 0, true)
-     << " <= " << getArrayName() << "[" << Addr->getName()
+     << " <= " << getArrayName() << "[" << Addr->getName() << "_selector_wire"
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
   OS << getRDataName(PortNum)
      << VASTValue::printBitRange(getDataWidth() + ByteAddrWidth, getDataWidth(), true)
-     << " <= " << Addr->getName() << VASTValue::printBitRange(ByteAddrWidth, 0)
-     << ";\n";
+     << " <= " << Addr->getName() << "_selector_wire"
+     << VASTValue::printBitRange(ByteAddrWidth, 0) << ";\n";
 
-  OS << "if (" << Addr->getName()
+  OS << "if (" << Addr->getName() << "_selector_wire"
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
      << NumWords << ")  $finish(\"Write access out of bound!\");\n";
 
