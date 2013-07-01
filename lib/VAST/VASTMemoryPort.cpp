@@ -169,6 +169,13 @@ VASTSelector *VASTMemoryBus::getWriteEnable() const {
   return getFanin(Offset);
 }
 
+unsigned VASTMemoryBus::getByteAddrWidth() const {
+  assert(requireByteEnable() && "Called getByteAddrWidth on wrong memory bus!");
+  unsigned ByteAddrWdith = Log2_32_Ceil(getDataWidth() / 8);
+  assert(ByteAddrWdith && "Unexpected zero ByteAddrWdith!");
+  return ByteAddrWdith;
+}
+
 std::string VASTMemoryBus::getAddrName(unsigned PortNum) const {
   if (isDefault()) return "mem" + utostr(Idx) + "addr";
 
@@ -225,10 +232,8 @@ void VASTMemoryBus::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
     getByteEn(PortNum)->printDecl(OS);
     getWData(PortNum)->printDecl(OS);
     // Also need to declare the register at last stage.
-    unsigned BytesPerWord = getDataWidth() / 8;
-    unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
     VASTNamedValue::PrintDecl(OS, getLastStageAddrName(PortNum),
-                              ByteAddrWidth, true);
+                              getByteAddrWidth(), true);
   }
 }
 

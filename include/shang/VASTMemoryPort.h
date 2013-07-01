@@ -67,6 +67,7 @@ public:
   unsigned getDataWidth() const { return DataSize; }
   unsigned getAddrWidth() const { return AddrSize; }
   unsigned getByteEnWidth() const { return getDataWidth() / 8; }
+  unsigned getByteAddrWidth() const;
 
   std::string getArrayName() const;
   VASTValPtr getFinalRDataShiftAmountOperand(VASTModule *VM,
