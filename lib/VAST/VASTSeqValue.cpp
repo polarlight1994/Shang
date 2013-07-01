@@ -223,7 +223,13 @@ void VASTSelector::instantiateSelector(raw_ostream &OS) const {
       continue;
     }
 
-    OS   << VASTValPtr(L) << ", " << VASTValPtr(L.getGuard()) << ",\n";
+    // Print the fanin.
+    OS << VASTValPtr(L);
+    // Print the guarding condition, the combination of SlotActive and the
+    // control-flow guard.
+    OS << ", (" << VASTValPtr(L.getGuard());
+    if (VASTValPtr V = L.getSlotActive()) OS << " & " << V;
+    OS << "),\n";
   }
 
   OS << getName() << "_selector_wire,\n"
