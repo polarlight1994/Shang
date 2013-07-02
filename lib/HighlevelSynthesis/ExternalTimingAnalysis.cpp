@@ -105,20 +105,13 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
 
   // The delay from the selector wire and the selector enable.
   DenseMap<VASTSelector*, float*> SelectorDelay;
-  DenseMap<unsigned, float*> BRAMInputDelay, BRAMOutputDelay;
+  DenseMap<unsigned, float*> BRAMOutputDelay;
 
   float getSelDelay(VASTSelector *S) const {
     float *ptr = SelectorDelay.lookup(S);
 
     assert(ptr && "Selector delay not allocated!");
     float delay = *ptr;
-
-    // Also accumulate the input delay of the BRAM.
-    if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(S->getParent())) {
-      float *ptr = BRAMInputDelay.lookup(Bus->getNumber());
-      assert(ptr && "BRAM input delay not allocated!");
-      delay += *ptr;
-    }
 
     return delay;
   }
@@ -504,18 +497,7 @@ ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O, VASTSelector *Sel) 
   SelectorDelay[Sel] = allocateDelayRef(Idx);
   extractTimingForPath(O, Idx);
   DEBUG(O << "post_message -type info \" selector -> "
-    << Sel->getSTAObjectName() << " delay: $delay\"\n");
-
-  if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(Sel->getParent())) {
-    O << "set dst [get_keepers " << Bus->getArrayName() << "*]\n"
-         "set src [get_pins -compatibility_mode "
-      << Bus->getArrayName() << "*port*]\n";
-    unsigned Idx = 0;
-    BRAMInputDelay[Bus->getNumber()] = allocateDelayRef(Idx);
-    extractTimingForPath(O, Idx);
-    DEBUG(O << "post_message -type info \" mem_fanin -> "
-      << Sel->getSTAObjectName() << " delay: $delay\"\n");
-  }
+          << Sel->getSTAObjectName() << " delay: $delay\"\n");
 }
 
 void
