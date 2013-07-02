@@ -107,13 +107,20 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
   DenseMap<VASTSelector*, float*> SelectorDelay;
   DenseMap<unsigned, float*> BRAMOutputDelay;
 
-  float getSelDelay(VASTSelector *S) const {
+  float getSelDelay(VASTSelector *S, VASTValue *FI) const {
     float *ptr = SelectorDelay.lookup(S);
-
     assert(ptr && "Selector delay not allocated!");
-    float delay = *ptr;
 
-    return delay;
+    // Also accumulate the interconnect delay from fanin.
+    PathInfo::const_iterator I = DelayMatrix.find(S);
+    assert(I != DelayMatrix.end() && "Fanin delay not available!");
+    const SrcInfo &FIDelays = I->second;
+    SrcInfo::const_iterator J = FIDelays.find(FI);
+    // Only return the sel delay if interconnect delay is not available.
+    if (J == FIDelays.end()) return *ptr;
+
+    assert(J->second && "Delay record not allocated?");
+    return *ptr + *J->second;
   }
 
   float getFUOutputDelay(VASTSelector *Sel) const {
@@ -142,6 +149,8 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
   void writeTimingExtractionScript(raw_ostream &O, StringRef ResultPath);
   void extractTimingForSelector(raw_ostream &O, VASTSelector *Sel);
   void extractSelectorDelay(raw_ostream &O, VASTSelector *Sel);
+  void extractInterConnectDelay(raw_ostream &O, VASTSelector *Sel,
+                                VASTValue *From);
   void extractFUOutputDelay(raw_ostream &O, VASTSelector *Sel);
 
   void buildPathInfoForCone(raw_ostream &O, VASTValue *Root);
@@ -231,27 +240,28 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
       continue;
     }
 
-    float SelDelay = ETA.getSelDelay(Sel);
     typedef VASTSelector::iterator fanin_iterator;
     for (fanin_iterator SI = Sel->begin(), SE = Sel->end(); SI != SE; ++SI) {
       VASTLatch U = *SI;
       VASTValue *FI = VASTValPtr(U).get();
+
       // Visit the cone rooted on the fanin.
       if (VASTExpr *Expr = dyn_cast<VASTExpr>(FI))
         Expr->visitConeTopOrder(Visited, ETA);
-      buildTimingPath(FI, Sel, delay_type(SelDelay));
+      buildTimingPath(FI, Sel, delay_type(ETA.getSelDelay(Sel, FI)));
 
       VASTValue *Cnd = VASTValPtr(U.getGuard()).get();
       // Visit the cone rooted on the guarding condition.
       if (VASTExpr *Expr = dyn_cast<VASTExpr>(Cnd))
         Expr->visitConeTopOrder(Visited, ETA);
-      buildTimingPath(Cnd, Sel, delay_type(SelDelay));
+      buildTimingPath(Cnd, Sel, delay_type(ETA.getSelDelay(Sel, Cnd)));
 
       if (VASTValue *SlotActive = U.getSlotActive().get()) {
         // Visit the cone rooted on the ready signal.
         if (VASTExpr *Expr = dyn_cast<VASTExpr>(SlotActive))
           Expr->visitConeTopOrder(Visited, ETA);
-        buildTimingPath(SlotActive, Sel, delay_type(SelDelay));
+        buildTimingPath(SlotActive, Sel,
+                        delay_type(ETA.getSelDelay(Sel, SlotActive)));
       }
     }
 
@@ -487,12 +497,16 @@ void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTExpr *V) {
   }
 }
 
+static std::string GetSelectorCollection(VASTSelector *Sel) {
+  const std::string Name(Sel->getName());
+  return "[get_pins -compatibility_mode -nowarn \"" + Name + "_selector*\"];";
+}
+
 void
 ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O, VASTSelector *Sel) {
   // Get the delay from the selector wire of the selector.
   O << "set dst " << GetSTACollection(Sel) << '\n';
-  O << "set src [get_pins -compatibility_mode -nowarn \"*"
-    << Sel->getName() << "_selector*" << "\"]\n";
+  O << "set src " << GetSelectorCollection(Sel) << '\n';
   unsigned Idx = 0;
   SelectorDelay[Sel] = allocateDelayRef(Idx);
   extractTimingForPath(O, Idx);
@@ -505,15 +519,54 @@ ExternalTimingAnalysis::extractFUOutputDelay(raw_ostream &O, VASTSelector *Sel) 
   assert(Sel->isFUOutput() && "Bad selector type!");
 
   if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(Sel->getParent())) {
-    O << "set dst [get_pins -compatibility_mode "
+    O << "set dst [get_pins -compatibility_mode -nowarn "
       << Bus->getArrayName() << "*dataout*]\n"
-      << "set src [get_keepers " << Bus->getArrayName() << "*]\n";
+      << "set src [get_keepers -nowarn " << Bus->getArrayName() << "*]\n";
     unsigned Idx = 0;
     BRAMOutputDelay[Bus->getNumber()] = allocateDelayRef(Idx);
     extractTimingForPath(O, Idx);
     DEBUG(O << "post_message -type info \" "
-      << Sel->getSTAObjectName() << " ->  mem_fanout delay: $delay\"\n");
+            << Sel->getSTAObjectName() << " ->  mem_fanout delay: $delay\"\n");
   }
+}
+
+void
+ExternalTimingAnalysis::extractInterConnectDelay(raw_ostream &O,
+                                                 VASTSelector *Sel,
+                                                 VASTValue *From) {
+  if (!isa<VASTExpr>(From) && !isa<VASTSeqValue>(From)) return;
+
+  float *&P =DelayMatrix[Sel][From];
+  // No need to calculate the interconnect delay more than once.
+  if (P) return;
+
+  O << "set src " << GetSTACollection(From) << "\n"
+       "set delay 0.0\n"
+       "foreach_in_collection node $src {\n"
+       "  set edges [get_node_info $node -fanout_edges]\n"
+       "  foreach edge $edges {\n"
+       "    set dst_node [get_edge_info -dst $edge]\n"
+       "    set dst_name [get_node_info -name $dst_node]\n"
+       "    if { [string match " << Sel->getName() <<  "_selector* $dst_name] } {\n"
+       "      set rr_delay [get_edge_info $edge -max -delay -rr]\n"
+       "      if { $rr_delay > $delay } { set delay $rr_delay }\n"
+       "      set rf_delay [get_edge_info $edge -max -delay -rf]\n"
+       "      if { $rf_delay > $delay } { set delay $rf_delay }\n"
+       "      set fr_delay [get_edge_info $edge -max -delay -fr]\n"
+       "      if { $fr_delay > $delay } { set delay $fr_delay }\n"
+       "      set ff_delay [get_edge_info $edge -max -delay -ff]\n"
+       "      if { $ff_delay > $delay } { set delay $ff_delay }\n"
+       "    }\n"
+       "  }\n"
+       "}\n";
+  // Allocate the delay record.
+  unsigned RefIdx = 0;
+  P = allocateDelayRef(RefIdx);
+  O << "puts $JSONFile \"" << RefIdx << " $delay\"\n";
+
+  DEBUG(O << "post_message -type info \" "
+          << Sel->getSTAObjectName() << " ->  " << From->getSTAObjectName()
+          << " delay: $delay\"\n");
 }
 
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
@@ -531,13 +584,17 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
     VASTValue *FI = VASTValPtr(U).get();
     // Visit the cone rooted on the fanin.
     buildPathInfoForCone(O, FI);
+    extractInterConnectDelay(O, Sel, FI);
 
     VASTValue *Cnd = VASTValPtr(U.getGuard()).get();
     // Visit the cone rooted on the guarding condition.
     buildPathInfoForCone(O, Cnd);
+    extractInterConnectDelay(O, Sel, Cnd);
 
-    if (VASTValue *SlotActive = U.getSlotActive().get())
+    if (VASTValue *SlotActive = U.getSlotActive().get()) {
       buildPathInfoForCone(O, SlotActive);
+      extractInterConnectDelay(O, Sel, SlotActive);
+    }
   }
 
   // Also extract the arrival time for the synthesized selector.
@@ -548,12 +605,15 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
       const VASTSelector::Fanin *FI = *I;
       VASTValue *FIVal = FI->FI.unwrap().get();
       buildPathInfoForCone(O, FIVal);
+      extractInterConnectDelay(O, Sel, FIVal);
       VASTValue *FICnd = FI->Cnd.unwrap().get();
       buildPathInfoForCone(O, FICnd);
+      extractInterConnectDelay(O, Sel, FICnd);
     }
 
     VASTValue *SelEnable = Sel->getEnable().get();
     buildPathInfoForCone(O, SelEnable);
+    extractInterConnectDelay(O, Sel, SelEnable);
   }
 }
 
