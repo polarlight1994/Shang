@@ -735,7 +735,6 @@ module DUT_TOP(
 );
 
 wire  [31:0]         return_value;
-wire                 start_N =~start;
 
 // The module successfully complete its execution if return_value is 0.
 assign succ = ~(|return_value);
@@ -743,7 +742,7 @@ assign succ = ~(|return_value);
   main main_inst(
   .clk(clk),
   .rstN(rstN),
-  .start(start_N),
+  .start(start),
   .fin(fin),
   .return_value(return_value)
   );
@@ -772,7 +771,7 @@ module DUT_TOP_tb();
   DUT_TOP i1 (
     .clk(clk),
     .rstN(rstN),
-      .start(start),
+    .start(start),
     .LED7(LED7),
     .succ(succ),
     .fin(fin)
@@ -781,7 +780,7 @@ module DUT_TOP_tb();
   // integer wfile,wtmpfile;
   initial begin
     clk = 0;
-    rstN = 1;
+    rstN = 0;
     start = 0;
     startcnt = 0;
     #{{ (1000.0 / fmax) / 2 }}ns;
@@ -805,17 +804,13 @@ module DUT_TOP_tb();
 
   reg [31:0] cnt = 0;
 
-  import "DPI-C" function int raise (int sig);
-
   integer cntfile;
 
   always_comb begin
     if (fin) begin
       if (!succ) begin
         $display ("The result is incorrect!");
-        // Abort.
-        raise(6);
-        $stop;
+        $finish(1);
       end
 
       cntfile = $fopen("cycles.rpt");
