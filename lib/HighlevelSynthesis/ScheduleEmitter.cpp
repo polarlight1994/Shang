@@ -503,7 +503,6 @@ void ScheduleEmitter::emitSchedule() {
 //===----------------------------------------------------------------------===//
 namespace {
 class ImplicitFlowBuilder {
-  DominatorTree *DT;
   VASTModule &VM;
   STGDistanceBase ShortesPaths;
   std::map<VASTSlot*, std::set<VASTSlot*> > ImplicitEdges;
@@ -512,7 +511,7 @@ class ImplicitFlowBuilder {
   void buildImplicitFlow(VASTSlot *S, ArrayRef<VASTSlot*> StraightFlow);
 
 public:
-  ImplicitFlowBuilder(DominatorTree *DT, VASTModule &VM) : DT(DT), VM(VM),
+  ImplicitFlowBuilder(VASTModule &VM) : VM(VM),
     ShortesPaths(STGDistanceBase::CalculateShortestPathDistance(VM)) {}
 
   void run();
@@ -548,8 +547,8 @@ void ImplicitFlowBuilder::buildImplicitFlow(VASTSlot *S,
     assert(SPDistance && "Bad distance to child state!");
     VASTSlot *Src = StraightFlow[SPDistance];
 
-    if (!DT->dominates(Src->getParent(), Child->getParent())) continue;
-
+    // FIXME: Assert that the parent BB of Src can reach the parent BB of Child
+    // in the control flow.
     ImplicitEdges[Src].insert(Child);
 
     DEBUG(dbgs() << "Overlap: #" << Src->SlotNum << " -> #"
@@ -927,6 +926,6 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
 
 void VASTScheduling::emitSchedule() {
   ScheduleEmitter(*VM, *G).emitSchedule();
-  ImplicitFlowBuilder(DT, *VM).run();
+  ImplicitFlowBuilder(*VM).run();
   RegisterFolding(*VM).run();
 }
