@@ -15,7 +15,7 @@
 #include "VASTScheduling.h"
 #include "shang/VASTModule.h"
 #include "llvm/IR/Function.h"
-
+#include "llvm/Analysis/Dominators.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "cross-bb-interval-fixer"
 #include "llvm/Support/Debug.h"
@@ -28,10 +28,12 @@ namespace {
 struct IntervalFixer {
   Function &F;
   VASTSchedGraph &G;
+  DominatorTree *DT;
 
   std::map<BasicBlock*, unsigned> SPDFromEntry;
 
-  IntervalFixer(VASTSchedGraph &G) : F(G.getFunction()), G(G) {}
+  IntervalFixer(VASTSchedGraph &G, DominatorTree *DT)
+    : F(G.getFunction()), G(G), DT(DT) {}
 
   void initialize();
   void fixInterval();
@@ -41,30 +43,6 @@ struct IntervalFixer {
 
   void ensureNoFlowDepFrom(BasicBlock *FromBB, BasicBlock *ToBB);
 };
-}
-
-void IntervalFixer::ensureNoFlowDepFrom(BasicBlock *FromBB, BasicBlock *ToBB) {
-#ifndef NDEBUG
-  ArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(ToBB));
-
-  for (unsigned i = 0, e = SUs.size(); i != e; ++i) {
-    VASTSchedUnit *U = SUs[i];
-
-    typedef VASTSchedUnit::dep_iterator dep_iterator;
-    for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
-      VASTSchedUnit *Src = *I;
-
-      if (Src->isEntry()) continue;
-
-      if (I.getEdgeType() == VASTDep::LinearOrder
-          || I.getEdgeType() == VASTDep::Conditional)
-       continue;
-
-      if (Src->getParent() == FromBB)
-        llvm_unreachable("Source of flow dependencies not dominates all its use!");
-    }
-  }
-#endif
 }
 
 unsigned IntervalFixer::allocateWaitStates(VASTSchedUnit *Entry,
@@ -86,7 +64,8 @@ unsigned IntervalFixer::allocateWaitStates(VASTSchedUnit *Entry,
     // the flow-dependencies from the source BB should be break by a PHI node.
     // And it is ok to ignore such incoming block.
     if (SrcSPDFromEntry == 0) {
-      ensureNoFlowDepFrom(SrcBB, Entry->getParent());
+      assert(!DT->properlyDominates(SrcBB, Entry->getParent())
+             && "Dominator edge not handled correctly!");
       continue;
     }
 
@@ -206,7 +185,7 @@ void IntervalFixer::fixInterval() {
 
 //===----------------------------------------------------------------------===//
 void VASTScheduling::fixIntervalForCrossBBChains() {
-  IntervalFixer Fixer(*G);
+  IntervalFixer Fixer(*G, DT);
 
   Fixer.initialize();
   Fixer.fixInterval();

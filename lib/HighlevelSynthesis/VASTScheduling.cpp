@@ -508,18 +508,6 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 
   VASTSchedUnit *Entry = G->createSUnit(BB, VASTSchedUnit::BlockEntry);
 
-  // Add the conditional dependencies from the branch instructions that
-  // targeting this BB.
-  // Please note that because we are visiting the BBs in topological order,
-  // we are supposed to not introduce backedges here.
-  for (unsigned i = 0; i < SUs.size(); ++i) {
-    assert(!SUs[i]->isBBEntry() && "Unexpected BB entry!");
-    assert(isa<TerminatorInst>(SUs[i]->getInst())
-           && "Unexpected instruction type!");
-    assert(SUs[i]->getTargetBlock() == BB && "Wrong target BB!");
-    Entry->addDep(SUs[i], VASTDep::CreateCndDep());
-  }
-
   // Also constraint the BB entry by the entry of the whole scheduling graph.
   // But this is actually not needed because we will set a lower bound on the
   // scheduling variable in the SDC scheduler.
@@ -544,16 +532,11 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
     // Schedule the PHI to the same slot with the entry if we are not perform
     // Software pipelining.
     U->addDep(Entry, VASTDep::CreateFixTimingConstraint(0));
-
-    // Add the dependencies from the incoming values.
-    SmallVectorImpl<VASTSchedUnit*> &Incomings = IR2SUMap[PN];
-    for (unsigned i = 0; i < Incomings.size(); ++i) {
-      VASTSchedUnit *Incoming = Incomings[i];
-      assert(Incoming->isLatch() && "Bad incoming scheduling unit type!");
-      U->addDep(Incoming, VASTDep::CreateCndDep());
-    }
-
-    Incomings.push_back(U);
+    // No need to add the dependency edges from the incoming values, because
+    // the SU is anyway scheduled to the same slot as the entry of the BB.
+    // And we will build the conditional dependencies for the conditional
+    // CFG edge between BBs.
+    IR2SUMap[PN].push_back(U);
   }
 
   return Entry;
@@ -657,6 +640,28 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 }
 
 //===----------------------------------------------------------------------===//
+void VASTScheduling::buildControlFlowEdges() {
+  Function &F = G->getFunction();
+  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    BasicBlock *BB = I;
+
+    SmallVectorImpl<VASTSchedUnit*> &SUs = IR2SUMap[BB];
+    VASTSchedUnit *Entry = 0;
+    for (unsigned i = 0; i < SUs.size(); ++i)
+      if (SUs[i]->isBBEntry())
+        Entry = SUs[i];
+
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      if (SUs[i]->isBBEntry())
+        continue;
+
+      assert(isa<TerminatorInst>(SUs[i]->getInst())
+             && "Unexpected instruction type!");
+      assert(SUs[i]->getTargetBlock() == BB && "Wrong target BB!");
+      Entry->addDep(SUs[i], VASTDep::CreateCndDep());
+    }
+  }
+}
 void VASTScheduling::preventInfinitUnrolling(Loop *L) {
   // Build the constraints from the entry to the branch of the backedges.
   BasicBlock *HeaderBB = L->getHeader();
@@ -774,7 +779,7 @@ void VASTScheduling::fixSchedulingGraph() {
         if (BBExit == U) continue;
       }
 
-      // The only chance that U's idx bigger than BBExit's idx is when U is
+      // The only chance that U's idx is bigger than BBExit's idx is when U is
       // a PHI node, which is handled above.
       assert(BBExit->getIdx() >= U->getIdx() && "Unexpected index order!");
 
@@ -910,6 +915,8 @@ void VASTScheduling::buildSchedulingGraph() {
 
   for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     buildSchedulingUnits(*I);
+
+  buildControlFlowEdges();
 
   buildMemoryDependencies();
 
