@@ -704,6 +704,9 @@ void VASTScheduling::preventImplicitPipelining(Loop *L) {
     // Ignore the Return and Unreachable, which will wait for the whole function.
     if (!isa<BranchInst>(Inst) && !isa<SwitchInst>(Inst)) continue;
 
+    BackEdges.clear();
+    ExitingEdges.clear();
+
     ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[Inst]);
     for (unsigned i = 0; i < Terminators.size(); ++i) {
       VASTSchedUnit *Terminator = Terminators[i];
@@ -712,21 +715,23 @@ void VASTScheduling::preventImplicitPipelining(Loop *L) {
 
       // Collect the branching operations targetting the header of the loop,
       // the corresponding edges are backedges.
-      if (Dst == Header) BackEdges.push_back(Terminator);
+      if (Dst == Header)
+        BackEdges.push_back(Terminator);
       // Also collect the extining edges.
-      else if (!L->contains(Dst)) ExitingEdges.push_back(Terminator);
+      else
+        ExitingEdges.push_back(Terminator);
     }
-  }
 
-  // Add dependencies to prevent the the backedges being activatived before
-  // we reach the exiting edges.
-  typedef SmallVector<VASTSchedUnit*, 8>::iterator iterator;
-  for (iterator EI = ExitingEdges.begin(), EE = ExitingEdges.end();
-       EI != EE; ++EI) {
-    VASTSchedUnit *Exiting = *EI;
+    // Add dependencies to prevent the the backedges being activatived before
+    // we reach the exiting edges.
+    typedef SmallVector<VASTSchedUnit*, 8>::iterator iterator;
     for (iterator BI = BackEdges.begin(), BE = BackEdges.end(); BI != BE; ++BI) {
       VASTSchedUnit *BackEdge = *BI;
-      BackEdge->addDep(Exiting, VASTDep::CreateCtrlDep(0));
+      for (iterator EI = ExitingEdges.begin(), EE = ExitingEdges.end();
+           EI != EE; ++EI) {
+        VASTSchedUnit *Exiting = *EI;
+        BackEdge->addDep(Exiting, VASTDep::CreateCtrlDep(0));
+      }
     }
   }
 }
