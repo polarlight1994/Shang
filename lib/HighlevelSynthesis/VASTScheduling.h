@@ -409,8 +409,7 @@ public:
     assert(BB && "Expect a parent BB!");
     assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::Virtual)
            && "Unexpected type!");
-    // Ignore the virtual nodes.
-    if (T == VASTSchedUnit::BlockEntry) BBMap[U->getParent()].push_back(U);
+    BBMap[U->getParent()].push_back(U);
 
     return U;
   }

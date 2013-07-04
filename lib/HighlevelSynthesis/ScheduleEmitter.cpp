@@ -399,7 +399,7 @@ bool ScheduleEmitter::emitToFirstSlot(VASTSlot *ToSlot,
     if (SU->getSchedule() != EntrySlot) return true;
 
     // Ignore the pseudo scheduling units.
-    if (SU->isPHI()) continue;
+    if (SU->isPHI() || SU->isVirtual()) continue;
 
     emitToSlot(SU->getSeqOp(), ToSlot);
   }
@@ -423,6 +423,9 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   
   for (unsigned i = 1; i < SUs.size(); ++i) {
     VASTSchedUnit *CurSU = SUs[i];
+
+    if (CurSU->isVirtual()) continue;
+
     unsigned CurSchedSlot = CurSU->getSchedule();
 
     // Do not emit the scheduling units at the first slot of the BB. They had
