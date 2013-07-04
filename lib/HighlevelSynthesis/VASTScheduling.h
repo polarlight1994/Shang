@@ -386,6 +386,9 @@ class VASTSchedGraph {
   typedef iplist<VASTSchedUnit> SUList;
   SUList SUnits;
 
+  void topsortCone(VASTSchedUnit *Root, std::set<VASTSchedUnit*> &Visited,
+                   BasicBlock *BB);
+
   /// Helper class to arrange the scheduling units according to their parent BB,
   /// we will emit the schedule or build the linear order BB by BB.
   std::map<BasicBlock*, std::vector<VASTSchedUnit*> > BBMap;

@@ -168,6 +168,8 @@ void VASTSchedUnit::resetSchedule() {
 }
 
 void VASTSchedUnit::print(raw_ostream &OS) const {
+  OS << '#' << InstIdx << ' ';
+
   if (isEntry()) {
     OS << "Entry Node";
     return;
@@ -178,7 +180,10 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
     return;
   }
 
-  OS << '#' << InstIdx << ' ' << (isLaunch() ? "Launch" : "Latch")
+  if (isBBEntry()) OS << "BB Entry\t";
+  else if (isVirtual()) OS << "Virtual\t";
+
+  OS << (isLaunch() ? "Launch" : "Latch")
      << " Parent: " << getParent()->getName();
 
   if (BB)
@@ -249,13 +254,57 @@ void VASTSchedGraph::prepareForScheduling() {
   getExit()->InstIdx = size();
 }
 
-void VASTSchedGraph::topologicalSortSUs() {
-  VASTSchedUnit *Entry = getEntry();
-  typedef po_iterator<VASTSchedUnit*> top_iterator;
-  for (top_iterator I = po_begin(Entry), E = po_end(Entry); I != E; ++I) {
-    VASTSchedUnit *U = *I;
-    SUnits.splice(SUnits.begin(), SUnits, U);
+void VASTSchedGraph::topsortCone(VASTSchedUnit *Root,
+                                 std::set<VASTSchedUnit*> &Visited,
+                                 BasicBlock *BB) {
+  if (!Visited.insert(Root).second) return;
+
+  typedef VASTSchedUnit::dep_iterator ChildIt;
+  std::vector<std::pair<VASTSchedUnit*, ChildIt> > WorkStack;
+
+  WorkStack.push_back(std::make_pair(Root, Root->dep_begin()));
+
+  while (!WorkStack.empty()) {
+    VASTSchedUnit *U = WorkStack.back().first;
+    ChildIt I = WorkStack.back().second;
+
+    // Visit the current node if all its dependencies are visited.
+    if (U->isBBEntry() || I == U->dep_end()) {
+      WorkStack.pop_back();
+      SUnits.splice(SUnits.end(), SUnits, U);
+      continue;
+    }
+
+    VASTSchedUnit *Child = *I;
+    ++WorkStack.back().second;
+
+    if (Child->isEntry() || Child->getParent() != BB)
+      continue;
+
+    // Do not visit the same node twice!
+    if (!Visited.insert(Child).second) continue;
+
+    WorkStack.push_back(std::make_pair(Child, Child->dep_begin()));
   }
+}
+
+void VASTSchedGraph::topologicalSortSUs() {
+  VASTSchedUnit *Entry = getEntry(), *Exit = getExit();
+  assert(Entry->isEntry() && Exit->isExit() && "Bad order!");
+
+  std::set<VASTSchedUnit*> Visited;
+  SUnits.splice(SUnits.end(), SUnits, Entry);
+
+  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    Visited.clear();
+    BasicBlock *BB = I;
+
+    MutableArrayRef<VASTSchedUnit*> SUs(getSUInBB(BB));
+    for (unsigned i = 0; i < SUs.size(); ++i)
+      topsortCone(SUs[i], Visited, BB);
+  }
+
+  SUnits.splice(SUnits.end(), SUnits, Exit);
 
   unsigned Idx = 0;
   for (iterator I = begin(), E = end(); I != E; ++I)
