@@ -191,6 +191,9 @@ int top_sort_schedule(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) {
   if (LHS->getSchedule() != RHS->getSchedule())
     return LHS->getSchedule() < RHS->getSchedule() ? -1 : 1;
 
+  //if (LHS->isBBEntry()) return -1;
+  //if (RHS->isBBEntry()) return 1;
+
   VASTSeqOp *LHSOp = LHS->getSeqOp(), *RHSOp = RHS->getSeqOp();
 
   /// Put the pseudo Scheduling Unit before the normal Scheduling Unit.
@@ -652,10 +655,11 @@ void ImplicitFlowBuilder::run() {
 namespace {
 struct RegisterFolding : public MinimalExprBuilderContext {
   VASTModule &VM;
+  DominatorTree *DT;
   VASTExprBuilder Builder;
 
-  explicit RegisterFolding(VASTModule &VM)
-    : MinimalExprBuilderContext(VM), VM(VM), Builder(*this) {}
+  RegisterFolding(VASTModule &VM, DominatorTree *DT)
+    : MinimalExprBuilderContext(VM), VM(VM), DT(DT), Builder(*this) {}
   ~RegisterFolding() { VM.gc(); }
 
   void run();
@@ -908,6 +912,9 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
       continue;
     }
 
+    assert(DT->dominates(U.getSlot()->getParent(), S->getParent())
+           && "Reg def does not dominate its use!");
+
     DEBUG(dbgs() << "Goning to forward " /*<< VASTValPtr(U) << ", "*/
                  << *U.Op->getValue());
 
@@ -927,5 +934,5 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
 void VASTScheduling::emitSchedule() {
   ScheduleEmitter(*VM, *G).emitSchedule();
   ImplicitFlowBuilder(*VM).run();
-  RegisterFolding(*VM).run();
+  RegisterFolding(*VM, DT).run();
 }
