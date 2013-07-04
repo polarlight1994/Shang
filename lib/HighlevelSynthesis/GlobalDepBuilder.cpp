@@ -362,7 +362,7 @@ struct SingleFULinearOrder
     // Create the source node if it is not created yet.
     Src = G->createSUnit(BB, VASTSchedUnit::Virtual);
     // Make src depends on something.
-    Src->addDep(G->getEntry(), VASTDep::CreateCtrlDep(0));
+    Src->addDep(G->getEntrySU(BB), VASTDep::CreateCtrlDep(0));
 
     DefMapTy::iterator at = DefMap.find(BB);
     assert(at != DefMap.end() && "Not a define block!");
@@ -596,7 +596,7 @@ struct AliasRegionDepBuilder
     // Create the source node if it is not created yet.
     Src = G.createSUnit(BB, VASTSchedUnit::Virtual);
     // Make src depends on something.
-    Src->addDep(G.getEntry(), VASTDep::CreateCtrlDep(0));
+    Src->addDep(G.getEntrySU(BB), VASTDep::CreateCtrlDep(0));
 
     DefMapTy::iterator at = DefMap.find(BB);
     assert(at != DefMap.end() && "Not a define block!");
