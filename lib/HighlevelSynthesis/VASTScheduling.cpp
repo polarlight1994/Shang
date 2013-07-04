@@ -779,6 +779,16 @@ void VASTScheduling::preventImplicitPipelining(Loop *L) {
       for (iterator EI = ExitingEdges.begin(), EE = ExitingEdges.end();
            EI != EE; ++EI) {
         VASTSchedUnit *Exiting = *EI;
+        if (Exiting->isDependsOn(BackEdge)) {
+          assert(Exiting->getEdgeFrom(BackEdge).getLatency() == 0
+                 && "Not able to handle contradictory constraint!");
+          Exiting->removeDep(BackEdge);
+          // If we require both Exiting >= BackEdge and BackEdge >= Exiting,
+          // then we can simply use Exiting == BackEdge
+          BackEdge->addDep(Exiting, VASTDep::CreateFixTimingConstraint(0));
+          continue;
+        }
+
         BackEdge->addDep(Exiting, VASTDep::CreateCtrlDep(0));
       }
     }

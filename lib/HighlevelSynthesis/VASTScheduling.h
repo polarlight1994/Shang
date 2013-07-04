@@ -306,6 +306,13 @@ public:
     return getDepIt(A).getEdge(II);
   }
 
+  void removeDep(VASTSchedUnit *Src) {
+    bool Erased = Deps.erase(Src);
+    assert(Erased && "Src not a dependency of the current node!");
+    Src->UseList.erase(this);
+    (void) Erased;
+  }
+
   /// Maintaining dependencies.
   void addDep(VASTSchedUnit *Src, VASTDep NewE) {
     assert(Src != this && "Cannot add self-loop!");
