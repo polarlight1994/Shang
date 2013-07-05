@@ -158,6 +158,8 @@ def main(builtinParameters = {}):
         next_active_jobs.append(job)
         continue
 
+      job.submitResults(con, status)
+
       if status == 'passed' :
         # Now the job finished successfully
         print "Test", job.test_name, job.step_name, "passed"
@@ -174,8 +176,6 @@ def main(builtinParameters = {}):
         for k, v in job.option.iteritems() :
           fail_space[k].add(v)
         job.dumplog()
-
-      job.submitResults(con, status)
 
     time.sleep(5)
     active_jobs = next_active_jobs[:]

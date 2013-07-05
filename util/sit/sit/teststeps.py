@@ -1058,3 +1058,170 @@ project_close
           :mult9,
           :mult18)''',
     results)
+
+  def generateSubTests(self) :
+    return [ AlteraNetlistSimStep(self) ]
+
+class AlteraNetlistSimStep(TestStep) :
+  step_name = 'altera netlist simulation'
+
+  def __init__(self, syn_step):
+    TestStep.__init__(self, syn_step.__dict__)
+    self.results.update(syn_step.results)
+
+  def prepareTest(self) :
+    self.netlist_sim_base_dir = os.path.join(self.altera_synthesis_base_dir, 'simulation', 'modelsim')
+    #os.makedirs(self.netlist_sim_base_dir)
+
+    self.reported_period = 1000.0 / self.results['fmax'] + 0.001
+
+    # Generate the testbench
+    self.generateFileFromTemplate('''`timescale 1ns/1ps
+module DUT_TOP(
+  input wire clk,
+  input wire rstN,
+  input wire start,
+  output reg[7:0] LED7,
+  output wire succ,
+  output wire fin
+);
+
+wire  [31:0]         return_value;
+
+// The module successfully complete its execution if return_value is 0.
+assign succ = ~(|return_value);
+
+  main main_inst(
+  .clk(clk),
+  .rstN(rstN),
+  .start(start),
+  .fin(fin),
+  .return_value(return_value)
+  );
+
+  always@(posedge clk, negedge rstN) begin
+    if(!rstN)begin
+      LED7 <= 8'b10101010;
+    end else begin
+      if(fin)begin
+        LED7 <= (|return_value) ? 8'b00000000 : 8'b11111111;
+      end
+    end
+  end
+
+endmodule
+
+module DUT_TOP_tb();
+  reg clk;
+  reg rstN;
+  reg start;
+  wire [7:0] LED7;
+  wire succ;
+  wire fin;
+  reg startcnt;
+
+  DUT_TOP i1 (
+    .clk(clk),
+    .rstN(rstN),
+    .start(start),
+    .LED7(LED7),
+    .succ(succ),
+    .fin(fin)
+  );
+
+  // integer wfile,wtmpfile;
+  initial begin
+    clk = 0;
+    rstN = 0;
+    start = 0;
+    startcnt = 0;
+    #{{ "%.3f" % (reported_period / 2) }}ns;
+    #1ns;
+    rstN = 0;
+    #{{ "%.3f" % (reported_period / 2) }}ns;
+    #{{ "%.3f" % (reported_period / 2) }}ns;
+    rstN = 1;
+    #{{ "%.3f" % (reported_period / 2) }}ns;
+    #{{ "%.3f" % (reported_period / 2) }}ns;
+    start = 1;
+    $display ("Start at %t!", $time());
+    #{{ "%.3f" % (reported_period / 2) }}ns;
+    #{{ "%.3f" % (reported_period / 2) }}ns;
+    start = 0;
+    startcnt = 1;
+  end
+
+  // Generate the 100MHz clock.
+  always #{{ "%.3f" % (reported_period / 2) }}ns clk = ~clk;
+
+  reg [31:0] cnt = 0;
+
+  integer cntfile;
+
+  always_comb begin
+    if (fin) begin
+      if (!succ) begin
+        $display ("The result is incorrect!");
+        $finish(1);
+      end
+
+      cntfile = $fopen("cycles.rpt");
+      $fwrite (cntfile, "%0d\\n",cnt);
+      $fclose(cntfile);
+
+      // cnt
+      $stop;
+    end
+  end
+
+  always@(posedge clk) begin
+    if (startcnt) cnt <= cnt + 1;
+    // Produce the heard beat of the simulation.
+    if (cnt % 80 == 0) $write(".");
+    // Do not exceed 80 columns.
+    if (cnt % 6400 == 0) $write("%t\\n", $time());
+  end
+
+endmodule
+''', os.path.join(self.netlist_sim_base_dir, 'DUT_TOP_tb.sv'))
+
+    #Generate the simulation script.
+    self.netlist_sim_expire = self.results["cycles"] + 100
+    self.netlist_sim_script = os.path.join(self.netlist_sim_base_dir, 'netlist_sim.sge')
+    self.generateFileFromTemplate('''#!/bin/bash
+#$ -S /bin/bash
+
+export PATH=/nfs/app/altera/modelsim_ase_12_x64/modelsim_ase/bin/:$PATH
+
+vlib work || exit 1
+vlog {{ test_name }}.vo || exit 1
+vlog -sv DUT_TOP_tb.sv || exit 1
+vsim -t 1ps -L cycloneii_ver work.DUT_TOP_tb -c -do "do {{ test_name }}_dump_all_vcd_nodes.tcl;run {{ netlist_sim_expire * reported_period }}ns;vcd flush;quit -f"
+
+# cycles.rpt will only generate when the simulation produce a correct result.
+[ -f cycles.rpt ] || exit 1
+''', self.netlist_sim_script)
+
+  def runTest(self) :
+    # Create the simulation job.
+    jt = Session.createJobTemplate()
+
+    jt.jobName = self.getJobName()
+    jt.remoteCommand = 'bash'
+    jt.args = [ self.netlist_sim_script ]
+    #Set up the correct working directory and the output path
+    jt.workingDirectory = self.netlist_sim_base_dir
+    self.stdout = os.path.join(self.netlist_sim_base_dir, 'netlist_sim.output')
+    jt.outputPath = ':' + self.stdout
+    self.stderr = os.path.join(self.netlist_sim_base_dir, 'netlist_sim.stderr')
+    jt.errorPath = ':' + self.stderr
+    jt.joinFiles=True
+
+    jt.nativeSpecification = '-q %s' % self.sge_queue
+
+    print "Submitted", self.getStepDesc()
+    self.jobid = Session.runJob(jt)
+    Session.deleteJobTemplate(jt)
+
+  def submitResults(self, connection, status) :
+    if (not self.submitLogfiles(connection, status)) : return
