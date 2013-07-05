@@ -755,6 +755,9 @@ void VASTScheduling::preventImplicitPipelining(Loop *L) {
 
     BackEdges.clear();
     ExitingEdges.clear();
+    bool IsBackedge = false;
+    for (succ_iterator SI = succ_begin(BB), SE = succ_end(BB); SI != SE; ++SI)
+      IsBackedge |= (*SI == Header);
 
     ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[Inst]);
     for (unsigned i = 0; i < Terminators.size(); ++i) {
@@ -762,11 +765,11 @@ void VASTScheduling::preventImplicitPipelining(Loop *L) {
       assert(Terminator->isTerminator() && "Unexpected scheduling unit type!");
       BasicBlock *Dst = Terminator->getTargetBlock();
 
-      // Collect the branching operations targetting the header of the loop,
+      // Collect the branching operations targeting the header of the loop,
       // the corresponding edges are backedges.
-      if (Dst == Header)
+      if (IsBackedge ? (Dst == Header) : L->contains(Dst))
         BackEdges.push_back(Terminator);
-      // Also collect the extining edges.
+      // Also collect the exiting edges.
       else
         ExitingEdges.push_back(Terminator);
     }
