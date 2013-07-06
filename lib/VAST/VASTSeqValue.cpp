@@ -264,7 +264,7 @@ void VASTSelector::instantiateSelector(raw_ostream &OS) const {
 void VASTSelector::printMUXAsBigOr(raw_ostream &OS) const {
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
     Fanin *FI = *I;
-    OS << "(* keep *) (* dont_retime *) wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
+    OS << "wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
        << ' ' << getName() << "_selector_fi" << FI
        << " = {" << getBitWidth()
        << '{' << getName() << "_selector_guard" << FI << "}} & "
@@ -323,7 +323,7 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
 
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
     Fanin *FI = *I;
-    OS << "(* keep *) (* dont_retime *) wire " << ' ' << getName() << "_selector_guard" << FI
+    OS << "wire " << ' ' << getName() << "_selector_guard" << FI
        << " = " << VASTValPtr(FI->Guard) << ";\n";
   }
 
@@ -406,11 +406,11 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     VASTValPtr FIVal = I->first;
 
+    Fanin *FI = new Fanin(this);
+    FaninGuards.clear();
+
     const OrVec &Ors = I->second;
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
-      Fanin *FI = new Fanin(this);
-      FaninGuards.clear();
-
       SmallVector<VASTValPtr, 2> CurGuards;
       const VASTSeqOp *Op = *OI;
       // Promote the guard to clock enable by default, it will be overwritten if
@@ -432,12 +432,12 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
 
       FaninGuards.insert(CurGuard);
       FI->AddSlot(Op->getSlot());
-
-      SmallVector<VASTValPtr, 4> Guards(FaninGuards.begin(), FaninGuards.end());
-      FI->Guard.set(Builder.buildOrExpr(Guards, 1));
-      FI->FI.set(FIVal);
-      Fanins.push_back(FI);
     }
+
+    SmallVector<VASTValPtr, 4> Guards(FaninGuards.begin(), FaninGuards.end());
+    FI->Guard.set(Builder.buildOrExpr(Guards, 1));
+    FI->FI.set(FIVal);
+    Fanins.push_back(FI);
   }
 }
 
