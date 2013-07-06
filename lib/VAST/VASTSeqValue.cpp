@@ -51,13 +51,37 @@ VASTSelector::~VASTSelector() {
   DeleteContainerPointers(Fanins);
 }
 
+static const char *getValName(VASTValue *V) {
+  if (VASTExpr *E = dyn_cast<VASTExpr>(V))
+    return E->getTempName();
+
+  if (VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V))
+    return NV->getName();
+
+  return 0;
+}
+
+static const VASTSelector *getSelector(VASTValue *V) {
+  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V))
+    return SV->getSelector();
+
+  return 0;
+}
+
 bool
 VASTSelector::StructualLess::operator()(VASTValPtr LHS, VASTValPtr RHS) const {
-  VASTSeqValue *LHSSV = dyn_cast<VASTSeqValue>(LHS.get());
-  VASTSeqValue *RHSSV = dyn_cast<VASTSeqValue>(RHS.get());
+  if (LHS && RHS && LHS.isInverted() == RHS.isInverted()) {
+    const char *LHSName = getValName(LHS.get()),
+               *RHSName = getValName(RHS.get());
+    if (LHSName && RHSName)
+      return LHSName < RHSName;
 
-  if (LHSSV && RHSSV && LHS.isInverted() == RHS.isInverted())
-    return LHSSV->getSelector() < RHSSV->getSelector();
+    const VASTSelector *LHSSel = getSelector(LHS.get()),
+                       *RHSSel = getSelector(RHS.get());
+
+    if (LHSSel && RHSSel)
+      return LHSSel < RHSSel;
+  }
 
   return LHS < RHS;
 }
