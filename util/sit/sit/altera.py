@@ -52,6 +52,7 @@ class ConstraintGenerator:
   # Generate the multi-cycle path constraints.
   def generate_script_for_path(self, **kwargs) :
     kwargs['period'] = self.period
+    kwargs['hold_cycles'] = kwargs['cycles'] - 1;
     if kwargs['thu'] == 'netsNone' :
       kwargs['cnd_string'] = '''[get_collection_size $%(src)s] && [get_collection_size $%(dst)s]''' % kwargs
       kwargs['path_fileter'] = '''-from $%(src)s -to $%(dst)s''' % kwargs
@@ -113,18 +114,20 @@ def generate_scripts(sql_path, sdc_path, report_path, period, factor) :
 create_clock -name "clk" -period %(period)sns [get_ports {clk}]
 derive_pll_clocks -create_base_clocks
 derive_clock_uncertainty
+set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold 0
 set num_not_applied 0
 ''',
     script_on_path = '''
 # %(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s
-if { %(cnd_string)s } { set_multicycle_path %(path_fileter)s -setup -end %(cycles)d
+if { %(cnd_string)s } {
+  set_multicycle_path %(path_fileter)s -setup %(cycles)d
+  set_multicycle_path %(path_fileter)s -hold %(hold_cycles)d
 } else { incr num_not_applied }
 post_message -type info "%(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s"
 
 ''',
     script_epilog = '''
 post_message -type info "$num_not_applied constraints are not applied"
-set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
 ''',
     period = period)
 
