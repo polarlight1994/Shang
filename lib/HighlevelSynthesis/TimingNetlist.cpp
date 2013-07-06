@@ -254,11 +254,13 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
            I != E; ++I){
         const VASTSelector::Fanin *FI = *I;
 
-        buildTimingPath(FI->Cnd.unwrap().get(), Sel, MUXDelay);
+        buildTimingPath(FI->ClkEn.unwrap().get(), Sel, MUXDelay);
+        buildTimingPath(FI->Guard.unwrap().get(), Sel, MUXDelay);
         buildTimingPath(FI->FI.unwrap().get(), Sel, MUXDelay);
       }
 
-      buildTimingPath(Sel->getEnable().get(), Sel, MUXDelay);
+      buildTimingPath(Sel->getClkEn().get(), Sel, MUXDelay);
+      buildTimingPath(Sel->getGuard().get(), Sel, MUXDelay);
 
       // Dirty HACK: Also run on the Latching operation of the registers, so that
       // we can build the timing path for the SlotActive wires.

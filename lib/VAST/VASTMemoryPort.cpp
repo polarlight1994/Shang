@@ -283,7 +283,7 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
 
   if (!WData->empty()) {
     OS << WData->getName() << "en" << " <= "
-       << WData->getName() << "_selector_enable;\n";
+       << WData->getName() << "_selector_guard;\n";
     // Use the enable of the write data as the write enable.
     OS.if_begin(Twine(WData->getName()) + "en");
 
@@ -496,7 +496,7 @@ void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
 
   if (!WData->empty()) {
     OS << WData->getName() << "en" << " <= "
-      << WData->getName() << "_selector_enable;\n";
+      << WData->getName() << "_selector_guard;\n";
 
     OS.if_begin(Twine(WData->getName()) + "en");
     OS << getArrayName() << "[" << Addr->getName()

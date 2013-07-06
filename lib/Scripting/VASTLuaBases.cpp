@@ -521,17 +521,17 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
     for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
       I != E; ++I){
         const VASTSelector::Fanin *FI = *I;
-        VASTValue *FIVal = FI->FI.unwrap().get();
-        if (VASTExpr *Expr = dyn_cast<VASTExpr>(FIVal))
+        if (VASTExpr *Expr = FI->FI.getAsLValue<VASTExpr>())
           Expr->visitConeTopOrder(Visited, Printer);
-
-        VASTValue *FICnd = FI->Cnd.unwrap().get();
-        if (VASTExpr *Expr = dyn_cast<VASTExpr>(FICnd))
+        if (VASTExpr *Expr = FI->Guard.getAsLValue<VASTExpr>())
+          Expr->visitConeTopOrder(Visited, Printer);
+        if (VASTExpr *Expr = FI->ClkEn.getAsLValue<VASTExpr>())
           Expr->visitConeTopOrder(Visited, Printer);
     }
 
-    VASTValue *SelEnable = Sel->getEnable().get();
-    if (VASTExpr *Expr = dyn_cast<VASTExpr>(SelEnable))
+    if (VASTExpr *Expr = Sel->getClkEn().getAsLValue<VASTExpr>())
+      Expr->visitConeTopOrder(Visited, Printer);
+    if (VASTExpr *Expr = Sel->getGuard().getAsLValue<VASTExpr>())
       Expr->visitConeTopOrder(Visited, Printer);
   }
 }

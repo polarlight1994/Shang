@@ -42,7 +42,8 @@ public:
     void operator=(const Fanin&) LLVM_DELETED_FUNCTION;
 
     std::vector<VASTSlot*> Slots;
-    VASTUse Cnd;
+    VASTUse ClkEn;
+    VASTUse Guard;
     VASTUse FI;
 
     Fanin(VASTNode *Node);
@@ -71,7 +72,7 @@ private:
 
   typedef std::vector<Fanin*> FaninVector;
   FaninVector Fanins;
-  VASTUse EnableU;
+  VASTUse ClkEn, Guard;
 
   // The VASTSeqValues from the same VASTSelector are not equal in the data flow,
   // because their are representing the value of the same selector at different
@@ -149,8 +150,9 @@ public:
 
   void synthesizeSelector(VASTExprBuilder &Builder);
 
-  bool isSelectorSynthesized() const { return !EnableU.isInvalid(); }
-  VASTValPtr getEnable() const { return VASTValPtr(EnableU); }
+  bool isSelectorSynthesized() const { return !ClkEn.isInvalid(); }
+  VASTValPtr getClkEn() const { return VASTValPtr(ClkEn); }
+  VASTValPtr getGuard() const { return VASTValPtr(Guard); }
 
   VASTSeqValue *getSSAValue() const;
 

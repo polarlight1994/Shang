@@ -43,7 +43,7 @@ static cl::opt<bool> PrintMUXAsParallelCase("shang-print-selector-as-parallel-ca
 VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
                            VASTNode *Node)
   : VASTNode(vastSelector), Parent(Node), BitWidth(BitWidth), T(T),
-    PrintSelModule(false), EnableU(this) {
+    PrintSelModule(false), ClkEn(this), Guard(this) {
   Contents.Name = Name;
 }
 
@@ -203,22 +203,29 @@ void VASTSelector::printSelectorModule(raw_ostream &O) const {
   for (unsigned i = 0, e = size(); i < e; ++i) {
     OS << "input wire" << VASTValue::printBitRange(getBitWidth())
        << " fi" << i << ",\n";
-    OS << "input wire sel" << i << ",\n";
+    OS << "input wire guard" << i << ",\n";
+    OS << "input wire clken" << i << ",\n";
   }
 
   OS << "output wire" << VASTValue::printBitRange(getBitWidth()) << " fo,\n"
-     << "output wire en);\n\n";
+        "output wire guard,\n"
+        "output wire clken);\n\n";
 
   // Build the enalbe.
-  OS << "assign en = sel0";
+  OS << "assign guard = guard0";
   for (unsigned i = 1, e = size(); i < e; ++i)
-    OS << " | sel" << i;
+    OS << " | guard" << i;
+  OS << ";\n";
+
+  OS << "assign clken = clken0";
+  for (unsigned i = 1, e = size(); i < e; ++i)
+    OS << " | clken" << i;
   OS << ";\n";
 
   // Build the data output.
-  OS << "assign fo = ({" << getBitWidth() << "{sel0}} & fi0)";
+  OS << "assign fo = ({" << getBitWidth() << "{guard0}} & fi0)";
   for (unsigned i = 1, e = size(); i < e; ++i)
-    OS << "| ({" << getBitWidth() << "{sel" << i << "}} & fi" << i << ')';
+    OS << "| ({" << getBitWidth() << "{guard" << i << "}} & fi" << i << ')';
   OS << ";\n";
 
   OS.module_end();
@@ -235,7 +242,8 @@ void VASTSelector::instantiateSelector(raw_ostream &OS) const {
   OS << "wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
      << ' ' << getName() << "_selector_wire;\n";
 
-  OS << "wire " << ' ' << getName() << "_selector_enable;\n\n";
+  OS << "wire " << ' ' << getName() << "_selector_guard;\n\n";
+  OS << "wire " << ' ' << getName() << "_selector_clken;\n\n";
 
   OS << "shang_" << getName() << "_selector " << getName() << "_selector(";
   // Print the inputs of the mux.
@@ -252,12 +260,19 @@ void VASTSelector::instantiateSelector(raw_ostream &OS) const {
     // Print the guarding condition, the combination of SlotActive and the
     // control-flow guard.
     OS << ", (" << VASTValPtr(L.getGuard());
-    if (VASTValPtr V = L.getSlotActive()) OS << " & " << V;
+    if (VASTValPtr V = L.getSlotActive())
+      OS << " & " << V;
     OS << "),\n";
+    if (VASTValPtr V = L.getSlotActive())
+      OS << V;
+    else // Promote the guard to clock enable if clock enable does not present.
+      OS << VASTValPtr(L.getGuard());
+    OS << ",\n";
   }
 
   OS << getName() << "_selector_wire,\n"
-     << getName() << "_selector_enable);\n";
+     << getName() << "_selector_guard,\n"
+     << getName() << "_selector_clken);\n";
 }
 
 void VASTSelector::printMUXAsBigOr(raw_ostream &OS) const {
@@ -268,8 +283,8 @@ void VASTSelector::printMUXAsBigOr(raw_ostream &OS) const {
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
     Fanin *FI = *I;
 
-    OS << "({" << getBitWidth() << '{' << VASTValPtr(FI->Cnd) << "}} & "
-      << VASTValPtr(FI->FI) << ") | ";
+    OS << "({" << getBitWidth() << '{' << VASTValPtr(FI->Guard) << "}} & "
+       << VASTValPtr(FI->FI) << ") | ";
   }
 
   OS << VASTImmediate::buildLiteral(0, getBitWidth(), false) << ";\n";
@@ -286,7 +301,7 @@ void VASTSelector::printMuxAsParallelCase(raw_ostream &OS) const {
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
     Fanin *FI = *I;
 
-    OS.indent(4) << '(' << VASTValPtr(FI->Cnd) << "): begin\n";
+    OS.indent(4) << '(' << VASTValPtr(FI->Guard) << "): begin\n";
     // Print the assignment under the condition.
     OS.indent(6) << getName() << "_selector_wire = "
       << VASTValPtr(FI->FI) << ";\n";
@@ -313,9 +328,12 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
   assert((isEnable() || !Fanins.empty())  && "Bad Fanin numder!");
   OS << "// Synthesized MUX\n";
 
-  if (PrintEnable)
-    OS << "wire " << ' ' << getName() << "_selector_enable = "
-       << VASTValPtr(EnableU) << ";\n\n";
+  if (PrintEnable) {
+    OS << "wire " << ' ' << getName() << "_selector_clken = "
+       << VASTValPtr(ClkEn) << ";\n";
+    OS << "wire " << ' ' << getName() << "_selector_guard = "
+       << VASTValPtr(Guard) << ";\n\n";
+  }
 
   if (isEnable()) return;
 
@@ -349,14 +367,17 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   OS.else_begin();
 
   // Print the assignment.
-  if (isEnable())
-    OS << getName() << " <= " << getName() << "_selector_enable" << ";\n";
-  else {
-    OS.if_begin(Twine(getName()) + Twine("_selector_enable"));
+  OS.if_begin(Twine(getName()) + Twine("_selector_clken"));
+  if (isEnable()) {
+    OS << getName() << " <= " << getName() << "_selector_guard" << ";\n";
+    OS.else_begin() << getName() << " <=  1'b0;\n";
+  } else {
+    OS.if_begin(Twine(getName()) + Twine("_selector_guard"));
     OS << getName() << " <= " << getName() << "_selector_wire"
        << VASTValue::printBitRange(getBitWidth(), 0, false) << ";\n";
     OS.exit_block();
   }
+  OS.exit_block();
 
   OS << "// synthesis translate_off\n";
   verifyAssignCnd(OS, Mod);
@@ -365,7 +386,7 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   OS.always_ff_end();
 }
 
-VASTSelector::Fanin::Fanin(VASTNode *N) : Cnd(N), FI(N) {}
+VASTSelector::Fanin::Fanin(VASTNode *N) : ClkEn(N), Guard(N), FI(N) {}
 
 void VASTSelector::Fanin::AddSlot(VASTSlot *S) {
   Slots.push_back(S);
@@ -380,49 +401,61 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
   if (!buildCSEMap(CSEMap)) return;
 
   // Print the mux logic.
-  SmallVector<VASTValPtr, 2> SeqOpCnds;
-  std::set<VASTValPtr, StructualLess> FaninCnds;
-  std::set<VASTValPtr, StructualLess> EnableCnds;
+  std::set<VASTValPtr, StructualLess> FaninClkens, FaninGuards,
+                                      AllClkEns, AllGuards;
 
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     VASTValPtr FIVal = I->first;
 
     Fanin *FI = 0;
     if (!isEnable()) {
-      FaninCnds.clear();
+      FaninClkens.clear();
+      FaninGuards.clear();
       FI = new Fanin(this);
     }
 
     const OrVec &Ors = I->second;
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
-      SeqOpCnds.clear();
+      SmallVector<VASTValPtr, 2> CurGuards;
       const VASTSeqOp *Op = *OI;
-      if (VASTValPtr SlotActive = Op->getSlotActive())
-        SeqOpCnds.push_back(SlotActive);
+      // Promote the guard to clock enable by default, it will be overwritten if
+      // clock enable presents
+      VASTValPtr CurClkEn = Op->getGuard();
 
-      SeqOpCnds.push_back(Op->getGuard());
-
-      VASTValPtr FICnd = Builder.buildAndExpr(SeqOpCnds, 1);
-      EnableCnds.insert(FICnd);
-      if (FI) {
-        FaninCnds.insert(FICnd);
-        FI->AddSlot(Op->getSlot());
+      if (VASTValPtr SlotActive = Op->getSlotActive()) {
+        CurGuards.push_back(SlotActive);
+        CurClkEn = SlotActive;
       }
+
+      CurGuards.push_back(Op->getGuard());
+      VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
+
+      AllGuards.insert(CurGuard);
+      AllClkEns.insert(CurClkEn);
+
+      if (FI == 0) continue;
+
+      FaninGuards.insert(CurGuard);
+      FaninClkens.insert(CurClkEn);
+      FI->AddSlot(Op->getSlot());
     }
 
     // For enables, there is only 1 fanin, which is the Or of all predicated.
     if (FI == 0) continue;
 
-    SmallVector<VASTValPtr, 4> Array(FaninCnds.begin(), FaninCnds.end());
-    VASTValPtr CurCnd = Builder.buildOrExpr(Array, 1);
-    FI->Cnd.set(CurCnd);
+    SmallVector<VASTValPtr, 4> ClkEns(FaninClkens.begin(), FaninClkens.end());
+    FI->ClkEn.set(Builder.buildOrExpr(ClkEns, 1));
+    SmallVector<VASTValPtr, 4> Guards(FaninGuards.begin(), FaninGuards.end());
+    FI->Guard.set(Builder.buildOrExpr(Guards, 1));
     FI->FI.set(FIVal);
     Fanins.push_back(FI);
   }
 
   assert((!isEnable() || Fanins.empty()) && "Enable should has only 1 fanin!");
-  SmallVector<VASTValPtr, 4> Array(EnableCnds.begin(), EnableCnds.end());
-  EnableU.set(Builder.buildOrExpr(Array, 1));
+  SmallVector<VASTValPtr, 4> ClkEnArray(AllClkEns.begin(), AllClkEns.end());
+  ClkEn.set(Builder.buildOrExpr(ClkEnArray, 1));
+  SmallVector<VASTValPtr, 4> GuardArray(AllGuards.begin(), AllGuards.end());
+  Guard.set(Builder.buildOrExpr(GuardArray, 1));
 }
 
 void VASTSelector::setParent(VASTNode *N) {

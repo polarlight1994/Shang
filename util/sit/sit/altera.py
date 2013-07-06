@@ -113,7 +113,6 @@ def generate_scripts(sql_path, sdc_path, report_path, period, factor) :
 create_clock -name "clk" -period %(period)sns [get_ports {clk}]
 derive_pll_clocks -create_base_clocks
 derive_clock_uncertainty
-set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
 set num_not_applied 0
 ''',
     script_on_path = '''
@@ -125,6 +124,7 @@ post_message -type info "%(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s"
 ''',
     script_epilog = '''
 post_message -type info "$num_not_applied constraints are not applied"
+set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
 ''',
     period = period)
 
