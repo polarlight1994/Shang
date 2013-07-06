@@ -274,12 +274,7 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
         buildTimingPath(FIVal, Sel, delay_type(0.0f));
         VASTValue *FIGuard = FI->Guard.unwrap().get();
         buildTimingPath(FIGuard, Sel, delay_type(0.0f));
-        VASTValue *FIClken = FI->ClkEn.unwrap().get();
-        buildTimingPath(FIClken, Sel, delay_type(0.0f));
       }
-
-      buildTimingPath(Sel->getClkEn().get(), Sel, delay_type(0.0f));
-      buildTimingPath(Sel->getGuard().get(), Sel, delay_type(0.0f));
     }
   }
 
@@ -611,17 +606,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
       VASTValue *FIGuard = FI->Guard.unwrap().get();
       buildPathInfoForCone(O, FIGuard);
       extractInterConnectDelay(O, Sel, FIGuard);
-      VASTValue *FIClken = FI->ClkEn.unwrap().get();
-      buildPathInfoForCone(O, FIClken);
-      extractInterConnectDelay(O, Sel, FIClken);
     }
-
-    VASTValue *SelClkEn = Sel->getClkEn().get();
-    buildPathInfoForCone(O, SelClkEn);
-    extractInterConnectDelay(O, Sel, SelClkEn);
-    VASTValue *SelGuard = Sel->getClkEn().get();
-    buildPathInfoForCone(O, SelGuard);
-    extractInterConnectDelay(O, Sel, SelGuard);
   }
 }
 

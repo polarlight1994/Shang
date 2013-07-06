@@ -525,14 +525,7 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
           Expr->visitConeTopOrder(Visited, Printer);
         if (VASTExpr *Expr = FI->Guard.getAsLValue<VASTExpr>())
           Expr->visitConeTopOrder(Visited, Printer);
-        if (VASTExpr *Expr = FI->ClkEn.getAsLValue<VASTExpr>())
-          Expr->visitConeTopOrder(Visited, Printer);
     }
-
-    if (VASTExpr *Expr = Sel->getClkEn().getAsLValue<VASTExpr>())
-      Expr->visitConeTopOrder(Visited, Printer);
-    if (VASTExpr *Expr = Sel->getGuard().getAsLValue<VASTExpr>())
-      Expr->visitConeTopOrder(Visited, Printer);
   }
 }
 
