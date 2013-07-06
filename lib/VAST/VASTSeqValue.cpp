@@ -262,22 +262,14 @@ void VASTSelector::instantiateSelector(raw_ostream &OS) const {
 }
 
 void VASTSelector::printMUXAsBigOr(raw_ostream &OS) const {
-  for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
-    Fanin *FI = *I;
-    OS << "wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
-       << ' ' << getName() << "_selector_fi" << FI
-       << " = {" << getBitWidth()
-       << '{' << getName() << "_selector_guard" << FI << "}} & "
-       << VASTValPtr(FI->FI) << ";\n";
-  }
-
   OS << "wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
      << ' ' << getName() << "_selector_wire = ";
 
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
     Fanin *FI = *I;
 
-    OS << getName() << "_selector_fi" << FI << " | ";
+    OS << "({" << getBitWidth() << '{' <<  VASTValPtr(FI->Guard) << "}} & "
+       << VASTValPtr(FI->FI) << ") | ";
   }
 
   OS << VASTImmediate::buildLiteral(0, getBitWidth(), false) << ";\n";
@@ -294,7 +286,7 @@ void VASTSelector::printMuxAsParallelCase(raw_ostream &OS) const {
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
     Fanin *FI = *I;
 
-    OS.indent(4) << '(' << getName() << "_selector_guard" << FI << "): begin\n";
+    OS.indent(4) << '(' << VASTValPtr(FI->Guard) << "): begin\n";
     // Print the assignment under the condition.
     OS.indent(6) << getName() << "_selector_wire = " << VASTValPtr(FI->FI)
                  << ";\n";
@@ -318,23 +310,15 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
     return;
   }
 
-  assert((isEnable() || !Fanins.empty())  && "Bad Fanin numder!");
+  assert(!Fanins.empty()  && "Bad Fanin numder!");
   OS << "// Synthesized MUX\n";
 
-  for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
-    Fanin *FI = *I;
-    OS << "wire " << ' ' << getName() << "_selector_guard" << FI
-       << " = " << VASTValPtr(FI->Guard) << ";\n";
-  }
-
   if (PrintEnable) {
-    OS << "wire "
-       << ' ' << getName() << "_selector_guard = 1'b0";
+    OS << "wire " << getName() << "_selector_guard = 1'b0";
     for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
       Fanin *FI = *I;
-      OS << " | " << getName() << "_selector_guard" << FI;
+      OS << " | " << VASTValPtr(FI->Guard);
     }
-
     OS  << ";\n\n";
   }
 
