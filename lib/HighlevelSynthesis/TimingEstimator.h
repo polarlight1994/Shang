@@ -243,6 +243,10 @@ public:
         accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
                            SubClass::AccumulateBitRepeatDelay);
         break;
+      case VASTExpr::dpKeep:
+        accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                           AccumulateZeroDelay);
+        break;
       default: llvm_unreachable("Unknown datapath opcode!"); break;
       }
     }

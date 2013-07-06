@@ -447,6 +447,10 @@ struct DatapathPrinter {
         // expressions and one of them been printed before.
         if (!PrintedNames.insert(Name).second) return;
 
+        // FIXME: Remove dont_retime?
+        if (E->getOpcode() == VASTExpr::dpKeep)
+          OS << "(* keep *) (* dont_retime *) ";
+
         OS << "wire ";
 
         if (E->getBitWidth() > 1)
