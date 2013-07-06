@@ -1073,7 +1073,7 @@ class AlteraNetlistSimStep(TestStep) :
     self.netlist_sim_base_dir = os.path.join(self.altera_synthesis_base_dir, 'simulation', 'modelsim')
     #os.makedirs(self.netlist_sim_base_dir)
 
-    self.reported_period = 1000.0 / self.results['fmax'] + 0.001
+    self.reported_period = 1000.0 / self.results['fmax'] + 0.01
 
     # Generate the testbench
     self.generateFileFromTemplate('''`timescale 1ns/1ps
@@ -1112,13 +1112,13 @@ assign succ = ~(|return_value);
 endmodule
 
 module DUT_TOP_tb();
-  reg clk;
-  reg rstN;
-  reg start;
+  reg clk = 1'b0;
+  reg rstN = 1'b0;
+  reg start = 1'b0;
   wire [7:0] LED7;
   wire succ;
   wire fin;
-  reg startcnt;
+  reg startcnt = 1'b0;
 
   DUT_TOP i1 (
     .clk(clk),
@@ -1131,28 +1131,18 @@ module DUT_TOP_tb();
 
   // integer wfile,wtmpfile;
   initial begin
-    clk = 0;
-    rstN = 0;
-    start = 0;
-    startcnt = 0;
-    #{{ "%.3f" % (reported_period / 2) }}ns;
-    #1ns;
-    rstN = 0;
-    #{{ "%.3f" % (reported_period / 2) }}ns;
-    #{{ "%.3f" % (reported_period / 2) }}ns;
-    rstN = 1;
-    #{{ "%.3f" % (reported_period / 2) }}ns;
-    #{{ "%.3f" % (reported_period / 2) }}ns;
-    start = 1;
+    @(posedge clk);
+    rstN <= 1;
+    @(posedge clk);
+    start <= 1;
     $display ("Start at %t!", $time());
-    #{{ "%.3f" % (reported_period / 2) }}ns;
-    #{{ "%.3f" % (reported_period / 2) }}ns;
-    start = 0;
-    startcnt = 1;
+    @(posedge clk);
+    start <= 0;
+    startcnt <= 1;
   end
 
   // Generate the 100MHz clock.
-  always #{{ "%.3f" % (reported_period / 2) }}ns clk = ~clk;
+  always #{{ "%.2f" % (reported_period / 2) }}ns clk = ~clk;
 
   reg [31:0] cnt = 0;
 
@@ -1196,7 +1186,7 @@ export PATH=/nfs/app/altera/modelsim_ase_12_x64/modelsim_ase/bin/:$PATH
 vlib work || exit 1
 vlog {{ test_name }}.vo || exit 1
 vlog -sv DUT_TOP_tb.sv || exit 1
-vsim -t 1ps -L cycloneii_ver work.DUT_TOP_tb -c -do "do {{ test_name }}_dump_all_vcd_nodes.tcl;run {{ netlist_sim_expire * reported_period }}ns;vcd flush;quit -f"
+vsim -t 1ps -L cycloneii_ver work.DUT_TOP_tb -c -do "do {{ test_name }}_dump_all_vcd_nodes.tcl;run {{ "%.2f" % (netlist_sim_expire * reported_period) }}ns;vcd flush;quit -f"
 
 # cycles.rpt will only generate when the simulation produce a correct result.
 [ -f cycles.rpt ] || exit 1
