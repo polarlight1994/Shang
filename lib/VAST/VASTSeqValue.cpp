@@ -409,8 +409,8 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
       CurGuards.push_back(Op->getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
 
-      // Do not allow quartus change the guarding condition if it is a complex
-      // expression!
+      // Do not allow quartus to modify the guarding condition if it is a
+      // complex expression!
       if (isa<VASTExpr>(CurGuard.get()))
         CurGuard = Builder.buildExpr(VASTExpr::dpKeep, CurGuard, 1);
 
