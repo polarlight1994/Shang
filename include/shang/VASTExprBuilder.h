@@ -421,6 +421,8 @@ public:
 
     return V;
   }
+
+  VASTValPtr buildKeep(VASTValPtr V);
 };
 }
 

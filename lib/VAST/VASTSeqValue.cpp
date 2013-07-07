@@ -376,7 +376,7 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
       // Do not allow quartus to modify the guarding condition if it is a
       // complex expression!
       if (isa<VASTExpr>(CurGuard.get()))
-        CurGuard = Builder.buildExpr(VASTExpr::dpKeep, CurGuard, 1);
+        CurGuard = Builder.buildKeep(CurGuard);
 
       FaninGuards.insert(CurGuard);
       FI->AddSlot(Op->getSlot());
@@ -386,7 +386,7 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
     FI->Guard.set(Builder.buildOrExpr(Guards, 1));
     VASTValPtr FIMask = Builder.buildBitRepeat(FI->Guard, getBitWidth());
     FIVal = Builder.buildAndExpr(FIVal, FIMask, getBitWidth());
-    FIVal = Builder.buildExpr(VASTExpr::dpKeep, FIVal, getBitWidth());
+    FIVal = Builder.buildKeep(FIVal);
     FI->FI.set(FIVal);
     Fanins.push_back(FI);
   }

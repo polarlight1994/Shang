@@ -561,6 +561,10 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
     assert(Ops.size() == 1 && "Unexpected more than 1 operands for reduction!");
     assert(BitWidth == 1 && "Bitwidth of reduction should be 1!");
     return buildReduction(Opc, Ops[0]);
+  case VASTExpr::dpKeep:
+    assert(Ops.size() == 1 && "Unexpected more than 1 operands for reduction!");
+    assert(BitWidth == Ops[0]->getBitWidth() && "Bad bitwidth!");
+    return buildKeep(Ops[0]);
   }
 
   return createExpr(Opc, Ops, BitWidth, 0);
@@ -574,10 +578,21 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op,
   case VASTExpr::dpRXor:
     assert(BitWidth == 1 && "Bitwidth of reduction should be 1!");
     return buildReduction(Opc, Op);
+  case VASTExpr::dpKeep:
+    assert(BitWidth == Op->getBitWidth() && "Bad bitwidth!");
+    return buildKeep(Op);
   }
 
   VASTValPtr Ops[] = { Op };
   return createExpr(Opc, Ops, BitWidth, 0);
+}
+
+VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
+  // No need to keep the immediate.
+  if (isa<VASTImmediate>(V.get())) return V;
+
+  VASTValPtr Ops[] = { V };
+  return createExpr(VASTExpr::dpKeep, Ops, V->getBitWidth(), 0);
 }
 
 VASTValPtr VASTExprBuilder::padHeadOrTail(VASTValPtr V, unsigned BitWidth,
