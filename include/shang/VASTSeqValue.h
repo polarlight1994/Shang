@@ -89,12 +89,6 @@ private:
   bool buildCSEMap(CSEMapTy &CSEMap) const;
 
   void instantiateSelector(raw_ostream &OS) const;
-
-  void printMuxAsParallelCase(raw_ostream &OS) const;
-
-  // Print (or implement) the MUX by:
-  // output = (Sel0 & FANNIN0) | (Sel1 & FANNIN1) ...
-  void printMUXAsBigOr(raw_ostream &OS) const;
 public:
   VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
                Type T = Temp, VASTNode *Node = 0);

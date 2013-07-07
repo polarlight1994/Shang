@@ -35,10 +35,6 @@ static cl::opt<bool> IgnoreXFanins("shang-selector-ignore-x-fanins",
   cl::desc("Ignore the undefined fanins (x) in the selector"),
   cl::init(true));
 
-static cl::opt<bool> PrintMUXAsParallelCase("shang-print-selector-as-parallel-case",
-  cl::desc("Print the selector as parallel case"),
-  cl::init(false));
-
 //----------------------------------------------------------------------------//
 VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
                            VASTNode *Node)
@@ -261,47 +257,6 @@ void VASTSelector::instantiateSelector(raw_ostream &OS) const {
      << getName() << "_selector_guard);\n";
 }
 
-void VASTSelector::printMUXAsBigOr(raw_ostream &OS) const {
-  OS << "wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
-     << ' ' << getName() << "_selector_wire = ";
-
-  for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
-    Fanin *FI = *I;
-
-    OS << "({" << getBitWidth() << '{' <<  VASTValPtr(FI->Guard) << "}} & "
-       << VASTValPtr(FI->FI) << ") | ";
-  }
-
-  OS << VASTImmediate::buildLiteral(0, getBitWidth(), false) << ";\n";
-}
-
-void VASTSelector::printMuxAsParallelCase(raw_ostream &OS) const {
-  OS << "reg " << VASTValue::printBitRange(getBitWidth(), 0, false)
-    << ' ' << getName() << "_selector_wire;\n";
-
-  // Print the mux logic.
-  OS << "always @(*)begin  // begin mux logic\n";
-  OS.indent(2) << VASTModule::ParallelCaseAttr << " case (1'b1)\n";
-
-  for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
-    Fanin *FI = *I;
-
-    OS.indent(4) << '(' << VASTValPtr(FI->Guard) << "): begin\n";
-    // Print the assignment under the condition.
-    OS.indent(6) << getName() << "_selector_wire = " << VASTValPtr(FI->FI)
-                 << ";\n";
-    OS.indent(4) << "end\n";
-  }
-
-  // Write the default condition, otherwise latch will be inferred.
-  OS.indent(4) << "default: begin\n";
-
-  OS.indent(6) << getName() << "_selector_wire = " << getBitWidth() << "'bx;\n";
-
-  OS.indent(4) << "end\n";
-  OS.indent(2) << "endcase\nend  // end mux logic\n\n";
-}
-
 void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
   if (empty()) return;
 
@@ -324,8 +279,17 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
 
   if (isEnable()) return;
 
-  if (PrintMUXAsParallelCase) printMuxAsParallelCase(OS);
-  else                        printMUXAsBigOr(OS);
+  // Print (or implement) the MUX by:
+  // output = (Sel0 & FANNIN0) | (Sel1 & FANNIN1) ...
+  OS << "wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
+     << ' ' << getName() << "_selector_wire = ";
+
+  for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
+    Fanin *FI = *I;
+    OS << VASTValPtr(FI->FI) << " | ";
+  }
+
+  OS << VASTImmediate::buildLiteral(0, getBitWidth(), false) << ";\n";
 }
 
 void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
@@ -420,6 +384,9 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
 
     SmallVector<VASTValPtr, 4> Guards(FaninGuards.begin(), FaninGuards.end());
     FI->Guard.set(Builder.buildOrExpr(Guards, 1));
+    VASTValPtr FIMask = Builder.buildBitRepeat(FI->Guard, getBitWidth());
+    FIVal = Builder.buildAndExpr(FIVal, FIMask, getBitWidth());
+    FIVal = Builder.buildExpr(VASTExpr::dpKeep, FIVal, getBitWidth());
     FI->FI.set(FIVal);
     Fanins.push_back(FI);
   }

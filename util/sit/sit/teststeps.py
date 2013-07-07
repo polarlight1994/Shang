@@ -555,8 +555,7 @@ IfFile:close()
                '-shang-max-scheduling-iteration=%(shang_max_scheduling_iteration)s' % self,
                '-shang-dump-intermediate-netlist=%(shang_dump_intermediate_netlist)s' % self,
                '-shang-selector-ignore-trivial-loops=true',
-               '-shang-selector-ignore-x-fanins=true',
-               '-shang-print-selector-as-parallel-case=false'
+               '-shang-selector-ignore-x-fanins=true'
               ]
 
     print "Submitted", self.getStepDesc()
