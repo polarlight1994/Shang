@@ -375,6 +375,7 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
 
   // Print the mux logic.
   std::set<VASTValPtr, StructualLess> FaninGuards;
+  bool KeepFI = CSEMap.size() > 1;
 
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     VASTValPtr FIVal = I->first;
@@ -404,8 +405,17 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
     FI->CombinedGuard.set(Builder.buildOrExpr(Guards, 1));
     VASTValPtr FIGuard = FI->CombinedGuard;
 
+    // If there is only 1 slot guard for this fanin value, we do not need to
+    // build the guarded fanin with the "keeped" guard. Because the dynamic
+    // false paths only present when there are multiple slot guards guarding this
+    // fanin value.
+    if (Guards.size() == 1)
+      FIGuard = StripKeep(FIGuard);
+
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, getBitWidth());
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, getBitWidth());
+    if (KeepFI)
+      GuardedFIVal = Builder.buildKeep(GuardedFIVal);
     FI->GuardedFI.set(GuardedFIVal);
     Fanins.push_back(FI);
   }
