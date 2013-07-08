@@ -357,68 +357,6 @@ VASTSelector::Fanin::~Fanin() {
   }
 }
 
-static VASTValPtr StripKeep(VASTValPtr V) {
-  if (VASTExprPtr Expr = dyn_cast<VASTExpr>(V))
-    if (Expr->getOpcode() == VASTExpr::dpKeep)
-      return Expr.getOperand(0);
-
-  return V;
-}
-
-void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
-  typedef std::vector<const VASTSeqOp*> OrVec;
-  typedef CSEMapTy::const_iterator it;
-
-  CSEMapTy CSEMap;
-
-  if (!buildCSEMap(CSEMap)) return;
-
-  // Print the mux logic.
-  std::set<VASTValPtr, StructualLess> FaninGuards;
-  bool KeepFI = CSEMap.size() > 1;
-
-  for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    VASTValPtr FIVal = I->first;
-
-    Fanin *FI = new Fanin(this, FIVal);
-    FaninGuards.clear();
-
-    const OrVec &Ors = I->second;
-    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
-      SmallVector<VASTValPtr, 2> CurGuards;
-      const VASTSeqOp *Op = *OI;
-
-      if (VASTValPtr SlotActive = Op->getSlotActive())
-        CurGuards.push_back(SlotActive);
-
-      CurGuards.push_back(Op->getGuard());
-      VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
-      CurGuard = Builder.buildKeep(CurGuard);
-
-      FaninGuards.insert(CurGuard);
-      FI->AddSlot(CurGuard, Op->getSlot());
-    }
-
-    SmallVector<VASTValPtr, 4> Guards(FaninGuards.begin(), FaninGuards.end());
-    FI->CombinedGuard.set(Builder.buildOrExpr(Guards, 1));
-    VASTValPtr FIGuard = FI->CombinedGuard;
-
-    // If there is only 1 slot guard for this fanin value, we do not need to
-    // build the guarded fanin with the "keeped" guard. Because the dynamic
-    // false paths only present when there are multiple slot guards guarding this
-    // fanin value.
-    if (Guards.size() == 1)
-      FIGuard = StripKeep(FIGuard);
-
-    VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, getBitWidth());
-    VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, getBitWidth());
-    if (KeepFI)
-      GuardedFIVal = Builder.buildKeep(GuardedFIVal);
-    FI->GuardedFI.set(GuardedFIVal);
-    Fanins.push_back(FI);
-  }
-}
-
 void VASTSelector::setParent(VASTNode *N) {
   assert(Parent == 0 && "Parent had already existed!");
   Parent = N;
@@ -458,6 +396,12 @@ void VASTSelector::eraseFanin(VASTLatch U) {
   iterator at = std::find(begin(), end(), U);
   assert(at != end() && "U is not in the assignment vector!");
   Assigns.erase(at);
+}
+
+VASTSelector::Fanin *VASTSelector::createFanin(VASTValPtr FI) {
+  Fanin *F = new Fanin(this, FI);
+  Fanins.push_back(F);
+  return F;
 }
 
 //===----------------------------------------------------------------------===//

@@ -45,7 +45,6 @@ public:
     VASTUse CombinedGuard;
     VASTUse FI;
     friend class VASTSelector;
-    void AddSlot(VASTValPtr Guard, VASTSlot *S);
     Fanin(VASTNode *Node, VASTValPtr FI);
   public:
     ~Fanin();
@@ -54,12 +53,26 @@ public:
     // Return the unguarded fan in.
     VASTValPtr getFanin() const { return FI; }
 
+    void AddSlot(VASTValPtr Guard, VASTSlot *S);
+    void setCombinedGuard(VASTValPtr V) { CombinedGuard.set(V); }
+
     typedef std::vector<std::pair<VASTUse*, VASTSlot*> >::const_iterator
             guard_iterator;
     guard_iterator guard_begin() const { return Guards.begin(); }
     guard_iterator guard_end() const { return Guards.end(); }
 
     void dropGuards();
+  };
+
+  // The VASTSeqValues from the same VASTSelector are not equal in the data flow,
+  // because their are representing the value of the same selector at different
+  // states of the circuit. However, they are structural equal because their are
+  // driven by the same register. Use this functor to avoid the redundant nodes
+  // in the netlist.
+  struct StructualLess
+    : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
+
+    bool operator()(VASTValPtr LHS, VASTValPtr RHS) const;
   };
 
 private:
@@ -82,18 +95,6 @@ private:
 
   typedef std::vector<Fanin*> FaninVector;
   FaninVector Fanins;
-
-  // The VASTSeqValues from the same VASTSelector are not equal in the data flow,
-  // because their are representing the value of the same selector at different
-  // states of the circuit. However, they are structural equal because their are
-  // driven by the same register. Use this functor to avoid the redundant nodes
-  // in the netlist.
-  struct StructualLess
-    : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
-
-    bool operator()(VASTValPtr LHS, VASTValPtr RHS) const;
-  };
-
 
   void instantiateSelector(raw_ostream &OS) const;
 public:
@@ -151,8 +152,7 @@ public:
           CSEMapTy;
 
   bool buildCSEMap(CSEMapTy &CSEMap) const;
-
-  void synthesizeSelector(VASTExprBuilder &Builder);
+  Fanin *createFanin(VASTValPtr FI);
 
   bool isSelectorSynthesized() const { return !Fanins.empty(); }
 

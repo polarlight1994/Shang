@@ -41,8 +41,6 @@ struct SelectorSynthesis : public VASTModulePass {
   unsigned MaxSingleCyleFINum;
   VASTExprBuilder *Builder;
   VASTModule *VM;
-  // Number of cycles at a specificed slot that we can move back unconditionally.
-  std::map<unsigned, unsigned> SlotSlack;
 
   static char ID;
 
@@ -66,9 +64,9 @@ struct SelectorSynthesis : public VASTModulePass {
 
   bool runOnVASTModule(VASTModule &VM);
 
-  void releaseMemory() {
-    SlotSlack.clear();
-  }
+  void synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
+
+  void releaseMemory() {}
 };
 }
 
@@ -82,6 +80,71 @@ char SelectorSynthesis::ID = 0;
 
 char &llvm::SelectorSynthesisID = SelectorSynthesis::ID;
 
+static VASTValPtr StripKeep(VASTValPtr V) {
+  if (VASTExprPtr Expr = dyn_cast<VASTExpr>(V))
+    if (Expr->getOpcode() == VASTExpr::dpKeep)
+      return Expr.getOperand(0);
+
+  return V;
+}
+
+void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
+                                           VASTExprBuilder &Builder) {
+  typedef std::vector<const VASTSeqOp*> OrVec;
+  typedef VASTSelector::CSEMapTy CSEMapTy;
+  typedef CSEMapTy::const_iterator iterator;
+
+  CSEMapTy CSEMap;
+
+  if (!Sel->buildCSEMap(CSEMap)) return;
+
+  unsigned Bitwidth = Sel->getBitWidth();
+
+  // Print the mux logic.
+  std::set<VASTValPtr, VASTSelector::StructualLess> FaninGuards;
+  bool KeepFI = CSEMap.size() > 1;
+
+  for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    VASTValPtr FIVal = I->first;
+
+    VASTSelector::Fanin *FI = Sel->createFanin(FIVal);
+    FaninGuards.clear();
+
+    const OrVec &Ors = I->second;
+    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
+      SmallVector<VASTValPtr, 2> CurGuards;
+      const VASTSeqOp *Op = *OI;
+
+      if (VASTValPtr SlotActive = Op->getSlotActive())
+        CurGuards.push_back(SlotActive);
+
+      CurGuards.push_back(Op->getGuard());
+      VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
+      CurGuard = Builder.buildKeep(CurGuard);
+
+      FaninGuards.insert(CurGuard);
+      FI->AddSlot(CurGuard, Op->getSlot());
+    }
+
+    SmallVector<VASTValPtr, 4> Guards(FaninGuards.begin(), FaninGuards.end());
+    VASTValPtr FIGuard = Builder.buildOrExpr(Guards, 1);
+    FI->setCombinedGuard(FIGuard);
+
+    // If there is only 1 slot guard for this fanin value, we do not need to
+    // build the guarded fanin with the "keeped" guard. Because the dynamic
+    // false paths only present when there are multiple slot guards guarding this
+    // fanin value.
+    if (Guards.size() == 1)
+      FIGuard = StripKeep(FIGuard);
+
+    VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
+    VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
+    if (KeepFI)
+      GuardedFIVal = Builder.buildKeep(GuardedFIVal);
+    FI->GuardedFI.set(GuardedFIVal);
+  }
+}
+
 bool SelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   {
     MinimalExprBuilderContext Context(VM);
@@ -92,7 +155,7 @@ bool SelectorSynthesis::runOnVASTModule(VASTModule &VM) {
 
     // Eliminate the identical SeqOps.
     for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-      I->synthesizeSelector(*Builder);
+      synthesizeSelector(I, *Builder);
 
     delete Builder;
   }
