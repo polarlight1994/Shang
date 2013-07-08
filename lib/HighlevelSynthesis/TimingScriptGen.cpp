@@ -431,16 +431,20 @@ TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
                                      SeqLiveVariables &SLV) {
   DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> > DatapathMap;
 
-  typedef VASTSelector::const_iterator vn_itertor;
-  for (vn_itertor I = Dst->begin(), E = Dst->end(); I != E; ++I) {
-    const VASTLatch &DstLatch = *I;
-    VASTSlot *ReadSlot = DstLatch.getSlot();
-    // Paths for the condition.
-    DatapathMap[VASTValPtr(DstLatch.getGuard()).get()].push_back(ReadSlot);
-    if (VASTValPtr SlotActive = DstLatch.getSlotActive())
-      DatapathMap[SlotActive.get()].push_back(ReadSlot);
-    // Paths for the assigning value
-    DatapathMap[VASTValPtr(DstLatch).get()].push_back(ReadSlot);
+  typedef VASTSelector::const_fanin_iterator fanin_iterator;
+  for (fanin_iterator I = Dst->fanin_begin(), E = Dst->fanin_end(); I != E; ++I)
+  {
+    VASTSelector::Fanin *FI = *I;
+    VASTValue *FIVal = FI->getFanin().get();
+
+    typedef VASTSelector::Fanin::guard_iterator guard_iterator;
+    for (guard_iterator GI = FI->guard_begin(), GE = FI->guard_end();
+         GI != GE; ++GI) {
+      VASTSlot *S = (*GI).second;
+      VASTValPtr Cnd = *(*GI).first;
+      DatapathMap[Cnd.get()].push_back(S);
+      DatapathMap[FIVal].push_back(S);
+    }
   }
 
   PathIntervalQueryCache Cache(TNL, SLV, Dst, OS);

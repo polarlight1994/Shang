@@ -50,6 +50,8 @@ public:
     ~Fanin();
 
     VASTUse GuardedFI;
+    // Return the unguarded fan in.
+    VASTValPtr getFanin() const { return FI; }
 
     Fanin(VASTNode *Node);
 
