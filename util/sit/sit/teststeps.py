@@ -1058,8 +1058,8 @@ project_close
           :mult18)''',
     results)
 
-  def generateSubTests(self) :
-    return [ AlteraNetlistSimStep(self) ]
+#  def generateSubTests(self) :
+#    return [ AlteraNetlistSimStep(self) ]
 
 class AlteraNetlistSimStep(TestStep) :
   step_name = 'altera netlist simulation'
