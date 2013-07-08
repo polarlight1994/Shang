@@ -520,11 +520,10 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
 
     if (!Sel->isSelectorSynthesized()) continue;
 
-    typedef VASTSelector::const_fanin_iterator fanin_iterator;
-    for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
-         I != E; ++I)
-      if (VASTExpr *Expr = (*I)->GuardedFI.getAsLValue<VASTExpr>())
-        Expr->visitConeTopOrder(Visited, Printer);
+    if (VASTExpr *Expr = Sel->getGuard().getAsLValue<VASTExpr>())
+      Expr->visitConeTopOrder(Visited, Printer);
+    if (VASTExpr *Expr = Sel->getFanin().getAsLValue<VASTExpr>())
+      Expr->visitConeTopOrder(Visited, Printer);
   }
 }
 

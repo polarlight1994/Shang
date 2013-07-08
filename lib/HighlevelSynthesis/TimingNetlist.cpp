@@ -171,17 +171,6 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 //===----------------------------------------------------------------------===//
-void TimingNetlist::buildTimingPath(VASTSelector::Fanin *Thu, VASTSelector *Dst,
-                                    delay_type MUXDelay) {
-  buildTimingPath(Thu->GuardedFI.unwrap().get(), Dst, MUXDelay);
-  buildTimingPath(Thu->getFanin().get(), Dst, MUXDelay);
-
-  typedef VASTSelector::Fanin::guard_iterator guard_iterator;
-  for (guard_iterator I = Thu->guard_begin(), E = Thu->guard_end();
-       I != E; ++I)
-    buildTimingPath((*I).first->unwrap().get(), Dst, MUXDelay);
-}
-
 void TimingNetlist::buildTimingPath(VASTValue *Thu, VASTSelector *Dst,
                                     delay_type MUXDelay) {
   if (!isa<VASTExpr>(Thu)) {
@@ -256,19 +245,21 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
+
     // Calculate the delay of the Fanin MUX.
     delay_type MUXDelay = getSelectorDelayImpl(Sel->size(), Sel);
-    
+
     if (Sel->isSelectorSynthesized()) {
-      typedef VASTSelector::fanin_iterator fanin_iterator;
-      for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
-           I != E; ++I)
+      VASTValPtr Fanin = Sel->getFanin();
+      typedef VASTSelector::ann_iterator ann_iterator;
+      for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
+        VASTValue *V = (*I)->getNode();
         // FIXME: Use the correct mux delay!
-        buildTimingPath(*I, Sel, MUXDelay);
-      // Dirty HACK: Also run on the Latching operation of the registers, so that
-      // we can build the timing path for the SlotActive wires.
-      // continue;
-    } // else
+        buildTimingPath(V, Sel, MUXDelay);
+      }
+
+      continue;
+    }
 
     typedef VASTSelector::iterator fanin_iterator;
     for (fanin_iterator FI = Sel->begin(), FE = Sel->end(); FI != FE; ++FI) {
@@ -281,9 +272,6 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
         buildTimingPath(SlotActive.get(), Sel, MUXDelay);
     }
   }
-
-  //ExternalTimingAnalysis ETA(VM, *this);
-  //ETA.runExternalTimingAnalysis();
 
   DEBUG(dbgs() << "Timing Netlist: \n";
         print(dbgs()););

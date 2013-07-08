@@ -266,12 +266,14 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
     }
 
     if (Sel->isSelectorSynthesized()) {
-      typedef VASTSelector::fanin_iterator fanin_iterator;
-      for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
-           I != E; ++I) {
-        VASTSelector::Fanin *FI = *I;
-        VASTValue *FIVal = FI->GuardedFI.unwrap().get();
-        buildTimingPath(FI, Sel, delay_type(0.0f));
+      typedef VASTSelector::ann_iterator ann_iterator;
+      for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
+        VASTValue *V = (*I)->getNode();
+        // Visit the cone rooted on the ready signal.
+        if (VASTExpr *Expr = dyn_cast<VASTExpr>(V))
+          Expr->visitConeTopOrder(Visited, ETA);
+        // FIXME: Get the delay from V to Sel!
+        buildTimingPath(V, Sel, delay_type(0.0f));
       }
     }
   }
@@ -531,7 +533,8 @@ ExternalTimingAnalysis::extractInterConnectDelay(raw_ostream &O,
                                                  VASTValue *From) {
   if (!isa<VASTExpr>(From) && !isa<VASTSeqValue>(From)) return;
 
-  float *&P =DelayMatrix[Sel][From];
+  DelayMatrix[Sel][From] = SelectorDelay[Sel];
+  return;
   // No need to calculate the interconnect delay more than once.
   if (P) return;
 
@@ -594,14 +597,10 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
 
   // Also extract the arrival time for the synthesized selector.
   if (Sel->isSelectorSynthesized()) {
-    typedef VASTSelector::fanin_iterator fanin_iterator;
-    for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
-         I != E; ++I){
-      const VASTSelector::Fanin *FI = *I;
-      VASTValue *FIVal = FI->GuardedFI.unwrap().get();
-      buildPathInfoForCone(O, FIVal);
-      extractInterConnectDelay(O, Sel, FIVal);
-    }
+    buildPathInfoForCone(O, Sel->getFanin().get());
+    extractInterConnectDelay(O, Sel, Sel->getFanin().get());
+    buildPathInfoForCone(O, Sel->getGuard().get());
+    extractInterConnectDelay(O, Sel, Sel->getGuard().get());
   }
 }
 

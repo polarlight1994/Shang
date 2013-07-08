@@ -36,32 +36,19 @@ public:
     FUInput,        // Represent the input of functional unit
     FUOutput        // Represent the output of functional unit
   };
-  // Synthesized Fanin.
-  class Fanin {
-    Fanin(const Fanin&) LLVM_DELETED_FUNCTION;
-    void operator=(const Fanin&) LLVM_DELETED_FUNCTION;
-    std::vector<std::pair<VASTUse*, VASTSlot*> > Guards;
+  // Annotate the timing information to the combinational node.
+  class Annotation {
+    Annotation(const Annotation&) LLVM_DELETED_FUNCTION;
+    void operator=(const Annotation&) LLVM_DELETED_FUNCTION;
 
-    VASTUse CombinedGuard;
-    VASTUse FI;
+    VASTUse Root;
+
     friend class VASTSelector;
-    Fanin(VASTNode *Node, VASTValPtr FI);
+    Annotation(VASTNode *Node, VASTSlot *S, VASTValue *V);
+    void dropNode();
   public:
-    ~Fanin();
-
-    VASTUse GuardedFI;
-    // Return the unguarded fan in.
-    VASTValPtr getFanin() const { return FI; }
-
-    void AddSlot(VASTValPtr Guard, VASTSlot *S);
-    void setCombinedGuard(VASTValPtr V) { CombinedGuard.set(V); }
-
-    typedef std::vector<std::pair<VASTUse*, VASTSlot*> >::const_iterator
-            guard_iterator;
-    guard_iterator guard_begin() const { return Guards.begin(); }
-    guard_iterator guard_end() const { return Guards.end(); }
-
-    void dropGuards();
+    VASTSlot &S;
+    VASTValue *getNode() const;
   };
 
   // The VASTSeqValues from the same VASTSelector are not equal in the data flow,
@@ -93,8 +80,10 @@ private:
   typedef std::vector<VASTLatch> AssignmentVector;
   AssignmentVector Assigns;
 
-  typedef std::vector<Fanin*> FaninVector;
-  FaninVector Fanins;
+  typedef std::vector<Annotation*> AnnotationVector;
+  AnnotationVector Annotations;
+
+  VASTUse Guard, Fanin;
 
   void instantiateSelector(raw_ostream &OS) const;
 public:
@@ -136,13 +125,15 @@ public:
   unsigned size() const { return Assigns.size(); }
   bool empty() const { return Assigns.empty(); }
 
-  typedef FaninVector::iterator fanin_iterator;
-  fanin_iterator fanin_begin() { return Fanins.begin(); }
-  fanin_iterator fanin_end() { return Fanins.end(); }
+  typedef AnnotationVector::const_iterator ann_iterator;
+  ann_iterator ann_begin() const { return Annotations.begin(); }
+  ann_iterator ann_end() const { return Annotations.end(); }
 
-  typedef FaninVector::const_iterator const_fanin_iterator;
-  const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
-  const_fanin_iterator fanin_end() const { return Fanins.end(); }
+  VASTValPtr getGuard() const { return Guard; }
+  VASTValPtr getFanin() const { return Fanin; }
+
+  void setGuard(VASTValPtr V) { Guard.set(V); }
+  void setFanin(VASTValPtr V) { Fanin.set(V); }
 
   // Return true if the latched value is X (undefined value) or the SeqVal from
   // the same selector.
@@ -152,9 +143,9 @@ public:
           CSEMapTy;
 
   bool buildCSEMap(CSEMapTy &CSEMap) const;
-  Fanin *createFanin(VASTValPtr FI);
+  void createAnnotation(VASTSlot *S, VASTValPtr V);
 
-  bool isSelectorSynthesized() const { return !Fanins.empty(); }
+  bool isSelectorSynthesized() const { return !Guard.isInvalid(); }
 
   VASTSeqValue *getSSAValue() const;
 

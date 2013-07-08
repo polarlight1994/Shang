@@ -37,14 +37,13 @@ namespace {
 struct SelectorSynthesis : public VASTModulePass {
   TimingNetlist *TNL;
   SeqLiveVariables *SLV;
-  STGDistances *SSP;
   unsigned MaxSingleCyleFINum;
   VASTExprBuilder *Builder;
   VASTModule *VM;
 
   static char ID;
 
-  SelectorSynthesis() : VASTModulePass(ID), TNL(0), SLV(0), SSP(0) {
+  SelectorSynthesis() : VASTModulePass(ID), TNL(0), SLV(0) {
     initializeSelectorSynthesisPass(*PassRegistry::getPassRegistry());
 
     VFUMux *Mux = getFUDesc<VFUMux>();
@@ -56,11 +55,14 @@ struct SelectorSynthesis : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
+    AU.addRequired<SeqLiveVariables>();
     AU.addPreserved<SeqLiveVariables>();
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
     AU.addPreserved<STGDistances>();
   }
+
+  unsigned getMinimalCycleOfCone(VASTValPtr V, VASTSlot *S);
 
   bool runOnVASTModule(VASTModule &VM);
 
@@ -104,14 +106,14 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   if (!Sel->buildCSEMap(CSEMap)) return;
 
   unsigned Bitwidth = Sel->getBitWidth();
+  unsigned MinimalInterval = STGDistances::Inf;
 
   // Slot guards *without* keep attributes.
-  std::set<VASTValPtr, VASTSelector::StructualLess> SlotGuards;
+  SmallVector<VASTValPtr, 4> SlotGuards, FaninGuards, Fanins;
+  SmallVector<VASTSlot*, 4> Slots;
 
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     VASTValPtr FIVal = I->first;
-
-    VASTSelector::Fanin *FI = Sel->createFanin(FIVal);
     SlotGuards.clear();
 
     const OrVec &Ors = I->second;
@@ -125,22 +127,40 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       CurGuards.push_back(Op->getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
 
-      FI->AddSlot(Builder.buildKeep(CurGuard), Op->getSlot());
-      SlotGuards.insert(CurGuard);
+      unsigned CurInterval
+        = SLV->getMinimalIntervalOfCone(CurGuard, Op->getSlot());
+      MinimalInterval = std::max(CurInterval, MinimalInterval);
+
+      // Only apply the keep attribute for multi-cycle path.
+      if (CurInterval > 1)
+        CurGuard = Builder.buildKeep(CurGuard);
+
+      VASTSlot *S = Op->getSlot();
+      Sel->createAnnotation(S, CurGuard);
+      SlotGuards.push_back(CurGuard);
+      Slots.push_back(S);
     }
 
-    SmallVector<VASTValPtr, 4> Guards(SlotGuards.begin(), SlotGuards.end());
-    VASTValPtr FIGuard = Builder.buildOrExpr(Guards, 1);
-    FI->setCombinedGuard(FIGuard);
+    VASTValPtr FIGuard = Builder.buildOrExpr(SlotGuards, 1);
+    FaninGuards.push_back(FIGuard);
 
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
-    GuardedFIVal = Builder.buildKeep(GuardedFIVal);
-    FI->GuardedFI.set(GuardedFIVal);
+    // Only apply the keep attribute for multi-cycle path.
+    if (MinimalInterval > 1)
+      GuardedFIVal = Builder.buildKeep(GuardedFIVal);
+    Fanins.push_back(GuardedFIVal);
+    while (!Slots.empty())
+      Sel->createAnnotation(Slots.pop_back_val(), GuardedFIVal.get());
   }
+
+  Sel->setGuard(Builder.buildOrExpr(FaninGuards, 1));
+  Sel->setFanin(Builder.buildOrExpr(Fanins, Bitwidth));
 }
 
 bool SelectorSynthesis::runOnVASTModule(VASTModule &VM) {
+  SLV = &getAnalysis<SeqLiveVariables>();
+
   {
     MinimalExprBuilderContext Context(VM);
     Builder = new VASTExprBuilder(Context);

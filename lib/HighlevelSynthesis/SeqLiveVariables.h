@@ -106,6 +106,7 @@ public:
   void verifyAnalysis() const;
 
   unsigned getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) const;
+  unsigned getMinimalIntervalOfCone(VASTValPtr V, VASTSlot *ReadSlot) const;
 
   void print(raw_ostream &OS) const;
 private:

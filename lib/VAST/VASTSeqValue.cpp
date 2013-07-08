@@ -39,12 +39,12 @@ static cl::opt<bool> IgnoreXFanins("shang-selector-ignore-x-fanins",
 VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
                            VASTNode *Node)
   : VASTNode(vastSelector), Parent(Node), BitWidth(BitWidth), T(T),
-    PrintSelModule(false) {
+    PrintSelModule(false), Guard(this), Fanin(this) {
   Contents.Name = Name;
 }
 
 VASTSelector::~VASTSelector() {
-  DeleteContainerPointers(Fanins);
+  DeleteContainerPointers(Annotations);
 }
 
 static const char *getValName(VASTValue *V) {
@@ -265,14 +265,11 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
     return;
   }
 
-  assert(!Fanins.empty()  && "Bad Fanin numder!");
   OS << "// Synthesized MUX\n";
 
   if (PrintEnable) {
-    OS << "wire " << getName() << "_selector_guard = 1'b0";
-    for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I)
-      OS << " | " << VASTValPtr((*I)->CombinedGuard);
-    OS  << ";\n\n";
+    OS << "wire " << getName() << "_selector_guard = "
+       << VASTValPtr(Guard) << ";\n";
   }
 
   if (isEnable() || isSlot()) return;
@@ -280,14 +277,7 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
   // Print (or implement) the MUX by:
   // output = (Sel0 & FANNIN0) | (Sel1 & FANNIN1) ...
   OS << "wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
-     << ' ' << getName() << "_selector_wire = ";
-
-  for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
-    Fanin *FI = *I;
-    OS << VASTValPtr(FI->GuardedFI) << " | ";
-  }
-
-  OS << VASTImmediate::buildLiteral(0, getBitWidth(), false) << ";\n";
+     << ' ' << getName() << "_selector_wire = " << VASTValPtr(Fanin) << ";\n";
 }
 
 void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
@@ -332,29 +322,15 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   OS.always_ff_end();
 }
 
-VASTSelector::Fanin::Fanin(VASTNode *N, VASTValPtr FI)
-  : CombinedGuard(N), FI(N, FI), GuardedFI(N) {}
+VASTSelector::Annotation::Annotation(VASTNode *Node, VASTSlot *S, VASTValue *V)
+  : Root(Node, V), S(*S) {}
 
-void VASTSelector::Fanin::AddSlot(VASTValPtr Guard, VASTSlot *S) {
-  VASTUse *U = new VASTUse(&FI.getUser(), Guard);
-  Guards.push_back(std::make_pair(U, S));
+VASTValue *VASTSelector::Annotation::getNode() const {
+  return Root.get().get();
 }
 
-void VASTSelector::Fanin::dropGuards() {
-  while (!Guards.empty()) {
-    VASTUse *U = Guards.back().first;
-    Guards.pop_back();
-
-    U->unlinkUseFromUser();
-    delete U;
-  }
-}
-
-VASTSelector::Fanin::~Fanin() {
-  while (!Guards.empty()) {
-    delete Guards.back().first;
-    Guards.pop_back();
-  }
+void VASTSelector::Annotation::dropNode() {
+  Root.unlinkUseFromUser();
 }
 
 void VASTSelector::setParent(VASTNode *N) {
@@ -398,10 +374,8 @@ void VASTSelector::eraseFanin(VASTLatch U) {
   Assigns.erase(at);
 }
 
-VASTSelector::Fanin *VASTSelector::createFanin(VASTValPtr FI) {
-  Fanin *F = new Fanin(this, FI);
-  Fanins.push_back(F);
-  return F;
+void VASTSelector::createAnnotation(VASTSlot *S, VASTValPtr V)  {
+  Annotations.push_back(new Annotation(this, S, V.get()));
 }
 
 //===----------------------------------------------------------------------===//
