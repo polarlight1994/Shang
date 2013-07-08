@@ -635,7 +635,7 @@ unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
     IntervalFromLanding = std::min(IntervalFromLanding, CurInterval);
   }
 
-  assert(IntervalFromLanding < STGDistances::Inf && "No live-in?");
+  //assert(IntervalFromLanding < STGDistances::Inf && "No live-in?");
 
   // The is 1 extra cycle from the definition to live in.
   return IntervalFromLanding + 1;

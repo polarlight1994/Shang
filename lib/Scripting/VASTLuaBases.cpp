@@ -522,13 +522,9 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
 
     typedef VASTSelector::const_fanin_iterator fanin_iterator;
     for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
-      I != E; ++I){
-        const VASTSelector::Fanin *FI = *I;
-        if (VASTExpr *Expr = FI->FI.getAsLValue<VASTExpr>())
-          Expr->visitConeTopOrder(Visited, Printer);
-        if (VASTExpr *Expr = FI->Guard.getAsLValue<VASTExpr>())
-          Expr->visitConeTopOrder(Visited, Printer);
-    }
+         I != E; ++I)
+      if (VASTExpr *Expr = (*I)->GuardedFI.getAsLValue<VASTExpr>())
+        Expr->visitConeTopOrder(Visited, Printer);
   }
 }
 

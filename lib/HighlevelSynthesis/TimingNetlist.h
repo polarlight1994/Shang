@@ -17,12 +17,12 @@
 
 #include "shang/FUInfo.h"
 #include "shang/VASTModulePass.h"
+#include "shang/VASTSeqValue.h"
 
 #include <map>
 
 namespace llvm {
 class VASTSelector;
-class VASTSeqValue;
 class VASTValue;
 
 /// Timinging Netlist - Annotate the timing information to the RTL netlist.
@@ -59,6 +59,8 @@ public:
   PathDelayInfo PathInfo;
   FaninDelayInfo FaninInfo;
 
+  void buildTimingPath(VASTSelector::Fanin *Thu, VASTSelector *Dst,
+                       delay_type MUXDelay);
   void buildTimingPath(VASTValue *Thu, VASTSelector *Dst, delay_type MUXDelay);
   bool performExternalAnalysis(VASTModule &VM);
 

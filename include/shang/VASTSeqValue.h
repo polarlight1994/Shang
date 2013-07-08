@@ -37,18 +37,28 @@ public:
     FUOutput        // Represent the output of functional unit
   };
   // Synthesized Fanin.
-  struct Fanin {
+  class Fanin {
     Fanin(const Fanin&) LLVM_DELETED_FUNCTION;
     void operator=(const Fanin&) LLVM_DELETED_FUNCTION;
+    std::vector<std::pair<VASTUse*, VASTSlot*> > Guards;
 
-    std::vector<VASTSlot*> Slots;
-    VASTUse Guard;
+    VASTUse CombinedGuard;
     VASTUse FI;
+    friend class VASTSelector;
+    void AddSlot(VASTValPtr Guard, VASTSlot *S);
+  public:
+    ~Fanin();
+
+    VASTUse GuardedFI;
 
     Fanin(VASTNode *Node);
 
-    void AddSlot(VASTSlot *S);
-    typedef std::vector<VASTSlot*>::iterator slot_iterator;
+    typedef std::vector<std::pair<VASTUse*, VASTSlot*> >::const_iterator
+            guard_iterator;
+    guard_iterator guard_begin() const { return Guards.begin(); }
+    guard_iterator guard_end() const { return Guards.end(); }
+
+    void dropGuards();
   };
 
 private:

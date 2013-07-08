@@ -268,12 +268,10 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
     if (Sel->isSelectorSynthesized()) {
       typedef VASTSelector::fanin_iterator fanin_iterator;
       for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
-           I != E; ++I){
-        const VASTSelector::Fanin *FI = *I;
-        VASTValue *FIVal = FI->FI.unwrap().get();
-        buildTimingPath(FIVal, Sel, delay_type(0.0f));
-        VASTValue *FIGuard = FI->Guard.unwrap().get();
-        buildTimingPath(FIGuard, Sel, delay_type(0.0f));
+           I != E; ++I) {
+        VASTSelector::Fanin *FI = *I;
+        VASTValue *FIVal = FI->GuardedFI.unwrap().get();
+        buildTimingPath(FI, Sel, delay_type(0.0f));
       }
     }
   }
@@ -600,12 +598,9 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
     for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
          I != E; ++I){
       const VASTSelector::Fanin *FI = *I;
-      VASTValue *FIVal = FI->FI.unwrap().get();
+      VASTValue *FIVal = FI->GuardedFI.unwrap().get();
       buildPathInfoForCone(O, FIVal);
       extractInterConnectDelay(O, Sel, FIVal);
-      VASTValue *FIGuard = FI->Guard.unwrap().get();
-      buildPathInfoForCone(O, FIGuard);
-      extractInterConnectDelay(O, Sel, FIGuard);
     }
   }
 }

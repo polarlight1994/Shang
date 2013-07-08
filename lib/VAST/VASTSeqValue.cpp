@@ -270,10 +270,8 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
 
   if (PrintEnable) {
     OS << "wire " << getName() << "_selector_guard = 1'b0";
-    for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
-      Fanin *FI = *I;
-      OS << " | " << VASTValPtr(FI->Guard);
-    }
+    for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I)
+      OS << " | " << VASTValPtr((*I)->CombinedGuard);
     OS  << ";\n\n";
   }
 
@@ -286,7 +284,7 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
 
   for (const_fanin_iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
     Fanin *FI = *I;
-    OS << VASTValPtr(FI->FI) << " | ";
+    OS << VASTValPtr(FI->GuardedFI) << " | ";
   }
 
   OS << VASTImmediate::buildLiteral(0, getBitWidth(), false) << ";\n";
@@ -314,7 +312,7 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   OS.always_ff_begin();
   // Reset the register.
   OS << getName()  << " <= "
-    << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false) << ";\n";
+     << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false) << ";\n";
   OS.else_begin();
 
   // Print the assignment.
@@ -334,10 +332,37 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   OS.always_ff_end();
 }
 
-VASTSelector::Fanin::Fanin(VASTNode *N) : Guard(N), FI(N) {}
+VASTSelector::Fanin::Fanin(VASTNode *N)
+  : CombinedGuard(N), FI(N), GuardedFI(N) {}
 
-void VASTSelector::Fanin::AddSlot(VASTSlot *S) {
-  Slots.push_back(S);
+void VASTSelector::Fanin::AddSlot(VASTValPtr Guard, VASTSlot *S) {
+  VASTUse *U = new VASTUse(&FI.getUser(), Guard);
+  Guards.push_back(std::make_pair(U, S));
+}
+
+void VASTSelector::Fanin::dropGuards() {
+  while (!Guards.empty()) {
+    VASTUse *U = Guards.back().first;
+    Guards.pop_back();
+
+    U->unlinkUseFromUser();
+    delete U;
+  }
+}
+
+VASTSelector::Fanin::~Fanin() {
+  while (!Guards.empty()) {
+    delete Guards.back().first;
+    Guards.pop_back();
+  }
+}
+
+static VASTValPtr StripKeep(VASTValPtr V) {
+  if (VASTExprPtr Expr = dyn_cast<VASTExpr>(V))
+    if (Expr->getOpcode() == VASTExpr::dpKeep)
+      return Expr.getOperand(0);
+
+  return V;
 }
 
 void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
@@ -361,14 +386,9 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
       SmallVector<VASTValPtr, 2> CurGuards;
       const VASTSeqOp *Op = *OI;
-      // Promote the guard to clock enable by default, it will be overwritten if
-      // clock enable presents
-      VASTValPtr CurClkEn = Op->getGuard();
 
-      if (VASTValPtr SlotActive = Op->getSlotActive()) {
+      if (VASTValPtr SlotActive = Op->getSlotActive())
         CurGuards.push_back(SlotActive);
-        CurClkEn = SlotActive;
-      }
 
       CurGuards.push_back(Op->getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
@@ -379,15 +399,18 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
         CurGuard = Builder.buildKeep(CurGuard);
 
       FaninGuards.insert(CurGuard);
-      FI->AddSlot(Op->getSlot());
+      FI->AddSlot(CurGuard, Op->getSlot());
     }
 
-    SmallVector<VASTValPtr, 4> Guards(FaninGuards.begin(), FaninGuards.end());
-    FI->Guard.set(Builder.buildOrExpr(Guards, 1));
-    VASTValPtr FIMask = Builder.buildBitRepeat(FI->Guard, getBitWidth());
-    FIVal = Builder.buildAndExpr(FIVal, FIMask, getBitWidth());
-    FIVal = Builder.buildKeep(FIVal);
     FI->FI.set(FIVal);
+
+    SmallVector<VASTValPtr, 4> Guards(FaninGuards.begin(), FaninGuards.end());
+    FI->CombinedGuard.set(Builder.buildOrExpr(Guards, 1));
+    VASTValPtr FIGuard = FI->CombinedGuard;
+
+    VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, getBitWidth());
+    VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, getBitWidth());
+    FI->GuardedFI.set(GuardedFIVal);
     Fanins.push_back(FI);
   }
 }

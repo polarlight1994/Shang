@@ -171,6 +171,17 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 //===----------------------------------------------------------------------===//
+void TimingNetlist::buildTimingPath(VASTSelector::Fanin *Thu, VASTSelector *Dst,
+                                    delay_type MUXDelay) {
+  buildTimingPath(Thu->GuardedFI.unwrap().get(), Dst, MUXDelay);
+  buildTimingPath(Thu->getFanin().get(), Dst, MUXDelay);
+
+  typedef VASTSelector::Fanin::guard_iterator guard_iterator;
+  for (guard_iterator I = Thu->guard_begin(), E = Thu->guard_end();
+       I != E; ++I)
+    buildTimingPath((*I).first->unwrap().get(), Dst, MUXDelay);
+}
+
 void TimingNetlist::buildTimingPath(VASTValue *Thu, VASTSelector *Dst,
                                     delay_type MUXDelay) {
   if (!isa<VASTExpr>(Thu)) {
@@ -251,13 +262,9 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
     if (Sel->isSelectorSynthesized()) {
       typedef VASTSelector::fanin_iterator fanin_iterator;
       for (fanin_iterator I = Sel->fanin_begin(), E = Sel->fanin_end();
-           I != E; ++I){
-        const VASTSelector::Fanin *FI = *I;
-
-        buildTimingPath(FI->Guard.unwrap().get(), Sel, MUXDelay);
-        buildTimingPath(FI->FI.unwrap().get(), Sel, MUXDelay);
-      }
-
+           I != E; ++I)
+        // FIXME: Use the correct mux delay!
+        buildTimingPath(*I, Sel, MUXDelay);
       // Dirty HACK: Also run on the Latching operation of the registers, so that
       // we can build the timing path for the SlotActive wires.
       // continue;
