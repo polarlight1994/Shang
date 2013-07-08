@@ -83,16 +83,26 @@ char SelectorSynthesis::ID = 0;
 char &llvm::SelectorSynthesisID = SelectorSynthesis::ID;
 
 bool SelectorSynthesis::runOnVASTModule(VASTModule &VM) {
-  MinimalExprBuilderContext Context(VM);
-  Builder = new VASTExprBuilder(Context);
-  this->VM = &VM;
+  {
+    MinimalExprBuilderContext Context(VM);
+    Builder = new VASTExprBuilder(Context);
+    this->VM = &VM;
 
-  typedef VASTModule::selector_iterator iterator;
-  
-  // Eliminate the identical SeqOps.
-  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-    I->synthesizeSelector(*Builder);
+    typedef VASTModule::selector_iterator iterator;
 
-  delete Builder;
+    // Eliminate the identical SeqOps.
+    for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
+      I->synthesizeSelector(*Builder);
+
+    delete Builder;
+  }
+
+  // Perform LUT Mapping on the newly synthesized selectors.
+  VASTModulePass *P = static_cast<VASTModulePass*>(createLUTMappingPass());
+  AnalysisResolver *AR = new AnalysisResolver(*getResolver());
+  P->setResolver(AR);
+  P->runOnVASTModule(VM);
+  delete P;
+
   return true;
 }
