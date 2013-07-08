@@ -534,7 +534,8 @@ ExternalTimingAnalysis::extractInterConnectDelay(raw_ostream &O,
   if (!isa<VASTExpr>(From) && !isa<VASTSeqValue>(From)) return;
 
   DelayMatrix[Sel][From] = SelectorDelay[Sel];
-  return;
+
+  float *&P = DelayMatrix[Sel][From];
   // No need to calculate the interconnect delay more than once.
   if (P) return;
 
