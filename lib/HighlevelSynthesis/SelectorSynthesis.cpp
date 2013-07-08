@@ -158,8 +158,8 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
   // Strip the keep attribute if the keeped value is directly fan into the
   // register.
-  Sel->setGuard(StripKeep(Builder.buildOrExpr(FaninGuards, 1)));
-  Sel->setFanin(StripKeep(Builder.buildOrExpr(Fanins, Bitwidth)));
+  Sel->setGuard(Builder.buildOrExpr(FaninGuards, 1));
+  Sel->setFanin(Builder.buildOrExpr(Fanins, Bitwidth));
 }
 
 bool SelectorSynthesis::runOnVASTModule(VASTModule &VM) {
