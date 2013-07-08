@@ -141,13 +141,7 @@ void ControlLogicSynthesis::buildSlotReadyLogic(VASTSlot *S) {
 }
 
 void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
-  SmallVector<VASTValPtr, 2> LoopCndVector;
   VASTValPtr AlwaysTrue = VASTImmediate::True;
-
-  // Since LoopCndVector holds the operands for an AND expression, it does not
-  // hurt if we put an extra always true. This prevent us from passing an empty
-  // operand list to build the AND expression.
-  LoopCndVector.push_back(AlwaysTrue);
 
   std::map<const VASTSeqValue*, SuccVecTy>::const_iterator at
     = SlotSuccs.find(S->getValue());
@@ -161,9 +155,6 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
       bool IsLoop = NextSlotReg == S->getValue();
       VASTValPtr Cnd = Br->getGuard();
 
-      // Disable the current slot when we are not looping back.
-      if (IsLoop) LoopCndVector.push_back(Builder->buildNotExpr(Cnd));
-
       VASTUse &U = Br->getSrc(0);
       assert(isa<VASTSlotCtrl>(U.getUser()) && "Unexpected user!");
       U.unlinkUseFromUser();
@@ -172,10 +163,6 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
       Br->addSrc(AlwaysTrue, 0, NextSlotReg);
     }
   }
-
-  // Disable the current slot. Do not export the definition of the assignment.
-  VM->assignCtrlLogic(S->getRegister()->getSelector(), VASTImmediate::False, S,
-                      Builder->buildAndExpr(LoopCndVector, 1), true);
 }
 
 void ControlLogicSynthesis::collectControlLogicInfo(VASTSlot *S) {

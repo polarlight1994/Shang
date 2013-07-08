@@ -277,7 +277,7 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
     OS  << ";\n\n";
   }
 
-  if (isEnable()) return;
+  if (isEnable() || isSlot()) return;
 
   // Print (or implement) the MUX by:
   // output = (Sel0 & FANNIN0) | (Sel1 & FANNIN1) ...
@@ -318,7 +318,7 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   OS.else_begin();
 
   // Print the assignment.
-  if (isEnable()) {
+  if (isEnable() || isSlot()) {
     OS << getName() << " <= " << getName() << "_selector_guard" << ";\n";
   } else {
     OS.if_begin(Twine(getName()) + Twine("_selector_guard"));
