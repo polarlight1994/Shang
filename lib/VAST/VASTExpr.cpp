@@ -248,13 +248,13 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
 
 VASTExpr::VASTExpr(Opcode Opc, uint8_t NumOps, unsigned UB, unsigned LB)
   : VASTValue(vastExpr, UB - LB), VASTOperandList(NumOps),
-    IsNamed(false), Opc(Opc), UB(UB), LB(LB) {
+    Opc(Opc), UB(UB), LB(LB) {
   Contents.Name = 0;
   assert(NumOps && "Unexpected empty operand list!");
 }
 
 VASTExpr::VASTExpr()
-  : VASTValue(vastExpr, 0), VASTOperandList(0), IsNamed(0), Opc(-1),
+  : VASTValue(vastExpr, 0), VASTOperandList(0), Opc(-1),
     UB(0), LB(0) {
   Contents.Name = 0;
 }

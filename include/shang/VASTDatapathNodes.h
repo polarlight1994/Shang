@@ -173,9 +173,6 @@ private:
     return reinterpret_cast<const VASTUse*>(this + 1);
   }
 
-  // The total operand of this expression.
-  bool     IsNamed    : 1;
-
   VASTExpr(const VASTExpr&);              // Do not implement
   void operator=(const VASTExpr&);        // Do not implement
 
