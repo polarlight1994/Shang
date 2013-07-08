@@ -37,6 +37,7 @@ class TestStep :
   HybridSim = 'hybrid_sim'
   PureHWSim = 'pure_hw_sim'
   AlteraSyn = 'altera_syn'
+  AlteraNls = 'altera_nls'
 
   def __init__(self, config):
     self.__dict__.update(config)
@@ -567,7 +568,8 @@ IfFile:close()
     #If test type == hybrid simulation
     if self.mode == TestStep.HybridSim :
       return self.generateHybridSim()
-    elif self.mode == TestStep.PureHWSim or self.mode == TestStep.AlteraSyn :
+    elif self.mode == TestStep.PureHWSim or self.mode == TestStep.AlteraSyn \
+         or self.mode == TestStep.AlteraNls :
       return self.generatePureHWSim()
 
     return []
@@ -708,7 +710,7 @@ class HWSimStep(TestStep) :
 
   def generateSubTests(self) :
     #If test type == hybrid simulation
-    if self.mode == TestStep.AlteraSyn :
+    if self.mode == TestStep.AlteraSyn or self.mode == TestStep.AlteraNls:
       return [ AlteraSynStep(self) ]
 
     return []
@@ -1058,8 +1060,11 @@ project_close
           :mult18)''',
     results)
 
-#  def generateSubTests(self) :
-#    return [ AlteraNetlistSimStep(self) ]
+  def generateSubTests(self) :
+    if self.mode == TestStep.AlteraNls :
+      return [ AlteraNetlistSimStep(self) ]
+
+    return []
 
 class AlteraNetlistSimStep(TestStep) :
   step_name = 'altera netlist simulation'
