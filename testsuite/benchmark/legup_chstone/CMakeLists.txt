@@ -18,6 +18,7 @@ macro(add_test_legup_cases benchmark bc_file)
 
   add_test_config("legup_${benchmark}_hardware_sim" ${dst_bc_path} legup_${benchmark}_ir pure_hw_sim)
   add_test_config("legup_${benchmark}_altera_syn" ${dst_bc_path} legup_${benchmark}_ir altera_syn)
+  add_test_config("legup_${benchmark}_altera_nls" ${dst_bc_path} legup_${benchmark}_ir altera_nls)
   set(ENV{all_legup_benchmark} "$ENV{all_legup_benchmark} ${dst_bc_path}")
 endmacro(add_test_legup_cases)
 
@@ -56,3 +57,4 @@ add_test_legup_cases(dfadd dfadd.bc)
 
 add_test_config(legup_simulation $ENV{all_legup_benchmark} legup_ir pure_hw_sim)
 add_test_config(legup_synthesis  $ENV{all_legup_benchmark} legup_ir altera_syn)
+add_test_config(legup_netlistsim  $ENV{all_legup_benchmark} legup_ir altera_nls)
