@@ -121,7 +121,9 @@ struct PathIntervalQueryCache {
     SeqValSetTy &CurSet = QueryCache[Expr];
     for (iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
       VASTExpr *SubExpr = dyn_cast<VASTExpr>(VASTValPtr(*I).get());
-      if (SubExpr == 0) continue;
+      // Do not look up the source information across the keep boundary.
+      if (SubExpr == 0 || SubExpr->getOpcode() == VASTExpr::dpKeep)
+        continue;
 
       QueryCacheTy::const_iterator at = QueryCache.find(SubExpr);
       if (at == QueryCache.end()) continue;
