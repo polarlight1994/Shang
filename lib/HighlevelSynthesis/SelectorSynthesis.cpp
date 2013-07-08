@@ -88,6 +88,11 @@ static VASTValPtr StripKeep(VASTValPtr V) {
   return V;
 }
 
+static void keepAll(VASTExprBuilder &Builder, MutableArrayRef<VASTValPtr> Ops) {
+  for (unsigned i = 0; i < Ops.size(); ++i)
+    Ops[i] = Builder.buildKeep(Ops[i]);
+}
+
 void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
                                            VASTExprBuilder &Builder) {
   typedef std::vector<const VASTSeqOp*> OrVec;
@@ -100,15 +105,14 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
   unsigned Bitwidth = Sel->getBitWidth();
 
-  // Print the mux logic.
-  std::set<VASTValPtr, VASTSelector::StructualLess> FaninGuards;
-  bool KeepFI = CSEMap.size() > 1;
+  // Slot guards *without* keep attributes.
+  std::set<VASTValPtr, VASTSelector::StructualLess> SlotGuards;
 
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     VASTValPtr FIVal = I->first;
 
     VASTSelector::Fanin *FI = Sel->createFanin(FIVal);
-    FaninGuards.clear();
+    SlotGuards.clear();
 
     const OrVec &Ors = I->second;
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
@@ -120,27 +124,24 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
       CurGuards.push_back(Op->getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
-      CurGuard = Builder.buildKeep(CurGuard);
 
-      FaninGuards.insert(CurGuard);
-      FI->AddSlot(CurGuard, Op->getSlot());
+      //Remember the unkeeped slot guard.
+      SlotGuards.insert(CurGuard);
+
+      FI->AddSlot(Builder.buildKeep(CurGuard), Op->getSlot());
     }
 
-    SmallVector<VASTValPtr, 4> Guards(FaninGuards.begin(), FaninGuards.end());
+    SmallVector<VASTValPtr, 4> Guards(SlotGuards.begin(), SlotGuards.end());
     VASTValPtr FIGuard = Builder.buildOrExpr(Guards, 1);
-    FI->setCombinedGuard(FIGuard);
 
-    // If there is only 1 slot guard for this fanin value, we do not need to
-    // build the guarded fanin with the "keeped" guard. Because the dynamic
-    // false paths only present when there are multiple slot guards guarding this
-    // fanin value.
-    if (Guards.size() == 1)
-      FIGuard = StripKeep(FIGuard);
+    // Apply the keep attribute to each individual slot guarding condition
+    // before combining them.
+    keepAll(Builder, Guards);
+    FI->setCombinedGuard(Builder.buildOrExpr(Guards, 1));
 
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
-    if (KeepFI)
-      GuardedFIVal = Builder.buildKeep(GuardedFIVal);
+    GuardedFIVal = Builder.buildKeep(GuardedFIVal);
     FI->GuardedFI.set(GuardedFIVal);
   }
 }
