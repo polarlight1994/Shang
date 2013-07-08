@@ -392,11 +392,7 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
 
       CurGuards.push_back(Op->getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
-
-      // Do not allow quartus to modify the guarding condition if it is a
-      // complex expression!
-      if (isa<VASTExpr>(CurGuard.get()))
-        CurGuard = Builder.buildKeep(CurGuard);
+      CurGuard = Builder.buildKeep(CurGuard);
 
       FaninGuards.insert(CurGuard);
       FI->AddSlot(CurGuard, Op->getSlot());
