@@ -46,14 +46,13 @@ public:
     VASTUse FI;
     friend class VASTSelector;
     void AddSlot(VASTValPtr Guard, VASTSlot *S);
+    Fanin(VASTNode *Node, VASTValPtr FI);
   public:
     ~Fanin();
 
     VASTUse GuardedFI;
     // Return the unguarded fan in.
     VASTValPtr getFanin() const { return FI; }
-
-    Fanin(VASTNode *Node);
 
     typedef std::vector<std::pair<VASTUse*, VASTSlot*> >::const_iterator
             guard_iterator;
@@ -95,10 +94,6 @@ private:
     bool operator()(VASTValPtr LHS, VASTValPtr RHS) const;
   };
 
-  typedef std::map<VASTValPtr, std::vector<const VASTSeqOp*>, StructualLess>
-          CSEMapTy;
-
-  bool buildCSEMap(CSEMapTy &CSEMap) const;
 
   void instantiateSelector(raw_ostream &OS) const;
 public:
@@ -151,6 +146,11 @@ public:
   // Return true if the latched value is X (undefined value) or the SeqVal from
   // the same selector.
   bool isTrivialFannin(const VASTLatch &L) const;
+
+  typedef std::map<VASTValPtr, std::vector<const VASTSeqOp*>, StructualLess>
+          CSEMapTy;
+
+  bool buildCSEMap(CSEMapTy &CSEMap) const;
 
   void synthesizeSelector(VASTExprBuilder &Builder);
 

@@ -332,8 +332,8 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   OS.always_ff_end();
 }
 
-VASTSelector::Fanin::Fanin(VASTNode *N)
-  : CombinedGuard(N), FI(N), GuardedFI(N) {}
+VASTSelector::Fanin::Fanin(VASTNode *N, VASTValPtr FI)
+  : CombinedGuard(N), FI(N, FI), GuardedFI(N) {}
 
 void VASTSelector::Fanin::AddSlot(VASTValPtr Guard, VASTSlot *S) {
   VASTUse *U = new VASTUse(&FI.getUser(), Guard);
@@ -380,7 +380,7 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
   for (it I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     VASTValPtr FIVal = I->first;
 
-    Fanin *FI = new Fanin(this);
+    Fanin *FI = new Fanin(this, FIVal);
     FaninGuards.clear();
 
     const OrVec &Ors = I->second;
@@ -398,8 +398,6 @@ void VASTSelector::synthesizeSelector(VASTExprBuilder &Builder) {
       FaninGuards.insert(CurGuard);
       FI->AddSlot(CurGuard, Op->getSlot());
     }
-
-    FI->FI.set(FIVal);
 
     SmallVector<VASTValPtr, 4> Guards(FaninGuards.begin(), FaninGuards.end());
     FI->CombinedGuard.set(Builder.buildOrExpr(Guards, 1));
