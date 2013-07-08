@@ -597,6 +597,14 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
 
   // Also extract the arrival time for the synthesized selector.
   if (Sel->isSelectorSynthesized()) {
+    // Dirty Hack: Build path for the annotated value.
+    typedef VASTSelector::ann_iterator ann_iterator;
+    for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
+      VASTValue *V = (*I)->getNode();
+      buildPathInfoForCone(O, V);
+      extractInterConnectDelay(O, Sel, V);
+    }
+
     buildPathInfoForCone(O, Sel->getFanin().get());
     extractInterConnectDelay(O, Sel, Sel->getFanin().get());
     buildPathInfoForCone(O, Sel->getGuard().get());
