@@ -125,19 +125,13 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       CurGuards.push_back(Op->getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
 
-      //Remember the unkeeped slot guard.
-      SlotGuards.insert(CurGuard);
-
       FI->AddSlot(Builder.buildKeep(CurGuard), Op->getSlot());
+      SlotGuards.insert(CurGuard);
     }
 
     SmallVector<VASTValPtr, 4> Guards(SlotGuards.begin(), SlotGuards.end());
     VASTValPtr FIGuard = Builder.buildOrExpr(Guards, 1);
-
-    // Apply the keep attribute to each individual slot guarding condition
-    // before combining them.
-    keepAll(Builder, Guards);
-    FI->setCombinedGuard(Builder.buildOrExpr(Guards, 1));
+    FI->setCombinedGuard(FIGuard);
 
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
