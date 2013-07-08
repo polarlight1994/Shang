@@ -434,12 +434,17 @@ void
 TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
                                      SeqLiveVariables &SLV) {
   DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> > DatapathMap;
+  VASTValue *FI = Dst->getFanin().get(), *Guard = Dst->getGuard().get();
 
   typedef VASTSelector::ann_iterator ann_iterator;
   for (ann_iterator I = Dst->ann_begin(), E = Dst->ann_end(); I != E; ++I) {
     VASTSelector::Annotation *Ann = *I;
     VASTSlot *S = &Ann->S;
     DatapathMap[Ann->getNode()].push_back(S);
+    // Also annotate the slot to FI and Guard, otherwise we may miss some path
+    // not block by the keeped nodes.
+    DatapathMap[FI].push_back(S);
+    DatapathMap[Guard].push_back(S);
   }
 
   PathIntervalQueryCache Cache(TNL, SLV, Dst, OS);
