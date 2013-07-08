@@ -120,6 +120,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
       SmallVector<VASTValPtr, 2> CurGuards;
       const VASTSeqOp *Op = *OI;
+      VASTSlot *S = Op->getSlot();
 
       if (VASTValPtr SlotActive = Op->getSlotActive())
         CurGuards.push_back(SlotActive);
@@ -128,14 +129,15 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
 
       unsigned CurInterval
-        = SLV->getMinimalIntervalOfCone(CurGuard, Op->getSlot());
-      MinimalInterval = std::max(CurInterval, MinimalInterval);
+        = SLV->getMinimalIntervalOfCone(Op->getGuard(), S);
+      MinimalInterval = std::min(CurInterval, MinimalInterval);
+      // Also update the interval for FIVal.
+      MinimalInterval = std::min(SLV->getMinimalIntervalOfCone(FIVal, S),
+                                 MinimalInterval);
 
       // Only apply the keep attribute for multi-cycle path.
       if (CurInterval > 1)
         CurGuard = Builder.buildKeep(CurGuard);
-
-      VASTSlot *S = Op->getSlot();
       Sel->createAnnotation(S, CurGuard);
       SlotGuards.push_back(CurGuard);
       Slots.push_back(S);
