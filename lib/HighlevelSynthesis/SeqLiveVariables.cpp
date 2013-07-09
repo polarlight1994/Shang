@@ -638,7 +638,7 @@ unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
   //assert(IntervalFromLanding < STGDistances::Inf && "No live-in?");
 
   // The is 1 extra cycle from the definition to live in.
-  return IntervalFromLanding + 1;
+  return std::min(IntervalFromLanding + 1, STGDistances::Inf);
 }
 
 unsigned SeqLiveVariables::getMinimalIntervalOfCone(VASTValPtr V,
