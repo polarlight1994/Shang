@@ -275,6 +275,18 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
         // FIXME: Get the delay from V to Sel!
         buildTimingPath(V, Sel, delay_type(0.0f));
       }
+
+      VASTValue *FI = Sel->getFanin().get();
+      // Visit the cone rooted on the ready signal.
+      if (VASTExpr *Expr = dyn_cast<VASTExpr>(FI))
+        Expr->visitConeTopOrder(Visited, ETA);
+      buildTimingPath(FI, Sel, delay_type(0.0f));
+
+      VASTValue *Guard = Sel->getGuard().get();
+      // Visit the cone rooted on the ready signal.
+      if (VASTExpr *Expr = dyn_cast<VASTExpr>(Guard))
+        Expr->visitConeTopOrder(Visited, ETA);
+      buildTimingPath(Guard, Sel, delay_type(0.0f));
     }
   }
 
