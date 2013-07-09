@@ -44,10 +44,15 @@ class Cone {
   LeafSetTy Leaves;
 
 public:
-  void buildCone(SVSet &SVs, TimingNetlist *TNL) {
+  void buildCone(SVSet &SVs, VASTValPtr Root, TimingNetlist *TNL) {
+    VASTExpr *Expr = dyn_cast<VASTExpr>(Root.get());
     for (SVSet::iterator I = SVs.begin(), E = SVs.end(); I != E; ++I) {
       VASTSeqValue *SV = *I;
-      Leaves[SV->getSelector()] = delay_type();
+      delay_type delay = delay_type();
+      if (Expr)
+        delay = TNL->getDelay(SV, Expr);
+      delay_type &old_delay = Leaves[SV->getSelector()];
+      old_delay = std::max(old_delay, delay);
     }
   }
 
@@ -139,9 +144,18 @@ public:
       // If the current cone have fewer available cycles or have bigger critical
       // delay, there is a tighter constraint.
       if (CurLeaf.NumCycles < I->second.NumCycles
-          || CurLeaf.CriticalDelay > I->second.CriticalDelay)
-        return true;
+          || CurLeaf.CriticalDelay > I->second.CriticalDelay) {
+        unsigned MinCycles = std::min(CurLeaf.NumCycles, I->second.NumCycles);
+        delay_type CriticalDelay
+          = std::max(CurLeaf.CriticalDelay, I->second.CriticalDelay);
 
+        // FIXME: Allow user to specify the ratio.
+        // Temporary choose 2 because the (unpredictable) wire delay usually
+        // take 50% of the total delay. Here we make sure even though we merge
+        // the fanin, we still have 50% slack for the wire delay.
+        if (CriticalDelay * 2 > MinCycles)
+          return true;
+      }
     }
 
     return false;
@@ -195,7 +209,7 @@ struct SelectorSynthesis : public VASTModulePass {
     // Build the cone if it is not yet created.
     Cone *&C = Cones[StrashID];
     C = new Cone();
-    C->buildCone(Leaves, TNL);
+    C->buildCone(Leaves, V, TNL);
     return C;
   }
 
@@ -213,6 +227,7 @@ struct SelectorSynthesis : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
+    AU.addRequired<TimingNetlist>();
     AU.addRequired<CachedStrashTable>();
     AU.addRequired<SeqLiveVariables>();
     AU.addPreserved<SeqLiveVariables>();
@@ -323,6 +338,8 @@ bool SelectorSynthesis::mergeCones(FIConeVec &Cones, VASTExprBuilder &Builder,
 
       // Merge the FI values.
       VASTValPtr NewFI = Builder.buildOrExpr(FaninI, FaninJ, BitWdith);
+      TNL->buildTimingPathOnTheFly(NewFI);
+
       // Merge the cones.
       // FIXME: Use the cone returned by "isGoodToMerge"
       TimedCone *TC = getOrCreateTimedCone(NewFI);
@@ -405,6 +422,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
+    TNL->buildTimingPathOnTheFly(GuardedFIVal);
 
     TimedCone *C = getOrCreateTimedCone(GuardedFIVal);
     FICones[GuardedFIVal] = C;
@@ -453,6 +471,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
 bool SelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   SLV = &getAnalysis<SeqLiveVariables>();
+  TNL = &getAnalysis<TimingNetlist>();
   CST = &getAnalysis<CachedStrashTable>();
 
   {

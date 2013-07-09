@@ -544,7 +544,7 @@ IfFile:close()
     jt = self.createJobTemplate()
     jt.remoteCommand = 'timeout'
     # Use a bigger timeout if we are runing the feedback flow.
-    timeout = self.hls_feedback_flow_timeout * self.shang_max_scheduling_iteration if self.timing_model == 'external' else self.hls_timeout
+    timeout = self.hls_feedback_flow_timeout * ( 3 * self.shang_max_scheduling_iteration ) if self.timing_model == 'external' else self.hls_timeout
     jt.args = ['%ds' % timeout, self.shang, self.synthesis_config_file, '-stats',
                '-timing-model=%(timing_model)s' % self,
                '-shang-enable-mux-pipelining=%(shang_enable_mux_pipelining)s' % self,
@@ -1138,12 +1138,12 @@ module DUT_TOP_tb();
     @(posedge clk);
     rstN <= 1;
     @(posedge clk);
-    #1ns;
+    #{{ "%.2f" % (reported_period *0.2) }}ns;
     start <= 1;
     $display ("Start at %t!", $time());
     @(posedge clk);
     @(posedge clk);
-    #1ns;
+    #{{ "%.2f" % (reported_period * 0.8) }}ns;
     start <= 0;
     startcnt <= 1;
   end
