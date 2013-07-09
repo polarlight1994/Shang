@@ -19,6 +19,7 @@
 #include "shang/VASTMemoryPort.h"
 #include "shang/VASTExprBuilder.h"
 
+#include "shang/Strash.h"
 #include "shang/VASTModulePass.h"
 #include "shang/VASTModule.h"
 #include "shang/Passes.h"
@@ -35,6 +36,7 @@ using namespace llvm;
 namespace {
 
 struct SelectorSynthesis : public VASTModulePass {
+  CachedStrashTable *CST;
   TimingNetlist *TNL;
   SeqLiveVariables *SLV;
   unsigned MaxSingleCyleFINum;
@@ -43,7 +45,7 @@ struct SelectorSynthesis : public VASTModulePass {
 
   static char ID;
 
-  SelectorSynthesis() : VASTModulePass(ID), TNL(0), SLV(0) {
+  SelectorSynthesis() : VASTModulePass(ID), CST(0), TNL(0), SLV(0) {
     initializeSelectorSynthesisPass(*PassRegistry::getPassRegistry());
 
     VFUMux *Mux = getFUDesc<VFUMux>();
@@ -55,6 +57,7 @@ struct SelectorSynthesis : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
+    AU.addRequired<CachedStrashTable>();
     AU.addRequired<SeqLiveVariables>();
     AU.addPreserved<SeqLiveVariables>();
     AU.addRequiredID(ControlLogicSynthesisID);
@@ -97,34 +100,45 @@ static void keepAll(VASTExprBuilder &Builder, MutableArrayRef<VASTValPtr> Ops) {
 
 void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
                                            VASTExprBuilder &Builder) {
-  typedef std::vector<const VASTSeqOp*> OrVec;
-  typedef VASTSelector::CSEMapTy CSEMapTy;
+  typedef std::vector<VASTLatch> OrVec;
+  typedef std::map<unsigned, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator iterator;
 
   CSEMapTy CSEMap;
 
-  if (!Sel->buildCSEMap(CSEMap)) return;
+  for (VASTSelector::const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+    VASTLatch U = *I;
+
+    if (Sel->isTrivialFannin(U)) continue;
+
+    // Index the input of the assignment based on the strash id. By doing this
+    // we can pack the structural identical inputs together.
+    CSEMap[CST->getOrCreateStrashID(VASTValPtr(U))].push_back(U);
+  }
+
+  if (CSEMap.empty()) return;
 
   unsigned Bitwidth = Sel->getBitWidth();
 
   // Slot guards *without* keep attributes.
-  SmallVector<VASTValPtr, 4> SlotGuards, FaninGuards, Fanins;
+  SmallVector<VASTValPtr, 4> SlotGuards, SlotFanins, FaninGuards, Fanins;
   SmallVector<VASTSlot*, 4> Slots;
 
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    VASTValPtr FIVal = I->first;
     SlotGuards.clear();
+    SlotFanins.clear();
 
     const OrVec &Ors = I->second;
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
       SmallVector<VASTValPtr, 2> CurGuards;
-      const VASTSeqOp *Op = *OI;
-      VASTSlot *S = Op->getSlot();
+      const VASTLatch &L = *OI;
+      SlotFanins.push_back(L);
+      VASTSlot *S = L.getSlot();
 
-      if (VASTValPtr SlotActive = Op->getSlotActive())
+      if (VASTValPtr SlotActive = L.getSlotActive())
         CurGuards.push_back(SlotActive);
 
-      CurGuards.push_back(Op->getGuard());
+      CurGuards.push_back(L.getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
 
       // Only apply the keep attribute for multi-cycle path.
@@ -139,6 +153,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     FaninGuards.push_back(FIGuard);
 
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
+    VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
 
     //GuardedFIVal = Builder.buildKeep(GuardedFIVal);
@@ -156,6 +171,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
 bool SelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   SLV = &getAnalysis<SeqLiveVariables>();
+  CST = &getAnalysis<CachedStrashTable>();
 
   {
     MinimalExprBuilderContext Context(VM);
