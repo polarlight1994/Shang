@@ -140,7 +140,7 @@ public:
       // delay, there is a tighter constraint.
       if (CurLeaf.NumCycles < I->second.NumCycles
           || CurLeaf.CriticalDelay > I->second.CriticalDelay)
-        return false;
+        return true;
 
     }
 
