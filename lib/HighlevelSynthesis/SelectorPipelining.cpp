@@ -27,7 +27,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "shang-selector-mux-synthesis"
 #include "llvm/Support/Debug.h"
 

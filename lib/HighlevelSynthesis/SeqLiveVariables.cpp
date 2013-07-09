@@ -625,10 +625,10 @@ unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
     unsigned CurInterval
       = Distances->getShortestPath(LandingSlotNum, ReadSlotNum);
     if (CurInterval >= STGDistances::Inf) {
-      dbgs() << "Read at slot: " << ReadSlotNum << '\n';
+      DEBUG(dbgs() << "Read at slot: " << ReadSlotNum << '\n';
       dbgs() << "Landing slot: " << LandingSlotNum << '\n';
       VI->dump();
-      dbgs() <<  "Alive slot not reachable?\n";
+      dbgs() <<  "Alive slot not reachable?\n");
       continue;
     }
 
