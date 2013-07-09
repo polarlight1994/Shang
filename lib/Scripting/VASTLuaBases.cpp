@@ -126,7 +126,8 @@ std::string VASTValue::printBitRange(unsigned UB, unsigned LB, bool printOneBit)
   return ret;
 }
 
-bool VASTValue::extractSupportingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
+bool VASTValue::extractSupportingSeqVal(std::set<VASTSeqValue*> &SeqVals,
+                                        bool IgnoreKeep) {
   VASTValue *Root = this;
 
   std::set<VASTExpr*> Visited;
@@ -160,6 +161,9 @@ bool VASTValue::extractSupportingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
     ++VisitStack.back().second;
 
     if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
+      if (IgnoreKeep && ChildExpr->getOpcode() == VASTExpr::dpKeep)
+        continue;
+
       // ChildNode has a name means we had already visited it.
       if (!Visited.insert(ChildExpr).second) continue;
 
