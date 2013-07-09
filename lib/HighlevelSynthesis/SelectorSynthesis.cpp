@@ -106,7 +106,6 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   if (!Sel->buildCSEMap(CSEMap)) return;
 
   unsigned Bitwidth = Sel->getBitWidth();
-  unsigned MinimalInterval = STGDistances::Inf;
 
   // Slot guards *without* keep attributes.
   SmallVector<VASTValPtr, 4> SlotGuards, FaninGuards, Fanins;
@@ -128,16 +127,9 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       CurGuards.push_back(Op->getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
 
-      unsigned CurInterval
-        = SLV->getMinimalIntervalOfCone(Op->getGuard(), S);
-      MinimalInterval = std::min(CurInterval, MinimalInterval);
-      // Also update the interval for FIVal.
-      MinimalInterval = std::min(SLV->getMinimalIntervalOfCone(FIVal, S),
-                                 MinimalInterval);
-
       // Only apply the keep attribute for multi-cycle path.
-      if (CurInterval > 1)
-        CurGuard = Builder.buildKeep(CurGuard);
+      CurGuard = Builder.buildKeep(CurGuard);
+
       Sel->createAnnotation(S, CurGuard);
       SlotGuards.push_back(CurGuard);
       Slots.push_back(S);
@@ -148,9 +140,9 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
-    // Only apply the keep attribute for multi-cycle path.
-    if (MinimalInterval > 1)
-      GuardedFIVal = Builder.buildKeep(GuardedFIVal);
+
+    //GuardedFIVal = Builder.buildKeep(GuardedFIVal);
+
     Fanins.push_back(GuardedFIVal);
     while (!Slots.empty())
       Sel->createAnnotation(Slots.pop_back_val(), GuardedFIVal.get());
