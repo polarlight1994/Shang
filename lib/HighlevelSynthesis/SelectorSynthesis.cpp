@@ -32,6 +32,8 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+STATISTIC(NumTrivialConesMerged, "Number of trivial cones merged");
+STATISTIC(NumConesMerged, "Number of cones merged");
 
 namespace {
 typedef std::set<VASTSeqValue*> SVSet;
@@ -108,9 +110,7 @@ public:
   slot_iterator slot_end() const { return Slots.end(); }
 };
 
-class ConeMerger {
-  SmallVector<TimedCone*, 8> Cones;
-};
+typedef std::map<VASTValPtr, TimedCone*> FIConeVec;
 
 struct SelectorSynthesis : public VASTModulePass {
   CachedStrashTable *CST;
@@ -175,10 +175,10 @@ struct SelectorSynthesis : public VASTModulePass {
     AU.addPreserved<STGDistances>();
   }
 
-  unsigned getMinimalCycleOfCone(VASTValPtr V, VASTSlot *S);
-
   bool runOnVASTModule(VASTModule &VM);
 
+  void mergeTrivialCones(FIConeVec &Cones, VASTExprBuilder &Builder,
+                         unsigned BitWdith);
   void synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
 
   void releaseMemory() {
@@ -197,17 +197,32 @@ char SelectorSynthesis::ID = 0;
 
 char &llvm::SelectorSynthesisID = SelectorSynthesis::ID;
 
-static VASTValPtr StripKeep(VASTValPtr V) {
-  if (VASTExprPtr Expr = dyn_cast<VASTExpr>(V))
-    if (Expr->getOpcode() == VASTExpr::dpKeep)
-      return Expr.getOperand(0);
+void SelectorSynthesis::mergeTrivialCones(FIConeVec &Cones,
+                                          VASTExprBuilder &Builder,
+                                          unsigned Bitwidth) {
+  std::vector<VASTValPtr> TrivialFIs;
 
-  return V;
-}
+  for (FIConeVec::iterator I = Cones.begin(), E = Cones.end(); I != E; ++I) {
+    if (I->second) continue;
 
-static void keepAll(VASTExprBuilder &Builder, MutableArrayRef<VASTValPtr> Ops) {
-  for (unsigned i = 0; i < Ops.size(); ++i)
-    Ops[i] = Builder.buildKeep(Ops[i]);
+    TrivialFIs.push_back(I->first);
+    ++NumTrivialConesMerged;
+  }
+
+  // Return if nothing to merge.
+  if (TrivialFIs.empty()) return;
+
+  // Combine the trivial cones by OR expression.
+  VASTValPtr MergedFI = Builder.buildOrExpr(TrivialFIs, Bitwidth);
+
+  // Erase the merged cones.
+  while (!TrivialFIs.empty()) {
+    Cones.erase(TrivialFIs.back());
+    TrivialFIs.pop_back();
+  }
+
+  // Add the newly created fanin.
+  Cones[MergedFI] = 0;
 }
 
 void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
@@ -235,7 +250,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   SmallVector<VASTValPtr, 4> SlotGuards, SlotFanins, FaninGuards;
   SmallVector<VASTSlot*, 4> Slots;
 
-  std::map<VASTValPtr, TimedCone*> FICones;
+  FIConeVec FICones;
 
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     SlotGuards.clear();
@@ -254,7 +269,9 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       CurGuards.push_back(L.getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
 
-      // Only apply the keep attribute for multi-cycle path.
+      // Simply keep all guarding condition, because they are only 1 bit nodes,
+      // and their upper bound is the product of number of slots and number of
+      // basic blocks.
       CurGuard = Builder.buildKeep(CurGuard);
 
       Sel->createAnnotation(S, CurGuard);
@@ -283,6 +300,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   // register.
   Sel->setGuard(Builder.buildOrExpr(FaninGuards, 1));
 
+  mergeTrivialCones(FICones, Builder, Bitwidth);
   // TODO: Merge fan-in cones.
 
   SmallVector<VASTValPtr, 4> Fanins;
