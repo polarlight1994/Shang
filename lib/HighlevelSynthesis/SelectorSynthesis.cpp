@@ -57,6 +57,7 @@ public:
 };
 
 class TimedCone {
+public:
   struct Leaf {
     unsigned NumCycles;
     float CriticalDelay;
@@ -76,9 +77,24 @@ class TimedCone {
   };
 
   typedef DenseMap<VASTSeqValue*, Leaf> LeafSetTy;
+private:
   LeafSetTy Leaves;
 
   std::set<VASTSlot*> Slots;
+
+  void updateIntervals(VASTSlot *S, SeqLiveVariables *SLV) {
+    // Update the available interval.
+    for (LeafSetTy::iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
+      VASTSeqValue *SV = I->first;
+      // Default the interval to 1, which corresponds to the interval from
+      // FUOutput. We will change it after we are sure that SV is not FUOutput.
+      unsigned Interval = 1;
+
+      if (!SV->isFUOutput())
+        Interval = SLV->getIntervalFromDef(SV, S);
+      I->second.update(Interval, I->second.CriticalDelay);
+    }
+  }
 public:
   void buildCone(SVSet &SVs, Cone *C) {
     for (SVSet::iterator I = SVs.begin(), E = SVs.end(); I != E; ++I) {
@@ -87,27 +103,49 @@ public:
     }
   }
 
-  typedef LeafSetTy::iterator iterator;
+  typedef LeafSetTy::const_iterator iterator;
+  iterator begin() const { return Leaves.begin(); }
+  iterator end()   const { return Leaves.end(); }
 
   void addSlot(VASTSlot *S, SeqLiveVariables *SLV) {
     if (!Slots.insert(S).second) return;
 
-    // Update the available interval.
-    for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
-      VASTSeqValue *SV = I->first;
-      // Default the interval to 1, which corresponds to the interval from
-      // FUOutput. We will change it after we are sure that SV is not FUOutput.
-      unsigned Interval = 1;
+    updateIntervals(S, SLV);
+  }
 
-      if (!SV->isFUOutput())
-        Interval = SLV->getIntervalFromDef(SV, S);
-      I->second.NumCycles = std::min(I->second.NumCycles, Interval);
-    }
+  Leaf getLeaf(VASTSeqValue *SV) const {
+    return Leaves.lookup(SV);
   }
 
   typedef std::set<VASTSlot*>::const_iterator slot_iterator;
   slot_iterator slot_begin() const { return Slots.begin(); }
   slot_iterator slot_end() const { return Slots.end(); }
+
+  void merge(const TimedCone *LHS, SeqLiveVariables *SLV) {
+    for (iterator I = LHS->begin(), E = LHS->end(); I != E; ++I)
+      Leaves[I->first].update(I->second);
+
+    Slots.insert(LHS->slot_begin(), LHS->slot_end());
+
+    // Recalculate the intervals.
+    for (slot_iterator I = slot_begin(), E = slot_end(); I != E; ++I)
+      updateIntervals(*I, SLV);
+  }
+
+  bool hasTighterConstraints(const TimedCone *LHS) const {
+    for (iterator I = LHS->begin(), E = LHS->end(); I != E; ++I) {
+      Leaf CurLeaf = getLeaf(I->first);
+
+      // If the current cone have fewer available cycles or have bigger critical
+      // delay, there is a tighter constraint.
+      if (CurLeaf.NumCycles < I->second.NumCycles
+          || CurLeaf.CriticalDelay > I->second.CriticalDelay)
+        return false;
+
+    }
+
+    return false;
+  }
 };
 
 typedef std::map<VASTValPtr, TimedCone*> FIConeVec;
@@ -179,6 +217,9 @@ struct SelectorSynthesis : public VASTModulePass {
 
   void mergeTrivialCones(FIConeVec &Cones, VASTExprBuilder &Builder,
                          unsigned BitWdith);
+  bool mergeCones(FIConeVec &Cones, VASTExprBuilder &Builder,
+                  unsigned BitWdith);
+  bool isGoodToMerge(TimedCone *LHS, TimedCone *RHS) const;
   void synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
 
   void releaseMemory() {
@@ -200,6 +241,9 @@ char &llvm::SelectorSynthesisID = SelectorSynthesis::ID;
 void SelectorSynthesis::mergeTrivialCones(FIConeVec &Cones,
                                           VASTExprBuilder &Builder,
                                           unsigned Bitwidth) {
+  // Nothing to merge.
+  if (Cones.size() == 1) return;
+
   std::vector<VASTValPtr> TrivialFIs;
 
   for (FIConeVec::iterator I = Cones.begin(), E = Cones.end(); I != E; ++I) {
@@ -223,6 +267,74 @@ void SelectorSynthesis::mergeTrivialCones(FIConeVec &Cones,
 
   // Add the newly created fanin.
   Cones[MergedFI] = 0;
+}
+
+bool SelectorSynthesis::isGoodToMerge(TimedCone *LHS, TimedCone *RHS) const {
+  // It is always good to merge to trivial cones.
+  if (!LHS || !RHS) return true;
+
+  TimedCone NewTC;
+
+  NewTC.merge(LHS, SLV);
+  NewTC.merge(RHS, SLV);
+
+  if (NewTC.hasTighterConstraints(LHS) || NewTC.hasTighterConstraints(RHS))
+    return false;
+
+  return true;
+}
+
+bool SelectorSynthesis::mergeCones(FIConeVec &Cones, VASTExprBuilder &Builder,
+                                   unsigned BitWdith) {
+  // Nothing to merge.
+  if (Cones.size() == 1) return false;
+
+  std::vector<std::pair<VASTValPtr, TimedCone*> > FIs(Cones.begin(), Cones.end());
+
+  bool AnyChange = false;
+
+  for (unsigned i = 0, e = FIs.size(); i < e; ++i) {
+    VASTValPtr FaninI = FIs[i].first;
+
+    // Do not merge the same fanin twice.
+    if (!FaninI)
+      continue;
+
+    TimedCone *TCI = FIs[i].second;
+
+    for (unsigned j = i + 1; j < e; ++j) {
+      VASTValPtr FaninJ = FIs[j].first;
+
+      // Do not merge the same fanin twice.
+      if (!FaninJ)
+        continue;
+
+      TimedCone *TCJ = FIs[j].second;
+
+      if (!isGoodToMerge(TCI, TCJ)) continue;
+
+      // Merge the FI values.
+      VASTValPtr NewFI = Builder.buildOrExpr(FaninI, FaninJ, BitWdith);
+      // Merge the cones.
+      // FIXME: Use the cone returned by "isGoodToMerge"
+      TimedCone *TC = getOrCreateTimedCone(NewFI);
+
+      // Modify Cone vector, so that we do not merge the same cone twice.
+      Cones.erase(FaninI);
+      Cones.erase(FaninJ);
+      bool Inserted = Cones.insert(std::make_pair(NewFI, TC)).second;
+      assert(Inserted && "Fanin had already existed?");
+
+      FaninI = NewFI;
+      TCI = TC;
+      FIs[j].first = VASTValPtr();
+
+      AnyChange = true;
+      ++NumConesMerged;
+    }
+  }
+
+  return AnyChange;
 }
 
 void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
@@ -301,7 +413,8 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   Sel->setGuard(Builder.buildOrExpr(FaninGuards, 1));
 
   mergeTrivialCones(FICones, Builder, Bitwidth);
-  // TODO: Merge fan-in cones.
+  while (mergeCones(FICones, Builder, Bitwidth))
+    ;
 
   SmallVector<VASTValPtr, 4> Fanins;
   typedef std::map<VASTValPtr, TimedCone*>::iterator cone_iterator;
@@ -309,6 +422,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     VASTValPtr FI = I->first;
     Fanins.push_back(FI);
     //FI = Builder.buildKeep(FI);
+
     TimedCone *TC = I->second;
 
     // Ignore the trivial cones.
