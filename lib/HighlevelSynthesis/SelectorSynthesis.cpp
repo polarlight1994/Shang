@@ -146,6 +146,14 @@ public:
 
     return false;
   }
+
+  bool isSingleCycleCone() const {
+    for (iterator I = begin(), E = end(); I != E; ++I)
+      if (I->second.NumCycles > 1)
+        return false;
+
+    return true;
+  }
 };
 
 typedef std::map<VASTValPtr, TimedCone*> FIConeVec;
@@ -420,14 +428,14 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   typedef std::map<VASTValPtr, TimedCone*>::iterator cone_iterator;
   for (cone_iterator I = FICones.begin(), E = FICones.end(); I != E; ++I) {
     VASTValPtr FI = I->first;
+    TimedCone *TC = I->second;
 
     // Apply the keep attribute if necessary.
-    if (FICones.size() > 1)
+    if (FICones.size() > 1 && TC && !TC->isSingleCycleCone())
       FI = Builder.buildKeep(FI);
 
+    // Remember the fanin, we are going to OR them together.
     Fanins.push_back(FI);
-
-    TimedCone *TC = I->second;
 
     // Ignore the trivial cones.
     if (!TC)
