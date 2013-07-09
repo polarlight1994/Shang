@@ -420,8 +420,12 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   typedef std::map<VASTValPtr, TimedCone*>::iterator cone_iterator;
   for (cone_iterator I = FICones.begin(), E = FICones.end(); I != E; ++I) {
     VASTValPtr FI = I->first;
+
+    // Apply the keep attribute if necessary.
+    if (FICones.size() > 1)
+      FI = Builder.buildKeep(FI);
+
     Fanins.push_back(FI);
-    //FI = Builder.buildKeep(FI);
 
     TimedCone *TC = I->second;
 
