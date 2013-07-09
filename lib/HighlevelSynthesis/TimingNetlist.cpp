@@ -250,7 +250,6 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
     delay_type MUXDelay = getSelectorDelayImpl(Sel->size(), Sel);
 
     if (Sel->isSelectorSynthesized()) {
-      VASTValPtr Fanin = Sel->getFanin();
       typedef VASTSelector::ann_iterator ann_iterator;
       for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
         VASTValue *V = (*I)->getNode();
@@ -258,6 +257,9 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
         buildTimingPath(V, Sel, MUXDelay);
       }
 
+      // Path from the direct inputs of the selector.
+      buildTimingPath(Sel->getFanin().get(), Sel, delay_type());
+      buildTimingPath(Sel->getGuard().get(), Sel, delay_type());
       continue;
     }
 
