@@ -34,6 +34,83 @@
 using namespace llvm;
 
 namespace {
+typedef std::set<VASTSeqValue*> SVSet;
+typedef TimingNetlist::delay_type delay_type;
+
+class Cone {
+  typedef DenseMap<VASTSelector*, delay_type> LeafSetTy;
+  LeafSetTy Leaves;
+
+public:
+  void buildCone(SVSet &SVs, TimingNetlist *TNL) {
+    for (SVSet::iterator I = SVs.begin(), E = SVs.end(); I != E; ++I) {
+      VASTSeqValue *SV = *I;
+      Leaves[SV->getSelector()] = delay_type();
+    }
+  }
+
+  delay_type getDelayFrom(VASTSelector *Sel) const {
+    return Leaves.lookup(Sel);
+  }
+};
+
+class TimedCone {
+  struct Leaf {
+    unsigned NumCycles;
+    float CriticalDelay;
+    Leaf(float CriticalDelay = 0.0f, unsigned NumCycles = STGDistances::Inf)
+      : NumCycles(NumCycles), CriticalDelay(CriticalDelay) {}
+
+    // Update the source information with tighter cycles constraint and larger
+    // critical delay
+    void update(unsigned NumCycles, float CriticalDelay) {
+      this->NumCycles = std::min(this->NumCycles, NumCycles);
+      this->CriticalDelay = std::max(this->CriticalDelay, CriticalDelay);
+    }
+
+    void update(const Leaf &RHS) {
+      update(RHS.NumCycles, RHS.CriticalDelay);
+    }
+  };
+
+  typedef DenseMap<VASTSeqValue*, Leaf> LeafSetTy;
+  LeafSetTy Leaves;
+
+  std::set<VASTSlot*> Slots;
+public:
+  void buildCone(SVSet &SVs, Cone *C) {
+    for (SVSet::iterator I = SVs.begin(), E = SVs.end(); I != E; ++I) {
+      VASTSeqValue *SV = *I;
+      Leaves[SV].update(STGDistances::Inf, C->getDelayFrom(SV->getSelector()));
+    }
+  }
+
+  typedef LeafSetTy::iterator iterator;
+
+  void addSlot(VASTSlot *S, SeqLiveVariables *SLV) {
+    if (!Slots.insert(S).second) return;
+
+    // Update the available interval.
+    for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
+      VASTSeqValue *SV = I->first;
+      // Default the interval to 1, which corresponds to the interval from
+      // FUOutput. We will change it after we are sure that SV is not FUOutput.
+      unsigned Interval = 1;
+
+      if (!SV->isFUOutput())
+        Interval = SLV->getIntervalFromDef(SV, S);
+      I->second.NumCycles = std::min(I->second.NumCycles, Interval);
+    }
+  }
+
+  typedef std::set<VASTSlot*>::const_iterator slot_iterator;
+  slot_iterator slot_begin() const { return Slots.begin(); }
+  slot_iterator slot_end() const { return Slots.end(); }
+};
+
+class ConeMerger {
+  SmallVector<TimedCone*, 8> Cones;
+};
 
 struct SelectorSynthesis : public VASTModulePass {
   CachedStrashTable *CST;
@@ -42,6 +119,39 @@ struct SelectorSynthesis : public VASTModulePass {
   unsigned MaxSingleCyleFINum;
   VASTExprBuilder *Builder;
   VASTModule *VM;
+
+  // The delay and available cycles for the combinational cones.
+  DenseMap<unsigned, Cone*> Cones;
+  DenseMap<VASTValue*, TimedCone*> TimedCones;
+
+  TimedCone *getOrCreateTimedCone(VASTValPtr V) {
+    if (TimedCone *C = TimedCones.lookup(V.get()))
+      return C;
+
+    SVSet Leaves;
+
+    // Ignore the trivial nodes.
+    if (!V->extractSupportingSeqVal(Leaves, true))
+      return 0;
+
+    Cone *C = getOrCreateCone(V, Leaves);
+    TimedCone *&TC = TimedCones[V.get()];
+    TC = new TimedCone();
+    TC->buildCone(Leaves, C);
+    return TC;
+  }
+
+  Cone *getOrCreateCone(VASTValPtr V, SVSet Leaves) {
+    unsigned StrashID = CST->getOrCreateStrashID(V.get());
+
+    if (Cone *C = Cones.lookup(StrashID)) return C;
+
+    // Build the cone if it is not yet created.
+    Cone *&C = Cones[StrashID];
+    C = new Cone();
+    C->buildCone(Leaves, TNL);
+    return C;
+  }
 
   static char ID;
 
@@ -71,7 +181,9 @@ struct SelectorSynthesis : public VASTModulePass {
 
   void synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
 
-  void releaseMemory() {}
+  void releaseMemory() {
+    DeleteContainerSeconds(Cones);
+  }
 };
 }
 
@@ -120,9 +232,10 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
   unsigned Bitwidth = Sel->getBitWidth();
 
-  // Slot guards *without* keep attributes.
-  SmallVector<VASTValPtr, 4> SlotGuards, SlotFanins, FaninGuards, Fanins;
+  SmallVector<VASTValPtr, 4> SlotGuards, SlotFanins, FaninGuards;
   SmallVector<VASTSlot*, 4> Slots;
+
+  std::map<VASTValPtr, TimedCone*> FICones;
 
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     SlotGuards.clear();
@@ -156,17 +269,42 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
 
-    //GuardedFIVal = Builder.buildKeep(GuardedFIVal);
+    TimedCone *C = getOrCreateTimedCone(GuardedFIVal);
+    FICones[GuardedFIVal] = C;
 
-    Fanins.push_back(GuardedFIVal);
+    // Ignore the trivial cones.
+    if (C == 0) continue;
+
     while (!Slots.empty())
-      Sel->createAnnotation(Slots.pop_back_val(), GuardedFIVal.get());
+      C->addSlot(Slots.pop_back_val(), SLV);
   }
 
   // Strip the keep attribute if the keeped value is directly fan into the
   // register.
   Sel->setGuard(Builder.buildOrExpr(FaninGuards, 1));
+
+  // TODO: Merge fan-in cones.
+
+  SmallVector<VASTValPtr, 4> Fanins;
+  typedef std::map<VASTValPtr, TimedCone*>::iterator cone_iterator;
+  for (cone_iterator I = FICones.begin(), E = FICones.end(); I != E; ++I) {
+    VASTValPtr FI = I->first;
+    Fanins.push_back(FI);
+    //FI = Builder.buildKeep(FI);
+    TimedCone *TC = I->second;
+
+    // Ignore the trivial cones.
+    if (!TC)
+      continue;
+
+    typedef TimedCone::slot_iterator slot_iterator;
+    for (slot_iterator SI = TC->slot_begin(), SE = TC->slot_end(); SI != SE; ++SI)
+      Sel->createAnnotation(*SI, FI);
+  }
+
   Sel->setFanin(Builder.buildOrExpr(Fanins, Bitwidth));
+
+  DeleteContainerSeconds(TimedCones);
 }
 
 bool SelectorSynthesis::runOnVASTModule(VASTModule &VM) {
