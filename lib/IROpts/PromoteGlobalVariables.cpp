@@ -44,6 +44,7 @@ struct GlobalToStack : public ModulePass {
 
   bool runOnModule(Module &M);
   bool replaceScalarGlobalVariable(GlobalVariable *GV,
+                                   BasicBlock *Entry,
                                    BasicBlock::iterator InsertPos,
                                    ArrayRef<ReturnInst*> Rets);
 
@@ -89,7 +90,8 @@ bool GlobalToStack::runOnModule(Module &M) {
       Rets.push_back(R);
 
   typedef BasicBlock::iterator iterator;
-  iterator EntryInsertPoint = TopFunction->getEntryBlock().begin();
+  BasicBlock *Entry = &TopFunction->getEntryBlock();
+  iterator EntryInsertPoint = Entry->begin();
 
   typedef Module::global_iterator global_iterator;
   for (global_iterator I = M.global_begin(), E = M.global_end(); I != E; ++I) {
@@ -98,7 +100,7 @@ bool GlobalToStack::runOnModule(Module &M) {
     // Ignore the dead GlobalVariables.
     if (GV->use_empty()) continue;
 
-    if (replaceScalarGlobalVariable(GV, EntryInsertPoint, Rets)) {
+    if (replaceScalarGlobalVariable(GV, Entry, EntryInsertPoint, Rets)) {
       changed = true;
       continue;
     }
@@ -109,7 +111,32 @@ bool GlobalToStack::runOnModule(Module &M) {
   return changed;
 }
 
+static Instruction *rewriteConstExpr(ConstantExpr *Expr, Value *From,
+                                     BasicBlock *Entry,
+                                     BasicBlock::iterator InsertPos) {
+  Instruction *Inst = Expr->getAsInstruction();
+  Entry->getInstList().insert(InsertPos, Inst);
+  while (!Expr->use_empty()) {
+    User *U = Expr->use_back();
+    if (ConstantExpr *SubExpr = dyn_cast<ConstantExpr>(U))
+      U = rewriteConstExpr(SubExpr, SubExpr, Entry, InsertPos);
+    else if (GlobalAlias *GA = dyn_cast<GlobalAlias>(U)) {
+      Constant *Aliasee = GA->getAliasee();
+      if (ConstantExpr *SubExpr = dyn_cast<ConstantExpr>(Aliasee))
+        U = rewriteConstExpr(SubExpr, GA, Entry, InsertPos);
+      else
+        llvm_unreachable("Unexpected user!");
+    }
+
+    U->replaceUsesOfWith(From, Inst);
+  }
+
+  Expr->destroyConstant();
+  return Inst;
+}
+
 bool GlobalToStack::replaceScalarGlobalVariable(GlobalVariable *GV,
+                                                BasicBlock *Entry,
                                                 BasicBlock::iterator InsertPos,
                                                 ArrayRef<ReturnInst*> Rets) {
   Type *Ty = GV->getType()->getElementType();
@@ -120,10 +147,14 @@ bool GlobalToStack::replaceScalarGlobalVariable(GlobalVariable *GV,
   AllocaInst *Shadow = new AllocaInst(Ty, GV->getName() + ".shadow", InsertPos);
 
   while (!GV->use_empty()) {
-    Instruction *U = cast<Instruction>(GV->use_back());
-    U->replaceUsesOfWith(GV, Shadow);
+    User *U = GV->use_back();
+    Instruction *I = 0;
+    if (ConstantExpr *CE = dyn_cast<ConstantExpr>(U)) {
+      I = rewriteConstExpr(CE, CE, Entry, InsertPos);
+    } else
+      I = cast<Instruction>(U);
 
-    // TODO: Handle constexpr
+    I->replaceUsesOfWith(GV, Shadow);
   }
 
   // Load the value to the shadow register in the entry of the BB.
