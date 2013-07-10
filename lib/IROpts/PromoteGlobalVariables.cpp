@@ -21,7 +21,6 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/DataLayout.h"
 
-#include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-promote-globals-to-stack"
 #include "llvm/Support/Debug.h"
@@ -29,9 +28,6 @@
 using namespace llvm;
 
 STATISTIC(NumPromotedGV, "Number of GlobalVariable Replaced by Stack Variable");
-static cl::opt<unsigned> MaxSize("vast-global-to-stack-max-size",
-  cl::desc("Maximal size of global variables that can be promote to stack slot"),
-  cl::init(32));
 
 namespace {
 struct GlobalToStack : public ModulePass {
@@ -141,7 +137,7 @@ bool GlobalToStack::replaceScalarGlobalVariable(GlobalVariable *GV,
                                                 ArrayRef<ReturnInst*> Rets) {
   Type *Ty = GV->getType()->getElementType();
 
-  if (isa<ArrayType>(Ty) || TD->getTypeAllocSize(Ty) > MaxSize)
+  if (isa<ArrayType>(Ty) || isa<CompositeType>(Ty))
     return false;
 
   AllocaInst *Shadow = new AllocaInst(Ty, GV->getName() + ".shadow", InsertPos);
