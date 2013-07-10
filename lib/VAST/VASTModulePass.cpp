@@ -316,7 +316,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
     case Instruction::IntToPtr: {
       VASTValPtr Operand = getAsOperandImpl(CExpr->getOperand(0));
       unsigned SizeInBits = getValueSizeInBits(V);
-      return indexVASTExpr(V, Builder.buildSExtExprOrSelf(Operand, SizeInBits));
+      return indexVASTExpr(V, Builder.buildZExtExprOrSelf(Operand, SizeInBits));
     }
     case Instruction::PtrToInt: {
       VASTValPtr Operand = getAsOperandImpl(CExpr->getOperand(0));
