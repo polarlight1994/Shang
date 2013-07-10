@@ -495,6 +495,13 @@ VASTExprBuilder::replaceKnownBits(VASTValPtr V, const BitMasks &Mask) {
 VASTValPtr VASTExprBuilder::buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes){
   if (RepeatTimes == 1) return Op;
 
+  if (VASTImmPtr Imm = dyn_cast<VASTImmediate>(Op)) {
+    if (Op->getBitWidth() == 1)
+      return Imm.getAPInt().getBoolValue() ?
+             getImmediate(APInt::getAllOnesValue(RepeatTimes)) :
+             getImmediate(APInt::getNullValue(RepeatTimes));
+  }
+
   return createExpr(VASTExpr::dpBitRepeat, Op, getImmediate(RepeatTimes, 8),
                     RepeatTimes * Op->getBitWidth());
 }
