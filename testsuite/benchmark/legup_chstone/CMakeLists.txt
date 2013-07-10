@@ -46,6 +46,7 @@ add_test_legup_cases(mcm mcm.bc)
 add_test_legup_cases(lee lee.bc)
 add_test_legup_cases(aircraft aircraft.bc)
 add_test_legup_cases(dir dir.bc)
+add_test_legup_cases(matrixmultiply matrixmultiply.bc)
 
 add_test_legup_cases(fft fft.bc)
 
