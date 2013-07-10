@@ -114,6 +114,7 @@ def generate_scripts(sql_path, sdc_path, report_path, period, factor) :
 create_clock -name "clk" -period %(period)sns [get_ports {clk}]
 derive_pll_clocks -create_base_clocks
 derive_clock_uncertainty
+set_max_delay -from start %(period)sns
 set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold 0
 set num_not_applied 0
 ''',
