@@ -137,7 +137,7 @@ bool GlobalToStack::replaceScalarGlobalVariable(GlobalVariable *GV,
                                                 ArrayRef<ReturnInst*> Rets) {
   Type *Ty = GV->getType()->getElementType();
 
-  if (isa<ArrayType>(Ty) || isa<CompositeType>(Ty))
+  if (isa<ArrayType>(Ty) || isa<StructType>(Ty))
     return false;
 
   AllocaInst *Shadow = new AllocaInst(Ty, GV->getName() + ".shadow", InsertPos);
