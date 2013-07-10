@@ -21,6 +21,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/DataLayout.h"
 
+#include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-promote-globals-to-stack"
 #include "llvm/Support/Debug.h"
@@ -28,12 +29,16 @@
 using namespace llvm;
 
 STATISTIC(NumPromotedGV, "Number of GlobalVariable Replaced by Stack Variable");
+static cl::opt<unsigned> MaxSize("vast-global-to-stack-max-size",
+  cl::desc("Maximal size of global variables that can be promote to stack slot"),
+  cl::init(32));
 
 namespace {
 struct GlobalToStack : public ModulePass {
   static char ID;
+  DataLayout *TD;
 
-  GlobalToStack() : ModulePass(ID) {
+  GlobalToStack() : ModulePass(ID), TD(0) {
     initializeGlobalToStackPass(*PassRegistry::getPassRegistry());
   }
 
@@ -41,6 +46,10 @@ struct GlobalToStack : public ModulePass {
   bool replaceScalarGlobalVariable(GlobalVariable *GV,
                                    BasicBlock::iterator InsertPos,
                                    ArrayRef<ReturnInst*> Rets);
+
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    AU.addRequired<DataLayout>();
+  }
 };
 }
 
@@ -55,6 +64,7 @@ Pass *llvm::createGlobalToStackPass() {
 }
 
 bool GlobalToStack::runOnModule(Module &M) {
+  TD = &getAnalysis<DataLayout>();
   bool changed = false;
 
   // Verify the goto expansion is run before this pass and find the top function.
@@ -104,7 +114,8 @@ bool GlobalToStack::replaceScalarGlobalVariable(GlobalVariable *GV,
                                                 ArrayRef<ReturnInst*> Rets) {
   Type *Ty = GV->getType()->getElementType();
 
-  if (isa<ArrayType>(Ty)) return false;
+  if (isa<ArrayType>(Ty) || TD->getTypeAllocSize(Ty) > MaxSize)
+    return false;
 
   AllocaInst *Shadow = new AllocaInst(Ty, GV->getName() + ".shadow", InsertPos);
 
