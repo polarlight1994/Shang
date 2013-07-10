@@ -1118,7 +1118,6 @@ endmodule
 module DUT_TOP_tb();
   reg clk = 1'b0;
   reg rstN = 1'b0;
-  reg start = 1'b0;
   wire [7:0] LED7;
   wire succ;
   wire fin;
@@ -1127,7 +1126,7 @@ module DUT_TOP_tb();
   DUT_TOP i1 (
     .clk(clk),
     .rstN(rstN),
-    .start(start),
+    .start(1'b1),
     .LED7(LED7),
     .succ(succ),
     .fin(fin)
@@ -1138,13 +1137,7 @@ module DUT_TOP_tb();
     @(posedge clk);
     rstN <= 1;
     @(posedge clk);
-    #{{ "%.2f" % (reported_period *0.2) }}ns;
-    start <= 1;
     $display ("Start at %t!", $time());
-    @(posedge clk);
-    @(posedge clk);
-    #{{ "%.2f" % (reported_period * 0.8) }}ns;
-    start <= 0;
     startcnt <= 1;
   end
 
