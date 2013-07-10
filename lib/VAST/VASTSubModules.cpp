@@ -108,6 +108,11 @@ void VASTSubModule::printSubModuleLogic(vlang_raw_ostream &OS,
     OS << "assign " << getRetPort()->getName() << " = "
        << getFanin(0)->getName() << " / " << getFanin(1)->getName() << ";\n";
     break;
+  case Instruction::SDiv:
+    OS << "assign " << getRetPort()->getName() << " = $signed("
+       << getFanin(0)->getName() << ") / $signed(" << getFanin(1)->getName()
+       << ");\n";
+    break;
   default:
     llvm_unreachable("Not implemented yet!");
     break;
