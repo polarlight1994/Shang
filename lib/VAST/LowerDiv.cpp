@@ -56,7 +56,7 @@ VASTValPtr DatapathBuilder::lowerUDiv(BinaryOperator &I) {
     }
 
     // Multiply the numerator (operand 0) by the magic value
-    Q = buildMulExpr(Q, getImmediate(d), 2 * ResultSizeInBits);
+    Q = buildMulExpr(Q, getImmediate(magics.m), 2 * ResultSizeInBits);
     // Get the higher part of the multplication result.
     Q = buildBitSliceExpr(Q, 2 * ResultSizeInBits, ResultSizeInBits);
 
@@ -131,10 +131,10 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
   if (RHSC) {
     // Lower divide by constant just like what TargetLowering::BuildSDIV do.
     APInt d = RHSC->getValue();
-    APInt::mu magics = d.magicu();
+    APInt::ms magics = d.magic();
     unsigned ResultSizeInBits = getValueSizeInBits(I);
     VASTValPtr N = getAsOperand(LHS);
-    VASTValPtr Q = buildMulExpr(N, getImmediate(d), 2 * ResultSizeInBits);
+    VASTValPtr Q = buildMulExpr(N, getImmediate(magics.m), 2 * ResultSizeInBits);
     // Get the higher part of the multplication result.
     Q = buildBitSliceExpr(Q, 2 * ResultSizeInBits, ResultSizeInBits);
     // If d > 0 and m < 0, add the numerator
