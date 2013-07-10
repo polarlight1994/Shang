@@ -53,7 +53,7 @@ struct AddMultOpInfoBase {
 
       // Any known leading zeros?
       if (unsigned LeadingZeros = Masks.KnownZeros.countLeadingOnes()) {
-        unsigned NoZerosUB = OperandSize - LeadingZeros;
+        unsigned NoZerosUB = V->getBitWidth() - LeadingZeros;
         V = Builder.buildBitSliceExpr(V, NoZerosUB, 0);
       }
 
