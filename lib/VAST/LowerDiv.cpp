@@ -142,7 +142,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
       Q = buildAddExpr(Q, N, ResultSizeInBits);
     // If d < 0 and m > 0, subtract the numerator
     if (d.isNegative() && magics.m.isStrictlyPositive()) {
-      VASTValPtr Ops[] = { Q, buildNotExpr(N),  getImmediate(1,1) };
+      VASTValPtr Ops[] = { Q, buildNotExpr(N),  VASTImmediate::True };
       Q = buildAddExpr(Ops, ResultSizeInBits);
     }
 
