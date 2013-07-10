@@ -49,6 +49,8 @@ add_test_legup_cases(dir dir.bc)
 
 add_test_legup_cases(fft fft.bc)
 
+add_test_legup_cases(option_pricing option_pricing.bc)
+
 #These there are very large design
 add_test_legup_cases(ogg ogg.bc)
 
