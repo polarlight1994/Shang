@@ -126,6 +126,11 @@ public:
   slot_iterator slot_begin() const { return Slots.begin(); }
   slot_iterator slot_end() const { return Slots.end(); }
 
+  void mergeSlots(const TimedCone *LHS, SeqLiveVariables *SLV) {
+    for (slot_iterator I = LHS->slot_begin(), E = LHS->slot_end(); I != E; ++I)
+      addSlot(*I, SLV);
+  }
+
   void merge(const TimedCone *LHS, SeqLiveVariables *SLV) {
     for (iterator I = LHS->begin(), E = LHS->end(); I != E; ++I)
       Leaves[I->first].update(I->second);
@@ -343,6 +348,10 @@ bool SelectorSynthesis::mergeCones(FIConeVec &Cones, VASTExprBuilder &Builder,
       // Merge the cones.
       // FIXME: Use the cone returned by "isGoodToMerge"
       TimedCone *TC = getOrCreateTimedCone(NewFI);
+      if (TCI)
+        TC->mergeSlots(TCI, SLV);
+      if (TCJ)
+        TC->mergeSlots(TCJ, SLV);
 
       // Modify Cone vector, so that we do not merge the same cone twice.
       Cones.erase(FaninI);
