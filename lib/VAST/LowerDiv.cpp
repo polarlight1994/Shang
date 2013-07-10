@@ -19,9 +19,66 @@
 
 using namespace llvm;
 STATISTIC(SDIVLowered, "Number of SDiv lowered");
+STATISTIC(UDIVLowered, "Number of UDiv lowered");
 STATISTIC(SREMLowered, "Number of SRem lowered");
+STATISTIC(UREMLowered, "Number of URem lowered");
 
 VASTValPtr DatapathBuilder::lowerUDiv(BinaryOperator &I) {
+  Value *LHS = I.getOperand(0), *RHS = I.getOperand(1);
+  ConstantInt *LHSC = dyn_cast<ConstantInt>(LHS);
+  ConstantInt *RHSC = dyn_cast<ConstantInt>(RHS);
+  // Assume we can lower the UDiv.
+  ++UDIVLowered;
+
+  // fold (udiv c1, c2) -> c1/c2
+  if (LHSC && RHSC && !RHSC->isNullValue())
+    return getImmediate(LHSC->getValue().udiv(RHSC->getValue()));
+
+  if (RHSC) {
+    unsigned ResultSizeInBits = getValueSizeInBits(I);
+    VASTValPtr N = getAsOperand(LHS);
+    VASTValPtr Q = N;
+
+    APInt d = RHSC->getValue();
+    APInt::mu magics = d.magicu();
+
+    // If the divisor is even, we can avoid using the expensive fixup by shifting
+    // the divided value upfront.
+    if (magics.a != 0 && d[0]) {
+      unsigned Shift = d.countTrailingZeros();
+      Q = buildShiftExpr(VASTExpr::dpSRL, Q,
+                         getImmediate(Shift, ResultSizeInBits),
+                         ResultSizeInBits);
+
+    // Get magic number for the shifted divisor.
+      magics = d.lshr(Shift).magicu(Shift);
+      assert(magics.a == 0 && "Should use cheap fixup now");
+    }
+
+    // Multiply the numerator (operand 0) by the magic value
+    Q = buildMulExpr(Q, getImmediate(d), 2 * ResultSizeInBits);
+    // Get the higher part of the multplication result.
+    Q = buildBitSliceExpr(Q, 2 * ResultSizeInBits, ResultSizeInBits);
+
+    if (magics.a == 0)
+      return buildShiftExpr(VASTExpr::dpSRL, Q,
+                            getImmediate(magics.s, ResultSizeInBits),
+                            ResultSizeInBits);
+
+    VASTValPtr Ops[] = { N, buildNotExpr(Q),  VASTImmediate::True };
+    VASTValPtr NPQ = buildAddExpr(Ops, ResultSizeInBits);
+    NPQ = buildShiftExpr(VASTExpr::dpSRL, NPQ,
+                         getImmediate(1, ResultSizeInBits),
+                         ResultSizeInBits);
+    NPQ = buildAddExpr(NPQ, Q, ResultSizeInBits);
+    return buildShiftExpr(VASTExpr::dpSRL, NPQ,
+                          getImmediate(magics.s - 1, ResultSizeInBits),
+                          ResultSizeInBits);
+  }
+
+  // Well, our assumption about we can lower the UDiv is wrong.
+  --SDIVLowered;
+  return VASTValPtr();
   return VASTValPtr();
 }
 
@@ -71,6 +128,34 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
     return buildNegative(SRA);
   }
 
+  if (RHSC) {
+    // Lower divide by constant just like what TargetLowering::BuildSDIV do.
+    APInt d = RHSC->getValue();
+    APInt::mu magics = d.magicu();
+    unsigned ResultSizeInBits = getValueSizeInBits(I);
+    VASTValPtr N = getAsOperand(LHS);
+    VASTValPtr Q = buildMulExpr(N, getImmediate(d), 2 * ResultSizeInBits);
+    // Get the higher part of the multplication result.
+    Q = buildBitSliceExpr(Q, 2 * ResultSizeInBits, ResultSizeInBits);
+    // If d > 0 and m < 0, add the numerator
+    if (d.isStrictlyPositive() && magics.m.isNegative())
+      Q = buildAddExpr(Q, N, ResultSizeInBits);
+    // If d < 0 and m > 0, subtract the numerator
+    if (d.isNegative() && magics.m.isStrictlyPositive()) {
+      VASTValPtr Ops[] = { Q, buildNotExpr(N),  getImmediate(1,1) };
+      Q = buildAddExpr(Ops, ResultSizeInBits);
+    }
+
+    // Shift right algebraic if shift value is nonzero
+    if (magics.s > 0)
+      Q = buildShiftExpr(VASTExpr::dpSRA, Q,
+                         getImmediate(magics.s, ResultSizeInBits),
+                         ResultSizeInBits);
+    // Extract the sign bit and add it to the quotient
+    VASTValPtr T = getSignBit(Q);
+    return buildAddExpr(Q, T, ResultSizeInBits);
+  }
+
   // Well, our assumption about we can lower the SDiv is wrong.
   --SDIVLowered;
   return VASTValPtr();
@@ -108,5 +193,32 @@ VASTValPtr DatapathBuilder::lowerSRem(BinaryOperator &I) {
 }
 
 VASTValPtr DatapathBuilder::lowerURem(BinaryOperator &I) {
+  Value *LHS = I.getOperand(0), *RHS = I.getOperand(1);
+  ConstantInt *LHSC = dyn_cast<ConstantInt>(LHS);
+  ConstantInt *RHSC = dyn_cast<ConstantInt>(RHS);
+  // Assume we can lower the SRem.
+  ++UREMLowered;
+
+  // fold (srem c1, c2) -> c1%c2
+  if (LHSC && RHSC && !RHSC->isNullValue())
+    return getImmediate(LHSC->getValue().urem(RHSC->getValue()));
+
+  // If X/C can be simplified by the division-by-constant logic, lower
+  // X%C to the equivalent of X-X/C*C.
+  if (RHSC && !RHSC->isNullValue())
+    // If we can get the SDiv expression.
+    if (VASTValPtr UDiv = lowerUDiv(I)) {
+      VASTValPtr LHSVal = getAsOperand(LHS);
+      unsigned SizeInBits = LHSVal->getBitWidth();
+      VASTValPtr Mul = buildMulExpr(UDiv, getAsOperand(RHS), SizeInBits);
+      VASTValPtr SubOps[] = { LHSVal,
+                              buildNotExpr(Mul),
+                              getImmediate(1,1)
+                            };
+      return buildAddExpr(SubOps, SizeInBits);
+    }
+
+  // Well, our assumption about we can lower the SRem is wrong.
+  --UREMLowered;
   return VASTValPtr();
 }
