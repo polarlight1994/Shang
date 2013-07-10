@@ -311,6 +311,8 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
   if (ConstantExpr *CExpr = dyn_cast<ConstantExpr>(V)) {
     switch (CExpr->getOpcode()) {
     default:break;
+    case Instruction::GetElementPtr:
+      return indexVASTExpr(V, Builder.visitGEPOperator(*cast<GEPOperator>(CExpr)));
     case Instruction::IntToPtr: {
       VASTValPtr Operand = getAsOperandImpl(CExpr->getOperand(0));
       unsigned SizeInBits = getValueSizeInBits(V);
@@ -326,6 +328,11 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
       assert(getValueSizeInBits(V) == Operand->getBitWidth()
              && "Cast between types with different size found!");
       return indexVASTExpr(V, Operand);
+    }
+    case Instruction::ZExt: {
+      VASTValPtr Operand = getAsOperandImpl(CExpr->getOperand(0));
+      unsigned SizeInBits = getValueSizeInBits(V);
+      return indexVASTExpr(V, Builder.buildZExtExpr(Operand, SizeInBits));
     }
     }
   }
