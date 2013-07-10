@@ -311,6 +311,11 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
   if (ConstantExpr *CExpr = dyn_cast<ConstantExpr>(V)) {
     switch (CExpr->getOpcode()) {
     default:break;
+    case Instruction::PtrToInt: {
+      VASTValPtr Operand = getAsOperandImpl(CExpr->getOperand(0));
+      unsigned SizeInBits = getValueSizeInBits(V);
+      return indexVASTExpr(V, Builder.buildBitSliceExpr(Operand, SizeInBits, 0));
+    }
     case Instruction::BitCast: {
       VASTValPtr Operand = getAsOperandImpl(CExpr->getOperand(0));
       assert(getValueSizeInBits(V) == Operand->getBitWidth()
