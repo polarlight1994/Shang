@@ -3,6 +3,7 @@ FUs.MaxLutSize = 4
 FUs.MemoryBus.AddrLatency = 1.0 / PERIOD -- Block RAM
 
 FUs.udiv = { Latencies = { ['64'] = 290.639 / PERIOD } }
+FUs.sdiv = { Latencies = { ['64'] = 290.639 / PERIOD } }
 
 FUs.AddSub = { Latencies = { 0 , 2.156 / PERIOD , 2.606 / PERIOD , 3.650 / PERIOD , 5.503 / PERIOD }, --Add
 	             Costs = {2 * 64, 10 * 64, 18 * 64, 34 * 64, 66 * 64}, --Add
