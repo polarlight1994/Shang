@@ -108,7 +108,7 @@ Pass *llvm::createMemoryPartitionPass() {
 
 bool MemoryPartition::runOnFunction(Function &F) {
   InitializeHLSAllocation(this);
-
+  uint64_t MemBusSizeInBytes = getFUDesc<VFUMemBus>()->getDataWidth() / 8;
   Module *M = F.getParent();
 
   // Make sure we have only 1 function.
@@ -190,7 +190,11 @@ bool MemoryPartition::runOnFunction(Function &F) {
           NumElem *= AT->getNumElements();
         }
 
-        ElementSizeInBytes = TD->getTypeStoreSize(ElemTy);
+        // GV may be a struct. In this case, we may not load/store the whole
+        // struct in a single instruction. This mean the required data port size
+        // is not necessary as big as the element size here.
+        ElementSizeInBytes = std::min(TD->getTypeStoreSize(ElemTy),
+                                      MemBusSizeInBytes);
 
         // Accumulate the element size.
         BankSizeInBytes += NumElem * ElementSizeInBytes;
@@ -213,6 +217,8 @@ bool MemoryPartition::runOnFunction(Function &F) {
       (void) inserted;
     }
 
+    assert(MaxElementSizeInBytes <= MemBusSizeInBytes
+           && "Unexpected element size!");
     MemBank Bank(Num, MaxElementSizeInBytes, Log2_32_Ceil(BankSizeInBytes),
                  AccessedTypes.size() != 1);
     while (!Objects.empty()) {
