@@ -47,8 +47,11 @@ add_test_legup_cases(lee lee.bc)
 add_test_legup_cases(aircraft aircraft.bc)
 add_test_legup_cases(dir dir.bc)
 
+add_test_legup_cases(fft fft.bc)
+
 #These there are very large design
 add_test_legup_cases(ogg ogg.bc)
+
 add_test_legup_cases(adpcm adpcm.bc)
 
 add_test_legup_cases(blowfish bf.bc)
