@@ -58,17 +58,18 @@ STATISTIC(NumTimgViolation, "Number of timing paths with negative slack");
 namespace{
 struct TimingScriptGen;
 
-struct PathIntervalQueryCache {
+/// AnnotatedCone - Combinational cone annotated with timing information.
+struct AnnotatedCone {
   TimingNetlist &TNL;
   SeqLiveVariables &SLV;
   VASTSelector *Dst;
   raw_ostream &OS;
   const uint32_t Inf;
 
-  struct SrcInfo {
+  struct Leaf {
     unsigned NumCycles;
     float CriticalDelay;
-    explicit SrcInfo(unsigned NumCycles = STGDistances::Inf,
+    explicit Leaf(unsigned NumCycles = STGDistances::Inf,
                      float CriticalDelay = 0.0f)
       : NumCycles(NumCycles), CriticalDelay(CriticalDelay) {}
 
@@ -79,18 +80,18 @@ struct PathIntervalQueryCache {
       this->CriticalDelay = std::max(this->CriticalDelay, CriticalDelay);
     }
 
-    void update(const SrcInfo &RHS) {
+    void update(const Leaf &RHS) {
       update(RHS.NumCycles, RHS.CriticalDelay);
     }
   };
 
-  typedef DenseMap<VASTSeqValue*, SrcInfo> SeqValSetTy;
+  typedef DenseMap<VASTSeqValue*, Leaf> SeqValSetTy;
   SeqValSetTy CyclesFromSrcLB;
 
   typedef DenseMap<VASTExpr*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
 
-  PathIntervalQueryCache(TimingNetlist &TNL, SeqLiveVariables &SLV,
+  AnnotatedCone(TimingNetlist &TNL, SeqLiveVariables &SLV,
                          VASTSelector *Dst, raw_ostream &OS)
     : TNL(TNL), SLV(SLV), Dst(Dst), OS(OS), Inf(STGDistances::Inf)
   {}
@@ -100,12 +101,11 @@ struct PathIntervalQueryCache {
     CyclesFromSrcLB.clear();
   }
 
-  void addIntervalFromSrc(VASTSeqValue *Src,  unsigned Interval,
-                          float NormalizedDelay) {
-    assert(Interval && "unexpected zero interval!");
-    assert((!Src->isSlot() || Interval <= 1)
+  void addIntervalFromSrc(VASTSeqValue *Src, const Leaf &L) {
+    assert(L.NumCycles && "unexpected zero interval!");
+    assert((!Src->isSlot() || L.NumCycles <= 1)
            && "Bad interval for slot registers!");
-    CyclesFromSrcLB[Src].update(Interval, NormalizedDelay);
+    CyclesFromSrcLB[Src].update(L);
   }
 
   bool generateSubmoduleConstraints(VASTSeqValue *SeqVal);
@@ -133,7 +133,7 @@ struct PathIntervalQueryCache {
       for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
         assert(I->second.NumCycles && "Unexpected zero delay!");
 
-        SrcInfo &SI = CurSet[I->first];
+        Leaf &SI = CurSet[I->first];
         // Look up the timing information from the map of current cone.
         SeqValSetTy::const_iterator at = LocalIntervalMap.find(I->first);
         assert(at != LocalIntervalMap.end() && "Node not visited yet?");
@@ -146,7 +146,7 @@ struct PathIntervalQueryCache {
   // Bind multi-cycle path constraints to the scripting engine.
   template<typename SrcTy>
   void insertMCPWithInterval(SrcTy *Src, const std::string &ThuName,
-                             const SrcInfo &SI) const;
+                             const Leaf &SI) const;
   unsigned insertMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const;
 
   typedef SeqValSetTy::const_iterator src_iterator;
@@ -175,7 +175,7 @@ struct TimingScriptGen : public VASTModulePass {
   void writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
                            SeqLiveVariables &SLV);
 
-  void extractTimingPaths(PathIntervalQueryCache &Cache,
+  void extractTimingPaths(AnnotatedCone &Cache,
                           ArrayRef<VASTSlot*> ReadSlots,
                           VASTValue *DepTree);
 
@@ -187,14 +187,14 @@ struct TimingScriptGen : public VASTModulePass {
 };
 }
 
-unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
+unsigned AnnotatedCone::getMinimalInterval(VASTSeqValue *Src,
                                                     VASTSlot *ReadSlot) {
   // Try to get the live variable at (Src, ReadSlot), calculate its distance
   // from its defining slots to the read slot.
   return SLV.getIntervalFromDef(Src, ReadSlot);
 }
 
-unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
+unsigned AnnotatedCone::getMinimalInterval(VASTSeqValue *Src,
                                                     ArrayRef<VASTSlot*> ReadSlots) {
   unsigned PathInterval = Inf;
   typedef ArrayRef<VASTSlot*>::iterator iterator;
@@ -204,7 +204,7 @@ unsigned PathIntervalQueryCache::getMinimalInterval(VASTSeqValue *Src,
   return PathInterval;
 }
 
-void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
+void AnnotatedCone::annotatePathInterval(VASTValue *Root,
                                                   ArrayRef<VASTSlot*> ReadSlots) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(Root);
 
@@ -247,12 +247,12 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
 
       unsigned Interval = getMinimalInterval(V, ReadSlots);
       float EstimatedDelay = TNL.getDelay(V, Root, Dst);
-      SrcInfo CurInfo(Interval, EstimatedDelay);
+      Leaf CurLeaf(Interval, EstimatedDelay);
 
-      LocalInterval[V].update(CurInfo);
-      QueryCache[Expr][V].update(CurInfo);
+      LocalInterval[V].update(CurLeaf);
+      QueryCache[Expr][V].update(CurLeaf);
       // Add the information to statistics.
-      addIntervalFromSrc(V, Interval, EstimatedDelay);
+      addIntervalFromSrc(V, CurLeaf);
       continue;
     }  
 
@@ -278,15 +278,15 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
 
       unsigned Interval = getMinimalInterval(V, ReadSlots);
       float EstimatedDelay = TNL.getDelay(V, Root, Dst);
-      SrcInfo CurInfo(Interval, EstimatedDelay);
+      Leaf CurLeaf(Interval, EstimatedDelay);
 
-      LocalInterval[V].update(CurInfo);
-      QueryCache[SubExpr][V].update(CurInfo);
+      LocalInterval[V].update(CurLeaf);
+      QueryCache[SubExpr][V].update(CurLeaf);
       // Add the information to statistics. It is ok to add the interval here
       // even V may be masked by the false path indicated by the keep attribute.
       // we will first generate the tight constraints and overwrite them by
       // looser constraints.
-      addIntervalFromSrc(V, Interval, EstimatedDelay);
+      addIntervalFromSrc(V, CurLeaf);
     }
   }
 
@@ -324,7 +324,7 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
   });
 }
 
-void PathIntervalQueryCache::dump() const {
+void AnnotatedCone::dump() const {
   dbgs() << "\nCurrent data-path timing:\n";
   typedef QueryCacheTy::const_iterator it;
   for (it I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I) {
@@ -347,9 +347,9 @@ void PathIntervalQueryCache::dump() const {
 // The first node of the path is the use node and the last node of the path is
 // the define node.
 template<typename SrcTy>
-void PathIntervalQueryCache::insertMCPWithInterval(SrcTy *Src,
+void AnnotatedCone::insertMCPWithInterval(SrcTy *Src,
                                                    const std::string &ThuName,
-                                                   const SrcInfo &SI) const {
+                                                   const Leaf &SI) const {
   assert(!ThuName.empty() && "Bad through node name!");
   OS << "INSERT INTO mcps(src, dst, thu, cycles, normalized_delay) VALUES(\n"
      << '\'' << Src->getSTAObjectName() << "', \n"
@@ -363,11 +363,11 @@ void PathIntervalQueryCache::insertMCPWithInterval(SrcTy *Src,
     ++NumMultiCyclesConstraints;
     if (SI.CriticalDelay > 1.0f) ++NumRequiredConstraints;
   }
-  if (SI.NumCycles == PathIntervalQueryCache::Inf) ++NumFalseTimingPath;
+  if (SI.NumCycles == AnnotatedCone::Inf) ++NumFalseTimingPath;
   if (SI.NumCycles < SI.CriticalDelay) ++NumTimgViolation;
 }
 
-unsigned PathIntervalQueryCache::insertMCPThough(VASTExpr *Thu,
+unsigned AnnotatedCone::insertMCPThough(VASTExpr *Thu,
                                                  const SeqValSetTy &SrcSet)
                                                  const {
   std::string ThuName = "shang-null-node";
@@ -382,7 +382,7 @@ unsigned PathIntervalQueryCache::insertMCPThough(VASTExpr *Thu,
   return SrcSet.size();
 }
 
-void PathIntervalQueryCache::insertMCPEntries() const {
+void AnnotatedCone::insertMCPEntries() const {
   DEBUG(dbgs() << "Going to bind delay information of graph: \n");
   DEBUG(dump());
   DEBUG(dbgs() << "Binding path for dst register: "
@@ -396,7 +396,7 @@ void PathIntervalQueryCache::insertMCPEntries() const {
     NumConstraints += insertMCPThough(I->first, I->second);
 }
 
-bool PathIntervalQueryCache::generateSubmoduleConstraints(VASTSeqValue *SeqVal) {
+bool AnnotatedCone::generateSubmoduleConstraints(VASTSeqValue *SeqVal) {
   if (!SeqVal->isFUOutput()) return false;
 
   VASTSubModule *SubMod = dyn_cast<VASTSubModule>(SeqVal->getParent());
@@ -412,7 +412,7 @@ bool PathIntervalQueryCache::generateSubmoduleConstraints(VASTSeqValue *SeqVal) 
        I != E; ++I) {
     VASTSelector *Operand = *I;
     insertMCPWithInterval(Operand, "shang-null-node",
-                          SrcInfo(Latency, float(Latency)));
+                          Leaf(Latency, float(Latency)));
   }
 
   return true;
@@ -474,7 +474,7 @@ TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
     DatapathMap[Guard].push_back(S);
   }
 
-  PathIntervalQueryCache Cache(TNL, SLV, Dst, OS);
+  AnnotatedCone Cache(TNL, SLV, Dst, OS);
   typedef DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> >::iterator it;
   for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
     extractTimingPaths(Cache, I->second, I->first);
@@ -482,7 +482,7 @@ TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
   Cache.insertMCPEntries();
 }
 
-void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
+void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache,
                                          ArrayRef<VASTSlot*> ReadSlots,
                                          VASTValue *DepTree) {
   // Trivial case: register to register path.
@@ -490,7 +490,7 @@ void TimingScriptGen::extractTimingPaths(PathIntervalQueryCache &Cache,
     if (Cache.generateSubmoduleConstraints(Src)) return;
 
     unsigned Interval = Cache.getMinimalInterval(Src, ReadSlots);
-    Cache.addIntervalFromSrc(Src, Interval, 0.0f);
+    Cache.addIntervalFromSrc(Src, AnnotatedCone::Leaf(Interval, 0.0f));
 
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
