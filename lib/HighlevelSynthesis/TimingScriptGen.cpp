@@ -65,6 +65,7 @@ struct AnnotatedCone {
   VASTSelector *Dst;
   raw_ostream &OS;
   const uint32_t Inf;
+  static unsigned ConstrantCounter;
 
   struct Leaf {
     unsigned NumCycles;
@@ -146,12 +147,19 @@ struct AnnotatedCone {
     }
   }
 
-  void insertMCPEntries() const;
+  void generateMCPEntries() const;
+  // Generate the constraints in depth-first order. So that we always cover the
+  // whole cone by the constraints on the root, and refine them by the
+  // constraints on the leaves.
+  void generateMCPEntriesDFOrder(VASTValue *Root) const;
+
+  bool generateMCPThough(VASTExpr *Expr) const;
+
   // Bind multi-cycle path constraints to the scripting engine.
   template<typename SrcTy>
-  void insertMCPWithInterval(SrcTy *Src, const std::string &ThuName,
-                             const Leaf &SI) const;
-  unsigned insertMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const;
+  void generateMCPWithInterval(SrcTy *Src, const std::string &ThuName,
+                             const Leaf &SI, unsigned Order) const;
+  unsigned generateMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const;
 
   typedef SeqValSetTy::const_iterator src_iterator;
   src_iterator src_begin() const { return CyclesFromSrcLB.begin(); }
@@ -352,18 +360,23 @@ void AnnotatedCone::dump() const {
     dbgs() << "}\n";
   }
 }
+
+unsigned AnnotatedCone::ConstrantCounter = 0;
+
 // The first node of the path is the use node and the last node of the path is
 // the define node.
 template<typename SrcTy>
-void AnnotatedCone::insertMCPWithInterval(SrcTy *Src, const std::string &ThuName,
-                                          const Leaf &SI) const {
+void AnnotatedCone::generateMCPWithInterval(SrcTy *Src, const std::string &ThuName,
+                                          const Leaf &SI, unsigned Order) const {
   assert(!ThuName.empty() && "Bad through node name!");
-  OS << "INSERT INTO mcps(src, dst, thu, cycles, normalized_delay) VALUES(\n"
+  OS << "INSERT INTO mcps(src, dst, thu, cycles, normalized_delay, constraint_order)"
+        "VALUES(\n"
      << '\'' << Src->getSTAObjectName() << "', \n"
      << '\'' << Dst->getSTAObjectName() << "', \n"
      << '\'' << ThuName << "', \n"
      << SI.NumCycles << ", \n"
-     << SI.CriticalDelay << ");\n";
+     << SI.CriticalDelay << ", \n"
+     << Order << ");\n";
 
   // Perform the Statistic.
   if (SI.NumCycles > 1) {
@@ -375,7 +388,7 @@ void AnnotatedCone::insertMCPWithInterval(SrcTy *Src, const std::string &ThuName
 }
 
 unsigned
-AnnotatedCone::insertMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const {
+AnnotatedCone::generateMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const {
   std::string ThuName = "shang-null-node";
   if (Thu) {
     // Do not generate constraints for anonymous nodes.
@@ -388,23 +401,72 @@ AnnotatedCone::insertMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const {
 
   typedef SeqValSetTy::const_iterator iterator;
   for (iterator I = SrcSet.begin(), E = SrcSet.end(); I != E; ++I)
-    insertMCPWithInterval(I->first, ThuName, I->second);
+    generateMCPWithInterval(I->first, ThuName, I->second, ++ConstrantCounter);
 
   return SrcSet.size();
 }
 
-void AnnotatedCone::insertMCPEntries() const {
+bool AnnotatedCone::generateMCPThough(VASTExpr *Expr) const {
+  // Visit the node before we pushing it into the stack.
+  QueryCacheTy::const_iterator I = QueryCache.find(Expr);
+  // The children of the current node will not have any annotation if the
+  // current node do not have any annotation.
+  if (I == QueryCache.end())
+    return false;
+
+  NumConstraints += generateMCPThough(Expr, I->second);
+  return true;
+}
+
+void AnnotatedCone::generateMCPEntriesDFOrder(VASTValue *Root) const {
+  VASTExpr *RootExpr = dyn_cast<VASTExpr>(Root);
+
+  // Trivial cone that only consists of 1 register is not handle here.
+  if (RootExpr == 0) return;
+
+  typedef  VASTOperandList::op_iterator ChildIt;
+  std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
+  // Remember the visited node for the current cone.
+  std::set<VASTValue*> Visited;
+  generateMCPThough(RootExpr);
+
+  VisitStack.push_back(std::make_pair(RootExpr, RootExpr->op_begin()));
+  while (!VisitStack.empty()) {
+    VASTExpr *Expr = VisitStack.back().first;
+    ChildIt It = VisitStack.back().second;
+
+    if (It == Expr->op_end()) {
+      VisitStack.pop_back();
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    VASTValue *ChildNode = It->unwrap().get();
+    ++VisitStack.back().second;
+
+    if (ChildNode == 0) continue;
+
+    // And do not visit a node twice.
+    if (!Visited.insert(ChildNode).second) continue;
+
+    if (VASTExpr *SubExpr = dyn_cast<VASTExpr>(ChildNode)) {
+      if (generateMCPThough(SubExpr))
+        VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
+    }
+  }
+}
+
+void AnnotatedCone::generateMCPEntries() const {
   DEBUG(dbgs() << "Going to bind delay information of graph: \n");
   DEBUG(dump());
   DEBUG(dbgs() << "Binding path for dst register: "
                << Dst->getName() << '\n');
 
-  insertMCPThough(0, CyclesFromSrcLB);
+  generateMCPThough(0, CyclesFromSrcLB);
   NumConstraints += CyclesFromSrcLB.size();
 
-  typedef QueryCacheTy::const_iterator iterator;
-  for (iterator I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I)
-    NumConstraints += insertMCPThough(I->first, I->second);
+  generateMCPEntriesDFOrder(Dst->getGuard().get());
+  generateMCPEntriesDFOrder(Dst->getFanin().get());
 }
 
 bool AnnotatedCone::generateSubmoduleConstraints(VASTSeqValue *SeqVal) {
@@ -422,8 +484,8 @@ bool AnnotatedCone::generateSubmoduleConstraints(VASTSeqValue *SeqVal) {
   for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
        I != E; ++I) {
     VASTSelector *Operand = *I;
-    insertMCPWithInterval(Operand, "shang-null-node",
-                          Leaf(Latency, float(Latency)));
+    Leaf CurLeaf = Leaf(Latency, float(Latency));
+    generateMCPWithInterval(Operand, "shang-null-node", CurLeaf, ++ConstrantCounter);
   }
 
   return true;
@@ -444,7 +506,8 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
           dst TEXT, \
           thu TEXT, \
           cycles INTEGER, \
-          normalized_delay REAL \
+          normalized_delay REAL, \
+          constraint_order INTEGER \
           );\n";
 
   bindFunctionToScriptEngine(getAnalysis<DataLayout>(), &VM);
@@ -490,7 +553,7 @@ TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
   for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
     extractTimingPaths(Cache, I->second, I->first);
 
-  Cache.insertMCPEntries();
+  Cache.generateMCPEntries();
 }
 
 void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache,
@@ -519,6 +582,7 @@ void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache,
 }
 
 char TimingScriptGen::ID = 0;
+
 INITIALIZE_PASS_BEGIN(TimingScriptGen, "vast-timing-script-generation",
                       "Generate timing script to export the behavior-level timing",
                       false, true)

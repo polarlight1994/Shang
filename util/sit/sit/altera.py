@@ -66,7 +66,7 @@ class ConstraintGenerator:
   def generate_script_from_src_to_dst(self, src, dst) :
     query = '''SELECT thu, cycles, normalized_delay FROM mcps
                where %(constraint)s and dst = '%(dst)s' and src = '%(src)s'
-               ORDER BY cycles ASC ''' % {
+               ORDER BY cycles ASC, constraint_order ASC''' % {
                'constraint' : self.path_constraints,
                'dst' : dst,
                'src' : src
