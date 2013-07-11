@@ -377,9 +377,14 @@ void AnnotatedCone::insertMCPWithInterval(SrcTy *Src, const std::string &ThuName
 unsigned
 AnnotatedCone::insertMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const {
   std::string ThuName = "shang-null-node";
-  if (Thu && !Thu->isAnonymous()) ThuName = Thu->getSTAObjectName();
-  
-  if (ThuName.empty()) return 0;
+  if (Thu) {
+    // Do not generate constraints for anonymous nodes.
+    if (Thu->isAnonymous()) return 0;
+
+    ThuName = Thu->getSTAObjectName();
+
+    if (ThuName.empty()) return 0;
+  }
 
   typedef SeqValSetTy::const_iterator iterator;
   for (iterator I = SrcSet.begin(), E = SrcSet.end(); I != E; ++I)
