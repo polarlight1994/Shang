@@ -249,18 +249,45 @@ void PathIntervalQueryCache::annotatePathInterval(VASTValue *Root,
       float EstimatedDelay = TNL.getDelay(V, Root, Dst);
       SrcInfo CurInfo(Interval, EstimatedDelay);
 
-      bool inserted = LocalInterval.insert(std::make_pair(V, CurInfo)).second;
-      assert(inserted && "Node had already been visited?");
+      LocalInterval[V].update(CurInfo);
       QueryCache[Expr][V].update(CurInfo);
       // Add the information to statistics.
       addIntervalFromSrc(V, Interval, EstimatedDelay);
       continue;
     }  
 
-    if (VASTExpr *SubExpr = dyn_cast<VASTExpr>(ChildNode))
-      // Do not move across the keep nodes.
-      if (SubExpr->getOpcode() != VASTExpr::dpKeep)
-        VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
+    VASTExpr *SubExpr = dyn_cast<VASTExpr>(ChildNode);
+
+    if (SubExpr == 0)
+      continue;
+
+    // Do not move across the keep nodes.
+    if (SubExpr->getOpcode() != VASTExpr::dpKeep) {
+      VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
+      continue;
+    }
+
+    typedef std::set<VASTSeqValue*> SVSet;
+    SVSet Srcs;
+    SubExpr->extractSupportingSeqVal(Srcs);
+    assert(!Srcs.empty() && "Unexpected trivial cone with keep attribute!");
+    for (SVSet::iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+      VASTSeqValue *V = *I;
+
+      if (generateSubmoduleConstraints(V)) continue;
+
+      unsigned Interval = getMinimalInterval(V, ReadSlots);
+      float EstimatedDelay = TNL.getDelay(V, Root, Dst);
+      SrcInfo CurInfo(Interval, EstimatedDelay);
+
+      LocalInterval[V].update(CurInfo);
+      QueryCache[SubExpr][V].update(CurInfo);
+      // Add the information to statistics. It is ok to add the interval here
+      // even V may be masked by the false path indicated by the keep attribute.
+      // we will first generate the tight constraints and overwrite them by
+      // looser constraints.
+      addIntervalFromSrc(V, Interval, EstimatedDelay);
+    }
   }
 
   // Check the result, debug only.
