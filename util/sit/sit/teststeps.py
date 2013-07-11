@@ -1184,7 +1184,7 @@ endmodule
 export PATH=/nfs/app/altera/modelsim_ase_12_x64/modelsim_ase/bin/:$PATH
 
 vlib work || exit 1
-vlog {{ test_name }}.vo || exit 1
+vlog -vlog01compat {{ test_name }}.vo || exit 1
 vlog -sv DUT_TOP_tb.sv || exit 1
 vsim -t 1ps -L altera_ver -L {{ device_family.lower() }}_ver work.DUT_TOP_tb -c -do "do {{ test_name }}_dump_all_vcd_nodes.tcl;run {{ "%.2f" % (netlist_sim_expire * reported_period) }}ns;vcd flush;quit -f"
 
