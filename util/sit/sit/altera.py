@@ -44,7 +44,7 @@ class ConstraintGenerator:
       if net in self.net_map: continue
 
       self.net_map[net] = net_id
-      net_line = '''set nets%(id)s [get_nets {%(net_patterns)s}]\n''' % {
+      net_line = '''set nets%(id)s [get_pins -compatibility_mode {%(net_patterns)s}]\n''' % {
                  'id':net_id, 'net_patterns' : net }
       self.output_script.write(net_line)
       net_id += 1
@@ -115,7 +115,6 @@ create_clock -name "clk" -period %(period)sns [get_ports {clk}]
 derive_pll_clocks -create_base_clocks
 derive_clock_uncertainty
 set_max_delay -from start %(period)sns
-set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold 0
 set num_not_applied 0
 ''',
     script_on_path = '''
