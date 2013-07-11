@@ -112,6 +112,10 @@ struct AnnotatedCone {
 
   void annotatePathInterval(VASTValue *Tree, ArrayRef<VASTSlot*> ReadSlots);
 
+  Leaf buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots, VASTValue *Thu);
+  void annotateLeaf(VASTSeqValue *V, VASTExpr *Parent, Leaf CurLeaf,
+                    SeqValSetTy &LocalInterval);
+
   unsigned getMinimalInterval(VASTSeqValue *Src, VASTSlot *ReadSlot);
   unsigned getMinimalInterval(VASTSeqValue *Src, ArrayRef<VASTSlot*> ReadSlots);
 
@@ -188,14 +192,14 @@ struct TimingScriptGen : public VASTModulePass {
 }
 
 unsigned AnnotatedCone::getMinimalInterval(VASTSeqValue *Src,
-                                                    VASTSlot *ReadSlot) {
+                                           VASTSlot *ReadSlot) {
   // Try to get the live variable at (Src, ReadSlot), calculate its distance
   // from its defining slots to the read slot.
   return SLV.getIntervalFromDef(Src, ReadSlot);
 }
 
 unsigned AnnotatedCone::getMinimalInterval(VASTSeqValue *Src,
-                                                    ArrayRef<VASTSlot*> ReadSlots) {
+                                           ArrayRef<VASTSlot*> ReadSlots) {
   unsigned PathInterval = Inf;
   typedef ArrayRef<VASTSlot*>::iterator iterator;
   for (iterator I = ReadSlots.begin(), E = ReadSlots.end(); I != E; ++I)
@@ -204,8 +208,25 @@ unsigned AnnotatedCone::getMinimalInterval(VASTSeqValue *Src,
   return PathInterval;
 }
 
+
+AnnotatedCone::Leaf AnnotatedCone::buildLeaf(VASTSeqValue *V,
+                                             ArrayRef<VASTSlot*> ReadSlots,
+                                             VASTValue *Thu) {
+  unsigned Interval = getMinimalInterval(V, ReadSlots);
+  float EstimatedDelay = TNL.getDelay(V, Thu, Dst);
+  return Leaf(Interval, EstimatedDelay);
+}
+
+void AnnotatedCone::annotateLeaf(VASTSeqValue *V, VASTExpr *Parent, Leaf CurLeaf,
+                                 SeqValSetTy &LocalInterval) {
+  LocalInterval[V].update(CurLeaf);
+  QueryCache[Parent][V].update(CurLeaf);
+  // Add the information to statistics.
+  addIntervalFromSrc(V, CurLeaf);
+}
+
 void AnnotatedCone::annotatePathInterval(VASTValue *Root,
-                                                  ArrayRef<VASTSlot*> ReadSlots) {
+                                         ArrayRef<VASTSlot*> ReadSlots) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(Root);
 
   if (Expr == 0) return;
@@ -245,14 +266,7 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root,
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
       if (generateSubmoduleConstraints(V)) continue;
 
-      unsigned Interval = getMinimalInterval(V, ReadSlots);
-      float EstimatedDelay = TNL.getDelay(V, Root, Dst);
-      Leaf CurLeaf(Interval, EstimatedDelay);
-
-      LocalInterval[V].update(CurLeaf);
-      QueryCache[Expr][V].update(CurLeaf);
-      // Add the information to statistics.
-      addIntervalFromSrc(V, CurLeaf);
+      annotateLeaf(V, Expr, buildLeaf(V, ReadSlots, Root), LocalInterval);
       continue;
     }  
 
@@ -276,17 +290,11 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root,
 
       if (generateSubmoduleConstraints(V)) continue;
 
-      unsigned Interval = getMinimalInterval(V, ReadSlots);
-      float EstimatedDelay = TNL.getDelay(V, Root, Dst);
-      Leaf CurLeaf(Interval, EstimatedDelay);
-
-      LocalInterval[V].update(CurLeaf);
-      QueryCache[SubExpr][V].update(CurLeaf);
       // Add the information to statistics. It is ok to add the interval here
       // even V may be masked by the false path indicated by the keep attribute.
       // we will first generate the tight constraints and overwrite them by
       // looser constraints.
-      addIntervalFromSrc(V, CurLeaf);
+      annotateLeaf(V, SubExpr, buildLeaf(V, ReadSlots, Root), LocalInterval);
     }
   }
 
@@ -347,9 +355,8 @@ void AnnotatedCone::dump() const {
 // The first node of the path is the use node and the last node of the path is
 // the define node.
 template<typename SrcTy>
-void AnnotatedCone::insertMCPWithInterval(SrcTy *Src,
-                                                   const std::string &ThuName,
-                                                   const Leaf &SI) const {
+void AnnotatedCone::insertMCPWithInterval(SrcTy *Src, const std::string &ThuName,
+                                          const Leaf &SI) const {
   assert(!ThuName.empty() && "Bad through node name!");
   OS << "INSERT INTO mcps(src, dst, thu, cycles, normalized_delay) VALUES(\n"
      << '\'' << Src->getSTAObjectName() << "', \n"
@@ -367,9 +374,8 @@ void AnnotatedCone::insertMCPWithInterval(SrcTy *Src,
   if (SI.NumCycles < SI.CriticalDelay) ++NumTimgViolation;
 }
 
-unsigned AnnotatedCone::insertMCPThough(VASTExpr *Thu,
-                                                 const SeqValSetTy &SrcSet)
-                                                 const {
+unsigned
+AnnotatedCone::insertMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const {
   std::string ThuName = "shang-null-node";
   if (Thu && !Thu->isAnonymous()) ThuName = Thu->getSTAObjectName();
   
