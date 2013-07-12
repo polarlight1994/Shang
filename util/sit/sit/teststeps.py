@@ -1176,7 +1176,7 @@ endmodule
 ''', os.path.join(self.netlist_sim_base_dir, 'DUT_TOP_tb.sv'))
 
     #Generate the simulation script.
-    self.netlist_sim_expire = self.results["cycles"] + 100
+    self.netlist_sim_expire = self.results["cycles"] + 1000
     self.netlist_sim_script = os.path.join(self.netlist_sim_base_dir, 'netlist_sim.sge')
     self.generateFileFromTemplate('''#!/bin/bash
 #$ -S /bin/bash
