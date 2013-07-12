@@ -152,8 +152,6 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
     for (const_succ_it I = NextSlots.begin(),E = NextSlots.end(); I != E; ++I) {
       VASTSlotCtrl *Br = (*I);
       VASTSeqValue *NextSlotReg = Br->getTargetSlot()->getValue();
-      bool IsLoop = NextSlotReg == S->getValue();
-      VASTValPtr Cnd = Br->getGuard();
 
       VASTUse &U = Br->getSrc(0);
       assert(isa<VASTSlotCtrl>(U.getUser()) && "Unexpected user!");
