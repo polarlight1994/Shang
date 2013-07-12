@@ -415,7 +415,13 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       // basic blocks.
       CurGuard = Builder.buildKeep(CurGuard);
 
-      Sel->createAnnotation(S, CurGuard);
+      // The guarding condition itself is not guard, that is, the guarding
+      // condition is read whenever the slot register is set. Hence, we should
+      // annotate it with the control-equivalent group instead of the guarding
+      // condition equivalent group!
+      // FIXME: We can build apply the keep attribute according to the STG
+      // subgroup hierarchy sequentially to relax the constraints.
+      Sel->createAnnotation(S->getParentState(), CurGuard);
       SlotGuards.push_back(CurGuard);
       Slots.push_back(S);
     }
