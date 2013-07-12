@@ -54,10 +54,10 @@ class ConstraintGenerator:
     kwargs['period'] = self.period
     kwargs['hold_cycles'] = kwargs['cycles'] - 1;
     if kwargs['thu'] == 'netsNone' :
-      kwargs['cnd_string'] = '''[get_collection_size $%(src)s] && [get_collection_size $%(dst)s]''' % kwargs
+      kwargs['cnd_string'] = '''1''' % kwargs
       kwargs['path_fileter'] = '''-from $%(src)s -to $%(dst)s''' % kwargs
     else :
-      kwargs['cnd_string'] = '''[get_collection_size $%(src)s] && [get_collection_size $%(dst)s] && [get_collection_size $%(thu)s]''' % kwargs
+      kwargs['cnd_string'] = '''[get_collection_size $%(thu)s]''' % kwargs
       kwargs['path_fileter'] = '''-from $%(src)s -through $%(thu)s -to $%(dst)s''' % kwargs
 
     self.output_script.write(self.script_on_path % kwargs)
@@ -71,14 +71,19 @@ class ConstraintGenerator:
                'dst' : dst,
                'src' : src
             }
+
+    self.output_script.write('if { [get_collection_size $%(src)s] } {\n' % { 'src' : "keepers%s" % self.keeper_map[src] })
     for thu, cycles, delay in [ (row[0], row[1], row[2] ) for row in self.cusor.execute(query) ]:
       self.generate_script_for_path(src="keepers%s" % self.keeper_map[src], dst="keepers%s" % self.keeper_map[dst], thu="nets%s" % self.net_map[thu], cycles=cycles, delay=delay)
+    self.output_script.write('}\n')
 
   def generate_script_for_dst(self, dst) :
     query = '''SELECT DISTINCT src FROM mcps where %(constraint)s and dst = '%(dst)s' ''' % {
                'constraint' : self.path_constraints, 'dst' : dst}
+    self.output_script.write('if { [get_collection_size $%(dst)s] } {\n' % { 'dst' : "keepers%s" % self.keeper_map[dst] })
     for src in [ row[0] for row in self.cusor.execute(query) ]:
       self.generate_script_from_src_to_dst(src, dst)
+    self.output_script.write('}\n')
 
   def generate_script(self):
     self.output_script = open(self.output_script_path, 'w')
