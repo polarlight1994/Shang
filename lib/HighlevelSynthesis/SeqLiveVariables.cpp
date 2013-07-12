@@ -606,6 +606,9 @@ bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot::EdgePtr Edge) {
 
 unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
                                               VASTSlot *ReadSlot) const {
+  // Assume the paths from FUOutput are always single cycle paths.
+  if (V->isFUOutput()) return 1;
+
   const VarInfo *VI = getVarInfo(V);
   unsigned ReadSlotNum = ReadSlot->SlotNum;
 

@@ -91,12 +91,7 @@ private:
     // Update the available interval.
     for (LeafSetTy::iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
       VASTSeqValue *SV = I->first;
-      // Default the interval to 1, which corresponds to the interval from
-      // FUOutput. We will change it after we are sure that SV is not FUOutput.
-      unsigned Interval = 1;
-
-      if (!SV->isFUOutput())
-        Interval = SLV->getIntervalFromDef(SV, S);
+      unsigned Interval = SLV->getIntervalFromDef(SV, S);
       I->second.update(Interval, I->second.CriticalDelay);
     }
   }
