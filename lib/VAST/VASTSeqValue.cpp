@@ -64,24 +64,6 @@ static const VASTSelector *getSelector(VASTValue *V) {
   return 0;
 }
 
-bool
-VASTSelector::StructualLess::operator()(VASTValPtr LHS, VASTValPtr RHS) const {
-  if (LHS && RHS && LHS.isInverted() == RHS.isInverted()) {
-    const char *LHSName = getValName(LHS.get()),
-               *RHSName = getValName(RHS.get());
-    if (LHSName && RHSName)
-      return LHSName < RHSName;
-
-    const VASTSelector *LHSSel = getSelector(LHS.get()),
-                       *RHSSel = getSelector(RHS.get());
-
-    if (LHSSel && RHSSel)
-      return LHSSel < RHSSel;
-  }
-
-  return LHS < RHS;
-}
-
 bool VASTSelector::isTrivialFannin(const VASTLatch &L) const {
   VASTValPtr FIVal = L;
 
@@ -98,16 +80,30 @@ bool VASTSelector::isTrivialFannin(const VASTLatch &L) const {
   return false;
 }
 
-bool VASTSelector::buildCSEMap(CSEMapTy &CSEMap) const {
-  for (const_iterator I = begin(), E = end(); I != E; ++I) {
-    VASTLatch U = *I;
+namespace {
+// The VASTSeqValues from the same VASTSelector are not equal in the data flow,
+// because their are representing the value of the same selector at different
+// states of the circuit. However, they are structural equal because their are
+// driven by the same register. Use this functor to avoid the redundant nodes
+// in the netlist.
+struct StructualLess : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
+  bool operator()(VASTValPtr LHS, VASTValPtr RHS) const {
+    if (LHS && RHS && LHS.isInverted() == RHS.isInverted()) {
+      const char *LHSName = getValName(LHS.get()),
+                 *RHSName = getValName(RHS.get());
+      if (LHSName && RHSName)
+        return LHSName < RHSName;
 
-    if (isTrivialFannin(U)) continue;
+      const VASTSelector *LHSSel = getSelector(LHS.get()),
+                         *RHSSel = getSelector(RHS.get());
 
-    CSEMap[U].push_back(U.Op);
+      if (LHSSel && RHSSel)
+        return LHSSel < RHSSel;
+    }
+
+    return LHS < RHS;
   }
-
-  return !CSEMap.empty();
+};
 }
 
 void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,

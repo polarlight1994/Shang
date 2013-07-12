@@ -51,17 +51,6 @@ public:
     VASTValue *getNode() const;
   };
 
-  // The VASTSeqValues from the same VASTSelector are not equal in the data flow,
-  // because their are representing the value of the same selector at different
-  // states of the circuit. However, they are structural equal because their are
-  // driven by the same register. Use this functor to avoid the redundant nodes
-  // in the netlist.
-  struct StructualLess
-    : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
-
-    bool operator()(VASTValPtr LHS, VASTValPtr RHS) const;
-  };
-
 private:
   VASTSelector(const VASTSelector&) LLVM_DELETED_FUNCTION;
   void operator=(const VASTSelector&) LLVM_DELETED_FUNCTION;
@@ -139,10 +128,6 @@ public:
   // the same selector.
   bool isTrivialFannin(const VASTLatch &L) const;
 
-  typedef std::map<VASTValPtr, std::vector<const VASTSeqOp*>, StructualLess>
-          CSEMapTy;
-
-  bool buildCSEMap(CSEMapTy &CSEMap) const;
   void createAnnotation(VASTSlot *S, VASTValPtr V);
 
   bool isSelectorSynthesized() const { return !Guard.isInvalid(); }
