@@ -643,26 +643,3 @@ unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
   // The is 1 extra cycle from the definition to live in.
   return std::min(IntervalFromLanding + 1, STGDistances::Inf);
 }
-
-unsigned SeqLiveVariables::getMinimalIntervalOfCone(VASTValPtr V,
-                                                    VASTSlot *ReadSlot) const {
-  typedef std::set<VASTSeqValue*> SVSet;
-  SVSet Srcs;
-  V->extractSupportingSeqVal(Srcs);
-
-  unsigned Interval = STGDistances::Inf;
-  typedef SVSet::const_iterator iterator;
-  for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-    VASTSeqValue *SV = *I;
-    // Do not retime if we do not have any timing information.
-    assert(SV && "Unexpected source SeqValue!");
-
-    if (SV->isFUOutput()) return 1;
-
-    Interval = std::min(Interval, getIntervalFromDef(SV, ReadSlot));
-  }
-
-  assert(Interval && "Unexpected interval!");
-
-  return Interval;
-}
