@@ -81,8 +81,9 @@ struct AnnotatedCone {
       this->CriticalDelay = std::max(this->CriticalDelay, CriticalDelay);
     }
 
-    void update(const Leaf &RHS) {
+    Leaf &update(const Leaf &RHS) {
       update(RHS.NumCycles, RHS.CriticalDelay);
+      return *this;
     }
   };
 
@@ -102,11 +103,16 @@ struct AnnotatedCone {
     CyclesFromSrcLB.clear();
   }
 
+  static void checkIntervalFromSlot(VASTSeqValue * Src, unsigned Cycles) {
+    assert((!Src->isSlot() || Cycles <= 1) && "Bad interval for slot registers!");
+    (void) Cycles;
+    (void) Src;
+  }
+
   void addIntervalFromSrc(VASTSeqValue *Src, const Leaf &L) {
     assert(L.NumCycles && "unexpected zero interval!");
-    assert((!Src->isSlot() || L.NumCycles <= 1)
-           && "Bad interval for slot registers!");
-    CyclesFromSrcLB[Src].update(L);
+    unsigned Cycles = CyclesFromSrcLB[Src].update(L).NumCycles;
+    checkIntervalFromSlot(Src, Cycles);
   }
 
   bool generateSubmoduleConstraints(VASTSeqValue *SeqVal);
@@ -228,7 +234,8 @@ AnnotatedCone::Leaf AnnotatedCone::buildLeaf(VASTSeqValue *V,
 void AnnotatedCone::annotateLeaf(VASTSeqValue *V, VASTExpr *Parent, Leaf CurLeaf,
                                  SeqValSetTy &LocalInterval) {
   LocalInterval[V].update(CurLeaf);
-  QueryCache[Parent][V].update(CurLeaf);
+  unsigned Cycles = QueryCache[Parent][V].update(CurLeaf).NumCycles;
+  checkIntervalFromSlot(V, Cycles);
   // Add the information to statistics.
   addIntervalFromSrc(V, CurLeaf);
 }
