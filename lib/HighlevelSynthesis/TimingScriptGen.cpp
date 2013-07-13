@@ -132,8 +132,7 @@ struct AnnotatedCone {
     SeqValSetTy &CurSet = QueryCache[Expr];
     for (iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
       VASTExpr *SubExpr = dyn_cast<VASTExpr>(VASTValPtr(*I).get());
-      // Do not look up the source information across the keep boundary.
-      if (SubExpr == 0 || SubExpr->getOpcode() == VASTExpr::dpKeep)
+      if (SubExpr == 0)
         continue;
 
       QueryCacheTy::const_iterator at = QueryCache.find(SubExpr);
@@ -298,7 +297,8 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root,
 
     typedef std::set<VASTSeqValue*> SVSet;
     SVSet Srcs;
-    SubExpr->extractSupportingSeqVal(Srcs);
+    // Get *all* source register of the cone rooted on SubExpr.
+    SubExpr->extractSupportingSeqVal(Srcs, false /*Search across keep nodes!*/);
     assert(!Srcs.empty() && "Unexpected trivial cone with keep attribute!");
     for (SVSet::iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       VASTSeqValue *V = *I;
