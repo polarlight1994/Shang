@@ -52,7 +52,6 @@ class ConstraintGenerator:
   # Generate the multi-cycle path constraints.
   def generate_script_for_path(self, **kwargs) :
     kwargs['period'] = self.period
-    kwargs['hold_cycles'] = kwargs['cycles'] - 1;
     if kwargs['thu'] == 'netsNone' :
       kwargs['cnd_string'] = '''1''' % kwargs
       kwargs['path_fileter'] = '''-from $%(src)s -to $%(dst)s''' % kwargs
@@ -110,7 +109,6 @@ def generate_scripts(sql_path, sdc_path, report_path, period, factor) :
   con.commit()
   sql_script.close();
 
-  #def __init__(self, path_constraints, sql_path, output_script, script_on_path, period):
   sdc_generator = ConstraintGenerator(
     sql_connection = con,
     path_constraints = ''' cycles > 1 and (thu like 'shang-null-node' or normalized_delay > %f) ''' % factor,
@@ -126,7 +124,7 @@ set num_not_applied 0
 # %(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s
 if { %(cnd_string)s } {
   set_multicycle_path %(path_fileter)s -setup %(cycles)d
-  set_multicycle_path %(path_fileter)s -hold %(hold_cycles)d
+  set_multicycle_path %(path_fileter)s -hold 0
 } else { incr num_not_applied }
 post_message -type info "%(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s"
 
