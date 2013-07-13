@@ -235,7 +235,7 @@ void VASTMemoryBus::printDecl(raw_ostream &OS) const {
   if (isDualPort()) printPortDecl(OS, 1);
 }
 
-void VASTMemoryBus::printBank(vlang_raw_ostream &OS, const VASTModule *Mod) const {
+void VASTMemoryBus::printBank(vlang_raw_ostream &OS) const {
   // The default memory bus are printed as module ports.
   if (isDefault()) return;
 
@@ -255,15 +255,15 @@ void VASTMemoryBus::printBank(vlang_raw_ostream &OS, const VASTModule *Mod) cons
 
   writeInitializeFile(OS);
 
-  printBanksPort(OS, Mod, 0, BytesPerWord, ByteAddrWidth, NumWords);
+  printBanksPort(OS, 0, BytesPerWord, ByteAddrWidth, NumWords);
   if (isDualPort())
-    printBanksPort(OS, Mod, 1, BytesPerWord, ByteAddrWidth, NumWords);
+    printBanksPort(OS, 1, BytesPerWord, ByteAddrWidth, NumWords);
 }
 
 void
-VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
-                              unsigned PortNum, unsigned BytesPerWord,
-                              unsigned ByteAddrWidth, unsigned NumWords) const {
+VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
+                              unsigned BytesPerWord, unsigned ByteAddrWidth,
+                              unsigned NumWords) const {
   // Print the read port.
   VASTSelector *Addr = getAddr(PortNum);
   if (Addr->empty()) {
@@ -274,9 +274,9 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
   VASTSelector *WData = getWData(PortNum);
   VASTSelector *ByteEn = getByteEn(PortNum);
 
-  Addr->printRegisterBlock(OS, Mod, 0);
-  WData->printRegisterBlock(OS, Mod, 0);
-  ByteEn->printRegisterBlock(OS, Mod, 0);
+  Addr->printRegisterBlock(OS, 0);
+  WData->printRegisterBlock(OS, 0);
+  ByteEn->printRegisterBlock(OS, 0);
   OS << "reg " << WData->getName() << "en;\n";
   // Access the block ram.
   OS.always_ff_begin(false);
@@ -454,8 +454,7 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
   padZeroToByteAddr(InitFileO, CurByteAddr, CurrentOffset, WordSizeInByte);
 }
 
-void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
-                                  const VASTModule *Mod) const {
+void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS) const {
   unsigned BytesPerWord = getDataWidth() / 8;
   unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
   assert((CurrentOffset * 8) % getDataWidth() == 0
@@ -471,13 +470,13 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS,
 
   writeInitializeFile(OS);
 
-  printBlockPort(OS, Mod, 0, ByteAddrWidth, NumWords);
-  if (isDualPort()) printBlockPort(OS, Mod, 1, ByteAddrWidth, NumWords);
+  printBlockPort(OS, 0, ByteAddrWidth, NumWords);
+  if (isDualPort()) printBlockPort(OS, 1, ByteAddrWidth, NumWords);
 }
 
-void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
-                                   unsigned PortNum, unsigned ByteAddrWidth,
-                                   unsigned NumWords) const {
+void
+VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
+                              unsigned ByteAddrWidth, unsigned NumWords) const {
   VASTSelector *Addr = getAddr(PortNum);
   // The port is not used if the address is not active.
   if (Addr->empty()) return;
@@ -486,9 +485,9 @@ void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
                *WData = getWData(PortNum);
 
   // Print the selectors.
-  Addr->printRegisterBlock(OS, Mod, 0);
-  RData->printRegisterBlock(OS, Mod, 0);
-  WData->printRegisterBlock(OS, Mod, 0);
+  Addr->printRegisterBlock(OS, 0);
+  RData->printRegisterBlock(OS, 0);
+  WData->printRegisterBlock(OS, 0);
 
   OS << "reg " << WData->getName() << "en;\n";
   // Access the block ram.
@@ -524,7 +523,9 @@ void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
   OS.always_ff_end(false);
 }
 
-void VASTMemoryBus::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
-  if (requireByteEnable()) printBank(OS, Mod);
-  else                     printBlockRAM(OS, Mod);
+void VASTMemoryBus::print(vlang_raw_ostream &OS) const {
+  if (requireByteEnable())
+    printBank(OS);
+  else
+    printBlockRAM(OS);
 }

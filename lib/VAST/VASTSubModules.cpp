@@ -35,11 +35,10 @@ void VASTSubModuleBase::addFanout(VASTSelector *V) {
 
 void VASTSubModuleBase::print(raw_ostream &OS) const {
   vlang_raw_ostream S(dbgs());
-  print(S, 0);
+  print(S);
 }
 
-void VASTSubModuleBase::print(vlang_raw_ostream &OS,
-                              const VASTModule *Mod) const {
+void VASTSubModuleBase::print(vlang_raw_ostream &OS) const {
 
 }
 
@@ -78,8 +77,7 @@ VASTSelector *VASTSubModule::createRetPort(VASTModule *VM, unsigned Bitwidth,
   return RetPort;
 }
 
-void VASTSubModule::printSimpleInstantiation(vlang_raw_ostream &OS,
-                                             const VASTModule *Mod) const {
+void VASTSubModule::printSimpleInstantiation(vlang_raw_ostream &OS) const {
   //OS << getName() << ' ' << getName() << "_inst" << "(\n";
 
   //// Print the port connections.
@@ -99,9 +97,7 @@ void VASTSubModule::printSimpleInstantiation(vlang_raw_ostream &OS,
   llvm_unreachable("Not implemented yet!");
 }
 
-void VASTSubModule::printSubModuleLogic(vlang_raw_ostream &OS,
-                                        const VASTModule *Mod)
-                                        const {
+void VASTSubModule::printSubModuleLogic(vlang_raw_ostream &OS) const {
   // Print the code for simple modules.
   switch (Insts.front()->getOpcode()) {
   case Instruction::UDiv:
@@ -119,13 +115,13 @@ void VASTSubModule::printSubModuleLogic(vlang_raw_ostream &OS,
   }
 }
 
-void VASTSubModule::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
+void VASTSubModule::print(vlang_raw_ostream &OS) const {
   if (isa<CallInst>(Insts.front())) {
-    printSimpleInstantiation(OS, Mod);
+    printSimpleInstantiation(OS);
     return;
   }
 
-  printSubModuleLogic(OS, Mod);
+  printSubModuleLogic(OS);
 }
 
 void VASTSubModule::printDecl(raw_ostream &OS) const {

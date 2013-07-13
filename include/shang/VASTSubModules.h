@@ -43,9 +43,8 @@ class VASTSubModule : public VASTSubModuleBase {
       RetPort(0), Latency(0) {}
 
   friend class VASTModule;
-  void
-  printSimpleInstantiation(vlang_raw_ostream &OS, const VASTModule *Mod) const;
-  void printSubModuleLogic(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void printSimpleInstantiation(vlang_raw_ostream &OS) const;
+  void printSubModuleLogic(vlang_raw_ostream &OS) const;
 public:
   unsigned getNum() const { return Idx; }
   const char *getName() const { return Contents.Name; }
@@ -77,7 +76,7 @@ public:
     return getPortName(getNum(), PortName);
   }
 
-  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void print(vlang_raw_ostream &OS) const;
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSubModule *A) { return true; }
   static inline bool classof(const VASTNode *A) {

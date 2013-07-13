@@ -249,8 +249,8 @@ unsigned VASTOutPort::getBitWidthImpl() const {
   return getSelector()->getBitWidth();
 }
 
-void VASTOutPort::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
-  getSelector()->printRegisterBlock(OS, Mod, 0);
+void VASTOutPort::print(vlang_raw_ostream &OS) const {
+  getSelector()->printRegisterBlock(OS, 0);
 }
 
 VASTInPort::VASTInPort(VASTNode *Node) : VASTPort(vastInPort) {
@@ -543,7 +543,7 @@ void VASTModule::printSubmodules(vlang_raw_ostream &OS) const {
     VASTSubModuleBase *S = *I;
 
     // Print the data selector of the register.
-    S->print(OS, this);
+    S->print(OS);
   }
 }
 
@@ -553,11 +553,11 @@ void VASTModule::printRegisterBlocks(vlang_raw_ostream &OS) const {
   typedef RegisterVector::const_iterator const_reg_iterator;
   for (const_reg_iterator I = Registers.begin(), E = Registers.end();
        I != E; ++I)
-    I->print(OS, this);
+    I->print(OS);
 
   for (const_port_iterator I = Ports.begin(), E = Ports.end(); I != E; ++I)
     if (VASTOutPort *P = dyn_cast<VASTOutPort>(*I))
-      P->print(OS, this);
+      P->print(OS);
 }
 
 void VASTModule::printModuleDecl(raw_ostream &OS) const {

@@ -70,7 +70,7 @@ private:
   void instantiateSelector(raw_ostream &OS) const;
 
   // Functions to write the verilog code.
-  void verifyAssignCnd(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void verifyAssignCnd(vlang_raw_ostream &OS) const;
   void printSelector(raw_ostream &OS) const;
 public:
   VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
@@ -139,8 +139,7 @@ public:
   void print(raw_ostream &OS) const;
 
   void printDecl(raw_ostream &OS) const;
-  void printRegisterBlock(vlang_raw_ostream &OS, const VASTModule *Mod,
-                          uint64_t InitVal) const;
+  void printRegisterBlock(vlang_raw_ostream &OS, uint64_t InitVal) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSelector *A) { return true; }
@@ -297,7 +296,7 @@ public:
   void printDecl(raw_ostream &OS) const;
 
   void print(raw_ostream &OS) const;
-  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void print(vlang_raw_ostream &OS) const;
 };
 }
 

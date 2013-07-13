@@ -52,15 +52,14 @@ class VASTMemoryBus : public VASTSubModuleBase {
 
   // Print the implementation of the memory blocks according to the requirement
   // of the byte enable.
-  void printBank(vlang_raw_ostream &OS, const VASTModule *Mod) const;
-  void printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
-                      unsigned PortNum, unsigned BytesPerWord,
-                      unsigned ByteAddrWidth, unsigned NumWords) const;
-
-  void printBlockRAM(vlang_raw_ostream &OS, const VASTModule *Mod) const;
-  void printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
-                      unsigned PortNum, unsigned ByteAddrWidth,
+  void printBank(vlang_raw_ostream &OS) const;
+  void printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
+                      unsigned BytesPerWord, unsigned ByteAddrWidth,
                       unsigned NumWords) const;
+
+  void printBlockRAM(vlang_raw_ostream &OS) const;
+  void printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
+                      unsigned ByteAddrWidth, unsigned NumWords) const;
 public:
   unsigned getDataWidth() const { return DataSize; }
   unsigned getAddrWidth() const { return AddrSize; }
@@ -87,7 +86,7 @@ public:
 
   void printDecl(raw_ostream &OS) const;
 
-  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void print(vlang_raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTMemoryBus *A) { return true; }

@@ -108,8 +108,7 @@ struct StructualLess : public std::binary_function<VASTValPtr, VASTValPtr, bool>
 };
 }
 
-void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
-                                   const VASTModule *Mod) const {
+void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS) const {
   if (empty()) return;
 
   // Concatenate all condition together to detect the case that more than one
@@ -143,8 +142,7 @@ void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS,
   // time.
   OS << "if (!$onehot0(" << AllCnd << ")) begin\n"
         "  $display(\"At time %t, register "
-        << getName() << " in module " << ( Mod ? Mod->getName() : "Unknown")
-        << " has more than one active assignment: %b!\", $time(), "
+        << getName() << " has more than one active assignment: %b!\", $time(), "
         << AllCnd << ");\n";
 
   // Display the conflicted condition and its slot.
@@ -277,7 +275,6 @@ void VASTSelector::printSelector(raw_ostream &OS) const {
 }
 
 void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
-                                      const VASTModule *Mod,
                                       uint64_t InitVal) const {
 
   if (empty()) {
@@ -312,7 +309,7 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   }
 
   OS << "// synthesis translate_off\n";
-  verifyAssignCnd(OS, Mod);
+  verifyAssignCnd(OS);
   OS << "// synthesis translate_on\n\n";
 
   OS.always_ff_end();
@@ -417,13 +414,13 @@ VASTRegister::VASTRegister(VASTSelector *Sel, uint64_t InitVal)
 
 VASTRegister::VASTRegister() : VASTNode(vastRegister), InitVal(0), Sel(0) {}
 
-void VASTRegister::print(vlang_raw_ostream &OS, const VASTModule *Mod) const {
-  Sel->printRegisterBlock(OS, Mod, InitVal);
+void VASTRegister::print(vlang_raw_ostream &OS) const {
+  Sel->printRegisterBlock(OS, InitVal);
 }
 
 void VASTRegister::print(raw_ostream &OS) const {
   vlang_raw_ostream S(dbgs());
-  print(S, 0);
+  print(S);
 }
 
 void VASTRegister::printDecl(raw_ostream &OS) const {

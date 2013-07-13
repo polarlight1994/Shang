@@ -71,7 +71,7 @@ public:
   explicit VASTOutPort(VASTSelector *Sel);
 
   VASTSelector *getSelector() const;
-  void print(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void print(vlang_raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTOutPort *A) { return true; }
