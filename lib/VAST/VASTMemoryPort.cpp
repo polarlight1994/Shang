@@ -84,13 +84,13 @@ void VASTMemoryBus::addExternalPins(VASTModule *VM) {
 
     // Enable pin
     VASTSelector *Enable
-      = VM->createSelector(getEnableName(0), 1, 0);
+      = VM->createSelector(getEnableName(0), 1, 0, VASTSelector::Enable);
     addFanin(Enable);
     VM->addPort(Enable, false);
 
     // Write enable pin
     VASTSelector *WriteEn
-      = VM->createSelector(getWriteEnName(0), 1, 0);
+      = VM->createSelector(getWriteEnName(0), 1, 0, VASTSelector::Enable);
     addFanin(WriteEn);
     VM->addPort(WriteEn, false);
 }
