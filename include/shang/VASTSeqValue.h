@@ -68,6 +68,10 @@ private:
   VASTUse Guard, Fanin;
 
   void instantiateSelector(raw_ostream &OS) const;
+
+  // Functions to write the verilog code.
+  void verifyAssignCnd(vlang_raw_ostream &OS, const VASTModule *Mod) const;
+  void printSelector(raw_ostream &OS) const;
 public:
   VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
                Type T = Temp, VASTNode *Node = 0);
@@ -127,10 +131,6 @@ public:
   bool isSelectorSynthesized() const { return !Guard.isInvalid(); }
 
   VASTSeqValue *getSSAValue() const;
-
-  // Functions to write the verilog code.
-  void verifyAssignCnd(vlang_raw_ostream &OS, const VASTModule *Mod) const;
-  void printSelector(raw_ostream &OS, bool PrintEnable = true) const;
 
   void addAssignment(VASTSeqOp *Op, unsigned SrcNo);
 

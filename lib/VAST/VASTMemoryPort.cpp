@@ -521,12 +521,6 @@ void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
         << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
         << ByteAddrWidth << "'b0) $finish(\"Write access out of bound!\");\n";
 
-  OS << "// synthesis translate_off\n";
-  Addr->verifyAssignCnd(OS, Mod);
-  WData->verifyAssignCnd(OS, Mod);
-  RData->verifyAssignCnd(OS, Mod);
-  OS << "// synthesis translate_on\n\n";
-
   OS.always_ff_end(false);
 }
 

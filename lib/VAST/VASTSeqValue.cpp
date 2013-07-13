@@ -255,7 +255,7 @@ void VASTSelector::instantiateSelector(raw_ostream &OS) const {
      << getName() << "_selector_guard);\n";
 }
 
-void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
+void VASTSelector::printSelector(raw_ostream &OS) const {
   if (empty()) return;
 
   if (forcePrintSelModule()) {
@@ -265,10 +265,8 @@ void VASTSelector::printSelector(raw_ostream &OS, bool PrintEnable) const {
 
   OS << "// Synthesized MUX\n";
 
-  if (PrintEnable) {
-    OS << "wire " << getName() << "_selector_guard = "
-       << VASTValPtr(Guard) << ";\n";
-  }
+  OS << "wire " << getName() << "_selector_guard = "
+     << VASTValPtr(Guard) << ";\n";
 
   if (isEnable() || isSlot()) return;
 
