@@ -69,8 +69,6 @@ private:
 
   void instantiateSelector(raw_ostream &OS) const;
 
-  // Functions to write the verilog code.
-  void verifyAssignCnd(vlang_raw_ostream &OS) const;
   void printSelector(raw_ostream &OS) const;
 public:
   VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
@@ -140,6 +138,9 @@ public:
 
   void printDecl(raw_ostream &OS) const;
   void printRegisterBlock(vlang_raw_ostream &OS, uint64_t InitVal) const;
+
+  // Generate the code to verify the register assignment.
+  void printVerificationCode(vlang_raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSelector *A) { return true; }

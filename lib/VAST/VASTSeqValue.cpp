@@ -108,7 +108,7 @@ struct StructualLess : public std::binary_function<VASTValPtr, VASTValPtr, bool>
 };
 }
 
-void VASTSelector::verifyAssignCnd(vlang_raw_ostream &OS) const {
+void VASTSelector::printVerificationCode(vlang_raw_ostream &OS) const {
   if (empty()) return;
 
   // Concatenate all condition together to detect the case that more than one
@@ -307,10 +307,6 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
        << VASTValue::printBitRange(getBitWidth(), 0, false) << ";\n";
     OS.exit_block();
   }
-
-  OS << "// synthesis translate_off\n";
-  verifyAssignCnd(OS);
-  OS << "// synthesis translate_on\n\n";
 
   OS.always_ff_end();
 }

@@ -148,6 +148,18 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   VM.printSubmodules(Out);
   VM.printRegisterBlocks(Out);
 
+  // Verify the register assignment.
+  Out << "// synthesis translate_off\n";
+  Out.always_ff_begin(false);
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+    Out << "// Verification code for Selector: " << I->getName() << '\n';
+    I->printVerificationCode(Out);
+    Out << '\n';
+  }
+  Out.always_ff_end(false);
+  Out << "// synthesis translate_on\n\n";
+
   Out.module_end();
   Out.flush();
 
