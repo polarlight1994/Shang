@@ -115,6 +115,8 @@ struct AnnotatedCone {
     checkIntervalFromSlot(Src, Cycles);
   }
 
+  bool generateSubmoduleConstraints(VASTSeqValue *SeqVal);
+
   void annotatePathInterval(VASTValue *Tree, ArrayRef<VASTSlot*> ReadSlots);
 
   Leaf buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots, VASTValue *Thu);
@@ -277,6 +279,8 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root,
     if (!Visited.insert(ChildNode).second) continue;
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
+      if (generateSubmoduleConstraints(V)) continue;
+
       annotateLeaf(V, Expr, buildLeaf(V, ReadSlots, Root), LocalInterval);
       continue;
     }  
@@ -298,6 +302,9 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root,
     assert(!Srcs.empty() && "Unexpected trivial cone with keep attribute!");
     for (SVSet::iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       VASTSeqValue *V = *I;
+
+      if (generateSubmoduleConstraints(V)) continue;
+
       // Add the information to statistics. It is ok to add the interval here
       // even V may be masked by the false path indicated by the keep attribute.
       // we will first generate the tight constraints and overwrite them by
@@ -469,6 +476,28 @@ void AnnotatedCone::generateMCPEntries() const {
   generateMCPEntriesDFOrder(Dst->getFanin().get());
 }
 
+bool AnnotatedCone::generateSubmoduleConstraints(VASTSeqValue *SeqVal) {
+  if (!SeqVal->isFUOutput()) return false;
+
+  VASTSubModule *SubMod = dyn_cast<VASTSubModule>(SeqVal->getParent());
+  if (SubMod == 0) return true;
+
+  unsigned Latency = SubMod->getLatency();
+  // No latency information available.
+  if (Latency == 0) return true;
+
+  // Add the timing constraints from operand registers to the output registers.
+  typedef VASTSubModule::fanin_iterator fanin_iterator;
+  for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
+       I != E; ++I) {
+    VASTSelector *Operand = *I;
+    Leaf CurLeaf = Leaf(Latency, float(Latency));
+    generateMCPWithInterval(Operand, "shang-null-node", CurLeaf, ++ConstrantCounter);
+  }
+
+  return true;
+}
+
 bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
   // No need to write timing script at all.
   if (DisableTimingScriptGeneration) return false;
@@ -536,7 +565,9 @@ void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache,
                                          ArrayRef<VASTSlot*> ReadSlots,
                                          VASTValue *DepTree) {
   // Trivial case: register to register path.
-  if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(DepTree)) {
+  if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(DepTree)){
+    if (Cache.generateSubmoduleConstraints(Src)) return;
+
     unsigned Interval = Cache.getMinimalInterval(Src, ReadSlots);
     Cache.addIntervalFromSrc(Src, AnnotatedCone::Leaf(Interval, 0.0f));
 
