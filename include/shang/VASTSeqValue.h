@@ -125,7 +125,7 @@ public:
   // the same selector.
   bool isTrivialFannin(const VASTLatch &L) const;
 
-  void createAnnotation(VASTSlot *S, VASTValPtr V);
+  void annotateReadSlot(VASTSlot *S, VASTValPtr V);
   void resetAnnotation();
 
   bool isSelectorSynthesized() const { return !Guard.isInvalid(); }

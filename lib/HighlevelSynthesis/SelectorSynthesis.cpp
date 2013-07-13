@@ -421,7 +421,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       // condition equivalent group!
       // FIXME: We can build apply the keep attribute according to the STG
       // subgroup hierarchy sequentially to relax the constraints.
-      Sel->createAnnotation(S->getParentState(), CurGuard);
+      Sel->annotateReadSlot(S->getParentState(), CurGuard);
       SlotGuards.push_back(CurGuard);
       Slots.push_back(S);
     }
@@ -471,7 +471,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
     typedef TimedCone::slot_iterator slot_iterator;
     for (slot_iterator SI = TC->slot_begin(), SE = TC->slot_end(); SI != SE; ++SI)
-      Sel->createAnnotation(*SI, FI);
+      Sel->annotateReadSlot(*SI, FI);
   }
 
   Sel->setFanin(Builder.buildOrExpr(Fanins, Bitwidth));

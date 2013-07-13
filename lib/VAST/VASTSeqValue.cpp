@@ -359,7 +359,7 @@ void VASTSelector::eraseFanin(VASTLatch U) {
   Assigns.erase(at);
 }
 
-void VASTSelector::createAnnotation(VASTSlot *S, VASTValPtr V)  {
+void VASTSelector::annotateReadSlot(VASTSlot *S, VASTValPtr V)  {
   //Annotations.push_back(new Annotation(this, S, V.get()));
   Annotations[V.get()].push_back(S);
 }
