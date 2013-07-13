@@ -487,18 +487,25 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
   }
 }
 
+static bool IsPointerOrInt(Value *V) {
+  return V->getType()->isIntOrIntVectorTy()
+         || V->getType()->getScalarType()->isPointerTy();
+}
+
 VASTValPtr VASTModuleBuilder::replaceKnownBits(Value *Val, VASTValPtr V) {
   // Nothing to do with the global address.
   if (isa<GlobalVariable>(Val)) return V;
 
-  BitMasks StructuralMask = calculateBitMask(V);
-  BitMasks BehaviorMask(getValueSizeInBits(Val));
-  ComputeMaskedBits(Val, BehaviorMask.KnownZeros, BehaviorMask.KnownOnes, TD);
+  if (IsPointerOrInt(Val)) {
+    BitMasks StructuralMask = calculateBitMask(V);
+    BitMasks BehaviorMask(getValueSizeInBits(Val));
+    ComputeMaskedBits(Val, BehaviorMask.KnownZeros, BehaviorMask.KnownOnes, TD);
 
-  if (StructuralMask.isSubSetOf(BehaviorMask)) {
-    // Replace the known bits in the Value.
-    if (VASTValPtr NewV = Builder.replaceKnownBits(V, BehaviorMask))
-      return NewV;
+    if (StructuralMask.isSubSetOf(BehaviorMask)) {
+      // Replace the known bits in the Value.
+      if (VASTValPtr NewV = Builder.replaceKnownBits(V, BehaviorMask))
+        return NewV;
+    }
   }
 
   return V;
