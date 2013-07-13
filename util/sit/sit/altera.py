@@ -123,14 +123,14 @@ set num_not_applied 0
     script_on_path = '''
 # %(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s
 if { %(cnd_string)s } {
-  set_multicycle_path %(path_fileter)s -setup %(cycles)d
-  set_multicycle_path %(path_fileter)s -hold 0
+  set_multicycle_path %(path_fileter)s -setup -end %(cycles)d
 } else { incr num_not_applied }
 post_message -type info "%(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s"
 
 ''',
     script_epilog = '''
 post_message -type info "$num_not_applied constraints are not applied"
+set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0
 ''',
     period = period)
 
