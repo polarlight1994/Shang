@@ -272,7 +272,7 @@ bool TimingNetlist::performExternalAnalysis(VASTModule &VM) {
     if (Sel->isSelectorSynthesized()) {
       typedef VASTSelector::ann_iterator ann_iterator;
       for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
-        VASTValue *V = (*I)->getNode();
+        VASTValue *V = VASTValPtr(I->first).get();
         // Visit the cone rooted on the ready signal.
         if (VASTExpr *Expr = dyn_cast<VASTExpr>(V))
           Expr->visitConeTopOrder(Visited, ETA);
@@ -617,7 +617,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
     // Dirty Hack: Build path for the annotated value.
     typedef VASTSelector::ann_iterator ann_iterator;
     for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
-      VASTValue *V = (*I)->getNode();
+      VASTValue *V = VASTValPtr(I->first).get();
       buildPathInfoForCone(O, V);
       extractInterConnectDelay(O, Sel, V);
     }

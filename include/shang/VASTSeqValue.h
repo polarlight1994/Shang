@@ -17,6 +17,7 @@
 #define SHANG_VAST_SEQ_VALUE_H
 
 #include "shang/VASTSeqOp.h"
+#include "shang/VASTHandle.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include <map>
@@ -35,20 +36,6 @@ public:
     Enable,         // Register for enable signals.
     FUInput,        // Represent the input of functional unit
     FUOutput        // Represent the output of functional unit
-  };
-  // Annotate the timing information to the combinational node.
-  class Annotation {
-    Annotation(const Annotation&) LLVM_DELETED_FUNCTION;
-    void operator=(const Annotation&) LLVM_DELETED_FUNCTION;
-
-    VASTUse Root;
-
-    friend class VASTSelector;
-    Annotation(VASTNode *Node, VASTSlot *S, VASTValue *V);
-    void dropNode();
-  public:
-    VASTSlot &S;
-    VASTValue *getNode() const;
   };
 
 private:
@@ -69,8 +56,14 @@ private:
   typedef std::vector<VASTLatch> AssignmentVector;
   AssignmentVector Assigns;
 
-  typedef std::vector<Annotation*> AnnotationVector;
-  AnnotationVector Annotations;
+  struct UseLess : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
+    bool operator()(const VASTUse *LHS, const VASTUse *RHS) const {
+      return VASTValPtr(*LHS).get() < VASTValPtr(*RHS).get();
+    }
+  };
+
+  typedef std::map<VASTHandle, SmallVector<VASTSlot*, 4> > AnnotationMap;
+  AnnotationMap Annotations;
 
   VASTUse Guard, Fanin;
 
@@ -114,7 +107,7 @@ public:
   unsigned size() const { return Assigns.size(); }
   bool empty() const { return Assigns.empty(); }
 
-  typedef AnnotationVector::const_iterator ann_iterator;
+  typedef AnnotationMap::const_iterator ann_iterator;
   ann_iterator ann_begin() const { return Annotations.begin(); }
   ann_iterator ann_end() const { return Annotations.end(); }
 
@@ -129,6 +122,7 @@ public:
   bool isTrivialFannin(const VASTLatch &L) const;
 
   void createAnnotation(VASTSlot *S, VASTValPtr V);
+  void resetAnnotation();
 
   bool isSelectorSynthesized() const { return !Guard.isInvalid(); }
 

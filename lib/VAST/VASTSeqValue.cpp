@@ -44,18 +44,10 @@ VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
 }
 
 VASTSelector::~VASTSelector() {
-  DeleteContainerPointers(Annotations);
+  assert(Annotations.empty()
+         && "Should explicitly release the annotations before deleting selectors!");
 }
 
-static const char *getValName(VASTValue *V) {
-  if (VASTExpr *E = dyn_cast<VASTExpr>(V))
-    return E->getTempName();
-
-  if (VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V))
-    return NV->getName();
-
-  return 0;
-}
 
 static const VASTSelector *getSelector(VASTValue *V) {
   if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V))
@@ -87,6 +79,16 @@ namespace {
 // driven by the same register. Use this functor to avoid the redundant nodes
 // in the netlist.
 struct StructualLess : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
+  static const char *getValName(VASTValue *V) {
+    if (VASTExpr *E = dyn_cast<VASTExpr>(V))
+      return E->getTempName();
+
+    if (VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V))
+      return NV->getName();
+
+    return 0;
+  }
+
   bool operator()(VASTValPtr LHS, VASTValPtr RHS) const {
     if (LHS && RHS && LHS.isInverted() == RHS.isInverted()) {
       const char *LHSName = getValName(LHS.get()),
@@ -318,17 +320,6 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   OS.always_ff_end();
 }
 
-VASTSelector::Annotation::Annotation(VASTNode *Node, VASTSlot *S, VASTValue *V)
-  : Root(Node, V), S(*S) {}
-
-VASTValue *VASTSelector::Annotation::getNode() const {
-  return Root.get().get();
-}
-
-void VASTSelector::Annotation::dropNode() {
-  Root.unlinkUseFromUser();
-}
-
 void VASTSelector::setParent(VASTNode *N) {
   assert(Parent == 0 && "Parent had already existed!");
   Parent = N;
@@ -371,7 +362,12 @@ void VASTSelector::eraseFanin(VASTLatch U) {
 }
 
 void VASTSelector::createAnnotation(VASTSlot *S, VASTValPtr V)  {
-  Annotations.push_back(new Annotation(this, S, V.get()));
+  //Annotations.push_back(new Annotation(this, S, V.get()));
+  Annotations[V.get()].push_back(S);
+}
+
+void VASTSelector::resetAnnotation() {
+  Annotations.clear();
 }
 
 //===----------------------------------------------------------------------===//

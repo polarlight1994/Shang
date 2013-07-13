@@ -512,24 +512,22 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 void
 TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
                                      SeqLiveVariables &SLV) {
-  DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> > DatapathMap;
-  VASTValue *FI = Dst->getFanin().get(), *Guard = Dst->getGuard().get();
+  AnnotatedCone Cache(TNL, SLV, Dst, OS);
+
+  SmallVector<VASTSlot*, 8> AllSlots;
+  typedef VASTSelector::const_iterator iterator;
+  for (iterator I = Dst->begin(), E = Dst->end(); I != E; ++I)
+    AllSlots.push_back((*I).getSlot());
+  // Annotate all slots to FI and Guard, otherwise we may miss some path not
+  // block by the keeped nodes.
+  extractTimingPaths(Cache, AllSlots, Dst->getFanin().get());
+  extractTimingPaths(Cache, AllSlots, Dst->getGuard().get());
 
   typedef VASTSelector::ann_iterator ann_iterator;
   for (ann_iterator I = Dst->ann_begin(), E = Dst->ann_end(); I != E; ++I) {
-    VASTSelector::Annotation *Ann = *I;
-    VASTSlot *S = &Ann->S;
-    DatapathMap[Ann->getNode()].push_back(S);
-    // Also annotate the slot to FI and Guard, otherwise we may miss some path
-    // not block by the keeped nodes.
-    DatapathMap[FI].push_back(S);
-    DatapathMap[Guard].push_back(S);
+    ArrayRef<VASTSlot*> Slots(I->second);
+    extractTimingPaths(Cache, Slots, VASTValPtr(I->first).get());
   }
-
-  AnnotatedCone Cache(TNL, SLV, Dst, OS);
-  typedef DenseMap<VASTValue*, SmallVector<VASTSlot*, 8> >::iterator it;
-  for (it I = DatapathMap.begin(), E = DatapathMap.end(); I != E; ++I)
-    extractTimingPaths(Cache, I->second, I->first);
 
   Cache.generateMCPEntries();
 }
