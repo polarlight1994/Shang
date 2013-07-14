@@ -470,8 +470,6 @@ local FMAX = {{ fmax }}
 PERIOD = 1000.0 / FMAX
 FUs.Period = PERIOD
 
-Misc.BRamInitFileDIR = [[{{ hls_base_dir }}]]
-
 dofile([[{{ [config_dir, 'common_config.lua']|joinpath }}]])
 
 -- Define some function
