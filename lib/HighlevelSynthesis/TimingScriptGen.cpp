@@ -459,11 +459,11 @@ bool AnnotatedCone::generateSubmoduleConstraints(VASTSeqValue *SeqVal) {
   if (!SeqVal->isFUOutput()) return false;
 
   VASTSubModule *SubMod = dyn_cast<VASTSubModule>(SeqVal->getParent());
-  if (SubMod == 0) return true;
+  if (SubMod == 0) return false;
 
   unsigned Latency = SubMod->getLatency();
   // No latency information available.
-  if (Latency == 0) return true;
+  if (Latency == 0) return false;
 
   // Add the timing constraints from operand registers to the output registers.
   typedef VASTSubModule::fanin_iterator fanin_iterator;
