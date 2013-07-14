@@ -71,6 +71,8 @@ private:
   void instantiateSelector(raw_ostream &OS) const;
 
   void printSelector(raw_ostream &OS) const;
+  void verifyHoldCycles(vlang_raw_ostream &OS, SeqLiveVariables *SLV,
+                        VASTValue *V, ArrayRef<VASTSlot*> ReadSlots) const;
 public:
   VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
                Type T = Temp, VASTNode *Node = 0);
