@@ -150,7 +150,7 @@ load_report
 report_timing -from_clock { clk } -to_clock { clk } -setup -npaths 1 -detail full_path -stdout
 
 qsta_utility::generate_all_summary_tables
-report_clock_fmax_summary -panel_name "Fmax Summary"
+report_clock_fmax_summary -panel_name "Fmax Summary" -stdout
 
 # Write the fmax report.
 set fmax_rpt [open "clk_fmax.rpt" w]
