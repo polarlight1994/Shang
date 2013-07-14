@@ -20,6 +20,7 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTSlot.h"
 #include "shang/VASTModule.h"
+#include "shang/SeqLiveVariables.h"
 
 #include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "vast-seq-value"
@@ -108,8 +109,65 @@ struct StructualLess : public std::binary_function<VASTValPtr, VASTValPtr, bool>
 };
 }
 
-void VASTSelector::printVerificationCode(vlang_raw_ostream &OS) const {
+static void VerifyHoldCycles(vlang_raw_ostream &OS, SeqLiveVariables *SLV,
+                             VASTValue *V, ArrayRef<VASTSlot*> ReadSlots) {
+  typedef std::set<VASTSeqValue*> SVSet;
+  SVSet Srcs;
+
+  OS << "// Verify timing of cone rooted on " << VASTValPtr(V) << "\n";
+  // Get *all* source register of the cone rooted on SubExpr.
+  V->extractSupportingSeqVal(Srcs, false /*Search across keep nodes!*/);
+
+  if (Srcs.empty()) return;
+
+  for (unsigned i = 0; i < ReadSlots.size(); ++i) {
+    VASTSlot *ReadSlot = ReadSlots[i];
+
+    OS << "// read at slot: " << ReadSlot->SlotNum;
+    if (BasicBlock *BB = ReadSlot->getParent())
+      OS << ", " << BB->getName();
+    OS << "\n";
+
+    OS.if_() << VASTValPtr(ReadSlot->getGuard())
+             << " & " << ReadSlot->getValue()->getName();
+    OS._then();
+
+    for (SVSet::iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+      VASTSeqValue *Src = *I;
+
+      unsigned Interval = SLV->getIntervalFromDef(Src, ReadSlot);
+
+      // Ignore single cycle path and false paths.
+      if (Interval == 1) continue;
+
+      OS.if_() << Src->getName() << "_hold_counter < " << (Interval - 1);
+      OS._then();
+      OS << "$display(\"Hold violation on " << Src->getName() << " at"
+            " slot: " << ReadSlot->SlotNum;
+      if (BasicBlock *BB = ReadSlot->getParent())
+        OS << ", " << BB->getName();
+      OS << "; expected hold cycle:" << Interval << " actual hold cycle: %d"
+         << "\", " << Src->getName() << "_hold_counter + 1);\n";
+      OS << "$finish(1);\n";
+      OS.exit_block();
+    }
+
+    OS.exit_block();
+  }
+
+  OS << '\n';
+}
+
+void VASTSelector::printVerificationCode(vlang_raw_ostream &OS,
+                                         SeqLiveVariables *SLV) const {
   if (empty()) return;
+
+  OS.always_ff_begin();
+
+  // Reset the hold counter when the register is reset.
+  OS << getName() << "_hold_counter <= " << SeqLiveVariables::Inf << ";\n";
+
+  OS.else_begin();
 
   // Concatenate all condition together to detect the case that more than one
   // case is activated.
@@ -145,6 +203,8 @@ void VASTSelector::printVerificationCode(vlang_raw_ostream &OS) const {
         << getName() << " has more than one active assignment: %b!\", $time(), "
         << AllCnd << ");\n";
 
+  SmallVector<VASTSlot*, 8> AllSlots;
+
   // Display the conflicted condition and its slot.
   for (const_iterator I = begin(), E = end(); I != E; ++I) {
     const VASTLatch &L = *I;
@@ -159,6 +219,8 @@ void VASTSelector::printVerificationCode(vlang_raw_ostream &OS) const {
     OS << ",  Src: " << VASTValPtr(L);
 
     VASTSlot *S = Op->getSlot();
+    AllSlots.push_back(S);
+
     OS << ", current slot: " << Op->getSlotNum() << ", ";
 
     if (BasicBlock *BB = S->getParent()) OS << BB->getName() << ',';
@@ -175,6 +237,19 @@ void VASTSelector::printVerificationCode(vlang_raw_ostream &OS) const {
   }
 
   OS.indent(2) << "$finish(1);\nend\n";
+
+  VerifyHoldCycles(OS, SLV, getGuard().get(), AllSlots);
+
+  if (!isEnable() && !isSlot())
+    VerifyHoldCycles(OS, SLV, getFanin().get(), AllSlots);
+
+  for (ann_iterator I = ann_begin(), E = ann_end(); I != E; ++I)
+    VerifyHoldCycles(OS, SLV, VASTValPtr(I->first).get(), I->second);
+
+  // Reset the hold counter when the register is changed.
+  OS << getName() << "_hold_counter <= " << getName() << "_selector_guard"
+     << " ? 0 : (" << getName() << "_hold_counter + 1);\n";
+  OS.always_ff_end();
 }
 
 void VASTSelector::addAssignment(VASTSeqOp *Op, unsigned SrcNo) {
@@ -292,10 +367,16 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   // Print the data selector of the register.
   printSelector(OS);
 
+  // Generate the hold counter to verify the multi-cycle analysis.
+  OS << "// synthesis translate_off\n";
+  OS << "int unsigned " << getName() << "_hold_counter;\n";
+  OS << "// synthesis translate_on\n\n";
+
   OS.always_ff_begin();
   // Reset the register.
   OS << getName()  << " <= "
      << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false) << ";\n";
+
   OS.else_begin();
 
   // Print the assignment.

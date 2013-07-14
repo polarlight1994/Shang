@@ -43,6 +43,7 @@ class SeqLiveVariables : public VASTModulePass {
   STGDistances *Distances;
 public:
   static char ID;
+  static const unsigned Inf = UINT16_MAX;
 
   SeqLiveVariables();
 

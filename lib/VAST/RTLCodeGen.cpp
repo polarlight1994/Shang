@@ -19,6 +19,7 @@
 #include "shang/VASTModule.h"
 #include "shang/Utilities.h"
 #include "shang/Passes.h"
+#include "shang/SeqLiveVariables.h"
 
 #include "llvm/IR/Module.h"
 #include "llvm/IR/DataLayout.h"
@@ -55,6 +56,7 @@ struct RTLCodeGen : public VASTModulePass {
     AU.addRequiredID(SelectorSynthesisID);
     AU.addRequiredID(DatapathNamerID);
     AU.addRequired<HLSAllocation>();
+    AU.addRequired<SeqLiveVariables>();
     AU.setPreservesAll();
   }
 };
@@ -70,6 +72,7 @@ Pass *llvm::createRTLCodeGenPass() {
 INITIALIZE_PASS_BEGIN(RTLCodeGen, "shang-verilog-writer",
                       "Write the RTL verilog code to output file.",
                       false, true)
+  INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
   INITIALIZE_PASS_DEPENDENCY(SelectorSynthesis)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
@@ -148,16 +151,15 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   VM.printSubmodules(Out);
   VM.printRegisterBlocks(Out);
 
+  SeqLiveVariables &SLV = getAnalysis<SeqLiveVariables>();
   // Verify the register assignment.
   Out << "// synthesis translate_off\n";
-  Out.always_ff_begin(false);
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     Out << "// Verification code for Selector: " << I->getName() << '\n';
-    I->printVerificationCode(Out);
+    I->printVerificationCode(Out, &SLV);
     Out << '\n';
   }
-  Out.always_ff_end(false);
   Out << "// synthesis translate_on\n\n";
 
   Out.module_end();
