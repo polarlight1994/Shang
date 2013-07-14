@@ -123,9 +123,6 @@ struct AnnotatedCone {
   void annotateLeaf(VASTSeqValue *V, VASTExpr *Parent, Leaf CurLeaf,
                     SeqValSetTy &LocalInterval);
 
-  unsigned getMinimalInterval(VASTSeqValue *Src, VASTSlot *ReadSlot);
-  unsigned getMinimalInterval(VASTSeqValue *Src, ArrayRef<VASTSlot*> ReadSlots);
-
   // Propagate the timing information of the current combinational cone.
   void propagateInterval(VASTExpr *Expr, const SeqValSetTy &LocalIntervalMap) {
     typedef VASTOperandList::op_iterator iterator;
@@ -204,28 +201,10 @@ struct TimingScriptGen : public VASTModulePass {
 };
 }
 
-unsigned AnnotatedCone::getMinimalInterval(VASTSeqValue *Src,
-                                           VASTSlot *ReadSlot) {
-  // Try to get the live variable at (Src, ReadSlot), calculate its distance
-  // from its defining slots to the read slot.
-  return SLV.getIntervalFromDef(Src, ReadSlot);
-}
-
-unsigned AnnotatedCone::getMinimalInterval(VASTSeqValue *Src,
-                                           ArrayRef<VASTSlot*> ReadSlots) {
-  unsigned PathInterval = Inf;
-  typedef ArrayRef<VASTSlot*>::iterator iterator;
-  for (iterator I = ReadSlots.begin(), E = ReadSlots.end(); I != E; ++I)
-    PathInterval = std::min(PathInterval, getMinimalInterval(Src, *I));
-
-  return PathInterval;
-}
-
-
 AnnotatedCone::Leaf AnnotatedCone::buildLeaf(VASTSeqValue *V,
                                              ArrayRef<VASTSlot*> ReadSlots,
                                              VASTValue *Thu) {
-  unsigned Interval = getMinimalInterval(V, ReadSlots);
+  unsigned Interval = SLV.getIntervalFromDef(V, ReadSlots);
   float EstimatedDelay = TNL.getDelay(V, Thu, Dst);
   return Leaf(Interval, EstimatedDelay);
 }
@@ -568,7 +547,7 @@ void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache,
   if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(DepTree)){
     if (Cache.generateSubmoduleConstraints(Src)) return;
 
-    unsigned Interval = Cache.getMinimalInterval(Src, ReadSlots);
+    unsigned Interval = Cache.SLV.getIntervalFromDef(Src, ReadSlots);
     Cache.addIntervalFromSrc(Src, AnnotatedCone::Leaf(Interval, 0.0f));
 
     // Even a trivial path can be a false path, e.g.:

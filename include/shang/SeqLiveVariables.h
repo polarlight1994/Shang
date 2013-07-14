@@ -106,6 +106,8 @@ public:
   void verifyAnalysis() const;
 
   unsigned getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) const;
+  unsigned getIntervalFromDef(const VASTSeqValue *V,
+                              ArrayRef<VASTSlot*> ReadSlots) const;
 
   void print(raw_ostream &OS) const;
 private:

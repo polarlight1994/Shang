@@ -643,3 +643,14 @@ unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
   // The is 1 extra cycle from the definition to live in.
   return std::min(IntervalFromLanding + 1, STGDistances::Inf);
 }
+
+unsigned
+SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
+                                     ArrayRef<VASTSlot*> ReadSlots) const {
+  unsigned PathInterval = STGDistances::Inf;
+  typedef ArrayRef<VASTSlot*>::iterator iterator;
+  for (iterator I = ReadSlots.begin(), E = ReadSlots.end(); I != E; ++I)
+    PathInterval = std::min(PathInterval, getIntervalFromDef(V, *I));
+
+  return PathInterval;
+}
