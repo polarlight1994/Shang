@@ -13,11 +13,11 @@
 
 #include "STGDistances.h"
 #include "TimingNetlist.h"
-#include "SeqLiveVariables.h"
 
 #include "shang/FUInfo.h"
 #include "shang/VASTMemoryPort.h"
 #include "shang/VASTExprBuilder.h"
+#include "shang/SeqLiveVariables.h"
 
 #include "shang/Strash.h"
 #include "shang/VASTModulePass.h"

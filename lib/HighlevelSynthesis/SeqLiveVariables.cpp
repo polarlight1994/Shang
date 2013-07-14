@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "STGDistances.h"
-#include "SeqLiveVariables.h"
 
 #include "shang/Passes.h"
 
@@ -20,6 +19,7 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTModulePass.h"
+#include "shang/SeqLiveVariables.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"

@@ -13,7 +13,6 @@
 
 #include "STGDistances.h"
 #include "TimingNetlist.h"
-#include "SeqLiveVariables.h"
 
 #include "shang/FUInfo.h"
 #include "shang/VASTMemoryPort.h"
@@ -22,6 +21,7 @@
 #include "shang/VASTModulePass.h"
 #include "shang/VASTModule.h"
 #include "shang/Passes.h"
+#include "shang/SeqLiveVariables.h"
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/ADT/STLExtras.h"

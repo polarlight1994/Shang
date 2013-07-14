@@ -17,11 +17,11 @@
 // the slack is 0. But if we read the data at cycle 3, the slack is 1.
 //
 //===----------------------------------------------------------------------===//
-#include "SeqLiveVariables.h"
 #include "STGDistances.h"
 #include "TimingNetlist.h"
 
 #include "shang/VASTSeqValue.h"
+#include "shang/SeqLiveVariables.h"
 #include "shang/VASTModulePass.h"
 #include "shang/VASTSubModules.h"
 #include "shang/VASTModule.h"

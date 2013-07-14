@@ -17,12 +17,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "SeqLiveVariables.h"
-
 #include "shang/VASTExprBuilder.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTModulePass.h"
 #include "shang/Passes.h"
+#include "shang/SeqLiveVariables.h"
 
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/SmallPtrSet.h"
