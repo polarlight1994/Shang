@@ -1169,7 +1169,7 @@ module DUT_TOP_tb();
     // Produce the heard beat of the simulation.
     if (startcnt && cnt % 80 == 0) $write(".");
     // Do not exceed 80 columns.
-    if (startcnt && cnt % 6400 == 0) $write("%t\n", $time());
+    if (startcnt && cnt % 6400 == 0) $write("%t\\n", $time());
   end
 
 endmodule
