@@ -117,7 +117,9 @@ def generate_scripts(sql_path, sdc_path, report_path, period, factor) :
 create_clock -name "clk" -period %(period)sns [get_ports {clk}]
 derive_pll_clocks -create_base_clocks
 derive_clock_uncertainty
-set_max_delay -from start %(period)sns
+
+set_input_delay -clock clk %(period)sns start
+
 set num_not_applied 0
 ''',
     script_on_path = '''
