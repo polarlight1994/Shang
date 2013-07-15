@@ -1132,7 +1132,9 @@ module DUT_TOP_tb();
 
   // integer wfile,wtmpfile;
   initial begin
-    @(posedge clk);
+    // Allocate some times to allow the circuit to become stable!
+    for (int i = 0; i < 1000; ++i)
+      @(posedge clk);
     rstN <= 1;
     @(posedge clk);
     $display ("Start at %t!", $time());
@@ -1165,9 +1167,9 @@ module DUT_TOP_tb();
   always@(posedge clk) begin
     if (startcnt) cnt <= cnt + 1;
     // Produce the heard beat of the simulation.
-    if (cnt % 80 == 0) $write(".");
+    if (startcnt && cnt % 80 == 0) $write(".");
     // Do not exceed 80 columns.
-    if (cnt % 6400 == 0) $write("%t\\n", $time());
+    if (startcnt && cnt % 6400 == 0) $write("%t\n", $time());
   end
 
 endmodule
