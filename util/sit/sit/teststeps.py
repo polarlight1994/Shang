@@ -1159,6 +1159,7 @@ module DUT_TOP_tb();
       $fwrite (cntfile, "%0d\\n",cnt);
       $fclose(cntfile);
 
+      $display ("Simulation successfully finished at %t\\n!", $time());
       // cnt
       $stop;
     end
