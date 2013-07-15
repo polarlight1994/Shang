@@ -54,7 +54,7 @@ class STGDistances : public VASTModulePass {
 
   VASTModule *VM;
 public:
-  static const unsigned Inf = UINT16_MAX;
+  static const unsigned Inf;
 
   static char ID;
 
