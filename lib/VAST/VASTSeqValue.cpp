@@ -141,6 +141,10 @@ VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
       // Ignore single cycle path and false paths.
       if (Interval == 1 || Interval == STGDistances::Inf) continue;
 
+      OS << "/*";
+      Src->printFaninns(OS);
+      OS << "*/";
+
       OS.if_() << Src->getName() << "_hold_counter < " << (Interval - 1);
       OS._then();
       OS << "$display(\"Hold violation on " << Src->getName() << " at"
@@ -451,13 +455,17 @@ VASTSeqValue::VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V)
   Selector->addUser(this);
 }
 
-void VASTSeqValue::dumpFaninns() const {
+void VASTSeqValue::printFaninns(raw_ostream &OS) const {
   typedef VASTSeqValue::const_fanin_iterator iterator;
 
   for (iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
     VASTLatch U = *I;
-    U.Op->dump();
+    U.Op->print(OS);
   }
+}
+
+void VASTSeqValue::dumpFaninns() const {
+  printFaninns(dbgs());
 }
 
 VASTSelector *VASTSeqValue::getSelector() const {
