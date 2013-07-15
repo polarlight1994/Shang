@@ -139,11 +139,11 @@ VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
       unsigned Interval = STGDist->getIntervalFromDef(Src, ReadSlot);
 
       // Ignore single cycle path and false paths.
-      if (Interval == 1 || Interval == STGDistances::Inf) continue;
+      if (Interval == 1) continue;
 
-      OS << "/*";
+      OS << "/*\n";
       Src->printFaninns(OS);
-      OS << "*/";
+      OS << "\n*/";
 
       OS.if_() << Src->getName() << "_hold_counter < " << (Interval - 1);
       OS._then();
@@ -171,7 +171,7 @@ void VASTSelector::printVerificationCode(vlang_raw_ostream &OS,
   OS.always_ff_begin();
 
   // Reset the hold counter when the register is reset.
-  OS << getName() << "_hold_counter <= 0;\n";
+  OS << getName() << "_hold_counter <= " << STGDistances::Inf << ";\n";
 
   OS.else_begin();
 
