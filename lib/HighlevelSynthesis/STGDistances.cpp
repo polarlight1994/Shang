@@ -248,6 +248,32 @@ STGDistanceBase STGDistanceBase::CalculateShortestPathDistance(VASTModule &VM){
   return Impl;
 }
 
+unsigned STGDistances::getIntervalFromDef(const VASTLatch &L, VASTSlot *ReadSlot,
+                                          unsigned ReadSlotNum) const {
+  unsigned PathInterval = STGDistances::Inf;
+
+  std::map<unsigned, SparseBitVector<> >::const_iterator J
+    = LandingMap.find(L.getSlot()->SlotNum);
+
+  assert(J != LandingMap.end() && "Landing slots cache not built?");
+  const SparseBitVector<> &Landings = J->second;
+  typedef SparseBitVector<>::iterator iterator;
+  for (iterator LI = Landings.begin(), LE = Landings.end(); LI != LE; ++LI) {
+    unsigned LandingSlotNum = *LI;
+
+    // Directly read at the landing slot, the interval is 1.
+    if (LandingSlotNum == ReadSlotNum)
+      return 1;
+
+    unsigned CurInterval = getShortestPath(LandingSlotNum, ReadSlotNum);
+
+    PathInterval = std::min(PathInterval, CurInterval);
+  }
+
+  // The is 1 extra cycle from the definition to landing.
+  return std::min(PathInterval + 1, STGDistances::Inf);;
+}
+
 unsigned
 STGDistances::getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) const {
   // Assume the paths from FUOutput are always single cycle paths.
@@ -262,36 +288,32 @@ STGDistances::getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) cons
 
     if (V->getSelector()->isTrivialFannin(L)) continue;
 
-    std::map<unsigned, SparseBitVector<> >::const_iterator J
-      = LandingMap.find(L.getSlot()->SlotNum);  
-
-    assert(J != LandingMap.end() && "Landing slots cache not built?");
-    const SparseBitVector<> &Landings = J->second;
-    typedef SparseBitVector<>::iterator iterator;
-    for (iterator LI = Landings.begin(), LE = Landings.end(); LI != LE; ++LI) {
-      unsigned LandingSlotNum = *LI;
-
-      // Directly read at the landing slot, the interval is 1.
-      if (LandingSlotNum == ReadSlotNum)
-        return 1;
-
-      unsigned CurInterval = getShortestPath(LandingSlotNum, ReadSlotNum);
-      PathInterval = std::min(PathInterval, CurInterval);
-    }
+    unsigned CurInterval = getIntervalFromDef(L, ReadSlot, ReadSlotNum);
+    PathInterval = std::min(PathInterval, CurInterval);
   }
 
   //assert(IntervalFromLanding < STGDistances::Inf && "No live-in?");
-
-  // The is 1 extra cycle from the definition to landing.
-  return std::min(PathInterval + 1, STGDistances::Inf);
+  return PathInterval;
 }
 
-unsigned STGDistances::getIntervalFromDef(const VASTSeqValue *V,
-                                          ArrayRef<VASTSlot*> ReadSlots) const {
-  unsigned PathInterval = STGDistances::Inf;
-  typedef ArrayRef<VASTSlot*>::iterator iterator;
-  for (iterator I = ReadSlots.begin(), E = ReadSlots.end(); I != E; ++I)
-    PathInterval = std::min(PathInterval, getIntervalFromDef(V, *I));
+unsigned STGDistances::getIntervalFromDef(const VASTSelector *Sel,
+                                          VASTSlot *ReadSlot) const {
+  // Assume the paths from FUOutput are always single cycle paths.
+  if (Sel->isFUOutput()) return 1;
 
+  unsigned PathInterval = STGDistances::Inf;
+  unsigned ReadSlotNum = ReadSlot->SlotNum;
+
+  typedef VASTSelector::const_iterator iterator;
+  for (iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+    const VASTLatch &L = *I;
+
+    if (Sel->isTrivialFannin(L)) continue;
+
+    unsigned CurInterval = getIntervalFromDef(L, ReadSlot, ReadSlotNum);
+    PathInterval = std::min(PathInterval, CurInterval);
+  }
+
+  //assert(IntervalFromLanding < STGDistances::Inf && "No live-in?");
   return PathInterval;
 }
