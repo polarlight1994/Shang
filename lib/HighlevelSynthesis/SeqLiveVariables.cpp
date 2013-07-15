@@ -10,8 +10,7 @@
 // This file implement the LiveVariable Analysis on the state-transition graph.
 //
 //===----------------------------------------------------------------------===//
-
-#include "STGDistances.h"
+#include "SeqLiveVariables.h"
 
 #include "shang/Passes.h"
 
@@ -19,7 +18,6 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTModulePass.h"
-#include "shang/SeqLiveVariables.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
@@ -92,7 +90,6 @@ SeqLiveVariables::SeqLiveVariables() : VASTModulePass(ID) {
 
 void SeqLiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
-  AU.addRequiredTransitive<STGDistances>();
   AU.setPreservesAll();
 }
 
@@ -197,7 +194,6 @@ void SeqLiveVariables::verifyAnalysis() const {
 }
 
 bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
-  Distances = &getAnalysis<STGDistances>();
   VM = &M;
 
   // Compute the PHI joins.
@@ -309,21 +305,21 @@ void SeqLiveVariables::initializeLandingSlots() {
     VarInfo *VI = I;
 
     typedef SparseBitVector<>::iterator iterator;
-    SparseBitVector<> CurLandings;
+    // SparseBitVector<> CurLandings;
     for (iterator DI = VI->Defs.begin(), DE = VI->Defs.end(); DI != DE; ++DI) {
       unsigned DefSlotNum = *DI;
       std::map<unsigned, SparseBitVector<> >::const_iterator
         at = LandingMap.find(DefSlotNum);
       assert(at != LandingMap.end() && "Landing information does not exist!");
-      CurLandings |= at->second;
+      VI->Landings |= at->second;
     }
 
     // Trim the unreachable slots from the landing slot.
-    for (iterator LI = CurLandings.begin(), LE = CurLandings.end();
-         LI != LE; ++LI) {
-      unsigned Landing = *LI;
-      if (VI->isSlotReachable(Landing)) VI->Landings.set(Landing);
-    }
+    //for (iterator LI = CurLandings.begin(), LE = CurLandings.end();
+    //     LI != LE; ++LI) {
+    //  unsigned Landing = *LI;
+    //  if (VI->isSlotReachable(Landing)) VI->Landings.set(Landing);
+    //}
   }
 }
 
@@ -358,7 +354,7 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
     if (V->fanin_empty()) continue;
 
     // Ignore the placeholder for node without timing information.
-    handleUse(V, S, PathFromEntry);
+    handleUse(V, S, PathFromEntry, false /* The define must reachable */);
   }
 }
 
@@ -403,9 +399,13 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
 }
 
 void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
-                                 PathVector PathFromEntry) {
+                                 PathVector PathFromEntry, bool MayNotReachable) {
   // The timing information is not avaliable.
   // if (Def->empty()) return;
+
+  if (Value *Val = Def->getLLVMValue())
+    if (Val->getName() == "tmp3")
+      Val->dump();
 
   assert(Def && "Bad Def pointer!");
   VASTSlot::EdgePtr DefEdge(0, VASTSlot::SubGrp);
@@ -602,55 +602,4 @@ bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot::EdgePtr Edge) {
   assert(at != WrittenSlots.end() && "Definition of V not visited yet!");
 
   return at->second.test(Dst->SlotNum);
-}
-
-unsigned SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
-                                              VASTSlot *ReadSlot) const {
-  // Assume the paths from FUOutput are always single cycle paths.
-  if (V->isFUOutput()) return 1;
-
-  const VarInfo *VI = getVarInfo(V);
-  unsigned ReadSlotNum = ReadSlot->SlotNum;
-
-  // Calculate the Shortest path distance from all live-in slot.
-  unsigned IntervalFromLanding = STGDistances::Inf;
-  typedef SparseBitVector<>::iterator def_iterator;
-  for (def_iterator I = VI->Landings.begin(), E = VI->Landings.end();
-       I != E; ++I) {
-    unsigned LandingSlotNum = *I;
-
-    // Directly read at the landing slot, the interval is 0.
-    if (LandingSlotNum == ReadSlotNum) {
-      IntervalFromLanding = 0;
-      break;
-    }
-
-    unsigned CurInterval
-      = Distances->getShortestPath(LandingSlotNum, ReadSlotNum);
-    if (CurInterval >= STGDistances::Inf) {
-      DEBUG(dbgs() << "Read at slot: " << ReadSlotNum << '\n';
-      dbgs() << "Landing slot: " << LandingSlotNum << '\n';
-      VI->dump();
-      dbgs() <<  "Alive slot not reachable?\n");
-      continue;
-    }
-
-    IntervalFromLanding = std::min(IntervalFromLanding, CurInterval);
-  }
-
-  //assert(IntervalFromLanding < STGDistances::Inf && "No live-in?");
-
-  // The is 1 extra cycle from the definition to live in.
-  return std::min(IntervalFromLanding + 1, STGDistances::Inf);
-}
-
-unsigned
-SeqLiveVariables::getIntervalFromDef(const VASTSeqValue *V,
-                                     ArrayRef<VASTSlot*> ReadSlots) const {
-  unsigned PathInterval = STGDistances::Inf;
-  typedef ArrayRef<VASTSlot*>::iterator iterator;
-  for (iterator I = ReadSlots.begin(), E = ReadSlots.end(); I != E; ++I)
-    PathInterval = std::min(PathInterval, getIntervalFromDef(V, *I));
-
-  return PathInterval;
 }

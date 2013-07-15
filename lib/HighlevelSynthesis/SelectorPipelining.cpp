@@ -11,7 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "STGDistances.h"
 #include "TimingNetlist.h"
 
 #include "shang/FUInfo.h"
@@ -21,7 +20,7 @@
 #include "shang/VASTModulePass.h"
 #include "shang/VASTModule.h"
 #include "shang/Passes.h"
-#include "shang/SeqLiveVariables.h"
+#include "shang/STGDistances.h"
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/ADT/STLExtras.h"
@@ -90,7 +89,7 @@ struct MUXPipeliner {
 
 struct SelectorPipelining : public VASTModulePass {
   TimingNetlist *TNL;
-  SeqLiveVariables *SLV;
+  STGDistances *STGDist;
   unsigned MaxSingleCyleFINum;
   VASTExprBuilder *Builder;
   VASTModule *VM;
@@ -99,7 +98,7 @@ struct SelectorPipelining : public VASTModulePass {
 
   static char ID;
 
-  SelectorPipelining() : VASTModulePass(ID), TNL(0), SLV(0) {
+  SelectorPipelining() : VASTModulePass(ID), TNL(0), STGDist(0) {
     initializeSelectorPipeliningPass(*PassRegistry::getPassRegistry());
 
     VFUMux *Mux = getFUDesc<VFUMux>();
@@ -128,7 +127,6 @@ struct SelectorPipelining : public VASTModulePass {
     AU.addPreservedID(ControlLogicSynthesisID);
     AU.addRequired<TimingNetlist>();
     AU.addRequired<STGDistances>();
-    AU.addRequired<SeqLiveVariables>();
     AU.addPreserved<STGDistances>();
   }
 
@@ -164,7 +162,7 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
   typedef VASTModule::selector_iterator iterator;
 
   TNL = &getAnalysis<TimingNetlist>();
-  SLV = &getAnalysis<SeqLiveVariables>();
+  STGDist = &getAnalysis<STGDistances>();
 
   std::vector<VASTSeqInst*> Worklist;
 
@@ -340,7 +338,7 @@ SelectorPipelining::getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot) {
     // units, we do not have the accurate timing information for them.
     if (SV->isStatic() || SV->isFUOutput()) return 0;
 
-    Interval = std::min(Interval, SLV->getIntervalFromDef(SV, ReadSlot));
+    Interval = std::min(Interval, STGDist->getIntervalFromDef(SV, ReadSlot));
   }
 
   assert(Interval && "Unexpected interval!");

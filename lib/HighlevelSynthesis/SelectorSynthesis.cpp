@@ -11,13 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "STGDistances.h"
 #include "TimingNetlist.h"
 
 #include "shang/FUInfo.h"
 #include "shang/VASTMemoryPort.h"
 #include "shang/VASTExprBuilder.h"
-#include "shang/SeqLiveVariables.h"
+#include "shang/STGDistances.h"
 
 #include "shang/Strash.h"
 #include "shang/VASTModulePass.h"
@@ -87,11 +86,11 @@ private:
 
   std::set<VASTSlot*> Slots;
 
-  void updateIntervals(VASTSlot *S, SeqLiveVariables *SLV) {
+  void updateIntervals(VASTSlot *S, STGDistances *STGDist) {
     // Update the available interval.
     for (LeafSetTy::iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
       VASTSeqValue *SV = I->first;
-      unsigned Interval = SLV->getIntervalFromDef(SV, S);
+      unsigned Interval = STGDist->getIntervalFromDef(SV, S);
       I->second.update(Interval, I->second.CriticalDelay);
     }
   }
@@ -107,10 +106,10 @@ public:
   iterator begin() const { return Leaves.begin(); }
   iterator end()   const { return Leaves.end(); }
 
-  void addSlot(VASTSlot *S, SeqLiveVariables *SLV) {
+  void addSlot(VASTSlot *S, STGDistances *STGDist) {
     if (!Slots.insert(S).second) return;
 
-    updateIntervals(S, SLV);
+    updateIntervals(S, STGDist);
   }
 
   Leaf getLeaf(VASTSeqValue *SV) const {
@@ -121,12 +120,12 @@ public:
   slot_iterator slot_begin() const { return Slots.begin(); }
   slot_iterator slot_end() const { return Slots.end(); }
 
-  void mergeSlots(const TimedCone *LHS, SeqLiveVariables *SLV) {
+  void mergeSlots(const TimedCone *LHS, STGDistances *STGDist) {
     for (slot_iterator I = LHS->slot_begin(), E = LHS->slot_end(); I != E; ++I)
-      addSlot(*I, SLV);
+      addSlot(*I, STGDist);
   }
 
-  void merge(const TimedCone *LHS, SeqLiveVariables *SLV) {
+  void merge(const TimedCone *LHS, STGDistances *STGDist) {
     for (iterator I = LHS->begin(), E = LHS->end(); I != E; ++I)
       Leaves[I->first].update(I->second);
 
@@ -134,7 +133,7 @@ public:
 
     // Recalculate the intervals.
     for (slot_iterator I = slot_begin(), E = slot_end(); I != E; ++I)
-      updateIntervals(*I, SLV);
+      updateIntervals(*I, STGDist);
   }
 
   bool hasTighterConstraints(const TimedCone *LHS) const {
@@ -175,8 +174,7 @@ typedef std::map<VASTValPtr, TimedCone*> FIConeVec;
 struct SelectorSynthesis : public VASTModulePass {
   CachedStrashTable *CST;
   TimingNetlist *TNL;
-  SeqLiveVariables *SLV;
-  unsigned MaxSingleCyleFINum;
+  STGDistances *STGDist;
   VASTExprBuilder *Builder;
   VASTModule *VM;
 
@@ -215,25 +213,18 @@ struct SelectorSynthesis : public VASTModulePass {
 
   static char ID;
 
-  SelectorSynthesis() : VASTModulePass(ID), CST(0), TNL(0), SLV(0) {
+  SelectorSynthesis() : VASTModulePass(ID), CST(0), TNL(0), STGDist(0) {
     initializeSelectorSynthesisPass(*PassRegistry::getPassRegistry());
-
-    VFUMux *Mux = getFUDesc<VFUMux>();
-    MaxSingleCyleFINum = 2;
-    while (Mux->getMuxLatency(MaxSingleCyleFINum) < 0.9
-           && MaxSingleCyleFINum < Mux->MaxAllowedMuxSize)
-      ++MaxSingleCyleFINum;
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequired<TimingNetlist>();
     AU.addRequired<CachedStrashTable>();
-    AU.addRequired<SeqLiveVariables>();
-    AU.addPreserved<SeqLiveVariables>();
+    AU.addRequired<STGDistances>();
+    AU.addPreserved<STGDistances>();
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
-    AU.addPreserved<STGDistances>();
   }
 
   bool runOnVASTModule(VASTModule &VM);
@@ -298,8 +289,8 @@ bool SelectorSynthesis::isGoodToMerge(TimedCone *LHS, TimedCone *RHS) const {
 
   TimedCone NewTC;
 
-  NewTC.merge(LHS, SLV);
-  NewTC.merge(RHS, SLV);
+  NewTC.merge(LHS, STGDist);
+  NewTC.merge(RHS, STGDist);
 
   if (NewTC.hasTighterConstraints(LHS) || NewTC.hasTighterConstraints(RHS))
     return false;
@@ -344,9 +335,9 @@ bool SelectorSynthesis::mergeCones(FIConeVec &Cones, VASTExprBuilder &Builder,
       // FIXME: Use the cone returned by "isGoodToMerge"
       TimedCone *TC = getOrCreateTimedCone(NewFI);
       if (TCI)
-        TC->mergeSlots(TCI, SLV);
+        TC->mergeSlots(TCI, STGDist);
       if (TCJ)
-        TC->mergeSlots(TCJ, SLV);
+        TC->mergeSlots(TCJ, STGDist);
 
       // Modify Cone vector, so that we do not merge the same cone twice.
       Cones.erase(FaninI);
@@ -441,7 +432,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     if (C == 0) continue;
 
     while (!Slots.empty())
-      C->addSlot(Slots.pop_back_val(), SLV);
+      C->addSlot(Slots.pop_back_val(), STGDist);
   }
 
   // Strip the keep attribute if the keeped value is directly fan into the
@@ -480,7 +471,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 }
 
 bool SelectorSynthesis::runOnVASTModule(VASTModule &VM) {
-  SLV = &getAnalysis<SeqLiveVariables>();
+  STGDist = &getAnalysis<STGDistances>();
   TNL = &getAnalysis<TimingNetlist>();
   CST = &getAnalysis<CachedStrashTable>();
 

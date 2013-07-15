@@ -33,17 +33,14 @@ class VASTSeqOp;
 class VASTSeqValue;
 class VASTSlot;
 class VASTModule;
-class STGDistances;
 template<class PtrType, unsigned SmallSize> class SmallPtrSet;
 class BasicBlock;
 class Value;
 
 class SeqLiveVariables : public VASTModulePass {
   VASTModule *VM;
-  STGDistances *Distances;
 public:
   static char ID;
-  static const unsigned Inf = UINT16_MAX;
 
   SeqLiveVariables();
 
@@ -106,15 +103,12 @@ public:
   void releaseMemory();
   void verifyAnalysis() const;
 
-  unsigned getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) const;
-  unsigned getIntervalFromDef(const VASTSeqValue *V,
-                              ArrayRef<VASTSlot*> ReadSlots) const;
-
   void print(raw_ostream &OS) const;
 private:
   typedef ArrayRef<VASTSlot::EdgePtr> PathVector;
   void handleSlot(VASTSlot *S, PathVector PathFromEntry);
-  void handleUse(VASTSeqValue *Def, VASTSlot *UseSlot, PathVector PathFromEntry);
+  void handleUse(VASTSeqValue *Def, VASTSlot *UseSlot, PathVector PathFromEntry,
+                 bool MayNotReachable);
 
   void initializeLandingSlots();
   void initializeOverlappedSlots();

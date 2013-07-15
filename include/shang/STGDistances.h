@@ -19,6 +19,8 @@
 #include "shang/VASTModulePass.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SparseBitVector.h"
 
 namespace llvm {
 class VASTSlot;
@@ -47,10 +49,12 @@ public:
 
 class STGDistances : public VASTModulePass {
   ShortestPathImpl *SPImpl;
-  LongestPathImpl *LPImpl;
+  // Setup the landing slot map.
+  std::map<unsigned, SparseBitVector<> > LandingMap;
+
   VASTModule *VM;
 public:
-  static const unsigned Inf;
+  static const unsigned Inf = UINT16_MAX;
 
   static char ID;
 
@@ -63,7 +67,10 @@ public:
   void print(raw_ostream &OS) const;
 
   unsigned getShortestPath(unsigned From, unsigned To) const;
-  unsigned getLongestPath(unsigned From, unsigned To) const;
+
+  unsigned getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) const;
+  unsigned getIntervalFromDef(const VASTSeqValue *V,
+                              ArrayRef<VASTSlot*> ReadSlots) const;
 };
 }
 

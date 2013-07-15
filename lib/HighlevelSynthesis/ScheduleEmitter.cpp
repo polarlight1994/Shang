@@ -14,12 +14,12 @@
 //===----------------------------------------------------------------------===//
 //
 #include "VASTScheduling.h"
-#include "STGDistances.h"
 
 #include "shang/VASTModulePass.h"
 #include "shang/VASTExprBuilder.h"
 #include "shang/VASTMemoryPort.h"
 #include "shang/VASTModule.h"
+#include "shang/STGDistances.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/Analysis/Dominators.h"

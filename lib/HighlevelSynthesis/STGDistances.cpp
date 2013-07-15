@@ -14,10 +14,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "STGDistances.h"
-
 #include "shang/Passes.h"
 #include "shang/VASTModule.h"
+#include "shang/STGDistances.h"
 
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/ADT/PostOrderIterator.h"
@@ -42,13 +41,6 @@ struct ShortestPathImpl : public STGDistanceImpl<ShortestPathImpl> {
   bool updateDistance(unsigned DistanceSrcThuDst,
                       unsigned DstSlot, unsigned SrcSlot);
 
-};
-
-struct LongestPathImpl : public STGDistanceImpl<LongestPathImpl> {
-  bool updateDistance(unsigned DistanceSrcThuDst,
-                      unsigned DstSlot, unsigned SrcSlot);
-
-  void initialize(VASTModule &VM);
 };
 }
 
@@ -155,62 +147,13 @@ bool ShortestPathImpl::updateDistance(unsigned DistanceSrcThuDst,
 }
 
 //===----------------------------------------------------------------------===//
-void LongestPathImpl::initialize(VASTModule &VM) {
-  STGDistanceBase::initialize(VM);
-
-  // Handle the backedges.
-  std::set<VASTSlot*> Visited;
-
-  // Visit the slots in topological order.
-  ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >
-    RPO(VM.getStartSlot());
-
-  typedef
-  ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >::rpo_iterator
-  slot_top_iterator;
-
-  for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
-    VASTSlot *Dst = *I;
-    Visited.insert(Dst);
-
-    typedef VASTSlot::pred_iterator pred_iterator;
-    for (pred_iterator PI = Dst->pred_begin(), PE = Dst->pred_end();
-         PI != PE; ++PI) {
-      VASTSlot *Src = *PI;
-
-      if (Visited.count(Src)) continue;
-
-      // Now we get a back-edge, for each backedge Src -> Dst, there must be
-      // a path from Dst to Src, set the distance of this path to Infinite.
-      // Because there is a loop: Src->Dst->Src, and the longest path distance
-      // will be infinite because of the loop.
-      DistanceMatrix[Src->SlotNum][Dst->SlotNum] = STGDistances::Inf;
-    }
-  }
-}
-
-bool LongestPathImpl::updateDistance(unsigned DistanceSrcThuDst,
-                                     unsigned DstSlot, unsigned SrcSlot) {
-  // Saturate the longest path distance at Infinite.
-  DistanceSrcThuDst = std::min(STGDistances::Inf, DistanceSrcThuDst);
-  unsigned DistanceSrcDst = getDistance(SrcSlot, DstSlot);
-  if (DistanceSrcThuDst > DistanceSrcDst) {
-    DistanceMatrix[DstSlot][SrcSlot] = DistanceSrcThuDst;
-    return true;
-  }
-
-  return false;
-}
-
-//===----------------------------------------------------------------------===//
 char STGDistances::ID = 0;
 char &llvm::STGDistancesID = STGDistances::ID;
-const unsigned STGDistances::Inf = UINT16_MAX;
 
 INITIALIZE_PASS(STGDistances, "vast-stg-distances",
                 "Compute the distances in the STG", false, true)
 
-STGDistances::STGDistances() : VASTModulePass(ID), SPImpl(0), LPImpl(0), VM(0) {
+STGDistances::STGDistances() : VASTModulePass(ID), SPImpl(0), VM(0) {
   initializeSTGDistancesPass(*PassRegistry::getPassRegistry());
 }
 
@@ -229,16 +172,58 @@ static void DeleteAndReset(T *&Ptr) {
 
 void STGDistances::releaseMemory() {
   DeleteAndReset(SPImpl);
-  DeleteAndReset(LPImpl);
   VM = 0;
+}
+
+static void setLandingSlots(VASTSlot *S, SparseBitVector<> &Landings) {
+  // Perform depth first search to check if we can reach RHS from LHS with
+  // 0-distance edges.
+  SmallPtrSet<VASTSlot*, 8> Visited;
+  SmallVector<std::pair<VASTSlot*, VASTSlot::succ_iterator>, 4> WorkStack;
+  WorkStack.push_back(std::make_pair(S, S->succ_begin()));
+
+  while (!WorkStack.empty()) {
+    VASTSlot *S = WorkStack.back().first;
+    VASTSlot::succ_iterator ChildIt = WorkStack.back().second;
+
+    if (ChildIt == S->succ_end()) {
+      WorkStack.pop_back();
+      continue;
+    }
+
+    VASTSlot::EdgePtr Edge = *ChildIt;
+    ++WorkStack.back().second;
+    VASTSlot *Child = Edge;
+
+    // Now we land with the 1-distance edge.
+    if (Edge.getDistance()) {
+      Landings.set(Child->SlotNum);
+      // Skip the children of the current node as we had already reach the leave.
+      continue;
+    }
+
+    // Do not visit a node twice.
+    if (!Visited.insert(Child)) continue;
+
+    WorkStack.push_back(std::make_pair(Child, Child->succ_begin()));
+  }
+
+  DEBUG(dbgs() << "Slot #" << S->SlotNum << " landing: ";
+  ::dump(Landings, dbgs()));
 }
 
 bool STGDistances::runOnVASTModule(VASTModule &VM) {
   releaseMemory();
 
+  // Setup the landing slot map.
+  typedef VASTModule::slot_iterator slot_iterator;
+  for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
+    VASTSlot *S = I;
+    setLandingSlots(S, LandingMap[S->SlotNum]);
+  }
+
   this->VM = &VM;
   SPImpl = new ShortestPathImpl();
-  LPImpl = new LongestPathImpl();
 
   return false;
 }
@@ -256,16 +241,56 @@ unsigned STGDistances::getShortestPath(unsigned From, unsigned To) const {
   return SPImpl->getDistance(From, To);
 }
 
-unsigned STGDistances::getLongestPath(unsigned From, unsigned To) const {
-  assert(LPImpl && "Get longest path after releaseMemory?");
-  // Calculate the distances on the fly.
-  if (LPImpl->empty()) LPImpl->run(*VM);
-
-  return LPImpl->getDistance(From, To);
-}
-
 STGDistanceBase STGDistanceBase::CalculateShortestPathDistance(VASTModule &VM){
   ShortestPathImpl Impl;
   Impl.run(VM);
   return Impl;
+}
+
+unsigned
+STGDistances::getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) const {
+  // Assume the paths from FUOutput are always single cycle paths.
+  if (V->isFUOutput()) return 1;
+
+  unsigned PathInterval = STGDistances::Inf;
+  unsigned ReadSlotNum = ReadSlot->SlotNum;
+
+  typedef VASTSeqValue::const_fanin_iterator fanin_iterator;
+  for (fanin_iterator I = V->fanin_begin(), E = V->fanin_end(); I != E; ++I) {
+    const VASTLatch &L = *I;
+
+    if (V->getSelector()->isTrivialFannin(L)) continue;
+
+    std::map<unsigned, SparseBitVector<> >::const_iterator J
+      = LandingMap.find(L.getSlot()->SlotNum);  
+
+    assert(J != LandingMap.end() && "Landing slots cache not built?");
+    const SparseBitVector<> &Landings = J->second;
+    typedef SparseBitVector<>::iterator iterator;
+    for (iterator LI = Landings.begin(), LE = Landings.end(); LI != LE; ++LI) {
+      unsigned LandingSlotNum = *LI;
+
+      // Directly read at the landing slot, the interval is 1.
+      if (LandingSlotNum == ReadSlotNum)
+        return 1;
+
+      unsigned CurInterval = getShortestPath(LandingSlotNum, ReadSlotNum);
+      PathInterval = std::min(PathInterval, CurInterval);
+    }
+  }
+
+  //assert(IntervalFromLanding < STGDistances::Inf && "No live-in?");
+
+  // The is 1 extra cycle from the definition to landing.
+  return std::min(PathInterval + 1, STGDistances::Inf);
+}
+
+unsigned STGDistances::getIntervalFromDef(const VASTSeqValue *V,
+                                          ArrayRef<VASTSlot*> ReadSlots) const {
+  unsigned PathInterval = STGDistances::Inf;
+  typedef ArrayRef<VASTSlot*>::iterator iterator;
+  for (iterator I = ReadSlots.begin(), E = ReadSlots.end(); I != E; ++I)
+    PathInterval = std::min(PathInterval, getIntervalFromDef(V, *I));
+
+  return PathInterval;
 }

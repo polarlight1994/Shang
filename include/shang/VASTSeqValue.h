@@ -26,7 +26,7 @@ namespace llvm {
 class Twine;
 class VASTExprBuilder;
 class VASTSeqValue;
-class SeqLiveVariables;
+class STGDistances;
 
 class VASTSelector : public VASTNode, public ilist_node<VASTSelector> {
 public:
@@ -71,7 +71,7 @@ private:
   void instantiateSelector(raw_ostream &OS) const;
 
   void printSelector(raw_ostream &OS) const;
-  void verifyHoldCycles(vlang_raw_ostream &OS, SeqLiveVariables *SLV,
+  void verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
                         VASTValue *V, ArrayRef<VASTSlot*> ReadSlots) const;
 public:
   VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
@@ -143,7 +143,7 @@ public:
   void printRegisterBlock(vlang_raw_ostream &OS, uint64_t InitVal) const;
 
   // Generate the code to verify the register assignment.
-  void printVerificationCode(vlang_raw_ostream &OS, SeqLiveVariables *SLV) const;
+  void printVerificationCode(vlang_raw_ostream &OS, STGDistances *STGDist) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSelector *A) { return true; }

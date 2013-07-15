@@ -17,11 +17,10 @@
 // the slack is 0. But if we read the data at cycle 3, the slack is 1.
 //
 //===----------------------------------------------------------------------===//
-#include "STGDistances.h"
 #include "TimingNetlist.h"
 
 #include "shang/VASTSeqValue.h"
-#include "shang/SeqLiveVariables.h"
+#include "shang/STGDistances.h"
 #include "shang/VASTModulePass.h"
 #include "shang/VASTSubModules.h"
 #include "shang/VASTModule.h"
@@ -61,7 +60,7 @@ struct TimingScriptGen;
 /// AnnotatedCone - Combinational cone annotated with timing information.
 struct AnnotatedCone {
   TimingNetlist &TNL;
-  SeqLiveVariables &SLV;
+  STGDistances &STGDist;
   VASTSelector *Dst;
   raw_ostream &OS;
   const uint32_t Inf;
@@ -93,9 +92,9 @@ struct AnnotatedCone {
   typedef DenseMap<VASTExpr*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
 
-  AnnotatedCone(TimingNetlist &TNL, SeqLiveVariables &SLV,
+  AnnotatedCone(TimingNetlist &TNL, STGDistances &STGDist,
                          VASTSelector *Dst, raw_ostream &OS)
-    : TNL(TNL), SLV(SLV), Dst(Dst), OS(OS), Inf(STGDistances::Inf)
+    : TNL(TNL), STGDist(STGDist), Dst(Dst), OS(OS), Inf(STGDistances::Inf)
   {}
 
   void reset() {
@@ -178,7 +177,6 @@ struct TimingScriptGen : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequired<SeqLiveVariables>();
     AU.addRequired<STGDistances>();
     AU.addRequired<TimingNetlist>();
     AU.addRequiredID(DatapathNamerID);
@@ -187,7 +185,7 @@ struct TimingScriptGen : public VASTModulePass {
   }
 
   void writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
-                           SeqLiveVariables &SLV);
+                           STGDistances &STGDist);
 
   void extractTimingPaths(AnnotatedCone &Cache,
                           ArrayRef<VASTSlot*> ReadSlots,
@@ -204,7 +202,7 @@ struct TimingScriptGen : public VASTModulePass {
 AnnotatedCone::Leaf AnnotatedCone::buildLeaf(VASTSeqValue *V,
                                              ArrayRef<VASTSlot*> ReadSlots,
                                              VASTValue *Thu) {
-  unsigned Interval = SLV.getIntervalFromDef(V, ReadSlots);
+  unsigned Interval = STGDist.getIntervalFromDef(V, ReadSlots);
   float EstimatedDelay = TNL.getDelay(V, Thu, Dst);
   return Leaf(Interval, EstimatedDelay);
 }
@@ -498,7 +496,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
   bindFunctionToScriptEngine(getAnalysis<DataLayout>(), &VM);
 
-  SeqLiveVariables &SLV = getAnalysis<SeqLiveVariables>();
+  STGDistances &STGDist = getAnalysis<STGDistances>();
   TimingNetlist &TNL =getAnalysis<TimingNetlist>();
 
   //Write the timing constraints.
@@ -508,7 +506,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
     if (Sel->empty()) continue;
 
-    writeConstraintsFor(Sel, TNL, SLV);
+    writeConstraintsFor(Sel, TNL, STGDist);
   }
 
   OS.flush();
@@ -519,8 +517,8 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 
 void
 TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
-                                     SeqLiveVariables &SLV) {
-  AnnotatedCone Cache(TNL, SLV, Dst, OS);
+                                     STGDistances &STGDist) {
+  AnnotatedCone Cache(TNL, STGDist, Dst, OS);
 
   SmallVector<VASTSlot*, 8> AllSlots;
   typedef VASTSelector::const_iterator iterator;
@@ -547,7 +545,7 @@ void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache,
   if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(DepTree)){
     if (Cache.generateSubmoduleConstraints(Src)) return;
 
-    unsigned Interval = Cache.SLV.getIntervalFromDef(Src, ReadSlots);
+    unsigned Interval = Cache.STGDist.getIntervalFromDef(Src, ReadSlots);
     Cache.addIntervalFromSrc(Src, AnnotatedCone::Leaf(Interval, 0.0f));
 
     // Even a trivial path can be a false path, e.g.:

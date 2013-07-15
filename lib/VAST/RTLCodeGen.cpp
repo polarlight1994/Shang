@@ -19,7 +19,7 @@
 #include "shang/VASTModule.h"
 #include "shang/Utilities.h"
 #include "shang/Passes.h"
-#include "shang/SeqLiveVariables.h"
+#include "shang/STGDistances.h"
 
 #include "llvm/IR/Module.h"
 #include "llvm/IR/DataLayout.h"
@@ -56,7 +56,7 @@ struct RTLCodeGen : public VASTModulePass {
     AU.addRequiredID(SelectorSynthesisID);
     AU.addRequiredID(DatapathNamerID);
     AU.addRequired<HLSAllocation>();
-    AU.addRequired<SeqLiveVariables>();
+    AU.addRequired<STGDistances>();
     AU.setPreservesAll();
   }
 };
@@ -151,13 +151,13 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   VM.printSubmodules(Out);
   VM.printRegisterBlocks(Out);
 
-  SeqLiveVariables &SLV = getAnalysis<SeqLiveVariables>();
+  STGDistances &STGDist = getAnalysis<STGDistances>();
   // Verify the register assignment.
   Out << "// synthesis translate_off\n";
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     Out << "// Verification code for Selector: " << I->getName() << '\n';
-    I->printVerificationCode(Out, &SLV);
+    I->printVerificationCode(Out, &STGDist);
     Out << '\n';
   }
   Out << "// synthesis translate_on\n\n";

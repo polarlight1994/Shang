@@ -20,7 +20,7 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/VASTSlot.h"
 #include "shang/VASTModule.h"
-#include "shang/SeqLiveVariables.h"
+#include "shang/STGDistances.h"
 
 #include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "vast-seq-value"
@@ -109,9 +109,9 @@ struct StructualLess : public std::binary_function<VASTValPtr, VASTValPtr, bool>
 };
 }
 
-void VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, SeqLiveVariables *SLV,
-                                    VASTValue *V,
-                                    ArrayRef<VASTSlot*> ReadSlots) const {
+void
+VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
+                               VASTValue *V, ArrayRef<VASTSlot*> ReadSlots) const {
   typedef std::set<VASTSeqValue*> SVSet;
   SVSet Srcs;
 
@@ -136,10 +136,10 @@ void VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, SeqLiveVariables *SLV
     for (SVSet::iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       VASTSeqValue *Src = *I;
 
-      unsigned Interval = SLV->getIntervalFromDef(Src, ReadSlot);
+      unsigned Interval = STGDist->getIntervalFromDef(Src, ReadSlot);
 
       // Ignore single cycle path and false paths.
-      if (Interval == 1 || Interval == SeqLiveVariables::Inf) continue;
+      if (Interval == 1 || Interval == STGDistances::Inf) continue;
 
       OS.if_() << Src->getName() << "_hold_counter < " << (Interval - 1);
       OS._then();
@@ -161,7 +161,7 @@ void VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, SeqLiveVariables *SLV
 }
 
 void VASTSelector::printVerificationCode(vlang_raw_ostream &OS,
-                                         SeqLiveVariables *SLV) const {
+                                         STGDistances *STGDist) const {
   if (empty()) return;
 
   OS.always_ff_begin();
@@ -240,13 +240,13 @@ void VASTSelector::printVerificationCode(vlang_raw_ostream &OS,
 
   OS.indent(2) << "$finish(1);\nend\n";
 
-  verifyHoldCycles(OS, SLV, getGuard().get(), AllSlots);
+  verifyHoldCycles(OS, STGDist, getGuard().get(), AllSlots);
 
   if (!isEnable() && !isSlot())
-    verifyHoldCycles(OS, SLV, getFanin().get(), AllSlots);
+    verifyHoldCycles(OS, STGDist, getFanin().get(), AllSlots);
 
   for (ann_iterator I = ann_begin(), E = ann_end(); I != E; ++I)
-    verifyHoldCycles(OS, SLV, VASTValPtr(I->first).get(), I->second);
+    verifyHoldCycles(OS, STGDist, VASTValPtr(I->first).get(), I->second);
 
   // Reset the hold counter when the register is changed.
   OS << getName() << "_hold_counter <= " << getName() << "_selector_guard"
