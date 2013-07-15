@@ -86,7 +86,7 @@ struct AnnotatedCone {
     }
   };
 
-  typedef DenseMap<VASTSeqValue*, Leaf> SeqValSetTy;
+  typedef DenseMap<VASTSelector*, Leaf> SeqValSetTy;
   SeqValSetTy CyclesFromSrcLB;
 
   typedef DenseMap<VASTExpr*, SeqValSetTy> QueryCacheTy;
@@ -110,7 +110,7 @@ struct AnnotatedCone {
 
   void addIntervalFromSrc(VASTSeqValue *Src, const Leaf &L) {
     assert(L.NumCycles && "unexpected zero interval!");
-    unsigned Cycles = CyclesFromSrcLB[Src].update(L).NumCycles;
+    unsigned Cycles = CyclesFromSrcLB[Src->getSelector()].update(L).NumCycles;
     checkIntervalFromSlot(Src, Cycles);
   }
 
@@ -209,8 +209,8 @@ AnnotatedCone::Leaf AnnotatedCone::buildLeaf(VASTSeqValue *V,
 
 void AnnotatedCone::annotateLeaf(VASTSeqValue *V, VASTExpr *Parent, Leaf CurLeaf,
                                  SeqValSetTy &LocalInterval) {
-  LocalInterval[V].update(CurLeaf);
-  unsigned Cycles = QueryCache[Parent][V].update(CurLeaf).NumCycles;
+  LocalInterval[V->getSelector()].update(CurLeaf);
+  unsigned Cycles = QueryCache[Parent][V->getSelector()].update(CurLeaf).NumCycles;
   checkIntervalFromSlot(V, Cycles);
   // Add the information to statistics.
   addIntervalFromSrc(V, CurLeaf);
