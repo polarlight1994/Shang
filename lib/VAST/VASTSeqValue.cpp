@@ -151,7 +151,7 @@ VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
         VASTLatch U = *I;
         U.Op->print(OS);
       }
-      OS << "\n*/";
+      OS << "\n*/\n";
 
       OS.if_() << Sel->getName() << "_hold_counter < " << (Interval - 1);
       OS._then();
