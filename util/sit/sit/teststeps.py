@@ -1140,11 +1140,17 @@ module DUT_TOP_tb();
     rstN <= 1'b1;
     @(posedge clk);
     @(posedge clk);
+    @(negedge clk);
     start <= 1'b1;
     @(posedge clk);
     $display ("Start at %t!", $time());
     @(posedge clk);
     @(posedge clk);
+    @(posedge clk);
+    @(posedge clk);
+    @(posedge clk);
+    @(posedge clk);
+    @(negedge clk);
     start <= 1'b0;
 
     for (;;) begin
