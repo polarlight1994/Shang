@@ -1116,7 +1116,7 @@ endmodule
 module DUT_TOP_tb();
   reg clk = 1'b0;
   reg rstN = 1'b0;
-  wire [7:0] LED7;
+  reg start = 1'b0;
   wire succ;
   wire fin;
   reg startcnt = 1'b0;
@@ -1124,8 +1124,7 @@ module DUT_TOP_tb();
   DUT_TOP i1 (
     .clk(clk),
     .rstN(rstN),
-    .start(1'b1),
-    .LED7(LED7),
+    .start(start),
     .succ(succ),
     .fin(fin)
   );
@@ -1135,10 +1134,16 @@ module DUT_TOP_tb();
     // Allocate some times to allow the circuit to become stable!
     for (int i = 0; i < 1000; ++i)
       @(posedge clk);
-    rstN <= 1;
+    rstN <= 1'b1;
+    @(posedge clk);
+    @(posedge clk);
+    start <= 1'b1;
     @(posedge clk);
     $display ("Start at %t!", $time());
     startcnt <= 1;
+    @(posedge clk);
+    @(posedge clk);
+    start <= 1'b0;
   end
 
   // Generate the 100MHz clock.
