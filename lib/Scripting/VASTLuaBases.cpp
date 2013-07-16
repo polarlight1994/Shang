@@ -765,8 +765,7 @@ VASTInPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
 
 VASTOutPort *VASTModule::addOutputPort(const Twine &Name, unsigned BitWidth,
                                        PortTypes T /*= Others*/) {
-  VASTSelector::Type SelTy = T == VASTModule::Finish ? VASTSelector::Enable
-                                                     : VASTSelector::Temp;
+  VASTSelector::Type SelTy = VASTSelector::Temp;
   VASTSelector *Sel = createSelector(Name, BitWidth, 0, SelTy);
   VASTPort *Port = createPort(Sel, false);
 

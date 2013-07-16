@@ -1119,7 +1119,10 @@ module DUT_TOP_tb();
   reg start = 1'b0;
   wire succ;
   wire fin;
-  reg startcnt = 1'b0;
+
+  reg [31:0] cnt = 0;
+
+  integer cntfile;
 
   DUT_TOP i1 (
     .clk(clk),
@@ -1140,43 +1143,41 @@ module DUT_TOP_tb();
     start <= 1'b1;
     @(posedge clk);
     $display ("Start at %t!", $time());
-    startcnt <= 1;
     @(posedge clk);
     @(posedge clk);
     start <= 1'b0;
+
+    for (;;) begin
+      @(posedge clk);
+      cnt <= cnt + 1;
+      // Produce the heard beat of the simulation.
+      if (cnt % 80 == 0) $write(".");
+      // Do not exceed 80 columns.
+      if (cnt % 6400 == 0) $write("%t\\n", $time());
+
+      if (fin) begin
+        @(posedge clk);
+        @(posedge clk);
+
+        if (!succ) begin
+          $display ("The result is incorrect!");
+          $finish(1);
+        end
+
+        cntfile = $fopen("cycles.rpt");
+        $fwrite (cntfile, "%0d\\n",cnt);
+        $fclose(cntfile);
+
+        $display ("Simulation successfully finished at %t!\\n", $time());
+        // cnt
+        $stop;
+      end
+    end
   end
 
   // Generate the 100MHz clock.
   always #{{ "%.2f" % (reported_period / 2) }}ns clk = ~clk;
 
-  reg [31:0] cnt = 0;
-
-  integer cntfile;
-
-  always_comb begin
-    if (fin) begin
-      if (!succ) begin
-        $display ("The result is incorrect!");
-        $finish(1);
-      end
-
-      cntfile = $fopen("cycles.rpt");
-      $fwrite (cntfile, "%0d\\n",cnt);
-      $fclose(cntfile);
-
-      $display ("Simulation successfully finished at %t\\n!", $time());
-      // cnt
-      $stop;
-    end
-  end
-
-  always@(posedge clk) begin
-    if (startcnt) cnt <= cnt + 1;
-    // Produce the heard beat of the simulation.
-    if (startcnt && cnt % 80 == 0) $write(".");
-    // Do not exceed 80 columns.
-    if (startcnt && cnt % 6400 == 0) $write("%t\\n", $time());
-  end
 
 endmodule
 ''', os.path.join(self.netlist_sim_base_dir, 'DUT_TOP_tb.sv'))

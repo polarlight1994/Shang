@@ -137,9 +137,9 @@ struct DatapathVisitor {
   }
 
   void visitOperands(VASTSeqInst *Op) {
-    Instruction *Inst = dyn_cast<Instruction>(Op->getValue());
+    Instruction *Inst = dyn_cast_or_null<Instruction>(Op->getValue());
     if (!Inst) {
-      assert(isa<Argument>(Op->getValue())
+      assert((isa<Argument>(Op->getValue()) || isa<UndefValue>(Op->getValue()))
              && "Uexpected VASTSeqInst without Instruction!");
       return;
     }

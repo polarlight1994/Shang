@@ -421,6 +421,13 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
   // Copy the value to the register.
   for (unsigned i = 0, e = ArgRegs.size(); i != e; ++i)
     VM->latchValue(ArgRegs[i], ArgPorts[i], EntryGrp, StartPort, Args[i]);
+
+  // Also reset the finish signal.
+  VASTSeqInst *ResetFin
+    = VM->lauchInst(EntryGrp, StartPort, 1, UndefValue::get(RetTy), true);
+  VASTSelector *FinPort
+    = cast<VASTOutPort>(VM->getPort(VASTModule::Finish)).getSelector();
+  ResetFin->addSrc(VASTImmediate::False, 0, FinPort);
 }
 
 void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
