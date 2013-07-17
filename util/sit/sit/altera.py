@@ -118,7 +118,8 @@ create_clock -name "clk" -period %(period)sns [get_ports {clk}]
 derive_pll_clocks -create_base_clocks
 derive_clock_uncertainty
 
-set_input_delay -clock clk %(period)sns start
+set_input_delay -clock clk -max [expr %(period)s * 0.8] start
+set_input_delay -clock clk -min [expr %(period)s * 0.4] start
 
 set num_not_applied 0
 ''',
