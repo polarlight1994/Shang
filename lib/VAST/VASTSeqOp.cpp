@@ -124,7 +124,7 @@ void VASTSeqOp::print(raw_ostream &OS) const {
 
   if (getNumDefs()) OS << "<- ";
 
-  OS << '@' << getSlotNum() << "{ pred";
+  OS << '@' << getSlotNum() << "{ guard";
   if (getSlotActive()) OS << " SlotActive#" << getSlotNum() << ' '; 
 
   for (unsigned i = 0; i < Size; ++i) {
