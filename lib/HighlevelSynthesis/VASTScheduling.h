@@ -563,7 +563,11 @@ class VASTScheduling : public VASTModulePass {
 
   void buildControlFlowEdges();
   void preventInfinitUnrolling(Loop *L);
-  void preventImplicitPipelining(Loop *L);
+  // Make sure the incoming value assignment for PHIs are scheduled after all
+  // user of PHIs, i.e. make sure the old value on the PHI nodes are read before
+  // it is updated.
+  // TODO: Relax these dependencies for software pipelining.
+  void buildWARDepForPHIs();
   void fixSchedulingGraph();
 
   void buildSchedulingUnits(VASTSlot *S);

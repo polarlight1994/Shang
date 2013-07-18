@@ -740,64 +740,6 @@ void VASTScheduling::preventInfinitUnrolling(Loop *L) {
   }
 }
 
-void VASTScheduling::preventImplicitPipelining(Loop *L) {
-  BasicBlock *Header = L->getHeader();
-
-  SmallVector<VASTSchedUnit*, 8> BackEdges, ExitingEdges;
-  typedef Loop::block_iterator block_iterator;
-
-  for (block_iterator I = L->block_begin(), E = L->block_end(); I != E; ++I) {
-    BasicBlock *BB = *I;
-    TerminatorInst *Inst = BB->getTerminator();
-
-    // Ignore the Return and Unreachable, which will wait for the whole function.
-    if (!isa<BranchInst>(Inst) && !isa<SwitchInst>(Inst)) continue;
-
-    BackEdges.clear();
-    ExitingEdges.clear();
-    bool IsBackedge = false;
-    for (succ_iterator SI = succ_begin(BB), SE = succ_end(BB); SI != SE; ++SI)
-      IsBackedge |= (*SI == Header);
-
-    ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[Inst]);
-    for (unsigned i = 0; i < Terminators.size(); ++i) {
-      VASTSchedUnit *Terminator = Terminators[i];
-      assert(Terminator->isTerminator() && "Unexpected scheduling unit type!");
-      BasicBlock *Dst = Terminator->getTargetBlock();
-
-      // Collect the branching operations targeting the header of the loop,
-      // the corresponding edges are backedges.
-      if (IsBackedge ? (Dst == Header) : L->contains(Dst))
-        BackEdges.push_back(Terminator);
-      // Also collect the exiting edges.
-      else
-        ExitingEdges.push_back(Terminator);
-    }
-
-    // Add dependencies to prevent the the backedges being activatived before
-    // we reach the exiting edges.
-    typedef SmallVector<VASTSchedUnit*, 8>::iterator iterator;
-    for (iterator BI = BackEdges.begin(), BE = BackEdges.end(); BI != BE; ++BI) {
-      VASTSchedUnit *BackEdge = *BI;
-      for (iterator EI = ExitingEdges.begin(), EE = ExitingEdges.end();
-           EI != EE; ++EI) {
-        VASTSchedUnit *Exiting = *EI;
-        if (Exiting->isDependsOn(BackEdge)) {
-          assert(Exiting->getEdgeFrom(BackEdge).getLatency() == 0
-                 && "Not able to handle contradictory constraint!");
-          Exiting->removeDep(BackEdge);
-          // If we require both Exiting >= BackEdge and BackEdge >= Exiting,
-          // then we can simply use Exiting == BackEdge
-          BackEdge->addDep(Exiting, VASTDep::CreateFixTimingConstraint(0));
-          continue;
-        }
-
-        BackEdge->addDep(Exiting, VASTDep::CreateCtrlDep(0));
-      }
-    }
-  }
-}
-
 void VASTScheduling::fixSchedulingGraph() {
   // Try to fix the dangling nodes.
   typedef VASTSchedGraph::iterator iterator;
@@ -891,13 +833,9 @@ void VASTScheduling::fixSchedulingGraph() {
     // can be entirely folded into its predecessors. If this happen, the schedule
     // emitter will try to unroll the loop.
     preventInfinitUnrolling(L);
-
-    // If the branch operations for the backedges are scheduled before the whole
-    // loop body is finished, we will get a pipelined loop, which is not what we
-    // want as the SDC scheduling cannot correctly model the modulo resource
-    // reservation at the moment.
-    preventImplicitPipelining(L);
   }
+
+  buildWARDepForPHIs();
 }
 
 void VASTScheduling::scheduleGlobal() {

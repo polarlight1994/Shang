@@ -38,6 +38,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Support/CFG.h"
 #define DEBUG_TYPE "shang-linear-order-builder"
 #include "llvm/Support/Debug.h"
 
@@ -755,4 +756,215 @@ void MemoryDepBuilder::buildDependencies() {
 
 void VASTScheduling::buildMemoryDependencies() {
   MemoryDepBuilder(*G, IR2SUMap, *DT, *AA).buildDependencies();
+}
+
+namespace {
+struct PHIWARDepBuilder {
+  BasicBlock *DefBlock;
+  SmallPtrSet<BasicBlock*, 4> Boundaries;
+  // Mapping a basic block to the scheduling units that are dominated by the
+  // BB and update the PHI node.
+  std::map<BasicBlock*, std::set<VASTSchedUnit*> > DomUpdateSUs;
+  // User of the PHI node in a BasicBlock.
+  std::map<BasicBlock*, std::vector<VASTSchedUnit*> > Users;
+  void addUser(VASTSchedUnit *SU) {
+    if (SU->isExit()) return;
+
+    BasicBlock *Parent = SU->getParent();
+    Users[Parent].push_back(SU);
+  }
+
+  void addPHI(VASTSchedUnit *SU) {
+    typedef VASTSchedUnit::use_iterator iterator;
+    for (iterator I = SU->use_begin(), E = SU->use_end(); I != E; ++I)
+      addUser(*I);
+  }
+
+  DominatorTree *DT;
+  IR2SUMapTy &IR2SUMap;
+
+  void buildDepandencies();
+  void rememberEdge(BasicBlock *SrcBB, BasicBlock *DstBB);
+  VASTSchedUnit *getCFGEdge(BasicBlock *SrcBB, BasicBlock *DstBB);
+  bool propagateDomUpdateSUs(BasicBlock *BB);
+  void buildDepandencies(BasicBlock *BB);
+
+  PHIWARDepBuilder(BasicBlock *DefBlock, DominatorTree *DT, IR2SUMapTy &IR2SUMap)
+    : DefBlock(DefBlock), Boundaries(pred_begin(DefBlock), pred_end(DefBlock)),
+      DT(DT), IR2SUMap(IR2SUMap) {}
+};
+}
+
+void PHIWARDepBuilder::buildDepandencies(BasicBlock *BB) {
+  std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator J
+    = Users.find(BB);
+
+  if (J == Users.end())
+    return;
+
+  std::map<BasicBlock*, std::set<VASTSchedUnit*> >::iterator K
+    = DomUpdateSUs.find(BB);
+
+  if (K == DomUpdateSUs.end())
+    return;
+  
+  std::set<VASTSchedUnit*> &UpdateSUs = K->second;
+  ArrayRef<VASTSchedUnit*> CurUsers(J->second);
+
+  typedef std::set<VASTSchedUnit*>::iterator update_iterator;
+  for (update_iterator I = UpdateSUs.begin(), E = UpdateSUs.end(); I != E; ++I) {
+    VASTSchedUnit *Updater = *I;
+
+    for (unsigned i = 0; i < CurUsers.size(); ++i) {
+      VASTSchedUnit *U = CurUsers[i];
+
+      // Translate the PHI latch to the corresponding branching operation.
+      // Because the PHI latch will anyway scheduled to the same cycle with that
+      // branching operation.
+      if (U->isPHILatch())
+        U = getCFGEdge(BB, U->getInst()->getParent());
+
+      if (U == Updater)
+        continue;
+
+      // Avoid dependency cycle: If we require both U >= Updater and Updater >= U,
+      // then we can simply use U == Updater
+      if (U->isDependsOn(Updater)) {
+        assert(U->getEdgeFrom(Updater).getLatency() == 0
+                && "Not able to handle contradictory constraint!");
+        U->removeDep(Updater);
+        U->addDep(Updater, VASTDep::CreateFixTimingConstraint(0));
+        continue;
+      }
+      
+      Updater->addDep(U, VASTDep::CreateCtrlDep(0));
+    }
+  }
+  
+}
+
+bool PHIWARDepBuilder::propagateDomUpdateSUs(BasicBlock *BB) {
+  bool AnyUpdateSU = false;
+
+  for (succ_iterator I = succ_begin(BB), E = succ_end(BB); I != E; ++I) {
+    BasicBlock *Succ = *I;
+
+    std::map<BasicBlock*, std::set<VASTSchedUnit*> >::iterator J
+      = DomUpdateSUs.find(Succ);
+    if (J == DomUpdateSUs.end()) continue;
+
+    AnyUpdateSU |= true;
+    // Make sure the SUs in the update set are dominated by the current BB.
+    // If current BB does not dominate the Succ, we cannot directly propagate
+    // the DomUpdateSUs of Succ to current BB, because the current BB does not
+    // dominate these update SUs. Instead, we add the branching SU targeting
+    // Succ to the update set, so that when we build a dependencies to the
+    // branching SU, we have an implicitly dependencies to the update SUs though
+    // the branching SU.
+    //    A
+    //    | /
+    //    B
+    //    |
+    // (update set)
+    // For example, we need to build dependencies from SUs in A to the SU in
+    // update sets dominated by B. However, A does not dominate B, thereby A
+    // does not dominate the SUs in update set of B. What we do is we build
+    // a dependencies to the entry of B. Because SUs in update set of B will
+    // never be scheduled before B (i.e. there are implicit dependencies from
+    // B to SUs in the update set.), and we build a dependencies to B,
+    // now we have a chain of dependencies from USs in A to update set.
+    if (!DT->properlyDominates(BB, Succ)) {
+      rememberEdge(BB, Succ);
+      continue;
+    }
+
+    std::set<VASTSchedUnit*> &SuccUpdateSet = J->second;
+
+    DomUpdateSUs[BB].insert(SuccUpdateSet.begin(), SuccUpdateSet.end());
+  }
+
+  return AnyUpdateSU;
+}
+
+VASTSchedUnit *
+PHIWARDepBuilder::getCFGEdge(BasicBlock *SrcBB, BasicBlock *DstBB) {
+  ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[SrcBB->getTerminator()]);
+  for (unsigned i = 0; i < Exits.size(); ++i) {
+    VASTSchedUnit *Exit = Exits[i];
+    assert(Exit->isTerminator() && "Expect terminator!");
+    if (Exit->getTargetBlock() != DstBB) continue;
+
+    return Exit;
+  }
+
+  llvm_unreachable("Cannot find edge!");
+  return 0;
+}
+
+void PHIWARDepBuilder::rememberEdge(BasicBlock *SrcBB, BasicBlock *DstBB) {
+  DomUpdateSUs[SrcBB].insert(getCFGEdge(SrcBB, DstBB));
+}
+
+void PHIWARDepBuilder::buildDepandencies() {
+  std::vector<std::pair<BasicBlock*, succ_iterator> > WorkStack;
+  std::set<BasicBlock*> Visited;
+
+  WorkStack.push_back(std::make_pair(DefBlock, succ_begin(DefBlock)));
+  Visited.insert(DefBlock);
+
+  while (!WorkStack.empty()) {
+    BasicBlock *CurBlock = WorkStack.back().first;
+    succ_iterator CurIt = WorkStack.back().second;
+
+    if (CurIt == succ_end(CurBlock)) {
+      WorkStack.pop_back();
+
+      // Update the dominated updating SUs of the current block.
+      if (propagateDomUpdateSUs(CurBlock))
+        // Build the WAR dependencies.
+        buildDepandencies(CurBlock);
+
+      continue;
+    }
+
+    BasicBlock *Child = *CurIt;
+    ++WorkStack.back().second;
+
+    // Do not visit a block twice!
+    if (!Visited.insert(Child).second)
+      continue;
+
+    if (Boundaries.count(Child)) {
+      // Handle the boundaries block.
+      rememberEdge(Child, DefBlock);
+      // Build the WAR dependencies.
+      buildDepandencies(CurBlock);
+      continue;
+    }
+
+    WorkStack.push_back(std::make_pair(Child, succ_begin(Child)));
+  }
+}
+
+void VASTScheduling::buildWARDepForPHIs() {
+  DenseMap<BasicBlock*, PHIWARDepBuilder*> DepBuilders;
+
+  for (VASTSchedGraph::iterator I = G->begin(), E = G->end(); I != E; ++I) {
+    VASTSchedUnit *SU = I;
+
+    if (!SU->isPHI()) continue;
+
+    BasicBlock *Parent = SU->getParent();
+    PHIWARDepBuilder *&Builder = DepBuilders[Parent];
+    if (Builder == 0) 
+      Builder = new PHIWARDepBuilder(Parent, DT, IR2SUMap);
+    
+    Builder->addPHI(SU);
+  }
+
+  typedef DenseMap<BasicBlock*, PHIWARDepBuilder*>::iterator iterator;
+  for (iterator I = DepBuilders.begin(), E = DepBuilders.end(); I != E; ++I)
+    I->second->buildDepandencies();
+
+  DeleteContainerSeconds(DepBuilders);
 }
