@@ -114,7 +114,6 @@ VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
                                VASTValue *V, ArrayRef<VASTSlot*> ReadSlots) const {
   typedef std::set<VASTSeqValue*> SVSet;
   SVSet Srcs;
-  std::set<VASTSelector*> SelSet;
 
   OS << "// Verify timing of cone rooted on " << VASTValPtr(V) << "\n";
   // Get *all* source register of the cone rooted on SubExpr.
@@ -122,52 +121,62 @@ VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
 
   if (Srcs.empty()) return;
 
+  OS.if_() << "1'b0 ";
   for (unsigned i = 0; i < ReadSlots.size(); ++i) {
     VASTSlot *ReadSlot = ReadSlots[i];
+    OS << "| (" << VASTValPtr(ReadSlot->getGuard())
+       << " & " << ReadSlot->getValue()->getName() << ") ";
+  }
 
-    OS << "// read at slot: " << ReadSlot->SlotNum;
-    if (BasicBlock *BB = ReadSlot->getParent())
-      OS << ", " << BB->getName();
-    OS << "\n";
+  OS._then();
 
-    OS.if_() << VASTValPtr(ReadSlot->getGuard())
-             << " & " << ReadSlot->getValue()->getName();
+  std::set<VASTSelector*> VisitedSelectors;
+  for (SVSet::iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+    VASTSeqValue *Src = *I;
+
+    if (!VisitedSelectors.insert(Src->getSelector()).second)
+      continue;
+
+    unsigned Interval = STGDist->getIntervalFromDef(Src->getSelector(), ReadSlots);
+
+    // Ignore single cycle path and false paths.
+    if (Interval == 1) continue;
+
+    OS << "/*\n";
+    typedef VASTSeqValue::fanin_iterator iterator;
+    for (iterator I = Src->fanin_begin(), E = Src->fanin_end(); I != E; ++I) {
+      VASTLatch U = *I;
+      U.Op->print(OS);
+    }
+    OS << "\n*/\n";
+
+    OS.if_() << Src->getName() << "_hold_counter < " << (Interval - 1);
     OS._then();
+    for (unsigned i = 0; i < ReadSlots.size(); ++i) {
+      VASTSlot *ReadSlot = ReadSlots[i];
+      OS << "// read at slot: " << ReadSlot->SlotNum;
+      if (BasicBlock *BB = ReadSlot->getParent())
+        OS << ", " << BB->getName();
+      OS << "\n";
 
-    for (SVSet::iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-      VASTSelector *Sel = (*I)->getSelector();
-
-      // No need to visit the same selector twice!
-      if (!SelSet.insert(Sel).second) continue;
-
-      unsigned Interval = STGDist->getIntervalFromDef(Sel, ReadSlot);
-
-      // Ignore single cycle path and false paths.
-      if (Interval == 1) continue;
-
-      OS << "/*\n";
-      typedef VASTSelector::const_iterator iterator;
-      for (iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
-        VASTLatch U = *I;
-        U.Op->print(OS);
-      }
-      OS << "\n*/\n";
-
-      OS.if_() << Sel->getName() << "_hold_counter < " << (Interval - 1);
+      OS.if_() << VASTValPtr(ReadSlot->getGuard())
+               << " & " << ReadSlot->getValue()->getName();
       OS._then();
-      OS << "$display(\"Hold violation on " << Sel->getName() << " at"
+
+      OS << "$display(\"Hold violation on " << Src->getName() << " at"
             " slot: " << ReadSlot->SlotNum;
       if (BasicBlock *BB = ReadSlot->getParent())
         OS << ", " << BB->getName();
       OS << " read by " << getName() << "; expected hold cycle:" << Interval
-         << " actual hold cycle: %d\", "
-         << Sel->getName() << "_hold_counter + 1);\n";
+          << " actual hold cycle: %d\", "
+          << Src->getName() << "_hold_counter + 1);\n";
       OS << "$finish(1);\n";
       OS.exit_block();
     }
-
     OS.exit_block();
   }
+
+  OS.exit_block();
 
   OS << '\n';
 }
