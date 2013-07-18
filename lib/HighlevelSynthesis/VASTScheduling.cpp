@@ -186,9 +186,7 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
   OS << (isLaunch() ? "Launch" : "Latch")
      << " Parent: " << getParent()->getName();
 
-  if (BB)
-    OS << " BB: " << BB->getName();
-  else if (Inst) {
+  if (Inst) {
     OS << ' ' << *Inst; //Inst->getName();
 
     if (isa<PHINode>(Inst) && isLatch())
@@ -197,7 +195,8 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
     if (isTerminator())
       if (BasicBlock *BB =  getTargetBlock())
         OS << " Targeting: " << BB->getName();
-  }
+  } else if (BB)
+    OS << " BB: " << BB->getName();
 
   OS << " Scheduled to " << Schedule << ' ' << this;
 }
