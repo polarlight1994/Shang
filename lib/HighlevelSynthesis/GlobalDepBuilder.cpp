@@ -32,6 +32,7 @@
 #include "shang/VASTMemoryPort.h"
 
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/AliasSetTracker.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
@@ -760,8 +761,7 @@ void VASTScheduling::buildMemoryDependencies() {
 
 namespace {
 struct PHIWARDepBuilder {
-  BasicBlock *DefBlock;
-  SmallPtrSet<BasicBlock*, 4> Boundaries;
+  Loop *L;
   // Mapping a basic block to the scheduling units that are dominated by the
   // BB and update the PHI node.
   std::map<BasicBlock*, std::set<VASTSchedUnit*> > DomUpdateSUs;
@@ -789,9 +789,8 @@ struct PHIWARDepBuilder {
   bool propagateDomUpdateSUs(BasicBlock *BB);
   void buildDepandencies(BasicBlock *BB);
 
-  PHIWARDepBuilder(BasicBlock *DefBlock, DominatorTree *DT, IR2SUMapTy &IR2SUMap)
-    : DefBlock(DefBlock), Boundaries(pred_begin(DefBlock), pred_end(DefBlock)),
-      DT(DT), IR2SUMap(IR2SUMap) {}
+  PHIWARDepBuilder(Loop *L, DominatorTree *DT, IR2SUMapTy &IR2SUMap)
+    : L(L), DT(DT), IR2SUMap(IR2SUMap) {}
 };
 }
 
@@ -851,7 +850,7 @@ bool PHIWARDepBuilder::propagateDomUpdateSUs(BasicBlock *BB) {
 
     std::map<BasicBlock*, std::set<VASTSchedUnit*> >::iterator J
       = DomUpdateSUs.find(Succ);
-    if (J == DomUpdateSUs.end()) continue;
+    if (J == DomUpdateSUs.end() && Succ != L->getHeader()) continue;
 
     AnyUpdateSU |= true;
     // Make sure the SUs in the update set are dominated by the current BB.
@@ -906,11 +905,26 @@ void PHIWARDepBuilder::rememberEdge(BasicBlock *SrcBB, BasicBlock *DstBB) {
 }
 
 void PHIWARDepBuilder::buildDepandencies() {
+  BasicBlock *Header = L->getHeader();
+
+  // Collect the user of the PHI nodes, for them we build the WAR dependencies.
+  typedef BasicBlock::iterator iterator;
+  for (iterator I = Header->begin(), E = Header->getFirstNonPHI(); I != E; ++I){
+    PHINode *PN = cast<PHINode>(I);
+
+    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[PN]);
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSchedUnit *SU = SUs[i];
+      if (SU->isPHI())
+        addPHI(SU);
+    }
+  }
+
   std::vector<std::pair<BasicBlock*, succ_iterator> > WorkStack;
   std::set<BasicBlock*> Visited;
 
-  WorkStack.push_back(std::make_pair(DefBlock, succ_begin(DefBlock)));
-  Visited.insert(DefBlock);
+  WorkStack.push_back(std::make_pair(Header, succ_begin(Header)));
+  Visited.insert(Header);
 
   while (!WorkStack.empty()) {
     BasicBlock *CurBlock = WorkStack.back().first;
@@ -934,37 +948,13 @@ void PHIWARDepBuilder::buildDepandencies() {
     if (!Visited.insert(Child).second)
       continue;
 
-    if (Boundaries.count(Child)) {
-      // Handle the boundaries block.
-      rememberEdge(Child, DefBlock);
-      // Build the WAR dependencies.
-      buildDepandencies(CurBlock);
+    if (!L->contains(Child))
       continue;
-    }
 
     WorkStack.push_back(std::make_pair(Child, succ_begin(Child)));
   }
 }
 
-void VASTScheduling::buildWARDepForPHIs() {
-  DenseMap<BasicBlock*, PHIWARDepBuilder*> DepBuilders;
-
-  for (VASTSchedGraph::iterator I = G->begin(), E = G->end(); I != E; ++I) {
-    VASTSchedUnit *SU = I;
-
-    if (!SU->isPHI()) continue;
-
-    BasicBlock *Parent = SU->getParent();
-    PHIWARDepBuilder *&Builder = DepBuilders[Parent];
-    if (Builder == 0) 
-      Builder = new PHIWARDepBuilder(Parent, DT, IR2SUMap);
-    
-    Builder->addPHI(SU);
-  }
-
-  typedef DenseMap<BasicBlock*, PHIWARDepBuilder*>::iterator iterator;
-  for (iterator I = DepBuilders.begin(), E = DepBuilders.end(); I != E; ++I)
-    I->second->buildDepandencies();
-
-  DeleteContainerSeconds(DepBuilders);
+void VASTScheduling::buildWARDepForPHIs(Loop *L) {
+  PHIWARDepBuilder(L, DT, IR2SUMap).buildDepandencies();
 }

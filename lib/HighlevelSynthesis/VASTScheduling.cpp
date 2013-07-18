@@ -833,9 +833,10 @@ void VASTScheduling::fixSchedulingGraph() {
     // can be entirely folded into its predecessors. If this happen, the schedule
     // emitter will try to unroll the loop.
     preventInfinitUnrolling(L);
+    // Ensure the WAR dependencies for the induction variables. Disable this if
+    // we want to perform software pipelining.
+    buildWARDepForPHIs(L);
   }
-
-  buildWARDepForPHIs();
 }
 
 void VASTScheduling::scheduleGlobal() {

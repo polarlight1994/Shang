@@ -567,7 +567,7 @@ class VASTScheduling : public VASTModulePass {
   // user of PHIs, i.e. make sure the old value on the PHI nodes are read before
   // it is updated.
   // TODO: Relax these dependencies for software pipelining.
-  void buildWARDepForPHIs();
+  void buildWARDepForPHIs(Loop *L);
   void fixSchedulingGraph();
 
   void buildSchedulingUnits(VASTSlot *S);
