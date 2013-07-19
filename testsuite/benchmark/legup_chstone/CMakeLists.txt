@@ -50,12 +50,12 @@ add_test_legup_cases(matrixmultiply matrixmultiply.bc)
 
 add_test_legup_cases(fft fft.bc)
 
-add_test_legup_cases(monte_carlo monte_carlo.bc)
+#add_test_legup_cases(monte_carlo monte_carlo.bc)
 
-add_test_legup_cases(option_pricing option_pricing.bc)
+#add_test_legup_cases(option_pricing option_pricing.bc)
 
 #These there are very large design
-add_test_legup_cases(ogg ogg.bc)
+#add_test_legup_cases(ogg ogg.bc)
 
 add_test_legup_cases(adpcm adpcm.bc)
 
