@@ -225,8 +225,11 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void visitStoreInst(StoreInst &I);
 
   void visitInstruction(Instruction &I) {
-    I.dump();
+    // Try to build a combinational node for I.
+    if (VASTValPtr V = Builder.visit(I))
+      indexVASTExpr(&I, V);
   }
+
   //===--------------------------------------------------------------------===//
   unsigned getByteEnable(Value *Addr) const;
   VASTValPtr alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
@@ -483,12 +486,6 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
     // PHINodes will be handled in somewhere else.
     if (isa<PHINode>(I)) continue;
 
-    // Try to build the datapath expressions.
-    if (VASTValPtr V = Builder.visit(I)) {
-      indexVASTExpr(I, V);
-      continue;
-    }
-
     // Otherwise build the SeqOp for this operation.
     visit(I);
   }
@@ -728,8 +725,11 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
 }
 
 void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
-  // The Operator may had already been lowered.
-  if (lookupExpr(&I)) return;
+  // Try to build the combinational node.
+  if (VASTValPtr V = Builder.visit(I)) {
+    indexVASTExpr(&I, V);
+    return;
+  }
 
   I.dump();
 
@@ -807,6 +807,12 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
 //===----------------------------------------------------------------------===//
 
 void VASTModuleBuilder::visitIntrinsicInst(IntrinsicInst &I) {
+  // Try to build a combinational node for I.
+  if (VASTValPtr V = Builder.visit(I)) {
+    indexVASTExpr(&I, V);
+    return;
+  }
+
   I.dump();
 }
 
