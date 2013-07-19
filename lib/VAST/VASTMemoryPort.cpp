@@ -220,8 +220,8 @@ std::string VASTMemoryBus::getArrayName() const {
 }
 
 void VASTMemoryBus::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
-  getRData(PortNum)->printDecl(OS);
   getAddr(PortNum)->printDecl(OS);
+  getRData(PortNum)->printDecl(OS);
   getWData(PortNum)->printDecl(OS);
 
   if (requireByteEnable())
@@ -277,21 +277,19 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
   Addr->printRegisterBlock(OS, 0);
   WData->printRegisterBlock(OS, 0);
   ByteEn->printRegisterBlock(OS, 0);
-  OS << "reg " << WData->getName() << "en;\n";
+
   // Access the block ram.
   OS.always_ff_begin(false);
 
   if (!WData->empty()) {
-    OS << WData->getName() << "en" << " <= "
-       << WData->getName() << "_selector_guard;\n";
     // Use the enable of the write data as the write enable.
-    OS.if_begin(Twine(WData->getName()) + "en");
+    OS.if_begin(Twine(WData->getName()) + "_selector_guard");
 
     for (unsigned i = 0; i < BytesPerWord; ++i) {
-      OS.if_() << ByteEn->getName() << "[" << i << "]";
-      OS._then() << getArrayName() << "[" << Addr->getName()
+      OS.if_() << ByteEn->getName() << "_selector_wire[" << i << "]";
+      OS._then() << getArrayName() << "[" << Addr->getName() << "_selector_wire"
          << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "]"
-            "[" << i << "] <= " << WData->getName()
+            "[" << i << "] <= " << WData->getName() << "_selector_wire"
          << VASTValue::printBitRange((i + 1) * 8, i * 8) << ";\n";
 
       OS.exit_block();
@@ -301,14 +299,14 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
   }
 
   OS << getRDataName(PortNum) << VASTValue::printBitRange(getDataWidth(), 0, true)
-     << " <= " << getArrayName() << "[" << Addr->getName()
+     << " <= " << getArrayName() << "[" << Addr->getName() << "_selector_wire"
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
   OS << getRDataName(PortNum)
      << VASTValue::printBitRange(getDataWidth() + ByteAddrWidth, getDataWidth(), true)
-     << " <= " << Addr->getName()
+     << " <= " << Addr->getName() << "_selector_wire"
      << VASTValue::printBitRange(ByteAddrWidth, 0) << ";\n";
 
-  OS << "if (" << Addr->getName()
+  OS << "if (" << Addr->getName() << "_selector_wire"
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
      << NumWords << ")  $finish(\"Write access out of bound!\");\n";
 
@@ -488,36 +486,31 @@ VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
   RData->printRegisterBlock(OS, 0);
   WData->printRegisterBlock(OS, 0);
 
-  OS << "reg " << WData->getName() << "en;\n";
-  // Access the block ram.
   OS.always_ff_begin(false);
 
   if (!WData->empty()) {
-    OS << WData->getName() << "en" << " <= "
-      << WData->getName() << "_selector_guard;\n";
-
-    OS.if_begin(Twine(WData->getName()) + "en");
-    OS << getArrayName() << "[" << Addr->getName()
-        << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ']'
-        << " <= " << WData->getName()
-        << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
+    OS.if_begin(Twine(WData->getName()) + "_selector_guard");
+    OS << getArrayName() << "[" << Addr->getName() << "_selector_wire"
+       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ']'
+       << " <= " << WData->getName() << "_selector_wire"
+       << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
 
     OS.exit_block();
   }
 
   OS << RData->getName()
     << VASTValue::printBitRange(getDataWidth(), 0, false) << " <= "
-    << ' ' << getArrayName() << "[" << Addr->getName()
+    << ' ' << getArrayName() << "[" << Addr->getName() << "_selector_wire"
     << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
 
   // Verify the addresses.
-  OS << "if (" << Addr->getName()
+  OS << "if (" << Addr->getName() << "_selector_wire"
       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true)
       << ">= "<< NumWords <<") $finish(\"Write access out of bound!\");\n";
   if (ByteAddrWidth)
-    OS << "if (" << Addr->getName()
-        << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
-        << ByteAddrWidth << "'b0) $finish(\"Write access out of bound!\");\n";
+    OS << "if (" << Addr->getName() << "_selector_wire"
+       << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
+       << ByteAddrWidth << "'b0) $finish(\"Write access out of bound!\");\n";
 
   OS.always_ff_end(false);
 }
