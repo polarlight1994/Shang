@@ -261,13 +261,13 @@ void VASTSelector::printVerificationCode(vlang_raw_ostream &OS,
 
   OS.indent(2) << "$finish(1);\nend\n";
 
-  verifyHoldCycles(OS, STGDist, getGuard().get(), AllSlots);
+  //verifyHoldCycles(OS, STGDist, getGuard().get(), AllSlots);
 
-  if (!isEnable() && !isSlot())
-    verifyHoldCycles(OS, STGDist, getFanin().get(), AllSlots);
+  //if (!isEnable() && !isSlot())
+  //  verifyHoldCycles(OS, STGDist, getFanin().get(), AllSlots);
 
-  for (ann_iterator I = ann_begin(), E = ann_end(); I != E; ++I)
-    verifyHoldCycles(OS, STGDist, VASTValPtr(I->first).get(), I->second);
+  //for (ann_iterator I = ann_begin(), E = ann_end(); I != E; ++I)
+  //  verifyHoldCycles(OS, STGDist, VASTValPtr(I->first).get(), I->second);
 
   // Reset the hold counter when the register is changed.
   OS << getName() << "_hold_counter <= " << getName() << "_selector_guard"
