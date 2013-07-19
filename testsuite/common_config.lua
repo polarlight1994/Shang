@@ -29,7 +29,7 @@ module shang_sra#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
   input wire[B_WIDTH-1:0] b,
   output wire[C_WIDTH-1:0] c
 );
-	assign c = $signed(a) >> b;
+	assign c = $signed(a) >>> b;
 endmodule
 
 module shang_srl#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
