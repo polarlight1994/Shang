@@ -426,9 +426,11 @@ public:
     AU.addRequired<LoopInfo>();
     AU.addRequired<BranchProbabilityInfo>();
     AU.addRequired<TimingNetlist>();
-    AU.addRequired<DelayInfoStorage>();
-    // Initialize the DelayInfoStorage by the unscheduled netlist.
-    AU.addRequired<DelayExtractor>();
+    if (MaxIteration > 1) {
+      AU.addRequired<DelayInfoStorage>();
+      // Initialize the DelayInfoStorage by the unscheduled netlist.
+      AU.addRequired<DelayExtractor>();
+    }
   }
 
   void recoverOutputPath();
@@ -474,7 +476,6 @@ public:
     if (MaxIteration == 0) return false;
     
     TimingNetlist &TNL = getAnalysis<TimingNetlist>();
-    DelayInfoStorage &DIS = getAnalysis<DelayInfoStorage>();
     Function &F = VM.getLLVMFunction();
 
     VASTScheduling Scheduler;
@@ -491,7 +492,7 @@ public:
       Scheduler.releaseMemory();
 
       VASTModule &NextVM = rebuildModule();
-      DelayAnnotator(TNL, DIS).visit(NextVM);
+      DelayAnnotator(TNL, getAnalysis<DelayInfoStorage>()).visit(NextVM);
       Scheduler.runOnVASTModule(NextVM);
     }
 
@@ -503,6 +504,10 @@ public:
 
   void assignPassManager(PMStack &PMS, PassManagerType T) {
     FunctionPass::assignPassManager(PMS, T);
+
+    // Do not need to add subpasses if we are not iterate at all.
+    if (MaxIteration <= 1)
+      return;
 
     // Inherit the existing analyses
     populateInheritedAnalysis(PMS);
