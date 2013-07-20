@@ -224,8 +224,8 @@ VASTValPtr DatapathBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
 VASTValPtr DatapathBuilder::visitGEPOperator(GEPOperator &O) {
   VASTValPtr Ptr = getAsOperand(O.getPointerOperand());
   // FIXME: All the pointer arithmetic are perform under the precision of
-  // PtrSize, do we need to perform the arithmetic at the max avilable integer
-  // width and truncate the resunt?
+  // PtrSize, do we need to perform the arithmetic at the max available integer
+  // width and truncate the result?
   unsigned PtrSize = Ptr->getBitWidth();
   // Note that the pointer operand may be a vector of pointers. Take the scalar
   // element which holds a pointer.
