@@ -920,6 +920,18 @@ void PHIWARDepBuilder::buildDepandencies() {
     }
   }
 
+  // Prevent implicit software pipelining by pretending the branching operations
+  // in the exiting blocks of the loop using the PHI. By doing this, we ensure
+  // the exiting blocks will not loop back until the whole block is finished.
+  SmallVector<BasicBlock*, 4> Exits;
+  L->getExitingBlocks(Exits);
+  for (unsigned i = 0, e = Exits.size(); i != e; ++i) {
+    BasicBlock *Exiting = Exits[i];
+    ArrayRef<VASTSchedUnit*> Brs(IR2SUMap[Exiting->getTerminator()]);
+    for (unsigned j = 0; j < Brs.size(); ++j)
+      addUser(Brs[j]);
+  }
+
   std::vector<std::pair<BasicBlock*, succ_iterator> > WorkStack;
   std::set<BasicBlock*> Visited;
 
