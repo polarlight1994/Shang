@@ -136,6 +136,16 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   VASTValPtr getAsOperandImpl(Value *Op);
 
+  VASTRegister *createOperandRegister(void *Prefix, Instruction &I,
+                                      unsigned Idx, unsigned BitWidth) {
+    SmallString<36> S;
+    translatePtr2Str(Prefix, S);
+    S += utostr_32(Idx);
+    S.push_back('_');
+    S += I.getOpcodeName();
+    return VM->createRegister(S.str(), BitWidth, 0, VASTSelector::FUInput);
+  }
+
   // Remember the landing slot and the latest slot of a basic block.
   std::map<BasicBlock*, std::pair<VASTSlot*, VASTSlot*> > BB2SlotMap;
   unsigned NumSlots;
@@ -239,6 +249,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
                                ArrayRef<VASTValPtr> Args);
+  bool buildBinaryOperation(BinaryOperator &I);
   //===--------------------------------------------------------------------===//
   VASTModuleBuilder(VASTModule *Module, DataLayout *TD, HLSAllocation &Allocation)
     : MinimalDatapathContext(*Module, TD), Builder(*this),
@@ -724,15 +735,104 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
   buildSubModuleOperation(Op, SubMod, Args);
 }
 
+bool VASTModuleBuilder::buildBinaryOperation(BinaryOperator &I) {
+  SmallVector<VASTValPtr, 3> Ops;
+  Ops.push_back(getAsOperandImpl(I.getOperand(0)));
+  Ops.push_back(getAsOperandImpl(I.getOperand(1)));
+
+  // Translate the LLVM instruction opcode to VASTExpr opcode.
+  switch (I.getOpcode()) {
+  case Instruction::Sub:
+    // A - B is equivalent to A + ~(B) + 1
+    Ops[1] = Builder.buildNotExpr(Ops[1]);
+    Ops.push_back(VASTImmediate::True);
+    break;
+  case Instruction::Add:
+    Ops.push_back(VASTImmediate::False);
+    break;
+  case Instruction::Mul:
+  case Instruction::Shl:
+  case Instruction::AShr:
+  case Instruction::LShr:
+  case Instruction::And:
+  case Instruction::Or:
+  case Instruction::Xor:
+    break;
+  default: return false;
+  }
+
+  BasicBlock *ParentBB = I.getParent();
+  VASTSlot *Slot = getLatestSlot(ParentBB);
+  VASTSeqInst *Op
+    = VM->lauchInst(Slot, VASTImmediate::True, Ops.size(), &I, false);
+  for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
+    VASTValPtr V = Ops[i];
+    VASTRegister *Operand = createOperandRegister(Op, I, i, V->getBitWidth());
+    VASTSeqValue *SV = VM->createSeqValue(Operand->getSelector(), i, &I);
+    Op->addSrc(V, i, SV);
+    // Update the operand to the registered version.
+    Ops[i] = SV;
+  }
+
+  // FIXME: Use the latency of the functional unit!
+  unsigned Latency = 1;
+  Slot = advanceToNextSlot(Slot, Latency);
+
+  unsigned ResultSize = getValueSizeInBits(I);
+  VASTValPtr ResultExpr;
+
+  switch (I.getOpcode()) {
+  case Instruction::Sub:
+  case Instruction::Add:
+    ResultExpr = Builder.buildExpr(VASTExpr::dpAdd, Ops, ResultSize);
+    break;
+
+  case Instruction::Mul:
+    ResultExpr = Builder.buildExpr(VASTExpr::dpMul, Ops, ResultSize);
+    break;
+
+  case Instruction::Shl:
+    ResultExpr = Builder.buildExpr(VASTExpr::dpShl, Ops, ResultSize);
+    break;
+  case Instruction::AShr:
+    ResultExpr = Builder.buildExpr(VASTExpr::dpSRA, Ops, ResultSize);
+    break;
+  case Instruction::LShr:
+    ResultExpr = Builder.buildExpr(VASTExpr::dpSRL, Ops, ResultSize);
+    break;
+
+  case Instruction::And:
+    ResultExpr = Builder.buildAndExpr(Ops, ResultSize);
+    break;
+  case Instruction::Or:
+    ResultExpr = Builder.buildOrExpr(Ops, ResultSize);
+    break;
+  case Instruction::Xor:
+    ResultExpr = Builder.buildXorExpr(Ops, ResultSize);
+    break;
+  default: llvm_unreachable("Unexpected opcode!"); return false;
+  }
+
+  // Trim the unused bits.
+  ResultExpr = Builder.buildBitSliceExpr(ResultExpr, ResultSize, 0);
+
+  VASTSeqValue *Result = getOrCreateSeqVal(&I);
+  VM->latchValue(Result, ResultExpr, Slot, VASTImmediate::True, &I, Latency);
+  return true;
+}
+
 void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
+  // Build the sequential operation for the binary operator.
+  if (buildBinaryOperation(I))
+    return;
+
   // Try to build the combinational node.
   if (VASTValPtr V = Builder.visit(I)) {
     indexVASTExpr(&I, V);
     return;
   }
 
-  I.dump();
-
+  // Otherwise we need to intanstiate a submodule.
   VASTSubModule *SubMod = getOrCreateSubModuleFromBinOp(I);
 
   if (SubMod == 0) {
