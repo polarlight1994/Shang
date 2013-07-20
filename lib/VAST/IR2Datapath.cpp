@@ -87,11 +87,9 @@ VASTValPtr DatapathBuilder::visitSelectInst(SelectInst &I) {
                       getValueSizeInBits(I));
 }
 
-VASTValPtr DatapathBuilder::visitICmpInst(ICmpInst &I) {
-  VASTValPtr LHS = getAsOperand(I.getOperand(0)),
-             RHS = getAsOperand(I.getOperand(1));
-
-  switch (I.getPredicate()) {
+VASTValPtr DatapathBuilder::buildICmpExpr(ICmpInst::Predicate Predicate,
+                                          VASTValPtr LHS, VASTValPtr RHS) {
+  switch (Predicate) {
   case CmpInst::ICMP_NE:  return buildNE(LHS, RHS);
   case CmpInst::ICMP_EQ:  return buildEQ(LHS, RHS);
 
@@ -119,10 +117,17 @@ VASTValPtr DatapathBuilder::visitICmpInst(ICmpInst &I) {
   case CmpInst::ICMP_UGE:
     return buildICmpOrEqExpr(VASTExpr::dpUGT, LHS, RHS);
 
-  default: llvm_unreachable("Unexpected ICmp predicate!"); break;
+  default: break;
   }
 
+  llvm_unreachable("Unexpected ICmp predicate!");
   return 0;
+}
+
+VASTValPtr DatapathBuilder::visitICmpInst(ICmpInst &I) {
+  return buildICmpExpr(I.getPredicate(),
+                       getAsOperand(I.getOperand(0)),
+                       getAsOperand(I.getOperand(1)));
 }
 
 VASTValPtr DatapathBuilder::visitBinaryOperator(BinaryOperator &I) {

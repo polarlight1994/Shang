@@ -112,6 +112,9 @@ public:
 
   // Operator visiting functions.
   VASTValPtr visitGEPOperator(GEPOperator &O);
+
+  VASTValPtr buildICmpExpr(ICmpInst::Predicate Predicate,
+                           VASTValPtr LHS, VASTValPtr RHS);
 };
 }
 
