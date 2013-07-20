@@ -46,6 +46,10 @@ static cl::opt<bool>
 EnalbeDualPortRAM("shang-enable-dual-port-ram",
                   cl::desc("Enable dual port ram in the design."),
                   cl::init(true));
+static cl::opt<bool>
+EnalbeBitlevelOpt("shang-enable-bit-level-opt",
+  cl::desc("Enable bit-level optimization."),
+  cl::init(true));
 
 namespace {
 struct VASTModuleBuilder : public MinimalDatapathContext,
@@ -894,12 +898,23 @@ bool VASTModuleBuilder::buildBinaryOperation(BinaryOperator &I) {
     Ops.push_back(VASTImmediate::False);
     break;
   case Instruction::Mul:
+    if (EnalbeBitlevelOpt) {
+      if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(Ops[1]))
+        if (Imm.getAPInt().isPowerOf2() || Imm.isAllZeros())
+          return false;
+    }
+    break;
   case Instruction::Shl:
   case Instruction::AShr:
   case Instruction::LShr:
+    if (EnalbeBitlevelOpt && isa<VASTImmPtr>(Ops[1]))
+      return false;
+    break;
   case Instruction::And:
   case Instruction::Or:
   case Instruction::Xor:
+    if (EnalbeBitlevelOpt && (isa<VASTImmPtr>(Ops[0]) || isa<VASTImmPtr>(Ops[1])))
+      return false;
     break;
   default: return false;
   }
