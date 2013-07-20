@@ -230,6 +230,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void visitIntrinsicInst(IntrinsicInst &I);
 
   void visitBinaryOperator(BinaryOperator &I);
+  void visitICmpInst(ICmpInst &I);
 
   void visitLoadInst(LoadInst &I);
   void visitStoreInst(StoreInst &I);
@@ -250,6 +251,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
                                ArrayRef<VASTValPtr> Args);
   bool buildBinaryOperation(BinaryOperator &I);
+  bool buildICmpOperation(ICmpInst &I);
   //===--------------------------------------------------------------------===//
   VASTModuleBuilder(VASTModule *Module, DataLayout *TD, HLSAllocation &Allocation)
     : MinimalDatapathContext(*Module, TD), Builder(*this),
@@ -733,6 +735,38 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
     = VM->lauchInst(Slot, VASTImmediate::True, Args.size() + 1, Inst, false);
   // Build the logic to lauch the module and read the result.
   buildSubModuleOperation(Op, SubMod, Args);
+}
+
+bool VASTModuleBuilder::buildICmpOperation(ICmpInst &I) {
+  VASTValPtr Ops[] = { getAsOperandImpl(I.getOperand(0)),
+                       getAsOperandImpl(I.getOperand(1)) };
+  BasicBlock *ParentBB = I.getParent();
+  VASTSlot *Slot = getLatestSlot(ParentBB);
+  VASTSeqInst *Op
+    = VM->lauchInst(Slot, VASTImmediate::True, array_lengthof(Ops), &I, false);
+  for (unsigned i = 0, e = array_lengthof(Ops); i != e; ++i) {
+    VASTValPtr V = Ops[i];
+    VASTRegister *Operand = createOperandRegister(Op, I, i, V->getBitWidth());
+    VASTSeqValue *SV = VM->createSeqValue(Operand->getSelector(), i, &I);
+    Op->addSrc(V, i, SV);
+    // Update the operand to the registered version.
+    Ops[i] = SV;
+  }
+  // FIXME: Use the latency of the functional unit!
+  unsigned Latency = 1;
+  Slot = advanceToNextSlot(Slot, Latency);
+
+  VASTSeqValue *Result = getOrCreateSeqVal(&I);
+  VM->latchValue(Result, Builder.buildICmpExpr(I.getPredicate(), Ops[0], Ops[1]),
+                 Slot, VASTImmediate::True, &I, Latency);
+  return true;
+}
+
+void VASTModuleBuilder::visitICmpInst(ICmpInst &I) {
+  if (buildICmpOperation(I))
+    return;
+
+  indexVASTExpr(&I, Builder.visit(I));
 }
 
 bool VASTModuleBuilder::buildBinaryOperation(BinaryOperator &I) {
