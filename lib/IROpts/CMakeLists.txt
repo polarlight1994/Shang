@@ -3,6 +3,7 @@ add_llvm_library(ShangIROpts
   LowerAlloca.cpp
   PromoteGlobalVariables.cpp
   LowerIntrinsic.cpp
+  LowerGetElementPtr.cpp
   HLSInliner.cpp
   GotoExpansion.cpp
   TrivialLoopUnrollPass.cpp

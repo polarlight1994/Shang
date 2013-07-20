@@ -67,7 +67,7 @@ Pass *createTimingScriptGenPass();
 Pass *createSeqLiveVariablesPass();
 Pass *createRegisterSharingPass();
 Pass *createSelectorPipeliningPass();
-Pass *createLowerPseudoPHIsPass();
+Pass *createLowerGetElementPtrPass();
 
 // RTL code generation.
 Pass *createRTLCodeGenPass();
@@ -76,6 +76,7 @@ void initializeShangTTIPass(PassRegistry &Registry);
 void initializeObjectBasedAliasAnalyaisPass(PassRegistry &Registry);
 
 void initializeDatapathHoistingPass(PassRegistry &Registry);
+void initializeLowerGetElementPtrPass(PassRegistry &Registry);
 void initializeFunctionFilterPass(PassRegistry &Registry);
 void initializeHLSInlinerPass(PassRegistry &Registry);
 void initializeGotoExpansionPass(PassRegistry &Registry);
