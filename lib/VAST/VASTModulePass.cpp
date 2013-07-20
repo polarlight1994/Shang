@@ -209,6 +209,9 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     if (Inst) SlotBr->annotateValue(Inst);
   }
 
+  void buildConditionalTransition(BasicBlock *DstBB, VASTSlot *CurSlot,
+                                  VASTValPtr Cnd, TerminatorInst &I);
+
   //===--------------------------------------------------------------------===//
   void visitBasicBlock(BasicBlock *BB);
   void visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd, BasicBlock *CurBB);
@@ -220,9 +223,6 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void visitReturnInst(ReturnInst &I);
   void visitBranchInst(BranchInst &I);
 
-  void buildConditionalTransition(BasicBlock *DstBB, VASTSlot *CurSlot,
-                                       VASTValPtr Cnd, TerminatorInst &I);
-
   void visitSwitchInst(SwitchInst &I);
   void visitUnreachableInst(UnreachableInst &I);
 
@@ -231,6 +231,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   void visitBinaryOperator(BinaryOperator &I);
   void visitICmpInst(ICmpInst &I);
+  void visitGetElementPtrInst(GetElementPtrInst &I);
 
   void visitLoadInst(LoadInst &I);
   void visitStoreInst(StoreInst &I);
@@ -252,6 +253,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
                                ArrayRef<VASTValPtr> Args);
   bool buildBinaryOperation(BinaryOperator &I);
   bool buildICmpOperation(ICmpInst &I);
+  bool buildGEPOperation(GetElementPtrInst &I);
   //===--------------------------------------------------------------------===//
   VASTModuleBuilder(VASTModule *Module, DataLayout *TD, HLSAllocation &Allocation)
     : MinimalDatapathContext(*Module, TD), Builder(*this),
@@ -735,6 +737,113 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
     = VM->lauchInst(Slot, VASTImmediate::True, Args.size() + 1, Inst, false);
   // Build the logic to lauch the module and read the result.
   buildSubModuleOperation(Op, SubMod, Args);
+}
+
+bool VASTModuleBuilder::buildGEPOperation(GetElementPtrInst &I) {
+  VASTValPtr Offset, Ptr = getAsOperandImpl(I.getPointerOperand());
+  // FIXME: All the pointer arithmetic are perform under the precision of
+  // PtrSize, do we need to perform the arithmetic at the max available integer
+  // width and truncate the result?
+  unsigned PtrSize = Ptr->getBitWidth();
+  // Note that the pointer operand may be a vector of pointers. Take the scalar
+  // element which holds a pointer.
+  Type *Ty = I.getPointerOperandType()->getScalarType();
+
+  typedef GEPOperator::op_iterator op_iterator;
+  for (op_iterator OI = I.idx_begin(), E = I.op_end(); OI != E; ++OI) {
+    Value *Idx = *OI;
+    if (StructType *StTy = dyn_cast<StructType>(Ty)) {
+      unsigned Field = cast<ConstantInt>(Idx)->getZExtValue();
+      if (Field) {
+        // N = N + Offset
+        uint64_t Offset
+          = getDataLayout()->getStructLayout(StTy)->getElementOffset(Field);
+        Ptr = Builder.buildExpr(VASTExpr::dpAdd,
+                                Ptr, Builder.getImmediate(Offset, PtrSize),
+                                PtrSize);
+      }
+
+      Ty = StTy->getElementType(Field);
+    } else {
+      Ty = cast<SequentialType>(Ty)->getElementType();
+
+      // If this is a constant subscript, handle it quickly.
+      if (const ConstantInt *CI = dyn_cast<ConstantInt>(Idx)) {
+        if (CI->isZero()) continue;
+        uint64_t Offs = getDataLayout()->getTypeAllocSize(Ty)
+                        * cast<ConstantInt>(CI)->getSExtValue();
+
+        Ptr = Builder.buildExpr(VASTExpr::dpAdd,
+                                Ptr, Builder.getImmediate(Offs, PtrSize),
+                                PtrSize);
+        continue;
+      }
+
+      assert(!Offset && "Unexpected more than one nonconst indices!");
+
+      // N = N + Idx * ElementSize;
+      APInt ElementSize = APInt(PtrSize, getDataLayout()->getTypeAllocSize(Ty));
+      VASTValPtr Offset = getAsOperandImpl(Idx);
+
+      // If the index is smaller or larger than intptr_t, truncate or extend
+      // it.
+      Offset = Builder.buildBitSliceExpr(Offset, PtrSize, 0);
+
+      // If this is a multiply by a power of two, turn it into a shl
+      // immediately.  This is a very common case.
+      if (ElementSize != 1) {
+        if (ElementSize.isPowerOf2()) {
+          unsigned Amt = ElementSize.logBase2();
+          Offset = Builder.buildShiftExpr(VASTExpr::dpShl, Offset,
+                                          Builder.getImmediate(Amt, PtrSize),
+                                          PtrSize);
+        } else {
+          VASTValPtr Scale = Builder.getImmediate(ElementSize.getSExtValue(),
+                                                  PtrSize);
+          Offset = Builder.buildExpr(VASTExpr::dpMul, Offset, Scale, PtrSize);
+        }
+      }
+
+      // Do not need to add Offset to Ptr, we will perform the addition in the
+      // SeqOp.
+      // Ptr = Builder.buildExpr(VASTExpr::dpAdd, Ptr, Offset, PtrSize);
+    }
+  }
+
+  // No need to build the operation if all indices are constants.
+  if (!Offset)
+    return false;
+
+  VASTValPtr Ops[] = { Ptr, Offset };
+
+  BasicBlock *ParentBB = I.getParent();
+  VASTSlot *Slot = getLatestSlot(ParentBB);
+  VASTSeqInst *Op
+    = VM->lauchInst(Slot, VASTImmediate::True, array_lengthof(Ops), &I, false);
+  for (unsigned i = 0, e = array_lengthof(Ops); i != e; ++i) {
+    VASTValPtr V = Ops[i];
+    VASTRegister *Operand = createOperandRegister(Op, I, i, V->getBitWidth());
+    VASTSeqValue *SV = VM->createSeqValue(Operand->getSelector(), i, &I);
+    Op->addSrc(V, i, SV);
+    // Update the operand to the registered version.
+    Ops[i] = SV;
+  }
+  // FIXME: Use the latency of the functional unit!
+  unsigned Latency = 1;
+  Slot = advanceToNextSlot(Slot, Latency);
+
+  VASTSeqValue *Result = getOrCreateSeqVal(&I);
+  VM->latchValue(Result, Builder.buildAddExpr(Ops, getValueSizeInBits(I)),
+                 Slot, VASTImmediate::True, &I, Latency);
+
+  return true;
+}
+
+void VASTModuleBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
+  if (buildGEPOperation(I))
+    return;
+
+  indexVASTExpr(&I, Builder.visit(I));
 }
 
 bool VASTModuleBuilder::buildICmpOperation(ICmpInst &I) {
