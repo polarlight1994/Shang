@@ -529,6 +529,7 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
 
   VASTSeqInst *SeqInst = cast<VASTSeqInst>(U->getSeqOp());
   unsigned Latency = SeqInst->getCyclesFromLaunch();
+  VASTSchedUnit *LaunchU = getLaunchSU(Inst);
   // This is a lowered signle-element- block RAM access.
   if (Latency == 0) {
     assert(isa<StoreInst>(Inst)
@@ -539,12 +540,15 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   }
 
   // Simply build the dependencies from the launch instruction.
-  SmallVectorImpl<VASTSchedUnit*> &SUs = IR2SUMap[Inst];
+  U->addDep(LaunchU, VASTDep::CreateFixTimingConstraint(Latency));
+}
+
+VASTSchedUnit *VASTScheduling::getLaunchSU(Value *V) {
+  ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[V]);
   assert(SUs.size() >= 1 && "Launching SU not found!");
   VASTSchedUnit *LaunchU = SUs.front();
   assert(LaunchU->isLaunch() && "Bad SU type!");
-
-  U->addDep(LaunchU, VASTDep::CreateFixTimingConstraint(Latency));
+  return LaunchU;
 }
 
 VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {

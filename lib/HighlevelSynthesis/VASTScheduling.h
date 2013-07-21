@@ -560,6 +560,7 @@ class VASTScheduling : public VASTModulePass {
   void buildFlowDependencies(VASTSchedUnit *U);
   void buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U);
   VASTSchedUnit *getFlowDepSU(Value *V);
+  VASTSchedUnit *getLaunchSU(Value *V);
 
   void buildControlFlowEdges();
   void preventInfinitUnrolling(Loop *L);
