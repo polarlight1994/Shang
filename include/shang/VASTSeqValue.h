@@ -95,6 +95,7 @@ public:
   bool isTemp() const { return getType() == Temp; }
   bool isStatic() const { return getType() == Static; }
   bool isFUOutput() const { return getType() == FUOutput; }
+  bool isFUInput() const { return getType() == FUInput; }
 
   typedef SmallPtrSet<VASTSeqValue*, 8>::const_iterator def_iterator;
   def_iterator def_begin() const { return Defs.begin(); }
@@ -226,6 +227,7 @@ public:
   bool isTemp() const { return getSelector()->isTemp(); }
   bool isStatic() const { return getSelector()->isStatic(); }
   bool isFUOutput() const { return getSelector()->isFUOutput(); }
+  bool isFUInput() const { return getSelector()->isFUInput(); }
 
   unsigned getDataRegNum() const {
     assert(isTemp() && "Wrong accessor!");
