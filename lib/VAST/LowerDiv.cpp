@@ -77,7 +77,7 @@ VASTValPtr DatapathBuilder::lowerUDiv(BinaryOperator &I) {
   }
 
   // Well, our assumption about we can lower the UDiv is wrong.
-  --SDIVLowered;
+  --UDIVLowered;
   return VASTValPtr();
   return VASTValPtr();
 }
