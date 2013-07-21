@@ -516,14 +516,11 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   VASTSeqInst *SeqInst = cast<VASTSeqInst>(U->getSeqOp());
   unsigned Latency = SeqInst->getCyclesFromLaunch();
   VASTSchedUnit *LaunchU = getLaunchSU(Inst);
-  // This is a lowered single-element- block RAM access.
+
   if (Latency == 0) {
-    assert(isa<StoreInst>(Inst)
-           && isa<GlobalVariable>(cast<StoreInst>(Inst)->getPointerOperand())
-           && "Zero latency latching is not allowed!");
-    llvm_unreachable("Unexpected single-element block RAM access!");
-    buildFlowDependencies(Inst, U);
-    return;
+    assert(isChainingCandidate(Inst) && "Unexpected 0 cycles from launch!");
+    float delay = DF->getDelayFromLaunch(Inst);
+    Latency = std::max<unsigned>(1, ceil(delay));
   }
 
   // Simply build the dependencies from the launch instruction.

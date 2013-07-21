@@ -124,6 +124,21 @@ float Dataflow::getSlackFromLaunch(Instruction *Inst) const {
   return (1.0f - J->second.delay);
 }
 
+float Dataflow::getDelayFromLaunch(Instruction *Inst) const {
+  if (!Inst) return 0;
+
+  FlowDepMapTy::const_iterator I = FlowDeps.find(DataflowInst(Inst, false));
+  if (I == FlowDeps.end())
+    return 0.0f;
+
+  const TimedSrcSet &Srcs = I->second;
+  TimedSrcSet::const_iterator J = Srcs.find(DataflowValue(Inst, true));
+  if (J == Srcs.end())
+    return 0.0f;
+
+  return J->second.delay;
+}
+
 float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const {
   BasicBlock *BB = getIncomingBlock(S, Dst, Src);
 

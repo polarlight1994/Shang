@@ -832,13 +832,15 @@ bool VASTModuleBuilder::buildGEPOperation(GetElementPtrInst &I) {
     // Update the operand to the registered version.
     Ops[i] = SV;
   }
-  // FIXME: Use the latency of the functional unit!
-  unsigned Latency = 1;
-  Slot = advanceToNextSlot(Slot, Latency);
+
+  Slot = advanceToNextSlot(Slot, 1);
 
   VASTSeqValue *Result = getOrCreateSeqVal(&I);
+  // Do not provide latency, we will calculate the latency in timing analysis
+  // and build the correct constraints in scheduling graph.
   VM->latchValue(Result, Builder.buildAddExpr(Ops, getValueSizeInBits(I)),
-                 Slot, VASTImmediate::True, &I, Latency);
+                 Slot, VASTImmediate::True, &I, 0);
+  advanceToNextSlot(Slot);
 
   return true;
 }
@@ -866,12 +868,14 @@ bool VASTModuleBuilder::buildICmpOperation(ICmpInst &I) {
     Ops[i] = SV;
   }
   // FIXME: Use the latency of the functional unit!
-  unsigned Latency = 1;
-  Slot = advanceToNextSlot(Slot, Latency);
+  Slot = advanceToNextSlot(Slot, 1);
 
   VASTSeqValue *Result = getOrCreateSeqVal(&I);
+  // Do not provide latency, we will calculate the latency in timing analysis
+  // and build the correct constraints in scheduling graph.
   VM->latchValue(Result, Builder.buildICmpExpr(I.getPredicate(), Ops[0], Ops[1]),
-                 Slot, VASTImmediate::True, &I, Latency);
+                 Slot, VASTImmediate::True, &I, 0);
+  advanceToNextSlot(Slot);
   return true;
 }
 
@@ -933,8 +937,7 @@ bool VASTModuleBuilder::buildBinaryOperation(BinaryOperator &I) {
   }
 
   // FIXME: Use the latency of the functional unit!
-  unsigned Latency = 1;
-  Slot = advanceToNextSlot(Slot, Latency);
+  Slot = advanceToNextSlot(Slot, 1);
 
   unsigned ResultSize = getValueSizeInBits(I);
   VASTValPtr ResultExpr;
@@ -975,7 +978,10 @@ bool VASTModuleBuilder::buildBinaryOperation(BinaryOperator &I) {
   ResultExpr = Builder.buildBitSliceExpr(ResultExpr, ResultSize, 0);
 
   VASTSeqValue *Result = getOrCreateSeqVal(&I);
-  VM->latchValue(Result, ResultExpr, Slot, VASTImmediate::True, &I, Latency);
+  // Do not provide latency, we will calculate the latency in timing analysis
+  // and build the correct constraints in scheduling graph.
+  VM->latchValue(Result, ResultExpr, Slot, VASTImmediate::True, &I, 0);
+  advanceToNextSlot(Slot);
   return true;
 }
 
