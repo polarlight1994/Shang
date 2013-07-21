@@ -694,8 +694,8 @@ void VASTModule::eraseSeqVal(VASTSeqValue *Val) {
 }
 
 void VASTModule::eraseSeqOp(VASTSeqOp *SeqOp) {
-  assert(SeqOp->getSlot() == 0
-         && "The VASTSeqOp should be erase from its parent slot first!");
+  if (SeqOp->getSlot())
+    SeqOp->removeFromParent();
 
   for (unsigned i = 0, e = SeqOp->num_srcs(); i != e; ++i) {
     VASTLatch U = SeqOp->getSrc(i);

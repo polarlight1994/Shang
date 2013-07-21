@@ -260,7 +260,6 @@ void VASTModule::gc() {
       DEBUG(dbgs() << "Removing SeqOp whose predicate is always false:\n";
       Op->dump(););
 
-      Op->removeFromParent();
       eraseSeqOp(Op);
     }
   }

@@ -206,7 +206,6 @@ void SelectorPipelining::descomposeSeqInst(VASTSeqInst *SeqInst) {
     NewSeqInst->addSrc(VASTValPtr(L), 0, L.getSelector(), L.getDst());
   }
 
-  SeqInst->getSlot()->removeOp(SeqInst);
   VM->eraseSeqOp(SeqInst);
 }
 
