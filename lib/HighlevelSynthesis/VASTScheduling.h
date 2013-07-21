@@ -140,6 +140,8 @@ private:
 
     explicit EdgeBundle(VASTDep E) : Edges(1, E)  {}
 
+    bool isLegalToAddFixTimngEdge(int Latency) const;
+
     void addEdge(VASTDep NewEdge);
     VASTDep getEdge(unsigned II = 0) const;
 

@@ -51,9 +51,24 @@ VASTSchedUnit::VASTSchedUnit(Type T, unsigned InstIdx, BasicBlock *Parent)
   : T(T), Schedule(0), InstIdx(InstIdx), Inst(0), BB(Parent), SeqOp(0)
 {}
 
+bool VASTSchedUnit::EdgeBundle::isLegalToAddFixTimngEdge(int Latency) const {
+  assert(!Edges.empty() && "Unexpected empty bundle!");
+
+  if (Edges.size() > 1)
+    return false;
+
+  VASTDep OldEdge = Edges.back();
+  return OldEdge.getEdgeType() == VASTDep::FixedTiming
+         && OldEdge.getLatency() == Latency;
+}
+
 void VASTSchedUnit::EdgeBundle::addEdge(VASTDep NewEdge) {
- assert(NewEdge.getEdgeType() != VASTDep::FixedTiming
-        && "Fixed timing constraint cannot be added!");
+  if (NewEdge.getEdgeType() == VASTDep::FixedTiming) {
+    assert(isLegalToAddFixTimngEdge(NewEdge.getLatency())
+           && "Fixed timing constraint cannot be added!");
+    return;
+  }
+
   unsigned InsertBefore = 0, Size = Edges.size();
   bool NeedToInsert = true;
 
