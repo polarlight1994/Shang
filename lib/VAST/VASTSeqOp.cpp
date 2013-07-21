@@ -71,6 +71,10 @@ void VASTLatch::removeFromParent() {
     Sel->eraseFanin(*this);
 }
 
+void VASTLatch::eraseOperand() {
+  Op->eraseOperand(No);
+}
+
 //----------------------------------------------------------------------------//
 bool VASTSeqOp::operator <(const VASTSeqOp &RHS) const  {
   // Same predicate?
@@ -115,6 +119,30 @@ void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, VASTSeqValue *Dst) {
 
 void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, VASTSelector *Sel) {
   addSrc(Src, SrcIdx, Sel, 0);
+}
+
+void VASTSeqOp::eraseOperand(unsigned Idx) {
+  // Unlink the use.
+  VASTUse &U = getUseInteranal(Idx);
+  U.unlinkUseFromUser();
+
+  if (VASTSelector *Sel = dyn_cast<VASTSelector>(&U.getUser()))
+    Sel->eraseFanin(getSrc(Idx));
+
+  for (unsigned i = Idx + 1; i < num_srcs(); ++i) {
+    VASTLatch L = getSrc(i);
+    L.removeFromParent();
+    // Create the use at the earlier operand, please note that we are not going
+    // to add the defined SeqVal again, otherwise we are pushing the same SeqVal
+    // more than once in the Defs vector.
+    addSrc(L, i - 1, L.getSelector(), 0);
+    getUseInteranal(i).unlinkUseFromUser();
+  }
+
+  if (getNumDefs() > Idx)
+    Defs.erase(Defs.begin() + Idx);
+
+  --Size;
 }
 
 void VASTSeqOp::print(raw_ostream &OS) const {

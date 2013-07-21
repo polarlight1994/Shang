@@ -235,18 +235,14 @@ void VASTModule::gc() {
 
     if (!V->use_empty()) continue;;
 
-    SmallVector<VASTSeqOp*, 4> DeadOps;
-    typedef VASTSeqValue::fanin_iterator iterator;
-    for (iterator I = V->fanin_begin(), E = V->fanin_end(); I != E; ++I) {
-      VASTLatch U = *I;
-      assert(U.Op->getNumDefs() == 1 && "Bad number of define!");
-      DeadOps.push_back(U.Op);
-    }
+    SmallVector<VASTLatch, 4> DeadOps(V->fanin_begin(), V->fanin_end());
 
     while (!DeadOps.empty()) {
-      VASTSeqOp *Op = DeadOps.pop_back_val();
-      Op->removeFromParent();
-      eraseSeqOp(Op);
+      VASTLatch L = DeadOps.pop_back_val();
+      if (L.Op->getNumDefs() == 1)
+        eraseSeqOp(L.Op);
+      else
+        L.eraseOperand();
     }
 
     eraseSeqVal(V);

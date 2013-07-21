@@ -38,6 +38,7 @@ struct VASTLatch {
   void replaceUsedBy(VASTValPtr V) const;
   void replacePredBy(VASTValPtr V, bool UseSlotActive = true) const;
   void removeFromParent();
+  void eraseOperand();
 
   // Get the destination of the transaction.
   VASTSeqValue *getDst() const;
@@ -75,6 +76,8 @@ class VASTSeqOp : public VASTOperandList, public VASTNode,
   VASTUse &getUseInteranal(unsigned Idx) {
     return getOperand(1 + Idx);
   }
+
+  void eraseOperand(unsigned Idx);
 
   void operator=(const VASTSeqOp &RHS); // DO NOT IMPLEMENT
   VASTSeqOp(const VASTSeqOp &RHS); // DO NOT IMPLEMENT
