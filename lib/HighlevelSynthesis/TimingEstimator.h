@@ -17,6 +17,7 @@
 #include "TimingNetlist.h"
 #include "shang/VASTDatapathNodes.h"
 #include "shang/VASTSeqValue.h"
+#include "shang/Utilities.h"
 
 #include "llvm/Support/ErrorHandling.h"
 
@@ -65,6 +66,8 @@ protected:
     const_src_iterator at = SrcInfo.find(Src);
     return at == SrcInfo.end() ? delay_type() : at->second;
   }
+
+  VASTExpr *getAsUnvisitedExpr(VASTValue *V) const;
 public:
   virtual ~TimingEstimatorBase() {}
 
@@ -97,10 +100,19 @@ public:
                           uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo,
                           DelayAccumulatorTy F) {
     // Do not lookup the source across the SeqValue.
-    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Thu)) {
-      assert(!isa<VASTExpr>(Thu) && "Not SrcInfo from Src find!");
+    if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(Thu)) {
       delay_type D(0.0f);
-      updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(SeqVal, D)));
+      updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(SV, D)));
+
+      if (isChainingCandidate(SV->getLLVMValue()) && SV->num_fanins() == 1) {
+        const VASTLatch &L = SV->getUniqueFanin();
+        accumulateDelayThu<DelayAccumulatorTy>(VASTValPtr(L).get(), Dst, ThuPos,
+                                               DstUB, DstLB, CurInfo, F);
+        accumulateDelayThu<DelayAccumulatorTy>(VASTValPtr(L.getGuard()).get(),
+                                               Dst, ThuPos, DstUB, DstLB,
+                                               CurInfo, F);
+      }
+
       return true;
     }
 
@@ -280,7 +292,7 @@ public:
                                     uint8_t DstUB, uint8_t DstLB,
                                     const SrcEntryTy &DelayFromSrc) {
     delay_type D = DelayFromSrc.second;
-    unsigned FUWidth = Dst->getBitWidth();
+    unsigned FUWidth = std::min(Dst->getBitWidth(), 64u);
     VFUTy *FU = getFUDesc<VFUTy>();
     float Latency = FU->lookupLatency(FUWidth);
     delay_type Inc(Latency);

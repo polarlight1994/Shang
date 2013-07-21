@@ -100,6 +100,13 @@ void TimingNetlist::extractDelay(VASTSelector *Sel, VASTValue *Src,
       delay_type &OldDelay = Set[SeqVal];
       OldDelay = std::max(accumulateSelDelay(Sel, SeqVal, Src, delay_type(0.0f)),
                           OldDelay);
+
+      // Look across the pipeline boundaries of the chaining candidates.
+      if (isChainingCandidate(SeqVal->getLLVMValue()) && SeqVal->num_fanins() == 1) {
+        const VASTLatch &L = SeqVal->getUniqueFanin();
+        extractDelay(Sel, VASTValPtr(L).get(), Set);
+        extractDelay(Sel, VASTValPtr(L.getGuard()).get(), Set);
+      }
     }
 
     return;
@@ -174,6 +181,13 @@ void TimingNetlist::buildTimingPath(VASTValue *Thu, VASTSelector *Dst,
 
       TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][SV];
       OldDelay = std::max(MUXDelay, OldDelay);
+
+      // Look across the pipeline boundaries of the chaining candidates.
+      if (isChainingCandidate(SV->getLLVMValue()) && SV->num_fanins() == 1) {
+        const VASTLatch &L = SV->getUniqueFanin();
+        buildTimingPath(VASTValPtr(L).get(), Dst, MUXDelay);
+        buildTimingPath(VASTValPtr(L.getGuard()).get(), Dst, MUXDelay);
+      }
     }
 
     return;

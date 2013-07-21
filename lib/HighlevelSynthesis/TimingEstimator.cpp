@@ -22,6 +22,13 @@ using namespace llvm;
 TimingEstimatorBase::TimingEstimatorBase(PathDelayInfo &PathDelay, ModelType T)
   : PathDelay(PathDelay), T(T) {}
 
+VASTExpr *TimingEstimatorBase::getAsUnvisitedExpr(VASTValue *V) const {
+  if (hasPathInfo(V))
+    return 0;
+
+  return dyn_cast<VASTExpr>(V);
+}
+
 void TimingEstimatorBase::estimateTimingOnCone(VASTExpr *Root) {
   // The entire tree had been visited or the root is some trivial node..
   if (hasPathInfo(Root)) return;
@@ -52,10 +59,22 @@ void TimingEstimatorBase::estimateTimingOnCone(VASTExpr *Root) {
     VASTValue *ChildNode = It->unwrap().get();
     ++VisitStack.back().second;
 
-    // We had already build the delay information to this node.
-    if (hasPathInfo(ChildNode)) continue;
+    if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(ChildNode)) {
+      if (!isChainingCandidate(SV->getLLVMValue()) || SV->num_fanins() != 1)
+        continue;
 
-    if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode))
+      const VASTLatch &L = SV->getUniqueFanin();
+
+      if (VASTExpr *Expr = getAsUnvisitedExpr(VASTValPtr(L).get()))
+        VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
+
+      if (VASTExpr *Expr = getAsUnvisitedExpr(VASTValPtr(L.getGuard()).get()))
+        VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
+
+      continue;
+    }
+
+    if (VASTExpr *ChildExpr = getAsUnvisitedExpr(ChildNode))
       VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
   }
 }
