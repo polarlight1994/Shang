@@ -448,8 +448,11 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
           || DT->dominates(cast<Instruction>(Src)->getParent(), DstU->getParent()))
          && "Flow dependency should be a dominance edge!");
 
-  float slack = DF->getSlackFromLaunch(dyn_cast<Instruction>(Src));
+  VASTSchedUnit *SrcSU = getFlowDepSU(Src);
+  Instruction *SrcInst = dyn_cast<Instruction>(Src);
+
   if (!isChainingCandidate(Src)) {
+    float slack = DF->getSlackFromLaunch(SrcInst);
     if (IsLaunch) {
       float DelayFromLaunch = 1.0f - slack;
       // TODO: Only set the upperbound to 1 for non-chaining candidate.
@@ -460,12 +463,30 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
       // Try to fold the delay of current pipeline stage to the previous pipeline
       // stage, if the previous pipeline stage has enough slack.
       delay = 0.0f;
-  }
+  } else {
+    bool IsChainingEnableOnEdge = DF->getDelayFromLaunch(SrcInst) <= 1.0f &&
+                                  isChainingCandidate(DstU->getInst());
 
-  // The static register is virtually defined at the entry slot. Because
-  // we only write it when the function exit. Whe we read is the value from
-  // last function execution.
-  VASTSchedUnit *SrcSU = getFlowDepSU(Src);
+    if (IsLaunch) {
+      // Ignore the dependencies from FUInput if Src is not chaining candidate,
+      // we will build the dependencies from the result.
+      if (!IsChainingEnableOnEdge || Src == DstU->getInst())
+        return;
+
+      // We need to build the dependence from launch SU if Src is FUInput.
+      SrcSU = getLaunchSU(Src);
+
+      // Round down the delay for single cycle path from launch to launch to
+      // enable chaining.
+      if (DstU->isLaunch() && delay < 1.0f)
+        delay = 0.0f;  //floor(delay);
+    } else {
+      // We will build the dependency from the launch SU (to launch SU) for
+      // chaining candidates.
+      if (IsChainingEnableOnEdge)
+        return;
+    }
+  }
 
   assert(delay >= 0.0f && "Unexpected negative delay!");
   DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay)));
@@ -521,6 +542,12 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
     assert(isChainingCandidate(Inst) && "Unexpected 0 cycles from launch!");
     float delay = DF->getDelayFromLaunch(Inst);
     Latency = std::max<unsigned>(1, ceil(delay));
+    // Set the correct cycle from Launch now.
+    SeqInst->setCyclesFromLaunch(Latency);
+
+    // Also build the flow dependencies to the latch SU to setup the upper bound
+    // of combination delay in case of (single cycle) chaining.
+    buildFlowDependencies(Inst, U);
   }
 
   // Simply build the dependencies from the launch instruction.
