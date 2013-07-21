@@ -449,16 +449,18 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
          && "Flow dependency should be a dominance edge!");
 
   float slack = DF->getSlackFromLaunch(dyn_cast<Instruction>(Src));
-  if (IsLaunch) {
-    float DelayFromLaunch = 1.0f - slack;
-    // TODO: Only set the upperbound to 1 for non-chaining candidate.
-    delay -= std::max(1.0f, DelayFromLaunch);
-    // Do not produce a negative delay!
-    delay = std::max(0.0f, delay);
-  } else if (slack > delay)
-    // Try to fold the delay of current pipeline stage to the previous pipeline
-    // stage, if the previous pipeline stage has enough slack.
-    delay = 0.0f;
+  if (!isChainingCandidate(Src)) {
+    if (IsLaunch) {
+      float DelayFromLaunch = 1.0f - slack;
+      // TODO: Only set the upperbound to 1 for non-chaining candidate.
+      delay -= std::max(1.0f, DelayFromLaunch);
+      // Do not produce a negative delay!
+      delay = std::max(0.0f, delay);
+    } else if (slack > delay)
+      // Try to fold the delay of current pipeline stage to the previous pipeline
+      // stage, if the previous pipeline stage has enough slack.
+      delay = 0.0f;
+  }
 
   // The static register is virtually defined at the entry slot. Because
   // we only write it when the function exit. Whe we read is the value from
