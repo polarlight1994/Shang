@@ -151,6 +151,22 @@ inline Value *getPointerOperand(Instruction *I) {
 
   return 0;
 }
+
+inline bool isChainingCandidate(const Value *V) {
+  // Do not perform (single-cycle) chaining across load/store or call, which
+  // requires special functional units.
+  // Also do not chain with PHI either, otherwise we will break the SSA form.
+  // At last, do not chain with instruction that do not define any value!
+  if (const Instruction *Inst = dyn_cast_or_null<Instruction>(V))
+    return !(isLoadStore(Inst) || isCall(Inst, false)
+             || isa<PHINode>(Inst) || Inst->isTerminator()
+             || Inst->getOpcode() == Instruction::UDiv
+             || Inst->getOpcode() == Instruction::SDiv
+             || Inst->getOpcode() == Instruction::URem
+             || Inst->getOpcode() == Instruction::SRem);
+
+  return false;
+}
 }
 
 #endif
