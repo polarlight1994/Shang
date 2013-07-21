@@ -479,6 +479,7 @@ public:
     Function &F = VM.getLLVMFunction();
 
     VASTScheduling Scheduler;
+    TimeRegion PassTimer(getPassTimer(&Scheduler));
     AnalysisResolver *AR = new AnalysisResolver(*getResolver());
     Scheduler.setResolver(AR);
     Scheduler.runOnVASTModule(VM);
