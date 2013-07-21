@@ -619,6 +619,12 @@ Value *VASTSeqValue::getLLVMValue() const {
   return V;
 }
 
+const VASTLatch &VASTSeqValue::getUniqueFanin() const {
+  assert(num_fanins() == 1
+         && "Cannot call getUniqueFanin on VASTSeqValue without unique fanin!");
+  return *fanin_begin();
+}
+
 //===----------------------------------------------------------------------===//
 VASTRegister::VASTRegister(VASTSelector *Sel, uint64_t InitVal)
   : VASTNode(vastRegister), InitVal(InitVal), Sel(Sel) {
