@@ -66,7 +66,9 @@ struct GotoExpansion : public ModulePass {
   LLVMContext *Context;
   IntegerType *RetAddrTy;
 
-  GotoExpansion() : ModulePass(ID), Context(0), RetAddrTy(0) {}
+  GotoExpansion() : ModulePass(ID), Context(0), RetAddrTy(0) {
+    initializeGotoExpansionPass(*PassRegistry::getPassRegistry());
+  }
 
   bool runOnModule(Module &M);
   void releaseMemory() {
