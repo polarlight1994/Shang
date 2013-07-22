@@ -724,6 +724,21 @@ static bool replaceIfDifferent(VASTUse &U, VASTValPtr V) {
   return true;
 }
 
+static bool operandMaybeChained(VASTSeqOp *Op) {
+  if (!isChainingCandidate(Op->getValue()))
+    return false;
+
+  if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op))
+    return SeqInst->isLaunch();
+
+  return false;
+}
+
+static VASTSlot *GetUnquineSuccessor(VASTSlot *S) {
+  assert(S->succ_size() == 1 && "Unexpected successor number!");
+  return *S->succ_begin();
+}
+
 void RegisterFolding::run() {
   typedef VASTModule::slot_iterator slot_iterator;
   // Retime the guarding conditions.
@@ -770,11 +785,24 @@ void RegisterFolding::run() {
     replaceIfDifferent(Guard, NewGuard);
 
     VASTSlot *DstSlot = getRetimingSlot(Op);
+    bool OperandMaybeChained = operandMaybeChained(Op);
 
     for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
       VASTLatch L = Op->getSrc(i);
       if (VASTSelector *Sel = L.getSelector()) {
         if (Sel->isTrivialFannin(L)) continue;
+
+        // Replace chained operand.
+        if (OperandMaybeChained) {
+          assert(Sel->isFUInput() && "Unexpected operand type!");
+          VASTSlot *Succ = GetUnquineSuccessor(DstSlot);
+          VASTValPtr CurrentOperand = L;
+          VASTValPtr ChainedOperand = retimeExprPtr(CurrentOperand, Succ);
+          if (CurrentOperand != ChainedOperand) {
+            Builder.replaceAllUseWith(L.getDst(), ChainedOperand);
+            continue;
+          }
+        }
 
         // Retime the fannins of the selectors.
         retimeFannin(L, DstSlot);
