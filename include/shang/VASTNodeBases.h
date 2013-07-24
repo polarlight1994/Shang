@@ -257,6 +257,12 @@ public:
   VASTUse(VASTNode *User, VASTValPtr V = 0);
 
   bool isInvalid() const { return !V; }
+  void reset() {
+    if (isInvalid()) return;
+
+    unlinkUseFromUser();
+    V = VASTValPtr();
+  }
 
   void set(VASTValPtr RHS) {
     assert(!V && "Already using some value!");
