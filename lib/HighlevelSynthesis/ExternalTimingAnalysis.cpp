@@ -145,7 +145,7 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
   void writeTimingExtractionScript(raw_ostream &O, StringRef ResultPath);
   void extractTimingForSelector(raw_ostream &O, VASTSelector *Sel);
   void extractSelectorDelay(raw_ostream &O, VASTSelector *Sel,
-                            VASTValue *From, VASTSlot *S);
+                            VASTValue *From, VASTSeqValue *Guard);
   void extractFUOutputDelay(raw_ostream &O, VASTSelector *Sel);
 
   void buildPathInfoForCone(raw_ostream &O, VASTValue *Root);
@@ -501,18 +501,25 @@ void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTExpr *V) {
 
 void
 ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O, VASTSelector *Sel,
-                                             VASTValue *From, VASTSlot *S) {
-  float *&ptr = DelayMatrix[Sel][From];
+                                             VASTValue *From, VASTSeqValue *Guard) {
+  float *&FIPtr = DelayMatrix[Sel][From];
   // Do not generate the same script twice!
-  if (ptr)
+  if (FIPtr)
     return;
+
+  float *&GuardPtr = DelayMatrix[Sel][Guard];
+  if (GuardPtr) {
+    // Reuse the result of existing script whenever possible.
+    FIPtr = GuardPtr;
+    return;
+  }
 
   O << "set dst " << GetSTACollection(Sel) << '\n';
   // Get the delay from the guarding condition of the fanin as the delay of the
   // fanin.
-  O << "set src " << GetSTACollection(S->getValue()) << '\n';
+  O << "set src " << GetSTACollection(Guard) << '\n';
   unsigned Idx = 0;
-  ptr = allocateDelayRef(Idx);
+  GuardPtr = FIPtr = allocateDelayRef(Idx);
   extractTimingForPath(O, Idx);
   DEBUG(O << "post_message -type info \" selector -> "
           << Sel->getSTAObjectName() << " delay: $delay\"\n");
@@ -545,18 +552,27 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
   for (fanin_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch U = *I;
     VASTValue *FI = VASTValPtr(U).get();
+    VASTSeqValue *Guard = U.getSlot()->getValue();
+    VASTValue *Cnd = VASTValPtr(U.getGuard()).get();
+
+    if (!U.Op->guardedBySlotActive()) {
+      // If the latch is not guarded by slot active, it must be guarded by enable
+      // register.
+      Guard = cast<VASTSeqValue>(Cnd);
+      assert(Guard->isEnable() && "Unexpected guard type!");
+    }
+
     // Visit the cone rooted on the fanin.
     buildPathInfoForCone(O, FI);
-    extractSelectorDelay(O, Sel, FI, U.getSlot());
+    extractSelectorDelay(O, Sel, FI, Guard);
 
-    VASTValue *Cnd = VASTValPtr(U.getGuard()).get();
     // Visit the cone rooted on the guarding condition.
     buildPathInfoForCone(O, Cnd);
-    extractSelectorDelay(O, Sel, Cnd, U.getSlot());
+    extractSelectorDelay(O, Sel, Cnd, Guard);
 
     if (VASTValue *SlotActive = U.getSlotActive().get()) {
       buildPathInfoForCone(O, SlotActive);
-      extractSelectorDelay(O, Sel, SlotActive, U.getSlot());
+      extractSelectorDelay(O, Sel, SlotActive, Guard);
     }
   }
 
