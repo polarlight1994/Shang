@@ -40,8 +40,8 @@ static cl::opt<bool> IgnoreXFanins("shang-selector-ignore-x-fanins",
 //----------------------------------------------------------------------------//
 VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
                            VASTNode *Node)
-  : VASTNode(vastSelector), Parent(Node), BitWidth(BitWidth), T(T),
-    PrintSelModule(false), Guard(this), Fanin(this) {
+  : VASTNode(vastSelector), Parent(Node), BitWidth(BitWidth), T(T), Guard(this),
+    Fanin(this) {
   Contents.Name = Name;
 }
 
@@ -283,82 +283,8 @@ void VASTSelector::addAssignment(VASTSeqOp *Op, unsigned SrcNo) {
   Assigns.push_back(L);
 }
 
-void VASTSelector::printSelectorModule(raw_ostream &O) const {
-  vlang_raw_ostream OS(O);
-
-  if (empty()) return;
-
-  OS << "module shang_" << getName() << "_selector(";
-  OS.module_begin();
-  // Print the input ports.
-  for (unsigned i = 0, e = size(); i < e; ++i) {
-    OS << "input wire" << VASTValue::printBitRange(getBitWidth())
-       << " fi" << i << ",\n";
-    OS << "input wire guard" << i << ",\n";
-  }
-
-  OS << "output wire" << VASTValue::printBitRange(getBitWidth()) << " fo,\n"
-        "output wire guard);\n\n";
-
-  // Build the enalbe.
-  OS << "assign guard = guard0";
-  for (unsigned i = 1, e = size(); i < e; ++i)
-    OS << " | guard" << i;
-  OS << ";\n";
-
-  // Build the data output.
-  OS << "assign fo = ({" << getBitWidth() << "{guard0}} & fi0)";
-  for (unsigned i = 1, e = size(); i < e; ++i)
-    OS << "| ({" << getBitWidth() << "{guard" << i << "}} & fi" << i << ')';
-  OS << ";\n";
-
-  OS.module_end();
-  OS << '\n';
-  OS.flush();
-}
-
-void VASTSelector::instantiateSelector(raw_ostream &OS) const {
-  if (empty()) return;
-
-  // Create the temporary signal.
-  OS << "// Combinational MUX\n";
-
-  OS << "wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
-     << ' ' << getName() << "_selector_wire;\n";
-
-  OS << "wire " << ' ' << getName() << "_selector_guard;\n\n";
-
-  OS << "shang_" << getName() << "_selector " << getName() << "_selector(";
-  // Print the inputs of the mux.
-  for (const_iterator I = begin(), E = end(); I != E; ++I) {
-    const VASTLatch &L = *I;
-    // Ignore the trivial fanins.
-    if (isTrivialFannin(L)) {
-      OS << VASTImmediate::buildLiteral(0, getBitWidth(), false) << ", 1'b0, ";
-      continue;
-    }
-
-    // Print the fanin.
-    OS << VASTValPtr(L);
-    // Print the guarding condition, the combination of SlotActive and the
-    // control-flow guard.
-    OS << ", (" << VASTValPtr(L.getGuard());
-    if (VASTValPtr V = L.getSlotActive())
-      OS << " & " << V;
-    OS << "),\n";
-  }
-
-  OS << getName() << "_selector_wire,\n"
-     << getName() << "_selector_guard);\n";
-}
-
 void VASTSelector::printSelector(raw_ostream &OS) const {
   if (empty()) return;
-
-  if (forcePrintSelModule()) {
-    instantiateSelector(OS);
-    return;
-  }
 
   OS << "// Synthesized MUX\n";
 
@@ -536,7 +462,10 @@ void VASTSelector::buildMux(VASTExprBuilder &Builder, CachedStrashTable &CST) {
   Fanin.set(Builder.buildOrExpr(Fanins, Bitwidth));
 }
 
+void VASTSelector::dropMux() {
   Annotations.clear();
+  Fanin.reset();
+  Guard.reset();
 }
 
 //===----------------------------------------------------------------------===//

@@ -164,6 +164,10 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
   TNL = &getAnalysis<TimingNetlist>();
   STGDist = &getAnalysis<STGDistances>();
 
+  // Clear up all MUX before we perform selector pipelining.
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
+    I->dropMux();
+
   std::vector<VASTSeqInst*> Worklist;
 
   typedef VASTModule::seqop_iterator seqop_iterator;

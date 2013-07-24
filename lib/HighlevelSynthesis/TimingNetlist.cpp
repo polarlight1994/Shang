@@ -144,6 +144,7 @@ INITIALIZE_PASS_BEGIN(TimingNetlist, "shang-timing-netlist",
                       "Preform Timing Estimation on the RTL Netlist",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(SelectorSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
 INITIALIZE_PASS_END(TimingNetlist, "shang-timing-netlist",
                     "Preform Timing Estimation on the RTL Netlist",
@@ -164,6 +165,7 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
   // Perform the control logic synthesis because we need to write the netlist.
   if (TimingModel == TimingNetlist::External) {
     AU.addRequiredID(ControlLogicSynthesisID);
+    AU.addRequiredID(SelectorSynthesisID);
     AU.addRequiredID(DatapathNamerID);
   }
 

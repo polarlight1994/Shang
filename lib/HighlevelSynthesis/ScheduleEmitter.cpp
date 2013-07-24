@@ -150,6 +150,12 @@ ScheduleEmitter::ScheduleEmitter(VASTModule &VM, VASTSchedGraph &G)
     CurrentSlotNum(0) {}
 
 void ScheduleEmitter::clearUp(VASTSlot *S) {
+  // The selectors will become invalid after we regenerate the STG, drop them
+  // now.
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
+    I->dropMux();
+
   typedef VASTSlot::op_iterator op_iterator;
   for (op_iterator I = S->op_begin(); I != S->op_end(); /*++I*/) {
     VASTSeqOp *SeqOp = *I;

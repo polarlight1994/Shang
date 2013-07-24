@@ -48,7 +48,6 @@ private:
   SmallPtrSet<VASTSeqValue*, 8> Defs;
   const uint8_t BitWidth;
   const uint8_t T : 3;
-  bool PrintSelModule : 1;
 
   friend class VASTSeqValue;
   void addUser(VASTSeqValue *V);
@@ -68,9 +67,8 @@ private:
   AnnotationMap Annotations;
 
   void annotateReadSlot(VASTSlot *S, VASTValPtr V);
-  VASTUse Guard, Fanin;
 
-  void instantiateSelector(raw_ostream &OS) const;
+  VASTUse Guard, Fanin;
 
   void printSelector(raw_ostream &OS) const;
   void verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
@@ -83,10 +81,6 @@ public:
 
   VASTNode *getParent() const;
   void setParent(VASTNode *N);
-
-  bool forcePrintSelModule() const { return PrintSelModule; }
-  void setPrintSelModule(bool Print = true) { PrintSelModule = Print; }
-  void printSelectorModule(raw_ostream &OS) const;
 
   const char *getName() const { return Contents.Name; }
   unsigned getBitWidth() const { return BitWidth; }
@@ -126,8 +120,8 @@ public:
   // the same selector.
   bool isTrivialFannin(const VASTLatch &L) const;
 
-  void resetAnnotation();
   void buildMux(VASTExprBuilder &Builder, CachedStrashTable &CST);
+  void dropMux();
 
   bool isSelectorSynthesized() const { return !Guard.isInvalid(); }
 

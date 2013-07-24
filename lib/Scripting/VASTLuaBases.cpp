@@ -429,7 +429,7 @@ VASTModule::~VASTModule() {
   // DIRTY HACK: We need to explicitly release the annotation, otherwise the
   // destructor will visit the deleted nodes.
   for (selector_iterator I = selector_begin(), E = selector_end(); I != E; ++I)
-    I->resetAnnotation();
+    I->dropMux();
 
   // To prevent we releasing deleted uses in the destructor of VASTSlots, we
   // release the slots before all other values.
