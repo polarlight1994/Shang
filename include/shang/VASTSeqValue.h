@@ -27,6 +27,7 @@ class Twine;
 class VASTExprBuilder;
 class VASTSeqValue;
 class STGDistances;
+class CachedStrashTable;
 
 class VASTSelector : public VASTNode, public ilist_node<VASTSelector> {
 public:
@@ -66,6 +67,7 @@ private:
   typedef std::map<VASTHandle, SmallVector<VASTSlot*, 4> > AnnotationMap;
   AnnotationMap Annotations;
 
+  void annotateReadSlot(VASTSlot *S, VASTValPtr V);
   VASTUse Guard, Fanin;
 
   void instantiateSelector(raw_ostream &OS) const;
@@ -120,15 +122,12 @@ public:
   VASTValPtr getGuard() const { return Guard; }
   VASTValPtr getFanin() const { return Fanin; }
 
-  void setGuard(VASTValPtr V) { Guard.set(V); }
-  void setFanin(VASTValPtr V) { Fanin.set(V); }
-
   // Return true if the latched value is X (undefined value) or the SeqVal from
   // the same selector.
   bool isTrivialFannin(const VASTLatch &L) const;
 
-  void annotateReadSlot(VASTSlot *S, VASTValPtr V);
   void resetAnnotation();
+  void buildMux(VASTExprBuilder &Builder, CachedStrashTable &CST);
 
   bool isSelectorSynthesized() const { return !Guard.isInvalid(); }
 
