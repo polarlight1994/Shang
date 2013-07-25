@@ -129,10 +129,10 @@ public:
     Invalid
   };
 private:
-  const Type T;
+  const Type T : 4;
   // TODO: typedef SlotType
-  uint16_t Schedule;
-  uint16_t InstIdx;
+  uint32_t Schedule : 28;
+  uint32_t InstIdx;
 
   // EdgeBundle allow us add/remove edges between VASTSUnit more easily.
   struct EdgeBundle {
@@ -363,9 +363,9 @@ public:
 
   /// getSchedule - Return the schedule of the current Scheduling Unit.
   ///
-  uint16_t getSchedule() const { return Schedule; }
+  uint32_t getSchedule() const { return Schedule; }
 
-  uint16_t getIdx() const { return InstIdx; };
+  uint32_t getIdx() const { return InstIdx; };
 
   void viewNeighbourGraph();
 };
