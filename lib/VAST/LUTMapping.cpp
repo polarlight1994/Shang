@@ -120,7 +120,19 @@ struct LogicNetwork {
     return OBJ;
   }
 
-  Abc_Obj_t *buildNAryAnd(ArrayRef<VASTUse> Ops);
+  template<typename T, typename F>
+  Abc_Obj_t *buildNAryAIG(ArrayRef<T> Ops, F Fn) {
+    Abc_Obj_t *Obj = getOrCreateObj(Ops[0]);
+
+    for (unsigned i = 1; i < Ops.size(); ++i) {
+      Abc_Obj_t *CurObj = getOrCreateObj(Ops[i]);
+      Obj = Fn((Abc_Aig_t *)Ntk->pManFunc, Obj, CurObj);
+      ++NumABCNodeBulit;
+    }
+
+    return Obj;
+  }
+
   bool buildAIG(VASTExpr *E);
   bool buildAIG(VASTValue *Root, std::set<VASTExpr*> &Visited);
   bool buildAIG(DatapathContainer &DP);
@@ -347,46 +359,8 @@ Abc_Obj_t *LogicNetwork::getOrCreateObj(VASTValue *V) {
   return Obj;
 }
 
-Abc_Obj_t *LogicNetwork::buildNAryAnd(ArrayRef<VASTUse> Ops) {
-  Abc_Obj_t *AndObj = getOrCreateObj(Ops[0]);
-
-  for (unsigned i = 1; i < Ops.size(); ++i) {
-    Abc_Obj_t *CurObj = getOrCreateObj(Ops[i]);
-    AndObj = Abc_AigAnd((Abc_Aig_t *)Ntk->pManFunc, AndObj, CurObj);
-    ++NumABCNodeBulit;
-  }
-
-  return AndObj;
-}
-
-bool LogicNetwork::buildAIG(VASTExpr *E) {
-  // Only handle the boolean expressions.
-  if (E->getOpcode() != VASTExpr::dpAnd) return false;
-
-  Nodes.insert(std::make_pair(E, buildNAryAnd(E->getOperands())));
-
-  return true;
-}
-
-VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
-  // Try to look up the VASTValue in the Fanin map.
-  char *Name = Abc_ObjName(Abc_ObjRegular(O));
-
-  VASTValPtr V = ValueNames.lookup(Name);
-  if (V) {
-    if (Abc_ObjIsComplement(O)) V = V.invert();
-
-    return V;
-  }
-
-  // Otherwise this value should be rewritten.
-  AbcObjMapTy::const_iterator at = RewriteMap.find(Abc_ObjRegular(O));
-  assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
-
-  return at->second;
-}
-
-static VASTValPtr ExpandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
+template<typename T>
+static VASTValPtr ExpandSOP(const char *sop, ArrayRef<T> Ops,
                             unsigned Bitwidth, VASTExprBuilder &Builder) {
   unsigned NInput = Ops.size();
   const char *p = sop;
@@ -435,6 +409,34 @@ static VASTValPtr ExpandSOP(const char *sop, ArrayRef<VASTValPtr> Ops,
   return SOP;
 }
 
+bool LogicNetwork::buildAIG(VASTExpr *E) {
+  // Only handle the boolean expressions.
+  if (E->getOpcode() == VASTExpr::dpAnd) {
+    Nodes.insert(std::make_pair(E, buildNAryAIG(E->getOperands(), Abc_AigAnd)));
+    return true;
+  }
+
+  return false;
+}
+
+VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
+  // Try to look up the VASTValue in the Fanin map.
+  char *Name = Abc_ObjName(Abc_ObjRegular(O));
+
+  VASTValPtr V = ValueNames.lookup(Name);
+  if (V) {
+    if (Abc_ObjIsComplement(O)) V = V.invert();
+
+    return V;
+  }
+
+  // Otherwise this value should be rewritten.
+  AbcObjMapTy::const_iterator at = RewriteMap.find(Abc_ObjRegular(O));
+  assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
+
+  return at->second;
+}
+
 VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
   SmallVector<VASTValPtr, 4> Ops;
 
@@ -467,7 +469,7 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
 
   if (ExpandLUT)
     // Expand the SOP back to SOP if user ask to.
-    return ExpandSOP(sop, Ops, Bitwidth, Builder);
+    return ExpandSOP<VASTValPtr>(sop, Ops, Bitwidth, Builder);
 
   // Do not need to build the LUT for a simple invert.
   if (Abc_SopIsInv(sop)) {
@@ -487,7 +489,7 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
   // inverted, hence we need to call ExpandSOP to build them correctly.
   if (Abc_SopIsAndType(sop) || Abc_SopIsOrType(sop)) {
     ++NumSimpleLUTExpand;
-    return ExpandSOP(sop, Ops, Bitwidth, Builder);
+    return ExpandSOP<VASTValPtr>(sop, Ops, Bitwidth, Builder);
   }
 
   // Otherwise simple construct the LUT expression.
@@ -583,7 +585,6 @@ struct LUTMapping : public VASTModulePass {
 };
 }
 
-
 static void ExpandSOP(DatapathContainer &DP, VASTExprBuilder &Builder) {
   std::vector<VASTHandle> Worklist;
 
@@ -603,14 +604,9 @@ static void ExpandSOP(DatapathContainer &DP, VASTExprBuilder &Builder) {
     assert(Expr->getOpcode() == VASTExpr::dpLUT
            && "LUT should not be changed by replacement!");
 
-    SmallVector<VASTValPtr, 8> Operands;
-    // Push the fanin of the LUT into the operand list, do not put the SOP
-    // string which is the last operand.
-    for (unsigned i = 0; i < Expr->size() - 1; ++i)
-      Operands.push_back(Expr->getOperand(i));
-
-    VASTValPtr Expaned
-      = ExpandSOP(Expr->getLUT(), Operands, Expr->getBitWidth(), Builder);
+    ArrayRef<VASTUse> Operands(Expr->op_begin(), Expr->size() - 1);
+    VASTValPtr Expaned = ExpandSOP(Expr->getLUT(), Operands,
+                                   Expr->getBitWidth(), Builder);
     Builder.replaceAllUseWith(Expr, Expaned);
   }
 }
