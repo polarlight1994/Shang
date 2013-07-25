@@ -229,7 +229,7 @@ void VASTSchedUnit::dump() const {
 }
 
 //===----------------------------------------------------------------------===//
-VASTSchedGraph::VASTSchedGraph(Function &F) : F(F) {
+VASTSchedGraph::VASTSchedGraph(Function &F) : F(F), TotalSUs(2) {
   // Create the entry SU.
   SUnits.push_back(new VASTSchedUnit(VASTSchedUnit::Entry, 0, 0));
   // Create the exit SU.
@@ -324,6 +324,7 @@ void VASTSchedGraph::topologicalSortSUs() {
   for (iterator I = begin(), E = end(); I != E; ++I)
     I->InstIdx = Idx++;
 
+  assert(Idx == size() && "Topological sort is not applied to all SU?");
   assert(getEntry()->isEntry() && getExit()->isExit() && "Broken TopSort!");
 }
 

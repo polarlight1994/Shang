@@ -394,6 +394,7 @@ class VASTSchedGraph {
 
   typedef iplist<VASTSchedUnit> SUList;
   SUList SUnits;
+  unsigned TotalSUs;
 
   void topsortCone(VASTSchedUnit *Root, std::set<VASTSchedUnit*> &Visited,
                    BasicBlock *BB);
@@ -414,7 +415,7 @@ public:
   const VASTSchedUnit *getExit() const { return &SUnits.back(); }
 
   VASTSchedUnit *createSUnit(BasicBlock *BB, VASTSchedUnit::Type T) {
-    VASTSchedUnit *U = new VASTSchedUnit(SUnits.size(), BB, T);
+    VASTSchedUnit *U = new VASTSchedUnit(TotalSUs++, BB, T);
     // Insert the newly create SU before the exit.
     SUnits.insert(SUnits.back(), U);
     // Also put the scheduling unit in the BBMap.
@@ -428,8 +429,7 @@ public:
 
   VASTSchedUnit *createSUnit(Instruction *Inst, bool IsLatch, BasicBlock *BB,
                              VASTSeqOp *SeqOp) {
-    VASTSchedUnit *U = new VASTSchedUnit(SUnits.size(), Inst, IsLatch, BB,
-                                         SeqOp);
+    VASTSchedUnit *U = new VASTSchedUnit(TotalSUs++, Inst, IsLatch, BB, SeqOp);
     // Insert the newly create SU before the exit.
     SUnits.insert(SUnits.back(), U);
     // Also put the scheduling unit in the BBMap.
@@ -455,7 +455,7 @@ public:
   const_reverse_iterator rbegin() const { return SUnits.rbegin(); }
   const_reverse_iterator rend() const { return SUnits.rend(); }
 
-  unsigned size() const { return SUnits.size(); }
+  unsigned size() const { return TotalSUs; }
 
   typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator bb_iterator;
   bb_iterator bb_begin() { return BBMap.begin(); }
