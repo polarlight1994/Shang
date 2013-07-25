@@ -110,6 +110,55 @@ struct LogicNetwork {
     return S;
   }
 
+  template<typename T>
+  VASTValPtr expandSOP(const char *sop, ArrayRef<T> Ops, unsigned Bitwidth) {
+    unsigned NInput = Ops.size();
+    const char *p = sop;
+    SmallVector<VASTValPtr, 8> ProductOps, SumOps;
+    bool isComplement = false;
+
+    while (*p) {
+      // Interpret the product.
+      ProductOps.clear();
+      for (unsigned i = 0; i < NInput; ++i) {
+        char c = *p++;
+        switch (c) {
+        default: llvm_unreachable("Unexpected SOP char!");
+        case '-': /*Dont care*/ break;
+        case '1': ProductOps.push_back(Ops[i]); break;
+        case '0':
+          ProductOps.push_back(Builder.buildNotExpr(Ops[i]));
+          break;
+        }
+      }
+
+      // Inputs and outputs are seperated by blank space.
+      assert(*p == ' ' && "Expect the blank space!");
+      ++p;
+
+      // Create the product.
+      // Add the product to the operand list of the sum.
+      SumOps.push_back(Builder.buildAndExpr(ProductOps, Bitwidth));
+
+      // Is the output inverted?
+      char c = *p++;
+      assert((c == '0' || c == '1') && "Unexpected SOP char!");
+      isComplement = (c == '0');
+
+      // Products are separated by new line.
+      assert(*p == '\n' && "Expect the new line!");
+      ++p;
+    }
+
+    // Or the products together to build the SOP (Sum of Product).
+    VASTValPtr SOP = Builder.buildOrExpr(SumOps, Bitwidth);
+
+    if (isComplement) SOP = Builder.buildNotExpr(SOP);
+
+    ++NumLUTExpand;
+    return SOP;
+  }
+
   Abc_Obj_t *getObj(VASTValue *V);
   Abc_Obj_t *getOrCreateObj(VASTValue *V);
   Abc_Obj_t *getOrCreateObj(VASTValPtr V) {
@@ -132,6 +181,20 @@ struct LogicNetwork {
 
     return Obj;
   }
+
+  template<typename F>
+  Abc_Obj_t *buildNAryAIG(ArrayRef<Abc_Obj_t*> Ops, F Fn) {
+    Abc_Obj_t *Obj = Ops[0];
+
+    for (unsigned i = 1; i < Ops.size(); ++i) {
+      Obj = Fn((Abc_Aig_t *)Ntk->pManFunc, Obj, Ops[i]);
+      ++NumABCNodeBulit;
+    }
+
+    return Obj;
+  }
+
+  Abc_Obj_t *buildSOP(const char *sop, ArrayRef<VASTUse> Ops);
 
   bool buildAIG(VASTExpr *E);
   bool buildAIG(VASTValue *Root, std::set<VASTExpr*> &Visited);
@@ -359,12 +422,10 @@ Abc_Obj_t *LogicNetwork::getOrCreateObj(VASTValue *V) {
   return Obj;
 }
 
-template<typename T>
-static VASTValPtr ExpandSOP(const char *sop, ArrayRef<T> Ops,
-                            unsigned Bitwidth, VASTExprBuilder &Builder) {
+Abc_Obj_t *LogicNetwork::buildSOP(const char *sop, ArrayRef<VASTUse> Ops) {
   unsigned NInput = Ops.size();
   const char *p = sop;
-  SmallVector<VASTValPtr, 8> ProductOps, SumOps;
+  SmallVector<Abc_Obj_t*, 8> ProductOps, SumOps;
   bool isComplement = false;
 
   while (*p) {
@@ -375,9 +436,11 @@ static VASTValPtr ExpandSOP(const char *sop, ArrayRef<T> Ops,
       switch (c) {
       default: llvm_unreachable("Unexpected SOP char!");
       case '-': /*Dont care*/ break;
-      case '1': ProductOps.push_back(Ops[i]); break;
+      case '1':
+        ProductOps.push_back(getOrCreateObj(Ops[i]));
+        break;
       case '0':
-        ProductOps.push_back(Builder.buildNotExpr(Ops[i]));
+        ProductOps.push_back(Abc_ObjNot(getOrCreateObj(Ops[i])));
         break;
       }
     }
@@ -388,7 +451,7 @@ static VASTValPtr ExpandSOP(const char *sop, ArrayRef<T> Ops,
 
     // Create the product.
     // Add the product to the operand list of the sum.
-    SumOps.push_back(Builder.buildAndExpr(ProductOps, Bitwidth));
+    SumOps.push_back(buildNAryAIG(ProductOps, Abc_AigAnd));
 
     // Is the output inverted?
     char c = *p++;
@@ -401,11 +464,10 @@ static VASTValPtr ExpandSOP(const char *sop, ArrayRef<T> Ops,
   }
 
   // Or the products together to build the SOP (Sum of Product).
-  VASTValPtr SOP = Builder.buildOrExpr(SumOps, Bitwidth);
+  Abc_Obj_t *SOP = buildNAryAIG(SumOps, Abc_AigOr);
 
-  if (isComplement) SOP = Builder.buildNotExpr(SOP);
+  if (isComplement) SOP = Abc_ObjNot(SOP);
 
-  ++NumLUTExpand;
   return SOP;
 }
 
@@ -413,6 +475,13 @@ bool LogicNetwork::buildAIG(VASTExpr *E) {
   // Only handle the boolean expressions.
   if (E->getOpcode() == VASTExpr::dpAnd) {
     Nodes.insert(std::make_pair(E, buildNAryAIG(E->getOperands(), Abc_AigAnd)));
+    return true;
+  }
+
+  if (E->getOpcode() == VASTExpr::dpLUT) {
+    // Get the operand list excluding the LUT.
+    ArrayRef<VASTUse> Ops(E->op_begin(), E->size() - 1);
+    Nodes.insert(std::make_pair(E, buildSOP(E->getLUT(), Ops)));
     return true;
   }
 
@@ -469,7 +538,7 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
 
   if (ExpandLUT)
     // Expand the SOP back to SOP if user ask to.
-    return ExpandSOP<VASTValPtr>(sop, Ops, Bitwidth, Builder);
+    return expandSOP<VASTValPtr>(sop, Ops, Bitwidth);
 
   // Do not need to build the LUT for a simple invert.
   if (Abc_SopIsInv(sop)) {
@@ -489,7 +558,7 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
   // inverted, hence we need to call ExpandSOP to build them correctly.
   if (Abc_SopIsAndType(sop) || Abc_SopIsOrType(sop)) {
     ++NumSimpleLUTExpand;
-    return ExpandSOP<VASTValPtr>(sop, Ops, Bitwidth, Builder);
+    return expandSOP<VASTValPtr>(sop, Ops, Bitwidth);
   }
 
   // Otherwise simple construct the LUT expression.
@@ -585,42 +654,11 @@ struct LUTMapping : public VASTModulePass {
 };
 }
 
-static void ExpandSOP(DatapathContainer &DP, VASTExprBuilder &Builder) {
-  std::vector<VASTHandle> Worklist;
-
-  typedef DatapathContainer::expr_iterator iterator;
-  for (iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I) {
-    VASTExpr *Expr = I;
-
-    if (I->getOpcode() == VASTExpr::dpLUT) Worklist.push_back(Expr);
-  }
-
-  while (!Worklist.empty()) {
-    VASTExpr *Expr = dyn_cast<VASTExpr>(Worklist.back());
-    Worklist.pop_back();
-
-    if (Expr == 0) continue;
-
-    assert(Expr->getOpcode() == VASTExpr::dpLUT
-           && "LUT should not be changed by replacement!");
-
-    ArrayRef<VASTUse> Operands(Expr->op_begin(), Expr->size() - 1);
-    VASTValPtr Expaned = ExpandSOP(Expr->getLUT(), Operands,
-                                   Expr->getBitWidth(), Builder);
-    Builder.replaceAllUseWith(Expr, Expaned);
-  }
-}
-
 bool LUTMapping::runOnVASTModule(VASTModule &VM) {
   DatapathContainer &DP = VM;
 
   MinimalExprBuilderContext Context(DP);
   VASTExprBuilder Builder(Context);
-
-  ExpandSOP(DP, Builder);
-
-  // DIRTY HACK: Force release the dead expressions.
-  DP.gc();
 
   LogicNetwork Ntk(VM, Builder);
 
