@@ -112,7 +112,15 @@ struct LogicNetwork {
 
   Abc_Obj_t *getObj(VASTValue *V);
   Abc_Obj_t *getOrCreateObj(VASTValue *V);
+  Abc_Obj_t *getOrCreateObj(VASTValPtr V) {
+    Abc_Obj_t *OBJ = getOrCreateObj(V.get());
 
+    if (V.isInverted()) OBJ = Abc_ObjNot(OBJ);
+
+    return OBJ;
+  }
+
+  Abc_Obj_t *buildNAryAnd(ArrayRef<VASTUse> Ops);
   bool buildAIG(VASTExpr *E);
   bool buildAIG(VASTValue *Root, std::set<VASTExpr*> &Visited);
   bool buildAIG(DatapathContainer &DP);
@@ -339,23 +347,23 @@ Abc_Obj_t *LogicNetwork::getOrCreateObj(VASTValue *V) {
   return Obj;
 }
 
+Abc_Obj_t *LogicNetwork::buildNAryAnd(ArrayRef<VASTUse> Ops) {
+  Abc_Obj_t *AndObj = getOrCreateObj(Ops[0]);
+
+  for (unsigned i = 1; i < Ops.size(); ++i) {
+    Abc_Obj_t *CurObj = getOrCreateObj(Ops[i]);
+    AndObj = Abc_AigAnd((Abc_Aig_t *)Ntk->pManFunc, AndObj, CurObj);
+    ++NumABCNodeBulit;
+  }
+
+  return AndObj;
+}
+
 bool LogicNetwork::buildAIG(VASTExpr *E) {
   // Only handle the boolean expressions.
   if (E->getOpcode() != VASTExpr::dpAnd) return false;
 
-  assert(E->size() == 2 && "Bad Operand number!");
-
-  VASTValPtr LHS = E->getOperand(0), RHS = E->getOperand(1);
-  Abc_Obj_t *LHS_OBJ = getOrCreateObj(LHS.get()),
-            *RHS_OBJ = getOrCreateObj(RHS.get());
-
-  if (LHS.isInverted()) LHS_OBJ = Abc_ObjNot(LHS_OBJ);
-  if (RHS.isInverted()) RHS_OBJ = Abc_ObjNot(RHS_OBJ);
-
-  Abc_Obj_t *AndObj = Abc_AigAnd((Abc_Aig_t *)Ntk->pManFunc, LHS_OBJ, RHS_OBJ);
-  Nodes.insert(std::make_pair(E, AndObj));
-
-  ++NumABCNodeBulit;
+  Nodes.insert(std::make_pair(E, buildNAryAnd(E->getOperands())));
 
   return true;
 }
@@ -573,75 +581,8 @@ struct LUTMapping : public VASTModulePass {
 
   bool runOnVASTModule(VASTModule &VM);
 };
-
 }
 
-static unsigned GetSameWidth(VASTValPtr LHS, VASTValPtr RHS) {
-  unsigned BitWidth = LHS->getBitWidth();
-  assert(BitWidth == RHS->getBitWidth() && "Bitwidth not match!");
-  return BitWidth;
-}
-
-static bool BreakDownNAryExpr(VASTExpr *Expr, VASTExprBuilder &Builder) {
-  VASTExpr::Opcode Opcode = Expr->getOpcode();
-
-  if (Opcode != VASTExpr::dpAnd) return false;
-
-  // Already binary expressions no need to break them down.
-  if (Expr->size() <= 2) return false;
-
-  SmallVector<VASTValPtr, 8> Ops;
-  for (unsigned i = 0; i < Expr->size(); ++i)
-    Ops.push_back(Expr->getOperand(i));
-
-  // Construct the expression tree for the NAry expression.
-  while (Ops.size() > 1) {
-    unsigned ResultPos = 0;
-    unsigned OperandPos = 0;
-    unsigned NumOperand = Ops.size();
-    while (OperandPos + 1 < NumOperand) {
-      VASTValPtr LHS = Ops[OperandPos];
-      VASTValPtr RHS = Ops[OperandPos + 1];
-      OperandPos += 2;
-      unsigned ResultWidth = GetSameWidth(LHS, RHS);
-      // Create the BinExpr without optimizations.
-      VASTValPtr BinExpr = Builder.createExpr(Expr->getOpcode(), LHS, RHS,
-                                               ResultWidth);
-
-      Ops[ResultPos++] = BinExpr;
-      ++NumAndExpand;
-    }
-
-    // Move the rest of the operand.
-    while (OperandPos < NumOperand)
-      Ops[ResultPos++] = Ops[OperandPos++];
-
-    // Only preserve the results.
-    Ops.resize(ResultPos);
-  }
-
-  // Replace the original Expr by the broken down Expr.
-  Builder.replaceAllUseWith(Expr, Ops.back());
-  return true;
-}
-
-static void BreakNAryExpr(DatapathContainer &DP, VASTExprBuilder &Builder) {
-  std::vector<VASTHandle> Worklist;
-
-  typedef DatapathContainer::expr_iterator iterator;
-  for (iterator I = DP.expr_begin(), E = DP.expr_end(); I != E; ++I) {
-    VASTExpr *Expr = I;
-
-    if (Expr->getOpcode() == VASTExpr::dpAnd) Worklist.push_back(Expr);
-  }
-
-  while (!Worklist.empty()) {
-    VASTExpr *E = cast<VASTExpr>(Worklist.back());
-    Worklist.pop_back();
-
-    BreakDownNAryExpr(E, Builder);
-  }
-}
 
 static void ExpandSOP(DatapathContainer &DP, VASTExprBuilder &Builder) {
   std::vector<VASTHandle> Worklist;
@@ -681,7 +622,6 @@ bool LUTMapping::runOnVASTModule(VASTModule &VM) {
   VASTExprBuilder Builder(Context);
 
   ExpandSOP(DP, Builder);
-  BreakNAryExpr(DP, Builder);
 
   // DIRTY HACK: Force release the dead expressions.
   DP.gc();
