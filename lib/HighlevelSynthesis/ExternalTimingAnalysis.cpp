@@ -558,8 +558,11 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
     if (!U.Op->guardedBySlotActive()) {
       // If the latch is not guarded by slot active, it must be guarded by enable
       // register.
-      Guard = cast<VASTSeqValue>(Cnd);
-      assert(Guard->isEnable() && "Unexpected guard type!");
+      VASTSeqValue *EnableGuard = cast<VASTSeqValue>(Cnd);
+      assert(EnableGuard->isEnable() && "Unexpected guard type!");
+      // Use the delay from the enable guard as the delay from slot guard.
+      extractSelectorDelay(O, Sel, Guard, EnableGuard);
+      Guard = EnableGuard;
     }
 
     // Visit the cone rooted on the fanin.
