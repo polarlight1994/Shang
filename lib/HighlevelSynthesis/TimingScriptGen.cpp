@@ -267,7 +267,7 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root,
       continue;
 
     // Do not move across the keep nodes.
-    if (SubExpr->getOpcode() != VASTExpr::dpKeep) {
+    if (!SubExpr->isTimingBarrier()) {
       VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
       continue;
     }

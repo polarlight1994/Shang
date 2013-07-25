@@ -159,7 +159,7 @@ bool VASTValue::extractSupportingSeqVal(std::set<VASTSeqValue*> &SeqVals,
     ++VisitStack.back().second;
 
     if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
-      if (IgnoreKeep && ChildExpr->getOpcode() == VASTExpr::dpKeep)
+      if (IgnoreKeep && ChildExpr->isTimingBarrier())
         continue;
 
       // ChildNode has a name means we had already visited it.
@@ -453,6 +453,9 @@ struct DatapathPrinter {
         // expressions, do not print them as their are structural identical
         // expressions and one of them been printed before.
         if (!PrintedNames.insert(Name).second) return;
+
+        if (E->getOpcode() == VASTExpr::dpBarrierKeep)
+          OS << "(* keep *) ";
 
         OS << "wire ";
 

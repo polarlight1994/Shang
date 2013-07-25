@@ -431,7 +431,7 @@ void VASTSelector::buildMux(VASTExprBuilder &Builder, CachedStrashTable &CST) {
       // Simply keep all guarding condition, because they are only 1 bit nodes,
       // and their upper bound is the product of number of slots and number of
       // basic blocks.
-      CurGuard = Builder.buildKeep(CurGuard);
+      CurGuard = Builder.buildBarrier(VASTExpr::dpBarrierKeep, CurGuard);
 
       // The guarding condition itself is not guard, that is, the guarding
       // condition is read whenever the slot register is set. Hence, we should
@@ -450,7 +450,8 @@ void VASTSelector::buildMux(VASTExprBuilder &Builder, CachedStrashTable &CST) {
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
-    GuardedFIVal = Builder.buildKeep(GuardedFIVal);
+    // Do not keep the guarded FI, otherwise the resource usage may be double!
+    GuardedFIVal = Builder.buildBarrier(VASTExpr::dpBarrier, GuardedFIVal);
     Fanins.push_back(GuardedFIVal);
     while (!Slots.empty())
       annotateReadSlot(Slots.pop_back_val(), GuardedFIVal);

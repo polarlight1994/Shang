@@ -329,7 +329,10 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   case dpBitCat:    printBitCat(OS, getOperands());    break;
   case dpBitRepeat: printBitRepeat(OS, getOperands()); break;
 
-  case dpKeep:      getOperand(0).printAsOperand(OS, UB, LB);  break;
+  case dpBarrierKeep:
+  case dpBarrier:
+    getOperand(0).printAsOperand(OS, UB, LB);
+    break;
 
   default: llvm_unreachable("Unknown datapath opcode!"); break;
   }

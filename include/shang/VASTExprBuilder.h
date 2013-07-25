@@ -422,7 +422,7 @@ public:
     return V;
   }
 
-  VASTValPtr buildKeep(VASTValPtr V);
+  VASTValPtr buildBarrier(VASTExpr::Opcode Opc, VASTValPtr V);
 };
 }
 
