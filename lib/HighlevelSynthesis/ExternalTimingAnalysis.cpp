@@ -28,6 +28,7 @@
 
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/system_error.h"
@@ -139,7 +140,7 @@ struct ExternalTimingAnalysis : TimingEstimatorBase {
 
   // Write the project file to perform the timing analysis.
   void writeProjectScript(raw_ostream &O, StringRef NetlistPath,
-                          StringRef ExtractScript) const;
+                          StringRef SDCPath, StringRef ExtractScript) const;
 
   // Write the script to extract the timing analysis results from quartus.
   void writeTimingExtractionScript(raw_ostream &O, StringRef ResultPath);
@@ -321,10 +322,11 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {
   Out.flush();
 }
 
-void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
-                                                StringRef NetlistPath,
-                                                StringRef ExtractScript)
-                                                const {
+void
+ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
+                                           StringRef NetlistPath,
+                                           StringRef SDCPath,
+                                           StringRef ExtractScript) const {
   const char *LUAPath[] = { "TimingAnalysis", "Device" };
   const std::string &DeviceName = getStrValueFromEngine(LUAPath);
 
@@ -336,8 +338,10 @@ void ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
        "set_global_assignment -name TOP_LEVEL_ENTITY " << VM.getName() << "\n"
        "set_global_assignment -name SOURCE_FILE \"";
   O.write_escaped(NetlistPath);
-  O <<"\"\n"
-       //"set_global_assignment -name SDC_FILE @SDC_FILE@\n"
+  O << "\"\n"
+       "set_global_assignment -name SDC_FILE \"";
+  O.write_escaped(SDCPath);
+  O << "\"\n"
        "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
        "set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW\n"
        "set_global_assignment -name TIMEQUEST_REPORT_SCRIPT_INCLUDE_DEFAULT_ANALYSIS OFF\n"
@@ -560,7 +564,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
       // register.
       VASTSeqValue *EnableGuard = cast<VASTSeqValue>(Cnd);
       assert(EnableGuard->isEnable() && "Unexpected guard type!");
-      // Use the delay from the enable guard as the delay from slot guard.
+      // Use the delay from the enable guard as the delay from slot guard. 
       extractSelectorDelay(O, Sel, Guard, EnableGuard);
       Guard = EnableGuard;
     }
@@ -597,11 +601,7 @@ void
 ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
                                                     StringRef ResultPath) {
   // Print the critical path in the datapath to debug the TimingNetlist.
-  O << "create_clock -name \"clk\" -period " << VFUs::Period
-    << "ns [get_ports {clk}]\n"
-       "derive_pll_clocks -create_base_clocks\n"
-       "derive_clock_uncertainty\n"
-       "report_timing -from_clock { clk } -to_clock { clk }"
+  O << "report_timing -from_clock { clk } -to_clock { clk }"
          " -setup -npaths 1 -detail full_path -stdout\n"
   // Open the file and start the array.
        "set JSONFile [open \"";
@@ -686,6 +686,22 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   NetlistO.close();
   errs() << " done. \n";
 
+  // Write the SDC for the project.
+  SmallString<256> SDC(OutputDir);
+  sys::path::append(SDC, VM.getName() + ".sdc");
+  errs() << "Writing '" << SDC << "'... ";
+
+  raw_fd_ostream SDCO(SDC.c_str(), ErrorInfo);
+
+  if (!ErrorInfo.empty())  return exitWithError(SDC);
+
+  SDCO << "create_clock -name \"clk\" -period " << format("%.2fns", VFUs::Period)
+       << " [get_ports {clk}]\n"
+          "derive_pll_clocks -create_base_clocks\n"
+          "derive_clock_uncertainty\n";
+  SDCO.close();
+  errs() << " done. \n";
+
   // Write the project script.
   SmallString<256> PrjTcl(OutputDir);
   sys::path::append(PrjTcl, VM.getName() + ".tcl");
@@ -696,7 +712,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
 
   if (!ErrorInfo.empty())  return exitWithError(PrjTcl);
 
-  writeProjectScript(PrjTclO, Netlist, TimingExtractTcl);
+  writeProjectScript(PrjTclO, Netlist, SDC, TimingExtractTcl);
   PrjTclO.close();
   errs() << " done. \n";
 
