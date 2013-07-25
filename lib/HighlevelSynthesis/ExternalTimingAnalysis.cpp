@@ -344,6 +344,7 @@ ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
   O << "\"\n"
        "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
        "set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW\n"
+       "set_global_assignment -name SYNTH_TIMING_DRIVEN_SYNTHESIS OFF\n"
        "set_global_assignment -name TIMEQUEST_REPORT_SCRIPT_INCLUDE_DEFAULT_ANALYSIS OFF\n"
        "export_assignments\n"
        // Start the processes.
