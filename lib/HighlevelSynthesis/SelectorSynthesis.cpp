@@ -43,6 +43,7 @@ struct SelectorSynthesis : public VASTModulePass {
     AU.addRequired<CachedStrashTable>();
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
+    AU.addPreservedID(STGDistancesID);
   }
 
   bool runOnVASTModule(VASTModule &VM);
