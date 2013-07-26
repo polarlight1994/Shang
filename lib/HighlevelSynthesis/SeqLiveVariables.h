@@ -82,10 +82,6 @@ public:
     ///
     SparseBitVector<> DefKills;
 
-    /// Auxiliary Masks
-    /// Landings - The slots immediately reachable by the define slot.
-    SparseBitVector<> Landings;
-
     void initializeDefSlot(unsigned SlotNum) {
       // Initialize the define slot.
       Defs.set(SlotNum);
@@ -111,9 +107,6 @@ private:
   void handleSlot(VASTSlot *S, PathVector PathFromEntry);
   void handleUse(VASTSeqValue *Def, VASTSlot *UseSlot, PathVector PathFromEntry);
   bool dominates(BasicBlock *BB, VASTSlot *S) const;
-
-  void initializeLandingSlots();
-  void initializeOverlappedSlots();
 
   // The value information for each definitions. Please note that the
   // VASTSeqValue is supposed to be in SSA form.

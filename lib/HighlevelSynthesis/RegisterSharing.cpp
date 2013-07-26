@@ -27,6 +27,8 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SparseBitVector.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/Support/DOTGraphTraits.h"
 #include "llvm/Support/GraphWriter.h"
 #define  DEBUG_TYPE "shang-register-sharing"
@@ -42,7 +44,6 @@ class SeqLiveInterval {
   SparseBitVector<> Defs;
   SparseBitVector<> Alives;
   SparseBitVector<> Kills;
-  SparseBitVector<> DefKills;
 
   typedef SmallPtrSet<SeqLiveInterval*, 8> NodeVecTy;
   // Predecessors and Successors.
@@ -62,14 +63,33 @@ public:
 
   SeqLiveInterval() : Sel(0) { }
 
-  SeqLiveInterval(VASTSelector *Sel, SeqLiveVariables *LVS) : Sel(Sel) {
+  SeqLiveInterval(VASTSelector *Sel) : Sel(Sel) {}
+
+  static void
+  setOverlappedSlots(SparseBitVector<> &LHS, const SparseBitVector<> &RHS,
+                     const std::map<unsigned, SparseBitVector<> > &OverlappedMap) {
+    typedef SparseBitVector<>::iterator iterator;
+    for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I) {
+      unsigned Slot = *I;
+      std::map<unsigned, SparseBitVector<> >::const_iterator
+        At = OverlappedMap.find(Slot);
+      assert(At != OverlappedMap.end() && "Overlapped slots not found!");
+      LHS |= At->second;
+    }
+  }
+
+  void
+  setUpInterval(SeqLiveVariables *LVS,
+                const std::map<unsigned, SparseBitVector<> > &OverlappedMap) {
     typedef VASTSelector::def_iterator iterator;
     for (iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
       const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*I);
-      Defs        |= LV->Defs;
-      Alives      |= LV->Alives;
-      Kills       |= LV->Kills;
-      DefKills    |= LV->DefKills;
+      setOverlappedSlots(Defs, LV->Defs, OverlappedMap);
+      setOverlappedSlots(Alives,  LV->Alives, OverlappedMap);
+      setOverlappedSlots(Kills,  LV->Kills, OverlappedMap);
+
+      setOverlappedSlots(Defs,  LV->DefKills, OverlappedMap);
+      setOverlappedSlots(Kills,  LV->DefKills, OverlappedMap);
     }
   }
 
@@ -110,7 +130,6 @@ public:
     Defs        |= RHS->Defs;
     Alives      |= RHS->Alives;
     Kills       |= RHS->Kills;
-    DefKills    |= RHS->DefKills;
   }
 
   bool compatibleWith(const SeqLiveInterval *RHS) const {
@@ -140,7 +159,10 @@ public:
 
     // Kills and Alives should not intersects.
     // TODO: Ignore the dead slots.
-    if (intersects(Kills, RHS->Kills))
+    if (intersects(Kills, RHS->Alives))
+      return false;
+
+    if (intersects(Alives, RHS->Kills))
       return false;
 
     return true;
@@ -316,12 +338,15 @@ public:
 
   NodeTy *operator[](VASTSelector *N) const { return Nodes.lookup(N); }
 
-  NodeTy *GetOrCreateNode(VASTSelector *Sel, SeqLiveVariables *LVS) {
+  NodeTy *
+  getOrCreateNode(VASTSelector *Sel, SeqLiveVariables *LVS,
+                  const std::map<unsigned, SparseBitVector<> > &OverlappedMap) {
     assert(Sel && "Unexpected null pointer pass to GetOrCreateNode!");
     NodeTy *&Node = Nodes[Sel];
     // Create the node if it not exists yet.
     if (Node == 0) {
-      Node = new NodeTy(Sel, LVS);
+      Node = new NodeTy(Sel);
+      Node->setUpInterval(LVS, OverlappedMap);
       // And insert the node into the graph.
       for (iterator I = begin(), E = end(); I != E; ++I) {
         NodeTy *Other = *I;
@@ -429,6 +454,7 @@ struct RegisterSharing : public VASTModulePass {
   VASTExprBuilder *Builder;
   LICompGraph *G;
   SeqLiveVariables *LVS;
+  std::map<unsigned, SparseBitVector<> > OverlappedMap;
 
   RegisterSharing() : VASTModulePass(ID), VM(0), Builder(0), G(0), LVS(0) {
     initializeRegisterSharingPass(*PassRegistry::getPassRegistry());
@@ -444,6 +470,8 @@ struct RegisterSharing : public VASTModulePass {
     AU.addRequired<SeqLiveVariables>();
     //AU.addPreserved<SeqLiveVariables>();
   }
+
+  void initializeOverlappedSlots();
 
   bool runOnVASTModule(VASTModule &VM);
 
@@ -473,7 +501,45 @@ static bool IsSharingCandidate(VASTSelector *Sel) {
   if (!isa<VASTRegister>(Sel->getParent())) return false;
 
   // Do not share the enable as well.
-  return Sel->isTemp();
+  return Sel->isTemp(); //|| Sel->isFUInput();
+}
+
+// Build the transitive closure of the overlap slots.
+void RegisterSharing::initializeOverlappedSlots() {
+  typedef VASTModule::slot_iterator slot_iterator;
+
+  SmallPtrSet<VASTSlot*, 8> Visited;
+  SmallVector<std::pair<VASTSlot*, VASTSlot::succ_iterator>, 4> WorkStack;
+
+  for (slot_iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
+    VASTSlot *S = I;
+    SparseBitVector<> &Overlapped = OverlappedMap[S->SlotNum];
+    Visited.clear();
+    WorkStack.clear();
+    WorkStack.push_back(std::make_pair(S, S->succ_begin()));
+    while (!WorkStack.empty()) {
+      VASTSlot *Cur = WorkStack.back().first;
+      VASTSlot::succ_iterator ChildIt = WorkStack.back().second;
+
+      if (ChildIt == Cur->succ_end()) {
+        Overlapped.set(Cur->SlotNum);
+        WorkStack.pop_back();
+        continue;
+      }
+
+      VASTSlot::EdgePtr Edge = *ChildIt;
+      ++WorkStack.back().second;
+      VASTSlot *Child = Edge;
+
+      // Skip the children require 1-distance edges to be reached.
+      if (Edge.getDistance()) continue;
+
+      // Do not visit a node twice.
+      if (!Visited.insert(Child)) continue;
+
+      WorkStack.push_back(std::make_pair(Child, Child->succ_begin()));
+    }
+  }
 }
 
 bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
@@ -487,16 +553,20 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   VASTExprBuilder Builder(C);
   this->Builder = &Builder;
 
+  initializeOverlappedSlots();
+
   typedef VASTModule::selector_iterator iterator;
 
   for (iterator I = VM.selector_begin(), IE = VM.selector_end(); I != IE; ++I) {
     VASTSelector *Sel = I;
-    if (IsSharingCandidate(Sel)) G.GetOrCreateNode(Sel, LVS);
+    if (IsSharingCandidate(Sel))
+      G.getOrCreateNode(Sel, LVS, OverlappedMap);
   }
 
   while (performRegisterSharing())
     ;
 
+  OverlappedMap.clear();
   return true;
 }
 

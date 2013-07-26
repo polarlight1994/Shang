@@ -42,8 +42,6 @@ void SeqLiveVariables::VarInfo::print(raw_ostream &OS) const {
   ::dump(Kills, OS);
   OS << "\n  Killed-Defined: ";
   ::dump(DefKills, OS);
-  OS << "\n  Landings: ";
-  ::dump(Landings, OS);
   OS << "\n";
 }
 
@@ -252,9 +250,6 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
     ChildItStack.push_back(STGPath.back()->succ_begin());
   }
 
-  initializeLandingSlots();
-  initializeOverlappedSlots();
-
 #ifndef NDEBUG
   verifyAnalysis();
 #endif
@@ -298,39 +293,6 @@ static void setLandingSlots(VASTSlot *S, SparseBitVector<> &Landings) {
   DEBUG(dbgs() << "Slot #" << S->SlotNum << " landing: ";
   ::dump(Landings, dbgs()));
 }
-
-void SeqLiveVariables::initializeLandingSlots() {
-  // Setup the linding slot map.
-  std::map<unsigned, SparseBitVector<> > LandingMap;
-  typedef VASTModule::slot_iterator slot_iterator;
-  for (slot_iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
-    VASTSlot *S = I;
-    setLandingSlots(S, LandingMap[S->SlotNum]);
-  }
-
-  for (var_iterator I = VarList.begin(), E = VarList.end(); I != E; ++I) {
-    VarInfo *VI = I;
-
-    typedef SparseBitVector<>::iterator iterator;
-    // SparseBitVector<> CurLandings;
-    for (iterator DI = VI->Defs.begin(), DE = VI->Defs.end(); DI != DE; ++DI) {
-      unsigned DefSlotNum = *DI;
-      std::map<unsigned, SparseBitVector<> >::const_iterator
-        at = LandingMap.find(DefSlotNum);
-      assert(at != LandingMap.end() && "Landing information does not exist!");
-      VI->Landings |= at->second;
-    }
-
-    // Trim the unreachable slots from the landing slot.
-    //for (iterator LI = CurLandings.begin(), LE = CurLandings.end();
-    //     LI != LE; ++LI) {
-    //  unsigned Landing = *LI;
-    //  if (VI->isSlotReachable(Landing)) VI->Landings.set(Landing);
-    //}
-  }
-}
-
-void SeqLiveVariables::initializeOverlappedSlots() {}
 
 void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
   std::set<VASTSeqValue*> ReadAtSlot;
