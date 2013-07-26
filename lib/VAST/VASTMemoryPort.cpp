@@ -281,14 +281,31 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
   // Access the block ram.
   OS.always_ff_begin(false);
 
+  // Work around: It looks like that the single element array will be implemented
+  // by block RAM in Stratix IV Platform, and the netlist simulation will
+  // complain 'Port size (2 or 2) does not match connection size (1) for port'.
+  // We can just add an zero to MSB to silence the warning.
+  SmallString<64> AddrConnection;
+
+  {
+    raw_svector_ostream SS(AddrConnection);
+    if (Addr->getBitWidth() == ByteAddrWidth + 1)
+      SS << "{ 1'b0, ";
+
+    SS << Addr->getName() << "_selector_wire"
+      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true);
+
+    if (Addr->getBitWidth() == ByteAddrWidth + 1)
+      SS << " }";
+  }
+
   if (!WData->empty()) {
     // Use the enable of the write data as the write enable.
     OS.if_begin(Twine(WData->getName()) + "_selector_guard");
 
     for (unsigned i = 0; i < BytesPerWord; ++i) {
       OS.if_() << ByteEn->getName() << "_selector_wire[" << i << "]";
-      OS._then() << getArrayName() << "[" << Addr->getName() << "_selector_wire"
-         << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "]"
+      OS._then() << getArrayName() << "[" << AddrConnection << "]"
             "[" << i << "] <= " << WData->getName() << "_selector_wire"
          << VASTValue::printBitRange((i + 1) * 8, i * 8) << ";\n";
 
@@ -299,8 +316,7 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
   }
 
   OS << getRDataName(PortNum) << VASTValue::printBitRange(getDataWidth(), 0, true)
-     << " <= " << getArrayName() << "[" << Addr->getName() << "_selector_wire"
-     << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
+     << " <= " << getArrayName() << "[" << AddrConnection << "];\n";
   OS << getRDataName(PortNum)
      << VASTValue::printBitRange(getDataWidth() + ByteAddrWidth, getDataWidth(), true)
      << " <= " << Addr->getName() << "_selector_wire"
