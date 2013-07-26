@@ -543,7 +543,7 @@ IfFile:close()
     jt.remoteCommand = 'timeout'
     # Use a bigger timeout if we are runing the feedback flow.
     timeout = self.hls_feedback_flow_timeout * ( 3 * self.shang_max_scheduling_iteration ) if self.timing_model == 'external' else self.hls_timeout
-    jt.args = ['%ds' % timeout, self.shang, self.synthesis_config_file, '-stats',
+    jt.args = ['%ds' % timeout, self.shang, self.synthesis_config_file,
                '-timing-model=%(timing_model)s' % self,
                '-shang-enable-mux-pipelining=%(shang_enable_mux_pipelining)s' % self,
                '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self,
@@ -554,7 +554,9 @@ IfFile:close()
                '-shang-max-scheduling-iteration=%(shang_max_scheduling_iteration)s' % self,
                '-shang-dump-intermediate-netlist=%(shang_dump_intermediate_netlist)s' % self,
                '-shang-selector-ignore-trivial-loops=true',
-               '-shang-selector-ignore-x-fanins=true'
+               '-shang-selector-ignore-x-fanins=true',
+                '-stats',
+               '-time-passes'
               ]
 
     print "Submitted", self.getStepDesc()
