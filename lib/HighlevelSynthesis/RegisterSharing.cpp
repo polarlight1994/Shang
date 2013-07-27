@@ -501,7 +501,7 @@ static bool IsSharingCandidate(VASTSelector *Sel) {
   if (!isa<VASTRegister>(Sel->getParent())) return false;
 
   // Do not share the enable as well.
-  return Sel->isTemp(); //|| Sel->isFUInput();
+  return Sel->isTemp() || Sel->isFUInput();
 }
 
 // Build the transitive closure of the overlap slots.
