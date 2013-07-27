@@ -102,7 +102,8 @@ void VASTMemoryBus::addExternalPins(VASTModule *VM) {
 void VASTMemoryBus::addByteEnables(VASTModule *VM, VASTNode *Parent,
                                   unsigned PortNum) {
   VASTSelector *ByteEnable
-    = VM->createSelector(getByteEnName(PortNum), getByteEnWidth(), Parent);
+    = VM->createSelector(getByteEnName(PortNum), getByteEnWidth(), Parent,
+                         VASTSelector::FUInput);
   addFanin(ByteEnable);
   if (isDefault()) VM->addPort(ByteEnable, false);
 }
