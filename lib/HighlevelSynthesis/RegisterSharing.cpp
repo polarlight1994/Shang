@@ -23,6 +23,8 @@
 #include "shang/VASTModulePass.h"
 #include "shang/Passes.h"
 
+#include "llvm/Analysis/Dominators.h"
+
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -42,6 +44,7 @@ typedef std::map<unsigned, SparseBitVector<> > OverlappedMapTy;
 
 namespace llvm {
 class SeqLiveInterval : public ilist_node<SeqLiveInterval> {
+  BasicBlock *DomBlock;
   // The underlying data.
   SmallVector<VASTSelector*, 3> Sels;
   SparseBitVector<> Defs;
@@ -52,7 +55,7 @@ class SeqLiveInterval : public ilist_node<SeqLiveInterval> {
   // Predecessors and Successors.
   NodeVecTy Preds, Succs;
 
-  typedef std::map<const SeqLiveInterval*, int> WeightVecTy;
+  typedef std::map<const SeqLiveInterval*, float> WeightVecTy;
   WeightVecTy SuccWeights;
 
   static bool intersects(const SparseBitVector<> &LHSBits,
@@ -78,7 +81,8 @@ public:
 
   SeqLiveInterval() { }
 
-  SeqLiveInterval(ArrayRef<VASTSelector*> Sels) : Sels(Sels.begin(), Sels.end()) {}
+  SeqLiveInterval(ArrayRef<VASTSelector*> Sels, BasicBlock *DomBlock)
+    : DomBlock(DomBlock), Sels(Sels.begin(), Sels.end()) {}
 
   typedef SmallVectorImpl<VASTSelector*>::iterator sel_iterator;
   sel_iterator begin() { return Sels.begin(); }
@@ -138,10 +142,11 @@ public:
 
   unsigned degree() const { return num_succ() + num_pred(); }
 
-  void merge(const SeqLiveInterval *RHS) {
+  void merge(const SeqLiveInterval *RHS, DominatorTree *DT) {
     Defs        |= RHS->Defs;
     Alives      |= RHS->Alives;
     Kills       |= RHS->Kills;
+    DomBlock = DT->findNearestCommonDominator(DomBlock, RHS->DomBlock);
   }
 
   bool isCompatibleWith(const SeqLiveInterval *RHS) const {
@@ -298,10 +303,22 @@ public:
       unlinkSucc(SuccToUnlink.pop_back_val());
   }
 
+  static bool lt(SeqLiveInterval *Src, SeqLiveInterval *Dst, DominatorTree *DT) {
+    assert(!Src->isTrivial() && !Dst->isTrivial() && "Unexpected trivial node!");
+    if (DT->properlyDominates(Src->DomBlock, Dst->DomBlock))
+      return true;
+
+    if (DT->properlyDominates(Dst->DomBlock, Src->DomBlock))
+      return true;
+
+    return Src < Dst;
+  }
+
   // Make the edge with default weight, we will udate the weight later.
-  static void MakeEdge(SeqLiveInterval *Src, SeqLiveInterval *Dst) {
+  static
+  void MakeEdge(SeqLiveInterval *Src, SeqLiveInterval *Dst, DominatorTree *DT) {
     // Make sure source is earlier than destination.
-    if (!Src->isTrivial() && !Dst->isTrivial() && Src > Dst)
+    if (!Src->isTrivial() && !Dst->isTrivial() && !lt(Src, Dst, DT))
       std::swap(Dst, Src);
 
     Src->Succs.insert(Dst);
@@ -328,27 +345,34 @@ public:
 
 private:
   typedef ilist<NodeTy> NodeVecTy;
+  typedef std::map<VASTSelector*, NodeTy> NodeMapTy;
   // The dummy entry node of the graph.
   NodeTy Entry, Exit;
   // Nodes vector.
   NodeVecTy Nodes;
+  DominatorTree *DT;
 
+  void deleteNode(NodeTy *N) {
+    N->unlink();
+    Nodes.erase(N);
+  }
 public:
-  LICompGraph() : Entry(), Exit() {}
+  LICompGraph(DominatorTree *DT) : Entry(), Exit(), DT(DT) {}
 
   ~LICompGraph() {}
 
   const NodeTy *getEntry() const { return &Entry; }
   const NodeTy *getExit() const { return &Exit; }
 
-  typedef NodeTy::iterator iterator;
+  typedef NodeVecTy::iterator iterator;
 
   // All nodes (except exit node) are successors of the entry node.
-  iterator begin() { return Entry.succ_begin(); }
-  iterator end()   { return Entry.succ_end(); }
+  iterator begin() { return Nodes.begin(); }
+  iterator end()   { return Nodes.end(); }
 
-  bool empty() const { return Entry.succ_empty(); }
-  bool hasMoreThanOneNode() const { return Entry.num_succ() > 1; }
+  bool hasMoreThanOneNode() const {
+    return !Nodes.empty() && &Nodes.front() != &Nodes.back();
+  }
 
   NodeTy *
   getOrCreateNode(VASTSeqInst *SeqInst, SeqLiveVariables *LVS,
@@ -362,55 +386,84 @@ public:
       Sels.push_back(SeqInst->getSrc(i).getSelector());
 
     // Create the node if it not exists yet.
-    NodeTy *Node = new NodeTy(Sels);
+    BasicBlock *DomBlock = cast<Instruction>(SeqInst->getValue())->getParent();
+    NodeTy *Node = new NodeTy(Sels, DomBlock);
     Nodes.push_back(Node);
     Node->setUpInterval(LVS, OverlappedMap);
     // And insert the node into the graph.
-    for (iterator I = begin(), E = end(); I != E; ++I) {
+    for (NodeTy::iterator I = Entry.succ_begin(), E = Entry.succ_begin();
+         I != E; ++I) {
       NodeTy *Other = *I;
 
       // Make edge between compatible nodes.
       if (Node->isCompatibleWith(Other))
-        NodeTy::MakeEdge(Node, Other);
+        NodeTy::MakeEdge(Node, Other, DT);
     }
 
     // There will be always an edge from entry to a node
     // and an edge from node to exit.
-    NodeTy::MakeEdge(&Entry, Node);
-    NodeTy::MakeEdge(Node, &Exit);
+    NodeTy::MakeEdge(&Entry, Node, 0);
+    NodeTy::MakeEdge(Node, &Exit, 0);
 
     return Node;
   }
 
-  void deleteNode(NodeTy *N) {
-    N->unlink();
-    Nodes.erase(N);
+  void merge(NodeTy *From, NodeTy *To) {
+    To->merge(From, DT);
+    deleteNode(From);
   }
 
   void recomputeCompatibility() {
     Entry.dropAllEdges();
     Exit.dropAllEdges();
 
-    typedef NodeVecTy::iterator node_iterator;
-    for (node_iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I)
+    for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I)
       I->dropAllEdges();
 
-    for (node_iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
+    for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
       NodeTy *Node = I;
 
       // And insert the node into the graph.
-      for (iterator I = begin(), E = end(); I != E; ++I) {
+      for (NodeTy::iterator I = Entry.succ_begin(), E = Entry.succ_end(); I != E; ++I) {
         NodeTy *Other = *I;
 
         // Make edge between compatible nodes.
         if (Node->isCompatibleWith(Other))
-          NodeTy::MakeEdge(Node, Other);
+          NodeTy::MakeEdge(Node, Other, DT);
       }
 
       // There will always edge from entry to a node and from node to exit.
-      NodeTy::MakeEdge(&Entry, Node);
-      NodeTy::MakeEdge(Node, &Exit);
+      NodeTy::MakeEdge(&Entry, Node, 0);
+      NodeTy::MakeEdge(Node, &Exit, 0);
     }
+  }
+
+  void verifyTransitive() {
+    // Check a -> b and b -> c implies a -> c;
+    typedef NodeVecTy::iterator node_iterator;
+    for (node_iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
+      NodeTy *Node = I;
+
+      for (NodeTy::iterator SI = Node->succ_begin(), SE = Node->succ_end();
+           SI != SE; ++SI) {
+        NodeTy *Succ = *SI;
+      
+        if (Succ->isTrivial())
+        continue;
+
+        for (NodeTy::iterator SSI = Succ->succ_begin(), SSE = Succ->succ_end();
+             SSI != SSE; ++SSI) {
+          NodeTy *SuccSucc = *SI;
+
+          if (SuccSucc->isTrivial())
+            continue;
+
+          if (!Node->isCompatibleWith(SuccSucc))
+            llvm_unreachable("Compatible graph is not transitive!");
+        }
+      }
+    }
+
   }
 
   template<class CompEdgeWeight>
@@ -478,6 +531,7 @@ struct RegisterSharing : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
+    AU.addRequired<DominatorTree>();
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
 
@@ -499,6 +553,7 @@ struct RegisterSharing : public VASTModulePass {
 
 INITIALIZE_PASS_BEGIN(RegisterSharing, "shang-register-sharing",
                       "Share the registers in the design", false, true)
+  INITIALIZE_PASS_DEPENDENCY(DominatorTree)
   INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
 INITIALIZE_PASS_END(RegisterSharing, "shang-register-sharing",
@@ -560,10 +615,11 @@ void RegisterSharing::initializeOverlappedSlots() {
 }
 
 bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
+  DominatorTree &DT = getAnalysis<DominatorTree>();
   LVS = &getAnalysis<SeqLiveVariables>();
   this->VM = &VM;
 
-  LICompGraph G;
+  LICompGraph G(&DT);
   this->G = &G;
 
   MinimalExprBuilderContext C(VM);
@@ -589,9 +645,15 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
       G.getOrCreateNode(Inst, LVS, OverlappedMap);
     }
   }
+#ifndef NDEBUG
+  G.verifyTransitive();
+#endif
 
-  while (performRegisterSharing())
-    ;
+  while (performRegisterSharing()) {
+#ifndef NDEBUG
+    G.verifyTransitive();
+#endif
+  }
 
   OverlappedMap.clear();
   return true;
@@ -645,18 +707,13 @@ void RegisterSharing::mergeLI(SeqLiveInterval *From, SeqLiveInterval *To) {
   for (unsigned i = 0, e = From->size(); i != e; ++i)
     mergeSelector(To->getSelector(i), From->getSelector(i));
 
-  // Merge the interval.
-  To->merge(From);
-
   // Remove From since it is already merged into others.
-  G->deleteNode(From);
+  G->merge(From, To);
 
   ++NumRegMerge;
 }
 
 void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From) {
-  dbgs() << "Merge " << From->getName() << " to " << To->getName() << '\n';
-
   SmallVector<VASTSeqOp*, 8> DeadOps;
 
   while (!From->def_empty())
@@ -706,7 +763,7 @@ bool RegisterSharing::performRegisterSharing() {
   int MaxNeighborWeight = 1;
 
   for (LICompGraph::iterator I = G->begin(), E = G->end(); I != E; ++I) {
-    SeqLiveInterval *N = *I;
+    SeqLiveInterval *N = I;
     // Ignore the Nodes that has only virtual neighbors.
     if (N->isTrivial()) continue;
 
