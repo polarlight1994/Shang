@@ -15,6 +15,7 @@ add_llvm_library(ShangHLS
   STGDistances.cpp
   SelectorPipelining.cpp
   SelectorSynthesis.cpp
+  CompGraph.cpp
   RegisterSharing.cpp
 )
 

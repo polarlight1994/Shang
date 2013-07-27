@@ -17,6 +17,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "SeqLiveVariables.h"
+#include "CompGraph.h"
 
 #include "shang/VASTExprBuilder.h"
 #include "shang/VASTModule.h"
@@ -43,305 +44,10 @@ STATISTIC(NumRegMerge, "Number of register pairs merged");
 typedef std::map<unsigned, SparseBitVector<> > OverlappedMapTy;
 
 namespace llvm {
-class SeqLiveInterval : public ilist_node<SeqLiveInterval> {
-  BasicBlock *DomBlock;
-  // The underlying data.
-  SmallVector<VASTSelector*, 3> Sels;
-  SparseBitVector<> Defs;
-  SparseBitVector<> Alives;
-  SparseBitVector<> Kills;
-
-  typedef SmallPtrSet<SeqLiveInterval*, 8> NodeVecTy;
-  // Predecessors and Successors.
-  NodeVecTy Preds, Succs;
-
-  typedef std::map<const SeqLiveInterval*, float> WeightVecTy;
-  WeightVecTy SuccWeights;
-
-  static bool intersects(const SparseBitVector<> &LHSBits,
-                         const SparseBitVector<> &RHSBits) {
-    return LHSBits.intersects(RHSBits);
-  }
-
-  static void
-  setOverlappedSlots(SparseBitVector<> &LHS, const SparseBitVector<> &RHS,
-                     const OverlappedMapTy &OverlappedMap) {
-    typedef SparseBitVector<>::iterator iterator;
-    for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I) {
-      unsigned Slot = *I;
-      OverlappedMapTy::const_iterator At = OverlappedMap.find(Slot);
-      assert(At != OverlappedMap.end() && "Overlapped slots not found!");
-      LHS |= At->second;
-    }
-  }
-
-public:
-  static const int HUGE_NEG_VAL = -1000000000;
-  static const int TINY_VAL = 1;
-
-  SeqLiveInterval() { }
-
-  SeqLiveInterval(ArrayRef<VASTSelector*> Sels, BasicBlock *DomBlock)
-    : DomBlock(DomBlock), Sels(Sels.begin(), Sels.end()) {}
-
-  typedef SmallVectorImpl<VASTSelector*>::iterator sel_iterator;
-  sel_iterator begin() { return Sels.begin(); }
-  sel_iterator end() { return Sels.end(); }
-
-  typedef SmallVectorImpl<VASTSelector*>::const_iterator const_sel_iterator;
-  const_sel_iterator begin() const { return Sels.begin(); }
-  const_sel_iterator end() const { return Sels.end(); }
-
-  size_t size() const { return Sels.size(); }
-  VASTSelector *getSelector(unsigned Idx) const { return Sels[Idx]; }
-
-  void
-  setUpInterval(SeqLiveVariables *LVS, const OverlappedMapTy &OverlappedMap) {
-    typedef VASTSelector::def_iterator def_iterator;
-    for (sel_iterator I = begin(), E = end(); I != E; ++I) {
-      VASTSelector *Sel = *I;
-      for (def_iterator SI = Sel->def_begin(), SE = Sel->def_end();
-           SI != SE; ++SI) {
-        const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*SI);
-        setOverlappedSlots(Defs, LV->Defs, OverlappedMap);
-        setOverlappedSlots(Alives,  LV->Alives, OverlappedMap);
-        setOverlappedSlots(Kills,  LV->Kills, OverlappedMap);
-
-        setOverlappedSlots(Defs,  LV->DefKills, OverlappedMap);
-        setOverlappedSlots(Kills,  LV->DefKills, OverlappedMap);
-      }
-    }
-  }
-
-  bool isTrivial() const { return Sels.empty(); }
-
-  void dropAllEdges() {
-    Preds.clear();
-    Succs.clear();
-    SuccWeights.clear();
-  }
-
-  void print(raw_ostream &OS) const {
-    ::dump(Alives, OS);
-  }
-
-  void dump() const { print(dbgs()); }
-
-  //typedef NodeVecTy::iterator iterator;
-  typedef NodeVecTy::const_iterator iterator;
-
-  iterator succ_begin() const { return Succs.begin(); }
-  iterator succ_end()   const { return Succs.end(); }
-  unsigned num_succ()   const { return Succs.size(); }
-  bool     succ_empty() const { return Succs.empty(); }
-
-  iterator pred_begin() const { return Preds.begin(); }
-  iterator pred_end()   const { return Preds.end(); }
-  unsigned num_pred()   const { return Preds.size(); }
-  bool     pred_empty() const { return Preds.empty(); }
-
-  unsigned degree() const { return num_succ() + num_pred(); }
-
-  void merge(const SeqLiveInterval *RHS, DominatorTree *DT) {
-    Defs        |= RHS->Defs;
-    Alives      |= RHS->Alives;
-    Kills       |= RHS->Kills;
-    DomBlock = DT->findNearestCommonDominator(DomBlock, RHS->DomBlock);
-  }
-
-  bool isCompatibleWith(const SeqLiveInterval *RHS) const {
-    if (Sels.size() != RHS->Sels.size())
-      return false;
-
-    // Bitwidth should be the same.
-    for (unsigned i = 0, e = size(); i != e; ++i)
-      if (getSelector(i)->getBitWidth() != RHS->getSelector(i)->getBitWidth())
-        return false;
-
-    // Defines should not intersects.
-    if (intersects(Defs, RHS->Defs))
-      return false;
-
-    // Defines and alives should not intersects.
-    if (intersects(Defs, RHS->Alives))
-      return false;
-
-    if (intersects(Alives, RHS->Defs))
-      return false;
-
-    // Alives should not intersects.
-    if (intersects(Alives, RHS->Alives))
-      return false;
-
-    // Kills should not intersects.
-    // Not need to check the DefKills because they are a part of Defs.
-    if (intersects(Kills, RHS->Kills))
-      return false;
-
-    // Kills and Alives should not intersects.
-    // TODO: Ignore the dead slots.
-    if (intersects(Kills, RHS->Alives))
-      return false;
-
-    if (intersects(Alives, RHS->Kills))
-      return false;
-
-    return true;
-  }
-
-  bool isNeighbor(SeqLiveInterval *RHS) const {
-    return Preds.count(RHS) || Succs.count(RHS);
-  }
-
-  int getWeightTo(const SeqLiveInterval *To) const {
-    return SuccWeights.find(To)->second;
-  }
-
-  int computeNeighborWeight(SeqLiveInterval *RHS = 0) const {
-    int Weight = 0;
-
-    for (iterator I = pred_begin(), E = pred_end(); I != E; ++I) {
-      SeqLiveInterval *NP = *I;
-      if (NP->isTrivial()) continue;
-
-      // RHS is null means we want to compute all neighbor weight, otherwise
-      // means we want to compute the common neighbor weight only.
-      if (RHS == 0 || NP->isNeighbor(RHS)) Weight += NP->getWeightTo(this);
-    }
-
-    for (iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
-      SeqLiveInterval *NS = *I;
-      if (NS->isTrivial()) continue;
-
-      // RHS is null means we want to compute all neighbor weight, otherwise
-      // means we want to compute the common neighbor weight only.
-      if (RHS == 0 || NS->isNeighbor(RHS)) Weight += getWeightTo(NS);
-    }
-
-    if (RHS && isNeighbor(RHS)) {
-      if (Succs.count(RHS)) Weight += getWeightTo(RHS);
-      else                  Weight += RHS->getWeightTo(this);
-    }
-
-    return Weight;
-  }
-
-  // Unlink the Succ from current node.
-  void unlinkSucc(SeqLiveInterval *Succ) {
-    bool deleted = Succs.erase(Succ);
-    assert(deleted && "Succ is not the successor of this!");
-    SuccWeights.erase(Succ);
-
-    // Current node is not the predecessor of succ node too.
-    deleted = Succ->Preds.erase(this);
-    assert(deleted && "this is not the predecessor of succ!");
-    (void) deleted;
-  }
-
-  // Unlink the Pred from current node.
-  void unlinkPred(SeqLiveInterval *Pred) {
-    bool deleted = Preds.erase(Pred);
-    assert(deleted && "Pred is not the predecessor of this!");
-
-    // Current node is not the successor of pred node too.
-    deleted = Pred->Succs.erase(this);
-    Pred->SuccWeights.erase(this);
-    assert(deleted && "this is not the successor of Pred!");
-    (void) deleted;
-  }
-
-  void deleteUncommonEdges(SeqLiveInterval *RHS) {
-    // Delete edge from P and Q that are not connected to their common neighbors.
-    SmallVector<SeqLiveInterval*, 8> ToUnlink;
-    // Unlink preds.
-    for (iterator I = pred_begin(), E = pred_end(); I != E; ++I) {
-      SeqLiveInterval *N = *I;
-      if (!RHS->isNeighbor(N)) ToUnlink.push_back(N);
-    }
-
-    while (!ToUnlink.empty())
-      unlinkPred(ToUnlink.pop_back_val());
-
-    // Unlink succs.
-    for (iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
-      SeqLiveInterval *N = *I;
-      if (!RHS->isNeighbor(N)) ToUnlink.push_back(N);
-    }
-
-    while (!ToUnlink.empty())
-      unlinkSucc(ToUnlink.pop_back_val());
-  }
-
-  void unlink() {
-    while (!succ_empty())
-      unlinkSucc(*succ_begin());
-
-    while (!pred_empty())
-      unlinkPred(*pred_begin());
-  }
-
-  template<typename CompEdgeWeight>
-  void updateEdgeWeight(CompEdgeWeight &C) {
-    SmallVector<SeqLiveInterval*, 8> SuccToUnlink;
-    for (iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
-      SeqLiveInterval *Succ = *I;
-      // Not need to update the weight of the exit edge.
-      if (Succ->isTrivial()) {
-        int Weigth = C(this, Succ);
-        if (Weigth <= HUGE_NEG_VAL) {
-          SuccToUnlink.push_back(Succ);
-          continue;
-        }
-
-        SuccWeights[Succ] = Weigth;
-      } else
-        // Make find longest path prefer to end with exit if possible.
-        SuccWeights[Succ] = TINY_VAL;
-    }
-
-    while (!SuccToUnlink.empty())
-      unlinkSucc(SuccToUnlink.pop_back_val());
-  }
-
-  static bool lt(SeqLiveInterval *Src, SeqLiveInterval *Dst, DominatorTree *DT) {
-    assert(!Src->isTrivial() && !Dst->isTrivial() && "Unexpected trivial node!");
-    if (DT->properlyDominates(Src->DomBlock, Dst->DomBlock))
-      return true;
-
-    if (DT->properlyDominates(Dst->DomBlock, Src->DomBlock))
-      return true;
-
-    return Src < Dst;
-  }
-
-  // Make the edge with default weight, we will udate the weight later.
-  static
-  void MakeEdge(SeqLiveInterval *Src, SeqLiveInterval *Dst, DominatorTree *DT) {
-    // Make sure source is earlier than destination.
-    if (!Src->isTrivial() && !Dst->isTrivial() && !lt(Src, Dst, DT))
-      std::swap(Dst, Src);
-
-    Src->Succs.insert(Dst);
-    Src->SuccWeights.insert(std::make_pair(Dst, TINY_VAL));
-    Dst->Preds.insert(Src);
-  }
-};
-
-template<> struct GraphTraits<SeqLiveInterval*> {
-  typedef SeqLiveInterval NodeType;
-  typedef NodeType::iterator ChildIteratorType;
-  static NodeType *getEntryNode(NodeType* N) { return N; }
-  static inline ChildIteratorType child_begin(NodeType *N) {
-    return N->succ_begin();
-  }
-  static inline ChildIteratorType child_end(NodeType *N) {
-    return N->succ_end();
-  }
-};
 
 class LICompGraph {
 public:
-  typedef SeqLiveInterval NodeTy;
+  typedef CompGraphNode NodeTy;
 
 private:
   typedef ilist<NodeTy> NodeVecTy;
@@ -374,6 +80,37 @@ public:
     return !Nodes.empty() && &Nodes.front() != &Nodes.back();
   }
 
+  static void
+  setOverlappedSlots(SparseBitVector<> &LHS, const SparseBitVector<> &RHS,
+                     const OverlappedMapTy &OverlappedMap) {
+    typedef SparseBitVector<>::iterator iterator;
+    for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I) {
+      unsigned Slot = *I;
+      OverlappedMapTy::const_iterator At = OverlappedMap.find(Slot);
+      assert(At != OverlappedMap.end() && "Overlapped slots not found!");
+      LHS |= At->second;
+    }
+  }
+  
+  static void
+  setUpInterval(CompGraphNode *LI, SeqLiveVariables *LVS,
+                const OverlappedMapTy &OverlappedMap) {
+    typedef VASTSelector::def_iterator def_iterator;
+    for (CompGraphNode::sel_iterator I = LI->begin(), E = LI->end(); I != E; ++I) {
+      VASTSelector *Sel = *I;
+      for (def_iterator SI = Sel->def_begin(), SE = Sel->def_end();
+           SI != SE; ++SI) {
+        const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*SI);
+        setOverlappedSlots(LI->getDefs(), LV->Defs, OverlappedMap);
+        setOverlappedSlots(LI->getAlives(),  LV->Alives, OverlappedMap);
+        setOverlappedSlots(LI->getKills(),  LV->Kills, OverlappedMap);
+
+        setOverlappedSlots(LI->getDefs(),  LV->DefKills, OverlappedMap);
+        setOverlappedSlots(LI->getKills(),  LV->DefKills, OverlappedMap);
+      }
+    }
+  }
+
   NodeTy *
   getOrCreateNode(VASTSeqInst *SeqInst, SeqLiveVariables *LVS,
                   const std::map<unsigned, SparseBitVector<> > &OverlappedMap) {
@@ -387,9 +124,9 @@ public:
 
     // Create the node if it not exists yet.
     BasicBlock *DomBlock = cast<Instruction>(SeqInst->getValue())->getParent();
-    NodeTy *Node = new NodeTy(Sels, DomBlock);
+    NodeTy *Node = new NodeTy(DomBlock, Sels);
     Nodes.push_back(Node);
-    Node->setUpInterval(LVS, OverlappedMap);
+    setUpInterval(Node, LVS, OverlappedMap);
     // And insert the node into the graph.
     for (NodeTy::iterator I = Entry.succ_begin(), E = Entry.succ_begin();
          I != E; ++I) {
@@ -466,19 +203,13 @@ public:
 
   }
 
-  template<class CompEdgeWeight>
-  void updateEdgeWeight(CompEdgeWeight &C) {
-    for (iterator I = begin(), E = end(); I != E; ++I)
-      (*I)->updateEdgeWeight(C);
-  }
-
   // TOOD: Add function: Rebuild graph.
 
   void viewGraph();
 };
 
 template <> struct GraphTraits<LICompGraph*>
-  : public GraphTraits<SeqLiveInterval*> {
+  : public GraphTraits<CompGraphNode*> {
   
   typedef LICompGraph::iterator nodes_iterator;
   static nodes_iterator nodes_begin(LICompGraph *G) {
@@ -546,7 +277,7 @@ struct RegisterSharing : public VASTModulePass {
   bool runOnVASTModule(VASTModule &VM);
 
   bool performRegisterSharing();
-  void mergeLI(SeqLiveInterval *From, SeqLiveInterval *To);
+  void mergeLI(CompGraphNode *From, CompGraphNode *To);
   void mergeSelector(VASTSelector *ToV, VASTSelector *FromV);
 };
 }
@@ -659,7 +390,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   return true;
 }
 
-static void UpdateQ(SeqLiveInterval *N, SeqLiveInterval *P, SeqLiveInterval *&Q,
+static void UpdateQ(CompGraphNode *N, CompGraphNode *P, CompGraphNode *&Q,
                     unsigned &MaxCommon) {
   unsigned NCommonNeighbors = N->computeNeighborWeight(P);
   // 2. Pick a neighbor of p, q, such that the number of common neighbor is
@@ -678,11 +409,11 @@ static void UpdateQ(SeqLiveInterval *N, SeqLiveInterval *P, SeqLiveInterval *&Q,
 }
 
 static
-SeqLiveInterval *GetNeighborToCombine(SeqLiveInterval *P) {
-  typedef SeqLiveInterval::iterator neighbor_it;
+CompGraphNode *GetNeighborToCombine(CompGraphNode *P) {
+  typedef CompGraphNode::iterator neighbor_it;
 
   unsigned MaxCommonNeighbors = 0;
-  SeqLiveInterval *Q = 0;
+  CompGraphNode *Q = 0;
 
   for (neighbor_it I = P->pred_begin(), E = P->pred_end(); I != E; ++I) {
     if ((*I)->isTrivial()) continue;
@@ -701,7 +432,7 @@ SeqLiveInterval *GetNeighborToCombine(SeqLiveInterval *P) {
   return Q;
 }
 
-void RegisterSharing::mergeLI(SeqLiveInterval *From, SeqLiveInterval *To) {
+void RegisterSharing::mergeLI(CompGraphNode *From, CompGraphNode *To) {
   assert(From->isCompatibleWith(To)
          && "Cannot merge incompatible LiveIntervals!");
   for (unsigned i = 0, e = From->size(); i != e; ++i)
@@ -757,13 +488,13 @@ bool RegisterSharing::performRegisterSharing() {
   // G.updateEdgeWeight(UseClosure);
   
   // 1. Pick a node with neighbor weight and call it P.
-  SeqLiveInterval *P = 0;
+  CompGraphNode *P = 0;
   // Initialize MaxNeighborWeight to a nozero value so we can ignore the
   // trivial nodes.
   int MaxNeighborWeight = 1;
 
   for (LICompGraph::iterator I = G->begin(), E = G->end(); I != E; ++I) {
-    SeqLiveInterval *N = I;
+    CompGraphNode *N = I;
     // Ignore the Nodes that has only virtual neighbors.
     if (N->isTrivial()) continue;
 
@@ -786,8 +517,8 @@ bool RegisterSharing::performRegisterSharing() {
 
   // If P has any no-virtual neighbor.
   while (P->degree() > 2) {
-    typedef SeqLiveInterval::iterator neighbor_it;
-    SeqLiveInterval *Q = GetNeighborToCombine(P);
+    typedef CompGraphNode::iterator neighbor_it;
+    CompGraphNode *Q = GetNeighborToCombine(P);
 
     // Combine P and Q and call it P, Make sure Q is before P.
     if (Q >= P) {
