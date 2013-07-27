@@ -23,6 +23,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/GraphTraits.h"
+#include "llvm/ADT/ilist.h"
 #include <map>
 
 namespace llvm {
@@ -247,7 +248,65 @@ template<> struct GraphTraits<CompGraphNode*> {
 };
 
 
+class CompGraphBase {
+public:
+  typedef CompGraphNode NodeTy;
 
+protected:
+  typedef ilist<NodeTy> NodeVecTy;
+  typedef std::map<VASTSelector*, NodeTy> NodeMapTy;
+  // The dummy entry node of the graph.
+  NodeTy Entry, Exit;
+  // Nodes vector.
+  NodeVecTy Nodes;
+  DominatorTree *DT;
+
+  void deleteNode(NodeTy *N) {
+    N->unlink();
+    Nodes.erase(N);
+  }
+public:
+  explicit CompGraphBase(DominatorTree *DT) : Entry(), Exit(), DT(DT) {}
+
+  virtual ~CompGraphBase() {}
+
+  const NodeTy *getEntry() const { return &Entry; }
+  const NodeTy *getExit() const { return &Exit; }
+
+  typedef NodeVecTy::iterator iterator;
+
+  // All nodes (except exit node) are successors of the entry node.
+  iterator begin() { return Nodes.begin(); }
+  iterator end()   { return Nodes.end(); }
+
+  bool hasMoreThanOneNode() const {
+    return !Nodes.empty() && &Nodes.front() != &Nodes.back();
+  }
+
+  void merge(NodeTy *From, NodeTy *To) {
+    To->merge(From, DT);
+    deleteNode(From);
+  }
+
+  void recomputeCompatibility();
+
+  void verifyTransitive();
+
+  void viewGraph();
+};
+
+template <> struct GraphTraits<CompGraphBase*>
+  : public GraphTraits<CompGraphNode*> {
+
+  typedef CompGraphBase::iterator nodes_iterator;
+  static nodes_iterator nodes_begin(CompGraphBase *G) {
+    return G->begin();
+  }
+
+  static nodes_iterator nodes_end(CompGraphBase *G) {
+    return G->end();
+  }
+};
 }
 
 #endif

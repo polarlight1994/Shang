@@ -26,15 +26,9 @@
 
 #include "llvm/Analysis/Dominators.h"
 
-#include "llvm/ADT/ilist_node.h"
-#include "llvm/ADT/GraphTraits.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SparseBitVector.h"
 #include "llvm/ADT/PostOrderIterator.h"
-#include "llvm/Support/DOTGraphTraits.h"
-#include "llvm/Support/GraphWriter.h"
 #define  DEBUG_TYPE "shang-register-sharing"
 #include "llvm/Support/Debug.h"
 
@@ -45,40 +39,9 @@ typedef std::map<unsigned, SparseBitVector<> > OverlappedMapTy;
 
 namespace llvm {
 
-class LICompGraph {
+class LICompGraph : public CompGraphBase {
 public:
-  typedef CompGraphNode NodeTy;
-
-private:
-  typedef ilist<NodeTy> NodeVecTy;
-  typedef std::map<VASTSelector*, NodeTy> NodeMapTy;
-  // The dummy entry node of the graph.
-  NodeTy Entry, Exit;
-  // Nodes vector.
-  NodeVecTy Nodes;
-  DominatorTree *DT;
-
-  void deleteNode(NodeTy *N) {
-    N->unlink();
-    Nodes.erase(N);
-  }
-public:
-  LICompGraph(DominatorTree *DT) : Entry(), Exit(), DT(DT) {}
-
-  ~LICompGraph() {}
-
-  const NodeTy *getEntry() const { return &Entry; }
-  const NodeTy *getExit() const { return &Exit; }
-
-  typedef NodeVecTy::iterator iterator;
-
-  // All nodes (except exit node) are successors of the entry node.
-  iterator begin() { return Nodes.begin(); }
-  iterator end()   { return Nodes.end(); }
-
-  bool hasMoreThanOneNode() const {
-    return !Nodes.empty() && &Nodes.front() != &Nodes.back();
-  }
+  explicit LICompGraph(DominatorTree *DT) : CompGraphBase(DT) {}
 
   static void
   setOverlappedSlots(SparseBitVector<> &LHS, const SparseBitVector<> &RHS,
@@ -145,106 +108,9 @@ public:
     return Node;
   }
 
-  void merge(NodeTy *From, NodeTy *To) {
-    To->merge(From, DT);
-    deleteNode(From);
-  }
-
-  void recomputeCompatibility() {
-    Entry.dropAllEdges();
-    Exit.dropAllEdges();
-
-    for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I)
-      I->dropAllEdges();
-
-    for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
-      NodeTy *Node = I;
-
-      // And insert the node into the graph.
-      for (NodeTy::iterator I = Entry.succ_begin(), E = Entry.succ_end(); I != E; ++I) {
-        NodeTy *Other = *I;
-
-        // Make edge between compatible nodes.
-        if (Node->isCompatibleWith(Other))
-          NodeTy::MakeEdge(Node, Other, DT);
-      }
-
-      // There will always edge from entry to a node and from node to exit.
-      NodeTy::MakeEdge(&Entry, Node, 0);
-      NodeTy::MakeEdge(Node, &Exit, 0);
-    }
-  }
-
-  void verifyTransitive() {
-    // Check a -> b and b -> c implies a -> c;
-    typedef NodeVecTy::iterator node_iterator;
-    for (node_iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
-      NodeTy *Node = I;
-
-      for (NodeTy::iterator SI = Node->succ_begin(), SE = Node->succ_end();
-           SI != SE; ++SI) {
-        NodeTy *Succ = *SI;
-      
-        if (Succ->isTrivial())
-        continue;
-
-        for (NodeTy::iterator SSI = Succ->succ_begin(), SSE = Succ->succ_end();
-             SSI != SSE; ++SSI) {
-          NodeTy *SuccSucc = *SI;
-
-          if (SuccSucc->isTrivial())
-            continue;
-
-          if (!Node->isCompatibleWith(SuccSucc))
-            llvm_unreachable("Compatible graph is not transitive!");
-        }
-      }
-    }
-
-  }
-
   // TOOD: Add function: Rebuild graph.
 
-  void viewGraph();
 };
-
-template <> struct GraphTraits<LICompGraph*>
-  : public GraphTraits<CompGraphNode*> {
-  
-  typedef LICompGraph::iterator nodes_iterator;
-  static nodes_iterator nodes_begin(LICompGraph *G) {
-    return G->begin();
-  }
-
-  static nodes_iterator nodes_end(LICompGraph *G) {
-    return G->end();
-  }
-};
-
-template<> struct DOTGraphTraits<LICompGraph*> : public DefaultDOTGraphTraits{
-  typedef LICompGraph GraphTy;
-  typedef GraphTy::NodeTy NodeTy;
-  typedef NodeTy::iterator NodeIterator;
-
-  DOTGraphTraits(bool isSimple=false) : DefaultDOTGraphTraits(isSimple) {}
-
-  static std::string getEdgeSourceLabel(const NodeTy *Node,NodeIterator I){
-    return itostr(Node->getWeightTo(*I));
-  }
-
-  std::string getNodeLabel(const NodeTy *Node, const GraphTy *Graph) {
-    return Node->isTrivial() ? "<null>" : "node";
-  }
-
-  static std::string getNodeAttributes(const NodeTy *Node,
-                                       const GraphTy *Graph) {
-    return "shape=Mrecord";
-  }
-};
-}
-
-void LICompGraph::viewGraph() {
-  ViewGraph(this, "CompatibilityGraph");
 }
 
 namespace {
