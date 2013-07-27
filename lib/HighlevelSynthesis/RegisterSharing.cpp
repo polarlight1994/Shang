@@ -23,6 +23,7 @@
 #include "shang/VASTModulePass.h"
 #include "shang/Passes.h"
 
+#include "llvm/ADT/ilist_node.h"
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
@@ -37,10 +38,12 @@
 using namespace llvm;
 STATISTIC(NumRegMerge, "Number of register pairs merged");
 
+typedef std::map<unsigned, SparseBitVector<> > OverlappedMapTy;
+
 namespace llvm {
-class SeqLiveInterval {
+class SeqLiveInterval : public ilist_node<SeqLiveInterval> {
   // The underlying data.
-  VASTSelector *Sel;
+  SmallVector<VASTSelector*, 3> Sels;
   SparseBitVector<> Defs;
   SparseBitVector<> Alives;
   SparseBitVector<> Kills;
@@ -52,58 +55,67 @@ class SeqLiveInterval {
   typedef std::map<const SeqLiveInterval*, int> WeightVecTy;
   WeightVecTy SuccWeights;
 
-  bool
-  intersects(const SparseBitVector<> &LHSBits, const SparseBitVector<> &RHSBits) const {
+  static bool intersects(const SparseBitVector<> &LHSBits,
+                         const SparseBitVector<> &RHSBits) {
     return LHSBits.intersects(RHSBits);
+  }
+
+  static void
+  setOverlappedSlots(SparseBitVector<> &LHS, const SparseBitVector<> &RHS,
+                     const OverlappedMapTy &OverlappedMap) {
+    typedef SparseBitVector<>::iterator iterator;
+    for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I) {
+      unsigned Slot = *I;
+      OverlappedMapTy::const_iterator At = OverlappedMap.find(Slot);
+      assert(At != OverlappedMap.end() && "Overlapped slots not found!");
+      LHS |= At->second;
+    }
   }
 
 public:
   static const int HUGE_NEG_VAL = -1000000000;
   static const int TINY_VAL = 1;
 
-  SeqLiveInterval() : Sel(0) { }
+  SeqLiveInterval() { }
 
-  SeqLiveInterval(VASTSelector *Sel) : Sel(Sel) {}
+  SeqLiveInterval(ArrayRef<VASTSelector*> Sels) : Sels(Sels.begin(), Sels.end()) {}
 
-  static void
-  setOverlappedSlots(SparseBitVector<> &LHS, const SparseBitVector<> &RHS,
-                     const std::map<unsigned, SparseBitVector<> > &OverlappedMap) {
-    typedef SparseBitVector<>::iterator iterator;
-    for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I) {
-      unsigned Slot = *I;
-      std::map<unsigned, SparseBitVector<> >::const_iterator
-        At = OverlappedMap.find(Slot);
-      assert(At != OverlappedMap.end() && "Overlapped slots not found!");
-      LHS |= At->second;
-    }
-  }
+  typedef SmallVectorImpl<VASTSelector*>::iterator sel_iterator;
+  sel_iterator begin() { return Sels.begin(); }
+  sel_iterator end() { return Sels.end(); }
+
+  typedef SmallVectorImpl<VASTSelector*>::const_iterator const_sel_iterator;
+  const_sel_iterator begin() const { return Sels.begin(); }
+  const_sel_iterator end() const { return Sels.end(); }
+
+  size_t size() const { return Sels.size(); }
+  VASTSelector *getSelector(unsigned Idx) const { return Sels[Idx]; }
 
   void
-  setUpInterval(SeqLiveVariables *LVS,
-                const std::map<unsigned, SparseBitVector<> > &OverlappedMap) {
-    typedef VASTSelector::def_iterator iterator;
-    for (iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
-      const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*I);
-      setOverlappedSlots(Defs, LV->Defs, OverlappedMap);
-      setOverlappedSlots(Alives,  LV->Alives, OverlappedMap);
-      setOverlappedSlots(Kills,  LV->Kills, OverlappedMap);
+  setUpInterval(SeqLiveVariables *LVS, const OverlappedMapTy &OverlappedMap) {
+    typedef VASTSelector::def_iterator def_iterator;
+    for (sel_iterator I = begin(), E = end(); I != E; ++I) {
+      VASTSelector *Sel = *I;
+      for (def_iterator SI = Sel->def_begin(), SE = Sel->def_end();
+           SI != SE; ++SI) {
+        const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*SI);
+        setOverlappedSlots(Defs, LV->Defs, OverlappedMap);
+        setOverlappedSlots(Alives,  LV->Alives, OverlappedMap);
+        setOverlappedSlots(Kills,  LV->Kills, OverlappedMap);
 
-      setOverlappedSlots(Defs,  LV->DefKills, OverlappedMap);
-      setOverlappedSlots(Kills,  LV->DefKills, OverlappedMap);
+        setOverlappedSlots(Defs,  LV->DefKills, OverlappedMap);
+        setOverlappedSlots(Kills,  LV->DefKills, OverlappedMap);
+      }
     }
   }
 
-  bool isTrivial() const { return Sel == 0; }
+  bool isTrivial() const { return Sels.empty(); }
 
   void dropAllEdges() {
     Preds.clear();
     Succs.clear();
     SuccWeights.clear();
   }
-
-  VASTSelector *get() const { return Sel; }
-  VASTSelector *operator*() const { return get(); }
-  VASTSelector *operator->() const { return get(); }
 
   void print(raw_ostream &OS) const {
     ::dump(Alives, OS);
@@ -132,10 +144,14 @@ public:
     Kills       |= RHS->Kills;
   }
 
-  bool compatibleWith(const SeqLiveInterval *RHS) const {
-    // Bitwidth should be the same.
-    if (Sel->getBitWidth() != RHS->Sel->getBitWidth())
+  bool isCompatibleWith(const SeqLiveInterval *RHS) const {
+    if (Sels.size() != RHS->Sels.size())
       return false;
+
+    // Bitwidth should be the same.
+    for (unsigned i = 0, e = size(); i != e; ++i)
+      if (getSelector(i)->getBitWidth() != RHS->getSelector(i)->getBitWidth())
+        return false;
 
     // Defines should not intersects.
     if (intersects(Defs, RHS->Defs))
@@ -265,8 +281,8 @@ public:
     for (iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
       SeqLiveInterval *Succ = *I;
       // Not need to update the weight of the exit edge.
-      if (Succ->get()) {
-        int Weigth = C(this->get(), Succ->get());
+      if (Succ->isTrivial()) {
+        int Weigth = C(this, Succ);
         if (Weigth <= HUGE_NEG_VAL) {
           SuccToUnlink.push_back(Succ);
           continue;
@@ -285,7 +301,7 @@ public:
   // Make the edge with default weight, we will udate the weight later.
   static void MakeEdge(SeqLiveInterval *Src, SeqLiveInterval *Dst) {
     // Make sure source is earlier than destination.
-    if (!Src->isTrivial() && !Dst->isTrivial() && Src->get() > Dst->get())
+    if (!Src->isTrivial() && !Dst->isTrivial() && Src > Dst)
       std::swap(Dst, Src);
 
     Src->Succs.insert(Dst);
@@ -311,18 +327,16 @@ public:
   typedef SeqLiveInterval NodeTy;
 
 private:
-  typedef DenseMap<VASTSelector*, NodeTy*> NodeMapTy;
+  typedef ilist<NodeTy> NodeVecTy;
   // The dummy entry node of the graph.
   NodeTy Entry, Exit;
   // Nodes vector.
-  NodeMapTy Nodes;
+  NodeVecTy Nodes;
 
 public:
   LICompGraph() : Entry(), Exit() {}
 
-  ~LICompGraph() {
-    DeleteContainerSeconds(Nodes);
-  }
+  ~LICompGraph() {}
 
   const NodeTy *getEntry() const { return &Entry; }
   const NodeTy *getExit() const { return &Exit; }
@@ -336,58 +350,60 @@ public:
   bool empty() const { return Entry.succ_empty(); }
   bool hasMoreThanOneNode() const { return Entry.num_succ() > 1; }
 
-  NodeTy *operator[](VASTSelector *N) const { return Nodes.lookup(N); }
-
   NodeTy *
-  getOrCreateNode(VASTSelector *Sel, SeqLiveVariables *LVS,
+  getOrCreateNode(VASTSeqInst *SeqInst, SeqLiveVariables *LVS,
                   const std::map<unsigned, SparseBitVector<> > &OverlappedMap) {
-    assert(Sel && "Unexpected null pointer pass to GetOrCreateNode!");
-    NodeTy *&Node = Nodes[Sel];
+    assert(SeqInst && "Unexpected null pointer pass to GetOrCreateNode!");
+
+    SmallVector<VASTSelector*, 4> Sels;
+    assert(SeqInst->getNumDefs() == SeqInst->num_srcs()
+           && "Expected all assignments are definitions!");
+    for (unsigned i = 0; i < SeqInst->num_srcs(); ++i)
+      Sels.push_back(SeqInst->getSrc(i).getSelector());
+
     // Create the node if it not exists yet.
-    if (Node == 0) {
-      Node = new NodeTy(Sel);
-      Node->setUpInterval(LVS, OverlappedMap);
-      // And insert the node into the graph.
-      for (iterator I = begin(), E = end(); I != E; ++I) {
-        NodeTy *Other = *I;
+    NodeTy *Node = new NodeTy(Sels);
+    Nodes.push_back(Node);
+    Node->setUpInterval(LVS, OverlappedMap);
+    // And insert the node into the graph.
+    for (iterator I = begin(), E = end(); I != E; ++I) {
+      NodeTy *Other = *I;
 
-        // Make edge between compatible nodes.
-        if (Node->compatibleWith(Other))
-          NodeTy::MakeEdge(Node, Other);
-      }
-
-      // There will be always an edge from entry to a node
-      // and an edge from node to exit.
-      NodeTy::MakeEdge(&Entry, Node);
-      NodeTy::MakeEdge(Node, &Exit);
+      // Make edge between compatible nodes.
+      if (Node->isCompatibleWith(Other))
+        NodeTy::MakeEdge(Node, Other);
     }
+
+    // There will be always an edge from entry to a node
+    // and an edge from node to exit.
+    NodeTy::MakeEdge(&Entry, Node);
+    NodeTy::MakeEdge(Node, &Exit);
 
     return Node;
   }
 
   void deleteNode(NodeTy *N) {
-    Nodes.erase(N->get());
     N->unlink();
-    delete N;
+    Nodes.erase(N);
   }
 
   void recomputeCompatibility() {
     Entry.dropAllEdges();
     Exit.dropAllEdges();
 
-    typedef NodeMapTy::iterator node_iterator;
+    typedef NodeVecTy::iterator node_iterator;
     for (node_iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I)
-      I->second->dropAllEdges();
+      I->dropAllEdges();
 
     for (node_iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
-      NodeTy *Node = I->second;
+      NodeTy *Node = I;
 
       // And insert the node into the graph.
       for (iterator I = begin(), E = end(); I != E; ++I) {
         NodeTy *Other = *I;
 
         // Make edge between compatible nodes.
-        if (Node->compatibleWith(Other))
+        if (Node->isCompatibleWith(Other))
           NodeTy::MakeEdge(Node, Other);
       }
 
@@ -433,7 +449,7 @@ template<> struct DOTGraphTraits<LICompGraph*> : public DefaultDOTGraphTraits{
   }
 
   std::string getNodeLabel(const NodeTy *Node, const GraphTy *Graph) {
-    return Node->isTrivial() ? "<null>" : std::string(Node->get()->getName());
+    return Node->isTrivial() ? "<null>" : "node";
   }
 
   static std::string getNodeAttributes(const NodeTy *Node,
@@ -494,14 +510,15 @@ Pass *llvm::createRegisterSharingPass() {
 
 char RegisterSharing::ID = 0;
 
-static bool IsSharingCandidate(VASTSelector *Sel) {
-  // Do not share the register without corresponding live variable.
-  if (Sel->num_defs() == 0) return false;
+static VASTSeqInst *IsSharingCandidate(VASTSeqOp *Op) {
+  VASTSeqInst *Inst = dyn_cast<VASTSeqInst>(Op);
 
-  if (!isa<VASTRegister>(Sel->getParent())) return false;
+  if (!Inst) return 0;
+
+  if (!isChainingCandidate(Inst->getValue())) return 0;
 
   // Do not share the enable as well.
-  return Sel->isTemp() || Sel->isFUInput();
+  return Inst;
 }
 
 // Build the transitive closure of the overlap slots.
@@ -555,12 +572,22 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
 
   initializeOverlappedSlots();
 
-  typedef VASTModule::selector_iterator iterator;
+  typedef VASTModule::seqop_iterator iterator;
 
-  for (iterator I = VM.selector_begin(), IE = VM.selector_end(); I != IE; ++I) {
-    VASTSelector *Sel = I;
-    if (IsSharingCandidate(Sel))
-      G.getOrCreateNode(Sel, LVS, OverlappedMap);
+  // Due to CFG folding, there maybe more than one operation correspond to
+  // the same LLVM Instruction. These operations operate on the same set of
+  // registers, we need to avoid adding them more than once to the compatibility
+  // graph.
+  std::set<Value*> VisitedInst;
+
+  for (iterator I = VM.seqop_begin(), IE = VM.seqop_end(); I != IE; ++I) {
+    VASTSeqOp *Op = I;
+    if (VASTSeqInst *Inst = IsSharingCandidate(Op)) {
+      if (!VisitedInst.insert(Inst->getValue()).second)
+        continue;
+
+      G.getOrCreateNode(Inst, LVS, OverlappedMap);
+    }
   }
 
   while (performRegisterSharing())
@@ -582,7 +609,7 @@ static void UpdateQ(SeqLiveInterval *N, SeqLiveInterval *P, SeqLiveInterval *&Q,
     return;
 
   // If they have the same neighbors weight, pick the node with bigger Id.
-  if (Q && Q->degree() < P->degree() && Q->get() > N->get()) return;
+  if (Q && Q->degree() < P->degree() && Q > N) return;
 
   MaxCommon = NCommonNeighbors;
   Q = N;
@@ -607,20 +634,16 @@ SeqLiveInterval *GetNeighborToCombine(SeqLiveInterval *P) {
     UpdateQ(*I, P, Q, MaxCommonNeighbors);
   }
 
-  assert(Q && Q->get() && "Unexpected Q is null!");
+  assert(Q && "Unexpected Q is null!");
 
   return Q;
 }
 
 void RegisterSharing::mergeLI(SeqLiveInterval *From, SeqLiveInterval *To) {
-  assert(From->compatibleWith(To) && "Cannot merge incompatible LiveIntervals!");
-  VASTSelector *FromV = From->get(), *ToV = To->get();
-  dbgs() << "Merge " << FromV->getName() << " to " << ToV->getName()
-         << '\n';
-  // From->dump();
-  // To->dump();
-
-  mergeSelector(ToV, FromV);
+  assert(From->isCompatibleWith(To)
+         && "Cannot merge incompatible LiveIntervals!");
+  for (unsigned i = 0, e = From->size(); i != e; ++i)
+    mergeSelector(To->getSelector(i), From->getSelector(i));
 
   // Merge the interval.
   To->merge(From);
@@ -632,6 +655,8 @@ void RegisterSharing::mergeLI(SeqLiveInterval *From, SeqLiveInterval *To) {
 }
 
 void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From) {
+  dbgs() << "Merge " << From->getName() << " to " << To->getName() << '\n';
+
   SmallVector<VASTSeqOp*, 8> DeadOps;
 
   while (!From->def_empty())
@@ -691,8 +716,7 @@ bool RegisterSharing::performRegisterSharing() {
     if (CurrentNeighborWeight < MaxNeighborWeight) continue;
 
     // If N and P have the same neighbor weight, pick the one with bigger Id.
-    if (P && CurrentNeighborWeight == MaxNeighborWeight
-        && N->get() < P->get())
+    if (P && CurrentNeighborWeight == MaxNeighborWeight && N < P)
       continue;
 
     P = N;
@@ -709,7 +733,7 @@ bool RegisterSharing::performRegisterSharing() {
     SeqLiveInterval *Q = GetNeighborToCombine(P);
 
     // Combine P and Q and call it P, Make sure Q is before P.
-    if (Q->get() >= P->get()) {
+    if (Q >= P) {
       std::swap(P, Q);
     }
 
