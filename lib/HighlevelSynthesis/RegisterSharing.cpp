@@ -91,7 +91,7 @@ public:
     Nodes.push_back(Node);
     setUpInterval(Node, LVS, OverlappedMap);
     // And insert the node into the graph.
-    for (NodeTy::iterator I = Entry.succ_begin(), E = Entry.succ_begin();
+    for (NodeTy::iterator I = Entry.succ_begin(), E = Entry.succ_end();
          I != E; ++I) {
       NodeTy *Other = *I;
 
