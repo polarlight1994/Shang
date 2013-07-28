@@ -65,7 +65,7 @@ struct VASTLatch {
 /// and define some others.
 class VASTSeqOp : public VASTOperandList, public VASTNode,
                   public ilist_node<VASTSeqOp> {
-  SmallVector<VASTSeqValue*, 1> Defs;
+  SmallVector<VASTSeqValue*, 4> Defs;
   PointerIntPair<VASTSlot*, 1, bool> S;
 
   friend struct VASTLatch;
