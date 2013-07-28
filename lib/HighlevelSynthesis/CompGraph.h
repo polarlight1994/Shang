@@ -54,7 +54,7 @@ public:
   static const int HUGE_NEG_VAL = -1000000000;
   static const int TINY_VAL = 1;
 
-  CompGraphNode() { }
+  CompGraphNode() : DomBlock(0) { }
 
   CompGraphNode(BasicBlock *DomBlock, ArrayRef<VASTSelector*> Sels)
     : DomBlock(DomBlock), Sels(Sels.begin(), Sels.end()) {}
@@ -289,6 +289,8 @@ public:
   void recomputeCompatibility();
 
   void verifyTransitive();
+
+  void performBinding();
 
   void viewGraph();
 };
