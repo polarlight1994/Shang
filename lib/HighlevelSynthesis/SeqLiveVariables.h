@@ -36,9 +36,11 @@ class VASTModule;
 template<class PtrType, unsigned SmallSize> class SmallPtrSet;
 class BasicBlock;
 class Value;
+class DominatorTree;
 
 class SeqLiveVariables : public VASTModulePass {
   VASTModule *VM;
+  DominatorTree *DT;
 public:
   static char ID;
 
@@ -109,6 +111,7 @@ private:
   void handleSlot(VASTSlot *S, PathVector PathFromEntry);
   void handleUse(VASTSeqValue *Def, VASTSlot *UseSlot, PathVector PathFromEntry,
                  bool MayNotReachable);
+  bool dominates(BasicBlock *BB, VASTSlot *S) const;
 
   void initializeLandingSlots();
   void initializeOverlappedSlots();

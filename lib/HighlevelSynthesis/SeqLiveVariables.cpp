@@ -19,6 +19,8 @@
 #include "shang/VASTModule.h"
 #include "shang/VASTModulePass.h"
 
+#include "llvm/Analysis/Dominators.h"
+
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -76,7 +78,7 @@ char &llvm::SeqLiveVariablesID = SeqLiveVariables::ID;
 
 INITIALIZE_PASS_BEGIN(SeqLiveVariables, "shang-seq-live-variables",
                       "Seq Live Variables Analysis", false, true)
-  INITIALIZE_PASS_DEPENDENCY(STGDistances)
+  INITIALIZE_PASS_DEPENDENCY(DominatorTree)
 INITIALIZE_PASS_END(SeqLiveVariables, "shang-seq-live-variables",
                     "Seq Live Variables Analysis", false, true)
 
@@ -90,6 +92,7 @@ SeqLiveVariables::SeqLiveVariables() : VASTModulePass(ID) {
 
 void SeqLiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
+  AU.addRequired<DominatorTree>();
   AU.setPreservesAll();
 }
 
@@ -195,7 +198,7 @@ void SeqLiveVariables::verifyAnalysis() const {
 
 bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
   VM = &M;
-
+  DT = &getAnalysis<DominatorTree>();
   // Compute the PHI joins.
   createInstVarInfo(VM);
 
@@ -223,7 +226,7 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
 
   while (STGPath.size() > 1) {
     VASTSlot *CurSlot = STGPath.back();
-    VASTSlot::succ_iterator It = ChildItStack.back();
+    VASTSlot::succ_iterator It = ChildItStack.back()++;
 
     if (It == CurSlot->succ_end()) {
       STGPath.pop_back();
@@ -232,8 +235,13 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
     }
 
     VASTSlot::EdgePtr Edge = *It;
+
+    // Do not go through the implicit flow, in this case we may missed the legal
+    // definition of a use.
+    if (Edge.getType() == VASTSlot::ImplicitFlow)
+      continue;
+
     VASTSlot *ChildNode = Edge;
-    ++ChildItStack.back();
 
     // Is the Slot visited?
     if (!Visited.insert(ChildNode).second)  continue;
@@ -369,7 +377,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
     if (V->fanin_empty()) continue;
 
     if (V->isStatic()) {
-      VarInfo *VI = new VarInfo(0);
+      VarInfo *VI = new VarInfo(V->getLLVMValue());
       VarList.push_back(VI);
 
       // The static register is implicitly defined at the entry slot.
@@ -381,7 +389,7 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
       continue;
     } 
 
-    VarInfo *VI = new VarInfo(0);
+    VarInfo *VI = new VarInfo(V->getLLVMValue());
     VarList.push_back(VI);
 
     typedef VASTSeqValue::fanin_iterator iterator;
@@ -398,16 +406,20 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
   }
 }
 
+bool SeqLiveVariables::dominates(BasicBlock *BB, VASTSlot *S) const {
+  return DT->dominates(BB, S->getParentState()->getParent());
+}
+
 void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
                                  PathVector PathFromEntry, bool MayNotReachable) {
   // The timing information is not avaliable.
   // if (Def->empty()) return;
 
-  if (Value *Val = Def->getLLVMValue())
-    if (Val->getName() == "tmp3")
-      Val->dump();
-
   assert(Def && "Bad Def pointer!");
+  Instruction *Inst = dyn_cast_or_null<Instruction>(Def->getLLVMValue());
+  assert((!Inst || dominates(Inst->getParent(), UseSlot))
+         && "Define not dominates its use!");
+
   VASTSlot::EdgePtr DefEdge(0, VASTSlot::SubGrp);
 
   // Walking backward to find the corresponding definition.
@@ -504,7 +516,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
 
   while (!VisitStack.empty()) {
     VASTSlot *Node = VisitStack.back().first;
-    ChildIt It = VisitStack.back().second;
+    ChildIt It = VisitStack.back().second++;
 
     // We have visited all children of current node.
     if (It == Node->pred_end()) {
@@ -514,7 +526,11 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
 
     // Otherwise, remember the node and visit its children first.
     VASTSlot *ChildNode = *It;
-    ++VisitStack.back().second;
+
+    // All uses of a (SSA) define should be within the dominator tree rooted on
+    // the define block.
+    if (Inst && !dominates(Inst->getParent(), ChildNode))
+      continue;
 
     // Is the value defined in this slot?
     if (VI->Defs.test(ChildNode->SlotNum)) {
