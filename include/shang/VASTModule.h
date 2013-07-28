@@ -192,7 +192,7 @@ public:
   /// one if it does not exists.
   VASTSymbol *getOrCreateSymbol(const Twine &Name, unsigned Bitwidth);
 
-  VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB,
+  VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB, unsigned Schedule,
                        VASTValPtr Pred = VASTImmediate::True,
                        bool IsVirtual = false);
 

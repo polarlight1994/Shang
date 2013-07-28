@@ -23,18 +23,18 @@
 
 using namespace llvm;
 
-VASTSlot::VASTSlot(unsigned slotNum, BasicBlock *ParentBB,  VASTValPtr Pred,
-                   bool IsSubGrp)
+VASTSlot::VASTSlot(unsigned SlotNum, BasicBlock *ParentBB,  VASTValPtr Pred,
+                   bool IsSubGrp, unsigned Schedule)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
-    SlotGuard(this, Pred), SlotNum(slotNum),
-    IsSubGrp(IsSubGrp) {
+    SlotGuard(this, Pred), SlotNum(SlotNum), IsSubGrp(IsSubGrp),
+    Schedule(Schedule) {
   Contents.ParentBB = ParentBB;
 }
 
 VASTSlot::VASTSlot(unsigned slotNum)
   : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
-    SlotGuard(this, VASTImmediate::True), SlotNum(slotNum),
-    IsSubGrp(false) {
+    SlotGuard(this, VASTImmediate::True), SlotNum(slotNum), IsSubGrp(false),
+    Schedule(0) {
   Contents.ParentBB = 0;
 }
 

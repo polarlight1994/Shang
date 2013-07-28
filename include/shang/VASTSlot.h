@@ -87,10 +87,10 @@ private:
 
   friend class VASTModule;
   VASTSlot(unsigned slotNum, BasicBlock *ParentBB, VASTValPtr Pred,
-           bool IsSubGrp);
+           bool IsSubGrp, unsigned Schedule);
 
   VASTSlot() : VASTNode(vastSlot), SlotReg(this), SlotActive(this),
-    SlotGuard(this), SlotNum(0), IsSubGrp(true) {}
+    SlotGuard(this), SlotNum(0), IsSubGrp(true), Schedule(0) {}
 
   friend struct ilist_sentinel_traits<VASTSlot>;
 
@@ -145,12 +145,13 @@ public:
   };
 
   // Create the finish slot.
-  explicit VASTSlot(unsigned slotNum);
+  explicit VASTSlot(unsigned SlotNum);
   ~VASTSlot();
 
   typedef uint16_t SlotNumTy;
   const SlotNumTy SlotNum : 15;
   const bool      IsSubGrp : 1;
+  const SlotNumTy Schedule;
 
   void createSignals(VASTModule *VM);
   void copySignals(VASTSlot *S);

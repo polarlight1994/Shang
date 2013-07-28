@@ -145,7 +145,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     if (Slots.first == 0) {
       assert(Slots.second == 0 && "Unexpected Latest slot without landing slot!");
       Slots.first
-        = (Slots.second = VM->createSlot(++NumSlots, BB));
+        = (Slots.second = VM->createSlot(++NumSlots, BB, 0));
     }
 
     return Slots.first;
@@ -164,7 +164,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     VASTSlot *&Slot = BB2SlotMap[BB].second;
     assert(Slot == CurSlot && "CurSlot not the last slot in the BB!");
     assert(CurSlot->succ_empty() && "CurSlot already have successors!");
-    Slot = VM->createSlot(++NumSlots, BB);
+    Slot = VM->createSlot(++NumSlots, BB, 0);
     // Connect the slots.
     addSuccSlot(CurSlot, Slot);
     return Slot;
@@ -179,7 +179,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   }
 
   VASTSlot *createSubGroup(BasicBlock *BB, VASTValPtr Cnd, VASTSlot *S) {
-    VASTSlot *SubGrp = VM->createSlot(++NumSlots, BB, Cnd, true);
+    VASTSlot *SubGrp = VM->createSlot(++NumSlots, BB, S->Schedule, Cnd, true);
     // The subgroups are not actually the successors of S in the control flow.
     S->addSuccSlot(SubGrp, VASTSlot::SubGrp);
     return SubGrp;

@@ -89,14 +89,14 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
   void clearUp();
   void clearUp(VASTSlot *S);
 
-  VASTSlot *createSlot(BasicBlock *BB) {
+  VASTSlot *createSlot(BasicBlock *BB, unsigned Schedule) {
     ++NumSlots;
-    return VM.createSlot(++CurrentSlotNum, BB);
+    return VM.createSlot(++CurrentSlotNum, BB, Schedule);
   }
 
-  VASTSlot *getOrCreateLandingSlot(BasicBlock *BB) {
+  VASTSlot *getOrCreateLandingSlot(BasicBlock *BB, unsigned Schedule) {
     VASTSlot *&S = LandingSlots[BB];
-    if (S == 0) S = createSlot(BB);
+    if (S == 0) S = createSlot(BB, Schedule);
     return S;
   }
 
@@ -110,7 +110,7 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
 
     // Create the subgroup if it does not exist.
     ++NumSubGropus;
-    SubGrp = VM.createSlot(++CurrentSlotNum, BB, Cnd, true);
+    SubGrp = VM.createSlot(++CurrentSlotNum, BB, S->Schedule, Cnd, true);
     // The subgroups are not actually the successors of S in the control flow.
     S->addSuccSlot(SubGrp, VASTSlot::SubGrp);
     return SubGrp;
@@ -278,10 +278,13 @@ ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot) {
   // Emit the the SUs in the first slot in the target BB.
   // Connect to the landing slot if not all SU in the target BB emitted to
   // current slot.
-  if (emitToFirstSlot(SubGrp, G.getSUInBB(TargetBB))) {
+  MutableArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(TargetBB));
+  if (emitToFirstSlot(SubGrp, SUs)) {
+    assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
+    unsigned EntrySchedSlot = SUs[0]->getSchedule();
     // There is some SeqOp need to be emitted to TargetBB, build the control
     // flow.
-    VASTSlot *LandingSlot = getOrCreateLandingSlot(TargetBB);
+    VASTSlot *LandingSlot = getOrCreateLandingSlot(TargetBB, EntrySchedSlot + 1);
     return addSuccSlot(SubGrp, LandingSlot, Cnd, V);
   }
 
@@ -443,12 +446,13 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
     unsigned CurSlotNum = EntrySlotNum + CurSchedSlot - EntrySchedSlot - 1;
     // Create the slot if it is not created.
     while (CurSlotNum != EmittedSlotNum) {
-      VASTSlot *NextSlot = createSlot(BB);
       ++EmittedSlotNum;
+      VASTSlot *NextSlot = createSlot(BB, EntrySchedSlot + EmittedSlotNum - EntrySlotNum + 1);
       addSuccSlot(CurSlot, NextSlot, VASTImmediate::True);
       CurSlot = NextSlot;
     }
 
+    assert(CurSlot->Schedule == CurSchedSlot && "Schedule not match!");
     emitToSlot(CurSU->getSeqOp(), CurSlot);
   }
 }
@@ -499,7 +503,8 @@ void ScheduleEmitter::emitSchedule() {
   if (emitToFirstSlot(EntryGrp, EntrySUs)) {
     // Create the landing slot of entry BB if not all SUs in the Entry BB
     // emitted to the idle slot.
-    VASTSlot *S = getOrCreateLandingSlot(&Entry);
+    unsigned EntrySchedule = EntrySUs.front()->getSchedule();
+    VASTSlot *S = getOrCreateLandingSlot(&Entry, EntrySchedule + 1);
     // Go to the new slot if the start port is true.
     addSuccSlot(EntryGrp, S, StartPort);
   }
