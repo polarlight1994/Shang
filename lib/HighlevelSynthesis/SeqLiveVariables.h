@@ -109,8 +109,7 @@ public:
 private:
   typedef ArrayRef<VASTSlot::EdgePtr> PathVector;
   void handleSlot(VASTSlot *S, PathVector PathFromEntry);
-  void handleUse(VASTSeqValue *Def, VASTSlot *UseSlot, PathVector PathFromEntry,
-                 bool MayNotReachable);
+  void handleUse(VASTSeqValue *Def, VASTSlot *UseSlot, PathVector PathFromEntry);
   bool dominates(BasicBlock *BB, VASTSlot *S) const;
 
   void initializeLandingSlots();
@@ -122,12 +121,6 @@ private:
   iplist<VarInfo> VarList;
   typedef iplist<VarInfo>::iterator var_iterator;
   typedef iplist<VarInfo>::const_iterator const_var_iterator;
-
-  // The Slots the writing a specific SeqValue.
-  std::map<VASTSeqValue*, SparseBitVector<> > WrittenSlots;
-
-  bool isWrittenAt(VASTSeqValue *V, VASTSlot::EdgePtr Edge);
-  bool isWrittenViaImplicitFlow(VASTSeqValue *V, VASTSlot::EdgePtr Edge);
 
   // Create the VarInfo for PHINodes.
   void createInstVarInfo(VASTModule *VM);

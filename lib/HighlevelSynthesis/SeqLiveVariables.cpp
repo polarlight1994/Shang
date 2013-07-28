@@ -98,7 +98,6 @@ void SeqLiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
 
 void SeqLiveVariables::releaseMemory() {
   VarInfos.clear();
-  WrittenSlots.clear();
   VarList.clear();
 }
 
@@ -362,7 +361,7 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
     if (V->fanin_empty()) continue;
 
     // Ignore the placeholder for node without timing information.
-    handleUse(V, S, PathFromEntry, false /* The define must reachable */);
+    handleUse(V, S, PathFromEntry);
   }
 }
 
@@ -385,7 +384,6 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
       VI->initializeDefSlot(S->SlotNum);
 
       VarInfos[V] = VI;
-      WrittenSlots[V].set(S->SlotNum);
       continue;
     } 
 
@@ -399,7 +397,6 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
 
       // Initialize the definition slot.
       VI->initializeDefSlot(DefSlot->SlotNum);
-      WrittenSlots[V].set(DefSlot->SlotNum);
     }
 
     VarInfos[V] = VI;
@@ -411,7 +408,7 @@ bool SeqLiveVariables::dominates(BasicBlock *BB, VASTSlot *S) const {
 }
 
 void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
-                                 PathVector PathFromEntry, bool MayNotReachable) {
+                                 PathVector PathFromEntry) {
   // The timing information is not avaliable.
   // if (Def->empty()) return;
 
@@ -420,63 +417,10 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
   assert((!Inst || dominates(Inst->getParent(), UseSlot))
          && "Define not dominates its use!");
 
-  VASTSlot::EdgePtr DefEdge(0, VASTSlot::SubGrp);
-
-  // Walking backward to find the corresponding definition.
-  // Provide the path which stop at prior slot (not a subgroup of the slot),
-  // otherwise we will calculate a wrong define slot when the current slot is
-  // a virtual slot. Consider the following example:
-  //   S1 <- D1
-  //   S2 <- D2
-  //   S3' <- U1
-  // In the example, there is definition D1 at S1 and definition D2 at S2.
-  // There is a read U1 at S3', the subgroup of S2. For U1, it reads the value
-  // produced by D1 instead of D2, because D2 and U1 are actually scheduled
-  // to the same slot, hence the assignment at S2 is not available at S3'.
-  bool IgnoreSlot = UseSlot->IsSubGrp;
-  typedef PathVector::reverse_iterator path_iterator;
-  for (path_iterator I = PathFromEntry.rbegin(), E = PathFromEntry.rend();
-       I != E; ++I) {
-    VASTSlot::EdgePtr Edge = *I;
-    if (IgnoreSlot) {
-
-      if (Edge.getDistance()) IgnoreSlot = false;
-    }
-
-    // Find the nearest written slot in the path.
-    // First check the implicit flow, then check the normal flow.
-    if (!(!IgnoreSlot && isWrittenAt(Def, Edge))
-        && !isWrittenViaImplicitFlow(Def, Edge))
-      continue;
-
-    DefEdge = Edge;
-    break;
-  }
-
-  if (!DefEdge) {
-    dbgs() << "Dumping path:[\n";
-    typedef PathVector::iterator iterator;
-    for (iterator I = PathFromEntry.begin(), E = PathFromEntry.end(); I != E; ++I)
-      dbgs() << (*I)->SlotNum << '\n';
-    dbgs() << "]\n";
-
-    Def->dumpFaninns();
-
-    UseSlot->dump();
-
-    llvm_unreachable("Define of VASTSeqVal not dominates all its uses!");
-  }
-
-  DEBUG(dbgs() << "SeqVal: " << Def->getName() << " Used at Slot "
-               << UseSlot->SlotNum << " Def at slot " << DefEdge->SlotNum
-               << '\n');
-
   // Get the corresponding VarInfo defined at DefSlot.
   VarInfo *VI = getVarInfo(Def);
 
-  if (UseSlot == DefEdge) {
-    assert(UseSlot->IsSubGrp && UseSlot->getParent() == 0
-           && "Unexpected Cycle!");
+  if (UseSlot->IsSubGrp && UseSlot->getParent() == 0) {
     VI->DefKills.set(UseSlot->SlotNum);
 
     // If we can reach a define slot, the define slot is not dead.
@@ -506,8 +450,12 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
   VI->Kills.set(UseSlot->SlotNum);
   //assert(!VI->Defs.test(UseSlot->SlotNum));
 
-  // The value not killed at define slot anymore.
-  VI->Kills.reset(DefEdge->SlotNum);
+  // The value not killed at define slots anymore.
+  VI->Kills.intersectWithComplement(VI->Defs);
+
+  if (VI->Defs.test(UseSlot->SlotNum))
+    VI->DefKills.set(UseSlot->SlotNum);
+  
 
   typedef VASTSlot::pred_iterator ChildIt;
   std::vector<std::pair<VASTSlot*, ChildIt> > VisitStack;
@@ -537,9 +485,6 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
       // The current slot is defined, but also killed!
       if (ChildNode == UseSlot) VI->DefKills.set(UseSlot->SlotNum);
 
-      // If we can reach a define slot, the define slot is not dead.
-      VI->Kills.reset(ChildNode->SlotNum);
-
       // Do not move across the define slot.
       continue;
     }
@@ -555,67 +500,8 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
     VI->Alives.set(ChildNode->SlotNum);
     VI->Kills.reset(ChildNode->SlotNum);
 
-    // Is the flow reach the define slot via implicit edges?
-    // If so we need to carefully prune the edges: Only traversal the implicit
-    // flow edges, otherwise we will reach a point that not necessary dominated
-    // by the defines of the current SeqVal.
-    if (DefEdge->SlotNum == ChildNode->SlotNum) {
-      bool ReachedDef = false;
-      for (ChildIt I = ChildNode->pred_begin(), E = ChildNode->pred_end();
-           I != E; ++I) {
-        VASTSlot::EdgePtr SrcEdge = *I;
-
-        // Only traversal backward via the implicit flow.
-        if (SrcEdge.getType() != VASTSlot::ImplicitFlow) continue;
-
-        // Check if we reach the definition via the implicit edges.
-        if (VI->Defs.test(SrcEdge->SlotNum)) {
-          // The current slot is defined, but also killed!
-          if (SrcEdge == UseSlot) VI->DefKills.set(UseSlot->SlotNum);
-
-          // If we can reach a define slot, the define slot is not dead.
-          VI->Kills.reset(SrcEdge->SlotNum);
-          ReachedDef = true;
-        }
-      }
-
-      assert(ReachedDef && "Bad define edge!");
-      (void) ReachedDef;
-      // Do not move across the define slot.
-      continue;
-    }
-
     VisitStack.push_back(std::make_pair(ChildNode, ChildNode->pred_begin()));
   }
   
   DEBUG(VI->verifyKillAndAlive();VI->dump(); dbgs() << '\n');
-}
-
-bool SeqLiveVariables::isWrittenViaImplicitFlow(VASTSeqValue *V,
-                                                VASTSlot::EdgePtr Edge) {
-  VASTSlot *Dst = Edge;
-
-  typedef VASTSlot::pred_iterator pred_iterator;
-  for (pred_iterator I = Dst->pred_begin(), E = Dst->pred_end(); I != E; ++I) {
-    VASTSlot::EdgePtr SrcEdge = *I;
-
-    // Only traversal backward via the implicit flow.
-    if (SrcEdge.getType() != VASTSlot::ImplicitFlow) continue;
-
-    if (isWrittenAt(V, SrcEdge)) {
-      assert(!isWrittenAt(V, Edge) && "Find overlapped write!");
-      return true;
-    }
-  }
-
-  return false;
-}
-
-bool SeqLiveVariables::isWrittenAt(VASTSeqValue *V, VASTSlot::EdgePtr Edge) {
-  VASTSlot *Dst = Edge;
-  std::map<VASTSeqValue*, SparseBitVector<> >::iterator at
-    = WrittenSlots.find(V);
-  assert(at != WrittenSlots.end() && "Definition of V not visited yet!");
-
-  return at->second.test(Dst->SlotNum);
 }
