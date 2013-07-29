@@ -21,12 +21,14 @@
 #include "llvm/Analysis/Dominators.h"
 
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Support/DOTGraphTraits.h"
 #include "llvm/Support/GraphWriter.h"
 #define DEBUG_TYPE "shang-compatibility-graph"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+STATISTIC(NumNonTranEdgeBreak, "Number of non-transitive edges are broken");
 
 void CompGraphNode::print(raw_ostream &OS) const {
   OS << "LI" << Idx << " order " << Order;
@@ -94,7 +96,10 @@ CompGraphBase::isBefore(CompGraphNode *Src, CompGraphNode *Dst) {
   return Src < Dst;
 }
 
-void CompGraphBase::verifyTransitive() {
+// Break the non-transitive edges, otherwise the network flow approach doesn't
+// work. TODO: Develop a optimal edge breaking approach.
+void CompGraphBase::fixTransitive() {
+  SmallVector<NodeTy*, 4> NonTransitiveNodes;
   // Check a -> b and b -> c implies a -> c;
   typedef NodeVecTy::iterator node_iterator;
   for (node_iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
@@ -114,10 +119,20 @@ void CompGraphBase::verifyTransitive() {
         if (SuccSucc->isTrivial())
           continue;
 
-        if (!Node->isCompatibleWith(SuccSucc))
-          llvm_unreachable("Compatible graph is not transitive!");
+        if (!Node->isCompatibleWith(SuccSucc)) {
+          DEBUG(dbgs() << "\nNontransitive edge:\n";
+          Node->dump();
+          Succ->dump();
+          SuccSucc->dump());
+          NonTransitiveNodes.push_back(Succ);
+          ++NumNonTranEdgeBreak;
+          break;
+        }
       }
     }
+
+    while (!NonTransitiveNodes.empty())
+      Node->unlinkSucc(NonTransitiveNodes.pop_back_val());
   }
 }
 
@@ -136,9 +151,7 @@ void CompGraphBase::recomputeCompatibility() {
       NodeTy *Other = *I;
 
       // Make edge between compatible nodes.
-      if ((DT->dominates(Node->DomBlock, Other->DomBlock) ||
-           DT->dominates(Other->DomBlock, Node->DomBlock)) &&
-          Node->isCompatibleWith(Other))
+      if (Node->isCompatibleWith(Other))
         makeEdge(Node, Other);
     }
 

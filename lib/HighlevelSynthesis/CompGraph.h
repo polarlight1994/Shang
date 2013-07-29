@@ -247,7 +247,7 @@ public:
 
   void recomputeCompatibility();
 
-  void verifyTransitive();
+  void fixTransitive();
 
   unsigned performBinding();
 

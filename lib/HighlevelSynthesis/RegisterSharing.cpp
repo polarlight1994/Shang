@@ -234,9 +234,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
 
   G.recomputeCompatibility();
 
-#ifndef NDEBUG
-  G.verifyTransitive();
-#endif
+  G.fixTransitive();
 
   unsigned NumFU = G.performBinding();
 
