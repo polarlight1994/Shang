@@ -65,11 +65,11 @@ public:
            SI != SE; ++SI) {
         const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*SI);
         setOverlappedSlots(LI->getDefs(), LV->Defs, OverlappedMap);
-        setOverlappedSlots(LI->getAlives(),  LV->Alives, OverlappedMap);
-        setOverlappedSlots(LI->getKills(),  LV->Kills, OverlappedMap);
+        setOverlappedSlots(LI->getReachables(),  LV->Alives, OverlappedMap);
+        setOverlappedSlots(LI->getReachables(),  LV->Kills, OverlappedMap);
 
         setOverlappedSlots(LI->getDefs(),  LV->DefKills, OverlappedMap);
-        setOverlappedSlots(LI->getKills(),  LV->DefKills, OverlappedMap);
+        setOverlappedSlots(LI->getReachables(),  LV->DefKills, OverlappedMap);
       }
     }
   }

@@ -36,8 +36,7 @@ class CompGraphNode : public ilist_node<CompGraphNode> {
   // The underlying data.
   SmallVector<VASTSelector*, 3> Sels;
   SparseBitVector<> Defs;
-  SparseBitVector<> Alives;
-  SparseBitVector<> Kills;
+  SparseBitVector<> Reachables;
 
   typedef SmallPtrSet<CompGraphNode*, 8> NodeVecTy;
   // Predecessors and Successors.
@@ -72,8 +71,7 @@ public:
   VASTSelector *getSelector(unsigned Idx) const { return Sels[Idx]; }
 
   SparseBitVector<> &getDefs() { return Defs; }
-  SparseBitVector<> &getAlives() { return Alives; }
-  SparseBitVector<> &getKills() { return Kills; }
+  SparseBitVector<> &getReachables() { return Reachables; }
 
   bool isTrivial() const { return Sels.empty(); }
 

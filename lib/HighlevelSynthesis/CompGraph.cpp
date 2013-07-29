@@ -28,7 +28,7 @@
 using namespace llvm;
 
 void CompGraphNode::print(raw_ostream &OS) const {
-  ::dump(Alives, OS);
+  ::dump(Reachables, OS);
 }
 
 void CompGraphNode::dump() const {
@@ -37,8 +37,7 @@ void CompGraphNode::dump() const {
 
 void CompGraphNode::merge(const CompGraphNode *RHS, DominatorTree *DT) {
   Defs        |= RHS->Defs;
-  Alives      |= RHS->Alives;
-  Kills       |= RHS->Kills;
+  Reachables  |= RHS->Reachables;
   DomBlock = DT->findNearestCommonDominator(DomBlock, RHS->DomBlock);
 }
 
@@ -55,28 +54,8 @@ bool CompGraphNode::isCompatibleWith(const CompGraphNode *RHS) const {
   if (intersects(Defs, RHS->Defs))
     return false;
 
-  // Defines and alives should not intersects.
-  if (intersects(Defs, RHS->Alives))
-    return false;
-
-  if (intersects(Alives, RHS->Defs))
-    return false;
-
   // Alives should not intersects.
-  if (intersects(Alives, RHS->Alives))
-    return false;
-
-  // Kills should not intersects.
-  // Not need to check the DefKills because they are a part of Defs.
-  if (intersects(Kills, RHS->Kills))
-    return false;
-
-  // Kills and Alives should not intersects.
-  // TODO: Ignore the dead slots.
-  if (intersects(Kills, RHS->Alives))
-    return false;
-
-  if (intersects(Alives, RHS->Kills))
+  if (intersects(Reachables, RHS->Reachables))
     return false;
 
   return true;
