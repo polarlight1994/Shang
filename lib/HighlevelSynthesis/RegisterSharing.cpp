@@ -55,9 +55,8 @@ public:
     }
   }
   
-  static void
-  setUpInterval(CompGraphNode *LI, SeqLiveVariables *LVS,
-                const OverlappedMapTy &OverlappedMap) {
+  static void setUpInterval(CompGraphNode *LI, SeqLiveVariables *LVS,
+                            const OverlappedMapTy &OverlappedMap) {
     typedef VASTSelector::def_iterator def_iterator;
     for (CompGraphNode::sel_iterator I = LI->begin(), E = LI->end(); I != E; ++I) {
       VASTSelector *Sel = *I;
@@ -65,11 +64,11 @@ public:
            SI != SE; ++SI) {
         const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*SI);
         setOverlappedSlots(LI->getDefs(), LV->Defs, OverlappedMap);
-        setOverlappedSlots(LI->getReachables(),  LV->Alives, OverlappedMap);
-        setOverlappedSlots(LI->getReachables(),  LV->Kills, OverlappedMap);
-
         setOverlappedSlots(LI->getDefs(),  LV->DefKills, OverlappedMap);
-        setOverlappedSlots(LI->getReachables(),  LV->DefKills, OverlappedMap);
+
+        LI->getReachables() |=  LV->Alives;
+        LI->getReachables() |=  LV->Kills;
+        LI->getReachables() |=  LV->DefKills;
       }
     }
   }
