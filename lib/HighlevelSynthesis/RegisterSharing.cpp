@@ -43,39 +43,7 @@ class LICompGraph : public CompGraphBase {
 public:
   explicit LICompGraph(DominatorTree *DT) : CompGraphBase(DT) {}
 
-  static void
-  setOverlappedSlots(SparseBitVector<> &LHS, const SparseBitVector<> &RHS,
-                     const OverlappedMapTy &OverlappedMap) {
-    typedef SparseBitVector<>::iterator iterator;
-    for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I) {
-      unsigned Slot = *I;
-      OverlappedMapTy::const_iterator At = OverlappedMap.find(Slot);
-      assert(At != OverlappedMap.end() && "Overlapped slots not found!");
-      LHS |= At->second;
-    }
-  }
-  
-  static void setUpInterval(CompGraphNode *LI, SeqLiveVariables *LVS,
-                            const OverlappedMapTy &OverlappedMap) {
-    typedef VASTSelector::def_iterator def_iterator;
-    for (CompGraphNode::sel_iterator I = LI->begin(), E = LI->end(); I != E; ++I) {
-      VASTSelector *Sel = *I;
-      for (def_iterator SI = Sel->def_begin(), SE = Sel->def_end();
-           SI != SE; ++SI) {
-        const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*SI);
-        setOverlappedSlots(LI->getDefs(), LV->Defs, OverlappedMap);
-        setOverlappedSlots(LI->getDefs(),  LV->DefKills, OverlappedMap);
-
-        LI->getReachables() |=  LV->Alives;
-        LI->getReachables() |=  LV->Kills;
-        LI->getReachables() |=  LV->DefKills;
-      }
-    }
-  }
-
-  NodeTy *
-  getOrCreateNode(VASTSeqInst *SeqInst, SeqLiveVariables *LVS,
-                  const std::map<unsigned, SparseBitVector<> > &OverlappedMap) {
+  NodeTy *addNode(VASTSeqInst *SeqInst) {
     assert(SeqInst && "Unexpected null pointer pass to GetOrCreateNode!");
 
     SmallVector<VASTSelector*, 4> Sels;
@@ -86,23 +54,8 @@ public:
 
     // Create the node if it not exists yet.
     BasicBlock *DomBlock = cast<Instruction>(SeqInst->getValue())->getParent();
-    NodeTy *Node = new NodeTy(DomBlock, Sels);
+    NodeTy *Node = new NodeTy(Nodes.size() + 1, DomBlock, Sels);
     Nodes.push_back(Node);
-    setUpInterval(Node, LVS, OverlappedMap);
-    // And insert the node into the graph.
-    for (NodeTy::iterator I = Entry.succ_begin(), E = Entry.succ_end();
-         I != E; ++I) {
-      NodeTy *Other = *I;
-
-      // Make edge between compatible nodes.
-      if (Node->isCompatibleWith(Other))
-        NodeTy::MakeEdge(Node, Other, DT);
-    }
-
-    // There will be always an edge from entry to a node
-    // and an edge from node to exit.
-    NodeTy::MakeEdge(&Entry, Node, 0);
-    NodeTy::MakeEdge(Node, &Exit, 0);
 
     return Node;
   }
@@ -138,6 +91,36 @@ struct RegisterSharing : public VASTModulePass {
   }
 
   void initializeOverlappedSlots();
+
+  void setOverlappedSlots(SparseBitVector<> &LHS,
+                          const SparseBitVector<> &RHS) const {
+    typedef SparseBitVector<>::iterator iterator;
+    for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I) {
+      unsigned Slot = *I;
+      OverlappedMapTy::const_iterator At = OverlappedMap.find(Slot);
+      assert(At != OverlappedMap.end() && "Overlapped slots not found!");
+      LHS |= At->second;
+    }
+  }
+
+  void setUpInterval(CompGraphNode *LI) {
+    typedef VASTSelector::def_iterator def_iterator;
+    typedef CompGraphNode::sel_iterator sel_iterator;
+    for (sel_iterator I = LI->begin(), E = LI->end(); I != E; ++I) {
+      VASTSelector *Sel = *I;
+      for (def_iterator SI = Sel->def_begin(), SE = Sel->def_end();
+           SI != SE; ++SI) {
+        const SeqLiveVariables::VarInfo *LV = LVS->getVarInfo(*SI);
+        setOverlappedSlots(LI->getDefs(), LV->Defs);
+        setOverlappedSlots(LI->getDefs(),  LV->DefKills);
+
+        LI->getReachables() |=  LV->Alives;
+        LI->getReachables() |=  LV->Kills;
+        LI->getReachables() |=  LV->DefKills;
+
+      }
+    }
+  }
 
   bool runOnVASTModule(VASTModule &VM);
 
@@ -230,74 +213,67 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   // the same LLVM Instruction. These operations operate on the same set of
   // registers, we need to avoid adding them more than once to the compatibility
   // graph.
-  std::set<Value*> VisitedInst;
+  std::map<Value*, CompGraphNode*> VisitedInst;
 
   for (iterator I = VM.seqop_begin(), IE = VM.seqop_end(); I != IE; ++I) {
     VASTSeqOp *Op = I;
-    if (VASTSeqInst *Inst = IsSharingCandidate(Op)) {
-      if (!VisitedInst.insert(Inst->getValue()).second)
-        continue;
+    VASTSeqInst *Inst = IsSharingCandidate(Op);
 
-      G.getOrCreateNode(Inst, LVS, OverlappedMap);
+    if (Inst == 0)
+      continue;
+
+    CompGraphNode *&N = VisitedInst[Inst->getValue()];
+
+    if (!N) {
+      N = G.addNode(Inst);
+      setUpInterval(N);
     }
+
+    N->updateOrder(Inst->getSlot()->SlotNum);
   }
+
+  G.recomputeCompatibility();
+
 #ifndef NDEBUG
   G.verifyTransitive();
 #endif
 
-  while (performRegisterSharing()) {
-#ifndef NDEBUG
-    G.verifyTransitive();
-#endif
+  unsigned NumFU = G.performBinding();
+
+  std::vector<CompGraphNode*> FUMap(NumFU);
+
+  typedef LICompGraph::binding_iterator binding_iterator;
+  for (binding_iterator I = G.binding_begin(), E = G.binding_end(); I != E; ++I)
+  {
+    CompGraphNode *N = I->first;
+    unsigned FUIdx = I->second - 1;
+
+    CompGraphNode *&FU = FUMap[FUIdx];
+    if (!FU) {
+      FU = N;
+      continue;
+    }
+
+    DEBUG(dbgs() << "FU " << FUIdx << "\n";
+    dbgs() << "Merge: \n";
+    N->dump();
+    dbgs() << "\n To: \n";
+    FU->dump();
+    dbgs() << "\n\n");
+
+    mergeLI(N, FU);
   }
 
   OverlappedMap.clear();
   return true;
 }
 
-static void UpdateQ(CompGraphNode *N, CompGraphNode *P, CompGraphNode *&Q,
-                    unsigned &MaxCommon) {
-  unsigned NCommonNeighbors = N->computeNeighborWeight(P);
-  // 2. Pick a neighbor of p, q, such that the number of common neighbor is
-  //    maximum
-  if (NCommonNeighbors == 0 || NCommonNeighbors < MaxCommon) return;
-
-  // Tie-breaking: Select q such that the node degree of q is minimum.
-  if (Q && NCommonNeighbors == MaxCommon && Q->degree() < N->degree())
-    return;
-
-  // If they have the same neighbors weight, pick the node with bigger Id.
-  if (Q && Q->degree() < P->degree() && Q > N) return;
-
-  MaxCommon = NCommonNeighbors;
-  Q = N;
-}
-
-static
-CompGraphNode *GetNeighborToCombine(CompGraphNode *P) {
-  typedef CompGraphNode::iterator neighbor_it;
-
-  unsigned MaxCommonNeighbors = 0;
-  CompGraphNode *Q = 0;
-
-  for (neighbor_it I = P->pred_begin(), E = P->pred_end(); I != E; ++I) {
-    if ((*I)->isTrivial()) continue;
-
-    UpdateQ(*I, P, Q, MaxCommonNeighbors);
-  }
-
-  for (neighbor_it I = P->succ_begin(), E = P->succ_end(); I != E; ++I) {
-    if ((*I)->isTrivial()) continue;
-
-    UpdateQ(*I, P, Q, MaxCommonNeighbors);
-  }
-
-  assert(Q && "Unexpected Q is null!");
-
-  return Q;
-}
-
 void RegisterSharing::mergeLI(CompGraphNode *From, CompGraphNode *To) {
+  if (!From->isCompatibleWith(To)) {
+    From->isCompatibleWith(To);
+    To->isCompatibleWith(From);
+  }
+
   assert(From->isCompatibleWith(To)
          && "Cannot merge incompatible LiveIntervals!");
   for (unsigned i = 0, e = From->size(); i != e; ++i)
@@ -347,55 +323,4 @@ void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From) {
   }
 
   VM->eraseSelector(From);
-}
-
-bool RegisterSharing::performRegisterSharing() {
-  // G.updateEdgeWeight(UseClosure);
-  
-  // 1. Pick a node with neighbor weight and call it P.
-  CompGraphNode *P = 0;
-  // Initialize MaxNeighborWeight to a nozero value so we can ignore the
-  // trivial nodes.
-  int MaxNeighborWeight = 1;
-
-  for (LICompGraph::iterator I = G->begin(), E = G->end(); I != E; ++I) {
-    CompGraphNode *N = I;
-    // Ignore the Nodes that has only virtual neighbors.
-    if (N->isTrivial()) continue;
-
-    int CurrentNeighborWeight = N->computeNeighborWeight();
-
-    // Do not update P if N has smaller neighbor weight.
-    if (CurrentNeighborWeight < MaxNeighborWeight) continue;
-
-    // If N and P have the same neighbor weight, pick the one with bigger Id.
-    if (P && CurrentNeighborWeight == MaxNeighborWeight && N < P)
-      continue;
-
-    P = N;
-    MaxNeighborWeight = CurrentNeighborWeight;
-  }
-
-  if (P == 0 || P->degree() <= 2) return false;
-
-  DEBUG(G->viewGraph());
-
-  // If P has any no-virtual neighbor.
-  while (P->degree() > 2) {
-    typedef CompGraphNode::iterator neighbor_it;
-    CompGraphNode *Q = GetNeighborToCombine(P);
-
-    // Combine P and Q and call it P, Make sure Q is before P.
-    if (Q >= P) {
-      std::swap(P, Q);
-    }
-
-    P->deleteUncommonEdges(Q);
-
-    // Merge QV into PV and delete Q.
-    mergeLI(Q, P);
-  }
-
-  G->recomputeCompatibility();
-  return true;
 }

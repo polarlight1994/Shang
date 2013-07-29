@@ -32,6 +32,10 @@ class VASTSelector;
 class DominatorTree;
 
 class CompGraphNode : public ilist_node<CompGraphNode> {
+public:
+  const unsigned Idx;
+private:
+  unsigned Order;
   BasicBlock *DomBlock;
   // The underlying data.
   SmallVector<VASTSelector*, 3> Sels;
@@ -49,15 +53,20 @@ class CompGraphNode : public ilist_node<CompGraphNode> {
                          const SparseBitVector<> &RHSBits) {
     return LHSBits.intersects(RHSBits);
   }
-
+  
+  friend class CompGraphBase;
 public:
   static const int HUGE_NEG_VAL = -1000000000;
   static const int TINY_VAL = 1;
 
-  CompGraphNode() : DomBlock(0) { }
+  CompGraphNode() : Idx(0), Order(0), DomBlock(0) { }
 
-  CompGraphNode(BasicBlock *DomBlock, ArrayRef<VASTSelector*> Sels)
-    : DomBlock(DomBlock), Sels(Sels.begin(), Sels.end()) {}
+  CompGraphNode(unsigned Idx, BasicBlock *DomBlock, ArrayRef<VASTSelector*> Sels)
+    : Idx(Idx), Order(UINT32_MAX), DomBlock(DomBlock), Sels(Sels.begin(), Sels.end()) {}
+
+  void updateOrder(unsigned NewOrder) {
+    Order = std::min(Order, NewOrder);
+  }
 
   typedef SmallVectorImpl<VASTSelector*>::iterator sel_iterator;
   sel_iterator begin() { return Sels.begin(); }
@@ -112,35 +121,6 @@ public:
     return SuccWeights.find(To)->second;
   }
 
-  int computeNeighborWeight(CompGraphNode *RHS = 0) const {
-    int Weight = 0;
-
-    for (iterator I = pred_begin(), E = pred_end(); I != E; ++I) {
-      CompGraphNode *NP = *I;
-      if (NP->isTrivial()) continue;
-
-      // RHS is null means we want to compute all neighbor weight, otherwise
-      // means we want to compute the common neighbor weight only.
-      if (RHS == 0 || NP->isNeighbor(RHS)) Weight += NP->getWeightTo(this);
-    }
-
-    for (iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
-      CompGraphNode *NS = *I;
-      if (NS->isTrivial()) continue;
-
-      // RHS is null means we want to compute all neighbor weight, otherwise
-      // means we want to compute the common neighbor weight only.
-      if (RHS == 0 || NS->isNeighbor(RHS)) Weight += getWeightTo(NS);
-    }
-
-    if (RHS && isNeighbor(RHS)) {
-      if (Succs.count(RHS)) Weight += getWeightTo(RHS);
-      else                  Weight += RHS->getWeightTo(this);
-    }
-
-    return Weight;
-  }
-
   // Unlink the Succ from current node.
   void unlinkSucc(CompGraphNode *Succ) {
     bool deleted = Succs.erase(Succ);
@@ -163,28 +143,6 @@ public:
     Pred->SuccWeights.erase(this);
     assert(deleted && "this is not the successor of Pred!");
     (void) deleted;
-  }
-
-  void deleteUncommonEdges(CompGraphNode *RHS) {
-    // Delete edge from P and Q that are not connected to their common neighbors.
-    SmallVector<CompGraphNode*, 8> ToUnlink;
-    // Unlink preds.
-    for (iterator I = pred_begin(), E = pred_end(); I != E; ++I) {
-      CompGraphNode *N = *I;
-      if (!RHS->isNeighbor(N)) ToUnlink.push_back(N);
-    }
-
-    while (!ToUnlink.empty())
-      unlinkPred(ToUnlink.pop_back_val());
-
-    // Unlink succs.
-    for (iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
-      CompGraphNode *N = *I;
-      if (!RHS->isNeighbor(N)) ToUnlink.push_back(N);
-    }
-
-    while (!ToUnlink.empty())
-      unlinkSucc(ToUnlink.pop_back_val());
   }
 
   void unlink() {
@@ -217,20 +175,6 @@ public:
     while (!SuccToUnlink.empty())
       unlinkSucc(SuccToUnlink.pop_back_val());
   }
-
-  static bool lt(CompGraphNode *Src, CompGraphNode *Dst, DominatorTree *DT);
-
-  // Make the edge with default weight, we will udate the weight later.
-  static
-  void MakeEdge(CompGraphNode *Src, CompGraphNode *Dst, DominatorTree *DT) {
-    // Make sure source is earlier than destination.
-    if (!Src->isTrivial() && !Dst->isTrivial() && !lt(Src, Dst, DT))
-      std::swap(Dst, Src);
-
-    Src->Succs.insert(Dst);
-    Src->SuccWeights.insert(std::make_pair(Dst, TINY_VAL));
-    Dst->Preds.insert(Src);
-  }
 };
 
 template<> struct GraphTraits<CompGraphNode*> {
@@ -249,6 +193,7 @@ template<> struct GraphTraits<CompGraphNode*> {
 class CompGraphBase {
 public:
   typedef CompGraphNode NodeTy;
+  typedef std::map<CompGraphNode*, unsigned> BindingMapTy;
 
 protected:
   typedef ilist<NodeTy> NodeVecTy;
@@ -258,18 +203,32 @@ protected:
   // Nodes vector.
   NodeVecTy Nodes;
   DominatorTree *DT;
+  BindingMapTy BindingMap;
 
   void deleteNode(NodeTy *N) {
     N->unlink();
     Nodes.erase(N);
   }
+
+  std::map<BasicBlock*, unsigned> DTDFSOrder;
+  void initalizeDTDFSOrder();
+
+  unsigned getDTDFSOrder(BasicBlock *BB) const {
+    std::map<BasicBlock*, unsigned>::const_iterator I = DTDFSOrder.find(BB);
+    assert(I != DTDFSOrder.end() && "DFS order not defined?");
+    return I->second;
+  }
 public:
-  explicit CompGraphBase(DominatorTree *DT) : Entry(), Exit(), DT(DT) {}
+  explicit CompGraphBase(DominatorTree *DT) : Entry(), Exit(), DT(DT) {
+    initalizeDTDFSOrder();
+  }
 
   virtual ~CompGraphBase() {}
 
   const NodeTy *getEntry() const { return &Entry; }
+  NodeTy *getEntry() { return &Entry; }
   const NodeTy *getExit() const { return &Exit; }
+  NodeTy *getExit() { return &Exit; }
 
   typedef NodeVecTy::iterator iterator;
 
@@ -290,9 +249,39 @@ public:
 
   void verifyTransitive();
 
-  void performBinding();
+  unsigned performBinding();
+
+  typedef BindingMapTy::const_iterator binding_iterator;
+  binding_iterator binding_begin() const {
+    return BindingMap.begin();
+  }
+
+  binding_iterator binding_end() const {
+    return BindingMap.end();
+  }
+
+  unsigned getBinding(CompGraphNode *N) const {
+    binding_iterator I = BindingMap.find(N);
+    return I == BindingMap.end() ? 0 : I->second;
+  }
+
+  bool hasbinding() const { return !BindingMap.empty(); }
 
   void viewGraph();
+  
+
+  bool isBefore(CompGraphNode *Src, CompGraphNode *Dst);
+
+  // Make the edge with default weight, we will udate the weight later.
+  void makeEdge(CompGraphNode *Src, CompGraphNode *Dst) {
+    // Make sure source is earlier than destination.
+    if (!Src->isTrivial() && !Dst->isTrivial() && !isBefore(Src, Dst))
+      std::swap(Dst, Src);
+
+    Src->Succs.insert(Dst);
+    Src->SuccWeights.insert(std::make_pair(Dst, NodeTy::TINY_VAL));
+    Dst->Preds.insert(Src);
+  }
 };
 
 template <> struct GraphTraits<CompGraphBase*>
