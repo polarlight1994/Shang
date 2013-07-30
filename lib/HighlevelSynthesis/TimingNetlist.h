@@ -60,8 +60,6 @@ public:
   FaninDelayInfo FaninInfo;
 
   void buildTimingPath(VASTValue *Thu, VASTSelector *Dst, delay_type MUXDelay);
-  bool performExternalAnalysis(VASTModule &VM);
-
 public: 
   enum ModelType {
     ZeroDelay, BlackBox, Bitlevel, External

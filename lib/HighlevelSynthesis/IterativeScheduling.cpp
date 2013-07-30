@@ -47,366 +47,7 @@ static cl::opt<bool> DumpIntermediateNetlist("shang-dump-intermediate-netlist",
   cl::desc("Dump the netlists produced by each iteration"),
   cl::init(false));
 
-namespace llvm {
-typedef TimingNetlist::delay_type delay_type;
-typedef std::map<Value*, delay_type> SrcDelayInfo;
-typedef std::map<Value*, SrcDelayInfo> PathDelayInfo;
-typedef StringMap<SrcDelayInfo> FaninDelayInfo;
-
-void initializeDelayInfoStoragePass(PassRegistry &Registry);
-
-class DelayInfoStorage : public ImmutablePass {
-  PathDelayInfo PathInfo;
-  FaninDelayInfo FaninInfo;
-
-  delay_type getDelayFromSrc(const SrcDelayInfo &SrcInfo, Value *SrcV) const {
-    SrcDelayInfo::const_iterator I = SrcInfo.find(SrcV);
-    if (I == SrcInfo.end()) return delay_type(0.0f);
-
-    return I->second;
-  }
-public:
-  static char ID;
-  DelayInfoStorage() : ImmutablePass(ID) {
-    initializeDelayInfoStoragePass(*PassRegistry::getPassRegistry());
-  }
-
-  delay_type getPathDelay(Value *DstV, Value *SrcV) const {
-    PathDelayInfo::const_iterator I = PathInfo.find(DstV);
-    if (I == PathInfo.end()) return delay_type(0.0f);
-
-    return getDelayFromSrc(I->second, SrcV);
-  }
-
-  void annotatePathDelay(Value *DstV, Value *SrcV, delay_type delay) {
-    PathInfo[DstV][SrcV] = delay;
-  }
-
-  delay_type getFaninDelay(StringRef SelName, Value *SrcV) const {
-    FaninDelayInfo::const_iterator I = FaninInfo.find(SelName);
-    if (I == FaninInfo.end()) return delay_type(0.0f);
-
-    return getDelayFromSrc(I->second, SrcV);
-  }
-
-  void annotateFaninDelay(StringRef SelName, Value *SrcV, delay_type delay) {
-    FaninInfo[SelName][SrcV] = delay;
-  }
-};
-
-template<typename SubClass>
-struct DatapathVisitor {
-  void visit(VASTModule &VM) {
-    // Extract/Annotate the delay for the SeqOp and the state-transition
-    // condition.
-    typedef VASTModule::slot_iterator slot_iterator;
-    for (slot_iterator SI = VM.slot_begin(), SE = VM.slot_end(); SI != SE; ++SI) {
-      VASTSlot *S = SI;
-
-      typedef VASTSlot::const_op_iterator op_iterator;
-
-      // Print the logic of the datapath used by the SeqOps.
-      for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
-        if (VASTSeqInst *Op = dyn_cast<VASTSeqInst>(*I)) {
-          visitOperands(Op);
-          continue;
-        }
-
-        // Also extract the transition condition between states.
-        if (VASTSlotCtrl *SlotCtrl = dyn_cast<VASTSlotCtrl>(*I)) {
-          Instruction *Inst = dyn_cast_or_null<Instruction>(SlotCtrl->getValue());
-          if (Inst == 0 || isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))
-            continue;
-
-          assert(Inst->getNumOperands() && "Expect operand for the condition!");
-          visitCone(VASTValPtr(SlotCtrl->getGuard()).get(), Inst->getOperand(0));
-        }
-      }
-    }
-  }
-
-  Value *getGuardingCondition(VASTSlot *S) {
-    VASTSlot *PredSlot = S->getParentGroup();
-    BasicBlock *PredBB = PredSlot->getParent();
-
-    // Ignore the VASTSlot which does not have a corresponding basic block.
-    if (PredBB == 0) return 0;
-
-    TerminatorInst *Inst = PredBB->getTerminator();
-    assert(Inst->getNumOperands() && "Expect operand for the condition!");
-    return Inst->getOperand(0);
-  }
-
-  void visitOperands(VASTSeqInst *Op) {
-    Instruction *Inst = dyn_cast_or_null<Instruction>(Op->getValue());
-    if (!Inst) {
-      assert((isa<Argument>(Op->getValue()) || isa<UndefValue>(Op->getValue()))
-             && "Uexpected VASTSeqInst without Instruction!");
-      return;
-    }
-
-    VASTSlot *ParentSlot = Op->getSlot();
-
-    // Get the VASTValue and the corresponding LLVM Operand according to the
-    // underlying LLVM Instruction.
-    switch (Inst->getOpcode()) {
-    case Instruction::Load: {
-      if (Op->isLatch()) {
-        visitFULatchAndSelector(Op->getSrc(0), Inst);
-        return;
-      }
-
-      LoadInst *LI = cast<LoadInst>(Inst);
-      VASTLatch Addr = Op->getSrc(0);
-      visitConeAndSelector(Addr, LI, LI->getPointerOperand());
-      visitGuardingConditionCone(Addr, ParentSlot, LI);
-      return;
-    }
-    case Instruction::Store: {
-      StoreInst *SI = cast<StoreInst>(Inst);
-      VASTLatch Addr = Op->getSrc(0);
-      visitConeAndSelector(Addr, SI, SI->getPointerOperand());
-      visitGuardingConditionCone(Addr, ParentSlot, SI);
-
-      VASTLatch Data = Op->getSrc(1);
-      visitConeAndSelector(Data, SI, SI->getValueOperand());
-      visitGuardingConditionCone(Data, ParentSlot, SI);
-      return;
-    }
-    case Instruction::PHI: {
-      PHINode *PN = cast<PHINode>(Inst);
-      // Because the assignments to PHINodes are always conditional executed,
-      // the parent slot of the assignment should always be a subgroup.
-      assert(ParentSlot->IsSubGrp
-             && "Expect SubGrp as the parent of PHI assignment!");
-      VASTSlot *IncomingSlot = ParentSlot->getParentGroup();
-      BasicBlock *BB = IncomingSlot->getParent();
-      Value *Incoming = PN->getIncomingValueForBlock(BB);
-
-      VASTLatch L = Op->getSrc(0);
-
-      visitConeAndSelector(L, PN, Incoming);
-      visitGuardingConditionCone(L, ParentSlot, PN);
-      return;
-    }
-    case Instruction::Ret: {
-      ReturnInst *RI = cast<ReturnInst>(Inst);
-      unsigned FinIdx = RI->getNumOperands();
-      // If the finish port is not assigned at the first operand, we are
-      // assigning the return value at the first operand.
-      if (FinIdx) {
-        VASTLatch RetVal = Op->getSrc(0);
-        visitConeAndSelector(RetVal, RI, RI->getReturnValue());
-        visitGuardingConditionCone(RetVal, ParentSlot, RI);
-      }
-
-      visitGuardingConditionCone(Op->getSrc(FinIdx), ParentSlot, RI);
-      return;
-    }
-    case Instruction::UDiv:
-    case Instruction::SDiv:
-    case Instruction::URem:
-    case Instruction::SRem: {
-      // Handle the binary operators.
-      if (Op->isLatch()) {
-        visitFULatchAndSelector( Op->getSrc(0), Inst);
-        return;
-      }
-
-      visitConeAndSelector(Op->getSrc(0), Inst, Inst->getOperand(0));
-      visitGuardingConditionCone(Op->getSrc(0), ParentSlot, Inst);
-
-      visitConeAndSelector(Op->getSrc(1), Inst, Inst->getOperand(1));
-      visitGuardingConditionCone(Op->getSrc(1), ParentSlot, Inst);
-      return;
-    }
-    default: llvm_unreachable("Unexpected opcode!"); return;
-    }
-  }
-
-  void visitFULatchAndSelector(const VASTLatch &L, Instruction *Inst) {
-    static_cast<SubClass*>(this)->visitFULatch(L, Inst);
-
-    // If the cone exsit, also extract/annotate the delay from root of the
-    // cone to the selector.
-    static_cast<SubClass*>(this)->visitSelFanin(L.getSelector(), Inst,
-                                                VASTValPtr(L).get(), Inst);
-  }
-
-  void visitGuardingConditionCone(VASTLatch L, VASTSlot *ParentSlot,
-                                  Instruction *Inst) {
-    // Guarding condition only presents when the parent slot is a sub group.
-    if (!ParentSlot->IsSubGrp) return;
-
-    Value *ConditionOperand = getGuardingCondition(ParentSlot);
-
-    VASTValue *Condition = VASTValPtr(L.getGuard()).get();
-    if (!visitCone(Condition, ConditionOperand)) return;
-
-    // If the cone exsit, also extract/annotate the delay from root of the
-    // cone to the selector.
-    static_cast<SubClass*>(this)->visitSelFanin(L.getSelector(), Inst,
-                                                Condition, ConditionOperand);
-  }
-
-  void visitConeAndSelector(VASTLatch L, Instruction *Inst, Value *Operand) {
-    VASTValue *Root = VASTValPtr(L).get();
-    if (!visitCone(Root, Operand)) return;
-
-    // If the cone exsit, also extract/annotate the delay from root of the
-    // cone to the selector.
-    static_cast<SubClass*>(this)->visitSelFanin(L.getSelector(), Inst,
-                                                Root, Operand);
-  }
-
-  bool visitCone(VASTValue *Root, Value *Operand) {
-    // There is not a cone at all if the Root is a SeqValue.
-    if (isa<VASTSeqValue>(Root)) return true;
-
-    // Dirty Hack: Temporary ignore the place holder for the direct output of
-    // block RAMs/some functional units.
-    // TODO: Add the delay from the corresponding launch operation?
-    if (isa<VASTWire>(Root)) return false;
-
-    // Annotate/Extract the delay from the leaves of this cone.
-    std::set<VASTSeqValue*> Srcs;
-    Root->extractSupportingSeqVal(Srcs);
-
-    if (Srcs.empty()) return false;
-
-    typedef std::set<VASTSeqValue*>::iterator iterator;
-    for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-      visitPair(Root, Operand, *I);
-
-    return true;
-  }
-
-  void visitPair(VASTValue *Dst, Value *DstV, VASTSeqValue *Src) {
-    Value *SrcV = Src->getLLVMValue();
-    assert(SrcV && "Cannot get the corresponding value!");
-    static_cast<SubClass*>(this)->visitPair(Dst, DstV, Src, SrcV);
-  }
-};
-
-void initializeDelayExtractorPass(PassRegistry &Registry);
-/// DelayExtractor - Extract the delay from the timing netlist.
-///
-struct DelayExtractor : public VASTModulePass,
-                        DatapathVisitor<DelayExtractor> {
-  static char ID;
-  TimingNetlist *TNL;
-  DelayInfoStorage *DIS;
-  DelayExtractor() : VASTModulePass(ID), TNL(0) {
-    initializeDelayExtractorPass(*PassRegistry::getPassRegistry());
-  }
-
-  void getAnalysisUsage(AnalysisUsage &AU) const {
-    VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequired<DelayInfoStorage>();
-    AU.addRequired<TimingNetlist>();
-    AU.setPreservesAll();
-  }
-
-  bool runOnVASTModule(VASTModule &VM) {
-    TNL = &getAnalysis<TimingNetlist>();
-    DIS = &getAnalysis<DelayInfoStorage>();
-    visit(VM);
-    return false;
-  }
-
-  void visitPair(VASTValue *Dst, Value *DstV, VASTSeqValue *Src, Value *SrcV) {
-    delay_type NewDelay = TNL->getDelay(Src, Dst);
-    delay_type OldDelay = DIS->getPathDelay(DstV, SrcV);
-
-    if (Src->isFUOutput() && SrcV != DstV) {
-      delay_type FUDelay = TNL->getFUOutputDelay(Src->getSelector());
-      delay_type OldFUDelay = DIS->getPathDelay(SrcV, SrcV);
-      DIS->annotatePathDelay(SrcV, SrcV, std::max(FUDelay, OldFUDelay));
-      // Remove the latency of the single cycle path from the output to the
-      // latching register.
-      // FIXME: Use the updated FU delay which considers the previous iteration.
-      NewDelay = std::max(0.0f, NewDelay - FUDelay);
-    }
-
-    // FIXME: Use better update algorithm, e.g. somekinds of iir filter.
-    DIS->annotatePathDelay(DstV, SrcV, std::max(OldDelay, NewDelay));
-  }
-
-  void visitSelFanin(VASTSelector *Sel, Value *User,
-                     VASTValue *FI, Value *Operand) {
-    StringRef SelName = Sel->getName();
-    if (Sel->num_defs()) {
-      // If the Selector have any definition used by the datapath, the
-      // corresponding LLVM IR should have a name!
-      assert(!User->getName().empty() && "Unexpected empty name!");
-      SelName = User->getName();
-    }
-
-    delay_type NewDelay = TNL->getDelay(FI, Sel);
-    delay_type OldDelay = DIS->getFaninDelay(SelName, Operand);
-    DIS->annotateFaninDelay(SelName, Operand, std::max(OldDelay, NewDelay));
-  }
-
-  void visitFULatch(const VASTLatch &L, Instruction *Inst) {
-    VASTValPtr Src = L;
-
-    TimingNetlist::RegDelaySet Srcs;
-    typedef TimingNetlist::RegDelaySet::iterator src_iterator;
-
-    // Extract the delay from the FU output.
-    TNL->extractDelay(L.getSelector(), Src.get(), Srcs);
-    for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-      VASTSeqValue *SrcV = I->first;
-      // The sources must be FU output.
-      assert(SrcV->isFUOutput() && SrcV->getLLVMValue() == Inst && "Bad latch!");
-      delay_type OldDelay = DIS->getPathDelay(Inst, Inst);
-      DIS->annotatePathDelay(Inst, Inst, std::max(OldDelay, I->second));
-    }
-  }
-};
-
-/// DelayAnnotator - Back annotate the delay to the timing netlist.
-///
-struct DelayAnnotator : public DatapathVisitor<DelayAnnotator> {
-  TimingNetlist &TNL;
-  DelayInfoStorage &DIS;
-
-  DelayAnnotator(TimingNetlist &TNL, DelayInfoStorage &DIS)
-    : TNL(TNL), DIS(DIS) {}
-
-  void visitPair(VASTValue *Dst, Value *DstV, VASTSeqValue *Src, Value *SrcV) {
-    TNL.annotateDelay(Src, Dst, DIS.getPathDelay(DstV, SrcV));
-  }
-
-  void visitSelFanin(VASTSelector *Sel, Value *User,
-                     VASTValue *FI, Value *Operand) {
-    StringRef SelName = Sel->getName();
-    if (Sel->num_defs()) {
-      // If the Selector have any definition used by the datapath, the
-      // corresponding LLVM IR should have a name!
-      assert(!User->getName().empty() && "Unexpected empty name!");
-      SelName = User->getName();
-    }
-
-    TNL.annotateDelay(FI, Sel, DIS.getFaninDelay(SelName, Operand));
-  }
-
-  void visitFULatch(const VASTLatch &L, Instruction *Inst) {
-    VASTValue *Src = VASTValPtr(L).get();
-
-    // Extract the source registers.
-    std::set<VASTSeqValue*> Srcs;
-    Src->extractSupportingSeqVal(Srcs);
-
-    typedef std::set<VASTSeqValue*>::iterator src_iterator;
-    for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-      VASTSeqValue *SrcV = *I;
-      // The sources must be FU output.
-      assert(SrcV->isFUOutput() && SrcV->getLLVMValue() == Inst && "Bad latch!");
-      TNL.annotateDelay(SrcV, Src, DIS.getPathDelay(Inst, Inst));
-    }
-  }
-};
+namespace {
 
 class IterativeScheduling : public VASTModulePass, public PMDataManager {
   const std::string OriginalRTLOutput, OriginalMCPOutput;
@@ -426,14 +67,7 @@ public:
     AU.addRequired<DominatorTree>();
     AU.addRequired<LoopInfo>();
     AU.addRequired<BranchProbabilityInfo>();
-    AU.addRequired<TimingNetlist>();
-    AU.addRequired<Dataflow>();
-
-    if (MaxIteration > 1) {
-      AU.addRequired<DelayInfoStorage>();
-      // Initialize the DelayInfoStorage by the unscheduled netlist.
-      AU.addRequired<DelayExtractor>();
-    }
+    AU.addRequired<DataflowAnnotation>();
   }
 
   void recoverOutputPath();
@@ -477,8 +111,7 @@ public:
 
   bool runOnVASTModule(VASTModule &VM) {
     if (MaxIteration == 0) return false;
-    
-    TimingNetlist &TNL = getAnalysis<TimingNetlist>();
+
     Function &F = VM.getLLVMFunction();
 
     VASTScheduling Scheduler;
@@ -492,11 +125,9 @@ public:
       if (DumpIntermediateNetlist) changeOutputPaths(i - 1);
 
       runSingleIteration(F);
-      TNL.releaseMemory();
       Scheduler.releaseMemory();
 
       VASTModule &NextVM = rebuildModule();
-      DelayAnnotator(TNL, getAnalysis<DelayInfoStorage>()).visit(NextVM);
       Scheduler.runOnVASTModule(NextVM);
     }
 
@@ -524,7 +155,7 @@ public:
 
     // Add the passes for each single iteration.
     schedulePass(createLUTMappingPass());
-    schedulePass(new DelayExtractor());
+    schedulePass(new DataflowAnnotation(true));
 
     // Finish the whole HLS process if we want to dump the intermediate netlist
     // for each iteration.
@@ -568,30 +199,13 @@ public:
 };
 }
 //===----------------------------------------------------------------------===//
-char DelayInfoStorage::ID = 0;
-INITIALIZE_PASS(DelayInfoStorage, "shang-delay-information-storage",
-                "The Storage to maintian the delay information across"
-                " scheduling iterations",
-                false, true)
-
-char DelayExtractor::ID = 0;
-INITIALIZE_PASS_BEGIN(DelayExtractor, "shang-delay-information-extractor",
-                      "Extract the delay information to cross-iteration storage",
-                      false, true)
-  INITIALIZE_PASS_DEPENDENCY(Dataflow)
-  INITIALIZE_PASS_DEPENDENCY(DelayInfoStorage)
-INITIALIZE_PASS_END(DelayExtractor, "shang-delay-information-extractor",
-                    "Extract the delay information to cross-iteration storage",
-                    false, true)
-
 char IterativeScheduling::ID = 0;
 
 INITIALIZE_PASS_BEGIN(IterativeScheduling, "shang-iterative-scheduling",
                       "Preform iterative scheduling",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
-  INITIALIZE_PASS_DEPENDENCY(DelayInfoStorage)
-  INITIALIZE_PASS_DEPENDENCY(DelayExtractor)
+  INITIALIZE_PASS_DEPENDENCY(DataflowAnnotation)
   INITIALIZE_PASS_DEPENDENCY(LoopInfo)
   INITIALIZE_PASS_DEPENDENCY(BranchProbabilityInfo)
 INITIALIZE_PASS_END(IterativeScheduling, "shang-iterative-scheduling",

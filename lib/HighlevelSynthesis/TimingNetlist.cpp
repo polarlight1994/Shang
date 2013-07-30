@@ -145,7 +145,6 @@ INITIALIZE_PASS_BEGIN(TimingNetlist, "shang-timing-netlist",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(SelectorSynthesis)
-  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
 INITIALIZE_PASS_END(TimingNetlist, "shang-timing-netlist",
                     "Preform Timing Estimation on the RTL Netlist",
                     false, true)
@@ -162,13 +161,6 @@ void TimingNetlist::releaseMemory() {
 
 void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
-  // Perform the control logic synthesis because we need to write the netlist.
-  if (TimingModel == TimingNetlist::External) {
-    AU.addRequiredID(ControlLogicSynthesisID);
-    AU.addRequiredID(SelectorSynthesisID);
-    AU.addRequiredID(DatapathNamerID);
-  }
-
   AU.setPreservesAll();
 }
 
@@ -234,13 +226,6 @@ void TimingNetlist::buildTimingPathOnTheFly(VASTValPtr V) {
 }
 
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
-  if (TimingModel == TimingNetlist::External) {
-    if (!performExternalAnalysis(VM))
-      report_fatal_error("External timing analysis fail!");
-
-    return false;
-  }
-  
   BlackBoxDelayEsitmator Estimator(PathInfo);
 
   // Build the timing path for datapath nodes.
