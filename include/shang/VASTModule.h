@@ -337,9 +337,6 @@ public:
 
   void print(raw_ostream &OS) const;
 
-  /// Assign name to the nodes in datapath.
-  void nameDatapath(StringSet<> &Names, CachedStrashTable *Strash);
-
   /// Perform the Garbage Collection to release the dead objects on the
   /// VASTModule
   void gc();
