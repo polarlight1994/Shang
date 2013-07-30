@@ -92,6 +92,7 @@ void initializeLowerAllocaPass(PassRegistry &Registry);
 void initializeGlobalToStackPass(PassRegistry &Registry);
 void initializeLowerIntrinsicPass(PassRegistry &Registry);
 void initializeLUTMappingPass(PassRegistry &Registry);
+void initializeDataflowPass(PassRegistry &Registry);
 void initializeTimingNetlistPass(PassRegistry &Registry);
 void initializeVASTSchedulingPass(PassRegistry &Registry);
 void initializeIterativeSchedulingPass(PassRegistry &Registry);

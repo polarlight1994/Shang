@@ -14,6 +14,7 @@
 //===----------------------------------------------------------------------===//
 //
 
+#include "Dataflow.h"
 #include "TimingNetlist.h"
 #include "VASTScheduling.h"
 
@@ -426,6 +427,8 @@ public:
     AU.addRequired<LoopInfo>();
     AU.addRequired<BranchProbabilityInfo>();
     AU.addRequired<TimingNetlist>();
+    AU.addRequired<Dataflow>();
+
     if (MaxIteration > 1) {
       AU.addRequired<DelayInfoStorage>();
       // Initialize the DelayInfoStorage by the unscheduled netlist.
@@ -575,7 +578,7 @@ char DelayExtractor::ID = 0;
 INITIALIZE_PASS_BEGIN(DelayExtractor, "shang-delay-information-extractor",
                       "Extract the delay information to cross-iteration storage",
                       false, true)
-  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
+  INITIALIZE_PASS_DEPENDENCY(Dataflow)
   INITIALIZE_PASS_DEPENDENCY(DelayInfoStorage)
 INITIALIZE_PASS_END(DelayExtractor, "shang-delay-information-extractor",
                     "Extract the delay information to cross-iteration storage",

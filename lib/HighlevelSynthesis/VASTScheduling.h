@@ -528,7 +528,7 @@ struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {
   }
 };
 
-class TimingNetlist;
+class Dataflow;
 
 class Loop;
 class LoopInfo;
@@ -543,7 +543,7 @@ class VASTScheduling : public VASTModulePass {
   ArgMapTy ArgMap;
 
   VASTSchedGraph *G;
-  TimingNetlist *TNL;
+  Dataflow *DF;
   VASTModule *VM;
 
   // Analysis for the scheduler
@@ -556,11 +556,10 @@ class VASTScheduling : public VASTModulePass {
 
   // Calculate the maximal slack available from the previous pipeline stage.
   float slackFromPrevStage(VASTSeqOp *Op);
-  void buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
-                             float delay);
-  void buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U);
+  void buildFlowDependencies(VASTSchedUnit *DstU, Value *Src, float delay);
+  void buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U);
   void buildFlowDependencies(VASTSchedUnit *U);
-  void buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U);
+  void buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U);
   VASTSchedUnit *getFlowDepSU(Value *V);
   VASTSchedUnit *getLaunchSU(Value *V);
 

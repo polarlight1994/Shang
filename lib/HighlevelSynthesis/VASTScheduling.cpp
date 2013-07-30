@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 //
 
-#include "TimingNetlist.h"
+#include "Dataflow.h"
 #include "VASTScheduling.h"
 #include "SDCScheduler.h"
 #include "ScheduleDOT.h"
@@ -367,7 +367,7 @@ VASTScheduling::VASTScheduling() : VASTModulePass(ID) {
 void VASTScheduling::getAnalysisUsage(AnalysisUsage &AU) const  {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequiredID(BasicBlockTopOrderID);
-  AU.addRequired<TimingNetlist>();
+  AU.addRequired<Dataflow>();
   AU.addRequired<AliasAnalysis>();
   AU.addRequired<DominatorTree>();
   AU.addRequired<LoopInfo>();
@@ -377,7 +377,7 @@ void VASTScheduling::getAnalysisUsage(AnalysisUsage &AU) const  {
 INITIALIZE_PASS_BEGIN(VASTScheduling,
                       "vast-scheduling", "Perfrom Scheduling on the VAST",
                       false, true)
-  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
+  INITIALIZE_PASS_DEPENDENCY(Dataflow)
   INITIALIZE_PASS_DEPENDENCY(LoopInfo)
   INITIALIZE_PASS_DEPENDENCY(BranchProbabilityInfo)
 INITIALIZE_PASS_END(VASTScheduling,
@@ -435,90 +435,75 @@ float VASTScheduling::slackFromPrevStage(VASTSeqOp *Op) {
 
   if (SrcOp == 0 || !SrcOp->isLatch()) return 0.0f;
 
-  TimingNetlist::RegDelaySet Srcs;
-  VASTLatch CurLatch = SrcOp->getSrc(0);
-  VASTValPtr LatchSrc = CurLatch;
-  TNL->extractDelay(CurLatch.getSelector(), LatchSrc.get(), Srcs);
+  //TimingNetlist::RegDelaySet Srcs;
+  //VASTLatch CurLatch = SrcOp->getSrc(0);
+  //VASTValPtr LatchSrc = CurLatch;
 
-  // We do not have any delay information from the previous pipeline stage.
-  if (Srcs.empty()) return 0.0f;
+  //// TODO: Get the delay from dataflow.
+  ////TNL->extractDelay(CurLatch.getSelector(), LatchSrc.get(), Srcs);
 
-  // Do not know how to compute the slack ...
-  if (!SrcOp->isLatch() || SrcOp->getCyclesFromLaunch() == 0) return 0.0f;
+  //// We do not have any delay information from the previous pipeline stage.
+  //if (Srcs.empty()) return 0.0f;
 
-  float MinimalSlack = 1.0f;
-  // For a latch from FU, there is at least 1 cycle available.
-  float CycleSlack = 1.0f;
-  typedef TimingNetlist::RegDelaySet::iterator src_iterator;
-  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-    float CurDelay = I->second;
-    float CurSlack = std::max<float>(ceil(CurDelay), CycleSlack) - CurDelay;
-    MinimalSlack = std::min(MinimalSlack, CurSlack);
-  }
+  //// Do not know how to compute the slack ...
+  //if (!SrcOp->isLatch() || SrcOp->getCyclesFromLaunch() == 0) return 0.0f;
 
-  return MinimalSlack;
+  //float MinimalSlack = 1.0f;
+  //// For a latch from FU, there is at least 1 cycle available.
+  //float CycleSlack = 1.0f;
+  //typedef TimingNetlist::RegDelaySet::iterator src_iterator;
+  //for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+  //  float CurDelay = I->second;
+  //  float CurSlack = std::max<float>(ceil(CurDelay), CycleSlack) - CurDelay;
+  //  MinimalSlack = std::min(MinimalSlack, CurSlack);
+  //}
+
+  return 0.0f; // MinimalSlack;
 }
 
-void
-VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, VASTSeqValue *Src,
-                                      float delay) {
+void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
+                                           float delay) {
   assert(Src && "Not a valid source!");
-
-  Value *V = Src->getLLVMValue();
-  assert(V && "Expect LLVM Value for flow dependencies!");
-  assert((Src->num_fanins() == 1 || isa<PHINode>(V)) && "SeqVal not in SSA!");
-  assert((!isa<Instruction>(V)
-          || DT->dominates(cast<Instruction>(V)->getParent(), DstU->getParent()))
+  assert((!isa<Instruction>(Src)
+          || DT->dominates(cast<Instruction>(Src)->getParent(), DstU->getParent()))
          && "Flow dependency should be a dominance edge!");
+
+  // Ignore the dependencies from FU output, there is no corresponding SeqOp,
+  // and hence there is no corresponding scheduling unit.
+  if (DstU->getInst() == Src)
+    return;
+
   // The static register is virtually defined at the entry slot. Because
   // we only write it when the function exit. Whe we read is the value from
   // last function execution.
-  VASTSchedUnit *SrcSU = Src->isStatic() ? G->getEntry() : getFlowDepSU(V);
+  VASTSchedUnit *SrcSU = getFlowDepSU(Src);
 
   // Try to fold the delay of current pipeline stage to the previous pipeline
   // stage, if the previous pipeline stage has enough slack.
   if (slackFromPrevStage(SrcSU->getSeqOp()) > delay)
     delay = 0.0f;
 
-  assert(!Src->isFUOutput() && "Unexpected FU output!");
   DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay)));
 }
 
-void VASTScheduling::buildFlowDependencies(VASTSeqOp *Op, VASTSchedUnit *U) {
-  TimingNetlist::RegDelaySet Srcs;
-  typedef TimingNetlist::RegDelaySet::iterator src_iterator;
+void VASTScheduling::buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U) {
+  Dataflow::SrcSet Srcs;
+  DF->getFlowDep(Inst, Srcs);
 
-  assert(Op->num_srcs() && "No operand for flow dependencies!");
-
-  VASTValue *Cnd = VASTValPtr(Op->getGuard()).get();
-
-  for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
-    VASTLatch L = Op->getSrc(i);
-    VASTValue *FI = VASTValPtr(L).get();
-    // FIXME: Assert the selector is in SSA form!
-    VASTSelector *Sel = L.getSelector();
-
-    // Extract the delay from the fanin and the guarding condition.
-    TNL->extractDelay(Sel, FI, Srcs);
-    TNL->extractDelay(Sel, Cnd, Srcs);
-  }
-
+  typedef Dataflow::SrcSet::iterator src_iterator;
   // Also calculate the path for the guarding condition.
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
     buildFlowDependencies(U, I->first, I->second);
 }
 
-void VASTScheduling::buildFlowDependenciesForSlotCtrl(VASTSchedUnit *U) {
-  VASTSlotCtrl *SlotCtrl = cast<VASTSlotCtrl>(U->getSeqOp());
-  TimingNetlist::RegDelaySet Srcs;
-  typedef TimingNetlist::RegDelaySet::iterator src_iterator;
-  
-  VASTValue *Cnd = VASTValPtr(SlotCtrl->getGuard()).get();
-  VASTRegister *Slot = SlotCtrl->getTargetSlot()->getRegister();
-  VASTSelector *Sel = Slot ? Slot->getSelector() : 0;
+void
+VASTScheduling::buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U) {
+  Dataflow::SrcSet Srcs;
+  typedef Dataflow::SrcSet::iterator src_iterator;
 
-  TNL->extractDelay(Sel, Cnd, Srcs);
+  DF->getIncomingFrom(PHI, U->getParent(), Srcs);
 
+  // Also calculate the path for the guarding condition.
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
     buildFlowDependencies(U, I->first, I->second);
 }
@@ -527,31 +512,32 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   Instruction *Inst = U->getInst();
 
   if (U->isLaunch()) {
-    buildFlowDependencies(U->getSeqOp(), U);
+    buildFlowDependencies(Inst, U);
     return;
   }
 
   assert(U->isLatch() && "Unexpected scheduling unit type!");
 
-  if (isa<PHINode>(Inst)) {
-    buildFlowDependencies(U->getSeqOp(), U);
+  if (PHINode *PHI = dyn_cast<PHINode>(Inst)) {
+    buildFlowDependenciesForPHILatch(PHI, U);
     return;
   }
 
   if (isa<TerminatorInst>(Inst)) {
-    buildFlowDependencies(U->getSeqOp(), U);
+    buildFlowDependencies(Inst, U);
     return;
   }
 
   VASTSeqInst *SeqInst = cast<VASTSeqInst>(U->getSeqOp());
   unsigned Latency = SeqInst->getCyclesFromLaunch();
   VASTSchedUnit *LaunchU = getLaunchSU(Inst);
-  // This is a lowered signle-element- block RAM access.
+  // This is a lowered single-element- block RAM access.
   if (Latency == 0) {
     assert(isa<StoreInst>(Inst)
            && isa<GlobalVariable>(cast<StoreInst>(Inst)->getPointerOperand())
            && "Zero latency latching is not allowed!");
-    buildFlowDependencies(U->getSeqOp(), U);
+    llvm_unreachable("Unexpected single-element block RAM access!");
+    buildFlowDependencies(Inst, U);
     return;
   }
 
@@ -689,7 +675,7 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
         // Also map the target BB to this terminator.
         IR2SUMap[TargetBB].push_back(U);
 
-        buildFlowDependenciesForSlotCtrl(U);
+        buildFlowDependencies(U);
 
         U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
         continue;
@@ -969,7 +955,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   G = GPtr.get();
 
   // Initialize the analyses
-  TNL = &getAnalysis<TimingNetlist>();
+  DF = &getAnalysis<Dataflow>();
   AA = &getAnalysis<AliasAnalysis>();
   LI = &getAnalysis<LoopInfo>();
   BPI = &getAnalysis<BranchProbabilityInfo>();
