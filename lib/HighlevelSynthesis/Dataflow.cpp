@@ -19,6 +19,8 @@
 #include "shang/VASTModule.h"
 
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/Support/Path.h"
 #define DEBUG_TYPE "shang-dataflow"
 #include "llvm/Support/Debug.h"
 
@@ -211,4 +213,72 @@ bool DataflowAnnotation::runOnVASTModule(VASTModule &VM) {
   externalDelayAnnotation(VM);
 
   return false;
+}
+
+void Dataflow::dumpToSQL() const {
+  SmallString<256> SQLPath
+    = sys::path::parent_path(getStrValueFromEngine("RTLOutput"));
+  sys::path::append(SQLPath, "delay_annotation.sql");
+
+  std::string Error;
+  raw_fd_ostream Output(SQLPath.c_str(), Error);
+  dumpFlowDeps(Output);
+  dumpIncomings(Output);
+}
+
+void Dataflow::dumpFlowDeps(raw_ostream &OS) const {
+  OS << "CREATE TABLE flowdeps( \
+        id INTEGER PRIMARY KEY AUTOINCREMENT, \
+        src TEXT, \
+        dst TEXT, \
+        generation INTEGER, \
+        delay REAL \
+        );\n";
+
+  typedef std::map<Instruction*, TimedSrcSet>::const_iterator iterator;
+  typedef TimedSrcSet::const_iterator src_iterator;
+  for (iterator I = FlowDeps.begin(), E = FlowDeps.end(); I != E; ++I) {
+    Instruction *Dst = I->first;
+    const TimedSrcSet &Srcs = I->second;
+    for (src_iterator J = Srcs.begin(), E = Srcs.end(); J != E; ++J) {
+      OS << "INSERT INTO flowdeps(src, dst, generation, delay) VALUES(\n"
+         << '\'' << *J->first << "', \n"
+         << '\'' << *Dst << "', \n"
+         << '\'' << J->second.second << "', \n"
+         << J->second.first << ");\n";
+    }
+  }
+}
+
+void Dataflow::dumpIncomings(raw_ostream &OS) const {
+  OS << "CREATE TABLE incomings( \
+        id INTEGER PRIMARY KEY AUTOINCREMENT, \
+        src TEXT, \
+        bb TEXT, \
+        dst TEXT, \
+        generation INTEGER, \
+        delay REAL \
+        );\n";
+
+  typedef
+  std::map<Instruction*, std::map<BasicBlock*, TimedSrcSet> >::const_iterator
+  iterator;
+  typedef std::map<BasicBlock*, TimedSrcSet>::const_iterator bb_iterator;
+  typedef TimedSrcSet::const_iterator src_iterator;
+  for (iterator I = Incomings.begin(), E = Incomings.end(); I != E; ++I) {
+    Instruction *Dst = I->first;
+    const std::map<BasicBlock*, TimedSrcSet> &BBs = I->second;
+    for (bb_iterator J = BBs.begin(), E = BBs.end(); J != E; ++J) {
+      BasicBlock *BB = J->first;
+      const TimedSrcSet &Srcs = J->second;
+      for (src_iterator K = Srcs.begin(), E = Srcs.end(); K != E; ++K) {
+        OS << "INSERT INTO incomings(src, bb, dst, generation, delay) VALUES(\n"
+           << '\'' << *K->first << "', \n"
+           << '\'' << BB->getName() << "', \n"
+           << '\'' << *Dst << "', \n"
+           << '\'' << K->second.second << "', \n"
+           << K->second.first << ");\n";
+      }
+    }
+  }
 }

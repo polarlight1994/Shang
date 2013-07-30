@@ -37,6 +37,8 @@ private:
 
   void annotateTriangleDelayFromPHI(SrcSet &Deps, Instruction *Src);
   SrcSet &getDeps(Instruction *Inst, BasicBlock *Parent);
+  void dumpIncomings(raw_ostream &OS) const;
+  void dumpFlowDeps(raw_ostream &OS) const;
 public:
   static char ID;
   Dataflow();
@@ -49,6 +51,8 @@ public:
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnFunction(Function &F);
   void releaseMemory();
+
+  void dumpToSQL() const;
 };
 
 class DataflowAnnotation : public VASTModulePass {
