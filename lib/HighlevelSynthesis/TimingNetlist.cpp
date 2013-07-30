@@ -252,7 +252,6 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
       // Path from the direct inputs of the selector.
       buildTimingPath(Sel->getFanin().get(), Sel, delay_type());
       buildTimingPath(Sel->getGuard().get(), Sel, delay_type());
-      continue;
     }
 
     typedef VASTSelector::iterator fanin_iterator;
