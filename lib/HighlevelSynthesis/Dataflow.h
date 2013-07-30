@@ -22,6 +22,7 @@
 namespace llvm {
 class DominatorTree;
 class VASTSeqOp;
+class VASTSlot;
 class VASTSeqValue;
 class TimingNetlist;
 
@@ -34,17 +35,19 @@ private:
   std::map<Instruction*, std::map<BasicBlock*, SrcSet> > Incomings;
   DominatorTree *DT;
 
+  void annotateTriangleDelayFromPHI(SrcSet &Deps, Instruction *Src);
+  SrcSet &getDeps(Instruction *Inst, BasicBlock *Parent);
 public:
   static char ID;
   Dataflow();
 
-  void annotateDelay(Instruction *Inst, BasicBlock *Parent, Value *V, float delay);
+  void annotateDelay(Instruction *Inst, VASTSlot *S, Value *V, float delay);
 
   void getFlowDep(Instruction *Inst, SrcSet &Set) const;
   void getIncomingFrom(Instruction *Inst, BasicBlock *BB, SrcSet &Set) const;
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
-  bool runOnFunction(Function &F) { return false; }
+  bool runOnFunction(Function &F);
   void releaseMemory();
 };
 
@@ -56,10 +59,8 @@ class DataflowAnnotation : public VASTModulePass {
   void extractFlowDep(VASTSeqOp *SeqOp, TimingNetlist &TNL);
   void internalDelayAnnotation(VASTModule &VM);
 
-  void annotateDelay(Instruction *Inst, BasicBlock *Parent,
+  void annotateDelay(Instruction *Inst, VASTSlot *S,
                      VASTSeqValue *V, float delay);
-
-  static BasicBlock *getIncomingBB(VASTSeqOp *Op);
 public:
 
   static char ID;

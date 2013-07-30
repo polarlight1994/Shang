@@ -47,6 +47,11 @@ void Dataflow::releaseMemory() {
   Incomings.clear();
 }
 
+bool Dataflow::runOnFunction(Function &F) {
+  DT = &getAnalysis<DominatorTree>();
+  return false;
+}
+
 void Dataflow::getFlowDep(Instruction *Inst, SrcSet &Set) const {
   std::map<Instruction*, SrcSet>::const_iterator I = FlowDeps.find(Inst);
   if (I == FlowDeps.end()) {
@@ -84,16 +89,35 @@ Dataflow::getIncomingFrom(Instruction *Inst, BasicBlock *BB, SrcSet &Set) const 
   Set.insert(J->second.begin(), J->second.end());
 }
 
-void Dataflow::annotateDelay(Instruction *Inst, BasicBlock *Parent,
-                             Value *V, float delay) {
-  assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");
+void Dataflow::annotateTriangleDelayFromPHI(SrcSet &Deps, Instruction *Src) {
 
-  if (!isa<PHINode>(Inst) && Inst->getParent() == Parent) {
-    FlowDeps[Inst][V] = delay;
-    return;
+}
+
+Dataflow::SrcSet &Dataflow::getDeps(Instruction *Inst, BasicBlock *Parent) {
+  if (!isa<PHINode>(Inst) && Inst->getParent() == Parent)
+    return FlowDeps[Inst];
+
+  return Incomings[Inst][Parent];
+}
+
+void
+Dataflow::annotateDelay(Instruction *Inst, VASTSlot *S, Value *V, float delay) {
+  assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");
+  BasicBlock *ParentBB = S->getParent();
+  assert((ParentBB == Inst->getParent() || isa<TerminatorInst>(Inst)) &&
+         "Parent not match!");
+
+  if (Instruction *Src = dyn_cast<Instruction>(V)) {
+    if (S->IsSubGrp) {
+      S = S->getParentGroup();
+      if (BasicBlock *BB = S->getParent())
+        ParentBB = BB;
+    }
   }
 
-  Incomings[Inst][Parent][V] = delay;
+  SrcSet &Srcs = getDeps(Inst, ParentBB);
+
+  Srcs[V] = delay;
 }
 
 DataflowAnnotation::DataflowAnnotation(bool Accumulative)
@@ -125,22 +149,9 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
 }
 
-BasicBlock *DataflowAnnotation::getIncomingBB(VASTSeqOp *Op) {
-  VASTSlot *S = Op->getSlot();
-  BasicBlock *ParentBB = S->getParent();
-
-  if (S->IsSubGrp) {
-    S = S->getParentGroup();
-    if (BasicBlock *BB = S->getParent())
-      ParentBB = BB;
-  }
-
-  return ParentBB;
-}
-
-void DataflowAnnotation::annotateDelay(Instruction *Inst, BasicBlock *Parent,
+void DataflowAnnotation::annotateDelay(Instruction *Inst, VASTSlot *S,
                                        VASTSeqValue *SV, float delay) {
-  DF->annotateDelay(Inst, Parent, SV->getLLVMValue(), delay);
+  DF->annotateDelay(Inst, S, SV->getLLVMValue(), delay);
 }
 
 void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
@@ -157,18 +168,20 @@ void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
 
   for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
     VASTLatch L = Op->getSrc(i);
+    VASTSelector *Sel = L.getSelector();
+    if (Sel->isTrivialFannin(L))
+      continue;
+
     VASTValPtr FI = L;
 
     // Extract the delay from the fan-in and the guarding condition.
-    TNL.extractDelay(L.getSelector(), FI.get(), Srcs);
-    TNL.extractDelay(L.getSelector(), Cnd.get(), Srcs);
+    TNL.extractDelay(Sel, FI.get(), Srcs);
+    TNL.extractDelay(Sel, Cnd.get(), Srcs);
   }
-
-  BasicBlock *ParentBB = getIncomingBB(Op);
 
   typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-    annotateDelay(Inst, ParentBB, I->first, I->second);
+    annotateDelay(Inst, Op->getSlot(), I->first, I->second);
 }
 
 void DataflowAnnotation::internalDelayAnnotation(VASTModule &VM) {

@@ -308,11 +308,9 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
       ETA.getPathDelay(L.getSelector(), Cnd.get(), L.getSlot(), Srcs, Visited);
     }
 
-    BasicBlock *ParentBB = getIncomingBB(Op);
-
     typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
     for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-      annotateDelay(Inst, ParentBB, I->first, I->second);
+      annotateDelay(Inst, Op->getSlot(), I->first, I->second);
   }
 
   // External timing analysis successfully completed.
