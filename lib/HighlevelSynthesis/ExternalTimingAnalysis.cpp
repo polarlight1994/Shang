@@ -107,15 +107,8 @@ struct ExternalTimingAnalysis {
   typedef std::map<VASTValue*, float*> SrcInfo;
   typedef std::map<VASTNode*, SrcInfo> PathInfo;
   PathInfo DelayMatrix;
-
-  float getSelDelay(VASTSelector *S, VASTValue *FI) const {
-    PathInfo::const_iterator I = DelayMatrix.find(S);
-    assert(I != DelayMatrix.end() && "Fanin delay not available!");
-    const SrcInfo &FIDelays = I->second;
-    SrcInfo::const_iterator J = FIDelays.find(FI);
-    assert(J != FIDelays.end() && "Delay record not allocated?");
-    return *J->second;
-  }
+  typedef std::map<VASTSelector*, float*> SelDelayInfo;
+  SelDelayInfo SelectorDelay;
 
   // Write the wrapper of the netlist.
   void writeNetlist(raw_ostream &O) const;
@@ -163,7 +156,7 @@ struct ExternalTimingAnalysis {
 
   bool analysisWithSynthesisTool();
 
-  void getPathDelay(VASTSelector *Sel, VASTValue *FI, VASTSlot *S,
+  void getPathDelay(VASTSelector *Sel, VASTValue *FI,
                     std::map<VASTSeqValue*, float> &Srcs,
                     std::set<VASTExpr*> &Visited);
 
@@ -211,7 +204,6 @@ struct ExternalTimingAnalysis {
 }
 
 void ExternalTimingAnalysis::getPathDelay(VASTSelector *Sel, VASTValue *FI,
-                                          VASTSlot *S,
                                           std::map<VASTSeqValue*, float> &Srcs,
                                           std::set<VASTExpr*> &Visited) {
   LeafSet Leaves;
@@ -247,8 +239,8 @@ void ExternalTimingAnalysis::getPathDelay(VASTSelector *Sel, VASTValue *FI,
   if (!AnyPathMissed)
     return;
 
-  SrcInfo::const_iterator J = FIDelays.find(S->getValue());
-  assert(J != FIDelays.end() && "Delay from slot register not found!");
+  SelDelayInfo::const_iterator J = SelectorDelay.find(Sel);
+  assert(J != SelectorDelay.end() && "Delay of selector not found!");
 
   if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(FI)) {
     // DIRTY HACK: If FI is simply a VASTSeqValue, we need to get the
@@ -304,8 +296,8 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
       VASTValPtr FI = L;
 
       // Extract the delay from the fan-in and the guarding condition.
-      ETA.getPathDelay(L.getSelector(), FI.get(), L.getSlot(), Srcs, Visited);
-      ETA.getPathDelay(L.getSelector(), Cnd.get(), L.getSlot(), Srcs, Visited);
+      ETA.getPathDelay(Sel, FI.get(), Srcs, Visited);
+      ETA.getPathDelay(Sel, Cnd.get(), Srcs, Visited);
     }
 
     typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
@@ -322,6 +314,10 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {
   const char *FUTemplatePath[] = { "FUs", "CommonTemplate" };
   std::string FUTemplate = getStrValueFromEngine(FUTemplatePath);
   Out << FUTemplate << '\n';
+
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
+    I->printSelectorModule(Out);
 
   // Write buffers to output
   VM.printModuleDecl(Out);

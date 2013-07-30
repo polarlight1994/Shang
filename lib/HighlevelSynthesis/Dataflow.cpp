@@ -153,7 +153,6 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequired<Dataflow>();
   AU.addRequiredID(ControlLogicSynthesisID);
-  AU.addRequiredID(SelectorSynthesisID);
   AU.addRequiredID(DatapathNamerID);
   AU.addRequired<TimingNetlist>();
   AU.setPreservesAll();

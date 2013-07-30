@@ -73,6 +73,9 @@ private:
   void printSelector(raw_ostream &OS) const;
   void verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
                         VASTValue *V, ArrayRef<VASTSlot*> ReadSlots) const;
+
+  void instantiateSelector(raw_ostream &OS) const;
+
 public:
   VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
                Type T = Temp, VASTNode *Node = 0);
@@ -126,6 +129,7 @@ public:
   void dropMux();
 
   bool isSelectorSynthesized() const { return !Guard.isInvalid(); }
+  void printSelectorModule(raw_ostream &O) const;
 
   VASTSeqValue *getSSAValue() const;
 
