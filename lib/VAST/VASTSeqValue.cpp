@@ -74,6 +74,39 @@ bool VASTSelector::isTrivialFannin(const VASTLatch &L) const {
   return false;
 }
 
+unsigned VASTSelector::numNonTrivialFanins() const {
+  unsigned Count = 0;
+
+  for (const_iterator I = begin(), E = end(); I != E; ++I) {
+    const VASTLatch &L = *I;
+
+    // Ignore the trivial fanins.
+    if (isTrivialFannin(L))
+      continue;
+
+    ++Count;
+  }
+
+  return Count;
+}
+
+VASTLatch VASTSelector::getUniqueFannin() const {
+  assert(numNonTrivialFanins() == 1 && "There is no unique fanin!");
+
+  for (const_iterator I = begin(), E = end(); I != E; ++I) {
+    const VASTLatch &L = *I;
+
+    // Ignore the trivial fanins.
+    if (isTrivialFannin(L))
+      continue;
+
+    return L;
+  }
+
+  llvm_unreachable("Should had returned the unique fanin!");
+  return VASTLatch();
+}
+
 namespace {
 // The VASTSeqValues from the same VASTSelector are not equal in the data flow,
 // because their are representing the value of the same selector at different

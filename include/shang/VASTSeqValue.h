@@ -119,6 +119,8 @@ public:
   // Return true if the latched value is X (undefined value) or the SeqVal from
   // the same selector.
   bool isTrivialFannin(const VASTLatch &L) const;
+  unsigned numNonTrivialFanins() const;
+  VASTLatch getUniqueFannin() const;
 
   void buildMux(VASTExprBuilder &Builder, CachedStrashTable &CST);
   void dropMux();
