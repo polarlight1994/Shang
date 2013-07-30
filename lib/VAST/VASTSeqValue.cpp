@@ -296,13 +296,11 @@ void VASTSelector::printVerificationCode(vlang_raw_ostream &OS,
 
   OS.indent(2) << "$finish(1);\nend\n";
 
-  //verifyHoldCycles(OS, STGDist, getGuard().get(), AllSlots);
-
-  //if (!isEnable() && !isSlot())
-  //  verifyHoldCycles(OS, STGDist, getFanin().get(), AllSlots);
-
-  //for (ann_iterator I = ann_begin(), E = ann_end(); I != E; ++I)
-  //  verifyHoldCycles(OS, STGDist, VASTValPtr(I->first).get(), I->second);
+  for (const_iterator I = begin(), E = end(); I != E; ++I) {
+    const VASTLatch &L = *I;
+    verifyHoldCycles(OS, STGDist, VASTValPtr(L).get(), L.getSlot());
+    verifyHoldCycles(OS, STGDist, VASTValPtr(L.getGuard()).get(), L.getSlot());
+  }
 
   // Reset the hold counter when the register is changed.
   OS << getName() << "_hold_counter <= " << getName() << "_selector_guard"
@@ -520,86 +518,15 @@ void VASTSelector::annotateReadSlot(VASTSlot *S, VASTValPtr V)  {
   Annotations[V.get()].push_back(S);
 }
 
-void VASTSelector::buildMux(VASTExprBuilder &Builder, CachedStrashTable &CST) {
-  typedef std::vector<VASTLatch> OrVec;
-  typedef std::map<unsigned, OrVec> CSEMapTy;
-  typedef CSEMapTy::const_iterator iterator;
-
-  CSEMapTy CSEMap;
-
-  for (const_iterator I = begin(), E = end(); I != E; ++I) {
-    VASTLatch U = *I;
-
-    if (isTrivialFannin(U)) continue;
-
-    // Index the input of the assignment based on the strash id. By doing this
-    // we can pack the structural identical inputs together.
-    CSEMap[CST.getOrCreateStrashID(VASTValPtr(U))].push_back(U);
-  }
-
-  if (CSEMap.empty()) return;
-
-  unsigned Bitwidth = getBitWidth();
-
-  SmallVector<VASTValPtr, 4> SlotGuards, SlotFanins, FaninGuards, Fanins;
-  SmallVector<VASTSlot*, 4> Slots;
-
-  for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    SlotGuards.clear();
-    SlotFanins.clear();
-
-    const OrVec &Ors = I->second;
-    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
-      SmallVector<VASTValPtr, 2> CurGuards;
-      const VASTLatch &L = *OI;
-      SlotFanins.push_back(L);
-      VASTSlot *S = L.getSlot();
-
-      if (VASTValPtr SlotActive = L.getSlotActive())
-        CurGuards.push_back(SlotActive);
-
-      CurGuards.push_back(L.getGuard());
-      VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
-
-      // Simply keep all guarding condition, because they are only 1 bit nodes,
-      // and their upper bound is the product of number of slots and number of
-      // basic blocks.
-      CurGuard = Builder.buildBarrier(VASTExpr::dpBarrierKeep, CurGuard);
-
-      // The guarding condition itself is not guard, that is, the guarding
-      // condition is read whenever the slot register is set. Hence, we should
-      // annotate it with the control-equivalent group instead of the guarding
-      // condition equivalent group!
-      // FIXME: We can build apply the keep attribute according to the STG
-      // subgroup hierarchy sequentially to relax the constraints.
-      annotateReadSlot(S->getParentState(), CurGuard);
-      SlotGuards.push_back(CurGuard);
-      Slots.push_back(S);
-    }
-
-    VASTValPtr FIGuard = Builder.buildOrExpr(SlotGuards, 1);
-    FaninGuards.push_back(FIGuard);
-
-    VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
-    VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
-    VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
-    // Do not keep the guarded FI, otherwise the resource usage may be double!
-    GuardedFIVal = Builder.buildBarrier(VASTExpr::dpBarrier, GuardedFIVal);
-    Fanins.push_back(GuardedFIVal);
-    while (!Slots.empty())
-      annotateReadSlot(Slots.pop_back_val(), GuardedFIVal);
-  }
-
-  // Strip the keep attribute if the keeped value is directly fan into the
-  // register.
-  Guard.set(Builder.buildOrExpr(FaninGuards, 1));
-  Fanin.set(Builder.buildOrExpr(Fanins, Bitwidth));
-}
-
 void VASTSelector::dropMux() {
   Annotations.clear();
   Fanin.reset();
   Guard.reset();
+}
+
+void VASTSelector::setMux(VASTValPtr Fanin, VASTValPtr Guard) {
+  this->Fanin.set(Fanin);
+  this->Guard.set(Guard);
 }
 
 //===----------------------------------------------------------------------===//

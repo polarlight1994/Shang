@@ -66,7 +66,6 @@ private:
   typedef std::map<VASTHandle, SmallVector<VASTSlot*, 4> > AnnotationMap;
   AnnotationMap Annotations;
 
-  void annotateReadSlot(VASTSlot *S, VASTValPtr V);
 
   VASTUse Guard, Fanin;
 
@@ -112,6 +111,7 @@ public:
   unsigned size() const { return Assigns.size(); }
   bool empty() const { return Assigns.empty(); }
 
+  void annotateReadSlot(VASTSlot *S, VASTValPtr V);
   typedef AnnotationMap::const_iterator ann_iterator;
   ann_iterator ann_begin() const { return Annotations.begin(); }
   ann_iterator ann_end() const { return Annotations.end(); }
@@ -125,7 +125,7 @@ public:
   unsigned numNonTrivialFanins() const;
   VASTLatch getUniqueFannin() const;
 
-  void buildMux(VASTExprBuilder &Builder, CachedStrashTable &CST);
+  void setMux(VASTValPtr Fanin, VASTValPtr Guard);
   void dropMux();
 
   bool isSelectorSynthesized() const { return !Guard.isInvalid(); }
