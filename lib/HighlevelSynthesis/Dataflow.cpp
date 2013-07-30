@@ -104,14 +104,24 @@ void
 Dataflow::annotateDelay(Instruction *Inst, VASTSlot *S, Value *V, float delay) {
   assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");
   BasicBlock *ParentBB = S->getParent();
-  assert((ParentBB == Inst->getParent() || isa<TerminatorInst>(Inst)) &&
+
+  // Adjust to actual parent BB for the incoming value.
+  if (isa<PHINode>(Inst) || isa<BranchInst>(Inst) || isa<SwitchInst>(Inst)) {
+    S = S->getParentGroup();
+    if (BasicBlock *BB = S->getParent())
+      ParentBB = BB;
+  }
+
+  assert((ParentBB == Inst->getParent() || isa<PHINode>(Inst)) &&
          "Parent not match!");
 
   if (Instruction *Src = dyn_cast<Instruction>(V)) {
-    if (S->IsSubGrp) {
+    // While Src not dominate BB, this is due to CFG folding. We need to get the
+    // parent BB of the actual user, this can be done by move up in the subgroup
+    // tree until we get a BB that is dominated by Src.
+    while (!DT->dominates(Src->getParent(), ParentBB)) {
       S = S->getParentGroup();
-      if (BasicBlock *BB = S->getParent())
-        ParentBB = BB;
+      ParentBB = S->getParent();
     }
   }
 
