@@ -250,6 +250,16 @@ void ExternalTimingAnalysis::getPathDelay(VASTSelector *Sel, VASTValue *FI,
   SrcInfo::const_iterator J = FIDelays.find(S->getValue());
   assert(J != FIDelays.end() && "Delay from slot register not found!");
 
+  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(FI)) {
+    // DIRTY HACK: If FI is simply a VASTSeqValue, we need to get the
+    // interconnect delay between SV and Sel. But TimeQuest will always return
+    // the longest path delay. For now we simply return the delay from the
+    // slot register as the interconnect delay.
+    float &OldDelay = Srcs[SV];
+    OldDelay = std::max(OldDelay, *J->second);
+    return;
+  }
+
   cast<VASTExpr>(FI)->visitConeTopOrder(Visited, *this);
   PathInfo::const_iterator K = DelayMatrix.find(FI);
   assert(K != DelayMatrix.end() && "Fanin delay not available!");
@@ -260,7 +270,7 @@ void ExternalTimingAnalysis::getPathDelay(VASTSelector *Sel, VASTValue *FI,
     VASTSeqValue *Leaf = cast<VASTSeqValue>(I->first);
 
     float &OldDelay = Srcs[Leaf];
-    OldDelay = std::max(OldDelay, *I->second);
+    OldDelay = std::max(OldDelay, *I->second + *J->second);
   }
 }
 
