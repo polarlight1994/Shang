@@ -1044,6 +1044,7 @@ void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<HLSAllocation>();
   AU.addPreserved<DependenceAnalysis>();
   AU.addPreserved<BranchProbabilityInfo>();
+  AU.addPreservedID(DataflowID);
   AU.setPreservesCFG();
 }
 

@@ -31,6 +31,7 @@ extern char &SelectorSynthesisID;
 extern char &DatapathNamerID;
 extern char &SeqLiveVariablesID;
 extern char &STGDistancesID;
+extern char &DataflowID;
 
 Pass *createObjectBasedAliasAnalyaisPass();
 FunctionPass *createDesignMetricsPass();
@@ -93,6 +94,7 @@ void initializeGlobalToStackPass(PassRegistry &Registry);
 void initializeLowerIntrinsicPass(PassRegistry &Registry);
 void initializeLUTMappingPass(PassRegistry &Registry);
 void initializeDataflowPass(PassRegistry &Registry);
+void initializeDataflowAnnotationPass(PassRegistry &Registry);
 void initializeTimingNetlistPass(PassRegistry &Registry);
 void initializeVASTSchedulingPass(PassRegistry &Registry);
 void initializeIterativeSchedulingPass(PassRegistry &Registry);

@@ -263,7 +263,8 @@ void ExternalTimingAnalysis::getPathDelay(VASTSelector *Sel, VASTValue *FI,
     OldDelay = std::max(OldDelay, *I->second);
   }
 }
-bool Dataflow::externalDelayAnnotation(VASTModule &VM) {
+
+bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
   ExternalTimingAnalysis ETA(VM);
 
   // Run the synthesis tool to get the arrival time estimation.

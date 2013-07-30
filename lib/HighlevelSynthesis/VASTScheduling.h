@@ -528,7 +528,7 @@ struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {
   }
 };
 
-class Dataflow;
+class DataflowAnnotation;
 
 class Loop;
 class LoopInfo;
@@ -543,7 +543,7 @@ class VASTScheduling : public VASTModulePass {
   ArgMapTy ArgMap;
 
   VASTSchedGraph *G;
-  Dataflow *DF;
+  DataflowAnnotation *DF;
   VASTModule *VM;
 
   // Analysis for the scheduler

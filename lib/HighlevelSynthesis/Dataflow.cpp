@@ -24,29 +24,20 @@
 
 using namespace llvm;
 
-Dataflow::Dataflow() : VASTModulePass(ID) {
+Dataflow::Dataflow() : FunctionPass(ID) {
   initializeDataflowPass(*PassRegistry::getPassRegistry());
 }
 
 INITIALIZE_PASS_BEGIN(Dataflow,
                       "vast-dataflow", "Dataflow Anlaysis", false, true)
-  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
-  INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
-  INITIALIZE_PASS_DEPENDENCY(SelectorSynthesis)
-  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
+  INITIALIZE_PASS_DEPENDENCY(DominatorTree)
 INITIALIZE_PASS_END(Dataflow,
                     "vast-dataflow", "Dataflow Anlaysis", false, true)
 
 char Dataflow::ID = 0;
+char &llvm::DataflowID = Dataflow::ID;
 
 void Dataflow::getAnalysisUsage(AnalysisUsage &AU) const {
-  VASTModulePass::getAnalysisUsage(AU);
-
-  AU.addRequiredID(ControlLogicSynthesisID);
-  AU.addRequiredID(SelectorSynthesisID);
-  AU.addRequiredID(DatapathNamerID);
-  AU.addRequired<TimingNetlist>();
-
   AU.addRequired<DominatorTree>();
   AU.setPreservesAll();
 }
@@ -94,19 +85,47 @@ Dataflow::getIncomingFrom(Instruction *Inst, BasicBlock *BB, SrcSet &Set) const 
 }
 
 void Dataflow::annotateDelay(Instruction *Inst, BasicBlock *Parent,
-                             VASTSeqValue *V, float delay) {
-  Value *Src = V->getLLVMValue();
-  assert(Src && "Unexpected VASTSeqValue without underlying llvm Value!");
+                             Value *V, float delay) {
+  assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");
 
   if (!isa<PHINode>(Inst) && Inst->getParent() == Parent) {
-    FlowDeps[Inst][Src] = delay;
+    FlowDeps[Inst][V] = delay;
     return;
   }
 
-  Incomings[Inst][Parent][Src] = delay;
+  Incomings[Inst][Parent][V] = delay;
 }
 
-BasicBlock *Dataflow::getIncomingBB(VASTSeqOp *Op) {
+DataflowAnnotation::DataflowAnnotation(bool Accumulative)
+  : VASTModulePass(ID), Accumulative(Accumulative) {
+  initializeDataflowPass(*PassRegistry::getPassRegistry());
+}
+
+INITIALIZE_PASS_BEGIN(DataflowAnnotation,
+                      "vast-dataflow-annotation", "Dataflow Annotation",
+                      false, true)
+  INITIALIZE_PASS_DEPENDENCY(Dataflow)
+  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
+  INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(SelectorSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
+INITIALIZE_PASS_END(DataflowAnnotation,
+                    "vast-dataflow-annotation", "Dataflow Annotation",
+                    false, true)
+
+char DataflowAnnotation::ID = 0;
+
+void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
+  VASTModulePass::getAnalysisUsage(AU);
+  AU.addRequired<Dataflow>();
+  AU.addRequiredID(ControlLogicSynthesisID);
+  AU.addRequiredID(SelectorSynthesisID);
+  AU.addRequiredID(DatapathNamerID);
+  AU.addRequired<TimingNetlist>();
+  AU.setPreservesAll();
+}
+
+BasicBlock *DataflowAnnotation::getIncomingBB(VASTSeqOp *Op) {
   VASTSlot *S = Op->getSlot();
   BasicBlock *ParentBB = S->getParent();
 
@@ -119,7 +138,12 @@ BasicBlock *Dataflow::getIncomingBB(VASTSeqOp *Op) {
   return ParentBB;
 }
 
-void Dataflow::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
+void DataflowAnnotation::annotateDelay(Instruction *Inst, BasicBlock *Parent,
+                                       VASTSeqValue *SV, float delay) {
+  DF->annotateDelay(Inst, Parent, SV->getLLVMValue(), delay);
+}
+
+void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
   Instruction *Inst = dyn_cast_or_null<Instruction>(Op->getValue());
 
   // Nothing to do if Op does not have an underlying instruction.
@@ -147,7 +171,7 @@ void Dataflow::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
     annotateDelay(Inst, ParentBB, I->first, I->second);
 }
 
-void Dataflow::internalDelayAnnotation(VASTModule &VM) {
+void DataflowAnnotation::internalDelayAnnotation(VASTModule &VM) {
   TimingNetlist &TNL = getAnalysis<TimingNetlist>();
 
   typedef VASTModule::seqop_iterator iterator;
@@ -155,8 +179,14 @@ void Dataflow::internalDelayAnnotation(VASTModule &VM) {
     extractFlowDep(I, TNL);
 }
 
-bool Dataflow::runOnVASTModule(VASTModule &VM) {
-  DT = &getAnalysis<DominatorTree>();
+bool DataflowAnnotation::runOnVASTModule(VASTModule &VM) {
+  DF = &getAnalysis<Dataflow>();
+
+  // Force release the context if the annotatio is not accumulative.
+  if (!Accumulative)
+    DF->releaseMemory();
+
   externalDelayAnnotation(VM);
+
   return false;
 }

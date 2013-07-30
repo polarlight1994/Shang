@@ -25,7 +25,7 @@ class VASTSeqOp;
 class VASTSeqValue;
 class TimingNetlist;
 
-class Dataflow : public VASTModulePass {
+class Dataflow : public FunctionPass {
 public:
   typedef std::map<Value*, float> SrcSet;
 private:
@@ -34,23 +34,48 @@ private:
   std::map<Instruction*, std::map<BasicBlock*, SrcSet> > Incomings;
   DominatorTree *DT;
 
-  void extractFlowDep(VASTSeqOp *SeqOp, TimingNetlist &TNL);
-  void internalDelayAnnotation(VASTModule &VM);
-  static BasicBlock *getIncomingBB(VASTSeqOp *Op);
 public:
   static char ID;
   Dataflow();
 
-  bool externalDelayAnnotation(VASTModule &VM);
+  void annotateDelay(Instruction *Inst, BasicBlock *Parent, Value *V, float delay);
 
   void getFlowDep(Instruction *Inst, SrcSet &Set) const;
   void getIncomingFrom(Instruction *Inst, BasicBlock *BB, SrcSet &Set) const;
+
+  void getAnalysisUsage(AnalysisUsage &AU) const;
+  bool runOnFunction(Function &F) { return false; }
+  void releaseMemory();
+};
+
+class DataflowAnnotation : public VASTModulePass {
+  Dataflow *DF;
+  const bool Accumulative;
+
+  bool externalDelayAnnotation(VASTModule &VM);
+  void extractFlowDep(VASTSeqOp *SeqOp, TimingNetlist &TNL);
+  void internalDelayAnnotation(VASTModule &VM);
+
   void annotateDelay(Instruction *Inst, BasicBlock *Parent,
                      VASTSeqValue *V, float delay);
 
+  static BasicBlock *getIncomingBB(VASTSeqOp *Op);
+public:
+
+  static char ID;
+  explicit DataflowAnnotation(bool Accumulative = false);
+
+  typedef Dataflow::SrcSet SrcSet;
+  void getFlowDep(Instruction *Inst, SrcSet &Set) const {
+    DF->getFlowDep(Inst, Set);
+  }
+
+  void getIncomingFrom(Instruction *Inst, BasicBlock *BB, SrcSet &Set) const {
+    DF->getIncomingFrom(Inst, BB, Set);
+  }
+
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnVASTModule(VASTModule &VM);
-  void releaseMemory();
 };
 }
 
