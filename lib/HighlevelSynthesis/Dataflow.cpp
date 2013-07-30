@@ -31,6 +31,9 @@ Dataflow::Dataflow() : VASTModulePass(ID) {
 INITIALIZE_PASS_BEGIN(Dataflow,
                       "vast-dataflow", "Dataflow Anlaysis", false, true)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
+  INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(SelectorSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
 INITIALIZE_PASS_END(Dataflow,
                     "vast-dataflow", "Dataflow Anlaysis", false, true)
 
@@ -38,7 +41,12 @@ char Dataflow::ID = 0;
 
 void Dataflow::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
+
+  AU.addRequiredID(ControlLogicSynthesisID);
+  AU.addRequiredID(SelectorSynthesisID);
+  AU.addRequiredID(DatapathNamerID);
   AU.addRequired<TimingNetlist>();
+
   AU.addRequired<DominatorTree>();
   AU.setPreservesAll();
 }
@@ -98,6 +106,19 @@ void Dataflow::annotateDelay(Instruction *Inst, BasicBlock *Parent,
   Incomings[Inst][Parent][Src] = delay;
 }
 
+BasicBlock *Dataflow::getIncomingBB(VASTSeqOp *Op) {
+  VASTSlot *S = Op->getSlot();
+  BasicBlock *ParentBB = S->getParent();
+
+  if (S->IsSubGrp) {
+    S = S->getParentGroup();
+    if (BasicBlock *BB = S->getParent())
+      ParentBB = BB;
+  }
+
+  return ParentBB;
+}
+
 void Dataflow::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
   Instruction *Inst = dyn_cast_or_null<Instruction>(Op->getValue());
 
@@ -105,7 +126,7 @@ void Dataflow::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
   if (!Inst)
     return;
 
-  TimingNetlist::RegDelaySet Srcs;
+  std::map<VASTSeqValue*, float> Srcs;
 
   VASTValPtr Cnd = Op->getGuard();
   TNL.extractDelay(0, Cnd.get(), Srcs);
@@ -119,26 +140,23 @@ void Dataflow::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
     TNL.extractDelay(L.getSelector(), Cnd.get(), Srcs);
   }
 
-  VASTSlot *S = Op->getSlot();
-  BasicBlock *ParentBB = S->getParent();
-  if (S->IsSubGrp) {
-    S = S->getParentGroup();
-    if (BasicBlock *BB = S->getParent())
-      ParentBB = BB;
-  }
+  BasicBlock *ParentBB = getIncomingBB(Op);
 
-  typedef TimingNetlist::RegDelaySet::iterator src_iterator;
+  typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
     annotateDelay(Inst, ParentBB, I->first, I->second);
 }
 
-bool Dataflow::runOnVASTModule(VASTModule &VM) {
+void Dataflow::internalDelayAnnotation(VASTModule &VM) {
   TimingNetlist &TNL = getAnalysis<TimingNetlist>();
-  DT = &getAnalysis<DominatorTree>();
 
   typedef VASTModule::seqop_iterator iterator;
   for (iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I)
     extractFlowDep(I, TNL);
+}
 
+bool Dataflow::runOnVASTModule(VASTModule &VM) {
+  DT = &getAnalysis<DominatorTree>();
+  externalDelayAnnotation(VM);
   return false;
 }

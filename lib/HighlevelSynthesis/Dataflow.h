@@ -35,10 +35,14 @@ private:
   DominatorTree *DT;
 
   void extractFlowDep(VASTSeqOp *SeqOp, TimingNetlist &TNL);
+  void internalDelayAnnotation(VASTModule &VM);
+  static BasicBlock *getIncomingBB(VASTSeqOp *Op);
 public:
   static char ID;
   Dataflow();
-  
+
+  bool externalDelayAnnotation(VASTModule &VM);
+
   void getFlowDep(Instruction *Inst, SrcSet &Set) const;
   void getIncomingFrom(Instruction *Inst, BasicBlock *BB, SrcSet &Set) const;
   void annotateDelay(Instruction *Inst, BasicBlock *Parent,
