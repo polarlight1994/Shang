@@ -157,6 +157,7 @@ void Dataflow::updateDelay(float NewDelay,
                            std::pair<float, unsigned> &OldDelay) {
   if (OldDelay.second == generation) {
     OldDelay.first = std::max(NewDelay, OldDelay.first);
+    return;
   }
 
   OldDelay.second = generation;
