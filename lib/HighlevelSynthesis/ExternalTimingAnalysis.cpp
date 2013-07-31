@@ -120,6 +120,7 @@ struct ExternalTimingAnalysis {
   // Write the script to extract the timing analysis results from quartus.
   void writeTimingExtractionScript(raw_ostream &O, StringRef ResultPath);
   void extractTimingForSelector(raw_ostream &O, VASTSelector *Sel);
+  void extractSelectorDelay(raw_ostream &O, VASTSelector *Sel);
 
   typedef std::set<VASTSeqValue*> LeafSet;
   void buildPathInfoForCone(raw_ostream &O, VASTValue *Root, LeafSet &Leaves);
@@ -523,6 +524,23 @@ void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTExpr *V,
     DelayMatrix.erase(V);
 }
 
+static std::string GetSelectorCollection(VASTSelector *Sel) {
+  const std::string Name(Sel->getName());
+  return "[get_pins -compatibility_mode -nowarn \"" + Name + "_selector*\"];";
+}
+
+void ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O,
+                                                  VASTSelector *Sel) {
+  // Get the delay from the selector wire of the selector.
+  O << "set dst " << GetSTACollection(Sel) << '\n';
+  O << "set src " << GetSelectorCollection(Sel) << '\n';
+  unsigned Idx = 0;
+  SelectorDelay[Sel] = allocateDelayRef(Idx);
+  extractTimingForPath(O, Idx);
+  O << "post_message -type info \" selector -> "
+    << Sel->getSTAObjectName() << " delay: $delay\"\n";
+}
+
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
                                                       VASTSelector *Sel) {
   std::set<VASTValue*> Fanins;
@@ -557,7 +575,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
   for (leaf_iterator I = AllLeaves.begin(), E = AllLeaves.end(); I != E; ++I) {
     VASTSeqValue *Src = *I;
 
-    if (IntersectLeaves.count(Src) && !Src->isSlot())
+    if (IntersectLeaves.count(Src) && !Src->isSlot() && !Src->isFUOutput())
       continue;
 
     unsigned Idx = 0;
@@ -569,6 +587,8 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
   // Extract path delay in details for leaves that reachable to different fanins
   if (IntersectLeaves.empty())
     return;
+
+  extractSelectorDelay(O, Sel);
 
   for (fanin_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch U = *I;
