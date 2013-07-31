@@ -92,8 +92,8 @@ struct AnnotatedCone {
   typedef DenseMap<VASTExpr*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
 
-  AnnotatedCone(TimingNetlist &TNL, STGDistances &STGDist,
-                         VASTSelector *Dst, raw_ostream &OS)
+  AnnotatedCone(TimingNetlist &TNL, STGDistances &STGDist, VASTSelector *Dst,
+                raw_ostream &OS)
     : TNL(TNL), STGDist(STGDist), Dst(Dst), OS(OS), Inf(STGDistances::Inf)
   {}
 
@@ -102,16 +102,16 @@ struct AnnotatedCone {
     CyclesFromSrcLB.clear();
   }
 
-  static void checkIntervalFromSlot(VASTSeqValue * Src, unsigned Cycles) {
-    assert((!Src->isSlot() || Cycles <= 1) && "Bad interval for slot registers!");
+  static void checkIntervalFromSlot(VASTSelector *Sel, unsigned Cycles) {
+    assert((!Sel->isSlot() || Cycles <= 1) && "Bad interval for slot registers!");
     (void) Cycles;
-    (void) Src;
+    (void) Sel;
   }
 
-  void addIntervalFromSrc(VASTSeqValue *Src, const Leaf &L) {
+  void addIntervalFromSrc(VASTSelector *Sel, const Leaf &L) {
     assert(L.NumCycles && "unexpected zero interval!");
-    unsigned Cycles = CyclesFromSrcLB[Src->getSelector()].update(L).NumCycles;
-    checkIntervalFromSlot(Src, Cycles);
+    unsigned Cycles = CyclesFromSrcLB[Sel].update(L).NumCycles;
+    checkIntervalFromSlot(Sel, Cycles);
   }
 
   bool generateSubmoduleConstraints(VASTSeqValue *SeqVal);
@@ -119,7 +119,7 @@ struct AnnotatedCone {
   void annotatePathInterval(VASTValue *Tree, ArrayRef<VASTSlot*> ReadSlots);
 
   Leaf buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots, VASTValue *Thu);
-  void annotateLeaf(VASTSeqValue *V, VASTExpr *Parent, Leaf CurLeaf,
+  void annotateLeaf(VASTSelector *Sel, VASTExpr *Parent, Leaf CurLeaf,
                     SeqValSetTy &LocalInterval);
 
   // Propagate the timing information of the current combinational cone.
@@ -202,18 +202,18 @@ struct TimingScriptGen : public VASTModulePass {
 AnnotatedCone::Leaf AnnotatedCone::buildLeaf(VASTSeqValue *V,
                                              ArrayRef<VASTSlot*> ReadSlots,
                                              VASTValue *Thu) {
-  unsigned Interval = STGDist.getIntervalFromDef(V, ReadSlots);
+  unsigned Interval = STGDist.getIntervalFromDef(V->getSelector(), ReadSlots);
   float EstimatedDelay = TNL.getDelay(V, Thu, Dst);
   return Leaf(Interval, EstimatedDelay);
 }
 
-void AnnotatedCone::annotateLeaf(VASTSeqValue *V, VASTExpr *Parent, Leaf CurLeaf,
-                                 SeqValSetTy &LocalInterval) {
-  LocalInterval[V->getSelector()].update(CurLeaf);
-  unsigned Cycles = QueryCache[Parent][V->getSelector()].update(CurLeaf).NumCycles;
-  checkIntervalFromSlot(V, Cycles);
+void
+AnnotatedCone::annotateLeaf(VASTSelector *Sel, VASTExpr *Parent, Leaf CurLeaf,
+                            SeqValSetTy &LocalInterval) {
+  LocalInterval[Sel].update(CurLeaf);
+  unsigned Cycles = QueryCache[Parent][Sel].update(CurLeaf).NumCycles;
   // Add the information to statistics.
-  addIntervalFromSrc(V, CurLeaf);
+  addIntervalFromSrc(Sel, CurLeaf);
 }
 
 void AnnotatedCone::annotatePathInterval(VASTValue *Root,
@@ -257,7 +257,8 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root,
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
       if (generateSubmoduleConstraints(V)) continue;
 
-      annotateLeaf(V, Expr, buildLeaf(V, ReadSlots, Root), LocalInterval);
+      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, Root),
+                   LocalInterval);
       continue;
     }  
 
@@ -286,7 +287,8 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root,
       // even V may be masked by the false path indicated by the keep attribute.
       // we will first generate the tight constraints and overwrite them by
       // looser constraints.
-      annotateLeaf(V, SubExpr, buildLeaf(V, ReadSlots, Root), LocalInterval);
+      annotateLeaf(V->getSelector(), SubExpr, buildLeaf(V, ReadSlots, Root),
+                   LocalInterval);
     }
   }
 
@@ -545,8 +547,8 @@ void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache,
   if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(DepTree)){
     if (Cache.generateSubmoduleConstraints(Src)) return;
 
-    unsigned Interval = Cache.STGDist.getIntervalFromDef(Src, ReadSlots);
-    Cache.addIntervalFromSrc(Src, AnnotatedCone::Leaf(Interval, 0.0f));
+    Cache.addIntervalFromSrc(Src->getSelector(),
+                             Cache.buildLeaf(Src, ReadSlots, 0));
 
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
