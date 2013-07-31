@@ -149,8 +149,7 @@ VASTExprBuilderContext::calculateBitMask(VASTValue *V) {
     return setBitMask(V, calculateAssignBitMask(Expr));
   case VASTExpr::dpAnd:
     return setBitMask(V, calculateAndBitMask(Expr));
-  case VASTExpr::dpBarrierKeep:
-  case VASTExpr::dpBarrier:
+  case VASTExpr::dpKeep:
     return setBitMask(V, calculateBitMask(Expr->getOperand(0)));
   }
 
@@ -578,11 +577,10 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
     assert(Times * Ops[0]->getBitWidth() == BitWidth && "Bitwidth not match!");
     return buildBitRepeat(Ops[0], Times);
   }
-  case VASTExpr::dpBarrierKeep:
-  case VASTExpr::dpBarrier:
+  case VASTExpr::dpKeep:
     assert(Ops.size() == 1 && "Unexpected more than 1 operands for reduction!");
     assert(BitWidth == Ops[0]->getBitWidth() && "Bad bitwidth!");
-    return buildBarrier(Opc, Ops[0]);
+    return buildKeep(Ops[0]);
   }
 
   return createExpr(Opc, Ops, BitWidth, 0);
@@ -596,17 +594,16 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op,
   case VASTExpr::dpRXor:
     assert(BitWidth == 1 && "Bitwidth of reduction should be 1!");
     return buildReduction(Opc, Op);
-  case VASTExpr::dpBarrier:
-  case VASTExpr::dpBarrierKeep:
+  case VASTExpr::dpKeep:
     assert(BitWidth == Op->getBitWidth() && "Bad bitwidth!");
-    return buildBarrier(Opc, Op);
+    return buildKeep(Op);
   }
 
   VASTValPtr Ops[] = { Op };
   return createExpr(Opc, Ops, BitWidth, 0);
 }
 
-VASTValPtr VASTExprBuilder::buildBarrier(VASTExpr::Opcode Opc, VASTValPtr V) {
+VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
   VASTExprPtr Expr = dyn_cast<VASTExpr>(V);
 
   // Only keep expressions!
@@ -615,23 +612,22 @@ VASTValPtr VASTExprBuilder::buildBarrier(VASTExpr::Opcode Opc, VASTValPtr V) {
   switch (Expr->getOpcode()) {
   default:break;
     // No need to keep twice!
-  case VASTExpr::dpBarrierKeep:
-  case VASTExpr::dpBarrier:
+  case VASTExpr::dpKeep:
     return V;
   case VASTExpr::dpBitRepeat:
-    return buildExpr(VASTExpr::dpBitRepeat, buildBarrier(Opc, Expr.getOperand(0)),
+    return buildExpr(VASTExpr::dpBitRepeat, buildKeep(Expr.getOperand(0)),
                      Expr->getOperand(1), Expr->getBitWidth());
   case VASTExpr::dpBitCat: {
     typedef VASTExpr::op_iterator iterator;
     SmallVector<VASTValPtr, 4> Ops;
     for (iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
-      Ops.push_back(buildBarrier(Opc, *I));
+      Ops.push_back(buildKeep(*I));
     return buildBitCatExpr(Ops, Expr->getBitWidth());
   }
   }
 
   VASTValPtr Ops[] = { V };
-  return createExpr(Opc, Ops, V->getBitWidth(), 0);
+  return createExpr(VASTExpr::dpKeep, Ops, V->getBitWidth(), 0);
 }
 
 VASTValPtr VASTExprBuilder::padHeadOrTail(VASTValPtr V, unsigned BitWidth,

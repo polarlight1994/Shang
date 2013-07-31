@@ -404,7 +404,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       // Simply keep all guarding condition, because they are only 1 bit nodes,
       // and their upper bound is the product of number of slots and number of
       // basic blocks.
-      CurGuard = Builder.buildBarrier(VASTExpr::dpBarrierKeep, CurGuard);
+      CurGuard = Builder.buildKeep(CurGuard);
 
       // The guarding condition itself is not guard, that is, the guarding
       // condition is read whenever the slot register is set. Hence, we should
@@ -448,7 +448,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
     // Apply the keep attribute if necessary.
     if (FICones.size() > 1 && TC && !TC->isSingleCycleCone())
-      FI = Builder.buildBarrier(VASTExpr::dpBarrierKeep, FI);
+      FI = Builder.buildKeep(FI);
 
     // Remember the fanin, we are going to OR them together.
     Fanins.push_back(FI);

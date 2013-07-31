@@ -243,8 +243,7 @@ public:
         accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
                            SubClass::AccumulateBitRepeatDelay);
         break;
-      case VASTExpr::dpBarrier:
-      case VASTExpr::dpBarrierKeep:
+      case VASTExpr::dpKeep:
         accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
                            AccumulateZeroDelay);
         break;

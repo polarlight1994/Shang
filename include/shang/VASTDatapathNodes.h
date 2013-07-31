@@ -165,7 +165,7 @@ public:
     // Lookup-tables.
     dpLUT,
     //
-    dpBarrierKeep, dpBarrier
+    dpKeep
   };
 private:
   // Operands, right after this VASTExpr.
@@ -200,7 +200,7 @@ public:
 
   const char *getLUT() const;
   bool isTimingBarrier() const {
-    return getOpcode() == dpBarrierKeep || getOpcode() == dpBarrier;
+    return getOpcode() == dpKeep;
   }
 
   inline bool isSubBitSlice() const {

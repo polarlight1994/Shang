@@ -329,8 +329,7 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   case dpBitCat:    printBitCat(OS, getOperands());    break;
   case dpBitRepeat: printBitRepeat(OS, getOperands()); break;
 
-  case dpBarrierKeep:
-  case dpBarrier:
+  case dpKeep:
     getOperand(0).printAsOperand(OS, UB, LB);
     break;
 
