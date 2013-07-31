@@ -731,8 +731,11 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   args.push_back(PrjTcl.c_str());
   args.push_back(0);
 
+  sys::Path Empty;
+  const sys::Path *Redirects[] = { &Empty, &Empty, &Empty };
   errs() << "Running '" << quartus.str() << " ' program... ";
-  if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, 0, 0, 0, &ErrorInfo)) {
+  if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, Redirects, 0, 0,
+                                   &ErrorInfo)) {
     errs() << "Error: " << ErrorInfo <<'\n';
     return false;
   }
