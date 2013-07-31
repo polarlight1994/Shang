@@ -197,7 +197,7 @@ struct ExternalTimingAnalysis {
         if (K == Srcs.end())
           continue;
 
-        K->second = std::max(K->second, SI->second);
+        *K->second = std::max(*K->second, *SI->second);
       }
     }
   }
