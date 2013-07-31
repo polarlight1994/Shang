@@ -240,7 +240,7 @@ bool DataflowAnnotation::runOnVASTModule(VASTModule &VM) {
 
   DF->increaseGeneration();
 
-  DF->dumpToSQL();
+  DEBUG(DF->dumpToSQL());
 
   return false;
 }
