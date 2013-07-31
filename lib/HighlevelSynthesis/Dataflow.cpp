@@ -108,6 +108,21 @@ Dataflow::TimedSrcSet &Dataflow::getDeps(DataflowInst Inst, BasicBlock *Parent) 
   return Incomings[Inst][Parent];
 }
 
+float Dataflow::getSlackFromLaunch(Instruction *Inst) const {
+  if (!Inst) return 0;
+
+  FlowDepMapTy::const_iterator I = FlowDeps.find(DataflowInst(Inst, false));
+  if (I == FlowDeps.end())
+    return 0.0f;
+
+  const TimedSrcSet &Srcs = I->second;
+  TimedSrcSet::const_iterator J = Srcs.find(DataflowValue(Inst, true));
+  if (J == Srcs.end())
+    return 0.0f;
+
+  return (1.0f - J->second.first);
+}
+
 void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
                              float delay) {
   assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");

@@ -430,37 +430,6 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   return 0;
 }
 
-float VASTScheduling::slackFromPrevStage(VASTSeqOp *Op) {
-  VASTSeqInst *SrcOp = dyn_cast_or_null<VASTSeqInst>(Op);
-
-  if (SrcOp == 0 || !SrcOp->isLatch()) return 0.0f;
-
-  //TimingNetlist::RegDelaySet Srcs;
-  //VASTLatch CurLatch = SrcOp->getSrc(0);
-  //VASTValPtr LatchSrc = CurLatch;
-
-  //// TODO: Get the delay from dataflow.
-  ////TNL->extractDelay(CurLatch.getSelector(), LatchSrc.get(), Srcs);
-
-  //// We do not have any delay information from the previous pipeline stage.
-  //if (Srcs.empty()) return 0.0f;
-
-  //// Do not know how to compute the slack ...
-  //if (!SrcOp->isLatch() || SrcOp->getCyclesFromLaunch() == 0) return 0.0f;
-
-  //float MinimalSlack = 1.0f;
-  //// For a latch from FU, there is at least 1 cycle available.
-  //float CycleSlack = 1.0f;
-  //typedef TimingNetlist::RegDelaySet::iterator src_iterator;
-  //for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-  //  float CurDelay = I->second;
-  //  float CurSlack = std::max<float>(ceil(CurDelay), CycleSlack) - CurDelay;
-  //  MinimalSlack = std::min(MinimalSlack, CurSlack);
-  //}
-
-  return 0.0f; // MinimalSlack;
-}
-
 void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
                                            bool IsLaunch, float delay) {
   assert(Src && "Not a valid source!");
@@ -468,16 +437,19 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
           || DT->dominates(cast<Instruction>(Src)->getParent(), DstU->getParent()))
          && "Flow dependency should be a dominance edge!");
 
-  assert(!IsLaunch && "Expect Latch!");
+  if (IsLaunch) {
+    float slack = DF->getSlackFromLaunch(dyn_cast<Instruction>(Src));
+    float DelayFromLaunch = 1.0f - slack;
+    delay -= DelayFromLaunch;
+  } else if (DF->getSlackFromLaunch(dyn_cast<Instruction>(Src)) > delay)
+    // Try to fold the delay of current pipeline stage to the previous pipeline
+    // stage, if the previous pipeline stage has enough slack.
+    delay = 0.0f;
+
   // The static register is virtually defined at the entry slot. Because
   // we only write it when the function exit. Whe we read is the value from
   // last function execution.
   VASTSchedUnit *SrcSU = getFlowDepSU(Src);
-
-  // Try to fold the delay of current pipeline stage to the previous pipeline
-  // stage, if the previous pipeline stage has enough slack.
-  //if (slackFromPrevStage(SrcSU->getSeqOp()) > delay)
-  //  delay = 0.0f;
 
   DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay)));
 }

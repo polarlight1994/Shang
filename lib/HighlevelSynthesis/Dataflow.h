@@ -105,6 +105,8 @@ public:
   void getFlowDep(DataflowInst Inst, SrcSet &Set) const;
   void getIncomingFrom(DataflowInst Inst, BasicBlock *BB, SrcSet &Set) const;
 
+  float getSlackFromLaunch(Instruction *Inst) const;
+
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnFunction(Function &F);
   void releaseMemory();
@@ -134,6 +136,10 @@ public:
 
   void getIncomingFrom(DataflowInst Inst, BasicBlock *BB, SrcSet &Set) const {
     DF->getIncomingFrom(Inst, BB, Set);
+  }
+
+  float getSlackFromLaunch(Instruction *Inst) const {
+    return DF->getSlackFromLaunch(Inst);
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
