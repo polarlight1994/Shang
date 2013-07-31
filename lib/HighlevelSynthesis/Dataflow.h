@@ -98,6 +98,7 @@ public:
   Dataflow();
 
   void increaseGeneration() { ++generation; }
+  unsigned getGeneration() const { return generation; }
 
   void annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V, float delay);
 

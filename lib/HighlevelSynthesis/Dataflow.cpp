@@ -233,8 +233,10 @@ bool DataflowAnnotation::runOnVASTModule(VASTModule &VM) {
   if (!Accumulative)
     DF->releaseMemory();
 
-  internalDelayAnnotation(VM);
-  //externalDelayAnnotation(VM);
+  if (DF->getGeneration() == 0)
+    internalDelayAnnotation(VM);
+  else
+    externalDelayAnnotation(VM);
 
   DF->increaseGeneration();
 
