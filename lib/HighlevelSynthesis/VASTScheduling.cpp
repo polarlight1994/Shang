@@ -462,17 +462,13 @@ float VASTScheduling::slackFromPrevStage(VASTSeqOp *Op) {
 }
 
 void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
-                                           float delay) {
+                                           bool IsLaunch, float delay) {
   assert(Src && "Not a valid source!");
   assert((!isa<Instruction>(Src)
           || DT->dominates(cast<Instruction>(Src)->getParent(), DstU->getParent()))
          && "Flow dependency should be a dominance edge!");
 
-  // Ignore the dependencies from FU output, there is no corresponding SeqOp,
-  // and hence there is no corresponding scheduling unit.
-  if (DstU->getInst() == Src)
-    return;
-
+  assert(!IsLaunch && "Expect Latch!");
   // The static register is virtually defined at the entry slot. Because
   // we only write it when the function exit. Whe we read is the value from
   // last function execution.
@@ -480,20 +476,20 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
 
   // Try to fold the delay of current pipeline stage to the previous pipeline
   // stage, if the previous pipeline stage has enough slack.
-  if (slackFromPrevStage(SrcSU->getSeqOp()) > delay)
-    delay = 0.0f;
+  //if (slackFromPrevStage(SrcSU->getSeqOp()) > delay)
+  //  delay = 0.0f;
 
   DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay)));
 }
 
 void VASTScheduling::buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U) {
   Dataflow::SrcSet Srcs;
-  DF->getFlowDep(Inst, Srcs);
+  DF->getFlowDep(DataflowInst(Inst, U->isLaunch()), Srcs);
 
   typedef Dataflow::SrcSet::iterator src_iterator;
   // Also calculate the path for the guarding condition.
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-    buildFlowDependencies(U, I->first, I->second);
+    buildFlowDependencies(U, I->first, I->first.IsLauch(), I->second);
 }
 
 void
@@ -501,11 +497,11 @@ VASTScheduling::buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U)
   Dataflow::SrcSet Srcs;
   typedef Dataflow::SrcSet::iterator src_iterator;
 
-  DF->getIncomingFrom(PHI, U->getParent(), Srcs);
+  DF->getIncomingFrom(DataflowInst(PHI, false), U->getParent(), Srcs);
 
   // Also calculate the path for the guarding condition.
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-    buildFlowDependencies(U, I->first, I->second);
+    buildFlowDependencies(U, I->first, I->first.IsLauch(), I->second);
 }
 
 void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {

@@ -283,6 +283,10 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
     if (!Inst)
       continue;
 
+    bool IsLaunch = false;
+    if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op))
+      IsLaunch = SeqInst->isLaunch();
+
     std::map<VASTSeqValue*, float> Srcs;
 
     VASTValPtr Cnd = Op->getGuard();
@@ -302,7 +306,8 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
 
     typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
     for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-      annotateDelay(Inst, Op->getSlot(), I->first, I->second);
+      annotateDelay(DataflowInst(Inst, IsLaunch), Op->getSlot(),
+                    I->first, I->second);
   }
 
   // External timing analysis successfully completed.

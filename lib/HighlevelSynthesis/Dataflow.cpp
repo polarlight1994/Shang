@@ -26,7 +26,7 @@
 
 using namespace llvm;
 
-Dataflow::Dataflow() : FunctionPass(ID) {
+Dataflow::Dataflow() : FunctionPass(ID), generation(0) {
   initializeDataflowPass(*PassRegistry::getPassRegistry());
 }
 
@@ -47,6 +47,7 @@ void Dataflow::getAnalysisUsage(AnalysisUsage &AU) const {
 void Dataflow::releaseMemory() {
   FlowDeps.clear();
   Incomings.clear();
+  generation = 0;
 }
 
 bool Dataflow::runOnFunction(Function &F) {
@@ -54,21 +55,25 @@ bool Dataflow::runOnFunction(Function &F) {
   return false;
 }
 
-void Dataflow::getFlowDep(Instruction *Inst, SrcSet &Set) const {
-  std::map<Instruction*, SrcSet>::const_iterator I = FlowDeps.find(Inst);
+void Dataflow::getFlowDep(DataflowInst Inst, SrcSet &Set) const {
+  FlowDepMapTy::const_iterator I = FlowDeps.find(Inst);
   if (I == FlowDeps.end()) {
     //assert(isa<TerminatorInst>(Inst) && "Flow dependencies do not exists?");
     return;
   }
 
-  assert(Set.empty() && "Expect empty set!");
-  Set.insert(I->second.begin(), I->second.end());
+  const TimedSrcSet &Srcs = I->second;
+
+  typedef TimedSrcSet::const_iterator iterator;
+  for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+    float &Delay = Set[I->first];
+    Delay = std::max(I->second.first, Delay);
+  }
 }
 
 void
-Dataflow::getIncomingFrom(Instruction *Inst, BasicBlock *BB, SrcSet &Set) const {
-  std::map<Instruction*, std::map<BasicBlock*, SrcSet> >::const_iterator
-    I = Incomings.find(Inst);
+Dataflow::getIncomingFrom(DataflowInst Inst, BasicBlock *BB, SrcSet &Set) const {
+  IncomingMapTy::const_iterator I = Incomings.find(Inst);
 
   if (I == Incomings.end()) {
     assert((!isa<PHINode>(Inst) ||
@@ -78,7 +83,7 @@ Dataflow::getIncomingFrom(Instruction *Inst, BasicBlock *BB, SrcSet &Set) const 
     return;
   }
 
-  std::map<BasicBlock*, SrcSet>::const_iterator J = I->second.find(BB);
+  IncomingBBMapTy::const_iterator J = I->second.find(BB);
   if (J == I->second.end()) {
     //assert((!isa<PHINode>(Inst) ||
     //        isa<Constant>(cast<PHINode>(Inst)->getIncomingValueForBlock(BB)) ||
@@ -87,23 +92,24 @@ Dataflow::getIncomingFrom(Instruction *Inst, BasicBlock *BB, SrcSet &Set) const 
     return;
   }
 
-  assert(Set.empty() && "Expect empty set!");
-  Set.insert(J->second.begin(), J->second.end());
+  const TimedSrcSet &Srcs = J->second;
+
+  typedef TimedSrcSet::const_iterator iterator;
+  for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+    float &Delay = Set[I->first];
+    Delay = std::max(I->second.first, Delay);
+  }
 }
 
-void Dataflow::annotateTriangleDelayFromPHI(SrcSet &Deps, Instruction *Src) {
-
-}
-
-Dataflow::SrcSet &Dataflow::getDeps(Instruction *Inst, BasicBlock *Parent) {
+Dataflow::TimedSrcSet &Dataflow::getDeps(DataflowInst Inst, BasicBlock *Parent) {
   if (!isa<PHINode>(Inst) && Inst->getParent() == Parent)
     return FlowDeps[Inst];
 
   return Incomings[Inst][Parent];
 }
 
-void
-Dataflow::annotateDelay(Instruction *Inst, VASTSlot *S, Value *V, float delay) {
+void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
+                             float delay) {
   assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");
   BasicBlock *ParentBB = S->getParent();
 
@@ -127,9 +133,20 @@ Dataflow::annotateDelay(Instruction *Inst, VASTSlot *S, Value *V, float delay) {
     }
   }
 
-  SrcSet &Srcs = getDeps(Inst, ParentBB);
+  TimedSrcSet &Srcs = getDeps(Inst, ParentBB);
 
-  Srcs[V] = delay;
+  updateDelay(delay, Srcs[V]);
+}
+
+void Dataflow::updateDelay(float NewDelay,
+                           std::pair<float, unsigned> &OldDelay) {
+  if (OldDelay.second == generation) {
+    OldDelay.first = std::max(NewDelay, OldDelay.first);
+  }
+
+  OldDelay.second = generation;
+  float Ratio = 0.4f;
+  OldDelay.first = OldDelay.first * Ratio + NewDelay * (1.0f - Ratio);
 }
 
 DataflowAnnotation::DataflowAnnotation(bool Accumulative)
@@ -160,9 +177,10 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
 }
 
-void DataflowAnnotation::annotateDelay(Instruction *Inst, VASTSlot *S,
+void DataflowAnnotation::annotateDelay(DataflowInst Inst, VASTSlot *S,
                                        VASTSeqValue *SV, float delay) {
-  DF->annotateDelay(Inst, S, SV->getLLVMValue(), delay);
+  DataflowValue V(SV->getLLVMValue(), SV->isFUOutput() || SV->isFUInput());
+  DF->annotateDelay(Inst, S, V, delay);
 }
 
 void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
@@ -171,6 +189,10 @@ void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
   // Nothing to do if Op does not have an underlying instruction.
   if (!Inst)
     return;
+
+  bool IsLaunch = false;
+  if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op))
+    IsLaunch = SeqInst->isLaunch();
 
   std::map<VASTSeqValue*, float> Srcs;
 
@@ -192,7 +214,8 @@ void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
 
   typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-    annotateDelay(Inst, Op->getSlot(), I->first, I->second);
+    annotateDelay(DataflowInst(Inst, IsLaunch), Op->getSlot(),
+                  I->first, I->second);
 }
 
 void DataflowAnnotation::internalDelayAnnotation(VASTModule &VM) {
@@ -210,7 +233,12 @@ bool DataflowAnnotation::runOnVASTModule(VASTModule &VM) {
   if (!Accumulative)
     DF->releaseMemory();
 
-  externalDelayAnnotation(VM);
+  internalDelayAnnotation(VM);
+  //externalDelayAnnotation(VM);
+
+  DF->increaseGeneration();
+
+  DF->dumpToSQL();
 
   return false;
 }
@@ -235,10 +263,10 @@ void Dataflow::dumpFlowDeps(raw_ostream &OS) const {
         delay REAL \
         );\n";
 
-  typedef std::map<Instruction*, TimedSrcSet>::const_iterator iterator;
+  typedef FlowDepMapTy::const_iterator iterator;
   typedef TimedSrcSet::const_iterator src_iterator;
   for (iterator I = FlowDeps.begin(), E = FlowDeps.end(); I != E; ++I) {
-    Instruction *Dst = I->first;
+    DataflowInst Dst = I->first;
     const TimedSrcSet &Srcs = I->second;
     for (src_iterator J = Srcs.begin(), E = Srcs.end(); J != E; ++J) {
       OS << "INSERT INTO flowdeps(src, dst, generation, delay) VALUES(\n"
@@ -260,13 +288,11 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
         delay REAL \
         );\n";
 
-  typedef
-  std::map<Instruction*, std::map<BasicBlock*, TimedSrcSet> >::const_iterator
-  iterator;
-  typedef std::map<BasicBlock*, TimedSrcSet>::const_iterator bb_iterator;
+  typedef IncomingMapTy::const_iterator iterator;
+  typedef IncomingBBMapTy::const_iterator bb_iterator;
   typedef TimedSrcSet::const_iterator src_iterator;
   for (iterator I = Incomings.begin(), E = Incomings.end(); I != E; ++I) {
-    Instruction *Dst = I->first;
+    DataflowInst Dst = I->first;
     const std::map<BasicBlock*, TimedSrcSet> &BBs = I->second;
     for (bb_iterator J = BBs.begin(), E = BBs.end(); J != E; ++J) {
       BasicBlock *BB = J->first;
