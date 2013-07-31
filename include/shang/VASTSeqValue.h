@@ -241,8 +241,8 @@ public:
   VASTNode *getParent() const;
   Value *getLLVMValue() const;
 
-  void printFaninns(raw_ostream &OS) const;
-  void dumpFaninns() const;
+  void printFanins(raw_ostream &OS) const;
+  void dumpFanins() const;
 
   void dropUses() {
     assert(0 && "Function not implemented!");

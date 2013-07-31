@@ -536,7 +536,7 @@ VASTSeqValue::VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V)
   Selector->addUser(this);
 }
 
-void VASTSeqValue::printFaninns(raw_ostream &OS) const {
+void VASTSeqValue::printFanins(raw_ostream &OS) const {
   typedef VASTSeqValue::const_fanin_iterator iterator;
 
   for (iterator I = fanin_begin(), E = fanin_end(); I != E; ++I) {
@@ -545,8 +545,8 @@ void VASTSeqValue::printFaninns(raw_ostream &OS) const {
   }
 }
 
-void VASTSeqValue::dumpFaninns() const {
-  printFaninns(dbgs());
+void VASTSeqValue::dumpFanins() const {
+  printFanins(dbgs());
 }
 
 VASTSelector *VASTSeqValue::getSelector() const {
