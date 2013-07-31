@@ -173,6 +173,7 @@ static void DeleteAndReset(T *&Ptr) {
 
 void STGDistances::releaseMemory() {
   DeleteAndReset(SPImpl);
+  LandingMap.clear();
   VM = 0;
 }
 
