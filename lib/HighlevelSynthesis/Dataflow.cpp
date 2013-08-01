@@ -17,6 +17,7 @@
 
 #include "shang/Passes.h"
 #include "shang/VASTModule.h"
+#include "shang/STGDistances.h"
 
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/ADT/SmallString.h"
@@ -123,10 +124,11 @@ float Dataflow::getSlackFromLaunch(Instruction *Inst) const {
   return (1.0f - J->second.first);
 }
 
-void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
-                             float delay) {
+float Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
+                              float delay, unsigned Slack) {
   assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");
   BasicBlock *ParentBB = S->getParent();
+  bool IsTimingVoilation = Slack < delay && generation != 0;
 
   // Adjust to actual parent BB for the incoming value.
   if (isa<PHINode>(Inst) || isa<BranchInst>(Inst) || isa<SwitchInst>(Inst)) {
@@ -150,19 +152,31 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
 
   TimedSrcSet &Srcs = getDeps(Inst, ParentBB);
 
-  updateDelay(delay, Srcs[V]);
+  // Assign the current delay a bigger weigth if there is timing violation. So
+  // that the scheduler can make quick respond on the timing violation.
+  float Ratio = IsTimingVoilation ? 0.9f : 0.5f;
+
+  float OldDelay = updateDelay(delay, Ratio, Srcs[V]);
+  if (IsTimingVoilation) {
+    dbgs() << "Potential timing violation: "<< Slack << ' ' << delay
+           << " Old delay " << OldDelay
+           << '(' << ((delay - OldDelay) / delay) << ')' << " \n";
+  }
+
+  return OldDelay;
 }
 
-void Dataflow::updateDelay(float NewDelay,
-                           std::pair<float, unsigned> &OldDelay) {
+float Dataflow::updateDelay(float NewDelay, float Ratio,
+                            std::pair<float, unsigned> &OldDelay) {
+  float tmp = OldDelay.first;
   if (OldDelay.second == generation) {
     OldDelay.first = std::max(NewDelay, OldDelay.first);
-    return;
+    return tmp;
   }
 
   OldDelay.second = generation;
-  float Ratio = 0.4f;
-  OldDelay.first = OldDelay.first * Ratio + NewDelay * (1.0f - Ratio);
+  OldDelay.first = OldDelay.first * (1.0f - Ratio) + NewDelay * Ratio;
+  return tmp;
 }
 
 DataflowAnnotation::DataflowAnnotation(bool Accumulative)
@@ -178,6 +192,7 @@ INITIALIZE_PASS_BEGIN(DataflowAnnotation,
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(SelectorSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
+  INITIALIZE_PASS_DEPENDENCY(STGDistances)
 INITIALIZE_PASS_END(DataflowAnnotation,
                     "vast-dataflow-annotation", "Dataflow Annotation",
                     false, true)
@@ -187,16 +202,21 @@ char DataflowAnnotation::ID = 0;
 void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequired<Dataflow>();
+  AU.addRequiredID(STGDistancesID);
+
   AU.addRequiredID(ControlLogicSynthesisID);
   AU.addRequiredID(DatapathNamerID);
+
   AU.addRequired<TimingNetlist>();
   AU.setPreservesAll();
 }
 
-void DataflowAnnotation::annotateDelay(DataflowInst Inst, VASTSlot *S,
-                                       VASTSeqValue *SV, float delay) {
+float DataflowAnnotation::annotateDelay(DataflowInst Inst, VASTSlot *S,
+                                        VASTSeqValue *SV, float delay) {
   DataflowValue V(SV->getLLVMValue(), SV->isFUOutput() || SV->isFUInput());
-  DF->annotateDelay(Inst, S, V, delay);
+  unsigned Slack = Distances->getIntervalFromDef(SV, S);
+  float OldDelay = DF->annotateDelay(Inst, S, V, delay, Slack);
+  return OldDelay;
 }
 
 void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
@@ -229,9 +249,11 @@ void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
   }
 
   typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
-  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-    annotateDelay(DataflowInst(Inst, IsLaunch), Op->getSlot(),
-                  I->first, I->second);
+  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+    VASTSeqValue *Src = I->first;
+    float delay = I->second;
+    annotateDelay(DataflowInst(Inst, IsLaunch), Op->getSlot(), Src, delay);
+  }
 }
 
 void DataflowAnnotation::internalDelayAnnotation(VASTModule &VM) {
@@ -244,6 +266,7 @@ void DataflowAnnotation::internalDelayAnnotation(VASTModule &VM) {
 
 bool DataflowAnnotation::runOnVASTModule(VASTModule &VM) {
   DF = &getAnalysis<Dataflow>();
+  Distances = &getAnalysis<STGDistances>();
 
   // Force release the context if the annotatio is not accumulative.
   if (!Accumulative)

@@ -27,6 +27,7 @@ class VASTSlot;
 class VASTSeqValue;
 class TimingNetlist;
 class raw_ostream;
+class STGDistances;
 
 template<typename T>
 struct DataflowPtr : public PointerIntPair<T*, 1, bool> {
@@ -79,17 +80,18 @@ class Dataflow : public FunctionPass {
 public:
   typedef std::map<DataflowValue, float> SrcSet;
 private:
+  DominatorTree *DT;
   typedef std::map<DataflowValue, std::pair<float, unsigned> > TimedSrcSet;
   typedef std::map<DataflowInst, TimedSrcSet> FlowDepMapTy;
   FlowDepMapTy FlowDeps;
   typedef std::map<BasicBlock*, TimedSrcSet> IncomingBBMapTy;
   typedef std::map<DataflowInst, IncomingBBMapTy>  IncomingMapTy;
   IncomingMapTy Incomings;
-  DominatorTree *DT;
 
   TimedSrcSet &getDeps(DataflowInst Inst, BasicBlock *Parent);
   unsigned generation;
-  void updateDelay(float NewDelay, std::pair<float, unsigned> &OldDelay);
+  float updateDelay(float NewDelay, float Ratio,
+                    std::pair<float, unsigned> &OldDelay);
 
   void dumpIncomings(raw_ostream &OS) const;
   void dumpFlowDeps(raw_ostream &OS) const;
@@ -100,7 +102,8 @@ public:
   void increaseGeneration() { ++generation; }
   unsigned getGeneration() const { return generation; }
 
-  void annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V, float delay);
+  float annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
+                      float delay, unsigned Slack);
 
   void getFlowDep(DataflowInst Inst, SrcSet &Set) const;
   void getIncomingFrom(DataflowInst Inst, BasicBlock *BB, SrcSet &Set) const;
@@ -116,14 +119,15 @@ public:
 
 class DataflowAnnotation : public VASTModulePass {
   Dataflow *DF;
+  STGDistances *Distances;
   const bool Accumulative;
 
   bool externalDelayAnnotation(VASTModule &VM);
   void extractFlowDep(VASTSeqOp *SeqOp, TimingNetlist &TNL);
   void internalDelayAnnotation(VASTModule &VM);
 
-  void annotateDelay(DataflowInst Inst, VASTSlot *S,
-                     VASTSeqValue *V, float delay);
+  float annotateDelay(DataflowInst Inst, VASTSlot *S, VASTSeqValue *V,
+                      float delay);
 public:
 
   static char ID;
