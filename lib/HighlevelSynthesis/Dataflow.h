@@ -88,7 +88,9 @@ private:
   typedef std::map<DataflowInst, IncomingBBMapTy>  IncomingMapTy;
   IncomingMapTy Incomings;
 
+  BasicBlock *getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const;
   TimedSrcSet &getDeps(DataflowInst Inst, BasicBlock *Parent);
+
   unsigned generation;
   float updateDelay(float NewDelay, float Ratio,
                     std::pair<float, unsigned> &OldDelay);

@@ -124,11 +124,9 @@ float Dataflow::getSlackFromLaunch(Instruction *Inst) const {
   return (1.0f - J->second.first);
 }
 
-float Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
-                              float delay, unsigned Slack) {
-  assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");
+BasicBlock *
+Dataflow::getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const {
   BasicBlock *ParentBB = S->getParent();
-  bool IsTimingVoilation = Slack < delay && generation != 0;
 
   // Adjust to actual parent BB for the incoming value.
   if (isa<PHINode>(Inst) || isa<BranchInst>(Inst) || isa<SwitchInst>(Inst)) {
@@ -140,17 +138,25 @@ float Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
   assert((ParentBB == Inst->getParent() || isa<PHINode>(Inst)) &&
          "Parent not match!");
 
-  if (Instruction *Src = dyn_cast<Instruction>(V)) {
+  if (Instruction *Def = dyn_cast<Instruction>(Src)) {
     // While Src not dominate BB, this is due to CFG folding. We need to get the
     // parent BB of the actual user, this can be done by move up in the subgroup
     // tree until we get a BB that is dominated by Src.
-    while (!DT->dominates(Src->getParent(), ParentBB)) {
+    while (!DT->dominates(Def->getParent(), ParentBB)) {
       S = S->getParentGroup();
       ParentBB = S->getParent();
     }
   }
 
-  TimedSrcSet &Srcs = getDeps(Inst, ParentBB);
+  return ParentBB;
+}
+
+float Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
+                              float delay, unsigned Slack) {
+  bool IsTimingVoilation = Slack < delay && generation != 0;
+  assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");
+
+  TimedSrcSet &Srcs = getDeps(Inst, getIncomingBlock(S, Inst, V));
 
   // Assign the current delay a bigger weigth if there is timing violation. So
   // that the scheduler can make quick respond on the timing violation.
@@ -160,7 +166,8 @@ float Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
   if (IsTimingVoilation) {
     dbgs() << "Potential timing violation: "<< Slack << ' ' << delay
            << " Old delay " << OldDelay
-           << '(' << ((delay - OldDelay) / delay) << ')' << " \n";
+           << '(' << ((delay - OldDelay) / delay) << ')' << " \n"
+           << "Src: " << *V << " Dst: " << *Inst << '\n';
   }
 
   return OldDelay;
