@@ -437,11 +437,12 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
           || DT->dominates(cast<Instruction>(Src)->getParent(), DstU->getParent()))
          && "Flow dependency should be a dominance edge!");
 
+  float slack = DF->getSlackFromLaunch(dyn_cast<Instruction>(Src));
   if (IsLaunch) {
-    float slack = DF->getSlackFromLaunch(dyn_cast<Instruction>(Src));
     float DelayFromLaunch = 1.0f - slack;
-    delay -= DelayFromLaunch;
-  } else if (DF->getSlackFromLaunch(dyn_cast<Instruction>(Src)) > delay)
+    // TODO: Only set the upperbound to 1 for non-chaining candidate.
+    delay -= std::max(1.0f, DelayFromLaunch);
+  } else if (slack > delay)
     // Try to fold the delay of current pipeline stage to the previous pipeline
     // stage, if the previous pipeline stage has enough slack.
     delay = 0.0f;
