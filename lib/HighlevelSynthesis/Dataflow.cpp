@@ -124,6 +124,39 @@ float Dataflow::getSlackFromLaunch(Instruction *Inst) const {
   return (1.0f - J->second.first);
 }
 
+float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const {
+  BasicBlock *BB = getIncomingBlock(S, Dst, Src);
+
+  if (!isa<PHINode>(Dst) && Dst->getParent() == BB) {
+    FlowDepMapTy::const_iterator I = FlowDeps.find(Dst);
+
+    // The scheduler may created new path via CFG folding, do not fail in this
+    // case.
+    if (I == FlowDeps.end())
+      return 0.0f;
+
+    const TimedSrcSet &Srcs = I->second;
+
+    TimedSrcSet::const_iterator J = Srcs.find(Src);
+    return J == Srcs.end() ? 0.0f : J->second.first;
+  }
+
+  IncomingMapTy::const_iterator I = Incomings.find(Dst);
+
+  // The scheduler may created new path via CFG folding, do not fail in this
+  // case.
+  if (I == Incomings.end())
+    return 0.0f;
+
+  IncomingBBMapTy::const_iterator J = I->second.find(BB);
+  if (J == I->second.end())
+    return 0.0f;
+
+  const TimedSrcSet &Srcs = J->second;
+  TimedSrcSet::const_iterator K = Srcs.find(Src);
+  return K == Srcs.end() ? 0.0f : K->second.first;
+}
+
 BasicBlock *
 Dataflow::getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const {
   BasicBlock *ParentBB = S->getParent();

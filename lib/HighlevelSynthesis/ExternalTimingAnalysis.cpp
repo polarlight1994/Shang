@@ -109,6 +109,7 @@ public:
 
 struct ExternalTimingAnalysis {
   VASTModule &VM;
+  Dataflow *DF;
   SpecificBumpPtrAllocator<float> Allocator;
   std::vector<float*> DelayRefs;
   typedef std::map<VASTValue*, float*> SrcInfo;
@@ -127,7 +128,8 @@ struct ExternalTimingAnalysis {
   // Write the script to extract the timing analysis results from quartus.
   void writeTimingScript(raw_ostream &O, raw_ostream &TimingSDCO,
                          StringRef ResultPath);
-  void extractTimingForSelector(raw_ostream &O, VASTSelector *Sel);
+  void extractTimingForSelector(raw_ostream &TclO, raw_ostream &TimingSDCO,
+                                VASTSelector *Sel);
   void extractSelectorDelay(raw_ostream &O, VASTSelector *Sel);
 
   typedef std::set<VASTSeqValue*> LeafSet;
@@ -161,7 +163,7 @@ struct ExternalTimingAnalysis {
   // Read the JSON file written by the timing extraction script.
   bool readTimingAnalysisResult(StringRef ResultPath);
 
-  explicit ExternalTimingAnalysis(VASTModule &VM);
+  ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF);
 
   bool analysisWithSynthesisTool();
 
@@ -275,7 +277,7 @@ void ExternalTimingAnalysis::getPathDelay(VASTSelector *Sel, VASTValue *FI,
 }
 
 bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
-  ExternalTimingAnalysis ETA(VM);
+  ExternalTimingAnalysis ETA(VM, DF);
 
   // Run the synthesis tool to get the arrival time estimation.
   if (!ETA.analysisWithSynthesisTool()) return false;
@@ -369,9 +371,9 @@ ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
        "set_global_assignment -name TOP_LEVEL_ENTITY " << VM.getName() << "\n"
        "set_global_assignment -name SOURCE_FILE \"";
   O.write_escaped(NetlistPath);
-  //O << "\"\n"
-  //     "set_global_assignment -name SDC_FILE \"";
-  //O.write_escaped(SDCPath);
+  O << "\"\n"
+       "set_global_assignment -name SDC_FILE \"";
+  O.write_escaped(SDCPath);
   O << "\"\n"
        "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
        "set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW\n"
@@ -550,9 +552,20 @@ void ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O,
     << Sel->getSTAObjectName() << " delay: $delay\"\n";
 }
 
+static void
+GenerateTimingConstraints(raw_ostream &O, VASTSelector *Src, VASTSelector *Dst,
+                          unsigned Cycles) {
+  O << "set src " << GetSTACollection(Src) << '\n';
+  O << "set dst " << GetSTACollection(Dst) << '\n';
+
+  O << "set_multicycle_path -from $src -to $dst -setup -end " << Cycles << '\n';
+}
+
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
+                                                      raw_ostream &TimingSDCO,
                                                       VASTSelector *Sel) {
   std::set<VASTValue*> Fanins;
+  std::map<DataflowValue, float> EstimatedDelays;
   LeafSet AllLeaves, IntersectLeaves, CurLeaves;
   typedef LeafSet::iterator leaf_iterator;
   typedef VASTSelector::iterator fanin_iterator;
@@ -568,11 +581,28 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
     U->extractSupportingSeqVal(CurLeaves);
     U.getGuard()->extractSupportingSeqVal(CurLeaves);
 
+    bool IsLaunch = false;
+    if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(U.Op))
+      IsLaunch = SeqInst->isLaunch();
+
+    DataflowInst Inst(dyn_cast_or_null<Instruction>(U.Op->getValue()), IsLaunch);
+
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
       VASTSeqValue *Leaf = *LI;
       if (!AllLeaves.insert(Leaf).second)
         IntersectLeaves.insert(Leaf);
+
+      // Get the delay from last generation.
+      DataflowValue Src(Leaf->getLLVMValue(),
+                        Leaf->isFUInput() || Leaf->isFUOutput());
+      float delay = DF->getDelay(Src, Inst, U.getSlot());
+
+      if (delay == 0.0f)
+        continue;
+
+      float &OldDelay = EstimatedDelays[Src];
+      OldDelay = std::max(OldDelay, delay);
     }
 
     // Directly add the slot active to all leaves set.
@@ -583,6 +613,16 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
   // Extract end-to-end delay.
   for (leaf_iterator I = AllLeaves.begin(), E = AllLeaves.end(); I != E; ++I) {
     VASTSeqValue *Src = *I;
+
+    // Generate the timing constraints
+    DataflowValue SrcV(Src->getLLVMValue(), Src->isFUInput() || Src->isFUOutput());
+    std::map<DataflowValue, float>::iterator J = EstimatedDelays.find(SrcV);
+    if (J != EstimatedDelays.end()) {
+      // Use a slightly tighter constraint to tweak the timing.
+      unsigned Cycles = std::max<float>(ceil(J->second - 0.5f), 1.0f);
+      if (Cycles > 1)
+        GenerateTimingConstraints(TimingSDCO, Src->getSelector(), Sel, Cycles);
+    }
 
     if (IntersectLeaves.count(Src) && !Src->isSlot() && !Src->isFUOutput())
       continue;
@@ -614,11 +654,11 @@ void
 ExternalTimingAnalysis::writeTimingScript(raw_ostream &TclO,
                                           raw_ostream &TimingSDCO,
                                           StringRef ResultPath) {
-  //TimingSDCO << "create_clock -name \"clk\" -period "
-  //           << format("%.2fns", VFUs::Period)
-  //           << " [get_ports {clk}]\n"
-  //              "derive_pll_clocks -create_base_clocks\n"
-  //              "derive_clock_uncertainty\n";
+  TimingSDCO << "create_clock -name \"clk\" -period "
+             << format("%.2fns", VFUs::Period)
+             << " [get_ports {clk}]\n"
+                "derive_pll_clocks -create_base_clocks\n"
+                "derive_clock_uncertainty\n";
 
   // Print the critical path in the datapath to debug the TimingNetlist.
   TclO << "report_timing -from_clock { clk } -to_clock { clk }"
@@ -630,10 +670,14 @@ ExternalTimingAnalysis::writeTimingScript(raw_ostream &TclO,
 
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-    extractTimingForSelector(TclO, I);
+    extractTimingForSelector(TclO, TimingSDCO, I);
 
   // Close the array and the file object.
   TclO << "close $JSONFile\n";
+
+  // Set the correct hold timing.
+  TimingSDCO << "set_multicycle_path -from [get_clocks {clk}] "
+                "-to [get_clocks {clk}] -hold -end 0\n";
 }
 
 template<typename T>
@@ -663,8 +707,8 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(StringRef ResultPath) {
   return true;
 }
 
-ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM) : VM(VM) {
-}
+ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF)
+  : VM(VM), DF(DF) {}
 
 bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   SmallString<256> OutputDir

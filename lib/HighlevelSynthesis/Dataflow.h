@@ -106,6 +106,7 @@ public:
 
   float annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
                       float delay, unsigned Slack);
+  float getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const;
 
   void getFlowDep(DataflowInst Inst, SrcSet &Set) const;
   void getIncomingFrom(DataflowInst Inst, BasicBlock *BB, SrcSet &Set) const;
