@@ -125,7 +125,8 @@ struct ExternalTimingAnalysis {
                           StringRef SDCPath, StringRef ExtractScript) const;
 
   // Write the script to extract the timing analysis results from quartus.
-  void writeTimingExtractionScript(raw_ostream &O, StringRef ResultPath);
+  void writeTimingScript(raw_ostream &O, raw_ostream &TimingSDCO,
+                         StringRef ResultPath);
   void extractTimingForSelector(raw_ostream &O, VASTSelector *Sel);
   void extractSelectorDelay(raw_ostream &O, VASTSelector *Sel);
 
@@ -160,7 +161,7 @@ struct ExternalTimingAnalysis {
   // Read the JSON file written by the timing extraction script.
   bool readTimingAnalysisResult(StringRef ResultPath);
 
-  explicit ExternalTimingAnalysis(VASTModule &VM) : VM(VM) {}
+  explicit ExternalTimingAnalysis(VASTModule &VM);
 
   bool analysisWithSynthesisTool();
 
@@ -368,13 +369,13 @@ ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
        "set_global_assignment -name TOP_LEVEL_ENTITY " << VM.getName() << "\n"
        "set_global_assignment -name SOURCE_FILE \"";
   O.write_escaped(NetlistPath);
-  O << "\"\n"
-       "set_global_assignment -name SDC_FILE \"";
-  O.write_escaped(SDCPath);
+  //O << "\"\n"
+  //     "set_global_assignment -name SDC_FILE \"";
+  //O.write_escaped(SDCPath);
   O << "\"\n"
        "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
        "set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW\n"
-       "set_global_assignment -name SYNTH_TIMING_DRIVEN_SYNTHESIS OFF\n"
+       //"set_global_assignment -name SYNTH_TIMING_DRIVEN_SYNTHESIS OFF\n"
        "set_global_assignment -name TIMEQUEST_REPORT_SCRIPT_INCLUDE_DEFAULT_ANALYSIS OFF\n"
        "export_assignments\n"
        // Start the processes.
@@ -549,7 +550,7 @@ void ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O,
     << Sel->getSTAObjectName() << " delay: $delay\"\n";
 }
 
-void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
+void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
                                                       VASTSelector *Sel) {
   std::set<VASTValue*> Fanins;
   LeafSet AllLeaves, IntersectLeaves, CurLeaves;
@@ -589,10 +590,10 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
     unsigned Idx = 0;
     // Directly use the register-to-register delay.
     DelayMatrix[Sel][Src] = allocateDelayRef(Idx);
-    extractTimingForPath(O, Sel, Src, Idx);
+    extractTimingForPath(TclO, Sel, Src, Idx);
   }
 
-  extractSelectorDelay(O, Sel);
+  extractSelectorDelay(TclO, Sel);
 
   // Extract path delay in details for leaves that reachable to different fanins
   if (IntersectLeaves.empty())
@@ -604,28 +605,35 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
     if (Sel->isTrivialFannin(U))
       continue;
 
-    buildPathInfoForCone(O, VASTValPtr(U).get(), IntersectLeaves);
-    buildPathInfoForCone(O, VASTValPtr(U.getGuard()).get(), IntersectLeaves);
+    buildPathInfoForCone(TclO, VASTValPtr(U).get(), IntersectLeaves);
+    buildPathInfoForCone(TclO, VASTValPtr(U.getGuard()).get(), IntersectLeaves);
   }
 }
 
 void
-ExternalTimingAnalysis::writeTimingExtractionScript(raw_ostream &O,
-                                                    StringRef ResultPath) {
+ExternalTimingAnalysis::writeTimingScript(raw_ostream &TclO,
+                                          raw_ostream &TimingSDCO,
+                                          StringRef ResultPath) {
+  //TimingSDCO << "create_clock -name \"clk\" -period "
+  //           << format("%.2fns", VFUs::Period)
+  //           << " [get_ports {clk}]\n"
+  //              "derive_pll_clocks -create_base_clocks\n"
+  //              "derive_clock_uncertainty\n";
+
   // Print the critical path in the datapath to debug the TimingNetlist.
-  O << "report_timing -from_clock { clk } -to_clock { clk }"
+  TclO << "report_timing -from_clock { clk } -to_clock { clk }"
          " -setup -npaths 1 -detail full_path -stdout\n"
   // Open the file and start the array.
        "set JSONFile [open \"";
-  O.write_escaped(ResultPath);
-  O << "\" w+]\n";
+  TclO.write_escaped(ResultPath);
+  TclO << "\" w+]\n";
 
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-    extractTimingForSelector(O, I);
+    extractTimingForSelector(TclO, I);
 
   // Close the array and the file object.
-  O << "close $JSONFile\n";
+  TclO << "close $JSONFile\n";
 }
 
 template<typename T>
@@ -655,6 +663,9 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(StringRef ResultPath) {
   return true;
 }
 
+ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM) : VM(VM) {
+}
+
 bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   SmallString<256> OutputDir
     = sys::path::parent_path(getStrValueFromEngine("RTLOutput"));
@@ -665,32 +676,31 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
 
   std::string ErrorInfo;
 
-  // Write the SDC and the delay query script.
-
-  SmallString<256> TimingExtractTcl(OutputDir);
-  sys::path::append(TimingExtractTcl, VM.getName() + "_extract.tcl");
-
-  errs() << "Writing '" << TimingExtractTcl.str() << "'... ";
-
-  raw_fd_ostream TimingExtractTclO(TimingExtractTcl.c_str(), ErrorInfo);
-
-  if (!ErrorInfo.empty())  return exitWithError(TimingExtractTcl);
-
   SmallString<256> TimingExtractResult(OutputDir);
   sys::path::append(TimingExtractResult, VM.getName() + "_result.json");
 
-  writeTimingExtractionScript(TimingExtractTclO, TimingExtractResult);
-  TimingExtractTclO.close();
+  // Write the SDC and the delay query script.
+  SmallString<256> TimingExtractTcl(OutputDir);
+  sys::path::append(TimingExtractTcl, VM.getName() + "_extract.tcl");
+  errs() << "Writing '" << TimingExtractTcl.str() << "'... ";
+  raw_fd_ostream TimingTclO(TimingExtractTcl.c_str(), ErrorInfo);
+  if (!ErrorInfo.empty())  return exitWithError(TimingExtractTcl);
+  // Write the SDC for the project.
+  SmallString<256> TimingSDC(OutputDir);
+  sys::path::append(TimingSDC, VM.getName() + ".sdc");
+  errs() << "Writing '" << TimingSDC << "'... ";
+  raw_fd_ostream TimingSDCO(TimingSDC.c_str(), ErrorInfo);
+  if (!ErrorInfo.empty())  return exitWithError(TimingSDC);
+  writeTimingScript(TimingTclO, TimingSDCO, TimingExtractResult);
+  TimingTclO.close();
+  TimingSDCO.close();
   errs() << " done. \n";
 
   // Write the Nestlist and the wrapper.
   SmallString<256> Netlist(OutputDir);
   sys::path::append(Netlist, VM.getName() + ".sv");
-
   errs() << "Writing '" << Netlist << "'... ";
-
   raw_fd_ostream NetlistO(Netlist.c_str(), ErrorInfo);
-
   if (!ErrorInfo.empty())  return exitWithError(Netlist);
 
   // Write the netlist.
@@ -698,33 +708,13 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   NetlistO.close();
   errs() << " done. \n";
 
-  // Write the SDC for the project.
-  SmallString<256> SDC(OutputDir);
-  sys::path::append(SDC, VM.getName() + ".sdc");
-  errs() << "Writing '" << SDC << "'... ";
-
-  raw_fd_ostream SDCO(SDC.c_str(), ErrorInfo);
-
-  if (!ErrorInfo.empty())  return exitWithError(SDC);
-
-  SDCO << "create_clock -name \"clk\" -period " << format("%.2fns", VFUs::Period)
-       << " [get_ports {clk}]\n"
-          "derive_pll_clocks -create_base_clocks\n"
-          "derive_clock_uncertainty\n";
-  SDCO.close();
-  errs() << " done. \n";
-
   // Write the project script.
   SmallString<256> PrjTcl(OutputDir);
   sys::path::append(PrjTcl, VM.getName() + ".tcl");
-
   errs() << "Writing '" << PrjTcl.str() << "'... ";
-
   raw_fd_ostream PrjTclO(PrjTcl.c_str(), ErrorInfo);
-
   if (!ErrorInfo.empty())  return exitWithError(PrjTcl);
-
-  writeProjectScript(PrjTclO, Netlist, SDC, TimingExtractTcl);
+  writeProjectScript(PrjTclO, Netlist, TimingSDC, TimingExtractTcl);
   PrjTclO.close();
   errs() << " done. \n";
 
