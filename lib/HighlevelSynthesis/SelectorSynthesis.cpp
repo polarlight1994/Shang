@@ -106,6 +106,10 @@ public:
   iterator begin() const { return Leaves.begin(); }
   iterator end()   const { return Leaves.end(); }
 
+  void getSlots(SmallVectorImpl<VASTSlot*> &Slots) const {
+    Slots.insert(Slots.end(), slot_begin(), slot_end());
+  }
+
   void addSlot(VASTSlot *S, STGDistances *STGDist) {
     if (!Slots.insert(S).second) return;
 
@@ -420,6 +424,11 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     VASTValPtr FIGuard = Builder.buildOrExpr(SlotGuards, 1);
     FaninGuards.push_back(FIGuard);
 
+    // No need to build the fanin for the enables, only the guard is used by
+    // them.
+    if (Sel->isEnable() || Sel->isSlot())
+      continue;
+
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
@@ -434,7 +443,6 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     while (!Slots.empty())
       C->addSlot(Slots.pop_back_val(), STGDist);
   }
-
 
   mergeTrivialCones(FICones, Builder, Bitwidth);
   while (mergeCones(FICones, Builder, Bitwidth))
@@ -457,13 +465,17 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     if (!TC)
       continue;
 
-    typedef TimedCone::slot_iterator slot_iterator;
-    for (slot_iterator SI = TC->slot_begin(), SE = TC->slot_end(); SI != SE; ++SI)
-      Sel->annotateReadSlot(*SI, FI);
+    Slots.clear();
+    TC->getSlots(Slots);
+    Sel->annotateReadSlot(Slots, FI);
   }
 
-  Sel->setMux(Builder.buildOrExpr(Fanins, Bitwidth),
-              Builder.buildOrExpr(FaninGuards, 1));
+  // Build the final fanin only if the selector is not enable.
+  VASTValPtr FI = VASTImmediate::True;
+  if (!Sel->isEnable() && !Sel->isSlot())
+    FI = Builder.buildOrExpr(Fanins, Bitwidth);
+
+  Sel->setMux(FI, Builder.buildOrExpr(FaninGuards, 1));
 
   DeleteContainerSeconds(TimedCones);
 }

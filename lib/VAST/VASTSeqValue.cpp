@@ -514,8 +514,58 @@ void VASTSelector::eraseFanin(VASTLatch U) {
   Assigns.erase(at);
 }
 
-void VASTSelector::annotateReadSlot(VASTSlot *S, VASTValPtr V)  {
-  Annotations[V.get()].push_back(S);
+void VASTSelector::annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V)  {
+
+  VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
+  if (!Expr)
+    return;
+
+  if (Expr->isTimingBarrier()) {
+    SmallVectorImpl<VASTSlot*> &AnnotatedSlots = Annotations[Expr];
+    assert(AnnotatedSlots.empty() && "Unexpected root annotated!");
+    AnnotatedSlots.append(Slots.begin(), Slots.end());
+    return;
+  }
+
+  // The timing barrier maybe decomposed by bit-level optimization, preform
+  // depth first search to annotate them.
+
+  typedef VASTOperandList::op_iterator ChildIt;
+  std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
+  std::set<VASTExpr*> Visited;
+
+  VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
+
+  while (!VisitStack.empty()) {
+    VASTExpr *Node = VisitStack.back().first;
+    ChildIt It = VisitStack.back().second;
+
+    // We have visited all children of current node.
+    if (It == Node->op_end()) {
+      VisitStack.pop_back();
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    VASTValue *ChildNode = It->unwrap().get();
+    ++VisitStack.back().second;
+
+    if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
+      // ChildNode has a name means we had already visited it.
+      if (!Visited.insert(ChildExpr).second) continue;
+
+      if (ChildExpr->isTimingBarrier()) {
+        SmallVectorImpl<VASTSlot*> &AnnotatedSlots = Annotations[ChildExpr];
+        // Do not modify the old annotation.
+        if (AnnotatedSlots.empty())
+          AnnotatedSlots.append(Slots.begin(), Slots.end());
+
+        continue;
+      }
+
+      VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
+    }
+  }
 }
 
 void VASTSelector::dropMux() {

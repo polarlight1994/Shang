@@ -111,7 +111,7 @@ public:
   unsigned size() const { return Assigns.size(); }
   bool empty() const { return Assigns.empty(); }
 
-  void annotateReadSlot(VASTSlot *S, VASTValPtr V);
+  void annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V);
   typedef AnnotationMap::const_iterator ann_iterator;
   ann_iterator ann_begin() const { return Annotations.begin(); }
   ann_iterator ann_end() const { return Annotations.end(); }
