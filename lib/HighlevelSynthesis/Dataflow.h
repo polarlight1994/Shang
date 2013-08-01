@@ -80,8 +80,17 @@ class Dataflow : public FunctionPass {
 public:
   typedef std::map<DataflowValue, float> SrcSet;
 private:
+  struct Annotation {
+    float delay;
+    uint16_t generation;
+    uint8_t voilation;
+    Annotation(float delay = 0.0f, uint16_t generation = 0,
+               uint8_t voilation = 0)
+      : delay(delay), generation(generation), voilation(voilation) {}
+  };
+
   DominatorTree *DT;
-  typedef std::map<DataflowValue, std::pair<float, unsigned> > TimedSrcSet;
+  typedef std::map<DataflowValue, Annotation> TimedSrcSet;
   typedef std::map<DataflowInst, TimedSrcSet> FlowDepMapTy;
   FlowDepMapTy FlowDeps;
   typedef std::map<BasicBlock*, TimedSrcSet> IncomingBBMapTy;
@@ -92,8 +101,7 @@ private:
   TimedSrcSet &getDeps(DataflowInst Inst, BasicBlock *Parent);
 
   unsigned generation;
-  float updateDelay(float NewDelay, float Ratio,
-                    std::pair<float, unsigned> &OldDelay);
+  void updateDelay(float NewDelay, float Ratio, Annotation &OldDelay);
 
   void dumpIncomings(raw_ostream &OS) const;
   void dumpFlowDeps(raw_ostream &OS) const;
@@ -104,8 +112,8 @@ public:
   void increaseGeneration() { ++generation; }
   unsigned getGeneration() const { return generation; }
 
-  float annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
-                      float delay, unsigned Slack);
+  void annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
+                     float delay, unsigned Slack);
   float getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const;
 
   void getFlowDep(DataflowInst Inst, SrcSet &Set) const;
@@ -129,8 +137,8 @@ class DataflowAnnotation : public VASTModulePass {
   void extractFlowDep(VASTSeqOp *SeqOp, TimingNetlist &TNL);
   void internalDelayAnnotation(VASTModule &VM);
 
-  float annotateDelay(DataflowInst Inst, VASTSlot *S, VASTSeqValue *V,
-                      float delay);
+  void annotateDelay(DataflowInst Inst, VASTSlot *S, VASTSeqValue *V,
+                     float delay);
 public:
 
   static char ID;

@@ -68,7 +68,7 @@ void Dataflow::getFlowDep(DataflowInst Inst, SrcSet &Set) const {
   typedef TimedSrcSet::const_iterator iterator;
   for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
     float &Delay = Set[I->first];
-    Delay = std::max(I->second.first, Delay);
+    Delay = std::max(I->second.delay, Delay);
   }
 }
 
@@ -98,7 +98,7 @@ Dataflow::getIncomingFrom(DataflowInst Inst, BasicBlock *BB, SrcSet &Set) const 
   typedef TimedSrcSet::const_iterator iterator;
   for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
     float &Delay = Set[I->first];
-    Delay = std::max(I->second.first, Delay);
+    Delay = std::max(I->second.delay, Delay);
   }
 }
 
@@ -121,7 +121,7 @@ float Dataflow::getSlackFromLaunch(Instruction *Inst) const {
   if (J == Srcs.end())
     return 0.0f;
 
-  return (1.0f - J->second.first);
+  return (1.0f - J->second.delay);
 }
 
 float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const {
@@ -138,7 +138,7 @@ float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const
     const TimedSrcSet &Srcs = I->second;
 
     TimedSrcSet::const_iterator J = Srcs.find(Src);
-    return J == Srcs.end() ? 0.0f : J->second.first;
+    return J == Srcs.end() ? 0.0f : J->second.delay;
   }
 
   IncomingMapTy::const_iterator I = Incomings.find(Dst);
@@ -154,7 +154,7 @@ float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const
 
   const TimedSrcSet &Srcs = J->second;
   TimedSrcSet::const_iterator K = Srcs.find(Src);
-  return K == Srcs.end() ? 0.0f : K->second.first;
+  return K == Srcs.end() ? 0.0f : K->second.delay;
 }
 
 BasicBlock *
@@ -184,8 +184,8 @@ Dataflow::getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const {
   return ParentBB;
 }
 
-float Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
-                              float delay, unsigned Slack) {
+void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
+                             float delay, unsigned Slack) {
   bool IsTimingVoilation = Slack < delay && generation != 0;
   assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");
 
@@ -194,29 +194,32 @@ float Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
   // Assign the current delay a bigger weigth if there is timing violation. So
   // that the scheduler can make quick respond on the timing violation.
   float Ratio = IsTimingVoilation ? 0.9f : 0.5f;
+  Annotation &OldAnnotation = Srcs[V];
+  float OldDelay = OldAnnotation.delay;
 
-  float OldDelay = updateDelay(delay, Ratio, Srcs[V]);
   if (IsTimingVoilation) {
-    dbgs() << "Potential timing violation: "<< Slack << ' ' << delay
+    if (OldAnnotation.generation != generation)
+      ++OldAnnotation.voilation;
+
+    dbgs() << "Potential timing violation: ("
+           << unsigned(OldAnnotation.voilation)
+           << ") "<< Slack << ' ' << delay
            << " Old delay " << OldDelay
            << '(' << ((delay - OldDelay) / delay) << ')' << " \n"
            << "Src: " << *V << " Dst: " << *Inst << '\n';
   }
 
-  return OldDelay;
+  updateDelay(delay, Ratio, OldAnnotation);
 }
 
-float Dataflow::updateDelay(float NewDelay, float Ratio,
-                            std::pair<float, unsigned> &OldDelay) {
-  float tmp = OldDelay.first;
-  if (OldDelay.second == generation) {
-    OldDelay.first = std::max(NewDelay, OldDelay.first);
-    return tmp;
+void Dataflow::updateDelay(float NewDelay, float Ratio, Annotation &OldDelay) {
+  if (OldDelay.generation == generation) {
+    OldDelay.delay = std::max(NewDelay, OldDelay.delay);
+    return;
   }
 
-  OldDelay.second = generation;
-  OldDelay.first = OldDelay.first * (1.0f - Ratio) + NewDelay * Ratio;
-  return tmp;
+  OldDelay.generation = generation;
+  OldDelay.delay = OldDelay.delay * (1.0f - Ratio) + NewDelay * Ratio;
 }
 
 DataflowAnnotation::DataflowAnnotation(bool Accumulative)
@@ -252,12 +255,11 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
 }
 
-float DataflowAnnotation::annotateDelay(DataflowInst Inst, VASTSlot *S,
+void DataflowAnnotation::annotateDelay(DataflowInst Inst, VASTSlot *S,
                                         VASTSeqValue *SV, float delay) {
   DataflowValue V(SV->getLLVMValue(), SV->isFUOutput() || SV->isFUInput());
   unsigned Slack = Distances->getIntervalFromDef(SV, S);
-  float OldDelay = DF->annotateDelay(Inst, S, V, delay, Slack);
-  return OldDelay;
+  DF->annotateDelay(Inst, S, V, delay, Slack);
 }
 
 void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
@@ -354,8 +356,8 @@ void Dataflow::dumpFlowDeps(raw_ostream &OS) const {
       OS << "INSERT INTO flowdeps(src, dst, generation, delay) VALUES(\n"
          << '\'' << *J->first << "', \n"
          << '\'' << *Dst << "', \n"
-         << '\'' << J->second.second << "', \n"
-         << J->second.first << ");\n";
+         << '\'' << J->second.generation << "', \n"
+         << J->second.delay << ");\n";
     }
   }
 }
@@ -384,8 +386,8 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
            << '\'' << *K->first << "', \n"
            << '\'' << BB->getName() << "', \n"
            << '\'' << *Dst << "', \n"
-           << '\'' << K->second.second << "', \n"
-           << K->second.first << ");\n";
+           << '\'' << K->second.generation << "', \n"
+           << K->second.delay << ");\n";
       }
     }
   }
