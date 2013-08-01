@@ -514,22 +514,22 @@ void VASTSelector::eraseFanin(VASTLatch U) {
   Assigns.erase(at);
 }
 
-void VASTSelector::annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V)  {
+void VASTSelector::annotateReadSlot(VASTSlot *S, VASTValPtr V)  {
 
   VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
   if (!Expr)
     return;
 
   if (Expr->isTimingBarrier()) {
-    SmallVectorImpl<VASTSlot*> &AnnotatedSlots = Annotations[Expr];
-    assert(AnnotatedSlots.empty() && "Unexpected root annotated!");
-    AnnotatedSlots.append(Slots.begin(), Slots.end());
+    Annotations[Expr].push_back(S);
     return;
   }
 
   // The timing barrier maybe decomposed by bit-level optimization, preform
   // depth first search to annotate them.
-
+  // The expression tree may contains keep nodes with other annotations. If we
+  // generate the keep nodes correctly, the newly generated keep nodes are
+  // supposed to shield the earlier keep nodes.
   typedef VASTOperandList::op_iterator ChildIt;
   std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
   std::set<VASTExpr*> Visited;
@@ -555,11 +555,7 @@ void VASTSelector::annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V)  {
       if (!Visited.insert(ChildExpr).second) continue;
 
       if (ChildExpr->isTimingBarrier()) {
-        SmallVectorImpl<VASTSlot*> &AnnotatedSlots = Annotations[ChildExpr];
-        // Do not modify the old annotation.
-        if (AnnotatedSlots.empty())
-          AnnotatedSlots.append(Slots.begin(), Slots.end());
-
+        Annotations[ChildExpr].push_back(S);
         continue;
       }
 

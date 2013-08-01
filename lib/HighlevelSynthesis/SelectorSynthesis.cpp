@@ -106,10 +106,6 @@ public:
   iterator begin() const { return Leaves.begin(); }
   iterator end()   const { return Leaves.end(); }
 
-  void getSlots(SmallVectorImpl<VASTSlot*> &Slots) const {
-    Slots.insert(Slots.end(), slot_begin(), slot_end());
-  }
-
   void addSlot(VASTSlot *S, STGDistances *STGDist) {
     if (!Slots.insert(S).second) return;
 
@@ -465,9 +461,9 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     if (!TC)
       continue;
 
-    Slots.clear();
-    TC->getSlots(Slots);
-    Sel->annotateReadSlot(Slots, FI);
+    typedef TimedCone::slot_iterator slot_iterator;
+    for (slot_iterator SI = TC->slot_begin(), SE = TC->slot_end(); SI != SE; ++SI)
+      Sel->annotateReadSlot(*SI, FI);
   }
 
   // Build the final fanin only if the selector is not enable.
