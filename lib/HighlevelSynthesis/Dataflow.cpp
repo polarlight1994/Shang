@@ -202,11 +202,12 @@ char DataflowAnnotation::ID = 0;
 void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequired<Dataflow>();
-  AU.addRequiredID(STGDistancesID);
 
   AU.addRequiredID(ControlLogicSynthesisID);
   AU.addRequiredID(DatapathNamerID);
 
+  AU.addRequiredID(STGDistancesID);
+  AU.addPreservedID(STGDistancesID);
   AU.addRequired<TimingNetlist>();
   AU.setPreservesAll();
 }
