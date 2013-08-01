@@ -449,10 +449,13 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   for (cone_iterator I = FICones.begin(), E = FICones.end(); I != E; ++I) {
     VASTValPtr FI = I->first;
     TimedCone *TC = I->second;
+    bool KeepApplied = false;
 
     // Apply the keep attribute if necessary.
-    if (FICones.size() > 1 && TC && !TC->isSingleCycleCone())
+    if (FICones.size() > 1 && TC && !TC->isSingleCycleCone()) {
       FI = Builder.buildKeep(FI);
+      KeepApplied = true;
+    }
 
     // Remember the fanin, we are going to OR them together.
     Fanins.push_back(FI);
@@ -461,9 +464,11 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     if (!TC)
       continue;
 
-    typedef TimedCone::slot_iterator slot_iterator;
-    for (slot_iterator SI = TC->slot_begin(), SE = TC->slot_end(); SI != SE; ++SI)
-      Sel->annotateReadSlot(*SI, FI);
+    if (KeepApplied) {
+      typedef TimedCone::slot_iterator iterator;
+      for (iterator SI = TC->slot_begin(), SE = TC->slot_end(); SI != SE; ++SI)
+        Sel->annotateReadSlot(*SI, FI);
+    }
   }
 
   // Build the final fanin only if the selector is not enable.
