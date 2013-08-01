@@ -24,6 +24,9 @@
 #include "shang/VASTModule.h"
 #include "shang/VASTSubModules.h"
 #include "shang/VASTMemoryPort.h"
+#include "shang/STGDistances.h"
+
+#include "llvm/Analysis/Dominators.h"
 
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/OwningPtr.h"
@@ -226,7 +229,6 @@ void ExternalTimingAnalysis::getPathDelay(VASTSelector *Sel, VASTValue *FI,
   typedef SrcInfo::const_iterator src_iterator;
   for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
     VASTSeqValue *Leaf = *I;
-
     src_iterator J = FIDelays.find(Leaf);
 
     // If there is more than one paths between Leaf and selector, the delay
@@ -310,9 +312,11 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
     }
 
     typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
-    for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
-      annotateDelay(DataflowInst(Inst, IsLaunch), Op->getSlot(),
-                    I->first, I->second);
+    for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+      VASTSeqValue *Src = I->first;
+      float delay = I->second;
+      annotateDelay(DataflowInst(Inst, IsLaunch), Op->getSlot(), Src, delay);
+    }
   }
 
   // External timing analysis successfully completed.
@@ -588,11 +592,11 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &O,
     extractTimingForPath(O, Sel, Src, Idx);
   }
 
+  extractSelectorDelay(O, Sel);
+
   // Extract path delay in details for leaves that reachable to different fanins
   if (IntersectLeaves.empty())
     return;
-
-  extractSelectorDelay(O, Sel);
 
   for (fanin_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch U = *I;
