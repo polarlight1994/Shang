@@ -45,6 +45,10 @@ static cl::opt<bool>
 DisableTimingScriptGeneration("shang-disable-timing-script",
                               cl::desc("Disable timing script generation"),
                               cl::init(false));
+static cl::opt<bool>
+KeepNodesOnly("shang-timing-script-keep-only",
+              cl::desc("Only generate timing script thu 'keep' nodes"),
+              cl::init(true));
 
 STATISTIC(NumMultiCyclesConstraints, "Number of multicycles timing constraints "
                                      "generated");
@@ -287,43 +291,10 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root,
       // even V may be masked by the false path indicated by the keep attribute.
       // we will first generate the tight constraints and overwrite them by
       // looser constraints.
-      annotateLeaf(V->getSelector(), SubExpr, buildLeaf(V, ReadSlots, Root),
+      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, Root),
                    LocalInterval);
     }
   }
-
-  // Check the result, debug only.
-  DEBUG(QueryCacheTy::iterator at = QueryCache.find(Expr);
-  assert(at != QueryCache.end()
-         && "Timing path information for root not found!");
-  const SeqValSetTy &RootSet = at->second;
-  typedef SeqValSetTy::const_iterator it;
-  bool IntervalMasked = false;
-  for (it I = LocalInterval.begin(), E = LocalInterval.end(); I != E; ++I) {
-    SeqValSetTy::const_iterator ActualIntervalAt = RootSet.find(I->first);
-    assert(ActualIntervalAt != RootSet.end() && "Timing path entire missed!");
-    assert(ActualIntervalAt->second.NumCycles <= I->second.NumCycles
-           && "Interval information not applied?");
-    if (ActualIntervalAt->second.NumCycles == I->second.NumCycles) continue;
-
-    dbgs() << "Timing path masked: Root is";
-    Root->printAsOperand(dbgs(), false);
-    dbgs() << " end node is " << I->first->getName()
-           << " masked delay: " << I->second.NumCycles
-           << " actual delay: " << ActualIntervalAt->second.NumCycles << '\n';
-    IntervalMasked = true;
-  }
-
-  if (IntervalMasked) {
-    dbgs() << " going to dump the nodes in the tree:\n";
-
-    typedef std::set<VASTValue*>::iterator node_it;
-    for (node_it NI = Visited.begin(), NE = Visited.end(); NI != NE; ++NI) {
-      (*NI)->printAsOperand(dbgs(), false);
-      dbgs() << ", ";
-    }
-    dbgs() << '\n';
-  });
 }
 
 void AnnotatedCone::dump() const {
@@ -383,6 +354,8 @@ AnnotatedCone::generateMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const
     ThuName = Thu->getSTAObjectName();
 
     if (ThuName.empty()) return 0;
+
+    if (KeepNodesOnly && !Thu->isTimingBarrier()) return 0;
   }
 
   typedef SeqValSetTy::const_iterator iterator;
