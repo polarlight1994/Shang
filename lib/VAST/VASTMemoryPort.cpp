@@ -40,7 +40,8 @@ void VASTMemoryBus::addBasicPins(VASTModule *VM, unsigned PortNum) {
 
   // Address pin
   VASTSelector *Address
-    = VM->createSelector(getAddrName(PortNum), getAddrWidth(), this);
+    = VM->createSelector(getAddrName(PortNum), getAddrWidth(), this,
+                         VASTSelector::FUInput);
   addFanin(Address);
 
   // Read (from memory) data pin
@@ -53,7 +54,8 @@ void VASTMemoryBus::addBasicPins(VASTModule *VM, unsigned PortNum) {
 
   // Write (to memory) data pin
   VASTSelector *WData
-    = VM->createSelector(getWDataName(PortNum), getDataWidth(), this);
+    = VM->createSelector(getWDataName(PortNum), getDataWidth(), this,
+                         VASTSelector::FUInput);
   addFanin(WData);  
 }
 
@@ -62,7 +64,8 @@ void VASTMemoryBus::addExternalPins(VASTModule *VM) {
 
     // Address pin
     VASTSelector *Address
-      = VM->createSelector(getAddrName(0), getAddrWidth(), 0);
+      = VM->createSelector(getAddrName(0), getAddrWidth(), 0,
+                           VASTSelector::FUInput);
     addFanin(Address);
     VM->addPort(Address, false);
 
@@ -74,7 +77,8 @@ void VASTMemoryBus::addExternalPins(VASTModule *VM) {
 
     // Write (to memory) data pin
     VASTSelector *WData
-      = VM->createSelector(getWDataName(0), getDataWidth(), 0);
+      = VM->createSelector(getWDataName(0), getDataWidth(), 0,
+                           VASTSelector::FUInput);
     addFanin(WData);
     VM->addPort(WData, false);
 
