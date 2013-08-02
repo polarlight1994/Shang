@@ -144,7 +144,6 @@ INITIALIZE_PASS_BEGIN(TimingNetlist, "shang-timing-netlist",
                       "Preform Timing Estimation on the RTL Netlist",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
-  INITIALIZE_PASS_DEPENDENCY(SelectorSynthesis)
 INITIALIZE_PASS_END(TimingNetlist, "shang-timing-netlist",
                     "Preform Timing Estimation on the RTL Netlist",
                     false, true)

@@ -171,7 +171,7 @@ public:
 
 typedef std::map<VASTValPtr, TimedCone*> FIConeVec;
 
-struct SelectorSynthesis : public VASTModulePass {
+struct TimingDrivenSelectorSynthesis : public VASTModulePass {
   CachedStrashTable *CST;
   TimingNetlist *TNL;
   STGDistances *STGDist;
@@ -213,8 +213,8 @@ struct SelectorSynthesis : public VASTModulePass {
 
   static char ID;
 
-  SelectorSynthesis() : VASTModulePass(ID), CST(0), TNL(0), STGDist(0) {
-    initializeSelectorSynthesisPass(*PassRegistry::getPassRegistry());
+  TimingDrivenSelectorSynthesis() : VASTModulePass(ID), CST(0), TNL(0), STGDist(0) {
+    initializeTimingDrivenSelectorSynthesisPass(*PassRegistry::getPassRegistry());
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -242,19 +242,21 @@ struct SelectorSynthesis : public VASTModulePass {
 };
 }
 
-INITIALIZE_PASS_BEGIN(SelectorSynthesis, "sequential-selector-synthesis",
+INITIALIZE_PASS_BEGIN(TimingDrivenSelectorSynthesis,
+                      "timing-driven-selector-synthesis",
                       "Implement the MUX for the Sequantal Logic", false, true)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
-INITIALIZE_PASS_END(SelectorSynthesis, "sequential-selector-synthesis",
+INITIALIZE_PASS_END(TimingDrivenSelectorSynthesis,
+                    "timing-driven-selector-synthesis",
                     "Implement the MUX for the Sequantal Logic", false, true)
 
-char SelectorSynthesis::ID = 0;
+char TimingDrivenSelectorSynthesis::ID = 0;
 
-char &llvm::SelectorSynthesisID = SelectorSynthesis::ID;
+char &llvm::TimingDrivenSelectorSynthesisID = TimingDrivenSelectorSynthesis::ID;
 
-void SelectorSynthesis::mergeTrivialCones(FIConeVec &Cones,
-                                          VASTExprBuilder &Builder,
-                                          unsigned Bitwidth) {
+void TimingDrivenSelectorSynthesis::mergeTrivialCones(FIConeVec &Cones,
+                                                      VASTExprBuilder &Builder,
+                                                      unsigned Bitwidth) {
   // Nothing to merge.
   if (Cones.size() == 1) return;
 
@@ -283,7 +285,8 @@ void SelectorSynthesis::mergeTrivialCones(FIConeVec &Cones,
   Cones[MergedFI] = 0;
 }
 
-bool SelectorSynthesis::isGoodToMerge(TimedCone *LHS, TimedCone *RHS) const {
+bool TimingDrivenSelectorSynthesis::isGoodToMerge(TimedCone *LHS,
+                                                  TimedCone *RHS) const {
   // It is always good to merge to trivial cones.
   if (!LHS || !RHS) return true;
 
@@ -298,8 +301,9 @@ bool SelectorSynthesis::isGoodToMerge(TimedCone *LHS, TimedCone *RHS) const {
   return true;
 }
 
-bool SelectorSynthesis::mergeCones(FIConeVec &Cones, VASTExprBuilder &Builder,
-                                   unsigned BitWdith) {
+bool TimingDrivenSelectorSynthesis::mergeCones(FIConeVec &Cones,
+                                               VASTExprBuilder &Builder,
+                                               unsigned BitWdith) {
   // Nothing to merge.
   if (Cones.size() == 1) return false;
 
@@ -357,8 +361,9 @@ bool SelectorSynthesis::mergeCones(FIConeVec &Cones, VASTExprBuilder &Builder,
   return AnyChange;
 }
 
-void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
-                                           VASTExprBuilder &Builder) {
+void
+TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
+                                                  VASTExprBuilder &Builder) {
   typedef std::vector<VASTLatch> OrVec;
   typedef std::map<unsigned, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator iterator;
@@ -481,7 +486,7 @@ void SelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   DeleteContainerSeconds(TimedCones);
 }
 
-bool SelectorSynthesis::runOnVASTModule(VASTModule &VM) {
+bool TimingDrivenSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   STGDist = &getAnalysis<STGDistances>();
   TNL = &getAnalysis<TimingNetlist>();
   CST = &getAnalysis<CachedStrashTable>();
