@@ -824,7 +824,8 @@ void VASTScheduling::scheduleGlobal() {
   // Build the step variables, and no need to schedule at all if all SUs have
   // been scheduled.
   if (Scheduler.createLPAndVariables()) {
-    unsigned TotalWeight = 0;
+    float TotalWeight = 0.0f;
+    float PerformanceFactor = 10.0f;
 
     Function &F = VM->getLLVMFunction();
     typedef Function::iterator iterator;
@@ -832,7 +833,7 @@ void VASTScheduling::scheduleGlobal() {
       BasicBlock *BB = I;
       DEBUG(dbgs() << "Applying constraints to BB: " << BB->getName() << '\n');
 
-      unsigned ExitWeigthSum = 0;
+      float ExitWeigthSum = 0;
       ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
       for (unsigned i = 0; i < Exits.size(); ++i) {
         VASTSchedUnit *BBExit = Exits[i];
@@ -843,12 +844,12 @@ void VASTScheduling::scheduleGlobal() {
           continue;
         }
 
-        unsigned ExitWeight = 1024;
+        float ExitWeight = PerformanceFactor;
         BranchProbability BP = BranchProbability::getOne();
         if (BasicBlock *TargetBB = BBExit->getTargetBlock())
           BP = BPI->getEdgeProbability(BB, TargetBB);
 
-        ExitWeight = ExitWeight * BP.getNumerator() / BP.getDenominator();
+        ExitWeight = (ExitWeight * BP.getNumerator()) / BP.getDenominator();
         Scheduler.addObjectCoeff(BBExit, - 1.0 * ExitWeight);
         DEBUG(dbgs().indent(4) << "Setting Exit Weight: " << ExitWeight
                                << ' ' << BP << '\n');
@@ -877,7 +878,7 @@ void VASTScheduling::scheduleGlobal() {
                              << ExitWeigthSum << '\n');
     }
 
-    Scheduler.addObjectCoeff(G->getExit(), - 1.0 * (TotalWeight + 1024));
+    Scheduler.addObjectCoeff(G->getExit(), - 1.0 * (TotalWeight /*+ PerformanceFactor*/));
 
     bool success = Scheduler.schedule();
     assert(success && "SDCScheduler fail!");
