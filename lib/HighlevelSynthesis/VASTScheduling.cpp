@@ -442,6 +442,8 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
     float DelayFromLaunch = 1.0f - slack;
     // TODO: Only set the upperbound to 1 for non-chaining candidate.
     delay -= std::max(1.0f, DelayFromLaunch);
+    // Do not produce a negative delay!
+    delay = std::max(0.0f, delay);
   } else if (slack > delay)
     // Try to fold the delay of current pipeline stage to the previous pipeline
     // stage, if the previous pipeline stage has enough slack.
@@ -452,6 +454,7 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
   // last function execution.
   VASTSchedUnit *SrcSU = getFlowDepSU(Src);
 
+  assert(delay >= 0.0f && "Unexpected negative delay!");
   DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay)));
 }
 
