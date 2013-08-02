@@ -256,9 +256,8 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
 
 void DataflowAnnotation::annotateDelay(DataflowInst Inst, VASTSlot *S,
                                         VASTSeqValue *SV, float delay) {
-  DataflowValue V(SV->getLLVMValue(), SV->isFUOutput() || SV->isFUInput());
   unsigned Slack = Distances->getIntervalFromDef(SV, S);
-  DF->annotateDelay(Inst, S, V, delay, Slack);
+  DF->annotateDelay(Inst, S, SV, delay, Slack);
 }
 
 void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {

@@ -15,6 +15,7 @@
 #ifndef DATAFLOW_ANALYSIS_H
 #define DATAFLOW_ANALYSIS_H
 
+#include "shang/VASTSeqValue.h"
 #include "shang/VASTModulePass.h"
 
 #include "llvm/IR/Instructions.h"
@@ -33,10 +34,13 @@ template<typename T>
 struct DataflowPtr : public PointerIntPair<T*, 1, bool> {
   typedef PointerIntPair<T*, 1, bool> Base;
 
-  DataflowPtr(Base V = Base()) : PointerIntPair<T*, 1, bool>(V) {}
+  DataflowPtr(Base V = Base()) : Base(V) {}
 
   DataflowPtr(T *V, bool IsLaunch)
-    : PointerIntPair<T*, 1, bool>(V, IsLaunch) {}
+    : Base(V, IsLaunch) {}
+
+  inline DataflowPtr(VASTSeqOp *Op);
+  inline DataflowPtr(VASTSeqValue *SV);
 
   template<typename T1>
   DataflowPtr(const DataflowPtr<T1>& RHS)
@@ -59,6 +63,17 @@ struct DataflowPtr : public PointerIntPair<T*, 1, bool> {
     return Base::getPointer();
   }
 };
+
+template<>
+inline DataflowPtr<Instruction>::DataflowPtr(VASTSeqOp *Op)
+  : Base(dyn_cast_or_null<Instruction>(Op->getValue()), false) {
+  if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op))
+    setInt(SeqInst->isLaunch());
+}
+
+template<>
+inline DataflowPtr<Value>::DataflowPtr(VASTSeqValue *SV)
+  : Base(SV->getLLVMValue(), SV->isFUInput() || SV->isFUOutput()) {}
 
 template<typename T>
 struct DenseMapInfo<DataflowPtr<T> >

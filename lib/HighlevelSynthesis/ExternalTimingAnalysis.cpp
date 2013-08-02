@@ -318,7 +318,7 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
     for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       VASTSeqValue *Src = I->first;
       float delay = I->second;
-      annotateDelay(DataflowInst(Inst, IsLaunch), Op->getSlot(), Src, delay);
+      annotateDelay(Op, Op->getSlot(), Src, delay);
     }
   }
 
@@ -581,12 +581,6 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
     U->extractSupportingSeqVal(CurLeaves);
     U.getGuard()->extractSupportingSeqVal(CurLeaves);
 
-    bool IsLaunch = false;
-    if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(U.Op))
-      IsLaunch = SeqInst->isLaunch();
-
-    DataflowInst Inst(dyn_cast_or_null<Instruction>(U.Op->getValue()), IsLaunch);
-
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
       VASTSeqValue *Leaf = *LI;
@@ -594,14 +588,12 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
         IntersectLeaves.insert(Leaf);
 
       // Get the delay from last generation.
-      DataflowValue Src(Leaf->getLLVMValue(),
-                        Leaf->isFUInput() || Leaf->isFUOutput());
-      float delay = DF->getDelay(Src, Inst, U.getSlot());
+      float delay = DF->getDelay(Leaf, U.Op, U.getSlot());
 
       if (delay == 0.0f)
         continue;
 
-      float &OldDelay = EstimatedDelays[Src];
+      float &OldDelay = EstimatedDelays[Leaf];
       OldDelay = std::max(OldDelay, delay);
     }
 

@@ -457,8 +457,8 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
 
 void VASTScheduling::buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U) {
   Dataflow::SrcSet Srcs;
-  DF->getFlowDep(DataflowInst(Inst, U->isLaunch()), Srcs);
 
+  DF->getFlowDep(U->getSeqOp(), Srcs);
   typedef Dataflow::SrcSet::iterator src_iterator;
   // Also calculate the path for the guarding condition.
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
