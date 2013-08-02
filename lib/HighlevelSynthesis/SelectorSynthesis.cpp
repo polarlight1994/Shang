@@ -611,6 +611,7 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     CurLeaves.clear();
     VASTValPtr FI = U;
     FI->extractSupportingSeqVal(CurLeaves);
+    U.getGuard()->extractSupportingSeqVal(CurLeaves);
 
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
