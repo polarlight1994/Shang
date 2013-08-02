@@ -448,10 +448,12 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
           || DT->dominates(cast<Instruction>(Src)->getParent(), DstU->getParent()))
          && "Flow dependency should be a dominance edge!");
 
-  VASTSchedUnit *SrcSU = getFlowDepSU(Src);
+  VASTSchedUnit *SrcSU = 0;
   Instruction *SrcInst = dyn_cast<Instruction>(Src);
 
   if (!isChainingCandidate(Src)) {
+    // Get the latch SU, if source cannot be chained.
+    SrcSU = getFlowDepSU(Src);
     float slack = DF->getSlackFromLaunch(SrcInst);
     if (IsLaunch) {
       float DelayFromLaunch = 1.0f - slack;
@@ -485,6 +487,9 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
       // chaining candidates.
       if (IsChainingEnableOnEdge)
         return;
+
+      // Get the latch SU for the latch operation.
+      SrcSU = getFlowDepSU(Src);
     }
   }
 
