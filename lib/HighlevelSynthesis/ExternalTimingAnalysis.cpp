@@ -115,8 +115,10 @@ struct ExternalTimingAnalysis {
   typedef std::map<VASTValue*, float*> SrcInfo;
   typedef std::map<VASTNode*, SrcInfo> PathInfo;
   PathInfo DelayMatrix;
-  typedef std::map<VASTSelector*, float*> SelDelayInfo;
-  SelDelayInfo SelectorDelay;
+
+  // The annotated expressions that are read by specificed VASTSeqOp
+  typedef std::map<VASTSeqOp*, std::set<VASTExpr*> > AnnotoatedFaninsMap;
+  AnnotoatedFaninsMap AnnotoatedFanins;
 
   // Write the wrapper of the netlist.
   void writeNetlist(raw_ostream &O) const;
@@ -130,10 +132,8 @@ struct ExternalTimingAnalysis {
                          StringRef ResultPath);
   void extractTimingForSelector(raw_ostream &TclO, raw_ostream &TimingSDCO,
                                 VASTSelector *Sel);
-  void extractSelectorDelay(raw_ostream &O, VASTSelector *Sel);
 
   typedef std::set<VASTSeqValue*> LeafSet;
-  void buildPathInfoForCone(raw_ostream &O, VASTValue *Root, LeafSet &Leaves);
 
   static bool contains(const SrcInfo &Srcs, const LeafSet &Leaves) {
     typedef LeafSet::iterator iterator;
@@ -143,8 +143,6 @@ struct ExternalTimingAnalysis {
 
     return true;
   }
-
-  void propagateSrcInfo(raw_ostream &O, VASTExpr *V, LeafSet &Leaves);
 
   void setDelay(unsigned Idx, float Delay) const {
     *DelayRefs[Idx] = Delay;
@@ -167,60 +165,17 @@ struct ExternalTimingAnalysis {
 
   bool analysisWithSynthesisTool();
 
-  void getPathDelay(VASTSelector *Sel, VASTValue *FI,
-                    std::map<VASTSeqValue*, float> &Srcs,
-                    std::set<VASTExpr*> &Visited);
-
-    // Update the arrival time information of a VASTNode.
-  void operator()(VASTNode *N) {
-    VASTExpr *Expr = dyn_cast<VASTExpr>(N);
-
-    if (Expr == 0) return;
-
-    PathInfo::iterator I = DelayMatrix.find(Expr);
-
-    // No need to build the source arrival times set if there is no source.
-    if (I == DelayMatrix.end()) return;
-
-    // Update the timing netlist according to the delay matrix.
-    SrcInfo &Srcs = I->second;
-
-    typedef SrcInfo::const_iterator iterator;
-
-    // Also accumulate the delay from the operands.
-    typedef VASTExpr::op_iterator op_iterator;
-    for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
-      VASTValue *Op = VASTValPtr(*I).get();
-
-      PathInfo::const_iterator J = DelayMatrix.find(Op);
-
-      if (J == DelayMatrix.end()) continue;
-
-      const SrcInfo &OpSrcs = J->second;
-
-      // Forward the arrival time information from the operands.
-      // This make sure the arrival time from any register to current node are
-      // no smaller than the arrival time from the same register.
-      // Equivalent to accumulateDelayFrom(Op, Expr);
-      for (iterator SI = OpSrcs.begin(), SE = OpSrcs.end(); SI != SE; ++SI) {
-        SrcInfo::iterator K = Srcs.find(SI->first);
-        if (K == Srcs.end())
-          continue;
-
-        *K->second = std::max(*K->second, *SI->second);
-      }
-    }
-  }
+  void getPathDelay(const VASTLatch &L, LeafSet &Leaves,
+                    std::map<VASTSeqValue*, float> &Srcs);
 };
 }
 
-void ExternalTimingAnalysis::getPathDelay(VASTSelector *Sel, VASTValue *FI,
-                                          std::map<VASTSeqValue*, float> &Srcs,
-                                          std::set<VASTExpr*> &Visited) {
-  LeafSet Leaves;
-  FI->extractSupportingSeqVal(Leaves);
+void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, LeafSet &Leaves,
+                                          std::map<VASTSeqValue*, float> &Srcs) {
   if (Leaves.empty())
     return;
+
+  VASTSelector *Sel = L.getSelector();
 
   PathInfo::const_iterator I = DelayMatrix.find(Sel);
   assert(I != DelayMatrix.end() && "Fanin delay not available!");
@@ -249,31 +204,51 @@ void ExternalTimingAnalysis::getPathDelay(VASTSelector *Sel, VASTValue *FI,
   if (!AnyPathMissed)
     return;
 
-  SelDelayInfo::const_iterator J = SelectorDelay.find(Sel);
-  assert(J != SelectorDelay.end() && "Delay of selector not found!");
+  // Only keep the missed leaves in the leaves set.
+  for (std::map<VASTSeqValue*, float>::const_iterator SI = Srcs.begin(),
+       SE = Srcs.end(); SI != SE; ++SI)
+    Leaves.erase(SI->first);
 
-  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(FI)) {
-    // DIRTY HACK: If FI is simply a VASTSeqValue, we need to get the
-    // interconnect delay between SV and Sel. But TimeQuest will always return
-    // the longest path delay. For now we simply return the delay from the
-    // slot register as the interconnect delay.
-    float &OldDelay = Srcs[SV];
-    OldDelay = std::max(OldDelay, *J->second);
-    return;
+  // Get the delay through annotated nodes.
+  VASTSeqOp *Op = L.Op;
+  AnnotoatedFaninsMap::const_iterator J = AnnotoatedFanins.find(Op);
+  assert(J != AnnotoatedFanins.end() && "Annotation node not available!");
+  const std::set<VASTExpr*> &ThuNodes = J->second;
+
+  typedef std::set<VASTExpr*>::const_iterator thu_iterator;
+  for (thu_iterator I = ThuNodes.begin(), E = ThuNodes.end(); I != E; ++I) {
+    VASTExpr *Expr = *I;
+
+    PathInfo::const_iterator SelI = DelayMatrix.find(Sel);
+    assert(SelI != DelayMatrix.end() && "Fanin delay not available!");
+    const SrcInfo &Delays = SelI->second;
+    SrcInfo::const_iterator SelThuI = Delays.find(Expr);
+    // Sometimes the thu nodes are connected to other selectors that are
+    // modified in current slot.
+    if (SelThuI == Delays.end())
+      continue;
+
+    // Get the delay from leaves to expr, and then build the full path delay by
+    // add delay from leaf to expr, delay from expr to the selector together.
+    PathInfo::const_iterator SrcI = DelayMatrix.find(Expr);
+    assert(SrcI != DelayMatrix.end() && "Fanin delay not available!");
+    const SrcInfo &LeavesDelays = SrcI->second;
+
+    for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
+      VASTSeqValue *Leaf = *I;
+      src_iterator ThuSrcI = LeavesDelays.find(Leaf);
+      if (ThuSrcI == LeavesDelays.end())
+        continue;
+
+      float &OldDelay = Srcs[Leaf];
+      OldDelay = std::max(OldDelay, *ThuSrcI->second + *SelThuI->second);
+    }
   }
 
-  cast<VASTExpr>(FI)->visitConeTopOrder(Visited, *this);
-  PathInfo::const_iterator K = DelayMatrix.find(FI);
-  assert(K != DelayMatrix.end() && "Fanin delay not available!");
-
-  const SrcInfo &LeavesDelays = K->second;
-  for (src_iterator I = LeavesDelays.begin(), E = LeavesDelays.end();
-       I != E; ++I) {
-    VASTSeqValue *Leaf = cast<VASTSeqValue>(I->first);
-
-    float &OldDelay = Srcs[Leaf];
-    OldDelay = std::max(OldDelay, *I->second + *J->second);
-  }
+#ifndef NDEBUG
+  for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I)
+    assert(Srcs.count(*I) && "Source delay missed!");
+#endif
 }
 
 bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
@@ -293,13 +268,9 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
     if (!Inst)
       continue;
 
-    bool IsLaunch = false;
-    if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op))
-      IsLaunch = SeqInst->isLaunch();
-
     std::map<VASTSeqValue*, float> Srcs;
-
-    VASTValPtr Cnd = Op->getGuard();
+    ExternalTimingAnalysis::LeafSet Leaves, CndLeaves;
+    Op->getGuard()->extractSupportingSeqVal(CndLeaves);
 
     for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
       VASTLatch L = Op->getSrc(i);
@@ -308,10 +279,12 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
         continue;
 
       VASTValPtr FI = L;
+      Leaves.clear();
+      FI->extractSupportingSeqVal(Leaves);
+      set_union(Leaves, CndLeaves);
 
       // Extract the delay from the fan-in and the guarding condition.
-      ETA.getPathDelay(Sel, FI.get(), Srcs, Visited);
-      ETA.getPathDelay(Sel, Cnd.get(), Srcs, Visited);
+      ETA.getPathDelay(L, Leaves, Srcs);
     }
 
     typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
@@ -331,10 +304,6 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {
   const char *FUTemplatePath[] = { "FUs", "CommonTemplate" };
   std::string FUTemplate = getStrValueFromEngine(FUTemplatePath);
   Out << FUTemplate << '\n';
-
-  typedef VASTModule::selector_iterator iterator;
-  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-    I->printSelectorModule(Out);
 
   // Write buffers to output
   VM.printModuleDecl(Out);
@@ -389,54 +358,6 @@ ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
        "project_close\n";
 }
 
-void
-ExternalTimingAnalysis::buildPathInfoForCone(raw_ostream &O, VASTValue *Root,
-                                             LeafSet &Leaves) {
-
-  VASTExpr *Expr = dyn_cast<VASTExpr>(Root);
-
-  if (Expr == 0)
-    return;
-
-  // Do nothing if the cone is visited.
-  PathInfo::iterator I = DelayMatrix.find(Root);
-  if (I != DelayMatrix.end() && contains(I->second, Leaves))
-    return;
-
-  typedef  VASTOperandList::op_iterator ChildIt;
-
-  std::set<VASTExpr*> Visited;
-  std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
-  VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
-
-  while (!VisitStack.empty()) {
-    VASTExpr *Node = VisitStack.back().first;
-    ChildIt It = VisitStack.back().second;
-
-    // All sources of this node is visited, now propagete the source information.
-    if (It ==  Node->op_end()) {
-      VisitStack.pop_back();
-
-      propagateSrcInfo(O, Node, Leaves);
-
-      continue;
-    }
-
-    // Otherwise, remember the node and visit its children first.
-    VASTValue *ChildNode = It->unwrap().get();
-    ++VisitStack.back().second;
-
-    if (VASTExpr *SubExpr = dyn_cast<VASTExpr>(ChildNode)){
-      // Mark the ChildNode as visited, and do not visit the same node more than
-      // once.
-      if (!Visited.insert(SubExpr).second)
-        continue;
-
-      VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
-    }
-  }
-}
-
 static std::string GetSTACollection(const VASTSelector *Sel) {
   const std::string &Name = Sel->getSTAObjectName();
   assert(!Name.empty() && "Unexpected anonymous selector!");
@@ -484,97 +405,42 @@ void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Src, unsigned RefIdx) {
   // if (Thu) O << "set thu " << GetSTACollection(Thu) << '\n';
   extractTimingForPath(O, RefIdx);
   DEBUG(O << "post_message -type info \"" << Src->getSTAObjectName()
-    << " -> " << Dst->getSTAObjectName() << " delay: $delay\"\n");
-}
-
-void ExternalTimingAnalysis::propagateSrcInfo(raw_ostream &O, VASTExpr *V,
-                                              LeafSet &Leaves) {
-  SrcInfo &PI = DelayMatrix[V];
-
-  typedef VASTOperandList::op_iterator iterator;
-  for (iterator I = V->op_begin(), E = V->op_end(); I != E; ++I) {
-    VASTValue *Op = (*I).getAsLValue<VASTValue>();
-
-    if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(Op)) {
-      if (!Leaves.count(SV))
-        continue;
-
-      float *&P = PI[SV];
-      if (P) continue;
-
-      unsigned Idx = 0;
-      P = allocateDelayRef(Idx);
-      // Generate the corresponding delay extraction script.
-      if (V->hasName()) extractTimingForPath(O, V, SV, Idx);
-      continue;
-    }
-
-    PathInfo::iterator at = DelayMatrix.find(Op);
-    // TODO: Assert Op is the leaf of the cone.
-    if (at == DelayMatrix.end()) continue;
-
-    // Propagate the source information from the operand.
-    SrcInfo &Srcs = at->second;
-    typedef SrcInfo::iterator source_iterator;
-    for (source_iterator SI = Srcs.begin(), SE = Srcs.end(); SI != SE; ++SI) {
-      VASTValue *Src = SI->first;
-      // Is the delay record allocated?
-      float *&P = PI[Src];
-      if (P) continue;
-
-      // Otherwise allocate the record now.
-      unsigned Idx = 0;
-      P = allocateDelayRef(Idx);
-      // Generate the corresponding delay extraction script.
-      if (V->hasName()) extractTimingForPath(O, V, Src, Idx);
-    }
-  }
-
-  // Erase the empty entry.
-  if (PI.empty())
-    DelayMatrix.erase(V);
-}
-
-static std::string GetSelectorCollection(VASTSelector *Sel) {
-  const std::string Name(Sel->getName());
-  return "[get_pins -compatibility_mode -nowarn \"" + Name + "_selector*\"];";
-}
-
-void ExternalTimingAnalysis::extractSelectorDelay(raw_ostream &O,
-                                                  VASTSelector *Sel) {
-  // Get the delay from the selector wire of the selector.
-  O << "set dst " << GetSTACollection(Sel) << '\n';
-  O << "set src " << GetSelectorCollection(Sel) << '\n';
-  unsigned Idx = 0;
-  SelectorDelay[Sel] = allocateDelayRef(Idx);
-  extractTimingForPath(O, Idx);
-  O << "post_message -type info \" selector -> "
-    << Sel->getSTAObjectName() << " delay: $delay\"\n";
+          << " -> " << Dst->getSTAObjectName() << " delay: $delay\"\n");
 }
 
 static void
 GenerateTimingConstraints(raw_ostream &O, VASTSelector *Src, VASTSelector *Dst,
-                          unsigned Cycles) {
+                          VASTValue *Thu, unsigned Cycles) {
   O << "set src " << GetSTACollection(Src) << '\n';
   O << "set dst " << GetSTACollection(Dst) << '\n';
+  if (Thu)
+    O << "set thu " << GetSTACollection(Thu) << '\n';
 
-  O << "set_multicycle_path -from $src -to $dst -setup -end " << Cycles << '\n';
+  O << "set_multicycle_path -from $src ";
+  if (Thu)
+    O << "-through $thu ";
+  O << "-to $dst -setup -end " << Cycles << '\n';
 }
 
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
                                                       raw_ostream &TimingSDCO,
                                                       VASTSelector *Sel) {
-  std::set<VASTValue*> Fanins;
+  // Build the intersected fanins and the esitmated delays.
   std::map<DataflowValue, float> EstimatedDelays;
   LeafSet AllLeaves, IntersectLeaves, CurLeaves;
   typedef LeafSet::iterator leaf_iterator;
   typedef VASTSelector::iterator fanin_iterator;
+  DenseMap<VASTSlot*, VASTSeqOp*> SlotMap;
 
   for (fanin_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch U = *I;
 
     if (Sel->isTrivialFannin(U))
       continue;
+
+    VASTSeqOp *&Op = SlotMap[U.getSlot()];
+    assert(Op == 0 && "Expected 1-to-1 mapping from VASTSlot to VASTSeqOp!");
+    Op = U.Op;
 
     // Collect all leaves for current fanin.
     CurLeaves.clear();
@@ -584,7 +450,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
       VASTSeqValue *Leaf = *LI;
-      if (!AllLeaves.insert(Leaf).second)
+      if (!AllLeaves.insert(Leaf).second && !Leaf->isSlot() && !Leaf->isFUOutput())
         IntersectLeaves.insert(Leaf);
 
       // Get the delay from last generation.
@@ -606,39 +472,79 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
   for (leaf_iterator I = AllLeaves.begin(), E = AllLeaves.end(); I != E; ++I) {
     VASTSeqValue *Src = *I;
 
-    // Generate the timing constraints
-    DataflowValue SrcV(Src->getLLVMValue(), Src->isFUInput() || Src->isFUOutput());
-    std::map<DataflowValue, float>::iterator J = EstimatedDelays.find(SrcV);
-    if (J != EstimatedDelays.end()) {
-      // Use a slightly tighter constraint to tweak the timing.
-      unsigned Cycles = std::max<float>(ceil(J->second - 0.5f), 1.0f);
-      if (Cycles > 1)
-        GenerateTimingConstraints(TimingSDCO, Src->getSelector(), Sel, Cycles);
-    }
-
-    if (IntersectLeaves.count(Src) && !Src->isSlot() && !Src->isFUOutput())
+    if (IntersectLeaves.count(Src))
       continue;
 
     unsigned Idx = 0;
     // Directly use the register-to-register delay.
     DelayMatrix[Sel][Src] = allocateDelayRef(Idx);
     extractTimingForPath(TclO, Sel, Src, Idx);
-  }
 
-  extractSelectorDelay(TclO, Sel);
+    // Generate the timing constraints
+    std::map<DataflowValue, float>::iterator J = EstimatedDelays.find(Src);
+    if (J != EstimatedDelays.end()) {
+      // Use a slightly tighter constraint to tweak the timing.
+      unsigned Cycles = std::max<float>(ceil(J->second - 0.5f), 1.0f);
+      if (Cycles > 1)
+        GenerateTimingConstraints(TimingSDCO, Src->getSelector(), Sel, 0, Cycles);
+    }
+  }
 
   // Extract path delay in details for leaves that reachable to different fanins
   if (IntersectLeaves.empty())
     return;
 
-  for (fanin_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
-    VASTLatch U = *I;
+  // Build the fanin map, extract the src -> thu -> dst delay.
+  typedef VASTSelector::ann_iterator ann_iterator;
+  for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
+    ArrayRef<VASTSlot*> Slots(I->second);
+    // Get the thu node of the path.
+    VASTExpr *Expr = dyn_cast<VASTExpr>(I->first);
 
-    if (Sel->isTrivialFannin(U))
+    if (Expr == 0)
       continue;
 
-    buildPathInfoForCone(TclO, VASTValPtr(U).get(), IntersectLeaves);
-    buildPathInfoForCone(TclO, VASTValPtr(U.getGuard()).get(), IntersectLeaves);
+    assert(Expr->isTimingBarrier() && "Unexpected VASTExpr type!");
+
+    CurLeaves.clear();
+    Expr->extractSupportingSeqVal(CurLeaves);
+    set_intersect(CurLeaves, IntersectLeaves);
+    // Ignore the thu node if it is not reachable from the intersect leaves.
+    if (CurLeaves.empty())
+      continue;
+
+    for (unsigned i = 0; i < Slots.size(); ++i) {
+      VASTSeqOp *Op = SlotMap.lookup(Slots[i]);
+      // For guarding conditions, we are 
+      if (Op == 0)
+        continue;
+      
+      for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
+           LI != LE; ++LI) {
+        VASTSeqValue *Leaf = *LI;
+        unsigned Idx = 0;
+        // Get the register to thu delay.
+        float *&P = DelayMatrix[Expr][Leaf];
+        if (P)
+          continue;
+
+        P = allocateDelayRef(Idx);
+        extractTimingForPath(TclO, Expr, Leaf, Idx);
+
+        // Also generate the constraint.
+        float delay = DF->getDelay(Leaf, Op, Op->getSlot());
+        unsigned Cycles = std::max<float>(ceil(delay - 0.5f), 1.0f);
+        if (Cycles > 1)
+          GenerateTimingConstraints(TimingSDCO, Leaf->getSelector(), Sel, Expr, Cycles);
+      }
+
+      // Get the thu to register delay.
+      unsigned Idx = 0;
+      DelayMatrix[Sel][Expr] = allocateDelayRef(Idx);
+      extractTimingForPath(TclO, Sel, Expr, Idx);
+
+      AnnotoatedFanins[Op].insert(Expr);
+    }
   }
 }
 
@@ -768,7 +674,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   sys::Path Empty;
   const sys::Path *Redirects[] = { &Empty, &Empty, &Empty };
   errs() << "Running '" << quartus.str() << " ' program... ";
-  if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, Redirects, 0, 0,
+  if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, 0, 0, 0,
                                    &ErrorInfo)) {
     errs() << "Error: " << ErrorInfo <<'\n';
     return false;

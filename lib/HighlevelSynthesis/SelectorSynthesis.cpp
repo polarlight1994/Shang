@@ -615,7 +615,8 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
       VASTSeqValue *Leaf = *LI;
-      if (!AllLeaves.insert(Leaf->getSelector()).second)
+      if (!AllLeaves.insert(Leaf->getSelector()).second &&
+          !Leaf->isSlot() && !Leaf->isFUOutput())
         IntersectLeaves.insert(Leaf->getSelector());
     }
 
@@ -682,6 +683,8 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     CurLeaves.clear();
     GuardedFIVal->extractSupportingSeqVal(CurLeaves);
 
+    // We need to keep the node to prevent it from being optimized improperly,
+    // if it is reachable by the intersect leaves.
     if (intersect(IntersectLeaves, CurLeaves)) {
       GuardedFIVal = Builder.buildKeep(GuardedFIVal);
       while (!Slots.empty())
