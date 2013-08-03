@@ -19,6 +19,7 @@
 #include "SeqLiveVariables.h"
 #include "CompGraph.h"
 
+#include "Dataflow.h"
 #include "shang/VASTExprBuilder.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTModulePass.h"
@@ -308,7 +309,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   // registers, we need to avoid adding them more than once to the compatibility
   // graph.
   // TODO: Use multimap.
-  std::map<Value*, CompGraphNode*> VisitedInst;
+  std::map<DataflowInst, CompGraphNode*> VisitedInst;
 
   for (iterator I = VM.seqop_begin(), IE = VM.seqop_end(); I != IE; ++I) {
     VASTSeqOp *Op = I;
@@ -317,7 +318,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
     if (Inst == 0)
       continue;
 
-    CompGraphNode *&N = VisitedInst[Inst->getValue()];
+    CompGraphNode *&N = VisitedInst[Op];
 
     if (!N) {
       N = G.addNode(Inst);
