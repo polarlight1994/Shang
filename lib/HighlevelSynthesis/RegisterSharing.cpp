@@ -86,6 +86,26 @@ public:
   explicit LICompGraph(DominatorTree *DT) : CompGraphBase(DT) {}
 
   NodeTy *addNode(VASTSeqInst *SeqInst);
+
+  float computeCost(CompGraphNodeBase *SrcBase, unsigned SrcBinding,
+                    CompGraphNodeBase *DstBase, unsigned DstBinding) const {
+    CompGraphNode *Src = static_cast<CompGraphNode*>(SrcBase);
+    CompGraphNode *Dst = static_cast<CompGraphNode*>(DstBase);
+
+    float Cost = 0.0f;
+    // 1. Calculate the number of registers we can reduce through this edge.
+    typedef NodeTy::sel_iterator sel_iterator;
+    for (sel_iterator I = Src->begin(), E = Src->end(); I != E; ++I)
+      Cost -= (*I)->getBitWidth();
+
+    // 2. Calculate the functional unit resource reduction through this edge.
+    if (Src->FUType != VFUs::Trivial && Src->FUType == Dst->FUType)
+      Cost -= std::min(Src->FUCost, Dst->FUCost);
+
+    // 3. Calculate the interconnection cost.
+    //
+    return Cost;
+  }
 };
 }
 
@@ -332,7 +352,8 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
     N->updateOrder(Inst->getSlot()->SlotNum);
   }
 
-  G.recomputeCompatibility();
+  G.computeCompatibility();
+  G.compuateEdgeCosts();
 
   G.fixTransitive();
 

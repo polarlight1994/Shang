@@ -30,6 +30,18 @@
 using namespace llvm;
 STATISTIC(NumNonTranEdgeBreak, "Number of non-transitive edges are broken");
 
+float CompGraphNodeBase::getCostTo(const CompGraphNodeBase *To) const  {
+  CostVecTy::const_iterator I = SuccCosts.find(To);
+  assert(I != SuccCosts.end() && "Not a Successor!");
+  return I->second;
+}
+
+void
+CompGraphNodeBase::setCost(const CompGraphNodeBase *To, float Cost) {
+  assert(SuccCosts.count(To) && "Not a successor!");
+  SuccCosts[To] = Cost;
+}
+
 void CompGraphNodeBase::print(raw_ostream &OS) const {
   OS << "LI" << Idx << " order " << Order;
   if (DomBlock)
@@ -131,7 +143,7 @@ void CompGraphBase::fixTransitive() {
   }
 }
 
-void CompGraphBase::recomputeCompatibility() {
+void CompGraphBase::computeCompatibility() {
   Entry.dropAllEdges();
   Exit.dropAllEdges();
 
@@ -153,6 +165,23 @@ void CompGraphBase::recomputeCompatibility() {
     // There will always edge from entry to a node and from node to exit.
     makeEdge(&Entry, Node);
     makeEdge(Node, &Exit);
+  }
+}
+
+void CompGraphBase::compuateEdgeCosts() {
+  for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
+    NodeTy *Src = I;
+    unsigned SrcBinding = getBinding(Src);
+
+    typedef NodeTy::iterator succ_iterator;
+    for (succ_iterator I = Src->succ_begin(), E = Src->succ_end(); I != E; ++I) {
+      NodeTy *Dst = *I;
+
+      if (Dst->IsTrivial)
+        continue;
+
+      Src->setCost(Dst, computeCost(Src, SrcBinding, Dst, getBinding(Dst)));
+    }
   }
 }
 
@@ -408,13 +437,13 @@ void MinCostFlowSolver::setCost() {
 
   for (iterator I = Edge2IdxMap.begin(), E = Edge2IdxMap.end(); I != E; ++I) {
     EdgeType Edge = I->first;
-
-    if (Edge.first->IsTrivial || Edge.second->IsTrivial)
+    const CompGraphNodeBase *Src = Edge.first, *Dst = Edge.second;
+    if (Src->IsTrivial || Src->IsTrivial)
       continue;
 
     Indices.push_back(I->second);
-    // Temporary set the cost of each edge to 1.0
-    Coefficients.push_back(1.0);
+
+    Coefficients.push_back(Src->getCostTo(Dst));
   }
 
   set_obj_fnex(lp, Indices.size(), Coefficients.data(), Indices.data());

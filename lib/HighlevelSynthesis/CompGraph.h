@@ -45,8 +45,8 @@ private:
   // Predecessors and Successors.
   NodeVecTy Preds, Succs;
 
-  typedef std::map<const CompGraphNodeBase*, float> WeightVecTy;
-  WeightVecTy SuccWeights;
+  typedef std::map<const CompGraphNodeBase*, float> CostVecTy;
+  CostVecTy SuccCosts;
 
   static bool intersects(const SparseBitVector<> &LHSBits,
                          const SparseBitVector<> &RHSBits) {
@@ -59,8 +59,6 @@ protected:
     return true;
   }
 public:
-  static const int HUGE_NEG_VAL = -1000000000;
-  static const int TINY_VAL = 1;
 
   CompGraphNodeBase() : Idx(0), IsTrivial(true), Order(0), DomBlock(0) { }
 
@@ -74,7 +72,7 @@ public:
   void dropAllEdges() {
     Preds.clear();
     Succs.clear();
-    SuccWeights.clear();
+    SuccCosts.clear();
   }
 
   void print(raw_ostream &OS) const;
@@ -107,15 +105,15 @@ public:
     return Preds.count(RHS) || Succs.count(RHS);
   }
 
-  int getWeightTo(const CompGraphNodeBase *To) const {
-    return SuccWeights.find(To)->second;
-  }
+  float getCostTo(const CompGraphNodeBase *To) const;
+
+  void setCost(const CompGraphNodeBase *To, float Cost);
 
   // Unlink the Succ from current node.
   void unlinkSucc(CompGraphNodeBase *Succ) {
     bool deleted = Succs.erase(Succ);
     assert(deleted && "Succ is not the successor of this!");
-    SuccWeights.erase(Succ);
+    SuccCosts.erase(Succ);
 
     // Current node is not the predecessor of succ node too.
     deleted = Succ->Preds.erase(this);
@@ -130,7 +128,7 @@ public:
 
     // Current node is not the successor of pred node too.
     deleted = Pred->Succs.erase(this);
-    Pred->SuccWeights.erase(this);
+    Pred->SuccCosts.erase(this);
     assert(deleted && "this is not the successor of Pred!");
     (void) deleted;
   }
@@ -164,7 +162,6 @@ public:
 
 protected:
   typedef ilist<NodeTy> NodeVecTy;
-  typedef std::map<VASTSelector*, NodeTy> NodeMapTy;
   // The dummy entry node of the graph.
   NodeTy Entry, Exit;
   // Nodes vector.
@@ -184,6 +181,11 @@ protected:
     std::map<BasicBlock*, unsigned>::const_iterator I = DTDFSOrder.find(BB);
     assert(I != DTDFSOrder.end() && "DFS order not defined?");
     return I->second;
+  }
+
+  virtual float computeCost(NodeTy *Src, unsigned SrcBinding,
+                            NodeTy *Dst, unsigned DstBinding) const {
+    return 0.0f;
   }
 public:
   explicit CompGraphBase(DominatorTree *DT) : Entry(), Exit(), DT(DT) {
@@ -212,8 +214,8 @@ public:
     deleteNode(From);
   }
 
-  void recomputeCompatibility();
-
+  void computeCompatibility();
+  void compuateEdgeCosts();
   void fixTransitive();
 
   unsigned performBinding();
@@ -246,7 +248,7 @@ public:
       std::swap(Dst, Src);
 
     Src->Succs.insert(Dst);
-    Src->SuccWeights.insert(std::make_pair(Dst, NodeTy::TINY_VAL));
+    Src->SuccCosts.insert(std::make_pair(Dst, 0.0f));
     Dst->Preds.insert(Src);
   }
 };
