@@ -37,31 +37,54 @@ STATISTIC(NumRegMerge, "Number of register pairs merged");
 
 typedef std::map<unsigned, SparseBitVector<> > OverlappedMapTy;
 
-namespace llvm {
+namespace {
+class CompGraphNode : public CompGraphNodeBase {
+public:
+  const VFUs::FUTypes FUType;
+  const unsigned FUCost;
+private:
+  // The underlying data.
+  SmallVector<VASTSelector*, 3> Sels;
+
+  bool isCompatibleWithInternal(const CompGraphNodeBase *RHSBase) const {
+    const CompGraphNode *RHS = static_cast<const CompGraphNode*>(RHSBase);
+    if (Sels.size() != RHS->Sels.size())
+      return false;
+
+    // Bitwidth should be the same.
+    for (unsigned i = 0, e = size(); i != e; ++i)
+      if (getSelector(i)->getBitWidth() != RHS->getSelector(i)->getBitWidth())
+        return false;
+
+    return true;
+  }
+public:
+  CompGraphNode() : CompGraphNodeBase(), FUType(VFUs::Trivial), FUCost(0) {}
+
+  CompGraphNode(VFUs::FUTypes FUType, unsigned FUCost, unsigned Idx,
+                BasicBlock *DomBlock, ArrayRef<VASTSelector*> Sels)
+    : CompGraphNodeBase(Idx, DomBlock, Sels), FUType(FUType), FUCost(FUCost),
+    Sels(Sels.begin(), Sels.end()) {}
+
+  typedef SmallVectorImpl<VASTSelector*>::iterator sel_iterator;
+  sel_iterator begin() { return Sels.begin(); }
+  sel_iterator end() { return Sels.end(); }
+
+  typedef SmallVectorImpl<VASTSelector*>::const_iterator const_sel_iterator;
+  const_sel_iterator begin() const { return Sels.begin(); }
+  const_sel_iterator end() const { return Sels.end(); }
+
+  size_t size() const { return Sels.size(); }
+  VASTSelector *getSelector(unsigned Idx) const { return Sels[Idx]; }
+
+};
 
 class LICompGraph : public CompGraphBase {
 public:
+  typedef CompGraphNode NodeTy;
   explicit LICompGraph(DominatorTree *DT) : CompGraphBase(DT) {}
 
-  NodeTy *addNode(VASTSeqInst *SeqInst) {
-    assert(SeqInst && "Unexpected null pointer pass to GetOrCreateNode!");
-
-    SmallVector<VASTSelector*, 4> Sels;
-    assert(SeqInst->getNumDefs() == SeqInst->num_srcs()
-           && "Expected all assignments are definitions!");
-    for (unsigned i = 0; i < SeqInst->num_srcs(); ++i)
-      Sels.push_back(SeqInst->getSrc(i).getSelector());
-
-    // Create the node if it not exists yet.
-    BasicBlock *DomBlock = cast<Instruction>(SeqInst->getValue())->getParent();
-    NodeTy *Node = new NodeTy(Nodes.size() + 1, DomBlock, Sels);
-    Nodes.push_back(Node);
-
-    return Node;
-  }
-
-  // TOOD: Add function: Rebuild graph.
-
+  NodeTy *addNode(VASTSeqInst *SeqInst);
 };
 }
 
@@ -103,9 +126,9 @@ struct RegisterSharing : public VASTModulePass {
     }
   }
 
-  void setUpInterval(CompGraphNodeBase *LI) {
+  void setUpInterval(CompGraphNode *LI) {
     typedef VASTSelector::def_iterator def_iterator;
-    typedef CompGraphNodeBase::sel_iterator sel_iterator;
+    typedef CompGraphNode::sel_iterator sel_iterator;
     for (sel_iterator I = LI->begin(), E = LI->end(); I != E; ++I) {
       VASTSelector *Sel = *I;
       for (def_iterator SI = Sel->def_begin(), SE = Sel->def_end();
@@ -125,7 +148,7 @@ struct RegisterSharing : public VASTModulePass {
   bool runOnVASTModule(VASTModule &VM);
 
   bool performRegisterSharing();
-  void mergeLI(CompGraphNodeBase *From, CompGraphNodeBase *To);
+  void mergeLI(CompGraphNode *From, CompGraphNode *To);
   void mergeSelector(VASTSelector *ToV, VASTSelector *FromV);
 };
 }
@@ -153,6 +176,78 @@ static VASTSeqInst *DynCastSharingCandidate(VASTSeqOp *Op) {
 
   return Inst;
 }
+
+static VFUs::FUTypes GetFUType(VASTSeqInst *SeqInst) {
+  if (!SeqInst->isLaunch())
+    return VFUs::Trivial;
+
+  Instruction *Inst = dyn_cast<Instruction>(SeqInst->getValue());
+  if (Inst == 0)
+    return VFUs::Trivial;
+
+  switch (Inst->getOpcode()) {
+  default: break;
+  case Instruction::Add:
+  case Instruction::Sub:
+    if (SeqInst->getNumDefs() == 3)
+      return VFUs::AddSub;
+    break;
+  case Instruction::Mul:
+    if (SeqInst->getNumDefs() == 2)
+      return VFUs::Mult;
+    break;
+  case Instruction::Shl:
+  case Instruction::AShr:
+  case Instruction::LShr:
+    if (SeqInst->getNumDefs() == 2)
+      return VFUs::Shift;
+    break;
+  case Instruction::ICmp:
+    if (SeqInst->getNumDefs() == 2)
+      return VFUs::ICmp;
+    break;
+  }
+
+  return VFUs::Trivial;
+}
+
+static unsigned GetFUCost(VFUs::FUTypes FUType, unsigned Width) {
+  switch (FUType) {
+  case VFUs::AddSub:
+    return getFUDesc<VFUAddSub>()->lookupCost(std::min(64u, Width));
+  case VFUs::ICmp:
+    return getFUDesc<VFUICmp>()->lookupCost(Width);
+  case VFUs::Mult:
+    return getFUDesc<VFUMult>()->lookupCost(Width);
+  case VFUs::Shift:
+    return getFUDesc<VFUShift>()->lookupCost(Width);
+  default:
+    break;
+  }
+
+  return 0;
+}
+
+LICompGraph::NodeTy *LICompGraph::addNode(VASTSeqInst *SeqInst) {
+  assert(SeqInst && "Unexpected null pointer pass to GetOrCreateNode!");
+
+  SmallVector<VASTSelector*, 4> Sels;
+  assert(SeqInst->getNumDefs() == SeqInst->num_srcs()
+    && "Expected all assignments are definitions!");
+  for (unsigned i = 0; i < SeqInst->num_srcs(); ++i)
+    Sels.push_back(SeqInst->getSrc(i).getSelector());
+
+  VFUs::FUTypes FUType = GetFUType(SeqInst);
+  unsigned FUCost = GetFUCost(FUType, Sels.front()->getBitWidth());
+
+  // Create the node if it not exists yet.
+  BasicBlock *DomBlock = cast<Instruction>(SeqInst->getValue())->getParent();
+  NodeTy *Node = new NodeTy(FUType, FUCost, Nodes.size() + 1, DomBlock, Sels);
+  Nodes.push_back(Node);
+
+  return Node;
+}
+
 
 // Build the transitive closure of the overlap slots.
 void RegisterSharing::initializeOverlappedSlots() {
@@ -212,7 +307,8 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   // the same LLVM Instruction. These operations operate on the same set of
   // registers, we need to avoid adding them more than once to the compatibility
   // graph.
-  std::map<Value*, CompGraphNodeBase*> VisitedInst;
+  // TODO: Use multimap.
+  std::map<Value*, CompGraphNode*> VisitedInst;
 
   for (iterator I = VM.seqop_begin(), IE = VM.seqop_end(); I != IE; ++I) {
     VASTSeqOp *Op = I;
@@ -221,7 +317,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
     if (Inst == 0)
       continue;
 
-    CompGraphNodeBase *&N = VisitedInst[Inst->getValue()];
+    CompGraphNode *&N = VisitedInst[Inst->getValue()];
 
     if (!N) {
       N = G.addNode(Inst);
@@ -237,15 +333,15 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
 
   unsigned NumFU = G.performBinding();
 
-  std::vector<CompGraphNodeBase*> FUMap(NumFU);
+  std::vector<CompGraphNode*> FUMap(NumFU);
 
   typedef LICompGraph::binding_iterator binding_iterator;
   for (binding_iterator I = G.binding_begin(), E = G.binding_end(); I != E; ++I)
   {
-    CompGraphNodeBase *N = I->first;
+    CompGraphNode *N = static_cast<CompGraphNode*>(I->first);
     unsigned FUIdx = I->second - 1;
 
-    CompGraphNodeBase *&FU = FUMap[FUIdx];
+    CompGraphNode *&FU = FUMap[FUIdx];
     if (!FU) {
       FU = N;
       continue;
@@ -265,7 +361,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   return true;
 }
 
-void RegisterSharing::mergeLI(CompGraphNodeBase *From, CompGraphNodeBase *To) {
+void RegisterSharing::mergeLI(CompGraphNode *From, CompGraphNode *To) {
   if (!From->isCompatibleWith(To)) {
     From->isCompatibleWith(To);
     To->isCompatibleWith(From);

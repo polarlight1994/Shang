@@ -33,12 +33,11 @@ class DominatorTree;
 
 class CompGraphNodeBase : public ilist_node<CompGraphNodeBase> {
 public:
-  const unsigned Idx;
+  const unsigned Idx : 31;
+  const unsigned IsTrivial : 1;
 private:
   unsigned Order;
   BasicBlock *DomBlock;
-  // The underlying data.
-  SmallVector<VASTSelector*, 3> Sels;
   SparseBitVector<> Defs;
   SparseBitVector<> Reachables;
 
@@ -55,34 +54,22 @@ private:
   }
   
   friend class CompGraphBase;
+protected:
+  virtual bool isCompatibleWithInternal(const CompGraphNodeBase *RHS) const {
+    return true;
+  }
 public:
   static const int HUGE_NEG_VAL = -1000000000;
   static const int TINY_VAL = 1;
 
-  CompGraphNodeBase() : Idx(0), Order(0), DomBlock(0) { }
+  CompGraphNodeBase() : Idx(0), IsTrivial(true), Order(0), DomBlock(0) { }
 
   CompGraphNodeBase(unsigned Idx, BasicBlock *DomBlock, ArrayRef<VASTSelector*> Sels)
-    : Idx(Idx), Order(UINT32_MAX), DomBlock(DomBlock), Sels(Sels.begin(), Sels.end()) {}
+    : Idx(Idx), IsTrivial(false), Order(UINT32_MAX), DomBlock(DomBlock) {}
 
   void updateOrder(unsigned NewOrder) {
     Order = std::min(Order, NewOrder);
   }
-
-  typedef SmallVectorImpl<VASTSelector*>::iterator sel_iterator;
-  sel_iterator begin() { return Sels.begin(); }
-  sel_iterator end() { return Sels.end(); }
-
-  typedef SmallVectorImpl<VASTSelector*>::const_iterator const_sel_iterator;
-  const_sel_iterator begin() const { return Sels.begin(); }
-  const_sel_iterator end() const { return Sels.end(); }
-
-  size_t size() const { return Sels.size(); }
-  VASTSelector *getSelector(unsigned Idx) const { return Sels[Idx]; }
-
-  SparseBitVector<> &getDefs() { return Defs; }
-  SparseBitVector<> &getReachables() { return Reachables; }
-
-  bool isTrivial() const { return Sels.empty(); }
 
   void dropAllEdges() {
     Preds.clear();
@@ -112,6 +99,9 @@ public:
   void merge(const CompGraphNodeBase *RHS, DominatorTree *DT);
 
   bool isCompatibleWith(const CompGraphNodeBase *RHS) const;
+
+  SparseBitVector<> &getDefs() { return Defs; }
+  SparseBitVector<> &getReachables() { return Reachables; }
 
   bool isNeighbor(CompGraphNodeBase *RHS) const {
     return Preds.count(RHS) || Succs.count(RHS);
@@ -151,29 +141,6 @@ public:
 
     while (!pred_empty())
       unlinkPred(*pred_begin());
-  }
-
-  template<typename CompEdgeWeight>
-  void updateEdgeWeight(CompEdgeWeight &C) {
-    SmallVector<CompGraphNodeBase*, 8> SuccToUnlink;
-    for (iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
-      CompGraphNodeBase *Succ = *I;
-      // Not need to update the weight of the exit edge.
-      if (Succ->isTrivial()) {
-        int Weigth = C(this, Succ);
-        if (Weigth <= HUGE_NEG_VAL) {
-          SuccToUnlink.push_back(Succ);
-          continue;
-        }
-
-        SuccWeights[Succ] = Weigth;
-      } else
-        // Make find longest path prefer to end with exit if possible.
-        SuccWeights[Succ] = TINY_VAL;
-    }
-
-    while (!SuccToUnlink.empty())
-      unlinkSucc(SuccToUnlink.pop_back_val());
   }
 };
 
@@ -275,7 +242,7 @@ public:
   // Make the edge with default weight, we will udate the weight later.
   void makeEdge(CompGraphNodeBase *Src, CompGraphNodeBase *Dst) {
     // Make sure source is earlier than destination.
-    if (!Src->isTrivial() && !Dst->isTrivial() && !isBefore(Src, Dst))
+    if (!Src->IsTrivial && !Dst->IsTrivial && !isBefore(Src, Dst))
       std::swap(Dst, Src);
 
     Src->Succs.insert(Dst);

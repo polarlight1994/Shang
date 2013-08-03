@@ -53,13 +53,8 @@ void CompGraphNodeBase::merge(const CompGraphNodeBase *RHS, DominatorTree *DT) {
 }
 
 bool CompGraphNodeBase::isCompatibleWith(const CompGraphNodeBase *RHS) const {
-  if (Sels.size() != RHS->Sels.size())
+  if (!isCompatibleWithInternal(RHS))
     return false;
-
-  // Bitwidth should be the same.
-  for (unsigned i = 0, e = size(); i != e; ++i)
-    if (getSelector(i)->getBitWidth() != RHS->getSelector(i)->getBitWidth())
-      return false;
 
   // Defines should not intersects.
   if (intersects(Defs, RHS->Defs))
@@ -82,7 +77,7 @@ void CompGraphBase::initalizeDTDFSOrder() {
 
 bool
 CompGraphBase::isBefore(CompGraphNodeBase *Src, CompGraphNodeBase *Dst) {
-  assert(!Src->isTrivial() && !Dst->isTrivial() && "Unexpected trivial node!");
+  assert(!Src->IsTrivial && !Dst->IsTrivial && "Unexpected trivial node!");
   if (Src->DomBlock != Dst->DomBlock)
     return getDTDFSOrder(Src->DomBlock) < getDTDFSOrder(Dst->DomBlock);
 
@@ -109,14 +104,14 @@ void CompGraphBase::fixTransitive() {
          SI != SE; ++SI) {
       NodeTy *Succ = *SI;
 
-      if (Succ->isTrivial())
+      if (Succ->IsTrivial)
         continue;
 
       for (NodeTy::iterator SSI = Succ->succ_begin(), SSE = Succ->succ_end();
            SSI != SSE; ++SSI) {
         NodeTy *SuccSucc = *SSI;
 
-        if (SuccSucc->isTrivial())
+        if (SuccSucc->IsTrivial)
           continue;
 
         if (!Node->isCompatibleWith(SuccSucc)) {
@@ -414,7 +409,7 @@ void MinCostFlowSolver::setCost() {
   for (iterator I = Edge2IdxMap.begin(), E = Edge2IdxMap.end(); I != E; ++I) {
     EdgeType Edge = I->first;
 
-    if (Edge.first->isTrivial() || Edge.second->isTrivial())
+    if (Edge.first->IsTrivial || Edge.second->IsTrivial)
       continue;
 
     Indices.push_back(I->second);
@@ -524,7 +519,7 @@ MinCostFlowSolver::buildBinging(unsigned TotalRows, BindingMapTy &BindingMap) {
     WorkStack.pop_back();
 
     // No need to go any further if we reach the exit.
-    if (Dst->isTrivial())
+    if (Dst->IsTrivial)
       continue;
 
 
