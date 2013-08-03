@@ -144,14 +144,13 @@ Pass *llvm::createRegisterSharingPass() {
 
 char RegisterSharing::ID = 0;
 
-static VASTSeqInst *IsSharingCandidate(VASTSeqOp *Op) {
+static VASTSeqInst *DynCastSharingCandidate(VASTSeqOp *Op) {
   VASTSeqInst *Inst = dyn_cast<VASTSeqInst>(Op);
 
   if (!Inst) return 0;
 
   if (!isChainingCandidate(Inst->getValue())) return 0;
 
-  // Do not share the enable as well.
   return Inst;
 }
 
@@ -217,7 +216,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
 
   for (iterator I = VM.seqop_begin(), IE = VM.seqop_end(); I != IE; ++I) {
     VASTSeqOp *Op = I;
-    VASTSeqInst *Inst = IsSharingCandidate(Op);
+    VASTSeqInst *Inst = DynCastSharingCandidate(Op);
 
     if (Inst == 0)
       continue;
