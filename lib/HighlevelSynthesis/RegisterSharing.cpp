@@ -91,6 +91,22 @@ public:
 
   void decomposeTrivialNodes();
 
+  static bool isCompatibleFU(VFUs::FUTypes LHS, VFUs::FUTypes RHS) {
+    if (LHS == VFUs::Trivial || RHS == VFUs::Trivial)
+      return false;
+
+    if (LHS == RHS)
+      return true;
+
+    if (LHS == VFUs::AddSub && RHS == VFUs::ICmp)
+      return true;
+
+    if (RHS == VFUs::ICmp && RHS == VFUs::AddSub)
+      return true;
+
+    return false;
+  }
+
   float computeCost(CompGraphNodeBase *SrcBase, unsigned SrcBinding,
                     CompGraphNodeBase *DstBase, unsigned DstBinding) const {
     CompGraphNode *Src = static_cast<CompGraphNode*>(SrcBase);
@@ -103,10 +119,13 @@ public:
       Cost -= (*I)->getBitWidth();
 
     // 2. Calculate the functional unit resource reduction through this edge.
-    if (Src->FUType != VFUs::Trivial && Src->FUType == Dst->FUType)
+    if (isCompatibleFU(Src->FUType, Dst->FUType))
       Cost -= std::min(Src->FUCost, Dst->FUCost);
 
     // 3. Calculate the interconnection cost.
+    //
+
+    // 4. Timing penalty introduced by MUX
     //
     return Cost;
   }
@@ -165,7 +184,6 @@ struct RegisterSharing : public VASTModulePass {
         LI->getReachables() |=  LV->Alives;
         LI->getReachables() |=  LV->Kills;
         LI->getReachables() |=  LV->DefKills;
-
       }
     }
   }
