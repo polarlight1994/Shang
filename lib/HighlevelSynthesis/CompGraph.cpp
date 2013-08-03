@@ -58,16 +58,18 @@ void CompGraphNodeBase::dump() const {
   print(dbgs());
 }
 
-void CompGraphNodeBase::merge(const CompGraphNodeBase *RHS, DominatorTree *DT) {
+void CompGraphNodeBase::merge(const CompGraphNodeBase *RHS, DominatorTree &DT) {
   Defs        |= RHS->Defs;
   Reachables  |= RHS->Reachables;
-  DomBlock = DT->findNearestCommonDominator(DomBlock, RHS->DomBlock);
+  DomBlock = DT.findNearestCommonDominator(DomBlock, RHS->DomBlock);
 }
 
 bool CompGraphNodeBase::isCompatibleWith(const CompGraphNodeBase *RHS) const {
   if (!isCompatibleWithInternal(RHS))
     return false;
 
+  // FIXME: It looks like that we need to test intersection between defs and
+  // alives. But intersection test between defs and kills are not required.
   // Defines should not intersects.
   if (intersects(Defs, RHS->Defs))
     return false;
@@ -81,7 +83,7 @@ bool CompGraphNodeBase::isCompatibleWith(const CompGraphNodeBase *RHS) const {
 
 void CompGraphBase::initalizeDTDFSOrder() {
   typedef df_iterator<DomTreeNode*> iterator;
-  DomTreeNode *Root = DT->getRootNode();
+  DomTreeNode *Root = DT.getRootNode();
   unsigned Order = 0;
   for (iterator I = df_begin(Root), E = df_end(Root); I != E; ++I)
     DTDFSOrder[(*I)->getBlock()] = ++Order;
@@ -405,7 +407,7 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
     Col.clear();
     Coeff.clear();
 
-    // For each node, build constraint: Outflow = 1, since the splited edge
+    // For each node, build constraint: Inflow = 1, since the splited edge
     // implies a unit flow incoming to each node.
     typedef CompGraphNodeBase::iterator iterator;
     for (iterator PI = N->pred_begin(), PE = N->pred_end(); PI != PE; ++PI) {

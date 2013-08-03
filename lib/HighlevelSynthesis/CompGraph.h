@@ -96,7 +96,7 @@ public:
 
   unsigned degree() const { return num_succ() + num_pred(); }
 
-  void merge(const CompGraphNodeBase *RHS, DominatorTree *DT);
+  void merge(const CompGraphNodeBase *RHS, DominatorTree &DT);
 
   bool isCompatibleWith(const CompGraphNodeBase *RHS) const;
 
@@ -168,7 +168,7 @@ protected:
   NodeTy Entry, Exit;
   // Nodes vector.
   NodeVecTy Nodes;
-  DominatorTree *DT;
+  DominatorTree &DT;
   BindingMapTy BindingMap;
 
   void deleteNode(NodeTy *N) {
@@ -190,7 +190,7 @@ protected:
     return 0.0f;
   }
 public:
-  explicit CompGraphBase(DominatorTree *DT) : Entry(), Exit(), DT(DT) {
+  explicit CompGraphBase(DominatorTree &DT) : Entry(), Exit(), DT(DT) {
     initalizeDTDFSOrder();
   }
 
