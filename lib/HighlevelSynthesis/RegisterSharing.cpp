@@ -173,7 +173,11 @@ static VASTSeqInst *DynCastSharingCandidate(VASTSeqOp *Op) {
 
   if (!Inst) return 0;
 
-  if (!isChainingCandidate(Inst->getValue())) return 0;
+  if (!Inst->getValue())
+    return 0;
+
+  if (!isChainingCandidate(Inst->getValue()) && !isa<PHINode>(Inst->getValue()))
+    return 0;
 
   return Inst;
 }
