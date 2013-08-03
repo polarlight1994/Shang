@@ -35,6 +35,8 @@
 
 using namespace llvm;
 STATISTIC(NumRegMerge, "Number of register pairs merged");
+STATISTIC(NumDecomposed,
+          "Number of operand register of chained operation decomposed");
 
 typedef std::map<unsigned, SparseBitVector<> > OverlappedMapTy;
 
@@ -86,6 +88,8 @@ public:
   explicit LICompGraph(DominatorTree *DT) : CompGraphBase(DT) {}
 
   NodeTy *addNode(VASTSeqInst *SeqInst);
+
+  void decomposeTrivialNodes();
 
   float computeCost(CompGraphNodeBase *SrcBase, unsigned SrcBinding,
                     CompGraphNodeBase *DstBase, unsigned DstBinding) const {
@@ -273,6 +277,28 @@ LICompGraph::NodeTy *LICompGraph::addNode(VASTSeqInst *SeqInst) {
   return Node;
 }
 
+void LICompGraph::decomposeTrivialNodes() {
+  typedef NodeVecTy::iterator node_iterator;
+  for (node_iterator I = Nodes.begin(), E = Nodes.end(); I != E; /*++I*/) {
+    NodeTy *Node = static_cast<NodeTy*>((CompGraphNodeBase*)(I++));
+    if (Node->size() != 1 && Node->FUType != VFUs::Trivial) {
+
+      typedef NodeTy::sel_iterator sel_iterator;
+      for (sel_iterator I = Node->begin(), E = Node->end(); I != E; ++I) {
+        NodeTy *SubNode = new NodeTy(VFUs::Trivial, 0, Nodes.size(),
+                                     Node->getDomBlock(), *I);
+        // Copy the live-interval from the parent node.
+        SubNode->getDefs() = Node->getDefs();
+        SubNode->getReachables() = Node->getReachables();
+
+        Nodes.push_back(SubNode);
+        ++NumDecomposed;
+      }
+
+      Nodes.erase(Node);
+    }
+  }
+}
 
 // Build the transitive closure of the overlap slots.
 void RegisterSharing::initializeOverlappedSlots() {
@@ -352,6 +378,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
     N->updateOrder(Inst->getSlot()->SlotNum);
   }
 
+  G.decomposeTrivialNodes();
   G.computeCompatibility();
   G.compuateEdgeCosts();
 

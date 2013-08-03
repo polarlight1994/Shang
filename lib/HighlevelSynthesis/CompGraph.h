@@ -65,6 +65,8 @@ public:
   CompGraphNodeBase(unsigned Idx, BasicBlock *DomBlock, ArrayRef<VASTSelector*> Sels)
     : Idx(Idx), IsTrivial(false), Order(UINT32_MAX), DomBlock(DomBlock) {}
 
+  BasicBlock *getDomBlock() const { return DomBlock; }
+
   void updateOrder(unsigned NewOrder) {
     Order = std::min(Order, NewOrder);
   }
