@@ -30,7 +30,7 @@
 using namespace llvm;
 STATISTIC(NumNonTranEdgeBreak, "Number of non-transitive edges are broken");
 
-void CompGraphNode::print(raw_ostream &OS) const {
+void CompGraphNodeBase::print(raw_ostream &OS) const {
   OS << "LI" << Idx << " order " << Order;
   if (DomBlock)
     OS << ' ' << DomBlock->getName() << ' ';
@@ -42,17 +42,17 @@ void CompGraphNode::print(raw_ostream &OS) const {
   ::dump(Reachables, OS);
 }
 
-void CompGraphNode::dump() const {
+void CompGraphNodeBase::dump() const {
   print(dbgs());
 }
 
-void CompGraphNode::merge(const CompGraphNode *RHS, DominatorTree *DT) {
+void CompGraphNodeBase::merge(const CompGraphNodeBase *RHS, DominatorTree *DT) {
   Defs        |= RHS->Defs;
   Reachables  |= RHS->Reachables;
   DomBlock = DT->findNearestCommonDominator(DomBlock, RHS->DomBlock);
 }
 
-bool CompGraphNode::isCompatibleWith(const CompGraphNode *RHS) const {
+bool CompGraphNodeBase::isCompatibleWith(const CompGraphNodeBase *RHS) const {
   if (Sels.size() != RHS->Sels.size())
     return false;
 
@@ -81,7 +81,7 @@ void CompGraphBase::initalizeDTDFSOrder() {
 }
 
 bool
-CompGraphBase::isBefore(CompGraphNode *Src, CompGraphNode *Dst) {
+CompGraphBase::isBefore(CompGraphNodeBase *Src, CompGraphNodeBase *Dst) {
   assert(!Src->isTrivial() && !Dst->isTrivial() && "Unexpected trivial node!");
   if (Src->DomBlock != Dst->DomBlock)
     return getDTDFSOrder(Src->DomBlock) < getDTDFSOrder(Dst->DomBlock);
@@ -234,7 +234,7 @@ void CompGraphBase::viewGraph() {
 namespace {
 class MinCostFlowSolver {
 public:
-  typedef std::pair<const CompGraphNode*, const CompGraphNode*> EdgeType;
+  typedef std::pair<const CompGraphNodeBase*, const CompGraphNodeBase*> EdgeType;
 
 private:
   CompGraphBase &G;
@@ -244,7 +244,7 @@ private:
   typedef std::map<EdgeType, unsigned> Edge2IdxMapTy;
   Edge2IdxMapTy Edge2IdxMap;
 
-  unsigned createEdgeVariables(const CompGraphNode *N, unsigned Col);
+  unsigned createEdgeVariables(const CompGraphNodeBase *N, unsigned Col);
 
 public:
   explicit MinCostFlowSolver(CompGraphBase &G) : G(G), lp(0) {}
@@ -269,11 +269,11 @@ public:
 };
 }
 
-unsigned MinCostFlowSolver::createEdgeVariables(const CompGraphNode *N,
+unsigned MinCostFlowSolver::createEdgeVariables(const CompGraphNodeBase *N,
                                                 unsigned Col) {
-  typedef CompGraphNode::iterator iterator;
+  typedef CompGraphNodeBase::iterator iterator;
   for (iterator I = N->succ_begin(), E = N->succ_end(); I != E; ++I) {
-    CompGraphNode *Succ = *I;
+    CompGraphNodeBase *Succ = *I;
     Edge2IdxMap[EdgeType(N, Succ)] = Col;
 
     SmallString<8> S;
@@ -304,7 +304,7 @@ unsigned MinCostFlowSolver::createLPAndVariables() {
   unsigned Col =  createEdgeVariables(G.getEntry(), 2);
 
   for (CompGraphBase::iterator I = G.begin(), E = G.end(); I != E; ++I) {
-    CompGraphNode *N = I;
+    CompGraphNodeBase *N = I;
     Col = createEdgeVariables(N, Col);
   }
 
@@ -318,10 +318,10 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
   std::vector<int> Col;
   std::vector<REAL> Coeff;
 
-  const CompGraphNode *S = G.getEntry();
-  typedef CompGraphNode::iterator iterator;
+  const CompGraphNodeBase *S = G.getEntry();
+  typedef CompGraphNodeBase::iterator iterator;
   for (iterator SI = S->succ_begin(), SE = S->succ_end(); SI != SE; ++SI) {
-    CompGraphNode *Succ = *SI;
+    CompGraphNodeBase *Succ = *SI;
     unsigned EdgeIdx = Edge2IdxMap[EdgeType(S, Succ)];
     assert(EdgeIdx && "Edge column number not available!");
     Col.push_back(EdgeIdx);
@@ -338,9 +338,9 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
 
   Col.clear();
   Coeff.clear();
-  const CompGraphNode *T = G.getExit();
+  const CompGraphNodeBase *T = G.getExit();
   for (iterator SI = T->pred_begin(), SE = T->pred_end(); SI != SE; ++SI) {
-    CompGraphNode *Pred = *SI;
+    CompGraphNodeBase *Pred = *SI;
     unsigned EdgeIdx = Edge2IdxMap[EdgeType(Pred, T)];
     assert(EdgeIdx && "Edge column number not available!");
     Col.push_back(EdgeIdx);
@@ -359,16 +359,16 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
   Coeff.clear();
 
   for (CompGraphBase::iterator I = G.begin(), E = G.end(); I != E; ++I) {
-    CompGraphNode *N = I;
+    CompGraphNodeBase *N = I;
 
     Col.clear();
     Coeff.clear();
 
     // For each node, build constraint: Outflow = 1, since the splited edge
     // implies a unit flow incoming to each node.
-    typedef CompGraphNode::iterator iterator;
+    typedef CompGraphNodeBase::iterator iterator;
     for (iterator SI = N->succ_begin(), SE = N->succ_end(); SI != SE; ++SI) {
-      CompGraphNode *Succ = *SI;
+      CompGraphNodeBase *Succ = *SI;
       unsigned EdgeIdx = Edge2IdxMap[EdgeType(N, Succ)];
       assert(EdgeIdx && "Edge column number not available!");
       Col.push_back(EdgeIdx);
@@ -383,9 +383,9 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
 
     // For each node, build constraint: Outflow = 1, since the splited edge
     // implies a unit flow incoming to each node.
-    typedef CompGraphNode::iterator iterator;
+    typedef CompGraphNodeBase::iterator iterator;
     for (iterator PI = N->pred_begin(), PE = N->pred_end(); PI != PE; ++PI) {
-      CompGraphNode *Pred = *PI;
+      CompGraphNodeBase *Pred = *PI;
       unsigned EdgeIdx = Edge2IdxMap[EdgeType(Pred, N)];
       assert(EdgeIdx && "Edge column number not available!");
       Col.push_back(EdgeIdx);
@@ -496,12 +496,12 @@ MinCostFlowSolver::buildBinging(unsigned TotalRows, BindingMapTy &BindingMap) {
   BindingMap.clear();
 
   unsigned FUIdx = 0;
-  typedef CompGraphNode::iterator iterator;
-  std::vector<std::pair<CompGraphNode*, iterator> > WorkStack;
+  typedef CompGraphNodeBase::iterator iterator;
+  std::vector<std::pair<CompGraphNodeBase*, iterator> > WorkStack;
 
-  CompGraphNode *S = G.getEntry();
+  CompGraphNodeBase *S = G.getEntry();
   for (iterator I = S->succ_begin(), E = S->succ_end(); I != E; ++I) {
-    CompGraphNode *Succ = *I;
+    CompGraphNodeBase *Succ = *I;
     if (!hasFlow(EdgeType(S, Succ), TotalRows))
       continue;
 
@@ -510,12 +510,12 @@ MinCostFlowSolver::buildBinging(unsigned TotalRows, BindingMapTy &BindingMap) {
   }
 
   while (!WorkStack.empty()) {
-    CompGraphNode *Src = WorkStack.back().first;
+    CompGraphNodeBase *Src = WorkStack.back().first;
     iterator ChildIt = WorkStack.back().second++;
 
     assert(ChildIt != Src->succ_end() &&
            "We should find a flow before we reach the end of successors list!");
-    CompGraphNode *Dst = *ChildIt;
+    CompGraphNodeBase *Dst = *ChildIt;
 
     if (!hasFlow(EdgeType(Src, Dst), TotalRows))
       continue;

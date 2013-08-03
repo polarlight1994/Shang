@@ -103,9 +103,9 @@ struct RegisterSharing : public VASTModulePass {
     }
   }
 
-  void setUpInterval(CompGraphNode *LI) {
+  void setUpInterval(CompGraphNodeBase *LI) {
     typedef VASTSelector::def_iterator def_iterator;
-    typedef CompGraphNode::sel_iterator sel_iterator;
+    typedef CompGraphNodeBase::sel_iterator sel_iterator;
     for (sel_iterator I = LI->begin(), E = LI->end(); I != E; ++I) {
       VASTSelector *Sel = *I;
       for (def_iterator SI = Sel->def_begin(), SE = Sel->def_end();
@@ -125,7 +125,7 @@ struct RegisterSharing : public VASTModulePass {
   bool runOnVASTModule(VASTModule &VM);
 
   bool performRegisterSharing();
-  void mergeLI(CompGraphNode *From, CompGraphNode *To);
+  void mergeLI(CompGraphNodeBase *From, CompGraphNodeBase *To);
   void mergeSelector(VASTSelector *ToV, VASTSelector *FromV);
 };
 }
@@ -212,7 +212,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   // the same LLVM Instruction. These operations operate on the same set of
   // registers, we need to avoid adding them more than once to the compatibility
   // graph.
-  std::map<Value*, CompGraphNode*> VisitedInst;
+  std::map<Value*, CompGraphNodeBase*> VisitedInst;
 
   for (iterator I = VM.seqop_begin(), IE = VM.seqop_end(); I != IE; ++I) {
     VASTSeqOp *Op = I;
@@ -221,7 +221,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
     if (Inst == 0)
       continue;
 
-    CompGraphNode *&N = VisitedInst[Inst->getValue()];
+    CompGraphNodeBase *&N = VisitedInst[Inst->getValue()];
 
     if (!N) {
       N = G.addNode(Inst);
@@ -237,15 +237,15 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
 
   unsigned NumFU = G.performBinding();
 
-  std::vector<CompGraphNode*> FUMap(NumFU);
+  std::vector<CompGraphNodeBase*> FUMap(NumFU);
 
   typedef LICompGraph::binding_iterator binding_iterator;
   for (binding_iterator I = G.binding_begin(), E = G.binding_end(); I != E; ++I)
   {
-    CompGraphNode *N = I->first;
+    CompGraphNodeBase *N = I->first;
     unsigned FUIdx = I->second - 1;
 
-    CompGraphNode *&FU = FUMap[FUIdx];
+    CompGraphNodeBase *&FU = FUMap[FUIdx];
     if (!FU) {
       FU = N;
       continue;
@@ -265,7 +265,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   return true;
 }
 
-void RegisterSharing::mergeLI(CompGraphNode *From, CompGraphNode *To) {
+void RegisterSharing::mergeLI(CompGraphNodeBase *From, CompGraphNodeBase *To) {
   if (!From->isCompatibleWith(To)) {
     From->isCompatibleWith(To);
     To->isCompatibleWith(From);

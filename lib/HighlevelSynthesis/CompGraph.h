@@ -31,7 +31,7 @@ class BasicBlock;
 class VASTSelector;
 class DominatorTree;
 
-class CompGraphNode : public ilist_node<CompGraphNode> {
+class CompGraphNodeBase : public ilist_node<CompGraphNodeBase> {
 public:
   const unsigned Idx;
 private:
@@ -42,11 +42,11 @@ private:
   SparseBitVector<> Defs;
   SparseBitVector<> Reachables;
 
-  typedef SmallPtrSet<CompGraphNode*, 8> NodeVecTy;
+  typedef SmallPtrSet<CompGraphNodeBase*, 8> NodeVecTy;
   // Predecessors and Successors.
   NodeVecTy Preds, Succs;
 
-  typedef std::map<const CompGraphNode*, float> WeightVecTy;
+  typedef std::map<const CompGraphNodeBase*, float> WeightVecTy;
   WeightVecTy SuccWeights;
 
   static bool intersects(const SparseBitVector<> &LHSBits,
@@ -59,9 +59,9 @@ public:
   static const int HUGE_NEG_VAL = -1000000000;
   static const int TINY_VAL = 1;
 
-  CompGraphNode() : Idx(0), Order(0), DomBlock(0) { }
+  CompGraphNodeBase() : Idx(0), Order(0), DomBlock(0) { }
 
-  CompGraphNode(unsigned Idx, BasicBlock *DomBlock, ArrayRef<VASTSelector*> Sels)
+  CompGraphNodeBase(unsigned Idx, BasicBlock *DomBlock, ArrayRef<VASTSelector*> Sels)
     : Idx(Idx), Order(UINT32_MAX), DomBlock(DomBlock), Sels(Sels.begin(), Sels.end()) {}
 
   void updateOrder(unsigned NewOrder) {
@@ -109,20 +109,20 @@ public:
 
   unsigned degree() const { return num_succ() + num_pred(); }
 
-  void merge(const CompGraphNode *RHS, DominatorTree *DT);
+  void merge(const CompGraphNodeBase *RHS, DominatorTree *DT);
 
-  bool isCompatibleWith(const CompGraphNode *RHS) const;
+  bool isCompatibleWith(const CompGraphNodeBase *RHS) const;
 
-  bool isNeighbor(CompGraphNode *RHS) const {
+  bool isNeighbor(CompGraphNodeBase *RHS) const {
     return Preds.count(RHS) || Succs.count(RHS);
   }
 
-  int getWeightTo(const CompGraphNode *To) const {
+  int getWeightTo(const CompGraphNodeBase *To) const {
     return SuccWeights.find(To)->second;
   }
 
   // Unlink the Succ from current node.
-  void unlinkSucc(CompGraphNode *Succ) {
+  void unlinkSucc(CompGraphNodeBase *Succ) {
     bool deleted = Succs.erase(Succ);
     assert(deleted && "Succ is not the successor of this!");
     SuccWeights.erase(Succ);
@@ -134,7 +134,7 @@ public:
   }
 
   // Unlink the Pred from current node.
-  void unlinkPred(CompGraphNode *Pred) {
+  void unlinkPred(CompGraphNodeBase *Pred) {
     bool deleted = Preds.erase(Pred);
     assert(deleted && "Pred is not the predecessor of this!");
 
@@ -155,9 +155,9 @@ public:
 
   template<typename CompEdgeWeight>
   void updateEdgeWeight(CompEdgeWeight &C) {
-    SmallVector<CompGraphNode*, 8> SuccToUnlink;
+    SmallVector<CompGraphNodeBase*, 8> SuccToUnlink;
     for (iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
-      CompGraphNode *Succ = *I;
+      CompGraphNodeBase *Succ = *I;
       // Not need to update the weight of the exit edge.
       if (Succ->isTrivial()) {
         int Weigth = C(this, Succ);
@@ -177,8 +177,8 @@ public:
   }
 };
 
-template<> struct GraphTraits<CompGraphNode*> {
-  typedef CompGraphNode NodeType;
+template<> struct GraphTraits<CompGraphNodeBase*> {
+  typedef CompGraphNodeBase NodeType;
   typedef NodeType::iterator ChildIteratorType;
   static NodeType *getEntryNode(NodeType* N) { return N; }
   static inline ChildIteratorType child_begin(NodeType *N) {
@@ -192,8 +192,8 @@ template<> struct GraphTraits<CompGraphNode*> {
 
 class CompGraphBase {
 public:
-  typedef CompGraphNode NodeTy;
-  typedef std::map<CompGraphNode*, unsigned> BindingMapTy;
+  typedef CompGraphNodeBase NodeTy;
+  typedef std::map<CompGraphNodeBase*, unsigned> BindingMapTy;
 
 protected:
   typedef ilist<NodeTy> NodeVecTy;
@@ -260,7 +260,7 @@ public:
     return BindingMap.end();
   }
 
-  unsigned getBinding(CompGraphNode *N) const {
+  unsigned getBinding(CompGraphNodeBase *N) const {
     binding_iterator I = BindingMap.find(N);
     return I == BindingMap.end() ? 0 : I->second;
   }
@@ -270,10 +270,10 @@ public:
   void viewGraph();
   
 
-  bool isBefore(CompGraphNode *Src, CompGraphNode *Dst);
+  bool isBefore(CompGraphNodeBase *Src, CompGraphNodeBase *Dst);
 
   // Make the edge with default weight, we will udate the weight later.
-  void makeEdge(CompGraphNode *Src, CompGraphNode *Dst) {
+  void makeEdge(CompGraphNodeBase *Src, CompGraphNodeBase *Dst) {
     // Make sure source is earlier than destination.
     if (!Src->isTrivial() && !Dst->isTrivial() && !isBefore(Src, Dst))
       std::swap(Dst, Src);
@@ -285,7 +285,7 @@ public:
 };
 
 template <> struct GraphTraits<CompGraphBase*>
-  : public GraphTraits<CompGraphNode*> {
+  : public GraphTraits<CompGraphNodeBase*> {
 
   typedef CompGraphBase::iterator nodes_iterator;
   static nodes_iterator nodes_begin(CompGraphBase *G) {
