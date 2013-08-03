@@ -245,7 +245,7 @@ static unsigned GetFUCost(VFUs::FUTypes FUType, unsigned Width) {
   case VFUs::Mult:
     return getFUDesc<VFUMult>()->lookupCost(Width);
   case VFUs::Shift:
-    return getFUDesc<VFUShift>()->lookupCost(Width);
+    return getFUDesc<VFUShift>()->lookupCost(std::min(64u, Width));
   default:
     break;
   }
