@@ -20,6 +20,7 @@
 #include "CompGraph.h"
 
 #include "Dataflow.h"
+#include "shang/Strash.h"
 #include "shang/VASTExprBuilder.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTModulePass.h"
@@ -83,9 +84,12 @@ public:
 };
 
 class LICompGraph : public CompGraphBase {
+  std::map<VASTSelector*, CompGraphNode*> NodeMap;
+  CachedStrashTable &CST;
 public:
   typedef CompGraphNode NodeTy;
-  explicit LICompGraph(DominatorTree *DT) : CompGraphBase(DT) {}
+  LICompGraph(DominatorTree &DT, CachedStrashTable &CST)
+    : CompGraphBase(DT), CST(CST) {}
 
   NodeTy *addNode(VASTSeqInst *SeqInst);
 
@@ -107,25 +111,64 @@ public:
     return false;
   }
 
+  float compuateSavedResource(CompGraphNode *Src, CompGraphNode *Dst) const {
+    float Cost = 0.0f;
+    // 1. Calculate the number of registers we can reduce through this edge.
+    typedef NodeTy::sel_iterator sel_iterator;
+    for (sel_iterator I = Src->begin(), E = Src->end(); I != E; ++I)
+      Cost += (*I)->getBitWidth();
+
+    // 2. Calculate the functional unit resource reduction through this edge.
+    if (isCompatibleFU(Src->FUType, Dst->FUType))
+      Cost += std::min(Src->FUCost, Dst->FUCost);
+
+    return Cost;
+  }
+
+  float computeIncreasedMuxPorts(VASTSelector *Src, VASTSelector *Dst) const {
+    std::set<unsigned> SrcFIs, DstFIs, MergedFIs;
+    typedef VASTSelector::iterator iterator;
+
+    for (iterator I = Src->begin(), E = Src->end(); I != E; ++I) {
+      unsigned SrashID = CST.getOrCreateStrashID(*I);
+      SrcFIs.insert(SrashID);
+      MergedFIs.insert(SrashID);
+    }
+
+    for (iterator I = Dst->begin(), E = Dst->end(); I != E; ++I) {
+      unsigned SrashID = CST.getOrCreateStrashID(*I);
+      DstFIs.insert(SrashID);
+      MergedFIs.insert(SrashID);
+    }
+
+    int IncreasePorts = MergedFIs.size() - std::min(DstFIs.size(), SrcFIs.size());
+
+    // Remember to multiple the saved mux (1 bit) port by the bitwidth.
+    return IncreasePorts * std::max(Src->getBitWidth(), Dst->getBitWidth());
+  }
+
+  float computeIncreasedMuxPorts(CompGraphNode *Src, CompGraphNode *Dst) const {
+    assert(Src->size() == Dst->size() && "Number of operand register not agreed!");
+    float Cost = 0.0f;
+    for (unsigned i = 0, e = Src->size(); i != e; ++i)
+      Cost += computeIncreasedMuxPorts(Src->getSelector(i), Dst->getSelector(i));
+
+    return Cost;
+  }
+
   float computeCost(CompGraphNodeBase *SrcBase, unsigned SrcBinding,
                     CompGraphNodeBase *DstBase, unsigned DstBinding) const {
     CompGraphNode *Src = static_cast<CompGraphNode*>(SrcBase);
     CompGraphNode *Dst = static_cast<CompGraphNode*>(DstBase);
 
     float Cost = 0.0f;
-    // 1. Calculate the number of registers we can reduce through this edge.
-    typedef NodeTy::sel_iterator sel_iterator;
-    for (sel_iterator I = Src->begin(), E = Src->end(); I != E; ++I)
-      Cost -= (*I)->getBitWidth();
+    // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
+    Cost -= 0.5f * compuateSavedResource(Src, Dst);
 
-    // 2. Calculate the functional unit resource reduction through this edge.
-    if (isCompatibleFU(Src->FUType, Dst->FUType))
-      Cost -= std::min(Src->FUCost, Dst->FUCost);
+    // 2. Calculate the interconnection cost.
+    Cost += 0.8f * computeIncreasedMuxPorts(Src, Dst);
 
-    // 3. Calculate the interconnection cost.
-    //
-
-    // 4. Timing penalty introduced by MUX
+    // 3. Timing penalty introduced by MUX
     //
     return Cost;
   }
@@ -135,13 +178,10 @@ public:
 namespace {
 struct RegisterSharing : public VASTModulePass {
   static char ID;
-  VASTModule *VM;
-  VASTExprBuilder *Builder;
-  LICompGraph *G;
   SeqLiveVariables *LVS;
   std::map<unsigned, SparseBitVector<> > OverlappedMap;
 
-  RegisterSharing() : VASTModulePass(ID), VM(0), Builder(0), G(0), LVS(0) {
+  RegisterSharing() : VASTModulePass(ID), LVS(0) {
     initializeRegisterSharingPass(*PassRegistry::getPassRegistry());
   }
 
@@ -155,9 +195,11 @@ struct RegisterSharing : public VASTModulePass {
 
     AU.addRequired<SeqLiveVariables>();
     //AU.addPreserved<SeqLiveVariables>();
+
+    AU.addRequired<CachedStrashTable>();
   }
 
-  void initializeOverlappedSlots();
+  void initializeOverlappedSlots(VASTModule &VM);
 
   void setOverlappedSlots(SparseBitVector<> &LHS,
                           const SparseBitVector<> &RHS) const {
@@ -191,8 +233,9 @@ struct RegisterSharing : public VASTModulePass {
   bool runOnVASTModule(VASTModule &VM);
 
   bool performRegisterSharing();
-  void mergeLI(CompGraphNode *From, CompGraphNode *To);
-  void mergeSelector(VASTSelector *ToV, VASTSelector *FromV);
+  void mergeLI(CompGraphNode *From, CompGraphNode *To, VASTModule &VM);
+  void mergeSelector(VASTSelector *ToV, VASTSelector *FromV,
+                     VASTModule &VM);
 };
 }
 
@@ -201,6 +244,7 @@ INITIALIZE_PASS_BEGIN(RegisterSharing, "shang-register-sharing",
   INITIALIZE_PASS_DEPENDENCY(DominatorTree)
   INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(CachedStrashTable)
 INITIALIZE_PASS_END(RegisterSharing, "shang-register-sharing",
                     "Share the registers in the design", false, true)
 
@@ -289,8 +333,12 @@ LICompGraph::NodeTy *LICompGraph::addNode(VASTSeqInst *SeqInst) {
 
   // Create the node if it not exists yet.
   BasicBlock *DomBlock = cast<Instruction>(SeqInst->getValue())->getParent();
-  NodeTy *Node = new NodeTy(FUType, FUCost, Nodes.size() + 1, DomBlock, Sels);
+  NodeTy *Node = new NodeTy(FUType, FUCost, Nodes.size() + 1, DomBlock, Sels);  
   Nodes.push_back(Node);
+
+  // Build the node mapping.
+  for (unsigned i = 0, e = Sels.size(); i != e; ++i)
+    NodeMap[Sels[i]] = Node;
 
   return Node;
 }
@@ -303,13 +351,15 @@ void LICompGraph::decomposeTrivialNodes() {
 
       typedef NodeTy::sel_iterator sel_iterator;
       for (sel_iterator I = Node->begin(), E = Node->end(); I != E; ++I) {
+        VASTSelector *Sel = *I;
         NodeTy *SubNode = new NodeTy(VFUs::Trivial, 0, Nodes.size(),
-                                     Node->getDomBlock(), *I);
+                                     Node->getDomBlock(), Sel);
         // Copy the live-interval from the parent node.
         SubNode->getDefs() = Node->getDefs();
         SubNode->getReachables() = Node->getReachables();
-
         Nodes.push_back(SubNode);
+        // Also update the node mapping.
+        NodeMap[Sel] = SubNode;
         ++NumDecomposed;
       }
 
@@ -319,13 +369,13 @@ void LICompGraph::decomposeTrivialNodes() {
 }
 
 // Build the transitive closure of the overlap slots.
-void RegisterSharing::initializeOverlappedSlots() {
+void RegisterSharing::initializeOverlappedSlots(VASTModule &VM) {
   typedef VASTModule::slot_iterator slot_iterator;
 
   SmallPtrSet<VASTSlot*, 8> Visited;
   SmallVector<std::pair<VASTSlot*, VASTSlot::succ_iterator>, 4> WorkStack;
 
-  for (slot_iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
+  for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
     VASTSlot *S = I;
     SparseBitVector<> &Overlapped = OverlappedMap[S->SlotNum];
     Visited.clear();
@@ -357,18 +407,11 @@ void RegisterSharing::initializeOverlappedSlots() {
 }
 
 bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
-  DominatorTree &DT = getAnalysis<DominatorTree>();
   LVS = &getAnalysis<SeqLiveVariables>();
-  this->VM = &VM;
 
-  LICompGraph G(&DT);
-  this->G = &G;
+  LICompGraph G(getAnalysis<DominatorTree>(), getAnalysis<CachedStrashTable>());
 
-  MinimalExprBuilderContext C(VM);
-  VASTExprBuilder Builder(C);
-  this->Builder = &Builder;
-
-  initializeOverlappedSlots();
+  initializeOverlappedSlots(VM);
 
   typedef VASTModule::seqop_iterator iterator;
 
@@ -403,7 +446,6 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   G.fixTransitive();
 
   unsigned NumFU = G.performBinding();
-
   std::vector<CompGraphNode*> FUMap(NumFU);
 
   typedef LICompGraph::binding_iterator binding_iterator;
@@ -425,14 +467,18 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
     FU->dump();
     dbgs() << "\n\n");
 
-    mergeLI(N, FU);
+    mergeLI(N, FU, VM);
+
+    // Remove it from the compatibility graph since it is already merged into others.
+    // G.merge(From, To);
   }
 
   OverlappedMap.clear();
   return true;
 }
 
-void RegisterSharing::mergeLI(CompGraphNode *From, CompGraphNode *To) {
+void
+RegisterSharing::mergeLI(CompGraphNode *From, CompGraphNode *To, VASTModule &VM) {
   if (!From->isCompatibleWith(To)) {
     From->isCompatibleWith(To);
     To->isCompatibleWith(From);
@@ -441,15 +487,13 @@ void RegisterSharing::mergeLI(CompGraphNode *From, CompGraphNode *To) {
   assert(From->isCompatibleWith(To)
          && "Cannot merge incompatible LiveIntervals!");
   for (unsigned i = 0, e = From->size(); i != e; ++i)
-    mergeSelector(To->getSelector(i), From->getSelector(i));
-
-  // Remove From since it is already merged into others.
-  G->merge(From, To);
+    mergeSelector(To->getSelector(i), From->getSelector(i), VM);
 
   ++NumRegMerge;
 }
 
-void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From) {
+void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From,
+                                    VASTModule &VM) {
   SmallVector<VASTSeqOp*, 8> DeadOps;
 
   while (!From->def_empty())
@@ -462,8 +506,8 @@ void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From) {
     VASTSeqOp *Op = L.Op;
 
     VASTSeqInst *NewInst
-      = VM->lauchInst(Op->getSlot(), Op->getGuard(), Op->num_srcs(),
-                      Op->getValue(), cast<VASTSeqInst>(Op)->isLatch());
+      = VM.lauchInst(Op->getSlot(), Op->getGuard(), Op->num_srcs(),
+                     Op->getValue(), cast<VASTSeqInst>(Op)->isLatch());
     typedef VASTSeqOp::op_iterator iterator;
 
     for (unsigned i = 0, e = Op->num_srcs(); i < e; ++i) {
@@ -483,8 +527,8 @@ void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From) {
   // Erase the dead ops.
   while (!DeadOps.empty()) {
     VASTSeqOp *Op = DeadOps.pop_back_val();
-    VM->eraseSeqOp(Op);
+    VM.eraseSeqOp(Op);
   }
 
-  VM->eraseSelector(From);
+  VM.eraseSelector(From);
 }
