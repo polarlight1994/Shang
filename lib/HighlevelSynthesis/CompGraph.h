@@ -17,6 +17,8 @@
 #ifndef COMPATIBiLITY_GRAPH_H
 #define COMPATIBiLITY_GRAPH_H
 
+#include "shang/FUInfo.h"
+
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/ADT/SparseBitVector.h"
 #include "llvm/ADT/SmallVector.h"
@@ -24,6 +26,8 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/ilist.h"
+
+#include <set>
 #include <map>
 
 namespace llvm {
@@ -35,6 +39,12 @@ class CompGraphNodeBase : public ilist_node<CompGraphNodeBase> {
 public:
   const unsigned Idx : 31;
   const unsigned IsTrivial : 1;
+  const VFUs::FUTypes FUType;
+  struct Cost {
+    int16_t ResourceCost;
+    int16_t InterconnectCost;
+    int16_t TimingPenalty;
+  };
 private:
   unsigned Order;
   BasicBlock *DomBlock;
@@ -60,10 +70,13 @@ protected:
   }
 public:
 
-  CompGraphNodeBase() : Idx(0), IsTrivial(true), Order(0), DomBlock(0) { }
+  CompGraphNodeBase()
+    : Idx(0), IsTrivial(true), FUType(VFUs::Trivial), Order(0), DomBlock(0) { }
 
-  CompGraphNodeBase(unsigned Idx, BasicBlock *DomBlock, ArrayRef<VASTSelector*> Sels)
-    : Idx(Idx), IsTrivial(false), Order(UINT32_MAX), DomBlock(DomBlock) {}
+  CompGraphNodeBase(VFUs::FUTypes FUType, unsigned Idx, BasicBlock *DomBlock,
+                    ArrayRef<VASTSelector*> Sels)
+    : Idx(Idx), IsTrivial(false), FUType(FUType), Order(UINT32_MAX),
+      DomBlock(DomBlock) {}
 
   BasicBlock *getDomBlock() const { return DomBlock; }
 
@@ -105,6 +118,10 @@ public:
 
   bool isNeighbor(CompGraphNodeBase *RHS) const {
     return Preds.count(RHS) || Succs.count(RHS);
+  }
+
+  bool countSuccessor(CompGraphNodeBase *RHS) const {
+    return Succs.count(RHS);
   }
 
   float getCostTo(const CompGraphNodeBase *To) const;
@@ -162,12 +179,18 @@ public:
   typedef CompGraphNodeBase NodeTy;
   typedef std::map<CompGraphNodeBase*, unsigned> BindingMapTy;
 
+  typedef std::pair<NodeTy*, NodeTy*> EdgeType;
+  typedef std::vector<EdgeType> EdgeVector;
 protected:
   typedef ilist<NodeTy> NodeVecTy;
   // The dummy entry node of the graph.
   NodeTy Entry, Exit;
   // Nodes vector.
   NodeVecTy Nodes;
+
+  // Try to bind the compatible edges together.
+  std::map<EdgeType, EdgeVector> CompatibleEdges;
+
   DominatorTree &DT;
   BindingMapTy BindingMap;
 
@@ -189,6 +212,11 @@ protected:
                             NodeTy *Dst, unsigned DstBinding) const {
     return 0.0f;
   }
+
+  virtual void extractFaninNodes(NodeTy *N, std::set<NodeTy*> &Srcs) const {}
+
+  void
+  collectCompatibleEdges(NodeTy *Dst, NodeTy *Src, std::set<NodeTy*> &SrcFIs);
 public:
   explicit CompGraphBase(DominatorTree &DT) : Entry(), Exit(), DT(DT) {
     initalizeDTDFSOrder();
@@ -240,6 +268,14 @@ public:
 
   void viewGraph();
   
+  typedef std::map<EdgeType, EdgeVector>::const_iterator comp_edge_iterator;
+  comp_edge_iterator comp_edge_begin() const { return CompatibleEdges.begin(); }
+  comp_edge_iterator comp_edge_end() const { return CompatibleEdges.end(); }
+
+  virtual
+  float getEdgeConsistencyBenefit(EdgeType Edge, EdgeType FIEdge) const {
+    return 0.0f;
+  }
 
   bool isBefore(CompGraphNodeBase *Src, CompGraphNodeBase *Dst);
 

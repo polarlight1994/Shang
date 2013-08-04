@@ -29,6 +29,8 @@
 
 using namespace llvm;
 STATISTIC(NumNonTranEdgeBreak, "Number of non-transitive edges are broken");
+STATISTIC(NumCompEdges,
+          "Number of compatible edges in the compatibility graph");
 
 float CompGraphNodeBase::getCostTo(const CompGraphNodeBase *To) const  {
   CostVecTy::const_iterator I = SuccCosts.find(To);
@@ -170,10 +172,47 @@ void CompGraphBase::computeCompatibility() {
   }
 }
 
+void CompGraphBase::collectCompatibleEdges(NodeTy *Dst, NodeTy *Src,
+                                           std::set<NodeTy*> &SrcFIs) {
+  EdgeVector &CompEdges = CompatibleEdges[EdgeType(Src, Dst)];
+
+  std::set<CompGraphNodeBase*> DstFIs;
+  extractFaninNodes(Dst, DstFIs);
+
+  typedef std::set<NodeTy*>::iterator iterator;
+  for (iterator I = SrcFIs.begin(), E = SrcFIs.end(); I != E; ++I) {
+    NodeTy *SrcFI = *I;
+
+    for (iterator J = DstFIs.begin(), E = DstFIs.end(); J != E; ++J) {
+      NodeTy *DstFI = *J;
+
+      if (!VFUs::isNoTrivialFUCompatible(SrcFI->FUType, DstFI->FUType))
+        continue;
+
+      if (SrcFI->countSuccessor(DstFI)) {
+        CompEdges.push_back(EdgeType(SrcFI, DstFI));
+        ++NumCompEdges;
+      }
+
+      if (DstFI->countSuccessor(SrcFI)) {
+        CompEdges.push_back(EdgeType(DstFI, SrcFI));
+        ++NumCompEdges;
+      }
+    }
+  }
+
+  if (CompEdges.empty())
+    CompatibleEdges.erase(EdgeType(Src, Dst));
+}
+
 void CompGraphBase::compuateEdgeCosts() {
+  std::set<NodeTy*> SrcFIs;
   for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
     NodeTy *Src = I;
     unsigned SrcBinding = getBinding(Src);
+
+    SrcFIs.clear();
+    extractFaninNodes(Src, SrcFIs);
 
     typedef NodeTy::iterator succ_iterator;
     for (succ_iterator I = Src->succ_begin(), E = Src->succ_end(); I != E; ++I) {
@@ -182,7 +221,11 @@ void CompGraphBase::compuateEdgeCosts() {
       if (Dst->IsTrivial)
         continue;
 
-      Src->setCost(Dst, computeCost(Src, SrcBinding, Dst, getBinding(Dst)));
+      unsigned DstBinding = getBinding(Dst);
+      Src->setCost(Dst, computeCost(Src, SrcBinding, Dst, DstBinding));
+
+      if (!SrcFIs.empty())
+        collectCompatibleEdges(Dst, Src, SrcFIs);
     }
   }
 }
@@ -269,9 +312,17 @@ private:
   // Map the edge to column number in LP.
   typedef std::map<EdgeType, unsigned> Edge2IdxMapTy;
   Edge2IdxMapTy Edge2IdxMap;
+  
+  struct EdgeConsistencyBenefit {
+    unsigned SrcEdgeIdx, DstEdgeIdx;
+    unsigned SrcDstConsistentVarIdx, DstSrcConsistentVarIdx;
+    float ConsistentBenefit;
+  };
+  std::vector<EdgeConsistencyBenefit> EdgeConsistencies;
 
   unsigned createEdgeVariables(const CompGraphNodeBase *N, unsigned Col);
-
+  unsigned createConsistencyVariables(EdgeType SrcEdge, EdgeType DstEdge,
+                                      float Benefit, unsigned Col);
 public:
   explicit MinCostFlowSolver(CompGraphBase &G) : G(G), lp(0) {}
   ~MinCostFlowSolver() {
@@ -317,6 +368,40 @@ unsigned MinCostFlowSolver::createEdgeVariables(const CompGraphNodeBase *N,
   return Col;
 }
 
+unsigned
+MinCostFlowSolver::createConsistencyVariables(EdgeType SrcEdge, EdgeType DstEdge,
+                                              float Benefit, unsigned Col) {
+  unsigned SrcDstConsistentVarIdx = Col;
+  SmallString<8> S;
+  {
+    raw_svector_ostream SS(S);
+    SS << 'C' << SrcDstConsistentVarIdx;
+  }
+  set_col_name(lp, SrcDstConsistentVarIdx, const_cast<char*>(S.c_str()));
+  set_int(lp, SrcDstConsistentVarIdx, TRUE);
+  // The variable will be 1 when the edges are not consistent.
+  set_upbo(lp, SrcDstConsistentVarIdx, 1.0);
+
+  unsigned DstSrcConsistentVarIdx = Col + 1;
+  S.clear();
+  {
+    raw_svector_ostream SS(S);
+    SS << 'C' << DstSrcConsistentVarIdx;
+  }
+  set_col_name(lp, DstSrcConsistentVarIdx, const_cast<char*>(S.c_str()));
+  set_int(lp, DstSrcConsistentVarIdx, TRUE);
+  set_upbo(lp, DstSrcConsistentVarIdx, 1.0);
+
+  unsigned SrcEdgeIdx = Edge2IdxMap[SrcEdge], DstEdgeIdx = Edge2IdxMap[DstEdge];
+  assert(SrcEdgeIdx && DstEdgeIdx && "Edge does not exist?");
+  EdgeConsistencyBenefit ECB = { SrcEdgeIdx, DstEdgeIdx,
+                                 SrcDstConsistentVarIdx, DstSrcConsistentVarIdx,
+                                 Benefit };
+  EdgeConsistencies.push_back(ECB);
+
+  return Col + 2;
+}
+
 // Create the lp model and variables, return the number of variable created.
 unsigned MinCostFlowSolver::createLPAndVariables() {
   lp = make_lp(0, 0);
@@ -332,6 +417,23 @@ unsigned MinCostFlowSolver::createLPAndVariables() {
   for (CompGraphBase::iterator I = G.begin(), E = G.end(); I != E; ++I) {
     CompGraphNodeBase *N = I;
     Col = createEdgeVariables(N, Col);
+  }
+
+  // Create the variable for compatible edges, i.e., given edge (n0, n1),
+  // (n2, n3), sometimes is is profit to bind n0 and n2 to the same physical
+  // unit if n1 and n3 are bound to the same physical unit.
+  typedef CompGraphBase::comp_edge_iterator comp_edge_iterator;
+  for (comp_edge_iterator I = G.comp_edge_begin(), E = G.comp_edge_end();
+       I != E; ++I) {
+    CompGraphBase::EdgeType Edge = I->first;
+    const CompGraphBase::EdgeVector &SrcEdges = I->second;
+    typedef CompGraphBase::EdgeVector::const_iterator edge_iterator;
+    for (edge_iterator I = SrcEdges.begin(), E = SrcEdges.end(); I != E; ++I) {
+      CompGraphBase::EdgeType FIEdge = *I;
+      float benefit = G.getEdgeConsistencyBenefit(Edge, FIEdge);
+      if (benefit > 0)
+        Col = createConsistencyVariables(Edge, FIEdge, benefit, Col);
+    }
   }
 
   return Col - 1;
@@ -421,6 +523,44 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
     if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EQ, 1.0))
       report_fatal_error("Cannot add flow constraint!");
   }
+  
+
+  typedef std::vector<EdgeConsistencyBenefit>::iterator consistency_iterator;
+  for (consistency_iterator I = EdgeConsistencies.begin(),
+       E = EdgeConsistencies.end(); I != E; ++I) {
+    // Apply a penalty on inconsistency
+    const EdgeConsistencyBenefit &ECB = *I;
+
+    // Build the consistency "soft" constraints
+    // SrcEdgeFlow - DstEdgeFlow - Inconsistency >= 0
+    // DstEdgeFlow - SrcEdgeFlow - Inconsistency' >= 0
+    // When SrcEdgeFlow and DstEdgeFlow are both 1 (or 0), Inconsistency and
+    // Inconsistency' will be 0. Otherwise, either Inconsistency or
+    // Inconsistency' will be 1.
+    Col.clear();
+    Coeff.clear();
+
+    Col.push_back(ECB.SrcEdgeIdx);
+    Coeff.push_back(1.0);
+
+    Col.push_back(ECB.DstEdgeIdx);
+    Coeff.push_back(-1.0);
+
+    if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), GE, 0.0))
+      report_fatal_error("Cannot add consistency constraint!");
+
+    Col.clear();
+    Coeff.clear();
+
+    Col.push_back(ECB.DstEdgeIdx);
+    Coeff.push_back(1.0);
+
+    Col.push_back(ECB.SrcEdgeIdx);
+    Coeff.push_back(-1.0);
+
+    if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), GE, 0.0))
+      report_fatal_error("Cannot add consistency constraint!");
+  }
 
   set_add_rowmode(lp, FALSE);
 
@@ -440,13 +580,27 @@ void MinCostFlowSolver::setCost() {
   for (iterator I = Edge2IdxMap.begin(), E = Edge2IdxMap.end(); I != E; ++I) {
     EdgeType Edge = I->first;
     const CompGraphNodeBase *Src = Edge.first, *Dst = Edge.second;
-    if (Src->IsTrivial || Src->IsTrivial)
+    if (Src->IsTrivial || Dst->IsTrivial)
       continue;
 
     Indices.push_back(I->second);
 
-    Coefficients.push_back(Src->getCostTo(Dst));
+    float EdgeCost = Src->getCostTo(Dst);
+    Coefficients.push_back(EdgeCost);
   }
+
+  typedef std::vector<EdgeConsistencyBenefit>::iterator consistency_iterator;
+  for (consistency_iterator I = EdgeConsistencies.begin(),
+       E = EdgeConsistencies.end(); I != E; ++I) {
+    // Apply a penalty on inconsistency
+    const EdgeConsistencyBenefit &ECB = *I;
+    Indices.push_back(ECB.SrcDstConsistentVarIdx);
+    Coefficients.push_back(ECB.ConsistentBenefit);
+
+    Indices.push_back(ECB.DstSrcConsistentVarIdx);
+    Coefficients.push_back(ECB.ConsistentBenefit);
+  }
+  
 
   set_obj_fnex(lp, Indices.size(), Coefficients.data(), Indices.data());
   set_minim(lp);
@@ -484,8 +638,7 @@ void MinCostFlowSolver::applySolveSettings() {
                get_presolveloops(lp));
 
   unsigned TotalRows = get_Nrows(lp), NumVars = get_Ncolumns(lp);
-  DEBUG(dbgs() << "The model has " << NumVars
-               << "x" << TotalRows << '\n');
+  dbgs() << "The model has " << NumVars << "x" << TotalRows << '\n';
   // Set timeout to 1 minute.
   set_timeout(lp, 60);
   DEBUG(dbgs() << "Timeout is set to " << get_timeout(lp) << "secs.\n");
@@ -513,6 +666,10 @@ bool MinCostFlowSolver::solveMinCostFlow() {
     report_fatal_error(Twine("Min cost flow fail: ")
                        + Twine(transSolveResult(result)));
   }
+
+  float Cost = get_var_primalresult(lp, 0);
+  dbgs() << "Object: " << Cost << ", Supply: "
+         << get_var_primalresult(lp, 1) << '\n';
 
   return true;
 }
@@ -572,22 +729,30 @@ unsigned CompGraphBase::performBinding() {
   unsigned TotalRows = MCF.createBlanceConstraints();
   MCF.applySolveSettings();
 
-  unsigned MaxFlow = Nodes.size(), MinFlow = 1;
+  unsigned MaxFlow = Nodes.size();
 
-  while (MaxFlow >= MinFlow) {
-    unsigned MidFlow = MinFlow + (MaxFlow - MinFlow) / 2;
+  MCF.setFUAllocationConstraints(MaxFlow);
+  unsigned MaxIteration = 20;
+  while (MaxIteration && !MCF.solveMinCostFlow())
+    --MaxIteration;
 
-    MCF.setFUAllocationConstraints(MidFlow);
+  //unsigned MinFlow = 1;
 
-    if (MCF.solveMinCostFlow())
-      // MidCount is ok, try a smaller one.
-      MaxFlow = MidFlow - 1;
-    else
-      // Otherwise we should use a bigger supply.
-      MinFlow = MidFlow + 1;
-  }
+  //while (MaxFlow >= MinFlow) {
+  //  unsigned MidFlow = MinFlow + (MaxFlow - MinFlow) / 2;
 
+  //  MCF.setFUAllocationConstraints(MidFlow);
+
+  //  if (MCF.solveMinCostFlow())
+  //    // MidCount is ok, try a smaller one.
+  //    MaxFlow = MidFlow - 1;
+  //  else
+  //    // Otherwise we should use a bigger supply.
+  //    MinFlow = MidFlow + 1;
+  //}
+
+  unsigned ActualFlow = MCF.buildBinging(TotalRows, BindingMap);
   dbgs() << "Original supply: " << Nodes.size()
-         << " Minimal: " << MaxFlow << '\n';
-  return MCF.buildBinging(TotalRows, BindingMap);
+         << " Minimal: " << ActualFlow << '\n';
+  return ActualFlow;
 }
