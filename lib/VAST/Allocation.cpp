@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/ResourceAllocation.h"
+#include "Allocation.h"
 
 #include "shang/Passes.h"
 #include "shang/FUInfo.h"
@@ -24,31 +24,31 @@
 
 using namespace llvm;
 
-ResourceAllocation::MemBank::MemBank(unsigned Number, unsigned WordSizeInBytes,
+HLSAllocation::MemBank::MemBank(unsigned Number, unsigned WordSizeInBytes,
                                 unsigned AddrWdith, bool RequireByteEnable)
   : Number(Number), WordSizeInBytes(WordSizeInBytes), AddrWidth(AddrWdith),
     RequireByteEnable(RequireByteEnable) {}
 
-unsigned ResourceAllocation::getMemoryBankNum(const StoreInst &I) const {
+unsigned HLSAllocation::getMemoryBankNum(const StoreInst &I) const {
   assert(Allocation
-         && "Allocation didn't call InitializeResourceAllocation in its run method!");
+         && "Allocation didn't call InitializeHLSAllocation in its run method!");
   return Allocation->getMemoryBankNum(I);
 }
 
-unsigned ResourceAllocation::getMemoryBankNum(const LoadInst &I) const {
+unsigned HLSAllocation::getMemoryBankNum(const LoadInst &I) const {
   assert(Allocation
-         && "Allocation didn't call InitializeResourceAllocation in its run method!");
+         && "Allocation didn't call InitializeHLSAllocation in its run method!");
   return Allocation->getMemoryBankNum(I);
 }
 
-ResourceAllocation::MemBank
-ResourceAllocation::getMemoryBank(const GlobalVariable &GV) const {
+HLSAllocation::MemBank
+HLSAllocation::getMemoryBank(const GlobalVariable &GV) const {
   assert(Allocation
-         && "Allocation didn't call InitializeResourceAllocation in its run method!");
+         && "Allocation didn't call InitializeHLSAllocation in its run method!");
   return Allocation->getMemoryBank(GV);
 }
 
-unsigned ResourceAllocation::getMemoryBankNum(const Value &V) const {
+unsigned HLSAllocation::getMemoryBankNum(const Value &V) const {
   if (const LoadInst *L = dyn_cast<LoadInst>(&V))
     return getMemoryBankNum(*L);
 
@@ -61,26 +61,26 @@ unsigned ResourceAllocation::getMemoryBankNum(const Value &V) const {
   return 0;
 }
 
-void ResourceAllocation::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.addRequired<ResourceAllocation>();         // All ResourceAllocation's chain
+void HLSAllocation::getAnalysisUsage(AnalysisUsage &AU) const {
+  AU.addRequired<HLSAllocation>();         // All HLSAllocation's chain
   AU.addRequired<DataLayout>();
 }
 
-void ResourceAllocation::InitializeResourceAllocation(Pass *P) {
+void HLSAllocation::InitializeHLSAllocation(Pass *P) {
   TD = &P->getAnalysis<DataLayout>();
-  Allocation = &P->getAnalysis<ResourceAllocation>();
+  Allocation = &P->getAnalysis<HLSAllocation>();
 }
 
-char ResourceAllocation::ID = 0;
+char HLSAllocation::ID = 0;
 
-INITIALIZE_ANALYSIS_GROUP(ResourceAllocation,
+INITIALIZE_ANALYSIS_GROUP(HLSAllocation,
                           "High-level Synthesis Resource Allocation",
                           BasicAllocation)
 
 namespace {
 /// TODO: Implement the HLS allocation as analysis group.
-/// ResourceAllocation - The resource allocation interface.
-struct BasicAllocation : public ImmutablePass, public ResourceAllocation {
+/// HLSAllocation - The resource allocation interface.
+struct BasicAllocation : public ImmutablePass, public HLSAllocation {
   static char ID;
 
   BasicAllocation();
@@ -98,7 +98,7 @@ struct BasicAllocation : public ImmutablePass, public ResourceAllocation {
   }
 
   void initializePass() {
-    // Note: BasicAllocation does not call InitializeResourceAllocation because it's
+    // Note: BasicAllocation does not call InitializeHLSAllocation because it's
     // special and does not support chaining.
     TD = &getAnalysis<DataLayout>();
   }
@@ -108,8 +108,8 @@ struct BasicAllocation : public ImmutablePass, public ResourceAllocation {
   /// should override this to adjust the this pointer as needed for the
   /// specified pass info.
   virtual void *getAdjustedAnalysisPointer(const void *ID) {
-    if (ID == &ResourceAllocation::ID)
-      return (ResourceAllocation*)this;
+    if (ID == &HLSAllocation::ID)
+      return (HLSAllocation*)this;
     return this;
   }
 };
@@ -119,7 +119,7 @@ BasicAllocation::BasicAllocation() : ImmutablePass(ID) {
   initializeBasicAllocationPass(*PassRegistry::getPassRegistry());
 }
 
-INITIALIZE_AG_PASS(BasicAllocation, ResourceAllocation,
+INITIALIZE_AG_PASS(BasicAllocation, HLSAllocation,
                    "shang-basic-resource-allocation",
                    "Basic Resource Allocation in High-level Synthesis",
                    false, true, true)

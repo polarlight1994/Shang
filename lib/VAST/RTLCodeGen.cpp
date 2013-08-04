@@ -12,9 +12,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "Allocation.h"
 #include "LangSteam.h"
 
-#include "shang/ResourceAllocation.h"
 #include "shang/VASTModulePass.h"
 #include "shang/VASTModule.h"
 #include "shang/Utilities.h"
@@ -55,7 +55,7 @@ struct RTLCodeGen : public VASTModulePass {
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addRequiredID(TimingDrivenSelectorSynthesisID);
     AU.addRequiredID(DatapathNamerID);
-    AU.addRequired<ResourceAllocation>();
+    AU.addRequired<HLSAllocation>();
     AU.addRequired<STGDistances>();
     AU.setPreservesAll();
   }
@@ -76,7 +76,7 @@ INITIALIZE_PASS_BEGIN(RTLCodeGen, "shang-verilog-writer",
   INITIALIZE_PASS_DEPENDENCY(TimingDrivenSelectorSynthesis)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
-  INITIALIZE_AG_DEPENDENCY(ResourceAllocation)
+  INITIALIZE_AG_DEPENDENCY(HLSAllocation)
 INITIALIZE_PASS_END(RTLCodeGen, "shang-verilog-writer",
                     "Write the RTL verilog code to output file.",
                     false, true)
@@ -87,7 +87,7 @@ RTLCodeGen::RTLCodeGen() : VASTModulePass(ID), Out() {
 
 void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
   DataLayout *TD = getAnalysisIfAvailable<DataLayout>();
-  ResourceAllocation &Allocation = getAnalysis<ResourceAllocation>();
+  HLSAllocation &Allocation = getAnalysis<HLSAllocation>();
 
   SMDiagnostic Err;
   const char *GlobalScriptPath[] = { "Misc", "RTLGlobalScript" };

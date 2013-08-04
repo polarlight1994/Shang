@@ -11,7 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/ResourceAllocation.h"
+#include "Allocation.h"
+
 #include "shang/Utilities.h"
 #include "shang/Passes.h"
 #include "shang/FUInfo.h"
@@ -40,7 +41,7 @@ cl::desc("Forbid the SimpleBlockRAMAllocation allocate the single element bram")
 cl::init(true));
 
 namespace {
-struct SimpleBlockRAMAllocation : public ModulePass, public ResourceAllocation {
+struct SimpleBlockRAMAllocation : public ModulePass, public HLSAllocation {
   static char ID;
 
   SimpleBlockRAMAllocation() : ModulePass(ID) {
@@ -65,7 +66,7 @@ struct SimpleBlockRAMAllocation : public ModulePass, public ResourceAllocation {
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
-    ResourceAllocation::getAnalysisUsage(AU);
+    HLSAllocation::getAnalysisUsage(AU);
     AU.setPreservesAll();
   }
 
@@ -78,8 +79,8 @@ struct SimpleBlockRAMAllocation : public ModulePass, public ResourceAllocation {
   /// should override this to adjust the this pointer as needed for the
   /// specified pass info.
   virtual void *getAdjustedAnalysisPointer(const void *ID) {
-    if (ID == &ResourceAllocation::ID)
-      return (ResourceAllocation*)this;
+    if (ID == &HLSAllocation::ID)
+      return (HLSAllocation*)this;
     return this;
   }
 };
@@ -166,7 +167,7 @@ static bool visitPtrUseTree(Value *BasePtr, VisitFunc &Visitor) {
   return true;
 }
 
-INITIALIZE_AG_PASS(SimpleBlockRAMAllocation, ResourceAllocation,
+INITIALIZE_AG_PASS(SimpleBlockRAMAllocation, HLSAllocation,
                    "simple-block-ram-allocation", "Simple BlockRAM Allocation",
                    false, true, false)
 
@@ -177,7 +178,7 @@ Pass *llvm::createSimpleBlockRAMAllocationPass() {
 }
 
 bool SimpleBlockRAMAllocation::runOnModule(Module &M) {
-  InitializeResourceAllocation(this);
+  InitializeHLSAllocation(this);
 
   typedef Module::global_iterator global_iterator;
   for (global_iterator I = M.global_begin(), E = M.global_end(); I != E; ++I)
