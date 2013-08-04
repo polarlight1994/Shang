@@ -13,8 +13,8 @@
 //===----------------------------------------------------------------------===//
 #include "IR2Datapath.h"
 #include "MinimalDatapathContext.h"
-#include "Allocation.h"
 
+#include "shang/ResourceAllocation.h"
 #include "shang/VASTMemoryPort.h"
 #include "shang/VASTModulePass.h"
 #include "shang/VASTModule.h"
@@ -57,7 +57,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   DatapathBuilder Builder;
   VASTModule *VM;
   DataLayout *TD;
-  HLSAllocation &Allocation;
+  ResourceAllocation &Allocation;
 
   //===--------------------------------------------------------------------===//
   void emitFunctionSignature(Function *F, VASTSubModule *SubMod = 0);
@@ -75,7 +75,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   //===--------------------------------------------------------------------===//
   std::map<unsigned, VASTMemoryBus*> MemBuses;
-  VASTMemoryBus *getOrCreateMemBus(const HLSAllocation::MemBank &Bank) {
+  VASTMemoryBus *getOrCreateMemBus(const ResourceAllocation::MemBank &Bank) {
     unsigned ByteEnWidth = Log2_32_Ceil(Bank.WordSizeInBytes);
     // Dirty Hack: Make the word address part not empty.
     unsigned AddrWidth = std::max<unsigned>(ByteEnWidth + 1, Bank.AddrWidth);
@@ -259,7 +259,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   bool buildICmpOperation(ICmpInst &I);
   bool buildGEPOperation(GetElementPtrInst &I);
   //===--------------------------------------------------------------------===//
-  VASTModuleBuilder(VASTModule *Module, DataLayout *TD, HLSAllocation &Allocation)
+  VASTModuleBuilder(VASTModule *Module, DataLayout *TD, ResourceAllocation &Allocation)
     : MinimalDatapathContext(*Module, TD), Builder(*this),
       VM(Module), TD(TD), Allocation(Allocation), NumSlots(0)  {}
 };
@@ -473,7 +473,7 @@ void VASTModuleBuilder::allocateSubModules() {
   for (global_iterator I = M->global_begin(), E = M->global_end(); I != E; ++I) {
     GlobalVariable *GV = I;
 
-    const HLSAllocation::MemBank &Bank = Allocation.getMemoryBank(*GV);
+    const ResourceAllocation::MemBank &Bank = Allocation.getMemoryBank(*GV);
     // Ignore the default memory port.
     if (Bank.Number == 0) continue;
 
@@ -1260,7 +1260,7 @@ struct VASTModuleAnalysis : public FunctionPass {
 INITIALIZE_PASS_BEGIN(VASTModuleAnalysis,
                       "vast-module-builder", "VASTModule Builder",
                       false, true)
-  INITIALIZE_AG_DEPENDENCY(HLSAllocation)
+  INITIALIZE_AG_DEPENDENCY(ResourceAllocation)
   INITIALIZE_PASS_DEPENDENCY(BasicBlockTopOrder)
 INITIALIZE_PASS_END(VASTModuleAnalysis,
                     "vast-module-builder", "VASTModule Builder",
@@ -1271,7 +1271,7 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
   VM = new VASTModule(F);
 
   VASTModuleBuilder Builder(VM, getAnalysisIfAvailable<DataLayout>(),
-                            getAnalysis<HLSAllocation>());
+                            getAnalysis<ResourceAllocation>());
 
   Builder.emitFunctionSignature(&F);
 
@@ -1289,7 +1289,7 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
 }
 
 void VASTModuleAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.addRequired<HLSAllocation>();
+  AU.addRequired<ResourceAllocation>();
   AU.addRequiredID(BasicBlockTopOrderID);
   AU.setPreservesAll();
 }
@@ -1305,13 +1305,13 @@ char VASTModuleAnalysis::ID = 0;
 
 //===----------------------------------------------------------------------===//
 void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.addRequiredTransitive<HLSAllocation>();
+  AU.addRequiredTransitive<ResourceAllocation>();
   AU.addRequiredTransitive<VASTModuleAnalysis>();
   AU.addPreserved<VASTModuleAnalysis>();
   AU.addPreservedID(BasicBlockTopOrderID);
   AU.addPreserved<AliasAnalysis>();
   AU.addPreserved<ScalarEvolution>();
-  AU.addPreserved<HLSAllocation>();
+  AU.addPreserved<ResourceAllocation>();
   AU.addPreserved<DependenceAnalysis>();
   AU.addPreserved<BranchProbabilityInfo>();
   AU.addPreservedID(DataflowID);

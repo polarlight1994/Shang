@@ -1,5 +1,5 @@
 add_llvm_library(ShangVAST
-  Allocation.cpp
+  ResourceAllocation.cpp
   SimpleBlockRAMAllocation.cpp
   MemoryPartition.cpp
   VASTModulePass.cpp

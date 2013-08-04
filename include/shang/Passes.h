@@ -86,7 +86,7 @@ void initializeMemoryAccessAlignerPass(PassRegistry &Registry);
 void initializeMemoryAccessCoalescingPass(PassRegistry &Registry);
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
 
-void initializeHLSAllocationAnalysisGroup(PassRegistry &Registry);
+void initializeResourceAllocationAnalysisGroup(PassRegistry &Registry);
 void initializeBasicAllocationPass(PassRegistry &Registry);
 void initializeSimpleBlockRAMAllocationPass(PassRegistry &Registry);
 void initializeMemoryPartitionPass(PassRegistry &Registry);

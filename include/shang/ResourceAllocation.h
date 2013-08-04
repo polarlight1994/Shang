@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SHANG_ALLOCATION_H
-#define SHANG_ALLOCATION_H
+#ifndef SHANG_RESOURCE_ALLOCATION_H
+#define SHANG_RESOURCE_ALLOCATION_H
 
 #include "llvm/ADT/ArrayRef.h"
 
@@ -28,24 +28,24 @@ class DataLayout;
 class Pass;
 class AnalysisUsage;
 
-class HLSAllocation {
-  // Previous HLSAllocation to chain to.
-  HLSAllocation *Allocation;
+class ResourceAllocation {
+  // Previous ResourceAllocation to chain to.
+  ResourceAllocation *Allocation;
 
 protected:
   const DataLayout *TD;
 
-  HLSAllocation() : Allocation(0), TD(0) {}
+  ResourceAllocation() : Allocation(0), TD(0) {}
 
-  void InitializeHLSAllocation(Pass *P);
+  void InitializeResourceAllocation(Pass *P);
 
-  /// getAnalysisUsage - All HLSAllocation implementations should invoke this
-  /// directly (using HLSAllocation::getAnalysisUsage(AU)).
+  /// getAnalysisUsage - All ResourceAllocation implementations should invoke this
+  /// directly (using ResourceAllocation::getAnalysisUsage(AU)).
   virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 public:
   static char ID;
 
-  virtual ~HLSAllocation() {}
+  virtual ~ResourceAllocation() {}
 
   struct MemBank {
     uint8_t Number;

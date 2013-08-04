@@ -11,8 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Allocation.h"
-
+#include "shang/ResourceAllocation.h"
 #include "shang/Utilities.h"
 #include "shang/Passes.h"
 #include "shang/FUInfo.h"
@@ -42,7 +41,7 @@ STATISTIC(NumMemBanks, "Number of Local Memory Bank Allocated");
 
 
 namespace {
-struct MemoryPartition : public FunctionPass, public HLSAllocation {
+struct MemoryPartition : public FunctionPass, public ResourceAllocation {
   static char ID;
 
   ValueMap<const Value*, unsigned>  Binding;
@@ -67,7 +66,7 @@ struct MemoryPartition : public FunctionPass, public HLSAllocation {
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
-    HLSAllocation::getAnalysisUsage(AU);
+    ResourceAllocation::getAnalysisUsage(AU);
     AU.addRequired<AliasAnalysis>();
     AU.setPreservesAll();
   }
@@ -84,19 +83,19 @@ struct MemoryPartition : public FunctionPass, public HLSAllocation {
   /// should override this to adjust the this pointer as needed for the
   /// specified pass info.
   virtual void *getAdjustedAnalysisPointer(const void *ID) {
-    if (ID == &HLSAllocation::ID)
-      return (HLSAllocation*)this;
+    if (ID == &ResourceAllocation::ID)
+      return (ResourceAllocation*)this;
     return this;
   }
 };
 }
 //===----------------------------------------------------------------------===//
 
-INITIALIZE_AG_PASS_BEGIN(MemoryPartition, HLSAllocation,
+INITIALIZE_AG_PASS_BEGIN(MemoryPartition, ResourceAllocation,
                          "memory-partition", "Memory Partition",
                          false, true, false)
   INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
-INITIALIZE_AG_PASS_END(MemoryPartition, HLSAllocation,
+INITIALIZE_AG_PASS_END(MemoryPartition, ResourceAllocation,
                        "memory-partition", "Memory Partition",
                        false, true, false)
 
@@ -107,7 +106,7 @@ Pass *llvm::createMemoryPartitionPass() {
 }
 
 bool MemoryPartition::runOnFunction(Function &F) {
-  InitializeHLSAllocation(this);
+  InitializeResourceAllocation(this);
   uint64_t MemBusSizeInBytes = getFUDesc<VFUMemBus>()->getDataWidth() / 8;
   Module *M = F.getParent();
 
