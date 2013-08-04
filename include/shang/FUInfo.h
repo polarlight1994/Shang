@@ -68,6 +68,26 @@ namespace VFUs {
 
   // Latency of clock enable multiplexer selector
   extern float LUTDelay;
+
+  inline bool isFUCompatible(VFUs::FUTypes LHS, VFUs::FUTypes RHS) {
+    if (LHS == RHS)
+      return true;
+
+    if (LHS == VFUs::AddSub && RHS == VFUs::ICmp)
+      return true;
+
+    if (RHS == VFUs::ICmp && RHS == VFUs::AddSub)
+      return true;
+
+    return false;
+  }
+
+  inline bool isNoTrivialFUCompatible(VFUs::FUTypes LHS, VFUs::FUTypes RHS) {
+    if (LHS == VFUs::Trivial || RHS == VFUs::Trivial)
+      return false;
+
+    return isFUCompatible(LHS, RHS);
+  }
 }
 
 class FuncUnitId {
