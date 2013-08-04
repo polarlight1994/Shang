@@ -51,8 +51,8 @@ private:
 
   bool isCompatibleWithInternal(const CompGraphNodeBase *RHSBase) const {
     const CompGraphNode *RHS = static_cast<const CompGraphNode*>(RHSBase);
-    if (!VFUs::isFUCompatible(FUType, RHS->FUType))
-      return false;
+    //if (!VFUs::isFUCompatible(FUType, RHS->FUType))
+    //  return false;
 
     if (Sels.size() != RHS->Sels.size())
       return false;
@@ -85,14 +85,18 @@ public:
 
 };
 
-class LICompGraph : public CompGraphBase {
+class VASTCompGraph : public CompGraphBase {
   std::map<VASTSelector*, CompGraphNode*> NodeMap;
   CachedStrashTable &CST;
   typedef CompGraphNode NodeTy;
 
+  std::set<VASTSelector*> BoundSels;
 public:
-  LICompGraph(DominatorTree &DT, CachedStrashTable &CST)
-    : CompGraphBase(DT), CST(CST) {}
+  const float interconnect_factor, area_factor, consistent_factor;
+
+  VASTCompGraph(DominatorTree &DT, CachedStrashTable &CST)
+    : CompGraphBase(DT), CST(CST), interconnect_factor(0.8f), area_factor(0.5f),
+      consistent_factor(0.4f) {}
 
   CompGraphNode *lookupNode(VASTSelector *Sel) const {
     std::map<VASTSelector*, CompGraphNode*>::const_iterator I
@@ -101,6 +105,22 @@ public:
   }
 
   NodeTy *addNode(VASTSeqInst *SeqInst);
+
+  void addBoundSels(VASTSelector *Sel) {
+    BoundSels.insert(Sel);
+  }
+
+  void calculateCommonFIBenefit() {
+    typedef std::set<VASTSelector*>::iterator iterator;
+    for (iterator I = BoundSels.begin(), E = BoundSels.end(); I != E; ++I)
+      calculateCommonFIBenefit(*I);
+
+    typedef std::map<VASTSelector*, CompGraphNode*>::iterator map_iterator;
+    for (map_iterator I = NodeMap.begin(), E = NodeMap.end(); I != E; ++I)
+      calculateCommonFIBenefit(I->first);
+  }
+
+  void calculateCommonFIBenefit(VASTSelector *Sel);
 
   void decomposeTrivialNodes();
 
@@ -147,14 +167,13 @@ public:
   }
 
   float getEdgeConsistencyBenefit(EdgeType Edge, EdgeType FIEdge) const {
-    CompGraphNode *Src = static_cast<CompGraphNode*>(Edge.first),
-                  *Dst = static_cast<CompGraphNode*>(Edge.second),
-                  *FISrc = static_cast<CompGraphNode*>(FIEdge.second),
+    CompGraphNode *FISrc = static_cast<CompGraphNode*>(FIEdge.first),
                   *FIDst = static_cast<CompGraphNode*>(FIEdge.second);
 
     if (VFUs::isFUCompatible(FISrc->FUType, FIDst->FUType)) {
-      // Add 0.8 interconnection benefit for trivial FU.
-      float cost = std::max<float>(std::min(FISrc->FUCost, FIDst->FUCost), 0.8f);
+      float cost = std::min(FISrc->FUCost, FIDst->FUCost) * consistent_factor;
+      // Add interconnection benefit for trivial FU.
+      cost = std::max<float>(cost, interconnect_factor);
       return cost;
     }
 
@@ -214,10 +233,10 @@ public:
 
     float Cost = 0.0f;
     // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
-    Cost -= 0.5f * compuateSavedResource(Src, Dst);
+    Cost -= area_factor * compuateSavedResource(Src, Dst);
 
     // 2. Calculate the interconnection cost.
-    Cost += 0.8f * computeIncreasedMuxPorts(Src, Dst);
+    Cost += interconnect_factor * computeIncreasedMuxPorts(Src, Dst);
 
     // 3. Timing penalty introduced by MUX
     //
@@ -370,7 +389,7 @@ static unsigned GetFUCost(VFUs::FUTypes FUType, unsigned Width) {
   return 0;
 }
 
-LICompGraph::NodeTy *LICompGraph::addNode(VASTSeqInst *SeqInst) {
+VASTCompGraph::NodeTy *VASTCompGraph::addNode(VASTSeqInst *SeqInst) {
   assert(SeqInst && "Unexpected null pointer pass to GetOrCreateNode!");
 
   SmallVector<VASTSelector*, 4> Sels;
@@ -394,7 +413,7 @@ LICompGraph::NodeTy *LICompGraph::addNode(VASTSeqInst *SeqInst) {
   return Node;
 }
 
-void LICompGraph::decomposeTrivialNodes() {
+void VASTCompGraph::decomposeTrivialNodes() {
   typedef NodeVecTy::iterator node_iterator;
   for (node_iterator I = Nodes.begin(), E = Nodes.end(); I != E; /*++I*/) {
     NodeTy *Node = static_cast<NodeTy*>((CompGraphNodeBase*)(I++));
@@ -414,6 +433,34 @@ void LICompGraph::decomposeTrivialNodes() {
       }
 
       Nodes.erase(Node);
+    }
+  }
+}
+
+void VASTCompGraph::calculateCommonFIBenefit(VASTSelector *Sel) {
+  std::set<CompGraphNodeBase*> Fanins;
+  extractFaninNodes(Sel, Fanins);
+  float Benefit = Sel->getBitWidth() * interconnect_factor;
+
+  typedef std::set<CompGraphNodeBase*>::iterator iterator;
+  for (iterator I = Fanins.begin(), E = Fanins.end(); I != E; ++I) {
+    CompGraphNode *LHS = static_cast<CompGraphNode*>(*I);
+
+    for (iterator J = I; J != E; ++J) {
+      CompGraphNode *RHS = static_cast<CompGraphNode*>(*J);
+
+      if (LHS == RHS)
+        continue;
+
+      if (LHS->countSuccessor(RHS)) {
+        LHS->setCost(RHS, LHS->getCostTo(RHS) - Benefit);
+        continue;
+      }
+
+      if (RHS->countSuccessor(LHS)) {
+        RHS->setCost(LHS, RHS->getCostTo(LHS) - Benefit);
+        continue;
+      }
     }
   }
 }
@@ -459,7 +506,7 @@ void RegisterSharing::initializeOverlappedSlots(VASTModule &VM) {
 bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   LVS = &getAnalysis<SeqLiveVariables>();
 
-  LICompGraph G(getAnalysis<DominatorTree>(), getAnalysis<CachedStrashTable>());
+  VASTCompGraph G(getAnalysis<DominatorTree>(), getAnalysis<CachedStrashTable>());
 
   initializeOverlappedSlots(VM);
 
@@ -476,8 +523,11 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
     VASTSeqOp *Op = I;
     VASTSeqInst *Inst = DynCastSharingCandidate(Op);
 
-    if (Inst == 0)
+    if (Inst == 0) {
+      for (unsigned i = 0; i < Op->num_srcs(); ++i)
+        G.addBoundSels(Op->getSrc(i).getSelector());
       continue;
+    }
 
     CompGraphNode *&N = VisitedInst[Op];
 
@@ -494,6 +544,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   G.fixTransitive();
 
   G.compuateEdgeCosts();
+  G.calculateCommonFIBenefit();
 
   unsigned NumFU = G.performBinding();
 
@@ -502,7 +553,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
 
   std::vector<CompGraphNode*> FUMap(NumFU);
 
-  typedef LICompGraph::binding_iterator binding_iterator;
+  typedef VASTCompGraph::binding_iterator binding_iterator;
   for (binding_iterator I = G.binding_begin(), E = G.binding_end(); I != E; ++I)
   {
     CompGraphNode *N = static_cast<CompGraphNode*>(I->first);
@@ -524,7 +575,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
     mergeLI(N, FU, VM);
 
     // Remove it from the compatibility graph since it is already merged into others.
-    // G.merge(From, To);
+    G.merge(N, FU);
   }
 
   OverlappedMap.clear();
