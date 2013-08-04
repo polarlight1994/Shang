@@ -347,8 +347,7 @@ void LICompGraph::decomposeTrivialNodes() {
   typedef NodeVecTy::iterator node_iterator;
   for (node_iterator I = Nodes.begin(), E = Nodes.end(); I != E; /*++I*/) {
     NodeTy *Node = static_cast<NodeTy*>((CompGraphNodeBase*)(I++));
-    if (Node->size() != 1 && Node->FUType != VFUs::Trivial) {
-
+    if (Node->size() != 1 && Node->FUType == VFUs::Trivial) {
       typedef NodeTy::sel_iterator sel_iterator;
       for (sel_iterator I = Node->begin(), E = Node->end(); I != E; ++I) {
         VASTSelector *Sel = *I;
