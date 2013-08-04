@@ -128,7 +128,7 @@ void CompGraphBase::fixTransitive() {
         if (SuccSucc->IsTrivial)
           continue;
 
-        if (!Node->isCompatibleWith(SuccSucc)) {
+        if (!Node->countSuccessor(SuccSucc)) {
           DEBUG(dbgs() << "\nNontransitive edge:\n";
           Node->dump();
           Succ->dump();
