@@ -109,7 +109,7 @@ public:
 
   unsigned degree() const { return num_succ() + num_pred(); }
 
-  void merge(const CompGraphNodeBase *RHS, DominatorTree &DT);
+  void merge(const CompGraphNodeBase *RHS);
 
   bool isCompatibleWith(const CompGraphNodeBase *RHS) const;
 
@@ -240,7 +240,7 @@ public:
   }
 
   void merge(NodeTy *From, NodeTy *To) {
-    To->merge(From, DT);
+    To->merge(From);
     deleteNode(From);
   }
 

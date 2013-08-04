@@ -60,10 +60,9 @@ void CompGraphNodeBase::dump() const {
   print(dbgs());
 }
 
-void CompGraphNodeBase::merge(const CompGraphNodeBase *RHS, DominatorTree &DT) {
+void CompGraphNodeBase::merge(const CompGraphNodeBase *RHS) {
   Defs        |= RHS->Defs;
   Reachables  |= RHS->Reachables;
-  DomBlock = DT.findNearestCommonDominator(DomBlock, RHS->DomBlock);
 }
 
 bool CompGraphNodeBase::isCompatibleWith(const CompGraphNodeBase *RHS) const {
