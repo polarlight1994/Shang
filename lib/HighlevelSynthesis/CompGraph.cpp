@@ -255,13 +255,12 @@ CompGraphNode *CompGraphBase::addNewNode(VASTSeqInst *SeqInst) {
   unsigned FUCost = SeqInst->getFUCost();
 
   // Create the node if it not exists yet.
-  DataflowInst Inst(SeqInst);
-  NodeTy *Node = new NodeTy(FUType, FUCost, Nodes.size() + 1, Inst, Sels);  
+  Node = new NodeTy(FUType, FUCost, Nodes.size() + 1, Inst, Sels);
   Nodes.push_back(Node);
 
   // Build the node mapping.
   for (unsigned i = 0, e = Sels.size(); i != e; ++i)
-    NodesMap[Sels[i]] = Node;
+    SelectorMap[Sels[i]] = Node;
 
   return Node;
 }
@@ -281,7 +280,7 @@ void CompGraphBase::decomposeTrivialNodes() {
         SubNode->getReachables() = Node->getReachables();
         Nodes.push_back(SubNode);
         // Also update the node mapping.
-        NodesMap[Sel] = SubNode;
+        SelectorMap[Sel] = SubNode;
         ++NumDecomposed;
       }
 
@@ -384,7 +383,7 @@ void CompGraphBase::setCommonFIBenefit() {
     setCommonFIBenefit(*I);
 
   typedef std::map<VASTSelector*, CompGraphNode*>::iterator map_iterator;
-  for (map_iterator I = NodesMap.begin(), E = NodesMap.end(); I != E; ++I)
+  for (map_iterator I = SelectorMap.begin(), E = SelectorMap.end(); I != E; ++I)
     setCommonFIBenefit(I->first);
 }
 

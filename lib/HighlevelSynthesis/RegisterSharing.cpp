@@ -219,12 +219,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
 
   typedef VASTModule::seqop_iterator iterator;
 
-  // Due to CFG folding, there maybe more than one operation correspond to
-  // the same LLVM Instruction. These operations operate on the same set of
-  // registers, we need to avoid adding them more than once to the compatibility
-  // graph.
   // TODO: Use multimap.
-  std::map<DataflowInst, CompGraphNode*> VisitedInst;
 
   for (iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
     VASTSeqOp *Op = I;
@@ -237,12 +232,9 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
       continue;
     }
 
-    CompGraphNode *&N = VisitedInst[Op];
-
-    if (!N) {
-      N = G.addNewNode(Inst);
+    CompGraphNode *N = G.addNewNode(Inst);
+    if (N->isIntervalEmpty())
       setUpInterval(N);
-    }
 
     N->updateOrder(Inst->getSlot()->SlotNum);
   }

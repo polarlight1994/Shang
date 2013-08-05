@@ -132,6 +132,8 @@ public:
   SparseBitVector<> &getDefs() { return Defs; }
   SparseBitVector<> &getReachables() { return Reachables; }
 
+  bool isIntervalEmpty() const { return Defs.empty() && Reachables.empty(); }
+
   bool isNeighbor(CompGraphNode *RHS) const {
     return Preds.count(RHS) || Succs.count(RHS);
   }
@@ -203,8 +205,14 @@ protected:
   NodeTy Entry, Exit;
   // Nodes vector.
   NodeVecTy Nodes;
-  std::map<VASTSelector*, CompGraphNode*> NodesMap;
+  std::map<VASTSelector*, CompGraphNode*> SelectorMap;
   std::set<VASTSelector*> BoundSels;
+
+  // Due to CFG folding, there maybe more than one operation correspond to
+  // the same LLVM Instruction. These operations operate on the same set of
+  // registers, we need to avoid adding them more than once to the compatibility
+  // graph.
+  std::map<DataflowInst, CompGraphNode*> InstMap;
 
   // Try to bind the compatible edges together.
   std::map<EdgeType, EdgeVector> CompatibleEdges;
@@ -260,8 +268,8 @@ public:
   virtual ~CompGraphBase() {}
 
   CompGraphNode *lookupNode(VASTSelector *Sel) const {
-    std::map<VASTSelector*, NodeTy*>::const_iterator I = NodesMap.find(Sel);
-    return I != NodesMap.end() ? I->second : 0;
+    std::map<VASTSelector*, NodeTy*>::const_iterator I = SelectorMap.find(Sel);
+    return I != SelectorMap.end() ? I->second : 0;
   }
 
   NodeTy *addNewNode(VASTSeqInst *SeqInst);
