@@ -14,8 +14,8 @@
 // unit).
 //===----------------------------------------------------------------------===//
 
-#ifndef COMPATIBiLITY_GRAPH_H
-#define COMPATIBiLITY_GRAPH_H
+#ifndef COMPATIBILITY_GRAPH_H
+#define COMPATIBILITY_GRAPH_H
 
 #include "shang/FUInfo.h"
 
@@ -33,13 +33,18 @@
 namespace llvm {
 class BasicBlock;
 class VASTSelector;
+class VASTSeqInst;
+class VASTSeqValue;
 class DominatorTree;
+class CachedStrashTable;
 
-class CompGraphNodeBase : public ilist_node<CompGraphNodeBase> {
+class CompGraphNode : public ilist_node<CompGraphNode> {
 public:
   const unsigned Idx : 31;
   const unsigned IsTrivial : 1;
   const VFUs::FUTypes FUType;
+  const unsigned FUCost;
+
   struct Cost {
     int16_t ResourceCost;
     int16_t InterconnectCost;
@@ -50,12 +55,14 @@ private:
   BasicBlock *DomBlock;
   SparseBitVector<> Defs;
   SparseBitVector<> Reachables;
+  // The underlying data.
+  SmallVector<VASTSelector*, 3> Sels;
 
-  typedef SmallPtrSet<CompGraphNodeBase*, 8> NodeVecTy;
+  typedef SmallPtrSet<CompGraphNode*, 8> NodeVecTy;
   // Predecessors and Successors.
   NodeVecTy Preds, Succs;
 
-  typedef std::map<const CompGraphNodeBase*, float> CostVecTy;
+  typedef std::map<const CompGraphNode*, float> CostVecTy;
   CostVecTy SuccCosts;
 
   static bool intersects(const SparseBitVector<> &LHSBits,
@@ -64,21 +71,29 @@ private:
   }
   
   friend class CompGraphBase;
-protected:
-  virtual bool isCompatibleWithInternal(const CompGraphNodeBase *RHS) const {
-    return true;
-  }
 public:
 
-  CompGraphNodeBase()
-    : Idx(0), IsTrivial(true), FUType(VFUs::Trivial), Order(0), DomBlock(0) { }
+  CompGraphNode()
+    : Idx(0), IsTrivial(true), FUType(VFUs::Trivial), FUCost(0), Order(0),
+      DomBlock(0) { }
 
-  CompGraphNodeBase(VFUs::FUTypes FUType, unsigned Idx, BasicBlock *DomBlock,
-                    ArrayRef<VASTSelector*> Sels)
-    : Idx(Idx), IsTrivial(false), FUType(FUType), Order(UINT32_MAX),
-      DomBlock(DomBlock) {}
+  CompGraphNode(VFUs::FUTypes FUType, unsigned FUCost, unsigned Idx,
+                BasicBlock *DomBlock, ArrayRef<VASTSelector*> Sels)
+    : Idx(Idx), IsTrivial(false), FUType(FUType), FUCost(FUCost),
+      Order(UINT32_MAX), DomBlock(DomBlock), Sels(Sels.begin(), Sels.end()) {}
 
   BasicBlock *getDomBlock() const { return DomBlock; }
+
+  typedef SmallVectorImpl<VASTSelector*>::iterator sel_iterator;
+  sel_iterator begin() { return Sels.begin(); }
+  sel_iterator end() { return Sels.end(); }
+
+  typedef SmallVectorImpl<VASTSelector*>::const_iterator const_sel_iterator;
+  const_sel_iterator begin() const { return Sels.begin(); }
+  const_sel_iterator end() const { return Sels.end(); }
+
+  size_t size() const { return Sels.size(); }
+  VASTSelector *getSelector(unsigned Idx) const { return Sels[Idx]; }
 
   void updateOrder(unsigned NewOrder) {
     Order = std::min(Order, NewOrder);
@@ -109,27 +124,27 @@ public:
 
   unsigned degree() const { return num_succ() + num_pred(); }
 
-  void merge(const CompGraphNodeBase *RHS);
+  void merge(const CompGraphNode *RHS);
 
-  bool isCompatibleWith(const CompGraphNodeBase *RHS) const;
+  bool isCompatibleWith(const CompGraphNode *RHS) const;
 
   SparseBitVector<> &getDefs() { return Defs; }
   SparseBitVector<> &getReachables() { return Reachables; }
 
-  bool isNeighbor(CompGraphNodeBase *RHS) const {
+  bool isNeighbor(CompGraphNode *RHS) const {
     return Preds.count(RHS) || Succs.count(RHS);
   }
 
-  bool countSuccessor(CompGraphNodeBase *RHS) const {
+  bool countSuccessor(CompGraphNode *RHS) const {
     return Succs.count(RHS);
   }
 
-  float getCostTo(const CompGraphNodeBase *To) const;
+  float getCostTo(const CompGraphNode *To) const;
 
-  void setCost(const CompGraphNodeBase *To, float Cost);
+  void setCost(const CompGraphNode *To, float Cost);
 
   // Unlink the Succ from current node.
-  void unlinkSucc(CompGraphNodeBase *Succ) {
+  void unlinkSucc(CompGraphNode *Succ) {
     bool deleted = Succs.erase(Succ);
     assert(deleted && "Succ is not the successor of this!");
     SuccCosts.erase(Succ);
@@ -141,7 +156,7 @@ public:
   }
 
   // Unlink the Pred from current node.
-  void unlinkPred(CompGraphNodeBase *Pred) {
+  void unlinkPred(CompGraphNode *Pred) {
     bool deleted = Preds.erase(Pred);
     assert(deleted && "Pred is not the predecessor of this!");
 
@@ -161,8 +176,8 @@ public:
   }
 };
 
-template<> struct GraphTraits<CompGraphNodeBase*> {
-  typedef CompGraphNodeBase NodeType;
+template<> struct GraphTraits<CompGraphNode*> {
+  typedef CompGraphNode NodeType;
   typedef NodeType::iterator ChildIteratorType;
   static NodeType *getEntryNode(NodeType* N) { return N; }
   static inline ChildIteratorType child_begin(NodeType *N) {
@@ -176,8 +191,8 @@ template<> struct GraphTraits<CompGraphNodeBase*> {
 
 class CompGraphBase {
 public:
-  typedef CompGraphNodeBase NodeTy;
-  typedef std::map<CompGraphNodeBase*, unsigned> BindingMapTy;
+  typedef CompGraphNode NodeTy;
+  typedef std::map<CompGraphNode*, unsigned> BindingMapTy;
 
   typedef std::pair<NodeTy*, NodeTy*> EdgeType;
   typedef std::vector<EdgeType> EdgeVector;
@@ -187,11 +202,14 @@ protected:
   NodeTy Entry, Exit;
   // Nodes vector.
   NodeVecTy Nodes;
+  std::map<VASTSelector*, CompGraphNode*> NodesMap;
+  std::set<VASTSelector*> BoundSels;
 
   // Try to bind the compatible edges together.
   std::map<EdgeType, EdgeVector> CompatibleEdges;
 
   DominatorTree &DT;
+  CachedStrashTable &CST;
   BindingMapTy BindingMap;
 
   void deleteNode(NodeTy *N) {
@@ -208,21 +226,51 @@ protected:
     return I->second;
   }
 
+  virtual bool isCompatible(NodeTy *Src, NodeTy *Dst) const {
+    return true;
+  }
+
   virtual float computeCost(NodeTy *Src, unsigned SrcBinding,
                             NodeTy *Dst, unsigned DstBinding) const {
     return 0.0f;
   }
 
-  virtual void extractFaninNodes(NodeTy *N, std::set<NodeTy*> &Srcs) const {}
+  virtual float compuateCommonFIBenefit(VASTSelector *Sel) const {
+    return 0.0f;
+  }
 
+  float computeIncreasedMuxPorts(VASTSelector *Src, VASTSelector *Dst) const;
+  float computeIncreasedMuxPorts(CompGraphNode *Src, CompGraphNode *Dst) const;
+  float compuateSavedResource(CompGraphNode *Src, CompGraphNode *Dst) const;
+
+  void extractFaninNodes(NodeTy *N, std::set<NodeTy*> &Fanins) const;
+  void extractFaninNodes(VASTSelector *Sel,
+                         std::set<CompGraphNode*> &Fanins) const;
+  void translateToCompNodes(std::set<VASTSeqValue*> &SVSet,
+                            std::set<CompGraphNode*> &Fanins) const;
   void
   collectCompatibleEdges(NodeTy *Dst, NodeTy *Src, std::set<NodeTy*> &SrcFIs);
 public:
-  explicit CompGraphBase(DominatorTree &DT) : Entry(), Exit(), DT(DT) {
+  explicit CompGraphBase(DominatorTree &DT, CachedStrashTable &CST)
+    : Entry(), Exit(), DT(DT), CST(CST) {
     initalizeDTDFSOrder();
   }
 
   virtual ~CompGraphBase() {}
+
+  CompGraphNode *lookupNode(VASTSelector *Sel) const {
+    std::map<VASTSelector*, NodeTy*>::const_iterator I = NodesMap.find(Sel);
+    return I != NodesMap.end() ? I->second : 0;
+  }
+
+  NodeTy *addNewNode(VASTSeqInst *SeqInst);
+
+  void addBoundSels(VASTSelector *Sel) {
+    BoundSels.insert(Sel);
+  }
+
+  void setCommonFIBenefit();
+  void setCommonFIBenefit(VASTSelector *Sel);
 
   const NodeTy *getEntry() const { return &Entry; }
   NodeTy *getEntry() { return &Entry; }
@@ -244,11 +292,16 @@ public:
     deleteNode(From);
   }
 
+  void decomposeTrivialNodes();
   void computeCompatibility();
   void compuateEdgeCosts();
   void fixTransitive();
 
   unsigned performBinding();
+
+  virtual float getEdgeConsistencyBenefit(EdgeType Edge, EdgeType FIEdge) const {
+    return 0.0f;
+  }
 
   typedef BindingMapTy::const_iterator binding_iterator;
   binding_iterator binding_begin() const {
@@ -259,7 +312,7 @@ public:
     return BindingMap.end();
   }
 
-  unsigned getBinding(CompGraphNodeBase *N) const {
+  unsigned getBinding(CompGraphNode *N) const {
     binding_iterator I = BindingMap.find(N);
     return I == BindingMap.end() ? 0 : I->second;
   }
@@ -272,15 +325,10 @@ public:
   comp_edge_iterator comp_edge_begin() const { return CompatibleEdges.begin(); }
   comp_edge_iterator comp_edge_end() const { return CompatibleEdges.end(); }
 
-  virtual
-  float getEdgeConsistencyBenefit(EdgeType Edge, EdgeType FIEdge) const {
-    return 0.0f;
-  }
-
-  bool isBefore(CompGraphNodeBase *Src, CompGraphNodeBase *Dst);
+  bool isBefore(CompGraphNode *Src, CompGraphNode *Dst);
 
   // Make the edge with default weight, we will udate the weight later.
-  void makeEdge(CompGraphNodeBase *Src, CompGraphNodeBase *Dst) {
+  void makeEdge(CompGraphNode *Src, CompGraphNode *Dst) {
     // Make sure source is earlier than destination.
     if (!Src->IsTrivial && !Dst->IsTrivial && !isBefore(Src, Dst))
       std::swap(Dst, Src);
@@ -292,7 +340,7 @@ public:
 };
 
 template <> struct GraphTraits<CompGraphBase*>
-  : public GraphTraits<CompGraphNodeBase*> {
+  : public GraphTraits<CompGraphNode*> {
 
   typedef CompGraphBase::iterator nodes_iterator;
   static nodes_iterator nodes_begin(CompGraphBase *G) {
