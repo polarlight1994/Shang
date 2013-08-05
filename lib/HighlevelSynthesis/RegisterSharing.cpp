@@ -18,7 +18,6 @@
 //===----------------------------------------------------------------------===//
 #include "SeqLiveVariables.h"
 #include "CompGraph.h"
-#include "Dataflow.h"
 
 #include "shang/Strash.h"
 #include "shang/VASTMemoryPort.h"

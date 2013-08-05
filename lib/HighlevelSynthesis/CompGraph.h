@@ -17,6 +17,7 @@
 #ifndef COMPATIBILITY_GRAPH_H
 #define COMPATIBILITY_GRAPH_H
 
+#include "Dataflow.h"
 #include "shang/FUInfo.h"
 
 #include "llvm/ADT/ilist_node.h"
@@ -44,6 +45,7 @@ public:
   const unsigned IsTrivial : 1;
   const VFUs::FUTypes FUType;
   const unsigned FUCost;
+  const DataflowInst Inst;
 
   struct Cost {
     int16_t ResourceCost;
@@ -52,7 +54,6 @@ public:
   };
 private:
   unsigned Order;
-  BasicBlock *DomBlock;
   SparseBitVector<> Defs;
   SparseBitVector<> Reachables;
   // The underlying data.
@@ -75,14 +76,14 @@ public:
 
   CompGraphNode()
     : Idx(0), IsTrivial(true), FUType(VFUs::Trivial), FUCost(0), Order(0),
-      DomBlock(0) { }
+      Inst() { }
 
   CompGraphNode(VFUs::FUTypes FUType, unsigned FUCost, unsigned Idx,
-                BasicBlock *DomBlock, ArrayRef<VASTSelector*> Sels)
+                DataflowInst Inst, ArrayRef<VASTSelector*> Sels)
     : Idx(Idx), IsTrivial(false), FUType(FUType), FUCost(FUCost),
-      Order(UINT32_MAX), DomBlock(DomBlock), Sels(Sels.begin(), Sels.end()) {}
+      Order(UINT32_MAX), Inst(Inst), Sels(Sels.begin(), Sels.end()) {}
 
-  BasicBlock *getDomBlock() const { return DomBlock; }
+  BasicBlock *getDomBlock() const;
 
   typedef SmallVectorImpl<VASTSelector*>::iterator sel_iterator;
   sel_iterator begin() { return Sels.begin(); }

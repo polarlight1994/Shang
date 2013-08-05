@@ -50,8 +50,8 @@ CompGraphNode::setCost(const CompGraphNode *To, float Cost) {
 
 void CompGraphNode::print(raw_ostream &OS) const {
   OS << "LI" << Idx << " order " << Order;
-  if (DomBlock)
-    OS << ' ' << DomBlock->getName() << ' ';
+  if (Instruction *I = Inst)
+    OS << ' ' << *I << ' ';
   OS << '\n';
 
   OS.indent(2) << "Defs: ";
@@ -91,6 +91,10 @@ bool CompGraphNode::isCompatibleWith(const CompGraphNode *RHS) const {
   return true;
 }
 
+BasicBlock *CompGraphNode::getDomBlock() const {
+  return Inst->getParent();
+}
+
 void CompGraphBase::initalizeDTDFSOrder() {
   typedef df_iterator<DomTreeNode*> iterator;
   DomTreeNode *Root = DT.getRootNode();
@@ -102,8 +106,8 @@ void CompGraphBase::initalizeDTDFSOrder() {
 bool
 CompGraphBase::isBefore(CompGraphNode *Src, CompGraphNode *Dst) {
   assert(!Src->IsTrivial && !Dst->IsTrivial && "Unexpected trivial node!");
-  if (Src->DomBlock != Dst->DomBlock)
-    return getDTDFSOrder(Src->DomBlock) < getDTDFSOrder(Dst->DomBlock);
+  if (Src->getDomBlock() != Dst->getDomBlock())
+    return getDTDFSOrder(Src->getDomBlock()) < getDTDFSOrder(Dst->getDomBlock());
 
   if (Src->Order < Dst->Order)
     return true;
@@ -251,8 +255,8 @@ CompGraphNode *CompGraphBase::addNewNode(VASTSeqInst *SeqInst) {
   unsigned FUCost = SeqInst->getFUCost();
 
   // Create the node if it not exists yet.
-  BasicBlock *DomBlock = cast<Instruction>(SeqInst->getValue())->getParent();
-  NodeTy *Node = new NodeTy(FUType, FUCost, Nodes.size() + 1, DomBlock, Sels);  
+  DataflowInst Inst(SeqInst);
+  NodeTy *Node = new NodeTy(FUType, FUCost, Nodes.size() + 1, Inst, Sels);  
   Nodes.push_back(Node);
 
   // Build the node mapping.
@@ -270,8 +274,8 @@ void CompGraphBase::decomposeTrivialNodes() {
       typedef NodeTy::sel_iterator sel_iterator;
       for (sel_iterator I = Node->begin(), E = Node->end(); I != E; ++I) {
         VASTSelector *Sel = *I;
-        NodeTy *SubNode = new NodeTy(VFUs::Trivial, 0, Nodes.size(),
-                                     Node->getDomBlock(), Sel);
+        NodeTy *SubNode
+          = new NodeTy(VFUs::Trivial, 0, Nodes.size(), Node->Inst, Sel);
         // Copy the live-interval from the parent node.
         SubNode->getDefs() = Node->getDefs();
         SubNode->getReachables() = Node->getReachables();
