@@ -485,7 +485,7 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
     } else {
       // We will build the dependency from the launch SU (to launch SU) for
       // chaining candidates.
-      if (IsChainingEnableOnEdge)
+      if (IsChainingEnableOnEdge && getLaunchSU(Src))
         return;
 
       // Get the latch SU for the latch operation.
@@ -548,7 +548,8 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
     float delay = DF->getDelayFromLaunch(Inst);
     Latency = std::max<unsigned>(1, ceil(delay));
     // Set the correct cycle from Launch now.
-    SeqInst->setCyclesFromLaunch(Latency);
+    if (LaunchU)
+      SeqInst->setCyclesFromLaunch(Latency);
 
     // Also build the flow dependencies to the latch SU to setup the upper bound
     // of combination delay in case of (single cycle) chaining.
@@ -556,14 +557,19 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   }
 
   // Simply build the dependencies from the launch instruction.
-  U->addDep(LaunchU, VASTDep::CreateFixTimingConstraint(Latency));
+  if (LaunchU)
+    U->addDep(LaunchU, VASTDep::CreateFixTimingConstraint(Latency));
 }
 
 VASTSchedUnit *VASTScheduling::getLaunchSU(Value *V) {
   ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[V]);
-  assert(SUs.size() >= 1 && "Launching SU not found!");
+  if (SUs.empty())
+    return 0;
+
   VASTSchedUnit *LaunchU = SUs.front();
-  assert(LaunchU->isLaunch() && "Bad SU type!");
+  if (!LaunchU->isLaunch())
+    return 0;
+
   return LaunchU;
 }
 

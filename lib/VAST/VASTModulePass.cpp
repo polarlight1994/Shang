@@ -890,6 +890,7 @@ bool VASTModuleBuilder::buildBinaryOperation(BinaryOperator &I) {
   SmallVector<VASTValPtr, 3> Ops;
   Ops.push_back(getAsOperandImpl(I.getOperand(0)));
   Ops.push_back(getAsOperandImpl(I.getOperand(1)));
+  bool BuildLaunch = true;
 
   // Translate the LLVM instruction opcode to VASTExpr opcode.
   switch (I.getOpcode()) {
@@ -919,21 +920,24 @@ bool VASTModuleBuilder::buildBinaryOperation(BinaryOperator &I) {
   case Instruction::Xor:
     if (EnalbeBitlevelOpt && (isa<VASTImmPtr>(Ops[0]) || isa<VASTImmPtr>(Ops[1])))
       return false;
+    BuildLaunch = false;
     break;
   default: return false;
   }
 
   BasicBlock *ParentBB = I.getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
-  VASTSeqInst *Op
-    = VM->lauchInst(Slot, VASTImmediate::True, Ops.size(), &I, false);
-  for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
-    VASTValPtr V = Ops[i];
-    VASTRegister *Operand = createOperandRegister(Op, I, i, V->getBitWidth());
-    VASTSeqValue *SV = VM->createSeqValue(Operand->getSelector(), i, &I);
-    Op->addSrc(V, i, SV);
-    // Update the operand to the registered version.
-    Ops[i] = SV;
+  if (BuildLaunch) {
+    VASTSeqInst *Op
+      = VM->lauchInst(Slot, VASTImmediate::True, Ops.size(), &I, false);
+    for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
+      VASTValPtr V = Ops[i];
+      VASTRegister *Operand = createOperandRegister(Op, I, i, V->getBitWidth());
+      VASTSeqValue *SV = VM->createSeqValue(Operand->getSelector(), i, &I);
+      Op->addSrc(V, i, SV);
+      // Update the operand to the registered version.
+      Ops[i] = SV;
+    }
   }
 
   // FIXME: Use the latency of the functional unit!
