@@ -103,9 +103,8 @@ public:
 
   void print(raw_ostream &OS) const;
 private:
-  typedef ArrayRef<VASTSlot::EdgePtr> PathVector;
-  void handleSlot(VASTSlot *S, PathVector PathFromEntry);
-  void handleUse(VASTSeqValue *Def, VASTSlot *UseSlot, PathVector PathFromEntry);
+  void handleSlot(VASTSlot *S);
+  void handleUse(VASTSeqValue *Def, VASTSlot *UseSlot);
   bool dominates(BasicBlock *BB, VASTSlot *S) const;
 
   // The value information for each definitions. Please note that the

@@ -208,30 +208,26 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
   assert(IdleSubGrp && "Idle subgroup does not exist?");
 
   std::set<VASTSlot*> Visited;
-  std::vector<VASTSlot::EdgePtr> STGPath;
-  std::vector<VASTSlot::succ_iterator> ChildItStack;
+  std::vector<std::pair<VASTSlot*, VASTSlot::succ_iterator> > WorkStack;
 
-  // Start from the Idle subgroup.
-  STGPath.push_back(VASTSlot::EdgePtr(IdleSubGrp, VASTSlot::SubGrp));
   // Visit the child of the entry slot: Idle Group.
-  handleSlot(Entry, STGPath);
-  STGPath.push_back(VASTSlot::EdgePtr(Entry, VASTSlot::Sucessor));
-  ChildItStack.push_back(STGPath.back()->succ_begin());
+  handleSlot(Entry);
+  WorkStack.push_back(std::make_pair(Entry, Entry->succ_begin()));
 
   // Prevent the entry node from being visited twice.
   Visited.insert(Entry);
 
-  while (STGPath.size() > 1) {
-    VASTSlot *CurSlot = STGPath.back();
-    VASTSlot::succ_iterator It = ChildItStack.back()++;
+  while (!WorkStack.empty()) {
+    VASTSlot *CurSlot = WorkStack.back().first;
+    VASTSlot::succ_iterator It = WorkStack.back().second;
 
     if (It == CurSlot->succ_end()) {
-      STGPath.pop_back();
-      ChildItStack.pop_back();
+      WorkStack.pop_back();
       continue;
     }
 
     VASTSlot::EdgePtr Edge = *It;
+    ++WorkStack.back().second;
 
     // Do not go through the implicit flow, in this case we may missed the legal
     // definition of a use.
@@ -244,10 +240,9 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
     if (!Visited.insert(ChildNode).second)  continue;
 
     // Visit the slots in depth-first order.
-    handleSlot(ChildNode, STGPath);
+    handleSlot(ChildNode);
 
-    STGPath.push_back(Edge);
-    ChildItStack.push_back(STGPath.back()->succ_begin());
+    WorkStack.push_back(std::make_pair(ChildNode, ChildNode->succ_begin()));
   }
 
 #ifndef NDEBUG
@@ -294,7 +289,7 @@ static void setLandingSlots(VASTSlot *S, SparseBitVector<> &Landings) {
   ::dump(Landings, dbgs()));
 }
 
-void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
+void SeqLiveVariables::handleSlot(VASTSlot *S) {
   std::set<VASTSeqValue*> ReadAtSlot;
 
   typedef VASTSlot::const_op_iterator op_iterator;
@@ -323,7 +318,7 @@ void SeqLiveVariables::handleSlot(VASTSlot *S, PathVector PathFromEntry) {
     if (V->fanin_empty()) continue;
 
     // Ignore the placeholder for node without timing information.
-    handleUse(V, S, PathFromEntry);
+    handleUse(V, S);
   }
 }
 
@@ -369,8 +364,7 @@ bool SeqLiveVariables::dominates(BasicBlock *BB, VASTSlot *S) const {
   return DT->dominates(BB, S->getParentState()->getParent());
 }
 
-void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
-                                 PathVector PathFromEntry) {
+void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot) {
   // The timing information is not avaliable.
   // if (Def->empty()) return;
 
@@ -415,9 +409,10 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
   // The value not killed at define slots anymore.
   VI->Kills.intersectWithComplement(VI->Defs);
 
+  // Incase the current slot also a define slot, the current slot become a
+  // defkill.
   if (VI->Defs.test(UseSlot->SlotNum))
     VI->DefKills.set(UseSlot->SlotNum);
-  
 
   typedef VASTSlot::pred_iterator ChildIt;
   std::vector<std::pair<VASTSlot*, ChildIt> > VisitStack;
@@ -445,7 +440,7 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
     // Is the value defined in this slot?
     if (VI->Defs.test(ChildNode->SlotNum)) {
       // The current slot is defined, but also killed!
-      if (ChildNode == UseSlot) VI->DefKills.set(UseSlot->SlotNum);
+      if (ChildNode == UseSlot) VI->DefKills.set(ChildNode->SlotNum);
 
       // Do not move across the define slot.
       continue;
