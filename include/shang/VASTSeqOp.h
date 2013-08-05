@@ -14,6 +14,7 @@
 #ifndef SHANG_VAST_SEQ_OP_H
 #define SHANG_VAST_SEQ_OP_H
 
+#include "shang/FUInfo.h"
 #include "shang/VASTNodeBases.h"
 #include "llvm/IR/Value.h"
 #include "llvm/ADT/PointerUnion.h"
@@ -157,6 +158,10 @@ public:
 
   bool isLatch() const { return IsLatch; }
   bool isLaunch() const { return !IsLatch; }
+
+  VFUs::FUTypes getFUType() const;
+  unsigned getFUCost() const;
+  bool isBindingCandidate() const;
 
   unsigned getCyclesFromLaunch() const {
     assert(isLatch() && "Call getCyclesFromLaunch on the wrong type!");

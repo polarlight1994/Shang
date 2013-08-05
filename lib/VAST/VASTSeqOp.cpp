@@ -243,6 +243,65 @@ void VASTSeqInst::print(raw_ostream &OS) const {
   OS << '\n';
 }
 
+VFUs::FUTypes VASTSeqInst::getFUType() const {
+  if (!isLaunch())
+    return VFUs::Trivial;
+
+  Instruction *Inst = dyn_cast<Instruction>(getValue());
+  if (Inst == 0)
+    return VFUs::Trivial;
+
+  switch (Inst->getOpcode()) {
+  default: break;
+  case Instruction::Add:
+  case Instruction::Sub:
+    if (getNumDefs() == 3)
+      return VFUs::AddSub;
+    break;
+  case Instruction::Mul:
+    if (getNumDefs() == 2)
+      return VFUs::Mult;
+    break;
+  case Instruction::Shl:
+  case Instruction::AShr:
+  case Instruction::LShr:
+    if (getNumDefs() == 2)
+      return VFUs::Shift;
+    break;
+  case Instruction::ICmp:
+    if (getNumDefs() == 2)
+      return VFUs::ICmp;
+    break;
+  case Instruction::Load:
+  case Instruction::Store:
+    return VFUs::MemoryBus;
+  }
+
+  return VFUs::Trivial;
+}
+
+unsigned VASTSeqInst::getFUCost() const {
+  unsigned BitWidth = const_cast<VASTSeqInst*>(this)->getSrc(0)->getBitWidth();
+  switch (getFUType()) {
+  case VFUs::AddSub:
+    return getFUDesc<VFUAddSub>()->lookupCost(std::min(64u, BitWidth));
+  case VFUs::ICmp:
+    return getFUDesc<VFUICmp>()->lookupCost(BitWidth);
+  case VFUs::Mult:
+    return getFUDesc<VFUMult>()->lookupCost(BitWidth);
+  case VFUs::Shift:
+    return getFUDesc<VFUShift>()->lookupCost(std::min(64u, BitWidth));
+  default:
+    break;
+  }
+
+  return 0;
+}
+
+bool VASTSeqInst::isBindingCandidate() const {
+  return getNumDefs() == num_srcs();
+}
+
 //----------------------------------------------------------------------------//
 VASTSeqCtrlOp::VASTSeqCtrlOp(VASTSlot *S, bool UseSlotActive)
   : VASTSeqOp(vastSeqCtrlOp, S, UseSlotActive, 1) {}
