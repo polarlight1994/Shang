@@ -248,6 +248,12 @@ protected:
     return 0.0f;
   }
 
+  virtual CompGraphNode *createNode(VFUs::FUTypes FUType, unsigned FUCost,
+                                    unsigned Idx, DataflowInst Inst,
+                                    ArrayRef<VASTSelector*> Sels) const {
+    return new CompGraphNode(FUType, FUCost, Idx, Inst, Sels);
+  }
+
   float computeIncreasedMuxPorts(VASTSelector *Src, VASTSelector *Dst) const;
   float computeIncreasedMuxPorts(CompGraphNode *Src, CompGraphNode *Dst) const;
   float compuateSavedResource(CompGraphNode *Src, CompGraphNode *Dst) const;
@@ -324,6 +330,18 @@ public:
   unsigned getBinding(CompGraphNode *N) const {
     binding_iterator I = BindingMap.find(N);
     return I == BindingMap.end() ? 0 : I->second;
+  }
+
+  CompGraphNode *getNode(DataflowInst Inst) const {
+    std::map<DataflowInst, CompGraphNode*>::const_iterator I = InstMap.find(Inst);
+    return I == InstMap.end() ? 0 : I->second;
+  }
+
+  unsigned getBinding(DataflowInst Inst) const {
+    if (CompGraphNode *N = getNode(Inst))
+      return getBinding(N);
+
+    return 0;
   }
 
   bool hasbinding() const { return !BindingMap.empty(); }

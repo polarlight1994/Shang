@@ -244,6 +244,11 @@ void CompGraphBase::compuateEdgeCosts() {
 
 CompGraphNode *CompGraphBase::addNewNode(VASTSeqInst *SeqInst) {
   assert(SeqInst && "Unexpected null pointer pass to GetOrCreateNode!");
+  DataflowInst Inst(SeqInst);
+
+  CompGraphNode *&Node = InstMap[Inst];
+  if (Node)
+    return Node;
 
   SmallVector<VASTSelector*, 4> Sels;
   assert(SeqInst->getNumDefs() == SeqInst->num_srcs()
@@ -255,7 +260,7 @@ CompGraphNode *CompGraphBase::addNewNode(VASTSeqInst *SeqInst) {
   unsigned FUCost = SeqInst->getFUCost();
 
   // Create the node if it not exists yet.
-  Node = new NodeTy(FUType, FUCost, Nodes.size() + 1, Inst, Sels);
+  Node = createNode(FUType, FUCost, Nodes.size() + 1, Inst, Sels);
   Nodes.push_back(Node);
 
   // Build the node mapping.
@@ -478,7 +483,16 @@ template<> struct DOTGraphTraits<CompGraphBase*> : public DefaultDOTGraphTraits{
   }
 
   std::string getNodeLabel(const NodeTy *Node, const GraphTy *Graph) {
-    return utostr_32(Node->Idx);
+    SmallString<32> S;
+    {
+      raw_svector_ostream SS(S);
+      SS << Node->Idx << ' ';
+      if (Node->Inst.IsLauch()) {
+        SS << Node->Inst->getOpcodeName();
+      }
+    }
+
+    return S.str();
   }
 
   static std::string getNodeAttributes(const NodeTy *Node,
