@@ -18,6 +18,7 @@
 //===----------------------------------------------------------------------===//
 #include "SeqLiveVariables.h"
 #include "CompGraph.h"
+#include "PreSchedBinding.h"
 
 #include "shang/Strash.h"
 #include "shang/VASTMemoryPort.h"
@@ -36,6 +37,9 @@
 
 using namespace llvm;
 STATISTIC(NumRegMerge, "Number of register pairs merged");
+STATISTIC(NumInconsistent, "Number of operation/variable pairs that do not have "
+                           "the same compatibility indicated by the schedule "
+                           "independent binding");
 
 typedef std::map<unsigned, SparseBitVector<> > OverlappedMapTy;
 
@@ -115,6 +119,7 @@ struct RegisterSharing : public VASTModulePass {
     //AU.addPreserved<SeqLiveVariables>();
 
     AU.addRequired<CachedStrashTable>();
+    AU.addRequired<PreSchedBinding>();
   }
 
   void initializeOverlappedSlots(VASTModule &VM);
@@ -149,6 +154,10 @@ struct RegisterSharing : public VASTModulePass {
   }
 
   bool runOnVASTModule(VASTModule &VM);
+
+  void checkConsistencyAgainstPSB(VASTCompGraph &G);
+  void checkConsistencyAgainstPSB(ArrayRef<PSBCompNode*> Cluster,
+                                  VASTCompGraph &G);
 
   bool performRegisterSharing();
   void mergeLI(CompGraphNode *From, CompGraphNode *To, VASTModule &VM);
@@ -210,6 +219,38 @@ void RegisterSharing::initializeOverlappedSlots(VASTModule &VM) {
   }
 }
 
+void RegisterSharing::checkConsistencyAgainstPSB(ArrayRef<PSBCompNode*> Cluster,
+                                                 VASTCompGraph &G) {
+  for (unsigned i = 0; i < Cluster.size(); ++i) {
+    CompGraphNode *Src = G.getNode(Cluster[i]->Inst);
+    // A node maybe eliminated by CFG folding or chaining.
+    if (Src == 0)
+      continue;
+
+    for (unsigned j = i + 1; j < Cluster.size(); ++j) {
+      CompGraphNode *Dst = G.getNode(Cluster[j]->Inst);
+      if (Dst == 0)
+        continue;
+
+      // TODO: Add reduce the cost between src and dst to produce a consistent
+      // binding?
+      if (Src->isNeighbor(Dst))
+        continue;
+
+      ++NumInconsistent;
+    }
+  }
+}
+
+void RegisterSharing::checkConsistencyAgainstPSB(VASTCompGraph &G) {
+  PreSchedBinding &PSB = getAnalysis<PreSchedBinding>();
+  typedef PreSchedBinding::cluster_iterator cluster_iterator;
+  for (cluster_iterator I = PSB.cluster_begin(), E = PSB.cluster_end();
+       I != E; ++I) {
+    checkConsistencyAgainstPSB(*I, G);
+  }
+}
+
 bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   LVS = &getAnalysis<SeqLiveVariables>();
 
@@ -256,7 +297,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   typedef VASTCompGraph::binding_iterator binding_iterator;
   for (binding_iterator I = G.binding_begin(), E = G.binding_end(); I != E; ++I)
   {
-    CompGraphNode *N = static_cast<CompGraphNode*>(I->first);
+    CompGraphNode *N = I->first;
     unsigned FUIdx = I->second - 1;
 
     CompGraphNode *&FU = FUMap[FUIdx];
