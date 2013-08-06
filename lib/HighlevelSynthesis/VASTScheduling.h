@@ -130,8 +130,9 @@ public:
   };
 private:
   const Type T : 4;
-  // TODO: typedef SlotType
-  uint32_t Schedule : 28;
+  // Initial Ineterval of the functional unit.
+  uint32_t II : 8;
+  uint32_t Schedule : 20;
   uint32_t InstIdx;
 
   // EdgeBundle allow us add/remove edges between VASTSUnit more easily.
@@ -239,6 +240,12 @@ public:
   VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
                 BasicBlock *BB, VASTSeqOp *SeqOp);
   VASTSchedUnit(unsigned InstIdx, BasicBlock *BB, Type T);
+
+  void setII(unsigned II) {
+    this->II = std::max(this->II, II);
+  }
+
+  unsigned getII() const { return II; }
 
   bool isEntry() const { return T == Entry; }
   bool isExit() const { return T == Exit; }

@@ -41,14 +41,14 @@ using namespace llvm;
 //===----------------------------------------------------------------------===//
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
                              BasicBlock *BB, VASTSeqOp *SeqOp)
-  : T(IsLatch ? Latch : Launch), Schedule(0),  InstIdx(InstIdx), Inst(Inst),
+  : T(IsLatch ? Latch : Launch), II(1), Schedule(0), InstIdx(InstIdx), Inst(Inst),
     BB(BB), SeqOp(SeqOp) {}
 
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, BasicBlock *BB, Type T)
-  : T(T), Schedule(0),  InstIdx(InstIdx), Inst(0), BB(BB), SeqOp(0) {}
+  : T(T), II(0), Schedule(0),  InstIdx(InstIdx), Inst(0), BB(BB), SeqOp(0) {}
 
 VASTSchedUnit::VASTSchedUnit(Type T, unsigned InstIdx, BasicBlock *Parent)
-  : T(T), Schedule(0), InstIdx(InstIdx), Inst(0), BB(Parent), SeqOp(0)
+  : T(T), II(1), Schedule(0), InstIdx(InstIdx), Inst(0), BB(Parent), SeqOp(0)
 {}
 
 bool VASTSchedUnit::EdgeBundle::isLegalToAddFixTimngEdge(int Latency) const {
@@ -557,8 +557,10 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   }
 
   // Simply build the dependencies from the launch instruction.
-  if (LaunchU)
+  if (LaunchU) {
     U->addDep(LaunchU, VASTDep::CreateFixTimingConstraint(Latency));
+    LaunchU->setII(Latency);
+  }
 }
 
 VASTSchedUnit *VASTScheduling::getLaunchSU(Value *V) {
