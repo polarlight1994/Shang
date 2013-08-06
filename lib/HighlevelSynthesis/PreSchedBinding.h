@@ -39,42 +39,16 @@ public:
   kill_iterator kill_begin() const { return KillOps.begin(); }
   kill_iterator kill_end() const { return KillOps.end(); }
 
-  void increaseSchedulingCost(PSBCompNode *Succ);
-  static void IncreaseSchedulingCost(PSBCompNode *LHS, PSBCompNode *RHS);
+  void increaseCost(PSBCompNode *Succ, float Cost);
 };
 
-class PSBCompGraph : public CompGraphBase {
-  bool isCompatible(CompGraphNode *Src, CompGraphNode *Dst) const;
-public:
-  PSBCompGraph(DominatorTree &DT, CachedStrashTable &CST)
-    : CompGraphBase(DT, CST) {}
-
-  CompGraphNode *createNode(VFUs::FUTypes FUType, unsigned FUCost, unsigned Idx,
-                            DataflowInst Inst, ArrayRef<VASTSelector*> Sels)
-                            const {
-    return new PSBCompNode(FUType, FUCost, Idx, Inst, Sels);
-  }
-
-  float compuateCommonFIBenefit(VASTSelector *Sel) const;
-
-  float getEdgeConsistencyBenefit(EdgeType Edge, EdgeType FIEdge) const;
-
-  float computeCost(CompGraphNode *Src, unsigned SrcBinding,
-                    CompGraphNode *Dst, unsigned DstBinding) const;
-};
 
 class PreSchedBinding : public VASTModulePass {
-  PSBCompGraph *PSBCG;
-  typedef std::vector<std::vector<PSBCompNode*> > ClusterVectors;
-  ClusterVectors Clusters;
+  CompGraphBase *PSBCG;
 public:
   PreSchedBinding();
 
-  typedef ClusterVectors::const_iterator cluster_iterator;
-  cluster_iterator cluster_begin() const { return Clusters.begin(); }
-  cluster_iterator cluster_end() const { return Clusters.end(); }
-
-  void performBinding();
+  CompGraphBase *operator->() const { return PSBCG; }
 
   static char ID;
   void getAnalysisUsage(AnalysisUsage &AU) const;

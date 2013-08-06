@@ -221,7 +221,6 @@ void CompGraphBase::compuateEdgeCosts() {
   std::set<NodeTy*> SrcFIs;
   for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
     NodeTy *Src = I;
-    unsigned SrcBinding = getBinding(Src);
 
     SrcFIs.clear();
     extractFaninNodes(Src, SrcFIs);
@@ -233,8 +232,7 @@ void CompGraphBase::compuateEdgeCosts() {
       if (Dst->IsTrivial)
         continue;
 
-      unsigned DstBinding = getBinding(Dst);
-      Src->setCost(Dst, computeCost(Src, SrcBinding, Dst, DstBinding));
+      Src->setCost(Dst, computeCost(Src, Dst));
 
       if (!SrcFIs.empty())
         collectCompatibleEdges(Dst, Src, SrcFIs);
@@ -443,10 +441,6 @@ template<> struct DOTGraphTraits<CompGraphBase*> : public DefaultDOTGraphTraits{
 
   static std::string getEdgeAttributes(const NodeTy *Node, NodeIterator I,
                                        GraphTy *G) {
-    if (unsigned FUIdx = G->getBinding(const_cast<NodeTy*>(Node)))
-      if (G->getBinding(*I) == FUIdx)
-        return "color=blue";
-
     return "style=dashed";
   }
 
@@ -455,28 +449,28 @@ template<> struct DOTGraphTraits<CompGraphBase*> : public DefaultDOTGraphTraits{
                                      GraphWriter<CompGraphBase*> &GW) {
     if (!G->hasbinding()) return;
 
-    std::map<unsigned, std::vector<NodeTy*> > Bindings;
-    typedef CompGraphBase::binding_iterator binding_iterator;
-    for (binding_iterator I = G->binding_begin(), E = G->binding_end();
-         I != E; ++I)
-      Bindings[I->second].push_back(I->first);
+    unsigned ClusterNum = 0;
 
     raw_ostream &O = GW.getOStream();
-    typedef std::map<unsigned, std::vector<NodeTy*> >::iterator cluster_iterator;
-    for (cluster_iterator I = Bindings.begin(), E = Bindings.end(); I != E; ++I)
-    {
-      ArrayRef<NodeTy*> Nodes(I->second);
+    typedef CompGraphBase::cluster_iterator cluster_iterator;
+    for (cluster_iterator I = G->cluster_begin(), E = G->cluster_end();
+         I != E; ++I) {
+      ArrayRef<CompGraphBase::EdgeType> Nodes(*I);
 
       if (Nodes.size() == 1)
         continue;
 
-      O.indent(2) << "subgraph cluster_" << I->first << " {\n";
-      O.indent(4) << "label = \"" << I->first << "\";\n";
+      O.indent(2) << "subgraph cluster_" << ClusterNum << " {\n";
+      O.indent(4) << "label = \"" << ClusterNum << "\";\n";
+      ++ClusterNum;
 
       O.indent(4) << "style = solid;\n";
+      O.indent(4) << "Node" << static_cast<const void*>(Nodes.front().first)
+                  << ";\n";
 
       for (unsigned i = 0; i < Nodes.size(); ++i)
-        O.indent(4) << "Node" << static_cast<const void*>(Nodes[i]) << ";\n";
+        O.indent(4) << "Node" << static_cast<const void*>(Nodes[i].second)
+                    << ";\n";
 
       O.indent(2) << "}\n";
     }
@@ -543,8 +537,12 @@ public:
   void setCost();
   void applySolveSettings();
   bool solveMinCostFlow();
-  typedef CompGraphBase::BindingMapTy BindingMapTy;
-  unsigned buildBinging(unsigned TotalRows, BindingMapTy &BindingMap);
+
+  typedef CompGraphBase::ClusterType ClusterType;
+  typedef CompGraphBase::ClusterVectors ClusterVectors;
+  unsigned buildBinging(ClusterVectors &Clusters);
+  void buildBinging(CompGraphNode *Src, ClusterType &Cluster);
+
   bool hasFlow(EdgeType E, unsigned TotalRows) const {
     Edge2IdxMapTy::const_iterator I = Edge2IdxMap.find(E);
     assert(I != Edge2IdxMap.end() && "Edge ID does not existed!");
@@ -857,7 +855,7 @@ void MinCostFlowSolver::applySolveSettings() {
 }
 
 bool MinCostFlowSolver::solveMinCostFlow() {
-  write_lp(lp, "log.lp");
+  DEBUG(write_lp(lp, "log.lp"));
 
   int result = solve(lp);
 
@@ -886,13 +884,11 @@ bool MinCostFlowSolver::solveMinCostFlow() {
   return true;
 }
 
-unsigned
-MinCostFlowSolver::buildBinging(unsigned TotalRows, BindingMapTy &BindingMap) {
-  BindingMap.clear();
+unsigned MinCostFlowSolver::buildBinging(ClusterVectors &Clusters) {
+  unsigned TotalRows = getNumRows();
+  Clusters.clear();
 
-  unsigned FUIdx = 0;
   typedef CompGraphNode::iterator iterator;
-  std::vector<std::pair<CompGraphNode*, iterator> > WorkStack;
 
   CompGraphNode *S = G.getEntry();
   for (iterator I = S->succ_begin(), E = S->succ_end(); I != E; ++I) {
@@ -900,49 +896,46 @@ MinCostFlowSolver::buildBinging(unsigned TotalRows, BindingMapTy &BindingMap) {
     if (!hasFlow(EdgeType(S, Succ), TotalRows))
       continue;
 
-    BindingMap.insert(std::make_pair(Succ, ++FUIdx));
-    WorkStack.push_back(std::make_pair(Succ, Succ->succ_begin()));
+    Clusters.push_back(ClusterType());
+    buildBinging(Succ, Clusters.back());
+
+    // Remove the trivial clusters.
+    if (Clusters.back().empty())
+      Clusters.pop_back();
   }
 
-  while (!WorkStack.empty()) {
-    CompGraphNode *Src = WorkStack.back().first;
-    iterator ChildIt = WorkStack.back().second++;
+  return Clusters.size();
+}
 
-    assert(ChildIt != Src->succ_end() &&
-           "We should find a flow before we reach the end of successors list!");
-    CompGraphNode *Dst = *ChildIt;
+void MinCostFlowSolver::buildBinging(CompGraphNode *Src, ClusterType &Cluster) {
+  unsigned TotalRows = getNumRows();
 
-    if (!hasFlow(EdgeType(Src, Dst), TotalRows))
-      continue;
+  typedef CompGraphNode::iterator iterator;
+  while (!Src->IsTrivial) {
+    for (iterator I = Src->succ_begin(), E = Src->succ_end(); I != E; ++I) {
+      CompGraphNode *Dst = *I;
 
-    // Else we find a flow.
-    WorkStack.pop_back();
+      if (!hasFlow(EdgeType(Src, Dst), TotalRows))
+        continue;
 
-    // No need to go any further if we reach the exit.
-    if (Dst->IsTrivial)
-      continue;
+      if (Dst->IsTrivial)
+        return;
 
-
-    BindingMapTy::iterator I = BindingMap.find(Src);
-    assert(I != BindingMap.end() && "FUIdx of source node not found!");
-
-    BindingMap.insert(std::make_pair(Dst, I->second));
-    WorkStack.push_back(std::make_pair(Dst, Dst->succ_begin()));
+      Cluster.push_back(CompGraphBase::EdgeType(Src, Dst));
+      Src = Dst;
+      break;
+    }
   }
-
-  return FUIdx;
 }
 
 unsigned CompGraphBase::performBinding() {
-  unsigned NumRows = 0;
   if (MCF == 0) {
     MCF = new MinCostFlowSolver(*this);
 
     MCF->createLPAndVariables();
-    NumRows = MCF->createBlanceConstraints();
+    MCF->createBlanceConstraints();
     MCF->applySolveSettings();
-  } else
-    NumRows = MCF->getNumRows();
+  }
 
   unsigned MaxFlow = Nodes.size();
 
@@ -966,7 +959,7 @@ unsigned CompGraphBase::performBinding() {
   //    MinFlow = MidFlow + 1;
   //}
 
-  unsigned ActualFlow = MCF->buildBinging(NumRows, BindingMap);
+  unsigned ActualFlow = MCF->buildBinging(Clusters);
   dbgs() << "Original supply: " << Nodes.size()
          << " Minimal: " << ActualFlow << '\n';
   return ActualFlow;

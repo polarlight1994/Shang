@@ -327,33 +327,39 @@ bool PSBCompNode::isKillIntersect(const PSBCompNode *RHS) const {
   return intersect(KillOps, RHS->KillOps);
 }
 
-void PSBCompNode::increaseSchedulingCost(PSBCompNode *Succ) {
-  float Cost = getCostTo(Succ) + 8.0f;
-  setCost(Succ, Cost + abs(Cost) * scheduling_factor);
+void PSBCompNode::increaseCost(PSBCompNode *Succ, float Cost) {
+  setCost(Succ, Cost + getCostTo(Succ));
 }
 
-void PSBCompNode::IncreaseSchedulingCost(PSBCompNode *LHS, PSBCompNode *RHS) {
-  if (LHS->countSuccessor(RHS)) {
-    LHS->increaseSchedulingCost(RHS);
-    return;
+namespace {
+class PSBCompGraph : public CompGraphBase {
+  bool isCompatible(CompGraphNode *Src, CompGraphNode *Dst) const;
+public:
+  PSBCompGraph(DominatorTree &DT, CachedStrashTable &CST)
+    : CompGraphBase(DT, CST) {}
+
+  CompGraphNode *createNode(VFUs::FUTypes FUType, unsigned FUCost, unsigned Idx,
+    DataflowInst Inst, ArrayRef<VASTSelector*> Sels)
+    const {
+      return new PSBCompNode(FUType, FUCost, Idx, Inst, Sels);
   }
 
-  if (RHS->countSuccessor(LHS)) {
-    RHS->increaseSchedulingCost(LHS);
-    return;
-  }
+  float compuateCommonFIBenefit(VASTSelector *Sel) const;
 
-  llvm_unreachable("LHS and RHS are not compatible!");
+  float getEdgeConsistencyBenefit(EdgeType Edge, EdgeType FIEdge) const;
+
+  float computeCost(CompGraphNode *Src, CompGraphNode *Dst) const;
+};
 }
 
-float PSBCompGraph::computeCost(CompGraphNode *Src, unsigned SrcBinding,
-                                CompGraphNode *Dst, unsigned DstBinding) const {
+float PSBCompGraph::computeCost(CompGraphNode *Src, CompGraphNode *Dst) const {
   float Cost = 0.0f;
   float current_area_factor = area_factor;
 
   // Increase the area benefit for operations that are not located in the same
   // BB, in this case, binding are almost always possible.
-  if (VFUs::isNoTrivialFUCompatible(Src->FUType, Dst->FUType))
+  if (VFUs::isNoTrivialFUCompatible(Src->FUType, Dst->FUType) &&
+      Src->getDomBlock() == Dst->getDomBlock())
     current_area_factor *= 1.1f;
 
   // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
@@ -411,8 +417,6 @@ void PreSchedBinding::releaseMemory() {
     delete PSBCG;
     PSBCG = 0;
   }
-
-  Clusters.clear();
 }
 
 bool PreSchedBinding::runOnVASTModule(VASTModule &VM) {
@@ -452,24 +456,9 @@ bool PreSchedBinding::runOnVASTModule(VASTModule &VM) {
   PSBCG->compuateEdgeCosts();
   PSBCG->setCommonFIBenefit();
 
-  performBinding();
+  PSBCG->performBinding();
 
   return false;
-}
-
-void PreSchedBinding::performBinding() {
-  unsigned NumFU = PSBCG->performBinding();
-  Clusters.clear();
-  Clusters.resize(NumFU);
-
-  // Build the operation cluster.
-  typedef PSBCompGraph::binding_iterator binding_iterator;
-  for (binding_iterator I = PSBCG->binding_begin(), E = PSBCG->binding_end();
-       I != E; ++I) {
-    unsigned FUIdx = I->second - 1;
-
-    Clusters[FUIdx].push_back(static_cast<PSBCompNode*>(I->first));
-  }
 }
 
 PreSchedBinding::PreSchedBinding() : VASTModulePass(ID) {

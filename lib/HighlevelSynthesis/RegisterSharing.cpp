@@ -81,8 +81,7 @@ public:
     return 0.0f;
   }
 
-  float computeCost(CompGraphNode *Src, unsigned SrcBinding,
-                    CompGraphNode *Dst, unsigned DstBinding) const {
+  float computeCost(CompGraphNode *Src, CompGraphNode *Dst) const {
     float Cost = 0.0f;
     // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
     Cost -= area_factor * compuateSavedResource(Src, Dst);
@@ -153,11 +152,13 @@ struct RegisterSharing : public VASTModulePass {
     }
   }
 
+  typedef CompGraphBase::ClusterType ClusterType;
+  typedef CompGraphBase::ClusterVectors ClusterVectors;
+
   bool runOnVASTModule(VASTModule &VM);
 
   void checkConsistencyAgainstPSB(VASTCompGraph &G);
-  void checkConsistencyAgainstPSB(ArrayRef<PSBCompNode*> Cluster,
-                                  VASTCompGraph &G);
+  void checkConsistencyAgainstPSB(const ClusterType &Cluster, VASTCompGraph &G);
 
   bool performRegisterSharing();
   void mergeLI(CompGraphNode *From, CompGraphNode *To, VASTModule &VM);
@@ -219,16 +220,23 @@ void RegisterSharing::initializeOverlappedSlots(VASTModule &VM) {
   }
 }
 
-void RegisterSharing::checkConsistencyAgainstPSB(ArrayRef<PSBCompNode*> Cluster,
+void RegisterSharing::checkConsistencyAgainstPSB(const ClusterType &Cluster,
                                                  VASTCompGraph &G) {
+  CompGraphNode *Head = G.getNode(Cluster.front().first->Inst);
+
   for (unsigned i = 0; i < Cluster.size(); ++i) {
-    CompGraphNode *Src = G.getNode(Cluster[i]->Inst);
+    CompGraphNode *Src = G.getNode(Cluster[i].second->Inst);
     // A node maybe eliminated by CFG folding or chaining.
     if (Src == 0)
       continue;
 
+    // TODO: Add reduce the cost between src and dst to produce a consistent
+    // binding?
+    if (Head && !Head->isNeighbor(Src))
+      ++NumInconsistent;
+
     for (unsigned j = i + 1; j < Cluster.size(); ++j) {
-      CompGraphNode *Dst = G.getNode(Cluster[j]->Inst);
+      CompGraphNode *Dst = G.getNode(Cluster[j].second->Inst);
       if (Dst == 0)
         continue;
 
@@ -244,8 +252,8 @@ void RegisterSharing::checkConsistencyAgainstPSB(ArrayRef<PSBCompNode*> Cluster,
 
 void RegisterSharing::checkConsistencyAgainstPSB(VASTCompGraph &G) {
   PreSchedBinding &PSB = getAnalysis<PreSchedBinding>();
-  typedef PreSchedBinding::cluster_iterator cluster_iterator;
-  for (cluster_iterator I = PSB.cluster_begin(), E = PSB.cluster_end();
+  typedef CompGraphBase::cluster_iterator cluster_iterator;
+  for (cluster_iterator I = PSB->cluster_begin(), E = PSB->cluster_end();
        I != E; ++I) {
     checkConsistencyAgainstPSB(*I, G);
   }
@@ -287,36 +295,29 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   G.compuateEdgeCosts();
   G.setCommonFIBenefit();
 
+  checkConsistencyAgainstPSB(G);
+
   unsigned NumFU = G.performBinding();
 
   if (NumFU == 0)
     return false;
 
-  std::vector<CompGraphNode*> FUMap(NumFU);
-
-  typedef VASTCompGraph::binding_iterator binding_iterator;
-  for (binding_iterator I = G.binding_begin(), E = G.binding_end(); I != E; ++I)
+  typedef VASTCompGraph::cluster_iterator cluster_iterator;
+  for (cluster_iterator I = G.cluster_begin(), E = G.cluster_end(); I != E; ++I)
   {
-    CompGraphNode *N = I->first;
-    unsigned FUIdx = I->second - 1;
+    const ClusterType &Cluster = *I;
+    CompGraphNode *Head = I->front().first;
 
-    CompGraphNode *&FU = FUMap[FUIdx];
-    if (!FU) {
-      FU = N;
-      continue;
+    typedef ClusterType::const_iterator iterator;
+    for (iterator CI = Cluster.begin(), CE = Cluster.end(); CI != CE; ++CI) {
+      VASTCompGraph::EdgeType Edge = *CI;
+      CompGraphNode *Node = Edge.second;
+      mergeLI(Node, Head, VM);
+
+      // Remove it from the compatibility graph since it is already merged into
+      // others.
+      G.merge(Node, Head);
     }
-
-    DEBUG(dbgs() << "FU " << FUIdx << "\n";
-    dbgs() << "Merge: \n";
-    N->dump();
-    dbgs() << "\n To: \n";
-    FU->dump();
-    dbgs() << "\n\n");
-
-    mergeLI(N, FU, VM);
-
-    // Remove it from the compatibility graph since it is already merged into others.
-    G.merge(N, FU);
   }
 
   OverlappedMap.clear();

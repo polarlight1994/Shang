@@ -894,26 +894,26 @@ struct IterativeSchedulingBinding {
 
   State S;
 
-  const float PerformanceFactor, AreaFactor;
+  const float PerformanceFactor, ResourceFactor;
 
   IterativeSchedulingBinding(VASTSchedGraph &G, PreSchedBinding &PSB,
                              DominatorTree &DT, BlockFrequencyInfo &BFI,
                              BranchProbabilityInfo &BPI, IR2SUMapTy &IR2SUMap)
     : Scheduler(G, 1), PSB(PSB), DT(DT), BFI(BFI), BPI(BPI), IR2SUMap(IR2SUMap),
-      S(Initial), PerformanceFactor(10.0f), AreaFactor(5.0f) {
+      S(Initial), PerformanceFactor(64.0f), ResourceFactor(0.05f) {
     // Build the hard linear order.
     Scheduler.addLinOrdEdge(DT, IR2SUMap);
   }
 
   bool checkCompatibility() {
-    bool IncompatibleDetect = false;
-    typedef PreSchedBinding::cluster_iterator cluster_iterator;
-    for (cluster_iterator I = PSB.cluster_begin(), E = PSB.cluster_end();
+    bool AnyViolation = false;
+    typedef CompGraphBase::cluster_iterator cluster_iterator;
+    for (cluster_iterator I = PSB->cluster_begin(), E = PSB->cluster_end();
          I != E; ++I) {
-      IncompatibleDetect |= checkCompatibility(*I);
+      AnyViolation |= checkCompatibility(*I);
     }
 
-    return IncompatibleDetect;
+    return AnyViolation;
   }
 
   static VASTSchedUnit *getLaunch(SUArrayRef SUs) {
@@ -945,15 +945,19 @@ struct IterativeSchedulingBinding {
     return 0;
   }
 
-  bool checkCompatibility(ArrayRef<PSBCompNode*> Cluster);
-  bool checkCompatibility(PSBCompNode *Src, SUArrayRef SrcSUs,
-                          PSBCompNode *Dst, SUArrayRef DstSUs);
-  bool
-  checkLatchCompatibility(PSBCompNode *Src, PSBCompNode *Dst, SUArrayRef DstSUs);
+  typedef CompGraphBase::ClusterType ClusterType;
+  bool checkCompatibility(const ClusterType &Cluster);
+  unsigned checkCompatibility(PSBCompNode *Src, SUArrayRef SrcSUs,
+                              PSBCompNode *Dst, SUArrayRef DstSUs);
+  unsigned
+  checkLatchCompatibility(PSBCompNode *Src, PSBCompNode *Dst, SUArrayRef DstSUs,
+                          float Benefit);
 
-  void updateBindingCost(PSBCompNode *Src, PSBCompNode *Dst) {
-    if (S == Binding)
-      PSBCompNode::IncreaseSchedulingCost(Src, Dst);
+  void updateBindingCost(PSBCompNode *Src, PSBCompNode *Dst, float Cost) {
+    if (S != Binding)
+      return;
+
+    Src->increaseCost(Dst, Cost);
   }
 
   bool alap_less(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) const {
@@ -969,17 +973,16 @@ struct IterativeSchedulingBinding {
     return LHS->getIdx() < RHS->getIdx();
   }
 
-  void
-  updateSchedulingConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst, unsigned C) {
+  void updateSchedulingConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst,
+                                  unsigned C, float Penalty) {
     if (S != Scheduling)
       return;
 
     if (!alap_less(Src, Dst))
       std::swap(Src, Dst);
 
-    Scheduler.addSoftConstraint(Src, Dst, C, AreaFactor);
+    Scheduler.addSoftConstraint(Src, Dst, C, Penalty);
   }
-
 
   bool performScheduling(VASTModule &VM);
 
@@ -994,7 +997,7 @@ struct IterativeSchedulingBinding {
     // Check the bindings that are invalided by the scheduler.
     if (checkCompatibility()) {
       // And bind again.
-      PSB.performBinding();
+      PSB->performBinding();
       // Perform scheduling after binding.
       S = Scheduling;
       return true;
@@ -1005,10 +1008,13 @@ struct IterativeSchedulingBinding {
 };
 }
 
-bool IterativeSchedulingBinding::checkLatchCompatibility(PSBCompNode *Src,
-                                                         PSBCompNode *Dst,
-                                                         SUArrayRef DstSUs) {
-  bool IsIncompatible = false;
+unsigned
+IterativeSchedulingBinding::checkLatchCompatibility(PSBCompNode *Src,
+                                                    PSBCompNode *Dst,
+                                                    SUArrayRef DstSUs,
+                                                    float Benefit) {
+  unsigned NegativeSlack = 0;
+
   typedef PSBCompNode::kill_iterator kill_iterator;
   for (kill_iterator I = Src->kill_begin(), E = Src->kill_end(); I != E; ++I) {
     VASTSchedUnit *SrcKill = lookupSU(*I);
@@ -1030,23 +1036,24 @@ bool IterativeSchedulingBinding::checkLatchCompatibility(PSBCompNode *Src,
       DstDef->dump();
       dbgs() << "\n\n");
 
-      updateSchedulingConstraint(SrcKill, DstDef, 0);
-      IsIncompatible |= true;
+      float Penalty = Benefit * ResourceFactor;
+      updateSchedulingConstraint(SrcKill, DstDef, 0, Penalty);
+      NegativeSlack += SrcKill->getSchedule() - DstDef->getSchedule();
     }
   }
 
-  if (IsIncompatible)
-    updateBindingCost(Src, Dst);
-
-  return IsIncompatible;
+  return NegativeSlack;
 }
 
-bool IterativeSchedulingBinding::checkCompatibility(PSBCompNode *Src,
-                                                    SUArrayRef SrcSUs,
-                                                    PSBCompNode *Dst,
-                                                    SUArrayRef DstSUs) {
+unsigned IterativeSchedulingBinding::checkCompatibility(PSBCompNode *Src,
+                                                        SUArrayRef SrcSUs,
+                                                        PSBCompNode *Dst,
+                                                        SUArrayRef DstSUs) {
   assert(Src->Inst.IsLauch() == Dst->Inst.IsLauch()
          && "Unexpected binding launch/latch to the same physical unit!");
+  // Get the benefit by getting the negative of the cost.
+  float BindingBenefit = std::max(-Src->getCostTo(Dst), PerformanceFactor);
+
   if (!Src->Inst.IsLauch()) {
     // For latch (that define a variable), the conflict only introduced by
     // scheduling when their are in the same subtree of the dominator tree.
@@ -1054,59 +1061,69 @@ bool IterativeSchedulingBinding::checkCompatibility(PSBCompNode *Src,
     // variable are all dominated by the define, hence the live interval rooted
     // on two node without dominance relationship will never overlap. 
     if (DT.dominates(Src->getDomBlock(), Dst->getDomBlock()))
-      return checkLatchCompatibility(Src, Dst, DstSUs);
+      return checkLatchCompatibility(Src, Dst, DstSUs, BindingBenefit);
 
     if (DT.dominates(Dst->getDomBlock(), Src->getDomBlock()))
-      return checkLatchCompatibility(Dst, Src, SrcSUs);
+      return checkLatchCompatibility(Dst, Src, SrcSUs, BindingBenefit);
 
-    return false;
+    return 0;
   }
 
   VASTSchedUnit *SrcSU = getLaunch(SrcSUs), *DstSU = getLaunch(DstSUs);
   // The execution time will never overlap if they are located in different BB
   // FIXME: Not true alter global code motion is enabled.
   if (SrcSU->getParent() != DstSU->getParent())
-    return false;
+    return 0;
 
   // Src and Dst is compatible if Dst is scheduled after Src is finished.
   if (SrcSU->getSchedule() + SrcSU->getII() <= DstSU->getSchedule())
-    return false;
+    return 0;
 
   // Or Src is scheduled after Dst is finished.
   if (SrcSU->getSchedule() >= DstSU->getSchedule() + DstSU->getII())
-    return false;
+    return 0;
   
   DEBUG(dbgs() << "Launch SU not compatible:\n";
   SrcSU->dump();
   DstSU->dump();
   dbgs() << "\n\n");
 
-  updateBindingCost(Src, Dst);
-  // When two operations are compatible, they should have the same II.
-  assert(SrcSU->getII() == DstSU->getII() &&
-         "Bind operations with different II together?");
-  updateSchedulingConstraint(SrcSU, DstSU, SrcSU->getII());
+  float Penalty = BindingBenefit * ResourceFactor;
+  updateSchedulingConstraint(SrcSU, DstSU, SrcSU->getII(), Penalty);
 
-  return true;
+  return SrcSU->getII();
 }
 
 bool
-IterativeSchedulingBinding::checkCompatibility(ArrayRef<PSBCompNode*> Cluster) {
-  bool IsIncompatible = false;
+IterativeSchedulingBinding::checkCompatibility(const ClusterType &Cluster) {
+  unsigned AnyViolation = false;
 
   for (unsigned i = 0; i < Cluster.size(); ++i) {
-    PSBCompNode *Src = Cluster[i];
+    PSBCompNode *Src = static_cast<PSBCompNode*>(Cluster[i].first);
     ArrayRef<VASTSchedUnit*> SrcSUs(IR2SUMap[Src->Inst]);
 
-    for (unsigned j = i + 1; j < Cluster.size(); ++j) {
-      PSBCompNode *Dst = Cluster[j];
+    PSBCompNode *Dst = static_cast<PSBCompNode*>(Cluster[i].second);
+    ArrayRef<VASTSchedUnit*> DstSUs(IR2SUMap[Dst->Inst]);
+
+    if (unsigned NegativeSlack = checkCompatibility(Src, SrcSUs, Dst, DstSUs)) {
+      float Penalty = (PerformanceFactor * NegativeSlack);
+      updateBindingCost(Src, Dst, Penalty);
+      AnyViolation |= true;
+    }
+
+    for (unsigned j = i + 1; j < Cluster.size(); ++j)  {
+      PSBCompNode *Dst = static_cast<PSBCompNode*>(Cluster[j].second);
       ArrayRef<VASTSchedUnit*> DstSUs(IR2SUMap[Dst->Inst]);
 
-      IsIncompatible |= checkCompatibility(Src, SrcSUs, Dst, DstSUs);
+      if (unsigned NegativeSlack = checkCompatibility(Src, SrcSUs, Dst, DstSUs)) {
+        float Penalty = (PerformanceFactor * NegativeSlack);
+        updateBindingCost(Src, Dst, Penalty);
+        AnyViolation |= true;
+      }
     }
   }
 
-  return IsIncompatible;
+  return AnyViolation;
 }
 
 bool IterativeSchedulingBinding::performScheduling(VASTModule &VM) {

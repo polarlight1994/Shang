@@ -196,9 +196,11 @@ template<> struct GraphTraits<CompGraphNode*> {
 class CompGraphBase {
 public:
   typedef CompGraphNode NodeTy;
-  typedef std::map<CompGraphNode*, unsigned> BindingMapTy;
-
   typedef std::pair<NodeTy*, NodeTy*> EdgeType;
+
+  typedef std::vector<EdgeType> ClusterType;
+  typedef std::vector<ClusterType> ClusterVectors;
+
   typedef std::vector<EdgeType> EdgeVector;
 protected:
   typedef ilist<NodeTy> NodeVecTy;
@@ -220,7 +222,7 @@ protected:
 
   DominatorTree &DT;
   CachedStrashTable &CST;
-  BindingMapTy BindingMap;
+  ClusterVectors Clusters;
 
   void deleteNode(NodeTy *N) {
     N->unlink();
@@ -240,8 +242,7 @@ protected:
     return true;
   }
 
-  virtual float computeCost(NodeTy *Src, unsigned SrcBinding,
-                            NodeTy *Dst, unsigned DstBinding) const {
+  virtual float computeCost(NodeTy *Src, NodeTy *Dst) const {
     return 0.0f;
   }
 
@@ -321,33 +322,16 @@ public:
     return 0.0f;
   }
 
-  typedef BindingMapTy::const_iterator binding_iterator;
-  binding_iterator binding_begin() const {
-    return BindingMap.begin();
-  }
-
-  binding_iterator binding_end() const {
-    return BindingMap.end();
-  }
-
-  unsigned getBinding(CompGraphNode *N) const {
-    binding_iterator I = BindingMap.find(N);
-    return I == BindingMap.end() ? 0 : I->second;
-  }
+  typedef ClusterVectors::const_iterator cluster_iterator;
+  cluster_iterator cluster_begin() const { return Clusters.begin(); }
+  cluster_iterator cluster_end() const { return Clusters.end(); }
 
   CompGraphNode *getNode(DataflowInst Inst) const {
     std::map<DataflowInst, CompGraphNode*>::const_iterator I = InstMap.find(Inst);
     return I == InstMap.end() ? 0 : I->second;
   }
 
-  unsigned getBinding(DataflowInst Inst) const {
-    if (CompGraphNode *N = getNode(Inst))
-      return getBinding(N);
-
-    return 0;
-  }
-
-  bool hasbinding() const { return !BindingMap.empty(); }
+  bool hasbinding() const { return !Clusters.empty(); }
 
   void viewGraph();
   
