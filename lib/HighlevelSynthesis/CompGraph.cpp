@@ -508,7 +508,7 @@ void CompGraphBase::viewGraph() {
 
 #include "lpsolve/lp_lib.h"
 
-namespace {
+namespace llvm {
 class MinCostFlowSolver {
 public:
   typedef std::pair<const CompGraphNode*, const CompGraphNode*> EdgeType;
@@ -532,7 +532,7 @@ private:
   unsigned createConsistencyVariables(EdgeType SrcEdge, EdgeType DstEdge,
                                       float Benefit, unsigned Col);
 public:
-  explicit MinCostFlowSolver(CompGraphBase &G) : G(G), lp(0) {}
+  MinCostFlowSolver(CompGraphBase &G) : G(G), lp(0) {}
   ~MinCostFlowSolver() {
     delete_lp(lp);
   }
@@ -550,6 +550,10 @@ public:
     assert(I != Edge2IdxMap.end() && "Edge ID does not existed!");
     REAL flow = get_var_primalresult(lp, TotalRows + I->second);
     return flow != 0.0;
+  }
+
+  unsigned getNumRows() const {
+    return get_Nrows(lp);
   }
 };
 }
@@ -846,7 +850,7 @@ void MinCostFlowSolver::applySolveSettings() {
                get_presolveloops(lp));
 
   unsigned TotalRows = get_Nrows(lp), NumVars = get_Ncolumns(lp);
-  dbgs() << "The model has " << NumVars << "x" << TotalRows << '\n';
+  DEBUG(dbgs() << "The model has " << NumVars << "x" << TotalRows << '\n');
   // Set timeout to 1 minute.
   set_timeout(lp, 20 * 60);
   DEBUG(dbgs() << "Timeout is set to " << get_timeout(lp) << "secs.\n");
@@ -930,17 +934,21 @@ MinCostFlowSolver::buildBinging(unsigned TotalRows, BindingMapTy &BindingMap) {
 }
 
 unsigned CompGraphBase::performBinding() {
-  MinCostFlowSolver MCF(*this);
+  unsigned NumRows = 0;
+  if (MCF == 0) {
+    MCF = new MinCostFlowSolver(*this);
 
-  MCF.createLPAndVariables();
-  MCF.setCost();
-  unsigned TotalRows = MCF.createBlanceConstraints();
-  MCF.applySolveSettings();
+    MCF->createLPAndVariables();
+    NumRows = MCF->createBlanceConstraints();
+    MCF->applySolveSettings();
+  } else
+    NumRows = MCF->getNumRows();
 
   unsigned MaxFlow = Nodes.size();
 
-  MCF.setFUAllocationConstraints(MaxFlow);
-  if (!MCF.solveMinCostFlow())
+  MCF->setFUAllocationConstraints(MaxFlow);
+  MCF->setCost();
+  if (!MCF->solveMinCostFlow())
     return 0;
   
   //unsigned MinFlow = 1;
@@ -958,8 +966,13 @@ unsigned CompGraphBase::performBinding() {
   //    MinFlow = MidFlow + 1;
   //}
 
-  unsigned ActualFlow = MCF.buildBinging(TotalRows, BindingMap);
+  unsigned ActualFlow = MCF->buildBinging(NumRows, BindingMap);
   dbgs() << "Original supply: " << Nodes.size()
          << " Minimal: " << ActualFlow << '\n';
   return ActualFlow;
+}
+
+CompGraphBase::~CompGraphBase() {
+  if (MCF)
+    delete MCF;
 }

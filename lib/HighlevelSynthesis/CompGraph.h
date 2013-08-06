@@ -38,6 +38,7 @@ class VASTSeqInst;
 class VASTSeqValue;
 class DominatorTree;
 class CachedStrashTable;
+class MinCostFlowSolver;
 
 class CompGraphNode : public ilist_node<CompGraphNode> {
 public:
@@ -265,13 +266,15 @@ protected:
                             std::set<CompGraphNode*> &Fanins) const;
   void
   collectCompatibleEdges(NodeTy *Dst, NodeTy *Src, std::set<NodeTy*> &SrcFIs);
+private:
+  MinCostFlowSolver *MCF;
 public:
   explicit CompGraphBase(DominatorTree &DT, CachedStrashTable &CST)
-    : Entry(), Exit(), DT(DT), CST(CST) {
+    : Entry(), Exit(), DT(DT), CST(CST), MCF(0) {
     initalizeDTDFSOrder();
   }
 
-  virtual ~CompGraphBase() {}
+  virtual ~CompGraphBase();
 
   CompGraphNode *lookupNode(VASTSelector *Sel) const {
     std::map<VASTSelector*, NodeTy*>::const_iterator I = SelectorMap.find(Sel);
