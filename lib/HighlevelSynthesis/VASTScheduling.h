@@ -541,6 +541,8 @@ struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {
 };
 
 class DataflowAnnotation;
+class PreSchedBinding;
+class PSBCompNode;
 
 class Loop;
 class LoopInfo;
@@ -561,7 +563,6 @@ class VASTScheduling : public VASTModulePass {
   // Analysis for the scheduler
   AliasAnalysis *AA;
   LoopInfo *LI;
-  BranchProbabilityInfo *BPI;
   DominatorTree *DT;
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
@@ -590,7 +591,6 @@ class VASTScheduling : public VASTModulePass {
   void buildMemoryDependencies();
 
   void scheduleGlobal();
-
   /// Fix (Check) the interval for cross BB chains.
   ///
   void fixIntervalForCrossBBChains();

@@ -14,6 +14,7 @@
 //
 
 #include "Dataflow.h"
+#include "PreSchedBinding.h"
 #include "VASTScheduling.h"
 #include "SDCScheduler.h"
 #include "ScheduleDOT.h"
@@ -26,6 +27,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/BlockFrequencyInfo.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/CommandLine.h"
@@ -37,6 +39,8 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+
+STATISTIC(NumIterations, "Number of Scheduling-Binding Iterations");
 
 //===----------------------------------------------------------------------===//
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
@@ -60,15 +64,6 @@ bool VASTSchedUnit::EdgeBundle::isLegalToAddFixTimngEdge(int Latency) const {
   VASTDep OldEdge = Edges.back();
   return OldEdge.getEdgeType() == VASTDep::FixedTiming
          && OldEdge.getLatency() == Latency;
-}
-
-bool VASTSchedUnit::EdgeBundle::hasValDep() const {
-  bool HasValDep = Edges.front().getEdgeType() == VASTDep::ValDep;
-
-  for (unsigned i = 1, e = Edges.size(); i != e; ++i)
-    HasValDep |= Edges[i].getEdgeType() == VASTDep::ValDep;
-
-  return HasValDep;
 }
 
 void VASTSchedUnit::EdgeBundle::addEdge(VASTDep NewEdge) {
@@ -141,6 +136,15 @@ VASTDep VASTSchedUnit::EdgeBundle::getEdge(unsigned II) const {
   }
 
   return CurEdge;
+}
+
+bool VASTSchedUnit::EdgeBundle::hasValDep() const {
+  bool HasValDep = Edges.front().getEdgeType() == VASTDep::ValDep;
+
+  for (unsigned i = 1, e = Edges.size(); i != e; ++i)
+    HasValDep |= Edges[i].getEdgeType() == VASTDep::ValDep;
+
+  return HasValDep;
 }
 
 bool VASTSchedUnit::requireLinearOrder() const {
@@ -378,19 +382,25 @@ VASTScheduling::VASTScheduling() : VASTModulePass(ID) {
 void VASTScheduling::getAnalysisUsage(AnalysisUsage &AU) const  {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequiredID(BasicBlockTopOrderID);
+  AU.addRequired<PreSchedBinding>();
+  AU.addPreserved<PreSchedBinding>();
   AU.addRequired<DataflowAnnotation>();
   AU.addRequired<AliasAnalysis>();
   AU.addRequired<DominatorTree>();
   AU.addRequired<LoopInfo>();
   AU.addRequired<BranchProbabilityInfo>();
+  // There is a bug in BlockFrequencyInfo :(
+  // AU.addRequired<BlockFrequencyInfo>();
 }
 
 INITIALIZE_PASS_BEGIN(VASTScheduling,
                       "vast-scheduling", "Perfrom Scheduling on the VAST",
                       false, true)
+  INITIALIZE_PASS_DEPENDENCY(PreSchedBinding)
   INITIALIZE_PASS_DEPENDENCY(DataflowAnnotation)
   INITIALIZE_PASS_DEPENDENCY(LoopInfo)
   INITIALIZE_PASS_DEPENDENCY(BranchProbabilityInfo)
+  INITIALIZE_PASS_DEPENDENCY(BlockFrequencyInfo)
 INITIALIZE_PASS_END(VASTScheduling,
                     "vast-scheduling", "Perfrom Scheduling on the VAST",
                     false, true)
@@ -593,7 +603,7 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
     assert(pred_begin(BB) == pred_end(BB)
            && "No entry block do not have any predecessor?");
     // Dependency from the BB entry is not conditional.
-    Entry->addDep(G->getEntry(), VASTDep::CreateCtrlDep(0));
+    Entry->addDep(G->getEntry(), VASTDep::CreateFlowDep(0));
   }
 
   // Add the entry to the mapping.
@@ -866,77 +876,330 @@ void VASTScheduling::fixSchedulingGraph() {
   }
 }
 
-void VASTScheduling::scheduleGlobal() {
-  SDCScheduler Scheduler(*G, 1);
+namespace {
+struct IterativeSchedulingBinding {
+  SDCScheduler Scheduler;
+  PreSchedBinding &PSB;
+  DominatorTree &DT;
+  BlockFrequencyInfo &BFI;
+  BranchProbabilityInfo &BPI;
 
-  Scheduler.addLinOrdEdge(*DT, IR2SUMap);
+  typedef ArrayRef<VASTSchedUnit*> SUArrayRef;
+  typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
+  IR2SUMapTy &IR2SUMap;
 
-  // Build the step variables, and no need to schedule at all if all SUs have
-  // been scheduled.
-  if (Scheduler.createLPAndVariables()) {
-    Scheduler.addDependencyConstraints();
+  enum State {
+    Initial, Scheduling, Binding
+  };
 
-    float TotalWeight = 0.0f;
-    float PerformanceFactor = 10.0f;
+  State S;
 
-    Function &F = VM->getLLVMFunction();
-    typedef Function::iterator iterator;
-    for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
-      BasicBlock *BB = I;
-      DEBUG(dbgs() << "Applying constraints to BB: " << BB->getName() << '\n');
+  const float PerformanceFactor, AreaFactor;
 
-      float ExitWeigthSum = 0;
-      ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
-      for (unsigned i = 0; i < Exits.size(); ++i) {
-        VASTSchedUnit *BBExit = Exits[i];
-        // Ignore the return value latching operation here. We will add the fix
-        // timing constraints between it and the actual terminator.
-        if (!BBExit->isTerminator()) {
-          assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
-          continue;
-        }
+  IterativeSchedulingBinding(VASTSchedGraph &G, PreSchedBinding &PSB,
+                             DominatorTree &DT, BlockFrequencyInfo &BFI,
+                             BranchProbabilityInfo &BPI, IR2SUMapTy &IR2SUMap)
+    : Scheduler(G, 1), PSB(PSB), DT(DT), BFI(BFI), BPI(BPI), IR2SUMap(IR2SUMap),
+      S(Initial), PerformanceFactor(10.0f), AreaFactor(5.0f) {
+    // Build the hard linear order.
+    Scheduler.addLinOrdEdge(DT, IR2SUMap);
+  }
 
-        float ExitWeight = PerformanceFactor;
-        BranchProbability BP = BranchProbability::getOne();
-        if (BasicBlock *TargetBB = BBExit->getTargetBlock())
-          BP = BPI->getEdgeProbability(BB, TargetBB);
-
-        ExitWeight = (ExitWeight * BP.getNumerator()) / BP.getDenominator();
-        Scheduler.addObjectCoeff(BBExit, - 1.0 * ExitWeight);
-        DEBUG(dbgs().indent(4) << "Setting Exit Weight: " << ExitWeight
-                               << ' ' << BP << '\n');
-
-        ExitWeigthSum += ExitWeight;
-        TotalWeight += ExitWeight;
-      }
-
-      ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[BB]);
-      VASTSchedUnit *BBEntry = 0;
-
-      // First of all we need to locate the header.
-      for (unsigned i = 0; i < SUs.size(); ++i) {
-        VASTSchedUnit *SU = SUs[i];
-        if (SU->isBBEntry()) {
-          BBEntry = SU;
-          break;
-        }
-      }
-
-      assert(BBEntry && "Cannot find BB Entry!");
-
-      assert(ExitWeigthSum && "Unexpected zero weight!");
-      Scheduler.addObjectCoeff(BBEntry, ExitWeigthSum);
-      DEBUG(dbgs().indent(2) << "Setting Entry Weight: "
-                             << ExitWeigthSum << '\n');
+  bool checkCompatibility() {
+    bool IncompatibleDetect = false;
+    typedef PreSchedBinding::cluster_iterator cluster_iterator;
+    for (cluster_iterator I = PSB.cluster_begin(), E = PSB.cluster_end();
+         I != E; ++I) {
+      IncompatibleDetect |= checkCompatibility(*I);
     }
 
-    Scheduler.addObjectCoeff(G->getExit(), - 1.0 * (TotalWeight /*+ PerformanceFactor*/));
-    Scheduler.buildOptSlackObject(1.0);
-
-    bool success = Scheduler.schedule();
-    assert(success && "SDCScheduler fail!");
-    (void) success;
+    return IncompatibleDetect;
   }
+
+  static VASTSchedUnit *getLaunch(SUArrayRef SUs) {
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSchedUnit *SU = SUs[i];
+      if (!SU->isLaunch())
+        continue;
+
+      return SU;
+    }
+
+    llvm_unreachable("SU not found!");
+    return 0;
+  }
+
+  VASTSchedUnit *lookupSU(VASTSeqOp *Op) {
+    Value *V = Op->getValue();
+    assert(V && "Unexpected virtual node!");
+    SUArrayRef SUs(IR2SUMap[V]);
+
+    assert(SUs.size() && "Corresponding scheduling units not found!");
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSchedUnit *SU = SUs[i];
+      if (SU->getSeqOp() == Op)
+        return SU;
+    }
+
+    llvm_unreachable("SU not found!");
+    return 0;
+  }
+
+  bool checkCompatibility(ArrayRef<PSBCompNode*> Cluster);
+  bool checkCompatibility(PSBCompNode *Src, SUArrayRef SrcSUs,
+                          PSBCompNode *Dst, SUArrayRef DstSUs);
+  bool
+  checkLatchCompatibility(PSBCompNode *Src, PSBCompNode *Dst, SUArrayRef DstSUs);
+
+  void updateBindingCost(PSBCompNode *Src, PSBCompNode *Dst) {
+    if (S == Binding)
+      PSBCompNode::IncreaseSchedulingCost(Src, Dst);
+  }
+
+  bool alap_less(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) const {
+    // Ascending order using ALAP.
+    if (Scheduler.getALAPStep(LHS) < Scheduler.getALAPStep(RHS)) return true;
+    if (Scheduler.getALAPStep(LHS) > Scheduler.getALAPStep(RHS)) return false;
+
+    // Tie breaker 1: ASAP.
+    if (Scheduler.getASAPStep(LHS) < Scheduler.getASAPStep(RHS)) return true;
+    if (Scheduler.getASAPStep(LHS) > Scheduler.getASAPStep(RHS)) return false;
+
+    // Tie breaker 2: Original topological order.
+    return LHS->getIdx() < RHS->getIdx();
+  }
+
+  void
+  updateSchedulingConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst, unsigned C) {
+    if (S != Scheduling)
+      return;
+
+    if (!alap_less(Src, Dst))
+      std::swap(Src, Dst);
+
+    Scheduler.addSoftConstraint(Src, Dst, C, AreaFactor);
+  }
+
+
+  bool performScheduling(VASTModule &VM);
+
+  bool iterate(VASTModule &VM) {
+    // First of all, perform the scheduling.
+    if (!performScheduling(VM))
+      return false;
+
+    // Perfrom binding after scheduing.
+    S = Binding;
+
+    // Check the bindings that are invalided by the scheduler.
+    if (checkCompatibility()) {
+      // And bind again.
+      PSB.performBinding();
+      // Perform scheduling after binding.
+      S = Scheduling;
+      return true;
+    }
+
+    return false;
+  }
+};
+}
+
+bool IterativeSchedulingBinding::checkLatchCompatibility(PSBCompNode *Src,
+                                                         PSBCompNode *Dst,
+                                                         SUArrayRef DstSUs) {
+  bool IsIncompatible = false;
+  typedef PSBCompNode::kill_iterator kill_iterator;
+  for (kill_iterator I = Src->kill_begin(), E = Src->kill_end(); I != E; ++I) {
+    VASTSchedUnit *SrcKill = lookupSU(*I);
+
+    for (unsigned i = 0; i < DstSUs.size(); ++i) {
+      VASTSchedUnit *DstDef = DstSUs[i];
+      if (!DstDef->isLatch())
+        continue;
+
+      // FIXME: Test dominance after global code motion is enabled.
+      if (DstDef->getParent() != SrcKill->getParent())
+        continue;
+
+      if (SrcKill->getSchedule() <= DstDef->getSchedule())
+        continue;
+
+      DEBUG(dbgs() << "Latch SU not compatible:\n";
+      SrcKill->dump();
+      DstDef->dump();
+      dbgs() << "\n\n");
+
+      updateSchedulingConstraint(SrcKill, DstDef, 0);
+      IsIncompatible |= true;
+    }
+  }
+
+  if (IsIncompatible)
+    updateBindingCost(Src, Dst);
+
+  return IsIncompatible;
+}
+
+bool IterativeSchedulingBinding::checkCompatibility(PSBCompNode *Src,
+                                                    SUArrayRef SrcSUs,
+                                                    PSBCompNode *Dst,
+                                                    SUArrayRef DstSUs) {
+  assert(Src->Inst.IsLauch() == Dst->Inst.IsLauch()
+         && "Unexpected binding launch/latch to the same physical unit!");
+  if (!Src->Inst.IsLauch()) {
+    // For latch (that define a variable), the conflict only introduced by
+    // scheduling when their are in the same subtree of the dominator tree.
+    // Otherwise their live interval will never overlap, because the use of a
+    // variable are all dominated by the define, hence the live interval rooted
+    // on two node without dominance relationship will never overlap. 
+    if (DT.dominates(Src->getDomBlock(), Dst->getDomBlock()))
+      return checkLatchCompatibility(Src, Dst, DstSUs);
+
+    if (DT.dominates(Dst->getDomBlock(), Src->getDomBlock()))
+      return checkLatchCompatibility(Dst, Src, SrcSUs);
+
+    return false;
+  }
+
+  VASTSchedUnit *SrcSU = getLaunch(SrcSUs), *DstSU = getLaunch(DstSUs);
+  // The execution time will never overlap if they are located in different BB
+  // FIXME: Not true alter global code motion is enabled.
+  if (SrcSU->getParent() != DstSU->getParent())
+    return false;
+
+  // Src and Dst is compatible if Dst is scheduled after Src is finished.
+  if (SrcSU->getSchedule() + SrcSU->getII() <= DstSU->getSchedule())
+    return false;
+
+  // Or Src is scheduled after Dst is finished.
+  if (SrcSU->getSchedule() >= DstSU->getSchedule() + DstSU->getII())
+    return false;
+  
+  DEBUG(dbgs() << "Launch SU not compatible:\n";
+  SrcSU->dump();
+  DstSU->dump();
+  dbgs() << "\n\n");
+
+  updateBindingCost(Src, Dst);
+  // When two operations are compatible, they should have the same II.
+  assert(SrcSU->getII() == DstSU->getII() &&
+         "Bind operations with different II together?");
+  updateSchedulingConstraint(SrcSU, DstSU, SrcSU->getII());
+
+  return true;
+}
+
+bool
+IterativeSchedulingBinding::checkCompatibility(ArrayRef<PSBCompNode*> Cluster) {
+  bool IsIncompatible = false;
+
+  for (unsigned i = 0; i < Cluster.size(); ++i) {
+    PSBCompNode *Src = Cluster[i];
+    ArrayRef<VASTSchedUnit*> SrcSUs(IR2SUMap[Src->Inst]);
+
+    for (unsigned j = i + 1; j < Cluster.size(); ++j) {
+      PSBCompNode *Dst = Cluster[j];
+      ArrayRef<VASTSchedUnit*> DstSUs(IR2SUMap[Dst->Inst]);
+
+      IsIncompatible |= checkCompatibility(Src, SrcSUs, Dst, DstSUs);
+    }
+  }
+
+  return IsIncompatible;
+}
+
+bool IterativeSchedulingBinding::performScheduling(VASTModule &VM) {
+  // No need to modify the scheduling if the FU compatiblity is preserved.
+  if (S == Scheduling && !checkCompatibility())
+    return false;
+
+  Scheduler->resetSchedule();
+
+  if (S == Initial) {
+    // Build the step variables, and no need to schedule at all if all SUs have
+    // been scheduled.
+    if (!Scheduler.createLPAndVariables())
+      return false;
+
+    Scheduler.addDependencyConstraints();
+  }
+
+  float TotalWeight = 0.0f;
+
+  Function &F = VM.getLLVMFunction();
+  typedef Function::iterator iterator;
+  for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    BasicBlock *BB = I;
+    DEBUG(dbgs() << "Applying constraints to BB: " << BB->getName() << '\n');
+    //BlockFrequency BF = BFI.getBlockFreq(BB);
+
+    float ExitWeigthSum = 0;
+    ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
+    for (unsigned i = 0; i < Exits.size(); ++i) {
+      VASTSchedUnit *BBExit = Exits[i];
+      // Ignore the return value latching operation here. We will add the fix
+      // timing constraints between it and the actual terminator.
+      if (!BBExit->isTerminator()) {
+        assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
+        continue;
+      }
+
+      BranchProbability BP = BranchProbability::getOne();
+      if (BasicBlock *TargetBB = BBExit->getTargetBlock())
+        BP = BPI.getEdgeProbability(BB, TargetBB);
+
+      // BlockFrequency CurBF = BF * BP;
+      float ExitWeight = (PerformanceFactor * BP.getNumerator()) / BP.getDenominator();
+      Scheduler.addObjectCoeff(BBExit, - 1.0 * ExitWeight);
+      DEBUG(dbgs().indent(4) << "Setting Exit Weight: " << ExitWeight
+                              << ' ' << BP << '\n');
+
+      ExitWeigthSum += ExitWeight;
+      TotalWeight += ExitWeight;
+    }
+
+    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[BB]);
+    VASTSchedUnit *BBEntry = 0;
+
+    // First of all we need to locate the header.
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSchedUnit *SU = SUs[i];
+      if (SU->isBBEntry()) {
+        BBEntry = SU;
+        break;
+      }
+    }
+
+    assert(BBEntry && "Cannot find BB Entry!");
+
+    assert(ExitWeigthSum && "Unexpected zero weight!");
+    Scheduler.addObjectCoeff(BBEntry, ExitWeigthSum);
+    DEBUG(dbgs().indent(2) << "Setting Entry Weight: "
+                            << ExitWeigthSum << '\n');
+  }
+
+  Scheduler.addObjectCoeff(Scheduler->getExit(), - 1.0 * (TotalWeight /*+ PerformanceFactor*/));
+
+  Scheduler.addSoftConstraints();
+  Scheduler.buildOptSlackObject(1.0);
+
+  bool success = Scheduler.schedule();
+  assert(success && "SDCScheduler fail!");
+
+  // We had made some changes.
+  return success;
+}
+
+void VASTScheduling::scheduleGlobal() {
+  PreSchedBinding &PSB = getAnalysis<PreSchedBinding>();
+  BranchProbabilityInfo &BPI = getAnalysis<BranchProbabilityInfo>();
+  BlockFrequencyInfo &BFI = *reinterpret_cast<BlockFrequencyInfo*>(0);
+  //getAnalysis<BlockFrequencyInfo>();
+
+  IterativeSchedulingBinding ISB(*G, PSB, *DT, BFI, BPI, IR2SUMap);
+  while (ISB.iterate(*VM))
+    ++NumIterations;
 
   DEBUG(G->viewGraph());
 }
@@ -984,7 +1247,6 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   DF = &getAnalysis<DataflowAnnotation>();
   AA = &getAnalysis<AliasAnalysis>();
   LI = &getAnalysis<LoopInfo>();
-  BPI = &getAnalysis<BranchProbabilityInfo>();
   DT = &getAnalysis<DominatorTree>();
 
   buildSchedulingGraph();
