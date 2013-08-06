@@ -33,6 +33,7 @@ extern char &DatapathNamerID;
 extern char &SeqLiveVariablesID;
 extern char &STGDistancesID;
 extern char &DataflowID;
+extern char &PreSchedBindingID;
 
 Pass *createObjectBasedAliasAnalyaisPass();
 FunctionPass *createDesignMetricsPass();
@@ -111,7 +112,7 @@ void initializeCachedStrashTablePass(PassRegistry &Registry);
 void initializeTimingScriptGenPass(PassRegistry &Registry);
 void initializeSeqLiveVariablesPass(PassRegistry &Registry);
 void initializeRegisterSharingPass(PassRegistry &Registry);
-void initializeLowerPseudoPHIsPass(PassRegistry &Registry);
+void initializePreSchedBindingPass(PassRegistry &Registry);
 
 void initializeRTLCodeGenPass(PassRegistry &Registry);
 } // end namespace

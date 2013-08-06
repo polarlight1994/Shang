@@ -583,6 +583,7 @@ struct SimpleSelectorSynthesis : public VASTModulePass {
     AU.addRequired<CachedStrashTable>();
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
+    AU.addPreservedID(PreSchedBindingID);
   }
 
   bool runOnVASTModule(VASTModule &VM);

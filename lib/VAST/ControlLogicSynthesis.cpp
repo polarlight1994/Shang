@@ -85,6 +85,11 @@ struct ControlLogicSynthesis : public VASTModulePass {
 
   bool runOnVASTModule(VASTModule &VM);
 
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    VASTModulePass::getAnalysisUsage(AU);
+    AU.addPreservedID(PreSchedBindingID);
+  }
+
   void releaseMemory() {
     SlotReadys.clear();
     SlotSuccs.clear();

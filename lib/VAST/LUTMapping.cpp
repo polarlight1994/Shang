@@ -651,6 +651,11 @@ struct LUTMapping : public VASTModulePass {
   }
 
   bool runOnVASTModule(VASTModule &VM);
+
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    VASTModulePass::getAnalysisUsage(AU);
+    AU.addPreservedID(PreSchedBindingID);
+  }
 };
 }
 

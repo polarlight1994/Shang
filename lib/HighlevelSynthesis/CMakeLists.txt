@@ -4,6 +4,7 @@ add_llvm_library(ShangHLS
   TimingScriptGen.cpp
   ExternalTimingAnalysis.cpp
   Dataflow.cpp
+  PreSchedBinding.cpp
   VASTScheduling.cpp
   ScheduleEmitter.cpp
   CrossBBChainFixer.cpp
