@@ -201,23 +201,23 @@ Dataflow::getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const {
 
 void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
                              float delay, unsigned Slack) {
-  bool IsTimingVoilation = Slack < delay && generation != 0;
+  bool IsTimingViolation = Slack < delay && generation != 0;
   assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");
 
   TimedSrcSet &Srcs = getDeps(Inst, getIncomingBlock(S, Inst, V));
 
   // Assign the current delay a bigger weigth if there is timing violation. So
   // that the scheduler can make quick respond on the timing violation.
-  float Ratio = IsTimingVoilation ? 0.9f : 0.5f;
+  float Ratio = IsTimingViolation ? 0.9f : 0.5f;
   Annotation &OldAnnotation = Srcs[V];
   float OldDelay = OldAnnotation.delay;
 
-  if (IsTimingVoilation) {
+  if (IsTimingViolation) {
     if (OldAnnotation.generation != generation)
-      ++OldAnnotation.voilation;
+      ++OldAnnotation.violation;
 
     dbgs() << "Potential timing violation: ("
-           << unsigned(OldAnnotation.voilation)
+           << unsigned(OldAnnotation.violation)
            << ") "<< Slack << ' ' << delay
            << " Old delay " << OldDelay
            << '(' << ((delay - OldDelay) / delay) << ')' << " \n"

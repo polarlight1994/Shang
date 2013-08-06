@@ -98,10 +98,10 @@ private:
   struct Annotation {
     float delay;
     uint16_t generation;
-    uint8_t voilation;
+    uint8_t violation;
     Annotation(float delay = 0.0f, uint16_t generation = 0,
-               uint8_t voilation = 0)
-      : delay(delay), generation(generation), voilation(voilation) {}
+               uint8_t violation = 0)
+      : delay(delay), generation(generation), violation(violation) {}
   };
 
   DominatorTree *DT;
