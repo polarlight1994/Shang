@@ -290,8 +290,8 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequiredID(DatapathNamerID);
 
   AU.addRequiredID(STGDistancesID);
-  AU.addPreservedID(STGDistancesID);
   AU.addRequired<TimingNetlist>();
+
   AU.setPreservesAll();
 }
 

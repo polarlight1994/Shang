@@ -15,7 +15,6 @@
 //
 
 #include "Dataflow.h"
-#include "TimingNetlist.h"
 #include "VASTScheduling.h"
 
 #include "shang/Passes.h"
@@ -201,7 +200,6 @@ char IterativeScheduling::ID = 0;
 INITIALIZE_PASS_BEGIN(IterativeScheduling, "shang-iterative-scheduling",
                       "Preform iterative scheduling",
                       false, true)
-  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(DataflowAnnotation)
   INITIALIZE_PASS_DEPENDENCY(LoopInfo)
   INITIALIZE_PASS_DEPENDENCY(BranchProbabilityInfo)
