@@ -556,6 +556,11 @@ private:
   // Map the edge to column number in LP.
   typedef std::map<EdgeType, unsigned> Edge2IdxMapTy;
   Edge2IdxMapTy Edge2IdxMap;
+
+  unsigned lookUpEdgeIdx(EdgeType Edge) const {
+    Edge2IdxMapTy::const_iterator I = Edge2IdxMap.find(Edge);
+    return I == Edge2IdxMap.end() ? 0 : I->second;
+  }
   
   struct EdgeConsistencyBenefit {
     unsigned SrcEdgeIdx, DstEdgeIdx;
@@ -603,14 +608,17 @@ unsigned MinCostFlowSolver::createEdgeVariables(const CompGraphNode *N,
   typedef CompGraphNode::iterator iterator;
   for (iterator I = N->succ_begin(), E = N->succ_end(); I != E; ++I) {
     CompGraphNode *Succ = *I;
-    Edge2IdxMap[EdgeType(N, Succ)] = Col;
+    bool inserted
+      = Edge2IdxMap.insert(std::make_pair(EdgeType(N, Succ), Col)).second;
+    assert(inserted && "Edge had already exisited?");
 
-    SmallString<8> S;
+    add_columnex(lp, 0, 0,0);
+    DEBUG(SmallString<8> S;
     {
       raw_svector_ostream SS(S);
       SS << 'E' << Col;
     }
-    set_col_name(lp, Col, const_cast<char*>(S.c_str()));
+    set_col_name(lp, Col, const_cast<char*>(S.c_str())););
     set_int(lp, Col, TRUE);
     // Set the maximum capacity (upper bound) of each edge to 1.
     set_upbo(lp, Col, 1.0);
@@ -624,27 +632,30 @@ unsigned
 MinCostFlowSolver::createConsistencyVariables(EdgeType SrcEdge, EdgeType DstEdge,
                                               float Benefit, unsigned Col) {
   unsigned SrcDstConsistentVarIdx = Col;
-  SmallString<8> S;
+  add_columnex(lp, 0, 0,0);
+  DEBUG(SmallString<8> S;
   {
     raw_svector_ostream SS(S);
     SS << 'C' << SrcDstConsistentVarIdx;
   }
-  set_col_name(lp, SrcDstConsistentVarIdx, const_cast<char*>(S.c_str()));
+  set_col_name(lp, SrcDstConsistentVarIdx, const_cast<char*>(S.c_str())););
   set_int(lp, SrcDstConsistentVarIdx, TRUE);
   // The variable will be 1 when the edges are not consistent.
   set_upbo(lp, SrcDstConsistentVarIdx, 1.0);
 
   unsigned DstSrcConsistentVarIdx = Col + 1;
-  S.clear();
+  add_columnex(lp, 0, 0,0);
+  DEBUG(SmallString<8> S;
   {
     raw_svector_ostream SS(S);
     SS << 'C' << DstSrcConsistentVarIdx;
   }
-  set_col_name(lp, DstSrcConsistentVarIdx, const_cast<char*>(S.c_str()));
+  set_col_name(lp, DstSrcConsistentVarIdx, const_cast<char*>(S.c_str())););
   set_int(lp, DstSrcConsistentVarIdx, TRUE);
   set_upbo(lp, DstSrcConsistentVarIdx, 1.0);
 
-  unsigned SrcEdgeIdx = Edge2IdxMap[SrcEdge], DstEdgeIdx = Edge2IdxMap[DstEdge];
+  unsigned SrcEdgeIdx = lookUpEdgeIdx(SrcEdge),
+           DstEdgeIdx = lookUpEdgeIdx(DstEdge);
   assert(SrcEdgeIdx && DstEdgeIdx && "Edge does not exist?");
   EdgeConsistencyBenefit ECB = { SrcEdgeIdx, DstEdgeIdx,
                                  SrcDstConsistentVarIdx, DstSrcConsistentVarIdx,
@@ -658,8 +669,10 @@ MinCostFlowSolver::createConsistencyVariables(EdgeType SrcEdge, EdgeType DstEdge
 unsigned MinCostFlowSolver::createLPAndVariables() {
   lp = make_lp(0, 0);
 
+  set_add_rowmode(lp, FALSE);
   // Create the supply variable
-  set_col_name(lp, 1, "supply");
+  add_columnex(lp, 0, 0,0);
+  DEBUG(set_col_name(lp, 1, "supply"));
   set_int(lp, 1, TRUE);
 
   // Column number of LP in lpsolve starts from 1, the other variables start
@@ -688,6 +701,7 @@ unsigned MinCostFlowSolver::createLPAndVariables() {
     }
   }
 
+  set_add_rowmode(lp, FALSE);
   return Col - 1;
 }
 
@@ -702,7 +716,7 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
   typedef CompGraphNode::iterator iterator;
   for (iterator SI = S->succ_begin(), SE = S->succ_end(); SI != SE; ++SI) {
     CompGraphNode *Succ = *SI;
-    unsigned EdgeIdx = Edge2IdxMap[EdgeType(S, Succ)];
+    unsigned EdgeIdx = lookUpEdgeIdx(EdgeType(S, Succ));
     assert(EdgeIdx && "Edge column number not available!");
     Col.push_back(EdgeIdx);
     Coeff.push_back(1.0);
@@ -721,7 +735,7 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
   const CompGraphNode *T = G.getExit();
   for (iterator SI = T->pred_begin(), SE = T->pred_end(); SI != SE; ++SI) {
     CompGraphNode *Pred = *SI;
-    unsigned EdgeIdx = Edge2IdxMap[EdgeType(Pred, T)];
+    unsigned EdgeIdx = lookUpEdgeIdx(EdgeType(Pred, T));
     assert(EdgeIdx && "Edge column number not available!");
     Col.push_back(EdgeIdx);
     Coeff.push_back(1.0);
@@ -749,7 +763,7 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
     typedef CompGraphNode::iterator iterator;
     for (iterator SI = N->succ_begin(), SE = N->succ_end(); SI != SE; ++SI) {
       CompGraphNode *Succ = *SI;
-      unsigned EdgeIdx = Edge2IdxMap[EdgeType(N, Succ)];
+      unsigned EdgeIdx = lookUpEdgeIdx(EdgeType(N, Succ));
       assert(EdgeIdx && "Edge column number not available!");
       Col.push_back(EdgeIdx);
       Coeff.push_back(1.0);
@@ -766,7 +780,7 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
     typedef CompGraphNode::iterator iterator;
     for (iterator PI = N->pred_begin(), PE = N->pred_end(); PI != PE; ++PI) {
       CompGraphNode *Pred = *PI;
-      unsigned EdgeIdx = Edge2IdxMap[EdgeType(Pred, N)];
+      unsigned EdgeIdx = lookUpEdgeIdx(EdgeType(Pred, N));
       assert(EdgeIdx && "Edge column number not available!");
       Col.push_back(EdgeIdx);
       Coeff.push_back(1.0);
