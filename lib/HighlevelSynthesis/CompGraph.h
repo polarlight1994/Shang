@@ -206,7 +206,7 @@ public:
   typedef CompGraphNode NodeTy;
   typedef std::pair<NodeTy*, NodeTy*> EdgeType;
 
-  typedef std::vector<EdgeType> ClusterType;
+  typedef std::vector<NodeTy*> ClusterType;
   typedef std::vector<ClusterType> ClusterVectors;
 
   typedef std::vector<EdgeType> EdgeVector;

@@ -215,21 +215,14 @@ void RegisterSharing::initializeOverlappedSlots(VASTModule &VM) {
 
 void RegisterSharing::checkConsistencyAgainstPSB(const ClusterType &Cluster,
                                                  VASTCompGraph &G) {
-  CompGraphNode *Head = G.getNode(Cluster.front().first->Inst);
-
   for (unsigned i = 0; i < Cluster.size(); ++i) {
-    CompGraphNode *Src = G.getNode(Cluster[i].second->Inst);
+    CompGraphNode *Src = G.getNode(Cluster[i]->Inst);
     // A node maybe eliminated by CFG folding or chaining.
     if (Src == 0)
       continue;
 
-    // TODO: Add reduce the cost between src and dst to produce a consistent
-    // binding?
-    if (Head && !Head->isNeighbor(Src))
-      ++NumInconsistent;
-
     for (unsigned j = i + 1; j < Cluster.size(); ++j) {
-      CompGraphNode *Dst = G.getNode(Cluster[j].second->Inst);
+      CompGraphNode *Dst = G.getNode(Cluster[j]->Inst);
       if (Dst == 0)
         continue;
 
@@ -299,12 +292,11 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   for (cluster_iterator I = G.cluster_begin(), E = G.cluster_end(); I != E; ++I)
   {
     const ClusterType &Cluster = *I;
-    CompGraphNode *Head = I->front().first;
+    CompGraphNode *Head = I->front();
 
     typedef ClusterType::const_iterator iterator;
-    for (iterator CI = Cluster.begin(), CE = Cluster.end(); CI != CE; ++CI) {
-      VASTCompGraph::EdgeType Edge = *CI;
-      CompGraphNode *Node = Edge.second;
+    for (iterator CI = Cluster.begin() + 1, CE = Cluster.end(); CI != CE; ++CI) {
+      CompGraphNode *Node = *CI;
       mergeLI(Node, Head, VM);
 
       // Remove it from the compatibility graph since it is already merged into

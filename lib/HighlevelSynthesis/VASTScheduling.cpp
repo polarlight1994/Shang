@@ -1125,21 +1125,12 @@ IterativeSchedulingBinding::checkCompatibility(const ClusterType &Cluster) {
   unsigned AnyViolation = false;
 
   for (unsigned i = 0; i < Cluster.size(); ++i) {
-    PSBCompNode *Src = static_cast<PSBCompNode*>(Cluster[i].first);
+    PSBCompNode *Src = static_cast<PSBCompNode*>(Cluster[i]);
     ArrayRef<VASTSchedUnit*> SrcSUs(IR2SUMap[Src->Inst]);
-
-    PSBCompNode *Dst = static_cast<PSBCompNode*>(Cluster[i].second);
-    ArrayRef<VASTSchedUnit*> DstSUs(IR2SUMap[Dst->Inst]);
-
-    if (unsigned NegativeSlack = checkCompatibility(Src, SrcSUs, Dst, DstSUs)) {
-      float Penalty = (PerformanceFactor * NegativeSlack);
-      updateBindingCost(Src, Dst, Penalty);
-      AnyViolation |= true;
-    }
 
     // Also check the compatibility between Src and its descendant
     for (unsigned j = i + 1; j < Cluster.size(); ++j)  {
-      PSBCompNode *Desc = static_cast<PSBCompNode*>(Cluster[j].second);
+      PSBCompNode *Desc = static_cast<PSBCompNode*>(Cluster[j]);
       ArrayRef<VASTSchedUnit*> DescSUs(IR2SUMap[Desc->Inst]);
 
       unsigned NegativeSlack = checkCompatibility(Src, SrcSUs, Desc, DescSUs);
@@ -1150,9 +1141,9 @@ IterativeSchedulingBinding::checkCompatibility(const ClusterType &Cluster) {
       // Prevent the this descendant from being bind to the same physical unit
       // with its ancestor. Essentially, we want to separate this node from the
       // cluster.
-      for (unsigned k = i; k <= j; ++k)  {
-        PSBCompNode *Ancestor = static_cast<PSBCompNode*>(Cluster[k].first);
-        float Penalty = (PerformanceFactor * NegativeSlack) / (j - k + 1);
+      for (unsigned k = i; k < j; ++k)  {
+        PSBCompNode *Ancestor = static_cast<PSBCompNode*>(Cluster[k]);
+        float Penalty = (PerformanceFactor * NegativeSlack) / (j - k);
         updateBindingCost(Ancestor, Desc, Penalty);
       }
     }

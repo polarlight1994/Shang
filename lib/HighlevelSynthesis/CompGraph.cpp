@@ -480,7 +480,7 @@ template<> struct DOTGraphTraits<CompGraphBase*> : public DefaultDOTGraphTraits{
     typedef CompGraphBase::cluster_iterator cluster_iterator;
     for (cluster_iterator I = G->cluster_begin(), E = G->cluster_end();
          I != E; ++I) {
-      ArrayRef<CompGraphBase::EdgeType> Nodes(*I);
+      ArrayRef<NodeTy*> Nodes(*I);
 
       if (Nodes.size() == 1)
         continue;
@@ -490,11 +490,11 @@ template<> struct DOTGraphTraits<CompGraphBase*> : public DefaultDOTGraphTraits{
       ++ClusterNum;
 
       O.indent(4) << "style = solid;\n";
-      O.indent(4) << "Node" << static_cast<const void*>(Nodes.front().first)
+      O.indent(4) << "Node" << static_cast<const void*>(Nodes.front())
                   << ";\n";
 
-      for (unsigned i = 0; i < Nodes.size(); ++i)
-        O.indent(4) << "Node" << static_cast<const void*>(Nodes[i].second)
+      for (unsigned i = 1; i < Nodes.size(); ++i)
+        O.indent(4) << "Node" << static_cast<const void*>(Nodes[i])
                     << ";\n";
 
       O.indent(2) << "}\n";
@@ -957,10 +957,14 @@ void MinCostFlowSolver::buildBinging(CompGraphNode *Src, ClusterType &Cluster) {
       if (!hasFlow(EdgeType(Src, Dst), TotalRows))
         continue;
 
-      if (Dst->IsTrivial)
-        return;
+      if (Dst->IsTrivial) {
+        if (!Cluster.empty())
+          Cluster.push_back(Src);
 
-      Cluster.push_back(CompGraphBase::EdgeType(Src, Dst));
+        return;
+      }
+
+      Cluster.push_back(Src);
       Src = Dst;
       break;
     }
