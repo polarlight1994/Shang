@@ -194,11 +194,13 @@ void BBLiveIntervals::createInstVarInfo(VASTModule &VM) {
 void BBLiveIntervals::handleUse(Instruction *Def, VASTSeqOp *Op) {
   BasicBlock *BB = GetParentBB(Op);
 
-  // Ignore the define block.
-  if (Def->getParent() == BB)
-    return;
-
   LiveInterval *LI = getVarInfo(Def);
+
+  // Ignore the define block.
+  if (Def->getParent() == BB) {
+    LI->KillOps.insert(Op);
+    return;
+  }
 
   unsigned BBNum = BBNumbers.lookup(BB);
   // This variable is known alive at this slot, that means there is some even
