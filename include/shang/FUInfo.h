@@ -73,12 +73,6 @@ namespace VFUs {
     if (LHS == RHS)
       return true;
 
-    if (LHS == VFUs::AddSub && RHS == VFUs::ICmp)
-      return true;
-
-    if (RHS == VFUs::ICmp && RHS == VFUs::AddSub)
-      return true;
-
     return false;
   }
 
