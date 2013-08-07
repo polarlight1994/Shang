@@ -227,6 +227,11 @@ void CompGraphBase::collectCompatibleEdges(NodeTy *Dst, NodeTy *Src,
   std::set<CompGraphNode*> DstFIs;
   extractFaninNodes(Dst, DstFIs);
 
+  // For now, trying to maintain consistency between the edges if the fanins
+  // have complex pattern doesn't make sense.
+  if (SrcFIs.size() != 1 || DstFIs.size() != 1)
+    return;
+
   typedef std::set<NodeTy*>::iterator iterator;
   for (iterator I = SrcFIs.begin(), E = SrcFIs.end(); I != E; ++I) {
     NodeTy *SrcFI = *I;
@@ -234,7 +239,7 @@ void CompGraphBase::collectCompatibleEdges(NodeTy *Dst, NodeTy *Src,
     for (iterator J = DstFIs.begin(), E = DstFIs.end(); J != E; ++J) {
       NodeTy *DstFI = *J;
 
-      if (!VFUs::isNoTrivialFUCompatible(SrcFI->FUType, DstFI->FUType))
+      if (!VFUs::isFUCompatible(SrcFI->FUType, DstFI->FUType))
         continue;
 
       if (SrcFI->countSuccessor(DstFI)) {
