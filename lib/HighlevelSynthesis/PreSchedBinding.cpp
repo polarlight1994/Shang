@@ -278,6 +278,7 @@ void BBLiveIntervals::run(VASTModule &VM) {
   typedef VASTOperandList::op_iterator op_iterator;
   for (seqop_iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
     VASTSeqOp *Op = I;
+    DataflowInst Inst(Op);
 
     // Extract the used SeqValues.
     SVs.clear();
@@ -287,6 +288,11 @@ void BBLiveIntervals::run(VASTModule &VM) {
     typedef std::set<VASTSeqValue*>::iterator def_iterator;
     for (def_iterator I = SVs.begin(), E = SVs.end(); I != E; ++I) {
       VASTSeqValue *V = *I;
+
+      // Ignore the launch-latch chains.
+      if (V->getLLVMValue() == Op->getValue())
+        continue;
+
       if (Instruction *Def = dyn_cast_or_null<Instruction>(V->getLLVMValue()))
         handleUse(Def, Op);
     }
