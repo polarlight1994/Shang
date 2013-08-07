@@ -93,7 +93,8 @@ public:
   void setUpInterval(PSBCompNode *N) {
     DataflowInst Inst = N->Inst;
     if (Inst.IsLauch()) {
-      // N->getDefs() |= 
+      N->getDefs().set(BBNumbers.lookup(Inst->getParent()));
+      N->getReachables().set(BBNumbers.lookup(Inst->getParent()));
       return;
     }
 
@@ -300,6 +301,12 @@ void PSBCompNode::setKillOps(const std::set<VASTSeqOp*> &KillOps,
   this->KillOps.insert(DefKillOps.begin(), DefKillOps.end());
 }
 
+
+
+bool PSBCompNode::isSingleBlock() const {
+  return getDefs().count() == 1 && getDefs() == getReachables();
+}
+
 template<typename T>
 static bool intersect(const std::set<T*> &LHS, const std::set<T*> &RHS) {
   typedef typename std::set<T*>::const_iterator iterator;
@@ -346,11 +353,7 @@ bool PSBCompNode::isCompatibleWith(const CompGraphNode *RHS) const {
 
     // If the live interval is not dead (there is live-in blocks), their will
     // never become compatible if they BB live interval overlap.
-    if (!isDead() || !RHS->isDead())
-      return false;
-
-    // Do not mess up with PHI for now.
-    if (isa<PHINode>(Inst) || isa<PHINode>(RHS->Inst))
+    if (!isSingleBlock() || !static_cast<const PSBCompNode*>(RHS)->isSingleBlock())
       return false;
   }
 

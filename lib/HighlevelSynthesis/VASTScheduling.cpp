@@ -1059,12 +1059,26 @@ unsigned IterativeSchedulingBinding::checkCompatibility(PSBCompNode *Src,
     // scheduling when their are in the same subtree of the dominator tree.
     // Otherwise their live interval will never overlap, because the use of a
     // variable are all dominated by the define, hence the live interval rooted
-    // on two node without dominance relationship will never overlap. 
-    if (DT.dominates(Src->getDomBlock(), Dst->getDomBlock()))
-      return checkLatchCompatibility(Src, Dst, DstSUs, BindingBenefit);
+    // on two node without dominance relationship will never overlap.
+    unsigned NegativeSlack = 0;
+    BasicBlock *SrcBlock = Src->getDomBlock(), *DstBlock = Dst->getDomBlock();
+    if (SrcBlock != DstBlock) {
+      if (DT.dominates(Src->getDomBlock(), Dst->getDomBlock()))
+        return checkLatchCompatibility(Src, Dst, DstSUs, BindingBenefit);
 
-    if (DT.dominates(Dst->getDomBlock(), Src->getDomBlock()))
-      return checkLatchCompatibility(Dst, Src, SrcSUs, BindingBenefit);
+      if (DT.dominates(Dst->getDomBlock(), Src->getDomBlock()))
+        return checkLatchCompatibility(Dst, Src, SrcSUs, BindingBenefit);
+
+      return 0;
+    }
+
+    unsigned Src2DstSlack
+      = checkLatchCompatibility(Src, Dst, DstSUs, BindingBenefit);
+    unsigned Dst2SrcSlack
+      = checkLatchCompatibility(Dst, Src, SrcSUs, BindingBenefit);
+
+    if (Src2DstSlack && Dst2SrcSlack)
+      return std::min(Src2DstSlack, Dst2SrcSlack);
 
     return 0;
   }

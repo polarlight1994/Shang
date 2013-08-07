@@ -34,7 +34,8 @@ public:
                   const std::set<VASTSeqOp*> &DefKillOps);
 
   bool isKillIntersect(const PSBCompNode *RHS) const;
-  
+  bool isSingleBlock() const;
+
   virtual bool isCompatibleWith(const CompGraphNode *RHS) const;
 
   typedef std::set<VASTSeqOp*>::const_iterator kill_iterator;

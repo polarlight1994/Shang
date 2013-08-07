@@ -138,9 +138,10 @@ public:
   SparseBitVector<> &getDefs() { return Defs; }
   SparseBitVector<> &getReachables() { return Reachables; }
 
-  bool isIntervalEmpty() const { return Defs.empty() && Reachables.empty(); }
+  const SparseBitVector<> &getDefs() const { return Defs; }
+  const SparseBitVector<> &getReachables() const { return Reachables; }
 
-  bool isDead() const { return Defs == Reachables; }
+  bool isIntervalEmpty() const { return Defs.empty() && Reachables.empty(); }
 
   bool isNeighbor(CompGraphNode *RHS) const {
     return Preds.count(RHS) || Succs.count(RHS);
