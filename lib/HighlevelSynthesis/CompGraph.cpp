@@ -220,51 +220,35 @@ void CompGraphBase::computeCompatibility() {
   }
 }
 
-void CompGraphBase::collectCompatibleEdges(NodeTy *Dst, NodeTy *Src,
-                                           std::set<NodeTy*> &SrcFIs) {
-  EdgeVector &CompEdges = CompatibleEdges[EdgeType(Src, Dst)];
-
-  std::set<CompGraphNode*> DstFIs;
-  extractFaninNodes(Dst, DstFIs);
-
-  // For now, trying to maintain consistency between the edges if the fanins
-  // have complex pattern doesn't make sense.
-  if (SrcFIs.size() != 1 || DstFIs.size() != 1)
+void CompGraphBase::collectCompatibleEdges(NodeTy *Dst, NodeTy *Src) {
+  // Given two latch operation A and B, if A and B are bound to the same
+  // physical unit, try to bind Launch A and Launch B to the same physical unit
+  // as well.
+  if (Src->Inst.IsLauch() || Dst->Inst.IsLauch())
     return;
 
-  typedef std::set<NodeTy*>::iterator iterator;
-  for (iterator I = SrcFIs.begin(), E = SrcFIs.end(); I != E; ++I) {
-    NodeTy *SrcFI = *I;
+  NodeTy *SrcFI = getNode(DataflowInst(Src->Inst, true)),
+         *DstFI = getNode(DataflowInst(Dst->Inst, true));
 
-    for (iterator J = DstFIs.begin(), E = DstFIs.end(); J != E; ++J) {
-      NodeTy *DstFI = *J;
+  if (!SrcFI || !DstFI)
+    return;
 
-      if (!VFUs::isFUCompatible(SrcFI->FUType, DstFI->FUType))
-        continue;
-
-      if (SrcFI->countSuccessor(DstFI)) {
-        CompEdges.push_back(EdgeType(SrcFI, DstFI));
-        ++NumCompEdges;
-      }
-
-      if (DstFI->countSuccessor(SrcFI)) {
-        CompEdges.push_back(EdgeType(DstFI, SrcFI));
-        ++NumCompEdges;
-      }
-    }
+  if (SrcFI->countSuccessor(DstFI)) {
+    CompatibleEdges[EdgeType(Src, Dst)].push_back(EdgeType(SrcFI, DstFI));
+    ++NumCompEdges;
+    return;
   }
 
-  if (CompEdges.empty())
-    CompatibleEdges.erase(EdgeType(Src, Dst));
+  if (DstFI->countSuccessor(SrcFI)) {
+    CompatibleEdges[EdgeType(Src, Dst)].push_back(EdgeType(DstFI, SrcFI));
+    ++NumCompEdges;
+    return;
+  }
 }
 
 void CompGraphBase::compuateEdgeCosts() {
-  std::set<NodeTy*> SrcFIs;
   for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
     NodeTy *Src = I;
-
-    SrcFIs.clear();
-    extractFaninNodes(Src, SrcFIs);
 
     typedef NodeTy::iterator succ_iterator;
     for (succ_iterator I = Src->succ_begin(), E = Src->succ_end(); I != E; ++I) {
@@ -275,8 +259,7 @@ void CompGraphBase::compuateEdgeCosts() {
 
       Src->setCost(Dst, computeCost(Src, Dst));
 
-      if (!SrcFIs.empty())
-        collectCompatibleEdges(Dst, Src, SrcFIs);
+      collectCompatibleEdges(Dst, Src);
     }
   }
 }

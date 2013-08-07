@@ -269,8 +269,7 @@ protected:
                          std::set<CompGraphNode*> &Fanins) const;
   void translateToCompNodes(std::set<VASTSeqValue*> &SVSet,
                             std::set<CompGraphNode*> &Fanins) const;
-  void
-  collectCompatibleEdges(NodeTy *Dst, NodeTy *Src, std::set<NodeTy*> &SrcFIs);
+  void collectCompatibleEdges(NodeTy *Dst, NodeTy *Src);
 private:
   MinCostFlowSolver *MCF;
 public:
