@@ -978,9 +978,6 @@ struct IterativeSchedulingBinding {
     if (S != Scheduling)
       return;
 
-    if (!alap_less(Src, Dst))
-      std::swap(Src, Dst);
-
     Scheduler.addSoftConstraint(Src, Dst, C, Penalty);
   }
 
@@ -1103,6 +1100,11 @@ unsigned IterativeSchedulingBinding::checkCompatibility(PSBCompNode *Src,
   dbgs() << "\n\n");
 
   float Penalty = BindingBenefit * ResourceFactor;
+
+  // Apply the constraint in the same way that we assign the linear order.
+  if (!alap_less(SrcSU, SrcSU))
+    std::swap(SrcSU, SrcSU);
+
   updateSchedulingConstraint(SrcSU, DstSU, SrcSU->getII(), Penalty);
 
   return SrcSU->getII();
