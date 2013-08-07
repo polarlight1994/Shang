@@ -95,19 +95,47 @@ BasicBlock *CompGraphNode::getDomBlock() const {
   return Inst->getParent();
 }
 
-void CompGraphBase::initalizeDTDFSOrder() {
-  typedef df_iterator<DomTreeNode*> iterator;
+void CompGraphBase::initalizeDomTreeLevel() {
+  typedef DomTreeNode::iterator dt_child_iterator;
+  if (!DomTreeLevels.empty()) return;
+
+  SmallVector<DomTreeNode*, 32> Worklist;
+
   DomTreeNode *Root = DT.getRootNode();
-  unsigned Order = 0;
-  for (iterator I = df_begin(Root), E = df_end(Root); I != E; ++I)
-    DTDFSOrder[(*I)->getBlock()] = ++Order;
+  DomTreeLevels[Root->getBlock()] = 0;
+  Worklist.push_back(Root);
+
+  while (!Worklist.empty()) {
+    DomTreeNode *Node = Worklist.pop_back_val();
+    unsigned ChildLevel = DomTreeLevels[Node->getBlock()] + 1;
+    for (dt_child_iterator CI = Node->begin(), CE = Node->end(); CI != CE; ++CI)
+    {
+      DomTreeLevels[(*CI)->getBlock()] = ChildLevel;
+      Worklist.push_back(*CI);
+    }
+  }
 }
 
 bool
 CompGraphBase::isBefore(CompGraphNode *Src, CompGraphNode *Dst) {
   assert(!Src->IsTrivial && !Dst->IsTrivial && "Unexpected trivial node!");
-  if (Src->getDomBlock() != Dst->getDomBlock())
-    return getDTDFSOrder(Src->getDomBlock()) < getDTDFSOrder(Dst->getDomBlock());
+  BasicBlock *SrcBlock = Src->getDomBlock(), *DstBlock = Dst->getDomBlock();
+  if (SrcBlock != DstBlock) {
+    if (DT.dominates(SrcBlock, DstBlock))
+      return true;
+
+    if (DT.dominates(DstBlock, SrcBlock))
+      return false;
+
+    unsigned SrcLevel = getDomTreeLevel(SrcBlock),
+             DstLevel = getDomTreeLevel(DstBlock);
+
+    if (SrcLevel < DstLevel)
+      return true;
+
+    if (DstLevel < SrcLevel)
+      return false;
+  }
 
   if (Src->Order < Dst->Order)
     return true;

@@ -229,12 +229,12 @@ protected:
     Nodes.erase(N);
   }
 
-  std::map<BasicBlock*, unsigned> DTDFSOrder;
-  void initalizeDTDFSOrder();
+  std::map<BasicBlock*, unsigned> DomTreeLevels;
+  void initalizeDomTreeLevel();
 
-  unsigned getDTDFSOrder(BasicBlock *BB) const {
-    std::map<BasicBlock*, unsigned>::const_iterator I = DTDFSOrder.find(BB);
-    assert(I != DTDFSOrder.end() && "DFS order not defined?");
+  unsigned getDomTreeLevel(BasicBlock *BB) const {
+    std::map<BasicBlock*, unsigned>::const_iterator I = DomTreeLevels.find(BB);
+    assert(I != DomTreeLevels.end() && "DFS order not defined?");
     return I->second;
   }
 
@@ -272,7 +272,7 @@ private:
 public:
   explicit CompGraphBase(DominatorTree &DT, CachedStrashTable &CST)
     : Entry(), Exit(), DT(DT), CST(CST), MCF(0) {
-    initalizeDTDFSOrder();
+    initalizeDomTreeLevel();
   }
 
   virtual ~CompGraphBase();
