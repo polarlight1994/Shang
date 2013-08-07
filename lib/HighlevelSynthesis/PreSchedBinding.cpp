@@ -331,9 +331,34 @@ void PSBCompNode::increaseCost(PSBCompNode *Succ, float Cost) {
   setCost(Succ, Cost + getCostTo(Succ));
 }
 
+bool PSBCompNode::isCompatibleWith(const CompGraphNode *RHS) const {
+  if (!isCompatibleWithStructural(RHS))
+    return false;
+
+  if (isKillIntersect(static_cast<const PSBCompNode*>(RHS)))
+    return false;
+
+  if (!isCompatibleWithInterval(RHS)) {
+    // For instructions from different BB, their will never become compatible
+    // if they BB live interval overlap.
+    if (getDomBlock() != RHS->getDomBlock())
+      return false;
+
+    // If the live interval is not dead (there is live-in blocks), their will
+    // never become compatible if they BB live interval overlap.
+    if (!isDead() || !RHS->isDead())
+      return false;
+
+    // Do not mess up with PHI for now.
+    if (isa<PHINode>(Inst) || isa<PHINode>(RHS->Inst))
+      return false;
+  }
+
+  return true;
+}
+
 namespace {
 class PSBCompGraph : public CompGraphBase {
-  bool isCompatible(CompGraphNode *Src, CompGraphNode *Dst) const;
 public:
   PSBCompGraph(DominatorTree &DT, CachedStrashTable &CST)
     : CompGraphBase(DT, CST) {}
@@ -392,15 +417,6 @@ float PSBCompGraph::compuateCommonFIBenefit(VASTSelector *Sel) const {
     = Sel->getBitWidth() * Sel->numNonTrivialFanins() * fanout_factor;
 
   return Benefit;
-}
-
-bool PSBCompGraph::isCompatible(NodeTy *SrcBase, NodeTy *DstBase) const {
-  PSBCompNode *Src = static_cast<PSBCompNode*>(SrcBase),
-              *Dst = static_cast<PSBCompNode*>(DstBase);
-  if (Src->isKillIntersect(Dst))
-    return false;
-
-  return true;
 }
 
 void PreSchedBinding::getAnalysisUsage(AnalysisUsage &AU) const {

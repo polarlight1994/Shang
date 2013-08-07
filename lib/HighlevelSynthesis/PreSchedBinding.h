@@ -35,6 +35,8 @@ public:
 
   bool isKillIntersect(const PSBCompNode *RHS) const;
   
+  virtual bool isCompatibleWith(const CompGraphNode *RHS) const;
+
   typedef std::set<VASTSeqOp*>::const_iterator kill_iterator;
   kill_iterator kill_begin() const { return KillOps.begin(); }
   kill_iterator kill_end() const { return KillOps.end(); }

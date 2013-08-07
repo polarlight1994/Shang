@@ -69,7 +69,10 @@ void CompGraphNode::merge(const CompGraphNode *RHS) {
   Reachables  |= RHS->Reachables;
 }
 
-bool CompGraphNode::isCompatibleWith(const CompGraphNode *RHS) const {
+bool CompGraphNode::isCompatibleWithStructural(const CompGraphNode *RHS) const {
+  if (!VFUs::isFUCompatible(FUType, RHS->FUType))
+    return false;
+
   if (Sels.size() != RHS->Sels.size())
     return false;
 
@@ -77,6 +80,11 @@ bool CompGraphNode::isCompatibleWith(const CompGraphNode *RHS) const {
   for (unsigned i = 0, e = size(); i != e; ++i)
     if (getSelector(i)->getBitWidth() != RHS->getSelector(i)->getBitWidth())
       return false;
+
+  return true;
+}
+
+bool CompGraphNode::isCompatibleWithInterval(const CompGraphNode *RHS) const {
 
   // FIXME: It looks like that we need to test intersection between defs and
   // alives. But intersection test between defs and kills are not required.
@@ -202,7 +210,7 @@ void CompGraphBase::computeCompatibility() {
       NodeTy *Other = *I;
 
       // Make edge between compatible nodes.
-      if (isCompatible(Node, Other) && Node->isCompatibleWith(Other))
+      if (Node->isCompatibleWith(Other))
         makeEdge(Node, Other);
     }
 

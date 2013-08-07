@@ -60,7 +60,7 @@ private:
   // The underlying data.
   SmallVector<VASTSelector*, 3> Sels;
 
-  typedef SmallPtrSet<CompGraphNode*, 8> NodeVecTy;
+  typedef std::set<CompGraphNode*> NodeVecTy;
   // Predecessors and Successors.
   NodeVecTy Preds, Succs;
 
@@ -71,7 +71,10 @@ private:
                          const SparseBitVector<> &RHSBits) {
     return LHSBits.intersects(RHSBits);
   }
-  
+protected:
+  bool isCompatibleWithInterval(const CompGraphNode *RHS) const;
+  bool isCompatibleWithStructural(const CompGraphNode *RHS) const;
+
   friend class CompGraphBase;
 public:
 
@@ -128,12 +131,16 @@ public:
 
   void merge(const CompGraphNode *RHS);
 
-  bool isCompatibleWith(const CompGraphNode *RHS) const;
+  virtual bool isCompatibleWith(const CompGraphNode *RHS) const {
+    return isCompatibleWithStructural(RHS) && isCompatibleWithInterval(RHS);
+  }
 
   SparseBitVector<> &getDefs() { return Defs; }
   SparseBitVector<> &getReachables() { return Reachables; }
 
   bool isIntervalEmpty() const { return Defs.empty() && Reachables.empty(); }
+
+  bool isDead() const { return Defs == Reachables; }
 
   bool isNeighbor(CompGraphNode *RHS) const {
     return Preds.count(RHS) || Succs.count(RHS);
@@ -236,10 +243,6 @@ protected:
     std::map<BasicBlock*, unsigned>::const_iterator I = DomTreeLevels.find(BB);
     assert(I != DomTreeLevels.end() && "DFS order not defined?");
     return I->second;
-  }
-
-  virtual bool isCompatible(NodeTy *Src, NodeTy *Dst) const {
-    return true;
   }
 
   virtual float computeCost(NodeTy *Src, NodeTy *Dst) const {

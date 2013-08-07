@@ -54,13 +54,6 @@ public:
     : CompGraphBase(DT, CST), fanin_factor(1.0f), fanout_factor(0.1f),
       area_factor(0.6f), consistent_factor(0.8f) {}
 
-  virtual bool isCompatible(NodeTy *Src, NodeTy *Dst) const {
-    if (!VFUs::isFUCompatible(Src->FUType, Dst->FUType))
-      return false;
-
-    return true;
-  }
-
   virtual float compuateCommonFIBenefit(VASTSelector *Sel) const {
     float Benefit
       = Sel->getBitWidth() * Sel->numNonTrivialFanins() * fanout_factor;
