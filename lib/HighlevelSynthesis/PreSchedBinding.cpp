@@ -278,7 +278,6 @@ void BBLiveIntervals::run(VASTModule &VM) {
   typedef VASTOperandList::op_iterator op_iterator;
   for (seqop_iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
     VASTSeqOp *Op = I;
-    DataflowInst Inst(Op);
 
     // Extract the used SeqValues.
     SVs.clear();
