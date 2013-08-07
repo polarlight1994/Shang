@@ -893,14 +893,15 @@ struct IterativeSchedulingBinding {
   };
 
   State S;
-
+  unsigned ScheduleViolation, BindingViolation;
   const float PerformanceFactor, ResourceFactor;
 
   IterativeSchedulingBinding(VASTSchedGraph &G, PreSchedBinding &PSB,
                              DominatorTree &DT, BlockFrequencyInfo &BFI,
                              BranchProbabilityInfo &BPI, IR2SUMapTy &IR2SUMap)
     : Scheduler(G, 1), PSB(PSB), DT(DT), BFI(BFI), BPI(BPI), IR2SUMap(IR2SUMap),
-      S(Initial), PerformanceFactor(64.0f), ResourceFactor(0.05f) {
+      ScheduleViolation(0), BindingViolation(0),
+      S(Initial), PerformanceFactor(64.0f), ResourceFactor(0.2f) {
     // Build the hard linear order.
     Scheduler.addLinOrdEdge(DT, IR2SUMap);
   }
@@ -958,9 +959,16 @@ struct IterativeSchedulingBinding {
       return;
 
     Src->increaseCost(Dst, Cost);
+    ++BindingViolation;
   }
 
   bool alap_less(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) const {
+    if (LHS->getSchedule() < RHS->getSchedule())
+      return true;
+
+    if (RHS->getSchedule() < LHS->getSchedule())
+      return false;
+
     // Ascending order using ALAP.
     if (Scheduler.getALAPStep(LHS) < Scheduler.getALAPStep(RHS)) return true;
     if (Scheduler.getALAPStep(LHS) > Scheduler.getALAPStep(RHS)) return false;
@@ -979,11 +987,13 @@ struct IterativeSchedulingBinding {
       return;
 
     Scheduler.addSoftConstraint(Src, Dst, C, Penalty);
+    ++ScheduleViolation;
   }
 
   bool performScheduling(VASTModule &VM);
 
   bool iterate(VASTModule &VM) {
+    ScheduleViolation = BindingViolation = 0;
     // First of all, perform the scheduling.
     if (!performScheduling(VM))
       return false;
@@ -1240,8 +1250,11 @@ void VASTScheduling::scheduleGlobal() {
   //getAnalysis<BlockFrequencyInfo>();
 
   IterativeSchedulingBinding ISB(*G, PSB, *DT, BFI, BPI, IR2SUMap);
-  while (ISB.iterate(*VM))
+  while (ISB.iterate(*VM)) {
     ++NumIterations;
+    dbgs() << "Schedule Violations: " << ISB.ScheduleViolation << ' '
+           << "Binding Violations:" << ISB.BindingViolation << '\n';
+  }
 
   DEBUG(G->viewGraph());
 }
