@@ -294,8 +294,8 @@ void BBLiveIntervals::run(VASTModule &VM) {
     I->trimKillOps(BBNumbers);
 }
 
-void llvm::PSBCompNode::setKillOps(const std::set<VASTSeqOp*> &KillOps,
-                                   const std::set<VASTSeqOp*> &DefKillOps) {
+void PSBCompNode::setKillOps(const std::set<VASTSeqOp*> &KillOps,
+                             const std::set<VASTSeqOp*> &DefKillOps) {
   this->KillOps.insert(KillOps.begin(), KillOps.end());
   this->KillOps.insert(DefKillOps.begin(), DefKillOps.end());
 }
