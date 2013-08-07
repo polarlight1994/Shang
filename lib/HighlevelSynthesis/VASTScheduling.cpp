@@ -1150,9 +1150,9 @@ IterativeSchedulingBinding::checkCompatibility(const ClusterType &Cluster) {
       // Prevent the this descendant from being bind to the same physical unit
       // with its ancestor. Essentially, we want to separate this node from the
       // cluster.
-      for (unsigned k = i; k < j; ++k)  {
+      for (unsigned k = i; k <= j; ++k)  {
         PSBCompNode *Ancestor = static_cast<PSBCompNode*>(Cluster[k].first);
-        float Penalty = (PerformanceFactor * NegativeSlack) / (k - i + 1);
+        float Penalty = (PerformanceFactor * NegativeSlack) / (j - k + 1);
         updateBindingCost(Ancestor, Desc, Penalty);
       }
     }
