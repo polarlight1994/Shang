@@ -315,6 +315,7 @@ void CompGraphBase::decomposeTrivialNodes() {
         ++NumDecomposed;
       }
 
+      InstMap.erase(Node->Inst);
       Nodes.erase(Node);
     }
   }
