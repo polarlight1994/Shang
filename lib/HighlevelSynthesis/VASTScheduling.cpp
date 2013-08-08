@@ -972,7 +972,7 @@ struct IterativeSchedulingBinding {
     if (S != Binding)
       return;
 
-    Src->increaseCost(Dst, Cost);
+    Src->decreaseFixBenefit(Dst, Cost);
     ++BindingViolation;
   }
 

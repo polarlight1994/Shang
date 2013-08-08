@@ -48,35 +48,29 @@ class VASTCompGraph : public CompGraphBase {
   typedef CompGraphNode NodeTy;
 
 public:
-  const float interconnect_factor, mux_factor, area_factor, consistent_factor;
+  const float mux_factor, area_factor;
 
   VASTCompGraph(DominatorTree &DT, CachedStrashTable &CST)
-    : CompGraphBase(DT, CST), interconnect_factor(64.0f), mux_factor(0.8f),
-      area_factor(0.6f), consistent_factor(2.0f) {}
+    : CompGraphBase(DT, CST), mux_factor(0.8f), area_factor(0.6f) {}
 
-  float computeFixedCost(NodeTy *Src, NodeTy *Dst) const {
-    float Cost = 0.0f;
+  void initializeCost(NodeTy *Src, NodeTy *Dst, NodeTy::Cost &Cost) const {
     // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
-    Cost -= area_factor * computeSavedResource(Src, Dst);
+    Cost.FixBenefit = area_factor * computeSavedResource(Src, Dst);
 
     // 2. Calculate the interconnection cost.
-    Cost -= mux_factor * (computeSavedFIMux(Src, Dst) + computeSavedFOMux(Src, Dst));
+    Cost.FaninCost = mux_factor * computeIncreasedFIs(Src, Dst);
+    Cost.SavedFOs = computeSavedFOMux(Src, Dst);
 
     // 3. Timing penalty introduced by MUX
-    return Cost;
   }
 
-  float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst,
-                    unsigned iteration) const {
-    float Cost = Src->getCostTo(Dst);
+  float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const {
+    const NodeTy::Cost &Cost = Src->getCostTo(Dst);
+    float CurrentCost = - Cost.FixBenefit;
+    CurrentCost += Cost.FaninCost * (1.0f - compuateMergeFIsRatio(Src, Dst));
+    CurrentCost -= (Cost.SavedFOs + compuateMergeFOs(Src, Dst)) * mux_factor;
 
-    // 2. Calculate the interconnection cost.
-    Cost -= interconnect_factor * computeInterConnectConsistency(Src, Dst);
-
-    if (Src->getBindingIdx() == Dst->getBindingIdx())
-      Cost -= consistent_factor * exp(float(iteration));
-
-    return Cost;
+    return CurrentCost;
   }
 };
 }
@@ -271,7 +265,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   G.fixTransitive();
   G.computeInterconnects();
 
-  G.computeFixedCosts();
+  G.initializeCosts();
 
   checkConsistencyAgainstPSB(G);
 

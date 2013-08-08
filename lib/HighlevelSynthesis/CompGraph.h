@@ -49,6 +49,15 @@ public:
   const unsigned FUCost;
   const DataflowInst Inst;
 
+  struct Cost {
+    // Fixed cost including saved resource, and timing criticality.
+    float FixBenefit;
+    // The cost of fanin and fanout interconnection complexity.
+    float FaninCost;
+    unsigned SavedFOs;
+
+    Cost() : FixBenefit(0.0f), FaninCost(0.0f), SavedFOs(0) {}
+  };
 private:
   unsigned Order;
   SparseBitVector<> Defs;
@@ -62,7 +71,7 @@ private:
   SmallVector<NodeVecTy, 3> FaninNodes;
   NodeVecTy FanoutNodes;
 
-  typedef std::map<const CompGraphNode*, float> CostVecTy;
+  typedef std::map<CompGraphNode*, Cost> CostVecTy;
   CostVecTy SuccCosts;
   unsigned BindingIdx;
 
@@ -70,9 +79,16 @@ private:
                          const SparseBitVector<> &RHSBits) {
     return LHSBits.intersects(RHSBits);
   }
+
+  typedef CostVecTy::iterator cost_iterator;
+  cost_iterator cost_begin() { return SuccCosts.begin(); }
+  cost_iterator cost_end() { return SuccCosts.end(); }
+
 protected:
   bool isCompatibleWithInterval(const CompGraphNode *RHS) const;
   bool isCompatibleWithStructural(const CompGraphNode *RHS) const;
+
+  Cost &getCostToInternal(const CompGraphNode *To);
 
   friend class CompGraphBase;
 public:
@@ -163,9 +179,7 @@ public:
     return Succs.count(RHS);
   }
 
-  float getCostTo(const CompGraphNode *To) const;
-
-  void setCost(const CompGraphNode *To, float Cost);
+  const Cost &getCostTo(const CompGraphNode *To) const;
 
   // Unlink the Succ from current node.
   void unlinkSucc(CompGraphNode *Succ) {
@@ -237,7 +251,7 @@ protected:
   std::map<DataflowInst, CompGraphNode*> InstMap;
 
   // Pre-calculate the possible merged edges to speed up the cost update.
-  std::map<EdgeType, EdgeVector> CompatibleEdges;
+  std::map<EdgeType, EdgeVector> FaninCompatibles, FanoutCompatibles;
 
   DominatorTree &DT;
   CachedStrashTable &CST;
@@ -257,10 +271,8 @@ protected:
     return I->second;
   }
 
-  virtual float computeFixedCost(NodeTy *Src, NodeTy *Dst) const {
-    return 0.0f;
-  }
-
+  virtual void initializeCost(NodeTy *Src, NodeTy *Dst,
+                              NodeTy::Cost &Cost) const {}
 
   virtual CompGraphNode *createNode(VFUs::FUTypes FUType, unsigned FUCost,
                                     unsigned Idx, DataflowInst Inst,
@@ -268,17 +280,20 @@ protected:
     return new CompGraphNode(FUType, FUCost, Idx, Inst, Sels);
   }
 
-  float computeInterConnectConsistency(const CompGraphNode *Src,
-                                      const CompGraphNode *Dst) const;
-  float computeSavedFOMux(const CompGraphNode *Src,
-                           const CompGraphNode *Dst) const;
-  float computeSavedResource(const CompGraphNode *Src,
-                             const CompGraphNode *Dst) const;
+  float compuateMergeFIsRatio(const CompGraphNode *Src,
+                              const CompGraphNode *Dst) const;
+  unsigned compuateMergeFOs(const CompGraphNode *Src,
+                            const CompGraphNode *Dst) const;
 
-  float computeSavedFIMux(VASTSelector *Src, VASTSelector *Dst) const;
+  unsigned computeSavedFOMux(const CompGraphNode *Src,
+                            const CompGraphNode *Dst) const;
 
-  float
-  computeSavedFIMux(const CompGraphNode *Src, const CompGraphNode *Dst) const;
+  unsigned computeSavedResource(const CompGraphNode *Src,
+                                const CompGraphNode *Dst) const;
+
+  int computeIncreasedFIs(VASTSelector *Src, VASTSelector *Dst) const;
+  int
+  computeIncreasedFIs(const CompGraphNode *Src, const CompGraphNode *Dst) const;
 
   void
   extractFaninNodes(VASTSelector *Sel, std::set<CompGraphNode*> &Fanins) const;
@@ -288,7 +303,7 @@ protected:
 
   void computeInterconnects(CompGraphNode *N);
   void computeInterconnects(CompGraphNode *N, unsigned SelIdx);
-  void computeCompatibleEdges(NodeTy *Dst, NodeTy *Src, EdgeVector &CompEdges);
+  void computeCompatibleEdges(NodeTy *Dst, NodeTy *Src);
   void computeCompatibleEdges(std::set<NodeTy*> &DstNodes,
                               std::set<NodeTy*> &SrcNodes,
                               EdgeVector &CompEdges);
@@ -330,15 +345,14 @@ public:
     deleteNode(From);
   }
 
-  virtual float computeCost(const NodeTy *Src, const NodeTy *Dst,
-                            unsigned iteration) const {
+  virtual float computeCost(const NodeTy *Src, const NodeTy *Dst) const {
     return 0.0f;
   }
 
   void decomposeTrivialNodes();
   void computeCompatibility();
   void computeInterconnects();
-  void computeFixedCosts();
+  void initializeCosts();
   void fixTransitive();
 
   unsigned performBinding();
@@ -365,7 +379,7 @@ public:
       std::swap(Dst, Src);
 
     Src->Succs.insert(Dst);
-    Src->SuccCosts.insert(std::make_pair(Dst, 0.0f));
+    Src->SuccCosts.insert(std::make_pair(Dst, CompGraphNode::Cost()));
     Dst->Preds.insert(Src);
   }
 };

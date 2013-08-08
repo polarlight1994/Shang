@@ -308,8 +308,6 @@ void PSBCompNode::setKillOps(const std::set<VASTSeqOp*> &KillOps,
   this->KillOps.insert(DefKillOps.begin(), DefKillOps.end());
 }
 
-
-
 bool PSBCompNode::isSingleBlock() const {
   return getDefs().count() == 1 && getDefs() == getReachables();
 }
@@ -335,8 +333,12 @@ bool PSBCompNode::isKillIntersect(const PSBCompNode *RHS) const {
   return intersect(KillOps, RHS->KillOps);
 }
 
-void PSBCompNode::increaseCost(PSBCompNode *Succ, float Cost) {
-  setCost(Succ, Cost + getCostTo(Succ));
+void PSBCompNode::decreaseFixBenefit(PSBCompNode *Succ, float Inc) {
+  Cost &C = getCostToInternal(Succ);
+  if (C.FixBenefit < 0.0f)
+    C.FixBenefit *= 1.1f;
+
+  C.FixBenefit -= Inc;
 }
 
 bool PSBCompNode::isCompatibleWith(const CompGraphNode *RHS) const {
@@ -373,21 +375,19 @@ public:
       return new PSBCompNode(FUType, FUCost, Idx, Inst, Sels);
   }
 
-  float computeFixedCost(NodeTy *Src, NodeTy *Dst) const;
+  float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const;
 
-  float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst,
-                    unsigned iteration) const;
+  void initializeCost(NodeTy *Src, NodeTy *Dst, NodeTy::Cost &Cost) const;
 };
 }
 
-static const float interconnect_factor = 64.0f, mux_factor = 0.8f,
-                   area_factor = 0.6f,
-                   consistent_factor = 2.0f,
-                   scheduling_factor = 0.1f;
+static const float mux_factor = 0.8f,
+                   area_factor = 0.6f;
 
-float PSBCompGraph::computeFixedCost(NodeTy *Src, NodeTy *Dst) const {
-  float Cost = 0.0f;
-  float current_area_factor = area_factor;
+void PSBCompGraph::initializeCost(NodeTy *Src, NodeTy *Dst,
+                                  NodeTy::Cost &Cost) const {
+
+  float current_area_factor = 1.0f;
 
   // Increase the area benefit for operations that are not located in the same
   // BB, in this case, binding are almost always possible.
@@ -396,27 +396,23 @@ float PSBCompGraph::computeFixedCost(NodeTy *Src, NodeTy *Dst) const {
     current_area_factor *= 1.1f;
 
   // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
-  Cost -= current_area_factor * computeSavedResource(Src, Dst);
+  Cost.FixBenefit = current_area_factor * computeSavedResource(Src, Dst);
 
   // 2. Calculate the interconnection cost.
-  Cost -= mux_factor * (computeSavedFIMux(Src, Dst) + computeSavedFOMux(Src, Dst));
+  Cost.FaninCost = mux_factor * computeIncreasedFIs(Src, Dst);
+  Cost.SavedFOs = computeSavedFOMux(Src, Dst);
 
   // 3. Timing penalty introduced by MUX
-  return Cost;
 }
 
 float PSBCompGraph::computeCost(const CompGraphNode *Src,
-                                const CompGraphNode *Dst,
-                                unsigned iteration) const {
-  float Cost = Src->getCostTo(Dst);
+                                const CompGraphNode *Dst) const {
+  const NodeTy::Cost &Cost = Src->getCostTo(Dst);
+  float CurrentCost = - Cost.FixBenefit;
+  CurrentCost += Cost.FaninCost * (1.0f - compuateMergeFIsRatio(Src, Dst));
+  CurrentCost -= (Cost.SavedFOs + compuateMergeFOs(Src, Dst)) * mux_factor;
 
-  // 2. Calculate the interconnection cost.
-  Cost -= interconnect_factor * computeInterConnectConsistency(Src, Dst);
-
-  if (Src->getBindingIdx() == Dst->getBindingIdx())
-    Cost -= consistent_factor * exp(float(iteration)) ;
-
-  return Cost;
+  return CurrentCost;
 }
 
 void PreSchedBinding::getAnalysisUsage(AnalysisUsage &AU) const {
@@ -468,8 +464,7 @@ bool PreSchedBinding::runOnVASTModule(VASTModule &VM) {
   PSBCG->computeCompatibility();
   PSBCG->fixTransitive();
   PSBCG->computeInterconnects();
-
-  PSBCG->computeFixedCosts();
+  PSBCG->initializeCosts();
 
   PSBCG->performBinding();
 

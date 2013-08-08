@@ -42,7 +42,7 @@ public:
   kill_iterator kill_begin() const { return KillOps.begin(); }
   kill_iterator kill_end() const { return KillOps.end(); }
 
-  void increaseCost(PSBCompNode *Succ, float Cost);
+  void decreaseFixBenefit(PSBCompNode *Succ, float Cost);
 };
 
 

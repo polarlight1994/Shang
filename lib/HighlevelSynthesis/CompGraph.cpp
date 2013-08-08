@@ -38,16 +38,17 @@ STATISTIC(NumCompEdges,
 STATISTIC(NumDecomposed,
           "Number of operand register of chained operation decomposed");
 
-float CompGraphNode::getCostTo(const CompGraphNode *To) const  {
-  CostVecTy::const_iterator I = SuccCosts.find(To);
+const CompGraphNode::Cost &
+CompGraphNode::getCostTo(const CompGraphNode *To) const {
+  CostVecTy::const_iterator I = SuccCosts.find(const_cast<CompGraphNode*>(To));
   assert(I != SuccCosts.end() && "Not a Successor!");
   return I->second;
 }
 
-void
-CompGraphNode::setCost(const CompGraphNode *To, float Cost) {
-  assert(SuccCosts.count(To) && "Not a successor!");
-  SuccCosts[To] = Cost;
+CompGraphNode::Cost &CompGraphNode::getCostToInternal(const CompGraphNode *To) {
+  CostVecTy::iterator I = SuccCosts.find(const_cast<CompGraphNode*>(To));
+  assert(I != SuccCosts.end() && "Not a Successor!");
+  return I->second;
 }
 
 void CompGraphNode::print(raw_ostream &OS) const {
@@ -222,18 +223,18 @@ void CompGraphBase::computeCompatibility() {
   }
 }
 
-void CompGraphBase::computeFixedCosts() {
+void CompGraphBase::initializeCosts() {
   for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
     NodeTy *Src = I;
 
-    typedef NodeTy::iterator succ_iterator;
-    for (succ_iterator I = Src->succ_begin(), E = Src->succ_end(); I != E; ++I) {
-      NodeTy *Dst = *I;
+    typedef NodeTy::cost_iterator succ_iterator;
+    for (succ_iterator I = Src->cost_begin(), E = Src->cost_end(); I != E; ++I) {
+      NodeTy *Dst = I->first;
 
       if (Dst->IsTrivial)
         continue;
 
-      Src->setCost(Dst, computeFixedCost(Src, Dst));
+      initializeCost(Src, Dst, I->second);
     }
   }
 }
@@ -345,8 +346,8 @@ void CompGraphBase::extractFaninNodes(VASTSelector *Sel,
   translateToCompNodes(SVSet, Fanins);
 }
 
-float CompGraphBase::computeSavedFIMux(VASTSelector *Src,
-                                        VASTSelector *Dst) const {
+int CompGraphBase::computeIncreasedFIs(VASTSelector *Src,
+                                       VASTSelector *Dst) const {
   std::set<unsigned> MergedFIs;
   typedef VASTSelector::iterator iterator;
 
@@ -355,31 +356,29 @@ float CompGraphBase::computeSavedFIMux(VASTSelector *Src,
     MergedFIs.insert(SrashID);
   }
 
-  int IntersectedFIs = 0;
   for (iterator I = Dst->begin(), E = Dst->end(); I != E; ++I) {
     unsigned SrashID = CST.getOrCreateStrashID(*I);
-    if (!MergedFIs.insert(SrashID).second)
-      ++IntersectedFIs;
+    MergedFIs.insert(SrashID);
   }
 
   int Bitwidth = std::max(Src->getBitWidth(), Dst->getBitWidth());
 
   // Remember to multiple the saved mux (1 bit) port by the bitwidth.
-  return IntersectedFIs * Bitwidth;
+  return (MergedFIs.size() - 1) * Bitwidth;
 }
 
-float CompGraphBase::computeSavedFIMux(const CompGraphNode *Src,
+int CompGraphBase::computeIncreasedFIs(const CompGraphNode *Src,
                                        const CompGraphNode *Dst) const {
   assert(Src->size() == Dst->size() && "Number of operand register not agreed!");
-  float Cost = 0.0f;
+  int Cost = 0;
   for (unsigned i = 0, e = Src->size(); i != e; ++i)
-    Cost += computeSavedFIMux(Src->getSelector(i), Dst->getSelector(i));
+    Cost += computeIncreasedFIs(Src->getSelector(i), Dst->getSelector(i));
 
   return Cost;
 }
 
-float CompGraphBase::computeSavedFOMux(const CompGraphNode *Src,
-                                        const CompGraphNode *Dst) const {
+unsigned CompGraphBase::computeSavedFOMux(const CompGraphNode *Src,
+                                         const CompGraphNode *Dst) const {
   float Cost = 0.0f;
 
   std::set<CompGraphNode*> NumMergedFOs;
@@ -397,11 +396,11 @@ float CompGraphBase::computeSavedFOMux(const CompGraphNode *Src,
 
   // For each intersected fanouts, mux is required.
   // Assume each fanins require 1 LE
-  return IntersectedFOs * Bitwidth;
+  return - IntersectedFOs * Bitwidth;
 }
 
-float CompGraphBase::computeSavedResource(const CompGraphNode *Src,
-                                           const CompGraphNode *Dst) const {
+unsigned CompGraphBase::computeSavedResource(const CompGraphNode *Src,
+                                             const CompGraphNode *Dst) const {
   float Cost = 0.0f;
   // 1. Calculate the number of registers we can reduce through this edge.
   typedef NodeTy::const_sel_iterator sel_iterator;
@@ -415,15 +414,13 @@ float CompGraphBase::computeSavedResource(const CompGraphNode *Src,
   return Cost;
 }
 
-float
-CompGraphBase::computeInterConnectConsistency(const CompGraphNode *Src,
-                                              const CompGraphNode *Dst) const {
+float CompGraphBase::compuateMergeFIsRatio(const CompGraphNode *Src,
+                                           const CompGraphNode *Dst) const {
   typedef std::map<EdgeType, EdgeVector>::const_iterator iterator;
-  iterator I = CompatibleEdges.find(EdgeType(const_cast<CompGraphNode*>(Src),
-                                             const_cast<CompGraphNode*>(Dst)));
-
-  if (I == CompatibleEdges.end())
-    return 0.0f;
+  iterator I = FaninCompatibles.find(EdgeType(const_cast<CompGraphNode*>(Src),
+                                              const_cast<CompGraphNode*>(Dst)));
+  if (I == FaninCompatibles.end())
+    return 0;
 
   typedef EdgeVector::const_iterator edge_iterator;
   const EdgeVector &Edges = I->second;
@@ -437,6 +434,31 @@ CompGraphBase::computeInterConnectConsistency(const CompGraphNode *Src,
   }
 
   return float(NumCompatibles) / float(Edges.size());
+}
+
+unsigned CompGraphBase::compuateMergeFOs(const CompGraphNode *Src,
+                                         const CompGraphNode *Dst) const {
+typedef std::map<EdgeType, EdgeVector>::const_iterator iterator;
+iterator I = FanoutCompatibles.find(EdgeType(const_cast<CompGraphNode*>(Src),
+                                             const_cast<CompGraphNode*>(Dst)));
+  if (I == FanoutCompatibles.end())
+    return 0;
+
+  typedef EdgeVector::const_iterator edge_iterator;
+  const EdgeVector &Edges = I->second;
+
+  unsigned NumCompatibles = 0;
+  for (edge_iterator EI = Edges.begin(), EE = Edges.end(); EI != EE; ++EI) {
+    NodeTy *Src = EI->first, *Dst = EI->second;
+
+    if (Src->getBindingIdx() == Dst->getBindingIdx())
+      ++NumCompatibles;
+  }
+
+  bool IsICmp = Src->FUType == VFUs::ICmp;
+  unsigned Bitwidth = IsICmp ? 1u : Src->getSelector(0)->getBitWidth();
+
+  return NumCompatibles * Bitwidth;
 }
 
 void CompGraphBase::computeInterconnects(CompGraphNode *N) {
@@ -484,14 +506,20 @@ void CompGraphBase::computeCompatibleEdges(std::set<NodeTy*> &DstNodes,
   }
 }
 
-void CompGraphBase::computeCompatibleEdges(NodeTy *Dst, NodeTy *Src,
-                                           EdgeVector &CompEdges) {
+void CompGraphBase::computeCompatibleEdges(NodeTy *Dst, NodeTy *Src) {
   assert(Src->size() == Dst->size() && "Number of operand register not agreed!");
 
+  EdgeVector &FIEdges = FaninCompatibles[EdgeType(Src, Dst)];
   for (unsigned i = 0, e = Src->size(); i != e; ++i)
-    computeCompatibleEdges(Dst->FaninNodes[i], Src->FaninNodes[i], CompEdges);
+    computeCompatibleEdges(Dst->FaninNodes[i], Src->FaninNodes[i], FIEdges);
 
-  computeCompatibleEdges(Dst->FanoutNodes, Src->FanoutNodes, CompEdges);
+  if (FIEdges.empty())
+    FaninCompatibles.erase(EdgeType(Src, Dst));
+
+  EdgeVector &FOEdges = FanoutCompatibles[EdgeType(Src, Dst)];
+  computeCompatibleEdges(Dst->FanoutNodes, Src->FanoutNodes, FOEdges);
+  if (FOEdges.empty())
+    FanoutCompatibles.erase(EdgeType(Src, Dst));
 }
 
 void CompGraphBase::computeInterconnects() {
@@ -508,10 +536,7 @@ void CompGraphBase::computeInterconnects() {
 
       computeInterconnects(Dst);
 
-      EdgeVector &CompEdges = CompatibleEdges[EdgeType(Src, Dst)];
-      computeCompatibleEdges(Dst, Src, CompEdges);
-      if (CompEdges.empty())
-        CompatibleEdges.erase(EdgeType(Src, Dst));
+      computeCompatibleEdges(Dst, Src);
     }
   }
 }
@@ -608,7 +633,12 @@ private:
 
   // Map the edge to column number in LP.
   typedef std::map<EdgeType, unsigned> Edge2IdxMapTy;
-  Edge2IdxMapTy Edge2IdxMap;
+  Edge2IdxMapTy Edge2IdxMap, EdgeConsistencies;
+
+  unsigned lookupEdgeConsistency(EdgeType Edge) const {
+    Edge2IdxMapTy::const_iterator I = EdgeConsistencies.find(Edge);
+    return I == EdgeConsistencies.end() ? 0 : I->second;
+  }
 
   unsigned lookUpEdgeIdx(EdgeType Edge) const {
     Edge2IdxMapTy::const_iterator I = Edge2IdxMap.find(Edge);
@@ -622,10 +652,14 @@ public:
     delete_lp(lp);
   }
 
+  void resetConsistencies() {
+    EdgeConsistencies.clear();
+  }
+
   unsigned createLPAndVariables();
   unsigned createBlanceConstraints();
   void setFUAllocationConstraints(unsigned Supply);
-  void setCost(unsigned iteration);
+  void setCost();
   void applySolveSettings();
   bool solveMinCostFlow();
 
@@ -790,7 +824,7 @@ void MinCostFlowSolver::setFUAllocationConstraints(unsigned Supply) {
   set_lowbo(lp, 1, Supply);
 }
 
-void MinCostFlowSolver::setCost(unsigned iteration) {
+void MinCostFlowSolver::setCost() {
   std::vector<int> Indices;
   std::vector<REAL> Coefficients;
   typedef Edge2IdxMapTy::iterator iterator;
@@ -803,7 +837,8 @@ void MinCostFlowSolver::setCost(unsigned iteration) {
 
     Indices.push_back(I->second);
 
-    float EdgeCost = G.computeCost(Src, Dst, iteration);
+    float ConsistencyFactor = exp(float(lookupEdgeConsistency(Edge)));
+    float EdgeCost = G.computeCost(Src, Dst) - ConsistencyFactor;
     Coefficients.push_back(EdgeCost);
   }
 
@@ -929,6 +964,7 @@ unsigned MinCostFlowSolver::buildBinging(CompGraphNode *Src, ClusterType &Cluste
 
       // Propagate the binding index;
       Changed += Dst->setBindingIdx(Src->getBindingIdx());
+      ++EdgeConsistencies[EdgeType(Src, Dst)];
       Cluster.push_back(Src);
       Src = Dst;
       break;
@@ -950,10 +986,9 @@ unsigned CompGraphBase::performBinding() {
 
   unsigned MaxFlow = Nodes.size();
 
-  unsigned iteration = 0;
   do {
     MCF->setFUAllocationConstraints(MaxFlow);
-    MCF->setCost(++iteration);
+    MCF->setCost();
     if (!MCF->solveMinCostFlow())
       return 0;
   
@@ -972,6 +1007,8 @@ unsigned CompGraphBase::performBinding() {
     //    MinFlow = MidFlow + 1;
     //}
   } while (MCF->buildBinging(Clusters));
+
+  MCF->resetConsistencies();
 
   return Clusters.size();
 }
