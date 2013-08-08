@@ -396,7 +396,7 @@ unsigned CompGraphBase::computeSavedFOMux(const CompGraphNode *Src,
 
   // For each intersected fanouts, mux is required.
   // Assume each fanins require 1 LE
-  return - IntersectedFOs * Bitwidth;
+  return IntersectedFOs * Bitwidth;
 }
 
 unsigned CompGraphBase::computeSavedResource(const CompGraphNode *Src,
