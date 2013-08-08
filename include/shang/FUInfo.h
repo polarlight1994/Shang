@@ -70,6 +70,9 @@ namespace VFUs {
   extern float LUTDelay;
 
   inline bool isFUCompatible(VFUs::FUTypes LHS, VFUs::FUTypes RHS) {
+    if (LHS > LastPostBindFUType || RHS > LastPostBindFUType)
+      return false;
+
     if (LHS == RHS)
       return true;
 
