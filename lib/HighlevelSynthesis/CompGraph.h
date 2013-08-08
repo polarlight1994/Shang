@@ -49,14 +49,6 @@ public:
   const unsigned FUCost;
   const DataflowInst Inst;
 
-  struct Cost {
-    // Fixed cost including saved resource, and timing criticality.
-    float FixedCost;
-    // The cost of fanin and fanout interconnection complexity.
-    float InterConnectCost;
-    float Penalty;
-    bool Consistency;
-  };
 private:
   unsigned Order;
   SparseBitVector<> Defs;
