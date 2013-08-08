@@ -103,7 +103,7 @@ struct GlobalFlowAnalyzer {
 
     // Determine in which blocks the FU's flow is alive.
     SmallPtrSet<BasicBlock*, 32> LiveInBlocks;
-    compuateLiveInBlocks<DefMapTy>(LiveInBlocks, DefMap);
+    computeLiveInBlocks<DefMapTy>(LiveInBlocks, DefMap);
 
     // Use a priority queue keyed on dominator tree level so that inserted nodes
     // are handled from the bottom of the dominator tree upwards.
@@ -173,7 +173,7 @@ struct GlobalFlowAnalyzer {
   }
 
   template<typename DefMapTy>
-  void compuateLiveInBlocks(BBSet &LiveInBlocks, const DefMapTy &DefMap) {
+  void computeLiveInBlocks(BBSet &LiveInBlocks, const DefMapTy &DefMap) {
     // To determine liveness, we must iterate through the predecessors of blocks
     // where the def is live.  Blocks are added to the worklist if we need to
     // check their predecessors.  Start with all the using blocks.
