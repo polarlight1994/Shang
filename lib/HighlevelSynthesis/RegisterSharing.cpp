@@ -48,42 +48,33 @@ class VASTCompGraph : public CompGraphBase {
   typedef CompGraphNode NodeTy;
 
 public:
-  const float fanin_factor, fanout_factor, area_factor, consistent_factor;
+  const float interconnect_factor, mux_factor, area_factor, consistent_factor;
 
   VASTCompGraph(DominatorTree &DT, CachedStrashTable &CST)
-    : CompGraphBase(DT, CST), fanin_factor(1.0f), fanout_factor(0.1f),
-      area_factor(0.6f), consistent_factor(0.8f) {}
+    : CompGraphBase(DT, CST), interconnect_factor(1.0f), mux_factor(0.8f),
+      area_factor(0.6f), consistent_factor(8.0f) {}
 
-  virtual float compuateCommonFIBenefit(VASTSelector *Sel) const {
-    float Benefit
-      = Sel->getBitWidth() * Sel->numNonTrivialFanins() * fanout_factor;
-
-    return Benefit;
-  }
-
-  float getEdgeConsistencyBenefit(EdgeType Edge, EdgeType FIEdge) const {
-    CompGraphNode *FISrc = FIEdge.first, *FIDst = FIEdge.second;
-
-    if (VFUs::isFUCompatible(FISrc->FUType, FIDst->FUType)) {
-      float cost = std::min(FISrc->FUCost, FIDst->FUCost) * consistent_factor;
-      // Add interconnection benefit for trivial FU.
-      cost = std::max<float>(cost, fanin_factor);
-      return cost;
-    }
-
-    return 0.0f;
-  }
-
-  float computeCost(CompGraphNode *Src, CompGraphNode *Dst) const {
+  float computeFixedCost(NodeTy *Src, NodeTy *Dst) const {
     float Cost = 0.0f;
     // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
-    Cost -= area_factor * compuateSavedResource(Src, Dst);
+    Cost -= area_factor * computeSavedResource(Src, Dst);
 
     // 2. Calculate the interconnection cost.
-    Cost -= fanin_factor * computeSavedFIMux(Src, Dst);
+    Cost -= mux_factor * computeSavedFIMux(Src, Dst);
 
     // 3. Timing penalty introduced by MUX
-    //
+    return Cost;
+  }
+
+  float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const {
+    float Cost = Src->getCostTo(Dst);
+
+    // 2. Calculate the interconnection cost.
+    Cost += interconnect_factor * computeInterConnectComplexity(Src, Dst);
+
+    if (Src->getBindingIdx() == Dst->getBindingIdx())
+      Cost -= consistent_factor;
+
     return Cost;
   }
 };
@@ -166,6 +157,7 @@ INITIALIZE_PASS_BEGIN(RegisterSharing, "shang-register-sharing",
   INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(CachedStrashTable)
+  INITIALIZE_PASS_DEPENDENCY(PreSchedBinding)
 INITIALIZE_PASS_END(RegisterSharing, "shang-register-sharing",
                     "Share the registers in the design", false, true)
 
@@ -262,8 +254,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
     VASTSeqInst *Inst = dyn_cast<VASTSeqInst>(Op);
 
     if (Inst == 0 || !Inst->isBindingCandidate()) {
-      for (unsigned i = 0; i < Op->num_srcs(); ++i)
-        G.addBoundSels(Op->getSrc(i).getSelector());
+      G.addBoundNode(Op);
       continue;
     }
 
@@ -278,8 +269,8 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   G.computeCompatibility();
   G.fixTransitive();
 
-  G.compuateEdgeCosts();
-  G.setCommonFIBenefit();
+  G.computeFixedCosts();
+  G.computeInterconnects();
 
   checkConsistencyAgainstPSB(G);
 

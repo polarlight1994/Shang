@@ -331,12 +331,6 @@ static bool intersect(const std::set<T*> &LHS, const std::set<T*> &RHS) {
   return false;
 }
 
-static const float fanin_factor = 1.0f,
-                   fanout_factor = 0.1f,
-                   area_factor = 0.6f,
-                   consistent_factor = 1.0f,
-                   scheduling_factor = 0.1f;
-
 bool PSBCompNode::isKillIntersect(const PSBCompNode *RHS) const {
   return intersect(KillOps, RHS->KillOps);
 }
@@ -379,15 +373,18 @@ public:
       return new PSBCompNode(FUType, FUCost, Idx, Inst, Sels);
   }
 
-  float compuateCommonFIBenefit(VASTSelector *Sel) const;
+  float computeFixedCost(NodeTy *Src, NodeTy *Dst) const;
 
-  float getEdgeConsistencyBenefit(EdgeType Edge, EdgeType FIEdge) const;
-
-  float computeCost(CompGraphNode *Src, CompGraphNode *Dst) const;
+  float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const;
 };
 }
 
-float PSBCompGraph::computeCost(CompGraphNode *Src, CompGraphNode *Dst) const {
+static const float interconnect_factor = 0.8f, mux_factor = 0.8f,
+                   area_factor = 0.6f,
+                   consistent_factor = 8.0f,
+                   scheduling_factor = 0.1f;
+
+float PSBCompGraph::computeFixedCost(NodeTy *Src, NodeTy *Dst) const {
   float Cost = 0.0f;
   float current_area_factor = area_factor;
 
@@ -398,35 +395,26 @@ float PSBCompGraph::computeCost(CompGraphNode *Src, CompGraphNode *Dst) const {
     current_area_factor *= 1.1f;
 
   // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
-  Cost -= current_area_factor * compuateSavedResource(Src, Dst);
+  Cost -= current_area_factor * computeSavedResource(Src, Dst);
 
   // 2. Calculate the interconnection cost.
-  Cost -= fanin_factor * computeSavedFIMux(Src, Dst);
+  Cost -= mux_factor * computeSavedFIMux(Src, Dst);
 
   // 3. Timing penalty introduced by MUX
-  //
   return Cost;
 }
 
-float PSBCompGraph::getEdgeConsistencyBenefit(EdgeType Edge,
-                                              EdgeType FIEdge) const {
-  CompGraphNode *FISrc = FIEdge.first, *FIDst = FIEdge.second;
+float PSBCompGraph::computeCost(const CompGraphNode *Src,
+                                const CompGraphNode *Dst) const {
+  float Cost = Src->getCostTo(Dst);
 
-  if (VFUs::isFUCompatible(FISrc->FUType, FIDst->FUType)) {
-    float cost = std::min(FISrc->FUCost, FIDst->FUCost) * consistent_factor;
-    // Add interconnection benefit for trivial FU.
-    cost = std::max<float>(cost, fanin_factor);
-    return cost;
-  }
+  // 2. Calculate the interconnection cost.
+  Cost += interconnect_factor * computeInterConnectComplexity(Src, Dst);
 
-  return 0.0f;
-}
+  if (Src->getBindingIdx() == Dst->getBindingIdx())
+    Cost -= consistent_factor;
 
-float PSBCompGraph::compuateCommonFIBenefit(VASTSelector *Sel) const {
-  float Benefit
-    = Sel->getBitWidth() * Sel->numNonTrivialFanins() * fanout_factor;
-
-  return Benefit;
+  return Cost;
 }
 
 void PreSchedBinding::getAnalysisUsage(AnalysisUsage &AU) const {
@@ -461,8 +449,7 @@ bool PreSchedBinding::runOnVASTModule(VASTModule &VM) {
     VASTSeqInst *Inst = dyn_cast<VASTSeqInst>(Op);
 
     if (Inst == 0 || !Inst->isBindingCandidate()) {
-      for (unsigned i = 0; i < Op->num_srcs(); ++i)
-        PSBCG->addBoundSels(Op->getSrc(i).getSelector());
+      PSBCG->addBoundNode(Op);
       continue;
     }
 
@@ -479,8 +466,8 @@ bool PreSchedBinding::runOnVASTModule(VASTModule &VM) {
   PSBCG->computeCompatibility();
   PSBCG->fixTransitive();
 
-  PSBCG->compuateEdgeCosts();
-  PSBCG->setCommonFIBenefit();
+  PSBCG->computeFixedCosts();
+  PSBCG->computeInterconnects();
 
   PSBCG->performBinding();
 

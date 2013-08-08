@@ -16,7 +16,9 @@
 
 #include "CompGraph.h"
 
+#include "shang/VASTDatapathNodes.h"
 #include "shang/VASTSeqValue.h"
+#include "shang/VASTMemoryPort.h"
 #include "shang/Strash.h"
 
 #include "llvm/Analysis/Dominators.h"
@@ -220,33 +222,7 @@ void CompGraphBase::computeCompatibility() {
   }
 }
 
-void CompGraphBase::collectCompatibleEdges(NodeTy *Dst, NodeTy *Src) {
-  // Given two latch operation A and B, if A and B are bound to the same
-  // physical unit, try to bind Launch A and Launch B to the same physical unit
-  // as well.
-  if (Src->Inst.IsLauch() || Dst->Inst.IsLauch())
-    return;
-
-  NodeTy *SrcFI = getNode(DataflowInst(Src->Inst, true)),
-         *DstFI = getNode(DataflowInst(Dst->Inst, true));
-
-  if (!SrcFI || !DstFI)
-    return;
-
-  if (SrcFI->countSuccessor(DstFI)) {
-    CompatibleEdges[EdgeType(Src, Dst)].push_back(EdgeType(SrcFI, DstFI));
-    ++NumCompEdges;
-    return;
-  }
-
-  if (DstFI->countSuccessor(SrcFI)) {
-    CompatibleEdges[EdgeType(Src, Dst)].push_back(EdgeType(DstFI, SrcFI));
-    ++NumCompEdges;
-    return;
-  }
-}
-
-void CompGraphBase::compuateEdgeCosts() {
+void CompGraphBase::computeFixedCosts() {
   for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
     NodeTy *Src = I;
 
@@ -257,9 +233,33 @@ void CompGraphBase::compuateEdgeCosts() {
       if (Dst->IsTrivial)
         continue;
 
-      Src->setCost(Dst, computeCost(Src, Dst));
+      Src->setCost(Dst, computeFixedCost(Src, Dst));
+    }
+  }
+}
 
-      collectCompatibleEdges(Dst, Src);
+void CompGraphBase::addBoundNode(VASTSeqOp *SeqOp) {
+  for (unsigned i = 0; i < SeqOp->num_srcs(); ++i) {
+    VASTSelector *Sel = SeqOp->getSrc(i).getSelector();
+    CompGraphNode *&BoundNode = SelectorMap[Sel];
+    if (BoundNode)
+      continue;
+
+    // Just prevent the node from being bound.
+    BoundNode = createNode(VFUs::Mux, 0, Nodes.size(), DataflowInst(0, 0), Sel);
+    Nodes.push_back(BoundNode);
+  }
+
+  if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(SeqOp)) {
+    if (isa<LoadInst>(SeqInst->getValue())) {
+      VASTSelector *Addr = SeqOp->getSrc(0).getSelector();
+      VASTMemoryBus *Bus = cast<VASTMemoryBus>(Addr->getParent());
+      unsigned PortIdx = 0;
+      if (Bus->isDualPort() && Bus->getAddr(1) == Addr)
+        PortIdx = 1;
+      // Pretend the Memory output port share the same register with the address
+      // so the latch operation that reads the output port can get a fanin.
+      SelectorMap[Bus->getFanout(PortIdx)] = SelectorMap[Addr];
     }
   }
 }
@@ -368,20 +368,8 @@ void CompGraphBase::extractFaninNodes(VASTSelector *Sel,
   translateToCompNodes(SVSet, Fanins);
 }
 
-void
-CompGraphBase::extractFaninNodes(NodeTy *N, std::set<NodeTy*> &Fanins) const {
-  std::set<VASTSeqValue*> SVSet;
-
-  for (NodeTy::sel_iterator I = N->begin(), E = N->end(); I != E; ++I) {
-    VASTSelector *Sel = *I;
-    ExtractFaninNodes(Sel, SVSet);
-  }
-
-  translateToCompNodes(SVSet, Fanins);
-}
-
-float CompGraphBase::computeSavedFIMux(CompGraphNode *Src,
-                                        CompGraphNode *Dst) const {
+float CompGraphBase::computeSavedFIMux(const CompGraphNode *Src,
+                                       const CompGraphNode *Dst) const {
   assert(Src->size() == Dst->size() && "Number of operand register not agreed!");
   float Cost = 0.0f;
   for (unsigned i = 0, e = Src->size(); i != e; ++i)
@@ -390,11 +378,66 @@ float CompGraphBase::computeSavedFIMux(CompGraphNode *Src,
   return Cost;
 }
 
-float CompGraphBase::compuateSavedResource(CompGraphNode *Src,
-                                           CompGraphNode *Dst) const {
+float CompGraphBase::computeFIMuxCost(const CompGraphNode *Src,
+                                      const CompGraphNode *Dst,
+                                      unsigned Idx) const {
+  float Cost = 0.0f;
+  const CompGraphNode::NodeVecTy &SrcFIs = Src->FaninNodes[Idx],
+                                 &DstFIs = Dst->FaninNodes[Idx];
+
+  std::set<unsigned> NumMergedFIs;
+  typedef CompGraphNode::iterator iterator;
+  for (iterator I = SrcFIs.begin(), E = SrcFIs.end(); I != E; ++I)
+    NumMergedFIs.insert((*I)->getBindingIdx());
+
+  for (iterator I = DstFIs.begin(), E = DstFIs.end(); I != E; ++I)
+    NumMergedFIs.insert((*I)->getBindingIdx());
+
+  // Assume each fanins require 1 LE
+  return NumMergedFIs.size() * Src->getSelector(Idx)->getBitWidth();
+}
+
+float CompGraphBase::computeSavedFOMux(const CompGraphNode *Src,
+                                        const CompGraphNode *Dst) const {
+  float Cost = 0.0f;
+
+  std::set<unsigned> NumMergedFOs;
+  typedef CompGraphNode::iterator iterator;
+  for (iterator I = Src->fanout_begin(), E = Src->fanout_end(); I != E; ++I)
+    NumMergedFOs.insert((*I)->getBindingIdx());
+
+  unsigned IntersectedFOs = 0;
+  for (iterator I = Dst->fanout_begin(), E = Dst->fanout_end(); I != E; ++I)
+    if (!NumMergedFOs.insert((*I)->getBindingIdx()).second)
+      ++IntersectedFOs;
+
+  unsigned Bitwidth = Src->FUType == VFUs::ICmp ?
+                                     1u : Src->getSelector(0)->getBitWidth();
+
+  // For each intersected fanouts, mux is required.
+  // Assume each fanins require 1 LE
+  return IntersectedFOs * Bitwidth;
+}
+
+float
+CompGraphBase::computeInterConnectComplexity(const CompGraphNode *Src,
+                                             const CompGraphNode *Dst) const {
+  assert(Src->size() == Dst->size() && "Number of operand register not agreed!");
+  float Cost = 0.0f;
+
+  for (unsigned i = 0, e = Src->size(); i != e; ++i) 
+    Cost += computeFIMuxCost(Src, Dst, i);
+
+  Cost -= computeSavedFOMux(Src, Dst);
+
+  return Cost;
+}
+
+float CompGraphBase::computeSavedResource(const CompGraphNode *Src,
+                                           const CompGraphNode *Dst) const {
   float Cost = 0.0f;
   // 1. Calculate the number of registers we can reduce through this edge.
-  typedef NodeTy::sel_iterator sel_iterator;
+  typedef NodeTy::const_sel_iterator sel_iterator;
   for (sel_iterator I = Src->begin(), E = Src->end(); I != E; ++I)
     Cost += (*I)->getBitWidth();
 
@@ -405,44 +448,23 @@ float CompGraphBase::compuateSavedResource(CompGraphNode *Src,
   return Cost;
 }
 
-void CompGraphBase::setCommonFIBenefit() {
-  typedef std::set<VASTSelector*>::iterator iterator;
-  for (iterator I = BoundSels.begin(), E = BoundSels.end(); I != E; ++I)
-    setCommonFIBenefit(*I);
+void CompGraphBase::computeInterconnects(CompGraphNode *N, unsigned SelIdx) {
+  extractFaninNodes(N->getSelector(SelIdx), N->FaninNodes[SelIdx]);
 
-  typedef std::map<VASTSelector*, CompGraphNode*>::iterator map_iterator;
-  for (map_iterator I = SelectorMap.begin(), E = SelectorMap.end(); I != E; ++I)
-    setCommonFIBenefit(I->first);
+  typedef CompGraphNode::iterator iterator;
+  for (iterator I = N->fanin_begin(SelIdx), E = N->fanin_end(SelIdx);
+       I != E; ++I) {
+    CompGraphNode *Fanain = *I;
+    Fanain->FanoutNodes.insert(N);
+  }
 }
 
-void CompGraphBase::setCommonFIBenefit(VASTSelector *Sel) {
-  std::set<CompGraphNode*> Fanins;
-  extractFaninNodes(Sel, Fanins);
-  float Benefit = compuateCommonFIBenefit(Sel);
+void CompGraphBase::computeInterconnects() {
+  for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
+    CompGraphNode *N = I;
 
-  if (Benefit <= 0)
-    return;
-
-  typedef std::set<CompGraphNode*>::iterator iterator;
-  for (iterator I = Fanins.begin(), E = Fanins.end(); I != E; ++I) {
-    CompGraphNode *LHS = static_cast<CompGraphNode*>(*I);
-
-    for (iterator J = I; J != E; ++J) {
-      CompGraphNode *RHS = static_cast<CompGraphNode*>(*J);
-
-      if (LHS == RHS)
-        continue;
-
-      if (LHS->countSuccessor(RHS)) {
-        LHS->setCost(RHS, LHS->getCostTo(RHS) - Benefit);
-        continue;
-      }
-
-      if (RHS->countSuccessor(LHS)) {
-        RHS->setCost(LHS, RHS->getCostTo(LHS) - Benefit);
-        continue;
-      }
-    }
+    for (unsigned i = 0, e = N->size(); i != e; ++i) 
+      computeInterconnects(N, i);
   }
 }
 
@@ -544,17 +566,8 @@ private:
     Edge2IdxMapTy::const_iterator I = Edge2IdxMap.find(Edge);
     return I == Edge2IdxMap.end() ? 0 : I->second;
   }
-  
-  struct EdgeConsistencyBenefit {
-    unsigned SrcEdgeIdx, DstEdgeIdx;
-    unsigned SrcDstConsistentVarIdx, DstSrcConsistentVarIdx;
-    float ConsistentBenefit;
-  };
-  std::vector<EdgeConsistencyBenefit> EdgeConsistencies;
 
   unsigned createEdgeVariables(const CompGraphNode *N, unsigned Col);
-  unsigned createConsistencyVariables(EdgeType SrcEdge, EdgeType DstEdge,
-                                      float Benefit, unsigned Col);
 public:
   MinCostFlowSolver(CompGraphBase &G) : G(G), lp(0) {}
   ~MinCostFlowSolver() {
@@ -571,7 +584,7 @@ public:
   typedef CompGraphBase::ClusterType ClusterType;
   typedef CompGraphBase::ClusterVectors ClusterVectors;
   unsigned buildBinging(ClusterVectors &Clusters);
-  void buildBinging(CompGraphNode *Src, ClusterType &Cluster);
+  unsigned buildBinging(CompGraphNode *Src, ClusterType &Cluster);
 
   bool hasFlow(EdgeType E, unsigned TotalRows) const {
     Edge2IdxMapTy::const_iterator I = Edge2IdxMap.find(E);
@@ -611,43 +624,6 @@ unsigned MinCostFlowSolver::createEdgeVariables(const CompGraphNode *N,
   return Col;
 }
 
-unsigned
-MinCostFlowSolver::createConsistencyVariables(EdgeType SrcEdge, EdgeType DstEdge,
-                                              float Benefit, unsigned Col) {
-  unsigned SrcDstConsistentVarIdx = Col;
-  add_columnex(lp, 0, 0,0);
-  DEBUG(SmallString<8> S;
-  {
-    raw_svector_ostream SS(S);
-    SS << 'C' << SrcDstConsistentVarIdx;
-  }
-  set_col_name(lp, SrcDstConsistentVarIdx, const_cast<char*>(S.c_str())););
-  set_int(lp, SrcDstConsistentVarIdx, TRUE);
-  // The variable will be 1 when the edges are not consistent.
-  set_upbo(lp, SrcDstConsistentVarIdx, 1.0);
-
-  unsigned DstSrcConsistentVarIdx = Col + 1;
-  add_columnex(lp, 0, 0,0);
-  DEBUG(SmallString<8> S;
-  {
-    raw_svector_ostream SS(S);
-    SS << 'C' << DstSrcConsistentVarIdx;
-  }
-  set_col_name(lp, DstSrcConsistentVarIdx, const_cast<char*>(S.c_str())););
-  set_int(lp, DstSrcConsistentVarIdx, TRUE);
-  set_upbo(lp, DstSrcConsistentVarIdx, 1.0);
-
-  unsigned SrcEdgeIdx = lookUpEdgeIdx(SrcEdge),
-           DstEdgeIdx = lookUpEdgeIdx(DstEdge);
-  assert(SrcEdgeIdx && DstEdgeIdx && "Edge does not exist?");
-  EdgeConsistencyBenefit ECB = { SrcEdgeIdx, DstEdgeIdx,
-                                 SrcDstConsistentVarIdx, DstSrcConsistentVarIdx,
-                                 Benefit };
-  EdgeConsistencies.push_back(ECB);
-
-  return Col + 2;
-}
-
 // Create the lp model and variables, return the number of variable created.
 unsigned MinCostFlowSolver::createLPAndVariables() {
   lp = make_lp(0, 0);
@@ -665,23 +641,6 @@ unsigned MinCostFlowSolver::createLPAndVariables() {
   for (CompGraphBase::iterator I = G.begin(), E = G.end(); I != E; ++I) {
     CompGraphNode *N = I;
     Col = createEdgeVariables(N, Col);
-  }
-
-  // Create the variable for compatible edges, i.e., given edge (n0, n1),
-  // (n2, n3), sometimes is is profit to bind n0 and n2 to the same physical
-  // unit if n1 and n3 are bound to the same physical unit.
-  typedef CompGraphBase::comp_edge_iterator comp_edge_iterator;
-  for (comp_edge_iterator I = G.comp_edge_begin(), E = G.comp_edge_end();
-       I != E; ++I) {
-    CompGraphBase::EdgeType Edge = I->first;
-    const CompGraphBase::EdgeVector &SrcEdges = I->second;
-    typedef CompGraphBase::EdgeVector::const_iterator edge_iterator;
-    for (edge_iterator I = SrcEdges.begin(), E = SrcEdges.end(); I != E; ++I) {
-      CompGraphBase::EdgeType FIEdge = *I;
-      float benefit = G.getEdgeConsistencyBenefit(Edge, FIEdge);
-      if (benefit > 0)
-        Col = createConsistencyVariables(Edge, FIEdge, benefit, Col);
-    }
   }
 
   set_add_rowmode(lp, FALSE);
@@ -772,44 +731,6 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
     if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EQ, 1.0))
       report_fatal_error("Cannot add flow constraint!");
   }
-  
-
-  typedef std::vector<EdgeConsistencyBenefit>::iterator consistency_iterator;
-  for (consistency_iterator I = EdgeConsistencies.begin(),
-       E = EdgeConsistencies.end(); I != E; ++I) {
-    // Apply a penalty on inconsistency
-    const EdgeConsistencyBenefit &ECB = *I;
-
-    // Build the consistency "soft" constraints
-    // SrcEdgeFlow - DstEdgeFlow - Inconsistency >= 0
-    // DstEdgeFlow - SrcEdgeFlow - Inconsistency' >= 0
-    // When SrcEdgeFlow and DstEdgeFlow are both 1 (or 0), Inconsistency and
-    // Inconsistency' will be 0. Otherwise, either Inconsistency or
-    // Inconsistency' will be 1.
-    Col.clear();
-    Coeff.clear();
-
-    Col.push_back(ECB.SrcEdgeIdx);
-    Coeff.push_back(1.0);
-
-    Col.push_back(ECB.DstEdgeIdx);
-    Coeff.push_back(-1.0);
-
-    if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), GE, 0.0))
-      report_fatal_error("Cannot add consistency constraint!");
-
-    Col.clear();
-    Coeff.clear();
-
-    Col.push_back(ECB.DstEdgeIdx);
-    Coeff.push_back(1.0);
-
-    Col.push_back(ECB.SrcEdgeIdx);
-    Coeff.push_back(-1.0);
-
-    if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), GE, 0.0))
-      report_fatal_error("Cannot add consistency constraint!");
-  }
 
   set_add_rowmode(lp, FALSE);
 
@@ -834,22 +755,9 @@ void MinCostFlowSolver::setCost() {
 
     Indices.push_back(I->second);
 
-    float EdgeCost = Src->getCostTo(Dst);
+    float EdgeCost = G.computeCost(Src, Dst);
     Coefficients.push_back(EdgeCost);
   }
-
-  typedef std::vector<EdgeConsistencyBenefit>::iterator consistency_iterator;
-  for (consistency_iterator I = EdgeConsistencies.begin(),
-       E = EdgeConsistencies.end(); I != E; ++I) {
-    // Apply a penalty on inconsistency
-    const EdgeConsistencyBenefit &ECB = *I;
-    Indices.push_back(ECB.SrcDstConsistentVarIdx);
-    Coefficients.push_back(ECB.ConsistentBenefit);
-
-    Indices.push_back(ECB.DstSrcConsistentVarIdx);
-    Coefficients.push_back(ECB.ConsistentBenefit);
-  }
-  
 
   set_obj_fnex(lp, Indices.size(), Coefficients.data(), Indices.data());
   set_minim(lp);
@@ -925,29 +833,36 @@ bool MinCostFlowSolver::solveMinCostFlow() {
 
 unsigned MinCostFlowSolver::buildBinging(ClusterVectors &Clusters) {
   unsigned TotalRows = getNumRows();
+  unsigned BindingIdx = 0;
   Clusters.clear();
+  unsigned Changed = 0;
+
+  CompGraphNode *Entry = G.getEntry();
 
   typedef CompGraphNode::iterator iterator;
-
-  CompGraphNode *S = G.getEntry();
-  for (iterator I = S->succ_begin(), E = S->succ_end(); I != E; ++I) {
+  for (iterator I = Entry->succ_begin(), E = Entry->succ_end(); I != E; ++I) {
     CompGraphNode *Succ = *I;
-    if (!hasFlow(EdgeType(S, Succ), TotalRows))
+    if (!hasFlow(EdgeType(Entry, Succ), TotalRows))
       continue;
 
     Clusters.push_back(ClusterType());
-    buildBinging(Succ, Clusters.back());
+    unsigned HeadChanged = Succ->setBindingIdx(++BindingIdx);
+    unsigned PathChanged = buildBinging(Succ, Clusters.back());
 
+    Changed += HeadChanged + PathChanged;
     // Remove the trivial clusters.
     if (Clusters.back().empty())
       Clusters.pop_back();
   }
 
-  return Clusters.size();
+  dbgs() << "Changes: " << Changed << '\n';
+
+  return Changed;
 }
 
-void MinCostFlowSolver::buildBinging(CompGraphNode *Src, ClusterType &Cluster) {
+unsigned MinCostFlowSolver::buildBinging(CompGraphNode *Src, ClusterType &Cluster) {
   unsigned TotalRows = getNumRows();
+  unsigned Changed = 0;
 
   typedef CompGraphNode::iterator iterator;
   while (!Src->IsTrivial) {
@@ -961,14 +876,19 @@ void MinCostFlowSolver::buildBinging(CompGraphNode *Src, ClusterType &Cluster) {
         if (!Cluster.empty())
           Cluster.push_back(Src);
 
-        return;
+        return Changed;
       }
 
+      // Propagate the binding index;
+      Changed += Dst->setBindingIdx(Src->getBindingIdx());
       Cluster.push_back(Src);
       Src = Dst;
       break;
     }
   }
+
+  llvm_unreachable("Should return before reach here!");
+  return Changed;
 }
 
 unsigned CompGraphBase::performBinding() {
@@ -982,30 +902,29 @@ unsigned CompGraphBase::performBinding() {
 
   unsigned MaxFlow = Nodes.size();
 
-  MCF->setFUAllocationConstraints(MaxFlow);
-  MCF->setCost();
-  if (!MCF->solveMinCostFlow())
-    return 0;
+  do {
+    MCF->setFUAllocationConstraints(MaxFlow);
+    MCF->setCost();
+    if (!MCF->solveMinCostFlow())
+      return 0;
   
-  //unsigned MinFlow = 1;
+    //unsigned MinFlow = 1;
 
-  //while (MaxFlow >= MinFlow) {
-  //  unsigned MidFlow = MinFlow + (MaxFlow - MinFlow) / 2;
+    //while (MaxFlow >= MinFlow) {
+    //  unsigned MidFlow = MinFlow + (MaxFlow - MinFlow) / 2;
 
-  //  MCF.setFUAllocationConstraints(MidFlow);
+    //  MCF.setFUAllocationConstraints(MidFlow);
 
-  //  if (MCF.solveMinCostFlow())
-  //    // MidCount is ok, try a smaller one.
-  //    MaxFlow = MidFlow - 1;
-  //  else
-  //    // Otherwise we should use a bigger supply.
-  //    MinFlow = MidFlow + 1;
-  //}
+    //  if (MCF.solveMinCostFlow())
+    //    // MidCount is ok, try a smaller one.
+    //    MaxFlow = MidFlow - 1;
+    //  else
+    //    // Otherwise we should use a bigger supply.
+    //    MinFlow = MidFlow + 1;
+    //}
+  } while (MCF->buildBinging(Clusters));
 
-  unsigned ActualFlow = MCF->buildBinging(Clusters);
-  dbgs() << "Original supply: " << Nodes.size()
-         << " Minimal: " << ActualFlow << '\n';
-  return ActualFlow;
+  return Clusters.size();
 }
 
 CompGraphBase::~CompGraphBase() {

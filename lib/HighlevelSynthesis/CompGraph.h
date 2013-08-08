@@ -34,6 +34,7 @@
 namespace llvm {
 class BasicBlock;
 class VASTSelector;
+class VASTSeqOp;
 class VASTSeqInst;
 class VASTSeqValue;
 class DominatorTree;
@@ -49,9 +50,12 @@ public:
   const DataflowInst Inst;
 
   struct Cost {
-    int16_t ResourceCost;
-    int16_t InterconnectCost;
-    int16_t TimingPenalty;
+    // Fixed cost including saved resource, and timing criticality.
+    float FixedCost;
+    // The cost of fanin and fanout interconnection complexity.
+    float InterConnectCost;
+    float Penalty;
+    bool Consistency;
   };
 private:
   unsigned Order;
@@ -63,9 +67,12 @@ private:
   typedef std::set<CompGraphNode*> NodeVecTy;
   // Predecessors and Successors.
   NodeVecTy Preds, Succs;
+  SmallVector<NodeVecTy, 3> FaninNodes;
+  NodeVecTy FanoutNodes;
 
   typedef std::map<const CompGraphNode*, float> CostVecTy;
   CostVecTy SuccCosts;
+  unsigned BindingIdx;
 
   static bool intersects(const SparseBitVector<> &LHSBits,
                          const SparseBitVector<> &RHSBits) {
@@ -80,14 +87,22 @@ public:
 
   CompGraphNode()
     : Idx(0), IsTrivial(true), FUType(VFUs::Trivial), FUCost(0), Order(0),
-      Inst() { }
+      Inst(), BindingIdx(0) { }
 
   CompGraphNode(VFUs::FUTypes FUType, unsigned FUCost, unsigned Idx,
                 DataflowInst Inst, ArrayRef<VASTSelector*> Sels)
     : Idx(Idx), IsTrivial(false), FUType(FUType), FUCost(FUCost),
-      Order(UINT32_MAX), Inst(Inst), Sels(Sels.begin(), Sels.end()) {}
+      Order(UINT32_MAX), Inst(Inst), Sels(Sels.begin(), Sels.end()),
+      FaninNodes(Sels.size()), BindingIdx(Idx) {}
 
   BasicBlock *getDomBlock() const;
+
+  unsigned getBindingIdx() const { return BindingIdx; }
+  bool setBindingIdx(unsigned Idx) {
+    bool Changed = BindingIdx != Idx;
+    BindingIdx = Idx;
+    return Changed;
+  }
 
   typedef SmallVectorImpl<VASTSelector*>::iterator sel_iterator;
   sel_iterator begin() { return Sels.begin(); }
@@ -126,6 +141,11 @@ public:
   iterator pred_end()   const { return Preds.end(); }
   unsigned num_pred()   const { return Preds.size(); }
   bool     pred_empty() const { return Preds.empty(); }
+
+  iterator fanin_begin(unsigned Idx) const { return FaninNodes[Idx].begin(); }
+  iterator fanin_end(unsigned Idx) const { return FaninNodes[Idx].end(); }
+  iterator fanout_begin() const { return FanoutNodes.begin(); }
+  iterator fanout_end() const { return FanoutNodes.end(); }
 
   unsigned degree() const { return num_succ() + num_pred(); }
 
@@ -217,16 +237,12 @@ protected:
   // Nodes vector.
   NodeVecTy Nodes;
   std::map<VASTSelector*, CompGraphNode*> SelectorMap;
-  std::set<VASTSelector*> BoundSels;
 
   // Due to CFG folding, there maybe more than one operation correspond to
   // the same LLVM Instruction. These operations operate on the same set of
   // registers, we need to avoid adding them more than once to the compatibility
   // graph.
   std::map<DataflowInst, CompGraphNode*> InstMap;
-
-  // Try to bind the compatible edges together.
-  std::map<EdgeType, EdgeVector> CompatibleEdges;
 
   DominatorTree &DT;
   CachedStrashTable &CST;
@@ -246,13 +262,10 @@ protected:
     return I->second;
   }
 
-  virtual float computeCost(NodeTy *Src, NodeTy *Dst) const {
+  virtual float computeFixedCost(NodeTy *Src, NodeTy *Dst) const {
     return 0.0f;
   }
 
-  virtual float compuateCommonFIBenefit(VASTSelector *Sel) const {
-    return 0.0f;
-  }
 
   virtual CompGraphNode *createNode(VFUs::FUTypes FUType, unsigned FUCost,
                                     unsigned Idx, DataflowInst Inst,
@@ -260,16 +273,25 @@ protected:
     return new CompGraphNode(FUType, FUCost, Idx, Inst, Sels);
   }
 
+  float computeInterConnectComplexity(const CompGraphNode *Src,
+                                      const CompGraphNode *Dst) const;
+  float computeFIMuxCost(const CompGraphNode *Src, const CompGraphNode *Dst,
+                         unsigned Idx) const;
+  float computeSavedFOMux(const CompGraphNode *Src,
+                           const CompGraphNode *Dst) const;
+  float computeSavedResource(const CompGraphNode *Src,
+                             const CompGraphNode *Dst) const;
   float computeSavedFIMux(VASTSelector *Src, VASTSelector *Dst) const;
-  float computeSavedFIMux(CompGraphNode *Src, CompGraphNode *Dst) const;
-  float compuateSavedResource(CompGraphNode *Src, CompGraphNode *Dst) const;
+  float
+  computeSavedFIMux(const CompGraphNode *Src, const CompGraphNode *Dst) const;
 
-  void extractFaninNodes(NodeTy *N, std::set<NodeTy*> &Fanins) const;
-  void extractFaninNodes(VASTSelector *Sel,
-                         std::set<CompGraphNode*> &Fanins) const;
+  void
+  extractFaninNodes(VASTSelector *Sel, std::set<CompGraphNode*> &Fanins) const;
+
   void translateToCompNodes(std::set<VASTSeqValue*> &SVSet,
                             std::set<CompGraphNode*> &Fanins) const;
-  void collectCompatibleEdges(NodeTy *Dst, NodeTy *Src);
+
+  void computeInterconnects(CompGraphNode *N, unsigned SelIdx);
 private:
   MinCostFlowSolver *MCF;
 public:
@@ -286,13 +308,7 @@ public:
   }
 
   NodeTy *addNewNode(VASTSeqInst *SeqInst);
-
-  void addBoundSels(VASTSelector *Sel) {
-    BoundSels.insert(Sel);
-  }
-
-  void setCommonFIBenefit();
-  void setCommonFIBenefit(VASTSelector *Sel);
+  void addBoundNode(VASTSeqOp *SeqOp);
 
   const NodeTy *getEntry() const { return &Entry; }
   NodeTy *getEntry() { return &Entry; }
@@ -314,16 +330,17 @@ public:
     deleteNode(From);
   }
 
+  virtual float computeCost(const NodeTy *Src, const NodeTy *Dst) const {
+    return 0.0f;
+  }
+
   void decomposeTrivialNodes();
   void computeCompatibility();
-  void compuateEdgeCosts();
+  void computeFixedCosts();
+  void computeInterconnects();
   void fixTransitive();
 
   unsigned performBinding();
-
-  virtual float getEdgeConsistencyBenefit(EdgeType Edge, EdgeType FIEdge) const {
-    return 0.0f;
-  }
 
   typedef ClusterVectors::const_iterator cluster_iterator;
   cluster_iterator cluster_begin() const { return Clusters.begin(); }
@@ -337,10 +354,6 @@ public:
   bool hasbinding() const { return !Clusters.empty(); }
 
   void viewGraph();
-  
-  typedef std::map<EdgeType, EdgeVector>::const_iterator comp_edge_iterator;
-  comp_edge_iterator comp_edge_begin() const { return CompatibleEdges.begin(); }
-  comp_edge_iterator comp_edge_end() const { return CompatibleEdges.end(); }
 
   bool isBefore(CompGraphNode *Src, CompGraphNode *Dst);
 
