@@ -951,9 +951,22 @@ struct IterativeSchedulingBinding {
   bool checkCompatibility(const ClusterType &Cluster);
   unsigned checkCompatibility(PSBCompNode *Src, SUArrayRef SrcSUs,
                               PSBCompNode *Dst, SUArrayRef DstSUs);
+
+  typedef SmallVector<std::pair<VASTSchedUnit*, VASTSchedUnit*>, 8>
+          ViolationPairs;
   unsigned
   checkLatchCompatibility(PSBCompNode *Src, PSBCompNode *Dst, SUArrayRef DstSUs,
-                          float Benefit);
+                          ViolationPairs &Violations);
+
+  void flushViolations(ViolationPairs &Violations, float Penalty) {
+    while (!Violations.empty()) {
+      VASTSchedUnit *Src = Violations.back().first,
+                    *Dst = Violations.back().second;
+      Violations.pop_back();
+
+      updateSchedulingConstraint(Src, Dst, 0, Penalty);
+    }
+  }
 
   void updateBindingCost(PSBCompNode *Src, PSBCompNode *Dst, float Cost) {
     if (S != Binding)
@@ -1020,7 +1033,7 @@ unsigned
 IterativeSchedulingBinding::checkLatchCompatibility(PSBCompNode *Src,
                                                     PSBCompNode *Dst,
                                                     SUArrayRef DstSUs,
-                                                    float Benefit) {
+                                                    ViolationPairs &Violations) {
   unsigned NegativeSlack = 0;
 
   typedef PSBCompNode::kill_iterator kill_iterator;
@@ -1044,8 +1057,7 @@ IterativeSchedulingBinding::checkLatchCompatibility(PSBCompNode *Src,
       DstDef->dump();
       dbgs() << "\n\n");
 
-      float Penalty = Benefit * ResourceFactor * TotalWeight;
-      updateSchedulingConstraint(SrcKill, DstDef, 0, Penalty);
+      Violations.push_back(std::make_pair(SrcKill, DstDef));
       NegativeSlack += SrcKill->getSchedule() - DstDef->getSchedule();
     }
   }
@@ -1068,25 +1080,42 @@ unsigned IterativeSchedulingBinding::checkCompatibility(PSBCompNode *Src,
     // Otherwise their live interval will never overlap, because the use of a
     // variable are all dominated by the define, hence the live interval rooted
     // on two node without dominance relationship will never overlap.
-    unsigned NegativeSlack = 0;
     BasicBlock *SrcBlock = Src->getDomBlock(), *DstBlock = Dst->getDomBlock();
-    if (SrcBlock != DstBlock) {
-      if (DT.dominates(Src->getDomBlock(), Dst->getDomBlock()))
-        return checkLatchCompatibility(Src, Dst, DstSUs, BindingBenefit);
+    if (SrcBlock == DstBlock) {
+      ViolationPairs Src2DstSPairs;
+      unsigned Src2DstSlack
+        = checkLatchCompatibility(Src, Dst, DstSUs, Src2DstSPairs);
+      ViolationPairs Dst2SrcPairs;
+      unsigned Dst2SrcSlack
+        = checkLatchCompatibility(Dst, Src, SrcSUs, Dst2SrcPairs);
 
-      if (DT.dominates(Dst->getDomBlock(), Src->getDomBlock()))
-        return checkLatchCompatibility(Dst, Src, SrcSUs, BindingBenefit);
+      if (Src2DstSlack && Dst2SrcSlack) {
+        if (Src2DstSlack < Dst2SrcSlack) {
+          flushViolations(Src2DstSPairs, Penalty);
+          return Src2DstSlack;
+        }
+
+        flushViolations(Dst2SrcPairs, Penalty);
+        return Dst2SrcSlack;
+      }
 
       return 0;
     }
 
-    unsigned Src2DstSlack
-      = checkLatchCompatibility(Src, Dst, DstSUs, BindingBenefit);
-    unsigned Dst2SrcSlack
-      = checkLatchCompatibility(Dst, Src, SrcSUs, BindingBenefit);
+    ViolationPairs Pairs;
+    if (DT.dominates(Src->getDomBlock(), Dst->getDomBlock())) {
+      if (unsigned Slack = checkLatchCompatibility(Src, Dst, DstSUs, Pairs)) {
+        flushViolations(Pairs, Penalty);
+        return Slack;
+      }
+    }
 
-    if (Src2DstSlack && Dst2SrcSlack)
-      return std::min(Src2DstSlack, Dst2SrcSlack);
+    if (DT.dominates(Dst->getDomBlock(), Src->getDomBlock())) {
+      if (unsigned Slack = checkLatchCompatibility(Dst, Src, SrcSUs, Pairs)) {
+        flushViolations(Pairs, Penalty);
+        return Slack;
+      }
+    }
 
     return 0;
   }
