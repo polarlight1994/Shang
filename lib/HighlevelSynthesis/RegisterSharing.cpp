@@ -60,7 +60,7 @@ public:
     Cost -= area_factor * computeSavedResource(Src, Dst);
 
     // 2. Calculate the interconnection cost.
-    Cost -= mux_factor * computeSavedFIMux(Src, Dst);
+    Cost -= mux_factor * (computeSavedFIMux(Src, Dst) + computeSavedFOMux(Src, Dst));
 
     // 3. Timing penalty introduced by MUX
     return Cost;
@@ -269,9 +269,9 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   G.decomposeTrivialNodes();
   G.computeCompatibility();
   G.fixTransitive();
+  G.computeInterconnects();
 
   G.computeFixedCosts();
-  G.computeInterconnects();
 
   checkConsistencyAgainstPSB(G);
 

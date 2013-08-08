@@ -317,29 +317,6 @@ void CompGraphBase::decomposeTrivialNodes() {
   }
 }
 
-float CompGraphBase::computeSavedFIMux(VASTSelector *Src,
-                                        VASTSelector *Dst) const {
-  std::set<unsigned> MergedFIs;
-  typedef VASTSelector::iterator iterator;
-
-  for (iterator I = Src->begin(), E = Src->end(); I != E; ++I) {
-    unsigned SrashID = CST.getOrCreateStrashID(*I);
-    MergedFIs.insert(SrashID);
-  }
-
-  int IntersectedFIs = 0;
-  for (iterator I = Dst->begin(), E = Dst->end(); I != E; ++I) {
-    unsigned SrashID = CST.getOrCreateStrashID(*I);
-    if (!MergedFIs.insert(SrashID).second)
-      ++IntersectedFIs;
-  }
-
-  int Bitwidth = std::max(Src->getBitWidth(), Dst->getBitWidth());
-
-  // Remember to multiple the saved mux (1 bit) port by the bitwidth.
-  return IntersectedFIs * Bitwidth;
-}
-
 static void ExtractFaninNodes(VASTSelector *Sel,
                               std::set<VASTSeqValue*> &SVSet) {
   for (VASTSelector::iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
@@ -368,6 +345,29 @@ void CompGraphBase::extractFaninNodes(VASTSelector *Sel,
   translateToCompNodes(SVSet, Fanins);
 }
 
+float CompGraphBase::computeSavedFIMux(VASTSelector *Src,
+                                        VASTSelector *Dst) const {
+  std::set<unsigned> MergedFIs;
+  typedef VASTSelector::iterator iterator;
+
+  for (iterator I = Src->begin(), E = Src->end(); I != E; ++I) {
+    unsigned SrashID = CST.getOrCreateStrashID(*I);
+    MergedFIs.insert(SrashID);
+  }
+
+  int IntersectedFIs = 0;
+  for (iterator I = Dst->begin(), E = Dst->end(); I != E; ++I) {
+    unsigned SrashID = CST.getOrCreateStrashID(*I);
+    if (!MergedFIs.insert(SrashID).second)
+      ++IntersectedFIs;
+  }
+
+  int Bitwidth = std::max(Src->getBitWidth(), Dst->getBitWidth());
+
+  // Remember to multiple the saved mux (1 bit) port by the bitwidth.
+  return IntersectedFIs * Bitwidth;
+}
+
 float CompGraphBase::computeSavedFIMux(const CompGraphNode *Src,
                                        const CompGraphNode *Dst) const {
   assert(Src->size() == Dst->size() && "Number of operand register not agreed!");
@@ -378,59 +378,26 @@ float CompGraphBase::computeSavedFIMux(const CompGraphNode *Src,
   return Cost;
 }
 
-float CompGraphBase::computeFIMuxCost(const CompGraphNode *Src,
-                                      const CompGraphNode *Dst,
-                                      unsigned Idx) const {
-  float Cost = 0.0f;
-  const CompGraphNode::NodeVecTy &SrcFIs = Src->FaninNodes[Idx],
-                                 &DstFIs = Dst->FaninNodes[Idx];
-
-  std::set<unsigned> NumMergedFIs;
-  typedef CompGraphNode::iterator iterator;
-  for (iterator I = SrcFIs.begin(), E = SrcFIs.end(); I != E; ++I)
-    NumMergedFIs.insert((*I)->getBindingIdx());
-
-  for (iterator I = DstFIs.begin(), E = DstFIs.end(); I != E; ++I)
-    NumMergedFIs.insert((*I)->getBindingIdx());
-
-  // Assume each fanins require 1 LE
-  return NumMergedFIs.size() * Src->getSelector(Idx)->getBitWidth();
-}
-
 float CompGraphBase::computeSavedFOMux(const CompGraphNode *Src,
                                         const CompGraphNode *Dst) const {
   float Cost = 0.0f;
 
-  std::set<unsigned> NumMergedFOs;
+  std::set<CompGraphNode*> NumMergedFOs;
   typedef CompGraphNode::iterator iterator;
   for (iterator I = Src->fanout_begin(), E = Src->fanout_end(); I != E; ++I)
-    NumMergedFOs.insert((*I)->getBindingIdx());
+    NumMergedFOs.insert(*I);
 
   unsigned IntersectedFOs = 0;
   for (iterator I = Dst->fanout_begin(), E = Dst->fanout_end(); I != E; ++I)
-    if (!NumMergedFOs.insert((*I)->getBindingIdx()).second)
+    if (!NumMergedFOs.insert(*I).second)
       ++IntersectedFOs;
 
-  unsigned Bitwidth = Src->FUType == VFUs::ICmp ?
-                                     1u : Src->getSelector(0)->getBitWidth();
+  bool IsICmp = Src->FUType == VFUs::ICmp;
+  unsigned Bitwidth = IsICmp ? 1u : Src->getSelector(0)->getBitWidth();
 
   // For each intersected fanouts, mux is required.
   // Assume each fanins require 1 LE
   return IntersectedFOs * Bitwidth;
-}
-
-float
-CompGraphBase::computeInterConnectComplexity(const CompGraphNode *Src,
-                                             const CompGraphNode *Dst) const {
-  assert(Src->size() == Dst->size() && "Number of operand register not agreed!");
-  float Cost = 0.0f;
-
-  for (unsigned i = 0, e = Src->size(); i != e; ++i) 
-    Cost += computeFIMuxCost(Src, Dst, i);
-
-  Cost -= computeSavedFOMux(Src, Dst);
-
-  return Cost;
 }
 
 float CompGraphBase::computeSavedResource(const CompGraphNode *Src,

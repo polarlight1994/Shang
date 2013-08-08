@@ -399,7 +399,7 @@ float PSBCompGraph::computeFixedCost(NodeTy *Src, NodeTy *Dst) const {
   Cost -= current_area_factor * computeSavedResource(Src, Dst);
 
   // 2. Calculate the interconnection cost.
-  Cost -= mux_factor * computeSavedFIMux(Src, Dst);
+  Cost -= mux_factor * (computeSavedFIMux(Src, Dst) + computeSavedFOMux(Src, Dst));
 
   // 3. Timing penalty introduced by MUX
   return Cost;
@@ -467,9 +467,9 @@ bool PreSchedBinding::runOnVASTModule(VASTModule &VM) {
   // PSBCG->decomposeTrivialNodes();
   PSBCG->computeCompatibility();
   PSBCG->fixTransitive();
+  PSBCG->computeInterconnects();
 
   PSBCG->computeFixedCosts();
-  PSBCG->computeInterconnects();
 
   PSBCG->performBinding();
 

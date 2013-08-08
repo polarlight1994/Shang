@@ -275,8 +275,6 @@ protected:
 
   float computeInterConnectComplexity(const CompGraphNode *Src,
                                       const CompGraphNode *Dst) const;
-  float computeFIMuxCost(const CompGraphNode *Src, const CompGraphNode *Dst,
-                         unsigned Idx) const;
   float computeSavedFOMux(const CompGraphNode *Src,
                            const CompGraphNode *Dst) const;
   float computeSavedResource(const CompGraphNode *Src,
