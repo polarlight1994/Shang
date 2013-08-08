@@ -244,6 +244,9 @@ protected:
   // graph.
   std::map<DataflowInst, CompGraphNode*> InstMap;
 
+  // Pre-calculate the possible merged edges to speed up the cost update.
+  std::map<EdgeType, EdgeVector> CompatibleEdges;
+
   DominatorTree &DT;
   CachedStrashTable &CST;
   ClusterVectors Clusters;
@@ -273,13 +276,15 @@ protected:
     return new CompGraphNode(FUType, FUCost, Idx, Inst, Sels);
   }
 
-  float computeInterConnectComplexity(const CompGraphNode *Src,
+  float computeInterConnectConsistency(const CompGraphNode *Src,
                                       const CompGraphNode *Dst) const;
   float computeSavedFOMux(const CompGraphNode *Src,
                            const CompGraphNode *Dst) const;
   float computeSavedResource(const CompGraphNode *Src,
                              const CompGraphNode *Dst) const;
+
   float computeSavedFIMux(VASTSelector *Src, VASTSelector *Dst) const;
+
   float
   computeSavedFIMux(const CompGraphNode *Src, const CompGraphNode *Dst) const;
 
@@ -289,7 +294,12 @@ protected:
   void translateToCompNodes(std::set<VASTSeqValue*> &SVSet,
                             std::set<CompGraphNode*> &Fanins) const;
 
+  void computeInterconnects(CompGraphNode *N);
   void computeInterconnects(CompGraphNode *N, unsigned SelIdx);
+  void computeCompatibleEdges(NodeTy *Dst, NodeTy *Src, EdgeVector &CompEdges);
+  void computeCompatibleEdges(std::set<NodeTy*> &DstNodes,
+                              std::set<NodeTy*> &SrcNodes,
+                              EdgeVector &CompEdges);
 private:
   MinCostFlowSolver *MCF;
 public:
@@ -335,8 +345,8 @@ public:
 
   void decomposeTrivialNodes();
   void computeCompatibility();
-  void computeFixedCosts();
   void computeInterconnects();
+  void computeFixedCosts();
   void fixTransitive();
 
   unsigned performBinding();

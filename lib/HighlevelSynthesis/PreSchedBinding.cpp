@@ -380,7 +380,7 @@ public:
 };
 }
 
-static const float interconnect_factor = 0.8f, mux_factor = 0.8f,
+static const float interconnect_factor = 64.0f, mux_factor = 0.8f,
                    area_factor = 0.6f,
                    consistent_factor = 2.0f,
                    scheduling_factor = 0.1f;
@@ -411,7 +411,7 @@ float PSBCompGraph::computeCost(const CompGraphNode *Src,
   float Cost = Src->getCostTo(Dst);
 
   // 2. Calculate the interconnection cost.
-  Cost += interconnect_factor * computeInterConnectComplexity(Src, Dst);
+  Cost -= interconnect_factor * computeInterConnectConsistency(Src, Dst);
 
   if (Src->getBindingIdx() == Dst->getBindingIdx())
     Cost -= consistent_factor * exp(float(iteration)) ;

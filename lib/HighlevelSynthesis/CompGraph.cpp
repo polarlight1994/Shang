@@ -415,7 +415,39 @@ float CompGraphBase::computeSavedResource(const CompGraphNode *Src,
   return Cost;
 }
 
+float
+CompGraphBase::computeInterConnectConsistency(const CompGraphNode *Src,
+                                              const CompGraphNode *Dst) const {
+  typedef std::map<EdgeType, EdgeVector>::const_iterator iterator;
+  iterator I = CompatibleEdges.find(EdgeType(const_cast<CompGraphNode*>(Src),
+                                             const_cast<CompGraphNode*>(Dst)));
+
+  if (I == CompatibleEdges.end())
+    return 0.0f;
+
+  typedef EdgeVector::const_iterator edge_iterator;
+  const EdgeVector &Edges = I->second;
+
+  unsigned NumCompatibles = 0;
+  for (edge_iterator EI = Edges.begin(), EE = Edges.end(); EI != EE; ++EI) {
+    NodeTy *Src = EI->first, *Dst = EI->second;
+
+    if (Src->getBindingIdx() == Dst->getBindingIdx())
+      ++NumCompatibles;
+  }
+
+  return float(NumCompatibles) / float(Edges.size());
+}
+
+void CompGraphBase::computeInterconnects(CompGraphNode *N) {
+  for (unsigned i = 0, e = N->size(); i != e; ++i)
+    computeInterconnects(N, i);
+}
+
 void CompGraphBase::computeInterconnects(CompGraphNode *N, unsigned SelIdx) {
+  if (!N->FaninNodes[SelIdx].empty())
+    return;
+
   extractFaninNodes(N->getSelector(SelIdx), N->FaninNodes[SelIdx]);
 
   typedef CompGraphNode::iterator iterator;
@@ -426,12 +458,61 @@ void CompGraphBase::computeInterconnects(CompGraphNode *N, unsigned SelIdx) {
   }
 }
 
+void CompGraphBase::computeCompatibleEdges(std::set<NodeTy*> &DstNodes,
+                                           std::set<NodeTy*> &SrcNodes,
+                                           EdgeVector &CompEdges) {
+  typedef std::set<NodeTy*>::iterator iterator;
+  for (iterator DI = DstNodes.begin(), DE = DstNodes.end(); DI != DE; ++DI) {
+    NodeTy *Dst = *DI;
+
+    for (iterator SI = SrcNodes.begin(), SE = SrcNodes.end(); SI != SE; ++SI) {
+      NodeTy *Src = *SI;
+
+      if (Src->countSuccessor(Dst)) {
+        CompEdges.push_back(EdgeType(Src, Dst));
+        ++NumCompEdges;
+        continue;
+      }
+
+      if (Dst->countSuccessor(Dst)) {
+        CompEdges.push_back(EdgeType(Dst, Src));
+        ++NumCompEdges;
+        continue;
+      }
+
+    }
+  }
+}
+
+void CompGraphBase::computeCompatibleEdges(NodeTy *Dst, NodeTy *Src,
+                                           EdgeVector &CompEdges) {
+  assert(Src->size() == Dst->size() && "Number of operand register not agreed!");
+
+  for (unsigned i = 0, e = Src->size(); i != e; ++i)
+    computeCompatibleEdges(Dst->FaninNodes[i], Src->FaninNodes[i], CompEdges);
+
+  computeCompatibleEdges(Dst->FanoutNodes, Src->FanoutNodes, CompEdges);
+}
+
 void CompGraphBase::computeInterconnects() {
   for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
-    CompGraphNode *N = I;
+    CompGraphNode *Src = I;
+    computeInterconnects(Src);
 
-    for (unsigned i = 0, e = N->size(); i != e; ++i) 
-      computeInterconnects(N, i);
+    typedef NodeTy::iterator succ_iterator;
+    for (succ_iterator I = Src->succ_begin(), E = Src->succ_end(); I != E; ++I) {
+      NodeTy *Dst = *I;
+
+      if (Dst->IsTrivial)
+        continue;
+
+      computeInterconnects(Dst);
+
+      EdgeVector &CompEdges = CompatibleEdges[EdgeType(Src, Dst)];
+      computeCompatibleEdges(Dst, Src, CompEdges);
+      if (CompEdges.empty())
+        CompatibleEdges.erase(EdgeType(Src, Dst));
+    }
   }
 }
 
