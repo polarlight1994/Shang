@@ -577,7 +577,7 @@ public:
   unsigned createLPAndVariables();
   unsigned createBlanceConstraints();
   void setFUAllocationConstraints(unsigned Supply);
-  void setCost();
+  void setCost(unsigned iteration);
   void applySolveSettings();
   bool solveMinCostFlow();
 
@@ -742,7 +742,7 @@ void MinCostFlowSolver::setFUAllocationConstraints(unsigned Supply) {
   set_lowbo(lp, 1, Supply);
 }
 
-void MinCostFlowSolver::setCost() {
+void MinCostFlowSolver::setCost(unsigned iteration) {
   std::vector<int> Indices;
   std::vector<REAL> Coefficients;
   typedef Edge2IdxMapTy::iterator iterator;
@@ -755,7 +755,7 @@ void MinCostFlowSolver::setCost() {
 
     Indices.push_back(I->second);
 
-    float EdgeCost = G.computeCost(Src, Dst);
+    float EdgeCost = G.computeCost(Src, Dst, iteration);
     Coefficients.push_back(EdgeCost);
   }
 
@@ -902,9 +902,10 @@ unsigned CompGraphBase::performBinding() {
 
   unsigned MaxFlow = Nodes.size();
 
+  unsigned iteration = 0;
   do {
     MCF->setFUAllocationConstraints(MaxFlow);
-    MCF->setCost();
+    MCF->setCost(++iteration);
     if (!MCF->solveMinCostFlow())
       return 0;
   

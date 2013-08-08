@@ -52,7 +52,7 @@ public:
 
   VASTCompGraph(DominatorTree &DT, CachedStrashTable &CST)
     : CompGraphBase(DT, CST), interconnect_factor(1.0f), mux_factor(0.8f),
-      area_factor(0.6f), consistent_factor(8.0f) {}
+      area_factor(0.6f), consistent_factor(2.0f) {}
 
   float computeFixedCost(NodeTy *Src, NodeTy *Dst) const {
     float Cost = 0.0f;
@@ -66,14 +66,15 @@ public:
     return Cost;
   }
 
-  float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const {
+  float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst,
+                    unsigned iteration) const {
     float Cost = Src->getCostTo(Dst);
 
     // 2. Calculate the interconnection cost.
     Cost += interconnect_factor * computeInterConnectComplexity(Src, Dst);
 
     if (Src->getBindingIdx() == Dst->getBindingIdx())
-      Cost -= consistent_factor;
+      Cost -= consistent_factor * exp(float(iteration));
 
     return Cost;
   }

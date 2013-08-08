@@ -375,13 +375,14 @@ public:
 
   float computeFixedCost(NodeTy *Src, NodeTy *Dst) const;
 
-  float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const;
+  float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst,
+                    unsigned iteration) const;
 };
 }
 
 static const float interconnect_factor = 0.8f, mux_factor = 0.8f,
                    area_factor = 0.6f,
-                   consistent_factor = 8.0f,
+                   consistent_factor = 2.0f,
                    scheduling_factor = 0.1f;
 
 float PSBCompGraph::computeFixedCost(NodeTy *Src, NodeTy *Dst) const {
@@ -405,14 +406,15 @@ float PSBCompGraph::computeFixedCost(NodeTy *Src, NodeTy *Dst) const {
 }
 
 float PSBCompGraph::computeCost(const CompGraphNode *Src,
-                                const CompGraphNode *Dst) const {
+                                const CompGraphNode *Dst,
+                                unsigned iteration) const {
   float Cost = Src->getCostTo(Dst);
 
   // 2. Calculate the interconnection cost.
   Cost += interconnect_factor * computeInterConnectComplexity(Src, Dst);
 
   if (Src->getBindingIdx() == Dst->getBindingIdx())
-    Cost -= consistent_factor;
+    Cost -= consistent_factor * exp(float(iteration)) ;
 
   return Cost;
 }

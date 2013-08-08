@@ -330,7 +330,8 @@ public:
     deleteNode(From);
   }
 
-  virtual float computeCost(const NodeTy *Src, const NodeTy *Dst) const {
+  virtual float computeCost(const NodeTy *Src, const NodeTy *Dst,
+                            unsigned iteration) const {
     return 0.0f;
   }
 
