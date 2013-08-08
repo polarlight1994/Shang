@@ -80,7 +80,7 @@ public:
     Cost -= area_factor * compuateSavedResource(Src, Dst);
 
     // 2. Calculate the interconnection cost.
-    Cost += fanin_factor * computeIncreasedMuxPorts(Src, Dst);
+    Cost -= fanin_factor * computeSavedFIMux(Src, Dst);
 
     // 3. Timing penalty introduced by MUX
     //

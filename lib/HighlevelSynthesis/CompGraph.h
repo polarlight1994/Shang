@@ -260,8 +260,8 @@ protected:
     return new CompGraphNode(FUType, FUCost, Idx, Inst, Sels);
   }
 
-  float computeIncreasedMuxPorts(VASTSelector *Src, VASTSelector *Dst) const;
-  float computeIncreasedMuxPorts(CompGraphNode *Src, CompGraphNode *Dst) const;
+  float computeSavedFIMux(VASTSelector *Src, VASTSelector *Dst) const;
+  float computeSavedFIMux(CompGraphNode *Src, CompGraphNode *Dst) const;
   float compuateSavedResource(CompGraphNode *Src, CompGraphNode *Dst) const;
 
   void extractFaninNodes(NodeTy *N, std::set<NodeTy*> &Fanins) const;

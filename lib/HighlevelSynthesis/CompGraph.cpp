@@ -317,27 +317,27 @@ void CompGraphBase::decomposeTrivialNodes() {
   }
 }
 
-float CompGraphBase::computeIncreasedMuxPorts(VASTSelector *Src,
-                                              VASTSelector *Dst) const {
-  std::set<unsigned> SrcFIs, DstFIs, MergedFIs;
+float CompGraphBase::computeSavedFIMux(VASTSelector *Src,
+                                        VASTSelector *Dst) const {
+  std::set<unsigned> MergedFIs;
   typedef VASTSelector::iterator iterator;
 
   for (iterator I = Src->begin(), E = Src->end(); I != E; ++I) {
     unsigned SrashID = CST.getOrCreateStrashID(*I);
-    SrcFIs.insert(SrashID);
     MergedFIs.insert(SrashID);
   }
 
+  int IntersectedFIs = 0;
   for (iterator I = Dst->begin(), E = Dst->end(); I != E; ++I) {
     unsigned SrashID = CST.getOrCreateStrashID(*I);
-    DstFIs.insert(SrashID);
-    MergedFIs.insert(SrashID);
+    if (!MergedFIs.insert(SrashID).second)
+      ++IntersectedFIs;
   }
 
-  int IncreasePorts = MergedFIs.size() - std::min(DstFIs.size(), SrcFIs.size());
+  int Bitwidth = std::max(Src->getBitWidth(), Dst->getBitWidth());
 
   // Remember to multiple the saved mux (1 bit) port by the bitwidth.
-  return IncreasePorts * std::max(Src->getBitWidth(), Dst->getBitWidth());
+  return IntersectedFIs * Bitwidth;
 }
 
 static void ExtractFaninNodes(VASTSelector *Sel,
@@ -380,12 +380,12 @@ CompGraphBase::extractFaninNodes(NodeTy *N, std::set<NodeTy*> &Fanins) const {
   translateToCompNodes(SVSet, Fanins);
 }
 
-float CompGraphBase::computeIncreasedMuxPorts(CompGraphNode *Src,
-                                              CompGraphNode *Dst) const {
+float CompGraphBase::computeSavedFIMux(CompGraphNode *Src,
+                                        CompGraphNode *Dst) const {
   assert(Src->size() == Dst->size() && "Number of operand register not agreed!");
   float Cost = 0.0f;
   for (unsigned i = 0, e = Src->size(); i != e; ++i)
-    Cost += computeIncreasedMuxPorts(Src->getSelector(i), Dst->getSelector(i));
+    Cost += computeSavedFIMux(Src->getSelector(i), Dst->getSelector(i));
 
   return Cost;
 }
