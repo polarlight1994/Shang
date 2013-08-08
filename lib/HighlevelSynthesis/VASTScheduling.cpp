@@ -894,14 +894,15 @@ struct IterativeSchedulingBinding {
 
   State S;
   unsigned ScheduleViolation, BindingViolation;
+  float TotalWeight;
   const float PerformanceFactor, ResourceFactor;
 
   IterativeSchedulingBinding(VASTSchedGraph &G, PreSchedBinding &PSB,
                              DominatorTree &DT, BlockFrequencyInfo &BFI,
                              BranchProbabilityInfo &BPI, IR2SUMapTy &IR2SUMap)
     : Scheduler(G, 1), PSB(PSB), DT(DT), BFI(BFI), BPI(BPI), IR2SUMap(IR2SUMap),
-      ScheduleViolation(0), BindingViolation(0),
-      S(Initial), PerformanceFactor(64.0f), ResourceFactor(0.2f) {
+      ScheduleViolation(0), BindingViolation(0), TotalWeight(0.0),
+      S(Initial), PerformanceFactor(64.0f), ResourceFactor(0.01f) {
     // Build the hard linear order.
     Scheduler.addLinOrdEdge(DT, IR2SUMap);
   }
@@ -1043,7 +1044,7 @@ IterativeSchedulingBinding::checkLatchCompatibility(PSBCompNode *Src,
       DstDef->dump();
       dbgs() << "\n\n");
 
-      float Penalty = Benefit * ResourceFactor;
+      float Penalty = Benefit * ResourceFactor * TotalWeight;
       updateSchedulingConstraint(SrcKill, DstDef, 0, Penalty);
       NegativeSlack += SrcKill->getSchedule() - DstDef->getSchedule();
     }
@@ -1109,7 +1110,7 @@ unsigned IterativeSchedulingBinding::checkCompatibility(PSBCompNode *Src,
   DstSU->dump();
   dbgs() << "\n\n");
 
-  float Penalty = BindingBenefit * ResourceFactor;
+  float Penalty = BindingBenefit * ResourceFactor * TotalWeight;
 
   // Apply the constraint in the same way that we assign the linear order.
   if (!alap_less(SrcSU, SrcSU))
@@ -1168,7 +1169,7 @@ bool IterativeSchedulingBinding::performScheduling(VASTModule &VM) {
     Scheduler.addDependencyConstraints();
   }
 
-  float TotalWeight = 0.0f;
+  TotalWeight = 0.0f;
 
   Function &F = VM.getLLVMFunction();
   typedef Function::iterator iterator;
