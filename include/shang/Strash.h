@@ -17,14 +17,14 @@
 
 #include "shang/VASTNodeBases.h"
 #include "shang/VASTModulePass.h"
-#include "llvm/ADT/DenseMap.h"
+#include <map>
 
 namespace llvm {
 // The structural hash table and the cached version.
 struct Strash;
 class CachedStrashTable : public VASTModulePass {
 public:
-  typedef DenseMap<VASTValPtr, unsigned> CacheTy;
+  typedef std::map<VASTValPtr, unsigned> CacheTy;
 private:
   CacheTy Cache;
   Strash *Table;
@@ -35,6 +35,48 @@ public:
 
   unsigned getOrCreateStrashID(VASTValPtr Ptr);
   unsigned getOrCreateStrashID(VASTSelector *Sel);
+
+  void getAnalysisUsage(AnalysisUsage &AU) const;
+  bool runOnVASTModule(VASTModule &VM);
+  void releaseMemory();
+};
+
+class CombPatterns;
+// The combinational pattern analysis.
+class CombPatternTable : public VASTModulePass {
+public:
+  typedef std::pair<VASTSelector*, VASTSelector*> LeafDelta;
+
+  struct DeltaResult {
+    bool IsAlwaysDifferent;
+    bool IsAlwaysIdentical;
+    SmallVector<LeafDelta, 8> Deltas;
+
+    DeltaResult(bool IsAlwaysDifferent = false, bool IsAlwaysIdentical = false)
+      : IsAlwaysDifferent(IsAlwaysDifferent),
+        IsAlwaysIdentical(IsAlwaysIdentical) {}
+
+    bool isUnintialized() const {
+      return !IsAlwaysDifferent && !IsAlwaysIdentical && Deltas.empty();
+    }
+
+    typedef SmallVector<LeafDelta, 8>::const_iterator iterator;
+    iterator begin() const { return Deltas.begin(); }
+    iterator end() const { return Deltas.end(); }
+  };
+private:
+  CombPatterns *Table;
+  std::map<std::pair<VASTExpr*, VASTExpr*>, DeltaResult> CachedDeltas;
+  static const DeltaResult AlwaysDifferent, AlwaysIdentical;
+public:
+  static char ID;
+
+  CombPatternTable();
+
+  unsigned getOrCreatePatternID(VASTValPtr Ptr);
+  ArrayRef<VASTSelector*> getLeaves(VASTExpr *Expr) const;
+
+  const DeltaResult &getLeavesDelta(VASTExpr *LHS, VASTExpr *RHS);
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnVASTModule(VASTModule &VM);

@@ -109,6 +109,7 @@ void initializeSimpleSelectorSynthesisPass(PassRegistry &Registry);
 void initializeSelectorPipeliningPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
 void initializeCachedStrashTablePass(PassRegistry &Registry);
+void initializeCombPatternTablePass(PassRegistry &Registry);
 void initializeTimingScriptGenPass(PassRegistry &Registry);
 void initializeSeqLiveVariablesPass(PassRegistry &Registry);
 void initializeRegisterSharingPass(PassRegistry &Registry);
