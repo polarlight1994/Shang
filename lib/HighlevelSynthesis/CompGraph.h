@@ -297,11 +297,13 @@ protected:
   void computeSingleNodeFaninDelta(CompGraphNode *Node) const;
 
 private:
-  MinCostFlowSolver *MCF;
+  MinCostFlowSolver *MCF[5];
 public:
   explicit CompGraphBase(DominatorTree &DT, CombPatternTable &CPT)
-    : Entry(), Exit(), DT(DT), CPT(CPT), MCF(0) {
+    : Entry(), Exit(), DT(DT), CPT(CPT) {
     initalizeDomTreeLevel();
+    for (unsigned i = 0; i < 5; ++i)
+      MCF[i] = 0;
   }
 
   virtual ~CompGraphBase();

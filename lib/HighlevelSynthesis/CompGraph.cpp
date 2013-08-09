@@ -596,6 +596,7 @@ public:
 private:
   CompGraphBase &G;
   lprec *lp;
+  VFUs::FUTypes Type;
 
   // Map the edge to column number in LP.
   typedef std::map<EdgeType, unsigned> Edge2IdxMapTy;
@@ -613,18 +614,14 @@ private:
 
   unsigned createEdgeVariables(const CompGraphNode *N, unsigned Col);
 public:
-  MinCostFlowSolver(CompGraphBase &G) : G(G), lp(0) {}
+  MinCostFlowSolver(CompGraphBase &G, VFUs::FUTypes Type)
+    : G(G), lp(0), Type(Type) {}
   ~MinCostFlowSolver() {
     delete_lp(lp);
   }
 
-  void resetConsistencies() {
-    EdgeConsistencies.clear();
-  }
-
   unsigned createLPAndVariables();
   unsigned createBlanceConstraints();
-  void setFUAllocationConstraints(unsigned Supply);
   void setCost();
   void applySolveSettings();
   bool solveMinCostFlow();
@@ -652,6 +649,9 @@ unsigned MinCostFlowSolver::createEdgeVariables(const CompGraphNode *N,
   typedef CompGraphNode::iterator iterator;
   for (iterator I = N->succ_begin(), E = N->succ_end(); I != E; ++I) {
     CompGraphNode *Succ = *I;
+    if (Succ->FUType != Type && !Succ->IsTrivial)
+      continue;
+
     bool inserted
       = Edge2IdxMap.insert(std::make_pair(EdgeType(N, Succ), Col)).second;
     assert(inserted && "Edge had already exisited?");
@@ -677,17 +677,15 @@ unsigned MinCostFlowSolver::createLPAndVariables() {
   lp = make_lp(0, 0);
 
   set_add_rowmode(lp, FALSE);
-  // Create the supply variable
-  add_columnex(lp, 0, 0,0);
-  DEBUG(set_col_name(lp, 1, "supply"));
-  set_int(lp, 1, TRUE);
 
-  // Column number of LP in lpsolve starts from 1, the other variables start
-  // from 2 because we had allocated the supply variable.
-  unsigned Col =  createEdgeVariables(G.getEntry(), 2);
+  // Column number of LP in lpsolve starts from 1
+  unsigned Col =  createEdgeVariables(G.getEntry(), 1);
 
   for (CompGraphBase::iterator I = G.begin(), E = G.end(); I != E; ++I) {
     CompGraphNode *N = I;
+    if (N->FUType != Type)
+      continue;
+
     Col = createEdgeVariables(N, Col);
   }
 
@@ -702,22 +700,27 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
   std::vector<int> Col;
   std::vector<REAL> Coeff;
 
+  // Count the number of nodes, use it as the outflow of the entry and the
+  // inflow of the exit.
+  unsigned MaxFlow = 0;
   const CompGraphNode *S = G.getEntry();
   typedef CompGraphNode::iterator iterator;
   for (iterator SI = S->succ_begin(), SE = S->succ_end(); SI != SE; ++SI) {
     CompGraphNode *Succ = *SI;
+    if (Succ->FUType != Type)
+      continue;
+
+    ++MaxFlow;
     unsigned EdgeIdx = lookUpEdgeIdx(EdgeType(S, Succ));
     assert(EdgeIdx && "Edge column number not available!");
     Col.push_back(EdgeIdx);
     Coeff.push_back(1.0);
   }
 
-  // Add the supply variable.
-  Col.push_back(1);
-  Coeff.push_back(-1.0);
+  // TODO: Set a tighter limit if the number of FU is constranted (E.g. mult).
 
   // The outflow from source must be smaller than supply.
-  if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), LE, 0.0))
+  if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), LE, MaxFlow))
     report_fatal_error("Cannot add flow constraint!");
 
   Col.clear();
@@ -725,18 +728,18 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
   const CompGraphNode *T = G.getExit();
   for (iterator SI = T->pred_begin(), SE = T->pred_end(); SI != SE; ++SI) {
     CompGraphNode *Pred = *SI;
+
+    if (Pred->FUType != Type)
+      continue;
+
     unsigned EdgeIdx = lookUpEdgeIdx(EdgeType(Pred, T));
     assert(EdgeIdx && "Edge column number not available!");
     Col.push_back(EdgeIdx);
     Coeff.push_back(1.0);
   }
 
-  // Add the supply variable.
-  Col.push_back(1);
-  Coeff.push_back(-1.0);
-
   // The inflow to sink must be smaller than supply.
-  if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), LE, 0.0))
+  if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), LE, MaxFlow))
     report_fatal_error("Cannot add flow constraint!");
 
   Col.clear();
@@ -744,6 +747,9 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
 
   for (CompGraphBase::iterator I = G.begin(), E = G.end(); I != E; ++I) {
     CompGraphNode *N = I;
+
+    if (N->FUType != Type)
+      continue;
 
     Col.clear();
     Coeff.clear();
@@ -753,6 +759,7 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
     typedef CompGraphNode::iterator iterator;
     for (iterator SI = N->succ_begin(), SE = N->succ_end(); SI != SE; ++SI) {
       CompGraphNode *Succ = *SI;
+
       unsigned EdgeIdx = lookUpEdgeIdx(EdgeType(N, Succ));
       assert(EdgeIdx && "Edge column number not available!");
       Col.push_back(EdgeIdx);
@@ -783,11 +790,6 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
   set_add_rowmode(lp, FALSE);
 
   return get_Nrows(lp);
-}
-
-void MinCostFlowSolver::setFUAllocationConstraints(unsigned Supply) {
-  set_upbo(lp, 1, Supply);
-  set_lowbo(lp, 1, Supply);
 }
 
 void MinCostFlowSolver::setCost() {
@@ -874,8 +876,7 @@ bool MinCostFlowSolver::solveMinCostFlow() {
   }
 
   float Cost = get_var_primalresult(lp, 0);
-  DEBUG(dbgs() << "Object: " << Cost << ", Supply: "
-               << get_var_primalresult(lp, 1) << '\n');
+  DEBUG(dbgs() << "Object: " << Cost << ' ' << Type << '\n');
 
   return true;
 }
@@ -883,7 +884,6 @@ bool MinCostFlowSolver::solveMinCostFlow() {
 unsigned MinCostFlowSolver::buildBinging(ClusterVectors &Clusters) {
   unsigned TotalRows = getNumRows();
   unsigned BindingIdx = 0;
-  Clusters.clear();
   unsigned Changed = 0;
 
   CompGraphNode *Entry = G.getEntry();
@@ -891,6 +891,10 @@ unsigned MinCostFlowSolver::buildBinging(ClusterVectors &Clusters) {
   typedef CompGraphNode::iterator iterator;
   for (iterator I = Entry->succ_begin(), E = Entry->succ_end(); I != E; ++I) {
     CompGraphNode *Succ = *I;
+
+    if (Succ->FUType != Type)
+      continue;
+
     if (!hasFlow(EdgeType(Entry, Succ), TotalRows))
       continue;
 
@@ -942,21 +946,31 @@ unsigned MinCostFlowSolver::buildBinging(CompGraphNode *Src, ClusterType &Cluste
 }
 
 unsigned CompGraphBase::performBinding() {
-  if (MCF == 0) {
-    MCF = new MinCostFlowSolver(*this);
 
-    MCF->createLPAndVariables();
-    MCF->createBlanceConstraints();
-    MCF->applySolveSettings();
+  for (unsigned i = 0; i < 5; ++i) {
+    if (MCF[i] == 0) {
+      MCF[i] = new MinCostFlowSolver(*this, VFUs::FUTypes(i));
+
+      MCF[i]->createLPAndVariables();
+      MCF[i]->createBlanceConstraints();
+      MCF[i]->applySolveSettings();
+    }
   }
 
   unsigned MaxFlow = Nodes.size();
 
+  bool Changed = true;
   do {
-    MCF->setFUAllocationConstraints(MaxFlow);
-    MCF->setCost();
-    if (!MCF->solveMinCostFlow())
-      return 0;
+    Changed = false;
+    Clusters.clear();
+
+    for (unsigned i = 0; i < 5; ++i) {
+      MCF[i]->setCost();
+      if (!MCF[i]->solveMinCostFlow())
+        return 0;
+
+      Changed |= (MCF[i]->buildBinging(Clusters) != 0);
+    }
   
     //unsigned MinFlow = 1;
 
@@ -972,14 +986,13 @@ unsigned CompGraphBase::performBinding() {
     //    // Otherwise we should use a bigger supply.
     //    MinFlow = MidFlow + 1;
     //}
-  } while (MCF->buildBinging(Clusters));
-
-  MCF->resetConsistencies();
+  } while (Changed);
 
   return Clusters.size();
 }
 
 CompGraphBase::~CompGraphBase() {
-  if (MCF)
-    delete MCF;
+  for (unsigned i = 0; i < 5; ++i)
+    if (MCF[i])
+      delete MCF[i];
 }
