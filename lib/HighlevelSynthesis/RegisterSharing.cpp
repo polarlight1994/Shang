@@ -50,16 +50,14 @@ class VASTCompGraph : public CompGraphBase {
 public:
   const float mux_factor, area_factor;
 
-  VASTCompGraph(DominatorTree &DT, CachedStrashTable &CST)
-    : CompGraphBase(DT, CST), mux_factor(0.8f), area_factor(0.6f) {}
+  VASTCompGraph(DominatorTree &DT, CombPatternTable &CPT)
+    : CompGraphBase(DT, CPT), mux_factor(0.8f), area_factor(0.8f) {}
 
   void initializeCost(NodeTy *Src, NodeTy *Dst, NodeTy::Cost &Cost) const {
     // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
     Cost.FixBenefit = area_factor * computeSavedResource(Src, Dst);
 
     // 2. Calculate the interconnection cost.
-    Cost.FaninCost = mux_factor * computeIncreasedFIs(Src, Dst);
-    Cost.SavedFOs = computeSavedFOMux(Src, Dst);
 
     // 3. Timing penalty introduced by MUX
   }
@@ -67,8 +65,9 @@ public:
   float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const {
     const NodeTy::Cost &Cost = Src->getCostTo(Dst);
     float CurrentCost = - Cost.FixBenefit;
-    CurrentCost += Cost.FaninCost * (1.0f - compuateMergeFIsRatio(Src, Dst));
-    CurrentCost -= (Cost.SavedFOs + compuateMergeFOs(Src, Dst)) * mux_factor;
+    CurrentCost -= mux_factor * Cost.FanoutBenefit;
+    CurrentCost += mux_factor * Cost.FaninCost;
+    CurrentCost -= mux_factor * Cost.getMergedDetaBenefit();
 
     return CurrentCost;
   }
@@ -96,7 +95,7 @@ struct RegisterSharing : public VASTModulePass {
     AU.addRequired<SeqLiveVariables>();
     //AU.addPreserved<SeqLiveVariables>();
 
-    AU.addRequired<CachedStrashTable>();
+    AU.addRequired<CombPatternTable>();
     AU.addRequired<PreSchedBinding>();
   }
 
@@ -151,7 +150,7 @@ INITIALIZE_PASS_BEGIN(RegisterSharing, "shang-register-sharing",
   INITIALIZE_PASS_DEPENDENCY(DominatorTree)
   INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
-  INITIALIZE_PASS_DEPENDENCY(CachedStrashTable)
+  INITIALIZE_PASS_DEPENDENCY(CombPatternTable)
   INITIALIZE_PASS_DEPENDENCY(PreSchedBinding)
 INITIALIZE_PASS_END(RegisterSharing, "shang-register-sharing",
                     "Share the registers in the design", false, true)
@@ -235,7 +234,7 @@ void RegisterSharing::checkConsistencyAgainstPSB(VASTCompGraph &G) {
 bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   LVS = &getAnalysis<SeqLiveVariables>();
 
-  VASTCompGraph G(getAnalysis<DominatorTree>(), getAnalysis<CachedStrashTable>());
+  VASTCompGraph G(getAnalysis<DominatorTree>(), getAnalysis<CombPatternTable>());
 
   initializeOverlappedSlots(VM);
 
@@ -263,7 +262,6 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   G.decomposeTrivialNodes();
   G.computeCompatibility();
   G.fixTransitive();
-  G.computeInterconnects();
 
   G.initializeCosts();
 

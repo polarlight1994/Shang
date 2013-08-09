@@ -38,7 +38,7 @@ class VASTSeqOp;
 class VASTSeqInst;
 class VASTSeqValue;
 class DominatorTree;
-class CachedStrashTable;
+class CombPatternTable;
 class MinCostFlowSolver;
 
 class CompGraphNode : public ilist_node<CompGraphNode> {
@@ -52,12 +52,23 @@ public:
   struct Cost {
     // Fixed cost including saved resource, and timing criticality.
     float FixBenefit;
-    // The cost of fanin and fanout interconnection complexity.
+    float FanoutBenefit;
     float FaninCost;
-    unsigned SavedFOs;
+    typedef std::pair<unsigned*, unsigned*> NodePair;
+    std::map<NodePair, float> Deltas;
+    typedef std::map<std::pair<unsigned*, unsigned*>, float>::const_iterator
+            delta_iterator;
 
-    Cost() : FixBenefit(0.0f), FaninCost(0.0f), SavedFOs(0) {}
+    delta_iterator delta_begin() const { return Deltas.begin(); }
+    delta_iterator delta_end() const { return Deltas.end(); }
+
+    void accumulateDelta(CompGraphNode *Src, CompGraphNode *Dst, float Weight);
+
+    float getMergedDetaBenefit() const;
+
+    Cost() : FixBenefit(0.0f), FanoutBenefit(0.0f), FaninCost(0.0f) {}
   };
+
 private:
   unsigned Order;
   SparseBitVector<> Defs;
@@ -68,8 +79,6 @@ private:
   typedef std::set<CompGraphNode*> NodeVecTy;
   // Predecessors and Successors.
   NodeVecTy Preds, Succs;
-  SmallVector<NodeVecTy, 3> FaninNodes;
-  NodeVecTy FanoutNodes;
 
   typedef std::map<CompGraphNode*, Cost> CostVecTy;
   CostVecTy SuccCosts;
@@ -101,7 +110,7 @@ public:
                 DataflowInst Inst, ArrayRef<VASTSelector*> Sels)
     : Idx(Idx), IsTrivial(false), FUType(FUType), FUCost(FUCost),
       Order(UINT32_MAX), Inst(Inst), Sels(Sels.begin(), Sels.end()),
-      FaninNodes(Sels.size()), BindingIdx(Idx) {}
+      BindingIdx(Idx) {}
 
   BasicBlock *getDomBlock() const;
 
@@ -149,11 +158,6 @@ public:
   iterator pred_end()   const { return Preds.end(); }
   unsigned num_pred()   const { return Preds.size(); }
   bool     pred_empty() const { return Preds.empty(); }
-
-  iterator fanin_begin(unsigned Idx) const { return FaninNodes[Idx].begin(); }
-  iterator fanin_end(unsigned Idx) const { return FaninNodes[Idx].end(); }
-  iterator fanout_begin() const { return FanoutNodes.begin(); }
-  iterator fanout_end() const { return FanoutNodes.end(); }
 
   unsigned degree() const { return num_succ() + num_pred(); }
 
@@ -254,7 +258,7 @@ protected:
   std::map<EdgeType, EdgeVector> FaninCompatibles, FanoutCompatibles;
 
   DominatorTree &DT;
-  CachedStrashTable &CST;
+  CombPatternTable &CPT;
   ClusterVectors Clusters;
 
   void deleteNode(NodeTy *N) {
@@ -271,8 +275,8 @@ protected:
     return I->second;
   }
 
-  virtual void initializeCost(NodeTy *Src, NodeTy *Dst,
-                              NodeTy::Cost &Cost) const {}
+  typedef NodeTy::Cost CostTy;
+  virtual void initializeCost(NodeTy *Src, NodeTy *Dst, CostTy &Cost) const {}
 
   virtual CompGraphNode *createNode(VFUs::FUTypes FUType, unsigned FUCost,
                                     unsigned Idx, DataflowInst Inst,
@@ -280,38 +284,24 @@ protected:
     return new CompGraphNode(FUType, FUCost, Idx, Inst, Sels);
   }
 
-  float compuateMergeFIsRatio(const CompGraphNode *Src,
-                              const CompGraphNode *Dst) const;
-  unsigned compuateMergeFOs(const CompGraphNode *Src,
-                            const CompGraphNode *Dst) const;
-
-  unsigned computeSavedFOMux(const CompGraphNode *Src,
-                            const CompGraphNode *Dst) const;
-
   unsigned computeSavedResource(const CompGraphNode *Src,
                                 const CompGraphNode *Dst) const;
 
-  int computeIncreasedFIs(VASTSelector *Src, VASTSelector *Dst) const;
-  int
-  computeIncreasedFIs(const CompGraphNode *Src, const CompGraphNode *Dst) const;
+  bool computeFaninDelta(VASTSelector *SrcV, VASTSelector *DstV, float Weight,
+                         CostTy *Cost) const;
+  bool computeFaninDelta(VASTValue *SrcFI, VASTValue *DstFI,
+                         CostTy *Cost) const;
+  int computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
+                       CostTy *Cost) const;
+  int computeFaninCost(CompGraphNode *Src, CompGraphNode *Dst,
+                       CostTy *Cost) const;
+  void computeSingleNodeFaninDelta(CompGraphNode *Node) const;
 
-  void
-  extractFaninNodes(VASTSelector *Sel, std::set<CompGraphNode*> &Fanins) const;
-
-  void translateToCompNodes(std::set<VASTSeqValue*> &SVSet,
-                            std::set<CompGraphNode*> &Fanins) const;
-
-  void computeInterconnects(CompGraphNode *N);
-  void computeInterconnects(CompGraphNode *N, unsigned SelIdx);
-  void computeCompatibleEdges(NodeTy *Dst, NodeTy *Src);
-  void computeCompatibleEdges(std::set<NodeTy*> &DstNodes,
-                              std::set<NodeTy*> &SrcNodes,
-                              EdgeVector &CompEdges);
 private:
   MinCostFlowSolver *MCF;
 public:
-  explicit CompGraphBase(DominatorTree &DT, CachedStrashTable &CST)
-    : Entry(), Exit(), DT(DT), CST(CST), MCF(0) {
+  explicit CompGraphBase(DominatorTree &DT, CombPatternTable &CPT)
+    : Entry(), Exit(), DT(DT), CPT(CPT), MCF(0) {
     initalizeDomTreeLevel();
   }
 
@@ -351,7 +341,6 @@ public:
 
   void decomposeTrivialNodes();
   void computeCompatibility();
-  void computeInterconnects();
   void initializeCosts();
   void fixTransitive();
 

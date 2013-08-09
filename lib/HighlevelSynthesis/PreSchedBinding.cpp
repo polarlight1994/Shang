@@ -366,8 +366,8 @@ bool PSBCompNode::isCompatibleWith(const CompGraphNode *RHS) const {
 namespace {
 class PSBCompGraph : public CompGraphBase {
 public:
-  PSBCompGraph(DominatorTree &DT, CachedStrashTable &CST)
-    : CompGraphBase(DT, CST) {}
+  PSBCompGraph(DominatorTree &DT, CombPatternTable &CPT)
+    : CompGraphBase(DT, CPT) {}
 
   CompGraphNode *createNode(VFUs::FUTypes FUType, unsigned FUCost, unsigned Idx,
     DataflowInst Inst, ArrayRef<VASTSelector*> Sels)
@@ -382,7 +382,7 @@ public:
 }
 
 static const float mux_factor = 0.8f,
-                   area_factor = 0.6f;
+                   area_factor = 0.8f;
 
 void PSBCompGraph::initializeCost(NodeTy *Src, NodeTy *Dst,
                                   NodeTy::Cost &Cost) const {
@@ -398,10 +398,6 @@ void PSBCompGraph::initializeCost(NodeTy *Src, NodeTy *Dst,
   // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
   Cost.FixBenefit = current_area_factor * computeSavedResource(Src, Dst);
 
-  // 2. Calculate the interconnection cost.
-  Cost.FaninCost = mux_factor * computeIncreasedFIs(Src, Dst);
-  Cost.SavedFOs = computeSavedFOMux(Src, Dst);
-
   // 3. Timing penalty introduced by MUX
 }
 
@@ -409,8 +405,9 @@ float PSBCompGraph::computeCost(const CompGraphNode *Src,
                                 const CompGraphNode *Dst) const {
   const NodeTy::Cost &Cost = Src->getCostTo(Dst);
   float CurrentCost = - Cost.FixBenefit;
-  CurrentCost += Cost.FaninCost * (1.0f - compuateMergeFIsRatio(Src, Dst));
-  CurrentCost -= (Cost.SavedFOs + compuateMergeFOs(Src, Dst)) * mux_factor;
+  CurrentCost -= mux_factor * Cost.FanoutBenefit;
+  CurrentCost += mux_factor * Cost.FaninCost;
+  CurrentCost -= mux_factor * Cost.getMergedDetaBenefit();
 
   return CurrentCost;
 }
@@ -420,7 +417,7 @@ void PreSchedBinding::getAnalysisUsage(AnalysisUsage &AU) const {
 
   AU.addRequired<DominatorTree>();
   AU.addRequiredID(ControlLogicSynthesisID);
-  AU.addRequired<CachedStrashTable>();
+  AU.addRequired<CombPatternTable>();
   AU.setPreservesAll();
 }
 
@@ -433,12 +430,12 @@ void PreSchedBinding::releaseMemory() {
 
 bool PreSchedBinding::runOnVASTModule(VASTModule &VM) {
   DominatorTree &DT = getAnalysis<DominatorTree>();
-  CachedStrashTable &CST = getAnalysis<CachedStrashTable>();
+  CombPatternTable &CPT = getAnalysis<CombPatternTable>();
   
   BBLiveIntervals BBLI(DT);
   BBLI.run(VM);
 
-  PSBCG = new PSBCompGraph(DT, CST);
+  PSBCG = new PSBCompGraph(DT, CPT);
 
   typedef VASTModule::seqop_iterator iterator;
   for (iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
@@ -463,7 +460,6 @@ bool PreSchedBinding::runOnVASTModule(VASTModule &VM) {
   // PSBCG->decomposeTrivialNodes();
   PSBCG->computeCompatibility();
   PSBCG->fixTransitive();
-  PSBCG->computeInterconnects();
   PSBCG->initializeCosts();
 
   PSBCG->performBinding();
@@ -483,6 +479,6 @@ INITIALIZE_PASS_BEGIN(PreSchedBinding, "shang-pre-schedule-binding",
                       "Schedule Independent Binding", false, true)
   INITIALIZE_PASS_DEPENDENCY(DominatorTree)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
-  INITIALIZE_PASS_DEPENDENCY(CachedStrashTable)
+  INITIALIZE_PASS_DEPENDENCY(CombPatternTable)
 INITIALIZE_PASS_END(PreSchedBinding, "shang-pre-schedule-binding",
                     "Schedule Independent Binding", false, true)

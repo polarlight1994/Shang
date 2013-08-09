@@ -51,6 +51,21 @@ CompGraphNode::Cost &CompGraphNode::getCostToInternal(const CompGraphNode *To) {
   return I->second;
 }
 
+void CompGraphNode::Cost::accumulateDelta(CompGraphNode *Src, CompGraphNode *Dst,
+                                          float Weight) {
+  Deltas[NodePair(&Src->BindingIdx, &Dst->BindingIdx)] += Weight;
+}
+
+float CompGraphNode::Cost::getMergedDetaBenefit() const {
+  float Benefit = 0.0f;
+  for (delta_iterator I = delta_begin(), E = delta_end(); I != E; ++I) {
+    if (*I->first.first == *I->first.second)
+      Benefit += I->second;
+  }
+
+  return Benefit;
+}
+
 void CompGraphNode::print(raw_ostream &OS) const {
   OS << "LI" << Idx << " order " << Order;
   if (Instruction *I = Inst)
@@ -226,6 +241,7 @@ void CompGraphBase::computeCompatibility() {
 void CompGraphBase::initializeCosts() {
   for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
     NodeTy *Src = I;
+    computeSingleNodeFaninDelta(Src);
 
     typedef NodeTy::cost_iterator succ_iterator;
     for (succ_iterator I = Src->cost_begin(), E = Src->cost_end(); I != E; ++I) {
@@ -235,8 +251,166 @@ void CompGraphBase::initializeCosts() {
         continue;
 
       initializeCost(Src, Dst, I->second);
+      float FaninCost = computeFaninCost(Src, Dst, &I->second);
+      I->second.FaninCost = FaninCost;
     }
   }
+}
+
+void CompGraphBase::computeSingleNodeFaninDelta(CompGraphNode *Node) const {
+  std::set<VASTValue*> FIs;
+  for (unsigned i = 0, e = Node->size(); i != e; ++i) {
+    VASTSelector *Sel = Node->getSelector(i);
+
+    FIs.clear();
+    // Try to find is there any node share the same fanout, there will be some
+    // benefit if we bind nodes that share common fanout.
+    typedef VASTSelector::iterator iterator;
+    for (iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+      const VASTLatch &L = *I;
+      VASTValPtr CurFI = L;
+      VASTValPtr GurGuard = L.getGuard();
+
+      FIs.insert(CurFI.get());
+      FIs.insert(GurGuard.get());
+
+      typedef std::set<VASTValue*>::iterator fanin_iterator;
+      for (fanin_iterator FI = FIs.begin(), FE = FIs.end(); FI != FE; ++FI) {
+        VASTValue *OtherFI = *FI;
+        if (OtherFI != CurFI.get())
+          computeFaninDelta(CurFI.get(), OtherFI, 0);
+
+        if (OtherFI != GurGuard.get())
+          computeFaninDelta(GurGuard.get(), OtherFI, 0);
+      }
+    }
+  }
+}
+
+int CompGraphBase::computeFaninCost(CompGraphNode *Src, CompGraphNode *Dst,
+                                    CostTy *Cost) const {
+  int TotalFIs = 0;
+  assert(Src->size() == Dst->size() && "Fanin size not matched!");
+  for (unsigned i = 0, e = Src->size(); i != e; ++i)
+    TotalFIs += computeFaninCost(Src->getSelector(i), Dst->getSelector(i), Cost);
+  return TotalFIs;
+}
+
+int CompGraphBase::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
+                                     CostTy *Cost) const {
+  // Ignore the invert flag, we assume the invert has zero cost.
+  std::set<VASTValue*> SrcFIs, DstFIs;
+  unsigned Intersected = 0;
+  typedef VASTSelector::iterator iterator;
+  for (iterator SI = Src->begin(), SE = Src->end(); SI != SE; ++SI) {
+    const VASTLatch &SL = *SI;
+
+    if (Src->isTrivialFannin(SL))
+      continue;
+
+    VASTValPtr SrcFI = SL;
+
+    if (!SrcFIs.insert(SrcFI.get()).second)
+      continue;
+
+    for (iterator DI = Dst->begin(), DE = Dst->end(); DI != DE; ++DI) {
+      const VASTLatch &DL = *DI;
+
+      if (Dst->isTrivialFannin(DL))
+        continue;
+
+      VASTValPtr DstFI = DL;
+
+      if (!DstFIs.insert(DstFI.get()).second)
+        continue;
+
+      if (computeFaninDelta(SrcFI.get(), DstFI.get(), Cost)) {
+        ++Intersected;
+        continue;
+      }
+
+    }
+  }
+
+  unsigned Bitwidth = std::max(Src->getBitWidth(), Dst->getBitWidth());
+  assert(int(SrcFIs.size() + DstFIs.size() - Intersected) > 0 && "Band fanin!");
+  return (int(SrcFIs.size() + DstFIs.size() + 1) - int(Intersected)) * Bitwidth;
+}
+
+bool CompGraphBase::computeFaninDelta(VASTValue *SrcFI, VASTValue *DstFI,
+                                      CostTy *Cost) const {
+  if (SrcFI == DstFI)
+    return true;
+
+  if (SrcFI->getASTType() != DstFI->getASTType())
+    return false;
+
+  unsigned Bitwidth = std::max(SrcFI->getBitWidth(), DstFI->getBitWidth());
+
+  if (VASTSeqValue *SrcV = dyn_cast<VASTSeqValue>(SrcFI)) {
+    VASTSeqValue *DstV = cast<VASTSeqValue>(DstFI);
+    return computeFaninDelta(SrcV->getSelector(), DstV->getSelector(),
+                             Bitwidth, Cost);
+  }
+
+  if (VASTExpr *SrcExpr = dyn_cast<VASTExpr>(SrcFI)) {
+    VASTExpr *DstExpr = cast<VASTExpr>(DstFI);
+    typedef CombPatternTable::DeltaResult Delta;
+    const Delta D = CPT.getLeavesDelta(SrcExpr, DstExpr);
+    if (D.IsAlwaysDifferent)
+      return false;
+
+    if (D.IsAlwaysIdentical)
+      return true;
+
+    bool different = false;
+
+    assert(D.Deltas.size() && "Unexpected empty delta!");
+    float Weight = float(Bitwidth) / float(D.Deltas.size());
+
+    typedef Delta::iterator iterator;
+    for (iterator I = D.begin(), E = D.end(); I != E; ++I)
+      different |= !computeFaninDelta(I->first, I->second, Weight, Cost);
+    
+    return different;
+  }
+
+  return false;
+}
+
+bool CompGraphBase::computeFaninDelta(VASTSelector *Src, VASTSelector *Dst,
+                                      float Weight, CostTy *Cost) const {
+  CompGraphNode *SrcNode = lookupNode(Src);
+  CompGraphNode *DstNode = lookupNode(Dst);
+
+  if (!SrcNode || !DstNode)
+    return false;
+
+  if (SrcNode == DstNode)
+    return true;
+
+  if (!SrcNode->countSuccessor(DstNode)) {
+    if (!DstNode->countSuccessor(SrcNode))
+      return false;
+
+    std::swap(SrcNode, DstNode);
+  }
+
+  if (Cost) {
+    // Add a edge delta, if source node and dst node are bound to the same
+    // physical unit, there is benefit to bind the current units too.
+    Cost->accumulateDelta(SrcNode, DstNode, Weight);
+    // Also give some benefit to bind SrcNode and DstNode to the same physical
+    // unit, since doing so help reduce the cost.
+    Weight *= 0.2f;
+  }
+ 
+  // Otherwise Src and Dst are fanin to the same selector, there is benefit
+  // to bind SrcNode to Dst node as they redece the interconnect of the fanout
+  // selector.
+  SrcNode->getCostToInternal(DstNode).FanoutBenefit += Weight;
+
+  return false;
 }
 
 void CompGraphBase::addBoundNode(VASTSeqOp *SeqOp) {
@@ -318,87 +492,6 @@ void CompGraphBase::decomposeTrivialNodes() {
   }
 }
 
-static void ExtractFaninNodes(VASTSelector *Sel,
-                              std::set<VASTSeqValue*> &SVSet) {
-  for (VASTSelector::iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
-    const VASTLatch &L = *I;
-    L->extractSupportingSeqVal(SVSet);
-    L.getGuard()->extractSupportingSeqVal(SVSet);
-  }
-}
-
-void
-CompGraphBase::translateToCompNodes(std::set<VASTSeqValue*> &SVSet,
-                                    std::set<CompGraphNode*> &Fanins) const {
-  typedef std::set<VASTSeqValue*>::iterator iterator;
-  for (iterator I = SVSet.begin(), E = SVSet.end(); I != E; ++I) {
-    VASTSeqValue *SV = *I;
-    if (CompGraphNode *Src = lookupNode(SV->getSelector()))
-      Fanins.insert(Src);
-  }
-}
-
-void CompGraphBase::extractFaninNodes(VASTSelector *Sel,
-                                      std::set<CompGraphNode*> &Fanins) const {
-  std::set<VASTSeqValue*> SVSet;
-
-  ExtractFaninNodes(Sel, SVSet);
-  translateToCompNodes(SVSet, Fanins);
-}
-
-int CompGraphBase::computeIncreasedFIs(VASTSelector *Src,
-                                       VASTSelector *Dst) const {
-  std::set<unsigned> MergedFIs;
-  typedef VASTSelector::iterator iterator;
-
-  for (iterator I = Src->begin(), E = Src->end(); I != E; ++I) {
-    unsigned SrashID = CST.getOrCreateStrashID(*I);
-    MergedFIs.insert(SrashID);
-  }
-
-  for (iterator I = Dst->begin(), E = Dst->end(); I != E; ++I) {
-    unsigned SrashID = CST.getOrCreateStrashID(*I);
-    MergedFIs.insert(SrashID);
-  }
-
-  int Bitwidth = std::max(Src->getBitWidth(), Dst->getBitWidth());
-
-  // Remember to multiple the saved mux (1 bit) port by the bitwidth.
-  return (MergedFIs.size() - 1) * Bitwidth;
-}
-
-int CompGraphBase::computeIncreasedFIs(const CompGraphNode *Src,
-                                       const CompGraphNode *Dst) const {
-  assert(Src->size() == Dst->size() && "Number of operand register not agreed!");
-  int Cost = 0;
-  for (unsigned i = 0, e = Src->size(); i != e; ++i)
-    Cost += computeIncreasedFIs(Src->getSelector(i), Dst->getSelector(i));
-
-  return Cost;
-}
-
-unsigned CompGraphBase::computeSavedFOMux(const CompGraphNode *Src,
-                                         const CompGraphNode *Dst) const {
-  float Cost = 0.0f;
-
-  std::set<CompGraphNode*> NumMergedFOs;
-  typedef CompGraphNode::iterator iterator;
-  for (iterator I = Src->fanout_begin(), E = Src->fanout_end(); I != E; ++I)
-    NumMergedFOs.insert(*I);
-
-  unsigned IntersectedFOs = 0;
-  for (iterator I = Dst->fanout_begin(), E = Dst->fanout_end(); I != E; ++I)
-    if (!NumMergedFOs.insert(*I).second)
-      ++IntersectedFOs;
-
-  bool IsICmp = Src->FUType == VFUs::ICmp;
-  unsigned Bitwidth = IsICmp ? 1u : Src->getSelector(0)->getBitWidth();
-
-  // For each intersected fanouts, mux is required.
-  // Assume each fanins require 1 LE
-  return IntersectedFOs * Bitwidth;
-}
-
 unsigned CompGraphBase::computeSavedResource(const CompGraphNode *Src,
                                              const CompGraphNode *Dst) const {
   float Cost = 0.0f;
@@ -412,133 +505,6 @@ unsigned CompGraphBase::computeSavedResource(const CompGraphNode *Src,
     Cost += std::min(Src->FUCost, Dst->FUCost);
 
   return Cost;
-}
-
-float CompGraphBase::compuateMergeFIsRatio(const CompGraphNode *Src,
-                                           const CompGraphNode *Dst) const {
-  typedef std::map<EdgeType, EdgeVector>::const_iterator iterator;
-  iterator I = FaninCompatibles.find(EdgeType(const_cast<CompGraphNode*>(Src),
-                                              const_cast<CompGraphNode*>(Dst)));
-  if (I == FaninCompatibles.end())
-    return 0;
-
-  typedef EdgeVector::const_iterator edge_iterator;
-  const EdgeVector &Edges = I->second;
-
-  unsigned NumCompatibles = 0;
-  for (edge_iterator EI = Edges.begin(), EE = Edges.end(); EI != EE; ++EI) {
-    NodeTy *Src = EI->first, *Dst = EI->second;
-
-    if (Src->getBindingIdx() == Dst->getBindingIdx())
-      ++NumCompatibles;
-  }
-
-  return float(NumCompatibles) / float(Edges.size());
-}
-
-unsigned CompGraphBase::compuateMergeFOs(const CompGraphNode *Src,
-                                         const CompGraphNode *Dst) const {
-typedef std::map<EdgeType, EdgeVector>::const_iterator iterator;
-iterator I = FanoutCompatibles.find(EdgeType(const_cast<CompGraphNode*>(Src),
-                                             const_cast<CompGraphNode*>(Dst)));
-  if (I == FanoutCompatibles.end())
-    return 0;
-
-  typedef EdgeVector::const_iterator edge_iterator;
-  const EdgeVector &Edges = I->second;
-
-  unsigned NumCompatibles = 0;
-  for (edge_iterator EI = Edges.begin(), EE = Edges.end(); EI != EE; ++EI) {
-    NodeTy *Src = EI->first, *Dst = EI->second;
-
-    if (Src->getBindingIdx() == Dst->getBindingIdx())
-      ++NumCompatibles;
-  }
-
-  bool IsICmp = Src->FUType == VFUs::ICmp;
-  unsigned Bitwidth = IsICmp ? 1u : Src->getSelector(0)->getBitWidth();
-
-  return NumCompatibles * Bitwidth;
-}
-
-void CompGraphBase::computeInterconnects(CompGraphNode *N) {
-  for (unsigned i = 0, e = N->size(); i != e; ++i)
-    computeInterconnects(N, i);
-}
-
-void CompGraphBase::computeInterconnects(CompGraphNode *N, unsigned SelIdx) {
-  if (!N->FaninNodes[SelIdx].empty())
-    return;
-
-  extractFaninNodes(N->getSelector(SelIdx), N->FaninNodes[SelIdx]);
-
-  typedef CompGraphNode::iterator iterator;
-  for (iterator I = N->fanin_begin(SelIdx), E = N->fanin_end(SelIdx);
-       I != E; ++I) {
-    CompGraphNode *Fanain = *I;
-    Fanain->FanoutNodes.insert(N);
-  }
-}
-
-void CompGraphBase::computeCompatibleEdges(std::set<NodeTy*> &DstNodes,
-                                           std::set<NodeTy*> &SrcNodes,
-                                           EdgeVector &CompEdges) {
-  typedef std::set<NodeTy*>::iterator iterator;
-  for (iterator DI = DstNodes.begin(), DE = DstNodes.end(); DI != DE; ++DI) {
-    NodeTy *Dst = *DI;
-
-    for (iterator SI = SrcNodes.begin(), SE = SrcNodes.end(); SI != SE; ++SI) {
-      NodeTy *Src = *SI;
-
-      if (Src->countSuccessor(Dst)) {
-        CompEdges.push_back(EdgeType(Src, Dst));
-        ++NumCompEdges;
-        continue;
-      }
-
-      if (Dst->countSuccessor(Dst)) {
-        CompEdges.push_back(EdgeType(Dst, Src));
-        ++NumCompEdges;
-        continue;
-      }
-
-    }
-  }
-}
-
-void CompGraphBase::computeCompatibleEdges(NodeTy *Dst, NodeTy *Src) {
-  assert(Src->size() == Dst->size() && "Number of operand register not agreed!");
-
-  EdgeVector &FIEdges = FaninCompatibles[EdgeType(Src, Dst)];
-  for (unsigned i = 0, e = Src->size(); i != e; ++i)
-    computeCompatibleEdges(Dst->FaninNodes[i], Src->FaninNodes[i], FIEdges);
-
-  if (FIEdges.empty())
-    FaninCompatibles.erase(EdgeType(Src, Dst));
-
-  EdgeVector &FOEdges = FanoutCompatibles[EdgeType(Src, Dst)];
-  computeCompatibleEdges(Dst->FanoutNodes, Src->FanoutNodes, FOEdges);
-  if (FOEdges.empty())
-    FanoutCompatibles.erase(EdgeType(Src, Dst));
-}
-
-void CompGraphBase::computeInterconnects() {
-  for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
-    CompGraphNode *Src = I;
-    computeInterconnects(Src);
-
-    typedef NodeTy::iterator succ_iterator;
-    for (succ_iterator I = Src->succ_begin(), E = Src->succ_end(); I != E; ++I) {
-      NodeTy *Dst = *I;
-
-      if (Dst->IsTrivial)
-        continue;
-
-      computeInterconnects(Dst);
-
-      computeCompatibleEdges(Dst, Src);
-    }
-  }
 }
 
 namespace llvm {
@@ -890,7 +856,7 @@ bool MinCostFlowSolver::solveMinCostFlow() {
   int result = solve(lp);
 
   DEBUG(dbgs() << "ILP result is: "<< transSolveResult(result) << "\n");
-  dbgs() << "Time elapsed: " << time_elapsed(lp) << "\n";
+  DEBUG(dbgs() << "Time elapsed: " << time_elapsed(lp) << "\n");
 
   switch (result) {
   case INFEASIBLE:
@@ -908,8 +874,8 @@ bool MinCostFlowSolver::solveMinCostFlow() {
   }
 
   float Cost = get_var_primalresult(lp, 0);
-  dbgs() << "Object: " << Cost << ", Supply: "
-         << get_var_primalresult(lp, 1) << '\n';
+  DEBUG(dbgs() << "Object: " << Cost << ", Supply: "
+               << get_var_primalresult(lp, 1) << '\n');
 
   return true;
 }
@@ -938,7 +904,7 @@ unsigned MinCostFlowSolver::buildBinging(ClusterVectors &Clusters) {
       Clusters.pop_back();
   }
 
-  dbgs() << "Changes: " << Changed << '\n';
+  DEBUG(dbgs() << "Changes: " << Changed << '\n');
 
   return Changed;
 }
