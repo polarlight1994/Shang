@@ -103,14 +103,13 @@ protected:
 public:
 
   CompGraphNode()
-    : Idx(0), IsTrivial(true), FUType(VFUs::Trivial), FUCost(0), Order(0),
-      Inst(), BindingIdx(0) { }
+    : Idx(0), IsTrivial(true), FUType(VFUs::Trivial), FUCost(0), Inst(),
+      Order(0), BindingIdx(0) { }
 
   CompGraphNode(VFUs::FUTypes FUType, unsigned FUCost, unsigned Idx,
                 DataflowInst Inst, ArrayRef<VASTSelector*> Sels)
-    : Idx(Idx), IsTrivial(false), FUType(FUType), FUCost(FUCost),
-      Order(UINT32_MAX), Inst(Inst), Sels(Sels.begin(), Sels.end()),
-      BindingIdx(Idx) {}
+    : Idx(Idx), IsTrivial(false), FUType(FUType), FUCost(FUCost), Inst(Inst),
+      Order(UINT32_MAX), Sels(Sels.begin(), Sels.end()), BindingIdx(Idx) {}
 
   BasicBlock *getDomBlock() const;
 

@@ -519,7 +519,7 @@ template<> struct DOTGraphTraits<CompGraphBase*> : public DefaultDOTGraphTraits{
     SmallString<8> S;
     {
       raw_svector_ostream SS(S);
-      SS << format("%.2f", Node->getCostTo(*I));
+      SS << format("%.2f", Node->getCostTo(*I).FixBenefit);
     }
 
     return S.str();
