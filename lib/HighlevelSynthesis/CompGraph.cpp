@@ -599,17 +599,17 @@ private:
   VFUs::FUTypes Type;
 
   // Map the edge to column number in LP.
-  typedef std::map<EdgeType, unsigned> Edge2IdxMapTy;
-  Edge2IdxMapTy Edge2IdxMap, EdgeConsistencies;
+  typedef std::map<EdgeType, std::pair<unsigned, bool> > Edge2IdxMapTy;
+  Edge2IdxMapTy Edge2IdxMap;
 
-  unsigned lookupEdgeConsistency(EdgeType Edge) const {
-    Edge2IdxMapTy::const_iterator I = EdgeConsistencies.find(Edge);
-    return I == EdgeConsistencies.end() ? 0 : I->second;
+  bool lookupEdgeConsistency(EdgeType Edge) const {
+    Edge2IdxMapTy::const_iterator I = Edge2IdxMap.find(Edge);
+    return I == Edge2IdxMap.end() ? 0 : I->second.second;
   }
 
   unsigned lookUpEdgeIdx(EdgeType Edge) const {
     Edge2IdxMapTy::const_iterator I = Edge2IdxMap.find(Edge);
-    return I == Edge2IdxMap.end() ? 0 : I->second;
+    return I == Edge2IdxMap.end() ? 0 : I->second.first;
   }
 
   unsigned createEdgeVariables(const CompGraphNode *N, unsigned Col);
@@ -634,7 +634,7 @@ public:
   bool hasFlow(EdgeType E, unsigned TotalRows) const {
     Edge2IdxMapTy::const_iterator I = Edge2IdxMap.find(E);
     assert(I != Edge2IdxMap.end() && "Edge ID does not existed!");
-    REAL flow = get_var_primalresult(lp, TotalRows + I->second);
+    REAL flow = get_var_primalresult(lp, TotalRows + I->second.first);
     return flow != 0.0;
   }
 
@@ -653,7 +653,8 @@ unsigned MinCostFlowSolver::createEdgeVariables(const CompGraphNode *N,
       continue;
 
     bool inserted
-      = Edge2IdxMap.insert(std::make_pair(EdgeType(N, Succ), Col)).second;
+      = Edge2IdxMap.insert(std::make_pair(EdgeType(N, Succ),
+                                          std::make_pair(Col, false))).second;
     assert(inserted && "Edge had already exisited?");
 
     add_columnex(lp, 0, 0,0);
@@ -803,9 +804,14 @@ void MinCostFlowSolver::setCost() {
     if (Src->IsTrivial || Dst->IsTrivial)
       continue;
 
-    Indices.push_back(I->second);
+    Indices.push_back(I->second.first);
 
-    float ConsistencyFactor = exp(float(lookupEdgeConsistency(Edge)));
+    float ConsistencyFactor = 0.0f;
+    if (I->second.second) {
+      ConsistencyFactor += 1.0f;
+      I->second.second = false;
+    }
+
     float EdgeCost = G.computeCost(Src, Dst) - ConsistencyFactor;
     Coefficients.push_back(EdgeCost);
   }
@@ -934,7 +940,7 @@ unsigned MinCostFlowSolver::buildBinging(CompGraphNode *Src, ClusterType &Cluste
 
       // Propagate the binding index;
       Changed += Dst->setBindingIdx(Src->getBindingIdx());
-      ++EdgeConsistencies[EdgeType(Src, Dst)];
+      Edge2IdxMap[EdgeType(Src, Dst)].second = true;
       Cluster.push_back(Src);
       Src = Dst;
       break;
@@ -957,7 +963,6 @@ unsigned CompGraphBase::performBinding() {
     }
   }
 
-  unsigned MaxFlow = Nodes.size();
 
   bool Changed = true;
   do {
