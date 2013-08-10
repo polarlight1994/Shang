@@ -824,30 +824,6 @@ void MinCostFlowSolver::setCost(unsigned Iteration) {
   set_minim(lp);
 }
 
-// Helper function
-static const char *transSolveResult(int result) {
-  if (result == -2) return "NOMEMORY";
-  else if (result > 13) return "Unknown result!";
-
-  static const char *ResultTable[] = {
-    "OPTIMAL",
-    "SUBOPTIMAL",
-    "INFEASIBLE",
-    "UNBOUNDED",
-    "DEGENERATE",
-    "NUMFAILURE",
-    "USERABORT",
-    "TIMEOUT",
-    "PRESOLVED",
-    "PROCFAIL",
-    "PROCBREAK",
-    "FEASFOUND",
-    "NOFEASFOUND"
-  };
-
-  return ResultTable[result];
-}
-
 void MinCostFlowSolver::applySolveSettings() {
   set_verbose(lp, CRITICAL);
   DEBUG(set_verbose(lp, FULL));
@@ -867,7 +843,7 @@ bool MinCostFlowSolver::solveMinCostFlow() {
 
   int result = solve(lp);
 
-  DEBUG(dbgs() << "ILP result is: "<< transSolveResult(result) << "\n");
+  DEBUG(dbgs() << "ILP result is: "<< get_statustext(lp, result) << "\n");
   DEBUG(dbgs() << "Time elapsed: " << time_elapsed(lp) << "\n");
 
   switch (result) {
@@ -884,7 +860,7 @@ bool MinCostFlowSolver::solveMinCostFlow() {
     return false;
   default:
     report_fatal_error(Twine("Min cost flow fail: ")
-                       + Twine(transSolveResult(result)));
+                       + Twine(get_statustext(lp, result)));
   }
 
   float Cost = get_var_primalresult(lp, 0);
