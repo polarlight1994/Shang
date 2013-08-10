@@ -33,10 +33,10 @@
 
 using namespace llvm;
 STATISTIC(NumNonTranEdgeBreak, "Number of non-transitive edges are broken");
-STATISTIC(NumCompEdges,
-          "Number of compatible edges in the compatibility graph");
 STATISTIC(NumDecomposed,
           "Number of operand register of chained operation decomposed");
+STATISTIC(NumMinCostFlowIteration,
+          "Number of iterations in the min-cost flow solver");
 
 const CompGraphNode::Cost &
 CompGraphNode::getCostTo(const CompGraphNode *To) const {
@@ -599,7 +599,7 @@ private:
   VFUs::FUTypes Type;
 
   // Map the edge to column number in LP.
-  typedef std::map<EdgeType, std::pair<unsigned, bool> > Edge2IdxMapTy;
+  typedef std::map<EdgeType, std::pair<unsigned, unsigned> > Edge2IdxMapTy;
   Edge2IdxMapTy Edge2IdxMap;
 
   bool lookupEdgeConsistency(EdgeType Edge) const {
@@ -622,7 +622,7 @@ public:
 
   unsigned createLPAndVariables();
   unsigned createBlanceConstraints();
-  void setCost();
+  void setCost(unsigned Iteration);
   void applySolveSettings();
   bool solveMinCostFlow();
 
@@ -793,10 +793,12 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
   return get_Nrows(lp);
 }
 
-void MinCostFlowSolver::setCost() {
+void MinCostFlowSolver::setCost(unsigned Iteration) {
   std::vector<int> Indices;
   std::vector<REAL> Coefficients;
   typedef Edge2IdxMapTy::iterator iterator;
+  float Scale = (float(Iteration) / 10.0f) * (float(Iteration) / 10.0f);
+  Scale = std::max<float>(1.0f, Scale);
 
   for (iterator I = Edge2IdxMap.begin(), E = Edge2IdxMap.end(); I != E; ++I) {
     EdgeType Edge = I->first;
@@ -806,13 +808,15 @@ void MinCostFlowSolver::setCost() {
 
     Indices.push_back(I->second.first);
 
-    float ConsistencyFactor = 0.0f;
-    if (I->second.second) {
-      ConsistencyFactor += 1.0f;
-      I->second.second = false;
-    }
+    float EdgeCost = G.computeCost(Src, Dst);
+    if (Iteration == 0) {
+      I->second.second = I->second.second > 0 ? 1 : 0;
+    } else if (Src->getBindingIdx() == Dst->getBindingIdx()) {
+      unsigned Consistency = (I->second.second += 2);
+      EdgeCost -= 1.0f * Consistency * Scale;;
+    } else if (I->second.second)
+      --I->second.second;
 
-    float EdgeCost = G.computeCost(Src, Dst) - ConsistencyFactor;
     Coefficients.push_back(EdgeCost);
   }
 
@@ -869,6 +873,8 @@ bool MinCostFlowSolver::solveMinCostFlow() {
   switch (result) {
   case INFEASIBLE:
     return false;
+  case NOTRUN:
+    return true;
   case SUBOPTIMAL:
     DEBUG(dbgs() << "Note: suboptimal schedule found!\n");
   case OPTIMAL:
@@ -940,7 +946,6 @@ unsigned MinCostFlowSolver::buildBinging(CompGraphNode *Src, ClusterType &Cluste
 
       // Propagate the binding index;
       Changed += Dst->setBindingIdx(Src->getBindingIdx());
-      Edge2IdxMap[EdgeType(Src, Dst)].second = true;
       Cluster.push_back(Src);
       Src = Dst;
       break;
@@ -963,20 +968,23 @@ unsigned CompGraphBase::performBinding() {
     }
   }
 
+  unsigned Iterations = 0;
 
-  bool Changed = true;
-  do {
-    Changed = false;
+  unsigned Changes = 1;
+  while (Changes) {
+    Changes = 0;
     Clusters.clear();
 
     for (unsigned i = 0; i < 5; ++i) {
-      MCF[i]->setCost();
+      MCF[i]->setCost(Iterations);
       if (!MCF[i]->solveMinCostFlow())
         return 0;
 
-      Changed |= (MCF[i]->buildBinging(Clusters) != 0);
+      Changes += MCF[i]->buildBinging(Clusters);
     }
   
+    ++Iterations;
+    ++NumMinCostFlowIteration;
     //unsigned MinFlow = 1;
 
     //while (MaxFlow >= MinFlow) {
@@ -991,7 +999,7 @@ unsigned CompGraphBase::performBinding() {
     //    // Otherwise we should use a bigger supply.
     //    MinFlow = MidFlow + 1;
     //}
-  } while (Changed);
+  }
 
   return Clusters.size();
 }
