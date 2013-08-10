@@ -52,8 +52,7 @@ public:
   struct Cost {
     // Fixed cost including saved resource, and timing criticality.
     float FixBenefit;
-    float FanoutBenefit;
-    float FaninCost;
+    float InterconnectCost;
     typedef std::pair<unsigned*, unsigned*> NodePair;
     std::map<NodePair, float> Deltas;
     typedef std::map<std::pair<unsigned*, unsigned*>, float>::const_iterator
@@ -66,7 +65,7 @@ public:
 
     float getMergedDetaBenefit() const;
 
-    Cost() : FixBenefit(0.0f), FanoutBenefit(0.0f), FaninCost(0.0f) {}
+    Cost() : FixBenefit(0.0f), InterconnectCost(0.0f) {}
   };
 
 private:

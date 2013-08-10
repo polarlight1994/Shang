@@ -252,7 +252,7 @@ void CompGraphBase::initializeCosts() {
 
       initializeCost(Src, Dst, I->second);
       float FaninCost = computeFaninCost(Src, Dst, &I->second);
-      I->second.FaninCost = FaninCost;
+      I->second.InterconnectCost += FaninCost;
     }
   }
 }
@@ -408,7 +408,7 @@ bool CompGraphBase::computeFaninDelta(VASTSelector *Src, VASTSelector *Dst,
   // Otherwise Src and Dst are fanin to the same selector, there is benefit
   // to bind SrcNode to Dst node as they redece the interconnect of the fanout
   // selector.
-  SrcNode->getCostToInternal(DstNode).FanoutBenefit += Weight;
+  SrcNode->getCostToInternal(DstNode).InterconnectCost -= Weight;
 
   return false;
 }

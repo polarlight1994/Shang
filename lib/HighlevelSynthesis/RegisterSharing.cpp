@@ -65,8 +65,7 @@ public:
   float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const {
     const NodeTy::Cost &Cost = Src->getCostTo(Dst);
     float CurrentCost = - Cost.FixBenefit;
-    CurrentCost -= mux_factor * Cost.FanoutBenefit;
-    CurrentCost += mux_factor * Cost.FaninCost;
+    CurrentCost += mux_factor * Cost.InterconnectCost;
     CurrentCost -= mux_factor * Cost.getMergedDetaBenefit();
 
     return CurrentCost;
