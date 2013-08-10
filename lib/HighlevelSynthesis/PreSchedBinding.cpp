@@ -382,7 +382,7 @@ public:
 }
 
 static const float mux_factor = 0.8f,
-                   area_factor = 0.8f;
+                   area_factor = 1.0f;
 
 void PSBCompGraph::initializeCost(NodeTy *Src, NodeTy *Dst,
                                   NodeTy::Cost &Cost) const {

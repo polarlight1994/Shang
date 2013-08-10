@@ -51,7 +51,7 @@ public:
   const float mux_factor, area_factor;
 
   VASTCompGraph(DominatorTree &DT, CombPatternTable &CPT)
-    : CompGraphBase(DT, CPT), mux_factor(0.8f), area_factor(0.8f) {}
+    : CompGraphBase(DT, CPT), mux_factor(0.8f), area_factor(1.0f) {}
 
   void initializeCost(NodeTy *Src, NodeTy *Dst, NodeTy::Cost &Cost) const {
     // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
