@@ -333,12 +333,10 @@ bool PSBCompNode::isKillIntersect(const PSBCompNode *RHS) const {
   return intersect(KillOps, RHS->KillOps);
 }
 
-void PSBCompNode::decreaseFixBenefit(PSBCompNode *Succ, float Inc) {
+void PSBCompNode::increaseSchedulingCost(PSBCompNode *Succ, float SchedulingCost) {
   Cost &C = getCostToInternal(Succ);
-  if (C.FixBenefit < 0.0f)
-    C.FixBenefit *= 1.1f;
 
-  C.FixBenefit -= Inc;
+  C.SchedulingCost += SchedulingCost;
 }
 
 bool PSBCompNode::isCompatibleWith(const CompGraphNode *RHS) const {

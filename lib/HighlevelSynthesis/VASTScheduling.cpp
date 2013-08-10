@@ -972,7 +972,7 @@ struct IterativeSchedulingBinding {
     if (S != Binding)
       return;
 
-    Src->decreaseFixBenefit(Dst, Cost);
+    Src->increaseSchedulingCost(Dst, Cost);
     ++BindingViolation;
   }
 
@@ -1000,7 +1000,9 @@ struct IterativeSchedulingBinding {
     if (S != Scheduling)
       return;
 
-    Scheduler.addSoftConstraint(Src, Dst, C, Penalty);
+    if (Penalty > 0)
+      Scheduler.addSoftConstraint(Src, Dst, C, Penalty);
+
     ++ScheduleViolation;
   }
 
@@ -1072,7 +1074,13 @@ unsigned IterativeSchedulingBinding::checkCompatibility(PSBCompNode *Src,
   assert(Src->Inst.IsLauch() == Dst->Inst.IsLauch()
          && "Unexpected binding launch/latch to the same physical unit!");
   // Get the benefit by getting the negative of the cost.
-  float BindingBenefit = std::max(-Src->getCostTo(Dst), PerformanceFactor);
+  float BindingBenefit = 0;
+  if (Src->countSuccessor(Dst))
+    BindingBenefit = - PSB->computeCost(Src, Dst);
+  else
+    BindingBenefit = - PSB->computeCost(Dst, Src);
+
+  float Penalty = BindingBenefit * ResourceFactor * TotalWeight;
 
   if (!Src->Inst.IsLauch()) {
     // For latch (that define a variable), the conflict only introduced by
@@ -1138,8 +1146,6 @@ unsigned IterativeSchedulingBinding::checkCompatibility(PSBCompNode *Src,
   SrcSU->dump();
   DstSU->dump();
   dbgs() << "\n\n");
-
-  float Penalty = BindingBenefit * ResourceFactor * TotalWeight;
 
   // Apply the constraint in the same way that we assign the linear order.
   if (!alap_less(SrcSU, SrcSU))

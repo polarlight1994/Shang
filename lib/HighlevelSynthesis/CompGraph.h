@@ -53,6 +53,7 @@ public:
     // Fixed cost including saved resource, and timing criticality.
     float FixBenefit;
     float InterconnectCost;
+    float SchedulingCost;
     typedef std::pair<unsigned*, unsigned*> NodePair;
     std::map<NodePair, float> Deltas;
     typedef std::map<std::pair<unsigned*, unsigned*>, float>::const_iterator
@@ -65,7 +66,7 @@ public:
 
     float getMergedDetaBenefit() const;
 
-    Cost() : FixBenefit(0.0f), InterconnectCost(0.0f) {}
+    Cost() : FixBenefit(0.0f), InterconnectCost(0.0f), SchedulingCost(0.0f) {}
   };
 
 private:
