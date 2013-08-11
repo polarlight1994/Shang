@@ -271,6 +271,9 @@ void CompGraphBase::computeSingleNodeFaninDelta(CompGraphNode *Node) const {
       VASTValPtr CurFI = L;
       VASTValPtr GurGuard = L.getGuard();
 
+      if (Sel->isTrivialFannin(L))
+        continue;
+
       FIs.insert(CurFI.get());
       FIs.insert(GurGuard.get());
 
@@ -305,7 +308,7 @@ int CompGraphBase::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
   for (iterator SI = Src->begin(), SE = Src->end(); SI != SE; ++SI) {
     const VASTLatch &SL = *SI;
 
-    if (Src->isTrivialFannin(SL))
+    if (Src->isTrivialFannin(SL) || Dst->isTrivialFannin(SL))
       continue;
 
     VASTValPtr SrcFI = SL;
@@ -316,7 +319,7 @@ int CompGraphBase::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
     for (iterator DI = Dst->begin(), DE = Dst->end(); DI != DE; ++DI) {
       const VASTLatch &DL = *DI;
 
-      if (Dst->isTrivialFannin(DL))
+      if (Dst->isTrivialFannin(DL) || Src->isTrivialFannin(DL))
         continue;
 
       VASTValPtr DstFI = DL;
@@ -328,13 +331,12 @@ int CompGraphBase::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
         ++Intersected;
         continue;
       }
-
     }
   }
 
   unsigned Bitwidth = std::max(Src->getBitWidth(), Dst->getBitWidth());
-  assert(int(SrcFIs.size() + DstFIs.size() - Intersected) > 0 && "Band fanin!");
-  return (int(SrcFIs.size() + DstFIs.size() + 1) - int(Intersected)) * Bitwidth;
+  int NumPorts = (int(SrcFIs.size() + DstFIs.size() + 1) - int(Intersected));
+  return NumPorts * int(Bitwidth);
 }
 
 bool CompGraphBase::computeFaninDelta(VASTValue *SrcFI, VASTValue *DstFI,
