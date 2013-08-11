@@ -48,25 +48,12 @@ class VASTCompGraph : public CompGraphBase {
   typedef CompGraphNode NodeTy;
 
 public:
-  const float mux_factor, area_factor;
-
   VASTCompGraph(DominatorTree &DT, CombPatternTable &CPT)
-    : CompGraphBase(DT, CPT), mux_factor(0.8f), area_factor(1.0f) {}
-
-  void initializeCost(NodeTy *Src, NodeTy *Dst, NodeTy::Cost &Cost) const {
-    // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
-    Cost.FixBenefit = area_factor * computeSavedResource(Src, Dst);
-
-    // 2. Calculate the interconnection cost.
-
-    // 3. Timing penalty introduced by MUX
-  }
+    : CompGraphBase(DT, CPT) {}
 
   float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const {
     const NodeTy::Cost &Cost = Src->getCostTo(Dst);
-    float CurrentCost = - Cost.FixBenefit;
-    CurrentCost += mux_factor * Cost.InterconnectCost;
-    CurrentCost -= mux_factor * Cost.getMergedDetaBenefit();
+    float CurrentCost = Cost.InterconnectCost - Cost.getMergedDetaBenefit();
 
     return CurrentCost;
   }

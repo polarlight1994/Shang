@@ -379,32 +379,15 @@ public:
 };
 }
 
-static const float mux_factor = 0.8f,
-                   area_factor = 1.0f;
-
-void PSBCompGraph::initializeCost(NodeTy *Src, NodeTy *Dst,
-                                  NodeTy::Cost &Cost) const {
-
-  float current_area_factor = 1.0f;
-
-  // Increase the area benefit for operations that are not located in the same
-  // BB, in this case, binding are almost always possible.
-  if (VFUs::isNoTrivialFUCompatible(Src->FUType, Dst->FUType) &&
-      Src->getDomBlock() == Dst->getDomBlock())
-    current_area_factor *= 1.1f;
-
-  // 1. Calculate the saved resource by binding src and dst to the same FU/Reg.
-  Cost.FixBenefit = current_area_factor * computeSavedResource(Src, Dst);
-
-  // 3. Timing penalty introduced by MUX
-}
-
 float PSBCompGraph::computeCost(const CompGraphNode *Src,
                                 const CompGraphNode *Dst) const {
   const NodeTy::Cost &Cost = Src->getCostTo(Dst);
-  float CurrentCost = - Cost.FixBenefit;
-  CurrentCost += mux_factor * Cost.InterconnectCost;
-  CurrentCost -= mux_factor * Cost.getMergedDetaBenefit();
+  float CurrentCost = Cost.InterconnectCost - Cost.getMergedDetaBenefit();
+
+  //if (Src->getBindingIdx() != Dst->getBindingIdx())
+  //  Cost.SchedulingCost *= 0.95f;
+
+  CurrentCost += Cost.SchedulingCost;
 
   return CurrentCost;
 }

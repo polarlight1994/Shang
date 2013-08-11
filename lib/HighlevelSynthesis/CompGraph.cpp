@@ -38,6 +38,10 @@ STATISTIC(NumDecomposed,
 STATISTIC(NumMinCostFlowIteration,
           "Number of iterations in the min-cost flow solver");
 
+// FIXME: Read the value from the scripting engine.
+static const float mux_factor = 1.0f;
+static const float area_factor = 1.0f;
+
 const CompGraphNode::Cost &
 CompGraphNode::getCostTo(const CompGraphNode *To) const {
   CostVecTy::const_iterator I = SuccCosts.find(const_cast<CompGraphNode*>(To));
@@ -239,25 +243,27 @@ void CompGraphBase::computeCompatibility() {
 }
 
 void CompGraphBase::initializeCosts() {
-  for (iterator I = Nodes.begin(), E = Nodes.end(); I != E; ++I) {
-    NodeTy *Src = I;
-    computeSingleNodeFaninDelta(Src);
+  typedef NodeTy::cost_iterator iterator;
+  for (iterator I = Entry.cost_begin(), E = Entry.cost_end(); I != E; ++I){
+    NodeTy *Src = I->first;
+    I->second.InterconnectCost += area_factor * computeReqiredResource(Src);
+    I->second.InterconnectCost += mux_factor * computeSingleNodeFaninCost(Src);
 
-    typedef NodeTy::cost_iterator succ_iterator;
-    for (succ_iterator I = Src->cost_begin(), E = Src->cost_end(); I != E; ++I) {
-      NodeTy *Dst = I->first;
+    for (iterator SI = Src->cost_begin(), SE = Src->cost_end(); SI != SE; ++SI){
+      NodeTy *Dst = SI->first;
 
       if (Dst->IsTrivial)
         continue;
 
-      initializeCost(Src, Dst, I->second);
-      float FaninCost = computeFaninCost(Src, Dst, &I->second);
-      I->second.InterconnectCost += FaninCost;
+      float FaninCost = computeFaninCost(Src, Dst, &SI->second);
+      SI->second.InterconnectCost += mux_factor * FaninCost;
     }
   }
 }
 
-void CompGraphBase::computeSingleNodeFaninDelta(CompGraphNode *Node) const {
+unsigned CompGraphBase::computeSingleNodeFaninCost(CompGraphNode *Node) const {
+  unsigned Cost = 0;
+
   std::set<VASTValue*> FIs;
   for (unsigned i = 0, e = Node->size(); i != e; ++i) {
     VASTSelector *Sel = Node->getSelector(i);
@@ -286,8 +292,12 @@ void CompGraphBase::computeSingleNodeFaninDelta(CompGraphNode *Node) const {
         if (OtherFI != GurGuard.get())
           computeFaninDelta(GurGuard.get(), OtherFI, 0);
       }
+
+      Cost += FIs.size() * Sel->getBitWidth();
     }
   }
+
+  return Cost;
 }
 
 int CompGraphBase::computeFaninCost(CompGraphNode *Src, CompGraphNode *Dst,
@@ -300,10 +310,10 @@ int CompGraphBase::computeFaninCost(CompGraphNode *Src, CompGraphNode *Dst,
 }
 
 int CompGraphBase::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
-                                     CostTy *Cost) const {
+                                    CostTy *Cost) const {
   // Ignore the invert flag, we assume the invert has zero cost.
   std::set<VASTValue*> SrcFIs, DstFIs;
-  unsigned Intersected = 0;
+  int Intersected = 0;
   typedef VASTSelector::iterator iterator;
   for (iterator SI = Src->begin(), SE = Src->end(); SI != SE; ++SI) {
     const VASTLatch &SL = *SI;
@@ -334,9 +344,9 @@ int CompGraphBase::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
     }
   }
 
-  unsigned Bitwidth = std::max(Src->getBitWidth(), Dst->getBitWidth());
-  int NumPorts = (int(SrcFIs.size() + DstFIs.size() + 1) - int(Intersected));
-  return NumPorts * int(Bitwidth);
+  unsigned Bitwidth = Dst->getBitWidth();
+  int IncreasedNumPorts = int(DstFIs.size()) - Intersected;
+  return IncreasedNumPorts * int(Bitwidth);
 }
 
 bool CompGraphBase::computeFaninDelta(VASTValue *SrcFI, VASTValue *DstFI,
@@ -410,7 +420,7 @@ bool CompGraphBase::computeFaninDelta(VASTSelector *Src, VASTSelector *Dst,
   // Otherwise Src and Dst are fanin to the same selector, there is benefit
   // to bind SrcNode to Dst node as they redece the interconnect of the fanout
   // selector.
-  SrcNode->getCostToInternal(DstNode).InterconnectCost -= Weight;
+  SrcNode->getCostToInternal(DstNode).InterconnectCost -= mux_factor * Weight;
 
   return false;
 }
@@ -494,17 +504,15 @@ void CompGraphBase::decomposeTrivialNodes() {
   }
 }
 
-unsigned CompGraphBase::computeSavedResource(const CompGraphNode *Src,
-                                             const CompGraphNode *Dst) const {
+unsigned CompGraphBase::computeReqiredResource(const CompGraphNode *Node) const {
   float Cost = 0.0f;
   // 1. Calculate the number of registers we can reduce through this edge.
   typedef NodeTy::const_sel_iterator sel_iterator;
-  for (sel_iterator I = Src->begin(), E = Src->end(); I != E; ++I)
-    Cost += (*I)->getBitWidth();
+  // for (sel_iterator I = Node->begin(), E = Node->end(); I != E; ++I)
+  //  Cost += (*I)->getBitWidth();
 
   // 2. Calculate the functional unit resource reduction through this edge.
-  if (VFUs::isNoTrivialFUCompatible(Src->FUType, Dst->FUType))
-    Cost += std::min(Src->FUCost, Dst->FUCost);
+  Cost += Node->FUCost;
 
   return Cost;
 }
@@ -521,7 +529,7 @@ template<> struct DOTGraphTraits<CompGraphBase*> : public DefaultDOTGraphTraits{
     SmallString<8> S;
     {
       raw_svector_ostream SS(S);
-      SS << format("%.2f", Node->getCostTo(*I).FixBenefit);
+      SS << format("%.2f", Node->getCostTo(*I).InterconnectCost);
     }
 
     return S.str();
@@ -805,10 +813,9 @@ void MinCostFlowSolver::setCost(unsigned Iteration) {
   for (iterator I = Edge2IdxMap.begin(), E = Edge2IdxMap.end(); I != E; ++I) {
     EdgeType Edge = I->first;
     const CompGraphNode *Src = Edge.first, *Dst = Edge.second;
-    if (Src->IsTrivial || Dst->IsTrivial)
+    if (Dst->IsTrivial)
       continue;
 
-    Indices.push_back(I->second.first);
 
     float EdgeCost = G.computeCost(Src, Dst);
     if (Iteration == 0) {
@@ -819,6 +826,7 @@ void MinCostFlowSolver::setCost(unsigned Iteration) {
     } else if (I->second.second)
       --I->second.second;
 
+    Indices.push_back(I->second.first);
     Coefficients.push_back(EdgeCost);
   }
 

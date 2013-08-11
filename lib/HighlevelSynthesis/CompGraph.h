@@ -51,10 +51,12 @@ public:
 
   struct Cost {
     // Fixed cost including saved resource, and timing criticality.
-    float FixBenefit;
     float InterconnectCost;
     float SchedulingCost;
     typedef std::pair<unsigned*, unsigned*> NodePair;
+    // The leaves differences of patterns rooted on the fanins of the MUX, if
+    // the leaves are bind to the same physical units, the pattern become
+    // identical, and hence the corresponding fanin (the root of the patterns)
     std::map<NodePair, float> Deltas;
     typedef std::map<std::pair<unsigned*, unsigned*>, float>::const_iterator
             delta_iterator;
@@ -66,7 +68,7 @@ public:
 
     float getMergedDetaBenefit() const;
 
-    Cost() : FixBenefit(0.0f), InterconnectCost(0.0f), SchedulingCost(0.0f) {}
+    Cost() : InterconnectCost(0.0f), SchedulingCost(0.0f) {}
   };
 
 private:
@@ -274,18 +276,15 @@ protected:
     return I->second;
   }
 
-  typedef NodeTy::Cost CostTy;
-  virtual void initializeCost(NodeTy *Src, NodeTy *Dst, CostTy &Cost) const {}
-
   virtual CompGraphNode *createNode(VFUs::FUTypes FUType, unsigned FUCost,
                                     unsigned Idx, DataflowInst Inst,
                                     ArrayRef<VASTSelector*> Sels) const {
     return new CompGraphNode(FUType, FUCost, Idx, Inst, Sels);
   }
 
-  unsigned computeSavedResource(const CompGraphNode *Src,
-                                const CompGraphNode *Dst) const;
+  unsigned computeReqiredResource(const CompGraphNode *Src) const;
 
+  typedef NodeTy::Cost CostTy;
   bool computeFaninDelta(VASTSelector *SrcV, VASTSelector *DstV, float Weight,
                          CostTy *Cost) const;
   bool computeFaninDelta(VASTValue *SrcFI, VASTValue *DstFI,
@@ -294,7 +293,7 @@ protected:
                        CostTy *Cost) const;
   int computeFaninCost(CompGraphNode *Src, CompGraphNode *Dst,
                        CostTy *Cost) const;
-  void computeSingleNodeFaninDelta(CompGraphNode *Node) const;
+  unsigned computeSingleNodeFaninCost(CompGraphNode *Node) const;
 
 private:
   MinCostFlowSolver *MCF[5];
