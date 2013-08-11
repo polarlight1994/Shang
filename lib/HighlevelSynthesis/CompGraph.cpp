@@ -287,7 +287,7 @@ void CompGraphBase::initializeCosts(CombPatternTable &CPT) {
 }
 
 unsigned FaninAnalyzer::computeSingleNodeFaninCost() const {
-  unsigned Cost = 0;
+  // unsigned Cost = 0;
 
   std::set<VASTValue*> FIs;
   unsigned NumFanins = 0;
@@ -322,10 +322,10 @@ unsigned FaninAnalyzer::computeSingleNodeFaninCost() const {
       }
     }
 
-    Cost += NumFanins * Sel->getBitWidth();
+    // Cost += NumFanins * Sel->getBitWidth();
   }
 
-  return Cost;
+  return 0;
 }
 
 int FaninAnalyzer::computeCost(CostTy *Cost) const {
@@ -554,7 +554,7 @@ void CompGraphBase::decomposeTrivialNodes() {
 unsigned CompGraphBase::computeReqiredResource(const CompGraphNode *Node) const {
   float Cost = 0.0f;
   // 1. Calculate the number of registers we can reduce through this edge.
-  typedef NodeTy::const_sel_iterator sel_iterator;
+  // typedef NodeTy::const_sel_iterator sel_iterator;
   // for (sel_iterator I = Node->begin(), E = Node->end(); I != E; ++I)
   //  Cost += (*I)->getBitWidth();
 
