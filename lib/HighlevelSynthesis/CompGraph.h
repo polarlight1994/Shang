@@ -99,8 +99,6 @@ protected:
   bool isCompatibleWithInterval(const CompGraphNode *RHS) const;
   bool isCompatibleWithStructural(const CompGraphNode *RHS) const;
 
-  Cost &getCostToInternal(const CompGraphNode *To);
-
   friend class CompGraphBase;
 public:
 
@@ -185,6 +183,7 @@ public:
   }
 
   const Cost &getCostTo(const CompGraphNode *To) const;
+  Cost &getCostToInternal(const CompGraphNode *To);
 
   // Unlink the Succ from current node.
   void unlinkSucc(CompGraphNode *Succ) {
@@ -259,7 +258,6 @@ protected:
   std::map<EdgeType, EdgeVector> FaninCompatibles, FanoutCompatibles;
 
   DominatorTree &DT;
-  CombPatternTable &CPT;
   ClusterVectors Clusters;
 
   void deleteNode(NodeTy *N) {
@@ -284,22 +282,11 @@ protected:
 
   unsigned computeReqiredResource(const CompGraphNode *Src) const;
 
-  typedef NodeTy::Cost CostTy;
-  bool computeFaninDelta(VASTSelector *SrcV, VASTSelector *DstV, float Weight,
-                         CostTy *Cost) const;
-  bool computeFaninDelta(VASTValue *SrcFI, VASTValue *DstFI,
-                         CostTy *Cost) const;
-  int computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
-                       CostTy *Cost) const;
-  int computeFaninCost(CompGraphNode *Src, CompGraphNode *Dst,
-                       CostTy *Cost) const;
-  unsigned computeSingleNodeFaninCost(CompGraphNode *Node) const;
-
 private:
   MinCostFlowSolver *MCF[5];
 public:
-  explicit CompGraphBase(DominatorTree &DT, CombPatternTable &CPT)
-    : Entry(), Exit(), DT(DT), CPT(CPT) {
+  explicit CompGraphBase(DominatorTree &DT)
+    : Entry(), Exit(), DT(DT) {
     initalizeDomTreeLevel();
     for (unsigned i = 0; i < 5; ++i)
       MCF[i] = 0;
@@ -341,7 +328,7 @@ public:
 
   void decomposeTrivialNodes();
   void computeCompatibility();
-  void initializeCosts();
+  void initializeCosts(CombPatternTable &CPT);
   void fixTransitive();
 
   unsigned performBinding();

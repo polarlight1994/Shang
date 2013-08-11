@@ -242,12 +242,36 @@ void CompGraphBase::computeCompatibility() {
   }
 }
 
-void CompGraphBase::initializeCosts() {
+namespace {
+struct FaninAnalyzer {
+  CompGraphNode *Src, *Dst;
+  CombPatternTable &CPT;
+  CompGraphBase &G;
+
+  typedef CompGraphNode::Cost CostTy;
+  bool computeFaninDelta(VASTSelector *SrcV, VASTSelector *DstV, float Weight,
+                         CostTy *Cost) const;
+  bool computeFaninDelta(VASTValue *SrcFI, VASTValue *DstFI, CostTy *Cost) const;
+  int computeFaninCost(VASTSelector *Src, VASTSelector *Dst, CostTy *Cost) const;
+  int computeCost(CostTy *Cost) const;
+  unsigned computeSingleNodeFaninCost() const;
+
+  FaninAnalyzer(CompGraphNode *Src, CompGraphNode *Dst, CombPatternTable &CPT,
+                CompGraphBase &G)
+    : Src(Src), Dst(Dst), CPT(CPT), G(G) {}
+};
+}
+
+void CompGraphBase::initializeCosts(CombPatternTable &CPT) {
   typedef NodeTy::cost_iterator iterator;
   for (iterator I = Entry.cost_begin(), E = Entry.cost_end(); I != E; ++I){
     NodeTy *Src = I->first;
-    I->second.InterconnectCost += area_factor * computeReqiredResource(Src);
-    I->second.InterconnectCost += mux_factor * computeSingleNodeFaninCost(Src);
+
+    float InterConnectCost =
+      FaninAnalyzer(Src, Src, CPT, *this).computeSingleNodeFaninCost();
+    float NodeCost = area_factor * computeReqiredResource(Src) +
+                     mux_factor * InterConnectCost;
+    I->second.InterconnectCost += NodeCost;
 
     for (iterator SI = Src->cost_begin(), SE = Src->cost_end(); SI != SE; ++SI){
       NodeTy *Dst = SI->first;
@@ -255,19 +279,20 @@ void CompGraphBase::initializeCosts() {
       if (Dst->IsTrivial)
         continue;
 
-      float FaninCost = computeFaninCost(Src, Dst, &SI->second);
+      float FaninCost =
+        FaninAnalyzer(Src, Dst, CPT, *this).computeCost(&SI->second);
       SI->second.InterconnectCost += mux_factor * FaninCost;
     }
   }
 }
 
-unsigned CompGraphBase::computeSingleNodeFaninCost(CompGraphNode *Node) const {
+unsigned FaninAnalyzer::computeSingleNodeFaninCost() const {
   unsigned Cost = 0;
 
   std::set<VASTValue*> FIs;
   unsigned NumFanins = 0;
-  for (unsigned i = 0, e = Node->size(); i != e; ++i) {
-    VASTSelector *Sel = Node->getSelector(i);
+  for (unsigned i = 0, e = Src->size(); i != e; ++i) {
+    VASTSelector *Sel = Src->getSelector(i);
 
     FIs.clear();
     NumFanins = 0;
@@ -303,8 +328,7 @@ unsigned CompGraphBase::computeSingleNodeFaninCost(CompGraphNode *Node) const {
   return Cost;
 }
 
-int CompGraphBase::computeFaninCost(CompGraphNode *Src, CompGraphNode *Dst,
-                                    CostTy *Cost) const {
+int FaninAnalyzer::computeCost(CostTy *Cost) const {
   int TotalFIs = 0;
   assert(Src->size() == Dst->size() && "Fanin size not matched!");
   for (unsigned i = 0, e = Src->size(); i != e; ++i)
@@ -312,7 +336,7 @@ int CompGraphBase::computeFaninCost(CompGraphNode *Src, CompGraphNode *Dst,
   return TotalFIs;
 }
 
-int CompGraphBase::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
+int FaninAnalyzer::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
                                     CostTy *Cost) const {
   // Ignore the invert flag, we assume the invert has zero cost.
   std::set<VASTValue*> SrcFIs, DstFIs;
@@ -367,7 +391,7 @@ int CompGraphBase::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
   return IncreasedNumPorts * int(Bitwidth);
 }
 
-bool CompGraphBase::computeFaninDelta(VASTValue *SrcFI, VASTValue *DstFI,
+bool FaninAnalyzer::computeFaninDelta(VASTValue *SrcFI, VASTValue *DstFI,
                                       CostTy *Cost) const {
   if (SrcFI == DstFI)
     return true;
@@ -408,37 +432,42 @@ bool CompGraphBase::computeFaninDelta(VASTValue *SrcFI, VASTValue *DstFI,
   return false;
 }
 
-bool CompGraphBase::computeFaninDelta(VASTSelector *Src, VASTSelector *Dst,
+bool FaninAnalyzer::computeFaninDelta(VASTSelector *SrcFI, VASTSelector *DstFI,
                                       float Weight, CostTy *Cost) const {
-  CompGraphNode *SrcNode = lookupNode(Src);
-  CompGraphNode *DstNode = lookupNode(Dst);
+  CompGraphNode *SrcFINode = G.lookupNode(SrcFI);
+  CompGraphNode *DstFINode = G.lookupNode(DstFI);
 
-  if (!SrcNode || !DstNode)
+  if (!SrcFINode || !DstFINode)
     return false;
 
-  if (SrcNode == DstNode)
+  if (SrcFINode == DstFINode)
     return true;
 
-  if (!SrcNode->countSuccessor(DstNode)) {
-    if (!DstNode->countSuccessor(SrcNode))
+  if (!SrcFINode->countSuccessor(DstFINode)) {
+    if (!DstFINode->countSuccessor(SrcFINode))
       return false;
 
-    std::swap(SrcNode, DstNode);
+    std::swap(SrcFINode, DstFINode);
   }
 
   if (Cost) {
     // Add a edge delta, if source node and dst node are bound to the same
     // physical unit, there is benefit to bind the current units too.
-    Cost->accumulateDelta(SrcNode, DstNode, Weight);
+    Cost->accumulateDelta(SrcFINode, DstFINode, mux_factor * Weight);
     // Also give some benefit to bind SrcNode and DstNode to the same physical
     // unit, since doing so help reduce the cost.
-    Weight *= 0.2f;
+    // Weight *= 0.2f;
   }
- 
+
+
   // Otherwise Src and Dst are fanin to the same selector, there is benefit
   // to bind SrcNode to Dst node as they redece the interconnect of the fanout
   // selector.
-  SrcNode->getCostToInternal(DstNode).InterconnectCost -= mux_factor * Weight;
+  CostTy &FICost = SrcFINode->getCostToInternal(DstFINode);
+  if (Src != Dst)
+    FICost.accumulateDelta(Src, Dst, mux_factor * Weight);
+  else
+    FICost.InterconnectCost -= mux_factor * Weight;
 
   return false;
 }

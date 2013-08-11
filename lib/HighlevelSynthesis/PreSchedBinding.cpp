@@ -364,8 +364,8 @@ bool PSBCompNode::isCompatibleWith(const CompGraphNode *RHS) const {
 namespace {
 class PSBCompGraph : public CompGraphBase {
 public:
-  PSBCompGraph(DominatorTree &DT, CombPatternTable &CPT)
-    : CompGraphBase(DT, CPT) {}
+  PSBCompGraph(DominatorTree &DT)
+    : CompGraphBase(DT) {}
 
   CompGraphNode *createNode(VFUs::FUTypes FUType, unsigned FUCost, unsigned Idx,
     DataflowInst Inst, ArrayRef<VASTSelector*> Sels)
@@ -410,12 +410,11 @@ void PreSchedBinding::releaseMemory() {
 
 bool PreSchedBinding::runOnVASTModule(VASTModule &VM) {
   DominatorTree &DT = getAnalysis<DominatorTree>();
-  CombPatternTable &CPT = getAnalysis<CombPatternTable>();
   
   BBLiveIntervals BBLI(DT);
   BBLI.run(VM);
 
-  PSBCG = new PSBCompGraph(DT, CPT);
+  PSBCG = new PSBCompGraph(DT);
 
   typedef VASTModule::seqop_iterator iterator;
   for (iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
@@ -440,7 +439,7 @@ bool PreSchedBinding::runOnVASTModule(VASTModule &VM) {
   // PSBCG->decomposeTrivialNodes();
   PSBCG->computeCompatibility();
   PSBCG->fixTransitive();
-  PSBCG->initializeCosts();
+  PSBCG->initializeCosts(getAnalysis<CombPatternTable>());
 
   PSBCG->performBinding();
 

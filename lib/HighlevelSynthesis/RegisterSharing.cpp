@@ -48,8 +48,8 @@ class VASTCompGraph : public CompGraphBase {
   typedef CompGraphNode NodeTy;
 
 public:
-  VASTCompGraph(DominatorTree &DT, CombPatternTable &CPT)
-    : CompGraphBase(DT, CPT) {}
+  VASTCompGraph(DominatorTree &DT)
+    : CompGraphBase(DT) {}
 
   float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const {
     const NodeTy::Cost &Cost = Src->getCostTo(Dst);
@@ -220,7 +220,7 @@ void RegisterSharing::checkConsistencyAgainstPSB(VASTCompGraph &G) {
 bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   LVS = &getAnalysis<SeqLiveVariables>();
 
-  VASTCompGraph G(getAnalysis<DominatorTree>(), getAnalysis<CombPatternTable>());
+  VASTCompGraph G(getAnalysis<DominatorTree>());
 
   initializeOverlappedSlots(VM);
 
@@ -249,7 +249,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
   G.computeCompatibility();
   G.fixTransitive();
 
-  G.initializeCosts();
+  G.initializeCosts(getAnalysis<CombPatternTable>());
 
   checkConsistencyAgainstPSB(G);
 
