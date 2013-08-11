@@ -265,10 +265,12 @@ unsigned CompGraphBase::computeSingleNodeFaninCost(CompGraphNode *Node) const {
   unsigned Cost = 0;
 
   std::set<VASTValue*> FIs;
+  unsigned NumFanins = 0;
   for (unsigned i = 0, e = Node->size(); i != e; ++i) {
     VASTSelector *Sel = Node->getSelector(i);
 
     FIs.clear();
+    NumFanins = 0;
     // Try to find is there any node share the same fanout, there will be some
     // benefit if we bind nodes that share common fanout.
     typedef VASTSelector::iterator iterator;
@@ -280,7 +282,8 @@ unsigned CompGraphBase::computeSingleNodeFaninCost(CompGraphNode *Node) const {
       if (Sel->isTrivialFannin(L))
         continue;
 
-      FIs.insert(CurFI.get());
+      if (FIs.insert(CurFI.get()).second)
+        NumFanins += 1;
       FIs.insert(GurGuard.get());
 
       typedef std::set<VASTValue*>::iterator fanin_iterator;
@@ -292,9 +295,9 @@ unsigned CompGraphBase::computeSingleNodeFaninCost(CompGraphNode *Node) const {
         if (OtherFI != GurGuard.get())
           computeFaninDelta(GurGuard.get(), OtherFI, 0);
       }
-
-      Cost += FIs.size() * Sel->getBitWidth();
     }
+
+    Cost += NumFanins * Sel->getBitWidth();
   }
 
   return Cost;
@@ -318,10 +321,15 @@ int CompGraphBase::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
   for (iterator SI = Src->begin(), SE = Src->end(); SI != SE; ++SI) {
     const VASTLatch &SL = *SI;
 
-    if (Src->isTrivialFannin(SL) || Dst->isTrivialFannin(SL))
+    if (Src->isTrivialFannin(SL))
       continue;
 
     VASTValPtr SrcFI = SL;
+
+    if (Dst->isTrivialFannin(SL)) {
+      ++Intersected;
+      continue;
+    }
 
     if (!SrcFIs.insert(SrcFI.get()).second)
       continue;
@@ -329,10 +337,15 @@ int CompGraphBase::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
     for (iterator DI = Dst->begin(), DE = Dst->end(); DI != DE; ++DI) {
       const VASTLatch &DL = *DI;
 
-      if (Dst->isTrivialFannin(DL) || Src->isTrivialFannin(DL))
+      if (Dst->isTrivialFannin(DL))
         continue;
 
       VASTValPtr DstFI = DL;
+
+      if (Src->isTrivialFannin(DL)) {
+        ++Intersected;
+        continue;
+      }
 
       if (!DstFIs.insert(DstFI.get()).second)
         continue;
@@ -346,6 +359,11 @@ int CompGraphBase::computeFaninCost(VASTSelector *Src, VASTSelector *Dst,
 
   unsigned Bitwidth = Dst->getBitWidth();
   int IncreasedNumPorts = int(DstFIs.size()) - Intersected;
+
+  // An extra MUX port is need to merge the fanins from Src.
+  if (IncreasedNumPorts > 0)
+    ++IncreasedNumPorts;
+
   return IncreasedNumPorts * int(Bitwidth);
 }
 
