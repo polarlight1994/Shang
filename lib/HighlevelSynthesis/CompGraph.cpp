@@ -783,8 +783,6 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
   if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), LE, MaxFlow))
     report_fatal_error("Cannot add flow constraint!");
 
-  Col.clear();
-  Coeff.clear();
   const CompGraphNode *T = G.getExit();
   for (iterator SI = T->pred_begin(), SE = T->pred_end(); SI != SE; ++SI) {
     CompGraphNode *Pred = *SI;
@@ -795,11 +793,11 @@ unsigned MinCostFlowSolver::createBlanceConstraints() {
     unsigned EdgeIdx = lookUpEdgeIdx(EdgeType(Pred, T));
     assert(EdgeIdx && "Edge column number not available!");
     Col.push_back(EdgeIdx);
-    Coeff.push_back(1.0);
+    Coeff.push_back(-1.0);
   }
 
   // The inflow to sink must be smaller than supply.
-  if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), LE, MaxFlow))
+  if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EQ, 0))
     report_fatal_error("Cannot add flow constraint!");
 
   Col.clear();
