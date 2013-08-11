@@ -13,7 +13,7 @@ FUs.AddSub = { Latencies = { 0 , 2.573 / PERIOD , 3.111 / PERIOD , 4.597 / PERIO
 	             Costs = {2, 10, 18, 34, 66}, --Add
                StartInterval=1}
 FUs.Mult = { Latencies = { 0 , 4.082 / PERIOD , 4.630 / PERIOD , 7.952 / PERIOD , 11.140 / PERIOD }, --Mult
-	           Costs = {1, 103, 344, 1211, 4478}, --Mul
+	           Costs = {1, 103, 206, 618, 1260}, --Mul
              StartInterval=1} --Mul
 FUs.ICmp   = { Latencies = { 0 , 2.143 / PERIOD , 3.044 / PERIOD , 4.376 / PERIOD , 6.982 / PERIOD }, --ICmp
                Costs = {1, 8, 16, 32, 64}, --Cmp

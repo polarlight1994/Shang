@@ -12,7 +12,7 @@ FUs.Shift = { Latencies = { 0 , 2.558 / PERIOD , 2.920 / PERIOD , 4.031 / PERIOD
               Costs = {1, 27, 70, 171, 393}, --Shift
               StartInterval=1} --Shift
 FUs.Mult = { Latencies = { 0 , 4.142 / PERIOD , 4.627 / PERIOD , 7.846 / PERIOD , 10.383 / PERIOD }, --Mult
-	           Costs = {1, 103, 344, 1211, 4478}, --Mul
+	           Costs = {1, 103, 206, 618, 1260}, --Mul
              StartInterval=1} --Mul 
 FUs.ICmp   = { Latencies = { 0 , 1.976 / PERIOD , 2.667 / PERIOD , 3.609 / PERIOD , 5.459 / PERIOD }, --ICmp
                Costs = {1, 8, 16, 32, 64}, --Cmp
