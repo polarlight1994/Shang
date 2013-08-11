@@ -187,11 +187,15 @@ void RegisterSharing::initializeOverlappedSlots(VASTModule &VM) {
 
 void RegisterSharing::checkConsistencyAgainstPSB(const ClusterType &Cluster,
                                                  VASTCompGraph &G) {
+  unsigned Id = 0;
   for (unsigned i = 0; i < Cluster.size(); ++i) {
     CompGraphNode *Src = G.getNode(Cluster[i]->Inst);
     // A node maybe eliminated by CFG folding or chaining.
     if (Src == 0)
       continue;
+
+    if (Id == 0)
+      Id = Src->getBindingIdx();
 
     for (unsigned j = i + 1; j < Cluster.size(); ++j) {
       CompGraphNode *Dst = G.getNode(Cluster[j]->Inst);
@@ -200,8 +204,10 @@ void RegisterSharing::checkConsistencyAgainstPSB(const ClusterType &Cluster,
 
       // TODO: Add reduce the cost between src and dst to produce a consistent
       // binding?
-      if (Src->isNeighbor(Dst))
+      if (Src->isNeighbor(Dst)) {
+        Dst->setBindingIdx(Id);
         continue;
+      }
 
       ++NumInconsistent;
     }
