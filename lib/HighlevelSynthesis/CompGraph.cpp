@@ -375,16 +375,16 @@ bool CompGraphBase::computeFaninDelta(VASTValue *SrcFI, VASTValue *DstFI,
     if (D.IsAlwaysIdentical)
       return true;
 
-    bool different = false;
+    bool IsIdentical = true;
 
     assert(D.Deltas.size() && "Unexpected empty delta!");
     float Weight = float(Bitwidth) / float(D.Deltas.size());
 
     typedef Delta::iterator iterator;
     for (iterator I = D.begin(), E = D.end(); I != E; ++I)
-      different |= !computeFaninDelta(I->first, I->second, Weight, Cost);
+      IsIdentical &= computeFaninDelta(I->first, I->second, Weight, Cost);
     
-    return different;
+    return IsIdentical;
   }
 
   return false;
