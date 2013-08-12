@@ -60,6 +60,24 @@ STATISTIC(NumTimgViolation, "Number of timing paths with negative slack");
 
 namespace{
 struct TimingScriptGen;
+struct Leaf {
+  unsigned NumCycles;
+  float CriticalDelay;
+  Leaf(unsigned NumCycles = STGDistances::Inf, float CriticalDelay = 0.0f)
+    : NumCycles(NumCycles), CriticalDelay(CriticalDelay) {}
+
+  // Update the source information with tighter cycles constraint and larger
+  // critical delay
+  void update(unsigned NumCycles, float CriticalDelay) {
+    this->NumCycles = std::min(this->NumCycles, NumCycles);
+    this->CriticalDelay = std::max(this->CriticalDelay, CriticalDelay);
+  }
+
+  Leaf &update(const Leaf &RHS) {
+    update(RHS.NumCycles, RHS.CriticalDelay);
+    return *this;
+  }
+};
 
 /// AnnotatedCone - Combinational cone annotated with timing information.
 struct AnnotatedCone {
@@ -69,26 +87,6 @@ struct AnnotatedCone {
   raw_ostream &OS;
   const uint32_t Inf;
   static unsigned ConstrantCounter;
-
-  struct Leaf {
-    unsigned NumCycles;
-    float CriticalDelay;
-    explicit Leaf(unsigned NumCycles = STGDistances::Inf,
-                     float CriticalDelay = 0.0f)
-      : NumCycles(NumCycles), CriticalDelay(CriticalDelay) {}
-
-    // Update the source information with tighter cycles constraint and larger
-    // critical delay
-    void update(unsigned NumCycles, float CriticalDelay) {
-      this->NumCycles = std::min(this->NumCycles, NumCycles);
-      this->CriticalDelay = std::max(this->CriticalDelay, CriticalDelay);
-    }
-
-    Leaf &update(const Leaf &RHS) {
-      update(RHS.NumCycles, RHS.CriticalDelay);
-      return *this;
-    }
-  };
 
   typedef DenseMap<VASTSelector*, Leaf> SeqValSetTy;
   SeqValSetTy CyclesFromSrcLB;
@@ -203,9 +201,8 @@ struct TimingScriptGen : public VASTModulePass {
 };
 }
 
-AnnotatedCone::Leaf AnnotatedCone::buildLeaf(VASTSeqValue *V,
-                                             ArrayRef<VASTSlot*> ReadSlots,
-                                             VASTValue *Thu) {
+Leaf AnnotatedCone::buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots,
+                              VASTValue *Thu) {
   unsigned Interval = STGDist.getIntervalFromDef(V->getSelector(), ReadSlots);
   float EstimatedDelay = TNL.getDelay(V, Thu, Dst);
   return Leaf(Interval, EstimatedDelay);
@@ -215,7 +212,7 @@ void
 AnnotatedCone::annotateLeaf(VASTSelector *Sel, VASTExpr *Parent, Leaf CurLeaf,
                             SeqValSetTy &LocalInterval) {
   LocalInterval[Sel].update(CurLeaf);
-  unsigned Cycles = QueryCache[Parent][Sel].update(CurLeaf).NumCycles;
+  QueryCache[Parent][Sel].update(CurLeaf);
   // Add the information to statistics.
   addIntervalFromSrc(Sel, CurLeaf);
 }
@@ -324,7 +321,7 @@ unsigned AnnotatedCone::ConstrantCounter = 0;
 // the define node.
 template<typename SrcTy>
 void AnnotatedCone::generateMCPWithInterval(SrcTy *Src, const std::string &ThuName,
-                                          const Leaf &SI, unsigned Order) const {
+                                            const Leaf &SI, unsigned Order) const {
   assert(!ThuName.empty() && "Bad through node name!");
   OS << "INSERT INTO mcps(src, dst, thu, cycles, normalized_delay, constraint_order)"
         "VALUES(\n"
