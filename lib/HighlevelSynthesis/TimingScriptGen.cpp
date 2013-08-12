@@ -22,6 +22,7 @@
 #include "shang/VASTSeqValue.h"
 #include "shang/STGDistances.h"
 #include "shang/VASTModulePass.h"
+#include "shang/VASTMemoryPort.h"
 #include "shang/VASTSubModules.h"
 #include "shang/VASTModule.h"
 #include "shang/Passes.h"
@@ -83,7 +84,7 @@ struct Leaf {
 struct AnnotatedCone {
   TimingNetlist &TNL;
   STGDistances &STGDist;
-  VASTSelector *Dst;
+  VASTNode *Node;
   raw_ostream &OS;
   const uint32_t Inf;
   static unsigned ConstrantCounter;
@@ -93,15 +94,21 @@ struct AnnotatedCone {
 
   typedef DenseMap<VASTExpr*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
+  SmallVector<VASTSelector*, 4> Sels;
 
-  AnnotatedCone(TimingNetlist &TNL, STGDistances &STGDist, VASTSelector *Dst,
+  AnnotatedCone(TimingNetlist &TNL, STGDistances &STGDist, VASTNode *Node,
                 raw_ostream &OS)
-    : TNL(TNL), STGDist(STGDist), Dst(Dst), OS(OS), Inf(STGDistances::Inf)
+    : TNL(TNL), STGDist(STGDist), Node(Node), OS(OS), Inf(STGDistances::Inf)
   {}
+
+  void addSelector(VASTSelector *Sel) {
+    Sels.push_back(Sel);
+  }
 
   void reset() {
     QueryCache.clear();
     CyclesFromSrcLB.clear();
+    Sels.clear();
   }
 
   static void checkIntervalFromSlot(VASTSelector *Sel, unsigned Cycles) {
@@ -118,9 +125,11 @@ struct AnnotatedCone {
 
   bool generateSubmoduleConstraints(VASTSeqValue *SeqVal);
 
-  void annotatePathInterval(VASTValue *Tree, ArrayRef<VASTSlot*> ReadSlots);
+  void annotatePathInterval(VASTValue *Tree, VASTSelector *Dst,
+                            ArrayRef<VASTSlot*> ReadSlots);
 
-  Leaf buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots, VASTValue *Thu);
+  Leaf buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots, VASTValue *Thu,
+                 VASTSelector *Dst);
   void annotateLeaf(VASTSelector *Sel, VASTExpr *Parent, Leaf CurLeaf,
                     SeqValSetTy &LocalInterval);
 
@@ -150,7 +159,8 @@ struct AnnotatedCone {
     }
   }
 
-  void generateMCPEntries() const;
+  void generateMCPEntries(VASTSelector *Dst) const;
+  void generateMCPEntries();
   // Generate the constraints in depth-first order. So that we always cover the
   // whole cone by the constraints on the root, and refine them by the
   // constraints on the leaves.
@@ -186,10 +196,11 @@ struct TimingScriptGen : public VASTModulePass {
     AU.setPreservesAll();
   }
 
-  void writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
+  void writeConstraintsFor(VASTSelector *Sel, TimingNetlist &TNL,
                            STGDistances &STGDist);
+  void annoataConstraintsFor(AnnotatedCone &Cache, VASTSelector *Sel);
 
-  void extractTimingPaths(AnnotatedCone &Cache,
+  void extractTimingPaths(AnnotatedCone &Cache, VASTSelector *Dst,
                           ArrayRef<VASTSlot*> ReadSlots,
                           VASTValue *DepTree);
 
@@ -202,7 +213,7 @@ struct TimingScriptGen : public VASTModulePass {
 }
 
 Leaf AnnotatedCone::buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots,
-                              VASTValue *Thu) {
+                              VASTValue *Thu, VASTSelector *Dst) {
   unsigned Interval = STGDist.getIntervalFromDef(V->getSelector(), ReadSlots);
   float EstimatedDelay = TNL.getDelay(V, Thu, Dst);
   return Leaf(Interval, EstimatedDelay);
@@ -217,7 +228,7 @@ AnnotatedCone::annotateLeaf(VASTSelector *Sel, VASTExpr *Parent, Leaf CurLeaf,
   addIntervalFromSrc(Sel, CurLeaf);
 }
 
-void AnnotatedCone::annotatePathInterval(VASTValue *Root,
+void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
                                          ArrayRef<VASTSlot*> ReadSlots) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(Root);
 
@@ -258,7 +269,7 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root,
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
       if (generateSubmoduleConstraints(V)) continue;
 
-      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, Root),
+      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, Root, Dst),
                    LocalInterval);
       continue;
     }  
@@ -288,7 +299,7 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root,
       // even V may be masked by the false path indicated by the keep attribute.
       // we will first generate the tight constraints and overwrite them by
       // looser constraints.
-      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, Root),
+      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, Root, Dst),
                    LocalInterval);
     }
   }
@@ -326,7 +337,7 @@ void AnnotatedCone::generateMCPWithInterval(SrcTy *Src, const std::string &ThuNa
   OS << "INSERT INTO mcps(src, dst, thu, cycles, normalized_delay, constraint_order)"
         "VALUES(\n"
      << '\'' << Src->getSTAObjectName() << "', \n"
-     << '\'' << Dst->getSTAObjectName() << "', \n"
+     << '\'' << Node->getSTAObjectName() << "', \n"
      << '\'' << ThuName << "', \n"
      << SI.NumCycles << ", \n"
      << SI.CriticalDelay << ", \n"
@@ -412,17 +423,17 @@ void AnnotatedCone::generateMCPEntriesDFOrder(VASTValue *Root) const {
   }
 }
 
-void AnnotatedCone::generateMCPEntries() const {
-  DEBUG(dbgs() << "Going to bind delay information of graph: \n");
-  DEBUG(dump());
-  DEBUG(dbgs() << "Binding path for dst register: "
-               << Dst->getName() << '\n');
-
+void AnnotatedCone::generateMCPEntries(VASTSelector *Dst) const {
   generateMCPThough(0, CyclesFromSrcLB);
   NumConstraints += CyclesFromSrcLB.size();
 
   generateMCPEntriesDFOrder(Dst->getGuard().get());
   generateMCPEntriesDFOrder(Dst->getFanin().get());
+}
+
+void AnnotatedCone::generateMCPEntries() {
+  while (!Sels.empty())
+    generateMCPEntries(Sels.pop_back_val());
 }
 
 bool AnnotatedCone::generateSubmoduleConstraints(VASTSeqValue *SeqVal) {
@@ -472,13 +483,32 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
   TimingNetlist &TNL =getAnalysis<TimingNetlist>();
 
   //Write the timing constraints.
+  std::map<VASTMemoryBus*, AnnotatedCone*> MemBusCones;
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
 
     if (Sel->empty()) continue;
 
-    writeConstraintsFor(Sel, TNL, STGDist);
+    // Handle the trivial case.
+    if (isa<VASTRegister>(Sel->getParent()) || isa<VASTOutPort>(Sel->getParent())) {
+      writeConstraintsFor(Sel, TNL, STGDist);
+      continue;
+    }
+
+    VASTMemoryBus *Bus = cast<VASTMemoryBus>(Sel->getParent());
+    AnnotatedCone *&Cone = MemBusCones[Bus];
+    if (Cone == 0)
+      Cone = new AnnotatedCone(TNL, STGDist, Bus, OS);
+
+    annoataConstraintsFor(*Cone, Sel);
+  }
+
+  // Generate the constraints for memory bus and release the cone for memory bus.
+  typedef std::map<VASTMemoryBus*, AnnotatedCone*>::iterator cone_iteator;
+  for (cone_iteator I = MemBusCones.begin(), E = MemBusCones.end(); I != E; ++I) {
+    I->second->generateMCPEntries();
+    delete I->second;
   }
 
   OS.flush();
@@ -492,25 +522,32 @@ TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
                                      STGDistances &STGDist) {
   AnnotatedCone Cache(TNL, STGDist, Dst, OS);
 
-  SmallVector<VASTSlot*, 8> AllSlots;
-  typedef VASTSelector::const_iterator iterator;
-  for (iterator I = Dst->begin(), E = Dst->end(); I != E; ++I)
-    AllSlots.push_back((*I).getSlot());
-  // Annotate all slots to FI and Guard, otherwise we may miss some path not
-  // block by the keeped nodes.
-  extractTimingPaths(Cache, AllSlots, Dst->getFanin().get());
-  extractTimingPaths(Cache, AllSlots, Dst->getGuard().get());
-
-  typedef VASTSelector::ann_iterator ann_iterator;
-  for (ann_iterator I = Dst->ann_begin(), E = Dst->ann_end(); I != E; ++I) {
-    ArrayRef<VASTSlot*> Slots(I->second);
-    extractTimingPaths(Cache, Slots, VASTValPtr(I->first).get());
-  }
+  annoataConstraintsFor(Cache, Dst);
 
   Cache.generateMCPEntries();
 }
 
-void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache,
+void TimingScriptGen::annoataConstraintsFor(AnnotatedCone &Cache,
+                                            VASTSelector *Sel) {
+  SmallVector<VASTSlot*, 8> AllSlots;
+  typedef VASTSelector::const_iterator iterator;
+  for (iterator I = Sel->begin(), E = Sel->end(); I != E; ++I)
+    AllSlots.push_back((*I).getSlot());
+  // Annotate all slots to FI and Guard, otherwise we may miss some path not
+  // block by the keeped nodes.
+  extractTimingPaths(Cache, Sel, AllSlots, Sel->getFanin().get());
+  extractTimingPaths(Cache, Sel, AllSlots, Sel->getGuard().get());
+
+  typedef VASTSelector::ann_iterator ann_iterator;
+  for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
+    ArrayRef<VASTSlot*> Slots(I->second);
+    extractTimingPaths(Cache, Sel, Slots, VASTValPtr(I->first).get());
+  }
+
+  Cache.addSelector(Sel);
+}
+
+void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache, VASTSelector *Dst,
                                          ArrayRef<VASTSlot*> ReadSlots,
                                          VASTValue *DepTree) {
   // Trivial case: register to register path.
@@ -518,7 +555,7 @@ void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache,
     if (Cache.generateSubmoduleConstraints(Src)) return;
 
     Cache.addIntervalFromSrc(Src->getSelector(),
-                             Cache.buildLeaf(Src, ReadSlots, 0));
+                             Cache.buildLeaf(Src, ReadSlots, 0, Dst));
 
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
@@ -532,7 +569,7 @@ void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache,
   // If Define Value is immediate or symbol, skip it.
   if (!isa<VASTWire>(DepTree) && !isa<VASTExpr>(DepTree)) return;
 
-  Cache.annotatePathInterval(DepTree, ReadSlots);
+  Cache.annotatePathInterval(DepTree, Dst, ReadSlots);
 }
 
 char TimingScriptGen::ID = 0;

@@ -31,14 +31,20 @@ void VASTNode::dropUses() {
   llvm_unreachable("Subclass should implement this function!");
 }
 
+static std::string GetSTAObjectName(const VASTMemoryBus *RAM) {
+  std::string Name;
+  raw_string_ostream OS(Name);
+
+  OS << " *" << RAM->getArrayName() << "* ";
+  return OS.str();
+}
+
 static std::string GetSTAObjectName(const VASTSelector *Sel) {
   std::string Name;
   raw_string_ostream OS(Name);
 
-  if (const VASTMemoryBus *RAM = dyn_cast<VASTMemoryBus>(Sel->getParent())) {
-    OS << " *" << RAM->getArrayName() << "* ";
-    return OS.str();
-  }
+  if (const VASTMemoryBus *RAM = dyn_cast<VASTMemoryBus>(Sel->getParent()))
+    return GetSTAObjectName(RAM);
 
   OS << ' ' << Sel->getName() << "* ";
 
@@ -77,6 +83,15 @@ std::string VASTNode::getSTAObjectName() const {
 
   if (const VASTSelector *Sel = dyn_cast<VASTSelector>(this))
     return GetSTAObjectName(Sel);
+
+  if (const VASTMemoryBus *RAM = dyn_cast<VASTMemoryBus>(this))
+    return GetSTAObjectName(RAM);
+
+  if (const VASTOutPort *Port = dyn_cast<VASTOutPort>(this))
+    return GetSTAObjectName(Port->getSelector());
+
+  if (const VASTRegister *Reg = dyn_cast<VASTRegister>(this))
+    return GetSTAObjectName(Reg->getSelector());
 
   return "";
 }
