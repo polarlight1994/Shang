@@ -63,11 +63,7 @@ public:
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequired<AliasAnalysis>();
-    AU.addRequired<DominatorTree>();
-    AU.addRequired<LoopInfo>();
-    AU.addRequired<BranchProbabilityInfo>();
-    AU.addRequired<DataflowAnnotation>();
+    AU.addRequired<Dataflow>();
   }
 
   void recoverOutputPath();
@@ -114,35 +110,30 @@ public:
 
     Function &F = VM.getLLVMFunction();
 
-    VASTScheduling Scheduler;
-    TimeRegion PassTimer(getPassTimer(&Scheduler));
-    AnalysisResolver *AR = new AnalysisResolver(*getResolver());
-    Scheduler.setResolver(AR);
-    Scheduler.runOnVASTModule(VM);
-
-    for (unsigned i = 1, e = MaxIteration; i < e; ++i) {
+    for (unsigned i = 0, e = MaxIteration; i < e; ++i) {
       // Redirect the output path for the intermediate netlist.
-      if (DumpIntermediateNetlist) changeOutputPaths(i - 1);
+      if (DumpIntermediateNetlist) changeOutputPaths(i);
 
       runSingleIteration(F);
-      Scheduler.releaseMemory();
-
-      VASTModule &NextVM = rebuildModule();
-      Scheduler.runOnVASTModule(NextVM);
+      rebuildModule();
     }
 
     // Fix the output pass if necessary.
     if (DumpIntermediateNetlist) recoverOutputPath();
+
+    // Last iteration, we will stop at scheduling.
+    while (!PassVector.empty() &&
+           PassVector.back()->getPassID() != &VASTScheduling::ID) {
+      PassVector.pop_back();
+    }
+
+    runSingleIteration(F);
 
     return true;
   }
 
   void assignPassManager(PMStack &PMS, PassManagerType T) {
     FunctionPass::assignPassManager(PMS, T);
-
-    // Do not need to add subpasses if we are not iterate at all.
-    if (MaxIteration <= 1)
-      return;
 
     // Inherit the existing analyses
     populateInheritedAnalysis(PMS);
@@ -152,6 +143,11 @@ public:
     PMTopLevelManager *TPM = PMD->getTopLevelManager();
     TPM->addIndirectPassManager(this);
     PMS.push(this);
+
+    schedulePass(createVASTSchedulingPass());
+    // Do not need to add other subpasses if we are not iterate at all.
+    if (MaxIteration <= 1)
+      return;
 
     // Add the passes for each single iteration.
     schedulePass(createLUTMappingPass());
