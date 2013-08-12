@@ -115,6 +115,7 @@ struct ExternalTimingAnalysis {
   typedef std::map<VASTValue*, float*> SrcInfo;
   typedef std::map<VASTNode*, SrcInfo> PathInfo;
   PathInfo DelayMatrix;
+  static std::string Placement;
 
   // The annotated expressions that are read by specificed VASTSeqOp
   typedef std::map<VASTSeqOp*, std::set<VASTExpr*> > AnnotoatedFaninsMap;
@@ -125,7 +126,8 @@ struct ExternalTimingAnalysis {
 
   // Write the project file to perform the timing analysis.
   void writeProjectScript(raw_ostream &O, StringRef NetlistPath,
-                          StringRef SDCPath, StringRef ExtractScript) const;
+                          StringRef SDCPath, StringRef ExtractScript,
+                          StringRef RegionPlacementFile) const;
 
   // Write the script to extract the timing analysis results from quartus.
   void writeTimingScript(raw_ostream &O, raw_ostream &TimingSDCO,
@@ -169,6 +171,8 @@ struct ExternalTimingAnalysis {
                     std::map<VASTSeqValue*, float> &Srcs);
 };
 }
+
+std::string ExternalTimingAnalysis::Placement;
 
 void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, LeafSet &Leaves,
                                           std::map<VASTSeqValue*, float> &Srcs) {
@@ -328,12 +332,14 @@ void
 ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
                                            StringRef NetlistPath,
                                            StringRef SDCPath,
-                                           StringRef ExtractScript) const {
+                                           StringRef ExtractScript,
+                                           StringRef RegionPlacementFile) const {
   const char *LUAPath[] = { "TimingAnalysis", "Device" };
   const std::string &DeviceName = getStrValueFromEngine(LUAPath);
 
   O << "load_package flow\n"
        "load_package report\n"
+       "load_package incremental_compilation\n"
     << "project_new  -overwrite " << VM.getName() << " \n"
 //       "set_global_assignment -name FAMILY \"Cyclone IV E\"\n"
        "set_global_assignment -name DEVICE " << DeviceName << "\n"
@@ -347,50 +353,39 @@ ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
        "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
        "set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW\n"
        //"set_global_assignment -name SYNTH_TIMING_DRIVEN_SYNTHESIS OFF\n"
-       "set_global_assignment -name TIMEQUEST_REPORT_SCRIPT_INCLUDE_DEFAULT_ANALYSIS OFF\n"
-       "set_location_assignment PIN_V6 -to fin\n"
-       "set_location_assignment PIN_U5 -to return_value[0]\n"
-       "set_location_assignment PIN_AL22 -to return_value[1]\n"
-       "set_location_assignment PIN_D13 -to return_value[2]\n"
-       "set_location_assignment PIN_C19 -to return_value[3]\n"
-       "set_location_assignment PIN_AU9 -to return_value[4]\n"
-       "set_location_assignment PIN_C26 -to return_value[5]\n"
-       "set_location_assignment PIN_AP9 -to return_value[6]\n"
-       "set_location_assignment PIN_J8 -to return_value[7]\n"
-       "set_location_assignment PIN_AJ25 -to return_value[8]\n"
-       "set_location_assignment PIN_G29 -to return_value[9]\n"
-       "set_location_assignment PIN_J5 -to return_value[10]\n"
-       "set_location_assignment PIN_U10 -to return_value[11]\n"
-       "set_location_assignment PIN_F12 -to return_value[12]\n"
-       "set_location_assignment PIN_V28 -to return_value[13]\n"
-       "set_location_assignment PIN_L23 -to return_value[14]\n"
-       "set_location_assignment PIN_K32 -to return_value[15]\n"
-       "set_location_assignment PIN_R5 -to return_value[16]\n"
-       "set_location_assignment PIN_AE17 -to return_value[17]\n"
-       "set_location_assignment PIN_C30 -to return_value[18]\n"
-       "set_location_assignment PIN_AB13 -to return_value[19]\n"
-       "set_location_assignment PIN_AL14 -to return_value[20]\n"
-       "set_location_assignment PIN_N19 -to return_value[21]\n"
-       "set_location_assignment PIN_C17 -to return_value[22]\n"
-       "set_location_assignment PIN_AM22 -to return_value[23]\n"
-       "set_location_assignment PIN_D11 -to return_value[24]\n"
-       "set_location_assignment PIN_AG34 -to return_value[25]\n"
-       "set_location_assignment PIN_AP23 -to return_value[26]\n"
-       "set_location_assignment PIN_C9 -to return_value[27]\n"
-       "set_location_assignment PIN_AV31 -to return_value[28]\n"
-       "set_location_assignment PIN_AG31 -to return_value[29]\n"
-       "set_location_assignment PIN_M20 -to return_value[30]\n"
-       "set_location_assignment PIN_AU10 -to return_value[31]\n"
-       "set_location_assignment PIN_AB34 -to clk\n"
-       "set_location_assignment PIN_AA35 -to rstN\n"
-       "set_location_assignment PIN_T9 -to start\n"
        "export_assignments\n"
        // Start the processes.
        "execute_module -tool map\n"
+       "initialize_logiclock\n"
+       "set_logiclock ";
+  if (Placement.empty())
+    O << "-auto_size true -floating true ";
+  else
+    O << Placement;
+
+  O << " -region main\n"
+       "set_logiclock_contents -region main -to main\n"
        "execute_module -tool fit -arg --early_timing_estimate\n"
        "execute_module -tool sta -args {--report_script \"";
   O.write_escaped(ExtractScript);
   O << "\"}\n"
+       "load_report\n"
+       "set panel {Fitter||Resource Section||LogicLock Region Resource Usage}\n"
+       "set id [get_report_panel_id $panel]\n"
+       "set origin [get_report_panel_data -col 2 -row_name {    -- Origin} -id $id]\n"
+       "set height [get_report_panel_data -col 2 -row_name {    -- Height} -id $id]\n"
+       "set width [get_report_panel_data -col 2 -row_name {    -- Width} -id $id]\n"
+       "post_message -type info $origin\n"
+       "post_message -type info $height\n"
+       "post_message -type info $width\n"
+       "set RegionPlacementFile [open \"";
+  O.write_escaped(RegionPlacementFile);
+  O << "\" w+]\n"
+       "puts $RegionPlacementFile \"-origin $origin -height $height -width $width \"\n";
+  // Close the array and the file object.
+  O << "close $RegionPlacementFile\n";
+       "unload_report\n"
+       "uninitialize_logiclock\n"
        "project_close\n";
 }
 
@@ -482,6 +477,8 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
     CurLeaves.clear();
     U->extractSupportingSeqVal(CurLeaves);
     U.getGuard()->extractSupportingSeqVal(CurLeaves);
+    // Also extract the arrival time from the slot register.
+    // CurLeaves.insert(U.getSlot()->getValue());
 
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
@@ -686,13 +683,17 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   NetlistO.close();
   errs() << " done. \n";
 
+  SmallString<256> RegionPlacement(OutputDir);
+  sys::path::append(RegionPlacement, VM.getName() + ".rgp");
+
   // Write the project script.
   SmallString<256> PrjTcl(OutputDir);
   sys::path::append(PrjTcl, VM.getName() + ".tcl");
   errs() << "Writing '" << PrjTcl.str() << "'... ";
   raw_fd_ostream PrjTclO(PrjTcl.c_str(), ErrorInfo);
   if (!ErrorInfo.empty())  return exitWithError(PrjTcl);
-  writeProjectScript(PrjTclO, Netlist, TimingSDC, TimingExtractTcl);
+  writeProjectScript(PrjTclO, Netlist, TimingSDC, TimingExtractTcl,
+                     RegionPlacement);
   PrjTclO.close();
   errs() << " done. \n";
 
@@ -710,7 +711,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   sys::Path Empty;
   const sys::Path *Redirects[] = { &Empty, &Empty, &Empty };
   errs() << "Running '" << quartus.str() << " ' program... ";
-  if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, 0, 0, 0,
+  if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, 0/*Redirects*/, 0, 0,
                                    &ErrorInfo)) {
     errs() << "Error: " << ErrorInfo <<'\n';
     return false;
@@ -720,6 +721,18 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
 
   if (!readTimingAnalysisResult(TimingExtractResult))
     return false;
+
+  OwningPtr<MemoryBuffer> File;
+  if (error_code ec = MemoryBuffer::getFile(RegionPlacement, File)) {
+    errs() <<  "Could not open input file: " <<  ec.message() << '\n';
+    return false;
+  }
+
+  StringRef PlacementRef = File->getBuffer();
+  while (isspace(PlacementRef.back()))
+    PlacementRef = PlacementRef.drop_back();
+
+  Placement.assign(PlacementRef.data(), PlacementRef.size());
 
   return true;
 }

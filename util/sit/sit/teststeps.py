@@ -944,43 +944,6 @@ set_global_assignment -name EDA_MAP_ILLEGAL_CHARACTERS ON -section_id eda_simula
 set_global_assignment -name EDA_TIME_SCALE "1 ps" -section_id eda_simulation
 set_global_assignment -name EDA_ENABLE_GLITCH_FILTERING ON -section_id eda_simulation
 
-set_location_assignment PIN_V6 -to fin
-set_location_assignment PIN_U5 -to return_value[0]
-set_location_assignment PIN_AL22 -to return_value[1]
-set_location_assignment PIN_D13 -to return_value[2]
-set_location_assignment PIN_C19 -to return_value[3]
-set_location_assignment PIN_AU9 -to return_value[4]
-set_location_assignment PIN_C26 -to return_value[5]
-set_location_assignment PIN_AP9 -to return_value[6]
-set_location_assignment PIN_J8 -to return_value[7]
-set_location_assignment PIN_AJ25 -to return_value[8]
-set_location_assignment PIN_G29 -to return_value[9]
-set_location_assignment PIN_J5 -to return_value[10]
-set_location_assignment PIN_U10 -to return_value[11]
-set_location_assignment PIN_F12 -to return_value[12]
-set_location_assignment PIN_V28 -to return_value[13]
-set_location_assignment PIN_L23 -to return_value[14]
-set_location_assignment PIN_K32 -to return_value[15]
-set_location_assignment PIN_R5 -to return_value[16]
-set_location_assignment PIN_AE17 -to return_value[17]
-set_location_assignment PIN_C30 -to return_value[18]
-set_location_assignment PIN_AB13 -to return_value[19]
-set_location_assignment PIN_AL14 -to return_value[20]
-set_location_assignment PIN_N19 -to return_value[21]
-set_location_assignment PIN_C17 -to return_value[22]
-set_location_assignment PIN_AM22 -to return_value[23]
-set_location_assignment PIN_D11 -to return_value[24]
-set_location_assignment PIN_AG34 -to return_value[25]
-set_location_assignment PIN_AP23 -to return_value[26]
-set_location_assignment PIN_C9 -to return_value[27]
-set_location_assignment PIN_AV31 -to return_value[28]
-set_location_assignment PIN_AG31 -to return_value[29]
-set_location_assignment PIN_M20 -to return_value[30]
-set_location_assignment PIN_AU10 -to return_value[31]
-set_location_assignment PIN_AB34 -to clk
-set_location_assignment PIN_AA35 -to rstN
-set_location_assignment PIN_T9 -to start
-
 set ENABLE_PHYSICAL_SYNTHESIS "OFF"
 
 source {{ [config_dir, 'quartus_compile.tcl']|joinpath }}
