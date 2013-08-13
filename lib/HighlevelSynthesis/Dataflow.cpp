@@ -207,6 +207,29 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
            << " Old delay " << OldDelay
            << '(' << ((delay - OldDelay) / delay) << ')' << " \n"
            << "Src: " << *V << " Dst: " << *Inst << '\n';
+
+    BasicBlock *ParentBB = S->getParent();
+
+    // Adjust to actual parent BB for the incoming value.
+    if (isa<PHINode>(Inst) || isa<BranchInst>(Inst) || isa<SwitchInst>(Inst)) {
+      S = S->getParentGroup();
+      if (BasicBlock *BB = S->getParent())
+        ParentBB = BB;
+    }
+
+    assert((ParentBB == Inst->getParent() || isa<PHINode>(Inst)) &&
+           "Parent not match!");
+
+    if (Instruction *Def = dyn_cast<Instruction>(V)) {
+      // While Src not dominate BB, this is due to CFG folding. We need to get the
+      // parent BB of the actual user, this can be done by move up in the subgroup
+      // tree until we get a BB that is dominated by Src.
+      while (!DT->dominates(Def->getParent(), ParentBB)) {
+        S = S->getParentGroup();
+        ParentBB = S->getParent();
+        dbgs() << "Move up!\n";
+      }
+    }
   }
 
   updateDelay(delay, Ratio, OldAnnotation);
