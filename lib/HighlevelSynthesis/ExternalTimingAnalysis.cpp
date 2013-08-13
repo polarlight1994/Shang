@@ -188,7 +188,7 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, LeafSet &Leaves,
   assert(I != DelayMatrix.end() && "Fanin delay not available!");
   const SrcInfo &FIDelays = I->second;
 
-  bool AnyPathMissed = false;
+  SmallVector<VASTSeqValue*, 4> MissedLeaves;
 
   typedef LeafSet::iterator iterator;
   typedef SrcInfo::const_iterator src_iterator;
@@ -199,7 +199,7 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, LeafSet &Leaves,
     // If there is more than one paths between Leaf and selector, the delay
     // is not directly available.
     if (J == FIDelays.end()) {
-      AnyPathMissed |= true;
+      MissedLeaves.push_back(Leaf);
       continue;
     }
 
@@ -208,13 +208,8 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, LeafSet &Leaves,
     OldDelay = std::max(OldDelay, *J->second);
   }
 
-  if (!AnyPathMissed)
+  if (MissedLeaves.empty())
     return;
-
-  // Only keep the missed leaves in the leaves set.
-  for (std::map<VASTSeqValue*, float>::const_iterator SI = Srcs.begin(),
-       SE = Srcs.end(); SI != SE; ++SI)
-    Leaves.erase(SI->first);
 
   // Get the delay through annotated nodes.
   VASTSeqOp *Op = L.Op;
@@ -241,7 +236,9 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, LeafSet &Leaves,
     assert(SrcI != DelayMatrix.end() && "Fanin delay not available!");
     const SrcInfo &LeavesDelays = SrcI->second;
 
-    for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
+    typedef SmallVector<VASTSeqValue*, 4>::iterator leaf_iterator;
+    for (leaf_iterator I = MissedLeaves.begin(), E = MissedLeaves.end();
+         I != E; ++I) {
       VASTSeqValue *Leaf = *I;
       src_iterator ThuSrcI = LeavesDelays.find(Leaf);
       if (ThuSrcI == LeavesDelays.end())
