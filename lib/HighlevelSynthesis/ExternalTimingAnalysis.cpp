@@ -372,8 +372,12 @@ ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
          "set_logiclock -enabled true -auto_size true -floating true -region main\n"
          "set_logiclock_contents -region main -to " << VM.getName() << "\n";
   }
-
-  O << "execute_module -tool fit -arg --early_timing_estimate\n"
+  // Set virtual pins.
+  O << "set_instance_assignment -name VIRTUAL_PIN ON -to rstN\n"
+       "set_instance_assignment -name VIRTUAL_PIN ON -to start\n"
+       "set_instance_assignment -name VIRTUAL_PIN ON -to fin\n"
+       "set_instance_assignment -name VIRTUAL_PIN ON -to return_value\n"
+       "execute_module -tool fit -arg --early_timing_estimate\n"
        "execute_module -tool sta -args {--report_script \"";
   O.write_escaped(ExtractScript);
   O << "\"}\n";

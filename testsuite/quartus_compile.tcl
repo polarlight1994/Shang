@@ -67,5 +67,11 @@ set_global_assignment -name SYNTH_PROTECT_SDC_CONSTRAINT ON
 
 # Compile project.
 execute_module -tool map
+
+set_instance_assignment -name VIRTUAL_PIN ON -to rstN
+set_instance_assignment -name VIRTUAL_PIN ON -to start
+set_instance_assignment -name VIRTUAL_PIN ON -to fin
+set_instance_assignment -name VIRTUAL_PIN ON -to return_value
+
 execute_module -tool fit
 
