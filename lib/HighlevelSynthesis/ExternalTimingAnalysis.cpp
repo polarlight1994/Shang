@@ -167,6 +167,8 @@ struct ExternalTimingAnalysis {
 
   bool analysisWithSynthesisTool();
 
+  bool readRegionPlacement(StringRef RegionPlacementPath);
+
   void getPathDelay(const VASTLatch &L, LeafSet &Leaves,
                     std::map<VASTSeqValue*, float> &Srcs);
 };
@@ -723,8 +725,12 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   if (!readTimingAnalysisResult(TimingExtractResult))
     return false;
 
+  return readRegionPlacement(RegionPlacement);
+}
+
+bool ExternalTimingAnalysis::readRegionPlacement(StringRef RegionPlacementPath){
   OwningPtr<MemoryBuffer> File;
-  if (error_code ec = MemoryBuffer::getFile(RegionPlacement, File)) {
+  if (error_code ec = MemoryBuffer::getFile(RegionPlacementPath, File)) {
     errs() <<  "Could not open input file: " <<  ec.message() << '\n';
     return false;
   }
