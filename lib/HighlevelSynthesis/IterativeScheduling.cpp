@@ -63,7 +63,8 @@ public:
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequired<Dataflow>();
+    AU.addRequired<DataflowAnnotation>();
+    AU.addPreserved<DataflowAnnotation>();
   }
 
   void recoverOutputPath();
