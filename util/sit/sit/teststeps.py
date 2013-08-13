@@ -945,11 +945,18 @@ set_global_assignment -name EDA_MAP_ILLEGAL_CHARACTERS ON -section_id eda_simula
 set_global_assignment -name EDA_TIME_SCALE "1 ps" -section_id eda_simulation
 set_global_assignment -name EDA_ENABLE_GLITCH_FILTERING ON -section_id eda_simulation
 
-set ENABLE_PHYSICAL_SYNTHESIS "OFF"
+export_assignments
+
+# Compile project.
+execute_module -tool map
 
 {{ location_constraints }}
 
-source {{ [config_dir, 'quartus_compile.tcl']|joinpath }}
+# Commit assignments
+export_assignments
+
+execute_module -tool fit
+
 execute_module -tool sta -args {--report_script {{ [hls_base_dir, test_name + "_report_timing.tcl"]|joinpath }} }
 
 source {{ [config_dir, 'report_json_data.tcl']|joinpath }}

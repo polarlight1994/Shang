@@ -217,8 +217,11 @@ def generate_location_constraints(sql_path) :
   location_constraints = ''
 
   for node, x, y, width, height in con.execute('''SELECT node, x, y, width, height FROM locations'''):
-    constraint = 'set_location_assignment CUSTOM_REGION_X%(x)d_Y%(y)d_X%(x_w)d_Y%(y_h)d -to %(node)s' % {
-                 'node' : node, 'x' : x, 'y' : y, 'x_w' : (x + width), 'y_h' : (y + height) }
+    constraint = '''
+load_package incremental_compilation
+set_logiclock -enabled true -origin X%(x)d_Y%(y)d -width %(w)d -height %(h)d -auto_size false -floating false -region %(node)s
+set_logiclock_contents -region %(node)s -to %(node)s ''' % {
+  'node' : node, 'x' : x, 'y' : y, 'w' : width, 'h' : height }
     location_constraints += constraint + '\n'
 
   #Close the connection.

@@ -351,29 +351,23 @@ ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
   O.write_escaped(SDCPath);
   O << "\"\n";
 
-  if (VM.hasBoundingBoxConstraint())
-    O << "set_location_assignment CUSTOM_REGION_X" << VM.getBBX()
-      << "_Y" << VM.getBBY() << "_X" << (VM.getBBX() + VM.getBBWidth())
-      << "_Y" << (VM.getBBY() + VM.getBBHeight()) << " -to "
-      << VM.getName() << '\n';
-
   O << "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
        "set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW\n"
        //"set_global_assignment -name SYNTH_TIMING_DRIVEN_SYNTHESIS OFF\n"
        "set_global_assignment -name TIMEQUEST_REPORT_SCRIPT_INCLUDE_DEFAULT_ANALYSIS OFF\n"
        "export_assignments\n"
        // Start the processes.
-       "execute_module -tool map\n";
-  if (!VM.hasBoundingBoxConstraint()) {
-    O << "initialize_logiclock\n"
-         "set_logiclock -enabled true -auto_size true -floating true -region main\n"
-         "set_logiclock_contents -region main -to " << VM.getName() << "\n";
-  }
-  // Set virtual pins.
-  O << "set_instance_assignment -name VIRTUAL_PIN ON -to rstN\n"
-       "set_instance_assignment -name VIRTUAL_PIN ON -to start\n"
-       "set_instance_assignment -name VIRTUAL_PIN ON -to fin\n"
-       "set_instance_assignment -name VIRTUAL_PIN ON -to return_value\n"
+       "execute_module -tool map\n"
+       "set_logiclock -enabled true ";
+  if (!VM.hasBoundingBoxConstraint())
+    O << "-auto_size true -floating true ";
+  else
+    O << "-origin X" << VM.getBBX() << "_Y" << VM.getBBY()
+      << " -width " << VM.getBBWidth() << " -height " << VM.getBBHeight()
+      << " -auto_size false -floating false ";
+  O << "-region main\n"
+       "set_logiclock_contents -region main -to " << VM.getName() << "\n"
+       "export_assignments\n"
        "execute_module -tool fit -arg --early_timing_estimate\n"
        "execute_module -tool sta -args {--report_script \"";
   O.write_escaped(ExtractScript);
@@ -381,23 +375,22 @@ ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
 
   // Get the regional placement if we do not have the bounding box constraint.
   if (!VM.hasBoundingBoxConstraint()) {
-  O << "load_report\n"
-       "set panel {Fitter||Resource Section||LogicLock Region Resource Usage}\n"
-       "set id [get_report_panel_id $panel]\n"
-       "set origin [get_report_panel_data -col 2 -row_name {    -- Origin} -id $id]\n"
-       "set height [get_report_panel_data -col 2 -row_name {    -- Height} -id $id]\n"
-       "set width [get_report_panel_data -col 2 -row_name {    -- Width} -id $id]\n"
-       "post_message -type info $origin\n"
-       "post_message -type info $height\n"
-       "post_message -type info $width\n"
-       "set RegionPlacementFile [open \"";
-  O.write_escaped(RegionPlacementFile);
-  O << "\" w+]\n"
-       "puts $RegionPlacementFile \"$origin,$width,$height \"\n";
-  // Close the array and the file object.
-  O << "close $RegionPlacementFile\n";
-       "unload_report\n"
-       "uninitialize_logiclock\n";
+    O << "load_report\n"
+         "set panel {Fitter||Resource Section||LogicLock Region Resource Usage}\n"
+         "set id [get_report_panel_id $panel]\n"
+         "set origin [get_report_panel_data -col 2 -row_name {    -- Origin} -id $id]\n"
+         "set height [get_report_panel_data -col 2 -row_name {    -- Height} -id $id]\n"
+         "set width [get_report_panel_data -col 2 -row_name {    -- Width} -id $id]\n"
+         "post_message -type info $origin\n"
+         "post_message -type info $height\n"
+         "post_message -type info $width\n"
+         "set RegionPlacementFile [open \"";
+    O.write_escaped(RegionPlacementFile);
+    O << "\" w+]\n"
+         "puts $RegionPlacementFile \"$origin,$width,$height \"\n";
+    // Close the array and the file object.
+    O << "close $RegionPlacementFile\n";
+         "unload_report\n";
   }
   O << "project_close\n";
 }

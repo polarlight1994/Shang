@@ -587,7 +587,8 @@ void VASTModule::printModuleDecl(raw_ostream &OS) const {
   Ports.front()->print(OS.indent(4));
   for (PortVector::const_iterator I = Ports.begin() + 1, E = Ports.end();
        I != E; ++I) {
-    OS << ",\n";
+    // Assign the ports to virtual pins.
+    OS << ",\n (* altera_attribute = \"-name VIRTUAL_PIN on\" *)";
     (*I)->print(OS.indent(4));
   }
   OS << ");\n";
