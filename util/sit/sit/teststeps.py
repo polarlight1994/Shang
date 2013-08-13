@@ -916,7 +916,7 @@ class AlteraSynStep(TestStep) :
                             report_path = os.path.join(self.hls_base_dir, self.test_name + "_report_timing.tcl"),
                             period = 1000.0 / self.fmax,
                             factor = self.shang_constraints_factor)
-    self.location_constraints = generate_location_constraints(sql_path = os.path.join(self.hls_base_dir, self.test_name + ".sql"))
+    self.location_constraints = altera.generate_location_constraints(sql_path = os.path.join(self.hls_base_dir, self.test_name + ".sql"))
 
     self.altera_synthesis_script = os.path.join(self.altera_synthesis_base_dir, 'setup_prj.tcl')
     self.generateFileFromTemplate('''# Load necessary package.
