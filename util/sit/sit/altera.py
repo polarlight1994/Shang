@@ -204,6 +204,28 @@ if { $report_path_info && (%(cnd_string)s) } {
   #Close the connection.
   con.close()
 
+def generate_location_constraints(sql_path) :
+  # Initialize the sql database.
+  sql_script = open(sql_path, 'r')
+  con = sqlite3.connect(":memory:")
+
+  # Build the location database.
+  con.executescript(sql_script.read())
+  con.commit()
+  sql_script.close();
+
+  location_constraints = ''
+
+  for node, x, y, width, height in con.execute('''SELECT node, x, y, width, height FROM locations'''):
+    constraint = 'set_location_assignment CUSTOM_REGION_X%(x)d_Y%(y)d_X%(x_w)d_Y%(y_h)d -to %(node)s' % {
+                 'node' : node, 'x' : x, 'y' : y, 'x_w' : (x + width), 'y_h' : (y + height) }
+    location_constraints += constraint + '\n'
+
+  #Close the connection.
+  con.close()
+
+  return location_constraints;
+
 if __name__=='__main__':
   parser = argparse.ArgumentParser(description='Altera SDC Script Generator')
   parser.add_argument("--sql", type=str, help="The script to build the sql database")
@@ -214,3 +236,5 @@ if __name__=='__main__':
 
   args = parser.parse_args()
   generate_scripts(sql_path = args.sql, sdc_path = args.sdc, report_path = args.report, period = args.period, factor = args.factor)
+
+  print generate_location_constraints(sql_path = args.sql)

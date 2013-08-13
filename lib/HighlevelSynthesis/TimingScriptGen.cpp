@@ -511,6 +511,17 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
     delete I->second;
   }
 
+  // Also generate the location constraints.
+  OS << "CREATE TABLE locations( \
+        id INTEGER PRIMARY KEY AUTOINCREMENT, \
+        node TEXT, x INTEGER, y INTEGER, width INTEGER, height INTEGER);\n";
+  if (VM.hasBoundingBoxConstraint()) {
+    OS << "INSERT INTO locations(node, x, y, width, height) VALUES(\""
+       << VM.getName() << "\", "
+       << VM.getBBX() << ", " << VM.getBBY() << ", "
+       << VM.getBBWidth()  << ", " << VM.getBBHeight() << ");\n";
+  }
+
   OS.flush();
 
   OS.setStream(nulls());

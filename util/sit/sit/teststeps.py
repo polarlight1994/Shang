@@ -916,6 +916,7 @@ class AlteraSynStep(TestStep) :
                             report_path = os.path.join(self.hls_base_dir, self.test_name + "_report_timing.tcl"),
                             period = 1000.0 / self.fmax,
                             factor = self.shang_constraints_factor)
+    self.location_constraints = generate_location_constraints(sql_path = os.path.join(self.hls_base_dir, self.test_name + ".sql"))
 
     self.altera_synthesis_script = os.path.join(self.altera_synthesis_base_dir, 'setup_prj.tcl')
     self.generateFileFromTemplate('''# Load necessary package.
@@ -945,6 +946,8 @@ set_global_assignment -name EDA_TIME_SCALE "1 ps" -section_id eda_simulation
 set_global_assignment -name EDA_ENABLE_GLITCH_FILTERING ON -section_id eda_simulation
 
 set ENABLE_PHYSICAL_SYNTHESIS "OFF"
+
+{{ location_constraints }}
 
 source {{ [config_dir, 'quartus_compile.tcl']|joinpath }}
 execute_module -tool sta -args {--report_script {{ [hls_base_dir, test_name + "_report_timing.tcl"]|joinpath }} }
