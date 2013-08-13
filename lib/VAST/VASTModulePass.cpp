@@ -1061,6 +1061,10 @@ bool VASTModulePass::runOnFunction(Function &F) {
 VASTModule &VASTModulePass::rebuildModule() {
   // Get the old VASTModule
   VASTModuleAnalysis &VMA = getAnalysis<VASTModuleAnalysis>();
+  // Preserve the bounding box constraint.
+  unsigned BBX = VMA->getBBX(), BBY = VMA->getBBY(),
+           BBWidth = VMA->getBBWidth(), BBHeight = VMA->getBBHeight();
+
   // And the corresponding LLVM Function, we will rebuild the VASTModule based
   // on the LLVM FUnction.
   Function &F = (*VMA).getLLVMFunction();
@@ -1068,6 +1072,8 @@ VASTModule &VASTModulePass::rebuildModule() {
   // Release and rebuild.
   VMA.releaseMemory();
   VMA.runOnFunction(F);
+
+  VMA->setBoundingBoxConstraint(BBX, BBY, BBWidth, BBHeight);
 
   return *VMA;
 }

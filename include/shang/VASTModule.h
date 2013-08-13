@@ -153,6 +153,8 @@ private:
 
   // The Name of the Design.
   std::string Name;
+  // The placement constraint of the bounding box. The constraint is in the
+  unsigned BBX, BBY, BBWidth, BBHeight;
   // The corresponding function for this module.
   Function &F;
 
@@ -170,6 +172,18 @@ public:
   void reset();
 
   const std::string &getName() const { return Name; }
+
+  bool hasBoundingBoxConstraint() const {
+    return BBX && BBY && BBWidth && BBHeight;
+  }
+
+  unsigned getBBX() const { return BBX; }
+  unsigned getBBY() const { return BBY; }
+  unsigned getBBWidth() const { return BBWidth; }
+  unsigned getBBHeight() const { return BBHeight; }
+
+  void setBoundingBoxConstraint(unsigned BBX, unsigned BBY, unsigned BBWidth,
+                                unsigned BBHeight);
 
   // Functions to generate verilog code.
   void printDatapath(raw_ostream &OS) const;

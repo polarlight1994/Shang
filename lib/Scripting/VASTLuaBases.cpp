@@ -416,9 +416,17 @@ const VASTSlot *VASTModule::getFinishSlot() const {
 
 VASTModule::VASTModule(Function &F)
   : VASTNode(vastModule), Datapath(new DatapathContainer()),
-    Ports(NumSpecialPort), Name(F.getName().str()), F(F),
-    NumArgPorts(0) {
+    Ports(NumSpecialPort), Name(F.getName().str()), BBX(0), BBY(0), BBWidth(0),
+    BBHeight(0), F(F), NumArgPorts(0) {
   createStartSlot();
+}
+
+void VASTModule::setBoundingBoxConstraint(unsigned BBX, unsigned BBY,
+                                          unsigned BBWidth, unsigned BBHeight) {
+  this->BBX = BBX;
+  this->BBY = BBY;
+  this->BBWidth = BBWidth;
+  this->BBHeight = BBHeight;
 }
 
 void VASTModule::reset() {
