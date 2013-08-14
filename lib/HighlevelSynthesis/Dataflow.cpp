@@ -206,7 +206,8 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
            << ") "<< Slack << ' ' << delay
            << " Old delay " << OldDelay
            << '(' << ((delay - OldDelay) / delay) << ')' << " \n"
-           << "Src: " << *V << " Dst: " << *Inst << '\n';
+           << "Src: " << *V << '(' << V.IsLauch() << ')'
+           << " Dst: " << *Inst << '(' << Inst.IsLauch() << ')' << '\n';
 
     BasicBlock *ParentBB = S->getParent();
 
