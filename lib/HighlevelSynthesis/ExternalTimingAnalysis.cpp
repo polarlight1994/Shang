@@ -128,9 +128,13 @@ struct ExternalTimingAnalysis {
   void writeNetlist(raw_ostream &O) const;
 
   // Write the project file to perform the timing analysis.
-  void writeProjectScript(raw_ostream &O, StringRef NetlistPath,
-                          StringRef SDCPath, StringRef ExtractScript,
-                          StringRef RegionPlacementFile) const;
+  void writeMapDesignScript(raw_ostream &O, StringRef NetlistPath,
+                            StringRef SDCPath) const;
+  void writeFitDesignScript(raw_ostream &O, bool DontFit, bool EnableETA) const;
+  void writeTimingAnalysisDriver(raw_ostream &O, StringRef ExtractScript,
+                                 bool PostMapOnly) const;
+  void writeReadPlacementScript(raw_ostream &O,
+                                StringRef RegionPlacementFile) const;
 
   // Write the script to extract the timing analysis results from quartus.
   void writeTimingScript(raw_ostream &O, raw_ostream &TimingSDCO,
@@ -328,72 +332,7 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {
   Out.flush();
 }
 
-void
-ExternalTimingAnalysis::writeProjectScript(raw_ostream &O,
-                                           StringRef NetlistPath,
-                                           StringRef SDCPath,
-                                           StringRef ExtractScript,
-                                           StringRef RegionPlacementFile) const {
-  const char *LUAPath[] = { "TimingAnalysis", "Device" };
-  const std::string &DeviceName = getStrValueFromEngine(LUAPath);
 
-  O << "load_package flow\n"
-       "load_package report\n"
-       "load_package incremental_compilation\n"
-    << "project_new  -overwrite " << VM.getName() << " \n"
-//       "set_global_assignment -name FAMILY \"Cyclone IV E\"\n"
-       "set_global_assignment -name DEVICE " << DeviceName << "\n"
-       "set_global_assignment -name TOP_LEVEL_ENTITY " << VM.getName() << "\n"
-       "set_global_assignment -name SOURCE_FILE \"";
-  O.write_escaped(NetlistPath);
-  O << "\"\n"
-       "set_global_assignment -name SDC_FILE \"";
-  O.write_escaped(SDCPath);
-  O << "\"\n";
-
-  O << "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
-       "set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW\n"
-       //"set_global_assignment -name SYNTH_TIMING_DRIVEN_SYNTHESIS OFF\n"
-       "set_global_assignment -name TIMEQUEST_REPORT_SCRIPT_INCLUDE_DEFAULT_ANALYSIS OFF\n"
-       "export_assignments\n"
-       // Start the processes.
-       "execute_module -tool map\n"
-       "set_logiclock -enabled true ";
-  if (!VM.hasBoundingBoxConstraint())
-    O << "-auto_size true -floating true ";
-  else
-    O << "-origin X" << VM.getBBX() << "_Y" << VM.getBBY()
-      << " -width " << VM.getBBWidth() << " -height " << VM.getBBHeight()
-      << " -auto_size false -floating false ";
-  O << "-region main\n"
-       "set_logiclock_contents -region main -to " << VM.getName() << "\n"
-       "export_assignments\n"
-       "execute_module -tool fit -arg --early_timing_estimate\n"
-       "execute_module -tool sta -args {--report_script \"";
-  O.write_escaped(ExtractScript);
-  O << "\"}\n";
-
-  // Get the regional placement if we do not have the bounding box constraint.
-  if (!VM.hasBoundingBoxConstraint()) {
-    O << "load_report\n"
-         "set panel {Fitter||Resource Section||LogicLock Region Resource Usage}\n"
-         "set id [get_report_panel_id $panel]\n"
-         "set origin [get_report_panel_data -col 2 -row_name {    -- Origin} -id $id]\n"
-         "set height [get_report_panel_data -col 2 -row_name {    -- Height} -id $id]\n"
-         "set width [get_report_panel_data -col 2 -row_name {    -- Width} -id $id]\n"
-         "post_message -type info $origin\n"
-         "post_message -type info $height\n"
-         "post_message -type info $width\n"
-         "set RegionPlacementFile [open \"";
-    O.write_escaped(RegionPlacementFile);
-    O << "\" w+]\n"
-         "puts $RegionPlacementFile \"$origin,$width,$height \"\n";
-    // Close the array and the file object.
-    O << "close $RegionPlacementFile\n";
-         "unload_report\n";
-  }
-  O << "project_close\n";
-}
 
 static std::string GetSTACollection(const VASTSelector *Sel) {
   const std::string &Name = Sel->getSTAObjectName();
@@ -647,6 +586,97 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(StringRef ResultPath) {
 ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF)
   : VM(VM), DF(DF) {}
 
+void
+ExternalTimingAnalysis::writeMapDesignScript(raw_ostream &O,
+                                           StringRef NetlistPath,
+                                           StringRef SDCPath) const {
+  const char *LUAPath[] = { "TimingAnalysis", "Device" };
+  const std::string &DeviceName = getStrValueFromEngine(LUAPath);
+
+  O << "load_package flow\n"
+       "load_package report\n"
+    << "project_new  -overwrite " << VM.getName() << " \n"
+//       "set_global_assignment -name FAMILY \"Cyclone IV E\"\n"
+       "set_global_assignment -name DEVICE " << DeviceName << "\n"
+       "set_global_assignment -name TOP_LEVEL_ENTITY " << VM.getName() << "\n"
+       "set_global_assignment -name SOURCE_FILE \"";
+  O.write_escaped(NetlistPath);
+  O << "\"\n"
+       "set_global_assignment -name SDC_FILE \"";
+  O.write_escaped(SDCPath);
+  O << "\"\n";
+
+  O << "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
+       "set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW\n"
+       //"set_global_assignment -name SYNTH_TIMING_DRIVEN_SYNTHESIS OFF\n"
+       "export_assignments\n"
+       // Start the processes.
+       "execute_module -tool map\n";
+}
+
+void
+ExternalTimingAnalysis::writeFitDesignScript(raw_ostream &O, bool DontFit,
+                                             bool EnableETA) const {
+  O << "load_package incremental_compilation\n"
+       "set_logiclock -enabled true ";
+  if (!VM.hasBoundingBoxConstraint())
+    O << "-auto_size true -floating true ";
+  else
+    O << "-origin X" << VM.getBBX() << "_Y" << VM.getBBY()
+      << " -width " << VM.getBBWidth() << " -height " << VM.getBBHeight()
+      << " -auto_size false -floating false ";
+  O << "-region main\n"
+       "set_logiclock_contents -region main -to " << VM.getName() << "\n"
+       "set_global_assignment -name TIMEQUEST_REPORT_SCRIPT_INCLUDE_DEFAULT_ANALYSIS OFF\n"
+       "export_assignments\n";
+
+  if (DontFit)
+    return;
+
+  O << "execute_module -tool fit";
+  if (EnableETA)
+    O << " -arg --early_timing_estimate";
+  O << '\n';
+}
+
+void
+ExternalTimingAnalysis::writeTimingAnalysisDriver(raw_ostream &O,
+                                                  StringRef ExtractScript,
+                                                  bool PostMapOnly) const {
+  O << "execute_module -tool sta -args { ";
+  if (PostMapOnly)
+    O << "--post_map ";
+  O << "--report_script \"";
+  O.write_escaped(ExtractScript);
+  O << "\"}\n";
+}
+
+void
+ExternalTimingAnalysis::writeReadPlacementScript(raw_ostream &O,
+                                                 StringRef RegionPlacementFile)
+                                                 const {
+  // Get the regional placement if we do not have the bounding box constraint.
+  if (!VM.hasBoundingBoxConstraint()) {
+    O << "load_report\n"
+         "set panel {Fitter||Resource Section||LogicLock Region Resource Usage}\n"
+         "set id [get_report_panel_id $panel]\n"
+         "set origin [get_report_panel_data -col 2 -row_name {    -- Origin} -id $id]\n"
+         "set height [get_report_panel_data -col 2 -row_name {    -- Height} -id $id]\n"
+         "set width [get_report_panel_data -col 2 -row_name {    -- Width} -id $id]\n"
+         "post_message -type info $origin\n"
+         "post_message -type info $height\n"
+         "post_message -type info $width\n"
+         "set RegionPlacementFile [open \"";
+    O.write_escaped(RegionPlacementFile);
+    O << "\" w+]\n"
+         "puts $RegionPlacementFile \"$origin,$width,$height \"\n";
+    // Close the array and the file object.
+    O << "close $RegionPlacementFile\n";
+         "unload_report\n";
+  }
+  O << "project_close\n";
+}
+
 bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   SmallString<256> OutputDir
     = sys::path::parent_path(getStrValueFromEngine("RTLOutput"));
@@ -698,8 +728,10 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   errs() << "Writing '" << PrjTcl.str() << "'... ";
   raw_fd_ostream PrjTclO(PrjTcl.c_str(), ErrorInfo);
   if (!ErrorInfo.empty())  return exitWithError(PrjTcl);
-  writeProjectScript(PrjTclO, Netlist, TimingSDC, TimingExtractTcl,
-                     RegionPlacement);
+  writeMapDesignScript(PrjTclO, Netlist, TimingSDC);
+  writeFitDesignScript(PrjTclO, false, true);
+  writeTimingAnalysisDriver(PrjTclO, TimingExtractTcl, false);
+  writeReadPlacementScript(PrjTclO, RegionPlacement);
   PrjTclO.close();
   errs() << " done. \n";
 
@@ -720,6 +752,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, Redirects, 0, 0,
                                    &ErrorInfo)) {
     errs() << "Error: " << ErrorInfo <<'\n';
+    report_fatal_error("External timing analyze fail!\n");
     return false;
   }
 
