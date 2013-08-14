@@ -460,12 +460,13 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
 
     // Generate the timing constraints
     std::map<DataflowValue, float>::iterator J = EstimatedDelays.find(Src);
-    if (J != EstimatedDelays.end()) {
-      // Use a slightly tighter constraint to tweak the timing.
-      unsigned Cycles = std::max<float>(ceil(J->second - 0.5f), 1.0f);
-      if (Cycles > 1)
-        GenerateTimingConstraints(TimingSDCO, Src->getSelector(), Sel, 0, Cycles);
-    }
+    if (J == EstimatedDelays.end())
+      continue;
+
+    // Use a slightly tighter constraint to tweak the timing.
+    unsigned Cycles = std::max<float>(ceil(J->second), 1.0f);
+    if (Cycles > 1)
+      GenerateTimingConstraints(TimingSDCO, Src->getSelector(), Sel, 0, Cycles);
   }
 
   // Extract path delay in details for leaves that reachable to different fanins
@@ -511,7 +512,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
 
         // Also generate the constraint.
         float delay = DF->getDelay(Leaf, Op, Op->getSlot());
-        unsigned Cycles = std::max<float>(ceil(delay - 0.5f), 1.0f);
+        unsigned Cycles = std::max<float>(ceil(delay), 1.0f);
         if (Cycles > 1)
           GenerateTimingConstraints(TimingSDCO, Leaf->getSelector(), Sel, Expr, Cycles);
       }
