@@ -254,6 +254,16 @@ char TimingDrivenSelectorSynthesis::ID = 0;
 
 char &llvm::TimingDrivenSelectorSynthesisID = TimingDrivenSelectorSynthesis::ID;
 
+static bool intersect(const std::set<VASTSelector*> &LHS,
+                      const std::set<VASTSeqValue*> &RHS) {
+  typedef std::set<VASTSeqValue*>::iterator iterator;
+  for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I)
+    if (LHS.count((*I)->getSelector()))
+      return true;
+
+  return false;
+}
+
 void TimingDrivenSelectorSynthesis::mergeTrivialCones(FIConeVec &Cones,
                                                       VASTExprBuilder &Builder,
                                                       unsigned Bitwidth) {
@@ -361,6 +371,48 @@ bool TimingDrivenSelectorSynthesis::mergeCones(FIConeVec &Cones,
   return AnyChange;
 }
 
+static void
+ApplyKeepAttribute(VASTSelector *Sel, MutableArrayRef<VASTValPtr> Values,
+                   ArrayRef<VASTSlot*> Slots, VASTExprBuilder &Builder) {
+  std::set<VASTSeqValue*> CurLeaves;
+  std::set<VASTSelector*> AllLeaves, IntersectLeaves;
+  typedef std::set<VASTSeqValue*>::iterator leaf_iterator;
+
+  for (unsigned i = 0, e = Values.size(); i != e; ++i) {
+    VASTValPtr V = Values[i];
+
+    CurLeaves.clear();
+    V->extractSupportingSeqVal(CurLeaves, true);
+
+    for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
+         LI != LE; ++LI) {
+      VASTSeqValue *SV = *LI;
+      if (!AllLeaves.insert(SV->getSelector()).second &&
+          !SV->isSlot() && !SV->isFUOutput())
+        IntersectLeaves.insert(SV->getSelector());
+    }
+  }
+
+  for (unsigned i = 0, e = Values.size(); i != e; ++i) {
+    VASTValPtr &V = Values[i];
+    CurLeaves.clear();
+    V->extractSupportingSeqVal(CurLeaves, true);
+
+    if (!intersect(IntersectLeaves, CurLeaves))
+      continue;
+
+    V = Builder.buildKeep(V);
+
+    // The guarding condition itself is not guard, that is, the guarding
+    // condition is read whenever the slot register is set. Hence, we should
+    // annotate it with the control-equivalent group instead of the guarding
+    // condition equivalent group!
+    // FIXME: We can build apply the keep attribute according to the STG
+    // subgroup hierarchy sequentially to relax the constraints.
+    Sel->annotateReadSlot(Slots[i]->getParentState(), Values[i]);
+  }
+}
+
 void
 TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
                                                   VASTExprBuilder &Builder) {
@@ -406,21 +458,11 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       CurGuards.push_back(L.getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
 
-      // Simply keep all guarding condition, because they are only 1 bit nodes,
-      // and their upper bound is the product of number of slots and number of
-      // basic blocks.
-      CurGuard = Builder.buildKeep(CurGuard);
-
-      // The guarding condition itself is not guard, that is, the guarding
-      // condition is read whenever the slot register is set. Hence, we should
-      // annotate it with the control-equivalent group instead of the guarding
-      // condition equivalent group!
-      // FIXME: We can build apply the keep attribute according to the STG
-      // subgroup hierarchy sequentially to relax the constraints.
-      Sel->annotateReadSlot(S->getParentState(), CurGuard);
       SlotGuards.push_back(CurGuard);
       Slots.push_back(S);
     }
+
+    ApplyKeepAttribute(Sel, SlotGuards, Slots, Builder);
 
     VASTValPtr FIGuard = Builder.buildOrExpr(SlotGuards, 1);
     FaninGuards.push_back(FIGuard);
@@ -580,16 +622,6 @@ bool SimpleSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   delete P;
 
   return true;
-}
-
-static bool intersect(const std::set<VASTSelector*> &LHS,
-                      const std::set<VASTSeqValue*> &RHS) {
-  typedef std::set<VASTSeqValue*>::iterator iterator;
-  for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I)
-    if (LHS.count((*I)->getSelector()))
-      return true;
-
-  return false;
 }
 
 void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
