@@ -777,13 +777,25 @@ bool ExternalTimingAnalysis::readRegionPlacement(StringRef RegionPlacementPath){
 
   FileLexer Lexer(File->getBufferStart(), File->getBufferEnd());
   assert(!Lexer.finish() && "Bad placement line!");
-  unsigned BBX = Lexer.getInteger();
+  int BBX = Lexer.getInteger();
   assert(!Lexer.finish() && "Bad placement line!");
-  unsigned BBY = Lexer.getInteger();
+  int BBY = Lexer.getInteger();
   assert(!Lexer.finish() && "Bad placement line!");
-  unsigned BBWidth = Lexer.getInteger();
+  int BBWidth = Lexer.getInteger();
   assert(!Lexer.finish() && "Bad placement line!");
-  unsigned BBHeight = Lexer.getInteger();
+  int BBHeight = Lexer.getInteger();
+
+  // Relax the placement constraints by 10% on both x and y axes.
+  int XSlack = ((BBWidth + 9) * 10) / 10,
+      YSlack = ((BBHeight + 9) * 10) / 10;
+
+  BBX = std::min(185 - (BBWidth + 2 * XSlack), BBX - XSlack);
+  BBX = std::max(1, BBX);
+  BBWidth += 2 * XSlack;
+
+  BBY = std::min(129 - (BBHeight + 2 * YSlack), BBY - YSlack);
+  BBY = std::max(1, BBY);
+  BBHeight += 2 * YSlack;
 
   VM.setBoundingBoxConstraint(BBX, BBY, BBWidth, BBHeight);
 
