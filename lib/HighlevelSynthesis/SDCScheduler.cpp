@@ -18,9 +18,10 @@
 #include "shang/VASTSeqValue.h"
 
 #include "llvm/ADT/StringExtras.h"
-#include "lpsolve/lp_lib.h"
 #define DEBUG_TYPE "sdc-scheduler"
 #include "llvm/Support/Debug.h"
+
+#include "lpsolve/lp_lib.h"
 
 using namespace llvm;
 
@@ -103,7 +104,8 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   bool inserted = SUIdx.insert(std::make_pair(U, Col)).second;
   assert(inserted && "Index already existed!");
   (void) inserted;
-  std::string SVStart;
+  add_columnex(lp, 0, 0,0);
+  DEBUG(std::string SVStart;
   if (U->isBBEntry())
     SVStart = "entry_" + ShangMangle(U->getParent()->getName());
   else if (U->isTerminator()) {
@@ -115,8 +117,8 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   } else
     SVStart = "sv" + utostr_32(U->getIdx());
 
-  DEBUG(dbgs() <<"Col#" << Col << " name: " <<SVStart << "\n");
-  set_col_name(lp, Col, const_cast<char*>(SVStart.c_str()));
+  dbgs() <<"Col#" << Col << " name: " <<SVStart << "\n";
+  set_col_name(lp, Col, const_cast<char*>(SVStart.c_str())););
   set_int(lp, Col, TRUE);
   set_lowbo(lp, Col, EntrySlot);
   return Col + 1;
@@ -132,78 +134,126 @@ unsigned SDCScheduler::createLPAndVariables(iterator I, iterator E) {
     Col = createStepVariable(U, Col);
   }
 
+  return Col;
+}
+
+unsigned SDCScheduler::createSlackVariable(unsigned Col) {
+  add_columnex(lp, 0, 0,0);
+  DEBUG(std::string SlackName = "slack" + utostr_32(Col);
+  dbgs() <<"Col#" << Col << " name: " << SlackName << "\n";
+  set_col_name(lp, Col, const_cast<char*>(SlackName.c_str())););
+  set_int(lp, Col, TRUE);
+  return Col + 1;
+}
+
+unsigned SDCScheduler::createLPAndVariables() {
+  unsigned Col = createLPAndVariables(begin(), end());
+
+  typedef SoftCstrVecTy::iterator iterator;
+  for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
+       I != E; ++I) {
+    I->second.SlackIdx = Col;
+    Col = createSlackVariable(Col);
+  }
+
   return Col - 1;
 }
 
-unsigned SDCScheduler::addSoftConstraint(const VASTSchedUnit *Src, const VASTSchedUnit *Dst,
-                                               unsigned Slack, double Penalty) {
-  if (Src->isScheduled() && Dst->isScheduled()) return 0;
-
-  unsigned NextCol = get_Ncolumns(lp) + 1;
-  SoftConstraint C = { Penalty, Src, Dst, NextCol, Slack };
-  SoftCstrs.push_back(C);
-  std::string SlackName = "slack" + utostr_32(NextCol);
-  DEBUG(dbgs() <<"Col#" << NextCol << " name: " <<SlackName << "\n");
-  set_col_name(lp, NextCol, const_cast<char*>(SlackName.c_str()));
-  set_int(lp, NextCol, TRUE);
-  return NextCol;
+void SDCScheduler::addSoftConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst,
+                                     unsigned C, double Penalty) {
+  SoftConstraint &SC = SoftConstraints[EdgeType(Src, Dst)];
+  assert(!SoftConstraints.count(EdgeType(Dst, Src)) &&
+         "Unexpected conflicted soft constraint!");
+  SC.Penalty = std::max<double>(SC.Penalty * 1.1, Penalty);
+  if (SC.SlackIdx == 0)
+    SC.LastValue = Src->getSchedule() - Dst->getSchedule() + C;
+  SC.C = std::max<unsigned>(SC.C, C);
 }
 
-void SDCScheduler::addSoftConstraints(lprec *lp) {
-  typedef SoftCstrVecTy::iterator iterator;
+void SDCScheduler::addSoftConstraint(lprec *lp,
+                                     VASTSchedUnit *Dst, VASTSchedUnit *Src,
+                                     const SoftConstraint &C) {
+  unsigned DstIdx = 0;
+  int DstSlot = Dst->getSchedule();
+  if (DstSlot == 0)
+    DstIdx = getSUIdx(Dst);
+
+  unsigned SrcIdx = 0;
+  int SrcSlot = Src->getSchedule();
+  if (SrcSlot == 0)
+    SrcIdx = getSUIdx(Src);
+
+  // Build constraint: Dst - Src >= C - V
+  // Compuate the constant by trying to move all the variable to RHS.
+  int RHS = C.C - DstSlot + SrcSlot;
+
+  // Both SU is scheduled.
+  assert(!(SrcSlot && DstSlot) &&
+         "Soft constraint cannot be apply to a fixed edge!");
+
   SmallVector<int, 3> Col;
   SmallVector<REAL, 3> Coeff;
 
-  // Build the constraint Dst - Src <= Latency - Slack
-  // FIXME: Use ConstraintHelper.
-  for (iterator I = SoftCstrs.begin(), E = SoftCstrs.end(); I != E; ++I) {
-    SoftConstraint &C = *I;
-
-    unsigned DstIdx = 0;
-    int DstSlot = C.Dst->getSchedule();
-    if (DstSlot == 0) DstIdx = getSUIdx(C.Dst);
-
-    unsigned SrcIdx = 0;
-    int SrcSlot = C.Src->getSchedule();
-    if (SrcSlot == 0) SrcIdx = getSUIdx(C.Src);
-
-    int RHS = C.Slack - DstSlot + SrcSlot;
-
-    // Both SU is scheduled.
-    if (SrcSlot && DstSlot) continue;
-
-    Col.clear();
-    Coeff.clear();
-
-    // Build the constraint.
-    if (SrcSlot == 0) {
-      Col.push_back(SrcIdx);
-      Coeff.push_back(-1.0);
-    }
-
-    if (DstSlot == 0) {
-      Col.push_back(DstIdx);
-      Coeff.push_back(1.0);
-    }
-
-    // Add the slack variable.
-    Col.push_back(C.SlackIdx);
-    Coeff.push_back(1.0);
-
-    if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), GE, RHS))
-      report_fatal_error("SDCScheduler: Can NOT step soft Constraints"
-                         " SlackIdx:" + utostr_32(C.SlackIdx));
+  // Build the constraint.
+  if (SrcSlot == 0) {
+    Col.push_back(SrcIdx);
+    Coeff.push_back(-1.0);
   }
+
+  if (DstSlot == 0) {
+    Col.push_back(DstIdx);
+    Coeff.push_back(1.0);
+  }
+
+  // Add the slack variable.
+  Col.push_back(C.SlackIdx);
+  Coeff.push_back(1.0);
+
+  if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), GE, RHS))
+    report_fatal_error("SDCScheduler: Can NOT step soft Constraints"
+    " SlackIdx:" + utostr_32(C.SlackIdx));
 }
 
-void SDCScheduler::addSoftConstraintsPenalties(double weight) {
-  typedef SoftCstrVecTy::iterator iterator;
-  for (iterator I = SoftCstrs.begin(), E = SoftCstrs.end(); I != E; ++I) {
-    const SoftConstraint &C = *I;
-    // Ignore the eliminated soft constraints.
-    if (C.SlackIdx == 0) continue;
+double SDCScheduler::getLastPenalty(VASTSchedUnit *Src,
+                                    VASTSchedUnit *Dst) const {
+  const SoftCstrVecTy::const_iterator I
+    = SoftConstraints.find(EdgeType(Src, Dst));
 
-    ObjFn[C.SlackIdx] -= C.Penalty * weight;
+  if (I == SoftConstraints.end())
+    return 0.0;
+
+  return I->second.LastValue * I->second.Penalty;
+}
+
+void SDCScheduler::addSoftConstraints() {
+  unsigned NewConstraints = 0;
+  typedef SoftCstrVecTy::iterator iterator;
+  for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
+       I != E; ++I) {
+    SoftConstraint &C = I->second;
+    // Ignore the eliminated soft constraints.
+    if (C.SlackIdx == 0) ++NewConstraints;
+  }
+
+  unsigned TotalRows = get_Nrows(lp), NumVars = get_Ncolumns(lp);
+  resize_lp(lp, TotalRows + NewConstraints, NumVars + NewConstraints);
+
+  double lastObject = get_var_primalresult(lp, 0);
+
+  for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
+       I != E; ++I) {
+    SoftConstraint &C = I->second;
+
+    if (C.SlackIdx == 0) {
+      VASTSchedUnit *Src = I->first.first, *Dst = I->first.second;
+      C.SlackIdx = ++NumVars;
+      createSlackVariable(NumVars);
+      addSoftConstraint(lp, Dst, Src, C);
+    } else if (C.LastValue == 0)
+      // Reduce the penalty if the constraint is preserved.
+      C.Penalty *= 0.95;
+
+    ObjFn[C.SlackIdx] = - C.Penalty / std::max<double>(C.LastValue, 1.0);
   }
 }
 
@@ -236,12 +286,14 @@ void SDCScheduler::buildOptSlackObject(iterator I, iterator E, double weight) {
   }
 }
 
-void SDCScheduler::buildSchedule(lprec *lp, unsigned TotalRows,
-                                      iterator I, iterator E) {
+unsigned SDCScheduler::buildSchedule(lprec *lp, iterator I, iterator E) {
+  unsigned TotalRows = get_Nrows(lp);
+  unsigned Changed = 0;
+
   while (I != E) {
     VASTSchedUnit *U = I++;
 
-    if (U->isScheduled()) continue;
+    if (U->isEntry()) continue;
 
     unsigned Idx = getSUIdx(U);
     unsigned j = get_var_primalresult(lp, TotalRows + Idx);
@@ -249,62 +301,55 @@ void SDCScheduler::buildSchedule(lprec *lp, unsigned TotalRows,
                  << " the result is:" << j << "\n");
 
     assert(j && "Bad result!");
-    U->scheduleTo(j);
+    if (U->scheduleTo(j))
+      ++Changed;
   }
-}
 
-// Helper function
-static const char *transSolveResult(int result) {
-  if (result == -2) return "NOMEMORY";
-  else if (result > 13) return "Unknown result!";
+  typedef SoftCstrVecTy::iterator iterator;
+  for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
+       I != E; ++I) {
+    SoftConstraint &C = I->second;
+    // Ignore the eliminated soft constraints.
+    if (C.SlackIdx == 0) continue;
 
-  static const char *ResultTable[] = {
-    "OPTIMAL",
-    "SUBOPTIMAL",
-    "INFEASIBLE",
-    "UNBOUNDED",
-    "DEGENERATE",
-    "NUMFAILURE",
-    "USERABORT",
-    "TIMEOUT",
-    "PRESOLVED",
-    "PROCFAIL",
-    "PROCBREAK",
-    "FEASFOUND",
-    "NOFEASFOUND"
-  };
+    unsigned NegativeSlack = get_var_primalresult(lp, TotalRows + C.SlackIdx);
+    if (NegativeSlack != C.LastValue) {
+      C.LastValue = NegativeSlack;
+      ++Changed;
+    }
+  }
 
-  return ResultTable[result];
+  return Changed;
 }
 
 bool SDCScheduler::solveLP(lprec *lp) {
   set_verbose(lp, CRITICAL);
   DEBUG(set_verbose(lp, FULL));
 
-  set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS | PRESOLVE_LINDEP
-                   | PRESOLVE_IMPLIEDFREE | PRESOLVE_REDUCEGCD
-                   | PRESOLVE_PROBEFIX | PRESOLVE_PROBEREDUCE
-                   | PRESOLVE_ROWDOMINATE /*| PRESOLVE_COLDOMINATE lpsolve bug*/
-                   | PRESOLVE_MERGEROWS
-                   | PRESOLVE_BOUNDS,
-               get_presolveloops(lp));
+  set_presolve(lp, PRESOLVE_NONE, get_presolveloops(lp));
+  //set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS | PRESOLVE_LINDEP
+  //                 | PRESOLVE_IMPLIEDFREE | PRESOLVE_REDUCEGCD
+  //                 | PRESOLVE_PROBEFIX | PRESOLVE_PROBEREDUCE
+  //                 | PRESOLVE_ROWDOMINATE /*| PRESOLVE_COLDOMINATE lpsolve bug*/
+  //                 | PRESOLVE_MERGEROWS
+  //                 | PRESOLVE_BOUNDS,
+  //             get_presolveloops(lp));
 
   DEBUG(write_lp(lp, "log.lp"));
 
   unsigned TotalRows = get_Nrows(lp), NumVars = get_Ncolumns(lp);
-  DEBUG(dbgs() << "The model has " << NumVars
-               << "x" << TotalRows << '\n');
+  DEBUG(dbgs() << "The model has " << NumVars << "x" << TotalRows << '\n');
 
   DEBUG(dbgs() << "Timeout is set to " << get_timeout(lp) << "secs.\n");
 
   int result = solve(lp);
 
-  DEBUG(dbgs() << "ILP result is: "<< transSolveResult(result) << "\n");
+  DEBUG(dbgs() << "ILP result is: "<< get_statustext(lp, result) << "\n");
   DEBUG(dbgs() << "Time elapsed: " << time_elapsed(lp) << "\n");
+  DEBUG(dbgs() << "Object: " << get_var_primalresult(lp, 0) << "\n");
 
   switch (result) {
   case INFEASIBLE:
-    delete_lp(lp);
     return false;
   case SUBOPTIMAL:
     DEBUG(dbgs() << "Note: suboptimal schedule found!\n");
@@ -313,7 +358,7 @@ bool SDCScheduler::solveLP(lprec *lp) {
     break;
   default:
     report_fatal_error(Twine("ILPScheduler Schedule fail: ")
-                       + Twine(transSolveResult(result)));
+                       + Twine(get_statustext(lp, result)));
   }
 
   return true;
@@ -351,29 +396,56 @@ void SDCScheduler::printVerision() const {
          << '.' << release << '.' << build << '\n';
 }
 
-bool SDCScheduler::schedule() {
-  DEBUG(printVerision());
+unsigned SDCScheduler::updateSoftConstraintPenalties() {
+  unsigned Changed = 0;
 
-  ObjFn.setLPObj(lp);
+  typedef SoftCstrVecTy::iterator iterator;
+  for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
+       I != E; ++I) {
+    SoftConstraint &C = I->second;
 
+    double &LastPenalty = ObjFn[C.SlackIdx];
+    double NewPenalty = - C.Penalty / std::max<double>(C.LastValue, 1.0);
+    if (LastPenalty != NewPenalty) {
+      LastPenalty = NewPenalty;
+      ++Changed;
+    }
+  }
+
+  return Changed;
+}
+
+void SDCScheduler::addDependencyConstraints() {
   set_add_rowmode(lp, TRUE);
 
   // Build the constraints.
   addDependencyConstraints(lp);
-  addSoftConstraints(lp);
 
   // Turn off the add rowmode and start to solve the model.
   set_add_rowmode(lp, FALSE);
-  unsigned TotalRows = get_Nrows(lp);
+}
 
-  if (!solveLP(lp)) return false;
+bool SDCScheduler::schedule() {
+  DEBUG(printVerision());
 
-  // Schedule the state with the ILP result.
-  buildSchedule(lp, TotalRows, begin(), end());
+  bool changed = true;
 
-  delete_lp(lp);
-  lp = 0;
-  SUIdx.clear();
+  while(changed) {
+    changed = false;
+    ObjFn.setLPObj(lp);
+
+    if (!solveLP(lp)) return false;
+
+    // Schedule the state with the ILP result.
+    changed |= (buildSchedule(lp, begin(), end()) != 0);
+    changed |= (updateSoftConstraintPenalties() != 0);
+  }
+
   ObjFn.clear();
   return true;
+}
+
+SDCScheduler::~SDCScheduler() {
+  if (lp)
+    delete_lp(lp);
 }

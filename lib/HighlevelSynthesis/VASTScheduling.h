@@ -359,7 +359,7 @@ public:
 
   /// scheduleTo - Schedule the VASTSchedUnit to a specific slot.
   ///
-  void scheduleTo(unsigned Step);
+  bool scheduleTo(unsigned Step);
 
   /// getSchedule - Return the schedule of the current Scheduling Unit.
   ///

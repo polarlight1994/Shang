@@ -173,9 +173,11 @@ BasicBlock *VASTSchedUnit::getParent() const {
   return Inst->getParent();
 }
 
-void VASTSchedUnit::scheduleTo(unsigned Step) {
+bool VASTSchedUnit::scheduleTo(unsigned Step) {
+  bool Changed = Step != Schedule;
   assert(Step && "Bad schedule!");
   Schedule = Step;
+  return Changed;
 }
 
 void VASTSchedUnit::resetSchedule() {
@@ -824,6 +826,8 @@ void VASTScheduling::scheduleGlobal() {
   // Build the step variables, and no need to schedule at all if all SUs have
   // been scheduled.
   if (Scheduler.createLPAndVariables()) {
+    Scheduler.addDependencyConstraints();
+
     float TotalWeight = 0.0f;
     float PerformanceFactor = 10.0f;
 

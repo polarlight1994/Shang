@@ -23,21 +23,26 @@ class DominatorTree;
 class SDCScheduler : public SchedulerBase {
   struct SoftConstraint {
     double Penalty;
-    const VASTSchedUnit *Src, *Dst;
-    unsigned SlackIdx, Slack;
+    unsigned SlackIdx;
+    unsigned C;
+    unsigned LastValue;
+
+    SoftConstraint() : Penalty(0.0), SlackIdx(0), C(0), LastValue(0) {}
   };
 public:
 
   typedef VASTSchedGraph::iterator iterator;
   // Set the variables' name in the model.
   unsigned createLPAndVariables(iterator I, iterator E);
-  unsigned addSoftConstraint(const VASTSchedUnit *Src, const VASTSchedUnit *Dst,
-                             unsigned Slack, double Penalty);
+  void addSoftConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst, unsigned C,
+                         double Penalty);
+
+  double getLastPenalty(VASTSchedUnit *Src, VASTSchedUnit *Dst) const;
 
   // Build the schedule object function.
   void buildASAPObject(iterator I, iterator E, double weight);
   void buildOptSlackObject(iterator I, iterator E, double weight);
-  void addSoftConstraintsPenalties(double weight);
+  void addSoftConstraints();
 
   void addObjectCoeff(const VASTSchedUnit *U, double Value) {
     // Ignore the constants.
@@ -89,19 +94,22 @@ private:
   typedef SUI2IdxMapTy::const_iterator SUIdxIt;
   SUI2IdxMapTy SUIdx;
 
-  typedef std::vector<SoftConstraint> SoftCstrVecTy;
-  SoftCstrVecTy SoftCstrs;
+  typedef std::pair<VASTSchedUnit*, VASTSchedUnit*> EdgeType;
+  typedef std::map<EdgeType, SoftConstraint> SoftCstrVecTy;
+  SoftCstrVecTy SoftConstraints;
 
   // Create step variables, which represent the c-step that the VSUnits are
   // scheduled to.
   unsigned createStepVariable(const VASTSchedUnit *U, unsigned Col);
+  unsigned createSlackVariable(unsigned Col);
 
-  void addSoftConstraints(lprec *lp);
-
+  void addSoftConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
+                         const SoftConstraint &C);
+  unsigned updateSoftConstraintPenalties();
   bool solveLP(lprec *lp);
 
   // Build the schedule form the result of ILP.
-  void buildSchedule(lprec *lp, unsigned TotalRows, iterator I, iterator E);
+  unsigned buildSchedule(lprec *lp, iterator I, iterator E);
 
   // The schedule should satisfy the dependences.
   void addDependencyConstraints(lprec *lp);
@@ -109,10 +117,10 @@ private:
 public:
   SDCScheduler(VASTSchedGraph &G, unsigned EntrySlot)
     : SchedulerBase(G, EntrySlot), lp(0) {}
+  ~SDCScheduler();
 
-  unsigned createLPAndVariables() {
-    return createLPAndVariables(begin(), end());
-  }
+  unsigned createLPAndVariables();
+  void addDependencyConstraints();
 
   void buildASAPObject(double weight) {
     buildASAPObject(begin(), end(), weight);
