@@ -111,7 +111,7 @@ public:
 
     Function &F = VM.getLLVMFunction();
 
-    for (unsigned i = 0, e = MaxIteration; i < e; ++i) {
+    for (unsigned i = 0, e = MaxIteration - 1; i < e; ++i) {
       // Redirect the output path for the intermediate netlist.
       if (DumpIntermediateNetlist) changeOutputPaths(i);
 
@@ -125,7 +125,7 @@ public:
     // Last iteration, we will stop at scheduling.
     while (!PassVector.empty() &&
            PassVector.back()->getPassID() != &VASTScheduling::ID) {
-      PassVector.pop_back();
+      delete PassVector.pop_back_val();
     }
 
     runSingleIteration(F);
