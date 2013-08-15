@@ -555,6 +555,7 @@ void SDCScheduler::addLinOrdEdge(DominatorTree &DT, IR2SUMapTy &IR2SUMap) {
   buildTimeFrameAndResetSchedule(true);
   BasicLinearOrderGenerator(*this, DT, IR2SUMap).buildLinearOrder();
   G.topologicalSortSUs();
+  buildTimeFrameAndResetSchedule(true);
 }
 
 //===----------------------------------------------------------------------===//
