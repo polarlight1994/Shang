@@ -371,46 +371,56 @@ bool TimingDrivenSelectorSynthesis::mergeCones(FIConeVec &Cones,
   return AnyChange;
 }
 
-static void
-ApplyKeepAttribute(VASTSelector *Sel, MutableArrayRef<VASTValPtr> Values,
-                   ArrayRef<VASTSlot*> Slots, VASTExprBuilder &Builder) {
+static VASTValPtr
+ApplyKeepAttributeAndBuildGuardingCondition(VASTSelector *Sel,
+                                            std::map<VASTSlot*, VASTValPtr> SlotGuards,
+                                            VASTExprBuilder &Builder) {
   std::set<VASTSeqValue*> CurLeaves;
-  std::set<VASTSelector*> AllLeaves, IntersectLeaves;
+  std::set<VASTSelector*> AllLeaves;
   typedef std::set<VASTSeqValue*>::iterator leaf_iterator;
+  SmallVector<VASTValPtr, 4> Values;
 
-  for (unsigned i = 0, e = Values.size(); i != e; ++i) {
-    VASTValPtr V = Values[i];
+  typedef std::map<VASTSlot*, VASTValPtr>::iterator iterator;
+  for (iterator I = SlotGuards.begin(), E = SlotGuards.end(); I != E; ++I) {
+    VASTValPtr V = I->second;
 
+    bool AnyIntersected = false;
     CurLeaves.clear();
     V->extractSupportingSeqVal(CurLeaves, true);
 
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
       VASTSeqValue *SV = *LI;
-      if (!AllLeaves.insert(SV->getSelector()).second &&
-          !SV->isSlot() && !SV->isFUOutput())
-        IntersectLeaves.insert(SV->getSelector());
+
+      if (SV->isSlot() || SV->isFUOutput())
+        continue;
+
+      // Intersected source detected.
+      if (AllLeaves.count(SV->getSelector())) {
+        AnyIntersected = true;
+        break;
+      }
+    }
+
+    if (AnyIntersected) {
+      V = Builder.buildKeep(V);
+      Values.push_back(V);
+      Sel->annotateReadSlot(I->first,V);
+      // If the node is blocked by a keep node, all its leaves are not reachable
+      continue;
+    }
+
+    // Collect the value.
+    Values.push_back(V);
+
+    for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
+         LI != LE; ++LI) {
+      VASTSeqValue *SV = *LI;
+      AllLeaves.insert(SV->getSelector());
     }
   }
 
-  for (unsigned i = 0, e = Values.size(); i != e; ++i) {
-    VASTValPtr &V = Values[i];
-    CurLeaves.clear();
-    V->extractSupportingSeqVal(CurLeaves, true);
-
-    if (!intersect(IntersectLeaves, CurLeaves))
-      continue;
-
-    V = Builder.buildKeep(V);
-
-    // The guarding condition itself is not guard, that is, the guarding
-    // condition is read whenever the slot register is set. Hence, we should
-    // annotate it with the control-equivalent group instead of the guarding
-    // condition equivalent group!
-    // FIXME: We can build apply the keep attribute according to the STG
-    // subgroup hierarchy sequentially to relax the constraints.
-    Sel->annotateReadSlot(Slots[i]->getParentState(), Values[i]);
-  }
+  return Builder.buildOrExpr(Values, Values.front()->getBitWidth());
 }
 
 void
@@ -436,8 +446,8 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
   unsigned Bitwidth = Sel->getBitWidth();
 
-  SmallVector<VASTValPtr, 4> SlotGuards, SlotFanins, FaninGuards;
-  SmallVector<VASTSlot*, 4> Slots;
+  SmallVector<VASTValPtr, 4> SlotFanins, FaninGuards;
+  std::map<VASTSlot*, VASTValPtr> SlotGuards;
 
   FIConeVec FICones;
 
@@ -458,13 +468,18 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       CurGuards.push_back(L.getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
 
-      SlotGuards.push_back(CurGuard);
-      Slots.push_back(S);
+      // Merge the slot read at the same slot. Please note that the guarding
+      // conditions depend on the slot registers, which mean the guarding
+      // condition used in different slots will never be the same.
+      VASTValPtr &GuardAtSlot = SlotGuards[S->getParentState()];
+      if (GuardAtSlot)
+        GuardAtSlot = Builder.orEqual(GuardAtSlot, CurGuard);
+      else
+        GuardAtSlot = CurGuard;
     }
 
-    ApplyKeepAttribute(Sel, SlotGuards, Slots, Builder);
-
-    VASTValPtr FIGuard = Builder.buildOrExpr(SlotGuards, 1);
+    VASTValPtr FIGuard
+      = ApplyKeepAttributeAndBuildGuardingCondition(Sel, SlotGuards, Builder);
     FaninGuards.push_back(FIGuard);
 
     // No need to build the fanin for the enables, only the guard is used by
@@ -483,8 +498,10 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     // Ignore the trivial cones.
     if (C == 0) continue;
 
-    while (!Slots.empty())
-      C->addSlot(Slots.pop_back_val(), STGDist);
+    typedef std::map<VASTSlot*, VASTValPtr>::iterator slot_iterator;
+    for (slot_iterator I = SlotGuards.begin(), E = SlotGuards.end(); I != E; ++I) {
+      C->addSlot(I->first, STGDist);
+    }
   }
 
   mergeTrivialCones(FICones, Builder, Bitwidth);
@@ -682,21 +699,29 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       CurGuards.push_back(L.getGuard());
       VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
 
-      // Simply keep all guarding condition, because they are only 1 bit nodes,
-      // and their upper bound is the product of number of slots and number of
-      // basic blocks.
-      CurGuard = Builder.buildKeep(CurGuard);
+      CurLeaves.clear();
+      CurGuard->extractSupportingSeqVal(CurLeaves);
 
-      // The guarding condition itself is not guard, that is, the guarding
-      // condition is read whenever the slot register is set. Hence, we should
-      // annotate it with the control-equivalent group instead of the guarding
-      // condition equivalent group!
-      // FIXME: We can build apply the keep attribute according to the STG
-      // subgroup hierarchy sequentially to relax the constraints.
-      Sel->annotateReadSlot(S->getParentState(), CurGuard);
-      // Also annotate S, so that we can construct the annoation to VASTSeqOp
-      // mapping based on the slot.
-      Sel->annotateReadSlot(S, CurGuard);
+      // We need to keep the node to prevent it from being optimized improperly,
+      // if it is reachable by the intersect leaves.
+      if (intersect(IntersectLeaves, CurLeaves)) {
+        // Simply keep all guarding condition, because they are only 1 bit nodes,
+        // and their upper bound is the product of number of slots and number of
+        // basic blocks.
+        CurGuard = Builder.buildKeep(CurGuard);
+
+        // The guarding condition itself is not guard, that is, the guarding
+        // condition is read whenever the slot register is set. Hence, we should
+        // annotate it with the control-equivalent group instead of the guarding
+        // condition equivalent group!
+        // FIXME: We can build apply the keep attribute according to the STG
+        // subgroup hierarchy sequentially to relax the constraints.
+        Sel->annotateReadSlot(S->getParentState(), CurGuard);
+        // Also annotate S, so that we can construct the annoation to VASTSeqOp
+        // mapping based on the slot.
+        Sel->annotateReadSlot(S, CurGuard);
+      }
+
       SlotGuards.push_back(CurGuard);
       Slots.push_back(S);
     }
