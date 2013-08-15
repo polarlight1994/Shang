@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Dataflow.h"
+#include "TimingNetlist.h"
 
 #include "shang/FUInfo.h"
 #include "shang/VASTMemoryPort.h"
@@ -36,8 +36,29 @@ STATISTIC(NumConesMerged, "Number of cones merged");
 
 namespace {
 typedef std::set<VASTSeqValue*> SVSet;
-typedef float delay_type;
-typedef DenseMap<DataflowValue, float> ArrivalTimeSet;
+typedef TimingNetlist::delay_type delay_type;
+
+class Cone {
+  typedef DenseMap<VASTSelector*, delay_type> LeafSetTy;
+  LeafSetTy Leaves;
+
+public:
+  void buildCone(SVSet &SVs, VASTValPtr Root, TimingNetlist *TNL) {
+    VASTExpr *Expr = dyn_cast<VASTExpr>(Root.get());
+    for (SVSet::iterator I = SVs.begin(), E = SVs.end(); I != E; ++I) {
+      VASTSeqValue *SV = *I;
+      delay_type delay = delay_type();
+      if (Expr)
+        delay = TNL->getDelay(SV, Expr);
+      delay_type &old_delay = Leaves[SV->getSelector()];
+      old_delay = std::max(old_delay, delay);
+    }
+  }
+
+  delay_type getDelayFrom(VASTSelector *Sel) const {
+    return Leaves.lookup(Sel);
+  }
+};
 
 class TimedCone {
 public:
@@ -74,10 +95,10 @@ private:
     }
   }
 public:
-  void buildCone(SVSet &SVs, const ArrivalTimeSet &ALT) {
+  void buildCone(SVSet &SVs, Cone *C) {
     for (SVSet::iterator I = SVs.begin(), E = SVs.end(); I != E; ++I) {
       VASTSeqValue *SV = *I;
-      Leaves[SV].update(STGDistances::Inf, ALT.lookup(DataflowValue(SV)));
+      Leaves[SV].update(STGDistances::Inf, C->getDelayFrom(SV->getSelector()));
     }
   }
 
@@ -152,15 +173,16 @@ typedef std::map<VASTValPtr, TimedCone*> FIConeVec;
 
 struct TimingDrivenSelectorSynthesis : public VASTModulePass {
   CachedStrashTable *CST;
-  Dataflow *DF;
+  TimingNetlist *TNL;
   STGDistances *STGDist;
   VASTExprBuilder *Builder;
   VASTModule *VM;
 
   // The delay and available cycles for the combinational cones.
+  DenseMap<unsigned, Cone*> Cones;
   DenseMap<VASTValue*, TimedCone*> TimedCones;
 
-  TimedCone *getOrCreateTimedCone(VASTValPtr V, const ArrivalTimeSet &ALT) {
+  TimedCone *getOrCreateTimedCone(VASTValPtr V) {
     if (TimedCone *C = TimedCones.lookup(V.get()))
       return C;
 
@@ -170,22 +192,34 @@ struct TimingDrivenSelectorSynthesis : public VASTModulePass {
     if (!V->extractSupportingSeqVal(Leaves, true))
       return 0;
 
+    Cone *C = getOrCreateCone(V, Leaves);
     TimedCone *&TC = TimedCones[V.get()];
     TC = new TimedCone();
-    if (ALT.empty())
-      TC->buildCone(Leaves, ALT);
+    TC->buildCone(Leaves, C);
     return TC;
+  }
+
+  Cone *getOrCreateCone(VASTValPtr V, SVSet Leaves) {
+    unsigned StrashID = CST->getOrCreateStrashID(V.get());
+
+    if (Cone *C = Cones.lookup(StrashID)) return C;
+
+    // Build the cone if it is not yet created.
+    Cone *&C = Cones[StrashID];
+    C = new Cone();
+    C->buildCone(Leaves, V, TNL);
+    return C;
   }
 
   static char ID;
 
-  TimingDrivenSelectorSynthesis() : VASTModulePass(ID), CST(0), DF(0), STGDist(0) {
+  TimingDrivenSelectorSynthesis() : VASTModulePass(ID), CST(0), TNL(0), STGDist(0) {
     initializeTimingDrivenSelectorSynthesisPass(*PassRegistry::getPassRegistry());
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequired<Dataflow>();
+    AU.addRequired<TimingNetlist>();
     AU.addRequired<CachedStrashTable>();
     AU.addRequired<STGDistances>();
     AU.addPreserved<STGDistances>();
@@ -203,7 +237,7 @@ struct TimingDrivenSelectorSynthesis : public VASTModulePass {
   void synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
 
   void releaseMemory() {
-    DeleteContainerSeconds(TimedCones);
+    DeleteContainerSeconds(Cones);
   }
 };
 }
@@ -309,14 +343,15 @@ bool TimingDrivenSelectorSynthesis::mergeCones(FIConeVec &Cones,
 
       // Merge the FI values.
       VASTValPtr NewFI = Builder.buildOrExpr(FaninI, FaninJ, BitWdith);
+      TNL->buildTimingPathOnTheFly(NewFI);
 
       // Merge the cones.
       // FIXME: Use the cone returned by "isGoodToMerge"
-      TimedCone *TC = getOrCreateTimedCone(NewFI, ArrivalTimeSet());
+      TimedCone *TC = getOrCreateTimedCone(NewFI);
       if (TCI)
-        TC->merge(TCI, STGDist);
+        TC->mergeSlots(TCI, STGDist);
       if (TCJ)
-        TC->merge(TCJ, STGDist);
+        TC->mergeSlots(TCJ, STGDist);
 
       // Modify Cone vector, so that we do not merge the same cone twice.
       Cones.erase(FaninI);
@@ -406,14 +441,9 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
   FIConeVec FICones;
 
-  ArrivalTimeSet EstimatedDelays;
-  std::set<VASTSeqValue*> CurLeaves;
-  typedef std::set<VASTSeqValue*>::iterator leaf_iterator;
-
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     SlotGuards.clear();
     SlotFanins.clear();
-    EstimatedDelays.clear();
 
     const OrVec &Ors = I->second;
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
@@ -430,26 +460,6 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
       SlotGuards.push_back(CurGuard);
       Slots.push_back(S);
-
-      // Collect all leaves for current fanin.
-      CurLeaves.clear();
-      L->extractSupportingSeqVal(CurLeaves);
-      L.getGuard()->extractSupportingSeqVal(CurLeaves);
-
-
-      for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
-           LI != LE; ++LI) {
-        VASTSeqValue *SV = *LI;
-
-        // Get the delay from last generation.
-        float delay = DF->getDelay(SV, L.Op, L.getSlot());
-
-        if (delay == 0.0f)
-          continue;
-
-        float &OldDelay = EstimatedDelays[SV];
-        OldDelay = std::max(OldDelay, delay);
-      }
     }
 
     ApplyKeepAttribute(Sel, SlotGuards, Slots, Builder);
@@ -465,8 +475,9 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
+    TNL->buildTimingPathOnTheFly(GuardedFIVal);
 
-    TimedCone *C = getOrCreateTimedCone(GuardedFIVal, EstimatedDelays);
+    TimedCone *C = getOrCreateTimedCone(GuardedFIVal);
     FICones[GuardedFIVal] = C;
 
     // Ignore the trivial cones.
@@ -519,7 +530,7 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
 bool TimingDrivenSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   STGDist = &getAnalysis<STGDistances>();
-  DF = &getAnalysis<Dataflow>();
+  TNL = &getAnalysis<TimingNetlist>();
   CST = &getAnalysis<CachedStrashTable>();
 
   {
