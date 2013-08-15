@@ -515,7 +515,6 @@ void VASTSelector::eraseFanin(VASTLatch U) {
 }
 
 void VASTSelector::annotateReadSlot(VASTSlot *S, VASTValPtr V)  {
-
   VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
   if (!Expr)
     return;
