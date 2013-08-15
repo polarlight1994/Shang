@@ -401,8 +401,7 @@ GenerateTimingConstraints(raw_ostream &O, VASTSelector *Src, VASTSelector *Dst,
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
                                                       raw_ostream &TimingSDCO,
                                                       VASTSelector *Sel) {
-  // Build the intersected fanins and the esitmated delays.
-  std::map<DataflowValue, float> EstimatedDelays;
+  // Build the intersected fanins.
   LeafSet AllLeaves, IntersectLeaves, CurLeaves;
   typedef LeafSet::iterator leaf_iterator;
   typedef VASTSelector::iterator fanin_iterator;
@@ -430,15 +429,6 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
       VASTSeqValue *Leaf = *LI;
       if (!AllLeaves.insert(Leaf).second && !Leaf->isSlot() && !Leaf->isFUOutput())
         IntersectLeaves.insert(Leaf);
-
-      // Get the delay from last generation.
-      float delay = DF->getDelay(Leaf, U.Op, U.getSlot());
-
-      if (delay == 0.0f)
-        continue;
-
-      float &OldDelay = EstimatedDelays[Leaf];
-      OldDelay = std::max(OldDelay, delay);
     }
 
     // Directly add the slot active to all leaves set.
@@ -457,16 +447,6 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
     // Directly use the register-to-register delay.
     DelayMatrix[Sel][Src] = allocateDelayRef(Idx);
     extractTimingForPath(TclO, Sel, Src, Idx);
-
-    // Generate the timing constraints
-    std::map<DataflowValue, float>::iterator J = EstimatedDelays.find(Src);
-    if (J == EstimatedDelays.end())
-      continue;
-
-    // Use a slightly tighter constraint to tweak the timing.
-    unsigned Cycles = std::max<float>(ceil(J->second), 1.0f);
-    if (Cycles > 1)
-      GenerateTimingConstraints(TimingSDCO, Src->getSelector(), Sel, 0, Cycles);
   }
 
   // Extract path delay in details for leaves that reachable to different fanins
@@ -509,12 +489,6 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
 
         P = allocateDelayRef(Idx);
         extractTimingForPath(TclO, Expr, Leaf, Idx);
-
-        // Also generate the constraint.
-        float delay = DF->getDelay(Leaf, Op, Op->getSlot());
-        unsigned Cycles = std::max<float>(ceil(delay), 1.0f);
-        if (Cycles > 1)
-          GenerateTimingConstraints(TimingSDCO, Leaf->getSelector(), Sel, Expr, Cycles);
       }
 
       // Get the thu to register delay.
