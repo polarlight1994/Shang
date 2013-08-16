@@ -892,7 +892,7 @@ void VASTScheduling::scheduleGlobal() {
     }
 
     Scheduler.addObjectCoeff(G->getExit(), - 1.0 * (TotalWeight /*+ PerformanceFactor*/));
-    Scheduler.buildOptSlackObject(TotalWeight * 0.2);
+    Scheduler.buildOptSlackObject(1.0);
 
     bool success = Scheduler.schedule();
     assert(success && "SDCScheduler fail!");
