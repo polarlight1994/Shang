@@ -679,12 +679,10 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       if (VASTValPtr SlotActive = L.getSlotActive())
         CurGuards.push_back(SlotActive);
 
-      CurGuards.push_back(L.getGuard());
-      VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
+      VASTValPtr CurGuard = L.getGuard();
 
       CurLeaves.clear();
       CurGuard->extractSupportingSeqVal(CurLeaves);
-
       // We need to keep the node to prevent it from being optimized improperly,
       // if it is reachable by the intersect leaves.
       if (intersect(IntersectLeaves, CurLeaves)) {
@@ -693,17 +691,13 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
         // basic blocks.
         CurGuard = Builder.buildKeep(CurGuard);
 
-        // The guarding condition itself is not guard, that is, the guarding
-        // condition is read whenever the slot register is set. Hence, we should
-        // annotate it with the control-equivalent group instead of the guarding
-        // condition equivalent group!
-        // FIXME: We can build apply the keep attribute according to the STG
-        // subgroup hierarchy sequentially to relax the constraints.
-        Sel->annotateReadSlot(S->getParentState(), CurGuard);
         // Also annotate S, so that we can construct the annoation to VASTSeqOp
         // mapping based on the slot.
         Sel->annotateReadSlot(S, CurGuard);
       }
+
+      CurGuards.push_back(CurGuard);
+      CurGuard = Builder.buildAndExpr(CurGuards, 1);
 
       SlotGuards.push_back(CurGuard);
       Slots.push_back(S);
@@ -719,19 +713,19 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
-    VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
 
     CurLeaves.clear();
-    GuardedFIVal->extractSupportingSeqVal(CurLeaves);
+    FIVal->extractSupportingSeqVal(CurLeaves);
 
     // We need to keep the node to prevent it from being optimized improperly,
     // if it is reachable by the intersect leaves.
     if (intersect(IntersectLeaves, CurLeaves)) {
-      GuardedFIVal = Builder.buildKeep(GuardedFIVal);
+      FIVal = Builder.buildKeep(FIVal);
       while (!Slots.empty())
-        Sel->annotateReadSlot(Slots.pop_back_val(), GuardedFIVal);
+        Sel->annotateReadSlot(Slots.pop_back_val(), FIVal);
     }
 
+    VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
     AllFanins.push_back(GuardedFIVal);
   }
 
