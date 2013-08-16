@@ -62,6 +62,15 @@ bool VASTSchedUnit::EdgeBundle::isLegalToAddFixTimngEdge(int Latency) const {
          && OldEdge.getLatency() == Latency;
 }
 
+bool VASTSchedUnit::EdgeBundle::hasValDep() const {
+  bool HasValDep = Edges.front().getEdgeType() == VASTDep::ValDep;
+
+  for (unsigned i = 1, e = Edges.size(); i != e; ++i)
+    HasValDep |= Edges[i].getEdgeType() == VASTDep::ValDep;
+
+  return HasValDep;
+}
+
 void VASTSchedUnit::EdgeBundle::addEdge(VASTDep NewEdge) {
   if (NewEdge.getEdgeType() == VASTDep::FixedTiming) {
     assert(isLegalToAddFixTimngEdge(NewEdge.getLatency())
@@ -545,7 +554,7 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
     assert(pred_begin(BB) == pred_end(BB)
            && "No entry block do not have any predecessor?");
     // Dependency from the BB entry is not conditional.
-    Entry->addDep(G->getEntry(), VASTDep::CreateFlowDep(0));
+    Entry->addDep(G->getEntry(), VASTDep::CreateCtrlDep(0));
   }
 
   // Add the entry to the mapping.
@@ -883,6 +892,7 @@ void VASTScheduling::scheduleGlobal() {
     }
 
     Scheduler.addObjectCoeff(G->getExit(), - 1.0 * (TotalWeight /*+ PerformanceFactor*/));
+    Scheduler.buildOptSlackObject(TotalWeight * 0.2);
 
     bool success = Scheduler.schedule();
     assert(success && "SDCScheduler fail!");

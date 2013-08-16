@@ -257,12 +257,12 @@ void SDCScheduler::addSoftConstraints() {
   }
 }
 
-void SDCScheduler::buildASAPObject(iterator I, iterator E, double weight) {
+void SDCScheduler::buildASAPObject(double weight) {
   //Build the ASAP object function.
-  while (I != E) {
-    const VASTSchedUnit* U = I++;
+  for (iterator I = begin(), E = end(); I != E; ++I) {
+    const VASTSchedUnit* U = I;
 
-    if (U->isScheduled()) continue;
+    if (U->isEntry()) continue;
 
     unsigned Idx = getSUIdx(U);
     // Because LPObjFn will set the objective function to maxim instead of minim,
@@ -271,18 +271,29 @@ void SDCScheduler::buildASAPObject(iterator I, iterator E, double weight) {
   }
 }
 
-void SDCScheduler::buildOptSlackObject(iterator I, iterator E, double weight) {
-  llvm_unreachable("Not implemented!");
+void SDCScheduler::buildOptSlackObject(double weight) {
+  //Build the Slack object function, maximize (Outdeg - Indeg) for each node.
+  for (iterator I = begin(), E = end(); I != E; ++I) {
+    const VASTSchedUnit* U = I;
 
-  while (I != E) {
-    const VASTSchedUnit* U = I++;
+    if (U->isEntry()) continue;
 
-    if (U->isScheduled()) continue;
-
-    int Indeg = 0; // U->countValDeps();
-    int Outdeg = 0; //U->countValUses();
     unsigned Idx = getSUIdx(U);
-    ObjFn[Idx] += (Outdeg - Indeg) * weight;
+    typedef VASTSchedUnit::const_dep_iterator dep_iterator;
+    int NumValDeps = 0;
+    for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
+      if (!I.hasValDep())
+        continue;
+
+      NumValDeps += 1;
+      const VASTSchedUnit *Src = *I;
+      // Add the outdeg for source.
+      ObjFn[getSUIdx(Src)] += 1.0 * weight;
+    }
+
+    // Minus the indeg for the current node, the outdeg will be added when we
+    // visit its use.
+    ObjFn[Idx] += (- NumValDeps) * weight;
   }
 }
 

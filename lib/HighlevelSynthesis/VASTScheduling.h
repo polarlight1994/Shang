@@ -147,6 +147,8 @@ private:
 
     // TODO: Print all edges in the edge bundle.
     void printDetials(raw_ostream &OS) const;
+
+    bool hasValDep() const;
   };
 
   typedef DenseMap<VASTSchedUnit*, EdgeBundle> DepSet;
@@ -200,6 +202,8 @@ public:
     }
 
     int getDistance(unsigned II = 0) const { return getEdge(II).getDistance(); }
+
+    bool hasValDep() const { return getEdgeBundle().hasValDep(); }
   };
 
   typedef VASTSchedUnitDepIterator<DepSet::const_iterator, true> const_dep_iterator;
@@ -365,6 +369,7 @@ public:
   ///
   uint32_t getSchedule() const { return Schedule; }
 
+  /// getIdx - Return the index of the current scheduling unit.
   uint32_t getIdx() const { return InstIdx; };
 
   void viewNeighbourGraph();

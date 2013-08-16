@@ -39,9 +39,6 @@ public:
 
   double getLastPenalty(VASTSchedUnit *Src, VASTSchedUnit *Dst) const;
 
-  // Build the schedule object function.
-  void buildASAPObject(iterator I, iterator E, double weight);
-  void buildOptSlackObject(iterator I, iterator E, double weight);
   void addSoftConstraints();
 
   void addObjectCoeff(const VASTSchedUnit *U, double Value) {
@@ -122,9 +119,9 @@ public:
   unsigned createLPAndVariables();
   void addDependencyConstraints();
 
-  void buildASAPObject(double weight) {
-    buildASAPObject(begin(), end(), weight);
-  }
+  // Build the schedule object function.
+  void buildASAPObject(double weight);
+  void buildOptSlackObject(double weight);
 
   bool schedule();
 
