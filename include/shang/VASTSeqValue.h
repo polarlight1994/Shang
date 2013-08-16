@@ -115,6 +115,7 @@ public:
   typedef AnnotationMap::const_iterator ann_iterator;
   ann_iterator ann_begin() const { return Annotations.begin(); }
   ann_iterator ann_end() const { return Annotations.end(); }
+  bool ann_empty() const { return Annotations.empty(); }
 
   VASTValPtr getGuard() const { return Guard; }
   VASTValPtr getFanin() const { return Fanin; }
