@@ -764,8 +764,8 @@ bool ExternalTimingAnalysis::readRegionPlacement(StringRef RegionPlacementPath){
   int BBHeight = Lexer.getInteger();
 
   // Relax the placement constraints by 10% on both x and y axes.
-  int XSlack = ((BBWidth + 9) * 10) / 10,
-      YSlack = ((BBHeight + 9) * 10) / 10;
+  int XSlack = ((BBWidth + 9) / 10),
+      YSlack = ((BBHeight + 9) / 10);
 
   BBX = std::min(185 - (BBWidth + 2 * XSlack), BBX - XSlack);
   BBX = std::max(1, BBX);
