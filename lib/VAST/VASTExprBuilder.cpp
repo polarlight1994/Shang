@@ -604,7 +604,7 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op,
 }
 
 VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
-  VASTExprPtr Expr = dyn_cast<VASTExpr>(V);
+  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
 
   // Only keep expressions!
   if (!Expr) return V;
