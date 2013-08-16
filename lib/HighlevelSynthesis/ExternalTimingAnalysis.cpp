@@ -400,7 +400,7 @@ GenerateTimingConstraints(raw_ostream &O, VASTSelector *Src, VASTSelector *Dst,
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
                                                       raw_ostream &TimingSDCO,
                                                       VASTSelector *Sel) {
-  // Build the intersected fanins.
+  // Build the intersected fanins
   LeafSet AllLeaves, IntersectLeaves, CurLeaves;
   typedef LeafSet::iterator leaf_iterator;
   typedef VASTSelector::iterator fanin_iterator;
@@ -418,7 +418,10 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
 
     // Collect all leaves for current fanin.
     CurLeaves.clear();
-    U->extractSupportingSeqVal(CurLeaves);
+    VASTValPtr FI = U;
+    // No need to extract the leaves from the same node twice.
+    FI->extractSupportingSeqVal(CurLeaves);
+
     U.getGuard()->extractSupportingSeqVal(CurLeaves);
     // Also extract the arrival time from the slot register.
     // CurLeaves.insert(U.getSlot()->getValue());
@@ -426,7 +429,9 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
       VASTSeqValue *Leaf = *LI;
-      if (!AllLeaves.insert(Leaf).second && !Leaf->isSlot() && !Leaf->isFUOutput())
+
+      if (!AllLeaves.insert(Leaf).second &&
+          !Leaf->isSlot() && !Leaf->isFUOutput())
         IntersectLeaves.insert(Leaf);
     }
 
