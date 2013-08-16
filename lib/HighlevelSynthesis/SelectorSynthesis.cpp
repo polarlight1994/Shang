@@ -257,9 +257,15 @@ char &llvm::TimingDrivenSelectorSynthesisID = TimingDrivenSelectorSynthesis::ID;
 static bool intersect(const std::set<VASTSelector*> &LHS,
                       const std::set<VASTSeqValue*> &RHS) {
   typedef std::set<VASTSeqValue*>::iterator iterator;
-  for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I)
-    if (LHS.count((*I)->getSelector()))
+  for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I) {
+    VASTSeqValue *SV = *I;
+
+    if (SV->isSlot() || SV->isFUOutput())
+      continue;
+
+    if (LHS.count(SV->getSelector()))
       return true;
+  }
 
   return false;
 }
@@ -371,56 +377,52 @@ bool TimingDrivenSelectorSynthesis::mergeCones(FIConeVec &Cones,
   return AnyChange;
 }
 
-static VASTValPtr
-ApplyKeepAttributeAndBuildGuardingCondition(VASTSelector *Sel,
-                                            std::map<VASTSlot*, VASTValPtr> SlotGuards,
-                                            VASTExprBuilder &Builder) {
-  std::set<VASTSeqValue*> CurLeaves;
-  std::set<VASTSelector*> AllLeaves;
-  typedef std::set<VASTSeqValue*>::iterator leaf_iterator;
-  SmallVector<VASTValPtr, 4> Values;
+namespace {
+struct GuardBuilder {
+  std::map<VASTSlot*, VASTValPtr> ReadAtSlot;
+  VASTExprBuilder &Builder;
+  VASTSelector *Sel;
 
-  typedef std::map<VASTSlot*, VASTValPtr>::iterator iterator;
-  for (iterator I = SlotGuards.begin(), E = SlotGuards.end(); I != E; ++I) {
-    VASTValPtr V = I->second;
+  GuardBuilder(VASTExprBuilder &Builder, VASTSelector *Sel)
+    : Builder(Builder), Sel(Sel) {}
 
-    bool AnyIntersected = false;
-    CurLeaves.clear();
-    V->extractSupportingSeqVal(CurLeaves, true);
-
-    for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
-         LI != LE; ++LI) {
-      VASTSeqValue *SV = *LI;
-
-      if (SV->isSlot() || SV->isFUOutput())
-        continue;
-
-      // Intersected source detected.
-      if (AllLeaves.count(SV->getSelector())) {
-        AnyIntersected = true;
-        break;
-      }
-    }
-
-    if (AnyIntersected) {
-      V = Builder.buildKeep(V);
-      Values.push_back(V);
-      Sel->annotateReadSlot(I->first,V);
-      // If the node is blocked by a keep node, all its leaves are not reachable
-      continue;
-    }
-
-    // Collect the value.
-    Values.push_back(V);
-
-    for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
-         LI != LE; ++LI) {
-      VASTSeqValue *SV = *LI;
-      AllLeaves.insert(SV->getSelector());
-    }
+  void reset() {
+    ReadAtSlot.clear();
   }
 
-  return Builder.buildOrExpr(Values, Values.front()->getBitWidth());
+  VASTValPtr applyKeepAndMerge() {
+    typedef std::map<VASTSlot*, VASTValPtr>::iterator iterator;
+
+    SmallVector<VASTValPtr, 4> Values;
+    for (iterator I = ReadAtSlot.begin(), E = ReadAtSlot.end(); I != E; ++I) {
+      VASTValPtr V = I->second;
+
+      V = Builder.buildKeep(V);
+      Sel->annotateReadSlot(I->first, V);
+
+      Values.push_back(V);
+    }
+
+    return Builder.buildOrExpr(Values, Values.front()->getBitWidth());
+  }
+
+  void addCondition(const VASTLatch &L) {
+    SmallVector<VASTValPtr, 2> CurGuards;
+    VASTSlot *S = L.getSlot();
+
+    if (VASTValPtr SlotActive = L.getSlotActive())
+      CurGuards.push_back(SlotActive);
+
+    CurGuards.push_back(L.getGuard());
+    VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
+
+    VASTValPtr &GuardAtSlot = ReadAtSlot[S];
+    if (GuardAtSlot)
+      GuardAtSlot = Builder.orEqual(GuardAtSlot, CurGuard);
+    else
+      GuardAtSlot = CurGuard;
+  }
+};
 }
 
 void
@@ -431,6 +433,7 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   typedef CSEMapTy::const_iterator iterator;
 
   CSEMapTy CSEMap;
+  GuardBuilder GB(Builder, Sel);
 
   for (VASTSelector::const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch U = *I;
@@ -440,52 +443,37 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     // Index the input of the assignment based on the strash id. By doing this
     // we can pack the structural identical inputs together.
     CSEMap[CST->getOrCreateStrashID(VASTValPtr(U))].push_back(U);
+
+    GB.addCondition(U);
   }
 
   if (CSEMap.empty()) return;
 
+  VASTValPtr Guard = GB.applyKeepAndMerge();
+
+  if (Sel->isEnable() || Sel->isSlot()) {
+    Sel->setMux(VASTImmediate::True, Guard);
+    return;
+  }
+
   unsigned Bitwidth = Sel->getBitWidth();
-
-  SmallVector<VASTValPtr, 4> SlotFanins, FaninGuards;
-  std::map<VASTSlot*, VASTValPtr> SlotGuards;
-
+  SmallVector<VASTValPtr, 4> SlotFanins;
+  SmallVector<VASTSlot*, 4> Slots;
   FIConeVec FICones;
 
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    SlotGuards.clear();
     SlotFanins.clear();
+    GB.reset();
 
     const OrVec &Ors = I->second;
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
-      SmallVector<VASTValPtr, 2> CurGuards;
       const VASTLatch &L = *OI;
       SlotFanins.push_back(L);
-      VASTSlot *S = L.getSlot();
-
-      if (VASTValPtr SlotActive = L.getSlotActive())
-        CurGuards.push_back(SlotActive);
-
-      CurGuards.push_back(L.getGuard());
-      VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
-
-      // Merge the slot read at the same slot. Please note that the guarding
-      // conditions depend on the slot registers, which mean the guarding
-      // condition used in different slots will never be the same.
-      VASTValPtr &GuardAtSlot = SlotGuards[S->getParentState()];
-      if (GuardAtSlot)
-        GuardAtSlot = Builder.orEqual(GuardAtSlot, CurGuard);
-      else
-        GuardAtSlot = CurGuard;
+      GB.addCondition(L);
+      Slots.push_back(L.getSlot());
     }
 
-    VASTValPtr FIGuard
-      = ApplyKeepAttributeAndBuildGuardingCondition(Sel, SlotGuards, Builder);
-    FaninGuards.push_back(FIGuard);
-
-    // No need to build the fanin for the enables, only the guard is used by
-    // them.
-    if (Sel->isEnable() || Sel->isSlot())
-      continue;
+    VASTValPtr FIGuard = GB.applyKeepAndMerge();
 
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
@@ -498,10 +486,9 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     // Ignore the trivial cones.
     if (C == 0) continue;
 
-    typedef std::map<VASTSlot*, VASTValPtr>::iterator slot_iterator;
-    for (slot_iterator I = SlotGuards.begin(), E = SlotGuards.end(); I != E; ++I) {
-      C->addSlot(I->first, STGDist);
-    }
+    
+    while (!Slots.empty())
+      C->addSlot(Slots.pop_back_val(), STGDist);
   }
 
   mergeTrivialCones(FICones, Builder, Bitwidth);
@@ -536,11 +523,7 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   }
 
   // Build the final fanin only if the selector is not enable.
-  VASTValPtr FI = VASTImmediate::True;
-  if (!Sel->isEnable() && !Sel->isSlot())
-    FI = Builder.buildOrExpr(Fanins, Bitwidth);
-
-  Sel->setMux(FI, Builder.buildOrExpr(FaninGuards, 1));
+  Sel->setMux(Builder.buildOrExpr(Fanins, Bitwidth), Guard);
 
   DeleteContainerSeconds(TimedCones);
 }
