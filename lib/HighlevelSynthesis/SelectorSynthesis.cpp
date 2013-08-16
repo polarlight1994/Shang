@@ -415,8 +415,13 @@ struct GuardBuilder {
 
     CurGuards.push_back(L.getGuard());
     VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
-
-    VASTValPtr &GuardAtSlot = ReadAtSlot[S];
+    // The guarding condition itself is not guard, that is, the guarding
+    // condition is read whenever the slot register is set. Hence, we should
+    // annotate it with the control-equivalent group instead of the guarding
+    // condition equivalent group!
+    // FIXME: We can build apply the keep attribute according to the STG
+    // subgroup hierarchy sequentially to relax the constraints.
+    VASTValPtr &GuardAtSlot = ReadAtSlot[S->getParentState()];
     if (GuardAtSlot)
       GuardAtSlot = Builder.orEqual(GuardAtSlot, CurGuard);
     else
@@ -691,7 +696,7 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
         // basic blocks.
         CurGuard = Builder.buildKeep(CurGuard);
 
-        // Also annotate S, so that we can construct the annoation to VASTSeqOp
+        // Also annotate S, so that we can construct the annotation to VASTSeqOp
         // mapping based on the slot.
         Sel->annotateReadSlot(S, CurGuard);
       }
