@@ -379,7 +379,7 @@ bool TimingDrivenSelectorSynthesis::mergeCones(FIConeVec &Cones,
 
 namespace {
 struct GuardBuilder {
-  std::map<VASTSlot*, VASTValPtr> ReadAtSlot;
+  std::map<VASTSlot*, VASTValPtr> ReadAtSlot, SlotActive;
   VASTExprBuilder &Builder;
   VASTSelector *Sel;
 
@@ -390,7 +390,7 @@ struct GuardBuilder {
     ReadAtSlot.clear();
   }
 
-  VASTValPtr applyKeepAndMerge() {
+  VASTValPtr buildGuard() {
     typedef std::map<VASTSlot*, VASTValPtr>::iterator iterator;
 
     SmallVector<VASTValPtr, 4> Values;
@@ -400,21 +400,26 @@ struct GuardBuilder {
       V = Builder.buildKeep(V);
       Sel->annotateReadSlot(I->first, V);
 
-      Values.push_back(V);
+      SmallVector<VASTValPtr, 2> CurGuards;
+      CurGuards.push_back(V);
+      std::map<VASTSlot*, VASTValPtr>::iterator J = SlotActive.find(I->first);
+      if (J != SlotActive.end())
+        CurGuards.push_back(J->second);
+
+      Values.push_back(Builder.buildAndExpr(CurGuards, 1));
     }
 
     return Builder.buildOrExpr(Values, Values.front()->getBitWidth());
   }
 
   void addCondition(const VASTLatch &L) {
-    SmallVector<VASTValPtr, 2> CurGuards;
     VASTSlot *S = L.getSlot();
 
-    if (VASTValPtr SlotActive = L.getSlotActive())
-      CurGuards.push_back(SlotActive);
+    // Collect both the slot active signal and the guarding condition.
+    if (VASTValPtr Active = L.getSlotActive())
+      SlotActive[S->getParentState()] = Active;
 
-    CurGuards.push_back(L.getGuard());
-    VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
+    VASTValPtr CurGuard = L.getGuard();
     // The guarding condition itself is not guard, that is, the guarding
     // condition is read whenever the slot register is set. Hence, we should
     // annotate it with the control-equivalent group instead of the guarding
@@ -454,7 +459,7 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
   if (CSEMap.empty()) return;
 
-  VASTValPtr Guard = GB.applyKeepAndMerge();
+  VASTValPtr Guard = GB.buildGuard();
 
   if (Sel->isEnable() || Sel->isSlot()) {
     Sel->setMux(VASTImmediate::True, Guard);
@@ -478,7 +483,7 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
       Slots.push_back(L.getSlot());
     }
 
-    VASTValPtr FIGuard = GB.applyKeepAndMerge();
+    VASTValPtr FIGuard = GB.buildGuard();
 
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
@@ -490,7 +495,6 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
     // Ignore the trivial cones.
     if (C == 0) continue;
-
     
     while (!Slots.empty())
       C->addSlot(Slots.pop_back_val(), STGDist);
