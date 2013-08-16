@@ -286,12 +286,11 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
       if (Sel->isTrivialFannin(L))
         continue;
 
+      // Extract the delay from the fan-in and the guarding condition.
       VASTValPtr FI = L;
+      ETA.getPathDelay(L, CndLeaves, Srcs);
       Leaves.clear();
       FI->extractSupportingSeqVal(Leaves);
-      set_union(Leaves, CndLeaves);
-
-      // Extract the delay from the fan-in and the guarding condition.
       ETA.getPathDelay(L, Leaves, Srcs);
     }
 
