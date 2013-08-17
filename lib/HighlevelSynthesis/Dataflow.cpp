@@ -70,6 +70,29 @@ void Dataflow::getFlowDep(DataflowInst Inst, SrcSet &Set) const {
       Delay = std::max(I->second.delay, Delay);
     }
   }
+
+  // Also collect the dependence from incoming block, if the dependence's parent
+  // basic block *prperly* dominates Inst's parent basic block.
+  IncomingMapTy::const_iterator J = Incomings.find(Inst);
+  if (J == Incomings.end())
+    return;
+
+  typedef IncomingBBMapTy::const_iterator incoming_iterator;
+  const IncomingBBMapTy &IncomingDeps = J->second;
+  for (incoming_iterator I = IncomingDeps.begin(), E = IncomingDeps.end();
+       I != E; ++I) {
+    const TimedSrcSet &Srcs = I->second;
+    for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+      DataflowValue V = I->first;
+      // Ignore the non-dominance edges.
+      if (Instruction *Def = dyn_cast<Instruction>(V))
+        if (!DT->properlyDominates(Def->getParent(), Inst->getParent()))
+          continue;
+
+      float &Delay = Set[V];
+      Delay = std::max(I->second.delay, Delay);
+    }
+  }
 }
 
 void
