@@ -27,6 +27,8 @@
 
 using namespace llvm;
 
+Dataflow::BBPtr::BBPtr(VASTSlot *S) : Base(S->getParent(), S->IsSubGrp) {}
+
 Dataflow::Dataflow() : FunctionPass(ID), generation(0) {
   initializeDataflowPass(*PassRegistry::getPassRegistry());
 }
@@ -58,17 +60,15 @@ bool Dataflow::runOnFunction(Function &F) {
 
 void Dataflow::getFlowDep(DataflowInst Inst, SrcSet &Set) const {
   FlowDepMapTy::const_iterator I = FlowDeps.find(Inst);
-  if (I == FlowDeps.end()) {
-    //assert(isa<TerminatorInst>(Inst) && "Flow dependencies do not exists?");
-    return;
-  }
-
-  const TimedSrcSet &Srcs = I->second;
-
   typedef TimedSrcSet::const_iterator iterator;
-  for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-    float &Delay = Set[I->first];
-    Delay = std::max(I->second.delay, Delay);
+
+  if (I != FlowDeps.end()) {
+    const TimedSrcSet &Srcs = I->second;
+
+    for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+      float &Delay = Set[I->first];
+      Delay = std::max(I->second.delay, Delay);
+    }
   }
 }
 
@@ -102,9 +102,11 @@ Dataflow::getIncomingFrom(DataflowInst Inst, BasicBlock *BB, SrcSet &Set) const 
   }
 }
 
-Dataflow::TimedSrcSet &Dataflow::getDeps(DataflowInst Inst, BasicBlock *Parent) {
-  if (!isa<PHINode>(Inst) && Inst->getParent() == Parent)
+Dataflow::TimedSrcSet &Dataflow::getDeps(DataflowInst Inst, BBPtr Parent) {
+  if (Inst->getParent() == Parent && !Parent.isSubGrp()) {
+    assert(!isa<PHINode>(Inst) && "Unexpected PHI!");
     return FlowDeps[Inst];
+  }
 
   return Incomings[Inst][Parent];
 }
@@ -172,19 +174,31 @@ float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const
   return K == Srcs.end() ? 0.0f : K->second.delay;
 }
 
-BasicBlock *
+Dataflow::BBPtr
 Dataflow::getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const {
   BasicBlock *ParentBB = S->getParent();
+  // Use the IsSubGrp flag to identify the intra-bb backedge like:
+  // BB:
+  //   A <-
+  //       |
+  //   B --
+  // In the above example, there is an back-edge from B to A, due to CFG folding
+  // although src and dst of the edge are located in the same BB, but such
+  // dependence is not a flow dependence, thereby we should not put such
+  // dependence to the FlowDep set..
+  bool IsSubGrp = S->IsSubGrp;
 
   // Adjust to actual parent BB for the incoming value.
-  if (isa<PHINode>(Inst) || isa<BranchInst>(Inst) || isa<SwitchInst>(Inst)) {
+  if (S->IsSubGrp) {
     S = S->getParentGroup();
     if (BasicBlock *BB = S->getParent())
       ParentBB = BB;
   }
 
-  assert((ParentBB == Inst->getParent() || isa<PHINode>(Inst)) &&
-         "Parent not match!");
+  // Since terminators are always the last instruction, there wil never be a
+  // intra-BB back-edge to terminators.
+  if (isa<TerminatorInst>(Inst))
+    IsSubGrp &= ParentBB != Inst->getParent();
 
   if (Instruction *Def = dyn_cast<Instruction>(Src)) {
     // While Src not dominate BB, this is due to CFG folding. We need to get the
@@ -196,7 +210,7 @@ Dataflow::getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const {
     }
   }
 
-  return ParentBB;
+  return BBPtr(ParentBB, IsSubGrp);
 }
 
 void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
@@ -254,6 +268,7 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
 void Dataflow::updateDelay(float NewDelay, float Ratio, Annotation &OldDelay) {
   if (OldDelay.generation == generation) {
     OldDelay.delay = std::max(NewDelay, OldDelay.delay);
+    OldDelay.generation = generation;
     return;
   }
 
@@ -296,7 +311,7 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 void DataflowAnnotation::annotateDelay(DataflowInst Inst, VASTSlot *S,
-                                        VASTSeqValue *SV, float delay) {
+                                       VASTSeqValue *SV, float delay) {
   unsigned Slack = Distances->getIntervalFromDef(SV, S);
   DF->annotateDelay(Inst, S, SV, delay, Slack);
 }

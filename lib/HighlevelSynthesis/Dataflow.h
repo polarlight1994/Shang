@@ -48,8 +48,8 @@ struct DataflowPtr : public PointerIntPair<T*, 1, bool> {
 
   template<typename T1>
   DataflowPtr<T> &operator=(const DataflowPtr<T1> &RHS) {
-    Base::setPointer(RHS.get());
-    Base::setInt(RHS.isInverted());
+    Base::setPointer(RHS.getPointer());
+    Base::setInt(RHS.getInt());
     return *this;
   }
 
@@ -95,6 +95,38 @@ class Dataflow : public FunctionPass {
 public:
   typedef std::map<DataflowValue, float> SrcSet;
 private:
+  // BasicBlock descriptor: The pointer and the "IsSubGrp" flag
+  struct BBPtr : public PointerIntPair<BasicBlock*, 1, bool> {
+    typedef PointerIntPair<BasicBlock*, 1, bool> Base;
+
+    BBPtr(Base BB = Base()) : Base(BB) {}
+
+    BBPtr(BasicBlock *BB, bool IsSubGrp)
+      : Base(BB, IsSubGrp) {}
+
+    BBPtr(VASTSlot *S);
+
+    BBPtr &operator=(const BBPtr &RHS) {
+      Base::setPointer(RHS.getPointer());
+      Base::setInt(RHS.getInt());
+      return *this;
+    }
+
+    bool isSubGrp() const { return Base::getInt(); }
+
+    operator BasicBlock*() const {
+      return Base::getPointer();
+    }
+
+    BasicBlock *operator->() const {
+      return Base::getPointer();
+    }
+
+    bool operator==(const BasicBlock *BB) const {
+      return getPointer() == BB;
+    }
+  };
+
   struct Annotation {
     float delay;
     uint16_t generation;
@@ -112,8 +144,8 @@ private:
   typedef std::map<DataflowInst, IncomingBBMapTy>  IncomingMapTy;
   IncomingMapTy Incomings;
 
-  BasicBlock *getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const;
-  TimedSrcSet &getDeps(DataflowInst Inst, BasicBlock *Parent);
+  BBPtr getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const;
+  TimedSrcSet &getDeps(DataflowInst Inst, BBPtr Parent);
 
   unsigned generation;
   void updateDelay(float NewDelay, float Ratio, Annotation &OldDelay);
