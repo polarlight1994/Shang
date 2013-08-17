@@ -574,9 +574,12 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
 }
 
 VASTSchedUnit *VASTScheduling::getLaunchSU(Value *V) {
-  ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[V]);
-  if (SUs.empty())
+  IR2SUMapTy::iterator I = IR2SUMap.find(V);
+
+  if (I == IR2SUMap.end())
     return 0;
+
+  ArrayRef<VASTSchedUnit*> SUs(I->second);
 
   VASTSchedUnit *LaunchU = SUs.front();
   if (!LaunchU->isLaunch())
