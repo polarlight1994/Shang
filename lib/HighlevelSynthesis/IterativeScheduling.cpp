@@ -156,6 +156,7 @@ public:
     // Finish the whole HLS process if we want to dump the intermediate netlist
     // for each iteration.
     if (DumpIntermediateNetlist) {
+      schedulePass(createRegisterSharingPass());
       schedulePass(createSelectorPipeliningPass());
       schedulePass(createRTLCodeGenPass());
       schedulePass(createTimingScriptGenPass());
@@ -201,6 +202,7 @@ INITIALIZE_PASS_BEGIN(IterativeScheduling, "shang-iterative-scheduling",
                       "Preform iterative scheduling",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataflowAnnotation)
+  INITIALIZE_PASS_DEPENDENCY(PreSchedBinding)
   INITIALIZE_PASS_DEPENDENCY(LoopInfo)
   INITIALIZE_PASS_DEPENDENCY(BranchProbabilityInfo)
 INITIALIZE_PASS_END(IterativeScheduling, "shang-iterative-scheduling",

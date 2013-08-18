@@ -540,7 +540,7 @@ struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {
   }
 };
 
-class DataflowAnnotation;
+class Dataflow;
 class PreSchedBinding;
 class PSBCompNode;
 
@@ -557,7 +557,7 @@ class VASTScheduling : public VASTModulePass {
   ArgMapTy ArgMap;
 
   VASTSchedGraph *G;
-  DataflowAnnotation *DF;
+  Dataflow *DF;
   VASTModule *VM;
 
   // Analysis for the scheduler

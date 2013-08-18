@@ -382,9 +382,9 @@ VASTScheduling::VASTScheduling() : VASTModulePass(ID) {
 void VASTScheduling::getAnalysisUsage(AnalysisUsage &AU) const  {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequiredID(BasicBlockTopOrderID);
+  AU.addRequired<Dataflow>();
   AU.addRequired<PreSchedBinding>();
   AU.addPreserved<PreSchedBinding>();
-  AU.addRequired<DataflowAnnotation>();
   AU.addRequired<AliasAnalysis>();
   AU.addRequired<DominatorTree>();
   AU.addRequired<LoopInfo>();
@@ -1329,7 +1329,7 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   G = GPtr.get();
 
   // Initialize the analyses
-  DF = &getAnalysis<DataflowAnnotation>();
+  DF = &getAnalysis<Dataflow>();
   AA = &getAnalysis<AliasAnalysis>();
   LI = &getAnalysis<LoopInfo>();
   DT = &getAnalysis<DominatorTree>();

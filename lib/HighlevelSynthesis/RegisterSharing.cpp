@@ -82,7 +82,7 @@ struct RegisterSharing : public VASTModulePass {
     //AU.addPreserved<SeqLiveVariables>();
 
     AU.addRequired<CombPatternTable>();
-    AU.addRequired<PreSchedBinding>();
+    // AU.addRequired<PreSchedBinding>();
   }
 
   void initializeOverlappedSlots(VASTModule &VM);
@@ -262,7 +262,7 @@ bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
 
   G.initializeCosts(getAnalysis<CombPatternTable>());
 
-  checkConsistencyAgainstPSB(G);
+  //checkConsistencyAgainstPSB(G);
 
   unsigned NumFU = G.performBinding();
 
