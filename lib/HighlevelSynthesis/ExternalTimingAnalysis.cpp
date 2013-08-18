@@ -176,13 +176,23 @@ struct ExternalTimingAnalysis {
 
   bool readRegionPlacement(StringRef RegionPlacementPath);
 
-  void getPathDelay(const VASTLatch &L, LeafSet &Leaves,
+  void getPathDelay(const VASTLatch &L, VASTValPtr V,
                     std::map<VASTSeqValue*, float> &Srcs);
 };
 }
 
-void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, LeafSet &Leaves,
+void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
                                           std::map<VASTSeqValue*, float> &Srcs) {
+  // Simply add the zero delay record if the fanin itself is a register.
+  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V.get())) {
+    // Please note that this insertion may fail (V already existed), but it does
+    // not hurt because here we only want to ensure the record exist.
+    Srcs.insert(std::make_pair(SV, 0.0f));
+    return;
+  }
+
+  LeafSet Leaves;
+  V->extractSupportingSeqVal(Leaves);
   if (Leaves.empty())
     return;
 
@@ -276,8 +286,7 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
       continue;
 
     std::map<VASTSeqValue*, float> Srcs;
-    ExternalTimingAnalysis::LeafSet Leaves, CndLeaves;
-    Op->getGuard()->extractSupportingSeqVal(CndLeaves);
+    VASTValPtr Guard = Op->getGuard();
 
     for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
       VASTLatch L = Op->getSrc(i);
@@ -287,10 +296,8 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
 
       // Extract the delay from the fan-in and the guarding condition.
       VASTValPtr FI = L;
-      ETA.getPathDelay(L, CndLeaves, Srcs);
-      Leaves.clear();
-      FI->extractSupportingSeqVal(Leaves);
-      ETA.getPathDelay(L, Leaves, Srcs);
+      ETA.getPathDelay(L, Guard, Srcs);
+      ETA.getPathDelay(L, FI, Srcs);
     }
 
     typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
