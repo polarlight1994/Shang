@@ -265,7 +265,6 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
   // Run the synthesis tool to get the arrival time estimation.
   if (!ETA.analysisWithSynthesisTool()) return false;
 
-  std::set<VASTExpr*> Visited;
   typedef VASTModule::seqop_iterator iterator;
   for (iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
     VASTSeqOp *Op = I;
@@ -421,7 +420,6 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
     VASTValPtr FI = U;
     // No need to extract the leaves from the same node twice.
     FI->extractSupportingSeqVal(CurLeaves);
-
     U.getGuard()->extractSupportingSeqVal(CurLeaves);
     // Also extract the arrival time from the slot register.
     // CurLeaves.insert(U.getSlot()->getValue());

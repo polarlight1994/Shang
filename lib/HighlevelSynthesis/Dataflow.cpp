@@ -301,7 +301,7 @@ void Dataflow::updateDelay(float NewDelay, float Ratio, Annotation &OldDelay) {
 
 DataflowAnnotation::DataflowAnnotation(bool Accumulative)
   : VASTModulePass(ID), Accumulative(Accumulative) {
-  initializeDataflowPass(*PassRegistry::getPassRegistry());
+  initializeDataflowAnnotationPass(*PassRegistry::getPassRegistry());
 }
 
 INITIALIZE_PASS_BEGIN(DataflowAnnotation,
@@ -468,4 +468,8 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
       }
     }
   }
+}
+
+Pass *llvm::createDataflowAnnotationPass() {
+  return new DataflowAnnotation();
 }

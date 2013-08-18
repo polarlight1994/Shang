@@ -58,6 +58,7 @@ Pass *createDatapathHoistingPass();
 
 Pass *createLUTMappingPass();
 Pass *createTimingNetlistPass();
+Pass *createDataflowAnnotationPass();
 Pass *createVASTSchedulingPass();
 Pass *createIterativeSchedulingPass();
 
