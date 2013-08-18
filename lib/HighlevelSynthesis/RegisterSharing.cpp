@@ -224,6 +224,11 @@ void RegisterSharing::checkConsistencyAgainstPSB(VASTCompGraph &G) {
 }
 
 bool RegisterSharing::runOnVASTModule(VASTModule &VM) {
+  typedef VASTModule::selector_iterator selector_iterator;
+  // Clear up all MUX before we perform sharing.
+  for (selector_iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
+    I->dropMux();
+
   LVS = &getAnalysis<SeqLiveVariables>();
 
   VASTCompGraph G(getAnalysis<DominatorTree>());
