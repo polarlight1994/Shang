@@ -184,6 +184,10 @@ void ControlLogicSynthesis::collectControlLogicInfo(VASTSlot *S) {
 }
 
 bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
+  // Do not fail if ControlLogicSynthesis had already run on the module.
+  if (M.getStartSlot()->getRegister())
+    return false;
+
   VM = &M;
   MinimalDatapathContext Context(M, getAnalysisIfAvailable<DataLayout>());
   Builder = new DatapathBuilder(Context);
