@@ -504,7 +504,8 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
   }
 
   assert(delay >= 0.0f && "Unexpected negative delay!");
-  DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay)));
+  bool RequireExtraCycles = (ceil(delay) - delay) < 0.5f;
+  DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay), RequireExtraCycles));
 }
 
 void VASTScheduling::buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U) {

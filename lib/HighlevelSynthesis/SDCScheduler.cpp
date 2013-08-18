@@ -58,11 +58,11 @@ struct ConstraintHelper {
     DstIdx = DstSlot == 0 ? S->getSUIdx(Dst) : 0;
   }
 
-  void addConstraintToLP(VASTDep Edge, lprec *lp, int ExtraLatency) {
+  void addConstraintToLP(VASTDep Edge, lprec *lp, int ExtraCycles) {
     SmallVector<int, 2> Col;
     SmallVector<REAL, 2> Coeff;
 
-    int RHS = Edge.getLatency() - DstSlot + SrcSlot + ExtraLatency;
+    int RHS = Edge.getLatency() - DstSlot + SrcSlot + ExtraCycles;
 
     // Both SU is scheduled.
     if (SrcSlot && DstSlot) {
@@ -376,18 +376,18 @@ bool SDCScheduler::solveLP(lprec *lp) {
 }
 
 void SDCScheduler::addDependencyConstraints(lprec *lp) {
-  for(VASTSchedGraph::const_iterator I = begin(), E = end(); I != E; ++I) {
-    const VASTSchedUnit *U = I;
+  for(VASTSchedGraph::iterator I = begin(), E = end(); I != E; ++I) {
+    VASTSchedUnit *U = I;
 
     ConstraintHelper H;
     H.resetDst(U, this);
 
-    typedef VASTSchedUnit::const_dep_iterator dep_iterator;
+    typedef VASTSchedUnit::dep_iterator dep_iterator;
     // Build the constraint for Dst_SU_startStep - Src_SU_endStep >= Latency.
     for (dep_iterator DI = U->dep_begin(), DE = U->dep_end(); DI != DE; ++DI) {
       assert(!DI.isLoopCarried()
         && "Loop carried dependencies cannot handled by SDC scheduler!");
-      const VASTSchedUnit *Src = *DI;
+      VASTSchedUnit *Src = *DI;
       VASTDep Edge = DI.getEdge();
 
       // Ignore the control-dependency edges between BBs.
@@ -395,6 +395,9 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
 
       H.resetSrc(Src, this);
       H.addConstraintToLP(Edge, lp, 0);
+
+      if (unsigned ExtraCycles = Edge.getExtraCycles())
+        addSoftConstraint(Src, U, Edge.getLatency() + Edge.getExtraCycles(), 1.0);
     }
   }
 }

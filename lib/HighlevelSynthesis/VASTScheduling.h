@@ -53,14 +53,18 @@ private:
   // Iterate distance.
   int16_t Distance : 13;
   // The latancy of this edge.
-  uint16_t Latancy;
-  int32_t Data;
+  uint16_t Latancy : 13;
+  uint16_t ExtraCycles : 3;
 
 public:
-  VASTDep(enum Types T, unsigned latancy, int Dst)
-    : EdgeType(T), Distance(Dst), Latancy(latancy) {}
+  VASTDep(enum Types T, unsigned latancy, int Dst, unsigned ExtraCycles)
+    : EdgeType(T), Distance(Dst), Latancy(latancy), ExtraCycles(ExtraCycles) {}
 
   Types getEdgeType() const { return Types(EdgeType); }
+
+  inline int getExtraCycles() const {
+    return unsigned(ExtraCycles);
+  }
 
   // Compute the latency considering the distance between iterations in a loop.
   inline int getLatency(unsigned II = 0) const {
@@ -89,28 +93,28 @@ public:
   }
 
   static VASTDep CreateMemDep(int Latency, int Distance) {
-    return VASTDep(MemDep, Latency, Distance);
+    return VASTDep(MemDep, Latency, Distance, 0);
   }
 
-  static VASTDep CreateFlowDep(int Latency) {
-    return VASTDep(ValDep, Latency, 0);
+  static VASTDep CreateFlowDep(int Latency, bool RequireExtraCycles) {
+    return VASTDep(ValDep, Latency, 0, RequireExtraCycles ? 1 : 0);
   }
 
   static VASTDep CreateCtrlDep(int Latency) {
-    return VASTDep(CtrlDep, Latency, 0);
+    return VASTDep(CtrlDep, Latency, 0, 0);
   }
 
   static VASTDep CreateFixTimingConstraint(int Latency) {
-    return VASTDep(FixedTiming, Latency, 0);
+    return VASTDep(FixedTiming, Latency, 0, 0);
   }
 
   template<Types Type>
   static VASTDep CreateDep(int Latency) {
-    return VASTDep(Type, Latency, 0);
+    return VASTDep(Type, Latency, 0, 0);
   }
 
   static VASTDep CreateCndDep() {
-    return VASTDep(Conditional, 0, 0);
+    return VASTDep(Conditional, 0, 0, 0);
   }
 };
 
