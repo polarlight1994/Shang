@@ -63,14 +63,14 @@ class FileLexer {
   StringRef getTok() {
     const char *TokStart = CurPtr;
 
-    while (!isdigit(CurChar) && CurChar != '.') {
+    while (!isdigit(CurChar) && CurChar != '.' && CurChar != '-') {
       ++CurPtr;
       CurChar = *CurPtr;
       TokStart = CurPtr;
       if (CurPtr == End) return StringRef();
     }
 
-    while (isdigit(CurChar) || CurChar == '.') {
+    while (isdigit(CurChar) || CurChar == '.' || CurChar == '-') {
       ++CurPtr;
       CurChar = *CurPtr;
       if (CurPtr == End) return StringRef();
@@ -104,7 +104,7 @@ public:
     return strtoul(Idx.data(), 0, 10);
   }
 
-  float getPathDelay() {
+  float getFloat() {
     StringRef Delay = eatTok();
     DEBUG(dbgs() << "Delay: " << Delay << '\n');
     return strtod(Delay.data(), 0);
@@ -116,9 +116,16 @@ struct ExternalTimingAnalysis {
   Dataflow *DF;
   SpecificBumpPtrAllocator<float> Allocator;
   std::vector<float*> DelayRefs;
-  typedef std::map<VASTValue*, float*> SrcInfo;
-  typedef std::map<VASTNode*, SrcInfo> PathInfo;
-  PathInfo DelayMatrix;
+  typedef std::map<VASTSeqValue*, float*> SrcInfo;
+  // The end-to-end (source register to destinate register) arrival time.
+  typedef std::map<VASTSelector*, SrcInfo> SDArrivalInfo;
+  SDArrivalInfo SDArrivals;
+
+  // The (source register through combinational node to destinate register)
+  // node arrival time
+  typedef std::map<VASTExpr*, SrcInfo> STArrivialInfo;
+  typedef std::map<VASTSelector*, STArrivialInfo> STDArrivialInfo;
+  STDArrivialInfo STDArrivials;
 
   // The annotated expressions that are read by specificed VASTSeqOp
   typedef std::map<VASTSeqOp*, std::set<VASTExpr*> > AnnotoatedFaninsMap;
@@ -198,8 +205,8 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
 
   VASTSelector *Sel = L.getSelector();
 
-  PathInfo::const_iterator I = DelayMatrix.find(Sel);
-  assert(I != DelayMatrix.end() && "Fanin delay not available!");
+  SDArrivalInfo::const_iterator I = SDArrivals.find(Sel);
+  assert(I != SDArrivals.end() && "End-to-End arrivial time not available!");
   const SrcInfo &FIDelays = I->second;
 
   SmallVector<VASTSeqValue*, 4> MissedLeaves;
@@ -231,35 +238,32 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
   assert(J != AnnotoatedFanins.end() && "Annotation node not available!");
   const std::set<VASTExpr*> &ThuNodes = J->second;
 
+  STDArrivialInfo::const_iterator K = STDArrivials.find(Sel);
+  assert(K != STDArrivials.end() && "Src-Thu-Dst arrivial information not found!");
+  const STArrivialInfo &STArrivials = K->second;
+
   typedef std::set<VASTExpr*>::const_iterator thu_iterator;
   for (thu_iterator I = ThuNodes.begin(), E = ThuNodes.end(); I != E; ++I) {
     VASTExpr *Expr = *I;
 
-    PathInfo::const_iterator SelI = DelayMatrix.find(Sel);
-    assert(SelI != DelayMatrix.end() && "Fanin delay not available!");
-    const SrcInfo &Delays = SelI->second;
-    SrcInfo::const_iterator SelThuI = Delays.find(Expr);
+    STArrivialInfo::const_iterator ThuI = STArrivials.find(Expr);
     // Sometimes the thu nodes are connected to other selectors that are
     // modified in current slot.
-    if (SelThuI == Delays.end())
+    if (ThuI == STArrivials.end())
       continue;
 
-    // Get the delay from leaves to expr, and then build the full path delay by
-    // add delay from leaf to expr, delay from expr to the selector together.
-    PathInfo::const_iterator SrcI = DelayMatrix.find(Expr);
-    assert(SrcI != DelayMatrix.end() && "Fanin delay not available!");
-    const SrcInfo &LeavesDelays = SrcI->second;
+    const SrcInfo &Delays = ThuI->second;
 
     typedef SmallVector<VASTSeqValue*, 4>::iterator leaf_iterator;
     for (leaf_iterator I = MissedLeaves.begin(), E = MissedLeaves.end();
          I != E; ++I) {
       VASTSeqValue *Leaf = *I;
-      src_iterator ThuSrcI = LeavesDelays.find(Leaf);
-      if (ThuSrcI == LeavesDelays.end())
+      src_iterator ThuSrcI = Delays.find(Leaf);
+      if (ThuSrcI == Delays.end())
         continue;
 
       float &OldDelay = Srcs[Leaf];
-      OldDelay = std::max(OldDelay, *ThuSrcI->second + *SelThuI->second);
+      OldDelay = std::max(OldDelay, *ThuSrcI->second);
     }
   }
 
@@ -360,31 +364,39 @@ static std::string GetSTACollection(const VASTValue *V) {
 }
 
 static
-void extractTimingForPath(raw_ostream &O, unsigned RefIdx) {
+void extractTimingForPath(raw_ostream &O, unsigned RefIdx, bool HasThu) {
   O << "set delay \"No-path\"\n";
-  O << "if {[get_collection_size $src] && [get_collection_size $dst]} {\n";
+  O << "if {[get_collection_size $src] && [get_collection_size $dst]";
+  if (HasThu)
+    O << "&& [get_collection_size $thu]";
+  O << "} {\n";
   // Use get_path instead of get_timing_path to get the longest delay paths
   // between arbitrary points in the netlist.
   // See "get_path -help" for more information.
-  O << "  set paths [get_path -from $src -to $dst -nworst 1 -pairs_only]\n"
+  O << "  set paths [get_timing_paths  -from $src ";
+  if (HasThu)
+    O << "-through $thu";
+  O << " -to $dst -nworst 1 -pairs_only]\n"
     // Only extract the delay from source to destination when these node are
     // not optimized.
        "  if {[get_collection_size $paths]} {\n"
        "    foreach_in_collection path $paths {\n"
-       "      set delay [get_path_info $path -data_delay]\n"
+       "      set delay [get_path_info $path -slack]\n"
        "      puts $JSONFile \"" << RefIdx << " $delay\"\n" <<
        "    }\n"
        "  }\n" // Path Size
        "}\n"; // Src and Dst Size
 }
 
-template<typename T0, typename T1>
 static
-void extractTimingForPath(raw_ostream &O, T0 *Dst, T1 *Src, unsigned RefIdx) {
+void extractTimingForPath(raw_ostream &O, VASTSelector *Dst, VASTSeqValue *Src,
+                          VASTExpr *Thu, unsigned RefIdx) {
   O << "set src " << GetSTACollection(Src) << '\n';
   O << "set dst " << GetSTACollection(Dst) << '\n';
+  if (Thu)
+    O << "set thu " << GetSTACollection(Thu) << '\n';
   // if (Thu) O << "set thu " << GetSTACollection(Thu) << '\n';
-  extractTimingForPath(O, RefIdx);
+  extractTimingForPath(O, RefIdx, Thu != 0);
   DEBUG(O << "post_message -type info \"" << Src->getSTAObjectName()
           << " -> " << Dst->getSTAObjectName() << " delay: $delay\"\n");
 }
@@ -454,8 +466,8 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
 
     unsigned Idx = 0;
     // Directly use the register-to-register delay.
-    DelayMatrix[Sel][Src] = allocateDelayRef(Idx);
-    extractTimingForPath(TclO, Sel, Src, Idx);
+    SDArrivals[Sel][Src] = allocateDelayRef(Idx);
+    extractTimingForPath(TclO, Sel, Src, 0, Idx);
   }
 
   // Extract path delay in details for leaves that reachable to different fanins
@@ -492,18 +504,13 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
         VASTSeqValue *Leaf = *LI;
         unsigned Idx = 0;
         // Get the register to thu delay.
-        float *&P = DelayMatrix[Expr][Leaf];
+        float *&P = STDArrivials[Sel][Expr][Leaf];
         if (P)
           continue;
 
         P = allocateDelayRef(Idx);
-        extractTimingForPath(TclO, Expr, Leaf, Idx);
+        extractTimingForPath(TclO, Sel, Leaf, Expr, Idx);
       }
-
-      // Get the thu to register delay.
-      unsigned Idx = 0;
-      DelayMatrix[Sel][Expr] = allocateDelayRef(Idx);
-      extractTimingForPath(TclO, Sel, Expr, Idx);
 
       AnnotoatedFanins[Op].insert(Expr);
     }
@@ -559,7 +566,7 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(StringRef ResultPath) {
 
   while (!Parser.finish()) {
     unsigned idx = Parser.getInteger();
-    float delay = Parser.getPathDelay() / VFUs::Period;
+    float delay = 1.0f - Parser.getFloat() / VFUs::Period;
     setDelay(idx, delay);
     ++NumQueriesRead;
   }
