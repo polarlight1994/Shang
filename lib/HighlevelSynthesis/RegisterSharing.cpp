@@ -53,7 +53,8 @@ public:
 
   float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const {
     const NodeTy::Cost &Cost = Src->getCostTo(Dst);
-    float CurrentCost = Cost.InterconnectCost - Cost.getMergedDetaBenefit();
+    float MergedDeltas = Cost.getMergedDetaBenefit();
+    float CurrentCost = Cost.InterconnectCost - MergedDeltas;
 
     return CurrentCost;
   }

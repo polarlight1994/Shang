@@ -553,7 +553,6 @@ IfFile:close()
                '-shang-enable-register-sharing=%(shang_enable_register_sharing)s' % self,
                '-shang-max-scheduling-iteration=%(shang_max_scheduling_iteration)s' % self,
                '-shang-dump-intermediate-netlist=%(shang_dump_intermediate_netlist)s' % self,
-               '-shang-enable-bit-level-opt=%(shang_enable_bit_level_opt)s' % self,
                '-shang-selector-ignore-trivial-loops=true',
                '-shang-selector-ignore-x-fanins=true',
                 '-stats',

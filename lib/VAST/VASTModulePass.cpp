@@ -30,6 +30,7 @@
 #include "llvm/Analysis/DependenceAnalysis.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/BlockFrequencyInfo.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Statistic.h"
@@ -49,10 +50,6 @@ static cl::opt<bool>
 EnalbeDualPortRAM("shang-enable-dual-port-ram",
                   cl::desc("Enable dual port ram in the design."),
                   cl::init(true));
-static cl::opt<bool>
-EnalbeBitlevelOpt("shang-enable-bit-level-opt",
-  cl::desc("Enable bit-level optimization."),
-  cl::init(true));
 
 namespace {
 struct VASTModuleBuilder : public MinimalDatapathContext,
@@ -874,19 +871,6 @@ bool VASTModuleBuilder::buildGEPOperation(GetElementPtrInst &I) {
 
   BasicBlock *ParentBB = I.getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
-  VASTSeqInst *Op
-    = VM->lauchInst(Slot, VASTImmediate::True, array_lengthof(Ops), &I, false);
-  for (unsigned i = 0, e = array_lengthof(Ops); i != e; ++i) {
-    VASTValPtr V = Ops[i];
-    VASTRegister *Operand = createOperandRegister(Op, I, i, V->getBitWidth());
-    VASTSeqValue *SV = VM->createSeqValue(Operand->getSelector(), i, &I);
-    Op->addSrc(V, i, SV);
-    // Update the operand to the registered version.
-    Ops[i] = SV;
-  }
-
-  Slot = advanceToNextSlot(Slot, 1);
-
   VASTSeqValue *Result = getOrCreateSeqVal(&I);
   // Do not provide latency, we will calculate the latency in timing analysis
   // and build the correct constraints in scheduling graph.
@@ -905,30 +889,18 @@ void VASTModuleBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
 }
 
 bool VASTModuleBuilder::buildICmpOperation(ICmpInst &I) {
-  VASTValPtr Ops[] = { getAsOperandImpl(I.getOperand(0)),
-                       getAsOperandImpl(I.getOperand(1)) };
-  BasicBlock *ParentBB = I.getParent();
-  VASTSlot *Slot = getLatestSlot(ParentBB);
-  VASTSeqInst *Op
-    = VM->lauchInst(Slot, VASTImmediate::True, array_lengthof(Ops), &I, false);
-  for (unsigned i = 0, e = array_lengthof(Ops); i != e; ++i) {
-    VASTValPtr V = Ops[i];
-    VASTRegister *Operand = createOperandRegister(Op, I, i, V->getBitWidth());
-    VASTSeqValue *SV = VM->createSeqValue(Operand->getSelector(), i, &I);
-    Op->addSrc(V, i, SV);
-    // Update the operand to the registered version.
-    Ops[i] = SV;
-  }
-  // FIXME: Use the latency of the functional unit!
-  Slot = advanceToNextSlot(Slot, 1);
-
-  VASTSeqValue *Result = getOrCreateSeqVal(&I);
-  // Do not provide latency, we will calculate the latency in timing analysis
-  // and build the correct constraints in scheduling graph.
-  VM->latchValue(Result, Builder.buildICmpExpr(I.getPredicate(), Ops[0], Ops[1]),
-                 Slot, VASTImmediate::True, &I, 0);
-  advanceToNextSlot(Slot);
-  return true;
+  return false;
+  //VASTValPtr Ops[] = { getAsOperandImpl(I.getOperand(0)),
+  //                     getAsOperandImpl(I.getOperand(1)) };
+  //BasicBlock *ParentBB = I.getParent();
+  //VASTSlot *Slot = getLatestSlot(ParentBB);
+  //VASTSeqValue *Result = getOrCreateSeqVal(&I);
+  //// Do not provide latency, we will calculate the latency in timing analysis
+  //// and build the correct constraints in scheduling graph.
+  //VM->latchValue(Result, Builder.buildICmpExpr(I.getPredicate(), Ops[0], Ops[1]),
+  //               Slot, VASTImmediate::True, &I, 0);
+  //advanceToNextSlot(Slot);
+  //return true;
 }
 
 void VASTModuleBuilder::visitICmpInst(ICmpInst &I) {
@@ -939,57 +911,42 @@ void VASTModuleBuilder::visitICmpInst(ICmpInst &I) {
 }
 
 bool VASTModuleBuilder::buildBinaryOperation(BinaryOperator &I) {
+  if (I.getOpcode() != Instruction::Mul)
+    return false;
+
   SmallVector<VASTValPtr, 3> Ops;
   Ops.push_back(getAsOperandImpl(I.getOperand(0)));
   Ops.push_back(getAsOperandImpl(I.getOperand(1)));
-  bool BuildLaunch = true;
 
-  // Translate the LLVM instruction opcode to VASTExpr opcode.
-  switch (I.getOpcode()) {
-  case Instruction::Sub:
-    // A - B is equivalent to A + ~(B) + 1
-    Ops[1] = Builder.buildNotExpr(Ops[1]);
-    Ops.push_back(VASTImmediate::True);
-    break;
-  case Instruction::Add:
-    Ops.push_back(VASTImmediate::False);
-    break;
-  case Instruction::Mul:
-    if (EnalbeBitlevelOpt) {
-      if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(Ops[1]))
-        if (Imm.getAPInt().isPowerOf2() || Imm.isAllZeros())
-          return false;
-    }
-    break;
-  case Instruction::Shl:
-  case Instruction::AShr:
-  case Instruction::LShr:
-    if (EnalbeBitlevelOpt && isa<VASTImmPtr>(Ops[1]))
+  if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(Ops[0]))
+    if (Imm.getAPInt().isPowerOf2() || Imm.isAllZeros())
       return false;
-    break;
-  case Instruction::And:
-  case Instruction::Or:
-  case Instruction::Xor:
-    if (EnalbeBitlevelOpt && (isa<VASTImmPtr>(Ops[0]) || isa<VASTImmPtr>(Ops[1])))
+
+  if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(Ops[1]))
+    if (Imm.getAPInt().isPowerOf2() || Imm.isAllZeros())
       return false;
-    BuildLaunch = false;
-    break;
-  default: return false;
-  }
 
   BasicBlock *ParentBB = I.getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
-  if (BuildLaunch) {
-    VASTSeqInst *Op
-      = VM->lauchInst(Slot, VASTImmediate::True, Ops.size(), &I, false);
-    for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
-      VASTValPtr V = Ops[i];
-      VASTRegister *Operand = createOperandRegister(Op, I, i, V->getBitWidth());
-      VASTSeqValue *SV = VM->createSeqValue(Operand->getSelector(), i, &I);
-      Op->addSrc(V, i, SV);
-      // Update the operand to the registered version.
-      Ops[i] = SV;
-    }
+  VASTSeqInst *Op
+    = VM->lauchInst(Slot, VASTImmediate::True, Ops.size(), &I, false);
+  for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
+    VASTValPtr V = Ops[i];
+    BitMasks SrcMask = calculateBitMask(V);
+
+    VASTRegister *Operand = createOperandRegister(Op, I, i, V->getBitWidth());
+    VASTSeqValue *SV = VM->createSeqValue(Operand->getSelector(), i, &I);
+    Op->addSrc(V, i, SV);
+    if (isa<VASTImmPtr>(V))
+      continue;
+
+    Ops[i] = SV;
+    // Update the operand to the registered version, and replace the known bits
+    // if possible.
+    if (VASTValPtr MaskedOperand = Builder.replaceKnownBits(Ops[i], SrcMask))
+      Ops[i] = MaskedOperand;
+
+    Ops[i] = replaceKnownBits(I.getOperand(i), Ops[i]);
   }
 
   // FIXME: Use the latency of the functional unit!
@@ -1375,6 +1332,7 @@ void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<ScalarEvolution>();
   AU.addPreserved<HLSAllocation>();
   AU.addPreserved<DependenceAnalysis>();
+  AU.addPreserved<BlockFrequencyInfo>();
   AU.addPreserved<BranchProbabilityInfo>();
   AU.addPreservedID(DataflowID);
   AU.setPreservesCFG();

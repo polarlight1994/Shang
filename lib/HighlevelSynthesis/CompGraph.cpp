@@ -122,7 +122,10 @@ bool CompGraphNode::isCompatibleWithInterval(const CompGraphNode *RHS) const {
 }
 
 BasicBlock *CompGraphNode::getDomBlock() const {
-  return Inst->getParent();
+  if (Inst)
+    return Inst->getParent();
+
+  return 0;
 }
 
 void CompGraphBase::initalizeDomTreeLevel() {
@@ -561,7 +564,7 @@ unsigned CompGraphBase::computeReqiredResource(const CompGraphNode *Node) const 
     Cost += (*I)->getBitWidth();
 
   // 2. Calculate the functional unit resource reduction through this edge.
-  Cost += Node->FUCost;
+  // Cost += Node->FUCost;
 
   return Cost;
 }
@@ -863,8 +866,8 @@ void MinCostFlowSolver::setCost(unsigned Iteration) {
     if (Dst->IsTrivial)
       continue;
 
-
     float EdgeCost = G.computeCost(Src, Dst);
+
     if (Iteration == 0) {
       I->second.second = I->second.second > 0 ? 1 : 0;
     } else if (Src->getBindingIdx() == Dst->getBindingIdx()) {

@@ -445,20 +445,6 @@ void ExtractTimingForPath(raw_ostream &O, VASTSelector *Dst, VASTSeqValue *Src,
           << " -> " << Dst->getSTAObjectName() << " delay: $delay\"\n");
 }
 
-static void
-GenerateTimingConstraints(raw_ostream &O, VASTSelector *Src, VASTSelector *Dst,
-                          VASTValue *Thu, unsigned Cycles) {
-  O << "set src " << GetSTACollection(Src) << '\n';
-  O << "set dst " << GetSTACollection(Dst) << '\n';
-  if (Thu)
-    O << "set thu " << GetSTACollection(Thu) << '\n';
-
-  O << "set_multicycle_path -from $src ";
-  if (Thu)
-    O << "-through $thu ";
-  O << "-to $dst -setup -end " << Cycles << '\n';
-}
-
 void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,
                                                      VASTSelector *Sel) {
   VASTSeqValue *V = Sel->getSSAValue();
@@ -727,7 +713,7 @@ ExternalTimingAnalysis::writeReadPlacementScript(raw_ostream &O,
     O << "\" w+]\n"
          "puts $RegionPlacementFile \"$origin,$width,$height \"\n";
     // Close the array and the file object.
-    O << "close $RegionPlacementFile\n";
+    O << "close $RegionPlacementFile\n"
          "unload_report\n";
   }
   O << "project_close\n";

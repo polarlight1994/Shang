@@ -627,7 +627,7 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
     assert(pred_begin(BB) == pred_end(BB)
            && "No entry block do not have any predecessor?");
     // Dependency from the BB entry is not conditional.
-    Entry->addDep(G->getEntry(), VASTDep::CreateFlowDep(0));
+    Entry->addDep(G->getEntry(), VASTDep::CreateCtrlDep(0));
   }
 
   // Add the entry to the mapping.
@@ -925,8 +925,8 @@ struct IterativeSchedulingBinding {
                              DominatorTree &DT, BlockFrequencyInfo &BFI,
                              BranchProbabilityInfo &BPI, IR2SUMapTy &IR2SUMap)
     : Scheduler(G, 1), PSB(PSB), DT(DT), BFI(BFI), BPI(BPI), IR2SUMap(IR2SUMap),
-      ScheduleViolation(0), BindingViolation(0), TotalWeight(0.0),
-      S(Initial), PerformanceFactor(64.0f), ResourceFactor(0.01f) {
+      S(Initial), ScheduleViolation(0), BindingViolation(0), TotalWeight(0.0),
+      PerformanceFactor(8.0f), ResourceFactor(0.1f) {
     // Build the hard linear order.
     Scheduler.addLinOrdEdge(DT, IR2SUMap);
   }
@@ -1098,11 +1098,8 @@ unsigned IterativeSchedulingBinding::checkCompatibility(PSBCompNode *Src,
   assert(Src->Inst.IsLauch() == Dst->Inst.IsLauch()
          && "Unexpected binding launch/latch to the same physical unit!");
   // Get the benefit by getting the negative of the cost.
-  float BindingBenefit = 0;
-  if (Src->countSuccessor(Dst))
-    BindingBenefit = - PSB->computeCost(Src, Dst);
-  else
-    BindingBenefit = - PSB->computeCost(Dst, Src);
+  float BindingBenefit = PSB->getEntry()->getCostTo(Dst).InterconnectCost -
+                         Src->getCostTo(Dst).InterconnectCost;
 
   float Penalty = BindingBenefit * ResourceFactor * TotalWeight;
 
@@ -1304,7 +1301,7 @@ void VASTScheduling::scheduleGlobal() {
   while (ISB.iterate(*VM)) {
     ++NumIterations;
     dbgs() << "Schedule Violations: " << ISB.ScheduleViolation << ' '
-           << "Binding Violations:" << ISB.BindingViolation << '\n';
+                 << "Binding Violations:" << ISB.BindingViolation << '\n';
   }
 
   DEBUG(G->viewGraph());

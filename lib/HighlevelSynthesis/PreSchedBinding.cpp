@@ -98,6 +98,10 @@ public:
       return;
     }
 
+    // Temporary work around: Do not fail on function argument.
+    if (!Inst)
+      return;
+
     LiveInterval *LI = getVarInfo(Inst);
     N->getDefs() |= LI->Defs;
     N->getDefs() |= LI->DefKills;
@@ -336,7 +340,7 @@ bool PSBCompNode::isKillIntersect(const PSBCompNode *RHS) const {
 void PSBCompNode::increaseSchedulingCost(PSBCompNode *Succ, float SchedulingCost) {
   Cost &C = getCostToInternal(Succ);
 
-  C.SchedulingCost += SchedulingCost;
+  C.SchedulingCost = std::max(C.SchedulingCost * 1.1f, SchedulingCost);
 }
 
 bool PSBCompNode::isCompatibleWith(const CompGraphNode *RHS) const {
@@ -373,9 +377,11 @@ public:
     : CompGraphBase(DT) {}
 
   CompGraphNode *createNode(VFUs::FUTypes FUType, unsigned FUCost, unsigned Idx,
-    DataflowInst Inst, ArrayRef<VASTSelector*> Sels)
-    const {
-      return new PSBCompNode(FUType, FUCost, Idx, Inst, Sels);
+                            DataflowInst Inst, ArrayRef<VASTSelector*> Sels)
+                            const {
+    CompGraphNode *Node = new PSBCompNode(FUType, FUCost, Idx, Inst, Sels);
+    Node->setBindingIdx(1);
+    return Node;
   }
 
   float computeCost(const CompGraphNode *Src, const CompGraphNode *Dst) const;
@@ -387,7 +393,8 @@ public:
 float PSBCompGraph::computeCost(const CompGraphNode *Src,
                                 const CompGraphNode *Dst) const {
   const NodeTy::Cost &Cost = Src->getCostTo(Dst);
-  float CurrentCost = Cost.InterconnectCost - Cost.getMergedDetaBenefit();
+  float MergedDeltas = Cost.getMergedDetaBenefit();
+  float CurrentCost = Cost.InterconnectCost - MergedDeltas;
 
   //if (Src->getBindingIdx() != Dst->getBindingIdx())
   //  Cost.SchedulingCost *= 0.95f;
