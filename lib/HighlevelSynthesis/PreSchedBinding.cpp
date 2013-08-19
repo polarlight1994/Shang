@@ -340,6 +340,11 @@ void PSBCompNode::increaseSchedulingCost(PSBCompNode *Succ, float SchedulingCost
 }
 
 bool PSBCompNode::isCompatibleWith(const CompGraphNode *RHS) const {
+  // Workaround: Do not mix Latch/Launch operation together in the schedule
+  // independent binding.
+  if (Inst.IsLauch() != RHS->Inst.IsLauch())
+    return false;
+
   if (!isCompatibleWithStructural(RHS))
     return false;
 
