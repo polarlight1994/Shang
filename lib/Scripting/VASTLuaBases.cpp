@@ -43,8 +43,10 @@ static std::string GetSTAObjectName(const VASTSelector *Sel) {
   std::string Name;
   raw_string_ostream OS(Name);
 
-  if (const VASTMemoryBus *RAM = dyn_cast<VASTMemoryBus>(Sel->getParent()))
-    return GetSTAObjectName(RAM);
+  if (Sel->isFUOutput()) {
+    if (const VASTMemoryBus *RAM = dyn_cast<VASTMemoryBus>(Sel->getParent()))
+      return GetSTAObjectName(RAM);
+  }
 
   OS << ' ' << Sel->getName() << "* ";
 

@@ -483,7 +483,6 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
   TimingNetlist &TNL =getAnalysis<TimingNetlist>();
 
   //Write the timing constraints.
-  std::map<VASTMemoryBus*, AnnotatedCone*> MemBusCones;
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
@@ -491,24 +490,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
     if (Sel->empty()) continue;
 
     // Handle the trivial case.
-    if (isa<VASTRegister>(Sel->getParent()) || isa<VASTOutPort>(Sel->getParent())) {
-      writeConstraintsFor(Sel, TNL, STGDist);
-      continue;
-    }
-
-    VASTMemoryBus *Bus = cast<VASTMemoryBus>(Sel->getParent());
-    AnnotatedCone *&Cone = MemBusCones[Bus];
-    if (Cone == 0)
-      Cone = new AnnotatedCone(TNL, STGDist, Bus, OS);
-
-    annoataConstraintsFor(*Cone, Sel);
-  }
-
-  // Generate the constraints for memory bus and release the cone for memory bus.
-  typedef std::map<VASTMemoryBus*, AnnotatedCone*>::iterator cone_iteator;
-  for (cone_iteator I = MemBusCones.begin(), E = MemBusCones.end(); I != E; ++I) {
-    I->second->generateMCPEntries();
-    delete I->second;
+    writeConstraintsFor(Sel, TNL, STGDist);
   }
 
   // Also generate the location constraints.
