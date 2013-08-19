@@ -21,6 +21,8 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Allocator.h"
+#define DEBUG_TYPE "vast-structural-hashing"
+#include "llvm/Support/Debug.h"
 
 using namespace llvm;
 
@@ -380,6 +382,10 @@ unsigned CombPatterns::getOrCreatePatternID(VASTExpr* Expr) {
     } else if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Operand.get()))
       Leaves.push_back(SeqVal->getSelector());
   }
+
+  // If we get a huge cone, simply not cache their leaves
+  if (Leaves.size() > 256)
+    Leaves.clear();
 
   return getOrCreateStrashID(Expr, Cache);
 }
