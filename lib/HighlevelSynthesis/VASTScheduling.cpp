@@ -428,6 +428,10 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   VASTSeqValue *SrcSeqVal = 0;
   for (unsigned i = 0; i < SUs.size(); ++i) {
     VASTSchedUnit *CurSU = SUs[i];
+
+    if (isa<BasicBlock>(V) && CurSU->isBBEntry())
+      return CurSU;
+
     // Are we got the VASTSeqVal corresponding to V?
     if (CurSU->isLatching(V)) {
       assert((SrcSeqVal == 0
@@ -457,6 +461,9 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
   assert((!isa<Instruction>(Src)
           || DT->dominates(cast<Instruction>(Src)->getParent(), DstU->getParent()))
          && "Flow dependency should be a dominance edge!");
+  assert((!isa<BasicBlock>(Src)
+          || DT->dominates(cast<BasicBlock>(Src), DstU->getParent()))
+         && "Flow dependency should be a dominance edge!");
 
   VASTSchedUnit *SrcSU = 0;
   Instruction *SrcInst = dyn_cast<Instruction>(Src);
@@ -464,14 +471,15 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
   if (!isChainingCandidate(Src)) {
     // Get the latch SU, if source cannot be chained.
     SrcSU = getFlowDepSU(Src);
-    float slack = DF->getSlackFromLaunch(SrcInst);
     if (IsLaunch) {
-      float DelayFromLaunch = 1.0f - slack;
-      // TODO: Only set the upperbound to 1 for non-chaining candidate.
+      float DelayFromLaunch = DF->getDelayFromLaunch(SrcInst);
       delay -= std::max(1.0f, DelayFromLaunch);
       // Do not produce a negative delay!
       delay = std::max(0.0f, delay);
-    } else if (slack > delay)
+    } else if (SrcSU->isBBEntry()) {
+      // There is already 1 cycle slack from the enable signal to DstU.
+      delay = std::max(0.0f, delay - 1.0f);
+    } else if (DF->getSlackFromLaunch(SrcInst) > delay)
       // Try to fold the delay of current pipeline stage to the previous pipeline
       // stage, if the previous pipeline stage has enough slack.
       delay = 0.0f;

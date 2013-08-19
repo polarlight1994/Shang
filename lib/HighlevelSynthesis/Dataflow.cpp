@@ -89,6 +89,10 @@ void Dataflow::getFlowDep(DataflowInst Inst, SrcSet &Set) const {
         if (!DT->properlyDominates(Def->getParent(), Inst->getParent()))
           continue;
 
+      if (BasicBlock *BB = dyn_cast<BasicBlock>(V))
+        if (!DT->properlyDominates(BB, Inst->getParent()))
+          continue;
+
       float &Delay = Set[V];
       Delay = std::max(I->second.delay, Delay);
     }
@@ -223,11 +227,17 @@ Dataflow::getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const {
   if (isa<TerminatorInst>(Inst))
     IsSubGrp &= ParentBB != Inst->getParent();
 
-  if (Instruction *Def = dyn_cast<Instruction>(Src)) {
+  BasicBlock *DefBB = 0;
+  if (Instruction *Def = dyn_cast<Instruction>(Src))
+    DefBB = Def->getParent();
+  else if (BasicBlock *BB = dyn_cast<BasicBlock>(Src))
+    DefBB = BB;
+
+  if (DefBB) {
     // While Src not dominate BB, this is due to CFG folding. We need to get the
     // parent BB of the actual user, this can be done by move up in the subgroup
     // tree until we get a BB that is dominated by Src.
-    while (!DT->dominates(Def->getParent(), ParentBB)) {
+    while (!DT->dominates(DefBB, ParentBB)) {
       S = S->getParentGroup();
       ParentBB = S->getParent();
     }
@@ -258,7 +268,7 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
            << ") "<< Slack << ' ' << delay
            << " Old delay " << OldDelay
            << '(' << ((delay - OldDelay) / delay) << ')' << " \n"
-           << "Src: " << *V << '(' << V.IsLauch() << ')'
+           << "Src: " << V->getName() << '(' << V.IsLauch() << ')'
            << " Dst: " << *Inst << '(' << Inst.IsLauch() << ')' << '\n';
 
     BasicBlock *ParentBB = S->getParent();
@@ -273,11 +283,17 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
     assert((ParentBB == Inst->getParent() || isa<PHINode>(Inst)) &&
            "Parent not match!");
 
-    if (Instruction *Def = dyn_cast<Instruction>(V)) {
+    BasicBlock *DefBB = 0;
+    if (Instruction *Def = dyn_cast<Instruction>(V))
+      DefBB = Def->getParent();
+    else if (BasicBlock *BB = dyn_cast<BasicBlock>(V))
+      DefBB = BB;
+
+    if (DefBB) {
       // While Src not dominate BB, this is due to CFG folding. We need to get the
       // parent BB of the actual user, this can be done by move up in the subgroup
       // tree until we get a BB that is dominated by Src.
-      while (!DT->dominates(Def->getParent(), ParentBB)) {
+      while (!DT->dominates(DefBB, ParentBB)) {
         S = S->getParentGroup();
         ParentBB = S->getParent();
         dbgs() << "Move up!\n";

@@ -53,7 +53,7 @@ void VASTSlot::createSignals(VASTModule *VM) {
   uint64_t InitVal = SlotNum == 0 ? 1 : 0;
   VASTRegister *R =
     VM->createRegister(SlotName + "r", 1, InitVal, VASTSelector::Slot);
-  SlotReg.set(VM->createSeqValue(R->getSelector(), SlotNum));
+  SlotReg.set(VM->createSeqValue(R->getSelector(), SlotNum, getParent()));
 }
 
 void VASTSlot::copySignals(VASTSlot *S) {

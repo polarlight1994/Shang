@@ -192,10 +192,12 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
                                           std::map<VASTSeqValue*, float> &Srcs) {
   // Simply add the zero delay record if the fanin itself is a register.
   if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V.get())) {
-    // Please note that this insertion may fail (V already existed), but it does
-    // not hurt because here we only want to ensure the record exist.
-    Srcs.insert(std::make_pair(SV, 0.0f));
-    return;
+    if (!SV->isSlot()) {
+      // Please note that this insertion may fail (V already existed), but it
+      // does not hurt because here we only want to ensure the record exist.
+      Srcs.insert(std::make_pair(SV, 0.0f));
+      return;
+    }
   }
 
   LeafSet Leaves;
@@ -291,6 +293,7 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
 
     std::map<VASTSeqValue*, float> Srcs;
     VASTValPtr Guard = Op->getGuard();
+    VASTSeqValue *SlotValue = Op->getSlot()->getValue();
 
     for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
       VASTLatch L = Op->getSrc(i);
@@ -300,6 +303,7 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
 
       // Extract the delay from the fan-in and the guarding condition.
       VASTValPtr FI = L;
+      ETA.getPathDelay(L, SlotValue, Srcs);
       ETA.getPathDelay(L, Guard, Srcs);
       ETA.getPathDelay(L, FI, Srcs);
     }
@@ -308,6 +312,12 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
     for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       VASTSeqValue *Src = I->first;
       float delay = I->second;
+
+      if (Src->isSlot()) {
+        if (Src->getLLVMValue() == 0)
+          continue;
+      }
+
       annotateDelay(Op, Op->getSlot(), Src, delay);
     }
   }
@@ -441,7 +451,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
     FI->extractSupportingSeqVal(CurLeaves);
     U.getGuard()->extractSupportingSeqVal(CurLeaves);
     // Also extract the arrival time from the slot register.
-    // CurLeaves.insert(U.getSlot()->getValue());
+    CurLeaves.insert(U.getSlot()->getValue());
 
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
