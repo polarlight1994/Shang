@@ -569,7 +569,6 @@ bool TimingDrivenSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
 namespace {
 struct SimpleSelectorSynthesis : public VASTModulePass {
   CachedStrashTable *CST;
-  VASTExprBuilder *Builder;
   VASTModule *VM;
 
   static char ID;
@@ -612,16 +611,14 @@ bool SimpleSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
 
   {
     MinimalExprBuilderContext Context(VM);
-    Builder = new VASTExprBuilder(Context);
+    VASTExprBuilder Builder(Context);
     this->VM = &VM;
 
     typedef VASTModule::selector_iterator iterator;
 
     // Eliminate the identical SeqOps.
     for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-      synthesizeSelector(I, *Builder);
-
-    delete Builder;
+      synthesizeSelector(I, Builder);
   }
 
   // Perform LUT Mapping on the newly synthesized selectors.
@@ -721,7 +718,6 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     if (Sel->isEnable() || Sel->isSlot())
       continue;
 
-    VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
 
     CurLeaves.clear();
@@ -735,8 +731,10 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
         Sel->annotateReadSlot(Slots.pop_back_val(), FIVal);
     }
 
+    VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
     AllFanins.push_back(GuardedFIVal);
+    Slots.clear();
   }
 
   // Build the final fanin only if the selector is not enable.
