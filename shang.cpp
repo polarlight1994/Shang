@@ -308,7 +308,7 @@ int main(int argc, char **argv) {
     // after scheduling.
     HLSPasses.add(createLUTMappingPass());
 
-    if (EnableRegisterSharing) HLSPasses.add(createRegisterSharingPass());
+    HLSPasses.add(createRegisterSharingPass());
     if (EnableMUXPipelining) HLSPasses.add(createSelectorPipeliningPass());
 
     // Analyse the slack between registers.
