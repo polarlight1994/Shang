@@ -374,7 +374,7 @@ static std::string GetSTACollection(const VASTValue *V) {
 }
 
 static
-void extractTimingForPath(raw_ostream &O, unsigned RefIdx, bool HasThu) {
+void ExtractTimingForPath(raw_ostream &O, unsigned RefIdx, bool HasThu) {
   O << "set delay \"No-path\"\n";
   O << "if {[get_collection_size $src] && [get_collection_size $dst]";
   if (HasThu)
@@ -399,14 +399,14 @@ void extractTimingForPath(raw_ostream &O, unsigned RefIdx, bool HasThu) {
 }
 
 static
-void extractTimingForPath(raw_ostream &O, VASTSelector *Dst, VASTSeqValue *Src,
+void ExtractTimingForPath(raw_ostream &O, VASTSelector *Dst, VASTSeqValue *Src,
                           VASTExpr *Thu, unsigned RefIdx) {
   O << "set src " << GetSTACollection(Src) << '\n';
   O << "set dst " << GetSTACollection(Dst) << '\n';
   if (Thu)
     O << "set thu " << GetSTACollection(Thu) << '\n';
   // if (Thu) O << "set thu " << GetSTACollection(Thu) << '\n';
-  extractTimingForPath(O, RefIdx, Thu != 0);
+  ExtractTimingForPath(O, RefIdx, Thu != 0);
   DEBUG(O << "post_message -type info \"" << Src->getSTAObjectName()
           << " -> " << Dst->getSTAObjectName() << " delay: $delay\"\n");
 }
@@ -477,7 +477,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
     unsigned Idx = 0;
     // Directly use the register-to-register delay.
     SDArrivals[Sel][Src] = allocateDelayRef(Idx);
-    extractTimingForPath(TclO, Sel, Src, 0, Idx);
+    ExtractTimingForPath(TclO, Sel, Src, 0, Idx);
   }
 
   // Extract path delay in details for leaves that reachable to different fanins
@@ -519,7 +519,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
           continue;
 
         P = allocateDelayRef(Idx);
-        extractTimingForPath(TclO, Sel, Leaf, Expr, Idx);
+        ExtractTimingForPath(TclO, Sel, Leaf, Expr, Idx);
       }
 
       AnnotoatedFanins[Op].insert(Expr);
