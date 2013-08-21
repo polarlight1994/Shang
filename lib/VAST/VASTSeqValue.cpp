@@ -562,6 +562,21 @@ void VASTSelector::setMux(VASTValPtr Fanin, VASTValPtr Guard) {
   this->Guard.set(Guard);
 }
 
+void VASTSelector::setName(const char *Name) {
+  if (Contents.Name == Name)
+    return;
+
+  // Change the name of the selector.
+  Contents.Name = Name;
+
+  for (def_iterator I = def_begin(), E = def_end(); I != E; ++I) {
+    VASTSeqValue *SV = *I;
+
+    if (SV->getName() != getName())
+      SV->changeSelector(this);
+  }
+}
+
 //===----------------------------------------------------------------------===//
 VASTSeqValue::VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V)
   : VASTNamedValue(vastSeqValue, Selector->getName(), Selector->getBitWidth()),
@@ -588,7 +603,12 @@ VASTSelector *VASTSeqValue::getSelector() const {
 }
 
 void VASTSeqValue::changeSelector(VASTSelector *NewSel) {
-  assert(NewSel != getSelector() && "Selector not changed!");
+  if (NewSel == getSelector()) {
+    assert(Contents.Name != Selector->getName() && "Selector not changed!");
+    Contents.Name = Selector->getName();
+    return;
+  }
+
   getSelector()->removeUser(this);
   Selector = NewSel;
   if (Selector) {

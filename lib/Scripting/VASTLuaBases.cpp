@@ -573,11 +573,16 @@ void VASTModule::printSubmodules(vlang_raw_ostream &OS) const {
 
 void VASTModule::printRegisterBlocks(vlang_raw_ostream &OS) const {
   typedef const_selector_iterator iterator;
-  
+
+  std::set<const char *> Existednames;
   typedef RegisterVector::const_iterator const_reg_iterator;
   for (const_reg_iterator I = Registers.begin(), E = Registers.end();
-       I != E; ++I)
+       I != E; ++I) {
+    if (!Existednames.insert(I->getSelector()->getName()).second)
+      continue;
+
     I->print(OS);
+  }
 
   for (const_port_iterator I = Ports.begin(), E = Ports.end(); I != E; ++I)
     if (VASTOutPort *P = dyn_cast<VASTOutPort>(*I))
@@ -599,9 +604,15 @@ void VASTModule::printModuleDecl(raw_ostream &OS) const {
 void VASTModule::printSignalDecl(raw_ostream &OS) const {
   typedef WireVector::const_iterator const_wire_iterator;
   typedef RegisterVector::const_iterator const_reg_iterator;
+
+  std::set<const char *> Existednames;
   for (const_reg_iterator I = Registers.begin(), E = Registers.end();
-       I != E; ++I)
+       I != E; ++I) {
+    if (!Existednames.insert(I->getSelector()->getName()).second)
+      continue;
+
     I->printDecl(OS);
+  }
 
   typedef SubmoduleVector::const_iterator const_submod_iterator;
   for (const_submod_iterator I = Submodules.begin(),E = Submodules.end();

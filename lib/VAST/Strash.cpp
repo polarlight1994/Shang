@@ -229,6 +229,7 @@ bool CachedStrashTable::runOnVASTModule(VASTModule &VM) {
 
 void CachedStrashTable::releaseMemory() {
   Cache.clear();
+  Table->releaseMemory();
 }
 
 unsigned CachedStrashTable::getOrCreateStrashID(VASTValPtr Ptr) {

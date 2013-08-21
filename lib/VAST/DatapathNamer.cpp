@@ -42,6 +42,8 @@ struct DatapathNamer : public VASTModulePass {
 
   bool runOnVASTModule(VASTModule &VM);
 
+  bool assignName(CachedStrashTable &Strash, VASTModule &VM);
+
   void releaseMemory() {
     Names.clear();
   }
@@ -80,7 +82,17 @@ struct Namer {
 }
 
 bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
+  VM.resetSelectorName();
+
   CachedStrashTable &Strash = getAnalysis<CachedStrashTable>();
+
+  while (assignName(Strash, VM))
+    Strash.releaseMemory();
+
+  return false;
+}
+
+bool DatapathNamer::assignName(CachedStrashTable & Strash, VASTModule &VM) {
   Namer N(Strash, Names);
   std::set<VASTExpr*> Visited;
 
@@ -103,6 +115,10 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
     }
   }
 
+  bool SelectorNameChanged = false;
+  typedef std::pair<unsigned, unsigned> FIPair;
+  std::map<FIPair, VASTSelector*> IdenticalSelectors;
+
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
@@ -112,7 +128,26 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
       Expr->visitConeTopOrder(Visited, N);
     if (VASTExpr *Expr = Sel->getFanin().getAsLValue<VASTExpr>())
       Expr->visitConeTopOrder(Visited, N);
+
+    // Do not rename the selector like memory ports, output port, etc.
+    if (!isa<VASTRegister>(Sel->getParent()))
+      continue;
+
+    unsigned FIIdx = Strash.getOrCreateStrashID(Sel->getFanin());
+    unsigned GuardIdx = Strash.getOrCreateStrashID(Sel->getGuard());
+    VASTSelector *&IdenticalSel = IdenticalSelectors[FIPair(FIIdx, GuardIdx)];
+
+    if (IdenticalSel) {
+      if (IdenticalSel->getName() != Sel->getName())  {
+        SelectorNameChanged |= true;
+        Sel->setName(IdenticalSel->getName());
+      }
+
+      continue;
+    }
+
+    IdenticalSel = Sel;
   }
 
-  return false;
+  return SelectorNameChanged;
 }

@@ -155,6 +155,17 @@ void VASTOperandList::dropOperands() {
 }
 
 //===----------------------------------------------------------------------===//
+void VASTModule::resetSelectorName() {
+  typedef SymTabTy::iterator iterator;
+  for (iterator I = SymbolTable.begin(), E = SymbolTable.end(); I != E; ++I) {
+    VASTSelector *Sel = dyn_cast<VASTSelector>(I->second);
+    if (Sel == 0)
+      continue;
+
+    Sel->setName(I->getKeyData());
+  }
+}
+
 void VASTModule::printSubmodules(raw_ostream &OS) const {
   vlang_raw_ostream O(OS);
   O.enter_block("\n", "");

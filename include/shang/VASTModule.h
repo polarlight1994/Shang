@@ -351,6 +351,8 @@ public:
 
   void print(raw_ostream &OS) const;
 
+  void resetSelectorName();
+
   /// Perform the Garbage Collection to release the dead objects on the
   /// VASTModule
   void gc();
