@@ -522,8 +522,14 @@ void VASTScheduling::buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U) 
   DF->getFlowDep(U->getSeqOp(), Srcs);
   typedef Dataflow::SrcSet::iterator src_iterator;
   // Also calculate the path for the guarding condition.
-  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
+  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+    if (Instruction *Inst = dyn_cast<Instruction>(I->first)) {
+      if (DF->isBlockUnreachable(Inst->getParent()))
+        continue;
+    }
+
     buildFlowDependencies(U, I->first, I->first.IsLauch(), I->second);
+  }
 }
 
 void
@@ -534,8 +540,14 @@ VASTScheduling::buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U)
   DF->getIncomingFrom(DataflowInst(PHI, false), U->getParent(), Srcs);
 
   // Also calculate the path for the guarding condition.
-  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
+  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+    if (Instruction *Inst = dyn_cast<Instruction>(I->first)) {
+      if (DF->isBlockUnreachable(Inst->getParent()))
+        continue;
+    }
+
     buildFlowDependencies(U, I->first, I->first.IsLauch(), I->second);
+  }
 }
 
 void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {

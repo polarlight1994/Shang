@@ -15,6 +15,9 @@
 #include "MinimalDatapathContext.h"
 #include "Allocation.h"
 
+// FIXME: Move Dataflow.h to a public place.
+#include "../HighlevelSynthesis/Dataflow.h"
+
 #include "shang/VASTMemoryPort.h"
 #include "shang/VASTModulePass.h"
 #include "shang/VASTModule.h"
@@ -58,6 +61,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   VASTModule *VM;
   DataLayout *TD;
   HLSAllocation &Allocation;
+  Dataflow &DF;
 
   //===--------------------------------------------------------------------===//
   void emitFunctionSignature(Function *F, VASTSubModule *SubMod = 0);
@@ -259,9 +263,10 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   bool buildICmpOperation(ICmpInst &I);
   bool buildGEPOperation(GetElementPtrInst &I);
   //===--------------------------------------------------------------------===//
-  VASTModuleBuilder(VASTModule *Module, DataLayout *TD, HLSAllocation &Allocation)
+  VASTModuleBuilder(VASTModule *Module, DataLayout *TD, HLSAllocation &Allocation,
+                    Dataflow &DF)
     : MinimalDatapathContext(*Module, TD), Builder(*this),
-      VM(Module), TD(TD), Allocation(Allocation), NumSlots(0)  {}
+      VM(Module), TD(TD), Allocation(Allocation), DF(DF), NumSlots(0)  {}
 };
 }
 
@@ -302,9 +307,13 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
 VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
   if (VASTValPtr Val = lookupExpr(V)) return Val;
 
-  // The VASTValPtr of the instruction should had been created when we trying
-  // to get it as operand.
-  assert(!isa<Instruction>(V) && "The VASTValPtr for Instruction not found!");
+  if (Instruction *Inst = dyn_cast<Instruction>(V)) {
+    // The VASTValPtr of the instruction should had been created when we trying
+    // to get it as operand, unless the basic block is unreachable.
+    assert(DF.isBlockUnreachable(Inst->getParent())
+           && "The VASTValPtr for Instruction not found!");
+    return getOrCreateImmediate(0, getValueSizeInBits(Inst));
+  }
 
   if (ConstantInt *Int = dyn_cast<ConstantInt>(V))
     return indexVASTExpr(V, getOrCreateImmediate(Int->getValue()));
@@ -497,8 +506,26 @@ void VASTModuleBuilder::allocateSubModules() {
 
 //===----------------------------------------------------------------------===//
 void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
+
   // Create the landing slot for this BB.
-  (void) getOrCreateLandingSlot(BB);
+  VASTSlot *S = getOrCreateLandingSlot(BB);
+
+  if (DF.isBlockUnreachable(BB)) {
+    TerminatorInst *Inst = BB->getTerminator();
+    if (ReturnInst *Ret = dyn_cast<ReturnInst>(Inst)) {
+      visitReturnInst(*Ret);
+      return;
+    }
+
+    for (succ_iterator I = succ_begin(BB), E = succ_end(BB); I != E; ++I) {
+      BasicBlock *Succ = *I;
+      // FIXME: Use VASTImmediate::False, and prevent the operation from being
+      // optimized away.
+      buildConditionalTransition(Succ, S, VM->getOrCreateSymbol("1'b0", 1), *Inst);
+    }
+
+    return;
+  }
 
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
@@ -547,9 +574,12 @@ void VASTModuleBuilder::visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd,
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB->begin(), E = BB->getFirstNonPHI(); I != E; ++I) {
     PHINode *PN = cast<PHINode>(I);
+    unsigned BitWidth = getValueSizeInBits(PN);
 
     Value *LiveOutedFromBB = PN->DoPHITranslation(BB, CurBB);
-    VASTValPtr LiveOut = getAsOperandImpl(LiveOutedFromBB);
+    VASTValPtr LiveOut = DF.isBlockUnreachable(CurBB) ?
+                         getOrCreateImmediate(0, BitWidth) :
+                         getAsOperandImpl(LiveOutedFromBB);
 
     VASTSeqValue *PHISeqVal = getOrCreateSeqVal(PN);
     // Latch the incoming value when we are branching to the succ slot.
@@ -559,9 +589,9 @@ void VASTModuleBuilder::visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd,
 
 
 void VASTModuleBuilder::buildConditionalTransition(BasicBlock *DstBB,
-                                                  VASTSlot *CurSlot,
-                                                  VASTValPtr Cnd,
-                                                  TerminatorInst &I) {
+                                                   VASTSlot *CurSlot,
+                                                   VASTValPtr Cnd,
+                                                   TerminatorInst &I) {
   // Create the virtual slot represent the launch of the design.
   VASTSlot *SubGrp = createSubGroup(DstBB, Cnd, CurSlot);
   // Build the branch operation before building the PHIs, make sure the PHIs
@@ -1264,7 +1294,9 @@ struct VASTModuleAnalysis : public FunctionPass {
 INITIALIZE_PASS_BEGIN(VASTModuleAnalysis,
                       "vast-module-builder", "VASTModule Builder",
                       false, true)
+  INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_AG_DEPENDENCY(HLSAllocation)
+  INITIALIZE_PASS_DEPENDENCY(Dataflow)
   INITIALIZE_PASS_DEPENDENCY(BasicBlockTopOrder)
 INITIALIZE_PASS_END(VASTModuleAnalysis,
                     "vast-module-builder", "VASTModule Builder",
@@ -1274,8 +1306,10 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
   assert(VM == 0 && "Module has been already created!");
   VM = new VASTModule(F);
 
-  VASTModuleBuilder Builder(VM, getAnalysisIfAvailable<DataLayout>(),
-                            getAnalysis<HLSAllocation>());
+  VASTModuleBuilder Builder(VM,
+                            &getAnalysis<DataLayout>(),
+                            getAnalysis<HLSAllocation>(),
+                            getAnalysis<Dataflow>());
 
   Builder.emitFunctionSignature(&F);
 
@@ -1293,8 +1327,10 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
 }
 
 void VASTModuleAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
+  AU.addRequired<DataLayout>();
   AU.addRequired<HLSAllocation>();
   AU.addRequiredID(BasicBlockTopOrderID);
+  AU.addRequired<Dataflow>();
   AU.setPreservesAll();
 }
 

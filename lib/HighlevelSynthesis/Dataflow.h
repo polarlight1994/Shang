@@ -150,6 +150,8 @@ private:
   unsigned generation;
   void updateDelay(float NewDelay, float Ratio, Annotation &OldDelay);
 
+  std::set<BasicBlock*> UnreachableBlocks;
+
   void dumpIncomings(raw_ostream &OS) const;
   void dumpFlowDeps(raw_ostream &OS) const;
 public:
@@ -168,6 +170,14 @@ public:
 
   float getSlackFromLaunch(Instruction *Inst) const;
   float getDelayFromLaunch(Instruction *Inst) const;
+
+  void addUnreachableBlocks(BasicBlock *BB) {
+    UnreachableBlocks.insert(BB);
+  }
+
+  bool isBlockUnreachable(BasicBlock *BB) const {
+    return UnreachableBlocks.count(BB);
+  }
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
   bool runOnFunction(Function &F);

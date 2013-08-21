@@ -131,6 +131,31 @@ struct ExternalTimingAnalysis {
   typedef std::map<VASTSeqOp*, std::set<VASTExpr*> > AnnotoatedFaninsMap;
   AnnotoatedFaninsMap AnnotoatedFanins;
 
+  // Test if a slot register can ever be set.
+  std::map<BasicBlock*, std::vector<float*> > BBReachability;
+
+  void extractSlotReachability(raw_ostream &TclO, VASTSelector *Sel);
+
+  bool isBasicBlockUnreachable(ArrayRef<float*> SlotsStatus) const {
+    for (unsigned i = 0; i < SlotsStatus.size(); ++i)
+      if (*SlotsStatus[i] == 0.0f)
+        return false;
+
+    return true;
+  }
+
+  bool isBasicBlockUnreachable(BasicBlock *BB) const {
+    typedef std::map<BasicBlock*, std::vector<float*> >::const_iterator iterator;
+    iterator I = BBReachability.find(BB);
+
+    // We do not know if the BB is reachable, it is safe to assume the BB is
+    // reachable.
+    if (I == BBReachability.end())
+      return false;
+
+    return isBasicBlockUnreachable(I->second);
+  }
+
   // Write the wrapper of the netlist.
   void writeNetlist(raw_ostream &O) const;
 
@@ -322,6 +347,15 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
     }
   }
 
+  // Annotate the unreachable blocks.
+  typedef Function::iterator bb_iterator;
+  Function &F = VM.getLLVMFunction();
+  for (bb_iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    BasicBlock *BB = I;
+    if (ETA.isBasicBlockUnreachable(BB))
+      DF->addUnreachableBlocks(BB);
+  }
+
   // External timing analysis successfully completed.
   return true;
 }
@@ -425,9 +459,30 @@ GenerateTimingConstraints(raw_ostream &O, VASTSelector *Src, VASTSelector *Dst,
   O << "-to $dst -setup -end " << Cycles << '\n';
 }
 
+void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,
+                                                     VASTSelector *Sel) {
+  VASTSeqValue *V = Sel->getSSAValue();
+  assert(V && "Slot enable value not defined?");
+  BasicBlock *BB = dyn_cast_or_null<BasicBlock>(V->getLLVMValue());
+
+  if (BB == 0)
+    return;
+
+  unsigned Idx = 0;
+  BBReachability[BB].push_back(allocateDelayRef(Idx));
+
+  TclO << "set slot " << GetSTACollection(Sel) << "\n"
+          "if {[get_collection_size $slot] == 0} {\n"
+          "  puts $JSONFile \"" << Idx << " 1.0\"\n"
+          "}\n";
+}
+
 void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
                                                       raw_ostream &TimingSDCO,
                                                       VASTSelector *Sel) {
+  if (Sel->isSlot())
+    extractSlotReachability(TclO, Sel);
+
   // Build the intersected fanins
   LeafSet AllLeaves, IntersectLeaves, CurLeaves;
   typedef LeafSet::iterator leaf_iterator;
