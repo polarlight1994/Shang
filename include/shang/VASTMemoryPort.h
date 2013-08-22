@@ -41,6 +41,7 @@ class VASTMemoryBus : public VASTSubModuleBase {
   // Signal names of the function unit.
   std::string getAddrName(unsigned PortNum) const;
   std::string getRDataName(unsigned PortNum) const;
+  std::string getInernalRDataName(unsigned PortNum) const;
   std::string getWDataName(unsigned PortNum) const;
   std::string getByteEnName(unsigned PortNum) const;
   std::string getEnableName(unsigned PortNum) const;

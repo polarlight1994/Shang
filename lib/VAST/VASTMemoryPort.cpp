@@ -196,6 +196,12 @@ std::string VASTMemoryBus::getRDataName(unsigned PortNum) const {
   return getArrayName() + "p" + utostr(PortNum) + "rdata";
 }
 
+std::string VASTMemoryBus::getInernalRDataName(unsigned PortNum) const {
+  assert(!isDefault() && "Unexpected port type!");
+
+  return getArrayName() + "p" + utostr(PortNum) + "internal_rdata";
+}
+
 std::string VASTMemoryBus::getWDataName(unsigned PortNum) const {
   if (isDefault()) return "mem" + utostr(Idx) + "wdata";
 
@@ -231,6 +237,10 @@ void VASTMemoryBus::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
 
   if (requireByteEnable())
     getByteEn(PortNum)->printDecl(OS);
+
+  if (!isDefault())
+    VASTNamedValue::PrintDecl(OS, getInernalRDataName(PortNum),
+                              getRData(PortNum)->getBitWidth(), true);
 }
 
 void VASTMemoryBus::printDecl(raw_ostream &OS) const {
@@ -322,9 +332,9 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
     OS.exit_block();
   }
 
-  OS << getRDataName(PortNum) << VASTValue::printBitRange(getDataWidth(), 0, true)
+  OS << getInernalRDataName(PortNum) << VASTValue::printBitRange(getDataWidth(), 0, true)
      << " <= " << getArrayName() << "[" << AddrConnection << "];\n";
-  OS << getRDataName(PortNum)
+  OS << getInernalRDataName(PortNum)
      << VASTValue::printBitRange(getDataWidth() + ByteAddrWidth, getDataWidth(), true)
      << " <= " << Addr->getName()
      << VASTValue::printBitRange(ByteAddrWidth, 0) << ";\n";
@@ -332,6 +342,8 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
   OS << "if (" << Addr->getName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
      << NumWords << ")  $finish(\"Write access out of bound!\");\n";
+
+  OS << getRDataName(PortNum) << " <= " << getInernalRDataName(PortNum) << ";\n";
 
   OS.always_ff_end(false);
 }
@@ -526,10 +538,10 @@ VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
     OS.exit_block();
   }
 
-  OS << RData->getName()
-    << VASTValue::printBitRange(getDataWidth(), 0, false) << " <= "
-    << ' ' << getArrayName() << "[" << Addr->getName()
-    << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
+  OS << getInernalRDataName(PortNum)
+     << VASTValue::printBitRange(getDataWidth(), 0, false) << " <= "
+     << ' ' << getArrayName() << "[" << Addr->getName()
+     << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
 
   // Verify the addresses.
   OS << "if (" << Addr->getName()
@@ -539,6 +551,9 @@ VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
     OS << "if (" << Addr->getName()
         << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
         << ByteAddrWidth << "'b0) $finish(\"Write access out of bound!\");\n";
+
+
+  OS << RData->getName() << " <= " << getInernalRDataName(PortNum) << ";\n";
 
   OS.always_ff_end(false);
 }
