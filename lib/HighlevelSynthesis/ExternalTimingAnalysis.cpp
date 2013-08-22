@@ -217,7 +217,7 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
                                           std::map<VASTSeqValue*, float> &Srcs) {
   // Simply add the zero delay record if the fanin itself is a register.
   if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V.get())) {
-    if (!SV->isSlot()) {
+    if (!SV->isSlot() && !SV->isFUOutput()) {
       // Please note that this insertion may fail (V already existed), but it
       // does not hurt because here we only want to ensure the record exist.
       Srcs.insert(std::make_pair(SV, 0.0f));
