@@ -305,7 +305,7 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
 }
 
 void Dataflow::updateDelay(float NewDelay, float Ratio, Annotation &OldDelay) {
-  if (OldDelay.generation == generation) {
+  if (OldDelay.generation == generation || OldDelay.generation == 0) {
     OldDelay.delay = std::max(NewDelay, OldDelay.delay);
     OldDelay.generation = generation;
     return;
