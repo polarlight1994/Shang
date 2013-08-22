@@ -453,7 +453,7 @@ bool PreSchedBinding::runOnVASTModule(VASTModule &VM) {
   PSBCG->fixTransitive();
   PSBCG->initializeCosts(getAnalysis<CombPatternTable>());
 
-  PSBCG->performBinding();
+  // PSBCG->performBinding();
 
   return false;
 }

@@ -156,7 +156,7 @@ public:
     // Finish the whole HLS process if we want to dump the intermediate netlist
     // for each iteration.
     if (DumpIntermediateNetlist) {
-      schedulePass(createRegisterSharingPass());
+      //schedulePass(createRegisterSharingPass());
       schedulePass(createSelectorPipeliningPass());
       schedulePass(createRTLCodeGenPass());
       schedulePass(createTimingScriptGenPass());
