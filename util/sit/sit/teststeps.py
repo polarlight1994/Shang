@@ -54,7 +54,7 @@ class TestStep :
     self.fpga_device = FamilyDevices[config['device_family']]
     self.require_license = (config['device_family'] == 'StratixIV')
     #Use full version for stratix devices.
-    self.quartus_bin = '/nfs/app/altera/quartus12.1x64_%s/quartus/bin/' % ('full' if self.require_license else 'web')
+    self.quartus_bin = '/nfs/app/altera/13.0sp1/quartus/bin/'
 
     # The results dict, for debug use
     self.results = {}
