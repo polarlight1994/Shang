@@ -528,8 +528,17 @@ void TimingScriptGen::annoataConstraintsFor(AnnotatedCone &Cache,
     AllSlots.push_back((*I).getSlot());
   // Annotate all slots to FI and Guard, otherwise we may miss some path not
   // block by the keeped nodes.
-  extractTimingPaths(Cache, Sel, AllSlots, Sel->getFanin().get());
-  extractTimingPaths(Cache, Sel, AllSlots, Sel->getGuard().get());
+  //extractTimingPaths(Cache, Sel, AllSlots, Sel->getFanin().get());
+  //extractTimingPaths(Cache, Sel, AllSlots, Sel->getGuard().get());
+
+  for (VASTSelector::const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+    VASTLatch U = *I;
+
+    if (Sel->isTrivialFannin(U)) continue;
+
+    extractTimingPaths(Cache, Sel, U.getSlot(), VASTValPtr(U).get());
+    extractTimingPaths(Cache, Sel, U.getSlot(), VASTValPtr(U.getGuard()).get());
+  }
 
   typedef VASTSelector::ann_iterator ann_iterator;
   for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
