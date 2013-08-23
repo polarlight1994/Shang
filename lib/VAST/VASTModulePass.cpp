@@ -139,7 +139,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   VASTSeqValue *getOrCreateSeqVal(Value *V) {
     SmallString<36> S;
-    return getOrCreateSeqValImpl(V, ShangMangle(V->getName()));
+    return getOrCreateSeqValImpl(V, "vast_" + ShangMangle(V->getName()) + "_r");
   }
 
   VASTValPtr getAsOperandImpl(Value *Op);
