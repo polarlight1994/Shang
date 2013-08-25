@@ -791,7 +791,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   sys::Path Empty;
   const sys::Path *Redirects[] = { &Empty, &Empty, &Empty };
   errs() << "Running '" << quartus.str() << " ' program... ";
-  if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, Redirects, 0, 0,
+  if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, 0/*Redirects*/, 0, 0,
                                    &ErrorInfo)) {
     errs() << "Error: " << ErrorInfo <<'\n';
     report_fatal_error("External timing analyze fail!\n");
