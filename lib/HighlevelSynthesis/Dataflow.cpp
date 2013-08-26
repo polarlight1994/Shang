@@ -415,7 +415,7 @@ bool DataflowAnnotation::runOnVASTModule(VASTModule &VM) {
 
   DF->increaseGeneration();
 
-  DEBUG(DF->dumpToSQL());
+  DF->dumpToSQL();
 
   return false;
 }
@@ -424,6 +424,9 @@ void Dataflow::dumpToSQL() const {
   SmallString<256> SQLPath
     = sys::path::parent_path(getStrValueFromEngine("RTLOutput"));
   sys::path::append(SQLPath, "delay_annotation.sql");
+
+  dbgs() << "Dump dataflow annotation to: "
+         << SQLPath << '\n';
 
   std::string Error;
   raw_fd_ostream Output(SQLPath.c_str(), Error);
