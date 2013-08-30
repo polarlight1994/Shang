@@ -1300,7 +1300,8 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
     Builder.visitBasicBlock(I);
 
   // Release the dead objects generated during the VM construction.
-  VM->gc();
+  while (VM->gc())
+    ;
 
   return false;
 }
@@ -1343,7 +1344,8 @@ bool VASTModulePass::runOnFunction(Function &F) {
 
   bool changed = runOnVASTModule(*VMA);
 
-  if (changed) VMA->gc();
+  while (changed && VMA->gc())
+    ;
 
   return changed;
 }

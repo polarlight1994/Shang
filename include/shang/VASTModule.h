@@ -355,7 +355,7 @@ public:
 
   /// Perform the Garbage Collection to release the dead objects on the
   /// VASTModule
-  void gc();
+  bool gc();
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTModule *A) { return true; }

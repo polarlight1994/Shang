@@ -524,7 +524,7 @@ void VASTScheduling::buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U) 
   // Also calculate the path for the guarding condition.
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
     if (Instruction *Inst = dyn_cast<Instruction>(I->first)) {
-      if (DF->isBlockUnreachable(Inst->getParent()))
+      if (DF->isBlockUnreachable(Inst->getParent()) || !IR2SUMap.count(Inst))
         continue;
     }
 
@@ -542,7 +542,7 @@ VASTScheduling::buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U)
   // Also calculate the path for the guarding condition.
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
     if (Instruction *Inst = dyn_cast<Instruction>(I->first)) {
-      if (DF->isBlockUnreachable(Inst->getParent()))
+      if (DF->isBlockUnreachable(Inst->getParent()) || !IR2SUMap.count(Inst))
         continue;
     }
 

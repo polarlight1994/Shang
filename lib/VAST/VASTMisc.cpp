@@ -180,12 +180,14 @@ void VASTModule::printRegisterBlocks(raw_ostream &OS) const {
   O.exit_block("\n", "");
 }
 
-void VASTModule::gc() {
+bool VASTModule::gc() {
+  bool Changed = false;
+
   // Clear up the dead VASTSeqValues.
   for (seqval_iterator VI = seqval_begin(); VI != seqval_end(); /*++I*/) {
     VASTSeqValue *V = VI++;
 
-    if (!V->use_empty()) continue;;
+    if (!V->use_empty()) continue;
 
     SmallVector<VASTLatch, 4> DeadOps(V->fanin_begin(), V->fanin_end());
 
@@ -198,6 +200,8 @@ void VASTModule::gc() {
     }
 
     eraseSeqVal(V);
+
+    Changed |= true;
   }
 
   // Release the dead seqops, this happen when we fold the SeqOp through the
@@ -209,14 +213,16 @@ void VASTModule::gc() {
       Op->dump(););
 
       eraseSeqOp(Op);
+
+      Changed |= true;
     }
   }
 
   // At last clear up the dead VASTExprs.
-  Datapath->gc();
+  return Datapath->gc() || Changed;
 }
 
-void DatapathContainer::gc() {
+bool DatapathContainer::gc() {
   // Please note that recursivelyDeleteTriviallyDeadExprs will not invalid the
   // VASTExprs in the workllist while we are deleting other expressions. Because
   // we do not perform any replacement.
@@ -225,10 +231,15 @@ void DatapathContainer::gc() {
   for (expr_iterator I = expr_begin(); I != expr_end(); ++I)
     if (I->use_empty()) Worklist.push_back(I);
 
+  if (Worklist.empty())
+    return false;
+
   while (!Worklist.empty()) {
     VASTExpr *E = Worklist.back();
     Worklist.pop_back();
 
     recursivelyDeleteTriviallyDeadExprs(E);
   }
+
+  return true;
 }
