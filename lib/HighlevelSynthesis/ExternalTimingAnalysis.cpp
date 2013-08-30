@@ -791,7 +791,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   sys::Path Empty;
   const sys::Path *Redirects[] = { &Empty, &Empty, &Empty };
   errs() << "Running '" << quartus.str() << " ' program... ";
-  if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, 0/*Redirects*/, 0, 0,
+  if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, Redirects, 0, 0,
                                    &ErrorInfo)) {
     errs() << "Error: " << ErrorInfo <<'\n';
     report_fatal_error("External timing analyze fail!\n");
@@ -827,16 +827,18 @@ bool ExternalTimingAnalysis::readRegionPlacement(StringRef RegionPlacementPath){
   int BBHeight = Lexer.getInteger();
 
   // Relax the placement constraints by 10% on both x and y axes.
-  int XSlack = ((BBWidth + 9) / 10) * 5,
-      YSlack = ((BBHeight + 9) / 10) * 5;
+  int XSlack = ((BBWidth + 9) / 10) * 1,
+      YSlack = ((BBHeight + 9) / 10) * 1;
 
-  BBX = std::min(185 - (BBWidth + 2 * XSlack), BBX - XSlack);
+  BBX = std::min(81 - (BBWidth + 2 * XSlack), BBX - XSlack);
   BBX = std::max(1, BBX);
   BBWidth += 2 * XSlack;
+  BBWidth = std::min(81, BBWidth);
 
-  BBY = std::min(129 - (BBHeight + 2 * YSlack), BBY - YSlack);
+  BBY = std::min(67 - (BBHeight + 2 * YSlack), BBY - YSlack);
   BBY = std::max(1, BBY);
   BBHeight += 2 * YSlack;
+  BBHeight = std::min(67, BBHeight);
 
   VM.setBoundingBoxConstraint(BBX, BBY, BBWidth, BBHeight);
 
