@@ -260,6 +260,24 @@ void VASTSchedGraph::resetSchedule() {
   getEntry()->scheduleTo(1);
 }
 
+void VASTSchedGraph::removeVirualNodes() {
+  typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator
+    iterator;
+
+  for (iterator I = BBMap.begin(), E = BBMap.end(); I != E; ++I) {
+    std::vector<VASTSchedUnit*> &SUs = I->second;
+
+    for (unsigned i = 0; i < SUs.size(); /*++i*/) {
+      if (!SUs[i]->isVirtual()) {
+        ++i;
+        continue;
+      }
+
+      SUs.erase(SUs.begin() + i);
+    }
+  }
+}
+
 void VASTSchedGraph::viewGraph() {
   ViewGraph(this, "SchedulingGraph");
 }

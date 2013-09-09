@@ -489,6 +489,9 @@ public:
     return Entry;
   }
 
+  // Remove virtual SU before emitting the scheduling.
+  void removeVirualNodes();
+
   template<typename T>
   void sortSUs(T F) {
     typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator
