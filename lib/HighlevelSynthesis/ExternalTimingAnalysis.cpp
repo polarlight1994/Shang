@@ -771,9 +771,9 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   raw_fd_ostream PrjTclO(PrjTcl.c_str(), ErrorInfo);
   if (!ErrorInfo.empty())  return exitWithError(PrjTcl);
   writeMapDesignScript(PrjTclO, Netlist, TimingSDC);
-  writeFitDesignScript(PrjTclO, false, true);
-  writeTimingAnalysisDriver(PrjTclO, TimingExtractTcl, false);
-  writeReadPlacementScript(PrjTclO, RegionPlacement);
+  writeFitDesignScript(PrjTclO, true, true);
+  writeTimingAnalysisDriver(PrjTclO, TimingExtractTcl, true);
+  //writeReadPlacementScript(PrjTclO, RegionPlacement);
   PrjTclO.close();
   errs() << " done. \n";
 
