@@ -111,7 +111,7 @@ def main(builtinParameters = {}):
   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
   option_space_dict['shang_enable_register_sharing'] = [ 'false' ]
   iterations = 10 if args.mode == TestStep.AlteraSyn \
-               else 3 if args.mode == TestStep.AlteraNls \
+               else 1 if args.mode == TestStep.AlteraNls \
                else 1
   option_space_dict['shang_max_scheduling_iteration'] = [ iterations ]
   option_space_dict['shang_dump_intermediate_netlist'] = [ 'true' ]
@@ -122,7 +122,7 @@ def main(builtinParameters = {}):
                                            args.mode == TestStep.AlteraNls \
                                         else 'blackbox' ]
 
-  option_space_dict['fmax'] = [ 350, 400, 450 ]
+  option_space_dict['fmax'] = [ 350, 400, 450 ] if args.mode == TestStep.AlteraSyn else [ 450 ]
   option_space_dict['device_family'] = [ 'StratixIV' ]
 
   option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]
