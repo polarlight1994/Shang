@@ -584,6 +584,8 @@ IfFile:close()
     return [ HybridSimStep(self) ]
 
   def generatePureHWSim(self) :
+    yield ShangHWSimStep(self)
+
     num_iter = self.shang_max_scheduling_iteration
     if self.shang_dump_intermediate_netlist == 'true' and num_iter > 1 :
       for i in range(num_iter - 1) :
@@ -593,8 +595,6 @@ IfFile:close()
         sim_step.rtl_output = os.path.join(sim_step.hls_base_dir, sim_step.test_name + ".sv")
         sim_step.option['shang_max_scheduling_iteration'] = i + 1
         yield sim_step
-    
-    yield ShangHWSimStep(self)
 
 # The test step for hybrid simulation.
 class HybridSimStep(TestStep) :

@@ -164,9 +164,9 @@ def main(builtinParameters = {}):
         next_active_jobs.append(job)
         continue
 
-      job.submitResults(con, status)
-
       if status == 'passed' :
+        job.submitResults(con, status)
+
         # Now the job finished successfully
         print "Test", job.test_name, job.step_name, "passed"
         # Generate subtest.
@@ -185,6 +185,7 @@ def main(builtinParameters = {}):
           next_active_jobs.append(job)
           continue
 
+        job.submitResults(con, status)
         print "Test", job.getStepDesc(), "failed"
         # Remember the options on the fail case
         for k, v in job.option.iteritems() :
