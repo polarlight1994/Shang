@@ -88,7 +88,6 @@ struct MUXPipeliner {
 };
 
 struct SelectorPipelining : public VASTModulePass {
-  TimingNetlist *TNL;
   Dataflow *DF;
   STGDistances *STGDist;
   unsigned MaxSingleCyleFINum;
@@ -96,9 +95,30 @@ struct SelectorPipelining : public VASTModulePass {
   // Number of cycles at a specificed slot that we can move back unconditionally.
   std::map<unsigned, unsigned> SlotSlack;
 
+  typedef std::map<VASTValue*, TimingNetlist::SrcDelayInfo> PathDelayInfo;
+  PathDelayInfo ArrivialCache;
+
+  float cacheArrivial(VASTValue *Src, VASTValue *Dst, float CurArrival) {
+    float &OldArrival = ArrivialCache[Dst][Src];
+    OldArrival = std::max(OldArrival, CurArrival);
+    return CurArrival;
+  }
+
+  float lookUpArrival(VASTValue *Src, VASTValue *Dst) const {
+    PathDelayInfo::const_iterator I = ArrivialCache.find(Dst);
+    if (I == ArrivialCache.end())
+      return 0.0f;
+
+    TimingNetlist::SrcDelayInfo::const_iterator J = I->second.find(Src);
+    if (J == I->second.end())
+      return 0.0f;
+
+    return J->second;
+  }
+
   static char ID;
 
-  SelectorPipelining() : VASTModulePass(ID), TNL(0), DF(0), STGDist(0) {
+  SelectorPipelining() : VASTModulePass(ID), DF(0), STGDist(0) {
     initializeSelectorPipeliningPass(*PassRegistry::getPassRegistry());
 
     VFUMux *Mux = getFUDesc<VFUMux>();
@@ -122,7 +142,6 @@ struct SelectorPipelining : public VASTModulePass {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
-    AU.addRequired<TimingNetlist>();
     // FIXME: Require dataflow annotation.
     AU.addRequired<Dataflow>();
     AU.addRequired<STGDistances>();
@@ -133,6 +152,7 @@ struct SelectorPipelining : public VASTModulePass {
 
   void releaseMemory() {
     SlotSlack.clear();
+    ArrivialCache.clear();
   }
 };
 }
@@ -141,7 +161,6 @@ INITIALIZE_PASS_BEGIN(SelectorPipelining, "sequential-selector-pipelining",
                       "Implement the MUX for the Sequantal Logic", false, true)
   INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
-  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
 INITIALIZE_PASS_END(SelectorPipelining, "sequential-selector-pipelining",
@@ -158,7 +177,6 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
 
   typedef VASTModule::selector_iterator iterator;
 
-  TNL = &getAnalysis<TimingNetlist>();
   DF = &getAnalysis<Dataflow>();
   STGDist = &getAnalysis<STGDistances>();
 
@@ -327,7 +345,7 @@ float SelectorPipelining::getFaninSlack(const SVSet &S, const VASTLatch &L,
 float SelectorPipelining::getArrivialTime(VASTSeqValue *SV, const VASTLatch &L,
                                           VASTValue *FI) {
   if (!SV->getLLVMValue() || DataflowInst(L.Op).getPointer() == 0)
-    return TNL->getDelay(SV, FI);
+    return lookUpArrival(SV, FI);
 
   VASTSlot *S = L.getSlot();
   BasicBlock *ParentBB = S->getParent();
@@ -341,7 +359,7 @@ float SelectorPipelining::getArrivialTime(VASTSeqValue *SV, const VASTLatch &L,
 
   float TotalDelay = DF->getDelay(SV, L.Op, S);
   float EnableDelay = DF->getDelay(DataflowValue(ParentBB, true), L.Op, S);
-  return std::max(TotalDelay - EnableDelay, 0.0f);
+  return cacheArrivial(SV, FI, std::max(TotalDelay - EnableDelay, 0.0f));
 }
 
 static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level) {
