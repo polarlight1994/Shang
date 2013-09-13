@@ -10,8 +10,8 @@
 // This file implement the control logic synthesis pass.
 //
 //===----------------------------------------------------------------------===//
-
 #include "TimingNetlist.h"
+#include "Dataflow.h"
 
 #include "shang/FUInfo.h"
 #include "shang/VASTMemoryPort.h"
@@ -89,16 +89,16 @@ struct MUXPipeliner {
 
 struct SelectorPipelining : public VASTModulePass {
   TimingNetlist *TNL;
+  Dataflow *DF;
   STGDistances *STGDist;
   unsigned MaxSingleCyleFINum;
-  VASTExprBuilder *Builder;
   VASTModule *VM;
   // Number of cycles at a specificed slot that we can move back unconditionally.
   std::map<unsigned, unsigned> SlotSlack;
 
   static char ID;
 
-  SelectorPipelining() : VASTModulePass(ID), TNL(0), STGDist(0) {
+  SelectorPipelining() : VASTModulePass(ID), TNL(0), DF(0), STGDist(0) {
     initializeSelectorPipeliningPass(*PassRegistry::getPassRegistry());
 
     VFUMux *Mux = getFUDesc<VFUMux>();
@@ -112,8 +112,8 @@ struct SelectorPipelining : public VASTModulePass {
 
   typedef std::set<VASTSeqValue*> SVSet;
 
-  unsigned getCriticalDelay(const SVSet &S, VASTValue *V);
-  unsigned getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot);
+  float getFaninSlack(const SVSet &S, const VASTLatch &L, VASTValue *FI);
+  float getArrivialTime(VASTSeqValue *SV, const VASTLatch &L, VASTValue *FI);
 
   unsigned getSlotSlack(VASTSlot *S);
   void buildPipelineFIs(VASTSelector *Sel, MUXPipeliner &Pipeliner);
@@ -123,6 +123,8 @@ struct SelectorPipelining : public VASTModulePass {
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
     AU.addRequired<TimingNetlist>();
+    // FIXME: Require dataflow annotation.
+    AU.addRequired<Dataflow>();
     AU.addRequired<STGDistances>();
     AU.addPreserved<STGDistances>();
   }
@@ -152,13 +154,12 @@ Pass *llvm::createSelectorPipeliningPass() {
 }
 
 bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
-  MinimalExprBuilderContext Context(VM);
-  Builder = new VASTExprBuilder(Context);
   this->VM = &VM;
 
   typedef VASTModule::selector_iterator iterator;
 
   TNL = &getAnalysis<TimingNetlist>();
+  DF = &getAnalysis<Dataflow>();
   STGDist = &getAnalysis<STGDistances>();
 
   // Clear up all MUX before we perform selector pipelining.
@@ -185,7 +186,7 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     // FIXME: Get the MUX delay from the timing estimator.
 
-    // The slot assignments cannot be retime, the selectors with small fannin
+    // The slot assignments cannot be retime, the selectors with small fanin
     // number do not need to be retime.
     if (I->isSlot() || I->size() < MaxSingleCyleFINum) continue;
 
@@ -194,7 +195,6 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
 
   DEBUG(dbgs() << "After MUX pipelining:\n"; VM.dump(););
 
-  delete Builder;
   return true;
 }
 
@@ -260,7 +260,7 @@ SelectorPipelining::buildPipelineFIs(VASTSelector *Sel, MUXPipeliner &Pipeliner)
   for (vn_itertor I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch &DstLatch = *I;
 
-    // Ignore the trivial fannins.
+    // Ignore the trivial fanins.
     if (Sel->isTrivialFannin(DstLatch)) continue;
 
     // Do not mess up with the operations that is guarded by the strange control
@@ -269,65 +269,38 @@ SelectorPipelining::buildPipelineFIs(VASTSelector *Sel, MUXPipeliner &Pipeliner)
 
     VASTSlot *ReadSlot = DstLatch.getSlot();
 
+    if (ReadSlot->getValue()->getLLVMValue() && DstLatch.Op->getValue()) {
+      if (DF->getDelay(ReadSlot->getValue(), DstLatch.Op, ReadSlot) <= 1.0f)
+        continue;
+    }
+
     unsigned RetimeSlack = getSlotSlack(ReadSlot);
     if (RetimeSlack == 0) continue;
 
-    unsigned CriticalDelay = 0;
-    unsigned AvailableInterval = STGDistances::Inf;
-
-    // Also do not retime across the SVal without liveness information.
-    VASTValPtr FI = DstLatch;
-
-    if (FI->extractSupportingSeqVal(Srcs)) {
-      CriticalDelay = std::max(CriticalDelay, getCriticalDelay(Srcs, FI.get()));
-      AvailableInterval
-        = std::min(AvailableInterval, getAvailableInterval(Srcs, ReadSlot));
-      Srcs.clear();
-    }
-
-    VASTValPtr Pred = DstLatch.getGuard();
-    // We should also retime the predicate together with the fanin.
-    if (Pred->extractSupportingSeqVal(Srcs)) {
-      CriticalDelay = std::max(CriticalDelay, getCriticalDelay(Srcs, Pred.get()));
-      AvailableInterval
-        = std::min(AvailableInterval, getAvailableInterval(Srcs, ReadSlot));
-      Srcs.clear();
-    }
+    Srcs.clear();
+    VASTValue *FI = VASTValPtr(DstLatch).get();
+    FI->extractSupportingSeqVal(Srcs);
+    float MinSlack = getFaninSlack(Srcs, DstLatch, FI);
+    Srcs.clear();
+    VASTValue *Guard = VASTValPtr(DstLatch.getGuard()).get();
+    Guard->extractSupportingSeqVal(Srcs);
+    MinSlack = std::min(MinSlack, getFaninSlack(Srcs, DstLatch, Guard));
 
     // Make sure the Retime slack is not negative
-    if (AvailableInterval < CriticalDelay) continue;
+    if (MinSlack <= 0.0f) continue;
 
-    DEBUG(dbgs() << "Fanin Pipelining opportnity: Slack: "
-            << (AvailableInterval - CriticalDelay)
-            << " RetimeSlack: " << RetimeSlack << '\n');
+    DEBUG(dbgs() << "Fanin Pipelining opportnity: Slack: " << MinSlack
+                 << " RetimeSlack: " << RetimeSlack << '\n');
 
     // Adjust the retime slack according to the timing slack.
-    unsigned FISlack = std::min(RetimeSlack, AvailableInterval - CriticalDelay);
+    unsigned FISlack = std::min<unsigned>(RetimeSlack, floor(MinSlack));
     if (FISlack) Pipeliner.addFannin(DstLatch, FISlack);
   }
 }
 
-unsigned SelectorPipelining::getCriticalDelay(const SVSet &S, VASTValue *V) {
-  unsigned Delay = 0;
-  typedef SVSet::const_iterator iterator;
-  for (iterator I = S.begin(), E = S.end(); I != E; ++I) {
-    VASTSeqValue *Src = *I;
-
-    // Do not retime across the direct output of the functional unit.
-    if (Src->isFUOutput()) return STGDistances::Inf;
-
-    // The ignore the trivial path.
-    if (Src == V) continue;    
-
-    Delay = std::max<unsigned>(Delay, ceil(TNL->getDelay(Src, V)));
-  }
-
-  return Delay;
-}
-
-unsigned
-SelectorPipelining::getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot) {
-  unsigned Interval = STGDistances::Inf;
+float SelectorPipelining::getFaninSlack(const SVSet &S, const VASTLatch &L,
+                                        VASTValue *FI) {
+  float slack = 256.0f;
   typedef SVSet::const_iterator iterator;
   for (iterator I = S.begin(), E = S.end(); I != E; ++I) {
     VASTSeqValue *SV = *I;
@@ -338,14 +311,37 @@ SelectorPipelining::getAvailableInterval(const SVSet &S, VASTSlot *ReadSlot) {
     // units, we do not have the accurate timing information for them.
     if (SV->isStatic() || SV->isFUOutput()) return 0;
 
-    Interval = std::min(Interval, STGDist->getIntervalFromDef(SV, ReadSlot));
+    unsigned Interval = STGDist->getIntervalFromDef(SV, L.getSlot());
+
+    float Arrival = getArrivialTime(SV, L, FI);
+
+    slack = std::min(slack, float(Interval) - Arrival);
   }
 
-  assert(Interval && "Unexpected interval!");
   // Dirty HACK: Avoid retime to the assignment slot of the FI for now.
-  Interval -= 1;
+  slack -= 1.0f;
 
-  return Interval;
+  return slack;
+}
+
+float SelectorPipelining::getArrivialTime(VASTSeqValue *SV, const VASTLatch &L,
+                                          VASTValue *FI) {
+  if (!SV->getLLVMValue() || DataflowInst(L.Op).getPointer() == 0)
+    return TNL->getDelay(SV, FI);
+
+  VASTSlot *S = L.getSlot();
+  BasicBlock *ParentBB = S->getParent();
+
+  // Adjust to actual parent BB for the incoming value.
+  if (S->IsSubGrp) {
+    S = S->getParentGroup();
+    if (BasicBlock *BB = S->getParent())
+      ParentBB = BB;
+  }
+
+  float TotalDelay = DF->getDelay(SV, L.Op, S);
+  float EnableDelay = DF->getDelay(DataflowValue(ParentBB, true), L.Op, S);
+  return std::max(TotalDelay - EnableDelay, 0.0f);
 }
 
 static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level) {
@@ -377,7 +373,7 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
 
   VASTRegister *FISel = 0;
   if (!Sel->isEnable()) {
-    FISel = VM->createRegister("fannin_" + utostr_32(RegCounter) + "r",
+    FISel = VM->createRegister("fanin_" + utostr_32(RegCounter) + "r",
                                Sel->getBitWidth(), 0, VASTSelector::Temp);
     NumPipelineRegBits += Sel->getBitWidth();
   }
@@ -404,7 +400,7 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
     // Read the pipelined guarding condition instead.
     FI->L.replacePredBy(PipelinedEn, false);
 
-    // Pipeline the fannin value.
+    // Pipeline the fanin value.
     if (FISel) {
       VASTSeqValue *PipelinedFI = getValueAt(FISel, S);
       VM->assignCtrlLogic(PipelinedFI, FIVal, S, FICnd, true);
@@ -452,7 +448,7 @@ bool MUXPipeliner::pipelineGreedy() {
     return true;
   }
 
-  // Iterate over the fannins, divide them into MaxSingleCyleFINum groups.
+  // Iterate over the fanins, divide them into MaxSingleCyleFINum groups.
   // TODO: Put the fanins in the successive slots together.
   array_pod_sort(Fannins.begin(), Fannins.end(), sort_by_slot);
 
