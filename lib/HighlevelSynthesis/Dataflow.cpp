@@ -263,13 +263,17 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
     if (OldAnnotation.generation != generation)
       ++OldAnnotation.violation;
 
-    dbgs() << "Potential timing violation: ("
-           << unsigned(OldAnnotation.violation)
-           << ") "<< Slack << ' ' << delay
-           << " Old delay " << OldDelay
-           << '(' << ((delay - OldDelay) / delay) << ')' << " \n"
-           << "Src: " << V->getName() << '(' << V.IsLauch() << ')'
-           << " Dst: " << *Inst << '(' << Inst.IsLauch() << ')' << '\n';
+
+    // We cannot do anything with the BRAM to register path ...
+    if (!isa<BasicBlock>(V) && !(isa<LoadInst>(V) && V.getPointer() == Inst.getPointer())) {
+      dbgs() << "Potential timing violation: ("
+             << unsigned(OldAnnotation.violation)
+             << ") "<< Slack << ' ' << delay
+             << " Old delay " << OldDelay
+             << '(' << ((delay - OldDelay) / delay) << ')' << " \n"
+             << "Src: " << V->getName() << '(' << V.IsLauch() << ')'
+             << " Dst: " << *Inst << '(' << Inst.IsLauch() << ')' << '\n';
+    }
 
     BasicBlock *ParentBB = S->getParent();
 
@@ -450,6 +454,14 @@ void Dataflow::dumpFlowDeps(raw_ostream &OS) const {
     DataflowInst Dst = I->first;
     const TimedSrcSet &Srcs = I->second;
     for (src_iterator J = Srcs.begin(), E = Srcs.end(); J != E; ++J) {
+      // We cannot do anything with the mux for now.
+      if (isa<BasicBlock>(J->first))
+        continue;
+
+      // We cannot do anything with the BRAM to register path ...
+      if (isa<LoadInst>(J->first) && J->first.getPointer() == Dst.getPointer())
+        continue;
+
       OS << "INSERT INTO flowdeps(src, dst, generation, violation, delay) VALUES(\n"
          << '\'' << J->first.getOpaqueValue() << "', \n"
          << '\'' << Dst.getOpaqueValue() << "', \n"
@@ -481,6 +493,9 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
       BasicBlock *BB = J->first;
       const TimedSrcSet &Srcs = J->second;
       for (src_iterator K = Srcs.begin(), E = Srcs.end(); K != E; ++K) {
+        if (isa<BasicBlock>(K->first))
+          continue;
+
         OS << "INSERT INTO incomings(src, bb, dst, generation, violation, delay) VALUES(\n"
            << '\'' << K->first.getOpaqueValue() << "', \n"
            << '\'' << BB->getName() << "', \n"
