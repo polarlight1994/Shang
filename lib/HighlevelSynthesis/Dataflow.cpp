@@ -440,6 +440,7 @@ void Dataflow::dumpFlowDeps(raw_ostream &OS) const {
         src TEXT, \
         dst TEXT, \
         generation INTEGER, \
+        violation INTEGER, \
         delay REAL \
         );\n";
 
@@ -449,10 +450,11 @@ void Dataflow::dumpFlowDeps(raw_ostream &OS) const {
     DataflowInst Dst = I->first;
     const TimedSrcSet &Srcs = I->second;
     for (src_iterator J = Srcs.begin(), E = Srcs.end(); J != E; ++J) {
-      OS << "INSERT INTO flowdeps(src, dst, generation, delay) VALUES(\n"
+      OS << "INSERT INTO flowdeps(src, dst, generation, violation, delay) VALUES(\n"
          << '\'' << J->first.getOpaqueValue() << "', \n"
          << '\'' << Dst.getOpaqueValue() << "', \n"
-         << '\'' << J->second.generation << "', \n"
+         << J->second.generation << ", \n"
+         << unsigned(J->second.violation) << ", \n"
          << J->second.delay << ");\n";
     }
   }
@@ -465,6 +467,7 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
         bb TEXT, \
         dst TEXT, \
         generation INTEGER, \
+        violation INTEGER, \
         delay REAL \
         );\n";
 
@@ -478,11 +481,12 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
       BasicBlock *BB = J->first;
       const TimedSrcSet &Srcs = J->second;
       for (src_iterator K = Srcs.begin(), E = Srcs.end(); K != E; ++K) {
-        OS << "INSERT INTO incomings(src, bb, dst, generation, delay) VALUES(\n"
+        OS << "INSERT INTO incomings(src, bb, dst, generation, violation, delay) VALUES(\n"
            << '\'' << K->first.getOpaqueValue() << "', \n"
            << '\'' << BB->getName() << "', \n"
            << '\'' << Dst.getOpaqueValue() << "', \n"
-           << '\'' << K->second.generation << "', \n"
+           << K->second.generation << ", \n"
+           << unsigned(K->second.violation) << ", \n"
            << K->second.delay << ");\n";
       }
     }
