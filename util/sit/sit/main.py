@@ -177,6 +177,14 @@ def main(builtinParameters = {}):
           time.sleep(1)
           next_active_jobs.append(subtest)
       elif status == 'failed' :
+        if job.retry_counter > 0 :
+          print "Retry", job.getStepDesc(), job.retry_counter
+          job.retry_counter -= 1
+          job.runTest()
+          time.sleep(1)
+          next_active_jobs.append(job)
+          continue
+
         print "Test", job.getStepDesc(), "failed"
         # Remember the options on the fail case
         for k, v in job.option.iteritems() :

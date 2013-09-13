@@ -443,6 +443,9 @@ class ShangHLSStep(HLSStep) :
 
   def __init__(self, config):
     HLSStep.__init__(self, config)
+    # Allow retry the high-level synthesis if it fail
+    if self.require_license :
+      self.retry_counter = 4
 
   def prepareTest(self) :
     self.prepareTestDIR()
