@@ -59,6 +59,9 @@ class TestStep :
     # The results dict, for debug use
     self.results = {}
 
+    # Allow the fail job to run again
+    self.retry_counter = 0
+
   def __getitem__(self, key):
     return self.__dict__[key]
 
@@ -723,6 +726,8 @@ class ShangHWSimStep(HWSimStep) :
 
   def __init__(self, hls_step):
     HWSimStep.__init__(self, hls_step)
+    # Allow retry the simulation if it fail
+    self.retry_counter = 4
 
   def prepareTest(self) :
     self.prepareTestDIR()
@@ -908,6 +913,8 @@ class AlteraSynStep(TestStep) :
   def __init__(self, hls_step):
     TestStep.__init__(self, hls_step.__dict__)
     self.results.update(hls_step.results)
+    # Allow retry the synthesis if it fail
+    self.retry_counter = 4
 
   def prepareTest(self) :
     self.altera_synthesis_base_dir = os.path.join(self.hls_base_dir, 'altera_synthesis')
