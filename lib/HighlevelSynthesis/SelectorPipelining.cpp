@@ -88,6 +88,7 @@ struct MUXPipeliner {
 };
 
 struct SelectorPipelining : public VASTModulePass {
+  TimingNetlist *TNL;
   Dataflow *DF;
   STGDistances *STGDist;
   unsigned MaxSingleCyleFINum;
@@ -118,7 +119,7 @@ struct SelectorPipelining : public VASTModulePass {
 
   static char ID;
 
-  SelectorPipelining() : VASTModulePass(ID), DF(0), STGDist(0) {
+  SelectorPipelining() : VASTModulePass(ID), TNL(0), DF(0), STGDist(0) {
     initializeSelectorPipeliningPass(*PassRegistry::getPassRegistry());
 
     VFUMux *Mux = getFUDesc<VFUMux>();
@@ -142,6 +143,7 @@ struct SelectorPipelining : public VASTModulePass {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
+    AU.addRequired<TimingNetlist>();
     // FIXME: Require dataflow annotation.
     AU.addRequired<Dataflow>();
     AU.addRequired<STGDistances>();
@@ -161,6 +163,7 @@ INITIALIZE_PASS_BEGIN(SelectorPipelining, "sequential-selector-pipelining",
                       "Implement the MUX for the Sequantal Logic", false, true)
   INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
+  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
 INITIALIZE_PASS_END(SelectorPipelining, "sequential-selector-pipelining",
@@ -177,6 +180,7 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
 
   typedef VASTModule::selector_iterator iterator;
 
+  TNL = &getAnalysis<TimingNetlist>();
   DF = &getAnalysis<Dataflow>();
   STGDist = &getAnalysis<STGDistances>();
 
@@ -344,22 +348,7 @@ float SelectorPipelining::getFaninSlack(const SVSet &S, const VASTLatch &L,
 
 float SelectorPipelining::getArrivialTime(VASTSeqValue *SV, const VASTLatch &L,
                                           VASTValue *FI) {
-  if (!SV->getLLVMValue() || DataflowInst(L.Op).getPointer() == 0)
-    return lookUpArrival(SV, FI);
-
-  VASTSlot *S = L.getSlot();
-  BasicBlock *ParentBB = S->getParent();
-
-  // Adjust to actual parent BB for the incoming value.
-  if (S->IsSubGrp) {
-    S = S->getParentGroup();
-    if (BasicBlock *BB = S->getParent())
-      ParentBB = BB;
-  }
-
-  float TotalDelay = DF->getDelay(SV, L.Op, S);
-  float EnableDelay = DF->getDelay(DataflowValue(ParentBB, true), L.Op, S);
-  return cacheArrivial(SV, FI, std::max(TotalDelay - EnableDelay, 0.0f));
+  return TNL->getDelay(SV, FI);
 }
 
 static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level) {
