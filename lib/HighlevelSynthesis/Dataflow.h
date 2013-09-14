@@ -128,12 +128,17 @@ private:
   };
 
   struct Annotation {
-    float delay;
-    uint16_t generation;
+    float sum, sqr_sum;
+    uint16_t num_samples;
+    uint8_t generation;
     uint8_t violation;
-    Annotation(float delay = 0.0f, uint16_t generation = 0,
-               uint8_t violation = 0)
-      : delay(delay), generation(generation), violation(violation) {}
+    Annotation()
+      : sum(0), sqr_sum(0), num_samples(0), generation(0), violation(0) {}
+
+    float calculateDelay() const;
+    void addSample(float d);
+    void reset();
+    void dump() const;
   };
 
   DominatorTree *DT;
@@ -148,7 +153,7 @@ private:
   TimedSrcSet &getDeps(DataflowInst Inst, BBPtr Parent);
 
   unsigned generation;
-  void updateDelay(float NewDelay, float Ratio, Annotation &OldDelay);
+  void updateDelay(float NewDelay, Annotation &OldDelay);
 
   std::set<BasicBlock*> UnreachableBlocks;
 

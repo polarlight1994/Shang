@@ -33,6 +33,49 @@ Dataflow::Dataflow() : FunctionPass(ID), generation(0) {
   initializeDataflowPass(*PassRegistry::getPassRegistry());
 }
 
+float Dataflow::Annotation::calculateDelay() const {
+  float num_samples = float(this->num_samples);
+  // Caculate the expected value
+  float E = sum / num_samples;
+  // Caculate the variance
+  float D2 = sqr_sum / num_samples - E * E;
+  // Do not fail due on the errors in floating point operation.
+  float D = sqrtf(std::max<float>(D2, 0.0f));
+
+  // Assume the data follow the Normal distribution.
+  float ratio = 1.0f + float(violation) / float(generation + 1);
+  float delay = E + ratio * D;
+  assert(delay >= 0.0f && "Unexpected negative delay!");
+  return delay;
+}
+
+void Dataflow::Annotation::addSample(float d) {
+  num_samples += 1;
+  sum += d;
+  sqr_sum += d * d;
+}
+
+void Dataflow::Annotation::reset() {
+  sum = sqr_sum = 0.0f;
+  num_samples = 0;
+}
+
+void Dataflow::Annotation::dump() const {
+  float num_samples = float(this->num_samples);
+  // Caculate the expected value
+  float E = sum / num_samples;
+  // Caculate the variance
+  float D2 = sqr_sum / num_samples - E * E;
+  // Do not fail due on the errors in floating point operation.
+  float D = sqrtf(std::max<float>(D2, 0.0f));
+
+  dbgs() << "E: " << E << " D: " << D
+         << "\t\nE + D: " << E + D
+         << "\t\nE + 2D: " << E + 2 * D
+         << "\t\nE + 3D: " << E + 3 * D
+         << "\t\nratio: " << float(violation) / float(generation + 1) << '\n';
+}
+
 INITIALIZE_PASS_BEGIN(Dataflow,
                       "vast-dataflow", "Dataflow Anlaysis", false, true)
   INITIALIZE_PASS_DEPENDENCY(DominatorTree)
@@ -67,7 +110,7 @@ void Dataflow::getFlowDep(DataflowInst Inst, SrcSet &Set) const {
 
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       float &Delay = Set[I->first];
-      Delay = std::max(I->second.delay, Delay);
+      Delay = std::max(I->second.calculateDelay(), Delay);
     }
   }
 
@@ -94,7 +137,7 @@ void Dataflow::getFlowDep(DataflowInst Inst, SrcSet &Set) const {
           continue;
 
       float &Delay = Set[V];
-      Delay = std::max(I->second.delay, Delay);
+      Delay = std::max(I->second.calculateDelay(), Delay);
     }
   }
 }
@@ -125,7 +168,7 @@ Dataflow::getIncomingFrom(DataflowInst Inst, BasicBlock *BB, SrcSet &Set) const 
   typedef TimedSrcSet::const_iterator iterator;
   for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
     float &Delay = Set[I->first];
-    Delay = std::max(I->second.delay, Delay);
+    Delay = std::max(I->second.calculateDelay(), Delay);
   }
 }
 
@@ -150,7 +193,7 @@ float Dataflow::getSlackFromLaunch(Instruction *Inst) const {
   if (J == Srcs.end())
     return 0.0f;
 
-  return (1.0f - J->second.delay);
+  return (1.0f - J->second.calculateDelay());
 }
 
 float Dataflow::getDelayFromLaunch(Instruction *Inst) const {
@@ -165,7 +208,7 @@ float Dataflow::getDelayFromLaunch(Instruction *Inst) const {
   if (J == Srcs.end())
     return 0.0f;
 
-  return J->second.delay;
+  return J->second.calculateDelay();
 }
 
 float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const {
@@ -182,7 +225,7 @@ float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const
     const TimedSrcSet &Srcs = I->second;
 
     TimedSrcSet::const_iterator J = Srcs.find(Src);
-    return J == Srcs.end() ? 0.0f : J->second.delay;
+    return J == Srcs.end() ? 0.0f : J->second.calculateDelay();
   }
 
   IncomingMapTy::const_iterator I = Incomings.find(Dst);
@@ -198,7 +241,7 @@ float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const
 
   const TimedSrcSet &Srcs = J->second;
   TimedSrcSet::const_iterator K = Srcs.find(Src);
-  return K == Srcs.end() ? 0.0f : K->second.delay;
+  return K == Srcs.end() ? 0.0f : K->second.calculateDelay();
 }
 
 Dataflow::BBPtr
@@ -253,19 +296,17 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
 
   TimedSrcSet &Srcs = getDeps(Inst, getIncomingBlock(S, Inst, V));
 
-  // Assign the current delay a bigger weigth if there is timing violation. So
-  // that the scheduler can make quick respond on the timing violation.
-  float Ratio = IsTimingViolation ? 0.9f : 0.5f;
   Annotation &OldAnnotation = Srcs[V];
-  float OldDelay = OldAnnotation.delay;
 
   if (IsTimingViolation) {
     if (OldAnnotation.generation != generation)
       ++OldAnnotation.violation;
 
-
     // We cannot do anything with the BRAM to register path ...
-    if (!isa<BasicBlock>(V) && !(isa<LoadInst>(V) && V.getPointer() == Inst.getPointer())) {
+    DEBUG(if (OldAnnotation.generation == 1 && !isa<BasicBlock>(V)
+              && !(isa<LoadInst>(V) && V.getPointer() == Inst.getPointer())) {
+      float OldDelay = OldAnnotation.calculateDelay();
+
       dbgs() << "Potential timing violation: ("
              << unsigned(OldAnnotation.violation)
              << ") "<< Slack << ' ' << delay
@@ -273,7 +314,7 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
              << '(' << ((delay - OldDelay) / delay) << ')' << " \n"
              << "Src: " << V->getName() << '(' << V.IsLauch() << ')'
              << " Dst: " << *Inst << '(' << Inst.IsLauch() << ')' << '\n';
-    }
+    });
 
     BasicBlock *ParentBB = S->getParent();
 
@@ -305,18 +346,15 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
     }
   }
 
-  updateDelay(delay, Ratio, OldAnnotation);
+  updateDelay(delay, OldAnnotation);
 }
 
-void Dataflow::updateDelay(float NewDelay, float Ratio, Annotation &OldDelay) {
-  if (OldDelay.generation == generation || OldDelay.delay == 0.0f) {
-    OldDelay.delay = std::max(NewDelay, OldDelay.delay);
-    OldDelay.generation = generation;
-    return;
-  }
+void Dataflow::updateDelay(float NewDelay, Annotation &OldDelay) {
+ if (OldDelay.generation == 0)
+   OldDelay.reset();
 
-  OldDelay.generation = generation;
-  OldDelay.delay = OldDelay.delay * (1.0f - Ratio) + NewDelay * Ratio;
+ OldDelay.addSample(NewDelay);
+ OldDelay.generation = generation;
 }
 
 DataflowAnnotation::DataflowAnnotation(bool Accumulative)
@@ -445,7 +483,9 @@ void Dataflow::dumpFlowDeps(raw_ostream &OS) const {
         dst TEXT, \
         generation INTEGER, \
         violation INTEGER, \
-        delay REAL \
+        num_samples INTEGER, \
+        sum REAL,\
+        sqr_sum REAL\
         );\n";
 
   typedef FlowDepMapTy::const_iterator iterator;
@@ -462,12 +502,14 @@ void Dataflow::dumpFlowDeps(raw_ostream &OS) const {
       if (isa<LoadInst>(J->first) && J->first.getPointer() == Dst.getPointer())
         continue;
 
-      OS << "INSERT INTO flowdeps(src, dst, generation, violation, delay) VALUES(\n"
+      OS << "INSERT INTO flowdeps(src, dst, generation, violation, num_samples, sum, sqr_sum) VALUES(\n"
          << '\'' << J->first.getOpaqueValue() << "', \n"
          << '\'' << Dst.getOpaqueValue() << "', \n"
-         << J->second.generation << ", \n"
+         << unsigned(J->second.generation) << ", \n"
          << unsigned(J->second.violation) << ", \n"
-         << J->second.delay << ");\n";
+         << unsigned(J->second.num_samples) << ", \n"
+         << J->second.sum << ", \n"
+         << J->second.sqr_sum << ");\n";
     }
   }
 }
@@ -480,7 +522,9 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
         dst TEXT, \
         generation INTEGER, \
         violation INTEGER, \
-        delay REAL \
+        num_samples INTEGER, \
+        sum REAL,\
+        sqr_sum REAL\
         );\n";
 
   typedef IncomingMapTy::const_iterator iterator;
@@ -496,13 +540,15 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
         if (isa<BasicBlock>(K->first))
           continue;
 
-        OS << "INSERT INTO incomings(src, bb, dst, generation, violation, delay) VALUES(\n"
+        OS << "INSERT INTO incomings(src, bb, dst, generation, violation, num_samples, sum, sqr_sum) VALUES(\n"
            << '\'' << K->first.getOpaqueValue() << "', \n"
            << '\'' << BB->getName() << "', \n"
            << '\'' << Dst.getOpaqueValue() << "', \n"
-           << K->second.generation << ", \n"
+           << unsigned(K->second.generation) << ", \n"
            << unsigned(K->second.violation) << ", \n"
-           << K->second.delay << ");\n";
+           << unsigned(K->second.num_samples) << ", \n"
+           << K->second.sum << ", \n"
+           << K->second.sqr_sum << ");\n";
       }
     }
   }
