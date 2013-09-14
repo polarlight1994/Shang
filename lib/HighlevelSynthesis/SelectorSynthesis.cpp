@@ -182,6 +182,12 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     return;
   }
 
+  if (Sel->numNonTrivialFanins() == 1) {
+    VASTLatch L = Sel->getUniqueFannin();
+    Sel->setMux(L, Guard);
+    return;
+  }
+
   // Build the intersect leaves set
   std::set<VASTSeqValue*> CurLeaves;
   std::set<VASTSelector*> AllLeaves, IntersectLeaves;
