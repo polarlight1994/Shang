@@ -166,7 +166,7 @@ struct AnnotatedCone {
   // constraints on the leaves.
   void generateMCPEntriesDFOrder(VASTValue *Root) const;
 
-  bool generateMCPThough(VASTExpr *Expr) const;
+  void generateMCPThough(VASTExpr *Expr) const;
 
   // Bind multi-cycle path constraints to the scripting engine.
   template<typename SrcTy>
@@ -373,16 +373,13 @@ AnnotatedCone::generateMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const
   return SrcSet.size();
 }
 
-bool AnnotatedCone::generateMCPThough(VASTExpr *Expr) const {
+void AnnotatedCone::generateMCPThough(VASTExpr *Expr) const {
   // Visit the node before we pushing it into the stack.
   QueryCacheTy::const_iterator I = QueryCache.find(Expr);
-  // The children of the current node will not have any annotation if the
-  // current node do not have any annotation.
-  if (I == QueryCache.end())
-    return false;
 
-  NumConstraints += generateMCPThough(Expr, I->second);
-  return true;
+  // Write the annotation if there is any.
+  if (I != QueryCache.end())
+    NumConstraints += generateMCPThough(Expr, I->second);
 }
 
 void AnnotatedCone::generateMCPEntriesDFOrder(VASTValue *Root) const {
@@ -417,8 +414,9 @@ void AnnotatedCone::generateMCPEntriesDFOrder(VASTValue *Root) const {
     if (!Visited.insert(ChildNode).second) continue;
 
     if (VASTExpr *SubExpr = dyn_cast<VASTExpr>(ChildNode)) {
-      if (generateMCPThough(SubExpr))
-        VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
+      generateMCPThough(SubExpr);
+
+      VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
     }
   }
 }
