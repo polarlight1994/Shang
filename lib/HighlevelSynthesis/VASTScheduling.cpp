@@ -474,7 +474,8 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
 }
 
 void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
-                                           bool IsLaunch, float delay) {
+                                           bool IsLaunch, float delay,
+                                           unsigned slack) {
   assert(Src && "Not a valid source!");
   assert((!isa<Instruction>(Src)
           || DT->dominates(cast<Instruction>(Src)->getParent(), DstU->getParent()))
@@ -530,14 +531,27 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
   }
 
   assert(delay >= 0.0f && "Unexpected negative delay!");
-  bool RequireExtraCycles = (ceil(delay) - delay) < 0.5f;
-  DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay), RequireExtraCycles));
+  unsigned ExtraCycles = (ceil(delay) - delay) < 0.5f ? 1 : 0;
+  ExtraCycles = std::max(slack, ExtraCycles);
+  DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay), ExtraCycles));
+}
+
+static unsigned GetMUXDelay(Dataflow::SrcSet Srcs, BasicBlock *ParentBB) {
+  typedef Dataflow::SrcSet::iterator src_iterator;
+
+  src_iterator I = Srcs.find(DataflowValue(ParentBB, false));
+  if (I == Srcs.end())
+    return 0;
+
+  return std::max<float>(ceil(I->second) - 2.0f, 0.0f) + 1.0f;
 }
 
 void VASTScheduling::buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U) {
   Dataflow::SrcSet Srcs;
 
   DF->getFlowDep(U->getSeqOp(), Srcs);
+  float MuxDelay = GetMUXDelay(Srcs, U->getParent());
+
   typedef Dataflow::SrcSet::iterator src_iterator;
   // Also calculate the path for the guarding condition.
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
@@ -546,7 +560,7 @@ void VASTScheduling::buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U) 
         continue;
     }
 
-    buildFlowDependencies(U, I->first, I->first.IsLauch(), I->second);
+    buildFlowDependencies(U, I->first, I->first.IsLauch(), I->second, MuxDelay);
   }
 }
 
@@ -556,6 +570,7 @@ VASTScheduling::buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U)
   typedef Dataflow::SrcSet::iterator src_iterator;
 
   DF->getIncomingFrom(DataflowInst(PHI, false), U->getParent(), Srcs);
+  float MuxDelay = GetMUXDelay(Srcs, U->getParent());
 
   // Also calculate the path for the guarding condition.
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
@@ -564,7 +579,7 @@ VASTScheduling::buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U)
         continue;
     }
 
-    buildFlowDependencies(U, I->first, I->first.IsLauch(), I->second);
+    buildFlowDependencies(U, I->first, I->first.IsLauch(), I->second, MuxDelay);
   }
 }
 

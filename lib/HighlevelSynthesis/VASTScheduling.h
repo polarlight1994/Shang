@@ -96,8 +96,8 @@ public:
     return VASTDep(MemDep, Latency, Distance, 0);
   }
 
-  static VASTDep CreateFlowDep(int Latency, bool RequireExtraCycles) {
-    return VASTDep(ValDep, Latency, 0, RequireExtraCycles ? 1 : 0);
+  static VASTDep CreateFlowDep(int Latency, unsigned ExtraCycles) {
+    return VASTDep(ValDep, Latency, 0, ExtraCycles);
   }
 
   static VASTDep CreateCtrlDep(int Latency) {
@@ -575,7 +575,7 @@ class VASTScheduling : public VASTModulePass {
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
   void buildFlowDependencies(VASTSchedUnit *DstU, Value *Src, bool IsLaunch,
-                             float delay);
+                             float delay, unsigned slack);
   void buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U);
   void buildFlowDependencies(VASTSchedUnit *U);
   void buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U);
