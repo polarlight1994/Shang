@@ -334,7 +334,11 @@ float SelectorPipelining::getFaninSlack(const SVSet &S, const VASTLatch &L,
     if (Interval == 0)
       return 0.0f;
 
-    float Arrival = getArrivialTime(SV, L, FI);
+    float Arrival = 0.0f;
+
+    // No need to calculate the arrivial time of the trivial fanin.
+    if (SV != FI)
+      Arrival = getArrivialTime(SV, L, FI);
 
     slack = std::min(slack, float(Interval) - Arrival);
   }
