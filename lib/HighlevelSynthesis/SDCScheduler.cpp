@@ -411,22 +411,7 @@ void SDCScheduler::printVerision() const {
 }
 
 unsigned SDCScheduler::updateSoftConstraintPenalties() {
-  unsigned Changed = 0;
-
-  typedef SoftCstrVecTy::iterator iterator;
-  for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
-       I != E; ++I) {
-    SoftConstraint &C = I->second;
-
-    double &LastPenalty = ObjFn[C.SlackIdx];
-    double NewPenalty = - C.Penalty / std::max<double>(C.LastValue, 1.0);
-    if (LastPenalty != NewPenalty) {
-      LastPenalty = NewPenalty;
-      ++Changed;
-    }
-  }
-
-  return Changed;
+  return 0;
 }
 
 void SDCScheduler::addDependencyConstraints() {
