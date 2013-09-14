@@ -217,12 +217,14 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
 }
 
 void SelectorPipelining::descomposeSeqInst(VASTSeqInst *SeqInst) {
+  Value *V = SeqInst->getValue();
+  bool IsLatch = SeqInst->isLatch();
+
   for (unsigned i = 0, e = SeqInst->num_srcs(); i != e; ++i) {
     VASTLatch L = SeqInst->getSrc(i);
 
-    VASTSeqInst *NewSeqInst = VM->lauchInst(L.getSlot(), L.getGuard(), 1,
-                                            SeqInst->getValue(), true);
-    NewSeqInst->addSrc(VASTValPtr(L), 0, L.getSelector(), L.getDst());
+    VM->lauchInst(L.getSlot(), L.getGuard(), 1, V, IsLatch)
+      ->addSrc(VASTValPtr(L), 0, L.getSelector(), L.getDst());
   }
 
   VM->eraseSeqOp(SeqInst);
@@ -287,11 +289,6 @@ SelectorPipelining::buildPipelineFIs(VASTSelector *Sel, MUXPipeliner &Pipeliner)
 
     VASTSlot *ReadSlot = DstLatch.getSlot();
 
-    if (ReadSlot->getValue()->getLLVMValue() && DstLatch.Op->getValue()) {
-      if (DF->getDelay(ReadSlot->getValue(), DstLatch.Op, ReadSlot) <= 1.0f)
-        continue;
-    }
-
     unsigned RetimeSlack = getSlotSlack(ReadSlot);
     if (RetimeSlack == 0) continue;
 
@@ -330,14 +327,17 @@ float SelectorPipelining::getFaninSlack(const SVSet &S, const VASTLatch &L,
     if (SV->isStatic() || SV->isFUOutput()) return 0;
 
     unsigned Interval = STGDist->getIntervalFromDef(SV, L.getSlot());
+    assert(Interval >= 1 && "Bad interval!");
+    // Dirty HACK: Avoid retime to the assignment slot of the FI for now.
+    Interval -= 1;
+    // The slack from fanins is 0 if we have any single cycle path.
+    if (Interval == 0)
+      return 0.0f;
 
     float Arrival = getArrivialTime(SV, L, FI);
 
     slack = std::min(slack, float(Interval) - Arrival);
   }
-
-  // Dirty HACK: Avoid retime to the assignment slot of the FI for now.
-  slack -= 1.0f;
 
   return slack;
 }
@@ -347,19 +347,8 @@ float SelectorPipelining::getArrivialTime(VASTSeqValue *SV, const VASTLatch &L,
   if (!SV->getLLVMValue() || DataflowInst(L.Op).getPointer() == 0)
     return lookUpArrival(SV, FI);
 
-  VASTSlot *S = L.getSlot();
-  BasicBlock *ParentBB = S->getParent();
-
-  // Adjust to actual parent BB for the incoming value.
-  if (S->IsSubGrp) {
-    S = S->getParentGroup();
-    if (BasicBlock *BB = S->getParent())
-      ParentBB = BB;
-  }
-
-  float TotalDelay = DF->getDelay(SV, L.Op, S);
-  float EnableDelay = DF->getDelay(DataflowValue(ParentBB, true), L.Op, S);
-  return cacheArrivial(SV, FI, std::max(TotalDelay - EnableDelay, 0.0f));
+  float Arrival = DF->getDelay(SV, L.Op, L.getSlot());
+  return cacheArrivial(SV, FI, Arrival);
 }
 
 static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level) {
