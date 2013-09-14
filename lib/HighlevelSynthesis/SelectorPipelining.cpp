@@ -88,6 +88,10 @@ struct MUXPipeliner {
 };
 
 struct SelectorPipelining : public VASTModulePass {
+#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
+  TimingNetlist *TNL;
+#endif
+
   Dataflow *DF;
   STGDistances *STGDist;
   unsigned MaxSingleCyleFINum;
@@ -118,7 +122,7 @@ struct SelectorPipelining : public VASTModulePass {
 
   static char ID;
 
-  SelectorPipelining() : VASTModulePass(ID), DF(0), STGDist(0) {
+  SelectorPipelining() : VASTModulePass(ID), TNL(0), DF(0), STGDist(0) {
     initializeSelectorPipeliningPass(*PassRegistry::getPassRegistry());
 
     VFUMux *Mux = getFUDesc<VFUMux>();
@@ -144,6 +148,9 @@ struct SelectorPipelining : public VASTModulePass {
     AU.addPreservedID(ControlLogicSynthesisID);
     // FIXME: Require dataflow annotation.
     AU.addRequired<Dataflow>();
+#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
+    AU.addRequired<TimingNetlist>();
+#endif
     AU.addRequired<STGDistances>();
     AU.addPreserved<STGDistances>();
   }
@@ -163,6 +170,11 @@ INITIALIZE_PASS_BEGIN(SelectorPipelining, "sequential-selector-pipelining",
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
+  INITIALIZE_PASS_DEPENDENCY(Dataflow)
+#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
+  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
+#endif
+
 INITIALIZE_PASS_END(SelectorPipelining, "sequential-selector-pipelining",
                     "Implement the MUX for the Sequantal Logic", false, true)
 
@@ -175,11 +187,13 @@ Pass *llvm::createSelectorPipeliningPass() {
 bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
   this->VM = &VM;
 
-  typedef VASTModule::selector_iterator iterator;
-
+#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
+  TNL = &getAnalysis<TimingNetlist>();
+#endif
   DF = &getAnalysis<Dataflow>();
   STGDist = &getAnalysis<STGDistances>();
 
+  typedef VASTModule::selector_iterator iterator;
   // Clear up all MUX before we perform selector pipelining.
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
     I->dropMux();
@@ -351,7 +365,11 @@ float SelectorPipelining::getArrivialTime(VASTSeqValue *SV, const VASTLatch &L,
   if (!SV->getLLVMValue() || DataflowInst(L.Op).getPointer() == 0)
     return lookUpArrival(SV, FI);
 
+#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
+  float Arrival = DF->getGeneration() == 2 ? TNL->getDelay(SV, FI) : DF->getDelay(SV, L.Op, L.getSlot());
+#else
   float Arrival = DF->getDelay(SV, L.Op, L.getSlot());
+#endif
   return cacheArrivial(SV, FI, Arrival);
 }
 
