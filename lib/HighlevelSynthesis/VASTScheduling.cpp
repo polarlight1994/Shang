@@ -531,8 +531,7 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
   }
 
   assert(delay >= 0.0f && "Unexpected negative delay!");
-  unsigned ExtraCycles = (ceil(delay) - delay) < 0.5f ? 1 : 0;
-  ExtraCycles = std::max(slack, ExtraCycles);
+  unsigned ExtraCycles = slack;
   DstU->addDep(SrcSU, VASTDep::CreateFlowDep(ceil(delay), ExtraCycles));
 }
 
