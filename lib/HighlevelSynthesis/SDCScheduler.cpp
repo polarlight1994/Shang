@@ -397,7 +397,7 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
       H.addConstraintToLP(Edge, lp, 0);
 
       if (unsigned ExtraCycles = Edge.getExtraCycles())
-        addSoftConstraint(Src, U, Edge.getLatency() + Edge.getExtraCycles(), 1.0);
+        addSoftConstraint(Src, U, Edge.getLatency() + Edge.getExtraCycles(), 2.0);
     }
   }
 }
