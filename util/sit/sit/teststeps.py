@@ -82,12 +82,12 @@ class TestStep :
   def getOptionCompack(self) :
     return [ (k, v) for k, v in self.option.iteritems() if set([v]) != set(self.option_space_dict[k])]
 
-  def submitLogfiles(self, connection, status) :
-    connection.execute('''
+  def submitLogfiles(self, status) :
+    return '''
 INSERT INTO
   logfile(name, parameter, stdout, stderr, test_file, synthesis_config_file, status)
-  VALUES (:test_name, :parameter, :stdout, :stderr, :test_file, :synthesis_config_file, :status)
-''',{
+  VALUES ('%(test_name)s', '%(parameter)s', '%(stdout)s', '%(stderr)s', '%(test_file)s', '%(synthesis_config_file)s', '%(status)s');
+''' % {
       'test_name' : self.test_name,
       'parameter' : json.dumps(self.getOptionCompack()),
       'stdout' :  self.stdout,
@@ -95,12 +95,13 @@ INSERT INTO
       'test_file' : self.test_file,
       'synthesis_config_file' : self.synthesis_config_file,
       'status' : status
-    })
+    }
 
+  def passed(self, status) :
     return status == 'passed'
 
-  def submitResults(self, connection, status) :
-    self.submitLogfiles(connection, status)
+  def submitResults(self, status) :
+    return self.submitLogfiles(status)
 
   def getStepDesc(self) :
     return ' '.join([self.test_name, self.step_name, str(self.getOptionCompack())]).replace(':', '-')
@@ -153,19 +154,20 @@ class HLSStep(TestStep) :
                            datetime.now().strftime("%Y%m%d-%H%M%S-%f"))
     os.makedirs(self.hls_base_dir)
 
-  def submitResults(self, connection, status) :
-    if (not self.submitLogfiles(connection, status)) : return
+  def submitResults(self, status) :
+    results = self.submitLogfiles(status)
+    if (self.passed(status)) :
+      # TODO: Extract other statistics
+      results += '''
+INSERT INTO highlevelsynthesis(name, parameter, rtl_output)
+       VALUES ('%(test_name)s', '%(parameter)s', '%(rtl_output)s');
+''' % {
+        'test_name' : self.test_name,
+        'parameter' : json.dumps(self.getOptionCompack()),
+        'rtl_output' :  self.rtl_output
+      }
 
-    # TODO: Extract other statistics
-    connection.execute('''
-INSERT INTO
-  highlevelsynthesis(name, parameter, rtl_output)
-  VALUES (:test_name, :parameter, :rtl_output)
-''',{
-      'test_name' : self.test_name,
-      'parameter' : json.dumps(self.getOptionCompack()),
-      'rtl_output' :  self.rtl_output
-    })
+    return results
 
   def createJobTemplate(self) :
     # Create the HLS job.
@@ -721,6 +723,24 @@ class HWSimStep(TestStep) :
 
     return []
 
+  def submitResults(self, status) :
+    results = self.submitLogfiles(status)
+    if (self.passed(status)) :
+      with open(os.path.join(self.pure_hw_sim_base_dir, 'cycles.rpt')) as cycles_rpt:
+        num_cycles = int(cycles_rpt.read())
+        self.results["cycles"] = num_cycles
+        results += '''
+INSERT INTO simulation(name, parameter, cycles)
+       VALUES ('%(test_name)s', '%(parameter)s', %(cycles)d);
+''' % {
+    'test_name' : self.test_name,
+    'parameter' : json.dumps(self.getOptionCompack()),
+    'cycles': num_cycles}
+
+      cycles_rpt.close()
+
+    return results
+
 class ShangHWSimStep(HWSimStep) :
   step_name = 'shang hardware simulation'
 
@@ -858,16 +878,6 @@ vsim -t 1ps work.DUT_TOP_tb -c -do "run -all;quit -f" || exit 1
 [ -f cycles.rpt ] || exit 1
 ''', self.pure_hw_sim_script)
 
-  def submitResults(self, connection, status) :
-    if (not self.submitLogfiles(connection, status)) : return
-
-    with open(os.path.join(self.pure_hw_sim_base_dir, 'cycles.rpt')) as cycles_rpt:
-      num_cycles = int(cycles_rpt.read())
-      self.results["cycles"] = num_cycles
-      connection.execute("INSERT INTO simulation(name, parameter, cycles) VALUES (:test_name, :parameter, :cycles)",
-                         {"test_name" : self.test_name,  "parameter" : json.dumps(self.getOptionCompack()), "cycles": num_cycles})
-    cycles_rpt.close()
-
 class LegUpHWSimStep(HWSimStep) :
   step_name = 'LegUp hardware simulation'
 
@@ -889,16 +899,6 @@ vlog -sv {{ rtl_output }} || exit 1
 vsim -L altera_mf_ver -L lpm_ver -t 1ps work.main_tb -c -do "run 7000000000000000ns; exit;" || exit 1
 
 ''', self.pure_hw_sim_script)
-
-  def submitResults(self, connection, status) :
-    if (not self.submitLogfiles(connection, status)) : return
-
-    with open(os.path.join(self.pure_hw_sim_base_dir, 'cycles.rpt')) as cycles_rpt:
-      num_cycles = int(cycles_rpt.read())
-      self.results["cycles"] = num_cycles
-      connection.execute("INSERT INTO simulation(name, parameter, cycles) VALUES (:test_name, :parameter, :cycles)",
-                         {"test_name" : self.test_name,  "parameter" : json.dumps(self.getOptionCompack()), "cycles": num_cycles})
-    cycles_rpt.close()
 
   def generateSubTests(self) :
     #If test type == hybrid simulation
@@ -1000,85 +1000,89 @@ project_close
     self.jobid = Session.runJob(jt)
     Session.deleteJobTemplate(jt)
 
-  def submitResults(self, connection, status) :
-    if (not self.submitLogfiles(connection, status)) : return
+  def submitResults(self, status) :
+    results = self.submitLogfiles(status)
+    if (self.passed(status)) :
+      results_data = {"test_name" : self.test_name,  "parameter" : json.dumps(self.getOptionCompack()) }
+      # Read the fmax
+      with open(os.path.join(self.altera_synthesis_base_dir, 'clk_fmax.rpt')) as fmax_rpt:
+        fmax = float(fmax_rpt.read())
+        results_data['fmax'] = fmax
+        self.results['fmax'] = fmax
 
-    results = {"test_name" : self.test_name,  "parameter" : json.dumps(self.getOptionCompack()) }
-    # Read the fmax
-    with open(os.path.join(self.altera_synthesis_base_dir, 'clk_fmax.rpt')) as fmax_rpt:
-      fmax = float(fmax_rpt.read())
-      results['fmax'] = fmax
-      self.results['fmax'] = fmax
+      with open(os.path.join(self.altera_synthesis_base_dir, 'resource.rpt')) as resource_rpt:
+        # Read the results into the result dict.
+        for k, v in json.load(resource_rpt).items() :
+          v = re.match(r"(^\d*)",v.replace(',','')).group(1)
 
-    with open(os.path.join(self.altera_synthesis_base_dir, 'resource.rpt')) as resource_rpt:
-      # Read the results into the result dict.
-      for k, v in json.load(resource_rpt).items() :
-        v = re.match(r"(^\d*)",v.replace(',','')).group(1)
+          if v == '' :
+            v = '0'
 
-        if v == '' :
-          v = '0'
+          results_data[k] = int(v)
+          self.results[k] = v
 
-        results[k] = int(v)
-        self.results[k] = v
+      print self.results
 
-    print self.results
+      results += '''
+INSERT INTO synthesis(
+            name,
+            parameter,
 
-    connection.execute('''INSERT INTO synthesis(
-          name,
-          parameter,
+            fmax,
 
-          fmax,
+            mem_bit,
 
-          mem_bit,
+            regs,
 
-          regs,
+            alut,
+            alm,
 
-          alut,
-          alm,
+            les,
+            les_wo_reg,
+            les_w_reg_only,
+            les_and_reg,
+            les_normal,
+            les_arit,
 
-          les,
-          les_wo_reg,
-          les_w_reg_only,
-          les_and_reg,
-          les_normal,
-          les_arit,
+            lut2,
+            lut3,
+            lut4,
+            lut6,
 
-          lut2,
-          lut3,
-          lut4,
-          lut6,
+            mult9,
+            mult18)
 
-          mult9,
-          mult18)
+  VALUES (
+            '%(test_name)s',
+            '%(parameter)s',
 
-        VALUES (
-          :test_name,
-          :parameter,
+            %(fmax)s,
 
-          :fmax,
+            %(mem_bit)s,
 
-          :mem_bit,
+            %(regs)s,
 
-          :regs,
+            %(alut)s,
+            %(alm)s,
 
-          :alut,
-          :alm,
+            %(les)s,
+            %(les_wo_reg)s,
+            %(les_w_reg_only)s,
+            %(les_and_reg)s,
+            %(les_normal)s,
+            %(les_arit)s,
 
-          :les,
-          :les_wo_reg,
-          :les_w_reg_only,
-          :les_and_reg,
-          :les_normal,
-          :les_arit,
+            %(lut2)s,
+            %(lut3)s,
+            %(lut4)s,
+            %(lut6)s,
 
-          :lut2,
-          :lut3,
-          :lut4,
-          :lut6,
+            %(mult9)s,
+            %(mult18)s);
+''' % results_data
 
-          :mult9,
-          :mult18)''',
-    results)
+    return results
+
 
   def generateSubTests(self) :
     if self.mode == TestStep.AlteraNls :
@@ -1247,6 +1251,3 @@ vsim -t 1ps -L altera_ver -L {{ device_family.lower() }}_ver work.DUT_TOP_tb -c 
     print "Submitted", self.getStepDesc()
     self.jobid = Session.runJob(jt)
     Session.deleteJobTemplate(jt)
-
-  def submitResults(self, connection, status) :
-    if (not self.submitLogfiles(connection, status)) : return

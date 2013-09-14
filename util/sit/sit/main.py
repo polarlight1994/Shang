@@ -36,11 +36,11 @@ def main(builtinParameters = {}):
   print "Starting the Shang Integrated Tester in", args.mode, "mode..."
 
   # Initialize the database connection
-  con = sqlite3.connect(":memory:")
+  database_log = open(os.path.join(args.config_bin_dir, 'data.sql'), 'w')
 
   # Create the tables for the experimental results.
   # We create 3 tables: HLS results, simulation results, and synthesis results
-  con.executescript('''
+  database_log.write('''
     create table highlevelsynthesis(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
@@ -96,9 +96,7 @@ def main(builtinParameters = {}):
         mult9  INTEGER,
         mult18 INTEGER
     );
-  ''')
-  # This is not necessary since we only have 1 connection.
-  con.commit()
+''')
 
   # Build the opation space from the configuration.
   option_space_dict = {}
@@ -122,7 +120,7 @@ def main(builtinParameters = {}):
                                            args.mode == TestStep.AlteraNls \
                                         else 'blackbox' ]
 
-  option_space_dict['fmax'] = [ 450 ] if args.mode == TestStep.AlteraSyn else [ 450 ]
+  option_space_dict['fmax'] = [ 350, 400, 450 ] if args.mode == TestStep.AlteraSyn else [ 450 ]
   option_space_dict['device_family'] = [ 'StratixIV' ]
 
   option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]
@@ -165,7 +163,8 @@ def main(builtinParameters = {}):
         continue
 
       if status == 'passed' :
-        job.submitResults(con, status)
+        database_log.write(job.submitResults(status))
+        database_log.flush()
 
         # Now the job finished successfully
         print "Test", job.test_name, job.step_name, "passed"
@@ -185,7 +184,9 @@ def main(builtinParameters = {}):
           next_active_jobs.append(job)
           continue
 
-        job.submitResults(con, status)
+        database_log.write(job.submitResults(status))
+        database_log.flush()
+
         print "Test", job.getStepDesc(), "failed"
         # Remember the options on the fail case
         for k, v in job.option.iteritems() :
@@ -205,12 +206,7 @@ def main(builtinParameters = {}):
   # Finialize the gridengine
   Session.exit()
 
-  cur = con.cursor()
-
-  with open(os.path.join(args.config_bin_dir, 'data.sql'), 'w') as database_script:
-    for line in con.iterdump():
-      database_script.write(line)
-      database_script.write('\n')
+  database_log.close()
 
   # Analysis the fail cases
   print 'Fail space:', [ (k, v) for k, v in fail_space.iteritems() if v < set(option_space_dict[k]) ]
