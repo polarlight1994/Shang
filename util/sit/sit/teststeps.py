@@ -935,6 +935,8 @@ load_package report
 
 project_new {{ test_name }} -overwrite
 
+set_global_assignment -name NUM_PARALLEL_PROCESSORS 1
+
 set_global_assignment -name FAMILY "{{ fpga_family }}"
 set_global_assignment -name DEVICE {{ fpga_device }}
 
