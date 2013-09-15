@@ -37,6 +37,7 @@
 #include "llvm/Support/system_error.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Timer.h"
 #include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "external-timing-analysis"
 #include "llvm/Support/Debug.h"
@@ -728,6 +729,10 @@ ExternalTimingAnalysis::writeReadPlacementScript(raw_ostream &O,
 }
 
 bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
+  std::string GroupName;
+  if (TimePassesIsEnabled)
+    GroupName = "External Timing Analysis";
+
   SmallString<256> OutputDir
     = sys::path::parent_path(getStrValueFromEngine("RTLOutput"));
   sys::path::append(OutputDir, "TimingNetlist");
@@ -800,20 +805,25 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   sys::Path Empty;
   const sys::Path *Redirects[] = { &Empty, &Empty, &Empty };
   errs() << "Running '" << quartus.str() << " ' program... ";
-  if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, Redirects, 0, 0,
-                                   &ErrorInfo)) {
-    errs() << "Error: " << ErrorInfo <<'\n';
-    report_fatal_error("External timing analyze fail!\n");
-    return false;
+  {
+    NamedRegionTimer T("External Tool Run Time", GroupName, TimePassesIsEnabled);
+    if (sys::Program::ExecuteAndWait(quartus, &args[0], 0, Redirects, 0, 0,
+      &ErrorInfo)) {
+        errs() << "Error: " << ErrorInfo <<'\n';
+        report_fatal_error("External timing analyze fail!\n");
+        return false;
+    }
   }
 
   errs() << " done. \n";
+  {
+    NamedRegionTimer T("Backannotation File IO", GroupName, TimePassesIsEnabled);
+    if (!readTimingAnalysisResult(TimingExtractResult))
+      return false;
 
-  if (!readTimingAnalysisResult(TimingExtractResult))
-    return false;
-
-  if (EnablePAR && !VM.hasBoundingBoxConstraint())
-    return readRegionPlacement(RegionPlacement);
+    if (EnablePAR && !VM.hasBoundingBoxConstraint())
+      return readRegionPlacement(RegionPlacement);
+  }
 
   return true;
 }
