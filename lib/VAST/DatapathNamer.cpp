@@ -66,9 +66,13 @@ struct Namer {
 
   void nameExpr(VASTExpr *Expr) {
     unsigned StrashID = Strash.getOrCreateStrashID(Expr);
-    StringSet<>::MapEntryTy &Entry
-      = Names.GetOrCreateValue("t" + utostr_32(StrashID) + "t");
-    Expr->nameExpr(Entry.getKeyData());
+    if (Expr->isTimingBarrier()) {
+      std::string Name = "k" + utostr_32(StrashID) + "k";
+      Expr->nameExpr(Names.GetOrCreateValue(Name).getKeyData());
+    } else {
+      std::string Name = "t" + utostr_32(StrashID) + "t";
+      Expr->nameExpr(Names.GetOrCreateValue(Name).getKeyData());
+    }
   }
 
   void operator()(VASTNode *N) {
