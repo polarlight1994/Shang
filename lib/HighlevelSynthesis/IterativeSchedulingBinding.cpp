@@ -28,7 +28,160 @@ using namespace llvm;
 
 STATISTIC(NumIterations, "Number of Scheduling-Binding Iterations");
 
+typedef ArrayRef<VASTSchedUnit*> SUArrayRef;
+typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
+
+static VASTSchedUnit *LookupSU(VASTSeqOp *Op, const IR2SUMapTy &Map) {
+  Value *V = Op->getValue();
+  assert(V && "Unexpected virtual node!");
+  IR2SUMapTy::const_iterator I = Map.find(V);
+  assert(I != Map.end() && "Corresponding scheduling units not found!");
+  SUArrayRef SUs(I->second);
+
+  assert(SUs.size() && "Unexpected empty array!");
+  for (unsigned i = 0; i < SUs.size(); ++i) {
+    VASTSchedUnit *SU = SUs[i];
+    if (SU->getSeqOp() == Op)
+      return SU;
+  }
+
+  llvm_unreachable("SU not found!");
+  return 0;
+}
+
 namespace {
+
+struct SelectorSlackVerifier {
+  IR2SUMapTy &IR2SUMap;
+  SDCScheduler &Scheduler;
+  VASTSelector *Sel;
+  typedef std::map<VASTSchedUnit*, unsigned> SrcSlackMapTy;
+  typedef std::map<VASTSchedUnit*, SrcSlackMapTy> SlackMapTy;
+  SlackMapTy SlackMap;
+  static const unsigned MaxFIPerLevel = 8;
+
+  SelectorSlackVerifier(IR2SUMapTy &IR2SUMap, SDCScheduler &Scheduler,
+                        VASTSelector *Sel)
+    : IR2SUMap(IR2SUMap), Scheduler(Scheduler), Sel(Sel) {}
+
+  bool preserveFaninConstraint() {
+    std::vector<VASTSchedUnit*> SUs;
+
+    typedef VASTSelector::iterator vn_itertor;
+    for (vn_itertor I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+      VASTLatch &DstLatch = *I;
+
+      // Ignore the trivial fanins.
+      if (Sel->isTrivialFannin(DstLatch)) continue;
+
+      VASTSchedUnit *U = LookupSU(DstLatch.Op, IR2SUMap);
+      SUs.push_back(U);
+
+      buildSlackMap(U);
+    }
+
+    return preserveFaninConstraint(MaxFIPerLevel, 0, SUs);
+  }
+
+  VASTSchedUnit *buildSlackMap(VASTSchedUnit *U) {
+    SrcSlackMapTy &SrcSlacks = SlackMap[U];
+
+    typedef VASTSchedUnit::dep_iterator dep_iterator;
+    int NumValDeps = 0;
+    for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
+      if (!I.hasValDep())
+        continue;
+
+      VASTSchedUnit *Src = *I;
+      unsigned EdgeDistance = U->getSchedule() - Src->getSchedule();
+      assert(EdgeDistance >= unsigned(I.getLatency())
+             && "Bad schedule that does not preserve latency constraint!");
+
+      unsigned CurSlack = EdgeDistance - I.getLatency();
+      // Ignore the BBEntry, if they are fused together.
+      if (Src->isBBEntry() && CurSlack == 0)
+        continue;
+
+     SrcSlacks[Src] = CurSlack;
+    }
+
+    return U;
+  }
+
+  bool preserveFaninConstraint(unsigned AvailableFanins, unsigned CurLevel,
+                               MutableArrayRef<VASTSchedUnit*> SUs) {
+    unsigned UsedFanins = 0;
+    unsigned RemainFanins = 0;
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSchedUnit *SU = SUs[i];
+
+      if (SU == 0)
+        continue;
+
+      ++RemainFanins;
+      if (hasExtraSlack(SU, CurLevel))
+        continue;
+
+      // If there is no extra slack, one fanin is consumed.
+      ++UsedFanins;
+      // Set this element to null, so that we will not visit it again in the
+      // next level.
+      SUs[i] = 0;
+    }
+
+    if (AvailableFanins < UsedFanins)
+      return false;
+
+    if (RemainFanins == 0 || RemainFanins <= AvailableFanins)
+      return true;
+
+    // Subtract the used fanins from the available fanins.
+    AvailableFanins -= UsedFanins;
+    // We get extra fanins as we go to next level.
+    AvailableFanins *= MaxFIPerLevel;
+    return preserveFaninConstraint(AvailableFanins, CurLevel + 1, SUs);
+  }
+
+  bool hasExtraSlack(VASTSchedUnit *SU, unsigned Level) const {
+    SlackMapTy::const_iterator J = SlackMap.find(SU);
+    assert(J != SlackMap.end() && "SU not in the map?");
+    const SrcSlackMapTy &SrcSlacks = J->second;
+
+    typedef SrcSlackMapTy::const_iterator iterator;
+    for (iterator I = SrcSlacks.begin(), E = SrcSlacks.end(); I != E; ++I)
+      // There is no extra slack if there is any fanin do not have extra slack.
+      if (I->second <= Level)
+        return false;
+
+    return true;
+  }
+
+  void applyPenalties() {
+    typedef SlackMapTy::const_iterator iterator;
+    for (iterator I = SlackMap.begin(), E = SlackMap.end(); I != E; ++I) {
+      VASTSchedUnit *Dst = I->first;
+      applyPenalties(Dst, I->second);
+    }
+  }
+
+  void applyPenalties(VASTSchedUnit *Dst, const SrcSlackMapTy &SrcSlacks) {
+    typedef SDCScheduler::SoftConstraint SoftConstraint;
+    typedef SrcSlackMapTy::const_iterator iterator;
+    for (iterator I = SrcSlacks.begin(), E = SrcSlacks.end(); I != E; ++I) {
+      VASTSchedUnit *Src = I->first;
+      unsigned Slack = I->second;
+      unsigned ExpectedSlack = Dst->getEdgeFrom(Src).getLatency() + Slack + 1;
+
+      SoftConstraint &SC = Scheduler.getOrCreateSoftConstraint(Src, Dst);
+      if (SC.C == 0 || SC.C >= ExpectedSlack)
+        SC.Penalty += 4.0;
+
+      if (SC.C < ExpectedSlack)
+        SC.C = ExpectedSlack;
+    }
+  }
+};
+
 struct ItetrativeEngine {
   SDCScheduler Scheduler;
   PreSchedBinding &PSB;
@@ -36,8 +189,6 @@ struct ItetrativeEngine {
   BlockFrequencyInfo &BFI;
   BranchProbabilityInfo &BPI;
 
-  typedef ArrayRef<VASTSchedUnit*> SUArrayRef;
-  typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
   IR2SUMapTy &IR2SUMap;
 
   enum State {
@@ -77,22 +228,6 @@ struct ItetrativeEngine {
         continue;
 
       return SU;
-    }
-
-    llvm_unreachable("SU not found!");
-    return 0;
-  }
-
-  VASTSchedUnit *lookupSU(VASTSeqOp *Op) {
-    Value *V = Op->getValue();
-    assert(V && "Unexpected virtual node!");
-    SUArrayRef SUs(IR2SUMap[V]);
-
-    assert(SUs.size() && "Corresponding scheduling units not found!");
-    for (unsigned i = 0; i < SUs.size(); ++i) {
-      VASTSchedUnit *SU = SUs[i];
-      if (SU->getSeqOp() == Op)
-        return SU;
     }
 
     llvm_unreachable("SU not found!");
@@ -180,19 +315,44 @@ struct ItetrativeEngine {
 
     return false;
   }
+
+  bool performSchedulingAndAllocateMuxSlack(VASTModule &VM) {
+    if (!performScheduling(VM))
+      return false;
+
+    bool FaninConstraintsViolated = false;
+    typedef VASTModule::selector_iterator iterator;
+    for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+      VASTSelector *Sel = I;
+
+      if (Sel->isSlot() || Sel->size() < 8) continue;
+
+      SelectorSlackVerifier SSV(IR2SUMap, Scheduler, Sel);
+      if (SSV.preserveFaninConstraint())
+        continue;
+
+      SSV.applyPenalties();
+
+      // Perform schedule again with the updated soft constraints.
+      S = Scheduling;
+      FaninConstraintsViolated = true;
+    }
+
+    return FaninConstraintsViolated;
+  }
 };
 }
 
 unsigned
 ItetrativeEngine::checkLatchCompatibility(PSBCompNode *Src,
-                                                    PSBCompNode *Dst,
-                                                    SUArrayRef DstSUs,
-                                                    ViolationPairs &Violations) {
+                                          PSBCompNode *Dst,
+                                          SUArrayRef DstSUs,
+                                          ViolationPairs &Violations) {
   unsigned NegativeSlack = 0;
 
   typedef PSBCompNode::kill_iterator kill_iterator;
   for (kill_iterator I = Src->kill_begin(), E = Src->kill_end(); I != E; ++I) {
-    VASTSchedUnit *SrcKill = lookupSU(*I);
+    VASTSchedUnit *SrcKill = LookupSU(*I, IR2SUMap);
 
     for (unsigned i = 0; i < DstSUs.size(); ++i) {
       VASTSchedUnit *DstDef = DstSUs[i];
@@ -339,8 +499,8 @@ ItetrativeEngine::checkCompatibility(const ClusterType &Cluster) {
 
 bool ItetrativeEngine::performScheduling(VASTModule &VM) {
   // No need to modify the scheduling if the FU compatiblity is preserved.
-  if (S == Scheduling && !checkCompatibility())
-    return false;
+  //if (S == Scheduling && !checkCompatibility())
+  //  return false;
 
   Scheduler->resetSchedule();
 
@@ -426,10 +586,10 @@ void VASTScheduling::scheduleGlobal() {
   //getAnalysis<BlockFrequencyInfo>();
 
   ItetrativeEngine ISB(*G, PSB, *DT, BFI, BPI, IR2SUMap);
-  while (ISB.iterate(*VM)) {
+  while (ISB.performSchedulingAndAllocateMuxSlack(*VM)) {
     ++NumIterations;
     dbgs() << "Schedule Violations: " << ISB.ScheduleViolation << ' '
-                 << "Binding Violations:" << ISB.BindingViolation << '\n';
+           << "Binding Violations:" << ISB.BindingViolation << '\n';
   }
 
   DEBUG(G->viewGraph());

@@ -575,7 +575,7 @@ class VASTScheduling : public VASTModulePass {
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
   void buildFlowDependencies(VASTSchedUnit *DstU, Value *Src, bool IsLaunch,
-                             float delay, unsigned slack);
+                             float delay);
   void buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U);
   void buildFlowDependencies(VASTSchedUnit *U);
   void buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U);
