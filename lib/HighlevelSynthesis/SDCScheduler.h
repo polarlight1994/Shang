@@ -21,6 +21,7 @@ namespace llvm {
 class DominatorTree;
 
 class SDCScheduler : public SchedulerBase {
+public:
   struct SoftConstraint {
     double Penalty;
     unsigned SlackIdx;
@@ -29,13 +30,14 @@ class SDCScheduler : public SchedulerBase {
 
     SoftConstraint() : Penalty(0.0), SlackIdx(0), C(0), LastValue(0) {}
   };
-public:
 
   typedef VASTSchedGraph::iterator iterator;
   // Set the variables' name in the model.
   unsigned createLPAndVariables(iterator I, iterator E);
   void addSoftConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst, unsigned C,
                          double Penalty);
+  SoftConstraint &getOrCreateSoftConstraint(VASTSchedUnit *Src,
+                                            VASTSchedUnit *Dst);
 
   double getLastPenalty(VASTSchedUnit *Src, VASTSchedUnit *Dst) const;
 

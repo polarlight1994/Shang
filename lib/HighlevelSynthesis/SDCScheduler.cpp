@@ -159,6 +159,11 @@ unsigned SDCScheduler::createLPAndVariables() {
   return Col - 1;
 }
 
+SDCScheduler::SoftConstraint&
+SDCScheduler::getOrCreateSoftConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
+  return SoftConstraints[EdgeType(Src, Dst)];
+}
+
 void SDCScheduler::addSoftConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst,
                                      unsigned C, double Penalty) {
   SoftConstraint &SC = SoftConstraints[EdgeType(Src, Dst)];
@@ -249,11 +254,9 @@ void SDCScheduler::addSoftConstraints() {
       C.SlackIdx = ++NumVars;
       createSlackVariable(NumVars);
       addSoftConstraint(lp, Dst, Src, C);
-    } else if (C.LastValue == 0)
-      // Reduce the penalty if the constraint is preserved.
-      C.Penalty *= 0.95;
+    }
 
-    ObjFn[C.SlackIdx] = - C.Penalty / std::max<double>(C.LastValue, 1.0);
+    ObjFn[C.SlackIdx] = - C.Penalty;
   }
 }
 
