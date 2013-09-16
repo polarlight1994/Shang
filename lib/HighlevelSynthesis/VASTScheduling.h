@@ -153,7 +153,7 @@ private:
     // TODO: Print all edges in the edge bundle.
     void printDetials(raw_ostream &OS) const;
 
-    bool hasValDep() const;
+    int getDFLatency() const;
   };
 
   typedef DenseMap<VASTSchedUnit*, EdgeBundle> DepSet;
@@ -208,7 +208,7 @@ public:
 
     int getDistance(unsigned II = 0) const { return getEdge(II).getDistance(); }
 
-    bool hasValDep() const { return getEdgeBundle().hasValDep(); }
+    int getDFLatency() const { return getEdgeBundle().getDFLatency(); }
   };
 
   typedef VASTSchedUnitDepIterator<DepSet::const_iterator, true> const_dep_iterator;
@@ -321,6 +321,13 @@ public:
   VASTDep getEdgeFrom(const VASTSchedUnit *A, unsigned II = 0) const {
     assert(isDependsOn(A) && "Current atom not depend on A!");
     return getDepIt(A).getEdge(II);
+  }
+
+  unsigned getDFLatency(const VASTSchedUnit *A) const {
+    assert(isDependsOn(A) && "Current atom not depend on A!");
+    int L = getDepIt(A).getDFLatency();
+    assert(L >= 0 && "Not a dataflow dependence!");
+    return unsigned(L);
   }
 
   void removeDep(VASTSchedUnit *Src) {

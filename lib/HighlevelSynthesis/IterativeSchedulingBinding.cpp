@@ -91,7 +91,8 @@ struct SelectorSlackVerifier {
     typedef VASTSchedUnit::dep_iterator dep_iterator;
     int NumValDeps = 0;
     for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
-      if (!I.hasValDep())
+      int Latnecy = I.getDFLatency();
+      if (Latnecy < 0)
         continue;
 
       VASTSchedUnit *Src = *I;
@@ -99,7 +100,7 @@ struct SelectorSlackVerifier {
       assert(EdgeDistance >= unsigned(I.getLatency())
              && "Bad schedule that does not preserve latency constraint!");
 
-      unsigned CurSlack = EdgeDistance - I.getLatency();
+      unsigned CurSlack = EdgeDistance - unsigned(Latnecy);
 
       // Ignore the BBEntry, if they are fused together.
       if (Src->isBBEntry() && CurSlack == 0)
@@ -173,7 +174,9 @@ struct SelectorSlackVerifier {
     for (iterator I = SrcSlacks.begin(), E = SrcSlacks.end(); I != E; ++I) {
       VASTSchedUnit *Src = I->first;
       unsigned Slack = I->second;
-      unsigned ExpectedSlack = Dst->getEdgeFrom(Src).getLatency() + Slack + 1;
+      unsigned Latency = Dst->getDFLatency(Src);
+
+      unsigned ExpectedSlack = unsigned(Latency) + Slack + 1;
 
       SoftConstraint &SC = Scheduler.getOrCreateSoftConstraint(Src, Dst);
       if (SC.C == 0 || SC.C >= ExpectedSlack)

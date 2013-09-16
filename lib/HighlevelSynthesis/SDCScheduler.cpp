@@ -269,7 +269,7 @@ void SDCScheduler::buildOptSlackObject(double weight) {
     typedef VASTSchedUnit::const_dep_iterator dep_iterator;
     int NumValDeps = 0;
     for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
-      if (!I.hasValDep())
+      if (I.getDFLatency() < 0)
         continue;
 
       NumValDeps += 1;
