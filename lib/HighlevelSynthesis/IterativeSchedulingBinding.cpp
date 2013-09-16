@@ -58,11 +58,12 @@ struct SelectorSlackVerifier {
   typedef std::map<VASTSchedUnit*, unsigned> SrcSlackMapTy;
   typedef std::map<VASTSchedUnit*, SrcSlackMapTy> SlackMapTy;
   SlackMapTy SlackMap;
-  static const unsigned MaxFIPerLevel = 8;
+  const unsigned MaxFIPerLevel;
 
   SelectorSlackVerifier(IR2SUMapTy &IR2SUMap, SDCScheduler &Scheduler,
                         VASTSelector *Sel)
-    : IR2SUMap(IR2SUMap), Scheduler(Scheduler), Sel(Sel) {}
+    : IR2SUMap(IR2SUMap), Scheduler(Scheduler), Sel(Sel),
+      MaxFIPerLevel(std::min(16u, 64 * 8 / Sel->getBitWidth())) {}
 
   bool preserveFaninConstraint() {
     std::vector<VASTSchedUnit*> SUs;
@@ -80,7 +81,7 @@ struct SelectorSlackVerifier {
       buildSlackMap(U);
     }
 
-    return preserveFaninConstraint(MaxFIPerLevel, 0, SUs);
+    return preserveFaninConstraint(MaxFIPerLevel, 1, SUs);
   }
 
   VASTSchedUnit *buildSlackMap(VASTSchedUnit *U) {
@@ -98,6 +99,7 @@ struct SelectorSlackVerifier {
              && "Bad schedule that does not preserve latency constraint!");
 
       unsigned CurSlack = EdgeDistance - I.getLatency();
+
       // Ignore the BBEntry, if they are fused together.
       if (Src->isBBEntry() && CurSlack == 0)
         continue;

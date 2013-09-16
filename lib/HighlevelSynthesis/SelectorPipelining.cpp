@@ -217,12 +217,13 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
 
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     // FIXME: Get the MUX delay from the timing estimator.
+    VASTSelector *Sel = I;
 
     // The slot assignments cannot be retime, the selectors with small fanin
     // number do not need to be retime.
-    if (I->isSlot() || I->size() < MaxSingleCyleFINum) continue;
+    if (Sel->isSlot() || Sel->size() < MaxSingleCyleFINum) continue;
 
-    pipelineFanins(I);
+    pipelineFanins(Sel);
   }
 
   DEBUG(dbgs() << "After MUX pipelining:\n"; VM.dump(););
@@ -257,7 +258,7 @@ void SelectorPipelining::descomposeSeqInst(VASTSeqInst *SeqInst) {
 bool SelectorPipelining::pipelineFanins(VASTSelector *Sel) {
   // Iterate over all fanins to build the Fanin Slack Map.
   // Try to build the pipeline register by inserting the map.
-  MUXPipeliner P(Sel, MaxSingleCyleFINum, VM);
+  MUXPipeliner P(Sel, std::min(16u, 64 * 8 / Sel->getBitWidth()), VM);
   buildPipelineFIs(Sel, P);
 
   return P.pipelineGreedy();
