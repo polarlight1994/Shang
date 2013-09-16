@@ -120,7 +120,7 @@ def main(builtinParameters = {}):
                                            args.mode == TestStep.AlteraNls \
                                         else 'blackbox' ]
 
-  option_space_dict['fmax'] = [ 350, 400, 450 ] if args.mode == TestStep.AlteraSyn else [ 450 ]
+  option_space_dict['fmax'] = [ 480, 400, 350 ] if args.mode == TestStep.AlteraSyn else [ 480 ]
   option_space_dict['device_family'] = [ 'StratixIV' ]
 
   option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]
