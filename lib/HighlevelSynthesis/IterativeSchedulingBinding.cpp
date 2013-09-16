@@ -180,7 +180,7 @@ struct SelectorSlackVerifier {
 
       SoftConstraint &SC = Scheduler.getOrCreateSoftConstraint(Src, Dst);
       if (SC.C == 0 || SC.C >= ExpectedSlack)
-        SC.Penalty += 4.0;
+        SC.Penalty += 2.0;
 
       if (SC.C < ExpectedSlack)
         SC.C = ExpectedSlack;
