@@ -396,7 +396,8 @@ void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
     // Extract the delay from the fan-in and the guarding condition.
     TNL.extractDelay(Sel, FI.get(), Srcs);
     TNL.extractDelay(Sel, Cnd.get(), Srcs);
-    TNL.extractDelay(Sel, SlotEn, Srcs);
+    if (Op->guardedBySlotActive() && SlotEn->getLLVMValue())
+      TNL.extractDelay(Sel, SlotEn, Srcs);
   }
 
   typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
