@@ -111,7 +111,7 @@ def generate_scripts(sql_path, sdc_path, report_path, period, factor) :
 
   sdc_generator = ConstraintGenerator(
     sql_connection = con,
-    path_constraints = ''' null is null ''',
+    path_constraints = ''' cycles > 1 ''',
     output_script_path = sdc_path,
     script_prologue = '''
 create_clock -name "clk" -period %(period)sns [get_ports {clk}]
