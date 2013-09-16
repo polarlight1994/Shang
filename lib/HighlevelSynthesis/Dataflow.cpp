@@ -218,9 +218,9 @@ float Dataflow::getDelayFromLaunch(Instruction *Inst) const {
 }
 
 float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const {
-  BasicBlock *BB = getIncomingBlock(S, Dst, Src);
+  BBPtr BB = getIncomingBlock(S, Dst, Src);
 
-  if (!isa<PHINode>(Dst) && Dst->getParent() == BB) {
+  if (!BB.isSubGrp() && Dst->getParent() == BB) {
     FlowDepMapTy::const_iterator I = FlowDeps.find(Dst);
 
     // The scheduler may created new path via CFG folding, do not fail in this
