@@ -246,7 +246,8 @@ float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const
 
 Dataflow::BBPtr
 Dataflow::getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const {
-  BasicBlock *ParentBB = S->getParent();
+  VASTSlot *CurSlot = S;
+  BasicBlock *ParentBB = CurSlot->getParent();
   // Use the IsSubGrp flag to identify the intra-bb backedge like:
   // BB:
   //   A <-
@@ -256,19 +257,14 @@ Dataflow::getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const {
   // although src and dst of the edge are located in the same BB, but such
   // dependence is not a flow dependence, thereby we should not put such
   // dependence to the FlowDep set..
-  bool IsSubGrp = S->IsSubGrp;
+  bool IsSubGrp = CurSlot->IsSubGrp;
 
   // Adjust to actual parent BB for the incoming value.
-  if (S->IsSubGrp) {
-    S = S->getParentGroup();
-    if (BasicBlock *BB = S->getParent())
+  if (CurSlot->IsSubGrp) {
+    CurSlot = CurSlot->getParentGroup();
+    if (BasicBlock *BB = CurSlot->getParent())
       ParentBB = BB;
   }
-
-  // Since terminators are always the last instruction, there wil never be a
-  // intra-BB back-edge to terminators.
-  if (isa<TerminatorInst>(Inst))
-    IsSubGrp &= ParentBB != Inst->getParent();
 
   BasicBlock *DefBB = 0;
   if (Instruction *Def = dyn_cast<Instruction>(Src))
@@ -281,7 +277,18 @@ Dataflow::getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const {
     // parent BB of the actual user, this can be done by move up in the subgroup
     // tree until we get a BB that is dominated by Src.
     while (!DT->dominates(DefBB, ParentBB)) {
-      S = S->getParentGroup();
+      CurSlot = CurSlot->getParentGroup();
+      ParentBB = CurSlot->getParent();
+    }
+  }
+
+  // Since terminators are always the last instruction, there wil never be a
+  // intra-BB back-edge to terminators.
+  if (isa<TerminatorInst>(Inst)) {
+    IsSubGrp &= ParentBB != Inst->getParent();
+
+    if ((isa<BranchInst>(Inst) || isa<SwitchInst>(Inst)) && !IsSubGrp) {
+      IsSubGrp = true;
       ParentBB = S->getParent();
     }
   }
