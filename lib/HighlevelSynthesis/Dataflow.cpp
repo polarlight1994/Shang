@@ -44,7 +44,7 @@ float Dataflow::Annotation::calculateDelay() const {
 
   // Assume the data follow the Normal distribution.
   float ratio = 2.0f;
-  float delay = E + ratio * D;
+  float delay = std::max(E + ratio * D, 0.0f);
   assert(delay >= 0.0f && "Unexpected negative delay!");
   return delay;
 }
