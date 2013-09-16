@@ -63,7 +63,8 @@ struct SelectorSlackVerifier {
   SelectorSlackVerifier(IR2SUMapTy &IR2SUMap, SDCScheduler &Scheduler,
                         VASTSelector *Sel)
     : IR2SUMap(IR2SUMap), Scheduler(Scheduler), Sel(Sel),
-      MaxFIPerLevel(std::min(16u, 64 * 8 / Sel->getBitWidth())) {}
+      MaxFIPerLevel(getFUDesc<VFUMux>()->getMaxAllowdMuxSize(Sel->getBitWidth()))
+  {}
 
   bool preserveFaninConstraint() {
     std::vector<VASTSchedUnit*> SUs;
@@ -327,9 +328,10 @@ struct ItetrativeEngine {
     for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
       VASTSelector *Sel = I;
 
-      if (Sel->isSlot() || Sel->size() < 8) continue;
-
       SelectorSlackVerifier SSV(IR2SUMap, Scheduler, Sel);
+
+      if (Sel->isSlot() || Sel->size() < SSV.MaxFIPerLevel) continue;
+
       if (SSV.preserveFaninConstraint())
         continue;
 

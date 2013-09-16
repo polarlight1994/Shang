@@ -180,6 +180,7 @@ public:
 
   float    getMuxLatency(unsigned Size);
   unsigned getMuxCost(unsigned Size, unsigned BitWidth);
+  unsigned getMaxAllowdMuxSize(unsigned Bitwidth) const;
 
   static VFUs::FUTypes getType() { return VFUs::Mux; };
   /// Methods for support type inquiry through isa, cast, and dyn_cast:

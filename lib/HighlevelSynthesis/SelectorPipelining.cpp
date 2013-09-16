@@ -94,7 +94,6 @@ struct SelectorPipelining : public VASTModulePass {
 
   Dataflow *DF;
   STGDistances *STGDist;
-  unsigned MaxSingleCyleFINum;
   VASTModule *VM;
   // Number of cycles at a specificed slot that we can move back unconditionally.
   std::map<unsigned, unsigned> SlotSlack;
@@ -124,9 +123,6 @@ struct SelectorPipelining : public VASTModulePass {
 
   SelectorPipelining() : VASTModulePass(ID), TNL(0), DF(0), STGDist(0) {
     initializeSelectorPipeliningPass(*PassRegistry::getPassRegistry());
-
-    VFUMux *Mux = getFUDesc<VFUMux>();
-    MaxSingleCyleFINum = 8;
   }
 
   bool pipelineFanins(VASTSelector *Sel);
@@ -221,7 +217,7 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
 
     // The slot assignments cannot be retime, the selectors with small fanin
     // number do not need to be retime.
-    if (Sel->isSlot() || Sel->size() < MaxSingleCyleFINum) continue;
+    if (Sel->isSlot()) continue;
 
     pipelineFanins(Sel);
   }
@@ -258,7 +254,12 @@ void SelectorPipelining::descomposeSeqInst(VASTSeqInst *SeqInst) {
 bool SelectorPipelining::pipelineFanins(VASTSelector *Sel) {
   // Iterate over all fanins to build the Fanin Slack Map.
   // Try to build the pipeline register by inserting the map.
-  MUXPipeliner P(Sel, std::min(16u, 64 * 8 / Sel->getBitWidth()), VM);
+  unsigned BitWidth = Sel->getBitWidth();
+  unsigned MaxFIsPerCycles = getFUDesc<VFUMux>()->getMaxAllowdMuxSize(BitWidth);
+  if (Sel->size() < MaxFIsPerCycles)
+    return false;
+
+  MUXPipeliner P(Sel, MaxFIsPerCycles, VM);
   buildPipelineFIs(Sel, P);
 
   return P.pipelineGreedy();

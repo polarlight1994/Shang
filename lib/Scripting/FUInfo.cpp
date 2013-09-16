@@ -144,6 +144,11 @@ VFUMux::VFUMux(luabind::object FUTable)
   initializeArray(CostTable, MuxCost, MaxAllowedMuxSize);
 }
 
+unsigned VFUMux::getMaxAllowdMuxSize(unsigned Bitwidth) const {
+  unsigned L = Log2_32_Ceil(std::max(2u, Bitwidth));
+  return 48 / L;
+}
+
 float VFUMux::getMuxLatency(unsigned Size) {
   if (Size < 2) return 0;
 
