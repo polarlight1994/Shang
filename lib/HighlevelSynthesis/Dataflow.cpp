@@ -328,7 +328,7 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
 }
 
 void Dataflow::updateDelay(float NewDelay, Annotation &OldDelay) {
- if (OldDelay.generation == 0)
+ if (OldDelay.generation == 0 && generation != 0)
    OldDelay.reset();
 
  OldDelay.addSample(NewDelay);
