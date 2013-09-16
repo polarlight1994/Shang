@@ -504,14 +504,8 @@ bool ItetrativeEngine::performScheduling(VASTModule &VM) {
 
   Scheduler->resetSchedule();
 
-  if (S == Initial) {
-    // Build the step variables, and no need to schedule at all if all SUs have
-    // been scheduled.
-    if (!Scheduler.createLPAndVariables())
-      return false;
-
-    Scheduler.addDependencyConstraints();
-  }
+  if (!Scheduler.createLPAndVariables())
+    return false;
 
   TotalWeight = 0.0f;
 
@@ -569,8 +563,7 @@ bool ItetrativeEngine::performScheduling(VASTModule &VM) {
 
   Scheduler.addObjectCoeff(Scheduler->getExit(), - 1.0 * (TotalWeight /*+ PerformanceFactor*/));
 
-  Scheduler.addSoftConstraints();
-  Scheduler.buildOptSlackObject(1.0);
+  //Scheduler.buildOptSlackObject(1.0);
 
   bool success = Scheduler.schedule();
   assert(success && "SDCScheduler fail!");

@@ -231,30 +231,21 @@ double SDCScheduler::getLastPenalty(VASTSchedUnit *Src,
 }
 
 void SDCScheduler::addSoftConstraints() {
-  unsigned NewConstraints = 0;
-  typedef SoftCstrVecTy::iterator iterator;
-  for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
-       I != E; ++I) {
-    SoftConstraint &C = I->second;
-    // Ignore the eliminated soft constraints.
-    if (C.SlackIdx == 0) ++NewConstraints;
-  }
-
+  unsigned NewConstraints = SoftConstraints.size();
   unsigned TotalRows = get_Nrows(lp), NumVars = get_Ncolumns(lp);
   resize_lp(lp, TotalRows + NewConstraints, NumVars + NewConstraints);
 
   double lastObject = get_var_primalresult(lp, 0);
 
+  typedef SoftCstrVecTy::iterator iterator;
   for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
        I != E; ++I) {
     SoftConstraint &C = I->second;
 
-    if (C.SlackIdx == 0) {
-      VASTSchedUnit *Src = I->first.first, *Dst = I->first.second;
-      C.SlackIdx = ++NumVars;
-      createSlackVariable(NumVars);
-      addSoftConstraint(lp, Dst, Src, C);
-    }
+    VASTSchedUnit *Src = I->first.first, *Dst = I->first.second;
+    C.SlackIdx = ++NumVars;
+    createSlackVariable(NumVars);
+    addSoftConstraint(lp, Dst, Src, C);
 
     ObjFn[C.SlackIdx] = - C.Penalty;
   }
@@ -327,6 +318,9 @@ unsigned SDCScheduler::buildSchedule(lprec *lp, iterator I, iterator E) {
     if (C.SlackIdx == 0) continue;
 
     unsigned NegativeSlack = get_var_primalresult(lp, TotalRows + C.SlackIdx);
+    assert (I->first.second->getSchedule() - I->first.first->getSchedule()
+            + NegativeSlack >= C.C && "Bad soft constraint slack!");
+
     if (NegativeSlack != C.LastValue) {
       C.LastValue = NegativeSlack;
       ++Changed;
@@ -398,9 +392,6 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
 
       H.resetSrc(Src, this);
       H.addConstraintToLP(Edge, lp, 0);
-
-      if (unsigned ExtraCycles = Edge.getExtraCycles())
-        addSoftConstraint(Src, U, Edge.getLatency() + Edge.getExtraCycles(), 2.0);
     }
   }
 }
@@ -430,24 +421,25 @@ void SDCScheduler::addDependencyConstraints() {
 bool SDCScheduler::schedule() {
   DEBUG(printVerision());
 
+  addDependencyConstraints();
+  addSoftConstraints();
+
   bool changed = true;
 
-  while(changed) {
-    changed = false;
-    ObjFn.setLPObj(lp);
+  ObjFn.setLPObj(lp);
 
-    if (!solveLP(lp)) return false;
+  if (!solveLP(lp)) return false;
 
-    // Schedule the state with the ILP result.
-    changed |= (buildSchedule(lp, begin(), end()) != 0);
-    changed |= (updateSoftConstraintPenalties() != 0);
-  }
+  // Schedule the state with the ILP result.
+  changed |= (buildSchedule(lp, begin(), end()) != 0);
+  changed |= (updateSoftConstraintPenalties() != 0);
 
   ObjFn.clear();
+  SUIdx.clear();
+  delete_lp(lp);
+  lp = 0;
   return true;
 }
 
 SDCScheduler::~SDCScheduler() {
-  if (lp)
-    delete_lp(lp);
 }
