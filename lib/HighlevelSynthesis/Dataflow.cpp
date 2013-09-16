@@ -22,10 +22,16 @@
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "shang-dataflow"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+
+static cl::opt<float>
+  SignmaRatio("vast-back-annotation-sigma-ratio",
+  cl::desc("Number of signma use to calculate the next delay from back annotation"),
+  cl::init(0.0f));
 
 Dataflow::BBPtr::BBPtr(VASTSlot *S) : Base(S->getParent(), S->IsSubGrp) {}
 
@@ -43,7 +49,7 @@ float Dataflow::Annotation::calculateDelay() const {
   float D = sqrtf(std::max<float>(D2, 0.0f));
 
   // Assume the data follow the Normal distribution.
-  float ratio = 2.0f;
+  float ratio = SignmaRatio;
   float delay = std::max(E + ratio * D, 0.0f);
   assert(delay >= 0.0f && "Unexpected negative delay!");
   return delay;

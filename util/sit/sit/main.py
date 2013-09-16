@@ -115,11 +115,12 @@ def main(builtinParameters = {}):
   option_space_dict['shang_dump_intermediate_netlist'] = [ 'true' ]
   option_space_dict['shang_constraints_factor'] = [ -0.1 ]
 
-  option_space_dict['timing_model'] = [ 'external' \
-                                        if args.mode == TestStep.AlteraSyn or \
-                                           args.mode == TestStep.AlteraNls \
-                                        else 'blackbox' ]
+  option_space_dict['vast_external_enable_timing_constraint'] = [ 'false', 'true' ]
+  option_space_dict['vast_external_enable_fast_place_and_route'] = [ 'true' ]
+  option_space_dict['vast_external_enable_place_and_route'] = [ 'true' ]
+  option_space_dict['vast_back_annotation_sigma_ratio'] = [ -2.0, 0.0, 2.0 ]
 
+  option_space_dict['timing_model'] = [ 'external' ]
   option_space_dict['fmax'] = [ 480, 400, 350 ] if args.mode == TestStep.AlteraSyn else [ 480 ]
   option_space_dict['device_family'] = [ 'StratixIV' ]
 
