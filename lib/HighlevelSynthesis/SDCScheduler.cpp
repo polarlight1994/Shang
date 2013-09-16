@@ -231,20 +231,13 @@ double SDCScheduler::getLastPenalty(VASTSchedUnit *Src,
 }
 
 void SDCScheduler::addSoftConstraints() {
-  unsigned NewConstraints = SoftConstraints.size();
-  unsigned TotalRows = get_Nrows(lp), NumVars = get_Ncolumns(lp);
-  resize_lp(lp, TotalRows + NewConstraints, NumVars + NewConstraints);
-
-  double lastObject = get_var_primalresult(lp, 0);
-
   typedef SoftCstrVecTy::iterator iterator;
   for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
        I != E; ++I) {
     SoftConstraint &C = I->second;
 
     VASTSchedUnit *Src = I->first.first, *Dst = I->first.second;
-    C.SlackIdx = ++NumVars;
-    createSlackVariable(NumVars);
+    assert(C.SlackIdx && "Not support on the fly soft constraint creation!");
     addSoftConstraint(lp, Dst, Src, C);
 
     ObjFn[C.SlackIdx] = - C.Penalty;
