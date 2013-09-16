@@ -219,8 +219,7 @@ float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const
 
     // The scheduler may created new path via CFG folding, do not fail in this
     // case.
-    if (I == FlowDeps.end())
-      return 0.0f;
+    assert(I != FlowDeps.end() && "Dst dose not existed in flow dependence?");
 
     const TimedSrcSet &Srcs = I->second;
 
