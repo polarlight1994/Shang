@@ -258,9 +258,6 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
                                ArrayRef<VASTValPtr> Args);
-  bool buildBinaryOperation(BinaryOperator &I);
-  bool buildICmpOperation(ICmpInst &I);
-  bool buildGEPOperation(GetElementPtrInst &I);
   //===--------------------------------------------------------------------===//
   VASTModuleBuilder(VASTModule *Module, DataLayout *TD, HLSAllocation &Allocation,
                     Dataflow &DF)
@@ -792,217 +789,15 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
   buildSubModuleOperation(Op, SubMod, Args);
 }
 
-bool VASTModuleBuilder::buildGEPOperation(GetElementPtrInst &I) {
-  VASTValPtr Offset, Ptr = getAsOperandImpl(I.getPointerOperand());
-  // FIXME: All the pointer arithmetic are perform under the precision of
-  // PtrSize, do we need to perform the arithmetic at the max available integer
-  // width and truncate the result?
-  unsigned PtrSize = Ptr->getBitWidth();
-  // Note that the pointer operand may be a vector of pointers. Take the scalar
-  // element which holds a pointer.
-  Type *Ty = I.getPointerOperandType()->getScalarType();
-
-  typedef GEPOperator::op_iterator op_iterator;
-  for (op_iterator OI = I.idx_begin(), E = I.op_end(); OI != E; ++OI) {
-    Value *Idx = *OI;
-    if (StructType *StTy = dyn_cast<StructType>(Ty)) {
-      unsigned Field = cast<ConstantInt>(Idx)->getZExtValue();
-      if (Field) {
-        // N = N + Offset
-        uint64_t Offset
-          = getDataLayout()->getStructLayout(StTy)->getElementOffset(Field);
-        Ptr = Builder.buildExpr(VASTExpr::dpAdd,
-                                Ptr, Builder.getImmediate(Offset, PtrSize),
-                                PtrSize);
-      }
-
-      Ty = StTy->getElementType(Field);
-    } else {
-      Ty = cast<SequentialType>(Ty)->getElementType();
-
-      // If this is a constant subscript, handle it quickly.
-      if (const ConstantInt *CI = dyn_cast<ConstantInt>(Idx)) {
-        if (CI->isZero()) continue;
-        uint64_t Offs = getDataLayout()->getTypeAllocSize(Ty)
-                        * cast<ConstantInt>(CI)->getSExtValue();
-
-        Ptr = Builder.buildExpr(VASTExpr::dpAdd,
-                                Ptr, Builder.getImmediate(Offs, PtrSize),
-                                PtrSize);
-        continue;
-      }
-
-      assert(!Offset && "Unexpected more than one nonconst indices!");
-
-      // N = N + Idx * ElementSize;
-      APInt ElementSize = APInt(PtrSize, getDataLayout()->getTypeAllocSize(Ty));
-      VASTValPtr Offset = getAsOperandImpl(Idx);
-
-      // If the index is smaller or larger than intptr_t, truncate or extend
-      // it.
-      Offset = Builder.buildBitSliceExpr(Offset, PtrSize, 0);
-
-      // If this is a multiply by a power of two, turn it into a shl
-      // immediately.  This is a very common case.
-      if (ElementSize != 1) {
-        if (ElementSize.isPowerOf2()) {
-          unsigned Amt = ElementSize.logBase2();
-          Offset = Builder.buildShiftExpr(VASTExpr::dpShl, Offset,
-                                          Builder.getImmediate(Amt, PtrSize),
-                                          PtrSize);
-        } else {
-          VASTValPtr Scale = Builder.getImmediate(ElementSize.getSExtValue(),
-                                                  PtrSize);
-          Offset = Builder.buildExpr(VASTExpr::dpMul, Offset, Scale, PtrSize);
-        }
-      }
-
-      // Do not need to add Offset to Ptr, we will perform the addition in the
-      // SeqOp.
-      // Ptr = Builder.buildExpr(VASTExpr::dpAdd, Ptr, Offset, PtrSize);
-    }
-  }
-
-  // No need to build the operation if all indices are constants.
-  if (!Offset)
-    return false;
-
-  VASTValPtr Ops[] = { Ptr, Offset };
-
-  BasicBlock *ParentBB = I.getParent();
-  VASTSlot *Slot = getLatestSlot(ParentBB);
-  VASTSeqValue *Result = getOrCreateSeqVal(&I);
-  // Do not provide latency, we will calculate the latency in timing analysis
-  // and build the correct constraints in scheduling graph.
-  VM->latchValue(Result, Builder.buildAddExpr(Ops, getValueSizeInBits(I)),
-                 Slot, VASTImmediate::True, &I, 0);
-  advanceToNextSlot(Slot);
-
-  return true;
-}
-
 void VASTModuleBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
-  if (buildGEPOperation(I))
-    return;
-
   indexVASTExpr(&I, Builder.visit(I));
-}
-
-bool VASTModuleBuilder::buildICmpOperation(ICmpInst &I) {
-  return false;
-  //VASTValPtr Ops[] = { getAsOperandImpl(I.getOperand(0)),
-  //                     getAsOperandImpl(I.getOperand(1)) };
-  //BasicBlock *ParentBB = I.getParent();
-  //VASTSlot *Slot = getLatestSlot(ParentBB);
-  //VASTSeqValue *Result = getOrCreateSeqVal(&I);
-  //// Do not provide latency, we will calculate the latency in timing analysis
-  //// and build the correct constraints in scheduling graph.
-  //VM->latchValue(Result, Builder.buildICmpExpr(I.getPredicate(), Ops[0], Ops[1]),
-  //               Slot, VASTImmediate::True, &I, 0);
-  //advanceToNextSlot(Slot);
-  //return true;
 }
 
 void VASTModuleBuilder::visitICmpInst(ICmpInst &I) {
-  if (buildICmpOperation(I))
-    return;
-
   indexVASTExpr(&I, Builder.visit(I));
 }
 
-bool VASTModuleBuilder::buildBinaryOperation(BinaryOperator &I) {
-  if (I.getOpcode() != Instruction::Mul)
-    return false;
-
-  SmallVector<VASTValPtr, 3> Ops;
-  Ops.push_back(getAsOperandImpl(I.getOperand(0)));
-  Ops.push_back(getAsOperandImpl(I.getOperand(1)));
-
-  if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(Ops[0]))
-    if (Imm.getAPInt().isPowerOf2() || Imm.isAllZeros())
-      return false;
-
-  if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(Ops[1]))
-    if (Imm.getAPInt().isPowerOf2() || Imm.isAllZeros())
-      return false;
-
-  BasicBlock *ParentBB = I.getParent();
-  VASTSlot *Slot = getLatestSlot(ParentBB);
-  VASTSeqInst *Op
-    = VM->lauchInst(Slot, VASTImmediate::True, Ops.size(), &I, false);
-  for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
-    VASTValPtr V = Ops[i];
-    BitMasks SrcMask = calculateBitMask(V);
-
-    VASTRegister *Operand = createOperandRegister(Op, I, i, V->getBitWidth());
-    VASTSeqValue *SV = VM->createSeqValue(Operand->getSelector(), i, &I);
-    Op->addSrc(V, i, SV);
-    if (isa<VASTImmPtr>(V))
-      continue;
-
-    Ops[i] = SV;
-    // Update the operand to the registered version, and replace the known bits
-    // if possible.
-    if (VASTValPtr MaskedOperand = Builder.replaceKnownBits(Ops[i], SrcMask))
-      Ops[i] = MaskedOperand;
-
-    Ops[i] = replaceKnownBits(I.getOperand(i), Ops[i]);
-  }
-
-  // FIXME: Use the latency of the functional unit!
-  Slot = advanceToNextSlot(Slot, 1);
-
-  unsigned ResultSize = getValueSizeInBits(I);
-  VASTValPtr ResultExpr;
-
-  switch (I.getOpcode()) {
-  case Instruction::Sub:
-  case Instruction::Add:
-    ResultExpr = Builder.buildExpr(VASTExpr::dpAdd, Ops, ResultSize);
-    break;
-
-  case Instruction::Mul:
-    ResultExpr = Builder.buildExpr(VASTExpr::dpMul, Ops, ResultSize);
-    break;
-
-  case Instruction::Shl:
-    ResultExpr = Builder.buildExpr(VASTExpr::dpShl, Ops, ResultSize);
-    break;
-  case Instruction::AShr:
-    ResultExpr = Builder.buildExpr(VASTExpr::dpSRA, Ops, ResultSize);
-    break;
-  case Instruction::LShr:
-    ResultExpr = Builder.buildExpr(VASTExpr::dpSRL, Ops, ResultSize);
-    break;
-
-  case Instruction::And:
-    ResultExpr = Builder.buildAndExpr(Ops, ResultSize);
-    break;
-  case Instruction::Or:
-    ResultExpr = Builder.buildOrExpr(Ops, ResultSize);
-    break;
-  case Instruction::Xor:
-    ResultExpr = Builder.buildXorExpr(Ops, ResultSize);
-    break;
-  default: llvm_unreachable("Unexpected opcode!"); return false;
-  }
-
-  // Trim the unused bits.
-  ResultExpr = Builder.buildBitSliceExpr(ResultExpr, ResultSize, 0);
-
-  VASTSeqValue *Result = getOrCreateSeqVal(&I);
-  // Do not provide latency, we will calculate the latency in timing analysis
-  // and build the correct constraints in scheduling graph.
-  VM->latchValue(Result, ResultExpr, Slot, VASTImmediate::True, &I, 0);
-  advanceToNextSlot(Slot);
-  return true;
-}
-
 void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
-  // Build the sequential operation for the binary operator.
-  if (buildBinaryOperation(I))
-    return;
-
   // Try to build the combinational node.
   if (VASTValPtr V = Builder.visit(I)) {
     indexVASTExpr(&I, V);

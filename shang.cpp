@@ -276,8 +276,6 @@ int main(int argc, char **argv) {
       HLSPasses.add(createDeadStoreEliminationPass());
     }
 
-    HLSPasses.add(createLowerGetElementPtrPass());
-
     // Try to optimize the computation.
     HLSPasses.add(createInstructionCombiningPass());
     // Move the datapath instructions as soon as possible.
