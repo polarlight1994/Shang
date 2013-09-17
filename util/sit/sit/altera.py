@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 import sqlite3, argparse
 
+def get_pins(pin_patterns) :
+  return '''[get_pins -compatibility_mode {%s}]''' % net_patterns
+
+def get_keepers(keeper_patterns) :
+  return '''[get_keepers {%s}]''' % keeper_patterns
+
 class ConstraintGenerator:
   def __init__(self, sql_connection, path_constraints, output_script_path, script_prologue, script_on_path, script_epilog, period):
     self.path_constraints = path_constraints
@@ -51,37 +57,53 @@ class ConstraintGenerator:
 
   # Generate the multi-cycle path constraints.
   def generate_script_for_path(self, **kwargs) :
-    kwargs['period'] = self.period
+    kwargs['cnd_string'] = '''[get_collection_size %(src)s]''' % kwargs
+
     if kwargs['thu'] == 'netsNone' :
-      kwargs['cnd_string'] = '''1''' % kwargs
-      kwargs['path_fileter'] = '''-from $%(src)s -to $%(dst)s''' % kwargs
+      kwargs['path_fileter'] = '''-from %(src)s -to $%(dst)s''' % kwargs
     else :
-      kwargs['cnd_string'] = '''[get_collection_size $%(thu)s]''' % kwargs
-      kwargs['path_fileter'] = '''-from $%(src)s -through $%(thu)s -to $%(dst)s''' % kwargs
+      kwargs['path_fileter'] = '''-from %(src)s -through $%(thu)s -to $%(dst)s''' % kwargs
 
     self.output_script.write(self.script_on_path % kwargs)
     self.num_path_script_generated = self.num_path_script_generated + 1
 
-  def generate_script_from_src_to_dst(self, src, dst) :
-    query = '''SELECT thu, cycles, normalized_delay FROM mcps
-               where %(constraint)s and dst = '%(dst)s' and src = '%(src)s'
+  def generate_script_from_thu_to_dst(self, thu, dst) :
+    if thu != 'shang-null-node' :
+      self.output_script.write('if { [get_collection_size $%(thu)s] } {\n' % {
+        'thu' : "nets%s" % self.net_map[thu]
+      })
+
+    query = '''SELECT DISTINCT cycles FROM mcps
+               where %(constraint)s and dst = '%(dst)s' and thu = '%(thu)s'
                ORDER BY cycles ASC, constraint_order ASC''' % {
                'constraint' : self.path_constraints,
                'dst' : dst,
-               'src' : src
+               'thu' : thu
             }
 
-    self.output_script.write('if { [get_collection_size $%(src)s] } {\n' % { 'src' : "keepers%s" % self.keeper_map[src] })
-    for thu, cycles, delay in [ (row[0], row[1], row[2] ) for row in self.cusor.execute(query) ]:
-      self.generate_script_for_path(src="keepers%s" % self.keeper_map[src], dst="keepers%s" % self.keeper_map[dst], thu="nets%s" % self.net_map[thu], cycles=cycles, delay=delay)
-    self.output_script.write('}\n')
+    for cycles in [ row[0] for row in self.cusor.execute(query) ]:
+      query = '''SELECT DISTINCT src FROM mcps
+  where %(constraint)s and dst = '%(dst)s' and thu = '%(thu)s'
+        and cycles = %(cycles)s''' % {
+    'constraint' : self.path_constraints,
+                 'dst' : dst,
+                 'thu' : thu,
+                 'cycles' : cycles
+              }
+
+      src = get_keepers(" ".join([ row[0] for row in self.cusor.execute(query) ]))
+      self.generate_script_for_path(src=src, dst="keepers%s" % self.keeper_map[dst],
+                                    thu="nets%s" % self.net_map[thu], cycles=cycles)
+
+    if thu != 'shang-null-node' :
+      self.output_script.write('}\n')
 
   def generate_script_for_dst(self, dst) :
-    query = '''SELECT DISTINCT src FROM mcps where %(constraint)s and dst = '%(dst)s' ''' % {
+    query = '''SELECT DISTINCT thu FROM mcps where %(constraint)s and dst = '%(dst)s' ''' % {
                'constraint' : self.path_constraints, 'dst' : dst}
     self.output_script.write('if { [get_collection_size $%(dst)s] } {\n' % { 'dst' : "keepers%s" % self.keeper_map[dst] })
-    for src in [ row[0] for row in self.cusor.execute(query) ]:
-      self.generate_script_from_src_to_dst(src, dst)
+    for thu in [ row[0] for row in self.cusor.execute(query) ]:
+      self.generate_script_from_thu_to_dst(thu, dst)
     self.output_script.write('}\n')
 
   def generate_script(self):
@@ -124,11 +146,11 @@ set_input_delay -clock clk -min [expr %(period)s * 0.4] start
 set num_not_applied 0
 ''',
     script_on_path = '''
-# %(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s
+# %(src)s -> %(thu)s -> %(dst)s %(cycles)s
 if { %(cnd_string)s } {
   set_multicycle_path %(path_fileter)s -setup -end %(cycles)d
 } else { incr num_not_applied }
-post_message -type info "%(src)s -> %(thu)s -> %(dst)s %(cycles)s %(delay)s"
+post_message -type info "%(src)s -> %(thu)s -> %(dst)s %(cycles)s"
 
 ''',
     script_epilog = '''
@@ -184,18 +206,7 @@ set slack_threshold [expr $worst_slack * 0.9]
 
 set report_path_info 0
 ''',
-    script_on_path = '''
-if { $report_path_info && (%(cnd_string)s) } {
-    set fail_paths [get_timing_paths %(path_fileter)s -setup -npaths 1 -less_than_slack $slack_threshold ]
-    foreach_in_collection path $fail_paths {
-      set slack [get_path_info $path -slack]
-      set delay [get_path_info $path -data_delay]
-      post_message -type info "Timing violation: available cycles: %(cycles)d, estimated delay: [expr %(delay)f * %(period)f], actual delay: $delay, slack: $slack path begin:"
-      report_timing %(path_fileter)s -setup -npaths 1 -less_than_slack $slack_threshold -detail full_path -stdout
-      post_message -type info "end path"
-    }
-}
-''',
+    script_on_path = '',
     script_epilog = '',
     period = period)
 
