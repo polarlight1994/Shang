@@ -43,6 +43,7 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+STATISTIC(NumConstraintsWritten, "Number of multi-cycle constraints written");
 STATISTIC(NumQueriesWritten, "Number of path delay queries written");
 STATISTIC(NumQueriesRead, "Number of path delay queries read");
 static cl::opt<bool> Use64BitQuartus("vast-use-64bit-quartus",
@@ -483,6 +484,8 @@ void GenerateTimingConstraint(raw_ostream &O, VASTSelector *Dst, VASTSeqValue *S
   if (Thu)
     O << "-through $thu ";
   O << "-to $dst -setup -end " << Cycles << '\n';
+
+  ++NumConstraintsWritten;
 }
 
 void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,
