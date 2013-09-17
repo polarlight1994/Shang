@@ -114,6 +114,8 @@ struct SelectorSlackVerifier {
 
   bool preserveFaninConstraint(unsigned AvailableFanins, unsigned CurLevel,
                                MutableArrayRef<VASTSchedUnit*> SUs) {
+    assert(CurLevel < 10 && "Unexpected number of pipeline stages!");
+
     unsigned UsedFanins = 0;
     unsigned RemainFanins = 0;
     for (unsigned i = 0; i < SUs.size(); ++i) {
