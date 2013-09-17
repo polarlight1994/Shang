@@ -136,6 +136,9 @@ struct SelectorSlackVerifier {
     if (AvailableFanins < UsedFanins)
       return false;
 
+    if (AvailableFanins == UsedFanins && RemainFanins > AvailableFanins)
+      return false;
+
     if (RemainFanins == 0 || RemainFanins <= AvailableFanins)
       return true;
 
