@@ -17,7 +17,7 @@ from teststeps import TestStep, ShangHLSStep, Session
 
 def ParseOptions() :
   parser = argparse.ArgumentParser(description='The Shang Integrated Tester')
-  parser.add_argument("--mode", type=str, choices=[TestStep.HybridSim, TestStep.PureHWSim, TestStep.AlteraSyn, TestStep.AlteraNls], help="the mode of sit", required=True)
+  parser.add_argument("--mode", type=str, choices=[ TestStep.PureHWSim, TestStep.AlteraSyn, TestStep.AlteraNls], help="the mode of sit", required=True)
   parser.add_argument("--tests", type=str, help="tests to run", required=True)
   parser.add_argument("--config_bin_dir", type=str, help="base binary dir of the test suit (to locate the config templates)", required=True)
   parser.add_argument("--sge_queue", type=str, help="the destinate sge queue to submit job", required=True)
