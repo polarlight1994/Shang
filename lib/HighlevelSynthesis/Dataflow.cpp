@@ -39,19 +39,38 @@ Dataflow::Dataflow() : FunctionPass(ID), generation(0) {
   initializeDataflowPass(*PassRegistry::getPassRegistry());
 }
 
-float Dataflow::Annotation::calculateDelay() const {
-  float num_samples = float(this->num_samples);
+Dataflow::delay_type::delay_type(const Annotation &Ann) {
+  float num_samples = float(Ann.num_samples);
   // Caculate the expected value
-  float E = sum / num_samples;
+  mu = Ann.sum / num_samples;
   // Caculate the variance
-  float D2 = sqr_sum / num_samples - E * E;
+  float D2 = Ann.sqr_sum / num_samples - mu * mu;
   // Do not fail due on the errors in floating point operation.
-  float D = sqrtf(std::max<float>(D2, 0.0f));
+  sigma = sqrtf(std::max<float>(D2, 0.0f));
+}
 
-  // Assume the data follow the Normal distribution.
-  float ratio = SignmaRatio;
-  float delay = std::max(E + ratio * D, 0.0f);
-  assert(delay >= 0.0f && "Unexpected negative delay!");
+void Dataflow::delay_type::reduce_max(const delay_type &RHS) {
+  // Trivial case: The distribution is completely separatable.
+  if (RHS.expected_at_offset(-2.0) > expected_at_offset(2.0)) {
+    mu = RHS.mu;
+    sigma = RHS.sigma;
+    return;
+  }
+
+  if (RHS.expected_at_offset(2.0) < expected_at_offset(-2.0))
+    return;
+
+  // Well, just do some approximation ...
+  if (mu < RHS.mu)
+    mu = RHS.mu;
+}
+
+float Dataflow::delay_type::expected() const {
+  return expected_at_offset(SignmaRatio);
+}
+
+float Dataflow::delay_type::expected_at_offset(float offset) const {
+  float delay = std::max(mu + offset * sigma, 0.0f);
   return delay;
 }
 
@@ -114,10 +133,8 @@ void Dataflow::getFlowDep(DataflowInst Inst, SrcSet &Set) const {
   if (I != FlowDeps.end()) {
     const TimedSrcSet &Srcs = I->second;
 
-    for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-      float &Delay = Set[I->first];
-      Delay = std::max(I->second.calculateDelay(), Delay);
-    }
+    for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
+      Set[I->first].reduce_max(I->second);
   }
 
   // Also collect the dependence from incoming block, if the dependence's parent
@@ -142,8 +159,7 @@ void Dataflow::getFlowDep(DataflowInst Inst, SrcSet &Set) const {
         if (!DT->properlyDominates(BB, Inst->getParent()))
           continue;
 
-      float &Delay = Set[V];
-      Delay = std::max(I->second.calculateDelay(), Delay);
+      Set[V].reduce_max(I->second);
     }
   }
 }
@@ -172,10 +188,8 @@ Dataflow::getIncomingFrom(DataflowInst Inst, BasicBlock *BB, SrcSet &Set) const 
   const TimedSrcSet &Srcs = J->second;
 
   typedef TimedSrcSet::const_iterator iterator;
-  for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-    float &Delay = Set[I->first];
-    Delay = std::max(I->second.calculateDelay(), Delay);
-  }
+  for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I)
+    Set[I->first].reduce_max(I->second);
 }
 
 Dataflow::TimedSrcSet &Dataflow::getDeps(DataflowInst Inst, BBPtr Parent) {
@@ -187,37 +201,39 @@ Dataflow::TimedSrcSet &Dataflow::getDeps(DataflowInst Inst, BBPtr Parent) {
   return Incomings[Inst][Parent];
 }
 
-float Dataflow::getSlackFromLaunch(Instruction *Inst) const {
-  if (!Inst) return 0;
+Dataflow::delay_type Dataflow::getSlackFromLaunch(Instruction *Inst) const {
+  if (!Inst) return delay_type(0.0f);
 
   FlowDepMapTy::const_iterator I = FlowDeps.find(DataflowInst(Inst, false));
   if (I == FlowDeps.end())
-    return 0.0f;
+    return delay_type(0.0f);
 
   const TimedSrcSet &Srcs = I->second;
   TimedSrcSet::const_iterator J = Srcs.find(DataflowValue(Inst, true));
   if (J == Srcs.end())
-    return 0.0f;
+    return delay_type(0.0f);
 
-  return (1.0f - J->second.calculateDelay());
+  delay_type delay(J->second);
+  return delay_type(1.0 - delay.mu, delay.sigma);
 }
 
-float Dataflow::getDelayFromLaunch(Instruction *Inst) const {
-  if (!Inst) return 0;
+Dataflow::delay_type Dataflow::getDelayFromLaunch(Instruction *Inst) const {
+  if (!Inst) return delay_type(0.0f);
 
   FlowDepMapTy::const_iterator I = FlowDeps.find(DataflowInst(Inst, false));
   if (I == FlowDeps.end())
-    return 0.0f;
+    return delay_type(0.0f);
 
   const TimedSrcSet &Srcs = I->second;
   TimedSrcSet::const_iterator J = Srcs.find(DataflowValue(Inst, true));
   if (J == Srcs.end())
-    return 0.0f;
+    return delay_type(0.0f);
 
-  return J->second.calculateDelay();
+  return J->second;
 }
 
-float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const {
+Dataflow::delay_type
+Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const {
   BBPtr BB = getIncomingBlock(S, Dst, Src);
 
   if (!BB.isSubGrp() && Dst->getParent() == BB) {
@@ -230,7 +246,7 @@ float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const
     const TimedSrcSet &Srcs = I->second;
 
     TimedSrcSet::const_iterator J = Srcs.find(Src);
-    return J == Srcs.end() ? 0.0f : J->second.calculateDelay();
+    return J == Srcs.end() ? delay_type(0.0f) : J->second;
   }
 
   IncomingMapTy::const_iterator I = Incomings.find(Dst);
@@ -238,15 +254,15 @@ float Dataflow::getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const
   // The scheduler may created new path via CFG folding, do not fail in this
   // case.
   if (I == Incomings.end())
-    return 0.0f;
+    return delay_type(0.0f);
 
   IncomingBBMapTy::const_iterator J = I->second.find(BB);
   if (J == I->second.end())
-    return 0.0f;
+    return delay_type(0.0f);
 
   const TimedSrcSet &Srcs = J->second;
   TimedSrcSet::const_iterator K = Srcs.find(Src);
-  return K == Srcs.end() ? 0.0f : K->second.calculateDelay();
+  return K == Srcs.end() ? delay_type(0.0f) : K->second;
 }
 
 Dataflow::BBPtr
@@ -317,15 +333,12 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
     // We cannot do anything with the BRAM to register path ...
     DEBUG(if (OldAnnotation.generation == 1 && !isa<BasicBlock>(V)
               && !(isa<LoadInst>(V) && V.getPointer() == Inst.getPointer())) {
-      float OldDelay = OldAnnotation.calculateDelay();
-
       dbgs() << "Potential timing violation: ("
              << unsigned(OldAnnotation.violation)
              << ") "<< Slack << ' ' << delay
-             << " Old delay " << OldDelay
-             << '(' << ((delay - OldDelay) / delay) << ')' << " \n"
              << "Src: " << V->getName() << '(' << V.IsLauch() << ')'
              << " Dst: " << *Inst << '(' << Inst.IsLauch() << ')' << '\n';
+      OldAnnotation.dump();
     });
   }
 

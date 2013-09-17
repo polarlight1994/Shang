@@ -477,8 +477,8 @@ VASTSchedUnit *VASTScheduling::getFlowDepSU(Value *V) {
   return 0;
 }
 
-void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
-                                           bool IsLaunch, float delay) {
+void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, DataflowValue Src,
+                                           Dataflow::delay_type delay_dist) {
   assert(Src && "Not a valid source!");
   assert((!isa<Instruction>(Src)
           || DT->dominates(cast<Instruction>(Src)->getParent(), DstU->getParent()))
@@ -487,29 +487,35 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, Value *Src,
           || DT->dominates(cast<BasicBlock>(Src), DstU->getParent()))
          && "Flow dependency should be a dominance edge!");
 
+  float delay = delay_dist.expected();
+
   VASTSchedUnit *SrcSU = 0;
   Instruction *SrcInst = dyn_cast<Instruction>(Src);
 
   if (!isChainingCandidate(Src)) {
     // Get the latch SU, if source cannot be chained.
     SrcSU = getFlowDepSU(Src);
-    if (IsLaunch) {
-      float DelayFromLaunch = DF->getDelayFromLaunch(SrcInst);
+    if (Src.IsLauch()) {
+      float DelayFromLaunch = DF->getDelayFromLaunch(SrcInst).expected();
       delay -= std::max(1.0f, DelayFromLaunch);
       // Do not produce a negative delay!
       delay = std::max(0.0f, delay);
     } else if (SrcSU->isBBEntry()) {
       // There is already 1 cycle slack from the enable signal to DstU.
       delay = std::max(0.0f, delay - 1.0f);
-    } else if (DF->getSlackFromLaunch(SrcInst) > delay)
+    } else if (DF->getSlackFromLaunch(SrcInst).expected() > delay) {
+      if (DstU->isTerminator())
+        DstU->dump();
       // Try to fold the delay of current pipeline stage to the previous pipeline
       // stage, if the previous pipeline stage has enough slack.
       delay = 0.0f;
+    }
   } else {
-    bool IsChainingEnableOnEdge = DF->getDelayFromLaunch(SrcInst) <= 1.0f &&
-                                  isChainingCandidate(DstU->getInst());
+    bool IsChainingEnableOnEdge
+      = DF->getDelayFromLaunch(SrcInst).expected() <= 1.0f &&
+        isChainingCandidate(DstU->getInst());
 
-    if (IsLaunch) {
+    if (Src.IsLauch()) {
       // Ignore the dependencies from FUInput if Src is not chaining candidate,
       // we will build the dependencies from the result.
       if (!IsChainingEnableOnEdge || Src == DstU->getInst())
@@ -550,7 +556,7 @@ void VASTScheduling::buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U) 
         continue;
     }
 
-    buildFlowDependencies(U, I->first, I->first.IsLauch(), I->second);
+    buildFlowDependencies(U, I->first, I->second);
   }
 }
 
@@ -568,7 +574,7 @@ VASTScheduling::buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U)
         continue;
     }
 
-    buildFlowDependencies(U, I->first, I->first.IsLauch(), I->second);
+    buildFlowDependencies(U, I->first, I->second);
   }
 }
 
@@ -598,7 +604,7 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
 
   if (Latency == 0) {
     assert(isChainingCandidate(Inst) && "Unexpected 0 cycles from launch!");
-    float delay = DF->getDelayFromLaunch(Inst);
+    float delay = DF->getDelayFromLaunch(Inst).expected();
     Latency = std::max<unsigned>(1, ceil(delay));
     // Set the correct cycle from Launch now.
     if (LaunchU)

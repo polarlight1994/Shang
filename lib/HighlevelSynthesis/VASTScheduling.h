@@ -19,6 +19,8 @@
 #ifndef VAST_SCHEDULING_H
 #define VAST_SCHEDULING_H
 
+#include "Dataflow.h"
+
 #include "shang/VASTSeqOp.h"
 #include "shang/VASTModulePass.h"
 
@@ -554,7 +556,6 @@ struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {
   }
 };
 
-class Dataflow;
 class PreSchedBinding;
 class PSBCompNode;
 
@@ -581,8 +582,8 @@ class VASTScheduling : public VASTModulePass {
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
-  void buildFlowDependencies(VASTSchedUnit *DstU, Value *Src, bool IsLaunch,
-                             float delay);
+  void buildFlowDependencies(VASTSchedUnit *DstU, DataflowValue Src,
+                             Dataflow::delay_type delay);
   void buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U);
   void buildFlowDependencies(VASTSchedUnit *U);
   void buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U);

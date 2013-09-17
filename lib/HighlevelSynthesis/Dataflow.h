@@ -92,8 +92,30 @@ typedef DataflowPtr<Value> DataflowValue;
 typedef DataflowPtr<Instruction> DataflowInst;
 
 class Dataflow : public FunctionPass {
+  struct Annotation {
+    float sum, sqr_sum;
+    uint16_t num_samples;
+    uint8_t generation;
+    uint8_t violation;
+    Annotation()
+      : sum(0), sqr_sum(0), num_samples(0), generation(0), violation(0) {}
+
+    void addSample(float d);
+    void reset();
+    void dump() const;
+  };
 public:
-  typedef std::map<DataflowValue, float> SrcSet;
+  struct delay_type {
+    float mu, sigma;
+    explicit delay_type(float mu = 0.0f, float sigma = 0.0f)
+      : mu(0.0f), sigma(0.0f) {}
+
+    delay_type(const Annotation &Ann);
+    void reduce_max(const delay_type &RHS);
+    float expected() const;
+    float expected_at_offset(float offset) const;
+  };
+  typedef std::map<DataflowValue, delay_type> SrcSet;
 private:
   // BasicBlock descriptor: The pointer and the "IsSubGrp" flag
   struct BBPtr : public PointerIntPair<BasicBlock*, 1, bool> {
@@ -127,20 +149,6 @@ private:
     }
   };
 
-  struct Annotation {
-    float sum, sqr_sum;
-    uint16_t num_samples;
-    uint8_t generation;
-    uint8_t violation;
-    Annotation()
-      : sum(0), sqr_sum(0), num_samples(0), generation(0), violation(0) {}
-
-    float calculateDelay() const;
-    void addSample(float d);
-    void reset();
-    void dump() const;
-  };
-
   DominatorTree *DT;
   typedef std::map<DataflowValue, Annotation> TimedSrcSet;
   typedef std::map<DataflowInst, TimedSrcSet> FlowDepMapTy;
@@ -168,13 +176,13 @@ public:
 
   void annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
                      float delay, unsigned Slack);
-  float getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const;
+  delay_type getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const;
 
   void getFlowDep(DataflowInst Inst, SrcSet &Set) const;
   void getIncomingFrom(DataflowInst Inst, BasicBlock *BB, SrcSet &Set) const;
 
-  float getSlackFromLaunch(Instruction *Inst) const;
-  float getDelayFromLaunch(Instruction *Inst) const;
+  delay_type getSlackFromLaunch(Instruction *Inst) const;
+  delay_type getDelayFromLaunch(Instruction *Inst) const;
 
   void addUnreachableBlocks(BasicBlock *BB) {
     UnreachableBlocks.insert(BB);
@@ -203,6 +211,7 @@ class DataflowAnnotation : public VASTModulePass {
   void annotateDelay(DataflowInst Inst, VASTSlot *S, VASTSeqValue *V,
                      float delay);
 public:
+  typedef Dataflow::delay_type delay_type;
 
   static char ID;
   explicit DataflowAnnotation(bool Accumulative = false);
@@ -216,11 +225,11 @@ public:
     DF->getIncomingFrom(Inst, BB, Set);
   }
 
-  float getSlackFromLaunch(Instruction *Inst) const {
+  delay_type getSlackFromLaunch(Instruction *Inst) const {
     return DF->getSlackFromLaunch(Inst);
   }
 
-  float getDelayFromLaunch(Instruction *Inst) const {
+  delay_type getDelayFromLaunch(Instruction *Inst) const {
     return DF->getDelayFromLaunch(Inst);
   }
 

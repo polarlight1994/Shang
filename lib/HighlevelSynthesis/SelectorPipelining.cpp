@@ -367,11 +367,23 @@ float SelectorPipelining::getArrivialTime(VASTSeqValue *SV, const VASTLatch &L,
   if (!SV->getLLVMValue() || DataflowInst(L.Op).getPointer() == 0)
     return lookUpArrival(SV, FI);
 
+  float Arrival = 0.0f;
+
 #ifndef WE_FINISHED_FPGA14_EXPERIMENTS
-  float Arrival = DF->getGeneration() == 2 ? TNL->getDelay(SV, FI) : DF->getDelay(SV, L.Op, L.getSlot());
-#else
-  float Arrival = DF->getDelay(SV, L.Op, L.getSlot());
+  if (DF->getGeneration() == 2)
+    Arrival = TNL->getDelay(SV, FI);
+  else {
 #endif
+
+  Arrival = DF->getDelay(SV, L.Op, L.getSlot()).expected();
+  //float EnableDelay = DF->getDelay(L.getSlot()->getValue(), L.Op, L.getSlot());
+  //EnableDelay = std::max(0.0f, EnableDelay - 1.0f);
+  //Arrival -= EnableDelay;
+
+#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
+  }
+#endif
+
   return cacheArrivial(SV, FI, Arrival);
 }
 

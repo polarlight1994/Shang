@@ -527,8 +527,8 @@ struct ConstraintHelper {
 };
 }
 
-float calculateCycles(float delay) {
-  return std::max(delay - 0.5f, 0.0f);
+float calculateCycles(Dataflow::delay_type delay) {
+  return std::max(delay.expected() - 0.5f, 0.0f);
 }
 
 void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,
@@ -560,7 +560,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
   typedef LeafSet::iterator leaf_iterator;
   typedef VASTSelector::iterator fanin_iterator;
   DenseMap<VASTSlot*, VASTSeqOp*> SlotMap;
-  DenseMap<VASTSeqValue*, float> CriticalDelay;
+  DenseMap<VASTSeqValue*, Dataflow::delay_type> CriticalDelay;
 
   for (fanin_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch U = *I;
@@ -592,8 +592,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
       if (Leaf->isSlot() || Leaf->isFUOutput())
         continue;
 
-      float &delay = CriticalDelay[Leaf];
-      delay = std::max(delay, DF->getDelay(Leaf, Op, Op->getSlot()));
+      CriticalDelay[Leaf].reduce_max(DF->getDelay(Leaf, Op, Op->getSlot()));
     }
 
     // Directly add the slot active to all leaves set.
@@ -663,7 +662,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
 
         P = allocateDelayRef(Idx);
         ExtractTimingForPath(TclO, Sel, Leaf, Expr, Idx);
-        float delay = DF->getDelay(Leaf, Op, Op->getSlot());
+        Dataflow::delay_type delay = DF->getDelay(Leaf, Op, Op->getSlot());
         CH.addSource(Leaf, calculateCycles(delay));
       }
 
