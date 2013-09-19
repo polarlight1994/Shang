@@ -469,9 +469,8 @@ namespace {
 struct DatapathPrinter {
   raw_ostream &OS;
   std::set<const char*> PrintedNames;
-  bool ExtraKeep;
 
-  DatapathPrinter(raw_ostream &OS, bool ExtraKeep) : OS(OS), ExtraKeep(ExtraKeep) {}
+  DatapathPrinter(raw_ostream &OS) : OS(OS) {}
 
   void operator()(VASTNode *N) {
     if (VASTExpr *E = dyn_cast<VASTExpr>(N))
@@ -481,8 +480,7 @@ struct DatapathPrinter {
         // expressions and one of them been printed before.
         if (!PrintedNames.insert(Name).second) return;
 
-        if (E->getOpcode() == VASTExpr::dpKeep ||
-            (ExtraKeep && E->getOpcode() > VASTExpr::LastAnonymousOpc))
+        if (E->getOpcode() == VASTExpr::dpKeep)
           OS << "(* keep *) ";
 
         OS << "wire ";
@@ -515,9 +513,9 @@ struct DatapathPrinter {
 };
 }
 
-void VASTModule::printDatapath(raw_ostream &OS, bool ExtraKeep) const{
+void VASTModule::printDatapath(raw_ostream &OS) const{
   std::set<VASTExpr*> Visited;
-  DatapathPrinter Printer(OS, ExtraKeep);
+  DatapathPrinter Printer(OS);
 
   for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
     const VASTSlot *S = SI;
