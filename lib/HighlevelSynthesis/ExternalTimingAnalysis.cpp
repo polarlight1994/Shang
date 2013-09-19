@@ -447,7 +447,7 @@ void ExtractTimingForPath(raw_ostream &O, unsigned RefIdx, bool HasThu) {
     // not optimized.
        "  if {[get_collection_size $paths]} {\n"
        "    foreach_in_collection path $paths {\n"
-       "      set delay [get_path_info $path -slack]\n"
+       "      set delay [get_path_info $path -data_delay]\n"
        "      puts $JSONFile \"" << RefIdx << " $delay\"\n" <<
        "    }\n"
        "  }\n" // Path Size
@@ -720,7 +720,7 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(StringRef ResultPath) {
 
   while (!Parser.finish()) {
     unsigned idx = Parser.getInteger();
-    float delay = 1.0f - Parser.getFloat() / VFUs::Period;
+    float delay = Parser.getFloat() / VFUs::Period;
     setDelay(idx, delay);
     ++NumQueriesRead;
   }
