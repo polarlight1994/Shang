@@ -397,7 +397,7 @@ void ExternalTimingAnalysis::writeNetlist(raw_ostream &Out) const {
   Out << "\n\n";
   // Datapath
   Out << "// Datapath\n";
-  VM.printDatapath(Out);
+  VM.printDatapath(Out, true);
 
   // Sequential logic of the registers.
   VM.printSubmodules(Out);
