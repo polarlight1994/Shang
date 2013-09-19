@@ -753,6 +753,7 @@ ExternalTimingAnalysis::writeMapDesignScript(raw_ostream &O,
 
   O << "set_global_assignment -name NUM_PARALLEL_PROCESSORS 1\n"
        "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
+       "set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON\n"
        "set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW\n"
        //"set_global_assignment -name SYNTH_TIMING_DRIVEN_SYNTHESIS OFF\n"
        "export_assignments\n"

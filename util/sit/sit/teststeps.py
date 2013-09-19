@@ -951,6 +951,7 @@ set_global_assignment -name SDC_FILE {{ [hls_base_dir, test_name + ".sdc"]|joinp
 set_global_assignment -name RESERVE_ALL_UNUSED_PINS "AS INPUT TRI-STATED"
 set_global_assignment -name RESERVE_ASDO_AFTER_CONFIGURATION "AS OUTPUT DRIVING AN UNSPECIFIED SIGNAL"
 set_global_assignment -name RESERVE_ALL_UNUSED_PINS_NO_OUTPUT_GND "AS INPUT TRI-STATED"
+set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON
 
 #Power estimation settings
 set_global_assignment -name EDA_SIMULATION_TOOL "ModelSim-Altera (Verilog)"
