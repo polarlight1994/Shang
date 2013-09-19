@@ -28,9 +28,7 @@ class ConstraintGenerator:
     keeper_id = 0;
     self.keeper_map = {}
 
-    keeper_query = '''SELECT DISTINCT src FROM mcps where %(path_constraints)s
-                        UNION
-                      SELECT DISTINCT dst FROM mcps where %(path_constraints)s''' % self
+    keeper_query = '''SELECT DISTINCT dst FROM mcps where %(path_constraints)s''' % self
     for keeper_row in self.cusor.execute(keeper_query):
       keeper = keeper_row[0]
       self.keeper_map[keeper] = keeper_id
@@ -57,12 +55,12 @@ class ConstraintGenerator:
 
   # Generate the multi-cycle path constraints.
   def generate_script_for_path(self, **kwargs) :
-    kwargs['cnd_string'] = '''[get_collection_size %(src)s]''' % kwargs
+    kwargs['cnd_string'] = '''[get_collection_size $%(src)s]''' % kwargs
 
     if kwargs['thu'] == 'netsNone' :
-      kwargs['path_fileter'] = '''-from %(src)s -to $%(dst)s''' % kwargs
+      kwargs['path_fileter'] = '''-from $%(src)s -to $%(dst)s''' % kwargs
     else :
-      kwargs['path_fileter'] = '''-from %(src)s -through $%(thu)s -to $%(dst)s''' % kwargs
+      kwargs['path_fileter'] = '''-from $%(src)s -through $%(thu)s -to $%(dst)s''' % kwargs
 
     self.output_script.write(self.script_on_path % kwargs)
     self.num_path_script_generated = self.num_path_script_generated + 1
@@ -91,8 +89,9 @@ class ConstraintGenerator:
                  'cycles' : cycles
               }
 
-      src = get_keepers(" ".join([ row[0] for row in self.cusor.execute(query) ]))
-      self.generate_script_for_path(src=src, dst="keepers%s" % self.keeper_map[dst],
+      src_set = get_keepers(" ".join([ row[0] for row in self.cusor.execute(query) ]))
+      self.output_script.write('''set srcs %s\n''' % src_set)
+      self.generate_script_for_path(src='srcs', dst="keepers%s" % self.keeper_map[dst],
                                     thu="nets%s" % self.net_map[thu], cycles=cycles)
 
     if thu != 'shang-null-node' :
