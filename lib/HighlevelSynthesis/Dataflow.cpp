@@ -40,13 +40,15 @@ Dataflow::Dataflow() : FunctionPass(ID), generation(0) {
 }
 
 Dataflow::delay_type::delay_type(const Annotation &Ann) {
-  float num_samples = float(Ann.num_samples);
-  // Caculate the expected value
-  mu = Ann.sum / num_samples;
-  // Caculate the variance
-  float D2 = Ann.sqr_sum / num_samples - mu * mu;
-  // Do not fail due on the errors in floating point operation.
-  sigma = sqrtf(std::max<float>(D2, 0.0f));
+  //float num_samples = float(Ann.num_samples);
+  //// Caculate the expected value
+  //mu = Ann.sum / num_samples;
+  //// Caculate the variance
+  //float D2 = Ann.sqr_sum / num_samples - mu * mu;
+  //// Do not fail due on the errors in floating point operation.
+  //sigma = sqrtf(std::max<float>(D2, 0.0f));
+  mu = Ann.iir_value;
+  sigma = 0;
 }
 
 void Dataflow::delay_type::reduce_max(const delay_type &RHS) {
@@ -342,15 +344,26 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
     });
   }
 
-  updateDelay(delay, OldAnnotation);
+  updateDelay(delay, OldAnnotation, IsTimingViolation);
 }
 
-void Dataflow::updateDelay(float NewDelay, Annotation &OldDelay) {
+void Dataflow::updateDelay(float NewDelay, Annotation &OldDelay,
+                           bool IsTimingViolation) {
  if (OldDelay.generation == 0 && generation != 0)
    OldDelay.reset();
 
  OldDelay.addSample(NewDelay);
  OldDelay.generation = generation;
+
+ if (OldDelay.generation == 0)
+   OldDelay.iir_value = NewDelay;
+ else if (OldDelay.generation == generation) {
+   float ratio = 0.7f;
+   OldDelay.iir_value = OldDelay.iir_value * (1.0 - ratio) + NewDelay * ratio;
+ } else {
+   float ratio = IsTimingViolation ? 0.8f : 0.5f;
+   OldDelay.iir_value = OldDelay.iir_value * (1.0 - ratio) + NewDelay * ratio;
+ }
 }
 
 DataflowAnnotation::DataflowAnnotation(bool Accumulative)

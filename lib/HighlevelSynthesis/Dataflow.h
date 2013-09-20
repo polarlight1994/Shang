@@ -93,7 +93,7 @@ typedef DataflowPtr<Instruction> DataflowInst;
 
 class Dataflow : public FunctionPass {
   struct Annotation {
-    float sum, sqr_sum;
+    float sum, sqr_sum, iir_value;
     uint16_t num_samples;
     uint8_t generation;
     uint8_t violation;
@@ -161,7 +161,7 @@ private:
   TimedSrcSet &getDeps(DataflowInst Inst, BBPtr Parent);
 
   unsigned generation;
-  void updateDelay(float NewDelay, Annotation &OldDelay);
+  void updateDelay(float NewDelay, Annotation &OldDelay, bool IsTimingViolation);
 
   std::set<BasicBlock*> UnreachableBlocks;
 
