@@ -67,7 +67,7 @@ EnableFastPAR("vast-external-enable-fast-place-and-route",
 static cl::opt<bool>
 EnableTimingConstraint("vast-external-enable-timing-constraint",
   cl::desc("Use timing constraints to tweak the data path in external tool"),
-  cl::init(true));
+  cl::init(false));
 
 static cl::opt<unsigned>
 ExternalToolTimeOut("vast-external-tool-time-out",
@@ -753,8 +753,10 @@ ExternalTimingAnalysis::writeMapDesignScript(raw_ostream &O,
 
   O << "set_global_assignment -name NUM_PARALLEL_PROCESSORS 1\n"
        "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
-       "set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON\n"
+       //"set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON\n"
        "set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW\n"
+       "set_global_assignment -name REMOVE_DUPLICATE_REGISTERS OFF\n"
+       "set_global_assignment -name SYNTHESIS_EFFORT FAST\n"
        //"set_global_assignment -name SYNTH_TIMING_DRIVEN_SYNTHESIS OFF\n"
        "export_assignments\n"
        // Start the processes.

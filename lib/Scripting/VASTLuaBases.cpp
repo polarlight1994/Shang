@@ -480,7 +480,7 @@ struct DatapathPrinter {
         // expressions and one of them been printed before.
         if (!PrintedNames.insert(Name).second) return;
 
-        if (E->getOpcode() == VASTExpr::dpKeep)
+        if (E->getOpcode() > VASTExpr::LastAnonymousOpc)
           OS << "(* keep *) ";
 
         OS << "wire ";
