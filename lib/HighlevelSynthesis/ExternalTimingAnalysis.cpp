@@ -136,6 +136,7 @@ public:
 struct ExternalTimingAnalysis {
   VASTModule &VM;
   Dataflow *DF;
+  STGDistances *Distances;
   SpecificBumpPtrAllocator<float> Allocator;
   std::vector<float*> DelayRefs;
   typedef std::map<VASTSeqValue*, float*> SrcInfo;
@@ -196,6 +197,8 @@ struct ExternalTimingAnalysis {
   void extractTimingForSelector(raw_ostream &TclO, raw_ostream &TimingSDCO,
                                 VASTSelector *Sel);
 
+  unsigned calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op);
+
   typedef std::set<VASTSeqValue*> LeafSet;
 
   static bool contains(const SrcInfo &Srcs, const LeafSet &Leaves) {
@@ -224,7 +227,7 @@ struct ExternalTimingAnalysis {
   // Read the JSON file written by the timing extraction script.
   bool readTimingAnalysisResult(StringRef ResultPath);
 
-  ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF);
+  ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF, STGDistances *Distences);
 
   bool analysisWithSynthesisTool();
 
@@ -323,7 +326,7 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
 }
 
 bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
-  ExternalTimingAnalysis ETA(VM, DF);
+  ExternalTimingAnalysis ETA(VM, DF, Distances);
 
   // Run the synthesis tool to get the arrival time estimation.
   if (!ETA.analysisWithSynthesisTool()) return false;
@@ -527,8 +530,24 @@ struct ConstraintHelper {
 };
 }
 
-float calculateCycles(Dataflow::delay_type delay) {
-  return std::max(delay.expected() - 0.5f, 0.0f);
+unsigned
+ExternalTimingAnalysis::calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op) {
+  Dataflow::delay_type delay = DF->getDelay(Src, Op, Op->getSlot());
+  unsigned NumCycles = Distances->getIntervalFromDef(Src, Op->getSlot());
+  int Slack = NumCycles - std::floor(delay.expected());
+  // Put extra effort to optimize this edge.
+  if (Slack <= 1)
+    return std::floor(delay.expected());
+  
+  float SlackRatio = float(Slack) / float(NumCycles);
+  // Just do not care about this path, if its slack ratio is bigger than 8.
+  //if (SlackRatio > 0.8f)
+  //  return 1;
+
+  SlackRatio = SlackRatio * SlackRatio * SlackRatio * SlackRatio;
+
+
+  return std::ceil(std::floor(delay.expected()) + Slack * SlackRatio);
 }
 
 void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,
@@ -560,7 +579,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
   typedef LeafSet::iterator leaf_iterator;
   typedef VASTSelector::iterator fanin_iterator;
   DenseMap<VASTSlot*, VASTSeqOp*> SlotMap;
-  DenseMap<VASTSeqValue*, Dataflow::delay_type> CriticalDelay;
+  DenseMap<VASTSeqValue*, unsigned> CycleConstraints;
 
   for (fanin_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch U = *I;
@@ -592,7 +611,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
       if (Leaf->isSlot() || Leaf->isFUOutput())
         continue;
 
-      CriticalDelay[Leaf].reduce_max(DF->getDelay(Leaf, Op, Op->getSlot()));
+      CycleConstraints[Leaf] = calculateCycles(Leaf, Op);
     }
 
     // Directly add the slot active to all leaves set.
@@ -616,7 +635,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
       if (Src->isSlot() || Src->isFUOutput())
         continue;
 
-      CH.addSource(Src, calculateCycles(CriticalDelay.lookup(Src)));
+      CH.addSource(Src, CycleConstraints.lookup(Src));
     }
   }
   // Extract end-to-end delay.
@@ -662,8 +681,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
 
         P = allocateDelayRef(Idx);
         ExtractTimingForPath(TclO, Sel, Leaf, Expr, Idx);
-        Dataflow::delay_type delay = DF->getDelay(Leaf, Op, Op->getSlot());
-        CH.addSource(Leaf, calculateCycles(delay));
+        CH.addSource(Leaf, calculateCycles(Leaf, Op));
       }
 
       AnnotoatedFanins[Op].insert(Expr);
@@ -728,8 +746,9 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(StringRef ResultPath) {
   return true;
 }
 
-ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF)
-  : VM(VM), DF(DF) {}
+ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF,
+                                               STGDistances *Distences)
+  : VM(VM), DF(DF), Distances(Distences) {}
 
 void
 ExternalTimingAnalysis::writeMapDesignScript(raw_ostream &O,
