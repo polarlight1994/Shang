@@ -41,6 +41,8 @@ def main(builtinParameters = {}):
   # Create the tables for the experimental results.
   # We create 3 tables: HLS results, simulation results, and synthesis results
   database_log.write('''
+    BEGIN TRANSACTION;
+
     create table highlevelsynthesis(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
@@ -109,19 +111,21 @@ def main(builtinParameters = {}):
   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
   option_space_dict['shang_enable_register_sharing'] = [ 'false' ]
   iterations = 10 if args.mode == TestStep.AlteraSyn \
-               else 1 if args.mode == TestStep.AlteraNls \
-               else 1
+               else 10 if args.mode == TestStep.AlteraNls \
+               else 20
   option_space_dict['shang_max_scheduling_iteration'] = [ iterations ]
   option_space_dict['shang_dump_intermediate_netlist'] = [ 'true' ]
   option_space_dict['shang_constraints_factor'] = [ -0.1 ]
 
-  option_space_dict['vast_external_enable_timing_constraint'] = [ 'false', 'true' ]
+  option_space_dict['vast_external_enable_timing_constraint'] = [ 'true' ]
   option_space_dict['vast_external_enable_fast_place_and_route'] = [ 'true' ]
   option_space_dict['vast_external_enable_place_and_route'] = [ 'true' ]
-  option_space_dict['vast_back_annotation_sigma_ratio'] = [ -2.0, 0.0, 2.0 ]
+  option_space_dict['vast_back_annotation_sigma_ratio'] = [ 0.0 ]
+  option_space_dict['vast_external_tool_sdc_filter_slack_ratio'] = [ 0.1, 0.2, 0.5 ]
 
   option_space_dict['timing_model'] = [ 'external' ]
-  option_space_dict['fmax'] = [ 480, 400, 350 ] if args.mode == TestStep.AlteraSyn else [ 480 ]
+
+  option_space_dict['fmax'] = [ 450  ] #if args.mode == TestStep.AlteraSyn else [ 480 ]
   option_space_dict['device_family'] = [ 'StratixIV' ]
 
   option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]
@@ -130,14 +134,14 @@ def main(builtinParameters = {}):
   fail_space = dict([ (k, set()) for k in option_space_dict.iterkeys() ])
 
   active_jobs = []
-
-  for test_path in args.tests.split() :
-    basedir = os.path.dirname(test_path)
-    test_file = os.path.basename(test_path)
-    test_name = os.path.splitext(test_file)[0]
+  
+  for test_option in option_space :
+    for test_path in args.tests.split() :
+      basedir = os.path.dirname(test_path)
+      test_file = os.path.basename(test_path)
+      test_name = os.path.splitext(test_file)[0]
 
     #test_option = random.choice(option_space)
-    for test_option in option_space :
       # TODO: Provide the keyword constructor
       # Expand the test_option so that the test option always override the basic_config.
       hls_step = ShangHLSStep(dict(basic_config, **test_option))
@@ -193,7 +197,6 @@ def main(builtinParameters = {}):
         # Remember the options on the fail case
         for k, v in job.option.iteritems() :
           fail_space[k].add(v)
-        job.dumplog()
 
     time.sleep(5)
     active_jobs = next_active_jobs[:]
@@ -208,6 +211,7 @@ def main(builtinParameters = {}):
   # Finialize the gridengine
   Session.exit()
 
+  database_log.write('COMMIT;\n')
   database_log.close()
 
   # Analysis the fail cases

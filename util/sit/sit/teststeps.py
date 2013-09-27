@@ -565,6 +565,7 @@ IfFile:close()
                '-vast-external-enable-fast-place-and-route=%(vast_external_enable_fast_place_and_route)s' % self,
                '-vast-external-enable-place-and-route=%(vast_external_enable_place_and_route)s' % self,
                '-vast-back-annotation-sigma-ratio=%(vast_back_annotation_sigma_ratio)s' % self,
+               '-vast-external-tool-sdc-filter-slack-ratio=%(vast_external_tool_sdc_filter_slack_ratio)s' % self,
                '-shang-selector-ignore-trivial-loops=true',
                '-shang-selector-ignore-x-fanins=true',
                 '-stats',
@@ -594,7 +595,7 @@ IfFile:close()
 
     num_iter = self.shang_max_scheduling_iteration
     if self.shang_dump_intermediate_netlist == 'true' and num_iter > 1 :
-      for i in range(num_iter - 1) :
+      for i in range(1) :
         sim_step = ShangHWSimStep(self)
         sim_step.option = self.option.copy()
         sim_step.hls_base_dir = os.path.join(sim_step.hls_base_dir, str(i))
