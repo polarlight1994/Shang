@@ -151,6 +151,7 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   VM.printSubmodules(Out);
   VM.printRegisterBlocks(Out);
 
+#ifdef GENERATE_SELFVERIFICATION
   STGDistances &STGDist = getAnalysis<STGDistances>();
   // Verify the register assignment.
   Out << "// synthesis translate_off\n";
@@ -161,6 +162,7 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
     Out << '\n';
   }
   Out << "// synthesis translate_on\n\n";
+#endif
 
   Out.module_end();
   Out.flush();

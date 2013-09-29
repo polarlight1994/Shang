@@ -1,0 +1,1046 @@
+diff --git include/shang/VASTExprBuilder.h include/shang/VASTExprBuilder.h
+index 9175ab0..e2aef67 100644
+--- include/shang/VASTExprBuilder.h
++++ include/shang/VASTExprBuilder.h
+@@ -18,36 +18,9 @@
+ 
+ namespace llvm {
+ class VASTExprBuilderContext {
+-  struct BitMasks {
+-    APInt KnownZeros, KnownOnes;
+-    BitMasks(APInt KnownZeros = APInt(), APInt KnownOnes = APInt())
+-      : KnownZeros(KnownZeros), KnownOnes(KnownOnes) {}
+-  };
+-
+-  typedef DenseMap<VASTValue*, BitMasks> BitMaskCacheTy;
+-  BitMaskCacheTy BitMaskCache;
+-
+-protected:
+-  virtual void onReplaceAllUseWith(VASTValPtr From, VASTValPtr To);
+-
+ public:
+   virtual ~VASTExprBuilderContext() {}
+ 
+-  void setBitMask(VASTValue *V, const APInt &KnownZeros, const APInt &KnownOnes);
+-
+-  // Bit mask analyzing, bitmask_collecting_iterator.
+-  void calculateBitMask(VASTValue *V, APInt &KnownZeros, APInt &KnownOnes);
+-
+-  void calculateBitMask(VASTValPtr V, APInt &KnownZeros, APInt &KnownOnes);
+-
+-  // Simple bit mask calculation functions.
+-  void calculateBitCatBitMask(VASTExpr *Expr, APInt &KnownZeros,
+-                              APInt &KnownOnes);
+-  void calculateAssignBitMask(VASTExpr *Expr, APInt &KnownZeros,
+-                              APInt &KnownOnes);
+-  void calculateImmediateBitMask(VASTImmediate *Imm, APInt &KnownZeros,
+-                                 APInt &KnownOnes);
+-
+   VASTValPtr stripZeroBasedBitSlize(VASTValPtr V) {
+     VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
+     if (Expr.get() && Expr->isSubBitSlice() && Expr->LB == 0)
+@@ -92,9 +65,6 @@ class DataLayout;
+ 
+ class MinimalExprBuilderContext : public VASTExprBuilderContext {
+   DatapathContainer &Datapath;
+-protected:
+-  virtual void onReplaceAllUseWith(VASTValPtr From, VASTValPtr To);
+-
+ public:
+   explicit MinimalExprBuilderContext(DatapathContainer &Datapath)
+     : Datapath(Datapath) {}
+@@ -232,10 +202,10 @@ public:
+     return createExpr(Opc, Ops, UB, LB);
+   }
+ 
+-  void calculateBitMask(VASTValPtr V, APInt &KnownZeros, APInt &KnownOnes) {
+-    Context.calculateBitMask(V, KnownZeros, KnownOnes);
+-  }
+-
++  // Bit mask analyzing, bitmask_collecting_iterator.
++  void calculateBitMask(VASTValPtr V, APInt &KnownZeros, APInt &KnownOnes);
++  void calculateBitCatBitMask(VASTExprPtr Expr, APInt &KnownZeros,
++                              APInt &KnownOnes);
+   static bool GetMaskSplitPoints(APInt Mask, unsigned &HiPt, unsigned &LoPt);
+ 
+   VASTValPtr getBoolImmediate(bool Val) {
+diff --git include/shang/VASTSlot.h include/shang/VASTSlot.h
+index ec9da04..b3c17b2 100644
+--- include/shang/VASTSlot.h
++++ include/shang/VASTSlot.h
+@@ -32,13 +32,10 @@ class VASTSlotCtrl;
+ 
+ class VASTSlot : public VASTNode, public ilist_node<VASTSlot> {
+ public:
+-  // The types of the edges in the STG, the lsb representing the timing distance
+-  // of the edge, only the successor edge represents a real state transition
+-  // which have a timing distance of 1.
+   enum EdgeType {
+     SubGrp = 0,
+     Sucessor = 1,
+-    ImplicitFlow = 2
++    ImplicitFlow = 3
+   };
+ 
+   // The pointer to successor which is also encoded with the distance.
+@@ -54,9 +51,7 @@ public:
+     EdgePtr(VASTSlot *S, EdgeType T) : _Base(S, T) {}
+ 
+     EdgeType getType() const { return _Base::getInt(); }
+-    unsigned getDistance() const {
+-      return _Base::getInt() == Sucessor ? 1 : 0;
+-    }
++    unsigned getDistance() const { return 0x1 & _Base::getInt(); }
+   };
+ 
+   typedef SmallVector<EdgePtr, 4> SuccVecTy;
+diff --git lib/HighlevelSynthesis/GlobalDepBuilder.cpp lib/HighlevelSynthesis/GlobalDepBuilder.cpp
+index 1794fe7..022b2b6 100644
+--- lib/HighlevelSynthesis/GlobalDepBuilder.cpp
++++ lib/HighlevelSynthesis/GlobalDepBuilder.cpp
+@@ -468,7 +468,7 @@ void BasicLinearOrderGenerator::buildFUInfo() {
+                    " linear order!");
+ 
+       VASTNode *FU = Op->getSrc(0).getSelector()->getParent();
+-      SingleFULinearOrder *&S = Builders[FU];
++      SingleFULinearOrder *&S = Builders[0];
+ 
+       // Create the Synchronizer if it is not yet created.
+       if (S == 0) {
+diff --git lib/HighlevelSynthesis/IterativeScheduling.cpp lib/HighlevelSynthesis/IterativeScheduling.cpp
+index 4ed8443..58d760f 100644
+--- lib/HighlevelSynthesis/IterativeScheduling.cpp
++++ lib/HighlevelSynthesis/IterativeScheduling.cpp
+@@ -259,7 +259,7 @@ struct DelayExtractor : public DatapathVisitor<DelayExtractor> {
+       // Calculate the delay from the FU output to the latch pipeline stage.
+       delay_type &CurStageDelay = PathInfo[SrcV][SrcV];
+       // Move the removed delay to current stage.
+-      CurStageDelay = std::max(CurStageDelay, NewDelay - NextStageDelay);
++      CurStageDelay = std::max<delay_type>(CurStageDelay, NewDelay - NextStageDelay);
+       // Always extract the delay from the latch register instead of the FU
+       // output.
+       NewDelay = NextStageDelay;
+diff --git lib/HighlevelSynthesis/SeqLiveVariables.cpp lib/HighlevelSynthesis/SeqLiveVariables.cpp
+index 4030bf3..ab0259d 100644
+--- lib/HighlevelSynthesis/SeqLiveVariables.cpp
++++ lib/HighlevelSynthesis/SeqLiveVariables.cpp
+@@ -402,12 +402,12 @@ void SeqLiveVariables::createInstVarInfo(VASTModule *VM) {
+   }
+ }
+ 
+-void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
++void SeqLiveVariables::handleUse(VASTSeqValue *Use, VASTSlot *UseSlot,
+                                  PathVector PathFromEntry) {
+   // The timing information is not avaliable.
+-  // if (Def->empty()) return;
++  // if (Use->empty()) return;
+ 
+-  assert(Def && "Bad Def pointer!");
++  assert(Use && "Bad Use pointer!");
+   VASTSlot::EdgePtr DefEdge(0, VASTSlot::SubGrp);
+ 
+   // Walking backward to find the corresponding definition.
+@@ -433,8 +433,8 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
+ 
+     // Find the nearest written slot in the path.
+     // First check the implicit flow, then check the normal flow.
+-    if (!(!IgnoreSlot && isWrittenAt(Def, Edge))
+-        && !isWrittenViaImplicitFlow(Def, Edge))
++    if (!(!IgnoreSlot && isWrittenAt(Use, Edge))
++        && !isWrittenViaImplicitFlow(Use, Edge))
+       continue;
+ 
+     DefEdge = Edge;
+@@ -448,19 +448,19 @@ void SeqLiveVariables::handleUse(VASTSeqValue *Def, VASTSlot *UseSlot,
+       dbgs() << (*I)->SlotNum << '\n';
+     dbgs() << "]\n";
+ 
+-    Def->dumpFaninns();
++    Use->dumpFaninns();
+ 
+     UseSlot->dump();
+ 
+     llvm_unreachable("Define of VASTSeqVal not dominates all its uses!");
+   }
+ 
+-  DEBUG(dbgs() << "SeqVal: " << Def->getName() << " Used at Slot "
++  DEBUG(dbgs() << "SeqVal: " << Use->getName() << " Used at Slot "
+                << UseSlot->SlotNum << " Def at slot " << DefEdge->SlotNum
+                << '\n');
+ 
+   // Get the corresponding VarInfo defined at DefSlot.
+-  VarInfo *VI = getVarInfo(Def);
++  VarInfo *VI = getVarInfo(Use);
+ 
+   if (UseSlot == DefEdge) {
+     assert(UseSlot->IsSubGrp && UseSlot->getParent() == 0
+diff --git lib/HighlevelSynthesis/SeqLiveVariables.h lib/HighlevelSynthesis/SeqLiveVariables.h
+index af67845..0589d75 100644
+--- lib/HighlevelSynthesis/SeqLiveVariables.h
++++ lib/HighlevelSynthesis/SeqLiveVariables.h
+@@ -111,7 +111,7 @@ public:
+ private:
+   typedef ArrayRef<VASTSlot::EdgePtr> PathVector;
+   void handleSlot(VASTSlot *S, PathVector PathFromEntry);
+-  void handleUse(VASTSeqValue *Def, VASTSlot *UseSlot, PathVector PathFromEntry);
++  void handleUse(VASTSeqValue *Use, VASTSlot *UseSlot, PathVector PathFromEntry);
+ 
+   void initializeLandingSlots();
+   void initializeOverlappedSlots();
+diff --git lib/HighlevelSynthesis/TimingEstimator.cpp lib/HighlevelSynthesis/TimingEstimator.cpp
+index e36f68a..41fb023 100644
+--- lib/HighlevelSynthesis/TimingEstimator.cpp
++++ lib/HighlevelSynthesis/TimingEstimator.cpp
+@@ -108,3 +108,81 @@ BlackBoxDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
+   delay_type Inc(Latency);
+   return SrcEntryTy(DelayFromSrc.first, D + Inc);
+ }
++
++//===----------------------------------------------------------------------===//
++BitlevelDelayEsitmator::SrcEntryTy
++BitlevelDelayEsitmator::AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
++                                           uint8_t DstUB, uint8_t DstLB,
++                                           const SrcEntryTy &DelayFromSrc) {
++
++  delay_type D = DelayFromSrc.second;
++  delay_type Inc(VFUs::LUTDelay);
++  return SrcEntryTy(DelayFromSrc.first, D.increaseParallel(Inc));
++}
++
++BitlevelDelayEsitmator::SrcEntryTy
++BitlevelDelayEsitmator::AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
++                                           uint8_t DstUB, uint8_t DstLB,
++                                           const SrcEntryTy &DelayFromSrc) {
++  delay_type D = DelayFromSrc.second;
++  VASTExpr *AndExpr = cast<VASTExpr>(Dst);
++  unsigned NumFanins = AndExpr->size();
++  unsigned LL = Log2_32_Ceil(NumFanins) / Log2_32_Ceil(VFUs::MaxLutSize);
++  delay_type Inc(LL * VFUs::LUTDelay);
++  return SrcEntryTy(DelayFromSrc.first, D.increaseParallel(Inc));
++}
++
++BitlevelDelayEsitmator::SrcEntryTy
++BitlevelDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
++                                           uint8_t DstUB, uint8_t DstLB,
++                                           const SrcEntryTy &DelayFromSrc) {
++  assert(DstUB == 1 && DstLB == 0 && "Bad UB and LB!");
++  delay_type D = DelayFromSrc.second;
++  VASTExpr *CmpExpr = cast<VASTExpr>(Dst);
++  unsigned FUWidth = CmpExpr->getOperand(SrcPos)->getBitWidth();
++  VFUICmp *Cmp = getFUDesc<VFUICmp>();
++  float Latency = Cmp->lookupLatency(FUWidth);
++  float BitIncresment = Latency / FUWidth;
++  float NewMSB = D.msb_delay + BitIncresment;
++  float NewLSB = std::max(D.lsb_delay + BitIncresment, D.msb_delay + Latency);
++  return SrcEntryTy(DelayFromSrc.first, std::max(NewMSB, NewLSB));
++}
++
++BitlevelDelayEsitmator::SrcEntryTy
++BitlevelDelayEsitmator::AccumulateAddDelay(VASTValue *Dst, unsigned SrcPos,
++                                           uint8_t DstUB, uint8_t DstLB,
++                                           const SrcEntryTy &DelayFromSrc) {
++  delay_type D = DelayFromSrc.second;
++  VFUAddSub *FU = getFUDesc<VFUAddSub>();
++  float MSBLatency = FU->lookupLatency(DstUB);
++  float LSBLatency = FU->lookupLatency(DstLB);
++  float LatencyPreBit = (MSBLatency - LSBLatency) / (DstUB - DstLB);
++
++  float NewMSB = std::max(D.msb_delay + LatencyPreBit,
++                          D.lsb_delay + MSBLatency);
++  float NewLSB = D.lsb_delay + LSBLatency;
++  delay_type Inc(NewMSB, NewLSB);
++  return SrcEntryTy(DelayFromSrc.first, delay_type(NewMSB, NewLSB));
++}
++
++BitlevelDelayEsitmator::SrcEntryTy
++BitlevelDelayEsitmator::AccumulateMulDelay(VASTValue *Dst, unsigned SrcPos,
++                                           uint8_t DstUB, uint8_t DstLB,
++                                           const SrcEntryTy &DelayFromSrc) {
++  delay_type D = DelayFromSrc.second;
++  VFUMult *FUMult = getFUDesc<VFUMult>();
++  float MSBLatency = FUMult->lookupLatency(DstUB);
++  float LatencyPreBit = FUMult->lookupLatency(8);
++  MSBLatency = std::min(LatencyPreBit, MSBLatency);
++
++  VFUAddSub *FUAdd = getFUDesc<VFUAddSub>();
++  float LSBLatency = FUMult->lookupLatency(DstUB)
++                     - FUAdd->lookupLatency(DstUB - DstLB);
++  LSBLatency = std::min(LatencyPreBit, LSBLatency);
++
++  float NewMSB = std::max(D.msb_delay + LatencyPreBit,
++                          D.lsb_delay + MSBLatency);
++  float NewLSB = D.lsb_delay + LSBLatency;
++  delay_type Inc(NewMSB, NewLSB);
++  return SrcEntryTy(DelayFromSrc.first, delay_type(NewMSB, NewLSB));
++}
+diff --git lib/HighlevelSynthesis/TimingEstimator.h lib/HighlevelSynthesis/TimingEstimator.h
+index eafbf58..a734705 100644
+--- lib/HighlevelSynthesis/TimingEstimator.h
++++ lib/HighlevelSynthesis/TimingEstimator.h
+@@ -93,7 +93,7 @@ public:
+   //                               uint8_t DstUB, uint8_t DstLB,
+   //                               SrcEntryTy DelayFromSrc)
+   template<typename DelayAccumulatorTy>
+-  bool accumulateDelayThu(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
++  void accumulateDelayThu(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+                           uint8_t DstUB, uint8_t DstLB, SrcDelayInfo &CurInfo,
+                           DelayAccumulatorTy F) {
+     // Do not lookup the source across the SeqValue.
+@@ -101,39 +101,27 @@ public:
+       assert(!isa<VASTExpr>(Thu) && "Not SrcInfo from Src find!");
+       delay_type D(0.0f);
+       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(SeqVal, D)));
+-      return true;
++      return;
+     }
+ 
+     // Lookup the source of the timing path.
+     const SrcDelayInfo *SrcInfo = getPathTo(Thu);
+ 
+-    if (SrcInfo == 0) return false;
++    if (SrcInfo == 0) return;
+ 
+-    bool updated = false;
+     assert(!SrcInfo->empty() && "Unexpected empty source delay info!");
+     for (src_iterator I = SrcInfo->begin(), E = SrcInfo->end(); I != E; ++I)
+       updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, *I));
+ 
+-    // FIXME: Also add the delay from Src to Dst.
+-    if (isa<VASTExpr>(Thu) && hasPathInfo(Thu)) {
+-      delay_type D(0.0f);
+-      updateDelay(CurInfo, F(Dst, ThuPos, DstUB, DstLB, SrcEntryTy(Thu, D)));
+-      updated = true;
+-    }
+-
+-    return updated;
++    return;
+   }
+ 
+   void accumulateDelayFrom(VASTValue *Src, VASTValue *Dst) {
+     SrcDelayInfo CurInfo;
+-    bool updated = accumulateDelayThu(Src, Dst, 0, Dst->getBitWidth(), 0,
+-                                      CurInfo, AccumulateZeroDelay);
+-    (void) updated;
++    accumulateDelayThu(Src, Dst, 0, Dst->getBitWidth(), 0, CurInfo,
++                       AccumulateZeroDelay);
+ 
+-    if (CurInfo.empty()) {
+-      assert(!updated && "Unexpected empty source!");
+-      return;
+-    }
++    if (CurInfo.empty()) return;
+ 
+     // Annotate the arrival time information to the matrix.
+     SrcDelayInfo &SrcInfo = PathDelay[Dst];
+@@ -166,25 +154,6 @@ public:
+     (void) inserted;
+   }
+ 
+-  void accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
+-                                uint8_t DstUB, uint8_t DstLB,
+-                                SrcDelayInfo &CurInfo) {
+-    VASTExpr *BitSliceExpr = cast<VASTExpr>(Dst);
+-    // Translate the (UB, LB] against the bitslice to the (UB, LB] against the
+-    // Src value.
+-    uint8_t UB = DstUB + BitSliceExpr->LB, LB = DstLB + BitSliceExpr->LB;
+-    assert(LB >= BitSliceExpr->LB && UB <= BitSliceExpr->UB && "Bad bitslice!");
+-
+-    // Handle the trivial case trivially.
+-    if (VASTExpr *ThuExpr = dyn_cast<VASTExpr>(Thu)) {
+-      // Accumulate the scaled delay of ThuExpr to the current bitslice expression.
+-      accumulateDelayTo(ThuExpr, UB, LB, CurInfo);
+-    }
+-
+-    // Build the delay from Thu to Dst.
+-    accumulateDelayThu(Thu, Dst, ThuPos, UB, LB, CurInfo, AccumulateZeroDelay);
+-  }
+-
+   void accumulateDelayTo(VASTExpr *Expr, unsigned UB, unsigned LB,
+                          SrcDelayInfo &CurSrcInfo) {
+     typedef VASTExpr::const_op_iterator op_iterator;
+@@ -231,7 +200,6 @@ public:
+         accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                            SubClass::AccumulateShiftDelay);
+         break;
+-        break;
+       case VASTExpr::dpAssign:
+         accumulateDelayThuAssign(Op, Expr, i, UB, LB, CurSrcInfo);
+         break;
+@@ -247,6 +215,25 @@ public:
+       }
+     }
+   }
++
++  void accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
++                                uint8_t DstUB, uint8_t DstLB,
++                                SrcDelayInfo &CurInfo) {
++    VASTExpr *BitSliceExpr = cast<VASTExpr>(Dst);
++    // Translate the (UB, LB] against the bitslice to the (UB, LB] against the
++    // Src value.
++    uint8_t UB = DstUB + BitSliceExpr->LB, LB = DstLB + BitSliceExpr->LB;
++    assert(LB >= BitSliceExpr->LB && UB <= BitSliceExpr->UB && "Bad bitslice!");
++
++    // Handle the trivial case trivially.
++    if (VASTExpr *ThuExpr = dyn_cast<VASTExpr>(Thu)) {
++      // Accumulate the scaled delay of ThuExpr to the current bitslice expression.
++      accumulateDelayTo(ThuExpr, UB, LB, CurInfo);
++    }
++
++    // Build the delay from Thu to Dst.
++    accumulateDelayThu(Thu, Dst, ThuPos, UB, LB, CurInfo, AccumulateZeroDelay);
++  }
+ };
+ 
+ // The timing estimator based on the black box model.
+@@ -316,6 +303,62 @@ public:
+   BlackBoxDelayEsitmator(PathDelayInfo &PathDelay)
+     : Base(PathDelay, TimingNetlist::BlackBox) {}
+ };
++
++// The timing estimator based on the black box model.
++class BitlevelDelayEsitmator : public TimingEstimatorImpl<BitlevelDelayEsitmator> {
++  typedef TimingEstimatorImpl<BitlevelDelayEsitmator> Base;
++  typedef Base::delay_type delay_type;
++
++public:
++  static SrcEntryTy AccumulateLUTDelay(VASTValue *Dst, unsigned SrcPos,
++                                       uint8_t DstUB, uint8_t DstLB,
++                                       const SrcEntryTy &DelayFromSrc);
++
++  static SrcEntryTy AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
++                                       uint8_t DstUB, uint8_t DstLB,
++                                       const SrcEntryTy &DelayFromSrc);
++
++  static SrcEntryTy AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
++                                       uint8_t DstUB, uint8_t DstLB,
++                                       const SrcEntryTy &DelayFromSrc) {
++    return BlackBoxDelayEsitmator::AccumulateRedDelay(Dst, SrcPos, DstUB, DstLB,
++                                                      DelayFromSrc);
++  }
++
++  static SrcEntryTy AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
++                                       uint8_t DstUB, uint8_t DstLB,
++                                       const SrcEntryTy &DelayFromSrc);
++
++  static SrcEntryTy AccumulateAddDelay(VASTValue *Dst, unsigned SrcPos,
++                                       uint8_t DstUB, uint8_t DstLB,
++                                       const SrcEntryTy &DelayFromSrc);
++
++  static SrcEntryTy AccumulateMulDelay(VASTValue *Dst, unsigned SrcPos,
++                                       uint8_t DstUB, uint8_t DstLB,
++                                       const SrcEntryTy &DelayFromSrc);
++
++  static SrcEntryTy AccumulateShiftDelay(VASTValue *Dst, unsigned SrcPos,
++                                       uint8_t DstUB, uint8_t DstLB,
++                                       const SrcEntryTy &DelayFromSrc) {
++    return BlackBoxDelayEsitmator::AccumulateShiftDelay(Dst, SrcPos, DstUB, DstLB,
++                                                        DelayFromSrc);
++  }
++
++  static SrcEntryTy AccumulateBitCatDelay(VASTValue *Dst, unsigned SrcPos,
++                                       uint8_t DstUB, uint8_t DstLB,
++                                       const SrcEntryTy &DelayFromSrc) {
++    return AccumulateZeroDelay(Dst, SrcPos, DstUB, DstLB, DelayFromSrc);
++  }
++  
++  static SrcEntryTy AccumulateBitRepeatDelay(VASTValue *Dst, unsigned SrcPos,
++                                             uint8_t DstUB, uint8_t DstLB,
++                                             const SrcEntryTy &DelayFromSrc) {
++    return AccumulateZeroDelay(Dst, SrcPos, DstUB, DstLB, DelayFromSrc);
++  }
++
++  BitlevelDelayEsitmator(PathDelayInfo &PathDelay)
++    : Base(PathDelay, TimingNetlist::Bitlevel) {}
++};
+ }
+ 
+ #endif
+diff --git lib/HighlevelSynthesis/TimingNetlist.cpp lib/HighlevelSynthesis/TimingNetlist.cpp
+index b885c5a..80d5902 100644
+--- lib/HighlevelSynthesis/TimingNetlist.cpp
++++ lib/HighlevelSynthesis/TimingNetlist.cpp
+@@ -203,7 +203,7 @@ TimingNetlist::getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) cons
+     }
+   }
+ 
+-  return delay_type(MUXDelay);
++  return 0.0f; //delay_type(MUXDelay);
+ }
+ 
+ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
+@@ -213,13 +213,14 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
+ 
+     return false;
+   }
+-  
+-  BlackBoxDelayEsitmator Estimator(PathInfo);
+ 
+-  // Build the timing path for datapath nodes.
+-  typedef DatapathContainer::expr_iterator expr_iterator;
+-  for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
+-    if (!I->use_empty()) Estimator.estimateTimingOnCone(I);
++  {
++    BlackBoxDelayEsitmator Estimator(PathInfo);
++    // Build the timing path for datapath nodes.
++    typedef DatapathContainer::expr_iterator expr_iterator;
++    for (expr_iterator I = VM->expr_begin(), E = VM->expr_end(); I != E; ++I)
++      if (!I->use_empty()) Estimator.estimateTimingOnCone(I);
++  }
+   
+   // Build the timing path for registers.
+   typedef VASTModule::selector_iterator iterator;
+diff --git lib/HighlevelSynthesis/TimingNetlist.h lib/HighlevelSynthesis/TimingNetlist.h
+index 23bcf6b..6f2f76e 100644
+--- lib/HighlevelSynthesis/TimingNetlist.h
++++ lib/HighlevelSynthesis/TimingNetlist.h
+@@ -28,7 +28,31 @@ class VASTValue;
+ /// Timinging Netlist - Annotate the timing information to the RTL netlist.
+ class TimingNetlist : public VASTModulePass {
+ public:
+-  typedef float delay_type;
++  struct delay_type {
++    float msb_delay, lsb_delay;
++    delay_type() : msb_delay(0.0f), lsb_delay(0.0f) {}
++    delay_type(float f) : msb_delay(f), lsb_delay(f) {}
++    delay_type(float msb_delay, float lsb_delay)
++      : msb_delay(msb_delay), lsb_delay(lsb_delay) {}
++
++    operator float() const { return std::max(msb_delay, lsb_delay); }
++
++    inline bool operator < (const delay_type &RHS) const {
++      return float(*this) < float(RHS);
++    }
++
++    inline delay_type &increaseParallel(const delay_type &RHS) {
++      lsb_delay += RHS.lsb_delay;
++      msb_delay += RHS.msb_delay;
++      return *this;
++    }
++
++    inline delay_type &operator+=(const delay_type &RHS) {
++      lsb_delay = msb_delay = float(*this) + float(RHS);
++      return *this;
++    }
++  };
++
+   // TODO: For each bitslice of the source, allocate a delay record!
+   typedef std::map<VASTValue*, delay_type> SrcDelayInfo;
+   typedef SrcDelayInfo::value_type SrcEntryTy;
+@@ -101,5 +125,4 @@ public:
+   void dumpPathsTo(VASTValue *Dst) const;
+ };
+ }
+-
+ #endif
+diff --git lib/HighlevelSynthesis/VASTScheduling.cpp lib/HighlevelSynthesis/VASTScheduling.cpp
+index 513ba64..5902933 100644
+--- lib/HighlevelSynthesis/VASTScheduling.cpp
++++ lib/HighlevelSynthesis/VASTScheduling.cpp
+@@ -379,7 +379,7 @@ float VASTScheduling::slackFromPrevStage(VASTSeqInst *SrcOp) {
+   // We do not have any delay information from the previous pipeline stage.
+   if (Srcs.empty()) return 0.0f;
+ 
+-  float MinimalSlack = 1.0f;
++  float MinimalSlack = 0.5f;
+   // For a latch from FU, there is at least 1 cycle available.
+   float CycleSlack = (SrcOp->isLatch() && SrcOp->getCyclesFromLaunch()) ?
+                      1.0f : 0.0f;
+@@ -390,7 +390,7 @@ float VASTScheduling::slackFromPrevStage(VASTSeqInst *SrcOp) {
+     MinimalSlack = std::min(MinimalSlack, CurSlack);
+   }
+ 
+-  return MinimalSlack;
++  return 0.0f;
+ }
+ 
+ void
+diff --git lib/Scripting/VASTLuaBases.cpp lib/Scripting/VASTLuaBases.cpp
+index a47c9d3..6647137 100644
+--- lib/Scripting/VASTLuaBases.cpp
++++ lib/Scripting/VASTLuaBases.cpp
+@@ -36,7 +36,7 @@ static std::string GetSTAObjectName(const VASTSelector *Sel) {
+   raw_string_ostream OS(Name);
+ 
+   if (const VASTMemoryBus *RAM = dyn_cast<VASTMemoryBus>(Sel->getParent())) {
+-    if (!RAM->requireByteEnable() || Sel->isFUOutput()) {
++    if (Sel->isFUOutput()) {
+       OS << " *" << RAM->getArrayName() << "* ";
+       return OS.str();
+     }
+diff --git lib/VAST/IR2Datapath.cpp lib/VAST/IR2Datapath.cpp
+index 5bee6a2..8379e69 100644
+--- lib/VAST/IR2Datapath.cpp
++++ lib/VAST/IR2Datapath.cpp
+@@ -36,10 +36,6 @@ unsigned DatapathBuilderContext::getValueSizeInBits(const Value *V) const {
+   return SizeInBits;
+ }
+ 
+-void DatapathBuilderContext::onReplaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+-  VASTExprBuilderContext::onReplaceAllUseWith(From, To);
+-}
+-
+ VASTValPtr DatapathBuilder::visitTruncInst(TruncInst &I) {
+   // Truncate the value by bitslice expression.
+   return buildBitSliceExpr(getAsOperand(I.getOperand(0)),
+diff --git lib/VAST/IR2Datapath.h lib/VAST/IR2Datapath.h
+index 0996ec4..d5f0ffc 100644
+--- lib/VAST/IR2Datapath.h
++++ lib/VAST/IR2Datapath.h
+@@ -30,8 +30,6 @@ public:
+ private:
+   ValueMapTy Value2Expr;
+   DataLayout *TD;
+-protected:
+-  virtual void onReplaceAllUseWith(VASTValPtr From, VASTValPtr To);
+ 
+ public:
+   explicit DatapathBuilderContext(DataLayout *TD) : TD(TD) {}
+diff --git lib/VAST/MinimalDatapathContext.cpp lib/VAST/MinimalDatapathContext.cpp
+index 28aa712..187bef9 100644
+--- lib/VAST/MinimalDatapathContext.cpp
++++ lib/VAST/MinimalDatapathContext.cpp
+@@ -37,14 +37,8 @@ MinimalDatapathContext::getAsOperandImpl(Value *Op) {
+   llvm_unreachable("Cannot create VASTValPtr for Value!");
+   return VASTValPtr();
+ }
+-void MinimalDatapathContext::onReplaceAllUseWith(VASTValPtr From, VASTValPtr To)
+-{
+-  DatapathBuilderContext::onReplaceAllUseWith(From, To);
+-}
+ 
+ void MinimalDatapathContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+-  // Notify the DatapathBuilderContext before actually perform the replacement.
+-  onReplaceAllUseWith(From, To);
+   Datapath.replaceAllUseWithImpl(From, To);
+ }
+ 
+diff --git lib/VAST/MinimalDatapathContext.h lib/VAST/MinimalDatapathContext.h
+index 2ed5084..4c9c0dd 100644
+--- lib/VAST/MinimalDatapathContext.h
++++ lib/VAST/MinimalDatapathContext.h
+@@ -21,8 +21,7 @@ class DataLayout;
+ 
+ class MinimalDatapathContext : public DatapathBuilderContext {
+   DatapathContainer &Datapath;
+-protected:
+-  virtual void onReplaceAllUseWith(VASTValPtr From, VASTValPtr To);
++
+ public:
+   MinimalDatapathContext(DatapathContainer &Datapath, DataLayout *TD);
+   ~MinimalDatapathContext();
+@@ -36,7 +35,7 @@ public:
+ 
+   virtual VASTValPtr getAsOperandImpl(Value *Op);
+ 
+-  virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
++  void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
+ };
+ }
+ 
+diff --git lib/VAST/VASTExprBuilder.cpp lib/VAST/VASTExprBuilder.cpp
+index b6935b3..92d2912 100644
+--- lib/VAST/VASTExprBuilder.cpp
++++ lib/VAST/VASTExprBuilder.cpp
+@@ -34,104 +34,11 @@ VASTValPtr VASTExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
+   return 0;
+ }
+ 
+-void VASTExprBuilderContext::onReplaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+-  BitMaskCache.erase(From.get());
+-}
+ 
+ void VASTExprBuilderContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+   llvm_unreachable("Function not implemented!");
+ }
+ 
+-void VASTExprBuilderContext::calculateBitCatBitMask(VASTExpr *Expr,
+-                                                    APInt &KnownZeros,
+-                                                    APInt &KnownOnes) {
+-  unsigned CurUB = Expr->getBitWidth();
+-  unsigned ExprSize = Expr->getBitWidth();
+-  // Clear the mask.
+-  KnownOnes = KnownZeros = APInt::getNullValue(ExprSize);
+-
+-  // Concatenate the bit mask together.
+-  for (unsigned i = 0; i < Expr->size(); ++i) {
+-    VASTValPtr CurBitSlice = Expr->getOperand(i);
+-    unsigned CurSize = CurBitSlice->getBitWidth();
+-    unsigned CurLB = CurUB - CurSize;
+-    APInt CurKnownZeros , CurKnownOnes;
+-    calculateBitMask(CurBitSlice, CurKnownZeros, CurKnownOnes);
+-    KnownZeros  |= CurKnownZeros.zextOrSelf(ExprSize).shl(CurLB);
+-    KnownOnes   |= CurKnownOnes.zextOrSelf(ExprSize).shl(CurLB);
+-
+-    CurUB = CurLB;
+-  }
+-}
+-
+-void VASTExprBuilderContext::calculateImmediateBitMask(VASTImmediate *Imm,
+-                                                       APInt &KnownZeros,
+-                                                       APInt &KnownOnes) {
+-  KnownOnes = Imm->getAPInt();
+-  KnownZeros = ~Imm->getAPInt();
+-}
+-
+-void VASTExprBuilderContext::calculateAssignBitMask(VASTExpr *Expr,
+-                                                    APInt &KnownZeros,
+-                                                    APInt &KnownOnes) {
+-  calculateBitMask(Expr->getOperand(0), KnownZeros, KnownOnes);
+-  // Adjust the bitmask by LB.
+-  KnownOnes = VASTImmediate::getBitSlice(KnownOnes, Expr->UB, Expr->LB);
+-  KnownZeros = VASTImmediate::getBitSlice(KnownZeros, Expr->UB, Expr->LB);
+-}
+-
+-// The implementation of basic bit mark calucation.
+-void VASTExprBuilderContext::calculateBitMask(VASTValue *V, APInt &KnownZeros,
+-                                              APInt &KnownOnes) {
+-  BitMaskCacheTy::iterator I = BitMaskCache.find(V);
+-  // Return the cached version if possible.
+-  if (I != BitMaskCache.end()) {
+-    KnownZeros = I->second.KnownZeros;
+-    KnownOnes = I->second.KnownOnes;
+-    return;
+-  }
+-
+-  // Clear the mask.
+-  KnownOnes = KnownZeros = APInt::getNullValue(V->getBitWidth());
+-
+-  // Most simple case: Immediate.
+-  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(V)) {
+-    calculateImmediateBitMask(Imm, KnownZeros, KnownOnes);
+-    setBitMask(V, KnownZeros, KnownOnes);
+-    return;
+-  }
+-
+-  VASTExpr *Expr = dyn_cast<VASTExpr>(V);
+-  if (!Expr) return;
+-
+-  switch(Expr->getOpcode()) {
+-  default: return;
+-  case VASTExpr::dpBitCat:
+-    calculateBitCatBitMask(Expr, KnownZeros, KnownOnes);
+-    break;
+-  case VASTExpr::dpAssign:
+-    calculateAssignBitMask(Expr, KnownZeros, KnownOnes);
+-    break;
+-  }
+-
+-  setBitMask(V, KnownZeros, KnownOnes);
+-}
+-
+-void VASTExprBuilderContext::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
+-                                              APInt &KnownOnes) {
+-  calculateBitMask(V.get(), KnownZeros, KnownOnes);
+-  // Flip the bitmask if the value is inverted.
+-  if (V.isInverted()) std::swap(KnownOnes, KnownZeros);
+-}
+-
+-void VASTExprBuilderContext::setBitMask(VASTValue *V,
+-                                        const APInt &KnownZeros,
+-                                        const APInt &KnownOnes) {
+-  std::pair<BitMaskCacheTy::iterator, bool> Pair
+-    = BitMaskCache.insert(std::make_pair(V, BitMasks(KnownZeros, KnownOnes)));
+-  if (!Pair.second) Pair.first->second = BitMasks(KnownZeros, KnownOnes);
+-}
+-
+ //===--------------------------------------------------------------------===//
+ 
+ VASTImmediate *MinimalExprBuilderContext::getOrCreateImmediate(const APInt &Value) {
+@@ -144,14 +51,8 @@ VASTValPtr MinimalExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
+   return Datapath.createExprImpl(Opc, Ops, UB, LB);
+ }
+ 
+-void MinimalExprBuilderContext::onReplaceAllUseWith(VASTValPtr From,
+-                                                    VASTValPtr To) {
+-  VASTExprBuilderContext::onReplaceAllUseWith(From, To);
+-}
+-
+ void MinimalExprBuilderContext::replaceAllUseWith(VASTValPtr From,
+                                                   VASTValPtr To) {
+-  onReplaceAllUseWith(From, To);
+   Datapath.replaceAllUseWithImpl(From, To);
+ }
+ 
+@@ -187,6 +88,57 @@ VASTExprBuilder::GetMaskSplitPoints(APInt Mask, unsigned &HiPt, unsigned &LoPt)
+   return true;
+ }
+ 
++void VASTExprBuilder::calculateBitCatBitMask(VASTExprPtr Expr,
++                                             APInt &KnownZeros,
++                                             APInt &KnownOnes) {
++  unsigned CurUB = Expr->getBitWidth();
++  unsigned ExprSize = Expr->getBitWidth();
++  // Clear the mask.
++  KnownOnes = KnownZeros = APInt::getNullValue(ExprSize);
++
++  // Concatenate the bit mask together.
++  for (unsigned i = 0; i < Expr->size(); ++i) {
++    VASTValPtr CurBitSlice = Expr.getOperand(i);
++    unsigned CurSize = CurBitSlice->getBitWidth();
++    unsigned CurLB = CurUB - CurSize;
++    APInt CurKnownZeros , CurKnownOnes;
++    calculateBitMask(CurBitSlice, CurKnownZeros, CurKnownOnes);
++    KnownZeros  |= CurKnownZeros.zextOrSelf(ExprSize).shl(CurLB);
++    KnownOnes   |= CurKnownOnes.zextOrSelf(ExprSize).shl(CurLB);
++
++    CurUB = CurLB;
++  }
++}
++
++void VASTExprBuilder::calculateBitMask(VASTValPtr V, APInt &KnownZeros,
++                                       APInt &KnownOnes) {
++  // Clear the mask.
++  KnownOnes = KnownZeros = APInt::getNullValue(V->getBitWidth());
++
++  // Most simple case: Immediate.
++  if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(V)) {
++    KnownOnes = Imm.getAPInt();
++    KnownZeros = ~Imm.getAPInt();
++    return;
++  }
++
++  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
++  if (!Expr) return;
++
++  switch(Expr->getOpcode()) {
++  default: return;
++  case VASTExpr::dpBitCat:
++    calculateBitCatBitMask(Expr, KnownZeros, KnownOnes);
++    return;
++  case VASTExpr::dpAssign:
++    calculateBitMask(Expr.getOperand(0), KnownZeros, KnownOnes);
++    // Adjust the bitmask by LB.
++    KnownOnes = VASTImmediate::getBitSlice(KnownOnes, Expr->UB, Expr->LB);
++    KnownZeros = VASTImmediate::getBitSlice(KnownZeros, Expr->UB, Expr->LB);
++    return;
++  }
++}
++
+ VASTValPtr VASTExprBuilder::buildNotExpr(VASTValPtr U) {
+   U = U.invert();
+ 
+diff --git lib/VAST/VASTMemoryPort.cpp lib/VAST/VASTMemoryPort.cpp
+index 05d9556..a44563c 100644
+--- lib/VAST/VASTMemoryPort.cpp
++++ lib/VAST/VASTMemoryPort.cpp
+@@ -157,11 +157,11 @@ std::string VASTMemoryBus::getArrayName() const {
+ 
+ void VASTMemoryBus::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
+   getRData(PortNum)->printDecl(OS);
++  getAddr(PortNum)->printDecl(OS);
++  getWData(PortNum)->printDecl(OS);
+ 
+   if (requireByteEnable()) {
+-    getAddr(PortNum)->printDecl(OS);
+     getByteEn(PortNum)->printDecl(OS);
+-    getWData(PortNum)->printDecl(OS);
+     // Also need to declare the register at last stage.
+     unsigned BytesPerWord = getDataWidth() / 8;
+     unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
+@@ -263,9 +263,11 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, const VASTModule *Mod,
+      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
+   OS << getLastStageAddrName(PortNum) << " <= " << Addr->getName() << ";\n";
+ 
++  OS << "// synthesis translate_off\n";
+   OS << "if (" << Addr->getName()
+      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
+      << NumWords << ")  $finish(\"Write access out of bound!\");\n";
++  OS << "// synthesis translate_on\n";
+ 
+   OS.always_ff_end(false);
+ }
+@@ -457,17 +459,21 @@ void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
+                *WData = getWData(PortNum);
+ 
+   // Print the selectors.
+-  Addr->printSelector(OS);
+-  RData->printSelector(OS);
+-  WData->printSelector(OS);
++  Addr->printRegisterBlock(OS, Mod, 0);
++  RData->printRegisterBlock(OS, Mod, 0);
++  WData->printRegisterBlock(OS, Mod, 0);
++
++  OS << "reg " << getInternalWEnName(PortNum) << ";\n";
+ 
+   OS.always_ff_begin(false);
+ 
+   if (!WData->empty()) {
+-    OS.if_begin(Twine(WData->getName()) + "_selector_enable");
+-    OS << getArrayName() << "[" << Addr->getName() << "_selector_wire"
++    OS << getInternalWEnName(PortNum) << " <= "
++       << WData->getName() <<  "_selector_enable;\n";
++    OS.if_begin(getInternalWEnName(PortNum));
++    OS << getArrayName() << "[" << Addr->getName()
+         << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ']'
+-        << " <= " << WData->getName() << "_selector_wire"
++        << " <= " << WData->getName()
+         << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
+ 
+     OS.exit_block();
+@@ -475,22 +481,18 @@ void VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, const VASTModule *Mod,
+ 
+   OS << RData->getName()
+     << VASTValue::printBitRange(getDataWidth(), 0, false) << " <= "
+-    << ' ' << getArrayName() << "[" << Addr->getName() << "_selector_wire"
++    << ' ' << getArrayName() << "[" << Addr->getName()
+     << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
+ 
+   // Verify the addresses.
+-  OS << "if (" << Addr->getName() << "_selector_wire"
++  OS << "// synthesis translate_off\n";
++  OS << "if (" << Addr->getName()
+       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true)
+       << ">= "<< NumWords <<") $finish(\"Write access out of bound!\");\n";
+   if (ByteAddrWidth)
+-    OS << "if (" << Addr->getName() << "_selector_wire"
++    OS << "if (" << Addr->getName()
+         << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
+         << ByteAddrWidth << "'b0) $finish(\"Write access out of bound!\");\n";
+-
+-  OS << "// synthesis translate_off\n";
+-  Addr->verifyAssignCnd(OS, Mod);
+-  WData->verifyAssignCnd(OS, Mod);
+-  RData->verifyAssignCnd(OS, Mod);
+   OS << "// synthesis translate_on\n\n";
+ 
+   OS.always_ff_end(false);
+diff --git lib/VAST/VASTModulePass.cpp lib/VAST/VASTModulePass.cpp
+index d023e13..f15f336 100644
+--- lib/VAST/VASTModulePass.cpp
++++ lib/VAST/VASTModulePass.cpp
+@@ -662,7 +662,6 @@ void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
+ 
+   I.dump();
+ 
+-  unsigned SizeInBits = getValueSizeInBits(I);
+   VASTSubModule *SubMod = getOrCreateSubModuleFromBinOp(I);
+ 
+   if (SubMod == 0) {
+@@ -805,8 +804,7 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
+   if (Data == 0) {
+     // The latency of the read operation is fixed to 1 if the byteenable is not
+     // required.
+-    unsigned Latency = Bus->requireByteEnable() ?
+-                       getFUDesc<VFUMemBus>()->getReadLatency() : 1;
++    unsigned Latency = getFUDesc<VFUMemBus>()->getReadLatency();
+     // TODO: Enable each pipeline stage individually.
+     // Please note that we had already advance 1 slot after we lauch the
+     // load/store to disable the load/store. Now we need only wait Latency - 1
+diff --git testsuite/benchmark/legup_chstone/CMakeLists.txt testsuite/benchmark/legup_chstone/CMakeLists.txt
+index 4f2cd2b..206332b 100644
+--- testsuite/benchmark/legup_chstone/CMakeLists.txt
++++ testsuite/benchmark/legup_chstone/CMakeLists.txt
+@@ -37,7 +37,7 @@ add_test_legup_cases(mips mips.bc)
+ #Deming's benchmark
+ add_test_legup_cases(pr pr.bc)
+ add_test_legup_cases(wang wang.bc)
+-add_test_legup_cases(chem chem.bc)
++#add_test_legup_cases(chem chem.bc)
+ add_test_legup_cases(arai arai.bc)
+ add_test_legup_cases(feig_dct feig_dct.bc)
+ add_test_legup_cases(u5ml u5ml.bc)
+diff --git util/sit/sit/main.py util/sit/sit/main.py
+index e2f8e3c..1f53318 100644
+--- util/sit/sit/main.py
++++ util/sit/sit/main.py
+@@ -13,7 +13,7 @@ import sqlite3
+ from jinja2 import Environment, FileSystemLoader, Template
+ 
+ from logparser import SimLogParser
+-from teststeps import TestStep, ShangHLSStep, Session
++from teststeps import TestStep, ShangHLSStep, LegUpHLSStep, Session
+ 
+ def ParseOptions() :
+   parser = argparse.ArgumentParser(description='The Shang Integrated Tester')
+@@ -104,9 +104,9 @@ def main(builtinParameters = {}):
+   option_space_dict = {}
+   # Constrains the option space
+   # HLS options
+-  option_space_dict['shang_enable_mux_pipelining'] = [ 'true' ]
++  option_space_dict['shang_enable_mux_pipelining'] = [ 'false' ]
+   option_space_dict['shang_baseline_scheduling_only'] = [ 'false' ]
+-  option_space_dict['shang_enable_memory_optimization'] = [ 'true' ]
++  option_space_dict['shang_enable_memory_optimization'] = [ 'false' ]
+   option_space_dict['shang_enable_memory_partition'] = [ 'true' ]
+   option_space_dict['shang_enable_dual_port_ram'] = [ 'true' ]
+   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
+@@ -114,10 +114,10 @@ def main(builtinParameters = {}):
+   option_space_dict['shang_max_scheduling_iteration'] = [ 1 ]
+   option_space_dict['shang_constraints_factor'] = [ -0.1 ]
+ 
+-  option_space_dict['timing_model'] = [ 'external' if args.mode == TestStep.AlteraSyn else 'blackbox' ]
++  option_space_dict['timing_model'] = [ 'blackbox' ]
+ 
+-  option_space_dict['fmax'] = [ 100 ]
+-  option_space_dict['device_family'] = [ 'CycloneII' ]
++  option_space_dict['fmax'] = [ 400, 450, 500 ]
++  option_space_dict['device_family'] = [ 'StratixIV' ]
+ 
+   option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]
+ 
+diff --git util/sit/sit/teststeps.py util/sit/sit/teststeps.py
+index 18a6176..755e32b 100644
+--- util/sit/sit/teststeps.py
++++ util/sit/sit/teststeps.py
+@@ -428,10 +428,10 @@ set_parameter ALIAS_ANALYSIS 1
+                self.rtl_output
+               ]
+ 
+-    print "Submitted", self.getStepDesc()
+-    #Submit the job.
++    print "Going to submit", self.getStepDesc()
+     self.jobid = Session.runJob(jt)
+     Session.deleteJobTemplate(jt)
++    print "Submitted", self.getStepDesc()
+ 
+   def generateSubTests(self) :
+     return [ LegUpHWSimStep(self) ]
+@@ -559,10 +559,10 @@ IfFile:close()
+                '-shang-print-selector-as-parallel-case=false'
+               ]
+ 
+-    print "Submitted", self.getStepDesc()
+-    #Submit the job.
++    print "Going to submit", self.getStepDesc()
+     self.jobid = Session.runJob(jt)
+     Session.deleteJobTemplate(jt)
++    print "Submitted", self.getStepDesc()
+ 
+   def generateSubTests(self) :
+     #If test type == hybrid simulation
+@@ -663,9 +663,10 @@ diff expected.output hardware.out || exit 1
+ 
+     jt.nativeSpecification = '-q %s' % self.sge_queue
+ 
+-    print "Submitted", self.getStepDesc()
++    print "Going to submit", self.getStepDesc()
+     self.jobid = Session.runJob(jt)
+     Session.deleteJobTemplate(jt)
++    print "Submitted", self.getStepDesc()
+ 
+ class HWSimStep(TestStep) :
+   def __init__(self, hls_step):
+@@ -693,9 +694,10 @@ class HWSimStep(TestStep) :
+ 
+     jt.nativeSpecification = '-q %s' % self.sge_queue
+ 
+-    print "Submitted", self.getStepDesc()
++    print "Going to submit", self.getStepDesc()
+     self.jobid = Session.runJob(jt)
+     Session.deleteJobTemplate(jt)
++    print "Submitted", self.getStepDesc()
+ 
+   def generateSubTests(self) :
+     #If test type == hybrid simulation
+@@ -970,9 +972,10 @@ project_close
+     if self.require_license :
+       jt.nativeSpecification += self.getLicenseSpecification()
+ 
+-    print "Submitted", self.getStepDesc()
++    print "Going to submit", self.getStepDesc()
+     self.jobid = Session.runJob(jt)
+     Session.deleteJobTemplate(jt)
++    print "Submitted", self.getStepDesc()
+ 
+   def submitResults(self, connection, status) :
+     if (not self.submitLogfiles(connection, status)) : return

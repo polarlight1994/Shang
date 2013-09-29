@@ -121,11 +121,11 @@ def main(builtinParameters = {}):
   option_space_dict['vast_external_enable_fast_place_and_route'] = [ 'true' ]
   option_space_dict['vast_external_enable_place_and_route'] = [ 'true' ]
   option_space_dict['vast_back_annotation_sigma_ratio'] = [ 0.0 ]
-  option_space_dict['vast_external_tool_sdc_filter_slack_ratio'] = [ 0.1, 0.2, 0.5 ]
+  option_space_dict['vast_external_tool_sdc_filter_slack_ratio'] = [ 0.2 ] #, 0.2, 0.3, 0.4, 0.5 ]
 
   option_space_dict['timing_model'] = [ 'external' ]
 
-  option_space_dict['fmax'] = [ 450  ] #if args.mode == TestStep.AlteraSyn else [ 480 ]
+  option_space_dict['fmax'] = [ 400, 450, 500  ] #if args.mode == TestStep.AlteraSyn else [ 480 ]
   option_space_dict['device_family'] = [ 'StratixIV' ]
 
   option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]

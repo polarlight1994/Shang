@@ -1,0 +1,275 @@
+diff --git lib/HighlevelSynthesis/Dataflow.cpp lib/HighlevelSynthesis/Dataflow.cpp
+index 25a685a..d8203dd 100644
+--- lib/HighlevelSynthesis/Dataflow.cpp
++++ lib/HighlevelSynthesis/Dataflow.cpp
+@@ -502,8 +502,8 @@ void Dataflow::dumpFlowDeps(raw_ostream &OS) const {
+         continue;
+ 
+       OS << "INSERT INTO flowdeps(src, dst, generation, violation, num_samples, sum, sqr_sum) VALUES(\n"
+-         << '\'' << J->first.getOpaqueValue() << "', \n"
+-         << '\'' << Dst.getOpaqueValue() << "', \n"
++         << '\'' << *J->first << J->first.IsLauch() << "', \n"
++         << '\'' << *Dst << Dst.IsLauch() << "', \n"
+          << unsigned(J->second.generation) << ", \n"
+          << unsigned(J->second.violation) << ", \n"
+          << unsigned(J->second.num_samples) << ", \n"
+@@ -540,9 +540,9 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
+           continue;
+ 
+         OS << "INSERT INTO incomings(src, bb, dst, generation, violation, num_samples, sum, sqr_sum) VALUES(\n"
+-           << '\'' << K->first.getOpaqueValue() << "', \n"
++          << '\'' << *K->first << K->first.IsLauch() << "', \n"
+            << '\'' << BB->getName() << "', \n"
+-           << '\'' << Dst.getOpaqueValue() << "', \n"
++           << '\'' << *Dst << Dst.IsLauch() << "', \n"
+            << unsigned(K->second.generation) << ", \n"
+            << unsigned(K->second.violation) << ", \n"
+            << unsigned(K->second.num_samples) << ", \n"
+diff --git lib/HighlevelSynthesis/ExternalTimingAnalysis.cpp lib/HighlevelSynthesis/ExternalTimingAnalysis.cpp
+index a58161b..723c759 100644
+--- lib/HighlevelSynthesis/ExternalTimingAnalysis.cpp
++++ lib/HighlevelSynthesis/ExternalTimingAnalysis.cpp
+@@ -67,7 +67,7 @@ EnableFastPAR("vast-external-enable-fast-place-and-route",
+ static cl::opt<bool>
+ EnableTimingConstraint("vast-external-enable-timing-constraint",
+   cl::desc("Use timing constraints to tweak the data path in external tool"),
+-  cl::init(true));
++  cl::init(false));
+ 
+ static cl::opt<unsigned>
+ ExternalToolTimeOut("vast-external-tool-time-out",
+@@ -753,8 +753,10 @@ ExternalTimingAnalysis::writeMapDesignScript(raw_ostream &O,
+ 
+   O << "set_global_assignment -name NUM_PARALLEL_PROCESSORS 1\n"
+        "set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1\n"
+-       "set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON\n"
++       //"set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON\n"
+        "set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW\n"
++       "set_global_assignment -name REMOVE_DUPLICATE_REGISTERS OFF\n"
++       "set_global_assignment -name SYNTHESIS_EFFORT FAST\n"
+        //"set_global_assignment -name SYNTH_TIMING_DRIVEN_SYNTHESIS OFF\n"
+        "export_assignments\n"
+        // Start the processes.
+diff --git lib/Scripting/VASTLuaBases.cpp lib/Scripting/VASTLuaBases.cpp
+index 8f334ff..7122863 100644
+--- lib/Scripting/VASTLuaBases.cpp
++++ lib/Scripting/VASTLuaBases.cpp
+@@ -480,7 +480,7 @@ struct DatapathPrinter {
+         // expressions and one of them been printed before.
+         if (!PrintedNames.insert(Name).second) return;
+ 
+-        if (E->getOpcode() == VASTExpr::dpKeep)
++        if (E->getOpcode() > VASTExpr::LastAnonymousOpc)
+           OS << "(* keep *) ";
+ 
+         OS << "wire ";
+diff --git lib/VAST/RTLCodeGen.cpp lib/VAST/RTLCodeGen.cpp
+index 5bd7668..b7f52f1 100644
+--- lib/VAST/RTLCodeGen.cpp
++++ lib/VAST/RTLCodeGen.cpp
+@@ -151,6 +151,7 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
+   VM.printSubmodules(Out);
+   VM.printRegisterBlocks(Out);
+ 
++#ifdef GENERATE_SELFVERIFICATION
+   STGDistances &STGDist = getAnalysis<STGDistances>();
+   // Verify the register assignment.
+   Out << "// synthesis translate_off\n";
+@@ -161,6 +162,7 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
+     Out << '\n';
+   }
+   Out << "// synthesis translate_on\n\n";
++#endif
+ 
+   Out.module_end();
+   Out.flush();
+diff --git testsuite/common_config.lua testsuite/common_config.lua
+index cc03023..8c1cba3 100644
+--- testsuite/common_config.lua
++++ testsuite/common_config.lua
+@@ -5,7 +5,10 @@ module shang_addc#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+   input wire c,
+   output wire[C_WIDTH-1:0] d
+ );
+-	assign d = a + b + c;
++  (*keep*) wire[A_WIDTH-1:0] ka = a;
++  (*keep*) wire[B_WIDTH-1:0] kb = b;
++  (*keep*) wire[C_WIDTH-1:0] kc = c;
++	assign d = ka + kb + kc;
+ endmodule
+ 
+ module shang_mult#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+@@ -13,7 +16,9 @@ module shang_mult#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+   input wire[B_WIDTH-1:0] b,
+   output wire[C_WIDTH-1:0] c
+ );
+-	assign c = a * b;
++  (*keep*) wire[A_WIDTH-1:0] ka = a;
++  (*keep*) wire[B_WIDTH-1:0] kb = b;
++	assign c = ka * kb;
+ endmodule
+ 
+ module shang_shl#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+@@ -21,7 +26,9 @@ module shang_shl#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+   input wire[B_WIDTH-1:0] b,
+   output wire[C_WIDTH-1:0] c
+ );
+-	assign c = a << b;
++  (*keep*) wire[A_WIDTH-1:0] ka = a;
++  (*keep*) wire[B_WIDTH-1:0] kb = b;
++	assign c = ka << kb;
+ endmodule
+ 
+ module shang_sra#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+@@ -29,7 +36,9 @@ module shang_sra#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+   input wire[B_WIDTH-1:0] b,
+   output wire[C_WIDTH-1:0] c
+ );
+-	assign c = $signed(a) >>> b;
++  (*keep*) wire[A_WIDTH-1:0] ka = a;
++  (*keep*) wire[B_WIDTH-1:0] kb = b;
++	assign c = $signed(ka) >>> kb;
+ endmodule
+ 
+ module shang_srl#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+@@ -37,7 +46,9 @@ module shang_srl#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+   input wire[B_WIDTH-1:0] b,
+   output wire[C_WIDTH-1:0] c
+ );
+-	assign c = a >> b;
++  (*keep*) wire[A_WIDTH-1:0] ka = a;
++  (*keep*) wire[B_WIDTH-1:0] kb = b;
++	assign c = ka >> kb;
+ endmodule
+ 
+ module shang_sgt#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+@@ -45,7 +56,9 @@ module shang_sgt#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+   input wire[B_WIDTH-1:0] b,
+   output wire c
+ );
+-	assign c = ($signed(a) >  $signed(b)) ? 1'b1 : 1'b0;
++  (*keep*) wire[A_WIDTH-1:0] ka = a;
++  (*keep*) wire[B_WIDTH-1:0] kb = b;
++	assign c = ($signed(ka) >  $signed(kb)) ? 1'b1 : 1'b0;
+ endmodule
+ 
+ module shang_sge#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+@@ -53,7 +66,9 @@ module shang_sge#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+   input wire[B_WIDTH-1:0] b,
+   output wire c
+ );
+-	assign c = ($signed(a) >=  $signed(b)) ? 1'b1 : 1'b0;
++  (*keep*) wire[A_WIDTH-1:0] ka = a;
++  (*keep*) wire[B_WIDTH-1:0] kb = b;
++	assign c = ($signed(ka) >=  $signed(kb)) ? 1'b1 : 1'b0;
+ endmodule
+ 
+ module shang_ugt#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+@@ -61,7 +76,9 @@ module shang_ugt#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+   input wire[B_WIDTH-1:0] b,
+   output wire c
+ );
+-	assign c = (a > b)  ? 1'b1 : 1'b0;
++  (*keep*) wire[A_WIDTH-1:0] ka = a;
++  (*keep*) wire[B_WIDTH-1:0] kb = b;
++	assign c = (ka > kb)  ? 1'b1 : 1'b0;
+ endmodule
+ 
+ module shang_uge#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+@@ -69,21 +86,25 @@ module shang_uge#(parameter A_WIDTH = 0, B_WIDTH = 0, C_WIDTH = 0) (
+   input wire[B_WIDTH-1:0] b,
+   output wire c
+ );
+-	assign c = (a >= b)  ? 1'b1 : 1'b0;
++  (*keep*) wire[A_WIDTH-1:0] ka = a;
++  (*keep*) wire[B_WIDTH-1:0] kb = b;
++	assign c = (ka >= kb)  ? 1'b1 : 1'b0;
+ endmodule
+ 
+ module shang_rand#(parameter WIDTH = 0) (
+   input wire[WIDTH-1:0] a,
+   output wire b
+ );
+-	assign b = &a;
++  (*keep*) wire[WIDTH-1:0] ka = a;
++	assign b = &ka;
+ endmodule
+ 
+ module shang_rxor#(parameter WIDTH = 0) (
+   input wire[WIDTH-1:0] a,
+   output wire b
+ );
+-	assign b = ^a;
++  (*keep*) wire[WIDTH-1:0] ka = a;
++	assign b = ^ka;
+ endmodule
+ ]=]
+ 
+diff --git util/sit/sit/main.py util/sit/sit/main.py
+index 193487b..859023e 100644
+--- util/sit/sit/main.py
++++ util/sit/sit/main.py
+@@ -41,6 +41,8 @@ def main(builtinParameters = {}):
+   # Create the tables for the experimental results.
+   # We create 3 tables: HLS results, simulation results, and synthesis results
+   database_log.write('''
++    BEGIN TRANSACTION;
++
+     create table highlevelsynthesis(
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         name TEXT,
+@@ -109,19 +111,20 @@ def main(builtinParameters = {}):
+   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
+   option_space_dict['shang_enable_register_sharing'] = [ 'false' ]
+   iterations = 10 if args.mode == TestStep.AlteraSyn \
+-               else 1 if args.mode == TestStep.AlteraNls \
+-               else 1
++               else 10 if args.mode == TestStep.AlteraNls \
++               else 20
+   option_space_dict['shang_max_scheduling_iteration'] = [ iterations ]
+   option_space_dict['shang_dump_intermediate_netlist'] = [ 'true' ]
+   option_space_dict['shang_constraints_factor'] = [ -0.1 ]
+ 
+-  option_space_dict['vast_external_enable_timing_constraint'] = [ 'false', 'true' ]
++  option_space_dict['vast_external_enable_timing_constraint'] = [ 'false' ]
+   option_space_dict['vast_external_enable_fast_place_and_route'] = [ 'true' ]
+   option_space_dict['vast_external_enable_place_and_route'] = [ 'true' ]
+-  option_space_dict['vast_back_annotation_sigma_ratio'] = [ -2.0, 0.0, 2.0 ]
++  option_space_dict['vast_back_annotation_sigma_ratio'] = [ 0.0 ]
+ 
+   option_space_dict['timing_model'] = [ 'external' ]
+-  option_space_dict['fmax'] = [ 480, 400, 350 ] if args.mode == TestStep.AlteraSyn else [ 480 ]
++
++  option_space_dict['fmax'] = [ 500, 450, 400  ] if args.mode == TestStep.AlteraSyn else [ 480 ]
+   option_space_dict['device_family'] = [ 'StratixIV' ]
+ 
+   option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]
+@@ -193,7 +196,6 @@ def main(builtinParameters = {}):
+         # Remember the options on the fail case
+         for k, v in job.option.iteritems() :
+           fail_space[k].add(v)
+-        job.dumplog()
+ 
+     time.sleep(5)
+     active_jobs = next_active_jobs[:]
+@@ -208,6 +210,7 @@ def main(builtinParameters = {}):
+   # Finialize the gridengine
+   Session.exit()
+ 
++  database_log.write('COMMIT;\n')
+   database_log.close()
+ 
+   # Analysis the fail cases
+diff --git util/sit/sit/teststeps.py util/sit/sit/teststeps.py
+index d4ef43b..d7f7e20 100644
+--- util/sit/sit/teststeps.py
++++ util/sit/sit/teststeps.py
+@@ -594,7 +594,7 @@ IfFile:close()
+ 
+     num_iter = self.shang_max_scheduling_iteration
+     if self.shang_dump_intermediate_netlist == 'true' and num_iter > 1 :
+-      for i in range(num_iter - 1) :
++      for i in range(1) :
+         sim_step = ShangHWSimStep(self)
+         sim_step.option = self.option.copy()
+         sim_step.hls_base_dir = os.path.join(sim_step.hls_base_dir, str(i))

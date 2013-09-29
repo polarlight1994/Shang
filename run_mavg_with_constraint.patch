@@ -1,0 +1,314 @@
+diff --git lib/HighlevelSynthesis/Dataflow.cpp lib/HighlevelSynthesis/Dataflow.cpp
+index 25a685a..fddd86b 100644
+--- lib/HighlevelSynthesis/Dataflow.cpp
++++ lib/HighlevelSynthesis/Dataflow.cpp
+@@ -40,13 +40,15 @@ Dataflow::Dataflow() : FunctionPass(ID), generation(0) {
+ }
+ 
+ Dataflow::delay_type::delay_type(const Annotation &Ann) {
+-  float num_samples = float(Ann.num_samples);
+-  // Caculate the expected value
+-  mu = Ann.sum / num_samples;
+-  // Caculate the variance
+-  float D2 = Ann.sqr_sum / num_samples - mu * mu;
+-  // Do not fail due on the errors in floating point operation.
+-  sigma = sqrtf(std::max<float>(D2, 0.0f));
++  //float num_samples = float(Ann.num_samples);
++  //// Caculate the expected value
++  //mu = Ann.sum / num_samples;
++  //// Caculate the variance
++  //float D2 = Ann.sqr_sum / num_samples - mu * mu;
++  //// Do not fail due on the errors in floating point operation.
++  //sigma = sqrtf(std::max<float>(D2, 0.0f));
++  mu = Ann.iir_value;
++  sigma = 0;
+ }
+ 
+ void Dataflow::delay_type::reduce_max(const delay_type &RHS) {
+@@ -342,15 +344,26 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
+     });
+   }
+ 
+-  updateDelay(delay, OldAnnotation);
++  updateDelay(delay, OldAnnotation, IsTimingViolation);
+ }
+ 
+-void Dataflow::updateDelay(float NewDelay, Annotation &OldDelay) {
++void Dataflow::updateDelay(float NewDelay, Annotation &OldDelay,
++                           bool IsTimingViolation) {
+  if (OldDelay.generation == 0 && generation != 0)
+    OldDelay.reset();
+ 
+  OldDelay.addSample(NewDelay);
+  OldDelay.generation = generation;
++
++ if (OldDelay.generation == 0)
++   OldDelay.iir_value = NewDelay;
++ else if (OldDelay.generation == generation) {
++   float ratio = 0.7f;
++   OldDelay.iir_value = OldDelay.iir_value * (1.0 - ratio) + NewDelay * ratio;
++ } else {
++   float ratio = IsTimingViolation ? 0.8f : 0.5f;
++   OldDelay.iir_value = OldDelay.iir_value * (1.0 - ratio) + NewDelay * ratio;
++ }
+ }
+ 
+ DataflowAnnotation::DataflowAnnotation(bool Accumulative)
+diff --git lib/HighlevelSynthesis/Dataflow.h lib/HighlevelSynthesis/Dataflow.h
+index f133382..010be8a 100644
+--- lib/HighlevelSynthesis/Dataflow.h
++++ lib/HighlevelSynthesis/Dataflow.h
+@@ -93,7 +93,7 @@ typedef DataflowPtr<Instruction> DataflowInst;
+ 
+ class Dataflow : public FunctionPass {
+   struct Annotation {
+-    float sum, sqr_sum;
++    float sum, sqr_sum, iir_value;
+     uint16_t num_samples;
+     uint8_t generation;
+     uint8_t violation;
+@@ -161,7 +161,7 @@ private:
+   TimedSrcSet &getDeps(DataflowInst Inst, BBPtr Parent);
+ 
+   unsigned generation;
+-  void updateDelay(float NewDelay, Annotation &OldDelay);
++  void updateDelay(float NewDelay, Annotation &OldDelay, bool IsTimingViolation);
+ 
+   std::set<BasicBlock*> UnreachableBlocks;
+ 
+diff --git lib/HighlevelSynthesis/ExternalTimingAnalysis.cpp lib/HighlevelSynthesis/ExternalTimingAnalysis.cpp
+index a58161b..16d2e07 100644
+--- lib/HighlevelSynthesis/ExternalTimingAnalysis.cpp
++++ lib/HighlevelSynthesis/ExternalTimingAnalysis.cpp
+@@ -136,6 +136,7 @@ public:
+ struct ExternalTimingAnalysis {
+   VASTModule &VM;
+   Dataflow *DF;
++  STGDistances *Distances;
+   SpecificBumpPtrAllocator<float> Allocator;
+   std::vector<float*> DelayRefs;
+   typedef std::map<VASTSeqValue*, float*> SrcInfo;
+@@ -196,6 +197,8 @@ struct ExternalTimingAnalysis {
+   void extractTimingForSelector(raw_ostream &TclO, raw_ostream &TimingSDCO,
+                                 VASTSelector *Sel);
+ 
++  unsigned calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op);
++
+   typedef std::set<VASTSeqValue*> LeafSet;
+ 
+   static bool contains(const SrcInfo &Srcs, const LeafSet &Leaves) {
+@@ -224,7 +227,7 @@ struct ExternalTimingAnalysis {
+   // Read the JSON file written by the timing extraction script.
+   bool readTimingAnalysisResult(StringRef ResultPath);
+ 
+-  ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF);
++  ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF, STGDistances *Distences);
+ 
+   bool analysisWithSynthesisTool();
+ 
+@@ -323,7 +326,7 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
+ }
+ 
+ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
+-  ExternalTimingAnalysis ETA(VM, DF);
++  ExternalTimingAnalysis ETA(VM, DF, Distances);
+ 
+   // Run the synthesis tool to get the arrival time estimation.
+   if (!ETA.analysisWithSynthesisTool()) return false;
+@@ -487,6 +490,11 @@ struct ConstraintHelper {
+     if (Cycle <= 1)
+       return;
+ 
++    // According to our experimental result, for path whose number of cycles is
++    // bigger than 5, the multi-cycle constraints doesn't help
++    if (Cycle > 5)
++      return;
++
+     assert(!Src->isSlot() && !Src->isFUOutput() && "Unexpected source type!");
+     Cycles.insert(std::make_pair(Cycle, Src));
+   }
+@@ -527,8 +535,24 @@ struct ConstraintHelper {
+ };
+ }
+ 
+-float calculateCycles(Dataflow::delay_type delay) {
+-  return std::max(delay.expected() - 0.5f, 0.0f);
++unsigned
++ExternalTimingAnalysis::calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op) {
++  Dataflow::delay_type delay = DF->getDelay(Src, Op, Op->getSlot());
++  unsigned NumCycles = Distances->getIntervalFromDef(Src, Op->getSlot());
++  int Slack = NumCycles - std::floor(delay.expected());
++  // Put extra effort to optimize this edge.
++  if (Slack <= 1)
++    return std::floor(delay.expected());
++  
++  float SlackRatio = float(Slack) / float(NumCycles);
++  // Just do not care about this path, if its slack ratio is bigger than 8.
++  //if (SlackRatio > 0.8f)
++  //  return 1;
++
++  SlackRatio = SlackRatio * SlackRatio * SlackRatio * SlackRatio;
++
++
++  return std::ceil(std::floor(delay.expected()) + Slack * SlackRatio);
+ }
+ 
+ void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,
+@@ -560,7 +584,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
+   typedef LeafSet::iterator leaf_iterator;
+   typedef VASTSelector::iterator fanin_iterator;
+   DenseMap<VASTSlot*, VASTSeqOp*> SlotMap;
+-  DenseMap<VASTSeqValue*, Dataflow::delay_type> CriticalDelay;
++  DenseMap<VASTSeqValue*, unsigned> CycleConstraints;
+ 
+   for (fanin_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+     VASTLatch U = *I;
+@@ -592,7 +616,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
+       if (Leaf->isSlot() || Leaf->isFUOutput())
+         continue;
+ 
+-      CriticalDelay[Leaf].reduce_max(DF->getDelay(Leaf, Op, Op->getSlot()));
++      CycleConstraints[Leaf] = calculateCycles(Leaf, Op);
+     }
+ 
+     // Directly add the slot active to all leaves set.
+@@ -616,7 +640,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
+       if (Src->isSlot() || Src->isFUOutput())
+         continue;
+ 
+-      CH.addSource(Src, calculateCycles(CriticalDelay.lookup(Src)));
++      CH.addSource(Src, CycleConstraints.lookup(Src));
+     }
+   }
+   // Extract end-to-end delay.
+@@ -662,8 +686,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
+ 
+         P = allocateDelayRef(Idx);
+         ExtractTimingForPath(TclO, Sel, Leaf, Expr, Idx);
+-        Dataflow::delay_type delay = DF->getDelay(Leaf, Op, Op->getSlot());
+-        CH.addSource(Leaf, calculateCycles(delay));
++        CH.addSource(Leaf, calculateCycles(Leaf, Op));
+       }
+ 
+       AnnotoatedFanins[Op].insert(Expr);
+@@ -728,8 +751,9 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult(StringRef ResultPath) {
+   return true;
+ }
+ 
+-ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF)
+-  : VM(VM), DF(DF) {}
++ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF,
++                                               STGDistances *Distences)
++  : VM(VM), DF(DF), Distances(Distences) {}
+ 
+ void
+ ExternalTimingAnalysis::writeMapDesignScript(raw_ostream &O,
+diff --git lib/VAST/RTLCodeGen.cpp lib/VAST/RTLCodeGen.cpp
+index 5bd7668..b7f52f1 100644
+--- lib/VAST/RTLCodeGen.cpp
++++ lib/VAST/RTLCodeGen.cpp
+@@ -151,6 +151,7 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
+   VM.printSubmodules(Out);
+   VM.printRegisterBlocks(Out);
+ 
++#ifdef GENERATE_SELFVERIFICATION
+   STGDistances &STGDist = getAnalysis<STGDistances>();
+   // Verify the register assignment.
+   Out << "// synthesis translate_off\n";
+@@ -161,6 +162,7 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
+     Out << '\n';
+   }
+   Out << "// synthesis translate_on\n\n";
++#endif
+ 
+   Out.module_end();
+   Out.flush();
+diff --git util/sit/sit/main.py util/sit/sit/main.py
+index 193487b..2d41224 100644
+--- util/sit/sit/main.py
++++ util/sit/sit/main.py
+@@ -41,6 +41,8 @@ def main(builtinParameters = {}):
+   # Create the tables for the experimental results.
+   # We create 3 tables: HLS results, simulation results, and synthesis results
+   database_log.write('''
++    BEGIN TRANSACTION;
++
+     create table highlevelsynthesis(
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         name TEXT,
+@@ -109,19 +111,20 @@ def main(builtinParameters = {}):
+   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
+   option_space_dict['shang_enable_register_sharing'] = [ 'false' ]
+   iterations = 10 if args.mode == TestStep.AlteraSyn \
+-               else 1 if args.mode == TestStep.AlteraNls \
+-               else 1
++               else 10 if args.mode == TestStep.AlteraNls \
++               else 20
+   option_space_dict['shang_max_scheduling_iteration'] = [ iterations ]
+   option_space_dict['shang_dump_intermediate_netlist'] = [ 'true' ]
+   option_space_dict['shang_constraints_factor'] = [ -0.1 ]
+ 
+-  option_space_dict['vast_external_enable_timing_constraint'] = [ 'false', 'true' ]
++  option_space_dict['vast_external_enable_timing_constraint'] = [ 'true' ]
+   option_space_dict['vast_external_enable_fast_place_and_route'] = [ 'true' ]
+   option_space_dict['vast_external_enable_place_and_route'] = [ 'true' ]
+-  option_space_dict['vast_back_annotation_sigma_ratio'] = [ -2.0, 0.0, 2.0 ]
++  option_space_dict['vast_back_annotation_sigma_ratio'] = [ 0.0 ]
+ 
+   option_space_dict['timing_model'] = [ 'external' ]
+-  option_space_dict['fmax'] = [ 480, 400, 350 ] if args.mode == TestStep.AlteraSyn else [ 480 ]
++
++  option_space_dict['fmax'] = [ 400, 450, 500  ] if args.mode == TestStep.AlteraSyn else [ 480 ]
+   option_space_dict['device_family'] = [ 'StratixIV' ]
+ 
+   option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]
+@@ -130,14 +133,14 @@ def main(builtinParameters = {}):
+   fail_space = dict([ (k, set()) for k in option_space_dict.iterkeys() ])
+ 
+   active_jobs = []
+-
+-  for test_path in args.tests.split() :
+-    basedir = os.path.dirname(test_path)
+-    test_file = os.path.basename(test_path)
+-    test_name = os.path.splitext(test_file)[0]
++  
++  for test_option in option_space :
++    for test_path in args.tests.split() :
++      basedir = os.path.dirname(test_path)
++      test_file = os.path.basename(test_path)
++      test_name = os.path.splitext(test_file)[0]
+ 
+     #test_option = random.choice(option_space)
+-    for test_option in option_space :
+       # TODO: Provide the keyword constructor
+       # Expand the test_option so that the test option always override the basic_config.
+       hls_step = ShangHLSStep(dict(basic_config, **test_option))
+@@ -193,7 +196,6 @@ def main(builtinParameters = {}):
+         # Remember the options on the fail case
+         for k, v in job.option.iteritems() :
+           fail_space[k].add(v)
+-        job.dumplog()
+ 
+     time.sleep(5)
+     active_jobs = next_active_jobs[:]
+@@ -208,6 +210,7 @@ def main(builtinParameters = {}):
+   # Finialize the gridengine
+   Session.exit()
+ 
++  database_log.write('COMMIT;\n')
+   database_log.close()
+ 
+   # Analysis the fail cases
+diff --git util/sit/sit/teststeps.py util/sit/sit/teststeps.py
+index d4ef43b..d7f7e20 100644
+--- util/sit/sit/teststeps.py
++++ util/sit/sit/teststeps.py
+@@ -594,7 +594,7 @@ IfFile:close()
+ 
+     num_iter = self.shang_max_scheduling_iteration
+     if self.shang_dump_intermediate_netlist == 'true' and num_iter > 1 :
+-      for i in range(num_iter - 1) :
++      for i in range(1) :
+         sim_step = ShangHWSimStep(self)
+         sim_step.option = self.option.copy()
+         sim_step.hls_base_dir = os.path.join(sim_step.hls_base_dir, str(i))
