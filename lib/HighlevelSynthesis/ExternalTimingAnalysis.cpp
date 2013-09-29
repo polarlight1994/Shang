@@ -551,7 +551,7 @@ ExternalTimingAnalysis::calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op) {
   // Only generate the multi-cycles constraints if its slack ratio is smaller than
   // the threshold
   if (SlackRatio <= SDCFilterSlackRatio)
-    return std::ceil(delay.expected());
+    return std::ceil(delay.expected() - 0.5);
 
   // Otherwise just ignore this path.
   return 1;
