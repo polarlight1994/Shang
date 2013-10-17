@@ -110,22 +110,21 @@ def main(builtinParameters = {}):
   option_space_dict['shang_enable_dual_port_ram'] = [ 'true' ]
   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
   option_space_dict['shang_enable_register_sharing'] = [ 'false' ]
-  iterations = 10 if args.mode == TestStep.AlteraSyn \
-               else 10 if args.mode == TestStep.AlteraNls \
-               else 20
+  iterations = 4 if args.mode == TestStep.AlteraSyn \
+               else 1
   option_space_dict['shang_max_scheduling_iteration'] = [ iterations ]
   option_space_dict['shang_dump_intermediate_netlist'] = [ 'true' ]
   option_space_dict['shang_constraints_factor'] = [ -0.1 ]
 
-  option_space_dict['vast_external_enable_timing_constraint'] = [ 'true' ]
-  option_space_dict['vast_external_enable_fast_place_and_route'] = [ 'true' ]
-  option_space_dict['vast_external_enable_place_and_route'] = [ 'true' ]
+  option_space_dict['vast_external_enable_timing_constraint'] = [ 'false' ]
+  option_space_dict['vast_external_enable_fast_place_and_route'] = [ 'false' ]
+  option_space_dict['vast_external_enable_place_and_route'] = [ 'false' ]
   option_space_dict['vast_back_annotation_sigma_ratio'] = [ 0.0 ]
-  option_space_dict['vast_external_tool_sdc_filter_slack_ratio'] = [ 0.2 ] #, 0.2, 0.3, 0.4, 0.5 ]
+  option_space_dict['vast_external_tool_sdc_filter_slack_ratio'] = [ 0.3 ] #, 0.4, 0.5 ]
 
   option_space_dict['timing_model'] = [ 'external' ]
 
-  option_space_dict['fmax'] = [ 400, 450, 500  ] #if args.mode == TestStep.AlteraSyn else [ 480 ]
+  option_space_dict['fmax'] = [ 400 ]
   option_space_dict['device_family'] = [ 'StratixIV' ]
 
   option_space = [ dict(itertools.izip(option_space_dict, opt))  for opt in itertools.product(*option_space_dict.itervalues()) ]
