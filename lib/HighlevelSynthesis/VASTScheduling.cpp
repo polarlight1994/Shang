@@ -504,8 +504,6 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *DstU, DataflowValue Sr
       // There is already 1 cycle slack from the enable signal to DstU.
       delay = std::max(0.0f, delay - 1.0f);
     } else if (DF->getSlackFromLaunch(SrcInst).expected() > delay) {
-      if (DstU->isTerminator())
-        DstU->dump();
       // Try to fold the delay of current pipeline stage to the previous pipeline
       // stage, if the previous pipeline stage has enough slack.
       delay = 0.0f;
