@@ -93,8 +93,6 @@ public:
   path_iterator path_end() { return PathInfo.end(); }
   const_path_iterator path_end() const { return PathInfo.end(); }
 
-  void buildTimingPathOnTheFly(VASTValPtr V);
-
   virtual void releaseMemory();
   virtual bool runOnVASTModule(VASTModule &VM);
   virtual void getAnalysisUsage(AnalysisUsage &AU) const;

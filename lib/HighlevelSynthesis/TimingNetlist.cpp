@@ -233,11 +233,6 @@ TimingNetlist::getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) cons
   return delay_type(MUXDelay);
 }
 
-void TimingNetlist::buildTimingPathOnTheFly(VASTValPtr V) {
-  if (VASTExpr *E = dyn_cast<VASTExpr>(V.get()))
-    BlackBoxDelayEsitmator(PathInfo).estimateTimingOnCone(E);
-}
-
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   BlackBoxDelayEsitmator Estimator(PathInfo);
 
