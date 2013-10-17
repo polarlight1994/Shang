@@ -88,6 +88,10 @@ template<typename T> struct simplify_type<DataflowPtr<T> > {
   }
 };
 
+template<typename T>
+struct simplify_type<const DataflowPtr<T> >
+  : public simplify_type<DataflowPtr<T> > {};
+
 typedef DataflowPtr<Value> DataflowValue;
 typedef DataflowPtr<Instruction> DataflowInst;
 

@@ -101,6 +101,9 @@ template<> struct simplify_type<VASTHandle> {
     return VASTValPtr(Val);
   }
 };
+
+template<>
+struct simplify_type<const VASTHandle> : public simplify_type<VASTHandle> {};
 }
 
 #endif

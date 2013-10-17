@@ -200,12 +200,19 @@ inline raw_ostream &operator<<(raw_ostream &OS, PtrInvPair<T> V) {
 
 // Casting PtrInvPair.
 template<class To, class From>
-struct cast_retty_impl<PtrInvPair<To>, PtrInvPair<From> >{
+struct cast_retty_impl<PtrInvPair<To>, PtrInvPair<From> > {
   typedef PtrInvPair<To> ret_type;
 };
 
+template<class To, class From>
+struct cast_retty_impl<PtrInvPair<To>, const PtrInvPair<From> >
+  : public cast_retty_impl<PtrInvPair<To>, PtrInvPair<From> > {};
+
+
 template<class ToTy, class FromTy>
-struct cast_convert_val<PtrInvPair<ToTy>, PtrInvPair<FromTy>, PtrInvPair<FromTy> >{
+struct cast_convert_val<PtrInvPair<ToTy>,
+                        PtrInvPair<FromTy>,
+                        PtrInvPair<FromTy> > {
   typedef PtrInvPair<ToTy> To;
   typedef PtrInvPair<FromTy> From;
   static typename cast_retty<To, From>::ret_type doit(const From &Val) {
@@ -214,6 +221,16 @@ struct cast_convert_val<PtrInvPair<ToTy>, PtrInvPair<FromTy>, PtrInvPair<FromTy>
   }
 };
 
+
+template<class ToTy, class FromTy>
+struct cast_convert_val<PtrInvPair<ToTy>,
+                        const PtrInvPair<FromTy>,
+                        const PtrInvPair<FromTy> >
+  : public cast_convert_val<PtrInvPair<ToTy>,
+                            PtrInvPair<FromTy>,
+                            PtrInvPair<FromTy> >
+{};
+
 template <typename To, typename From>
 struct isa_impl<PtrInvPair<To>, PtrInvPair<From> > {
   static inline bool doit(const PtrInvPair<From> &Val) {
@@ -221,9 +238,15 @@ struct isa_impl<PtrInvPair<To>, PtrInvPair<From> > {
   }
 };
 
-template<class To, class From>
-struct cast_retty_impl<To, PtrInvPair<From> > : public cast_retty_impl<To, From*>
-{};
+template <typename To, typename From>
+struct isa_impl<PtrInvPair<To>, const PtrInvPair<From> >
+  : public isa_impl<PtrInvPair<To>, PtrInvPair<From> > {};
+
+template<class To, class From> struct cast_retty_impl<To, PtrInvPair<From> >
+  : public cast_retty_impl<To, From*> {};
+
+template<class To, class From> struct cast_retty_impl<To, const PtrInvPair<From> >
+  : public cast_retty_impl<To, const From*> {};
 
 template<class To, class FromTy> struct cast_convert_val<To,
                                                          PtrInvPair<FromTy>,
@@ -234,12 +257,22 @@ template<class To, class FromTy> struct cast_convert_val<To,
   }
 };
 
+template<class To, class FromTy>
+struct cast_convert_val<To,
+                        const PtrInvPair<FromTy>,
+                        const PtrInvPair<FromTy> >
+  : public cast_convert_val<To, PtrInvPair<FromTy>, PtrInvPair<FromTy> >
+{};
+
 template <typename To, typename From>
 struct isa_impl<To, PtrInvPair<From> > {
   static inline bool doit(const PtrInvPair<From> &Val) {
     return !Val.isInverted() && To::classof(Val.get());
   }
 };
+
+template <typename To, typename From>
+struct isa_impl<To, const PtrInvPair<From> > : public isa_impl<To, PtrInvPair<From> > {};
 
 typedef PtrInvPair<VASTValue> VASTValPtr;
 

@@ -20,12 +20,21 @@
 
 namespace llvm {
 template<class LangTraits>
-class lang_raw_ostream : public formatted_raw_ostream {
+class lang_raw_ostream : public raw_ostream {
 protected:
   // Current block indent.
   unsigned Indent;
-  // We are start form a new line?
+  // Are we start form a new line?
   bool newline;
+  /// TheStream - The real stream we output to. We set it to be
+  /// unbuffered, since we're already doing our own buffering.
+  ///
+  raw_ostream *TheStream;
+
+  /// DeleteStream - Do we need to delete TheStream in the
+  /// destructor?
+  ///
+  bool DeleteStream;
 
   static bool isPrepProcChar(char C) {
     return C == LangTraits::PrepProcChar;
@@ -47,7 +56,7 @@ protected:
     return Size;
   }
 
-  virtual void write_impl(const char *Ptr, size_t Size) {
+  virtual void write_impl(const char *Ptr, size_t Size) LLVM_OVERRIDE {
     assert(Size > 0 && "Unexpected writing zero char!");
 
     //Do not indent the preprocessor directive.
@@ -65,17 +74,63 @@ protected:
     // Write the rest lines.
     if (size_t SizeLeft = Size - line_len)
       write_impl(NewLineStart, SizeLeft);
-    else // Compute the column for last line.
-      ComputeColumn(Ptr, Size);
+  }
+
+  /// current_pos - Return the current position within the stream,
+  /// not counting the bytes currently in the buffer.
+  virtual uint64_t current_pos() const LLVM_OVERRIDE {
+    // Our current position in the stream is all the contents which have been
+    // written to the underlying stream (*not* the current position of the
+    // underlying stream).
+    return TheStream->tell();
+  }
+
+  void releaseStream() {
+    // Delete the stream if needed. Otherwise, transfer the buffer
+    // settings from this raw_ostream back to the underlying stream.
+    if (!TheStream)
+      return;
+    if (DeleteStream)
+      delete TheStream;
+    else if (size_t BufferSize = GetBufferSize())
+      TheStream->SetBufferSize(BufferSize);
+    else
+      TheStream->SetUnbuffered();
   }
 
 public:
   explicit lang_raw_ostream(unsigned Ind = 0)
-    : formatted_raw_ostream(), Indent(Ind), newline(true) {}
+    : raw_ostream(), Indent(Ind), newline(true), TheStream(0),
+      DeleteStream(false) {}
 
   explicit lang_raw_ostream(raw_ostream &Stream, bool Delete = false,
                             unsigned Ind = 0)
-    : formatted_raw_ostream(Stream, Delete), Indent(Ind), newline(true) {}
+    : raw_ostream(), Indent(Ind), newline(true), TheStream(&Stream),
+      DeleteStream(false) {
+    setStream(Stream, Delete);
+  }
+
+  ~lang_raw_ostream() {
+    flush();
+    releaseStream();
+  }
+
+  void setStream(raw_ostream &Stream, bool Delete = false) {
+    releaseStream();
+
+    TheStream = &Stream;
+    DeleteStream = Delete;
+
+    // This formatted_raw_ostream inherits from raw_ostream, so it'll do its
+    // own buffering, and it doesn't need or want TheStream to do another
+    // layer of buffering underneath. Resize the buffer to what TheStream
+    // had been using, and tell TheStream not to do its own buffering.
+    if (size_t BufferSize = TheStream->GetBufferSize())
+      SetBufferSize(BufferSize);
+    else
+      SetUnbuffered();
+    TheStream->SetUnbuffered();
+  }
 
   template<typename PosfixT>
   lang_raw_ostream &enter_block(PosfixT Posfix,
