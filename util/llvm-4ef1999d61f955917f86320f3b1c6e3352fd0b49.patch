@@ -1,0 +1,74 @@
+From 98812df6a83844a2f5eaff4c11cf647c97fcc2a3 Mon Sep 17 00:00:00 2001
+From: ether <etherzhhb@gmail.com>
+Date: Wed, 30 Jan 2013 17:00:16 +0800
+Subject: [PATCH] wip
+
+---
+ cmake/modules/LLVMProcessSources.cmake   |   17 +++++++++++++++--
+ include/llvm/IR/Instruction.h            |    2 +-
+ lib/Transforms/Scalar/CodeGenPrepare.cpp |    2 +-
+ 3 files changed, 17 insertions(+), 4 deletions(-)
+
+diff --git a/cmake/modules/LLVMProcessSources.cmake b/cmake/modules/LLVMProcessSources.cmake
+index 2cef6cf..618d39a 100644
+--- a/cmake/modules/LLVMProcessSources.cmake
++++ b/cmake/modules/LLVMProcessSources.cmake
+@@ -63,14 +63,27 @@ function(llvm_process_sources OUT_VAR)
+       llvm_replace_compiler_option(CMAKE_CXX_FLAGS "/EHsc" "/EHs-c-")
+       add_definitions( /D_HAS_EXCEPTIONS=0 )
+     endif()
+-  endif()
++  else ( NOT LLVM_REQUIRES_EH )
++    if( LLVM_COMPILER_IS_GCC_COMPATIBLE )
++      remove_definitions( -fno-exceptions )
++    elseif( MSVC )
++      llvm_replace_compiler_option(CMAKE_CXX_FLAGS "/EHs-c-" "/EHsc")
++      remove_definitions( /D_HAS_EXCEPTIONS=0 )
++    endif()
++  endif( NOT LLVM_REQUIRES_EH )
+   if( NOT LLVM_REQUIRES_RTTI )
+     if( LLVM_COMPILER_IS_GCC_COMPATIBLE )
+       llvm_replace_compiler_option(CMAKE_CXX_FLAGS "-frtti" "-fno-rtti")
+     elseif( MSVC )
+       llvm_replace_compiler_option(CMAKE_CXX_FLAGS "/GR" "/GR-")
+     endif()
+-  endif()
++  else ( NOT LLVM_REQUIRES_RTTI )
++    if( LLVM_COMPILER_IS_GCC_COMPATIBLE )
++      llvm_replace_compiler_option(CMAKE_CXX_FLAGS "-fno-rtti" "-frtti")
++    elseif( MSVC )
++      llvm_replace_compiler_option(CMAKE_CXX_FLAGS "/GR-" "/GR")
++    endif()
++  endif( NOT LLVM_REQUIRES_RTTI )
+ 
+   set( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" PARENT_SCOPE )
+   set( ${OUT_VAR} ${sources} PARENT_SCOPE )
+diff --git a/include/llvm/IR/Instruction.h b/include/llvm/IR/Instruction.h
+index 5721d8f..e3deb79 100644
+--- a/include/llvm/IR/Instruction.h
++++ b/include/llvm/IR/Instruction.h
+@@ -85,7 +85,7 @@ public:
+   const char *getOpcodeName() const { return getOpcodeName(getOpcode()); }
+   bool isTerminator() const { return isTerminator(getOpcode()); }
+   bool isBinaryOp() const { return isBinaryOp(getOpcode()); }
+-  bool isShift() { return isShift(getOpcode()); }
++  bool isShift() const { return isShift(getOpcode()); }
+   bool isCast() const { return isCast(getOpcode()); }
+ 
+   static const char* getOpcodeName(unsigned OpCode);
+diff --git a/lib/Transforms/Scalar/CodeGenPrepare.cpp b/lib/Transforms/Scalar/CodeGenPrepare.cpp
+index 007e9b7..8e68967 100644
+--- a/lib/Transforms/Scalar/CodeGenPrepare.cpp
++++ b/lib/Transforms/Scalar/CodeGenPrepare.cpp
+@@ -1949,7 +1949,7 @@ bool CodeGenPrepare::OptimizeInst(Instruction *I) {
+     return OptimizeCallInst(CI);
+ 
+   if (SelectInst *SI = dyn_cast<SelectInst>(I))
+-    return OptimizeSelectInst(SI);
++    if (TLI)  return OptimizeSelectInst(SI);
+ 
+   return false;
+ }
+-- 
+1.7.9
+

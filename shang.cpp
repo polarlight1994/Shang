@@ -126,7 +126,6 @@ void addIROptimizationPasses(PassManager &HLSPasses) {
   Builder.LibraryInfo->disableAllFunctions();
   Builder.OptLevel = 3;
   Builder.SizeLevel = 2;
-  Builder.DisableSimplifyLibCalls = true;
   Builder.Inliner = createHLSInlinerPass();
 
   HLSPasses.add(createVerifierPass());
@@ -135,7 +134,7 @@ void addIROptimizationPasses(PassManager &HLSPasses) {
   Builder.populateModulePassManager(HLSPasses);
   Builder.populateLTOPassManager(HLSPasses,
                                  /*Internalize*/false,
-                                 /*RunInliner*/true);
+                                 /*RunInliner*/false);
 }
 
 // main - Entry point for the sync compiler.
@@ -186,8 +185,7 @@ int main(int argc, char **argv) {
     // This is the final bitcode, internalize it to expose more optimization
     // opportunities. Note that we should internalize it before SW/HW partition,
     // otherwise we may lost some information that help the later internalize.
-    const char *ExportList[] = { "main" };
-    PreHLSPasses.add(createInternalizePass(ExportList));
+    PreHLSPasses.add(createInternalizePass("main", None));
 
     // Perform Software/Hardware partition.
     PreHLSPasses.add(createFunctionFilterPass());

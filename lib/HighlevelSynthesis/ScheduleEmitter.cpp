@@ -226,9 +226,9 @@ int top_sort_schedule(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) {
   return 0;
 }
 
-static int top_sort_schedule_wrapper(const void *LHS, const void *RHS) {
-  return top_sort_schedule(*reinterpret_cast<const VASTSchedUnit* const *>(LHS),
-                           *reinterpret_cast<const VASTSchedUnit* const *>(RHS));
+static int top_sort_schedule_wrapper(VASTSchedUnit *const *LHS,
+                                     VASTSchedUnit *const *RHS) {
+  return top_sort_schedule(*LHS, *RHS);
 }
 
 //===----------------------------------------------------------------------===//

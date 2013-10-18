@@ -348,10 +348,9 @@ VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
   OS.always_ff_end(false);
 }
 
-static inline int base_addr_less(const void *P1, const void *P2) {
-  #define T(x) reinterpret_cast<const std::pair<GlobalVariable*, unsigned>*>(x)
-
-  return T(P2)->second - T(P1)->second;
+static inline int base_addr_less(const std::pair<GlobalVariable*, unsigned> *P1,
+                                 const std::pair<GlobalVariable*, unsigned> *P2) {
+  return P2->second - P1->second;
 }
 
 typedef SmallVector<uint8_t, 1024> ByteBuffer;

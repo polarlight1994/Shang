@@ -153,9 +153,9 @@ static int top_sort_idx(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) {
   return 0;
 }
 
-static int top_sort_idx_wrapper(const void *LHS, const void *RHS) {
-  return top_sort_idx(*reinterpret_cast<const VASTSchedUnit* const *>(LHS),
-                      *reinterpret_cast<const VASTSchedUnit* const *>(RHS));
+static int top_sort_idx_wrapper(VASTSchedUnit *const *LHS,
+                                VASTSchedUnit *const *RHS) {
+  return top_sort_idx(*LHS, *RHS);
 }
 
 void IntervalFixer::initialize() {

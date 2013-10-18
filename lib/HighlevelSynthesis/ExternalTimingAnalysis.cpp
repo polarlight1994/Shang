@@ -914,7 +914,8 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   }
 
   const char *LUAPath[] = { "TimingAnalysis", "ExternalTool" };
-  sys::Path quartus(getStrValueFromEngine(LUAPath));
+
+  SmallString<256> quartus(getStrValueFromEngine(LUAPath));
   std::vector<const char*> args;
 
   std::string DriverScriptPath = getDriverScriptPath();
@@ -925,17 +926,15 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   args.push_back(DriverScriptPath.c_str());
   args.push_back(0);
 
-  sys::Path Empty;
-  const sys::Path *Redirects[] = { &Empty, &Empty, &Empty };
+  StringRef Empty;
+  const StringRef *Redirects[] = { &Empty, &Empty, &Empty };
   errs() << "Running '" << quartus.str() << " ' program... ";
   {
 
     NamedRegionTimer T("External Tool Run Time", GroupName, TimePassesIsEnabled);
     std::string ErrorInfo;
-    if (LLVM_UNLIKELY(sys::Program::ExecuteAndWait(quartus, &args[0], 0,
-                                                   0/*Redirects*/,
-                                                   ExternalToolTimeOut, 0,
-                                                   &ErrorInfo))) {
+    if (LLVM_UNLIKELY(sys::ExecuteAndWait(quartus, &args[0], 0, 0/*Redirects*/,
+                                          ExternalToolTimeOut, 0, &ErrorInfo))) {
       errs() << "Error: " << ErrorInfo <<'\n';
       report_fatal_error("External timing analyze fail!\n");
       return false;

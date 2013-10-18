@@ -680,31 +680,52 @@ struct CaseRange {
 
 typedef std::vector<CaseRange>           CaseVector;
 typedef std::vector<CaseRange>::iterator CaseItr;
+
+
+
+/// The comparison function for sorting the switch case values in the vector.
+/// WARNING: Case ranges should be disjoint!
+struct CaseCmp {
+  bool operator () (const CaseRange& C1,
+                    const CaseRange& C2) {
+    return C1.Low.slt(C2.High);
+  }
+};
 }
 
 // Clusterify - Transform simple list of Cases into list of CaseRange's
 static unsigned Clusterify(CaseVector& Cases, SwitchInst *SI) {
-  IntegersSubsetToBB TheClusterifier;
+  unsigned numCmps = 0;
 
   // Start with "simple" cases
-  for (SwitchInst::CaseIt i = SI->case_begin(), e = SI->case_end();
-       i != e; ++i) {
-    BasicBlock *SuccBB = i.getCaseSuccessor();
-    IntegersSubset CaseRanges = i.getCaseValueEx();
-    TheClusterifier.add(CaseRanges, SuccBB);
+  for (SwitchInst::CaseIt i = SI->case_begin(), e = SI->case_end(); i != e; ++i)
+    Cases.push_back(CaseRange(i.getCaseValue()->getValue(),
+                              i.getCaseValue()->getValue(),
+                              i.getCaseSuccessor()));
+
+  std::sort(Cases.begin(), Cases.end(), CaseCmp());
+
+  // Merge case into clusters
+  if (Cases.size()>=2) {
+    for (CaseItr I=Cases.begin(), J=llvm::next(Cases.begin()); J!=Cases.end(); ) {
+      int64_t nextValue = J->Low.getSExtValue();
+      int64_t currentValue = I->High.getSExtValue();
+      BasicBlock* nextBB = J->BB;
+      BasicBlock* currentBB = I->BB;
+
+      // If the two neighboring cases go to the same destination, merge them
+      // into a single case.
+      if ((nextValue-currentValue==1) && (currentBB == nextBB)) {
+        I->High = J->High;
+        J = Cases.erase(J);
+      } else {
+        I = J++;
+      }
+    }
   }
 
-  TheClusterifier.optimize();
-
-  size_t numCmps = 0;
-  for (IntegersSubsetToBB::RangeIterator i = TheClusterifier.begin(),
-       e = TheClusterifier.end(); i != e; ++i, ++numCmps) {
-    IntegersSubsetToBB::Cluster &C = *i;
-
-    // FIXME: Currently work with ConstantInt based numbers.
-    // Changing it to APInt based is a pretty heavy for this commit.
-    Cases.push_back(CaseRange(C.first.getLow(), C.first.getHigh(), C.second));
-    if (C.first.isSingleNumber())
+  for (CaseItr I=Cases.begin(), E=Cases.end(); I!=E; ++I, ++numCmps) {
+    if (I->Low != I->High)
       // A range counts double, since it requires two compares.
       ++numCmps;
   }

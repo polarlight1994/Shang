@@ -461,14 +461,11 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(ArrayRef<MUXFI*> FIs) {
   retimeLatchesOneCycleEarlier(FIs.begin(), FIs.end());
 }
 
-static int
-sort_by_slot(const void *LHS, const void *RHS) {
-  typedef const MUXFI T;
-
-  if (reinterpret_cast<T*>(LHS)->Slack < reinterpret_cast<T*>(RHS)->Slack)
+static int sort_by_slot(MUXFI *const *LHS, MUXFI *const *RHS) {
+  if ((*LHS)->Slack < (*RHS)->Slack)
     return -1;
 
-  if (reinterpret_cast<T*>(LHS)->Slack > reinterpret_cast<T*>(RHS)->Slack)
+  if ((*LHS)->Slack > (*RHS)->Slack)
     return 1;
 
   return 0;

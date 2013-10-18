@@ -412,7 +412,7 @@ void VASTScheduling::getAnalysisUsage(AnalysisUsage &AU) const  {
   AU.addRequired<LoopInfo>();
   AU.addRequired<BranchProbabilityInfo>();
   // There is a bug in BlockFrequencyInfo :(
-  // AU.addRequired<BlockFrequencyInfo>();
+  AU.addRequired<BlockFrequencyInfo>();
 }
 
 INITIALIZE_PASS_BEGIN(VASTScheduling,

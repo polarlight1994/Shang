@@ -14,6 +14,7 @@
 #include "shang/Passes.h"
 
 #include "llvm/Pass.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #define DEBUG_TYPE "object-based-aa"
