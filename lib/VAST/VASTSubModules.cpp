@@ -18,7 +18,7 @@
 
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/Support/Format.h"
-#include "llvm/Support/PathV2.h"
+#include "llvm/Support/Path.h"
 #define DEBUG_TYPE "vast-submodules"
 #include "llvm/Support/Debug.h"
 

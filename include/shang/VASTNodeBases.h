@@ -331,7 +331,7 @@ public:
   }
 
   // Return the underlying VASTValue.
-  VASTValPtr get() const {
+  const VASTValPtr &get() const {
     assert(!isInvalid() && "Not a valid Use!");
     return V;
   }
@@ -357,7 +357,7 @@ public:
     get().printAsOperand(OS);
   }
 
-  VASTValPtr unwrap() const { return V; }
+  const VASTValPtr &unwrap() const { return V; }
 };
 
 template<>
@@ -498,19 +498,18 @@ public:
 
 // simplify_type - Allow clients to treat VASTRValue just like VASTValues when
 // using casting operators.
-template<> struct simplify_type<const VASTUse> {
-  typedef VASTValPtr SimpleType;
+template<> struct simplify_type<VASTUse> {
+  typedef const VASTValPtr &SimpleType;        // The real type this represents...
+
+  // An accessor to get the real value...
   static SimpleType getSimplifiedValue(const VASTUse &Val) {
     return Val.unwrap();
   }
 };
 
-template<> struct simplify_type<VASTUse> {
-  typedef VASTValPtr SimpleType;
-  static SimpleType getSimplifiedValue(const VASTUse &Val) {
-    return Val.unwrap();
-  }
-};
+template<>
+struct simplify_type<const VASTUse> : public simplify_type<VASTUse> {};
+
 
 class VASTNamedValue : public VASTValue {
 protected:

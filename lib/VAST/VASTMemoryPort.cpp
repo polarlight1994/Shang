@@ -20,7 +20,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Support/PathV2.h"
+#include "llvm/Support/Path.h"
 #define DEBUG_TYPE "vast-memory-bus"
 #include "llvm/Support/Debug.h"
 
