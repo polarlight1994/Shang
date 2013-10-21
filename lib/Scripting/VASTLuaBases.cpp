@@ -527,6 +527,8 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
       Expr->visitConeTopOrder(Visited, Printer);
 
     OS << "\n// At slot " << S->SlotNum;
+    if (S->IsSubGrp)
+      OS << " (SubGrp)";
     if (BasicBlock *BB = S->getParent()) OS << ", BB: " << BB->getName();
     OS << '\n';
 
