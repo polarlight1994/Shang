@@ -439,7 +439,7 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
 }
 
 void ExternalTimingAnalysis::writeNetlist() const {
-  OwningPtr<raw_fd_ostream> Out(createTmpFile(VM.getName() + ".sv"));
+  OwningPtr<raw_fd_ostream> Out(createTmpFile(getNetlistPath()));
 
   // Read the result from the scripting engine.
   const char *FUTemplatePath[] = { "FUs", "CommonTemplate" };
