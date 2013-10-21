@@ -471,7 +471,7 @@ RTLModuleName = [[{{ [test_name, "_RTL_DUT"]|join }}]]
 
 Functions.{{ hardware_function }} = RTLModuleName
 
-TimingAnalysis.ExternalTool = [[{{ [quartus_bin, 'quartus_sh']|joinpath }}]]
+TimingAnalysis.ExternalTool = [[{{ [quartus_bin, 'quartus_sta']|joinpath }}]]
 TimingAnalysis.Device = [[{{ fpga_device }}]]
 
 local FMAX = {{ fmax }}
