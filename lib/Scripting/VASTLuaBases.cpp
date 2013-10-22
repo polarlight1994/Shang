@@ -354,13 +354,34 @@ VASTSubModule *VASTModule::addSubmodule(const Twine &Name, unsigned Num) {
   return M;
 }
 
-VASTWrapper *VASTModule::addWrapper(const Twine &Name, unsigned BitWidth,
-                                    Value* LLVMValue) {
+VASTWrapper *VASTModule::getOrCreateWrapper(const Twine &Name, unsigned BitWidth,
+                                            Value *LLVMValue) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
-  assert(Entry.second == 0 && "Symbol already exist!");
-  // Allocate the wire and the use.
+  if (Entry.second != 0) {
+    VASTWrapper *W = cast<VASTWrapper>(Entry.second);
+    assert(W->getLLVMValue() == LLVMValue
+           && "Symbol already exist, with different value!");
+    return W;
+  }
 
   VASTWrapper *Wire = new VASTWrapper(Entry.getKeyData(), BitWidth, LLVMValue);
+  Entry.second = Wire;
+  Wires.push_back(Wire);
+
+  return Wire;
+}
+
+VASTWrapper *VASTModule::getOrCreateWrapper(const Twine &Name, unsigned BitWidth,
+                                            VASTNode *Node) {
+  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
+  if (Entry.second != 0) {
+    VASTWrapper *W = cast<VASTWrapper>(Entry.second);
+    assert(W->getVASTNode() == Node
+           && "Symbol already exist, with different value!");
+    return W;
+  }
+
+  VASTWrapper *Wire = new VASTWrapper(Entry.getKeyData(), BitWidth, Node);
   Entry.second = Wire;
   Wires.push_back(Wire);
 

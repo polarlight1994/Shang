@@ -295,7 +295,10 @@ public:
                                unsigned InitVal = 0,
                                VASTSelector::Type T = VASTSelector::Temp);
 
-  VASTWrapper *addWrapper(const Twine &Name, unsigned BitWidth, Value* LLVMValue = 0);
+  VASTWrapper *getOrCreateWrapper(const Twine &Name, unsigned BitWidth,
+                          Value* LLVMValue);
+  VASTWrapper *getOrCreateWrapper(const Twine &Name, unsigned BitWidth,
+                          VASTNode* Node);
 
   selector_iterator selector_begin() { return Selectors.begin(); }
   selector_iterator selector_end() { return Selectors.end(); }

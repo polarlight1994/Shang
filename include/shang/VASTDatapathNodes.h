@@ -294,19 +294,24 @@ VASTExpr::visitConeTopOrder(std::set<VASTExpr*> &Visited, T &F) {
 }
 
 class VASTWrapper :public VASTNamedValue, public ilist_node<VASTWrapper> {
-  Value *LLVMValue;
+  PointerUnion<Value*,VASTNode*> Data;
 
   friend struct ilist_sentinel_traits<VASTWrapper>;
   VASTWrapper() : VASTNamedValue(vastWrapper, 0, 0) {}
 
 public:
 
-  VASTWrapper(const char *Name, unsigned BitWidth, Value* LLVMValue = 0)
-    : VASTNamedValue(vastWrapper, Name, BitWidth), LLVMValue(LLVMValue) {}
+  VASTWrapper(const char *Name, unsigned BitWidth, Value* LLVMValue)
+    : VASTNamedValue(vastWrapper, Name, BitWidth), Data(LLVMValue) {}
 
-  Value *getValue() const { return LLVMValue; }
+  VASTWrapper(const char *Name, unsigned BitWidth, VASTNode* Node)
+    : VASTNamedValue(vastWrapper, Name, BitWidth), Data(Node) {}
+
+  Value *getLLVMValue() const { return Data.dyn_cast<Value*>(); }
   // Return true if the wire represents
   bool isX() const;
+
+  VASTNode *getVASTNode() const { return Data.dyn_cast<VASTNode*>(); }
 
   virtual void printDecl(raw_ostream &OS) const;
 
