@@ -567,7 +567,7 @@ void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache, VASTSelector *Dst
   }
 
   // If Define Value is immediate or symbol, skip it.
-  if (!isa<VASTWire>(DepTree) && !isa<VASTExpr>(DepTree)) return;
+  if (!isa<VASTExpr>(DepTree)) return;
 
   Cache.annotatePathInterval(DepTree, Dst, ReadSlots);
 }

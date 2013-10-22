@@ -293,16 +293,16 @@ VASTExpr::visitConeTopOrder(std::set<VASTExpr*> &Visited, T &F) {
   }
 }
 
-class VASTWire :public VASTNamedValue, public ilist_node<VASTWire> {
+class VASTWrapper :public VASTNamedValue, public ilist_node<VASTWrapper> {
   Value *LLVMValue;
 
-  friend struct ilist_sentinel_traits<VASTWire>;
-  VASTWire() : VASTNamedValue(vastWire, 0, 0) {}
+  friend struct ilist_sentinel_traits<VASTWrapper>;
+  VASTWrapper() : VASTNamedValue(vastWrapper, 0, 0) {}
 
 public:
 
-  VASTWire(const char *Name, unsigned BitWidth, Value* LLVMValue = 0)
-    : VASTNamedValue(vastWire, Name, BitWidth), LLVMValue(LLVMValue) {}
+  VASTWrapper(const char *Name, unsigned BitWidth, Value* LLVMValue = 0)
+    : VASTNamedValue(vastWrapper, Name, BitWidth), LLVMValue(LLVMValue) {}
 
   Value *getValue() const { return LLVMValue; }
   // Return true if the wire represents
@@ -311,13 +311,13 @@ public:
   virtual void printDecl(raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTWire *A) { return true; }
+  static inline bool classof(const VASTWrapper *A) { return true; }
   static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastWire;
+    return A->getASTType() == vastWrapper;
   }
 };
 
-typedef PtrInvPair<VASTWire> VASTWirePtr;
+typedef PtrInvPair<VASTWrapper> VASTWirePtr;
 class VASTExprBuilderContext;
 
 // The container to hold all VASTExprs in data-path of the design.

@@ -274,8 +274,8 @@ VASTInPort::VASTInPort(VASTNode *Node) : VASTPort(vastInPort) {
     Sel->setParent(this);
 }
 
-VASTWire *VASTInPort::getValue() const {
-  return cast<VASTWire>(Contents.Node);
+VASTWrapper *VASTInPort::getValue() const {
+  return cast<VASTWrapper>(Contents.Node);
 }
 
 const char *VASTInPort::getNameImpl() const {
@@ -354,13 +354,13 @@ VASTSubModule *VASTModule::addSubmodule(const Twine &Name, unsigned Num) {
   return M;
 }
 
-VASTWire *VASTModule::addWire(const Twine &Name, unsigned BitWidth,
-                              Value* LLVMValue) {
+VASTWrapper *VASTModule::addWrapper(const Twine &Name, unsigned BitWidth,
+                                    Value* LLVMValue) {
   SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
   assert(Entry.second == 0 && "Symbol already exist!");
   // Allocate the wire and the use.
 
-  VASTWire *Wire = new VASTWire(Entry.getKeyData(), BitWidth, LLVMValue);
+  VASTWrapper *Wire = new VASTWrapper(Entry.getKeyData(), BitWidth, LLVMValue);
   Entry.second = Wire;
   Wires.push_back(Wire);
 
@@ -780,7 +780,7 @@ VASTPort *VASTModule::addPort(VASTNode *Node, bool IsInput) {
 
 VASTInPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
                                      PortTypes T /*= Others*/) {
-  VASTWire *Wire = addWire(Name, BitWidth);
+  VASTWrapper *Wire = addWrapper(Name, BitWidth);
   VASTPort *Port = createPort(Wire, true);
 
   if (T < SpecialInPortEnd) {

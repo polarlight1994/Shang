@@ -20,7 +20,7 @@
 
 namespace llvm {
 class GlobalVariable;
-class VASTWire;
+class VASTWrapper;
 class VASTSelector;
 class Instruction;
 

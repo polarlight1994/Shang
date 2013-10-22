@@ -432,13 +432,13 @@ void VASTExpr::dropUses() {
 }
 
 //----------------------------------------------------------------------------//
-bool VASTWire::isX() const {
+bool VASTWrapper::isX() const {
   Value *V = getValue();
 
   return V && isa<UndefValue>(V);
 }
 
-void VASTWire::printDecl(raw_ostream &OS) const {
+void VASTWrapper::printDecl(raw_ostream &OS) const {
   if (use_empty()) return;
 
   // Print the wrapper for the LLVM Values.

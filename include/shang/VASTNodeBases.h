@@ -31,7 +31,7 @@ class Value;
 class VASTNamedValue;
 class VASTValue;
 class VASTExpr;
-class VASTWire;
+class VASTWrapper;
 class VASTSeqValue;
 class VASTSelector;
 class VASTSymbol;
@@ -50,7 +50,7 @@ public:
     vastFirstValueType = vastImmediate,
     vastSymbol,
     vastExpr,
-    vastWire,
+    vastWrapper,
     vastSeqValue,
 
     vastLastValueType = vastSeqValue,
@@ -515,7 +515,7 @@ class VASTNamedValue : public VASTValue {
 protected:
   VASTNamedValue(VASTTypes T, const char *Name, unsigned BitWidth)
     : VASTValue(T, BitWidth) {
-    assert((T == vastSymbol || T == vastWire || T == vastSeqValue)
+    assert((T == vastSymbol || T == vastWrapper || T == vastSeqValue)
            && "Bad DeclType!");
     Contents.Name = Name;
   }
@@ -538,7 +538,7 @@ public:
   static inline bool classof(const VASTNamedValue *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSymbol ||
-           A->getASTType() == vastWire ||
+           A->getASTType() == vastWrapper ||
            A->getASTType() == vastSeqValue;
   }
 };

@@ -68,7 +68,7 @@ bool VASTSelector::isTrivialFannin(const VASTLatch &L) const {
       return true;
 
   // Ignore the X values.
-  if (VASTWire *W = dyn_cast<VASTWire>(FIVal.get()))
+  if (VASTWrapper *W = dyn_cast<VASTWrapper>(FIVal.get()))
     if (W->isX() && IgnoreXFanins)
       return true;
 

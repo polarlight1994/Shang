@@ -328,7 +328,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
     }
     
     // If the GV is assigned to the memory port 0, create a wrapper wire for it.
-    return indexVASTExpr(GV, VM->addWire(WrapperName, SizeInBits, GV));
+    return indexVASTExpr(GV, VM->addWrapper(WrapperName, SizeInBits, GV));
   }
 
   if (GEPOperator *GEP = dyn_cast<GEPOperator>(V))
@@ -367,7 +367,8 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
   if (UndefValue *UDef = dyn_cast<UndefValue>(V)) {
     unsigned SizeInBits = getValueSizeInBits(UDef);
     SmallString<36> S;
-    return indexVASTExpr(V, VM->addWire(translatePtr2Str(V, S), SizeInBits, UDef));
+    return indexVASTExpr(V, VM->addWrapper(translatePtr2Str(V, S), SizeInBits,
+                                           UDef));
   }
 
   if (ConstantPointerNull *PtrNull = dyn_cast<ConstantPointerNull>(V)) {

@@ -27,7 +27,7 @@
 
 namespace llvm {
 class Value;
-class VASTWire;
+class VASTWrapper;
 class VASTRegister;
 class VASTBlockRAM;
 class VASTSubModule;
@@ -85,7 +85,7 @@ class VASTInPort : public VASTPort {
   unsigned getBitWidthImpl() const;
 public:
   explicit VASTInPort(VASTNode *N);
-  VASTWire *getValue() const;
+  VASTWrapper *getValue() const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTInPort *A) { return true; }
@@ -101,7 +101,7 @@ public:
   typedef PortVector::iterator port_iterator;
   typedef PortVector::const_iterator const_port_iterator;
 
-  typedef ilist<VASTWire> WireVector;
+  typedef ilist<VASTWrapper> WireVector;
   typedef WireVector::iterator wire_iterator;
 
   typedef ilist<VASTRegister> RegisterVector;
@@ -295,7 +295,7 @@ public:
                                unsigned InitVal = 0,
                                VASTSelector::Type T = VASTSelector::Temp);
 
-  VASTWire *addWire(const Twine &Name, unsigned BitWidth, Value* LLVMValue = 0);
+  VASTWrapper *addWrapper(const Twine &Name, unsigned BitWidth, Value* LLVMValue = 0);
 
   selector_iterator selector_begin() { return Selectors.begin(); }
   selector_iterator selector_end() { return Selectors.end(); }
