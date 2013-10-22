@@ -510,7 +510,6 @@ template<> struct simplify_type<VASTUse> {
 template<>
 struct simplify_type<const VASTUse> : public simplify_type<VASTUse> {};
 
-
 class VASTNamedValue : public VASTValue {
 protected:
   VASTNamedValue(VASTTypes T, const char *Name, unsigned BitWidth)

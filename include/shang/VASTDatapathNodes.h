@@ -164,6 +164,10 @@ public:
     LastICmpOpc = dpUGT,
     // Lookup-tables.
     dpLUT,
+    // Combinational ROM, a big lookup table.
+    // The bitwidth of the ROM is stored in the second operand, i.e. the wrapper
+    // that wrap the actually ROM context.
+    dpCROM,
     //
     dpKeep
   };
@@ -199,6 +203,11 @@ public:
   bool printFUInstantiation(raw_ostream &OS) const;
 
   const char *getLUT() const;
+  unsigned getCombROMWordSizeInBits() const {
+    assert(getOpcode() == VASTExpr::dpCROM && "Incorrect expr type!");
+    return getOperand(1)->getBitWidth();
+  }
+
   bool isTimingBarrier() const {
     return getOpcode() == dpKeep;
   }

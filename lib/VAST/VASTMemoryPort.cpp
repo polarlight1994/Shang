@@ -29,11 +29,11 @@ STATISTIC(NumUnusedPorts, "Number of unused ports in memory bus");
 
 VASTMemoryBus::VASTMemoryBus(unsigned BusNum, unsigned AddrSize,
                              unsigned DataSize, bool RequireByteEnable,
-                             bool IsDualPort)
+                             bool IsDualPort, bool IsCombROM)
   : VASTSubModuleBase(VASTNode::vastMemoryBus, "", BusNum),
     AddrSize(AddrSize), DataSize(DataSize),
     RequireByteEnable(RequireByteEnable), IsDualPort(IsDualPort),
-    CurrentOffset(0) {}
+    IsCombROM(IsCombROM), EndByteAddr(0) {}
 
 void VASTMemoryBus::addBasicPins(VASTModule *VM, unsigned PortNum) {
   assert(!isDefault() && "Just handle internal memory here");
@@ -123,21 +123,21 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
 }
 
 void VASTMemoryBus::addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes) {
-  DEBUG(dbgs() << GV->getName() << " CurOffset: " << CurrentOffset << "\n");
+  DEBUG(dbgs() << GV->getName() << " CurOffset: " << EndByteAddr << "\n");
   // Insert the GlobalVariable to the offset map, and calculate its offset.
   // Please note that the computation is in the byte address.
   assert(GV->getAlignment() >= (DataSize / 8) && "Bad alignment!");
-  assert(CurrentOffset % (DataSize / 8) == 0 && "Bad CurrentOffset!");
-  CurrentOffset = RoundUpToAlignment(CurrentOffset, GV->getAlignment());
-  DEBUG(dbgs() << "Roundup to " << CurrentOffset << " according to alignment "
+  assert(EndByteAddr % (DataSize / 8) == 0 && "Bad CurrentOffset!");
+  EndByteAddr = RoundUpToAlignment(EndByteAddr, GV->getAlignment());
+  DEBUG(dbgs() << "Roundup to " << EndByteAddr << " according to alignment "
          << GV->getAlignment() << '\n');
-  bool inserted = BaseAddrs.insert(std::make_pair(GV, CurrentOffset)).second;
+  bool inserted = BaseAddrs.insert(std::make_pair(GV, EndByteAddr)).second;
   assert(inserted && "GV had already added!");
   (void) inserted;
   DEBUG(dbgs() << "Size of GV " << SizeInBytes << " Offset increase to "
-         << (CurrentOffset + SizeInBytes) << "\n");
-  CurrentOffset = RoundUpToAlignment(CurrentOffset + SizeInBytes, DataSize / 8);
-  DEBUG(dbgs() << "Roundup to Word address " << CurrentOffset << "\n");
+         << (EndByteAddr + SizeInBytes) << "\n");
+  EndByteAddr = RoundUpToAlignment(EndByteAddr + SizeInBytes, DataSize / 8);
+  DEBUG(dbgs() << "Roundup to Word address " << EndByteAddr << "\n");
 }
 
 unsigned VASTMemoryBus::getStartOffset(GlobalVariable *GV) const {
@@ -244,7 +244,7 @@ void VASTMemoryBus::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
 }
 
 void VASTMemoryBus::printDecl(raw_ostream &OS) const {
-  if (isDefault()) return;
+  if (isDefault() || isCombinationalROM()) return;
 
   printPortDecl(OS, 0);
   if (isDualPort()) printPortDecl(OS, 1);
@@ -259,8 +259,8 @@ void VASTMemoryBus::printBank(vlang_raw_ostream &OS) const {
   unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
   assert(ByteAddrWidth && "Should print as block RAM!");
 
-  assert(CurrentOffset % BytesPerWord == 0 && "CurrentOffset not aligned!");
-  unsigned NumWords = (CurrentOffset / BytesPerWord);
+  assert(EndByteAddr % BytesPerWord == 0 && "CurrentOffset not aligned!");
+  unsigned NumWords = (EndByteAddr / BytesPerWord);
   // use a multi-dimensional packed array to model individual bytes within the
   // word. Please note that the bytes is ordered from 0 to 7 ([0:7]) because
   // so that the byte address can access the correct byte.
@@ -355,7 +355,8 @@ static inline int base_addr_less(const std::pair<GlobalVariable*, unsigned> *P1,
 
 typedef SmallVector<uint8_t, 1024> ByteBuffer;
 
-static unsigned FillByteBuffer(ByteBuffer &Buf, uint64_t Val, unsigned SizeInBytes) {
+static
+unsigned FillByteBuffer(ByteBuffer &Buf, uint64_t Val, unsigned SizeInBytes) {
   SizeInBytes = std::max(1u, SizeInBytes);
   for (unsigned i = 0; i < SizeInBytes; ++i) {
     Buf.push_back(Val & 0xff);
@@ -394,29 +395,101 @@ static void FillByteBuffer(ByteBuffer &Buf, const Constant *C) {
   llvm_unreachable("Unsupported constant type to bind to script engine!");
 }
 
-static unsigned padZeroToByteAddr(raw_ostream &OS, unsigned CurByteAddr,
-                                  unsigned TargetByteAddr,
-                                  unsigned WordSizeInBytes) {
-  assert(TargetByteAddr % WordSizeInBytes == 0 && "Bad target byte address!");
-  assert(CurByteAddr <= TargetByteAddr && "Bad current byte address!");
-  while (CurByteAddr != TargetByteAddr) {
-    OS << "00";
-    ++CurByteAddr;
-    if (CurByteAddr % WordSizeInBytes == 0)
-      OS << "// " << CurByteAddr << '\n';
+namespace {
+struct MemContextWriter {
+  raw_ostream &OS;
+  typedef SmallVector<std::pair<GlobalVariable*, unsigned>, 8> VarVector;
+  VarVector &Vars;
+  unsigned WordSizeInBytes;
+  unsigned EndByteAddr;
+  const Twine &CombROMLHS;
+
+  MemContextWriter(raw_ostream &OS, VarVector &Vars, unsigned WordSizeInBytes,
+                   unsigned EndByteAddr, const Twine &CombROMLHS)
+    : OS(OS), Vars(Vars), WordSizeInBytes(WordSizeInBytes),
+      EndByteAddr(EndByteAddr), CombROMLHS(CombROMLHS) {}
+
+  void padZeroToByteAddr(raw_ostream &OS, unsigned CurByteAddr,
+                         unsigned TargetByteAddr) {
+    assert(TargetByteAddr % WordSizeInBytes == 0 && "Bad target byte address!");
+    assert(CurByteAddr <= TargetByteAddr && "Bad current byte address!");
+    while (CurByteAddr != TargetByteAddr) {
+      OS << "00";
+      ++CurByteAddr;
+      if (CurByteAddr % WordSizeInBytes == 0)
+        OS << "// " << CurByteAddr << '\n';
+    }
   }
 
-  return CurByteAddr;
+  void writeContext();
+
+  static
+  void WriteContext(raw_ostream &OS, VarVector &Vars, unsigned WordSizeInBytes,
+                    unsigned EndByteAddr, const Twine &CombROMLHS) {
+    MemContextWriter MCW(OS, Vars, WordSizeInBytes, EndByteAddr, CombROMLHS);
+    MCW.writeContext();
+  }
+};
+}
+
+void MemContextWriter::writeContext() {
+  unsigned NumCasesWritten = 0;
+  unsigned CurByteAddr = 0;
+  ByteBuffer Buffer;
+
+  while (!Vars.empty()) {
+    std::pair<GlobalVariable*, unsigned> Var = Vars.pop_back_val();
+
+    GlobalVariable *GV = Var.first;
+    DEBUG(dbgs() << GV->getName() << " CurByteAddress " << CurByteAddr << '\n');
+    unsigned StartOffset = Var.second;
+    if (CombROMLHS.isTriviallyEmpty())
+      padZeroToByteAddr(OS, CurByteAddr, StartOffset);
+    CurByteAddr = StartOffset;
+    DEBUG(dbgs() << "Pad zero to " << StartOffset << '\n');
+    OS << "//" << GV->getName() << " start byte address " << StartOffset << '\n';
+    if (GV->hasInitializer() && !GV->getInitializer()->isNullValue()) {
+      FillByteBuffer(Buffer, GV->getInitializer());
+      unsigned BytesToPad = OffsetToAlignment(Buffer.size(), WordSizeInBytes);
+      for (unsigned i = 0; i < BytesToPad; ++i)
+        Buffer.push_back(0);
+
+      assert(Buffer.size() % WordSizeInBytes == 0 && "Buffer does not padded!");
+      for (unsigned i = 0, e = (Buffer.size() / WordSizeInBytes); i != e; ++i) {
+        // Write the case assignment for combinational ROM.
+        if (!CombROMLHS.isTriviallyEmpty()) {
+          OS.indent(2) << CurByteAddr << ": " << CombROMLHS
+                       << " = " << WordSizeInBytes * 8 << "'h";
+          ++NumCasesWritten;
+        }
+
+        for (unsigned j = 0; j < WordSizeInBytes; ++j) {
+          // Directly write out the buffer in little endian!
+          unsigned Idx = i * WordSizeInBytes + (WordSizeInBytes - j - 1);
+          OS << format("%02x", Buffer[Idx]);
+          ++CurByteAddr;
+        }
+
+        if (!CombROMLHS.isTriviallyEmpty())
+          OS << ';';
+        OS << "// " << CurByteAddr << '\n';
+      }
+
+      assert((CurByteAddr % WordSizeInBytes) == 0 && "Bad ByteBuffer size!");
+      DEBUG(dbgs() << "Write initializer: " << CurByteAddr << '\n');
+      Buffer.clear();
+    }
+  }
+
+  if (CombROMLHS.isTriviallyEmpty())
+    padZeroToByteAddr(OS, CurByteAddr, EndByteAddr);
+  else
+    OS.indent(2)
+      << "default: " << CombROMLHS << " = "
+      << WordSizeInBytes << "'b" << (NumCasesWritten ? 'x' : '0') << ";\n";
 }
 
 void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
-  SmallVector<std::pair<GlobalVariable*, unsigned>, 8> Vars;
-
-  typedef std::map<GlobalVariable*, unsigned>::const_iterator iterator;
-  for (iterator I = BaseAddrs.begin(), E = BaseAddrs.end(); I != E; ++I)
-    Vars.push_back(*I);
-
-  array_pod_sort(Vars.begin(), Vars.end(), base_addr_less);
 
   std::string InitFileName = "mem" + utostr_32(Idx) + "ram_init.txt";
 
@@ -440,57 +513,28 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
     return;
   }
 
-  unsigned CurByteAddr = 0;
-  unsigned WordSizeInByte = getDataWidth() / 8;
-  ByteBuffer Buffer;
+  SmallVector<std::pair<GlobalVariable*, unsigned>, 8> Vars;
 
-  while (!Vars.empty()) {
-    std::pair<GlobalVariable*, unsigned> Var = Vars.pop_back_val();
-
-    GlobalVariable *GV = Var.first;
-    DEBUG(dbgs() << GV->getName() << " CurByteAddress " << CurByteAddr << '\n');
-    unsigned StartOffset = Var.second;
-    CurByteAddr = padZeroToByteAddr(InitFileO, CurByteAddr, StartOffset,
-                                    WordSizeInByte);
-    DEBUG(dbgs() << "Pad zero to " << StartOffset << '\n');
-    InitFileO << "//" << GV->getName() << " start byte address "
-              << StartOffset << '\n';
-    if (GV->hasInitializer() && !GV->getInitializer()->isNullValue()) {
-      FillByteBuffer(Buffer, GV->getInitializer());
-      unsigned BytesToPad = OffsetToAlignment(Buffer.size(), WordSizeInByte);
-      for (unsigned i = 0; i < BytesToPad; ++i)
-        Buffer.push_back(0);
-
-      // Directly write out the buffer in little endian!
-      assert(Buffer.size() % WordSizeInByte == 0 && "Buffer does not padded!");
-      for (unsigned i = 0, e = (Buffer.size() / WordSizeInByte); i != e; ++i) {
-        for (unsigned j = 0; j < WordSizeInByte; ++j) {
-          unsigned Idx = i * WordSizeInByte + (WordSizeInByte - j - 1);
-          InitFileO << format("%02x", Buffer[Idx]);
-          ++CurByteAddr;
-        }
-        InitFileO << "// " << CurByteAddr << '\n';
-      }
-
-      assert((CurByteAddr % WordSizeInByte) == 0 && "Bad ByteBuffer size!");
-      DEBUG(dbgs() << "Write initializer: " << CurByteAddr << '\n');
-      Buffer.clear();
-    }
+  typedef std::map<GlobalVariable*, unsigned>::const_iterator iterator;
+  for (iterator I = BaseAddrs.begin(), E = BaseAddrs.end(); I != E; ++I) {
+    Vars.push_back(*I);
 
     // Print the information about the global variable in the memory.
-    OS << "/* Offset: " << StartOffset << ' ' << *GV->getType() << ' '
-       << GV->getName() << "*/\n";
+    OS << "/* Offset: " << I->second << ' ' << *I->first->getType() << ' '
+       << I->first->getName() << "*/\n";
   }
 
-  padZeroToByteAddr(InitFileO, CurByteAddr, CurrentOffset, WordSizeInByte);
+  array_pod_sort(Vars.begin(), Vars.end(), base_addr_less);
+  MemContextWriter::WriteContext(InitFileO, Vars, getDataWidth() / 8,
+                                 EndByteAddr, Twine());
 }
 
 void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS) const {
   unsigned BytesPerWord = getDataWidth() / 8;
   unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
-  assert((CurrentOffset * 8) % getDataWidth() == 0
+  assert((EndByteAddr * 8) % getDataWidth() == 0
          && "CurrentOffset not aligned!");
-  unsigned NumWords = (CurrentOffset * 8 / getDataWidth());
+  unsigned NumWords = (EndByteAddr * 8 / getDataWidth());
   // use a multi-dimensional packed array to model individual bytes within the
   // word. Please note that the bytes is ordered from 0 to 7 ([0:7]) because
   // so that the byte address can access the correct byte.
@@ -558,8 +602,47 @@ VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
 }
 
 void VASTMemoryBus::print(vlang_raw_ostream &OS) const {
+  if (isCombinationalROM())
+    return;
+
   if (requireByteEnable())
     printBank(OS);
   else
     printBlockRAM(OS);
+}
+
+void VASTMemoryBus::printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr,
+                                   raw_ostream &OS) const {
+  assert(LHS->getTempName() && "Unexpected unnamed CombROM Epxr!");
+  unsigned WordSizeInBits = LHS->getCombROMWordSizeInBits();
+  OS << "reg [" << WordSizeInBits << ":0] "
+     << LHS->getTempName() << "_comb_rom;\n";
+  OS << "always @(*) begin// begin combinational ROM logic\n";
+
+  SmallVector<std::pair<GlobalVariable*, unsigned>, 8> Vars;
+
+  typedef std::map<GlobalVariable*, unsigned>::const_iterator iterator;
+  for (iterator I = BaseAddrs.begin(), E = BaseAddrs.end(); I != E; ++I) {
+    Vars.push_back(*I);
+
+    // Print the information about the global variable in the memory.
+    OS.indent(2) << "/* Offset: " << I->second << ' ' << *I->first->getType()
+                 << ' ' << I->first->getName() << "*/\n";
+  }
+
+  array_pod_sort(Vars.begin(), Vars.end(), base_addr_less);
+
+  // The width of the byte address in a word.
+  unsigned BytesPerWord = WordSizeInBits / 8;
+  unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
+  OS.indent(2) << VASTModule::FullCaseAttr << ' ' << VASTModule::ParallelCaseAttr
+               << "case (";
+  Addr.printAsOperand(OS);
+  OS << ")";
+  MemContextWriter::WriteContext(OS, Vars, BytesPerWord, EndByteAddr,
+                                 Twine(LHS->getTempName()) + "_comb_rom");
+  OS.indent(2) << "endcase //end case\n";
+  OS << "end // end combinational ROM logic\n";
+  OS << "assign " << LHS->getTempName()
+     << " = " << LHS->getTempName() << "_comb_rom;\n";
 }

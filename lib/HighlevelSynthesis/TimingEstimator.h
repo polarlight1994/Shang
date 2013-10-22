@@ -215,6 +215,10 @@ public:
         accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
                            SubClass::AccumulateLUTDelay);
         break;
+      case VASTExpr::dpCROM:
+        accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
+                           SubClass::AccumulateCROMDelay);
+        break;
       case VASTExpr::dpAnd:
         accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
                            SubClass::AccumulateAndDelay);
@@ -278,6 +282,10 @@ public:
   static SrcEntryTy AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
                                        uint8_t DstUB, uint8_t DstLB,
                                        const SrcEntryTy &DelayFromSrc);
+
+  static SrcEntryTy AccumulateCROMDelay(VASTValue *Dst, unsigned SrcPos,
+                                        uint8_t DstUB, uint8_t DstLB,
+                                        const SrcEntryTy &DelayFromSrc);
 
   static SrcEntryTy AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
                                        uint8_t DstUB, uint8_t DstLB,

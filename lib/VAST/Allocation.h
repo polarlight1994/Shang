@@ -51,10 +51,12 @@ public:
     uint8_t Number;
     uint8_t WordSizeInBytes;
     uint8_t AddrWidth;
-    bool RequireByteEnable;
+    bool RequireByteEnable : 1;
+    bool IsReadOnly        : 1;
 
     MemBank(unsigned Number = 0, unsigned WordSizeInBytes = 0,
-            unsigned AddrWdith = 0, bool RequireByteEnable = true);
+            unsigned AddrWdith = 0, bool RequireByteEnable = true,
+            bool IsReadOnly = false);
   };
 
   // Memory Bank allocation queries.

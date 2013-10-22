@@ -22,14 +22,15 @@ class GlobalVariable;
 
 class VASTMemoryBus : public VASTSubModuleBase {
   const unsigned AddrSize, DataSize;
-  const bool RequireByteEnable;
-  const bool IsDualPort;
+  const bool RequireByteEnable : 1;
+  const bool IsDualPort : 1;
+  const bool IsCombROM : 1;
   static const unsigned InputsPerPort = 2;
   std::map<GlobalVariable*, unsigned> BaseAddrs;
-  unsigned CurrentOffset;
+  unsigned EndByteAddr;
 
   VASTMemoryBus(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
-                bool RequireByteEnable, bool IsDualPort);
+                bool RequireByteEnable, bool IsDualPort, bool IsCombinational);
   friend class VASTModule;
 
   void addPorts(VASTModule *VM);
@@ -72,6 +73,7 @@ public:
   bool isDefault() const { return Idx == 0; }
   bool requireByteEnable() const { return RequireByteEnable; }
   bool isDualPort() const { return IsDualPort; }
+  bool isCombinationalROM() const { return IsCombROM; }
   unsigned getNumber() const { return Idx; }
 
   // The ports of the memory bus.
@@ -88,6 +90,8 @@ public:
   void printDecl(raw_ostream &OS) const;
 
   void print(vlang_raw_ostream &OS) const;
+  void
+  printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr, raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTMemoryBus *A) { return true; }

@@ -11,8 +11,8 @@
 // in the verilog abstract syntax tree.
 //
 //===----------------------------------------------------------------------===//
-
 #include "shang/VASTDatapathNodes.h"
+#include "shang/VASTMemoryPort.h"
 #include "shang/Utilities.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -351,6 +351,7 @@ const char *VASTExpr::getFUName() const {
   case dpUGT:   return "shang_ugt";
   case dpRAnd:  return "shang_rand";
   case dpRXor:  return "shang_rxor";
+  case dpCROM:  return "shang_comb_rom";
   default: break;
   }
 
@@ -404,6 +405,12 @@ bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
     if (InstSubModForFU && hasName() && printUnaryFU(OS, this))
       return true;
     break;
+  case VASTExpr::dpCROM: {
+    const VASTWrapper *TableWrapper = cast<VASTWrapper>(getOperand(1).get());
+    VASTMemoryBus *Table = cast<VASTMemoryBus>(TableWrapper->getVASTNode());
+    Table->printAsCombROM(this, getOperand(0), OS);
+    return true;
+  }
   }
 
   return false;
@@ -433,7 +440,7 @@ void VASTExpr::dropUses() {
 
 //----------------------------------------------------------------------------//
 bool VASTWrapper::isX() const {
-  Value *V = getValue();
+  Value *V = getLLVMValue();
 
   return V && isa<UndefValue>(V);
 }
@@ -442,7 +449,7 @@ void VASTWrapper::printDecl(raw_ostream &OS) const {
   if (use_empty()) return;
 
   // Print the wrapper for the LLVM Values.
-  if (Value *V = getValue()) {
+  if (Value *V = getLLVMValue()) {
     VASTNamedValue::printDecl(OS, false, " = ");
     if (isa<GlobalVariable>(V))
       OS << "(`gv" << ShangMangle(V->getName()) << ')';

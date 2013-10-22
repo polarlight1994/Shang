@@ -332,14 +332,16 @@ VASTModule::createSeqValue(VASTSelector *Selector, unsigned Idx, Value *V) {
 VASTMemoryBus *VASTModule::createDefaultMemBus() {
   VFUMemBus *Desc = getFUDesc<VFUMemBus>();
   return createMemBus(0, Desc->getAddrWidth(), Desc->getDataWidth(),
-                      true, false);
+                      true, false, false);
 }
 
 VASTMemoryBus *
 VASTModule::createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth,
-                         bool RequireByteEnable, bool IsDualPort) {
+                         bool RequireByteEnable, bool IsDualPort,
+                         bool IsCombinationalROM) {
   VASTMemoryBus *Bus = new VASTMemoryBus(Num, AddrWidth, DataWidth,
-                                         RequireByteEnable, IsDualPort);
+                                         RequireByteEnable, IsDualPort,
+                                         IsCombinationalROM);
   Bus->addPorts(this);
   Submodules.push_back(Bus);
   return Bus;
@@ -801,7 +803,7 @@ VASTPort *VASTModule::addPort(VASTNode *Node, bool IsInput) {
 
 VASTInPort *VASTModule::addInputPort(const Twine &Name, unsigned BitWidth,
                                      PortTypes T /*= Others*/) {
-  VASTWrapper *Wire = addWrapper(Name, BitWidth);
+  VASTWrapper *Wire = getOrCreateWrapper(Name, BitWidth, (VASTNode*)0);
   VASTPort *Port = createPort(Wire, true);
 
   if (T < SpecialInPortEnd) {

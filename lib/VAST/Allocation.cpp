@@ -25,9 +25,10 @@
 using namespace llvm;
 
 HLSAllocation::MemBank::MemBank(unsigned Number, unsigned WordSizeInBytes,
-                                unsigned AddrWdith, bool RequireByteEnable)
+                                unsigned AddrWdith, bool RequireByteEnable,
+                                bool IsReadOnly)
   : Number(Number), WordSizeInBytes(WordSizeInBytes), AddrWidth(AddrWdith),
-    RequireByteEnable(RequireByteEnable) {}
+    RequireByteEnable(RequireByteEnable), IsReadOnly(IsReadOnly) {}
 
 unsigned HLSAllocation::getMemoryBankNum(const StoreInst &I) const {
   assert(Allocation

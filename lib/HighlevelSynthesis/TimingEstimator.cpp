@@ -102,6 +102,20 @@ BlackBoxDelayEsitmator::AccumulateAndDelay(VASTValue *Dst, unsigned SrcPos,
 }
 
 BlackBoxDelayEsitmator::SrcEntryTy
+BlackBoxDelayEsitmator::AccumulateCROMDelay(VASTValue *Dst, unsigned SrcPos,
+                                            uint8_t DstUB, uint8_t DstLB,
+                                            const SrcEntryTy &DelayFromSrc) {
+  delay_type D = DelayFromSrc.second;
+  VASTExpr *CROMExpr = cast<VASTExpr>(Dst);
+  // Calculate the delay of a combinational ROM based on the number of logic
+  // level. The way to calculate the
+  unsigned AddrWidth = CROMExpr->getOperand(0)->getBitWidth();
+  unsigned LL = Log2_32_Ceil(AddrWidth) / Log2_32_Ceil(VFUs::MaxLutSize);
+  delay_type Inc(LL * VFUs::LUTDelay);
+  return SrcEntryTy(DelayFromSrc.first, D + Inc);
+}
+
+BlackBoxDelayEsitmator::SrcEntryTy
 BlackBoxDelayEsitmator::AccumulateRedDelay(VASTValue *Dst, unsigned SrcPos,
                                            uint8_t DstUB, uint8_t DstLB,
                                            const SrcEntryTy &DelayFromSrc) {

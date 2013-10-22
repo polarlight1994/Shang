@@ -37,19 +37,25 @@
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/InstIterator.h"
 #include "llvm/Support/CommandLine.h"
-#define DEBUG_TYPE "shang-vast-module-analysis"
+#define DEBUG_TYPE "vast-module-analysis"
 #include "llvm/Support/Debug.h"
 
 #include <map>
 
 using namespace llvm;
 STATISTIC(NumIPs, "Number of IPs Instantiated");
-STATISTIC(NumBRam2Reg, "Number of Single Element Block RAM lowered to Register");
+STATISTIC(NumBRam2Reg, "Number of Single Element Block RAM Lowered to Register");
+STATISTIC(NUMCombROM, "Number of Combinational ROM Generated");
 
 static cl::opt<bool>
 EnalbeDualPortRAM("shang-enable-dual-port-ram",
                   cl::desc("Enable dual port ram in the design."),
                   cl::init(true));
+
+static cl::opt<unsigned>
+  MaxComblROMLL("vast-max-combinational-rom-logic-level",
+  cl::desc("The maximal allowed logic level of a combinational ROM"),
+  cl::init(1));
 
 namespace {
 struct VASTModuleBuilder : public MinimalDatapathContext,
@@ -82,8 +88,15 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     unsigned AddrWidth = std::max<unsigned>(ByteEnWidth + 1, Bank.AddrWidth);
     VASTMemoryBus *&Bus = MemBuses[Bank.Number];
     if (Bus == 0) {
+      // The byte address inside a word of the memory bank is not used
+      unsigned EffAddrWidth = AddrWidth - Log2_32_Ceil(Bank.WordSizeInBytes);
+      bool IsCombROM = Bank.IsReadOnly &&
+                       EffAddrWidth <= pow(float(VFUs::MaxLutSize),
+                                           int(MaxComblROMLL));
+
       Bus = VM->createMemBus(Bank.Number, AddrWidth, Bank.WordSizeInBytes * 8,
-                             Bank.RequireByteEnable, EnalbeDualPortRAM);
+                             Bank.RequireByteEnable, EnalbeDualPortRAM,
+                             IsCombROM);
     }
 
     assert(Bus->getAddrWidth() == AddrWidth
@@ -253,8 +266,10 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   unsigned getByteEnable(Value *Addr) const;
   VASTValPtr alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
                              VASTMemoryBus *Bus);
-  void buildMemoryTransaction(Value *Addr, Value *Data, unsigned PortNum,
+  void buildMemoryTransaction(Value *Addr, Value *Data, VASTMemoryBus *Bus,
                               Instruction &Inst);
+  void buildCombinationalROMLookup(Value *Addr, VASTMemoryBus *Bus,
+                                   Instruction &Inst);
 
   void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
                                ArrayRef<VASTValPtr> Args);
@@ -318,7 +333,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
     unsigned SizeInBits = getValueSizeInBits(GV);
 
     unsigned BankNum = Allocation.getMemoryBankNum(*GV);
-    const std::string WrapperName = ShangMangle(GV->getName());
+    const std::string Name = ShangMangle(GV->getName());
     if (BankNum) {
       VASTMemoryBus *Bus = getMemBus(BankNum);
       unsigned StartOffset = Bus->getStartOffset(GV);
@@ -328,7 +343,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
     }
     
     // If the GV is assigned to the memory port 0, create a wrapper wire for it.
-    return indexVASTExpr(GV, VM->addWrapper(WrapperName, SizeInBits, GV));
+    return indexVASTExpr(GV, VM->getOrCreateWrapper(Name, SizeInBits, GV));
   }
 
   if (GEPOperator *GEP = dyn_cast<GEPOperator>(V))
@@ -367,8 +382,8 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
   if (UndefValue *UDef = dyn_cast<UndefValue>(V)) {
     unsigned SizeInBits = getValueSizeInBits(UDef);
     SmallString<36> S;
-    return indexVASTExpr(V, VM->addWrapper(translatePtr2Str(V, S), SizeInBits,
-                                           UDef));
+    return indexVASTExpr(V, VM->getOrCreateWrapper(translatePtr2Str(UDef, S),
+                                                   SizeInBits, UDef));
   }
 
   if (ConstantPointerNull *PtrNull = dyn_cast<ConstantPointerNull>(V)) {
@@ -912,13 +927,20 @@ void VASTModuleBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
   unsigned BankNum = Allocation.getMemoryBankNum(I);
-  buildMemoryTransaction(I.getPointerOperand(), 0, BankNum, I);
+  VASTMemoryBus *Bus = getMemBus(BankNum);
+  if (Bus->isCombinationalROM()) {
+    buildCombinationalROMLookup(I.getPointerOperand(), Bus, I);
+    return;
+  }
+
+  buildMemoryTransaction(I.getPointerOperand(), 0, Bus, I);
 }
 
 void VASTModuleBuilder::visitStoreInst(StoreInst &I) {
   unsigned BankNum = Allocation.getMemoryBankNum(I);
-  buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(),
-                          BankNum, I);
+  VASTMemoryBus *Bus = getMemBus(BankNum);
+  assert(!Bus->isCombinationalROM() && "Cannot store to a combinational ROM!");
+  buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(), Bus, I);
 }
 
 //===----------------------------------------------------------------------===//
@@ -959,11 +981,11 @@ VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
   return V;
 }
 
-void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
-                                               unsigned PortNum, Instruction &I){
+void
+VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
+                                          VASTMemoryBus *Bus, Instruction &I) {
   BasicBlock *ParentBB = I.getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
-  VASTMemoryBus *Bus = getMemBus(PortNum);
 
   // Build the logic to start the transaction.
   unsigned NumOperands = Data ? 2 : 1;
@@ -1061,6 +1083,25 @@ void VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   // Move the the next slot so that the other operations are not conflict with
   // the current memory operations.
   advanceToNextSlot(Slot);
+}
+
+void
+VASTModuleBuilder::buildCombinationalROMLookup(Value *Addr, VASTMemoryBus *Bus,
+                                               Instruction &Inst) {
+  unsigned ResultWidth = getValueSizeInBits(Inst);
+  VASTValPtr AddrVal = getAsOperandImpl(Addr);
+  // Clamp the address width, to the address width of the memory bank.
+  // Please note that we are using the byte address in the memory banks, so
+  // the lower bound of the bitslice is 0.
+  AddrVal = Builder.buildBitSliceExpr(AddrVal, Bus->getAddrWidth(), 0);
+
+  unsigned Num = Bus->getNumber();
+  const std::string BankName = "membank" + utostr_32(Num) +
+                               "w" + utostr_32(ResultWidth);
+  VASTWrapper *Table = VM->getOrCreateWrapper(BankName, ResultWidth, Bus);
+  indexVASTExpr(&Inst,
+                Builder.buildExpr(VASTExpr::dpCROM, AddrVal, Table, ResultWidth));
+  ++NUMCombROM;
 }
 
 //===----------------------------------------------------------------------===//

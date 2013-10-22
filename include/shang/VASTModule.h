@@ -287,7 +287,7 @@ public:
   VASTMemoryBus *createDefaultMemBus();
   VASTMemoryBus *createMemBus(unsigned Num, unsigned AddrWidth,
                               unsigned DataWidth, bool RequireByteEnable,
-                              bool IsDualPort);
+                              bool IsDualPort, bool IsCombinationalROM);
 
   VASTSubModule *addSubmodule(const Twine &Name, unsigned Num);
 

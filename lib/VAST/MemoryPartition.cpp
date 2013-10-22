@@ -219,8 +219,11 @@ bool MemoryPartition::runOnFunction(Function &F) {
 
     assert(MaxElementSizeInBytes <= MemBusSizeInBytes
            && "Unexpected element size!");
+    // The memory bank is read only if all load/store instructions do not modify
+    // the accessed location.
+    bool IsReadOnly = !AS->isMod();
     MemBank Bank(Num, MaxElementSizeInBytes, Log2_32_Ceil(BankSizeInBytes),
-                 AccessedTypes.size() != 1);
+                 AccessedTypes.size() != 1, IsReadOnly);
     while (!Objects.empty()) {
       GlobalVariable *GV = Objects.pop_back_val();
       DEBUG(dbgs() << "Assign " << *GV << " to Memory #" << Num << "\n");
