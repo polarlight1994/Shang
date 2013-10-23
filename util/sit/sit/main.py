@@ -117,11 +117,10 @@ def main(builtinParameters = {}):
   option_space_dict['shang_dump_intermediate_netlist'] = [ 'true' ]
   option_space_dict['shang_constraints_factor'] = [ -0.1 ]
 
-  option_space_dict['vast_external_enable_timing_constraint'] = [ 'false' ]
-  option_space_dict['vast_external_enable_fast_place_and_route'] = [ 'false' ]
-  option_space_dict['vast_external_enable_place_and_route'] = [ 'false' ]
-  option_space_dict['vast_back_annotation_sigma_ratio'] = [ 0.0 ]
-  option_space_dict['vast_external_tool_sdc_filter_slack_ratio'] = [ 0.3 ] #, 0.4, 0.5 ]
+  option_space_dict['vast_external_enable_timing_constraint'] = [ 'true' ]
+  option_space_dict['vast_external_enable_fast_place_and_route'] = [ 'true' ]
+  option_space_dict['vast_external_enable_place_and_route'] = [ 'true' ]
+  option_space_dict['vast_external_tool_sdc_filter_ic_delay_ratio'] = [ 0.8 ]
 
   option_space_dict['timing_model'] = [ 'external' ]
 

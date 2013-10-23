@@ -53,6 +53,10 @@ float Dataflow::delay_type::expected() const {
   return total_delay;
 }
 
+float Dataflow::delay_type::expected_ic_delay() const {
+  return ic_delay;
+}
+
 void Dataflow::Annotation::addSample(float delay, float ic_delay) {
   num_samples += 1;
   delay_sum += delay;

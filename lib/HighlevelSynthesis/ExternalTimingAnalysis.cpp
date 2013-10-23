@@ -76,9 +76,9 @@ ExternalToolTimeOut("vast-external-tool-time-out",
 
 
 static cl::opt<float>
-  SDCFilterSlackRatio("vast-external-tool-sdc-filter-slack-ratio",
-  cl::desc("Use set the slack ratio for the sdc constraints filter"),
-  cl::init(0.1f));
+SDCFilterICDelayRatio("vast-external-tool-sdc-filter-ic-delay-ratio",
+  cl::desc("Use set the interconnect delay ratio for the sdc constraints filter"),
+  cl::init(0.0f));
 
 //===----------------------------------------------------------------------===//
 template<typename T>
@@ -618,13 +618,13 @@ unsigned
 ExternalTimingAnalysis::calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op) {
   Dataflow::delay_type delay = DF->getDelay(Src, Op, Op->getSlot());
   unsigned NumCycles = Distances->getIntervalFromDef(Src, Op->getSlot());
-  float Slack = float(NumCycles) - delay.expected();
-  float SlackRatio = Slack / float(NumCycles);
-
+  //float Slack = float(NumCycles) - delay.expected() - delay.expected_ic_delay();
+  float ICDelayRatio = delay.expected_ic_delay() / delay.expected();
+  float CellDelay = delay.expected() - delay.expected_ic_delay();
   // Only generate the multi-cycles constraints if its slack ratio is smaller than
   // the threshold
-  if (SlackRatio <= SDCFilterSlackRatio)
-    return std::ceil(delay.expected() - 0.5);
+  if (ICDelayRatio >= SDCFilterICDelayRatio)
+    return std::min<unsigned>(NumCycles, std::ceil(CellDelay / (1.0 - SDCFilterICDelayRatio)));
 
   // Otherwise just ignore this path.
   return 1;

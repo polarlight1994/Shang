@@ -118,6 +118,7 @@ public:
     delay_type(const Annotation &Ann);
     void reduce_max(const delay_type &RHS);
     float expected() const;
+    float expected_ic_delay() const;
   };
   typedef std::map<DataflowValue, delay_type> SrcSet;
 private:
