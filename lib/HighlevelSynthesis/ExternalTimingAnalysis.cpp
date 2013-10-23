@@ -156,14 +156,14 @@ struct ExternalTimingAnalysis {
   std::vector<float*> DelayRefs;
   typedef std::map<VASTSeqValue*, float*> SrcInfo;
   // The end-to-end (source register to destinate register) arrival time.
-  typedef std::map<VASTSelector*, SrcInfo> SDArrivalInfo;
-  SDArrivalInfo SDArrivals;
+  typedef std::map<VASTSelector*, SrcInfo> SimpleArrivalInfo;
+  SimpleArrivalInfo SimpleArrivals;
 
   // The (source register through combinational node to destinate register)
   // node arrival time
-  typedef std::map<VASTExpr*, SrcInfo> STArrivialInfo;
-  typedef std::map<VASTSelector*, STArrivialInfo> STDArrivialInfo;
-  STDArrivialInfo STDArrivials;
+  typedef std::map<VASTExpr*, SrcInfo> HalfArrivialInfo;
+  typedef std::map<VASTSelector*, HalfArrivialInfo> ComplexArrivialInfo;
+  ComplexArrivialInfo ComplexArrivials;
 
   // The annotated expressions that are read by specificed VASTSeqOp
   typedef std::map<VASTSeqOp*, std::set<VASTExpr*> > AnnotoatedFaninsMap;
@@ -310,8 +310,8 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
 
   VASTSelector *Sel = L.getSelector();
 
-  SDArrivalInfo::const_iterator I = SDArrivals.find(Sel);
-  assert(I != SDArrivals.end() && "End-to-End arrivial time not available!");
+  SimpleArrivalInfo::const_iterator I = SimpleArrivals.find(Sel);
+  assert(I != SimpleArrivals.end() && "End-to-End arrivial time not available!");
   const SrcInfo &FIDelays = I->second;
 
   SmallVector<VASTSeqValue*, 4> MissedLeaves;
@@ -343,15 +343,15 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
   assert(J != AnnotoatedFanins.end() && "Annotation node not available!");
   const std::set<VASTExpr*> &ThuNodes = J->second;
 
-  STDArrivialInfo::const_iterator K = STDArrivials.find(Sel);
-  assert(K != STDArrivials.end() && "Src-Thu-Dst arrivial information not found!");
-  const STArrivialInfo &STArrivials = K->second;
+  ComplexArrivialInfo::const_iterator K = ComplexArrivials.find(Sel);
+  assert(K != ComplexArrivials.end() && "Src-Thu-Dst arrivial information not found!");
+  const HalfArrivialInfo &STArrivials = K->second;
 
   typedef std::set<VASTExpr*>::const_iterator thu_iterator;
   for (thu_iterator I = ThuNodes.begin(), E = ThuNodes.end(); I != E; ++I) {
     VASTExpr *Expr = *I;
 
-    STArrivialInfo::const_iterator ThuI = STArrivials.find(Expr);
+    HalfArrivialInfo::const_iterator ThuI = STArrivials.find(Expr);
     // Sometimes the thu nodes are connected to other selectors that are
     // modified in current slot.
     if (ThuI == STArrivials.end())
@@ -683,7 +683,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
 
       unsigned Idx = 0;
       // Directly use the register-to-register delay.
-      SDArrivals[Sel][Src] = allocateDelayRef(Idx);
+      SimpleArrivals[Sel][Src] = allocateDelayRef(Idx);
       ExtractTimingForPath(TclO, Sel, Src, 0, Idx);
 
       if (Src->isSlot() || Src->isFUOutput())
@@ -692,7 +692,6 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
       CH.addSource(Src, CycleConstraints.lookup(Src));
     }
   }
-  // Extract end-to-end delay.
 
   // Extract path delay in details for leaves that reachable to different fanins
   if (IntersectLeaves.empty())
@@ -729,7 +728,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
         VASTSeqValue *Leaf = *LI;
         unsigned Idx = 0;
         // Get the register to thu delay.
-        float *&P = STDArrivials[Sel][Expr][Leaf];
+        float *&P = ComplexArrivials[Sel][Expr][Leaf];
         if (P)
           continue;
 
