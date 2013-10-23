@@ -433,14 +433,15 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
     typedef ArrivalInfo::iterator src_iterator;
     for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       VASTSeqValue *Src = I->first;
-      float delay = I->second.total_delay;
+      float delay = I->second.total_delay,
+            ic_delay = delay - I->second.cell_delay;
 
       if (Src->isSlot()) {
         if (Src->getLLVMValue() == 0)
           continue;
       }
 
-      annotateDelay(Op, Op->getSlot(), Src, delay);
+      annotateDelay(Op, Op->getSlot(), Src, delay, ic_delay);
     }
   }
 

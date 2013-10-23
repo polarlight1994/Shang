@@ -97,27 +97,27 @@ typedef DataflowPtr<Instruction> DataflowInst;
 
 class Dataflow : public FunctionPass {
   struct Annotation {
-    float sum, sqr_sum, iir_value;
+    float delay_sum, delay_sqr_sum, ic_delay_sum, ic_delay_sqr_sum;
     uint16_t num_samples;
     uint8_t generation;
     uint8_t violation;
     Annotation()
-      : sum(0), sqr_sum(0), num_samples(0), generation(0), violation(0) {}
+      : delay_sum(0), delay_sqr_sum(0), ic_delay_sum(0), ic_delay_sqr_sum(0),
+        num_samples(0), generation(0), violation(0) {}
 
-    void addSample(float d);
+    void addSample(float delay, float ic_delay);
     void reset();
     void dump() const;
   };
 public:
   struct delay_type {
-    float mu, sigma;
-    explicit delay_type(float mu = 0.0f, float sigma = 0.0f)
-      : mu(0.0f), sigma(0.0f) {}
+    float total_delay, ic_delay;
+    explicit delay_type(float total_delay = 0.0f, float ic_delay = 0.0f)
+      : total_delay(total_delay), ic_delay(ic_delay) {}
 
     delay_type(const Annotation &Ann);
     void reduce_max(const delay_type &RHS);
     float expected() const;
-    float expected_at_offset(float offset) const;
   };
   typedef std::map<DataflowValue, delay_type> SrcSet;
 private:
@@ -165,7 +165,8 @@ private:
   TimedSrcSet &getDeps(DataflowInst Inst, BBPtr Parent);
 
   unsigned generation;
-  void updateDelay(float NewDelay, Annotation &OldDelay, bool IsTimingViolation);
+  void updateDelay(float NewDelay, float NewICDelay, Annotation &OldDelay,
+                   bool IsTimingViolation);
 
   std::set<BasicBlock*> UnreachableBlocks;
 
@@ -179,7 +180,7 @@ public:
   unsigned getGeneration() const { return generation; }
 
   void annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
-                     float delay, unsigned Slack);
+                     float delay, float ic_delay, unsigned Slack);
   delay_type getDelay(DataflowValue Src, DataflowInst Dst, VASTSlot *S) const;
 
   void getFlowDep(DataflowInst Inst, SrcSet &Set) const;
@@ -213,7 +214,7 @@ class DataflowAnnotation : public VASTModulePass {
   void internalDelayAnnotation(VASTModule &VM);
 
   void annotateDelay(DataflowInst Inst, VASTSlot *S, VASTSeqValue *V,
-                     float delay);
+                     float delay, float ic_delay);
 public:
   typedef Dataflow::delay_type delay_type;
 

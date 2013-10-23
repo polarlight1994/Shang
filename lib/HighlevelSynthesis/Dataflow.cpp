@@ -28,11 +28,6 @@
 
 using namespace llvm;
 
-static cl::opt<float>
-  SignmaRatio("vast-back-annotation-sigma-ratio",
-  cl::desc("Number of signma use to calculate the next delay from back annotation"),
-  cl::init(0.0f));
-
 Dataflow::BBPtr::BBPtr(VASTSlot *S) : Base(S->getParent(), S->IsSubGrp) {}
 
 Dataflow::Dataflow() : FunctionPass(ID), generation(0) {
@@ -40,59 +35,43 @@ Dataflow::Dataflow() : FunctionPass(ID), generation(0) {
 }
 
 Dataflow::delay_type::delay_type(const Annotation &Ann) {
-  //float num_samples = float(Ann.num_samples);
-  //// Caculate the expected value
-  //mu = Ann.sum / num_samples;
-  //// Caculate the variance
-  //float D2 = Ann.sqr_sum / num_samples - mu * mu;
-  //// Do not fail due on the errors in floating point operation.
-  //sigma = sqrtf(std::max<float>(D2, 0.0f));
-  mu = Ann.iir_value;
-  sigma = 0;
+  float num_samples = float(Ann.num_samples);
+  // Calculate the expected value
+  total_delay = Ann.delay_sum / num_samples;
+  ic_delay = Ann.ic_delay_sum / num_samples;
 }
 
 void Dataflow::delay_type::reduce_max(const delay_type &RHS) {
-  // Trivial case: The distribution is completely separatable.
-  if (RHS.expected_at_offset(-2.0) > expected_at_offset(2.0)) {
-    mu = RHS.mu;
-    sigma = RHS.sigma;
+  if (RHS.total_delay > total_delay) {
+    total_delay = RHS.total_delay;
+    ic_delay = RHS.ic_delay;
     return;
   }
-
-  if (RHS.expected_at_offset(2.0) < expected_at_offset(-2.0))
-    return;
-
-  // Well, just do some approximation ...
-  if (mu < RHS.mu)
-    mu = RHS.mu;
 }
 
 float Dataflow::delay_type::expected() const {
-  return expected_at_offset(SignmaRatio);
+  return total_delay;
 }
 
-float Dataflow::delay_type::expected_at_offset(float offset) const {
-  float delay = std::max(mu + offset * sigma, 0.0f);
-  return delay;
-}
-
-void Dataflow::Annotation::addSample(float d) {
+void Dataflow::Annotation::addSample(float delay, float ic_delay) {
   num_samples += 1;
-  sum += d;
-  sqr_sum += d * d;
+  delay_sum += delay;
+  delay_sqr_sum += delay * delay;
+  ic_delay_sum += ic_delay;
+  ic_delay_sqr_sum += ic_delay * ic_delay;
 }
 
 void Dataflow::Annotation::reset() {
-  sum = sqr_sum = 0.0f;
+  delay_sum = delay_sqr_sum = ic_delay_sum = ic_delay_sqr_sum = 0.0f;
   num_samples = 0;
 }
 
 void Dataflow::Annotation::dump() const {
   float num_samples = float(this->num_samples);
   // Caculate the expected value
-  float E = sum / num_samples;
+  float E = delay_sum / num_samples;
   // Caculate the variance
-  float D2 = sqr_sum / num_samples - E * E;
+  float D2 = delay_sqr_sum / num_samples - E * E;
   // Do not fail due on the errors in floating point operation.
   float D = sqrtf(std::max<float>(D2, 0.0f));
 
@@ -216,7 +195,7 @@ Dataflow::delay_type Dataflow::getSlackFromLaunch(Instruction *Inst) const {
     return delay_type(0.0f);
 
   delay_type delay(J->second);
-  return delay_type(1.0 - delay.mu, delay.sigma);
+  return delay_type(1.0 - delay.total_delay, 0);
 }
 
 Dataflow::delay_type Dataflow::getDelayFromLaunch(Instruction *Inst) const {
@@ -320,7 +299,7 @@ Dataflow::getIncomingBlock(VASTSlot *S, Instruction *Inst, Value *Src) const {
 }
 
 void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
-                             float delay, unsigned Slack) {
+                             float delay, float ic_delay, unsigned Slack) {
   bool IsTimingViolation = Slack < delay && generation != 0;
   assert(V && "Unexpected VASTSeqValue without underlying llvm Value!");
 
@@ -344,26 +323,16 @@ void Dataflow::annotateDelay(DataflowInst Inst, VASTSlot *S, DataflowValue V,
     });
   }
 
-  updateDelay(delay, OldAnnotation, IsTimingViolation);
+  updateDelay(delay, ic_delay, OldAnnotation, IsTimingViolation);
 }
 
-void Dataflow::updateDelay(float NewDelay, Annotation &OldDelay,
+void Dataflow::updateDelay(float NewDelay, float NewICDelay, Annotation &OldDelay,
                            bool IsTimingViolation) {
  if (OldDelay.generation == 0 && generation != 0)
    OldDelay.reset();
 
- OldDelay.addSample(NewDelay);
+ OldDelay.addSample(NewDelay, NewICDelay);
  OldDelay.generation = generation;
-
- if (OldDelay.generation == 0)
-   OldDelay.iir_value = NewDelay;
- else if (OldDelay.generation == generation) {
-   float ratio = 0.7f;
-   OldDelay.iir_value = OldDelay.iir_value * (1.0 - ratio) + NewDelay * ratio;
- } else {
-   float ratio = IsTimingViolation ? 0.8f : 0.5f;
-   OldDelay.iir_value = OldDelay.iir_value * (1.0 - ratio) + NewDelay * ratio;
- }
 }
 
 DataflowAnnotation::DataflowAnnotation(bool Accumulative)
@@ -401,9 +370,10 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 void DataflowAnnotation::annotateDelay(DataflowInst Inst, VASTSlot *S,
-                                       VASTSeqValue *SV, float delay) {
+                                       VASTSeqValue *SV, float delay,
+                                       float ic_delay) {
   unsigned Slack = Distances->getIntervalFromDef(SV, S);
-  DF->annotateDelay(Inst, S, SV, delay, Slack);
+  DF->annotateDelay(Inst, S, SV, delay, ic_delay, Slack);
 }
 
 void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
@@ -442,7 +412,7 @@ void DataflowAnnotation::extractFlowDep(VASTSeqOp *Op, TimingNetlist &TNL) {
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
     VASTSeqValue *Src = I->first;
     float delay = I->second;
-    annotateDelay(DataflowInst(Inst, IsLaunch), Op->getSlot(), Src, delay);
+    annotateDelay(DataflowInst(Inst, IsLaunch), Op->getSlot(), Src, delay, 0);
   }
 }
 
@@ -497,7 +467,9 @@ void Dataflow::dumpFlowDeps(raw_ostream &OS) const {
         violation INTEGER, \
         num_samples INTEGER, \
         sum REAL,\
-        sqr_sum REAL\
+        sqr_sum REAL,\
+        ic_sum REAL,\
+        ic_sqr_sum REAL\
         );\n";
 
   typedef FlowDepMapTy::const_iterator iterator;
@@ -514,14 +486,16 @@ void Dataflow::dumpFlowDeps(raw_ostream &OS) const {
       if (isa<LoadInst>(J->first) && J->first.getPointer() == Dst.getPointer())
         continue;
 
-      OS << "INSERT INTO flowdeps(src, dst, generation, violation, num_samples, sum, sqr_sum) VALUES(\n"
+      OS << "INSERT INTO flowdeps(src, dst, generation, violation, num_samples, sum, sqr_sum, ic_sum, ic_sqr_sum) VALUES(\n"
          << '\'' << J->first.getOpaqueValue() << "', \n"
          << '\'' << Dst.getOpaqueValue() << "', \n"
          << unsigned(J->second.generation) << ", \n"
          << unsigned(J->second.violation) << ", \n"
          << unsigned(J->second.num_samples) << ", \n"
-         << J->second.sum << ", \n"
-         << J->second.sqr_sum << ");\n";
+         << J->second.delay_sum << ", \n"
+         << J->second.delay_sqr_sum  << ", \n"
+         << J->second.ic_delay_sum << ", \n"
+         << J->second.ic_delay_sqr_sum << ");\n";
     }
   }
 }
@@ -536,7 +510,9 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
         violation INTEGER, \
         num_samples INTEGER, \
         sum REAL,\
-        sqr_sum REAL\
+        sqr_sum REAL,\
+        ic_sum REAL,\
+        ic_sqr_sum REAL\
         );\n";
 
   typedef IncomingMapTy::const_iterator iterator;
@@ -552,15 +528,17 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
         if (isa<BasicBlock>(K->first))
           continue;
 
-        OS << "INSERT INTO incomings(src, bb, dst, generation, violation, num_samples, sum, sqr_sum) VALUES(\n"
+        OS << "INSERT INTO incomings(src, bb, dst, generation, violation, num_samples, sum, sqr_sum, ic_sum, ic_sqr_sum) VALUES(\n"
            << '\'' << K->first.getOpaqueValue() << "', \n"
            << '\'' << BB->getName() << "', \n"
            << '\'' << Dst.getOpaqueValue() << "', \n"
            << unsigned(K->second.generation) << ", \n"
            << unsigned(K->second.violation) << ", \n"
            << unsigned(K->second.num_samples) << ", \n"
-           << K->second.sum << ", \n"
-           << K->second.sqr_sum << ");\n";
+           << K->second.delay_sum << ", \n"
+           << K->second.delay_sqr_sum << ", \n"
+           << K->second.ic_delay_sum << ", \n"
+           << K->second.ic_delay_sqr_sum << ");\n";
       }
     }
   }
