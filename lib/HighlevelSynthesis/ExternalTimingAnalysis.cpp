@@ -153,8 +153,10 @@ struct ExternalTimingAnalysis {
   Dataflow *DF;
   STGDistances *Distances;
   SpecificBumpPtrAllocator<float> Allocator;
-  std::vector<float*> DelayRefs;
-  typedef std::map<VASTSeqValue*, float*> SrcInfo;
+
+  typedef float delay_type;
+  std::vector<delay_type*> DelayRefs;
+  typedef std::map<VASTSeqValue*, delay_type*> SrcInfo;
   // The end-to-end (source register to destinate register) arrival time.
   typedef std::map<VASTSelector*, SrcInfo> SimpleArrivalInfo;
   SimpleArrivalInfo SimpleArrivals;
@@ -172,7 +174,8 @@ struct ExternalTimingAnalysis {
   // Test if a slot register can ever be set.
   std::map<BasicBlock*, std::vector<float*> > BBReachability;
 
-  void extractSlotReachability(raw_ostream &TclO, VASTSelector *Sel);
+  void extractSlotReachability(raw_ostream &TclO, VASTSelector *Sel,
+                               delay_type *DelayRef);
 
   bool isBasicBlockUnreachable(ArrayRef<float*> SlotsStatus) const {
     for (unsigned i = 0; i < SlotsStatus.size(); ++i)
@@ -246,10 +249,12 @@ struct ExternalTimingAnalysis {
   void writeReadPlacementScript(raw_ostream &O) const;
 
   // Write the script to extract the timing analysis results from quartus.
-  void writeTimingScript(raw_ostream &O);
-  void extractTimingForSelector(raw_ostream &TclO, raw_ostream &TimingSDCO,
-                                VASTSelector *Sel);
-
+  void buildDelayMatrix(raw_ostream &O);
+  void buildDelayMatrixForSelector(raw_ostream &TimingSDCO,
+                                   VASTSelector *Sel);
+  void writeDelayMatrixExtractionScript(raw_ostream &TclO, bool PAR);
+  void extractTimingForPath(raw_ostream &O, VASTSelector *Dst, VASTSeqValue *Src,
+                            VASTExpr *Thu, delay_type *DelayRef);
   unsigned calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op);
 
   typedef std::set<VASTSeqValue*> LeafSet;
@@ -267,12 +272,10 @@ struct ExternalTimingAnalysis {
     *DelayRefs[Idx] = Delay;
   }
 
-  float *allocateDelayRef(unsigned &Idx) {
-    Idx = DelayRefs.size();
+  float *allocateDelayRef() {
     float *P = Allocator.Allocate();
     // Don't forget to initialize the content!
     *P = 0.0f;
-    DelayRefs.push_back(P);
     ++NumQueriesWritten;
     return P;
   }
@@ -510,15 +513,20 @@ void ExtractTimingForPath(raw_ostream &O, unsigned RefIdx, bool HasThu) {
        "}\n"; // Src and Dst Size
 }
 
-static
-void ExtractTimingForPath(raw_ostream &O, VASTSelector *Dst, VASTSeqValue *Src,
-                          VASTExpr *Thu, unsigned RefIdx) {
+void
+ExternalTimingAnalysis::extractTimingForPath(raw_ostream &O, VASTSelector *Dst,
+                                             VASTSeqValue *Src, VASTExpr *Thu,
+                                             delay_type *DelayRef) {
   O << "set src " << GetSTACollection(Src) << '\n';
   O << "set dst " << GetSTACollection(Dst) << '\n';
   if (Thu)
     O << "set thu " << GetSTACollection(Thu) << '\n';
   // if (Thu) O << "set thu " << GetSTACollection(Thu) << '\n';
-  ExtractTimingForPath(O, RefIdx, Thu != 0);
+
+  unsigned RefIndex = DelayRefs.size();
+  DelayRefs.push_back(DelayRef);
+
+  ExtractTimingForPath(O, RefIndex, Thu != 0);
   DEBUG(O << "post_message -type info \"" << Src->getSTAObjectName()
           << " -> " << Dst->getSTAObjectName() << " delay: $delay\"\n");
 }
@@ -605,7 +613,8 @@ ExternalTimingAnalysis::calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op) {
 }
 
 void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,
-                                                     VASTSelector *Sel) {
+                                                     VASTSelector *Sel,
+                                                     delay_type *DelayRef) {
   VASTSeqValue *V = Sel->getSSAValue();
   assert(V && "Slot enable value not defined?");
   BasicBlock *BB = dyn_cast_or_null<BasicBlock>(V->getLLVMValue());
@@ -613,21 +622,18 @@ void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,
   if (BB == 0)
     return;
 
-  unsigned Idx = 0;
-  BBReachability[BB].push_back(allocateDelayRef(Idx));
+  unsigned RefIndex = DelayRefs.size();
+  DelayRefs.push_back(DelayRef);
+  BBReachability[BB].push_back(DelayRef);
 
   TclO << "set slot " << GetSTACollection(Sel) << "\n"
           "if {[get_collection_size $slot] == 0} {\n"
-          "  puts $JSONFile \"" << Idx << " 1.0\"\n"
+          "  puts $JSONFile \"" << RefIndex << " 1.0\"\n"
           "}\n";
 }
 
-void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
-                                                      raw_ostream &TimingSDCO,
-                                                      VASTSelector *Sel) {
-  if (Sel->isSlot())
-    extractSlotReachability(TclO, Sel);
-
+void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO,
+                                                         VASTSelector *Sel) {
   // Build the intersected fanins
   LeafSet AllLeaves, IntersectLeaves, CurLeaves;
   typedef LeafSet::iterator leaf_iterator;
@@ -681,10 +687,8 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
       if (IntersectLeaves.count(Src))
         continue;
 
-      unsigned Idx = 0;
       // Directly use the register-to-register delay.
-      SimpleArrivals[Sel][Src] = allocateDelayRef(Idx);
-      ExtractTimingForPath(TclO, Sel, Src, 0, Idx);
+      SimpleArrivals[Sel][Src] = allocateDelayRef();
 
       if (Src->isSlot() || Src->isFUOutput())
         continue;
@@ -726,14 +730,12 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
       for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
            LI != LE; ++LI) {
         VASTSeqValue *Leaf = *LI;
-        unsigned Idx = 0;
         // Get the register to thu delay.
         float *&P = ComplexArrivials[Sel][Expr][Leaf];
         if (P)
           continue;
 
-        P = allocateDelayRef(Idx);
-        ExtractTimingForPath(TclO, Sel, Leaf, Expr, Idx);
+        P = allocateDelayRef();
         CH.addSource(Leaf, calculateCycles(Leaf, Op));
       }
 
@@ -743,7 +745,7 @@ void ExternalTimingAnalysis::extractTimingForSelector(raw_ostream &TclO,
 }
 
 void
-ExternalTimingAnalysis::writeTimingScript(raw_ostream &TclO) {
+ExternalTimingAnalysis::buildDelayMatrix(raw_ostream &TclO) {
   OwningPtr<raw_fd_ostream> TimingSDCO(createTmpFile(getSDCPath()));
 
   *TimingSDCO << "create_clock -name \"clk\" -period "
@@ -752,20 +754,9 @@ ExternalTimingAnalysis::writeTimingScript(raw_ostream &TclO) {
                  "derive_pll_clocks -create_base_clocks\n"
                  "derive_clock_uncertainty\n";
 
-  // Print the critical path in the datapath to debug the TimingNetlist.
-  TclO << "report_timing -from_clock { clk } -to_clock { clk }"
-         " -setup -npaths 1 -detail full_path -stdout\n"
-  // Open the file and start the array.
-       "set JSONFile [open \"";
-  TclO.write_escaped(getResultPath());
-  TclO << "\" w+]\n";
-
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-    extractTimingForSelector(TclO, *TimingSDCO, I);
-
-  // Close the array and the file object.
-  TclO << "close $JSONFile\n";
+    buildDelayMatrixForSelector(*TimingSDCO, I);
 
   // Set the correct hold timing.
   *TimingSDCO << "set_multicycle_path -from [get_clocks {clk}] "
@@ -856,19 +847,75 @@ ExternalTimingAnalysis::writeFitDesignScript(raw_ostream &O, bool PAR,
   O << '\n';
 }
 
-void
-ExternalTimingAnalysis::writeTimingAnalysisDriver(raw_ostream &O, bool PAR) {
+void ExternalTimingAnalysis::writeDelayMatrixExtractionScript(raw_ostream &O,
+                                                              bool PAR) {
   // Create the timing netlist before we perform any analysis.
   O << "create_timing_netlist";
   if (!PAR) O << " -post_map";
   O << "\n"
-       "read_sdc {" << getSDCPath() << "}\n"
-       "update_timing_netlist\n";
+    "read_sdc {" << getSDCPath() << "}\n"
+    "update_timing_netlist\n";
 
-  // Perform analysis to extract the delays.
-  writeTimingScript(O);
+  // Print the critical path in the datapath to debug the TimingNetlist.
+  O << "report_timing -from_clock { clk } -to_clock { clk }"
+       " -setup -npaths 1 -detail full_path -stdout\n";
+
+  typedef SimpleArrivalInfo::const_iterator simple_path_iterator;
+  typedef SrcInfo::const_iterator src_iterator;
+  for (simple_path_iterator I = SimpleArrivals.begin(),
+       E = SimpleArrivals.end(); I != E; ++I) {
+    VASTSelector *Sel = I->first;
+
+    const SrcInfo &Srcs = I->second;
+    for (src_iterator J = Srcs.begin(), E = Srcs.end(); J != E; ++J) {
+      VASTSeqValue *Leaf = J->first;
+      extractTimingForPath(O, Sel, Leaf, 0, J->second);
+    }
+  }
+
+  typedef ComplexArrivialInfo::const_iterator complex_path_iterator;
+  typedef HalfArrivialInfo::const_iterator half_path_iterator;
+  for (complex_path_iterator I = ComplexArrivials.begin(),
+       E = ComplexArrivials.end(); I != E; ++I) {
+    VASTSelector *Sel = I->first;
+    const HalfArrivialInfo &HalfArrivals = I->second;
+
+    for (half_path_iterator J = HalfArrivals.begin(), E = HalfArrivals.end();
+         J != E; ++J) {
+      VASTExpr *Thu = J->first;
+      const SrcInfo &Srcs = J->second;
+      for (src_iterator K = Srcs.begin(), E = Srcs.end(); K != E; ++K) {
+        VASTSeqValue *Leaf = K->first;
+        extractTimingForPath(O, Sel, Leaf, Thu, K->second);
+      }
+    }
+  }
 
   O << "delete_timing_netlist\n\n";
+}
+
+void
+ExternalTimingAnalysis::writeTimingAnalysisDriver(raw_ostream &O, bool PAR) {
+  // Perform analysis to extract the delays.
+  buildDelayMatrix(O);
+  // Open the file for the extracted datapath arrival time.
+  O << "set JSONFile [open \"";
+  O.write_escaped(getResultPath()) << "\" w+]\n";
+
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+    VASTSelector *Sel = I;
+
+    if (!Sel->isSlot())
+      continue;
+
+    extractSlotReachability(O, Sel, allocateDelayRef());
+  }
+
+  writeDelayMatrixExtractionScript(O, PAR);
+
+  // Close the file object.
+  O << "close $JSONFile\n";
 }
 
 void
@@ -903,9 +950,10 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   // Write the Nestlist and the wrapper.
   writeNetlist();
 
+  std::string DriverScriptPath = getDriverScriptPath();
   {
     // Write the project script.
-    OwningPtr<raw_fd_ostream> PrjTclO(createTmpFile(getDriverScriptPath()));
+    OwningPtr<raw_fd_ostream> PrjTclO(createTmpFile(DriverScriptPath));
     writeMapDesignScript(*PrjTclO);
     writeFitDesignScript(*PrjTclO, EnablePAR, EnableFastPAR);
     writeTimingAnalysisDriver(*PrjTclO, EnablePAR);
@@ -917,7 +965,6 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
   SmallString<256> quartus(getStrValueFromEngine(LUAPath));
   std::vector<const char*> args;
 
-  std::string DriverScriptPath = getDriverScriptPath();
   args.push_back(quartus.c_str());
   if (Use64BitQuartus)
     args.push_back("--64bit");
@@ -932,7 +979,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
 
     NamedRegionTimer T("External Tool Run Time", GroupName, TimePassesIsEnabled);
     std::string ErrorInfo;
-    if (LLVM_UNLIKELY(sys::ExecuteAndWait(quartus, &args[0], 0, 0/*Redirects*/,
+    if (LLVM_UNLIKELY(sys::ExecuteAndWait(quartus, &args[0], 0, Redirects,
                                           ExternalToolTimeOut, 0, &ErrorInfo))) {
       errs() << "Error: " << ErrorInfo <<'\n';
       report_fatal_error("External timing analyze fail!\n");
