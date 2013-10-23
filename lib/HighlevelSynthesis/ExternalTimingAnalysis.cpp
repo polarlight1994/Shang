@@ -152,10 +152,23 @@ struct ExternalTimingAnalysis {
   VASTModule &VM;
   Dataflow *DF;
   STGDistances *Distances;
-  SpecificBumpPtrAllocator<float> Allocator;
 
-  typedef float delay_type;
-  std::vector<delay_type*> DelayRefs;
+  // Data structure that explicitly hold the total delay and cell delay of a
+  // datapath. Based on total delay and cell delay we can calculate the
+  // corresponding wire delay.
+  struct delay_type {
+    float total_delay;
+    float cell_delay;
+    delay_type() : total_delay(0.0f), cell_delay(0.0f) {}
+
+    bool operator < (const delay_type &RHS) const {
+      return total_delay < RHS.total_delay;
+    }
+  };
+
+  SpecificBumpPtrAllocator<delay_type> Allocator;
+
+  std::vector<float*> DelayRefs;
   typedef std::map<VASTSeqValue*, delay_type*> SrcInfo;
   // The end-to-end (source register to destinate register) arrival time.
   typedef std::map<VASTSelector*, SrcInfo> SimpleArrivalInfo;
@@ -228,7 +241,7 @@ struct ExternalTimingAnalysis {
   raw_fd_ostream *createTmpFile(const std::string &FilePath) const {
     std::string ErrorInfo;
 
-    errs() << "Writing '" << FilePath << "'... ";
+    errs() << "Writing '" << FilePath << "'...\n";
     raw_fd_ostream *NetlistO = new raw_fd_ostream(FilePath.c_str(), ErrorInfo);
 
     if (LLVM_UNLIKELY(!ErrorInfo.empty())) {
@@ -252,9 +265,10 @@ struct ExternalTimingAnalysis {
   void buildDelayMatrix(raw_ostream &O);
   void buildDelayMatrixForSelector(raw_ostream &TimingSDCO,
                                    VASTSelector *Sel);
-  void writeDelayMatrixExtractionScript(raw_ostream &TclO, bool PAR);
+  void writeDelayMatrixExtractionScript(raw_ostream &TclO, bool PAR,
+                                        bool ZeroICDelay);
   void extractTimingForPath(raw_ostream &O, VASTSelector *Dst, VASTSeqValue *Src,
-                            VASTExpr *Thu, delay_type *DelayRef);
+                            VASTExpr *Thu, delay_type *DelayRef, bool IsCellDelay);
   unsigned calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op);
 
   typedef std::set<VASTSeqValue*> LeafSet;
@@ -272,10 +286,9 @@ struct ExternalTimingAnalysis {
     *DelayRefs[Idx] = Delay;
   }
 
-  float *allocateDelayRef() {
-    float *P = Allocator.Allocate();
+  delay_type *allocateDelayRef() {
+    delay_type *P = new (Allocator.Allocate()) delay_type();
     // Don't forget to initialize the content!
-    *P = 0.0f;
     ++NumQueriesWritten;
     return P;
   }
@@ -290,18 +303,19 @@ struct ExternalTimingAnalysis {
   bool readRegionPlacement();
 
   void getPathDelay(const VASTLatch &L, VASTValPtr V,
-                    std::map<VASTSeqValue*, float> &Srcs);
+                    std::map<VASTSeqValue*, delay_type> &Srcs);
 };
 }
 
-void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
-                                          std::map<VASTSeqValue*, float> &Srcs) {
+void
+ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
+                                     std::map<VASTSeqValue*, delay_type> &Srcs) {
   // Simply add the zero delay record if the fanin itself is a register.
   if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V.get())) {
     if (!SV->isSlot() && !SV->isFUOutput()) {
       // Please note that this insertion may fail (V already existed), but it
       // does not hurt because here we only want to ensure the record exist.
-      Srcs.insert(std::make_pair(SV, 0.0f));
+      Srcs.insert(std::make_pair(SV, delay_type()));
       return;
     }
   }
@@ -333,7 +347,7 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
     }
 
     // Otherwise Update the delay.
-    float &OldDelay = Srcs[Leaf];
+    delay_type &OldDelay = Srcs[Leaf];
     OldDelay = std::max(OldDelay, *J->second);
   }
 
@@ -370,7 +384,7 @@ void ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
       if (ThuSrcI == Delays.end())
         continue;
 
-      float &OldDelay = Srcs[Leaf];
+      delay_type &OldDelay = Srcs[Leaf];
       OldDelay = std::max(OldDelay, *ThuSrcI->second);
     }
   }
@@ -397,7 +411,9 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
     if (!Inst)
       continue;
 
-    std::map<VASTSeqValue*, float> Srcs;
+    typedef std::map<VASTSeqValue*, ExternalTimingAnalysis::delay_type>
+            ArrivalInfo;
+    std::map<VASTSeqValue*, ExternalTimingAnalysis::delay_type> Srcs;
     VASTValPtr Guard = Op->getGuard();
     VASTSeqValue *SlotValue = Op->getSlot()->getValue();
 
@@ -414,10 +430,10 @@ bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
       ETA.getPathDelay(L, FI, Srcs);
     }
 
-    typedef std::map<VASTSeqValue*, float>::iterator src_iterator;
+    typedef ArrivalInfo::iterator src_iterator;
     for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       VASTSeqValue *Src = I->first;
-      float delay = I->second;
+      float delay = I->second.total_delay;
 
       if (Src->isSlot()) {
         if (Src->getLLVMValue() == 0)
@@ -516,7 +532,8 @@ void ExtractTimingForPath(raw_ostream &O, unsigned RefIdx, bool HasThu) {
 void
 ExternalTimingAnalysis::extractTimingForPath(raw_ostream &O, VASTSelector *Dst,
                                              VASTSeqValue *Src, VASTExpr *Thu,
-                                             delay_type *DelayRef) {
+                                             delay_type *Delay,
+                                             bool IsCellDelay) {
   O << "set src " << GetSTACollection(Src) << '\n';
   O << "set dst " << GetSTACollection(Dst) << '\n';
   if (Thu)
@@ -524,7 +541,7 @@ ExternalTimingAnalysis::extractTimingForPath(raw_ostream &O, VASTSelector *Dst,
   // if (Thu) O << "set thu " << GetSTACollection(Thu) << '\n';
 
   unsigned RefIndex = DelayRefs.size();
-  DelayRefs.push_back(DelayRef);
+  DelayRefs.push_back(IsCellDelay ? & Delay->cell_delay : &Delay->total_delay);
 
   ExtractTimingForPath(O, RefIndex, Thu != 0);
   DEBUG(O << "post_message -type info \"" << Src->getSTAObjectName()
@@ -623,8 +640,8 @@ void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,
     return;
 
   unsigned RefIndex = DelayRefs.size();
-  DelayRefs.push_back(DelayRef);
-  BBReachability[BB].push_back(DelayRef);
+  DelayRefs.push_back(&DelayRef->total_delay);
+  BBReachability[BB].push_back(&DelayRef->total_delay);
 
   TclO << "set slot " << GetSTACollection(Sel) << "\n"
           "if {[get_collection_size $slot] == 0} {\n"
@@ -731,7 +748,7 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
            LI != LE; ++LI) {
         VASTSeqValue *Leaf = *LI;
         // Get the register to thu delay.
-        float *&P = ComplexArrivials[Sel][Expr][Leaf];
+        delay_type *&P = ComplexArrivials[Sel][Expr][Leaf];
         if (P)
           continue;
 
@@ -848,10 +865,12 @@ ExternalTimingAnalysis::writeFitDesignScript(raw_ostream &O, bool PAR,
 }
 
 void ExternalTimingAnalysis::writeDelayMatrixExtractionScript(raw_ostream &O,
-                                                              bool PAR) {
+                                                              bool PAR,
+                                                              bool ZeroICDelay) {
   // Create the timing netlist before we perform any analysis.
   O << "create_timing_netlist";
   if (!PAR) O << " -post_map";
+  if (ZeroICDelay) O << " -zero_ic_delays";
   O << "\n"
     "read_sdc {" << getSDCPath() << "}\n"
     "update_timing_netlist\n";
@@ -869,7 +888,7 @@ void ExternalTimingAnalysis::writeDelayMatrixExtractionScript(raw_ostream &O,
     const SrcInfo &Srcs = I->second;
     for (src_iterator J = Srcs.begin(), E = Srcs.end(); J != E; ++J) {
       VASTSeqValue *Leaf = J->first;
-      extractTimingForPath(O, Sel, Leaf, 0, J->second);
+      extractTimingForPath(O, Sel, Leaf, 0, J->second, ZeroICDelay);
     }
   }
 
@@ -886,7 +905,7 @@ void ExternalTimingAnalysis::writeDelayMatrixExtractionScript(raw_ostream &O,
       const SrcInfo &Srcs = J->second;
       for (src_iterator K = Srcs.begin(), E = Srcs.end(); K != E; ++K) {
         VASTSeqValue *Leaf = K->first;
-        extractTimingForPath(O, Sel, Leaf, Thu, K->second);
+        extractTimingForPath(O, Sel, Leaf, Thu, K->second, ZeroICDelay);
       }
     }
   }
@@ -912,7 +931,8 @@ ExternalTimingAnalysis::writeTimingAnalysisDriver(raw_ostream &O, bool PAR) {
     extractSlotReachability(O, Sel, allocateDelayRef());
   }
 
-  writeDelayMatrixExtractionScript(O, PAR);
+  writeDelayMatrixExtractionScript(O, PAR, false);
+  writeDelayMatrixExtractionScript(O, PAR, true);
 
   // Close the file object.
   O << "close $JSONFile\n";
