@@ -910,6 +910,19 @@ void ExternalTimingAnalysis::writeDelayMatrixExtractionScript(raw_ostream &O,
     }
   }
 
+  // Extract the basic block reachability information if it is not yet extracted.
+  if (BBReachability.empty()) {
+    typedef VASTModule::selector_iterator iterator;
+    for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+      VASTSelector *Sel = I;
+
+      if (!Sel->isSlot())
+        continue;
+
+      extractSlotReachability(O, Sel, allocateDelayRef());
+    }
+  }
+
   O << "delete_timing_netlist\n\n";
 }
 
@@ -920,16 +933,6 @@ ExternalTimingAnalysis::writeTimingAnalysisDriver(raw_ostream &O, bool PAR) {
   // Open the file for the extracted datapath arrival time.
   O << "set JSONFile [open \"";
   O.write_escaped(getResultPath()) << "\" w+]\n";
-
-  typedef VASTModule::selector_iterator iterator;
-  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
-    VASTSelector *Sel = I;
-
-    if (!Sel->isSlot())
-      continue;
-
-    extractSlotReachability(O, Sel, allocateDelayRef());
-  }
 
   writeDelayMatrixExtractionScript(O, PAR, false);
   writeDelayMatrixExtractionScript(O, PAR, true);
