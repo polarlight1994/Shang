@@ -262,7 +262,7 @@ struct ExternalTimingAnalysis {
   void writeReadPlacementScript(raw_ostream &O) const;
 
   // Write the script to extract the timing analysis results from quartus.
-  void buildDelayMatrix(raw_ostream &O);
+  void buildDelayMatrix();
   void buildDelayMatrixForSelector(raw_ostream &TimingSDCO,
                                    VASTSelector *Sel);
   void writeDelayMatrixExtractionScript(raw_ostream &TclO, bool PAR,
@@ -762,7 +762,7 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
 }
 
 void
-ExternalTimingAnalysis::buildDelayMatrix(raw_ostream &TclO) {
+ExternalTimingAnalysis::buildDelayMatrix() {
   OwningPtr<raw_fd_ostream> TimingSDCO(createTmpFile(getSDCPath()));
 
   *TimingSDCO << "create_clock -name \"clk\" -period "
@@ -929,9 +929,10 @@ void ExternalTimingAnalysis::writeDelayMatrixExtractionScript(raw_ostream &O,
 void
 ExternalTimingAnalysis::writeTimingAnalysisDriver(raw_ostream &O, bool PAR) {
   // Perform analysis to extract the delays.
-  buildDelayMatrix(O);
+  buildDelayMatrix();
   // Open the file for the extracted datapath arrival time.
-  O << "set JSONFile [open \"";
+  O << "export_assignments\n"
+       "set JSONFile [open \"";
   O.write_escaped(getResultPath()) << "\" w+]\n";
 
   writeDelayMatrixExtractionScript(O, PAR, false);
