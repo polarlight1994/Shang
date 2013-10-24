@@ -78,7 +78,7 @@ ExternalToolTimeOut("vast-external-tool-time-out",
 
 
 static cl::opt<float>
-SDCFilterICDelayRatio("vast-external-tool-sdc-filter-ic-delay-ratio",
+ExpectedICDelayRatio("vast-external-tool-expected-ic-delay-ratio",
   cl::desc("Use set the interconnect delay ratio for the sdc constraints filter"),
   cl::init(0.0f));
 
@@ -721,17 +721,14 @@ struct ConstraintHelper {
 unsigned
 ExternalTimingAnalysis::calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op) {
   Dataflow::delay_type delay = DF->getDelay(Src, Op, Op->getSlot());
-  unsigned NumCycles = Distances->getIntervalFromDef(Src, Op->getSlot());
-  //float Slack = float(NumCycles) - delay.expected() - delay.expected_ic_delay();
-  float ICDelayRatio = delay.expected_ic_delay() / delay.expected();
-  float CellDelay = delay.expected() - delay.expected_ic_delay();
-  // Only generate the multi-cycles constraints if its slack ratio is smaller than
-  // the threshold
-  if (ICDelayRatio >= SDCFilterICDelayRatio)
-    return std::ceil(CellDelay / (1.0 - SDCFilterICDelayRatio));
 
-  // Otherwise just ignore this path.
-  return 1;
+  float TotalDelay = delay.expected();
+  float CellDelay = TotalDelay - delay.expected_ic_delay();
+  // Calculate the expected delay according to the cell delay and the expected
+  // % of interconnect delay.
+  float ExpectedDelay = CellDelay / (1.0 - ExpectedICDelayRatio);
+
+  return std::ceil(std::min(TotalDelay, ExpectedDelay));
 }
 
 void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,

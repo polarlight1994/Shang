@@ -565,7 +565,7 @@ IfFile:close()
                '-vast-external-enable-timing-constraint=%(vast_external_enable_timing_constraint)s' % self,
                '-vast-external-enable-fast-place-and-route=%(vast_external_enable_fast_place_and_route)s' % self,
                '-vast-external-enable-place-and-route=%(vast_external_enable_place_and_route)s' % self,
-               '-vast-external-tool-sdc-filter-ic-delay-ratio=%(vast_external_tool_sdc_filter_ic_delay_ratio)s' % self,
+               '-vast-external-tool-expected-ic-delay-ratio=%(vast_external_tool_expected_ic_delay_ratio)s' % self,
                '-shang-selector-ignore-trivial-loops=true',
                '-shang-selector-ignore-x-fanins=true',
                 '-stats',

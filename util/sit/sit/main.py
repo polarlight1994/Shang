@@ -120,7 +120,7 @@ def main(builtinParameters = {}):
   option_space_dict['vast_external_enable_timing_constraint'] = [ 'true' ]
   option_space_dict['vast_external_enable_fast_place_and_route'] = [ 'true' ]
   option_space_dict['vast_external_enable_place_and_route'] = [ 'true' ]
-  option_space_dict['vast_external_tool_sdc_filter_ic_delay_ratio'] = [ 0.8 ]
+  option_space_dict['vast_external_tool_expected_ic_delay_ratio'] = [ 0.4 ]
 
   option_space_dict['timing_model'] = [ 'external' ]
 
