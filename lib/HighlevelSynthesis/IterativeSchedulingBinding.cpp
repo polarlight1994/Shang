@@ -58,12 +58,13 @@ struct SelectorSlackVerifier {
   typedef std::map<VASTSchedUnit*, SrcSlackMapTy> SlackMapTy;
   SlackMapTy SlackMap;
   const unsigned MaxFIPerLevel;
+  const float PenaltyFactor;
 
   SelectorSlackVerifier(IR2SUMapTy &IR2SUMap, SDCScheduler &Scheduler,
-                        VASTSelector *Sel)
+                        VASTSelector *Sel, float PenaltyFactor)
     : IR2SUMap(IR2SUMap), Scheduler(Scheduler), Sel(Sel),
-      MaxFIPerLevel(getFUDesc<VFUMux>()->getMaxAllowdMuxSize(Sel->getBitWidth()))
-  {}
+      MaxFIPerLevel(getFUDesc<VFUMux>()->getMaxAllowdMuxSize(Sel->getBitWidth())),
+      PenaltyFactor(PenaltyFactor) {}
 
   bool preserveFaninConstraint() {
     std::vector<VASTSchedUnit*> SUs;
@@ -182,9 +183,15 @@ struct SelectorSlackVerifier {
 
       unsigned ExpectedSlack = unsigned(Latency) + Slack + 1;
 
+      double CurPenalty = double(PenaltyFactor) /
+                          pow(double(MaxFIPerLevel), int(Slack + 1));
+      // Do not add the soft constraint if its penalty is too small
+      if (CurPenalty < 1e-2)
+        continue;
+
       SoftConstraint &SC = Scheduler.getOrCreateSoftConstraint(Src, Dst);
       if (SC.C == 0 || SC.C >= ExpectedSlack)
-        SC.Penalty += 4.0 / float(Slack + 1) * float(Slack + 1);
+        SC.Penalty += CurPenalty;
 
       if (SC.C < ExpectedSlack)
         SC.C = ExpectedSlack;
@@ -330,12 +337,14 @@ struct ItetrativeEngine {
     if (!performScheduling(VM))
       return false;
 
+    float NumBBs = VM.getLLVMFunction().getBasicBlockList().size();
+
     bool FaninConstraintsViolated = false;
     typedef VASTModule::selector_iterator iterator;
     for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
       VASTSelector *Sel = I;
 
-      SelectorSlackVerifier SSV(IR2SUMap, Scheduler, Sel);
+      SelectorSlackVerifier SSV(IR2SUMap, Scheduler, Sel, TotalWeight / NumBBs);
 
       if (Sel->isSlot() || Sel->size() < SSV.MaxFIPerLevel) continue;
 
