@@ -44,6 +44,8 @@
 
 using namespace llvm;
 STATISTIC(NumConstraintsWritten, "Number of multi-cycle constraints written");
+STATISTIC(NumConesMerged, "Number of combinational cones merged for multi-cycle"
+                          " constraints generation");
 STATISTIC(NumQueriesWritten, "Number of path delay queries written");
 STATISTIC(NumQueriesRead, "Number of path delay queries read");
 static cl::opt<bool> Use64BitQuartus("vast-use-64bit-quartus",
@@ -557,6 +559,10 @@ struct ConstraintHelper {
   typedef std::map<VASTExpr*, LeafSet> ConeSet;
   std::map<unsigned, ConeSet> CyclesMatrix;
 
+  typedef std::map<VASTSeqValue*, unsigned> LeafCyclesDistribution;
+  typedef std::map<VASTExpr*, LeafCyclesDistribution> ConeCyclesDistribution;
+  ConeCyclesDistribution ConeCyclesDistributionMatrix;
+
   ConstraintHelper(raw_ostream &O, VASTSelector *Sel)
     : O(O), Sel(Sel) {}
 
@@ -565,6 +571,7 @@ struct ConstraintHelper {
     Cycles = std::max(Cycles, 1u);
 
     CyclesMatrix[Cycles][Thu].insert(Leaf);
+    ConeCyclesDistributionMatrix[Thu][Leaf] = Cycles;
   }
 
   void generateConstraints() const {
@@ -573,6 +580,8 @@ struct ConstraintHelper {
 
     typedef std::map<unsigned, ConeSet>::const_iterator iterator;
     typedef ConeSet::const_iterator cone_iterator;
+    std::vector<VASTExpr*> Roots, CurCones;
+
     for (iterator I = CyclesMatrix.begin(), E = CyclesMatrix.end(); I != E; ++I)
     {
       unsigned NumCycles = I->first;
@@ -582,34 +591,129 @@ struct ConstraintHelper {
 
       const ConeSet &Cones = I->second;
       for (cone_iterator J = Cones.begin(), E = Cones.end(); J != E; ++J)
-        generateConstraints(J->first, J->second, NumCycles);
+        Roots.push_back(J->first);
+
+      while (!Roots.empty()) {
+        VASTExpr *E = Roots.back();
+        Roots.pop_back();
+
+        // The current root may be merged.
+        if (E == 0)
+          continue;
+
+        CurCones.push_back(E);
+        for (unsigned i = 0, e = Roots.size(); i < e; ++i) {
+          VASTExpr *&Root = Roots[i];
+
+          // The current root may be merged.
+          if (!(Root && isLegalToMergeCone(CurCones, Root, Cones, NumCycles)))
+            continue;
+
+          CurCones.push_back(Root);
+          // Set the current array element to 0, so that we will not visit the
+          // same root more than once.
+          Root = 0;
+
+          ++NumConesMerged;
+        }
+
+        generateConstraints(CurCones, NumCycles, Cones);
+        CurCones.clear();
+      }
     }
   }
 
-  // Generate the constraints.
-  void generateConstraints(VASTExpr *Thu, const LeafSet &Leaves,
-                           unsigned NumCycles) const {
-    assert(!Leaves.empty() && "Unexpected empty leaf set!");
+  bool isLegalToMergeCone(ArrayRef<VASTExpr*> CurCones, VASTExpr *NewRoot,
+                          const ConeSet &ConeSets, unsigned NumCycles) const {
+    ConeSet::const_iterator I = ConeSets.find(NewRoot);
+    assert(I != ConeSets.end() && "Cannot find leaves of current cone!");
+    const LeafSet &LeavesOfNewRoot = I->second;
+
+    for (unsigned i = 0; i < CurCones.size(); ++i) {
+      VASTExpr *CurRoot = CurCones[i];
+
+      if (haveDifferentCyclesConstraints(CurRoot, LeavesOfNewRoot, NumCycles))
+        return false;
+
+      ConeSet::const_iterator J = ConeSets.find(CurRoot);
+      assert(J != ConeSets.end() && "Cannot find leaves of current cone!");
+      const LeafSet &LeavesOfCurRoot = J->second;
+
+      if (haveDifferentCyclesConstraints(NewRoot, LeavesOfCurRoot, NumCycles))
+        return false;
+    }
+
+    return true;
+  }
+
+  bool haveDifferentCyclesConstraints(VASTExpr *Root, const LeafSet &Leaves,
+                                      unsigned CurrentCycles) const {
+    typedef LeafSet::const_iterator iterator;
+    for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I)
+      if (haveDifferentCyclesConstraints(Root, *I, CurrentCycles))
+        return true;
+
+    return false;
+  }
+
+  bool haveDifferentCyclesConstraints(VASTExpr *Root, VASTSeqValue *Leaf,
+                                      unsigned CurrentCycles) const {
+    typedef ConeCyclesDistribution::const_iterator iterator;
+    iterator I = ConeCyclesDistributionMatrix.find(Root);
+    assert(I != ConeCyclesDistributionMatrix.end()
+           && "Cycles information is missed for current root!");
+
+    const LeafCyclesDistribution &LeafCycles = I->second;
+    LeafCyclesDistribution::const_iterator J = LeafCycles.find(Leaf);
+
+    // If leaf is not reachable from current root, there is no different cycles
+    // constraints.
+    if (J == LeafCycles.end())
+      return false;
+
+    return J->second != CurrentCycles;
+  }
+
+  void generateConstraints(ArrayRef<VASTExpr*> CurCones, unsigned NumCycles,
+                           const ConeSet &ConeSets) const {
     assert(NumCycles > 1 && "Unexpected number of cycles!");
 
     // Start the new constraint.
     O << "set_multicycle_path"
-          " -to [get_keepers -nowarn {" << Sel->getSTAObjectName() <<  "}]";
-    if (Thu)
-      O << " -through [get_pins -compatibility_mode -nowarn {"
-        << Thu->getSTAObjectName() << "}] ";
+         " -to [get_keepers -nowarn {" << Sel->getSTAObjectName() <<  "}]";
 
-    O << " -from [get_keepers -nowarn {";
+    // Generate the through filter
+    if (CurCones.size() > 1 || CurCones[0] != 0) {
+      O << " -through [get_pins -compatibility_mode -nowarn {";
 
-    typedef LeafSet::const_iterator iterator;
-    for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
+      for (unsigned i = 0; i < CurCones.size(); ++i)
+        if (CurCones[i] != 0)
+          O << ' ' << CurCones[i]->getSTAObjectName();
 
-      O << ' ' << (*I)->getSTAObjectName();
+      O  << "}] ";
     }
 
-    // Finish the constraint for the last cycle.
-    O << "}] -setup -end " << NumCycles << '\n';
-    ++NumConstraintsWritten;
+    // Generate the from filter
+    O << " -from [get_keepers -nowarn {";
+
+    LeafSet Leaves;
+    for (unsigned i = 0; i < CurCones.size(); ++i) {
+      ConeSet::const_iterator I = ConeSets.find(CurCones[i]);
+      assert(I != ConeSets.end() && "Cannot find leaves of current cone!");
+      const LeafSet &CurLeaves = I->second;
+      Leaves.insert(CurLeaves.begin(), CurLeaves.end());
+    }
+
+    assert(!Leaves.empty() && "Unexpected empty leaf set!");
+
+    typedef LeafSet::const_iterator iterator;
+    for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I)
+      O << ' ' << (*I)->getSTAObjectName();
+
+    O  << "}] ";
+
+    O << " -setup -end " << NumCycles << '\n';
+      ++NumConstraintsWritten;
   }
 };
 }
