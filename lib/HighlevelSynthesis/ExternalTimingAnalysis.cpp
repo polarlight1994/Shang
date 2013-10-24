@@ -553,63 +553,63 @@ namespace {
 struct ConstraintHelper {
   raw_ostream &O;
   VASTSelector *Sel;
-  VASTExpr *Expr;
-  std::multimap<unsigned, VASTSeqValue*> Cycles;
+  typedef std::set<VASTSeqValue*> LeafSet;
+  typedef std::map<VASTExpr*, LeafSet> ConeSet;
+  std::map<unsigned, ConeSet> CyclesMatrix;
 
-  ConstraintHelper(raw_ostream &O, VASTSelector *Sel, VASTExpr *Expr = 0)
-    : O(O), Sel(Sel), Expr(Expr) {}
+  ConstraintHelper(raw_ostream &O, VASTSelector *Sel)
+    : O(O), Sel(Sel) {}
 
-  ~ConstraintHelper() {
-    if (EnableTimingConstraint)
-      generateConstraints();
-  }
   // Add source node and the number of avalaible cycles
-  void addSource(VASTSeqValue *Src, unsigned Cycle) {
-    // Ignore the single cycle paths.
-    if (Cycle <= 1)
+  void addSource(VASTSeqValue *Leaf, VASTExpr *Thu, unsigned Cycles) {
+    Cycles = std::max(Cycles, 1u);
+
+    CyclesMatrix[Cycles][Thu].insert(Leaf);
+  }
+
+  void generateConstraints() const {
+    if (!EnableTimingConstraint)
       return;
 
-    // According to our experimental result, for path whose number of cycles is
-    // bigger than 5, the multi-cycle constraints doesn't help
-    //if (Cycle > 5)
-    //  return;
+    typedef std::map<unsigned, ConeSet>::const_iterator iterator;
+    typedef ConeSet::const_iterator cone_iterator;
+    for (iterator I = CyclesMatrix.begin(), E = CyclesMatrix.end(); I != E; ++I)
+    {
+      unsigned NumCycles = I->first;
+      // No need to generate the single cycle constraints
+      if (NumCycles <= 1)
+        continue;
 
-    assert(!Src->isSlot() && !Src->isFUOutput() && "Unexpected source type!");
-    Cycles.insert(std::make_pair(Cycle, Src));
+      const ConeSet &Cones = I->second;
+      for (cone_iterator J = Cones.begin(), E = Cones.end(); J != E; ++J)
+        generateConstraints(J->first, J->second, NumCycles);
+    }
   }
 
   // Generate the constraints.
-  void generateConstraints() const {
-    unsigned LastCycle = 0;
-    typedef std::multimap<unsigned, VASTSeqValue*>::const_iterator iterator;
-    for (iterator I = Cycles.begin(), E = Cycles.end(); I != E; ++I) {
-      unsigned CurCycle = I->first;
-      if (CurCycle != LastCycle) {
-        // Finish the constraint for the last cycle.
-        if (LastCycle) {
-          O << "}] -setup -end " << LastCycle << '\n';
-          ++NumConstraintsWritten;
-        }
+  void generateConstraints(VASTExpr *Thu, const LeafSet &Leaves,
+                           unsigned NumCycles) const {
+    assert(!Leaves.empty() && "Unexpected empty leaf set!");
+    assert(NumCycles > 1 && "Unexpected number of cycles!");
 
-        // Start the new constraint.
-        O << "set_multicycle_path"
-             " -to [get_keepers -nowarn {" << Sel->getSTAObjectName() <<  "}]";
-        if (Expr)
-          O << " -through [get_pins -compatibility_mode -nowarn {"
-            << Expr->getSTAObjectName() << "}] ";
+    // Start the new constraint.
+    O << "set_multicycle_path"
+          " -to [get_keepers -nowarn {" << Sel->getSTAObjectName() <<  "}]";
+    if (Thu)
+      O << " -through [get_pins -compatibility_mode -nowarn {"
+        << Thu->getSTAObjectName() << "}] ";
 
-        O << " -from [get_keepers -nowarn {";
-      }
+    O << " -from [get_keepers -nowarn {";
 
-      O << ' ' << I->second->getSTAObjectName();
-      LastCycle = CurCycle;
+    typedef LeafSet::const_iterator iterator;
+    for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
+
+      O << ' ' << (*I)->getSTAObjectName();
     }
 
     // Finish the constraint for the last cycle.
-    if (LastCycle) {
-      O << "}] -setup -end " << LastCycle << '\n';
-      ++NumConstraintsWritten;
-    }
+    O << "}] -setup -end " << NumCycles << '\n';
+    ++NumConstraintsWritten;
   }
 };
 }
@@ -624,7 +624,7 @@ ExternalTimingAnalysis::calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op) {
   // Only generate the multi-cycles constraints if its slack ratio is smaller than
   // the threshold
   if (ICDelayRatio >= SDCFilterICDelayRatio)
-    return std::min<unsigned>(NumCycles, std::ceil(CellDelay / (1.0 - SDCFilterICDelayRatio)));
+    return std::ceil(CellDelay / (1.0 - SDCFilterICDelayRatio));
 
   // Otherwise just ignore this path.
   return 1;
@@ -658,6 +658,7 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
   typedef VASTSelector::iterator fanin_iterator;
   DenseMap<VASTSlot*, VASTSeqOp*> SlotMap;
   DenseMap<VASTSeqValue*, unsigned> CycleConstraints;
+  ConstraintHelper CH(TimingSDCO, Sel);
 
   for (fanin_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch U = *I;
@@ -697,22 +698,19 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
       SlotActive->extractSupportingSeqVal(AllLeaves);
   }
 
-  {
-    ConstraintHelper CH(TimingSDCO, Sel);
-    for (leaf_iterator I = AllLeaves.begin(), E = AllLeaves.end(); I != E; ++I) {
-      VASTSeqValue *Src = *I;
+  for (leaf_iterator I = AllLeaves.begin(), E = AllLeaves.end(); I != E; ++I) {
+    VASTSeqValue *Src = *I;
 
-      if (IntersectLeaves.count(Src))
-        continue;
+    if (IntersectLeaves.count(Src))
+      continue;
 
-      // Directly use the register-to-register delay.
-      SimpleArrivals[Sel][Src] = allocateDelayRef();
+    // Directly use the register-to-register delay.
+    SimpleArrivals[Sel][Src] = allocateDelayRef();
 
-      if (Src->isSlot() || Src->isFUOutput())
-        continue;
+    if (Src->isSlot() || Src->isFUOutput())
+      continue;
 
-      CH.addSource(Src, CycleConstraints.lookup(Src));
-    }
+    CH.addSource(Src, 0, CycleConstraints.lookup(Src));
   }
 
   // Extract path delay in details for leaves that reachable to different fanins
@@ -730,7 +728,6 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
       continue;
 
     assert(Expr->isTimingBarrier() && "Unexpected VASTExpr type!");
-    ConstraintHelper CH(TimingSDCO, Sel, Expr);
 
     CurLeaves.clear();
     Expr->extractSupportingSeqVal(CurLeaves);
@@ -754,12 +751,14 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
           continue;
 
         P = allocateDelayRef();
-        CH.addSource(Leaf, calculateCycles(Leaf, Op));
+        CH.addSource(Leaf, Expr, calculateCycles(Leaf, Op));
       }
 
       AnnotoatedFanins[Op].insert(Expr);
     }
   }
+
+  CH.generateConstraints();
 }
 
 void
