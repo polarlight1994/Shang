@@ -50,7 +50,6 @@ static VASTSchedUnit *LookupSU(VASTSeqOp *Op, const IR2SUMapTy &Map) {
 }
 
 namespace {
-
 struct SelectorSlackVerifier {
   IR2SUMapTy &IR2SUMap;
   SDCScheduler &Scheduler;
@@ -526,7 +525,9 @@ bool ItetrativeEngine::performScheduling(VASTModule &VM) {
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
     DEBUG(dbgs() << "Applying constraints to BB: " << BB->getName() << '\n');
-    //BlockFrequency BF = BFI.getBlockFreq(BB);
+    // Get the frequency of the block, and ensure the frequency always bigger
+    // than 0.
+    BlockFrequency BF = std::max(BFI.getBlockFreq(BB), BlockFrequency(1));
 
     float ExitWeigthSum = 0;
     ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
@@ -543,8 +544,10 @@ bool ItetrativeEngine::performScheduling(VASTModule &VM) {
       if (BasicBlock *TargetBB = BBExit->getTargetBlock())
         BP = BPI.getEdgeProbability(BB, TargetBB);
 
-      // BlockFrequency CurBF = BF * BP;
-      float ExitWeight = (PerformanceFactor * BP.getNumerator()) / BP.getDenominator();
+      BlockFrequency CurBranchFreq = BF * BP;
+      float ScaledCurBranchFreq = float(CurBranchFreq.getFrequency()) /
+                                  float(BlockFrequency::getEntryFrequency());
+      float ExitWeight = (PerformanceFactor * ScaledCurBranchFreq);
       Scheduler.addObjectCoeff(BBExit, - 1.0 * ExitWeight);
       DEBUG(dbgs().indent(4) << "Setting Exit Weight: " << ExitWeight
                               << ' ' << BP << '\n');
@@ -587,8 +590,7 @@ bool ItetrativeEngine::performScheduling(VASTModule &VM) {
 void VASTScheduling::scheduleGlobal() {
   PreSchedBinding &PSB = getAnalysis<PreSchedBinding>();
   BranchProbabilityInfo &BPI = getAnalysis<BranchProbabilityInfo>();
-  BlockFrequencyInfo &BFI = *reinterpret_cast<BlockFrequencyInfo*>(0);
-  //getAnalysis<BlockFrequencyInfo>();
+  BlockFrequencyInfo &BFI = getAnalysis<BlockFrequencyInfo>();
 
   ItetrativeEngine ISB(*G, PSB, *DT, BFI, BPI, IR2SUMap);
   while (ISB.performSchedulingAndAllocateMuxSlack(*VM)) {
