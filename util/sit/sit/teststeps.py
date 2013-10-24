@@ -551,7 +551,7 @@ IfFile:close()
     jt.remoteCommand = 'timeout'
     # Use a bigger timeout if we are runing the feedback flow.
     timeout = self.hls_feedback_flow_timeout * ( 3 * self.shang_max_scheduling_iteration ) if self.timing_model == 'external' else self.hls_timeout
-    jt.args = ['%ds' % timeout, self.shang, self.synthesis_config_file,
+    jt.args = ['%ds' % timeout, 'nice', '-10', self.shang, self.synthesis_config_file,
                '-timing-model=%(timing_model)s' % self,
                '-shang-enable-mux-pipelining=%(shang_enable_mux_pipelining)s' % self,
                '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self,
