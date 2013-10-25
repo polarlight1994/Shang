@@ -57,6 +57,8 @@ struct SelectorSlackVerifier {
   typedef std::map<VASTSchedUnit*, unsigned> SrcSlackMapTy;
   typedef std::map<VASTSchedUnit*, SrcSlackMapTy> SlackMapTy;
   SlackMapTy SlackMap;
+  typedef std::set<VASTSchedUnit*> ViolatedSUSet;
+  ViolatedSUSet ViolatedSUs;
   const unsigned MaxFIPerLevel;
   const float PenaltyFactor;
 
@@ -115,6 +117,7 @@ struct SelectorSlackVerifier {
   bool preserveFaninConstraint(unsigned AvailableFanins, unsigned CurLevel,
                                MutableArrayRef<VASTSchedUnit*> SUs) {
     assert(CurLevel < 10 && "Unexpected number of pipeline stages!");
+    SmallVector<VASTSchedUnit*, 8> UsedSUs;
 
     unsigned UsedFanins = 0;
     unsigned RemainFanins = 0;
@@ -133,13 +136,22 @@ struct SelectorSlackVerifier {
       // Set this element to null, so that we will not visit it again in the
       // next level.
       SUs[i] = 0;
+      UsedSUs.push_back(SU);
     }
 
-    if (AvailableFanins < UsedFanins)
-      return false;
+    if (AvailableFanins < UsedFanins) {
+      while (!UsedSUs.empty())
+        ViolatedSUs.insert(UsedSUs.pop_back_val());
 
-    if (AvailableFanins == UsedFanins && RemainFanins > AvailableFanins)
       return false;
+    }
+
+    if (AvailableFanins == UsedFanins && RemainFanins > AvailableFanins) {
+      while (!UsedSUs.empty())
+        ViolatedSUs.insert(UsedSUs.pop_back_val());
+
+      return false;
+    }
 
     if (RemainFanins == 0 || RemainFanins <= AvailableFanins)
       return true;
@@ -176,25 +188,34 @@ struct SelectorSlackVerifier {
   void applyPenalties(VASTSchedUnit *Dst, const SrcSlackMapTy &SrcSlacks) {
     typedef SDCScheduler::SoftConstraint SoftConstraint;
     typedef SrcSlackMapTy::const_iterator iterator;
+    bool IsDstVoilatedSlackConstraint = ViolatedSUs.count(Dst);
+
     for (iterator I = SrcSlacks.begin(), E = SrcSlacks.end(); I != E; ++I) {
       VASTSchedUnit *Src = I->first;
       unsigned Slack = I->second;
-      unsigned Latency = Dst->getDFLatency(Src);
 
+      unsigned Latency = Dst->getDFLatency(Src);
+      unsigned AverageMUXLevel = (Log2_32_Ceil(Sel->numNonTrivialFanins()) - 1)
+                                 / Log2_32_Ceil(MaxFIPerLevel) + 1;
       unsigned ExpectedSlack = unsigned(Latency) + Slack + 1;
 
-      double CurPenalty = double(PenaltyFactor) /
+      double CurrentSlackRatio = double(Slack + 1) / double(AverageMUXLevel);
+      double CurPenalty = double(PenaltyFactor) * double(AverageMUXLevel) /
                           pow(double(MaxFIPerLevel), int(Slack + 1));
+
+      if (IsDstVoilatedSlackConstraint)
+        CurPenalty *= 2.0;
+      else
+        CurPenalty /= 2.0;
+
       // Do not add the soft constraint if its penalty is too small
       if (CurPenalty < 1e-2)
         continue;
 
       SoftConstraint &SC = Scheduler.getOrCreateSoftConstraint(Src, Dst);
-      if (SC.C == 0 || SC.C >= ExpectedSlack)
-        SC.Penalty += CurPenalty;
 
-      if (SC.C < ExpectedSlack)
-        SC.C = ExpectedSlack;
+      SC.Penalty += CurPenalty;
+      SC.C = ExpectedSlack;
     }
   }
 };
