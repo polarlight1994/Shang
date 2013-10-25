@@ -606,7 +606,7 @@ struct ConstraintHelper {
           VASTExpr *&Root = Roots[i];
 
           // The current root may be merged.
-          if (!(Root && isLegalToMergeCone(CurCones, Root, Cones, NumCycles)))
+          if (!(Root && isLegalToGroup(CurCones, Root, Cones, NumCycles)))
             continue;
 
           CurCones.push_back(Root);
@@ -623,41 +623,43 @@ struct ConstraintHelper {
     }
   }
 
-  bool isLegalToMergeCone(ArrayRef<VASTExpr*> CurCones, VASTExpr *NewRoot,
-                          const ConeSet &ConeSets, unsigned NumCycles) const {
+  bool isLegalToGroup(ArrayRef<VASTExpr*> CurCones, VASTExpr *NewRoot,
+                      const ConeSet &ConeSets, unsigned NumCycles) const {
     ConeSet::const_iterator I = ConeSets.find(NewRoot);
     assert(I != ConeSets.end() && "Cannot find leaves of current cone!");
     const LeafSet &LeavesOfNewRoot = I->second;
 
+    // Do not generate the constraints that have more number of cycles than
+    // the actual available cycles.
     for (unsigned i = 0; i < CurCones.size(); ++i) {
       VASTExpr *CurRoot = CurCones[i];
 
-      if (haveDifferentCyclesConstraints(CurRoot, LeavesOfNewRoot, NumCycles))
+      if (haveSmallerCyclesConstraints(CurRoot, LeavesOfNewRoot, NumCycles))
         return false;
 
       ConeSet::const_iterator J = ConeSets.find(CurRoot);
       assert(J != ConeSets.end() && "Cannot find leaves of current cone!");
       const LeafSet &LeavesOfCurRoot = J->second;
 
-      if (haveDifferentCyclesConstraints(NewRoot, LeavesOfCurRoot, NumCycles))
+      if (haveSmallerCyclesConstraints(NewRoot, LeavesOfCurRoot, NumCycles))
         return false;
     }
 
     return true;
   }
 
-  bool haveDifferentCyclesConstraints(VASTExpr *Root, const LeafSet &Leaves,
-                                      unsigned CurrentCycles) const {
+  bool haveSmallerCyclesConstraints(VASTExpr *Root, const LeafSet &Leaves,
+                                    unsigned CurrentCycles) const {
     typedef LeafSet::const_iterator iterator;
     for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I)
-      if (haveDifferentCyclesConstraints(Root, *I, CurrentCycles))
+      if (haveSmallerCyclesConstraints(Root, *I, CurrentCycles))
         return true;
 
     return false;
   }
 
-  bool haveDifferentCyclesConstraints(VASTExpr *Root, VASTSeqValue *Leaf,
-                                      unsigned CurrentCycles) const {
+  bool haveSmallerCyclesConstraints(VASTExpr *Root, VASTSeqValue *Leaf,
+                                    unsigned CurrentCycles) const {
     typedef ConeCyclesDistribution::const_iterator iterator;
     iterator I = ConeCyclesDistributionMatrix.find(Root);
     assert(I != ConeCyclesDistributionMatrix.end()
@@ -671,7 +673,7 @@ struct ConstraintHelper {
     if (J == LeafCycles.end())
       return false;
 
-    return J->second != CurrentCycles;
+    return J->second < CurrentCycles;
   }
 
   void generateConstraints(ArrayRef<VASTExpr*> CurCones, unsigned NumCycles,
