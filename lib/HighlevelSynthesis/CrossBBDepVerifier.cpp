@@ -21,32 +21,30 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
-STATISTIC(AllocatedWaitStates,
-          "Number of wait states inserted to fix the inter-bb latency");
 
 namespace {
-struct IntervalFixer {
+struct Verifier {
   Function &F;
   VASTSchedGraph &G;
   DominatorTree *DT;
 
   std::map<BasicBlock*, unsigned> SPDFromEntry;
 
-  IntervalFixer(VASTSchedGraph &G, DominatorTree *DT)
+  Verifier(VASTSchedGraph &G, DominatorTree *DT)
     : F(G.getFunction()), G(G), DT(DT) {}
 
   void initialize();
-  void fixInterval();
+  void verify();
 
   unsigned computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs);
-  unsigned allocateWaitStates(VASTSchedUnit *Entry, unsigned ExpectedSPD);
+  unsigned computeActualSPDFromEntry(VASTSchedUnit *Entry, unsigned ExpectedSPD);
 
   void ensureNoFlowDepFrom(BasicBlock *FromBB, BasicBlock *ToBB);
 };
 }
 
-unsigned IntervalFixer::allocateWaitStates(VASTSchedUnit *Entry,
-                                           unsigned ExpectedSPD) {
+unsigned Verifier::computeActualSPDFromEntry(VASTSchedUnit *Entry,
+                                             unsigned ExpectedSPD) {
   typedef VASTSchedUnit::dep_iterator dep_iterator;
   unsigned ActualSPD = UINT32_MAX;
 
@@ -78,13 +76,12 @@ unsigned IntervalFixer::allocateWaitStates(VASTSchedUnit *Entry,
     unsigned Entry2ExitDistanceFromEntry = SrcSPDFromEntry + TotalSlots;
 
     int ExtraLatency = int(ExpectedSPD) - int(Entry2ExitDistanceFromEntry);
-    if (ExtraLatency > 0) {
+    if (LLVM_UNLIKELY(ExtraLatency > 0)) {
       dbgs() << "Allocate extra " << ExtraLatency << " wait state: "
              << SrcBB->getName() << " -> "
              << Entry->getParent()->getName() <<'\n';
       llvm_unreachable("As we support conditional dependencies in ILP model,"
-                        "we should not get a cross bb interval violation!");
-      ++AllocatedWaitStates;
+                       "we should not get a cross bb dependency violation!");
     }
 
     ActualSPD = std::min(ActualSPD, Entry2ExitDistanceFromEntry);
@@ -96,7 +93,7 @@ unsigned IntervalFixer::allocateWaitStates(VASTSchedUnit *Entry,
 }
 
 unsigned
-IntervalFixer::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
+Verifier::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
   assert(SUs[0]->isBBEntry() && "BBEntry not placed at the beginning!");
   unsigned EntrySlot = SUs[0]->getSchedule();
   BasicBlock *BB = SUs[0]->getParent();
@@ -110,6 +107,11 @@ IntervalFixer::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
 
     typedef VASTSchedUnit::dep_iterator dep_iterator;
     for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
+      if (I.getEdgeType() == VASTDep::LinearOrder
+          || I.getEdgeType() == VASTDep::Conditional
+          || I.getEdgeType() == VASTDep::CtrlDep)
+       continue;
+
       VASTSchedUnit *Src = *I;
 
       // When the U depends on the function argument, there is a dependency
@@ -120,16 +122,11 @@ IntervalFixer::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
       BasicBlock *SrcBB = Src->getParent();
       if (SrcBB == BB) continue;
 
-      if (I.getEdgeType() == VASTDep::LinearOrder
-          || I.getEdgeType() == VASTDep::Conditional
-          || I.getEdgeType() == VASTDep::CtrlDep)
-       continue;
-
       VASTSchedUnit *SrcEntry = G.getEntrySU(SrcBB);
 
       // Get the required entry-to-entry distance from source BB to current BB.
       int E2EDistance = I.getLatency() - UOffset
-        + (Src-> getSchedule() - SrcEntry->getSchedule());
+          + (Src-> getSchedule() - SrcEntry->getSchedule());
       // Get the actual distance from SrcBB to IDom.
       int Src2EntryDistance = SPDFromEntry[SrcBB];
       assert(Src2EntryDistance && "SrcBB not visited?");
@@ -158,7 +155,7 @@ static int top_sort_idx_wrapper(VASTSchedUnit *const *LHS,
   return top_sort_idx(*LHS, *RHS);
 }
 
-void IntervalFixer::initialize() {
+void Verifier::initialize() {
   G.sortSUs(top_sort_idx_wrapper);
 
   BasicBlock *Entry = &F.getEntryBlock();
@@ -166,7 +163,7 @@ void IntervalFixer::initialize() {
   SPDFromEntry[Entry] = EntrySU->getSchedule();
 }
 
-void IntervalFixer::fixInterval() {
+void Verifier::verify() {
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
@@ -177,16 +174,16 @@ void IntervalFixer::fixInterval() {
 
     ArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(BB));
     unsigned ExpectedSPD = computeExpectedSPDFromEntry(SUs);
-    unsigned ActualSPD = allocateWaitStates(SUs.front(), ExpectedSPD);
+    unsigned ActualSPD = computeActualSPDFromEntry(SUs.front(), ExpectedSPD);
 
     SPDFromEntry[BB] = ActualSPD;
   }
 }
 
 //===----------------------------------------------------------------------===//
-void VASTScheduling::fixIntervalForCrossBBChains() {
-  IntervalFixer Fixer(*G, DT);
+void VASTScheduling::verifyCrossBBDeps() {
+  Verifier V(*G, DT);
 
-  Fixer.initialize();
-  Fixer.fixInterval();
+  V.initialize();
+  V.verify();
 }
