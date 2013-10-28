@@ -8,7 +8,7 @@ add_llvm_library(ShangHLS
   VASTScheduling.cpp
   IterativeSchedulingBinding.cpp
   ScheduleEmitter.cpp
-  CrossBBChainFixer.cpp
+  CrossBBDepVerifier.cpp
   SchedulerBase.cpp
   GlobalDepBuilder.cpp
   SDCScheduler.cpp
