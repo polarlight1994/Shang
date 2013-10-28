@@ -6,13 +6,13 @@ add_llvm_library(ShangHLS
   Dataflow.cpp
   PreSchedBinding.cpp
   VASTScheduling.cpp
-  IterativeSchedulingBinding.cpp
+  InnerIterativeEngine.cpp
   ScheduleEmitter.cpp
   CrossBBDepVerifier.cpp
   SchedulerBase.cpp
   GlobalDepBuilder.cpp
   SDCScheduler.cpp
-  IterativeScheduling.cpp
+  IterativeSchedulingDriver.cpp
   SeqLiveVariables.cpp
   STGDistances.cpp
   SelectorPipelining.cpp

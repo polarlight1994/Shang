@@ -421,9 +421,9 @@ ItetrativeEngine::checkLatchCompatibility(PSBCompNode *Src,
 }
 
 unsigned ItetrativeEngine::checkCompatibility(PSBCompNode *Src,
-                                                        SUArrayRef SrcSUs,
-                                                        PSBCompNode *Dst,
-                                                        SUArrayRef DstSUs) {
+                                              SUArrayRef SrcSUs,
+                                              PSBCompNode *Dst,
+                                              SUArrayRef DstSUs) {
   assert(Src->Inst.IsLauch() == Dst->Inst.IsLauch()
          && "Unexpected binding launch/latch to the same physical unit!");
   // Get the benefit by getting the negative of the cost.
@@ -491,7 +491,7 @@ unsigned ItetrativeEngine::checkCompatibility(PSBCompNode *Src,
   // Or Src is scheduled after Dst is finished.
   if (SrcSU->getSchedule() >= DstSU->getSchedule() + DstSU->getII())
     return 0;
-  
+
   DEBUG(dbgs() << "Launch SU not compatible:\n";
   SrcSU->dump();
   DstSU->dump();
