@@ -154,14 +154,12 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   VASTValPtr getAsOperandImpl(Value *Op);
 
-  VASTRegister *createOperandRegister(void *Prefix, Instruction &I,
-                                      unsigned Idx, unsigned BitWidth) {
+  VASTRegister *createLoadRegister(Instruction &I, unsigned BitWidth) {
     SmallString<36> S;
-    translatePtr2Str(Prefix, S);
-    S += utostr_32(Idx);
-    S.push_back('_');
-    S += I.getOpcodeName();
-    return VM->createRegister(S.str(), BitWidth, 0, VASTSelector::FUInput);
+    S += "vast_";
+    S += ShangMangle(I.getName());
+    S += "_unshifted_r";
+    return VM->createRegister(S.str(), BitWidth);
   }
 
   // Remember the landing slot and the latest slot of a basic block.
@@ -1067,8 +1065,8 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     // Use port 0 of the memory
     VASTValPtr TimedRData = VM->createSeqValue(Bus->getRData(0), 0, &I);
     SmallString<36> S;
-    VASTRegister *ResultRegister = VM->createRegister(translatePtr2Str(&I, S),
-                                                      TimedRData->getBitWidth());
+    VASTRegister *ResultRegister
+      = createLoadRegister(I, TimedRData->getBitWidth());
     VASTSeqValue *Result = VM->createSeqValue(ResultRegister->getSelector(), 0, &I);
     VM->latchValue(Result, TimedRData, Slot, VASTImmediate::True, &I, Latency);
 
