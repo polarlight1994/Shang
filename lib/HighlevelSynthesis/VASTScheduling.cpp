@@ -987,7 +987,9 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
 
   scheduleGlobal();
 
-  fixIntervalForCrossBBChains();
+#ifndef NDEBUG
+  verifyCrossBBDeps();
+#endif
 
   DEBUG(F.viewCFGOnly());
   DEBUG(G->viewGraph());

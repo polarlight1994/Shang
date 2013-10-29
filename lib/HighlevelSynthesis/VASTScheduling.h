@@ -615,7 +615,7 @@ class VASTScheduling : public VASTModulePass {
   void scheduleGlobal();
   /// Fix (Check) the interval for cross BB chains.
   ///
-  void fixIntervalForCrossBBChains();
+  void verifyCrossBBDeps();
 
   /// Emit the schedule by reimplementing the state-transition graph according
   /// the new scheduling results.
