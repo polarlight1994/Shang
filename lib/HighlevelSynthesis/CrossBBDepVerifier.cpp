@@ -17,7 +17,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/ADT/Statistic.h"
-#define DEBUG_TYPE "cross-bb-interval-fixer"
+#define DEBUG_TYPE "cross-bb-dep-verifier"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
@@ -126,7 +126,7 @@ Verifier::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
 
       // Get the required entry-to-entry distance from source BB to current BB.
       int E2EDistance = I.getLatency() - UOffset
-          + (Src-> getSchedule() - SrcEntry->getSchedule());
+          + (Src->getSchedule() - SrcEntry->getSchedule());
       // Get the actual distance from SrcBB to IDom.
       int Src2EntryDistance = SPDFromEntry[SrcBB];
       assert(Src2EntryDistance && "SrcBB not visited?");

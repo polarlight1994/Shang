@@ -498,7 +498,7 @@ public:
 
   VASTSchedUnit *getEntrySU(BasicBlock *BB) const {
     VASTSchedUnit *Entry = getSUInBB(BB).front();
-    assert(Entry->isBBEntry() && "Bad SU order, do you sort the SUs?");
+    assert(Entry->isBBEntry() && "Bad SU order, did you sort the SUs?");
     return Entry;
   }
 
