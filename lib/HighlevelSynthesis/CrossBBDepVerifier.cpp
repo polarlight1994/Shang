@@ -140,23 +140,8 @@ Verifier::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
   return CurSPDFromEntry;
 }
 
-static int top_sort_idx(const VASTSchedUnit *LHS, const VASTSchedUnit *RHS) {
-  if (LHS->getSchedule() != RHS->getSchedule())
-    return LHS->getSchedule() < RHS->getSchedule() ? -1 : 1;
-
-  if (LHS->getIdx() < RHS->getIdx()) return -1;
-  if (LHS->getIdx() > RHS->getIdx()) return 1;
-
-  return 0;
-}
-
-static int top_sort_idx_wrapper(VASTSchedUnit *const *LHS,
-                                VASTSchedUnit *const *RHS) {
-  return top_sort_idx(*LHS, *RHS);
-}
-
 void Verifier::initialize() {
-  G.sortSUs(top_sort_idx_wrapper);
+  G.sortSUs(VASTSchedGraph::top_sort_idx);
 
   BasicBlock *Entry = &F.getEntryBlock();
   VASTSchedUnit *EntrySU = G.getEntrySU(Entry);
