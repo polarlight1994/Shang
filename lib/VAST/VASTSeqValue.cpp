@@ -209,12 +209,14 @@ VASTSelector::initTraceDataBase(raw_ostream &OS, const char *TraceDataBase) {
   OS << "$fwrite (" << TraceDataBase << ", \"";
   OS.write_escaped("CREATE TABLE InstTrace("
                    "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                   "  Time INTEGER,"
+                   "  ActiveTime INTEGER,"
                    "  Instruction TEXT,"
                    "  Opcode TEXT,"
                    "  BB TEXT,"
                    "  OperandIndex INTEGER,"
-                   "  OperandValue INTEGER"
+                   "  OperandValue INTEGER,"
+                   "  RegisterName Text,"
+                   "  SlotNum INTEGER"
                    ");\n");
   OS << "\");\n";
 }
@@ -227,15 +229,17 @@ void VASTSelector::dumpSlotTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
 void VASTSelector::dumpInstTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
                                  const VASTLatch &L, const Instruction *Inst,
                                  const char *TraceDataBase) const {
+  VASTSlot *S = Op->getSlot();
+
   OS << "$fwrite (" << TraceDataBase << ", \"";
   OS.write_escaped("INSERT INTO InstTrace("
-                   "Time, Instruction, Opcode, BB, OperandIndex,  OperandValue"
-                   ") VALUES(");
+                   "ActiveTime, Instruction, Opcode, BB, OperandIndex,  OperandValue, "
+                   "RegisterName, SlotNum) VALUES(");
   // Time
   OS.write_escaped("%t, ");
 
   // Instruction
-  OS.write_escaped("%s, ");
+  OS.write_escaped("\"%s\", ");
 
   // Opcode
   OS.write_escaped("\"");
@@ -244,7 +248,6 @@ void VASTSelector::dumpInstTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
 
   // Parent slot
   OS.write_escaped("\"");
-  VASTSlot *S = Op->getSlot();
   if (BasicBlock *BB = S->getParent())
     OS.write_escaped(BB->getName());
   else
@@ -252,11 +255,21 @@ void VASTSelector::dumpInstTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
   OS.write_escaped("\", ");
 
   // Operand index
+  // FIXME: We split the VASTSeqOp with multiple operands to a set of VASTSeqOps.
+  // Each of these splited VASTSeqOps only have one operand. As a result,
+  // L.No will always be 0.
   OS << L.No << ", ";
 
   // Current Operand value
-  OS.write_escaped("%d");
+  OS.write_escaped("%d, ");
 
+  // Register Name
+  OS.write_escaped("\"");
+  OS << getName();
+  OS.write_escaped("\", ");
+
+  // SlotNum
+  OS << S->SlotNum;
   OS.write_escaped(");\n");
 
   OS << "\", $time(), ";
@@ -373,6 +386,10 @@ VASTSelector::printVerificationCode(vlang_raw_ostream &OS, STGDistances *STGDist
   if (TraceDataBase) {
     for (const_iterator I = begin(), E = end(); I != E; ++I) {
       const VASTLatch &L = *I;
+
+      if (isTrivialFannin(L))
+        continue;
+
       const VASTSeqOp *Op = L.Op;
       OS.if_();
       Op->printGuard(OS);
