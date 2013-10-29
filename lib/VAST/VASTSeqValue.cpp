@@ -208,7 +208,7 @@ void VASTSelector::printVerificationCode(vlang_raw_ostream &OS,
                                          STGDistances *STGDist) const {
   if (empty()) return;
 
-  OS.always_ff_begin();
+  OS.if_begin("!rstN");
 
   // Reset the hold counter when the register is reset.
   OS << getName() << "_hold_counter <= " << STGDistances::Inf << ";\n";
@@ -293,7 +293,8 @@ void VASTSelector::printVerificationCode(vlang_raw_ostream &OS,
   // Reset the hold counter when the register is changed.
   OS << getName() << "_hold_counter <= " << getName() << "_selector_guard"
      << " ? 0 : (" << getName() << "_hold_counter + 1);\n";
-  OS.always_ff_end();
+  OS.exit_block();
+  OS << "\n\n";
 }
 
 void VASTSelector::addAssignment(VASTSeqOp *Op, unsigned SrcNo) {

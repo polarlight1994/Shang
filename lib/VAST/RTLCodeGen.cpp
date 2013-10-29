@@ -151,16 +151,20 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   VM.printSubmodules(Out);
   VM.printRegisterBlocks(Out);
 
-#ifdef GENERATE_SELFVERIFICATION
+#ifndef DISABLE_SELFVERIFICATION
   STGDistances &STGDist = getAnalysis<STGDistances>();
   // Verify the register assignment.
   Out << "// synthesis translate_off\n";
+  Out.always_ff_begin(false);
+
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     Out << "// Verification code for Selector: " << I->getName() << '\n';
     I->printVerificationCode(Out, &STGDist);
     Out << '\n';
   }
+
+  Out.always_ff_end(false);
   Out << "// synthesis translate_on\n\n";
 #endif
 
