@@ -215,7 +215,8 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
   }
 
   if (isBBEntry()) OS << "BB Entry\t";
-  else if (isVirtual()) OS << "Virtual\t";
+  else if (isVSnk()) OS << "VSnk\t";
+  else if (isVSrc()) OS << "VSrc\t";
 
   OS << (isLaunch() ? "Launch" : "Latch")
      << " Parent: " << getParent()->getName();

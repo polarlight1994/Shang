@@ -343,7 +343,7 @@ struct SingleFULinearOrder
     if (Snk) return Snk;
 
     // Create the sink node if it is not created yet.
-    Snk = G->createSUnit(BB, VASTSchedUnit::Virtual);
+    Snk = G->createSUnit(BB, VASTSchedUnit::VSnk);
     DefMapTy::iterator at = DefMap.find(BB);
     assert(at != DefMap.end() && "Not a define block!");
     // At this point, the intra-BB linear order had already constructed, and
@@ -362,7 +362,7 @@ struct SingleFULinearOrder
     if (Src) return Src;
 
     // Create the source node if it is not created yet.
-    Src = G->createSUnit(BB, VASTSchedUnit::Virtual);
+    Src = G->createSUnit(BB, VASTSchedUnit::VSrc);
     // Make src depends on something.
     Src->addDep(G->getEntrySU(BB), VASTDep::CreateCtrlDep(0));
 
@@ -580,7 +580,7 @@ struct AliasRegionDepBuilder
     if (Snk) return Snk;
 
     // Create the sink node if it is not created yet.
-    Snk = G.createSUnit(BB, VASTSchedUnit::Virtual);
+    Snk = G.createSUnit(BB, VASTSchedUnit::VSnk);
 
     DefMapTy::iterator at = DefMap.find(BB);
     assert(at != DefMap.end() && "Not a define block!");
@@ -597,7 +597,7 @@ struct AliasRegionDepBuilder
     if (Src) return Src;
 
     // Create the source node if it is not created yet.
-    Src = G.createSUnit(BB, VASTSchedUnit::Virtual);
+    Src = G.createSUnit(BB, VASTSchedUnit::VSrc);
     // Make src depends on something.
     Src->addDep(G.getEntrySU(BB), VASTDep::CreateCtrlDep(0));
 

@@ -130,7 +130,7 @@ public:
     BlockEntry,
     Launch, Latch,
     // Virtual supper sink and supper source.
-    Virtual,
+    VSnk, VSrc,
     // Invalide node for the ilist sentinel
     Invalid
   };
@@ -256,7 +256,10 @@ public:
   bool isEntry() const { return T == Entry; }
   bool isExit() const { return T == Exit; }
   bool isBBEntry() const { return T == BlockEntry; }
-  bool isVirtual() const { return T == Virtual; }
+  bool isVirtual() const { return T == VSnk || T == VSrc; }
+  bool isVSnk() const { return T == VSnk; }
+  bool isVSrc() const { return T == VSrc; }
+
   bool isPHI() const {
     return Inst && isa<PHINode>(getInst()) && isLaunch();
   }
@@ -445,7 +448,8 @@ public:
     SUnits.insert(SUnits.back(), U);
     // Also put the scheduling unit in the BBMap.
     assert(BB && "Expect a parent BB!");
-    assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::Virtual)
+    assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::VSnk ||
+            T == VASTSchedUnit::VSrc)
            && "Unexpected type!");
     BBMap[U->getParent()].push_back(U);
 
