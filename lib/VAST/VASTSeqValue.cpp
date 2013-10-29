@@ -204,8 +204,84 @@ VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
   OS << '\n';
 }
 
-void VASTSelector::printVerificationCode(vlang_raw_ostream &OS,
-                                         STGDistances *STGDist) const {
+void
+VASTSelector::initTraceDataBase(raw_ostream &OS, const char *TraceDataBase) {
+  OS << "$fwrite (" << TraceDataBase << ", \"";
+  OS.write_escaped("CREATE TABLE InstTrace("
+                   "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                   "  Time INTEGER,"
+                   "  Instruction TEXT,"
+                   "  Opcode TEXT,"
+                   "  BB TEXT,"
+                   "  OperandIndex INTEGER,"
+                   "  OperandValue INTEGER"
+                   ");\n");
+  OS << "\");\n";
+}
+
+void VASTSelector::dumpSlotTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
+                                 const char *TraceDataBase) const {
+
+}
+
+void VASTSelector::dumpInstTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
+                                 const VASTLatch &L, const Instruction *Inst,
+                                 const char *TraceDataBase) const {
+  OS << "$fwrite (" << TraceDataBase << ", \"";
+  OS.write_escaped("INSERT INTO InstTrace("
+                   "Time, Instruction, Opcode, BB, OperandIndex,  OperandValue"
+                   ") VALUES(");
+  // Time
+  OS.write_escaped("%t, ");
+
+  // Instruction
+  OS.write_escaped("%s, ");
+
+  // Opcode
+  OS.write_escaped("\"");
+  OS << Inst->getOpcodeName();
+  OS.write_escaped("\", ");
+
+  // Parent slot
+  OS.write_escaped("\"");
+  VASTSlot *S = Op->getSlot();
+  if (BasicBlock *BB = S->getParent())
+    OS.write_escaped(BB->getName());
+  else
+    OS.write_escaped("n/a");
+  OS.write_escaped("\", ");
+
+  // Operand index
+  OS << L.No << ", ";
+
+  // Current Operand value
+  OS.write_escaped("%d");
+
+  OS.write_escaped(");\n");
+
+  OS << "\", $time(), ";
+  OS << '"' << *Inst << "\", ";
+  VASTValPtr(L).printAsOperand(OS);
+  OS << ");\n";
+}
+
+void
+VASTSelector::dumpTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
+                        const VASTLatch &L, const char *TraceDataBase) const {
+  Value *V = Op->getValue();
+
+  if (V == 0) {
+    dumpSlotTrace(OS, Op, TraceDataBase);
+    return;
+  }
+
+  if (Instruction *Inst = dyn_cast<Instruction>(V))
+    dumpInstTrace(OS, Op, L, Inst, TraceDataBase);
+}
+
+void
+VASTSelector::printVerificationCode(vlang_raw_ostream &OS, STGDistances *STGDist,
+                                    const char *TraceDataBase) const {
   if (empty()) return;
 
   OS.if_begin("!rstN");
@@ -293,8 +369,20 @@ void VASTSelector::printVerificationCode(vlang_raw_ostream &OS,
   // Reset the hold counter when the register is changed.
   OS << getName() << "_hold_counter <= " << getName() << "_selector_guard"
      << " ? 0 : (" << getName() << "_hold_counter + 1);\n";
+
+  if (TraceDataBase) {
+    for (const_iterator I = begin(), E = end(); I != E; ++I) {
+      const VASTLatch &L = *I;
+      const VASTSeqOp *Op = L.Op;
+      OS.if_();
+      Op->printGuard(OS);
+      OS._then();
+      dumpTrace(OS, Op, L, TraceDataBase);
+      OS.exit_block();
+    }
+  }
+
   OS.exit_block();
-  OS << "\n\n";
 }
 
 void VASTSelector::addAssignment(VASTSeqOp *Op, unsigned SrcNo) {

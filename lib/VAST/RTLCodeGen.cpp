@@ -33,8 +33,11 @@
 using namespace llvm;
 
 static cl::opt<bool>
-EnalbeDumpIR("shang-dump-ir", cl::desc("Dump the IR to the RTL code."),
+EnalbeDumpIR("vast-dump-ir", cl::desc("Dump the IR to the RTL code."),
              cl::init(false));
+static cl::opt<bool>
+EnalbeDumpTrace("vast-dump-trace", cl::desc("Dump the execution trace."),
+                cl::init(true));
 
 namespace {
 struct RTLCodeGen : public VASTModulePass {
@@ -155,12 +158,26 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   STGDistances &STGDist = getAnalysis<STGDistances>();
   // Verify the register assignment.
   Out << "// synthesis translate_off\n";
+
+  if (EnalbeDumpTrace)
+    Out << "integer trace_database; // the\n";
+
+  // Open the trace database
+  if (EnalbeDumpTrace) {
+    Out << "initial ";
+    Out.enter_block();
+    Out << "trace_database = $fopen(\"trace_database.sql\");\n";
+    VASTSelector::initTraceDataBase(Out, "trace_database");
+    Out.exit_block();
+  }
+
   Out.always_ff_begin(false);
 
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     Out << "// Verification code for Selector: " << I->getName() << '\n';
-    I->printVerificationCode(Out, &STGDist);
+    I->printVerificationCode(Out, &STGDist,
+                             EnalbeDumpTrace ? "trace_database" : 0);
     Out << '\n';
   }
 

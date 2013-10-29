@@ -71,7 +71,13 @@ private:
   void printSelector(raw_ostream &OS) const;
   void verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
                         VASTValue *V, ArrayRef<VASTSlot*> ReadSlots) const;
-
+  void dumpTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op, const VASTLatch &L,
+                 const char *TraceDataBase) const;
+  void dumpSlotTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
+                     const char *TraceDataBase) const;
+  void dumpInstTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
+                     const VASTLatch &L, const Instruction *Inst,
+                     const char *TraceDataBase) const;
   void instantiateSelector(raw_ostream &OS) const;
 
 public:
@@ -145,7 +151,10 @@ public:
   void setName(const char *Name);
 
   // Generate the code to verify the register assignment.
-  void printVerificationCode(vlang_raw_ostream &OS, STGDistances *STGDist) const;
+  void printVerificationCode(vlang_raw_ostream &OS, STGDistances *STGDist,
+                             const char *TraceDataBase) const;
+
+  static void initTraceDataBase(raw_ostream &OS, const char *TraceDataBase);
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSelector *A) { return true; }
