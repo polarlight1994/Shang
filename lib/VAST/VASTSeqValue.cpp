@@ -393,6 +393,17 @@ VASTSelector::printVerificationCode(vlang_raw_ostream &OS, STGDistances *STGDist
       const VASTSeqOp *Op = L.Op;
       OS.if_();
       Op->printGuard(OS);
+      // Be careful of operations that is not guarded by slot, their guard can
+      // set even in the slot that their are not scheduled to. These cases are
+      // usually introduced by MUX pipelining, etc, which assign to the same
+      // register with the same guard and same fanin in different slots,
+      // it is save to the behavior of the circuit. But it introduces incorrect
+      // instruction trace, hence we need to guard it by the slot register.
+      if (!Op->guardedBySlotActive()) {
+        OS << " & ";
+        Op->getSlot()->getValue()->printAsOperand(OS, false);
+      }
+
       OS._then();
       dumpTrace(OS, Op, L, TraceDataBase);
       OS.exit_block();
