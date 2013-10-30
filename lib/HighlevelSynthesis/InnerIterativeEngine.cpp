@@ -20,6 +20,7 @@
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/BlockFrequencyInfo.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "vast-iterative-scheduling-binding"
 #include "llvm/Support/Debug.h"
@@ -29,6 +30,182 @@ using namespace llvm;
 STATISTIC(NumIterations, "Number of Scheduling-Binding Iterations");
 
 typedef ArrayRef<VASTSchedUnit*> SUArrayRef;
+
+namespace {
+struct ControlChainingHazardDectector {
+  SDCScheduler &Scheduler;
+  VASTSchedGraph &G;
+  struct TimeFrame {
+    unsigned ASAP, ALAP;
+
+    TimeFrame(unsigned ASAP = UINT32_MAX, unsigned ALAP = 0)
+      : ASAP(ASAP), ALAP(ALAP) {}
+
+    TimeFrame(const TimeFrame &RHS) : ASAP(RHS.ASAP), ALAP(RHS.ALAP) {}
+    TimeFrame &operator=(const TimeFrame &RHS) {
+      ASAP = RHS.ASAP;
+      ALAP = RHS.ALAP;
+      return *this;
+    }
+
+    operator bool() const {
+      return ASAP <= ALAP;
+    }
+
+    TimeFrame operator+(unsigned i) const {
+      return TimeFrame(ASAP + i, ALAP + i);
+    }
+
+    void reduce(const TimeFrame &RHS) {
+      ASAP = std::min(ASAP, RHS.ASAP);
+      ALAP = std::max(ALAP, RHS.ALAP);
+    }
+  };
+
+  std::map<const BasicBlock*, TimeFrame> BBTimeFrames;
+
+  explicit ControlChainingHazardDectector(SDCScheduler &Scheduler)
+    : Scheduler(Scheduler), G(*Scheduler) {}
+
+  TimeFrame getTimeFrame(const BasicBlock *BB) const {
+    std::map<const BasicBlock*, TimeFrame>::const_iterator I
+      = BBTimeFrames.find(BB);
+
+    return I != BBTimeFrames.end() ? I->second : TimeFrame();
+  }
+
+  void initDistances();
+  TimeFrame calculateTimeFrame(BasicBlock *BB);
+  bool updateTimeFrame(BasicBlock *BB, TimeFrame NewTF);
+
+  bool detectHazard();
+  bool detectHazard(VASTSchedUnit *SU);
+
+  static bool Run(SDCScheduler &Scheduler) {
+    ControlChainingHazardDectector CCHD(Scheduler);
+    CCHD.initDistances();
+    return CCHD.detectHazard();
+  }
+};
+}
+
+void ControlChainingHazardDectector::initDistances() {
+  Function &F = G.getFunction();
+  BBTimeFrames[&F.getEntryBlock()] = TimeFrame(0, 0);
+
+  G.sortSUs(VASTSchedGraph::top_sort_idx);
+
+  // Build the scheduling units according to the original scheduling.
+  ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
+  typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
+
+  for (unsigned i = 0; i < 2; ++i) {
+    for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
+      BasicBlock *BB = *I;
+
+      TimeFrame Distance = calculateTimeFrame(BB);
+      updateTimeFrame(BB, Distance);
+    }
+  }
+}
+
+ControlChainingHazardDectector::TimeFrame
+ControlChainingHazardDectector::calculateTimeFrame(BasicBlock *BB) {
+  VASTSchedUnit *Entry = G.getEntrySU(BB);
+  TimeFrame CurTF;
+
+  typedef VASTSchedUnit::dep_iterator dep_iterator;
+  for (dep_iterator I = Entry->dep_begin(), E = Entry->dep_end(); I != E; ++I) {
+    VASTSchedUnit *Src = *I;
+
+    if (!Src->isTerminator()) continue;
+
+    if (I.getEdgeType() != VASTDep::Conditional) continue;
+
+    BasicBlock *SrcBB = Src->getParent();
+    TimeFrame SrcEntryTF = getTimeFrame(SrcBB);
+
+    // For the nonstructural CFG, we may get a back edge. For this kind of edge
+    // the flow-dependencies from the source BB should be break by a PHI node.
+    // And it is ok to ignore such incoming block.
+    if (!SrcEntryTF) {
+      //assert(!DT.properlyDominates(SrcBB, BB)
+      //       && "Dominator edge not handled correctly!");
+      continue;
+    }
+
+    VASTSchedUnit *SrcEntry = G.getEntrySU(SrcBB);
+    unsigned SrcBBLength = Src->getSchedule() - SrcEntry->getSchedule();
+    CurTF.reduce(SrcEntryTF + SrcBBLength);
+  }
+
+  return CurTF;
+}
+
+bool ControlChainingHazardDectector::updateTimeFrame(BasicBlock *BB,
+                                                     TimeFrame NewTF) {
+  TimeFrame &TF = BBTimeFrames[BB];
+  TF.reduce(NewTF);
+  return true;
+}
+
+bool ControlChainingHazardDectector::detectHazard() {
+  bool HazardDetected = false;
+
+  typedef VASTSchedGraph::iterator iterator;
+  for (iterator I = G.begin(), E = G.end(); I != E; ++I)
+    HazardDetected |= detectHazard(I);
+
+  return HazardDetected;
+}
+
+bool ControlChainingHazardDectector::detectHazard(VASTSchedUnit *Dst) {
+  if (LLVM_UNLIKELY(Dst->isVirtual() || Dst->isEntry() || Dst->isExit()))
+    return false;
+
+  BasicBlock *BB = Dst->getParent();
+  unsigned DstOffset = Dst->getSchedule() - G.getEntrySU(BB)->getSchedule();
+
+  typedef VASTSchedUnit::dep_iterator dep_iterator;
+  for (dep_iterator I = Dst->dep_begin(), E = Dst->dep_end(); I != E; ++I) {
+    if (I.getEdgeType() == VASTDep::LinearOrder
+        || I.getEdgeType() == VASTDep::Conditional
+        || I.getEdgeType() == VASTDep::CtrlDep)
+      continue;
+
+    // Hazard only occur when the data dependency edge have 0 delay.
+    if (I.getLatency() > 0)
+      continue;
+
+    VASTSchedUnit *Src = *I;
+
+    // When the U depends on the function argument, there is a dependency
+    // edge from the entry of the whole scheduling graph. Do not fail in this
+    // case.
+    if (Src->isEntry()) continue;
+
+    // There is not hazard if Src and Dst are not scheduled to the same step.
+    // Because hazard only occur when src and dst are scheduled to the same step,
+    // which require chaining.
+    if (Src->getSchedule() != Dst->getSchedule())
+      continue;
+
+    BasicBlock *SrcBB = Src->getParent();
+    if (SrcBB == BB) continue;
+
+    VASTSchedUnit *SrcEntry = G.getEntrySU(SrcBB);
+    unsigned SrcOffset = Src->getSchedule() - SrcEntry->getSchedule();
+    assert(getTimeFrame(BB).ASAP - getTimeFrame(SrcBB).ASAP
+           + DstOffset - SrcOffset == 0 && "InterBB dependency not preserved!");
+    unsigned NonShortestPathDistance = getTimeFrame(BB).ALAP -
+                                       getTimeFrame(SrcBB).ALAP;
+    if (NonShortestPathDistance + DstOffset - SrcOffset > 0)
+      return true;
+  }
+
+  return false;
+}
+
 typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
 
 static VASTSchedUnit *LookupSU(VASTSeqOp *Op, const IR2SUMapTy &Map) {
@@ -357,6 +534,11 @@ struct ItetrativeEngine {
   bool performSchedulingAndAllocateMuxSlack(VASTModule &VM) {
     if (!performScheduling(VM))
       return false;
+
+    if (ControlChainingHazardDectector::Run(Scheduler)) {
+      llvm_unreachable("No code to handle this yet!");
+      return false;
+    }
 
     float NumBBs = VM.getLLVMFunction().getBasicBlockList().size();
 
