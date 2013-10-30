@@ -39,6 +39,11 @@
 
 using namespace llvm;
 
+static cl::opt<bool>
+RelaxCtrlDeps("vast-relax-control-dependencies",
+              cl::desc("Relax control-dependencies to allow the time frame"
+                       " of different basic blocks overlap"),
+  cl::init(true));
 //===----------------------------------------------------------------------===//
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
                              BasicBlock *BB, VASTSeqOp *SeqOp)
@@ -865,10 +870,14 @@ void VASTScheduling::fixSchedulingGraph() {
     if (Inst && (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst)))
       continue;
 
-#ifdef ENABLE_FINE_GRAIN_CFG_SCHEDULING
-    // At least constrain the scheduling unit with something.
-    if (U->use_empty()) G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
-#else
+    if (RelaxCtrlDeps) {
+      // At least constrain the scheduling unit with something.
+      if (U->use_empty())
+        G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
+
+      continue;
+    }
+
     // Only need to create the pseudo dependencies to the exit node. Because
     // the PHI node will always be scheduled to the same slot as the
     // terminator.
@@ -901,7 +910,6 @@ void VASTScheduling::fixSchedulingGraph() {
       // dependence to wait the launch operation finish here.
       BBExit->addDep(U, VASTDep::CreateCtrlDep(0));
     }
-#endif
   }
 
   // Also add the dependencies form the return instruction to the exit of
