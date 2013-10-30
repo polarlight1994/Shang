@@ -571,11 +571,13 @@ void VASTScheduling::buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U) 
 }
 
 void
-VASTScheduling::buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U) {
+VASTScheduling::buildFlowDependenciesConditionalInst(Instruction *Inst,
+                                                     BasicBlock *Target,
+                                                     VASTSchedUnit *U) {
   Dataflow::SrcSet Srcs;
   typedef Dataflow::SrcSet::iterator src_iterator;
 
-  DF->getIncomingFrom(DataflowInst(PHI, false), U->getParent(), Srcs);
+  DF->getIncomingFrom(DataflowInst(Inst, false), Target, Srcs);
 
   // Also calculate the path for the guarding condition.
   for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
@@ -599,12 +601,16 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
   assert(U->isLatch() && "Unexpected scheduling unit type!");
 
   if (PHINode *PHI = dyn_cast<PHINode>(Inst)) {
-    buildFlowDependenciesForPHILatch(PHI, U);
+    buildFlowDependenciesConditionalInst(PHI, U->getParent(), U);
     return;
   }
 
   if (isa<TerminatorInst>(Inst)) {
-    buildFlowDependencies(Inst, U);
+    if (U->isTerminator())
+      buildFlowDependenciesConditionalInst(Inst, U->getTargetBlock(), U);
+    else
+      buildFlowDependencies(Inst, U);
+
     return;
   }
 

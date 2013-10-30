@@ -593,7 +593,8 @@ class VASTScheduling : public VASTModulePass {
                              Dataflow::delay_type delay);
   void buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U);
   void buildFlowDependencies(VASTSchedUnit *U);
-  void buildFlowDependenciesForPHILatch(PHINode *PHI, VASTSchedUnit *U);
+  void buildFlowDependenciesConditionalInst(Instruction *Inst, BasicBlock *Target,
+                                            VASTSchedUnit *U);
   VASTSchedUnit *getFlowDepSU(Value *V);
   VASTSchedUnit *getLaunchSU(Value *V);
 
