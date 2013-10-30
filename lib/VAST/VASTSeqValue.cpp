@@ -213,7 +213,6 @@ VASTSelector::initTraceDataBase(raw_ostream &OS, const char *TraceDataBase) {
                    "  Instruction TEXT,"
                    "  Opcode TEXT,"
                    "  BB TEXT,"
-                   "  OperandIndex INTEGER,"
                    "  OperandValue INTEGER,"
                    "  RegisterName Text,"
                    "  SlotNum INTEGER"
@@ -233,7 +232,7 @@ void VASTSelector::dumpInstTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
 
   OS << "$fwrite (" << TraceDataBase << ", \"";
   OS.write_escaped("INSERT INTO InstTrace("
-                   "ActiveTime, Instruction, Opcode, BB, OperandIndex,  OperandValue, "
+                   "ActiveTime, Instruction, Opcode, BB, OperandValue, "
                    "RegisterName, SlotNum) VALUES(");
   // Time
   OS.write_escaped("%t, ");
@@ -254,18 +253,18 @@ void VASTSelector::dumpInstTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
     OS.write_escaped("n/a");
   OS.write_escaped("\", ");
 
-  // Operand index
-  // FIXME: We split the VASTSeqOp with multiple operands to a set of VASTSeqOps.
-  // Each of these splited VASTSeqOps only have one operand. As a result,
-  // L.No will always be 0.
-  OS << L.No << ", ";
-
   // Current Operand value
   OS.write_escaped("%d, ");
 
   // Register Name
   OS.write_escaped("\"");
-  OS << getName();
+  // The name of slot register depends on the schedule, simply generate the
+  // same name for all slot register to avoid the difference in trace only
+  // because of different schedule.
+  if (isSlot())
+    OS << "Slot Register";
+  else
+    OS << getName();
   OS.write_escaped("\", ");
 
   // SlotNum
@@ -281,14 +280,10 @@ void VASTSelector::dumpInstTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
 void
 VASTSelector::dumpTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
                         const VASTLatch &L, const char *TraceDataBase) const {
-  Value *V = Op->getValue();
-
-  if (V == 0) {
+  if (isSlot())
     dumpSlotTrace(OS, Op, TraceDataBase);
-    return;
-  }
 
-  if (Instruction *Inst = dyn_cast<Instruction>(V))
+  if (Instruction *Inst = dyn_cast_or_null<Instruction>(Op->getValue()))
     dumpInstTrace(OS, Op, L, Inst, TraceDataBase);
 }
 
