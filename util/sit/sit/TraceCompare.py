@@ -4,6 +4,7 @@ import sqlite3
 import urllib2
 import re
 from difflib import SequenceMatcher
+from os import path
 
 def generate_bb_filter(bbs = []) :
   if not bbs:
@@ -37,17 +38,20 @@ def build_instruction_matcher(LHSTrace, RHSTrace) :
   return SequenceMatcher(isjunk = None, a = LHSTrace[1], b = RHSTrace[1],
                          autojunk = False)
 
-class BugLocator:
-  def __init__(self, LHSDBScript, RHSDBScript, MatcherBuilder) :
+class TraceAnalyzer:
+  def __init__(self, LHSDBScript, RHSDBScript = None, MatcherBuilder = None) :
     #Initialize the database connections
     self.lhs_conn = sqlite3.connect(':memory:')
     self.lhs_conn.executescript(urllib2.urlopen(LHSDBScript).read())
     self.lhs_conn.commit()
-    self.rhs_conn = sqlite3.connect(':memory:')
-    self.rhs_conn.executescript(urllib2.urlopen(RHSDBScript).read())
-    self.rhs_conn.commit()
-    self.MatcherBuilder = MatcherBuilder
 
+    if RHSDBScript :
+      self.rhs_conn = sqlite3.connect(':memory:')
+      self.rhs_conn.executescript(urllib2.urlopen(RHSDBScript).read())
+      self.rhs_conn.commit()
+
+    if MatcherBuilder :
+      self.MatcherBuilder = MatcherBuilder
 
   def generateInstructionTrace(self, conn, Filter) :
     cur = conn.cursor()
@@ -67,11 +71,13 @@ class BugLocator:
     select_addr = '(select * from InstTrace where (%s)) as Addr' % AddrFilter
     select_data = '(select * from InstTrace where (%s)) as Data' % DataFilter
 
-    query = ('''select Addr.Instruction, Addr.OperandValue, Data.OperandValue, Addr.RegisterName, Data.RegisterName,
+    query = ('''select Addr.Instruction, Addr.OperandValue, Data.OperandValue,
+                       Addr.RegisterName, Data.RegisterName,
                        Addr.BB, Addr.SlotNum, Addr.ActiveTime
-                from %s left join %s
+                  from %s left join %s
                     on Addr.ActiveTime == Data.ActiveTime
-                order by Addr.ActiveTime ASC, Addr.Instruction ASC, Addr.RegisterName ASC, Data.RegisterName ASC'''
+                  order by Addr.ActiveTime ASC, Addr.Instruction ASC,
+                           Addr.RegisterName ASC, Data.RegisterName ASC'''
              % (select_addr, select_data))
     rows = cur.execute(query).fetchall()
     return zip(*[((Addr, Data), Instruction, BB, SlotNum, ActiveTime)
@@ -132,19 +138,80 @@ class BugLocator:
     for d in InsertedList :
       print '+', d
 
+  def generateSlotTraceInternal(self, conn, Filter = 'null is null') :
+    cur = conn.cursor()
+
+    query = ('''select BB, SlotNum, ActiveTime
+                  from SlotTrace where (%s)
+                  order by ActiveTime ASC, BB ASC, SlotNum ASC''' %
+             Filter)
+    rows = cur.execute(query).fetchall()
+    return rows
+
+  def generateSlotTrace(self, Filter = 'null is null') :
+    return self.generateSlotTraceInternal(self.lhs_conn, Filter)
+
+  def generateBBCyclesInternal(self, conn, Filter = 'null is null') :
+    cur = conn.cursor()
+
+    query = ('''select count(ActiveTime), BB
+                  from SlotTrace where (%s)
+                  group by BB
+                  order by 1 DESC''' %
+             Filter)
+    rows = cur.execute(query).fetchall()
+    return rows
+
+  
+  def generateBBCycles(self, Filter = 'null is null') :
+    return self.generateBBCyclesInternal(self.lhs_conn, Filter)
+
+
+def analyze_benchmarks_execution_trace(dburl) :
+  #Initialize the database connections
+  conn = sqlite3.connect(':memory:')
+  conn.executescript(urllib2.urlopen(dburl).read())
+  conn.commit()
+
+  cur = conn.cursor()
+
+  for name, parameter, cycles in cur.execute('''select name, parameter, cycles from simulation''').fetchall() :
+    print name, cycles
+
+    for rtl_output, in cur.execute('''select rtl_output from highlevelsynthesis where  name = '%s' and  parameter = '%s' ''' % (name, parameter)).fetchall() :
+      rtl_output = rtl_output.replace('''/nfs/home/hongbin.zheng''', '''file:///E:''').replace('/', '\\')
+      parent_dir = path.dirname(rtl_output)
+      parent_dir = path.join(parent_dir, 'pure_hw_sim')
+      sql_path = path.join(parent_dir, 'trace_database.sql')
+      
+      TA = TraceAnalyzer(sql_path)
+      for s in TA.generateBBCycles() :
+        print s, (float(s[0]) / float(cycles) * 100) 
+
+
+
+
 if __name__ == "__main__" :
-  CorrectTrace = r'''file:///E:/buildbot/shang-slave/LongTerm/build/shang-build/tools/shang/testsuite/benchmark/legup_chstone/aes/20131030-131814-171052/pure_hw_sim/trace_database.sql'''
-  BadTrace = r'''file:///E:/buildbot/shang-slave-43/LongTerm/build/shang-build/tools/shang/testsuite/benchmark/legup_chstone/aes/20131030-121730-295299/pure_hw_sim/trace_database.sql'''
+  #CorrectTrace = r'''file:///E:/buildbot/shang-slave/LongTerm/build/shang-build/tools/shang/testsuite/benchmark/legup_chstone/aes/20131030-131814-171052/pure_hw_sim/trace_database.sql'''
+  #BadTrace = r'''file:///E:/buildbot/shang-slave-43/LongTerm/build/shang-build/tools/shang/testsuite/benchmark/legup_chstone/aes/20131030-121730-295299/pure_hw_sim/trace_database.sql'''
 
-  # First of all, compare the trace of PHI instructions.
-  BL = BugLocator(CorrectTrace, BadTrace, build_reg_assign_matcher)
-  BL.printInstructionTraceDifferent(generate_opcode_filter(['phi']))
-  BL.printInstructionTraceDifferent(generate_bb_filter(['.lr.ph.i']))
+  ## First of all, compare the trace of PHI instructions.
+  #TA = TraceAnalyzer(CorrectTrace, BadTrace, build_reg_assign_matcher)
+  #TA.printInstructionTraceDifferent(generate_opcode_filter(['phi']))
+  #TA.printInstructionTraceDifferent(generate_bb_filter(['.lr.ph.i']))
 
-  BL = BugLocator(CorrectTrace, BadTrace, build_instruction_matcher)
-  BL.printMemoryLocationTraceDifferent('%s and %s' % (generate_register_filter(['mem6p0addr', 'mem6p1addr']),
-                                        generate_register_value_filter([0])),
-                                       generate_register_filter(['mem6p0wdata', 'mem6p1wdata']))
+  #TA = TraceAnalyzer(CorrectTrace, BadTrace, build_instruction_matcher)
+  #TA.printMemoryLocationTraceDifferent('%s and %s' % (generate_register_filter(['mem6p0addr', 'mem6p1addr']),
+  #                                      generate_register_value_filter([0])),
+  #                                     generate_register_filter(['mem6p0wdata', 'mem6p1wdata']))
+
+  #SlotTrace = r'''file:///E:\buildbot\shang-slave-41\LongTerm\build\shang-build\tools\shang\testsuite\benchmark\legup_chstone\aes\20131031-104625-492307\pure_hw_sim\trace_database.sql'''
+  #TA = TraceAnalyzer(SlotTrace)
+  #for s in TA.generateBBCycles() :
+  #  print s
+
+  SimulationDB = r'''http://192.168.1.253:8010/builders/LongTerm/builds/857/steps/custom%20target/logs/data/text'''
+  analyze_benchmarks_execution_trace(SimulationDB)
   print 'a'
 
 
