@@ -93,7 +93,7 @@ void ControlChainingHazardDectector::initDistances() {
   Function &F = G.getFunction();
   BBTimeFrames[&F.getEntryBlock()] = TimeFrame(0, 0);
 
-  G.sortSUs(VASTSchedGraph::top_sort_idx);
+  G.sortSUs(VASTSchedGraph::idx_less);
 
   // Build the scheduling units according to the original scheduling.
   ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());

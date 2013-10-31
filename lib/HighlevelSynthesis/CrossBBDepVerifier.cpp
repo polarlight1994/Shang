@@ -141,7 +141,7 @@ Verifier::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
 }
 
 void Verifier::initialize() {
-  G.sortSUs(VASTSchedGraph::top_sort_idx);
+  G.sortSUs(VASTSchedGraph::idx_less);
 
   BasicBlock *Entry = &F.getEntryBlock();
   VASTSchedUnit *EntrySU = G.getEntrySU(Entry);

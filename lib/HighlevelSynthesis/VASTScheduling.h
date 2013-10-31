@@ -505,8 +505,7 @@ public:
   // Remove virtual SU before emitting the scheduling.
   void removeVirualNodes();
 
-  static int top_sort_idx(VASTSchedUnit *const *LHS,
-                          VASTSchedUnit *const *RHS);
+  static int idx_less(VASTSchedUnit *const *LHS, VASTSchedUnit *const *RHS);
 
   template<typename T>
   void sortSUs(T F) {
