@@ -97,13 +97,16 @@ struct GlobalFlowAnalyzer {
   void initializeDomTreeLevel();
 
   // Determinate the insertion points for the PHIs.
-  template<typename DefMapTy>
-  void determineInsertionPoint(BBSet &DFBlocks, const DefMapTy &DefMap) {
+  template<typename AccessSetTy, typename IsDefBeforeUseFN>
+  void determineInsertionPoint(BBSet &DFBlocks, const AccessSetTy &DefMap,
+                               const AccessSetTy &UseMap,
+                               IsDefBeforeUseFN &isDefBeforeUse) {
     initializeDomTreeLevel();
 
     // Determine in which blocks the FU's flow is alive.
     SmallPtrSet<BasicBlock*, 32> LiveInBlocks;
-    computeLiveInBlocks<DefMapTy>(LiveInBlocks, DefMap);
+    computeLiveInBlocks<AccessSetTy>(LiveInBlocks, DefMap, UseMap,
+                                     isDefBeforeUse);
 
     // Use a priority queue keyed on dominator tree level so that inserted nodes
     // are handled from the bottom of the dominator tree upwards.
@@ -112,7 +115,7 @@ struct GlobalFlowAnalyzer {
             IDFPriorityQueue;
     IDFPriorityQueue PQ;
 
-    typedef typename DefMapTy::const_iterator def_iterator;
+    typedef typename AccessSetTy::const_iterator def_iterator;
     for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I) {
       if (DomTreeNode *Node = DT.getNode(I->first))
         PQ.push(std::make_pair(Node, DomLevels.lookup(Node)));
@@ -172,8 +175,10 @@ struct GlobalFlowAnalyzer {
     }
   }
 
-  template<typename DefMapTy>
-  void computeLiveInBlocks(BBSet &LiveInBlocks, const DefMapTy &DefMap) {
+  template<typename AccessSetTy, typename IsDefBeforeUseFN>
+  void computeLiveInBlocks(BBSet &LiveInBlocks, const AccessSetTy &DefMap,
+                           const AccessSetTy &UseMap,
+                           IsDefBeforeUseFN &isDefBeforeUse) {
     // To determine liveness, we must iterate through the predecessors of blocks
     // where the def is live.  Blocks are added to the worklist if we need to
     // check their predecessors.  Start with all the using blocks.
@@ -181,9 +186,21 @@ struct GlobalFlowAnalyzer {
     // block, the define block is also a live-in block.
     SmallVector<BasicBlock*, 64> LiveInBlockWorklist;
 
-    typedef typename DefMapTy::const_iterator def_iterator;
-    for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
+    typedef typename AccessSetTy::const_iterator iterator;
+    for (iterator I = UseMap.begin(), E = UseMap.end(); I != E; ++I) {
+      BasicBlock *UseBlock = I->first;
+
+      iterator J = DefMap.find(UseBlock);
+      if (J != DefMap.end()) {
+        // Okay, this is a block that both uses and defines the value.
+        // If the first reference to the alloca is a def (store),
+        // then we know it isn't live-in.
+        if (isDefBeforeUse(*I, *J))
+          continue;
+      }
+
       LiveInBlockWorklist.push_back(I->first);
+    }
 
     // Now that we have a set of blocks where the phi is live-in, recursively
     // add their predecessors until we find the full region the value is live.
@@ -220,14 +237,18 @@ struct GlobalDependenciesBuilderBase  {
   GlobalDependenciesBuilderBase(GlobalFlowAnalyzer &GFA, IR2SUMapTy &IR2SUMap)
     : GFA(GFA), IR2SUMap(IR2SUMap) {}
 
-  typedef DenseMap<BasicBlock*, SmallVector<VASTSchedUnit*, 8> > DefMapTy;
-  DefMapTy DefMap;
+  typedef DenseMap<BasicBlock*, SmallVector<VASTSchedUnit*, 8> > AccessMapTy;
+  AccessMapTy DefMap, UseMap;
 
   // The dominance frontiers of DefBlocks.
   BBSet DFBlocks;
 
   void addDef(VASTSchedUnit *SU, BasicBlock *BB) {
     DefMap[BB].push_back(SU);
+  }
+
+  void addUse(VASTSchedUnit *SU, BasicBlock *BB) {
+    UseMap[BB].push_back(SU);
   }
 
   // Build the dependency between Join Edges (the edges across the dominance
@@ -286,10 +307,11 @@ struct GlobalDependenciesBuilderBase  {
 
   void constructGlobalFlow() {
     // Build the dependency across the basic block boundaries.
-    GFA.determineInsertionPoint(DFBlocks, DefMap);
+    GFA.determineInsertionPoint(DFBlocks, DefMap, UseMap,
+                                SubClass::isDefBeforeUse);
 
     // Build the dependency within each BB.
-    typedef DefMapTy::iterator def_iterator;
+    typedef AccessMapTy::iterator def_iterator;
     for (def_iterator I = DefMap.begin() , E = DefMap.end(); I != E; ++I) {
       BasicBlock *BB = I->first;
       VASTSchedUnit *Src = static_cast<SubClass*>(this)->getSrcAt(BB);
@@ -318,6 +340,11 @@ struct SingleFULinearOrder
   SchedulerBase &G;
   const DenseMap<BasicBlock*, VASTSchedUnit*> &Returns;
 
+  static bool isDefBeforeUse(const AccessMapTy::value_type &,
+                             const AccessMapTy::value_type &) {
+    return false;
+  }
+
   void buildDep(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
     unsigned IntialInterval = 1;
     VASTDep Edge = VASTDep::CreateDep<VASTDep::LinearOrder>(IntialInterval);
@@ -344,7 +371,7 @@ struct SingleFULinearOrder
 
     // Create the sink node if it is not created yet.
     Snk = G->createSUnit(BB, VASTSchedUnit::VSnk);
-    DefMapTy::iterator at = DefMap.find(BB);
+    AccessMapTy::iterator at = DefMap.find(BB);
     assert(at != DefMap.end() && "Not a define block!");
     // At this point, the intra-BB linear order had already constructed, and
     // hence the back of the SU array is the 'last' N SU in the block.
@@ -366,7 +393,7 @@ struct SingleFULinearOrder
     // Make src depends on something.
     Src->addDep(G->getEntrySU(BB), VASTDep::CreateCtrlDep(0));
 
-    DefMapTy::iterator at = DefMap.find(BB);
+    AccessMapTy::iterator at = DefMap.find(BB);
     assert(at != DefMap.end() && "Not a define block!");
     // At this point, the intra-BB linear order had already constructed, and
     // hence the front of the SU array is the 'first' N SUs in the block.
@@ -389,7 +416,7 @@ struct SingleFULinearOrder
   void buildLinearOrder();
 
   virtual void dump() const {
-    typedef DefMapTy::const_iterator def_iterator;
+    typedef AccessMapTy::const_iterator def_iterator;
     dbgs() << "Defs:\n\t";
     for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
       dbgs() << I->first->getName() << ", ";
@@ -484,6 +511,7 @@ void BasicLinearOrderGenerator::buildFUInfo() {
 
       // Add the FU visiting information.
       S->addDef(SU, BB);
+      S->addUse(SU, BB);
     }
   }
 }
@@ -508,7 +536,7 @@ SingleFULinearOrder::buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
 
 void SingleFULinearOrder::buildLinearOrder() {
   // Build the linear order within each BB.
-  typedef DefMapTy::iterator def_iterator;
+  typedef AccessMapTy::iterator def_iterator;
   for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
     buildLinearOrderInBB(I->second);
 
@@ -574,6 +602,12 @@ struct AliasRegionDepBuilder
 
   void buildDepFromDFBlock(VASTSchedUnit *Dst, BasicBlock *DFBlock) {}
 
+  static bool isDefBeforeUse(const AccessMapTy::value_type &,
+                             const AccessMapTy::value_type &) {
+    return false;
+  }
+
+
   VASTSchedUnit *getSnkAt(BasicBlock *BB) {
     VASTSchedUnit *&Snk = SSnks[BB];
 
@@ -582,7 +616,7 @@ struct AliasRegionDepBuilder
     // Create the sink node if it is not created yet.
     Snk = G.createSUnit(BB, VASTSchedUnit::VSnk);
 
-    DefMapTy::iterator at = DefMap.find(BB);
+    AccessMapTy::iterator at = DefMap.find(BB);
     assert(at != DefMap.end() && "Not a define block!");
     ArrayRef<VASTSchedUnit*> SUs(at->second);
     for (unsigned i = 0; i < SUs.size(); ++i)
@@ -601,7 +635,7 @@ struct AliasRegionDepBuilder
     // Make src depends on something.
     Src->addDep(G.getEntrySU(BB), VASTDep::CreateCtrlDep(0));
 
-    DefMapTy::iterator at = DefMap.find(BB);
+    AccessMapTy::iterator at = DefMap.find(BB);
     assert(at != DefMap.end() && "Not a define block!");
     ArrayRef<VASTSchedUnit*> SUs(at->second);
     for (unsigned i = 0; i < SUs.size(); ++i)
@@ -655,6 +689,7 @@ void AliasRegionDepBuilder::initializeRegion(AliasSet &AS) {
       assert(SU->isLaunch() && "Bad scheduling unit type!");
       // Remember the scheduling unit and the corresponding basic block.
       addDef(SU, Inst->getParent());
+      addUse(SU, Inst->getParent());
     }
   }
 
