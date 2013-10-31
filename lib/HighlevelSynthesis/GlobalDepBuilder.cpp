@@ -97,16 +97,15 @@ struct GlobalFlowAnalyzer {
   void initializeDomTreeLevel();
 
   // Determinate the insertion points for the PHIs.
-  template<typename AccessSetTy, typename IsDefBeforeUseFN>
+  template<typename AccessSetTy, typename InitLiveInsFN>
   void determineInsertionPoint(BBSet &DFBlocks, const AccessSetTy &DefMap,
                                const AccessSetTy &UseMap,
-                               IsDefBeforeUseFN &isDefBeforeUse) {
+                               InitLiveInsFN &InitLiveIns) {
     initializeDomTreeLevel();
 
     // Determine in which blocks the FU's flow is alive.
     SmallPtrSet<BasicBlock*, 32> LiveInBlocks;
-    computeLiveInBlocks<AccessSetTy>(LiveInBlocks, DefMap, UseMap,
-                                     isDefBeforeUse);
+    computeLiveInBlocks<AccessSetTy>(LiveInBlocks, DefMap, UseMap, InitLiveIns);
 
     // Use a priority queue keyed on dominator tree level so that inserted nodes
     // are handled from the bottom of the dominator tree upwards.
@@ -175,10 +174,9 @@ struct GlobalFlowAnalyzer {
     }
   }
 
-  template<typename AccessSetTy, typename IsDefBeforeUseFN>
+  template<typename AccessSetTy, typename InitLiveInsFN>
   void computeLiveInBlocks(BBSet &LiveInBlocks, const AccessSetTy &DefMap,
-                           const AccessSetTy &UseMap,
-                           IsDefBeforeUseFN &isDefBeforeUse) {
+                           const AccessSetTy &UseMap, InitLiveInsFN &InitLiveIns) {
     // To determine liveness, we must iterate through the predecessors of blocks
     // where the def is live.  Blocks are added to the worklist if we need to
     // check their predecessors.  Start with all the using blocks.
@@ -186,21 +184,7 @@ struct GlobalFlowAnalyzer {
     // block, the define block is also a live-in block.
     SmallVector<BasicBlock*, 64> LiveInBlockWorklist;
 
-    typedef typename AccessSetTy::const_iterator iterator;
-    for (iterator I = UseMap.begin(), E = UseMap.end(); I != E; ++I) {
-      BasicBlock *UseBlock = I->first;
-
-      iterator J = DefMap.find(UseBlock);
-      if (J != DefMap.end()) {
-        // Okay, this is a block that both uses and defines the value.
-        // If the first reference to the alloca is a def (store),
-        // then we know it isn't live-in.
-        if (isDefBeforeUse(*I, *J))
-          continue;
-      }
-
-      LiveInBlockWorklist.push_back(I->first);
-    }
+    InitLiveIns(LiveInBlockWorklist, DefMap, UseMap);
 
     // Now that we have a set of blocks where the phi is live-in, recursively
     // add their predecessors until we find the full region the value is live.
@@ -249,6 +233,18 @@ struct GlobalDependenciesBuilderBase  {
 
   void addUse(VASTSchedUnit *SU, BasicBlock *BB) {
     UseMap[BB].push_back(SU);
+  }
+
+  static void InitLiveins(SmallVectorImpl<BasicBlock*> &LiveInBlockWorklist,
+                          const AccessMapTy &DefMap, const AccessMapTy &UseMap) {
+    // Add Both Def and Use to liveins, but do not add the same block twice.
+    typedef AccessMapTy::const_iterator iterator;
+    for (iterator I = UseMap.begin(), E = UseMap.end(); I != E; ++I)
+      LiveInBlockWorklist.push_back(I->first);
+
+    for (iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
+      if (!UseMap.count(I->first))
+        LiveInBlockWorklist.push_back(I->first);
   }
 
   // Build the dependency between Join Edges (the edges across the dominance
@@ -307,8 +303,7 @@ struct GlobalDependenciesBuilderBase  {
 
   void constructGlobalFlow() {
     // Build the dependency across the basic block boundaries.
-    GFA.determineInsertionPoint(DFBlocks, DefMap, UseMap,
-                                SubClass::isDefBeforeUse);
+    GFA.determineInsertionPoint(DFBlocks, DefMap, UseMap, SubClass::InitLiveins);
 
     // Build the dependency within each BB.
     typedef AccessMapTy::iterator def_iterator;
@@ -339,11 +334,6 @@ struct SingleFULinearOrder
   const unsigned Parallelism;
   SchedulerBase &G;
   const DenseMap<BasicBlock*, VASTSchedUnit*> &Returns;
-
-  static bool isDefBeforeUse(const AccessMapTy::value_type &,
-                             const AccessMapTy::value_type &) {
-    return false;
-  }
 
   void buildDep(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
     unsigned IntialInterval = 1;
@@ -511,7 +501,6 @@ void BasicLinearOrderGenerator::buildFUInfo() {
 
       // Add the FU visiting information.
       S->addDef(SU, BB);
-      S->addUse(SU, BB);
     }
   }
 }
@@ -602,12 +591,6 @@ struct AliasRegionDepBuilder
 
   void buildDepFromDFBlock(VASTSchedUnit *Dst, BasicBlock *DFBlock) {}
 
-  static bool isDefBeforeUse(const AccessMapTy::value_type &,
-                             const AccessMapTy::value_type &) {
-    return false;
-  }
-
-
   VASTSchedUnit *getSnkAt(BasicBlock *BB) {
     VASTSchedUnit *&Snk = SSnks[BB];
 
@@ -689,7 +672,6 @@ void AliasRegionDepBuilder::initializeRegion(AliasSet &AS) {
       assert(SU->isLaunch() && "Bad scheduling unit type!");
       // Remember the scheduling unit and the corresponding basic block.
       addDef(SU, Inst->getParent());
-      addUse(SU, Inst->getParent());
     }
   }
 
