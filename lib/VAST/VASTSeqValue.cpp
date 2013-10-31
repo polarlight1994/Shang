@@ -217,12 +217,38 @@ VASTSelector::initTraceDataBase(raw_ostream &OS, const char *TraceDataBase) {
                    "  RegisterName Text,"
                    "  SlotNum INTEGER"
                    ");\n");
+  OS.write_escaped("CREATE TABLE SlotTrace("
+                   "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                   "  ActiveTime INTEGER,"
+                   "  BB TEXT,"
+                   "  SlotNum INTEGER"
+                   ");\n");
   OS << "\");\n";
 }
 
 void VASTSelector::dumpSlotTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
                                  const char *TraceDataBase) const {
+  VASTSlot *S = Op->getSlot();
 
+  OS << "$fwrite (" << TraceDataBase << ", \"";
+  OS.write_escaped("INSERT INTO SlotTrace(ActiveTime, BB, SlotNum) VALUES(");
+  // Time
+  OS.write_escaped("%t, ");
+
+  // BB
+  OS.write_escaped("\"");
+  if (BasicBlock *BB = S->getParent())
+    OS.write_escaped(BB->getName());
+  else
+    OS.write_escaped("entry/exit");
+  OS.write_escaped("\", ");
+
+  // SlotNum
+  OS << S->SlotNum;
+
+  OS.write_escaped(");\n");
+
+  OS << "\", $time());\n";
 }
 
 void VASTSelector::dumpInstTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
