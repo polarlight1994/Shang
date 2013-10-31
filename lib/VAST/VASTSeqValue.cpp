@@ -272,7 +272,11 @@ void VASTSelector::dumpInstTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
   OS.write_escaped(");\n");
 
   OS << "\", $time(), ";
-  OS << '"' << *Inst << "\", ";
+  SmallString<64> InstStr;
+  raw_svector_ostream SS(InstStr);
+  SS << *Inst;
+
+  OS << '"' << SS.str() << "\", ";
   VASTValPtr(L).printAsOperand(OS);
   OS << ");\n";
 }
