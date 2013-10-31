@@ -167,13 +167,16 @@ class TraceAnalyzer:
     return self.generateBBCyclesInternal(self.lhs_conn, Filter)
 
 
-def analyze_benchmarks_execution_trace(dburl) :
+def analyze_benchmarks_execution_trace(dburl, bb_threshold) :
   #Initialize the database connections
   conn = sqlite3.connect(':memory:')
   conn.executescript(urllib2.urlopen(dburl).read())
   conn.commit()
 
   cur = conn.cursor()
+
+  benchmarks = []
+  data = []
 
   for name, parameter, cycles in cur.execute('''select name, parameter, cycles from simulation''').fetchall() :
     print name, cycles
@@ -185,11 +188,27 @@ def analyze_benchmarks_execution_trace(dburl) :
       sql_path = path.join(parent_dir, 'trace_database.sql')
       
       TA = TraceAnalyzer(sql_path)
-      for s in TA.generateBBCycles() :
-        print s, (float(s[0]) / float(cycles) * 100) 
 
+      BBActiveStats = TA.generateBBCycles()
 
+      NumSlotActived = 0
 
+      for bb_cycles, BB in BBActiveStats :
+        NumSlotActived += bb_cycles
+        percentage = float(bb_cycles) / float(cycles)
+        if percentage < bb_threshold :
+          continue
+
+        print bb_cycles, BB, '%.2f%%' % (percentage * 100)
+
+      OverlapRatio = float(NumSlotActived) / float(cycles) - 1.0
+      print 'Overlap ratio: ', OverlapRatio, '\n'
+
+      benchmarks.append(name)
+      data.append(OverlapRatio)
+
+  import result_comparison
+  print result_comparison.draw_bars([ data ], [ 'A' ], benchmarks, 'OverlapRatio',  'Overlap Ratio', False)
 
 if __name__ == "__main__" :
   #CorrectTrace = r'''file:///E:/buildbot/shang-slave/LongTerm/build/shang-build/tools/shang/testsuite/benchmark/legup_chstone/aes/20131030-131814-171052/pure_hw_sim/trace_database.sql'''
@@ -210,8 +229,8 @@ if __name__ == "__main__" :
   #for s in TA.generateBBCycles() :
   #  print s
 
-  SimulationDB = r'''http://192.168.1.253:8010/builders/LongTerm/builds/857/steps/custom%20target/logs/data/text'''
-  analyze_benchmarks_execution_trace(SimulationDB)
+  SimulationDB = r'''http://192.168.1.253:8010/builders/LongTerm/builds/858/steps/custom%20target/logs/data/text'''
+  analyze_benchmarks_execution_trace(SimulationDB, 0.1)
   print 'a'
 
 
