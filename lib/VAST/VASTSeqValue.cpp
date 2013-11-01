@@ -237,7 +237,7 @@ void VASTSelector::dumpSlotTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
 
   // BB
   OS.write_escaped("\"");
-  if (BasicBlock *BB = S->getParent())
+  if (BasicBlock *BB = dyn_cast_or_null<BasicBlock>(getSSAValue()->getLLVMValue()))
     OS.write_escaped(BB->getName());
   else
     OS.write_escaped("entry/exit");
