@@ -281,6 +281,21 @@ int VASTSchedGraph::idx_less(VASTSchedUnit *const *LHS,
   return 0;
 }
 
+VASTSchedUnit *
+VASTSchedGraph::createSUnit(BasicBlock *BB, VASTSchedUnit::Type T) {
+  VASTSchedUnit *U = new VASTSchedUnit(TotalSUs++, BB, T);
+  // Insert the newly create SU before the exit.
+  SUnits.insert(SUnits.back(), U);
+  // Also put the scheduling unit in the BBMap.
+  assert(BB && "Expect a parent BB!");
+  assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::VSnk ||
+          T == VASTSchedUnit::VSrc)
+         && "Unexpected type!");
+  BBMap[U->getParent()].push_back(U);
+
+  return U;
+}
+
 void VASTSchedGraph::removeVirualNodes() {
   typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator
     iterator;

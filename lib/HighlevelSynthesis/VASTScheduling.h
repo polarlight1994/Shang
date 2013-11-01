@@ -442,19 +442,7 @@ public:
   VASTSchedUnit *getExit() { return &SUnits.back(); }
   const VASTSchedUnit *getExit() const { return &SUnits.back(); }
 
-  VASTSchedUnit *createSUnit(BasicBlock *BB, VASTSchedUnit::Type T) {
-    VASTSchedUnit *U = new VASTSchedUnit(TotalSUs++, BB, T);
-    // Insert the newly create SU before the exit.
-    SUnits.insert(SUnits.back(), U);
-    // Also put the scheduling unit in the BBMap.
-    assert(BB && "Expect a parent BB!");
-    assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::VSnk ||
-            T == VASTSchedUnit::VSrc)
-           && "Unexpected type!");
-    BBMap[U->getParent()].push_back(U);
-
-    return U;
-  }
+  VASTSchedUnit *createSUnit(BasicBlock *BB, VASTSchedUnit::Type T);
 
   VASTSchedUnit *createSUnit(Instruction *Inst, bool IsLatch, BasicBlock *BB,
                              VASTSeqOp *SeqOp) {
