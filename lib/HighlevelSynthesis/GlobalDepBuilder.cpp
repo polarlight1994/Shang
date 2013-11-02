@@ -39,6 +39,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/Support/CFG.h"
 #define DEBUG_TYPE "shang-linear-order-builder"
 #include "llvm/Support/Debug.h"
@@ -260,80 +261,62 @@ struct GlobalDependenciesBuilderBase  {
         LiveInBlockWorklist.push_back(I->first);
   }
 
-  // Build the dependency between the dominance edges.
-  void buildDepFromDom(VASTSchedUnit *Dst, BasicBlock *SrcBB, bool IncludeUse) {
-    // Traversal the dominator tree bottom up and find the fisrt block in which
-    // the FU is visited.
-    DomTreeNode *Node = GFA.DT.getNode(SrcBB);
-    while (Node) {
-      BasicBlock *BB = Node->getBlock();
-
-      if (DefMap.count(BB) || (IncludeUse && UseMap.count(BB))) {
-        VASTSchedUnit *Snk = static_cast<SubClass*>(this)->getSnkAt(BB, IncludeUse);
-        static_cast<SubClass*>(this)->buildDep(Snk, Dst);
-        return;
-      }
-
-      if (DFBlocks.count(BB)) {
-        static_cast<SubClass*>(this)->buildDepFromDFBlock(Dst, BB);
-        return;
-      }
-
-      Node = Node->getIDom();
-    }
-  }
-
-  // Build the dependency between Join Edges (the edges across the dominance
-  // frontier).
-  void buildDepOnJEdge(BasicBlock *DF) {
-    for (pred_iterator I = pred_begin(DF), E = pred_end(DF); I != E; ++I) {
-      BasicBlock *Incoming = *I;
-
-      // Find the branching operation targeting the dominance frontier, wait until
-      // all operations that dominate and reachable (not killed) to the incoming
-      // block finish before we leave the block.
-      // TODO: We can also insert a "Join" operation, and wait the join operation
-      // just before we access the functional unit.
-      ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[Incoming->getTerminator()]);
-      for (unsigned i = 0; i < Exits.size(); ++i) {
-        VASTSchedUnit *Exit = Exits[i];
-        assert(Exit->isTerminator() && "Expect terminator!");
-        if (Exit->getTargetBlock() != DF) continue;
-
-        // Because we assume there is a pseudo write (def)  at the beginning of
-        // the DFBlocks, we should include the uses.
-        buildDepFromDom(Exit, Incoming, true);
-        break;
-      }
-    }
-  }
-
-  // Build the dependencies to a specified scheduling unit.
-  void buildDepOnDEdge(VASTSchedUnit *Dst, BasicBlock *SrcBB, bool IncludeUse) {
-    DomTreeNode *IDom = GFA.DT.getNode(SrcBB)->getIDom();
-    // Ignore the unreachable BB.
-    if (IDom == 0) return;
-
-    buildDepFromDom(Dst, IDom->getBlock(), IncludeUse);
-  }
-
-  void buildDepForAccessBlocks(AccessMapTy &Map, bool IsUse) {
-    // Build the dependency within each BB.
-    typedef AccessMapTy::iterator iterator;
-    for (iterator I = DefMap.begin() , E = DefMap.end(); I != E; ++I) {
-      BasicBlock *BB = I->first;
-
-      // Do not build the edges across the DFBlocks.
-      if (DFBlocks.count(BB)) {
-        //static_cast<SubClass*>(this)->buildDepFromDFBlock(Src, BB);
+  void buildCtrlDepToSyncPoint(BasicBlock *BB, ArrayRef<VASTSchedUnit*> TDSUs,
+                               SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
+    SmallVector<VASTSchedUnit*, 8> Branches;
+    ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
+    for (unsigned i = 0; i < Exits.size(); ++i) {
+      VASTSchedUnit *Exit = Exits[i];
+      assert(Exit->isTerminator() && "Expect terminator!");
+      BasicBlock *TargetBlock = Exit->getTargetBlock();
+      if (!DFBlocks.count(TargetBlock))
         continue;
-      }
 
-      VASTSchedUnit *Src = static_cast<SubClass*>(this)->getSrcAt(BB, IsUse);
-      // We need to build both read->write and write->write edges for defs,
-      // and only write->read edges for use. Hence when IsUse is true, the
-      // IncludeUse in buildDepOnDEdge should be false.
-      buildDepOnDEdge(Src, BB, !IsUse);
+      Branches.push_back(Exit);
+    }
+
+    if (Branches.empty())
+      return;
+
+    for (unsigned i = 0, e = BUSUs.size(); i < e; ++i)
+      for (unsigned j = 0; j < Branches.size(); ++j)
+        static_cast<SubClass*>(this)->buildDep(TDSUs[i], Branches[j]);
+
+    BUSUs.append(Branches.begin(), Branches.end());
+  }
+
+  void buildDependenciesBottonUp(DomTreeNode *Node) {
+    SmallVector<VASTSchedUnit*, 8> BUSUs, TDSUs;
+    BasicBlock *BB = Node->getBlock();
+
+    // Collect the SUs for which we are going to build dependencies BottonUp.
+    static_cast<SubClass*>(this)->collectSUsForBottonUpDeps(BB, BUSUs);
+    if (succ_begin(BB) != succ_end(BB)) {
+      static_cast<SubClass*>(this)->collectSUsForTopDownDeps(BB, TDSUs);
+      buildCtrlDepToSyncPoint(BB, TDSUs, BUSUs);
+    }
+
+    if (BUSUs.empty())
+      return;
+
+    if (DFBlocks.count(BB))
+      static_cast<SubClass*>(this)->buildDepFromDFBlock(BB, BUSUs);
+
+    Node = Node->getIDom();
+    while (Node && !BUSUs.empty()) {
+      BasicBlock *BB = Node->getBlock();
+      Node = Node->getIDom();
+
+      TDSUs.clear();
+      static_cast<SubClass*>(this)->collectSUsForTopDownDeps(BB, TDSUs);
+
+      static_cast<SubClass*>(this)->buildDependencies(BUSUs, TDSUs);
+
+      // If the current BB is synchronization point (i.e. PHI node for flow
+      // dependencies), add control dependencies to the SUs that are not
+      // consumed by the previous dependencies building function.
+      if (DFBlocks.count(BB))
+        static_cast<SubClass*>(this)->buildDepFromDFBlock(BB, BUSUs);
     }
   }
 
@@ -341,13 +324,13 @@ struct GlobalDependenciesBuilderBase  {
     // Build the dependency across the basic block boundaries.
     GFA.determineInsertionPoint(DFBlocks, DefMap, UseMap, SubClass::InitLiveins);
 
-    buildDepForAccessBlocks(DefMap, false);
-    buildDepForAccessBlocks(UseMap, true);
+    DomTreeNode *Root = GFA.DT.getRootNode();
 
-    // Build the dependencies to ensure the linear orders even states in different
-    // blocks may be activated at the same time.
-    for (BBSet::iterator I = DFBlocks.begin(), E = DFBlocks.end(); I != E; ++I)
-      buildDepOnJEdge(*I);
+    typedef po_iterator<DomTreeNode*> iterator;
+    for (iterator I = po_begin(Root), E = po_end(Root); I != E; ++I) {
+      DomTreeNode *Node = *I;
+      buildDependenciesBottonUp(Node);
+    }
   }
 };
 
@@ -358,7 +341,6 @@ struct SingleFULinearOrder
   const unsigned Parallelism;
   SchedulerBase &G;
   const DenseMap<BasicBlock*, VASTSchedUnit*> &Returns;
-  DenseMap<BasicBlock*, VASTSchedUnit*> SSnks, SSrcs;
 
   void buildDep(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
     unsigned IntialInterval = 1;
@@ -366,58 +348,50 @@ struct SingleFULinearOrder
     Dst->addDep(Src, Edge);
   }
 
-  void buildDepFromDFBlock(VASTSchedUnit *Dst, BasicBlock *DFBlock) {
-    // At one hand, later we will add edges to make sure the FU accesses will
-    // finish before the control flow reach (the entry of) the dominance
-    // frontiers (i.e. DFBlocks). At the other hand, all operation is
-    // constrained by the entry of their parent basic block, which means
-    // (the entry of) the dominance frontiers implicitly predecease all
-    // the blocks (as well as the FU access operations inside) dominated by
-    // them. Hence, All FU accesses reachable to dominance frontiers
-    // implicitly predecease all blocks (as well as the FU access operations
-    // inside) dominated by the dominance frontiers, and we do not need to
-    // add any dependencies in this case.
+  void
+  buildDepFromDFBlock(BasicBlock *BB, SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
+    // Do not allow the SUs exceeding the entry of dominance frontier. Because
+    // the scheduler cannot preserve the inter-BB dependencies in this case.
+    while (!BUSUs.empty())
+      BUSUs.pop_back_val()->addDep(G->getEntrySU(BB), VASTDep::CreateCtrlDep(0));
   }
 
-  VASTSchedUnit *getSnkAt(BasicBlock *BB, bool /*IncludeUse*/) {
-    VASTSchedUnit *&Snk = SSnks[BB];
+  void buildDependencies(SmallVectorImpl<VASTSchedUnit*> &BUSUs,
+                         ArrayRef<VASTSchedUnit*> TDSUs) {
+    while (!BUSUs.empty()) {
+      VASTSchedUnit *Dst = BUSUs.pop_back_val();
 
-    if (Snk) return Snk;
+      for (unsigned i = 0; i < TDSUs.size(); ++i)
+        buildDep(TDSUs[i], Dst);
+    }
+  }
 
-    // Create the sink node if it is not created yet.
-    Snk = G->createSUnit(BB, VASTSchedUnit::VSnk);
+  void collectSUsForTopDownDeps(BasicBlock *BB,
+                                SmallVectorImpl<VASTSchedUnit*> &TDSUs) {
     AccessMapTy::iterator at = DefMap.find(BB);
-    assert(at != DefMap.end() && "Not a define block!");
+    if (at == DefMap.end())
+      return;
+
     // At this point, the intra-BB linear order had already constructed, and
     // hence the back of the SU array is the 'last' N SU in the block.
     ArrayRef<VASTSchedUnit*> SUs(at->second);
     for (unsigned i = std::max<int>(0, SUs.size() - Parallelism), e = SUs.size();
          i < e; ++i)
-      Snk->addDep(SUs[i], VASTDep::CreateCtrlDep(0));
-
-    return Snk;
+      TDSUs.push_back(SUs[i]);
   }
 
-  VASTSchedUnit *getSrcAt(BasicBlock *BB, bool /*IncludeUse*/) {
-    VASTSchedUnit *&Src = SSrcs[BB];
-
-    if (Src) return Src;
-
-    // Create the source node if it is not created yet.
-    Src = G->createSUnit(BB, VASTSchedUnit::VSrc);
-    // Make src depends on something.
-    Src->addDep(G->getEntrySU(BB), VASTDep::CreateCtrlDep(0));
-
+  void collectSUsForBottonUpDeps(BasicBlock *BB,
+                                 SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
     AccessMapTy::iterator at = DefMap.find(BB);
-    assert(at != DefMap.end() && "Not a define block!");
+    if (at == DefMap.end())
+      return;
+
     // At this point, the intra-BB linear order had already constructed, and
     // hence the front of the SU array is the 'first' N SUs in the block.
     ArrayRef<VASTSchedUnit*> SUs(at->second);
     for (unsigned i = 0, e = std::min<unsigned>(SUs.size(), Parallelism);
          i < e; ++i)
-      SUs[i]->addDep(Src, VASTDep::CreateCtrlDep(0));
-
-    return Src;
+      BUSUs.push_back(SUs[i]);
   }
 
   void buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs);
@@ -606,59 +580,37 @@ STATISTIC(NumMemDep, "Number of Memory Dependencies Added");
 namespace {
 struct AliasRegionDepBuilder
   : public GlobalDependenciesBuilderBase<AliasRegionDepBuilder> {
-  VASTSchedGraph &G;
+    VASTSchedGraph &G;
+    AliasAnalysis &AA;
 
-  DenseMap<BasicBlock*, VASTSchedUnit*> SSnks[2], SSrcs[2];
-
-  AliasRegionDepBuilder(VASTSchedGraph &G, GlobalFlowAnalyzer &GFA,
-                        IR2SUMapTy &IR2SUMap)
-    : GlobalDependenciesBuilderBase(GFA, IR2SUMap), G(G) {}
+  AliasRegionDepBuilder(VASTSchedGraph &G, AliasAnalysis &AA,
+                        GlobalFlowAnalyzer &GFA, IR2SUMapTy &IR2SUMap)
+    : GlobalDependenciesBuilderBase(GFA, IR2SUMap), G(G), AA(AA) {}
 
   void initializeRegion(AliasSet &AS);
 
-  void buildDepFromDFBlock(VASTSchedUnit *Dst, BasicBlock *DFBlock) {}
-
-  VASTSchedUnit *getSnkAt(BasicBlock *BB, bool IncludeUse) {
-    VASTSchedUnit *&Snk = SSnks[IncludeUse ? 0 : 1][BB];
-
-    if (Snk) return Snk;
-
-    // Create the sink node if it is not created yet.
-    Snk = G.createSUnit(BB, VASTSchedUnit::VSnk);
-
-    SmallVector<VASTSchedUnit*, 8> SUs;
-    collectSUsInBlock(DefMap, BB, SUs);
-    if (IncludeUse)
-      collectSUsInBlock(UseMap, BB, SUs);
-
-    assert(!SUs.empty() && "There is no def/use in this block!");
-    for (unsigned i = 0; i < SUs.size(); ++i)
-      Snk->addDep(SUs[i], VASTDep::CreateCtrlDep(0));
-
-    return Snk;
+  void buildDepFromDFBlock(BasicBlock *BB,
+                           SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
+    // Do not allow the SUs exceeding the entry of dominance frontier. Because
+    // the scheduler cannot preserve the inter-BB dependencies in this case.
+    while (!BUSUs.empty())
+      BUSUs.pop_back_val()->addDep(G.getEntrySU(BB), VASTDep::CreateCtrlDep(0));
   }
 
-  VASTSchedUnit *getSrcAt(BasicBlock *BB, bool IncludeUse) {
-    VASTSchedUnit *&Src = SSrcs[IncludeUse ? 0 : 1][BB];
-
-    if (Src) return Src;
-
-    // Create the source node if it is not created yet.
-    Src = G.createSUnit(BB, VASTSchedUnit::VSrc);
-    // Make src depends on something.
-    Src->addDep(G.getEntrySU(BB), VASTDep::CreateCtrlDep(0));
-
-    SmallVector<VASTSchedUnit*, 8> SUs;
-    collectSUsInBlock(DefMap, BB, SUs);
-    if (IncludeUse)
-      collectSUsInBlock(UseMap, BB, SUs);
-
-    assert(!SUs.empty() && "There is no def/use in this block!");
-    for (unsigned i = 0; i < SUs.size(); ++i)
-      SUs[i]->addDep(Src, VASTDep::CreateCtrlDep(0));
-
-    return Src;
+  void collectSUsForTopDownDeps(BasicBlock *BB,
+                                SmallVectorImpl<VASTSchedUnit*> &TDSUs) {
+    collectSUsInBlock(DefMap, BB, TDSUs);
+    collectSUsInBlock(UseMap, BB, TDSUs);
   }
+
+  void collectSUsForBottonUpDeps(BasicBlock *BB,
+                                 SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
+    collectSUsInBlock(DefMap, BB, BUSUs);
+    collectSUsInBlock(UseMap, BB, BUSUs);
+  }
+
+  void buildDependencies(SmallVectorImpl<VASTSchedUnit*> &BUSUs,
+                         ArrayRef<VASTSchedUnit*> TDSUs);
 
   static void buildDep(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
     Dst->addDep(Src, VASTDep::CreateMemDep(1, 0));
@@ -729,6 +681,38 @@ AliasAnalysis::Location getPointerLocation(Instruction *I, AliasAnalysis *AA) {
 
 static bool isNoAlias(Instruction *Src, Instruction *Dst, AliasAnalysis *AA) {
   return AA->isNoAlias(getPointerLocation(Src, AA), getPointerLocation(Dst, AA));
+}
+
+static
+bool isHasDependencies(Instruction *Src, Instruction *Dst, AliasAnalysis *AA) {
+  return Src->mayWriteToMemory() && Dst->mayWriteToMemory() &&
+         !AA->isNoAlias(getPointerLocation(Src, AA), getPointerLocation(Dst, AA));
+}
+
+void
+AliasRegionDepBuilder::buildDependencies(SmallVectorImpl<VASTSchedUnit*> &BUSUs,
+                                         ArrayRef<VASTSchedUnit*> TDSUs) {
+  for (unsigned i = 0, e = BUSUs.size(); i != e; ++i) {
+    bool AnyAlias = false;
+    VASTSchedUnit *Dst = BUSUs[i];
+    bool IsDstTerminator = Dst->isTerminator();
+
+    for (unsigned j = 0; j < TDSUs.size(); ++j) {
+      VASTSchedUnit *Src = TDSUs[j];
+      if (!IsDstTerminator &&
+          !isHasDependencies(Dst->getInst(), Src->getInst(), &AA))
+        continue;
+      
+      buildDep(Src, Dst);
+      AnyAlias |= !IsDstTerminator;
+    }
+
+    if (AnyAlias) {
+      BUSUs.erase(BUSUs.begin() + i);
+      --i;
+      --e;
+    }
+  }
 }
 
 void MemoryDepBuilder::buildDependency(Instruction *Src, Instruction *Dst) {
@@ -803,7 +787,7 @@ void MemoryDepBuilder::buildDependencies() {
     if (AS->isForwardingAliasSet() || !(AS->isMod() || AS->isRef()))
       continue;
 
-    AliasRegionDepBuilder Builder(G, GFA, IR2SUMap);
+    AliasRegionDepBuilder Builder(G, AA, GFA, IR2SUMap);
     Builder.initializeRegion(*AS);
     Builder.constructGlobalFlow();
   }
