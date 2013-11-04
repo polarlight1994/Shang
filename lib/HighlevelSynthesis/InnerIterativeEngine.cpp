@@ -226,27 +226,30 @@ static VASTSchedUnit *LookupSU(VASTSeqOp *Op, const IR2SUMapTy &Map) {
   return 0;
 }
 
+
 namespace {
 struct SelectorSlackVerifier {
   IR2SUMapTy &IR2SUMap;
   SDCScheduler &Scheduler;
   VASTSelector *Sel;
   typedef std::map<VASTSchedUnit*, unsigned> SrcSlackMapTy;
+  SrcSlackMapTy MinimalSlacks;
   typedef std::map<VASTSchedUnit*, SrcSlackMapTy> SlackMapTy;
   SlackMapTy SlackMap;
-  typedef std::set<VASTSchedUnit*> ViolatedSUSet;
-  ViolatedSUSet ViolatedSUs;
   const unsigned MaxFIPerLevel;
+  const unsigned AverageMUXLevel;
   const float PenaltyFactor;
 
   SelectorSlackVerifier(IR2SUMapTy &IR2SUMap, SDCScheduler &Scheduler,
                         VASTSelector *Sel, float PenaltyFactor)
     : IR2SUMap(IR2SUMap), Scheduler(Scheduler), Sel(Sel),
       MaxFIPerLevel(getFUDesc<VFUMux>()->getMaxAllowdMuxSize(Sel->getBitWidth())),
+      AverageMUXLevel((Log2_32_Ceil(Sel->numNonTrivialFanins()) - 1) / Log2_32_Ceil(MaxFIPerLevel) + 1),
       PenaltyFactor(PenaltyFactor) {}
 
   bool preserveFaninConstraint() {
     std::vector<VASTSchedUnit*> SUs;
+    std::set<VASTSeqValue*> Srcs;
 
     typedef VASTSelector::iterator vn_itertor;
     for (vn_itertor I = Sel->begin(), E = Sel->end(); I != E; ++I) {
@@ -258,25 +261,79 @@ struct SelectorSlackVerifier {
       VASTSchedUnit *U = LookupSU(DstLatch.Op, IR2SUMap);
       SUs.push_back(U);
 
-      buildSlackMap(U);
+      // Get the source SU according to the structure of the combinatioal cone.
+      Srcs.clear();
+
+      VASTValue *FI = VASTValPtr(DstLatch).get();
+      FI->extractSupportingSeqVal(Srcs);
+
+      VASTValue *Guard = VASTValPtr(DstLatch.getGuard()).get();
+      Guard->extractSupportingSeqVal(Srcs);
+
+      MinimalSlacks[U] = buildSlackMap(U, Srcs);
     }
 
     return preserveFaninConstraint(MaxFIPerLevel, 1, SUs);
   }
 
-  VASTSchedUnit *buildSlackMap(VASTSchedUnit *U) {
-    SrcSlackMapTy &SrcSlacks = SlackMap[U];
+  VASTSchedUnit *getDataDepSU(VASTSeqValue *SV) {
+    Value *V = SV->getLLVMValue();
+    bool IsPHI = isa<PHINode>(V);
 
-    typedef VASTSchedUnit::dep_iterator dep_iterator;
+    if (isa<Argument>(V)) return Scheduler->getEntry();
+
+    IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
+    assert(at != IR2SUMap.end() && "Flow dependencies missed!");
+
+    // Get the corresponding latch SeqOp.
+    ArrayRef<VASTSchedUnit*> SUs(at->second);
+    VASTSeqValue *SrcSeqVal = 0;
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSchedUnit *CurSU = SUs[i];
+
+      if (isa<BasicBlock>(V) && CurSU->isBBEntry())
+        return CurSU;
+
+      // Are we got the VASTSeqVal corresponding to V?
+      if (CurSU->isLatching(V)) {
+        assert((SrcSeqVal == 0
+                || SrcSeqVal == CurSU->getSeqOp()->getDef(0))
+               && "All PHI latching SeqOp should define the same SeqOp!");
+        SrcSeqVal = CurSU->getSeqOp()->getDef(0);
+
+        if (IsPHI) continue;
+
+        // We are done if we are looking for the Scheduling Unit for common
+        // instruction.
+        return CurSU;
+      }
+
+      if (IsPHI && CurSU->isPHI()) return CurSU;
+    }
+
+    (void) SrcSeqVal;
+
+    llvm_unreachable("No source SU?");
+    return 0;
+  }
+
+  unsigned buildSlackMap(VASTSchedUnit *U, std::set<VASTSeqValue*> &Srcs) {
+    SrcSlackMapTy &SrcSlacks = SlackMap[U];
+    unsigned MinimalSlack = UINT32_MAX;
+
+    typedef std::set<VASTSeqValue*>::iterator iterator;
     int NumValDeps = 0;
-    for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
-      int Latnecy = I.getDFLatency();
+    for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+      VASTSeqValue *SV = *I;
+      VASTSchedUnit *Src = getDataDepSU(SV);
+      const VASTDep &Dep = U->getEdgeFrom(Src);
+
+      int Latnecy = U->getDFLatency(Src);
       if (Latnecy < 0)
         continue;
 
-      VASTSchedUnit *Src = *I;
       unsigned EdgeDistance = U->getSchedule() - Src->getSchedule();
-      assert(EdgeDistance >= unsigned(I.getLatency())
+      assert(EdgeDistance >= unsigned(U->getEdgeFrom(Src).getLatency())
              && "Bad schedule that does not preserve latency constraint!");
 
       unsigned CurSlack = EdgeDistance - unsigned(Latnecy);
@@ -286,9 +343,10 @@ struct SelectorSlackVerifier {
         continue;
 
      SrcSlacks[Src] = CurSlack;
+     MinimalSlack = std::min(MinimalSlack, CurSlack);
     }
 
-    return U;
+    return MinimalSlack;
   }
 
   bool preserveFaninConstraint(unsigned AvailableFanins, unsigned CurLevel,
@@ -316,19 +374,11 @@ struct SelectorSlackVerifier {
       UsedSUs.push_back(SU);
     }
 
-    if (AvailableFanins < UsedFanins) {
-      while (!UsedSUs.empty())
-        ViolatedSUs.insert(UsedSUs.pop_back_val());
-
+    if (AvailableFanins < UsedFanins)
       return false;
-    }
 
-    if (AvailableFanins == UsedFanins && RemainFanins > AvailableFanins) {
-      while (!UsedSUs.empty())
-        ViolatedSUs.insert(UsedSUs.pop_back_val());
-
+    if (AvailableFanins == UsedFanins && RemainFanins > AvailableFanins)
       return false;
-    }
 
     if (RemainFanins == 0 || RemainFanins <= AvailableFanins)
       return true;
@@ -340,18 +390,14 @@ struct SelectorSlackVerifier {
     return preserveFaninConstraint(AvailableFanins, CurLevel + 1, SUs);
   }
 
+  unsigned getMinimalSlack(VASTSchedUnit *SU) const {
+    SrcSlackMapTy::const_iterator J = MinimalSlacks.find(SU);
+    assert(J != MinimalSlacks.end() && "SU not in the map?");
+    return J->second;
+  }
+
   bool hasExtraSlack(VASTSchedUnit *SU, unsigned Level) const {
-    SlackMapTy::const_iterator J = SlackMap.find(SU);
-    assert(J != SlackMap.end() && "SU not in the map?");
-    const SrcSlackMapTy &SrcSlacks = J->second;
-
-    typedef SrcSlackMapTy::const_iterator iterator;
-    for (iterator I = SrcSlacks.begin(), E = SrcSlacks.end(); I != E; ++I)
-      // There is no extra slack if there is any fanin do not have extra slack.
-      if (I->second <= Level)
-        return false;
-
-    return true;
+    return getMinimalSlack(SU) > Level;
   }
 
   void applyPenalties() {
@@ -365,33 +411,27 @@ struct SelectorSlackVerifier {
   void applyPenalties(VASTSchedUnit *Dst, const SrcSlackMapTy &SrcSlacks) {
     typedef SDCScheduler::SoftConstraint SoftConstraint;
     typedef SrcSlackMapTy::const_iterator iterator;
-    bool IsDstVoilatedSlackConstraint = ViolatedSUs.count(Dst);
+    unsigned MinimalSlack = getMinimalSlack(Dst);
+    double CurrentSlackRatio = double(MinimalSlack + 1) / double(AverageMUXLevel);
+    double CurPenalty = double(PenaltyFactor) / pow(CurrentSlackRatio, int(MinimalSlack + 1));
 
     for (iterator I = SrcSlacks.begin(), E = SrcSlacks.end(); I != E; ++I) {
       VASTSchedUnit *Src = I->first;
       unsigned Slack = I->second;
 
       unsigned Latency = Dst->getDFLatency(Src);
-      unsigned AverageMUXLevel = (Log2_32_Ceil(Sel->numNonTrivialFanins()) - 1)
-                                 / Log2_32_Ceil(MaxFIPerLevel) + 1;
-      unsigned ExpectedSlack = unsigned(Latency) + Slack + 1;
-
-      double CurrentSlackRatio = double(Slack + 1) / double(AverageMUXLevel);
-      double CurPenalty = double(PenaltyFactor) * double(AverageMUXLevel) /
-                          pow(double(MaxFIPerLevel), int(Slack + 1));
-
-      if (IsDstVoilatedSlackConstraint)
-        CurPenalty *= 2.0;
-      else
-        CurPenalty /= 2.0;
-
-      // Do not add the soft constraint if its penalty is too small
-      if (CurPenalty < 1e-2)
-        continue;
+      unsigned ExpectedSlack = unsigned(Latency) + MinimalSlack + 1;
 
       SoftConstraint &SC = Scheduler.getOrCreateSoftConstraint(Src, Dst);
 
-      SC.Penalty += CurPenalty;
+      if (Slack == MinimalSlack) {
+        SC.Penalty += CurPenalty;
+        SC.C = ExpectedSlack;
+        return;
+      }
+
+      assert(Slack > MinimalSlack && "Unexpected slack");
+      SC.Penalty *= 0.9;
       SC.C = ExpectedSlack;
     }
   }
@@ -411,7 +451,7 @@ struct ItetrativeEngine {
   };
 
   State S;
-  unsigned ScheduleViolation, BindingViolation;
+  unsigned ScheduleViolation, BindingViolation, MUXFIViolation;
   float TotalWeight;
   const float PerformanceFactor, ResourceFactor;
 
@@ -511,7 +551,7 @@ struct ItetrativeEngine {
   bool performScheduling(VASTModule &VM);
 
   bool iterate(VASTModule &VM) {
-    ScheduleViolation = BindingViolation = 0;
+    ScheduleViolation = BindingViolation = MUXFIViolation = 0;
     // First of all, perform the scheduling.
     if (!performScheduling(VM))
       return false;
@@ -541,8 +581,8 @@ struct ItetrativeEngine {
     }
 
     float NumBBs = VM.getLLVMFunction().getBasicBlockList().size();
+    MUXFIViolation = 0;
 
-    bool FaninConstraintsViolated = false;
     typedef VASTModule::selector_iterator iterator;
     for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
       VASTSelector *Sel = I;
@@ -558,10 +598,10 @@ struct ItetrativeEngine {
 
       // Perform schedule again with the updated soft constraints.
       S = Scheduling;
-      FaninConstraintsViolated = true;
+      ++MUXFIViolation;
     }
 
-    return FaninConstraintsViolated;
+    return MUXFIViolation > 0;
   }
 };
 }
@@ -808,7 +848,8 @@ void VASTScheduling::scheduleGlobal() {
   while (ISB.performSchedulingAndAllocateMuxSlack(*VM)) {
     ++NumIterations;
     dbgs() << "Schedule Violations: " << ISB.ScheduleViolation << ' '
-           << "Binding Violations:" << ISB.BindingViolation << '\n';
+           << "Binding Violations:" << ISB.BindingViolation << ' '
+           << "MUX Fanins Violations:" << ISB.MUXFIViolation << '\n';
   }
 
   DEBUG(G->viewGraph());
