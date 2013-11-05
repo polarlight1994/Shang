@@ -704,10 +704,10 @@ AliasRegionDepBuilder::buildDependencies(SmallVectorImpl<VASTSchedUnit*> &BUSUs,
         continue;
       
       buildDep(Src, Dst);
-      AnyAlias |= !IsDstTerminator;
+      AnyAlias |= true;
     }
 
-    if (AnyAlias) {
+    if (AnyAlias && !IsDstTerminator) {
       BUSUs.erase(BUSUs.begin() + i);
       --i;
       --e;
