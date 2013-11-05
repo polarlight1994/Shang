@@ -934,7 +934,8 @@ void VASTScheduling::fixSchedulingGraph() {
     }
   }
 
-  SmallVector<Loop*, 64> Worklist(LI->begin(), LI->end());
+  LoopInfo &LI = getAnalysis<LoopInfo>();
+  SmallVector<Loop*, 64> Worklist(LI.begin(), LI.end());
   while (!Worklist.empty()) {
     Loop *L = Worklist.pop_back_val();
 
@@ -992,8 +993,6 @@ bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
 
   // Initialize the analyses
   DF = &getAnalysis<Dataflow>();
-  AA = &getAnalysis<AliasAnalysis>();
-  LI = &getAnalysis<LoopInfo>();
   DT = &getAnalysis<DominatorTree>();
 
   buildSchedulingGraph();

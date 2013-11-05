@@ -572,8 +572,6 @@ class VASTScheduling : public VASTModulePass {
   VASTModule *VM;
 
   // Analysis for the scheduler
-  AliasAnalysis *AA;
-  LoopInfo *LI;
   DominatorTree *DT;
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);

@@ -794,7 +794,8 @@ void MemoryDepBuilder::buildDependencies() {
 }
 
 void VASTScheduling::buildMemoryDependencies() {
-  MemoryDepBuilder(*G, IR2SUMap, *DT, *AA).buildDependencies();
+  MemoryDepBuilder MDB(*G, IR2SUMap, *DT, getAnalysis<AliasAnalysis>());
+  MDB.buildDependencies();
 }
 
 namespace {
