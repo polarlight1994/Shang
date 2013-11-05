@@ -507,6 +507,8 @@ public:
     }
   }
 
+  void sortSUsByIdx();
+
   /// Fix the scheduling graph after it is built.
   ///
   void prepareForScheduling();

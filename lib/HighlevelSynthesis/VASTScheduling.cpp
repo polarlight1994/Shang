@@ -281,6 +281,10 @@ int VASTSchedGraph::idx_less(VASTSchedUnit *const *LHS,
   return 0;
 }
 
+void VASTSchedGraph::sortSUsByIdx() {
+  sortSUs(idx_less);
+}
+
 VASTSchedUnit *
 VASTSchedGraph::createSUnit(BasicBlock *BB, VASTSchedUnit::Type T) {
   VASTSchedUnit *U = new VASTSchedUnit(TotalSUs++, BB, T);
