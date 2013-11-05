@@ -814,28 +814,8 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 }
 
 //===----------------------------------------------------------------------===//
-void VASTScheduling::buildControlFlowEdges() {
-  Function &F = G->getFunction();
-  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    BasicBlock *BB = I;
 
-    SmallVectorImpl<VASTSchedUnit*> &SUs = IR2SUMap[BB];
-    VASTSchedUnit *Entry = 0;
-    for (unsigned i = 0; i < SUs.size(); ++i)
-      if (SUs[i]->isBBEntry())
-        Entry = SUs[i];
 
-    for (unsigned i = 0; i < SUs.size(); ++i) {
-      if (SUs[i]->isBBEntry())
-        continue;
-
-      assert(isa<TerminatorInst>(SUs[i]->getInst())
-             && "Unexpected instruction type!");
-      assert(SUs[i]->getTargetBlock() == BB && "Wrong target BB!");
-      Entry->addDep(SUs[i], VASTDep::CreateCndDep());
-    }
-  }
-}
 void VASTScheduling::preventInfinitUnrolling(Loop *L) {
   // Build the constraints from the entry to the branch of the backedges.
   BasicBlock *HeaderBB = L->getHeader();
@@ -979,9 +959,9 @@ void VASTScheduling::buildSchedulingGraph() {
   for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     buildSchedulingUnits(*I);
 
-  buildControlFlowEdges();
-
   buildMemoryDependencies();
+
+  buildControlFlowEdges();
 
   // Constraint all nodes that do not have a user by the terminator in its parent
   // BB.

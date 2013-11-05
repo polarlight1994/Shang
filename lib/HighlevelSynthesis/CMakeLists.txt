@@ -9,6 +9,7 @@ add_llvm_library(ShangHLS
   InnerIterativeEngine.cpp
   ScheduleEmitter.cpp
   CrossBBDepVerifier.cpp
+  CFGParallelizer.cpp
   SchedulerBase.cpp
   GlobalDepBuilder.cpp
   SDCScheduler.cpp
