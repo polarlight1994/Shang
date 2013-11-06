@@ -244,13 +244,13 @@ int main(int argc, char **argv) {
       HLSPasses.add(createCorrelatedValuePropagationPass());
       HLSPasses.add(createGlobalOptimizerPass());
       HLSPasses.add(createSROAPass());
-      HLSPasses.add(createDatapathHoistingPass());
+      HLSPasses.add(createAlwaysSpeculatePass());
       HLSPasses.add(createGVNPass());
       HLSPasses.add(createInstructionCombiningPass());
       HLSPasses.add(createDeadStoreEliminationPass());
     }
 
-    HLSPasses.add(createDatapathHoistingPass());
+    HLSPasses.add(createAlwaysSpeculatePass());
 
     // Unroll the loop to expose more coalescing opportunities.
     if (EnableMemoryOptimization) {
@@ -277,7 +277,7 @@ int main(int argc, char **argv) {
     // Try to optimize the computation.
     HLSPasses.add(createInstructionCombiningPass());
     // Move the datapath instructions as soon as possible.
-    HLSPasses.add(createDatapathHoistingPass());
+    HLSPasses.add(createAlwaysSpeculatePass());
 
     if (DumpIRBeforeHLS)
       HLSPasses.add(createPrintModulePass(&dbgs()));

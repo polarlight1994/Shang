@@ -1,13 +1,13 @@
-//===- DatapathCodeMotion.cpp - Move the data-path operations ---*- C++ -*-===//
+//===- AlwaysSpeculate.cpp - Speculate all operations -----------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                               //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
-// This file contains the VTM implementation of the DatapathCodeMotion pass.
+// This file contains the implementation of the AlwaysSpeculate pass.
 //
 //===----------------------------------------------------------------------===//
 #include "shang/Passes.h"
@@ -17,48 +17,51 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Function.h"
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/Statistic.h"
-#define DEBUG_TYPE "shang-data-path-hoisting"
+#define DEBUG_TYPE "vast-data-path-speculation"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
-STATISTIC(NumDatapathHoisted, "Number of datapath operations hoisted");
+STATISTIC(NumSpeculated, "Number of operations Speculated");
 STATISTIC(NumBBSimplified, "Number of blocks simplified");
 
 namespace {
-struct DatapathHoisting : public FunctionPass {
+struct AlwaysSpeculate : public FunctionPass {
   static char ID;
-  DatapathHoisting() : FunctionPass(ID) {
-    initializeDatapathHoistingPass(*PassRegistry::getPassRegistry());
+  AlwaysSpeculate() : FunctionPass(ID) {
+    initializeAlwaysSpeculatePass(*PassRegistry::getPassRegistry());
   }
 
   bool runOnFunction(Function &F);
   void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.addRequired<TargetTransformInfo>();
     AU.addRequired<DominatorTree>();
+    AU.addRequired<LoopInfo>();
   }
 };
 }
 
-Pass *llvm::createDatapathHoistingPass() { return new DatapathHoisting(); }
-char DatapathHoisting::ID = 0;
+Pass *llvm::createAlwaysSpeculatePass() { return new AlwaysSpeculate(); }
+char AlwaysSpeculate::ID = 0;
 
-INITIALIZE_PASS_BEGIN(DatapathHoisting,
+INITIALIZE_PASS_BEGIN(AlwaysSpeculate,
                       "shang-datapath-hoisting",
                       "Hoist the Datapath Instructions",
                       false, false)
   INITIALIZE_AG_DEPENDENCY(TargetTransformInfo)
   INITIALIZE_PASS_DEPENDENCY(DominatorTree)
-INITIALIZE_PASS_END(DatapathHoisting,
+  INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+INITIALIZE_PASS_END(AlwaysSpeculate,
                     "shang-datapath-hoisting",
                     "Hoist the Datapath Instructions",
                     false, false)
 
-static bool hoistInst(Instruction *Inst, DominatorTree &DT) {
+static bool SpeculateInst(Instruction *Inst, DominatorTree &DT) {
   // Do not touch the following instructions.
   if (Inst->isTerminator() || isLoadStore(Inst) || isa<PHINode>(Inst)
       || Inst->mayThrow() || isCall(Inst, false))
@@ -87,12 +90,12 @@ static bool hoistInst(Instruction *Inst, DominatorTree &DT) {
   Inst->removeFromParent();
 
   Dst->getInstList().insert(Dst->getTerminator(), Inst);
-  ++NumDatapathHoisted;
+  ++NumSpeculated;
 
   return true;
 }
 
-static bool hoistInstInFunction(Function &F, DominatorTree &DT) {
+static bool SpeculateInstInFunction(Function &F, DominatorTree &DT) {
   bool changed = false;
   // Visit the BBs in topological order this can benefit some of the later
   // algorithms.
@@ -101,7 +104,7 @@ static bool hoistInstInFunction(Function &F, DominatorTree &DT) {
   for (rpo_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
     BasicBlock *BB = *I;
     for (BasicBlock::iterator BI = BB->begin(), BE = BB->end(); BI != BE; /*++BI*/)
-      changed |= hoistInst(BI++, DT);
+      changed |= SpeculateInst(BI++, DT);
   }
 
   return changed;
@@ -126,7 +129,7 @@ static bool SimplifyCFGOnFunction(Function &F, const TargetTransformInfo &TTI,
   }
   return Changed;
 }
-bool DatapathHoisting::runOnFunction(Function &F) {
+bool AlwaysSpeculate::runOnFunction(Function &F) {
   DominatorTree &DT = getAnalysis<DominatorTree>();
   TargetTransformInfo &TTI = getAnalysis<TargetTransformInfo>();
   DataLayout *TD = getAnalysisIfAvailable<DataLayout>();
@@ -134,7 +137,7 @@ bool DatapathHoisting::runOnFunction(Function &F) {
   bool changed = false;
   bool LocalChanged = true;
   while (LocalChanged) {
-    changed |= (LocalChanged = hoistInstInFunction(F, DT));
+    changed |= (LocalChanged = SpeculateInstInFunction(F, DT));
     changed |= (LocalChanged = SimplifyCFGOnFunction(F, TTI, TD));
     // Recalculate the Dominator tree.
     DT.runOnFunction(F);

@@ -54,7 +54,7 @@ Pass *createMemoryAccessCoalescingPass();
 Pass *createSimpleBlockRAMAllocationPass();
 Pass *createMemoryPartitionPass();
 Pass *createShangTargetTransformInfoPass();
-Pass *createDatapathHoistingPass();
+Pass *createAlwaysSpeculatePass();
 
 Pass *createLUTMappingPass();
 Pass *createTimingNetlistPass();
@@ -77,7 +77,7 @@ Pass *createRTLCodeGenPass();
 void initializeShangTTIPass(PassRegistry &Registry);
 void initializeObjectBasedAliasAnalyaisPass(PassRegistry &Registry);
 
-void initializeDatapathHoistingPass(PassRegistry &Registry);
+void initializeAlwaysSpeculatePass(PassRegistry &Registry);
 void initializeLowerGetElementPtrPass(PassRegistry &Registry);
 void initializeFunctionFilterPass(PassRegistry &Registry);
 void initializeHLSInlinerPass(PassRegistry &Registry);
