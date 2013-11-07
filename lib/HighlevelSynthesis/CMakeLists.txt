@@ -6,7 +6,6 @@ add_llvm_library(ShangHLS
   Dataflow.cpp
   PreSchedBinding.cpp
   VASTScheduling.cpp
-  AlwaysSpeculate.cpp
   InnerIterativeEngine.cpp
   ScheduleEmitter.cpp
   CrossBBDepVerifier.cpp

@@ -1,5 +1,6 @@
 add_llvm_library(ShangIROpts
   FunctionFilter.cpp
+  AlwaysSpeculate.cpp
   LowerAlloca.cpp
   PromoteGlobalVariables.cpp
   LowerIntrinsic.cpp
