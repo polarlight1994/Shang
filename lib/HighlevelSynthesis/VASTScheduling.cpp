@@ -39,11 +39,6 @@
 
 using namespace llvm;
 
-static cl::opt<bool>
-RelaxCtrlDeps("vast-relax-control-dependencies",
-              cl::desc("Relax control-dependencies to allow the time frame"
-                       " of different basic blocks overlap"),
-  cl::init(true));
 //===----------------------------------------------------------------------===//
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
                              BasicBlock *BB, VASTSeqOp *SeqOp)
@@ -323,15 +318,15 @@ void VASTSchedGraph::viewGraph() {
 }
 
 void VASTSchedGraph::verify() const {
-  if (getEntry()->use_empty() && !getEntry()->dep_empty())
+  if (LLVM_UNLIKELY(getEntry()->use_empty() && !getEntry()->dep_empty()))
     llvm_unreachable("Broken dependencies on Entry!");
 
-  if (getExit()->dep_empty() && !getExit()->use_empty())
+  if (LLVM_UNLIKELY(getExit()->dep_empty() && !getExit()->use_empty()))
     llvm_unreachable("Broken dependencies on Exit!");
 
   for (const_iterator I = llvm::next(SUnits.begin()), E = SUnits.back();
        I != E; ++I)
-    if (I->dep_empty() || I->use_empty())
+    if (LLVM_UNLIKELY(I->dep_empty() || I->use_empty()))
       llvm_unreachable("Broken dependencies!");
 }
 
@@ -736,8 +731,10 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
   typedef VASTSlot::subgrp_iterator subgrp_iterator;
   for (subgrp_iterator SI = S->subgrp_begin(), SE = S->subgrp_end();
        SI != SE; ++SI) {
+    VASTSlot *SubGrp = *SI;
+
     // Collect the operation in the current slot and the subgroups.
-    Ops.insert(Ops.end(), SI->op_begin(), SI->op_end());
+    Ops.insert(Ops.end(), SubGrp->op_begin(), SubGrp->op_end());
   }
 
   typedef std::vector<VASTSeqOp*>::iterator op_iterator;
@@ -850,9 +847,10 @@ void VASTScheduling::preventInfinitUnrolling(Loop *L) {
 }
 
 void VASTScheduling::fixSchedulingGraph() {
+  VASTSchedUnit *Exit = G->getExit();
   // Try to fix the dangling nodes.
   typedef VASTSchedGraph::iterator iterator;
-  for (iterator I = llvm::next(G->begin()), E = G->getExit(); I != E; ++I) {
+  for (iterator I = llvm::next(G->begin()), E = Exit; I != E; ++I) {
     VASTSchedUnit *U = I;
 
     // Ignore the entries.
@@ -869,46 +867,9 @@ void VASTScheduling::fixSchedulingGraph() {
     if (Inst && (isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst)))
       continue;
 
-    if (RelaxCtrlDeps) {
-      // At least constrain the scheduling unit with something.
-      if (U->use_empty())
-        G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
-
-      continue;
-    }
-
-    // Only need to create the pseudo dependencies to the exit node. Because
-    // the PHI node will always be scheduled to the same slot as the
-    // terminator.
-    if (U->isPHILatch() || U->isPHI()) {
-      G->getExit()->addDep(U, VASTDep::CreateCtrlDep(0));
-      continue;
-    }
-
-    BasicBlock *BB = U->getParent();
-
-    // Constrain the dangling nodes by all terminators.
-    ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
-    for (unsigned i = 0; i < Exits.size(); ++i) {
-      VASTSchedUnit *BBExit = Exits[i];
-      // Ignore the return value latching operation here. We will add the fix
-      // timing constraints between it and the actual terminator.
-      if (!BBExit->isTerminator()) {
-        assert(isa<ReturnInst>(BB->getTerminator())
-                && "BBExit is not terminator!");
-        // We need to add the dependencies even the BB return is not a
-        // terminator. But becareful, do not add the cycle dependencies.
-        if (BBExit == U) continue;
-      }
-
-      // The only chance that U's idx is bigger than BBExit's idx is when U is
-      // a PHI node, which is handled above.
-      assert(BBExit->getIdx() >= U->getIdx() && "Unexpected index order!");
-
-      // Protected by the later linear order builder, we do not need add
-      // dependence to wait the launch operation finish here.
-      BBExit->addDep(U, VASTDep::CreateCtrlDep(0));
-    }
+    // At least constrain the scheduling unit with something.
+    if (U->use_empty())
+      Exit->addDep(U, VASTDep::CreateCtrlDep(0));
   }
 
   // Also add the dependencies form the return instruction to the exit of
@@ -929,7 +890,7 @@ void VASTScheduling::fixSchedulingGraph() {
         LastSU = U;
       }
 
-      G->getExit()->addDep(LastSU, VASTDep::CreateCtrlDep(0));
+      Exit->addDep(LastSU, VASTDep::CreateCtrlDep(0));
       continue;
     }
   }
