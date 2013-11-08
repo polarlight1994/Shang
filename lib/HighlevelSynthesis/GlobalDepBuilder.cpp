@@ -173,6 +173,22 @@ struct GlobalFlowAnalyzer {
           if (!Visited.count(*CI)) Worklist.push_back(*CI);
       }
     }
+
+    DEBUG(dbgs() << "DefBlocks:\n";
+    for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
+      dbgs().indent(2) << I->first->getName() << '\n';
+
+    dbgs() << "UseBlocks:\n";
+    for (def_iterator I = UseMap.begin(), E = UseMap.end(); I != E; ++I)
+      dbgs().indent(2) << I->first->getName() << '\n';
+
+    dbgs() << "DFBlocks:\n";
+    typedef BBSet::iterator df_iterator;
+    for (df_iterator I = DFBlocks.begin(), E = DFBlocks.end(); I != E; ++I) {
+      dbgs().indent(2) << (*I)->getName() << '\n';
+    }
+
+    dbgs() << "\n\n";);
   }
 
   template<typename AccessSetTy, typename InitLiveInsFN>

@@ -1,14 +1,14 @@
 //===- LUTMapping.cpp - Perform LUT mapping on the RTL Netlist  -*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS framework                               //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implementent the VerilogAST to LUT mapper. The mapper map the
-// boalean expressions in the VerilogAST to LUTs with ABC logic synthesis.
+// This file implement the VerilogAST to LUT mapper. The mapper map the boolean
+// expressions in the VerilogAST to LUTs with ABC logic synthesis.
 //
 //===----------------------------------------------------------------------===//
 
@@ -27,7 +27,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/ADT/Statistic.h"
-#define DEBUG_TYPE "shang-logic-synthesis"
+#define DEBUG_TYPE "vast-logic-synthesis"
 #include "llvm/Support/Debug.h"
 
 STATISTIC(NumAndExpand, "Number of binary And expanded from NAry And expanded");

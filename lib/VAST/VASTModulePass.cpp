@@ -516,7 +516,6 @@ void VASTModuleBuilder::allocateSubModules() {
 
 //===----------------------------------------------------------------------===//
 void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
-
   // Create the landing slot for this BB.
   VASTSlot *S = getOrCreateLandingSlot(BB);
 
