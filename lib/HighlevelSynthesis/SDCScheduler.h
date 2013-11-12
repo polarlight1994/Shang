@@ -62,6 +62,16 @@ public:
                      &IR2SUMap);
 
 private:
+  // Also remember the control flow edge variable.
+  typedef std::pair<BasicBlock*, BasicBlock*> CFEdge;
+  typedef std::map<CFEdge, unsigned> CFESlacks;
+  CFESlacks CFSlackIdx;
+  unsigned lookUpEdgeSlackIdx(BasicBlock *Src, BasicBlock *Snk) const {
+    CFESlacks::const_iterator I = CFSlackIdx.find(CFEdge(Src, Snk));
+    assert(I != CFSlackIdx.end() && "CFEdge does not exists?");
+    return I->second;
+  }
+
   lprec *lp;
 
   // Helper class to build the object function for lp.

@@ -17,6 +17,7 @@
 #include "shang/Utilities.h"
 #include "shang/VASTSeqValue.h"
 
+#include "llvm/Support/CFG.h"
 #include "llvm/ADT/StringExtras.h"
 #define DEBUG_TYPE "sdc-scheduler"
 #include "llvm/Support/Debug.h"
@@ -144,6 +145,20 @@ unsigned SDCScheduler::createLPAndVariables() {
       continue;
 
     Col = createStepVariable(U, Col);
+  }
+
+  // Create the CFG Edge slack variables.
+  Function &F = G.getFunction();
+  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    BasicBlock *BB = I;
+
+    for (pred_iterator PI = pred_begin(BB), PE = pred_end(BB); PI != PE; ++PI) {
+      BasicBlock *PredBB = *PI;
+
+      CFSlackIdx[CFEdge(PredBB, BB)] = Col;
+      // By design, the upper bound of CFG edge slack is 1.
+      Col = createSlackVariable(Col, 0);
+    }
   }
 
   typedef SoftCstrVecTy::iterator iterator;
@@ -365,6 +380,7 @@ bool SDCScheduler::solveLP(lprec *lp) {
 void SDCScheduler::addDependencyConstraints(lprec *lp) {
   for(VASTSchedGraph::iterator I = begin(), E = end(); I != E; ++I) {
     VASTSchedUnit *U = I;
+    BasicBlock *CurBB = U->isBBEntry() ? U->getParent() : NULL;
 
     ConstraintHelper H;
     H.resetDst(U, this);
@@ -378,7 +394,15 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
       VASTDep Edge = DI.getEdge();
 
       // Ignore the control-dependency edges between BBs.
-      // if (Edge.getEdgeType() == VASTDep::Conditional) continue;
+      if (Edge.getEdgeType() == VASTDep::Conditional) {
+        assert(CurBB && Src->isTerminator() &&
+               "Unexpected conditional dependency!");
+        // For edge (i, j) in CFG, build Src(j) <= Snk(i,j)
+        // => Snk(i,j) - Src(j) = Slack(i, j), Slack > 0
+        unsigned EdgeSlackIdx = lookUpEdgeSlackIdx(Src->getParent(), CurBB);
+        addSoftConstraint(lp, U, Src, 0, EdgeSlackIdx, EQ);
+        continue;
+      }
 
       H.resetSrc(Src, this);
       H.addConstraintToLP(Edge, lp, 0);
@@ -426,6 +450,7 @@ bool SDCScheduler::schedule() {
 
   ObjFn.clear();
   SUIdx.clear();
+  CFSlackIdx.clear();
   delete_lp(lp);
   lp = 0;
   return true;
