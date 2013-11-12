@@ -123,6 +123,7 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   set_lowbo(lp, Col, EntrySlot);
   return Col + 1;
 }
+unsigned SDCScheduler::createSlackVariable(unsigned Col, unsigned UB) {
 
 unsigned SDCScheduler::createLPAndVariables(iterator I, iterator E) {
   lp = make_lp(0, 0);
@@ -137,12 +138,14 @@ unsigned SDCScheduler::createLPAndVariables(iterator I, iterator E) {
   return Col;
 }
 
-unsigned SDCScheduler::createSlackVariable(unsigned Col) {
   add_columnex(lp, 0, 0,0);
   DEBUG(std::string SlackName = "slack" + utostr_32(Col);
   dbgs() <<"Col#" << Col << " name: " << SlackName << "\n";
   set_col_name(lp, Col, const_cast<char*>(SlackName.c_str())););
   set_int(lp, Col, TRUE);
+  if (UB)
+    set_upbo(lp, Col, UB);
+
   return Col + 1;
 }
 
@@ -153,7 +156,7 @@ unsigned SDCScheduler::createLPAndVariables() {
   for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
        I != E; ++I) {
     I->second.SlackIdx = Col;
-    Col = createSlackVariable(Col);
+    Col = createSlackVariable(Col, 0);
   }
 
   return Col - 1;

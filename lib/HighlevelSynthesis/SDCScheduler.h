@@ -100,7 +100,7 @@ private:
   // Create step variables, which represent the c-step that the VSUnits are
   // scheduled to.
   unsigned createStepVariable(const VASTSchedUnit *U, unsigned Col);
-  unsigned createSlackVariable(unsigned Col);
+  unsigned createSlackVariable(unsigned Col, unsigned UB);
 
   // Dst - Src >= C - V
   void addSoftConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
