@@ -304,8 +304,7 @@ void SDCScheduler::buildOptSlackObject(double weight) {
   }
 }
 
-unsigned SDCScheduler::buildSchedule(lprec *lp) {
-  unsigned TotalRows = get_Nrows(lp);
+unsigned SDCScheduler::buildSchedule(lprec *lp, unsigned TotalRows) {
   unsigned Changed = 0;
 
   for (iterator I = begin(), E = end(); I != E; ++I) {
@@ -377,14 +376,14 @@ bool SDCScheduler::solveLP(lprec *lp) {
   set_verbose(lp, CRITICAL);
   DEBUG(set_verbose(lp, FULL));
 
-  set_presolve(lp, PRESOLVE_NONE, get_presolveloops(lp));
-  //set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS | PRESOLVE_LINDEP
-  //                 | PRESOLVE_IMPLIEDFREE | PRESOLVE_REDUCEGCD
-  //                 | PRESOLVE_PROBEFIX | PRESOLVE_PROBEREDUCE
-  //                 | PRESOLVE_ROWDOMINATE /*| PRESOLVE_COLDOMINATE lpsolve bug*/
-  //                 | PRESOLVE_MERGEROWS
-  //                 | PRESOLVE_BOUNDS,
-  //             get_presolveloops(lp));
+  //set_presolve(lp, PRESOLVE_NONE, get_presolveloops(lp));
+  set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS | PRESOLVE_LINDEP
+                   | PRESOLVE_IMPLIEDFREE | PRESOLVE_REDUCEGCD
+                   | PRESOLVE_PROBEFIX | PRESOLVE_PROBEREDUCE
+                   | PRESOLVE_ROWDOMINATE /*| PRESOLVE_COLDOMINATE lpsolve bug*/
+                   | PRESOLVE_MERGEROWS
+                   | PRESOLVE_BOUNDS,
+               get_presolveloops(lp));
 
   DEBUG(write_lp(lp, "log.lp"));
 
@@ -516,10 +515,13 @@ bool SDCScheduler::schedule() {
 
   ObjFn.setLPObj(lp);
 
-  if (!solveLP(lp)) return false;
+  // Get the number of Rows before we presolve the model.
+  unsigned TotalRows = get_Nrows(lp);
+  if (!solveLP(lp))
+    return false;
 
   // Schedule the state with the ILP result.
-  changed |= (buildSchedule(lp) != 0);
+  changed |= (buildSchedule(lp, TotalRows) != 0);
   changed |= (updateSoftConstraintPenalties() != 0);
 
   ObjFn.clear();
