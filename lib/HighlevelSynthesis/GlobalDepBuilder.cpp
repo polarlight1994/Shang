@@ -356,7 +356,7 @@ struct SingleFULinearOrder
   VASTNode *FU;
   const unsigned Parallelism;
   SchedulerBase &G;
-  const DenseMap<BasicBlock*, VASTSchedUnit*> &Returns;
+  ArrayRef<VASTSchedUnit*> Returns;
 
   void buildDep(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
     unsigned IntialInterval = 1;
@@ -414,7 +414,7 @@ struct SingleFULinearOrder
 
   SingleFULinearOrder(VASTNode *FU, unsigned Parallelism, SchedulerBase &G,
                       IR2SUMapTy &IR2SUMap, GlobalFlowAnalyzer &GFA,
-                      DenseMap<BasicBlock*, VASTSchedUnit*> &ReturnBlocks)
+                      ArrayRef<VASTSchedUnit*> ReturnBlocks)
     : GlobalDependenciesBuilderBase(GFA, IR2SUMap), FU(FU),
       Parallelism(Parallelism), G(G), Returns(ReturnBlocks) {}
 
@@ -436,7 +436,7 @@ struct SingleFULinearOrder
 struct BasicLinearOrderGenerator {
   SchedulerBase &G;
   IR2SUMapTy &IR2SUMap;
-  DenseMap<BasicBlock*, VASTSchedUnit*> ReturnBlocks;
+  SmallVector<VASTSchedUnit*, 8> ReturnSUs;
   GlobalFlowAnalyzer GFA;
 
   BasicLinearOrderGenerator(SchedulerBase &G, DominatorTree &DT,
@@ -486,7 +486,7 @@ void BasicLinearOrderGenerator::buildFUInfo() {
     // in the return block.
     if ((isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))) {
       ArrayRef<VASTSchedUnit*> Returns(IR2SUMap[Inst]);
-      ReturnBlocks.insert(std::make_pair(BB, Returns.front()));
+      ReturnSUs.push_back(Returns.front());
     }
 
     MutableArrayRef<VASTSchedUnit*> SUs(I->second);
@@ -511,7 +511,7 @@ void BasicLinearOrderGenerator::buildFUInfo() {
           if (Bus->isDualPort()) Parallelism = 2;
 
         S = new SingleFULinearOrder(FU, Parallelism, G, IR2SUMap, GFA,
-                                    ReturnBlocks);
+                                    ReturnSUs);
       }
 
       // Add the FU visiting information.
@@ -546,10 +546,9 @@ void SingleFULinearOrder::buildLinearOrder() {
 
   // Create synchronization points at the return block by pretending the return
   // to be a read operation.
-  typedef DenseMap<BasicBlock*, VASTSchedUnit*>::const_iterator ret_iterator;
-  for (ret_iterator I = Returns.begin(), E = Returns.end(); I != E; ++I) {
-    BasicBlock *ReturnBlock = I->first;
-    VASTSchedUnit *ReturnSU = I->second;
+  for (unsigned i = 0; i < Returns.size(); ++i) {
+    VASTSchedUnit *ReturnSU = Returns[i];
+    BasicBlock *ReturnBlock = ReturnSU->getParent();
     SmallVectorImpl<VASTSchedUnit*> &ExistSUs = DefMap[ReturnBlock];
 
     // If there is no FU access operation in the block, simply put the ReturnSU
