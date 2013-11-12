@@ -102,8 +102,9 @@ private:
   unsigned createStepVariable(const VASTSchedUnit *U, unsigned Col);
   unsigned createSlackVariable(unsigned Col);
 
+  // Dst - Src >= C - V
   void addSoftConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
-                         const SoftConstraint &C);
+                         int C, unsigned SlackIdx, int EqTy);
   unsigned updateSoftConstraintPenalties();
   bool solveLP(lprec *lp);
 

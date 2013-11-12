@@ -177,7 +177,7 @@ void SDCScheduler::addSoftConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst,
 
 void SDCScheduler::addSoftConstraint(lprec *lp,
                                      VASTSchedUnit *Dst, VASTSchedUnit *Src,
-                                     const SoftConstraint &C) {
+                                     int C, unsigned SlackIdx, int EqTy) {
   unsigned DstIdx = 0;
   int DstSlot = Dst->getSchedule();
   if (DstSlot == 0)
@@ -189,8 +189,8 @@ void SDCScheduler::addSoftConstraint(lprec *lp,
     SrcIdx = getSUIdx(Src);
 
   // Build constraint: Dst - Src >= C - V
-  // Compuate the constant by trying to move all the variable to RHS.
-  int RHS = C.C - DstSlot + SrcSlot;
+  // Compute the constant by trying to move all the variable to RHS.
+  int RHS = C - DstSlot + SrcSlot;
 
   // Both SU is scheduled.
   assert(!(SrcSlot && DstSlot) &&
@@ -211,12 +211,12 @@ void SDCScheduler::addSoftConstraint(lprec *lp,
   }
 
   // Add the slack variable.
-  Col.push_back(C.SlackIdx);
+  Col.push_back(SlackIdx);
   Coeff.push_back(1.0);
 
-  if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), GE, RHS))
-    report_fatal_error("SDCScheduler: Can NOT step soft Constraints"
-    " SlackIdx:" + utostr_32(C.SlackIdx));
+  if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EqTy, RHS))
+    report_fatal_error("SDCScheduler: Can NOT create soft Constraints"
+                       " SlackIdx:" + utostr_32(SlackIdx));
 }
 
 double SDCScheduler::getLastPenalty(VASTSchedUnit *Src,
@@ -238,7 +238,7 @@ void SDCScheduler::addSoftConstraints() {
 
     VASTSchedUnit *Src = I->first.first, *Dst = I->first.second;
     assert(C.SlackIdx && "Not support on the fly soft constraint creation!");
-    addSoftConstraint(lp, Dst, Src, C);
+    addSoftConstraint(lp, Dst, Src, C.C, C.SlackIdx, GE);
 
     ObjFn[C.SlackIdx] = - C.Penalty;
   }
