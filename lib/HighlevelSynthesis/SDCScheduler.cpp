@@ -308,7 +308,8 @@ void SDCScheduler::buildOptSlackObject(double weight) {
   }
 }
 
-unsigned SDCScheduler::buildSchedule(lprec *lp, unsigned TotalRows) {
+unsigned SDCScheduler::buildSchedule(lprec *lp) {
+  unsigned TotalRows = get_Norig_rows(lp);
   unsigned Changed = 0;
 
   for (iterator I = begin(), E = end(); I != E; ++I) {
@@ -527,7 +528,7 @@ bool SDCScheduler::schedule() {
     return false;
 
   // Schedule the state with the ILP result.
-  changed |= (buildSchedule(lp, TotalRows) != 0);
+  changed |= (buildSchedule(lp) != 0);
   changed |= (updateSoftConstraintPenalties() != 0);
 
   ObjFn.clear();

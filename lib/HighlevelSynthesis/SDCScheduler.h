@@ -124,7 +124,7 @@ private:
   bool solveLP(lprec *lp);
 
   // Build the schedule form the result of ILP.
-  unsigned buildSchedule(lprec *lp, unsigned TotalRows);
+  unsigned buildSchedule(lprec *lp);
 
   // The schedule should satisfy the dependences.
   void addDependencyConstraints(lprec *lp);
