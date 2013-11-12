@@ -421,12 +421,13 @@ bool SDCScheduler::solveLP(lprec *lp) {
   return true;
 }
 
-void SDCScheduler::addConstraintsForCFGEdgeSlacks(SmallVectorImpl<int> &Slacks) {
+void SDCScheduler::addConstraintsForCFGEdges(BasicBlock *BB) {
   SmallVector<int, 8> Cols;
   SmallVector<REAL, 8> Coeffs;
 
-  while (!Slacks.empty()) {
-    int CurSlackIdx = Slacks.pop_back_val();
+  for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
+    BasicBlock *PredBB = *I;
+    int CurSlackIdx = lookUpEdgeSlackIdx(PredBB, BB);
     int AuxVar = CurSlackIdx + 1;
 
     // Build constraints -Slack + BigM * AuxVar >= 0
@@ -449,14 +450,16 @@ void SDCScheduler::addConstraintsForCFGEdgeSlacks(SmallVectorImpl<int> &Slacks) 
     report_fatal_error("Cannot create constraints!");
 }
 
-void SDCScheduler::addDependencyConstraints(lprec *lp) {
-  SmallVector<int, 8> CFGEdgeCol;
+void SDCScheduler::addConstraintsForCFGEdges() {
+  Function &F = G.getFunction();
+  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I)
+    addConstraintsForCFGEdges(I);
+}
 
+void SDCScheduler::addDependencyConstraints(lprec *lp) {
   for(VASTSchedGraph::iterator I = begin(), E = end(); I != E; ++I) {
     VASTSchedUnit *U = I;
     BasicBlock *CurBB = U->isBBEntry() ? U->getParent() : NULL;
-    assert(CFGEdgeCol.empty()
-           && "CFGEdgeCol is supposed to be consumed by pior iteration!");
 
     ConstraintHelper H;
     H.resetDst(U, this);
@@ -477,16 +480,12 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
         // => Snk(i,j) - Src(j) = Slack(i, j), Slack > 0
         unsigned EdgeSlackIdx = lookUpEdgeSlackIdx(Src->getParent(), CurBB);
         addSoftConstraint(lp, U, Src, 0, EdgeSlackIdx, EQ);
-        CFGEdgeCol.push_back(EdgeSlackIdx);
         continue;
       }
 
       H.resetSrc(Src, this);
       H.addConstraintToLP(Edge, lp, 0);
     }
-
-    if (CurBB && !CFGEdgeCol.empty())
-      addConstraintsForCFGEdgeSlacks(CFGEdgeCol);
   }
 }
 
@@ -507,6 +506,7 @@ void SDCScheduler::addDependencyConstraints() {
 
   // Build the constraints.
   addDependencyConstraints(lp);
+  addConstraintsForCFGEdges();
 
   // Turn off the add rowmode and start to solve the model.
   set_add_rowmode(lp, FALSE);

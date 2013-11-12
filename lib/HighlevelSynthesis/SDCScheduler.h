@@ -110,7 +110,8 @@ private:
   // Sum (AuxVar) <= Number of Slack - 1, where AuxVar is either 0 or 1.
   // With these constraints, we specify that at least one of the slack must be
   // 0
-  void addConstraintsForCFGEdgeSlacks(SmallVectorImpl<int> &Slacks);
+  void addConstraintsForCFGEdges(BasicBlock *BB);
+  void addConstraintsForCFGEdges();
 
   // Create step variables, which represent the c-step that the VSUnits are
   // scheduled to.
