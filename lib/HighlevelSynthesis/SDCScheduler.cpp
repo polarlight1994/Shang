@@ -18,6 +18,7 @@
 #include "shang/VASTSeqValue.h"
 
 #include "llvm/Support/CFG.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/STLExtras.h"
 #define DEBUG_TYPE "sdc-scheduler"
@@ -26,6 +27,10 @@
 #include "lpsolve/lp_lib.h"
 
 using namespace llvm;
+
+static cl::opt<unsigned> BigMMultiplier("vast-linear-model-big-M-multiplier",
+  cl::desc("The multiplier apply to bigM in the linear model"),
+  cl::init(8));
 
 void SDCScheduler::LPObjFn::setLPObj(lprec *lp) const {
   std::vector<int> Indices;
@@ -390,7 +395,7 @@ void SDCScheduler::addConstraintsForCFGEdgeSlacks(SmallVectorImpl<int> &Slacks) 
 
     // Build constraints -Slack + BigM * AuxVar >= 0
     int CurCols[] = { CurSlackIdx, AuxVar };
-    REAL CurCoeffs[] = { -1.0, 65535 };
+    REAL CurCoeffs[] = { -1.0, BigMMultiplier * getCriticalPathLength() };
 
     if(!add_constraintex(lp, array_lengthof(CurCols), CurCoeffs, CurCols, GE, 0))
       report_fatal_error("Cannot create constraints!");
