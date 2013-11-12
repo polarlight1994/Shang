@@ -28,9 +28,13 @@
 
 using namespace llvm;
 
-static cl::opt<unsigned> BigMMultiplier("vast-linear-model-big-M-multiplier",
+static cl::opt<unsigned> BigMMultiplier("vast-ilp-big-M-multiplier",
   cl::desc("The multiplier apply to bigM in the linear model"),
   cl::init(8));
+
+static cl::opt<unsigned> ILPTimeOut("vast-ilp-timeout",
+  cl::desc("The timeout value for ilp solver, in seconds"),
+  cl::init(5 * 60));
 
 void SDCScheduler::LPObjFn::setLPObj(lprec *lp) const {
   std::vector<int> Indices;
@@ -391,6 +395,8 @@ bool SDCScheduler::solveLP(lprec *lp) {
   DEBUG(dbgs() << "The model has " << NumVars << "x" << TotalRows << '\n');
 
   DEBUG(dbgs() << "Timeout is set to " << get_timeout(lp) << "secs.\n");
+
+  set_timeout(lp, ILPTimeOut);
 
   int result = solve(lp);
 
