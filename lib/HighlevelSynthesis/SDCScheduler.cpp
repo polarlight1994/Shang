@@ -19,6 +19,7 @@
 
 #include "llvm/Support/CFG.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/STLExtras.h"
 #define DEBUG_TYPE "sdc-scheduler"
 #include "llvm/Support/Debug.h"
 
@@ -156,8 +157,10 @@ unsigned SDCScheduler::createLPAndVariables() {
       BasicBlock *PredBB = *PI;
 
       CFSlackIdx[CFEdge(PredBB, BB)] = Col;
-      // By design, the upper bound of CFG edge slack is 1.
       Col = createSlackVariable(Col, 0);
+      // The auxiliary to specify one of the Snk(BBi,BBj) and Src(BBj) pare
+      // must be equal.
+      Col = createSlackVariable(Col, 1);
     }
   }
 
@@ -377,10 +380,42 @@ bool SDCScheduler::solveLP(lprec *lp) {
   return true;
 }
 
+void SDCScheduler::addConstraintsForCFGEdgeSlacks(SmallVectorImpl<int> &Slacks) {
+  SmallVector<int, 8> Cols;
+  SmallVector<REAL, 8> Coeffs;
+
+  while (!Slacks.empty()) {
+    int CurSlackIdx = Slacks.pop_back_val();
+    int AuxVar = CurSlackIdx + 1;
+
+    // Build constraints -Slack + BigM * AuxVar >= 0
+    int CurCols[] = { CurSlackIdx, AuxVar };
+    REAL CurCoeffs[] = { -1.0, 65535 };
+
+    if(!add_constraintex(lp, array_lengthof(CurCols), CurCoeffs, CurCols, GE, 0))
+      report_fatal_error("Cannot create constraints!");
+
+    Cols.push_back(AuxVar);
+    Coeffs.push_back(1.0);
+  }
+
+  // The sum of AuxVars must be no bigger than NumCols - 1, so that at least
+  // one of the AuxVars is zero. This means at least one of the slack variable
+  // is zero.
+  unsigned NumCols = Cols.size();
+  unsigned RHS = NumCols - 1;
+  if(!add_constraintex(lp, NumCols, Coeffs.data(), Cols.data(), LE, RHS))
+    report_fatal_error("Cannot create constraints!");
+}
+
 void SDCScheduler::addDependencyConstraints(lprec *lp) {
+  SmallVector<int, 8> CFGEdgeCol;
+
   for(VASTSchedGraph::iterator I = begin(), E = end(); I != E; ++I) {
     VASTSchedUnit *U = I;
     BasicBlock *CurBB = U->isBBEntry() ? U->getParent() : NULL;
+    assert(CFGEdgeCol.empty()
+           && "CFGEdgeCol is supposed to be consumed by pior iteration!");
 
     ConstraintHelper H;
     H.resetDst(U, this);
@@ -389,7 +424,7 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
     // Build the constraint for Dst_SU_startStep - Src_SU_endStep >= Latency.
     for (dep_iterator DI = U->dep_begin(), DE = U->dep_end(); DI != DE; ++DI) {
       assert(!DI.isLoopCarried()
-        && "Loop carried dependencies cannot handled by SDC scheduler!");
+             && "Loop carried dependencies cannot handled by SDC scheduler!");
       VASTSchedUnit *Src = *DI;
       VASTDep Edge = DI.getEdge();
 
@@ -401,12 +436,16 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
         // => Snk(i,j) - Src(j) = Slack(i, j), Slack > 0
         unsigned EdgeSlackIdx = lookUpEdgeSlackIdx(Src->getParent(), CurBB);
         addSoftConstraint(lp, U, Src, 0, EdgeSlackIdx, EQ);
+        CFGEdgeCol.push_back(EdgeSlackIdx);
         continue;
       }
 
       H.resetSrc(Src, this);
       H.addConstraintToLP(Edge, lp, 0);
     }
+
+    if (CurBB && !CFGEdgeCol.empty())
+      addConstraintsForCFGEdgeSlacks(CFGEdgeCol);
   }
 }
 
