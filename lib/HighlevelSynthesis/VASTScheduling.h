@@ -430,6 +430,8 @@ class VASTSchedGraph {
   /// Helper class to arrange the scheduling units according to their parent BB,
   /// we will emit the schedule or build the linear order BB by BB.
   std::map<BasicBlock*, std::vector<VASTSchedUnit*> > BBMap;
+
+  void verifyBBEntry(const VASTSchedUnit *SU) const;
 public:
   VASTSchedGraph(Function &F);
   ~VASTSchedGraph();

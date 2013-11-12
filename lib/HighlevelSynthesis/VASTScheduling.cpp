@@ -317,6 +317,37 @@ void VASTSchedGraph::viewGraph() {
   ViewGraph(this, "SchedulingGraph");
 }
 
+void VASTSchedGraph::verifyBBEntry(const VASTSchedUnit *SU) const {
+  BasicBlock *BB = SU->getParent();
+
+  std::set<BasicBlock*> Preds(pred_begin(BB), pred_end(BB));
+
+  typedef VASTSchedUnit::const_dep_iterator dep_iterator;
+  for (dep_iterator DI = SU->dep_begin(), DE = SU->dep_end(); DI != DE; ++DI) {
+    if (DI.getEdgeType() != VASTDep::Conditional)
+      continue;
+
+    const VASTSchedUnit *Dep = *DI;
+
+    if (!Dep->isTerminator())
+      continue;
+
+    assert(Dep->getTargetBlock() == BB && "Bad terminator!");
+
+    Preds.erase(Dep->getParent());
+  }
+
+  if (LLVM_LIKELY(Preds.empty()))
+    return;
+
+  dbgs() << "Predecessors of BB " << BB->getName() << " missing: ";
+  typedef std::set<BasicBlock*>::iterator iterator;
+  for (iterator I = Preds.begin(), E = Preds.end(); I != E; ++I)
+    dbgs() << (*I)->getName() << ", ";
+
+  llvm_unreachable("Incomplete CFG dependencies in scheduling graph!");
+}
+
 void VASTSchedGraph::verify() const {
   if (LLVM_UNLIKELY(getEntry()->use_empty() && !getEntry()->dep_empty()))
     llvm_unreachable("Broken dependencies on Entry!");
@@ -325,9 +356,13 @@ void VASTSchedGraph::verify() const {
     llvm_unreachable("Broken dependencies on Exit!");
 
   for (const_iterator I = llvm::next(SUnits.begin()), E = SUnits.back();
-       I != E; ++I)
+       I != E; ++I) {
     if (LLVM_UNLIKELY(I->dep_empty() || I->use_empty()))
       llvm_unreachable("Broken dependencies!");
+
+    if (I->isBBEntry())
+      verifyBBEntry(I);
+  }
 }
 
 void VASTSchedGraph::prepareForScheduling() {
