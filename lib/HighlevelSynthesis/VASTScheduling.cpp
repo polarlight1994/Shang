@@ -711,8 +711,9 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
   SmallVectorImpl<VASTSchedUnit*> &SUs = IR2SUMap[BB];
 
   // Simply return the BBEntry if it had already existed.
-  if (!SUs.empty() && SUs.back()->isBBEntry())
-    return SUs.back();
+  for (unsigned i = 0, e = SUs.size(); i != e; ++i)
+    if (SUs[i]->isBBEntry())
+      return SUs[i];
 
   VASTSchedUnit *Entry = G->createSUnit(BB, VASTSchedUnit::BlockEntry);
 
@@ -725,7 +726,7 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
     assert(pred_begin(BB) == pred_end(BB)
            && "No entry block do not have any predecessor?");
     // Dependency from the BB entry is not conditional.
-    Entry->addDep(G->getEntry(), VASTDep::CreateCtrlDep(0));
+    Entry->addDep(G->getEntry(), VASTDep::CreateFixTimingConstraint(0));
   }
 
   // Add the entry to the mapping.
