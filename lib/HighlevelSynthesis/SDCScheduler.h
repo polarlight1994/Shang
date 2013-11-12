@@ -33,7 +33,6 @@ public:
 
   typedef VASTSchedGraph::iterator iterator;
   // Set the variables' name in the model.
-  unsigned createLPAndVariables(iterator I, iterator E);
   void addSoftConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst, unsigned C,
                          double Penalty);
   SoftConstraint &getOrCreateSoftConstraint(VASTSchedUnit *Src,
@@ -109,7 +108,7 @@ private:
   bool solveLP(lprec *lp);
 
   // Build the schedule form the result of ILP.
-  unsigned buildSchedule(lprec *lp, iterator I, iterator E);
+  unsigned buildSchedule(lprec *lp);
 
   // The schedule should satisfy the dependences.
   void addDependencyConstraints(lprec *lp);

@@ -124,20 +124,6 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   return Col + 1;
 }
 unsigned SDCScheduler::createSlackVariable(unsigned Col, unsigned UB) {
-
-unsigned SDCScheduler::createLPAndVariables(iterator I, iterator E) {
-  lp = make_lp(0, 0);
-  unsigned Col =  1;
-  while (I != E) {
-    const VASTSchedUnit* U = I++;
-    if (U->isScheduled()) continue;
-
-    Col = createStepVariable(U, Col);
-  }
-
-  return Col;
-}
-
   add_columnex(lp, 0, 0,0);
   DEBUG(std::string SlackName = "slack" + utostr_32(Col);
   dbgs() <<"Col#" << Col << " name: " << SlackName << "\n";
@@ -150,7 +136,15 @@ unsigned SDCScheduler::createLPAndVariables(iterator I, iterator E) {
 }
 
 unsigned SDCScheduler::createLPAndVariables() {
-  unsigned Col = createLPAndVariables(begin(), end());
+  lp = make_lp(0, 0);
+  unsigned Col =  1;
+  for (iterator I =begin(), E = end(); I != E; ++I) {
+    const VASTSchedUnit* U = I;
+    if (U->isScheduled())
+      continue;
+
+    Col = createStepVariable(U, Col);
+  }
 
   typedef SoftCstrVecTy::iterator iterator;
   for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
@@ -287,12 +281,12 @@ void SDCScheduler::buildOptSlackObject(double weight) {
   }
 }
 
-unsigned SDCScheduler::buildSchedule(lprec *lp, iterator I, iterator E) {
+unsigned SDCScheduler::buildSchedule(lprec *lp) {
   unsigned TotalRows = get_Nrows(lp);
   unsigned Changed = 0;
 
-  while (I != E) {
-    VASTSchedUnit *U = I++;
+  for (iterator I = begin(), E = end(); I != E; ++I) {
+    VASTSchedUnit *U = I;
 
     if (U->isEntry()) continue;
 
@@ -427,7 +421,7 @@ bool SDCScheduler::schedule() {
   if (!solveLP(lp)) return false;
 
   // Schedule the state with the ILP result.
-  changed |= (buildSchedule(lp, begin(), end()) != 0);
+  changed |= (buildSchedule(lp) != 0);
   changed |= (updateSoftConstraintPenalties() != 0);
 
   ObjFn.clear();
