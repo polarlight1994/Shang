@@ -47,6 +47,9 @@ unsigned Verifier::computeActualSPDFromEntry(VASTSchedUnit *Entry,
                                              unsigned ExpectedSPD) {
   typedef VASTSchedUnit::dep_iterator dep_iterator;
   unsigned ActualSPD = UINT32_MAX;
+  // A flag to indicate if the current Entry is connected to any its predecessors
+  // exit, i.e. the current entry and the exit are scheduled to the same slot.
+  bool IsConnected = false;
 
   for (dep_iterator I = Entry->dep_begin(), E = Entry->dep_end(); I != E; ++I) {
     VASTSchedUnit *Src = *I;
@@ -69,7 +72,8 @@ unsigned Verifier::computeActualSPDFromEntry(VASTSchedUnit *Entry,
 
     VASTSchedUnit *SrcEntry = G.getEntrySU(SrcBB);
     unsigned TotalSlots = Src->getSchedule() - SrcEntry->getSchedule();
-    
+    IsConnected |= Src->getSchedule() == Entry->getSchedule();
+
     // Get the distance from the entry of IDom to the exit of predecessor BB.
     // It is also the distance from the entry of IDom through predecessor BB
     // to the entry of current BB.
@@ -86,6 +90,8 @@ unsigned Verifier::computeActualSPDFromEntry(VASTSchedUnit *Entry,
 
     ActualSPD = std::min(ActualSPD, Entry2ExitDistanceFromEntry);
   }
+
+  assert(IsConnected && "No shortest path to current block?");
 
   // After delay operations are inserted, the actual distance from IDom is no
   // smaller than the expected distance.
