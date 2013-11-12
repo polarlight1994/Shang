@@ -340,10 +340,11 @@ void VASTSchedGraph::verifyBBEntry(const VASTSchedUnit *SU) const {
   if (LLVM_LIKELY(Preds.empty()))
     return;
 
-  dbgs() << "Predecessors of BB " << BB->getName() << " missing: ";
+  DEBUG(dbgs() << "Predecessors of BB " << BB->getName() << " missing: ";
   typedef std::set<BasicBlock*>::iterator iterator;
   for (iterator I = Preds.begin(), E = Preds.end(); I != E; ++I)
     dbgs() << (*I)->getName() << ", ";
+  );
 
   llvm_unreachable("Incomplete CFG dependencies in scheduling graph!");
 }

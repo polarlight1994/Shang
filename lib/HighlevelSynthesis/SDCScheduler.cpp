@@ -340,6 +340,36 @@ unsigned SDCScheduler::buildSchedule(lprec *lp) {
     }
   }
 
+  DEBUG(Function &F = G.getFunction();
+  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    BasicBlock *BB = I;
+    VASTSchedUnit *U = G.getEntrySU(BB);
+    U->dump();
+
+    typedef VASTSchedUnit::dep_iterator dep_iterator;
+    for (dep_iterator DI = U->dep_begin(), DE = U->dep_end(); DI != DE; ++DI) {
+      if (DI.getEdgeType() != VASTDep::Conditional)
+        continue;
+
+      VASTSchedUnit *Dep = *DI;
+
+      if (!Dep->isTerminator())
+        continue;
+
+      assert(Dep->getTargetBlock() == BB && "Bad terminator!");
+
+      BasicBlock *PredBB = Dep->getParent();
+
+      unsigned EdgeIdx = lookUpEdgeSlackIdx(PredBB, BB);
+      dbgs().indent(2) << "Pred: " << PredBB->getName() << " Slack: "
+                       <<  get_var_primalresult(lp, TotalRows + EdgeIdx) << '\n';
+
+      Dep->dump();
+    }
+
+    dbgs() << '\n';
+  });
+
   return Changed;
 }
 
