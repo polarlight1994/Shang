@@ -94,9 +94,9 @@ struct ConstraintHelper {
       Coeff.push_back(1.0);
     }
 
-    int EqTy = (Edge.getEdgeType() == VASTDep::FixedTiming) ? EQ :
-               (Edge.getEdgeType() == VASTDep::Conditional) ? LE :
-               GE;
+    assert(Edge.getEdgeType() != VASTDep::Conditional &&
+           "Unexpected conditional edge!");
+    int EqTy = (Edge.getEdgeType() == VASTDep::FixedTiming) ? EQ : GE;
 
     if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EqTy, RHS))
       report_fatal_error("SDCScheduler: Can NOT add dependency constraints"
@@ -150,27 +150,29 @@ unsigned SDCScheduler::createLPAndVariables() {
   lp = make_lp(0, 0);
   unsigned Col =  1;
   for (iterator I =begin(), E = end(); I != E; ++I) {
-    const VASTSchedUnit* U = I;
+    VASTSchedUnit* U = I;
     if (U->isScheduled())
       continue;
 
     Col = createStepVariable(U, Col);
-  }
 
-  // Create the CFG Edge slack variables.
-  Function &F = G.getFunction();
-  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    BasicBlock *BB = I;
+    bool HasCndDep = false;
 
-    for (pred_iterator PI = pred_begin(BB), PE = pred_end(BB); PI != PE; ++PI) {
-      BasicBlock *PredBB = *PI;
+    // Allocate slack variable and connect variable for conditional edges.
+    typedef VASTSchedUnit::dep_iterator dep_iterator;
+    for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
+      if (I.getEdgeType() != VASTDep::Conditional)
+        continue;
 
-      CFSlackIdx[CFEdge(PredBB, BB)] = Col;
       Col = createSlackVariable(Col, 0);
-      // The auxiliary to specify one of the Snk(BBi,BBj) and Src(BBj) pare
-      // must be equal.
+      // The auxiliary variable to specify one of the conditional dependence
+      // and the current SU must have the same scheduling.
       Col = createSlackVariable(Col, 1);
+      HasCndDep = true;
     }
+
+    if (HasCndDep)
+      ConditionalSUs.push_back(U);
   }
 
   typedef SoftCstrVecTy::iterator iterator;
@@ -344,51 +346,22 @@ unsigned SDCScheduler::buildSchedule(lprec *lp) {
     }
   }
 
-  DEBUG(Function &F = G.getFunction();
-  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    BasicBlock *BB = I;
-    VASTSchedUnit *U = G.getEntrySU(BB);
-    U->dump();
-
-    typedef VASTSchedUnit::dep_iterator dep_iterator;
-    for (dep_iterator DI = U->dep_begin(), DE = U->dep_end(); DI != DE; ++DI) {
-      if (DI.getEdgeType() != VASTDep::Conditional)
-        continue;
-
-      VASTSchedUnit *Dep = *DI;
-
-      if (!Dep->isTerminator())
-        continue;
-
-      assert(Dep->getTargetBlock() == BB && "Bad terminator!");
-
-      BasicBlock *PredBB = Dep->getParent();
-
-      unsigned EdgeIdx = lookUpEdgeSlackIdx(PredBB, BB);
-      dbgs().indent(2) << "Pred: " << PredBB->getName() << " Slack: "
-                       <<  get_var_primalresult(lp, TotalRows + EdgeIdx) << '\n';
-
-      Dep->dump();
-    }
-
-    dbgs() << '\n';
-  });
-
   return Changed;
 }
 
-bool SDCScheduler::solveLP(lprec *lp) {
-  set_verbose(lp, CRITICAL);
+bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
   DEBUG(set_verbose(lp, FULL));
 
-  //set_presolve(lp, PRESOLVE_NONE, get_presolveloops(lp));
-  set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS | PRESOLVE_LINDEP
-                   | PRESOLVE_IMPLIEDFREE | PRESOLVE_REDUCEGCD
-                   | PRESOLVE_PROBEFIX | PRESOLVE_PROBEREDUCE
-                   | PRESOLVE_ROWDOMINATE /*| PRESOLVE_COLDOMINATE lpsolve bug*/
-                   | PRESOLVE_MERGEROWS
-                   | PRESOLVE_BOUNDS,
-               get_presolveloops(lp));
+  if (PreSolve) {
+    set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS | PRESOLVE_LINDEP
+                     | PRESOLVE_IMPLIEDFREE | PRESOLVE_REDUCEGCD
+                     | PRESOLVE_PROBEFIX | PRESOLVE_PROBEREDUCE
+                     | PRESOLVE_ROWDOMINATE /*| PRESOLVE_COLDOMINATE lpsolve bug*/
+                     | PRESOLVE_MERGEROWS
+                     | PRESOLVE_BOUNDS,
+                 get_presolveloops(lp));
+  } else
+    set_presolve(lp, PRESOLVE_NONE, get_presolveloops(lp));
 
   DEBUG(write_lp(lp, "log.lp"));
 
@@ -421,13 +394,22 @@ bool SDCScheduler::solveLP(lprec *lp) {
   return true;
 }
 
-void SDCScheduler::addConstraintsForCFGEdges(BasicBlock *BB) {
+void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   SmallVector<int, 8> Cols;
   SmallVector<REAL, 8> Coeffs;
 
-  for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
-    BasicBlock *PredBB = *I;
-    int CurSlackIdx = lookUpEdgeSlackIdx(PredBB, BB);
+  int CurSlackIdx = getSUIdx(SU) + 1;
+  typedef VASTSchedUnit::dep_iterator dep_iterator;
+  for (dep_iterator I = SU->dep_begin(), E = SU->dep_end(); I != E; ++I) {
+    if (I.getEdgeType() != VASTDep::Conditional)
+      continue;
+
+    assert(I.getLatency() == 0 &&
+           "Conditional dependencies must have a zero latency!");
+    // First of all, export the slack for conditional edge. For conditional edge
+    // we require Dst <= Src, hence we have Dst - Src + Slack = 0, Slack >= 0
+    addSoftConstraint(lp, SU, *I, 0, CurSlackIdx, EQ);
+
     int AuxVar = CurSlackIdx + 1;
 
     // Build constraints -Slack + BigM * AuxVar >= 0
@@ -439,6 +421,7 @@ void SDCScheduler::addConstraintsForCFGEdges(BasicBlock *BB) {
 
     Cols.push_back(AuxVar);
     Coeffs.push_back(1.0);
+    CurSlackIdx += 2;
   }
 
   // The sum of AuxVars must be no bigger than NumCols - 1, so that at least
@@ -450,10 +433,10 @@ void SDCScheduler::addConstraintsForCFGEdges(BasicBlock *BB) {
     report_fatal_error("Cannot create constraints!");
 }
 
-void SDCScheduler::addConstraintsForCFGEdges() {
-  Function &F = G.getFunction();
-  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I)
-    addConstraintsForCFGEdges(I);
+void SDCScheduler::addConditionalConstraints() {
+  typedef std::vector<VASTSchedUnit*>::iterator iterator;
+  for (iterator I = ConditionalSUs.begin(), E = ConditionalSUs.end(); I != E; ++I)
+    addConditionalConstraints(*I);
 }
 
 void SDCScheduler::addDependencyConstraints(lprec *lp) {
@@ -472,16 +455,9 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
       VASTSchedUnit *Src = *DI;
       VASTDep Edge = DI.getEdge();
 
-      // Ignore the control-dependency edges between BBs.
-      if (Edge.getEdgeType() == VASTDep::Conditional) {
-        assert(CurBB && Src->isTerminator() &&
-               "Unexpected conditional dependency!");
-        // For edge (i, j) in CFG, build Src(j) <= Snk(i,j)
-        // => Snk(i,j) - Src(j) = Slack(i, j), Slack > 0
-        unsigned EdgeSlackIdx = lookUpEdgeSlackIdx(Src->getParent(), CurBB);
-        addSoftConstraint(lp, U, Src, 0, EdgeSlackIdx, EQ);
+      // Conditional edges are not handled here.
+      if (Edge.getEdgeType() == VASTDep::Conditional)
         continue;
-      }
 
       H.resetSrc(Src, this);
       H.addConstraintToLP(Edge, lp, 0);
@@ -506,7 +482,7 @@ void SDCScheduler::addDependencyConstraints() {
 
   // Build the constraints.
   addDependencyConstraints(lp);
-  addConstraintsForCFGEdges();
+  addConditionalConstraints();
 
   // Turn off the add rowmode and start to solve the model.
   set_add_rowmode(lp, FALSE);
@@ -522,9 +498,7 @@ bool SDCScheduler::schedule() {
 
   ObjFn.setLPObj(lp);
 
-  // Get the number of Rows before we presolve the model.
-  unsigned TotalRows = get_Nrows(lp);
-  if (!solveLP(lp))
+  if (!solveLP(lp, true))
     return false;
 
   // Schedule the state with the ILP result.
@@ -533,7 +507,7 @@ bool SDCScheduler::schedule() {
 
   ObjFn.clear();
   SUIdx.clear();
-  CFSlackIdx.clear();
+  ConditionalSUs.clear();
   delete_lp(lp);
   lp = 0;
   return true;

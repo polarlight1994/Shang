@@ -96,22 +96,15 @@ private:
   typedef std::map<EdgeType, SoftConstraint> SoftCstrVecTy;
   SoftCstrVecTy SoftConstraints;
 
-  // Also remember the control flow edge variable.
-  typedef std::pair<BasicBlock*, BasicBlock*> CFEdge;
-  typedef std::map<CFEdge, unsigned> CFESlacks;
-  CFESlacks CFSlackIdx;
-  unsigned lookUpEdgeSlackIdx(BasicBlock *Src, BasicBlock *Snk) const {
-    CFESlacks::const_iterator I = CFSlackIdx.find(CFEdge(Src, Snk));
-    assert(I != CFSlackIdx.end() && "CFEdge does not exists?");
-    return I->second;
-  }
+  // The scheduling unit with conditional dependencies.
+  std::vector<VASTSchedUnit*> ConditionalSUs;
 
   // Build constraints -Slack + BigM * AuxVar >= 0 and
   // Sum (AuxVar) <= Number of Slack - 1, where AuxVar is either 0 or 1.
   // With these constraints, we specify that at least one of the slack must be
   // 0
-  void addConstraintsForCFGEdges(BasicBlock *BB);
-  void addConstraintsForCFGEdges();
+  void addConditionalConstraints(VASTSchedUnit *SU);
+  void addConditionalConstraints();
 
   // Create step variables, which represent the c-step that the VSUnits are
   // scheduled to.
@@ -122,7 +115,7 @@ private:
   void addSoftConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
                          int C, unsigned SlackIdx, int EqTy);
   unsigned updateSoftConstraintPenalties();
-  bool solveLP(lprec *lp);
+  bool solveLP(lprec *lp, bool PreSolve);
 
   // Build the schedule form the result of ILP.
   unsigned buildSchedule(lprec *lp);
