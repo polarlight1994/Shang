@@ -149,6 +149,16 @@ unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB) {
   return Col + 1;
 }
 
+unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
+  // Create the slack variable for the edge.
+  Col = createSlackVariable(Col, 0, 0);
+  // The auxiliary variable to specify one of the conditional dependence
+  // and the current SU must have the same scheduling.
+  Col = createSlackVariable(Col, 1, 0);
+
+  return Col;
+}
+
 unsigned SDCScheduler::createLPAndVariables() {
   lp = make_lp(0, 0);
   unsigned Col =  1;
@@ -164,14 +174,11 @@ unsigned SDCScheduler::createLPAndVariables() {
     // Allocate slack variable and connect variable for conditional edges.
     typedef VASTSchedUnit::dep_iterator dep_iterator;
     for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
-      if (I.getEdgeType() != VASTDep::Conditional)
+      if (I.getEdgeType() != VASTDep::Conditional) {
+        Col = createVarForCndDeps(Col);
+        HasCndDep = true;
         continue;
-
-      Col = createSlackVariable(Col, 0, 0);
-      // The auxiliary variable to specify one of the conditional dependence
-      // and the current SU must have the same scheduling.
-      Col = createSlackVariable(Col, 1, 0);
-      HasCndDep = true;
+      }
     }
 
     if (HasCndDep)
