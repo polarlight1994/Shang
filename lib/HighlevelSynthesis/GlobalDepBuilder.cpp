@@ -233,9 +233,11 @@ template<typename SubClass>
 struct GlobalDependenciesBuilderBase  {
   GlobalFlowAnalyzer &GFA;
   IR2SUMapTy &IR2SUMap;
+  VASTSchedGraph &G;
 
-  GlobalDependenciesBuilderBase(GlobalFlowAnalyzer &GFA, IR2SUMapTy &IR2SUMap)
-    : GFA(GFA), IR2SUMap(IR2SUMap) {}
+  GlobalDependenciesBuilderBase(GlobalFlowAnalyzer &GFA, IR2SUMapTy &IR2SUMap,
+                                VASTSchedGraph &G)
+    : GFA(GFA), IR2SUMap(IR2SUMap), G(G) {}
 
   typedef DenseMap<BasicBlock*, SmallVector<VASTSchedUnit*, 8> > AccessMapTy;
   AccessMapTy DefMap, UseMap;
@@ -250,6 +252,15 @@ struct GlobalDependenciesBuilderBase  {
 
   void addUse(VASTSchedUnit *SU, BasicBlock *BB) {
     UseMap[BB].push_back(SU);
+  }
+
+  void
+  buildDepFromDFBlock(BasicBlock *BB, SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
+    VASTSchedUnit *Entry = G.getEntrySU(BB);
+    // Do not allow the SUs exceeding the entry of dominance frontier. Because
+    // the scheduler cannot preserve the inter-BB dependencies in this case.
+    while (!BUSUs.empty())
+      BUSUs.pop_back_val()->addDep(Entry, VASTDep::CreateCtrlDep(0));
   }
 
   void collectSUsInBlock(AccessMapTy &Map, BasicBlock *BB,
@@ -316,7 +327,7 @@ struct GlobalDependenciesBuilderBase  {
       return;
 
     if (DFBlocks.count(BB))
-      static_cast<SubClass*>(this)->buildDepFromDFBlock(BB, BUSUs);
+      buildDepFromDFBlock(BB, BUSUs);
 
     Node = Node->getIDom();
     while (Node && !BUSUs.empty()) {
@@ -332,7 +343,7 @@ struct GlobalDependenciesBuilderBase  {
       // dependencies), add control dependencies to the SUs that are not
       // consumed by the previous dependencies building function.
       if (DFBlocks.count(BB))
-        static_cast<SubClass*>(this)->buildDepFromDFBlock(BB, BUSUs);
+        buildDepFromDFBlock(BB, BUSUs);
     }
   }
 
@@ -362,14 +373,6 @@ struct SingleFULinearOrder
     unsigned IntialInterval = 1;
     VASTDep Edge = VASTDep::CreateDep<VASTDep::LinearOrder>(IntialInterval);
     Dst->addDep(Src, Edge);
-  }
-
-  void
-  buildDepFromDFBlock(BasicBlock *BB, SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
-    // Do not allow the SUs exceeding the entry of dominance frontier. Because
-    // the scheduler cannot preserve the inter-BB dependencies in this case.
-    while (!BUSUs.empty())
-      BUSUs.pop_back_val()->addDep(G->getEntrySU(BB), VASTDep::CreateCtrlDep(0));
   }
 
   void buildDependencies(SmallVectorImpl<VASTSchedUnit*> &BUSUs,
@@ -415,7 +418,7 @@ struct SingleFULinearOrder
   SingleFULinearOrder(VASTNode *FU, unsigned Parallelism, SchedulerBase &G,
                       IR2SUMapTy &IR2SUMap, GlobalFlowAnalyzer &GFA,
                       ArrayRef<VASTSchedUnit*> ReturnBlocks)
-    : GlobalDependenciesBuilderBase(GFA, IR2SUMap), FU(FU),
+    : GlobalDependenciesBuilderBase(GFA, IR2SUMap, *G), FU(FU),
       Parallelism(Parallelism), G(G), Returns(ReturnBlocks) {}
 
   void buildLinearOrder();
@@ -595,22 +598,13 @@ STATISTIC(NumMemDep, "Number of Memory Dependencies Added");
 namespace {
 struct AliasRegionDepBuilder
   : public GlobalDependenciesBuilderBase<AliasRegionDepBuilder> {
-    VASTSchedGraph &G;
     AliasAnalysis &AA;
 
   AliasRegionDepBuilder(VASTSchedGraph &G, AliasAnalysis &AA,
                         GlobalFlowAnalyzer &GFA, IR2SUMapTy &IR2SUMap)
-    : GlobalDependenciesBuilderBase(GFA, IR2SUMap), G(G), AA(AA) {}
+    : GlobalDependenciesBuilderBase(GFA, IR2SUMap, G), AA(AA) {}
 
   void initializeRegion(AliasSet &AS);
-
-  void buildDepFromDFBlock(BasicBlock *BB,
-                           SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
-    // Do not allow the SUs exceeding the entry of dominance frontier. Because
-    // the scheduler cannot preserve the inter-BB dependencies in this case.
-    while (!BUSUs.empty())
-      BUSUs.pop_back_val()->addDep(G.getEntrySU(BB), VASTDep::CreateCtrlDep(0));
-  }
 
   void collectSUsForTopDownDeps(BasicBlock *BB,
                                 SmallVectorImpl<VASTSchedUnit*> &TDSUs) {
