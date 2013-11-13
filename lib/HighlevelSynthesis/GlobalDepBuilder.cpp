@@ -254,9 +254,31 @@ struct GlobalDependenciesBuilderBase  {
     UseMap[BB].push_back(SU);
   }
 
+  typedef std::map<BasicBlock*, VASTSchedUnit*> SyncMapTy;
+  SyncMapTy Srcs;
+
+  VASTSchedUnit *getOrCreateSyncNode(BasicBlock *BB, SyncMapTy &Map,
+                                     VASTSchedUnit::Type T) {
+    VASTSchedUnit *&Node = Map[BB];
+
+    if (Node == NULL)
+      Node = G.createSUnit(BB, T);
+
+    return Node;
+  }
+
+  VASTSchedUnit *getOrCreateSyncSrc(BasicBlock *BB) {
+    VASTSchedUnit *Node = getOrCreateSyncNode(BB, Srcs, VASTSchedUnit::SyncSrc);
+
+    if (Node->dep_empty())
+      Node->addDep(G.getEntrySU(BB), VASTDep::CreateCtrlDep(0));
+
+    return Node;
+  }
+
   void
   buildDepFromDFBlock(BasicBlock *BB, SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
-    VASTSchedUnit *Entry = G.getEntrySU(BB);
+    VASTSchedUnit *Entry = getOrCreateSyncSrc(BB);
     // Do not allow the SUs exceeding the entry of dominance frontier. Because
     // the scheduler cannot preserve the inter-BB dependencies in this case.
     while (!BUSUs.empty())
