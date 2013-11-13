@@ -112,8 +112,8 @@ private:
   unsigned createSlackVariable(unsigned Col, unsigned UB);
 
   // Dst - Src >= C - V
-  void addSoftConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
-                         int C, unsigned SlackIdx, int EqTy);
+  void addConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
+                     int C, unsigned SlackIdx, int EqTy);
   unsigned updateSoftConstraintPenalties();
   bool solveLP(lprec *lp, bool PreSolve);
 

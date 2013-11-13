@@ -201,9 +201,9 @@ void SDCScheduler::addSoftConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst,
   SC.C = std::max<unsigned>(SC.C, C);
 }
 
-void SDCScheduler::addSoftConstraint(lprec *lp,
-                                     VASTSchedUnit *Dst, VASTSchedUnit *Src,
-                                     int C, unsigned SlackIdx, int EqTy) {
+void
+SDCScheduler::addConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
+                            int C, unsigned SlackIdx, int EqTy) {
   unsigned DstIdx = 0;
   int DstSlot = Dst->getSchedule();
   if (DstSlot == 0)
@@ -264,7 +264,7 @@ void SDCScheduler::addSoftConstraints() {
 
     VASTSchedUnit *Src = I->first.first, *Dst = I->first.second;
     assert(C.SlackIdx && "Not support on the fly soft constraint creation!");
-    addSoftConstraint(lp, Dst, Src, C.C, C.SlackIdx, GE);
+    addConstraint(lp, Dst, Src, C.C, C.SlackIdx, GE);
 
     ObjFn[C.SlackIdx] = - C.Penalty;
   }
@@ -408,7 +408,7 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
            "Conditional dependencies must have a zero latency!");
     // First of all, export the slack for conditional edge. For conditional edge
     // we require Dst <= Src, hence we have Dst - Src + Slack = 0, Slack >= 0
-    addSoftConstraint(lp, SU, *I, 0, CurSlackIdx, EQ);
+    addConstraint(lp, SU, *I, 0, CurSlackIdx, EQ);
 
     int AuxVar = CurSlackIdx + 1;
 
