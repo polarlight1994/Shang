@@ -215,8 +215,8 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
   }
 
   if (isBBEntry()) OS << "BB Entry\t";
-  else if (isVSnk()) OS << "VSnk\t";
-  else if (isVSrc()) OS << "VSrc\t";
+  else if (isSyncSnk()) OS << "SyncSnk\t";
+  else if (isSyncSrc()) OS << "SyncSrc\t";
 
   OS << (isLaunch() ? "Launch" : "Latch")
      << " Parent: " << getParent()->getName();
@@ -287,8 +287,8 @@ VASTSchedGraph::createSUnit(BasicBlock *BB, VASTSchedUnit::Type T) {
   SUnits.insert(SUnits.back(), U);
   // Also put the scheduling unit in the BBMap.
   assert(BB && "Expect a parent BB!");
-  assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::VSnk ||
-          T == VASTSchedUnit::VSrc)
+  assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::SyncSnk ||
+          T == VASTSchedUnit::SyncSrc)
          && "Unexpected type!");
   BBMap[U->getParent()].push_back(U);
 

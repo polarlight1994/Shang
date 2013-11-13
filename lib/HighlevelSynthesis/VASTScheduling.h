@@ -129,8 +129,8 @@ public:
     // The supper source node of the basic block.
     BlockEntry,
     Launch, Latch,
-    // Virtual supper sink and supper source.
-    VSnk, VSrc,
+    // Synchronization nodes.
+    SyncSnk, SyncSrc,
     // Invalide node for the ilist sentinel
     Invalid
   };
@@ -256,9 +256,10 @@ public:
   bool isEntry() const { return T == Entry; }
   bool isExit() const { return T == Exit; }
   bool isBBEntry() const { return T == BlockEntry; }
-  bool isVirtual() const { return T == VSnk || T == VSrc; }
-  bool isVSnk() const { return T == VSnk; }
-  bool isVSrc() const { return T == VSrc; }
+  bool isSync() const { return T == SyncSnk || T == SyncSrc; }
+  bool isSyncSnk() const { return T == SyncSnk; }
+  bool isSyncSrc() const { return T == SyncSrc; }
+  bool isVirtual() const { return isEntry() || isExit() || isSync(); }
 
   bool isPHI() const {
     return Inst && isa<PHINode>(getInst()) && isLaunch();

@@ -160,7 +160,7 @@ bool ControlChainingHazardDectector::detectHazard() {
 }
 
 bool ControlChainingHazardDectector::detectHazard(VASTSchedUnit *Dst) {
-  if (LLVM_UNLIKELY(Dst->isVirtual() || Dst->isEntry() || Dst->isExit()))
+  if (LLVM_UNLIKELY(Dst->isVirtual()))
     return false;
 
   BasicBlock *BB = Dst->getParent();
