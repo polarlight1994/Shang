@@ -550,6 +550,8 @@ struct ItetrativeEngine {
 
   bool performScheduling(VASTModule &VM);
 
+  float assignEdgeWeight(BasicBlock *BB);
+
   bool iterate(VASTModule &VM) {
     ScheduleViolation = BindingViolation = MUXFIViolation = 0;
     // First of all, perform the scheduling.
@@ -777,58 +779,12 @@ bool ItetrativeEngine::performScheduling(VASTModule &VM) {
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
     DEBUG(dbgs() << "Applying constraints to BB: " << BB->getName() << '\n');
-    // Get the frequency of the block, and ensure the frequency always bigger
-    // than 0.
-    BlockFrequency BF = std::max(BFI.getBlockFreq(BB), BlockFrequency(1));
 
-    float ExitWeigthSum = 0;
-    ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
-    for (unsigned i = 0; i < Exits.size(); ++i) {
-      VASTSchedUnit *BBExit = Exits[i];
-      // Ignore the return value latching operation here. We will add the fix
-      // timing constraints between it and the actual terminator.
-      if (!BBExit->isTerminator()) {
-        assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
-        continue;
-      }
-
-      BranchProbability BP = BranchProbability::getOne();
-      if (BasicBlock *TargetBB = BBExit->getTargetBlock())
-        BP = BPI.getEdgeProbability(BB, TargetBB);
-
-      BlockFrequency CurBranchFreq = BF * BP;
-      float ScaledCurBranchFreq = float(CurBranchFreq.getFrequency()) /
-                                  float(BlockFrequency::getEntryFrequency());
-      float ExitWeight = (PerformanceFactor * ScaledCurBranchFreq);
-      Scheduler.addObjectCoeff(BBExit, - 1.0 * ExitWeight);
-      DEBUG(dbgs().indent(4) << "Setting Exit Weight: " << ExitWeight
-                              << ' ' << BP << '\n');
-
-      ExitWeigthSum += ExitWeight;
-      TotalWeight += ExitWeight;
-    }
-
-    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[BB]);
-    VASTSchedUnit *BBEntry = 0;
-
-    // First of all we need to locate the header.
-    for (unsigned i = 0; i < SUs.size(); ++i) {
-      VASTSchedUnit *SU = SUs[i];
-      if (SU->isBBEntry()) {
-        BBEntry = SU;
-        break;
-      }
-    }
-
-    assert(BBEntry && "Cannot find BB Entry!");
-
-    assert(ExitWeigthSum && "Unexpected zero weight!");
-    Scheduler.addObjectCoeff(BBEntry, ExitWeigthSum);
-    DEBUG(dbgs().indent(2) << "Setting Entry Weight: "
-                            << ExitWeigthSum << '\n');
+    float ExitWightSum = assignEdgeWeight(BB);
+    TotalWeight += ExitWightSum;
   }
 
-  Scheduler.addObjectCoeff(Scheduler->getExit(), - 1.0 * (TotalWeight /*+ PerformanceFactor*/));
+  //Scheduler.addObjectCoeff(Scheduler->getExit(), - 1.0 * (TotalWeight /*+ PerformanceFactor*/));
 
   //Scheduler.buildOptSlackObject(1.0);
 
@@ -837,6 +793,48 @@ bool ItetrativeEngine::performScheduling(VASTModule &VM) {
 
   // We had made some changes.
   return success;
+}
+
+float ItetrativeEngine::assignEdgeWeight(BasicBlock *BB) {
+  VASTSchedUnit *Entry = Scheduler->getEntrySU(BB);
+  // Get the frequency of the block, and ensure the frequency always bigger
+  // than 0.
+  BlockFrequency BF = std::max(BFI.getBlockFreq(BB), BlockFrequency(1));
+
+  float ExitWightSum = 0.0f;
+  ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
+  for (unsigned i = 0; i < Exits.size(); ++i) {
+    VASTSchedUnit *BBExit = Exits[i];
+    // Ignore the return value latching operation here. We will add the fix
+    // timing constraints between it and the actual terminator.
+    if (!BBExit->isTerminator()) {
+      assert(isa<ReturnInst>(BB->getTerminator()) && "BBExit is not terminator!");
+      continue;
+    }
+
+    BranchProbability BP = BranchProbability::getOne();
+    if (BasicBlock *TargetBB = BBExit->getTargetBlock())
+      BP = BPI.getEdgeProbability(BB, TargetBB);
+
+    BlockFrequency CurBranchFreq = BF * BP;
+    float ScaledCurBranchFreq = float(CurBranchFreq.getFrequency()) /
+                                float(BlockFrequency::getEntryFrequency());
+    float ExitWeight = (PerformanceFactor * ScaledCurBranchFreq);
+    // Minimize the edge weight, i.e. BBExit - BBEntry =>
+    // Maximize BBEntry - BBExit
+    Scheduler.addObjectCoeff(Entry, 1.0 * ExitWeight);
+    Scheduler.addObjectCoeff(BBExit, - 1.0 * ExitWeight);
+    DEBUG(dbgs().indent(4) << "Setting Exit Weight: " << ExitWeight
+                           << ' ' << BP << '\n');
+
+    ExitWightSum += ExitWeight;
+  }
+
+  // At the same time, maximize BBEntry for the shortest path problem.
+  //float ScaledBBFreq = float(BF.getFrequency()) /
+  //                     float(BlockFrequency::getEntryFrequency());
+  //Scheduler.addObjectCoeff(Entry, 1.0 * PerformanceFactor * ScaledBBFreq);
+  return ExitWightSum;
 }
 
 void VASTScheduling::scheduleGlobal() {
