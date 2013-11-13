@@ -134,14 +134,17 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   set_lowbo(lp, Col, EntrySlot);
   return Col + 1;
 }
-unsigned SDCScheduler::createSlackVariable(unsigned Col, unsigned UB) {
+unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB) {
   add_columnex(lp, 0, 0,0);
   DEBUG(std::string SlackName = "slack" + utostr_32(Col);
   dbgs() <<"Col#" << Col << " name: " << SlackName << "\n";
   set_col_name(lp, Col, const_cast<char*>(SlackName.c_str())););
   set_int(lp, Col, TRUE);
-  if (UB)
+
+  if (UB != LB) {
     set_upbo(lp, Col, UB);
+    set_lowbo(lp, Col, LB);
+  }
 
   return Col + 1;
 }
@@ -164,10 +167,10 @@ unsigned SDCScheduler::createLPAndVariables() {
       if (I.getEdgeType() != VASTDep::Conditional)
         continue;
 
-      Col = createSlackVariable(Col, 0);
+      Col = createSlackVariable(Col, 0, 0);
       // The auxiliary variable to specify one of the conditional dependence
       // and the current SU must have the same scheduling.
-      Col = createSlackVariable(Col, 1);
+      Col = createSlackVariable(Col, 1, 0);
       HasCndDep = true;
     }
 
@@ -179,7 +182,7 @@ unsigned SDCScheduler::createLPAndVariables() {
   for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
        I != E; ++I) {
     I->second.SlackIdx = Col;
-    Col = createSlackVariable(Col, 0);
+    Col = createSlackVariable(Col, 0, 0);
   }
 
   return Col - 1;
