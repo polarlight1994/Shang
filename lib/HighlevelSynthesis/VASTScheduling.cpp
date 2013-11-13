@@ -389,8 +389,13 @@ void VASTSchedGraph::topsortCone(VASTSchedUnit *Root,
       continue;
     }
 
-    VASTSchedUnit *Child = *I;
     ++WorkStack.back().second;
+
+    if (I.getEdgeType() == VASTDep::Synchronize ||
+        I.getEdgeType() == VASTDep::Conditional)
+      continue;
+
+    VASTSchedUnit *Child = *I;
 
     if (Child->isEntry() || Child->getParent() != BB)
       continue;
