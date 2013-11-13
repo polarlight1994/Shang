@@ -115,6 +115,7 @@ Verifier::computeExpectedSPDFromEntry(ArrayRef<VASTSchedUnit*> SUs) {
     for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
       if (I.getEdgeType() == VASTDep::LinearOrder
           || I.getEdgeType() == VASTDep::Conditional
+          || I.getEdgeType() == VASTDep::Synchronize
           || I.getEdgeType() == VASTDep::CtrlDep)
        continue;
 

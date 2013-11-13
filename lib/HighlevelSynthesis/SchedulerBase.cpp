@@ -61,6 +61,7 @@ unsigned SchedulerBase::calculateASAP(const VASTSchedUnit *U) {
     if (Dep->getIdx() > U->getIdx() && MII == 0) {
       assert((Dep->getIdx() < U->getIdx()
               || DI.getEdgeType(MII) == VASTDep::Conditional
+              || DI.getEdgeType(MII) == VASTDep::Synchronize
               || DI.getEdgeType(MII) == VASTDep::MemDep)
              && "Bad dependencies!");
       continue;
@@ -174,6 +175,7 @@ unsigned SchedulerBase::calculateALAP(const VASTSchedUnit *A) {
     if (A->getIdx() > Use->getIdx() && MII == 0) {
       assert((A->getIdx() < Use->getIdx()
               || UseEdge.getEdgeType() == VASTDep::Conditional
+              || UseEdge.getEdgeType() == VASTDep::Synchronize
               || UseEdge.getEdgeType() == VASTDep::MemDep)
              && "Bad dependencies!");
       continue;

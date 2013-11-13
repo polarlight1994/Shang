@@ -48,7 +48,8 @@ public:
     CtrlDep     = 2,
     FixedTiming = 3,
     LinearOrder = 4,
-    Conditional = 5
+    Conditional = 5,
+    Synchronize = 6
   };
 private:
   uint8_t EdgeType : 3;
@@ -117,6 +118,10 @@ public:
 
   static VASTDep CreateCndDep() {
     return VASTDep(Conditional, 0, 0, 0);
+  }
+
+  static VASTDep CreateSyncDep() {
+    return VASTDep(Synchronize, 0, 0, 0);
   }
 };
 

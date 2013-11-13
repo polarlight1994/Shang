@@ -464,8 +464,9 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
       VASTSchedUnit *Src = *DI;
       VASTDep Edge = DI.getEdge();
 
-      // Conditional edges are not handled here.
-      if (Edge.getEdgeType() == VASTDep::Conditional)
+      // Conditional and synchronize edges are not handled here.
+      if (Edge.getEdgeType() == VASTDep::Conditional ||
+          Edge.getEdgeType() == VASTDep::Synchronize)
         continue;
 
       H.resetSrc(Src, this);
