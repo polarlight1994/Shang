@@ -411,8 +411,7 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   int CurSlackIdx = getSUIdx(SU) + 1;
   typedef VASTSchedUnit::dep_iterator dep_iterator;
   for (dep_iterator I = SU->dep_begin(), E = SU->dep_end(); I != E; ++I) {
-    if (I.getEdgeType() != VASTDep::Conditional)
-      continue;
+    assert(I.getEdgeType() == VASTDep::Conditional && "Unexpected edge type!");
 
     assert(I.getLatency() == 0 &&
            "Conditional dependencies must have a zero latency!");
