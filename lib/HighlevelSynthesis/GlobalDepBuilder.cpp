@@ -40,6 +40,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/SetOperations.h"
 #include "llvm/Support/CFG.h"
 #define DEBUG_TYPE "shang-linear-order-builder"
 #include "llvm/Support/Debug.h"
@@ -270,9 +271,6 @@ struct GlobalDependenciesBuilderBase  {
   VASTSchedUnit *getOrCreateSyncSrc(BasicBlock *BB) {
     VASTSchedUnit *Node = getOrCreateSyncNode(BB, Srcs, VASTSchedUnit::SyncSrc);
 
-    if (Node->dep_empty())
-      Node->addDep(G.getEntrySU(BB), VASTDep::CreateCtrlDep(0));
-
     return Node;
   }
 
@@ -318,24 +316,18 @@ struct GlobalDependenciesBuilderBase  {
 
   void buildCtrlDepToSyncPoint(BasicBlock *BB, ArrayRef<VASTSchedUnit*> TDSUs,
                                SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
-    SmallVector<VASTSchedUnit*, 8> Branches;
-    ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[BB->getTerminator()]);
-    for (unsigned i = 0; i < Exits.size(); ++i) {
-      VASTSchedUnit *Exit = Exits[i];
-      assert(Exit->isTerminator() && "Expect terminator!");
-      BasicBlock *TargetBlock = Exit->getTargetBlock();
-      if (!DFBlocks.count(TargetBlock))
-        continue;
-
-      Branches.push_back(Exit);
-    }
-
-    if (Branches.empty())
+    std::set<BasicBlock*> Succs(succ_begin(BB), succ_end(BB));
+    set_intersect(Succs, DFBlocks);
+    if (Succs.empty())
       return;
 
     VASTSchedUnit *Snk = getOrCreateSyncSnk(BB);
-    while (!Branches.empty())
-      Branches.pop_back_val()->addDep(Snk, VASTDep::CreateCtrlDep(0));
+
+    typedef std::set<BasicBlock*>::iterator iterator;
+    for (iterator I = Succs.begin(), E = Succs.end(); I != E; ++I) {
+      BasicBlock *Succ = *I;
+      getOrCreateSyncSrc(Succ)->addDep(Snk, VASTDep::CreateSyncDep());
+    }
 
     for (unsigned i = 0, e = BUSUs.size(); i < e; ++i)
       static_cast<SubClass*>(this)->buildDep(TDSUs[i], Snk);

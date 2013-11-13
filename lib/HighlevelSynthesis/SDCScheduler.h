@@ -97,7 +97,7 @@ private:
   SoftCstrVecTy SoftConstraints;
 
   // The scheduling unit with conditional dependencies.
-  std::vector<VASTSchedUnit*> ConditionalSUs;
+  std::vector<VASTSchedUnit*> ConditionalSUs, SynchronizeSUs;
 
   // Build constraints -Slack + BigM * AuxVar >= 0 and
   // Sum (AuxVar) <= Number of Slack - 1, where AuxVar is either 0 or 1.
@@ -106,11 +106,15 @@ private:
   void addConditionalConstraints(VASTSchedUnit *SU);
   void addConditionalConstraints();
 
+  void addSynchronizeConstraints(VASTSchedUnit *SU);
+  void addSynchronizeConstraints();
+
   // Create step variables, which represent the c-step that the VSUnits are
   // scheduled to.
   unsigned createStepVariable(const VASTSchedUnit *U, unsigned Col);
   unsigned createSlackVariable(unsigned Col, int UB, int LB);
   unsigned createVarForCndDeps(unsigned Col);
+  unsigned createVarForSyncDeps(unsigned Col);
 
   // Dst - Src >= C - V
   void addConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,

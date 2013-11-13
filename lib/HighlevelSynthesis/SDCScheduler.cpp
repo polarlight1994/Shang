@@ -134,6 +134,7 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   set_lowbo(lp, Col, EntrySlot);
   return Col + 1;
 }
+
 unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB) {
   add_columnex(lp, 0, 0,0);
   DEBUG(std::string SlackName = "slack" + utostr_32(Col);
@@ -159,6 +160,12 @@ unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
   return Col;
 }
 
+unsigned SDCScheduler::createVarForSyncDeps(unsigned Col) {
+  int Bound = getCriticalPathLength() * BigMMultiplier;
+
+  return createSlackVariable(Col, Bound, -Bound);
+}
+
 unsigned SDCScheduler::createLPAndVariables() {
   lp = make_lp(0, 0);
   unsigned Col =  1;
@@ -170,19 +177,32 @@ unsigned SDCScheduler::createLPAndVariables() {
     Col = createStepVariable(U, Col);
 
     bool HasCndDep = false;
+    bool HasSyncDep = false;
 
     // Allocate slack variable and connect variable for conditional edges.
     typedef VASTSchedUnit::dep_iterator dep_iterator;
     for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
-      if (I.getEdgeType() != VASTDep::Conditional) {
+      if (I.getEdgeType() == VASTDep::Conditional) {
         Col = createVarForCndDeps(Col);
         HasCndDep = true;
         continue;
       }
+
+      if (I.getEdgeType() == VASTDep::Synchronize) {
+        assert((*I)->isSyncSnk() && "Unexpected dependence type for sync edge!");
+        HasSyncDep = true;
+        continue;
+      }
     }
 
-    if (HasCndDep)
+    if (HasCndDep) {
+      assert(U->isBBEntry() && "Unexpected SU type for conditional edges!");
       ConditionalSUs.push_back(U);
+    } else if (HasSyncDep) {
+      assert(U->isSyncSrc() && "Unexpected SU type for synchronize edges!");
+      Col = createVarForSyncDeps(Col);
+      SynchronizeSUs.push_back(U);
+    }
   }
 
   typedef SoftCstrVecTy::iterator iterator;
@@ -360,6 +380,7 @@ unsigned SDCScheduler::buildSchedule(lprec *lp) {
 }
 
 bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
+  set_verbose(lp, NORMAL);
   DEBUG(set_verbose(lp, FULL));
 
   if (PreSolve) {
@@ -376,7 +397,8 @@ bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
   DEBUG(write_lp(lp, "log.lp"));
 
   unsigned TotalRows = get_Nrows(lp), NumVars = get_Ncolumns(lp);
-  DEBUG(dbgs() << "The model has " << NumVars << "x" << TotalRows << '\n');
+  dbgs() << "The model has " << NumVars << "x" << TotalRows
+         << ", conditional nodes: " << ConditionalSUs.size() << '\n';
 
   DEBUG(dbgs() << "Timeout is set to " << get_timeout(lp) << "secs.\n");
 
@@ -385,7 +407,7 @@ bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
   int result = solve(lp);
 
   DEBUG(dbgs() << "ILP result is: "<< get_statustext(lp, result) << "\n");
-  DEBUG(dbgs() << "Time elapsed: " << time_elapsed(lp) << "\n");
+  dbgs() << "Time elapsed: " << time_elapsed(lp) << "\n";
   DEBUG(dbgs() << "Object: " << get_var_primalresult(lp, 0) << "\n");
 
   switch (result) {
@@ -408,6 +430,8 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   SmallVector<int, 8> Cols;
   SmallVector<REAL, 8> Coeffs;
 
+  // Note that we had allocated variables for the slacks, these variables are
+  // right after the step variable of SU.
   int CurSlackIdx = getSUIdx(SU) + 1;
   typedef VASTSchedUnit::dep_iterator dep_iterator;
   for (dep_iterator I = SU->dep_begin(), E = SU->dep_end(); I != E; ++I) {
@@ -446,6 +470,52 @@ void SDCScheduler::addConditionalConstraints() {
   typedef std::vector<VASTSchedUnit*>::iterator iterator;
   for (iterator I = ConditionalSUs.begin(), E = ConditionalSUs.end(); I != E; ++I)
     addConditionalConstraints(*I);
+}
+
+static void BuildPredecessorMap(VASTSchedUnit *SU,
+                                DenseMap<BasicBlock*, VASTSchedUnit*> &Map) {
+  assert(SU->isBBEntry() && "Unexpected SU type!");
+
+  typedef VASTSchedUnit::dep_iterator dep_iterator;
+  for (dep_iterator I = SU->dep_begin(), E = SU->dep_end(); I != E; ++I) {
+    assert(I.getEdgeType() == VASTDep::Conditional && "Unexpected edge type!");
+
+    VASTSchedUnit *Dep = *I;
+    assert(Dep->isTerminator() && "Bad Dep type of BBEntry!");
+    Map.insert(std::make_pair(Dep->getParent(), Dep));
+  }
+}
+
+void SDCScheduler::addSynchronizeConstraints(VASTSchedUnit *SU) {
+  unsigned SrcIdx = getSUIdx(SU);
+
+  // Note that we had allocated variables for the slacks, these variables are
+  // right after the step variable of SU.
+  unsigned SlackIdx = SrcIdx + 1;
+  VASTSchedUnit *Entry = G.getEntrySU(SU->getParent());
+  // Calculate the slack from Entry to SU: Slack = SU - Entry.
+  addConstraint(lp, Entry, SU, 0, SlackIdx, EQ);
+
+  DenseMap<BasicBlock*, VASTSchedUnit*> PredecessorMap;
+  BuildPredecessorMap(Entry, PredecessorMap);
+
+  typedef VASTSchedUnit::dep_iterator dep_iterator;
+  for (dep_iterator I = SU->dep_begin(), E = SU->dep_end(); I != E; ++I) {
+    assert(I.getEdgeType() == VASTDep::Synchronize && "Unexpected edge type!");
+
+    VASTSchedUnit *Dep = *I;
+    VASTSchedUnit *PredExit = PredecessorMap.lookup(Dep->getParent());
+    // The slack from the corresponding exit to Dep must no greater than the
+    // slack from Entry to SU, i.e.
+    // Dep - Exit <= SU - Entry
+    addConstraint(lp, PredExit, Dep, 0, SlackIdx, GE);
+  }
+}
+
+void SDCScheduler::addSynchronizeConstraints() {
+  typedef std::vector<VASTSchedUnit*>::iterator iterator;
+  for (iterator I = SynchronizeSUs.begin(), E = SynchronizeSUs.end(); I != E; ++I)
+    addSynchronizeConstraints(*I);
 }
 
 void SDCScheduler::addDependencyConstraints(lprec *lp) {
@@ -492,6 +562,8 @@ void SDCScheduler::addDependencyConstraints() {
 
   // Build the constraints.
   addDependencyConstraints(lp);
+  addSynchronizeConstraints();
+
   addConditionalConstraints();
 
   // Turn off the add rowmode and start to solve the model.
