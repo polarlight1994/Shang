@@ -496,8 +496,6 @@ public:
   // Remove virtual SU before emitting the scheduling.
   void removeVirualNodes();
 
-  static int idx_less(VASTSchedUnit *const *LHS, VASTSchedUnit *const *RHS);
-
   template<typename T>
   void sortSUs(T F) {
     typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator

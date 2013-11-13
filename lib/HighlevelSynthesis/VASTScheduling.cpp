@@ -265,11 +265,7 @@ void VASTSchedGraph::resetSchedule() {
   getEntry()->scheduleTo(1);
 }
 
-int VASTSchedGraph::idx_less(VASTSchedUnit *const *LHS,
-                             VASTSchedUnit *const *RHS) {
-  if ((*LHS)->getSchedule() != (*RHS)->getSchedule())
-    return (*LHS)->getSchedule() < (*RHS)->getSchedule() ? -1 : 1;
-
+static int idx_less(VASTSchedUnit *const *LHS, VASTSchedUnit *const *RHS) {
   if ((*LHS)->getIdx() < (*RHS)->getIdx()) return -1;
   if ((*LHS)->getIdx() > (*RHS)->getIdx()) return 1;
 
