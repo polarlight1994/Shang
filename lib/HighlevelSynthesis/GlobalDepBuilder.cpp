@@ -255,7 +255,7 @@ struct GlobalDependenciesBuilderBase  {
   }
 
   typedef std::map<BasicBlock*, VASTSchedUnit*> SyncMapTy;
-  SyncMapTy Srcs;
+  SyncMapTy Srcs, Snks;
 
   VASTSchedUnit *getOrCreateSyncNode(BasicBlock *BB, SyncMapTy &Map,
                                      VASTSchedUnit::Type T) {
@@ -272,6 +272,12 @@ struct GlobalDependenciesBuilderBase  {
 
     if (Node->dep_empty())
       Node->addDep(G.getEntrySU(BB), VASTDep::CreateCtrlDep(0));
+
+    return Node;
+  }
+
+  VASTSchedUnit *getOrCreateSyncSnk(BasicBlock *BB) {
+    VASTSchedUnit *Node = getOrCreateSyncNode(BB, Snks, VASTSchedUnit::SyncSnk);
 
     return Node;
   }
@@ -327,11 +333,14 @@ struct GlobalDependenciesBuilderBase  {
     if (Branches.empty())
       return;
 
-    for (unsigned i = 0, e = BUSUs.size(); i < e; ++i)
-      for (unsigned j = 0; j < Branches.size(); ++j)
-        static_cast<SubClass*>(this)->buildDep(TDSUs[i], Branches[j]);
+    VASTSchedUnit *Snk = getOrCreateSyncSnk(BB);
+    while (!Branches.empty())
+      Branches.pop_back_val()->addDep(Snk, VASTDep::CreateCtrlDep(0));
 
-    BUSUs.append(Branches.begin(), Branches.end());
+    for (unsigned i = 0, e = BUSUs.size(); i < e; ++i)
+      static_cast<SubClass*>(this)->buildDep(TDSUs[i], Snk);
+
+    BUSUs.push_back(Snk);
   }
 
   void buildDependenciesBottonUp(DomTreeNode *Node) {
@@ -366,6 +375,16 @@ struct GlobalDependenciesBuilderBase  {
       // consumed by the previous dependencies building function.
       if (DFBlocks.count(BB))
         buildDepFromDFBlock(BB, BUSUs);
+    }
+
+    // If we have nodes that reach the root of the dominator tree without
+    // finding any dependencies, we can simply making the entry node of the
+    // graph as the dependence of these nodes.
+    VASTSchedUnit *Entry = G.getEntry();
+    while (!BUSUs.empty()) {
+      VASTSchedUnit *SU = BUSUs.pop_back_val();
+
+      SU->addDep(Entry, VASTDep::CreateCtrlDep(0));
     }
   }
 
@@ -726,11 +745,11 @@ AliasRegionDepBuilder::buildDependencies(SmallVectorImpl<VASTSchedUnit*> &BUSUs,
   for (unsigned i = 0, e = BUSUs.size(); i != e; ++i) {
     bool AnyAlias = false;
     VASTSchedUnit *Dst = BUSUs[i];
-    bool IsDstTerminator = Dst->isTerminator();
+    bool IsDstSyncSnk = Dst->isSyncSnk();
 
     for (unsigned j = 0; j < TDSUs.size(); ++j) {
       VASTSchedUnit *Src = TDSUs[j];
-      if (!IsDstTerminator &&
+      if (!IsDstSyncSnk &&
           !isHasDependencies(Dst->getInst(), Src->getInst(), &AA))
         continue;
       
@@ -738,7 +757,7 @@ AliasRegionDepBuilder::buildDependencies(SmallVectorImpl<VASTSchedUnit*> &BUSUs,
       AnyAlias |= true;
     }
 
-    if (AnyAlias && !IsDstTerminator) {
+    if (AnyAlias && !IsDstSyncSnk) {
       BUSUs.erase(BUSUs.begin() + i);
       --i;
       --e;
