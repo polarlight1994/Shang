@@ -99,15 +99,14 @@ struct GlobalFlowAnalyzer {
   void initializeDomTreeLevel();
 
   // Determinate the insertion points for the PHIs.
-  template<typename AccessSetTy, typename InitLiveInsFN>
+  template<typename AccessSetTy>
   void determineInsertionPoint(BBSet &DFBlocks, const AccessSetTy &DefMap,
-                               const AccessSetTy &UseMap,
-                               InitLiveInsFN &InitLiveIns) {
+                               const AccessSetTy &UseMap) {
     initializeDomTreeLevel();
 
     // Determine in which blocks the FU's flow is alive.
     SmallPtrSet<BasicBlock*, 32> LiveInBlocks;
-    computeLiveInBlocks<AccessSetTy>(LiveInBlocks, DefMap, UseMap, InitLiveIns);
+    computeLiveInBlocks<AccessSetTy>(LiveInBlocks, DefMap, UseMap);
 
     // Use a priority queue keyed on dominator tree level so that inserted nodes
     // are handled from the bottom of the dominator tree upwards.
@@ -192,9 +191,9 @@ struct GlobalFlowAnalyzer {
     dbgs() << "\n\n";);
   }
 
-  template<typename AccessSetTy, typename InitLiveInsFN>
+  template<typename AccessSetTy>
   void computeLiveInBlocks(BBSet &LiveInBlocks, const AccessSetTy &DefMap,
-                           const AccessSetTy &UseMap, InitLiveInsFN &InitLiveIns) {
+                           const AccessSetTy &UseMap) {
     // To determine liveness, we must iterate through the predecessors of blocks
     // where the def is live.  Blocks are added to the worklist if we need to
     // check their predecessors.  Start with all the using blocks.
@@ -202,7 +201,16 @@ struct GlobalFlowAnalyzer {
     // block, the define block is also a live-in block.
     SmallVector<BasicBlock*, 64> LiveInBlockWorklist;
 
-    InitLiveIns(LiveInBlockWorklist, DefMap, UseMap);
+    // Add Both Def and Use to liveins, because the WAR dependencies cannot be
+    // resolved by renaming here. At the same time, do not add the same block
+    // twice.
+    typedef AccessSetTy::const_iterator iterator;
+    for (iterator I = UseMap.begin(), E = UseMap.end(); I != E; ++I)
+      LiveInBlockWorklist.push_back(I->first);
+
+    for (iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
+      if (!UseMap.count(I->first))
+        LiveInBlockWorklist.push_back(I->first);
 
     // Now that we have a set of blocks where the phi is live-in, recursively
     // add their predecessors until we find the full region the value is live.
@@ -302,18 +310,6 @@ struct GlobalDependenciesBuilderBase  {
     SUs.append(SUsInBlock.begin(), SUsInBlock.end());
   }
 
-  static void InitLiveins(SmallVectorImpl<BasicBlock*> &LiveInBlockWorklist,
-                          const AccessMapTy &DefMap, const AccessMapTy &UseMap) {
-    // Add Both Def and Use to liveins, but do not add the same block twice.
-    typedef AccessMapTy::const_iterator iterator;
-    for (iterator I = UseMap.begin(), E = UseMap.end(); I != E; ++I)
-      LiveInBlockWorklist.push_back(I->first);
-
-    for (iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
-      if (!UseMap.count(I->first))
-        LiveInBlockWorklist.push_back(I->first);
-  }
-
   void buildCtrlDepToSyncPoint(BasicBlock *BB, ArrayRef<VASTSchedUnit*> TDSUs,
                                SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
     std::set<BasicBlock*> Succs(succ_begin(BB), succ_end(BB));
@@ -382,7 +378,7 @@ struct GlobalDependenciesBuilderBase  {
 
   void constructGlobalFlow() {
     // Build the dependency across the basic block boundaries.
-    GFA.determineInsertionPoint(DFBlocks, DefMap, UseMap, SubClass::InitLiveins);
+    GFA.determineInsertionPoint(DFBlocks, DefMap, UseMap);
 
     DomTreeNode *Root = GFA.DT.getRootNode();
 
