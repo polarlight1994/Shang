@@ -860,7 +860,7 @@ struct LoopWARDepBuilder {
       addUser(*I);
   }
 
-  void addSUs(PHINode *PN);
+  void initializeUseDefForPHI(PHINode *PN);
   void buildDepandencies();
   void rememberEdge(BasicBlock *SrcBB, BasicBlock *DstBB);
   VASTSchedUnit *getCFGEdge(BasicBlock *SrcBB, BasicBlock *DstBB);
@@ -984,7 +984,7 @@ bool LoopWARDepBuilder::propagateDomUpdateSUs(BasicBlock *BB) {
     DomUpdateSUs[BB].insert(SuccUpdateSet.begin(), SuccUpdateSet.end());
   }
 
-  return AnyUpdateSU;
+  return AnyUpdateSU || DomUpdateSUs.count(BB);
 }
 
 VASTSchedUnit *
@@ -1043,7 +1043,7 @@ void LoopWARDepBuilder::buildDepandencies() {
   }
 }
 
-void LoopWARDepBuilder::addSUs(PHINode *PN) {
+void LoopWARDepBuilder::initializeUseDefForPHI(PHINode *PN) {
   BasicBlock *Header = L->getHeader();
   ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[PN]);
   for (unsigned i = 0; i < SUs.size(); ++i) {
@@ -1056,8 +1056,10 @@ void LoopWARDepBuilder::addSUs(PHINode *PN) {
 
     // Collect the update SU from the BackEdge.
     BasicBlock *Incoming = SU->getIncomingBlock();
-    if (L->contains(Incoming))
-      DomUpdateSUs[SU->getIncomingBlock()].insert(SU);
+    if (L->contains(Incoming)) {
+      assert(Incoming == SU->getParent() && "Bad parent for PHI incoming node!");
+      DomUpdateSUs[SU->getParent()].insert(SU);
+    }
   }
 }
 
@@ -1068,8 +1070,9 @@ void VASTScheduling::buildWARDepForPHIs(Loop *L) {
   typedef BasicBlock::iterator iterator;
   for (iterator I = Header->begin(), E = Header->getFirstNonPHI(); I != E; ++I){
     PHINode *PN = cast<PHINode>(I);
+
     LoopWARDepBuilder WARDepBuilder(L, DT, IR2SUMap);
-    WARDepBuilder.addSUs(PN);
+    WARDepBuilder.initializeUseDefForPHI(PN);
     WARDepBuilder.buildDepandencies();
   }
 }
