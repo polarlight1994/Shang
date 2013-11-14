@@ -860,7 +860,9 @@ struct LoopWARDepBuilder {
       addUser(*I);
   }
 
-  void initializeUseDefForPHI(PHINode *PN);
+  bool initializeUseDefForPHI(PHINode *PN);
+  void initializeUseDefForBackEdge();
+
   void buildDepandencies();
   void rememberEdge(BasicBlock *SrcBB, BasicBlock *DstBB);
   VASTSchedUnit *getCFGEdge(BasicBlock *SrcBB, BasicBlock *DstBB);
@@ -1037,8 +1039,14 @@ void LoopWARDepBuilder::buildDepandencies() {
   }
 }
 
-void LoopWARDepBuilder::initializeUseDefForPHI(PHINode *PN) {
-  ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[PN]);
+bool LoopWARDepBuilder::initializeUseDefForPHI(PHINode *PN) {
+  IR2SUMapTy::iterator J = IR2SUMap.find(PN);
+
+  // Ignore the dead PHINodes.
+  if (J == IR2SUMap.end())
+    return false;
+
+  ArrayRef<VASTSchedUnit*> SUs(J->second);
   for (unsigned i = 0; i < SUs.size(); ++i) {
     VASTSchedUnit *SU = SUs[i];
     // Collect the user of the PHI node.
@@ -1054,6 +1062,39 @@ void LoopWARDepBuilder::initializeUseDefForPHI(PHINode *PN) {
       DomUpdateSUs[SU->getParent()].insert(SU);
     }
   }
+
+  return true;
+}
+
+void LoopWARDepBuilder::initializeUseDefForBackEdge() {
+  BasicBlock *Header = L->getHeader();
+
+  ArrayRef<VASTSchedUnit*> Incomings(IR2SUMap[Header]);
+  for (unsigned i = 0; i < Incomings.size(); ++i) {
+    VASTSchedUnit *SU = Incomings[i];
+
+    BasicBlock *IncomingBB = SU->getParent();
+    if (SU->isTerminator() && L->contains(IncomingBB))
+      DomUpdateSUs[IncomingBB].insert(SU);
+  }
+
+  // Prevent implicit software pipelining by pretending the branching operations
+  // in the exiting blocks of the loop using the Backedge. By doing this, we
+  // ensure the exiting blocks will not loop back until the whole block is
+  // finished.
+  SmallVector<BasicBlock*, 4> Exits;
+  L->getExitingBlocks(Exits);
+  for (unsigned i = 0, e = Exits.size(); i != e; ++i) {
+    BasicBlock *Exiting = Exits[i];
+    ArrayRef<VASTSchedUnit*> Brs(IR2SUMap[Exiting->getTerminator()]);
+    for (unsigned j = 0; j < Brs.size(); ++j) {
+      VASTSchedUnit *SU = Brs[j];
+      if (SU->isTerminator() && SU->getTargetBlock() == Header)
+        continue;
+      
+      addUser(SU);
+    }
+  }
 }
 
 void VASTScheduling::buildWARDepForPHIs(Loop *L) {
@@ -1065,7 +1106,11 @@ void VASTScheduling::buildWARDepForPHIs(Loop *L) {
     PHINode *PN = cast<PHINode>(I);
 
     LoopWARDepBuilder WARDepBuilder(L, DT, IR2SUMap);
-    WARDepBuilder.initializeUseDefForPHI(PN);
-    WARDepBuilder.buildDepandencies();
+    if (WARDepBuilder.initializeUseDefForPHI(PN))
+      WARDepBuilder.buildDepandencies();
   }
+
+  LoopWARDepBuilder WARDepBuilder(L, DT, IR2SUMap);
+  WARDepBuilder.initializeUseDefForBackEdge();
+  WARDepBuilder.buildDepandencies();
 }
