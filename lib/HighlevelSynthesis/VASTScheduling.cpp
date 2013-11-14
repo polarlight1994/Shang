@@ -763,15 +763,21 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 
   // Also create the SUnit for the PHI Nodes.
   typedef BasicBlock::iterator iterator;
-  for (iterator I = BB->begin(), E = BB->getFirstNonPHI(); I != E; ++I) {
+  for (iterator I = BB->begin(); isa<PHINode>(I); ++I) {
     PHINode *PN = cast<PHINode>(I);
+    IR2SUMapTy::iterator J = IR2SUMap.find(PN);
+
+    // Ignore the dead PHINodes.
+    if (J == IR2SUMap.end())
+      continue;
+
     VASTSchedUnit *U = G->createSUnit(PN, VASTSchedUnit::SyncJoin, 0, 0);
 
     // No need to add the dependency edges from the incoming values, because
     // the SU is anyway scheduled to the same slot as the entry of the BB.
     // And we will build the conditional dependencies for the conditional
     // CFG edge between BBs.
-    IR2SUMap[PN].push_back(U);
+    J->second.push_back(U);
   }
 
   return Entry;
@@ -920,13 +926,18 @@ void VASTScheduling::tightReturns(BasicBlock *BB) {
 
 void VASTScheduling::buildSyncEdgeForPHIs(BasicBlock *BB) {
   typedef BasicBlock::iterator iterator;
-  for (iterator I = BB->begin(), E = BB->getFirstNonPHI(); I != E; ++I) {
+  for (iterator I = BB->begin(); isa<PHINode>(I); ++I) {
     PHINode *PN = cast<PHINode>(I);
 
+    IR2SUMapTy::iterator J = IR2SUMap.find(PN);
+
+    // Ignore the dead PHINodes.
+    if (J == IR2SUMap.end())
+      continue;
+
     VASTSchedUnit *PHIJoin = 0;
-    
     // Find the join node
-    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[PN]);
+    ArrayRef<VASTSchedUnit*> SUs(J->second);
     for (unsigned i = 0; i < SUs.size(); ++i) {
       if (!SUs[i]->isPHI())
         continue;
@@ -936,6 +947,8 @@ void VASTScheduling::buildSyncEdgeForPHIs(BasicBlock *BB) {
     }
 
     // Build the dependence edge to the join node.
+    assert(PHIJoin && "PHIJoin not built?");
+
     for (unsigned i = 0; i < SUs.size(); ++i) {
       if (SUs[i]->isPHI())
         continue;
