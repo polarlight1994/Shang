@@ -204,7 +204,7 @@ struct GlobalFlowAnalyzer {
     // Add Both Def and Use to liveins, because the WAR dependencies cannot be
     // resolved by renaming here. At the same time, do not add the same block
     // twice.
-    typedef AccessSetTy::const_iterator iterator;
+    typedef typename AccessSetTy::const_iterator iterator;
     for (iterator I = UseMap.begin(), E = UseMap.end(); I != E; ++I)
       LiveInBlockWorklist.push_back(I->first);
 
@@ -1044,7 +1044,6 @@ void LoopWARDepBuilder::buildDepandencies() {
 }
 
 void LoopWARDepBuilder::initializeUseDefForPHI(PHINode *PN) {
-  BasicBlock *Header = L->getHeader();
   ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[PN]);
   for (unsigned i = 0; i < SUs.size(); ++i) {
     VASTSchedUnit *SU = SUs[i];
