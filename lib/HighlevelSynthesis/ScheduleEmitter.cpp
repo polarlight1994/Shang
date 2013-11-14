@@ -404,14 +404,9 @@ bool ScheduleEmitter::emitToFirstSlot(VASTSlot *ToSlot,
   for (unsigned i = 1; i < SUs.size(); ++i) {
     VASTSchedUnit *SU = SUs[i];
 
-    assert(!SU->isVirtual() && "Unexpected virtual node!");
-
     // Only emit the SUs in the same slot with the entry.
     if (SU->getSchedule() != EntrySlot)
       return true;
-
-    // Ignore the pseudo scheduling units.
-    if (SU->isPHI()) continue;
 
     emitToSlot(SU->getSeqOp(), ToSlot);
   }
@@ -435,8 +430,6 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   
   for (unsigned i = 1; i < SUs.size(); ++i) {
     VASTSchedUnit *CurSU = SUs[i];
-
-    assert(!CurSU->isVirtual() && "Unexpected virtual node!");
 
     unsigned CurSchedSlot = CurSU->getSchedule();
 
