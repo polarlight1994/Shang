@@ -898,17 +898,11 @@ void LoopWARDepBuilder::buildDepandencies(BasicBlock *BB) {
       if (U == Updater)
         continue;
 
-      // Avoid dependency cycle: If we require both U >= Updater and Updater >= U,
-      // then we can simply use U == Updater
-      if (U->isDependsOn(Updater)) {
-        assert(U->getEdgeFrom(Updater).getLatency() == 0
-                && "Not able to handle contradictory constraint!");
-        U->removeDep(Updater);
-        U->addDep(Updater, VASTDep::CreateFixTimingConstraint(0));
-        continue;
-      }
-      
-      Updater->addDep(U, VASTDep::CreateCtrlDep(0));
+      // We may introduce dependence cycles here. But it is ok since the cycle
+      // is not a negative cycle. Detecting the cycles require some SCC algorithm,
+      // for now, simply create memory dependency so that the scheduler do not
+      // complain these cycles.
+      Updater->addDep(U, VASTDep::CreateMemDep(0, 0));
     }
   }
   
