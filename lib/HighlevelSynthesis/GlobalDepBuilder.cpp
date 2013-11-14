@@ -841,8 +841,11 @@ void VASTScheduling::buildMemoryDependencies() {
 }
 
 namespace {
-struct PHIWARDepBuilder {
+struct LoopWARDepBuilder {
   Loop *L;
+  DominatorTree *DT;
+  IR2SUMapTy &IR2SUMap;
+
   // Mapping a basic block to the scheduling units that are dominated by the
   // BB and update the PHI node.
   std::map<BasicBlock*, std::set<VASTSchedUnit*> > DomUpdateSUs;
@@ -861,21 +864,19 @@ struct PHIWARDepBuilder {
       addUser(*I);
   }
 
-  DominatorTree *DT;
-  IR2SUMapTy &IR2SUMap;
-
+  void addSUs(PHINode *PN);
   void buildDepandencies();
   void rememberEdge(BasicBlock *SrcBB, BasicBlock *DstBB);
   VASTSchedUnit *getCFGEdge(BasicBlock *SrcBB, BasicBlock *DstBB);
   bool propagateDomUpdateSUs(BasicBlock *BB);
   void buildDepandencies(BasicBlock *BB);
 
-  PHIWARDepBuilder(Loop *L, DominatorTree *DT, IR2SUMapTy &IR2SUMap)
+  LoopWARDepBuilder(Loop *L, DominatorTree *DT, IR2SUMapTy &IR2SUMap)
     : L(L), DT(DT), IR2SUMap(IR2SUMap) {}
 };
 }
 
-void PHIWARDepBuilder::buildDepandencies(BasicBlock *BB) {
+void LoopWARDepBuilder::buildDepandencies(BasicBlock *BB) {
   std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator J
     = Users.find(BB);
 
@@ -898,12 +899,6 @@ void PHIWARDepBuilder::buildDepandencies(BasicBlock *BB) {
     for (unsigned i = 0; i < CurUsers.size(); ++i) {
       VASTSchedUnit *U = CurUsers[i];
 
-      // Translate the PHI latch to the corresponding branching operation.
-      // Because the PHI latch will anyway scheduled to the same cycle with that
-      // branching operation.
-      if (U->isPHILatch())
-        U = getCFGEdge(BB, U->getInst()->getParent());
-
       if (U == Updater)
         continue;
 
@@ -923,7 +918,22 @@ void PHIWARDepBuilder::buildDepandencies(BasicBlock *BB) {
   
 }
 
-bool PHIWARDepBuilder::propagateDomUpdateSUs(BasicBlock *BB) {
+static void VerifyCtrlDep(VASTSchedUnit *SU) {
+  BasicBlock *ParentBB = SU->getParent();
+
+  typedef VASTSchedUnit::dep_iterator dep_iterator;
+  // Build the constraint for Dst_SU_startStep - Src_SU_endStep >= Latency.
+  for (dep_iterator DI = SU->dep_begin(), DE = SU->dep_end(); DI != DE; ++DI) {
+    VASTSchedUnit *Dep = *DI;
+
+    if (Dep->isBBEntry() && Dep->getParent() == ParentBB)
+      return;
+  }
+
+  llvm_unreachable("Control Dependencies for PHI updates missed!");
+}
+
+bool LoopWARDepBuilder::propagateDomUpdateSUs(BasicBlock *BB) {
   bool AnyUpdateSU = false;
 
   for (succ_iterator I = succ_begin(BB), E = succ_end(BB); I != E; ++I) {
@@ -931,7 +941,7 @@ bool PHIWARDepBuilder::propagateDomUpdateSUs(BasicBlock *BB) {
 
     std::map<BasicBlock*, std::set<VASTSchedUnit*> >::iterator J
       = DomUpdateSUs.find(Succ);
-    if (J == DomUpdateSUs.end() && Succ != L->getHeader())
+    if (J == DomUpdateSUs.end())
       continue;
 
     AnyUpdateSU |= true;
@@ -954,12 +964,26 @@ bool PHIWARDepBuilder::propagateDomUpdateSUs(BasicBlock *BB) {
     // never be scheduled before B (i.e. there are implicit dependencies from
     // B to SUs in the update set.), and we build a dependencies to B,
     // now we have a chain of dependencies from USs in A to update set.
+    std::set<VASTSchedUnit*> &SuccUpdateSet = J->second;
+    assert(!SuccUpdateSet.empty() && "Unexpected empty update set!");
+
     if (!DT->properlyDominates(BB, Succ)) {
-      rememberEdge(BB, Succ);
+
+      // Remember the branch from current BB to Succ BB as the dominated updater.
+      // and we will build dependencies from the PHI users in this BB to the
+      // branch operation, then we also build a control dependencies from the
+      // entry of Succ to all updates that dominated by Succ. By doing this,
+      // we build dependency edge User->(branch/entry)->updater.
+      if (Succ != L->getHeader())
+        rememberEdge(BB, Succ);
+
+#ifndef NDEBUG
+      std::for_each(SuccUpdateSet.begin(), SuccUpdateSet.end(), VerifyCtrlDep);
+#endif
+
       continue;
     }
 
-    std::set<VASTSchedUnit*> &SuccUpdateSet = J->second;
 
     DomUpdateSUs[BB].insert(SuccUpdateSet.begin(), SuccUpdateSet.end());
   }
@@ -968,7 +992,7 @@ bool PHIWARDepBuilder::propagateDomUpdateSUs(BasicBlock *BB) {
 }
 
 VASTSchedUnit *
-PHIWARDepBuilder::getCFGEdge(BasicBlock *SrcBB, BasicBlock *DstBB) {
+LoopWARDepBuilder::getCFGEdge(BasicBlock *SrcBB, BasicBlock *DstBB) {
   ArrayRef<VASTSchedUnit*> Exits(IR2SUMap[SrcBB->getTerminator()]);
   for (unsigned i = 0; i < Exits.size(); ++i) {
     VASTSchedUnit *Exit = Exits[i];
@@ -982,38 +1006,12 @@ PHIWARDepBuilder::getCFGEdge(BasicBlock *SrcBB, BasicBlock *DstBB) {
   return 0;
 }
 
-void PHIWARDepBuilder::rememberEdge(BasicBlock *SrcBB, BasicBlock *DstBB) {
+void LoopWARDepBuilder::rememberEdge(BasicBlock *SrcBB, BasicBlock *DstBB) {
   DomUpdateSUs[SrcBB].insert(getCFGEdge(SrcBB, DstBB));
 }
 
-void PHIWARDepBuilder::buildDepandencies() {
+void LoopWARDepBuilder::buildDepandencies() {
   BasicBlock *Header = L->getHeader();
-
-  // Collect the user of the PHI nodes, for them we build the WAR dependencies.
-  typedef BasicBlock::iterator iterator;
-  for (iterator I = Header->begin(), E = Header->getFirstNonPHI(); I != E; ++I){
-    PHINode *PN = cast<PHINode>(I);
-
-    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[PN]);
-    for (unsigned i = 0; i < SUs.size(); ++i) {
-      VASTSchedUnit *SU = SUs[i];
-      if (SU->isPHI())
-        addPHI(SU);
-    }
-  }
-
-  // Prevent implicit software pipelining by pretending the branching operations
-  // in the exiting blocks of the loop using the PHI. By doing this, we ensure
-  // the exiting blocks will not loop back until the whole block is finished.
-  SmallVector<BasicBlock*, 4> Exits;
-  L->getExitingBlocks(Exits);
-  for (unsigned i = 0, e = Exits.size(); i != e; ++i) {
-    BasicBlock *Exiting = Exits[i];
-    ArrayRef<VASTSchedUnit*> Brs(IR2SUMap[Exiting->getTerminator()]);
-    for (unsigned j = 0; j < Brs.size(); ++j)
-      addUser(Brs[j]);
-  }
-
   std::vector<std::pair<BasicBlock*, succ_iterator> > WorkStack;
   std::set<BasicBlock*> Visited;
 
@@ -1049,6 +1047,33 @@ void PHIWARDepBuilder::buildDepandencies() {
   }
 }
 
+void LoopWARDepBuilder::addSUs(PHINode *PN) {
+  BasicBlock *Header = L->getHeader();
+  ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[PN]);
+  for (unsigned i = 0; i < SUs.size(); ++i) {
+    VASTSchedUnit *SU = SUs[i];
+    // Collect the user of the PHI node.
+    if (SU->isPHI()) {
+      addPHI(SU);
+      continue;
+    }
+
+    // Collect the update SU from the BackEdge.
+    BasicBlock *Incoming = SU->getIncomingBlock();
+    if (L->contains(Incoming))
+      DomUpdateSUs[SU->getIncomingBlock()].insert(SU);
+  }
+}
+
 void VASTScheduling::buildWARDepForPHIs(Loop *L) {
-  PHIWARDepBuilder(L, DT, IR2SUMap).buildDepandencies();
+  BasicBlock *Header = L->getHeader();
+
+  // Collect the user of the PHI nodes, for them we build the WAR dependencies.
+  typedef BasicBlock::iterator iterator;
+  for (iterator I = Header->begin(), E = Header->getFirstNonPHI(); I != E; ++I){
+    PHINode *PN = cast<PHINode>(I);
+    LoopWARDepBuilder WARDepBuilder(L, DT, IR2SUMap);
+    WARDepBuilder.addSUs(PN);
+    WARDepBuilder.buildDepandencies();
+  }
 }
