@@ -135,7 +135,7 @@ public:
     BlockEntry,
     Launch, Latch,
     // Synchronization nodes.
-    SyncSnk, SyncSrc,
+    SyncBarrier, SyncJoin,
     // Invalide node for the ilist sentinel
     Invalid
   };
@@ -261,17 +261,17 @@ public:
   bool isEntry() const { return T == Entry; }
   bool isExit() const { return T == Exit; }
   bool isBBEntry() const { return T == BlockEntry; }
-  bool isSync() const { return T == SyncSnk || T == SyncSrc; }
-  bool isSyncSnk() const { return T == SyncSnk; }
-  bool isSyncSrc() const { return T == SyncSrc; }
+  bool isSync() const { return T == SyncBarrier || T == SyncJoin; }
+  bool isSyncBarrier() const { return T == SyncBarrier; }
+  bool isSyncJoin() const { return T == SyncJoin; }
   bool isVirtual() const { return isEntry() || isExit() || isSync(); }
 
   bool isPHI() const {
-    return Inst && isa<PHINode>(getInst()) && isSyncSrc();
+    return Inst && isa<PHINode>(getInst()) && isSyncJoin();
   }
 
   bool isPHILatch() const {
-    return SeqOp && isa<PHINode>(getInst()) && isSyncSnk();
+    return SeqOp && isa<PHINode>(getInst()) && isSyncBarrier();
   }
 
   Instruction *getInst() const;

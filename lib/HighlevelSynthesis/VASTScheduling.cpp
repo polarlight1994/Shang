@@ -218,8 +218,8 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
   }
 
   if (isBBEntry()) OS << "BB Entry\t";
-  else if (isSyncSnk()) OS << "SyncSnk\t";
-  else if (isSyncSrc()) OS << "SyncSrc\t";
+  else if (isSyncBarrier()) OS << "SyncBarrier\t";
+  else if (isSyncJoin()) OS << "SyncJoin\t";
 
   OS << (isLaunch() ? "Launch" : "Latch")
      << " Parent: " << getParent()->getName();
@@ -286,8 +286,8 @@ VASTSchedGraph::createSUnit(BasicBlock *BB, VASTSchedUnit::Type T) {
   SUnits.insert(SUnits.back(), U);
   // Also put the scheduling unit in the BBMap.
   assert(BB && "Expect a parent BB!");
-  assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::SyncSnk ||
-          T == VASTSchedUnit::SyncSrc)
+  assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::SyncBarrier ||
+          T == VASTSchedUnit::SyncJoin)
          && "Unexpected type!");
 
   BBMap[U->getParent()].push_back(U);
@@ -675,7 +675,7 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
 
 
   if (PHINode *PHI = dyn_cast<PHINode>(Inst)) {
-    assert(U->isSyncSnk() && "Unexpected scheduling unit type!");
+    assert(U->isSyncBarrier() && "Unexpected scheduling unit type!");
     buildFlowDependenciesConditionalInst(PHI, U->getParent(), U);
 
     // Some times we get a PHI with constant incoming value. In this case there
@@ -765,7 +765,7 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB->begin(), E = BB->getFirstNonPHI(); I != E; ++I) {
     PHINode *PN = cast<PHINode>(I);
-    VASTSchedUnit *U = G->createSUnit(PN, VASTSchedUnit::SyncSrc, 0, 0);
+    VASTSchedUnit *U = G->createSUnit(PN, VASTSchedUnit::SyncJoin, 0, 0);
 
     // No need to add the dependency edges from the incoming values, because
     // the SU is anyway scheduled to the same slot as the entry of the BB.
@@ -823,7 +823,7 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
       VASTSchedUnit *U = 0;
 
       if (isa<PHINode>(Inst))
-        U = G->createSUnit(Inst, VASTSchedUnit::SyncSnk, BB, SeqInst);
+        U = G->createSUnit(Inst, VASTSchedUnit::SyncBarrier, BB, SeqInst);
       else {
         VASTSchedUnit::Type T = SeqInst->isLatch() ? VASTSchedUnit::Latch
                                                    : VASTSchedUnit::Launch;

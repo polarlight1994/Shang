@@ -189,7 +189,7 @@ unsigned SDCScheduler::createLPAndVariables() {
       }
 
       if (I.getEdgeType() == VASTDep::Synchronize) {
-        assert((*I)->isSyncSnk() && "Unexpected dependence type for sync edge!");
+        assert((*I)->isSyncBarrier() && "Unexpected dependence type for sync edge!");
         HasSyncDep = true;
         continue;
       }
@@ -199,7 +199,7 @@ unsigned SDCScheduler::createLPAndVariables() {
       assert(U->isBBEntry() && "Unexpected SU type for conditional edges!");
       ConditionalSUs.push_back(U);
     } else if (HasSyncDep) {
-      assert(U->isSyncSrc() && "Unexpected SU type for synchronize edges!");
+      assert(U->isSyncJoin() && "Unexpected SU type for synchronize edges!");
       Col = createVarForSyncDeps(Col);
       SynchronizeSUs.push_back(U);
     }

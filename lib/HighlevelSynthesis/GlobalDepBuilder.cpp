@@ -268,21 +268,21 @@ struct GlobalDependenciesBuilderBase  {
     return Node;
   }
 
-  VASTSchedUnit *getOrCreateSyncSrc(BasicBlock *BB) {
-    VASTSchedUnit *Node = getOrCreateSyncNode(BB, Srcs, VASTSchedUnit::SyncSrc);
+  VASTSchedUnit *getOrCreateSyncJoin(BasicBlock *BB) {
+    VASTSchedUnit *Node = getOrCreateSyncNode(BB, Srcs, VASTSchedUnit::SyncJoin);
 
     return Node;
   }
 
-  VASTSchedUnit *getOrCreateSyncSnk(BasicBlock *BB) {
-    VASTSchedUnit *Node = getOrCreateSyncNode(BB, Snks, VASTSchedUnit::SyncSnk);
+  VASTSchedUnit *getOrCreateSyncBarrier(BasicBlock *BB) {
+    VASTSchedUnit *Node = getOrCreateSyncNode(BB, Snks, VASTSchedUnit::SyncBarrier);
 
     return Node;
   }
 
   void
   buildDepFromDFBlock(BasicBlock *BB, SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
-    VASTSchedUnit *Entry = getOrCreateSyncSrc(BB);
+    VASTSchedUnit *Entry = getOrCreateSyncJoin(BB);
     // Do not allow the SUs exceeding the entry of dominance frontier. Because
     // the scheduler cannot preserve the inter-BB dependencies in this case.
     while (!BUSUs.empty())
@@ -321,12 +321,12 @@ struct GlobalDependenciesBuilderBase  {
     if (Succs.empty())
       return;
 
-    VASTSchedUnit *Snk = getOrCreateSyncSnk(BB);
+    VASTSchedUnit *Snk = getOrCreateSyncBarrier(BB);
 
     typedef std::set<BasicBlock*>::iterator iterator;
     for (iterator I = Succs.begin(), E = Succs.end(); I != E; ++I) {
       BasicBlock *Succ = *I;
-      getOrCreateSyncSrc(Succ)->addDep(Snk, VASTDep::CreateSyncDep());
+      getOrCreateSyncJoin(Succ)->addDep(Snk, VASTDep::CreateSyncDep());
     }
 
     for (unsigned i = 0, e = BUSUs.size(); i < e; ++i)
@@ -737,11 +737,11 @@ AliasRegionDepBuilder::buildDependencies(SmallVectorImpl<VASTSchedUnit*> &BUSUs,
   for (unsigned i = 0, e = BUSUs.size(); i != e; ++i) {
     bool AnyAlias = false;
     VASTSchedUnit *Dst = BUSUs[i];
-    bool IsDstSyncSnk = Dst->isSyncSnk();
+    bool IsDstSyncBarrier = Dst->isSyncBarrier();
 
     for (unsigned j = 0; j < TDSUs.size(); ++j) {
       VASTSchedUnit *Src = TDSUs[j];
-      if (!IsDstSyncSnk &&
+      if (!IsDstSyncBarrier &&
           !isHasDependencies(Dst->getInst(), Src->getInst(), &AA))
         continue;
       
@@ -749,7 +749,7 @@ AliasRegionDepBuilder::buildDependencies(SmallVectorImpl<VASTSchedUnit*> &BUSUs,
       AnyAlias |= true;
     }
 
-    if (AnyAlias && !IsDstSyncSnk) {
+    if (AnyAlias && !IsDstSyncBarrier) {
       BUSUs.erase(BUSUs.begin() + i);
       --i;
       --e;
@@ -931,7 +931,8 @@ bool PHIWARDepBuilder::propagateDomUpdateSUs(BasicBlock *BB) {
 
     std::map<BasicBlock*, std::set<VASTSchedUnit*> >::iterator J
       = DomUpdateSUs.find(Succ);
-    if (J == DomUpdateSUs.end() && Succ != L->getHeader()) continue;
+    if (J == DomUpdateSUs.end() && Succ != L->getHeader())
+      continue;
 
     AnyUpdateSU |= true;
     // Make sure the SUs in the update set are dominated by the current BB.
