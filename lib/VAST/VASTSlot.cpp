@@ -157,6 +157,26 @@ VASTSlot *VASTSlot::getParentState() {
   return S;
 }
 
+bool VASTSlot::isGuardedByBB(BasicBlock *BB) const {
+  // Only a SubGrp is guarded by something.
+  if (!IsSubGrp) return false;
+
+  // Else the State is the first State reachable from this SubGrp via the
+  // predecessors tree.
+  const VASTSlot *S = this;
+  while (S->pred_size() == 1 && S->IsSubGrp) {
+    // Ok, we reach BB bottom-up in the subgrp path, so the subgrp is guarded
+    // by the same predicate that guard BB.
+    if (S->getParent() == BB)
+      return true;
+
+    VASTSlot *PredSlot = *S->pred_begin();
+    S = PredSlot;
+  }
+
+  return false;
+}
+
 VASTSlot *VASTSlot::getParentGroup() const {
   // Get the parent group of the current subgroup, to prevent us from
   // unnecessary retiming.

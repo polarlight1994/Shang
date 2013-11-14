@@ -185,6 +185,7 @@ public:
   VASTSlot *getSubGroup(BasicBlock *BB) const;
   VASTSlot *getParentState();
   VASTSlot *getParentGroup() const;
+  bool isGuardedByBB(BasicBlock *BB) const;
 
   void addSuccSlot(VASTSlot *NextSlot, EdgeType T);
 

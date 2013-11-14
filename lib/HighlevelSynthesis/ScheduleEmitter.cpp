@@ -570,11 +570,17 @@ void ImplicitFlowBuilder::buildImplicitFlow(VASTSlot *S,
 
     // FIXME: Assert that the parent BB of Src can reach the parent BB of Child
     // in the control flow.
-    ImplicitEdges[Src].insert(Child);
+    typedef VASTSlot::subgrp_iterator subgrp_iterator;
+    for (subgrp_iterator SI = Src->subgrp_begin(), SE = Src->subgrp_end();
+          SI != SE; ++SI) {
+      VASTSlot *SubGrp = *SI;
+
+      if (SubGrp == Src || S->isGuardedByBB(SubGrp->getParent()))
+        ImplicitEdges[SubGrp].insert(Child);
+    }
 
     DEBUG(dbgs() << "Overlap: #" << Src->SlotNum << " -> #"
                  << Child->SlotNum << " distance: " << SPDistance << '\n');
-    // ++NumOverlappeds;
   }
 }
 
