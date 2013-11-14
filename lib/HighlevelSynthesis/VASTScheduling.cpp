@@ -27,6 +27,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/BlockFrequencyInfo.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/Support/CFG.h"
@@ -40,9 +41,9 @@
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
-VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
+VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, Instruction *Inst, Type T,
                              BasicBlock *BB, VASTSeqOp *SeqOp)
-  : T(IsLatch ? Latch : Launch), II(1), Schedule(0), InstIdx(InstIdx), Inst(Inst),
+  : T(T), II(1), Schedule(0), InstIdx(InstIdx), Inst(Inst),
     BB(BB), SeqOp(SeqOp) {}
 
 VASTSchedUnit::VASTSchedUnit(unsigned InstIdx, BasicBlock *BB, Type T)
@@ -183,9 +184,11 @@ Instruction *VASTSchedUnit::getInst() const {
 BasicBlock *VASTSchedUnit::getParent() const {
   assert(!isEntry() && !isExit() && "Call getParent on the wrong SUnit type!");
 
-  if (Inst == 0) return BB;
+  if (Inst == 0)
+    return BB;
 
-  if (isa<PHINode>(getInst()) && isLatch()) return getIncomingBlock();
+  if (isPHILatch())
+    return getIncomingBlock();
 
   return Inst->getParent();
 }
@@ -286,6 +289,19 @@ VASTSchedGraph::createSUnit(BasicBlock *BB, VASTSchedUnit::Type T) {
   assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::SyncSnk ||
           T == VASTSchedUnit::SyncSrc)
          && "Unexpected type!");
+
+  BBMap[U->getParent()].push_back(U);
+
+  return U;
+}
+
+VASTSchedUnit *
+VASTSchedGraph::createSUnit(Instruction *Inst, VASTSchedUnit::Type T,
+                            BasicBlock *BB, VASTSeqOp *SeqOp) {
+  VASTSchedUnit *U = new VASTSchedUnit(TotalSUs++, Inst, T, BB, SeqOp);
+  // Insert the newly create SU before the exit.
+  SUnits.insert(SUnits.back(), U);
+  // Also put the scheduling unit in the BBMap.
   BBMap[U->getParent()].push_back(U);
 
   return U;
@@ -299,7 +315,7 @@ void VASTSchedGraph::removeVirualNodes() {
     std::vector<VASTSchedUnit*> &SUs = I->second;
 
     for (unsigned i = 0; i < SUs.size(); /*++i*/) {
-      if (!SUs[i]->isVirtual()) {
+      if (!(SUs[i]->isVirtual() && SUs[i]->getSeqOp() == NULL)) {
         ++i;
         continue;
       }
@@ -477,6 +493,7 @@ void VASTScheduling::getAnalysisUsage(AnalysisUsage &AU) const  {
   AU.addPreserved<PreSchedBinding>();
   AU.addRequired<AliasAnalysis>();
   AU.addRequired<DominatorTree>();
+  AU.addRequired<PostDominatorTree>();
   AU.addRequired<LoopInfo>();
   AU.addRequired<BranchProbabilityInfo>();
   // There is a bug in BlockFrequencyInfo :(
@@ -489,6 +506,8 @@ INITIALIZE_PASS_BEGIN(VASTScheduling,
   INITIALIZE_PASS_DEPENDENCY(PreSchedBinding)
   INITIALIZE_PASS_DEPENDENCY(DataflowAnnotation)
   INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+  INITIALIZE_PASS_DEPENDENCY(DominatorTree)
+  INITIALIZE_PASS_DEPENDENCY(PostDominatorTree)
   INITIALIZE_PASS_DEPENDENCY(BranchProbabilityInfo)
   INITIALIZE_PASS_DEPENDENCY(BlockFrequencyInfo)
 INITIALIZE_PASS_END(VASTScheduling,
@@ -654,13 +673,21 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
     return;
   }
 
-  assert(U->isLatch() && "Unexpected scheduling unit type!");
 
   if (PHINode *PHI = dyn_cast<PHINode>(Inst)) {
+    assert(U->isSyncSnk() && "Unexpected scheduling unit type!");
     buildFlowDependenciesConditionalInst(PHI, U->getParent(), U);
+
+    // Some times we get a PHI with constant incoming value. In this case there
+    // will be no flow dependencies to this PHI. In this case, make it depends
+    // on the entry node.
+    if (U->dep_empty())
+      U->addDep(G->getEntry(), VASTDep::CreateCtrlDep(0));
+    
     return;
   }
 
+  assert(U->isLatch() && "Unexpected scheduling unit type!");
   if (isa<TerminatorInst>(Inst)) {
     if (U->isTerminator())
       buildFlowDependenciesConditionalInst(Inst, U->getTargetBlock(), U);
@@ -738,11 +765,8 @@ VASTSchedUnit *VASTScheduling::getOrCreateBBEntry(BasicBlock *BB) {
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB->begin(), E = BB->getFirstNonPHI(); I != E; ++I) {
     PHINode *PN = cast<PHINode>(I);
-    VASTSchedUnit *U = G->createSUnit(PN, false, 0, 0);
+    VASTSchedUnit *U = G->createSUnit(PN, VASTSchedUnit::SyncSrc, 0, 0);
 
-    // Schedule the PHI to the same slot with the entry if we are not perform
-    // Software pipelining.
-    U->addDep(Entry, VASTDep::CreateFixTimingConstraint(0));
     // No need to add the dependency edges from the incoming values, because
     // the SU is anyway scheduled to the same slot as the entry of the BB.
     // And we will build the conditional dependencies for the conditional
@@ -797,30 +821,20 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 
     if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op)) {
       VASTSchedUnit *U = 0;
-      bool IsLatch = SeqInst->isLatch();
 
-      if (PHINode *PN = dyn_cast<PHINode>(Inst)) {
-        U = G->createSUnit(PN, IsLatch, BB, SeqInst);
-
-        BasicBlock *LandingBlock = PN->getParent();
-        ArrayRef<VASTSchedUnit*> Terminators(IR2SUMap[BB->getTerminator()]);
-        for (unsigned i = 0; i < Terminators.size(); ++i) {
-          VASTSchedUnit *T = Terminators[i];
-          if (T->getTargetBlock() == LandingBlock) {
-            // Schedule the incoming copy of the PHIs to the same slot that
-            // the branch instruction branching to the same BB.
-            U->addDep(T, VASTDep::CreateFixTimingConstraint(0));
-            break;
-          }
-        }
-        assert(!U->dep_empty()
-               && "PHI not bind to the Branch that targeting the same block!");
-      } else
-        U = G->createSUnit(Inst, IsLatch, 0, SeqInst);
+      if (isa<PHINode>(Inst))
+        U = G->createSUnit(Inst, VASTSchedUnit::SyncSnk, BB, SeqInst);
+      else {
+        VASTSchedUnit::Type T = SeqInst->isLatch() ? VASTSchedUnit::Latch
+                                                   : VASTSchedUnit::Launch;
+        U = G->createSUnit(Inst, T, 0, SeqInst);
+      }
 
       buildFlowDependencies(U);
 
+      //if (Inst->mayHaveSideEffects())
       U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
+
       IR2SUMap[Inst].push_back(U);
       continue;
     }
@@ -829,7 +843,8 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
       if (SlotCtrl->isBranch()) {
         // Handle the branch.
         BasicBlock *TargetBB = SlotCtrl->getTargetSlot()->getParent();
-        VASTSchedUnit *U = G->createSUnit(Inst, true, TargetBB, SlotCtrl);
+        VASTSchedUnit *U =
+          G->createSUnit(Inst, VASTSchedUnit::Latch, TargetBB, SlotCtrl);
         IR2SUMap[Inst].push_back(U);
         // Also map the target BB to this terminator.
         IR2SUMap[TargetBB].push_back(U);
@@ -841,7 +856,7 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
       }
 
       // This is a wait operation.
-      VASTSchedUnit *U = G->createSUnit(Inst, true, BB, SlotCtrl);
+      VASTSchedUnit *U = G->createSUnit(Inst, VASTSchedUnit::Latch, BB, SlotCtrl);
       IR2SUMap[Inst].push_back(U);
       VASTSchedUnit *Launch = IR2SUMap[Inst].front();
       assert(Launch->isLaunch() && "Expect launch operation!");
@@ -884,6 +899,52 @@ void VASTScheduling::preventInfinitUnrolling(Loop *L) {
   }
 }
 
+void VASTScheduling::tightReturns(BasicBlock *BB) {
+  TerminatorInst *Inst = BB->getTerminator();
+
+  if (!(isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst)))
+    return;
+
+  ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[Inst]);
+  assert(!SUs.empty() && "Scheduling Units for terminator not built?");
+  VASTSchedUnit *LastSU = SUs[0];
+
+  for (unsigned i = 1; i < SUs.size(); ++i) {
+    VASTSchedUnit *U = SUs[i];
+    U->addDep(LastSU, VASTDep::CreateFixTimingConstraint(0));
+    LastSU = U;
+  }
+
+  G->getExit()->addDep(LastSU, VASTDep::CreateCtrlDep(0));
+}
+
+void VASTScheduling::buildSyncEdgeForPHIs(BasicBlock *BB) {
+  typedef BasicBlock::iterator iterator;
+  for (iterator I = BB->begin(), E = BB->getFirstNonPHI(); I != E; ++I) {
+    PHINode *PN = cast<PHINode>(I);
+
+    VASTSchedUnit *PHIJoin = 0;
+    
+    // Find the join node
+    ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[PN]);
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      if (!SUs[i]->isPHI())
+        continue;
+      
+      PHIJoin = SUs[i];
+      break;
+    }
+
+    // Build the dependence edge to the join node.
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      if (SUs[i]->isPHI())
+        continue;
+
+      PHIJoin->addDep(SUs[i], VASTDep::CreateSyncDep());
+    }
+  }
+}
+
 void VASTScheduling::fixSchedulingGraph() {
   VASTSchedUnit *Exit = G->getExit();
   // Try to fix the dangling nodes.
@@ -915,22 +976,8 @@ void VASTScheduling::fixSchedulingGraph() {
   Function &F = VM->getLLVMFunction();
 
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    TerminatorInst *Inst = I->getTerminator();
-
-    if ((isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))) {
-      ArrayRef<VASTSchedUnit*> SUs(IR2SUMap[Inst]);
-      assert(!SUs.empty() && "Scheduling Units for terminator not built?");
-      VASTSchedUnit *LastSU = SUs[0];
-
-      for (unsigned i = 1; i < SUs.size(); ++i) {
-        VASTSchedUnit *U = SUs[i];
-        U->addDep(LastSU, VASTDep::CreateFixTimingConstraint(0));
-        LastSU = U;
-      }
-
-      Exit->addDep(LastSU, VASTDep::CreateCtrlDep(0));
-      continue;
-    }
+    buildSyncEdgeForPHIs(I);
+    tightReturns(I);
   }
 
   LoopInfo &LI = getAnalysis<LoopInfo>();

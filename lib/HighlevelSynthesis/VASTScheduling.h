@@ -248,8 +248,8 @@ private:
 public:
   // Create the virtual SUs.
   VASTSchedUnit(Type T = Invalid, unsigned InstIdx = 0, BasicBlock *Parent = 0);
-  VASTSchedUnit(unsigned InstIdx, Instruction *Inst, bool IsLatch,
-                BasicBlock *BB, VASTSeqOp *SeqOp);
+  VASTSchedUnit(unsigned InstIdx, Instruction *Inst, Type T, BasicBlock *BB,
+                VASTSeqOp *SeqOp);
   VASTSchedUnit(unsigned InstIdx, BasicBlock *BB, Type T);
 
   void setII(unsigned II) {
@@ -267,11 +267,11 @@ public:
   bool isVirtual() const { return isEntry() || isExit() || isSync(); }
 
   bool isPHI() const {
-    return Inst && isa<PHINode>(getInst()) && isLaunch();
+    return Inst && isa<PHINode>(getInst()) && isSyncSrc();
   }
 
   bool isPHILatch() const {
-    return SeqOp && isa<PHINode>(getInst()) && isLatch();
+    return SeqOp && isa<PHINode>(getInst()) && isSyncSnk();
   }
 
   Instruction *getInst() const;
@@ -451,17 +451,8 @@ public:
   const VASTSchedUnit *getExit() const { return &SUnits.back(); }
 
   VASTSchedUnit *createSUnit(BasicBlock *BB, VASTSchedUnit::Type T);
-
-  VASTSchedUnit *createSUnit(Instruction *Inst, bool IsLatch, BasicBlock *BB,
-                             VASTSeqOp *SeqOp) {
-    VASTSchedUnit *U = new VASTSchedUnit(TotalSUs++, Inst, IsLatch, BB, SeqOp);
-    // Insert the newly create SU before the exit.
-    SUnits.insert(SUnits.back(), U);
-    // Also put the scheduling unit in the BBMap.
-    BBMap[U->getParent()].push_back(U);
-
-    return U;
-  }
+  VASTSchedUnit *createSUnit(Instruction *Inst, VASTSchedUnit::Type T,
+                             BasicBlock *BB, VASTSeqOp *SeqOp);
 
   // Iterate over all scheduling units in the scheduling graph.
   typedef SUList::iterator iterator;
@@ -598,6 +589,8 @@ class VASTScheduling : public VASTModulePass {
   // it is updated.
   // TODO: Relax these dependencies for software pipelining.
   void buildWARDepForPHIs(Loop *L);
+  void tightReturns(BasicBlock *BB);
+  void buildSyncEdgeForPHIs(BasicBlock *BB);
   void fixSchedulingGraph();
 
   void buildSchedulingUnits(VASTSlot *S);
