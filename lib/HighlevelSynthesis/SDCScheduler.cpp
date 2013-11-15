@@ -103,10 +103,9 @@ struct ConstraintHelper {
       report_fatal_error("SDCScheduler: Can NOT add dependency constraints"
                          " at VASTSchedUnit " + utostr_32(DstIdx));
 
-    DEBUG(std::string RowName = utostr_32(SrcIdx) + " -> " + utostr_32(DstIdx);
-          unsigned NRow = get_Nrows(lp);
-          set_row_name(lp, NRow, const_cast<char*>(RowName.c_str()));
-    );
+    DEBUG(unsigned RowNo = get_Nrows(lp);
+    std::string RowName = "dep_" + utostr_32(RowNo);
+    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str())););
   }
 };
 }
@@ -277,6 +276,10 @@ SDCScheduler::addConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
   if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EqTy, RHS))
     report_fatal_error("SDCScheduler: Can NOT create soft Constraints"
                        " SlackIdx:" + utostr_32(SlackIdx));
+
+  DEBUG(unsigned RowNo = get_Nrows(lp);
+  std::string RowName = "generic_" + utostr_32(RowNo);
+  set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str())););
 }
 
 double SDCScheduler::getLastPenalty(VASTSchedUnit *Src,
@@ -458,6 +461,10 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
     if(!add_constraintex(lp, array_lengthof(CurCols), CurCoeffs, CurCols, LE, 0))
       report_fatal_error("Cannot create constraint!");
 
+    DEBUG(unsigned RowNo = get_Nrows(lp);
+    std::string RowName = "conditional_" + utostr_32(RowNo);
+    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str())););
+
     Cols.push_back(AuxVar);
     Coeffs.push_back(1.0);
     CurSlackIdx += 2;
@@ -471,6 +478,9 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   if(!add_constraintex(lp, NumCols, Coeffs.data(), Cols.data(), LE, RHS))
     report_fatal_error("Cannot create constraint!");
 
+  DEBUG(unsigned RowNo = get_Nrows(lp);
+  std::string RowName = "connectivity_" + utostr_32(RowNo);
+  set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str())););
   // Temporary disable this constraint because it make the LP model matrix
   // become a non- totally unimodular matrix, which require B&B to get the
   // optimal solution.
@@ -601,6 +611,10 @@ void SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src,
 
     if(!add_constraintex(lp, array_lengthof(Cols), Coeffs, Cols, LE, 0))
       report_fatal_error("Cannot create constraints!");
+
+    DEBUG(unsigned RowNo = get_Nrows(lp);
+    std::string RowName = "throughput_" + utostr_32(RowNo);
+    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str())););
   }
 }
 
