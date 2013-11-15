@@ -574,9 +574,6 @@ void SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src,
   // Path(Header, Src) + Path(Src, Dst Exit), because Header dominates Src and
   // Src dominates Dst, the equetion can be rewritten as
   // Src - Header + Dst Exit - Src, i.e. Dst Exit - Header.
-  int Cols[] = { getSUIdx(Dst), getSUIdx(Src), 0, 0 };
-  REAL Coeffs[] = { 1.0, -1.0, 1.0, -1.0 };
-
   std::set<VASTSchedUnit*> &Exits = J->second;
   typedef std::set<VASTSchedUnit*>::iterator iterator;
 
@@ -595,8 +592,12 @@ void SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src,
 
     HeaderSU = G.getEntrySU(InclusiveLoop->getHeader());
 
-    Cols[2] = getSUIdx(HeaderSU);
-    Cols[3] = getSUIdx(DstExit);
+    // Note: We must re-define the column numbers and coefficient in every
+    // iteration, even though their are almost kept unchanged during the
+    // iteration because add_constraintex modify these two arrays.
+    int Cols[] = { getSUIdx(Dst), getSUIdx(Src),
+                   getSUIdx(HeaderSU), getSUIdx(DstExit) };
+    REAL Coeffs[] = { 1.0, -1.0, 1.0, -1.0 };
 
     if(!add_constraintex(lp, array_lengthof(Cols), Coeffs, Cols, LE, 0))
       report_fatal_error("Cannot create constraints!");
