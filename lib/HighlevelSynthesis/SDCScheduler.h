@@ -61,6 +61,7 @@ public:
                      std::map<Value*, SmallVector<VASTSchedUnit*, 4> >
                      &IR2SUMap);
 
+  void initalizeBackEdgeMap(LoopInfo &LI);
 private:
   lprec *lp;
 
@@ -98,6 +99,12 @@ private:
 
   // The scheduling unit with conditional dependencies.
   std::vector<VASTSchedUnit*> ConditionalSUs, SynchronizeSUs;
+
+  std::map<BasicBlock*, std::vector<EdgeType> > Backedges;
+  ArrayRef<EdgeType> getBackEdgesOfParentLoops(BasicBlock *BB) const;
+  ArrayRef<EdgeType> getBackEdgesOfParentLoops(VASTSchedUnit *SU) const;
+  void addIntervalConstraintForLoop(VASTSchedUnit *Src, VASTSchedUnit *Dst,
+                                    ArrayRef<EdgeType> BackEdges);
 
   // Build constraints -Slack + BigM * AuxVar >= 0 and
   // Sum (AuxVar) <= Number of Slack - 1, where AuxVar is either 0 or 1.

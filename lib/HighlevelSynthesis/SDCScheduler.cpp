@@ -17,6 +17,7 @@
 #include "shang/Utilities.h"
 #include "shang/VASTSeqValue.h"
 
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/StringExtras.h"
@@ -268,8 +269,10 @@ SDCScheduler::addConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
   }
 
   // Add the slack variable.
-  Col.push_back(SlackIdx);
-  Coeff.push_back(1.0);
+  if (SlackIdx) {
+    Col.push_back(SlackIdx);
+    Coeff.push_back(1.0);
+  }
 
   if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EqTy, RHS))
     report_fatal_error("SDCScheduler: Can NOT create soft Constraints"
@@ -521,10 +524,33 @@ void SDCScheduler::addSynchronizeConstraints() {
     addSynchronizeConstraints(*I);
 }
 
+void SDCScheduler::addIntervalConstraintForLoop(VASTSchedUnit *Src,
+                                                VASTSchedUnit *Dst,
+                                                ArrayRef<EdgeType> BackEdges) {
+  // Build Constraints Dst - Src <= Initial Interval, so that we do not need
+  // to insert pipeline register to the data edge. Specifically, (minimal)
+  // initial interval is calculated by Loop Back Branch - LoopEntry, this
+  // calculation is valid even there is control-flow between loop entry and the
+  // loop back branch, because loop entry dominates loop back branch.
+  // Anyway, the equation is: Dst - Src <= Loop Back Branch - LoopEntry, i.e.
+  // Dst - Src - Loop Back Branch + LoopEntry <= 0;
+
+  int Cols[] = { getSUIdx(Dst), getSUIdx(Src), 0, 0 };
+  REAL Coeffs[] = { 1.0, -1.0, -1.0, 1.0 };
+  for (unsigned i = 0; i < BackEdges.size(); ++i) {
+    EdgeType Edge = BackEdges[i];
+    Cols[2] = getSUIdx(Edge.second);
+    Cols[3] = getSUIdx(Edge.first);
+
+    if(!add_constraintex(lp, array_lengthof(Cols), Coeffs, Cols, LE, 0))
+      report_fatal_error("Cannot create constraints!");
+  }
+}
+
 void SDCScheduler::addDependencyConstraints(lprec *lp) {
   for(VASTSchedGraph::iterator I = begin(), E = end(); I != E; ++I) {
     VASTSchedUnit *U = I;
-    BasicBlock *CurBB = U->isBBEntry() ? U->getParent() : NULL;
+    ArrayRef<EdgeType> BackEdges = getBackEdgesOfParentLoops(U);
 
     ConstraintHelper H;
     H.resetDst(U, this);
@@ -544,6 +570,9 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
 
       H.resetSrc(Src, this);
       H.addConstraintToLP(Edge, lp, 0);
+
+      if (!BackEdges.empty() && DI.hasDataDependency())
+        addIntervalConstraintForLoop(Src, U, BackEdges);
     }
   }
 }
@@ -599,4 +628,56 @@ bool SDCScheduler::schedule() {
 }
 
 SDCScheduler::~SDCScheduler() {
+}
+
+void SDCScheduler::initalizeBackEdgeMap(LoopInfo &LI) {
+  SmallVector<EdgeType, 4> CurBackEdges;
+
+  for (LoopInfo::iterator I = LI.begin(), E = LI.end(); I != E; ++I) {
+    Loop *L = *I;
+    BasicBlock *Header = L->getHeader();
+    VASTSchedUnit *BBEntry = G.getEntrySU(Header);
+    CurBackEdges.clear();
+
+    // Collect all backedge of the current loop
+    typedef VASTSchedUnit::dep_iterator dep_iterator;
+    for (dep_iterator I = BBEntry->dep_begin(), E = BBEntry->dep_end();
+         I != E; ++I) {
+      if (I.getEdgeType() != VASTDep::Conditional)
+        continue;
+
+      VASTSchedUnit *Dep = *I;
+      assert(Dep->isTerminator() && "Unexpected dependency type of Header!");
+      BasicBlock *IncomingBB = Dep->getParent();
+      if (L->contains(IncomingBB))
+        CurBackEdges.push_back(EdgeType(BBEntry, Dep));
+    }
+
+    // Annotate the backedges to all block in the loop.
+    assert(!CurBackEdges.empty() && "We got a loop without any backedge?");
+    for (Loop::block_iterator I = L->block_begin(), E = L->block_end();
+         I != E; ++I) {
+      BasicBlock *BB = *I;
+      std::vector<EdgeType> &CurEdgesForBB = Backedges[BB];
+      CurEdgesForBB.insert(CurEdgesForBB.end(),
+                           CurBackEdges.begin(), CurBackEdges.end());
+    }
+  }
+}
+
+ArrayRef<SDCScheduler::EdgeType>
+SDCScheduler::getBackEdgesOfParentLoops(BasicBlock *BB) const {
+  std::map<BasicBlock*, std::vector<EdgeType> >::const_iterator
+    I = Backedges.find(BB);
+
+  return I == Backedges.end() ? ArrayRef<EdgeType>()
+                              : ArrayRef<EdgeType>(I->second);
+}
+
+ArrayRef<SDCScheduler::EdgeType>
+SDCScheduler::getBackEdgesOfParentLoops(VASTSchedUnit *SU) const {
+  if (SU->isVirtual())
+    return ArrayRef<EdgeType>();
+
+  return getBackEdgesOfParentLoops(SU->getParent());
 }
