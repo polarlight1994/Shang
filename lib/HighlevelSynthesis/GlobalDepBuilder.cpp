@@ -283,7 +283,7 @@ struct GlobalDependenciesBuilderBase  {
   }
 
   VASTSchedUnit *getOrCreateSyncBarrier(BasicBlock *BB) {
-    VASTSchedUnit *Node = getOrCreateSyncNode(BB, Snks, VASTSchedUnit::SyncBarrier);
+    VASTSchedUnit *Node = getOrCreateSyncNode(BB, Snks, VASTSchedUnit::VNode);
 
     return Node;
   }
@@ -733,19 +733,18 @@ AliasRegionDepBuilder::buildDependencies(SmallVectorImpl<VASTSchedUnit*> &BUSUs,
   for (unsigned i = 0, e = BUSUs.size(); i != e; ++i) {
     bool AnyAlias = false;
     VASTSchedUnit *Dst = BUSUs[i];
-    bool IsDstSyncBarrier = Dst->isSyncBarrier();
+    bool IsDstVNode = Dst->isVNode();
 
     for (unsigned j = 0; j < TDSUs.size(); ++j) {
       VASTSchedUnit *Src = TDSUs[j];
-      if (!IsDstSyncBarrier &&
-          !isHasDependencies(Dst->getInst(), Src->getInst(), &AA))
+      if (!IsDstVNode && !isHasDependencies(Dst->getInst(), Src->getInst(), &AA))
         continue;
       
       buildDep(Src, Dst);
       AnyAlias |= true;
     }
 
-    if (AnyAlias && !IsDstSyncBarrier) {
+    if (AnyAlias && !IsDstVNode) {
       BUSUs.erase(BUSUs.begin() + i);
       --i;
       --e;

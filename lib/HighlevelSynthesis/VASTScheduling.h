@@ -134,8 +134,10 @@ public:
     // The supper source node of the basic block.
     BlockEntry,
     Launch, Latch,
+    // Generic prupose virtual node
+    VNode,
     // Synchronization nodes.
-    SyncBarrier, SyncJoin,
+    SyncJoin,
     // Invalide node for the ilist sentinel
     Invalid
   };
@@ -261,17 +263,19 @@ public:
   bool isEntry() const { return T == Entry; }
   bool isExit() const { return T == Exit; }
   bool isBBEntry() const { return T == BlockEntry; }
-  bool isSync() const { return T == SyncBarrier || T == SyncJoin; }
-  bool isSyncBarrier() const { return T == SyncBarrier; }
+  bool isSync() const { return T == SyncJoin; }
+  bool isVNode() const { return T == VNode; }
   bool isSyncJoin() const { return T == SyncJoin; }
-  bool isVirtual() const { return isEntry() || isExit() || isSync(); }
+  bool isVirtual() const {
+    return isEntry() || isExit() || isSync() || isVNode();
+  }
 
   bool isPHI() const {
     return Inst && isa<PHINode>(getInst()) && isSyncJoin();
   }
 
   bool isPHILatch() const {
-    return SeqOp && isa<PHINode>(getInst()) && isSyncBarrier();
+    return SeqOp && isa<PHINode>(getInst()) && isLatch();
   }
 
   Instruction *getInst() const;

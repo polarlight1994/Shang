@@ -218,7 +218,7 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
   }
 
   if (isBBEntry()) OS << "BB Entry\t";
-  else if (isSyncBarrier()) OS << "SyncBarrier\t";
+  else if (isVNode()) OS << "VNode\t";
   else if (isSyncJoin()) OS << "SyncJoin\t";
 
   OS << (isLaunch() ? "Launch" : "Latch")
@@ -286,7 +286,7 @@ VASTSchedGraph::createSUnit(BasicBlock *BB, VASTSchedUnit::Type T) {
   SUnits.insert(SUnits.back(), U);
   // Also put the scheduling unit in the BBMap.
   assert(BB && "Expect a parent BB!");
-  assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::SyncBarrier ||
+  assert((T == VASTSchedUnit::BlockEntry || T == VASTSchedUnit::VNode ||
           T == VASTSchedUnit::SyncJoin)
          && "Unexpected type!");
 
@@ -315,7 +315,7 @@ void VASTSchedGraph::removeVirualNodes() {
     std::vector<VASTSchedUnit*> &SUs = I->second;
 
     for (unsigned i = 0; i < SUs.size(); /*++i*/) {
-      if (!(SUs[i]->isVirtual() && SUs[i]->getSeqOp() == NULL)) {
+      if (!(SUs[i]->isVirtual())) {
         ++i;
         continue;
       }
@@ -675,7 +675,6 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
 
 
   if (PHINode *PHI = dyn_cast<PHINode>(Inst)) {
-    assert(U->isSyncBarrier() && "Unexpected scheduling unit type!");
     buildFlowDependenciesConditionalInst(PHI, U->getParent(), U);
 
     // Some times we get a PHI with constant incoming value. In this case there
@@ -828,11 +827,11 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
     if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(Op)) {
       VASTSchedUnit *U = 0;
 
-      if (isa<PHINode>(Inst))
-        U = G->createSUnit(Inst, VASTSchedUnit::SyncBarrier, BB, SeqInst);
-      else {
-        VASTSchedUnit::Type T = SeqInst->isLatch() ? VASTSchedUnit::Latch
-                                                   : VASTSchedUnit::Launch;
+      VASTSchedUnit::Type T = SeqInst->isLatch() ? VASTSchedUnit::Latch
+                                                 : VASTSchedUnit::Launch;
+      if (isa<PHINode>(Inst)) {
+        U = G->createSUnit(Inst, T, BB, SeqInst);
+      } else {
         U = G->createSUnit(Inst, T, 0, SeqInst);
       }
 

@@ -189,7 +189,8 @@ unsigned SDCScheduler::createLPAndVariables() {
       }
 
       if (I.getEdgeType() == VASTDep::Synchronize) {
-        assert((*I)->isSyncBarrier() && "Unexpected dependence type for sync edge!");
+        assert(((*I)->isVNode() || (*I)->isPHILatch())
+                && "Unexpected dependence type for sync edge!");
         HasSyncDep = true;
         continue;
       }
