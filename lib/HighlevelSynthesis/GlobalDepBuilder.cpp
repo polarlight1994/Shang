@@ -901,9 +901,9 @@ void LoopWARDepBuilder::buildDepandencies(BasicBlock *BB) {
 
       // We may introduce dependence cycles here. But it is ok since the cycle
       // is not a negative cycle. Detecting the cycles require some SCC algorithm,
-      // for now, simply create memory dependency so that the scheduler do not
+      // for now, simply create generic dependency so that the scheduler do not
       // complain these cycles.
-      Updater->addDep(U, VASTDep::CreateMemDep(0, 0));
+      Updater->addDep(U, VASTDep::CreateDep<VASTDep::Generic>(0));
     }
   }
   

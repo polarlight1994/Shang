@@ -49,7 +49,9 @@ public:
     FixedTiming = 3,
     LinearOrder = 4,
     Conditional = 5,
-    Synchronize = 6
+    Synchronize = 6,
+    // Generic dependency that may form cycles.
+    Generic     = 7
   };
 private:
   uint8_t EdgeType : 3;
