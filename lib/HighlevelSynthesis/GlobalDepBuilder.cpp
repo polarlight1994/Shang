@@ -406,6 +406,9 @@ struct SingleFULinearOrder
 
   void buildDependencies(SmallVectorImpl<VASTSchedUnit*> &BUSUs,
                          ArrayRef<VASTSchedUnit*> TDSUs) {
+    if (TDSUs.empty())
+      return;
+
     while (!BUSUs.empty()) {
       VASTSchedUnit *Dst = BUSUs.pop_back_val();
 
