@@ -136,16 +136,32 @@ VASTDep VASTSchedUnit::EdgeBundle::getEdge(unsigned II) const {
   return CurEdge;
 }
 
+bool VASTSchedUnit::EdgeBundle::hasDataDependency() const {
+  VASTDep::Types T = Edges.front().getEdgeType();
+  int Latency = -1;
+
+  if ((T == VASTDep::ValDep) || (T == VASTDep::MemDep))
+    return true;
+
+  for (unsigned i = 1, e = Edges.size(); i != e; ++i) {
+    T = Edges[i].getEdgeType();
+    if ((T == VASTDep::ValDep) || (T == VASTDep::MemDep))
+      return true;
+  }
+
+  return false;
+}
+
 int VASTSchedUnit::EdgeBundle::getDFLatency() const {
   VASTDep::Types T = Edges.front().getEdgeType();
   int Latency = -1;
 
-  if ((T == VASTDep::ValDep) && (T != VASTDep::FixedTiming))
+  if ((T == VASTDep::ValDep))
     Latency = std::max(Edges.front().getLatency(), Latency);
 
   for (unsigned i = 1, e = Edges.size(); i != e; ++i) {
     T = Edges[i].getEdgeType();
-    if ((T == VASTDep::ValDep) && (T != VASTDep::FixedTiming))
+    if ((T == VASTDep::ValDep))
       Latency = std::max(Edges[i].getLatency(), Latency);
   }
 

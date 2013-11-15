@@ -165,6 +165,7 @@ private:
     void printDetials(raw_ostream &OS) const;
 
     int getDFLatency() const;
+    bool hasDataDependency() const;
   };
 
   typedef DenseMap<VASTSchedUnit*, EdgeBundle> DepSet;
@@ -220,6 +221,9 @@ public:
     int getDistance(unsigned II = 0) const { return getEdge(II).getDistance(); }
 
     int getDFLatency() const { return getEdgeBundle().getDFLatency(); }
+    bool hasDataDependency() const {
+      return getEdgeBundle().hasDataDependency();
+    }
   };
 
   typedef VASTSchedUnitDepIterator<DepSet::const_iterator, true> const_dep_iterator;

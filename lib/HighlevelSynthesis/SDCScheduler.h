@@ -61,9 +61,10 @@ public:
                      std::map<Value*, SmallVector<VASTSchedUnit*, 4> >
                      &IR2SUMap);
 
-  void initalizeBackEdgeMap(LoopInfo &LI);
+  void initalizeCFGEdges();
 private:
   lprec *lp;
+  LoopInfo &LI;
 
   // Helper class to build the object function for lp.
   struct LPObjFn : public std::map<unsigned, double> {
@@ -100,11 +101,8 @@ private:
   // The scheduling unit with conditional dependencies.
   std::vector<VASTSchedUnit*> ConditionalSUs, SynchronizeSUs;
 
-  std::map<BasicBlock*, std::vector<EdgeType> > Backedges;
-  ArrayRef<EdgeType> getBackEdgesOfParentLoops(BasicBlock *BB) const;
-  ArrayRef<EdgeType> getBackEdgesOfParentLoops(VASTSchedUnit *SU) const;
-  void addIntervalConstraintForLoop(VASTSchedUnit *Src, VASTSchedUnit *Dst,
-                                    ArrayRef<EdgeType> BackEdges);
+  std::map<BasicBlock*, std::set<VASTSchedUnit*> > CFGEdges;
+  void limitThroughputOnEdge(VASTSchedUnit *Src, VASTSchedUnit *Dst);
 
   // Build constraints -Slack + BigM * AuxVar >= 0 and
   // Sum (AuxVar) <= Number of Slack - 1, where AuxVar is either 0 or 1.
@@ -136,8 +134,8 @@ private:
   void addDependencyConstraints(lprec *lp);
 
 public:
-  SDCScheduler(VASTSchedGraph &G, unsigned EntrySlot)
-    : SchedulerBase(G, EntrySlot), lp(0) {}
+  SDCScheduler(VASTSchedGraph &G, unsigned EntrySlot, LoopInfo &LI)
+    : SchedulerBase(G, EntrySlot), lp(0), LI(LI) {}
   ~SDCScheduler();
 
   unsigned createLPAndVariables();
