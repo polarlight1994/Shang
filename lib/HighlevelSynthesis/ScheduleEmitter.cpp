@@ -532,6 +532,39 @@ public:
 };
 }
 
+static bool isPathMatch(VASTSlot *LHS, VASTSlot *RHS) {
+  do {
+    LHS = LHS->getParentGroup();
+    RHS = RHS->getParentGroup();
+
+    if (LHS->getParent() != RHS->getParent())
+      return false;
+
+  } while (LHS->IsSubGrp && RHS->IsSubGrp);
+
+  return true;
+}
+
+static bool IsGuardCompatible(VASTSlot *LHS, VASTSlot *RHS) {
+  // Only a SubGrp is guarded by something.
+  if (!LHS->IsSubGrp) return false;
+
+  // Else the State is the first State reachable from this SubGrp via the
+  // predecessors tree.
+  VASTSlot *S = LHS;
+  while (S->pred_size() == 1 && S->IsSubGrp) {
+    // Ok, we reach BB bottom-up in the subgrp path, so the subgrp is guarded
+    // by the same predicate that guard BB.
+    if (S->getParent() == RHS->getParent())
+      return isPathMatch(S, RHS);
+
+    VASTSlot *PredSlot = S->getParentGroup();
+    S = PredSlot;
+  }
+
+  return false;
+}
+
 void ImplicitFlowBuilder::buildImplicitFlow(VASTSlot *S,
                                             ArrayRef<VASTSlot*> StraightFlow) {
   DEBUG(dbgs() << "Starting from #" << S->SlotNum << '\n');
@@ -568,7 +601,7 @@ void ImplicitFlowBuilder::buildImplicitFlow(VASTSlot *S,
           SI != SE; ++SI) {
       VASTSlot *SubGrp = *SI;
 
-      if (SubGrp == Src || S->isGuardedByBB(SubGrp->getParent()))
+      if (SubGrp == Src || IsGuardCompatible(S, SubGrp))
         ImplicitEdges[SubGrp].insert(Child);
     }
 
