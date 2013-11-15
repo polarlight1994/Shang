@@ -690,6 +690,7 @@ bool SDCScheduler::schedule() {
   SUIdx.clear();
   ConditionalSUs.clear();
   HardConstraints.clear();
+  SynchronizeSUs.clear();
   delete_lp(lp);
   lp = 0;
   return true;
