@@ -520,7 +520,10 @@ void BasicLinearOrderGenerator::buildFUInfo() {
       ArrayRef<VASTSchedUnit*> Returns(IR2SUMap[Inst]);
       ReturnSUs.push_back(Returns.front());
     }
+  }
 
+  for (bb_iterator I = G->bb_begin(), E = G->bb_end(); I != E; ++I) {
+    BasicBlock *BB = I->first;
     MutableArrayRef<VASTSchedUnit*> SUs(I->second);
 
     // Iterate the scheduling units in the same BB to assign linear order.
