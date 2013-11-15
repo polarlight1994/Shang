@@ -559,7 +559,6 @@ void SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src,
   // is bigger than the distance of the current edge. Otherwise, we may need to
   // insert pipeline register to maintain the dependency of the current edge.
   BasicBlock *Header = L->getHeader();
-  VASTSchedUnit *HeaderSU = G.getEntrySU(Header);
   
   // Build Constraints Dst - Src <= Path Interval <= Initial Interval.
   // Where Path Interval >= DstParent Exit - Header, hence we have
@@ -569,14 +568,29 @@ void SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src,
   // Path(Header, Src) + Path(Src, Dst Exit), because Header dominates Src and
   // Src dominates Dst, the equetion can be rewritten as
   // Src - Header + Dst Exit - Src, i.e. Dst Exit - Header.
-  int Cols[] = { getSUIdx(Dst), getSUIdx(Src), getSUIdx(HeaderSU), 0 };
+  int Cols[] = { getSUIdx(Dst), getSUIdx(Src), 0, 0 };
   REAL Coeffs[] = { 1.0, -1.0, 1.0, -1.0 };
 
   std::set<VASTSchedUnit*> &Exits = J->second;
   typedef std::set<VASTSchedUnit*>::iterator iterator;
 
   for (iterator I = Exits.begin(), E = Exits.end(); I != E; ++I) {
-    Cols[3] = getSUIdx(*I);
+    VASTSchedUnit *DstExit = *I;
+    VASTSchedUnit *HeaderSU = 0;
+
+    Loop *InclusiveLoop = L;
+    while (InclusiveLoop && !InclusiveLoop->contains(DstExit->getTargetBlock()))
+      InclusiveLoop = InclusiveLoop->getParentLoop();
+
+    // No need to constraint the path if the path is not entirely included in
+    // the loop.
+    if (InclusiveLoop == NULL)
+      continue;
+
+    HeaderSU = G.getEntrySU(InclusiveLoop->getHeader());
+
+    Cols[2] = getSUIdx(HeaderSU);
+    Cols[3] = getSUIdx(DstExit);
 
     if(!add_constraintex(lp, array_lengthof(Cols), Coeffs, Cols, LE, 0))
       report_fatal_error("Cannot create constraints!");
