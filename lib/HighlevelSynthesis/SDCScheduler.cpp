@@ -209,8 +209,11 @@ unsigned SDCScheduler::createLPAndVariables() {
   typedef SoftCstrVecTy::iterator iterator;
   for (iterator I = SoftConstraints.begin(), E = SoftConstraints.end();
        I != E; ++I) {
-    I->second.SlackIdx = Col;
+    SoftConstraint &C = I->second;
+    C.SlackIdx = Col;
     Col = createSlackVariable(Col, 0, 0);
+
+    ObjFn[C.SlackIdx] = - C.Penalty;
   }
 
   return Col - 1;
