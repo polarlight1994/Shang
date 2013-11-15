@@ -487,7 +487,7 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   // Temporary disable this constraint because it make the LP model matrix
   // become a non- totally unimodular matrix, which require B&B to get the
   // optimal solution.
-  addHardConstraints(get_Nrows(lp) - 1, true);
+  addDifficultConstraints(get_Nrows(lp), RHS, true);
 }
 
 void SDCScheduler::addConditionalConstraints() {
@@ -699,7 +699,7 @@ bool SDCScheduler::schedule() {
     return false;
 
   // Then enable the hard constraints and (try to) get the optimal solution.
-  changeHardConstraints(true);
+  changeDifficultConstraints(true);
 
   set_break_at_first(lp, FALSE);
   if (!solveLP(lp, false))
@@ -712,8 +712,8 @@ bool SDCScheduler::schedule() {
   ObjFn.clear();
   SUIdx.clear();
   ConditionalSUs.clear();
-  HardConstraints.clear();
   SynchronizeSUs.clear();
+  DifficultConstraints.clear();
   delete_lp(lp);
   lp = 0;
   return true;
@@ -744,21 +744,32 @@ void SDCScheduler::initalizeCFGEdges() {
   }
 }
 
-void SDCScheduler::addHardConstraints(unsigned RowNo, bool Disable) {
-  HardConstraints.push_back(RowNo);
+void
+SDCScheduler::addDifficultConstraints(unsigned RowNo, double RHS, bool Disable) {
+  DifficultConstraints.push_back(std::make_pair(RowNo, RHS));
+
   if (Disable && !set_constr_type(lp, RowNo, FR))
     report_fatal_error("Cannot change constraint type!");
 }
 
-void SDCScheduler::changeHardConstraints(bool Enable) {
-  typedef std::vector<unsigned>::iterator iterator;
-  for (iterator I = HardConstraints.begin(), E = HardConstraints.end();
+void SDCScheduler::changeDifficultConstraints(bool Enable) {
+  typedef std::vector<std::pair<unsigned, double> >::iterator iterator;
+  for (iterator I = DifficultConstraints.begin(), E = DifficultConstraints.end();
        I != E; ++I) {
-    unsigned RowNo = *I;
+    unsigned RowNo = I->first;
+    unsigned CurRow = get_lp_index(lp, RowNo);
+    double RHS = I->second;
+
+    dbgs() << "Row: " << RowNo << ", Name: "
+           << get_row_name(lp, CurRow) << '\n';
+
+    if (CurRow == 0)
+      continue;
+
     if (Enable) {
-      if (!set_constr_type(lp, RowNo, LE) || !set_rh(lp, RowNo, 0.0))
+      if (!set_constr_type(lp, CurRow, LE) || !set_rh(lp, CurRow, RHS))
         report_fatal_error("Cannot change constraint type!");
-    } else if (!set_constr_type(lp, RowNo, FR))
+    } else if (!set_constr_type(lp, CurRow, FR))
       report_fatal_error("Cannot change constraint type!");
   }
 }

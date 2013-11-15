@@ -67,11 +67,11 @@ private:
   LoopInfo &LI;
 
   // The constraints that are disable in the first pass. All thse constraints
-  // should have form ... <= 0
-  std::vector<unsigned> HardConstraints;
+  // should have form ... <= RHS
+  std::vector<std::pair<unsigned, double> > DifficultConstraints;
 
-  void changeHardConstraints(bool Enable);
-  void addHardConstraints(unsigned RowNo, bool Disable);
+  void changeDifficultConstraints(bool Enable);
+  void addDifficultConstraints(unsigned RowNo, double RHS, bool Disable);
 
   // Helper class to build the object function for lp.
   struct LPObjFn : public std::map<unsigned, double> {
