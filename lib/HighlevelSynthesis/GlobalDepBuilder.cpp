@@ -861,7 +861,7 @@ struct LoopWARDepBuilder {
   }
 
   bool initializeUseDefForPHI(PHINode *PN);
-  void initializeUseDefForBackEdge();
+  void initializeUseDefForBackEdge(VASTSchedGraph &G);
 
   void buildDepandencies();
   void rememberEdge(BasicBlock *SrcBB, BasicBlock *DstBB);
@@ -1066,7 +1066,23 @@ bool LoopWARDepBuilder::initializeUseDefForPHI(PHINode *PN) {
   return true;
 }
 
-void LoopWARDepBuilder::initializeUseDefForBackEdge() {
+static bool HasUserInTheSameBB(VASTSchedUnit *SU, BasicBlock *BB) {
+  typedef VASTSchedUnit::const_use_iterator iterator;
+  for (iterator UI = SU->use_begin(), UE = SU->use_end(); UI != UE; ++UI) {
+    VASTSchedUnit *User = *UI;
+
+    if (User->isExit())
+      continue;
+
+    if (User->getParent() == BB && !User->isTerminator() && !User->isPHILatch())
+      return true;
+
+  }
+
+  return false;
+}
+
+void LoopWARDepBuilder::initializeUseDefForBackEdge(VASTSchedGraph &G) {
   BasicBlock *Header = L->getHeader();
 
   ArrayRef<VASTSchedUnit*> Incomings(IR2SUMap[Header]);
@@ -1078,20 +1094,23 @@ void LoopWARDepBuilder::initializeUseDefForBackEdge() {
       DomUpdateSUs[IncomingBB].insert(SU);
   }
 
-  // Prevent implicit software pipelining by pretending the branching operations
-  // in the exiting blocks of the loop using the Backedge. By doing this, we
-  // ensure the exiting blocks will not loop back until the whole block is
-  // finished.
-  SmallVector<BasicBlock*, 4> Exits;
-  L->getExitingBlocks(Exits);
-  for (unsigned i = 0, e = Exits.size(); i != e; ++i) {
-    BasicBlock *Exiting = Exits[i];
-    ArrayRef<VASTSchedUnit*> Brs(IR2SUMap[Exiting->getTerminator()]);
-    for (unsigned j = 0; j < Brs.size(); ++j) {
-      VASTSchedUnit *SU = Brs[j];
-      if (SU->isTerminator() && SU->getTargetBlock() == Header)
+  typedef Loop::block_iterator block_iterator;
+  for (block_iterator I = L->block_begin(), E = L->block_end(); I != E; ++I) {
+    BasicBlock *BB = *I;
+
+    ArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(BB));
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSchedUnit *SU = SUs[i];
+
+      if (SU->isBBEntry() || SU->isPHI())
         continue;
-      
+
+      if (SU->isTerminator())
+        continue;
+
+      if (HasUserInTheSameBB(SU, BB))
+        continue;
+
       addUser(SU);
     }
   }
@@ -1111,6 +1130,6 @@ void VASTScheduling::buildWARDepForPHIs(Loop *L) {
   }
 
   LoopWARDepBuilder WARDepBuilder(L, DT, IR2SUMap);
-  WARDepBuilder.initializeUseDefForBackEdge();
+  WARDepBuilder.initializeUseDefForBackEdge(*G);
   WARDepBuilder.buildDepandencies();
 }
