@@ -678,8 +678,14 @@ void SDCScheduler::addDependencyConstraints() {
 }
 
 bool SDCScheduler::schedule() {
-  DEBUG(printVerision());
+#ifndef NDEBUG
+  // Verify the scheduling graph before we are trying to schedule it.
+  G.verify();
+#endif
+
   ObjFn.setLPObj(lp);
+
+  DEBUG(printVerision());
 
   addDependencyConstraints();
   addSoftConstraints();
@@ -755,4 +761,8 @@ void SDCScheduler::changeHardConstraints(bool Enable) {
     } else if (!set_constr_type(lp, RowNo, FR))
       report_fatal_error("Cannot change constraint type!");
   }
+}
+
+void SDCScheduler::dumpModel() const {
+  write_lp(lp, "log.lp");
 }
