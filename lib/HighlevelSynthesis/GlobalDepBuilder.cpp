@@ -248,6 +248,12 @@ struct GlobalDependenciesBuilderBase  {
                                 VASTSchedGraph &G)
     : GFA(GFA), IR2SUMap(IR2SUMap), G(G) {}
 
+  ~GlobalDependenciesBuilderBase() {
+#ifndef NDEBUG
+    verifyCreatedNodes();
+#endif
+  }
+
   typedef DenseMap<BasicBlock*, SmallVector<VASTSchedUnit*, 8> > AccessMapTy;
   AccessMapTy DefMap, UseMap;
 
@@ -265,6 +271,16 @@ struct GlobalDependenciesBuilderBase  {
 
   typedef std::map<BasicBlock*, VASTSchedUnit*> SyncMapTy;
   SyncMapTy Srcs, Snks;
+
+  static void verifyCreatedNode(std::pair<BasicBlock*, VASTSchedUnit*> I) {
+    if (LLVM_UNLIKELY(I.second->dep_empty() || I.second->use_empty()))
+      llvm_unreachable("Broken dependencies!");
+  }
+
+  void verifyCreatedNodes() const {
+    std::for_each(Srcs.begin(), Srcs.end(), verifyCreatedNode);
+    std::for_each(Snks.begin(), Snks.end(), verifyCreatedNode);
+  }
 
   VASTSchedUnit *getOrCreateSyncNode(BasicBlock *BB, SyncMapTy &Map,
                                      VASTSchedUnit::Type T) {
