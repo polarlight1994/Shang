@@ -398,7 +398,8 @@ bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
 
   unsigned TotalRows = get_Nrows(lp), NumVars = get_Ncolumns(lp);
   dbgs() << "The model has " << NumVars << "x" << TotalRows
-         << ", conditional nodes: " << ConditionalSUs.size() << '\n';
+         << ", conditional nodes: " << ConditionalSUs.size()
+         << ", synchronization nodes: " << SynchronizeSUs.size() << '\n';
 
   DEBUG(dbgs() << "Timeout is set to " << get_timeout(lp) << "secs.\n");
 
@@ -505,6 +506,7 @@ void SDCScheduler::addSynchronizeConstraints(VASTSchedUnit *SU) {
 
     VASTSchedUnit *Dep = *I;
     VASTSchedUnit *PredExit = PredecessorMap.lookup(Dep->getParent());
+    assert(PredExit && "Cannot find exit from predecessor block!");
     // The slack from the corresponding exit to Dep must no greater than the
     // slack from Entry to SU, i.e.
     // Dep - Exit <= SU - Entry
