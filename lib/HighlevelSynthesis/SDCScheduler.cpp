@@ -450,12 +450,13 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
 
     int AuxVar = CurSlackIdx + 1;
 
-    // Build constraints -Slack + BigM * AuxVar >= 0
+    // Build constraints Slack - BigM * AuxVar <= 0
     int CurCols[] = { CurSlackIdx, AuxVar };
-    REAL CurCoeffs[] = { -1.0, BigMMultiplier * getCriticalPathLength() };
+    REAL BigM = BigMMultiplier * getCriticalPathLength();
+    REAL CurCoeffs[] = { 1.0,  -BigM };
 
-    if(!add_constraintex(lp, array_lengthof(CurCols), CurCoeffs, CurCols, GE, 0))
-      report_fatal_error("Cannot create constraints!");
+    if(!add_constraintex(lp, array_lengthof(CurCols), CurCoeffs, CurCols, LE, 0))
+      report_fatal_error("Cannot create constraint!");
 
     Cols.push_back(AuxVar);
     Coeffs.push_back(1.0);
@@ -468,7 +469,12 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   unsigned NumCols = Cols.size();
   unsigned RHS = NumCols - 1;
   if(!add_constraintex(lp, NumCols, Coeffs.data(), Cols.data(), LE, RHS))
-    report_fatal_error("Cannot create constraints!");
+    report_fatal_error("Cannot create constraint!");
+
+  // Temporary disable this constraint because it make the LP model matrix
+  // become a non- totally unimodular matrix, which require B&B to get the
+  // optimal solution.
+  addHardConstraints(get_Nrows(lp) - 1, true);
 }
 
 void SDCScheduler::addConditionalConstraints() {
@@ -655,15 +661,24 @@ void SDCScheduler::addDependencyConstraints() {
 
 bool SDCScheduler::schedule() {
   DEBUG(printVerision());
+  ObjFn.setLPObj(lp);
 
   addDependencyConstraints();
   addSoftConstraints();
 
   bool changed = true;
 
-  ObjFn.setLPObj(lp);
+  // Just get a solution with the hard constraints disabled first.
+  set_break_at_first(lp, TRUE);
 
-  if (!solveLP(lp, true))
+  if (!solveLP(lp, false))
+    return false;
+
+  // Then enable the hard constraints and (try to) get the optimal solution.
+  changeHardConstraints(true);
+
+  set_break_at_first(lp, FALSE);
+  if (!solveLP(lp, false))
     return false;
 
   // Schedule the state with the ILP result.
@@ -673,6 +688,7 @@ bool SDCScheduler::schedule() {
   ObjFn.clear();
   SUIdx.clear();
   ConditionalSUs.clear();
+  HardConstraints.clear();
   delete_lp(lp);
   lp = 0;
   return true;
@@ -700,5 +716,24 @@ void SDCScheduler::initalizeCFGEdges() {
       BasicBlock *IncomingBB = Dep->getParent();
       CFGEdges[IncomingBB].insert(Dep);
     }
+  }
+}
+
+void SDCScheduler::addHardConstraints(unsigned RowNo, bool Disable) {
+  HardConstraints.push_back(RowNo);
+  if (Disable && !set_constr_type(lp, RowNo, FR))
+    report_fatal_error("Cannot change constraint type!");
+}
+
+void SDCScheduler::changeHardConstraints(bool Enable) {
+  typedef std::vector<unsigned>::iterator iterator;
+  for (iterator I = HardConstraints.begin(), E = HardConstraints.end();
+       I != E; ++I) {
+    unsigned RowNo = *I;
+    if (Enable) {
+      if (!set_constr_type(lp, RowNo, LE) || !set_rh(lp, RowNo, 0.0))
+        report_fatal_error("Cannot change constraint type!");
+    } else if (!set_constr_type(lp, RowNo, FR))
+      report_fatal_error("Cannot change constraint type!");
   }
 }

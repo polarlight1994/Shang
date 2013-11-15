@@ -66,6 +66,13 @@ private:
   lprec *lp;
   LoopInfo &LI;
 
+  // The constraints that are disable in the first pass. All thse constraints
+  // should have form ... <= 0
+  std::vector<unsigned> HardConstraints;
+
+  void changeHardConstraints(bool Enable);
+  void addHardConstraints(unsigned RowNo, bool Disable);
+
   // Helper class to build the object function for lp.
   struct LPObjFn : public std::map<unsigned, double> {
     LPObjFn &operator*=(double val) {
