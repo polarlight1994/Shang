@@ -146,7 +146,7 @@ struct StructualLess : public std::binary_function<VASTValPtr, VASTValPtr, bool>
 
 void
 VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
-                               VASTValue *V, ArrayRef<VASTSlot*> ReadSlots) const {
+                               VASTValue *V, VASTSlot *ReadSlot) const {
   typedef std::set<VASTSeqValue*> SVSet;
   SVSet Srcs;
 
@@ -156,48 +156,41 @@ VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
 
   if (Srcs.empty()) return;
 
-  for (unsigned i = 0; i < ReadSlots.size(); ++i) {
-    VASTSlot *ReadSlot = ReadSlots[i];
+  for (SVSet::iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
+    VASTSeqValue *Src = *I;
+    if (!Src->getLLVMValue())
+      continue;
 
-    OS.if_() << VASTValPtr(ReadSlot->getGuard())
-             << " & " << ReadSlot->getValue()->getName();
-    OS._then();
+    unsigned Interval = STGDist->getIntervalFromDef(Src, ReadSlot);
 
-    for (SVSet::iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-      VASTSeqValue *Src = *I;
-      if (!Src->getLLVMValue())
-        continue;
+    // Ignore single cycle path and false paths.
+    if (Interval == 1 || Interval == STGDistances::Inf) continue;
 
-      unsigned Interval = STGDist->getIntervalFromDef(Src, ReadSlot);
-
-      // Ignore single cycle path and false paths.
-      if (Interval == 1 || Interval == STGDistances::Inf) continue;
-
-      OS << "/*\n";
-      typedef VASTSeqValue::fanin_iterator iterator;
-      for (iterator I = Src->fanin_begin(), E = Src->fanin_end(); I != E; ++I) {
-        VASTLatch U = *I;
-        U.Op->print(OS);
-      }
-      OS << "\n*/\n";
-
-      OS.if_() << Src->getName() << "_hold_counter < " << (Interval - 1);
-      OS._then();
-      OS << "// read at slot: " << ReadSlot->SlotNum;
-      if (BasicBlock *BB = ReadSlot->getParent())
-        OS << ", " << BB->getName();
-      OS << "\n";
-
-      OS << "$display(\"Hold violation on " << Src->getName() << " at"
-            " slot: " << ReadSlot->SlotNum;
-      if (BasicBlock *BB = ReadSlot->getParent())
-        OS << ", " << BB->getName();
-      OS << " read by " << getName() << "; expected hold cycle:" << Interval
-          << " actual hold cycle: %d\", "
-          << Src->getName() << "_hold_counter + 1);\n";
-      OS << "$finish(1);\n";
-      OS.exit_block();
+    OS << "/*\n";
+    typedef VASTSeqValue::fanin_iterator iterator;
+    for (iterator I = Src->fanin_begin(), E = Src->fanin_end(); I != E; ++I) {
+      VASTLatch U = *I;
+      U.Op->print(OS);
     }
+    OS << "\n*/\n";
+
+    OS.if_() << Src->getName() << "_hold_counter < " << (Interval - 1);
+    OS._then();
+    OS << "// read at slot: " << ReadSlot->SlotNum;
+    if (BasicBlock *BB = ReadSlot->getParent())
+      OS << ", " << BB->getName();
+    OS << "\n";
+
+    OS << "$display(\"Hold violation on " << Src->getName() << " at"
+          " slot: " << ReadSlot->SlotNum;
+    if (BasicBlock *BB = ReadSlot->getParent())
+      OS << ", " << BB->getName();
+    OS << " written at slot %d read by " << getName()
+        << "; expected hold cycle:" << Interval
+        << " actual hold cycle: %d\", "
+        << Src->getName() << "_last_assigned_slot, "
+        << Src->getName() << "_hold_counter + 1);\n";
+    OS << "$finish(1);\n";
     OS.exit_block();
   }
 
@@ -328,6 +321,7 @@ VASTSelector::printVerificationCode(vlang_raw_ostream &OS, STGDistances *STGDist
 
   // Reset the hold counter when the register is reset.
   OS << getName() << "_hold_counter <= " << STGDistances::Inf << ";\n";
+  OS << getName() << "_last_assigned_slot <= " << STGDistances::Inf << ";\n";
 
   OS.else_begin();
 
@@ -400,41 +394,41 @@ VASTSelector::printVerificationCode(vlang_raw_ostream &OS, STGDistances *STGDist
 
   OS.indent(2) << "$finish(1);\nend\n";
 
-  for (const_iterator I = begin(), E = end(); I != E; ++I) {
-    const VASTLatch &L = *I;
-    verifyHoldCycles(OS, STGDist, VASTValPtr(L).get(), L.getSlot());
-    verifyHoldCycles(OS, STGDist, VASTValPtr(L.getGuard()).get(), L.getSlot());
-  }
-
   // Reset the hold counter when the register is changed.
   OS << getName() << "_hold_counter <= " << getName() << "_selector_guard"
      << " ? 0 : (" << getName() << "_hold_counter + 1);\n";
 
-  if (TraceDataBase) {
-    for (const_iterator I = begin(), E = end(); I != E; ++I) {
-      const VASTLatch &L = *I;
+  for (const_iterator I = begin(), E = end(); I != E; ++I) {
+    const VASTLatch &L = *I;
 
-      if (isTrivialFannin(L))
-        continue;
+    if (isTrivialFannin(L))
+      continue;
 
-      const VASTSeqOp *Op = L.Op;
-      OS.if_();
-      Op->printGuard(OS);
-      // Be careful of operations that is not guarded by slot, their guard can
-      // set even in the slot that their are not scheduled to. These cases are
-      // usually introduced by MUX pipelining, etc, which assign to the same
-      // register with the same guard and same fanin in different slots,
-      // it is save to the behavior of the circuit. But it introduces incorrect
-      // instruction trace, hence we need to guard it by the slot register.
-      if (!Op->guardedBySlotActive()) {
-        OS << " & ";
-        Op->getSlot()->getValue()->printAsOperand(OS, false);
-      }
-
-      OS._then();
-      dumpTrace(OS, Op, L, TraceDataBase);
-      OS.exit_block();
+    const VASTSeqOp *Op = L.Op;
+    OS.if_();
+    Op->printGuard(OS);
+    // Be careful of operations that is not guarded by slot, their guard can
+    // set even in the slot that their are not scheduled to. These cases are
+    // usually introduced by MUX pipelining, etc, which assign to the same
+    // register with the same guard and same fanin in different slots,
+    // it is save to the behavior of the circuit. But it introduces incorrect
+    // instruction trace, hence we need to guard it by the slot register.
+    if (!Op->guardedBySlotActive()) {
+      OS << " & ";
+      Op->getSlot()->getValue()->printAsOperand(OS, false);
     }
+
+    OS._then();
+
+    OS << getName() << "_last_assigned_slot <= " << L.getSlotNum() << ";\n";
+
+    verifyHoldCycles(OS, STGDist, VASTValPtr(L).get(), L.getSlot());
+    verifyHoldCycles(OS, STGDist, VASTValPtr(L.getGuard()).get(), L.getSlot());
+
+    if (TraceDataBase)
+      dumpTrace(OS, Op, L, TraceDataBase);
+
+    OS.exit_block();
   }
 
   OS.exit_block();
@@ -583,6 +577,7 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   // Generate the hold counter to verify the multi-cycle analysis.
   OS << "// synthesis translate_off\n";
   OS << "int unsigned " << getName() << "_hold_counter;\n";
+  OS << "int unsigned " << getName() << "_last_assigned_slot;\n";
   OS << "// synthesis translate_on\n\n";
 
   OS.always_ff_begin();

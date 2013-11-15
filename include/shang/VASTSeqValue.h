@@ -70,7 +70,7 @@ private:
 
   void printSelector(raw_ostream &OS) const;
   void verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
-                        VASTValue *V, ArrayRef<VASTSlot*> ReadSlots) const;
+                        VASTValue *V, VASTSlot *ReadSlot) const;
   void dumpTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op, const VASTLatch &L,
                  const char *TraceDataBase) const;
   void dumpSlotTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
