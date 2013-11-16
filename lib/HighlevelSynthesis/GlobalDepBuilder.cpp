@@ -887,7 +887,6 @@ struct LoopWARDepBuilder {
   }
 
   bool initializeUseDefForPHI(PHINode *PN);
-  void initializeUseDefForBackEdge(VASTSchedGraph &G);
 
   void buildDepandencies();
   void rememberEdge(BasicBlock *SrcBB, BasicBlock *DstBB);
@@ -1092,56 +1091,6 @@ bool LoopWARDepBuilder::initializeUseDefForPHI(PHINode *PN) {
   return true;
 }
 
-static bool HasUserInTheSameBB(VASTSchedUnit *SU, BasicBlock *BB) {
-  typedef VASTSchedUnit::const_use_iterator iterator;
-  for (iterator UI = SU->use_begin(), UE = SU->use_end(); UI != UE; ++UI) {
-    VASTSchedUnit *User = *UI;
-
-    if (User->isExit())
-      continue;
-
-    if (User->getParent() == BB && !User->isTerminator() && !User->isPHILatch())
-      return true;
-
-  }
-
-  return false;
-}
-
-void LoopWARDepBuilder::initializeUseDefForBackEdge(VASTSchedGraph &G) {
-  BasicBlock *Header = L->getHeader();
-
-  ArrayRef<VASTSchedUnit*> Incomings(IR2SUMap[Header]);
-  for (unsigned i = 0; i < Incomings.size(); ++i) {
-    VASTSchedUnit *SU = Incomings[i];
-
-    BasicBlock *IncomingBB = SU->getParent();
-    if (SU->isTerminator() && L->contains(IncomingBB))
-      DomUpdateSUs[IncomingBB].insert(SU);
-  }
-
-  typedef Loop::block_iterator block_iterator;
-  for (block_iterator I = L->block_begin(), E = L->block_end(); I != E; ++I) {
-    BasicBlock *BB = *I;
-
-    ArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(BB));
-    for (unsigned i = 0; i < SUs.size(); ++i) {
-      VASTSchedUnit *SU = SUs[i];
-
-      if (SU->isBBEntry() || SU->isPHI())
-        continue;
-
-      if (SU->isTerminator())
-        continue;
-
-      if (HasUserInTheSameBB(SU, BB))
-        continue;
-
-      addUser(SU);
-    }
-  }
-}
-
 void VASTScheduling::buildWARDepForPHIs(Loop *L) {
   BasicBlock *Header = L->getHeader();
 
@@ -1154,8 +1103,4 @@ void VASTScheduling::buildWARDepForPHIs(Loop *L) {
     if (WARDepBuilder.initializeUseDefForPHI(PN))
       WARDepBuilder.buildDepandencies();
   }
-
-  LoopWARDepBuilder WARDepBuilder(L, DT, IR2SUMap);
-  WARDepBuilder.initializeUseDefForBackEdge(*G);
-  WARDepBuilder.buildDepandencies();
 }
