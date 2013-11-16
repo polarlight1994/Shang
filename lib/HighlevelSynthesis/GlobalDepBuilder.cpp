@@ -673,7 +673,12 @@ struct AliasRegionDepBuilder
                          ArrayRef<VASTSchedUnit*> TDSUs);
 
   static void buildDep(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
-    Dst->addDep(Src, VASTDep::CreateMemDep(1, 0));
+    if (Dst->isVNode())
+      // Need to wait for 1 cycle for the SU in other side of the
+      // synchronization point.
+      Dst->addDep(Src, VASTDep::CreateCtrlDep(1));
+    else
+      Dst->addDep(Src, VASTDep::CreateMemDep(1, 0));
   }
 };
 
