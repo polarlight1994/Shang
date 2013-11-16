@@ -644,7 +644,10 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
       H.resetSrc(Src, this);
       H.addConstraintToLP(Edge, lp, 0);
 
-      if (DI.hasDataDependency())
+      // Ignore the edge from BBEntry (representing the guarding condition),
+      // because we had pipelined it (slot registers). Also ignore the edge from
+      // PHI, we had built RAW dependency to its updating nodes.
+      if (!Src->isBBEntry() && !Src->isPHI() && DI.hasDataDependency())
         // Limit throughput on edge, otherwise we may need to insert pipeline
         // register.
         limitThroughputOnEdge(Src, U);
