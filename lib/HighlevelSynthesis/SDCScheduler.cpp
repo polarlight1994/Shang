@@ -484,10 +484,6 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   DEBUG(unsigned RowNo = get_Nrows(lp);
   std::string RowName = "connectivity_" + utostr_32(RowNo);
   set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str())););
-  // Temporary disable this constraint because it make the LP model matrix
-  // become a non- totally unimodular matrix, which require B&B to get the
-  // optimal solution.
-  addDifficultConstraints(get_Nrows(lp), RHS, true);
 }
 
 void SDCScheduler::addConditionalConstraints() {
@@ -695,17 +691,7 @@ bool SDCScheduler::schedule() {
 
   bool changed = true;
 
-  // Just get a solution with the hard constraints disabled first.
-  set_break_at_first(lp, TRUE);
-
-  if (!solveLP(lp, false))
-    return false;
-
-  // Then enable the hard constraints and (try to) get the optimal solution.
-  changeDifficultConstraints(true);
-
-  set_break_at_first(lp, FALSE);
-  if (!solveLP(lp, false))
+  if (!solveLP(lp, true))
     return false;
 
   // Schedule the state with the ILP result.
@@ -716,9 +702,9 @@ bool SDCScheduler::schedule() {
   SUIdx.clear();
   ConditionalSUs.clear();
   SynchronizeSUs.clear();
-  DifficultConstraints.clear();
   delete_lp(lp);
   lp = 0;
+
   return true;
 }
 
@@ -744,36 +730,6 @@ void SDCScheduler::initalizeCFGEdges() {
       BasicBlock *IncomingBB = Dep->getParent();
       CFGEdges[IncomingBB].insert(Dep);
     }
-  }
-}
-
-void
-SDCScheduler::addDifficultConstraints(unsigned RowNo, double RHS, bool Disable) {
-  DifficultConstraints.push_back(std::make_pair(RowNo, RHS));
-
-  if (Disable && !set_constr_type(lp, RowNo, FR))
-    report_fatal_error("Cannot change constraint type!");
-}
-
-void SDCScheduler::changeDifficultConstraints(bool Enable) {
-  typedef std::vector<std::pair<unsigned, double> >::iterator iterator;
-  for (iterator I = DifficultConstraints.begin(), E = DifficultConstraints.end();
-       I != E; ++I) {
-    unsigned RowNo = I->first;
-    unsigned CurRow = get_lp_index(lp, RowNo);
-    double RHS = I->second;
-
-    dbgs() << "Row: " << RowNo << ", Name: "
-           << get_row_name(lp, CurRow) << '\n';
-
-    if (CurRow == 0)
-      continue;
-
-    if (Enable) {
-      if (!set_constr_type(lp, CurRow, LE) || !set_rh(lp, CurRow, RHS))
-        report_fatal_error("Cannot change constraint type!");
-    } else if (!set_constr_type(lp, CurRow, FR))
-      report_fatal_error("Cannot change constraint type!");
   }
 }
 
