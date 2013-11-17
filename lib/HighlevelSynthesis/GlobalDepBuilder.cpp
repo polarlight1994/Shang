@@ -100,8 +100,8 @@ struct GlobalFlowAnalyzer {
 
   // Determinate the insertion points for the PHIs.
   template<typename AccessSetTy>
-  void determineInsertionPoint(BBSet &DFBlocks, const AccessSetTy &DefMap,
-                               const AccessSetTy &UseMap) {
+  void determineDominanceFrontiers(BBSet &DFBlocks, const AccessSetTy &DefMap,
+                                   const AccessSetTy &UseMap) {
     initializeDomTreeLevel();
 
     // Determine in which blocks the FU's flow is alive.
@@ -394,7 +394,7 @@ struct GlobalDependenciesBuilderBase  {
 
   void constructGlobalFlow() {
     // Build the dependency across the basic block boundaries.
-    GFA.determineInsertionPoint(DFBlocks, DefMap, UseMap);
+    GFA.determineDominanceFrontiers(DFBlocks, DefMap, UseMap);
 
     DomTreeNode *Root = GFA.DT.getRootNode();
 
