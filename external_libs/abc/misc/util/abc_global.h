@@ -35,16 +35,7 @@
 //#pragma warning( disable : 4273 )
 #endif
 
-#ifdef WIN32
-#define ABC_DLLEXPORT __declspec(dllexport)
-#define ABC_DLLIMPORT __declspec(dllimport)
-#else  /* defined(WIN32) */
-#define ABC_DLLIMPORT
-#endif /* defined(WIN32) */
-
-#ifndef ABC_DLL
-#define ABC_DLL ABC_DLLIMPORT
-#endif
+#define ABC_DLL
 
 // catch memory leaks in Visual Studio
 #ifdef _DEBUG
