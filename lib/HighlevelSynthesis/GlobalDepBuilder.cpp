@@ -42,6 +42,7 @@
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/Support/CFG.h"
+#include "llvm/Support/type_traits.h"
 #define DEBUG_TYPE "shang-linear-order-builder"
 #include "llvm/Support/Debug.h"
 
@@ -81,10 +82,22 @@ struct alap_less {
 
 struct SingleFULinearOrder;
 
+template<typename AccessSetTy, typename DominatorTreeTy>
 struct GlobalFlowAnalyzer {
-  explicit GlobalFlowAnalyzer(DominatorTree &DT) : DT(DT) {}
+  explicit GlobalFlowAnalyzer(DominatorTreeTy &DT) : DT(*DT.DT) {}
+  static const bool IsPostDominators
+    = is_same<DominatorTreeTy, PostDominatorTree>::value;
+  typedef typename conditional<IsPostDominators,
+                               GraphTraits<Inverse<BasicBlock*> >,
+                               GraphTraits<BasicBlock*> >::type
+          GT;
 
-  DominatorTree &DT;
+  typedef typename conditional<IsPostDominators,
+                               GraphTraits<BasicBlock*>,
+                               GraphTraits<Inverse<BasicBlock*> > >::type
+          InverseGT;
+
+  DominatorTreeBase<BasicBlock> &DT;
   /// DomLevels - Maps DomTreeNodes to their level in the dominator tree.
   /// Please refer the following paper for more detials.
   ///
@@ -96,17 +109,34 @@ struct GlobalFlowAnalyzer {
   /// Also refer PromoteMemoryToRegister.cpp
   ///
   DenseMap<DomTreeNode*, unsigned> DomLevels;
-  void initializeDomTreeLevel();
+  void initializeDomTreeLevel() {
+    if (!DomLevels.empty()) return;
+
+    SmallVector<DomTreeNode*, 32> Worklist;
+
+    DomTreeNode *Root = DT.getRootNode();
+    DomLevels[Root] = 0;
+    Worklist.push_back(Root);
+
+    while (!Worklist.empty()) {
+      DomTreeNode *Node = Worklist.pop_back_val();
+      unsigned ChildLevel = DomLevels[Node] + 1;
+      for (dt_child_iterator CI = Node->begin(), CE = Node->end(); CI != CE; ++CI)
+      {
+        DomLevels[*CI] = ChildLevel;
+        Worklist.push_back(*CI);
+      }
+    }
+  }
 
   // Determinate the insertion points for the PHIs.
-  template<typename AccessSetTy>
   void determineDominanceFrontiers(BBSet &DFBlocks, const AccessSetTy &DefMap,
                                    const AccessSetTy &UseMap) {
     initializeDomTreeLevel();
 
     // Determine in which blocks the FU's flow is alive.
     SmallPtrSet<BasicBlock*, 32> LiveInBlocks;
-    computeLiveInBlocks<AccessSetTy>(LiveInBlocks, DefMap, UseMap);
+    computeLiveInBlocks(LiveInBlocks, DefMap, UseMap);
 
     // Use a priority queue keyed on dominator tree level so that inserted nodes
     // are handled from the bottom of the dominator tree upwards.
@@ -140,8 +170,9 @@ struct GlobalFlowAnalyzer {
         DomTreeNode *Node = Worklist.pop_back_val();
         BasicBlock *BB = Node->getBlock();
 
-        for (succ_iterator SI = succ_begin(BB), SE = succ_end(BB); SI != SE;
-             ++SI) {
+        typedef typename GT::ChildIteratorType child_iterator;
+        for (child_iterator SI = GT::child_begin(BB), SE = GT::child_end(BB);
+             SI != SE; ++SI) {
           DomTreeNode *SuccNode = DT.getNode(*SI);
 
           // Quickly skip all CFG edges that are also dominator tree edges
@@ -191,7 +222,6 @@ struct GlobalFlowAnalyzer {
     dbgs() << "\n\n";);
   }
 
-  template<typename AccessSetTy>
   void computeLiveInBlocks(BBSet &LiveInBlocks, const AccessSetTy &DefMap,
                            const AccessSetTy &UseMap) {
     // To determine liveness, we must iterate through the predecessors of blocks
@@ -225,7 +255,9 @@ struct GlobalFlowAnalyzer {
       // Since the value is live into BB, it is either defined in a predecessor
       // or live into it to.  Add the preds to the worklist unless they are a
       // defining block.
-      for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI) {
+      typedef typename InverseGT::ChildIteratorType parent_iterator;
+      for (parent_iterator PI = InverseGT::child_begin(BB),
+           E = InverseGT::child_end(BB); PI != E; ++PI) {
         BasicBlock *P = *PI;
 
         // The value is not live into a predecessor if it defines the value.
@@ -238,24 +270,27 @@ struct GlobalFlowAnalyzer {
   }
 };
 
+typedef DenseMap<BasicBlock*, SmallVector<VASTSchedUnit*, 8> > AccessMapTy;
+typedef GlobalFlowAnalyzer<AccessMapTy, DominatorTree> SyncPointAnalysis;
+
 template<typename SubClass>
 struct GlobalDependenciesBuilderBase  {
-  GlobalFlowAnalyzer &GFA;
+  AccessMapTy DefMap, UseMap;
+
+  SyncPointAnalysis &SyncAnalysis;
+
   IR2SUMapTy &IR2SUMap;
   VASTSchedGraph &G;
 
-  GlobalDependenciesBuilderBase(GlobalFlowAnalyzer &GFA, IR2SUMapTy &IR2SUMap,
+  GlobalDependenciesBuilderBase(SyncPointAnalysis &SyncAnalysis, IR2SUMapTy &IR2SUMap,
                                 VASTSchedGraph &G)
-    : GFA(GFA), IR2SUMap(IR2SUMap), G(G) {}
+    : SyncAnalysis(SyncAnalysis), IR2SUMap(IR2SUMap), G(G) {}
 
   ~GlobalDependenciesBuilderBase() {
 #ifndef NDEBUG
     verifyCreatedNodes();
 #endif
   }
-
-  typedef DenseMap<BasicBlock*, SmallVector<VASTSchedUnit*, 8> > AccessMapTy;
-  AccessMapTy DefMap, UseMap;
 
   // The dominance frontiers of DefBlocks, hence there is a pseudo write (def)
   // at the beginning of the block.
@@ -394,9 +429,9 @@ struct GlobalDependenciesBuilderBase  {
 
   void constructGlobalFlow() {
     // Build the dependency across the basic block boundaries.
-    GFA.determineDominanceFrontiers(DFBlocks, DefMap, UseMap);
+    SyncAnalysis.determineDominanceFrontiers(DFBlocks, DefMap, UseMap);
 
-    DomTreeNode *Root = GFA.DT.getRootNode();
+    DomTreeNode *Root = SyncAnalysis.DT.getRootNode();
 
     typedef po_iterator<DomTreeNode*> iterator;
     for (iterator I = po_begin(Root), E = po_end(Root); I != E; ++I) {
@@ -464,9 +499,9 @@ struct SingleFULinearOrder
   void buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs);
 
   SingleFULinearOrder(VASTNode *FU, unsigned Parallelism, SchedulerBase &G,
-                      IR2SUMapTy &IR2SUMap, GlobalFlowAnalyzer &GFA,
+                      IR2SUMapTy &IR2SUMap, SyncPointAnalysis &SyncAnalysis,
                       ArrayRef<VASTSchedUnit*> ReturnBlocks)
-    : GlobalDependenciesBuilderBase(GFA, IR2SUMap, *G), FU(FU),
+    : GlobalDependenciesBuilderBase(SyncAnalysis, IR2SUMap, *G), FU(FU),
       Parallelism(Parallelism), G(G), Returns(ReturnBlocks) {}
 
   void buildLinearOrder();
@@ -488,11 +523,11 @@ struct BasicLinearOrderGenerator {
   SchedulerBase &G;
   IR2SUMapTy &IR2SUMap;
   SmallVector<VASTSchedUnit*, 8> ReturnSUs;
-  GlobalFlowAnalyzer GFA;
+  SyncPointAnalysis SyncAnalysis;
 
   BasicLinearOrderGenerator(SchedulerBase &G, DominatorTree &DT,
                             IR2SUMapTy &IR2SUMap)
-    : G(G), IR2SUMap(IR2SUMap), GFA(DT) {}
+    : G(G), IR2SUMap(IR2SUMap), SyncAnalysis(DT) {}
 
   // The FUs whose accesses need to be synchronized, and the basic blocks in
   // which the FU is accessed.
@@ -504,26 +539,6 @@ struct BasicLinearOrderGenerator {
 
   ~BasicLinearOrderGenerator() { DeleteContainerSeconds(Builders); }
 };
-}
-
-void GlobalFlowAnalyzer::initializeDomTreeLevel() {
-  if (!DomLevels.empty()) return;
-
-  SmallVector<DomTreeNode*, 32> Worklist;
-
-  DomTreeNode *Root = DT.getRootNode();
-  DomLevels[Root] = 0;
-  Worklist.push_back(Root);
-
-  while (!Worklist.empty()) {
-    DomTreeNode *Node = Worklist.pop_back_val();
-    unsigned ChildLevel = DomLevels[Node] + 1;
-    for (dt_child_iterator CI = Node->begin(), CE = Node->end(); CI != CE; ++CI)
-    {
-      DomLevels[*CI] = ChildLevel;
-      Worklist.push_back(*CI);
-    }
-  }
 }
 
 void BasicLinearOrderGenerator::buildFUInfo() {
@@ -564,7 +579,7 @@ void BasicLinearOrderGenerator::buildFUInfo() {
         if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(FU))
           if (Bus->isDualPort()) Parallelism = 2;
 
-        S = new SingleFULinearOrder(FU, Parallelism, G, IR2SUMap, GFA,
+        S = new SingleFULinearOrder(FU, Parallelism, G, IR2SUMap, SyncAnalysis,
                                     ReturnSUs);
       }
 
@@ -652,8 +667,8 @@ struct AliasRegionDepBuilder
     AliasAnalysis &AA;
 
   AliasRegionDepBuilder(VASTSchedGraph &G, AliasAnalysis &AA,
-                        GlobalFlowAnalyzer &GFA, IR2SUMapTy &IR2SUMap)
-    : GlobalDependenciesBuilderBase(GFA, IR2SUMap, G), AA(AA) {}
+                        SyncPointAnalysis &SyncAnalysis, IR2SUMapTy &IR2SUMap)
+    : GlobalDependenciesBuilderBase(SyncAnalysis, IR2SUMap, G), AA(AA) {}
 
   void initializeRegion(AliasSet &AS);
 
@@ -688,13 +703,13 @@ struct AliasRegionDepBuilder
 struct MemoryDepBuilder {
   VASTSchedGraph &G;
   IR2SUMapTy &IR2SUMap;
-  GlobalFlowAnalyzer GFA;
+  SyncPointAnalysis SyncAnalysis;
   AliasAnalysis &AA;
   AliasSetTracker AST;
 
   MemoryDepBuilder(VASTSchedGraph &G, IR2SUMapTy &IR2SUMap, DominatorTree &DT,
                    AliasAnalysis &AA)
-    : G(G), IR2SUMap(IR2SUMap), GFA(DT), AA(AA), AST(AA) {}
+    : G(G), IR2SUMap(IR2SUMap), SyncAnalysis(DT), AA(AA), AST(AA) {}
 
   void buildLocalDependencies(BasicBlock *BB);
   void buildDependency(Instruction *Src, Instruction *Dst);
@@ -851,7 +866,7 @@ void MemoryDepBuilder::buildDependencies() {
     if (AS->isForwardingAliasSet() || !(AS->isMod() || AS->isRef()))
       continue;
 
-    AliasRegionDepBuilder Builder(G, AA, GFA, IR2SUMap);
+    AliasRegionDepBuilder Builder(G, AA, SyncAnalysis, IR2SUMap);
     Builder.initializeRegion(*AS);
     Builder.constructGlobalFlow();
   }
