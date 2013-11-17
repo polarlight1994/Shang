@@ -457,8 +457,6 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
 void ScheduleEmitter::emitSchedule() {
   Function &F = VM.getLLVMFunction();
   BasicBlock &Entry = F.getEntryBlock();
-
-  G.removeVirualNodes();
   G.sortSUs(top_sort_schedule_wrapper);
 
   OldSlots.splice(OldSlots.begin(), VM.getSLotList(),
@@ -1010,6 +1008,8 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
 //===----------------------------------------------------------------------===//
 
 void VASTScheduling::emitSchedule() {
+  G->finalizeScheduling(DT);
+
   ScheduleEmitter(*VM, *G).emitSchedule();
   ImplicitFlowBuilder(*VM).run();
   RegisterFolding(*VM, DT).run();

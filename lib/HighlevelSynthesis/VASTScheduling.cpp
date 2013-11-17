@@ -323,15 +323,44 @@ VASTSchedGraph::createSUnit(Instruction *Inst, VASTSchedUnit::Type T,
   return U;
 }
 
-void VASTSchedGraph::removeVirualNodes() {
+bool VASTSchedGraph::reassignParentBB(VASTSchedUnit *SU, BasicBlock *BB,
+                                      DominatorTree *DT) {
+  VASTSchedUnit *BBEntry = getEntrySU(BB);
+  BasicBlock *NewBB = BB;
+
+  unsigned SUSchedule = SU->getSchedule();
+  DomTreeNode *Node = DT->getNode(BB);
+
+  // Walk up the dominator tree, until we found a BB with a eariler schedule
+  // than the current SU.
+  while (SUSchedule < BBEntry->getSchedule()) {
+    assert(Node && "Bad scheduling eariler than the entry of CDFG?");
+    Node = Node->getIDom();
+    NewBB = Node->getBlock();
+    BBEntry = getEntrySU(NewBB);
+  }
+
+  // The entry BB is not changed at all.
+  if (NewBB == BB)
+    return false;
+
+  BBMap[NewBB].push_back(SU);
+  ++NumBBReassignments;
+
+  return true;
+}
+
+void VASTSchedGraph::finalizeScheduling(DominatorTree *DT) {
   typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::iterator
     iterator;
 
   for (iterator I = BBMap.begin(), E = BBMap.end(); I != E; ++I) {
+    BasicBlock *BB = I->first;
     std::vector<VASTSchedUnit*> &SUs = I->second;
+    assert(SUs.front()->isBBEntry() && "Bad SU order, did you sort the SUs?");
 
-    for (unsigned i = 0; i < SUs.size(); /*++i*/) {
-      if (!(SUs[i]->isVirtual())) {
+    for (unsigned i = 1; i < SUs.size(); /*++i*/) {
+      if (!(SUs[i]->isVirtual() || reassignParentBB(SUs[i], BB, DT))) {
         ++i;
         continue;
       }

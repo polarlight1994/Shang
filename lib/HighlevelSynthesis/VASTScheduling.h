@@ -448,6 +448,10 @@ class VASTSchedGraph {
   std::map<BasicBlock*, std::vector<VASTSchedUnit*> > BBMap;
 
   void verifyBBEntry(const VASTSchedUnit *SU) const;
+
+  // Reassign parent BB of a SU according to it's schedule. Return true if the
+  // parent BB is actually changed.
+  bool reassignParentBB(VASTSchedUnit *SU, BasicBlock *BB, DominatorTree *DT);
 public:
   VASTSchedGraph(Function &F);
   ~VASTSchedGraph();
@@ -499,8 +503,11 @@ public:
     return Entry;
   }
 
-  // Remove virtual SU before emitting the scheduling.
-  void removeVirualNodes();
+  // This function do the following things to prepare the scheduling graph for
+  // schedule emission:
+  // 1. Remove virtual SU before emitting the scheduling.
+  // 2. Reassign parent BB of the scheduling unit
+  void finalizeScheduling(DominatorTree *DT);
 
   template<typename T>
   void sortSUs(T F) {
