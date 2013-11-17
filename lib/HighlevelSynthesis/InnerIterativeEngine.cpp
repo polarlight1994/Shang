@@ -18,6 +18,7 @@
 
 #include "llvm/IR/Function.h"
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/BlockFrequencyInfo.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
@@ -442,6 +443,7 @@ struct ItetrativeEngine {
   SDCScheduler Scheduler;
   PreSchedBinding &PSB;
   DominatorTree &DT;
+  PostDominatorTree &PDT;
   BlockFrequencyInfo &BFI;
   BranchProbabilityInfo &BPI;
 
@@ -457,13 +459,14 @@ struct ItetrativeEngine {
   const float PerformanceFactor, ResourceFactor;
 
   ItetrativeEngine(VASTSchedGraph &G, LoopInfo &LI, PreSchedBinding &PSB,
-                   DominatorTree &DT, BlockFrequencyInfo &BFI,
-                   BranchProbabilityInfo &BPI, IR2SUMapTy &IR2SUMap)
-    : Scheduler(G, 1, LI), PSB(PSB), DT(DT), BFI(BFI), BPI(BPI),
+                   DominatorTree &DT, PostDominatorTree &PDT,
+                   BlockFrequencyInfo &BFI, BranchProbabilityInfo &BPI,
+                   IR2SUMapTy &IR2SUMap)
+    : Scheduler(G, 1, LI), PSB(PSB), DT(DT), PDT(PDT), BFI(BFI), BPI(BPI),
       IR2SUMap(IR2SUMap), S(Initial), ScheduleViolation(0), BindingViolation(0),
       TotalWeight(0.0), PerformanceFactor(8.0f), ResourceFactor(0.1f) {
     // Build the hard linear order.
-    Scheduler.addLinOrdEdge(DT, IR2SUMap);
+    Scheduler.addLinOrdEdge(DT, PDT, IR2SUMap);
     Scheduler.initalizeCFGEdges();
   }
 
@@ -844,8 +847,9 @@ void VASTScheduling::scheduleGlobal() {
   PreSchedBinding &PSB = getAnalysis<PreSchedBinding>();
   BranchProbabilityInfo &BPI = getAnalysis<BranchProbabilityInfo>();
   BlockFrequencyInfo &BFI = getAnalysis<BlockFrequencyInfo>();
+  PostDominatorTree &PDT = getAnalysis<PostDominatorTree>();
 
-  ItetrativeEngine ISB(*G, LI, PSB, *DT, BFI, BPI, IR2SUMap);
+  ItetrativeEngine ISB(*G, LI, PSB, *DT, PDT, BFI, BPI, IR2SUMap);
   while (ISB.performSchedulingAndAllocateMuxSlack(*VM)) {
     ++NumIterations;
     dbgs() << "Schedule Violations: " << ISB.ScheduleViolation << ' '

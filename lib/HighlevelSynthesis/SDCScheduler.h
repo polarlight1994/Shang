@@ -19,6 +19,7 @@
 
 namespace llvm {
 class DominatorTree;
+struct PostDominatorTree;
 
 class SDCScheduler : public SchedulerBase {
 public:
@@ -57,7 +58,7 @@ public:
 
   /// Add linear order edges to resolve resource conflict.
   //
-  void addLinOrdEdge(DominatorTree &DT,
+  void addLinOrdEdge(DominatorTree &DT, PostDominatorTree &PDT,
                      std::map<Value*, SmallVector<VASTSchedUnit*, 4> >
                      &IR2SUMap);
 

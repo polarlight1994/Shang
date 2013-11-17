@@ -32,6 +32,7 @@
 #include "shang/VASTMemoryPort.h"
 
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/AliasSetTracker.h"
 
@@ -272,19 +273,23 @@ struct GlobalFlowAnalyzer {
 
 typedef DenseMap<BasicBlock*, SmallVector<VASTSchedUnit*, 8> > AccessMapTy;
 typedef GlobalFlowAnalyzer<AccessMapTy, DominatorTree> SyncPointAnalysis;
+typedef GlobalFlowAnalyzer<AccessMapTy, PostDominatorTree> ControlDependenceAnalysis;
 
 template<typename SubClass>
 struct GlobalDependenciesBuilderBase  {
   AccessMapTy DefMap, UseMap;
 
   SyncPointAnalysis &SyncAnalysis;
+  ControlDependenceAnalysis &CtrlDepAnalysis;
 
   IR2SUMapTy &IR2SUMap;
   VASTSchedGraph &G;
 
-  GlobalDependenciesBuilderBase(SyncPointAnalysis &SyncAnalysis, IR2SUMapTy &IR2SUMap,
-                                VASTSchedGraph &G)
-    : SyncAnalysis(SyncAnalysis), IR2SUMap(IR2SUMap), G(G) {}
+  GlobalDependenciesBuilderBase(SyncPointAnalysis &SyncAnalysis,
+                                ControlDependenceAnalysis &CtrlDepAnalysis,
+                                IR2SUMapTy &IR2SUMap, VASTSchedGraph &G)
+    : SyncAnalysis(SyncAnalysis), CtrlDepAnalysis(CtrlDepAnalysis),
+      IR2SUMap(IR2SUMap), G(G) {}
 
   ~GlobalDependenciesBuilderBase() {
 #ifndef NDEBUG
@@ -500,9 +505,10 @@ struct SingleFULinearOrder
 
   SingleFULinearOrder(VASTNode *FU, unsigned Parallelism, SchedulerBase &G,
                       IR2SUMapTy &IR2SUMap, SyncPointAnalysis &SyncAnalysis,
+                      ControlDependenceAnalysis &CtrlDepAnalysis,
                       ArrayRef<VASTSchedUnit*> ReturnBlocks)
-    : GlobalDependenciesBuilderBase(SyncAnalysis, IR2SUMap, *G), FU(FU),
-      Parallelism(Parallelism), G(G), Returns(ReturnBlocks) {}
+    : GlobalDependenciesBuilderBase(SyncAnalysis, CtrlDepAnalysis, IR2SUMap, *G),
+      FU(FU), Parallelism(Parallelism), G(G), Returns(ReturnBlocks) {}
 
   void buildLinearOrder();
 
@@ -524,10 +530,11 @@ struct BasicLinearOrderGenerator {
   IR2SUMapTy &IR2SUMap;
   SmallVector<VASTSchedUnit*, 8> ReturnSUs;
   SyncPointAnalysis SyncAnalysis;
+  ControlDependenceAnalysis CtrlAnalysis;
 
   BasicLinearOrderGenerator(SchedulerBase &G, DominatorTree &DT,
-                            IR2SUMapTy &IR2SUMap)
-    : G(G), IR2SUMap(IR2SUMap), SyncAnalysis(DT) {}
+                            PostDominatorTree &PDT, IR2SUMapTy &IR2SUMap)
+    : G(G), IR2SUMap(IR2SUMap), SyncAnalysis(DT), CtrlAnalysis(PDT) {}
 
   // The FUs whose accesses need to be synchronized, and the basic blocks in
   // which the FU is accessed.
@@ -579,8 +586,8 @@ void BasicLinearOrderGenerator::buildFUInfo() {
         if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(FU))
           if (Bus->isDualPort()) Parallelism = 2;
 
-        S = new SingleFULinearOrder(FU, Parallelism, G, IR2SUMap, SyncAnalysis,
-                                    ReturnSUs);
+        S = new SingleFULinearOrder(FU, Parallelism, G, IR2SUMap,
+                                    SyncAnalysis, CtrlAnalysis, ReturnSUs);
       }
 
       // Add the FU visiting information.
@@ -651,9 +658,10 @@ void BasicLinearOrderGenerator::buildLinearOrder() {
   }
 }
 
-void SDCScheduler::addLinOrdEdge(DominatorTree &DT, IR2SUMapTy &IR2SUMap) {
+void SDCScheduler::addLinOrdEdge(DominatorTree &DT, PostDominatorTree &PDT,
+                                 IR2SUMapTy &IR2SUMap) {
   buildTimeFrameAndResetSchedule(true);
-  BasicLinearOrderGenerator(*this, DT, IR2SUMap).buildLinearOrder();
+  BasicLinearOrderGenerator(*this, DT, PDT, IR2SUMap).buildLinearOrder();
   G.topologicalSortSUs();
   buildTimeFrameAndResetSchedule(true);
 }
@@ -667,8 +675,11 @@ struct AliasRegionDepBuilder
     AliasAnalysis &AA;
 
   AliasRegionDepBuilder(VASTSchedGraph &G, AliasAnalysis &AA,
-                        SyncPointAnalysis &SyncAnalysis, IR2SUMapTy &IR2SUMap)
-    : GlobalDependenciesBuilderBase(SyncAnalysis, IR2SUMap, G), AA(AA) {}
+                        SyncPointAnalysis &SyncAnalysis,
+                        ControlDependenceAnalysis &CtrlDepAnalysis,
+                        IR2SUMapTy &IR2SUMap)
+    : GlobalDependenciesBuilderBase(SyncAnalysis, CtrlDepAnalysis, IR2SUMap, G),
+      AA(AA) {}
 
   void initializeRegion(AliasSet &AS);
 
@@ -704,12 +715,14 @@ struct MemoryDepBuilder {
   VASTSchedGraph &G;
   IR2SUMapTy &IR2SUMap;
   SyncPointAnalysis SyncAnalysis;
+  ControlDependenceAnalysis CtrlDepAnalysis;
   AliasAnalysis &AA;
   AliasSetTracker AST;
 
   MemoryDepBuilder(VASTSchedGraph &G, IR2SUMapTy &IR2SUMap, DominatorTree &DT,
-                   AliasAnalysis &AA)
-    : G(G), IR2SUMap(IR2SUMap), SyncAnalysis(DT), AA(AA), AST(AA) {}
+                   PostDominatorTree &PDT, AliasAnalysis &AA)
+    : G(G), IR2SUMap(IR2SUMap), SyncAnalysis(DT), CtrlDepAnalysis(PDT),
+      AA(AA), AST(AA) {}
 
   void buildLocalDependencies(BasicBlock *BB);
   void buildDependency(Instruction *Src, Instruction *Dst);
@@ -866,14 +879,15 @@ void MemoryDepBuilder::buildDependencies() {
     if (AS->isForwardingAliasSet() || !(AS->isMod() || AS->isRef()))
       continue;
 
-    AliasRegionDepBuilder Builder(G, AA, SyncAnalysis, IR2SUMap);
+    AliasRegionDepBuilder Builder(G, AA, SyncAnalysis, CtrlDepAnalysis, IR2SUMap);
     Builder.initializeRegion(*AS);
     Builder.constructGlobalFlow();
   }
 }
 
 void VASTScheduling::buildMemoryDependencies() {
-  MemoryDepBuilder MDB(*G, IR2SUMap, *DT, getAnalysis<AliasAnalysis>());
+  MemoryDepBuilder MDB(*G, IR2SUMap, *DT, getAnalysis<PostDominatorTree>(),
+                       getAnalysis<AliasAnalysis>());
   MDB.buildDependencies();
 }
 
