@@ -21,11 +21,6 @@
 #include "abc.h"
 #include "mainInt.h"
 
-#ifndef _WIN32
-#include <readline/readline.h>
-#include <readline/history.h>
-#endif
-
 ABC_NAMESPACE_IMPL_START
 
 
@@ -71,22 +66,11 @@ char * Abc_UtilsGetVersion( Abc_Frame_t * pAbc )
 char * Abc_UtilsGetUsersInput( Abc_Frame_t * pAbc )
 {
     static char Prompt[5000];
-#ifndef _WIN32
-    static char * line = NULL;
-#endif
 
     sprintf( Prompt, "abc %02d> ", pAbc->nSteps );
-#ifdef _WIN32
     fprintf( pAbc->Out, "%s", Prompt );
     fgets( Prompt, 5000, stdin );
     return Prompt;
-#else
-    if (line != NULL) ABC_FREE(line);
-    line = readline(Prompt);
-    if (line == NULL){ printf("***EOF***\n"); exit(0); }
-    add_history(line);
-    return line;
-#endif
 }
 
 /**Function*************************************************************
@@ -147,7 +131,6 @@ void Abc_UtilsPrintUsage( Abc_Frame_t * pAbc, char * ProgName )
 ***********************************************************************/
 void Abc_UtilsSource( Abc_Frame_t * pAbc )
 {
-#ifdef WIN32
     if ( Cmd_CommandExecute(pAbc, "source abc.rc") )
     {
         if ( Cmd_CommandExecute(pAbc, "source ..\\abc.rc") == 0 )
@@ -155,102 +138,7 @@ void Abc_UtilsSource( Abc_Frame_t * pAbc )
         else if ( Cmd_CommandExecute(pAbc, "source ..\\..\\abc.rc") == 0 )
             printf( "Loaded \"abc.rc\" from the grandparent directory.\n" );
     }
-#else
 
-#if 0
-    {
-        char * sPath1, * sPath2;
-
-         // If .rc is present in both the home and current directories, then read
-         // it from the home directory.  Otherwise, read it from wherever it's located.
-        sPath1 = Extra_UtilFileSearch(".rc", "~/", "r");
-        sPath2 = Extra_UtilFileSearch(".rc", ".",  "r");
-
-        if ( sPath1 && sPath2 ) {
-            /* ~/.rc == .rc : Source the file only once */
-            (void) Cmd_CommandExecute(pAbc, "source -s ~/.rc");
-        }
-        else {
-            if (sPath1) {
-                (void) Cmd_CommandExecute(pAbc, "source -s ~/.rc");
-            }
-            if (sPath2) {
-                (void) Cmd_CommandExecute(pAbc, "source -s .rc");
-            }
-        }
-        if ( sPath1 ) ABC_FREE(sPath1);
-        if ( sPath2 ) ABC_FREE(sPath2);
-
-        /* execute the abc script which can be open with the "open_path" */
-        Cmd_CommandExecute( pAbc, "source -s abc.rc" );
-    }
-#endif
-
-#ifdef ABC_PYTHON_EMBED
-    if ( getenv("ABC_PYTHON_ABC_RC") )
-    {
-        /* read script file from $ABC_PYTHON_ABC_RC */
-
-        char * sPath = getenv("ABC_PYTHON_ABC_RC");
-
-        if (sPath){
-            char * sCmd = ABC_ALLOC(char, strlen(sPath) + 50);
-            (void) sprintf(sCmd, "source -s %s", sPath);
-            (void) Cmd_CommandExecute(pAbc, sCmd);
-            ABC_FREE(sCmd);
-        }
-    }
-    else
-#endif /* #ifdef ABC_PYTHON_EMBED */
-    {
-        char * sPath1, * sPath2;
-        char * home;
-
-         // If .rc is present in both the home and current directories, then read
-         // it from the home directory.  Otherwise, read it from wherever it's located.
-        home = getenv("HOME");
-        if (home){
-            char * sPath3 = ABC_ALLOC(char, strlen(home) + 2);
-            (void) sprintf(sPath3, "%s/", home);
-            sPath1 = Extra_UtilFileSearch(".abc.rc", sPath3, "r");
-            ABC_FREE(sPath3);
-        }else
-            sPath1 = NULL;
-
-        sPath2 = Extra_UtilFileSearch(".abc.rc", ".",  "r");
-
-        if ( sPath1 && sPath2 ) {
-            /* ~/.rc == .rc : Source the file only once */
-            char *tmp_cmd = ABC_ALLOC(char, strlen(sPath1)+12);
-            (void) sprintf(tmp_cmd, "source -s %s", sPath1);
-            // (void) Cmd_CommandExecute(pAbc, "source -s ~/.abc.rc");
-            (void) Cmd_CommandExecute(pAbc, tmp_cmd);
-            ABC_FREE(tmp_cmd);
-        }
-        else {
-            if (sPath1) {
-                char *tmp_cmd = ABC_ALLOC(char, strlen(sPath1)+12);
-                (void) sprintf(tmp_cmd, "source -s %s", sPath1);
-                // (void) Cmd_CommandExecute(pAbc, "source -s ~/.abc.rc");
-                (void) Cmd_CommandExecute(pAbc, tmp_cmd);
-                ABC_FREE(tmp_cmd);
-            }
-            if (sPath2) {
-                char *tmp_cmd = ABC_ALLOC(char, strlen(sPath2)+12);
-                (void) sprintf(tmp_cmd, "source -s %s", sPath2);
-                // (void) Cmd_CommandExecute(pAbc, "source -s .abc.rc");
-                (void) Cmd_CommandExecute(pAbc, tmp_cmd);
-                ABC_FREE(tmp_cmd);
-            }
-        }
-        if ( sPath1 ) ABC_FREE(sPath1);
-        if ( sPath2 ) ABC_FREE(sPath2);
-
-        /* execute the abc script which can be open with the "open_path" */
-        Cmd_CommandExecute( pAbc, "source -s abc.rc" );
-    }
-
-#endif //WIN32
     {
         // reset command history
         char * pName;

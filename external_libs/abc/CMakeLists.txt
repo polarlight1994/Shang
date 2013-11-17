@@ -7,15 +7,18 @@ MACRO(HEADER_DIRECTORIES return_list)
     ENDFOREACH()
     LIST(REMOVE_DUPLICATES dir_list)
     SET(${return_list} ${dir_list})
-ENDMACRO()
+ENDMACRO(HEADER_DIRECTORIES)
 
 #Simply add all .c files
 file(GLOB_RECURSE ALL_ABC_SOURCES globbing *.c)
 #MESSAGE(STATUS "Found ABC: ${ALL_ABC_SOURCES}")
 
 add_definitions( -DABC_LIB )
+SetupABC()
 
-add_llvm_library(ABC ${ALL_ABC_SOURCES})
+add_llvm_library(ABCLogicSynthesis ${ALL_ABC_SOURCES})
 
 HEADER_DIRECTORIES(ABC_LOCAL_INCLUDE_DIRS)
 include_directories(${ABC_LOCAL_INCLUDE_DIRS})
+set(ABC_INCLUDE_DIRS "${ABC_LOCAL_INCLUDE_DIRS}"
+    CACHE PATH "Include directories of ABC")

@@ -78,17 +78,16 @@ endif (MSVC)
 
 #Add path for custom modules
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${SHANG_SOURCE_DIR}/cmake")
+# Load the macro to setup the platform variable for ABC
+include(SetupABC)
 
 FIND_PACKAGE(BOOST REQUIRED)
 FIND_PACKAGE(Lua REQUIRED)
 FIND_PACKAGE(LuaBind REQUIRED)
 FIND_PACKAGE(LpSolve REQUIRED)
 
-option(ENABLE_LOGIC_SYNTHESIS
-       "Enable the Pre-schedule bitlevel optimization by ABC" OFF)
-if (ENABLE_LOGIC_SYNTHESIS)
-  FIND_PACKAGE(ABC REQUIRED)
-endif(ENABLE_LOGIC_SYNTHESIS)
+# Add the external libraries before we add the source code of VAST.
+add_subdirectory(external_libs)
 
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -109,6 +108,7 @@ if (ENABLE_TESTSUITE)
   add_subdirectory(testsuite)
 endif (ENABLE_TESTSUITE)
 
+
 IF (NOT MSVC)
   add_subdirectory(util/TestAllDelayandLEs)
 ENDIF (NOT MSVC)
@@ -122,4 +122,4 @@ set(LLVM_LINK_COMPONENTS
 add_llvm_tool(shang
   shang.cpp
  )
-target_link_libraries(shang ShangIROpts ShangVAST ShangHLS ShangScripting)
+target_link_libraries(shang ShangIROpts ShangVAST ShangHLS ShangScripting ABCLogicSynthesis)

@@ -41,8 +41,8 @@ STATISTIC(NumSimpleLUTExpand, "Number of LUT of And type or Or type expand.");
 // The header of ABC
 #define ABC_DLL
 
-#include "base/main/main.h"
-#include "map/fpga/fpga.h"
+#include "main.h"
+#include "fpga.h"
 extern "C" {
   extern Abc_Ntk_t *Abc_NtkFpga(Abc_Ntk_t *pNtk, float DelayTarget,
                                 int fRecovery, int fSwitching, int fLatchPaths,

@@ -38,9 +38,11 @@
 #define ABC_DLL
 
 // catch memory leaks in Visual Studio
+#ifdef WIN32
 #ifdef _DEBUG
 #define _CRTDBG_MAP_ALLOC
 #include <crtdbg.h>
+#endif
 #endif
 
 #if !defined(___unused)
