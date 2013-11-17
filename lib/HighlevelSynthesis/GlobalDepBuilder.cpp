@@ -301,6 +301,8 @@ struct GlobalDependenciesBuilderBase  {
   // at the beginning of the block.
   BBSet SyncBlocks;
 
+  BBSet CtrlBlocks;
+
   void addDef(VASTSchedUnit *SU, BasicBlock *BB) {
     DefMap[BB].push_back(SU);
   }
@@ -432,16 +434,54 @@ struct GlobalDependenciesBuilderBase  {
     }
   }
 
+  bool hasControlBlockAsPredecessor(BasicBlock *BB) {
+    for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
+      BasicBlock *Predecessor = *I;
+
+      if (CtrlBlocks.count(Predecessor))
+        return true;
+    }
+
+    return false;
+  }
+
   void constructGlobalFlow() {
     // Build the dependency across the basic block boundaries.
     SyncAnalysis.determineDominanceFrontiers(SyncBlocks, DefMap, UseMap);
 
-    DomTreeNode *Root = SyncAnalysis.DT.getRootNode();
+    Function &F = G.getFunction();
 
-    typedef po_iterator<DomTreeNode*> iterator;
-    for (iterator I = po_begin(Root), E = po_end(Root); I != E; ++I) {
-      DomTreeNode *Node = *I;
-      buildDependenciesBottonUp(Node);
+    for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
+      if (DomTreeNode *Node = SyncAnalysis.DT.getNode(I))
+        buildDependenciesBottonUp(Node);
+    }
+
+    // Perform control Dependencies analysis on the write operations (defs).
+    CtrlDepAnalysis.determineDominanceFrontiers(CtrlBlocks, DefMap, AccessMapTy());
+
+    // TODO: Do not move SU into depper loop.
+    typedef AccessMapTy::iterator iterator;
+    for (iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I) {
+      BasicBlock *BB = I->first;
+      BasicBlock *ControlBlock = BB;
+      DomTreeNode *Node = SyncAnalysis.DT.getNode(BB);
+
+      while (Node) {
+        BasicBlock *CurBlock = Node->getBlock();
+        // TODO: Only update the controlling block if it does not go into deeper
+        // loop.
+        ControlBlock = CurBlock;
+
+        if (hasControlBlockAsPredecessor(CurBlock))
+          break;
+
+        Node = Node->getIDom();
+      }
+
+      VASTSchedUnit *BBEntry = G.getEntrySU(ControlBlock);
+      ArrayRef<VASTSchedUnit*> SUs(I->second);
+      for (unsigned i = 0; i < SUs.size(); ++i)
+        SUs[i]->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
     }
   }
 };
