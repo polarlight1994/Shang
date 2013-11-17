@@ -83,7 +83,7 @@ struct ControlChainingHazardDectector {
   bool detectHazard();
   bool detectHazard(VASTSchedUnit *SU);
 
-  static bool Run(SDCScheduler &Scheduler) {
+  static bool DetectAndFix(SDCScheduler &Scheduler) {
     ControlChainingHazardDectector CCHD(Scheduler);
     CCHD.initDistances();
     return CCHD.detectHazard();
@@ -167,6 +167,7 @@ bool ControlChainingHazardDectector::detectHazard(VASTSchedUnit *Dst) {
 
   BasicBlock *BB = Dst->getParent();
   unsigned DstOffset = Dst->getSchedule() - G.getEntrySU(BB)->getSchedule();
+  bool AnlyHazard = false;
 
   typedef VASTSchedUnit::dep_iterator dep_iterator;
   for (dep_iterator I = Dst->dep_begin(), E = Dst->dep_end(); I != E; ++I) {
@@ -201,11 +202,13 @@ bool ControlChainingHazardDectector::detectHazard(VASTSchedUnit *Dst) {
            + DstOffset - SrcOffset == 0 && "InterBB dependency not preserved!");
     unsigned NonShortestPathDistance = getTimeFrame(BB).ALAP -
                                        getTimeFrame(SrcBB).ALAP;
-    if (NonShortestPathDistance + DstOffset - SrcOffset > 0)
-      return true;
+    if (NonShortestPathDistance + DstOffset - SrcOffset > 0) {
+      Dst->addDep(Src, VASTDep::CreateCtrlDep(1));
+      AnlyHazard |= true;
+    }
   }
 
-  return false;
+  return AnlyHazard;
 }
 
 typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
@@ -582,10 +585,8 @@ struct ItetrativeEngine {
     if (!performScheduling(VM))
       return false;
 
-    if (ControlChainingHazardDectector::Run(Scheduler)) {
-      llvm_unreachable("No code to handle this yet!");
+    if (ControlChainingHazardDectector::DetectAndFix(Scheduler))
       return false;
-    }
 
     float NumBBs = VM.getLLVMFunction().getBasicBlockList().size();
     MUXFIViolation = 0;
