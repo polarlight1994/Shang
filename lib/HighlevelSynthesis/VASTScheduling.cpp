@@ -655,7 +655,10 @@ void VASTScheduling::buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U) 
     if (Instruction *Inst = dyn_cast<Instruction>(I->first)) {
       if (DF->isBlockUnreachable(Inst->getParent()) || !IR2SUMap.count(Inst))
         continue;
-    }
+    } else if (isa<BasicBlock>(I->first))
+      // The dependencies from BasicBlocks are control dependencies, we will
+      // calculate them based on post dominance frontier later.
+      continue;
 
     buildFlowDependencies(U, I->first, I->second);
   }
@@ -675,7 +678,10 @@ VASTScheduling::buildFlowDependenciesConditionalInst(Instruction *Inst,
     if (Instruction *Inst = dyn_cast<Instruction>(I->first)) {
       if (DF->isBlockUnreachable(Inst->getParent()) || !IR2SUMap.count(Inst))
         continue;
-    }
+    } else if (isa<BasicBlock>(I->first))
+      // The dependencies from BasicBlocks are control dependencies, we will
+      // calculate them based on post dominance frontier later.
+      continue;
 
     buildFlowDependencies(U, I->first, I->second);
   }
@@ -689,16 +695,8 @@ void VASTScheduling::buildFlowDependencies(VASTSchedUnit *U) {
     return;
   }
 
-
   if (PHINode *PHI = dyn_cast<PHINode>(Inst)) {
     buildFlowDependenciesConditionalInst(PHI, U->getParent(), U);
-
-    // Some times we get a PHI with constant incoming value. In this case there
-    // will be no flow dependencies to this PHI. In this case, make it depends
-    // on the entry node.
-    if (U->dep_empty())
-      U->addDep(G->getEntry(), VASTDep::CreateCtrlDep(0));
-    
     return;
   }
 
@@ -853,8 +851,17 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 
       buildFlowDependencies(U);
 
-      //if (Inst->mayHaveSideEffects())
-      U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
+      // No need to add control dependencies even the instruction have side
+      // effect, we are going to calculate the controlling block later.
+      // if (Inst->mayHaveSideEffects())
+      //   U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
+
+      if (U->isPHILatch()) {
+        // Since the PHI latches are predicated, their depends on the parent BB,
+        // i.e. the PHI latches are implicitly guard by the 'condition' of their
+        // parent BB.
+        U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
+      }
 
       IR2SUMap[Inst].push_back(U);
       continue;
@@ -872,6 +879,8 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 
         buildFlowDependencies(U);
 
+        // The branch operations are predicated, hence their depends on their
+        // parent BB.
         U->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
         continue;
       }
