@@ -156,12 +156,12 @@ int VASTSchedUnit::EdgeBundle::getDFLatency() const {
   VASTDep::Types T = Edges.front().getEdgeType();
   int Latency = -1;
 
-  if ((T == VASTDep::ValDep))
+  if (T == VASTDep::ValDep)
     Latency = std::max(Edges.front().getLatency(), Latency);
 
   for (unsigned i = 1, e = Edges.size(); i != e; ++i) {
     T = Edges[i].getEdgeType();
-    if ((T == VASTDep::ValDep))
+    if (T == VASTDep::ValDep)
       Latency = std::max(Edges[i].getLatency(), Latency);
   }
 
