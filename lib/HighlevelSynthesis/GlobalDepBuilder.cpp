@@ -886,7 +886,9 @@ struct LoopWARDepBuilder {
       addUser(*I);
   }
 
-  bool initializeUseDefForPHI(PHINode *PN);
+  void addUpdater(VASTSchedUnit *SU) {
+    DomUpdateSUs[SU->getParent()].insert(SU);
+  }
 
   void buildDepandencies();
   void rememberEdge(BasicBlock *SrcBB, BasicBlock *DstBB);
@@ -1064,33 +1066,6 @@ void LoopWARDepBuilder::buildDepandencies() {
   }
 }
 
-bool LoopWARDepBuilder::initializeUseDefForPHI(PHINode *PN) {
-  IR2SUMapTy::iterator J = IR2SUMap.find(PN);
-
-  // Ignore the dead PHINodes.
-  if (J == IR2SUMap.end())
-    return false;
-
-  ArrayRef<VASTSchedUnit*> SUs(J->second);
-  for (unsigned i = 0; i < SUs.size(); ++i) {
-    VASTSchedUnit *SU = SUs[i];
-    // Collect the user of the PHI node.
-    if (SU->isPHI()) {
-      addPHI(SU);
-      continue;
-    }
-
-    // Collect the update SU from the BackEdge.
-    BasicBlock *Incoming = SU->getIncomingBlock();
-    if (L->contains(Incoming)) {
-      assert(Incoming == SU->getParent() && "Bad parent for PHI incoming node!");
-      DomUpdateSUs[SU->getParent()].insert(SU);
-    }
-  }
-
-  return true;
-}
-
 void VASTScheduling::buildWARDepForPHIs(Loop *L) {
   BasicBlock *Header = L->getHeader();
 
@@ -1100,7 +1075,37 @@ void VASTScheduling::buildWARDepForPHIs(Loop *L) {
     PHINode *PN = cast<PHINode>(I);
 
     LoopWARDepBuilder WARDepBuilder(L, DT, IR2SUMap);
-    if (WARDepBuilder.initializeUseDefForPHI(PN))
-      WARDepBuilder.buildDepandencies();
+
+    IR2SUMapTy::iterator J = IR2SUMap.find(PN);
+
+    // Ignore the dead PHINodes.
+    if (J == IR2SUMap.end())
+      continue;
+
+    ArrayRef<VASTSchedUnit*> SUs(J->second);
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      VASTSchedUnit *SU = SUs[i];
+      // Collect the user of the PHI node.
+      if (SU->isPHI()) {
+        WARDepBuilder.addPHI(SU);
+        continue;
+      }
+
+      // Collect the update SU from the BackEdge.
+      BasicBlock *Incoming = SU->getIncomingBlock();
+      if (L->contains(Incoming)) {
+        assert(Incoming == SU->getParent()
+               && "Bad parent for PHI incoming node!");
+        WARDepBuilder.addUpdater(SU);
+        continue;
+      }
+
+      Loop *ParentLoop = L->getParentLoop();
+      if (ParentLoop && ParentLoop->contains(Incoming))
+        assert(DT->dominates(Incoming, L->getHeader())
+               && "Cannot handle irregular loop!");
+    }
+
+    WARDepBuilder.buildDepandencies();
   }
 }

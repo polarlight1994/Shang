@@ -103,6 +103,8 @@ private:
 
   std::map<BasicBlock*, std::set<VASTSchedUnit*> > CFGEdges;
   void limitThroughputOnEdge(VASTSchedUnit *Src, VASTSchedUnit *Dst);
+  void limitThroughputOnEdge(VASTSchedUnit *Src, VASTSchedUnit *Dst, Loop *L,
+                             std::set<VASTSchedUnit*> &Exits);
 
   // Build constraints -Slack + BigM * AuxVar >= 0 and
   // Sum (AuxVar) <= Number of Slack - 1, where AuxVar is either 0 or 1.

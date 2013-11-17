@@ -554,8 +554,9 @@ Loop *GetCommonParentLoop(BasicBlock *LHS, BasicBlock *RHS, LoopInfo &LI) {
 
   return RHSLoop;
 }
-void SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src,
-                                                VASTSchedUnit *Dst) {
+
+void
+SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
   BasicBlock *DstParent = Dst->getParent();
 
   std::map<BasicBlock*, std::set<VASTSchedUnit*> >::iterator
@@ -570,20 +571,49 @@ void SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src,
   if (L == NULL)
     return;
 
-  // Ensure all paths from Src to Dst in the loop have an initial interval that
-  // is bigger than the distance of the current edge. Otherwise, we may need to
-  // insert pipeline register to maintain the dependency of the current edge.
-  BasicBlock *Header = L->getHeader();
-  
+  std::set<VASTSchedUnit*> &Exits = J->second;
+
+  // PHIs which are representing induction variable (or similar) need to be
+  // handled in a different way.
+  if (Src->isPHI() && Src->getParent() == L->getHeader()) {
+    typedef VASTSchedUnit::dep_iterator dep_iterator;
+    for (dep_iterator I = Src->dep_begin(), E = Src->dep_end(); I != E; ++I) {
+      assert(I.getEdgeType() == VASTDep::Synchronize && "Unexpected edge type!");
+      VASTSchedUnit *Incoming = *I;
+      assert(Incoming->isPHILatch() && "Unexpected type of Incoming SU of PHI!");
+
+      // Back edge update had been handled by LoopWARDepBuilder.
+      if (L->contains(Incoming->getParent()))
+        continue;
+
+      // Limit the throughput in parent loop.
+      if (Loop *ParentLoop = L->getParentLoop())
+        limitThroughputOnEdge(Src, Dst, ParentLoop, Exits);
+    }
+
+    return;
+  }
+
+  limitThroughputOnEdge(Src, Dst, L, Exits);
+}
+
+void
+SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src, VASTSchedUnit *Dst,
+                                    Loop *L, std::set<VASTSchedUnit*> &Exits) {
+  DEBUG(dbgs() << "Going to add throughput limitation constraints on edge:\n";
+  Src->dump();
+  Dst->dump();
+  L->dump();
+  dbgs() << '\n';);
+
   // Build Constraints Dst - Src <= Path Interval <= Initial Interval.
   // Where Path Interval >= DstParent Exit - Header, hence we have
   // Dst - Src <= DstParent Exit - Header <= Path Interval <= Initial, i.e.
   // Dst - Src + Header - DstParent Exit <= 0. The path interval (length) of
   // all path goes through Src and Dst is calculated by:
   // Path(Header, Src) + Path(Src, Dst Exit), because Header dominates Src and
-  // Src dominates Dst, the equetion can be rewritten as
+  // Src dominates Dst, the equation can be rewritten as
   // Src - Header + Dst Exit - Src, i.e. Dst Exit - Header.
-  std::set<VASTSchedUnit*> &Exits = J->second;
   typedef std::set<VASTSchedUnit*>::iterator iterator;
 
   for (iterator I = Exits.begin(), E = Exits.end(); I != E; ++I) {
@@ -640,12 +670,10 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
       H.resetSrc(Src, this);
       H.addConstraintToLP(Edge, lp, 0);
 
-      // Ignore the edge from BBEntry (representing the guarding condition),
-      // because we had pipelined it (slot registers). Also ignore the edge from
-      // PHI, we had built RAW dependency to its updating nodes.
-      if (!Src->isBBEntry() && !Src->isPHI() && DI.hasDataDependency())
-        // Limit throughput on edge, otherwise we may need to insert pipeline
-        // register.
+      // Limit throughput on edge, otherwise we may need to insert pipeline
+      // register. At the same time, ignore the edge from BBEntry (representing
+      // the guarding condition), because we had pipelined it (slot registers).
+      if (!Src->isBBEntry() && DI.getDFLatency() > -1)
         limitThroughputOnEdge(Src, U);
     }
   }
