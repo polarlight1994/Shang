@@ -445,7 +445,7 @@ struct GlobalDependenciesBuilderBase  {
     return false;
   }
 
-  void constructGlobalFlow() {
+  void constructGlobalFlow(LoopInfo &LI) {
     // Build the dependency across the basic block boundaries.
     SyncAnalysis.determineDominanceFrontiers(SyncBlocks, DefMap, UseMap);
 
@@ -465,12 +465,26 @@ struct GlobalDependenciesBuilderBase  {
       BasicBlock *BB = I->first;
       BasicBlock *ControlBlock = BB;
       DomTreeNode *Node = SyncAnalysis.DT.getNode(BB);
+      Loop *LastLoop = LI.getLoopFor(BB);
+      unsigned LastLoopDepth = LI.getLoopDepth(BB);
 
       while (Node) {
         BasicBlock *CurBlock = Node->getBlock();
         // TODO: Only update the controlling block if it does not go into deeper
         // loop.
-        ControlBlock = CurBlock;
+        unsigned CurLoopDepth = LI.getLoopDepth(CurBlock);
+
+        // Always move to parent loop.
+        if (CurLoopDepth < LastLoopDepth) {
+          ControlBlock = CurBlock;
+          LastLoop = LI.getLoopFor(CurBlock);
+        } else if (CurLoopDepth == LastLoopDepth) {
+          Loop *CurLoop = LI.getLoopFor(CurBlock);
+          // It doesn't make sense if we move to another loop with the same
+          // depth.
+          if (CurLoop == LastLoop)
+            ControlBlock = CurBlock;
+        }
 
         if (hasControlBlockAsPredecessor(CurBlock))
           break;
@@ -550,7 +564,7 @@ struct SingleFULinearOrder
     : GlobalDependenciesBuilderBase(SyncAnalysis, CtrlDepAnalysis, IR2SUMap, *G),
       FU(FU), Parallelism(Parallelism), G(G), Returns(ReturnBlocks) {}
 
-  void buildLinearOrder();
+  void buildLinearOrder(LoopInfo &LI);
 
   virtual void dump() const {
     typedef AccessMapTy::const_iterator def_iterator;
@@ -582,7 +596,7 @@ struct BasicLinearOrderGenerator {
 
   void buildFUInfo();
 
-  void buildLinearOrder();
+  void buildLinearOrder(LoopInfo &LI);
 
   ~BasicLinearOrderGenerator() { DeleteContainerSeconds(Builders); }
 };
@@ -654,7 +668,7 @@ SingleFULinearOrder::buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   }
 }
 
-void SingleFULinearOrder::buildLinearOrder() {
+void SingleFULinearOrder::buildLinearOrder(LoopInfo &LI) {
   // Build the linear order within each BB.
   typedef AccessMapTy::iterator def_iterator;
   for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
@@ -681,10 +695,10 @@ void SingleFULinearOrder::buildLinearOrder() {
     buildDep(ExistSUs.back(), ReturnSU);
   }
 
-  constructGlobalFlow();
+  constructGlobalFlow(LI);
 }
 
-void BasicLinearOrderGenerator::buildLinearOrder() {
+void BasicLinearOrderGenerator::buildLinearOrder(LoopInfo &LI) {
   // Collect the functional units which require dependencies to avoid multiple
   // accesses in the overlap slots, and the blocks in which the FU is accessed.
   buildFUInfo();
@@ -694,14 +708,14 @@ void BasicLinearOrderGenerator::buildLinearOrder() {
           iterator;
   for (iterator I = Builders.begin(), E = Builders.end(); I != E; ++I) {
     SingleFULinearOrder *Builder = I->second;
-    Builder->buildLinearOrder();
+    Builder->buildLinearOrder(LI);
   }
 }
 
 void SDCScheduler::addLinOrdEdge(DominatorTree &DT, PostDominatorTree &PDT,
                                  IR2SUMapTy &IR2SUMap) {
   buildTimeFrameAndResetSchedule(true);
-  BasicLinearOrderGenerator(*this, DT, PDT, IR2SUMap).buildLinearOrder();
+  BasicLinearOrderGenerator(*this, DT, PDT, IR2SUMap).buildLinearOrder(LI);
   G.topologicalSortSUs();
   buildTimeFrameAndResetSchedule(true);
 }
@@ -767,7 +781,7 @@ struct MemoryDepBuilder {
   void buildLocalDependencies(BasicBlock *BB);
   void buildDependency(Instruction *Src, Instruction *Dst);
 
-  void buildDependencies();
+  void buildDependencies(LoopInfo &LI);
 };
 }
 //===----------------------------------------------------------------------===//
@@ -902,7 +916,7 @@ void MemoryDepBuilder::buildLocalDependencies(BasicBlock *BB) {
   }
 }
 
-void MemoryDepBuilder::buildDependencies() {
+void MemoryDepBuilder::buildDependencies(LoopInfo &LI) {
   Function &F = G.getFunction();
 
   // Build the memory dependencies inside basic blocks.
@@ -921,14 +935,14 @@ void MemoryDepBuilder::buildDependencies() {
 
     AliasRegionDepBuilder Builder(G, AA, SyncAnalysis, CtrlDepAnalysis, IR2SUMap);
     Builder.initializeRegion(*AS);
-    Builder.constructGlobalFlow();
+    Builder.constructGlobalFlow(LI);
   }
 }
 
 void VASTScheduling::buildMemoryDependencies() {
   MemoryDepBuilder MDB(*G, IR2SUMap, *DT, getAnalysis<PostDominatorTree>(),
                        getAnalysis<AliasAnalysis>());
-  MDB.buildDependencies();
+  MDB.buildDependencies(getAnalysis<LoopInfo>());
 }
 
 namespace {
