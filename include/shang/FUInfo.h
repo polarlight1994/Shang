@@ -157,6 +157,7 @@ protected:
   static float    lookupLatency(const float *Table, unsigned SizeInBits);
   static unsigned lookupCost(const unsigned *Table, unsigned SizeInBits);
 public:
+  virtual ~VFUDesc() {}
 
   static const char *getTypeName(VFUs::FUTypes FU) {
     return VFUs::VFUNames[FU];

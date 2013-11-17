@@ -357,7 +357,7 @@ protected:
   void notifyDeletion(VASTExpr *E);
 public:
   DatapathContainer();
-  ~DatapathContainer();
+  virtual ~DatapathContainer();
 
   BumpPtrAllocator &getAllocator() { return Allocator; }
 
