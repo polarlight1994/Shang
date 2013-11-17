@@ -529,7 +529,7 @@ void SDCScheduler::addSynchronizeConstraints(VASTSchedUnit *SU) {
     // The slack from the corresponding exit to Dep must no greater than the
     // slack from Entry to SU, i.e.
     // Dep - Exit <= SU - Entry
-    addConstraint(lp, PredExit, Dep, 0, SlackIdx, GE);
+    addConstraint(lp, PredExit, Dep, 0, SlackIdx, EQ); // EQ|GE
   }
 }
 
