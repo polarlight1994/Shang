@@ -299,7 +299,7 @@ struct GlobalDependenciesBuilderBase  {
 
   // The dominance frontiers of DefBlocks, hence there is a pseudo write (def)
   // at the beginning of the block.
-  BBSet DFBlocks;
+  BBSet SyncBlocks;
 
   void addDef(VASTSchedUnit *SU, BasicBlock *BB) {
     DefMap[BB].push_back(SU);
@@ -369,7 +369,7 @@ struct GlobalDependenciesBuilderBase  {
   void buildCtrlDepToSyncPoint(BasicBlock *BB, ArrayRef<VASTSchedUnit*> TDSUs,
                                SmallVectorImpl<VASTSchedUnit*> &BUSUs) {
     std::set<BasicBlock*> Succs(succ_begin(BB), succ_end(BB));
-    set_intersect(Succs, DFBlocks);
+    set_intersect(Succs, SyncBlocks);
     if (Succs.empty())
       return;
 
@@ -401,7 +401,7 @@ struct GlobalDependenciesBuilderBase  {
     if (BUSUs.empty())
       return;
 
-    if (DFBlocks.count(BB))
+    if (SyncBlocks.count(BB))
       buildDepFromDFBlock(BB, BUSUs);
 
     Node = Node->getIDom();
@@ -417,7 +417,7 @@ struct GlobalDependenciesBuilderBase  {
       // If the current BB is synchronization point (i.e. PHI node for flow
       // dependencies), add control dependencies to the SUs that are not
       // consumed by the previous dependencies building function.
-      if (DFBlocks.count(BB))
+      if (SyncBlocks.count(BB))
         buildDepFromDFBlock(BB, BUSUs);
     }
 
@@ -434,7 +434,7 @@ struct GlobalDependenciesBuilderBase  {
 
   void constructGlobalFlow() {
     // Build the dependency across the basic block boundaries.
-    SyncAnalysis.determineDominanceFrontiers(DFBlocks, DefMap, UseMap);
+    SyncAnalysis.determineDominanceFrontiers(SyncBlocks, DefMap, UseMap);
 
     DomTreeNode *Root = SyncAnalysis.DT.getRootNode();
 
@@ -520,7 +520,7 @@ struct SingleFULinearOrder
 
     dbgs() << "\nDFs:\n\t";
     typedef BBSet::const_iterator bb_iterator;
-    for (bb_iterator I = DFBlocks.begin(), E = DFBlocks.end(); I != E; ++I)
+    for (bb_iterator I = SyncBlocks.begin(), E = SyncBlocks.end(); I != E; ++I)
       dbgs() << (*I)->getName() << ", ";
   }
 };
