@@ -555,7 +555,7 @@ Loop *GetCommonParentLoop(BasicBlock *LHS, BasicBlock *RHS, LoopInfo &LI) {
 }
 
 void
-SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
+SDCScheduler::preserveAntiDependence(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
   BasicBlock *DstParent = Dst->getParent();
 
   std::map<BasicBlock*, std::set<VASTSchedUnit*> >::iterator
@@ -587,18 +587,18 @@ SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
 
       // Limit the throughput in parent loop.
       if (Loop *ParentLoop = L->getParentLoop())
-        limitThroughputOnEdge(Src, Dst, ParentLoop, Exits);
+        preserveAntiDependence(Src, Dst, ParentLoop, Exits);
     }
 
     return;
   }
 
-  limitThroughputOnEdge(Src, Dst, L, Exits);
+  preserveAntiDependence(Src, Dst, L, Exits);
 }
 
 void
-SDCScheduler::limitThroughputOnEdge(VASTSchedUnit *Src, VASTSchedUnit *Dst,
-                                    Loop *L, std::set<VASTSchedUnit*> &Exits) {
+SDCScheduler::preserveAntiDependence(VASTSchedUnit *Src, VASTSchedUnit *Dst,
+                                     Loop *L, std::set<VASTSchedUnit*> &Exits) {
   DEBUG(dbgs() << "Going to add throughput limitation constraints on edge:\n";
   Src->dump();
   Dst->dump();
