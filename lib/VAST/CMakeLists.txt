@@ -29,6 +29,9 @@ add_llvm_library(ShangVAST
   RTLCodeGen.cpp
 )
 
+get_property(ABC_INCLUDE_DIRS GLOBAL PROPERTY ABC_INCLUDE_DIRS)
+get_property(ABC_LIBRARY GLOBAL PROPERTY ABC_LIBRARY)
+
 # We need to link ShangVAST against ShangIROpts under Linux
 if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
   target_link_libraries (ShangVAST ShangIROpts)
