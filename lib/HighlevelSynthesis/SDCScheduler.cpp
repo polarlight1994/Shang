@@ -157,14 +157,6 @@ unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB) {
 }
 
 unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
-  // Create the slack variable for the edge.
-  Col = createSlackVariable(Col, 0, 0);
-  // Slack variables are used in the ``difficult'' constraints, hence we
-  // assign a lower variable weight (than the step variables and slack
-  // variables for soft constraints) to them, so lpsolve will make them integer
-  // earier than the step variables and slack variables for soft constraints.
-  LPVarWeights.push_back(128.0);
-
   // The auxiliary variable to specify one of the conditional dependence
   // and the current SU must have the same scheduling.
   Col = createSlackVariable(Col, 1, 0);
@@ -459,7 +451,7 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
 
   // Note that we had allocated variables for the slacks, these variables are
   // right after the step variable of SU.
-  int CurSlackIdx = getSUIdx(SU) + 1;
+  int CurIdx = getSUIdx(SU) + 1;
   bool HadMetEarierBranch = false;
 
   typedef VASTSchedUnit::dep_iterator dep_iterator;
@@ -469,12 +461,12 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
 
     assert(I.getLatency() == 0 &&
            "Conditional dependencies must have a zero latency!");
+
     // First of all, export the slack for conditional edge. For conditional edge
     // we require Dst <= Src, hence we have Dst - Src + Slack = 0, Slack >= 0
-    addConstraint(lp, SU, Dep, 0, CurSlackIdx, EQ);
-
-    int AuxVar = CurSlackIdx + 1;
-
+    // i.e. Slack = Src - Dst
+    addConstraint(lp, SU, Dep, 0, 0, LE);
+    int AuxVar = CurIdx;
     // Note that AuxVar is a binary variable, setting 0 to AuxVar means the
     // terminator of the predecessor block is 'connected' to the entry of
     // current BB. And the conditional dependency constraints require that
@@ -487,21 +479,22 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
     } else
       set_var_branch(lp, AuxVar, BRANCH_CEILING);
 
-    // Build constraints Slack - BigM * AuxVar <= 0
-    int CurCols[] = { CurSlackIdx, AuxVar };
+    // Build constraints Slack - BigM * AuxVar <= 0,
+    // i.e. Src - Dst - BigM * AuxVar <= 0
+    int CurCols[] = { getSUIdx(Dep), getSUIdx(SU), AuxVar };
     REAL BigM = BigMMultiplier * getCriticalPathLength();
-    REAL CurCoeffs[] = { 1.0,  -BigM };
+    REAL CurCoeffs[] = { 1.0, -1.0,  -BigM };
 
     if(!add_constraintex(lp, array_lengthof(CurCols), CurCoeffs, CurCols, LE, 0))
       report_fatal_error("Cannot create constraint!");
 
-    DEBUG(unsigned RowNo = get_Nrows(lp);
+    unsigned RowNo = get_Nrows(lp);
     std::string RowName = "conditional_" + utostr_32(RowNo);
-    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str())););
+    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
 
     Cols.push_back(AuxVar);
     Coeffs.push_back(1.0);
-    CurSlackIdx += 2;
+    ++CurIdx;
   }
 
   // The sum of AuxVars must be no bigger than NumCols - 1, so that at least
