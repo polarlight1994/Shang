@@ -40,7 +40,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/type_traits.h"
@@ -50,6 +50,7 @@
 #include <queue>
 
 using namespace llvm;
+STATISTIC(NumControlDepRelaxed, "Number of control dependencies relaxed");
 
 namespace {
 typedef std::map<Value*, SmallVector<VASTSchedUnit*, 4> > IR2SUMapTy;
@@ -273,8 +274,148 @@ struct GlobalFlowAnalyzer {
 
 typedef DenseMap<BasicBlock*, SmallVector<VASTSchedUnit*, 8> > AccessMapTy;
 typedef GlobalFlowAnalyzer<AccessMapTy, DominatorTree> SyncPointAnalysis;
-typedef GlobalFlowAnalyzer<AccessMapTy, PostDominatorTree> ControlDependenceAnalysis;
+typedef GlobalFlowAnalyzer<AccessMapTy, PostDominatorTree> PostDomFrontiers;
 
+struct CtrlDepAnalysis {
+  PostDomFrontiers &PDF;
+  VASTSchedGraph &G;
+  BBSet PDFBlocks;
+  AccessMapTy &Map;
+
+  CtrlDepAnalysis(PostDomFrontiers &PDF, VASTSchedGraph &G, AccessMapTy &Map)
+    : PDF(PDF), G(G), Map(Map) {}
+
+  bool hasControlBlockAsPredecessor(BasicBlock *BB) {
+    for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
+      BasicBlock *Predecessor = *I;
+
+      if (PDFBlocks.count(Predecessor))
+        return true;
+    }
+
+    return false;
+  }
+
+  BasicBlock *getCommonPostDom(ArrayRef<BasicBlock*> BBs);
+
+  void
+  collectCtrlDeps(BasicBlock *BB, SmallVectorImpl<BasicBlock*> &CtrlBlocks);
+
+  BasicBlock *getEarliestCtrlDominator(BasicBlock *BB, LoopInfo &LI,
+                                       DominatorTreeBase<BasicBlock> &DT,
+                                       ArrayRef<BasicBlock*> CtrlBlocks);
+
+  void constructCtrlDeps(LoopInfo &LI, DominatorTreeBase<BasicBlock> &DT);
+};
+}
+
+BasicBlock *CtrlDepAnalysis::getCommonPostDom(ArrayRef<BasicBlock*> BBs) {
+  BasicBlock *BB = BBs[0];
+
+  for (unsigned i = 1; i < BBs.size(); ++i)
+    BB = PDF.DT.findNearestCommonDominator(BB, BBs[i]);
+
+  return BB;
+}
+
+void
+CtrlDepAnalysis::collectCtrlDeps(BasicBlock *BB,
+                                 SmallVectorImpl<BasicBlock*> &CtrlBlocks) {
+  DominatorTreeBase<BasicBlock> &PDT = PDF.DT;
+  DomTreeNode *Node = PDT.getNode(BB);
+
+  typedef df_iterator<DomTreeNode*> dt_df_iterator;
+  for (dt_df_iterator I = df_begin(Node), E = df_end(Node); I != E; /*++I*/) {
+    DomTreeNode *CurNode = *I;
+    BasicBlock *CurBlock = CurNode->getBlock();
+
+    if (hasControlBlockAsPredecessor(CurBlock)) {
+      // Find a control block.
+      CtrlBlocks.push_back(CurBlock);
+      I.skipChildren();
+      continue;
+    }
+
+    ++I;
+  }
+}
+
+BasicBlock *
+CtrlDepAnalysis::getEarliestCtrlDominator(BasicBlock *BB, LoopInfo &LI,
+                                          DominatorTreeBase<BasicBlock> &DT,
+                                          ArrayRef<BasicBlock*> CtrlBlocks) {
+  // Trivial case: No ctrl blocks, make it depends on the entry of the CDFG.
+  if (CtrlBlocks.empty())
+    return DT.getRoot();
+
+  // Find the block that post dominates all the controlling blocks.
+  BasicBlock *EarliestBBInPDT = getCommonPostDom(CtrlBlocks),
+             *EarliestDominator = BB;
+  // We cannot further relax the control dependence if BB is already the
+  // earliest block.
+  if (EarliestBBInPDT == BB)
+    return BB;
+
+  DomTreeNode *DNode = DT.getNode(BB);
+  Loop *LastLoop = LI.getLoopFor(BB);
+  unsigned LastLoopDepth = LI.getLoopDepth(BB);
+
+  DNode = DNode->getIDom();
+  while (DNode) {
+    BasicBlock *CurBlock = DNode->getBlock();
+    if (!PDF.DT.dominates(CurBlock, EarliestBBInPDT))
+      break;
+
+    // TODO: Only update the controlling block if it does not go into deeper
+    // loop.
+    unsigned CurLoopDepth = LI.getLoopDepth(CurBlock);
+
+    // Always move to parent loop.
+    if (CurLoopDepth < LastLoopDepth) {
+      EarliestDominator = CurBlock;
+      LastLoop = LI.getLoopFor(CurBlock);
+      // Update the loop depth.
+      LastLoopDepth = CurLoopDepth;
+    } else if (CurLoopDepth == LastLoopDepth) {
+      Loop *CurLoop = LI.getLoopFor(CurBlock);
+      // It doesn't make sense if we move to another loop with the same
+      // depth.
+      if (CurLoop == LastLoop)
+        EarliestDominator = CurBlock;
+    }
+
+    DNode = DNode->getIDom();
+  }
+
+  NumControlDepRelaxed += (EarliestDominator != BB) ? 1 : 0;
+
+  return EarliestDominator;
+}
+
+void CtrlDepAnalysis::constructCtrlDeps(LoopInfo &LI,
+                                        DominatorTreeBase<BasicBlock> &DT) {
+  Function &F = G.getFunction();
+  // Implicitly create a record for entry block.
+  (void) Map[&F.getEntryBlock()];
+  // Build the post dominance frontiers for the write operations (defs).
+  PDF.determineDominanceFrontiers(PDFBlocks, Map, AccessMapTy());
+
+  SmallVector<BasicBlock*, 4> ControlBlocks;
+  typedef AccessMapTy::iterator iterator;
+  for (iterator I = Map.begin(), E = Map.end(); I != E; ++I) {
+    BasicBlock *BB = I->first;
+    ControlBlocks.clear();
+    collectCtrlDeps(BB, ControlBlocks);
+    BasicBlock *CtrlDom = getEarliestCtrlDominator(BB, LI, DT, ControlBlocks);
+
+    VASTSchedUnit *BBEntry = G.getEntrySU(CtrlDom);
+    ArrayRef<VASTSchedUnit*> SUs(I->second);
+    for (unsigned i = 0; i < SUs.size(); ++i)
+      SUs[i]->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
+  }
+}
+
+namespace {
 template<typename SubClass>
 struct GlobalDependenciesBuilderBase  {
   AccessMapTy DefMap, UseMap;
@@ -293,8 +434,6 @@ struct GlobalDependenciesBuilderBase  {
   // The dominance frontiers of DefBlocks, hence there is a pseudo write (def)
   // at the beginning of the block.
   BBSet SyncBlocks;
-
-  BBSet CtrlBlocks;
 
   void addDef(VASTSchedUnit *SU, BasicBlock *BB) {
     DefMap[BB].push_back(SU);
@@ -461,66 +600,6 @@ struct GlobalDependenciesBuilderBase  {
         buildDependenciesBottonUp(Node);
     }
   }
-
-  bool hasControlBlockAsPredecessor(BasicBlock *BB) {
-    for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
-      BasicBlock *Predecessor = *I;
-
-      if (CtrlBlocks.count(Predecessor))
-        return true;
-    }
-
-    return false;
-  }
-
-  void constructControlDependencies(ControlDependenceAnalysis &CtrlDepAnalysis,
-                                    DominatorTreeBase<BasicBlock> &DT,
-                                    LoopInfo &LI) {
-    Function &F = G.getFunction();
-    // Implicitly create a record for entry block.
-    (void) DefMap[&F.getEntryBlock()];
-    // Perform control Dependencies analysis on the write operations (defs).
-    CtrlDepAnalysis.determineDominanceFrontiers(CtrlBlocks, DefMap, AccessMapTy());
-
-    // TODO: Do not move SU into depper loop.
-    typedef AccessMapTy::iterator iterator;
-    for (iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I) {
-      BasicBlock *BB = I->first;
-      BasicBlock *ControlBlock = BB;
-      DomTreeNode *Node = DT.getNode(BB);
-      Loop *LastLoop = LI.getLoopFor(BB);
-      unsigned LastLoopDepth = LI.getLoopDepth(BB);
-
-      while (Node) {
-        BasicBlock *CurBlock = Node->getBlock();
-        // TODO: Only update the controlling block if it does not go into deeper
-        // loop.
-        unsigned CurLoopDepth = LI.getLoopDepth(CurBlock);
-
-        // Always move to parent loop.
-        if (CurLoopDepth < LastLoopDepth) {
-          ControlBlock = CurBlock;
-          LastLoop = LI.getLoopFor(CurBlock);
-        } else if (CurLoopDepth == LastLoopDepth) {
-          Loop *CurLoop = LI.getLoopFor(CurBlock);
-          // It doesn't make sense if we move to another loop with the same
-          // depth.
-          if (CurLoop == LastLoop)
-            ControlBlock = CurBlock;
-        }
-
-        if (hasControlBlockAsPredecessor(CurBlock))
-          break;
-
-        Node = Node->getIDom();
-      }
-
-      VASTSchedUnit *BBEntry = G.getEntrySU(ControlBlock);
-      ArrayRef<VASTSchedUnit*> SUs(I->second);
-      for (unsigned i = 0; i < SUs.size(); ++i)
-        SUs[i]->addDep(BBEntry, VASTDep::CreateCtrlDep(0));
-    }
-  }
 };
 
 struct SingleFULinearOrder
@@ -585,8 +664,7 @@ struct SingleFULinearOrder
       FU(FU), Parallelism(Parallelism), G(G) {}
 
   void buildLinearOrder(ArrayRef<VASTSchedUnit*> Returns, LoopInfo &LI,
-                        SyncPointAnalysis &SyncAnalysis,
-                        ControlDependenceAnalysis &CtrlDepAnalysis);
+                        SyncPointAnalysis &SyncAnalysis, PostDomFrontiers &PDF);
 
   virtual void dump() const {
     typedef AccessMapTy::const_iterator def_iterator;
@@ -606,11 +684,11 @@ struct BasicLinearOrderGenerator {
   IR2SUMapTy &IR2SUMap;
   SmallVector<VASTSchedUnit*, 8> ReturnSUs;
   SyncPointAnalysis SyncAnalysis;
-  ControlDependenceAnalysis CtrlAnalysis;
+  PostDomFrontiers PDF;
 
   BasicLinearOrderGenerator(SchedulerBase &G, DominatorTree &DT,
                             PostDominatorTree &PDT, IR2SUMapTy &IR2SUMap)
-    : G(G), IR2SUMap(IR2SUMap), SyncAnalysis(DT), CtrlAnalysis(PDT) {}
+    : G(G), IR2SUMap(IR2SUMap), SyncAnalysis(DT), PDF(PDT) {}
 
   // The FUs whose accesses need to be synchronized, and the basic blocks in
   // which the FU is accessed.
@@ -689,11 +767,10 @@ SingleFULinearOrder::buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   }
 }
 
-void
-SingleFULinearOrder::buildLinearOrder(ArrayRef<VASTSchedUnit*> Returns,
-                                      LoopInfo &LI,
-                                      SyncPointAnalysis &SyncAnalysis,
-                                      ControlDependenceAnalysis &CtrlDepAnalysis) {
+void SingleFULinearOrder::buildLinearOrder(ArrayRef<VASTSchedUnit*> Returns,
+                                           LoopInfo &LI,
+                                           SyncPointAnalysis &SyncAnalysis,
+                                           PostDomFrontiers &PDF) {
   // Build the linear order within each BB.
   typedef AccessMapTy::iterator def_iterator;
   for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
@@ -701,7 +778,8 @@ SingleFULinearOrder::buildLinearOrder(ArrayRef<VASTSchedUnit*> Returns,
 
   addReturns(Returns, DefMap);
   constructSynchronizations(SyncAnalysis);
-  constructControlDependencies(CtrlDepAnalysis, SyncAnalysis.DT, LI);
+  CtrlDepAnalysis CDA(PDF, *G, DefMap);
+  CDA.constructCtrlDeps(LI, SyncAnalysis.DT);
 }
 
 void BasicLinearOrderGenerator::buildLinearOrder(LoopInfo &LI) {
@@ -714,7 +792,7 @@ void BasicLinearOrderGenerator::buildLinearOrder(LoopInfo &LI) {
           iterator;
   for (iterator I = Builders.begin(), E = Builders.end(); I != E; ++I) {
     SingleFULinearOrder *Builder = I->second;
-    Builder->buildLinearOrder(ReturnSUs, LI, SyncAnalysis, CtrlAnalysis);
+    Builder->buildLinearOrder(ReturnSUs, LI, SyncAnalysis, PDF);
   }
 }
 
@@ -772,14 +850,14 @@ struct MemoryDepBuilder {
   VASTSchedGraph &G;
   IR2SUMapTy &IR2SUMap;
   SyncPointAnalysis SyncAnalysis;
-  ControlDependenceAnalysis CtrlDepAnalysis;
+  PostDomFrontiers PDF;
   AliasAnalysis &AA;
   AliasSetTracker AST;
   SmallVector<VASTSchedUnit*, 8> ReturnSUs;
 
   MemoryDepBuilder(VASTSchedGraph &G, IR2SUMapTy &IR2SUMap, DominatorTree &DT,
                    PostDominatorTree &PDT, AliasAnalysis &AA)
-    : G(G), IR2SUMap(IR2SUMap), SyncAnalysis(DT), CtrlDepAnalysis(PDT),
+    : G(G), IR2SUMap(IR2SUMap), SyncAnalysis(DT), PDF(PDT),
       AA(AA), AST(AA) {}
 
   void buildLocalDependencies(BasicBlock *BB);
@@ -954,7 +1032,8 @@ void MemoryDepBuilder::buildDependencies(LoopInfo &LI) {
 
     Builder.addReturns(ReturnSUs, Builder.UseMap);
     Builder.constructSynchronizations(SyncAnalysis);
-    Builder.constructControlDependencies(CtrlDepAnalysis, SyncAnalysis.DT, LI);
+    CtrlDepAnalysis CDA(PDF, G, Builder.DefMap);
+    CDA.constructCtrlDeps(LI, SyncAnalysis.DT);
   }
 }
 
