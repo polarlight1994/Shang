@@ -306,7 +306,6 @@ void SDCScheduler::addSoftConstraints() {
     assert(C.SlackIdx && "Not support on the fly soft constraint creation!");
     addConstraint(lp, Dst, Src, C.C, C.SlackIdx, GE);
 
-    ObjFn[C.SlackIdx] = - C.Penalty;
   }
 }
 
