@@ -34,7 +34,7 @@ add_definitions( -DRoleIsExternalInvEngine )
 
 set(LPSOLVE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set_property(GLOBAL PROPERTY LPSOLVE_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-set_property(GLOBAL PROPERTY LPSOLVE_LIBRARY "Luabind")
+set_property(GLOBAL PROPERTY LPSOLVE_LIBRARY "lpsolve")
 
 include_directories(
   ${LPSOLVE_INCLUDE_DIR}

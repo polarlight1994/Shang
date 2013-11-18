@@ -82,7 +82,6 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${SHANG_SOURCE_DIR}/cmake")
 include(SetupABC)
 
 FIND_PACKAGE(Lua REQUIRED)
-FIND_PACKAGE(LpSolve REQUIRED)
 
 # Add the external libraries before we add the source code of VAST.
 add_subdirectory(external_libs)
