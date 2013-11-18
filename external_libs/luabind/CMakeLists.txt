@@ -20,5 +20,3 @@ include_directories(
   ${LUABIND_INCLUDE_DIR}
   ${LUABIND_INCLUDE_DIR}/luabind
 )
-
-

@@ -81,7 +81,6 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${SHANG_SOURCE_DIR}/cmake")
 # Load the macro to setup the platform variable for ABC
 include(SetupABC)
 
-FIND_PACKAGE(BOOST REQUIRED)
 FIND_PACKAGE(Lua REQUIRED)
 FIND_PACKAGE(LpSolve REQUIRED)
 
@@ -121,4 +120,4 @@ set(LLVM_LINK_COMPONENTS
 add_llvm_tool(shang
   shang.cpp
  )
-target_link_libraries(shang ShangIROpts ShangVAST ShangHLS ShangScripting ABCLogicSynthesis)
+target_link_libraries(shang ShangIROpts ShangVAST ShangHLS ShangScripting)

@@ -16,9 +16,10 @@ file(GLOB_RECURSE ALL_ABC_SOURCES globbing *.c)
 add_definitions( -DABC_LIB )
 SetupABC()
 
-add_llvm_library(ABCLogicSynthesis ${ALL_ABC_SOURCES})
+add_llvm_library(ABC ${ALL_ABC_SOURCES})
 
 HEADER_DIRECTORIES(ABC_LOCAL_INCLUDE_DIRS)
 include_directories(${ABC_LOCAL_INCLUDE_DIRS})
 set(ABC_INCLUDE_DIRS "${ABC_LOCAL_INCLUDE_DIRS}"
     CACHE PATH "Include directories of ABC")
+set(ABC_LIBRARY  "ABC" CACHE PATH "ABC Library")

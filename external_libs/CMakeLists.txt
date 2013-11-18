@@ -1,3 +1,6 @@
+set(BOOST_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/boost"
+    CACHE PATH "Include directory for boost")
+
 add_subdirectory(abc)
 add_subdirectory(luabind)
 

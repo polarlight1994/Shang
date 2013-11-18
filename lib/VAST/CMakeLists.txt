@@ -29,6 +29,11 @@ add_llvm_library(ShangVAST
   RTLCodeGen.cpp
 )
 
-target_link_libraries (ShangVAST ShangIROpts)
+# We need to link ShangVAST against ShangIROpts under Linux
+if (${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
+  target_link_libraries (ShangVAST ShangIROpts)
+endif(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
+target_link_libraries (ShangVAST ${ABC_LIBRARY})
+
 include_directories(${ABC_INCLUDE_DIRS})
 SetupABC()
