@@ -436,17 +436,32 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   // Note that we had allocated variables for the slacks, these variables are
   // right after the step variable of SU.
   int CurSlackIdx = getSUIdx(SU) + 1;
+  bool HadMetEarierBranch = false;
+
   typedef VASTSchedUnit::dep_iterator dep_iterator;
   for (dep_iterator I = SU->dep_begin(), E = SU->dep_end(); I != E; ++I) {
     assert(I.getEdgeType() == VASTDep::Conditional && "Unexpected edge type!");
+    VASTSchedUnit *Dep = *I;
 
     assert(I.getLatency() == 0 &&
            "Conditional dependencies must have a zero latency!");
     // First of all, export the slack for conditional edge. For conditional edge
     // we require Dst <= Src, hence we have Dst - Src + Slack = 0, Slack >= 0
-    addConstraint(lp, SU, *I, 0, CurSlackIdx, EQ);
+    addConstraint(lp, SU, Dep, 0, CurSlackIdx, EQ);
 
     int AuxVar = CurSlackIdx + 1;
+
+    // Note that AuxVar is a binary variable, setting 0 to AuxVar means the
+    // terminator of the predecessor block is 'connected' to the entry of
+    // current BB. And the conditional dependency constraints require that
+    // at least one terminator is connected to the entry of current BB. Hence,
+    // as an initial solution, we can connect to the first terminator we meet
+    // that has a smaller topological order number.
+    if (!HadMetEarierBranch && Dep->getIdx() < SU->getIdx()) {
+      set_var_branch(lp, AuxVar, BRANCH_FLOOR);
+      HadMetEarierBranch = true;
+    } else
+      set_var_branch(lp, AuxVar, BRANCH_CEILING);
 
     // Build constraints Slack - BigM * AuxVar <= 0
     int CurCols[] = { CurSlackIdx, AuxVar };
