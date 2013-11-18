@@ -83,7 +83,6 @@ include(SetupABC)
 
 FIND_PACKAGE(BOOST REQUIRED)
 FIND_PACKAGE(Lua REQUIRED)
-FIND_PACKAGE(LuaBind REQUIRED)
 FIND_PACKAGE(LpSolve REQUIRED)
 
 # Add the external libraries before we add the source code of VAST.
