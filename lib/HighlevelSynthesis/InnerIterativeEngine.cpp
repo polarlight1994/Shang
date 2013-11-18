@@ -844,13 +844,12 @@ float ItetrativeEngine::assignEdgeWeight(BasicBlock *BB) {
 }
 
 void VASTScheduling::scheduleGlobal() {
-  LoopInfo &LI = getAnalysis<LoopInfo>();
   PreSchedBinding &PSB = getAnalysis<PreSchedBinding>();
   BranchProbabilityInfo &BPI = getAnalysis<BranchProbabilityInfo>();
   BlockFrequencyInfo &BFI = getAnalysis<BlockFrequencyInfo>();
   PostDominatorTree &PDT = getAnalysis<PostDominatorTree>();
 
-  ItetrativeEngine ISB(*G, LI, PSB, *DT, PDT, BFI, BPI, IR2SUMap);
+  ItetrativeEngine ISB(*G, *LI, PSB, *DT, PDT, BFI, BPI, IR2SUMap);
   while (ISB.performSchedulingAndAllocateMuxSlack(*VM)) {
     ++NumIterations;
     dbgs() << "Schedule Violations: " << ISB.ScheduleViolation << ' '

@@ -358,7 +358,7 @@ public:
     (void) Erased;
   }
 
-  /// Maintaining dependencies.
+  // Maintaining dependencies.
   void addDep(VASTSchedUnit *Src, VASTDep NewE) {
     assert(Src != this && "Cannot add self-loop!");
     DepSet::iterator at = Deps.find(Src);
@@ -585,8 +585,9 @@ class VASTScheduling : public VASTModulePass {
   Dataflow *DF;
   VASTModule *VM;
 
-  // Analysis for the scheduler
+  // Analyses for the scheduler
   DominatorTree *DT;
+  LoopInfo *LI;
 
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
