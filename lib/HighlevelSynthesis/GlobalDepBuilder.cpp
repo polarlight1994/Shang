@@ -278,18 +278,11 @@ typedef GlobalFlowAnalyzer<AccessMapTy, PostDominatorTree> ControlDependenceAnal
 template<typename SubClass>
 struct GlobalDependenciesBuilderBase  {
   AccessMapTy DefMap, UseMap;
-
-  SyncPointAnalysis &SyncAnalysis;
-  ControlDependenceAnalysis &CtrlDepAnalysis;
-
   IR2SUMapTy &IR2SUMap;
   VASTSchedGraph &G;
 
-  GlobalDependenciesBuilderBase(SyncPointAnalysis &SyncAnalysis,
-                                ControlDependenceAnalysis &CtrlDepAnalysis,
-                                IR2SUMapTy &IR2SUMap, VASTSchedGraph &G)
-    : SyncAnalysis(SyncAnalysis), CtrlDepAnalysis(CtrlDepAnalysis),
-      IR2SUMap(IR2SUMap), G(G) {}
+  GlobalDependenciesBuilderBase(IR2SUMapTy &IR2SUMap, VASTSchedGraph &G)
+    : IR2SUMap(IR2SUMap), G(G) {}
 
   ~GlobalDependenciesBuilderBase() {
 #ifndef NDEBUG
@@ -457,7 +450,7 @@ struct GlobalDependenciesBuilderBase  {
     }
   }
 
-  void constructSynchronizations() {
+  void constructSynchronizations(SyncPointAnalysis &SyncAnalysis) {
     // Build the dependency across the basic block boundaries.
     SyncAnalysis.determineDominanceFrontiers(SyncBlocks, DefMap, UseMap);
 
@@ -480,7 +473,9 @@ struct GlobalDependenciesBuilderBase  {
     return false;
   }
 
-  void constructControlDependencies(LoopInfo &LI) {
+  void constructControlDependencies(ControlDependenceAnalysis &CtrlDepAnalysis,
+                                    DominatorTreeBase<BasicBlock> &DT,
+                                    LoopInfo &LI) {
     Function &F = G.getFunction();
     // Implicitly create a record for entry block.
     (void) DefMap[&F.getEntryBlock()];
@@ -492,7 +487,7 @@ struct GlobalDependenciesBuilderBase  {
     for (iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I) {
       BasicBlock *BB = I->first;
       BasicBlock *ControlBlock = BB;
-      DomTreeNode *Node = SyncAnalysis.DT.getNode(BB);
+      DomTreeNode *Node = DT.getNode(BB);
       Loop *LastLoop = LI.getLoopFor(BB);
       unsigned LastLoopDepth = LI.getLoopDepth(BB);
 
@@ -585,12 +580,13 @@ struct SingleFULinearOrder
   void buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs);
 
   SingleFULinearOrder(VASTNode *FU, unsigned Parallelism, SchedulerBase &G,
-                      IR2SUMapTy &IR2SUMap, SyncPointAnalysis &SyncAnalysis,
-                      ControlDependenceAnalysis &CtrlDepAnalysis)
-    : GlobalDependenciesBuilderBase(SyncAnalysis, CtrlDepAnalysis, IR2SUMap, *G),
+                      IR2SUMapTy &IR2SUMap)
+    : GlobalDependenciesBuilderBase(IR2SUMap, *G),
       FU(FU), Parallelism(Parallelism), G(G) {}
 
-  void buildLinearOrder(LoopInfo &LI, ArrayRef<VASTSchedUnit*> Returns);
+  void buildLinearOrder(ArrayRef<VASTSchedUnit*> Returns, LoopInfo &LI,
+                        SyncPointAnalysis &SyncAnalysis,
+                        ControlDependenceAnalysis &CtrlDepAnalysis);
 
   virtual void dump() const {
     typedef AccessMapTy::const_iterator def_iterator;
@@ -666,8 +662,7 @@ void BasicLinearOrderGenerator::buildFUInfo() {
         if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(FU))
           if (Bus->isDualPort()) Parallelism = 2;
 
-        S = new SingleFULinearOrder(FU, Parallelism, G, IR2SUMap,
-                                    SyncAnalysis, CtrlAnalysis);
+        S = new SingleFULinearOrder(FU, Parallelism, G, IR2SUMap);
       }
 
       // Add the FU visiting information.
@@ -694,16 +689,19 @@ SingleFULinearOrder::buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   }
 }
 
-void SingleFULinearOrder::buildLinearOrder(LoopInfo &LI,
-                                           ArrayRef<VASTSchedUnit*> Returns) {
+void
+SingleFULinearOrder::buildLinearOrder(ArrayRef<VASTSchedUnit*> Returns,
+                                      LoopInfo &LI,
+                                      SyncPointAnalysis &SyncAnalysis,
+                                      ControlDependenceAnalysis &CtrlDepAnalysis) {
   // Build the linear order within each BB.
   typedef AccessMapTy::iterator def_iterator;
   for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
     buildLinearOrderInBB(I->second);
 
   addReturns(Returns, DefMap);
-  constructSynchronizations();
-  constructControlDependencies(LI);
+  constructSynchronizations(SyncAnalysis);
+  constructControlDependencies(CtrlDepAnalysis, SyncAnalysis.DT, LI);
 }
 
 void BasicLinearOrderGenerator::buildLinearOrder(LoopInfo &LI) {
@@ -716,7 +714,7 @@ void BasicLinearOrderGenerator::buildLinearOrder(LoopInfo &LI) {
           iterator;
   for (iterator I = Builders.begin(), E = Builders.end(); I != E; ++I) {
     SingleFULinearOrder *Builder = I->second;
-    Builder->buildLinearOrder(LI,ReturnSUs);
+    Builder->buildLinearOrder(ReturnSUs, LI, SyncAnalysis, CtrlAnalysis);
   }
 }
 
@@ -737,11 +735,8 @@ struct AliasRegionDepBuilder
   AliasAnalysis &AA;
 
   AliasRegionDepBuilder(VASTSchedGraph &G, AliasAnalysis &AA,
-                        SyncPointAnalysis &SyncAnalysis,
-                        ControlDependenceAnalysis &CtrlDepAnalysis,
                         IR2SUMapTy &IR2SUMap)
-    : GlobalDependenciesBuilderBase(SyncAnalysis, CtrlDepAnalysis, IR2SUMap, G),
-      AA(AA) {}
+    : GlobalDependenciesBuilderBase(IR2SUMap, G), AA(AA) {}
 
   void initializeRegion(AliasSet &AS);
 
@@ -954,12 +949,12 @@ void MemoryDepBuilder::buildDependencies(LoopInfo &LI) {
     if (AS->isForwardingAliasSet() || !(AS->isMod() || AS->isRef()))
       continue;
 
-    AliasRegionDepBuilder Builder(G, AA, SyncAnalysis, CtrlDepAnalysis, IR2SUMap);
+    AliasRegionDepBuilder Builder(G, AA, IR2SUMap);
     Builder.initializeRegion(*AS);
 
     Builder.addReturns(ReturnSUs, Builder.UseMap);
-    Builder.constructSynchronizations();
-    Builder.constructControlDependencies(LI);
+    Builder.constructSynchronizations(SyncAnalysis);
+    Builder.constructControlDependencies(CtrlDepAnalysis, SyncAnalysis.DT, LI);
   }
 }
 
