@@ -21,13 +21,18 @@ add_llvm_library(ShangHLS
   CompGraph.cpp
   RegisterSharing.cpp
 )
-get_property(LPSOLVE_LIBRARY GLOBAL PROPERTY LPSOLVE_LIBRARY)
-get_property(LPSOLVE_INCLUDE_DIR GLOBAL PROPERTY LPSOLVE_INCLUDE_DIR)
+
+IF (NOT MSVC AND NOT USE_LOCAL_LP_SOLVE)
+ set(EXTRA_LIBS colamd dl)
+ELSE (NOT MSVC AND NOT USE_LOCAL_LP_SOLVE)
+ set(EXTRA_LIBS "")
+ENDIF (NOT MSVC AND NOT USE_LOCAL_LP_SOLVE)
 
 target_link_libraries (
   ShangHLS
   ShangVAST
   ${LPSOLVE_LIBRARY}
+  ${EXTRA_LIBS}
 )
 
-include_directories("${LPSOLVE_INCLUDE_DIR}/..")
+include_directories(${LPSOLVE_INCLUDE_DIR})
