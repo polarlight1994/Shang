@@ -160,12 +160,6 @@ unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
   return Col;
 }
 
-unsigned SDCScheduler::createVarForSyncDeps(unsigned Col) {
-  int Bound = getCriticalPathLength() * BigMMultiplier;
-
-  return createSlackVariable(Col, Bound, -Bound);
-}
-
 unsigned SDCScheduler::createLPAndVariables() {
   lp = make_lp(0, 0);
   unsigned Col =  1;
@@ -201,7 +195,6 @@ unsigned SDCScheduler::createLPAndVariables() {
       ConditionalSUs.push_back(U);
     } else if (HasSyncDep) {
       assert(U->isSyncJoin() && "Unexpected SU type for synchronize edges!");
-      Col = createVarForSyncDeps(Col);
       SynchronizeSUs.push_back(U);
     }
   }
@@ -506,14 +499,7 @@ static void BuildPredecessorMap(VASTSchedUnit *SU,
 }
 
 void SDCScheduler::addSynchronizeConstraints(VASTSchedUnit *SU) {
-  unsigned SrcIdx = getSUIdx(SU);
-
-  // Note that we had allocated variables for the slacks, these variables are
-  // right after the step variable of SU.
-  unsigned SlackIdx = SrcIdx + 1;
   VASTSchedUnit *Entry = G.getEntrySU(SU->getParent());
-  // Calculate the slack from Entry to SU: Slack = SU - Entry.
-  addConstraint(lp, Entry, SU, 0, SlackIdx, EQ);
 
   DenseMap<BasicBlock*, VASTSchedUnit*> PredecessorMap;
   BuildPredecessorMap(Entry, PredecessorMap);
@@ -526,9 +512,20 @@ void SDCScheduler::addSynchronizeConstraints(VASTSchedUnit *SU) {
     VASTSchedUnit *PredExit = PredecessorMap.lookup(Dep->getParent());
     assert(PredExit && "Cannot find exit from predecessor block!");
     // The slack from the corresponding exit to Dep must no greater than the
-    // slack from Entry to SU, i.e.
-    // Dep - Exit <= SU - Entry
-    addConstraint(lp, PredExit, Dep, 0, SlackIdx, EQ); // EQ|GE
+    // slack from Entry to SU, :
+    // Dep - Exit <= SU - Entry, i.e. Dep - Exit - SU + Entry <= 0
+    int CurCols[] = { getSUIdx(Dep), getSUIdx(PredExit),
+                      getSUIdx(SU), getSUIdx(Entry) };
+    REAL CurCoeffs[] = { 1.0, -1.0,  -1.0, 1.0 };
+
+    int Ty = Dep->isPHILatch() ? EQ : LE;
+    unsigned NumData = array_lengthof(CurCols);
+    if (!add_constraintex(lp, NumData, CurCoeffs, CurCols, Ty, 0))
+      report_fatal_error("Cannot create constraint!");
+
+    unsigned RowNo = get_Nrows(lp);
+    std::string RowName = "sync_src_" + utostr_32(RowNo);
+    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
   }
 }
 

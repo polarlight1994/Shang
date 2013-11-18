@@ -122,7 +122,6 @@ private:
   unsigned createStepVariable(const VASTSchedUnit *U, unsigned Col);
   unsigned createSlackVariable(unsigned Col, int UB, int LB);
   unsigned createVarForCndDeps(unsigned Col);
-  unsigned createVarForSyncDeps(unsigned Col);
 
   // Dst - Src >= C - V
   void addConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
