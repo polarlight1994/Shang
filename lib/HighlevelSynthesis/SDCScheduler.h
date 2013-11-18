@@ -94,6 +94,8 @@ private:
   typedef std::map<const VASTSchedUnit*, unsigned> SUI2IdxMapTy;
   typedef SUI2IdxMapTy::const_iterator SUIdxIt;
   SUI2IdxMapTy SUIdx;
+  // The variable weight for 'set_var_weights' function of lpsolve.
+  std::vector<double> LPVarWeights;
 
   typedef std::pair<VASTSchedUnit*, VASTSchedUnit*> EdgeType;
   typedef std::map<EdgeType, SoftConstraint> SoftCstrVecTy;

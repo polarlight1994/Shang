@@ -132,6 +132,12 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   set_col_name(lp, Col, const_cast<char*>(SVStart.c_str())););
   set_int(lp, Col, TRUE);
   set_lowbo(lp, Col, EntrySlot);
+
+  // The step variables are almost only used in differential constraints,
+  // their are relatively easier to be solved. So we assign a lower priority
+  // to these variables, so that lpsolve can focus on those ``difficult''
+  // constraints first.
+  LPVarWeights.push_back(256.0);
   return Col + 1;
 }
 
@@ -153,9 +159,20 @@ unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB) {
 unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
   // Create the slack variable for the edge.
   Col = createSlackVariable(Col, 0, 0);
+  // Slack variables are used in the ``difficult'' constraints, hence we
+  // assign a lower variable weight (than the step variables and slack
+  // variables for soft constraints) to them, so lpsolve will make them integer
+  // earier than the step variables and slack variables for soft constraints.
+  LPVarWeights.push_back(128.0);
+
   // The auxiliary variable to specify one of the conditional dependence
   // and the current SU must have the same scheduling.
   Col = createSlackVariable(Col, 1, 0);
+  // These variable have the lowest variable weight for the branch and bound
+  // process. Because the related constraints are the hardest ones to be
+  // preserved. Hence we want to choose to make these variables integer
+  // first.
+  LPVarWeights.push_back(0.0);
 
   return Col;
 }
@@ -205,6 +222,13 @@ unsigned SDCScheduler::createLPAndVariables() {
     SoftConstraint &C = I->second;
     C.SlackIdx = Col;
     Col = createSlackVariable(Col, 0, 0);
+
+    // The slack variables of soft constraints are only used in differential
+    // constraints, their are most easier to be solved and do not affect the
+    // feasiblity of the model at all. So we assign a lowest priority to these
+    // variables, so that lpsolve can focus on those ``difficult'' constraints
+    // first.
+    LPVarWeights.push_back(512.0);
 
     ObjFn[C.SlackIdx] = - C.Penalty;
   }
@@ -741,6 +765,7 @@ bool SDCScheduler::schedule() {
   SUIdx.clear();
   ConditionalSUs.clear();
   SynchronizeSUs.clear();
+  LPVarWeights.clear();
   delete_lp(lp);
   lp = 0;
 
