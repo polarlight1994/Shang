@@ -673,7 +673,7 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
       // register. At the same time, ignore the edge from BBEntry (representing
       // the guarding condition), because we had pipelined it (slot registers).
       if (!Src->isBBEntry() && DI.getDFLatency() > -1)
-        limitThroughputOnEdge(Src, U);
+        preserveAntiDependence(Src, U);
     }
   }
 }
