@@ -434,6 +434,41 @@ struct GlobalDependenciesBuilderBase  {
     }
   }
 
+  void addReturns(ArrayRef<VASTSchedUnit*> Returns, AccessMapTy &AccessMap) {
+    // Create synchronization points at the return block by pretending the return
+    // to be a read operation.
+    for (unsigned i = 0; i < Returns.size(); ++i) {
+      VASTSchedUnit *ReturnSU = Returns[i];
+      BasicBlock *ReturnBlock = ReturnSU->getParent();
+      SmallVectorImpl<VASTSchedUnit*> &ExistSUs = AccessMap[ReturnBlock];
+
+      // If there is no FU access operation in the block, simply put the ReturnSU
+      // to the block and the later algorithm will pretending this operation to be
+      // a FU access operation and happily build the linear dependencies to
+      // synchronize the 'real' FU access operation before the return operation.
+      if (ExistSUs.empty()) {
+        ExistSUs.push_back(ReturnSU);
+        continue;
+      }
+
+      // Otherwise simply build an edge from the last FU access operation in the
+      // same block, so that they are finished before we return.
+      static_cast<SubClass*>(this)->buildDep(ExistSUs.back(), ReturnSU);
+    }
+  }
+
+  void constructSynchronizations() {
+    // Build the dependency across the basic block boundaries.
+    SyncAnalysis.determineDominanceFrontiers(SyncBlocks, DefMap, UseMap);
+
+    Function &F = G.getFunction();
+
+    for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
+      if (DomTreeNode *Node = SyncAnalysis.DT.getNode(I))
+        buildDependenciesBottonUp(Node);
+    }
+  }
+
   bool hasControlBlockAsPredecessor(BasicBlock *BB) {
     for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
       BasicBlock *Predecessor = *I;
@@ -445,17 +480,10 @@ struct GlobalDependenciesBuilderBase  {
     return false;
   }
 
-  void constructGlobalFlow(LoopInfo &LI) {
-    // Build the dependency across the basic block boundaries.
-    SyncAnalysis.determineDominanceFrontiers(SyncBlocks, DefMap, UseMap);
-
+  void constructControlDependencies(LoopInfo &LI) {
     Function &F = G.getFunction();
-
-    for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
-      if (DomTreeNode *Node = SyncAnalysis.DT.getNode(I))
-        buildDependenciesBottonUp(Node);
-    }
-
+    // Implicitly create a record for entry block.
+    (void) DefMap[&F.getEntryBlock()];
     // Perform control Dependencies analysis on the write operations (defs).
     CtrlDepAnalysis.determineDominanceFrontiers(CtrlBlocks, DefMap, AccessMapTy());
 
@@ -506,7 +534,6 @@ struct SingleFULinearOrder
   VASTNode *FU;
   const unsigned Parallelism;
   SchedulerBase &G;
-  ArrayRef<VASTSchedUnit*> Returns;
 
   void buildDep(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
     unsigned IntialInterval = 1;
@@ -559,12 +586,11 @@ struct SingleFULinearOrder
 
   SingleFULinearOrder(VASTNode *FU, unsigned Parallelism, SchedulerBase &G,
                       IR2SUMapTy &IR2SUMap, SyncPointAnalysis &SyncAnalysis,
-                      ControlDependenceAnalysis &CtrlDepAnalysis,
-                      ArrayRef<VASTSchedUnit*> ReturnBlocks)
+                      ControlDependenceAnalysis &CtrlDepAnalysis)
     : GlobalDependenciesBuilderBase(SyncAnalysis, CtrlDepAnalysis, IR2SUMap, *G),
-      FU(FU), Parallelism(Parallelism), G(G), Returns(ReturnBlocks) {}
+      FU(FU), Parallelism(Parallelism), G(G) {}
 
-  void buildLinearOrder(LoopInfo &LI);
+  void buildLinearOrder(LoopInfo &LI, ArrayRef<VASTSchedUnit*> Returns);
 
   virtual void dump() const {
     typedef AccessMapTy::const_iterator def_iterator;
@@ -641,7 +667,7 @@ void BasicLinearOrderGenerator::buildFUInfo() {
           if (Bus->isDualPort()) Parallelism = 2;
 
         S = new SingleFULinearOrder(FU, Parallelism, G, IR2SUMap,
-                                    SyncAnalysis, CtrlAnalysis, ReturnSUs);
+                                    SyncAnalysis, CtrlAnalysis);
       }
 
       // Add the FU visiting information.
@@ -668,34 +694,16 @@ SingleFULinearOrder::buildLinearOrderInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   }
 }
 
-void SingleFULinearOrder::buildLinearOrder(LoopInfo &LI) {
+void SingleFULinearOrder::buildLinearOrder(LoopInfo &LI,
+                                           ArrayRef<VASTSchedUnit*> Returns) {
   // Build the linear order within each BB.
   typedef AccessMapTy::iterator def_iterator;
   for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)
     buildLinearOrderInBB(I->second);
 
-  // Create synchronization points at the return block by pretending the return
-  // to be a read operation.
-  for (unsigned i = 0; i < Returns.size(); ++i) {
-    VASTSchedUnit *ReturnSU = Returns[i];
-    BasicBlock *ReturnBlock = ReturnSU->getParent();
-    SmallVectorImpl<VASTSchedUnit*> &ExistSUs = DefMap[ReturnBlock];
-
-    // If there is no FU access operation in the block, simply put the ReturnSU
-    // to the block and the later algorithm will pretending this operation to be
-    // a FU access operation and happily build the linear dependencies to
-    // synchronize the 'real' FU access operation before the return operation.
-    if (ExistSUs.empty()) {
-      ExistSUs.push_back(ReturnSU);
-      continue;
-    }
-
-    // Otherwise simply build an edge from the last FU access operation in the
-    // same block, so that they are finished before we return.
-    buildDep(ExistSUs.back(), ReturnSU);
-  }
-
-  constructGlobalFlow(LI);
+  addReturns(Returns, DefMap);
+  constructSynchronizations();
+  constructControlDependencies(LI);
 }
 
 void BasicLinearOrderGenerator::buildLinearOrder(LoopInfo &LI) {
@@ -708,7 +716,7 @@ void BasicLinearOrderGenerator::buildLinearOrder(LoopInfo &LI) {
           iterator;
   for (iterator I = Builders.begin(), E = Builders.end(); I != E; ++I) {
     SingleFULinearOrder *Builder = I->second;
-    Builder->buildLinearOrder(LI);
+    Builder->buildLinearOrder(LI,ReturnSUs);
   }
 }
 
@@ -726,7 +734,7 @@ STATISTIC(NumMemDep, "Number of Memory Dependencies Added");
 namespace {
 struct AliasRegionDepBuilder
   : public GlobalDependenciesBuilderBase<AliasRegionDepBuilder> {
-    AliasAnalysis &AA;
+  AliasAnalysis &AA;
 
   AliasRegionDepBuilder(VASTSchedGraph &G, AliasAnalysis &AA,
                         SyncPointAnalysis &SyncAnalysis,
@@ -772,6 +780,7 @@ struct MemoryDepBuilder {
   ControlDependenceAnalysis CtrlDepAnalysis;
   AliasAnalysis &AA;
   AliasSetTracker AST;
+  SmallVector<VASTSchedUnit*, 8> ReturnSUs;
 
   MemoryDepBuilder(VASTSchedGraph &G, IR2SUMapTy &IR2SUMap, DominatorTree &DT,
                    PostDominatorTree &PDT, AliasAnalysis &AA)
@@ -921,8 +930,20 @@ void MemoryDepBuilder::buildDependencies(LoopInfo &LI) {
 
   // Build the memory dependencies inside basic blocks.
   typedef Function::iterator iterator;
-  for (iterator I = F.begin(), E = F.end(); I != E; ++I)
-    buildLocalDependencies(I);
+  for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    BasicBlock *BB = I;
+    buildLocalDependencies(BB);
+
+    TerminatorInst *Inst = BB->getTerminator();
+
+    // Also collect the return operation, we need to wait all operation finish
+    // before we return. This can be achieve by simulating a read operation
+    // in the return block.
+    if ((isa<UnreachableInst>(Inst) || isa<ReturnInst>(Inst))) {
+      ArrayRef<VASTSchedUnit*> Returns(IR2SUMap[Inst]);
+      ReturnSUs.push_back(Returns.front());
+    }
+  }
 
   // Build the memory dependencies flow.
   // TODO: Ignore RAR dependencies.
@@ -935,14 +956,17 @@ void MemoryDepBuilder::buildDependencies(LoopInfo &LI) {
 
     AliasRegionDepBuilder Builder(G, AA, SyncAnalysis, CtrlDepAnalysis, IR2SUMap);
     Builder.initializeRegion(*AS);
-    Builder.constructGlobalFlow(LI);
+
+    Builder.addReturns(ReturnSUs, Builder.UseMap);
+    Builder.constructSynchronizations();
+    Builder.constructControlDependencies(LI);
   }
 }
 
 void VASTScheduling::buildMemoryDependencies() {
   MemoryDepBuilder MDB(*G, IR2SUMap, *DT, getAnalysis<PostDominatorTree>(),
                        getAnalysis<AliasAnalysis>());
-  MDB.buildDependencies(getAnalysis<LoopInfo>());
+  MDB.buildDependencies(*LI);
 }
 
 namespace {
