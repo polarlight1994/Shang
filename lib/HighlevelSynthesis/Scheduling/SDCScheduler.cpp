@@ -414,13 +414,15 @@ bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
 
   // set_break_at_first(lp, TRUE);
 
-  int result = solve(lp);
+  return interpertResult(solve(lp));
+}
 
-  DEBUG(dbgs() << "ILP result is: "<< get_statustext(lp, result) << "\n");
+bool SDCScheduler::interpertResult(int Result) {
+  DEBUG(dbgs() << "ILP result is: " << get_statustext(lp, Result) << "\n");
   dbgs() << "Time elapsed: " << time_elapsed(lp) << "\n";
   DEBUG(dbgs() << "Object: " << get_var_primalresult(lp, 0) << "\n");
 
-  switch (result) {
+  switch (Result) {
   case INFEASIBLE:
     return false;
   case SUBOPTIMAL:
@@ -430,7 +432,7 @@ bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
     break;
   default:
     report_fatal_error(Twine("ILPScheduler Schedule fail: ")
-                       + Twine(get_statustext(lp, result)));
+                       + Twine(get_statustext(lp, Result)));
   }
 
   return true;

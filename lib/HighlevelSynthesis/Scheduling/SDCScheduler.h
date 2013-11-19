@@ -132,6 +132,10 @@ private:
   unsigned updateSoftConstraintPenalties();
   bool solveLP(lprec *lp, bool PreSolve);
 
+  // Interpert the return code from lpsolve, translate it to true if a solution,
+  // which maybe suboptimal, is found, false otherwise.
+  bool interpertResult(int Result);
+
   // Build the schedule form the result of ILP.
   unsigned buildSchedule(lprec *lp);
 
