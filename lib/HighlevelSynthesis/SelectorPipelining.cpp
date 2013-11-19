@@ -88,10 +88,6 @@ struct MUXPipeliner {
 };
 
 struct SelectorPipelining : public VASTModulePass {
-#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
-  TimingNetlist *TNL;
-#endif
-
   Dataflow *DF;
   STGDistances *STGDist;
   VASTModule *VM;
@@ -121,7 +117,7 @@ struct SelectorPipelining : public VASTModulePass {
 
   static char ID;
 
-  SelectorPipelining() : VASTModulePass(ID), TNL(0), DF(0), STGDist(0) {
+  SelectorPipelining() : VASTModulePass(ID), DF(0), STGDist(0) {
     initializeSelectorPipeliningPass(*PassRegistry::getPassRegistry());
   }
 
@@ -144,9 +140,6 @@ struct SelectorPipelining : public VASTModulePass {
     AU.addPreservedID(ControlLogicSynthesisID);
     // FIXME: Require dataflow annotation.
     AU.addRequired<Dataflow>();
-#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
-    AU.addRequired<TimingNetlist>();
-#endif
     AU.addRequired<STGDistances>();
     AU.addPreserved<STGDistances>();
   }
@@ -167,10 +160,6 @@ INITIALIZE_PASS_BEGIN(SelectorPipelining, "sequential-selector-pipelining",
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
   INITIALIZE_PASS_DEPENDENCY(Dataflow)
-#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
-  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
-#endif
-
 INITIALIZE_PASS_END(SelectorPipelining, "sequential-selector-pipelining",
                     "Implement the MUX for the Sequantal Logic", false, true)
 
@@ -183,9 +172,6 @@ Pass *llvm::createSelectorPipeliningPass() {
 bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
   this->VM = &VM;
 
-#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
-  TNL = &getAnalysis<TimingNetlist>();
-#endif
   DF = &getAnalysis<Dataflow>();
   STGDist = &getAnalysis<STGDistances>();
 
@@ -369,20 +355,10 @@ float SelectorPipelining::getArrivialTime(VASTSeqValue *SV, const VASTLatch &L,
 
   float Arrival = 0.0f;
 
-#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
-  if (DF->getGeneration() == 2)
-    Arrival = TNL->getDelay(SV, FI);
-  else {
-#endif
-
   Arrival = DF->getDelay(SV, L.Op, L.getSlot()).expected();
   //float EnableDelay = DF->getDelay(L.getSlot()->getValue(), L.Op, L.getSlot());
   //EnableDelay = std::max(0.0f, EnableDelay - 1.0f);
   //Arrival -= EnableDelay;
-
-#ifndef WE_FINISHED_FPGA14_EXPERIMENTS
-  }
-#endif
 
   return cacheArrivial(SV, FI, Arrival);
 }
