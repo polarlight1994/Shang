@@ -65,6 +65,8 @@ public:
   void initalizeCFGEdges();
 private:
   lprec *lp;
+  const bool UseHeuristicalDriver;
+
   LoopInfo &LI;
 
   // Helper class to build the object function for lp.
@@ -115,6 +117,8 @@ private:
   // 0
   void addConditionalConstraints(VASTSchedUnit *SU);
   void addConditionalConstraints();
+  bool fixCndDepSlack();
+  bool fixCndDepSlack(VASTSchedUnit *SU, unsigned SlackIdx, unsigned TotalRows);
 
   void addSynchronizeConstraints(VASTSchedUnit *SU);
   void addSynchronizeConstraints();
@@ -131,6 +135,10 @@ private:
                      int C, unsigned SlackIdx, int EqTy);
   unsigned updateSoftConstraintPenalties();
   bool solveLP(lprec *lp, bool PreSolve);
+  // Solve the scheduling LP with heuristics based on the high-level
+  // information.
+  bool solveLPHeuristically(lprec *lp);
+  bool updateModelHeuristically(lprec *lp);
 
   // Interpert the return code from lpsolve, translate it to true if a solution,
   // which maybe suboptimal, is found, false otherwise.
@@ -145,8 +153,7 @@ private:
   void nameLastRow(const Twine &NamePrefix);
   void dumpModel() const;
 public:
-  SDCScheduler(VASTSchedGraph &G, unsigned EntrySlot, LoopInfo &LI)
-    : SchedulerBase(G, EntrySlot), lp(0), LI(LI) {}
+  SDCScheduler(VASTSchedGraph &G, unsigned EntrySlot, LoopInfo &LI);
   ~SDCScheduler();
 
   unsigned createLPAndVariables();

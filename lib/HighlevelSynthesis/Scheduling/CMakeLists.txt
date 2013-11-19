@@ -8,6 +8,7 @@ add_llvm_library(ShangScheduling
   GlobalDepBuilder.cpp
   SDCScheduler.cpp
   IterativeSchedulingDriver.cpp
+  HeuristicalILPDriver.cpp
 )
 
 IF (NOT MSVC AND NOT USE_LOCAL_LP_SOLVE)
