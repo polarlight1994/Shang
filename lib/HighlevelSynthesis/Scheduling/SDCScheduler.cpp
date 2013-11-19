@@ -101,10 +101,6 @@ struct ConstraintHelper {
     if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EqTy, RHS))
       report_fatal_error("SDCScheduler: Can NOT add dependency constraints"
                          " at VASTSchedUnit " + utostr_32(DstIdx));
-
-    unsigned RowNo = get_Nrows(lp);
-    std::string RowName = "dep_" + utostr_32(RowNo);
-    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
   }
 };
 }
@@ -303,10 +299,7 @@ void SDCScheduler::addSoftConstraints() {
     VASTSchedUnit *Src = I->first.first, *Dst = I->first.second;
     assert(C.SlackIdx && "Not support on the fly soft constraint creation!");
     addConstraint(lp, Dst, Src, C.C, C.SlackIdx, GE);
-
-    unsigned RowNo = get_Nrows(lp);
-    std::string RowName = "soft_" + utostr_32(RowNo);
-    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
+    nameLastRow("soft_");
   }
 }
 
@@ -487,9 +480,7 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
     if(!add_constraintex(lp, array_lengthof(CurCols), CurCoeffs, CurCols, LE, 0))
       report_fatal_error("Cannot create constraint!");
 
-    unsigned RowNo = get_Nrows(lp);
-    std::string RowName = "conditional_" + utostr_32(RowNo);
-    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
+    nameLastRow("cnd_");
 
     Cols.push_back(AuxVar);
     Coeffs.push_back(1.0);
@@ -512,9 +503,7 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   if(!add_constraintex(lp, NumCols, Coeffs.data(), Cols.data(), LE, RHS))
     report_fatal_error("Cannot create constraint!");
 
-  unsigned RowNo = get_Nrows(lp);
-  std::string RowName = "connectivity_" + utostr_32(RowNo);
-  set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
+  nameLastRow("connectivity_");
 }
 
 void SDCScheduler::addConditionalConstraints() {
@@ -562,9 +551,7 @@ void SDCScheduler::addSynchronizeConstraints(VASTSchedUnit *SU) {
     if (!add_constraintex(lp, NumData, CurCoeffs, CurCols, Ty, 0))
       report_fatal_error("Cannot create constraint!");
 
-    unsigned RowNo = get_Nrows(lp);
-    std::string RowName = "sync_src_" + utostr_32(RowNo);
-    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
+    nameLastRow("sync_src_");
   }
 }
 
@@ -676,9 +663,7 @@ SDCScheduler::preserveAntiDependence(VASTSchedUnit *Src, VASTSchedUnit *Dst,
     if(!add_constraintex(lp, array_lengthof(Cols), Coeffs, Cols, LE, 0))
       report_fatal_error("Cannot create constraints!");
 
-    unsigned RowNo = get_Nrows(lp);
-    std::string RowName = "throughput_" + utostr_32(RowNo);
-    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
+    nameLastRow("throughput_");
   }
 }
 
@@ -704,6 +689,7 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
 
       H.resetSrc(Src, this);
       H.addConstraintToLP(Edge, lp, 0);
+      nameLastRow("dep_");
 
       // Limit throughput on edge, otherwise we may need to insert pipeline
       // register. At the same time, ignore the edge from BBEntry (representing
@@ -799,4 +785,12 @@ void SDCScheduler::initalizeCFGEdges() {
 
 void SDCScheduler::dumpModel() const {
   write_lp(lp, "log.lp");
+}
+
+void SDCScheduler::nameLastRow(const Twine &Name) {
+#ifndef NDEBUG
+  unsigned RowNo = get_Nrows(lp);
+  std::string RowName = Name.str() + utostr_32(RowNo);
+  set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
+#endif
 }

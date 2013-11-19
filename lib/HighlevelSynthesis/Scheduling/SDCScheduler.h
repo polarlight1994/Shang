@@ -138,6 +138,7 @@ private:
   // The schedule should satisfy the dependences.
   void addDependencyConstraints(lprec *lp);
 
+  void nameLastRow(const Twine &NamePrefix);
   void dumpModel() const;
 public:
   SDCScheduler(VASTSchedGraph &G, unsigned EntrySlot, LoopInfo &LI)
