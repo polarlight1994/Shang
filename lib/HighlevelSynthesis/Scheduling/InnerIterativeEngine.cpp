@@ -463,11 +463,11 @@ struct ItetrativeEngine {
                    DominatorTree &DT, PostDominatorTree &PDT,
                    BlockFrequencyInfo &BFI, BranchProbabilityInfo &BPI,
                    IR2SUMapTy &IR2SUMap)
-    : Scheduler(G, 1, LI), DT(DT), PDT(PDT), BFI(BFI), BPI(BPI),
+    : Scheduler(G, 1, DT, LI), DT(DT), PDT(PDT), BFI(BFI), BPI(BPI),
       IR2SUMap(IR2SUMap), S(Initial), ScheduleViolation(0), BindingViolation(0),
       TotalWeight(0.0), PerformanceFactor(8.0f), ResourceFactor(0.1f) {
     // Build the hard linear order.
-    Scheduler.addLinOrdEdge(DT, PDT, IR2SUMap);
+    Scheduler.addLinOrdEdge(PDT, IR2SUMap);
     Scheduler.initalizeCFGEdges();
   }
 

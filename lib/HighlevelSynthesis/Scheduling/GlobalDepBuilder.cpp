@@ -796,8 +796,7 @@ void BasicLinearOrderGenerator::buildLinearOrder(LoopInfo &LI) {
   }
 }
 
-void SDCScheduler::addLinOrdEdge(DominatorTree &DT, PostDominatorTree &PDT,
-                                 IR2SUMapTy &IR2SUMap) {
+void SDCScheduler::addLinOrdEdge(PostDominatorTree &PDT, IR2SUMapTy &IR2SUMap) {
   buildTimeFrameAndResetSchedule(true);
   BasicLinearOrderGenerator(*this, DT, PDT, IR2SUMap).buildLinearOrder(LI);
   G.topologicalSortSUs();

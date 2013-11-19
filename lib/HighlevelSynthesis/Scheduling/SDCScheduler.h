@@ -58,7 +58,7 @@ public:
 
   /// Add linear order edges to resolve resource conflict.
   //
-  void addLinOrdEdge(DominatorTree &DT, PostDominatorTree &PDT,
+  void addLinOrdEdge(PostDominatorTree &PDT,
                      std::map<Value*, SmallVector<VASTSchedUnit*, 4> >
                      &IR2SUMap);
 
@@ -67,6 +67,7 @@ private:
   lprec *lp;
   const bool UseHeuristicalDriver;
 
+  DominatorTree &DT;
   LoopInfo &LI;
 
   // Helper class to build the object function for lp.
@@ -153,7 +154,8 @@ private:
   void nameLastRow(const Twine &NamePrefix);
   void dumpModel() const;
 public:
-  SDCScheduler(VASTSchedGraph &G, unsigned EntrySlot, LoopInfo &LI);
+  SDCScheduler(VASTSchedGraph &G, unsigned EntrySlot, DominatorTree &DT,
+               LoopInfo &LI);
   ~SDCScheduler();
 
   unsigned createLPAndVariables();
