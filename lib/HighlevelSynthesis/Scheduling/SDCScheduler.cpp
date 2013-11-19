@@ -159,6 +159,10 @@ unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
 
 unsigned SDCScheduler::createLPAndVariables() {
   lp = make_lp(0, 0);
+
+  set_verbose(lp, NORMAL);
+  DEBUG(set_verbose(lp, FULL));
+
   unsigned Col =  1;
 
   for (iterator I = begin(), E = end(); I != E; ++I) {
@@ -389,9 +393,6 @@ unsigned SDCScheduler::buildSchedule(lprec *lp) {
 }
 
 bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
-  set_verbose(lp, NORMAL);
-  DEBUG(set_verbose(lp, FULL));
-
   if (PreSolve) {
     set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS,
                  get_presolveloops(lp));
