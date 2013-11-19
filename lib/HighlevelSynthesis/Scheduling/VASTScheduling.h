@@ -376,6 +376,16 @@ public:
            && "Edge not isnerted?");
   }
 
+  // SSA Form require that a def dominates all its uses. From the use's point
+  // of use, it is dominated by all its operand. At the same time, because the
+  // dominators have a tree structures, this means all operands of a use are
+  // located in a path in the dominator tree that starts from the root and end
+  // at the parent block of the use. We call this path the "operand dominators
+  // path". The (data) flow dominator of a node is the parent block of an
+  // operand of the node that is nearest to the parent block of the node in the
+  // operand dominators path.
+  BasicBlock *getFlowDominator(DominatorTree &DT) const;
+
   /// Return true if the node should be constrained by linear order.
   bool requireLinearOrder() const;
 

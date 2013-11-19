@@ -122,7 +122,8 @@ private:
   // Create step variables, which represent the c-step that the VSUnits are
   // scheduled to.
   unsigned createStepVariable(const VASTSchedUnit *U, unsigned Col);
-  unsigned createSlackVariable(unsigned Col, int UB, int LB);
+  unsigned createSlackVariable(unsigned Col, int UB, int LB,
+                               const Twine &Name);
   unsigned createVarForCndDeps(unsigned Col);
 
   // Dst - Src >= C - V

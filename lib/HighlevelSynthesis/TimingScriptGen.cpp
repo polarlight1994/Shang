@@ -580,7 +580,6 @@ INITIALIZE_PASS_BEGIN(TimingScriptGen, "vast-timing-script-generation",
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
-  INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
 INITIALIZE_PASS_END(TimingScriptGen, "vast-timing-script-generation",
                     "Generate timing script to export the behavior-level timing",

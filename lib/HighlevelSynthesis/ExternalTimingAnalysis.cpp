@@ -58,7 +58,7 @@ static cl::opt<bool> Use64BitQuartus("vast-use-64bit-quartus",
 static cl::opt<bool>
 EnablePAR("vast-external-enable-place-and-route",
   cl::desc("Enable place and route in external tool"),
-  cl::init(false));
+  cl::init(true));
 
 static cl::opt<bool>
 EnableFastPAR("vast-external-enable-fast-place-and-route",
@@ -1105,7 +1105,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
 
     NamedRegionTimer T("External Tool Run Time", GroupName, TimePassesIsEnabled);
     std::string ErrorInfo;
-    if (LLVM_UNLIKELY(sys::ExecuteAndWait(quartus, &args[0], 0, Redirects,
+    if (LLVM_UNLIKELY(sys::ExecuteAndWait(quartus, &args[0], 0, 0/*Redirects*/,
                                           ExternalToolTimeOut, 0, &ErrorInfo))) {
       errs() << "Error: " << ErrorInfo <<'\n';
       report_fatal_error("External timing analyze fail!\n");

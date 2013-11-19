@@ -13,7 +13,6 @@
 //===----------------------------------------------------------------------===//
 //
 
-#include "PreSchedBinding.h"
 #include "VASTScheduling.h"
 #include "ScheduleDOT.h"
 
@@ -169,6 +168,35 @@ int VASTSchedUnit::EdgeBundle::getDFLatency() const {
   return Latency;
 }
 
+BasicBlock *
+VASTSchedUnit::getFlowDominator(DominatorTree &DT) const {
+  assert(!isPHI() && !isBBEntry() && "Cannot calculate Flow Dominator!");
+
+  BasicBlock *Dst = DT.getRoot();
+
+  for (const_dep_iterator I = dep_begin(), E = dep_end(); I != E; ++I) {
+    if (I.getDFLatency() < 0 )
+      continue;
+
+    const VASTSchedUnit *Dep = *I;
+
+    // Ignore the dependencies from these virtual nodes.
+    if (Dep->isEntry() || Dep->isSyncJoin())
+      continue;
+
+    BasicBlock *SrcBB = Dep->getParent();
+    if (DT.dominates(Dst, SrcBB)) {
+      Dst = SrcBB;
+      continue;
+    }
+
+    assert(DT.dominates(SrcBB, Dst)
+           && "Operands not in a path of the dominator tree!");
+  }
+
+  return Dst;
+}
+
 bool VASTSchedUnit::requireLinearOrder() const {
   VASTSeqOp *Op = getSeqOp();
 
@@ -242,7 +270,7 @@ void VASTSchedUnit::print(raw_ostream &OS) const {
      << " Parent: " << getParent()->getName();
 
   if (Inst) {
-    OS << ' ' << *Inst; //Inst->getName();
+    OS << ' ' << *Inst;//Inst->getName();
 
     if (isa<PHINode>(Inst) && isLatch())
       OS << " From: " << getIncomingBlock()->getName();
@@ -535,14 +563,13 @@ void VASTScheduling::getAnalysisUsage(AnalysisUsage &AU) const  {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequiredID(BasicBlockTopOrderID);
   AU.addRequired<Dataflow>();
-  AU.addRequired<PreSchedBinding>();
-  AU.addPreserved<PreSchedBinding>();
+  // AU.addRequired<PreSchedBinding>();
+  // AU.addPreserved<PreSchedBinding>();
   AU.addRequired<AliasAnalysis>();
   AU.addRequired<DominatorTree>();
   AU.addRequired<PostDominatorTree>();
   AU.addRequired<LoopInfo>();
   AU.addRequired<BranchProbabilityInfo>();
-  // There is a bug in BlockFrequencyInfo :(
   AU.addRequired<BlockFrequencyInfo>();
 }
 

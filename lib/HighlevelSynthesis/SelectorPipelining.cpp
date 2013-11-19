@@ -155,7 +155,6 @@ struct SelectorPipelining : public VASTModulePass {
 
 INITIALIZE_PASS_BEGIN(SelectorPipelining, "sequential-selector-pipelining",
                       "Implement the MUX for the Sequantal Logic", false, true)
-  INITIALIZE_PASS_DEPENDENCY(SeqLiveVariables)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
@@ -194,6 +193,8 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
 
     descomposeSeqInst(SeqInst);
   }
+
+  return true;
 
   DEBUG(dbgs() << "Before MUX pipelining:\n"; VM.dump(););
 

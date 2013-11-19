@@ -31,7 +31,7 @@ using namespace llvm;
 
 static cl::opt<unsigned> BigMMultiplier("vast-ilp-big-M-multiplier",
   cl::desc("The multiplier apply to bigM in the linear model"),
-  cl::init(8));
+  cl::init(1));
 
 static cl::opt<unsigned> ILPTimeOut("vast-ilp-timeout",
   cl::desc("The timeout value for ilp solver, in seconds"),
@@ -49,7 +49,6 @@ void SDCScheduler::LPObjFn::setLPObj(lprec *lp) const {
 
   set_obj_fnex(lp, size(), Coefficients.data(), Indices.data());
   set_maxim(lp);
-  DEBUG(write_lp(lp, "log.lp"));
 }
 
 namespace {
@@ -103,9 +102,9 @@ struct ConstraintHelper {
       report_fatal_error("SDCScheduler: Can NOT add dependency constraints"
                          " at VASTSchedUnit " + utostr_32(DstIdx));
 
-    DEBUG(unsigned RowNo = get_Nrows(lp);
+    unsigned RowNo = get_Nrows(lp);
     std::string RowName = "dep_" + utostr_32(RowNo);
-    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str())););
+    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
   }
 };
 }
@@ -116,22 +115,15 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   assert(inserted && "Index already existed!");
   (void) inserted;
   add_columnex(lp, 0, 0,0);
-  DEBUG(std::string SVStart;
-  if (U->isBBEntry())
-    SVStart = "entry_" + ShangMangle(U->getParent()->getName());
-  else if (U->isTerminator()) {
-    SVStart = "br_" + ShangMangle(U->getParent()->getName()) + "_";
-    if (BasicBlock *TargetBB = U->getTargetBlock())
-      SVStart += ShangMangle(TargetBB->getName());
-    else
-      SVStart += "exit";
-  } else
-    SVStart = "sv" + utostr_32(U->getIdx());
 
-  dbgs() <<"Col#" << Col << " name: " <<SVStart << "\n";
-  set_col_name(lp, Col, const_cast<char*>(SVStart.c_str())););
+  std::string SVName = "sv" + utostr(U->getIdx());
+  set_col_name(lp, Col, const_cast<char*>(SVName.c_str()));
+
   set_int(lp, Col, TRUE);
   set_lowbo(lp, Col, EntrySlot);
+
+  REAL BigM = BigMMultiplier * getCriticalPathLength();
+  set_upbo(lp, Col, BigM + EntrySlot );
 
   // The step variables are almost only used in differential constraints,
   // their are relatively easier to be solved. So we assign a lower priority
@@ -141,11 +133,11 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   return Col + 1;
 }
 
-unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB) {
+unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB,
+                                           const Twine &Name) {
   add_columnex(lp, 0, 0,0);
-  DEBUG(std::string SlackName = "slack" + utostr_32(Col);
-  dbgs() <<"Col#" << Col << " name: " << SlackName << "\n";
-  set_col_name(lp, Col, const_cast<char*>(SlackName.c_str())););
+  std::string SlackName = Name.str();
+  set_col_name(lp, Col, const_cast<char*>(SlackName.c_str()));
   set_int(lp, Col, TRUE);
 
   if (UB != LB) {
@@ -159,7 +151,7 @@ unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB) {
 unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
   // The auxiliary variable to specify one of the conditional dependence
   // and the current SU must have the same scheduling.
-  Col = createSlackVariable(Col, 1, 0);
+  Col = createSlackVariable(Col, 1, 0, "cnd_connect" + utostr(Col));
   // These variable have the lowest variable weight for the branch and bound
   // process. Because the related constraints are the hardest ones to be
   // preserved. Hence we want to choose to make these variables integer
@@ -172,7 +164,8 @@ unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
 unsigned SDCScheduler::createLPAndVariables() {
   lp = make_lp(0, 0);
   unsigned Col =  1;
-  for (iterator I =begin(), E = end(); I != E; ++I) {
+
+  for (iterator I = begin(), E = end(); I != E; ++I) {
     VASTSchedUnit* U = I;
     if (U->isScheduled())
       continue;
@@ -213,7 +206,7 @@ unsigned SDCScheduler::createLPAndVariables() {
        I != E; ++I) {
     SoftConstraint &C = I->second;
     C.SlackIdx = Col;
-    Col = createSlackVariable(Col, 0, 0);
+    Col = createSlackVariable(Col, 0, 0, "soft_slack" + utostr(Col));
 
     // The slack variables of soft constraints are only used in differential
     // constraints, their are most easier to be solved and do not affect the
@@ -288,10 +281,6 @@ SDCScheduler::addConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
   if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EqTy, RHS))
     report_fatal_error("SDCScheduler: Can NOT create soft Constraints"
                        " SlackIdx:" + utostr_32(SlackIdx));
-
-  DEBUG(unsigned RowNo = get_Nrows(lp);
-  std::string RowName = "generic_" + utostr_32(RowNo);
-  set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str())););
 }
 
 double SDCScheduler::getLastPenalty(VASTSchedUnit *Src,
@@ -315,6 +304,9 @@ void SDCScheduler::addSoftConstraints() {
     assert(C.SlackIdx && "Not support on the fly soft constraint creation!");
     addConstraint(lp, Dst, Src, C.C, C.SlackIdx, GE);
 
+    unsigned RowNo = get_Nrows(lp);
+    std::string RowName = "soft_" + utostr_32(RowNo);
+    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
   }
 }
 
@@ -368,9 +360,10 @@ unsigned SDCScheduler::buildSchedule(lprec *lp) {
     if (U->isEntry()) continue;
 
     unsigned Idx = getSUIdx(U);
-    unsigned j = get_var_primalresult(lp, TotalRows + Idx);
-    DEBUG(dbgs() << "At row:" << TotalRows + Idx
-                 << " the result is:" << j << "\n");
+    REAL CurSchedule = get_var_primalresult(lp, TotalRows + Idx);
+    unsigned j = CurSchedule;
+    dbgs() << "At row:" << TotalRows + Idx
+           << " the result is:" << j << " (" << CurSchedule << ")\n";
 
     assert(j && "Bad result!");
     if (U->scheduleTo(j))
@@ -388,6 +381,11 @@ unsigned SDCScheduler::buildSchedule(lprec *lp) {
     assert (I->first.second->getSchedule() - I->first.first->getSchedule()
             + NegativeSlack >= C.C && "Bad soft constraint slack!");
 
+    I->first.first->dump();
+    I->first.second->dump();
+
+    dbgs().indent(2) << C.C << " -> " << NegativeSlack << '\n';
+
     if (NegativeSlack != C.LastValue) {
       C.LastValue = NegativeSlack;
       ++Changed;
@@ -402,12 +400,7 @@ bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
   DEBUG(set_verbose(lp, FULL));
 
   if (PreSolve) {
-    set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS | PRESOLVE_LINDEP
-                     | PRESOLVE_IMPLIEDFREE | PRESOLVE_REDUCEGCD
-                     | PRESOLVE_PROBEFIX | PRESOLVE_PROBEREDUCE
-                     | PRESOLVE_ROWDOMINATE /*| PRESOLVE_COLDOMINATE lpsolve bug*/
-                     | PRESOLVE_MERGEROWS
-                     | PRESOLVE_BOUNDS,
+    set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS,
                  get_presolveloops(lp));
   } else
     set_presolve(lp, PRESOLVE_NONE, get_presolveloops(lp));
@@ -422,6 +415,11 @@ bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
   DEBUG(dbgs() << "Timeout is set to " << get_timeout(lp) << "secs.\n");
 
   set_timeout(lp, ILPTimeOut);
+
+  assert(LPVarWeights.size() == get_Ncolumns(lp) && "Broken variable weights!");
+  set_var_weights(lp, LPVarWeights.data());
+
+  // set_break_at_first(lp, TRUE);
 
   int result = solve(lp);
 
@@ -466,6 +464,7 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
     // we require Dst <= Src, hence we have Dst - Src + Slack = 0, Slack >= 0
     // i.e. Slack = Src - Dst
     addConstraint(lp, SU, Dep, 0, 0, LE);
+
     int AuxVar = CurIdx;
     // Note that AuxVar is a binary variable, setting 0 to AuxVar means the
     // terminator of the predecessor block is 'connected' to the entry of
@@ -473,11 +472,11 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
     // at least one terminator is connected to the entry of current BB. Hence,
     // as an initial solution, we can connect to the first terminator we meet
     // that has a smaller topological order number.
-    if (!HadMetEarierBranch && Dep->getIdx() < SU->getIdx()) {
-      set_var_branch(lp, AuxVar, BRANCH_FLOOR);
-      HadMetEarierBranch = true;
-    } else
-      set_var_branch(lp, AuxVar, BRANCH_CEILING);
+    //if (!HadMetEarierBranch && Dep->getIdx() < SU->getIdx()) {
+    //  set_var_branch(lp, AuxVar, BRANCH_FLOOR);
+    //  HadMetEarierBranch = true;
+    //} else
+    //  set_var_branch(lp, AuxVar, BRANCH_CEILING);
 
     // Build constraints Slack - BigM * AuxVar <= 0,
     // i.e. Src - Dst - BigM * AuxVar <= 0
@@ -502,12 +501,20 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   // is zero.
   unsigned NumCols = Cols.size();
   unsigned RHS = NumCols - 1;
+
+  // No need to set a constraints for the trivial value.
+  if (RHS == 0) {
+    set_lowbo(lp, Cols.front(), 0);
+    set_upbo(lp, Cols.front(), 0);
+    return;
+  }
+
   if(!add_constraintex(lp, NumCols, Coeffs.data(), Cols.data(), LE, RHS))
     report_fatal_error("Cannot create constraint!");
 
-  DEBUG(unsigned RowNo = get_Nrows(lp);
+  unsigned RowNo = get_Nrows(lp);
   std::string RowName = "connectivity_" + utostr_32(RowNo);
-  set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str())););
+  set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
 }
 
 void SDCScheduler::addConditionalConstraints() {
@@ -669,9 +676,9 @@ SDCScheduler::preserveAntiDependence(VASTSchedUnit *Src, VASTSchedUnit *Dst,
     if(!add_constraintex(lp, array_lengthof(Cols), Coeffs, Cols, LE, 0))
       report_fatal_error("Cannot create constraints!");
 
-    DEBUG(unsigned RowNo = get_Nrows(lp);
+    unsigned RowNo = get_Nrows(lp);
     std::string RowName = "throughput_" + utostr_32(RowNo);
-    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str())););
+    set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
   }
 }
 
@@ -747,7 +754,7 @@ bool SDCScheduler::schedule() {
 
   bool changed = true;
 
-  if (!solveLP(lp, true))
+  if (!solveLP(lp, false))
     return false;
 
   // Schedule the state with the ILP result.
