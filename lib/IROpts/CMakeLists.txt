@@ -8,7 +8,6 @@ add_llvm_library(ShangIROpts
   HLSInliner.cpp
   GotoExpansion.cpp
   TrivialLoopUnrollPass.cpp
-  BasicBlockTopOrder.cpp
   MemoryAccessCoalescing.cpp
   ShangTTI.cpp
   ObjectBasedAliasAnalysis.cpp
