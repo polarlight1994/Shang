@@ -12,10 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Dataflow.h"
 #include "TimingNetlist.h"
 
 #include "shang/Passes.h"
+#include "shang/Dataflow.h"
 #include "shang/VASTModule.h"
 #include "shang/STGDistances.h"
 

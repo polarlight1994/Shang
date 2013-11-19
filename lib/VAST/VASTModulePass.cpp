@@ -15,9 +15,7 @@
 #include "MinimalDatapathContext.h"
 #include "Allocation.h"
 
-// FIXME: Move Dataflow.h to a public place.
-#include "../HighlevelSynthesis/Dataflow.h"
-
+#include "shang/Dataflow.h"
 #include "shang/VASTMemoryPort.h"
 #include "shang/VASTModulePass.h"
 #include "shang/VASTModule.h"

@@ -13,10 +13,8 @@
 //===----------------------------------------------------------------------===//
 //
 
-#include "Dataflow.h"
 #include "PreSchedBinding.h"
 #include "VASTScheduling.h"
-#include "SDCScheduler.h"
 #include "ScheduleDOT.h"
 
 #include "shang/Passes.h"

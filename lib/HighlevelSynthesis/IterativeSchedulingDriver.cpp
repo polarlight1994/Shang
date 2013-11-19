@@ -14,9 +14,9 @@
 //===----------------------------------------------------------------------===//
 //
 
-#include "Dataflow.h"
 #include "VASTScheduling.h"
 
+#include "shang/Dataflow.h"
 #include "shang/Passes.h"
 #include "shang/Strash.h"
 #include "shang/VASTModule.h"

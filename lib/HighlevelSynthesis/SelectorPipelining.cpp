@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 #include "TimingNetlist.h"
-#include "Dataflow.h"
 
+#include "shang/Dataflow.h"
 #include "shang/FUInfo.h"
 #include "shang/VASTMemoryPort.h"
 #include "shang/VASTExprBuilder.h"

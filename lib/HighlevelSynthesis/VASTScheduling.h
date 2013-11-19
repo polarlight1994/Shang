@@ -19,8 +19,7 @@
 #ifndef VAST_SCHEDULING_H
 #define VAST_SCHEDULING_H
 
-#include "Dataflow.h"
-
+#include "shang/Dataflow.h"
 #include "shang/VASTSeqOp.h"
 #include "shang/VASTModulePass.h"
 

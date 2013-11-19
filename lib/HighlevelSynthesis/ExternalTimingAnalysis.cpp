@@ -18,9 +18,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "Dataflow.h"
-
 #include "shang/Passes.h"
+#include "shang/Dataflow.h"
 #include "shang/VASTModule.h"
 #include "shang/VASTSubModules.h"
 #include "shang/VASTMemoryPort.h"

@@ -17,7 +17,7 @@
 #ifndef COMPATIBILITY_GRAPH_H
 #define COMPATIBILITY_GRAPH_H
 
-#include "Dataflow.h"
+#include "shang/Dataflow.h"
 #include "shang/FUInfo.h"
 
 #include "llvm/ADT/ilist_node.h"
