@@ -24,3 +24,7 @@ target_link_libraries (
 )
 
 include_directories(${LPSOLVE_INCLUDE_DIR})
+
+# Need to link against the analysis in linux, otherwise we will get a link
+# error.
+llvm_config(ShangScheduling analysis)
