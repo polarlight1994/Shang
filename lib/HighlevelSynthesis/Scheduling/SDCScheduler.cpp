@@ -42,9 +42,15 @@ static cl::opt<bool> CndDepTopBB("vast-sdc-cnd-dep-top-bb",
            " based on topological order"),
   cl::init(false));
 
+static unsigned ILPEarlyTimeOut = 30;
+static cl::opt<unsigned, true> ILPEarlyTimeOutCL("vast-ilp-early-timeout",
+  cl::location(ILPEarlyTimeOut),
+  cl::desc("The timeout value for ilp solver when it have an solution,"
+           " in seconds"));
+
 static cl::opt<unsigned> ILPTimeOut("vast-ilp-timeout",
   cl::desc("The timeout value for ilp solver, in seconds"),
-  cl::init(5 * 60));
+  cl::init(10 * 60));
 
 void SDCScheduler::LPObjFn::setLPObj(lprec *lp) const {
   std::vector<int> Indices;
@@ -131,8 +137,26 @@ unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
   return Col;
 }
 
+// The time function used by lpsolve.
+extern "C" double timeNow(void);
+static int __WINAPI sdc_abort(lprec *lp, void *userhandle) {
+  // Abort the solving process if we have any solution and the elapsed time
+  // is bigger than early timeout.
+  if (lp->solutioncount > 0) {
+    REAL TimeElapsed = timeNow() - lp->timestart;
+    if ((TimeElapsed > (REAL)ILPEarlyTimeOut))
+      return TRUE;
+  }
+
+  return FALSE;
+}
+
 unsigned SDCScheduler::createLPAndVariables() {
   lp = make_lp(0, 0);
+
+  // Install the abort function so that we can abort the solving process early
+  // when we have an solution.
+  put_abortfunc(lp, sdc_abort, NULL);
 
   set_verbose(lp, NORMAL);
   DEBUG(set_verbose(lp, FULL));
