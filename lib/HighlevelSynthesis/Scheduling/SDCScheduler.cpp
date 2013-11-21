@@ -55,60 +55,6 @@ void SDCScheduler::LPObjFn::setLPObj(lprec *lp) const {
   set_maxim(lp);
 }
 
-namespace {
-struct ConstraintHelper {
-  int SrcSlot, DstSlot;
-  unsigned SrcIdx, DstIdx;
-
-  ConstraintHelper()
-    : SrcSlot(0), DstSlot(0), SrcIdx(0), DstIdx(0) {}
-
-  void resetSrc(const VASTSchedUnit *Src, const SDCScheduler *S) {
-    SrcSlot = Src->getSchedule();
-    SrcIdx = SrcSlot == 0 ? S->getSUIdx(Src) : 0;
-  }
-
-  void resetDst(const VASTSchedUnit *Dst, const SDCScheduler *S) {
-    DstSlot = Dst->getSchedule();
-    DstIdx = DstSlot == 0 ? S->getSUIdx(Dst) : 0;
-  }
-
-  void addConstraintToLP(VASTDep Edge, lprec *lp, int ExtraCycles) {
-    SmallVector<int, 2> Col;
-    SmallVector<REAL, 2> Coeff;
-
-    int RHS = Edge.getLatency() - DstSlot + SrcSlot + ExtraCycles;
-
-    // Both SU is scheduled.
-    if (SrcSlot && DstSlot) {
-      assert(0 >= RHS && "Bad schedule!");
-      return;
-    }
-
-    // Build the constraint.
-    if (SrcSlot == 0) {
-      assert(SrcIdx && "Bad SrcIdx!");
-      Col.push_back(SrcIdx);
-      Coeff.push_back(-1.0);
-    }
-
-    if (DstSlot == 0) {
-      assert(DstIdx && "Bad DstIdx!");
-      Col.push_back(DstIdx);
-      Coeff.push_back(1.0);
-    }
-
-    assert(Edge.getEdgeType() != VASTDep::Conditional &&
-           "Unexpected conditional edge!");
-    int EqTy = (Edge.getEdgeType() == VASTDep::FixedTiming) ? EQ : GE;
-
-    if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EqTy, RHS))
-      report_fatal_error("SDCScheduler: Can NOT add dependency constraints"
-                         " at VASTSchedUnit " + utostr_32(DstIdx));
-  }
-};
-}
-
 unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) {
   // Set up the step variable for the VASTSchedUnit.
   bool inserted = SUIdx.insert(std::make_pair(U, Col)).second;
@@ -712,9 +658,7 @@ SDCScheduler::preserveAntiDependence(VASTSchedUnit *Src, VASTSchedUnit *Dst,
 void SDCScheduler::addDependencyConstraints(lprec *lp) {
   for(VASTSchedGraph::iterator I = begin(), E = end(); I != E; ++I) {
     VASTSchedUnit *U = I;
-
-    ConstraintHelper H;
-    H.resetDst(U, this);
+    unsigned DstIdx = getSUIdx(U);
 
     typedef VASTSchedUnit::dep_iterator dep_iterator;
     // Build the constraint for Dst_SU_startStep - Src_SU_endStep >= Latency.
@@ -729,8 +673,13 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
           Edge.getEdgeType() == VASTDep::Synchronize)
         continue;
 
-      H.resetSrc(Src, this);
-      H.addConstraintToLP(Edge, lp, 0);
+
+      REAL Coefs[] = { 1.0, -1.0 };
+      int Cols[] = { DstIdx, getSUIdx(Src) };
+      int EqTy = (Edge.getEdgeType() == VASTDep::FixedTiming) ? EQ : GE;
+      if (!add_constraintex(lp, array_lengthof(Cols), Coefs, Cols, EqTy, Edge.getLatency()))
+        report_fatal_error("Cannot create dependence constraint!");
+
       nameLastRow("dep_");
 
       // Limit throughput on edge, otherwise we may need to insert pipeline
