@@ -91,7 +91,7 @@ private:
     void dump() const;
   };
 
-  LPObjFn ObjFn;
+  LPObjFn ObjFn, LagObjFn;
 
   // The table of the index of the VSUnits and the column number in LP.
   typedef std::map<const VASTSchedUnit*, unsigned> SUI2IdxMapTy;
@@ -133,8 +133,8 @@ private:
   bool solveLP(lprec *lp, bool PreSolve);
   // Solve the scheduling LP with Augmented Lagrangian Methods.
   bool lagSolveLP(lprec *lp);
-  bool updateLagMultipliers(lprec *lp);
-  bool updateCndDepLagMultipliers();
+  unsigned updateLagMultipliers(lprec *lp);
+  unsigned updateCndDepLagMultipliers();
   bool updateCndDepLagMultipliers(VASTSchedUnit *SU, unsigned SlackIdx,
                                   unsigned TotalRows);
 

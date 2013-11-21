@@ -22,29 +22,45 @@
 
 using namespace llvm;
 
-bool SDCScheduler::updateCndDepLagMultipliers() {
+unsigned SDCScheduler::updateCndDepLagMultipliers() {
   unsigned TotalRows = get_Norig_rows(lp);
-  bool AnyFix = false;
+  unsigned Violations = 0;
 
   typedef std::vector<VASTSchedUnit*>::iterator iterator;
   for (iterator I = ConditionalSUs.begin(), E = ConditionalSUs.end();
        I != E; ++I) {
     VASTSchedUnit *SU = *I;
     unsigned SlackIdxStart = getSUIdx(SU) + 1;
-    AnyFix |= updateCndDepLagMultipliers(SU, SlackIdxStart, TotalRows);
+    if (updateCndDepLagMultipliers(SU, SlackIdxStart, TotalRows))
+      ++Violations;
   }
 
-  return AnyFix;
+  return Violations;
+}
+
+static REAL ProductExcluding(ArrayRef<REAL> A, unsigned Idx) {
+  REAL P = 1.0;
+
+  for (unsigned i = 0; i < A.size(); ++i)
+    if (i != Idx)
+      P *= A[i];
+
+  return P;
 }
 
 bool
 SDCScheduler::updateCndDepLagMultipliers(VASTSchedUnit *SU, unsigned SlackIdx,
                                          unsigned TotalRows) {
   BasicBlock *CurBB = SU->getParent();
-  dbgs() << "Update conditional slack for BB: " << CurBB->getName()
-         << '\n';
-  REAL SmallestSlack = get_infinite(lp);
-  unsigned SmallestSlackIdx = 0;
+  DEBUG(dbgs() << "Update conditional slack for BB: " << CurBB->getName()
+               << '\n');
+
+  // For conditional dependencies, we require one of the slack must be zer,
+  // i.e. product(Slack_{i}) = 0.
+
+  SmallVector<REAL, 4> Slacks;
+  SmallVector<int, 4> Indices;
+  bool AnyZero = false;
 
   typedef VASTSchedUnit::dep_iterator dep_iterator;
   for (dep_iterator I = SU->dep_begin(), E = SU->dep_end(); I != E; ++I) {
@@ -54,53 +70,76 @@ SDCScheduler::updateCndDepLagMultipliers(VASTSchedUnit *SU, unsigned SlackIdx,
     unsigned SlackResultIdx = TotalRows + SlackIdx;
     REAL Slack = get_var_primalresult(lp, SlackResultIdx);
 
-    dbgs().indent(2) << "From BB: " << Dep->getParent()->getName() << ' '
-                     << Slack << " (" << unsigned(Slack) << ", Idx " << SlackIdx
-                     << ", " << get_col_name(lp, SlackIdx) << ")\n";
+    DEBUG(dbgs().indent(2);
+          dbgs() << "From BB: " << Dep->getParent()->getName() << ' '
+                 << Slack << " (" << unsigned(Slack) << ", Idx " << SlackIdx
+                 << ", " << get_col_name(lp, SlackIdx) << ")\n";);
 
-
-    if (Dep->getIdx() > SU->getIdx()) {
-    // if (DT.dominates(CurBB, Dep->getParent())) {
-      dbgs().indent(4) << "Ignore the potential backedge!\n";
+    if (DT.dominates(CurBB, Dep->getParent())) {
+      DEBUG(dbgs().indent(4) << "Ignore the potential backedge!\n");
       ++SlackIdx;
       continue;
     }
 
-    if (Slack < SmallestSlack) {
-      SmallestSlack = Slack;
-      SmallestSlackIdx = SlackIdx;
-    }
+    Slacks.push_back(Slack);
+    Indices.push_back(SlackIdx);
+    AnyZero |= (Slack == 0.0);
 
     ++SlackIdx;
   }
 
-  assert(SmallestSlackIdx && "SmallestSlackIdx not updated in the loop?");
+  DEBUG(dbgs() << '\n');
 
-  if (SmallestSlack > 0.0) {
-    dbgs() << "Going to fix slack variable " << SmallestSlackIdx << ", "
-           << get_col_name(lp, SmallestSlackIdx)
-           << "\n\tcurrent slack value: " << SmallestSlack << '\n';
+  if (AnyZero)
+    return false;
+
+  dbgs() << "Going to penalize conditional slack for BB: " << CurBB->getName()
+         << '\n';
+
+  for (unsigned i = 0, e = Slacks.size(); i != e; ++i) {
+    // Calculate the partial derivative of product(Slack_{k}) on Slack_{k}.
+    REAL PD = ProductExcluding(Slacks, i);
+    // Penalty the voilating slack.
+    LagObjFn[Indices[i]] -= PD;
+    dbgs().indent(2) << "Idx " << Indices[i] << ", CurSlack " << Slacks[i]
+                     << " pd " << PD << '\n';
   }
-
-  set_upbo(lp, SmallestSlackIdx, 0.0);
 
   dbgs() << '\n';
 
-  return SmallestSlack > 0.0;
+  return true;
 }
 
-bool SDCScheduler::updateLagMultipliers(lprec *lp) {
+unsigned SDCScheduler::updateLagMultipliers(lprec *lp) {
+  set_break_at_value(lp, get_var_primalresult(lp, 0));
   return updateCndDepLagMultipliers();
 }
 
 bool SDCScheduler::lagSolveLP(lprec *lp) {
+  set_break_at_first(lp, TRUE);
+
+  unsigned Voilations = 0;
+  LPObjFn Obj;
+
   // Create
   do {
+    Obj = ObjFn;
+    Obj += LagObjFn;
+
+    Obj.setLPObj(lp);
+
     if (!solveLP(lp, false))
       return false;
 
+    LagObjFn *= 0.8;
+
     set_break_at_first(lp, FALSE);
-  } while (updateLagMultipliers(lp));
+
+    unsigned LastVoilations = Voilations;
+    Voilations = updateLagMultipliers(lp);
+    dbgs() << "LastVoilation: " << LastVoilations
+           << " CurVoilation: " << Voilations << '\n';
+  } while (Voilations);
 
   return true;
 }

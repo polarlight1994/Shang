@@ -715,6 +715,7 @@ bool SDCScheduler::schedule() {
   changed |= (updateSoftConstraintPenalties() != 0);
 
   ObjFn.clear();
+  LagObjFn.clear();
   SUIdx.clear();
   ConditionalSUs.clear();
   SynchronizeSUs.clear();
