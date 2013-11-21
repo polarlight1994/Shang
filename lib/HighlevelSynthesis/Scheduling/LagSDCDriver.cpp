@@ -1,4 +1,4 @@
-//===- HeuristicalILPDriver.cpp - High-level ILP Heuristics -----*- C++ -*-===//
+//===- LagSDCDriver.cpp - Solve SDC with Lagrangian relaxation --*- C++ -*-===//
 //
 //                      The VAST HLS frameowrk                               //
 //
@@ -7,13 +7,14 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implement the Heuristical ILPDriver for the scheduler to solve the
-// difficult ILP model.
+// This file implement Lagrangian relaxation based algorithm to solve the extend
+// ILP model for the SDC scheduler.
 //
 //===----------------------------------------------------------------------===//
 
 #include "SDCScheduler.h"
 
+#include "llvm/Analysis/Dominators.h"
 #define DEBUG_TYPE "sdc-scheduler-heuristics"
 #include "llvm/Support/Debug.h"
 
@@ -21,7 +22,7 @@
 
 using namespace llvm;
 
-bool SDCScheduler::fixCndDepSlack() {
+bool SDCScheduler::updateCndDepLagMultipliers() {
   unsigned TotalRows = get_Norig_rows(lp);
   bool AnyFix = false;
 
@@ -30,15 +31,17 @@ bool SDCScheduler::fixCndDepSlack() {
        I != E; ++I) {
     VASTSchedUnit *SU = *I;
     unsigned SlackIdxStart = getSUIdx(SU) + 1;
-    AnyFix |= fixCndDepSlack(SU, SlackIdxStart, TotalRows);
+    AnyFix |= updateCndDepLagMultipliers(SU, SlackIdxStart, TotalRows);
   }
 
   return AnyFix;
 }
 
-bool SDCScheduler::fixCndDepSlack(VASTSchedUnit *SU, unsigned SlackIdx,
-                                  unsigned TotalRows) {
-  dbgs() << "Update conditional slack for BB: " << SU->getParent()->getName()
+bool
+SDCScheduler::updateCndDepLagMultipliers(VASTSchedUnit *SU, unsigned SlackIdx,
+                                         unsigned TotalRows) {
+  BasicBlock *CurBB = SU->getParent();
+  dbgs() << "Update conditional slack for BB: " << CurBB->getName()
          << '\n';
   REAL SmallestSlack = get_infinite(lp);
   unsigned SmallestSlackIdx = 0;
@@ -55,8 +58,11 @@ bool SDCScheduler::fixCndDepSlack(VASTSchedUnit *SU, unsigned SlackIdx,
                      << Slack << " (" << unsigned(Slack) << ", Idx " << SlackIdx
                      << ", " << get_col_name(lp, SlackIdx) << ")\n";
 
+
     if (Dep->getIdx() > SU->getIdx()) {
+    // if (DT.dominates(CurBB, Dep->getParent())) {
       dbgs().indent(4) << "Ignore the potential backedge!\n";
+      ++SlackIdx;
       continue;
     }
 
@@ -83,20 +89,18 @@ bool SDCScheduler::fixCndDepSlack(VASTSchedUnit *SU, unsigned SlackIdx,
   return SmallestSlack > 0.0;
 }
 
-bool SDCScheduler::updateModelHeuristically(lprec *lp) {
-  set_break_at_value(lp, get_var_primalresult(lp, 0));
-  return fixCndDepSlack();
+bool SDCScheduler::updateLagMultipliers(lprec *lp) {
+  return updateCndDepLagMultipliers();
 }
 
-bool SDCScheduler::solveLPHeuristically(lprec *lp) {
-  set_break_at_first(lp, TRUE);
-
+bool SDCScheduler::lagSolveLP(lprec *lp) {
+  // Create
   do {
     if (!solveLP(lp, false))
       return false;
 
     set_break_at_first(lp, FALSE);
-  } while (updateModelHeuristically(lp));
+  } while (updateLagMultipliers(lp));
 
   return true;
 }

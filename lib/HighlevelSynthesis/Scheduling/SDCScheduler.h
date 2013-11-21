@@ -65,7 +65,7 @@ public:
   void initalizeCFGEdges();
 private:
   lprec *lp;
-  const bool UseHeuristicalDriver;
+  const bool UseLagSolve;
 
   DominatorTree &DT;
   LoopInfo &LI;
@@ -118,8 +118,6 @@ private:
   // 0
   void addConditionalConstraints(VASTSchedUnit *SU);
   void addConditionalConstraints();
-  bool fixCndDepSlack();
-  bool fixCndDepSlack(VASTSchedUnit *SU, unsigned SlackIdx, unsigned TotalRows);
 
   void addSynchronizeConstraints(VASTSchedUnit *SU);
   void addSynchronizeConstraints();
@@ -133,10 +131,12 @@ private:
 
   unsigned updateSoftConstraintPenalties();
   bool solveLP(lprec *lp, bool PreSolve);
-  // Solve the scheduling LP with heuristics based on the high-level
-  // information.
-  bool solveLPHeuristically(lprec *lp);
-  bool updateModelHeuristically(lprec *lp);
+  // Solve the scheduling LP with Augmented Lagrangian Methods.
+  bool lagSolveLP(lprec *lp);
+  bool updateLagMultipliers(lprec *lp);
+  bool updateCndDepLagMultipliers();
+  bool updateCndDepLagMultipliers(VASTSchedUnit *SU, unsigned SlackIdx,
+                                  unsigned TotalRows);
 
   // Interpert the return code from lpsolve, translate it to true if a solution,
   // which maybe suboptimal, is found, false otherwise.

@@ -33,8 +33,8 @@ static cl::opt<unsigned> BigMMultiplier("vast-ilp-big-M-multiplier",
   cl::desc("The multiplier apply to bigM in the linear model"),
   cl::init(8));
 
-static cl::opt<bool> UseHeuristics("vast-use-heuristical-ilp-driver",
-  cl::desc("Use the heuristical ILP driver to schedule the CDFG"),
+static cl::opt<bool> UseLagSolveCL("vast-sdc-use-lag-solve",
+  cl::desc("Solve the scheduling problem with lagrangian relaxation"),
   cl::init(false));
 
 static cl::opt<unsigned> ILPTimeOut("vast-ilp-timeout",
@@ -104,7 +104,7 @@ unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB,
 }
 
 unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
-  if (UseHeuristicalDriver) {
+  if (UseLagSolve) {
     // Export the slack for the conditional edges, and we will fix these slacks
     // in the heuristical ILP driver.
     Col = createSlackVariable(Col, 0, 0, "cnd_slack" + utostr(Col));
@@ -378,6 +378,7 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   // right after the step variable of SU.
   int Idx = getSUIdx(SU) + 1;
   bool HadMetEarierBranch = false;
+  unsigned NumCndDeps = 0;
 
   typedef VASTSchedUnit::dep_iterator dep_iterator;
   for (dep_iterator I = SU->dep_begin(), E = SU->dep_end(); I != E; ++I) {
@@ -394,13 +395,14 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
     assert(I.getLatency() == 0 &&
            "Conditional dependencies must have a zero latency!");
 
+    ++NumCndDeps;
     Cols.push_back(CurIdx);
     Coeffs.push_back(1.0);
 
     // First of all, export the slack for conditional edge. For conditional edge
     // we require Dst <= Src, hence we have Dst - Src + Slack = 0, Slack >= 0
     // i.e. Slack = Src - Dst
-    if (UseHeuristicalDriver) {
+    if (UseLagSolve) {
       // Export the slack for the HeuristicalDriver
       REAL Coefs[] = { 1.0, -1.0, -1.0 };
       int Cols[] = { getSUIdx(Dep), getSUIdx(SU), CurIdx };
@@ -412,9 +414,10 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
     }
 
     // Otherwise we need to require the slack to be non-negative.
-    REAL Coefs[] = { 1.0, -1.0 };
-    int Cols[] = { getSUIdx(Dep), getSUIdx(SU) };
-    if (!add_constraintex(lp, array_lengthof(Cols), Coefs, Cols, GE, 0))
+    REAL SlackCoefs[] = { 1.0, -1.0 };
+    int SlackCols[] = { getSUIdx(Dep), getSUIdx(SU) };
+    unsigned NumCols = array_lengthof(SlackCols);
+    if (!add_constraintex(lp, NumCols, SlackCoefs, SlackCols, GE, 0))
       report_fatal_error("Cannot export the slack of conditional edge!");
     nameLastRow("cnd_slack_");
 
@@ -442,27 +445,26 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
     nameLastRow("cnd_");
   }
 
-  // The sum of AuxVars must be no bigger than NumCols - 1, so that at least
-  // one of the AuxVars is zero. This means at least one of the slack variable
-  // is zero.
-  unsigned NumCols = Cols.size();
-  unsigned RHS = NumCols - 1;
-
   // No need to set a constraints for the trivial value.
-  if (RHS == 0) {
-    set_lowbo(lp, Cols.front(), 0);
-    set_upbo(lp, Cols.front(), 0);
+  if (NumCndDeps == 1) {
+    set_lowbo(lp, Cols.back(), 0);
+    set_upbo(lp, Cols.back(), 0);
     return;
   }
 
+  if (UseLagSolve)
+    return;
+
   // Build the SOS like constraints for the conditional dependencies if we are
   // not using the heuristical driver.
-  if (!UseHeuristicalDriver) {
-    if (!add_constraintex(lp, NumCols, Coeffs.data(), Cols.data(), LE, RHS))
-      report_fatal_error("Cannot create constraint!");
+  // The sum of AuxVars must be no bigger than NumCols - 1, so that at least
+  // one of the AuxVars is zero. This means at least one of the slack variable
+  // is zero.
+  unsigned RHS = NumCndDeps - 1;
+  if (!add_constraintex(lp, NumCndDeps, Coeffs.data(), Cols.data(), LE, RHS))
+    report_fatal_error("Cannot create constraint!");
 
-    nameLastRow("connectivity_");
-  }
+  nameLastRow("connectivity_");
 }
 
 void SDCScheduler::addConditionalConstraints() {
@@ -702,8 +704,8 @@ bool SDCScheduler::schedule() {
 
   bool changed = true;
 
-  if (UseHeuristicalDriver) {
-    if (!solveLPHeuristically(lp))
+  if (UseLagSolve) {
+    if (!lagSolveLP(lp))
       return false;
   } else if (!solveLP(lp, false))
     return false;
@@ -762,5 +764,5 @@ void SDCScheduler::nameLastRow(const Twine &Name) {
 
 SDCScheduler::SDCScheduler(VASTSchedGraph &G, unsigned EntrySlot,
                            DominatorTree &DT, LoopInfo &LI)
- : SchedulerBase(G, EntrySlot), lp(0), UseHeuristicalDriver(UseHeuristics),
+ : SchedulerBase(G, EntrySlot), lp(0), UseLagSolve(UseLagSolveCL),
    DT(DT), LI(LI) {}
