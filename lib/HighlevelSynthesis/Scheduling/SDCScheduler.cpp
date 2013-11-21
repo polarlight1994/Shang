@@ -122,7 +122,11 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
 #endif
 
   set_int(lp, Col, TRUE);
-  set_lowbo(lp, Col, EntrySlot);
+  if (U->isScheduled()) {
+    set_lowbo(lp, Col, U->getSchedule());
+    set_upbo(lp, Col, U->getSchedule());
+  } else
+    set_lowbo(lp, Col, EntrySlot);
 
   REAL BigM = BigMMultiplier * getCriticalPathLength();
   set_upbo(lp, Col, BigM + EntrySlot );
@@ -186,8 +190,6 @@ unsigned SDCScheduler::createLPAndVariables() {
 
   for (iterator I = begin(), E = end(); I != E; ++I) {
     VASTSchedUnit* U = I;
-    if (U->isScheduled())
-      continue;
 
     Col = createStepVariable(U, Col);
 
@@ -644,7 +646,6 @@ SDCScheduler::preserveAntiDependence(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
       assert(I.getEdgeType() == VASTDep::Synchronize && "Unexpected edge type!");
       VASTSchedUnit *Incoming = *I;
       assert(Incoming->isPHILatch() && "Unexpected type of Incoming SU of PHI!");
-
       // Back edge update had been handled by LoopWARDepBuilder.
       if (L->contains(Incoming->getParent()))
         continue;
