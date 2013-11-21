@@ -131,9 +131,6 @@ private:
                                const Twine &Name);
   unsigned createVarForCndDeps(unsigned Col);
 
-  // Dst - Src >= C - V
-  void addConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
-                     int C, unsigned SlackIdx, int EqTy);
   unsigned updateSoftConstraintPenalties();
   bool solveLP(lprec *lp, bool PreSolve);
   // Solve the scheduling LP with heuristics based on the high-level

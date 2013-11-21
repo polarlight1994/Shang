@@ -35,7 +35,7 @@ static cl::opt<unsigned> BigMMultiplier("vast-ilp-big-M-multiplier",
 
 static cl::opt<bool> UseHeuristics("vast-use-heuristical-ilp-driver",
   cl::desc("Use the heuristical ILP driver to schedule the CDFG"),
-  cl::init(true));
+  cl::init(false));
 
 static cl::opt<unsigned> ILPTimeOut("vast-ilp-timeout",
   cl::desc("The timeout value for ilp solver, in seconds"),
@@ -204,52 +204,6 @@ void SDCScheduler::addSoftConstraint(VASTSchedUnit *Src, VASTSchedUnit *Dst,
   SC.C = std::max<unsigned>(SC.C, C);
 }
 
-void
-SDCScheduler::addConstraint(lprec *lp, VASTSchedUnit *Dst, VASTSchedUnit *Src,
-                            int C, unsigned SlackIdx, int EqTy) {
-  unsigned DstIdx = 0;
-  int DstSlot = Dst->getSchedule();
-  if (DstSlot == 0)
-    DstIdx = getSUIdx(Dst);
-
-  unsigned SrcIdx = 0;
-  int SrcSlot = Src->getSchedule();
-  if (SrcSlot == 0)
-    SrcIdx = getSUIdx(Src);
-
-  // Build constraint: Dst - Src >= C - V
-  // Compute the constant by trying to move all the variable to RHS.
-  int RHS = C - DstSlot + SrcSlot;
-
-  // Both SU is scheduled.
-  assert(!(SrcSlot && DstSlot) &&
-         "Soft constraint cannot be apply to a fixed edge!");
-
-  SmallVector<int, 3> Col;
-  SmallVector<REAL, 3> Coeff;
-
-  // Build the constraint.
-  if (SrcSlot == 0) {
-    Col.push_back(SrcIdx);
-    Coeff.push_back(-1.0);
-  }
-
-  if (DstSlot == 0) {
-    Col.push_back(DstIdx);
-    Coeff.push_back(1.0);
-  }
-
-  // Add the slack variable.
-  if (SlackIdx) {
-    Col.push_back(SlackIdx);
-    Coeff.push_back(1.0);
-  }
-
-  if(!add_constraintex(lp, Col.size(), Coeff.data(), Col.data(), EqTy, RHS))
-    report_fatal_error("SDCScheduler: Can NOT create soft Constraints"
-                       " SlackIdx:" + utostr_32(SlackIdx));
-}
-
 double SDCScheduler::getLastPenalty(VASTSchedUnit *Src,
                                     VASTSchedUnit *Dst) const {
   const SoftCstrVecTy::const_iterator I
@@ -269,7 +223,13 @@ void SDCScheduler::addSoftConstraints() {
 
     VASTSchedUnit *Src = I->first.first, *Dst = I->first.second;
     assert(C.SlackIdx && "Not support on the fly soft constraint creation!");
-    addConstraint(lp, Dst, Src, C.C, C.SlackIdx, GE);
+
+    // Add soft constraints Dst - Src >= C - Slack, i.e. Dst - Src + Slack >= C
+    REAL Coefs[] = { 1.0, -1.0, 1.0 };
+    int Cols[] = { getSUIdx(Dst), getSUIdx(Src), C.SlackIdx };
+    if (!add_constraintex(lp, array_lengthof(Cols), Coefs, Cols, GE, C.C))
+      report_fatal_error("Cannot add soft constraint!");
+
     nameLastRow("soft_");
   }
 }
@@ -442,11 +402,22 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
     // i.e. Slack = Src - Dst
     if (UseHeuristicalDriver) {
       // Export the slack for the HeuristicalDriver
-      addConstraint(lp, SU, Dep, 0, CurIdx, EQ);
+      REAL Coefs[] = { 1.0, -1.0, -1.0 };
+      int Cols[] = { getSUIdx(Dep), getSUIdx(SU), CurIdx };
+      if (!add_constraintex(lp, array_lengthof(Cols), Coefs, Cols, EQ, 0))
+        report_fatal_error("Cannot export the slack of conditional edge!");
+      nameLastRow("cnd_slack_");
+
       continue;
     }
 
-    addConstraint(lp, SU, Dep, 0, 0, LE);
+    // Otherwise we need to require the slack to be non-negative.
+    REAL Coefs[] = { 1.0, -1.0 };
+    int Cols[] = { getSUIdx(Dep), getSUIdx(SU) };
+    if (!add_constraintex(lp, array_lengthof(Cols), Coefs, Cols, GE, 0))
+      report_fatal_error("Cannot export the slack of conditional edge!");
+    nameLastRow("cnd_slack_");
+
     // Note that AuxVar is a binary variable, setting 0 to AuxVar means the
     // terminator of the predecessor block is 'connected' to the entry of
     // current BB. And the conditional dependency constraints require that
