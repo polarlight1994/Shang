@@ -42,12 +42,6 @@ static cl::opt<bool> CndDepTopBB("vast-sdc-cnd-dep-top-bb",
            " based on topological order"),
   cl::init(false));
 
-static unsigned ILPEarlyTimeOut = 30;
-static cl::opt<unsigned, true> ILPEarlyTimeOutCL("vast-ilp-early-timeout",
-  cl::location(ILPEarlyTimeOut),
-  cl::desc("The timeout value for ilp solver when it have an solution,"
-           " in seconds"));
-
 static cl::opt<unsigned> ILPTimeOut("vast-ilp-timeout",
   cl::desc("The timeout value for ilp solver, in seconds"),
   cl::init(10 * 60));
@@ -140,11 +134,17 @@ unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
 // The time function used by lpsolve.
 extern "C" double timeNow(void);
 static int __WINAPI sdc_abort(lprec *lp, void *userhandle) {
+  static unsigned EarlyTimeOut = 30;
+  static cl::opt<unsigned, true> ILPEarlyTimeOutCL("vast-ilp-early-timeout",
+    cl::location(EarlyTimeOut),
+    cl::desc("The timeout value for ilp solver when it have an solution,"
+             " in seconds"));
+
   // Abort the solving process if we have any solution and the elapsed time
   // is bigger than early timeout.
   if (lp->solutioncount > 0) {
     REAL TimeElapsed = timeNow() - lp->timestart;
-    if ((TimeElapsed > (REAL)ILPEarlyTimeOut))
+    if ((TimeElapsed > (REAL)EarlyTimeOut))
       return TRUE;
   }
 
