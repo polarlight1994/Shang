@@ -286,10 +286,10 @@ unsigned SDCScheduler::buildSchedule(lprec *lp) {
     unsigned Idx = getSUIdx(U);
     REAL CurSchedule = get_var_primalresult(lp, TotalRows + Idx);
     unsigned j = CurSchedule;
-    dbgs() << "At row:" << TotalRows + Idx
-           << " the result is:" << j << " (" << CurSchedule << ")\n";
+    DEBUG(dbgs() << "At row:" << TotalRows + Idx
+                 << " the result is:" << j << " (" << CurSchedule << ")\n");
 
-    assert(j && "Bad result!");
+    assert(j && double(j) == CurSchedule && "Bad result!");
     if (U->scheduleTo(j))
       ++Changed;
   }
