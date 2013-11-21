@@ -37,6 +37,11 @@ static cl::opt<bool> UseLagSolveCL("vast-sdc-use-lag-solve",
   cl::desc("Solve the scheduling problem with lagrangian relaxation"),
   cl::init(false));
 
+static cl::opt<bool> CndDepTopBB("vast-sdc-cnd-dep-top-bb",
+  cl::desc("Perform branch and bound on the conditional dependency slack"
+           " based on topological order"),
+  cl::init(false));
+
 static cl::opt<unsigned> ILPTimeOut("vast-ilp-timeout",
   cl::desc("The timeout value for ilp solver, in seconds"),
   cl::init(5 * 60));
@@ -421,17 +426,19 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
       report_fatal_error("Cannot export the slack of conditional edge!");
     nameLastRow("cnd_slack_");
 
-    // Note that AuxVar is a binary variable, setting 0 to AuxVar means the
-    // terminator of the predecessor block is 'connected' to the entry of
-    // current BB. And the conditional dependency constraints require that
-    // at least one terminator is connected to the entry of current BB. Hence,
-    // as an initial solution, we can connect to the first terminator we meet
-    // that has a smaller topological order number.
-    //if (!HadMetEarierBranch && Dep->getIdx() < SU->getIdx()) {
-    //  set_var_branch(lp, AuxVar, BRANCH_FLOOR);
-    //  HadMetEarierBranch = true;
-    //} else
-    //  set_var_branch(lp, AuxVar, BRANCH_CEILING);
+    if (CndDepTopBB) {
+      // Note that AuxVar is a binary variable, setting 0 to AuxVar means the
+      // terminator of the predecessor block is 'connected' to the entry of
+      // current BB. And the conditional dependency constraints require that
+      // at least one terminator is connected to the entry of current BB. Hence,
+      // as an initial solution, we can connect to the first terminator we meet
+      // that has a smaller topological order number.
+      if (!HadMetEarierBranch && Dep->getIdx() < SU->getIdx()) {
+        set_var_branch(lp, CurIdx, BRANCH_FLOOR);
+        HadMetEarierBranch = true;
+      } else
+        set_var_branch(lp, CurIdx, BRANCH_CEILING);
+    }
 
     // Build constraints Slack - BigM * AuxVar <= 0,
     // i.e. Src - Dst - BigM * AuxVar <= 0
