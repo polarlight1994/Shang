@@ -114,10 +114,12 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   bool inserted = SUIdx.insert(std::make_pair(U, Col)).second;
   assert(inserted && "Index already existed!");
   (void) inserted;
-  add_columnex(lp, 0, 0,0);
+  add_columnex(lp, 0, 0, 0);
 
+#ifndef NDEBUG
   std::string SVName = "sv" + utostr(U->getIdx());
   set_col_name(lp, Col, const_cast<char*>(SVName.c_str()));
+#endif
 
   set_int(lp, Col, TRUE);
   set_lowbo(lp, Col, EntrySlot);
@@ -135,11 +137,14 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
 
 unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB,
                                            const Twine &Name) {
-  add_columnex(lp, 0, 0,0);
+  add_columnex(lp, 0, 0, 0);
+
+#ifndef NDEBUG
   std::string SlackName = Name.str();
   set_col_name(lp, Col, const_cast<char*>(SlackName.c_str()));
-  set_int(lp, Col, TRUE);
+#endif
 
+  set_int(lp, Col, TRUE);
   if (UB != LB) {
     set_upbo(lp, Col, UB);
     set_lowbo(lp, Col, LB);
@@ -444,8 +449,12 @@ bool SDCScheduler::interpertResult(int Result) {
   case PRESOLVED:
     break;
   default:
-    report_fatal_error(Twine("ILPScheduler Schedule fail: ")
-                       + Twine(get_statustext(lp, Result)));
+    dbgs() << "ILPScheduler Schedule fail: "
+           << get_statustext(lp, Result) << '\n';
+#ifndef NDEBUG
+    write_lp(lp, "fail.lp");
+#endif
+    report_fatal_error("Fail to schedule the design.");
   }
 
   return true;
