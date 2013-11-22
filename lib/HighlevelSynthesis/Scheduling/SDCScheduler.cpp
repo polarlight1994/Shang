@@ -35,7 +35,7 @@ static cl::opt<unsigned> BigMMultiplier("vast-ilp-big-M-multiplier",
 
 static cl::opt<bool> UseLagSolveCL("vast-sdc-use-lag-solve",
   cl::desc("Solve the scheduling problem with lagrangian relaxation"),
-  cl::init(false));
+  cl::init(true));
 
 static cl::opt<bool> CndDepTopBB("vast-sdc-cnd-dep-top-bb",
   cl::desc("Perform branch and bound on the conditional dependency slack"
@@ -132,21 +132,30 @@ unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
 }
 
 // The time function used by lpsolve.
-extern "C" double timeNow(void);
 static int __WINAPI sdc_abort(lprec *lp, void *userhandle) {
   static unsigned EarlyTimeOut = 30;
-  static cl::opt<unsigned, true> ILPEarlyTimeOutCL("vast-ilp-early-timeout",
+  static cl::opt<unsigned, true> X("vast-ilp-early-timeout",
     cl::location(EarlyTimeOut),
     cl::desc("The timeout value for ilp solver when it have an solution,"
              " in seconds"));
 
+  //static unsigned BBRestart = 120;
+  //static cl::opt<unsigned, true> Y("vast-ilp-bb-timeout",
+  //  cl::location(BBRestart),
+  //  cl::desc("The timeout value for B&B of the ilp solver, in seconds. We will"
+  //           " restart the B&B process when the ilp solver spend too much time"
+  //           " on B&B without finding any feasible solution"));
   // Abort the solving process if we have any solution and the elapsed time
   // is bigger than early timeout.
-  if (lp->solutioncount > 0) {
-    REAL TimeElapsed = timeNow() - lp->timestart;
-    if ((TimeElapsed > (REAL)EarlyTimeOut))
+  if (get_solutioncount(lp) > 0) {
+    if (time_elapsed(lp) > (REAL)EarlyTimeOut)
       return TRUE;
   }
+  //else if (lp->bb_level > 1) {
+  //  REAL TimeElapsed = timeNow() - lp->timestart;
+  //  if (TimeElapsed > (REAL)BBRestart)
+  //    return ACTION_RESTART;
+  //}
 
   return FALSE;
 }
