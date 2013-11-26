@@ -45,7 +45,7 @@ static REAL ProductExcluding(ArrayRef<REAL> A, unsigned Idx) {
 }
 
 // For conditional dependencies, we require one of the slack must be zero,
-// i.e. product(Slack_{i}) <= 0.
+// i.e. geomean(Slack_{i}) <= 0.
 double CndDepLagConstraint::updateConfficients(lprec *lp) {
   unsigned TotalRows = get_Norig_rows(lp);
   SmallVector<REAL, 2> Slacks;
@@ -62,22 +62,34 @@ double CndDepLagConstraint::updateConfficients(lprec *lp) {
 
   DEBUG(dbgs() << '\n');
 
-  CurValue = - ProductExcluding(Slacks, -1);
+  double RowValue = ProductExcluding(Slacks, -1);
+  double exponent = 1.0 / Slacks.size();
+  if (RowValue != 0.0)
+    RowValue = pow(RowValue, exponent);
 
   DEBUG(dbgs() << "Violation of current Lagrangian constraint: "
-               << - CurValue << '\n');
+               << -RowValue << '\n');
 
   for (unsigned i = 0, e = VarIdx.size(); i != e; ++i) {
-    // Calculate the partial derivative of product(Slack_{k}) on Slack_{k}.
+    // Calculate the partial derivative of geomean(Slack_{k}) on Slack_{k}.
     REAL PD = ProductExcluding(Slacks, i);
+    PD = std::max<double>(PD, 0.01);
+    PD = pow(PD, exponent);
+    double CurSlack = Slacks[i];
+    if (CurSlack != 0)
+      PD *= pow(CurSlack, exponent);
+    PD *= exponent;
+
     // Penalty the voilating slack.
     Coeffs[i] = PD;
     DEBUG(dbgs().indent(2) << "Idx " << VarIdx[i] << ", CurSlack " << Slacks[i]
-                     << " pd " << PD << '\n');
+                           << " pd " << PD << '\n');
   }
 
   DEBUG(dbgs() << '\n');
 
+  // Calculate b - A
+  CurValue = 0.0 - RowValue;
   return CurValue;
 }
 
