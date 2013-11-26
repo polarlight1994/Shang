@@ -628,7 +628,7 @@ void SDCScheduler::addSynchronizeConstraints(VASTSchedUnit *SU) {
                          0.0 /*RHS for Lagrangian constrant*/ };
 
     int Ty = Dep->isPHILatch() ? EQ : LE;
-    if (LagSolver) {
+    if (LagSolver && Ty == LE) {
       assert(array_lengthof(CurCols) == 4 && "Unexpected constraint size!");
       LagSolver->addGenericConstraint<4>(Ty == LE, CurCoeffs, CurCols);
       continue;
