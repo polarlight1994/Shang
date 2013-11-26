@@ -73,13 +73,44 @@ public:
   }
 };
 
+template<unsigned N>
+struct FixedSizeLagConstraint : public LagConstraint {
+  double Coeffs[N + 1];
+  int VarIdx[N];
+
+  FixedSizeLagConstraint(bool LeNotEq, ArrayRef<double> Coefficients,
+                         ArrayRef<int> Indecies)
+    : LagConstraint(LeNotEq, N, Coeffs, VarIdx) {
+    for (unsigned i = 0; i < N; ++i) {
+      Coeffs[i] = Coefficients[i];
+      VarIdx[i] = Indecies[i];
+    }
+
+    Coeffs[N] = Coefficients[N];
+  }
+};
+
 class LagSDCSolver {
   ilist<LagConstraint> RelaxedConstraints;
   // 2. Update Lagrangrian multipliers (subgradient method)
   void updateMultipliers(double StepSize);
 public:
+  enum ResultType {
+    InFeasible,
+    Feasible,
+    Optimal
+  };
 
   void addCndDep(ArrayRef<int> VarIdx);
+
+  template<unsigned N>
+  void addGenericConstraint(bool LeNotEq, ArrayRef<double> Coefficients,
+                            ArrayRef<int> VarIdx) {
+    LagConstraint *C
+      = new FixedSizeLagConstraint<N>(LeNotEq, Coefficients, VarIdx);
+    RelaxedConstraints.push_back(C);
+  }
+
   void reset();
 
   typedef ilist<LagConstraint>::iterator iterator;
@@ -87,7 +118,7 @@ public:
   iterator end() { return RelaxedConstraints.end(); }
 
   // 1. Update constraints and compate violations
-  bool update(lprec *lp, double StepSizeFactor);
+  ResultType update(lprec *lp, double StepSizeFactor);
 };
 
 }

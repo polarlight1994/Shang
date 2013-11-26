@@ -38,7 +38,7 @@ LagConstraint::LagConstraint(bool LeNotEq, unsigned Size, double *CArray,
 
 bool LagConstraint::updateStatus(lprec *lp) {
   unsigned TotalRows = get_Norig_rows(lp);
-  double RowVal = 0;
+  double RowVal = 0.0;
 
   // Calculate Ax
   for (unsigned i = 0; i < Size; ++i) {
@@ -63,18 +63,6 @@ void LagConstraint::updateMultiplier(double StepSize) {
 }
 
 namespace {
-template<unsigned N>
-struct FixedSizeLagConstraint : public LagConstraint {
-  double Coeffs[N + 1];
-  int VarIdx[N];
-
-  FixedSizeLagConstraint(bool LeNotEq, ArrayRef<double> Coefficients,
-                         ArrayRef<int> Indecies)
-    : LagConstraint(LeNotEq, Coeffs, VarIdx) {
-    
-  }
-};
-
 struct CndDepLagConstraint : public LagConstraint {
   static const unsigned SmallSize = 2;
   double SmallCoeffs[SmallSize + 1];
@@ -176,7 +164,10 @@ bool CndDepLagConstraint::updateStatus(lprec *lp) {
   return CurValue == 0.0;
 }
 
-bool LagSDCSolver::update(lprec *lp, double StepSizeFactor) {
+LagSDCSolver::ResultType
+LagSDCSolver::update(lprec *lp, double StepSizeFactor) {
+  ResultType Result = LagSDCSolver::InFeasible;
+
   unsigned Violations = 0;
   double SubGradientSqr = 0.0;
 
@@ -191,7 +182,14 @@ bool LagSDCSolver::update(lprec *lp, double StepSizeFactor) {
     SubGradientSqr += PD * PD;
   }
 
-  dbgs() << "Violations: " << Violations << " SGL: " << SubGradientSqr << "\n";
+  dbgs() << "Violations: " << Violations << " in " << RelaxedConstraints.size()
+         << " SGL: " << SubGradientSqr << "\n";
+
+  if (Violations == 0) {
+    Result = LagSDCSolver::Feasible;
+    if (SubGradientSqr == 0.0)
+      Result = LagSDCSolver::Optimal;
+  }
 
   // Calculate the stepsize, based on:
   // An Applications Oriented Guide to Lagrangian Relaxation
@@ -202,7 +200,7 @@ bool LagSDCSolver::update(lprec *lp, double StepSizeFactor) {
   for (iterator I = begin(), E = end(); I != E; ++I)
     I->updateMultiplier(StepSize);
 
-  return Violations == 0;
+  return Result;
 }
 
 void LagSDCSolver::reset() {

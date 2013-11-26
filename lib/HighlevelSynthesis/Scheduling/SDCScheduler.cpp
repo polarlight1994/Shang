@@ -381,13 +381,12 @@ bool SDCScheduler::lagSolveLP(lprec *lp) {
   LPObjFn CurObj;
 
   // Create
-  do {
-
+  for (;;) {
     if (!solveLP(lp, false))
       return false;
 
     REAL DualObj = get_objective(lp);
-    assert(DualObj < 0.0 && "Expected object function smaller than 0!");
+    // assert(DualObj < 0.0 && "Expected object function smaller than 0!");
     if (MinimalObj == 0.0)
       MinimalObj = 2.0 * DualObj;
 
@@ -395,25 +394,26 @@ bool SDCScheduler::lagSolveLP(lprec *lp) {
 
     CurObj = ObjFn;
 
-    double SubGradientSqr = LagSolver->updateConstraints(lp);
-
-    if (SubGradientSqr == 0.0)
-      MinimalObj = std::max<double>(MinimalObj, ObjFn.evaluateCurValue(lp));
-
     if (NotDecreaseSince > 4)
       StepSizeLambda /= 2.0;
 
-    // Calculate the stepsize, based on:
-    // An Applications Oriented Guide to Lagrangian Relaxation
-    // by ML Fisher, 1985
-    double StepSize = StepSizeLambda * (DualObj - MinimalObj) / SubGradientSqr;
+    double StepSizeFactor = StepSizeLambda * (DualObj - MinimalObj);
 
-    LagSolver->updateMultipliers(StepSize);
+    LagSDCSolver::ResultType Result = LagSolver->update(lp, StepSizeFactor);
+    switch (Result) {
+    case LagSDCSolver::InFeasible:
+      break;
+    case LagSDCSolver::Feasible:
+      MinimalObj = std::max<double>(MinimalObj, ObjFn.evaluateCurValue(lp));
+      break;
+    case LagSDCSolver::Optimal:
+      return true;
+    }
 
     // Update the objective
     typedef LagSDCSolver::iterator iterator;
     for (iterator I = LagSolver->begin(), E = LagSolver->end(); I != E ; ++I) {
-      CndDepLagConstraint *C = I;
+      LagConstraint *C = I;
       for (unsigned i = 0; i < C->size(); ++i)
         CurObj[C->getVarIdx(i)] += C->getObjCoefIdx(i);
     }
@@ -426,8 +426,8 @@ bool SDCScheduler::lagSolveLP(lprec *lp) {
       ++NotDecreaseSince;
 
     LastDualObj = DualObj;
-    dbgs() << "SGL: " << SubGradientSqr << " DualObj: " << DualObj << "\n";
-  } while (true);
+    dbgs() << " DualObj: " << DualObj << "\n";
+  }
 
   return true;
 }
@@ -442,9 +442,10 @@ bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
   DEBUG(write_lp(lp, "log.lp"));
 
   unsigned TotalRows = get_Nrows(lp), NumVars = get_Ncolumns(lp);
-  dbgs() << "The model has " << NumVars << "x" << TotalRows
-         << ", conditional nodes: " << ConditionalSUs.size()
-         << ", synchronization nodes: " << SynchronizeSUs.size() << '\n';
+  DEBUG(dbgs() << "The model has " << NumVars << "x" << TotalRows
+               << ", conditional nodes: " << ConditionalSUs.size()
+               << ", synchronization nodes: " << SynchronizeSUs.size()
+               << '\n');
 
   DEBUG(dbgs() << "Timeout is set to " << get_timeout(lp) << "secs.\n");
 
@@ -458,7 +459,7 @@ bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
 
 bool SDCScheduler::interpertResult(int Result) {
   DEBUG(dbgs() << "ILP result is: " << get_statustext(lp, Result) << "\n");
-  dbgs() << "Time elapsed: " << time_elapsed(lp) << "\n";
+  DEBUG(dbgs() << "Time elapsed: " << time_elapsed(lp) << "\n");
   DEBUG(dbgs() << "Object: " << get_var_primalresult(lp, 0) << "\n");
 
   switch (Result) {
@@ -623,9 +624,16 @@ void SDCScheduler::addSynchronizeConstraints(VASTSchedUnit *SU) {
     // Dep - Exit <= SU - Entry, i.e. Dep - Exit - SU + Entry <= 0
     int CurCols[] = { getSUIdx(Dep), getSUIdx(PredExit),
                       getSUIdx(SU), getSUIdx(Entry) };
-    REAL CurCoeffs[] = { 1.0, -1.0,  -1.0, 1.0 };
+    REAL CurCoeffs[] = { 1.0, -1.0, -1.0, 1.0,
+                         0.0 /*RHS for Lagrangian constrant*/ };
 
     int Ty = Dep->isPHILatch() ? EQ : LE;
+    if (LagSolver) {
+      assert(array_lengthof(CurCols) == 4 && "Unexpected constraint size!");
+      LagSolver->addGenericConstraint<4>(Ty == LE, CurCoeffs, CurCols);
+      continue;
+    }
+
     unsigned NumData = array_lengthof(CurCols);
     if (!add_constraintex(lp, NumData, CurCoeffs, CurCols, Ty, 0))
       report_fatal_error("Cannot create constraint!");
@@ -836,7 +844,7 @@ bool SDCScheduler::schedule() {
   ConditionalSUs.clear();
   SynchronizeSUs.clear();
   LPVarWeights.clear();
-  LagSolver->reset();
+  if (LagSolver) LagSolver->reset();
   delete_lp(lp);
   lp = 0;
 
