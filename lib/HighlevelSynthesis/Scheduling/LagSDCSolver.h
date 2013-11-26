@@ -23,7 +23,6 @@
 #define LAG_SDC_SOLVER_H
 
 #include "llvm/ADT/ilist_node.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/ArrayRef.h"
 
 //Dirty Hack
@@ -39,8 +38,9 @@ class LagSDCSolver;
 class LagConstraint : public ilist_node<LagConstraint> {
 protected:
   const bool LeNotEq;
-  ArrayRef<double> C;
-  ArrayRef<int> V;
+  const unsigned Size;
+  double *const CArray;
+  int *const IdxArray;
   // The value of current row, i.e. for constraint f(x) <= b, the value of
   // b - f(x). Please note that this is under the assumption that we are going
   // to maximize the object function of LP module.
@@ -51,19 +51,25 @@ protected:
 
   friend struct ilist_sentinel_traits<LagConstraint>;
   friend class LagSDCSolver;
-  LagConstraint() : LeNotEq(true), CurValue(0.0), Lambda(0.0) {}
+  LagConstraint() : LeNotEq(true), Size(0), CArray(0), IdxArray(0),
+                    CurValue(0.0), Lambda(0.0) {}
 
   // Update the status of the constraint, return true if the constraint is preserved.
   virtual bool updateStatus(lprec *lp);
 
   void updateMultiplier(double StepSize);
-  explicit LagConstraint(bool LeNotEq, ArrayRef<double> C = None,
-                         ArrayRef<int> V = None);
+  LagConstraint(bool LeNotEq, unsigned Size, double *CArray, int *IdxArray);
 public:
-  unsigned size() const { return V.size(); }
-  unsigned getVarIdx(unsigned i) const { return V[i]; }
+  virtual ~LagConstraint() {}
+  unsigned size() const { return Size; }
+  unsigned getVarIdx(unsigned i) const {
+    assert(i < Size && "Index out of bound!");
+    return IdxArray[i];
+  }
+
   double getObjCoefIdx(unsigned i) const {
-    return - Lambda * C[i];
+    assert(i < Size && "Index out of bound!");
+    return -Lambda * CArray[i];
   }
 };
 

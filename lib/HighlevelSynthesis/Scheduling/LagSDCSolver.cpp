@@ -31,22 +31,24 @@
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
-LagConstraint::LagConstraint(bool LeNotEq, ArrayRef<double> C, ArrayRef<int> V)
-  : LeNotEq(LeNotEq), C(C), V(V), CurValue(0.0), Lambda(0.0) {}
+LagConstraint::LagConstraint(bool LeNotEq, unsigned Size, double *CArray,
+                             int *IdxArray)
+  : LeNotEq(LeNotEq), Size(Size), CArray(CArray), IdxArray(IdxArray),
+    CurValue(0.0), Lambda(0.0) {}
 
 bool LagConstraint::updateStatus(lprec *lp) {
   unsigned TotalRows = get_Norig_rows(lp);
   double RowVal = 0;
 
   // Calculate Ax
-  for (unsigned i = 0; i < V.size(); ++i) {
-    unsigned Idx = V[i];
+  for (unsigned i = 0; i < Size; ++i) {
+    unsigned Idx = IdxArray[i];
     unsigned ResultIdx = TotalRows + Idx;
     REAL Val = get_var_primalresult(lp, ResultIdx);
-    RowVal += C[i] * Val;
+    RowVal += CArray[i] * Val;
   }
 
-  CurValue = C[V.size()] - RowVal;
+  CurValue = CArray[Size] - RowVal;
   // For
   return LeNotEq ? CurValue >= 0.0 : CurValue == 0.0;
 }
@@ -61,24 +63,56 @@ void LagConstraint::updateMultiplier(double StepSize) {
 }
 
 namespace {
+template<unsigned N>
+struct FixedSizeLagConstraint : public LagConstraint {
+  double Coeffs[N + 1];
+  int VarIdx[N];
+
+  FixedSizeLagConstraint(bool LeNotEq, ArrayRef<double> Coefficients,
+                         ArrayRef<int> Indecies)
+    : LagConstraint(LeNotEq, Coeffs, VarIdx) {
+    
+  }
+};
+
 struct CndDepLagConstraint : public LagConstraint {
-  SmallVector<double, 2> Coeffs;
-  SmallVector<int, 2> VarIdx;
+  static const unsigned SmallSize = 2;
+  double SmallCoeffs[SmallSize + 1];
+  int SmallVarIdx[SmallSize];
 
   // friend struct ilist_sentinel_traits<CndDepLagConstraint>;
   // friend class LagSDCSolver;
 
   bool updateStatus(lprec *lp);
   CndDepLagConstraint(ArrayRef<int> VarIdx);
+  ~CndDepLagConstraint() {
+    if (Size > SmallSize) {
+      delete CArray;
+      delete IdxArray;
+    }
+  }
 };
 }
 
-CndDepLagConstraint::CndDepLagConstraint(ArrayRef<int> VarIdx)
-  : LagConstraint(true), Coeffs(VarIdx.size(), 0),
-    VarIdx(VarIdx.begin(), VarIdx.end()) {
-  V = this->VarIdx;
-  C = Coeffs;
+// CreateIfNotSmallWithInitialize
+template<unsigned SmallSize, typename T>
+static T *Create(unsigned Size, T *SmallStorage, ArrayRef<T> InitVals = None) {
+  T *Ptr = SmallStorage;
+  if (Size > SmallSize)
+    Ptr = new T[Size];
+
+  bool HasInitVals = InitVals.empty();
+
+  for (unsigned i = 0; i < Size; ++i)
+    Ptr[i] = HasInitVals ? T() : InitVals[i];
+
+  return Ptr;
 }
+
+CndDepLagConstraint::CndDepLagConstraint(ArrayRef<int> VarIdx)
+: LagConstraint(true, VarIdx.size(),
+                Create<SmallSize + 1>(VarIdx.size() + 1, SmallCoeffs),
+                Create<SmallSize>(VarIdx.size(), SmallVarIdx, VarIdx)) {}
 
 static REAL ProductExcluding(ArrayRef<REAL> A, unsigned Idx) {
   REAL P = 1.0;
@@ -96,8 +130,8 @@ bool CndDepLagConstraint::updateStatus(lprec *lp) {
   unsigned TotalRows = get_Norig_rows(lp);
   SmallVector<REAL, 2> Slacks;
 
-  for (unsigned i = 0; i < VarIdx.size(); ++i) {
-    unsigned SlackIdx = VarIdx[i];
+  for (unsigned i = 0; i < Size; ++i) {
+    unsigned SlackIdx = IdxArray[i];
     unsigned SlackResultIdx = TotalRows + SlackIdx;
     REAL Slack = get_var_primalresult(lp, SlackResultIdx);
     Slacks.push_back(Slack);
@@ -116,7 +150,7 @@ bool CndDepLagConstraint::updateStatus(lprec *lp) {
   DEBUG(dbgs() << "Violation of current Lagrangian constraint: "
                << -RowValue << '\n');
 
-  for (unsigned i = 0, e = VarIdx.size(); i != e; ++i) {
+  for (unsigned i = 0, e = Size; i != e; ++i) {
     // Calculate the partial derivative of geomean(Slack_{k}) on Slack_{k}.
     REAL PD = ProductExcluding(Slacks, i);
     PD = std::max<double>(PD, 1e-4);
@@ -127,8 +161,9 @@ bool CndDepLagConstraint::updateStatus(lprec *lp) {
     PD *= exponent;
 
     // Penalty the voilating slack.
-    Coeffs[i] = PD;
-    DEBUG(dbgs().indent(2) << "Idx " << VarIdx[i] << ", CurSlack " << Slacks[i]
+    CArray[i] = PD;
+    DEBUG(dbgs().indent(2) << "Idx " << IdxArray[i]
+                           << ", CurSlack " << Slacks[i]
                            << " pd " << PD << '\n');
   }
 
