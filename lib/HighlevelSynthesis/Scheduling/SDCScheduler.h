@@ -1,4 +1,4 @@
-//===---------- SDCScheduler.h ------- SDCScheduler -------------*- C++ -*-===//
+//===------------- SDCScheduler.h - The SDC Scheduler -----------*- C++ -*-===//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file define the scheduler based on the System of Difference
-// Constraints formation.
+// This file define the scheduler based on the System of Differential
+// Constraints
 //
 //===----------------------------------------------------------------------===//
 
@@ -17,9 +17,15 @@
 
 #include "SchedulerBase.h"
 
+//Dirty Hack
+struct _lprec;
+typedef _lprec lprec;
+
 namespace llvm {
 class DominatorTree;
 struct PostDominatorTree;
+
+class LagSDCSolver;
 
 class SDCScheduler : public SchedulerBase {
 public:
@@ -65,7 +71,7 @@ public:
   void initalizeCFGEdges();
 private:
   lprec *lp;
-  const bool UseLagSolve;
+  LagSDCSolver *LagSolver;
 
   DominatorTree &DT;
   LoopInfo &LI;
@@ -88,10 +94,12 @@ private:
 
     void setLPObj(lprec *lp) const;
 
+    double evaluateCurValue(lprec *lp) const;
+
     void dump() const;
   };
 
-  LPObjFn ObjFn, LagObjFn;
+  LPObjFn ObjFn;
 
   // The table of the index of the VSUnits and the column number in LP.
   typedef std::map<const VASTSchedUnit*, unsigned> SUI2IdxMapTy;
@@ -133,10 +141,6 @@ private:
   bool solveLP(lprec *lp, bool PreSolve);
   // Solve the scheduling LP with Augmented Lagrangian Methods.
   bool lagSolveLP(lprec *lp);
-  unsigned updateLagMultipliers(lprec *lp);
-  unsigned updateCndDepLagMultipliers();
-  bool updateCndDepLagMultipliers(VASTSchedUnit *SU, unsigned SlackIdx,
-                                  unsigned TotalRows);
 
   // Interpert the return code from lpsolve, translate it to true if a solution,
   // which maybe suboptimal, is found, false otherwise.

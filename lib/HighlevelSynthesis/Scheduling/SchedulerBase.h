@@ -21,10 +21,6 @@
 #include "llvm/ADT/SmallSet.h"
 #include <map>
 
-//Dirty Hack
-struct _lprec;
-typedef _lprec lprec;
-
 namespace llvm {
 class TimingNetlist;
 

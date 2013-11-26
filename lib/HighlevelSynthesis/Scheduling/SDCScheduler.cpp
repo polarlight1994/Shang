@@ -13,6 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "SDCScheduler.h"
+#include "LagSDCSolver.h"
+
 #include "shang/VASTSubModules.h"
 #include "shang/Utilities.h"
 #include "shang/VASTSeqValue.h"
@@ -33,7 +35,7 @@ static cl::opt<unsigned> BigMMultiplier("vast-ilp-big-M-multiplier",
   cl::desc("The multiplier apply to bigM in the linear model"),
   cl::init(8));
 
-static cl::opt<bool> UseLagSolveCL("vast-sdc-use-lag-solve",
+static cl::opt<bool> UseLagSolve("vast-sdc-use-lag-solve",
   cl::desc("Solve the scheduling problem with lagrangian relaxation"),
   cl::init(true));
 
@@ -58,6 +60,19 @@ void SDCScheduler::LPObjFn::setLPObj(lprec *lp) const {
 
   set_obj_fnex(lp, size(), Coefficients.data(), Indices.data());
   set_maxim(lp);
+}
+
+double SDCScheduler::LPObjFn::evaluateCurValue(lprec *lp) const {
+  unsigned TotalRows = get_Norig_rows(lp);
+  double value = 0.0;
+
+  for (const_iterator I = begin(), E = end(); I != E; ++I) {
+    unsigned Idx = TotalRows + I->first;
+    REAL Val = get_var_primalresult(lp, Idx);
+    value += Val * I->second;
+  }
+
+  return value;
 }
 
 unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) {
@@ -109,7 +124,7 @@ unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB,
 }
 
 unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
-  if (UseLagSolve) {
+  if (LagSolver) {
     // Export the slack for the conditional edges, and we will fix these slacks
     // in the heuristical ILP driver.
     Col = createSlackVariable(Col, 0, 0, "cnd_slack" + utostr(Col));
@@ -167,7 +182,7 @@ unsigned SDCScheduler::createLPAndVariables() {
   // when we have an solution.
   put_abortfunc(lp, sdc_abort, NULL);
 
-  set_verbose(lp, NORMAL);
+  set_verbose(lp, CRITICAL);
   DEBUG(set_verbose(lp, FULL));
 
   unsigned Col =  1;
@@ -357,6 +372,66 @@ unsigned SDCScheduler::buildSchedule(lprec *lp) {
   return Changed;
 }
 
+bool SDCScheduler::lagSolveLP(lprec *lp) {
+  set_break_at_first(lp, TRUE);
+
+  REAL LastDualObj = 0.0, MinimalObj = 0;
+  REAL StepSizeLambda = 2.0;
+  unsigned NotDecreaseSince = 0;
+  LPObjFn CurObj;
+
+  // Create
+  do {
+
+    if (!solveLP(lp, false))
+      return false;
+
+    REAL DualObj = get_objective(lp);
+    assert(DualObj < 0.0 && "Expected object function smaller than 0!");
+    if (MinimalObj == 0.0)
+      MinimalObj = 2.0 * DualObj;
+
+    set_break_at_first(lp, FALSE);
+
+    CurObj = ObjFn;
+
+    double SubGradientSqr = LagSolver->updateConstraints(lp);
+
+    if (SubGradientSqr == 0.0)
+      MinimalObj = std::max<double>(MinimalObj, ObjFn.evaluateCurValue(lp));
+
+    if (NotDecreaseSince > 4)
+      StepSizeLambda /= 2.0;
+
+    // Calculate the stepsize, based on:
+    // An Applications Oriented Guide to Lagrangian Relaxation
+    // by ML Fisher, 1985
+    double StepSize = StepSizeLambda * (DualObj - MinimalObj) / SubGradientSqr;
+
+    LagSolver->updateMultipliers(StepSize);
+
+    // Update the objective
+    typedef LagSDCSolver::iterator iterator;
+    for (iterator I = LagSolver->begin(), E = LagSolver->end(); I != E ; ++I) {
+      CndDepLagConstraint *C = I;
+      for (unsigned i = 0; i < C->size(); ++i)
+        CurObj[C->getVarIdx(i)] += C->getObjCoefIdx(i);
+    }
+
+    CurObj.setLPObj(lp);
+
+    if (DualObj < LastDualObj)
+      NotDecreaseSince = 0;
+    else
+      ++NotDecreaseSince;
+
+    LastDualObj = DualObj;
+    dbgs() << "SGL: " << SubGradientSqr << " DualObj: " << DualObj << "\n";
+  } while (true);
+
+  return true;
+}
+
 bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
   if (PreSolve) {
     set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS,
@@ -492,8 +567,10 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
     return;
   }
 
-  if (UseLagSolve)
+  if (LagSolver) {
+    LagSolver->addCndDep(Cols);
     return;
+  }
 
   // Build the SOS like constraints for the conditional dependencies if we are
   // not using the heuristical driver.
@@ -744,7 +821,7 @@ bool SDCScheduler::schedule() {
 
   bool changed = true;
 
-  if (UseLagSolve) {
+  if (LagSolver) {
     if (!lagSolveLP(lp))
       return false;
   } else if (!solveLP(lp, false))
@@ -755,11 +832,11 @@ bool SDCScheduler::schedule() {
   changed |= (updateSoftConstraintPenalties() != 0);
 
   ObjFn.clear();
-  LagObjFn.clear();
   SUIdx.clear();
   ConditionalSUs.clear();
   SynchronizeSUs.clear();
   LPVarWeights.clear();
+  LagSolver->reset();
   delete_lp(lp);
   lp = 0;
 
@@ -767,6 +844,7 @@ bool SDCScheduler::schedule() {
 }
 
 SDCScheduler::~SDCScheduler() {
+  if (LagSolver) delete LagSolver;
 }
 
 void SDCScheduler::initalizeCFGEdges() {
@@ -805,5 +883,7 @@ void SDCScheduler::nameLastRow(const Twine &Name) {
 
 SDCScheduler::SDCScheduler(VASTSchedGraph &G, unsigned EntrySlot,
                            DominatorTree &DT, LoopInfo &LI)
- : SchedulerBase(G, EntrySlot), lp(0), UseLagSolve(UseLagSolveCL),
-   DT(DT), LI(LI) {}
+  : SchedulerBase(G, EntrySlot), lp(0), LagSolver(0), DT(DT), LI(LI) {
+  if (UseLagSolve)
+    LagSolver = new LagSDCSolver();
+}
