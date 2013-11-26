@@ -36,9 +36,11 @@ class LagSDCSolver;
 // The constraints for conditional dependencies to who Lagrangrain relaxation
 // is applied. They correspond to a row in the LP model, but they are sparse
 // so we only store the non-zero entries.
-class CndDepLagConstraint : public ilist_node<CndDepLagConstraint> {
-  SmallVector<double, 2> Coeffs;
-  SmallVector<int, 2> VarIdx;
+class LagConstraint : public ilist_node<LagConstraint> {
+protected:
+  const bool LeNotEq;
+  ArrayRef<double> C;
+  ArrayRef<int> V;
   // The value of current row, i.e. for constraint f(x) <= b, the value of
   // b - f(x). Please note that this is under the assumption that we are going
   // to maximize the object function of LP module.
@@ -47,36 +49,39 @@ class CndDepLagConstraint : public ilist_node<CndDepLagConstraint> {
   // The Lagrangrian multiplier
   double Lambda;
 
-  friend struct ilist_sentinel_traits<CndDepLagConstraint>;
+  friend struct ilist_sentinel_traits<LagConstraint>;
   friend class LagSDCSolver;
-  CndDepLagConstraint() : CurValue(0.0), Lambda(0.0) {}
+  LagConstraint() : LeNotEq(true), CurValue(0.0), Lambda(0.0) {}
 
-  double updateConfficients(lprec *lp);
+  // Update the status of the constraint, return true if the constraint is preserved.
+  virtual bool updateStatus(lprec *lp);
+
   void updateMultiplier(double StepSize);
-  CndDepLagConstraint(ArrayRef<int> VarIdx);
+  explicit LagConstraint(bool LeNotEq, ArrayRef<double> C = None,
+                         ArrayRef<int> V = None);
 public:
-  unsigned size() const { return VarIdx.size(); }
-  unsigned getVarIdx(unsigned i) const { return VarIdx[i]; }
+  unsigned size() const { return V.size(); }
+  unsigned getVarIdx(unsigned i) const { return V[i]; }
   double getObjCoefIdx(unsigned i) const {
-    return - Lambda * Coeffs[i];
+    return - Lambda * C[i];
   }
 };
 
 class LagSDCSolver {
-  ilist<CndDepLagConstraint> RelaxedConstraints;
+  ilist<LagConstraint> RelaxedConstraints;
+  // 2. Update Lagrangrian multipliers (subgradient method)
+  void updateMultipliers(double StepSize);
 public:
 
   void addCndDep(ArrayRef<int> VarIdx);
   void reset();
 
-  typedef ilist<CndDepLagConstraint>::iterator iterator;
+  typedef ilist<LagConstraint>::iterator iterator;
   iterator begin() { return RelaxedConstraints.begin(); }
   iterator end() { return RelaxedConstraints.end(); }
 
   // 1. Update constraints and compate violations
-  double updateConstraints(lprec *lp);
-  // 2. Update Lagrangrian multipliers (subgradient method)
-  void updateMultipliers(double StepSize);
+  bool update(lprec *lp, double StepSizeFactor);
 };
 
 }

@@ -30,9 +30,55 @@
 
 using namespace llvm;
 
+//===----------------------------------------------------------------------===//
+LagConstraint::LagConstraint(bool LeNotEq, ArrayRef<double> C, ArrayRef<int> V)
+  : LeNotEq(LeNotEq), C(C), V(V), CurValue(0.0), Lambda(0.0) {}
+
+bool LagConstraint::updateStatus(lprec *lp) {
+  unsigned TotalRows = get_Norig_rows(lp);
+  double RowVal = 0;
+
+  // Calculate Ax
+  for (unsigned i = 0; i < V.size(); ++i) {
+    unsigned Idx = V[i];
+    unsigned ResultIdx = TotalRows + Idx;
+    REAL Val = get_var_primalresult(lp, ResultIdx);
+    RowVal += C[i] * Val;
+  }
+
+  CurValue = C[V.size()] - RowVal;
+  // For
+  return LeNotEq ? CurValue >= 0.0 : CurValue == 0.0;
+}
+
+void LagConstraint::updateMultiplier(double StepSize) {
+  double NewVal = Lambda - CurValue * StepSize;
+
+  if (LeNotEq)
+    NewVal = std::max<double>(0.0, NewVal);
+
+  Lambda = NewVal;
+}
+
+namespace {
+struct CndDepLagConstraint : public LagConstraint {
+  SmallVector<double, 2> Coeffs;
+  SmallVector<int, 2> VarIdx;
+
+  // friend struct ilist_sentinel_traits<CndDepLagConstraint>;
+  // friend class LagSDCSolver;
+
+  bool updateStatus(lprec *lp);
+  CndDepLagConstraint(ArrayRef<int> VarIdx);
+};
+}
+
 CndDepLagConstraint::CndDepLagConstraint(ArrayRef<int> VarIdx)
-  : Coeffs(VarIdx.size(), 0), VarIdx(VarIdx.begin(), VarIdx.end()),
-    CurValue(0.0), Lambda(0.0) {}
+  : LagConstraint(true), Coeffs(VarIdx.size(), 0),
+    VarIdx(VarIdx.begin(), VarIdx.end()) {
+  V = this->VarIdx;
+  C = Coeffs;
+}
 
 static REAL ProductExcluding(ArrayRef<REAL> A, unsigned Idx) {
   REAL P = 1.0;
@@ -46,7 +92,7 @@ static REAL ProductExcluding(ArrayRef<REAL> A, unsigned Idx) {
 
 // For conditional dependencies, we require one of the slack must be zero,
 // i.e. geomean(Slack_{i}) <= 0.
-double CndDepLagConstraint::updateConfficients(lprec *lp) {
+bool CndDepLagConstraint::updateStatus(lprec *lp) {
   unsigned TotalRows = get_Norig_rows(lp);
   SmallVector<REAL, 2> Slacks;
 
@@ -73,7 +119,7 @@ double CndDepLagConstraint::updateConfficients(lprec *lp) {
   for (unsigned i = 0, e = VarIdx.size(); i != e; ++i) {
     // Calculate the partial derivative of geomean(Slack_{k}) on Slack_{k}.
     REAL PD = ProductExcluding(Slacks, i);
-    PD = std::max<double>(PD, 0.01);
+    PD = std::max<double>(PD, 1e-4);
     PD = pow(PD, exponent);
     double CurSlack = Slacks[i];
     if (CurSlack != 0)
@@ -90,32 +136,38 @@ double CndDepLagConstraint::updateConfficients(lprec *lp) {
 
   // Calculate b - A
   CurValue = 0.0 - RowValue;
-  return CurValue;
+
+  // The constraint is preserved if the row value is zero.
+  return CurValue == 0.0;
 }
 
-void CndDepLagConstraint::updateMultiplier(double StepSize) {
-  Lambda = std::max<double>(0.0, Lambda - CurValue * StepSize);
-  // Lambda = Lambda - CurValue * StepSize;
-}
-
-double LagSDCSolver::updateConstraints(lprec *lp) {
-  double SubGradiantLengthSqr = 0.0;
+bool LagSDCSolver::update(lprec *lp, double StepSizeFactor) {
+  unsigned Violations = 0;
+  double SubGradientSqr = 0.0;
 
   for (iterator I = begin(), E = end(); I != E; ++I) {
-    CndDepLagConstraint *C = I;
+    LagConstraint *C = I;
+    if (!C->updateStatus(lp))
+      ++Violations;
+
     // Calculate the partial derivative of for the lagrangian multiplier of the
     // current constraint.
-    double PD = C->updateConfficients(lp);
-    SubGradiantLengthSqr += PD * PD;
+    double PD = C->CurValue;
+    SubGradientSqr += PD * PD;
   }
 
-  return SubGradiantLengthSqr;
-}
+  dbgs() << "Violations: " << Violations << " SGL: " << SubGradientSqr << "\n";
 
-void LagSDCSolver::updateMultipliers(double StepSize) {
+  // Calculate the stepsize, based on:
+  // An Applications Oriented Guide to Lagrangian Relaxation
+  // by ML Fisher, 1985
+  double StepSize = StepSizeFactor / SubGradientSqr;
+
   // Calculate the step size.
   for (iterator I = begin(), E = end(); I != E; ++I)
     I->updateMultiplier(StepSize);
+
+  return Violations == 0;
 }
 
 void LagSDCSolver::reset() {
