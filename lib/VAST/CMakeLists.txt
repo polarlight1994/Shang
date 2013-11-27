@@ -2,7 +2,6 @@ add_llvm_library(ShangVAST
   Allocation.cpp
   SimpleBlockRAMAllocation.cpp
   MemoryPartition.cpp
-  BasicBlockTopOrder.cpp
   VASTModulePass.cpp
   VASTExpr.cpp
   VASTExprBuilder.cpp

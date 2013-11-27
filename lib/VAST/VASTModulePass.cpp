@@ -30,6 +30,7 @@
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/BlockFrequencyInfo.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/CFG.h"
@@ -1129,7 +1130,6 @@ INITIALIZE_PASS_BEGIN(VASTModuleAnalysis,
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_AG_DEPENDENCY(HLSAllocation)
   INITIALIZE_PASS_DEPENDENCY(Dataflow)
-  INITIALIZE_PASS_DEPENDENCY(BasicBlockTopOrder)
 INITIALIZE_PASS_END(VASTModuleAnalysis,
                     "vast-module-builder", "VASTModule Builder",
                     false, true)
@@ -1148,9 +1148,12 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
   // Allocate the submodules.
   Builder.allocateSubModules();
 
-  // Build the slot for each BB.
-  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I)
-    Builder.visitBasicBlock(I);
+  // Visit the basic block in topological order.
+  ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
+  typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
+
+  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
+    Builder.visitBasicBlock(*I);
 
   // Release the dead objects generated during the VM construction.
   while (VM->gc())
@@ -1162,7 +1165,6 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
 void VASTModuleAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<DataLayout>();
   AU.addRequired<HLSAllocation>();
-  AU.addRequiredID(BasicBlockTopOrderID);
   AU.addRequired<Dataflow>();
   AU.setPreservesAll();
 }
@@ -1181,7 +1183,6 @@ void VASTModulePass::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequiredTransitive<HLSAllocation>();
   AU.addRequiredTransitive<VASTModuleAnalysis>();
   AU.addPreserved<VASTModuleAnalysis>();
-  AU.addPreservedID(BasicBlockTopOrderID);
   AU.addPreserved<AliasAnalysis>();
   AU.addPreserved<ScalarEvolution>();
   AU.addPreserved<HLSAllocation>();

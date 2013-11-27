@@ -23,6 +23,7 @@
 
 #include "llvm/IR/Function.h"
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "shang-schedule-emitter"
@@ -503,10 +504,12 @@ void ScheduleEmitter::emitSchedule() {
     // Go to the new slot if the start port is true.
     addSuccSlot(EntryGrp, S, StartPort);
   }
+  // Visit the basic block in topological order.
+  ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
+  typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
 
-  typedef Function::iterator iterator;
-  for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    BasicBlock *BB = I;
+  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
+    BasicBlock *BB = *I;
     MutableArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(BB));
     emitScheduleInBB(SUs);
   }

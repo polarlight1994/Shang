@@ -16,6 +16,7 @@
 #include "shang/VASTModule.h"
 #include "llvm/IR/Function.h"
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "cross-bb-dep-verifier"
 #include "llvm/Support/Debug.h"
@@ -156,9 +157,12 @@ void Verifier::initialize() {
 }
 
 void Verifier::verify() {
-  typedef Function::iterator iterator;
-  for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    BasicBlock *BB = I;
+  // Visit the basic block in topological order.
+  ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
+  typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
+
+  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
+    BasicBlock *BB = *I;
 
     DEBUG(dbgs() << "Visiting: " << BB->getName() << '\n');
 

@@ -41,6 +41,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/type_traits.h"
@@ -595,8 +596,12 @@ struct GlobalDependenciesBuilderBase  {
 
     Function &F = G.getFunction();
 
-    for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
-      if (DomTreeNode *Node = SyncAnalysis.DT.getNode(I))
+    ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
+    typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
+
+    for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
+      BasicBlock *BB = *I;
+      if (DomTreeNode *Node = SyncAnalysis.DT.getNode(BB))
         buildDependenciesBottonUp(Node);
     }
   }
@@ -1001,9 +1006,11 @@ void MemoryDepBuilder::buildDependencies(LoopInfo &LI) {
   Function &F = G.getFunction();
 
   // Build the memory dependencies inside basic blocks.
-  typedef Function::iterator iterator;
-  for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    BasicBlock *BB = I;
+  ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
+  typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
+
+  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
+    BasicBlock *BB = *I;
     buildLocalDependencies(BB);
 
     TerminatorInst *Inst = BB->getTerminator();

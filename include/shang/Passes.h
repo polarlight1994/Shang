@@ -24,8 +24,6 @@ class PassRegistry;
 class MallocAllocator;
 template<typename T, typename AllocatorTy> class StringMap;
 
-//BasicBlockTopOrder Pass - Place the MachineBasicBlocks in topological order.
-extern char &BasicBlockTopOrderID;
 extern char &ControlLogicSynthesisID;
 extern char &TimingDrivenSelectorSynthesisID;
 extern char &SimpleSelectorSynthesisID;

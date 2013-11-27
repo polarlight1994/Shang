@@ -504,9 +504,12 @@ void VASTSchedGraph::topologicalSortSUs() {
   std::set<VASTSchedUnit*> Visited;
   SUnits.splice(SUnits.end(), SUnits, Entry);
 
-  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
+  ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
+  typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
+
+  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
     Visited.clear();
-    BasicBlock *BB = I;
+    BasicBlock *BB = *I;
 
     MutableArrayRef<VASTSchedUnit*> SUs(getSUInBB(BB));
     for (unsigned i = 0; i < SUs.size(); ++i)
@@ -561,7 +564,6 @@ VASTScheduling::VASTScheduling() : VASTModulePass(ID) {
 
 void VASTScheduling::getAnalysisUsage(AnalysisUsage &AU) const  {
   VASTModulePass::getAnalysisUsage(AU);
-  AU.addRequiredID(BasicBlockTopOrderID);
   AU.addRequired<Dataflow>();
   // AU.addRequired<PreSchedBinding>();
   // AU.addPreserved<PreSchedBinding>();
