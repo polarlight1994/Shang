@@ -36,33 +36,13 @@ namespace {
 struct ControlChainingHazardDectector {
   SDCScheduler &Scheduler;
   VASTSchedGraph &G;
+  typedef SchedulerBase::TimeFrame TimeFrame;
 
-  struct TimeFrame {
-    unsigned ASAP, ALAP;
-
-    TimeFrame(unsigned ASAP = UINT32_MAX, unsigned ALAP = 0)
-      : ASAP(ASAP), ALAP(ALAP) {}
-
-    TimeFrame(const TimeFrame &RHS) : ASAP(RHS.ASAP), ALAP(RHS.ALAP) {}
-    TimeFrame &operator=(const TimeFrame &RHS) {
-      ASAP = RHS.ASAP;
-      ALAP = RHS.ALAP;
-      return *this;
-    }
-
-    operator bool() const {
-      return ASAP <= ALAP;
-    }
-
-    TimeFrame operator+(unsigned i) const {
-      return TimeFrame(ASAP + i, ALAP + i);
-    }
-
-    void reduce(const TimeFrame &RHS) {
-      ASAP = std::min(ASAP, RHS.ASAP);
-      ALAP = std::max(ALAP, RHS.ALAP);
-    }
-  };
+  static TimeFrame &reduce(TimeFrame &LHS, const TimeFrame &RHS) {
+    LHS.ASAP = std::min(LHS.ASAP, RHS.ASAP);
+    LHS.ALAP = std::max(LHS.ALAP, RHS.ALAP);
+    return LHS;
+  }
 
   std::map<const BasicBlock*, TimeFrame> BBTimeFrames;
 
@@ -138,7 +118,7 @@ ControlChainingHazardDectector::calculateTimeFrame(BasicBlock *BB) {
 
     VASTSchedUnit *SrcEntry = G.getEntrySU(SrcBB);
     unsigned SrcBBLength = Src->getSchedule() - SrcEntry->getSchedule();
-    CurTF.reduce(SrcEntryTF + SrcBBLength);
+    reduce(CurTF, SrcEntryTF + SrcBBLength);
   }
 
   return CurTF;
@@ -147,7 +127,7 @@ ControlChainingHazardDectector::calculateTimeFrame(BasicBlock *BB) {
 bool ControlChainingHazardDectector::updateTimeFrame(BasicBlock *BB,
                                                      TimeFrame NewTF) {
   TimeFrame &TF = BBTimeFrames[BB];
-  TF.reduce(NewTF);
+  reduce(TF, NewTF);
   return true;
 }
 
