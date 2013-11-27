@@ -47,7 +47,6 @@ public:
 
   double getLastPenalty(VASTSchedUnit *Src, VASTSchedUnit *Dst) const;
 
-  void addSoftConstraints();
 
   void addObjectCoeff(const VASTSchedUnit *U, double Value) {
     // Ignore the constants.
@@ -139,6 +138,10 @@ private:
 
   unsigned updateSoftConstraintPenalties();
   bool solveLP(lprec *lp, bool PreSolve);
+
+  //
+  bool resolveControlChainingHazard();
+
   // Solve the scheduling LP with Augmented Lagrangian Methods.
   bool lagSolveLP(lprec *lp);
 
@@ -154,13 +157,18 @@ private:
 
   void nameLastRow(const Twine &NamePrefix);
   void dumpModel() const;
+  void reset();
+
+  void addDependencyConstraints();
+  void addSoftConstraints();
 public:
   SDCScheduler(VASTSchedGraph &G, unsigned EntrySlot, DominatorTree &DT,
                LoopInfo &LI);
   ~SDCScheduler();
 
   unsigned createLPAndVariables();
-  void addDependencyConstraints();
+  void addDifferentialConstraint(VASTSchedUnit *Dst, VASTSchedUnit *Src,
+                                 int Ty, int RHS);
 
   // Build the schedule object function.
   void buildASAPObject(double weight);

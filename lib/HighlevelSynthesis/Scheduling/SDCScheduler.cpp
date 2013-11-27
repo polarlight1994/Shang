@@ -789,6 +789,16 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
   }
 }
 
+void
+SDCScheduler::addDifferentialConstraint(VASTSchedUnit *Dst, VASTSchedUnit *Src,
+                                        int Ty, int RHS) {
+  REAL Coefs[] = { 1.0, -1.0 };
+  int Cols[] = { getSUIdx(Dst), getSUIdx(Src) };
+  if (!add_constraintex(lp, array_lengthof(Cols), Coefs, Cols, Ty, RHS))
+    report_fatal_error("Cannot create differential constraint!");
+  nameLastRow("diff_");
+}
+
 void SDCScheduler::printVerision() const {
   int majorversion, minorversion, release, build;
   lp_solve_version(&majorversion, &minorversion, &release, &build);
@@ -827,18 +837,25 @@ bool SDCScheduler::schedule() {
   addDependencyConstraints();
   addSoftConstraints();
 
-  bool changed = true;
+  bool repeat = true;
 
-  if (LagSolver) {
-    if (!lagSolveLP(lp))
+  while (repeat) {
+    if (!solveLP(lp, false)) {
+      reset();
       return false;
-  } else if (!solveLP(lp, false))
-    return false;
+    }
 
-  // Schedule the state with the ILP result.
-  changed |= (buildSchedule(lp) != 0);
-  changed |= (updateSoftConstraintPenalties() != 0);
+    // Schedule the state with the ILP result.
+    repeat = buildSchedule(lp)
+             && (updateSoftConstraintPenalties()
+                 || resolveControlChainingHazard());
+  }
 
+  reset();
+  return true;
+}
+
+void SDCScheduler::reset() {
   ObjFn.clear();
   SUIdx.clear();
   ConditionalSUs.clear();
@@ -847,8 +864,6 @@ bool SDCScheduler::schedule() {
   if (LagSolver) LagSolver->reset();
   delete_lp(lp);
   lp = 0;
-
-  return true;
 }
 
 SDCScheduler::~SDCScheduler() {

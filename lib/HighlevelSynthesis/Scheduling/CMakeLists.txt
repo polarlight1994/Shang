@@ -7,6 +7,7 @@ add_llvm_library(ShangScheduling
   SchedulerBase.cpp
   GlobalDepBuilder.cpp
   SDCScheduler.cpp
+  ControlHazardResolver.cpp
   LagSDCSolver.cpp
   IterativeSchedulingDriver.cpp
 )
