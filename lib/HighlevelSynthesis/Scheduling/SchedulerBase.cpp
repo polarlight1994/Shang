@@ -28,7 +28,7 @@ void SchedulerBase::viewGraph() {
 void SchedulerBase::resetTimeFrame() {
   // Reset the time frames
   for (iterator I = begin(), E = end();I != E;++I)
-    SUnitToTF[I] = std::make_pair(0, MaxSlot);
+    SUnitToTF[I] = TimeFrame(0, MaxSlot);
 }
 
 void SchedulerBase::buildTimeFrame() {
@@ -93,7 +93,7 @@ bool SchedulerBase::buildASAPStep() {
     for (iterator I = begin(), E = end(); I != E; ++I) {
       const VASTSchedUnit *U = I;
       if (U->isScheduled()) {
-        SUnitToTF[U].first = U->getSchedule();
+        SUnitToTF[U].ASAP = U->getSchedule();
         continue;
       }
 
@@ -106,7 +106,7 @@ bool SchedulerBase::buildASAPStep() {
             U->dump();
             dbgs() << "\n\n";);
 
-      unsigned &ASAPStep = SUnitToTF[U].first;
+      unsigned &ASAPStep = SUnitToTF[U].ASAP;
       if (ASAPStep == NewStep) continue;
       ASAPStep = NewStep;
 
@@ -205,7 +205,7 @@ unsigned SchedulerBase::calculateALAP(const VASTSchedUnit *A) {
 void SchedulerBase::buildALAPStep() {
   const VASTSchedUnit *Exit = G.getExit();
   int LastSlot = CriticalPathEnd;
-  SUnitToTF[Exit].second = LastSlot;
+  SUnitToTF[Exit].ALAP = LastSlot;
 
   bool NeedToReCalc = true;
   // Build the time frame iteratively.
@@ -218,7 +218,7 @@ void SchedulerBase::buildALAPStep() {
       if (A == Exit) continue;
 
       if (A->isScheduled()) {
-        SUnitToTF[A].second = A->getSchedule();
+        SUnitToTF[A].ALAP = A->getSchedule();
         continue;
       }
 
@@ -231,7 +231,7 @@ void SchedulerBase::buildALAPStep() {
             A->dump();
             dbgs() << "\n\n";);
 
-      unsigned &ALAPStep = SUnitToTF[A].second;
+      unsigned &ALAPStep = SUnitToTF[A].ALAP;
       if (ALAPStep == NewStep) continue;
       assert(getASAPStep(A) <= NewStep && "Broken ALAP step!");
       ALAPStep = NewStep;

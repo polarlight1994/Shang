@@ -26,8 +26,27 @@ class TimingNetlist;
 
 class SchedulerBase {
 public:
-    typedef std::pair<unsigned, unsigned> TimeFrame;
-    // Time Frame {asap step, alap step }
+  struct TimeFrame {
+    unsigned ASAP, ALAP;
+
+    TimeFrame(unsigned ASAP = UINT32_MAX, unsigned ALAP = 0)
+      : ASAP(ASAP), ALAP(ALAP) {}
+
+    TimeFrame(const TimeFrame &RHS) : ASAP(RHS.ASAP), ALAP(RHS.ALAP) {}
+    TimeFrame &operator=(const TimeFrame &RHS) {
+      ASAP = RHS.ASAP;
+      ALAP = RHS.ALAP;
+      return *this;
+    }
+
+    operator bool() const {
+      return ASAP <= ALAP;
+    }
+
+    TimeFrame operator+(unsigned i) const {
+      return TimeFrame(ASAP + i, ALAP + i);
+    }
+  };
 
 protected:
   // MII in modulo schedule.
@@ -77,12 +96,12 @@ public:
   unsigned getASAPStep(const VASTSchedUnit *A) const {
     TFMapTy::const_iterator at = SUnitToTF.find(A);
     assert(at != SUnitToTF.end() && "TimeFrame for SU not exist!");
-    return at->second.first;
+    return at->second.ASAP;
   }
   unsigned getALAPStep(const VASTSchedUnit *A) const {
     TFMapTy::const_iterator at = SUnitToTF.find(A);
     assert(at != SUnitToTF.end() && "TimeFrame for SU not exist!");
-    return at->second.second;
+    return at->second.ALAP;
   }
 
   unsigned getTimeFrame(const VASTSchedUnit *A) const {
