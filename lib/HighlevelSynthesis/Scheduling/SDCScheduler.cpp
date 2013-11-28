@@ -39,15 +39,6 @@ static cl::opt<bool> UseLagSolve("vast-sdc-use-lag-solve",
   cl::desc("Solve the scheduling problem with lagrangian relaxation"),
   cl::init(true));
 
-static cl::opt<bool> CndDepTopBB("vast-sdc-cnd-dep-top-bb",
-  cl::desc("Perform branch and bound on the conditional dependency slack"
-           " based on topological order"),
-  cl::init(false));
-
-static cl::opt<unsigned> ILPTimeOut("vast-ilp-timeout",
-  cl::desc("The timeout value for ilp solver, in seconds"),
-  cl::init(10 * 60));
-
 void SDCScheduler::LPObjFn::setLPObj(lprec *lp) const {
   std::vector<int> Indices;
   std::vector<REAL> Coefficients;
@@ -450,6 +441,10 @@ bool SDCScheduler::lagSolveLP(lprec *lp) {
   return true;
 }
 
+static cl::opt<unsigned> ILPTimeOut("vast-ilp-timeout",
+  cl::desc("The timeout value for ilp solver, in seconds"),
+  cl::init(10 * 60));
+
 bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
   if (PreSolve) {
     set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS,
@@ -465,9 +460,8 @@ bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
                << ", synchronization nodes: " << SynchronizeSUs.size()
                << '\n');
 
-  DEBUG(dbgs() << "Timeout is set to " << get_timeout(lp) << "secs.\n");
-
   set_timeout(lp, ILPTimeOut);
+  DEBUG(dbgs() << "Timeout is set to " << get_timeout(lp) << "secs.\n");
 
   assert(LPVarWeights.size() == get_Ncolumns(lp) && "Broken variable weights!");
   set_var_weights(lp, LPVarWeights.data());
@@ -499,6 +493,11 @@ bool SDCScheduler::interpertResult(int Result) {
 
   return true;
 }
+
+static cl::opt<bool> CndDepTopBB("vast-sdc-cnd-dep-top-bb",
+  cl::desc("Perform branch and bound on the conditional dependency slack"
+            " based on topological order"),
+  cl::init(false));
 
 void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
   SmallVector<int, 8> Cols;
