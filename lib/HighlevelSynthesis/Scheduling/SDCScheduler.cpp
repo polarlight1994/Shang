@@ -146,6 +146,22 @@ unsigned SDCScheduler::createVarForCndDeps(unsigned Col) {
   return Col;
 }
 
+unsigned SDCScheduler::createVarForSyncDeps(unsigned Col) {
+  if (LagSolver == NULL)
+    return Col;
+
+  REAL BigM = BigMMultiplier * getCriticalPathLength();
+
+  // Export the slack for the synchronization edges, and we will fix these
+  // slacks in the heuristical ILP driver.
+  Col = createSlackVariable(Col, BigM, -BigM, "sync_slack" + utostr(Col));
+
+  // This slack are not imprtant at all.
+  LPVarWeights.push_back(512.0);
+
+  return Col;
+}
+
 // The time function used by lpsolve.
 static int __WINAPI sdc_abort(lprec *lp, void *userhandle) {
   static unsigned EarlyTimeOut = 30;
@@ -207,6 +223,7 @@ unsigned SDCScheduler::createLPAndVariables() {
       if (I.getEdgeType() == VASTDep::Synchronize) {
         assert(((*I)->isVNode() || (*I)->isPHILatch())
                 && "Unexpected dependence type for sync edge!");
+        Col = createVarForSyncDeps(Col);
         HasSyncDep = true;
         continue;
       }
@@ -217,6 +234,7 @@ unsigned SDCScheduler::createLPAndVariables() {
       ConditionalSUs.push_back(U);
     } else if (HasSyncDep) {
       assert(U->isSyncJoin() && "Unexpected SU type for synchronize edges!");
+      Col = createVarForSyncDeps(Col);
       SynchronizeSUs.push_back(U);
     }
   }
@@ -628,11 +646,6 @@ void SDCScheduler::addSynchronizeConstraints(VASTSchedUnit *SU) {
                          0.0 /*RHS for Lagrangian constrant*/ };
 
     int Ty = Dep->isPHILatch() ? EQ : LE;
-    if (LagSolver && Ty == LE) {
-      assert(array_lengthof(CurCols) == 4 && "Unexpected constraint size!");
-      LagSolver->addGenericConstraint<4>(Ty == LE, CurCoeffs, CurCols);
-      continue;
-    }
 
     unsigned NumData = array_lengthof(CurCols);
     if (!add_constraintex(lp, NumData, CurCoeffs, CurCols, Ty, 0))
@@ -642,10 +655,52 @@ void SDCScheduler::addSynchronizeConstraints(VASTSchedUnit *SU) {
   }
 }
 
+void SDCScheduler::addLagSynchronizeConstraints(VASTSchedUnit *SU) {
+  SmallVector<int, 4> Slacks;
+  VASTSchedUnit *Entry = G.getEntrySU(SU->getParent());
+
+  // 1. Export the slack: SU - Entry + Slack = 0.
+  unsigned SlackIdx = getSUIdx(SU) + 1;
+  int JoinCols[] = { getSUIdx(SU), getSUIdx(Entry), SlackIdx };
+  REAL JoinCoeffs[] = { 1.0, -1.0, -1.0 };
+  unsigned N = array_lengthof(JoinCols);
+  if (!add_constraintex(lp, N, JoinCoeffs, JoinCols, EQ, 0))
+    report_fatal_error("Cannot create constraint!");
+  nameLastRow("sync_join_");
+  Slacks.push_back(SlackIdx);
+
+  DenseMap<BasicBlock*, VASTSchedUnit*> PredecessorMap;
+  BuildPredecessorMap(Entry, PredecessorMap);
+  typedef VASTSchedUnit::dep_iterator dep_iterator;
+  for (dep_iterator I = SU->dep_begin(), E = SU->dep_end(); I != E; ++I) {
+    assert(I.getEdgeType() == VASTDep::Synchronize && "Unexpected edge type!");
+
+    VASTSchedUnit *Dep = *I;
+    VASTSchedUnit *PredExit = PredecessorMap.lookup(Dep->getParent());
+    assert(PredExit && "Cannot find exit from predecessor block!");
+    unsigned CurSlackIdx = ++SlackIdx;
+    // 1. Export the slack: Dep - PredExit + Slack = 0.
+    int IncomingCols[] = { getSUIdx(SU), getSUIdx(Entry), CurSlackIdx };
+    REAL IncomingCoeffs[] = { 1.0, -1.0, -1.0 };
+    unsigned N = array_lengthof(IncomingCols);
+    if (!add_constraintex(lp, N, IncomingCoeffs, IncomingCols, EQ, 0))
+      report_fatal_error("Cannot create constraint!");
+    nameLastRow("sync_incoming_");
+    Slacks.push_back(CurSlackIdx);
+  }
+
+  LagSolver->addSyncDep(Slacks);
+}
+
 void SDCScheduler::addSynchronizeConstraints() {
   typedef std::vector<VASTSchedUnit*>::iterator iterator;
-  for (iterator I = SynchronizeSUs.begin(), E = SynchronizeSUs.end(); I != E; ++I)
-    addSynchronizeConstraints(*I);
+  for (iterator I = SynchronizeSUs.begin(), E = SynchronizeSUs.end();
+       I != E; ++I) {
+    if (LagSolver)
+      addLagSynchronizeConstraints(*I);
+    else
+      addSynchronizeConstraints(*I);
+  }
 }
 
 static

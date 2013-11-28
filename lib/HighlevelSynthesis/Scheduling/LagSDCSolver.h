@@ -102,6 +102,7 @@ public:
   };
 
   void addCndDep(ArrayRef<int> VarIdx);
+  void addSyncDep(ArrayRef<int> VarIdx);
 
   template<unsigned N>
   void addGenericConstraint(bool LeNotEq, ArrayRef<double> Coefficients,

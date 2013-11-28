@@ -171,6 +171,68 @@ bool CndDepLagConstraint::updateStatus(lprec *lp) {
   return CurValue == 0.0;
 }
 
+namespace {
+struct SyncDepLagConstraint : public SmallConstraint<4> {
+  SyncDepLagConstraint(ArrayRef<int> VarIdx)
+    : SmallConstraint(true, None, VarIdx) {}
+
+  bool updateStatus(lprec *lp);
+};
+}
+
+// For synchronization dependencies, we require all the slacks to have an
+// indentical value.
+bool SyncDepLagConstraint::updateStatus(lprec *lp) {
+  unsigned TotalRows = get_Norig_rows(lp);
+
+  SmallVector<REAL, 2> Slacks;
+  REAL SlackSum = 0.0;
+
+  for (unsigned i = 0; i < Size; ++i) {
+    unsigned SlackIdx = IdxArray[i];
+    unsigned SlackResultIdx = TotalRows + SlackIdx;
+    REAL Slack = get_var_primalresult(lp, SlackResultIdx);
+    Slacks.push_back(Slack);
+    SlackSum += Slack;
+    DEBUG(dbgs().indent(2) << get_col_name(lp, SlackIdx) << ", Idx " << SlackIdx
+                           << " (" << unsigned(Slack) << ")\n";);
+  }
+
+  DEBUG(dbgs() << '\n');
+
+  // Calculate the average slack
+  REAL AverageSlack = SlackSum / Slacks.size();
+
+  /*DEBUG(*/dbgs() << "Average slack: " << AverageSlack
+               << '\n'/*)*/;
+
+  bool AllSlackIdentical = true;
+  REAL RowValue = 0.0;
+  
+  for (unsigned i = 0, e = Size; i != e; ++i) {
+    REAL Offset = (Slacks[i] - AverageSlack);
+    RowValue += Offset * Offset;
+
+    // Calculate the partial derivative of geomean(Slack_{k}) on Slack_{k}.
+    REAL PD = 2.0 * Offset;
+    // Penalty the voilating slack.
+    CArray[i] = PD;
+    /*DEBUG(*/dbgs().indent(2) << "Idx " << IdxArray[i]
+                           << ", CurSlack " << Slacks[i]
+                           << " pd " << PD << '\n'/*)*/;
+    AllSlackIdentical &= (Slacks[i] == AverageSlack);
+  }
+
+  /*DEBUG(*/dbgs() << "Violation of current Lagrangian constraint: "
+              << -RowValue << "\n\n"/*)*/;
+
+  // Calculate b - A
+  CurValue = 0.0 - sqrt(RowValue);
+
+  // The constraint is preserved if the row value is zero.
+  return AllSlackIdentical;
+}
+
 LagSDCSolver::ResultType
 LagSDCSolver::update(lprec *lp, double StepSizeFactor) {
   ResultType Result = LagSDCSolver::InFeasible;
@@ -216,4 +278,8 @@ void LagSDCSolver::reset() {
 
 void LagSDCSolver::addCndDep(ArrayRef<int> VarIdx) {
   RelaxedConstraints.push_back(new CndDepLagConstraint(VarIdx));
+}
+
+void LagSDCSolver::addSyncDep(ArrayRef<int> VarIdx) {
+  RelaxedConstraints.push_back(new SyncDepLagConstraint(VarIdx));
 }

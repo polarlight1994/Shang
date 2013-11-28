@@ -127,6 +127,7 @@ private:
   void addConditionalConstraints();
 
   void addSynchronizeConstraints(VASTSchedUnit *SU);
+  void addLagSynchronizeConstraints(VASTSchedUnit *SU);
   void addSynchronizeConstraints();
 
   // Create step variables, which represent the c-step that the VSUnits are
@@ -135,6 +136,7 @@ private:
   unsigned createSlackVariable(unsigned Col, int UB, int LB,
                                const Twine &Name);
   unsigned createVarForCndDeps(unsigned Col);
+  unsigned createVarForSyncDeps(unsigned Col);
 
   unsigned updateSoftConstraintPenalties();
   bool solveLP(lprec *lp, bool PreSolve);
