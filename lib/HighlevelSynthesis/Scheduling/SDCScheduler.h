@@ -126,8 +126,10 @@ private:
   void addConditionalConstraints(VASTSchedUnit *SU);
   void addConditionalConstraints();
 
-  void addSynchronizeConstraints(VASTSchedUnit *SU);
+  unsigned createSlackPair(VASTSchedUnit *Dst, VASTSchedUnit *Src,
+                           unsigned SlackIdx);
   void addLagSynchronizeConstraints(VASTSchedUnit *SU);
+  void addSynchronizeConstraints(VASTSchedUnit *SU);
   void addSynchronizeConstraints();
 
   // Create step variables, which represent the c-step that the VSUnits are

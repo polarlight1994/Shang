@@ -145,9 +145,13 @@ unsigned SDCScheduler::createVarForSyncDeps(unsigned Col) {
 
   // Export the slack for the synchronization edges, and we will fix these
   // slacks in the heuristical ILP driver.
-  Col = createSlackVariable(Col, BigM, -BigM, "sync_slack" + utostr(Col));
-
+  ObjFn[Col] = -1e-6;
+  Col = createSlackVariable(Col, 0, 0, "sync_slack_pos" + utostr(Col));
   // This slack are not imprtant at all.
+  LPVarWeights.push_back(512.0);
+
+  ObjFn[Col] = -1e-6;
+  Col = createSlackVariable(Col, 0, 0, "sync_slack_neg" + utostr(Col));
   LPVarWeights.push_back(512.0);
 
   return Col;
@@ -654,19 +658,33 @@ void SDCScheduler::addSynchronizeConstraints(VASTSchedUnit *SU) {
   }
 }
 
+unsigned SDCScheduler::createSlackPair(VASTSchedUnit *Dst, VASTSchedUnit *Src,
+                                       unsigned SlackIdx) {
+  unsigned PosSlackIdx = SlackIdx;
+  int PosCols[] = { getSUIdx(Dst), getSUIdx(Src), PosSlackIdx };
+  REAL PosCoeffs[] = { 1.0, -1.0, 1.0 };
+  if (!add_constraintex(lp, array_lengthof(PosCols), PosCoeffs, PosCols, GE, 0))
+    report_fatal_error("Cannot create constraint!");
+  nameLastRow(Twine(get_col_name(lp, PosSlackIdx)) + "_");
+
+  unsigned NegSlackIdx = SlackIdx + 1;
+  int NegCols[] = { getSUIdx(Src), getSUIdx(Dst), NegSlackIdx };
+  REAL NegCoeffs[] = { 1.0, -1.0, 1.0 };
+  if (!add_constraintex(lp, array_lengthof(NegCols), NegCoeffs, NegCols, GE, 0))
+    report_fatal_error("Cannot create constraint!");
+  nameLastRow(Twine(get_col_name(lp, NegSlackIdx)) + "_");
+
+  return SlackIdx + 2;
+}
+
 void SDCScheduler::addLagSynchronizeConstraints(VASTSchedUnit *SU) {
-  SmallVector<int, 4> Slacks;
+  unsigned SlackIdxStart = getSUIdx(SU) + 1;
+  unsigned SlackIdxEnd = SlackIdxStart;
+  unsigned RowIdxStart = get_Nrows(lp) + 1;
   VASTSchedUnit *Entry = G.getEntrySU(SU->getParent());
 
-  // 1. Export the slack: SU - Entry + Slack = 0.
-  unsigned SlackIdx = getSUIdx(SU) + 1;
-  int JoinCols[] = { getSUIdx(SU), getSUIdx(Entry), SlackIdx };
-  REAL JoinCoeffs[] = { 1.0, -1.0, -1.0 };
-  unsigned N = array_lengthof(JoinCols);
-  if (!add_constraintex(lp, N, JoinCoeffs, JoinCols, EQ, 0))
-    report_fatal_error("Cannot create constraint!");
-  nameLastRow("sync_join_");
-  Slacks.push_back(SlackIdx);
+  // Export the slack: SU - Entry + Slack = 0.
+  SlackIdxEnd = createSlackPair(SU, Entry, SlackIdxEnd);
 
   DenseMap<BasicBlock*, VASTSchedUnit*> PredecessorMap;
   BuildPredecessorMap(Entry, PredecessorMap);
@@ -677,18 +695,14 @@ void SDCScheduler::addLagSynchronizeConstraints(VASTSchedUnit *SU) {
     VASTSchedUnit *Dep = *I;
     VASTSchedUnit *PredExit = PredecessorMap.lookup(Dep->getParent());
     assert(PredExit && "Cannot find exit from predecessor block!");
-    unsigned CurSlackIdx = ++SlackIdx;
-    // 1. Export the slack: Dep - PredExit + Slack = 0.
-    int IncomingCols[] = { getSUIdx(SU), getSUIdx(Entry), CurSlackIdx };
-    REAL IncomingCoeffs[] = { 1.0, -1.0, -1.0 };
-    unsigned N = array_lengthof(IncomingCols);
-    if (!add_constraintex(lp, N, IncomingCoeffs, IncomingCols, EQ, 0))
-      report_fatal_error("Cannot create constraint!");
-    nameLastRow("sync_incoming_");
-    Slacks.push_back(CurSlackIdx);
+    // Export the slack: Dep - PredExit + Slack = 0.
+    SlackIdxEnd = createSlackPair(Dep, PredExit, SlackIdxEnd);
   }
 
-  LagSolver->addSyncDep(Slacks);
+  unsigned RowIdxEnd = get_Nrows(lp) + 1;
+  assert(RowIdxEnd - RowIdxStart == SlackIdxEnd - SlackIdxStart &&
+         "Number of slack variables and constraints are not match!");
+  LagSolver->addSyncDep(SlackIdxStart, SlackIdxEnd, RowIdxStart);
 }
 
 void SDCScheduler::addSynchronizeConstraints() {

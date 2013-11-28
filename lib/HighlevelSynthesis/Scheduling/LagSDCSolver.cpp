@@ -173,8 +173,10 @@ bool CndDepLagConstraint::updateStatus(lprec *lp) {
 
 namespace {
 struct SyncDepLagConstraint : public SmallConstraint<4> {
-  SyncDepLagConstraint(ArrayRef<int> VarIdx)
-    : SmallConstraint(true, None, VarIdx) {}
+  const unsigned RowStart;
+  SyncDepLagConstraint(unsigned RowStart, ArrayRef<double> Coeffs,
+                       ArrayRef<int> VarIdx)
+    : SmallConstraint(true, Coeffs, VarIdx), RowStart(RowStart) {}
 
   bool updateStatus(lprec *lp);
 };
@@ -188,45 +190,69 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
   SmallVector<REAL, 2> Slacks;
   REAL SlackSum = 0.0;
 
-  for (unsigned i = 0; i < Size; ++i) {
-    unsigned SlackIdx = IdxArray[i];
-    unsigned SlackResultIdx = TotalRows + SlackIdx;
-    REAL Slack = get_var_primalresult(lp, SlackResultIdx);
+  for (unsigned i = 0; i < Size; i += 2) {
+    unsigned PosSlackIdx = IdxArray[i];
+    unsigned PosSlackResultIdx = TotalRows + PosSlackIdx;
+    REAL PosSlack = get_var_primalresult(lp, PosSlackResultIdx);
+    /*DEBUG(*/dbgs().indent(4) << get_col_name(lp, PosSlackIdx)
+                           << ", Idx " << PosSlackIdx
+                           << " (" << unsigned(PosSlack) << ")\n"/*)*/;
+
+    unsigned NegSlackIdx = IdxArray[i + 1];
+    unsigned NegSlackResultIdx = TotalRows + NegSlackIdx;
+    REAL NegSlack = get_var_primalresult(lp, NegSlackResultIdx);
+    /*DEBUG(*/dbgs().indent(4) << get_col_name(lp, NegSlackIdx)
+                           << ", Idx " << NegSlackIdx
+                           << " (" << unsigned(NegSlack) << ")\n"/*)*/;
+
+    assert(PosSlack * NegSlack == 0 &&
+           "Unexpected both positive and negative to be nonzero at the same time!");
+    REAL Slack = PosSlack - NegSlack;
     Slacks.push_back(Slack);
     SlackSum += Slack;
-    DEBUG(dbgs().indent(2) << get_col_name(lp, SlackIdx) << ", Idx " << SlackIdx
-                           << " (" << unsigned(Slack) << ")\n";);
+
+
+    /*DEBUG(*/dbgs().indent(2) << "Slack: " << int(Slack) << '\n'/*)*/;
   }
 
   DEBUG(dbgs() << '\n');
 
   // Calculate the average slack
   REAL AverageSlack = SlackSum / Slacks.size();
-
-  /*DEBUG(*/dbgs() << "Average slack: " << AverageSlack
-               << '\n'/*)*/;
+  int RoundedAveSlack = ceil(AverageSlack - 0.5);
+  /*DEBUG(*/dbgs() << "Average slack: " << AverageSlack << " ("
+               << RoundedAveSlack << ")\n"/*)*/;
 
   bool AllSlackIdentical = true;
+  unsigned CurRowNum = RowStart;
   REAL RowValue = 0.0;
-  
-  for (unsigned i = 0, e = Size; i != e; ++i) {
-    REAL Offset = (Slacks[i] - AverageSlack);
-    RowValue += Offset * Offset;
 
-    // Calculate the partial derivative of geomean(Slack_{k}) on Slack_{k}.
-    REAL PD = 2.0 * Offset;
-    // Penalty the voilating slack.
-    CArray[i] = PD;
-    /*DEBUG(*/dbgs().indent(2) << "Idx " << IdxArray[i]
-                           << ", CurSlack " << Slacks[i]
-                           << " pd " << PD << '\n'/*)*/;
-    AllSlackIdentical &= (Slacks[i] == AverageSlack);
+  for (unsigned i = 0; i < Size; i += 2) {
+    REAL Offset = (Slacks[i / 2] - RoundedAveSlack);
+    RowValue += Offset * Offset;
+    AllSlackIdentical &= (Offset == 0);
+
+    /*DEBUG(*/dbgs().indent(2) << "Going to change RHS of constraint: "
+                           << get_row_name(lp, CurRowNum) << " ("
+                           << get_col_name(lp, IdxArray[i]) << ") from "
+                           << get_rh(lp, CurRowNum) << " to "
+                           << RoundedAveSlack << '\n'/*)*/;
+    set_rh(lp, CurRowNum, RoundedAveSlack);
+    ++CurRowNum;
+
+    /*DEBUG(*/dbgs().indent(2) << "Going to change RHS of constraint: "
+                           << get_row_name(lp, CurRowNum) << " ("
+                           << get_col_name(lp, IdxArray[i]) << ") from "
+                           << get_rh(lp, CurRowNum) << " to "
+                           << -RoundedAveSlack << '\n'/*)*/;
+    set_rh(lp, CurRowNum, -RoundedAveSlack);
+    ++CurRowNum;
   }
 
-  /*DEBUG(*/dbgs() << "Violation of current Lagrangian constraint: "
-              << -RowValue << "\n\n"/*)*/;
+  ///*DEBUG(*/dbgs() << "Violation of current Lagrangian constraint: "
+  //            << -RowValue << "\n\n"/*)*/;
 
-  // Calculate b - A
+  //// Calculate b - A
   CurValue = 0.0 - sqrt(RowValue);
 
   // The constraint is preserved if the row value is zero.
@@ -280,6 +306,17 @@ void LagSDCSolver::addCndDep(ArrayRef<int> VarIdx) {
   RelaxedConstraints.push_back(new CndDepLagConstraint(VarIdx));
 }
 
-void LagSDCSolver::addSyncDep(ArrayRef<int> VarIdx) {
-  RelaxedConstraints.push_back(new SyncDepLagConstraint(VarIdx));
+void LagSDCSolver::addSyncDep(unsigned IdxStart, unsigned IdxEnd,
+                              unsigned RowStart) {
+  SmallVector<int, 8> VarIdx;
+  SmallVector<double, 8> Coeffs;
+  for (unsigned i = IdxStart; i < IdxEnd; ++i) {
+    Coeffs.push_back(1.0);
+    VarIdx.push_back(i);
+  }
+
+  Coeffs.push_back(0.0);
+
+  RelaxedConstraints.push_back(new SyncDepLagConstraint(RowStart, Coeffs,
+                                                        VarIdx));
 }
