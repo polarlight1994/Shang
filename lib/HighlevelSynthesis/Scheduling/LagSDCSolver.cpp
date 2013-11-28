@@ -63,44 +63,51 @@ void LagConstraint::updateMultiplier(double StepSize) {
 }
 
 namespace {
-struct CndDepLagConstraint : public LagConstraint {
-  static const unsigned SmallSize = 2;
+template<unsigned N>
+struct SmallConstraint : public LagConstraint {
+  static const unsigned SmallSize = N;
   double SmallCoeffs[SmallSize + 1];
   int SmallVarIdx[SmallSize];
 
-  // friend struct ilist_sentinel_traits<CndDepLagConstraint>;
-  // friend class LagSDCSolver;
+  // CreateIfNotSmallWithInitialize
+  template<unsigned SmallSize, typename T>
+  static T *Create(unsigned Size, T *SmallStorage, ArrayRef<T> InitVals) {
+    T *Ptr = SmallStorage;
+    if (Size > SmallSize)
+      Ptr = new T[Size];
 
-  bool updateStatus(lprec *lp);
-  CndDepLagConstraint(ArrayRef<int> VarIdx);
-  ~CndDepLagConstraint() {
+    bool HasInitVals = InitVals.empty();
+
+    for (unsigned i = 0; i < Size; ++i)
+      Ptr[i] = HasInitVals ? T() : InitVals[i];
+
+    return Ptr;
+  }
+
+  SmallConstraint(bool LeNotEq, ArrayRef<double> Coeffs, ArrayRef<int> VarIdx)
+    : LagConstraint(LeNotEq, VarIdx.size(),
+                    Create<SmallSize + 1>(VarIdx.size() + 1, SmallCoeffs, Coeffs),
+                    Create<SmallSize>(VarIdx.size(), SmallVarIdx, VarIdx)) {}
+
+  ~SmallConstraint() {
     if (Size > SmallSize) {
       delete CArray;
       delete IdxArray;
     }
   }
 };
+
+struct CndDepLagConstraint : public SmallConstraint<4> {
+
+  // friend struct ilist_sentinel_traits<CndDepLagConstraint>;
+  // friend class LagSDCSolver;
+
+  bool updateStatus(lprec *lp);
+
+  CndDepLagConstraint(ArrayRef<int> VarIdx)
+    : SmallConstraint(true, None, VarIdx) {}
+};
 }
-
-// CreateIfNotSmallWithInitialize
-template<unsigned SmallSize, typename T>
-static T *Create(unsigned Size, T *SmallStorage, ArrayRef<T> InitVals = None) {
-  T *Ptr = SmallStorage;
-  if (Size > SmallSize)
-    Ptr = new T[Size];
-
-  bool HasInitVals = InitVals.empty();
-
-  for (unsigned i = 0; i < Size; ++i)
-    Ptr[i] = HasInitVals ? T() : InitVals[i];
-
-  return Ptr;
-}
-
-CndDepLagConstraint::CndDepLagConstraint(ArrayRef<int> VarIdx)
-: LagConstraint(true, VarIdx.size(),
-                Create<SmallSize + 1>(VarIdx.size() + 1, SmallCoeffs),
-                Create<SmallSize>(VarIdx.size(), SmallVarIdx, VarIdx)) {}
 
 static REAL ProductExcluding(ArrayRef<REAL> A, unsigned Idx) {
   REAL P = 1.0;
