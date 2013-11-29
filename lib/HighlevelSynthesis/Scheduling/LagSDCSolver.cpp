@@ -189,42 +189,46 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
 
   SmallVector<REAL, 2> Slacks;
   REAL SlackSum = 0.0;
+  REAL CoeffsSum = 0.0;
 
   for (unsigned i = 0; i < Size; i += 2) {
     unsigned PosSlackIdx = IdxArray[i];
     unsigned PosSlackResultIdx = TotalRows + PosSlackIdx;
     REAL PosSlack = get_var_primalresult(lp, PosSlackResultIdx);
-    /*DEBUG(*/dbgs().indent(4) << get_col_name(lp, PosSlackIdx)
+    DEBUG(dbgs().indent(4) << get_col_name(lp, PosSlackIdx)
                            << ", Idx " << PosSlackIdx
-                           << " (" << unsigned(PosSlack) << ")\n"/*)*/;
+                           << " (" << unsigned(PosSlack) << ")\n");
 
     unsigned NegSlackIdx = IdxArray[i + 1];
     unsigned NegSlackResultIdx = TotalRows + NegSlackIdx;
     REAL NegSlack = get_var_primalresult(lp, NegSlackResultIdx);
-    /*DEBUG(*/dbgs().indent(4) << get_col_name(lp, NegSlackIdx)
+    DEBUG(dbgs().indent(4) << get_col_name(lp, NegSlackIdx)
                            << ", Idx " << NegSlackIdx
-                           << " (" << unsigned(NegSlack) << ")\n"/*)*/;
+                           << " (" << unsigned(NegSlack) << ")\n");
 
     assert(PosSlack * NegSlack == 0 &&
            "Unexpected both positive and negative to be nonzero at the same time!");
     REAL Slack = PosSlack - NegSlack;
-    Slacks.push_back(Slack);
-    SlackSum += Slack;
+    REAL TranslatedSlack = get_rh(lp, RowStart + i) + Slack;
+    Slacks.push_back(TranslatedSlack);
+    SlackSum += TranslatedSlack * CArray[i];
+    CoeffsSum += CArray[i];
 
-
-    /*DEBUG(*/dbgs().indent(2) << "Slack: " << int(Slack) << '\n'/*)*/;
+    unsigned CurRowNum = RowStart + i;
+    DEBUG(dbgs().indent(2) << "Slack: " << int(TranslatedSlack)
+                               << " ("<< int(Slack) << ")\n");
   }
 
   DEBUG(dbgs() << '\n');
 
   // Calculate the average slack
-  REAL AverageSlack = SlackSum / Slacks.size();
+  REAL AverageSlack = SlackSum / CoeffsSum;
   int RoundedAveSlack = ceil(AverageSlack - 0.5);
-  /*DEBUG(*/dbgs() << "Average slack: " << AverageSlack << " ("
-               << RoundedAveSlack << ")\n"/*)*/;
+  DEBUG(dbgs() << "Average slack: " << AverageSlack << " ("
+               << RoundedAveSlack << ")\n");
 
   bool AllSlackIdentical = true;
-  unsigned CurRowNum = RowStart;
+  bool AverageStable = true;
   REAL RowValue = 0.0;
 
   for (unsigned i = 0; i < Size; i += 2) {
@@ -232,27 +236,26 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
     RowValue += Offset * Offset;
     AllSlackIdentical &= (Offset == 0);
 
-    /*DEBUG(*/dbgs().indent(2) << "Going to change RHS of constraint: "
-                           << get_row_name(lp, CurRowNum) << " ("
+    unsigned PosRowNum = RowStart + i;
+    DEBUG(dbgs().indent(2) << "Going to change RHS of constraint: "
+                           << get_row_name(lp, PosRowNum) << " ("
                            << get_col_name(lp, IdxArray[i]) << ") from "
-                           << get_rh(lp, CurRowNum) << " to "
-                           << RoundedAveSlack << '\n'/*)*/;
-    set_rh(lp, CurRowNum, RoundedAveSlack);
-    ++CurRowNum;
+                           << get_rh(lp, PosRowNum) << " to "
+                           << RoundedAveSlack << '\n');
+    AverageStable &= (RoundedAveSlack == get_rh(lp, PosRowNum));
+    set_rh(lp, PosRowNum, RoundedAveSlack);
 
-    /*DEBUG(*/dbgs().indent(2) << "Going to change RHS of constraint: "
-                           << get_row_name(lp, CurRowNum) << " ("
-                           << get_col_name(lp, IdxArray[i]) << ") from "
-                           << get_rh(lp, CurRowNum) << " to "
-                           << -RoundedAveSlack << '\n'/*)*/;
-    set_rh(lp, CurRowNum, -RoundedAveSlack);
-    ++CurRowNum;
+    unsigned NegRowNum = RowStart + i + 1;
+    DEBUG(dbgs().indent(2) << "Going to change RHS of constraint: "
+                           << get_row_name(lp, NegRowNum) << " ("
+                           << get_col_name(lp, IdxArray[i + 1]) << ") from "
+                           << get_rh(lp, NegRowNum) << " to "
+                           << RoundedAveSlack << '\n');
+    AverageStable &= (RoundedAveSlack == get_rh(lp, NegRowNum));
+    set_rh(lp, NegRowNum, RoundedAveSlack);
   }
 
-  ///*DEBUG(*/dbgs() << "Violation of current Lagrangian constraint: "
-  //            << -RowValue << "\n\n"/*)*/;
-
-  //// Calculate b - A
+  // Calculate b - A
   CurValue = 0.0 - sqrt(RowValue);
 
   // The constraint is preserved if the row value is zero.
