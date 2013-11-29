@@ -141,7 +141,7 @@ private:
   unsigned createVarForSyncDeps(unsigned Col);
 
   unsigned updateSoftConstraintPenalties();
-  bool solveLP(lprec *lp, bool PreSolve);
+  bool solveLP(lprec *lp);
 
   //
   bool resolveControlChainingHazard();

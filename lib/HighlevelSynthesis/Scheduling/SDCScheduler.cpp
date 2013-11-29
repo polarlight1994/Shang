@@ -396,7 +396,7 @@ bool SDCScheduler::lagSolveLP(lprec *lp) {
 
   // Create
   for (unsigned iterations = 0;iterations < 1000; ++iterations) {
-    if (!solveLP(lp, false))
+    if (!solveLP(lp))
       return false;
 
     REAL DualObj = get_objective(lp);
@@ -448,12 +448,8 @@ static cl::opt<unsigned> ILPTimeOut("vast-ilp-timeout",
   cl::desc("The timeout value for ilp solver, in seconds"),
   cl::init(10 * 60));
 
-bool SDCScheduler::solveLP(lprec *lp, bool PreSolve) {
-  if (PreSolve) {
-    set_presolve(lp, PRESOLVE_ROWS | PRESOLVE_COLS,
-                 get_presolveloops(lp));
-  } else
-    set_presolve(lp, PRESOLVE_NONE, get_presolveloops(lp));
+bool SDCScheduler::solveLP(lprec *lp) {
+  set_presolve(lp, PRESOLVE_NONE, get_presolveloops(lp));
 
   DEBUG(write_lp(lp, "log.lp"));
 
@@ -923,7 +919,7 @@ bool SDCScheduler::schedule() {
     if (LagSolver && !lagSolveLP(lp)) {
       reset();
       return false;
-    } else if (!solveLP(lp, false)) {
+    } else if (!solveLP(lp)) {
       reset();
       return false;
     }
