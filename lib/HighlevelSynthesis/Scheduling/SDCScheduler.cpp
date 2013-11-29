@@ -66,6 +66,15 @@ double SDCScheduler::LPObjFn::evaluateCurValue(lprec *lp) const {
   return value;
 }
 
+void SDCScheduler::LPObjFn::buildLagDualObj(LagSDCSolver *S) {
+  typedef LagSDCSolver::iterator iterator;
+  for (iterator I = S->begin(), E = S->end(); I != E; ++I) {
+    LagConstraint *C = I;
+    for (unsigned i = 0; i < C->size(); ++i)
+      (*this)[C->getVarIdx(i)] += C->getObjCoefIdx(i);
+  }
+}
+
 unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) {
   // Set up the step variable for the VASTSchedUnit.
   bool inserted = SUIdx.insert(std::make_pair(U, Col)).second;
@@ -423,14 +432,7 @@ bool SDCScheduler::lagSolveLP(lprec *lp) {
       return true;
     }
 
-    // Update the objective
-    typedef LagSDCSolver::iterator iterator;
-    for (iterator I = LagSolver->begin(), E = LagSolver->end(); I != E ; ++I) {
-      LagConstraint *C = I;
-      for (unsigned i = 0; i < C->size(); ++i)
-        CurObj[C->getVarIdx(i)] += C->getObjCoefIdx(i);
-    }
-
+    CurObj.buildLagDualObj(LagSolver);
     CurObj.setLPObj(lp);
 
     if (DualObj < LastDualObj)

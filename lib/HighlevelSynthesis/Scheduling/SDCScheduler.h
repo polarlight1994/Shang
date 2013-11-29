@@ -93,6 +93,8 @@ private:
 
     void setLPObj(lprec *lp) const;
 
+    void buildLagDualObj(LagSDCSolver *S);
+
     double evaluateCurValue(lprec *lp) const;
 
     void dump() const;
