@@ -260,11 +260,10 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
 }
 
 LagSDCSolver::ResultType
-LagSDCSolver::update(lprec *lp, double StepSizeFactor) {
+LagSDCSolver::update(lprec *lp, double &SubGradientSqr) {
+  SubGradientSqr = 0.0;
   ResultType Result = LagSDCSolver::InFeasible;
-
   unsigned Violations = 0;
-  double SubGradientSqr = 0.0;
 
   for (iterator I = begin(), E = end(); I != E; ++I) {
     LagConstraint *C = I;
@@ -285,15 +284,6 @@ LagSDCSolver::update(lprec *lp, double StepSizeFactor) {
     if (SubGradientSqr == 0.0)
       Result = LagSDCSolver::Optimal;
   }
-
-  // Calculate the stepsize, based on:
-  // An Applications Oriented Guide to Lagrangian Relaxation
-  // by ML Fisher, 1985
-  double StepSize = StepSizeFactor / SubGradientSqr;
-
-  // Calculate the step size.
-  for (iterator I = begin(), E = end(); I != E; ++I)
-    I->updateMultiplier(StepSize);
 
   return Result;
 }

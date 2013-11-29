@@ -66,15 +66,6 @@ double SDCScheduler::LPObjFn::evaluateCurValue(lprec *lp) const {
   return value;
 }
 
-void SDCScheduler::LPObjFn::buildLagDualObj(LagSDCSolver *S) {
-  typedef LagSDCSolver::iterator iterator;
-  for (iterator I = S->begin(), E = S->end(); I != E; ++I) {
-    LagConstraint *C = I;
-    for (unsigned i = 0; i < C->size(); ++i)
-      (*this)[C->getVarIdx(i)] += C->getObjCoefIdx(i);
-  }
-}
-
 unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) {
   // Set up the step variable for the VASTSchedUnit.
   bool inserted = SUIdx.insert(std::make_pair(U, Col)).second;
@@ -395,44 +386,48 @@ unsigned SDCScheduler::buildSchedule(lprec *lp) {
 }
 
 bool SDCScheduler::lagSolveLP(lprec *lp) {
-  set_break_at_first(lp, TRUE);
+  // set_break_at_first(lp, TRUE);
 
-  REAL LastDualObj = 0.0, MinimalObj = 0;
+  REAL LastDualObj = 0.0, MinimalObj = get_infinite(lp);
   REAL StepSizeLambda = 2.0;
   unsigned NotDecreaseSince = 0;
-  LPObjFn CurObj;
+
+  unsigned MaxFeasiableiteration = 64;
 
   // Create
-  for (;;) {
+  for (unsigned iterations = 0;iterations < 1000; ++iterations) {
     if (!solveLP(lp, false))
       return false;
 
     REAL DualObj = get_objective(lp);
-    // assert(DualObj < 0.0 && "Expected object function smaller than 0!");
-    if (MinimalObj == 0.0)
-      MinimalObj = 2.0 * DualObj;
 
-    set_break_at_first(lp, FALSE);
+    // set_break_at_first(lp, FALSE);
 
-    CurObj = ObjFn;
+    LPObjFn CurObj(ObjFn);
 
     if (NotDecreaseSince > 4)
       StepSizeLambda /= 2.0;
 
-    double StepSizeFactor = StepSizeLambda * (DualObj - MinimalObj);
-
-    LagSDCSolver::ResultType Result = LagSolver->update(lp, StepSizeFactor);
+    double SubGradientSqr = 0.0;
+    LagSDCSolver::ResultType Result = LagSolver->update(lp, SubGradientSqr);
     switch (Result) {
     case LagSDCSolver::InFeasible:
+      if (MinimalObj > DualObj)
+        MinimalObj = DualObj - 0.5 * abs(DualObj);
       break;
     case LagSDCSolver::Feasible:
       MinimalObj = std::max<double>(MinimalObj, ObjFn.evaluateCurValue(lp));
+      if (--MaxFeasiableiteration == 0)
+        return true;
       break;
     case LagSDCSolver::Optimal:
       return true;
     }
 
-    CurObj.buildLagDualObj(LagSolver);
+    double StepSize = StepSizeLambda * (DualObj - MinimalObj) / SubGradientSqr;
+    assert(StepSize > 0.0 && "Bad Step size factor!");
+
+    LagSolver->updateMultipliers(CurObj, StepSize);
     CurObj.setLPObj(lp);
 
     if (DualObj < LastDualObj)
@@ -440,8 +435,10 @@ bool SDCScheduler::lagSolveLP(lprec *lp) {
     else
       ++NotDecreaseSince;
 
+    dbgs() << " DualObj: " << DualObj
+           << " (" << (LastDualObj - DualObj ) << ") at iter: "
+           << iterations << "\n";
     LastDualObj = DualObj;
-    dbgs() << " DualObj: " << DualObj << "\n";
   }
 
   return true;
@@ -910,7 +907,10 @@ bool SDCScheduler::schedule() {
   bool repeat = true;
 
   while (repeat) {
-    if (!solveLP(lp, false)) {
+    if (LagSolver && !lagSolveLP(lp)) {
+      reset();
+      return false;
+    } else if (!solveLP(lp, false)) {
       reset();
       return false;
     }

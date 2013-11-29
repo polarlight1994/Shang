@@ -59,6 +59,13 @@ protected:
 
   void updateMultiplier(double StepSize);
   LagConstraint(bool LeNotEq, unsigned Size, double *CArray, int *IdxArray);
+
+  template<typename T>
+  void applyPenalty(T &Obj) const {
+    for (unsigned i = 0; i < size(); ++i)
+      Obj[getVarIdx(i)] += getObjCoefIdx(i);
+  }
+
 public:
   virtual ~LagConstraint() {}
   unsigned size() const { return Size; }
@@ -92,9 +99,9 @@ struct FixedSizeLagConstraint : public LagConstraint {
 
 class LagSDCSolver {
   ilist<LagConstraint> RelaxedConstraints;
-  // 2. Update Lagrangrian multipliers (subgradient method)
-  void updateMultipliers(double StepSize);
 public:
+  LagSDCSolver() {}
+
   enum ResultType {
     InFeasible,
     Feasible,
@@ -119,7 +126,16 @@ public:
   iterator end() { return RelaxedConstraints.end(); }
 
   // 1. Update constraints and compate violations
-  ResultType update(lprec *lp, double StepSizeFactor);
+  ResultType update(lprec *lp, double &SubGradientSqr);
+
+  // 2. Update Lagrangrian multipliers (subgradient method)
+  template<typename T>
+  void updateMultipliers(T &Obj, double StepSize) {
+    for (iterator I = begin(), E = end(); I != E; ++I) {
+      I->updateMultiplier(StepSize);
+      I->applyPenalty<T>(Obj);
+    }
+  }
 };
 
 }
