@@ -213,7 +213,10 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
     assert(PosSlack * NegSlack == 0 &&
            "Unexpected both positive and negative to be nonzero at the same time!");
     REAL Slack = PosSlack - NegSlack;
-    REAL TranslatedSlack = get_rh(lp, RowStart + i) + Slack;
+    // lpsolve introduce error to rh when it perform scaling, try to fix that
+    // error.
+    REAL RoundedRH = ceil(get_rh(lp, RowStart + i) - get_epsb(lp));
+    REAL TranslatedSlack = RoundedRH + Slack;
     assert(get_rh(lp, RowStart + i) == get_rh(lp, RowStart + i + 1)
            && "Bad RH of slack constraint!");
     Offsets.push_back(TranslatedSlack);
@@ -225,18 +228,18 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
                            << " ("<< int(Slack) << ")\n");
   }
 
-  // Calculate the average slack
-  REAL AverageSlack = OffsetSum / WeightSum;
-  int TargetSlack = ceil(AverageSlack - 0.5);
-  DEBUG(dbgs() << "Average slack: " << AverageSlack << " ("
-               << TargetSlack << ")\n");
+  // Calculate the weighted average offset, this average offset will move toward
+  // the offset of the edge on which the constraint is hard to be preserved
+  REAL AverageOffset = OffsetSum / WeightSum;
+  int TargetOffset = ceil(AverageOffset - 0.5);
+  DEBUG(dbgs() << "Average slack: " << AverageOffset << " ("
+               << TargetOffset << ")\n");
 
   bool AllSlackIdentical = true;
-  bool AverageStable = true;
   REAL RowValue = 0.0;
 
   for (unsigned i = 0; i < Size; i += 2) {
-    REAL Violation = int(Offsets[i / 2]) - int(TargetSlack);
+    REAL Violation = int(Offsets[i / 2]) - int(TargetOffset);
     RowValue += Violation * Violation;
     AllSlackIdentical &= (Violation == 0);
     // Apply different penalty to different slack variables, 0.1 is added to
@@ -248,18 +251,16 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
                            << get_row_name(lp, PosRowNum) << " ("
                            << get_col_name(lp, IdxArray[i]) << ") from "
                            << get_rh(lp, PosRowNum) << " to "
-                           << TargetSlack << '\n');
-    AverageStable &= (TargetSlack == get_rh(lp, PosRowNum));
-    set_rh(lp, PosRowNum, TargetSlack);
+                           << TargetOffset << '\n');
+    set_rh(lp, PosRowNum, TargetOffset);
 
     unsigned NegRowNum = RowStart + i + 1;
     DEBUG(dbgs().indent(2) << "Going to change RHS of constraint: "
                            << get_row_name(lp, NegRowNum) << " ("
                            << get_col_name(lp, IdxArray[i + 1]) << ") from "
                            << get_rh(lp, NegRowNum) << " to "
-                           << TargetSlack << '\n');
-    AverageStable &= (TargetSlack == get_rh(lp, NegRowNum));
-    set_rh(lp, NegRowNum, TargetSlack);
+                           << TargetOffset << '\n');
+    set_rh(lp, NegRowNum, TargetOffset);
   }
 
   DEBUG(dbgs() << '\n');
