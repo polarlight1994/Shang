@@ -173,92 +173,18 @@ bool CndDepLagConstraint::updateStatus(lprec *lp) {
 
 namespace {
 struct SyncDepLagConstraint : public SmallConstraint<4> {
-  // The join node
-  VASTSchedUnit &Join;
   const unsigned RowStart;
+  // The weight vector to allow us to move the target offset toward feasiable
+  // region.
   SmallVector<double, SmallSize> Weights;
 
-  SyncDepLagConstraint(VASTSchedUnit &Join, unsigned RowStart,
+  SyncDepLagConstraint(unsigned RowStart,
                        ArrayRef<double> Coeffs, ArrayRef<int> VarIdx)
-    : SmallConstraint(true, Coeffs, VarIdx), Join(Join), RowStart(RowStart),
+    : SmallConstraint(true, Coeffs, VarIdx), RowStart(RowStart),
       Weights(VarIdx.size() / 2, 1.0) {}
 
   bool updateStatus(lprec *lp);
-
-  // Calculate a legal slack for the synchronization dependencies of the Join
-  // node.
-  int calculateSlackForNextIter(ArrayRef<int> Slacks);
 };
-}
-
-static int CalculateALAP(VASTSchedUnit *SU) {
-  int ALAP = UINT16_MAX >> 2;
-
-  typedef VASTSchedUnit::const_use_iterator iterator;
-  for (iterator UI = SU->use_begin(), UE = SU->use_end(); UI != UE; ++UI) {
-    VASTSchedUnit *Use = *UI;
-    VASTDep UseEdge = Use->getEdgeFrom(SU);
-
-    assert((UseEdge.getEdgeType() != VASTDep::Conditional
-            && UseEdge.getEdgeType() != VASTDep::Synchronize)
-           && "Unexpected dependency type!");
-
-    int Step = Use->getSchedule() - UseEdge.getLatency();
-    ALAP = std::min<int>(Step, ALAP);
-  }
-
-  return ALAP;
-}
-
-static int CalculateJoinMobility(VASTSchedUnit *SU) {
-  int ALAP = CalculateALAP(SU);
-  assert(ALAP >= int(SU->getSchedule()) && "Bad ALAP of join node!");
-  return ALAP - SU->getSchedule();
-}
-
-static int CalculateASAP(VASTSchedUnit *SU) {
-  unsigned ASAP = 0;
-  typedef VASTSchedUnit::const_dep_iterator iterator;
-  for (iterator DI = SU->dep_begin(), DE = SU->dep_end(); DI != DE; ++DI) {
-    const VASTSchedUnit *Dep = *DI;
-
-    assert((DI.getEdgeType() != VASTDep::Conditional
-            && DI.getEdgeType() != VASTDep::Synchronize)
-           && "Unexpected dependency type!");
-
-    int Step = Dep->getSchedule() + DI.getLatency();
-
-    ASAP = std::max<int>(Step, ASAP);
-  }
-
-  return ASAP;
-}
-
-static int CalculateDepMobility(VASTSchedUnit *SU) {
-  int ASAP = CalculateASAP(SU);
-  assert(ASAP <= int(SU->getSchedule()) && "Bad ALAP of join node!");
-  return SU->getSchedule() - ASAP;
-}
-
-int
-SyncDepLagConstraint::calculateSlackForNextIter(ArrayRef<int> Slacks) {
-  // Calculate the ALAP for the join node.
-  int JoinOffset = Slacks.front();
-  int JoinOffsetALAP = JoinOffset + CalculateJoinMobility(&Join);
-  int DepOffsetASAP = -(UINT16_MAX >> 2);
-
-  typedef VASTSchedUnit::dep_iterator dep_iterator;
-  unsigned i = 1;
-  for (dep_iterator I = Join.dep_begin(), E = Join.dep_end(); I != E; ++I) {
-    assert(I.getEdgeType() == VASTDep::Synchronize && "Unexpected edge type!");
-
-    VASTSchedUnit *Dep = *I;
-    int DepOffset = Slacks[i++];
-    DepOffsetASAP = std::max<int>(DepOffsetASAP,
-                                  DepOffset - CalculateDepMobility(Dep));
-  }
-
-  return ((JoinOffsetALAP + DepOffsetASAP) + 1) / 2;
 }
 
 // For synchronization dependencies, we require all the slacks to have an
@@ -383,8 +309,7 @@ void LagSDCSolver::addCndDep(ArrayRef<int> VarIdx) {
   RelaxedConstraints.push_back(new CndDepLagConstraint(VarIdx));
 }
 
-void LagSDCSolver::addSyncDep(VASTSchedUnit *SU,
-                              unsigned IdxStart, unsigned IdxEnd,
+void LagSDCSolver::addSyncDep(unsigned IdxStart, unsigned IdxEnd,
                               unsigned RowStart) {
   SmallVector<int, 8> VarIdx;
   SmallVector<double, 8> Coeffs;
@@ -395,6 +320,6 @@ void LagSDCSolver::addSyncDep(VASTSchedUnit *SU,
 
   Coeffs.push_back(0.0);
 
-  RelaxedConstraints.push_back(new SyncDepLagConstraint(*SU, RowStart,
+  RelaxedConstraints.push_back(new SyncDepLagConstraint(RowStart,
                                                         Coeffs, VarIdx));
 }

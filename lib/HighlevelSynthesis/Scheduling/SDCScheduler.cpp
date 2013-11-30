@@ -712,7 +712,7 @@ void SDCScheduler::addLagSynchronizeConstraints(VASTSchedUnit *SU) {
   unsigned RowIdxEnd = get_Nrows(lp) + 1;
   assert(RowIdxEnd - RowIdxStart == SlackIdxEnd - SlackIdxStart &&
          "Number of slack variables and constraints are not match!");
-  LagSolver->addSyncDep(SU, SlackIdxStart, SlackIdxEnd, RowIdxStart);
+  LagSolver->addSyncDep(SlackIdxStart, SlackIdxEnd, RowIdxStart);
 }
 
 void SDCScheduler::addSynchronizeConstraints() {

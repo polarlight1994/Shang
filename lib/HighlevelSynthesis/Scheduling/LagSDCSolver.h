@@ -109,8 +109,7 @@ public:
   };
 
   void addCndDep(ArrayRef<int> VarIdx);
-  void addSyncDep(VASTSchedUnit *Join, unsigned IdxStart, unsigned IdxEnd,
-                  unsigned RowStart);
+  void addSyncDep(unsigned IdxStart, unsigned IdxEnd, unsigned RowStart);
 
   template<unsigned N>
   void addGenericConstraint(bool LeNotEq, ArrayRef<double> Coefficients,
