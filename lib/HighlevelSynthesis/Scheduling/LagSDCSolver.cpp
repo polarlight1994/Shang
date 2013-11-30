@@ -181,7 +181,7 @@ struct SyncDepLagConstraint : public SmallConstraint<4> {
   SyncDepLagConstraint(unsigned RowStart,
                        ArrayRef<double> Coeffs, ArrayRef<int> VarIdx)
     : SmallConstraint(true, Coeffs, VarIdx), RowStart(RowStart),
-      Weights(VarIdx.size() / 2, 1.0) {}
+      Weights(VarIdx.size() / 2, 2.0) {}
 
   bool updateStatus(lprec *lp);
 };
@@ -242,9 +242,6 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
     REAL Violation = int(Offsets[i / 2]) - int(TargetOffset);
     RowValue += Violation * Violation;
     AllSlackIdentical &= (Violation == 0);
-    // Apply different penalty to different slack variables, 0.1 is added to
-    // avoid zero penalty.
-    Weights[i / 2] += abs(Violation);
 
     unsigned PosRowNum = RowStart + i;
     DEBUG(dbgs().indent(2) << "Going to change RHS of constraint: "
@@ -266,7 +263,19 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
   DEBUG(dbgs() << '\n');
 
   // Calculate b - A
-  CurValue = 0.0 - sqrt(RowValue);
+  double Norm = sqrt(RowValue);
+  CurValue = 0.0 - Norm;
+
+  // Update rows
+  if (!AllSlackIdentical) {
+    assert(Norm > 0 && "Unexpected violation with zero norm!");
+    for (unsigned i = 0, e = Weights.size(); i < e; ++i) {
+      REAL Violation = int(Offsets[i]) - int(TargetOffset);
+      // Apply different penalty to different slack variables, 0.1 is added to
+      // avoid zero penalty.
+      Weights[i] *= 1.0 + abs(Violation) / Norm;
+    }
+  }
 
   // The constraint is preserved if the row value is zero.
   return AllSlackIdentical;
