@@ -192,8 +192,8 @@ struct SyncDepLagConstraint : public SmallConstraint<4> {
 bool SyncDepLagConstraint::updateStatus(lprec *lp) {
   unsigned TotalRows = get_Norig_rows(lp);
 
-  SmallVector<int, 4> Slacks;
-  REAL SlackSum = 0.0, WeightSum = 0.0;
+  SmallVector<int, 4> Offsets;
+  REAL OffsetSum = 0.0, WeightSum = 0.0;
 
   for (unsigned i = 0; i < Size; i += 2) {
     unsigned PosSlackIdx = IdxArray[i];
@@ -216,32 +216,32 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
     REAL TranslatedSlack = get_rh(lp, RowStart + i) + Slack;
     assert(get_rh(lp, RowStart + i) == get_rh(lp, RowStart + i + 1)
            && "Bad RH of slack constraint!");
-    Slacks.push_back(TranslatedSlack);
+    Offsets.push_back(TranslatedSlack);
     double CurWeight = Weights[i / 2];
-    SlackSum += TranslatedSlack * CurWeight;
+    OffsetSum += TranslatedSlack * CurWeight;
     WeightSum += CurWeight;
     unsigned CurRowNum = RowStart + i;
-    /*DEBUG(*/dbgs().indent(2) << "Slack: " << int(TranslatedSlack)
-                               << " ("<< int(Slack) << ")\n"/*)*/;
+    DEBUG(dbgs().indent(2) << "Offset: " << int(TranslatedSlack)
+                           << " ("<< int(Slack) << ")\n");
   }
 
   // Calculate the average slack
-  REAL AverageSlack = SlackSum / WeightSum;
+  REAL AverageSlack = OffsetSum / WeightSum;
   int TargetSlack = ceil(AverageSlack - 0.5);
-  /*DEBUG(*/dbgs() << "Average slack: " << AverageSlack << " ("
-               << TargetSlack << ")\n"/*)*/;
+  DEBUG(dbgs() << "Average slack: " << AverageSlack << " ("
+               << TargetSlack << ")\n");
 
   bool AllSlackIdentical = true;
   bool AverageStable = true;
   REAL RowValue = 0.0;
 
   for (unsigned i = 0; i < Size; i += 2) {
-    REAL Offset = int(Slacks[i / 2]) - int(TargetSlack);
-    RowValue += Offset * Offset;
-    AllSlackIdentical &= (Offset == 0);
+    REAL Violation = int(Offsets[i / 2]) - int(TargetSlack);
+    RowValue += Violation * Violation;
+    AllSlackIdentical &= (Violation == 0);
     // Apply different penalty to different slack variables, 0.1 is added to
     // avoid zero penalty.
-    Weights[i / 2] += abs(Offset);
+    Weights[i / 2] += abs(Violation);
 
     unsigned PosRowNum = RowStart + i;
     DEBUG(dbgs().indent(2) << "Going to change RHS of constraint: "
@@ -262,7 +262,7 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
     set_rh(lp, NegRowNum, TargetSlack);
   }
 
-  /*DEBUG(*/dbgs() << '\n'/*)*/;
+  DEBUG(dbgs() << '\n');
 
   // Calculate b - A
   CurValue = 0.0 - sqrt(RowValue);
