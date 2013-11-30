@@ -176,9 +176,12 @@ struct SyncDepLagConstraint : public SmallConstraint<4> {
   // The join node
   VASTSchedUnit &Join;
   const unsigned RowStart;
+  SmallVector<double, SmallSize> Weights;
+
   SyncDepLagConstraint(VASTSchedUnit &Join, unsigned RowStart,
                        ArrayRef<double> Coeffs, ArrayRef<int> VarIdx)
-    : SmallConstraint(true, Coeffs, VarIdx), Join(Join), RowStart(RowStart) {}
+    : SmallConstraint(true, Coeffs, VarIdx), Join(Join), RowStart(RowStart),
+      Weights(VarIdx.size() / 2, 1.0) {}
 
   bool updateStatus(lprec *lp);
 
@@ -264,7 +267,7 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
   unsigned TotalRows = get_Norig_rows(lp);
 
   SmallVector<int, 4> Slacks;
-  REAL SlackSum = 0.0;
+  REAL SlackSum = 0.0, WeightSum = 0.0;
 
   for (unsigned i = 0; i < Size; i += 2) {
     unsigned PosSlackIdx = IdxArray[i];
@@ -288,16 +291,17 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
     assert(get_rh(lp, RowStart + i) == get_rh(lp, RowStart + i + 1)
            && "Bad RH of slack constraint!");
     Slacks.push_back(TranslatedSlack);
-    SlackSum += TranslatedSlack;
-
+    double CurWeight = Weights[i / 2];
+    SlackSum += TranslatedSlack * CurWeight;
+    WeightSum += CurWeight;
     unsigned CurRowNum = RowStart + i;
     /*DEBUG(*/dbgs().indent(2) << "Slack: " << int(TranslatedSlack)
                                << " ("<< int(Slack) << ")\n"/*)*/;
   }
 
   // Calculate the average slack
-  REAL AverageSlack = SlackSum / Slacks.size();
-  int TargetSlack = calculateSlackForNextIter(Slacks);
+  REAL AverageSlack = SlackSum / WeightSum;
+  int TargetSlack = ceil(AverageSlack - 0.5);
   /*DEBUG(*/dbgs() << "Average slack: " << AverageSlack << " ("
                << TargetSlack << ")\n"/*)*/;
 
@@ -311,7 +315,7 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
     AllSlackIdentical &= (Offset == 0);
     // Apply different penalty to different slack variables, 0.1 is added to
     // avoid zero penalty.
-    CArray[i] = CArray[i + 1] = 1.0;// + abs(Offset);
+    Weights[i / 2] += abs(Offset);
 
     unsigned PosRowNum = RowStart + i;
     DEBUG(dbgs().indent(2) << "Going to change RHS of constraint: "
