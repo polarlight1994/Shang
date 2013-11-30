@@ -173,13 +173,89 @@ bool CndDepLagConstraint::updateStatus(lprec *lp) {
 
 namespace {
 struct SyncDepLagConstraint : public SmallConstraint<4> {
+  // The join node
+  VASTSchedUnit &Join;
   const unsigned RowStart;
-  SyncDepLagConstraint(unsigned RowStart, ArrayRef<double> Coeffs,
-                       ArrayRef<int> VarIdx)
-    : SmallConstraint(true, Coeffs, VarIdx), RowStart(RowStart) {}
+  SyncDepLagConstraint(VASTSchedUnit &Join, unsigned RowStart,
+                       ArrayRef<double> Coeffs, ArrayRef<int> VarIdx)
+    : SmallConstraint(true, Coeffs, VarIdx), Join(Join), RowStart(RowStart) {}
 
   bool updateStatus(lprec *lp);
+
+  // Calculate a legal slack for the synchronization dependencies of the Join
+  // node.
+  int calculateSlackForNextIter(ArrayRef<int> Slacks);
 };
+}
+
+static int CalculateALAP(VASTSchedUnit *SU) {
+  int ALAP = UINT16_MAX >> 2;
+
+  typedef VASTSchedUnit::const_use_iterator iterator;
+  for (iterator UI = SU->use_begin(), UE = SU->use_end(); UI != UE; ++UI) {
+    VASTSchedUnit *Use = *UI;
+    VASTDep UseEdge = Use->getEdgeFrom(SU);
+
+    assert((UseEdge.getEdgeType() != VASTDep::Conditional
+            && UseEdge.getEdgeType() != VASTDep::Synchronize)
+           && "Unexpected dependency type!");
+
+    int Step = Use->getSchedule() - UseEdge.getLatency();
+    ALAP = std::min<int>(Step, ALAP);
+  }
+
+  return ALAP;
+}
+
+static int CalculateJoinMobility(VASTSchedUnit *SU) {
+  int ALAP = CalculateALAP(SU);
+  assert(ALAP >= int(SU->getSchedule()) && "Bad ALAP of join node!");
+  return ALAP - SU->getSchedule();
+}
+
+static int CalculateASAP(VASTSchedUnit *SU) {
+  unsigned ASAP = 0;
+  typedef VASTSchedUnit::const_dep_iterator iterator;
+  for (iterator DI = SU->dep_begin(), DE = SU->dep_end(); DI != DE; ++DI) {
+    const VASTSchedUnit *Dep = *DI;
+
+    assert((DI.getEdgeType() != VASTDep::Conditional
+            && DI.getEdgeType() != VASTDep::Synchronize)
+           && "Unexpected dependency type!");
+
+    int Step = Dep->getSchedule() + DI.getLatency();
+
+    ASAP = std::max<int>(Step, ASAP);
+  }
+
+  return ASAP;
+}
+
+static int CalculateDepMobility(VASTSchedUnit *SU) {
+  int ASAP = CalculateASAP(SU);
+  assert(ASAP <= int(SU->getSchedule()) && "Bad ALAP of join node!");
+  return SU->getSchedule() - ASAP;
+}
+
+int
+SyncDepLagConstraint::calculateSlackForNextIter(ArrayRef<int> Slacks) {
+  // Calculate the ALAP for the join node.
+  int JoinOffset = Slacks.front();
+  int JoinOffsetALAP = JoinOffset + CalculateJoinMobility(&Join);
+  int DepOffsetASAP = -(UINT16_MAX >> 2);
+
+  typedef VASTSchedUnit::dep_iterator dep_iterator;
+  unsigned i = 1;
+  for (dep_iterator I = Join.dep_begin(), E = Join.dep_end(); I != E; ++I) {
+    assert(I.getEdgeType() == VASTDep::Synchronize && "Unexpected edge type!");
+
+    VASTSchedUnit *Dep = *I;
+    int DepOffset = Slacks[i++];
+    DepOffsetASAP = std::max<int>(DepOffsetASAP,
+                                  DepOffset - CalculateDepMobility(Dep));
+  }
+
+  return ((JoinOffsetALAP + DepOffsetASAP) + 1) / 2;
 }
 
 // For synchronization dependencies, we require all the slacks to have an
@@ -187,9 +263,8 @@ struct SyncDepLagConstraint : public SmallConstraint<4> {
 bool SyncDepLagConstraint::updateStatus(lprec *lp) {
   unsigned TotalRows = get_Norig_rows(lp);
 
-  SmallVector<REAL, 2> Slacks;
+  SmallVector<int, 4> Slacks;
   REAL SlackSum = 0.0;
-  REAL CoeffsSum = 0.0;
 
   for (unsigned i = 0; i < Size; i += 2) {
     unsigned PosSlackIdx = IdxArray[i];
@@ -210,50 +285,54 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
            "Unexpected both positive and negative to be nonzero at the same time!");
     REAL Slack = PosSlack - NegSlack;
     REAL TranslatedSlack = get_rh(lp, RowStart + i) + Slack;
+    assert(get_rh(lp, RowStart + i) == get_rh(lp, RowStart + i + 1)
+           && "Bad RH of slack constraint!");
     Slacks.push_back(TranslatedSlack);
-    SlackSum += TranslatedSlack * CArray[i];
-    CoeffsSum += CArray[i];
+    SlackSum += TranslatedSlack;
 
     unsigned CurRowNum = RowStart + i;
-    DEBUG(dbgs().indent(2) << "Slack: " << int(TranslatedSlack)
-                               << " ("<< int(Slack) << ")\n");
+    /*DEBUG(*/dbgs().indent(2) << "Slack: " << int(TranslatedSlack)
+                               << " ("<< int(Slack) << ")\n"/*)*/;
   }
 
-  DEBUG(dbgs() << '\n');
-
   // Calculate the average slack
-  REAL AverageSlack = SlackSum / CoeffsSum;
-  int RoundedAveSlack = ceil(AverageSlack - 0.5);
-  DEBUG(dbgs() << "Average slack: " << AverageSlack << " ("
-               << RoundedAveSlack << ")\n");
+  REAL AverageSlack = SlackSum / Slacks.size();
+  int TargetSlack = calculateSlackForNextIter(Slacks);
+  /*DEBUG(*/dbgs() << "Average slack: " << AverageSlack << " ("
+               << TargetSlack << ")\n"/*)*/;
 
   bool AllSlackIdentical = true;
   bool AverageStable = true;
   REAL RowValue = 0.0;
 
   for (unsigned i = 0; i < Size; i += 2) {
-    REAL Offset = (Slacks[i / 2] - RoundedAveSlack);
+    REAL Offset = int(Slacks[i / 2]) - int(TargetSlack);
     RowValue += Offset * Offset;
     AllSlackIdentical &= (Offset == 0);
+    // Apply different penalty to different slack variables, 0.1 is added to
+    // avoid zero penalty.
+    CArray[i] = CArray[i + 1] = 1.0;// + abs(Offset);
 
     unsigned PosRowNum = RowStart + i;
     DEBUG(dbgs().indent(2) << "Going to change RHS of constraint: "
                            << get_row_name(lp, PosRowNum) << " ("
                            << get_col_name(lp, IdxArray[i]) << ") from "
                            << get_rh(lp, PosRowNum) << " to "
-                           << RoundedAveSlack << '\n');
-    AverageStable &= (RoundedAveSlack == get_rh(lp, PosRowNum));
-    set_rh(lp, PosRowNum, RoundedAveSlack);
+                           << TargetSlack << '\n');
+    AverageStable &= (TargetSlack == get_rh(lp, PosRowNum));
+    set_rh(lp, PosRowNum, TargetSlack);
 
     unsigned NegRowNum = RowStart + i + 1;
     DEBUG(dbgs().indent(2) << "Going to change RHS of constraint: "
                            << get_row_name(lp, NegRowNum) << " ("
                            << get_col_name(lp, IdxArray[i + 1]) << ") from "
                            << get_rh(lp, NegRowNum) << " to "
-                           << RoundedAveSlack << '\n');
-    AverageStable &= (RoundedAveSlack == get_rh(lp, NegRowNum));
-    set_rh(lp, NegRowNum, RoundedAveSlack);
+                           << TargetSlack << '\n');
+    AverageStable &= (TargetSlack == get_rh(lp, NegRowNum));
+    set_rh(lp, NegRowNum, TargetSlack);
   }
+
+  /*DEBUG(*/dbgs() << '\n'/*)*/;
 
   // Calculate b - A
   CurValue = 0.0 - sqrt(RowValue);
@@ -279,8 +358,9 @@ LagSDCSolver::update(lprec *lp, double &SubGradientSqr) {
     SubGradientSqr += PD * PD;
   }
 
-  dbgs() << "Violations: " << Violations << " in " << RelaxedConstraints.size()
-         << " SGL: " << SubGradientSqr << "\n";
+  DEBUG(dbgs() << "Violations: " << Violations << " in "
+               << RelaxedConstraints.size()
+               << " SGL: " << SubGradientSqr << "\n");
 
   if (Violations == 0) {
     Result = LagSDCSolver::Feasible;
@@ -299,7 +379,8 @@ void LagSDCSolver::addCndDep(ArrayRef<int> VarIdx) {
   RelaxedConstraints.push_back(new CndDepLagConstraint(VarIdx));
 }
 
-void LagSDCSolver::addSyncDep(unsigned IdxStart, unsigned IdxEnd,
+void LagSDCSolver::addSyncDep(VASTSchedUnit *SU,
+                              unsigned IdxStart, unsigned IdxEnd,
                               unsigned RowStart) {
   SmallVector<int, 8> VarIdx;
   SmallVector<double, 8> Coeffs;
@@ -310,6 +391,6 @@ void LagSDCSolver::addSyncDep(unsigned IdxStart, unsigned IdxEnd,
 
   Coeffs.push_back(0.0);
 
-  RelaxedConstraints.push_back(new SyncDepLagConstraint(RowStart, Coeffs,
-                                                        VarIdx));
+  RelaxedConstraints.push_back(new SyncDepLagConstraint(*SU, RowStart,
+                                                        Coeffs, VarIdx));
 }

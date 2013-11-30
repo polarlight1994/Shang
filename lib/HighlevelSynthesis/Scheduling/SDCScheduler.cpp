@@ -665,8 +665,8 @@ unsigned SDCScheduler::createSlackPair(VASTSchedUnit *Dst, VASTSchedUnit *Src,
   // Now if we have x = x0 fall into region x <= RH:
   //             x <= RH                    x >= RH
   // -------------------x0---------RH---------------------------
-  // x - pos <= RH hold even if pos is 0, but neg will be bigger than 0 to fix
-  // constraints x0 + neg >= RH. Similarly, when x = 01 fall into region
+  // x - pos <= RH hold even if pos is 0, but neg need to be bigger than 0 to
+  // fix constraints x0 + neg >= RH. Similarly, when x = 01 fall into region
   // x >= RH, pos will be bigger than 0 to fix constraint x - pos <= RH
   unsigned PosSlackIdx = SlackIdx;
   int PosCols[] = { getSUIdx(Dst), getSUIdx(Src), PosSlackIdx };
@@ -674,6 +674,7 @@ unsigned SDCScheduler::createSlackPair(VASTSchedUnit *Dst, VASTSchedUnit *Src,
   if (!add_constraintex(lp, array_lengthof(PosCols), PosCoeffs, PosCols, LE, 0))
     report_fatal_error("Cannot create constraint!");
   nameLastRow(Twine(get_col_name(lp, PosSlackIdx)) + "_");
+  //set_upbo(lp, PosSlackIdx, 0);
 
   unsigned NegSlackIdx = SlackIdx + 1;
   int NegCols[] = { getSUIdx(Dst), getSUIdx(Src), NegSlackIdx };
@@ -681,6 +682,7 @@ unsigned SDCScheduler::createSlackPair(VASTSchedUnit *Dst, VASTSchedUnit *Src,
   if (!add_constraintex(lp, array_lengthof(NegCols), NegCoeffs, NegCols, GE, 0))
     report_fatal_error("Cannot create constraint!");
   nameLastRow(Twine(get_col_name(lp, NegSlackIdx)) + "_");
+  //set_upbo(lp, NegSlackIdx, 0);
 
   return SlackIdx + 2;
 }
@@ -710,7 +712,7 @@ void SDCScheduler::addLagSynchronizeConstraints(VASTSchedUnit *SU) {
   unsigned RowIdxEnd = get_Nrows(lp) + 1;
   assert(RowIdxEnd - RowIdxStart == SlackIdxEnd - SlackIdxStart &&
          "Number of slack variables and constraints are not match!");
-  LagSolver->addSyncDep(SlackIdxStart, SlackIdxEnd, RowIdxStart);
+  LagSolver->addSyncDep(SU, SlackIdxStart, SlackIdxEnd, RowIdxStart);
 }
 
 void SDCScheduler::addSynchronizeConstraints() {
