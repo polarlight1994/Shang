@@ -532,7 +532,7 @@ void SDCScheduler::addConditionalConstraints(VASTSchedUnit *SU) {
     // First of all, export the slack for conditional edge. For conditional edge
     // we require Dst <= Src, hence we have Dst - Src + Slack = 0, Slack >= 0
     // i.e. Slack = Src - Dst
-    if (UseLagSolve) {
+    if (LagSolver) {
       // Export the slack for the HeuristicalDriver
       REAL Coefs[] = { 1.0, -1.0, -1.0 };
       int Cols[] = { getSUIdx(Dep), getSUIdx(SU), CurIdx };
