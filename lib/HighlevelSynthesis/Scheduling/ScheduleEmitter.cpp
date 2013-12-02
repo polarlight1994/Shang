@@ -1017,7 +1017,6 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
   // Else build the selection logic to select the incoming value based on the
   // guarding condition.
   SmallVector<VASTValPtr, 4> GuardedIncomings;
-  SmallVector<VASTValPtr, 2> CurGuards;
   unsigned Bitwidth = V->getBitWidth();
 
   typedef SmallVectorImpl<VASTLatch>::iterator incoming_iterator;
@@ -1025,15 +1024,9 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
        I != E; ++I) {
     const VASTLatch &L = *I;
     VASTSlot *S = L.getSlot();
-    CurGuards.clear();
 
     // In case of multiple incoming, we also need the guarding conditions
-    CurGuards.push_back(L.getGuard());
-    if (VASTValPtr SlotActive = L.getSlotActive())
-      CurGuards.push_back(SlotActive);
-
-    VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
-    VASTValPtr FIMask = Builder.buildBitRepeat(CurGuard, Bitwidth);
+    VASTValPtr FIMask = Builder.buildBitRepeat(L.getGuard(), Bitwidth);
 
     // Push the incoming value itself.
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(L, FIMask, Bitwidth);
