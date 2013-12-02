@@ -395,7 +395,9 @@ bool SDCScheduler::lagSolveLP(lprec *lp) {
   unsigned MaxFeasiableiteration = 64;
 
   // Create
-  for (unsigned iterations = 0;iterations < 1000; ++iterations) {
+  for (unsigned iterations = 0;iterations < 10000; ++iterations) {
+    // default_basis(lp);
+
     if (!solveLP(lp))
       return false;
 
@@ -405,23 +407,44 @@ bool SDCScheduler::lagSolveLP(lprec *lp) {
 
     LPObjFn CurObj(ObjFn);
 
-    if (NotDecreaseSince > 4)
-      StepSizeLambda /= 2.0;
-
     double SubGradientSqr = 0.0;
     LagSDCSolver::ResultType Result = LagSolver->update(lp, SubGradientSqr);
     switch (Result) {
     case LagSDCSolver::InFeasible:
-      if (MinimalObj > DualObj)
-        MinimalObj = DualObj - 0.5 * abs(DualObj);
+      MaxFeasiableiteration = 0;
+
+      if (iterations % 100 == 0) {
+        dbgs() << " DualObj: " << DualObj
+          << " (" << (LastDualObj - DualObj) << ") at iter: "
+          << iterations << "\n";
+      }
+
+      if (MinimalObj >= DualObj)
+        MinimalObj = DualObj - 0.01 * abs(DualObj);
       break;
     case LagSDCSolver::Feasible:
+      dbgs() << " DualObj: " << DualObj
+             << " feasiable solution at iter: "
+             << iterations << "\n";
       MinimalObj = std::max<double>(MinimalObj, ObjFn.evaluateCurValue(lp));
       if (--MaxFeasiableiteration == 0)
         return true;
       break;
     case LagSDCSolver::Optimal:
+      dbgs() << " DualObj: " << DualObj
+             << " optimal solution at iter: "
+             << iterations << "\n";
       return true;
+    }
+
+    if (DualObj < LastDualObj)
+      NotDecreaseSince = 0;
+    else
+      ++NotDecreaseSince;
+
+    if (NotDecreaseSince > 32) {
+      StepSizeLambda /= 2.0;
+      NotDecreaseSince = 0;
     }
 
     double StepSize = StepSizeLambda * (DualObj - MinimalObj) / SubGradientSqr;
@@ -430,18 +453,10 @@ bool SDCScheduler::lagSolveLP(lprec *lp) {
     LagSolver->updateMultipliers(CurObj, StepSize);
     CurObj.setLPObj(lp);
 
-    if (DualObj < LastDualObj)
-      NotDecreaseSince = 0;
-    else
-      ++NotDecreaseSince;
-
-    dbgs() << " DualObj: " << DualObj
-           << " (" << (LastDualObj - DualObj ) << ") at iter: "
-           << iterations << "\n";
     LastDualObj = DualObj;
   }
 
-  return true;
+  return false;
 }
 
 static cl::opt<unsigned> ILPTimeOut("vast-ilp-timeout",
