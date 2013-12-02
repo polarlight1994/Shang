@@ -246,7 +246,7 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
 }
 //===----------------------------------------------------------------------===//
 
-VASTExpr::VASTExpr(Opcode Opc, uint8_t NumOps, unsigned UB, unsigned LB)
+VASTExpr::VASTExpr(Opcode Opc, unsigned NumOps, unsigned UB, unsigned LB)
   : VASTValue(vastExpr, UB - LB), VASTOperandList(NumOps),
     Opc(Opc), UB(UB), LB(LB) {
   Contents.Name = 0;

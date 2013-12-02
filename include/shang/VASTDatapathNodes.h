@@ -180,7 +180,7 @@ private:
   VASTExpr(const VASTExpr&);              // Do not implement
   void operator=(const VASTExpr&);        // Do not implement
 
-  VASTExpr(Opcode Opc, uint8_t NumOps, unsigned UB, unsigned LB);
+  VASTExpr(Opcode Opc, unsigned NumOps, unsigned UB, unsigned LB);
   VASTExpr();
 
   friend struct ilist_sentinel_traits<VASTExpr>;
