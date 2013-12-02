@@ -759,6 +759,11 @@ Loop *GetCommonParentLoop(BasicBlock *LHS, BasicBlock *RHS, LoopInfo &LI) {
 
 void
 SDCScheduler::preserveAntiDependence(VASTSchedUnit *Src, VASTSchedUnit *Dst) {
+  // Ignore the edge takes function arguments as source node for now since we
+  // do not perform whole function pipelining.
+  if (LLVM_UNLIKELY(Src->isEntry()))
+    return;
+
   BasicBlock *DstParent = Dst->getParent();
 
   std::map<BasicBlock*, std::set<VASTSchedUnit*> >::iterator
