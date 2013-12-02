@@ -886,7 +886,17 @@ void AliasRegionDepBuilder::initializeRegion(AliasSet &AS) {
 
       if (Inst == 0 || !isLoadStore(Inst)) continue;
 
-      VASTSchedUnit *SU = IR2SUMap[Inst].front();
+      IR2SUMapTy::iterator J = IR2SUMap.find(Inst);
+
+      if (J == IR2SUMap.end()) {
+        // The only case that we cannot found the user is that the user is
+        // located in another function.
+        assert(Inst->getParent()->getParent() != &G.getFunction() &&
+               "Cannot found the corresonding scheduling unit!");
+        continue;
+      }
+
+      VASTSchedUnit *SU = J->second.front();
       assert(SU->isLaunch() && "Bad scheduling unit type!");
       // Remember the scheduling unit and the corresponding basic block.
       if (Inst->mayWriteToMemory())
