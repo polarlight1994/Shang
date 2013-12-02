@@ -42,7 +42,7 @@ STATISTIC(NumMemBanks, "Number of Local Memory Bank Allocated");
 
 
 namespace {
-struct MemoryPartition : public FunctionPass, public HLSAllocation {
+struct MemoryPartition : public ModulePass, public HLSAllocation {
   static char ID;
 
   ValueMap<const Value*, unsigned>  Binding;
@@ -62,7 +62,7 @@ struct MemoryPartition : public FunctionPass, public HLSAllocation {
     return Banks.lookup(&GV);
   }
 
-  MemoryPartition() : FunctionPass(ID) {
+  MemoryPartition() : ModulePass(ID) {
     initializeMemoryPartitionPass(*PassRegistry::getPassRegistry());
   }
 
@@ -72,7 +72,8 @@ struct MemoryPartition : public FunctionPass, public HLSAllocation {
     AU.setPreservesAll();
   }
 
-  bool runOnFunction(Function &F);
+  bool runOnModule(Module &M);
+  void runOnFunction(Function &F, AliasSetTracker &AST);
 
   void releaseMemory() {
     Binding.clear();
@@ -106,33 +107,12 @@ Pass *llvm::createMemoryPartitionPass() {
   return new MemoryPartition();
 }
 
-bool MemoryPartition::runOnFunction(Function &F) {
+bool MemoryPartition::runOnModule(Module &M) {
   InitializeHLSAllocation(this);
-  uint64_t MemBusSizeInBytes = getFUDesc<VFUMemBus>()->getDataWidth() / 8;
-  Module *M = F.getParent();
-
-  // Make sure we have only 1 function.
-#ifndef NDEBUG
-  {
-    Function *TopFunction = 0;
-    for (Module::iterator I = M->begin(), E = M->end(); I != E; ++I) {
-      Function *F = I;
-
-      if (!F->use_empty() || F->isDeclaration())  continue;
-
-      // Ignore the dead functions.
-      if (!F->hasExternalLinkage()) continue;
-
-      assert(TopFunction == 0 && "More than 1 top functions!");
-      TopFunction = F;
-    }
-  }
-#endif
-  
   AliasSetTracker AST(getAnalysis<AliasAnalysis>());
 
-  typedef Module::global_iterator iterator;
-  for (iterator I = M->global_begin(), E = M->global_end(); I != E; ++I) {
+  typedef Module::global_iterator global_iterator;
+  for (global_iterator I = M.global_begin(), E = M.global_end(); I != E; ++I) {
     GlobalVariable *GV = I;
 
     // DIRTYHACK: Make sure the GV is aligned.
@@ -141,20 +121,11 @@ bool MemoryPartition::runOnFunction(Function &F) {
     AST.add(GV, AliasAnalysis::UnknownSize, 0);
   }
 
-  for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
-    Instruction *Inst = &*I;
-    assert(!isCall(Inst) && "MemoryPartition can only run after goto-expansion!");
+  typedef Module::iterator iterator;
+  for (iterator I = M.begin(), E = M.end(); I != E; ++I)
+    runOnFunction(*I, AST);
 
-    if (!isLoadStore(Inst)) continue;
-
-    ++NumMemoryAccess;
-
-    if (Inst->mayWriteToMemory()) ++NumStore;
-    else                          ++NumLoad;
-
-    AST.add(Inst);
-  }
-
+  uint64_t MemBusSizeInBytes = getFUDesc<VFUMemBus>()->getDataWidth() / 8;
   unsigned CurPortNum = 1;
 
   for (AliasSetTracker::iterator I = AST.begin(), E = AST.end(); I != E; ++I) {
@@ -245,3 +216,18 @@ bool MemoryPartition::runOnFunction(Function &F) {
   return false;
 }
 
+void MemoryPartition::runOnFunction(Function &F, AliasSetTracker &AST) {
+  for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
+    Instruction *Inst = &*I;
+
+    // TODO: Handle call instructions.
+    if (!isLoadStore(Inst)) continue;
+
+    ++NumMemoryAccess;
+
+    if (Inst->mayWriteToMemory()) ++NumStore;
+    else                          ++NumLoad;
+
+    AST.add(Inst);
+  }
+}
