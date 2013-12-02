@@ -38,6 +38,8 @@ STATISTIC(NumSubGropus, "Number of guarding condition equivalent state groups");
 STATISTIC(NumRetimed, "Number of retimed leaf node");
 STATISTIC(NumRejectedRetiming,
           "Number of reject retiming because the predicates are not compatible");
+STATISTIC(NumMultRetimeIncoming,
+          "Number of retiming with multiple incoming values");
 
 namespace {
 class NaiveMemoryPortReservationTable {
@@ -973,10 +975,11 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
   if (SeqVal == 0) return V;
 
   // Try to forward the value which is assigned to SeqVal at the same slot.
-  VASTValPtr ForwardedValue = SeqVal;
+  SmallVector<VASTLatch, 4> Incomings;
 
   typedef VASTSeqValue::fanin_iterator iterator;
-  for (iterator I = SeqVal->fanin_begin(), E = SeqVal->fanin_end(); I != E; ++I) {
+  for (iterator I = SeqVal->fanin_begin(), E = SeqVal->fanin_end();
+       I != E; ++I) {
     const VASTLatch &U = *I;
 
     // Avoid infinite retiming ...
@@ -997,15 +1000,47 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
     DEBUG(dbgs() << "Goning to forward " /*<< VASTValPtr(U) << ", "*/
                  << *U.Op->getValue());
 
-    assert (ForwardedValue == SeqVal && "Unexpected multiple compatible source!");
-    ForwardedValue = VASTValPtr(U);
+    Incomings.push_back(U);
 
-    assert(ForwardedValue->getBitWidth() == V->getBitWidth()
+    assert(U->getBitWidth() == V->getBitWidth()
            && "Bitwidth implicitly changed!");
     ++NumRetimed;
   }
 
-  return ForwardedValue;
+  if (Incomings.empty())
+    return V;
+
+  if (Incomings.size() == 1)
+    return Incomings.front();
+
+  ++NumMultRetimeIncoming;
+  // Else build the selection logic to select the incoming value based on the
+  // guarding condition.
+  SmallVector<VASTValPtr, 4> GuardedIncomings;
+  SmallVector<VASTValPtr, 2> CurGuards;
+  unsigned Bitwidth = V->getBitWidth();
+
+  typedef SmallVectorImpl<VASTLatch>::iterator incoming_iterator;
+  for (incoming_iterator I = Incomings.begin(), E = Incomings.end();
+       I != E; ++I) {
+    const VASTLatch &L = *I;
+    VASTSlot *S = L.getSlot();
+    CurGuards.clear();
+
+    // In case of multiple incoming, we also need the guarding conditions
+    CurGuards.push_back(L.getGuard());
+    if (VASTValPtr SlotActive = L.getSlotActive())
+      CurGuards.push_back(SlotActive);
+
+    VASTValPtr CurGuard = Builder.buildAndExpr(CurGuards, 1);
+    VASTValPtr FIMask = Builder.buildBitRepeat(CurGuard, Bitwidth);
+
+    // Push the incoming value itself.
+    VASTValPtr GuardedFIVal = Builder.buildAndExpr(L, FIMask, Bitwidth);
+    GuardedIncomings.push_back(GuardedFIVal);
+  }
+
+  return Builder.buildOrExpr(GuardedIncomings, Bitwidth);
 }
 
 //===----------------------------------------------------------------------===//
