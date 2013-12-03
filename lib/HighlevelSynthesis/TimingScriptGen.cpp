@@ -475,8 +475,6 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
           constraint_order INTEGER \
           );\n";
 
-  bindFunctionToScriptEngine(getAnalysis<DataLayout>(), &VM);
-
   STGDistances &STGDist = getAnalysis<STGDistances>();
   TimingNetlist &TNL =getAnalysis<TimingNetlist>();
 

@@ -111,13 +111,6 @@ void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
   const char *GlobalCodePath[] = { "RTLGlobalCode" };
   std::string GlobalCode = getStrValueFromEngine(GlobalCodePath);
   Out << GlobalCode << '\n';
-
-  bindFunctionToScriptEngine(*TD, &VM);
-  const char *TopModuleScriptPath[] = { "Misc", "RTLTopModuleScript" };
-  std::string TopModuleScript = getStrValueFromEngine(TopModuleScriptPath);
-  if (!runScriptStr(TopModuleScript, Err))
-    report_fatal_error("RTLCodeGen: Cannot run top module script:\n"
-                       + Err.getMessage());
 }
 
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {

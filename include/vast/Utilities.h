@@ -90,12 +90,7 @@ bool runScriptOnGlobalVariables(Module &M, DataLayout *TD,
 bool runScriptOnGlobalVariables(ArrayRef<GlobalVariable*> GVs, DataLayout *TD,
                                 const std::string &Script,
                                 SMDiagnostic Err);
-class VASTModule;
-void bindFunctionToScriptEngine(DataLayout &TD, VASTModule *Module);
 
-class VASTModule;
-// Bind VASTModule to script engine.
-void bindToScriptEngine(const char *name, VASTModule *M);
 bool runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err);
 bool runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err);
 //

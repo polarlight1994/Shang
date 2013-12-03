@@ -11,10 +11,10 @@
 // information into the program with lua script. 
 //
 //===----------------------------------------------------------------------===//
-#include "BindingTraits.h"
 #include "LuaScript.h"
 
 #include "vast/Passes.h"
+#include "vast/VASTNodeBases.h"
 #include "vast/Utilities.h"
 
 #include "llvm/PassManager.h"
@@ -57,13 +57,6 @@ void LuaScript::init() {
 
   // Bind our class.
   luabind::open(State);
-
-  // Bind the C++ classes.
-  luabind::module(State)[
-    BindingTraits<VASTPort>::register_("VASTPort"),
-
-    BindingTraits<VASTModule>::register_("VASTModule")
-  ];
 
   // Bind the object.
   luabind::globals(State)["TimingAnalysis"] = luabind::newtable(State);
@@ -165,12 +158,6 @@ VFUDesc *llvm::getFUDesc(enum VFUs::FUTypes T) {
 }
 
 LuaScript &llvm::scriptEngin() { return *Script; }
-
-// Dirty Hack: Allow we invoke some scripting function in the libraries
-// compiled with no-rtti
-void llvm::bindToScriptEngine(const char *name, VASTModule *M) {
-  Script->bindToGlobals(name, M);
-}
 
 unsigned llvm::getIntValueFromEngine(ArrayRef<const char*> Path) {
   return Script->getValue<unsigned>(Path);
