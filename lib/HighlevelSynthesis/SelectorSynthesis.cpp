@@ -260,8 +260,10 @@ bool TimingDrivenSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
     typedef VASTModule::selector_iterator iterator;
 
     // Eliminate the identical SeqOps.
-    for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
+    for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+      I->dropMux();
       synthesizeSelector(I, Builder);
+    }
   }
 
   // Perform LUT Mapping on the newly synthesized selectors.
@@ -325,8 +327,10 @@ bool SimpleSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
     typedef VASTModule::selector_iterator iterator;
 
     // Eliminate the identical SeqOps.
-    for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
+    for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+      I->dropMux();
       synthesizeSelector(I, Builder);
+    }
   }
 
   // Perform LUT Mapping on the newly synthesized selectors.
