@@ -91,6 +91,21 @@ void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
   HLSAllocation &Allocation = getAnalysis<HLSAllocation>();
 
   SMDiagnostic Err;
+  const char *GlobalScriptPath[] = { "Misc", "RTLGlobalScript" };
+  std::string GlobalScript = getStrValueFromEngine(GlobalScriptPath);
+  SmallVector<GlobalVariable*, 32> GVs;
+
+  for (Module::global_iterator I = M->global_begin(), E = M->global_end();
+       I != E; ++I) {
+    GlobalVariable *GV = I;
+
+    if (Allocation.getMemoryBank(*GV) == NULL)
+      GVs.push_back(I);
+  }
+
+  if (!runScriptOnGlobalVariables(GVs, TD, GlobalScript, Err))
+    report_fatal_error("RTLCodeGen: Cannot run globalvariable script:\n"
+                       + Err.getMessage());
 
   // Read the result from the scripting engine.
   const char *GlobalCodePath[] = { "RTLGlobalCode" };
