@@ -156,7 +156,7 @@ private:
   // The placement constraint of the bounding box. The constraint is in the
   unsigned BBX, BBY, BBWidth, BBHeight;
   // The corresponding function for this module.
-  Function &F;
+  Function *F;
 
   unsigned NumArgPorts, RetPortIdx;
 
@@ -164,8 +164,11 @@ private:
                                  VASTValPtr GuardCnd, bool UseSlotActive);
   VASTPort *createPort(VASTNode *Node, bool IsInput);
 public:
+  // TEMORARY HACK before hierarchy CFG is finished
+  void setFunction(Function &F);
+  Function &getLLVMFunction() { return *F; }
 
-  VASTModule(Function &F);
+  VASTModule();
 
   ~VASTModule();
 
@@ -219,7 +222,6 @@ public:
   ilist<VASTSlot> &getSLotList() { return Slots; }
 
   operator DatapathContainer &() const { return *Datapath; }
-  Function &getLLVMFunction() { return F; }
   DatapathContainer *operator->() const { return Datapath; }
 
 

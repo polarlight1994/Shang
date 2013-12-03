@@ -46,16 +46,6 @@ STATISTIC(NumIPs, "Number of IPs Instantiated");
 STATISTIC(NumBRam2Reg, "Number of Single Element Block RAM Lowered to Register");
 STATISTIC(NUMCombROM, "Number of Combinational ROM Generated");
 
-static cl::opt<bool>
-EnalbeDualPortRAM("shang-enable-dual-port-ram",
-                  cl::desc("Enable dual port ram in the design."),
-                  cl::init(true));
-
-static cl::opt<unsigned>
-  MaxComblROMLL("vast-max-combinational-rom-logic-level",
-  cl::desc("The maximal allowed logic level of a combinational ROM"),
-  cl::init(1));
-
 namespace {
 struct VASTModuleBuilder : public MinimalDatapathContext,
                            public InstVisitor<VASTModuleBuilder, void> {
@@ -79,39 +69,6 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   VASTSubModule *getOrCreateSubModuleFromBinOp(BinaryOperator &BinOp);
 
-  //===--------------------------------------------------------------------===//
-  std::map<unsigned, VASTMemoryBus*> MemBuses;
-  VASTMemoryBus *getOrCreateMemBus(const HLSAllocation::MemBank &Bank) {
-    unsigned ByteEnWidth = Log2_32_Ceil(Bank.WordSizeInBytes);
-    // Dirty Hack: Make the word address part not empty.
-    unsigned AddrWidth = std::max<unsigned>(ByteEnWidth + 1, Bank.AddrWidth);
-    VASTMemoryBus *&Bus = MemBuses[Bank.Number];
-    if (Bus == 0) {
-      // The byte address inside a word of the memory bank is not used
-      unsigned EffAddrWidth = AddrWidth - Log2_32_Ceil(Bank.WordSizeInBytes);
-      bool IsCombROM = Bank.IsReadOnly &&
-                       EffAddrWidth <= pow(float(VFUs::MaxLutSize),
-                                           int(MaxComblROMLL));
-
-      Bus = VM->createMemBus(Bank.Number, AddrWidth, Bank.WordSizeInBytes * 8,
-                             Bank.RequireByteEnable, EnalbeDualPortRAM,
-                             IsCombROM);
-    }
-
-    assert(Bus->getAddrWidth() == AddrWidth
-           && Bus->getDataWidth() == Bank.WordSizeInBytes * 8
-           && "Bank parameter doesn't match!");
-    return Bus;
-  }
-
-  VASTMemoryBus *getMemBus(unsigned Num) const {
-    std::map<unsigned, VASTMemoryBus*>::const_iterator at = MemBuses.find(Num);
-    assert(at != MemBuses.end() && "BlockRAM not existed!");
-    return at->second;
-  }
-
-  //===--------------------------------------------------------------------===//
-  void allocateSubModules();
   //===--------------------------------------------------------------------===//
   VASTSeqValue *getOrCreateSeqValImpl(Value *V, const Twine &Name);
   VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name) {
@@ -329,10 +286,9 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
   if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
     unsigned SizeInBits = getValueSizeInBits(GV);
 
-    unsigned BankNum = Allocation.getMemoryBankNum(*GV);
+    VASTMemoryBus *Bus = Allocation.getMemoryBank(*GV);
     const std::string Name = ShangMangle(GV->getName());
-    if (BankNum) {
-      VASTMemoryBus *Bus = getMemBus(BankNum);
+    if (!Bus->isDefault()) {
       unsigned StartOffset = Bus->getStartOffset(GV);
       VASTImmediate *Imm = getOrCreateImmediate(StartOffset, SizeInBits);
       // FIXME: Annotate the GV to the Immediate.
@@ -433,14 +389,6 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
   emitCommonPort(SubMod);
   if (SubMod) return;
 
-  // Create the default memory bus.
-  if (F->getName() != "main") {
-    bool Inserted
-      = MemBuses.insert(std::make_pair(0, VM->createDefaultMemBus())).second;
-    assert(Inserted && "Memory bus not inserted!");
-    (void) Inserted;
-  }
-
   VASTSlot *IdleSlot = VM->getStartSlot();
 
   // Create the virtual slot representing the idle loop.
@@ -480,36 +428,6 @@ void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
     VM->addInputPort("rstN", 1, VASTModule::RST);
     VM->addInputPort("start", 1, VASTModule::Start);
     VM->addOutputPort("fin", 1, VASTModule::Finish);
-  }
-}
-
-void VASTModuleBuilder::allocateSubModules() {
-  Function &F = VM->getLLVMFunction();
-
-  typedef Module::global_iterator global_iterator;
-  Module *M = F.getParent();
-  for (global_iterator I = M->global_begin(), E = M->global_end(); I != E; ++I) {
-    GlobalVariable *GV = I;
-
-    const HLSAllocation::MemBank &Bank = Allocation.getMemoryBank(*GV);
-    // Ignore the default memory port.
-    if (Bank.Number == 0) continue;
-
-    VASTMemoryBus *Bus = getOrCreateMemBus(Bank);
-
-    // TODO: Remember the size of the objects in the MemBank.
-    Type *ElemTy = GV->getType()->getElementType();
-    unsigned NumElem = 1;
-
-    // Try to expand multi-dimension array to single dimension array.
-    while (const ArrayType *AT = dyn_cast<ArrayType>(ElemTy)) {
-      ElemTy = AT->getElementType();
-      NumElem *= AT->getNumElements();
-    }
-
-    unsigned ElementSizeInBytes = TD->getTypeStoreSize(ElemTy);
-
-    Bus->addGlobalVariable(GV, NumElem * ElementSizeInBytes);
   }
 }
 
@@ -922,8 +840,7 @@ void VASTModuleBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 }
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
-  unsigned BankNum = Allocation.getMemoryBankNum(I);
-  VASTMemoryBus *Bus = getMemBus(BankNum);
+  VASTMemoryBus *Bus = Allocation.getMemoryBank(I);
   if (Bus->isCombinationalROM()) {
     buildCombinationalROMLookup(I.getPointerOperand(), Bus, I);
     return;
@@ -933,8 +850,7 @@ void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
 }
 
 void VASTModuleBuilder::visitStoreInst(StoreInst &I) {
-  unsigned BankNum = Allocation.getMemoryBankNum(I);
-  VASTMemoryBus *Bus = getMemBus(BankNum);
+  VASTMemoryBus *Bus = Allocation.getMemoryBank(I);
   assert(!Bus->isCombinationalROM() && "Cannot store to a combinational ROM!");
   buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(), Bus, I);
 }
@@ -1136,17 +1052,14 @@ INITIALIZE_PASS_END(VASTModuleAnalysis,
 
 bool VASTModuleAnalysis::runOnFunction(Function &F) {
   assert(VM == 0 && "Module has been already created!");
-  VM = new VASTModule(F);
+  HLSAllocation &A = getAnalysis<HLSAllocation>();
+  VM = &A.getModule();
+  VM->setFunction(F);
 
-  VASTModuleBuilder Builder(VM,
-                            &getAnalysis<DataLayout>(),
-                            getAnalysis<HLSAllocation>(),
-                            getAnalysis<Dataflow>());
+  VASTModuleBuilder Builder(VM, &getAnalysis<DataLayout>(),
+                            A,  getAnalysis<Dataflow>());
 
   Builder.emitFunctionSignature(&F);
-
-  // Allocate the submodules.
-  Builder.allocateSubModules();
 
   // Visit the basic block in topological order.
   ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());

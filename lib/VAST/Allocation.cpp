@@ -16,6 +16,7 @@
 
 #include "shang/Passes.h"
 #include "shang/FUInfo.h"
+#include "shang/VASTModule.h"
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"
@@ -24,42 +25,35 @@
 
 using namespace llvm;
 
-HLSAllocation::MemBank::MemBank(unsigned Number, unsigned WordSizeInBytes,
-                                unsigned AddrWdith, bool RequireByteEnable,
-                                bool IsReadOnly)
-  : Number(Number), WordSizeInBytes(WordSizeInBytes), AddrWidth(AddrWdith),
-    RequireByteEnable(RequireByteEnable), IsReadOnly(IsReadOnly) {}
-
-unsigned HLSAllocation::getMemoryBankNum(const StoreInst &I) const {
+VASTMemoryBus *HLSAllocation::getMemoryBank(const StoreInst &I) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
-  return Allocation->getMemoryBankNum(I);
+  return Allocation->getMemoryBank(I);
 }
 
-unsigned HLSAllocation::getMemoryBankNum(const LoadInst &I) const {
+VASTMemoryBus *HLSAllocation::getMemoryBank(const LoadInst &I) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
-  return Allocation->getMemoryBankNum(I);
+  return Allocation->getMemoryBank(I);
 }
 
-HLSAllocation::MemBank
-HLSAllocation::getMemoryBank(const GlobalVariable &GV) const {
+VASTMemoryBus *HLSAllocation::getMemoryBank(const GlobalVariable &GV) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
   return Allocation->getMemoryBank(GV);
 }
 
-unsigned HLSAllocation::getMemoryBankNum(const Value &V) const {
+VASTMemoryBus *HLSAllocation::getMemoryBank(const Value &V) const {
   if (const LoadInst *L = dyn_cast<LoadInst>(&V))
-    return getMemoryBankNum(*L);
+    return getMemoryBank(*L);
 
   if (const StoreInst *S = dyn_cast<StoreInst>(&V))
-    return getMemoryBankNum(*S);
+    return getMemoryBank(*S);
 
   if (const GlobalVariable *G = dyn_cast<GlobalVariable>(&V))
-    return getMemoryBank(*G).Number;
+    return getMemoryBank(*G);
 
-  return 0;
+  return NULL;
 }
 
 void HLSAllocation::getAnalysisUsage(AnalysisUsage &AU) const {
@@ -70,6 +64,15 @@ void HLSAllocation::getAnalysisUsage(AnalysisUsage &AU) const {
 void HLSAllocation::InitializeHLSAllocation(Pass *P) {
   TD = &P->getAnalysis<DataLayout>();
   Allocation = &P->getAnalysis<HLSAllocation>();
+  M = Allocation->M;
+}
+
+void HLSAllocation::createModule() {
+  M = new VASTModule();
+}
+
+HLSAllocation::~HLSAllocation() {
+  delete M;
 }
 
 char HLSAllocation::ID = 0;
@@ -86,9 +89,9 @@ struct BasicAllocation : public ImmutablePass, public HLSAllocation {
 
   BasicAllocation();
 
-  MemBank  getMemoryBank(const GlobalVariable &GV) const { return MemBank(); }
-  unsigned getMemoryBankNum(const LoadInst &I) const { return 0; }
-  unsigned getMemoryBankNum(const StoreInst &I) const { return 0; }
+  VASTMemoryBus *getMemoryBank(const GlobalVariable &GV) const { return NULL; }
+  VASTMemoryBus *getMemoryBankNum(const LoadInst &I) const { return NULL; }
+  VASTMemoryBus *getMemoryBankNum(const StoreInst &I) const { return NULL; }
 
   ArrayRef<const GlobalVariable*> getBlockRAMAllocation(const Function *F) const {
     return ArrayRef<const GlobalVariable*>();
@@ -102,6 +105,8 @@ struct BasicAllocation : public ImmutablePass, public HLSAllocation {
     // Note: BasicAllocation does not call InitializeHLSAllocation because it's
     // special and does not support chaining.
     TD = &getAnalysis<DataLayout>();
+    // Create the module.
+    createModule();
   }
 
   /// getAdjustedAnalysisPointer - This method is used when a pass implements

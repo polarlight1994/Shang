@@ -50,7 +50,6 @@ struct RTLCodeGen : public VASTModulePass {
 
   ~RTLCodeGen(){}
 
-  void generateCodeForTopModule(Module *M, VASTModule &VM);
   bool runOnVASTModule(VASTModule &VM);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -86,48 +85,12 @@ RTLCodeGen::RTLCodeGen() : VASTModulePass(ID), Out() {
   initializeRTLCodeGenPass(*PassRegistry::getPassRegistry());
 }
 
-void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
-  DataLayout *TD = getAnalysisIfAvailable<DataLayout>();
-  HLSAllocation &Allocation = getAnalysis<HLSAllocation>();
-
-  SMDiagnostic Err;
-  const char *GlobalScriptPath[] = { "Misc", "RTLGlobalScript" };
-  std::string GlobalScript = getStrValueFromEngine(GlobalScriptPath);
-  SmallVector<GlobalVariable*, 32> GVs;
-
-  for (Module::global_iterator I = M->global_begin(), E = M->global_end();
-       I != E; ++I) {
-    GlobalVariable *GV = I;
-
-    if (Allocation.getMemoryBankNum(*GV) == 0)
-      GVs.push_back(I);
-  }
-
-  if (!runScriptOnGlobalVariables(GVs, TD, GlobalScript, Err))
-    report_fatal_error("RTLCodeGen: Cannot run globalvariable script:\n"
-                       + Err.getMessage());
-
-  // Read the result from the scripting engine.
-  const char *GlobalCodePath[] = { "RTLGlobalCode" };
-  std::string GlobalCode = getStrValueFromEngine(GlobalCodePath);
-  Out << GlobalCode << '\n';
-
-  bindFunctionToScriptEngine(*TD, &VM);
-  const char *TopModuleScriptPath[] = { "Misc", "RTLTopModuleScript" };
-  std::string TopModuleScript = getStrValueFromEngine(TopModuleScriptPath);
-  if (!runScriptStr(TopModuleScript, Err))
-    report_fatal_error("RTLCodeGen: Cannot run top module script:\n"
-                       + Err.getMessage());
-}
-
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   Function &F = VM.getLLVMFunction();
   std::string RTLOutputPath = getStrValueFromEngine("RTLOutput");
   std::string Error;
   raw_fd_ostream Output(RTLOutputPath.c_str(), Error);
   Out.setStream(Output);
-
-  generateCodeForTopModule(F.getParent(), VM);
 
   if (EnalbeDumpIR) {
     Out << "`ifdef wtf_is_this\n" << "Function for RTL Codegen:\n";

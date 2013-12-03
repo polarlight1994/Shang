@@ -438,11 +438,15 @@ const VASTSlot *VASTModule::getFinishSlot() const {
   return &Slots.back();
 }
 
+void VASTModule::setFunction(Function &F) {
+  this->F = &F;
+  Name = F.getName();
+}
 
-VASTModule::VASTModule(Function &F)
+VASTModule::VASTModule()
   : VASTNode(vastModule), Datapath(new DatapathContainer()),
-    Ports(NumSpecialPort), Name(F.getName().str()), BBX(0), BBY(0), BBWidth(0),
-    BBHeight(0), F(F), NumArgPorts(0) {
+    Ports(NumSpecialPort), Name(), BBX(0), BBY(0), BBWidth(0),
+    BBHeight(0), F(0), NumArgPorts(0) {
   createStartSlot();
 }
 

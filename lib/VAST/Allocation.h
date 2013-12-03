@@ -7,13 +7,13 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file define the resource allocation interface in the Shang high-lvel
+// This file define the resource allocation interface in the VAST high-lvel
 // synthesis framework.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SHANG_ALLOCATION_H
-#define SHANG_ALLOCATION_H
+#ifndef VAST_ALLOCATION_H
+#define VAST_ALLOCATION_H
 
 #include "llvm/ADT/ArrayRef.h"
 
@@ -22,6 +22,8 @@ class Value;
 class GlobalVariable;
 class StoreInst;
 class LoadInst;
+class VASTModule;
+class VASTMemoryBus;
 class Function;
 class FuncUnitId;
 class DataLayout;
@@ -32,10 +34,14 @@ class HLSAllocation {
   // Previous HLSAllocation to chain to.
   HLSAllocation *Allocation;
 
+  // HLSAllocation also hold the pointer to the hardware module.
+  VASTModule *M;
 protected:
+  void createModule();
+
   const DataLayout *TD;
 
-  HLSAllocation() : Allocation(0), TD(0) {}
+  HLSAllocation() : Allocation(0), M(0), TD(0) {}
 
   void InitializeHLSAllocation(Pass *P);
 
@@ -45,25 +51,15 @@ protected:
 public:
   static char ID;
 
-  virtual ~HLSAllocation() {}
+  virtual ~HLSAllocation();
 
-  struct MemBank {
-    uint8_t Number;
-    uint8_t WordSizeInBytes;
-    uint8_t AddrWidth;
-    bool RequireByteEnable : 1;
-    bool IsReadOnly        : 1;
-
-    MemBank(unsigned Number = 0, unsigned WordSizeInBytes = 0,
-            unsigned AddrWdith = 0, bool RequireByteEnable = true,
-            bool IsReadOnly = false);
-  };
+  VASTModule &getModule() const { return *M; }
 
   // Memory Bank allocation queries.
-  virtual MemBank  getMemoryBank(const GlobalVariable &GV) const;
-  virtual unsigned getMemoryBankNum(const LoadInst &I) const;
-  virtual unsigned getMemoryBankNum(const StoreInst &I) const;
-  unsigned getMemoryBankNum(const Value &V) const;
+  virtual VASTMemoryBus *getMemoryBank(const GlobalVariable &GV) const;
+  virtual VASTMemoryBus *getMemoryBank(const LoadInst &I) const;
+  virtual VASTMemoryBus *getMemoryBank(const StoreInst &I) const;
+  VASTMemoryBus *getMemoryBank(const Value &V) const;
 };
 }
 
