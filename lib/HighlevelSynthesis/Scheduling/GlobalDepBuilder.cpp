@@ -29,7 +29,7 @@
 
 #include "vast/Utilities.h"
 #include "vast/VASTSeqValue.h"
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/PostDominators.h"
@@ -742,7 +742,7 @@ void BasicLinearOrderGenerator::buildFUInfo() {
       // Create the Synchronizer if it is not yet created.
       if (S == 0) {
         unsigned Parallelism = 1;
-        if (VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(FU))
+        if (VASTMemoryBank *Bus = dyn_cast<VASTMemoryBank>(FU))
           if (Bus->isDualPort()) Parallelism = 2;
 
         S = new SingleFULinearOrder(FU, Parallelism, G, IR2SUMap);

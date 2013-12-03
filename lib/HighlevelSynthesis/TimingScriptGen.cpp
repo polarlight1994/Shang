@@ -22,7 +22,7 @@
 #include "vast/VASTSeqValue.h"
 #include "vast/STGDistances.h"
 #include "vast/VASTModulePass.h"
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 #include "vast/VASTSubModules.h"
 #include "vast/VASTModule.h"
 #include "vast/Passes.h"

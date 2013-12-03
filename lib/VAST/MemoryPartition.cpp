@@ -15,7 +15,7 @@
 
 #include "vast/Utilities.h"
 #include "vast/Passes.h"
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 #include "vast/VASTModule.h"
 
 #include "llvm/IR/Constants.h"
@@ -58,19 +58,19 @@ namespace {
 struct MemoryPartition : public ModulePass, public HLSAllocation {
   static char ID;
 
-  ValueMap<const Value*, VASTMemoryBus*>  Binding;
+  ValueMap<const Value*, VASTMemoryBank*>  Binding;
 
   // Look up the memory port allocation if the pointers are not allocated
   // to the BlockRAM.
-  virtual VASTMemoryBus *getMemoryBank(const LoadInst &I) const {
+  virtual VASTMemoryBank *getMemoryBank(const LoadInst &I) const {
     return Binding.lookup(I.getPointerOperand());
   }
 
-  virtual VASTMemoryBus *getMemoryBank(const StoreInst &I) const {
+  virtual VASTMemoryBank *getMemoryBank(const StoreInst &I) const {
     return Binding.lookup(I.getPointerOperand());
   }
 
-  virtual VASTMemoryBus *getMemoryBank(const GlobalVariable &GV) const {
+  virtual VASTMemoryBank *getMemoryBank(const GlobalVariable &GV) const {
     return Binding.lookup(&GV);
   }
 
@@ -221,7 +221,7 @@ bool MemoryPartition::createMemoryBank(AliasSet *AS, unsigned PortNum) {
                     EffAddrWidth <= pow(float(VFUs::MaxLutSize),
                                         int(MaxComblROMLL));
   // Now create the memory bus.
-  VASTMemoryBus *Bus = VM.createMemBus(PortNum, AddrWidth,
+  VASTMemoryBank *Bus = VM.createMemBus(PortNum, AddrWidth,
                                        MaxElementSizeInBytes * 8,
                                        RequireByteEnable, EnalbeDualPortRAM,
                                        IsCombROM);

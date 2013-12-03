@@ -14,7 +14,7 @@
 #include "TimingNetlist.h"
 #include "TimingEstimator.h"
 
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 #include "vast/VASTModule.h"
 #include "vast/Passes.h"
 #include "vast/FUInfo.h"
@@ -225,7 +225,7 @@ TimingNetlist::getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) cons
   if (TimingModel != TimingNetlist::ZeroDelay) {
     VFUMux *Mux = getFUDesc<VFUMux>();
     MUXDelay = Mux->getMuxLatency(NumFannins);
-    if (Sel && isa<VASTMemoryBus>(Sel->getParent()))
+    if (Sel && isa<VASTMemoryBank>(Sel->getParent()))
       // Also accumulate the delay of the block RAM.
       MUXDelay += getFUDesc<VFUMemBus>()->AddrLatency;
   }

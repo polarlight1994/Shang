@@ -25,25 +25,25 @@
 
 using namespace llvm;
 
-VASTMemoryBus *HLSAllocation::getMemoryBank(const StoreInst &I) const {
+VASTMemoryBank *HLSAllocation::getMemoryBank(const StoreInst &I) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
   return Allocation->getMemoryBank(I);
 }
 
-VASTMemoryBus *HLSAllocation::getMemoryBank(const LoadInst &I) const {
+VASTMemoryBank *HLSAllocation::getMemoryBank(const LoadInst &I) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
   return Allocation->getMemoryBank(I);
 }
 
-VASTMemoryBus *HLSAllocation::getMemoryBank(const GlobalVariable &GV) const {
+VASTMemoryBank *HLSAllocation::getMemoryBank(const GlobalVariable &GV) const {
   assert(Allocation
          && "Allocation didn't call InitializeHLSAllocation in its run method!");
   return Allocation->getMemoryBank(GV);
 }
 
-VASTMemoryBus *HLSAllocation::getMemoryBank(const Value &V) const {
+VASTMemoryBank *HLSAllocation::getMemoryBank(const Value &V) const {
   if (const LoadInst *L = dyn_cast<LoadInst>(&V))
     return getMemoryBank(*L);
 
@@ -84,9 +84,9 @@ struct BasicAllocation : public ImmutablePass, public HLSAllocation {
 
   BasicAllocation();
 
-  VASTMemoryBus *getMemoryBank(const GlobalVariable &GV) const { return NULL; }
-  VASTMemoryBus *getMemoryBankNum(const LoadInst &I) const { return NULL; }
-  VASTMemoryBus *getMemoryBankNum(const StoreInst &I) const { return NULL; }
+  VASTMemoryBank *getMemoryBank(const GlobalVariable &GV) const { return NULL; }
+  VASTMemoryBank *getMemoryBankNum(const LoadInst &I) const { return NULL; }
+  VASTMemoryBank *getMemoryBankNum(const StoreInst &I) const { return NULL; }
 
   ArrayRef<const GlobalVariable*> getBlockRAMAllocation(const Function *F) const {
     return ArrayRef<const GlobalVariable*>();

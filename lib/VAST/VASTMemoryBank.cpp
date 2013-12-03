@@ -1,4 +1,4 @@
-//===---- VASTMemoryPort.cpp - Memory Ports in Verilog AST ------*- C++ -*-===//
+//===---- VASTMemoryBank.cpp - Memory Ports in Verilog AST ------*- C++ -*-===//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 #include "LangSteam.h"
 
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 #include "vast/VASTModule.h"
 
 #include "llvm/IR/GlobalVariable.h"
@@ -27,7 +27,7 @@
 using namespace llvm;
 STATISTIC(NumUnusedPorts, "Number of unused ports in memory bus");
 
-VASTMemoryBus::VASTMemoryBus(unsigned BusNum, unsigned AddrSize,
+VASTMemoryBank::VASTMemoryBank(unsigned BusNum, unsigned AddrSize,
                              unsigned DataSize, bool RequireByteEnable,
                              bool IsDualPort, bool IsCombROM)
   : VASTSubModuleBase(VASTNode::vastMemoryBus, "", BusNum),
@@ -35,7 +35,7 @@ VASTMemoryBus::VASTMemoryBus(unsigned BusNum, unsigned AddrSize,
     RequireByteEnable(RequireByteEnable), IsDualPort(IsDualPort),
     IsCombROM(IsCombROM), EndByteAddr(0) {}
 
-void VASTMemoryBus::addBasicPins(VASTModule *VM, unsigned PortNum) {
+void VASTMemoryBank::addBasicPins(VASTModule *VM, unsigned PortNum) {
   assert(!isDefault() && "Just handle internal memory here");
 
   // Address pin
@@ -59,7 +59,7 @@ void VASTMemoryBus::addBasicPins(VASTModule *VM, unsigned PortNum) {
   addFanin(WData);  
 }
 
-void VASTMemoryBus::addExternalPins(VASTModule *VM) {
+void VASTMemoryBank::addExternalPins(VASTModule *VM) {
     assert(isDefault() && "Just handle external memory here");
 
     // Address pin
@@ -99,7 +99,7 @@ void VASTMemoryBus::addExternalPins(VASTModule *VM) {
     VM->addPort(WriteEn, false);
 }
 
-void VASTMemoryBus::addByteEnables(VASTModule *VM, VASTNode *Parent,
+void VASTMemoryBank::addByteEnables(VASTModule *VM, VASTNode *Parent,
                                   unsigned PortNum) {
   VASTSelector *ByteEnable
     = VM->createSelector(getByteEnName(PortNum), getByteEnWidth(), Parent,
@@ -108,7 +108,7 @@ void VASTMemoryBus::addByteEnables(VASTModule *VM, VASTNode *Parent,
   if (isDefault()) VM->addPort(ByteEnable, false);
 }
 
-void VASTMemoryBus::addPorts(VASTModule *VM) {
+void VASTMemoryBank::addPorts(VASTModule *VM) {
   if (isDefault()) {
     addExternalPins(VM);
     return;
@@ -122,7 +122,7 @@ void VASTMemoryBus::addPorts(VASTModule *VM) {
   }
 }
 
-void VASTMemoryBus::addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes) {
+void VASTMemoryBank::addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes) {
   DEBUG(dbgs() << GV->getName() << " CurOffset: " << EndByteAddr << "\n");
   // Insert the GlobalVariable to the offset map, and calculate its offset.
   // Please note that the computation is in the byte address.
@@ -140,97 +140,97 @@ void VASTMemoryBus::addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes) 
   DEBUG(dbgs() << "Roundup to Word address " << EndByteAddr << "\n");
 }
 
-unsigned VASTMemoryBus::getStartOffset(GlobalVariable *GV) const {
+unsigned VASTMemoryBank::getStartOffset(GlobalVariable *GV) const {
   std::map<GlobalVariable*, unsigned>::const_iterator at = BaseAddrs.find(GV);
   assert(at != BaseAddrs.end() && "GV is not assigned to this memory bank?");
   return at->second;
 }
 
-VASTSelector *VASTMemoryBus::getAddr(unsigned PortNum) const {
+VASTSelector *VASTMemoryBank::getAddr(unsigned PortNum) const {
   return getFanin(InputsPerPort * PortNum + 0);
 }
 
-VASTSelector *VASTMemoryBus::getWData(unsigned PortNum) const {
+VASTSelector *VASTMemoryBank::getWData(unsigned PortNum) const {
   return getFanin(InputsPerPort * PortNum + 1);
 }
 
-VASTSelector *VASTMemoryBus::getRData(unsigned PortNum) const {
+VASTSelector *VASTMemoryBank::getRData(unsigned PortNum) const {
   return getFanout(PortNum);
 }
 
-VASTSelector *VASTMemoryBus::getByteEn(unsigned PortNum) const {
+VASTSelector *VASTMemoryBank::getByteEn(unsigned PortNum) const {
   unsigned Offset = InputsPerPort;
   if (isDualPort()) Offset += InputsPerPort;
 
   return getFanin(Offset + PortNum);
 }
 
-VASTSelector *VASTMemoryBus::getEnable() const {
+VASTSelector *VASTMemoryBank::getEnable() const {
   assert(isDefault() && "Enable only exists in default memory bus!");
   unsigned Offset = InputsPerPort + 1;
   return getFanin(Offset);
 }
 
-VASTSelector *VASTMemoryBus::getWriteEnable() const {
+VASTSelector *VASTMemoryBank::getWriteEnable() const {
   assert(isDefault() && "Write enable only exists in default memory bus!");
   unsigned Offset = InputsPerPort + 2;
   return getFanin(Offset);
 }
 
-unsigned VASTMemoryBus::getByteAddrWidth() const {
+unsigned VASTMemoryBank::getByteAddrWidth() const {
   assert(requireByteEnable() && "Called getByteAddrWidth on wrong memory bus!");
   unsigned ByteAddrWdith = Log2_32_Ceil(getDataWidth() / 8);
   assert(ByteAddrWdith && "Unexpected zero ByteAddrWdith!");
   return ByteAddrWdith;
 }
 
-std::string VASTMemoryBus::getAddrName(unsigned PortNum) const {
+std::string VASTMemoryBank::getAddrName(unsigned PortNum) const {
   if (isDefault()) return "mem" + utostr(Idx) + "addr";
 
   return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "addr";
 }
 
-std::string VASTMemoryBus::getRDataName(unsigned PortNum) const {
+std::string VASTMemoryBank::getRDataName(unsigned PortNum) const {
   if (isDefault()) return "mem" + utostr(Idx) + "rdata";
   
   return getArrayName() + "p" + utostr(PortNum) + "rdata";
 }
 
-std::string VASTMemoryBus::getInernalRDataName(unsigned PortNum) const {
+std::string VASTMemoryBank::getInernalRDataName(unsigned PortNum) const {
   assert(!isDefault() && "Unexpected port type!");
 
   return getArrayName() + "p" + utostr(PortNum) + "internal_rdata";
 }
 
-std::string VASTMemoryBus::getWDataName(unsigned PortNum) const {
+std::string VASTMemoryBank::getWDataName(unsigned PortNum) const {
   if (isDefault()) return "mem" + utostr(Idx) + "wdata";
 
   return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "wdata";
 }
 
-std::string VASTMemoryBus::getByteEnName(unsigned PortNum) const {
+std::string VASTMemoryBank::getByteEnName(unsigned PortNum) const {
   if (isDefault()) return "mem" + utostr(Idx) + "be";
 
   return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "be";
 }
 
-std::string VASTMemoryBus::getEnableName(unsigned PortNum) const {
+std::string VASTMemoryBank::getEnableName(unsigned PortNum) const {
   if (isDefault()) return "mem" + utostr(Idx) + "en";
 
   return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "en";
 }
 
-std::string VASTMemoryBus::getWriteEnName(unsigned PortNum) const {
+std::string VASTMemoryBank::getWriteEnName(unsigned PortNum) const {
   if (isDefault()) return "mem" + utostr(Idx) + "wen";
 
   return "mem" + utostr(Idx) + "p" + utostr(PortNum) + "wen";
 }
 
-std::string VASTMemoryBus::getArrayName() const {
+std::string VASTMemoryBank::getArrayName() const {
   return "mem" + utostr(Idx) + "ram";
 }
 
-void VASTMemoryBus::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
+void VASTMemoryBank::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
   getRData(PortNum)->printDecl(OS);
   getAddr(PortNum)->printDecl(OS);
   getWData(PortNum)->printDecl(OS);
@@ -243,14 +243,14 @@ void VASTMemoryBus::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
                               getRData(PortNum)->getBitWidth(), true);
 }
 
-void VASTMemoryBus::printDecl(raw_ostream &OS) const {
+void VASTMemoryBank::printDecl(raw_ostream &OS) const {
   if (isDefault() || isCombinationalROM()) return;
 
   printPortDecl(OS, 0);
   if (isDualPort()) printPortDecl(OS, 1);
 }
 
-void VASTMemoryBus::printBank(vlang_raw_ostream &OS) const {
+void VASTMemoryBank::printBank(vlang_raw_ostream &OS) const {
   // The default memory bus are printed as module ports.
   if (isDefault()) return;
 
@@ -276,7 +276,7 @@ void VASTMemoryBus::printBank(vlang_raw_ostream &OS) const {
 }
 
 void
-VASTMemoryBus::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
+VASTMemoryBank::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
                               unsigned BytesPerWord, unsigned ByteAddrWidth,
                               unsigned NumWords) const {
   // Print the read port.
@@ -489,7 +489,7 @@ void MemContextWriter::writeContext() {
       << WordSizeInBytes << "'b" << (NumCasesWritten ? 'x' : '0') << ";\n";
 }
 
-void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
+void VASTMemoryBank::writeInitializeFile(vlang_raw_ostream &OS) const {
 
   std::string InitFileName = "mem" + utostr_32(Idx) + "ram_init.txt";
 
@@ -529,7 +529,7 @@ void VASTMemoryBus::writeInitializeFile(vlang_raw_ostream &OS) const {
                                  EndByteAddr, Twine());
 }
 
-void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS) const {
+void VASTMemoryBank::printBlockRAM(vlang_raw_ostream &OS) const {
   unsigned BytesPerWord = getDataWidth() / 8;
   unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
   assert((EndByteAddr * 8) % getDataWidth() == 0
@@ -550,7 +550,7 @@ void VASTMemoryBus::printBlockRAM(vlang_raw_ostream &OS) const {
 }
 
 void
-VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
+VASTMemoryBank::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
                               unsigned ByteAddrWidth, unsigned NumWords) const {
   VASTSelector *Addr = getAddr(PortNum);
   // The port is not used if the address is not active.
@@ -601,7 +601,7 @@ VASTMemoryBus::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
   OS.always_ff_end(false);
 }
 
-void VASTMemoryBus::print(vlang_raw_ostream &OS) const {
+void VASTMemoryBank::print(vlang_raw_ostream &OS) const {
   if (isCombinationalROM())
     return;
 
@@ -611,7 +611,7 @@ void VASTMemoryBus::print(vlang_raw_ostream &OS) const {
     printBlockRAM(OS);
 }
 
-void VASTMemoryBus::printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr,
+void VASTMemoryBank::printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr,
                                    raw_ostream &OS) const {
   assert(LHS->getTempName() && "Unexpected unnamed CombROM Epxr!");
   unsigned WordSizeInBits = LHS->getCombROMWordSizeInBits();

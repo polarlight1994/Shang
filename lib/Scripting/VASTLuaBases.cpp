@@ -10,7 +10,7 @@
 // This file implement the classes that need to be bound.
 //
 //===----------------------------------------------------------------------===//
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 #include "vast/VASTModule.h"
 
 #include "llvm/IR/Function.h"
@@ -31,7 +31,7 @@ void VASTNode::dropUses() {
   llvm_unreachable("Subclass should implement this function!");
 }
 
-static std::string GetSTAObjectName(const VASTMemoryBus *RAM) {
+static std::string GetSTAObjectName(const VASTMemoryBank *RAM) {
   std::string Name;
   raw_string_ostream OS(Name);
 
@@ -44,7 +44,7 @@ static std::string GetSTAObjectName(const VASTSelector *Sel) {
   raw_string_ostream OS(Name);
 
   if (Sel->isFUOutput()) {
-    if (const VASTMemoryBus *RAM = dyn_cast<VASTMemoryBus>(Sel->getParent()))
+    if (const VASTMemoryBank *RAM = dyn_cast<VASTMemoryBank>(Sel->getParent()))
       return GetSTAObjectName(RAM);
   }
 
@@ -86,7 +86,7 @@ std::string VASTNode::getSTAObjectName() const {
   if (const VASTSelector *Sel = dyn_cast<VASTSelector>(this))
     return GetSTAObjectName(Sel);
 
-  if (const VASTMemoryBus *RAM = dyn_cast<VASTMemoryBus>(this))
+  if (const VASTMemoryBank *RAM = dyn_cast<VASTMemoryBank>(this))
     return GetSTAObjectName(RAM);
 
   if (const VASTOutPort *Port = dyn_cast<VASTOutPort>(this))
@@ -329,19 +329,19 @@ VASTModule::createSeqValue(VASTSelector *Selector, unsigned Idx, Value *V) {
   return SeqVal;
 }
 
-VASTMemoryBus *VASTModule::createDefaultMemBus() {
+VASTMemoryBank *VASTModule::createDefaultMemBus() {
   VFUMemBus *Desc = getFUDesc<VFUMemBus>();
   return createMemBus(0, Desc->getAddrWidth(), Desc->getDataWidth(),
                       true, false, false);
 }
 
-VASTMemoryBus *
+VASTMemoryBank *
 VASTModule::createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth,
                          bool RequireByteEnable, bool IsDualPort,
                          bool IsCombinationalROM) {
-  VASTMemoryBus *Bus = new VASTMemoryBus(Num, AddrWidth, DataWidth,
-                                         RequireByteEnable, IsDualPort,
-                                         IsCombinationalROM);
+  VASTMemoryBank *Bus = new VASTMemoryBank(Num, AddrWidth, DataWidth,
+                                          RequireByteEnable, IsDualPort,
+                                          IsCombinationalROM);
   Bus->addPorts(this);
   Submodules.push_back(Bus);
   return Bus;

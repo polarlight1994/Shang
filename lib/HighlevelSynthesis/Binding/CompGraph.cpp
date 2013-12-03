@@ -18,7 +18,7 @@
 
 #include "vast/VASTDatapathNodes.h"
 #include "vast/VASTSeqValue.h"
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 #include "vast/Strash.h"
 
 #include "llvm/Analysis/Dominators.h"
@@ -491,7 +491,7 @@ void CompGraphBase::addBoundNode(VASTSeqOp *SeqOp) {
   if (VASTSeqInst *SeqInst = dyn_cast<VASTSeqInst>(SeqOp)) {
     if (isa<LoadInst>(SeqInst->getValue())) {
       VASTSelector *Addr = SeqOp->getSrc(0).getSelector();
-      VASTMemoryBus *Bus = cast<VASTMemoryBus>(Addr->getParent());
+      VASTMemoryBank *Bus = cast<VASTMemoryBank>(Addr->getParent());
       unsigned PortIdx = 0;
       if (Bus->isDualPort() && Bus->getAddr(1) == Addr)
         PortIdx = 1;

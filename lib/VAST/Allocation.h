@@ -23,7 +23,7 @@ class GlobalVariable;
 class StoreInst;
 class LoadInst;
 class VASTModule;
-class VASTMemoryBus;
+class VASTMemoryBank;
 class Function;
 class FuncUnitId;
 class DataLayout;
@@ -55,10 +55,10 @@ public:
   VASTModule &getModule() const { return *M; }
 
   // Memory Bank allocation queries.
-  virtual VASTMemoryBus *getMemoryBank(const GlobalVariable &GV) const;
-  virtual VASTMemoryBus *getMemoryBank(const LoadInst &I) const;
-  virtual VASTMemoryBus *getMemoryBank(const StoreInst &I) const;
-  VASTMemoryBus *getMemoryBank(const Value &V) const;
+  virtual VASTMemoryBank *getMemoryBank(const GlobalVariable &GV) const;
+  virtual VASTMemoryBank *getMemoryBank(const LoadInst &I) const;
+  virtual VASTMemoryBank *getMemoryBank(const StoreInst &I) const;
+  VASTMemoryBank *getMemoryBank(const Value &V) const;
 };
 }
 

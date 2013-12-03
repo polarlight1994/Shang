@@ -21,7 +21,7 @@
 #include "PreSchedBinding.h"
 
 #include "vast/Strash.h"
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 #include "vast/VASTExprBuilder.h"
 #include "vast/VASTModule.h"
 #include "vast/VASTModulePass.h"

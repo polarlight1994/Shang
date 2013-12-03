@@ -34,7 +34,7 @@ class VASTSubModule;
 class VASTSeqInst;
 class DatapathContainer;
 class VASTExprBuilder;
-class VASTMemoryBus;
+class VASTMemoryBank;
 class CachedStrashTable;
 class vlang_raw_ostream;
 
@@ -286,8 +286,8 @@ public:
                                VASTSelector::Type T = VASTSelector::Temp);
   VASTSeqValue *createSeqValue(VASTSelector *Selector, unsigned Idx, Value *V = 0);
 
-  VASTMemoryBus *createDefaultMemBus();
-  VASTMemoryBus *createMemBus(unsigned Num, unsigned AddrWidth,
+  VASTMemoryBank *createDefaultMemBus();
+  VASTMemoryBank *createMemBus(unsigned Num, unsigned AddrWidth,
                               unsigned DataWidth, bool RequireByteEnable,
                               bool IsDualPort, bool IsCombinationalROM);
 

@@ -22,7 +22,7 @@
 #include "vast/Dataflow.h"
 #include "vast/VASTModule.h"
 #include "vast/VASTSubModules.h"
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 #include "vast/STGDistances.h"
 
 #include "llvm/Analysis/Dominators.h"

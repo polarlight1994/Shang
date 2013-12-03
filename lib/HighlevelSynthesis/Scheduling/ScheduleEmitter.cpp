@@ -17,7 +17,7 @@
 
 #include "vast/VASTModulePass.h"
 #include "vast/VASTExprBuilder.h"
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 #include "vast/VASTModule.h"
 #include "vast/STGDistances.h"
 
@@ -44,12 +44,12 @@ STATISTIC(NumMultRetimeIncoming,
 namespace {
 class NaiveMemoryPortReservationTable {
   // The memory port that will assign to next memory access.
-  DenseMap<VASTMemoryBus*, unsigned> PortForNextAccess;
+  DenseMap<VASTMemoryBank*, unsigned> PortForNextAccess;
   // Map the instruction to the corresponding memory port, the map is actually
   // mapping the instruction to PortNum + 1, so when we try to lookup the map
   // and get a zero, we know the instruction is not bound to a port yet.
   DenseMap<Instruction*, unsigned> PortMapping;
-  DenseMap<Instruction*, VASTMemoryBus*> BusMapping;
+  DenseMap<Instruction*, VASTMemoryBank*> BusMapping;
 public:
   unsigned getOrCreateMapping(VASTSeqInst *Op) {
     Instruction *Inst = cast<Instruction>(Op->getValue());
@@ -60,7 +60,7 @@ public:
     if (PortNum) return PortNum - 1;
 
     VASTSelector *Addr = Op->getSrc(0).getSelector();
-    VASTMemoryBus *Bus = dyn_cast<VASTMemoryBus>(Addr->getParent());
+    VASTMemoryBank *Bus = dyn_cast<VASTMemoryBank>(Addr->getParent());
 
     // Ignore the default memory bus or the signle port Bus.
     if (Bus == 0 || !Bus->isDualPort()) return 0;
@@ -75,7 +75,7 @@ public:
     return PortNum - 1;
   }
 
-  VASTMemoryBus *getMemBus(Instruction *Inst) const {
+  VASTMemoryBank *getMemBus(Instruction *Inst) const {
     return BusMapping.lookup(Inst);
   }
 };
@@ -300,7 +300,7 @@ ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot) {
 VASTSeqInst *ScheduleEmitter::remapToPort1(VASTSeqInst *Op, VASTSlot *ToSlot) {
   if (Op->isLatch()) {
     Instruction *Inst = cast<Instruction>(Op->getValue());
-    VASTMemoryBus *Bus = PRT.getMemBus(Inst);
+    VASTMemoryBank *Bus = PRT.getMemBus(Inst);
     assert(Bus && "Port reservation table is broken?");
     VASTLatch RData = Op->getSrc(0);
     VASTValPtr TimedRData = VM.createSeqValue(Bus->getRData(1), 0, Inst);
@@ -318,7 +318,7 @@ VASTSeqInst *ScheduleEmitter::remapToPort1(VASTSeqInst *Op, VASTSlot *ToSlot) {
                                       Op->getValue(), Op->isLatch());
   VASTLatch Addr = Op->getSrc(CurSrcIdx);
   VASTSelector *AddrPort = Addr.getSelector();
-  VASTMemoryBus *Bus = cast<VASTMemoryBus>(AddrPort->getParent());
+  VASTMemoryBank *Bus = cast<VASTMemoryBank>(AddrPort->getParent());
   NewInst->addSrc(Addr, CurSrcIdx++, Bus->getAddr(1));
 
   if (isa<StoreInst>(Op->getValue())) {

@@ -1,6 +1,6 @@
-//===------ VASTMemoryPort.h - Memory Ports in Verilog AST ------*- C++ -*-===//
+//===------ VASTMemoryBank.h - Memory Banks in Verilog AST ------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -20,7 +20,7 @@
 namespace llvm {
 class GlobalVariable;
 
-class VASTMemoryBus : public VASTSubModuleBase {
+class VASTMemoryBank : public VASTSubModuleBase {
   const unsigned AddrSize, DataSize;
   const bool RequireByteEnable : 1;
   const bool IsDualPort : 1;
@@ -29,8 +29,8 @@ class VASTMemoryBus : public VASTSubModuleBase {
   std::map<GlobalVariable*, unsigned> BaseAddrs;
   unsigned EndByteAddr;
 
-  VASTMemoryBus(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
-                bool RequireByteEnable, bool IsDualPort, bool IsCombinational);
+  VASTMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
+                 bool RequireByteEnable, bool IsDualPort, bool IsCombinational);
   friend class VASTModule;
 
   void addPorts(VASTModule *VM);
@@ -94,7 +94,7 @@ public:
   printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr, raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTMemoryBus *A) { return true; }
+  static inline bool classof(const VASTMemoryBank *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastMemoryBus;
   }

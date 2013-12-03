@@ -16,7 +16,7 @@
 #include "Allocation.h"
 
 #include "vast/Dataflow.h"
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 #include "vast/VASTModulePass.h"
 #include "vast/VASTModule.h"
 #include "vast/VASTSubModules.h"
@@ -219,10 +219,10 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   //===--------------------------------------------------------------------===//
   unsigned getByteEnable(Value *Addr) const;
   VASTValPtr alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
-                             VASTMemoryBus *Bus);
-  void buildMemoryTransaction(Value *Addr, Value *Data, VASTMemoryBus *Bus,
+                             VASTMemoryBank *Bus);
+  void buildMemoryTransaction(Value *Addr, Value *Data, VASTMemoryBank *Bus,
                               Instruction &Inst);
-  void buildCombinationalROMLookup(Value *Addr, VASTMemoryBus *Bus,
+  void buildCombinationalROMLookup(Value *Addr, VASTMemoryBank *Bus,
                                    Instruction &Inst);
 
   void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
@@ -286,7 +286,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
   if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
     unsigned SizeInBits = getValueSizeInBits(GV);
 
-    VASTMemoryBus *Bus = Allocation.getMemoryBank(*GV);
+    VASTMemoryBank *Bus = Allocation.getMemoryBank(*GV);
     const std::string Name = ShangMangle(GV->getName());
     if (!Bus->isDefault()) {
       unsigned StartOffset = Bus->getStartOffset(GV);
@@ -840,7 +840,7 @@ void VASTModuleBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 }
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
-  VASTMemoryBus *Bus = Allocation.getMemoryBank(I);
+  VASTMemoryBank *Bus = Allocation.getMemoryBank(I);
   if (Bus->isCombinationalROM()) {
     buildCombinationalROMLookup(I.getPointerOperand(), Bus, I);
     return;
@@ -850,7 +850,7 @@ void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
 }
 
 void VASTModuleBuilder::visitStoreInst(StoreInst &I) {
-  VASTMemoryBus *Bus = Allocation.getMemoryBank(I);
+  VASTMemoryBank *Bus = Allocation.getMemoryBank(I);
   assert(!Bus->isCombinationalROM() && "Cannot store to a combinational ROM!");
   buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(), Bus, I);
 }
@@ -869,7 +869,7 @@ unsigned VASTModuleBuilder::getByteEnable(Value *Addr) const {
 
 VASTValPtr
 VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
-                                   VASTMemoryBus *Bus) {
+                                   VASTMemoryBank *Bus) {
   VASTValPtr V = Builder.buildBitSliceExpr(Result, Bus->getDataWidth(), 0);
 
   // Build the shift to shift the bytes to LSB.
@@ -895,7 +895,7 @@ VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
 
 void
 VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
-                                          VASTMemoryBus *Bus, Instruction &I) {
+                                          VASTMemoryBank *Bus, Instruction &I) {
   BasicBlock *ParentBB = I.getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
 
@@ -998,7 +998,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
 }
 
 void
-VASTModuleBuilder::buildCombinationalROMLookup(Value *Addr, VASTMemoryBus *Bus,
+VASTModuleBuilder::buildCombinationalROMLookup(Value *Addr, VASTMemoryBank *Bus,
                                                Instruction &Inst) {
   unsigned ResultWidth = getValueSizeInBits(Inst);
   VASTValPtr AddrVal = getAsOperandImpl(Addr);

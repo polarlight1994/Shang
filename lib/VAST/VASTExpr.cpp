@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "vast/VASTDatapathNodes.h"
-#include "vast/VASTMemoryPort.h"
+#include "vast/VASTMemoryBank.h"
 #include "vast/Utilities.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -409,7 +409,7 @@ bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
     break;
   case VASTExpr::dpCROM: {
     const VASTWrapper *TableWrapper = cast<VASTWrapper>(getOperand(1).get());
-    VASTMemoryBus *Table = cast<VASTMemoryBus>(TableWrapper->getVASTNode());
+    VASTMemoryBank *Table = cast<VASTMemoryBank>(TableWrapper->getVASTNode());
     Table->printAsCombROM(this, getOperand(0), OS);
     return true;
   }
