@@ -106,7 +106,6 @@ def main(builtinParameters = {}):
   # HLS options
   option_space_dict['shang_enable_mux_pipelining'] = [ 'true' ]
   option_space_dict['shang_enable_memory_optimization'] = [ 'true' ]
-  option_space_dict['shang_enable_memory_partition'] = [ 'true' ]
   option_space_dict['shang_enable_dual_port_ram'] = [ 'true' ]
   option_space_dict['vast_max_combinational_rom_logic_level'] = [ 1 ]
   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
