@@ -66,8 +66,10 @@ void VASTImmediate::Profile(FoldingSetNodeID& ID) const {
   Int.Profile(ID);
 }
 
-VASTImmediate *VASTImmediate::True = 0;
-VASTImmediate *VASTImmediate::False = 0;
+VASTImmediate VASTImmediate::TrueValue(APInt(1, 1));
+VASTImmediate VASTImmediate::FalseValue(APInt(1, 0));
+VASTImmediate *const VASTImmediate::True = &VASTImmediate::TrueValue;
+VASTImmediate *const VASTImmediate::False = &VASTImmediate::FalseValue;
 
 //===----------------------------------------------------------------------===//
 

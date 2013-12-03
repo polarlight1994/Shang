@@ -43,8 +43,9 @@ class VASTImmediate : public VASTValue, public FoldingSetNode  {
   }
 
   friend class DatapathContainer;
+  static VASTImmediate TrueValue, FalseValue;
 public:
-  static VASTImmediate *True, *False;
+  static VASTImmediate *const True, *const False;
 
   /// Profile - Used to insert VASTImm objects, or objects that contain VASTImm
   ///  objects, into FoldingSets.

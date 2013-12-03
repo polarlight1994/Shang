@@ -166,17 +166,11 @@ void DatapathContainer::reset() {
   UniqueImms->clear();
   Exprs.clear();
   Allocator.Reset();
-
-  // Reinsert the TRUE and False.
-  VASTImmediate::True = getOrCreateImmediateImpl(1, 1);
-  VASTImmediate::False = getOrCreateImmediateImpl(0, 1);
 }
 
 DatapathContainer::DatapathContainer() : CurContexts(0) {
   UniqueImms = new FoldingSet<VASTImmediate>();
   UniqueExprs = new FoldingSet<VASTExpr>();
-  VASTImmediate::True = getOrCreateImmediateImpl(1, 1);
-  VASTImmediate::False = getOrCreateImmediateImpl(0, 1);
 }
 
 DatapathContainer::~DatapathContainer() {
@@ -185,6 +179,10 @@ DatapathContainer::~DatapathContainer() {
 }
 
 VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
+  // True and False are not managed by DatapathContainer.
+  if (Value.getBitWidth() == 1)
+    return Value.getBoolValue() ? VASTImmediate::True : VASTImmediate::False;
+
   FoldingSetNodeID ID;
 
   Value.Profile(ID);
