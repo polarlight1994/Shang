@@ -484,6 +484,10 @@ VASTModule::~VASTModule() {
   for (selector_iterator I = selector_begin(), E = selector_end(); I != E; ++I)
     I->dropMux();
 
+  // Unlink the uses in the operand list of seqop from the used value.
+  for (seqop_iterator I = seqop_begin(), E = seqop_end(); I != E; ++I)
+    I->dropOperands();
+
   // To prevent we releasing deleted uses in the destructor of VASTSlots, we
   // release the slots before all other values.
   Slots.clear();

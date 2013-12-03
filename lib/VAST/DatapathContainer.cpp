@@ -162,9 +162,14 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
 }
 
 void DatapathContainer::reset() {
+  // Delete all datapath nodes in a correct order.
+  while (gc())
+    ;
+
+  assert(Exprs.empty() && "Expressions are not completely deleted!");
+
   UniqueExprs->clear();
   UniqueImms->clear();
-  Exprs.clear();
   Allocator.Reset();
 }
 
@@ -174,6 +179,8 @@ DatapathContainer::DatapathContainer() : CurContexts(0) {
 }
 
 DatapathContainer::~DatapathContainer() {
+  reset();
+
   delete UniqueExprs;
   delete UniqueImms;
 }

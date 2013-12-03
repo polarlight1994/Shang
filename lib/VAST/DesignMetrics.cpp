@@ -74,6 +74,8 @@ public:
   explicit DesignMetricsImpl(DataLayout *TD)
     : DatapathBuilderContext(TD), Builder(*this), StepLB(0), NumCalls(0){}
 
+  ~DesignMetricsImpl() {}
+
   void visit(Instruction &Inst);
   void visit(BasicBlock &BB);
   void visit(Function &F);

@@ -259,7 +259,9 @@ VASTExpr::VASTExpr()
   Contents.Name = 0;
 }
 
-VASTExpr::~VASTExpr() {}
+VASTExpr::~VASTExpr() {
+  assert(use_empty() && "Something is still using this expression!");
+}
 
 bool VASTExpr::isAnonymous() const {
   return getOpcode() <= LastAnonymousOpc;
