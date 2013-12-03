@@ -1082,12 +1082,7 @@ void VASTModuleAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
 }
 
-void VASTModuleAnalysis::releaseMemory() {
-  if (VM == 0) return;
-
-  delete VM;
-  VM = 0;
-}
+void VASTModuleAnalysis::releaseMemory() {}
 
 char VASTModuleAnalysis::ID = 0;
 
