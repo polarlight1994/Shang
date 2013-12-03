@@ -460,6 +460,7 @@ void VASTModule::reset() {
   SeqOps.clear();
   SeqVals.clear();
   Slots.clear();
+  Submodules.clear();
 
   // Release all ports.
   Ports.clear();
@@ -471,7 +472,6 @@ void VASTModule::reset() {
   // Release the datapath after all other contexts released.
   Datapath->reset();
   DeleteContainerPointers(Ports);
-  DeleteContainerPointers(Submodules);
 }
 
 VASTModule::~VASTModule() {
@@ -485,7 +485,6 @@ VASTModule::~VASTModule() {
   Slots.clear();
   delete Datapath;
   DeleteContainerPointers(Ports);
-  DeleteContainerPointers(Submodules);
 }
 
 namespace {
@@ -586,10 +585,10 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
 }
 
 void VASTModule::printSubmodules(vlang_raw_ostream &OS) const {
-  typedef SubmoduleVector::const_iterator iterator;
+  typedef SubmoduleList::const_iterator iterator;
 
   for (iterator I = Submodules.begin(), E = Submodules.end(); I != E; ++I) {
-    VASTSubModuleBase *S = *I;
+    const VASTSubModuleBase *S = I;
 
     // Print the data selector of the register.
     S->print(OS);
@@ -639,10 +638,10 @@ void VASTModule::printSignalDecl(raw_ostream &OS) const {
     I->printDecl(OS);
   }
 
-  typedef SubmoduleVector::const_iterator const_submod_iterator;
+  typedef SubmoduleList::const_iterator const_submod_iterator;
   for (const_submod_iterator I = Submodules.begin(),E = Submodules.end();
        I != E;++I)
-    (*I)->printDecl(OS);
+    I->printDecl(OS);
 
   // Print the symbol of the global variable.
   for (const_wire_iterator I = Wires.begin(), E = Wires.end(); I != E; ++I)

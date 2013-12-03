@@ -106,7 +106,7 @@ public:
 
   typedef ilist<VASTRegister> RegisterVector;
 
-  typedef SmallVector<VASTSubModuleBase*, 16> SubmoduleVector;
+  typedef ilist<VASTSubModuleBase> SubmoduleList;
 
   typedef ilist<VASTSelector> SelectorVector;
   typedef SelectorVector::iterator selector_iterator;
@@ -145,7 +145,7 @@ private:
 
   // Input/Output ports of the design.
   PortVector Ports;
-  SubmoduleVector Submodules;
+  SubmoduleList Submodules;
 
   typedef StringMap<VASTNode*> SymTabTy;
   SymTabTy SymbolTable;
@@ -296,9 +296,9 @@ public:
                                VASTSelector::Type T = VASTSelector::Temp);
 
   VASTWrapper *getOrCreateWrapper(const Twine &Name, unsigned BitWidth,
-                          Value* LLVMValue);
+                                  Value* LLVMValue);
   VASTWrapper *getOrCreateWrapper(const Twine &Name, unsigned BitWidth,
-                          VASTNode* Node);
+                                  VASTNode* Node);
 
   selector_iterator selector_begin() { return Selectors.begin(); }
   selector_iterator selector_end() { return Selectors.end(); }
