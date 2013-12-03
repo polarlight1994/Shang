@@ -67,12 +67,7 @@ void HLSAllocation::InitializeHLSAllocation(Pass *P) {
   M = Allocation->M;
 }
 
-void HLSAllocation::createModule() {
-  M = new VASTModule();
-}
-
 HLSAllocation::~HLSAllocation() {
-  delete M;
 }
 
 char HLSAllocation::ID = 0;
@@ -106,7 +101,11 @@ struct BasicAllocation : public ImmutablePass, public HLSAllocation {
     // special and does not support chaining.
     TD = &getAnalysis<DataLayout>();
     // Create the module.
-    createModule();
+    M = new VASTModule();
+  }
+
+  ~BasicAllocation() {
+    delete M;
   }
 
   /// getAdjustedAnalysisPointer - This method is used when a pass implements

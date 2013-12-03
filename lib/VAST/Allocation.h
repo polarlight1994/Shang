@@ -34,10 +34,9 @@ class HLSAllocation {
   // Previous HLSAllocation to chain to.
   HLSAllocation *Allocation;
 
+protected:
   // HLSAllocation also hold the pointer to the hardware module.
   VASTModule *M;
-protected:
-  void createModule();
 
   const DataLayout *TD;
 
