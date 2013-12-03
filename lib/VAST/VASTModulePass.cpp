@@ -57,7 +57,6 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   //===--------------------------------------------------------------------===//
   void emitFunctionSignature(Function *F, VASTSubModule *SubMod = 0);
-  void emitCommonPort(VASTSubModule *SubMod);
 
   //===--------------------------------------------------------------------===//
   StringMap<VASTSubModule*> SubModules;
@@ -386,7 +385,6 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
       VM->addOutputPort("return_value", BitWidth, VASTModule::RetPort);
   }
 
-  emitCommonPort(SubMod);
   if (SubMod) return;
 
   VASTSlot *IdleSlot = VM->getStartSlot();
@@ -416,19 +414,6 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
   VASTSelector *FinPort
     = cast<VASTOutPort>(VM->getPort(VASTModule::Finish)).getSelector();
   ResetFin->addSrc(VASTImmediate::False, 0, FinPort);
-}
-
-void VASTModuleBuilder::emitCommonPort(VASTSubModule *SubMod) {
-  if (SubMod) {
-    // It is a callee function, emit the signal for the sub module.
-    SubMod->createStartPort(VM);
-    SubMod->createFinPort(VM);
-  } else { // If F is current function.
-    VM->addInputPort("clk", 1, VASTModule::Clk);
-    VM->addInputPort("rstN", 1, VASTModule::RST);
-    VM->addInputPort("start", 1, VASTModule::Start);
-    VM->addOutputPort("fin", 1, VASTModule::Finish);
-  }
 }
 
 //===----------------------------------------------------------------------===//

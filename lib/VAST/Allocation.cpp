@@ -96,12 +96,21 @@ struct BasicAllocation : public ImmutablePass, public HLSAllocation {
     AU.addRequired<DataLayout>();
   }
 
+  void addCommonPorts() {
+     M->addInputPort("clk", 1, VASTModule::Clk);
+     M->addInputPort("rstN", 1, VASTModule::RST);
+     M->addInputPort("start", 1, VASTModule::Start);
+     M->addOutputPort("fin", 1, VASTModule::Finish);
+  }
+
   void initializePass() {
     // Note: BasicAllocation does not call InitializeHLSAllocation because it's
     // special and does not support chaining.
     TD = &getAnalysis<DataLayout>();
     // Create the module.
     M = new VASTModule();
+    // Create the common ports for a module.
+    addCommonPorts();
   }
 
   ~BasicAllocation() {
