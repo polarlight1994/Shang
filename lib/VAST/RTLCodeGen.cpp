@@ -168,7 +168,7 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     Out << "// Verification code for Selector: " << I->getName() << '\n';
     I->printVerificationCode(Out, &STGDist,
-                             EnalbeDumpTrace ? "trace_database" : 0);
+                             EnalbeDumpTrace ? "trace_database" : NULL);
     Out << '\n';
   }
 
