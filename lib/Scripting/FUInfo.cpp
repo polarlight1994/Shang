@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 #include "LuaScript.h"
 
-#include "shang/FUInfo.h"
+#include "vast/FUInfo.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/raw_ostream.h"

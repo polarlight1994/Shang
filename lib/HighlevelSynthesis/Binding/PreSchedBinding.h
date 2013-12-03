@@ -16,8 +16,8 @@
 
 #include "CompGraph.h"
 
-#include "shang/FUInfo.h"
-#include "shang/VASTModulePass.h"
+#include "vast/FUInfo.h"
+#include "vast/VASTModulePass.h"
 
 namespace llvm {
 // The PreSchedule Compatibility Graph.

@@ -10,8 +10,8 @@
 // This file implement the Datapath Container.
 //
 //===----------------------------------------------------------------------===//
-#include "shang/VASTDatapathNodes.h"
-#include "shang/VASTExprBuilder.h"
+#include "vast/VASTDatapathNodes.h"
+#include "vast/VASTExprBuilder.h"
 
 #define DEBUG_TYPE "vast-datapath-container"
 #include "llvm/Support/Debug.h"

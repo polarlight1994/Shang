@@ -16,7 +16,7 @@
 #ifndef VAST_STG_SHORTEST_PATH_H
 #define VAST_STG_SHORTEST_PATH_H
 
-#include "shang/VASTModulePass.h"
+#include "vast/VASTModulePass.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/ArrayRef.h"

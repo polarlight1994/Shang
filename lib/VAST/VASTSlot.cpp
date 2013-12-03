@@ -12,10 +12,10 @@
 //===----------------------------------------------------------------------===//
 #include "LangSteam.h"
 
-#include "shang/VASTSlot.h"
-#include "shang/VASTSeqValue.h"
-#include "shang/VASTSubModules.h"
-#include "shang/VASTModule.h"
+#include "vast/VASTSlot.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/VASTSubModules.h"
+#include "vast/VASTModule.h"
 
 #include "llvm/Support/GraphWriter.h"
 #define DEBUG_TYPE "vast-slot"

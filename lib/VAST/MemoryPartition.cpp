@@ -13,10 +13,10 @@
 
 #include "Allocation.h"
 
-#include "shang/Utilities.h"
-#include "shang/Passes.h"
-#include "shang/VASTMemoryPort.h"
-#include "shang/VASTModule.h"
+#include "vast/Utilities.h"
+#include "vast/Passes.h"
+#include "vast/VASTMemoryPort.h"
+#include "vast/VASTModule.h"
 
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"

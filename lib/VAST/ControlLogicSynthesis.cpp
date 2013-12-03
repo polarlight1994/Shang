@@ -29,9 +29,9 @@
 
 #include "MinimalDatapathContext.h"
 
-#include "shang/VASTModulePass.h"
-#include "shang/VASTModule.h"
-#include "shang/Passes.h"
+#include "vast/VASTModulePass.h"
+#include "vast/VASTModule.h"
+#include "vast/Passes.h"
 
 #include "llvm/IR/DataLayout.h"
 #define DEBUG_TYPE "shang-control-logic-synthesis"

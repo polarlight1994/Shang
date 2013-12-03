@@ -17,8 +17,8 @@
 #ifndef COMPATIBILITY_GRAPH_H
 #define COMPATIBILITY_GRAPH_H
 
-#include "shang/Dataflow.h"
-#include "shang/FUInfo.h"
+#include "vast/Dataflow.h"
+#include "vast/FUInfo.h"
 
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/ADT/SparseBitVector.h"

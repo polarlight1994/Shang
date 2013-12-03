@@ -11,13 +11,13 @@
 // datapath in the constraints script.
 //
 //===----------------------------------------------------------------------===//
-#include "shang/Strash.h"
+#include "vast/Strash.h"
 
-#include "shang/VASTDatapathNodes.h"
-#include "shang/VASTSeqValue.h"
-#include "shang/VASTModule.h"
-#include "shang/VASTModulePass.h"
-#include "shang/Passes.h"
+#include "vast/VASTDatapathNodes.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/VASTModule.h"
+#include "vast/VASTModulePass.h"
+#include "vast/Passes.h"
 
 #include "llvm/ADT/StringSet.h"
 #define DEBUG_TYPE "vast-datapath-namer"

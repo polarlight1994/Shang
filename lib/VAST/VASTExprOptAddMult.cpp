@@ -11,9 +11,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/VASTExprBuilder.h"
+#include "vast/VASTExprBuilder.h"
 
-#include "shang/Utilities.h"
+#include "vast/Utilities.h"
 
 #include "llvm/Support/ErrorHandling.h"
 #define DEBUG_TYPE "vast-expr-opt-add-mult"

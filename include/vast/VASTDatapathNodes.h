@@ -13,7 +13,7 @@
 #ifndef VTM_VAST_DATA_PATH_NODES_H
 #define VTM_VAST_DATA_PATH_NODES_H
 
-#include "shang/VASTNodeBases.h"
+#include "vast/VASTNodeBases.h"
 
 #include "llvm/IR/Value.h"
 #include "llvm/ADT/PointerUnion.h"

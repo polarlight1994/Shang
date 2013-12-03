@@ -10,9 +10,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/DesignMetrics.h"
-#include "shang/FUInfo.h"
-#include "shang/Passes.h"
+#include "vast/DesignMetrics.h"
+#include "vast/FUInfo.h"
+#include "vast/Passes.h"
 
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/InlineCost.h"

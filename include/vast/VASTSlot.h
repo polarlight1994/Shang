@@ -14,9 +14,9 @@
 #ifndef VTM_VAST_CONTROL_PATH_NODES_H
 #define VTM_VAST_CONTROL_PATH_NODES_H
 
-#include "shang/VASTNodeBases.h"
-#include "shang/VASTDatapathNodes.h"
-#include "shang/Utilities.h"
+#include "vast/VASTNodeBases.h"
+#include "vast/VASTDatapathNodes.h"
+#include "vast/Utilities.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/PointerUnion.h"

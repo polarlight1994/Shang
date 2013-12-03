@@ -14,8 +14,8 @@
 #ifndef SEQ_LIVEVARIABLES_H
 #define SEQ_LIVEVARIABLES_H
 
-#include "shang/VASTModulePass.h"
-#include "shang/VASTSlot.h"
+#include "vast/VASTModulePass.h"
+#include "vast/VASTSlot.h"
 
 #include "llvm/IR/Value.h"
 #include "llvm/ADT/ArrayRef.h"

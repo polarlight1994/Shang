@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/VASTExprBuilder.h"
-#include "shang/Utilities.h"
+#include "vast/VASTExprBuilder.h"
+#include "vast/Utilities.h"
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/ErrorHandling.h"

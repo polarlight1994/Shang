@@ -15,9 +15,9 @@
 #ifndef SHANG_TIMING_NETLIST_H
 #define SHANG_TIMING_NETLIST_H
 
-#include "shang/FUInfo.h"
-#include "shang/VASTModulePass.h"
-#include "shang/VASTSeqValue.h"
+#include "vast/FUInfo.h"
+#include "vast/VASTModulePass.h"
+#include "vast/VASTSeqValue.h"
 
 #include <map>
 

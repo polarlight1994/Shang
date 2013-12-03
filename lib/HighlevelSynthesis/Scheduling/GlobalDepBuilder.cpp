@@ -27,9 +27,9 @@
 
 #include "SDCScheduler.h"
 
-#include "shang/Utilities.h"
-#include "shang/VASTSeqValue.h"
-#include "shang/VASTMemoryPort.h"
+#include "vast/Utilities.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/VASTMemoryPort.h"
 
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/PostDominators.h"

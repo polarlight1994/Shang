@@ -12,15 +12,15 @@
 //===----------------------------------------------------------------------===//
 #include "TimingNetlist.h"
 
-#include "shang/Dataflow.h"
-#include "shang/FUInfo.h"
-#include "shang/VASTMemoryPort.h"
-#include "shang/VASTExprBuilder.h"
+#include "vast/Dataflow.h"
+#include "vast/FUInfo.h"
+#include "vast/VASTMemoryPort.h"
+#include "vast/VASTExprBuilder.h"
 
-#include "shang/VASTModulePass.h"
-#include "shang/VASTModule.h"
-#include "shang/Passes.h"
-#include "shang/STGDistances.h"
+#include "vast/VASTModulePass.h"
+#include "vast/VASTModule.h"
+#include "vast/Passes.h"
+#include "vast/STGDistances.h"
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/ADT/STLExtras.h"

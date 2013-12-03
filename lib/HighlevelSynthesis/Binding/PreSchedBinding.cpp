@@ -14,9 +14,9 @@
 
 #include "PreSchedBinding.h"
 
-#include "shang/Passes.h"
-#include "shang/Strash.h"
-#include "shang/VASTModule.h"
+#include "vast/Passes.h"
+#include "vast/Strash.h"
+#include "vast/VASTModule.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/Analysis/Dominators.h"

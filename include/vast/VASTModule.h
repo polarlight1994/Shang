@@ -13,12 +13,12 @@
 #ifndef VTM_VAST_MODULE_H
 #define VTM_VAST_MODULE_H
 
-#include "shang/VASTNodeBases.h"
-#include "shang/VASTDatapathNodes.h"
-#include "shang/VASTSeqValue.h"
-#include "shang/VASTSlot.h"
+#include "vast/VASTNodeBases.h"
+#include "vast/VASTDatapathNodes.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/VASTSlot.h"
 
-#include "shang/FUInfo.h"
+#include "vast/FUInfo.h"
 
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringSet.h"

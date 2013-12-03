@@ -15,8 +15,8 @@
 #ifndef DATAFLOW_ANALYSIS_H
 #define DATAFLOW_ANALYSIS_H
 
-#include "shang/VASTSeqValue.h"
-#include "shang/VASTModulePass.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/VASTModulePass.h"
 
 #include "llvm/IR/Instructions.h"
 #include "llvm/ADT/PointerIntPair.h"

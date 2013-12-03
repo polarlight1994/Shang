@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/VASTExprBuilder.h"
+#include "vast/VASTExprBuilder.h"
 
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "vast-expr-opt-cmp"

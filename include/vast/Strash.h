@@ -15,8 +15,8 @@
 #ifndef STRUCTRURAL_HASH_TABLE_H
 #define STRUCTRURAL_HASH_TABLE_H
 
-#include "shang/VASTNodeBases.h"
-#include "shang/VASTModulePass.h"
+#include "vast/VASTNodeBases.h"
+#include "vast/VASTModulePass.h"
 #include <map>
 
 namespace llvm {

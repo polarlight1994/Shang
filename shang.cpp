@@ -12,8 +12,8 @@
 // code, given LLVM bitcode.
 //
 //===----------------------------------------------------------------------===//
-#include "shang/Passes.h"
-#include "shang/Utilities.h"
+#include "vast/Passes.h"
+#include "vast/Utilities.h"
 
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"

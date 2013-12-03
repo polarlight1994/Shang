@@ -15,11 +15,11 @@
 //
 #include "VASTScheduling.h"
 
-#include "shang/VASTModulePass.h"
-#include "shang/VASTExprBuilder.h"
-#include "shang/VASTMemoryPort.h"
-#include "shang/VASTModule.h"
-#include "shang/STGDistances.h"
+#include "vast/VASTModulePass.h"
+#include "vast/VASTExprBuilder.h"
+#include "vast/VASTMemoryPort.h"
+#include "vast/VASTModule.h"
+#include "vast/STGDistances.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/Analysis/Dominators.h"

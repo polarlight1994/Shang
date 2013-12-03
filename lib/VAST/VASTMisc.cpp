@@ -12,11 +12,11 @@
 //
 //===----------------------------------------------------------------------===//
 #include "LangSteam.h"
-#include "shang/Strash.h"
-#include "shang/VASTHandle.h"
-#include "shang/VASTDatapathNodes.h"
-#include "shang/VASTModule.h"
-#include "shang/Utilities.h"
+#include "vast/Strash.h"
+#include "vast/VASTHandle.h"
+#include "vast/VASTDatapathNodes.h"
+#include "vast/VASTModule.h"
+#include "vast/Utilities.h"
 
 #define DEBUG_TYPE "vast-misc"
 #include "llvm/Support/Debug.h"

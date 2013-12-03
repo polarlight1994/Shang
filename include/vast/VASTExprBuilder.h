@@ -13,7 +13,7 @@
 #ifndef VTM_VASTEXPR_BUILDER_H
 #define VTM_VASTEXPR_BUILDER_H
 
-#include "shang/VASTDatapathNodes.h"
+#include "vast/VASTDatapathNodes.h"
 #include "llvm/Support/Allocator.h"
 
 namespace llvm {

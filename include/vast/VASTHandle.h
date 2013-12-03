@@ -14,7 +14,7 @@
 #ifndef SHANG_VAST_HANDLE_H
 #define SHANG_VAST_HANDLE_H
 
-#include "shang/VASTNodeBases.h"
+#include "vast/VASTNodeBases.h"
 
 #include "llvm/Support/Casting.h"
 

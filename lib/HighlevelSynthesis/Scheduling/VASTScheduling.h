@@ -19,9 +19,9 @@
 #ifndef VAST_SCHEDULING_H
 #define VAST_SCHEDULING_H
 
-#include "shang/Dataflow.h"
-#include "shang/VASTSeqOp.h"
-#include "shang/VASTModulePass.h"
+#include "vast/Dataflow.h"
+#include "vast/VASTSeqOp.h"
+#include "vast/VASTModulePass.h"
 
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/BasicBlock.h"

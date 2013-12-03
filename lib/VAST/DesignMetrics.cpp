@@ -13,9 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "IR2Datapath.h"
-#include "shang/Passes.h"
-#include "shang/DesignMetrics.h"
-#include "shang/FUInfo.h"
+#include "vast/Passes.h"
+#include "vast/DesignMetrics.h"
+#include "vast/FUInfo.h"
 
 #include "llvm/Pass.h"
 #include "llvm/IR/DataLayout.h"

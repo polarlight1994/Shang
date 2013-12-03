@@ -12,9 +12,9 @@
 // design.
 //
 //===----------------------------------------------------------------------===//
-#include "shang/Passes.h"
-#include "shang/FUInfo.h"
-#include "shang/Utilities.h"
+#include "vast/Passes.h"
+#include "vast/FUInfo.h"
+#include "vast/Utilities.h"
 
 #include "llvm/Pass.h"
 #include "llvm/IR/IRBuilder.h"

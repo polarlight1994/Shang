@@ -14,7 +14,7 @@
 #ifndef VAST_SUBMODULES_H
 #define VAST_SUBMODULES_H
 
-#include "shang/VASTNodeBases.h"
+#include "vast/VASTNodeBases.h"
 
 #include "llvm/ADT/StringMap.h"
 

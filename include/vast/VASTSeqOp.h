@@ -14,8 +14,8 @@
 #ifndef SHANG_VAST_SEQ_OP_H
 #define SHANG_VAST_SEQ_OP_H
 
-#include "shang/FUInfo.h"
-#include "shang/VASTNodeBases.h"
+#include "vast/FUInfo.h"
+#include "vast/VASTNodeBases.h"
 #include "llvm/IR/Value.h"
 #include "llvm/ADT/PointerUnion.h"
 

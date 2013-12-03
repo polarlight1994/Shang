@@ -16,10 +16,10 @@
 #include "VASTScheduling.h"
 #include "ScheduleDOT.h"
 
-#include "shang/Passes.h"
-#include "shang/VASTModule.h"
-#include "shang/VASTSeqValue.h"
-#include "shang/VASTModulePass.h"
+#include "vast/Passes.h"
+#include "vast/VASTModule.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/VASTModulePass.h"
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Analysis/AliasAnalysis.h"

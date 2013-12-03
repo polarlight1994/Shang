@@ -11,9 +11,9 @@
 // in the verilog abstract syntax tree.
 //
 //===----------------------------------------------------------------------===//
-#include "shang/VASTDatapathNodes.h"
-#include "shang/VASTMemoryPort.h"
-#include "shang/Utilities.h"
+#include "vast/VASTDatapathNodes.h"
+#include "vast/VASTMemoryPort.h"
+#include "vast/Utilities.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"

@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/Passes.h"
+#include "vast/Passes.h"
 
 #define DEBUG_TYPE "shang-tti"
 #include "llvm/Analysis/TargetTransformInfo.h"

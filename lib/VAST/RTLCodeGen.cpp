@@ -15,11 +15,11 @@
 #include "Allocation.h"
 #include "LangSteam.h"
 
-#include "shang/VASTModulePass.h"
-#include "shang/VASTModule.h"
-#include "shang/Utilities.h"
-#include "shang/Passes.h"
-#include "shang/STGDistances.h"
+#include "vast/VASTModulePass.h"
+#include "vast/VASTModule.h"
+#include "vast/Utilities.h"
+#include "vast/Passes.h"
+#include "vast/STGDistances.h"
 
 #include "llvm/IR/Module.h"
 #include "llvm/IR/DataLayout.h"

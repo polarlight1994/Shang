@@ -11,10 +11,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/Passes.h"
-#include "shang/VASTModule.h"
-#include "shang/VASTModulePass.h"
-#include "shang/VASTExprBuilder.h"
+#include "vast/Passes.h"
+#include "vast/VASTModule.h"
+#include "vast/VASTModulePass.h"
+#include "vast/VASTExprBuilder.h"
 
 #include "llvm/IR/Instructions.h"
 #include "llvm/Analysis/Dominators.h"

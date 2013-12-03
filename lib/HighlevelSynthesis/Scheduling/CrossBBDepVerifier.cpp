@@ -13,7 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "VASTScheduling.h"
-#include "shang/VASTModule.h"
+#include "vast/VASTModule.h"
 #include "llvm/IR/Function.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/ADT/PostOrderIterator.h"

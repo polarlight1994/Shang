@@ -12,10 +12,10 @@
 // counts of loops easily.
 //===----------------------------------------------------------------------===//
 
-#include "shang/Passes.h"
-#include "shang/DesignMetrics.h"
-#include "shang/FUInfo.h"
-#include "shang/Utilities.h"
+#include "vast/Passes.h"
+#include "vast/DesignMetrics.h"
+#include "vast/FUInfo.h"
+#include "vast/Utilities.h"
 
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Analysis/AliasAnalysis.h"

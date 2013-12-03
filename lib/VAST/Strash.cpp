@@ -12,10 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/Passes.h"
-#include "shang/VASTDatapathNodes.h"
-#include "shang/VASTSeqValue.h"
-#include "shang/Strash.h"
+#include "vast/Passes.h"
+#include "vast/VASTDatapathNodes.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/Strash.h"
 #include "llvm/Pass.h"
 #include "llvm/ADT/FoldingSet.h"
 

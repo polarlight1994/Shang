@@ -12,8 +12,8 @@
 //===----------------------------------------------------------------------===//
 #include "LangSteam.h"
 
-#include "shang/VASTMemoryPort.h"
-#include "shang/VASTModule.h"
+#include "vast/VASTMemoryPort.h"
+#include "vast/VASTModule.h"
 
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/ADT/StringExtras.h"

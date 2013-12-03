@@ -16,8 +16,8 @@
 #ifndef SHANG_VAST_SEQ_VALUE_H
 #define SHANG_VAST_SEQ_VALUE_H
 
-#include "shang/VASTSeqOp.h"
-#include "shang/VASTHandle.h"
+#include "vast/VASTSeqOp.h"
+#include "vast/VASTHandle.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include <map>

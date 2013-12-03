@@ -19,14 +19,14 @@
 //===----------------------------------------------------------------------===//
 #include "TimingNetlist.h"
 
-#include "shang/VASTSeqValue.h"
-#include "shang/STGDistances.h"
-#include "shang/VASTModulePass.h"
-#include "shang/VASTMemoryPort.h"
-#include "shang/VASTSubModules.h"
-#include "shang/VASTModule.h"
-#include "shang/Passes.h"
-#include "shang/Utilities.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/STGDistances.h"
+#include "vast/VASTModulePass.h"
+#include "vast/VASTMemoryPort.h"
+#include "vast/VASTSubModules.h"
+#include "vast/VASTModule.h"
+#include "vast/Passes.h"
+#include "vast/Utilities.h"
 
 #include "llvm/Pass.h"
 #include "llvm/IR/DataLayout.h"

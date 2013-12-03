@@ -16,10 +16,10 @@
 
 #include "CompGraph.h"
 
-#include "shang/VASTDatapathNodes.h"
-#include "shang/VASTSeqValue.h"
-#include "shang/VASTMemoryPort.h"
-#include "shang/Strash.h"
+#include "vast/VASTDatapathNodes.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/VASTMemoryPort.h"
+#include "vast/Strash.h"
 
 #include "llvm/Analysis/Dominators.h"
 

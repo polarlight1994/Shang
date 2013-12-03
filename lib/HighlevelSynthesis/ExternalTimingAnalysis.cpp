@@ -18,12 +18,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/Passes.h"
-#include "shang/Dataflow.h"
-#include "shang/VASTModule.h"
-#include "shang/VASTSubModules.h"
-#include "shang/VASTMemoryPort.h"
-#include "shang/STGDistances.h"
+#include "vast/Passes.h"
+#include "vast/Dataflow.h"
+#include "vast/VASTModule.h"
+#include "vast/VASTSubModules.h"
+#include "vast/VASTMemoryPort.h"
+#include "vast/STGDistances.h"
 
 #include "llvm/Analysis/Dominators.h"
 

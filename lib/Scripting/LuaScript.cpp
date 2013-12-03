@@ -14,8 +14,8 @@
 #include "BindingTraits.h"
 #include "LuaScript.h"
 
-#include "shang/Passes.h"
-#include "shang/Utilities.h"
+#include "vast/Passes.h"
+#include "vast/Utilities.h"
 
 #include "llvm/PassManager.h"
 #include "llvm/Support/raw_ostream.h"

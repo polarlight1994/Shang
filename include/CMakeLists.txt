@@ -1,1 +1,1 @@
-add_subdirectory(shang)
+add_subdirectory(vast)

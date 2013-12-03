@@ -15,9 +15,9 @@
 #include "SDCScheduler.h"
 #include "LagSDCSolver.h"
 
-#include "shang/VASTSubModules.h"
-#include "shang/Utilities.h"
-#include "shang/VASTSeqValue.h"
+#include "vast/VASTSubModules.h"
+#include "vast/Utilities.h"
+#include "vast/VASTSeqValue.h"
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Support/CFG.h"

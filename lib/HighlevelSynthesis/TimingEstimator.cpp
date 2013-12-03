@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "TimingEstimator.h"
-#include "shang/FUInfo.h"
+#include "vast/FUInfo.h"
 
 #include "llvm/Support/MathExtras.h"
 #define DEBUG_TYPE "shang-timing-estimator"

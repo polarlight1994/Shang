@@ -14,9 +14,9 @@
 
 #include "Allocation.h"
 
-#include "shang/Passes.h"
-#include "shang/FUInfo.h"
-#include "shang/VASTModule.h"
+#include "vast/Passes.h"
+#include "vast/FUInfo.h"
+#include "vast/VASTModule.h"
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Instructions.h"

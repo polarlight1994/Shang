@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Implement the shang/VASTModulePass pass, which is the container of the
+// Implement the vast/VASTModulePass pass, which is the container of the
 // VASTModule.
 //
 //===----------------------------------------------------------------------===//
@@ -15,13 +15,13 @@
 #include "MinimalDatapathContext.h"
 #include "Allocation.h"
 
-#include "shang/Dataflow.h"
-#include "shang/VASTMemoryPort.h"
-#include "shang/VASTModulePass.h"
-#include "shang/VASTModule.h"
-#include "shang/VASTSubModules.h"
+#include "vast/Dataflow.h"
+#include "vast/VASTMemoryPort.h"
+#include "vast/VASTModulePass.h"
+#include "vast/VASTModule.h"
+#include "vast/VASTSubModules.h"
 
-#include "shang/Passes.h"
+#include "vast/Passes.h"
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Analysis/ValueTracking.h"

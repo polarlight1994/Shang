@@ -14,10 +14,10 @@
 #include "TimingNetlist.h"
 #include "TimingEstimator.h"
 
-#include "shang/VASTMemoryPort.h"
-#include "shang/VASTModule.h"
-#include "shang/Passes.h"
-#include "shang/FUInfo.h"
+#include "vast/VASTMemoryPort.h"
+#include "vast/VASTModule.h"
+#include "vast/Passes.h"
+#include "vast/FUInfo.h"
 
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SetOperations.h"

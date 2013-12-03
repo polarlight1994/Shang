@@ -13,7 +13,7 @@
 
 #include "SDCScheduler.h"
 
-#include "shang/VASTModule.h"
+#include "vast/VASTModule.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/Analysis/Dominators.h"

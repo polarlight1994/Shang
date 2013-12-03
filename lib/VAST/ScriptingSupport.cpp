@@ -11,10 +11,10 @@
 // manipulate some data such as current generated RTL module with external script
 //
 //===----------------------------------------------------------------------===//
-#include "shang/Passes.h"
-#include "shang/Utilities.h"
-#include "shang/VASTModule.h"
-#include "shang/VASTModulePass.h"
+#include "vast/Passes.h"
+#include "vast/Utilities.h"
+#include "vast/VASTModule.h"
+#include "vast/VASTModulePass.h"
 
 #include "llvm/IR/Module.h"
 #include "llvm/IR/DerivedTypes.h"

@@ -14,9 +14,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/Passes.h"
-#include "shang/VASTModule.h"
-#include "shang/STGDistances.h"
+#include "vast/Passes.h"
+#include "vast/VASTModule.h"
+#include "vast/STGDistances.h"
 
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/ADT/PostOrderIterator.h"

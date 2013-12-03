@@ -11,9 +11,9 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/VASTSeqOp.h"
-#include "shang/VASTSeqValue.h"
-#include "shang/VASTSlot.h"
+#include "vast/VASTSeqOp.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/VASTSlot.h"
 
 #include "llvm/IR/Instruction.h"
 #define DEBUG_TYPE "vast-seq-op"

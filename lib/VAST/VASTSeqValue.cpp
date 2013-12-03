@@ -16,12 +16,12 @@
 
 #include "LangSteam.h"
 
-#include "shang/VASTExprBuilder.h"
-#include "shang/VASTSeqValue.h"
-#include "shang/VASTSlot.h"
-#include "shang/VASTModule.h"
-#include "shang/STGDistances.h"
-#include "shang/Strash.h"
+#include "vast/VASTExprBuilder.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/VASTSlot.h"
+#include "vast/VASTModule.h"
+#include "vast/STGDistances.h"
+#include "vast/Strash.h"
 
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/CommandLine.h"

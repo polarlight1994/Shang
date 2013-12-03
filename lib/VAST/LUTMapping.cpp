@@ -12,13 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "shang/VASTModule.h"
-#include "shang/VASTModulePass.h"
-#include "shang/VASTExprBuilder.h"
-#include "shang/VASTHandle.h"
-#include "shang/Utilities.h"
-#include "shang/FUInfo.h"
-#include "shang/Passes.h"
+#include "vast/VASTModule.h"
+#include "vast/VASTModulePass.h"
+#include "vast/VASTExprBuilder.h"
+#include "vast/VASTHandle.h"
+#include "vast/Utilities.h"
+#include "vast/FUInfo.h"
+#include "vast/Passes.h"
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/ADT/SmallString.h"

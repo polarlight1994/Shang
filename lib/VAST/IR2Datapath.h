@@ -14,7 +14,7 @@
 #ifndef VTM_LLVM_IR_TO_DATAPATH
 #define VTM_LLVM_IR_TO_DATAPATH
 
-#include "shang/VASTExprBuilder.h"
+#include "vast/VASTExprBuilder.h"
 
 #include "llvm/InstVisitor.h"
 #include "llvm/ADT/ValueMap.h"

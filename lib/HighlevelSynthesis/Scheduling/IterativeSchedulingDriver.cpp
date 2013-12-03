@@ -16,11 +16,11 @@
 
 #include "VASTScheduling.h"
 
-#include "shang/Dataflow.h"
-#include "shang/Passes.h"
-#include "shang/Strash.h"
-#include "shang/VASTModule.h"
-#include "shang/VASTModulePass.h"
+#include "vast/Dataflow.h"
+#include "vast/Passes.h"
+#include "vast/Strash.h"
+#include "vast/VASTModule.h"
+#include "vast/VASTModulePass.h"
 
 #include "llvm/PassManagers.h"
 #include "llvm/Analysis/Dominators.h"

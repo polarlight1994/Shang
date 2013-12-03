@@ -1,4 +1,4 @@
-//===--------- shang/LuaScript.h - Lua Scripting Support ------------===//
+//===--------- vast/LuaScript.h - Lua Scripting Support ------------===//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -15,7 +15,7 @@
 #ifndef VTM_LUA_SCRIPT_H
 #define VTM_LUA_SCRIPT_H
 
-#include "shang/FUInfo.h"
+#include "vast/FUInfo.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/ADT/StringMap.h"

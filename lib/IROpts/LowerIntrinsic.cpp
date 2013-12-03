@@ -10,7 +10,7 @@
 // This file contains the LowerIntrinsic pass.
 //
 //===----------------------------------------------------------------------===//
-#include "shang/Passes.h"
+#include "vast/Passes.h"
 
 #include "llvm/Pass.h"
 #include "llvm/IR/Function.h"

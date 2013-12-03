@@ -20,12 +20,12 @@
 #include "CompGraph.h"
 #include "PreSchedBinding.h"
 
-#include "shang/Strash.h"
-#include "shang/VASTMemoryPort.h"
-#include "shang/VASTExprBuilder.h"
-#include "shang/VASTModule.h"
-#include "shang/VASTModulePass.h"
-#include "shang/Passes.h"
+#include "vast/Strash.h"
+#include "vast/VASTMemoryPort.h"
+#include "vast/VASTExprBuilder.h"
+#include "vast/VASTModule.h"
+#include "vast/VASTModulePass.h"
+#include "vast/Passes.h"
 
 #include "llvm/Analysis/Dominators.h"
 

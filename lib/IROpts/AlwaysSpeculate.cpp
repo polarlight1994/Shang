@@ -10,8 +10,8 @@
 // This file contains the implementation of the AlwaysSpeculate pass.
 //
 //===----------------------------------------------------------------------===//
-#include "shang/Passes.h"
-#include "shang/Utilities.h"
+#include "vast/Passes.h"
+#include "vast/Utilities.h"
 
 #include "llvm/Pass.h"
 #include "llvm/IR/Instructions.h"

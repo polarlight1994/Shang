@@ -12,12 +12,12 @@
 //===----------------------------------------------------------------------===//
 #include "SeqLiveVariables.h"
 
-#include "shang/Passes.h"
+#include "vast/Passes.h"
 
-#include "shang/VASTSeqOp.h"
-#include "shang/VASTSeqValue.h"
-#include "shang/VASTModule.h"
-#include "shang/VASTModulePass.h"
+#include "vast/VASTSeqOp.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/VASTModule.h"
+#include "vast/VASTModulePass.h"
 
 #include "llvm/Analysis/Dominators.h"
 

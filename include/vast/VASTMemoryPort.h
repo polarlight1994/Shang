@@ -14,7 +14,7 @@
 #ifndef VAST_MEMORY_PORT_H
 #define VAST_MEMORY_PORT_H
 
-#include "shang/VASTSubModules.h"
+#include "vast/VASTSubModules.h"
 #include <map>
 
 namespace llvm {

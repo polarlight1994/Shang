@@ -12,7 +12,7 @@
 // the content to the global variables when the function return.
 //
 //===----------------------------------------------------------------------===//
-#include "shang/Passes.h"
+#include "vast/Passes.h"
 
 #include "llvm/Pass.h"
 #include "llvm/IR/DerivedTypes.h"

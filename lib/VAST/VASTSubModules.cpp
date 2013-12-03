@@ -12,9 +12,9 @@
 //===----------------------------------------------------------------------===//
 #include "LangSteam.h"
 
-#include "shang/VASTSubModules.h"
-#include "shang/VASTModule.h"
-#include "shang/FUInfo.h"
+#include "vast/VASTSubModules.h"
+#include "vast/VASTModule.h"
+#include "vast/FUInfo.h"
 
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/Support/Format.h"
