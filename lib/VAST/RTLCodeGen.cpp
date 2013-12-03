@@ -50,6 +50,7 @@ struct RTLCodeGen : public VASTModulePass {
 
   ~RTLCodeGen(){}
 
+  void generateCodeForTopModule(Module *M, VASTModule &VM);
   bool runOnVASTModule(VASTModule &VM);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -85,12 +86,33 @@ RTLCodeGen::RTLCodeGen() : VASTModulePass(ID), Out() {
   initializeRTLCodeGenPass(*PassRegistry::getPassRegistry());
 }
 
+void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
+  DataLayout *TD = getAnalysisIfAvailable<DataLayout>();
+  HLSAllocation &Allocation = getAnalysis<HLSAllocation>();
+
+  SMDiagnostic Err;
+
+  // Read the result from the scripting engine.
+  const char *GlobalCodePath[] = { "RTLGlobalCode" };
+  std::string GlobalCode = getStrValueFromEngine(GlobalCodePath);
+  Out << GlobalCode << '\n';
+
+  bindFunctionToScriptEngine(*TD, &VM);
+  const char *TopModuleScriptPath[] = { "Misc", "RTLTopModuleScript" };
+  std::string TopModuleScript = getStrValueFromEngine(TopModuleScriptPath);
+  if (!runScriptStr(TopModuleScript, Err))
+    report_fatal_error("RTLCodeGen: Cannot run top module script:\n"
+                       + Err.getMessage());
+}
+
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   Function &F = VM.getLLVMFunction();
   std::string RTLOutputPath = getStrValueFromEngine("RTLOutput");
   std::string Error;
   raw_fd_ostream Output(RTLOutputPath.c_str(), Error);
   Out.setStream(Output);
+
+  generateCodeForTopModule(F.getParent(), VM);
 
   if (EnalbeDumpIR) {
     Out << "`ifdef wtf_is_this\n" << "Function for RTL Codegen:\n";
