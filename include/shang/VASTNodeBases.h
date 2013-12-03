@@ -542,12 +542,14 @@ public:
   }
 };
 
-class VASTSubModuleBase : public VASTNode {
+class VASTSubModuleBase : public VASTNode,
+                          public ilist_node<VASTSubModuleBase> {
   SmallVector<VASTSelector*, 8> Fanins;
 
   SmallVector<VASTSelector*, 4> Fanouts;
 protected:
   const unsigned Idx;
+  VASTSubModuleBase() : VASTNode(VASTTypes(-1)), Idx(0) {}
 
   VASTSubModuleBase(VASTTypes DeclType, const char *Name, unsigned Idx)
     : VASTNode(DeclType), Idx(Idx) {
@@ -556,6 +558,8 @@ protected:
 
   void addFanin(VASTSelector *S);
   void addFanout(VASTSelector *V);
+
+  friend struct ilist_sentinel_traits<VASTSubModuleBase>;
 public:
   ~VASTSubModuleBase() {}
 
