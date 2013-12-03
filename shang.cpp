@@ -292,7 +292,7 @@ int main(int argc, char **argv) {
     // Perform the scheduling.
     HLSPasses.add(createDataflowAnnotationPass());
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
-    HLSPasses.add(createIterativeSchedulingPass());
+    DEBUG(HLSPasses.add(createIterativeSchedulingPass()));
     // Scheduling will restruct the datapath. Optimize the datapath again
     // after scheduling.
     HLSPasses.add(createLUTMappingPass());
