@@ -1,15 +1,17 @@
-//===- VASTLuaBases.cpp - The classes in VAST need to be bound --*- C++ -*-===//
+//===- VASTModule.cpp - The Module of the synthesized hardware --*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implement the classes that need to be bound.
+// This file implements VASTModule.
 //
 //===----------------------------------------------------------------------===//
+#include "LangSteam.h"
+
 #include "vast/VASTMemoryBank.h"
 #include "vast/VASTModule.h"
 
@@ -20,198 +22,6 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
-//----------------------------------------------------------------------------//
-void VASTNode::dump() const {
-  print(dbgs());
-  dbgs() << '\n';
-}
-
-void VASTNode::dropUses() {
-  dbgs() << "Current Type " << unsigned(getASTType()) << '\n';
-  llvm_unreachable("Subclass should implement this function!");
-}
-
-static std::string GetSTAObjectName(const VASTMemoryBank *RAM) {
-  std::string Name;
-  raw_string_ostream OS(Name);
-
-  OS << " *" << RAM->getArrayName() << "* ";
-  return OS.str();
-}
-
-static std::string GetSTAObjectName(const VASTSelector *Sel) {
-  std::string Name;
-  raw_string_ostream OS(Name);
-
-  if (Sel->isFUOutput()) {
-    if (const VASTMemoryBank *RAM = dyn_cast<VASTMemoryBank>(Sel->getParent()))
-      return GetSTAObjectName(RAM);
-  }
-
-  OS << ' ' << Sel->getName() << "* ";
-
-  return OS.str();
-}
-
-static std::string GetSTAObjectName(const VASTValue *V) {
-  std::string Name;
-  raw_string_ostream OS(Name);
-  if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
-    if (const VASTSeqValue *SV = dyn_cast<VASTSeqValue>(NV))
-      return GetSTAObjectName(SV->getSelector());
-
-    // The block RAM should be printed as Prefix + ArrayName in the script.
-    if (const char *N = NV->getName()) {
-      OS << ' ' << N << "* ";
-      return OS.str();
-    }
-  } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
-    std::string Name = E->getSubModName();
-    if (!Name.empty()) {
-      OS << ' ' << Name << "* ";
-      return OS.str();
-    } else if (E->hasName()) {
-      OS << ' ' << E->getTempName() << "* ";
-      return OS.str();
-    }
-  }
-
-  return "";
-}
-
-std::string VASTNode::getSTAObjectName() const {
-  if (const VASTValue *V = dyn_cast<VASTValue>(this))
-    return GetSTAObjectName(V);
-
-  if (const VASTSelector *Sel = dyn_cast<VASTSelector>(this))
-    return GetSTAObjectName(Sel);
-
-  if (const VASTMemoryBank *RAM = dyn_cast<VASTMemoryBank>(this))
-    return GetSTAObjectName(RAM);
-
-  if (const VASTOutPort *Port = dyn_cast<VASTOutPort>(this))
-    return GetSTAObjectName(Port->getSelector());
-
-  if (const VASTRegister *Reg = dyn_cast<VASTRegister>(this))
-    return GetSTAObjectName(Reg->getSelector());
-
-  return "";
-}
-
-std::string VASTNode::DirectClkEnAttr = "";
-std::string VASTNode::ParallelCaseAttr = "";
-std::string VASTNode::FullCaseAttr = "";
-
-//----------------------------------------------------------------------------//
-void VASTValue::print(raw_ostream &OS) const {
-  printAsOperandImpl(OS);
-}
-
-void VASTValue::printAsOperand(raw_ostream &OS, unsigned UB, unsigned LB,
-                               bool isInverted) const{
-  if (isInverted) OS << "(~";
-  OS << '(';
-  printAsOperandImpl(OS, UB, LB);
-  OS << ')';
-  if (isInverted) OS << ')';
-}
-
-void VASTValue::printAsOperand(raw_ostream &OS, bool isInverted) const {
-  if (isInverted) OS << "(~";
-  OS << '(';
-  printAsOperandImpl(OS);
-  OS << ')';
-  if (isInverted) OS << ')';
-}
-
-void VASTValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
-                                   unsigned LB) const {
-  assert(0 && "VASTValue::printAsOperand should not be called!");
-}
-
-std::string VASTValue::printBitRange(unsigned UB, unsigned LB, bool printOneBit){
-  std::string ret;
-  assert(UB && UB > LB && "Bad bit range!");
-  --UB;
-  if (UB != LB)
-    ret = "[" + utostr_32(UB) + ":" + utostr_32(LB) + "]";
-  else if(printOneBit)
-    ret = "[" + utostr_32(LB) + "]";
-
-  return ret;
-}
-
-bool VASTValue::extractSupportingSeqVal(std::set<VASTSeqValue*> &SeqVals,
-                                        bool StopAtTimingBarrier) {
-  VASTValue *Root = this;
-
-  std::set<VASTExpr*> Visited;
-  VASTExpr *Expr = dyn_cast<VASTExpr>(Root);
-  // The entire tree had been visited.
-  if (Expr == 0) {
-    // If ChildNode is a not data-path operand list, it may be the SeqVal.
-    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Root))
-      SeqVals.insert(SeqVal);
-
-    return !SeqVals.empty();
-  }
-
-  typedef VASTOperandList::op_iterator ChildIt;
-  std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
-
-  VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
-
-  while (!VisitStack.empty()) {
-    VASTExpr *Node = VisitStack.back().first;
-    ChildIt It = VisitStack.back().second;
-
-    // We have visited all children of current node.
-    if (It == Node->op_end()) {
-      VisitStack.pop_back();
-      continue;
-    }
-
-    // Otherwise, remember the node and visit its children first.
-    VASTValue *ChildNode = It->unwrap().get();
-    ++VisitStack.back().second;
-
-    if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
-      if (StopAtTimingBarrier && ChildExpr->isTimingBarrier())
-        continue;
-
-      // ChildNode has a name means we had already visited it.
-      if (!Visited.insert(ChildExpr).second) continue;
-
-      VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
-      continue;
-    }
-
-    // If ChildNode is a not data-path operand list, it may be the SeqVal.
-    if (VASTSeqValue *SeqVal = dyn_cast_or_null<VASTSeqValue>(ChildNode)) {
-      SeqVals.insert(SeqVal);
-      continue;
-    }
-  }
-
-  return !SeqVals.empty();
-}
-
-VASTValue::VASTValue(VASTTypes T, unsigned BitWidth)
-  : VASTNode(T), BitWidth(BitWidth) {
-  assert(T >= vastFirstValueType && T <= vastLastValueType
-    && "Bad DeclType!");
-  UseList
-    = reinterpret_cast<iplist<VASTUse>*>(::operator new(sizeof(iplist<VASTUse>)));
-  new (UseList) iplist<VASTUse>();
-}
-
-VASTValue::~VASTValue() {
-  // Do not call the destructor of UseList. They are deleted by the
-  // VASTOperandList.
-  // We should check if use list is empty if necessary.
-  ::operator delete(UseList);
-}
-
 //----------------------------------------------------------------------------//
 VASTPort::VASTPort(VASTTypes Type) : VASTNode(Type) {}
 
@@ -880,4 +690,72 @@ VASTSelector *VASTModule::createSelector(const Twine &Name, unsigned BitWidth,
   Selectors.push_back(Sel);
 
   return Sel;
+}
+
+//===----------------------------------------------------------------------===//
+void VASTModule::resetSelectorName() {
+  typedef SymTabTy::iterator iterator;
+  for (iterator I = SymbolTable.begin(), E = SymbolTable.end(); I != E; ++I) {
+    VASTSelector *Sel = dyn_cast<VASTSelector>(I->second);
+    if (Sel == 0)
+      continue;
+
+    Sel->setName(I->getKeyData());
+  }
+}
+
+void VASTModule::printSubmodules(raw_ostream &OS) const {
+  vlang_raw_ostream O(OS);
+  O.enter_block("\n", "");
+  printSubmodules(O);
+  O.exit_block("\n", "");
+}
+
+void VASTModule::printRegisterBlocks(raw_ostream &OS) const {
+  vlang_raw_ostream O(OS);
+  O.enter_block("\n", "");
+  printRegisterBlocks(O);
+  O.exit_block("\n", "");
+}
+
+bool VASTModule::gc() {
+  bool Changed = false;
+
+  // Clear up the dead VASTSeqValues.
+  for (seqval_iterator VI = seqval_begin(); VI != seqval_end(); /*++I*/) {
+    VASTSeqValue *V = VI++;
+
+    if (!V->use_empty()) continue;
+
+    SmallVector<VASTLatch, 4> DeadOps(V->fanin_begin(), V->fanin_end());
+
+    while (!DeadOps.empty()) {
+      VASTLatch L = DeadOps.pop_back_val();
+      if (L.Op->getNumDefs() == 1)
+        eraseSeqOp(L.Op);
+      else
+        L.eraseOperand();
+    }
+
+    eraseSeqVal(V);
+
+    Changed |= true;
+  }
+
+  // Release the dead seqops, this happen when we fold the SeqOp through the
+  // false paths.
+  for (seqop_iterator I = seqop_begin(); I != seqop_end(); /*++I*/) {
+    VASTSeqOp *Op = I++;
+    if (Op->getGuard() == VASTImmediate::False) {
+      DEBUG(dbgs() << "Removing SeqOp whose predicate is always false:\n";
+      Op->dump(););
+
+      eraseSeqOp(Op);
+
+      Changed |= true;
+    }
+  }
+
+  // At last clear up the dead VASTExprs.
+  return Datapath->gc() || Changed;
 }

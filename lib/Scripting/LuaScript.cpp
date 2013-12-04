@@ -55,9 +55,6 @@ void LuaScript::init() {
 
   load_luapp_lo(State);
 
-  // Bind our class.
-  luabind::open(State);
-
   // Bind the object.
   luabind::globals(State)["TimingAnalysis"] = luabind::newtable(State);
   luabind::globals(State)["FUs"] = luabind::newtable(State);

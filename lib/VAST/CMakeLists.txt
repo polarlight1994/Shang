@@ -21,7 +21,8 @@ add_llvm_library(ShangVAST
   VASTSeqValue.cpp
   VASTSlot.cpp
   VASTSubModules.cpp
-  VASTMisc.cpp
+  VASTModule.cpp
+  VASTNodes.cpp
   ScriptingSupport.cpp
   ControlLogicSynthesis.cpp
   DatapathNamer.cpp

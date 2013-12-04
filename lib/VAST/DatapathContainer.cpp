@@ -233,3 +233,26 @@ void DatapathContainer::recursivelyDeleteTriviallyDeadExprs(VASTExpr *E) {
     Exprs.erase(E);
   } while (!DeadExprs.empty());
 }
+
+bool DatapathContainer::gc() {
+  // Please note that recursivelyDeleteTriviallyDeadExprs will not invalid the
+  // VASTExprs in the workllist while we are deleting other expressions. Because
+  // we do not perform any replacement.
+  std::vector<VASTExpr*> Worklist;
+  typedef DatapathContainer::expr_iterator expr_iterator;
+  for (expr_iterator I = expr_begin(); I != expr_end(); ++I)
+    if (I->use_empty())
+      Worklist.push_back(I);
+
+  if (Worklist.empty())
+    return false;
+
+  while (!Worklist.empty()) {
+    VASTExpr *E = Worklist.back();
+    Worklist.pop_back();
+
+    recursivelyDeleteTriviallyDeadExprs(E);
+  }
+
+  return true;
+}
