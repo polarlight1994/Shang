@@ -88,10 +88,9 @@ RTLCodeGen::RTLCodeGen() : VASTModulePass(ID), Out() {
 }
 
 void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
-  // Read the result from the scripting engine.
-  const char *GlobalCodePath[] = { "RTLGlobalCode" };
-  std::string GlobalCode = LuaI::GetString(GlobalCodePath);
-  Out << GlobalCode << '\n';
+  const char *FUTemplatePath[] = { "FUs", "CommonTemplate" };
+  std::string FUTemplate = LuaI::GetString(FUTemplatePath);
+  Out << FUTemplate << '\n';
 }
 
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
