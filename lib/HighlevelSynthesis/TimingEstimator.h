@@ -15,6 +15,7 @@
 #define TIMING_ESTIMATOR_LINEAR_APPROXIMATION_H
 
 #include "TimingNetlist.h"
+#include "vast/LuaI.h"
 #include "vast/VASTDatapathNodes.h"
 #include "vast/VASTSeqValue.h"
 #include "vast/Utilities.h"
