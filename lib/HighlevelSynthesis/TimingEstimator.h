@@ -301,7 +301,7 @@ public:
                                     const SrcEntryTy &DelayFromSrc) {
     delay_type D = DelayFromSrc.second;
     unsigned FUWidth = std::min(Dst->getBitWidth(), 64u);
-    VFUTy *FU = getFUDesc<VFUTy>();
+    VFUTy *FU = LuaI::Get<VFUTy>();
     float Latency = FU->lookupLatency(FUWidth);
     delay_type Inc(Latency);
     return SrcEntryTy(DelayFromSrc.first, D + Inc);

@@ -15,6 +15,7 @@
 #include "Allocation.h"
 #include "LangSteam.h"
 
+#include "vast/LuaI.h"
 #include "vast/VASTModulePass.h"
 #include "vast/VASTModule.h"
 #include "vast/Utilities.h"
@@ -87,35 +88,15 @@ RTLCodeGen::RTLCodeGen() : VASTModulePass(ID), Out() {
 }
 
 void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
-  DataLayout *TD = getAnalysisIfAvailable<DataLayout>();
-  HLSAllocation &Allocation = getAnalysis<HLSAllocation>();
-
-  SMDiagnostic Err;
-  const char *GlobalScriptPath[] = { "Misc", "RTLGlobalScript" };
-  std::string GlobalScript = getStrValueFromEngine(GlobalScriptPath);
-  SmallVector<GlobalVariable*, 32> GVs;
-
-  for (Module::global_iterator I = M->global_begin(), E = M->global_end();
-       I != E; ++I) {
-    GlobalVariable *GV = I;
-
-    if (Allocation.getMemoryBank(*GV) == NULL)
-      GVs.push_back(I);
-  }
-
-  if (!runScriptOnGlobalVariables(GVs, TD, GlobalScript, Err))
-    report_fatal_error("RTLCodeGen: Cannot run globalvariable script:\n"
-                       + Err.getMessage());
-
   // Read the result from the scripting engine.
   const char *GlobalCodePath[] = { "RTLGlobalCode" };
-  std::string GlobalCode = getStrValueFromEngine(GlobalCodePath);
+  std::string GlobalCode = LuaI::GetString(GlobalCodePath);
   Out << GlobalCode << '\n';
 }
 
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   Function &F = VM.getLLVMFunction();
-  std::string RTLOutputPath = getStrValueFromEngine("RTLOutput");
+  std::string RTLOutputPath = LuaI::GetString("RTLOutput");
   std::string Error;
   raw_fd_ostream Output(RTLOutputPath.c_str(), Error);
   Out.setStream(Output);

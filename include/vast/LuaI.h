@@ -1,19 +1,18 @@
-//===--------- vast/LuaScript.h - Lua Scripting Support ------------===//
+//===--- vast/LuaI.h - The wrapper of the embedded LUA Interpreter --------===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                               //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
-// This file define the LuaScript class, which provide basic lua scripting
-// support.
+// This file define the LuaI class, which provide basic lua scripting support.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef VAST_LUA_SCRIPT_H
-#define VAST_LUA_SCRIPT_H
+#ifndef VAST_LUA_I_H
+#define VAST_LUA_I_H
 
 #include "vast/FUInfo.h"
 
@@ -37,18 +36,16 @@ class raw_ostream;
 class SMDiagnostic;
 
 // Lua scripting support.
-class LuaScript {
+class LuaI {
   // DO NOT IMPLEMENT
-  LuaScript(const LuaScript&);
+  LuaI(const LuaI&) LLVM_DELETED_FUNCTION;
   // DO NOT IMPLEMENT
-  const LuaScript &operator=(const LuaScript&);
+  const LuaI &operator=(const LuaI&)LLVM_DELETED_FUNCTION;
 
   lua_State *State;
 
   IndexedMap<VFUDesc*, CommonFUIdentityFunctor> FUSet;
   std::string DataLayout;
-
-  friend VFUDesc *getFUDesc(enum VFUs::FUTypes T);
 
   template<enum VFUs::FUTypes T>
   void initSimpleFU(luabridge::LuaRef FUs);
@@ -64,17 +61,17 @@ class LuaScript {
   luabridge::LuaRef
   getValueRecursively(luabridge::LuaRef Parent,
                       ArrayRef<const char*> Path) const;
-public:
 
-  LuaScript();
-  ~LuaScript();
+  luabridge::LuaRef getValue(ArrayRef<const char*> Path) const;
+
+  template<typename T>
+  T getValueT(ArrayRef<const char*> Path) const;
 
   // template<class T>
   // void bindToGlobals(const char *Name, T *O) {
   //  luabind::globals(State)[Name] = O;
   //}
 
-  luabridge::LuaRef getValue(ArrayRef<const char*> Path) const;
   std::string getValueStr(ArrayRef<const char*> Path) const;
 
   luabridge::LuaRef getValue(const char *Name) const;
@@ -85,11 +82,27 @@ public:
 
   bool runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err);
   bool runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err);
+public:
 
-  const std::string &getDataLayout() const { return DataLayout; }
+  LuaI();
+  ~LuaI();
+
+  static bool EvalString(const std::string &ScriptStr, SMDiagnostic &Err);
+
+  static std::string GetString(const char *Name);
+  static std::string GetString(ArrayRef<const char*> Path);
+
+  static float GetFloat(ArrayRef<const char*> Path);
+
+  static bool Load(const std::string &Path);
+  static std::string GetDataLayout();
+  static LuaI &Get();
+  static VFUDesc *Get(enum VFUs::FUTypes T);
+  template<class ResType>
+  static ResType *Get() {
+    return cast<ResType>(Get(ResType::getType()));
+  }
 };
-
-LuaScript &scriptEngin();
 }
 
 #endif

@@ -14,6 +14,7 @@
 //===----------------------------------------------------------------------===//
 #include "vast/Passes.h"
 #include "vast/FUInfo.h"
+#include "vast/LuaI.h"
 #include "vast/Utilities.h"
 
 #include "llvm/Pass.h"
@@ -387,7 +388,7 @@ bool MemoryAccessCoalescing::canBeFused(Instruction *LowerInst,
         return false;
   }
 
-  uint64_t BusWidth = getFUDesc<VFUMemBus>()->getDataWidth() / 8;
+  uint64_t BusWidth = LuaI::Get<VFUMemBus>()->getDataWidth() / 8;
 
   // Don't exceed the width of data port of MemBus.
   if (FusedWidth > BusWidth) return false;
@@ -468,7 +469,7 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
                                               AddrDistant + HigherSizeInBytes);
   NewSizeInBytes = NextPowerOf2(NewSizeInBytes - 1);
 
-  assert(NewSizeInBytes <= getFUDesc<VFUMemBus>()->getDataWidth() / 8
+  assert(NewSizeInBytes <= LuaI::Get<VFUMemBus>()->getDataWidth() / 8
          && "Bad load/store size!");
 
   // Get the Byte enable.

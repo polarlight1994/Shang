@@ -14,6 +14,7 @@
 //===----------------------------------------------------------------------===//
 #include "vast/Passes.h"
 #include "vast/Utilities.h"
+#include "vast/LuaI.h"
 
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -48,10 +49,6 @@
 #include <map>
 
 using namespace llvm;
-namespace llvm {
-bool loadConfig(const std::string &Path);
-std::string getDataLayoutFromEngine();
-}
 
 // General options for sync.  Other pass-specific options are specified
 // within the corresponding sync passes, and target-specific options
@@ -152,20 +149,20 @@ int main(int argc, char **argv) {
 
   std::string error;
 
-  if (loadConfig(InputFilename))
+  if (LuaI::Load(InputFilename))
     report_fatal_error("Cannot load synthesis configuration file!");
 
   // Load the module to be compiled...
   std::auto_ptr<Module> M;
 
-  M.reset(ParseIRFile(getStrValueFromEngine("InputFile"), Err, Context));
+  M.reset(ParseIRFile(LuaI::GetString("InputFile"), Err, Context));
 
   if (M.get() == 0) {
     Err.print(argv[0], errs());
     return 1;
   }
 
-  std::string DataLayoutStr = getDataLayoutFromEngine();
+  std::string DataLayoutStr = LuaI::GetDataLayout();
 
   Module &mod = *M.get();
 
@@ -206,7 +203,7 @@ int main(int argc, char **argv) {
   }
 
   const char *MainSynthesisInfoPath[2] = { "Functions", "main" };
-  bool isMainSynthesis = !getStrValueFromEngine(MainSynthesisInfoPath).empty();
+  bool isMainSynthesis = !LuaI::GetString(MainSynthesisInfoPath).empty();
   // Stage 3, perform high-level synthesis.
   // Build up all of the passes that we want to do to the module.
   {

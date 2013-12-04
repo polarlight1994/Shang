@@ -284,13 +284,6 @@ struct CommonFUIdentityFunctor
     return (unsigned)T - (unsigned)VFUs::FirstFUType;
   }
 };
-
-VFUDesc *getFUDesc(enum VFUs::FUTypes T);
-
-template<class ResType>
-ResType *getFUDesc() {
-  return cast<ResType>(getFUDesc(ResType::getType()));
-}
 }
 
 #endif

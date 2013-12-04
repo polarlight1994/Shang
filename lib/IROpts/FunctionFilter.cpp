@@ -14,6 +14,7 @@
 
 
 #include "vast/Passes.h"
+#include "vast/LuaI.h"
 #include "vast/Utilities.h"
 
 #include "llvm/Pass.h"
@@ -46,7 +47,7 @@ struct FunctionFilter : public ModulePass {
   std::map<Function*, std::string> TopFunctions;
 
   FunctionFilter(): ModulePass(ID), SwOut(0) {
-    std::string SoftwareIROutputPath = getStrValueFromEngine("SoftwareIROutput");
+    std::string SoftwareIROutputPath = LuaI::GetString("SoftwareIROutput");
     std::string Error;
     SwOut = new raw_fd_ostream(SoftwareIROutputPath.c_str(), Error);
     initializeFunctionFilterPass(*PassRegistry::getPassRegistry());
@@ -89,7 +90,7 @@ bool FunctionFilter::runOnModule(Module &M) {
     // Try to retrieve the synthesis configuration of the current function. 
     const char *FunctionInfoPath[2] = { "Functions",
                                         F->getValueName()->getKeyData() };
-    std::string DesignName = getStrValueFromEngine(FunctionInfoPath);
+    std::string DesignName = LuaI::GetString(FunctionInfoPath);
 
     // Ignore the function if the synthesis configuration is not available.
     if (DesignName.empty()) continue;

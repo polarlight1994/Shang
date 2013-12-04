@@ -16,6 +16,7 @@
 
 #include "VASTScheduling.h"
 
+#include "vast/LuaI.h"
 #include "vast/Dataflow.h"
 #include "vast/Passes.h"
 #include "vast/Strash.h"
@@ -54,8 +55,8 @@ class IterativeScheduling : public VASTModulePass, public PMDataManager {
 public:
   static char ID;
   IterativeScheduling() : VASTModulePass(ID), PMDataManager(),
-    OriginalRTLOutput(getStrValueFromEngine("RTLOutput")),
-    OriginalMCPOutput(getStrValueFromEngine("MCPDataBase")),
+    OriginalRTLOutput(LuaI::GetString("RTLOutput")),
+    OriginalMCPOutput(LuaI::GetString("MCPDataBase")),
     RTLFileName(sys::path::filename(OriginalRTLOutput)) {
     initializeIterativeSchedulingPass(*PassRegistry::getPassRegistry());
   }
@@ -286,6 +287,7 @@ void IterativeScheduling::changeOutputPaths(unsigned i) {
   (void)Existed;
   sys::path::append(NewPath, RTLFileName);
 
+  // Fixme: directly assign to LuaRef
   std::string Script;
   raw_string_ostream SS(Script);
   SS << "RTLOutput = [[" << NewPath << "]]\n";
@@ -293,7 +295,7 @@ void IterativeScheduling::changeOutputPaths(unsigned i) {
   SS << "MCPDataBase = [[" << NewPath << "]]\n";
 
   SMDiagnostic Err;
-  if (!runScriptStr(SS.str(), Err))
+  if (!LuaI::EvalString(SS.str(), Err))
     report_fatal_error("Cannot set output paths for intermediate netlist!");
 }
 
@@ -304,6 +306,6 @@ void IterativeScheduling::recoverOutputPath() {
         "MCPDataBase = [[" << OriginalMCPOutput << "]]\n";
 
   SMDiagnostic Err;
-  if (!runScriptStr(SS.str(), Err))
+  if (!LuaI::EvalString(SS.str(), Err))
     report_fatal_error("Cannot recover output paths!");
 }

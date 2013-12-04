@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 #include "TimingEstimator.h"
 #include "vast/FUInfo.h"
+#include "vast/LuaI.h"
 
 #include "llvm/Support/MathExtras.h"
 #define DEBUG_TYPE "shang-timing-estimator"
@@ -136,7 +137,7 @@ BlackBoxDelayEsitmator::AccumulateCmpDelay(VASTValue *Dst, unsigned SrcPos,
   delay_type D = DelayFromSrc.second;
   VASTExpr *CmpExpr = cast<VASTExpr>(Dst);
   unsigned FUWidth = CmpExpr->getOperand(SrcPos)->getBitWidth();
-  VFUICmp *Cmp = getFUDesc<VFUICmp>();
+  VFUICmp *Cmp = LuaI::Get<VFUICmp>();
   float Latency = Cmp->lookupLatency(FUWidth);
   delay_type Inc(Latency);
   return SrcEntryTy(DelayFromSrc.first, D + Inc);

@@ -13,7 +13,7 @@
 
 #include "Allocation.h"
 
-#include "vast/Utilities.h"
+#include "vast/LuaI.h"
 #include "vast/Passes.h"
 #include "vast/VASTMemoryBank.h"
 #include "vast/VASTModule.h"
@@ -159,7 +159,7 @@ bool MemoryPartition::runOnModule(Module &M) {
 
 bool MemoryPartition::createMemoryBank(AliasSet *AS, unsigned PortNum) {
   VASTModule &VM = getModule();
-  uint64_t MemBusSizeInBytes = getFUDesc<VFUMemBus>()->getDataWidth() / 8;
+  uint64_t MemBusSizeInBytes = LuaI::Get<VFUMemBus>()->getDataWidth() / 8;
   bool AllocateNewPort = true;
   SmallVector<Value*, 8> Pointers;
   SmallPtrSet<Type*, 8> AccessedTypes;

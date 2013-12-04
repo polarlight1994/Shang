@@ -7,7 +7,7 @@ include_directories(
 
 add_llvm_library(ShangScripting
   FUInfo.cpp
-  LuaScript.cpp
+  LuaI.cpp
 )
 
 target_link_libraries (

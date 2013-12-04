@@ -15,6 +15,7 @@
 #include "vast/Passes.h"
 #include "vast/DesignMetrics.h"
 #include "vast/FUInfo.h"
+#include "vast/LuaI.h"
 #include "vast/Utilities.h"
 
 #include "llvm/IR/IntrinsicInst.h"
@@ -501,7 +502,7 @@ unsigned LoopMetrics::getSaturateCount(Value *Val, Value *Ptr) {
 
   // The distance between pointer in successive iterations, in bytes.
   unsigned Distance = Stride64 * SizeInBytes;
-  unsigned BusSizeInBits = getFUDesc<VFUMemBus>()->getDataWidth();
+  unsigned BusSizeInBits = LuaI::Get<VFUMemBus>()->getDataWidth();
   unsigned BusSizeInBytes = BusSizeInBits / 8;
   // Dual port RAM double the data bandwitdh!
   // BusSizeInBytes *= 2;
@@ -627,8 +628,8 @@ bool LoopMetrics::isUnrollAccaptable(unsigned Count, uint64_t UnrollThreshold,
   if (NumAddressFanIn == 0) StepsElimnated = Count;
 
   // Calculate the MUX cost increment.
-  VFUMux *MUX = getFUDesc<VFUMux>();
-  VFUMemBus *MemBus = getFUDesc<VFUMemBus>();
+  VFUMux *MUX = LuaI::Get<VFUMux>();
+  VFUMemBus *MemBus = LuaI::Get<VFUMemBus>();
   unsigned AddrWidth = MemBus->getAddrWidth();
   unsigned DataWidth = MemBus->getDataWidth();
 

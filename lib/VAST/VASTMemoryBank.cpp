@@ -14,6 +14,7 @@
 
 #include "vast/VASTMemoryBank.h"
 #include "vast/VASTModule.h"
+#include "vast/LuaI.h"
 
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/ADT/StringExtras.h"
@@ -373,7 +374,7 @@ static void FillByteBuffer(ByteBuffer &Buf, const Constant *C) {
   }
 
   if (isa<ConstantPointerNull>(C)) {
-    unsigned PtrSizeInBytes = getFUDesc<VFUMemBus>()->getAddrWidth() / 8;
+    unsigned PtrSizeInBytes = LuaI::Get<VFUMemBus>()->getAddrWidth() / 8;
     FillByteBuffer(Buf, 0, PtrSizeInBytes);
     return;
   }
@@ -494,7 +495,7 @@ void VASTMemoryBank::writeInitializeFile(vlang_raw_ostream &OS) const {
   std::string InitFileName = "mem" + utostr_32(Idx) + "ram_init.txt";
 
   SmallString<256> FullInitFilePath
-    = sys::path::parent_path(getStrValueFromEngine("RTLOutput"));
+    = sys::path::parent_path(LuaI::GetString("RTLOutput"));
   sys::path::append(FullInitFilePath, InitFileName);
 
   std::string ErrorInfo;

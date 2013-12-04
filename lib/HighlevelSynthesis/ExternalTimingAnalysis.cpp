@@ -24,6 +24,7 @@
 #include "vast/VASTSubModules.h"
 #include "vast/VASTMemoryBank.h"
 #include "vast/STGDistances.h"
+#include "vast/LuaI.h"
 
 #include "llvm/Analysis/Dominators.h"
 
@@ -464,7 +465,7 @@ void ExternalTimingAnalysis::writeNetlist() const {
 
   // Read the result from the scripting engine.
   const char *FUTemplatePath[] = { "FUs", "CommonTemplate" };
-  std::string FUTemplate = getStrValueFromEngine(FUTemplatePath);
+  std::string FUTemplate = LuaI::GetString(FUTemplatePath);
   *Out << FUTemplate << '\n';
 
   // Write buffers to output
@@ -905,7 +906,7 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult() {
 
 ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF,
                                                STGDistances *Distences)
-  : OutputDir(sys::path::parent_path(getStrValueFromEngine("RTLOutput"))),
+  : OutputDir(sys::path::parent_path(LuaI::GetString("RTLOutput"))),
     VM(VM), DF(DF), Distances(Distences) {
   sys::path::append(OutputDir, "TimingNetlist");
   bool Existed;
@@ -916,7 +917,7 @@ ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF,
 void
 ExternalTimingAnalysis::writeMapDesignScript(raw_ostream &O) const {
   const char *LUAPath[] = { "TimingAnalysis", "Device" };
-  const std::string &DeviceName = getStrValueFromEngine(LUAPath);
+  const std::string &DeviceName = LuaI::GetString(LUAPath);
 
   O << "load_package flow\n"
        "load_package report\n"
@@ -1088,7 +1089,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
 
   const char *LUAPath[] = { "TimingAnalysis", "ExternalTool" };
 
-  SmallString<256> quartus(getStrValueFromEngine(LUAPath));
+  SmallString<256> quartus(LuaI::GetString(LUAPath));
   std::vector<const char*> args;
 
   args.push_back(quartus.c_str());

@@ -7,15 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the LuaScript class, which allow users pass some
+// This file implements the LuaI class, which allow users pass some
 // information into the program with lua script. 
 //
 //===----------------------------------------------------------------------===//
-#include "LuaScript.h"
-
-#include "vast/Passes.h"
+#include "vast/LuaI.h"
 #include "vast/VASTNodeBases.h"
-#include "vast/Utilities.h"
 
 #include "llvm/PassManager.h"
 #include "llvm/Support/raw_ostream.h"
@@ -42,11 +39,11 @@ using namespace luabridge;
 // The text template processing lua module
 #include "luapp.inc"
 
-LuaScript::LuaScript() : State(lua_open()) {
+LuaI::LuaI() : State(lua_open()) {
   FUSet.grow(VFUs::LastCommonFUType);
 }
 
-LuaScript::~LuaScript() {
+LuaI::~LuaI() {
   // FIXME: Release the function unit descriptors and function settings.
   //for (size_t i = 0, e = array_lengthof(FUSet); i != e; ++i)
   //  if(VFUDesc *Desc = FUSet[i]) delete Desc;
@@ -54,7 +51,7 @@ LuaScript::~LuaScript() {
   lua_close(State);
 }
 
-void LuaScript::init() {
+void LuaI::init() {
   // Open lua libraries.
   luaL_openlibs(State);
 
@@ -86,7 +83,7 @@ static void ReportNILPath(ArrayRef<const char*> Path) {
 }
 
 LuaRef
-LuaScript::getValueRecursively(LuaRef Parent,
+LuaI::getValueRecursively(LuaRef Parent,
                                ArrayRef<const char*> Path) const {
   if (Parent.isNil())
     return Parent;
@@ -99,7 +96,7 @@ LuaScript::getValueRecursively(LuaRef Parent,
   return getValueRecursively(R, Path.slice(1));
 }
 
-LuaRef LuaScript::getValue(ArrayRef<const char*> Path) const {
+LuaRef LuaI::getValue(ArrayRef<const char*> Path) const {
   LuaRef Root = getGlobal(State, Path[0]);
 
   if (Path.size() == 1)
@@ -108,28 +105,34 @@ LuaRef LuaScript::getValue(ArrayRef<const char*> Path) const {
   return getValueRecursively(Root, Path.slice(1));
 }
 
-std::string LuaScript::getValueStr(ArrayRef<const char*> Path) const {
+template<typename T>
+T LuaI::getValueT(ArrayRef<const char*> Path) const {
   LuaRef R = getValue(Path);
 
   if (R.isNil()) {
     ReportNILPath(Path);
-    return std::string("");
+    return T();
   }
 
-  return R.cast<std::string>();
+  return R.cast<T>();
 }
 
-LuaRef LuaScript::getValue(const char *Name) const {
+LuaRef LuaI::getValue(const char *Name) const {
   const char *Path[] = { Name };
   return getValue(Path);
 }
 
-std::string LuaScript::getValueStr(const char *Name) const {
+std::string LuaI::getValueStr(const char *Name) const {
   const char *Path[] = { Name };
   return getValueStr(Path);
 }
 
-bool LuaScript::runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err) {
+
+std::string LuaI::getValueStr(ArrayRef<const char*> Path) const {
+  return getValueT<std::string>(Path);
+}
+
+bool LuaI::runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err) {
   // Run the script.
   if (luaL_dostring(State, ScriptStr.c_str())) {
     Err = SMDiagnostic(ScriptStr, SourceMgr::DK_Warning, lua_tostring(State, -1));
@@ -139,7 +142,7 @@ bool LuaScript::runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err) {
   return true;
 }
 
-bool LuaScript::runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err) {
+bool LuaI::runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err) {
   // Run the script.
   if (luaL_dofile(State, ScriptPath.c_str())) {
     Err = SMDiagnostic(ScriptPath, SourceMgr::DK_Warning, lua_tostring(State, -1));
@@ -150,11 +153,11 @@ bool LuaScript::runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err) 
 }
 
 template<enum VFUs::FUTypes T>
-void LuaScript::initSimpleFU(LuaRef FUs) {
+void LuaI::initSimpleFU(LuaRef FUs) {
   FUSet[T] = new VSimpleFUDesc<T>(FUs[VFUDesc::getTypeName(T)]);
 }
 
-void LuaScript::updateFUs() {
+void LuaI::updateFUs() {
   LuaRef FUs = getGlobal(State, "FUs");
   // Initialize the functional unit descriptions.
   FUSet[VFUs::MemoryBus]
@@ -186,7 +189,7 @@ void LuaScript::updateFUs() {
   READPARAMETER(MaxLutSize, unsigned);
 }
 
-void LuaScript::updateStatus() {
+void LuaI::updateStatus() {
   updateFUs();
 
   // Read the synthesis attributes.
@@ -206,7 +209,7 @@ void LuaScript::updateStatus() {
   s << '-';
 
   // Setup the address width (pointer width).
-  unsigned PtrSize = getFUDesc<VFUMemBus>()->getAddrWidth();
+  unsigned PtrSize = Get<VFUMemBus>()->getAddrWidth();
   s << "p:" << PtrSize << ':' << PtrSize << ':' << PtrSize << '-';
 
   // FIXME: Setup the correct integer layout.
@@ -216,55 +219,44 @@ void LuaScript::updateStatus() {
   s.flush();
 }
 
-ManagedStatic<LuaScript> Script;
+ManagedStatic<LuaI> Interpreter;
 
-VFUDesc *llvm::getFUDesc(enum VFUs::FUTypes T) {
-  return Script->FUSet[T];
+VFUDesc *LuaI::Get(enum VFUs::FUTypes T) {
+  return Interpreter->FUSet[T];
 }
 
-LuaScript &llvm::scriptEngin() { return *Script; }
+LuaI &LuaI::Get() { return *Interpreter; }
 
-unsigned llvm::getIntValueFromEngine(ArrayRef<const char*> Path) {
-  return Script->getValue(Path).cast<unsigned>();
+std::string LuaI::GetDataLayout() {
+  return Interpreter->DataLayout;
 }
 
-float llvm::getFloatValueFromEngine(ArrayRef<const char*> Path) {
-  return Script->getValue(Path).cast<float>();
-}
-
-std::string llvm::getStrValueFromEngine(ArrayRef<const char*> Path) {
-  return Script->getValueStr(Path);
-}
-
-std::string llvm::getStrValueFromEngine(const char *VariableName) {
-  const char *Path[] = { VariableName };
-  return getStrValueFromEngine(Path);
-}
-
-bool llvm::runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err) {
-  return Script->runScriptFile(ScriptPath, Err);
-}
-
-bool llvm::runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err) {
-  return Script->runScriptStr(ScriptStr, Err);
-}
-
-namespace llvm {
-std::string getDataLayoutFromEngine() {
-  return Script->getDataLayout();
-}
-
-bool loadConfig(const std::string &Path) {
-  Script->init();
+bool LuaI::Load(const std::string &Path) {
+  Interpreter->init();
 
   SMDiagnostic Err;
-  if (!Script->runScriptFile(Path, Err)){
+  if (!Interpreter->runScriptFile(Path, Err)){
     report_fatal_error(Err.getMessage());
     return true;
   }
 
-  Script->updateStatus();
+  Interpreter->updateStatus();
 
   return false;
 }
+
+std::string LuaI::GetString(ArrayRef<const char*> Path) {
+  return Interpreter->getValueStr(Path);
+}
+
+std::string LuaI::GetString(const char *Name) {
+  return Interpreter->getValueStr(Name);
+}
+
+float LuaI::GetFloat(ArrayRef<const char*> Path) {
+  return Interpreter->getValueT<float>(Path);
+}
+
+bool LuaI::EvalString(const std::string &ScriptStr, SMDiagnostic &Err) {
+  return Interpreter->runScriptStr(ScriptStr, Err);
 }

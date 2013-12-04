@@ -18,6 +18,7 @@
 #include "vast/Dataflow.h"
 #include "vast/VASTModule.h"
 #include "vast/STGDistances.h"
+#include "vast/LuaI.h"
 
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/ADT/SmallString.h"
@@ -450,7 +451,7 @@ bool DataflowAnnotation::runOnVASTModule(VASTModule &VM) {
 
 void Dataflow::dumpToSQL() const {
   SmallString<256> SQLPath
-    = sys::path::parent_path(getStrValueFromEngine("RTLOutput"));
+    = sys::path::parent_path(LuaI::GetString("RTLOutput"));
   sys::path::append(SQLPath, "delay_annotation.sql");
 
   dbgs() << "Dump dataflow annotation to: "

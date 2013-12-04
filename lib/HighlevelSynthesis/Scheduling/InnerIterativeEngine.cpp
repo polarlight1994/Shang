@@ -13,6 +13,7 @@
 
 #include "SDCScheduler.h"
 
+#include "vast/LuaI.h"
 #include "vast/VASTModule.h"
 
 #include "llvm/IR/Function.h"
@@ -69,7 +70,7 @@ struct SelectorSlackVerifier {
   SelectorSlackVerifier(IR2SUMapTy &IR2SUMap, SDCScheduler &Scheduler,
                         VASTSelector *Sel, float PenaltyFactor)
     : IR2SUMap(IR2SUMap), Scheduler(Scheduler), Sel(Sel),
-      MaxFIPerLevel(getFUDesc<VFUMux>()->getMaxAllowdMuxSize(Sel->getBitWidth())),
+      MaxFIPerLevel(LuaI::Get<VFUMux>()->getMaxAllowdMuxSize(Sel->getBitWidth())),
       AverageMUXLevel((Log2_32_Ceil(Sel->numNonTrivialFanins()) - 1) / Log2_32_Ceil(MaxFIPerLevel) + 1),
       PenaltyFactor(PenaltyFactor) {}
 

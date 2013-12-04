@@ -15,6 +15,7 @@
 #include "MinimalDatapathContext.h"
 #include "Allocation.h"
 
+#include "vast/LuaI.h"
 #include "vast/Dataflow.h"
 #include "vast/VASTMemoryBank.h"
 #include "vast/VASTModulePass.h"
@@ -780,7 +781,7 @@ VASTModuleBuilder::getOrCreateSubModuleFromBinOp(BinaryOperator &BinOp) {
     // Look up the functional unit latency from the scripting engine.
     const char *FUDelayPath[] = { "FUs", BinOp.getOpcodeName(), "Latencies",
                                   SizeStr.c_str() };
-    float Latency = getFloatValueFromEngine(FUDelayPath);
+    float Latency = LuaI::GetFloat(FUDelayPath);
     Mod->createRetPort(VM, ResultSize, ceil(Latency));
 
     ++NumIPs;
@@ -954,7 +955,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     // The latency of the read operation is fixed to 1 if the byteenable is not
     // required.
     unsigned Latency = Bus->isDefault() ?
-                       getFUDesc<VFUMemBus>()->getReadLatency() : (Data ? 2 : 3);
+                       LuaI::Get<VFUMemBus>()->getReadLatency() : (Data ? 2 : 3);
     // TODO: Enable each pipeline stage individually.
     // Please note that we had already advance 1 slot after we lauch the
     // load/store to disable the load/store. Now we need only wait Latency - 1

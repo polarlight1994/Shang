@@ -14,6 +14,7 @@
 
 #include "vast/VASTMemoryBank.h"
 #include "vast/VASTModule.h"
+#include "vast/LuaI.h"
 
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -140,7 +141,7 @@ VASTModule::createSeqValue(VASTSelector *Selector, unsigned Idx, Value *V) {
 }
 
 VASTMemoryBank *VASTModule::createDefaultMemBus() {
-  VFUMemBus *Desc = getFUDesc<VFUMemBus>();
+  VFUMemBus *Desc = LuaI::Get<VFUMemBus>();
   return createMemBus(0, Desc->getAddrWidth(), Desc->getDataWidth(),
                       true, false, false);
 }

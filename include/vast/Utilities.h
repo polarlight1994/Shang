@@ -79,26 +79,6 @@ inline void PrintEscapedString(const std::string &Str, raw_ostream &Out) {
   PrintEscapedString(Str.c_str(), Str.size(), Out);
 }
 
-class Module;
-class DataLayout;
-class SMDiagnostic;
-// Allow other pass to run script against the GlobalVariables.
-bool runScriptOnGlobalVariables(Module &M, DataLayout *TD,
-                                const std::string &Script,
-                                SMDiagnostic Err);
-
-bool runScriptOnGlobalVariables(ArrayRef<GlobalVariable*> GVs, DataLayout *TD,
-                                const std::string &Script,
-                                SMDiagnostic Err);
-
-bool runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err);
-bool runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err);
-//
-unsigned getIntValueFromEngine(ArrayRef<const char*> Path);
-float getFloatValueFromEngine(ArrayRef<const char*> Path);
-std::string getStrValueFromEngine(ArrayRef<const char*> Path);
-std::string getStrValueFromEngine(const char *VariableName);
-
 class SCEV;
 class ScalarEvolution;
 // Loop dependency Analysis.

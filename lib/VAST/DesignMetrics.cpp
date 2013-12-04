@@ -16,6 +16,7 @@
 #include "vast/Passes.h"
 #include "vast/DesignMetrics.h"
 #include "vast/FUInfo.h"
+#include "vast/LuaI.h"
 
 #include "llvm/Pass.h"
 #include "llvm/IR/DataLayout.h"
@@ -225,13 +226,13 @@ uint64_t DesignMetricsImpl::getFUCost(VASTValue *V) const {
   switch (Expr->getOpcode()) {
   default: break;
 
-  case VASTExpr::dpAdd: return getFUDesc<VFUAddSub>()->lookupCost(ValueSize);
-  case VASTExpr::dpMul: return getFUDesc<VFUMult>()->lookupCost(ValueSize);
+  case VASTExpr::dpAdd: return LuaI::Get<VFUAddSub>()->lookupCost(ValueSize);
+  case VASTExpr::dpMul: return LuaI::Get<VFUMult>()->lookupCost(ValueSize);
   case VASTExpr::dpSGT:
-  case VASTExpr::dpUGT: return getFUDesc<VFUICmp>()->lookupCost(ValueSize);
+  case VASTExpr::dpUGT: return LuaI::Get<VFUICmp>()->lookupCost(ValueSize);
   case VASTExpr::dpShl:
   case VASTExpr::dpSRA:
-  case VASTExpr::dpSRL: return getFUDesc<VFUShift>()->lookupCost(ValueSize);
+  case VASTExpr::dpSRL: return LuaI::Get<VFUShift>()->lookupCost(ValueSize);
   }
 
   return 0;
@@ -314,8 +315,8 @@ void DesignMetrics::reset() { Impl->reset(); }
 
 uint64_t DesignMetrics::DesignCost::getCostInc(unsigned Multiply, uint64_t Alpha,
                                                uint64_t Beta, uint64_t Gama) const {
-  VFUMux *MUX = getFUDesc<VFUMux>();
-  VFUMemBus *MemBus = getFUDesc<VFUMemBus>();
+  VFUMux *MUX = LuaI::Get<VFUMux>();
+  VFUMemBus *MemBus = LuaI::Get<VFUMemBus>();
   unsigned AddrWidth = MemBus->getAddrWidth();
   unsigned DataWidth = MemBus->getDataWidth();
 

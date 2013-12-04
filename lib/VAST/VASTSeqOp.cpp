@@ -14,6 +14,7 @@
 #include "vast/VASTSeqOp.h"
 #include "vast/VASTSeqValue.h"
 #include "vast/VASTSlot.h"
+#include "vast/LuaI.h"
 
 #include "llvm/IR/Instruction.h"
 #define DEBUG_TYPE "vast-seq-op"
@@ -284,13 +285,13 @@ unsigned VASTSeqInst::getFUCost() const {
   unsigned BitWidth = const_cast<VASTSeqInst*>(this)->getSrc(0)->getBitWidth();
   switch (getFUType()) {
   case VFUs::AddSub:
-    return getFUDesc<VFUAddSub>()->lookupCost(std::min(64u, BitWidth));
+    return LuaI::Get<VFUAddSub>()->lookupCost(std::min(64u, BitWidth));
   case VFUs::ICmp:
-    return getFUDesc<VFUICmp>()->lookupCost(BitWidth);
+    return LuaI::Get<VFUICmp>()->lookupCost(BitWidth);
   case VFUs::Mult:
-    return getFUDesc<VFUMult>()->lookupCost(BitWidth);
+    return LuaI::Get<VFUMult>()->lookupCost(BitWidth);
   case VFUs::Shift:
-    return getFUDesc<VFUShift>()->lookupCost(std::min(64u, BitWidth));
+    return LuaI::Get<VFUShift>()->lookupCost(std::min(64u, BitWidth));
   default:
     break;
   }

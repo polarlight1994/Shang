@@ -11,8 +11,7 @@
 // Verilog target machine.
 //
 //===----------------------------------------------------------------------===//
-#include "LuaScript.h"
-
+#include "vast/LuaI.h"
 #include "vast/FUInfo.h"
 
 #include "llvm/ADT/STLExtras.h"

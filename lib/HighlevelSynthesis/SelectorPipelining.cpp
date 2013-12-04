@@ -16,6 +16,7 @@
 #include "vast/FUInfo.h"
 #include "vast/VASTMemoryBank.h"
 #include "vast/VASTExprBuilder.h"
+#include "vast/LuaI.h"
 
 #include "vast/VASTModulePass.h"
 #include "vast/VASTModule.h"
@@ -242,7 +243,7 @@ bool SelectorPipelining::pipelineFanins(VASTSelector *Sel) {
   // Iterate over all fanins to build the Fanin Slack Map.
   // Try to build the pipeline register by inserting the map.
   unsigned BitWidth = Sel->getBitWidth();
-  unsigned MaxFIsPerCycles = getFUDesc<VFUMux>()->getMaxAllowdMuxSize(BitWidth);
+  unsigned MaxFIsPerCycles = LuaI::Get<VFUMux>()->getMaxAllowdMuxSize(BitWidth);
   if (Sel->size() < MaxFIsPerCycles)
     return false;
 

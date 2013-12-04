@@ -27,6 +27,7 @@
 #include "vast/VASTModule.h"
 #include "vast/Passes.h"
 #include "vast/Utilities.h"
+#include "vast/LuaI.h"
 
 #include "llvm/Pass.h"
 #include "llvm/IR/DataLayout.h"
@@ -460,7 +461,7 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
   // No need to write timing script at all.
   if (DisableTimingScriptGeneration) return false;
 
-  std::string MCPDataBasePath = getStrValueFromEngine("MCPDataBase");
+  std::string MCPDataBasePath = LuaI::GetString("MCPDataBase");
   std::string Error;
   raw_fd_ostream Output(MCPDataBasePath.c_str(), Error);
   OS.setStream(Output);
