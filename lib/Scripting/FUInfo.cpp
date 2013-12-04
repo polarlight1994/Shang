@@ -21,22 +21,31 @@
 #include "llvm/Support/SourceMgr.h"
 #define DEBUG_TYPE "vtm-fu-info"
 #include "llvm/Support/Debug.h"
+
+// Include the lua headers (the extern "C" is a requirement because we're
+// using C++ and lua has been compiled as C code)
+extern "C" {
+#include "lua.h"
+#include "lualib.h"
+#include "lauxlib.h"
+}
+
+#include "LuaBridge/LuaBridge.h"
+
 #include <assert.h>
+
 using namespace llvm;
+using namespace luabridge;
 
 //===----------------------------------------------------------------------===//
 // Helper functions for reading function unit table from script.
 template<typename PropType, typename IdxType>
-static PropType getProperty(const luabind::object &FUTable, IdxType PropName,
+static PropType getProperty(LuaRef FUTable, IdxType PropName,
                             PropType DefaultRetVal = PropType()) {
-    if (luabind::type(FUTable) != LUA_TTABLE) return DefaultRetVal;
+  if (FUTable.type() != LUA_TTABLE)
+    return DefaultRetVal;
 
-    boost::optional<PropType> Result =
-      luabind::object_cast_nothrow<PropType>(FUTable[PropName]);
-
-    if (!Result) return DefaultRetVal;
-
-    return Result.get();
+  return FUTable[PropName].cast<PropType>();
 }
 
 static unsigned ComputeOperandSizeInByteLog2Ceil(unsigned SizeInBits) {
@@ -45,7 +54,7 @@ static unsigned ComputeOperandSizeInByteLog2Ceil(unsigned SizeInBits) {
 
 template<typename T>
 static void
-initializeArray(luabind::object LuaLatTable, T *LatTable, unsigned Size) {
+initializeArray(LuaRef LuaLatTable, T *LatTable, unsigned Size) {
   for (unsigned i = 0; i < Size; ++i)
     // Lua array starts from 1
     LatTable[i] = getProperty<T>(LuaLatTable, i + 1, LatTable[i]);
@@ -78,7 +87,7 @@ namespace llvm {
       }
     }
 
-    void initCostTable(luabind::object LuaCostTable, unsigned *CostTable,
+    void initCostTable(LuaRef LuaCostTable, unsigned *CostTable,
                        unsigned Size) {
         SmallVector<unsigned, 8> CopyTable(Size);
         for (unsigned i = 0; i < Size; ++i)
@@ -98,12 +107,12 @@ namespace llvm {
 }
 
 
-VFUDesc::VFUDesc(VFUs::FUTypes type, const luabind::object &FUTable,
+VFUDesc::VFUDesc(VFUs::FUTypes type, LuaRef FUTable,
                  float *Latencies, unsigned *Cost)
   : ResourceType(type), StartInt(getProperty<unsigned>(FUTable, "StartInterval")) {
-  luabind::object LatenciesTable = FUTable["Latencies"];
+  LuaRef LatenciesTable = FUTable["Latencies"];
   initializeArray(LatenciesTable, Latencies, 5);
-  luabind::object CostTable = FUTable["Costs"];
+  LuaRef CostTable = FUTable["Costs"];
   VFUs::initCostTable(CostTable, Cost, 5);
 }
 
@@ -132,15 +141,15 @@ unsigned VFUDesc::lookupCost(const unsigned *Table, unsigned SizeInBits) {
   return Table[SizeInBits - 1];
 }
 
-VFUMux::VFUMux(luabind::object FUTable)
+VFUMux::VFUMux(LuaRef FUTable)
   : VFUDesc(VFUs::Mux, 1),
     MaxAllowedMuxSize(getProperty<unsigned>(FUTable, "MaxAllowedMuxSize", 1)) {
   assert(MaxAllowedMuxSize <= array_lengthof(MuxLatencies)
          && "MaxAllowedMuxSize too big!");
 
-  luabind::object LatTable = FUTable["Latencies"];
+  LuaRef LatTable = FUTable["Latencies"];
   initializeArray(LatTable, MuxLatencies, MaxAllowedMuxSize);
-  luabind::object CostTable = FUTable["Costs"];
+  LuaRef CostTable = FUTable["Costs"];
   initializeArray(CostTable, MuxCost, MaxAllowedMuxSize);
 }
 
@@ -171,7 +180,7 @@ unsigned VFUMux::getMuxCost(unsigned Size, unsigned BitWidth) {
   return MuxCost[Size - 2] * BitWidth * ratio;
 }
 
-VFUMemBus::VFUMemBus(luabind::object FUTable)
+VFUMemBus::VFUMemBus(LuaRef FUTable)
   : VFUDesc(VFUs::MemoryBus, getProperty<unsigned>(FUTable, "StartInterval")),
     AddrWidth(getProperty<unsigned>(FUTable, "AddressWidth")),
     DataWidth(getProperty<unsigned>(FUTable, "DataWidth")),

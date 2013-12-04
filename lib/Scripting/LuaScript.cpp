@@ -32,7 +32,10 @@ extern "C" {
 #include "lauxlib.h"
 }
 
+#include "LuaBridge/LuaBridge.h"
+
 using namespace llvm;
+using namespace luabridge;
 
 // The text template processing lua module
 #include "luapp.inc"
@@ -56,14 +59,35 @@ void LuaScript::init() {
   load_luapp_lo(State);
 
   // Bind the object.
-  luabind::globals(State)["TimingAnalysis"] = luabind::newtable(State);
-  luabind::globals(State)["FUs"] = luabind::newtable(State);
-  luabind::globals(State)["Functions"] = luabind::newtable(State);
-  luabind::globals(State)["Modules"] = luabind::newtable(State);
+  setGlobal(State, newTable(State), "TimingAnalysis");
+  // Cost/latency of functional units
+  setGlobal(State, newTable(State), "FUs");
+  // Functions to be mapped to hardware
+  setGlobal(State, newTable(State), "Functions");
+  // Predefined modules
+  setGlobal(State, newTable(State), "Modules");
   // Synthesis attribute
-  luabind::globals(State)["SynAttr"] = luabind::newtable(State);
+  setGlobal(State, newTable(State), "SynAttr");
   // Table for Miscellaneous information
-  luabind::globals(State)["Misc"] = luabind::newtable(State);
+  setGlobal(State, newTable(State), "Misc");
+}
+
+LuaRef LuaScript::getValue(ArrayRef<const char*> Path) const {
+  LuaRef o = getGlobal(State, Path[0]);
+  for (unsigned i = 1; i < Path.size(); ++i)
+    o = o[Path[i]];
+
+  return o;
+}
+
+LuaRef LuaScript::getValue(const char *Name) const {
+  const char *Path[] = { Name };
+  return getValue(Path);
+}
+
+std::string LuaScript::getValueStr(const char *Name) const {
+  const char *Path[] = { Name };
+  return getValue(Path).cast<std::string>();
 }
 
 bool LuaScript::runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err) {
@@ -87,12 +111,12 @@ bool LuaScript::runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err) 
 }
 
 template<enum VFUs::FUTypes T>
-void LuaScript::initSimpleFU(luabind::object FUs) {
+void LuaScript::initSimpleFU(LuaRef FUs) {
   FUSet[T] = new VSimpleFUDesc<T>(FUs[VFUDesc::getTypeName(T)]);
 }
 
 void LuaScript::updateFUs() {
-  luabind::object FUs = luabind::globals(State)["FUs"];
+  LuaRef FUs = getGlobal(State, "FUs");
   // Initialize the functional unit descriptions.
   FUSet[VFUs::MemoryBus]
     = new VFUMemBus(FUs[VFUDesc::getTypeName(VFUs::MemoryBus)]);
@@ -102,13 +126,12 @@ void LuaScript::updateFUs() {
   initSimpleFU<VFUs::Mult>(FUs);
   initSimpleFU<VFUs::ICmp>(FUs);
 
-  FUSet[VFUs::Mux] = new VFUMux(FUs[VFUDesc::getTypeName(VFUs::Mux)]);
-
+  FUSet[VFUs::Mux]
+    = new VFUMux(FUs[VFUDesc::getTypeName(VFUs::Mux)]);
+  
   // Read other parameters.
 #define READPARAMETER(PARAMETER, T) \
-  if (boost::optional<T> PARAMETER \
-      = luabind::object_cast_nothrow<T>(FUs[#PARAMETER])) \
-    VFUs::PARAMETER = PARAMETER.get();
+  VFUs::PARAMETER = FUs[#PARAMETER].cast<T>();
 
   READPARAMETER(LUTCost, unsigned);
   READPARAMETER(RegCost, unsigned);
@@ -123,11 +146,11 @@ void LuaScript::updateStatus() {
 
   // Read the synthesis attributes.
   const char *Path[] = { "SynAttr", "DirectClkEnAttr" };
-  VASTNode::DirectClkEnAttr = getValue<std::string>(Path);
+  VASTNode::DirectClkEnAttr = getValue(Path).cast<std::string>();
   Path[1] = "ParallelCaseAttr";
-  VASTNode::ParallelCaseAttr = getValue<std::string>(Path);
+  VASTNode::ParallelCaseAttr = getValue(Path).cast<std::string>();
   Path[1] = "FullCaseAttr";
-  VASTNode::FullCaseAttr = getValue<std::string>(Path);
+  VASTNode::FullCaseAttr = getValue(Path).cast<std::string>();
 
   // Build the data layout.
   raw_string_ostream s(DataLayout);
@@ -157,15 +180,15 @@ VFUDesc *llvm::getFUDesc(enum VFUs::FUTypes T) {
 LuaScript &llvm::scriptEngin() { return *Script; }
 
 unsigned llvm::getIntValueFromEngine(ArrayRef<const char*> Path) {
-  return Script->getValue<unsigned>(Path);
+  return Script->getValue(Path).cast<unsigned>();
 }
 
 float llvm::getFloatValueFromEngine(ArrayRef<const char*> Path) {
-  return Script->getValue<float>(Path);
+  return Script->getValue(Path).cast<float>();
 }
 
 std::string llvm::getStrValueFromEngine(ArrayRef<const char*> Path) {
-  return Script->getValue<std::string>(Path);
+  return Script->getValue(Path).cast<std::string>();
 }
 
 std::string llvm::getStrValueFromEngine(const char *VariableName) {

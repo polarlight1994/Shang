@@ -26,11 +26,8 @@
 
 #include<set>
 
-namespace luabind {
-  namespace adl {
-    class object;
-  }
-  using adl::object;
+namespace luabridge {
+  class LuaRef;
 }
 
 namespace llvm {
@@ -140,8 +137,8 @@ inline static raw_ostream &operator<<(raw_ostream &O, const FuncUnitId &ID) {
 
 /// @brief The description of Verilog target machine function units.
 class VFUDesc {
-  VFUDesc(const VFUDesc &);            // DO NOT IMPLEMENT
-  void operator=(const VFUDesc &);  // DO NOT IMPLEMENT
+  VFUDesc(const VFUDesc &) LLVM_DELETED_FUNCTION;
+  void operator=(const VFUDesc &) LLVM_DELETED_FUNCTION;
 protected:
   // The HWResource baseclass this node corresponds to
   const unsigned ResourceType;
@@ -151,7 +148,7 @@ protected:
   VFUDesc(VFUs::FUTypes type, unsigned startInt)
     : ResourceType(type), StartInt(startInt) {}
 
-  VFUDesc(VFUs::FUTypes type, const luabind::object &FUTable,
+  VFUDesc(VFUs::FUTypes type, luabridge::LuaRef FUTable,
           float *Latencies, unsigned *Cost);
 
   static float    lookupLatency(const float *Table, unsigned SizeInBits);
@@ -177,7 +174,7 @@ class VFUMux : public VFUDesc {
 public:
   const unsigned MaxAllowedMuxSize;
 
-  VFUMux(luabind::object FUTable);
+  explicit VFUMux(luabridge::LuaRef FUTable);
 
   float    getMuxLatency(unsigned Size);
   unsigned getMuxCost(unsigned Size, unsigned BitWidth);
@@ -199,7 +196,7 @@ public:
   // The latency of the address MUX of the block RAM.
   const float AddrLatency;
 
-  VFUMemBus(luabind::object FUTable);
+  explicit VFUMemBus(luabridge::LuaRef FUTable);
 
   unsigned getAddrWidth() const { return AddrWidth; }
   unsigned getDataWidth() const { return DataWidth; }
@@ -252,7 +249,7 @@ class VSimpleFUDesc : public VFUDesc {
   float    Latencies[5];
   unsigned Cost[64];
 public:
-  explicit VSimpleFUDesc(const luabind::object &FUTable)
+  explicit VSimpleFUDesc(luabridge::LuaRef FUTable)
     : VFUDesc(T, FUTable, Latencies, Cost) {}
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   template<enum VFUs::FUTypes OtherT>

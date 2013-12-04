@@ -12,8 +12,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef VTM_LUA_SCRIPT_H
-#define VTM_LUA_SCRIPT_H
+#ifndef VAST_LUA_SCRIPT_H
+#define VAST_LUA_SCRIPT_H
 
 #include "vast/FUInfo.h"
 
@@ -22,13 +22,14 @@
 #include "llvm/ADT/IndexedMap.h"
 #include "llvm/ADT/ArrayRef.h"
 
-// This is the only header we need to include for LuaBind to work
-#include "luabind/luabind.hpp"
-
 #include <map>
 
 // Forward declaration.
 struct lua_State;
+
+namespace luabridge {
+  class LuaRef;
+}
 
 namespace llvm {
 // Forward declaration.
@@ -50,7 +51,7 @@ class LuaScript {
   friend VFUDesc *getFUDesc(enum VFUs::FUTypes T);
 
   template<enum VFUs::FUTypes T>
-  void initSimpleFU(luabind::object FUs);
+  void initSimpleFU(luabridge::LuaRef FUs);
 
   friend bool loadConfig(const std::string &Path);
 
@@ -64,42 +65,19 @@ public:
   LuaScript();
   ~LuaScript();
 
-  template<class T>
-  void bindToGlobals(const char *Name, T *O) {
-    luabind::globals(State)[Name] = O;
-  }
+  // template<class T>
+  // void bindToGlobals(const char *Name, T *O) {
+  //  luabind::globals(State)[Name] = O;
+  //}
 
-  template<class T>
-  T getValue(ArrayRef<const char*> Path) const {
-    luabind::object o = luabind::globals(State);
-    for (unsigned i = 0; i < Path.size(); ++i)
-      o = o[Path[i]];
+  luabridge::LuaRef getValue(ArrayRef<const char*> Path) const;
 
-    boost::optional<T> Res = luabind::object_cast_nothrow<T>(o);
+  luabridge::LuaRef getValue(const char *Name) const;
 
-    // If the value not found, just construct then with default constructor.
-    if (!Res) return T();
-
-    return Res.get();
-  }
-
-  template<class T>
-  T getValue(const char *Name) {
-    const char *Path[] = { Name };
-    return getValue<T>(Path);
-  }
-
-  std::string getValueStr(const char *Name) const {
-    const char *Path[] = { Name };
-    return getValue<std::string>(Path);
-  }
+  std::string getValueStr(const char *Name) const;
 
   std::string getValueStr(const std::string &Name) const {
     return getValueStr(Name.c_str());
-  }
-
-  luabind::object getModTemplate(const std::string &Name) const {
-    return luabind::globals(State)["Modules"][Name];
   }
 
   bool runScriptFile(const std::string &ScriptPath, SMDiagnostic &Err);
