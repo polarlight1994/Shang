@@ -737,7 +737,8 @@ public:
 
       This is used for diagnostics.
   */
-  void print (std::ostream& os) const
+  template<typename T>
+  void print (T &os) const
   {
     switch (type ())
     {

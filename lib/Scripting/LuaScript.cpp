@@ -23,6 +23,8 @@
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/ADT/STLExtras.h"
+#define DEBUG_TYPE "vast-lua"
+#include "llvm/Support/Debug.h"
 
 // Include the lua headers (the extern "C" is a requirement because we're
 // using C++ and lua has been compiled as C code)
@@ -56,7 +58,7 @@ void LuaScript::init() {
   // Open lua libraries.
   luaL_openlibs(State);
 
-  load_luapp_lo(State);
+  // load_luapp_lo(State);
 
   // Bind the object.
   setGlobal(State, newTable(State), "TimingAnalysis");
@@ -72,12 +74,49 @@ void LuaScript::init() {
   setGlobal(State, newTable(State), "Misc");
 }
 
-LuaRef LuaScript::getValue(ArrayRef<const char*> Path) const {
-  LuaRef o = getGlobal(State, Path[0]);
-  for (unsigned i = 1; i < Path.size(); ++i)
-    o = o[Path[i]];
+static void ReportNILPath(ArrayRef<const char*> Path) {
+  for (unsigned i = 0; i < Path.size(); ++i) {
+    if (i > 0)
+      errs() << '.';
 
-  return o;
+    errs() << Path[i];
+  }
+
+  errs() << " is missed in the configuration script!\n";
+}
+
+LuaRef
+LuaScript::getValueRecursively(LuaRef Parent,
+                               ArrayRef<const char*> Path) const {
+  if (Parent.isNil())
+    return Parent;
+
+  LuaRef R = Parent[Path.front()];
+
+  if (Path.size() == 1)
+    return R;
+
+  return getValueRecursively(R, Path.slice(1));
+}
+
+LuaRef LuaScript::getValue(ArrayRef<const char*> Path) const {
+  LuaRef Root = getGlobal(State, Path[0]);
+
+  if (Path.size() == 1)
+    return Root;
+
+  return getValueRecursively(Root, Path.slice(1));
+}
+
+std::string LuaScript::getValueStr(ArrayRef<const char*> Path) const {
+  LuaRef R = getValue(Path);
+
+  if (R.isNil()) {
+    ReportNILPath(Path);
+    return std::string("");
+  }
+
+  return R.cast<std::string>();
 }
 
 LuaRef LuaScript::getValue(const char *Name) const {
@@ -87,7 +126,7 @@ LuaRef LuaScript::getValue(const char *Name) const {
 
 std::string LuaScript::getValueStr(const char *Name) const {
   const char *Path[] = { Name };
-  return getValue(Path).cast<std::string>();
+  return getValueStr(Path);
 }
 
 bool LuaScript::runScriptStr(const std::string &ScriptStr, SMDiagnostic &Err) {
@@ -128,10 +167,16 @@ void LuaScript::updateFUs() {
 
   FUSet[VFUs::Mux]
     = new VFUMux(FUs[VFUDesc::getTypeName(VFUs::Mux)]);
-  
+
   // Read other parameters.
-#define READPARAMETER(PARAMETER, T) \
-  VFUs::PARAMETER = FUs[#PARAMETER].cast<T>();
+#define READPARAMETER(PARAMETER, T) { \
+    LuaRef R = FUs[#PARAMETER]; \
+    if (R.isNil()) \
+      errs() << "FUs."#PARAMETER \
+             << " is missed in the configuration script!\n"; \
+    else \
+      VFUs::PARAMETER = R.cast<T>(); \
+  }
 
   READPARAMETER(LUTCost, unsigned);
   READPARAMETER(RegCost, unsigned);
@@ -146,11 +191,11 @@ void LuaScript::updateStatus() {
 
   // Read the synthesis attributes.
   const char *Path[] = { "SynAttr", "DirectClkEnAttr" };
-  VASTNode::DirectClkEnAttr = getValue(Path).cast<std::string>();
+  VASTNode::DirectClkEnAttr = getValueStr(Path);
   Path[1] = "ParallelCaseAttr";
-  VASTNode::ParallelCaseAttr = getValue(Path).cast<std::string>();
+  VASTNode::ParallelCaseAttr = getValueStr(Path);
   Path[1] = "FullCaseAttr";
-  VASTNode::FullCaseAttr = getValue(Path).cast<std::string>();
+  VASTNode::FullCaseAttr = getValueStr(Path);
 
   // Build the data layout.
   raw_string_ostream s(DataLayout);
@@ -188,7 +233,7 @@ float llvm::getFloatValueFromEngine(ArrayRef<const char*> Path) {
 }
 
 std::string llvm::getStrValueFromEngine(ArrayRef<const char*> Path) {
-  return Script->getValue(Path).cast<std::string>();
+  return Script->getValueStr(Path);
 }
 
 std::string llvm::getStrValueFromEngine(const char *VariableName) {

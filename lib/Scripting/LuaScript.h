@@ -60,6 +60,10 @@ class LuaScript {
   void updateFUs();
   // Update the status of script engine after script run.
   void updateStatus();
+
+  luabridge::LuaRef
+  getValueRecursively(luabridge::LuaRef Parent,
+                      ArrayRef<const char*> Path) const;
 public:
 
   LuaScript();
@@ -71,11 +75,10 @@ public:
   //}
 
   luabridge::LuaRef getValue(ArrayRef<const char*> Path) const;
+  std::string getValueStr(ArrayRef<const char*> Path) const;
 
   luabridge::LuaRef getValue(const char *Name) const;
-
   std::string getValueStr(const char *Name) const;
-
   std::string getValueStr(const std::string &Name) const {
     return getValueStr(Name.c_str());
   }
