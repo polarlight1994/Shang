@@ -23,7 +23,7 @@
 
 #include <map>
 
-// Forward declaration.
+// Forward declarations.
 struct lua_State;
 
 namespace luabridge {
@@ -40,7 +40,7 @@ class LuaI {
   // DO NOT IMPLEMENT
   LuaI(const LuaI&) LLVM_DELETED_FUNCTION;
   // DO NOT IMPLEMENT
-  const LuaI &operator=(const LuaI&)LLVM_DELETED_FUNCTION;
+  LuaI &operator=(const LuaI&)LLVM_DELETED_FUNCTION;
 
   lua_State *State;
 

@@ -11,7 +11,7 @@
 // Verilog target machine.
 //
 //===----------------------------------------------------------------------===//
-#include "vast/LuaI.h"
+
 #include "vast/FUInfo.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -39,7 +39,7 @@ using namespace luabridge;
 //===----------------------------------------------------------------------===//
 // Helper functions for reading function unit table from script.
 template<typename PropType, typename IdxType>
-static PropType getProperty(LuaRef FUTable, IdxType PropName,
+static PropType getProperty(const LuaRef &FUTable, IdxType PropName,
                             PropType DefaultRetVal = PropType()) {
   if (FUTable.type() != LUA_TTABLE)
     return DefaultRetVal;
@@ -53,7 +53,7 @@ static unsigned ComputeOperandSizeInByteLog2Ceil(unsigned SizeInBits) {
 
 template<typename T>
 static void
-initializeArray(LuaRef LuaLatTable, T *LatTable, unsigned Size) {
+initializeArray(const LuaRef &LuaLatTable, T *LatTable, unsigned Size) {
   for (unsigned i = 0; i < Size; ++i)
     // Lua array starts from 1
     LatTable[i] = getProperty<T>(LuaLatTable, i + 1, LatTable[i]);
@@ -86,7 +86,7 @@ namespace llvm {
       }
     }
 
-    void initCostTable(LuaRef LuaCostTable, unsigned *CostTable,
+    void initCostTable(const LuaRef &LuaCostTable, unsigned *CostTable,
                        unsigned Size) {
         SmallVector<unsigned, 8> CopyTable(Size);
         for (unsigned i = 0; i < Size; ++i)
@@ -106,7 +106,7 @@ namespace llvm {
 }
 
 
-VFUDesc::VFUDesc(VFUs::FUTypes type, LuaRef FUTable,
+VFUDesc::VFUDesc(VFUs::FUTypes type, const LuaRef &FUTable,
                  float *Latencies, unsigned *Cost)
   : ResourceType(type), StartInt(getProperty<unsigned>(FUTable, "StartInterval")) {
   LuaRef LatenciesTable = FUTable["Latencies"];
@@ -140,7 +140,7 @@ unsigned VFUDesc::lookupCost(const unsigned *Table, unsigned SizeInBits) {
   return Table[SizeInBits - 1];
 }
 
-VFUMux::VFUMux(LuaRef FUTable)
+VFUMux::VFUMux(const LuaRef &FUTable)
   : VFUDesc(VFUs::Mux, 1),
     MaxAllowedMuxSize(getProperty<unsigned>(FUTable, "MaxAllowedMuxSize", 1)) {
   assert(MaxAllowedMuxSize <= array_lengthof(MuxLatencies)
@@ -179,7 +179,7 @@ unsigned VFUMux::getMuxCost(unsigned Size, unsigned BitWidth) {
   return MuxCost[Size - 2] * BitWidth * ratio;
 }
 
-VFUMemBus::VFUMemBus(LuaRef FUTable)
+VFUMemBus::VFUMemBus(const LuaRef &FUTable)
   : VFUDesc(VFUs::MemoryBus, getProperty<unsigned>(FUTable, "StartInterval")),
     AddrWidth(getProperty<unsigned>(FUTable, "AddressWidth")),
     DataWidth(getProperty<unsigned>(FUTable, "DataWidth")),
