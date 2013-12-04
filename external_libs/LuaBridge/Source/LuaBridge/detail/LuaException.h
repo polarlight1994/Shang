@@ -27,7 +27,16 @@
 */
 //==============================================================================
 
-class LuaException : public std::exception 
+#ifdef ENABLE_THROW_EXCEPTION
+#define THROW_NOTHING throw ()
+#else
+#define THROW_NOTHING
+#endif
+
+class LuaException
+#ifdef ENABLE_THROW_EXCEPTION
+  : public std::exception
+#endif
 {
 private:
   lua_State* m_L;
@@ -57,13 +66,13 @@ public:
 
   //----------------------------------------------------------------------------
 
-  ~LuaException() throw ()
+  ~LuaException() THROW_NOTHING
   {
   }
 
   //----------------------------------------------------------------------------
 
-  char const* what() const throw ()
+  char const* what() const THROW_NOTHING
   {
     return m_what.c_str();
   }
@@ -79,7 +88,11 @@ public:
   template <class Exception>
   static void Throw (Exception e)
   {
+#ifdef ENABLE_THROW_EXCEPTION
     throw e;
+#else
+    assert(0 && "Unhandled execption!");
+#endif
   }
 
   //----------------------------------------------------------------------------
