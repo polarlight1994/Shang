@@ -86,7 +86,7 @@ struct TypeListValues <TypeList <Head, Tail> >
     if (comma)
       s = ", ";
 
-    s = s + typeid (Head).name ();
+    s = s + TypeNameTraits::NameOf<Head>();
 
     return s + TypeListValues <Tail>::tostring (true);
   }
@@ -114,7 +114,7 @@ struct TypeListValues <TypeList <Head&, Tail> >
     if (comma)
       s = ", ";
 
-    s = s + typeid (Head).name () + "&";
+    s = s + TypeNameTraits::NameOf<Head>() + "&";
 
     return s + TypeListValues <Tail>::tostring (true);
   }
@@ -138,7 +138,7 @@ struct TypeListValues <TypeList <Head const&, Tail> >
     if (comma)
       s = ", ";
 
-    s = s + typeid (Head).name () + " const&";
+    s = s + TypeNameTraits::NameOf<Head>() + " const&";
 
     return s + TypeListValues <Tail>::tostring (true);
   }

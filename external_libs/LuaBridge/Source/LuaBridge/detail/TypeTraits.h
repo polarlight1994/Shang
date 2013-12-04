@@ -122,4 +122,9 @@ struct TypeTraits
   /**@}*/
 };
 
+struct TypeNameTraits {
+  template <class T>
+  static std::string NameOf() { return T::UnknownTyeNameError; }
+};
+
 #endif
