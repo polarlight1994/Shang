@@ -260,7 +260,6 @@ VASTExpr::VASTExpr()
 }
 
 VASTExpr::~VASTExpr() {
-  assert(use_empty() && "Something is still using this expression!");
 }
 
 bool VASTExpr::isAnonymous() const {

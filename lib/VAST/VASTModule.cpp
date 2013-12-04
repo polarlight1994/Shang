@@ -254,9 +254,8 @@ void VASTModule::setFunction(Function &F) {
 }
 
 VASTModule::VASTModule()
-  : VASTNode(vastModule), Datapath(new DatapathContainer()),
-    Ports(NumSpecialPort), Name(), BBX(0), BBY(0), BBWidth(0),
-    BBHeight(0), F(0), NumArgPorts(0) {
+  : VASTNode(vastModule), Ports(NumSpecialPort), Name(), BBX(0), BBY(0),
+    BBWidth(0), BBHeight(0), F(0), NumArgPorts(0) {
   createStartSlot();
 }
 
@@ -284,7 +283,7 @@ void VASTModule::reset() {
   RetPortIdx = 0;
 
   // Release the datapath after all other contexts released.
-  Datapath->reset();
+  DatapathContainer::reset();
   DeleteContainerPointers(Ports);
 }
 
@@ -301,7 +300,9 @@ VASTModule::~VASTModule() {
   // To prevent we releasing deleted uses in the destructor of VASTSlots, we
   // release the slots before all other values.
   Slots.clear();
-  delete Datapath;
+
+  // Now release the datapath.
+  DatapathContainer::gc();
   DeleteContainerPointers(Ports);
 }
 
@@ -472,7 +473,7 @@ VASTSymbol *VASTModule::getOrCreateSymbol(const Twine &Name, unsigned BitWidth) 
   if (V == 0) {
     const char *S = Entry.getKeyData();
     unsigned SymbolWidth = BitWidth;
-    V = new (Datapath->getAllocator()) VASTSymbol(S, SymbolWidth);
+    V = new (Allocator) VASTSymbol(S, SymbolWidth);
   }
 
   assert(cast<VASTSymbol>(V)->getBitWidth() == BitWidth
@@ -757,5 +758,5 @@ bool VASTModule::gc() {
   }
 
   // At last clear up the dead VASTExprs.
-  return Datapath->gc() || Changed;
+  return DatapathContainer::gc() || Changed;
 }

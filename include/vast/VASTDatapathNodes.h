@@ -339,10 +339,10 @@ class VASTExprBuilderContext;
 class DatapathContainer {
   // Use pointer to workaround the typeid problem.
   // The unique immediate in the data-path.
-  FoldingSet<VASTImmediate> *UniqueImms;
+  FoldingSet<VASTImmediate> UniqueImms;
 
   // Expression in data-path
-  FoldingSet<VASTExpr> *UniqueExprs;
+  FoldingSet<VASTExpr> UniqueExprs;
 
   VASTExprBuilderContext* CurContexts;
 protected:

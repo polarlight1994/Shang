@@ -203,20 +203,16 @@ bool VASTValue::extractSupportingSeqVal(std::set<VASTSeqValue*> &SeqVals,
 VASTValue::VASTValue(VASTTypes T, unsigned BitWidth)
   : VASTNode(T), BitWidth(BitWidth) {
   assert(T >= vastFirstValueType && T <= vastLastValueType
-    && "Bad DeclType!");
-  UseList
-    = reinterpret_cast<iplist<VASTUse>*>(::operator new(sizeof(iplist<VASTUse>)));
-  new (UseList) iplist<VASTUse>();
+         && "Bad DeclType!");
 }
 
 VASTValue::~VASTValue() {
   // Do not call the destructor of UseList. They are deleted by the
   // VASTOperandList.
   // We should check if use list is empty if necessary.
-  ::operator delete(UseList);
+  assert(use_empty() && "Something is still using this value!");
+  // UseList.clearAndLeakNodesUnsafely();
 }
-
-
 
 //===----------------------------------------------------------------------===//
 // Value and type printing

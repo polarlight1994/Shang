@@ -95,7 +95,7 @@ public:
 };
 
 // The class that represent Verilog modulo.
-class VASTModule : public VASTNode {
+class VASTModule : public VASTNode, public DatapathContainer {
 public:
   typedef SmallVector<VASTPort*, 16> PortVector;
   typedef PortVector::iterator port_iterator;
@@ -133,7 +133,6 @@ public:
     RetPort // Port for function return value.
   };
 private:
-  DatapathContainer *Datapath;
   WireVector Wires;
 
   // The slots vector, each slot represent a state in the FSM of the design.
@@ -220,10 +219,6 @@ public:
   const VASTSlot *getFinishSlot() const;
 
   ilist<VASTSlot> &getSLotList() { return Slots; }
-
-  operator DatapathContainer &() const { return *Datapath; }
-  DatapathContainer *operator->() const { return Datapath; }
-
 
   // Allow user to add ports.
   VASTPort *addPort(VASTNode *Node, bool IsInput);

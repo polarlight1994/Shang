@@ -37,12 +37,12 @@ void DatapathContainer::notifyDeletion(VASTExpr *Expr) {
 //----------------------------------------------------------------------------//
 void DatapathContainer::removeValueFromCSEMaps(VASTNode *N) {
   if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(N)) {
-    UniqueImms->RemoveNode(Imm);
+    UniqueImms.RemoveNode(Imm);
     return;
   }
 
   if (VASTExpr *Expr = dyn_cast<VASTExpr>(N)) {
-    UniqueExprs->RemoveNode(Expr);
+    UniqueExprs.RemoveNode(Expr);
     notifyDeletion(Expr);
     return;
   }
@@ -64,12 +64,12 @@ void DatapathContainer::addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap) {
 
 void DatapathContainer::addModifiedValueToCSEMaps(VASTNode *N) {
   if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(N)) {
-    addModifiedValueToCSEMaps(Imm, *UniqueImms);
+    addModifiedValueToCSEMaps(Imm, UniqueImms);
     return;
   }
 
   if (VASTExpr *Expr = dyn_cast<VASTExpr>(N)) {
-    addModifiedValueToCSEMaps(Expr, *UniqueExprs);
+    addModifiedValueToCSEMaps(Expr, UniqueExprs);
     return;
   }
 
@@ -145,7 +145,7 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
     ID.AddPointer(Ops[i]);
 
   void *IP = 0;
-  if (VASTExpr *E = UniqueExprs->FindNodeOrInsertPos(ID, IP))
+  if (VASTExpr *E = UniqueExprs.FindNodeOrInsertPos(ID, IP))
     return E;
 
   VASTExpr *E = new VASTExpr(Opc, Ops.size(), UB, LB);
@@ -156,7 +156,7 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
     (void) new (E->Operands + i) VASTUse(E, Ops[i]);
   }
 
-  UniqueExprs->InsertNode(E, IP);
+  UniqueExprs.InsertNode(E, IP);
   Exprs.push_back(E);
   return E;
 }
@@ -168,21 +168,16 @@ void DatapathContainer::reset() {
 
   assert(Exprs.empty() && "Expressions are not completely deleted!");
 
-  UniqueExprs->clear();
-  UniqueImms->clear();
+  UniqueExprs.clear();
+  UniqueImms.clear();
   Allocator.Reset();
 }
 
 DatapathContainer::DatapathContainer() : CurContexts(0) {
-  UniqueImms = new FoldingSet<VASTImmediate>();
-  UniqueExprs = new FoldingSet<VASTExpr>();
 }
 
 DatapathContainer::~DatapathContainer() {
   reset();
-
-  delete UniqueExprs;
-  delete UniqueImms;
 }
 
 VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
@@ -195,12 +190,12 @@ VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
   Value.Profile(ID);
 
   void *IP = 0;
-  if (VASTImmediate *V = UniqueImms->FindNodeOrInsertPos(ID, IP))
+  if (VASTImmediate *V = UniqueImms.FindNodeOrInsertPos(ID, IP))
     return V;
 
   void *P = Allocator.Allocate(sizeof(VASTImmediate), alignOf<VASTImmediate>());
   VASTImmediate *V = new (P) VASTImmediate(Value);
-  UniqueImms->InsertNode(V, IP);
+  UniqueImms.InsertNode(V, IP);
 
   return V;
 }

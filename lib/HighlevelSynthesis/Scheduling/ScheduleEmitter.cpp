@@ -172,7 +172,7 @@ void ScheduleEmitter::clearUp(VASTSlot *S) {
       if (!V->use_empty()) continue;
 
       if (VASTExpr *Child = dyn_cast<VASTExpr>(V))
-        VM->recursivelyDeleteTriviallyDeadExprs(Child);
+        VM.recursivelyDeleteTriviallyDeadExprs(Child);
     }
 
     I = S->removeOp(I);
