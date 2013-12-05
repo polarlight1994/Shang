@@ -43,6 +43,17 @@ struct DatapathNamer : public VASTModulePass {
   bool runOnVASTModule(VASTModule &VM);
 
   bool assignName(CachedStrashTable &Strash, VASTModule &VM);
+  
+  void nameExpr(VASTExpr *Expr, CachedStrashTable &Strash) {
+    unsigned StrashID = Strash.getOrCreateStrashID(Expr);
+    if (Expr->isTimingBarrier()) {
+      std::string Name = "k" + utostr_32(StrashID) + "k";
+      Expr->nameExpr(Names.GetOrCreateValue(Name).getKeyData());
+    } else {
+      std::string Name = "t" + utostr_32(StrashID) + "t";
+      Expr->nameExpr(Names.GetOrCreateValue(Name).getKeyData());
+    }
+  }
 
   void releaseMemory() {
     Names.clear();
@@ -57,33 +68,6 @@ INITIALIZE_PASS_END(DatapathNamer, "datapath-namer",
                     "Assign name to the datapath node", false, true)
 char DatapathNamer::ID = 0;
 char &llvm::DatapathNamerID = DatapathNamer::ID;
-namespace {
-struct Namer {
-  CachedStrashTable &Strash;
-  StringSet<> &Names;
-  Namer(CachedStrashTable &Strash, StringSet<> &Names)
-    : Strash(Strash), Names(Names) {}
-
-  void nameExpr(VASTExpr *Expr) {
-    unsigned StrashID = Strash.getOrCreateStrashID(Expr);
-    if (Expr->isTimingBarrier()) {
-      std::string Name = "k" + utostr_32(StrashID) + "k";
-      Expr->nameExpr(Names.GetOrCreateValue(Name).getKeyData());
-    } else {
-      std::string Name = "t" + utostr_32(StrashID) + "t";
-      Expr->nameExpr(Names.GetOrCreateValue(Name).getKeyData());
-    }
-  }
-
-  void operator()(VASTNode *N) {
-    VASTExpr *Expr = dyn_cast<VASTExpr>(N);
-
-    if (Expr == 0) return;
-
-    nameExpr(Expr);
-  }
-};
-}
 
 bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
   VM.resetSelectorName();
@@ -96,28 +80,10 @@ bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
   return false;
 }
 
-bool DatapathNamer::assignName(CachedStrashTable & Strash, VASTModule &VM) {
-  Namer N(Strash, Names);
-  std::set<VASTExpr*> Visited;
-
-  typedef VASTModule::slot_iterator slot_iterator;
-  for (slot_iterator SI = VM.slot_begin(), SE = VM.slot_end(); SI != SE; ++SI) {
-    const VASTSlot *S = SI;
-
-    typedef VASTSlot::const_op_iterator op_iterator;
-
-    // Print the logic of the datapath used by the SeqOps.
-    for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
-      VASTSeqOp *L = *I;
-
-      typedef VASTOperandList::op_iterator op_iterator;
-      for (op_iterator OI = L->op_begin(), OE = L->op_end(); OI != OE; ++OI) {
-        VASTValue *V = OI->unwrap().get();
-        if (VASTExpr *Expr = dyn_cast<VASTExpr>(V))
-          Expr->visitConeTopOrder(Visited, N);
-      }
-    }
-  }
+bool DatapathNamer::assignName(CachedStrashTable &Strash, VASTModule &VM) {
+  typedef VASTModule::expr_iterator expr_iterator;
+  for (expr_iterator I = VM.expr_begin(), E = VM.expr_end(); I != E; ++I)
+    nameExpr(I, Strash);
 
   bool SelectorNameChanged = false;
   typedef std::pair<unsigned, unsigned> FIPair;
@@ -126,12 +92,9 @@ bool DatapathNamer::assignName(CachedStrashTable & Strash, VASTModule &VM) {
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
-    if (!Sel->isSelectorSynthesized()) continue;
 
-    if (VASTExpr *Expr = Sel->getGuard().getAsLValue<VASTExpr>())
-      Expr->visitConeTopOrder(Visited, N);
-    if (VASTExpr *Expr = Sel->getFanin().getAsLValue<VASTExpr>())
-      Expr->visitConeTopOrder(Visited, N);
+    if (!Sel->isSelectorSynthesized())
+      continue;
 
     // Do not rename the selector like memory ports, output port, etc.
     if (!isa<VASTRegister>(Sel->getParent()))
