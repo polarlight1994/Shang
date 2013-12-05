@@ -310,9 +310,15 @@ VASTModule::~VASTModule() {
 namespace {
 struct DatapathPrinter {
   raw_ostream &OS;
+  std::set<VASTExpr*> Visited;
   std::set<const char*> PrintedNames;
 
   DatapathPrinter(raw_ostream &OS) : OS(OS) {}
+
+  void print(VASTValPtr V) {
+    if (VASTExpr *E = V.getAsLValue<VASTExpr>())
+      E->visitConeTopOrder(Visited, *this);
+  }
 
   void operator()(VASTNode *N) {
     if (VASTExpr *E = dyn_cast<VASTExpr>(N))
@@ -359,48 +365,23 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
   std::set<VASTExpr*> Visited;
   DatapathPrinter Printer(OS);
 
-  for (const_slot_iterator SI = slot_begin(), SE = slot_end(); SI != SE; ++SI) {
-    const VASTSlot *S = SI;
-
-    typedef VASTSlot::const_op_iterator op_iterator;
-
-    // Write the expression of the slot ready signal.
-    if (VASTExpr *Expr = dyn_cast<VASTExpr>(S->getActive().get()))
-      Expr->visitConeTopOrder(Visited, Printer);
-
-    OS << "\n// At slot " << S->SlotNum;
-    if (S->IsSubGrp)
-      OS << " (SubGrp)";
-    if (BasicBlock *BB = S->getParent()) OS << ", BB: " << BB->getName();
-    OS << '\n';
-
-    // Print the logic of the datapath used by the SeqOps.
-    for (op_iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
-      VASTSeqOp *L = *I;
-
-      typedef VASTOperandList::op_iterator op_iterator;
-      for (op_iterator OI = L->op_begin(), OE = L->op_end(); OI != OE; ++OI) {
-        if (VASTExpr *Expr = dyn_cast<VASTExpr>(OI->unwrap().get()))
-          Expr->visitConeTopOrder(Visited, Printer);
-      }
-
-      OS << "/* ";
-      L->print(OS);
-      OS << "*/\n";
-    }
-  }
-
   // Print the logic for the selectors.
   for (const_selector_iterator I = selector_begin(), E = selector_end();
        I != E; ++I) {
     const VASTSelector *Sel = I;
 
-    if (!Sel->isSelectorSynthesized()) continue;
+    typedef VASTSelector::const_iterator const_iterator;
+    for (const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+      const VASTLatch &L = *I;
+      Printer.print(L);
+      Printer.print(L.getGuard());
+    }
 
-    if (VASTExpr *Expr = Sel->getGuard().getAsLValue<VASTExpr>())
-      Expr->visitConeTopOrder(Visited, Printer);
-    if (VASTExpr *Expr = Sel->getFanin().getAsLValue<VASTExpr>())
-      Expr->visitConeTopOrder(Visited, Printer);
+    if (!Sel->isSelectorSynthesized())
+      continue;
+
+    Printer.print(Sel->getGuard());
+    Printer.print(Sel->getFanin());
   }
 }
 
