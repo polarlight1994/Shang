@@ -83,6 +83,7 @@ public:
 class ScheduleEmitter : public MinimalExprBuilderContext {
   VASTExprBuilder Builder;
   VASTModule &VM;
+  VASTCtrlRgn &R;
   NaiveMemoryPortReservationTable PRT;
   ilist<VASTSlot> OldSlots;
   VASTSchedGraph &G;
@@ -93,7 +94,7 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
 
   VASTSlot *createSlot(BasicBlock *BB, unsigned Schedule) {
     ++NumSlots;
-    return VM.createSlot(++CurrentSlotNum, BB, Schedule);
+    return R.createSlot(++CurrentSlotNum, BB, Schedule);
   }
 
   VASTSlot *getOrCreateLandingSlot(BasicBlock *BB, unsigned Schedule) {
@@ -112,7 +113,7 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
 
     // Create the subgroup if it does not exist.
     ++NumSubGropus;
-    SubGrp = VM.createSlot(++CurrentSlotNum, BB, S->Schedule, Cnd, true);
+    SubGrp = R.createSlot(++CurrentSlotNum, BB, S->Schedule, Cnd, true);
     // The subgroups are not actually the successors of S in the control flow.
     S->addSuccSlot(SubGrp, VASTSlot::SubGrp);
     return SubGrp;
@@ -139,7 +140,7 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
   void handleNewSeqOp(VASTSeqInst *SeqOp);
   void handleNewSeqOp(VASTSlotCtrl *SeqOp);
 public:
-  ScheduleEmitter(VASTModule &VM, VASTSchedGraph &G);
+  ScheduleEmitter(VASTModule &VM, VASTCtrlRgn &R, VASTSchedGraph &G);
   ~ScheduleEmitter() { clearUp(); }
 
   void emitSchedule();
@@ -147,10 +148,10 @@ public:
 }
 
 //===----------------------------------------------------------------------===//
-ScheduleEmitter::ScheduleEmitter(VASTModule &VM, VASTSchedGraph &G)
-  : MinimalExprBuilderContext(VM), Builder(*this), VM(VM), G(G),
+ScheduleEmitter::ScheduleEmitter(VASTModule &VM, VASTCtrlRgn &R,
+                                 VASTSchedGraph &G)
+  : MinimalExprBuilderContext(VM), Builder(*this), VM(VM), R(R), G(G),
     CurrentSlotNum(0) {}
-
 
 void ScheduleEmitter::clearUp() {
   // Clear up the VASTSeqOp in the old list.
@@ -206,12 +207,12 @@ VASTSlotCtrl *ScheduleEmitter::addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
   // If the Br already exist, simply or the conditions together.
   assert(!S->hasNextSlot(NextSlot) && "Edge had already existed!");
   assert((S->getParent() == NextSlot->getParent()
-          || NextSlot == VM.getFinishSlot())
+          || NextSlot == R.getFinishSlot())
         && "Cannot change Slot and BB at the same time!");
 
   assert(!NextSlot->IsSubGrp && "Unexpected subgroup!");
   S->addSuccSlot(NextSlot, VASTSlot::Sucessor);
-  VASTSlotCtrl *SlotBr = VM.createStateTransition(NextSlot, S, Cnd);
+  VASTSlotCtrl *SlotBr = R.createStateTransition(NextSlot, S, Cnd);
   if (V) SlotBr->annotateValue(V);
 
   return SlotBr;
@@ -234,13 +235,13 @@ ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot) {
   // Handle the trivial case
   if (!Op->isBranch()) {
     VASTSlotCtrl *NewSlotCtrl
-      = VM.createStateTransition(Op->getNode(), ToSlot, Cnd);
+      = R.createStateTransition(Op->getNode(), ToSlot, Cnd);
     NewSlotCtrl->annotateValue(V);
     return NewSlotCtrl;
   }
 
   if (isa<ReturnInst>(V) || isa<UnreachableInst>(V))
-    return addSuccSlot(ToSlot, VM.getFinishSlot(), Cnd, V);
+    return addSuccSlot(ToSlot, R.getFinishSlot(), Cnd, V);
 
   BasicBlock *TargetBB = Op->getTargetSlot()->getParent();
   VASTSlot *SubGrp = getOrCreateSubGroup(TargetBB, Cnd, ToSlot);
@@ -273,15 +274,15 @@ VASTSeqInst *ScheduleEmitter::remapToPort1(VASTSeqInst *Op, VASTSlot *ToSlot) {
 
     VASTSeqValue *Dst = RData.getDst();
     VASTValPtr V = Builder.buildBitSliceExpr(TimedRData, Dst->getBitWidth(), 0);
-    return VM.latchValue(Dst, V, ToSlot, Op->getGuard(), Inst,
+    return R.latchValue(Dst, V, ToSlot, Op->getGuard(), Inst,
                          Op->getCyclesFromLaunch());
   }
 
   unsigned CurSrcIdx = 0;
   unsigned NumSrcs = Op->num_srcs();
 
-  VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Op->getGuard(), NumSrcs,
-                                      Op->getValue(), Op->isLatch());
+  VASTSeqInst *NewInst = R.lauchInst(ToSlot, Op->getGuard(), NumSrcs,
+                                     Op->getValue(), Op->isLatch());
   VASTLatch Addr = Op->getSrc(CurSrcIdx);
   VASTSelector *AddrPort = Addr.getSelector();
   VASTMemoryBank *Bus = cast<VASTMemoryBank>(AddrPort->getParent());
@@ -328,7 +329,7 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot) {
       ToSlot = getOrCreateSubGroup(PN->getParent(), Cnd, ToSlot);
   }
 
-  VASTSeqInst *NewInst = VM.lauchInst(ToSlot, Cnd, Op->num_srcs(),
+  VASTSeqInst *NewInst = R.lauchInst(ToSlot, Cnd, Op->num_srcs(),
                                       Op->getValue(), Op->isLatch());
   typedef VASTSeqOp::op_iterator iterator;
 
@@ -424,15 +425,15 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
 
 
 void ScheduleEmitter::emitSchedule() {
-  Function &F = VM.getLLVMFunction();
+  Function &F = VM.getLLVMFunction(); //*R.getFunction();
   BasicBlock &Entry = F.getEntryBlock();
   G.sortSUs(top_sort_schedule_wrapper);
 
-  OldSlots.splice(OldSlots.begin(), VM.getSLotList(),
-                  VM.slot_begin(), VM.slot_end());
+  OldSlots.splice(OldSlots.begin(), R.getSLotList(),
+                  R.slot_begin(), R.slot_end());
   // Remove the successors of the start slot, we will reconstruct them.
-  VM.createLandingSlot();
-  VASTSlot *StartSlot = VM.getStartSlot();
+  R.createLandingSlot();
+  VASTSlot *StartSlot = R.getStartSlot();
   StartSlot->unlinkSuccs();
 
   VASTSlot *OldStart = OldSlots.begin();
@@ -1013,7 +1014,7 @@ void VASTScheduling::emitSchedule() {
   for (iterator I = VM->selector_begin(), E = VM->selector_end(); I != E; ++I)
     I->dropMux();
 
-  ScheduleEmitter(*VM, *G).emitSchedule();
+  ScheduleEmitter(*VM, *VM, *G).emitSchedule();
   ImplicitFlowBuilder(*VM).run();
   RegisterFolding(*VM, DT).run();
 }

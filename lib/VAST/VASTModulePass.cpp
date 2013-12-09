@@ -539,14 +539,14 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   SeqInst->addSrc(VASTImmediate::True, NumOperands, FinPort);
 
   // Construct the control flow.
-  addSuccSlot(CurSlot, A->getFinishSlot(), VASTImmediate::True, &I);
+  addSuccSlot(CurSlot, R.getFinishSlot(), VASTImmediate::True, &I);
 }
 
 void VASTModuleBuilder::visitUnreachableInst(UnreachableInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
   // DIRTYHACK: Simply jump back the start slot.
   // Construct the control flow.
-  addSuccSlot(CurSlot, A->getFinishSlot(), VASTImmediate::True, &I);
+  addSuccSlot(CurSlot, R.getFinishSlot(), VASTImmediate::True, &I);
 }
 
 void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
@@ -793,7 +793,7 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
   if (VASTSelector *RetPort = SubMod->getRetPort()) {
     VASTSeqValue *TimedReturn = A->createSeqValue(RetPort, 0, V);
     VASTSeqValue *Result = getOrCreateSeqVal(Inst->getValue());
-    A->latchValue(Result, TimedReturn, Slot, VASTImmediate::True, V, Latency);
+    R.latchValue(Result, TimedReturn, Slot, VASTImmediate::True, V, Latency);
     // Move the the next slot so that the operation can correctly read the
     // returned value
     advanceToNextSlot(Slot);
@@ -955,7 +955,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     VASTRegister *ResultRegister
       = createLoadRegister(I, TimedRData->getBitWidth());
     VASTSeqValue *Result = A->createSeqValue(ResultRegister->getSelector(), 0, &I);
-    A->latchValue(Result, TimedRData, Slot, VASTImmediate::True, &I, Latency);
+    R.latchValue(Result, TimedRData, Slot, VASTImmediate::True, &I, Latency);
 
     // Alignment is required if the Bus has byteenable.
     VASTValPtr V = alignLoadResult(Result, ByteOffset, Bus);

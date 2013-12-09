@@ -111,6 +111,7 @@ class DatapathContainer;
 class DataLayout;
 
 class MinimalExprBuilderContext : public VASTExprBuilderContext {
+protected:
   DatapathContainer &Datapath;
 
 public:
