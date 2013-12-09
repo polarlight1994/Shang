@@ -53,6 +53,7 @@ public:
   virtual ~HLSAllocation();
 
   VASTModule &getModule() const { return *M; }
+  VASTModule *operator->() const { return M; }
 
   // Memory Bank allocation queries.
   virtual VASTMemoryBank *getMemoryBank(const GlobalVariable &GV) const;
