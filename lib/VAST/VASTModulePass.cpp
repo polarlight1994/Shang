@@ -51,9 +51,9 @@ namespace {
 struct VASTModuleBuilder : public MinimalDatapathContext,
                            public InstVisitor<VASTModuleBuilder, void> {
   DatapathBuilder Builder;
-  VASTModule *VM;
+  VASTCtrlRgn &R;
   DataLayout *TD;
-  HLSAllocation &Allocation;
+  HLSAllocation &A;
   Dataflow &DF;
 
   //===--------------------------------------------------------------------===//
@@ -115,7 +115,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     S += "vast_";
     S += ShangMangle(I.getName());
     S += "_unshifted_r";
-    return VM->createRegister(S.str(), BitWidth);
+    return A->createRegister(S.str(), BitWidth);
   }
 
   // Remember the landing slot and the latest slot of a basic block.
@@ -127,7 +127,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     if (Slots.first == 0) {
       assert(Slots.second == 0 && "Unexpected Latest slot without landing slot!");
       Slots.first
-        = (Slots.second = VM->createSlot(++NumSlots, BB, 0));
+        = (Slots.second = R.createSlot(++NumSlots, BB, 0));
     }
 
     return Slots.first;
@@ -146,7 +146,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     VASTSlot *&Slot = BB2SlotMap[BB].second;
     assert(Slot == CurSlot && "CurSlot not the last slot in the BB!");
     assert(CurSlot->succ_empty() && "CurSlot already have successors!");
-    Slot = VM->createSlot(++NumSlots, BB, 0);
+    Slot = R.createSlot(++NumSlots, BB, 0);
     // Connect the slots.
     addSuccSlot(CurSlot, Slot);
     return Slot;
@@ -161,7 +161,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   }
 
   VASTSlot *createSubGroup(BasicBlock *BB, VASTValPtr Cnd, VASTSlot *S) {
-    VASTSlot *SubGrp = VM->createSlot(++NumSlots, BB, S->Schedule, Cnd, true);
+    VASTSlot *SubGrp = R.createSlot(++NumSlots, BB, S->Schedule, Cnd, true);
     // The subgroups are not actually the successors of S in the control flow.
     S->addSuccSlot(SubGrp, VASTSlot::SubGrp);
     return SubGrp;
@@ -173,11 +173,11 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
     // If the Br is already exist, simply or the conditions together.
     assert(!S->hasNextSlot(NextSlot) && "Edge had already existed!");
     assert((S->getParent() == NextSlot->getParent()
-           || NextSlot == VM->getFinishSlot())
+            || NextSlot->getParent() == NULL)
           && "Cannot change Slot and BB at the same time!");
     assert(!NextSlot->IsSubGrp && "Unexpected subgroup!");
     S->addSuccSlot(NextSlot, VASTSlot::Sucessor);
-    VASTSlotCtrl *SlotBr = VM->createSlotCtrl(NextSlot, S, Cnd);
+    VASTSlotCtrl *SlotBr = R.createStateTransition(NextSlot, S, Cnd);
     if (Inst) SlotBr->annotateValue(Inst);
   }
 
@@ -228,10 +228,10 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
                                ArrayRef<VASTValPtr> Args);
   //===--------------------------------------------------------------------===//
-  VASTModuleBuilder(VASTModule *Module, DataLayout *TD, HLSAllocation &Allocation,
+  VASTModuleBuilder(VASTCtrlRgn &R, DataLayout *TD, HLSAllocation &Allocation,
                     Dataflow &DF)
-    : MinimalDatapathContext(*Module, TD), Builder(*this),
-      VM(Module), TD(TD), Allocation(Allocation), DF(DF), NumSlots(0)  {}
+    : MinimalDatapathContext(Allocation.getModule(), TD), Builder(*this),
+      R(R), TD(TD), A(Allocation), DF(DF), NumSlots(0)  {}
 };
 }
 
@@ -260,8 +260,8 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
 
   // Create the SeqVal now.
   unsigned BitWidth = Builder.getValueSizeInBits(V);
-  VASTRegister *R = VM->createRegister(Name, BitWidth, 0);
-  VASTSeqValue *SeqVal = VM->createSeqValue(R->getSelector(), 0, V);
+  VASTRegister *R = A->createRegister(Name, BitWidth, 0);
+  VASTSeqValue *SeqVal = A->createSeqValue(R->getSelector(), 0, V);
 
   // Index the value.
   indexVASTExpr(V, SeqVal);
@@ -286,7 +286,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
   if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
     unsigned SizeInBits = getValueSizeInBits(GV);
 
-    VASTMemoryBank *Bus = Allocation.getMemoryBank(*GV);
+    VASTMemoryBank *Bus = A.getMemoryBank(*GV);
     const std::string Name = ShangMangle(GV->getName());
     if (!Bus->isDefault()) {
       unsigned StartOffset = Bus->getStartOffset(GV);
@@ -296,7 +296,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
     }
     
     // If the GV is assigned to the memory port 0, create a wrapper wire for it.
-    return indexVASTExpr(GV, VM->getOrCreateWrapper(Name, SizeInBits, GV));
+    return indexVASTExpr(GV, A->getOrCreateWrapper(Name, SizeInBits, GV));
   }
 
   if (GEPOperator *GEP = dyn_cast<GEPOperator>(V))
@@ -335,8 +335,8 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
   if (UndefValue *UDef = dyn_cast<UndefValue>(V)) {
     unsigned SizeInBits = getValueSizeInBits(UDef);
     SmallString<36> S;
-    return indexVASTExpr(V, VM->getOrCreateWrapper(translatePtr2Str(UDef, S),
-                                                   SizeInBits, UDef));
+    return indexVASTExpr(V, A->getOrCreateWrapper(translatePtr2Str(UDef, S),
+                                                  SizeInBits, UDef));
   }
 
   if (ConstantPointerNull *PtrNull = dyn_cast<ConstantPointerNull>(V)) {
@@ -360,7 +360,7 @@ void VASTModuleBuilder::buildInterface(Function *F) {
     unsigned BitWidth = TD->getTypeSizeInBits(Arg->getType());
 
     VASTValPtr V
-      = VM->addInputPort(Name, BitWidth, VASTModule::ArgPort)->getValue();
+      = A->addInputPort(Name, BitWidth, VASTModule::ArgPort)->getValue();
     // Remember the expression for the argument input.
     VASTSeqValue *SeqVal = getOrCreateSeqVal(Arg, Name);
     ArgRegs.push_back(SeqVal);
@@ -372,14 +372,14 @@ void VASTModuleBuilder::buildInterface(Function *F) {
   if (!RetTy->isVoidTy()) {
     assert(RetTy->isIntegerTy() && "Only support return integer now!");
     unsigned BitWidth = TD->getTypeSizeInBits(RetTy);
-    VM->addOutputPort("return_value", BitWidth, VASTModule::RetPort);
+    A->addOutputPort("return_value", BitWidth, VASTModule::RetPort);
   }
 
-  VASTSlot *IdleSlot = VM->getStartSlot();
+  VASTSlot *IdleSlot = R.getStartSlot();
 
   // Create the virtual slot representing the idle loop.
   VASTValue *StartPort
-    = cast<VASTInPort>(VM->getPort(VASTModule::Start)).getValue();
+    = cast<VASTInPort>(A->getPort(VASTModule::Start)).getValue();
   VASTSlot *IdleSlotGrp
     = createSubGroup(0, Builder.buildNotExpr(StartPort), IdleSlot);
   addSuccSlot(IdleSlotGrp, IdleSlot, Builder.buildNotExpr(StartPort));
@@ -394,13 +394,13 @@ void VASTModuleBuilder::buildInterface(Function *F) {
 
   // Copy the value to the register.
   for (unsigned i = 0, e = ArgRegs.size(); i != e; ++i)
-    VM->latchValue(ArgRegs[i], ArgPorts[i], EntryGrp, StartPort, Args[i]);
+    R.latchValue(ArgRegs[i], ArgPorts[i], EntryGrp, StartPort, Args[i]);
 
   // Also reset the finish signal.
   VASTSeqInst *ResetFin
-    = VM->lauchInst(EntryGrp, StartPort, 1, UndefValue::get(RetTy), true);
+    = R.lauchInst(EntryGrp, StartPort, 1, UndefValue::get(RetTy), true);
   VASTSelector *FinPort
-    = cast<VASTOutPort>(VM->getPort(VASTModule::Finish)).getSelector();
+    = cast<VASTOutPort>(A->getPort(VASTModule::Finish)).getSelector();
   ResetFin->addSrc(VASTImmediate::False, 0, FinPort);
 }
 
@@ -420,7 +420,7 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
       BasicBlock *Succ = *I;
       // FIXME: Use VASTImmediate::False, and prevent the operation from being
       // optimized away.
-      buildConditionalTransition(Succ, S, VM->getOrCreateSymbol("1'b0", 1), *Inst);
+      buildConditionalTransition(Succ, S, A->getOrCreateSymbol("1'b0", 1), *Inst);
     }
 
     return;
@@ -502,7 +502,7 @@ void VASTModuleBuilder::visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd,
 
     VASTSeqValue *PHISeqVal = getOrCreateSeqVal(PN);
     // Latch the incoming value when we are branching to the succ slot.
-    VM->latchValue(PHISeqVal, LiveOut, S,  Cnd, PN);
+    R.latchValue(PHISeqVal, LiveOut, S,  Cnd, PN);
   }
 }
 
@@ -523,11 +523,11 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
   unsigned NumOperands = I.getNumOperands();
   VASTSeqInst *SeqInst =
-    VM->lauchInst(CurSlot, VASTImmediate::True, NumOperands + 1, &I, true);
+    R.lauchInst(CurSlot, VASTImmediate::True, NumOperands + 1, &I, true);
 
   // Assign the return port if necessary.
   if (NumOperands) {
-    VASTSelector *RetPort = cast<VASTOutPort>(VM->getRetPort()).getSelector();
+    VASTSelector *RetPort = cast<VASTOutPort>(A->getRetPort()).getSelector();
     // Please note that we do not need to export the definition of the value
     // on the return port.
     SeqInst->addSrc(getAsOperandImpl(I.getReturnValue()), 0, RetPort);
@@ -535,18 +535,18 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
 
   // Enable the finish port.
   VASTSelector *FinPort
-    = cast<VASTOutPort>(VM->getPort(VASTModule::Finish)).getSelector();
+    = cast<VASTOutPort>(A->getPort(VASTModule::Finish)).getSelector();
   SeqInst->addSrc(VASTImmediate::True, NumOperands, FinPort);
 
   // Construct the control flow.
-  addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True, &I);
+  addSuccSlot(CurSlot, A->getFinishSlot(), VASTImmediate::True, &I);
 }
 
 void VASTModuleBuilder::visitUnreachableInst(UnreachableInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
   // DIRTYHACK: Simply jump back the start slot.
   // Construct the control flow.
-  addSuccSlot(CurSlot, VM->getFinishSlot(), VASTImmediate::True, &I);
+  addSuccSlot(CurSlot, A->getFinishSlot(), VASTImmediate::True, &I);
 }
 
 void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
@@ -708,7 +708,7 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
   BasicBlock *ParentBB = CS->getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
   VASTSeqInst *Op
-    = VM->lauchInst(Slot, VASTImmediate::True, Args.size() + 1, Inst, false);
+    = R.lauchInst(Slot, VASTImmediate::True, Args.size() + 1, Inst, false);
   // Build the logic to lauch the module and read the result.
   buildSubModuleOperation(Op, SubMod, Args);
 }
@@ -743,7 +743,7 @@ void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
   BasicBlock *ParentBB = I.getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
   VASTSeqInst *Op
-    = VM->lauchInst(Slot, VASTImmediate::True, I.getNumOperands(), &I, false);
+    = R.lauchInst(Slot, VASTImmediate::True, I.getNumOperands(), &I, false);
   buildSubModuleOperation(Op, SubMod, Ops);
 }
 
@@ -758,18 +758,18 @@ VASTModuleBuilder::getOrCreateSubModuleFromBinOp(BinaryOperator &BinOp) {
   // Create the SubModuleNow if it didn't exist yet.
   if (Mod == 0) {
     unsigned FNNum = SubModules.size();
-    Mod = VM->addSubmodule(SubModuleName.c_str(), FNNum);
+    Mod = A->addSubmodule(SubModuleName.c_str(), FNNum);
     // Build up the operand and outputs.
-    VASTRegister *LHS = VM->createRegister(SubModuleName + "lhs", ResultSize);
+    VASTRegister *LHS = A->createRegister(SubModuleName + "lhs", ResultSize);
     Mod->addFanin(LHS->getSelector());
-    VASTRegister *RHS = VM->createRegister(SubModuleName + "rhs", ResultSize);
+    VASTRegister *RHS = A->createRegister(SubModuleName + "rhs", ResultSize);
     Mod->addFanin(RHS->getSelector());
 
     // Look up the functional unit latency from the scripting engine.
     const char *FUDelayPath[] = { "FUs", BinOp.getOpcodeName(), "Latencies",
                                   SizeStr.c_str() };
     float Latency = LuaI::GetFloat(FUDelayPath);
-    Mod->createRetPort(VM, ResultSize, ceil(Latency));
+    Mod->createRetPort(&A.getModule(), ResultSize, ceil(Latency));
 
     ++NumIPs;
   }
@@ -791,9 +791,9 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
 
   // Read the return value from the function if there is any.
   if (VASTSelector *RetPort = SubMod->getRetPort()) {
-    VASTSeqValue *TimedReturn = VM->createSeqValue(RetPort, 0, V);
+    VASTSeqValue *TimedReturn = A->createSeqValue(RetPort, 0, V);
     VASTSeqValue *Result = getOrCreateSeqVal(Inst->getValue());
-    VM->latchValue(Result, TimedReturn, Slot, VASTImmediate::True, V, Latency);
+    A->latchValue(Result, TimedReturn, Slot, VASTImmediate::True, V, Latency);
     // Move the the next slot so that the operation can correctly read the
     // returned value
     advanceToNextSlot(Slot);
@@ -813,7 +813,7 @@ void VASTModuleBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 }
 
 void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
-  VASTMemoryBank *Bus = Allocation.getMemoryBank(I);
+  VASTMemoryBank *Bus = A.getMemoryBank(I);
   if (Bus->isCombinationalROM()) {
     buildCombinationalROMLookup(I.getPointerOperand(), Bus, I);
     return;
@@ -823,7 +823,7 @@ void VASTModuleBuilder::visitLoadInst(LoadInst &I) {
 }
 
 void VASTModuleBuilder::visitStoreInst(StoreInst &I) {
-  VASTMemoryBank *Bus = Allocation.getMemoryBank(I);
+  VASTMemoryBank *Bus = A.getMemoryBank(I);
   assert(!Bus->isCombinationalROM() && "Cannot store to a combinational ROM!");
   buildMemoryTransaction(I.getPointerOperand(), I.getValueOperand(), Bus, I);
 }
@@ -881,7 +881,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   if (Bus->requireByteEnable()) NumOperands += 1;
 
   VASTSeqOp *Op
-    = VM->lauchInst(Slot, VASTImmediate::True, NumOperands, &I, false);
+    = R.lauchInst(Slot, VASTImmediate::True, NumOperands, &I, false);
   unsigned CurSrcIdx = 0;
 
   VASTValPtr AddrVal = getAsOperandImpl(Addr);
@@ -950,12 +950,12 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     Slot = advanceToNextSlot(Slot, Latency);
 
     // Use port 0 of the memory
-    VASTValPtr TimedRData = VM->createSeqValue(Bus->getRData(0), 0, &I);
+    VASTValPtr TimedRData = A->createSeqValue(Bus->getRData(0), 0, &I);
     SmallString<36> S;
     VASTRegister *ResultRegister
       = createLoadRegister(I, TimedRData->getBitWidth());
-    VASTSeqValue *Result = VM->createSeqValue(ResultRegister->getSelector(), 0, &I);
-    VM->latchValue(Result, TimedRData, Slot, VASTImmediate::True, &I, Latency);
+    VASTSeqValue *Result = A->createSeqValue(ResultRegister->getSelector(), 0, &I);
+    A->latchValue(Result, TimedRData, Slot, VASTImmediate::True, &I, Latency);
 
     // Alignment is required if the Bus has byteenable.
     VASTValPtr V = alignLoadResult(Result, ByteOffset, Bus);
@@ -983,7 +983,7 @@ VASTModuleBuilder::buildCombinationalROMLookup(Value *Addr, VASTMemoryBank *Bus,
   unsigned Num = Bus->getNumber();
   const std::string BankName = "membank" + utostr_32(Num) +
                                "w" + utostr_32(ResultWidth);
-  VASTWrapper *Table = VM->getOrCreateWrapper(BankName, ResultWidth, Bus);
+  VASTWrapper *Table = A->getOrCreateWrapper(BankName, ResultWidth, Bus);
   indexVASTExpr(&Inst,
                 Builder.buildExpr(VASTExpr::dpCROM, AddrVal, Table, ResultWidth));
   ++NUMCombROM;
@@ -1029,7 +1029,7 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
   VM = &A.getModule();
   VM->setFunction(F);
 
-  VASTModuleBuilder Builder(VM, &getAnalysis<DataLayout>(),
+  VASTModuleBuilder Builder(*VM, &getAnalysis<DataLayout>(),
                             A,  getAnalysis<Dataflow>());
 
   Builder.buildInterface(&F);

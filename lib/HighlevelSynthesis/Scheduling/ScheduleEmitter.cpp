@@ -245,7 +245,7 @@ VASTSlotCtrl *ScheduleEmitter::addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
 
   assert(!NextSlot->IsSubGrp && "Unexpected subgroup!");
   S->addSuccSlot(NextSlot, VASTSlot::Sucessor);
-  VASTSlotCtrl *SlotBr = VM.createSlotCtrl(NextSlot, S, Cnd);
+  VASTSlotCtrl *SlotBr = VM.createStateTransition(NextSlot, S, Cnd);
   if (V) SlotBr->annotateValue(V);
 
   return SlotBr;
@@ -268,7 +268,7 @@ ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot) {
   // Handle the trivial case
   if (!Op->isBranch()) {
     VASTSlotCtrl *NewSlotCtrl
-      = VM.createSlotCtrl(Op->getNode(), ToSlot, Cnd);
+      = VM.createStateTransition(Op->getNode(), ToSlot, Cnd);
     NewSlotCtrl->annotateValue(V);
     return NewSlotCtrl;
   }
@@ -465,7 +465,7 @@ void ScheduleEmitter::emitSchedule() {
   OldSlots.splice(OldSlots.begin(), VM.getSLotList(),
                   VM.slot_begin(), VM.slot_end());
   // Remove the successors of the start slot, we will reconstruct them.
-  VM.createStartSlot();
+  VM.createLandingSlot();
   VASTSlot *StartSlot = VM.getStartSlot();
   StartSlot->unlinkSuccs();
 

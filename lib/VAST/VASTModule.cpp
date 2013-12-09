@@ -201,64 +201,14 @@ VASTWrapper *VASTModule::getOrCreateWrapper(const Twine &Name, unsigned BitWidth
   return Wire;
 }
 
-namespace {
-  struct SlotNumEqual {
-    unsigned SlotNum;
-    SlotNumEqual(unsigned SlotNum) : SlotNum(SlotNum) {}
-
-    bool operator()(const VASTSlot &S) const {
-      return S.SlotNum == SlotNum;
-    }
-  };
-}
-
-VASTSlot *
-VASTModule::createSlot(unsigned SlotNum, BasicBlock *ParentBB, unsigned Schedule,
-                       VASTValPtr Pred, bool IsVirtual) {
-  assert(std::find_if(Slots.begin(), Slots.end(), SlotNumEqual(SlotNum)) == Slots.end()
-         && "The same slot had already been created!");
-
-  VASTSlot *Slot = new VASTSlot(SlotNum, ParentBB, Pred, IsVirtual, Schedule);
-  // Insert the newly created slot before the finish slot.
-  Slots.insert(Slots.back(), Slot);
-
-  return Slot;
-}
-
-VASTSlot *VASTModule::createStartSlot() {
-  VASTSlot *StartSlot = new VASTSlot(0, 0, VASTImmediate::True, false, 0);
-  Slots.push_back(StartSlot);
-  // Also create the finish slot.
-  Slots.push_back(new VASTSlot(-1));
-  return StartSlot;
-}
-
-VASTSlot *VASTModule::getStartSlot() {
-  return &Slots.front();
-}
-
-VASTSlot *VASTModule::getFinishSlot() {
-  return &Slots.back();
-}
-
-const VASTSlot *VASTModule::getStartSlot() const {
-  return &Slots.front();
-}
-
-const VASTSlot *VASTModule::getFinishSlot() const {
-  return &Slots.back();
-}
-
 void VASTModule::setFunction(Function &F) {
   this->F = &F;
   Name = F.getName();
 }
 
 VASTModule::VASTModule()
-  : VASTNode(vastModule), Ports(NumSpecialPort), Name(), BBX(0), BBY(0),
-    BBWidth(0), BBHeight(0), F(0), NumArgPorts(0) {
-  createStartSlot();
-}
+  : VASTCtrlRgn(), Ports(NumSpecialPort), Name(), BBX(0), BBY(0),
+    BBWidth(0), BBHeight(0), F(0), NumArgPorts(0) {}
 
 void VASTModule::setBoundingBoxConstraint(unsigned BBX, unsigned BBY,
                                           unsigned BBWidth, unsigned BBHeight) {
@@ -271,7 +221,6 @@ void VASTModule::setBoundingBoxConstraint(unsigned BBX, unsigned BBY,
 void VASTModule::reset() {
   Wires.clear();
   Registers.clear();
-  SeqOps.clear();
   SeqVals.clear();
   Slots.clear();
   Submodules.clear();
@@ -294,13 +243,7 @@ VASTModule::~VASTModule() {
   for (selector_iterator I = selector_begin(), E = selector_end(); I != E; ++I)
     I->dropMux();
 
-  // Unlink the uses in the operand list of seqop from the used value.
-  for (seqop_iterator I = seqop_begin(), E = seqop_end(); I != E; ++I)
-    I->dropOperands();
-
-  // To prevent we releasing deleted uses in the destructor of VASTSlots, we
-  // release the slots before all other values.
-  Slots.clear();
+  VASTCtrlRgn::finalize();
 
   // Now release the datapath.
   DatapathContainer::gc();
@@ -464,74 +407,6 @@ VASTSymbol *VASTModule::getOrCreateSymbol(const Twine &Name, unsigned BitWidth) 
   return cast<VASTSymbol>(V);
 }
 
-VASTSeqInst *
-VASTModule::latchValue(VASTSeqValue *SeqVal, VASTValPtr Src,  VASTSlot *Slot,
-                       VASTValPtr GuardCnd, Value *V, unsigned Latency) {
-  assert(Src && "Bad assignment source!");
-  VASTSeqInst *Inst = lauchInst(Slot, GuardCnd, 1, V, true);
-  Inst->addSrc(Src, 0, SeqVal);
-  Inst->setCyclesFromLaunch(Latency);
-
-  return Inst;
-}
-
-VASTSeqInst *
-VASTModule::lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps, Value *V,
-                      bool IsLatch) {
-  // Create the uses in the list.
-  VASTSeqInst *SeqInst = new VASTSeqInst(V, Slot, NumOps, IsLatch);
-  // Create the predicate operand.
-  new (SeqInst->Operands) VASTUse(SeqInst, Pred);
-
-  // Add the SeqOp to the the all SeqOp list.
-  SeqOps.push_back(SeqInst);
-
-  return SeqInst;
-}
-
-VASTSeqCtrlOp *VASTModule::createCtrlLogic(VASTValPtr Src, VASTSlot *Slot,
-                                           VASTValPtr GuardCnd,
-                                           bool UseSlotActive) {
-  VASTSeqCtrlOp *CtrlOp = new VASTSeqCtrlOp(Slot, UseSlotActive);
-  // Create the predicate operand.
-  new (CtrlOp->Operands) VASTUse(CtrlOp, GuardCnd);
-
-  // Add the SeqOp to the the all SeqOp list.
-  SeqOps.push_back(CtrlOp);
-  return CtrlOp;
-
-}
-
-VASTSeqCtrlOp *VASTModule::assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
-                                           VASTSlot *Slot, VASTValPtr GuardCnd,
-                                           bool UseSlotActive) {
-  VASTSeqCtrlOp *CtrlOp = createCtrlLogic(Src, Slot, GuardCnd, UseSlotActive);
-  // Create the source of the assignment
-  CtrlOp->addSrc(Src, 0, SeqVal);
-  return CtrlOp;
-}
-
-VASTSeqCtrlOp *VASTModule::assignCtrlLogic(VASTSelector *Selector, VASTValPtr Src,
-                                           VASTSlot *Slot, VASTValPtr GuardCnd,
-                                           bool UseSlotActive) {
-  VASTSeqCtrlOp *CtrlOp = createCtrlLogic(Src, Slot, GuardCnd, UseSlotActive);
-  // Create the source of the assignment
-  CtrlOp->addSrc(Src, 0, Selector);
-  return CtrlOp;
-}
-
-VASTSlotCtrl *VASTModule::createSlotCtrl(VASTNode *N, VASTSlot *Slot,
-                                         VASTValPtr Pred) {
-  VASTSlotCtrl *CtrlOp = new VASTSlotCtrl(Slot, N);
-  // Create the predicate operand.
-  new (CtrlOp->Operands) VASTUse(CtrlOp, Pred);
-
-  // Add the SeqOp to the the all SeqOp list.
-  SeqOps.push_back(CtrlOp);
-
-  return CtrlOp;
-}
-
 void VASTModule::eraseSelector(VASTSelector *Sel) {
   assert(Sel->def_empty() && Sel->empty()
          && "Cannot erase the Sel that is still in use!");
@@ -557,19 +432,6 @@ void VASTModule::eraseSeqVal(VASTSeqValue *Val) {
   if (Sel->empty() && !Sel->isFUOutput()) eraseSelector(Sel);
 
   SeqVals.erase(Val);
-}
-
-void VASTModule::eraseSeqOp(VASTSeqOp *SeqOp) {
-  if (SeqOp->getSlot())
-    SeqOp->removeFromParent();
-
-  for (unsigned i = 0, e = SeqOp->num_srcs(); i != e; ++i) {
-    VASTLatch U = SeqOp->getSrc(i);
-    U.removeFromParent();
-  }
-
-  SeqOp->dropUses();
-  SeqOps.erase(SeqOp);
 }
 
 void VASTModule::print(raw_ostream &OS) const {

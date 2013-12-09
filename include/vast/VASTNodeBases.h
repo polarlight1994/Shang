@@ -58,6 +58,7 @@ public:
     vastOutPort,
     vastSlot,
     vastRegister,
+    vastCtrlRegion,
     vastSubmodule,
     vastMemoryBus,
 
@@ -405,7 +406,7 @@ public:
 };
 
 class VASTOperandList {
-  friend class VASTModule;
+  friend class VASTCtrlRgn;
   friend class DatapathContainer;
 protected:
   VASTUse *Operands;
@@ -590,7 +591,8 @@ public:
   static inline bool classof(const VASTSubModuleBase *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSubmodule ||
-           A->getASTType() == vastMemoryBus;
+           A->getASTType() == vastMemoryBus ||
+           A->getASTType() == vastCtrlRegion;
   }
 };
 } // end namespace

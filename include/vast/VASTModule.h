@@ -16,7 +16,7 @@
 #include "vast/VASTNodeBases.h"
 #include "vast/VASTDatapathNodes.h"
 #include "vast/VASTSeqValue.h"
-#include "vast/VASTSlot.h"
+#include "vast/VASTCtrlRgn.h"
 
 #include "vast/FUInfo.h"
 
@@ -95,7 +95,7 @@ public:
 };
 
 // The class that represent Verilog modulo.
-class VASTModule : public VASTNode, public DatapathContainer {
+class VASTModule : public VASTCtrlRgn, public DatapathContainer {
 public:
   typedef SmallVector<VASTPort*, 16> PortVector;
   typedef PortVector::iterator port_iterator;
@@ -136,11 +136,9 @@ private:
   WireVector Wires;
 
   // The slots vector, each slot represent a state in the FSM of the design.
-  SlotVecTy Slots;
   SelectorVector Selectors;
   RegisterVector Registers;
   SeqValueVector SeqVals;
-  ilist<VASTSeqOp> SeqOps;
 
   // Input/Output ports of the design.
   PortVector Ports;
@@ -159,8 +157,6 @@ private:
 
   unsigned NumArgPorts, RetPortIdx;
 
-  VASTSeqCtrlOp *createCtrlLogic(VASTValPtr Src, VASTSlot *Slot,
-                                 VASTValPtr GuardCnd, bool UseSlotActive);
   VASTPort *createPort(VASTNode *Node, bool IsInput);
 public:
   // TEMORARY HACK before hierarchy CFG is finished
@@ -207,18 +203,6 @@ public:
   /// getOrCreateSymbol - Get the symbol with the specified name, create a new
   /// one if it does not exists.
   VASTSymbol *getOrCreateSymbol(const Twine &Name, unsigned Bitwidth);
-
-  VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB, unsigned Schedule,
-                       VASTValPtr Pred = VASTImmediate::True,
-                       bool IsVirtual = false);
-
-  VASTSlot *createStartSlot();
-  VASTSlot *getStartSlot();
-  VASTSlot *getFinishSlot();
-  const VASTSlot *getStartSlot() const;
-  const VASTSlot *getFinishSlot() const;
-
-  ilist<VASTSlot> &getSLotList() { return Slots; }
 
   // Allow user to add ports.
   VASTPort *addPort(VASTNode *Node, bool IsInput);
@@ -309,38 +293,10 @@ public:
   const_slot_iterator slot_begin() const { return Slots.begin(); }
   const_slot_iterator slot_end() const { return Slots.end(); }
 
-  void viewGraph() const;
-
-  // Fine-grain Control-flow creation functions.
-  // Create a SeqOp that contains NumOps operands, please note that the predicate
-  // operand is excluded from NumOps.
-  VASTSeqInst *lauchInst(VASTSlot *Slot, VASTValPtr Pred, unsigned NumOps,
-                         Value *V, bool IsLatch);
-
-  VASTSeqInst *latchValue(VASTSeqValue *SeqVal, VASTValPtr Src, VASTSlot *Slot,
-                          VASTValPtr GuardCnd, Value *V, unsigned Latency = 0);
-
-  /// Create an assignment on the control logic.
-  VASTSeqCtrlOp *assignCtrlLogic(VASTSeqValue *SeqVal, VASTValPtr Src,
-                                 VASTSlot *Slot, VASTValPtr GuardCnd,
-                                 bool UseSlotActive);
-  VASTSeqCtrlOp *assignCtrlLogic(VASTSelector *Selector, VASTValPtr Src,
-                                 VASTSlot *Slot, VASTValPtr GuardCnd,
-                                 bool UseSlotActive);
-  /// Create an assignment on the control logic which may need further conflict
-  /// resolution.
-  VASTSlotCtrl *createSlotCtrl(VASTNode *N, VASTSlot *Slot, VASTValPtr GuardCnd);
-
   /// Remove the VASTSeqOp from the module and delete it. Please note that
   /// the SeqOp should be remove from its parent slot before we erase it.
-  void eraseSeqOp(VASTSeqOp *SeqOp);
   void eraseSelector(VASTSelector *Sel);
   void eraseSeqVal(VASTSeqValue *Val);
-
-  // Iterate over all SeqOps in the module.
-  typedef ilist<VASTSeqOp>::iterator seqop_iterator;
-  seqop_iterator seqop_begin() { return SeqOps.begin(); }
-  seqop_iterator seqop_end() { return SeqOps.end(); }
 
   // Iterate over all SeqVals in the module.
   seqval_iterator seqval_begin()  { return SeqVals.begin(); }
@@ -358,10 +314,8 @@ public:
   bool gc();
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTModule *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastModule;
-  }
+  static inline bool classof(const VASTModule *A) LLVM_DELETED_FUNCTION;
+  static inline bool classof(const VASTNode *A) LLVM_DELETED_FUNCTION;
 
   static const std::string GetFinPortName() {
     return "fin";

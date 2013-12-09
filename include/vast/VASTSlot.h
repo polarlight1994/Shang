@@ -85,7 +85,7 @@ private:
     assert(0 && "Function not implemented!");
   }
 
-  friend class VASTModule;
+  friend class VASTCtrlRgn;
   VASTSlot(unsigned slotNum, BasicBlock *ParentBB, VASTValPtr Pred,
            bool IsSubGrp, unsigned Schedule);
 
