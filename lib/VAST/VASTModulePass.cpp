@@ -57,7 +57,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   Dataflow &DF;
 
   //===--------------------------------------------------------------------===//
-  void emitFunctionSignature(Function *F, VASTSubModule *SubMod = 0);
+  void buildInterface(Function *F);
 
   //===--------------------------------------------------------------------===//
   StringMap<VASTSubModule*> SubModules;
@@ -348,8 +348,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
 }
 
 //===----------------------------------------------------------------------===//
-void VASTModuleBuilder::emitFunctionSignature(Function *F,
-                                              VASTSubModule *SubMod) {
+void VASTModuleBuilder::buildInterface(Function *F) {
   SmallVector<VASTSeqValue*, 4> ArgRegs;
   SmallVector<VASTValPtr, 4> ArgPorts;
   SmallVector<Value*, 4> Args;
@@ -359,13 +358,6 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
     Argument *Arg = I;
     std::string Name = Arg->getName();
     unsigned BitWidth = TD->getTypeSizeInBits(Arg->getType());
-    // Add port declaration.
-    if (SubMod) {
-      std::string RegName = SubMod->getPortName(Name);
-      VASTRegister *R = VM->createRegister(RegName, BitWidth);
-      SubMod->addFanin(R->getSelector());
-      continue;
-    }
 
     VASTValPtr V
       = VM->addInputPort(Name, BitWidth, VASTModule::ArgPort)->getValue();
@@ -380,13 +372,8 @@ void VASTModuleBuilder::emitFunctionSignature(Function *F,
   if (!RetTy->isVoidTy()) {
     assert(RetTy->isIntegerTy() && "Only support return integer now!");
     unsigned BitWidth = TD->getTypeSizeInBits(RetTy);
-    if (SubMod)
-      SubMod->createRetPort(VM, BitWidth);
-    else
-      VM->addOutputPort("return_value", BitWidth, VASTModule::RetPort);
+    VM->addOutputPort("return_value", BitWidth, VASTModule::RetPort);
   }
-
-  if (SubMod) return;
 
   VASTSlot *IdleSlot = VM->getStartSlot();
 
@@ -1045,7 +1032,7 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
   VASTModuleBuilder Builder(VM, &getAnalysis<DataLayout>(),
                             A,  getAnalysis<Dataflow>());
 
-  Builder.emitFunctionSignature(&F);
+  Builder.buildInterface(&F);
 
   // Visit the basic block in topological order.
   ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
