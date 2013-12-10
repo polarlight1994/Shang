@@ -73,7 +73,7 @@ unsigned SDCScheduler::createStepVariable(const VASTSchedUnit* U, unsigned Col) 
   (void) inserted;
   add_columnex(lp, 0, 0, 0);
 
-#ifndef NDEBUG
+#ifdef XDEBUG
   std::string SVName = "sv" + utostr(U->getIdx());
   set_col_name(lp, Col, const_cast<char*>(SVName.c_str()));
 #endif
@@ -100,7 +100,7 @@ unsigned SDCScheduler::createSlackVariable(unsigned Col, int UB, int LB,
                                            const Twine &Name) {
   add_columnex(lp, 0, 0, 0);
 
-#ifndef NDEBUG
+#ifdef XDEBUG
   std::string SlackName = Name.str();
   set_col_name(lp, Col, const_cast<char*>(SlackName.c_str()));
 #endif
@@ -411,7 +411,7 @@ bool SDCScheduler::lagSolveLP(lprec *lp) {
     LagSDCSolver::ResultType Result = LagSolver->update(lp, SubGradientSqr);
     switch (Result) {
     case LagSDCSolver::InFeasible:
-      MaxFeasiableiteration = 0;
+      MaxFeasiableiteration = 64;
 
       if (iterations % 100 == 0) {
         dbgs() << " DualObj: " << DualObj
@@ -1045,7 +1045,7 @@ void SDCScheduler::dumpModel() const {
 }
 
 void SDCScheduler::nameLastRow(const Twine &Name) {
-#ifndef NDEBUG
+#ifdef XDEBUG
   unsigned RowNo = get_Nrows(lp);
   std::string RowName = Name.str() + utostr_32(RowNo);
   set_row_name(lp, RowNo, const_cast<char*>(RowName.c_str()));
