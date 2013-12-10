@@ -957,8 +957,6 @@ void VASTScheduling::buildSchedulingUnits(VASTSlot *S) {
 }
 
 //===----------------------------------------------------------------------===//
-
-
 void VASTScheduling::preventInfinitUnrolling(Loop *L) {
   // Build the constraints from the entry to the branch of the backedges.
   BasicBlock *HeaderBB = L->getHeader();
@@ -1049,13 +1047,16 @@ void VASTScheduling::fixSchedulingGraph() {
     VASTSchedUnit *U = I;
 
     // Ignore the entries.
-    if (U->isBBEntry()) continue;
+    if (U->isBBEntry())
+      continue;
 
     // Terminators will be handled later.
-    if (U->isTerminator()) continue;
+    if (U->isTerminator())
+      continue;
 
     // Ignore the virtual nodes.
-    if (U->isVirtual()) continue;
+    if (U->isVirtual())
+      continue;
 
     Instruction *Inst = U->getInst();
     // Returns will be handled later, too.

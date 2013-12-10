@@ -143,6 +143,10 @@ private:
   unsigned updateSoftConstraintPenalties();
   bool solveLP(lprec *lp);
 
+  // Apply control dependencies to SU, prevent it from being scheduled out of
+  // the boundaries of current basic block.
+  void applyControlDependencies(VASTSchedUnit *SU);
+
   //
   bool resolveControlChainingHazard();
 

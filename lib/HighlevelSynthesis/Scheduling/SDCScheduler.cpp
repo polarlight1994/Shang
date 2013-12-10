@@ -689,7 +689,9 @@ unsigned SDCScheduler::createSlackPair(VASTSchedUnit *Dst, VASTSchedUnit *Src,
   if (!add_constraintex(lp, array_lengthof(PosCols), PosCoeffs, PosCols, LE, 0))
     report_fatal_error("Cannot create constraint!");
   nameLastRow(Twine(get_col_name(lp, PosSlackIdx)) + "_");
-  //set_upbo(lp, PosSlackIdx, 0);
+#ifndef ENABLE_GLOBAL_CODE_MOTION
+  set_upbo(lp, PosSlackIdx, 0);
+#endif
 
   unsigned NegSlackIdx = SlackIdx + 1;
   int NegCols[] = { getSUIdx(Dst), getSUIdx(Src), NegSlackIdx };
@@ -697,7 +699,9 @@ unsigned SDCScheduler::createSlackPair(VASTSchedUnit *Dst, VASTSchedUnit *Src,
   if (!add_constraintex(lp, array_lengthof(NegCols), NegCoeffs, NegCols, GE, 0))
     report_fatal_error("Cannot create constraint!");
   nameLastRow(Twine(get_col_name(lp, NegSlackIdx)) + "_");
-  //set_upbo(lp, NegSlackIdx, 0);
+#ifndef ENABLE_GLOBAL_CODE_MOTION
+  set_upbo(lp, NegSlackIdx, 0);
+#endif
 
   return SlackIdx + 2;
 }
@@ -851,6 +855,43 @@ SDCScheduler::preserveAntiDependence(VASTSchedUnit *Src, VASTSchedUnit *Dst,
   }
 }
 
+void SDCScheduler::applyControlDependencies(VASTSchedUnit *SU) {
+  // Ignore the edge takes function arguments as source node for now since we
+  // do not perform whole function pipelining.
+  if (LLVM_UNLIKELY(SU->isEntry() || SU->isExit()) || SU->isBBEntry())
+    return;
+
+  BasicBlock *BB = SU->getParent();
+
+  VASTSchedUnit *SSrc = G.getEntrySU(BB);
+  addDifferentialConstraint(SU, SSrc, GE, 0);
+  nameLastRow("ctrl_ssrc_");
+
+  // Control dependnecies to the teriminator of the BB for these nodes are
+  // either not need (terminators), or handled by synchronization dependencies
+  // (PHILatch).
+  if (SU->isTerminator() || SU->isPHILatch())
+    return;
+
+  std::map<BasicBlock*, std::set<VASTSchedUnit*> >::iterator
+    J = CFGEdges.find(BB);
+
+  // No need to worry about the return block, it always exiting the loop
+  if (J == CFGEdges.end())
+    return;
+
+  unsigned II = SU->getII();
+
+  std::set<VASTSchedUnit*> &Exits = J->second;
+
+  typedef std::set<VASTSchedUnit*>::iterator iterator;
+  for (iterator I = Exits.begin(), E = Exits.end(); I != E; ++I) {
+    VASTSchedUnit *SSnk = *I;
+    addDifferentialConstraint(SSnk, SU, GE, 0);
+    nameLastRow("ctrl_ssnk_");
+  }
+}
+
 void SDCScheduler::addDependencyConstraints(lprec *lp) {
   for(VASTSchedGraph::iterator I = begin(), E = end(); I != E; ++I) {
     VASTSchedUnit *U = I;
@@ -878,12 +919,18 @@ void SDCScheduler::addDependencyConstraints(lprec *lp) {
 
       nameLastRow("dep_");
 
+#ifdef ENABLE_GLOBAL_CODE_MOTION
       // Limit throughput on edge, otherwise we may need to insert pipeline
       // register. At the same time, ignore the edge from BBEntry (representing
       // the guarding condition), because we had pipelined it (slot registers).
       if (!Src->isBBEntry() && DI.getDFLatency() > -1)
         preserveAntiDependence(Src, U);
+#endif
     }
+
+#ifndef ENABLE_GLOBAL_CODE_MOTION
+    applyControlDependencies(U);
+#endif
   }
 }
 
