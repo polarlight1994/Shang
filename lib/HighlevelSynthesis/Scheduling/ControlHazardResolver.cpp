@@ -100,7 +100,7 @@ ControlChainingHazardResolver::calculateTimeFrame(BasicBlock *BB) {
     // the flow-dependencies from the source BB should be break by a PHI node.
     // And it is ok to ignore such incoming block.
     if (!SrcEntryTF) {
-      assert(DT.dominates(BB, SrcBB) && "Expect backedge here!");
+      // assert(DT.dominates(BB, SrcBB) && "Expect backedge here!");
       continue;
     }
 
