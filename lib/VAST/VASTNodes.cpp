@@ -334,6 +334,7 @@ ArrayRef<VASTUse> VASTOperandList::getOperands() const {
 VASTOperandList::VASTOperandList(unsigned Size)
   : Operands(0), Size(Size) {
   if (Size)
+    // Avoid calling the constructor of VASTUse by calling the generic new.
     Operands = reinterpret_cast<VASTUse*>(::operator new(sizeof(VASTUse) * Size));
 }
 

@@ -122,30 +122,6 @@ void VASTSeqOp::addSrc(VASTValPtr Src, unsigned SrcIdx, VASTSelector *Sel) {
   addSrc(Src, SrcIdx, Sel, 0);
 }
 
-void VASTSeqOp::eraseOperand(unsigned Idx) {
-  // Unlink the use.
-  VASTUse &U = getUseInteranal(Idx);
-  U.unlinkUseFromUser();
-
-  if (VASTSelector *Sel = dyn_cast<VASTSelector>(&U.getUser()))
-    Sel->eraseFanin(getSrc(Idx));
-
-  for (unsigned i = Idx + 1; i < num_srcs(); ++i) {
-    VASTLatch L = getSrc(i);
-    L.removeFromParent();
-    // Create the use at the earlier operand, please note that we are not going
-    // to add the defined SeqVal again, otherwise we are pushing the same SeqVal
-    // more than once in the Defs vector.
-    addSrc(L, i - 1, L.getSelector(), 0);
-    getUseInteranal(i).unlinkUseFromUser();
-  }
-
-  if (getNumDefs() > Idx)
-    Defs.erase(Defs.begin() + Idx);
-
-  --Size;
-}
-
 void VASTSeqOp::print(raw_ostream &OS) const {
   for (unsigned I = 0, E = getNumDefs(); I != E; ++I) {
     OS << Defs[I]->getName() << ", ";
@@ -220,6 +196,30 @@ void VASTSeqOp::annotateValue(Value *V) {
   Contents.LLVMValue =  V;
 }
 
+void VASTSeqOp::eraseOperand(unsigned Idx) {
+  // Unlink the use.
+  VASTUse &U = getUseInteranal(Idx);
+  U.unlinkUseFromUser();
+
+  if (VASTSelector *Sel = dyn_cast<VASTSelector>(&U.getUser()))
+    Sel->eraseFanin(getSrc(Idx));
+
+  for (unsigned i = Idx + 1; i < num_srcs(); ++i) {
+    VASTLatch L = getSrc(i);
+    L.removeFromParent();
+    // Create the use at the earlier operand, please note that we are not going
+    // to add the defined SeqVal again, otherwise we are pushing the same SeqVal
+    // more than once in the Defs vector.
+    addSrc(L, i - 1, L.getSelector(), 0);
+    getUseInteranal(i).unlinkUseFromUser();
+  }
+
+  if (getNumDefs() > Idx)
+    Defs.erase(Defs.begin() + Idx);
+
+  --Size;
+}
+
 void VASTSeqOp::dropUses() {
   dropOperands();
 }
@@ -228,13 +228,14 @@ void VASTSeqOp::eraseFromParentList(ilist<VASTSeqOp> &List) {
   assert(getSlot() == NULL &&
          "Should call clear parent before calling this function!");
 
+  assert(size() && "Deleting the same operation twice?");
   for (unsigned i = 0, e = num_srcs(); i != e; ++i)
     getSrc(i).removeFromParent();
 
   dropUses();
 
   // Set the size to 0 since we had clear up the operand list.
-  this->Size = 0;
+  Size = 0;
 
   // Erase the current node from the list that contains the current node.
   List.erase(this);
