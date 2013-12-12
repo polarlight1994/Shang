@@ -334,6 +334,10 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
     getOperand(0).printAsOperand(OS, UB, LB);
     break;
 
+  case dpCROM:
+    OS << "[Combinational ROM]";
+    break;
+
   default: llvm_unreachable("Unknown datapath opcode!"); break;
   }
 
