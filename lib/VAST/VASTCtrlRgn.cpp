@@ -193,11 +193,8 @@ VASTSlotCtrl *VASTCtrlRgn::createStateTransition(VASTNode *N, VASTSlot *Slot,
 }
 
 void VASTCtrlRgn::finalize() {
-  // Unlink the uses in the operand list of seqop from the used value.
-  for (seqop_iterator I = seqop_begin(), E = seqop_end(); I != E; ++I)
-    I->dropOperands();
-
-  // Delete all slot, this also implicitly delete all operation.
+  // Delete all slot, this also implicitly delete all operation, and drop the
+  // operands of the operation.
   Slots.clear();
   assert(Ops.empty() && "Operations are not deleted with its parent slots?");
 }
