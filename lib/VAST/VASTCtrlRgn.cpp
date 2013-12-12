@@ -36,7 +36,7 @@ bool VASTCtrlRgn::gc() {
       DEBUG(dbgs() << "Removing SeqOp whose predicate is always false:\n";
             Op->dump(););
 
-      Ops.erase(Op);
+      Op->eraseFromParent();
 
       Changed |= true;
     }
