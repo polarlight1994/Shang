@@ -91,8 +91,8 @@ struct SmallConstraint : public LagConstraint {
 
   ~SmallConstraint() {
     if (Size > SmallSize) {
-      delete CArray;
-      delete IdxArray;
+      delete[] CArray;
+      delete[] IdxArray;
     }
   }
 };
