@@ -78,7 +78,7 @@ public:
   const_slot_iterator slot_begin() const { return Slots.begin(); }
   const_slot_iterator slot_end() const { return Slots.end(); }
 
-  ilist<VASTSlot> &getSLotList() { return Slots; }
+  SlotListTy &getSLotList() { return Slots; }
 
   VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB, unsigned Schedule,
                        VASTValPtr Pred = VASTImmediate::True,
@@ -111,15 +111,12 @@ public:
   VASTSlotCtrl *createStateTransition(VASTNode *N, VASTSlot *Slot,
                                       VASTValPtr GuardCnd);
 
-  /// Remove the VASTSeqOp from the module and delete it. Please note that
-  /// the SeqOp should be remove from its parent slot before we erase it.
-  void eraseSeqOp(VASTSeqOp *SeqOp);
-
   // Iterate over all operations in current control region.
   typedef SeqOpListTy::iterator seqop_iterator;
   typedef SeqOpListTy::const_iterator const_seqop_iterator;
   seqop_iterator seqop_begin() { return Ops.begin(); }
   seqop_iterator seqop_end() { return Ops.end(); }
+  SeqOpListTy &getOpList() { return Ops; }
 
   void print(raw_ostream &OS) const;
 

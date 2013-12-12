@@ -80,8 +80,8 @@ class VASTSeqOp : public VASTOperandList, public VASTNode,
 
   void eraseOperand(unsigned Idx);
 
-  void operator=(const VASTSeqOp &RHS); // DO NOT IMPLEMENT
-  VASTSeqOp(const VASTSeqOp &RHS); // DO NOT IMPLEMENT
+  void operator=(const VASTSeqOp &RHS) LLVM_DELETED_FUNCTION;
+  VASTSeqOp(const VASTSeqOp &RHS) LLVM_DELETED_FUNCTION;
 
 protected:
   VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive, unsigned Size);
@@ -94,7 +94,6 @@ public:
 
   // Set the parent slot to 0.
   void clearParent() { S.setPointer(0); }
-  void removeFromParent();
 
   unsigned getSlotNum() const;
 
@@ -136,6 +135,9 @@ public:
 
   // Provide the < operator to support set of VASTSeqDef.
   bool operator<(const VASTSeqOp &RHS) const;
+
+  void eraseFromParentList(ilist<VASTSeqOp> &List);
+  void eraseFromParent();
 
   virtual void dropUses();
 

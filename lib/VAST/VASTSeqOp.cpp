@@ -13,7 +13,7 @@
 
 #include "vast/VASTSeqOp.h"
 #include "vast/VASTSeqValue.h"
-#include "vast/VASTSlot.h"
+#include "vast/VASTCtrlRgn.h"
 #include "vast/LuaI.h"
 
 #include "llvm/IR/Instruction.h"
@@ -224,8 +224,30 @@ void VASTSeqOp::dropUses() {
   dropOperands();
 }
 
-void VASTSeqOp::removeFromParent() {
-  getSlot()->removeOp(this);
+void VASTSeqOp::eraseFromParentList(ilist<VASTSeqOp> &List) {
+  assert(getSlot() == NULL &&
+         "Should call clear parent before calling this function!");
+
+  for (unsigned i = 0, e = num_srcs(); i != e; ++i)
+    getSrc(i).removeFromParent();
+
+  dropUses();
+
+  // Set the size to 0 since we had clear up the operand list.
+  this->Size = 0;
+
+  // Erase the current node from the list that contains the current node.
+  List.erase(this);
+}
+
+void VASTSeqOp::eraseFromParent() {
+  // Get the list that containing this node.
+  VASTSlot *S = getSlot();
+  assert(S && "Cannot get parent slot!");
+  VASTCtrlRgn &R = S->getParentRgn();
+
+  S->removeOp(this);
+  eraseFromParentList(R.getOpList());
 }
 
 //----------------------------------------------------------------------------//

@@ -336,7 +336,7 @@ void RegisterSharing::mergeSelector(VASTSelector *To, VASTSelector *From,
   // Erase the dead ops.
   while (!DeadOps.empty()) {
     VASTSeqOp *Op = DeadOps.pop_back_val();
-    VM.eraseSeqOp(Op);
+    Op->eraseFromParent();
   }
 
   VM.eraseSelector(From);

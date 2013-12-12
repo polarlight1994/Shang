@@ -23,22 +23,34 @@
 
 using namespace llvm;
 
-VASTSlot::VASTSlot(unsigned SlotNum, BasicBlock *ParentBB,  VASTValPtr Pred,
-                   bool IsSubGrp, unsigned Schedule)
-  : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
+#define VASTSLOT_CTOR_NULL_RGN_REF *(reinterpret_cast<VASTCtrlRgn*>(NULL))
+
+VASTSlot::VASTSlot() : VASTNode(vastSlot), R(VASTSLOT_CTOR_NULL_RGN_REF),
+  SlotReg(this), SlotActive(this), SlotGuard(this),
+  SlotNum(0), IsSubGrp(true), Schedule(0) {}
+
+VASTSlot::VASTSlot(unsigned SlotNum, VASTCtrlRgn &R, BasicBlock *ParentBB,
+                   VASTValPtr Pred, bool IsSubGrp, unsigned Schedule)
+  : VASTNode(vastSlot), R(R), SlotReg(this, 0), SlotActive(this, 0),
     SlotGuard(this, Pred), SlotNum(SlotNum), IsSubGrp(IsSubGrp),
     Schedule(Schedule) {
   Contents.ParentBB = ParentBB;
 }
 
-VASTSlot::VASTSlot(unsigned slotNum)
-  : VASTNode(vastSlot), SlotReg(this, 0), SlotActive(this, 0),
+VASTSlot::VASTSlot(unsigned slotNum, VASTCtrlRgn &R)
+  : VASTNode(vastSlot), R(R), SlotReg(this, 0), SlotActive(this, 0),
     SlotGuard(this, VASTImmediate::True), SlotNum(slotNum), IsSubGrp(false),
     Schedule(0) {
   Contents.ParentBB = 0;
 }
 
 VASTSlot::~VASTSlot() {
+  while (!Operations.empty()) {
+    Operations.back()->clearParent();
+    Operations.back()->eraseFromParentList(R.getOpList());
+    Operations.pop_back();
+  }
+
   // Release the uses.
   if (!SlotReg.isInvalid()) SlotReg.unlinkUseFromUser();
   if (!SlotActive.isInvalid()) SlotActive.unlinkUseFromUser();

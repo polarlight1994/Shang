@@ -90,7 +90,6 @@ class ScheduleEmitter : public MinimalExprBuilderContext {
   unsigned CurrentSlotNum;
 
   void clearUp();
-  void clearUp(VASTSlot *S);
 
   VASTSlot *createSlot(BasicBlock *BB, unsigned Schedule) {
     ++NumSlots;
@@ -152,27 +151,6 @@ ScheduleEmitter::ScheduleEmitter(VASTModule &VM, VASTSchedGraph &G)
   : MinimalExprBuilderContext(VM), Builder(*this), VM(VM), G(G),
     CurrentSlotNum(0) {}
 
-void ScheduleEmitter::clearUp(VASTSlot *S) {
-  typedef VASTSlot::op_iterator op_iterator;
-  for (op_iterator I = S->op_begin(); I != S->op_end(); /*++I*/) {
-    VASTSeqOp *SeqOp = *I;
-
-    // Delete the dead Exprs used by this SeqOp.
-    for (unsigned i = 0, e = SeqOp->size(); i != e; ++i) {
-      VASTValue *V = SeqOp->getOperand(i).unwrap().get();
-
-      SeqOp->getOperand(i).unlinkUseFromUser();
-
-      if (!V->use_empty()) continue;
-
-      if (VASTExpr *Child = dyn_cast<VASTExpr>(V))
-        VM.recursivelyDeleteTriviallyDeadExprs(Child);
-    }
-
-    I = S->removeOp(I);
-    VM.eraseSeqOp(SeqOp);
-  }
-}
 
 void ScheduleEmitter::clearUp() {
   // The selectors will become invalid after we regenerate the STG, drop them
@@ -182,13 +160,7 @@ void ScheduleEmitter::clearUp() {
     I->dropMux();
 
   // Clear up the VASTSeqOp in the old list.
-  while (!OldSlots.empty()) {
-    VASTSlot *CurSlot = &OldSlots.back();
-
-    clearUp(CurSlot);
-
-    OldSlots.pop_back();
-  }
+  OldSlots.clear();
 
   // Release the dead objects now.
   VM.gc();

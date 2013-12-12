@@ -577,7 +577,7 @@ bool VASTModule::gc() {
     while (!DeadOps.empty()) {
       VASTLatch L = DeadOps.pop_back_val();
       if (L.Op->getNumDefs() == 1)
-        eraseSeqOp(L.Op);
+        L.Op->eraseFromParent();
       else
         L.eraseOperand();
     }
@@ -587,20 +587,17 @@ bool VASTModule::gc() {
     Changed |= true;
   }
 
-  // Release the dead seqops, this happen when we fold the SeqOp through the
-  // false paths.
-  for (seqop_iterator I = seqop_begin(); I != seqop_end(); /*++I*/) {
-    VASTSeqOp *Op = I++;
-    if (Op->getGuard() == VASTImmediate::False) {
-      DEBUG(dbgs() << "Removing SeqOp whose predicate is always false:\n";
-      Op->dump(););
-
-      eraseSeqOp(Op);
-
-      Changed |= true;
-    }
+  typedef SubmoduleList::iterator submodule_iterator;
+  for (submodule_iterator I = Submodules.begin(), E = Submodules.end();
+       I != E; ++I) {
+    if (VASTCtrlRgn *R = dyn_cast<VASTCtrlRgn>(I))
+      Changed |= R->gc();
   }
 
+  Changed |= VASTCtrlRgn::gc();
+
+  Changed |= DatapathContainer::gc();
+
   // At last clear up the dead VASTExprs.
-  return DatapathContainer::gc() || Changed;
+  return Changed;
 }

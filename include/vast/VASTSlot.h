@@ -29,6 +29,7 @@ class vlang_raw_ostream;
 class VASTSlot;
 class VASTSeqOp;
 class VASTSlotCtrl;
+class VASTCtrlRgn;
 
 class VASTSlot : public VASTNode, public ilist_node<VASTSlot> {
 public:
@@ -68,6 +69,9 @@ public:
   typedef PredVecTy::const_iterator const_pred_iterator;
 
 private:
+  // The parent control region of the current slot.
+  VASTCtrlRgn &R;
+
   // The relative signal of the slot: Slot register, Slot active and Slot ready.
   VASTUse SlotReg;
   VASTUse SlotActive;
@@ -86,11 +90,11 @@ private:
   }
 
   friend class VASTCtrlRgn;
-  VASTSlot(unsigned slotNum, BasicBlock *ParentBB, VASTValPtr Pred,
-           bool IsSubGrp, unsigned Schedule);
-
-  VASTSlot() : VASTNode(vastSlot), SlotReg(this), SlotActive(this),
-    SlotGuard(this), SlotNum(0), IsSubGrp(true), Schedule(0) {}
+  VASTSlot(unsigned slotNum, VASTCtrlRgn &R, BasicBlock *ParentBB,
+           VASTValPtr Pred, bool IsSubGrp, unsigned Schedule);
+  // Create the finish slot.
+  VASTSlot(unsigned SlotNum, VASTCtrlRgn &R);
+  VASTSlot();
 
   friend struct ilist_sentinel_traits<VASTSlot>;
 
@@ -144,8 +148,6 @@ public:
     }
   };
 
-  // Create the finish slot.
-  explicit VASTSlot(unsigned SlotNum);
   ~VASTSlot();
 
   typedef uint16_t SlotNumTy;
@@ -157,6 +159,7 @@ public:
   void copySignals(VASTSlot *S);
 
   BasicBlock *getParent() const;
+  VASTCtrlRgn &getParentRgn() const { return R; }
 
   void print(raw_ostream &OS) const;
 

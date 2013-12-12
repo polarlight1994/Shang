@@ -226,7 +226,7 @@ void SelectorPipelining::descomposeSeqInst(VASTSeqInst *SeqInst) {
       ->addSrc(VASTValPtr(L), 0, L.getSelector(), L.getDst());
   }
 
-  VM->eraseSeqOp(SeqInst);
+  SeqInst->eraseFromParent();
 }
 
 //static bool isLatchIdentical(const VASTLatch &LHS, const VASTLatch &RHS) {

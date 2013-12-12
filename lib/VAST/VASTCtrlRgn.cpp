@@ -27,19 +27,6 @@
 
 using namespace llvm;
 
-void VASTCtrlRgn::eraseSeqOp(VASTSeqOp *SeqOp) {
-  if (SeqOp->getSlot())
-    SeqOp->removeFromParent();
-
-  for (unsigned i = 0, e = SeqOp->num_srcs(); i != e; ++i) {
-    VASTLatch U = SeqOp->getSrc(i);
-    U.removeFromParent();
-  }
-
-  SeqOp->dropUses();
-  Ops.erase(SeqOp);
-}
-
 bool VASTCtrlRgn::gc() {
   bool Changed = false;
 
@@ -49,7 +36,7 @@ bool VASTCtrlRgn::gc() {
       DEBUG(dbgs() << "Removing SeqOp whose predicate is always false:\n";
             Op->dump(););
 
-      eraseSeqOp(Op);
+      Ops.erase(Op);
 
       Changed |= true;
     }
@@ -97,7 +84,8 @@ VASTCtrlRgn::createSlot(unsigned SlotNum, BasicBlock *ParentBB,
   assert(!std::count_if(Slots.begin(), Slots.end(), SlotNumEq(SlotNum))
          && "The same slot had already been created!");
 
-  VASTSlot *Slot = new VASTSlot(SlotNum, ParentBB, Pred, IsVirtual, Schedule);
+  VASTSlot *Slot = new VASTSlot(SlotNum, *this, ParentBB,
+                                Pred, IsVirtual, Schedule);
   // Insert the newly created slot before the finish slot.
   Slots.insert(Slots.back(), Slot);
 
@@ -106,10 +94,11 @@ VASTCtrlRgn::createSlot(unsigned SlotNum, BasicBlock *ParentBB,
 
 VASTSlot *VASTCtrlRgn::createLandingSlot() {
   BasicBlock *Entry = NULL/*getEntryBlock()*/;
-  VASTSlot *Landing = new VASTSlot(0, Entry, VASTImmediate::True, false, 0);
+  VASTSlot *Landing = new VASTSlot(0, *this, Entry,
+                                   VASTImmediate::True, false, 0);
   Slots.push_back(Landing);
   // Also create the finish slot.
-  Slots.push_back(new VASTSlot(-1));
+  Slots.push_back(new VASTSlot(-1, *this));
   return Landing;
 }
 
@@ -208,8 +197,9 @@ void VASTCtrlRgn::finalize() {
   for (seqop_iterator I = seqop_begin(), E = seqop_end(); I != E; ++I)
     I->dropOperands();
 
-  Ops.clear();
+  // Delete all slot, this also implicitly delete all operation.
   Slots.clear();
+  assert(Ops.empty() && "Operations are not deleted with its parent slots?");
 }
 
 VASTCtrlRgn::~VASTCtrlRgn() {
