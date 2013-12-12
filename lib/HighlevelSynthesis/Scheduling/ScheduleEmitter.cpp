@@ -153,12 +153,6 @@ ScheduleEmitter::ScheduleEmitter(VASTModule &VM, VASTSchedGraph &G)
 
 
 void ScheduleEmitter::clearUp() {
-  // The selectors will become invalid after we regenerate the STG, drop them
-  // now.
-  typedef VASTModule::selector_iterator iterator;
-  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-    I->dropMux();
-
   // Clear up the VASTSeqOp in the old list.
   OldSlots.clear();
 
@@ -1012,6 +1006,12 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
 
 void VASTScheduling::emitSchedule() {
   G->finalizeScheduling(DT);
+
+  // The selectors will become invalid after we regenerate the STG, drop them
+  // now.
+  typedef VASTModule::selector_iterator iterator;
+  for (iterator I = VM->selector_begin(), E = VM->selector_end(); I != E; ++I)
+    I->dropMux();
 
   ScheduleEmitter(*VM, *G).emitSchedule();
   ImplicitFlowBuilder(*VM).run();
