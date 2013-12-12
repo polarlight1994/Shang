@@ -238,6 +238,8 @@ public:
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSlot;
   }
+
+  void verify() const;
 };
 
 template<> struct GraphTraits<VASTSlot*> {

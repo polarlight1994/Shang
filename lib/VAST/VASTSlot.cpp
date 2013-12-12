@@ -198,3 +198,11 @@ void VASTSlot::print(raw_ostream &OS) const {
   for (const_succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I)
     OS << "S#" << (*I)->SlotNum << '(' << (*I)->IsSubGrp << ")v, ";
 }
+
+void VASTSlot::verify() const {
+  for (const_op_iterator I = op_begin(); I != op_end(); ++I) {
+    VASTSeqOp *Op = *I;
+    if (LLVM_UNLIKELY(Op->getSlot() != this))
+      llvm_unreachable("Contains operation in other slot?");
+  }
+}

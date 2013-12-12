@@ -192,6 +192,11 @@ VASTSlotCtrl *VASTCtrlRgn::createStateTransition(VASTNode *N, VASTSlot *Slot,
   return CtrlOp;
 }
 
+void VASTCtrlRgn::verify() const {
+  for (const_slot_iterator I = slot_begin(), E = slot_end(); I != E; ++I)
+    I->verify();
+}
+
 void VASTCtrlRgn::finalize() {
   // Delete all slot, this also implicitly delete all operation, and drop the
   // operands of the operation.

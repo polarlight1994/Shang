@@ -135,6 +135,8 @@ public:
     return changed;
   }
 
+  void verify() const;
+
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTCtrlRgn *A) { return true; }
   static inline bool classof(const VASTNode *A) {

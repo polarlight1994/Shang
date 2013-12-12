@@ -1078,6 +1078,10 @@ bool VASTModulePass::runOnFunction(Function &F) {
 
   bool changed = runOnVASTModule(*VMA);
 
+#ifndef NDEBUG
+  VMA->verify();
+#endif
+
   while (changed && VMA->gc())
     ;
 
