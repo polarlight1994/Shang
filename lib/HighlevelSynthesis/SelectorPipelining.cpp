@@ -195,8 +195,6 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
     descomposeSeqInst(SeqInst);
   }
 
-  return true;
-
   DEBUG(dbgs() << "Before MUX pipelining:\n"; VM.dump(););
 
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
