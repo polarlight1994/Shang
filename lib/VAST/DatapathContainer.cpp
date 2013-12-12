@@ -163,8 +163,7 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
 
 void DatapathContainer::reset() {
   // Delete all datapath nodes in a correct order.
-  while (gc())
-    ;
+  gc();
 
   assert(Exprs.empty() && "Expressions are not completely deleted!");
 
@@ -229,7 +228,7 @@ void DatapathContainer::recursivelyDeleteTriviallyDeadExprs(VASTExpr *E) {
   } while (!DeadExprs.empty());
 }
 
-bool DatapathContainer::gc() {
+bool DatapathContainer::gcImpl() {
   // Please note that recursivelyDeleteTriviallyDeadExprs will not invalid the
   // VASTExprs in the workllist while we are deleting other expressions. Because
   // we do not perform any replacement.

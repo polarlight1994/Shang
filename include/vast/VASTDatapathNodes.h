@@ -356,6 +356,10 @@ protected:
   iplist<VASTExpr> Exprs;
 
   void notifyDeletion(VASTExpr *E);
+
+  /// Perform the Garbage Collection to release the dead objects on the
+  /// DatapathContainer
+  bool gcImpl();
 public:
   DatapathContainer();
   virtual ~DatapathContainer();
@@ -385,13 +389,20 @@ public:
 
   void recursivelyDeleteTriviallyDeadExprs(VASTExpr *L);
 
+  bool gc() {
+    bool changed = false;
+
+    // Iteratively release the dead objects.
+    while (gcImpl())
+      changed = true;
+
+    return changed;
+  }
+
   // Context management.
   void pushContext(VASTExprBuilderContext *Context);
   void popContext(VASTExprBuilderContext *Context);
 
-  /// Perform the Garbage Collection to release the dead objects on the
-  /// VASTModule
-  bool gc();
 };
 } // end namespace
 

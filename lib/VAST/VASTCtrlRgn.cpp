@@ -27,7 +27,7 @@
 
 using namespace llvm;
 
-bool VASTCtrlRgn::gc() {
+bool VASTCtrlRgn::gcImpl() {
   bool Changed = false;
 
   for (seqop_iterator I = seqop_begin(); I != seqop_end(); /*++I*/) {

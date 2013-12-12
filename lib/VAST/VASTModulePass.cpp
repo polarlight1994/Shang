@@ -1042,8 +1042,7 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
     Builder.visitBasicBlock(*I);
 
   // Release the dead objects generated during the VM construction.
-  while (VM->gc())
-    ;
+  VM->gc();
 
   return false;
 }

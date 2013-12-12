@@ -53,6 +53,9 @@ protected:
   // Allow releasing the resources in CtrlRgn explicitly.
   void finalize();
 
+  /// Perform the Garbage Collection to release the dead objects on the
+  /// control region
+  bool gcImpl();
 public:
   ~VASTCtrlRgn();
 
@@ -122,9 +125,15 @@ public:
 
   void viewGraph() const;
 
-  /// Perform the Garbage Collection to release the dead objects on the
-  /// VASTModule
-  bool gc();
+  bool gc() {
+    bool changed = false;
+
+    // Iteratively release the dead objects.
+    while (gcImpl())
+      changed = true;
+
+    return changed;
+  }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTCtrlRgn *A) { return true; }

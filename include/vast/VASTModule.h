@@ -154,6 +154,11 @@ private:
   unsigned NumArgPorts, RetPortIdx;
 
   VASTPort *createPort(VASTNode *Node, bool IsInput);
+
+  /// Perform the Garbage Collection to release the dead objects on the
+  /// VASTModule
+  bool gcImpl();
+
 public:
   // TEMORARY HACK before hierarchy CFG is finished
   void setFunction(Function &F);
@@ -299,9 +304,15 @@ public:
 
   void resetSelectorName();
 
-  /// Perform the Garbage Collection to release the dead objects on the
-  /// VASTModule
-  bool gc();
+  bool gc() {
+    bool changed = false;
+
+    // Iteratively release the dead objects.
+    while (gcImpl())
+      changed = true;
+
+    return changed;
+  }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTModule *A) LLVM_DELETED_FUNCTION;

@@ -563,12 +563,12 @@ void VASTModule::printRegisterBlocks(raw_ostream &OS) const {
   O.exit_block("\n", "");
 }
 
-bool VASTModule::gc() {
+bool VASTModule::gcImpl() {
   bool Changed = false;
 
   // Clear up the dead VASTSeqValues.
-  for (seqval_iterator VI = seqval_begin(); VI != seqval_end(); /*++I*/) {
-    VASTSeqValue *V = VI++;
+  for (seqval_iterator I = seqval_begin(); I != seqval_end(); /*++I*/) {
+    VASTSeqValue *V = I++;
 
     if (!V->use_empty()) continue;
 
