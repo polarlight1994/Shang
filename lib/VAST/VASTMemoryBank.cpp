@@ -636,7 +636,7 @@ void VASTMemoryBank::printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr,
   // The width of the byte address in a word.
   unsigned BytesPerWord = WordSizeInBits / 8;
   unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
-  OS.indent(2) << VASTModule::FullCaseAttr << ' ' << VASTModule::ParallelCaseAttr
+  OS.indent(2) << VASTNode::FullCaseAttr << ' ' << VASTNode::ParallelCaseAttr
                << "case (";
   Addr.printAsOperand(OS);
   OS << ")";
