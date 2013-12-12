@@ -116,10 +116,6 @@ public:
   typedef SeqValueVector::iterator seqval_iterator;
   typedef SeqValueVector::const_iterator const_seqval_iterator;
 
-  typedef ilist<VASTSlot> SlotVecTy;
-  typedef SlotVecTy::iterator slot_iterator;
-  typedef SlotVecTy::const_iterator const_slot_iterator;
-
   enum PortTypes {
     Clk = 0,
     RST,
@@ -286,12 +282,6 @@ public:
 
   const_selector_iterator selector_begin() const { return Selectors.begin(); }
   const_selector_iterator selector_end() const { return Selectors.end(); }
-
-  slot_iterator slot_begin() { return Slots.begin(); }
-  slot_iterator slot_end() { return Slots.end(); }
-
-  const_slot_iterator slot_begin() const { return Slots.begin(); }
-  const_slot_iterator slot_end() const { return Slots.end(); }
 
   /// Remove the VASTSeqOp from the module and delete it. Please note that
   /// the SeqOp should be remove from its parent slot before we erase it.
