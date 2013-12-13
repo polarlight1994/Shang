@@ -168,15 +168,15 @@ struct MemoryAccessAligner : public FunctionPass {
 
 // The dependency graph of the loop body.
 class LoopDepGraph {
-  // DO NOT IMPLEMENT
-  LoopDepGraph(const LoopDepGraph &);
-  // DO NOT IMPLEMENT
-  const LoopDepGraph&operator=(const LoopDepGraph &);
+  LoopDepGraph(const LoopDepGraph &) LLVM_DELETED_FUNCTION;
+  const LoopDepGraph&operator=(const LoopDepGraph &)LLVM_DELETED_FUNCTION;
 
-  typedef DenseMap<const Value*, unsigned> DepInfoTy;
+public:
+  typedef std::map<const Value*, unsigned> DepInfoTy;
   // The map that hold the dependency distance from the load instructions.
   // In contrast, the the dependency graph should only contains load and store.
-  typedef DenseMap<const Value*, DepInfoTy> DepMapTy;
+  typedef std::map<const Value*, DepInfoTy> DepMapTy;
+private:
   DepMapTy DepMap;
 
 protected:
@@ -270,7 +270,7 @@ public:
 class LoopMetrics : public DesignMetrics, public LoopDepGraph {
   // For the load/store, fusing the number of unrolled instance cause the memory
   // bandwidth saturated.
-  typedef DenseMap<const Instruction*, unsigned> Inst2IntMap;
+  typedef std::map<const Instruction*, unsigned> Inst2IntMap;
   Inst2IntMap SaturatedCounts;
 
   // The number of parallel iteration of the loop.
@@ -521,15 +521,17 @@ bool LoopMetrics::initialize(LoopInfo *LI, AliasAnalysis *AA) {
   DEBUG(dbgs() << "loops in dependency graph:\n");
   for (iterator I = closure_begin(), E = closure_end(); I != E; ++I) {
     if (const Instruction *Inst = dyn_cast<Instruction>(I->first)) {
-      unsigned LoopDistance = I->second.lookup(Inst);
-      DEBUG(dbgs() << *Inst<< " loop-distance: " << LoopDistance << '\n');
+      const DepInfoTy &Dep = I->second;
+      DepInfoTy::const_iterator J = Dep.find(Inst);
+      // The loop dose not exist by default, which means the distance is infinite.
+      unsigned LoopDistance = UINT32_MAX;
 
-      if (LoopDistance)
-        NumParallelIt = std::min(NumParallelIt, LoopDistance);
-      else
-        // If the distance is zero, the loop is not exist, which means the
-        // distance is infinite.
-        LoopDistance = UINT32_MAX;
+      // A zero distance also means there is no loop
+      if (J != Dep.end() && J->second != 0)
+        LoopDistance = J->second;
+
+      DEBUG(dbgs() << *Inst << " loop-distance: " << LoopDistance << '\n');
+      NumParallelIt = std::min(NumParallelIt, LoopDistance);
 
       // Calculate the unroll count lead to a memory bus bandwidth saturate.
       if (const StoreInst *SI = dyn_cast<StoreInst>(Inst)) {
@@ -599,7 +601,8 @@ bool LoopMetrics::isUnrollAccaptable(unsigned Count, uint64_t UnrollThreshold,
                                      uint64_t Alpha, uint64_t Beta,
                                      uint64_t Gama) const {
   // Handle the trivial case trivially.
-  if (Count == 1) return true;
+  if (Count == 1)
+    return true;
 
   DesignMetrics::DesignCost Cost = getCost();
   uint64_t DataPathCost = Cost.getCostInc(Count, Alpha, 0, 0);
