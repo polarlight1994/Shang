@@ -24,16 +24,16 @@
 
 namespace llvm {
 class VASTSlot;
-class VASTModule;
+class VASTCtrlRgn;
 struct ShortestPathImpl;
 struct LongestPathImpl;
 
 class STGDistanceBase {
 protected:
   typedef std::pair<unsigned, unsigned> Idx;
-  DenseMap<unsigned, DenseMap<unsigned, unsigned> > DistanceMatrix;
+  std::map<unsigned, std::map<unsigned, unsigned> > DistanceMatrix;
 
-  void initialize(VASTModule &VM);
+  void initialize(VASTCtrlRgn &R);
 
   STGDistanceBase() {}
 
@@ -42,9 +42,9 @@ public:
 
   unsigned getDistance(unsigned From, unsigned To) const;
 
-  void print(raw_ostream &OS, VASTModule &VM) const;
+  void print(raw_ostream &OS, VASTCtrlRgn &R) const;
 
-  static STGDistanceBase CalculateShortestPathDistance(VASTModule &VM);
+  static STGDistanceBase *CalculateShortestPathDistance(VASTCtrlRgn &R);
 };
 
 class STGDistances : public VASTModulePass {

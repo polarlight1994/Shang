@@ -34,7 +34,7 @@ STATISTIC(NumSTPIterations,
 namespace llvm {
 template<typename SubClass>
 struct STGDistanceImpl : public STGDistanceBase {
-  void run(VASTModule &VM);
+  void run(VASTCtrlRgn &R);
 };
 
 struct ShortestPathImpl : public STGDistanceImpl<ShortestPathImpl> {
@@ -44,10 +44,10 @@ struct ShortestPathImpl : public STGDistanceImpl<ShortestPathImpl> {
 };
 }
 
-void STGDistanceBase::initialize(VASTModule &VM) {
+void STGDistanceBase::initialize(VASTCtrlRgn &R) {
   // Initialize the neighbor weight.
   typedef VASTModule::slot_iterator slot_iterator;
-  for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
+  for (slot_iterator I = R.slot_begin(), E = R.slot_end(); I != E; ++I) {
     VASTSlot *Src = I;
 
     typedef VASTSlot::succ_iterator succ_iterator;
@@ -61,22 +61,22 @@ void STGDistanceBase::initialize(VASTModule &VM) {
 }
 
 unsigned STGDistanceBase::getDistance(unsigned From, unsigned To) const  {
-  DenseMap<unsigned, DenseMap<unsigned, unsigned> >::const_iterator
+  std::map<unsigned, std::map<unsigned, unsigned> >::const_iterator
     to_at = DistanceMatrix.find(To);
 
   if (to_at == DistanceMatrix.end()) return STGDistances::Inf;
 
-  DenseMap<unsigned, unsigned>::const_iterator from_at = to_at->second.find(From);
+  std::map<unsigned, unsigned>::const_iterator from_at = to_at->second.find(From);
 
   if (from_at == to_at->second.end()) return STGDistances::Inf;
 
   return from_at->second;
 }
 
-void STGDistanceBase::print(raw_ostream &OS, VASTModule &VM) const {
-  typedef VASTModule::slot_iterator slot_iterator;
-  for (slot_iterator I = VM.slot_begin(), IE = VM.slot_end(); I != IE; ++I) {
-    for (slot_iterator J = VM.slot_begin(), JE = VM.slot_end(); J != JE; ++J) {
+void STGDistanceBase::print(raw_ostream &OS, VASTCtrlRgn &R) const {
+  typedef VASTCtrlRgn::slot_iterator slot_iterator;
+  for (slot_iterator I = R.slot_begin(), IE = R.slot_end(); I != IE; ++I) {
+    for (slot_iterator J = R.slot_begin(), JE = R.slot_end(); J != JE; ++J) {
       OS << '[' << I->SlotNum << ',' << J->SlotNum << "] = ";
       unsigned Distance = getDistance(I->SlotNum, J->SlotNum);
       if (Distance == STGDistances::Inf) OS << "Inf";
@@ -90,12 +90,12 @@ void STGDistanceBase::print(raw_ostream &OS, VASTModule &VM) const {
 //===----------------------------------------------------------------------===//
 
 template<typename SubClass>
-void STGDistanceImpl<SubClass>::run(VASTModule &VM) {
-  reinterpret_cast<SubClass*>(this)->initialize(VM);
+void STGDistanceImpl<SubClass>::run(VASTCtrlRgn &R) {
+  reinterpret_cast<SubClass*>(this)->initialize(R);
 
   // Visit the slots in topological order.
   ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >
-    RPO(VM.getStartSlot());
+    RPO(R.getStartSlot());
 
   typedef
   ReversePostOrderTraversal<VASTSlot*, GraphTraits<VASTSlot*> >::rpo_iterator
@@ -118,8 +118,8 @@ void STGDistanceImpl<SubClass>::run(VASTModule &VM) {
         VASTSlot::EdgePtr Thu = *PI;
         unsigned EdgeDistance = Thu.getDistance();
 
-        DenseMap<unsigned, unsigned> &Srcs = DistanceMatrix[Thu->SlotNum];
-        typedef DenseMap<unsigned, unsigned>::iterator from_iterator;
+        std::map<unsigned, unsigned> &Srcs = DistanceMatrix[Thu->SlotNum];
+        typedef std::map<unsigned, unsigned>::iterator from_iterator;
         for (from_iterator FI = Srcs.begin(), FE = Srcs.end(); FI != FE; ++FI) {
           //D[i][j] = min( D[i][j], D[i][k] + D[k][j]
           unsigned SrcSlot = FI->first;
@@ -238,14 +238,15 @@ void STGDistances::print(raw_ostream &OS) const {
 unsigned STGDistances::getShortestPath(unsigned From, unsigned To) const {
   assert(SPImpl && "Get shortest path after releaseMemory?");
   // Calculate the distances on the fly.
-  if (SPImpl->empty()) SPImpl->run(*VM);
+  if (SPImpl->empty())
+    SPImpl->run(*VM);
 
   return SPImpl->getDistance(From, To);
 }
 
-STGDistanceBase STGDistanceBase::CalculateShortestPathDistance(VASTModule &VM){
-  ShortestPathImpl Impl;
-  Impl.run(VM);
+STGDistanceBase *STGDistanceBase::CalculateShortestPathDistance(VASTCtrlRgn &R){
+  ShortestPathImpl *Impl = new ShortestPathImpl();
+  Impl->run(R);
   return Impl;
 }
 

@@ -490,7 +490,7 @@ void ScheduleEmitter::emitSchedule() {
 namespace {
 class ImplicitFlowBuilder {
   VASTModule &VM;
-  STGDistanceBase ShortesPaths;
+  STGDistanceBase *ShortesPaths;
   std::map<VASTSlot*, std::set<VASTSlot*> > ImplicitEdges;
 
   void buildImplicitFlow(VASTSlot *S);
@@ -499,6 +499,8 @@ class ImplicitFlowBuilder {
 public:
   ImplicitFlowBuilder(VASTModule &VM) : VM(VM),
     ShortesPaths(STGDistanceBase::CalculateShortestPathDistance(VM)) {}
+
+  ~ImplicitFlowBuilder() { delete ShortesPaths; }
 
   void run();
 };
@@ -551,7 +553,7 @@ void ImplicitFlowBuilder::buildImplicitFlow(VASTSlot *S,
       continue;
     }
 
-    unsigned SPDistance = ShortesPaths.getDistance(S->SlotNum, Child->SlotNum);
+    unsigned SPDistance = ShortesPaths->getDistance(S->SlotNum, Child->SlotNum);
 
     // Ignore the slots that not overlap with any of the slot in StraightFlow.
     if (SPDistance >= StraightFlow.size()) {
