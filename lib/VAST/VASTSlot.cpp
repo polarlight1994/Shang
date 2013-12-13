@@ -69,7 +69,7 @@ void VASTSlot::createSignals(VASTModule *VM) {
 }
 
 void VASTSlot::copySignals(VASTSlot *S) {
-  // Finish slot alias with the start slot.
+  // All control equivalent groups share the same enable signal.
   SlotReg.set(S->SlotReg);
 }
 
