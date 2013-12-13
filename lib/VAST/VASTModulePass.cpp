@@ -521,9 +521,15 @@ void VASTModuleBuilder::buildConditionalTransition(BasicBlock *DstBB,
 
 void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
+
+  // Create the virtual slot represent the launch of the design.
+  VASTSlot *SubGrp = createSubGroup(NULL, VASTImmediate::True, CurSlot);
+  // Jump back to the start slot on return.
+  addSuccSlot(SubGrp, R.getStartSlot(), VASTImmediate::True, &I);
+
   unsigned NumOperands = I.getNumOperands();
   VASTSeqInst *SeqInst =
-    R.lauchInst(CurSlot, VASTImmediate::True, NumOperands + 1, &I, true);
+    R.lauchInst(SubGrp, VASTImmediate::True, NumOperands + 1, &I, true);
 
   // Assign the return port if necessary.
   if (NumOperands) {
@@ -537,16 +543,16 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   VASTSelector *FinPort
     = cast<VASTOutPort>(A->getPort(VASTModule::Finish)).getSelector();
   SeqInst->addSrc(VASTImmediate::True, NumOperands, FinPort);
-
-  // Construct the control flow.
-  addSuccSlot(CurSlot, R.getFinishSlot(), VASTImmediate::True, &I);
 }
 
 void VASTModuleBuilder::visitUnreachableInst(UnreachableInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
+
+  // Create the virtual slot represent the launch of the design.
+  VASTSlot *SubGrp = createSubGroup(NULL, VASTImmediate::True, CurSlot);
   // DIRTYHACK: Simply jump back the start slot.
   // Construct the control flow.
-  addSuccSlot(CurSlot, R.getFinishSlot(), VASTImmediate::True, &I);
+  addSuccSlot(SubGrp, R.getStartSlot(), VASTImmediate::True, &I);
 }
 
 void VASTModuleBuilder::visitBranchInst(BranchInst &I) {

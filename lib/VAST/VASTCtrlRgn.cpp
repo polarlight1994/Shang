@@ -87,7 +87,7 @@ VASTCtrlRgn::createSlot(unsigned SlotNum, BasicBlock *ParentBB,
   VASTSlot *Slot = new VASTSlot(SlotNum, *this, ParentBB,
                                 Pred, IsVirtual, Schedule);
   // Insert the newly created slot before the finish slot.
-  Slots.insert(Slots.back(), Slot);
+  Slots.push_back(Slot);
 
   return Slot;
 }
@@ -97,8 +97,6 @@ VASTSlot *VASTCtrlRgn::createLandingSlot() {
   VASTSlot *Landing = new VASTSlot(0, *this, Entry,
                                    VASTImmediate::True, false, 0);
   Slots.push_back(Landing);
-  // Also create the finish slot.
-  Slots.push_back(new VASTSlot(-1, *this));
   return Landing;
 }
 
@@ -110,9 +108,6 @@ VASTSlot *VASTCtrlRgn::getStartSlot() {
   return &Slots.front();
 }
 
-VASTSlot *VASTCtrlRgn::getFinishSlot() {
-  return &Slots.back();
-}
 
 VASTCtrlRgn::VASTCtrlRgn(VASTModule &Parent, Function &F, const char *Name)
   : VASTSubModuleBase(vastCtrlRegion, Name, 0), Parent(&Parent), F(&F) {

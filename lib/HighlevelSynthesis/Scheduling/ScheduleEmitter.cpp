@@ -207,7 +207,7 @@ VASTSlotCtrl *ScheduleEmitter::addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
   // If the Br already exist, simply or the conditions together.
   assert(!S->hasNextSlot(NextSlot) && "Edge had already existed!");
   assert((S->getParent() == NextSlot->getParent()
-          || NextSlot == R.getFinishSlot())
+          || NextSlot == R.getStartSlot())
         && "Cannot change Slot and BB at the same time!");
 
   assert(!NextSlot->IsSubGrp && "Unexpected subgroup!");
@@ -240,8 +240,10 @@ ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot) {
     return NewSlotCtrl;
   }
 
-  if (isa<ReturnInst>(V) || isa<UnreachableInst>(V))
-    return addSuccSlot(ToSlot, R.getFinishSlot(), Cnd, V);
+  if (isa<ReturnInst>(V) || isa<UnreachableInst>(V)) {
+    VASTSlot *SubGrp = getOrCreateSubGroup(NULL, Cnd, ToSlot);
+    return addSuccSlot(SubGrp, R.getStartSlot(), Cnd, V);
+  }
 
   BasicBlock *TargetBB = Op->getTargetSlot()->getParent();
   VASTSlot *SubGrp = getOrCreateSubGroup(TargetBB, Cnd, ToSlot);

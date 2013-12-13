@@ -91,7 +91,6 @@ public:
   VASTSlot *createLandingSlot();
 
   VASTSlot *getStartSlot();
-  VASTSlot *getFinishSlot();
 
   // Operations in the current control region. 
   // Create a SeqOp that contains NumOps operands, please note that the predicate

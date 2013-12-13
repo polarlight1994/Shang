@@ -138,11 +138,6 @@ void ControlLogicSynthesis::buildSlotReadyLogic(VASTSlot *S) {
     VASTSlot *Child = *SI;
     Child->getActive().set(ActiveExpr);
   }
-
-  // Also set the active for the finish slot, which is actually alias with the
-  // start slot.
-  if (S == VM->getStartSlot())
-    VM->getFinishSlot()->getActive().set(ActiveExpr);
 }
 
 void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
@@ -196,8 +191,7 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
   typedef VASTModule::slot_iterator slot_iterator;
 
   // Build the signals corresponding to the slots.
-  for (slot_iterator I = VM->slot_begin(), E = llvm::prior(VM->slot_end());
-       I != E; ++I) {
+  for (slot_iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
     VASTSlot *S = I;
 
     if (S->IsSubGrp) continue;
@@ -215,14 +209,10 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
     }
   }
 
-  VM->getFinishSlot()->copySignals(VM->getStartSlot());
-
-  for (slot_iterator I = VM->slot_begin(), E = llvm::prior(VM->slot_end());
-       I != E; ++I)
+  for (slot_iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I)
     collectControlLogicInfo(I);
 
-  for (slot_iterator I = VM->slot_begin(), E = llvm::prior(VM->slot_end());
-       I != E; ++I) {
+  for (slot_iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
     VASTSlot *S = I;
 
     // No need to synthesize the control logic for virtual slots.
