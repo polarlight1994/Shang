@@ -40,14 +40,15 @@
 using namespace llvm;
 
 namespace {
-struct ControlLogicSynthesis : public VASTModulePass {
-  static char ID;
+struct ControlLogicBuilder {
+  DatapathBuilder &Builder;
+  VASTCtrlRgn &R;
 
-  DatapathBuilder *Builder;
-  VASTModule *VM;
+  ControlLogicBuilder(DatapathBuilder &Builder, VASTCtrlRgn &R)
+    : Builder(Builder), R(R) {}
 
   void addSlotReady(VASTSlot *S, VASTValPtr V, VASTValPtr Cnd) {
-    Builder->orEqual(SlotReadys[S->getValue()][V], Cnd);
+    Builder.orEqual(SlotReadys[S->getValue()][V], Cnd);
   }
 
   void addSlotSucc(VASTSlot *S, VASTSlotCtrl *Br) {
@@ -79,6 +80,12 @@ struct ControlLogicSynthesis : public VASTModulePass {
 
   void collectControlLogicInfo(VASTSlot *S);
 
+  void buildControlLogic(VASTModule &M);
+};
+
+struct ControlLogicSynthesis : public VASTModulePass {
+  static char ID;
+
   ControlLogicSynthesis() : VASTModulePass(ID) {
     initializeControlLogicSynthesisPass(*PassRegistry::getPassRegistry());
   }
@@ -89,11 +96,6 @@ struct ControlLogicSynthesis : public VASTModulePass {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addPreservedID(PreSchedBindingID);
   }
-
-  void releaseMemory() {
-    SlotReadys.clear();
-    SlotSuccs.clear();
-  }
 };
 }
 
@@ -103,31 +105,31 @@ char ControlLogicSynthesis::ID = 0;
 
 char &llvm::ControlLogicSynthesisID = ControlLogicSynthesis::ID;
 
-VASTValPtr ControlLogicSynthesis::buildSlotReadyExpr(VASTSlot *S) {
+VASTValPtr ControlLogicBuilder::buildSlotReadyExpr(VASTSlot *S) {
   SmallVector<VASTValPtr, 4> Ops;
 
   const FUReadyVecTy *ReadySet = getReadySet(S);
   if (ReadySet)
     for (const_fu_rdy_it I = ReadySet->begin(), E = ReadySet->end();I != E; ++I) {
       // If the condition is true then the signal must be 1 to ready.
-      VASTValPtr ReadyCnd = Builder->buildNotExpr(I->second);
-      Ops.push_back(Builder->buildOrExpr(I->first, ReadyCnd, 1));
+      VASTValPtr ReadyCnd = Builder.buildNotExpr(I->second);
+      Ops.push_back(Builder.buildOrExpr(I->first, ReadyCnd, 1));
     }
 
   // No waiting signal means always ready.
   if (Ops.empty()) return VASTImmediate::True;
 
-  return Builder->buildAndExpr(Ops, 1);
+  return Builder.buildAndExpr(Ops, 1);
 }
 
-void ControlLogicSynthesis::buildSlotReadyLogic(VASTSlot *S) {
+void ControlLogicBuilder::buildSlotReadyLogic(VASTSlot *S) {
   SmallVector<VASTValPtr, 4> Ops;
   // FU ready for current slot.
   Ops.push_back(buildSlotReadyExpr(S));
 
   // All signals should be 1 before the slot is ready.
-  VASTValPtr ReadyExpr = Builder->buildAndExpr(Ops, 1);
-  VASTValPtr ActiveExpr = Builder->buildAndExpr(S->getValue(), ReadyExpr, 1);
+  VASTValPtr ReadyExpr = Builder.buildAndExpr(Ops, 1);
+  VASTValPtr ActiveExpr = Builder.buildAndExpr(S->getValue(), ReadyExpr, 1);
 
   // The slot is activated when the slot is enable and all waiting signal is
   // ready.
@@ -140,7 +142,7 @@ void ControlLogicSynthesis::buildSlotReadyLogic(VASTSlot *S) {
   }
 }
 
-void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
+void ControlLogicBuilder::buildSlotLogic(VASTSlot *S) {
   VASTValPtr AlwaysTrue = VASTImmediate::True;
 
   std::map<const VASTSeqValue*, SuccVecTy>::const_iterator at
@@ -163,7 +165,7 @@ void ControlLogicSynthesis::buildSlotLogic(VASTSlot *S) {
   }
 }
 
-void ControlLogicSynthesis::collectControlLogicInfo(VASTSlot *S) {
+void ControlLogicBuilder::collectControlLogicInfo(VASTSlot *S) {
   typedef VASTSlot::op_iterator op_iterator;
 
   // We need to read the S->op_end() at every iteration because it may be
@@ -172,31 +174,26 @@ void ControlLogicSynthesis::collectControlLogicInfo(VASTSlot *S) {
     if (VASTSlotCtrl *SeqOp = dyn_cast<VASTSlotCtrl>(*I)) {
       VASTValPtr Pred = SeqOp->getGuard();
 
-      if (SeqOp->isBranch()) addSlotSucc(S, SeqOp);
-      else                   addSlotReady(S, SeqOp->getWaitingSignal(), Pred);
+      if (SeqOp->isBranch())
+        addSlotSucc(S, SeqOp);
+      else
+        addSlotReady(S, SeqOp->getWaitingSignal(), Pred);
     }
   }
 }
 
-bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
-  // Do not fail if ControlLogicSynthesis had already run on the module.
-  if (M.getStartSlot()->getRegister())
-    return false;
-
-  VM = &M;
-  MinimalDatapathContext Context(M, getAnalysisIfAvailable<DataLayout>());
-  Builder = new DatapathBuilder(Context);
-
+void ControlLogicBuilder::buildControlLogic(VASTModule &M) {
   // Building the Slot active signals.
   typedef VASTModule::slot_iterator slot_iterator;
 
   // Build the signals corresponding to the slots.
-  for (slot_iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
+  for (slot_iterator I = R.slot_begin(), E = R.slot_end();I != E; ++I) {
     VASTSlot *S = I;
 
-    if (S->IsSubGrp) continue;
+    if (S->IsSubGrp)
+      continue;
 
-    S->createSignals(VM);
+    S->createSignals(&M);
 
     // Share the signal to the virtual slots, because the virtual slot reachable
     // from this slot without visiting any non-virtual slots are sharing the
@@ -205,27 +202,37 @@ bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
     for (subgrp_iterator SI = S->subgrp_begin(), SE = S->subgrp_end();
          SI != SE; ++SI) {
       VASTSlot *Child = *SI;
-      if (Child != S) Child->copySignals(S);
+      if (Child != S)
+        Child->copySignals(S);
     }
   }
 
-  for (slot_iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I)
+  for (slot_iterator I = R.slot_begin(), E = R.slot_end(); I != E; ++I)
     collectControlLogicInfo(I);
 
-  for (slot_iterator I = VM->slot_begin(), E = VM->slot_end(); I != E; ++I) {
+  for (slot_iterator I = R.slot_begin(), E = R.slot_end(); I != E; ++I) {
     VASTSlot *S = I;
 
     // No need to synthesize the control logic for virtual slots.
-    if (S->IsSubGrp) continue;
+    if (S->IsSubGrp)
+      continue;
     
     // Build the ready logic.
     buildSlotReadyLogic(S);
     // Build the state-transfer logic and the functional unit controlling logic.
     buildSlotLogic(S);
   }
+}
 
-  delete Builder;
-  releaseMemory();
+bool ControlLogicSynthesis::runOnVASTModule(VASTModule &M) {
+  // Do not fail if ControlLogicSynthesis had already run on the module.
+  if (M.getStartSlot()->getRegister())
+    return false;
+
+  MinimalDatapathContext Context(M, getAnalysisIfAvailable<DataLayout>());
+  DatapathBuilder Builder(Context);
+  VASTCtrlRgn &R = M;
+  ControlLogicBuilder(Builder, R).buildControlLogic(M);
 
   return true;
 }
