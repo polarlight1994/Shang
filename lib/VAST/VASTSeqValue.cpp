@@ -536,7 +536,8 @@ void VASTSelector::instantiateSelector(raw_ostream &OS) const {
 }
 
 void VASTSelector::printSelector(raw_ostream &OS) const {
-  if (empty()) return;
+  if (empty())
+    return;
 
   if (!isSelectorSynthesized()) {
     instantiateSelector(OS);

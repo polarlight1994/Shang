@@ -50,6 +50,11 @@ class VASTMemoryBank : public VASTSubModuleBase {
   std::string getEnableName(unsigned PortNum) const;
   std::string getWriteEnName(unsigned PortNum) const;
 
+  std::string getRDataName(unsigned PortNum, unsigned CurPipelineStage) const;
+  std::string getAddrName(unsigned PortNum, unsigned CurPipelineStage) const;
+  std::string getWDataName(unsigned PortNum, unsigned CurPipelineStage) const;
+  std::string getByteEnName(unsigned PortNum, unsigned CurPipelineStage) const;
+
   void printPortDecl(raw_ostream &OS, unsigned PortNum) const;
 
   void writeInitializeFile(vlang_raw_ostream &OS) const;
@@ -64,6 +69,7 @@ class VASTMemoryBank : public VASTSubModuleBase {
   void printBlockRAM(vlang_raw_ostream &OS) const;
   void printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
                       unsigned ByteAddrWidth, unsigned NumWords) const;
+
 public:
   unsigned getDataWidth() const { return DataSize; }
   unsigned getAddrWidth() const { return AddrSize; }

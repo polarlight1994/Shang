@@ -232,6 +232,53 @@ std::string VASTMemoryBank::getArrayName() const {
   return "mem" + utostr(Idx) + "ram";
 }
 
+std::string VASTMemoryBank::getRDataName(unsigned PortNum,
+                                         unsigned CurPipelineStage) const {
+  assert(CurPipelineStage >= 2
+         && "Cannot get the read data ealier than stage 2!");
+  if (getReadLatency() <= CurPipelineStage)
+    return getRDataName(PortNum);
+
+  // TODO: Number the pipeline register?
+  return getInernalRDataName(PortNum);
+}
+
+std::string VASTMemoryBank::getAddrName(unsigned PortNum,
+                                        unsigned CurPipelineStage) const {
+  assert(CurPipelineStage <= 1
+         && "Cannot get the address latter than stage 1!");
+  std::string AddrName = getAddrName(PortNum);
+
+  if (getReadLatency() <= CurPipelineStage)
+    AddrName += "_selector_wire";
+
+  return AddrName;
+}
+
+std::string VASTMemoryBank::getWDataName(unsigned PortNum,
+                                         unsigned CurPipelineStage) const {
+  assert(CurPipelineStage <= 1
+         && "Cannot get the write data latter than stage 1!");
+  std::string WDataName = getWDataName(PortNum);
+
+  if (getReadLatency() <= CurPipelineStage)
+    WDataName += "_selector_wire";
+
+  return WDataName;
+}
+
+std::string VASTMemoryBank::getByteEnName(unsigned PortNum,
+                                          unsigned CurPipelineStage) const {
+  assert(CurPipelineStage <= 1
+         && "Cannot get the byte enable latter than stage 1!");
+  std::string ByteEnName = getByteEnName(PortNum);
+
+  if (getReadLatency() <= CurPipelineStage)
+    ByteEnName += "_selector_wire";
+
+  return ByteEnName;
+}
+
 void VASTMemoryBank::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
   getRData(PortNum)->printDecl(OS);
   getAddr(PortNum)->printDecl(OS);
@@ -240,7 +287,7 @@ void VASTMemoryBank::printPortDecl(raw_ostream &OS, unsigned PortNum) const {
   if (requireByteEnable())
     getByteEn(PortNum)->printDecl(OS);
 
-  if (!isDefault())
+  if (!isDefault() && getReadLatency() > 2)
     VASTNamedValue::PrintDecl(OS, getInernalRDataName(PortNum),
                               getRData(PortNum)->getBitWidth(), true);
 }
@@ -249,7 +296,8 @@ void VASTMemoryBank::printDecl(raw_ostream &OS) const {
   if (isDefault() || isCombinationalROM()) return;
 
   printPortDecl(OS, 0);
-  if (isDualPort()) printPortDecl(OS, 1);
+  if (isDualPort())
+    printPortDecl(OS, 1);
 }
 
 void VASTMemoryBank::printBank(vlang_raw_ostream &OS) const {
@@ -294,9 +342,6 @@ VASTMemoryBank::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
   Addr->printRegisterBlock(OS, 0);
   WData->printRegisterBlock(OS, 0);
   ByteEn->printRegisterBlock(OS, 0);
-  OS << "reg " << WData->getName() << "en;\n";
-  // Access the block ram.
-  OS.always_ff_begin(false);
 
   // Work around: It looks like that the single element array will be implemented
   // by block RAM in Stratix IV Platform, and the netlist simulation will
@@ -309,23 +354,38 @@ VASTMemoryBank::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
     if (Addr->getBitWidth() == ByteAddrWidth + 1)
       SS << "{ 1'b0, ";
 
-    SS << Addr->getName()
-      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true);
+    SS << getAddrName(PortNum, 1)
+       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true);
 
     if (Addr->getBitWidth() == ByteAddrWidth + 1)
       SS << " }";
   }
+ 
+  if (!WData->empty()) {
+    // We need to pipeline the input ports if the read latency is bigger than 1.
+    if (getReadLatency() == 1)
+      OS << "wire " << WData->getName() << "en = "
+         << WData->getName() << "_selector_guard;\n";
+    else
+      OS << "reg " << WData->getName() << "en;\n";
+  }
+
+  // Access the block ram.
+  OS.always_ff_begin(false);
 
   if (!WData->empty()) {
-    OS << WData->getName() << "en" << " <= "
-       << WData->getName() << "_selector_guard;\n";
+    if (getReadLatency() > 1) {
+      OS << WData->getName() << "en" << " <= "
+         << WData->getName() << "_selector_guard;\n";
+    }
+
     // Use the enable of the write data as the write enable.
     OS.if_begin(Twine(WData->getName()) + "en");
 
     for (unsigned i = 0; i < BytesPerWord; ++i) {
-      OS.if_() << ByteEn->getName() << "[" << i << "]";
+      OS.if_() << getByteEnName(PortNum, 1) << "[" << i << "]";
       OS._then() << getArrayName() << "[" << AddrConnection << "]"
-            "["  << i << "] <= " << WData->getName()
+             "[" << i << "] <= " << getWDataName(PortNum, 1)
                  << VASTValue::printBitRange((i + 1) * 8, i * 8) << ";\n";
 
       OS.exit_block();
@@ -334,24 +394,33 @@ VASTMemoryBank::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
     OS.exit_block();
   }
 
-  OS << getInernalRDataName(PortNum) << VASTValue::printBitRange(getDataWidth(), 0, true)
+  OS << getRDataName(PortNum, 2)
+     << VASTValue::printBitRange(getDataWidth(), 0, true)
      << " <= " << getArrayName() << "[" << AddrConnection << "];\n";
-  OS << getInernalRDataName(PortNum)
-     << VASTValue::printBitRange(getDataWidth() + ByteAddrWidth, getDataWidth(), true)
-     << " <= " << Addr->getName()
+
+  OS << getRDataName(PortNum, 2)
+     << VASTValue::printBitRange(getDataWidth() + ByteAddrWidth,
+                                 getDataWidth(), true)
+     << " <= " << getAddrName(PortNum, 1)
      << VASTValue::printBitRange(ByteAddrWidth, 0) << ";\n";
+
+  if (getReadLatency() > 2) {
+    assert(getReadLatency() == 3 && "Unsupported read latency!");
+    OS << getRDataName(PortNum, 3) << " <= "
+       << getRDataName(PortNum, 2) << ";\n";
+  }
 
   OS << "if (" << Addr->getName()
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
      << NumWords << ")  $finish(\"Write access out of bound!\");\n";
 
-  OS << getRDataName(PortNum) << " <= " << getInernalRDataName(PortNum) << ";\n";
 
   OS.always_ff_end(false);
 }
 
-static inline int base_addr_less(const std::pair<GlobalVariable*, unsigned> *P1,
-                                 const std::pair<GlobalVariable*, unsigned> *P2) {
+static inline
+int base_addr_less(const std::pair<GlobalVariable*, unsigned> *P1,
+                   const std::pair<GlobalVariable*, unsigned> *P2) {
   return P2->second - P1->second;
 }
 
@@ -510,8 +579,8 @@ void VASTMemoryBank::writeInitializeFile(vlang_raw_ostream &OS) const {
     OS.write_escaped(FullInitFilePath);
     OS << "\", " << getArrayName() << ");\n";
   } else {
-    errs() << "error opening file '" << FullInitFilePath.data()
-           << "' for writing block RAM initialize file!\n";
+    report_fatal_error("Cannot open file '" + FullInitFilePath.str()
+                       + "' for writing block RAM initialize file!\n");
     return;
   }
 
@@ -548,7 +617,8 @@ void VASTMemoryBank::printBlockRAM(vlang_raw_ostream &OS) const {
   writeInitializeFile(OS);
 
   printBlockPort(OS, 0, ByteAddrWidth, NumWords);
-  if (isDualPort()) printBlockPort(OS, 1, ByteAddrWidth, NumWords);
+  if (isDualPort())
+    printBlockPort(OS, 1, ByteAddrWidth, NumWords);
 }
 
 void
@@ -556,37 +626,53 @@ VASTMemoryBank::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
                               unsigned ByteAddrWidth, unsigned NumWords) const {
   VASTSelector *Addr = getAddr(PortNum);
   // The port is not used if the address is not active.
-  if (Addr->empty()) return;
+  if (Addr->empty())
+    return;
 
   VASTSelector *RData = getRData(PortNum),
                *WData = getWData(PortNum);
 
-  // Print the selectors.
   Addr->printRegisterBlock(OS, 0);
   RData->printRegisterBlock(OS, 0);
   WData->printRegisterBlock(OS, 0);
 
-  OS << "reg " << WData->getName() << "en;\n";
+  if (!WData->empty()) {
+    // We need to pipeline the input ports if the read latency is bigger than 1.
+    if (getReadLatency() == 1)
+      OS << "wire " << WData->getName() << "en = "
+         << WData->getName() << "_selector_guard;\n";
+    else
+      OS << "reg " << WData->getName() << "en;\n";
+  }
+
   // Access the block ram.
   OS.always_ff_begin(false);
 
   if (!WData->empty()) {
-    OS << WData->getName() << "en" << " <= "
-      << WData->getName() << "_selector_guard;\n";
+    if (getReadLatency() > 1) {
+      OS << WData->getName() << "en" << " <= "
+         << WData->getName() << "_selector_guard;\n";
+    }
 
     OS.if_begin(Twine(WData->getName()) + "en");
-    OS << getArrayName() << "[" << Addr->getName()
+    OS << getArrayName() << "[" << getAddrName(PortNum, 1)
         << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ']'
-        << " <= " << WData->getName()
+        << " <= " << getWDataName(PortNum, 1)
         << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
 
     OS.exit_block();
   }
 
-  OS << getInernalRDataName(PortNum)
+  OS << getRDataName(PortNum, 2)
      << VASTValue::printBitRange(getDataWidth(), 0, false) << " <= "
-     << ' ' << getArrayName() << "[" << Addr->getName()
+     << ' ' << getArrayName() << "[" << getAddrName(PortNum, 1)
      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
+
+  if (getReadLatency() > 2) {
+    assert(getReadLatency() == 3 && "Unsupported read latency!");
+    OS << getRDataName(PortNum, 3) << " <= "
+       << getRDataName(PortNum, 2) << ";\n";
+  }
 
   // Verify the addresses.
   OS << "if (" << Addr->getName()
@@ -596,9 +682,6 @@ VASTMemoryBank::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
     OS << "if (" << Addr->getName()
         << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
         << ByteAddrWidth << "'b0) $finish(\"Write access out of bound!\");\n";
-
-
-  OS << RData->getName() << " <= " << getInernalRDataName(PortNum) << ";\n";
 
   OS.always_ff_end(false);
 }
@@ -614,7 +697,7 @@ void VASTMemoryBank::print(vlang_raw_ostream &OS) const {
 }
 
 void VASTMemoryBank::printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr,
-                                   raw_ostream &OS) const {
+                                    raw_ostream &OS) const {
   assert(LHS->getTempName() && "Unexpected unnamed CombROM Epxr!");
   unsigned WordSizeInBits = LHS->getCombROMWordSizeInBits();
   OS << "reg [" << WordSizeInBits << ":0] "

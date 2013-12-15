@@ -68,7 +68,6 @@ private:
 
   VASTUse Guard, Fanin;
 
-  void printSelector(raw_ostream &OS) const;
   void verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
                         VASTValue *V, VASTSlot *ReadSlot) const;
   void dumpTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op, const VASTLatch &L,
@@ -146,6 +145,7 @@ public:
   void print(raw_ostream &OS) const;
 
   void printDecl(raw_ostream &OS) const;
+  void printSelector(raw_ostream &OS) const;
   void printRegisterBlock(vlang_raw_ostream &OS, uint64_t InitVal) const;
 
   void setName(const char *Name);
