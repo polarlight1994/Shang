@@ -159,7 +159,8 @@ bool MemoryPartition::runOnModule(Module &M) {
 
 bool MemoryPartition::createMemoryBank(AliasSet *AS, unsigned PortNum) {
   VASTModule &VM = getModule();
-  uint64_t MemBusSizeInBytes = LuaI::Get<VFUMemBus>()->getDataWidth() / 8;
+  unsigned MemBusSizeInBytes = LuaI::Get<VFUMemBus>()->getDataWidth() / 8;
+  unsigned ReadLatency = LuaI::Get<VFUMemBus>()->getReadLatency();
   bool AllocateNewPort = true;
   SmallVector<Value*, 8> Pointers;
   SmallPtrSet<Type*, 8> AccessedTypes;
@@ -189,7 +190,7 @@ bool MemoryPartition::createMemoryBank(AliasSet *AS, unsigned PortNum) {
       // struct in a single instruction. This mean the required data port size
       // is not necessary as big as the element size here.
       ElementSizeInBytes = std::min(TD->getTypeStoreSize(ElemTy),
-                                    MemBusSizeInBytes);
+                                    uint64_t(MemBusSizeInBytes));
       unsigned CurArraySize = NumElem * ElementSizeInBytes;
 
       // Accumulate the element size.
@@ -224,7 +225,7 @@ bool MemoryPartition::createMemoryBank(AliasSet *AS, unsigned PortNum) {
   VASTMemoryBank *Bus = VM.createMemBus(PortNum, AddrWidth,
                                        MaxElementSizeInBytes * 8,
                                        RequireByteEnable, EnalbeDualPortRAM,
-                                       IsCombROM);
+                                       IsCombROM, ReadLatency);
 
   // Remember the global variable binding, and add the global variable to
   // the memory bank.

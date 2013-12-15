@@ -143,16 +143,16 @@ VASTModule::createSeqValue(VASTSelector *Selector, unsigned Idx, Value *V) {
 VASTMemoryBank *VASTModule::createDefaultMemBus() {
   VFUMemBus *Desc = LuaI::Get<VFUMemBus>();
   return createMemBus(0, Desc->getAddrWidth(), Desc->getDataWidth(),
-                      true, false, false);
+                      true, false, false, 0);
 }
 
 VASTMemoryBank *
 VASTModule::createMemBus(unsigned Num, unsigned AddrWidth, unsigned DataWidth,
                          bool RequireByteEnable, bool IsDualPort,
-                         bool IsCombinationalROM) {
+                         bool IsCombinationalROM, unsigned ReadLatency) {
   VASTMemoryBank *Bus = new VASTMemoryBank(Num, AddrWidth, DataWidth,
                                           RequireByteEnable, IsDualPort,
-                                          IsCombinationalROM);
+                                          IsCombinationalROM, ReadLatency);
   Bus->addPorts(this);
   Submodules.push_back(Bus);
   return Bus;

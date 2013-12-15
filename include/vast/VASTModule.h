@@ -269,7 +269,8 @@ public:
   VASTMemoryBank *createDefaultMemBus();
   VASTMemoryBank *createMemBus(unsigned Num, unsigned AddrWidth,
                               unsigned DataWidth, bool RequireByteEnable,
-                              bool IsDualPort, bool IsCombinationalROM);
+                              bool IsDualPort, bool IsCombinationalROM,
+                              unsigned ReadLatency);
 
   VASTSubModule *addSubmodule(const Twine &Name, unsigned Num);
 

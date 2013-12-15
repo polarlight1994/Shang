@@ -29,12 +29,13 @@ using namespace llvm;
 STATISTIC(NumUnusedPorts, "Number of unused ports in memory bus");
 
 VASTMemoryBank::VASTMemoryBank(unsigned BusNum, unsigned AddrSize,
-                             unsigned DataSize, bool RequireByteEnable,
-                             bool IsDualPort, bool IsCombROM)
+                               unsigned DataSize, bool RequireByteEnable,
+                               bool IsDualPort, bool IsCombROM,
+                               unsigned ReadLatency)
   : VASTSubModuleBase(VASTNode::vastMemoryBus, "", BusNum),
     AddrSize(AddrSize), DataSize(DataSize),
     RequireByteEnable(RequireByteEnable), IsDualPort(IsDualPort),
-    IsCombROM(IsCombROM), EndByteAddr(0) {}
+    IsCombROM(IsCombROM), ReadLatency(ReadLatency), EndByteAddr(0) {}
 
 void VASTMemoryBank::addBasicPins(VASTModule *VM, unsigned PortNum) {
   assert(!isDefault() && "Just handle internal memory here");

@@ -25,12 +25,14 @@ class VASTMemoryBank : public VASTSubModuleBase {
   const bool RequireByteEnable : 1;
   const bool IsDualPort : 1;
   const bool IsCombROM : 1;
+  const unsigned ReadLatency : 5;
   static const unsigned InputsPerPort = 2;
   std::map<GlobalVariable*, unsigned> BaseAddrs;
   unsigned EndByteAddr;
 
   VASTMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
-                 bool RequireByteEnable, bool IsDualPort, bool IsCombinational);
+                 bool RequireByteEnable, bool IsDualPort, bool IsCombinational,
+                 unsigned ReadLatency);
   friend class VASTModule;
 
   void addPorts(VASTModule *VM);
@@ -67,6 +69,7 @@ public:
   unsigned getAddrWidth() const { return AddrSize; }
   unsigned getByteEnWidth() const { return getDataWidth() / 8; }
   unsigned getByteAddrWidth() const;
+  unsigned getReadLatency() const { return ReadLatency; }
 
   std::string getArrayName() const;
 
