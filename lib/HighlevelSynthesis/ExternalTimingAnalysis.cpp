@@ -1148,15 +1148,17 @@ bool ExternalTimingAnalysis::readRegionPlacement(){
   int XSlack = ((BBWidth + 9) / 10) * 1,
       YSlack = ((BBHeight + 9) / 10) * 1;
 
-  BBX = std::min(81 - (BBWidth + 2 * XSlack), BBX - XSlack);
+  const int DeviceWidth = 81, DeviceHeight = 67;
+
+  BBX = std::min(DeviceWidth - (BBWidth + 2 * XSlack), BBX - XSlack);
   BBX = std::max(1, BBX);
   BBWidth += 2 * XSlack;
-  BBWidth = std::min(81, BBWidth);
+  BBWidth = std::min(DeviceWidth, BBWidth);
 
-  BBY = std::min(67 - (BBHeight + 2 * YSlack), BBY - YSlack);
+  BBY = std::min(DeviceHeight - (BBHeight + 2 * YSlack), BBY - YSlack);
   BBY = std::max(1, BBY);
   BBHeight += 2 * YSlack;
-  BBHeight = std::min(67, BBHeight);
+  BBHeight = std::min(DeviceHeight, BBHeight);
 
   VM.setBoundingBoxConstraint(BBX, BBY, BBWidth, BBHeight);
 
