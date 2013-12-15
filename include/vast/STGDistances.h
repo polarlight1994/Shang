@@ -54,8 +54,7 @@ class STGDistances : public VASTModulePass {
 
   VASTModule *VM;
 
-  unsigned getIntervalFromDef(const VASTLatch &L, VASTSlot *ReadSlot,
-                              unsigned ReadSlotNum) const;
+  unsigned getIntervalFromDef(const VASTLatch &L, unsigned ReadSlotNum) const;
 public:
   static const unsigned Inf;
 

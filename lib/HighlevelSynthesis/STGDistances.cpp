@@ -250,7 +250,7 @@ STGDistanceBase *STGDistanceBase::CalculateShortestPathDistance(VASTCtrlRgn &R){
   return Impl;
 }
 
-unsigned STGDistances::getIntervalFromDef(const VASTLatch &L, VASTSlot *ReadSlot,
+unsigned STGDistances::getIntervalFromDef(const VASTLatch &L,
                                           unsigned ReadSlotNum) const {
   unsigned PathInterval = STGDistances::Inf;
 
@@ -273,11 +273,11 @@ unsigned STGDistances::getIntervalFromDef(const VASTLatch &L, VASTSlot *ReadSlot
   }
 
   // The is 1 extra cycle from the definition to landing.
-  return std::min(PathInterval + 1, STGDistances::Inf);;
+  return std::min(PathInterval + 1, STGDistances::Inf);
 }
 
-unsigned
-STGDistances::getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) const {
+unsigned STGDistances::getIntervalFromDef(const VASTSeqValue *V,
+                                          VASTSlot *ReadSlot) const {
   // Assume the paths from FUOutput are always single cycle paths.
   if (V->isFUOutput()) return 1;
 
@@ -290,7 +290,9 @@ STGDistances::getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) cons
 
     if (V->getSelector()->isTrivialFannin(L)) continue;
 
-    unsigned CurInterval = getIntervalFromDef(L, ReadSlot, ReadSlotNum);
+    // TODO: Assert that read slot and L must be located in the same control
+    //       region
+    unsigned CurInterval = getIntervalFromDef(L, ReadSlotNum);
     PathInterval = std::min(PathInterval, CurInterval);
   }
 
@@ -312,7 +314,9 @@ unsigned STGDistances::getIntervalFromDef(const VASTSelector *Sel,
 
     if (Sel->isTrivialFannin(L)) continue;
 
-    unsigned CurInterval = getIntervalFromDef(L, ReadSlot, ReadSlotNum);
+    // TODO: Assert that read slot and L must be located in the same control
+    //       region
+    unsigned CurInterval = getIntervalFromDef(L, ReadSlotNum);
     PathInterval = std::min(PathInterval, CurInterval);
   }
 
