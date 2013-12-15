@@ -41,8 +41,6 @@ STATISTIC(NumMemoryAccess, "Number of memory accesses");
 STATISTIC(NumLoad, "Number of Load");
 STATISTIC(NumStore, "Number of Store");
 STATISTIC(NumMemBanks, "Number of Local Memory Bank Allocated");
-STATISTIC(NumBRam2Reg, "Number of Single Element Block RAM Lowered to Register");
-STATISTIC(NUMCombROM, "Number of Combinational ROM Generated");
 
 static cl::opt<bool>
 EnalbeDualPortRAM("shang-enable-dual-port-ram",
