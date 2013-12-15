@@ -489,16 +489,17 @@ void ScheduleEmitter::emitSchedule() {
 //===----------------------------------------------------------------------===//
 namespace {
 class ImplicitFlowBuilder {
-  VASTModule &VM;
+  VASTCtrlRgn &R;
   STGDistanceBase *ShortesPaths;
+
   std::map<VASTSlot*, std::set<VASTSlot*> > ImplicitEdges;
 
   void buildImplicitFlow(VASTSlot *S);
   void buildImplicitFlow(VASTSlot *S, ArrayRef<VASTSlot*> StraightFlow);
 
 public:
-  ImplicitFlowBuilder(VASTModule &VM) : VM(VM),
-    ShortesPaths(STGDistanceBase::CalculateShortestPathDistance(VM)) {}
+  explicit ImplicitFlowBuilder(VASTCtrlRgn &R) : R(R),
+    ShortesPaths(STGDistanceBase::CalculateShortestPathDistance(R)) {}
 
   ~ImplicitFlowBuilder() { delete ShortesPaths; }
 
@@ -643,8 +644,8 @@ void ImplicitFlowBuilder::run() {
   //  S2 S3
   // Where edge (S1, S2) is unconditional while edge (S1, S2) is conditional.
 
-  typedef VASTModule::slot_iterator slot_iterator;
-  for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
+  typedef VASTCtrlRgn::slot_iterator slot_iterator;
+  for (slot_iterator I = R.slot_begin(), E = R.slot_end(); I != E; ++I) {
     VASTSlot *S = I;
 
     if (HasSideBranch(S)) buildImplicitFlow(S);
@@ -678,13 +679,13 @@ void ImplicitFlowBuilder::run() {
 
 namespace {
 struct RegisterFolding : public MinimalExprBuilderContext {
-  VASTModule &VM;
+  VASTCtrlRgn &R;
   DominatorTree *DT;
   VASTExprBuilder Builder;
 
-  RegisterFolding(VASTModule &VM, DominatorTree *DT)
-    : MinimalExprBuilderContext(VM), VM(VM), DT(DT), Builder(*this) {}
-  ~RegisterFolding() { VM.gc(); }
+  RegisterFolding(VASTModule &VM, VASTCtrlRgn &R, DominatorTree *DT)
+    : MinimalExprBuilderContext(VM), R(R), DT(DT), Builder(*this) {}
+  ~RegisterFolding() { }
 
   void run();
   bool retimeFannin(VASTUse &U, VASTSlot *S);
@@ -750,9 +751,9 @@ static VASTSlot *GetUnquineSuccessor(VASTSlot *S) {
 }
 
 void RegisterFolding::run() {
-  typedef VASTModule::slot_iterator slot_iterator;
+  typedef VASTCtrlRgn::slot_iterator slot_iterator;
   // Retime the guarding conditions.
-  for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
+  for (slot_iterator I = R.slot_begin(), E = R.slot_end(); I != E; ++I) {
     VASTSlot *S = I;
 
     if (S->IsSubGrp) continue;
@@ -787,8 +788,8 @@ void RegisterFolding::run() {
   }
 
   // Retime the Operands.
-  typedef VASTModule::seqop_iterator iterator;
-  for (iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
+  typedef VASTCtrlRgn::seqop_iterator iterator;
+  for (iterator I = R.seqop_begin(), E = R.seqop_end(); I != E; ++I) {
     VASTSeqOp *Op = I;
     VASTUse &Guard = Op->getGuard();
     VASTValPtr NewGuard = Op->getSlot()->getGuard();
@@ -800,7 +801,8 @@ void RegisterFolding::run() {
     for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
       VASTLatch L = Op->getSrc(i);
       if (VASTSelector *Sel = L.getSelector()) {
-        if (Sel->isTrivialFannin(L)) continue;
+        if (Sel->isTrivialFannin(L))
+          continue;
 
         // Replace chained operand.
         if (OperandMaybeChained) {
@@ -1020,5 +1022,5 @@ void VASTScheduling::emitSchedule() {
 
   ScheduleEmitter(*VM, *VM, *G).emitSchedule();
   ImplicitFlowBuilder(*VM).run();
-  RegisterFolding(*VM, DT).run();
+  RegisterFolding(*VM, *VM, DT).run();
 }
