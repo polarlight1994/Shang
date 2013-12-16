@@ -183,7 +183,7 @@ VASTValPtr VASTSeqOp::getSlotActive() const {
   if (guardedBySlotActive())
     return getSlot()->getActive().unwrap();
 
-  return VASTValPtr();
+  return None;
 }
 
 Value *VASTSeqOp::getValue() const {

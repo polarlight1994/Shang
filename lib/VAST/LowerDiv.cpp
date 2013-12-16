@@ -78,8 +78,7 @@ VASTValPtr DatapathBuilder::lowerUDiv(BinaryOperator &I) {
 
   // Well, our assumption about we can lower the UDiv is wrong.
   --UDIVLowered;
-  return VASTValPtr();
-  return VASTValPtr();
+  return None;
 }
 
 VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
@@ -158,7 +157,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
 
   // Well, our assumption about we can lower the SDiv is wrong.
   --SDIVLowered;
-  return VASTValPtr();
+  return None;
 }
 
 VASTValPtr DatapathBuilder::lowerSRem(BinaryOperator &I) {
@@ -189,7 +188,7 @@ VASTValPtr DatapathBuilder::lowerSRem(BinaryOperator &I) {
 
   // Well, our assumption about we can lower the SRem is wrong.
   --SREMLowered;
-  return VASTValPtr();
+  return None;
 }
 
 VASTValPtr DatapathBuilder::lowerURem(BinaryOperator &I) {
@@ -220,5 +219,5 @@ VASTValPtr DatapathBuilder::lowerURem(BinaryOperator &I) {
 
   // Well, our assumption about we can lower the SRem is wrong.
   --UREMLowered;
-  return VASTValPtr();
+  return None;
 }

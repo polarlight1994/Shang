@@ -324,9 +324,9 @@ VASTValPtr VASTExprBuilder::buildAddExpr(ArrayRef<VASTValPtr> Ops,
 
   // Make sure the carry bit located in the last operand in the operand list.
   SmallVector<VASTValPtr, 8> NewOps;
-  VASTValPtr Carry = VASTValPtr();
+  VASTValPtr Carry = None;
   for (unsigned i = 0; i < Ops.size(); ++i) {
-    if (Carry == VASTValPtr() && Ops[i]->getBitWidth() == 1) {
+    if (Carry == None && Ops[i]->getBitWidth() == 1) {
       Carry = Ops[i];
       continue;
     }

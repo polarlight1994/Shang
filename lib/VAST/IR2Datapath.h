@@ -107,7 +107,7 @@ public:
 
   VASTValPtr visitInstruction(Instruction &I) {
     // Unhandled instructions can be safely ignored.
-    return VASTValPtr();
+    return None;
   }
 
   // Operator visiting functions.

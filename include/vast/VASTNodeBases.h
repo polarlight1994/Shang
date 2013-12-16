@@ -10,9 +10,10 @@
 // This file defines the base classes in the Verilog Abstract Syntax Tree.
 //
 //===----------------------------------------------------------------------===//
-#ifndef SHANG_VAST_NODE_BASE_H
-#define SHANG_VAST_NODE_BASE_H
+#ifndef VAST_NODE_BASE_H
+#define VAST_NODE_BASE_H
 
+#include "llvm/ADT/None.h"
 #include "llvm/ADT/ilist.h"
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/ADT/PointerIntPair.h"
@@ -116,8 +117,10 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
 
   PtrInvPair(Base V) : PointerIntPair<T*, 1, bool>(V) {}
 
-  PtrInvPair(T *V = 0, bool IsInvert = false)
+  PtrInvPair(T *V = NULL, bool IsInvert = false)
     : PointerIntPair<T*, 1, bool>(V, IsInvert) {}
+
+  PtrInvPair(NoneType) : PointerIntPair<T*, 1, bool>(NULL, false) {}
 
   template<typename T1>
   PtrInvPair(const PtrInvPair<T1>& RHS)
@@ -131,7 +134,7 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
   }
 
   operator void*() const {
-    return get() ? this->getOpaqueValue() : 0;
+    return get() ? this->getOpaqueValue() : NULL;
   }
 
   T *get() const { return this->getPointer(); }
@@ -166,6 +169,14 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
   bool operator<(const T1 *RHS) const { return this->getOpaqueValue() < RHS; }
   template<typename T1>
   bool operator>(const T1 *RHS) const { return this->getOpaqueValue() > RHS; }
+
+  bool operator==(NoneType) const {
+    return Base::getPointer() == NULL;
+  }
+
+  bool operator!=(NoneType) const {
+    return !operator==(None);
+  }
 
   inline void printAsOperand(raw_ostream &OS, unsigned UB, unsigned LB) const {
     get()->printAsOperand(OS, UB, LB, isInverted());
@@ -295,7 +306,7 @@ public:
     if (isInvalid()) return;
 
     unlinkUseFromUser();
-    V = VASTValPtr();
+    V = None;
   }
 
   void set(VASTValPtr RHS) {
@@ -316,6 +327,14 @@ public:
 
   // Remove this use from use list.
   void unlinkUseFromUser();
+
+  bool operator==(NoneType) const {
+    return isInvalid();
+  }
+
+  bool operator!=(NoneType) const {
+    return !operator==(None);
+  }
 
   bool operator==(const VASTValPtr RHS) const;
 

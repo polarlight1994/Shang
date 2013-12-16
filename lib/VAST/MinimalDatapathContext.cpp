@@ -31,11 +31,12 @@ MinimalDatapathContext::getAsOperandImpl(Value *Op) {
   if (ConstantInt *Int = dyn_cast<ConstantInt>(Op))
     return getOrCreateImmediate(Int->getValue());
 
-  if (VASTValPtr V = lookupExpr(Op)) return V;
+  if (VASTValPtr V = lookupExpr(Op))
+    return V;
 
   // Else we need to create a leaf node for the expression tree.
   llvm_unreachable("Cannot create VASTValPtr for Value!");
-  return VASTValPtr();
+  return None;
 }
 
 void MinimalDatapathContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {

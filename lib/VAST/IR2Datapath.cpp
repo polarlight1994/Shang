@@ -164,7 +164,7 @@ VASTValPtr DatapathBuilder::visitBinaryOperator(BinaryOperator &I) {
   default: llvm_unreachable("Unexpected opcode!"); break;
   }
 
-  return VASTValPtr();
+  return None;
 }
 
 VASTValPtr DatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
@@ -184,7 +184,7 @@ VASTValPtr DatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
     VASTValPtr V = getAsOperand(I.getOperand(0));
     assert(NumBits % 16 == 0 && "Bad bitwidth for byteswap!");
     unsigned NumBytes = NumBits / 8;
-    SmallVector<VASTValPtr, 8> Bytes(NumBytes, VASTValPtr()) ;
+    SmallVector<VASTValPtr, 8> Bytes(NumBytes, None);
     for (unsigned i = 0; i != NumBytes; ++i)
       Bytes[i] = buildBitSliceExpr(V, i * 8 + 8, i * 8);
 
@@ -192,7 +192,7 @@ VASTValPtr DatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
   }
   }
 
-  return VASTValPtr();
+  return None;
 }
 
 VASTValPtr DatapathBuilder::visitExtractValueInst(ExtractValueInst &I) {
@@ -214,7 +214,7 @@ VASTValPtr DatapathBuilder::visitExtractValueInst(ExtractValueInst &I) {
     }
   }
 
-  return VASTValPtr();
+  return None;
 }
 
 VASTValPtr DatapathBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
