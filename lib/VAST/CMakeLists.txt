@@ -14,8 +14,6 @@ add_llvm_library(ShangVAST
   IR2Datapath.cpp
   LowerDiv.cpp
   DesignMetrics.cpp
-  LUTMapping.cpp
-  IterativeBitlevelOpt.cpp
   OptimizePHINodes.cpp
   VASTSeqOp.cpp
   VASTSeqValue.cpp
@@ -28,11 +26,3 @@ add_llvm_library(ShangVAST
   DatapathNamer.cpp
   RTLCodeGen.cpp
 )
-
-get_property(ABC_INCLUDE_DIRS GLOBAL PROPERTY ABC_INCLUDE_DIRS)
-get_property(ABC_LIBRARY GLOBAL PROPERTY ABC_LIBRARY)
-
-target_link_libraries (ShangVAST ${ABC_LIBRARY})
-
-include_directories(${ABC_INCLUDE_DIRS})
-SetupABC()
