@@ -477,6 +477,7 @@ TimingAnalysis.Device = [[{{ fpga_device }}]]
 local FMAX = {{ fmax }}
 PERIOD = 1000.0 / FMAX
 FUs.Period = PERIOD
+FUs.MemoryBus = { ReadLatency =  {{ membus_read_latency }}, StartInterval=1, AddressWidth=ptr_size, DataWidth=64 }
 
 dofile([[{{ [config_dir, 'common_config.lua']|joinpath }}]])
 

@@ -86,5 +86,3 @@ module shang_rxor#(parameter WIDTH = 0) (
 	assign b = ^a;
 endmodule
 ]=]
-
-FUs.MemoryBus = { ReadLatency = 2, StartInterval=1, AddressWidth=ptr_size, DataWidth=64 }
