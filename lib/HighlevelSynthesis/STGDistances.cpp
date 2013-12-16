@@ -154,7 +154,7 @@ const unsigned STGDistances::Inf = UINT16_MAX;
 INITIALIZE_PASS(STGDistances, "vast-stg-distances",
                 "Compute the distances in the STG", false, true)
 
-STGDistances::STGDistances() : VASTModulePass(ID), SPImpl(0), VM(0) {
+STGDistances::STGDistances() : VASTModulePass(ID) {
   initializeSTGDistancesPass(*PassRegistry::getPassRegistry());
 }
 
@@ -163,51 +163,42 @@ void STGDistances::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.setPreservesAll();
 }
 
-template<typename T>
-static void DeleteAndReset(T *&Ptr) {
-  if (Ptr) {
-    delete Ptr;
-    Ptr = 0;
-  }
-}
-
 void STGDistances::releaseMemory() {
-  DeleteAndReset(SPImpl);
-  VM = 0;
+  DeleteContainerSeconds(SPMatrices);
 }
 
 bool STGDistances::runOnVASTModule(VASTModule &VM) {
   releaseMemory();
 
-  this->VM = &VM;
-  SPImpl = new ShortestPathImpl();
-
   return false;
 }
 
 void STGDistances::print(raw_ostream &OS) const {
-  assert(SPImpl && "Print after releaseMemory?");
-  SPImpl->print(OS, *VM);
 }
 
-unsigned STGDistances::getShortestPath(unsigned From, unsigned To) const {
-  assert(SPImpl && "Get shortest path after releaseMemory?");
+unsigned
+STGDistances::getShortestPath(unsigned From, unsigned To, VASTCtrlRgn *R) {
+  ShortestPathImpl *&SPImpl = SPMatrices[R];
   // Calculate the distances on the fly.
-  if (SPImpl->empty())
-    SPImpl->run(*VM);
+  if (SPImpl == 0) {
+    SPImpl = new ShortestPathImpl();
+    SPImpl->run(*R);
+  }
 
   return SPImpl->getDistance(From, To);
 }
 
-STGDistanceBase *STGDistanceBase::CalculateShortestPathDistance(VASTCtrlRgn &R){
+STGDistanceBase *STGDistanceBase::CalculateShortestPathDistance(VASTCtrlRgn &R) {
   ShortestPathImpl *Impl = new ShortestPathImpl();
   Impl->run(R);
   return Impl;
 }
 
-unsigned STGDistances::getIntervalFromDef(const VASTLatch &L,
-                                          unsigned ReadSlotNum) const {
+unsigned
+STGDistances::getIntervalFromDef(const VASTLatch &L, VASTSlot *ReadSlot) {
   unsigned PathInterval = STGDistances::Inf;
+  unsigned ReadSlotNum = ReadSlot->SlotNum;
+  VASTCtrlRgn &R = ReadSlot->getParentRgn();
   VASTSlot *S = L.getSlot();
 
   // Perform depth first search to reach the "next slot" of L.
@@ -232,11 +223,13 @@ unsigned STGDistances::getIntervalFromDef(const VASTLatch &L,
     if (Edge.getDistance()) {
       unsigned NextSlotNum = Child->SlotNum;
 
+      assert(&Child->getParentRgn() == &R
+             && "Cannot calculate distance across control regions!");
       // Directly read at the landing slot, the interval is 1.
       if (NextSlotNum == ReadSlotNum)
         return 1;
 
-      unsigned CurInterval = getShortestPath(NextSlotNum, ReadSlotNum);
+      unsigned CurInterval = getShortestPath(NextSlotNum, ReadSlotNum, &R);
 
       PathInterval = std::min(PathInterval, CurInterval);
 
@@ -245,7 +238,8 @@ unsigned STGDistances::getIntervalFromDef(const VASTLatch &L,
     }
 
     // Do not visit a node twice.
-    if (!Visited.insert(Child)) continue;
+    if (!Visited.insert(Child))
+      continue;
 
     WorkStack.push_back(std::make_pair(Child, Child->succ_begin()));
   }
@@ -254,23 +248,23 @@ unsigned STGDistances::getIntervalFromDef(const VASTLatch &L,
   return std::min(PathInterval + 1, STGDistances::Inf);
 }
 
-unsigned STGDistances::getIntervalFromDef(const VASTSeqValue *V,
-                                          VASTSlot *ReadSlot) const {
+unsigned
+STGDistances::getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) {
   // Assume the paths from FUOutput are always single cycle paths.
   if (V->isFUOutput()) return 1;
 
   unsigned PathInterval = STGDistances::Inf;
-  unsigned ReadSlotNum = ReadSlot->SlotNum;
 
   typedef VASTSeqValue::const_fanin_iterator fanin_iterator;
   for (fanin_iterator I = V->fanin_begin(), E = V->fanin_end(); I != E; ++I) {
     const VASTLatch &L = *I;
 
-    if (V->getSelector()->isTrivialFannin(L)) continue;
+    if (V->getSelector()->isTrivialFannin(L))
+      continue;
 
     // TODO: Assert that read slot and L must be located in the same control
     //       region
-    unsigned CurInterval = getIntervalFromDef(L, ReadSlotNum);
+    unsigned CurInterval = getIntervalFromDef(L, ReadSlot);
     PathInterval = std::min(PathInterval, CurInterval);
   }
 
@@ -278,23 +272,24 @@ unsigned STGDistances::getIntervalFromDef(const VASTSeqValue *V,
   return PathInterval;
 }
 
-unsigned STGDistances::getIntervalFromDef(const VASTSelector *Sel,
-                                          VASTSlot *ReadSlot) const {
+unsigned
+STGDistances::getIntervalFromDef(const VASTSelector *Sel, VASTSlot *ReadSlot) {
   // Assume the paths from FUOutput are always single cycle paths.
-  if (Sel->isFUOutput()) return 1;
+  if (Sel->isFUOutput())
+    return 1;
 
   unsigned PathInterval = STGDistances::Inf;
-  unsigned ReadSlotNum = ReadSlot->SlotNum;
 
   typedef VASTSelector::const_iterator iterator;
   for (iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     const VASTLatch &L = *I;
 
-    if (Sel->isTrivialFannin(L)) continue;
+    if (Sel->isTrivialFannin(L))
+      continue;
 
     // TODO: Assert that read slot and L must be located in the same control
     //       region
-    unsigned CurInterval = getIntervalFromDef(L, ReadSlotNum);
+    unsigned CurInterval = getIntervalFromDef(L, ReadSlot);
     PathInterval = std::min(PathInterval, CurInterval);
   }
 

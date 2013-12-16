@@ -48,11 +48,11 @@ public:
 };
 
 class STGDistances : public VASTModulePass {
-  ShortestPathImpl *SPImpl;
+  // Shortest path matrix for each control region.
+  std::map<VASTCtrlRgn*, ShortestPathImpl*> SPMatrices;
 
-  VASTModule *VM;
-
-  unsigned getIntervalFromDef(const VASTLatch &L, unsigned ReadSlotNum) const;
+  unsigned getIntervalFromDef(const VASTLatch &L, VASTSlot *ReadSlot);
+  unsigned getShortestPath(unsigned From, unsigned To, VASTCtrlRgn *R);
 public:
   static const unsigned Inf;
 
@@ -66,13 +66,12 @@ public:
   void releaseMemory();
   void print(raw_ostream &OS) const;
 
-  unsigned getShortestPath(unsigned From, unsigned To) const;
 
-  unsigned getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot) const;
-  unsigned getIntervalFromDef(const VASTSelector *Sel, VASTSlot *ReadSlot) const;
+  unsigned getIntervalFromDef(const VASTSeqValue *V, VASTSlot *ReadSlot);
+  unsigned getIntervalFromDef(const VASTSelector *Sel, VASTSlot *ReadSlot);
 
   template<typename T>
-  unsigned getIntervalFromDef(const T *V, ArrayRef<VASTSlot*> ReadSlots) const {
+  unsigned getIntervalFromDef(const T *V, ArrayRef<VASTSlot*> ReadSlots) {
     unsigned PathInterval = STGDistances::Inf;
     typedef ArrayRef<VASTSlot*>::iterator iterator;
     for (iterator I = ReadSlots.begin(), E = ReadSlots.end(); I != E; ++I)
