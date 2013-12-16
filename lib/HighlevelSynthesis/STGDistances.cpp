@@ -173,56 +173,11 @@ static void DeleteAndReset(T *&Ptr) {
 
 void STGDistances::releaseMemory() {
   DeleteAndReset(SPImpl);
-  LandingMap.clear();
   VM = 0;
-}
-
-static void setLandingSlots(VASTSlot *S, SparseBitVector<> &Landings) {
-  // Perform depth first search to check if we can reach RHS from LHS with
-  // 0-distance edges.
-  SmallPtrSet<VASTSlot*, 8> Visited;
-  SmallVector<std::pair<VASTSlot*, VASTSlot::succ_iterator>, 4> WorkStack;
-  WorkStack.push_back(std::make_pair(S, S->succ_begin()));
-
-  while (!WorkStack.empty()) {
-    VASTSlot *S = WorkStack.back().first;
-    VASTSlot::succ_iterator ChildIt = WorkStack.back().second;
-
-    if (ChildIt == S->succ_end()) {
-      WorkStack.pop_back();
-      continue;
-    }
-
-    VASTSlot::EdgePtr Edge = *ChildIt;
-    ++WorkStack.back().second;
-    VASTSlot *Child = Edge;
-
-    // Now we land with the 1-distance edge.
-    if (Edge.getDistance()) {
-      Landings.set(Child->SlotNum);
-      // Skip the children of the current node as we had already reach the leave.
-      continue;
-    }
-
-    // Do not visit a node twice.
-    if (!Visited.insert(Child)) continue;
-
-    WorkStack.push_back(std::make_pair(Child, Child->succ_begin()));
-  }
-
-  DEBUG(dbgs() << "Slot #" << S->SlotNum << " landing: ";
-  ::dump(Landings, dbgs()));
 }
 
 bool STGDistances::runOnVASTModule(VASTModule &VM) {
   releaseMemory();
-
-  // Setup the landing slot map.
-  typedef VASTModule::slot_iterator slot_iterator;
-  for (slot_iterator I = VM.slot_begin(), E = VM.slot_end(); I != E; ++I) {
-    VASTSlot *S = I;
-    setLandingSlots(S, LandingMap[S->SlotNum]);
-  }
 
   this->VM = &VM;
   SPImpl = new ShortestPathImpl();
@@ -253,23 +208,46 @@ STGDistanceBase *STGDistanceBase::CalculateShortestPathDistance(VASTCtrlRgn &R){
 unsigned STGDistances::getIntervalFromDef(const VASTLatch &L,
                                           unsigned ReadSlotNum) const {
   unsigned PathInterval = STGDistances::Inf;
+  VASTSlot *S = L.getSlot();
 
-  std::map<unsigned, SparseBitVector<> >::const_iterator J
-    = LandingMap.find(L.getSlot()->SlotNum);
+  // Perform depth first search to reach the "next slot" of L.
+  SmallPtrSet<VASTSlot*, 8> Visited;
+  SmallVector<std::pair<VASTSlot*, VASTSlot::succ_iterator>, 4> WorkStack;
+  WorkStack.push_back(std::make_pair(S, S->succ_begin()));
 
-  assert(J != LandingMap.end() && "Landing slots cache not built?");
-  const SparseBitVector<> &Landings = J->second;
-  typedef SparseBitVector<>::iterator iterator;
-  for (iterator LI = Landings.begin(), LE = Landings.end(); LI != LE; ++LI) {
-    unsigned LandingSlotNum = *LI;
+  while (!WorkStack.empty()) {
+    VASTSlot *S = WorkStack.back().first;
+    VASTSlot::succ_iterator ChildIt = WorkStack.back().second;
 
-    // Directly read at the landing slot, the interval is 1.
-    if (LandingSlotNum == ReadSlotNum)
-      return 1;
+    if (ChildIt == S->succ_end()) {
+      WorkStack.pop_back();
+      continue;
+    }
 
-    unsigned CurInterval = getShortestPath(LandingSlotNum, ReadSlotNum);
+    VASTSlot::EdgePtr Edge = *ChildIt;
+    ++WorkStack.back().second;
+    VASTSlot *Child = Edge;
 
-    PathInterval = std::min(PathInterval, CurInterval);
+    // Now we land with the 1-distance edge.
+    if (Edge.getDistance()) {
+      unsigned NextSlotNum = Child->SlotNum;
+
+      // Directly read at the landing slot, the interval is 1.
+      if (NextSlotNum == ReadSlotNum)
+        return 1;
+
+      unsigned CurInterval = getShortestPath(NextSlotNum, ReadSlotNum);
+
+      PathInterval = std::min(PathInterval, CurInterval);
+
+      // Skip the children of the current node as we had already reach the leave.
+      continue;
+    }
+
+    // Do not visit a node twice.
+    if (!Visited.insert(Child)) continue;
+
+    WorkStack.push_back(std::make_pair(Child, Child->succ_begin()));
   }
 
   // The is 1 extra cycle from the definition to landing.

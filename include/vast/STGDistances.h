@@ -49,8 +49,6 @@ public:
 
 class STGDistances : public VASTModulePass {
   ShortestPathImpl *SPImpl;
-  // Setup the landing slot map.
-  std::map<unsigned, SparseBitVector<> > LandingMap;
 
   VASTModule *VM;
 
