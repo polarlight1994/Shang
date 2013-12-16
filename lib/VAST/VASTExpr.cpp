@@ -204,8 +204,11 @@ static bool printFUAdd(raw_ostream &OS, const VASTExpr *E) {
   OS << ", ";
   OpB.printAsOperand(OS);
   OS << ", ";
-  if (E->size() == 3) E->getOperand(2).printAsOperand(OS);
-  else                OS << "1'b0";
+  if (E->size() == 3) {
+    assert(E->getOperand(2)->getBitWidth() == 1 && "Expected carry bit!");
+    E->getOperand(2).printAsOperand(OS);
+  } else
+    OS << "1'b0";
   OS << ", ";
   E->printAsOperand(OS, false);
   OS << ");\n";

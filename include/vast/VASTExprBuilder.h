@@ -19,52 +19,7 @@
 namespace llvm {
 class VASTExprBuilderContext {
 public:
-  struct BitMasks {
-    APInt KnownZeros, KnownOnes;
-    explicit BitMasks(unsigned Size)
-      : KnownZeros(APInt::getNullValue(Size)),
-        KnownOnes(APInt::getNullValue(Size))
-    {}
-
-    BitMasks(APInt KnownZeros = APInt(), APInt KnownOnes = APInt())
-      : KnownZeros(KnownZeros), KnownOnes(KnownOnes) {
-      assert(KnownOnes.getBitWidth() == KnownZeros.getBitWidth()
-             && "Bitwidths are not agreed!");
-    }
-
-    APInt getKnownBits() const;
-    // Return true if the known bits in the current mask is a subset of the known
-    // bits in RHS.
-    bool isSubSetOf(const BitMasks &RHS) const;
-
-    void dump() const;
-  };
-private:
-  typedef DenseMap<VASTValue*, BitMasks> BitMaskCacheTy;
-  BitMaskCacheTy BitMaskCache;
-
-protected:
-  // Simple bit mask calculation functions.
-  BitMasks calculateBitCatBitMask(VASTExpr *Expr);
-  BitMasks calculateAssignBitMask(VASTExpr *Expr);
-  BitMasks calculateAndBitMask(VASTExpr *Expr);
-  BitMasks calculateImmediateBitMask(VASTImmediate *Imm);
-
-public:
   virtual ~VASTExprBuilderContext() {}
-
-  inline BitMasks setBitMask(VASTValue *V, const BitMasks &Masks) {
-    std::pair<BitMaskCacheTy::iterator, bool> Pair
-      = BitMaskCache.insert(std::make_pair(V, Masks));
-    if (!Pair.second) Pair.first->second = Masks;
-
-    return Masks;
-  }
-
-  // Bit mask analyzing, bitmask_collecting_iterator.
-  BitMasks calculateBitMask(VASTValue *V);
-
-  BitMasks calculateBitMask(VASTValPtr V);
 
   VASTValPtr stripZeroBasedBitSlize(VASTValPtr V) {
     VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
@@ -144,7 +99,6 @@ class VASTExprBuilder {
   VASTExprBuilder(const VASTExprBuilder &RHS); // DO NOT IMPLEMENT
 
   VASTValPtr splitAndByMask(APInt Mask, ArrayRef<VASTValPtr> NewOps);
-  VASTValPtr foldBitSliceExpr(VASTValPtr U, uint8_t UB, uint8_t LB);
 
   // Inline all operands in the expression whose Opcode is the same as Opc
   // recursively;
@@ -251,14 +205,6 @@ public:
     return createExpr(Opc, Ops, UB, LB);
   }
 
-  typedef VASTExprBuilderContext::BitMasks BitMasks;
-  BitMasks calculateBitMask(VASTValPtr V) {
-    return Context.calculateBitMask(V);
-  }
-
-  static bool GetMaskSplitPoints(APInt Mask, unsigned &HiPt, unsigned &LoPt);
-  VASTValPtr replaceKnownBits(VASTValPtr V, const BitMasks &Mask);
-
   VASTValPtr getBoolImmediate(bool Val) {
     return Context.getOrCreateImmediate(Val, 1);
   }
@@ -271,9 +217,9 @@ public:
     return Context.getOrCreateImmediate(Value);
   }
 
-  VASTValPtr getOrCreateCommutativeExpr(VASTExpr::Opcode Opc,
-                                        SmallVectorImpl<VASTValPtr> &Ops,
-                                        unsigned BitWidth);
+  VASTValPtr buildCommutativeExpr(VASTExpr::Opcode Opc,
+                                  MutableArrayRef<VASTValPtr> Ops,
+                                  unsigned BitWidth);
 
   VASTValPtr buildExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                        unsigned BitWidth);

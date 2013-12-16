@@ -279,7 +279,7 @@ struct DatapathPrinter {
         if (E->getBitWidth() > 1)
           OS << "[" << (E->getBitWidth() - 1) << ":0] ";
 
-        OS << E->getTempName();
+        OS << Name;
 
         if (!E->getSubModName().empty()) {
           OS << ";\n";
@@ -318,6 +318,7 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
       const VASTLatch &L = *I;
       Printer.print(L);
       Printer.print(L.getGuard());
+      Printer.print(L.getSlotActive());
     }
 
     if (!Sel->isSelectorSynthesized())

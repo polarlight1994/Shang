@@ -188,9 +188,6 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void visitBasicBlock(BasicBlock *BB);
   void visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd, BasicBlock *CurBB);
 
-  VASTValPtr replaceKnownBits(Value *Val, VASTValPtr V);
-  VASTValPtr replaceSignBits(Value *Val, VASTValPtr V);
-
   VASTValPtr indexVASTExpr(Value *Val, VASTValPtr V);
 
   // Build the SeqOps from the LLVM Instruction.
@@ -436,53 +433,9 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
   }
 }
 
-static bool IsPointerOrInt(Value *V) {
-  return V->getType()->isIntOrIntVectorTy()
-         || V->getType()->getScalarType()->isPointerTy();
-}
-
-
-VASTValPtr VASTModuleBuilder::replaceSignBits(Value *Val, VASTValPtr V) {
-  unsigned NumSignBits = ComputeNumSignBits(Val, TD);
-  if (NumSignBits <= 1)
-    return V;
-
-  unsigned SignBitPos = V->getBitWidth() - NumSignBits;
-  VASTValPtr SignBit = Builder.buildBitSliceExpr(V, SignBitPos + 1, SignBitPos);
-  VASTValPtr SignBits = Builder.buildBitRepeat(SignBit, NumSignBits);
-  VASTValPtr Bits[] = { SignBits, Builder.buildBitSliceExpr(V, SignBitPos, 0) };
-  return Builder.buildBitCatExpr(Bits, V->getBitWidth());
-}
-
-VASTValPtr VASTModuleBuilder::replaceKnownBits(Value *Val, VASTValPtr V) {
-  // Nothing to do with the global address.
-  if (isa<GlobalVariable>(Val)) return V;
-
-  if (!IsPointerOrInt(Val))
-    return V;
-
-  assert(V->getBitWidth() == getValueSizeInBits(Val) && "Bitwidth not match!");
-
-  // Replace the repeated register output.
-  if (isa<VASTSeqValue>(V.get()))
-    V = replaceSignBits(Val, V);
-
-  BitMasks StructuralMask = calculateBitMask(V);
-  BitMasks BehaviorMask(getValueSizeInBits(Val));
-  ComputeMaskedBits(Val, BehaviorMask.KnownZeros, BehaviorMask.KnownOnes, TD);
-
-  if (StructuralMask.isSubSetOf(BehaviorMask)) {
-    // Replace the known bits in the Value.
-    if (VASTValPtr NewV = Builder.replaceKnownBits(V, BehaviorMask))
-      V = NewV;
-  }
-
-  return V;
-}
-
 VASTValPtr VASTModuleBuilder::indexVASTExpr(Value *Val, VASTValPtr V) {
   // Replace the known bits before we index the expressions.
-  return DatapathBuilderContext::indexVASTExpr(Val, replaceKnownBits(Val, V));
+  return DatapathBuilderContext::indexVASTExpr(Val, V);
 }
 
 void VASTModuleBuilder::visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd,
