@@ -1,4 +1,4 @@
-//==- IterativeBitlevelOpt.cpp - Iterative Bit-level Optimization -*- C++ -*-=//
+//==----------- BitlevelOpt.cpp - Bit-level Optimization ----------*- C++ -*-=//
 //
 //                      The Shang HLS frameowrk                               //
 //
@@ -7,8 +7,314 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implement the IterativeBitLevelOpt pass.
-// The IterativeBitLevelOpt pass perform the bit-level optimizations iteratively
-// until the bit-level optimization do not optimize the Module any further.
+// This file implement the BitLevelOpt pass.
+// The BitLevelOpt pass perform the bit-level optimizations iteratively until
+// the bit-level optimization do not optimize the Module any further.
 //
 //===----------------------------------------------------------------------===//
+
+#include "BitlevelOpt.h"
+
+#include "vast/Passes.h"
+#include "vast/VASTModule.h"
+#include "vast/VASTModulePass.h"
+
+#include "llvm/ADT/Statistic.h"
+#define DEBUG_TYPE "vast-bit-level-opt"
+#include "llvm/Support/Debug.h"
+
+using namespace llvm;
+
+STATISTIC(NumIterations, "Number of bit-level optimization iteration");
+
+//===--------------------------------------------------------------------===//
+APInt BitMasks::getKnownBits() const {
+  return KnownZeros | KnownOnes;
+}
+
+bool BitMasks::isSubSetOf(const BitMasks &RHS) const {
+  assert(!(KnownOnes & RHS.KnownZeros)
+        && !(KnownZeros & RHS.KnownOnes)
+        && "Bit masks contradict!");
+
+  APInt KnownBits = getKnownBits(), RHSKnownBits = RHS.getKnownBits();
+  if (KnownBits == RHSKnownBits) return false;
+
+  return (KnownBits | RHSKnownBits) == RHSKnownBits;
+}
+
+void BitMasks::dump() const {
+  SmallString<128> Str;
+  KnownZeros.toString(Str, 2, false, true);
+  dbgs() << "Known Zeros\t" << Str << '\n';
+  Str.clear();
+  KnownOnes.toString(Str, 2, false, true);
+  dbgs() << "Known Ones\t" << Str << '\n';
+  Str.clear();
+  getKnownBits().toString(Str, 2, false, true);
+  dbgs() << "Known Bits\t" << Str << '\n';
+}
+
+//===----------------------------------------------------------------------===//
+BitMasks BitMaskContext::calculateBitCatBitMask(VASTExpr *Expr) {
+  unsigned CurUB = Expr->getBitWidth();
+  unsigned ExprSize = Expr->getBitWidth();
+  // Clear the mask.
+  APInt KnownOnes = APInt::getNullValue(ExprSize),
+    KnownZeros = APInt::getNullValue(ExprSize);
+
+  // Concatenate the bit mask together.
+  for (unsigned i = 0; i < Expr->size(); ++i) {
+    VASTValPtr CurBitSlice = Expr->getOperand(i);
+    unsigned CurSize = CurBitSlice->getBitWidth();
+    unsigned CurLB = CurUB - CurSize;
+    BitMasks CurMask = calculateBitMask(CurBitSlice);
+    KnownZeros |= CurMask.KnownZeros.zextOrSelf(ExprSize).shl(CurLB);
+    KnownOnes |= CurMask.KnownOnes.zextOrSelf(ExprSize).shl(CurLB);
+
+    CurUB = CurLB;
+  }
+
+  return BitMasks(KnownZeros, KnownOnes);
+}
+
+BitMasks BitMaskContext::calculateImmediateBitMask(VASTImmediate *Imm) {
+  return BitMasks(~Imm->getAPInt(), Imm->getAPInt());
+}
+
+BitMasks BitMaskContext::calculateAssignBitMask(VASTExpr *Expr) {
+  unsigned UB = Expr->UB, LB = Expr->LB;
+  BitMasks CurMask = calculateBitMask(Expr->getOperand(0));
+  // Adjust the bitmask by LB.
+  return BitMasks(VASTImmediate::getBitSlice(CurMask.KnownZeros, UB, LB),
+                  VASTImmediate::getBitSlice(CurMask.KnownOnes, UB, LB));
+}
+
+BitMasks BitMaskContext::calculateAndBitMask(VASTExpr *Expr) {
+  unsigned BitWidth = Expr->getBitWidth();
+  // Assume all bits are 1s.
+  BitMasks Mask(APInt::getNullValue(BitWidth),
+                APInt::getAllOnesValue(BitWidth));
+
+  for (unsigned i = 0; i < Expr->size(); ++i) {
+    BitMasks OperandMask = calculateBitMask(Expr->getOperand(i));
+    // The bit become zero if the same bit in any operand is zero.
+    Mask.KnownZeros |= OperandMask.KnownZeros;
+    // The bit is one only if the same bit in all operand are zeros.
+    Mask.KnownOnes &= OperandMask.KnownOnes;
+  }
+
+  return Mask;
+}
+
+// The implementation of basic bit mark calucation.
+BitMasks BitMaskContext::calculateBitMask(VASTValue *V) {
+  BitMaskCacheTy::iterator I = BitMaskCache.find(V);
+  // Return the cached version if possible.
+  if (I != BitMaskCache.end()) {
+    return I->second;
+  }
+
+  // Most simple case: Immediate.
+  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(V))
+    return setBitMask(V, calculateImmediateBitMask(Imm));
+
+  VASTExpr *Expr = dyn_cast<VASTExpr>(V);
+  if (!Expr) return BitMasks(V->getBitWidth());
+
+  switch(Expr->getOpcode()) {
+  default: break;
+  case VASTExpr::dpBitCat:
+    return setBitMask(V, calculateBitCatBitMask(Expr));
+  case VASTExpr::dpAssign:
+    return setBitMask(V, calculateAssignBitMask(Expr));
+  case VASTExpr::dpAnd:
+    return setBitMask(V, calculateAndBitMask(Expr));
+  case VASTExpr::dpKeep:
+    return setBitMask(V, calculateBitMask(Expr->getOperand(0)));
+  }
+
+  return BitMasks(Expr->getBitWidth());
+}
+
+BitMasks BitMaskContext::calculateBitMask(VASTValPtr V) {
+  BitMasks Masks = calculateBitMask(V.get());
+
+  // Flip the bitmask if the value is inverted.
+  if (V.isInverted())
+    return BitMasks(Masks.KnownOnes, Masks.KnownZeros);
+
+  return Masks;
+}
+
+//===----------------------------------------------------------------------===//
+DatapathBLO::DatapathBLO(DatapathContainer &Datapath)
+  : MinimalExprBuilderContext(Datapath), Builder(*this) {}
+
+DatapathBLO::~DatapathBLO() {}
+
+void DatapathBLO::gc() {
+  Datapath.gc();
+}
+
+void DatapathBLO::deleteContenxt(VASTValue *V) {
+  MinimalExprBuilderContext::deleteContenxt(V);
+  BitMaskCache.erase(V);
+}
+
+void DatapathBLO::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
+  return MinimalExprBuilderContext::replaceAllUseWith(From, To);
+}
+
+template<typename T>
+static PtrInvPair<T> check(PtrInvPair<T> V) {
+  assert(V != None && "Unexpected None!");
+  return V;
+}
+
+template<typename MapTy, typename KeyT, typename ValueT>
+static void InsertAndCheck(MapTy &Map, KeyT Key, ValueT Value) {
+  bool inserted = Map.insert(std::make_pair(Key, Value)).second;
+  assert(inserted && "Expr had already retimed?");
+  (void)inserted;
+}
+
+template<typename MapTy, typename KeyT>
+static VASTValPtr LookUp(const MapTy &Map, KeyT Key) {
+  typename MapTy::const_iterator I = Map.find(Key);
+
+  if (I == Map.end())
+    return None;
+
+  return I->second;
+}
+
+VASTValPtr DatapathBLO::eliminateImmediateInvertFlag(VASTValPtr V) {
+  if (VASTImmPtr ImmPtr = dyn_cast<VASTImmPtr>(V))
+    return getOrCreateImmediate(ImmPtr.getAPInt());
+
+  return V;
+}
+
+VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
+  // There is not invert flag to fold.
+  if (!V.isInverted())
+    return V;
+
+  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
+
+  if (Expr == None)
+    return eliminateImmediateInvertFlag(V);
+
+  VASTExpr::Opcode Opcode = Expr->getOpcode();
+  switch (Opcode) {
+    // Only propagate the invert flag across these expressions:
+  case VASTExpr::dpAssign:
+  case VASTExpr::dpBitCat:
+  case VASTExpr::dpBitRepeat:
+  case VASTExpr::dpKeep:
+    break;
+    // Else stop propagating the invert flag here.
+  default:
+    return V;
+  }
+
+  typedef VASTOperandList::op_iterator op_iterator;
+  SmallVector<VASTValPtr, 8> InvertedOperands;
+  // Collect the possible retimed operands.
+  for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
+    VASTValPtr Op = *I;
+    VASTValPtr InvertedOp = eliminateImmediateInvertFlag(Op.invert());
+    InvertedOperands.push_back(InvertedOp);
+  }
+
+  return Builder.buildExpr(Opcode, InvertedOperands, Expr->UB, Expr->LB);
+}
+
+VASTValPtr DatapathBLO::optimizeCone(VASTValPtr V) {
+  // Before we propagete the invert flag, we should optimize the combinational
+  // cone. This may reduce the depth of the combinational cone, and avoid the
+  // unnecessary propagation.
+
+  V = propagateInvertFlag(V);
+
+  return V;
+}
+
+bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
+  VASTValPtr NewV = optimizeCone(V);
+
+  // Return false if nothing changed.
+  if (NewV == V)
+    return false;
+
+  // Perform the replacement if nothing changed.
+  replaceAllUseWith(V, NewV);
+  return true;
+}
+
+namespace {
+struct BitlevelOptPass : public VASTModulePass {
+  static char ID;
+  BitlevelOptPass() : VASTModulePass(ID) {
+    //initializeBitlevelOptPassPass(*PassRegistry::getPassRegistry());
+  }
+
+  bool runSingleIteration(VASTModule &VM, DatapathBLO &BLO);
+
+  bool runOnVASTModule(VASTModule &VM);
+
+
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    VASTModulePass::getAnalysisUsage(AU);
+    AU.addPreservedID(PreSchedBindingID);
+    AU.addPreservedID(ControlLogicSynthesisID);
+  }
+};
+}
+
+char BitlevelOptPass::ID = 0;
+
+bool BitlevelOptPass::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
+  bool Changed = false;
+
+  typedef VASTModule::selector_iterator selector_iterator;
+
+  for (selector_iterator I = VM.selector_begin(), E = VM.selector_end();
+       I != E; ++I) {
+    VASTSelector *Sel = I;
+
+    if (Sel->isSelectorSynthesized()) {
+      // Only optimize the guard and fanin
+      BLO.optimizeAndReplace(Sel->getGuard());
+      BLO.optimizeAndReplace(Sel->getFanin());
+      continue;
+    }
+
+    typedef VASTSelector::const_iterator const_iterator;
+    for (const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+      const VASTLatch &L = *I;
+      BLO.optimizeAndReplace(L);
+      BLO.optimizeAndReplace(L.getGuard());
+    }
+  }
+
+  ++NumIterations;
+  return Changed;
+}
+
+bool BitlevelOptPass::runOnVASTModule(VASTModule &VM) {
+  DatapathBLO BLO(VM);
+
+  if (!runSingleIteration(VM, BLO))
+    return false;
+
+  while (runSingleIteration(VM, BLO))
+    BLO.gc();
+
+  return true;
+}
+
+Pass *llvm::createBitlevelOptPass() {
+  return new BitlevelOptPass();
+}

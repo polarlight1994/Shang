@@ -54,6 +54,7 @@ Pass *createShangTargetTransformInfoPass();
 Pass *createAlwaysSpeculatePass();
 
 Pass *createLUTMappingPass();
+Pass *createBitlevelOptPass();
 Pass *createOptimizePHINodesPass();
 Pass *createTimingNetlistPass();
 Pass *createDataflowAnnotationPass();

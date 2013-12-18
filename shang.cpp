@@ -285,6 +285,8 @@ int main(int argc, char **argv) {
     HLSPasses.add(createMemoryPartitionPass());
 
     if (EnablePreScheduleLUTMapping) HLSPasses.add(createLUTMappingPass());
+    // Run the bit-level optimization.
+    HLSPasses.add(createBitlevelOptPass());
 
     // Perform the scheduling.
     HLSPasses.add(createDataflowAnnotationPass());

@@ -71,7 +71,7 @@ protected:
 
 public:
   explicit MinimalExprBuilderContext(DatapathContainer &Datapath);
-  ~MinimalExprBuilderContext();
+  virtual ~MinimalExprBuilderContext();
 
   using VASTExprBuilderContext::getOrCreateImmediate;
 
