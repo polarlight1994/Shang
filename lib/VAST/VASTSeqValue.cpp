@@ -43,7 +43,7 @@ VASTSelector::VASTSelector(const char *Name, unsigned BitWidth, Type T,
                            VASTNode *Node)
   : VASTNode(vastSelector), Parent(Node), BitWidth(BitWidth), T(T), Guard(this),
     Fanin(this) {
-  Contents.Name = Name;
+  Contents64.Name = Name;
 }
 
 VASTSelector::~VASTSelector() {
@@ -703,11 +703,11 @@ void VASTSelector::setMux(VASTValPtr Fanin, VASTValPtr Guard) {
 }
 
 void VASTSelector::setName(const char *Name) {
-  if (Contents.Name == Name)
+  if (Contents64.Name == Name)
     return;
 
   // Change the name of the selector.
-  Contents.Name = Name;
+  Contents64.Name = Name;
 
   for (def_iterator I = def_begin(), E = def_end(); I != E; ++I) {
     VASTSeqValue *SV = *I;
@@ -744,15 +744,15 @@ VASTSelector *VASTSeqValue::getSelector() const {
 
 void VASTSeqValue::changeSelector(VASTSelector *NewSel) {
   if (NewSel == getSelector()) {
-    assert(Contents.Name != Selector->getName() && "Selector not changed!");
-    Contents.Name = Selector->getName();
+    assert(Contents64.Name != Selector->getName() && "Selector not changed!");
+    Contents64.Name = Selector->getName();
     return;
   }
 
   getSelector()->removeUser(this);
   Selector = NewSel;
   if (Selector) {
-    Contents.Name = Selector->getName();
+    Contents64.Name = Selector->getName();
     Selector->addUser(this);
   }
 }

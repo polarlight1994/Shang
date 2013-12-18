@@ -59,12 +59,12 @@ unsigned VASTPort::getBitWidthImpl() const {
 }
 
 VASTOutPort::VASTOutPort(VASTSelector *Sel) : VASTPort(vastOutPort) {
-  Contents.Sel = Sel;
+  Contents64.Sel = Sel;
   Sel->setParent(this);
 }
 
 VASTSelector *VASTOutPort::getSelector() const {
-  return Contents.Sel;
+  return Contents64.Sel;
 }
 
 const char *VASTOutPort::getNameImpl() const {
@@ -80,27 +80,27 @@ void VASTOutPort::print(vlang_raw_ostream &OS) const {
 }
 
 VASTInPort::VASTInPort(VASTNode *Node) : VASTPort(vastInPort) {
-  Contents.Node = Node;
+  Contents64.Node = Node;
   if (VASTSelector *Sel = dyn_cast<VASTSelector>(Node))
     Sel->setParent(this);
 }
 
 VASTWrapper *VASTInPort::getValue() const {
-  return cast<VASTWrapper>(Contents.Node);
+  return cast<VASTWrapper>(Contents64.Node);
 }
 
 const char *VASTInPort::getNameImpl() const {
-  if (VASTNamedValue *V = dyn_cast<VASTNamedValue>(Contents.Node))
+  if (VASTNamedValue *V = dyn_cast<VASTNamedValue>(Contents64.Node))
     return V->getName();
 
-  return cast<VASTSelector>(Contents.Node)->getName();
+  return cast<VASTSelector>(Contents64.Node)->getName();
 }
 
 unsigned VASTInPort::getBitWidthImpl() const {
-  if (VASTNamedValue *V = dyn_cast<VASTNamedValue>(Contents.Node))
+  if (VASTNamedValue *V = dyn_cast<VASTNamedValue>(Contents64.Node))
     return V->getBitWidth();
 
-  return cast<VASTSelector>(Contents.Node)->getBitWidth();
+  return cast<VASTSelector>(Contents64.Node)->getBitWidth();
 }
 
 void VASTPort::printExternalDriver(raw_ostream &OS, uint64_t InitVal) const {

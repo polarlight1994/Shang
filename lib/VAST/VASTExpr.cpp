@@ -252,14 +252,14 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
 VASTExpr::VASTExpr(Opcode Opc, unsigned NumOps, unsigned UB, unsigned LB)
   : VASTValue(vastExpr, UB - LB), VASTOperandList(NumOps),
     Opc(Opc), UB(UB), LB(LB) {
-  Contents.Name = 0;
+  Contents64.Name = 0;
   assert(NumOps && "Unexpected empty operand list!");
 }
 
 VASTExpr::VASTExpr()
   : VASTValue(vastExpr, 0), VASTOperandList(0), Opc(-1),
     UB(0), LB(0) {
-  Contents.Name = 0;
+  Contents64.Name = 0;
 }
 
 VASTExpr::~VASTExpr() {
@@ -270,15 +270,15 @@ bool VASTExpr::isAnonymous() const {
 }
 
 bool VASTExpr::hasName() const {
-  return Contents.Name != 0;
+  return Contents64.Name != 0;
 }
 
 void VASTExpr::nameExpr(const char *Name) {
-  Contents.Name = Name;
+  Contents64.Name = Name;
 }
 
 const char *VASTExpr::getTempName() const {
-  return Contents.Name;
+  return Contents64.Name;
 }
 
 void

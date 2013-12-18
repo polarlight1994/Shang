@@ -34,14 +34,14 @@ VASTSlot::VASTSlot(unsigned SlotNum, VASTCtrlRgn &R, BasicBlock *ParentBB,
   : VASTNode(vastSlot), R(R), SlotReg(this, 0), SlotActive(this, 0),
     SlotGuard(this, Pred), SlotNum(SlotNum), IsSubGrp(IsSubGrp),
     Schedule(Schedule) {
-  Contents.ParentBB = ParentBB;
+  Contents64.ParentBB = ParentBB;
 }
 
 VASTSlot::VASTSlot(unsigned slotNum, VASTCtrlRgn &R)
   : VASTNode(vastSlot), R(R), SlotReg(this, 0), SlotActive(this, 0),
     SlotGuard(this, VASTConstant::True), SlotNum(slotNum), IsSubGrp(false),
     Schedule(0) {
-  Contents.ParentBB = 0;
+  Contents64.ParentBB = 0;
 }
 
 VASTSlot::~VASTSlot() {
@@ -74,7 +74,7 @@ void VASTSlot::copySignals(VASTSlot *S) {
 }
 
 BasicBlock *VASTSlot::getParent() const {
-  return Contents.ParentBB;
+  return Contents64.ParentBB;
 }
 
 bool VASTSlot::hasNextSlot(VASTSlot *NextSlot) const {

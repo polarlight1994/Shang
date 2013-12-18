@@ -88,7 +88,7 @@ public:
   VASTNode *getParent() const;
   void setParent(VASTNode *N);
 
-  const char *getName() const { return Contents.Name; }
+  const char *getName() const { return Contents64.Name; }
   unsigned getBitWidth() const { return BitWidth; }
 
   Type getType() const { return Type(T); }

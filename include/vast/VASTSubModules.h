@@ -47,7 +47,7 @@ class VASTSubModule : public VASTSubModuleBase {
   void printSubModuleLogic(vlang_raw_ostream &OS) const;
 public:
   unsigned getNum() const { return Idx; }
-  const char *getName() const { return Contents.Name; }
+  const char *getName() const { return Contents64.Name; }
 
   void addInstuction(Instruction *I) { Insts.push_back(I); }
 

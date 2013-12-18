@@ -77,14 +77,18 @@ public:
   };
 
 protected:
-  union {
+  union VASTNodeContents64Ty {
     const char *Name;
     BasicBlock *ParentBB;
     Value *LLVMValue;
     VASTSelector *Sel;
     VASTNode *Node;
     uint64_t Int;
-  } Contents;
+  } Contents64;
+
+  union VASTNodeContents32Ty {
+    uint32_t Bitwidth;
+  } Contents32;
 
   const uint8_t NodeT : 7;
   bool IsDead         : 1;
@@ -486,8 +490,7 @@ protected:
 
 public:
   virtual ~VASTValue();
-  const uint8_t BitWidth;
-  unsigned getBitWidth() const { return BitWidth; }
+  unsigned getBitWidth() const { return Contents32.Bitwidth; }
 
   typedef VASTUseIterator<UseListTy::iterator, VASTNode> use_iterator;
   use_iterator use_begin() { return use_iterator(UseList.begin()); }
@@ -539,7 +542,7 @@ protected:
     : VASTValue(T, BitWidth) {
     assert((T == vastSymbol || T == vastWrapper || T == vastSeqValue)
            && "Bad DeclType!");
-    Contents.Name = Name;
+    Contents64.Name = Name;
   }
 
   virtual void printAsOperandImpl(raw_ostream &OS, unsigned UB,
@@ -549,7 +552,7 @@ protected:
   }
 
 public:
-  const char *getName() const { return Contents.Name; }
+  const char *getName() const { return Contents64.Name; }
 
   static void PrintDecl(raw_ostream &OS, const Twine &Name, unsigned BitWidth,
                         bool declAsRegister, const char *Terminator = ";\n");
@@ -576,7 +579,7 @@ protected:
 
   VASTSubModuleBase(VASTTypes DeclType, const char *Name, unsigned Idx)
     : VASTNode(DeclType), Idx(Idx) {
-    Contents.Name = Name;
+    Contents64.Name = Name;
   }
 
   void addFanin(VASTSelector *S);

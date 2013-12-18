@@ -169,7 +169,7 @@ void VASTSeqOp::printGuard(raw_ostream &OS) const {
 VASTSeqOp::VASTSeqOp(VASTTypes T, VASTSlot *S, bool UseSlotActive, unsigned Size)
   : VASTOperandList(Size + 1), VASTNode(T), S(S, UseSlotActive) {
   S->addOperation(this);
-  Contents.LLVMValue = 0;
+  Contents64.LLVMValue = 0;
 }
 
 void VASTSeqOp::replaceGuardBy(VASTValPtr V, bool UseSlotActive) {
@@ -187,13 +187,13 @@ VASTValPtr VASTSeqOp::getSlotActive() const {
 }
 
 Value *VASTSeqOp::getValue() const {
-  return Contents.LLVMValue;
+  return Contents64.LLVMValue;
 }
 
 void VASTSeqOp::annotateValue(Value *V) {
   assert((getValue() == 0 || getValue() == V)
          && "Already annotated with some value!");
-  Contents.LLVMValue =  V;
+  Contents64.LLVMValue =  V;
 }
 
 void VASTSeqOp::eraseOperand(unsigned Idx) {
