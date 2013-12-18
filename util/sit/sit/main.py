@@ -110,8 +110,7 @@ def main(builtinParameters = {}):
   option_space_dict['vast_max_combinational_rom_logic_level'] = [ 1 ]
   option_space_dict['shang_enable_pre_schedule_lut_mapping'] = [ 'true' ]
   option_space_dict['shang_enable_register_sharing'] = [ 'false' ]
-  iterations = 4 if args.mode == TestStep.AlteraSyn \
-               else 1
+  iterations = 1
   option_space_dict['shang_max_scheduling_iteration'] = [ iterations ]
   option_space_dict['shang_dump_intermediate_netlist'] = [ 'true' ]
   option_space_dict['shang_constraints_factor'] = [ -0.1 ]
