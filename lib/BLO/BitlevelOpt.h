@@ -67,6 +67,8 @@ public:
 
 class DatapathBLO : public MinimalExprBuilderContext, public BitMaskContext {
   VASTExprBuilder Builder;
+  // Do not optimize the same expr twice.
+  std::set<VASTExpr*> Visited;
 
   VASTValPtr optimizeExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                           unsigned BitWidth);
@@ -75,22 +77,21 @@ class DatapathBLO : public MinimalExprBuilderContext, public BitMaskContext {
   VASTValPtr propagateInvertFlag(VASTValPtr V);
   VASTValPtr eliminateImmediateInvertFlag(VASTValPtr V);
 
-  VASTValPtr optimizeBitCat(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth);
-  VASTValPtr optimizeBitRepeat(VASTValPtr V, unsigned Times);
-  VASTValPtr optimizeAssign(VASTValPtr V, unsigned UB, unsigned LB);
+  bool optimizeBitCat(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth);
+  bool optimizeBitRepeat(VASTValPtr V, unsigned Times);
+  bool optimizeAssign(VASTValPtr V, unsigned UB, unsigned LB);
 
-  VASTValPtr optimizeCone(VASTValPtr V);
-
+  bool optimizeExpr(VASTExpr *Expr);
+  bool replaceIfNotEqual(VASTValPtr From, VASTValPtr To);
   // Override some hook for the ExprBUuilder
   virtual void deleteContenxt(VASTValue *V);
-  virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 public:
   explicit DatapathBLO(DatapathContainer &Datapath);
   ~DatapathBLO();
 
   bool optimizeAndReplace(VASTValPtr V);
 
-  void gc();
+  void resetForNextIteration();
 };
 }
 #endif

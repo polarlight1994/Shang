@@ -153,7 +153,8 @@ DatapathBLO::DatapathBLO(DatapathContainer &Datapath)
 
 DatapathBLO::~DatapathBLO() {}
 
-void DatapathBLO::gc() {
+void DatapathBLO::resetForNextIteration() {
+  Visited.clear();
   Datapath.gc();
 }
 
@@ -162,32 +163,20 @@ void DatapathBLO::deleteContenxt(VASTValue *V) {
   BitMaskCache.erase(V);
 }
 
-void DatapathBLO::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
-  return MinimalExprBuilderContext::replaceAllUseWith(From, To);
+bool DatapathBLO::replaceIfNotEqual(VASTValPtr From, VASTValPtr To) {
+  if (From == To)
+    return false;
+
+  replaceAllUseWith(From, To);
+
+  // Now To is a optimized node, we will not optimize it again in the current
+  // iteration.
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(To.get()))
+    Visited.insert(Expr);
+
+  return true;
 }
 
-template<typename T>
-static PtrInvPair<T> check(PtrInvPair<T> V) {
-  assert(V != None && "Unexpected None!");
-  return V;
-}
-
-template<typename MapTy, typename KeyT, typename ValueT>
-static void InsertAndCheck(MapTy &Map, KeyT Key, ValueT Value) {
-  bool inserted = Map.insert(std::make_pair(Key, Value)).second;
-  assert(inserted && "Expr had already retimed?");
-  (void)inserted;
-}
-
-template<typename MapTy, typename KeyT>
-static VASTValPtr LookUp(const MapTy &Map, KeyT Key) {
-  typename MapTy::const_iterator I = Map.find(Key);
-
-  if (I == Map.end())
-    return None;
-
-  return I->second;
-}
 
 VASTValPtr DatapathBLO::eliminateImmediateInvertFlag(VASTValPtr V) {
   if (VASTImmPtr ImmPtr = dyn_cast<VASTImmPtr>(V))
@@ -214,7 +203,9 @@ VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
   case VASTExpr::dpBitRepeat:
   case VASTExpr::dpKeep:
     break;
-    // Else stop propagating the invert flag here.
+    // Else stop propagating the invert flag here. In fact, the invert
+    // flag cost nothing in LUT-based FPGA. What we worry about is the
+    // invert flag may confuse the bit-level optimization.
   default:
     return V;
   }
@@ -231,27 +222,56 @@ VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
   return Builder.buildExpr(Opcode, InvertedOperands, Expr->UB, Expr->LB);
 }
 
-VASTValPtr DatapathBLO::optimizeCone(VASTValPtr V) {
-  // Before we propagete the invert flag, we should optimize the combinational
-  // cone. This may reduce the depth of the combinational cone, and avoid the
-  // unnecessary propagation.
-
-  V = propagateInvertFlag(V);
-
-  return V;
+bool DatapathBLO::optimizeExpr(VASTExpr *Expr) {
+  return false;
 }
 
 bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
-  VASTValPtr NewV = optimizeCone(V);
+  VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
 
-  // Return false if nothing changed.
-  if (NewV == V)
+  if (Expr == NULL)
+    return replaceIfNotEqual(V, eliminateImmediateInvertFlag(V));
+
+  // This expression had been optimized in the current iteration.
+  if (Visited.count(Expr))
     return false;
 
-  // Perform the replacement if nothing changed.
-  replaceAllUseWith(V, NewV);
-  return true;
+  bool Replaced = false;
+
+  std::set<VASTExpr*> LocalVisited;
+  typedef VASTOperandList::op_iterator ChildIterator;
+  std::vector<std::pair<VASTExpr*, ChildIterator> > VisitStack;
+
+  VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
+
+  while (!VisitStack.empty()) {
+    VASTExpr *CurNode = VisitStack.back().first;
+    ChildIterator &It = VisitStack.back().second;
+
+    // We have visited all children of current node.
+    if (It == CurNode->op_end()) {
+      VisitStack.pop_back();
+      Replaced |= optimizeExpr(Expr);
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    VASTExpr *ChildExpr = It->getAsLValue<VASTExpr>();
+    ++It;
+
+    if (ChildExpr == NULL)
+      continue;
+
+    // No need to visit the same node twice
+    if (!LocalVisited.insert(ChildExpr).second || Visited.count(ChildExpr))
+      continue;
+
+    VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
+  }
+
+  return Replaced;
 }
+
 
 namespace {
 struct BitlevelOptPass : public VASTModulePass {
@@ -310,7 +330,7 @@ bool BitlevelOptPass::runOnVASTModule(VASTModule &VM) {
     return false;
 
   while (runSingleIteration(VM, BLO))
-    BLO.gc();
+    BLO.resetForNextIteration();
 
   return true;
 }
