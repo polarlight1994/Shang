@@ -74,13 +74,6 @@ VASTValPtr VASTExprBuilder::buildNotExpr(VASTValPtr U) {
   return U.invert();
 }
 
-static VASTExprPtr getAsBitSliceExpr(VASTValPtr V) {
-  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
-  if (!Expr || !Expr->isSubBitSlice()) return 0;
-
-  return Expr;
-}
-
 VASTValPtr VASTExprBuilder::buildBitCatExpr(ArrayRef<VASTValPtr> Ops,
                                             unsigned BitWidth) {
   return createExpr(VASTExpr::dpBitCat, Ops, BitWidth, 0);
