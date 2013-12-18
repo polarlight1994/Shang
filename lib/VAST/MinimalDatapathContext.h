@@ -26,9 +26,9 @@ public:
   MinimalDatapathContext(DatapathContainer &Datapath, DataLayout *TD);
   ~MinimalDatapathContext();
 
-  using VASTExprBuilderContext::getOrCreateImmediate;
+  using VASTExprBuilderContext::getConstant;
 
-  VASTImmediate *getOrCreateImmediate(const APInt &Value);
+  VASTConstant *getConstant(const APInt &Value);
 
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                         unsigned UB, unsigned LB);

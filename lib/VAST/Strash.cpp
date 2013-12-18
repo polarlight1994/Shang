@@ -51,8 +51,8 @@ class StrashTable {
   BumpPtrAllocator Allocator;
 
   void profileLeaf(VASTValue *Ptr, FoldingSetNodeID &ID) {
-    if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(Ptr)) {
-      ID.Add(Imm->getAPInt());
+    if (VASTConstant *C = dyn_cast<VASTConstant>(Ptr)) {
+      ID.Add(C->getAPInt());
       return;
     }
 

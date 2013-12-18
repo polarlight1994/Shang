@@ -415,7 +415,7 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
 
     // Pipeline the guarding condition.
     VASTSeqValue *PipelinedEn = getValueAt(EnSel, S);
-    VM->assignCtrlLogic(PipelinedEn, VASTImmediate::True, S, FICnd, true);
+    VM->assignCtrlLogic(PipelinedEn, VASTConstant::True, S, FICnd, true);
     // Read the pipelined guarding condition instead.
     FI->L.replacePredBy(PipelinedEn, false);
 

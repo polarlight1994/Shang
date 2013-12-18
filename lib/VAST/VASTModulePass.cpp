@@ -168,7 +168,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   }
 
   void addSuccSlot(VASTSlot *S, VASTSlot *NextSlot,
-                   VASTValPtr Cnd = VASTImmediate::True,
+                   VASTValPtr Cnd = VASTConstant::True,
                    TerminatorInst *Inst = 0) {
     // If the Br is already exist, simply or the conditions together.
     assert(!S->hasNextSlot(NextSlot) && "Edge had already existed!");
@@ -274,11 +274,11 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
     // to get it as operand, unless the basic block is unreachable.
     assert(DF.isBlockUnreachable(Inst->getParent())
            && "The VASTValPtr for Instruction not found!");
-    return getOrCreateImmediate(0, getValueSizeInBits(Inst));
+    return getConstant(0, getValueSizeInBits(Inst));
   }
 
   if (ConstantInt *Int = dyn_cast<ConstantInt>(V))
-    return indexVASTExpr(V, getOrCreateImmediate(Int->getValue()));
+    return indexVASTExpr(V, getConstant(Int->getValue()));
 
   if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
     unsigned SizeInBits = getValueSizeInBits(GV);
@@ -287,9 +287,9 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
     const std::string Name = ShangMangle(GV->getName());
     if (!Bus->isDefault()) {
       unsigned StartOffset = Bus->getStartOffset(GV);
-      VASTImmediate *Imm = getOrCreateImmediate(StartOffset, SizeInBits);
-      // FIXME: Annotate the GV to the Immediate.
-      return indexVASTExpr(GV, Imm);
+      VASTConstant *C = getConstant(StartOffset, SizeInBits);
+      // FIXME: Annotate the GV to the Constant.
+      return indexVASTExpr(GV, C);
     }
     
     // If the GV is assigned to the memory port 0, create a wrapper wire for it.
@@ -338,7 +338,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
 
   if (ConstantPointerNull *PtrNull = dyn_cast<ConstantPointerNull>(V)) {
     unsigned SizeInBit = getValueSizeInBits(PtrNull);
-    return indexVASTExpr(V, getOrCreateImmediate(APInt::getNullValue(SizeInBit)));
+    return indexVASTExpr(V, getConstant(APInt::getNullValue(SizeInBit)));
   }
 
   llvm_unreachable("Unhandle value!");
@@ -398,7 +398,7 @@ void VASTModuleBuilder::buildInterface(Function *F) {
     = R.lauchInst(EntryGrp, StartPort, 1, UndefValue::get(RetTy), true);
   VASTSelector *FinPort
     = cast<VASTOutPort>(A->getPort(VASTModule::Finish)).getSelector();
-  ResetFin->addSrc(VASTImmediate::False, 0, FinPort);
+  ResetFin->addSrc(VASTConstant::False, 0, FinPort);
 }
 
 //===----------------------------------------------------------------------===//
@@ -415,7 +415,7 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
 
     for (succ_iterator I = succ_begin(BB), E = succ_end(BB); I != E; ++I) {
       BasicBlock *Succ = *I;
-      // FIXME: Use VASTImmediate::False, and prevent the operation from being
+      // FIXME: Use VASTConstant::False, and prevent the operation from being
       // optimized away.
       buildConditionalTransition(Succ, S, A->getOrCreateSymbol("1'b0", 1), *Inst);
     }
@@ -450,7 +450,7 @@ void VASTModuleBuilder::visitPHIsInSucc(VASTSlot *S, VASTValPtr Cnd,
 
     Value *LiveOutedFromBB = PN->DoPHITranslation(BB, CurBB);
     VASTValPtr LiveOut = DF.isBlockUnreachable(CurBB) ?
-                         getOrCreateImmediate(0, BitWidth) :
+                         getConstant(0, BitWidth) :
                          getAsOperandImpl(LiveOutedFromBB);
 
     VASTSeqValue *PHISeqVal = getOrCreateSeqVal(PN);
@@ -476,13 +476,13 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
 
   // Create the virtual slot represent the launch of the design.
-  VASTSlot *SubGrp = createSubGroup(NULL, VASTImmediate::True, CurSlot);
+  VASTSlot *SubGrp = createSubGroup(NULL, VASTConstant::True, CurSlot);
   // Jump back to the start slot on return.
-  addSuccSlot(SubGrp, R.getStartSlot(), VASTImmediate::True, &I);
+  addSuccSlot(SubGrp, R.getStartSlot(), VASTConstant::True, &I);
 
   unsigned NumOperands = I.getNumOperands();
   VASTSeqInst *SeqInst =
-    R.lauchInst(SubGrp, VASTImmediate::True, NumOperands + 1, &I, true);
+    R.lauchInst(SubGrp, VASTConstant::True, NumOperands + 1, &I, true);
 
   // Assign the return port if necessary.
   if (NumOperands) {
@@ -495,17 +495,17 @@ void VASTModuleBuilder::visitReturnInst(ReturnInst &I) {
   // Enable the finish port.
   VASTSelector *FinPort
     = cast<VASTOutPort>(A->getPort(VASTModule::Finish)).getSelector();
-  SeqInst->addSrc(VASTImmediate::True, NumOperands, FinPort);
+  SeqInst->addSrc(VASTConstant::True, NumOperands, FinPort);
 }
 
 void VASTModuleBuilder::visitUnreachableInst(UnreachableInst &I) {
   VASTSlot *CurSlot = getLatestSlot(I.getParent());
 
   // Create the virtual slot represent the launch of the design.
-  VASTSlot *SubGrp = createSubGroup(NULL, VASTImmediate::True, CurSlot);
+  VASTSlot *SubGrp = createSubGroup(NULL, VASTConstant::True, CurSlot);
   // DIRTYHACK: Simply jump back the start slot.
   // Construct the control flow.
-  addSuccSlot(SubGrp, R.getStartSlot(), VASTImmediate::True, &I);
+  addSuccSlot(SubGrp, R.getStartSlot(), VASTConstant::True, &I);
 }
 
 void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
@@ -514,7 +514,7 @@ void VASTModuleBuilder::visitBranchInst(BranchInst &I) {
   if (I.isUnconditional()) {
     BasicBlock *DstBB = I.getSuccessor(0);
 
-    buildConditionalTransition(DstBB, CurSlot, VASTImmediate::True, I);
+    buildConditionalTransition(DstBB, CurSlot, VASTConstant::True, I);
     return;
   }
 
@@ -609,7 +609,7 @@ void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
     const CaseRange &Case = *CI;
     // Simple case, test if the CndVal is equal to a specific value.
     if (Case.High == Case.Low) {
-      VASTValPtr CaseVal = getOrCreateImmediate(Case.High);
+      VASTValPtr CaseVal = getConstant(Case.High);
       VASTValPtr Pred = Builder.buildEQ(CndVal, CaseVal);
       VASTValPtr &BBPred = CaseMap[Case.BB];
       if (!BBPred) BBPred = Pred;
@@ -619,9 +619,9 @@ void VASTModuleBuilder::visitSwitchInst(SwitchInst &I) {
     }
 
     // Test if Low <= CndVal <= High
-    VASTValPtr Low = Builder.getImmediate(Case.Low);
+    VASTValPtr Low = Builder.getConstant(Case.Low);
     VASTValPtr LowCmp = Builder.buildICmpOrEqExpr(VASTExpr::dpUGT, CndVal, Low);
-    VASTValPtr High = Builder.getImmediate(Case.High);
+    VASTValPtr High = Builder.getConstant(Case.High);
     VASTValPtr HighCmp = Builder.buildICmpOrEqExpr(VASTExpr::dpUGT, High, CndVal);
     VASTValPtr Pred = Builder.buildAndExpr(LowCmp, HighCmp, 1);
     VASTValPtr &BBPred = CaseMap[Case.BB];
@@ -667,7 +667,7 @@ void VASTModuleBuilder::visitCallSite(CallSite CS) {
   BasicBlock *ParentBB = CS->getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
   VASTSeqInst *Op
-    = R.lauchInst(Slot, VASTImmediate::True, Args.size() + 1, Inst, false);
+    = R.lauchInst(Slot, VASTConstant::True, Args.size() + 1, Inst, false);
   // Build the logic to lauch the module and read the result.
   buildSubModuleOperation(Op, SubMod, Args);
 }
@@ -702,7 +702,7 @@ void VASTModuleBuilder::visitBinaryOperator(BinaryOperator &I) {
   BasicBlock *ParentBB = I.getParent();
   VASTSlot *Slot = getLatestSlot(ParentBB);
   VASTSeqInst *Op
-    = R.lauchInst(Slot, VASTImmediate::True, I.getNumOperands(), &I, false);
+    = R.lauchInst(Slot, VASTConstant::True, I.getNumOperands(), &I, false);
   buildSubModuleOperation(Op, SubMod, Ops);
 }
 
@@ -752,7 +752,7 @@ void VASTModuleBuilder::buildSubModuleOperation(VASTSeqInst *Inst,
   if (VASTSelector *RetPort = SubMod->getRetPort()) {
     VASTSeqValue *TimedReturn = A->createSeqValue(RetPort, 0, V);
     VASTSeqValue *Result = getOrCreateSeqVal(Inst->getValue());
-    R.latchValue(Result, TimedReturn, Slot, VASTImmediate::True, V, Latency);
+    R.latchValue(Result, TimedReturn, Slot, VASTConstant::True, V, Latency);
     // Move the the next slot so that the operation can correctly read the
     // returned value
     advanceToNextSlot(Slot);
@@ -812,11 +812,11 @@ VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
     VASTValPtr ShiftAmt = ByteOffset;
     // If the byte offset is unknown in compile time, get the shift amount from
     // the higher part of the bus output.
-    if (!isa<VASTImmediate>(ByteOffset.get()))
+    if (!isa<VASTConstant>(ByteOffset.get()))
       ShiftAmt = Builder.buildBitSliceExpr(Result, DataWidth + ByteAddrWidth,
                                            DataWidth);
     // Again, convert the shift amount in bytes to shift amount in bits.
-    VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getImmediate(0, 3) };
+    VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getConstant(0, 3) };
     ShiftAmt = Builder.buildBitCatExpr(ShiftAmtBits, ByteAddrWidth + 3);
     // Align the result.
     V = Builder.buildShiftExpr(VASTExpr::dpSRL, V, ShiftAmt, Bus->getDataWidth());
@@ -840,7 +840,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   if (Bus->requireByteEnable()) NumOperands += 1;
 
   VASTSeqOp *Op
-    = R.lauchInst(Slot, VASTImmediate::True, NumOperands, &I, false);
+    = R.lauchInst(Slot, VASTConstant::True, NumOperands, &I, false);
   unsigned CurSrcIdx = 0;
 
   VASTValPtr AddrVal = getAsOperandImpl(Addr);
@@ -866,7 +866,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
       ByteOffset = Builder.buildBitSliceExpr(AddrVal, ByteAddrWidth, 0);
       VASTValPtr ShiftAmt = ByteOffset;
       // Shift the data by Bytes requires the ShiftAmt multiplied by 8.
-      VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getImmediate(0, 3) };
+      VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getConstant(0, 3) };
       ShiftAmt = Builder.buildBitCatExpr(ShiftAmtBits, ByteAddrWidth + 3);
       ValToStore = Builder.buildShiftExpr(VASTExpr::dpShl, ValToStore, ShiftAmt,
                                           Bus->getDataWidth());
@@ -874,17 +874,17 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
 
     Op->addSrc(ValToStore, CurSrcIdx++, Bus->getWData(0));
     if (Bus->isDefault())
-      Op->addSrc(VASTImmediate::True, CurSrcIdx++, Bus->getWriteEnable());
+      Op->addSrc(VASTConstant::True, CurSrcIdx++, Bus->getWriteEnable());
   }
 
   // Explicitly enable the memory bus is required if the bus is external.
   if (Bus->isDefault())
-    Op->addSrc(VASTImmediate::True, CurSrcIdx++, Bus->getEnable());
+    Op->addSrc(VASTConstant::True, CurSrcIdx++, Bus->getEnable());
 
   // Compute the byte enable, use port 0..
   if (Bus->requireByteEnable()) {
     VASTValPtr ByteEn
-      = Builder.getImmediate(getByteEnable(Addr), Bus->getByteEnWidth());
+      = Builder.getConstant(getByteEnable(Addr), Bus->getByteEnWidth());
     if (!Bus->isDefault()) {
       // We also need to align the byte enables.
       unsigned ByteAddrWidth = Bus->getByteAddrWidth();
@@ -913,7 +913,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     VASTRegister *ResultRegister
       = createLoadRegister(I, TimedRData->getBitWidth());
     VASTSeqValue *Result = A->createSeqValue(ResultRegister->getSelector(), 0, &I);
-    R.latchValue(Result, TimedRData, Slot, VASTImmediate::True, &I, Latency);
+    R.latchValue(Result, TimedRData, Slot, VASTConstant::True, &I, Latency);
 
     // Alignment is required if the Bus has byteenable.
     VASTValPtr V = alignLoadResult(Result, ByteOffset, Bus);

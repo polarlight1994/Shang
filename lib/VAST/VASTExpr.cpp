@@ -137,7 +137,7 @@ static void printBitCat(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
 }
 
 static void printBitRepeat(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
-  OS << '{' << cast<VASTImmediate>((Ops[1]).get())->getAPInt() << '{';
+  OS << '{' << cast<VASTConstant>((Ops[1]).get())->getAPInt() << '{';
   Ops[0].printAsOperand(OS);
   OS << "}}";
 }

@@ -36,8 +36,8 @@ void DatapathContainer::notifyDeletion(VASTExpr *Expr) {
 
 //----------------------------------------------------------------------------//
 void DatapathContainer::removeValueFromCSEMaps(VASTNode *N) {
-  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(N)) {
-    UniqueImms.RemoveNode(Imm);
+  if (VASTConstant *C = dyn_cast<VASTConstant>(N)) {
+    UniqueConstants.RemoveNode(C);
     return;
   }
 
@@ -63,8 +63,8 @@ void DatapathContainer::addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap) {
 }
 
 void DatapathContainer::addModifiedValueToCSEMaps(VASTNode *N) {
-  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(N)) {
-    addModifiedValueToCSEMaps(Imm, UniqueImms);
+  if (VASTConstant *C = dyn_cast<VASTConstant>(N)) {
+    addModifiedValueToCSEMaps(C, UniqueConstants);
     return;
   }
 
@@ -168,7 +168,7 @@ void DatapathContainer::reset() {
   assert(Exprs.empty() && "Expressions are not completely deleted!");
 
   UniqueExprs.clear();
-  UniqueImms.clear();
+  UniqueConstants.clear();
   Allocator.Reset();
 }
 
@@ -179,22 +179,22 @@ DatapathContainer::~DatapathContainer() {
   reset();
 }
 
-VASTImmediate *DatapathContainer::getOrCreateImmediateImpl(const APInt &Value) {
+VASTConstant *DatapathContainer::getConstantImpl(const APInt &Value) {
   // True and False are not managed by DatapathContainer.
   if (Value.getBitWidth() == 1)
-    return Value.getBoolValue() ? VASTImmediate::True : VASTImmediate::False;
+    return Value.getBoolValue() ? VASTConstant::True : VASTConstant::False;
 
   FoldingSetNodeID ID;
 
   Value.Profile(ID);
 
   void *IP = 0;
-  if (VASTImmediate *V = UniqueImms.FindNodeOrInsertPos(ID, IP))
+  if (VASTConstant *V = UniqueConstants.FindNodeOrInsertPos(ID, IP))
     return V;
 
-  void *P = Allocator.Allocate(sizeof(VASTImmediate), alignOf<VASTImmediate>());
-  VASTImmediate *V = new (P) VASTImmediate(Value);
-  UniqueImms.InsertNode(V, IP);
+  void *P = Allocator.Allocate(sizeof(VASTConstant), alignOf<VASTConstant>());
+  VASTConstant *V = new (P) VASTConstant(Value);
+  UniqueConstants.InsertNode(V, IP);
 
   return V;
 }

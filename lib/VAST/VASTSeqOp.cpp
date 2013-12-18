@@ -338,7 +338,7 @@ void VASTSeqCtrlOp::print(raw_ostream &OS) const {
 //----------------------------------------------------------------------------//
 VASTSlotCtrl::VASTSlotCtrl(VASTSlot *S, VASTNode *N)
   : VASTSeqOp(vastSlotCtrl, S, true, 1), TargetSlot(0) {
-  VASTValue *Src = VASTImmediate::True;
+  VASTValue *Src = VASTConstant::True;
   if (VASTSlot *S = dyn_cast<VASTSlot>(N)) TargetSlot = S;
   else                                     Src = cast<VASTValue>(N);
 

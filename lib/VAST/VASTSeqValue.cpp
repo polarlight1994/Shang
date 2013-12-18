@@ -565,7 +565,7 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
     if (isa<VASTOutPort>(getParent())) {
       OS.always_ff_begin();
       OS << getName()  << " <= "
-         << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false) << ";\n";
+         << VASTConstant::buildLiteral(InitVal, getBitWidth(), false) << ";\n";
       OS.always_ff_end();
     }
 
@@ -584,7 +584,7 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   OS.always_ff_begin();
   // Reset the register.
   OS << getName()  << " <= "
-     << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false) << ";\n";
+     << VASTConstant::buildLiteral(InitVal, getBitWidth(), false) << ";\n";
 
   OS.else_begin();
 
@@ -792,6 +792,6 @@ void VASTRegister::print(raw_ostream &OS) const {
 
 void VASTRegister::printDecl(raw_ostream &OS) const {
   VASTNamedValue::PrintDecl(OS, Sel->getName(), Sel->getBitWidth(), true, "");
-  OS << " = " << VASTImmediate::buildLiteral(InitVal, Sel->getBitWidth(), false)
+  OS << " = " << VASTConstant::buildLiteral(InitVal, Sel->getBitWidth(), false)
      <<  ";\n";
 }

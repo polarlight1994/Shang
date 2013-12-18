@@ -178,7 +178,7 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   VASTValPtr Guard = GB.buildGuard();
 
   if (Sel->isEnable() || Sel->isSlot()) {
-    Sel->setMux(VASTImmediate::True, Guard);
+    Sel->setMux(VASTConstant::True, Guard);
     return;
   }
 
@@ -450,7 +450,7 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   }
 
   // Build the final fanin only if the selector is not enable.
-  VASTValPtr FI = VASTImmediate::True;
+  VASTValPtr FI = VASTConstant::True;
   if (!Sel->isEnable() && !Sel->isSlot())
     FI = Builder.buildOrExpr(AllFanins, Bitwidth);
 

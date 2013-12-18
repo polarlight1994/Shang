@@ -84,7 +84,7 @@ public:
   SlotListTy &getSLotList() { return Slots; }
 
   VASTSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB, unsigned Schedule,
-                       VASTValPtr Pred = VASTImmediate::True,
+                       VASTValPtr Pred = VASTConstant::True,
                        bool IsVirtual = false);
 
   VASTSlot *getLandingSlot();

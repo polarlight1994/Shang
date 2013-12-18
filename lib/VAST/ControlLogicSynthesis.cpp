@@ -117,7 +117,7 @@ VASTValPtr ControlLogicBuilder::buildSlotReadyExpr(VASTSlot *S) {
     }
 
   // No waiting signal means always ready.
-  if (Ops.empty()) return VASTImmediate::True;
+  if (Ops.empty()) return VASTConstant::True;
 
   return Builder.buildAndExpr(Ops, 1);
 }
@@ -143,7 +143,7 @@ void ControlLogicBuilder::buildSlotReadyLogic(VASTSlot *S) {
 }
 
 void ControlLogicBuilder::buildSlotLogic(VASTSlot *S) {
-  VASTValPtr AlwaysTrue = VASTImmediate::True;
+  VASTValPtr AlwaysTrue = VASTConstant::True;
 
   std::map<const VASTSeqValue*, SuccVecTy>::const_iterator at
     = SlotSuccs.find(S->getValue());

@@ -225,7 +225,7 @@ ScheduleEmitter::cloneSlotCtrl(VASTSlotCtrl *Op, VASTSlot *ToSlot) {
 
   // Some times we may even try to fold the BB through a 'false path' ... such
   // folding can be safely skipped.
-  if (Cnd == VASTImmediate::False) {
+  if (Cnd == VASTConstant::False) {
     ++NumFalsePathSkip;
     return 0;
   }
@@ -314,7 +314,7 @@ VASTSeqInst *ScheduleEmitter::cloneSeqInst(VASTSeqInst *Op, VASTSlot *ToSlot) {
 
   // Some times we may even try to fold the BB through a 'false path' ... such
   // folding can be safely skipped.
-  if (Cnd == VASTImmediate::False) {
+  if (Cnd == VASTConstant::False) {
     ++NumFalsePathSkip;
     return 0;
   }
@@ -416,7 +416,7 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
     while (CurSlotNum != EmittedSlotNum) {
       ++EmittedSlotNum;
       VASTSlot *NextSlot = createSlot(BB, EntrySchedSlot + EmittedSlotNum - EntrySlotNum + 1);
-      addSuccSlot(CurSlot, NextSlot, VASTImmediate::True);
+      addSuccSlot(CurSlot, NextSlot, VASTConstant::True);
       CurSlot = NextSlot;
     }
 
@@ -758,7 +758,7 @@ void RegisterFolding::run() {
 
     if (S->IsSubGrp) continue;
 
-    assert(S->getGuard() == VASTImmediate::True && "Unexpected guarded state!");
+    assert(S->getGuard() == VASTConstant::True && "Unexpected guarded state!");
 
     // Share the signal to the virtual slots, because the virtual slot reachable
     // from this slot without visiting any non-virtual slots are sharing the

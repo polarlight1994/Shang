@@ -217,7 +217,7 @@ VASTValue::~VASTValue() {
 //===----------------------------------------------------------------------===//
 // Value and type printing
 std::string
-VASTImmediate::buildLiteral(uint64_t Value, unsigned bitwidth, bool isMinValue) {
+VASTConstant::buildLiteral(uint64_t Value, unsigned bitwidth, bool isMinValue) {
   std::string ret;
   ret = utostr_32(bitwidth) + '\'';
   if (bitwidth == 1) ret += "b";
@@ -240,7 +240,7 @@ VASTImmediate::buildLiteral(uint64_t Value, unsigned bitwidth, bool isMinValue) 
   return ret;
 }
 
-void VASTImmediate::printAsOperandImpl(raw_ostream &OS, unsigned UB,
+void VASTConstant::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                        unsigned LB) const {
   APInt Operand = Int;
   if (UB != getBitWidth() || LB != 0) {
@@ -252,14 +252,14 @@ void VASTImmediate::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   OS << (UB - LB) << "'h" << Operand.toString(16, false);
 }
 
-void VASTImmediate::Profile(FoldingSetNodeID& ID) const {
+void VASTConstant::Profile(FoldingSetNodeID& ID) const {
   Int.Profile(ID);
 }
 
-VASTImmediate VASTImmediate::TrueValue(APInt(1, 1));
-VASTImmediate VASTImmediate::FalseValue(APInt(1, 0));
-VASTImmediate *const VASTImmediate::True = &VASTImmediate::TrueValue;
-VASTImmediate *const VASTImmediate::False = &VASTImmediate::FalseValue;
+VASTConstant VASTConstant::TrueValue(APInt(1, 1));
+VASTConstant VASTConstant::FalseValue(APInt(1, 0));
+VASTConstant *const VASTConstant::True = &VASTConstant::TrueValue;
+VASTConstant *const VASTConstant::False = &VASTConstant::FalseValue;
 
 //===----------------------------------------------------------------------===//
 

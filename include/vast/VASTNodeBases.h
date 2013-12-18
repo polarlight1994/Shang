@@ -47,8 +47,8 @@ class VASTNode {
 public:
   // Leaf node type of Verilog AST.
   enum VASTTypes {
-    vastImmediate,
-    vastFirstValueType = vastImmediate,
+    vastConstant,
+    vastFirstValueType = vastConstant,
     vastSymbol,
     vastExpr,
     vastWrapper,
@@ -83,6 +83,7 @@ protected:
     Value *LLVMValue;
     VASTSelector *Sel;
     VASTNode *Node;
+    uint64_t Int;
   } Contents;
 
   const uint8_t NodeT : 7;
@@ -153,6 +154,8 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
   inline PtrInvPair<VASTValue> getOperand(unsigned i) const;
   inline PtrInvPair<VASTExpr> getExpr() const;
   inline APInt getAPInt() const;
+  inline uint64_t getZExtValue() const;
+  inline bool getBoolValue() const;
   inline APInt getBitSlice(unsigned UB, unsigned LB = 0) const;
   inline bool isAllZeros() const;
   inline bool isAllOnes() const;
@@ -383,7 +386,7 @@ public:
 template<>
 struct ilist_traits<VASTUse> : public ilist_default_traits<VASTUse> {
   // FIXME: This sentinel is created and never released.
-  static VASTUse *createSentinel() { return new VASTUse(0, 0); }
+  static VASTUse *createSentinel() { return new VASTUse(NULL, NULL); }
 
   static void deleteNode(VASTUse *U) {}
 };
@@ -519,7 +522,7 @@ public:
 // simplify_type - Allow clients to treat VASTRValue just like VASTValues when
 // using casting operators.
 template<> struct simplify_type<VASTUse> {
-  typedef const VASTValPtr &SimpleType;        // The real type this represents...
+  typedef const VASTValPtr SimpleType;        // The real type this represents...
 
   // An accessor to get the real value...
   static SimpleType getSimplifiedValue(const VASTUse &Val) {

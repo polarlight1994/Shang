@@ -48,11 +48,11 @@ public:
     return Expr;
   }
 
-  VASTImmediate *getOrCreateImmediate(uint64_t Value, int8_t BitWidth) {
-    return getOrCreateImmediate(APInt(BitWidth, Value));
+  VASTConstant *getConstant(uint64_t Value, int8_t BitWidth) {
+    return getConstant(APInt(BitWidth, Value));
   }
 
-  virtual VASTImmediate *getOrCreateImmediate(const APInt &Value);
+  virtual VASTConstant *getConstant(const APInt &Value);
 
   virtual VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                                 unsigned UB, unsigned LB);
@@ -73,9 +73,9 @@ public:
   explicit MinimalExprBuilderContext(DatapathContainer &Datapath);
   virtual ~MinimalExprBuilderContext();
 
-  using VASTExprBuilderContext::getOrCreateImmediate;
+  using VASTExprBuilderContext::getConstant;
 
-  VASTImmediate *getOrCreateImmediate(const APInt &Value);
+  VASTConstant *getConstant(const APInt &Value);
 
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                         unsigned UB, unsigned LB);
@@ -205,16 +205,16 @@ public:
     return createExpr(Opc, Ops, UB, LB);
   }
 
-  VASTValPtr getBoolImmediate(bool Val) {
-    return Context.getOrCreateImmediate(Val, 1);
+  VASTValPtr getBoolConstant(bool Val) {
+    return Context.getConstant(Val, 1);
   }
 
-  VASTImmediate *getImmediate(uint64_t Value, int8_t BitWidth) {
-    return Context.getOrCreateImmediate(Value, BitWidth);
+  VASTConstant *getConstant(uint64_t Value, int8_t BitWidth) {
+    return Context.getConstant(Value, BitWidth);
   }
 
-  VASTImmediate *getImmediate(const APInt &Value) {
-    return Context.getOrCreateImmediate(Value);
+  VASTConstant *getConstant(const APInt &Value) {
+    return Context.getConstant(Value);
   }
 
   VASTValPtr buildCommutativeExpr(VASTExpr::Opcode Opc,

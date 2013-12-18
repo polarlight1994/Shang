@@ -32,7 +32,7 @@ VASTValPtr DatapathBuilder::lowerUDiv(BinaryOperator &I) {
 
   // fold (udiv c1, c2) -> c1/c2
   if (LHSC && RHSC && !RHSC->isNullValue())
-    return getImmediate(LHSC->getValue().udiv(RHSC->getValue()));
+    return getConstant(LHSC->getValue().udiv(RHSC->getValue()));
 
   if (RHSC) {
     unsigned ResultSizeInBits = getValueSizeInBits(I);
@@ -47,7 +47,7 @@ VASTValPtr DatapathBuilder::lowerUDiv(BinaryOperator &I) {
     if (magics.a != 0 && d[0]) {
       unsigned Shift = d.countTrailingZeros();
       Q = buildShiftExpr(VASTExpr::dpSRL, Q,
-                         getImmediate(Shift, ResultSizeInBits),
+                         getConstant(Shift, ResultSizeInBits),
                          ResultSizeInBits);
 
     // Get magic number for the shifted divisor.
@@ -56,23 +56,23 @@ VASTValPtr DatapathBuilder::lowerUDiv(BinaryOperator &I) {
     }
 
     // Multiply the numerator (operand 0) by the magic value
-    Q = buildMulExpr(Q, getImmediate(magics.m), 2 * ResultSizeInBits);
+    Q = buildMulExpr(Q, getConstant(magics.m), 2 * ResultSizeInBits);
     // Get the higher part of the multplication result.
     Q = buildBitSliceExpr(Q, 2 * ResultSizeInBits, ResultSizeInBits);
 
     if (magics.a == 0)
       return buildShiftExpr(VASTExpr::dpSRL, Q,
-                            getImmediate(magics.s, ResultSizeInBits),
+                            getConstant(magics.s, ResultSizeInBits),
                             ResultSizeInBits);
 
-    VASTValPtr Ops[] = { N, buildNotExpr(Q),  VASTImmediate::True };
+    VASTValPtr Ops[] = { N, buildNotExpr(Q),  VASTConstant::True };
     VASTValPtr NPQ = buildAddExpr(Ops, ResultSizeInBits);
     NPQ = buildShiftExpr(VASTExpr::dpSRL, NPQ,
-                         getImmediate(1, ResultSizeInBits),
+                         getConstant(1, ResultSizeInBits),
                          ResultSizeInBits);
     NPQ = buildAddExpr(NPQ, Q, ResultSizeInBits);
     return buildShiftExpr(VASTExpr::dpSRL, NPQ,
-                          getImmediate(magics.s - 1, ResultSizeInBits),
+                          getConstant(magics.s - 1, ResultSizeInBits),
                           ResultSizeInBits);
   }
 
@@ -90,7 +90,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
 
   // fold (sdiv c1, c2) -> c1/c2
   if (LHSC && RHSC && !RHSC->isNullValue())
-    return getImmediate(LHSC->getValue().sdiv(RHSC->getValue()));
+    return getConstant(LHSC->getValue().sdiv(RHSC->getValue()));
   // fold (sdiv X, 1) -> X
   if (RHSC && RHSC->getValue() == 1LL)
     return getAsOperand(LHS);
@@ -107,7 +107,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
 
     // Splat the sign bit put the sign bit of LHS at the lower lg2 bits, and add
     // it to LHS.
-    VASTValPtr BitCatOps[] = { getImmediate(0, SizeInBits - lg2),
+    VASTValPtr BitCatOps[] = { getConstant(0, SizeInBits - lg2),
                                buildBitRepeat(getSignBit(LHSVal), lg2),
                              };
     VASTValPtr SGN = buildBitCatExpr(BitCatOps, SizeInBits);
@@ -118,7 +118,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
     // Divide by pow2
     VASTValPtr SRA
       = buildShiftExpr(VASTExpr::dpSRA, ADD,
-                       getImmediate(lg2, SizeInBits), SizeInBits);
+                       getConstant(lg2, SizeInBits), SizeInBits);
 
     // If we're dividing by a positive value, we're done.  Otherwise, we must
     // negate the result.
@@ -133,7 +133,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
     APInt::ms magics = d.magic();
     unsigned ResultSizeInBits = getValueSizeInBits(I);
     VASTValPtr N = getAsOperand(LHS);
-    VASTValPtr Q = buildMulExpr(N, getImmediate(magics.m), 2 * ResultSizeInBits);
+    VASTValPtr Q = buildMulExpr(N, getConstant(magics.m), 2 * ResultSizeInBits);
     // Get the higher part of the multplication result.
     Q = buildBitSliceExpr(Q, 2 * ResultSizeInBits, ResultSizeInBits);
     // If d > 0 and m < 0, add the numerator
@@ -141,14 +141,14 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
       Q = buildAddExpr(Q, N, ResultSizeInBits);
     // If d < 0 and m > 0, subtract the numerator
     if (d.isNegative() && magics.m.isStrictlyPositive()) {
-      VASTValPtr Ops[] = { Q, buildNotExpr(N),  VASTImmediate::True };
+      VASTValPtr Ops[] = { Q, buildNotExpr(N),  VASTConstant::True };
       Q = buildAddExpr(Ops, ResultSizeInBits);
     }
 
     // Shift right algebraic if shift value is nonzero
     if (magics.s > 0)
       Q = buildShiftExpr(VASTExpr::dpSRA, Q,
-                         getImmediate(magics.s, ResultSizeInBits),
+                         getConstant(magics.s, ResultSizeInBits),
                          ResultSizeInBits);
     // Extract the sign bit and add it to the quotient
     VASTValPtr T = getSignBit(Q);
@@ -169,7 +169,7 @@ VASTValPtr DatapathBuilder::lowerSRem(BinaryOperator &I) {
 
   // fold (srem c1, c2) -> c1%c2
   if (LHSC && RHSC && !RHSC->isNullValue())
-    return getImmediate(LHSC->getValue().srem(RHSC->getValue()));
+    return getConstant(LHSC->getValue().srem(RHSC->getValue()));
 
   // If X/C can be simplified by the division-by-constant logic, lower
   // X%C to the equivalent of X-X/C*C.
@@ -181,7 +181,7 @@ VASTValPtr DatapathBuilder::lowerSRem(BinaryOperator &I) {
       VASTValPtr Mul = buildMulExpr(SDiv, getAsOperand(RHS), SizeInBits);
       VASTValPtr SubOps[] = { LHSVal,
                               buildNotExpr(Mul),
-                              getImmediate(1,1)
+                              getConstant(1,1)
                             };
       return buildAddExpr(SubOps, SizeInBits);
     }
@@ -200,7 +200,7 @@ VASTValPtr DatapathBuilder::lowerURem(BinaryOperator &I) {
 
   // fold (srem c1, c2) -> c1%c2
   if (LHSC && RHSC && !RHSC->isNullValue())
-    return getImmediate(LHSC->getValue().urem(RHSC->getValue()));
+    return getConstant(LHSC->getValue().urem(RHSC->getValue()));
 
   // If X/C can be simplified by the division-by-constant logic, lower
   // X%C to the equivalent of X-X/C*C.
@@ -212,7 +212,7 @@ VASTValPtr DatapathBuilder::lowerURem(BinaryOperator &I) {
       VASTValPtr Mul = buildMulExpr(UDiv, getAsOperand(RHS), SizeInBits);
       VASTValPtr SubOps[] = { LHSVal,
                               buildNotExpr(Mul),
-                              getImmediate(1,1)
+                              getConstant(1,1)
                             };
       return buildAddExpr(SubOps, SizeInBits);
     }

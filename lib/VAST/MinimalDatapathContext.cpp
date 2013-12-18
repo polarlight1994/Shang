@@ -15,9 +15,9 @@
 using namespace llvm;
 //===--------------------------------------------------------------------===//
 // Implement the functions of EarlyDatapathBuilderContext.
-VASTImmediate *
-MinimalDatapathContext::getOrCreateImmediate(const APInt &Value) {
-  return Datapath.getOrCreateImmediateImpl(Value);
+VASTConstant *
+MinimalDatapathContext::getConstant(const APInt &Value) {
+  return Datapath.getConstantImpl(Value);
 }
 
 VASTValPtr
@@ -29,7 +29,7 @@ MinimalDatapathContext::createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Op
 VASTValPtr 
 MinimalDatapathContext::getAsOperandImpl(Value *Op) {
   if (ConstantInt *Int = dyn_cast<ConstantInt>(Op))
-    return getOrCreateImmediate(Int->getValue());
+    return getConstant(Int->getValue());
 
   if (VASTValPtr V = lookupExpr(Op))
     return V;

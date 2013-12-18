@@ -388,14 +388,15 @@ Abc_Obj_t *LogicNetwork::getObj(VASTValue *V) {
 Abc_Obj_t *LogicNetwork::getOrCreateObj(VASTValue *V) {
   Abc_Obj_t *Obj = 0;
 
-  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(V)) {
-    if (Imm->isAllOnes())
+  if (VASTConstant *C = dyn_cast<VASTConstant>(V)) {
+    if (C->isAllOnes())
       Obj = Abc_AigConst1(Ntk);
-    else if (Imm->isAllZeros())
+    else if (C->isAllZeros())
       Obj = Abc_ObjNot(Abc_AigConst1(Ntk));
 
     // If we can handle the constant...
-    if (Obj) return Obj;
+    if (Obj)
+      return Obj;
   }
 
   Obj = getObj(V);
@@ -526,12 +527,12 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
 
   if (Abc_SopIsConst0(sop)) {
     ++NumConsts;
-    return Builder.getImmediate(APInt::getNullValue(Bitwidth));
+    return Builder.getConstant(APInt::getNullValue(Bitwidth));
   }
 
   if (Abc_SopIsConst1(sop)) {
     ++NumConsts;
-    return Builder.getImmediate(APInt::getAllOnesValue(Bitwidth));
+    return Builder.getConstant(APInt::getAllOnesValue(Bitwidth));
   }
 
   assert(!Ops.empty() && "We got a node without fanin?");

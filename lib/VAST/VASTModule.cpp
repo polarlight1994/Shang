@@ -117,7 +117,7 @@ void VASTPort::printExternalDriver(raw_ostream &OS, uint64_t InitVal) const {
   OS << ' ' << getName();
 
   if (isInput())
-    OS << " = " << VASTImmediate::buildLiteral(InitVal, getBitWidth(), false);
+    OS << " = " << VASTConstant::buildLiteral(InitVal, getBitWidth(), false);
 
   OS << ';';
 }

@@ -23,7 +23,7 @@
 using namespace llvm;
 
 //===--------------------------------------------------------------------===//
-VASTImmediate *VASTExprBuilderContext::getOrCreateImmediate(const APInt &Value) {
+VASTConstant *VASTExprBuilderContext::getConstant(const APInt &Value) {
   llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
   return 0;
 }
@@ -49,9 +49,9 @@ MinimalExprBuilderContext::MinimalExprBuilderContext(DatapathContainer &DP)
   DP.pushContext(this);
 }
 
-VASTImmediate *
-MinimalExprBuilderContext::getOrCreateImmediate(const APInt &Value) {
-  return Datapath.getOrCreateImmediateImpl(Value);
+VASTConstant *
+MinimalExprBuilderContext::getConstant(const APInt &Value) {
+  return Datapath.getConstantImpl(Value);
 }
 
 VASTValPtr MinimalExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
@@ -101,7 +101,7 @@ VASTExprBuilder::buildCommutativeExpr(VASTExpr::Opcode Opc,
 VASTValPtr VASTExprBuilder::buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes){
   if (RepeatTimes == 1) return Op;
 
-  return createExpr(VASTExpr::dpBitRepeat, Op, getImmediate(RepeatTimes, 8),
+  return createExpr(VASTExpr::dpBitRepeat, Op, getConstant(RepeatTimes, 8),
                     RepeatTimes * Op->getBitWidth());
 }
 
@@ -111,8 +111,8 @@ VASTValPtr VASTExprBuilder::buildSelExpr(VASTValPtr Cnd, VASTValPtr TrueV,
   assert(TrueV->getBitWidth() == FalseV->getBitWidth()
          && TrueV->getBitWidth() == BitWidth && "Bad bitwidth!");
 
-  if (VASTImmPtr Imm = dyn_cast<VASTImmPtr>(Cnd))
-    return Imm.getAPInt().getBoolValue() ? TrueV : FalseV;
+  if (VASTConstPtr C = dyn_cast<VASTConstPtr>(Cnd))
+    return C.getBoolValue() ? TrueV : FalseV;
 
   Cnd = buildBitRepeat(Cnd, BitWidth);
   VASTValPtr V = buildOrExpr(buildAndExpr(Cnd, TrueV, BitWidth),
@@ -161,8 +161,8 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
     return buildReduction(Opc, Ops[0]);
   case VASTExpr::dpBitRepeat: {
     assert(Ops.size() == 2 && "Bad expression size!");
-    VASTImmPtr Imm = cast<VASTImmPtr>(Ops[1]);
-    unsigned Times = Imm.getAPInt().getZExtValue();
+    VASTConstPtr C = cast<VASTConstPtr>(Ops[1]);
+    unsigned Times = C.getZExtValue();
     assert(Times * Ops[0]->getBitWidth() == BitWidth && "Bitwidth not match!");
     return buildBitRepeat(Ops[0], Times);
   }
@@ -228,7 +228,7 @@ VASTValPtr VASTExprBuilder::padHeadOrTail(VASTValPtr V, unsigned BitWidth,
   if (ZeroBits == 0) return V;
 
   VASTValPtr Pader =
-    Context.getOrCreateImmediate(ByOnes ? ~UINT64_C(0) : UINT64_C(0), ZeroBits);
+    Context.getConstant(ByOnes ? ~UINT64_C(0) : UINT64_C(0), ZeroBits);
 
   VASTValPtr Hi = PadTail ? V : Pader, Lo = PadTail ? Pader : V;
 
@@ -288,7 +288,7 @@ VASTValPtr VASTExprBuilder::buildSExtExpr(VASTValPtr V, unsigned DstBitWidth) {
   VASTValPtr SignBit = getSignBit(V);
 
   VASTValPtr ExtendBits = buildExpr(VASTExpr::dpBitRepeat, SignBit,
-                                    getImmediate(NumExtendBits, 8),
+                                    getConstant(NumExtendBits, 8),
                                     NumExtendBits);
   VASTValPtr Ops[] = { ExtendBits, V };
   return buildBitCatExpr(Ops, DstBitWidth);
@@ -305,7 +305,7 @@ VASTValPtr VASTExprBuilder::buildMulExpr(ArrayRef<VASTValPtr> Ops,
 }
 
 VASTValPtr VASTExprBuilder::buildNegative(VASTValPtr Op) {
-  return buildAddExpr(buildNotExpr(Op), getImmediate(1, Op->getBitWidth()),
+  return buildAddExpr(buildNotExpr(Op), getConstant(1, Op->getBitWidth()),
                       Op->getBitWidth());
 }
 

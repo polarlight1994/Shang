@@ -26,6 +26,8 @@
 using namespace llvm;
 
 STATISTIC(NumIterations, "Number of bit-level optimization iteration");
+STATISTIC(NodesReplaced,
+          "Number of Nodes are replaced during the bit-level optimization");
 
 //===--------------------------------------------------------------------===//
 APInt BitMasks::getKnownBits() const {
@@ -78,16 +80,16 @@ BitMasks BitMaskContext::calculateBitCatBitMask(VASTExpr *Expr) {
   return BitMasks(KnownZeros, KnownOnes);
 }
 
-BitMasks BitMaskContext::calculateImmediateBitMask(VASTImmediate *Imm) {
-  return BitMasks(~Imm->getAPInt(), Imm->getAPInt());
+BitMasks BitMaskContext::calculateConstantBitMask(VASTConstant *C) {
+  return BitMasks(~C->getAPInt(), C->getAPInt());
 }
 
 BitMasks BitMaskContext::calculateAssignBitMask(VASTExpr *Expr) {
   unsigned UB = Expr->UB, LB = Expr->LB;
   BitMasks CurMask = calculateBitMask(Expr->getOperand(0));
   // Adjust the bitmask by LB.
-  return BitMasks(VASTImmediate::getBitSlice(CurMask.KnownZeros, UB, LB),
-                  VASTImmediate::getBitSlice(CurMask.KnownOnes, UB, LB));
+  return BitMasks(VASTConstant::getBitSlice(CurMask.KnownZeros, UB, LB),
+                  VASTConstant::getBitSlice(CurMask.KnownOnes, UB, LB));
 }
 
 BitMasks BitMaskContext::calculateAndBitMask(VASTExpr *Expr) {
@@ -115,12 +117,13 @@ BitMasks BitMaskContext::calculateBitMask(VASTValue *V) {
     return I->second;
   }
 
-  // Most simple case: Immediate.
-  if (VASTImmediate *Imm = dyn_cast<VASTImmediate>(V))
-    return setBitMask(V, calculateImmediateBitMask(Imm));
+  // Most simple case: Constant.
+  if (VASTConstant *C = dyn_cast<VASTConstant>(V))
+    return setBitMask(V, calculateConstantBitMask(C));
 
   VASTExpr *Expr = dyn_cast<VASTExpr>(V);
-  if (!Expr) return BitMasks(V->getBitWidth());
+  if (!Expr)
+    return BitMasks(V->getBitWidth());
 
   switch(Expr->getOpcode()) {
   default: break;
@@ -168,6 +171,7 @@ bool DatapathBLO::replaceIfNotEqual(VASTValPtr From, VASTValPtr To) {
     return false;
 
   replaceAllUseWith(From, To);
+  ++NodesReplaced;
 
   // Now To is a optimized node, we will not optimize it again in the current
   // iteration.
@@ -178,10 +182,10 @@ bool DatapathBLO::replaceIfNotEqual(VASTValPtr From, VASTValPtr To) {
 }
 
 
-VASTValPtr DatapathBLO::eliminateImmediateInvertFlag(VASTValPtr V) {
+VASTValPtr DatapathBLO::eliminateConstantInvertFlag(VASTValPtr V) {
   if (V.isInverted())
-    if (VASTImmPtr ImmPtr = dyn_cast<VASTImmPtr>(V))
-      return getOrCreateImmediate(ImmPtr.getAPInt());
+  if (VASTConstPtr C = dyn_cast<VASTConstPtr>(V))
+      return getConstant(C.getAPInt());
 
   return V;
 }
@@ -194,7 +198,7 @@ VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
   VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
 
   if (Expr == None)
-    return eliminateImmediateInvertFlag(V);
+    return eliminateConstantInvertFlag(V);
 
   VASTExpr::Opcode Opcode = Expr->getOpcode();
   switch (Opcode) {
@@ -216,7 +220,7 @@ VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
   // Collect the possible retimed operands.
   for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
     VASTValPtr Op = *I;
-    VASTValPtr InvertedOp = eliminateImmediateInvertFlag(Op.invert());
+    VASTValPtr InvertedOp = eliminateConstantInvertFlag(Op.invert());
     InvertedOperands.push_back(InvertedOp);
   }
 
@@ -226,22 +230,23 @@ VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
 bool DatapathBLO::optimizeBitRepeat(VASTExpr *Expr) {
   VerifyOpcode<VASTExpr::dpBitRepeat>(Expr);
 
-  VASTImmPtr Imm = cast<VASTImmPtr>(Expr->getOperand(1));
-  unsigned Times = Imm.getAPInt().getZExtValue();
+  VASTConstPtr C = cast<VASTConstPtr>(Expr->getOperand(1));
+  unsigned Times = C.getZExtValue();
 
   VASTValPtr Pattern = Expr->getOperand(0);
 
+  // This is not a repeat at all.
   if (Times == 1) {
     replaceIfNotEqual(Expr, Pattern);
     return true;
   }
 
-  if (VASTImmPtr Imm = dyn_cast<VASTImmediate>(Pattern)) {
+  if (VASTConstPtr C = dyn_cast<VASTConstPtr>(Pattern)) {
     // Repeat the constant bit pattern.
-    if (Imm->getBitWidth() == 1) {
-      Pattern = Imm.getAPInt().getBoolValue() ?
-                getOrCreateImmediate(APInt::getAllOnesValue(Times)) :
-                getOrCreateImmediate(APInt::getNullValue(Times));
+    if (C->getBitWidth() == 1) {
+      Pattern = C.getBoolValue() ?
+                getConstant(APInt::getAllOnesValue(Times)) :
+                getConstant(APInt::getNullValue(Times));
       replaceIfNotEqual(Expr, Pattern);
       return true;
     }
@@ -264,7 +269,7 @@ bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
 
   if (Expr == NULL)
-    return replaceIfNotEqual(V, eliminateImmediateInvertFlag(V));
+    return replaceIfNotEqual(V, eliminateConstantInvertFlag(V));
 
   // This expression had been optimized in the current iteration.
   if (Visited.count(Expr))

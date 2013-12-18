@@ -39,7 +39,7 @@ VASTSlot::VASTSlot(unsigned SlotNum, VASTCtrlRgn &R, BasicBlock *ParentBB,
 
 VASTSlot::VASTSlot(unsigned slotNum, VASTCtrlRgn &R)
   : VASTNode(vastSlot), R(R), SlotReg(this, 0), SlotActive(this, 0),
-    SlotGuard(this, VASTImmediate::True), SlotNum(slotNum), IsSubGrp(false),
+    SlotGuard(this, VASTConstant::True), SlotNum(slotNum), IsSubGrp(false),
     Schedule(0) {
   Contents.ParentBB = 0;
 }

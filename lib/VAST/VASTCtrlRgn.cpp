@@ -32,7 +32,7 @@ bool VASTCtrlRgn::gcImpl() {
 
   for (seqop_iterator I = seqop_begin(); I != seqop_end(); /*++I*/) {
     VASTSeqOp *Op = I++;
-    if (Op->getGuard() == VASTImmediate::False) {
+    if (Op->getGuard() == VASTConstant::False) {
       DEBUG(dbgs() << "Removing SeqOp whose predicate is always false:\n";
             Op->dump(););
 
@@ -95,7 +95,7 @@ VASTCtrlRgn::createSlot(unsigned SlotNum, BasicBlock *ParentBB,
 VASTSlot *VASTCtrlRgn::createLandingSlot() {
   BasicBlock *Entry = NULL/*getEntryBlock()*/;
   VASTSlot *Landing = new VASTSlot(0, *this, Entry,
-                                   VASTImmediate::True, false, 0);
+                                   VASTConstant::True, false, 0);
   Slots.push_back(Landing);
   return Landing;
 }

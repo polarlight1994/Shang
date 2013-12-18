@@ -48,7 +48,7 @@ protected:
   BitMasks calculateBitCatBitMask(VASTExpr *Expr);
   BitMasks calculateAssignBitMask(VASTExpr *Expr);
   BitMasks calculateAndBitMask(VASTExpr *Expr);
-  BitMasks calculateImmediateBitMask(VASTImmediate *Imm);
+  BitMasks calculateConstantBitMask(VASTConstant *C);
 public:
   inline BitMasks setBitMask(VASTValue *V, const BitMasks &Masks) {
     std::pair<BitMaskCacheTy::iterator, bool> Pair
@@ -75,7 +75,7 @@ class DatapathBLO : public MinimalExprBuilderContext, public BitMaskContext {
 
   // Propagate invert flag to the leave of a combinational cone if possible.
   VASTValPtr propagateInvertFlag(VASTValPtr V);
-  VASTValPtr eliminateImmediateInvertFlag(VASTValPtr V);
+  VASTValPtr eliminateConstantInvertFlag(VASTValPtr V);
 
   bool optimizeBitCat(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth);
   bool optimizeBitRepeat(VASTExpr *Expr);

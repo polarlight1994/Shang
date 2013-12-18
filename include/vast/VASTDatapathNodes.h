@@ -27,14 +27,14 @@
 namespace llvm {
 class Value;
 
-class VASTImmediate : public VASTValue, public FoldingSetNode  {
+class VASTConstant : public VASTValue, public FoldingSetNode  {
   const APInt Int;
 
-  VASTImmediate(const APInt &Other)
-    : VASTValue(vastImmediate, Other.getBitWidth()), Int(Other) {}
+  VASTConstant(const APInt &Other)
+    : VASTValue(vastConstant, Other.getBitWidth()), Int(Other) {}
 
-  VASTImmediate(const VASTImmediate&);              // Do not implement
-  void operator=(const VASTImmediate&);             // Do not implement
+  VASTConstant(const VASTConstant&)  LLVM_DELETED_FUNCTION;
+  void operator=(const VASTConstant&)LLVM_DELETED_FUNCTION;
 
   void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 
@@ -43,9 +43,9 @@ class VASTImmediate : public VASTValue, public FoldingSetNode  {
   }
 
   friend class DatapathContainer;
-  static VASTImmediate TrueValue, FalseValue;
+  static VASTConstant TrueValue, FalseValue;
 public:
-  static VASTImmediate *const True, *const False;
+  static VASTConstant *const True, *const False;
 
   /// Profile - Used to insert VASTImm objects, or objects that contain VASTImm
   ///  objects, into FoldingSets.
@@ -53,6 +53,7 @@ public:
 
   const APInt &getAPInt() const { return Int; }
   uint64_t getZExtValue() const { return Int.getZExtValue(); }
+  bool getBoolValue() const { return Int.getBoolValue(); }
 
   APInt getBitSlice(unsigned UB, unsigned LB = 0) const {
     return getBitSlice(Int, UB, LB);
@@ -75,9 +76,9 @@ public:
   }
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTImmediate *A) { return true; }
+  static inline bool classof(const VASTConstant *A) { return true; }
   static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastImmediate;
+    return A->getASTType() == vastConstant;
   }
 
   // Helper functions to manipulate APInt at bit level.
@@ -89,36 +90,46 @@ public:
   std::string buildLiteral(uint64_t Value, unsigned bitwidth, bool isMinValue);
 };
 
-typedef PtrInvPair<VASTImmediate> VASTImmPtr;
+typedef PtrInvPair<VASTConstant> VASTConstPtr;
+
 template<>
-inline APInt PtrInvPair<VASTImmediate>::getAPInt() const {
+inline APInt PtrInvPair<VASTConstant>::getAPInt() const {
   APInt Val = get()->getAPInt();
   if (isInverted()) Val.flipAllBits();
   return Val;
 }
 
-typedef PtrInvPair<VASTImmediate> VASTImmPtr;
+template<>
+inline uint64_t PtrInvPair<VASTConstant>::getZExtValue() const {
+  return PtrInvPair<VASTConstant>::getAPInt().getZExtValue();
+}
+
+template<>
+inline bool PtrInvPair<VASTConstant>::getBoolValue() const {
+  return PtrInvPair<VASTConstant>::getAPInt().getBoolValue();
+}
+
 template<>
 inline
-APInt PtrInvPair<VASTImmediate>::getBitSlice(unsigned UB, unsigned LB) const {
-  return VASTImmediate::getBitSlice(getAPInt(), UB, LB);
+APInt PtrInvPair<VASTConstant>::getBitSlice(unsigned UB, unsigned LB) const {
+  return VASTConstant::getBitSlice(getAPInt(), UB, LB);
 }
 template<>
-inline bool PtrInvPair<VASTImmediate>::isAllZeros() const {
+inline bool PtrInvPair<VASTConstant>::isAllZeros() const {
   return isInverted() ? get()->isAllOnes() : get()->isAllZeros();
 }
 template<>
-inline bool PtrInvPair<VASTImmediate>::isAllOnes() const {
+inline bool PtrInvPair<VASTConstant>::isAllOnes() const {
   return isInverted() ? get()->isAllZeros() : get()->isAllOnes();
 }
 
 template<>
-inline bool PtrInvPair<VASTImmediate>::isMaxSigned() const {
+inline bool PtrInvPair<VASTConstant>::isMaxSigned() const {
   return isInverted() ? (~get()->getAPInt()).isMaxSignedValue()
                       : get()->isMaxSigned();
 }
 template<>
-inline bool PtrInvPair<VASTImmediate>::isMinSigned() const {
+inline bool PtrInvPair<VASTConstant>::isMinSigned() const {
   return isInverted() ? (~get()->getAPInt()).isMinSignedValue()
                       : get()->isMinSigned();
 }
@@ -332,14 +343,13 @@ public:
   }
 };
 
-typedef PtrInvPair<VASTWrapper> VASTWirePtr;
 class VASTExprBuilderContext;
 
 // The container to hold all VASTExprs in data-path of the design.
 class DatapathContainer {
   // Use pointer to workaround the typeid problem.
   // The unique immediate in the data-path.
-  FoldingSet<VASTImmediate> UniqueImms;
+  FoldingSet<VASTConstant> UniqueConstants;
 
   // Expression in data-path
   FoldingSet<VASTExpr> UniqueExprs;
@@ -371,10 +381,10 @@ public:
 
   virtual void replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To);
 
-  VASTImmediate *getOrCreateImmediateImpl(const APInt &Value);
+  VASTConstant *getConstantImpl(const APInt &Value);
 
-  VASTImmediate *getOrCreateImmediateImpl(uint64_t Value, int8_t BitWidth) {
-    return getOrCreateImmediateImpl(APInt(BitWidth, Value));
+  VASTConstant *getConstantImpl(uint64_t Value, int8_t BitWidth) {
+    return getConstantImpl(APInt(BitWidth, Value));
   }
 
   typedef ilist<VASTExpr>::iterator expr_iterator;
