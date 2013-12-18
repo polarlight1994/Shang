@@ -1,4 +1,4 @@
-//===-------------- IR2Datapath.h - LLVM IR <-> VAST ------------*- C++ -*-===//
+//===-------------- IR2Datapath.h - LLVM IR --> VAST ------------*- C++ -*-===//
 //
 //                      The Shang HLS frameowrk                               //
 //

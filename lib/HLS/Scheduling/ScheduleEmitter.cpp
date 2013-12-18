@@ -836,7 +836,8 @@ VASTValPtr RegisterFolding::retimeExpr(VASTValue *Root, VASTSlot *S) {
   VASTExpr *RootExpr = dyn_cast<VASTExpr>(Root);
 
   // The Root is already the leaf of the expr tree.
-  if (RootExpr == 0) return retimeLeaf(Root, S);
+  if (RootExpr == 0)
+    return retimeLeaf(Root, S);
 
   typedef VASTOperandList::op_iterator ChildIt;
   std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
