@@ -78,13 +78,19 @@ class DatapathBLO : public MinimalExprBuilderContext, public BitMaskContext {
   VASTValPtr eliminateImmediateInvertFlag(VASTValPtr V);
 
   bool optimizeBitCat(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth);
-  bool optimizeBitRepeat(VASTValPtr V, unsigned Times);
+  bool optimizeBitRepeat(VASTExpr *Expr);
   bool optimizeAssign(VASTValPtr V, unsigned UB, unsigned LB);
 
   bool optimizeExpr(VASTExpr *Expr);
   bool replaceIfNotEqual(VASTValPtr From, VASTValPtr To);
   // Override some hook for the ExprBUuilder
   virtual void deleteContenxt(VASTValue *V);
+
+  template<VASTExpr::Opcode Opcode>
+  static void VerifyOpcode(VASTExpr *Expr) {
+    assert(Expr->getOpcode() == Opcode && "Unexpected opcode!");
+  }
+
 public:
   explicit DatapathBLO(DatapathContainer &Datapath);
   ~DatapathBLO();

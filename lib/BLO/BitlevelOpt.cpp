@@ -179,8 +179,9 @@ bool DatapathBLO::replaceIfNotEqual(VASTValPtr From, VASTValPtr To) {
 
 
 VASTValPtr DatapathBLO::eliminateImmediateInvertFlag(VASTValPtr V) {
-  if (VASTImmPtr ImmPtr = dyn_cast<VASTImmPtr>(V))
-    return getOrCreateImmediate(ImmPtr.getAPInt());
+  if (V.isInverted())
+    if (VASTImmPtr ImmPtr = dyn_cast<VASTImmPtr>(V))
+      return getOrCreateImmediate(ImmPtr.getAPInt());
 
   return V;
 }
@@ -222,7 +223,40 @@ VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
   return Builder.buildExpr(Opcode, InvertedOperands, Expr->UB, Expr->LB);
 }
 
+bool DatapathBLO::optimizeBitRepeat(VASTExpr *Expr) {
+  VerifyOpcode<VASTExpr::dpBitRepeat>(Expr);
+
+  VASTImmPtr Imm = cast<VASTImmPtr>(Expr->getOperand(1));
+  unsigned Times = Imm.getAPInt().getZExtValue();
+
+  VASTValPtr Pattern = Expr->getOperand(0);
+
+  if (Times == 1) {
+    replaceIfNotEqual(Expr, Pattern);
+    return true;
+  }
+
+  if (VASTImmPtr Imm = dyn_cast<VASTImmediate>(Pattern)) {
+    // Repeat the constant bit pattern.
+    if (Imm->getBitWidth() == 1) {
+      Pattern = Imm.getAPInt().getBoolValue() ?
+                getOrCreateImmediate(APInt::getAllOnesValue(Times)) :
+                getOrCreateImmediate(APInt::getNullValue(Times));
+      replaceIfNotEqual(Expr, Pattern);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 bool DatapathBLO::optimizeExpr(VASTExpr *Expr) {
+  switch (Expr->getOpcode()) {
+  case VASTExpr::dpBitRepeat:
+    return optimizeBitRepeat(Expr);
+  // Strange expressions that we cannot optimize.
+  default: break;
+  }
   return false;
 }
 
