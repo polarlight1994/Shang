@@ -85,7 +85,7 @@ BitMasks BitMaskContext::calculateConstantBitMask(VASTConstant *C) {
 }
 
 BitMasks BitMaskContext::calculateAssignBitMask(VASTExpr *Expr) {
-  unsigned UB = Expr->UB, LB = Expr->LB;
+  unsigned UB = Expr->getUB(), LB = Expr->getLB();
   BitMasks CurMask = calculateBitMask(Expr->getOperand(0));
   // Adjust the bitmask by LB.
   return BitMasks(VASTConstant::getBitSlice(CurMask.KnownZeros, UB, LB),
@@ -224,7 +224,8 @@ VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
     InvertedOperands.push_back(InvertedOp);
   }
 
-  return Builder.buildExpr(Opcode, InvertedOperands, Expr->UB, Expr->LB);
+  return Builder.buildExpr(Opcode, InvertedOperands,
+                           Expr->getUB(), Expr->getLB());
 }
 
 bool DatapathBLO::optimizeBitRepeat(VASTExpr *Expr) {

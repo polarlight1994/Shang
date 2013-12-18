@@ -254,8 +254,10 @@ void VASTSeqOp::eraseFromParent() {
 //----------------------------------------------------------------------------//
 
 VASTSeqInst::VASTSeqInst(Value *V, VASTSlot *S, unsigned Size, bool IsLatch)
-  : VASTSeqOp(vastSeqInst, S, true, Size), IsLatch(IsLatch), Data(0) {
+  : VASTSeqOp(vastSeqInst, S, true, Size) {
   annotateValue(V);
+  Contents16.SeqInstData = 0;
+  Contents32.SeqInstIsLatch = IsLatch;
 }
 
 void VASTSeqInst::print(raw_ostream &OS) const {

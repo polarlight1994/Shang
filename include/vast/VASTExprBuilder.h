@@ -21,33 +21,6 @@ class VASTExprBuilderContext {
 public:
   virtual ~VASTExprBuilderContext() {}
 
-  VASTValPtr stripZeroBasedBitSlize(VASTValPtr V) {
-    VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
-    if (Expr.get() && Expr->isSubBitSlice() && Expr->LB == 0)
-      return Expr.getOperand(0);
-
-    return V;
-  }
-
-  // If V is an addition which can be flatten the addition that using its result
-  // return the expression, or return null otherwise.
-  virtual VASTExpr *getAddExprToFlatten(VASTValPtr V, bool MustHasCarry) {
-    V = stripZeroBasedBitSlize(V);
-
-    VASTExpr *Expr = dyn_cast<VASTExpr>(V);
-    if (!Expr || Expr->getOpcode() != VASTExpr::dpAdd) return 0;
-
-    // We only flatten the expression to make full use of the carry bit.
-    // So check if there is only 2 operand and the second operand can be fitted
-    // into the carry bit.
-    if (Expr->size() != 2) return 0;
-
-    if (MustHasCarry && Expr->getOperand(1)->getBitWidth() != 1)
-      return 0;
-
-    return Expr;
-  }
-
   VASTConstant *getConstant(uint64_t Value, int8_t BitWidth) {
     return getConstant(APInt(BitWidth, Value));
   }

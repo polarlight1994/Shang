@@ -152,14 +152,12 @@ public:
 
 /// VASTSeqInst - Represent the LLVM Instruction in the sequential logic.
 class VASTSeqInst : public VASTSeqOp {
-  unsigned IsLatch: 1;
-  unsigned Data   : 15;
 public:
   // VASTSeqInst always use slot active, it is not a part of the control logic.
   VASTSeqInst(Value *V, VASTSlot *S, unsigned Size, bool IsLatch);
 
-  bool isLatch() const { return IsLatch; }
-  bool isLaunch() const { return !IsLatch; }
+  bool isLatch() const { return Contents32.SeqInstIsLatch; }
+  bool isLaunch() const { return !isLatch(); }
 
   VFUs::FUTypes getFUType() const;
   unsigned getFUCost() const;
@@ -167,12 +165,12 @@ public:
 
   unsigned getCyclesFromLaunch() const {
     assert(isLatch() && "Call getCyclesFromLaunch on the wrong type!");
-    return Data;
+    return Contents16.SeqInstData;
   }
 
   void setCyclesFromLaunch(unsigned Cycles) {
     assert(isLatch() && "Call setCyclesFromLaunch on the wrong type!");
-    Data = Cycles;
+    Contents16.SeqInstData = Cycles;
   }
 
   virtual void print(raw_ostream &OS) const;

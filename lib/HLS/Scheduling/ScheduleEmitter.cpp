@@ -870,7 +870,7 @@ VASTValPtr RegisterFolding::retimeExpr(VASTValue *Root, VASTSlot *S) {
       VASTValPtr RetimedExpr = Node;
       if (AnyOperandRetimed)
         RetimedExpr = Builder.buildExpr(Node->getOpcode(), RetimedOperands,
-                                        Node->UB, Node->LB);
+                                        Node->getUB(), Node->getLB());
 
       bool inserted
         = RetimedMap.insert(std::make_pair(Node, RetimedExpr)).second;

@@ -250,17 +250,16 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
 //===----------------------------------------------------------------------===//
 
 VASTExpr::VASTExpr(Opcode Opc, unsigned NumOps, unsigned UB, unsigned LB)
-  : VASTValue(vastExpr, UB - LB), VASTOperandList(NumOps),
-    Opc(Opc), UB(UB), LB(LB) {
-  Contents64.Name = 0;
+  : VASTValue(vastExpr, UB - LB), VASTOperandList(NumOps) {
+  Contents64.Name = NULL;
+  Contents32.ExprContents.Opc = Opc;
+  Contents32.ExprContents.UB = UB;
+  Contents32.ExprContents.LB = LB;
   assert(NumOps && "Unexpected empty operand list!");
+
 }
 
-VASTExpr::VASTExpr()
-  : VASTValue(vastExpr, 0), VASTOperandList(0), Opc(-1),
-    UB(0), LB(0) {
-  Contents64.Name = 0;
-}
+VASTExpr::VASTExpr() : VASTValue(vastExpr, 0), VASTOperandList(0) {}
 
 VASTExpr::~VASTExpr() {
 }
@@ -328,13 +327,13 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   case dpSRL: printSimpleUnsignedOp(OS, getOperands(), " >> ");break;
   case dpSRA: printSRAOp(OS, getOperands());                   break;
 
-  case dpAssign: getOperand(0).printAsOperand(OS, UB, LB); break;
+  case dpAssign: getOperand(0).printAsOperand(OS, getUB(), getLB()); break;
 
   case dpBitCat:    printBitCat(OS, getOperands());    break;
   case dpBitRepeat: printBitRepeat(OS, getOperands()); break;
 
   case dpKeep:
-    getOperand(0).printAsOperand(OS, UB, LB);
+    getOperand(0).printAsOperand(OS, getUB(), getLB());
     break;
 
   case dpCROM:
@@ -433,8 +432,8 @@ const char *VASTExpr::getLUT() const {
 
 void VASTExpr::Profile(FoldingSetNodeID& ID) const {
   ID.AddInteger(getOpcode());
-  ID.AddInteger(UB);
-  ID.AddInteger(LB);
+  ID.AddInteger(getUB());
+  ID.AddInteger(getLB());
   typedef VASTExpr::const_op_iterator op_iterator;
   for (op_iterator OI = op_begin(), OE = op_end(); OI != OE; ++OI) {
     VASTValPtr Operand = *OI;

@@ -87,8 +87,20 @@ protected:
   } Contents64;
 
   union VASTNodeContents32Ty {
-    uint32_t Bitwidth;
+    struct VASTExprContentsTy {
+      uint8_t Opc;
+      uint8_t UB;
+      uint8_t LB;
+    } ExprContents;
+
+    bool SeqInstIsLatch;
   } Contents32;
+
+  union VASTNodeContents16Ty {
+    uint16_t ValueBitwidth;
+    uint16_t SeqInstData;
+    uint16_t ExprBitRepeat;
+  } Contents16;
 
   const uint8_t NodeT : 7;
   bool IsDead         : 1;
@@ -490,7 +502,7 @@ protected:
 
 public:
   virtual ~VASTValue();
-  unsigned getBitWidth() const { return Contents32.Bitwidth; }
+  unsigned getBitWidth() const { return Contents16.ValueBitwidth; }
 
   typedef VASTUseIterator<UseListTy::iterator, VASTNode> use_iterator;
   use_iterator use_begin() { return use_iterator(UseList.begin()); }

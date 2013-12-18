@@ -185,8 +185,10 @@ public:
     VASTExpr *BitSliceExpr = cast<VASTExpr>(Dst);
     // Translate the (UB, LB] against the bitslice to the (UB, LB] against the
     // Src value.
-    uint8_t UB = DstUB + BitSliceExpr->LB, LB = DstLB + BitSliceExpr->LB;
-    assert(LB >= BitSliceExpr->LB && UB <= BitSliceExpr->UB && "Bad bitslice!");
+    uint8_t UB = DstUB + BitSliceExpr->getLB(),
+            LB = DstLB + BitSliceExpr->getLB();
+    assert(LB >= BitSliceExpr->getLB() && UB <= BitSliceExpr->getUB()
+           && "Bad bitslice!");
 
     // Handle the trivial case trivially.
     if (VASTExpr *ThuExpr = dyn_cast<VASTExpr>(Thu)) {

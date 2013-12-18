@@ -208,8 +208,13 @@ private:
 public:
   ~VASTExpr();
 
-  const uint8_t Opc, UB, LB;
-  Opcode getOpcode() const { return VASTExpr::Opcode(Opc); }
+  unsigned getUB() const { return Contents32.ExprContents.UB; }
+  unsigned getLB() const { return Contents32.ExprContents.UB; }
+
+  Opcode getOpcode() const {
+    return VASTExpr::Opcode(Contents32.ExprContents.Opc);
+  }
+
   const char *getFUName() const;
   const std::string getSubModName() const;
   bool printFUInstantiation(raw_ostream &OS) const;
@@ -225,12 +230,12 @@ public:
   }
 
   inline bool isSubBitSlice() const {
-    return getOpcode() == dpAssign
-           && (UB != getOperand(0)->getBitWidth() || LB != 0);
+    return getOpcode() == dpAssign &&
+           (getUB() != getOperand(0)->getBitWidth() || getLB() != 0);
   }
 
   inline bool isZeroBasedBitSlice() const {
-    return isSubBitSlice() && LB == 0;
+    return isSubBitSlice() && getLB() == 0;
   }
 
   bool hasName() const;

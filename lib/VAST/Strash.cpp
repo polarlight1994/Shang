@@ -62,8 +62,8 @@ class StrashTable {
   void profileExpr(VASTExpr *Expr, FoldingSetNodeID &ID, CacheTy &Cache) {
     VASTExpr::Opcode Opcode = Expr->getOpcode();
     ID.AddInteger(Opcode);
-    ID.AddInteger(Expr->UB);
-    ID.AddInteger(Expr->LB);
+    ID.AddInteger(Expr->getUB());
+    ID.AddInteger(Expr->getLB());
     //ID.AddInteger(Expr->size());
 
     SmallVector<unsigned, 8> Operands;

@@ -203,7 +203,7 @@ bool VASTValue::extractSupportingSeqVal(std::set<VASTSeqValue*> &SeqVals,
 VASTValue::VASTValue(VASTTypes T, unsigned BitWidth) : VASTNode(T) {
   assert(T >= vastFirstValueType && T <= vastLastValueType
          && "Bad DeclType!");
-  Contents32.Bitwidth = BitWidth;
+  Contents16.ValueBitwidth = BitWidth;
 }
 
 VASTValue::~VASTValue() {
