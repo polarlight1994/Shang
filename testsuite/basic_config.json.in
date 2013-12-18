@@ -11,6 +11,6 @@
   
   "hls_timeout" : 3600,
   "hls_feedback_flow_timeout" : 7200,
-  "sim_timeout" : 7200,
+  "sim_timeout" : 2400,
   "syn_timeout" : 43200
 }
