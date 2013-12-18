@@ -869,8 +869,7 @@ VASTValPtr RegisterFolding::retimeExpr(VASTValue *Root, VASTSlot *S) {
       // Rebuild the expression if any of its operand retimed.
       VASTValPtr RetimedExpr = Node;
       if (AnyOperandRetimed)
-        RetimedExpr = Builder.buildExpr(Node->getOpcode(), RetimedOperands,
-                                        Node->getUB(), Node->getLB());
+        RetimedExpr = Builder.copyExpr(Node, RetimedOperands);
 
       bool inserted
         = RetimedMap.insert(std::make_pair(Node, RetimedExpr)).second;

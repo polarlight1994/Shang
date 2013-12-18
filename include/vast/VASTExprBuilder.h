@@ -231,6 +231,8 @@ public:
     return buildExpr(Opc, Ops, UB - LB);
   }
 
+  VASTValPtr copyExpr(VASTExpr *Expr, ArrayRef<VASTValPtr> Ops);
+
   VASTValPtr getSignBit(VASTValPtr V) {
     return buildBitSliceExpr(V, V->getBitWidth(), V->getBitWidth() - 1);
   }

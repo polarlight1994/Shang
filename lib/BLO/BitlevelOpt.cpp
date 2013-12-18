@@ -224,8 +224,7 @@ VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
     InvertedOperands.push_back(InvertedOp);
   }
 
-  return Builder.buildExpr(Opcode, InvertedOperands,
-                           Expr->getUB(), Expr->getLB());
+  return Builder.copyExpr(Expr.get(), InvertedOperands);
 }
 
 bool DatapathBLO::optimizeBitRepeat(VASTExpr *Expr) {

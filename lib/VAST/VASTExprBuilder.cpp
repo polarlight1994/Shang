@@ -190,6 +190,11 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op,
 
   VASTValPtr Ops[] = { Op };
   return createExpr(Opc, Ops, BitWidth, 0);
+
+}
+
+VASTValPtr VASTExprBuilder::copyExpr(VASTExpr *Expr, ArrayRef<VASTValPtr> Ops) {
+  return buildExpr(Expr->getOpcode(), Ops, Expr->getUB(), Expr->getLB());
 }
 
 VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
