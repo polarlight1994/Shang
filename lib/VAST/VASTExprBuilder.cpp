@@ -195,7 +195,18 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op,
 }
 
 VASTValPtr VASTExprBuilder::copyExpr(VASTExpr *Expr, ArrayRef<VASTValPtr> Ops) {
-  return buildExpr(Expr->getOpcode(), Ops, Expr->getUB(), Expr->getLB());
+  VASTExpr::Opcode Opcode = Expr->getOpcode();
+  switch (Opcode) {
+  default: break;
+  case VASTExpr::dpAssign:
+    assert(Ops.size() == 1 && "Wrong operand number!");
+    return buildBitSliceExpr(Ops[0], Expr->getUB(), Expr->getLB());
+  case VASTExpr::dpBitRepeat:
+    assert(Ops.size() == 1 && "Wrong operand number!");
+    return buildBitRepeat(Ops[0], Expr->getRepeatTimes());
+  }
+
+  return buildExpr(Expr->getOpcode(), Ops, Expr->getBitWidth());
 }
 
 VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
