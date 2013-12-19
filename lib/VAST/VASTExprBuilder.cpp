@@ -99,7 +99,8 @@ VASTExprBuilder::buildCommutativeExpr(VASTExpr::Opcode Opc,
 }
 
 VASTValPtr VASTExprBuilder::buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes){
-  if (RepeatTimes == 1) return Op;
+  if (RepeatTimes == 1)
+    return Op;
 
   return createExpr(VASTExpr::dpBitRepeat, Op, RepeatTimes * Op->getBitWidth());
 }
@@ -138,7 +139,8 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
                                       ArrayRef<VASTValPtr> Ops,
                                       unsigned BitWidth) {
   switch (Opc) {
-  default: break;
+  // Directly create the loop up table.
+  case VASTExpr::dpLUT:  return createExpr(Opc, Ops, BitWidth);
   case VASTExpr::dpAdd:  return buildAddExpr(Ops, BitWidth);
   case VASTExpr::dpMul:  return buildMulExpr(Ops, BitWidth);
   case VASTExpr::dpAnd:  return buildAndExpr(Ops, BitWidth);
@@ -158,26 +160,25 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
     assert(Ops.size() == 1 && "Unexpected more than 1 operands for reduction!");
     assert(BitWidth == 1 && "Bitwidth of reduction should be 1!");
     return buildReduction(Opc, Ops[0]);
-  case VASTExpr::dpBitRepeat: {
-    assert(Ops.size() == 2 && "Bad expression size!");
-    VASTConstPtr C = cast<VASTConstPtr>(Ops[1]);
-    unsigned Times = C.getZExtValue();
-    assert(Times * Ops[0]->getBitWidth() == BitWidth && "Bitwidth not match!");
-    return buildBitRepeat(Ops[0], Times);
-  }
   case VASTExpr::dpKeep:
     assert(Ops.size() == 1 && "Unexpected more than 1 operands for reduction!");
     assert(BitWidth == Ops[0]->getBitWidth() && "Bad bitwidth!");
     return buildKeep(Ops[0]);
+  case VASTExpr::dpCROM:
+    assert(Ops.size() == 2
+           && "Incorrect number of operand for combinational ROM lookup!");
+    return buildCROM(Ops[0], Ops[1], BitWidth);
+  default:
+    llvm_unreachable("Unexpected opcode!");
+    break;
   }
 
-  return createExpr(Opc, Ops, BitWidth, 0);
+  return None;
 }
 
 VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op,
                                       unsigned BitWidth) {
   switch (Opc) {
-  default: break;
   case VASTExpr::dpRAnd:
   case VASTExpr::dpRXor:
     assert(BitWidth == 1 && "Bitwidth of reduction should be 1!");
@@ -185,11 +186,12 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op,
   case VASTExpr::dpKeep:
     assert(BitWidth == Op->getBitWidth() && "Bad bitwidth!");
     return buildKeep(Op);
+  default:
+    llvm_unreachable("Unexpected opcode!");
+    break;
   }
 
-  VASTValPtr Ops[] = { Op };
-  return createExpr(Opc, Ops, BitWidth, 0);
-
+  return None;
 }
 
 VASTValPtr VASTExprBuilder::copyExpr(VASTExpr *Expr, ArrayRef<VASTValPtr> Ops) {
@@ -209,8 +211,7 @@ VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
   case VASTExpr::dpKeep:
     return V;
   case VASTExpr::dpBitRepeat:
-    return buildExpr(VASTExpr::dpBitRepeat, buildKeep(Expr.getOperand(0)),
-                     Expr->getOperand(1), Expr->getBitWidth());
+    return buildBitRepeat(buildKeep(Expr.getOperand(0)), Expr->getRepeatTimes());
   case VASTExpr::dpBitCat: {
     typedef VASTExpr::op_iterator iterator;
     SmallVector<VASTValPtr, 4> Ops;
@@ -222,6 +223,11 @@ VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
 
   VASTValPtr Ops[] = { V };
   return createExpr(VASTExpr::dpKeep, Ops, V->getBitWidth(), 0);
+}
+
+VASTValPtr VASTExprBuilder::buildCROM(VASTValPtr Addr, VASTValPtr Table, unsigned Bitwidth) {
+  VASTValPtr Ops[] = { Addr, Table };
+  return createExpr(VASTExpr::dpCROM, Ops, Bitwidth, 0);
 }
 
 VASTValPtr VASTExprBuilder::padHeadOrTail(VASTValPtr V, unsigned BitWidth,
@@ -291,9 +297,7 @@ VASTValPtr VASTExprBuilder::buildSExtExpr(VASTValPtr V, unsigned DstBitWidth) {
   unsigned NumExtendBits = DstBitWidth - V->getBitWidth();
   VASTValPtr SignBit = getSignBit(V);
 
-  VASTValPtr ExtendBits = buildExpr(VASTExpr::dpBitRepeat, SignBit,
-                                    getConstant(NumExtendBits, 8),
-                                    NumExtendBits);
+  VASTValPtr ExtendBits = buildBitRepeat(SignBit, NumExtendBits);
   VASTValPtr Ops[] = { ExtendBits, V };
   return buildBitCatExpr(Ops, DstBitWidth);
 }

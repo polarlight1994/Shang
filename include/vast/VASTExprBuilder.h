@@ -350,6 +350,7 @@ public:
   }
 
   VASTValPtr buildKeep(VASTValPtr V);
+  VASTValPtr buildCROM(VASTValPtr Addr, VASTValPtr Table, unsigned Bitwidth);
 };
 }
 
