@@ -51,14 +51,6 @@ VASTSelector::~VASTSelector() {
          && "Should explicitly release the annotations before deleting selectors!");
 }
 
-
-static const VASTSelector *getSelector(VASTValue *V) {
-  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V))
-    return SV->getSelector();
-
-  return 0;
-}
-
 bool VASTSelector::isTrivialFannin(const VASTLatch &L) const {
   VASTValPtr FIVal = L;
 
@@ -115,25 +107,41 @@ namespace {
 // driven by the same register. Use this functor to avoid the redundant nodes
 // in the netlist.
 struct StructualLess : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
-  static const char *getValName(VASTValue *V) {
-    if (VASTExpr *E = dyn_cast<VASTExpr>(V))
-      return E->getTempName();
-
+  static const char *GetValName(VASTValue *V) {
     if (VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V))
       return NV->getName();
+
+    return NULL;
+  }
+
+  static unsigned GetNameID(VASTValue *V) {
+    if (VASTExpr *E = dyn_cast<VASTExpr>(V))
+      return E->getNameID();
 
     return 0;
   }
 
+  static const VASTSelector *GetSelector(VASTValue *V) {
+    if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V))
+      return SV->getSelector();
+
+    return NULL;
+  }
+
   bool operator()(VASTValPtr LHS, VASTValPtr RHS) const {
     if (LHS && RHS && LHS.isInverted() == RHS.isInverted()) {
-      const char *LHSName = getValName(LHS.get()),
-                 *RHSName = getValName(RHS.get());
+      unsigned LHSNameID = GetNameID(LHS.get()),
+               RHSNameID = GetNameID(RHS.get());
+      if (LHSNameID && RHSNameID)
+        return LHSNameID < RHSNameID;
+
+      const char *LHSName = GetValName(LHS.get()),
+                 *RHSName = GetValName(RHS.get());
       if (LHSName && RHSName)
         return LHSName < RHSName;
 
-      const VASTSelector *LHSSel = getSelector(LHS.get()),
-                         *RHSSel = getSelector(RHS.get());
+      const VASTSelector *LHSSel = GetSelector(LHS.get()),
+                         *RHSSel = GetSelector(RHS.get());
 
       if (LHSSel && RHSSel)
         return LHSSel < RHSSel;

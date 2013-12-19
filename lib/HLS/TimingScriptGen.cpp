@@ -357,12 +357,10 @@ unsigned
 AnnotatedCone::generateMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const {
   std::string ThuName = "shang-null-node";
   if (Thu) {
-    // Do not generate constraints for anonymous nodes.
-    if (Thu->isAnonymous()) return 0;
-
     ThuName = Thu->getSTAObjectName();
 
-    if (ThuName.empty()) return 0;
+    if (ThuName.empty())
+      return 0;
 
     if (KeepNodesOnly && !Thu->isTimingBarrier()) return 0;
   }

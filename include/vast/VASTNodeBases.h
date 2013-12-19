@@ -38,6 +38,7 @@ class VASTSelector;
 class VASTSymbol;
 class VASTRegister;
 class VASTSeqOp;
+class VASTMemoryBank;
 class VASTModule;
 class vlang_raw_ostream;
 class Twine;
@@ -82,25 +83,27 @@ protected:
     BasicBlock *ParentBB;
     Value *LLVMValue;
     VASTSelector *Sel;
+    VASTMemoryBank *Bank;
     VASTNode *Node;
     uint64_t Int;
   } Contents64;
 
   union VASTNodeContents32Ty {
-    struct VASTExprContentsTy {
-      uint8_t Opc;
-      uint8_t UB;
-      uint8_t LB;
-    } ExprContents;
-
-    bool SeqInstIsLatch;
+    uint32_t ExprNameID;
   } Contents32;
 
   union VASTNodeContents16Ty {
-    uint16_t ValueBitwidth;
     uint16_t SeqInstData;
-    uint16_t ExprBitRepeat;
+    struct VASTExprContentsTy {
+      uint8_t Opcode;
+      uint8_t LB;
+    } ExprContents;
   } Contents16;
+
+  union VASTNodeContents8Ty {
+    uint8_t ValueBitwidth;
+    bool SeqInstIsLatch : 1;
+  } Contents8;
 
   const uint8_t NodeT : 7;
   bool IsDead         : 1;
@@ -502,7 +505,7 @@ protected:
 
 public:
   virtual ~VASTValue();
-  unsigned getBitWidth() const { return Contents16.ValueBitwidth; }
+  unsigned getBitWidth() const { return Contents8.ValueBitwidth; }
 
   typedef VASTUseIterator<UseListTy::iterator, VASTNode> use_iterator;
   use_iterator use_begin() { return use_iterator(UseList.begin()); }

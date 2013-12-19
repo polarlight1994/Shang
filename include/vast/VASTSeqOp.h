@@ -156,7 +156,7 @@ public:
   // VASTSeqInst always use slot active, it is not a part of the control logic.
   VASTSeqInst(Value *V, VASTSlot *S, unsigned Size, bool IsLatch);
 
-  bool isLatch() const { return Contents32.SeqInstIsLatch; }
+  bool isLatch() const { return Contents8.SeqInstIsLatch; }
   bool isLaunch() const { return !isLatch(); }
 
   VFUs::FUTypes getFUType() const;

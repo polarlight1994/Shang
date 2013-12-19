@@ -70,12 +70,10 @@ static std::string GetSTAObjectName(const VASTValue *V) {
       return OS.str();
     }
   } else if (const VASTExpr *E = dyn_cast<VASTExpr>(V)) {
-    std::string Name = E->getSubModName();
-    if (!Name.empty()) {
-      OS << ' ' << Name << "* ";
-      return OS.str();
-    } else if (E->hasName()) {
-      OS << ' ' << E->getTempName() << "* ";
+    if (E->hasNameID()) {
+      OS << ' ';
+      E->printName(OS);
+      OS << "* ";
       return OS.str();
     }
   }
@@ -203,7 +201,7 @@ bool VASTValue::extractSupportingSeqVal(std::set<VASTSeqValue*> &SeqVals,
 VASTValue::VASTValue(VASTTypes T, unsigned BitWidth) : VASTNode(T) {
   assert(T >= vastFirstValueType && T <= vastLastValueType
          && "Bad DeclType!");
-  Contents16.ValueBitwidth = BitWidth;
+  Contents8.ValueBitwidth = BitWidth;
 }
 
 VASTValue::~VASTValue() {

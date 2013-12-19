@@ -208,15 +208,16 @@ private:
 public:
   ~VASTExpr();
 
-  unsigned getUB() const { return Contents32.ExprContents.UB; }
-  unsigned getLB() const { return Contents32.ExprContents.LB; }
+  unsigned getUB() const { return getLB() + getBitWidth(); }
+  unsigned getLB() const { return Contents16.ExprContents.LB; }
 
   Opcode getOpcode() const {
-    return VASTExpr::Opcode(Contents32.ExprContents.Opc);
+    return VASTExpr::Opcode(Contents16.ExprContents.Opcode);
   }
 
   const char *getFUName() const;
-  const std::string getSubModName() const;
+  bool isInstantiatedAsSubModule() const;
+  void printSubModName(raw_ostream &OS) const;
   bool printFUInstantiation(raw_ostream &OS) const;
 
   unsigned getRepeatTimes() const {
@@ -245,14 +246,11 @@ public:
     return isSubBitSlice() && getLB() == 0;
   }
 
-  bool hasName() const;
-
+  bool hasNameID() const;
   // Assign a name to this expression.
-  void nameExpr(const char *Name);
-
-  const char *getTempName() const;
-
-  bool isAnonymous() const;
+  void assignNameID(unsigned NameID);
+  unsigned getNameID() const;
+  void printName(raw_ostream &OS) const;
 
   void print(raw_ostream &OS) const { printAsOperandInteral(OS); }
 

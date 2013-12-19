@@ -254,7 +254,7 @@ namespace {
 struct DatapathPrinter {
   raw_ostream &OS;
   std::set<VASTExpr*> Visited;
-  std::set<const char*> PrintedNames;
+  std::set<unsigned> PrintedNames;
 
   DatapathPrinter(raw_ostream &OS) : OS(OS) {}
 
@@ -265,11 +265,13 @@ struct DatapathPrinter {
 
   void operator()(VASTNode *N) {
     if (VASTExpr *E = dyn_cast<VASTExpr>(N))
-      if (const char *Name =  E->getTempName()) {
+      if (E->hasNameID()) {
+        unsigned NameID = E->getNameID();
         // If the we get an expression with the same name as some other
         // expressions, do not print them as their are structural identical
         // expressions and one of them been printed before.
-        if (!PrintedNames.insert(Name).second) return;
+        if (!PrintedNames.insert(NameID).second)
+          return;
 
         if (E->getOpcode() == VASTExpr::dpKeep)
           OS << "(* keep *) ";
@@ -279,24 +281,25 @@ struct DatapathPrinter {
         if (E->getBitWidth() > 1)
           OS << "[" << (E->getBitWidth() - 1) << ":0] ";
 
-        OS << Name;
+        E->printName(OS);
 
-        if (!E->getSubModName().empty()) {
+        if (E->isInstantiatedAsSubModule()) {
           OS << ";\n";
           if (E->printFUInstantiation(OS))
             return;
         
           // If the FU instantiation is not printed, we need to print the
           // assignment.
-          OS << "assign " << E->getTempName();
+          OS << "assign ";
+          E->printName(OS);
         }
 
         OS << " = ";
 
         // Temporary unname the expression so that we can print its logic.
-        E->nameExpr(0);
+        E->assignNameID(0);
         E->printAsOperand(OS, false);
-        E->nameExpr(Name);
+        E->assignNameID(NameID);
 
         OS << ";\n";
       }

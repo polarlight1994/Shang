@@ -198,8 +198,9 @@ static bool printFUAdd(raw_ostream &OS, const VASTExpr *E) {
   OS << E->getFUName() << "#("
      << OpA->getBitWidth() << ", "
      << OpB->getBitWidth() << ", "
-     << E->getBitWidth() << ") "
-     << E->getSubModName() << '(';
+     << E->getBitWidth() << ") ";
+  E->printSubModName(OS);
+  OS << '(';
 
   OpA.printAsOperand(OS);
   OS << ", ";
@@ -223,8 +224,9 @@ static bool printBinaryFU(raw_ostream &OS, const VASTExpr *E) {
   OS << E->getFUName() << "#("
      << OpA->getBitWidth() << ", "
      << OpB->getBitWidth() << ", "
-     << E->getBitWidth() << ") "
-     << E->getSubModName() << '(';
+     << E->getBitWidth() << ") ";
+  E->printSubModName(OS);
+  OS << '(';
 
   OpA.printAsOperand(OS);
   OS << ", ";
@@ -239,8 +241,9 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
   assert(E->size() == 1 && "Not a unary expression!");
   const VASTUse &Op = E->getOperand(0);
 
-  OS << E->getFUName() << "#(" << Op->getBitWidth() << ") "
-     << E->getSubModName() << '(';
+  OS << E->getFUName() << "#(" << Op->getBitWidth() << ") ";
+  E->printSubModName(OS);
+  OS << '(';
   Op.printAsOperand(OS);
   OS << ", ";
   E->printAsOperand(OS, false);
@@ -252,10 +255,10 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
 
 VASTExpr::VASTExpr(Opcode Opc, unsigned NumOps, unsigned UB, unsigned LB)
   : VASTValue(vastExpr, UB - LB), VASTOperandList(NumOps) {
-  Contents64.Name = NULL;
-  Contents32.ExprContents.Opc = Opc;
-  Contents32.ExprContents.UB = UB;
-  Contents32.ExprContents.LB = LB;
+  Contents64.Bank = NULL;
+  Contents32.ExprNameID = 0;
+  Contents16.ExprContents.Opcode = Opc;
+  Contents16.ExprContents.LB = LB;
   assert(NumOps && "Unexpected empty operand list!");
 
 }
@@ -265,20 +268,21 @@ VASTExpr::VASTExpr() : VASTValue(vastExpr, 0), VASTOperandList(0) {}
 VASTExpr::~VASTExpr() {
 }
 
-bool VASTExpr::isAnonymous() const {
-  return getOpcode() <= LastAnonymousOpc;
+bool VASTExpr::hasNameID() const {
+  return Contents32.ExprNameID != 0;
 }
 
-bool VASTExpr::hasName() const {
-  return Contents64.Name != 0;
+void VASTExpr::assignNameID(unsigned NameID) {
+  Contents32.ExprNameID = NameID;
 }
 
-void VASTExpr::nameExpr(const char *Name) {
-  Contents64.Name = Name;
+unsigned VASTExpr::getNameID() const {
+  return Contents32.ExprNameID;
 }
 
-const char *VASTExpr::getTempName() const {
-  return Contents64.Name;
+void VASTExpr::printName(raw_ostream &OS) const {
+  char Prefix = isTimingBarrier() ? 'k' : 'w';
+  OS << Prefix << getNameID() << Prefix;
 }
 
 void
@@ -295,8 +299,8 @@ VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const {
 }
 
 bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
-  if (hasName()) {
-    OS << getTempName();
+  if (hasNameID()) {
+    printName(OS);
     // Only printed the temp name, subexpression is not printed.
     return false;
   }
@@ -366,37 +370,22 @@ const char *VASTExpr::getFUName() const {
   return 0;
 }
 
-const std::string VASTExpr::getSubModName() const {
-  const char *FUName = getFUName();
+bool VASTExpr::isInstantiatedAsSubModule() const {
+  return InstSubModForFU && getFUName() != NULL && hasNameID();
+}
 
-  if (FUName == 0 || !InstSubModForFU) return std::string("");
+void VASTExpr::printSubModName(raw_ostream &OS) const {
+  assert(isInstantiatedAsSubModule() && "Cannot print submodule name!");
 
-  std::string Name(FUName);
-  raw_string_ostream SS(Name);
-  SS << getTempName() << 'w' ;
-  switch (getOpcode()) {
-  default:
-    SS << getBitWidth();
-    break;
-  case dpSGT:
-  case dpUGT:
-  case dpRAnd:
-  case dpRXor:
-    SS << getOperand(0)->getBitWidth();
-    break;
-  }
-
-  SS << 'b';
-
-  SS.flush();
-  return Name;
+  printName(OS);
+  OS << '_' << getFUName();
 }
 
 bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
   switch (getOpcode()) {
   default: break;
   case VASTExpr::dpAdd:
-    if (InstSubModForFU && hasName() && printFUAdd(OS, this))
+    if (InstSubModForFU && hasNameID() && printFUAdd(OS, this))
       return true;
     break;
   case VASTExpr::dpMul:
@@ -405,12 +394,12 @@ bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
   case VASTExpr::dpSRL:
   case VASTExpr::dpSGT:
   case VASTExpr::dpUGT:
-    if (InstSubModForFU && hasName() && printBinaryFU(OS, this))
+    if (InstSubModForFU && hasNameID() && printBinaryFU(OS, this))
       return true;
     break;
   case VASTExpr::dpRXor:
   case VASTExpr::dpRAnd:
-    if (InstSubModForFU && hasName() && printUnaryFU(OS, this))
+    if (InstSubModForFU && hasNameID() && printUnaryFU(OS, this))
       return true;
     break;
   case VASTExpr::dpCROM: {

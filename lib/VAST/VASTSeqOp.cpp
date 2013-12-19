@@ -257,7 +257,7 @@ VASTSeqInst::VASTSeqInst(Value *V, VASTSlot *S, unsigned Size, bool IsLatch)
   : VASTSeqOp(vastSeqInst, S, true, Size) {
   annotateValue(V);
   Contents16.SeqInstData = 0;
-  Contents32.SeqInstIsLatch = IsLatch;
+  Contents8.SeqInstIsLatch = IsLatch;
 }
 
 void VASTSeqInst::print(raw_ostream &OS) const {

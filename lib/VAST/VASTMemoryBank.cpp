@@ -698,10 +698,15 @@ void VASTMemoryBank::print(vlang_raw_ostream &OS) const {
 
 void VASTMemoryBank::printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr,
                                     raw_ostream &OS) const {
-  assert(LHS->getTempName() && "Unexpected unnamed CombROM Epxr!");
+  assert(LHS->hasNameID() && "Unexpected unnamed CombROM Epxr!");
+
+  std::string LHSName;
+  raw_string_ostream SS(LHSName);
+  LHS->printName(SS);
+  SS.flush();
+
   unsigned WordSizeInBits = LHS->getCombROMWordSizeInBits();
-  OS << "reg [" << WordSizeInBits << ":0] "
-     << LHS->getTempName() << "_comb_rom;\n";
+  OS << "reg [" << WordSizeInBits << ":0] " << LHSName << "_comb_rom;\n";
   OS << "always @(*) begin// begin combinational ROM logic\n";
 
   SmallVector<std::pair<GlobalVariable*, unsigned>, 8> Vars;
@@ -725,9 +730,8 @@ void VASTMemoryBank::printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr,
   Addr.printAsOperand(OS);
   OS << ")";
   MemContextWriter::WriteContext(OS, Vars, BytesPerWord, EndByteAddr,
-                                 Twine(LHS->getTempName()) + "_comb_rom");
+                                 LHSName + "_comb_rom");
   OS.indent(2) << "endcase //end case\n";
   OS << "end // end combinational ROM logic\n";
-  OS << "assign " << LHS->getTempName()
-     << " = " << LHS->getTempName() << "_comb_rom;\n";
+  OS << "assign " << LHSName << " = " << LHSName << "_comb_rom;\n";
 }

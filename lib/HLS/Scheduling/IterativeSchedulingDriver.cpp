@@ -1,6 +1,6 @@
 //===-- IterativeScheduling.cpp - the Iterative Scheduling Pass -*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -113,7 +113,8 @@ public:
 
     for (unsigned i = 0, e = MaxIteration - 1; i < e; ++i) {
       // Redirect the output path for the intermediate netlist.
-      if (DumpIntermediateNetlist) changeOutputPaths(i);
+      if (DumpIntermediateNetlist)
+        changeOutputPaths(i);
 
       runSingleIteration(F);
       rebuildModule();
@@ -199,14 +200,14 @@ public:
 //===----------------------------------------------------------------------===//
 char IterativeScheduling::ID = 0;
 
-INITIALIZE_PASS_BEGIN(IterativeScheduling, "shang-iterative-scheduling",
+INITIALIZE_PASS_BEGIN(IterativeScheduling, "vast-iterative-scheduling",
                       "Preform iterative scheduling",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataflowAnnotation)
   INITIALIZE_PASS_DEPENDENCY(PreSchedBinding)
   INITIALIZE_PASS_DEPENDENCY(LoopInfo)
   INITIALIZE_PASS_DEPENDENCY(BranchProbabilityInfo)
-INITIALIZE_PASS_END(IterativeScheduling, "shang-iterative-scheduling",
+INITIALIZE_PASS_END(IterativeScheduling, "vast-iterative-scheduling",
                     "Preform iterative scheduling",
                     false, true)
 
