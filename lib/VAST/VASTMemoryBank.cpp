@@ -32,7 +32,7 @@ VASTMemoryBank::VASTMemoryBank(unsigned BusNum, unsigned AddrSize,
                                unsigned DataSize, bool RequireByteEnable,
                                bool IsDualPort, bool IsCombROM,
                                unsigned ReadLatency)
-  : VASTSubModuleBase(VASTNode::vastMemoryBus, "", BusNum),
+  : VASTSubModuleBase(VASTNode::vastMemoryBank, "", BusNum),
     AddrSize(AddrSize), DataSize(DataSize),
     RequireByteEnable(RequireByteEnable), IsDualPort(IsDualPort),
     IsCombROM(IsCombROM), ReadLatency(ReadLatency), EndByteAddr(0) {}

@@ -105,7 +105,7 @@ public:
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTMemoryBank *A) { return true; }
   static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastMemoryBus;
+    return A->getASTType() == vastMemoryBank;
   }
 };
 }

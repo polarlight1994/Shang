@@ -61,7 +61,7 @@ public:
     vastRegister,
     vastCtrlRegion,
     vastSubmodule,
-    vastMemoryBus,
+    vastMemoryBank,
 
     vastSelector,
     // Fine-grain control flow.
@@ -628,7 +628,7 @@ public:
   static inline bool classof(const VASTSubModuleBase *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() == vastSubmodule ||
-           A->getASTType() == vastMemoryBus ||
+           A->getASTType() == vastMemoryBank ||
            A->getASTType() == vastCtrlRegion;
   }
 };
