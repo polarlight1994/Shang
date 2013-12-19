@@ -210,16 +210,18 @@ public:
 
   // Simulate the "|=" operator.
   VASTValPtr orEqual(VASTValPtr &LHS, VASTValPtr RHS) {
-    if (!LHS)  LHS = RHS;
-    else       LHS = buildOrExpr(LHS, RHS, RHS->getBitWidth());
-    return LHS;
+    if (LHS == None)
+      return (LHS = RHS);
+
+    return (LHS = buildOrExpr(LHS, RHS, RHS->getBitWidth()));
   }
 
   // Simulate the "&=" operator.
   VASTValPtr andEqual(VASTValPtr &LHS, VASTValPtr RHS) {
-    if (!LHS)  LHS = RHS;
-    else       LHS = buildAndExpr(LHS, RHS, RHS->getBitWidth());
-    return LHS;
+    if (LHS == None)
+      return (LHS = RHS);
+
+    return (LHS = buildAndExpr(LHS, RHS, RHS->getBitWidth()));
   }
 
   VASTValPtr buildOrExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
