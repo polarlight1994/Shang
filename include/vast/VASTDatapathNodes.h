@@ -209,7 +209,7 @@ public:
   ~VASTExpr();
 
   unsigned getUB() const { return Contents32.ExprContents.UB; }
-  unsigned getLB() const { return Contents32.ExprContents.UB; }
+  unsigned getLB() const { return Contents32.ExprContents.LB; }
 
   Opcode getOpcode() const {
     return VASTExpr::Opcode(Contents32.ExprContents.Opc);
