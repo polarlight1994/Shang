@@ -219,6 +219,13 @@ public:
   const std::string getSubModName() const;
   bool printFUInstantiation(raw_ostream &OS) const;
 
+  unsigned getRepeatTimes() const {
+    assert(getOpcode() == VASTExpr::dpBitRepeat && "Incorrect expr type!");
+    unsigned PatternWidth = getOperand(0)->getBitWidth();
+    assert(getBitWidth() % PatternWidth == 0 && "Bad bitrepeat bitwidth!");
+    return getBitWidth() / PatternWidth;
+  }
+
   const char *getLUT() const;
   unsigned getCombROMWordSizeInBits() const {
     assert(getOpcode() == VASTExpr::dpCROM && "Incorrect expr type!");

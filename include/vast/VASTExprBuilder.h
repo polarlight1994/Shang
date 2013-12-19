@@ -223,9 +223,14 @@ public:
 
   VASTValPtr buildExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                        uint8_t UB, uint8_t LB) {
-    if (Opc == VASTExpr::dpAssign) {
+    switch (Opc) {
+    default: break;
+    case VASTExpr::dpAssign:
       assert(Ops.size() == 1 && "Wrong operand number!");
       return buildBitSliceExpr(Ops[0], UB, LB);
+    case VASTExpr::dpBitRepeat:
+      assert(Ops.size() == 1 && "Wrong operand number!");
+      return buildBitRepeat(Ops[0], UB - LB);
     }
 
     return buildExpr(Opc, Ops, UB - LB);

@@ -136,9 +136,10 @@ static void printBitCat(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
   OS << '}';
 }
 
-static void printBitRepeat(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
-  OS << '{' << cast<VASTConstant>((Ops[1]).get())->getAPInt() << '{';
-  Ops[0].printAsOperand(OS);
+static
+void printBitRepeat(raw_ostream &OS, VASTValPtr Pattern, unsigned RepeatTimes) {
+  OS << '{' << RepeatTimes << '{';
+  Pattern.printAsOperand(OS);
   OS << "}}";
 }
 
@@ -330,7 +331,7 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   case dpAssign: getOperand(0).printAsOperand(OS, getUB(), getLB()); break;
 
   case dpBitCat:    printBitCat(OS, getOperands());    break;
-  case dpBitRepeat: printBitRepeat(OS, getOperands()); break;
+  case dpBitRepeat: printBitRepeat(OS, getOperand(0), getRepeatTimes()); break;
 
   case dpKeep:
     getOperand(0).printAsOperand(OS, getUB(), getLB());

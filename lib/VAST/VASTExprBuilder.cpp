@@ -101,8 +101,7 @@ VASTExprBuilder::buildCommutativeExpr(VASTExpr::Opcode Opc,
 VASTValPtr VASTExprBuilder::buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes){
   if (RepeatTimes == 1) return Op;
 
-  return createExpr(VASTExpr::dpBitRepeat, Op, getConstant(RepeatTimes, 8),
-                    RepeatTimes * Op->getBitWidth());
+  return createExpr(VASTExpr::dpBitRepeat, Op, RepeatTimes * Op->getBitWidth());
 }
 
 VASTValPtr VASTExprBuilder::buildSelExpr(VASTValPtr Cnd, VASTValPtr TrueV,
