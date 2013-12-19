@@ -68,82 +68,8 @@ struct VASTExprOpInfo {
 };
 
 class VASTExprBuilder {
-  void operator=(const VASTExprBuilder &RHS); // DO NOT IMPLEMENT
-  VASTExprBuilder(const VASTExprBuilder &RHS); // DO NOT IMPLEMENT
-
-  VASTValPtr splitAndByMask(APInt Mask, ArrayRef<VASTValPtr> NewOps);
-
-  // Inline all operands in the expression whose Opcode is the same as Opc
-  // recursively;
-  template<VASTExpr::Opcode Opcode, typename visitor>
-  void flattenExpr(VASTValPtr V, visitor F) {
-    if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
-      typedef VASTExpr::op_iterator op_iterator;
-      if (Expr->getOpcode() == Opcode) {
-        for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
-          flattenExpr<Opcode>(*I, F);
-
-        return;
-      }
-    }
-
-    F++ = V;
-  }
-
-  template<VASTExpr::Opcode Opcode, typename iterator, typename visitor>
-  void flattenExpr(iterator begin, iterator end, visitor F) {
-    while (begin != end)
-      flattenExpr<Opcode>(*begin++, F);
-  }
-
-  template<VASTExpr::Opcode Opcode, typename iterator, typename visitor>
-  void collectOperands(iterator begin, iterator end, visitor F) {
-    while (begin != end) F++ = *begin++;
-  }
-
-  // The helper iterator class to collect all leaf operand of an expression tree.
-  template<VASTExpr::Opcode Opcode, class _Container>
-  struct op_filler_iterator : public std::iterator<std::output_iterator_tag,
-                                                   void, void, void, void> {
-    typedef op_filler_iterator<Opcode, _Container> Self;
-
-    VASTExprBuilder &Builder;
-    VASTExprOpInfo<Opcode> &OpInfo;
-    _Container &C;
-    explicit op_filler_iterator(_Container &C, VASTExprOpInfo<Opcode> &OpInfo,
-                                VASTExprBuilder &Builder)
-      : Builder(Builder), OpInfo(OpInfo), C(C) {}
-
-    Self &operator=(VASTValPtr V) {
-      if ((V = OpInfo.analyzeOperand(V)))
-        C.push_back(V);
-
-      return *this;
-    }
-
-    Self& operator*() {
-      // pretend to return designated value
-      return (*this);
-    }
-
-    Self& operator++() {
-      // pretend to preincrement
-      return (*this);
-    }
-
-    Self operator++(int) {
-      // pretend to postincrement
-      return (*this);
-    }
-  };
-
-  template<VASTExpr::Opcode Opcode, class _Container>
-  op_filler_iterator<Opcode, _Container> op_filler(_Container &C,
-                                                   VASTExprOpInfo<Opcode> &Info)
-  {
-    return op_filler_iterator<Opcode, _Container>(C, Info, *this);
-  }
-
+  void operator=(const VASTExprBuilder &RHS) LLVM_DELETED_FUNCTION;
+  VASTExprBuilder(const VASTExprBuilder &RHS) LLVM_DELETED_FUNCTION;
 
   VASTValPtr padHeadOrTail(VASTValPtr V, unsigned BitWidth, bool ByOnes,
                            bool PadTail);
@@ -197,24 +123,9 @@ public:
   VASTValPtr buildExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                        unsigned BitWidth);
 
-  VASTValPtr buildExprByOpBitSlice(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                                   uint8_t UB, uint8_t LB) {
-    SmallVector<VASTValPtr, 8> OpBitSlices;
-    for (unsigned i = 0; i < Ops.size(); ++i)
-      OpBitSlices.push_back(buildBitSliceExpr(Ops[i], UB, LB));
-
-    unsigned KnownBitwidth = VASTExpr::GetResultBitWidth(Opc);
-    return buildExpr(Opc, OpBitSlices, KnownBitwidth ? KnownBitwidth : (UB - LB));
-  }
-
   VASTValPtr buildExpr(VASTExpr::Opcode Opc,VASTValPtr Op, unsigned BitWidth);
   VASTValPtr buildExpr(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
                        unsigned BitWidth);
-  template<VASTExpr::Opcode Opc>
-  static VASTValPtr buildExpr(VASTValPtr LHS, VASTValPtr RHS, unsigned BitWidth,
-                              VASTExprBuilder *Builder) {
-    return Builder->buildExpr(Opc, LHS, RHS, BitWidth);
-  }
 
   VASTValPtr buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op0, VASTValPtr Op1,
                        VASTValPtr Op2, unsigned BitWidth);
@@ -296,11 +207,6 @@ public:
   VASTValPtr buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes);
 
   VASTValPtr buildNotExpr(VASTValPtr U);
-
-  static VASTValPtr buildOr(VASTValPtr LHS, VASTValPtr RHS, unsigned BitWidth,
-                            VASTExprBuilder *Builder) {
-    return Builder->buildOrExpr(LHS, RHS, BitWidth);
-  }
 
   // Simulate the "|=" operator.
   VASTValPtr orEqual(VASTValPtr &LHS, VASTValPtr RHS) {
