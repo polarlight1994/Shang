@@ -167,7 +167,7 @@ void DatapathBLO::deleteContenxt(VASTValue *V) {
 }
 
 bool DatapathBLO::replaceIfNotEqual(VASTValPtr From, VASTValPtr To) {
-  if (From == To)
+  if (To == None || From == To)
     return false;
 
   replaceAllUseWith(From, To);
@@ -227,38 +227,36 @@ VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
   return Builder.copyExpr(Expr.get(), InvertedOperands);
 }
 
-bool DatapathBLO::optimizeBitRepeat(VASTExpr *Expr) {
-  VerifyOpcode<VASTExpr::dpBitRepeat>(Expr);
-
-  VASTConstPtr C = cast<VASTConstPtr>(Expr->getOperand(1));
-  unsigned Times = C.getZExtValue();
-
-  VASTValPtr Pattern = Expr->getOperand(0);
-
+VASTValPtr DatapathBLO::optimizeBitRepeat(VASTValPtr Pattern, unsigned Times) {
   // This is not a repeat at all.
-  if (Times == 1) {
-    replaceIfNotEqual(Expr, Pattern);
-    return true;
-  }
+  if (Times == 1)
+    return Pattern;
 
   if (VASTConstPtr C = dyn_cast<VASTConstPtr>(Pattern)) {
     // Repeat the constant bit pattern.
     if (C->getBitWidth() == 1) {
-      Pattern = C.getBoolValue() ?
-                getConstant(APInt::getAllOnesValue(Times)) :
-                getConstant(APInt::getNullValue(Times));
-      replaceIfNotEqual(Expr, Pattern);
-      return true;
+      return C.getBoolValue() ?
+             getConstant(APInt::getAllOnesValue(Times)) :
+             getConstant(APInt::getNullValue(Times));
     }
   }
 
-  return false;
+  return None;
 }
 
-bool DatapathBLO::optimizeExpr(VASTExpr *Expr) {
+VASTValPtr DatapathBLO::optimizeAssign(VASTValPtr V, unsigned UB, unsigned LB) {
+  return None;
+}
+
+VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   switch (Expr->getOpcode()) {
-  case VASTExpr::dpBitRepeat:
-    return optimizeBitRepeat(Expr);
+  case VASTExpr::dpBitRepeat: {
+    unsigned Times = Expr->getRepeatTimes();
+
+    VASTValPtr Pattern = Expr->getOperand(0);
+    Pattern = propagateInvertFlag(Pattern);
+    return optimizeBitRepeat(Pattern, Times);
+  }
   // Strange expressions that we cannot optimize.
   default: break;
   }
@@ -290,7 +288,7 @@ bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
     // We have visited all children of current node.
     if (It == CurNode->op_end()) {
       VisitStack.pop_back();
-      Replaced |= optimizeExpr(Expr);
+      Replaced |= replaceIfNotEqual(CurNode, optimizeExpr(CurNode));
       continue;
     }
 

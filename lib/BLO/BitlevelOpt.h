@@ -77,11 +77,11 @@ class DatapathBLO : public MinimalExprBuilderContext, public BitMaskContext {
   VASTValPtr propagateInvertFlag(VASTValPtr V);
   VASTValPtr eliminateConstantInvertFlag(VASTValPtr V);
 
-  bool optimizeBitCat(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth);
-  bool optimizeBitRepeat(VASTExpr *Expr);
-  bool optimizeAssign(VASTValPtr V, unsigned UB, unsigned LB);
+  VASTValPtr optimizeBitCat(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth);
+  VASTValPtr optimizeBitRepeat(VASTValPtr Pattern, unsigned Times);
+  VASTValPtr optimizeAssign(VASTValPtr V, unsigned UB, unsigned LB);
 
-  bool optimizeExpr(VASTExpr *Expr);
+  VASTValPtr optimizeExpr(VASTExpr *Expr);
   bool replaceIfNotEqual(VASTValPtr From, VASTValPtr To);
   // Override some hook for the ExprBUuilder
   virtual void deleteContenxt(VASTValue *V);
