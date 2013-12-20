@@ -137,9 +137,7 @@ DatapathContainer::createBitSliceImpl(VASTValPtr Op, unsigned UB, unsigned LB) {
   if (VASTExpr *E = UniqueExprs.FindNodeOrInsertPos(ID, IP))
     return E;
 
-  VASTExpr *E = new VASTExpr(UB, LB);
-  assert(Op.get() && "Unexpected null VASTValPtr!");
-  (void) new (E->Operands) VASTUse(E, Op);
+  VASTExpr *E = new VASTExpr(Op, UB, LB);
 
   UniqueExprs.InsertNode(E, IP);
   Exprs.push_back(E);
@@ -161,9 +159,7 @@ DatapathContainer::createROMLookUpImpl(VASTValPtr Addr, VASTMemoryBank *Bank,
   if (VASTExpr *E = UniqueExprs.FindNodeOrInsertPos(ID, IP))
     return E;
 
-  VASTExpr *E = new VASTExpr(Bank, BitWidth);
-  assert(Addr.get() && "Unexpected null VASTValPtr!");
-  (void) new (E->Operands) VASTUse(E, Addr);
+  VASTExpr *E = new VASTExpr(Addr, Bank, BitWidth);
 
   UniqueExprs.InsertNode(E, IP);
   Exprs.push_back(E);
@@ -191,13 +187,7 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
   if (VASTExpr *E = UniqueExprs.FindNodeOrInsertPos(ID, IP))
     return E;
 
-  VASTExpr *E = new VASTExpr(Opc, Ops.size(), Bitwidth);
-
-  for (unsigned i = 0; i < Ops.size(); ++i) {
-    assert(Ops[i].get() && "Unexpected null VASTValPtr!");
-
-    (void) new (E->Operands + i) VASTUse(E, Ops[i]);
-  }
+  VASTExpr *E = new VASTExpr(Opc, Ops, Bitwidth);
 
   UniqueExprs.InsertNode(E, IP);
   Exprs.push_back(E);

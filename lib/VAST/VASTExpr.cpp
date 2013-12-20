@@ -253,29 +253,38 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
 }
 //===----------------------------------------------------------------------===//
 
-VASTExpr::VASTExpr(Opcode Opc, unsigned NumOps, unsigned BitWidth)
-: VASTValue(vastExpr, BitWidth), VASTOperandList(NumOps) {
+VASTExpr::VASTExpr(Opcode Opc, ArrayRef<VASTValPtr> Ops, unsigned BitWidth)
+: VASTValue(vastExpr, BitWidth), VASTOperandList(Ops.size()) {
   Contents64.Bank = NULL;
   Contents32.ExprNameID = 0;
   Contents16.ExprContents.Opcode = Opc;
   Contents16.ExprContents.LB = 0;
-  assert(NumOps && "Unexpected empty operand list!");
+  assert(Ops.size() && "Unexpected empty operand list!");
+  // Construct the uses that use the operand.
+  for (unsigned i = 0; i < Ops.size(); ++i) {
+    assert(Ops[i].get() && "Unexpected null VASTValPtr!");
+    (void) new (Operands + i) VASTUse(this, Ops[i]);
+  }
 }
 
-VASTExpr::VASTExpr(unsigned UB, unsigned LB)
+VASTExpr::VASTExpr(VASTValPtr Op, unsigned UB, unsigned LB)
   : VASTValue(vastExpr, UB - LB), VASTOperandList(1) {
   Contents64.Bank = NULL;
   Contents32.ExprNameID = 0;
   Contents16.ExprContents.Opcode = VASTExpr::dpAssign;
   Contents16.ExprContents.LB = LB;
+  assert(Op.get() && "Unexpected null VASTValPtr!");
+  (void) new (Operands) VASTUse(this, Op);
 }
 
-VASTExpr::VASTExpr(VASTMemoryBank *Bank, unsigned BitWidth)
+VASTExpr::VASTExpr(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth)
   : VASTValue(vastExpr, BitWidth), VASTOperandList(1) {
   Contents64.Bank = Bank;
   Contents32.ExprNameID = 0;
   Contents16.ExprContents.Opcode = VASTExpr::dpROMLookUp;
   Contents16.ExprContents.LB = 0;
+  assert(Addr.get() && "Unexpected null VASTValPtr!");
+  (void) new (Operands)VASTUse(this, Addr);
 }
 
 VASTExpr::VASTExpr() : VASTValue(vastExpr, 0), VASTOperandList(0) {}

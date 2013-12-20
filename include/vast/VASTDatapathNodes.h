@@ -192,9 +192,9 @@ private:
   VASTExpr(const VASTExpr&);              // Do not implement
   void operator=(const VASTExpr&);        // Do not implement
 
-  VASTExpr(Opcode Opc, unsigned NumOps, unsigned BitWidth);
-  VASTExpr(unsigned UB, unsigned LB);
-  VASTExpr(VASTMemoryBank *Bank, unsigned BitWidth);
+  VASTExpr(Opcode Opc, ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
+  VASTExpr(VASTValPtr Op, unsigned UB, unsigned LB);
+  VASTExpr(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth);
   VASTExpr();
 
   friend struct ilist_sentinel_traits<VASTExpr>;
