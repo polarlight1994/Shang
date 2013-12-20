@@ -27,8 +27,14 @@ public:
 
   virtual VASTConstant *getConstant(const APInt &Value);
 
-  virtual VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                                unsigned UB, unsigned LB);
+  virtual
+  VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
+                            unsigned Bitwidth);
+  virtual
+  VASTValPtr createBitSlice(VASTValPtr Op, unsigned UB, unsigned LB);
+  virtual
+  VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
+                             unsigned BitWidth);
 
   virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 
@@ -51,7 +57,10 @@ public:
   VASTConstant *getConstant(const APInt &Value);
 
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                        unsigned UB, unsigned LB);
+                        unsigned Bitwidth);
+  VASTValPtr createBitSlice(VASTValPtr Op, unsigned UB, unsigned LB);
+  VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
+                             unsigned BitWidth);
 
   void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 };
@@ -62,24 +71,13 @@ class VASTExprBuilder {
 
 protected:
   VASTExprBuilderContext &Context;
+
 public:
   explicit VASTExprBuilder(VASTExprBuilderContext &Context)
     : Context(Context) {}
 
-  // Directly create the expression without optimizations.
-  VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                        unsigned UB, unsigned LB = 0) {
-    return Context.createExpr(Opc, Ops, UB, LB);
-  }
-
   void replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
     Context.replaceAllUseWith(From, To);
-  }
-
-  VASTValPtr createExpr(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
-                        unsigned UB, unsigned LB = 0) {
-    VASTValPtr Ops[] = { LHS, RHS };
-    return createExpr(Opc, Ops, UB, LB);
   }
 
   VASTValPtr getBoolConstant(bool Val) {
@@ -221,7 +219,8 @@ public:
   }
 
   VASTValPtr buildKeep(VASTValPtr V);
-  VASTValPtr buildCROM(VASTValPtr Addr, VASTValPtr Table, unsigned Bitwidth);
+  VASTValPtr buildROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
+                            unsigned Bitwidth);
 };
 }
 

@@ -30,9 +30,20 @@ VASTConstant *VASTExprBuilderContext::getConstant(const APInt &Value) {
 
 VASTValPtr VASTExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
                                               ArrayRef<VASTValPtr> Ops,
-                                              unsigned UB, unsigned LB) {
+                                              unsigned BitWidth) {
   llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
-  return 0;
+  return None;
+}
+VASTValPtr VASTExprBuilderContext::createBitSlice(VASTValPtr Op,
+                                                  unsigned UB, unsigned LB) {
+  llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
+  return None;
+}
+VASTValPtr VASTExprBuilderContext::createROMLookUp(VASTValPtr Addr,
+                                                   VASTMemoryBank *Bank,
+                                                   unsigned BitWidth) {
+  llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
+  return None;
 }
 
 void VASTExprBuilderContext::deleteContenxt(VASTValue *V) {
@@ -56,8 +67,19 @@ MinimalExprBuilderContext::getConstant(const APInt &Value) {
 
 VASTValPtr MinimalExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
                                                  ArrayRef<VASTValPtr> Ops,
-                                                 unsigned UB, unsigned LB) {
-  return Datapath.createExprImpl(Opc, Ops, UB, LB);
+                                                 unsigned Bitwidth) {
+  return Datapath.createExprImpl(Opc, Ops, Bitwidth);
+}
+
+VASTValPtr MinimalExprBuilderContext::createBitSlice(VASTValPtr Op,
+                                                     unsigned UB, unsigned LB) {
+  return Datapath.createBitSliceImpl(Op, UB, LB);
+}
+
+VASTValPtr MinimalExprBuilderContext::createROMLookUp(VASTValPtr Addr,
+                                                      VASTMemoryBank *Bank,
+                                                      unsigned BitWidth) {
+  return Datapath.createROMLookUpImpl(Addr, Bank, BitWidth);
 }
 
 void MinimalExprBuilderContext::replaceAllUseWith(VASTValPtr From,
@@ -76,18 +98,18 @@ VASTValPtr VASTExprBuilder::buildNotExpr(VASTValPtr U) {
 
 VASTValPtr VASTExprBuilder::buildBitCatExpr(ArrayRef<VASTValPtr> Ops,
                                             unsigned BitWidth) {
-  return createExpr(VASTExpr::dpBitCat, Ops, BitWidth, 0);
+  return Context.createExpr(VASTExpr::dpBitCat, Ops, BitWidth);
 }
 
 VASTValPtr VASTExprBuilder::buildBitSliceExpr(VASTValPtr U, uint8_t UB,
                                               uint8_t LB) {
   assert(UB <= U->getBitWidth() && UB > LB && "Bad bit range!");
   VASTValPtr Ops[] = { U };
-  return createExpr(VASTExpr::dpAssign, Ops, UB, LB);
+  return Context.createBitSlice(U, UB, LB);
 }
 
 VASTValPtr VASTExprBuilder::buildReduction(VASTExpr::Opcode Opc,VASTValPtr Op) {
-  return createExpr(Opc, Op, 1, 0);
+  return Context.createExpr(Opc, Op, 1);
 }
 
 VASTValPtr
@@ -95,14 +117,15 @@ VASTExprBuilder::buildCommutativeExpr(VASTExpr::Opcode Opc,
                                       MutableArrayRef<VASTValPtr> Ops,
                                       unsigned BitWidth) {
   std::sort(Ops.begin(), Ops.end(), VASTValPtr::type_less);
-  return createExpr(Opc, Ops, BitWidth, 0);
+  return Context.createExpr(Opc, Ops, BitWidth);
 }
 
 VASTValPtr VASTExprBuilder::buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes){
   if (RepeatTimes == 1)
     return Op;
 
-  return createExpr(VASTExpr::dpBitRepeat, Op, RepeatTimes * Op->getBitWidth());
+  return Context.createExpr(VASTExpr::dpBitRepeat, Op,
+                            RepeatTimes * Op->getBitWidth());
 }
 
 VASTValPtr VASTExprBuilder::buildSelExpr(VASTValPtr Cnd, VASTValPtr TrueV,
@@ -140,7 +163,7 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
                                       unsigned BitWidth) {
   switch (Opc) {
   // Directly create the loop up table.
-  case VASTExpr::dpLUT:  return createExpr(Opc, Ops, BitWidth);
+  case VASTExpr::dpLUT:  return Context.createExpr(Opc, Ops, BitWidth);
   case VASTExpr::dpAdd:  return buildAddExpr(Ops, BitWidth);
   case VASTExpr::dpMul:  return buildMulExpr(Ops, BitWidth);
   case VASTExpr::dpAnd:  return buildAndExpr(Ops, BitWidth);
@@ -164,10 +187,6 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
     assert(Ops.size() == 1 && "Unexpected more than 1 operands for reduction!");
     assert(BitWidth == Ops[0]->getBitWidth() && "Bad bitwidth!");
     return buildKeep(Ops[0]);
-  case VASTExpr::dpCROM:
-    assert(Ops.size() == 2
-           && "Incorrect number of operand for combinational ROM lookup!");
-    return buildCROM(Ops[0], Ops[1], BitWidth);
   default:
     llvm_unreachable("Unexpected opcode!");
     break;
@@ -233,28 +252,12 @@ VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
   }
 
   VASTValPtr Ops[] = { V };
-  return createExpr(VASTExpr::dpKeep, Ops, V->getBitWidth(), 0);
+  return Context.createExpr(VASTExpr::dpKeep, Ops, V->getBitWidth());
 }
 
-VASTValPtr VASTExprBuilder::buildCROM(VASTValPtr Addr, VASTValPtr Table, unsigned Bitwidth) {
-  VASTValPtr Ops[] = { Addr, Table };
-  return createExpr(VASTExpr::dpCROM, Ops, Bitwidth, 0);
-}
-
-VASTValPtr VASTExprBuilder::padHeadOrTail(VASTValPtr V, unsigned BitWidth,
-                                          bool ByOnes, bool PadTail) {
-  assert(BitWidth >= V->getBitWidth() && "Bad bitwidth!");
-  unsigned ZeroBits = BitWidth - V->getBitWidth();
-
-  if (ZeroBits == 0) return V;
-
-  VASTValPtr Pader =
-    Context.getConstant(ByOnes ? ~UINT64_C(0) : UINT64_C(0), ZeroBits);
-
-  VASTValPtr Hi = PadTail ? V : Pader, Lo = PadTail ? Pader : V;
-
-  VASTValPtr Ops[] = { Hi, Lo};
-  return buildBitCatExpr(Ops, BitWidth);
+VASTValPtr VASTExprBuilder::buildROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
+                                           unsigned Bitwidth) {
+  return Context.createROMLookUp(Addr, Bank, Bitwidth);
 }
 
 VASTValPtr VASTExprBuilder::buildOrExpr(ArrayRef<VASTValPtr> Ops,
@@ -294,13 +297,17 @@ VASTValPtr VASTExprBuilder::buildShiftExpr(VASTExpr::Opcode Opc,
   if (RHS->getBitWidth() > RHSMaxSize)
     RHS = buildBitSliceExpr(RHS, RHSMaxSize, 0);
 
-  VASTValPtr Ops[] = { LHS, RHS }; 
-  return createExpr(Opc, Ops, BitWidth, 0);
+  VASTValPtr Ops[] = { LHS, RHS };
+  return Context.createExpr(Opc, Ops, BitWidth);
 }
 
 VASTValPtr VASTExprBuilder::buildZExtExpr(VASTValPtr V, unsigned DstBitWidth) {
   assert(DstBitWidth > V->getBitWidth() && "Unexpected DstBitWidth!");
-  return padHigherBits(V, DstBitWidth, false);
+  unsigned ZeroBits = DstBitWidth - V->getBitWidth();
+
+  VASTValPtr Zeros = Context.getConstant( UINT64_C(0), ZeroBits);
+  VASTValPtr Ops[] = { Zeros, V };
+  return buildBitCatExpr(Ops, DstBitWidth);
 }
 
 VASTValPtr VASTExprBuilder::buildSExtExpr(VASTValPtr V, unsigned DstBitWidth) {
@@ -347,10 +354,10 @@ VASTValPtr VASTExprBuilder::buildAddExpr(ArrayRef<VASTValPtr> Ops,
   }
 
   std::sort(NewOps.begin(), NewOps.end(), VASTValPtr::type_less);
-  if (Carry)
+  if (Carry != None)
     NewOps.push_back(Carry);
 
-  return createExpr(VASTExpr::dpAdd, NewOps, BitWidth, 0);
+  return Context.createExpr(VASTExpr::dpAdd, NewOps, BitWidth);
 }
 
 VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
@@ -371,5 +378,5 @@ VASTValPtr VASTExprBuilder::buildICmpExpr(VASTExpr::Opcode Opc,
                                           VASTValPtr LHS, VASTValPtr RHS) {
   assert(RHS->getBitWidth() == LHS->getBitWidth() && "Bad icmp bitwidth!");
   VASTValPtr Ops[] = { LHS, RHS };
-  return createExpr(Opc, Ops, 1, 0);
+  return Context.createExpr(Opc, Ops, 1);
 }

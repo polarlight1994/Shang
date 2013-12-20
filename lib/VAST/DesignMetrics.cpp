@@ -58,8 +58,17 @@ class DesignMetricsImpl : public DatapathBuilderContext {
   }
 
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                        unsigned UB, unsigned LB) {
-    return DPContainer.createExprImpl(Opc, Ops, UB, LB);;
+                        unsigned BitWidth) {
+    return DPContainer.createExprImpl(Opc, Ops, BitWidth);
+  }
+
+  VASTValPtr createBitSlice(VASTValPtr Op, unsigned UB, unsigned LB) {
+    return DPContainer.createBitSliceImpl(Op, UB, LB);
+  }
+
+  VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
+                             unsigned BitWidth) {
+    return DPContainer.createROMLookUpImpl(Addr, Bank, BitWidth);
   }
 
   VASTValPtr getAsOperandImpl(Value *Op);

@@ -30,8 +30,14 @@ public:
 
   VASTConstant *getConstant(const APInt &Value);
 
+  virtual
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                        unsigned UB, unsigned LB);
+                        unsigned Bitwidth);
+  virtual
+  VASTValPtr createBitSlice(VASTValPtr Op, unsigned UB, unsigned LB);
+  virtual
+  VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
+                             unsigned BitWidth);
 
   virtual VASTValPtr getAsOperandImpl(Value *Op);
 

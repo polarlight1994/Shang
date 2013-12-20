@@ -179,7 +179,7 @@ public:
     // Combinational ROM, a big lookup table.
     // The bitwidth of the ROM is stored in the second operand, i.e. the wrapper
     // that wrap the actually ROM context.
-    dpCROM,
+    dpROMLookUp,
     //
     dpKeep
   };
@@ -192,7 +192,9 @@ private:
   VASTExpr(const VASTExpr&);              // Do not implement
   void operator=(const VASTExpr&);        // Do not implement
 
-  VASTExpr(Opcode Opc, unsigned NumOps, unsigned UB, unsigned LB);
+  VASTExpr(Opcode Opc, unsigned NumOps, unsigned BitWidth);
+  VASTExpr(unsigned UB, unsigned LB);
+  VASTExpr(VASTMemoryBank *Bank, unsigned BitWidth);
   VASTExpr();
 
   friend struct ilist_sentinel_traits<VASTExpr>;
@@ -215,6 +217,10 @@ public:
     return VASTExpr::Opcode(Contents16.ExprContents.Opcode);
   }
 
+  bool isCommutative() const {
+    return getOpcode() == dpAdd || getOpcode() == dpAnd || getOpcode() == dpMul;
+  }
+
   const char *getFUName() const;
   bool isInstantiatedAsSubModule() const;
   void printSubModName(raw_ostream &OS) const;
@@ -228,9 +234,10 @@ public:
   }
 
   const char *getLUT() const;
-  unsigned getCombROMWordSizeInBits() const {
-    assert(getOpcode() == VASTExpr::dpCROM && "Incorrect expr type!");
-    return getOperand(1)->getBitWidth();
+
+  VASTMemoryBank *getROMContent() const {
+    assert(getOpcode() == VASTExpr::dpROMLookUp && "Incorrect expr type!");
+    return Contents64.Bank;
   }
 
   bool isTimingBarrier() const {
@@ -263,6 +270,7 @@ public:
   /// Profile - Used to insert VASTExpr objects, or objects that contain
   /// VASTExpr objects, into FoldingSets.
   void Profile(FoldingSetNodeID& ID) const;
+  void ProfileWithoutOperands(FoldingSetNodeID& ID) const;
 
   /// Helper function returning the properties of the opcodes.
   static bool IsICmp(Opcode Opc) {
@@ -387,7 +395,10 @@ public:
   BumpPtrAllocator &getAllocator() { return Allocator; }
 
   VASTValPtr createExprImpl(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                        unsigned UB, unsigned LB);
+                            unsigned Bitwidth);
+  VASTValPtr createBitSliceImpl(VASTValPtr Op, unsigned UB, unsigned LB);
+  VASTValPtr
+  createROMLookUpImpl(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth);
 
   virtual void replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To);
 

@@ -938,12 +938,7 @@ VASTModuleBuilder::buildCombinationalROMLookup(Value *Addr, VASTMemoryBank *Bus,
   // the lower bound of the bitslice is 0.
   AddrVal = Builder.buildBitSliceExpr(AddrVal, Bus->getAddrWidth(), 0);
 
-  unsigned Num = Bus->getNumber();
-  const std::string BankName = "membank" + utostr_32(Num) +
-                               "w" + utostr_32(ResultWidth);
-  VASTWrapper *Table = A->getOrCreateWrapper(BankName, ResultWidth, Bus);
-  indexVASTExpr(&Inst,
-                Builder.buildExpr(VASTExpr::dpCROM, AddrVal, Table, ResultWidth));
+  indexVASTExpr(&Inst, Builder.buildROMLookUp(AddrVal, Bus, ResultWidth));
   ++NUMCombROM;
 }
 

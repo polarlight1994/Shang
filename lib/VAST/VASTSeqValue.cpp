@@ -464,12 +464,12 @@ void VASTSelector::printSelectorModule(raw_ostream &O) const {
     if (isTrivialFannin(L))
       continue;
 
-    OS << "input wire" << VASTValue::printBitRange(getBitWidth())
+    OS << "input wire" << VASTValue::BitRange(getBitWidth())
        << " slot" << L.getSlotNum() << "fi,\n";
     OS << "input wire slot" << L.getSlotNum() << "guard,\n";
   }
 
-  OS << "output wire" << VASTValue::printBitRange(getBitWidth()) << " fo,\n"
+  OS << "output wire" << VASTValue::BitRange(getBitWidth()) << " fo,\n"
         "output wire guard);\n\n";
 
   // Build the enable.
@@ -510,7 +510,7 @@ void VASTSelector::instantiateSelector(raw_ostream &OS) const {
   // Create the temporary signal.
   OS << "// Combinational MUX\n";
 
-  OS << "wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
+  OS << "wire " << VASTValue::BitRange(getBitWidth(), 0, false)
      << ' ' << getName() << "_selector_wire;\n";
 
   OS << "wire " << ' ' << getName() << "_selector_guard;\n\n";
@@ -561,7 +561,7 @@ void VASTSelector::printSelector(raw_ostream &OS) const {
 
   // Print (or implement) the MUX by:
   // output = (Sel0 & FANNIN0) | (Sel1 & FANNIN1) ...
-  OS << "wire " << VASTValue::printBitRange(getBitWidth(), 0, false)
+  OS << "wire " << VASTValue::BitRange(getBitWidth(), 0, false)
      << ' ' << getName() << "_selector_wire = " << VASTValPtr(Fanin) << ";\n";
 }
 
@@ -602,7 +602,7 @@ void VASTSelector::printRegisterBlock(vlang_raw_ostream &OS,
   } else {
     OS.if_begin(Twine(getName()) + Twine("_selector_guard"));
     OS << getName() << " <= " << getName() << "_selector_wire"
-       << VASTValue::printBitRange(getBitWidth(), 0, false) << ";\n";
+       << VASTValue::BitRange(getBitWidth(), 0, false) << ";\n";
     OS.exit_block();
   }
 

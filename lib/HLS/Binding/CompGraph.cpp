@@ -872,7 +872,7 @@ void MinCostFlowSolver::setCost(unsigned Iteration) {
       I->second.second = I->second.second > 0 ? 1 : 0;
     } else if (Src->getBindingIdx() == Dst->getBindingIdx()) {
       unsigned Consistency = (I->second.second += 2);
-      EdgeCost -= 1.0f * Consistency * Scale;;
+      EdgeCost -= 1.0f * Consistency * Scale;
     } else if (I->second.second)
       --I->second.second;
 

@@ -315,7 +315,7 @@ void VASTMemoryBank::printBank(vlang_raw_ostream &OS) const {
   // word. Please note that the bytes is ordered from 0 to 7 ([0:7]) because
   // so that the byte address can access the correct byte.
   OS << "(* ramstyle = \"no_rw_check\", max_depth = " << NumWords << " *) logic"
-    << VASTValue::printBitRange(BytesPerWord) << VASTValue::printBitRange(8)
+    << VASTValue::BitRange(BytesPerWord) << VASTValue::BitRange(8)
     << ' ' << getArrayName() << "[0:" << NumWords << "-1];\n";
 
   writeInitializeFile(OS);
@@ -355,7 +355,7 @@ VASTMemoryBank::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
       SS << "{ 1'b0, ";
 
     SS << getAddrName(PortNum, 1)
-       << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true);
+       << VASTValue::BitRange(getAddrWidth(), ByteAddrWidth, true);
 
     if (Addr->getBitWidth() == ByteAddrWidth + 1)
       SS << " }";
@@ -386,7 +386,7 @@ VASTMemoryBank::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
       OS.if_() << getByteEnName(PortNum, 1) << "[" << i << "]";
       OS._then() << getArrayName() << "[" << AddrConnection << "]"
              "[" << i << "] <= " << getWDataName(PortNum, 1)
-                 << VASTValue::printBitRange((i + 1) * 8, i * 8) << ";\n";
+                 << VASTValue::BitRange((i + 1) * 8, i * 8) << ";\n";
 
       OS.exit_block();
     }
@@ -395,14 +395,14 @@ VASTMemoryBank::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
   }
 
   OS << getRDataName(PortNum, 2)
-     << VASTValue::printBitRange(getDataWidth(), 0, true)
+     << VASTValue::BitRange(getDataWidth(), 0, true)
      << " <= " << getArrayName() << "[" << AddrConnection << "];\n";
 
   OS << getRDataName(PortNum, 2)
-     << VASTValue::printBitRange(getDataWidth() + ByteAddrWidth,
+     << VASTValue::BitRange(getDataWidth() + ByteAddrWidth,
                                  getDataWidth(), true)
      << " <= " << getAddrName(PortNum, 1)
-     << VASTValue::printBitRange(ByteAddrWidth, 0) << ";\n";
+     << VASTValue::BitRange(ByteAddrWidth, 0) << ";\n";
 
   if (getReadLatency() > 2) {
     assert(getReadLatency() == 3 && "Unsupported read latency!");
@@ -411,7 +411,7 @@ VASTMemoryBank::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
   }
 
   OS << "if (" << Addr->getName()
-     << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
+     << VASTValue::BitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
      << NumWords << ")  $finish(\"Write access out of bound!\");\n";
 
 
@@ -610,8 +610,8 @@ void VASTMemoryBank::printBlockRAM(vlang_raw_ostream &OS) const {
   // word. Please note that the bytes is ordered from 0 to 7 ([0:7]) because
   // so that the byte address can access the correct byte.
   OS << "(* ramstyle = \"no_rw_check\", max_depth = " << NumWords << " *) logic"
-     << VASTValue::printBitRange(getDataWidth())
-     //<< VASTValue::printBitRange(BytesPerWord) << VASTValue::printBitRange(8)
+     << VASTValue::BitRange(getDataWidth())
+     //<< VASTValue::BitRange(BytesPerWord) << VASTValue::BitRange(8)
      << ' ' << getArrayName() << "[0:" << NumWords << "-1];\n";
 
   writeInitializeFile(OS);
@@ -656,17 +656,17 @@ VASTMemoryBank::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
 
     OS.if_begin(Twine(WData->getName()) + "en");
     OS << getArrayName() << "[" << getAddrName(PortNum, 1)
-        << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << ']'
+        << VASTValue::BitRange(getAddrWidth(), ByteAddrWidth, true) << ']'
         << " <= " << getWDataName(PortNum, 1)
-        << VASTValue::printBitRange(getDataWidth(), 0, false) << ";\n";
+        << VASTValue::BitRange(getDataWidth(), 0, false) << ";\n";
 
     OS.exit_block();
   }
 
   OS << getRDataName(PortNum, 2)
-     << VASTValue::printBitRange(getDataWidth(), 0, false) << " <= "
+     << VASTValue::BitRange(getDataWidth(), 0, false) << " <= "
      << ' ' << getArrayName() << "[" << getAddrName(PortNum, 1)
-     << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
+     << VASTValue::BitRange(getAddrWidth(), ByteAddrWidth, true) << "];\n";
 
   if (getReadLatency() > 2) {
     assert(getReadLatency() == 3 && "Unsupported read latency!");
@@ -676,11 +676,11 @@ VASTMemoryBank::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
 
   // Verify the addresses.
   OS << "if (" << Addr->getName()
-      << VASTValue::printBitRange(getAddrWidth(), ByteAddrWidth, true)
+      << VASTValue::BitRange(getAddrWidth(), ByteAddrWidth, true)
       << ">= "<< NumWords <<") $finish(\"Write access out of bound!\");\n";
   if (ByteAddrWidth)
     OS << "if (" << Addr->getName()
-        << VASTValue::printBitRange(ByteAddrWidth, 0, true) << " != "
+        << VASTValue::BitRange(ByteAddrWidth, 0, true) << " != "
         << ByteAddrWidth << "'b0) $finish(\"Write access out of bound!\");\n";
 
   OS.always_ff_end(false);
@@ -705,8 +705,9 @@ void VASTMemoryBank::printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr,
   LHS->printName(SS);
   SS.flush();
 
-  unsigned WordSizeInBits = LHS->getCombROMWordSizeInBits();
-  OS << "reg [" << WordSizeInBits << ":0] " << LHSName << "_comb_rom;\n";
+  unsigned DataWidth = LHS->getBitWidth();
+  OS << "reg " << VASTValue::BitRange(getDataWidth()) << ' '
+     << LHSName << "_comb_rom;\n";
   OS << "always @(*) begin// begin combinational ROM logic\n";
 
   SmallVector<std::pair<GlobalVariable*, unsigned>, 8> Vars;
@@ -723,7 +724,9 @@ void VASTMemoryBank::printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr,
   array_pod_sort(Vars.begin(), Vars.end(), base_addr_less);
 
   // The width of the byte address in a word.
-  unsigned BytesPerWord = WordSizeInBits / 8;
+  unsigned BytesPerWord = DataWidth / 8;
+  assert(((getDataWidth() / 8) % BytesPerWord) == 0 &&
+         "Bad datawidth of rom lookup!");
   unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
   OS.indent(2) << VASTNode::FullCaseAttr << ' ' << VASTNode::ParallelCaseAttr
                << "case (";

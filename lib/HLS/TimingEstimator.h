@@ -218,7 +218,7 @@ public:
         accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
                            SubClass::AccumulateLUTDelay);
         break;
-      case VASTExpr::dpCROM:
+      case VASTExpr::dpROMLookUp:
         accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
                            SubClass::AccumulateCROMDelay);
         break;

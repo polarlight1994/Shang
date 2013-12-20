@@ -60,25 +60,17 @@ class StrashTable {
   }
 
   void profileExpr(VASTExpr *Expr, FoldingSetNodeID &ID, CacheTy &Cache) {
-    VASTExpr::Opcode Opcode = Expr->getOpcode();
-    ID.AddInteger(Opcode);
-    ID.AddInteger(Expr->getUB());
-    ID.AddInteger(Expr->getLB());
-    //ID.AddInteger(Expr->size());
+    Expr->ProfileWithoutOperands(ID);
 
     SmallVector<unsigned, 8> Operands;
-
     for (unsigned i = 0; i < Expr->size(); ++i) {
       VASTValPtr Operand = Expr->getOperand(i);
       unsigned NodeID = getOrCreateStrashID(Operand, Cache);
-      //unsigned Data = (NodeID << 8) | (Operand->getBitWidth() & 0xff);
-      //assert((Data >> 8) == NodeID && "NodeID overflow!");
       Operands.push_back(NodeID);
     }
 
     // Sort the operands of commutative expressions
-    if (Opcode == VASTExpr::dpAnd || Opcode == VASTExpr::dpAdd
-        || Opcode == VASTExpr::dpMul)
+    if (Expr->isCommutative())
       array_pod_sort(Operands.begin(), Operands.end());  
 
     for (unsigned i = 0, e = Operands.size(); i < e; ++i)

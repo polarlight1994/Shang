@@ -131,7 +131,7 @@ void VASTValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   assert(0 && "VASTValue::printAsOperand should not be called!");
 }
 
-std::string VASTValue::printBitRange(unsigned UB, unsigned LB, bool printOneBit){
+std::string VASTValue::BitRange(unsigned UB, unsigned LB, bool printOneBit){
   std::string ret;
   assert(UB && UB > LB && "Bad bit range!");
   --UB;
@@ -268,13 +268,13 @@ void VASTSymbol::printAsOperandImpl(raw_ostream &OS,
                                     unsigned UB, unsigned LB) const {
   OS << getName();
   if (UB != getBitWidth() || LB != 0)
-    OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
+    OS << VASTValue::BitRange(UB, LB, getBitWidth() > 1);
 }
 
 void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                         unsigned LB) const{
   OS << getName();
-  if (UB) OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
+  if (UB) OS << VASTValue::BitRange(UB, LB, getBitWidth() > 1);
 }
 
 void VASTNamedValue::PrintDecl(raw_ostream &OS, const Twine &Name,
@@ -285,7 +285,7 @@ void VASTNamedValue::PrintDecl(raw_ostream &OS, const Twine &Name,
   else
     OS << "wire";
 
-  OS << VASTValue::printBitRange(BitWidth, 0, false);
+  OS << VASTValue::BitRange(BitWidth, 0, false);
 
   OS << ' ' << Name;
 

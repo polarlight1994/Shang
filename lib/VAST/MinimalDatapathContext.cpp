@@ -22,8 +22,19 @@ MinimalDatapathContext::getConstant(const APInt &Value) {
 
 VASTValPtr
 MinimalDatapathContext::createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
-                                   unsigned UB, unsigned LB) {
-  return Datapath.createExprImpl(Opc, Ops, UB, LB);;
+                                   unsigned Bitwidth) {
+  return Datapath.createExprImpl(Opc, Ops, Bitwidth);
+}
+
+VASTValPtr
+MinimalDatapathContext::createBitSlice(VASTValPtr Op, unsigned UB, unsigned LB) {
+  return Datapath.createBitSliceImpl(Op, UB, LB);
+}
+
+VASTValPtr
+MinimalDatapathContext::createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
+                                        unsigned BitWidth) {
+  return Datapath.createROMLookUpImpl(Addr, Bank, BitWidth);
 }
 
 VASTValPtr 

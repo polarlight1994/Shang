@@ -32,7 +32,7 @@ static cl::opt<bool>
 static
 raw_ostream &printAssign(raw_ostream &OS, const Twine &Name, unsigned BitWidth){
   OS << "assign " << Name
-     << VASTValue::printBitRange(BitWidth, 0, false)
+     << VASTValue::BitRange(BitWidth, 0, false)
      << " = ";
   return OS;
 }
@@ -44,7 +44,7 @@ static void printCombMux(raw_ostream &OS, ArrayRef<OperandT> Ops,
   // Create the temporary signal.
   OS << "// Combinational MUX\n"
      << (IsSimpleAssignment ? "wire " : "reg ")
-     << VASTValue::printBitRange(LHSWidth, 0, false)
+     << VASTValue::BitRange(LHSWidth, 0, false)
      << ' ' << LHSName << "_mux_wire;\n";
 
   // Handle the trivial case trivially: Only 1 input.
@@ -253,14 +253,29 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
 }
 //===----------------------------------------------------------------------===//
 
-VASTExpr::VASTExpr(Opcode Opc, unsigned NumOps, unsigned UB, unsigned LB)
-  : VASTValue(vastExpr, UB - LB), VASTOperandList(NumOps) {
+VASTExpr::VASTExpr(Opcode Opc, unsigned NumOps, unsigned BitWidth)
+: VASTValue(vastExpr, BitWidth), VASTOperandList(NumOps) {
   Contents64.Bank = NULL;
   Contents32.ExprNameID = 0;
   Contents16.ExprContents.Opcode = Opc;
-  Contents16.ExprContents.LB = LB;
+  Contents16.ExprContents.LB = 0;
   assert(NumOps && "Unexpected empty operand list!");
+}
 
+VASTExpr::VASTExpr(unsigned UB, unsigned LB)
+  : VASTValue(vastExpr, UB - LB), VASTOperandList(1) {
+  Contents64.Bank = NULL;
+  Contents32.ExprNameID = 0;
+  Contents16.ExprContents.Opcode = VASTExpr::dpAssign;
+  Contents16.ExprContents.LB = LB;
+}
+
+VASTExpr::VASTExpr(VASTMemoryBank *Bank, unsigned BitWidth)
+  : VASTValue(vastExpr, BitWidth), VASTOperandList(1) {
+  Contents64.Bank = Bank;
+  Contents32.ExprNameID = 0;
+  Contents16.ExprContents.Opcode = VASTExpr::dpROMLookUp;
+  Contents16.ExprContents.LB = 0;
 }
 
 VASTExpr::VASTExpr() : VASTValue(vastExpr, 0), VASTOperandList(0) {}
@@ -295,7 +310,7 @@ VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const {
   }
 
   assert(UB <= getBitWidth() && "Bad bit range!");
-  OS << VASTValue::printBitRange(UB, LB, getBitWidth() > 1);
+  OS << VASTValue::BitRange(UB, LB, getBitWidth() > 1);
 }
 
 bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
@@ -341,7 +356,7 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
     getOperand(0).printAsOperand(OS, getUB(), getLB());
     break;
 
-  case dpCROM:
+  case dpROMLookUp:
     OS << "[Combinational ROM]";
     break;
 
@@ -363,7 +378,7 @@ const char *VASTExpr::getFUName() const {
   case dpUGT:   return "shang_ugt";
   case dpRAnd:  return "shang_rand";
   case dpRXor:  return "shang_rxor";
-  case dpCROM:  return "shang_comb_rom";
+  case dpROMLookUp:  return "shang_comb_rom";
   default: break;
   }
 
@@ -402,10 +417,8 @@ bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
     if (InstSubModForFU && hasNameID() && printUnaryFU(OS, this))
       return true;
     break;
-  case VASTExpr::dpCROM: {
-    const VASTWrapper *TableWrapper = cast<VASTWrapper>(getOperand(1).get());
-    VASTMemoryBank *Table = cast<VASTMemoryBank>(TableWrapper->getVASTNode());
-    Table->printAsCombROM(this, getOperand(0), OS);
+  case VASTExpr::dpROMLookUp: {
+    getROMContent()->printAsCombROM(this, getOperand(0), OS);
     return true;
   }
   }
@@ -420,10 +433,27 @@ const char *VASTExpr::getLUT() const {
   return getOperand(size() - 1).getAsLValue<VASTSymbol>()->getName();
 }
 
+void VASTExpr::ProfileWithoutOperands(FoldingSetNodeID& ID) const {
+  VASTExpr::Opcode Opcode = getOpcode();
+  ID.AddInteger(Opcode);
+  switch (Opcode) {
+  default:
+    ID.AddInteger(getBitWidth());
+    break;
+  case VASTExpr::dpAssign:
+    ID.AddInteger(getUB());
+    ID.AddInteger(getLB());
+    break;
+  case VASTExpr::dpROMLookUp:
+    ID.AddPointer(getROMContent());
+    ID.AddInteger(getBitWidth());
+    break;
+  }
+}
+
 void VASTExpr::Profile(FoldingSetNodeID& ID) const {
-  ID.AddInteger(getOpcode());
-  ID.AddInteger(getUB());
-  ID.AddInteger(getLB());
+  ProfileWithoutOperands(ID);
+
   typedef VASTExpr::const_op_iterator op_iterator;
   for (op_iterator OI = op_begin(), OE = op_end(); OI != OE; ++OI) {
     VASTValPtr Operand = *OI;

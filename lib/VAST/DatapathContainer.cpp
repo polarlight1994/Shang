@@ -123,24 +123,67 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
     recursivelyDeleteTriviallyDeadExprs(E);
 }
 
+VASTValPtr
+DatapathContainer::createBitSliceImpl(VASTValPtr Op, unsigned UB, unsigned LB) {
+  FoldingSetNodeID ID;
+
+  // Profile the elements of VASTExpr.
+  ID.AddInteger(VASTExpr::dpAssign);
+  ID.AddInteger(UB);
+  ID.AddInteger(LB);
+  ID.AddPointer(Op);
+
+  void *IP = 0;
+  if (VASTExpr *E = UniqueExprs.FindNodeOrInsertPos(ID, IP))
+    return E;
+
+  VASTExpr *E = new VASTExpr(UB, LB);
+  assert(Op.get() && "Unexpected null VASTValPtr!");
+  (void) new (E->Operands) VASTUse(E, Op);
+
+  UniqueExprs.InsertNode(E, IP);
+  Exprs.push_back(E);
+  return E;
+}
+
+VASTValPtr
+DatapathContainer::createROMLookUpImpl(VASTValPtr Addr, VASTMemoryBank *Bank,
+                                       unsigned BitWidth) {
+  FoldingSetNodeID ID;
+
+  // Profile the elements of VASTExpr.
+  ID.AddInteger(VASTExpr::dpROMLookUp);
+  ID.AddInteger(BitWidth);
+  ID.AddPointer(Bank);
+  ID.AddPointer(Addr);
+
+  void *IP = 0;
+  if (VASTExpr *E = UniqueExprs.FindNodeOrInsertPos(ID, IP))
+    return E;
+
+  VASTExpr *E = new VASTExpr(Bank, BitWidth);
+  assert(Addr.get() && "Unexpected null VASTValPtr!");
+  (void) new (E->Operands) VASTUse(E, Addr);
+
+  UniqueExprs.InsertNode(E, IP);
+  Exprs.push_back(E);
+  return E;
+}
+
 VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
                                              ArrayRef<VASTValPtr> Ops,
-                                             unsigned UB, unsigned LB) {
+                                             unsigned Bitwidth) {
   assert(!Ops.empty() && "Unexpected empty expression");
-  if (Ops.size() == 1) {
-    switch (Opc) {
-    default: break;
-    case VASTExpr::dpAnd: case VASTExpr::dpAdd: case VASTExpr::dpMul:
-      return Ops[0];
-    }
-  }
+  assert((Ops.size() != 1 ||
+          ((Opc < VASTExpr::FirstFUOpc || Opc > VASTExpr::LastFUOpc) &&
+            Opc != VASTExpr::dpAnd))
+         && "Unexpected empty expression");
 
   FoldingSetNodeID ID;
 
   // Profile the elements of VASTExpr.
   ID.AddInteger(Opc);
-  ID.AddInteger(UB);
-  ID.AddInteger(LB);
+  ID.AddInteger(Bitwidth);
   for (unsigned i = 0; i < Ops.size(); ++i)
     ID.AddPointer(Ops[i]);
 
@@ -148,7 +191,7 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
   if (VASTExpr *E = UniqueExprs.FindNodeOrInsertPos(ID, IP))
     return E;
 
-  VASTExpr *E = new VASTExpr(Opc, Ops.size(), UB, LB);
+  VASTExpr *E = new VASTExpr(Opc, Ops.size(), Bitwidth);
 
   for (unsigned i = 0; i < Ops.size(); ++i) {
     assert(Ops[i].get() && "Unexpected null VASTValPtr!");

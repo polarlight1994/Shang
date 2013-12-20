@@ -521,8 +521,8 @@ public:
   virtual void print(raw_ostream &OS) const;
 
   // Helper function.
-  static std::string printBitRange(unsigned UB, unsigned LB = 0,
-                                   bool printOneBit = false);
+  static std::string BitRange(unsigned UB, unsigned LB = 0,
+                              bool printOneBit = false);
 
   // Extract all SeqVals which are connect to this VASTValue through data-path.
   // Return true if there is any supporting sval.
