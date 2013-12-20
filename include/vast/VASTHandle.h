@@ -55,6 +55,9 @@ public:
 
   VASTValPtr operator->() const { return U.unwrap(); }
 
+  template<typename T>
+  T *getAsLValue() const { return U.getAsLValue<T>(); }
+
   bool operator==(const VASTValPtr &RHS) const {
     return U.unwrap() == RHS;
   }

@@ -276,25 +276,24 @@ bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
   bool Replaced = false;
 
   std::set<VASTExpr*> LocalVisited;
-  typedef VASTOperandList::op_iterator ChildIterator;
-  std::vector<std::pair<VASTExpr*, ChildIterator> > VisitStack;
+  std::vector<std::pair<VASTHandle, unsigned> > VisitStack;
 
-  VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
+  VisitStack.push_back(std::make_pair(Expr, 0));
 
   while (!VisitStack.empty()) {
-    VASTExpr *CurNode = VisitStack.back().first;
-    ChildIterator &It = VisitStack.back().second;
+    VASTExpr *CurNode = VisitStack.back().first.getAsLValue<VASTExpr>();
+    unsigned &Idx = VisitStack.back().second;
 
     // We have visited all children of current node.
-    if (It == CurNode->op_end()) {
+    if (Idx == CurNode->size()) {
       VisitStack.pop_back();
       Replaced |= replaceIfNotEqual(CurNode, optimizeExpr(CurNode));
       continue;
     }
 
     // Otherwise, remember the node and visit its children first.
-    VASTExpr *ChildExpr = It->getAsLValue<VASTExpr>();
-    ++It;
+    VASTExpr *ChildExpr = CurNode->getOperand(Idx).getAsLValue<VASTExpr>();
+    ++Idx;
 
     if (ChildExpr == NULL)
       continue;
@@ -303,7 +302,7 @@ bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
     if (!LocalVisited.insert(ChildExpr).second || Visited.count(ChildExpr))
       continue;
 
-    VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
+    VisitStack.push_back(std::make_pair(ChildExpr, 0));
   }
 
   return Replaced;
