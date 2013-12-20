@@ -77,10 +77,14 @@ void DatapathContainer::addModifiedValueToCSEMaps(VASTNode *N) {
 }
 
 void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
-  assert(From && To && From != To && "Unexpected VASTValPtr value!");
+  assert(From && To && From != To && From.get() != To.get() &&
+         "Unexpected VASTValPtr value!");
   assert(From->getBitWidth() == To->getBitWidth() && "Bitwidth not match!");
   assert(!To->isDead() && "Replacing node by dead node!");
   VASTValue::use_iterator UI = From->use_begin(), UE = From->use_end();
+  // Remove the node from the CES map to prevent other node from being CES to
+  // the node that is going to be replaced.
+  removeValueFromCSEMaps(From.get());
 
   while (UI != UE) {
     VASTNode *User = *UI;
@@ -98,7 +102,7 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
       VASTValPtr Replacement = To;
       // If a inverted value is used, we must also invert the replacement.
       if (UsedValue != From) {
-        assert(UsedValue.invert() == From && "Use not using 'From'!");
+        assert(UsedValue.invert() == From && "Use is not using 'From'!");
         Replacement = Replacement.invert();
       }
 
@@ -114,8 +118,6 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
   }
 
   assert(From->use_empty() && "Incompleted replacement!");
-  // Do not use this node anymore.
-  removeValueFromCSEMaps(From.get());
   // Sentence this Node to dead!
   From->setDead();
   // Delete From.
