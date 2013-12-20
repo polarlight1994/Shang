@@ -190,7 +190,7 @@ VASTValPtr DatapathBLO::eliminateConstantInvertFlag(VASTValPtr V) {
   return V;
 }
 
-VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
+VASTValPtr DatapathBLO::eliminateInvertFlag(VASTValPtr V) {
   // There is not invert flag to fold.
   if (!V.isInverted())
     return V;
@@ -228,6 +228,8 @@ VASTValPtr DatapathBLO::propagateInvertFlag(VASTValPtr V) {
 }
 
 VASTValPtr DatapathBLO::optimizeBitRepeat(VASTValPtr Pattern, unsigned Times) {
+  Pattern = eliminateInvertFlag(Pattern);
+
   // This is not a repeat at all.
   if (Times == 1)
     return Pattern;
@@ -245,22 +247,180 @@ VASTValPtr DatapathBLO::optimizeBitRepeat(VASTValPtr Pattern, unsigned Times) {
 }
 
 VASTValPtr DatapathBLO::optimizeAssign(VASTValPtr V, unsigned UB, unsigned LB) {
+  V = eliminateInvertFlag(V);
+  unsigned OperandSize = V->getBitWidth();
+  // Not a sub bitslice.
+  if (UB == OperandSize && LB == 0)
+    return V;
+
+  if (VASTConstPtr C = dyn_cast<VASTConstPtr>(V))
+    return getConstant(C.getBitSlice(UB, LB));
+
+  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
+
+  if (Expr == None)
+    return None;
+
+  if (Expr->getOpcode() == VASTExpr::dpAssign){
+    unsigned Offset = Expr->getLB();
+    UB += Offset;
+    LB += Offset;
+    return optimizeAssign(Expr.getOperand(0), UB, LB);
+  }
+
+  if (Expr->getOpcode() == VASTExpr::dpBitCat) {
+    // Collect the bitslices which fall into (UB, LB]
+    SmallVector<VASTValPtr, 8> Ops;
+    unsigned CurUB = Expr->getBitWidth(), CurLB = 0;
+    unsigned LeadingBitsToLeft = 0, TailingBitsToTrim = 0;
+    for (unsigned i = 0; i < Expr->size(); ++i) {
+      VASTValPtr CurBitSlice = Expr.getOperand(i);
+      CurLB = CurUB - CurBitSlice->getBitWidth();
+      // Not fall into (UB, LB] yet.
+      if (CurLB >= UB) {
+        CurUB = CurLB;
+        continue;
+      }
+      // The entire range is visited.
+      if (CurUB <= LB)
+        break;
+      // Now we have CurLB < UB and CurUB > LB.
+      // Compute LeadingBitsToLeft if UB fall into [CurUB, CurLB), which imply
+      // CurUB >= UB >= CurLB.
+      if (CurUB >= UB)
+        LeadingBitsToLeft = UB - CurLB;
+      // Compute TailingBitsToTrim if LB fall into (CurUB, CurLB], which imply
+      // CurUB >= LB >= CurLB.
+      if (LB >= CurLB)
+        TailingBitsToTrim = LB - CurLB;
+
+      Ops.push_back(CurBitSlice);
+      CurUB = CurLB;
+    }
+
+    // Trivial case: Only 1 bitslice in range.
+    if (Ops.size() == 1)
+      return optimizeAssign(Ops.back(), LeadingBitsToLeft, TailingBitsToTrim);
+
+    Ops.front() = optimizeAssign(Ops.front(), LeadingBitsToLeft, 0);
+    Ops.back() = optimizeAssign(Ops.back(), Ops.back()->getBitWidth(),
+                                TailingBitsToTrim);
+
+    return optimizeBitCat<VASTValPtr>(Ops, UB - LB);
+  }
+
+  if (Expr->getOpcode() == VASTExpr::dpBitRepeat) {
+    VASTValPtr Pattern = Expr.getOperand(0);
+    // Simply repeat the pattern by the correct number.
+    if (Pattern->getBitWidth() == 1)
+      return optimizeBitRepeat(Pattern, UB - LB);
+    // TODO: Build the correct pattern.
+  }
+
   return None;
+}
+
+static VASTExprPtr GetAsBitSliceExpr(VASTValPtr V) {
+  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
+  if (!Expr || !Expr->isSubBitSlice())
+    return None;
+
+  return Expr;
+}
+
+VASTValPtr DatapathBLO::optimizeBitCatImpl(MutableArrayRef<VASTValPtr> Ops,
+                                           unsigned BitWidth) {
+  VASTConstPtr LastC = dyn_cast<VASTConstPtr>(Ops[0]);
+  VASTExprPtr LastBitSlice = GetAsBitSliceExpr(Ops[0]);
+
+  unsigned ActualOpPos = 1;
+
+  // Merge the constant sequence.
+  for (unsigned i = 1, e = Ops.size(); i < e; ++i) {
+    VASTValPtr V = Ops[i];
+    if (VASTConstPtr CurC = dyn_cast<VASTConstPtr>(V)) {
+      if (LastC != None) {
+        // Merge the constants.
+        APInt HiVal = LastC.getAPInt(), LoVal = CurC.getAPInt();
+        unsigned HiSizeInBits = LastC->getBitWidth(),
+                 LoSizeInBits = CurC->getBitWidth();
+        unsigned SizeInBits = LoSizeInBits + HiSizeInBits;
+        APInt Val = LoVal.zextOrSelf(SizeInBits);
+        Val |= HiVal.zextOrSelf(SizeInBits).shl(LoSizeInBits);
+        Ops[ActualOpPos - 1] = (LastC = getConstant(Val)); // Modify back.
+        continue;
+      } else {
+        LastC = CurC;
+        Ops[ActualOpPos++] = V; //push_back.
+        continue;
+      }
+    } else // Reset LastImm, since the current value is not immediate.
+      LastC = None;
+
+    if (VASTExprPtr CurBitSlice = GetAsBitSliceExpr(V)) {
+      VASTValPtr CurBitSliceParent = CurBitSlice.getOperand(0);
+      if (LastBitSlice && CurBitSliceParent == LastBitSlice.getOperand(0)
+          && LastBitSlice->getLB() == CurBitSlice->getUB()) {
+        VASTValPtr MergedBitSlice
+          = optimizeAssign(CurBitSliceParent, LastBitSlice->getUB(),
+                           CurBitSlice->getLB());
+        Ops[ActualOpPos - 1] = MergedBitSlice; // Modify back.
+        LastBitSlice = GetAsBitSliceExpr(MergedBitSlice);
+        continue;
+      } else {
+        LastBitSlice = CurBitSlice;
+        Ops[ActualOpPos++] = V; //push_back.
+        continue;
+      }
+    } else
+      LastBitSlice = 0;
+
+    Ops[ActualOpPos++] = V; //push_back.
+  }
+
+  Ops = Ops.slice(0, ActualOpPos);
+  if (Ops.size() == 1)
+    return Ops.back();
+
+#ifndef NDEBUG
+  unsigned TotalBits = 0;
+  for (unsigned i = 0, e = Ops.size(); i < e; ++i)
+    TotalBits += Ops[i]->getBitWidth();
+  if (TotalBits != BitWidth) {
+    dbgs() << "Bad bitcat operands: \n";
+    for (unsigned i = 0, e = Ops.size(); i < e; ++i)
+      Ops[i]->dump();
+    llvm_unreachable("Bitwidth not match!");
+  }
+#endif
+
+  return createExpr(VASTExpr::dpBitCat, Ops, BitWidth);
+}
+
+void DatapathBLO::eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops) {
+  for (unsigned i = 0; i < Ops.size(); ++i)
+    Ops[i] = eliminateInvertFlag(Ops[i]);
 }
 
 VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   switch (Expr->getOpcode()) {
+  case VASTExpr::dpAssign: {
+    VASTValPtr Op = Expr->getOperand(0);
+    return optimizeAssign(Op, Expr->getUB(), Expr->getLB());
+  }
+  case VASTExpr::dpBitCat:
+    return optimizeBitCat(Expr->getOperands(), Expr->getBitWidth());
   case VASTExpr::dpBitRepeat: {
     unsigned Times = Expr->getRepeatTimes();
 
     VASTValPtr Pattern = Expr->getOperand(0);
-    Pattern = propagateInvertFlag(Pattern);
     return optimizeBitRepeat(Pattern, Times);
   }
   // Strange expressions that we cannot optimize.
   default: break;
   }
-  return false;
+
+  return None;
 }
 
 bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {

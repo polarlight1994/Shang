@@ -74,12 +74,41 @@ class DatapathBLO : public MinimalExprBuilderContext, public BitMaskContext {
                           unsigned BitWidth);
 
   // Propagate invert flag to the leave of a combinational cone if possible.
-  VASTValPtr propagateInvertFlag(VASTValPtr V);
+  VASTValPtr eliminateInvertFlag(VASTValPtr V);
   VASTValPtr eliminateConstantInvertFlag(VASTValPtr V);
+  void eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops);
 
-  VASTValPtr optimizeBitCat(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth);
+  template<typename T>
+  VASTValPtr optimizeBitCat(ArrayRef<T> Ops, unsigned BitWidth) {
+    SmallVector<VASTValPtr, 8> FlattenOps;
+    flattenExpr<VASTExpr::dpBitCat, T>(FlattenOps, Ops);
+
+    return optimizeBitCatImpl(FlattenOps, BitWidth);
+  }
+
+  VASTValPtr optimizeBitCatImpl(MutableArrayRef<VASTValPtr>  Ops,
+                                unsigned BitWidth);
   VASTValPtr optimizeBitRepeat(VASTValPtr Pattern, unsigned Times);
   VASTValPtr optimizeAssign(VASTValPtr V, unsigned UB, unsigned LB);
+  
+  template<VASTExpr::Opcode Opcode, typename T>
+  void flattenExpr(SmallVectorImpl<VASTValPtr> &Dst, ArrayRef<T> Src) {
+    for (unsigned i = 0; i < Src.size(); ++i) {
+      // Try to remove the invert flag.
+      VASTValPtr V = eliminateInvertFlag(Src[i]);
+      if (!V.isInverted()) {
+        if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
+          // Flatten the expression tree with the same kind of opcode.
+          if (Expr->getOpcode() == Opcode) {
+            flattenExpr<Opcode, VASTUse>(Dst, Expr->getOperands());
+            continue;
+          }
+        }
+      }
+
+      Dst.push_back(V);
+    }
+  }
 
   VASTValPtr optimizeExpr(VASTExpr *Expr);
   bool replaceIfNotEqual(VASTValPtr From, VASTValPtr To);
