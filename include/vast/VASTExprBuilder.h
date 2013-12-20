@@ -56,33 +56,11 @@ public:
   void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 };
 
-// The helper class to collect the information about the operands of a VASTExpr.
-template<VASTExpr::Opcode Opcode>
-struct VASTExprOpInfo {
-  VASTExprOpInfo() {}
-
-  VASTValPtr analyzeOperand(VASTValPtr V) {
-    // Do nothing by default.
-    return V;
-  }
-};
-
 class VASTExprBuilder {
   void operator=(const VASTExprBuilder &RHS) LLVM_DELETED_FUNCTION;
   VASTExprBuilder(const VASTExprBuilder &RHS) LLVM_DELETED_FUNCTION;
 
-  VASTValPtr padHeadOrTail(VASTValPtr V, unsigned BitWidth, bool ByOnes,
-                           bool PadTail);
-
 protected:
-  VASTValPtr padHigherBits(VASTValPtr V, unsigned BitWidth, bool ByOnes) {
-    return padHeadOrTail(V, BitWidth, ByOnes, false);
-  }
-
-  VASTValPtr padLowerBits(VASTValPtr V, unsigned BitWidth, bool ByOnes) {
-    return padHeadOrTail(V, BitWidth, ByOnes, true);
-  }
-
   VASTExprBuilderContext &Context;
 public:
   explicit VASTExprBuilder(VASTExprBuilderContext &Context)
