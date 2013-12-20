@@ -313,7 +313,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
     case Instruction::PtrToInt: {
       VASTValPtr Operand = getAsOperandImpl(CExpr->getOperand(0));
       unsigned SizeInBits = getValueSizeInBits(V);
-      return indexVASTExpr(V, Builder.buildBitSliceExpr(Operand, SizeInBits, 0));
+      return indexVASTExpr(V, Builder.buildBitExtractExpr(Operand, SizeInBits, 0));
     }
     case Instruction::BitCast: {
       VASTValPtr Operand = getAsOperandImpl(CExpr->getOperand(0));
@@ -802,7 +802,7 @@ unsigned VASTModuleBuilder::getByteEnable(Value *Addr) const {
 VASTValPtr
 VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
                                    VASTMemoryBank *Bus) {
-  VASTValPtr V = Builder.buildBitSliceExpr(Result, Bus->getDataWidth(), 0);
+  VASTValPtr V = Builder.buildBitExtractExpr(Result, Bus->getDataWidth(), 0);
 
   // Build the shift to shift the bytes to LSB.
   if (Bus->requireByteEnable() && !Bus->isDefault()) {
@@ -813,7 +813,7 @@ VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
     // If the byte offset is unknown in compile time, get the shift amount from
     // the higher part of the bus output.
     if (!isa<VASTConstant>(ByteOffset.get()))
-      ShiftAmt = Builder.buildBitSliceExpr(Result, DataWidth + ByteAddrWidth,
+      ShiftAmt = Builder.buildBitExtractExpr(Result, DataWidth + ByteAddrWidth,
                                            DataWidth);
     // Again, convert the shift amount in bytes to shift amount in bits.
     VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getConstant(0, 3) };
@@ -847,7 +847,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   // Clamp the address width, to the address width of the memory bank.
   // Please note that we are using the byte address in the memory banks, so
   // the lower bound of the bitslice is 0.
-  AddrVal = Builder.buildBitSliceExpr(AddrVal, Bus->getAddrWidth(), 0);
+  AddrVal = Builder.buildBitExtractExpr(AddrVal, Bus->getAddrWidth(), 0);
   // Emit Address, use port 0.
   Op->addSrc(AddrVal, CurSrcIdx++, Bus->getAddr(0));
 
@@ -863,7 +863,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
       // We need to align the data based on its byte offset if byteenable
       // presents.
       unsigned ByteAddrWidth = Bus->getByteAddrWidth();
-      ByteOffset = Builder.buildBitSliceExpr(AddrVal, ByteAddrWidth, 0);
+      ByteOffset = Builder.buildBitExtractExpr(AddrVal, ByteAddrWidth, 0);
       VASTValPtr ShiftAmt = ByteOffset;
       // Shift the data by Bytes requires the ShiftAmt multiplied by 8.
       VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getConstant(0, 3) };
@@ -888,7 +888,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     if (!Bus->isDefault()) {
       // We also need to align the byte enables.
       unsigned ByteAddrWidth = Bus->getByteAddrWidth();
-      ByteOffset = Builder.buildBitSliceExpr(AddrVal, ByteAddrWidth, 0);
+      ByteOffset = Builder.buildBitExtractExpr(AddrVal, ByteAddrWidth, 0);
       ByteEn = Builder.buildShiftExpr(VASTExpr::dpShl, ByteEn, ByteOffset,
                                       Bus->getByteEnWidth());
     }
@@ -918,7 +918,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
     // Alignment is required if the Bus has byteenable.
     VASTValPtr V = alignLoadResult(Result, ByteOffset, Bus);
     // Trim the unused bits.
-    V = Builder.buildBitSliceExpr(V, getValueSizeInBits(&I), 0);
+    V = Builder.buildBitExtractExpr(V, getValueSizeInBits(&I), 0);
     // Index the aligned and trimed result.
     indexVASTExpr(&I, V);
   }
@@ -936,7 +936,7 @@ VASTModuleBuilder::buildCombinationalROMLookup(Value *Addr, VASTMemoryBank *Bus,
   // Clamp the address width, to the address width of the memory bank.
   // Please note that we are using the byte address in the memory banks, so
   // the lower bound of the bitslice is 0.
-  AddrVal = Builder.buildBitSliceExpr(AddrVal, Bus->getAddrWidth(), 0);
+  AddrVal = Builder.buildBitExtractExpr(AddrVal, Bus->getAddrWidth(), 0);
 
   indexVASTExpr(&Inst, Builder.buildROMLookUp(AddrVal, Bus, ResultWidth));
   ++NUMCombROM;

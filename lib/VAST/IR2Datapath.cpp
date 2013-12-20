@@ -38,8 +38,8 @@ unsigned DatapathBuilderContext::getValueSizeInBits(const Value *V) const {
 
 VASTValPtr DatapathBuilder::visitTruncInst(TruncInst &I) {
   // Truncate the value by bitslice expression.
-  return buildBitSliceExpr(getAsOperand(I.getOperand(0)),
-                           getValueSizeInBits(I), 0);
+  return buildBitExtractExpr(getAsOperand(I.getOperand(0)),
+                             getValueSizeInBits(I), 0);
 }
 
 VASTValPtr DatapathBuilder::visitZExtInst(ZExtInst &I) {
@@ -186,7 +186,7 @@ VASTValPtr DatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
     unsigned NumBytes = NumBits / 8;
     SmallVector<VASTValPtr, 8> Bytes(NumBytes, None);
     for (unsigned i = 0; i != NumBytes; ++i)
-      Bytes[i] = buildBitSliceExpr(V, i * 8 + 8, i * 8);
+      Bytes[i] = buildBitExtractExpr(V, i * 8 + 8, i * 8);
 
     return buildBitCatExpr(Bytes, NumBits);
   }
@@ -206,10 +206,10 @@ VASTValPtr DatapathBuilder::visitExtractValueInst(ExtractValueInst &I) {
       assert(I.getNumIndices() == 1 && "Unexpected number of indices!");
       // Return the overflow bit.
       if (I.getIndices()[0] == 1)
-        return buildBitSliceExpr(V, V->getBitWidth(), V->getBitWidth() - 1);
+        return buildBitExtractExpr(V, V->getBitWidth(), V->getBitWidth() - 1);
       // Else return the addition result.
       assert(I.getIndices()[0] == 0 && "Bad index!");
-      return buildBitSliceExpr(V, V->getBitWidth() - 1, 0);
+      return buildBitExtractExpr(V, V->getBitWidth() - 1, 0);
     }
     }
   }
@@ -267,7 +267,7 @@ VASTValPtr DatapathBuilder::visitGEPOperator(GEPOperator &O) {
 
       // If the index is smaller or larger than intptr_t, truncate or extend
       // it.
-      IdxN = buildBitSliceExpr(IdxN, PtrSize, 0);
+      IdxN = buildBitExtractExpr(IdxN, PtrSize, 0);
 
       // If this is a multiply by a power of two, turn it into a shl
       // immediately.  This is a very common case.

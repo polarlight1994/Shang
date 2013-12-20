@@ -271,7 +271,7 @@ VASTExpr::VASTExpr(VASTValPtr Op, unsigned UB, unsigned LB)
   : VASTValue(vastExpr, UB - LB), VASTOperandList(1) {
   Contents64.Bank = NULL;
   Contents32.ExprNameID = 0;
-  Contents16.ExprContents.Opcode = VASTExpr::dpAssign;
+  Contents16.ExprContents.Opcode = VASTExpr::dpBitExtract;
   Contents16.ExprContents.LB = LB;
   assert(Op.get() && "Unexpected null VASTValPtr!");
   (void) new (Operands) VASTUse(this, Op);
@@ -356,7 +356,7 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   case dpSRL: printSimpleUnsignedOp(OS, getOperands(), " >> ");break;
   case dpSRA: printSRAOp(OS, getOperands());                   break;
 
-  case dpAssign: getOperand(0).printAsOperand(OS, getUB(), getLB()); break;
+  case dpBitExtract: getOperand(0).printAsOperand(OS, getUB(), getLB()); break;
 
   case dpBitCat:    printBitCat(OS, getOperands());    break;
   case dpBitRepeat: printBitRepeat(OS, getOperand(0), getRepeatTimes()); break;
@@ -449,7 +449,7 @@ void VASTExpr::ProfileWithoutOperands(FoldingSetNodeID& ID) const {
   default:
     ID.AddInteger(getBitWidth());
     break;
-  case VASTExpr::dpAssign:
+  case VASTExpr::dpBitExtract:
     ID.AddInteger(getUB());
     ID.AddInteger(getLB());
     break;

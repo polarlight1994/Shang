@@ -182,12 +182,12 @@ public:
   void accumulateDelayThuAssign(VASTValue *Thu, VASTValue *Dst, unsigned ThuPos,
                                 uint8_t DstUB, uint8_t DstLB,
                                 SrcDelayInfo &CurInfo) {
-    VASTExpr *BitSliceExpr = cast<VASTExpr>(Dst);
+    VASTExpr *BitExtractExpr = cast<VASTExpr>(Dst);
     // Translate the (UB, LB] against the bitslice to the (UB, LB] against the
     // Src value.
-    uint8_t UB = DstUB + BitSliceExpr->getLB(),
-            LB = DstLB + BitSliceExpr->getLB();
-    assert(LB >= BitSliceExpr->getLB() && UB <= BitSliceExpr->getUB()
+    uint8_t UB = DstUB + BitExtractExpr->getLB(),
+            LB = DstLB + BitExtractExpr->getLB();
+    assert(LB >= BitExtractExpr->getLB() && UB <= BitExtractExpr->getUB()
            && "Bad bitslice!");
 
     // Handle the trivial case trivially.
@@ -251,7 +251,7 @@ public:
                            SubClass::AccumulateShiftDelay);
         break;
         break;
-      case VASTExpr::dpAssign:
+      case VASTExpr::dpBitExtract:
         accumulateDelayThuAssign(Op, Expr, i, UB, LB, CurSrcInfo);
         break;
       case VASTExpr::dpBitCat:

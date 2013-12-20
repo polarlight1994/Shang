@@ -155,8 +155,8 @@ public:
     dpBitCat,
     dpBitRepeat,
     // Simple wire assignment.
-    dpAssign,
-    LastAnonymousOpc = dpAssign,
+    dpBitExtract,
+    LastAnonymousOpc = dpBitExtract,
     // bitwise logic datapath
     dpAnd,
     dpRAnd,
@@ -244,13 +244,13 @@ public:
     return getOpcode() == dpKeep;
   }
 
-  inline bool isSubBitSlice() const {
-    return getOpcode() == dpAssign &&
+  inline bool isSubWord() const {
+    return getOpcode() == VASTExpr::dpBitExtract &&
            (getUB() != getOperand(0)->getBitWidth() || getLB() != 0);
   }
 
-  inline bool isZeroBasedBitSlice() const {
-    return isSubBitSlice() && getLB() == 0;
+  inline bool isLowerPart() const {
+    return isSubWord() && getLB() == 0;
   }
 
   bool hasNameID() const;
@@ -396,7 +396,7 @@ public:
 
   VASTValPtr createExprImpl(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                             unsigned Bitwidth);
-  VASTValPtr createBitSliceImpl(VASTValPtr Op, unsigned UB, unsigned LB);
+  VASTValPtr createBitExtractImpl(VASTValPtr Op, unsigned UB, unsigned LB);
   VASTValPtr
   createROMLookUpImpl(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth);
 

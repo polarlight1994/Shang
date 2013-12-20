@@ -27,8 +27,8 @@ MinimalDatapathContext::createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Op
 }
 
 VASTValPtr
-MinimalDatapathContext::createBitSlice(VASTValPtr Op, unsigned UB, unsigned LB) {
-  return Datapath.createBitSliceImpl(Op, UB, LB);
+MinimalDatapathContext::createBitExtract(VASTValPtr Op, unsigned UB, unsigned LB) {
+  return Datapath.createBitExtractImpl(Op, UB, LB);
 }
 
 VASTValPtr

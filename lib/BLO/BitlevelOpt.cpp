@@ -129,7 +129,7 @@ BitMasks BitMaskContext::calculateBitMask(VASTValue *V) {
   default: break;
   case VASTExpr::dpBitCat:
     return setBitMask(V, calculateBitCatBitMask(Expr));
-  case VASTExpr::dpAssign:
+  case VASTExpr::dpBitExtract:
     return setBitMask(V, calculateAssignBitMask(Expr));
   case VASTExpr::dpAnd:
     return setBitMask(V, calculateAndBitMask(Expr));
@@ -203,7 +203,7 @@ VASTValPtr DatapathBLO::eliminateInvertFlag(VASTValPtr V) {
   VASTExpr::Opcode Opcode = Expr->getOpcode();
   switch (Opcode) {
     // Only propagate the invert flag across these expressions:
-  case VASTExpr::dpAssign:
+  case VASTExpr::dpBitExtract:
   case VASTExpr::dpBitCat:
   case VASTExpr::dpBitRepeat:
   case VASTExpr::dpKeep:
@@ -261,7 +261,7 @@ VASTValPtr DatapathBLO::optimizeAssign(VASTValPtr V, unsigned UB, unsigned LB) {
   if (Expr == None)
     return None;
 
-  if (Expr->getOpcode() == VASTExpr::dpAssign){
+  if (Expr->getOpcode() == VASTExpr::dpBitExtract){
     unsigned Offset = Expr->getLB();
     UB += Offset;
     LB += Offset;
@@ -320,9 +320,9 @@ VASTValPtr DatapathBLO::optimizeAssign(VASTValPtr V, unsigned UB, unsigned LB) {
   return None;
 }
 
-static VASTExprPtr GetAsBitSliceExpr(VASTValPtr V) {
+static VASTExprPtr GetAsBitExtractExpr(VASTValPtr V) {
   VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
-  if (!Expr || !Expr->isSubBitSlice())
+  if (Expr == None || !Expr->isSubWord())
     return None;
 
   return Expr;
@@ -331,7 +331,7 @@ static VASTExprPtr GetAsBitSliceExpr(VASTValPtr V) {
 VASTValPtr DatapathBLO::optimizeBitCatImpl(MutableArrayRef<VASTValPtr> Ops,
                                            unsigned BitWidth) {
   VASTConstPtr LastC = dyn_cast<VASTConstPtr>(Ops[0]);
-  VASTExprPtr LastBitSlice = GetAsBitSliceExpr(Ops[0]);
+  VASTExprPtr LastBitSlice = GetAsBitExtractExpr(Ops[0]);
 
   unsigned ActualOpPos = 1;
 
@@ -357,7 +357,7 @@ VASTValPtr DatapathBLO::optimizeBitCatImpl(MutableArrayRef<VASTValPtr> Ops,
     } else // Reset LastImm, since the current value is not immediate.
       LastC = None;
 
-    if (VASTExprPtr CurBitSlice = GetAsBitSliceExpr(V)) {
+    if (VASTExprPtr CurBitSlice = GetAsBitExtractExpr(V)) {
       VASTValPtr CurBitSliceParent = CurBitSlice.getOperand(0);
       if (LastBitSlice && CurBitSliceParent == LastBitSlice.getOperand(0)
           && LastBitSlice->getLB() == CurBitSlice->getUB()) {
@@ -365,7 +365,7 @@ VASTValPtr DatapathBLO::optimizeBitCatImpl(MutableArrayRef<VASTValPtr> Ops,
           = optimizeAssign(CurBitSliceParent, LastBitSlice->getUB(),
                            CurBitSlice->getLB());
         Ops[ActualOpPos - 1] = MergedBitSlice; // Modify back.
-        LastBitSlice = GetAsBitSliceExpr(MergedBitSlice);
+        LastBitSlice = GetAsBitExtractExpr(MergedBitSlice);
         continue;
       } else {
         LastBitSlice = CurBitSlice;
@@ -404,7 +404,7 @@ void DatapathBLO::eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops) {
 
 VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   switch (Expr->getOpcode()) {
-  case VASTExpr::dpAssign: {
+  case VASTExpr::dpBitExtract: {
     VASTValPtr Op = Expr->getOperand(0);
     return optimizeAssign(Op, Expr->getUB(), Expr->getLB());
   }

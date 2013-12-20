@@ -62,8 +62,8 @@ class DesignMetricsImpl : public DatapathBuilderContext {
     return DPContainer.createExprImpl(Opc, Ops, BitWidth);
   }
 
-  VASTValPtr createBitSlice(VASTValPtr Op, unsigned UB, unsigned LB) {
-    return DPContainer.createBitSliceImpl(Op, UB, LB);
+  VASTValPtr createBitExtract(VASTValPtr Op, unsigned UB, unsigned LB) {
+    return DPContainer.createBitExtractImpl(Op, UB, LB);
   }
 
   VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,

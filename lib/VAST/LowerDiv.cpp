@@ -58,7 +58,7 @@ VASTValPtr DatapathBuilder::lowerUDiv(BinaryOperator &I) {
     // Multiply the numerator (operand 0) by the magic value
     Q = buildMulExpr(Q, getConstant(magics.m), 2 * ResultSizeInBits);
     // Get the higher part of the multplication result.
-    Q = buildBitSliceExpr(Q, 2 * ResultSizeInBits, ResultSizeInBits);
+    Q = buildBitExtractExpr(Q, 2 * ResultSizeInBits, ResultSizeInBits);
 
     if (magics.a == 0)
       return buildShiftExpr(VASTExpr::dpSRL, Q,
@@ -135,7 +135,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
     VASTValPtr N = getAsOperand(LHS);
     VASTValPtr Q = buildMulExpr(N, getConstant(magics.m), 2 * ResultSizeInBits);
     // Get the higher part of the multplication result.
-    Q = buildBitSliceExpr(Q, 2 * ResultSizeInBits, ResultSizeInBits);
+    Q = buildBitExtractExpr(Q, 2 * ResultSizeInBits, ResultSizeInBits);
     // If d > 0 and m < 0, add the numerator
     if (d.isStrictlyPositive() && magics.m.isNegative())
       Q = buildAddExpr(Q, N, ResultSizeInBits);

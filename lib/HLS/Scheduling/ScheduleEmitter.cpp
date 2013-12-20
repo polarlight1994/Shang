@@ -275,7 +275,7 @@ VASTSeqInst *ScheduleEmitter::remapToPort1(VASTSeqInst *Op, VASTSlot *ToSlot) {
     VASTValPtr TimedRData = VM.createSeqValue(Bus->getRData(1), 0, Inst);
 
     VASTSeqValue *Dst = RData.getDst();
-    VASTValPtr V = Builder.buildBitSliceExpr(TimedRData, Dst->getBitWidth(), 0);
+    VASTValPtr V = Builder.buildBitExtractExpr(TimedRData, Dst->getBitWidth(), 0);
     return R.latchValue(Dst, V, ToSlot, Op->getGuard(), Inst,
                          Op->getCyclesFromLaunch());
   }

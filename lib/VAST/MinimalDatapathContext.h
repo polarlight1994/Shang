@@ -34,7 +34,7 @@ public:
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                         unsigned Bitwidth);
   virtual
-  VASTValPtr createBitSlice(VASTValPtr Op, unsigned UB, unsigned LB);
+  VASTValPtr createBitExtract(VASTValPtr Op, unsigned UB, unsigned LB);
   virtual
   VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
                              unsigned BitWidth);

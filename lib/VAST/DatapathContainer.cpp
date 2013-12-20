@@ -126,11 +126,11 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
 }
 
 VASTValPtr
-DatapathContainer::createBitSliceImpl(VASTValPtr Op, unsigned UB, unsigned LB) {
+DatapathContainer::createBitExtractImpl(VASTValPtr Op, unsigned UB, unsigned LB) {
   FoldingSetNodeID ID;
 
   // Profile the elements of VASTExpr.
-  ID.AddInteger(VASTExpr::dpAssign);
+  ID.AddInteger(VASTExpr::dpBitExtract);
   ID.AddInteger(UB);
   ID.AddInteger(LB);
   ID.AddPointer(Op);

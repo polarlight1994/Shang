@@ -31,7 +31,7 @@ public:
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                             unsigned Bitwidth);
   virtual
-  VASTValPtr createBitSlice(VASTValPtr Op, unsigned UB, unsigned LB);
+  VASTValPtr createBitExtract(VASTValPtr Op, unsigned UB, unsigned LB);
   virtual
   VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
                              unsigned BitWidth);
@@ -58,7 +58,7 @@ public:
 
   VASTValPtr createExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                         unsigned Bitwidth);
-  VASTValPtr createBitSlice(VASTValPtr Op, unsigned UB, unsigned LB);
+  VASTValPtr createBitExtract(VASTValPtr Op, unsigned UB, unsigned LB);
   VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
                              unsigned BitWidth);
 
@@ -106,12 +106,12 @@ public:
   VASTValPtr buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op0, VASTValPtr Op1,
                        VASTValPtr Op2, unsigned BitWidth);
 
-  VASTValPtr buildBitSliceExpr(VASTValPtr U, uint8_t UB, uint8_t LB);
+  VASTValPtr buildBitExtractExpr(VASTValPtr U, unsigned UB, unsigned LB);
 
   VASTValPtr copyExpr(VASTExpr *Expr, ArrayRef<VASTValPtr> Ops);
 
   VASTValPtr getSignBit(VASTValPtr V) {
-    return buildBitSliceExpr(V, V->getBitWidth(), V->getBitWidth() - 1);
+    return buildBitExtractExpr(V, V->getBitWidth(), V->getBitWidth() - 1);
   }
 
   VASTValPtr buildBitCatExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth);

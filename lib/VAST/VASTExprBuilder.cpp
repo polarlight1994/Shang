@@ -34,7 +34,7 @@ VASTValPtr VASTExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
   llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
   return None;
 }
-VASTValPtr VASTExprBuilderContext::createBitSlice(VASTValPtr Op,
+VASTValPtr VASTExprBuilderContext::createBitExtract(VASTValPtr Op,
                                                   unsigned UB, unsigned LB) {
   llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
   return None;
@@ -71,9 +71,9 @@ VASTValPtr MinimalExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
   return Datapath.createExprImpl(Opc, Ops, Bitwidth);
 }
 
-VASTValPtr MinimalExprBuilderContext::createBitSlice(VASTValPtr Op,
+VASTValPtr MinimalExprBuilderContext::createBitExtract(VASTValPtr Op,
                                                      unsigned UB, unsigned LB) {
-  return Datapath.createBitSliceImpl(Op, UB, LB);
+  return Datapath.createBitExtractImpl(Op, UB, LB);
 }
 
 VASTValPtr MinimalExprBuilderContext::createROMLookUp(VASTValPtr Addr,
@@ -101,11 +101,10 @@ VASTValPtr VASTExprBuilder::buildBitCatExpr(ArrayRef<VASTValPtr> Ops,
   return Context.createExpr(VASTExpr::dpBitCat, Ops, BitWidth);
 }
 
-VASTValPtr VASTExprBuilder::buildBitSliceExpr(VASTValPtr U, uint8_t UB,
-                                              uint8_t LB) {
+VASTValPtr VASTExprBuilder::buildBitExtractExpr(VASTValPtr U, unsigned UB,
+                                                unsigned LB) {
   assert(UB <= U->getBitWidth() && UB > LB && "Bad bit range!");
-  VASTValPtr Ops[] = { U };
-  return Context.createBitSlice(U, UB, LB);
+  return Context.createBitExtract(U, UB, LB);
 }
 
 VASTValPtr VASTExprBuilder::buildReduction(VASTExpr::Opcode Opc,VASTValPtr Op) {
@@ -217,9 +216,9 @@ VASTValPtr VASTExprBuilder::copyExpr(VASTExpr *Expr, ArrayRef<VASTValPtr> Ops) {
   VASTExpr::Opcode Opcode = Expr->getOpcode();
   switch (Opcode) {
   default: break;
-  case VASTExpr::dpAssign:
+  case VASTExpr::dpBitExtract:
     assert(Ops.size() == 1 && "Wrong operand number!");
-    return buildBitSliceExpr(Ops[0], Expr->getUB(), Expr->getLB());
+    return buildBitExtractExpr(Ops[0], Expr->getUB(), Expr->getLB());
   case VASTExpr::dpBitRepeat:
     assert(Ops.size() == 1 && "Wrong operand number!");
     return buildBitRepeat(Ops[0], Expr->getRepeatTimes());
@@ -295,7 +294,7 @@ VASTValPtr VASTExprBuilder::buildShiftExpr(VASTExpr::Opcode Opc,
   // the corresponding software.
   unsigned RHSMaxSize = Log2_32_Ceil(LHS->getBitWidth());
   if (RHS->getBitWidth() > RHSMaxSize)
-    RHS = buildBitSliceExpr(RHS, RHSMaxSize, 0);
+    RHS = buildBitExtractExpr(RHS, RHSMaxSize, 0);
 
   VASTValPtr Ops[] = { LHS, RHS };
   return Context.createExpr(Opc, Ops, BitWidth);
