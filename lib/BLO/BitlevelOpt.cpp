@@ -243,7 +243,7 @@ VASTValPtr DatapathBLO::optimizeBitRepeat(VASTValPtr Pattern, unsigned Times) {
     }
   }
 
-  return None;
+  return Builder.buildBitRepeat(Pattern, Times);
 }
 
 VASTValPtr
@@ -260,7 +260,7 @@ DatapathBLO::optimizeBitExtract(VASTValPtr V, unsigned UB, unsigned LB) {
   VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
 
   if (Expr == None)
-    return None;
+    return Builder.buildBitExtractExpr(V, UB, LB);
 
   if (Expr->getOpcode() == VASTExpr::dpBitExtract){
     unsigned Offset = Expr->getLB();
@@ -318,7 +318,7 @@ DatapathBLO::optimizeBitExtract(VASTValPtr V, unsigned UB, unsigned LB) {
     // TODO: Build the correct pattern.
   }
 
-  return None;
+  return Builder.buildBitExtractExpr(V, UB, LB);
 }
 
 static VASTExprPtr GetAsBitExtractExpr(VASTValPtr V) {
@@ -395,7 +395,7 @@ VASTValPtr DatapathBLO::optimizeBitCatImpl(MutableArrayRef<VASTValPtr> Ops,
   }
 #endif
 
-  return createExpr(VASTExpr::dpBitCat, Ops, BitWidth);
+  return Builder.buildBitCatExpr(Ops, BitWidth);
 }
 
 VASTValPtr DatapathBLO::optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op) {
