@@ -447,6 +447,44 @@ VASTValPtr DatapathBLO::optimizeKeep(VASTValPtr Op) {
   return Builder.buildKeep(eliminateInvertFlag(Op));
 }
 
+VASTValPtr DatapathBLO::optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
+                                      unsigned BitWidth) {
+  LHS = eliminateInvertFlag(LHS);
+  RHS = eliminateInvertFlag(RHS);
+
+  if (VASTConstPtr C = dyn_cast<VASTConstPtr>(RHS)) {
+    unsigned ShiftAmount = C.getZExtValue();
+
+    // If we not shift at all, simply return the operand.
+    if (ShiftAmount == 0)
+     return LHS;
+
+    switch(Opc) {
+    case VASTExpr::dpShl:{
+      VASTValPtr PaddingBits = getConstant(0, ShiftAmount);
+      LHS = optimizeBitExtract(LHS, LHS->getBitWidth() - ShiftAmount, 0);
+      VASTValPtr Ops[] = { LHS, PaddingBits };
+      return optimizeBitCat<VASTValPtr>(Ops, BitWidth);
+    }
+    case VASTExpr::dpSRL:{
+      VASTValPtr PaddingBits = getConstant(0, ShiftAmount);
+      LHS = optimizeBitExtract(LHS, LHS->getBitWidth(), ShiftAmount);
+      VASTValPtr Ops[] = { PaddingBits, LHS };
+      return optimizeBitCat<VASTValPtr>(Ops, BitWidth);
+    }
+    case VASTExpr::dpSRA:{
+      VASTValPtr SignBits = optimizeBitRepeat(optimizeSignBit(LHS), ShiftAmount);
+      LHS = optimizeBitExtract(LHS, LHS->getBitWidth(), ShiftAmount);
+      VASTValPtr Ops[] = { SignBits, LHS };
+      return optimizeBitCat<VASTValPtr>(Ops, BitWidth);
+    }
+    default: llvm_unreachable("Unexpected opcode!"); break;
+    }
+  }
+
+  return Builder.buildShiftExpr(Opc, LHS, RHS, BitWidth);
+}
+
 void DatapathBLO::eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops) {
   for (unsigned i = 0; i < Ops.size(); ++i)
     Ops[i] = eliminateInvertFlag(Ops[i]);
@@ -472,6 +510,11 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
     return optimizeReduction(Opcode, Expr->getOperand(0));
   case VASTExpr::dpKeep:
     return optimizeKeep(Expr);
+  case VASTExpr::dpShl:
+  case VASTExpr::dpSRL:
+  case VASTExpr::dpSRA:
+    return optimizeShift(Opcode, Expr->getOperand(0), Expr->getOperand(1),
+                         Expr->getBitWidth());
   // Strange expressions that we cannot optimize.
   default: break;
   }

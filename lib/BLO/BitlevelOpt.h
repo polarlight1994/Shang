@@ -95,6 +95,12 @@ class DatapathBLO : public MinimalExprBuilderContext, public BitMaskContext {
   
   VASTValPtr optimizeKeep(VASTValPtr Op);
 
+  VASTValPtr optimizeSignBit(VASTValPtr V) {
+    return optimizeBitExtract(V, V->getBitWidth(), V->getBitWidth() - 1);
+  }
+  VASTValPtr optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
+                           unsigned BitWidth);
+
   template<VASTExpr::Opcode Opcode, typename T>
   void flattenExpr(SmallVectorImpl<VASTValPtr> &Dst, ArrayRef<T> Src) {
     for (unsigned i = 0; i < Src.size(); ++i) {
