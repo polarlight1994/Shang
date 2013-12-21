@@ -443,6 +443,10 @@ VASTValPtr DatapathBLO::optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op) {
   return Builder.buildReduction(Opc, Op);
 }
 
+VASTValPtr DatapathBLO::optimizeKeep(VASTValPtr Op) {
+  return Builder.buildKeep(eliminateInvertFlag(Op));
+}
+
 void DatapathBLO::eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops) {
   for (unsigned i = 0; i < Ops.size(); ++i)
     Ops[i] = eliminateInvertFlag(Ops[i]);
@@ -466,6 +470,8 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   case VASTExpr::dpRAnd:
   case VASTExpr::dpRXor:
     return optimizeReduction(Opcode, Expr->getOperand(0));
+  case VASTExpr::dpKeep:
+    return optimizeKeep(Expr);
   // Strange expressions that we cannot optimize.
   default: break;
   }
