@@ -398,13 +398,59 @@ VASTValPtr DatapathBLO::optimizeBitCatImpl(MutableArrayRef<VASTValPtr> Ops,
   return createExpr(VASTExpr::dpBitCat, Ops, BitWidth);
 }
 
+VASTValPtr DatapathBLO::optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op) {
+  Op = eliminateInvertFlag(Op);
+
+  if (VASTConstPtr C = dyn_cast<VASTConstPtr>(Op)) {
+    APInt Val = C.getAPInt();
+    switch (Opc) {
+    case VASTExpr::dpRAnd:
+      // Only reduce to 1 if all bits are 1.
+      if (Val.isAllOnesValue())
+        return getConstant(true, 1);
+      else
+        return getConstant(false, 1);
+    case VASTExpr::dpRXor:
+      // Only reduce to 1 if there are odd 1s.
+      if (Val.countPopulation() & 0x1)
+        return getConstant(true, 1);
+      else
+        return getConstant(false, 1);
+      break; // FIXME: Who knows how to evaluate this?
+    default:  llvm_unreachable("Unexpected Reduction Node!");
+    }
+  }
+
+  // Promote the reduction to the operands.
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(Op)) {
+    switch (Expr->getOpcode()) {
+    default: break;
+    case VASTExpr::dpBitCat: {
+      SmallVector<VASTValPtr, 8> Ops;
+      typedef VASTExpr::op_iterator it;
+      for (it I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
+        Ops.push_back(optimizeReduction(Opc, *I));
+
+      switch (Opc) {
+      case VASTExpr::dpRAnd: return Builder.buildAndExpr(Ops, 1);
+      case VASTExpr::dpRXor: return Builder.buildXorExpr(Ops, 1);
+      default:  llvm_unreachable("Unexpected Reduction Node!");
+      }
+    }
+    }
+  }
+
+  return Builder.buildReduction(Opc, Op);
+}
+
 void DatapathBLO::eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops) {
   for (unsigned i = 0; i < Ops.size(); ++i)
     Ops[i] = eliminateInvertFlag(Ops[i]);
 }
 
 VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
-  switch (Expr->getOpcode()) {
+  VASTExpr::Opcode Opcode = Expr->getOpcode();
+  switch (Opcode) {
   case VASTExpr::dpBitExtract: {
     VASTValPtr Op = Expr->getOperand(0);
     return optimizeBitExtract(Op, Expr->getUB(), Expr->getLB());
@@ -417,6 +463,9 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
     VASTValPtr Pattern = Expr->getOperand(0);
     return optimizeBitRepeat(Pattern, Times);
   }
+  case VASTExpr::dpRAnd:
+  case VASTExpr::dpRXor:
+    return optimizeReduction(Opcode, Expr->getOperand(0));
   // Strange expressions that we cannot optimize.
   default: break;
   }
