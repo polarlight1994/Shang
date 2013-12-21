@@ -89,7 +89,7 @@ class DatapathBLO : public MinimalExprBuilderContext, public BitMaskContext {
   VASTValPtr optimizeBitCatImpl(MutableArrayRef<VASTValPtr>  Ops,
                                 unsigned BitWidth);
   VASTValPtr optimizeBitRepeat(VASTValPtr Pattern, unsigned Times);
-  VASTValPtr optimizeAssign(VASTValPtr V, unsigned UB, unsigned LB);
+  VASTValPtr optimizeBitExtract(VASTValPtr V, unsigned UB, unsigned LB);
   
   template<VASTExpr::Opcode Opcode, typename T>
   void flattenExpr(SmallVectorImpl<VASTValPtr> &Dst, ArrayRef<T> Src) {
