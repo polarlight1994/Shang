@@ -340,7 +340,7 @@ class VASTWrapper :public VASTNamedValue, public ilist_node<VASTWrapper> {
   PointerUnion<Value*,VASTNode*> Data;
 
   friend struct ilist_sentinel_traits<VASTWrapper>;
-  VASTWrapper() : VASTNamedValue(vastWrapper, 0, 0) {}
+  VASTWrapper() : VASTNamedValue(vastWrapper, 0, 1) {}
 
 public:
 

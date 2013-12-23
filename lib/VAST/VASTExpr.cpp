@@ -287,7 +287,7 @@ VASTExpr::VASTExpr(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth)
   (void) new (Operands) VASTUse(this, Addr);
 }
 
-VASTExpr::VASTExpr() : VASTMaskedValue(vastExpr, 0), VASTOperandList(0) {}
+VASTExpr::VASTExpr() : VASTMaskedValue(vastExpr, 1), VASTOperandList(0) {}
 
 VASTExpr::~VASTExpr() {
 }

@@ -563,7 +563,7 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
   }
 
   // Otherwise simple construct the LUT expression.
-  VASTValPtr SOP = VM.getOrCreateSymbol(sop, 0);
+  VASTValPtr SOP = VM.getOrCreateSymbol(sop, 1);
   // Encode the comment flag of the SOP into the invert flag of the LUT string.
   if (Abc_SopIsComplement(sop)) SOP = SOP.invert();
   Ops.push_back(SOP);

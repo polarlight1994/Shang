@@ -225,7 +225,7 @@ private:
   friend struct ilist_sentinel_traits<VASTSeqValue>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
   VASTSeqValue()
-    : VASTNamedValue(vastSeqValue, 0, 0), Selector(0), V(0), Idx(0) {}
+    : VASTNamedValue(vastSeqValue, 0, 1), Selector(0), V(0), Idx(0) {}
 
 public:
   VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V);
