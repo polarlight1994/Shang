@@ -435,6 +435,9 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
 }
 
 VASTValPtr VASTModuleBuilder::indexVASTExpr(Value *Val, VASTValPtr V) {
+  if (VASTMaskedValue *MaskedValue = dyn_cast<VASTMaskedValue>(V.get()))
+    MaskedValue->init(Val, TD, V.isInverted());
+
   // Replace the known bits before we index the expressions.
   return DatapathBuilderContext::indexVASTExpr(Val, V);
 }

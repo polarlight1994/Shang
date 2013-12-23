@@ -799,6 +799,21 @@ void VASTRegister::print(raw_ostream &OS) const {
 }
 
 void VASTRegister::printDecl(raw_ostream &OS) const {
+  // Print the known bitmasks. 
+  typedef VASTSelector::def_iterator def_iterator;
+  for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
+    VASTSeqValue *V = *I;
+    if (!V->anyBitKnown())
+      continue;
+
+    if (Value *Val = V->getLLVMValue()) {
+      OS << "/*\n" << *Val << "*/\n";
+    }
+
+    V->printMaskIfAnyKnown(OS);
+    OS << '\n';
+  }
+
   VASTNamedValue::PrintDecl(OS, Sel->getName(), Sel->getBitWidth(), true, "");
   OS << " = " << VASTConstant::buildLiteral(InitVal, Sel->getBitWidth(), false)
      <<  ";\n";

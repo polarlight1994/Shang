@@ -585,9 +585,9 @@ using namespace llvm;
 class VASTMaskedValue : public VASTValue, public VASTBitMask {
 protected:
   VASTMaskedValue(VASTTypes T, unsigned BitWidth);
-
+public:
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTValue *A) { return true; }
+  static inline bool classof(const VASTMaskedValue *A) { return true; }
   static inline bool classof(const VASTNode *A) {
     return A->getASTType() >= vastFirstMaskedValueType &&
            A->getASTType() <= vastLastMaskedValueType;

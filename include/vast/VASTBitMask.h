@@ -17,6 +17,8 @@
 
 #include "llvm/ADT/APInt.h"
 namespace llvm {
+class Value;
+class DataLayout;
 class raw_ostream;
 }
 
@@ -34,16 +36,33 @@ public:
   VASTBitMask(APInt KnownZeros, APInt KnownOnes)
     : KnownZeros(KnownZeros), KnownOnes(KnownOnes) {
     assert(KnownOnes.getBitWidth() == KnownZeros.getBitWidth()
-      && "Bitwidths are not agreed!");
+           && "Bitwidths are not agreed!");
+    verify();
   }
 
-  APInt getKnownBits() const;
-  // Return true if the known bits in the current mask is a subset of the known
-  // bits in RHS.
-  bool isSubSetOf(const VASTBitMask &RHS) const;
+  unsigned getMaskWidth() const;
 
-  void print(raw_ostream &OS) const;
-  void dump() const;
+  APInt getKnownBits() const;
+  bool anyBitKnown() const;
+  VASTBitMask invert(bool invert = true) const {
+    return invert ? VASTBitMask(KnownOnes, KnownZeros)
+                  : VASTBitMask(KnownZeros, KnownOnes);
+  }
+
+  bool operator==(const VASTBitMask &RHS) const {
+    return KnownZeros == RHS.KnownZeros && KnownOnes == RHS.KnownOnes;
+  }
+
+  // Compute the bit mask for a LLVM Value, by calling ComputeMaskedBits.
+  void init(Value *V, const DataLayout *TD, bool Inverted = false);
+  // Initialize the current bit mask from other.
+  void init(const VASTBitMask &Other, bool Inverted = false);
+
+  void printMask(raw_ostream &OS) const;
+  void printMaskIfAnyKnown(raw_ostream &OS) const;
+  void dumpMask() const;
+
+  void verify() const;
 };
 }
 

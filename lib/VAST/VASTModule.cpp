@@ -273,6 +273,7 @@ struct DatapathPrinter {
         if (!PrintedNames.insert(NameID).second)
           return;
 
+        E->printMaskIfAnyKnown(OS);
         if (E->getOpcode() == VASTExpr::dpKeep)
           OS << "(* keep *) ";
 
