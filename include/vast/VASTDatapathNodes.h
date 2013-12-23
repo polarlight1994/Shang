@@ -151,7 +151,7 @@ public:
   }
 };
 
-class VASTExpr : public VASTValue, public VASTOperandList,
+class VASTExpr : public VASTMaskedValue, public VASTOperandList,
                  public FoldingSetNode, public ilist_node<VASTExpr> {
 public:
   enum Opcode {

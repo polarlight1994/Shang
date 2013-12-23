@@ -260,7 +260,13 @@ VASTConstant *const VASTConstant::True = &VASTConstant::TrueValue;
 VASTConstant *const VASTConstant::False = &VASTConstant::FalseValue;
 
 //===----------------------------------------------------------------------===//
+VASTMaskedValue::VASTMaskedValue(VASTTypes T, unsigned BitWidth)
+   : VASTValue(T, BitWidth), VASTBitMask(BitWidth) {
+  assert(T >= vastFirstMaskedValueType && T <= vastLastMaskedValueType
+         && "Bad DeclType!");
+}
 
+//===----------------------------------------------------------------------===//
 VASTSymbol::VASTSymbol(const char *Name, unsigned BitWidth)
   : VASTNamedValue(VASTNode::vastSymbol, Name, BitWidth) {}
 

@@ -13,6 +13,8 @@
 #ifndef VAST_NODE_BASE_H
 #define VAST_NODE_BASE_H
 
+#include "vast/VASTBitMask.h"
+
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/ilist.h"
 #include "llvm/ADT/ilist_node.h"
@@ -55,11 +57,13 @@ public:
     vastConstant,
     vastFirstValueType = vastConstant,
     vastSymbol,
+    vastFirstMaskedValueType = vastSymbol,
     vastExpr,
     vastWrapper,
     vastSeqValue,
-
     vastLastValueType = vastSeqValue,
+    vastLastMaskedValueType = vastSeqValue,
+
     vastInPort,
     vastOutPort,
     vastSlot,
@@ -576,10 +580,24 @@ struct simplify_type<const VASTUse> : public simplify_type<VASTUse> {};
 
 namespace vast {
 using namespace llvm;
-class VASTNamedValue : public VASTValue {
+
+// VASTValue with bitmask.
+class VASTMaskedValue : public VASTValue, public VASTBitMask {
+protected:
+  VASTMaskedValue(VASTTypes T, unsigned BitWidth);
+
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const VASTValue *A) { return true; }
+  static inline bool classof(const VASTNode *A) {
+    return A->getASTType() >= vastFirstMaskedValueType &&
+           A->getASTType() <= vastLastMaskedValueType;
+  }
+};
+
+class VASTNamedValue : public VASTMaskedValue {
 protected:
   VASTNamedValue(VASTTypes T, const char *Name, unsigned BitWidth)
-    : VASTValue(T, BitWidth) {
+    : VASTMaskedValue(T, BitWidth) {
     assert((T == vastSymbol || T == vastWrapper || T == vastSeqValue)
            && "Bad DeclType!");
     Contents64.Name = Name;

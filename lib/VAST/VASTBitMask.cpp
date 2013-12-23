@@ -22,11 +22,11 @@
 using namespace llvm;
 using namespace vast;
 //===--------------------------------------------------------------------===//
-APInt BitMasks::getKnownBits() const {
+APInt VASTBitMask::getKnownBits() const {
   return KnownZeros | KnownOnes;
 }
 
-bool BitMasks::isSubSetOf(const BitMasks &RHS) const {
+bool VASTBitMask::isSubSetOf(const VASTBitMask &RHS) const {
   assert(!(KnownOnes & RHS.KnownZeros)
     && !(KnownZeros & RHS.KnownOnes)
     && "Bit masks contradict!");
@@ -37,16 +37,18 @@ bool BitMasks::isSubSetOf(const BitMasks &RHS) const {
   return (KnownBits | RHSKnownBits) == RHSKnownBits;
 }
 
-void BitMasks::dump() const {
+void VASTBitMask::print(raw_ostream &OS) const {
   SmallString<128> Str;
   KnownZeros.toString(Str, 2, false, true);
-  dbgs() << "Known Zeros\t" << Str << '\n';
+  OS << "Known Zeros\t" << Str << '\n';
   Str.clear();
   KnownOnes.toString(Str, 2, false, true);
-  dbgs() << "Known Ones\t" << Str << '\n';
+  OS << "Known Ones\t" << Str << '\n';
   Str.clear();
   getKnownBits().toString(Str, 2, false, true);
-  dbgs() << "Known Bits\t" << Str << '\n';
+  OS << "Known Bits\t" << Str << '\n';
 }
 
-
+void VASTBitMask::dump() const {
+  print(dbgs());
+}

@@ -254,7 +254,7 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
 //===----------------------------------------------------------------------===//
 
 VASTExpr::VASTExpr(Opcode Opc, ArrayRef<VASTValPtr> Ops, unsigned BitWidth)
-: VASTValue(vastExpr, BitWidth), VASTOperandList(Ops.size()) {
+  : VASTMaskedValue(vastExpr, BitWidth), VASTOperandList(Ops.size()) {
   Contents64.Bank = NULL;
   Contents32.ExprNameID = 0;
   Contents16.ExprContents.Opcode = Opc;
@@ -268,7 +268,7 @@ VASTExpr::VASTExpr(Opcode Opc, ArrayRef<VASTValPtr> Ops, unsigned BitWidth)
 }
 
 VASTExpr::VASTExpr(VASTValPtr Op, unsigned UB, unsigned LB)
-  : VASTValue(vastExpr, UB - LB), VASTOperandList(1) {
+  : VASTMaskedValue(vastExpr, UB - LB), VASTOperandList(1) {
   Contents64.Bank = NULL;
   Contents32.ExprNameID = 0;
   Contents16.ExprContents.Opcode = VASTExpr::dpBitExtract;
@@ -278,16 +278,16 @@ VASTExpr::VASTExpr(VASTValPtr Op, unsigned UB, unsigned LB)
 }
 
 VASTExpr::VASTExpr(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth)
-  : VASTValue(vastExpr, BitWidth), VASTOperandList(1) {
+  : VASTMaskedValue(vastExpr, BitWidth), VASTOperandList(1) {
   Contents64.Bank = Bank;
   Contents32.ExprNameID = 0;
   Contents16.ExprContents.Opcode = VASTExpr::dpROMLookUp;
   Contents16.ExprContents.LB = 0;
   assert(Addr.get() && "Unexpected null VASTValPtr!");
-  (void) new (Operands)VASTUse(this, Addr);
+  (void) new (Operands) VASTUse(this, Addr);
 }
 
-VASTExpr::VASTExpr() : VASTValue(vastExpr, 0), VASTOperandList(0) {}
+VASTExpr::VASTExpr() : VASTMaskedValue(vastExpr, 0), VASTOperandList(0) {}
 
 VASTExpr::~VASTExpr() {
 }

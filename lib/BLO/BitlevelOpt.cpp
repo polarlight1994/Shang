@@ -30,99 +30,6 @@ STATISTIC(NodesReplaced,
           "Number of Nodes are replaced during the bit-level optimization");
 
 //===----------------------------------------------------------------------===//
-BitMasks BitMaskContext::calculateBitCatBitMask(VASTExpr *Expr) {
-  unsigned CurUB = Expr->getBitWidth();
-  unsigned ExprSize = Expr->getBitWidth();
-  // Clear the mask.
-  APInt KnownOnes = APInt::getNullValue(ExprSize),
-    KnownZeros = APInt::getNullValue(ExprSize);
-
-  // Concatenate the bit mask together.
-  for (unsigned i = 0; i < Expr->size(); ++i) {
-    VASTValPtr CurBitSlice = Expr->getOperand(i);
-    unsigned CurSize = CurBitSlice->getBitWidth();
-    unsigned CurLB = CurUB - CurSize;
-    BitMasks CurMask = calculateBitMask(CurBitSlice);
-    KnownZeros |= CurMask.KnownZeros.zextOrSelf(ExprSize).shl(CurLB);
-    KnownOnes |= CurMask.KnownOnes.zextOrSelf(ExprSize).shl(CurLB);
-
-    CurUB = CurLB;
-  }
-
-  return BitMasks(KnownZeros, KnownOnes);
-}
-
-BitMasks BitMaskContext::calculateConstantBitMask(VASTConstant *C) {
-  return BitMasks(~C->getAPInt(), C->getAPInt());
-}
-
-BitMasks BitMaskContext::calculateAssignBitMask(VASTExpr *Expr) {
-  unsigned UB = Expr->getUB(), LB = Expr->getLB();
-  BitMasks CurMask = calculateBitMask(Expr->getOperand(0));
-  // Adjust the bitmask by LB.
-  return BitMasks(VASTConstant::getBitSlice(CurMask.KnownZeros, UB, LB),
-                  VASTConstant::getBitSlice(CurMask.KnownOnes, UB, LB));
-}
-
-BitMasks BitMaskContext::calculateAndBitMask(VASTExpr *Expr) {
-  unsigned BitWidth = Expr->getBitWidth();
-  // Assume all bits are 1s.
-  BitMasks Mask(APInt::getNullValue(BitWidth),
-                APInt::getAllOnesValue(BitWidth));
-
-  for (unsigned i = 0; i < Expr->size(); ++i) {
-    BitMasks OperandMask = calculateBitMask(Expr->getOperand(i));
-    // The bit become zero if the same bit in any operand is zero.
-    Mask.KnownZeros |= OperandMask.KnownZeros;
-    // The bit is one only if the same bit in all operand are zeros.
-    Mask.KnownOnes &= OperandMask.KnownOnes;
-  }
-
-  return Mask;
-}
-
-// The implementation of basic bit mark calucation.
-BitMasks BitMaskContext::calculateBitMask(VASTValue *V) {
-  BitMaskCacheTy::iterator I = BitMaskCache.find(V);
-  // Return the cached version if possible.
-  if (I != BitMaskCache.end()) {
-    return I->second;
-  }
-
-  // Most simple case: Constant.
-  if (VASTConstant *C = dyn_cast<VASTConstant>(V))
-    return setBitMask(V, calculateConstantBitMask(C));
-
-  VASTExpr *Expr = dyn_cast<VASTExpr>(V);
-  if (!Expr)
-    return BitMasks(V->getBitWidth());
-
-  switch(Expr->getOpcode()) {
-  default: break;
-  case VASTExpr::dpBitCat:
-    return setBitMask(V, calculateBitCatBitMask(Expr));
-  case VASTExpr::dpBitExtract:
-    return setBitMask(V, calculateAssignBitMask(Expr));
-  case VASTExpr::dpAnd:
-    return setBitMask(V, calculateAndBitMask(Expr));
-  case VASTExpr::dpKeep:
-    return setBitMask(V, calculateBitMask(Expr->getOperand(0)));
-  }
-
-  return BitMasks(Expr->getBitWidth());
-}
-
-BitMasks BitMaskContext::calculateBitMask(VASTValPtr V) {
-  BitMasks Masks = calculateBitMask(V.get());
-
-  // Flip the bitmask if the value is inverted.
-  if (V.isInverted())
-    return BitMasks(Masks.KnownOnes, Masks.KnownZeros);
-
-  return Masks;
-}
-
-//===----------------------------------------------------------------------===//
 DatapathBLO::DatapathBLO(DatapathContainer &Datapath)
   : MinimalExprBuilderContext(Datapath), Builder(*this) {}
 
@@ -131,11 +38,6 @@ DatapathBLO::~DatapathBLO() {}
 void DatapathBLO::resetForNextIteration() {
   Visited.clear();
   Datapath.gc();
-}
-
-void DatapathBLO::deleteContenxt(VASTValue *V) {
-  MinimalExprBuilderContext::deleteContenxt(V);
-  BitMaskCache.erase(V);
 }
 
 bool DatapathBLO::replaceIfNotEqual(VASTValPtr From, VASTValPtr To) {

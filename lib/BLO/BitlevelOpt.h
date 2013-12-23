@@ -22,32 +22,7 @@
 namespace vast {
 using namespace llvm;
 
-class BitMaskContext {
-protected:
-  typedef std::map<VASTValue*, BitMasks> BitMaskCacheTy;
-  BitMaskCacheTy BitMaskCache;
-  // Simple bit mask calculation functions.
-  BitMasks calculateBitCatBitMask(VASTExpr *Expr);
-  BitMasks calculateAssignBitMask(VASTExpr *Expr);
-  BitMasks calculateAndBitMask(VASTExpr *Expr);
-  BitMasks calculateConstantBitMask(VASTConstant *C);
-public:
-  inline BitMasks setBitMask(VASTValue *V, const BitMasks &Masks) {
-    std::pair<BitMaskCacheTy::iterator, bool> Pair
-      = BitMaskCache.insert(std::make_pair(V, Masks));
-
-    if (!Pair.second)
-      Pair.first->second = Masks;
-
-    return Masks;
-  }
-
-  // Bit mask analyzing, bitmask_collecting_iterator.
-  BitMasks calculateBitMask(VASTValue *V);
-  BitMasks calculateBitMask(VASTValPtr V);
-};
-
-class DatapathBLO : public MinimalExprBuilderContext, public BitMaskContext {
+class DatapathBLO : public MinimalExprBuilderContext {
   VASTExprBuilder Builder;
   // Do not optimize the same expr twice.
   std::set<VASTExpr*> Visited;
@@ -104,8 +79,6 @@ class DatapathBLO : public MinimalExprBuilderContext, public BitMaskContext {
 
   VASTValPtr optimizeExpr(VASTExpr *Expr);
   bool replaceIfNotEqual(VASTValPtr From, VASTValPtr To);
-  // Override some hook for the ExprBUuilder
-  virtual void deleteContenxt(VASTValue *V);
 
   template<VASTExpr::Opcode Opcode>
   static void VerifyOpcode(VASTExpr *Expr) {
