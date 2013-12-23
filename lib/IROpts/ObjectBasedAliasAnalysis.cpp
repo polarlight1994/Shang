@@ -54,7 +54,7 @@ struct ObjectBasedAliasAnalyais : public ImmutablePass, public AliasAnalysis {
 
 char ObjectBasedAliasAnalyais::ID = 0;
 
-Pass *llvm::createObjectBasedAliasAnalyaisPass() {
+Pass *vast::createObjectBasedAliasAnalyaisPass() {
   return new ObjectBasedAliasAnalyais();
 }
 

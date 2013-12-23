@@ -1,6 +1,6 @@
 //===----- VFunctionUnit.cpp - VTM Function Unit Information ----*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -34,6 +34,7 @@ extern "C" {
 #include <assert.h>
 
 using namespace llvm;
+using namespace vast;
 using namespace luabridge;
 
 //===----------------------------------------------------------------------===//
@@ -64,7 +65,9 @@ initializeArray(const LuaRef &LuaLatTable, T *LatTable, unsigned Size) {
 void VFUDesc::print(raw_ostream &OS) const {
 }
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
   namespace VFUs {
     const char *VFUNames[] = {
       "Trivial", "AddSub", "Shift", "Mult", "ICmp",  "MemoryBus", "Mux"

@@ -1,6 +1,6 @@
 //===----- VASTHandle.h - VASTNode Smart Pointer Class ----------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SHANG_VAST_HANDLE_H
-#define SHANG_VAST_HANDLE_H
+#ifndef VAST_VAST_HANDLE_H
+#define VAST_VAST_HANDLE_H
 
 #include "vast/VASTNodeBases.h"
 
@@ -20,6 +20,10 @@
 
 namespace llvm {
 class raw_ostream;
+}
+
+namespace vast {
+using namespace llvm;
 
 class VASTHandle : public VASTNode {
   VASTUse U;
@@ -95,6 +99,10 @@ public:
     return A->getASTType() == VASTNode::vastHandle;
   }
 };
+}// end namespace vast
+
+namespace llvm {
+using namespace vast;
 
 template<> struct simplify_type<VASTHandle> {
   typedef       VASTValPtr SimpleType;        // The real type this represents...

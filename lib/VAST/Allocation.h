@@ -22,13 +22,18 @@ class Value;
 class GlobalVariable;
 class StoreInst;
 class LoadInst;
-class VASTModule;
-class VASTMemoryBank;
 class Function;
-class FuncUnitId;
 class DataLayout;
 class Pass;
 class AnalysisUsage;
+}
+
+namespace vast {
+using namespace llvm;
+
+class VASTModule;
+class VASTMemoryBank;
+class FuncUnitId;
 
 class HLSAllocation {
   // Previous HLSAllocation to chain to.

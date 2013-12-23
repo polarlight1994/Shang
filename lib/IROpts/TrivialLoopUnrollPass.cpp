@@ -1,6 +1,6 @@
 //===-- TrivialLoopUnroll.cpp - Loop unroller pass ------------------------===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -39,6 +39,7 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
 STATISTIC(NumUnrolled, "Number of loops unrolled");
 STATISTIC(NumTailUnrolled, "Number of loops tail unrolled");
 
@@ -52,7 +53,7 @@ TailUnrollThreshold("shang-unroll-epilog-threshold",
                              "  the tripcount is a mulitple of the unroll count"),
                     cl::init(128));
 
-namespace llvm {
+namespace vast {
 int getLoopDepDist(const SCEV *SSAddr, const SCEV *SDAddr, bool SrcBeforeDest,
                    unsigned ElemSizeInByte, ScalarEvolution *SE) {
   // Use SCEV to compute the dependencies distance.
@@ -661,7 +662,7 @@ bool LoopMetrics::isUnrollAccaptable(unsigned Count, uint64_t UnrollThreshold,
   return IncreasedCost < Gama * StepsElimnated;
 }
 
-Pass *llvm::createMemoryAccessAlignerPass() {
+Pass *vast::createMemoryAccessAlignerPass() {
   return new MemoryAccessAligner();
 }
 
@@ -683,7 +684,7 @@ INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
 INITIALIZE_PASS_END(TrivialLoopUnroll, "trivial-loop-unroll",
                     "Unroll trivial loops", false, false)
 
-Pass *llvm::createTrivialLoopUnrollPass() {
+Pass *vast::createTrivialLoopUnrollPass() {
   return new TrivialLoopUnroll();
 }
 

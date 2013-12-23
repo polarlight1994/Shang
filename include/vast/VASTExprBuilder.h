@@ -1,6 +1,6 @@
 //===----- VASTExprBuilder.h - Building Verilog AST Expressions -*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -17,6 +17,12 @@
 #include "llvm/Support/Allocator.h"
 
 namespace llvm {
+class DataLayout;
+}
+
+namespace vast {
+using namespace llvm;
+
 class VASTExprBuilderContext {
 public:
   virtual ~VASTExprBuilderContext() {}
@@ -42,7 +48,6 @@ public:
 };
 
 class DatapathContainer;
-class DataLayout;
 
 class MinimalExprBuilderContext : public VASTExprBuilderContext {
 protected:

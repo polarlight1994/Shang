@@ -1,6 +1,6 @@
 //===------- CompGraph.h - Compatibility Graph for Binding ------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -33,11 +33,16 @@
 
 namespace llvm {
 class BasicBlock;
+class DominatorTree;
+}
+
+namespace vast {
+using namespace llvm;
+
 class VASTSelector;
 class VASTSeqOp;
 class VASTSeqInst;
 class VASTSeqValue;
-class DominatorTree;
 class CombPatternTable;
 class MinCostFlowSolver;
 
@@ -217,6 +222,10 @@ public:
       unlinkPred(*pred_begin());
   }
 };
+} // end namespace vast
+
+namespace llvm {
+using namespace vast;
 
 template<> struct GraphTraits<CompGraphNode*> {
   typedef CompGraphNode NodeType;
@@ -229,8 +238,10 @@ template<> struct GraphTraits<CompGraphNode*> {
     return N->succ_end();
   }
 };
+} // end namespace llvm
 
-
+namespace vast {
+using namespace llvm;
 class CompGraphBase {
 public:
   typedef CompGraphNode NodeTy;
@@ -359,6 +370,10 @@ public:
     Dst->Preds.insert(Src);
   }
 };
+} // end namespace vast
+
+namespace llvm {
+using namespace vast;
 
 template <> struct GraphTraits<CompGraphBase*>
   : public GraphTraits<CompGraphNode*> {

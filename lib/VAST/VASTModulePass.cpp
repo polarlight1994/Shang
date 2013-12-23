@@ -1,6 +1,6 @@
 //===-- VASTModulePass.cpp - Build the VASTModule on LLVM IR --------------===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -944,7 +944,7 @@ VASTModuleBuilder::buildCombinationalROMLookup(Value *Addr, VASTMemoryBank *Bus,
 
 //===----------------------------------------------------------------------===//
 namespace llvm {
-  void initializeVASTModuleAnalysisPass(PassRegistry &Registry);
+void initializeVASTModuleAnalysisPass(PassRegistry &Registry);
 }
 
 namespace {

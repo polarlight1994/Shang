@@ -1,6 +1,6 @@
 //===-- MemoryAccessCoalescing.cpp - Coalesce Memory Accesses  --*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -30,6 +30,7 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
 
 STATISTIC(MemOpFused, "Number of memory operations fused");
 
@@ -517,6 +518,6 @@ void MemoryAccessCoalescing::fuseInstruction(Instruction *LowerInst,
   ++MemOpFused;
 }
 
-Pass *llvm::createMemoryAccessCoalescingPass() {
+Pass *vast::createMemoryAccessCoalescingPass() {
   return new MemoryAccessCoalescing();
 }

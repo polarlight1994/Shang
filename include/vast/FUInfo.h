@@ -30,7 +30,9 @@ namespace luabridge {
   class LuaRef;
 }
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 class TargetRegisterClass;
 
 namespace VFUs {

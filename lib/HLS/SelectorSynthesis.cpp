@@ -1,6 +1,6 @@
 //===- SelectorSynthesis.cpp - Implement the Fanin Mux for Regs -*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.

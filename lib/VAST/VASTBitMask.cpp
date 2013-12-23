@@ -20,6 +20,7 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
 //===--------------------------------------------------------------------===//
 APInt BitMasks::getKnownBits() const {
   return KnownZeros | KnownOnes;

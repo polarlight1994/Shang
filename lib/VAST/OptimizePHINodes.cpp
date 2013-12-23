@@ -132,6 +132,6 @@ bool OptimizePHINodes::runOnVASTModule(VASTModule &VM) {
   return changed;
 }
 
-Pass *llvm::createOptimizePHINodesPass() {
+Pass *vast::createOptimizePHINodesPass() {
   return new OptimizePHINodes();
 }

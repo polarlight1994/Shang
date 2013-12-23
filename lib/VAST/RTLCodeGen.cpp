@@ -1,6 +1,6 @@
 //===- Writer.cpp - VTM machine instructions to RTL verilog  ----*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -68,7 +68,7 @@ struct RTLCodeGen : public VASTModulePass {
 //===----------------------------------------------------------------------===//
 char RTLCodeGen::ID = 0;
 
-Pass *llvm::createRTLCodeGenPass() {
+Pass *vast::createRTLCodeGenPass() {
   return new RTLCodeGen();
 }
 

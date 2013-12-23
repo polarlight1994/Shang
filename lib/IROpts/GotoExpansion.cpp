@@ -1,6 +1,6 @@
 //===--------- GotoExpansion.cpp ---Perform Goto Expansion in HLS ---------===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -91,7 +91,7 @@ INITIALIZE_PASS_BEGIN(GotoExpansion, "shang-goto-expansion",
 INITIALIZE_PASS_END(GotoExpansion, "shang-goto-expansion",
                 "Goto Expansion in HLS", false, false)
 
-Pass *llvm::createGotoExpansionPass() {
+Pass *vast::createGotoExpansionPass() {
   return new GotoExpansion();
 }
 

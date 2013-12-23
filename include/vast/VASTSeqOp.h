@@ -1,6 +1,6 @@
 //===-------- VASTSeqOp.h - Operations in the Control-path ------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -11,15 +11,17 @@
 // design.
 //
 //===----------------------------------------------------------------------===//
-#ifndef SHANG_VAST_SEQ_OP_H
-#define SHANG_VAST_SEQ_OP_H
+#ifndef VAST_VAST_SEQ_OP_H
+#define VAST_VAST_SEQ_OP_H
 
 #include "vast/FUInfo.h"
 #include "vast/VASTNodeBases.h"
 #include "llvm/IR/Value.h"
 #include "llvm/ADT/PointerUnion.h"
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 class VASTSeqOp;
 class VASTSlot;
 class VASTSeqInst;

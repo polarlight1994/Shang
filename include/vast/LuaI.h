@@ -26,14 +26,18 @@
 // Forward declarations.
 struct lua_State;
 
-namespace luabridge {
-  class LuaRef;
-}
-
 namespace llvm {
 // Forward declaration.
 class raw_ostream;
 class SMDiagnostic;
+}
+
+namespace luabridge {
+  class LuaRef;
+}
+
+namespace vast {
+using namespace llvm;
 
 // Lua scripting support.
 class LuaI {

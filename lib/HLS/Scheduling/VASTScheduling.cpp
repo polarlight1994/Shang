@@ -1,6 +1,6 @@
 //===----- VASTScheduling.cpp - Scheduling Graph on VAST  -------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -589,7 +589,7 @@ INITIALIZE_PASS_END(VASTScheduling,
                     "vast-scheduling", "Perfrom Scheduling on the VAST",
                     false, true)
 
-Pass *llvm::createVASTSchedulingPass() {
+Pass *vast::createVASTSchedulingPass() {
   return new VASTScheduling();
 }
 

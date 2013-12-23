@@ -19,6 +19,10 @@
 
 namespace llvm {
 class GlobalVariable;
+}
+
+namespace vast {
+using namespace llvm;
 
 class VASTMemoryBank : public VASTSubModuleBase {
   const unsigned AddrSize, DataSize;

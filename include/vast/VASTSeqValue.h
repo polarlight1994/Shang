@@ -1,6 +1,6 @@
 //===----- VASTSeqValue.h - The Value in the Sequential Logic ---*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -13,8 +13,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SHANG_VAST_SEQ_VALUE_H
-#define SHANG_VAST_SEQ_VALUE_H
+#ifndef VAST_VAST_SEQ_VALUE_H
+#define VAST_VAST_SEQ_VALUE_H
 
 #include "vast/VASTSeqOp.h"
 #include "vast/VASTHandle.h"
@@ -24,6 +24,11 @@
 
 namespace llvm {
 class Twine;
+}
+
+namespace vast {
+using namespace llvm;
+
 class VASTExprBuilder;
 class VASTSeqValue;
 class STGDistances;

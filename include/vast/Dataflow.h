@@ -1,6 +1,6 @@
 //===--------- Dataflow.h - Dataflow Analysis on LLVM IR --------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -22,12 +22,17 @@
 #include "llvm/ADT/PointerIntPair.h"
 
 namespace llvm {
+class raw_ostream;
 class DominatorTree;
+}
+
+namespace vast {
+using namespace llvm;
+
 class VASTSeqOp;
 class VASTSlot;
 class VASTSeqValue;
 class TimingNetlist;
-class raw_ostream;
 class STGDistances;
 
 template<typename T>
@@ -63,7 +68,6 @@ struct DataflowPtr : public PointerIntPair<T*, 1, bool> {
     return Base::getPointer();
   }
 };
-
 template<>
 inline DataflowPtr<Instruction>::DataflowPtr(VASTSeqOp *Op)
   : Base(dyn_cast_or_null<Instruction>(Op->getValue()), false) {
@@ -75,6 +79,10 @@ template<>
 inline DataflowPtr<Value>::DataflowPtr(VASTSeqValue *SV)
   : Base(SV->getLLVMValue(), SV->isFUInput() || SV->isFUOutput()) {}
 
+} // end namespace vast
+
+namespace llvm {
+using namespace vast;
 template<typename T>
 struct DenseMapInfo<DataflowPtr<T> >
   : public DenseMapInfo<PointerIntPair<T*, 1, bool> > {};
@@ -94,6 +102,10 @@ struct simplify_type<const DataflowPtr<T> >
 
 typedef DataflowPtr<Value> DataflowValue;
 typedef DataflowPtr<Instruction> DataflowInst;
+} // end namespace llvm
+
+namespace vast {
+using namespace llvm;
 
 class Dataflow : public FunctionPass {
   struct Annotation {

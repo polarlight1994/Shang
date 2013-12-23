@@ -1,6 +1,6 @@
 //===- SeqLiveVariables.h - LiveVariables analysis on the STG ---*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -27,16 +27,21 @@
 #include <set>
 
 namespace llvm {
+template<class PtrType, unsigned SmallSize> class SmallPtrSet;
+class BasicBlock;
+class Value;
+class DominatorTree;
+}
+
+namespace vast {
+using namespace llvm;
+
 class VASTValue;
 struct VASTLatch;
 class VASTSeqOp;
 class VASTSeqValue;
 class VASTSlot;
 class VASTModule;
-template<class PtrType, unsigned SmallSize> class SmallPtrSet;
-class BasicBlock;
-class Value;
-class DominatorTree;
 
 class SeqLiveVariables : public VASTModulePass {
   VASTModule *VM;

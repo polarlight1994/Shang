@@ -1,6 +1,6 @@
 //=- FunctionFilter.cpp --- This Pass filter out the SW part of the module -==//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -38,6 +38,7 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
 
 namespace {
 struct FunctionFilter : public ModulePass {
@@ -156,7 +157,7 @@ INITIALIZE_PASS_BEGIN(FunctionFilter, "FunctionFilter",
 INITIALIZE_PASS_END(FunctionFilter, "FunctionFilter",
                     "Function Filter", false, false)
 
-Pass *llvm::createFunctionFilterPass() {
+Pass *vast::createFunctionFilterPass() {
   return new FunctionFilter();
 }
 

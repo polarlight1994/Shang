@@ -1,6 +1,6 @@
 //===-------- Strash.h - Structural Hash Table for Datapath Nodes ---------===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -19,7 +19,9 @@
 #include "vast/VASTModulePass.h"
 #include <map>
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 // The structural hash table and the cached version.
 struct Strash;
 class CachedStrashTable : public VASTModulePass {

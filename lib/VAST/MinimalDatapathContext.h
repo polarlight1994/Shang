@@ -1,6 +1,6 @@
 //===-- VASTModuleDatapathContext.h - Minimal Datapath Context --*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -10,14 +10,19 @@
 // This file define the Datapath builder context based on VASTModule.
 //
 //===----------------------------------------------------------------------===//
-#ifndef SHANG_VASTMODULE_DATAPATH_CONTEXT_H
-#define SHANG_VASTMODULE_DATAPATH_CONTEXT_H
+#ifndef VAST_VASTMODULE_DATAPATH_CONTEXT_H
+#define VAST_VASTMODULE_DATAPATH_CONTEXT_H
 
 #include "IR2Datapath.h"
 
 namespace llvm {
-class DatapathContainer;
 class DataLayout;
+}
+
+namespace vast {
+using namespace llvm;
+
+class DatapathContainer;
 
 class MinimalDatapathContext : public DatapathBuilderContext {
   DatapathContainer &Datapath;

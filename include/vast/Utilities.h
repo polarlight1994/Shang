@@ -1,13 +1,13 @@
-//===-- Utilities.h - Utilities Functions for Verilog Backend ---*- C++ -*-===//
+//===-------------- Utilities.h - Utilities Functions -----------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements some utilities functions for Verilog Backend.
+// This file implements some utilities functions
 //
 //===----------------------------------------------------------------------===//
 #ifndef VTM_UTILITIES_H
@@ -20,6 +20,13 @@
 #include "llvm/Support/Compiler.h"
 
 namespace llvm {
+class SCEV;
+class ScalarEvolution;
+}
+
+namespace vast {
+using namespace llvm;
+
 // Get the bit slice in range (UB, LB].
 /// GetBits - Retrieve bits between [LB, UB).
 inline uint64_t getBitSlice64(uint64_t x, unsigned UB, unsigned LB = 0) {
@@ -79,8 +86,6 @@ inline void PrintEscapedString(const std::string &Str, raw_ostream &Out) {
   PrintEscapedString(Str.c_str(), Str.size(), Out);
 }
 
-class SCEV;
-class ScalarEvolution;
 // Loop dependency Analysis.
 int getLoopDepDist(bool SrcBeforeDest, int Distance = 0);
 

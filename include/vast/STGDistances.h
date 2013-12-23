@@ -22,7 +22,9 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SparseBitVector.h"
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 class VASTSlot;
 class VASTCtrlRgn;
 struct ShortestPathImpl;

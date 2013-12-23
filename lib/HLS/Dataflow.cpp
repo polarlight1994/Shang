@@ -1,6 +1,6 @@
 //===------- Dataflow.cpp - Dataflow Analysis on LLVM IR --------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -549,6 +549,6 @@ void Dataflow::dumpIncomings(raw_ostream &OS) const {
   }
 }
 
-Pass *llvm::createDataflowAnnotationPass() {
+Pass *vast::createDataflowAnnotationPass() {
   return new DataflowAnnotation();
 }

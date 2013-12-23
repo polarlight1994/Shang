@@ -1,6 +1,6 @@
 //=====- LowerAlloca.cpp - Move Stack Memory to Global RAM ----*- C++ -*-=====//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -57,7 +57,7 @@ INITIALIZE_PASS(LowerAlloca, "shang-lower-alloca",
                 "Move Stack Variable to Global Variable",
                 false, true)
 
-Pass *llvm::createLowerAllocaPass() {
+Pass *vast::createLowerAllocaPass() {
   return new LowerAlloca();
 }
 

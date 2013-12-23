@@ -1,6 +1,6 @@
 //===--- HSLInliner.cpp ---Perform HLS specific function inlining ---------===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -25,6 +25,7 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
 
 namespace {
 
@@ -75,7 +76,7 @@ INITIALIZE_AG_DEPENDENCY(CallGraph)
 INITIALIZE_PASS_END(HLSInliner, "hls-inline",
                 "Inliner HLS specific algorithm", false, false)
 
-Pass *llvm::createHLSInlinerPass() {
+Pass *vast::createHLSInlinerPass() {
   return new HLSInliner();
 }
 

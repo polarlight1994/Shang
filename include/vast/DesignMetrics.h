@@ -22,12 +22,17 @@
 #include "llvm/Support/DataTypes.h"
 
 namespace llvm {
-class DesignMetricsImpl;
 class Instruction;
 class BasicBlock;
 class Function;
 class DataLayout;
 class raw_ostream;
+}
+
+namespace vast {
+using namespace llvm;
+
+class DesignMetricsImpl;
 
 class DesignMetrics {
   // DO NOT IMPLEMENT

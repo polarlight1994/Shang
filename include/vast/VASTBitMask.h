@@ -17,7 +17,9 @@
 
 #include "llvm/ADT/APInt.h"
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 struct BitMasks {
   APInt KnownZeros, KnownOnes;
   explicit BitMasks(unsigned Size)

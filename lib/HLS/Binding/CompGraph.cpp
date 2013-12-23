@@ -1,6 +1,6 @@
 //===----- CompGraph.cpp - Compatibility Graph for Binding ------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -570,6 +570,7 @@ unsigned CompGraphBase::computeReqiredResource(const CompGraphNode *Node) const 
 }
 
 namespace llvm {
+
 template<> struct DOTGraphTraits<CompGraphBase*> : public DefaultDOTGraphTraits{
   typedef CompGraphBase GraphTy;
   typedef GraphTy::NodeTy NodeTy;
@@ -650,7 +651,9 @@ void CompGraphBase::viewGraph() {
 
 #include "lpsolve/lp_lib.h"
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 class MinCostFlowSolver {
 public:
   typedef std::pair<const CompGraphNode*, const CompGraphNode*> EdgeType;

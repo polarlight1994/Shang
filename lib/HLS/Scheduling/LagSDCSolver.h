@@ -1,6 +1,6 @@
 //===- LagSDCSolver.h - Solve the IP with Lagrangian Relaxation -*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -29,7 +29,9 @@
 struct _lprec;
 typedef _lprec lprec;
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 class LagSDCSolver;
 
 // The constraints for conditional dependencies to who Lagrangrain relaxation

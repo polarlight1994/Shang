@@ -31,7 +31,9 @@ using namespace llvm;
 STATISTIC(NumSTPIterations,
           "Number of iterations in the shortest path algorithm");
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 template<typename SubClass>
 struct STGDistanceImpl : public STGDistanceBase {
   void run(VASTCtrlRgn &R);

@@ -1,6 +1,6 @@
 //=----- TimingNetlist.h - The Netlist for Delay Estimation -------*- C++ -*-=//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -12,8 +12,8 @@
 // timing estimation/analysis before and after scheduling/FU binding.
 //
 //===----------------------------------------------------------------------===//
-#ifndef SHANG_TIMING_NETLIST_H
-#define SHANG_TIMING_NETLIST_H
+#ifndef VAST_TIMING_NETLIST_H
+#define VAST_TIMING_NETLIST_H
 
 #include "vast/FUInfo.h"
 #include "vast/VASTModulePass.h"
@@ -21,7 +21,9 @@
 
 #include <map>
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 class VASTSelector;
 class VASTValue;
 

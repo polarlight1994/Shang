@@ -1,6 +1,6 @@
 //===--------- GlobalDepBuilder.cpp - Build the dependencies on CFG -------===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -51,6 +51,8 @@
 #include <queue>
 
 using namespace llvm;
+using namespace vast;
+
 STATISTIC(NumControlDepRelaxed, "Number of control dependencies relaxed");
 
 namespace {

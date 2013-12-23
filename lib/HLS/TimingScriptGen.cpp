@@ -1,6 +1,6 @@
 //===----------- TimingScriptGen.cpp- Generate the Timing Scripts - C++ ---===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -582,6 +582,6 @@ INITIALIZE_PASS_END(TimingScriptGen, "vast-timing-script-generation",
                     "Generate timing script to export the behavior-level timing",
                     false, true)
 
-Pass *llvm::createTimingScriptGenPass() {
+Pass *vast::createTimingScriptGenPass() {
   return new TimingScriptGen();
 }

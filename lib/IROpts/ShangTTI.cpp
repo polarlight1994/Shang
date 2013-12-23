@@ -1,6 +1,6 @@
 //===----- ShangTTI.cpp - Basic TTI for the Shang HLS framework -*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -101,7 +101,7 @@ INITIALIZE_AG_PASS(ShangTTI, TargetTransformInfo, "basictti",
 char ShangTTI::ID = 0;
 
 Pass *
-llvm::createShangTargetTransformInfoPass() {
+vast::createShangTargetTransformInfoPass() {
   return new ShangTTI();
 }
 

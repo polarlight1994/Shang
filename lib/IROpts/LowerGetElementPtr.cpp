@@ -1,6 +1,6 @@
 //===- LowerGetElementPtr.cpp - Lower GEP to integer arithmetic -*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -49,7 +49,7 @@ INITIALIZE_PASS_BEGIN(LowerGetElementPtr, "vast-lower-gep",
 INITIALIZE_PASS_END(LowerGetElementPtr, "vast-lower-gep",
                     "Lower GetElementPtr to integer arithmetic", false, false)
 
-Pass *llvm::createLowerGetElementPtrPass() {
+Pass *vast::createLowerGetElementPtrPass() {
   return new LowerGetElementPtr();
 }
 

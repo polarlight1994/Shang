@@ -1,6 +1,6 @@
 //===------ Strash.cpp - Structural Hash Table for Datapath Nodes ---------===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -26,7 +26,9 @@
 
 using namespace llvm;
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 struct StrashNode : public FoldingSetNode {
   /// FastID - A reference to an Interned FoldingSetNodeID for this node.
   /// The StrashTable's BumpPtrAllocator holds the data.
@@ -153,7 +155,10 @@ public:
     LastID = 0;
   }
 };
+} // end namespace
 
+namespace llvm {
+using namespace vast;
 // Specialize FoldingSetTrait for StrashNode to avoid needing to compute
 // temporary FoldingSetNodeID values.
 template<> struct FoldingSetTrait<StrashNode> {
@@ -174,6 +179,10 @@ template<> struct FoldingSetTrait<StrashNode> {
 // The structural hash table which compute the hash of the datapath node based
 // on the structural of the combinational cone rooted on that node.
 void initializeStrashPass(PassRegistry &Registry);
+} // end namespace llvm
+
+namespace vast {
+using namespace llvm;
 
 struct Strash : public ImmutablePass, public StrashTable<Strash> {
   static char ID;
@@ -232,7 +241,8 @@ unsigned CachedStrashTable::getOrCreateStrashID(VASTSelector *Sel) {
   return Table->getOrCreateStrashID(Sel);
 }
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
 
 class CombPatterns : public StrashTable<CombPatterns> {
   typedef std::map<VASTValPtr, unsigned> CacheTy;

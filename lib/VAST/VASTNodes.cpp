@@ -13,7 +13,6 @@
 //===----------------------------------------------------------------------===//
 #include "LangSteam.h"
 #include "vast/Strash.h"
-#include "vast/VASTHandle.h"
 #include "vast/VASTDatapathNodes.h"
 #include "vast/VASTMemoryBank.h"
 #include "vast/VASTModule.h"
@@ -23,6 +22,7 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
 
 //----------------------------------------------------------------------------//
 void VASTNode::dump() const {

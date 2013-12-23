@@ -1,6 +1,6 @@
 //===- SeqLiveVariables.cpp - LiveVariables analysis on the STG -*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -80,7 +80,7 @@ INITIALIZE_PASS_BEGIN(SeqLiveVariables, "shang-seq-live-variables",
 INITIALIZE_PASS_END(SeqLiveVariables, "shang-seq-live-variables",
                     "Seq Live Variables Analysis", false, true)
 
-Pass *llvm::createSeqLiveVariablesPass() {
+Pass *vast::createSeqLiveVariablesPass() {
   return new SeqLiveVariables();
 }
 

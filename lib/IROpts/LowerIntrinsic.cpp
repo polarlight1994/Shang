@@ -1,6 +1,6 @@
 //===---- LowerIntrinsic.cpp - Lower the Intrinsics Functions ---*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -39,7 +39,7 @@ INITIALIZE_PASS(LowerIntrinsic, "shang-lower-intrinsic",
                 "Lower the unsupported intrinsics",
                 false, false)
 
-Pass *llvm::createLowerIntrinsicPass() {
+Pass *vast::createLowerIntrinsicPass() {
   return new LowerIntrinsic();
 }
 

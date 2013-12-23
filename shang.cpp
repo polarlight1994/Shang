@@ -1,6 +1,6 @@
 //===-- sync.cpp - Implement the C Synthesis Code Generator ---------------===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -49,6 +49,7 @@
 #include <map>
 
 using namespace llvm;
+using namespace vast;
 
 // General options for sync.  Other pass-specific options are specified
 // within the corresponding sync passes, and target-specific options

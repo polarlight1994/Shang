@@ -1,6 +1,6 @@
 //===------------- SDCScheduler.h - The SDC Scheduler -----------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -24,6 +24,10 @@ typedef _lprec lprec;
 namespace llvm {
 class DominatorTree;
 struct PostDominatorTree;
+}
+
+namespace vast {
+using namespace llvm;
 
 class LagSDCSolver;
 

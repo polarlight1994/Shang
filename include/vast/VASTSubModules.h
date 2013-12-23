@@ -1,6 +1,6 @@
 //===---- VASTSubModules.h - Submodules in VerilogAST -----------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -20,9 +20,14 @@
 
 namespace llvm {
 class GlobalVariable;
+class Instruction;
+}
+
+namespace vast {
+using namespace llvm;
+
 class VASTWrapper;
 class VASTSelector;
-class Instruction;
 
 class VASTSubModule : public VASTSubModuleBase {
   // Remember the input/output flag in the pointer.

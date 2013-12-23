@@ -1,6 +1,6 @@
 //===------- VASTScheduling.h - Scheduling Graph on VAST  -------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -34,10 +34,18 @@
 
 namespace llvm {
 class raw_ostream;
-class VASTModule;
-class SchedulerBase;
+class Loop;
 class DominatorTree;
 class AliasAnalysis;
+class LoopInfo;
+class BranchProbabilityInfo;
+}
+
+namespace vast {
+using namespace llvm;
+
+class VASTModule;
+class SchedulerBase;
 
 class VASTDep {
 public:
@@ -422,7 +430,10 @@ public:
 
   void viewNeighbourGraph();
 };
+} // end namespace vast
 
+namespace llvm {
+using namespace vast;
 template<>
 struct GraphTraits<VASTSchedUnit*> {
   typedef VASTSchedUnit NodeType;
@@ -440,7 +451,10 @@ struct GraphTraits<VASTSchedUnit*> {
     return N->use_end();
   }
 };
+} // end namespace llvm
 
+namespace vast {
+using namespace llvm;
 // The container of the VASTSUnits
 class VASTSchedGraph {
   Function &F;
@@ -554,6 +568,10 @@ public:
 
   void dump() const;
 };
+} // end namespace vast
+
+namespace llvm {
+using namespace vast;
 
 template<>
 struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {
@@ -574,14 +592,13 @@ struct GraphTraits<VASTSchedGraph*> : public GraphTraits<VASTSchedUnit*> {
     return G->end();
   }
 };
+} // end namespace llvm
+
+namespace vast {
+using namespace llvm;
 
 class PreSchedBinding;
 class PSBCompNode;
-
-class Loop;
-class LoopInfo;
-class BranchProbabilityInfo;
-class DominatorTree;
 
 class VASTScheduling : public VASTModulePass {
   // Mapping between LLVM IR and VAST IR.

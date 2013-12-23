@@ -15,14 +15,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef SHANG_VASTMODULE_PASS_H
-#define SHANG_VASTMODULE_PASS_H
+#ifndef VAST_VASTMODULE_PASS_H
+#define VAST_VASTMODULE_PASS_H
 
 #include "llvm/Pass.h"
-
 namespace llvm {
-class VASTModule;
 class Function;
+}
+
+namespace vast {
+using namespace llvm;
+
+class VASTModule;
 
 /// ScopPass - This class adapts the FunctionPass interface to allow convenient
 /// creation of passes that operate on the VAST. Instead of overriding

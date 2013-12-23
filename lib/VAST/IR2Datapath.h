@@ -1,6 +1,6 @@
 //===-------------- IR2Datapath.h - LLVM IR --> VAST ------------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -22,6 +22,10 @@
 namespace llvm {
 class DataLayout;
 class GEPOperator;
+}
+
+namespace vast {
+using namespace llvm;
 
 class DatapathBuilderContext : public VASTExprBuilderContext {
 public:

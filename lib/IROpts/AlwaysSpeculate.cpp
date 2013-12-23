@@ -30,6 +30,8 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
+
 STATISTIC(NumSpeculated, "Number of operations Speculated");
 STATISTIC(NumBBSimplified, "Number of blocks simplified");
 
@@ -53,7 +55,7 @@ struct AlwaysSpeculate : public FunctionPass {
 };
 }
 
-Pass *llvm::createAlwaysSpeculatePass() { return new AlwaysSpeculate(); }
+Pass *vast::createAlwaysSpeculatePass() { return new AlwaysSpeculate(); }
 char AlwaysSpeculate::ID = 0;
 
 INITIALIZE_PASS_BEGIN(AlwaysSpeculate,

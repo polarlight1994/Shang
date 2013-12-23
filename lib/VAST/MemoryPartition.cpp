@@ -114,7 +114,7 @@ INITIALIZE_AG_PASS_END(MemoryPartition, HLSAllocation,
 
 char MemoryPartition::ID = 0;
 
-Pass *llvm::createMemoryPartitionPass() {
+Pass *vast::createMemoryPartitionPass() {
   return new MemoryPartition();
 }
 

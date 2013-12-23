@@ -1,6 +1,6 @@
-//===--------- Passes.h - Passes for Verilog target machine -----*- C++ -*-===//
+//===------------- Passes.h - Passes Implemented in VAST --------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -10,8 +10,8 @@
 // SUnits optimization passes
 //
 //===----------------------------------------------------------------------===//
-#ifndef SHANG_PASSES_H
-#define SHANG_PASSES_H
+#ifndef VAST_PASSES_H
+#define VAST_PASSES_H
 
 #include <string>
 
@@ -20,9 +20,10 @@ class Pass;
 class FunctionPass;
 class raw_ostream;
 class PassRegistry;
+}
 
-class MallocAllocator;
-template<typename T, typename AllocatorTy> class StringMap;
+namespace vast {
+using namespace llvm;
 
 extern char &ControlLogicSynthesisID;
 extern char &TimingDrivenSelectorSynthesisID;
@@ -72,7 +73,9 @@ Pass *createLowerGetElementPtrPass();
 
 // RTL code generation.
 Pass *createRTLCodeGenPass();
+} // end namespace vast
 
+namespace llvm {
 void initializeShangTTIPass(PassRegistry &Registry);
 void initializeObjectBasedAliasAnalyaisPass(PassRegistry &Registry);
 

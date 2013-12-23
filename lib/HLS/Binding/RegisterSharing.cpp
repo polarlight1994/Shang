@@ -1,6 +1,6 @@
 //===- RegisterSharing.cpp - Share the Registers in the Design --*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -142,7 +142,7 @@ INITIALIZE_PASS_BEGIN(RegisterSharing, "shang-register-sharing",
 INITIALIZE_PASS_END(RegisterSharing, "shang-register-sharing",
                     "Share the registers in the design", false, true)
 
-Pass *llvm::createRegisterSharingPass() {
+Pass *vast::createRegisterSharingPass() {
   return new RegisterSharing();
 }
 

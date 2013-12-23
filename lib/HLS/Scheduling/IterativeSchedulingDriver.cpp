@@ -211,7 +211,7 @@ INITIALIZE_PASS_END(IterativeScheduling, "vast-iterative-scheduling",
                     "Preform iterative scheduling",
                     false, true)
 
-Pass *llvm::createIterativeSchedulingPass() {
+Pass *vast::createIterativeSchedulingPass() {
   return new IterativeScheduling();
 }
 

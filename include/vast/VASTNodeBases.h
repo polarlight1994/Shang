@@ -1,6 +1,6 @@
 //===----- VASTNodeBases.h - Base Classes in VerilogAST ---------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -29,6 +29,11 @@
 namespace llvm {
 class BasicBlock;
 class Value;
+class Twine;
+template<typename T> class ArrayRef;
+}
+
+namespace vast {
 class VASTNamedValue;
 class VASTValue;
 class VASTExpr;
@@ -41,9 +46,8 @@ class VASTSeqOp;
 class VASTMemoryBank;
 class VASTModule;
 class vlang_raw_ostream;
-class Twine;
-template<typename T> class ArrayRef;
 
+using namespace llvm;
 class VASTNode {
 public:
   // Leaf node type of Verilog AST.
@@ -221,6 +225,10 @@ private:
   // Hide the confusing getInt function.
   bool getInt() const { return Base::getInt(); }
 };
+} // end namespace vast
+
+namespace llvm {
+using namespace vast;
 
 template<typename T>
 struct DenseMapInfo<PtrInvPair<T> >
@@ -307,7 +315,10 @@ struct isa_impl<To, PtrInvPair<From> > {
 
 template <typename To, typename From>
 struct isa_impl<To, const PtrInvPair<From> > : public isa_impl<To, PtrInvPair<From> > {};
+} // end namespace llvm
 
+namespace vast {
+using namespace llvm;
 typedef PtrInvPair<VASTValue> VASTValPtr;
 
 class VASTUse : public ilist_node<VASTUse> {
@@ -401,7 +412,10 @@ public:
 
   const VASTValPtr &unwrap() const { return V; }
 };
+} // end namespace vast
 
+namespace llvm {
+using namespace vast;
 template<>
 struct ilist_traits<VASTUse> : public ilist_default_traits<VASTUse> {
   // FIXME: This sentinel is created and never released.
@@ -409,6 +423,10 @@ struct ilist_traits<VASTUse> : public ilist_default_traits<VASTUse> {
 
   static void deleteNode(VASTUse *U) {}
 };
+} // end namespace llvm
+
+namespace vast {
+using namespace llvm;
 
 template<class IteratorType, class NodeType>
 class VASTUseIterator : public std::iterator<std::forward_iterator_tag,
@@ -536,6 +554,10 @@ public:
            A->getASTType() <= vastLastValueType;
   }
 };
+}// end namespace vast
+
+namespace llvm {
+using namespace vast;
 
 // simplify_type - Allow clients to treat VASTRValue just like VASTValues when
 // using casting operators.
@@ -550,7 +572,10 @@ template<> struct simplify_type<VASTUse> {
 
 template<>
 struct simplify_type<const VASTUse> : public simplify_type<VASTUse> {};
+} // end namespace llvm
 
+namespace vast {
+using namespace llvm;
 class VASTNamedValue : public VASTValue {
 protected:
   VASTNamedValue(VASTTypes T, const char *Name, unsigned BitWidth)

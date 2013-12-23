@@ -1,6 +1,6 @@
 //==------------- BitlevelOpt.h - Bit-level Optimization ----------*- C++ -*-=//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -17,8 +17,10 @@
 #define VAST_BIT_LEVEL_OPTIMIZATION_H
 
 #include "vast/VASTExprBuilder.h"
+#include "vast/VASTBitMask.h"
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
 
 class BitMaskContext {
 protected:

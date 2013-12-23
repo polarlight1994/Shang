@@ -1,6 +1,6 @@
 //=--- TimingNetlist.cpp - The Netlist for Delay Estimation -------*- C++ -*-=//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -156,7 +156,7 @@ INITIALIZE_PASS_END(TimingNetlist, "shang-timing-netlist",
                     "Preform Timing Estimation on the RTL Netlist",
                     false, true)
 
-Pass *llvm::createTimingNetlistPass() {
+Pass *vast::createTimingNetlistPass() {
   return new TimingNetlist();
 }
 

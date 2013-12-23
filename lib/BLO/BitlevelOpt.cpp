@@ -1,6 +1,6 @@
 //==----------- BitlevelOpt.cpp - Bit-level Optimization ----------*- C++ -*-=//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -602,6 +602,6 @@ bool BitlevelOptPass::runOnVASTModule(VASTModule &VM) {
   return true;
 }
 
-Pass *llvm::createBitlevelOptPass() {
+Pass *vast::createBitlevelOptPass() {
   return new BitlevelOptPass();
 }

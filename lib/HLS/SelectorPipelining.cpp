@@ -1,6 +1,6 @@
 //===--- SelectorPipelining.cpp - Implement the MUX Pipelining --*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -165,7 +165,7 @@ INITIALIZE_PASS_END(SelectorPipelining, "sequential-selector-pipelining",
 
 char SelectorPipelining::ID = 0;
 
-Pass *llvm::createSelectorPipeliningPass() {
+Pass *vast::createSelectorPipeliningPass() {
   return new SelectorPipelining();
 }
 

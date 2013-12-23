@@ -24,7 +24,9 @@
 #include "vast/VASTSlot.h"
 #include "vast/VASTSeqOp.h"
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 class VASTModule;
 
 class VASTCtrlRgn : public VASTSubModuleBase {

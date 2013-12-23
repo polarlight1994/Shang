@@ -1,6 +1,6 @@
 //===---------- VASTSlot.h - The Time Slot in Control PATH ------*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -22,7 +22,9 @@
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 class VASTRegister;
 class VASTExprBuilder;
 class vlang_raw_ostream;
@@ -241,6 +243,10 @@ public:
 
   void verify() const;
 };
+}// end namespace vast
+
+namespace llvm {
+using namespace vast;
 
 template<> struct GraphTraits<VASTSlot*> {
   typedef VASTSlot NodeType;
@@ -265,6 +271,10 @@ template<> struct GraphTraits<const VASTSlot*> {
     return N->succ_end();
   }
 };
+} // end namespace llvm
+
+namespace vast {
+using namespace llvm;
 
 VASTSlot::subgrp_iterator VASTSlot::subgrp_begin() {
   return subgrp_iterator(this);
@@ -281,7 +291,6 @@ VASTSlot::const_subgrp_iterator VASTSlot::subgrp_begin() const {
 VASTSlot::const_subgrp_iterator VASTSlot::subgrp_end() const {
   return const_subgrp_iterator();
 }
-
-} // end namespace
+} // end namespace vast
 
 #endif

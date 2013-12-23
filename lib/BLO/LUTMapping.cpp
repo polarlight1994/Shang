@@ -688,6 +688,6 @@ char LUTMapping::ID = 0;
 INITIALIZE_PASS(LUTMapping, "vast-lut-mapping", "Map Logic Operation to LUTs",
                 false, true)
 
-Pass *llvm::createLUTMappingPass() {
+Pass *vast::createLUTMappingPass() {
   return new LUTMapping();
 }

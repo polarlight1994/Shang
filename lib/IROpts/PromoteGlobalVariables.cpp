@@ -1,6 +1,6 @@
 //===- PromoteGlobalVariables.cpp - Promote Global Variables ----*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -57,7 +57,7 @@ INITIALIZE_PASS(GlobalToStack, "global2stack",
                 "Create Shadow Register for global variables",
                 false, false)
 
-Pass *llvm::createGlobalToStackPass() {
+Pass *vast::createGlobalToStackPass() {
   return new GlobalToStack();
 }
 

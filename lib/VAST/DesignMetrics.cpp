@@ -1,6 +1,6 @@
 //===- DesignMetrics.cpp - Estimate the metrics of the design ---*- C++ -*-===//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -29,7 +29,9 @@
 
 using namespace llvm;
 
-namespace llvm {
+namespace vast {
+using namespace llvm;
+
 // FIXME: Move the class definition to a header file.
 class DesignMetricsImpl : public DatapathBuilderContext {
   // Data-path container to hold the optimized data-path of the design.
@@ -362,6 +364,6 @@ bool DesignMetricsPass::runOnFunction(Function &F) {
   return false;
 }
 
-FunctionPass *llvm::createDesignMetricsPass() {
+FunctionPass *vast::createDesignMetricsPass() {
   return new DesignMetricsPass();
 }

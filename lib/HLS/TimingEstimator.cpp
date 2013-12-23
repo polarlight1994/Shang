@@ -1,6 +1,6 @@
 //- LATimingEstimator.cpp-Estimate Delay with Linear Approximation -*- C++ -*-//
 //
-//                      The Shang HLS frameowrk                               //
+//                      The VAST HLS frameowrk                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
