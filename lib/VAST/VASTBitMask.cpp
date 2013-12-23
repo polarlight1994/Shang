@@ -17,6 +17,7 @@
 #include "llvm/IR/Value.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/raw_os_ostream.h"
 #include "llvm/Support/CommandLine.h"
@@ -69,20 +70,27 @@ void VASTBitMask::dumpMask() const {
   printMask(dbgs());
 }
 
-static bool IsPointerOrInt(Value *V) {
-  return V->getType()->isIntOrIntVectorTy() ||
-         V->getType()->getScalarType()->isPointerTy();
-}
-
-void VASTBitMask::init(Value *V, const DataLayout *TD, bool Inverted) {
+void VASTBitMask::init(Value *V, ScalarEvolution &SE, const DataLayout &TD,
+                       bool Inverted) {
   // We cannot anything if V is not integer.
-  if (!IsPointerOrInt(V))
+  if (!SE.isSCEVable(V->getType()))
     return;
 
-  unsigned SizeInBits = TD->getTypeSizeInBits(V->getType());
+  unsigned SizeInBits = TD.getTypeSizeInBits(V->getType());
   VASTBitMask Mask(SizeInBits);
 
-  ComputeMaskedBits(V, Mask.KnownZeros, Mask.KnownOnes, TD);
+  ComputeMaskedBits(V, Mask.KnownZeros, Mask.KnownOnes, &TD);
+
+  ConstantRange R = SE.getSignedRange(SE.getSCEV(V));
+
+  // Further trim the unknown bits if the Range is zero based.
+  if (R.getLower().isMinValue()) {
+    APInt UB = R.getUpper();
+    // Note that the upper bound of ConstantRange is not included in the range.
+    --UB;
+    unsigned LeadingZeros = UB.countLeadingZeros();
+    Mask.KnownZeros |= APInt::getHighBitsSet(SizeInBits, LeadingZeros);
+  }
 
   init(Mask, Inverted);
 }
@@ -94,4 +102,5 @@ void VASTBitMask::init(const VASTBitMask &Other, bool Inverted) {
 
   KnownOnes = Inverted ? Other.KnownZeros : Other.KnownOnes;
   KnownZeros = Inverted ? Other.KnownOnes : Other.KnownZeros;
+  verify();
 }

@@ -33,6 +33,8 @@ public:
 
 private:
   ValueMapTy Value2Expr;
+
+protected:
   DataLayout *TD;
 
 public:

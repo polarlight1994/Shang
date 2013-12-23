@@ -16,10 +16,12 @@
 #define VAST_BITMASK_H
 
 #include "llvm/ADT/APInt.h"
+
 namespace llvm {
 class Value;
 class DataLayout;
 class raw_ostream;
+class ScalarEvolution;
 }
 
 namespace vast {
@@ -54,7 +56,8 @@ public:
   }
 
   // Compute the bit mask for a LLVM Value, by calling ComputeMaskedBits.
-  void init(Value *V, const DataLayout *TD, bool Inverted = false);
+  void init(Value *V, ScalarEvolution &SE, const DataLayout &TD,
+            bool Inverted = false);
   // Initialize the current bit mask from other.
   void init(const VASTBitMask &Other, bool Inverted = false);
 

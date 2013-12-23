@@ -52,9 +52,9 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
                            public InstVisitor<VASTModuleBuilder, void> {
   DatapathBuilder Builder;
   VASTCtrlRgn &R;
-  DataLayout *TD;
   HLSAllocation &A;
   Dataflow &DF;
+  ScalarEvolution &SE;
 
   //===--------------------------------------------------------------------===//
   void buildInterface(Function *F);
@@ -226,10 +226,10 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   void buildSubModuleOperation(VASTSeqInst *Inst, VASTSubModule *SubMod,
                                ArrayRef<VASTValPtr> Args);
   //===--------------------------------------------------------------------===//
-  VASTModuleBuilder(VASTCtrlRgn &R, DataLayout *TD, HLSAllocation &Allocation,
-                    Dataflow &DF)
-    : MinimalDatapathContext(Allocation.getModule(), TD), Builder(*this),
-      R(R), TD(TD), A(Allocation), DF(DF), NumSlots(0)  {}
+  VASTModuleBuilder(VASTCtrlRgn &R, HLSAllocation &Allocation, DataLayout &TD,
+                    Dataflow &DF, ScalarEvolution &SE)
+    : MinimalDatapathContext(Allocation.getModule(), &TD), Builder(*this),
+      R(R), A(Allocation), DF(DF), SE(SE), NumSlots(0)  {}
 };
 }
 
@@ -436,7 +436,7 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
 
 VASTValPtr VASTModuleBuilder::indexVASTExpr(Value *Val, VASTValPtr V) {
   if (VASTMaskedValue *MaskedValue = dyn_cast<VASTMaskedValue>(V.get()))
-    MaskedValue->init(Val, TD, V.isInverted());
+    MaskedValue->init(Val, SE, *TD, V.isInverted());
 
   // Replace the known bits before we index the expressions.
   return DatapathBuilderContext::indexVASTExpr(Val, V);
@@ -986,8 +986,10 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
   VM = &A.getModule();
   VM->setFunction(F);
 
-  VASTModuleBuilder Builder(*VM, &getAnalysis<DataLayout>(),
-                            A,  getAnalysis<Dataflow>());
+  VASTModuleBuilder Builder(*VM, A,
+                            getAnalysis<DataLayout>(),
+                            getAnalysis<Dataflow>(),
+                            getAnalysis<ScalarEvolution>());
 
   Builder.buildInterface(&F);
 
@@ -1008,6 +1010,7 @@ void VASTModuleAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<DataLayout>();
   AU.addRequired<HLSAllocation>();
   AU.addRequired<Dataflow>();
+  AU.addRequired<ScalarEvolution>();
   AU.setPreservesAll();
 }
 
