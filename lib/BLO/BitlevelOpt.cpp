@@ -272,6 +272,47 @@ VASTValPtr DatapathBLO::optimizeBitCatImpl(MutableArrayRef<VASTValPtr> Ops,
   return Builder.buildBitCatExpr(Ops, BitWidth);
 }
 
+VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
+                                        unsigned BitWidth) {
+  // Handle the trivial case trivially.
+  if (Ops.size() == 1)
+   return Ops[0];
+
+  std::sort(Ops.begin(), Ops.end(), VASTValPtr::type_less);
+
+  VASTValPtr LastVal;
+  unsigned ActualPos = 0;
+  for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
+    VASTValPtr CurVal = Ops[i];
+    if (CurVal == LastVal) {
+      // A & A = A
+      continue;
+    }
+    else if (CurVal.invert() == LastVal)
+      // A & ~A => 0
+      return getConstant(APInt::getNullValue(BitWidth));
+
+    // Ignore the 1s
+    if (VASTConstPtr C = dyn_cast<VASTConstPtr>(CurVal)) {
+      if (C.isAllOnes()) {
+        DEBUG(dbgs().indent(2) << "Discard the all ones value: " << C << '\n');
+        continue;
+      }
+    }
+
+    Ops[ActualPos++] = CurVal;
+    LastVal = CurVal;
+  }
+  // If there is only 1 operand left, simply return the operand.
+  if (ActualPos == 1)
+   return LastVal;
+
+  // Resize the operand vector so it only contains valid operands.
+  Ops = Ops.slice(0, ActualPos);
+
+  return Builder.buildAndExpr(Ops, BitWidth);
+}
+
 VASTValPtr DatapathBLO::optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op) {
   Op = eliminateInvertFlag(Op);
 

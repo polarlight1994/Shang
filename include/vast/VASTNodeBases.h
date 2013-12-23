@@ -220,8 +220,10 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
   bool isa() const { return llvm::isa<T1>(get()); }
 
   static bool type_less(PtrInvPair<T> LHS, PtrInvPair<T> RHS) {
-    if (LHS->getASTType() < RHS->getASTType()) return true;
-    else if (LHS->getASTType() > RHS->getASTType()) return false;
+    if (LHS->getASTType() < RHS->getASTType())
+     return true;
+    else if (LHS->getASTType() > RHS->getASTType())
+     return false;
 
     return LHS.getOpaqueValue() < RHS.getOpaqueValue();
   }
