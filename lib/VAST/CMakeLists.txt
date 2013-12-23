@@ -12,6 +12,7 @@ add_llvm_library(ShangVAST
   LowerDiv.cpp
   DesignMetrics.cpp
   OptimizePHINodes.cpp
+  VASTBitMask.cpp
   VASTSeqOp.cpp
   VASTSeqValue.cpp
   VASTSlot.cpp

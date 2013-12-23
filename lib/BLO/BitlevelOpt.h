@@ -19,26 +19,6 @@
 #include "vast/VASTExprBuilder.h"
 
 namespace llvm {
-struct BitMasks {
-  APInt KnownZeros, KnownOnes;
-  explicit BitMasks(unsigned Size)
-    : KnownZeros(APInt::getNullValue(Size)),
-      KnownOnes(APInt::getNullValue(Size))
-  {}
-
-  BitMasks(APInt KnownZeros = APInt(), APInt KnownOnes = APInt())
-    : KnownZeros(KnownZeros), KnownOnes(KnownOnes) {
-    assert(KnownOnes.getBitWidth() == KnownZeros.getBitWidth()
-      && "Bitwidths are not agreed!");
-  }
-
-  APInt getKnownBits() const;
-  // Return true if the known bits in the current mask is a subset of the known
-  // bits in RHS.
-  bool isSubSetOf(const BitMasks &RHS) const;
-
-  void dump() const;
-};
 
 class BitMaskContext {
 protected:
