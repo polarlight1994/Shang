@@ -189,7 +189,7 @@ public:
                                 unsigned BBHeight);
 
   // Functions to generate verilog code.
-  void printDatapath(raw_ostream &OS) const;
+  void printDatapath(raw_ostream &OS, bool PrintSelfVerification) const;
   void printRegisterBlocks(vlang_raw_ostream &OS) const;
   void printRegisterBlocks(raw_ostream &OS) const;
   void printSubmodules(vlang_raw_ostream &OS) const;

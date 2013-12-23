@@ -308,13 +308,30 @@ struct DatapathPrinter {
 };
 }
 
-void VASTModule::printDatapath(raw_ostream &OS) const{
+void
+VASTModule::printDatapath(raw_ostream &OS, bool PrintSelfVerification) const {
   std::set<VASTExpr*> Visited;
   DatapathPrinter Printer(OS);
 
   // Print the logic for the selectors.
   for (const_selector_iterator I = selector_begin(), E = selector_end();
        I != E; ++I) {
+    const VASTSelector *Sel = I;
+
+    if (!Sel->isSelectorSynthesized())
+      continue;
+
+    Printer.print(Sel->getGuard());
+    Printer.print(Sel->getFanin());
+  }
+
+  if (!PrintSelfVerification)
+    return;
+
+  OS << "// synthesis translate_off\n";
+  // Print the logic for the selectors.
+  for (const_selector_iterator I = selector_begin(), E = selector_end();
+    I != E; ++I) {
     const VASTSelector *Sel = I;
 
     typedef VASTSelector::const_iterator const_iterator;
@@ -324,13 +341,8 @@ void VASTModule::printDatapath(raw_ostream &OS) const{
       Printer.print(L.getGuard());
       Printer.print(L.getSlotActive());
     }
-
-    if (!Sel->isSelectorSynthesized())
-      continue;
-
-    Printer.print(Sel->getGuard());
-    Printer.print(Sel->getFanin());
   }
+  OS << "// synthesis translate_on\n\n";
 }
 
 void VASTModule::printSubmodules(vlang_raw_ostream &OS) const {

@@ -119,7 +119,11 @@ bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
   Out << "\n\n";
   // Datapath
   Out << "// Datapath\n";
-  VM.printDatapath(Out);
+#ifndef DISABLE_SELFVERIFICATION
+  VM.printDatapath(Out, true);
+#else
+  VM.printDatapath(Out, false);
+#endif
 
   // Sequential logic of the registers.
   VM.printSubmodules(Out);
