@@ -181,7 +181,7 @@ DatapathBLO::optimizeBitExtract(VASTValPtr V, unsigned UB, unsigned LB) {
     Ops.back() = optimizeBitExtract(Ops.back(), Ops.back()->getBitWidth(),
                                     TailingBitsToTrim);
 
-    return optimizeBitCat<VASTValPtr>(Ops, UB - LB);
+    return optimizeNAryExpr<VASTExpr::dpBitCat, VASTValPtr>(Ops, UB - LB);
   }
 
   if (Expr->getOpcode() == VASTExpr::dpBitRepeat) {
@@ -338,19 +338,19 @@ VASTValPtr DatapathBLO::optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VAST
       VASTValPtr PaddingBits = getConstant(0, ShiftAmount);
       LHS = optimizeBitExtract(LHS, LHS->getBitWidth() - ShiftAmount, 0);
       VASTValPtr Ops[] = { LHS, PaddingBits };
-      return optimizeBitCat<VASTValPtr>(Ops, BitWidth);
+      return optimizeNAryExpr<VASTExpr::dpBitCat, VASTValPtr>(Ops, BitWidth);
     }
     case VASTExpr::dpSRL:{
       VASTValPtr PaddingBits = getConstant(0, ShiftAmount);
       LHS = optimizeBitExtract(LHS, LHS->getBitWidth(), ShiftAmount);
       VASTValPtr Ops[] = { PaddingBits, LHS };
-      return optimizeBitCat<VASTValPtr>(Ops, BitWidth);
+      return optimizeNAryExpr<VASTExpr::dpBitCat, VASTValPtr>(Ops, BitWidth);
     }
     case VASTExpr::dpSRA:{
       VASTValPtr SignBits = optimizeBitRepeat(optimizeSignBit(LHS), ShiftAmount);
       LHS = optimizeBitExtract(LHS, LHS->getBitWidth(), ShiftAmount);
       VASTValPtr Ops[] = { SignBits, LHS };
-      return optimizeBitCat<VASTValPtr>(Ops, BitWidth);
+      return optimizeNAryExpr<VASTExpr::dpBitCat, VASTValPtr>(Ops, BitWidth);
     }
     default: llvm_unreachable("Unexpected opcode!"); break;
     }
@@ -372,7 +372,8 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
     return optimizeBitExtract(Op, Expr->getUB(), Expr->getLB());
   }
   case VASTExpr::dpBitCat:
-    return optimizeBitCat(Expr->getOperands(), Expr->getBitWidth());
+    return optimizeNAryExpr<VASTExpr::dpBitCat>(Expr->getOperands(),
+                                                Expr->getBitWidth());
   case VASTExpr::dpBitRepeat: {
     unsigned Times = Expr->getRepeatTimes();
 

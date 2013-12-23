@@ -35,12 +35,24 @@ class DatapathBLO : public MinimalExprBuilderContext {
   VASTValPtr eliminateConstantInvertFlag(VASTValPtr V);
   void eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops);
 
-  template<typename T>
-  VASTValPtr optimizeBitCat(ArrayRef<T> Ops, unsigned BitWidth) {
+  template<VASTExpr::Opcode Opcode, typename T>
+  VASTValPtr optimizeNAryExpr(ArrayRef<T> Ops, unsigned BitWidth) {
     SmallVector<VASTValPtr, 8> FlattenOps;
-    flattenExpr<VASTExpr::dpBitCat, T>(FlattenOps, Ops);
+    flattenExpr<Opcode, T>(FlattenOps, Ops);
 
-    return optimizeBitCatImpl(FlattenOps, BitWidth);
+    switch (Opcode) {
+    default: break;
+    case VASTExpr::dpBitCat:
+      return optimizeBitCatImpl(FlattenOps, BitWidth);
+    case VASTExpr::dpAnd:
+      break;
+    case VASTExpr::dpAdd:
+      break;
+    case VASTExpr::dpMul:
+      break;
+    }
+
+    return Builder.buildExpr(Opcode, FlattenOps, BitWidth);
   }
 
   VASTValPtr optimizeBitCatImpl(MutableArrayRef<VASTValPtr>  Ops,
