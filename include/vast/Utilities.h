@@ -27,72 +27,11 @@ class ScalarEvolution;
 namespace vast {
 using namespace llvm;
 
-// Get the bit slice in range (UB, LB].
-/// GetBits - Retrieve bits between [LB, UB).
-inline uint64_t getBitSlice64(uint64_t x, unsigned UB, unsigned LB = 0) {
-  assert(UB - LB <= 64 && UB <= 64 && "Cannot extract bit slice!");
-  // If the bit slice contains the whole 64-bit variable, simply return it.
-  if (UB == 64 && LB == 0) return x;
-
-  return (x >> LB) & ((uint64_t(1) << (UB - LB)) - 1);
-}
-
-inline bool isAllZeros64(uint64_t V, unsigned BitWidth) {
-  return getBitSlice64(V, BitWidth) == getBitSlice64(UINT64_C(0), BitWidth);
-}
-
-inline bool isAllOnes64(uint64_t V, unsigned BitWidth) {
-  return getBitSlice64(V, BitWidth) == getBitSlice64(~UINT64_C(0), BitWidth);
-
-}
-
-inline std::string ShangMangle(const std::string &S) {
-  std::string Result;
-
-  for (unsigned i = 0, e = S.size(); i != e; ++i)
-    if (isalnum(S[i]) || S[i] == '_') {
-      Result += S[i];
-    } else {
-      Result += '_';
-      Result += 'A'+(S[i]&15);
-      Result += 'A'+((S[i]>>4)&15);
-      Result += '_';
-    }
-    return Result;
-}
-
-// PrintEscapedString - Print each character of the specified string, escaping
-// it if it is not printable or if it is an escape char.
-inline void PrintEscapedString(const char *Str, unsigned Length,
-                               raw_ostream &Out) {
-    for (unsigned i = 0; i != Length; ++i) {
-      unsigned char C = Str[i];
-      if (isprint(C) && C != '\\' && C != '"')
-        Out << C;
-      else if (C == '\\')
-        Out << "\\\\";
-      else if (C == '\"')
-        Out << "\\\"";
-      else if (C == '\t')
-        Out << "\\t";
-      else
-        Out << "\\x" << hexdigit(C >> 4) << hexdigit(C & 0x0F);
-    }
-}
-
-// PrintEscapedString - Print each character of the specified string, escaping
-// it if it is not printable or if it is an escape char.
-inline void PrintEscapedString(const std::string &Str, raw_ostream &Out) {
-  PrintEscapedString(Str.c_str(), Str.size(), Out);
-}
-
 // Loop dependency Analysis.
 int getLoopDepDist(bool SrcBeforeDest, int Distance = 0);
 
 int getLoopDepDist(const SCEV *SSAddr, const SCEV *SDAddr,
                    bool SrcLoad, unsigned ElemSizeInByte, ScalarEvolution *SE);
-
-
 
 inline bool isCall(const Instruction *Inst, bool IgnoreExternalCall = true) {
   const CallInst *CI = dyn_cast<CallInst>(Inst);

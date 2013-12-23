@@ -73,7 +73,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   VASTSeqValue *getOrCreateSeqValImpl(Value *V, const Twine &Name);
   VASTSeqValue *getOrCreateSeqVal(Value *V, const Twine &Name) {
     std::string SeqValName = "v_" + Name.str() + "_r";
-    SeqValName = ShangMangle(SeqValName);
+    SeqValName = VASTNamedValue::Mangle(SeqValName);
     return getOrCreateSeqValImpl(V, SeqValName);
   }
 
@@ -105,7 +105,8 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
 
   VASTSeqValue *getOrCreateSeqVal(Value *V) {
     SmallString<36> S;
-    return getOrCreateSeqValImpl(V, "vast_" + ShangMangle(V->getName()) + "_r");
+    std::string Name = "vast_" + VASTNamedValue::Mangle(V->getName()) + "_r";
+    return getOrCreateSeqValImpl(V, Name);
   }
 
   VASTValPtr getAsOperandImpl(Value *Op);
@@ -113,7 +114,7 @@ struct VASTModuleBuilder : public MinimalDatapathContext,
   VASTRegister *createLoadRegister(Instruction &I, unsigned BitWidth) {
     SmallString<36> S;
     S += "vast_";
-    S += ShangMangle(I.getName());
+    S += VASTNamedValue::Mangle(I.getName());
     S += "_unshifted_r";
     return A->createRegister(S.str(), BitWidth);
   }
@@ -284,7 +285,7 @@ VASTValPtr VASTModuleBuilder::getAsOperandImpl(Value *V) {
     unsigned SizeInBits = getValueSizeInBits(GV);
 
     VASTMemoryBank *Bus = A.getMemoryBank(*GV);
-    const std::string Name = ShangMangle(GV->getName());
+    const std::string Name = VASTNamedValue::Mangle(GV->getName());
     if (!Bus->isDefault()) {
       unsigned StartOffset = Bus->getStartOffset(GV);
       VASTConstant *C = getConstant(StartOffset, SizeInBits);

@@ -488,7 +488,7 @@ void VASTWrapper::printDecl(raw_ostream &OS) const {
   if (Value *V = getLLVMValue()) {
     VASTNamedValue::printDecl(OS, false, " = ");
     if (isa<GlobalVariable>(V))
-      OS << "(`gv" << ShangMangle(V->getName()) << ')';
+      OS << "(`gv" << VASTNamedValue::Mangle(V->getName()) << ')';
     else if (isa<UndefValue>(V))
       OS << getBitWidth() << "'bx";
 

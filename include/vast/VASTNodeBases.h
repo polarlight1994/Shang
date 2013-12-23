@@ -606,6 +606,23 @@ public:
            A->getASTType() == vastWrapper ||
            A->getASTType() == vastSeqValue;
   }
+
+  static inline std::string Mangle(const std::string &S) {
+    std::string Result;
+
+    for (unsigned i = 0, e = S.size(); i != e; ++i) {
+      if (isalnum(S[i]) || S[i] == '_') {
+        Result += S[i];
+      } else {
+        Result += '_';
+        Result += 'A'+(S[i]&15);
+        Result += 'A'+((S[i]>>4)&15);
+        Result += '_';
+      }
+    }
+
+    return Result;
+  }
 };
 
 class VASTSubModuleBase : public VASTNode,
