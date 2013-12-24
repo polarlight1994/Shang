@@ -727,7 +727,7 @@ void VASTMemoryBank::printAsCombROM(const VASTExpr *LHS, VASTValPtr Addr,
   unsigned BytesPerWord = DataWidth / 8;
   assert(((getDataWidth() / 8) % BytesPerWord) == 0 &&
          "Bad datawidth of rom lookup!");
-  unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
+  
   OS.indent(2) << VASTNode::FullCaseAttr << ' ' << VASTNode::ParallelCaseAttr
                << "case (";
   Addr.printAsOperand(OS);

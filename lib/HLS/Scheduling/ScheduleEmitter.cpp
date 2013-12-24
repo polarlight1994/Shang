@@ -996,7 +996,6 @@ VASTValPtr RegisterFolding::retimeLeaf(VASTValue *V, VASTSlot *S) {
   for (incoming_iterator I = Incomings.begin(), E = Incomings.end();
        I != E; ++I) {
     const VASTLatch &L = *I;
-    VASTSlot *S = L.getSlot();
 
     // In case of multiple incoming, we also need the guarding conditions
     VASTValPtr FIMask = Builder.buildBitRepeat(L.getGuard(), Bitwidth);

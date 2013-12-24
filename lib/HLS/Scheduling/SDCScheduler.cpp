@@ -141,8 +141,6 @@ unsigned SDCScheduler::createVarForSyncDeps(unsigned Col) {
   if (LagSolver == NULL)
     return Col;
 
-  REAL BigM = BigMMultiplier * getCriticalPathLength();
-
   // Export the slack for the synchronization edges, and we will fix these
   // slacks in the heuristical ILP driver.
   ObjFn[Col] = -1e-6;
@@ -477,7 +475,8 @@ bool SDCScheduler::solveLP(lprec *lp) {
   set_timeout(lp, ILPTimeOut);
   DEBUG(dbgs() << "Timeout is set to " << get_timeout(lp) << "secs.\n");
 
-  assert(LPVarWeights.size() == get_Ncolumns(lp) && "Broken variable weights!");
+  assert(LPVarWeights.size() == unsigned(get_Ncolumns(lp)) &&
+         "Broken variable weights!");
   set_var_weights(lp, LPVarWeights.data());
 
   return interpertResult(solve(lp));
@@ -879,8 +878,6 @@ void SDCScheduler::applyControlDependencies(VASTSchedUnit *SU) {
   // No need to worry about the return block, it always exiting the loop
   if (J == CFGEdges.end())
     return;
-
-  unsigned II = SU->getII();
 
   std::set<VASTSchedUnit*> &Exits = J->second;
 

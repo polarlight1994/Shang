@@ -138,7 +138,6 @@ VASTDep VASTSchedUnit::EdgeBundle::getEdge(unsigned II) const {
 
 bool VASTSchedUnit::EdgeBundle::hasDataDependency() const {
   VASTDep::Types T = Edges.front().getEdgeType();
-  int Latency = -1;
 
   if ((T == VASTDep::ValDep) || (T == VASTDep::MemDep))
     return true;

@@ -28,15 +28,6 @@ static cl::opt<bool>
   cl::desc("Instantiate submodule for each functional unit"),
   cl::init(false));
 
-//===----------------------------------------------------------------------===//
-static
-raw_ostream &printAssign(raw_ostream &OS, const Twine &Name, unsigned BitWidth){
-  OS << "assign " << Name
-     << VASTValue::BitRange(BitWidth, 0, false)
-     << " = ";
-  return OS;
-}
-
 //----------------------------------------------------------------------------//
 // Operand printing helper functions.
 static void printSignedOperand(raw_ostream &OS, const VASTUse &U) {

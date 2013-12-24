@@ -673,7 +673,7 @@ struct SingleFULinearOrder
   void buildLinearOrder(ArrayRef<VASTSchedUnit*> Returns, LoopInfo &LI,
                         SyncPointAnalysis &SyncAnalysis, PostDomFrontiers &PDF);
 
-  virtual void dump() const {
+  void dump() const {
     typedef AccessMapTy::const_iterator def_iterator;
     dbgs() << "Defs:\n\t";
     for (def_iterator I = DefMap.begin(), E = DefMap.end(); I != E; ++I)

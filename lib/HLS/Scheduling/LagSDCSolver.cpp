@@ -223,7 +223,6 @@ bool SyncDepLagConstraint::updateStatus(lprec *lp) {
     double CurWeight = Weights[i / 2];
     OffsetSum += TranslatedSlack * CurWeight;
     WeightSum += CurWeight;
-    unsigned CurRowNum = RowStart + i;
     DEBUG(dbgs().indent(2) << "Offset: " << int(TranslatedSlack)
                            << " ("<< int(Slack) << ")\n");
   }

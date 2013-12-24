@@ -1106,7 +1106,7 @@ bool ExternalTimingAnalysis::analysisWithSynthesisTool() {
 
     NamedRegionTimer T("External Tool Run Time", GroupName, TimePassesIsEnabled);
     std::string ErrorInfo;
-    if (LLVM_UNLIKELY(sys::ExecuteAndWait(quartus, &args[0], 0, 0/*Redirects*/,
+    if (LLVM_UNLIKELY(sys::ExecuteAndWait(quartus, &args[0], 0, Redirects,
                                           ExternalToolTimeOut, 0, &ErrorInfo))) {
       errs() << "Error: " << ErrorInfo <<'\n';
       report_fatal_error("External timing analyze fail!\n");

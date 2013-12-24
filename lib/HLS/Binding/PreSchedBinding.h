@@ -32,6 +32,8 @@ public:
               DataflowInst Inst, ArrayRef<VASTSelector*> Sels)
     : CompGraphNode(FUType, FUCost, Idx, Inst, Sels) {}
 
+  virtual ~PSBCompNode() {}
+
   void setKillOps(const std::set<VASTSeqOp*> &KillOps,
                   const std::set<VASTSeqOp*> &DefKillOps);
 

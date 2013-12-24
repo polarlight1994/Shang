@@ -149,11 +149,10 @@ struct SelectorSlackVerifier {
     unsigned MinimalSlack = UINT32_MAX;
 
     typedef std::set<VASTSeqValue*>::iterator iterator;
-    int NumValDeps = 0;
+
     for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
       VASTSeqValue *SV = *I;
       VASTSchedUnit *Src = getDataDepSU(SV);
-      const VASTDep &Dep = U->getEdgeFrom(Src);
 
       int Latnecy = U->getDFLatency(Src);
       if (Latnecy < 0)

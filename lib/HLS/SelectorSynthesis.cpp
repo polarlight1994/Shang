@@ -25,14 +25,11 @@
 
 #include "llvm/IR/DataLayout.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/Statistic.h"
 #include "llvm/Support/MathExtras.h"
 #define DEBUG_TYPE "shang-selector-mux-synthesis"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
-STATISTIC(NumTrivialConesMerged, "Number of trivial cones merged");
-STATISTIC(NumConesMerged, "Number of cones merged");
 
 namespace {
 struct TimingDrivenSelectorSynthesis : public VASTModulePass {

@@ -252,43 +252,6 @@ bool SeqLiveVariables::runOnVASTModule(VASTModule &M) {
   return false;
 }
 
-static void setLandingSlots(VASTSlot *S, SparseBitVector<> &Landings) {
-  // Perform depth first search to check if we can reach RHS from LHS with
-  // 0-distance edges.
-  SmallPtrSet<VASTSlot*, 8> Visited;
-  SmallVector<std::pair<VASTSlot*, VASTSlot::succ_iterator>, 4> WorkStack;
-  WorkStack.push_back(std::make_pair(S, S->succ_begin()));
-
-  while (!WorkStack.empty()) {
-    VASTSlot *S = WorkStack.back().first;
-    VASTSlot::succ_iterator ChildIt = WorkStack.back().second;
-
-    if (ChildIt == S->succ_end()) {
-      WorkStack.pop_back();
-      continue;
-    }
-
-    VASTSlot::EdgePtr Edge = *ChildIt;
-    ++WorkStack.back().second;
-    VASTSlot *Child = Edge;
-
-    // Now we land with the 1-distance edge.
-    if (Edge.getDistance()) {
-      Landings.set(Child->SlotNum);
-      // Skip the children of the current node as we had already reach the leave.
-      continue;
-    }
-
-    // Do not visit a node twice.
-    if (!Visited.insert(Child)) continue;
-
-    WorkStack.push_back(std::make_pair(Child, Child->succ_begin()));
-  }
-
-  DEBUG(dbgs() << "Slot #" << S->SlotNum << " landing: ";
-  ::dump(Landings, dbgs()));
-}
-
 void SeqLiveVariables::handleSlot(VASTSlot *S) {
   std::set<VASTSeqValue*> ReadAtSlot;
 

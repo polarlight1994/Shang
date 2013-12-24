@@ -116,6 +116,8 @@ public:
     : Idx(Idx), IsTrivial(false), FUType(FUType), FUCost(FUCost), Inst(Inst),
       Order(UINT32_MAX), Sels(Sels.begin(), Sels.end()), BindingIdx(Idx) {}
 
+  virtual ~CompGraphNode() {}
+
   BasicBlock *getDomBlock() const;
 
   unsigned getBindingIdx() const { return BindingIdx; }

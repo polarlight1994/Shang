@@ -44,7 +44,6 @@
 
 using namespace llvm;
 STATISTIC(NumIPs, "Number of IPs Instantiated");
-STATISTIC(NumBRam2Reg, "Number of Single Element Block RAM Lowered to Register");
 STATISTIC(NUMCombROM, "Number of Combinational ROM Generated");
 
 namespace {
