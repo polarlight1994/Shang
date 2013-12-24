@@ -58,6 +58,7 @@ struct RTLCodeGen : public VASTModulePass {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addRequiredID(TimingDrivenSelectorSynthesisID);
+    AU.addRequiredID(BitlevelOptID);
     AU.addRequiredID(DatapathNamerID);
     AU.addRequired<STGDistances>();
     AU.setPreservesAll();
@@ -77,6 +78,7 @@ INITIALIZE_PASS_BEGIN(RTLCodeGen, "shang-verilog-writer",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(TimingDrivenSelectorSynthesis)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(BitlevelOpt)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
 INITIALIZE_PASS_END(RTLCodeGen, "shang-verilog-writer",

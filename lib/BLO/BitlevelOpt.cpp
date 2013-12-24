@@ -485,10 +485,10 @@ bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
 
 
 namespace {
-struct BitlevelOptPass : public VASTModulePass {
+struct BitlevelOpt : public VASTModulePass {
   static char ID;
-  BitlevelOptPass() : VASTModulePass(ID) {
-    //initializeBitlevelOptPassPass(*PassRegistry::getPassRegistry());
+  BitlevelOpt() : VASTModulePass(ID) {
+    initializeBitlevelOptPass(*PassRegistry::getPassRegistry());
   }
 
   bool runSingleIteration(VASTModule &VM, DatapathBLO &BLO);
@@ -500,13 +500,19 @@ struct BitlevelOptPass : public VASTModulePass {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addPreservedID(PreSchedBindingID);
     AU.addPreservedID(ControlLogicSynthesisID);
+    AU.addPreservedID(TimingDrivenSelectorSynthesisID);
+    AU.addPreservedID(STGDistancesID);
   }
 };
 }
 
-char BitlevelOptPass::ID = 0;
+char BitlevelOpt::ID = 0;
+char &vast::BitlevelOptID = BitlevelOpt::ID;
+INITIALIZE_PASS(BitlevelOpt, "vast-bit-level-opt",
+                "Perform the bit-level optimization.",
+                false, true)
 
-bool BitlevelOptPass::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
+bool BitlevelOpt::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
   bool Changed = false;
 
   typedef VASTModule::selector_iterator selector_iterator;
@@ -534,7 +540,7 @@ bool BitlevelOptPass::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
   return Changed;
 }
 
-bool BitlevelOptPass::runOnVASTModule(VASTModule &VM) {
+bool BitlevelOpt::runOnVASTModule(VASTModule &VM) {
   DatapathBLO BLO(VM);
 
   if (!runSingleIteration(VM, BLO))
@@ -547,5 +553,5 @@ bool BitlevelOptPass::runOnVASTModule(VASTModule &VM) {
 }
 
 Pass *vast::createBitlevelOptPass() {
-  return new BitlevelOptPass();
+  return new BitlevelOpt();
 }

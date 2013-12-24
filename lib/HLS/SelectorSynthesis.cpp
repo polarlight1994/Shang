@@ -266,13 +266,6 @@ bool TimingDrivenSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
     }
   }
 
-  // Perform LUT Mapping on the newly synthesized selectors.
-  VASTModulePass *P = static_cast<VASTModulePass*>(createLUTMappingPass());
-  AnalysisResolver *AR = new AnalysisResolver(*getResolver());
-  P->setResolver(AR);
-  P->runOnVASTModule(VM);
-  delete P;
-
   return true;
 }
 
@@ -332,13 +325,6 @@ bool SimpleSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
       synthesizeSelector(I, Builder);
     }
   }
-
-  // Perform LUT Mapping on the newly synthesized selectors.
-  VASTModulePass *P = static_cast<VASTModulePass*>(createLUTMappingPass());
-  AnalysisResolver *AR = new AnalysisResolver(*getResolver());
-  P->setResolver(AR);
-  P->runOnVASTModule(VM);
-  delete P;
 
   return true;
 }
