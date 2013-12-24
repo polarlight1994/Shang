@@ -177,6 +177,53 @@ VASTBitMask VASTBitMask::EvaluateAndMask(ArrayRef<VASTBitMask> Masks,
   return Mask;
 }
 
+VASTBitMask VASTBitMask::EvaluateLUTMask(ArrayRef<VASTBitMask> Masks,
+                                         unsigned BitWidth, const char *SOP) {
+  bool IsComplement = false;
+    // Interpret the sum of product table.
+  const char *p = SOP;
+  unsigned NumInputs = Masks.size();
+
+  SmallVector<VASTBitMask, 6> ProductMasks;
+  SmallVector<VASTBitMask, 6> SumMasks;
+
+  while (*p) {
+    ProductMasks.clear();
+    // Interpret the product.
+    for (unsigned i = 0; i < NumInputs; ++i) {
+      char c = *p++;
+      if (c == '-')
+       continue;
+
+      assert((c == '0' || c == '1') && "Unexpected SOP char!");
+      // Put the operand into product masks vector, invert it if necessary.
+      ProductMasks.push_back(Masks[i].invert(c == '0'));
+    }
+
+    // Inputs and outputs are seperated by blank space.
+    assert(*p == ' ' && "Expect the blank space!");
+    ++p;
+
+    // Is the output inverted?
+    char c = *p++;
+    assert((c == '0' || c == '1') && "Unexpected SOP char!");
+    VASTBitMask CurProduct = EvaluateAndMask(ProductMasks, BitWidth);
+    // We are going to evaluate A OR B by ~(~A AND ~B), so invert the mask
+    // before we are putting it into the sum masks vector.
+    SumMasks.push_back(CurProduct.invert());
+    IsComplement |= (c == '0');
+
+    // Products are separated by new line.
+    assert(*p == '\n' && "Expect the new line!");
+    ++p;
+  }
+
+  VASTBitMask Sum = EvaluateAndMask(SumMasks, BitWidth).invert();
+
+  // We need to invert the final result if the SOP is complemented.
+  return Sum.invert(IsComplement);
+}
+
 VASTBitMask VASTBitMask::EvaluateAddMask(VASTBitMask LHS, VASTBitMask RHS,
                                          unsigned BitWidth) {
   //if (!(LHS.getKnownBits() | RHS.getKnownBits())) {
@@ -309,6 +356,9 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
     break;
   case VASTExpr::dpAnd:
     mergeAnyKnown(EvaluateAndMask(Masks, BitWidth));
+    break;
+  case VASTExpr::dpLUT:
+    mergeAnyKnown(EvaluateLUTMask(Masks, BitWidth, E->getLUT()));
     break;
   case VASTExpr::dpAdd: {
     // Evaluate the bitmask pairwise for the ADD for now.

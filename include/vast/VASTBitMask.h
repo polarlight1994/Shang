@@ -109,6 +109,9 @@ public:
   // Mask Evaluation function.
   static
   VASTBitMask EvaluateAndMask(ArrayRef<VASTBitMask> Masks, unsigned BitWidth);
+  static
+  VASTBitMask EvaluateLUTMask(ArrayRef<VASTBitMask> Masks, unsigned BitWidth,
+                              const char *SOP);
 
   static
   VASTBitMask EvaluateBitCatMask(ArrayRef<VASTBitMask> Masks, unsigned BitWidth);
