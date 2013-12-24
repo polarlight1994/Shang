@@ -365,6 +365,55 @@ VASTValPtr DatapathBLO::optimizeKeep(VASTValPtr Op) {
   return Builder.buildKeep(eliminateInvertFlag(Op));
 }
 
+VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
+                                        unsigned BitWidth) {
+  // Handle the trivial case trivially.
+  if (Ops.size() == 1)
+    return Ops[0];
+
+  std::sort(Ops.begin(), Ops.end(), VASTValPtr::type_less);
+
+  APInt C = APInt::getNullValue(BitWidth);
+
+  VASTValPtr LastVal = None;
+  unsigned ActualPos = 0;
+  for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
+    VASTValPtr CurVal = Ops[i];
+    if (CurVal == LastVal) {
+      // A + A = A << 1
+      VASTConstant *ShiftAmt = getConstant(1, Log2_32_Ceil(BitWidth));
+      CurVal = optimizeShift(VASTExpr::dpShl, CurVal, ShiftAmt, BitWidth);
+    } else if (CurVal.invert() == LastVal)
+      // A + ~A => ~0, verified by
+      // (declare-fun a () (_ BitVec 32))
+      // (assert (not (= (bvadd a (bvnot a)) #xffffffff)))
+      // (check-sat)
+      // -> unsat
+      CurVal = getConstant(APInt::getAllOnesValue(BitWidth));
+
+    // Accumulate the constants.
+    if (VASTConstPtr CurC = dyn_cast<VASTConstPtr>(CurVal)) {
+      C += CurC.getAPInt().zextOrTrunc(BitWidth);
+      continue;
+    }
+
+    Ops[ActualPos++] = CurVal;
+    LastVal = CurVal;
+  }
+
+  // Add the accumulated constant to operand list.
+  if (C.getBoolValue())
+    Ops[ActualPos++] = getConstant(C);
+
+  Ops = Ops.slice(0, ActualPos);
+
+  // If there is only 1 operand left, simply return the operand.
+  if (ActualPos == 1)
+    return Ops[0];
+
+  return Builder.buildAddExpr(Ops, BitWidth);
+}
+
 VASTValPtr DatapathBLO::optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
                                       unsigned BitWidth) {
   LHS = eliminateInvertFlag(LHS);
@@ -432,6 +481,9 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
     VASTValPtr Pattern = Expr->getOperand(0);
     return optimizeBitRepeat(Pattern, Times);
   }
+  case VASTExpr::dpAdd:
+    return optimizeNAryExpr<VASTExpr::dpAdd>(Expr->getOperands(),
+                                             Expr->getBitWidth());
   case VASTExpr::dpRAnd:
   case VASTExpr::dpRXor:
     return optimizeReduction(Opcode, Expr->getOperand(0));

@@ -47,6 +47,7 @@ class DatapathBLO : public MinimalExprBuilderContext {
     case VASTExpr::dpAnd:
       return optimizeAndImpl(FlattenOps, BitWidth);
     case VASTExpr::dpAdd:
+      return optimizeAddImpl(FlattenOps, BitWidth);
       break;
     case VASTExpr::dpMul:
       break;
@@ -70,6 +71,11 @@ class DatapathBLO : public MinimalExprBuilderContext {
   VASTValPtr optimizeSignBit(VASTValPtr V) {
     return optimizeBitExtract(V, V->getBitWidth(), V->getBitWidth() - 1);
   }
+
+
+  VASTValPtr optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
+                             unsigned BitWidth);
+
   VASTValPtr optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
                            unsigned BitWidth);
 
