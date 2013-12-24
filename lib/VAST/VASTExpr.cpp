@@ -26,7 +26,7 @@ using namespace llvm;
 static cl::opt<bool>
   InstSubModForFU("shang-instantiate-submod-for-fu",
   cl::desc("Instantiate submodule for each functional unit"),
-  cl::init(true));
+  cl::init(false));
 
 //===----------------------------------------------------------------------===//
 static
@@ -206,7 +206,8 @@ static void printLUT(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *LUT) {
 
 static bool printFUAdd(raw_ostream &OS, const VASTExpr *E) {
   assert(E->size() >= 2 && E->size() <=3 && "bad operand number!");
-  if (E->size() > 3) return false;
+  if (E->size() > 3)
+   return false;
 
   const VASTUse &OpA = E->getOperand(0), &OpB = E->getOperand(1);
 
@@ -416,7 +417,9 @@ const char *VASTExpr::getFUName() const {
 }
 
 bool VASTExpr::isInstantiatedAsSubModule() const {
-  return InstSubModForFU && getFUName() != NULL && hasNameID();
+  // Combinational ROM lookup shuld always be instantiated as submodule.
+  return getOpcode() == dpROMLookUp ||
+         (InstSubModForFU && getFUName() != NULL && hasNameID());
 }
 
 void VASTExpr::printSubModName(raw_ostream &OS) const {
