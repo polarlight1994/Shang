@@ -122,6 +122,9 @@ public:
 
   static
   VASTBitMask EvaluateShlMask(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth);
+  static
+  VASTBitMask EvaluateSRLMask(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth);
+
   void verify() const;
 };
 }

@@ -253,6 +253,18 @@ VASTBitMask VASTBitMask::EvaluateShlMask(VASTBitMask LHS, VASTBitMask RHS,
   return Mask;
 }
 
+VASTBitMask VASTBitMask::EvaluateSRLMask(VASTBitMask LHS, VASTBitMask RHS,
+                                         unsigned BitWidth) {
+  // Because we are shifting toward LSB, so the Leading zeros are known
+  // regardless of the shift amount.
+  unsigned LeadingZeros = LHS.KnownZeros.countLeadingOnes();
+  VASTBitMask Mask(APInt::getHighBitsSet(BitWidth, LeadingZeros),
+                   APInt::getNullValue(BitWidth));
+
+  // TODO: Analyze RHS.
+  return Mask;
+}
+
 VASTBitMask VASTBitMask::EvaluateBitExtractMask(VASTBitMask Mask,
                                                 unsigned UB, unsigned LB) {
   return VASTBitMask(VASTConstant::getBitSlice(Mask.KnownZeros, UB, LB),
@@ -322,6 +334,9 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
   }
   case VASTExpr::dpShl:
     mergeAnyKnown(EvaluateShlMask(Masks[0], Masks[1], BitWidth));
+    break;
+  case VASTExpr::dpSRL:
+    mergeAnyKnown(EvaluateSRLMask(Masks[0], Masks[1], BitWidth));
     break;
   case VASTExpr::dpKeep:
     // Simply propagate the masks from the RHS of the assignment.
