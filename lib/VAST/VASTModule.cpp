@@ -264,46 +264,62 @@ struct DatapathPrinter {
   }
 
   void operator()(VASTNode *N) {
-    if (VASTExpr *E = dyn_cast<VASTExpr>(N))
-      if (E->hasNameID()) {
-        unsigned NameID = E->getNameID();
-        // If the we get an expression with the same name as some other
-        // expressions, do not print them as their are structural identical
-        // expressions and one of them been printed before.
-        if (!PrintedNames.insert(NameID).second)
-          return;
+    VASTExpr *E = dyn_cast<VASTExpr>(N);
 
-        E->printMaskIfAnyKnown(OS);
-        if (E->getOpcode() == VASTExpr::dpKeep)
-          OS << "(* keep *) ";
+    if (E == NULL || !E->hasNameID())
+      return;
 
-        OS << "wire ";
+    unsigned NameID = E->getNameID();
+    // If the we get an expression with the same name as some other
+    // expressions, do not print them as their are structural identical
+    // expressions and one of them been printed before.
+    if (!PrintedNames.insert(NameID).second)
+      return;
 
-        if (E->getBitWidth() > 1)
-          OS << "[" << (E->getBitWidth() - 1) << ":0] ";
+    if (E->getOpcode() == VASTExpr::dpKeep)
+      OS << "(* keep *) ";
 
-        E->printName(OS);
+    OS << "wire ";
 
-        if (E->isInstantiatedAsSubModule()) {
-          OS << ";\n";
-          if (E->printFUInstantiation(OS))
-            return;
+    unsigned Bitwidth = E->getBitWidth();
+    OS << VASTValue::BitRange(Bitwidth, 0, Bitwidth > 1) << ' ';
+
+    E->printName(OS);
+
+    if (E->isInstantiatedAsSubModule()) {
+      OS << ";\n";
+      if (E->printFUInstantiation(OS))
+        return;
         
-          // If the FU instantiation is not printed, we need to print the
-          // assignment.
-          OS << "assign ";
-          E->printName(OS);
-        }
+      // If the FU instantiation is not printed, we need to print the
+      // assignment.
+      OS << "assign ";
+      E->printName(OS);
+    }
 
-        OS << " = ";
+    OS << " = ((";
 
-        // Temporary unname the expression so that we can print its logic.
-        E->assignNameID(0);
-        E->printAsOperand(OS, false);
-        E->assignNameID(NameID);
+    // Temporary unname the expression so that we can print its logic.
+    E->assignNameID(0);
+    E->printAsOperand(OS, false);
+    // Mask away the known zeros, if there is any.
+    if (E->anyKnownZero()) {
+      APInt KnownZeros = E->getKnownZeros();
+      SmallString<128> Str;
+      (~KnownZeros).toString(Str, 2, false, false);
+      OS << " & " << Bitwidth << "'b" << Str;
+    }
+    OS << ")";
 
-        OS << ";\n";
-      }
+    // Set the known ones, if there is any
+    if (E->anyKnownOne()) {
+      SmallString<128> Str;
+      E->getKnownOnes().toString(Str, 2, false, false);
+      OS << " | " << Bitwidth << "'b" << Str;
+    }
+    OS << ");\n";
+
+    E->assignNameID(NameID);
   }
 };
 }

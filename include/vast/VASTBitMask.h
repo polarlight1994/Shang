@@ -49,6 +49,9 @@ public:
     verify();
   }
 
+  APInt getKnownZeros() const { return KnownZeros; }
+  APInt getKnownOnes() const { return KnownOnes; }
+
   /// \brief Zero extend or truncate to width
   ///
   /// Make this VASTBitMask have the bit width given by \p width. The value is
@@ -81,6 +84,8 @@ public:
   }
 
   bool anyBitKnown() const;
+  bool anyKnownZero() const { return getKnownZeros().getBoolValue(); }
+  bool anyKnownOne() const { return getKnownOnes().getBoolValue(); }
 
   VASTBitMask invert(bool invert = true) const {
     return invert ? VASTBitMask(KnownOnes, KnownZeros)
