@@ -266,7 +266,7 @@ VASTMaskedValue::VASTMaskedValue(VASTTypes T, unsigned BitWidth)
          && "Bad DeclType!");
 }
 
-bool VASTMaskedValue::evaluateMask() {
+void VASTMaskedValue::evaluateMask() {
   return VASTBitMask::evaluateMask(this);
 }
 

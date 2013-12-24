@@ -33,9 +33,9 @@ class VASTSeqValue;
 class VASTBitMask {
   APInt KnownZeros, KnownOnes;
 protected:
-  bool evaluateMask(VASTMaskedValue *V);
-  bool evaluateMask(VASTExpr *E);
-  bool evaluateMask(VASTSeqValue *V);
+  void evaluateMask(VASTMaskedValue *V);
+  void evaluateMask(VASTExpr *E);
+  void evaluateMask(VASTSeqValue *V);
 public:
   explicit VASTBitMask(unsigned Size)
     : KnownZeros(APInt::getNullValue(Size)),
@@ -49,12 +49,30 @@ public:
     verify();
   }
 
+  /// \brief Zero extend or truncate to width
+  ///
+  /// Make this VASTBitMask have the bit width given by \p width. The value is
+  /// zero extended, truncated, or left alone to make it that width.
+  VASTBitMask zextOrTrunc(unsigned Width) const {
+    APInt NewKnownZeros = KnownZeros.zextOrTrunc(Width);
+
+    // Set the Zero extended bits to zeros, if there is any.
+    int ExtraBits = int(Width) - getMaskWidth();
+    if (ExtraBits > 0)
+      NewKnownZeros |= APInt::getHighBitsSet(Width, ExtraBits);
+
+    return VASTBitMask(NewKnownZeros, KnownOnes.zextOrTrunc(Width));
+  }
+
   unsigned getMaskWidth() const;
 
   // Functions for the known bits of the BitMask
   APInt getKnownBits() const;
 
-  APInt getKnownValue() const;
+  APInt getKnownValue(unsigned UB, unsigned LB = 0) const;
+  APInt getKnownValue() const {
+    return getKnownValue(getMaskWidth(), 0);
+  }
 
   bool isAllBitKnown(unsigned UB, unsigned LB = 0) const;
 
@@ -83,6 +101,17 @@ public:
   void printMaskIfAnyKnown(raw_ostream &OS) const;
   void dumpMask() const;
 
+  // Mask Evaluation function.
+  static
+  VASTBitMask EvaluateAndMask(ArrayRef<VASTBitMask> Masks, unsigned BitWidth);
+
+  static
+  VASTBitMask EvaluateBitCatMask(ArrayRef<VASTBitMask> Masks, unsigned BitWidth);
+  static
+  VASTBitMask EvaluateBitExtractMask(VASTBitMask Mask, unsigned UB, unsigned LB);
+  
+  static
+  VASTBitMask EvaluateAddMask(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth);
 
   void verify() const;
 };

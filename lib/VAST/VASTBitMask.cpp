@@ -46,10 +46,13 @@ APInt VASTBitMask::getKnownBits() const {
   return KnownZeros | KnownOnes;
 }
 
-APInt VASTBitMask::getKnownValue() const {
-  assert(isAllBitKnown() && "The value is unknown!");
+APInt VASTBitMask::getKnownValue(unsigned UB, unsigned LB) const {
+  assert(isAllBitKnown(UB, LB) && "The value is unknown!");
 
   verify();
+
+  if (UB != getMaskWidth() || LB != 0)
+    return VASTConstant::getBitSlice(KnownOnes, UB, LB);
 
   return KnownOnes;
 }
@@ -67,16 +70,16 @@ unsigned VASTBitMask::getMaskWidth() const {
 void VASTBitMask::printMask(raw_ostream &OS) const {
   // This function may called when we are generating the Verilog code,
   // make sure their are comments.
-  OS << "/*\n";
+  OS << "/*";
   SmallString<128> Str;
   KnownZeros.toString(Str, 2, false, true);
-  OS << "Known Zeros\t" << Str << '\n';
+  OS << 'Z' << Str << ' ';
   Str.clear();
   KnownOnes.toString(Str, 2, false, true);
-  OS << "Known Ones\t" << Str << '\n';
+  OS << 'O' << Str << ' ';
   Str.clear();
   getKnownBits().toString(Str, 2, false, true);
-  OS << "Known Bits\t" << Str << '\n';
+  OS << 'K' << Str << ' ';
   OS << "*/\n";
 }
 
@@ -112,7 +115,7 @@ void VASTBitMask::mergeAnyKnown(Value *V, ScalarEvolution &SE,
     Mask.KnownZeros |= APInt::getHighBitsSet(SizeInBits, LeadingZeros);
   }
 
-  mergeAnyKnown(Mask.invert(Inverted));
+  return mergeAnyKnown(Mask.invert(Inverted));
 }
 
 void VASTBitMask::mergeAnyKnown(const VASTBitMask &Other) {
@@ -125,20 +128,161 @@ void VASTBitMask::mergeAnyKnown(const VASTBitMask &Other) {
   verify();
 }
 
-bool VASTBitMask::evaluateMask(VASTMaskedValue *V) {
+void VASTBitMask::evaluateMask(VASTMaskedValue *V) {
   if (VASTExpr *E = dyn_cast<VASTExpr>(V))
     return evaluateMask(E);
 
   if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V))
     return evaluateMask(SV);
-
-  return false;
 }
 
-bool VASTBitMask::evaluateMask(VASTExpr *E) {
-  return false;
+
+//===--------------------------------------------------------------------===//
+template<typename T>
+static
+void ExtractBitMasks(ArrayRef<T> Ops, SmallVectorImpl<VASTBitMask> &Masks) {
+  for (unsigned i = 0; i < Ops.size(); ++i) {
+    VASTValPtr V = Ops[i];
+
+    if (VASTConstPtr C = dyn_cast<VASTConstPtr>(V)) {
+      APInt Bits = C.getAPInt();
+      // Directly construct the mask from constant.
+      Masks.push_back(VASTBitMask(~Bits, Bits));
+      continue;
+    }
+
+    if (VASTMaskedValue *MV = dyn_cast<VASTMaskedValue>(V.get())) {
+      Masks.push_back(MV->invert(V.isInverted()));
+      continue;
+    }
+
+    // Else just push the all unknown mask.
+    Masks.push_back(VASTBitMask(V->getBitWidth()));
+  }
 }
 
-bool VASTBitMask::evaluateMask(VASTSeqValue *SV) {
-  return false;
+VASTBitMask VASTBitMask::EvaluateAndMask(ArrayRef<VASTBitMask> Masks,
+                                         unsigned BitWidth) {
+  // Assume all bits are 1s.
+  VASTBitMask Mask(APInt::getNullValue(BitWidth),
+                   APInt::getAllOnesValue(BitWidth));
+
+  for (unsigned i = 0; i < Masks.size(); ++i) {
+    // The bit become zero if the same bit in any operand is zero.
+    Mask.KnownZeros |= Masks[i].KnownZeros;
+    // The bit is one only if the same bit in all operand are zeros.
+    Mask.KnownOnes &= Masks[i].KnownOnes;
+  }
+
+  return Mask;
+}
+
+VASTBitMask VASTBitMask::EvaluateAddMask(VASTBitMask LHS, VASTBitMask RHS,
+                                         unsigned BitWidth) {
+  //if (!(LHS.getKnownBits() | RHS.getKnownBits())) {
+  //  // If the known bits are not overlapped, the addition become an OR.
+  //  // Build OR by ~(~A & ~B)
+  //  VASTBitMask Masks[] = { LHS.invert(), RHS.invert() };
+  //  return EvaluateAndMask(Masks, BitWidth).invert();
+  //}
+
+  // Assume all bits are unknown.
+  VASTBitMask Mask(BitWidth);
+
+  // Well, steal from llvm ComputeMaskedBitsAddSub:
+  unsigned LHSKnownTrailingZeros = LHS.KnownZeros.countTrailingOnes();
+  unsigned RHSKnownTrailingZeros = RHS.KnownZeros.countTrailingOnes();
+
+  // Determine which operand has more trailing zeros, and use that
+  // many bits from the other operand.
+  if (LHSKnownTrailingZeros > RHSKnownTrailingZeros) {
+    APInt ZeroMask = APInt::getLowBitsSet(BitWidth, LHSKnownTrailingZeros);
+    Mask.KnownZeros |= RHS.KnownZeros & ZeroMask;
+    Mask.KnownOnes |= RHS.KnownOnes & ZeroMask;
+  } else if (RHSKnownTrailingZeros >= LHSKnownTrailingZeros) {
+    APInt ZeroMask = APInt::getLowBitsSet(BitWidth, RHSKnownTrailingZeros);
+    Mask.KnownZeros |= LHS.KnownZeros & ZeroMask;
+    Mask.KnownOnes |= LHS.KnownOnes & ZeroMask;
+  }
+
+  // The Carry bit will stop propagate if LHS and RHS has zero bit at the same
+  // position.
+  unsigned LHSKnownLeadingZeros= LHS.KnownZeros.countLeadingOnes();
+  unsigned RHSKnownLeadingZeros = RHS.KnownZeros.countLeadingOnes();
+  unsigned ResultKnownLeadingZeros = std::min(LHSKnownLeadingZeros,
+                                              RHSKnownLeadingZeros);
+  // The carry bit will eat a leading zero, if there is any.
+  if (ResultKnownLeadingZeros > 0)
+    ResultKnownLeadingZeros -= 1;
+
+  Mask.KnownZeros |= APInt::getHighBitsSet(BitWidth, ResultKnownLeadingZeros);
+
+  // TODO: Find the opportunity to break the carray chain.
+
+  return Mask;
+}
+
+VASTBitMask VASTBitMask::EvaluateBitExtractMask(VASTBitMask Mask,
+                                                unsigned UB, unsigned LB) {
+  return VASTBitMask(VASTConstant::getBitSlice(Mask.KnownZeros, UB, LB),
+                     VASTConstant::getBitSlice(Mask.KnownOnes, UB, LB));
+}
+
+VASTBitMask VASTBitMask::EvaluateBitCatMask(ArrayRef<VASTBitMask> Masks,
+                                            unsigned BitWidth) {
+  unsigned CurUB = BitWidth;
+  unsigned ExprSize = BitWidth;
+
+  // Assume all bits are unknown.
+  VASTBitMask Mask(BitWidth);
+
+  // Concatenate the bit mask together.
+  for (unsigned i = 0; i < Masks.size(); ++i) {
+    VASTBitMask CurMask = Masks[i];
+    unsigned CurSize = CurMask.getMaskWidth();
+    unsigned CurLB = CurUB - CurSize;
+    Mask.KnownZeros |= CurMask.KnownZeros.zextOrSelf(ExprSize).shl(CurLB);
+    Mask.KnownOnes  |= CurMask.KnownOnes.zextOrSelf(ExprSize).shl(CurLB);
+
+    CurUB = CurLB;
+  }
+
+  return Mask;
+}
+
+//===--------------------------------------------------------------------===//
+void VASTBitMask::evaluateMask(VASTExpr *E) {
+  SmallVector<VASTBitMask, 8> Masks;
+  ExtractBitMasks(E->getOperands(), Masks);
+  unsigned BitWidth = E->getBitWidth();
+
+  switch (E->getOpcode()) {
+  default: break;
+  case VASTExpr::dpBitExtract:
+    mergeAnyKnown(EvaluateBitExtractMask(Masks[0], E->getUB(), E->getLB()));
+    break;
+  case VASTExpr::dpBitCat:
+    mergeAnyKnown(EvaluateBitCatMask(Masks, BitWidth));
+    break;
+  case VASTExpr::dpAnd:
+    mergeAnyKnown(EvaluateAndMask(Masks, BitWidth));
+    break;
+  case VASTExpr::dpAdd: {
+    // Evaluate the bitmask pairwise for the ADD for now.
+    while (Masks.size() > 1) {
+      VASTBitMask LHS = Masks.pop_back_val().zextOrTrunc(BitWidth);
+      VASTBitMask RHS = Masks.pop_back_val().zextOrTrunc(BitWidth);
+      Masks.push_back(EvaluateAddMask(LHS, RHS, BitWidth));
+    }
+
+    mergeAnyKnown(Masks[0]);
+    break;
+  }
+  case VASTExpr::dpKeep:
+    mergeAnyKnown(Masks[0]);
+    break;
+  }
+}
+
+void VASTBitMask::evaluateMask(VASTSeqValue *SV) {
 }
