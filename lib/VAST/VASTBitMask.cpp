@@ -70,8 +70,9 @@ void VASTBitMask::dumpMask() const {
   printMask(dbgs());
 }
 
-void VASTBitMask::init(Value *V, ScalarEvolution &SE, const DataLayout &TD,
-                       bool Inverted) {
+void VASTBitMask::mergeAnyKnown(Value *V, ScalarEvolution &SE,
+                                const DataLayout &TD,
+                                bool Inverted) {
   // We cannot anything if V is not integer.
   if (!SE.isSCEVable(V->getType()))
     return;
@@ -92,15 +93,15 @@ void VASTBitMask::init(Value *V, ScalarEvolution &SE, const DataLayout &TD,
     Mask.KnownZeros |= APInt::getHighBitsSet(SizeInBits, LeadingZeros);
   }
 
-  init(Mask, Inverted);
+  mergeAnyKnown(Mask.invert(Inverted));
 }
 
-void VASTBitMask::init(const VASTBitMask &Other, bool Inverted) {
+void VASTBitMask::mergeAnyKnown(const VASTBitMask &Other) {
   assert(Other.getMaskWidth() == getMaskWidth() && "Size of V is unknown!");
-  assert((!anyBitKnown() || operator==(Other.invert(Inverted))) &&
-         "Cannot initialize nonzero!");
+  assert(!(KnownOnes & Other.KnownZeros) && !(KnownZeros & Other.KnownOnes) &&
+         "Bit masks contradict!");
 
-  KnownOnes = Inverted ? Other.KnownZeros : Other.KnownOnes;
-  KnownZeros = Inverted ? Other.KnownOnes : Other.KnownZeros;
+  KnownOnes |= Other.KnownOnes;
+  KnownZeros |= Other.KnownZeros;
   verify();
 }

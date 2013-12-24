@@ -56,10 +56,10 @@ public:
   }
 
   // Compute the bit mask for a LLVM Value, by calling ComputeMaskedBits.
-  void init(Value *V, ScalarEvolution &SE, const DataLayout &TD,
-            bool Inverted = false);
-  // Initialize the current bit mask from other.
-  void init(const VASTBitMask &Other, bool Inverted = false);
+  void mergeAnyKnown(Value *V, ScalarEvolution &SE, const DataLayout &TD,
+                     bool Inverted = false);
+  // Merge any known bits from other to the current bit mask
+  void mergeAnyKnown(const VASTBitMask &Other);
 
   void printMask(raw_ostream &OS) const;
   void printMaskIfAnyKnown(raw_ostream &OS) const;
