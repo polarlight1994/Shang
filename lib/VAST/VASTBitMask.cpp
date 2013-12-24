@@ -223,7 +223,7 @@ VASTBitMask VASTBitMask::EvaluateAddMask(VASTBitMask LHS, VASTBitMask RHS,
 }
 
 VASTBitMask VASTBitMask::EvaluateMultMask(VASTBitMask LHS, VASTBitMask RHS,
-                                         unsigned BitWidth) {
+                                          unsigned BitWidth) {
   // Assume all bits are unknown.
   VASTBitMask Mask(BitWidth);
   unsigned TrailZeros = LHS.KnownZeros.countTrailingOnes() +
@@ -238,6 +238,18 @@ VASTBitMask VASTBitMask::EvaluateMultMask(VASTBitMask LHS, VASTBitMask RHS,
   LeadZeros = std::min(LeadZeros, BitWidth);
   Mask.KnownZeros = APInt::getLowBitsSet(BitWidth, TrailZeros) |
                     APInt::getHighBitsSet(BitWidth, LeadZeros);
+  return Mask;
+}
+
+VASTBitMask VASTBitMask::EvaluateShlMask(VASTBitMask LHS, VASTBitMask RHS,
+                                         unsigned BitWidth) {
+  // Because we are shifting toward MSB, so the Trailing zeros are known
+  // regardless of the shift amount.
+  unsigned TrailingZeros = LHS.KnownZeros.countTrailingOnes();
+  VASTBitMask Mask(APInt::getLowBitsSet(BitWidth, TrailingZeros),
+                   APInt::getNullValue(BitWidth));
+
+  // TODO: Analyze RHS.
   return Mask;
 }
 
@@ -308,6 +320,9 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
     mergeAnyKnown(Masks[0]);
     break;
   }
+  case VASTExpr::dpShl:
+    mergeAnyKnown(EvaluateShlMask(Masks[0], Masks[1], BitWidth));
+    break;
   case VASTExpr::dpKeep:
     // Simply propagate the masks from the RHS of the assignment.
     mergeAnyKnown(Masks[0]);
