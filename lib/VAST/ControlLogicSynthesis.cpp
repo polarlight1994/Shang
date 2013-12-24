@@ -103,7 +103,7 @@ INITIALIZE_PASS(ControlLogicSynthesis, "control-logic-synthesis",
                 "Implement the Control Logic", false, true)
 char ControlLogicSynthesis::ID = 0;
 
-char &llvm::ControlLogicSynthesisID = ControlLogicSynthesis::ID;
+char &vast::ControlLogicSynthesisID = ControlLogicSynthesis::ID;
 
 VASTValPtr ControlLogicBuilder::buildSlotReadyExpr(VASTSlot *S) {
   SmallVector<VASTValPtr, 4> Ops;

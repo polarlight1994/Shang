@@ -75,7 +75,7 @@ INITIALIZE_PASS_END(TimingDrivenSelectorSynthesis,
 
 char TimingDrivenSelectorSynthesis::ID = 0;
 
-char &llvm::TimingDrivenSelectorSynthesisID = TimingDrivenSelectorSynthesis::ID;
+char &vast::TimingDrivenSelectorSynthesisID = TimingDrivenSelectorSynthesis::ID;
 
 static bool intersect(const std::set<VASTSelector*> &LHS,
                       const std::set<VASTSeqValue*> &RHS) {
@@ -314,7 +314,7 @@ INITIALIZE_PASS_END(SimpleSelectorSynthesis,
 
 char SimpleSelectorSynthesis::ID = 0;
 
-char &llvm::SimpleSelectorSynthesisID = SimpleSelectorSynthesis::ID;
+char &vast::SimpleSelectorSynthesisID = SimpleSelectorSynthesis::ID;
 
 bool SimpleSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   CST = &getAnalysis<CachedStrashTable>();

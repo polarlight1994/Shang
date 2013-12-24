@@ -464,7 +464,7 @@ PreSchedBinding::PreSchedBinding() : VASTModulePass(ID) {
 
 char PreSchedBinding::ID = 0;
 
-char &llvm::PreSchedBindingID = PreSchedBinding::ID;
+char &vast::PreSchedBindingID = PreSchedBinding::ID;
 
 INITIALIZE_PASS_BEGIN(PreSchedBinding, "shang-pre-schedule-binding",
                       "Schedule Independent Binding", false, true)

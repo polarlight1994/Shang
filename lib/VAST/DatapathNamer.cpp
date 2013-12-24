@@ -56,7 +56,7 @@ INITIALIZE_PASS_BEGIN(DatapathNamer, "datapath-namer",
 INITIALIZE_PASS_END(DatapathNamer, "datapath-namer",
                     "Assign name to the datapath node", false, true)
 char DatapathNamer::ID = 0;
-char &llvm::DatapathNamerID = DatapathNamer::ID;
+char &vast::DatapathNamerID = DatapathNamer::ID;
 
 bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
   VM.resetSelectorName();

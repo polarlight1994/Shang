@@ -150,7 +150,7 @@ bool ShortestPathImpl::updateDistance(unsigned DistanceSrcThuDst,
 
 //===----------------------------------------------------------------------===//
 char STGDistances::ID = 0;
-char &llvm::STGDistancesID = STGDistances::ID;
+char &vast::STGDistancesID = STGDistances::ID;
 const unsigned STGDistances::Inf = UINT16_MAX;
 
 INITIALIZE_PASS(STGDistances, "vast-stg-distances",

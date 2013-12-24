@@ -94,7 +94,7 @@ INITIALIZE_PASS_END(Dataflow,
                     "vast-dataflow", "Dataflow Anlaysis", false, true)
 
 char Dataflow::ID = 0;
-char &llvm::DataflowID = Dataflow::ID;
+char &vast::DataflowID = Dataflow::ID;
 
 void Dataflow::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<DominatorTree>();

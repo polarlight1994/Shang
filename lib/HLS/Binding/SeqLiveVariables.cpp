@@ -72,7 +72,7 @@ void SeqLiveVariables::VarInfo::verify() const {
 }
 
 char SeqLiveVariables::ID = 0;
-char &llvm::SeqLiveVariablesID = SeqLiveVariables::ID;
+char &vast::SeqLiveVariablesID = SeqLiveVariables::ID;
 
 INITIALIZE_PASS_BEGIN(SeqLiveVariables, "shang-seq-live-variables",
                       "Seq Live Variables Analysis", false, true)
