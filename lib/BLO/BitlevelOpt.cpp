@@ -28,6 +28,9 @@ using namespace llvm;
 STATISTIC(NumIterations, "Number of bit-level optimization iteration");
 STATISTIC(NodesReplaced,
           "Number of Nodes are replaced during the bit-level optimization");
+STATISTIC(NodesReplacedByKnownBits,
+          "Number of Nodes whose bits are all known "
+          "during the bit-level optimization");
 
 //===----------------------------------------------------------------------===//
 DatapathBLO::DatapathBLO(DatapathContainer &Datapath)
@@ -406,6 +409,15 @@ void DatapathBLO::eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops) {
 }
 
 VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
+  // Update the bitmask before we perform the optimization.
+  Expr->evaluateMask();
+
+  // If all bit is known, simply return the constant to replace the expr.
+  if (LLVM_UNLIKELY(Expr->isAllBitKnown())) {
+    ++NodesReplacedByKnownBits;
+    return getConstant(Expr->getKnownValue());
+  }
+
   VASTExpr::Opcode Opcode = Expr->getOpcode();
   switch (Opcode) {
   case VASTExpr::dpBitExtract: {

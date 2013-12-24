@@ -595,6 +595,8 @@ public:
     return A->getASTType() >= vastFirstMaskedValueType &&
            A->getASTType() <= vastLastMaskedValueType;
   }
+
+  bool evaluateMask();
 };
 
 class VASTNamedValue : public VASTMaskedValue {

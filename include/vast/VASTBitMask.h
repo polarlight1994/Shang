@@ -26,9 +26,16 @@ class ScalarEvolution;
 
 namespace vast {
 using namespace llvm;
+class VASTMaskedValue;
+class VASTExpr;
+class VASTSeqValue;
 
 class VASTBitMask {
   APInt KnownZeros, KnownOnes;
+protected:
+  bool evaluateMask(VASTMaskedValue *V);
+  bool evaluateMask(VASTExpr *E);
+  bool evaluateMask(VASTSeqValue *V);
 public:
   explicit VASTBitMask(unsigned Size)
     : KnownZeros(APInt::getNullValue(Size)),
@@ -44,8 +51,19 @@ public:
 
   unsigned getMaskWidth() const;
 
+  // Functions for the known bits of the BitMask
   APInt getKnownBits() const;
+
+  APInt getKnownValue() const;
+
+  bool isAllBitKnown(unsigned UB, unsigned LB = 0) const;
+
+  bool isAllBitKnown() const {
+    return isAllBitKnown(getMaskWidth(), 0);
+  }
+
   bool anyBitKnown() const;
+
   VASTBitMask invert(bool invert = true) const {
     return invert ? VASTBitMask(KnownOnes, KnownZeros)
                   : VASTBitMask(KnownZeros, KnownOnes);
@@ -64,6 +82,7 @@ public:
   void printMask(raw_ostream &OS) const;
   void printMaskIfAnyKnown(raw_ostream &OS) const;
   void dumpMask() const;
+
 
   void verify() const;
 };

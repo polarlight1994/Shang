@@ -266,6 +266,10 @@ VASTMaskedValue::VASTMaskedValue(VASTTypes T, unsigned BitWidth)
          && "Bad DeclType!");
 }
 
+bool VASTMaskedValue::evaluateMask() {
+  return VASTBitMask::evaluateMask(this);
+}
+
 //===----------------------------------------------------------------------===//
 VASTSymbol::VASTSymbol(const char *Name, unsigned BitWidth)
   : VASTNamedValue(VASTNode::vastSymbol, Name, BitWidth) {}

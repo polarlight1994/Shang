@@ -13,6 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "vast/VASTBitMask.h"
+#include "vast/VASTDatapathNodes.h"
+#include "vast/VASTSeqValue.h"
 
 #include "llvm/IR/Value.h"
 #include "llvm/IR/DataLayout.h"
@@ -31,8 +33,25 @@ void VASTBitMask::verify() const {
   assert(!(KnownOnes & KnownZeros) && "Bit masks contradict!");
 }
 
+bool VASTBitMask::isAllBitKnown(unsigned UB, unsigned LB) const {
+  APInt KnownBits = getKnownBits();
+
+  if (UB != getMaskWidth() || LB != 0)
+    KnownBits = VASTConstant::getBitSlice(KnownBits, UB, LB);
+
+  return KnownBits.isAllOnesValue();
+}
+
 APInt VASTBitMask::getKnownBits() const {
   return KnownZeros | KnownOnes;
+}
+
+APInt VASTBitMask::getKnownValue() const {
+  assert(isAllBitKnown() && "The value is unknown!");
+
+  verify();
+
+  return KnownOnes;
 }
 
 bool VASTBitMask::anyBitKnown() const {
@@ -104,4 +123,22 @@ void VASTBitMask::mergeAnyKnown(const VASTBitMask &Other) {
   KnownOnes |= Other.KnownOnes;
   KnownZeros |= Other.KnownZeros;
   verify();
+}
+
+bool VASTBitMask::evaluateMask(VASTMaskedValue *V) {
+  if (VASTExpr *E = dyn_cast<VASTExpr>(V))
+    return evaluateMask(E);
+
+  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V))
+    return evaluateMask(SV);
+
+  return false;
+}
+
+bool VASTBitMask::evaluateMask(VASTExpr *E) {
+  return false;
+}
+
+bool VASTBitMask::evaluateMask(VASTSeqValue *SV) {
+  return false;
 }
