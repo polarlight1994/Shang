@@ -283,7 +283,7 @@ VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
 
   std::sort(Ops.begin(), Ops.end(), VASTValPtr::type_less);
 
-  VASTValPtr LastVal;
+  VASTValPtr LastVal = None;
   unsigned ActualPos = 0;
   for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
     VASTValPtr CurVal = Ops[i];
@@ -420,6 +420,9 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
 
   VASTExpr::Opcode Opcode = Expr->getOpcode();
   switch (Opcode) {
+  case VASTExpr::dpAnd:
+    return optimizeNAryExpr<VASTExpr::dpAnd>(Expr->getOperands(),
+                                             Expr->getBitWidth());
   case VASTExpr::dpBitExtract: {
     VASTValPtr Op = Expr->getOperand(0);
     return optimizeBitExtract(Op, Expr->getUB(), Expr->getLB());
