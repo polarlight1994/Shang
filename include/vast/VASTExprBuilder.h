@@ -38,9 +38,10 @@ public:
                             unsigned Bitwidth);
   virtual
   VASTValPtr createBitExtract(VASTValPtr Op, unsigned UB, unsigned LB);
-  virtual
-  VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
-                             unsigned BitWidth);
+  virtual VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
+                                     unsigned BitWidth);
+  virtual VASTValPtr createLUT(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth,
+                               StringRef SOP);
 
   virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 
@@ -66,7 +67,8 @@ public:
   VASTValPtr createBitExtract(VASTValPtr Op, unsigned UB, unsigned LB);
   VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
                              unsigned BitWidth);
-
+  VASTValPtr createLUT(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth,
+                       StringRef SOP);
   void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
 };
 
@@ -226,6 +228,8 @@ public:
   VASTValPtr buildKeep(VASTValPtr V);
   VASTValPtr buildROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
                             unsigned Bitwidth);
+  VASTValPtr buildLUTExpr(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth,
+                          StringRef SOP);
 };
 }
 

@@ -153,8 +153,8 @@ DatapathContainer::createROMLookUpImpl(VASTValPtr Addr, VASTMemoryBank *Bank,
 
   // Profile the elements of VASTExpr.
   ID.AddInteger(VASTExpr::dpROMLookUp);
-  ID.AddInteger(BitWidth);
   ID.AddPointer(Bank);
+  ID.AddInteger(BitWidth);
   ID.AddPointer(Addr);
 
   void *IP = 0;
@@ -190,6 +190,32 @@ VASTValPtr DatapathContainer::createExprImpl(VASTExpr::Opcode Opc,
     return E;
 
   VASTExpr *E = new VASTExpr(Opc, Ops, Bitwidth);
+
+  UniqueExprs.InsertNode(E, IP);
+  Exprs.push_back(E);
+  return E;
+}
+
+VASTValPtr DatapathContainer::createLUTImpl(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth,
+                                            StringRef SOP) {
+  assert(!Ops.empty() && "Unexpected empty expression");
+
+  const char *SOPData = SOPs.GetOrCreateValue(SOP).getKeyData();
+
+  FoldingSetNodeID ID;
+
+  // Profile the elements of VASTExpr.
+  ID.AddInteger(VASTExpr::dpLUT);
+  ID.AddPointer(SOPData);
+  ID.AddInteger(Bitwidth);
+  for (unsigned i = 0; i < Ops.size(); ++i)
+    ID.AddPointer(Ops[i]);
+
+  void *IP = 0;
+  if (VASTExpr *E = UniqueExprs.FindNodeOrInsertPos(ID, IP))
+    return E;
+
+  VASTExpr *E = new VASTExpr(Ops, Bitwidth, SOPData);
 
   UniqueExprs.InsertNode(E, IP);
   Exprs.push_back(E);

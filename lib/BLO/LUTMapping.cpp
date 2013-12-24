@@ -481,7 +481,7 @@ bool LogicNetwork::buildAIG(VASTExpr *E) {
 
   if (E->getOpcode() == VASTExpr::dpLUT) {
     // Get the operand list excluding the LUT.
-    ArrayRef<VASTUse> Ops(E->op_begin(), E->size() - 1);
+    ArrayRef<VASTUse> Ops(E->op_begin(), E->size());
     Nodes.insert(std::make_pair(E, buildSOP(E->getLUT(), Ops)));
     return true;
   }
@@ -562,14 +562,8 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
     return expandSOP<VASTValPtr>(sop, Ops, Bitwidth);
   }
 
-  // Otherwise simple construct the LUT expression.
-  VASTValPtr SOP = VM.getOrCreateSymbol(sop, 1);
-  // Encode the comment flag of the SOP into the invert flag of the LUT string.
-  if (Abc_SopIsComplement(sop)) SOP = SOP.invert();
-  Ops.push_back(SOP);
-
   ++NumLUTBulit;
-  return Builder.buildExpr(VASTExpr::dpLUT, Ops, Bitwidth);
+  return Builder.buildLUTExpr(Ops, Bitwidth, sop);
 }
 
 void LogicNetwork::buildLUTTree(Abc_Obj_t *Root, unsigned BitWidth ) {

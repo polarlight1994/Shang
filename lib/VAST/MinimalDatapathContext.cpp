@@ -37,6 +37,12 @@ MinimalDatapathContext::createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
   return Datapath.createROMLookUpImpl(Addr, Bank, BitWidth);
 }
 
+VASTValPtr MinimalDatapathContext::createLUT(ArrayRef<VASTValPtr> Ops,
+                                             unsigned Bitwidth,
+                                             StringRef SOP) {
+  return Datapath.createLUTImpl(Ops, Bitwidth, SOP);
+}
+
 VASTValPtr 
 MinimalDatapathContext::getAsOperandImpl(Value *Op) {
   if (ConstantInt *Int = dyn_cast<ConstantInt>(Op))

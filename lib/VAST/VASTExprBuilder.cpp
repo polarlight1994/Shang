@@ -34,14 +34,22 @@ VASTValPtr VASTExprBuilderContext::createExpr(VASTExpr::Opcode Opc,
   llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
   return None;
 }
+
 VASTValPtr VASTExprBuilderContext::createBitExtract(VASTValPtr Op,
                                                   unsigned UB, unsigned LB) {
   llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
   return None;
 }
+
 VASTValPtr VASTExprBuilderContext::createROMLookUp(VASTValPtr Addr,
                                                    VASTMemoryBank *Bank,
                                                    unsigned BitWidth) {
+  llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
+  return None;
+}
+
+VASTValPtr VASTExprBuilderContext::createLUT(ArrayRef<VASTValPtr> Ops,
+                                             unsigned Bitwidth, StringRef SOP) {
   llvm_unreachable("reach Unimplemented function of VASTExprBuilderContext!");
   return None;
 }
@@ -80,6 +88,12 @@ VASTValPtr MinimalExprBuilderContext::createROMLookUp(VASTValPtr Addr,
                                                       VASTMemoryBank *Bank,
                                                       unsigned BitWidth) {
   return Datapath.createROMLookUpImpl(Addr, Bank, BitWidth);
+}
+
+
+VASTValPtr MinimalExprBuilderContext::createLUT(ArrayRef<VASTValPtr> Ops,
+                                                unsigned Bitwidth, StringRef SOP) {
+  return Datapath.createLUTImpl(Ops, Bitwidth, SOP);
 }
 
 void MinimalExprBuilderContext::replaceAllUseWith(VASTValPtr From,
@@ -162,7 +176,6 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
                                       unsigned BitWidth) {
   switch (Opc) {
   // Directly create the loop up table.
-  case VASTExpr::dpLUT:  return Context.createExpr(Opc, Ops, BitWidth);
   case VASTExpr::dpAdd:  return buildAddExpr(Ops, BitWidth);
   case VASTExpr::dpMul:  return buildMulExpr(Ops, BitWidth);
   case VASTExpr::dpAnd:  return buildAndExpr(Ops, BitWidth);
@@ -222,6 +235,8 @@ VASTValPtr VASTExprBuilder::copyExpr(VASTExpr *Expr, ArrayRef<VASTValPtr> Ops) {
   case VASTExpr::dpBitRepeat:
     assert(Ops.size() == 1 && "Wrong operand number!");
     return buildBitRepeat(Ops[0], Expr->getRepeatTimes());
+  case VASTExpr::dpLUT:
+    return buildLUTExpr(Ops, Expr->getBitWidth(), Expr->getLUT());
   }
 
   return buildExpr(Expr->getOpcode(), Ops, Expr->getBitWidth());
@@ -257,6 +272,11 @@ VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
 VASTValPtr VASTExprBuilder::buildROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
                                            unsigned Bitwidth) {
   return Context.createROMLookUp(Addr, Bank, Bitwidth);
+}
+
+VASTValPtr VASTExprBuilder::buildLUTExpr(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth,
+                                         StringRef SOP) {
+  return Context.createLUT(Ops, Bitwidth, SOP);
 }
 
 VASTValPtr VASTExprBuilder::buildOrExpr(ArrayRef<VASTValPtr> Ops,

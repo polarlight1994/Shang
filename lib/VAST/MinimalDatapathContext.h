@@ -40,9 +40,10 @@ public:
                         unsigned Bitwidth);
   virtual
   VASTValPtr createBitExtract(VASTValPtr Op, unsigned UB, unsigned LB);
-  virtual
-  VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
-                             unsigned BitWidth);
+  virtual VASTValPtr createROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
+                                     unsigned BitWidth);
+  virtual VASTValPtr createLUT(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth,
+                               StringRef SOP);
 
   virtual VASTValPtr getAsOperandImpl(Value *Op);
 

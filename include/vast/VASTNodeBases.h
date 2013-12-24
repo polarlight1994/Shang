@@ -92,6 +92,7 @@ protected:
     Value *LLVMValue;
     VASTSelector *Sel;
     VASTMemoryBank *Bank;
+    const char *SOP;
     VASTNode *Node;
     uint64_t Int;
   } Contents64;

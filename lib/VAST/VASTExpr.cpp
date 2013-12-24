@@ -143,10 +143,25 @@ void printBitRepeat(raw_ostream &OS, VASTValPtr Pattern, unsigned RepeatTimes) {
   OS << "}}";
 }
 
+static bool IsComplementSop(const char *SOP) {
+  for (; *SOP; ++SOP)
+    if (*SOP == '\n')
+      return (*(SOP - 1) == '0' || *(SOP - 1) == 'n');
+
+  llvm_unreachable("Broken SOP!");
+  return false;
+}
+
 static void printLUT(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *LUT) {
+  // Invert the result if the LUT is inverted.
+  // Please note that we had encoded the comment flag of the SOP into the
+  // invert flag of the LUT string.
+  if (IsComplementSop(LUT))
+    OS << '~';
+
   // Interpret the sum of product table.
   const char *p = LUT;
-  unsigned NumInputs = Ops.size() - 1;
+  unsigned NumInputs = Ops.size();
   // The LUT is in form of "Sum of Product", print the left parenthesis of the
   // sum first.
   OS << '(';
@@ -252,13 +267,7 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
   return true;
 }
 //===----------------------------------------------------------------------===//
-
-VASTExpr::VASTExpr(Opcode Opc, ArrayRef<VASTValPtr> Ops, unsigned BitWidth)
-  : VASTMaskedValue(vastExpr, BitWidth), VASTOperandList(Ops.size()) {
-  Contents64.Bank = NULL;
-  Contents32.ExprNameID = 0;
-  Contents16.ExprContents.Opcode = Opc;
-  Contents16.ExprContents.LB = 0;
+void VASTExpr::initializeOperands(ArrayRef<VASTValPtr> Ops) {
   assert(Ops.size() && "Unexpected empty operand list!");
   // Construct the uses that use the operand.
   for (unsigned i = 0; i < Ops.size(); ++i) {
@@ -267,14 +276,31 @@ VASTExpr::VASTExpr(Opcode Opc, ArrayRef<VASTValPtr> Ops, unsigned BitWidth)
   }
 }
 
+VASTExpr::VASTExpr(Opcode Opc, ArrayRef<VASTValPtr> Ops, unsigned BitWidth)
+  : VASTMaskedValue(vastExpr, BitWidth), VASTOperandList(Ops.size()) {
+  Contents64.Bank = NULL;
+  Contents32.ExprNameID = 0;
+  Contents16.ExprContents.Opcode = Opc;
+  Contents16.ExprContents.LB = 0;
+  initializeOperands(Ops);
+}
+
+VASTExpr::VASTExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth, const char *SOP)
+  : VASTMaskedValue(vastExpr, BitWidth), VASTOperandList(Ops.size()) {
+  Contents64.SOP = SOP;
+  Contents32.ExprNameID = 0;
+  Contents16.ExprContents.Opcode = VASTExpr::dpLUT;
+  Contents16.ExprContents.LB = 0;
+  initializeOperands(Ops);
+}
+
 VASTExpr::VASTExpr(VASTValPtr Op, unsigned UB, unsigned LB)
   : VASTMaskedValue(vastExpr, UB - LB), VASTOperandList(1) {
   Contents64.Bank = NULL;
   Contents32.ExprNameID = 0;
   Contents16.ExprContents.Opcode = VASTExpr::dpBitExtract;
   Contents16.ExprContents.LB = LB;
-  assert(Op.get() && "Unexpected null VASTValPtr!");
-  (void) new (Operands) VASTUse(this, Op);
+  initializeOperands(Op);
 }
 
 VASTExpr::VASTExpr(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth)
@@ -283,8 +309,7 @@ VASTExpr::VASTExpr(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth)
   Contents32.ExprNameID = 0;
   Contents16.ExprContents.Opcode = VASTExpr::dpROMLookUp;
   Contents16.ExprContents.LB = 0;
-  assert(Addr.get() && "Unexpected null VASTValPtr!");
-  (void) new (Operands) VASTUse(this, Addr);
+  initializeOperands(Addr);
 }
 
 VASTExpr::VASTExpr() : VASTMaskedValue(vastExpr, 1), VASTOperandList(0) {}
@@ -334,10 +359,6 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
 
   switch (getOpcode()) {
   case dpLUT: {
-    // Invert the result if the LUT is inverted.
-    // Please note that we had encoded the comment flag of the SOP into the
-    // invert flag of the LUT string.
-    if (getOperand(size() - 1).isInverted())  OS << '~';
     printLUT(OS, getOperands(), getLUT());
     break;
   }
@@ -439,7 +460,7 @@ bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
 const char *VASTExpr::getLUT() const {
   assert(getOpcode() == VASTExpr::dpLUT && "Call getLUT on the wrong Expr type!");
   // The LUT is in the last operand.
-  return getOperand(size() - 1).getAsLValue<VASTSymbol>()->getName();
+  return Contents64.SOP;
 }
 
 void VASTExpr::ProfileWithoutOperands(FoldingSetNodeID& ID) const {
@@ -452,6 +473,10 @@ void VASTExpr::ProfileWithoutOperands(FoldingSetNodeID& ID) const {
   case VASTExpr::dpBitExtract:
     ID.AddInteger(getUB());
     ID.AddInteger(getLB());
+    break;
+  case VASTExpr::dpLUT:
+    ID.AddPointer(getLUT());
+    ID.AddInteger(getBitWidth());
     break;
   case VASTExpr::dpROMLookUp:
     ID.AddPointer(getROMContent());

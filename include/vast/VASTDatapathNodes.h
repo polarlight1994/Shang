@@ -18,6 +18,7 @@
 #include "llvm/IR/Value.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/Support/Allocator.h"
@@ -196,10 +197,21 @@ private:
   VASTExpr(const VASTExpr&);              // Do not implement
   void operator=(const VASTExpr&);        // Do not implement
 
+  // Create a generic expression.
   VASTExpr(Opcode Opc, ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
+
+  // Create a LUT expression.
+  VASTExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth, const char *SOP);
+
+  // Create a BitExtract expression.
   VASTExpr(VASTValPtr Op, unsigned UB, unsigned LB);
+
+  // Create a ROM lookup expression.
   VASTExpr(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth);
+
   VASTExpr();
+
+  void initializeOperands(ArrayRef<VASTValPtr> Ops);
 
   friend struct ilist_sentinel_traits<VASTExpr>;
 
@@ -376,6 +388,9 @@ class DatapathContainer {
   // Expression in data-path
   FoldingSet<VASTExpr> UniqueExprs;
 
+  // The string of SOP for the LUT expressions
+  StringSet<> SOPs;
+
   VASTExprBuilderContext* CurContexts;
 protected:
   BumpPtrAllocator Allocator;
@@ -400,6 +415,8 @@ public:
 
   VASTValPtr createExprImpl(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                             unsigned Bitwidth);
+  VASTValPtr createLUTImpl(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth,
+                           StringRef SOP);
   VASTValPtr createBitExtractImpl(VASTValPtr Op, unsigned UB, unsigned LB);
   VASTValPtr
   createROMLookUpImpl(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth);
