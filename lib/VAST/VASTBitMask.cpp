@@ -72,13 +72,13 @@ void VASTBitMask::printMask(raw_ostream &OS) const {
   // make sure their are comments.
   OS << "/*";
   SmallString<128> Str;
-  KnownZeros.toString(Str, 2, false, true);
+  KnownZeros.toString(Str, 2, false, false);
   OS << 'Z' << Str << ' ';
   Str.clear();
-  KnownOnes.toString(Str, 2, false, true);
+  KnownOnes.toString(Str, 2, false, false);
   OS << 'O' << Str << ' ';
   Str.clear();
-  getKnownBits().toString(Str, 2, false, true);
+  getKnownBits().toString(Str, 2, false, false);
   OS << 'K' << Str << ' ';
   OS << "*/\n";
 }
@@ -222,6 +222,25 @@ VASTBitMask VASTBitMask::EvaluateAddMask(VASTBitMask LHS, VASTBitMask RHS,
   return Mask;
 }
 
+VASTBitMask VASTBitMask::EvaluateMultMask(VASTBitMask LHS, VASTBitMask RHS,
+                                         unsigned BitWidth) {
+  // Assume all bits are unknown.
+  VASTBitMask Mask(BitWidth);
+  unsigned TrailZeros = LHS.KnownZeros.countTrailingOnes() +
+                        RHS.KnownZeros.countTrailingOnes();
+  unsigned LeadZeros = std::max(LHS.KnownZeros.countLeadingOnes() +
+                                RHS.KnownZeros.countLeadingOnes(),
+                                BitWidth) - BitWidth;
+
+  // If low bits are zero in either operand, output low known-0 bits.
+  // Also compute a conserative estimate for high known-0 bits.
+  TrailZeros = std::min(TrailZeros, BitWidth);
+  LeadZeros = std::min(LeadZeros, BitWidth);
+  Mask.KnownZeros = APInt::getLowBitsSet(BitWidth, TrailZeros) |
+                    APInt::getHighBitsSet(BitWidth, LeadZeros);
+  return Mask;
+}
+
 VASTBitMask VASTBitMask::EvaluateBitExtractMask(VASTBitMask Mask,
                                                 unsigned UB, unsigned LB) {
   return VASTBitMask(VASTConstant::getBitSlice(Mask.KnownZeros, UB, LB),
@@ -278,7 +297,19 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
     mergeAnyKnown(Masks[0]);
     break;
   }
+  case VASTExpr::dpMul: {
+    // Evaluate the bitmask pairwise for the ADD for now.
+    while (Masks.size() > 1) {
+      VASTBitMask LHS = Masks.pop_back_val().zextOrTrunc(BitWidth);
+      VASTBitMask RHS = Masks.pop_back_val().zextOrTrunc(BitWidth);
+      Masks.push_back(EvaluateMultMask(LHS, RHS, BitWidth));
+    }
+
+    mergeAnyKnown(Masks[0]);
+    break;
+  }
   case VASTExpr::dpKeep:
+    // Simply propagate the masks from the RHS of the assignment.
     mergeAnyKnown(Masks[0]);
     break;
   }

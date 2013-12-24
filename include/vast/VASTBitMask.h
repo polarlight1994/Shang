@@ -112,6 +112,8 @@ public:
   
   static
   VASTBitMask EvaluateAddMask(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth);
+  static
+  VASTBitMask EvaluateMultMask(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth);
 
   void verify() const;
 };
