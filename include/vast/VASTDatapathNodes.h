@@ -250,6 +250,7 @@ public:
   }
 
   const char *getLUT() const;
+  bool isComplementSOP() const;
 
   VASTMemoryBank *getROMContent() const {
     assert(getOpcode() == VASTExpr::dpROMLookUp && "Incorrect expr type!");

@@ -463,6 +463,10 @@ const char *VASTExpr::getLUT() const {
   return Contents64.SOP;
 }
 
+bool VASTExpr::isComplementSOP() const {
+  return IsComplementSop(getLUT());
+}
+
 void VASTExpr::ProfileWithoutOperands(FoldingSetNodeID& ID) const {
   VASTExpr::Opcode Opcode = getOpcode();
   ID.AddInteger(Opcode);
