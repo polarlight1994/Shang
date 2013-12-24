@@ -93,6 +93,7 @@ class DatapathBLO : public MinimalExprBuilderContext {
   }
 
   VASTValPtr optimizeExpr(VASTExpr *Expr);
+  VASTValPtr replaceKnownBits(VASTValPtr V);
   bool replaceIfNotEqual(VASTValPtr From, VASTValPtr To);
 
   template<VASTExpr::Opcode Opcode>

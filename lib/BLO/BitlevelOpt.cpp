@@ -61,8 +61,8 @@ bool DatapathBLO::replaceIfNotEqual(VASTValPtr From, VASTValPtr To) {
 
 VASTValPtr DatapathBLO::eliminateConstantInvertFlag(VASTValPtr V) {
   if (V.isInverted())
-  if (VASTConstPtr C = dyn_cast<VASTConstPtr>(V))
-      return getConstant(C.getAPInt());
+    if (VASTConstPtr C = dyn_cast<VASTConstPtr>(V))
+        return getConstant(C.getAPInt());
 
   return V;
 }
@@ -290,8 +290,7 @@ VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
     if (CurVal == LastVal) {
       // A & A = A
       continue;
-    }
-    else if (CurVal.invert() == LastVal)
+    } else if (CurVal.invert() == LastVal)
       // A & ~A => 0
       return getConstant(APInt::getNullValue(BitWidth));
 
@@ -306,6 +305,7 @@ VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
     Ops[ActualPos++] = CurVal;
     LastVal = CurVal;
   }
+
   // If there is only 1 operand left, simply return the operand.
   if (ActualPos == 1)
    return LastVal;
@@ -409,14 +409,10 @@ void DatapathBLO::eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops) {
 }
 
 VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
-  // Update the bitmask before we perform the optimization.
-  Expr->evaluateMask();
-
-  // If all bit is known, simply return the constant to replace the expr.
-  if (LLVM_UNLIKELY(Expr->isAllBitKnown())) {
-    ++NodesReplacedByKnownBits;
-    return getConstant(Expr->getKnownValue());
-  }
+  // Replace the expr by known bits if possible.
+  VASTValPtr KnownBits = replaceKnownBits(Expr);
+  if (KnownBits != Expr)
+    return KnownBits;
 
   VASTExpr::Opcode Opcode = Expr->getOpcode();
   switch (Opcode) {
@@ -450,7 +446,25 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   default: break;
   }
 
-  return None;
+  return Expr;
+}
+
+VASTValPtr DatapathBLO::replaceKnownBits(VASTValPtr V) {
+  VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
+  if (Expr == NULL)
+    return V;
+
+  // Update the bitmask before we perform the optimization.
+  Expr->evaluateMask();
+
+  if (LLVM_LIKELY(!Expr->isAllBitKnown()))
+    return V;
+
+  // If all bit is known, simply return the constant to replace the expr.
+  ++NodesReplacedByKnownBits;
+  VASTValPtr C = getConstant(Expr->getKnownValue());
+  // Do not forget the invert flag of the original expression.
+  return eliminateConstantInvertFlag(C.invert(V.isInverted()));
 }
 
 bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
@@ -477,7 +491,8 @@ bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
     // We have visited all children of current node.
     if (Idx == CurNode->size()) {
       VisitStack.pop_back();
-      Replaced |= replaceIfNotEqual(CurNode, optimizeExpr(CurNode));
+      VASTValPtr NewVal = replaceKnownBits(optimizeExpr(CurNode));
+      Replaced |= replaceIfNotEqual(CurNode, NewVal);
       continue;
     }
 
