@@ -37,41 +37,6 @@ raw_ostream &printAssign(raw_ostream &OS, const Twine &Name, unsigned BitWidth){
   return OS;
 }
 
-template<typename OperandT>
-static void printCombMux(raw_ostream &OS, ArrayRef<OperandT> Ops,
-                         const Twine &LHSName, unsigned LHSWidth) {
-  bool IsSimpleAssignment = (Ops.size() == 2);
-  // Create the temporary signal.
-  OS << "// Combinational MUX\n"
-     << (IsSimpleAssignment ? "wire " : "reg ")
-     << VASTValue::BitRange(LHSWidth, 0, false)
-     << ' ' << LHSName << "_mux_wire;\n";
-
-  // Handle the trivial case trivially: Only 1 input.
-  if (IsSimpleAssignment) {
-    printAssign(OS, LHSName + "_mux_wire", LHSWidth);
-    Ops[1].printAsOperand(OS);
-    OS << ";\n\n";
-    return;
-  }
-
-  // Print the mux logic.
-  OS << "always @(*)begin  // begin mux logic\n";
-  OS.indent(2) << VASTNode::ParallelCaseAttr << " case (1'b1)\n";
-  for (unsigned i = 0; i < Ops.size(); i+=2) {
-    OS.indent(4);
-    Ops[i].printAsOperand(OS);
-    OS << ": " << LHSName << "_mux_wire = ";
-    Ops[i + 1].printAsOperand(OS);
-    OS << ";\n";
-  }
-
-  // Write the default condition, otherwise latch will be inferred.
-  OS.indent(4) << "default: " << LHSName << "_mux_wire = "
-               << LHSWidth << "'bx;\n";
-  OS.indent(2) << "endcase\nend  // end mux logic\n\n";
-}
-
 //----------------------------------------------------------------------------//
 // Operand printing helper functions.
 static void printSignedOperand(raw_ostream &OS, const VASTUse &U) {
