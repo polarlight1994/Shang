@@ -341,6 +341,7 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
 
   case dpKeep:
     getOperand(0).printAsOperand(OS, getUB(), getLB());
+    OS << "/*keep*/";
     break;
 
   case dpROMLookUp:

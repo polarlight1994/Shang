@@ -243,11 +243,13 @@ VASTValPtr VASTExprBuilder::copyExpr(VASTExpr *Expr, ArrayRef<VASTValPtr> Ops) {
 }
 
 VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
-  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
+  VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
 
   // Only keep expressions!
   if (!Expr)
     return V;
+
+  bool IsInverted = V.isInverted();
   
   switch (Expr->getOpcode()) {
   default:break;
@@ -255,18 +257,20 @@ VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
   case VASTExpr::dpKeep:
     return V;
   case VASTExpr::dpBitRepeat:
-    return buildBitRepeat(buildKeep(Expr.getOperand(0)), Expr->getRepeatTimes());
+    return buildBitRepeat(buildKeep(Expr->getOperand(0)).invert(IsInverted),
+                          Expr->getRepeatTimes());
   case VASTExpr::dpBitCat: {
     typedef VASTExpr::op_iterator iterator;
     SmallVector<VASTValPtr, 4> Ops;
     for (iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
-      Ops.push_back(buildKeep(*I));
+      Ops.push_back(buildKeep(*I).invert(IsInverted));
     return buildBitCatExpr(Ops, Expr->getBitWidth());
   }
   }
 
-  VASTValPtr Ops[] = { V };
-  return Context.createExpr(VASTExpr::dpKeep, Ops, V->getBitWidth());
+  VASTValPtr Ops[] = { V.get() };
+  VASTValPtr K = Context.createExpr(VASTExpr::dpKeep, Ops, V->getBitWidth());
+  return K.invert(IsInverted);
 }
 
 VASTValPtr VASTExprBuilder::buildROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,

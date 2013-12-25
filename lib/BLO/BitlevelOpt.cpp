@@ -491,7 +491,7 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   case VASTExpr::dpRXor:
     return optimizeReduction(Opcode, Expr->getOperand(0));
   case VASTExpr::dpKeep:
-    return optimizeKeep(Expr);
+    return optimizeKeep(Expr->getOperand(0));
   case VASTExpr::dpShl:
   case VASTExpr::dpSRL:
   case VASTExpr::dpSRA:
