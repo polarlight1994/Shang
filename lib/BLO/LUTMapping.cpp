@@ -30,7 +30,6 @@
 #define DEBUG_TYPE "vast-logic-synthesis"
 #include "llvm/Support/Debug.h"
 
-STATISTIC(NumAndExpand, "Number of binary And expanded from NAry And expanded");
 STATISTIC(NumABCNodeBulit, "Number of ABC node built");
 STATISTIC(NumLUTBulit, "Number of LUT node built");
 STATISTIC(NumLUTExpand, "Number of LUT node expanded");
