@@ -597,6 +597,7 @@ public:
   }
 
   void evaluateMask();
+  void printMaskVerification(raw_ostream &OS) const;
 };
 
 class VASTNamedValue : public VASTMaskedValue {

@@ -437,3 +437,50 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
 
 void VASTBitMask::evaluateMask(VASTSeqValue *SV) {
 }
+
+void VASTBitMask::printMaskVerification(raw_ostream &OS,
+                                        const VASTMaskedValue *V) const {
+  if (const VASTExpr *E = dyn_cast<VASTExpr>(V))
+    return printMaskVerification(OS, E);
+}
+
+void
+VASTBitMask::printMaskVerification(raw_ostream &OS, const VASTExpr *E) const {
+  if (!anyBitKnown())
+    return;
+
+  OS << "// synthesis translate_off\n"
+        "always @(*) begin\n";
+  // There should not be 1s in the bits that are known zeros
+  if (anyKnownZero()) {
+    OS.indent(2) << "if (";
+    E->printAsOperand(OS, false);
+    SmallString<128> Str;
+    KnownZeros.toString(Str, 2, false, false);
+    OS << " & " << getMaskWidth() << "'b" << Str << ") begin\n";
+    OS.indent(4) << "$display(\"At time %t, " << E
+                 << " with unexpected ones: %b!\", $time(),";
+    E->printAsOperand(OS, false);
+    OS << ");\n";
+    OS.indent(4) << "$finish(1);\n";
+    OS.indent(4) << "end\n";
+  }
+
+  // There should not be 0s in the bits that are known ones
+  if (anyKnownOne()) {
+    OS.indent(2) << "if (~";
+    E->printAsOperand(OS, false);
+    SmallString<128> Str;
+    KnownOnes.toString(Str, 2, false, false);
+    OS << " & " << getMaskWidth() << "'b" << Str << ") begin\n";
+    OS.indent(4) << "$display(\"At time %t, " << E
+                 << " with unexpected zeros: %b!\", $time(),";
+    E->printAsOperand(OS, false);
+    OS << ");\n";
+    OS.indent(4) << "$finish(1);\n";
+    OS.indent(4) << "end\n";
+  }
+
+  OS << "end\n"
+        "// synthesis translate_on\n\n";
+}

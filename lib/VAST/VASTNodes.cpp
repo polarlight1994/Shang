@@ -270,6 +270,10 @@ void VASTMaskedValue::evaluateMask() {
   return VASTBitMask::evaluateMask(this);
 }
 
+void VASTMaskedValue::printMaskVerification(raw_ostream &OS) const {
+  return VASTBitMask::printMaskVerification(OS, this);
+}
+
 //===----------------------------------------------------------------------===//
 VASTSymbol::VASTSymbol(const char *Name, unsigned BitWidth)
   : VASTNamedValue(VASTNode::vastSymbol, Name, BitWidth) {}

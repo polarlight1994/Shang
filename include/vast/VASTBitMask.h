@@ -36,6 +36,9 @@ protected:
   void evaluateMask(VASTMaskedValue *V);
   void evaluateMask(VASTExpr *E);
   void evaluateMask(VASTSeqValue *V);
+
+  void printMaskVerification(raw_ostream &OS, const VASTMaskedValue *V) const;
+  void printMaskVerification(raw_ostream &OS, const VASTExpr *E) const;
 public:
   explicit VASTBitMask(unsigned Size)
     : KnownZeros(APInt::getNullValue(Size)),

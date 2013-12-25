@@ -255,8 +255,10 @@ struct DatapathPrinter {
   raw_ostream &OS;
   std::set<VASTExpr*> Visited;
   std::set<unsigned> PrintedNames;
+  const bool PrintSelfVerification;
 
-  DatapathPrinter(raw_ostream &OS) : OS(OS) {}
+  DatapathPrinter(raw_ostream &OS, bool PrintSelfVerification)
+    : OS(OS), PrintSelfVerification(PrintSelfVerification) {}
 
   void print(VASTValPtr V) {
     if (VASTExpr *E = V.getAsLValue<VASTExpr>())
@@ -319,6 +321,9 @@ struct DatapathPrinter {
     }
     OS << ");\n";
 
+    if (PrintSelfVerification)
+      E->printMaskVerification(OS);
+
     E->assignNameID(NameID);
   }
 };
@@ -327,7 +332,7 @@ struct DatapathPrinter {
 void
 VASTModule::printDatapath(raw_ostream &OS, bool PrintSelfVerification) const {
   std::set<VASTExpr*> Visited;
-  DatapathPrinter Printer(OS);
+  DatapathPrinter Printer(OS, PrintSelfVerification);
 
   // Print the logic for the selectors.
   for (const_selector_iterator I = selector_begin(), E = selector_end();
