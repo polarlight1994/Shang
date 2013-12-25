@@ -247,7 +247,7 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
   VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
   while (!VisitStack.empty()) {
     VASTExpr *Expr = VisitStack.back().first;
-    ChildIt It = VisitStack.back().second;
+    ChildIt &It = VisitStack.back().second;
 
     // All sources of this node is visited.
     if (It == Expr->op_end()) {
@@ -260,9 +260,10 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
 
     // Otherwise, remember the node and visit its children first.
     VASTValue *ChildNode = It->unwrap().get();
-    ++VisitStack.back().second;
+    ++It;
 
-    if (ChildNode == 0) continue;
+    if (ChildNode == NULL)
+     continue;
 
     // And do not visit a node twice.
     if (!Visited.insert(ChildNode).second) continue;
