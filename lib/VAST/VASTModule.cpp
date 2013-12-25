@@ -430,21 +430,6 @@ void VASTModule::printSignalDecl(raw_ostream &OS) const {
     I->printDecl(OS);
 }
 
-VASTSymbol *VASTModule::getOrCreateSymbol(const Twine &Name, unsigned BitWidth) {
-  SymEntTy &Entry = SymbolTable.GetOrCreateValue(Name.str());
-  VASTNode *&V = Entry.second;
-  if (V == 0) {
-    const char *S = Entry.getKeyData();
-    unsigned SymbolWidth = BitWidth;
-    V = new (Allocator) VASTSymbol(S, SymbolWidth);
-  }
-
-  assert(cast<VASTSymbol>(V)->getBitWidth() == BitWidth
-         && "Getting symbol with wrong bitwidth!");
-
-  return cast<VASTSymbol>(V);
-}
-
 void VASTModule::eraseSelector(VASTSelector *Sel) {
   assert(Sel->def_empty() && Sel->empty()
          && "Cannot erase the Sel that is still in use!");

@@ -415,9 +415,7 @@ void VASTModuleBuilder::visitBasicBlock(BasicBlock *BB) {
 
     for (succ_iterator I = succ_begin(BB), E = succ_end(BB); I != E; ++I) {
       BasicBlock *Succ = *I;
-      // FIXME: Use VASTConstant::False, and prevent the operation from being
-      // optimized away.
-      buildConditionalTransition(Succ, S, A->getOrCreateSymbol("1'b0", 1), *Inst);
+      buildConditionalTransition(Succ, S, VASTConstant::False, *Inst);
     }
 
     return;

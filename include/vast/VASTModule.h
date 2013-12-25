@@ -205,10 +205,6 @@ public:
     return cast_or_null<T>(at->second);
   }
 
-  /// getOrCreateSymbol - Get the symbol with the specified name, create a new
-  /// one if it does not exists.
-  VASTSymbol *getOrCreateSymbol(const Twine &Name, unsigned Bitwidth);
-
   // Allow user to add ports.
   VASTPort *addPort(VASTNode *Node, bool IsInput);
   VASTInPort *addInputPort(const Twine &Name, unsigned BitWidth,
