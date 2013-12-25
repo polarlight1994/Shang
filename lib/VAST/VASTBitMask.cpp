@@ -462,7 +462,9 @@ void VASTBitMask::printMaskVerification(raw_ostream &OS,
 
 void
 VASTBitMask::printMaskVerification(raw_ostream &OS, const VASTExpr *E) const {
-  if (!anyBitKnown())
+  // No need to verify the bit manipulate expressions, they are just extracting
+  // repeating, and concating bits.
+  if (!anyBitKnown() || E->getOpcode() <= VASTExpr::LastBitManipulate)
     return;
 
   OS << "// synthesis translate_off\n"

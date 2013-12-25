@@ -161,7 +161,7 @@ public:
     dpBitRepeat,
     // Simple wire assignment.
     dpBitExtract,
-    LastAnonymousOpc = dpBitExtract,
+    LastBitManipulate = dpBitExtract,
     // bitwise logic datapath
     dpAnd,
     dpRAnd,
