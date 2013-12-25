@@ -180,7 +180,6 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
 
   // Forwarding function of VASTValues
   inline PtrInvPair<VASTValue> getOperand(unsigned i) const;
-  inline PtrInvPair<VASTExpr> getExpr() const;
   inline APInt getAPInt() const;
   inline uint64_t getZExtValue() const;
   inline bool getBoolValue() const;
