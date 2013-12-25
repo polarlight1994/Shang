@@ -107,6 +107,9 @@ MinimalExprBuilderContext::~MinimalExprBuilderContext() {
 }
 
 VASTValPtr VASTExprBuilder::buildNotExpr(VASTValPtr U) {
+  if (VASTConstPtr C = dyn_cast<VASTConstPtr>(U))
+    return getConstant(~C.getAPInt());
+
   return U.invert();
 }
 
