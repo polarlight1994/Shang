@@ -125,6 +125,7 @@ public:
                      bool Inverted = false);
   // Merge any known bits from other to the current bit mask
   void mergeAnyKnown(const VASTBitMask &Other);
+  void mergeAllKnown(const VASTBitMask &Other);
 
   void printMask(raw_ostream &OS) const;
   void printMaskIfAnyKnown(raw_ostream &OS) const;
