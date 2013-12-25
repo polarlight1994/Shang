@@ -351,14 +351,21 @@ VASTBitMask VASTBitMask::EvaluateShl(VASTBitMask LHS, VASTBitMask RHS,
 //===----------------------------------------------------------------------===//
 VASTBitMask VASTBitMask::EvaluateLshr(VASTBitMask LHS, VASTBitMask RHS,
                                       unsigned BitWidth) {
-  // Because we are shifting toward LSB, so the Leading zeros are known
-  // regardless of the shift amount.
-  unsigned LeadingZeros = LHS.KnownZeros.countLeadingOnes();
-  VASTBitMask Mask(APInt::getHighBitsSet(BitWidth, LeadingZeros),
-                   APInt::getNullValue(BitWidth));
+  unsigned RHSMaxSize = std::min(Log2_32_Ceil(LHS.getMaskWidth()),
+                                 RHS.getMaskWidth());
+  VASTBitMask M = LHS;
+  for (unsigned i = 0; i < RHSMaxSize && M.anyBitKnown(); ++i) {
+    // If the i-th bit is known 1 in RHS, we always add the shifted LHS
+    // to the result in this case.
+    if (RHS.isKnownOneAt(i))
+      M = M.lshr(1 << i);
+    // Otherwise if the bit at RHS is unknown, the result bits are known only
+    // if the LHS bit is known no matter it is shifted or not.
+    else if (!RHS.isKnownZeroAt(i))
+      M.mergeAllKnown(M.lshr(1 << i));
+  }
 
-  // TODO: Analyze RHS.
-  return Mask;
+  return M;
 }
 
 //===----------------------------------------------------------------------===//
