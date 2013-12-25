@@ -99,7 +99,7 @@ void VASTBitMask::printMask(raw_ostream &OS) const {
   Str.clear();
   getKnownBits().toString(Str, 2, false, false);
   OS << 'K' << Str << ' ';
-  OS << "*/\n";
+  OS << "*/";
 }
 
 void VASTBitMask::printMaskIfAnyKnown(raw_ostream &OS) const {

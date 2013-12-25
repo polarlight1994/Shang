@@ -370,7 +370,7 @@ const char *VASTExpr::getFUName() const {
   default: break;
   }
 
-  return 0;
+  return NULL;
 }
 
 bool VASTExpr::isInstantiatedAsSubModule() const {

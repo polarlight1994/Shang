@@ -266,7 +266,8 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
      continue;
 
     // And do not visit a node twice.
-    if (!Visited.insert(ChildNode).second) continue;
+    if (!Visited.insert(ChildNode).second)
+     continue;
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
       if (generateSubmoduleConstraints(V)) continue;
