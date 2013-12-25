@@ -54,6 +54,19 @@ public:
 
   bool isAllKnownZero() const { return KnownZeros.isAllOnesValue(); }
 
+  bool isKnownZeroAt(unsigned N) const {
+    return (KnownZeros & APInt::getOneBitSet(getMaskWidth(), N)).getBoolValue();
+  }
+
+  bool isKnownOneAt(unsigned N) const {
+    return (KnownOnes & APInt::getOneBitSet(getMaskWidth(), N)).getBoolValue();
+  }
+
+  void setKnwonZeroAt(unsigned i) {
+    KnownOnes.clearBit(i);
+    KnownZeros.setBit(i);
+  }
+
   /// \brief Zero extend or truncate to width
   ///
   /// Make this VASTBitMask have the bit width given by \p width. The value is

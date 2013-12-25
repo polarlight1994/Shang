@@ -287,21 +287,36 @@ VASTBitMask VASTBitMask::EvaluateAdd(VASTBitMask LHS, VASTBitMask RHS,
 //===----------------------------------------------------------------------===//
 VASTBitMask VASTBitMask::EvaluateMul(VASTBitMask LHS, VASTBitMask RHS,
                                     unsigned BitWidth) {
-  // Assume all bits are unknown.
-  VASTBitMask Mask(BitWidth);
-  unsigned TrailZeros = LHS.KnownZeros.countTrailingOnes() +
-                        RHS.KnownZeros.countTrailingOnes();
-  unsigned LeadZeros = std::max(LHS.KnownZeros.countLeadingOnes() +
-                                RHS.KnownZeros.countLeadingOnes(),
-                                BitWidth) - BitWidth;
+  // Start from zero, and implement the multipication by "shift-and-add":
+  // p = 0
+  // for i = 0 to bitwidth
+  //  p += (LHS << i) & Bitrepeat(RHS(i), bitwidth)
+  //
+  VASTBitMask P(APInt::getAllOnesValue(BitWidth),
+                APInt::getNullValue(BitWidth));
 
-  // If low bits are zero in either operand, output low known-0 bits.
-  // Also compute a conserative estimate for high known-0 bits.
-  TrailZeros = std::min(TrailZeros, BitWidth);
-  LeadZeros = std::min(LeadZeros, BitWidth);
-  Mask.KnownZeros = APInt::getLowBitsSet(BitWidth, TrailZeros) |
-                    APInt::getHighBitsSet(BitWidth, LeadZeros);
-  return Mask;
+  for (unsigned i = 0; i < BitWidth; ++i) {
+    // Nothing to do if Both LHS and RHS is zero.
+    if (LHS.isAllKnownZero() || RHS.isAllKnownZero() ||!P.anyBitKnown())
+      break;
+
+    // If the i-th bit is known 1 in RHS, we always add the shifted LHS
+    // to the result in this case.
+    if (RHS.isKnownOneAt(i))
+      P = EvaluateAdd(P, LHS, BitWidth);
+    else if (!RHS.isKnownZeroAt(i)) {
+      // If the current bit is unknown, we can only be sure about the zeros
+      // that will be add to the product.
+      VASTBitMask Mask(LHS.getKnownZeros(), APInt::getNullValue(BitWidth));
+      P = EvaluateAdd(P, Mask, BitWidth);
+    }
+
+    LHS = LHS.shl(1);
+    // Clear the bit after we had evaluated it.
+    RHS.setKnwonZeroAt(i);
+  }
+
+  return P;
 }
 
 //===----------------------------------------------------------------------===//
