@@ -389,14 +389,24 @@ VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
       // A + A = A << 1
       VASTConstant *ShiftAmt = getConstant(1, Log2_32_Ceil(BitWidth));
       CurVal = optimizeShift(VASTExpr::dpShl, CurVal, ShiftAmt, BitWidth);
-    } else if (CurVal.invert() == LastVal)
+      // Replace the last value.
+      Ops[ActualPos] = CurVal;
+      LastVal = CurVal;
+      continue;
+    }
+
+    if (CurVal.invert() == LastVal) {
       // A + ~A => ~0, verified by
       // (declare-fun a () (_ BitVec 32))
       // (assert (not (= (bvadd a (bvnot a)) #xffffffff)))
       // (check-sat)
       // -> unsat
       CurVal = getConstant(APInt::getAllOnesValue(BitWidth));
-
+      // Replace the last value.
+      Ops[ActualPos] = CurVal;
+      LastVal = CurVal;
+      continue;
+    }
     // Accumulate the constants.
     if (VASTConstPtr CurC = dyn_cast<VASTConstPtr>(CurVal)) {
       C += CurC.getAPInt().zextOrTrunc(BitWidth);
