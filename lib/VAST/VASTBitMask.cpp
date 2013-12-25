@@ -484,6 +484,22 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
 }
 
 void VASTBitMask::evaluateMask(VASTSeqValue *SV) {
+  // Slot and enable are always assigned by 1, but timing is important for them
+  // so we cannot simply replace the output of Slot and Enables by 1.
+  if (SV->isSlot() || SV->isEnable())
+    return;
+
+  if (SV->fanin_empty())
+    return;
+
+  VASTBitMask NewMask(getMaskWidth());
+  NewMask.KnownZeros = APInt::getAllOnesValue(getMaskWidth());
+  NewMask.KnownOnes = APInt::getAllOnesValue(getMaskWidth());
+  typedef VASTSeqValue::fanin_iterator iterator;
+  for (iterator I = SV->fanin_begin(), E = SV->fanin_end(); I != E; ++I)
+    NewMask.mergeAllKnown(VASTValPtr(*I));
+
+  mergeAnyKnown(NewMask);
 }
 
 void VASTBitMask::printMaskVerification(raw_ostream &OS,

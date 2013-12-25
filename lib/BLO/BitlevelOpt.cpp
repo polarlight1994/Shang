@@ -544,7 +544,7 @@ bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
 
   if (Expr == NULL)
-    return false;
+    return replaceIfNotEqual(V, replaceKnownBits(V));
 
   // This expression had been optimized in the current iteration.
   if (Visited.count(Expr))
@@ -628,14 +628,30 @@ bool BitlevelOpt::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
       // Only optimize the guard and fanin
       BLO.optimizeAndReplace(Sel->getGuard());
       BLO.optimizeAndReplace(Sel->getFanin());
-      continue;
+    } else {
+      typedef VASTSelector::const_iterator const_iterator;
+      for (const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+        const VASTLatch &L = *I;
+        BLO.optimizeAndReplace(L);
+        BLO.optimizeAndReplace(L.getGuard());
+      }
     }
 
-    typedef VASTSelector::const_iterator const_iterator;
-    for (const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
-      const VASTLatch &L = *I;
-      BLO.optimizeAndReplace(L);
-      BLO.optimizeAndReplace(L.getGuard());
+    // Do not optimize the register if we had already generate the MUX.
+    // Otherwise we may invalidate the timing information annotate to the MUX.
+    if (Sel->isSelectorSynthesized())
+      continue;
+
+    typedef VASTSelector::def_iterator def_iterator;
+    for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
+      VASTSeqValue *SV = *I;
+      if (BLO.optimizeAndReplace(SV)) {
+        DEBUG(dbgs() << SV->getName() << ' ' << SV << '\n';
+        SV->dumpFanins();
+        SV->dumpMask();
+        dbgs() << "\n\n";);
+        Changed |= true;
+      }
     }
   }
 
@@ -646,11 +662,10 @@ bool BitlevelOpt::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
 bool BitlevelOpt::runOnVASTModule(VASTModule &VM) {
   DatapathBLO BLO(VM);
 
-  if (!runSingleIteration(VM, BLO))
-    return false;
-
-  while (runSingleIteration(VM, BLO))
+  do {
     BLO.resetForNextIteration();
+    VM.gc();
+  } while (runSingleIteration(VM, BLO));
 
   return true;
 }

@@ -112,6 +112,8 @@ public:
 
   bool optimizeAndReplace(VASTValPtr V);
 
+  // void optimizeLoadAlign(VASTMemoryBank *Bank);
+
   void resetForNextIteration();
 };
 }

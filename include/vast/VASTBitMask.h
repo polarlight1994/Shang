@@ -135,6 +135,10 @@ public:
     return KnownZeros == RHS.KnownZeros && KnownOnes == RHS.KnownOnes;
   }
 
+  bool operator!=(const VASTBitMask &RHS) const {
+    return !operator==(RHS);
+  }
+
   // Compute the bit mask for a LLVM Value, by calling ComputeMaskedBits.
   void mergeAnyKnown(Value *V, ScalarEvolution &SE, const DataLayout &TD,
                      bool Inverted = false);
