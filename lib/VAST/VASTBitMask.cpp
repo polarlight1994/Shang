@@ -161,8 +161,9 @@ void ExtractBitMasks(ArrayRef<T> Ops, SmallVectorImpl<VASTBitMask> &Masks) {
   }
 }
 
-VASTBitMask VASTBitMask::EvaluateAndMask(ArrayRef<VASTBitMask> Masks,
-                                         unsigned BitWidth) {
+//===--------------------------------------------------------------------===//
+VASTBitMask
+VASTBitMask::EvaluateAnd(ArrayRef<VASTBitMask> Masks, unsigned BitWidth) {
   // Assume all bits are 1s.
   VASTBitMask Mask(APInt::getNullValue(BitWidth),
                    APInt::getAllOnesValue(BitWidth));
@@ -177,8 +178,10 @@ VASTBitMask VASTBitMask::EvaluateAndMask(ArrayRef<VASTBitMask> Masks,
   return Mask;
 }
 
-VASTBitMask VASTBitMask::EvaluateLUTMask(ArrayRef<VASTBitMask> Masks,
-                                         unsigned BitWidth, const char *SOP) {
+//===--------------------------------------------------------------------===//
+VASTBitMask
+VASTBitMask::EvaluateLUT(ArrayRef<VASTBitMask> Masks, unsigned BitWidth,
+                         const char *SOP) {
   bool IsComplement = false;
     // Interpret the sum of product table.
   const char *p = SOP;
@@ -207,7 +210,7 @@ VASTBitMask VASTBitMask::EvaluateLUTMask(ArrayRef<VASTBitMask> Masks,
     // Is the output inverted?
     char c = *p++;
     assert((c == '0' || c == '1') && "Unexpected SOP char!");
-    VASTBitMask CurProduct = EvaluateAndMask(ProductMasks, BitWidth);
+    VASTBitMask CurProduct = EvaluateAnd(ProductMasks, BitWidth);
     // We are going to evaluate A OR B by ~(~A AND ~B), so invert the mask
     // before we are putting it into the sum masks vector.
     SumMasks.push_back(CurProduct.invert());
@@ -218,14 +221,15 @@ VASTBitMask VASTBitMask::EvaluateLUTMask(ArrayRef<VASTBitMask> Masks,
     ++p;
   }
 
-  VASTBitMask Sum = EvaluateAndMask(SumMasks, BitWidth).invert();
+  VASTBitMask Sum = EvaluateAnd(SumMasks, BitWidth).invert();
 
   // We need to invert the final result if the SOP is complemented.
   return Sum.invert(IsComplement);
 }
 
-VASTBitMask VASTBitMask::EvaluateAddMask(VASTBitMask LHS, VASTBitMask RHS,
-                                         unsigned BitWidth) {
+//===--------------------------------------------------------------------===//
+VASTBitMask VASTBitMask::EvaluateAdd(VASTBitMask LHS, VASTBitMask RHS,
+                                     unsigned BitWidth) {
   //if (!(LHS.getKnownBits() | RHS.getKnownBits())) {
   //  // If the known bits are not overlapped, the addition become an OR.
   //  // Build OR by ~(~A & ~B)
@@ -269,8 +273,9 @@ VASTBitMask VASTBitMask::EvaluateAddMask(VASTBitMask LHS, VASTBitMask RHS,
   return Mask;
 }
 
-VASTBitMask VASTBitMask::EvaluateMultMask(VASTBitMask LHS, VASTBitMask RHS,
-                                          unsigned BitWidth) {
+//===--------------------------------------------------------------------===//
+VASTBitMask VASTBitMask::EvaluateMul(VASTBitMask LHS, VASTBitMask RHS,
+                                    unsigned BitWidth) {
   // Assume all bits are unknown.
   VASTBitMask Mask(BitWidth);
   unsigned TrailZeros = LHS.KnownZeros.countTrailingOnes() +
@@ -288,8 +293,9 @@ VASTBitMask VASTBitMask::EvaluateMultMask(VASTBitMask LHS, VASTBitMask RHS,
   return Mask;
 }
 
-VASTBitMask VASTBitMask::EvaluateShlMask(VASTBitMask LHS, VASTBitMask RHS,
-                                         unsigned BitWidth) {
+//===--------------------------------------------------------------------===//
+VASTBitMask VASTBitMask::EvaluateShl(VASTBitMask LHS, VASTBitMask RHS,
+                                     unsigned BitWidth) {
   // Because we are shifting toward MSB, so the Trailing zeros are known
   // regardless of the shift amount.
   unsigned TrailingZeros = LHS.KnownZeros.countTrailingOnes();
@@ -300,7 +306,8 @@ VASTBitMask VASTBitMask::EvaluateShlMask(VASTBitMask LHS, VASTBitMask RHS,
   return Mask;
 }
 
-VASTBitMask VASTBitMask::EvaluateSRLMask(VASTBitMask LHS, VASTBitMask RHS,
+//===--------------------------------------------------------------------===//
+VASTBitMask VASTBitMask::EvaluateSRL(VASTBitMask LHS, VASTBitMask RHS,
                                          unsigned BitWidth) {
   // Because we are shifting toward LSB, so the Leading zeros are known
   // regardless of the shift amount.
@@ -312,14 +319,15 @@ VASTBitMask VASTBitMask::EvaluateSRLMask(VASTBitMask LHS, VASTBitMask RHS,
   return Mask;
 }
 
-VASTBitMask VASTBitMask::EvaluateBitExtractMask(VASTBitMask Mask,
-                                                unsigned UB, unsigned LB) {
+//===--------------------------------------------------------------------===//
+VASTBitMask VASTBitMask::EvaluateBitExtract(VASTBitMask Mask,
+                                            unsigned UB, unsigned LB) {
   return VASTBitMask(VASTConstant::getBitSlice(Mask.KnownZeros, UB, LB),
                      VASTConstant::getBitSlice(Mask.KnownOnes, UB, LB));
 }
 
-VASTBitMask VASTBitMask::EvaluateBitCatMask(ArrayRef<VASTBitMask> Masks,
-                                            unsigned BitWidth) {
+VASTBitMask VASTBitMask::EvaluateBitCat(ArrayRef<VASTBitMask> Masks,
+                                        unsigned BitWidth) {
   unsigned CurUB = BitWidth;
   unsigned ExprSize = BitWidth;
 
@@ -349,23 +357,23 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
   switch (E->getOpcode()) {
   default: break;
   case VASTExpr::dpBitExtract:
-    mergeAnyKnown(EvaluateBitExtractMask(Masks[0], E->getUB(), E->getLB()));
+    mergeAnyKnown(EvaluateBitExtract(Masks[0], E->getUB(), E->getLB()));
     break;
   case VASTExpr::dpBitCat:
-    mergeAnyKnown(EvaluateBitCatMask(Masks, BitWidth));
+    mergeAnyKnown(EvaluateBitCat(Masks, BitWidth));
     break;
   case VASTExpr::dpAnd:
-    mergeAnyKnown(EvaluateAndMask(Masks, BitWidth));
+    mergeAnyKnown(EvaluateAnd(Masks, BitWidth));
     break;
   case VASTExpr::dpLUT:
-    mergeAnyKnown(EvaluateLUTMask(Masks, BitWidth, E->getLUT()));
+    mergeAnyKnown(EvaluateLUT(Masks, BitWidth, E->getLUT()));
     break;
   case VASTExpr::dpAdd: {
     // Evaluate the bitmask pairwise for the ADD for now.
     while (Masks.size() > 1) {
       VASTBitMask LHS = Masks.pop_back_val().zextOrTrunc(BitWidth);
       VASTBitMask RHS = Masks.pop_back_val().zextOrTrunc(BitWidth);
-      Masks.push_back(EvaluateAddMask(LHS, RHS, BitWidth));
+      Masks.push_back(EvaluateAdd(LHS, RHS, BitWidth));
     }
 
     mergeAnyKnown(Masks[0]);
@@ -376,21 +384,27 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
     while (Masks.size() > 1) {
       VASTBitMask LHS = Masks.pop_back_val().zextOrTrunc(BitWidth);
       VASTBitMask RHS = Masks.pop_back_val().zextOrTrunc(BitWidth);
-      Masks.push_back(EvaluateMultMask(LHS, RHS, BitWidth));
+      Masks.push_back(EvaluateMul(LHS, RHS, BitWidth));
     }
 
     mergeAnyKnown(Masks[0]);
     break;
   }
   case VASTExpr::dpShl:
-    mergeAnyKnown(EvaluateShlMask(Masks[0], Masks[1], BitWidth));
+    mergeAnyKnown(EvaluateShl(Masks[0], Masks[1], BitWidth));
     break;
   case VASTExpr::dpSRL:
-    mergeAnyKnown(EvaluateSRLMask(Masks[0], Masks[1], BitWidth));
+    mergeAnyKnown(EvaluateSRL(Masks[0], Masks[1], BitWidth));
     break;
   case VASTExpr::dpKeep:
     // Simply propagate the masks from the RHS of the assignment.
     mergeAnyKnown(Masks[0]);
+    break;
+  // Yet to be implement:
+  case VASTExpr::dpSRA:
+  case VASTExpr::dpSGT:
+  case VASTExpr::dpUGT:
+  case VASTExpr::dpROMLookUp:
     break;
   }
 }

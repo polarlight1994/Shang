@@ -107,26 +107,24 @@ public:
   void dumpMask() const;
 
   // Mask Evaluation function.
-  static
-  VASTBitMask EvaluateAndMask(ArrayRef<VASTBitMask> Masks, unsigned BitWidth);
-  static
-  VASTBitMask EvaluateLUTMask(ArrayRef<VASTBitMask> Masks, unsigned BitWidth,
-                              const char *SOP);
+  static VASTBitMask EvaluateAnd(ArrayRef<VASTBitMask> Masks, unsigned BitWidth);
+  static VASTBitMask EvaluateLUT(ArrayRef<VASTBitMask> Masks, unsigned BitWidth,
+                                 const char *SOP);
 
-  static
-  VASTBitMask EvaluateBitCatMask(ArrayRef<VASTBitMask> Masks, unsigned BitWidth);
-  static
-  VASTBitMask EvaluateBitExtractMask(VASTBitMask Mask, unsigned UB, unsigned LB);
+  static VASTBitMask EvaluateBitCat(ArrayRef<VASTBitMask> Masks,
+                                    unsigned BitWidth);
+  static VASTBitMask EvaluateBitExtract(VASTBitMask Mask,
+                                        unsigned UB, unsigned LB);
   
-  static
-  VASTBitMask EvaluateAddMask(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth);
-  static
-  VASTBitMask EvaluateMultMask(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth);
+  static VASTBitMask EvaluateAdd(VASTBitMask LHS, VASTBitMask RHS,
+                                 unsigned BitWidth);
+  static VASTBitMask EvaluateMul(VASTBitMask LHS, VASTBitMask RHS,
+                                 unsigned BitWidth);
 
-  static
-  VASTBitMask EvaluateShlMask(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth);
-  static
-  VASTBitMask EvaluateSRLMask(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth);
+  static VASTBitMask EvaluateShl(VASTBitMask LHS, VASTBitMask RHS,
+                                 unsigned BitWidth);
+  static VASTBitMask EvaluateSRL(VASTBitMask LHS, VASTBitMask RHS,
+                                 unsigned BitWidth);
 
   void verify() const;
 };
