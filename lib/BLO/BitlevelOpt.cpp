@@ -433,13 +433,13 @@ VASTValPtr DatapathBLO::optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VAST
       VASTValPtr Ops[] = { LHS, PaddingBits };
       return optimizeNAryExpr<VASTExpr::dpBitCat, VASTValPtr>(Ops, BitWidth);
     }
-    case VASTExpr::dpSRL:{
+    case VASTExpr::dpLshr:{
       VASTValPtr PaddingBits = getConstant(0, ShiftAmount);
       LHS = optimizeBitExtract(LHS, LHS->getBitWidth(), ShiftAmount);
       VASTValPtr Ops[] = { PaddingBits, LHS };
       return optimizeNAryExpr<VASTExpr::dpBitCat, VASTValPtr>(Ops, BitWidth);
     }
-    case VASTExpr::dpSRA:{
+    case VASTExpr::dpAshr:{
       VASTValPtr SignBits = optimizeBitRepeat(optimizeSignBit(LHS), ShiftAmount);
       LHS = optimizeBitExtract(LHS, LHS->getBitWidth(), ShiftAmount);
       VASTValPtr Ops[] = { SignBits, LHS };
@@ -493,8 +493,8 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   case VASTExpr::dpKeep:
     return optimizeKeep(Expr->getOperand(0));
   case VASTExpr::dpShl:
-  case VASTExpr::dpSRL:
-  case VASTExpr::dpSRA:
+  case VASTExpr::dpLshr:
+  case VASTExpr::dpAshr:
     return optimizeShift(Opcode, Expr->getOperand(0), Expr->getOperand(1),
                          Expr->getBitWidth());
   // Yet to be implement:

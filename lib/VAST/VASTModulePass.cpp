@@ -822,7 +822,7 @@ VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
     VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getConstant(0, 3) };
     ShiftAmt = Builder.buildBitCatExpr(ShiftAmtBits, ByteAddrWidth + 3);
     // Align the result.
-    V = Builder.buildShiftExpr(VASTExpr::dpSRL, V, ShiftAmt, Bus->getDataWidth());
+    V = Builder.buildShiftExpr(VASTExpr::dpLshr, V, ShiftAmt, Bus->getDataWidth());
   }
 
   return V;

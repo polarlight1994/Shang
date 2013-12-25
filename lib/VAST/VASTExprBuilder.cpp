@@ -181,8 +181,8 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
   case VASTExpr::dpAnd:  return buildAndExpr(Ops, BitWidth);
   case VASTExpr::dpBitCat: return buildBitCatExpr(Ops, BitWidth);
   case VASTExpr::dpShl:
-  case VASTExpr::dpSRA:
-  case VASTExpr::dpSRL:
+  case VASTExpr::dpAshr:
+  case VASTExpr::dpLshr:
     assert(Ops.size() == 2 && "Bad Operand input!");
     return buildShiftExpr(Opc, Ops[0], Ops[1], BitWidth);
   case VASTExpr::dpSGT:

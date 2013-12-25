@@ -80,7 +80,7 @@ static void printUnaryOp(raw_ostream &OS, const VASTUse &U, const char *Opc) {
   U.printAsOperand(OS);
 }
 
-static void printSRAOp(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
+static void printAshrOp(raw_ostream &OS, ArrayRef<VASTUse> Ops) {
   printSignedOperand(OS, Ops[0]);
   OS << " >>> ";
   Ops[1].printAsOperand(OS);
@@ -331,8 +331,8 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
   case dpAdd: printSimpleOp(OS, getOperands(), " + "); break;
   case dpMul: printSimpleUnsignedOp(OS, getOperands(), " * "); break;
   case dpShl: printSimpleUnsignedOp(OS, getOperands(), " << ");break;
-  case dpSRL: printSimpleUnsignedOp(OS, getOperands(), " >> ");break;
-  case dpSRA: printSRAOp(OS, getOperands());                   break;
+  case dpLshr: printSimpleUnsignedOp(OS, getOperands(), " >> "); break;
+  case dpAshr: printAshrOp(OS, getOperands());                   break;
 
   case dpBitExtract: getOperand(0).printAsOperand(OS, getUB(), getLB()); break;
 
@@ -360,8 +360,8 @@ const char *VASTExpr::getFUName() const {
   case dpAdd:   return "shang_addc";
   case dpMul:   return "shang_mult";
   case dpShl:   return "shang_shl";
-  case dpSRL:   return "shang_srl";
-  case dpSRA:   return "shang_sra";
+  case dpLshr:  return "shang_lshr";
+  case dpAshr:  return "shang_ashr";
   case dpSGT:   return "shang_sgt";
   case dpUGT:   return "shang_ugt";
   case dpRAnd:  return "shang_rand";
@@ -395,8 +395,8 @@ bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
     break;
   case VASTExpr::dpMul:
   case VASTExpr::dpShl:
-  case VASTExpr::dpSRA:
-  case VASTExpr::dpSRL:
+  case VASTExpr::dpAshr:
+  case VASTExpr::dpLshr:
   case VASTExpr::dpSGT:
   case VASTExpr::dpUGT:
     if (InstSubModForFU && hasNameID() && printBinaryFU(OS, this))

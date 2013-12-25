@@ -242,8 +242,8 @@ uint64_t DesignMetricsImpl::getFUCost(VASTValue *V) const {
   case VASTExpr::dpSGT:
   case VASTExpr::dpUGT: return LuaI::Get<VFUICmp>()->lookupCost(ValueSize);
   case VASTExpr::dpShl:
-  case VASTExpr::dpSRA:
-  case VASTExpr::dpSRL: return LuaI::Get<VFUShift>()->lookupCost(ValueSize);
+  case VASTExpr::dpAshr:
+  case VASTExpr::dpLshr: return LuaI::Get<VFUShift>()->lookupCost(ValueSize);
   }
 
   return 0;

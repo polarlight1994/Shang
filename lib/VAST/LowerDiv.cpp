@@ -46,7 +46,7 @@ VASTValPtr DatapathBuilder::lowerUDiv(BinaryOperator &I) {
     // the divided value upfront.
     if (magics.a != 0 && d[0]) {
       unsigned Shift = d.countTrailingZeros();
-      Q = buildShiftExpr(VASTExpr::dpSRL, Q,
+      Q = buildShiftExpr(VASTExpr::dpLshr, Q,
                          getConstant(Shift, ResultSizeInBits),
                          ResultSizeInBits);
 
@@ -61,17 +61,17 @@ VASTValPtr DatapathBuilder::lowerUDiv(BinaryOperator &I) {
     Q = buildBitExtractExpr(Q, 2 * ResultSizeInBits, ResultSizeInBits);
 
     if (magics.a == 0)
-      return buildShiftExpr(VASTExpr::dpSRL, Q,
+      return buildShiftExpr(VASTExpr::dpLshr, Q,
                             getConstant(magics.s, ResultSizeInBits),
                             ResultSizeInBits);
 
     VASTValPtr Ops[] = { N, buildNotExpr(Q),  VASTConstant::True };
     VASTValPtr NPQ = buildAddExpr(Ops, ResultSizeInBits);
-    NPQ = buildShiftExpr(VASTExpr::dpSRL, NPQ,
+    NPQ = buildShiftExpr(VASTExpr::dpLshr, NPQ,
                          getConstant(1, ResultSizeInBits),
                          ResultSizeInBits);
     NPQ = buildAddExpr(NPQ, Q, ResultSizeInBits);
-    return buildShiftExpr(VASTExpr::dpSRL, NPQ,
+    return buildShiftExpr(VASTExpr::dpLshr, NPQ,
                           getConstant(magics.s - 1, ResultSizeInBits),
                           ResultSizeInBits);
   }
@@ -117,7 +117,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
 
     // Divide by pow2
     VASTValPtr SRA
-      = buildShiftExpr(VASTExpr::dpSRA, ADD,
+      = buildShiftExpr(VASTExpr::dpAshr, ADD,
                        getConstant(lg2, SizeInBits), SizeInBits);
 
     // If we're dividing by a positive value, we're done.  Otherwise, we must
@@ -147,7 +147,7 @@ VASTValPtr DatapathBuilder::lowerSDiv(BinaryOperator &I) {
 
     // Shift right algebraic if shift value is nonzero
     if (magics.s > 0)
-      Q = buildShiftExpr(VASTExpr::dpSRA, Q,
+      Q = buildShiftExpr(VASTExpr::dpAshr, Q,
                          getConstant(magics.s, ResultSizeInBits),
                          ResultSizeInBits);
     // Extract the sign bit and add it to the quotient

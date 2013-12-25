@@ -247,8 +247,8 @@ public:
                            SubClass::AccumulateMulDelay);
         break;
       case VASTExpr::dpShl:
-      case VASTExpr::dpSRL:
-      case VASTExpr::dpSRA:
+      case VASTExpr::dpLshr:
+      case VASTExpr::dpAshr:
         accumulateDelayThu(Op, Expr, i, UB, LB, CurSrcInfo,
                            SubClass::AccumulateShiftDelay);
         break;

@@ -150,8 +150,8 @@ public:
 
   static VASTBitMask EvaluateShl(VASTBitMask LHS, VASTBitMask RHS,
                                  unsigned BitWidth);
-  static VASTBitMask EvaluateSRL(VASTBitMask LHS, VASTBitMask RHS,
-                                 unsigned BitWidth);
+  static VASTBitMask EvaluateLshr(VASTBitMask LHS, VASTBitMask RHS,
+                                  unsigned BitWidth);
 
   void verify() const;
 };
