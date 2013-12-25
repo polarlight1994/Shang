@@ -87,8 +87,19 @@ public:
 
   VASTBitMask shl(unsigned i) {
     // Shift left and fill the lower bit with zeros.
-    return VASTBitMask(KnownZeros.shl(i)|APInt::getLowBitsSet(getMaskWidth(),i),
-                       KnownOnes.shl(i));
+    APInt LowZeros = APInt::getLowBitsSet(getMaskWidth(), i);
+    return VASTBitMask(KnownZeros.shl(i) | LowZeros, KnownOnes.shl(i));
+  }
+
+  VASTBitMask lshr(unsigned i) {
+    // Shift right and fill the higher bit with zeros.
+    APInt HighZeros = APInt::getHighBitsSet(getMaskWidth(), i);
+    return VASTBitMask(KnownZeros.lshr(i) | HighZeros, KnownOnes.lshr(i));
+  }
+
+  VASTBitMask ashr(unsigned i) {
+    // Shift right and fill the higher bits only they are known.
+    return VASTBitMask(KnownZeros.ashr(i), KnownOnes.ashr(i));
   }
 
   unsigned getMaskWidth() const;
@@ -129,6 +140,7 @@ public:
 
   void printMask(raw_ostream &OS) const;
   void printMaskIfAnyKnown(raw_ostream &OS) const;
+
   void dumpMask() const;
 
   // Mask Evaluation function.
