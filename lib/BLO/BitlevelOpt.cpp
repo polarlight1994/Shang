@@ -283,8 +283,10 @@ VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
 
   std::sort(Ops.begin(), Ops.end(), VASTValPtr::type_less);
 
+  APInt C = APInt::getAllOnesValue(BitWidth);
   VASTValPtr LastVal = None;
   unsigned ActualPos = 0;
+
   for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
     VASTValPtr CurVal = Ops[i];
     if (CurVal == LastVal) {
@@ -295,20 +297,24 @@ VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
       return getConstant(APInt::getNullValue(BitWidth));
 
     // Ignore the 1s
-    if (VASTConstPtr C = dyn_cast<VASTConstPtr>(CurVal)) {
-      if (C.isAllOnes()) {
-        DEBUG(dbgs().indent(2) << "Discard the all ones value: " << C << '\n');
-        continue;
-      }
+    if (VASTConstPtr CurC = dyn_cast<VASTConstPtr>(CurVal)) {
+      C &= CurC.getAPInt();
+      continue;
     }
 
     Ops[ActualPos++] = CurVal;
     LastVal = CurVal;
   }
 
+  if (!C)
+    return getConstant(C);
+
+  if (!C.isAllOnesValue())
+    Ops[ActualPos++] = getConstant(C);
+
   // If there is only 1 operand left, simply return the operand.
   if (ActualPos == 1)
-   return LastVal;
+    return Ops[0];
 
   // Resize the operand vector so it only contains valid operands.
   Ops = Ops.slice(0, ActualPos);
