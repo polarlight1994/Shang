@@ -58,24 +58,15 @@ bool DatapathBLO::replaceIfNotEqual(VASTValPtr From, VASTValPtr To) {
   return true;
 }
 
-
-VASTValPtr DatapathBLO::eliminateConstantInvertFlag(VASTValPtr V) {
-  if (V.isInverted())
-    if (VASTConstPtr C = dyn_cast<VASTConstPtr>(V))
-        return getConstant(C.getAPInt());
-
-  return V;
-}
-
 VASTValPtr DatapathBLO::eliminateInvertFlag(VASTValPtr V) {
   // There is not invert flag to fold.
   if (!V.isInverted())
     return V;
 
-  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
+  VASTExpr *Expr = dyn_cast<VASTExpr>(V);
 
-  if (Expr == None)
-    return eliminateConstantInvertFlag(V);
+  if (Expr == NULL)
+    return V;
 
   VASTExpr::Opcode Opcode = Expr->getOpcode();
   switch (Opcode) {
@@ -97,11 +88,10 @@ VASTValPtr DatapathBLO::eliminateInvertFlag(VASTValPtr V) {
   // Collect the possible retimed operands.
   for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
     VASTValPtr Op = *I;
-    VASTValPtr InvertedOp = eliminateConstantInvertFlag(Op.invert());
-    InvertedOperands.push_back(InvertedOp);
+    InvertedOperands.push_back(Builder.buildNotExpr(Op));
   }
 
-  return Builder.copyExpr(Expr.get(), InvertedOperands);
+  return Builder.copyExpr(Expr, InvertedOperands);
 }
 
 VASTValPtr DatapathBLO::optimizeBitRepeat(VASTValPtr Pattern, unsigned Times) {
@@ -134,25 +124,29 @@ DatapathBLO::optimizeBitExtract(VASTValPtr V, unsigned UB, unsigned LB) {
   if (VASTConstPtr C = dyn_cast<VASTConstPtr>(V))
     return getConstant(C.getBitSlice(UB, LB));
 
-  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
+  VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
 
-  if (Expr == None)
+  if (Expr == NULL)
     return Builder.buildBitExtractExpr(V, UB, LB);
 
   if (Expr->getOpcode() == VASTExpr::dpBitExtract){
+    assert(!V.isInverted() &&
+           "Invert flag of bitextract should had been eliminated!");
     unsigned Offset = Expr->getLB();
     UB += Offset;
     LB += Offset;
-    return optimizeBitExtract(Expr.getOperand(0), UB, LB);
+    return optimizeBitExtract(Expr->getOperand(0), UB, LB);
   }
 
   if (Expr->getOpcode() == VASTExpr::dpBitCat) {
+      assert(!V.isInverted() &&
+              "Invert flag of bitextract should had been eliminated!");
     // Collect the bitslices which fall into (UB, LB]
     SmallVector<VASTValPtr, 8> Ops;
     unsigned CurUB = Expr->getBitWidth(), CurLB = 0;
     unsigned LeadingBitsToLeft = 0, TailingBitsToTrim = 0;
     for (unsigned i = 0; i < Expr->size(); ++i) {
-      VASTValPtr CurBitSlice = Expr.getOperand(i);
+      VASTValPtr CurBitSlice = Expr->getOperand(i);
       CurLB = CurUB - CurBitSlice->getBitWidth();
       // Not fall into (UB, LB] yet.
       if (CurLB >= UB) {
@@ -188,7 +182,9 @@ DatapathBLO::optimizeBitExtract(VASTValPtr V, unsigned UB, unsigned LB) {
   }
 
   if (Expr->getOpcode() == VASTExpr::dpBitRepeat) {
-    VASTValPtr Pattern = Expr.getOperand(0);
+    assert(!V.isInverted() &&
+           "Invert flag of bitextract should had been eliminated!");
+    VASTValPtr Pattern = Expr->getOperand(0);
     // Simply repeat the pattern by the correct number.
     if (Pattern->getBitWidth() == 1)
       return optimizeBitRepeat(Pattern, UB - LB);
@@ -198,18 +194,20 @@ DatapathBLO::optimizeBitExtract(VASTValPtr V, unsigned UB, unsigned LB) {
   return Builder.buildBitExtractExpr(V, UB, LB);
 }
 
-static VASTExprPtr GetAsBitExtractExpr(VASTValPtr V) {
-  VASTExprPtr Expr = dyn_cast<VASTExprPtr>(V);
-  if (Expr == None || !Expr->isSubWord())
-    return None;
+static VASTExpr *GetAsBitExtractExpr(VASTValPtr V) {
+  VASTExpr *Expr = dyn_cast<VASTExpr>(V);
+  if (Expr == NULL || !Expr->isSubWord())
+    return NULL;
 
+  assert(!V.isInverted() &&
+         "Invert flag of bitextract should had been eliminated!");
   return Expr;
 }
 
 VASTValPtr DatapathBLO::optimizeBitCatImpl(MutableArrayRef<VASTValPtr> Ops,
                                            unsigned BitWidth) {
   VASTConstPtr LastC = dyn_cast<VASTConstPtr>(Ops[0]);
-  VASTExprPtr LastBitSlice = GetAsBitExtractExpr(Ops[0]);
+  VASTExpr *LastBitSlice = GetAsBitExtractExpr(Ops[0]);
 
   unsigned ActualOpPos = 1;
 
@@ -235,9 +233,9 @@ VASTValPtr DatapathBLO::optimizeBitCatImpl(MutableArrayRef<VASTValPtr> Ops,
     } else // Reset LastImm, since the current value is not immediate.
       LastC = None;
 
-    if (VASTExprPtr CurBitSlice = GetAsBitExtractExpr(V)) {
-      VASTValPtr CurBitSliceParent = CurBitSlice.getOperand(0);
-      if (LastBitSlice && CurBitSliceParent == LastBitSlice.getOperand(0)
+    if (VASTExpr *CurBitSlice = GetAsBitExtractExpr(V)) {
+      VASTValPtr CurBitSliceParent = CurBitSlice->getOperand(0);
+      if (LastBitSlice && CurBitSliceParent == LastBitSlice->getOperand(0)
           && LastBitSlice->getLB() == CurBitSlice->getUB()) {
         VASTValPtr MergedBitSlice
           = optimizeBitExtract(CurBitSliceParent, LastBitSlice->getUB(),
@@ -292,7 +290,7 @@ VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
     if (CurVal == LastVal) {
       // A & A = A
       continue;
-    } else if (CurVal.invert() == LastVal)
+    } else if (Builder.buildNotExpr(CurVal) == LastVal)
       // A & ~A => 0
       return getConstant(APInt::getNullValue(BitWidth));
 
@@ -395,7 +393,7 @@ VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
       continue;
     }
 
-    if (CurVal.invert() == LastVal) {
+    if (Builder.buildNotExpr(CurVal) == LastVal) {
       // A + ~A => ~0, verified by
       // (declare-fun a () (_ BitVec 32))
       // (assert (not (= (bvadd a (bvnot a)) #xffffffff)))
@@ -540,14 +538,16 @@ VASTValPtr DatapathBLO::replaceKnownBits(VASTValPtr V) {
   ++NodesReplacedByKnownBits;
   VASTValPtr C = getConstant(Expr->getKnownValue());
   // Do not forget the invert flag of the original expression.
-  return eliminateConstantInvertFlag(C.invert(V.isInverted()));
+  if (V.isInverted())
+    C = Builder.buildNotExpr(C);
+  return C;
 }
 
 bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
 
   if (Expr == NULL)
-    return replaceIfNotEqual(V, eliminateConstantInvertFlag(V));
+    return false;
 
   // This expression had been optimized in the current iteration.
   if (Visited.count(Expr))

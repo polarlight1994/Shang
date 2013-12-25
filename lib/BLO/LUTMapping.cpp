@@ -494,7 +494,8 @@ VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
 
   VASTValPtr V = ValueNames.lookup(Name);
   if (V) {
-    if (Abc_ObjIsComplement(O)) V = V.invert();
+    if (Abc_ObjIsComplement(O))
+     V = Builder.buildNotExpr(V);
 
     return V;
   }
@@ -621,7 +622,8 @@ void LogicNetwork::buildLUTDatapath() {
     AbcObjMapTy::const_iterator at = RewriteMap.find(Abc_ObjRegular(FI));
     assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
     VASTValPtr NewVal = at->second;
-    if (Abc_ObjIsComplement(FI)) NewVal = NewVal.invert();
+    if (Abc_ObjIsComplement(FI))
+     NewVal = Builder.buildNotExpr(NewVal);
 
     // Update the mapping if the mapped value changed.
     if (VH != NewVal)

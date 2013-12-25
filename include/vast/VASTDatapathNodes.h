@@ -292,12 +292,6 @@ public:
   void visitConeTopOrder(std::set<VASTExpr*> &Visited, T &F);
 };
 
-typedef PtrInvPair<VASTExpr> VASTExprPtr;
-template<>
-inline VASTValPtr PtrInvPair<VASTExpr>::getOperand(unsigned i) const {
-  return get()->getOperand(i).get().invert(isInverted());
-}
-
 template<typename T>
 void
 VASTExpr::visitConeTopOrder(std::set<VASTExpr*> &Visited, T &F) {
@@ -389,6 +383,8 @@ protected:
   void addModifiedValueToCSEMaps(T *V, FoldingSet<T> &CSEMap);
 
   iplist<VASTExpr> Exprs;
+
+  VASTValPtr invert(VASTValPtr V);
 
   void notifyDeletion(VASTExpr *E);
 

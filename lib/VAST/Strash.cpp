@@ -251,8 +251,8 @@ class CombPatterns : public StrashTable<CombPatterns> {
   typedef std::map<VASTExpr*, std::vector<VASTSelector*> > LeavesMapTy;
   LeavesMapTy LeavesMap;
 
-  unsigned getOrCreatePatternID(VASTExprPtr Ptr);
-  unsigned getOrCreatePatternID(VASTExpr* Ptr);
+  unsigned getOrCreatePatternID(VASTExpr *Ptr, bool isInverted);
+  unsigned getOrCreatePatternID(VASTExpr *Ptr);
 public:
   CombPatterns() {}
 
@@ -353,22 +353,22 @@ unsigned CombPatterns::getOrCreatePatternID(VASTValPtr Ptr) {
     return ID;
   }
 
-  VASTExprPtr ExprPtr = dyn_cast<VASTExprPtr>(Ptr);
-  if (!ExprPtr)
+  VASTExpr *ExprPtr = dyn_cast<VASTExpr>(Ptr);
+  if (ExprPtr == NULL)
     return getOrCreateStrashID(Ptr, Cache);
 
-  return getOrCreatePatternID(ExprPtr);
+  return getOrCreatePatternID(ExprPtr, Ptr.isInverted());
 }
 
-unsigned CombPatterns::getOrCreatePatternID(VASTExprPtr Ptr) {
-  if (unsigned ID = lookupCache(Ptr.get())) {
-    assert(LeavesMap.count(cast<VASTExpr>(Ptr.get())) &&
+unsigned CombPatterns::getOrCreatePatternID(VASTExpr *Ptr, bool isInverted) {
+  if (unsigned ID = lookupCache(VASTValPtr(Ptr, isInverted))) {
+    assert(LeavesMap.count(cast<VASTExpr>(Ptr)) &&
            "Id exists with out leaves?");
     return ID;
   }
 
   // Build the pattern for the underlying expression first.
-  getOrCreatePatternID(Ptr.get());
+  getOrCreatePatternID(VASTValPtr(Ptr, isInverted));
   return getOrCreateStrashID(Ptr, Cache);
 }
 

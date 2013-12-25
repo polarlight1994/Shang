@@ -32,7 +32,6 @@ class DatapathBLO : public MinimalExprBuilderContext {
 
   // Propagate invert flag to the leave of a combinational cone if possible.
   VASTValPtr eliminateInvertFlag(VASTValPtr V);
-  VASTValPtr eliminateConstantInvertFlag(VASTValPtr V);
   void eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops);
 
   template<VASTExpr::Opcode Opcode, typename T>

@@ -36,6 +36,7 @@ template<typename T> class ArrayRef;
 }
 
 namespace vast {
+class VASTUse;
 class VASTNamedValue;
 class VASTValue;
 class VASTExpr;
@@ -171,14 +172,10 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
   T1 *getAsLValue() const { return dyn_cast_or_null<T1>(this->getPointer()); }
 
   bool isInverted() const { return this->getInt(); }
-  PtrInvPair<T> invert(bool Invert = true) const {
-    return Invert ? PtrInvPair<T>(get(), !isInverted()) : *this;
-  }
 
   T *operator->() const { return this->get(); }
 
   // Forwarding function of VASTValues
-  inline PtrInvPair<VASTValue> getOperand(unsigned i) const;
   inline APInt getAPInt() const;
   inline uint64_t getZExtValue() const;
   inline bool getBoolValue() const;
@@ -207,6 +204,11 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
     return !operator==(None);
   }
 
+  inline bool operator==(const VASTUse &RHS) const;
+  inline bool operator!=(const VASTUse &RHS) const {
+    return !operator==(RHS);
+  }
+
   inline void printAsOperand(raw_ostream &OS, unsigned UB, unsigned LB) const {
     get()->printAsOperand(OS, UB, LB, isInverted());
   }
@@ -227,6 +229,13 @@ struct PtrInvPair : public PointerIntPair<T*, 1, bool> {
     return LHS.getOpaqueValue() < RHS.getOpaqueValue();
   }
 private:
+  friend class VASTExprBuilder;
+  friend class DatapathContainer;
+
+  PtrInvPair<T> invert(bool Invert = true) const {
+    return Invert ? PtrInvPair<T>(get(), !isInverted()) : *this;
+  }
+
   // Hide the confusing getInt function.
   bool getInt() const { return Base::getInt(); }
 };
@@ -334,8 +343,8 @@ class VASTUse : public ilist_node<VASTUse> {
 
   void linkUseToUser();
 
-  void operator=(const VASTUse &RHS); // DO NOT IMPLEMENT
-  VASTUse(const VASTUse &RHS); // DO NOT IMPLEMENT
+  void operator=(const VASTUse &RHS) LLVM_DELETED_FUNCTION;
+  VASTUse(const VASTUse &RHS) LLVM_DELETED_FUNCTION;
 public:
   VASTUse(VASTNode *User, VASTValPtr V = 0);
 
@@ -405,7 +414,6 @@ public:
   VASTValPtr operator->() const { return get(); }
 
   bool isInverted() const { return get().isInverted(); }
-  VASTValPtr invert(bool Invert = true) const { return get().invert(Invert); }
 
   inline void printAsOperand(raw_ostream &OS, unsigned UB, unsigned LB) const {
     get().printAsOperand(OS, UB, LB);
@@ -417,6 +425,12 @@ public:
 
   const VASTValPtr &unwrap() const { return V; }
 };
+
+template<>
+inline bool PtrInvPair<VASTValue>::operator==(const VASTUse &RHS) const {
+  return Base::operator==(RHS.unwrap());
+}
+
 } // end namespace vast
 
 namespace llvm {

@@ -76,6 +76,13 @@ void DatapathContainer::addModifiedValueToCSEMaps(VASTNode *N) {
   // Otherwise V is not in the CSEMap, do nothing.
 }
 
+VASTValPtr DatapathContainer::invert(VASTValPtr U) {
+  if (VASTConstPtr C = dyn_cast<VASTConstPtr>(U))
+    return getConstantImpl(~C.getAPInt());
+
+  return U.invert();
+}
+
 void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
   assert(From && To && From != To && From.get() != To.get() &&
          "Unexpected VASTValPtr value!");
@@ -102,8 +109,8 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
       VASTValPtr Replacement = To;
       // If a inverted value is used, we must also invert the replacement.
       if (UsedValue != From) {
-        assert(UsedValue.invert() == From && "Use is not using 'From'!");
-        Replacement = Replacement.invert();
+        assert(invert(UsedValue) == From && "Use is not using 'From'!");
+        Replacement = invert(Replacement);
       }
 
       ++UI;
@@ -119,7 +126,10 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
 
   assert(From->use_empty() && "Incompleted replacement!");
   // Sentence this Node to dead!
-  From->setDead();
+  assert(From.get() != VASTConstant::True && From.get() != VASTConstant::False
+         && "Replacing all use of boolean constant?");
+  if (From.get() != VASTConstant::True && From.get() != VASTConstant::False)
+    From->setDead();
   // Delete From.
   if (VASTExpr *E = dyn_cast<VASTExpr>(From.get()))
     recursivelyDeleteTriviallyDeadExprs(E);
