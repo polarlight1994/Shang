@@ -852,7 +852,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   // Emit Address, use port 0.
   Op->addSrc(AddrVal, CurSrcIdx++, Bus->getAddr(0));
 
-  VASTValPtr ByteOffset;
+  VASTValPtr ByteOffset = None;
 
   if (Data) {
     // Assign store data, use port 0..
@@ -898,7 +898,7 @@ VASTModuleBuilder::buildMemoryTransaction(Value *Addr, Value *Data,
   }
 
   // Read the result of the memory transaction.
-  if (Data == 0) {
+  if (Data == NULL) {
     // The latency of the read operation is fixed to 1 if the byteenable is not
     // required.
     unsigned Latency = Bus->getReadLatency();
