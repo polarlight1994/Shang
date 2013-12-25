@@ -272,6 +272,7 @@ VASTExpr::VASTExpr(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth)
 VASTExpr::VASTExpr() : VASTMaskedValue(vastExpr, 1), VASTOperandList(0) {}
 
 VASTExpr::~VASTExpr() {
+  dropUses();
 }
 
 bool VASTExpr::hasNameID() const {
