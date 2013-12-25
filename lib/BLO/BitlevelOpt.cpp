@@ -524,23 +524,20 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
 }
 
 VASTValPtr DatapathBLO::replaceKnownBits(VASTValPtr V) {
-  VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
-  if (Expr == NULL)
+  VASTMaskedValue *MV = dyn_cast<VASTMaskedValue>(V.get());
+  if (MV == NULL)
     return V;
 
   // Update the bitmask before we perform the optimization.
-  Expr->evaluateMask();
+  MV->evaluateMask();
 
-  if (LLVM_LIKELY(!Expr->isAllBitKnown()))
+  if (LLVM_LIKELY(!MV->isAllBitKnown()))
     return V;
 
   // If all bit is known, simply return the constant to replace the expr.
   ++NodesReplacedByKnownBits;
-  VASTValPtr C = getConstant(Expr->getKnownValue());
-  // Do not forget the invert flag of the original expression.
-  if (V.isInverted())
-    C = Builder.buildNotExpr(C);
-  return C;
+  VASTBitMask Mask(V);
+  return getConstant(Mask.getKnownValue());
 }
 
 bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
