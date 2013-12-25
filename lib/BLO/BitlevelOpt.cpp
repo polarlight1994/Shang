@@ -484,6 +484,9 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   case VASTExpr::dpAdd:
     return optimizeNAryExpr<VASTExpr::dpAdd>(Expr->getOperands(),
                                              Expr->getBitWidth());
+  case VASTExpr::dpMul:
+    return optimizeNAryExpr<VASTExpr::dpMul>(Expr->getOperands(),
+                                             Expr->getBitWidth());
   case VASTExpr::dpRAnd:
   case VASTExpr::dpRXor:
     return optimizeReduction(Opcode, Expr->getOperand(0));
@@ -494,6 +497,11 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   case VASTExpr::dpSRA:
     return optimizeShift(Opcode, Expr->getOperand(0), Expr->getOperand(1),
                          Expr->getBitWidth());
+  // Yet to be implement:
+  case VASTExpr::dpSGT:
+  case VASTExpr::dpUGT:
+  case VASTExpr::dpLUT:
+    break;
   // Strange expressions that we cannot optimize.
   default: break;
   }
