@@ -390,7 +390,7 @@ VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
       VASTConstant *ShiftAmt = getConstant(1, Log2_32_Ceil(BitWidth));
       CurVal = optimizeShift(VASTExpr::dpShl, CurVal, ShiftAmt, BitWidth);
       // Replace the last value.
-      Ops[ActualPos] = CurVal;
+      Ops[ActualPos - 1] = CurVal;
       LastVal = CurVal;
       continue;
     }
@@ -403,7 +403,7 @@ VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
       // -> unsat
       CurVal = getConstant(APInt::getAllOnesValue(BitWidth));
       // Replace the last value.
-      Ops[ActualPos] = CurVal;
+      Ops[ActualPos - 1] = CurVal;
       LastVal = CurVal;
       continue;
     }
