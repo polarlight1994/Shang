@@ -369,6 +369,26 @@ VASTBitMask VASTBitMask::EvaluateLshr(VASTBitMask LHS, VASTBitMask RHS,
 }
 
 //===----------------------------------------------------------------------===//
+VASTBitMask VASTBitMask::EvaluateAshr(VASTBitMask LHS, VASTBitMask RHS,
+                                      unsigned BitWidth) {
+  unsigned RHSMaxSize = std::min(Log2_32_Ceil(LHS.getMaskWidth()),
+                                 RHS.getMaskWidth());
+  VASTBitMask M = LHS;
+  for (unsigned i = 0; i < RHSMaxSize && M.anyBitKnown(); ++i) {
+    // If the i-th bit is known 1 in RHS, we always add the shifted LHS
+    // to the result in this case.
+    if (RHS.isKnownOneAt(i))
+      M = M.ashr(1 << i);
+    // Otherwise if the bit at RHS is unknown, the result bits are known only
+    // if the LHS bit is known no matter it is shifted or not.
+    else if (!RHS.isKnownZeroAt(i))
+      M.mergeAllKnown(M.ashr(1 << i));
+  }
+
+  return M;
+}
+
+//===----------------------------------------------------------------------===//
 VASTBitMask VASTBitMask::EvaluateBitExtract(VASTBitMask Mask,
                                             unsigned UB, unsigned LB) {
   return VASTBitMask(VASTConstant::getBitSlice(Mask.KnownZeros, UB, LB),
@@ -445,12 +465,14 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
   case VASTExpr::dpLshr:
     mergeAnyKnown(EvaluateLshr(Masks[0], Masks[1], BitWidth));
     break;
+  case VASTExpr::dpAshr:
+    mergeAnyKnown(EvaluateAshr(Masks[0], Masks[1], BitWidth));
+    break;
   case VASTExpr::dpKeep:
     // Simply propagate the masks from the RHS of the assignment.
     mergeAnyKnown(Masks[0]);
     break;
   // Yet to be implement:
-  case VASTExpr::dpAshr:
   case VASTExpr::dpSGT:
   case VASTExpr::dpUGT:
   case VASTExpr::dpROMLookUp:

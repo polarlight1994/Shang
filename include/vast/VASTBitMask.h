@@ -168,6 +168,8 @@ public:
                                  unsigned BitWidth);
   static VASTBitMask EvaluateLshr(VASTBitMask LHS, VASTBitMask RHS,
                                   unsigned BitWidth);
+  static VASTBitMask EvaluateAshr(VASTBitMask LHS, VASTBitMask RHS,
+                                  unsigned BitWidth);
 
   void verify() const;
 };
