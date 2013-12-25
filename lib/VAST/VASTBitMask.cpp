@@ -28,7 +28,7 @@
 
 using namespace llvm;
 using namespace vast;
-//===--------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 void VASTBitMask::verify() const {
   assert(!(KnownOnes & KnownZeros) && "Bit masks contradict!");
 }
@@ -136,8 +136,7 @@ void VASTBitMask::evaluateMask(VASTMaskedValue *V) {
     return evaluateMask(SV);
 }
 
-
-//===--------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 template<typename T>
 static
 void ExtractBitMasks(ArrayRef<T> Ops, SmallVectorImpl<VASTBitMask> &Masks) {
@@ -161,7 +160,7 @@ void ExtractBitMasks(ArrayRef<T> Ops, SmallVectorImpl<VASTBitMask> &Masks) {
   }
 }
 
-//===--------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 VASTBitMask
 VASTBitMask::EvaluateAnd(ArrayRef<VASTBitMask> Masks, unsigned BitWidth) {
   // Assume all bits are 1s.
@@ -171,14 +170,44 @@ VASTBitMask::EvaluateAnd(ArrayRef<VASTBitMask> Masks, unsigned BitWidth) {
   for (unsigned i = 0; i < Masks.size(); ++i) {
     // The bit become zero if the same bit in any operand is zero.
     Mask.KnownZeros |= Masks[i].KnownZeros;
-    // The bit is one only if the same bit in all operand are zeros.
+    // The bit is one only if the same bit in all operand are ones.
     Mask.KnownOnes &= Masks[i].KnownOnes;
   }
 
   return Mask;
 }
 
-//===--------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+VASTBitMask
+VASTBitMask::EvaluateAnd(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth) {
+  return VASTBitMask(
+    // The bit become zero if the same bit in any operand is zero.
+    LHS.KnownZeros | RHS.KnownZeros,
+    // The bit is one only if the same bit in all operand are ones.
+    LHS.KnownOnes & RHS.KnownOnes);
+}
+
+//===----------------------------------------------------------------------===//
+VASTBitMask
+VASTBitMask::EvaluateOr(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth) {
+  return VASTBitMask(
+    // The bit become zero if the same bit in all operand is zero.
+    LHS.KnownZeros & RHS.KnownZeros,
+    // The bit is one only if the same bit in any operand are ones.
+    LHS.KnownOnes | RHS.KnownOnes);
+}
+
+//===----------------------------------------------------------------------===//
+VASTBitMask
+VASTBitMask::EvaluateXor(VASTBitMask LHS, VASTBitMask RHS, unsigned BitWidth) {
+  return VASTBitMask(
+    // Output known-0 bits are known if clear or set in both the LHS & RHS.
+    (LHS.KnownZeros & RHS.KnownZeros) | (LHS.KnownOnes & RHS.KnownOnes),
+    // Output known-1 are known to be set if set in only one of the LHS, RHS.
+    (LHS.KnownZeros & RHS.KnownOnes) | (LHS.KnownOnes & RHS.KnownZeros));
+}
+
+//===----------------------------------------------------------------------===//
 VASTBitMask
 VASTBitMask::EvaluateLUT(ArrayRef<VASTBitMask> Masks, unsigned BitWidth,
                          const char *SOP) {
@@ -227,53 +256,35 @@ VASTBitMask::EvaluateLUT(ArrayRef<VASTBitMask> Masks, unsigned BitWidth,
   return Sum.invert(IsComplement);
 }
 
-//===--------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 VASTBitMask VASTBitMask::EvaluateAdd(VASTBitMask LHS, VASTBitMask RHS,
                                      unsigned BitWidth) {
-  //if (!(LHS.getKnownBits() | RHS.getKnownBits())) {
-  //  // If the known bits are not overlapped, the addition become an OR.
-  //  // Build OR by ~(~A & ~B)
-  //  VASTBitMask Masks[] = { LHS.invert(), RHS.invert() };
-  //  return EvaluateAndMask(Masks, BitWidth).invert();
-  //}
+  // Perform bit level evaluation for addition.
+  // unsigned int carry = a & b;
+  // unsigned int result = a ^ b;
+  // while (carry != 0) {
+  //   unsigned int shiftedcarry = carry << 1;
+  //   carry = result & shiftedcarry;
+  //   result ^= shiftedcarry;
+  // }
+  // return result;
 
-  // Assume all bits are unknown.
-  VASTBitMask Mask(BitWidth);
+  VASTBitMask S = EvaluateXor(LHS, RHS, BitWidth),
+              C = EvaluateAnd(LHS, RHS, BitWidth);
 
-  // Well, steal from llvm ComputeMaskedBitsAddSub:
-  unsigned LHSKnownTrailingZeros = LHS.KnownZeros.countTrailingOnes();
-  unsigned RHSKnownTrailingZeros = RHS.KnownZeros.countTrailingOnes();
+  for (unsigned i = 0; i < BitWidth; ++i) {
+    if (!S.anyBitKnown() || C.isAllKnownZero())
+      break;
 
-  // Determine which operand has more trailing zeros, and use that
-  // many bits from the other operand.
-  if (LHSKnownTrailingZeros > RHSKnownTrailingZeros) {
-    APInt ZeroMask = APInt::getLowBitsSet(BitWidth, LHSKnownTrailingZeros);
-    Mask.KnownZeros |= RHS.KnownZeros & ZeroMask;
-    Mask.KnownOnes |= RHS.KnownOnes & ZeroMask;
-  } else if (RHSKnownTrailingZeros >= LHSKnownTrailingZeros) {
-    APInt ZeroMask = APInt::getLowBitsSet(BitWidth, RHSKnownTrailingZeros);
-    Mask.KnownZeros |= LHS.KnownZeros & ZeroMask;
-    Mask.KnownOnes |= LHS.KnownOnes & ZeroMask;
+    VASTBitMask ShiftedC = C.shl(1);
+    C = EvaluateAnd(S, ShiftedC, BitWidth);
+    S = EvaluateXor(S, ShiftedC, BitWidth);
   }
 
-  // The Carry bit will stop propagate if LHS and RHS has zero bit at the same
-  // position.
-  unsigned LHSKnownLeadingZeros= LHS.KnownZeros.countLeadingOnes();
-  unsigned RHSKnownLeadingZeros = RHS.KnownZeros.countLeadingOnes();
-  unsigned ResultKnownLeadingZeros = std::min(LHSKnownLeadingZeros,
-                                              RHSKnownLeadingZeros);
-  // The carry bit will eat a leading zero, if there is any.
-  if (ResultKnownLeadingZeros > 0)
-    ResultKnownLeadingZeros -= 1;
-
-  Mask.KnownZeros |= APInt::getHighBitsSet(BitWidth, ResultKnownLeadingZeros);
-
-  // TODO: Find the opportunity to break the carray chain.
-
-  return Mask;
+  return S;
 }
 
-//===--------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 VASTBitMask VASTBitMask::EvaluateMul(VASTBitMask LHS, VASTBitMask RHS,
                                     unsigned BitWidth) {
   // Assume all bits are unknown.
@@ -293,7 +304,7 @@ VASTBitMask VASTBitMask::EvaluateMul(VASTBitMask LHS, VASTBitMask RHS,
   return Mask;
 }
 
-//===--------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 VASTBitMask VASTBitMask::EvaluateShl(VASTBitMask LHS, VASTBitMask RHS,
                                      unsigned BitWidth) {
   // Because we are shifting toward MSB, so the Trailing zeros are known
@@ -306,7 +317,7 @@ VASTBitMask VASTBitMask::EvaluateShl(VASTBitMask LHS, VASTBitMask RHS,
   return Mask;
 }
 
-//===--------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 VASTBitMask VASTBitMask::EvaluateSRL(VASTBitMask LHS, VASTBitMask RHS,
                                          unsigned BitWidth) {
   // Because we are shifting toward LSB, so the Leading zeros are known
@@ -319,7 +330,7 @@ VASTBitMask VASTBitMask::EvaluateSRL(VASTBitMask LHS, VASTBitMask RHS,
   return Mask;
 }
 
-//===--------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 VASTBitMask VASTBitMask::EvaluateBitExtract(VASTBitMask Mask,
                                             unsigned UB, unsigned LB) {
   return VASTBitMask(VASTConstant::getBitSlice(Mask.KnownZeros, UB, LB),
@@ -348,7 +359,7 @@ VASTBitMask VASTBitMask::EvaluateBitCat(ArrayRef<VASTBitMask> Masks,
   return Mask;
 }
 
-//===--------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
 void VASTBitMask::evaluateMask(VASTExpr *E) {
   SmallVector<VASTBitMask, 8> Masks;
   ExtractBitMasks(E->getOperands(), Masks);

@@ -52,6 +52,8 @@ public:
   APInt getKnownZeros() const { return KnownZeros; }
   APInt getKnownOnes() const { return KnownOnes; }
 
+  bool isAllKnownZero() const { return KnownZeros.isAllOnesValue(); }
+
   /// \brief Zero extend or truncate to width
   ///
   /// Make this VASTBitMask have the bit width given by \p width. The value is
@@ -65,6 +67,12 @@ public:
       NewKnownZeros |= APInt::getHighBitsSet(Width, ExtraBits);
 
     return VASTBitMask(NewKnownZeros, KnownOnes.zextOrTrunc(Width));
+  }
+
+  VASTBitMask shl(unsigned i) {
+    // Shift left and fill the lower bit with zeros.
+    return VASTBitMask(KnownZeros.shl(i)|APInt::getLowBitsSet(getMaskWidth(),i),
+                       KnownOnes.shl(i));
   }
 
   unsigned getMaskWidth() const;
@@ -108,6 +116,12 @@ public:
 
   // Mask Evaluation function.
   static VASTBitMask EvaluateAnd(ArrayRef<VASTBitMask> Masks, unsigned BitWidth);
+  static VASTBitMask EvaluateOr(VASTBitMask LHS, VASTBitMask RHS,
+                                unsigned BitWidth);
+  static VASTBitMask EvaluateAnd(VASTBitMask LHS, VASTBitMask RHS,
+                                 unsigned BitWidth);
+  static VASTBitMask EvaluateXor(VASTBitMask LHS, VASTBitMask RHS,
+                                 unsigned BitWidth);
   static VASTBitMask EvaluateLUT(ArrayRef<VASTBitMask> Masks, unsigned BitWidth,
                                  const char *SOP);
 
