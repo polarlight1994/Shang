@@ -275,16 +275,6 @@ void VASTMaskedValue::printMaskVerification(raw_ostream &OS) const {
 }
 
 //===----------------------------------------------------------------------===//
-VASTSymbol::VASTSymbol(const char *Name, unsigned BitWidth)
-  : VASTNamedValue(VASTNode::vastSymbol, Name, BitWidth) {}
-
-void VASTSymbol::printAsOperandImpl(raw_ostream &OS,
-                                    unsigned UB, unsigned LB) const {
-  OS << getName();
-  if (UB != getBitWidth() || LB != 0)
-    OS << VASTValue::BitRange(UB, LB, getBitWidth() > 1);
-}
-
 void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                         unsigned LB) const{
   OS << getName();

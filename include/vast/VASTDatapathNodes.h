@@ -139,19 +139,6 @@ inline bool PtrInvPair<VASTConstant>::isMinSigned() const {
                       : get()->isMinSigned();
 }
 
-class VASTSymbol : public VASTNamedValue {
-  VASTSymbol(const char *Name, unsigned BitWidth);
-
-  void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
-  friend class VASTModule;
-public:
-  /// Methods for support type inquiry through isa, cast, and dyn_cast:
-  static inline bool classof(const VASTSymbol *A) { return true; }
-  static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastSymbol;
-  }
-};
-
 class VASTExpr : public VASTMaskedValue, public VASTOperandList,
                  public FoldingSetNode, public ilist_node<VASTExpr> {
 public:

@@ -56,9 +56,8 @@ public:
   enum VASTTypes {
     vastConstant,
     vastFirstValueType = vastConstant,
-    vastSymbol,
-    vastFirstMaskedValueType = vastSymbol,
     vastExpr,
+    vastFirstMaskedValueType = vastExpr,
     vastWrapper,
     vastSeqValue,
     vastLastValueType = vastSeqValue,
@@ -603,8 +602,7 @@ class VASTNamedValue : public VASTMaskedValue {
 protected:
   VASTNamedValue(VASTTypes T, const char *Name, unsigned BitWidth)
     : VASTMaskedValue(T, BitWidth) {
-    assert((T == vastSymbol || T == vastWrapper || T == vastSeqValue)
-           && "Bad DeclType!");
+    assert((T == vastWrapper || T == vastSeqValue) && "Bad node type!");
     Contents64.Name = Name;
   }
 
@@ -625,8 +623,7 @@ public:
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTNamedValue *A) { return true; }
   static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastSymbol ||
-           A->getASTType() == vastWrapper ||
+    return A->getASTType() == vastWrapper ||
            A->getASTType() == vastSeqValue;
   }
 
