@@ -198,12 +198,6 @@ public:
     return buildOrExpr(Ops, BitWidth);
   }
 
-  static VASTValPtr buildXor(VASTValPtr LHS, VASTValPtr RHS, unsigned BitWidth,
-                             VASTExprBuilder *Builder) {
-    VASTValPtr Ops[] = { LHS, RHS };
-    return Builder->buildXorExpr(Ops, BitWidth);
-  }
-
   VASTValPtr buildXorExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
   VASTValPtr buildXorExpr(VASTValPtr LHS, VASTValPtr RHS, unsigned BitWidth) {
     VASTValPtr Ops[] = { LHS, RHS };
