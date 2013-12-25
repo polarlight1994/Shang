@@ -29,6 +29,8 @@ using namespace llvm;
 class VASTMaskedValue;
 class VASTExpr;
 class VASTSeqValue;
+class VASTValue;
+template<typename T> struct PtrInvPair;
 
 class VASTBitMask {
   APInt KnownZeros, KnownOnes;
@@ -51,6 +53,8 @@ public:
            && "Bitwidths are not agreed!");
     verify();
   }
+
+  /*implicit*/ VASTBitMask(PtrInvPair<VASTValue> V);
 
   APInt getKnownZeros() const { return KnownZeros; }
   APInt getKnownOnes() const { return KnownOnes; }

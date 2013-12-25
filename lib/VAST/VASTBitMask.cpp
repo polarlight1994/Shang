@@ -29,6 +29,25 @@
 using namespace llvm;
 using namespace vast;
 //===----------------------------------------------------------------------===//
+VASTBitMask::VASTBitMask(VASTValPtr V)
+  : KnownZeros(APInt::getNullValue(V->getBitWidth())),
+    KnownOnes(APInt::getNullValue(V->getBitWidth())){
+  if (VASTConstPtr C = dyn_cast<VASTConstPtr>(V)) {
+    APInt Bits = C.getAPInt();
+    // Directly construct the mask from constant.
+    KnownZeros = ~Bits;
+    KnownOnes = Bits;
+    return;
+  }
+
+  if (VASTMaskedValue *MV = dyn_cast<VASTMaskedValue>(V.get())) {
+    VASTBitMask Mask = MV->invert(V.isInverted());
+    KnownZeros = Mask.KnownZeros;
+    KnownOnes = Mask.KnownOnes;
+    return;
+  }
+}
+
 void VASTBitMask::verify() const {
   assert(!(KnownOnes & KnownZeros) && "Bit masks contradict!");
 }
@@ -148,24 +167,8 @@ void VASTBitMask::evaluateMask(VASTMaskedValue *V) {
 template<typename T>
 static
 void ExtractBitMasks(ArrayRef<T> Ops, SmallVectorImpl<VASTBitMask> &Masks) {
-  for (unsigned i = 0; i < Ops.size(); ++i) {
-    VASTValPtr V = Ops[i];
-
-    if (VASTConstPtr C = dyn_cast<VASTConstPtr>(V)) {
-      APInt Bits = C.getAPInt();
-      // Directly construct the mask from constant.
-      Masks.push_back(VASTBitMask(~Bits, Bits));
-      continue;
-    }
-
-    if (VASTMaskedValue *MV = dyn_cast<VASTMaskedValue>(V.get())) {
-      Masks.push_back(MV->invert(V.isInverted()));
-      continue;
-    }
-
-    // Else just push the all unknown mask.
-    Masks.push_back(VASTBitMask(V->getBitWidth()));
-  }
+  for (unsigned i = 0; i < Ops.size(); ++i)
+    Masks.push_back(VASTBitMask(Ops[i]));
 }
 
 //===----------------------------------------------------------------------===//
