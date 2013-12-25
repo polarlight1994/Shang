@@ -135,7 +135,7 @@ static void printLUT(raw_ostream &OS, ArrayRef<VASTUse> Ops, const char *LUT) {
 
       assert((c == '0' || c == '1') && "Unexpected SOP char!");
       // Print the operand, invert it if necessary.
-      Ops[i].invert(c == '0').printAsOperand(OS);
+      Ops[i]->printAsOperand(OS, Ops[i].isInverted() ^ (c == '0'));
       AnyOperandPrinted = true;
     }
     // Close the product.
