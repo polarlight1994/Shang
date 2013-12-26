@@ -732,7 +732,7 @@ bool DatapathBLO::optimizeForward(VASTModule &VM) {
     }
   }
 
-  return Changed;
+  return Changed || !Visited.empty();
 }
 
 namespace {
