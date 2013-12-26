@@ -44,6 +44,9 @@ class DatapathBLO : public MinimalExprBuilderContext {
     case VASTExpr::dpBitCat:
       return optimizeBitCatImpl(FlattenOps, BitWidth);
     case VASTExpr::dpAnd:
+    // Optimize the bitmask expression with the same function that optimize
+    // AND
+    case VASTExpr::dpBitMask:
       return optimizeAndImpl(FlattenOps, BitWidth);
     case VASTExpr::dpAdd:
       return optimizeAddImpl(FlattenOps, BitWidth);
@@ -83,6 +86,20 @@ class DatapathBLO : public MinimalExprBuilderContext {
   VASTValPtr optimizeCmpWithConst(VASTExpr::Opcode Opcode, VASTValPtr X,
                                   const APInt &Const, bool VarAtLHS);
 
+  template<VASTExpr::Opcode Opcode>
+  static bool IsOpcodeEquivalent(VASTExpr::Opcode Other) {
+    if (Opcode == Other)
+      return true;
+
+    if (Opcode == VASTExpr::dpAnd)
+      return Other == VASTExpr::dpBitMask;
+
+    if (Opcode == VASTExpr::dpBitMask)
+      return Other == VASTExpr::dpAnd;
+
+    return false;
+  }
+
   template<VASTExpr::Opcode Opcode, typename T>
   void flattenExpr(SmallVectorImpl<VASTValPtr> &Dst, ArrayRef<T> Src) {
     for (unsigned i = 0; i < Src.size(); ++i) {
@@ -91,7 +108,7 @@ class DatapathBLO : public MinimalExprBuilderContext {
       if (!V.isInverted()) {
         if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
           // Flatten the expression tree with the same kind of opcode.
-          if (Expr->getOpcode() == Opcode) {
+          if (IsOpcodeEquivalent<Opcode>(Expr->getOpcode())) {
             flattenExpr<Opcode, VASTUse>(Dst, Expr->getOperands());
             continue;
           }
