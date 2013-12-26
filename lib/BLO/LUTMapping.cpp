@@ -532,12 +532,12 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
 
   if (Abc_SopIsConst0(sop)) {
     ++NumConsts;
-    return BLO.getConstant(APInt::getNullValue(Bitwidth));
+    return BLO->getConstant(APInt::getNullValue(Bitwidth));
   }
 
   if (Abc_SopIsConst1(sop)) {
     ++NumConsts;
-    return BLO.getConstant(APInt::getAllOnesValue(Bitwidth));
+    return BLO->getConstant(APInt::getAllOnesValue(Bitwidth));
   }
 
   assert(!Ops.empty() && "We got a node without fanin?");

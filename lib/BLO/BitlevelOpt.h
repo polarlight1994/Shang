@@ -22,7 +22,7 @@
 namespace vast {
 using namespace llvm;
 
-class DatapathBLO : public MinimalExprBuilderContext {
+class DatapathBLO : private MinimalExprBuilderContext {
   VASTExprBuilder Builder;
   // Do not optimize the same expr twice.
   std::set<VASTExpr*> Visited;
