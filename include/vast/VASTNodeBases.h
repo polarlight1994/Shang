@@ -98,6 +98,7 @@ protected:
   } Contents64;
 
   union VASTNodeContents32Ty {
+    uint32_t SeqValIdx;
     uint32_t ExprNameID;
   } Contents32;
 

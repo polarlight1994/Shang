@@ -217,21 +217,19 @@ private:
   VASTSelector *Selector;
   Value *V;
 
-  // For common registers, the Idx is the corresponding register number in the
-  // MachineFunction. With this register number we can get the define/use/kill
-  // information of transaction to this local storage.
-  const unsigned Idx;
-
   friend struct ilist_sentinel_traits<VASTSeqValue>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
   VASTSeqValue()
-    : VASTNamedValue(vastSeqValue, 0, 1), Selector(0), V(0), Idx(0) {}
+    : VASTNamedValue(vastSeqValue, 0, 1), Selector(0), V(0) {}
 
 public:
   VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V);
 
   ~VASTSeqValue();
 
+  // For common registers, the Idx is the corresponding register number in the
+  // MachineFunction. With this register number we can get the define/use/kill
+  // information of transaction to this local storage.
   VASTSelector *getSelector() const;
   void changeSelector(VASTSelector *NewSel);
 
@@ -246,12 +244,12 @@ public:
 
   unsigned getDataRegNum() const {
     assert(isTemp() && "Wrong accessor!");
-    return Idx;
+    return Contents32.SeqValIdx;
   }
 
   unsigned getSlotNum() const {
     assert(isSlot() && "Wrong accessor!");
-    return Idx;
+    return Contents32.SeqValIdx;
   }
 
   VASTNode *getParent() const;

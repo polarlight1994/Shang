@@ -728,8 +728,9 @@ void VASTSelector::setName(const char *Name) {
 //===----------------------------------------------------------------------===//
 VASTSeqValue::VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V)
   : VASTNamedValue(vastSeqValue, Selector->getName(), Selector->getBitWidth()),
-    Selector(Selector), V(V), Idx(Idx) {
+    Selector(Selector), V(V) {
   Selector->addUser(this);
+  Contents32.SeqValIdx = Idx;
 }
 
 void VASTSeqValue::printFanins(raw_ostream &OS) const {
