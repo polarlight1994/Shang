@@ -19,6 +19,7 @@
 #include "vast/VASTSeqOp.h"
 #include "vast/VASTHandle.h"
 
+#include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include <map>
 
@@ -59,9 +60,27 @@ private:
   // Map the transaction condition to transaction value.
   typedef std::vector<VASTLatch> AssignmentVector;
   AssignmentVector Assigns;
+public:
+  // Timing annotation for the keep expressions, annotate the slots when these
+  // keep expressions will be read.
+  class Annotation : public VASTUse, public FoldingSetNode {
+    bool onReplace(VASTValPtr Old, VASTValPtr New);
+    SmallVector<VASTSlot*, 4> Slots;
+  public:
 
-  typedef std::map<VASTHandle, SmallVector<VASTSlot*, 4> > AnnotationMap;
-  AnnotationMap Annotations;
+    Annotation(VASTNode *User, VASTExpr *E, ArrayRef<VASTSlot*> Slots = None);
+    ~Annotation() { if (!isInvalid()) unlinkUseFromUser(); }
+
+    void Profile(FoldingSetNodeID& ID) const;
+    void annotateSlot(ArrayRef<VASTSlot*> Slots);
+
+    ArrayRef<VASTSlot*> getSlots() const { return Slots; }
+  };
+
+private:
+  FoldingSet<Annotation> Annotations;
+  void createAnnotation(ArrayRef<VASTSlot*> Slots, VASTExpr *E);
+  void deleteAnnotation(Annotation *Ann);
 
   VASTUse Guard, Fanin;
 
@@ -112,8 +131,8 @@ public:
   unsigned size() const { return Assigns.size(); }
   bool empty() const { return Assigns.empty(); }
 
-  void annotateReadSlot(VASTSlot *S, VASTValPtr V);
-  typedef AnnotationMap::const_iterator ann_iterator;
+  void annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V);
+  typedef FoldingSet<Annotation>::const_iterator ann_iterator;
   ann_iterator ann_begin() const { return Annotations.begin(); }
   ann_iterator ann_end() const { return Annotations.end(); }
   bool ann_empty() const { return Annotations.empty(); }

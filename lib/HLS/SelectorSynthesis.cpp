@@ -231,8 +231,7 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     // if it is reachable by the intersect leaves.
     if (intersect(IntersectLeaves, CurLeaves)) {
       FIVal = Builder.buildKeep(FIVal);
-      while (!Slots.empty())
-        Sel->annotateReadSlot(Slots.pop_back_val(), FIVal);
+      Sel->annotateReadSlot(Slots, FIVal);
     }
 
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
@@ -422,8 +421,7 @@ void SimpleSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     // if it is reachable by the intersect leaves.
     if (intersect(IntersectLeaves, CurLeaves)) {
       FIVal = Builder.buildKeep(FIVal);
-      while (!Slots.empty())
-        Sel->annotateReadSlot(Slots.pop_back_val(), FIVal);
+      Sel->annotateReadSlot(Slots, FIVal);
     }
 
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);

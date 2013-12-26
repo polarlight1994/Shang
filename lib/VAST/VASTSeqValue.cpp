@@ -452,7 +452,8 @@ void VASTSelector::addAssignment(VASTSeqOp *Op, unsigned SrcNo) {
 }
 
 void VASTSelector::printSelectorModule(raw_ostream &O) const {
-  if (empty() || isSelectorSynthesized()) return;
+  if (empty() || isSelectorSynthesized())
+    return;
 
   vlang_raw_ostream OS(O);
 
@@ -652,13 +653,67 @@ void VASTSelector::eraseFanin(VASTLatch U) {
   Assigns.erase(at);
 }
 
-void VASTSelector::annotateReadSlot(VASTSlot *S, VASTValPtr V)  {
+VASTSelector::Annotation::Annotation(VASTNode *User, VASTExpr *E,
+                                     ArrayRef<VASTSlot*> Slots)
+  : VASTUse(User, E), Slots(Slots.begin(), Slots.end()) {}
+
+bool VASTSelector::Annotation::onReplace(VASTValPtr Old, VASTValPtr New) {
+  VASTExpr *Expr = dyn_cast<VASTExpr>(New.get());
+
+  // The annotation is not need anymore if the new expression is not
+  // an expression.
+  if (Expr == NULL) {
+    cast<VASTSelector>(&getUser())->deleteAnnotation(this);
+    // Interrupt the replacement process since we had delete 'this'!
+    return true;
+  }
+
+  // Yet another timing barrier, just replace the old Keep expression.
+  if (Expr->isTimingBarrier())
+    return false;
+
+  // Now annotate the new Keeps.
+  cast<VASTSelector>(&getUser())->annotateReadSlot(getSlots(), Expr);
+  // This keep is not used anymore, delete it.
+  cast<VASTSelector>(&getUser())->deleteAnnotation(this);
+  // Interrupt the replacement process since we had delete 'this'!
+  return true;
+}
+
+void VASTSelector::Annotation::Profile(FoldingSetNodeID& ID) const {
+  ID.AddPointer(get());
+}
+
+void VASTSelector::Annotation::annotateSlot(ArrayRef<VASTSlot*> Slots) {
+  this->Slots.append(Slots.begin(), Slots.end());
+}
+
+void VASTSelector::deleteAnnotation(Annotation *Ann) {
+  assert(Ann->isInvalid() && "The annotation is not unlinked from the keep!");
+  Annotations.RemoveNode(Ann);
+  delete Ann;
+}
+
+void VASTSelector::createAnnotation(ArrayRef<VASTSlot*> Slots, VASTExpr *E) {
+  assert(E->isTimingBarrier() && "Unexpected expression type!");
+  FoldingSetNodeID ID;
+
+  ID.AddPointer(E);
+
+  void *IP = NULL;
+  if (Annotation *A = Annotations.FindNodeOrInsertPos(ID, IP))
+    return A->annotateSlot(Slots);
+
+  Annotations.InsertNode(new Annotation(this, E, Slots), IP);
+}
+
+void VASTSelector::annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V)  {
   VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
   if (!Expr)
     return;
 
   if (Expr->isTimingBarrier()) {
-    Annotations[Expr].push_back(S);
+    createAnnotation(Slots, Expr);
     return;
   }
 
@@ -692,7 +747,7 @@ void VASTSelector::annotateReadSlot(VASTSlot *S, VASTValPtr V)  {
       if (!Visited.insert(ChildExpr).second) continue;
 
       if (ChildExpr->isTimingBarrier()) {
-        Annotations[ChildExpr].push_back(S);
+        createAnnotation(Slots, ChildExpr);
         continue;
       }
 
@@ -702,7 +757,18 @@ void VASTSelector::annotateReadSlot(VASTSlot *S, VASTValPtr V)  {
 }
 
 void VASTSelector::dropMux() {
+  SmallVector<Annotation*, 8> DeadAnns;
+
+  typedef FoldingSet<Annotation>::iterator iterator;
+  for (iterator I = Annotations.begin(), E = Annotations.end(); I != E; ++I)
+    DeadAnns.push_back(&*I);
+
   Annotations.clear();
+
+  // Release the annotations.
+  while (!DeadAnns.empty())
+    delete DeadAnns.pop_back_val();
+
   Fanin.reset();
   Guard.reset();
 }

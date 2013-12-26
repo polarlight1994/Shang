@@ -539,8 +539,9 @@ void TimingScriptGen::annoataConstraintsFor(AnnotatedCone &Cache,
 
   typedef VASTSelector::ann_iterator ann_iterator;
   for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
-    ArrayRef<VASTSlot*> Slots(I->second);
-    extractTimingPaths(Cache, Sel, Slots, VASTValPtr(I->first).get());
+    const VASTSelector::Annotation &Ann = *I;
+    ArrayRef<VASTSlot*> Slots(Ann.getSlots());
+    extractTimingPaths(Cache, Sel, Slots, VASTValPtr(Ann).get());
   }
 
   Cache.addSelector(Sel);

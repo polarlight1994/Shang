@@ -823,9 +823,10 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
   // Build the fanin map, extract the src -> thu -> dst delay.
   typedef VASTSelector::ann_iterator ann_iterator;
   for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
-    ArrayRef<VASTSlot*> Slots(I->second);
+    const VASTSelector::Annotation &Ann = *I;
+    ArrayRef<VASTSlot*> Slots(Ann.getSlots());
     // Get the thu node of the path.
-    VASTExpr *Expr = dyn_cast<VASTExpr>(I->first);
+    VASTExpr *Expr = Ann.getAsLValue<VASTExpr>();
 
     if (Expr == 0)
       continue;

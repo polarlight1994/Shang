@@ -342,14 +342,18 @@ class VASTUse : public ilist_node<VASTUse> {
   VASTNode &User;
   VASTValPtr V;
 
-  friend struct ilist_sentinel_traits<VASTUse>;
-
   void linkUseToUser();
 
   void operator=(const VASTUse &RHS) LLVM_DELETED_FUNCTION;
   VASTUse(const VASTUse &RHS) LLVM_DELETED_FUNCTION;
+
+protected:
+  virtual bool onReplace(VASTValPtr Old, VASTValPtr New) {
+    return false;
+  }
+
 public:
-  VASTUse(VASTNode *User, VASTValPtr V = 0);
+  VASTUse(VASTNode *User = 0, VASTValPtr V = 0);
 
   bool isInvalid() const { return !V; }
   void reset() {
@@ -368,6 +372,11 @@ public:
   void replaceUseBy(VASTValPtr RHS) {
     assert(V && V != RHS && "Cannot replace!");
     unlinkUseFromUser();
+
+    // The subclass may interrput the replacement process.
+    if (LLVM_UNLIKELY(onReplace(V, RHS)))
+      return;
+
     V = RHS;
     linkUseToUser();
   }
@@ -434,20 +443,6 @@ inline bool PtrInvPair<VASTValue>::operator==(const VASTUse &RHS) const {
   return Base::operator==(RHS.unwrap());
 }
 
-} // end namespace vast
-
-namespace llvm {
-using namespace vast;
-template<>
-struct ilist_traits<VASTUse> : public ilist_default_traits<VASTUse> {
-  // FIXME: This sentinel is created and never released.
-  static VASTUse *createSentinel() { return new VASTUse(NULL, NULL); }
-
-  static void deleteNode(VASTUse *U) {}
-};
-} // end namespace llvm
-
-namespace vast {
 using namespace llvm;
 
 template<class IteratorType, class NodeType>

@@ -253,7 +253,8 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
     if (Sel->isSelectorSynthesized()) {
       typedef VASTSelector::ann_iterator ann_iterator;
       for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
-        VASTValue *V = VASTValPtr(I->first).get();
+        const VASTSelector::Annotation &Ann = *I;
+        VASTValue *V = VASTValPtr(Ann).get();
         // FIXME: Use the correct mux delay!
         buildTimingPath(V, Sel, MUXDelay);
       }

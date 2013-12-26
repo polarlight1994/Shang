@@ -221,7 +221,7 @@ VASTValPtr DatapathContainer::createLUTImpl(ArrayRef<VASTValPtr> Ops, unsigned B
   for (unsigned i = 0; i < Ops.size(); ++i)
     ID.AddPointer(Ops[i]);
 
-  void *IP = 0;
+  void *IP = NULL;
   if (VASTExpr *E = UniqueExprs.FindNodeOrInsertPos(ID, IP))
     return E;
 
