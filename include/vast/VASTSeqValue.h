@@ -60,12 +60,6 @@ private:
   typedef std::vector<VASTLatch> AssignmentVector;
   AssignmentVector Assigns;
 
-  struct UseLess : public std::binary_function<VASTValPtr, VASTValPtr, bool> {
-    bool operator()(const VASTUse *LHS, const VASTUse *RHS) const {
-      return VASTValPtr(*LHS).get() < VASTValPtr(*RHS).get();
-    }
-  };
-
   typedef std::map<VASTHandle, SmallVector<VASTSlot*, 4> > AnnotationMap;
   AnnotationMap Annotations;
 
