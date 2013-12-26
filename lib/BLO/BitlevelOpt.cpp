@@ -60,7 +60,7 @@ VASTValPtr DatapathBLO::eliminateInvertFlag(VASTValPtr V) {
   if (!V.isInverted())
     return V;
 
-  VASTExpr *Expr = dyn_cast<VASTExpr>(V);
+  VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
 
   if (Expr == NULL)
     return V;
