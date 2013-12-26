@@ -15,16 +15,8 @@
 
 #include "vast/VASTModule.h"
 #include "vast/VASTModulePass.h"
-#include "vast/VASTExprBuilder.h"
 #include "vast/VASTHandle.h"
-#include "vast/Utilities.h"
-#include "vast/FUInfo.h"
-#include "vast/Passes.h"
 
-#include "llvm/IR/DataLayout.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/ADT/StringMap.h"
-#include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/ADT/Statistic.h"
