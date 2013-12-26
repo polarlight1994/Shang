@@ -73,9 +73,9 @@ struct LogicNetwork {
   ABCContext &Context;
 
   Abc_Ntk_t *Ntk;
-  VASTExprBuilder &Builder;
+  DatapathBLO &BLO;
 
-  explicit LogicNetwork(VASTExprBuilder &Builder);
+  explicit LogicNetwork(DatapathBLO &BLO);
 
   ~LogicNetwork() {
     Abc_NtkDelete(Ntk);
@@ -126,7 +126,7 @@ struct LogicNetwork {
         case '-': /*Dont care*/ break;
         case '1': ProductOps.push_back(Ops[i]); break;
         case '0':
-          ProductOps.push_back(Builder.buildNotExpr(Ops[i]));
+          ProductOps.push_back(BLO.optimizeNotExpr(Ops[i]));
           break;
         }
       }
@@ -137,7 +137,8 @@ struct LogicNetwork {
 
       // Create the product.
       // Add the product to the operand list of the sum.
-      SumOps.push_back(Builder.buildAndExpr(ProductOps, Bitwidth));
+      VASTValPtr P = BLO.optimizeAndExpr<VASTValPtr>(ProductOps, Bitwidth);
+      SumOps.push_back(P);
 
       // Is the output inverted?
       char c = *p++;
@@ -150,9 +151,10 @@ struct LogicNetwork {
     }
 
     // Or the products together to build the SOP (Sum of Product).
-    VASTValPtr SOP = Builder.buildOrExpr(SumOps, Bitwidth);
+    VASTValPtr SOP = BLO.optimizeORExpr<VASTValPtr>(SumOps, Bitwidth);
 
-    if (isComplement) SOP = Builder.buildNotExpr(SOP);
+    if (isComplement)
+      SOP = BLO.optimizeNotExpr(SOP);
 
     ++NumLUTExpand;
     return SOP;
@@ -495,7 +497,7 @@ VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
   VASTValPtr V = ValueNames.lookup(Name);
   if (V) {
     if (Abc_ObjIsComplement(O))
-     V = Builder.buildNotExpr(V);
+     V = BLO.optimizeNotExpr(V);
 
     return V;
   }
@@ -527,12 +529,12 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
 
   if (Abc_SopIsConst0(sop)) {
     ++NumConsts;
-    return Builder.getConstant(APInt::getNullValue(Bitwidth));
+    return BLO.getConstant(APInt::getNullValue(Bitwidth));
   }
 
   if (Abc_SopIsConst1(sop)) {
     ++NumConsts;
-    return Builder.getConstant(APInt::getAllOnesValue(Bitwidth));
+    return BLO.getConstant(APInt::getAllOnesValue(Bitwidth));
   }
 
   assert(!Ops.empty() && "We got a node without fanin?");
@@ -544,7 +546,7 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
   // Do not need to build the LUT for a simple invert.
   if (Abc_SopIsInv(sop)) {
     assert(Ops.size() == 1 && "Bad operand size for invert!");
-    return Builder.buildNotExpr(Ops[0]);
+    return BLO.optimizeNotExpr(Ops[0]);
   }
 
   // Do not need to build the LUT for a simple buffer.
@@ -563,7 +565,7 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
   }
 
   ++NumLUTBulit;
-  return Builder.buildLUTExpr(Ops, Bitwidth, sop);
+  return BLO->buildLUTExpr(Ops, Bitwidth, sop);
 }
 
 void LogicNetwork::buildLUTTree(Abc_Obj_t *Root, unsigned BitWidth ) {
@@ -623,24 +625,24 @@ void LogicNetwork::buildLUTDatapath() {
     assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
     VASTValPtr NewVal = at->second;
     if (Abc_ObjIsComplement(FI))
-     NewVal = Builder.buildNotExpr(NewVal);
+      NewVal = BLO.optimizeNotExpr(NewVal);
 
     // Update the mapping if the mapped value changed.
     if (VH != NewVal)
-      Builder.replaceAllUseWith(VH, NewVal);
+      BLO.replaceAllUseWith(VH, NewVal);
   }
 }
 
 static ManagedStatic<ABCContext> GlobalContext;
 
-LogicNetwork::LogicNetwork(VASTExprBuilder &Builder)
-  : Context(*GlobalContext), Builder(Builder) {
+LogicNetwork::LogicNetwork(DatapathBLO &BLO)
+  : Context(*GlobalContext), BLO(BLO) {
   Ntk = Abc_NtkAlloc(ABC_NTK_STRASH, ABC_FUNC_AIG, 1);
   Ntk->pName = Extra_UtilStrsav("vast logic network");
 }
 
 bool DatapathBLO::performLUTMapping() {
-  LogicNetwork Ntk(Builder);
+  LogicNetwork Ntk(*this);
 
   if (!Ntk.buildAIG(Datapath))
     return false;

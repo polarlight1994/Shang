@@ -27,12 +27,45 @@ class DatapathBLO : public MinimalExprBuilderContext {
   // Do not optimize the same expr twice.
   std::set<VASTExpr*> Visited;
 
+public:
+  // Allow user to access the builder to build expression.
+  VASTExprBuilder *operator->() { return &Builder; }
+
   VASTValPtr optimizeExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                           unsigned BitWidth);
 
   // Propagate invert flag to the leave of a combinational cone if possible.
   VASTValPtr eliminateInvertFlag(VASTValPtr V);
   void eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops);
+
+  // Construct !V, then try to optimize it.
+  VASTValPtr optimizeNotExpr(VASTValPtr V) {
+    return eliminateInvertFlag(Builder.buildNotExpr(V));
+  }
+
+  template<typename T>
+  VASTValPtr optimizeORExpr(ArrayRef<T> Ops, unsigned BitWidth) {
+    assert(Ops.size() >= 1 && "There should be more than one operand!!");
+
+    if (Ops.size() == 1)
+      return Ops[0];
+
+    SmallVector<VASTValPtr, 4> NotExprs;
+    // Build the operands of Or operation into not Expr.
+    for (unsigned i = 0; i < Ops.size(); ++i) {
+      VASTValPtr V = optimizeNotExpr(Ops[i]);
+      NotExprs.push_back(V);
+    }
+
+    // Build Or operation with the And Inverter Graph (AIG).
+    VASTValPtr V = optimizeAndExpr<VASTValPtr>(NotExprs, BitWidth);
+    return optimizeNotExpr(V);
+  }
+
+  template<typename T>
+  VASTValPtr optimizeAndExpr(ArrayRef<T> Ops, unsigned BitWidth) {
+    return optimizeNAryExpr<VASTExpr::dpAnd, T>(Ops, BitWidth);
+  }
 
   template<VASTExpr::Opcode Opcode, typename T>
   VASTValPtr optimizeNAryExpr(ArrayRef<T> Ops, unsigned BitWidth) {
@@ -128,7 +161,6 @@ class DatapathBLO : public MinimalExprBuilderContext {
     assert(Expr->getOpcode() == Opcode && "Unexpected opcode!");
   }
 
-public:
   explicit DatapathBLO(DatapathContainer &Datapath);
   ~DatapathBLO();
 

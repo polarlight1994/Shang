@@ -327,9 +327,10 @@ VASTValPtr VASTExprBuilder::buildLUTExpr(ArrayRef<VASTValPtr> Ops, unsigned Bitw
 
 VASTValPtr VASTExprBuilder::buildOrExpr(ArrayRef<VASTValPtr> Ops,
                                         unsigned BitWidth) {
-  if (Ops.size() == 1) return Ops[0];
+  assert (Ops.size() >= 1 && "There should be more than one operand!!");
+  if (Ops.size() == 1)
+    return Ops[0];
 
-  assert (Ops.size() > 1 && "There should be more than one operand!!");
 
   SmallVector<VASTValPtr, 4> NotExprs;
   // Build the operands of Or operation into not Expr.
