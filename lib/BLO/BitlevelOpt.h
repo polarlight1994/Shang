@@ -112,7 +112,7 @@ public:
 
   bool optimizeAndReplace(VASTValPtr V);
 
-  // void optimizeLoadAlign(VASTMemoryBank *Bank);
+  bool optimizeForward(VASTModule &VM);
 
   void resetForNextIteration();
 };

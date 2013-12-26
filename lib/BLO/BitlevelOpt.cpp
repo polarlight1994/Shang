@@ -586,6 +586,42 @@ bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
   return Replaced;
 }
 
+bool DatapathBLO::optimizeForward(VASTModule &VM) {
+  bool Changed = false;
+  typedef VASTModule::selector_iterator selector_iterator;
+
+  for (selector_iterator I = VM.selector_begin(), E = VM.selector_end();
+       I != E; ++I) {
+    VASTSelector *Sel = I;
+
+    if (Sel->isSelectorSynthesized()) {
+      // Only optimize the guard and fanin
+      optimizeAndReplace(Sel->getGuard());
+      optimizeAndReplace(Sel->getFanin());
+    } else {
+      typedef VASTSelector::const_iterator const_iterator;
+      for (const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+        const VASTLatch &L = *I;
+        optimizeAndReplace(L);
+        optimizeAndReplace(L.getGuard());
+      }
+    }
+
+    // Do not optimize the register if we had already generate the MUX.
+    // Otherwise we may invalidate the timing information annotate to the MUX.
+    if (Sel->isSelectorSynthesized())
+      continue;
+
+    typedef VASTSelector::def_iterator def_iterator;
+    for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
+      VASTSeqValue *SV = *I;
+      VASTBitMask OldMask = *SV;
+      Changed |= optimizeAndReplace(SV) || OldMask != *SV;
+    }
+  }
+
+  return Changed;
+}
 
 namespace {
 struct BitlevelOpt : public VASTModulePass {
@@ -618,37 +654,7 @@ INITIALIZE_PASS(BitlevelOpt, "vast-bit-level-opt",
 bool BitlevelOpt::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
   bool Changed = false;
 
-  typedef VASTModule::selector_iterator selector_iterator;
-
-  for (selector_iterator I = VM.selector_begin(), E = VM.selector_end();
-       I != E; ++I) {
-    VASTSelector *Sel = I;
-
-    if (Sel->isSelectorSynthesized()) {
-      // Only optimize the guard and fanin
-      BLO.optimizeAndReplace(Sel->getGuard());
-      BLO.optimizeAndReplace(Sel->getFanin());
-    } else {
-      typedef VASTSelector::const_iterator const_iterator;
-      for (const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
-        const VASTLatch &L = *I;
-        BLO.optimizeAndReplace(L);
-        BLO.optimizeAndReplace(L.getGuard());
-      }
-    }
-
-    // Do not optimize the register if we had already generate the MUX.
-    // Otherwise we may invalidate the timing information annotate to the MUX.
-    if (Sel->isSelectorSynthesized())
-      continue;
-
-    typedef VASTSelector::def_iterator def_iterator;
-    for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
-      VASTSeqValue *SV = *I;
-      VASTBitMask OldMask = *SV;
-      Changed |= BLO.optimizeAndReplace(SV) || OldMask != *SV;
-    }
-  }
+  Changed |= BLO.optimizeForward(VM);
 
   ++NumIterations;
   return Changed;
