@@ -628,8 +628,7 @@ void LogicNetwork::buildLUTDatapath() {
       NewVal = BLO.optimizeNotExpr(NewVal);
 
     // Update the mapping if the mapped value changed.
-    if (VH != NewVal)
-      BLO.replaceAllUseWith(VH, NewVal);
+    BLO.replaceIfNotEqual(VH, NewVal);
   }
 }
 
@@ -657,6 +656,10 @@ bool DatapathBLO::performLUTMapping() {
 
   Ntk.buildLUTDatapath();
 
-  return false;
+  bool AnyReplace = !Visited.empty();
+  Visited.clear();
+  // It looks like that the result of LUT mapping is not stable,
+  // so do not report change for now.
+  return AnyReplace && false;
 }
 
