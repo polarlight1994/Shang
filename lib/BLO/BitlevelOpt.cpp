@@ -466,6 +466,91 @@ VASTValPtr DatapathBLO::optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VAST
   return Builder.buildShiftExpr(Opc, LHS, RHS, BitWidth);
 }
 
+VASTValPtr DatapathBLO::optimizeCmpWithConst(VASTExpr::Opcode Opcode,
+                                             VASTValPtr X,
+                                             const APInt &Const, bool VarAtLHS) {
+
+  APInt Min = Opcode == VASTExpr::dpSGT ?
+                        APInt::getSignedMaxValue(Const.getBitWidth()) :
+                        APInt::getMaxValue(Const.getBitWidth());
+  APInt Max = Opcode == VASTExpr::dpSGT ?
+              APInt::getSignedMinValue(Const.getBitWidth()) :
+              APInt::getMinValue(Const.getBitWidth());
+
+  if (Const == Min) {
+    // a > min <=> a != min.
+    if (VarAtLHS)
+      return Builder.buildNE(X, Builder.getConstant(Min));
+    // min > a is always false,
+    else
+      return Builder.getConstant(false, 1);
+  }
+
+  if (Const == Max) {
+    // a > max is always false.
+    if (VarAtLHS)
+      return Builder.getConstant(false, 1);
+    // max > a <=> a != max
+    else
+      return Builder.buildNE(X, Builder.getConstant(Max));
+  }
+
+  if (Opcode == VASTExpr::dpSGT && Const.isMinValue()) {
+    // a > 0 => signed bit == 0 && nonzero.
+    if (VarAtLHS)
+      return Builder.buildAndExpr(Builder.buildNotExpr(Builder.getSignBit(X)),
+                                  Builder.buildROr(X),
+                                  1);
+    // 0 > a => signed bit == 1 && nonzero.
+    else
+      return Builder.buildAndExpr(Builder.getSignBit(X),
+                                  Builder.buildROr(X),
+                                  1);
+  }
+
+  if (Opcode == VASTExpr::dpSGT && Const.isAllOnesValue()) {
+    // a > -1 <=> a >= 0 <=> signed bit == 0
+    if (VarAtLHS)
+      return Builder.buildNotExpr(Builder.getSignBit(X));
+    // -1 > a <=> a < 0 && a != -1
+    else {
+      APInt MinusOne = APInt::getAllOnesValue(X->getBitWidth());
+      VASTValPtr MinusOneImm = Builder.getConstant(MinusOne);
+      return Builder.buildAndExpr(Builder.getSignBit(X),
+                                  Builder.buildNE(X, MinusOneImm),
+                                  1);
+    }
+  }
+
+  VASTValPtr LHS = VarAtLHS ? X : getConstant(Const);
+  VASTValPtr RHS = VarAtLHS ? getConstant(Const) : X;
+
+  return Builder.buildICmpExpr(Opcode, LHS, RHS);
+}
+
+VASTValPtr DatapathBLO::optimizeSGT(VASTValPtr LHS, VASTValPtr RHS) {
+  LHS = eliminateInvertFlag(LHS);
+  RHS = eliminateInvertFlag(RHS);
+
+  unsigned OperandWidth = LHS->getBitWidth();
+  assert(OperandWidth == RHS->getBitWidth() && "Operand bitwidth doesn't match!");
+
+  VASTConstPtr LHSC = dyn_cast<VASTConstPtr>(LHS),
+               RHSC = dyn_cast<VASTConstPtr>(RHS);
+
+  // Calculate the results of ICmp now.
+  if (LHSC != None && RHSC != None)
+    return getConstant(LHSC.getAPInt().sgt(RHSC.getAPInt()), 1);
+
+  if (RHSC != None)
+    return optimizeCmpWithConst(VASTExpr::dpSGT, LHS, RHSC.getAPInt(), true);
+
+  if (LHSC != None)
+    return optimizeCmpWithConst(VASTExpr::dpSGT, RHS, LHSC.getAPInt(), false);
+
+  return Builder.buildICmpExpr(VASTExpr::dpSGT, LHS, RHS);
+}
+
 void DatapathBLO::eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops) {
   for (unsigned i = 0; i < Ops.size(); ++i)
     Ops[i] = eliminateInvertFlag(Ops[i]);
@@ -513,6 +598,7 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
                          Expr->getBitWidth());
   // Yet to be implement:
   case VASTExpr::dpSGT:
+    return optimizeSGT(Expr->getOperand(0), Expr->getOperand(1));
   case VASTExpr::dpUGT:
   case VASTExpr::dpLUT:
     break;

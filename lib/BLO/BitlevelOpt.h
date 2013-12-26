@@ -78,6 +78,10 @@ class DatapathBLO : public MinimalExprBuilderContext {
   VASTValPtr optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
                            unsigned BitWidth);
 
+  VASTValPtr optimizeSGT(VASTValPtr LHS, VASTValPtr RHS);
+  VASTValPtr optimizeCmpWithConst(VASTExpr::Opcode Opcode, VASTValPtr X,
+                                  const APInt &Const, bool VarAtLHS);
+
   template<VASTExpr::Opcode Opcode, typename T>
   void flattenExpr(SmallVectorImpl<VASTValPtr> &Dst, ArrayRef<T> Src) {
     for (unsigned i = 0; i < Src.size(); ++i) {
