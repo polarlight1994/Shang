@@ -114,14 +114,15 @@ public:
                        VASTValPtr Op2, unsigned BitWidth);
 
   VASTValPtr buildBitExtractExpr(VASTValPtr U, unsigned UB, unsigned LB);
+  VASTValPtr buildBitCatExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
+  VASTValPtr buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes);
+  VASTValPtr buildBitMask(VASTValPtr Op, APInt Mask);
 
   VASTValPtr copyExpr(VASTExpr *Expr, ArrayRef<VASTValPtr> Ops);
 
   VASTValPtr getSignBit(VASTValPtr V) {
     return buildBitExtractExpr(V, V->getBitWidth(), V->getBitWidth() - 1);
   }
-
-  VASTValPtr buildBitCatExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
 
   VASTValPtr buildAndExpr(ArrayRef<VASTValPtr> Ops, unsigned BitWidth);
   VASTValPtr buildAndExpr(VASTValPtr LHS, VASTValPtr RHS, unsigned BitWidth) {
@@ -171,8 +172,6 @@ public:
   VASTValPtr buildEQ(VASTValPtr LHS, VASTValPtr RHS) {
     return buildNotExpr(buildNE(LHS, RHS));
   }
-
-  VASTValPtr buildBitRepeat(VASTValPtr Op, unsigned RepeatTimes);
 
   VASTValPtr buildNotExpr(VASTValPtr U);
 

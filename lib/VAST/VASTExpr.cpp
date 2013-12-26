@@ -320,6 +320,10 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
     printLUT(OS, getOperands(), getLUT());
     break;
   }
+
+  // BitMask expression is also an AND expression execpt that the RHS is
+  // always constant.
+  case dpBitMask:
   case dpAnd: printSimpleOp(OS, getOperands(), " & "); break;
 
   case dpRAnd:  printUnaryOp(OS, getOperand(0), "&");  break;

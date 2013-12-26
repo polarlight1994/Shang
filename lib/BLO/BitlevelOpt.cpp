@@ -304,20 +304,21 @@ VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
     LastVal = CurVal;
   }
 
-  if (!C)
+  // The result of and become all zero if the constant mask is zero.
+  // Also return the Constant if all operand is folded into the constant.
+  if (!C || ActualPos == 0)
     return getConstant(C);
-
-  if (!C.isAllOnesValue())
-    Ops[ActualPos++] = getConstant(C);
-
-  // If there is only 1 operand left, simply return the operand.
-  if (ActualPos == 1)
-    return Ops[0];
 
   // Resize the operand vector so it only contains valid operands.
   Ops = Ops.slice(0, ActualPos);
 
-  return Builder.buildAndExpr(Ops, BitWidth);
+  VASTValPtr And = Builder.buildAndExpr(Ops, BitWidth);
+
+  // Build the bitmask expression if we get some mask.
+  if (!C.isAllOnesValue())
+    And = Builder.buildBitMask(And, C);
+
+  return And;
 }
 
 VASTValPtr DatapathBLO::optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op) {

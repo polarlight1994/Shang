@@ -143,12 +143,13 @@ class VASTExpr : public VASTMaskedValue, public VASTOperandList,
                  public FoldingSetNode, public ilist_node<VASTExpr> {
 public:
   enum Opcode {
-    // bit level assignment.
+    // bit level maniplulate expressions.
     dpBitCat,
     dpBitRepeat,
-    // Simple wire assignment.
     dpBitExtract,
-    LastBitManipulate = dpBitExtract,
+    // Mask (with and operation the operand by an constant).
+    dpBitMask,
+    LastBitManipulate = dpBitMask,
     // bitwise logic datapath
     dpAnd,
     dpRAnd,

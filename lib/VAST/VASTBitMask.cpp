@@ -436,6 +436,9 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
     mergeAnyKnown(EvaluateBitCat(Masks, BitWidth));
     break;
   case VASTExpr::dpAnd:
+  // BitMask expression is also an AND expression execpt that the RHS is
+  // always constant.
+  case VASTExpr::dpBitMask:
     mergeAnyKnown(EvaluateAnd(Masks, BitWidth));
     break;
   case VASTExpr::dpLUT:

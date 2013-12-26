@@ -113,6 +113,13 @@ VASTValPtr VASTExprBuilder::buildNotExpr(VASTValPtr U) {
   return U.invert();
 }
 
+VASTValPtr VASTExprBuilder::buildBitMask(VASTValPtr Op, APInt Mask) {
+  unsigned BitWidth = Op->getBitWidth();
+  assert(BitWidth == Mask.getBitWidth() && "Bitwidth of mask dosen't match!");
+  VASTValPtr Ops[] = { Op, getConstant(Mask) };
+  return Context.createExpr(VASTExpr::dpBitMask, Ops, BitWidth);
+}
+
 VASTValPtr VASTExprBuilder::buildBitCatExpr(ArrayRef<VASTValPtr> Ops,
                                             unsigned BitWidth) {
   return Context.createExpr(VASTExpr::dpBitCat, Ops, BitWidth);
@@ -183,6 +190,9 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
   case VASTExpr::dpMul:  return buildMulExpr(Ops, BitWidth);
   case VASTExpr::dpAnd:  return buildAndExpr(Ops, BitWidth);
   case VASTExpr::dpBitCat: return buildBitCatExpr(Ops, BitWidth);
+  case VASTExpr::dpBitMask:
+    assert(Ops.size() == 2 && "Incorrect operand number!");
+    return buildBitMask(Ops[0], cast<VASTConstPtr>(Ops[1]).getAPInt());
   case VASTExpr::dpShl:
   case VASTExpr::dpAshr:
   case VASTExpr::dpLshr:
