@@ -645,13 +645,8 @@ bool BitlevelOpt::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
     typedef VASTSelector::def_iterator def_iterator;
     for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
       VASTSeqValue *SV = *I;
-      if (BLO.optimizeAndReplace(SV)) {
-        DEBUG(dbgs() << SV->getName() << ' ' << SV << '\n';
-        SV->dumpFanins();
-        SV->dumpMask();
-        dbgs() << "\n\n";);
-        Changed |= true;
-      }
+      VASTBitMask OldMask = *SV;
+      Changed |= BLO.optimizeAndReplace(SV) || OldMask != *SV;
     }
   }
 
