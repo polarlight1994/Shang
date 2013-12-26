@@ -64,11 +64,11 @@ public:
   bool isAllKnownZero() const { return KnownZeros.isAllOnesValue(); }
 
   bool isKnownZeroAt(unsigned N) const {
-    return (KnownZeros & APInt::getOneBitSet(getMaskWidth(), N)).getBoolValue();
+    return KnownZeros[N];
   }
 
   bool isKnownOneAt(unsigned N) const {
-    return (KnownOnes & APInt::getOneBitSet(getMaskWidth(), N)).getBoolValue();
+    return KnownOnes[N];
   }
 
   void setKnwonZeroAt(unsigned i) {
