@@ -350,13 +350,15 @@ VASTValPtr DatapathBLO::optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op) {
     default: break;
     case VASTExpr::dpBitCat: {
       SmallVector<VASTValPtr, 8> Ops;
-      typedef VASTExpr::op_iterator it;
-      for (it I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
+      typedef VASTExpr::op_iterator op_iterator;
+      for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
         Ops.push_back(optimizeReduction(Opc, *I));
 
       switch (Opc) {
-      case VASTExpr::dpRAnd: return Builder.buildAndExpr(Ops, 1);
-      case VASTExpr::dpRXor: return Builder.buildXorExpr(Ops, 1);
+      case VASTExpr::dpRAnd:
+        return optimizeNAryExpr<VASTExpr::dpAnd, VASTValPtr>(Ops, 1);
+      case VASTExpr::dpRXor:
+        return Builder.buildXorExpr(Ops, 1);
       default:  llvm_unreachable("Unexpected Reduction Node!");
       }
     }
