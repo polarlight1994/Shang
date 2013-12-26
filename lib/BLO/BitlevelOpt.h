@@ -79,6 +79,7 @@ class DatapathBLO : public MinimalExprBuilderContext {
                            unsigned BitWidth);
 
   VASTValPtr optimizeSGT(VASTValPtr LHS, VASTValPtr RHS);
+  VASTValPtr optimizeUGT(VASTValPtr LHS, VASTValPtr RHS);
   VASTValPtr optimizeCmpWithConst(VASTExpr::Opcode Opcode, VASTValPtr X,
                                   const APInt &Const, bool VarAtLHS);
 

@@ -469,10 +469,9 @@ VASTValPtr DatapathBLO::optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VAST
 VASTValPtr DatapathBLO::optimizeCmpWithConst(VASTExpr::Opcode Opcode,
                                              VASTValPtr X,
                                              const APInt &Const, bool VarAtLHS) {
-
   APInt Min = Opcode == VASTExpr::dpSGT ?
-                        APInt::getSignedMaxValue(Const.getBitWidth()) :
-                        APInt::getMaxValue(Const.getBitWidth());
+              APInt::getSignedMaxValue(Const.getBitWidth()) :
+              APInt::getMaxValue(Const.getBitWidth());
   APInt Max = Opcode == VASTExpr::dpSGT ?
               APInt::getSignedMinValue(Const.getBitWidth()) :
               APInt::getMinValue(Const.getBitWidth());
@@ -551,6 +550,29 @@ VASTValPtr DatapathBLO::optimizeSGT(VASTValPtr LHS, VASTValPtr RHS) {
   return Builder.buildICmpExpr(VASTExpr::dpSGT, LHS, RHS);
 }
 
+VASTValPtr DatapathBLO::optimizeUGT(VASTValPtr LHS, VASTValPtr RHS) {
+  LHS = eliminateInvertFlag(LHS);
+  RHS = eliminateInvertFlag(RHS);
+
+  unsigned OperandWidth = LHS->getBitWidth();
+  assert(OperandWidth == RHS->getBitWidth() && "Operand bitwidth doesn't match!");
+
+  VASTConstPtr LHSC = dyn_cast<VASTConstPtr>(LHS),
+               RHSC = dyn_cast<VASTConstPtr>(RHS);
+
+  // Calculate the results of ICmp now.
+  if (LHSC != None && RHSC != None)
+    return getConstant(LHSC.getAPInt().ugt(RHSC.getAPInt()), 1);
+
+  if (RHSC != None)
+    return optimizeCmpWithConst(VASTExpr::dpUGT, LHS, RHSC.getAPInt(), true);
+
+  if (LHSC != None)
+    return optimizeCmpWithConst(VASTExpr::dpSGT, RHS, LHSC.getAPInt(), false);
+
+  return Builder.buildICmpExpr(VASTExpr::dpUGT, LHS, RHS);
+}
+
 void DatapathBLO::eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops) {
   for (unsigned i = 0; i < Ops.size(); ++i)
     Ops[i] = eliminateInvertFlag(Ops[i]);
@@ -596,10 +618,11 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   case VASTExpr::dpAshr:
     return optimizeShift(Opcode, Expr->getOperand(0), Expr->getOperand(1),
                          Expr->getBitWidth());
-  // Yet to be implement:
   case VASTExpr::dpSGT:
     return optimizeSGT(Expr->getOperand(0), Expr->getOperand(1));
   case VASTExpr::dpUGT:
+    return optimizeUGT(Expr->getOperand(0), Expr->getOperand(1));
+    // Yet to be implement:
   case VASTExpr::dpLUT:
     break;
   // Strange expressions that we cannot optimize.
