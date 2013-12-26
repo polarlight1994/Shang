@@ -1,5 +1,6 @@
 add_llvm_library(ShangBLO
   LUTMapping.cpp
+  DemandedOpt.cpp
   BitlevelOpt.cpp
 )
 
