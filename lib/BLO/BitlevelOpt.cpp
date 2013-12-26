@@ -136,8 +136,8 @@ DatapathBLO::optimizeBitExtract(VASTValPtr V, unsigned UB, unsigned LB) {
   }
 
   if (Expr->getOpcode() == VASTExpr::dpBitCat) {
-      assert(!V.isInverted() &&
-              "Invert flag of bitextract should had been eliminated!");
+    assert(!V.isInverted() &&
+           "Invert flag of bitextract should had been eliminated!");
     // Collect the bitslices which fall into (UB, LB]
     SmallVector<VASTValPtr, 8> Ops;
     unsigned CurUB = Expr->getBitWidth(), CurLB = 0;
@@ -767,6 +767,7 @@ bool BitlevelOpt::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
 
   Changed |= BLO.optimizeForward(VM);
   Changed |= BLO.performLUTMapping();
+  Changed |= BLO.shrink(VM);
 
   ++NumIterations;
   return Changed;

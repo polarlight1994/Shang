@@ -173,6 +173,7 @@ public:
 
   bool optimizeForward(VASTModule &VM);
   bool performLUTMapping();
+  bool shrink(VASTModule &VM);
 
   void resetForNextIteration();
 };

@@ -69,8 +69,6 @@ APInt VASTBitMask::getKnownBits() const {
 APInt VASTBitMask::getKnownValue(unsigned UB, unsigned LB) const {
   assert(isAllBitKnown(UB, LB) && "The value is unknown!");
 
-  verify();
-
   if (UB != getMaskWidth() || LB != 0)
     return VASTConstant::getBitSlice(KnownOnes, UB, LB);
 
@@ -110,6 +108,7 @@ void VASTBitMask::printMaskIfAnyKnown(raw_ostream &OS) const {
 
 void VASTBitMask::dumpMask() const {
   printMask(dbgs());
+  dbgs() << '\n';
 }
 
 void VASTBitMask::mergeAnyKnown(Value *V, ScalarEvolution &SE,
