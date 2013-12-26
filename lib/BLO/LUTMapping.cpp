@@ -42,6 +42,7 @@ extern "C" {
 }
 
 using namespace llvm;
+using namespace vast;
 
 static cl::opt<bool>
 ExpandLUT("shang-lut-mapping-expand",
@@ -118,7 +119,7 @@ struct LogicNetwork {
         case '-': /*Dont care*/ break;
         case '1': ProductOps.push_back(Ops[i]); break;
         case '0':
-          ProductOps.push_back(BLO.optimizeNotExpr(Ops[i]));
+          ProductOps.push_back(BLO.optimizeNot(Ops[i]));
           break;
         }
       }
@@ -129,7 +130,7 @@ struct LogicNetwork {
 
       // Create the product.
       // Add the product to the operand list of the sum.
-      VASTValPtr P = BLO.optimizeAndExpr<VASTValPtr>(ProductOps, Bitwidth);
+      VASTValPtr P = BLO.optimizeAnd<VASTValPtr>(ProductOps, Bitwidth);
       SumOps.push_back(P);
 
       // Is the output inverted?
@@ -143,10 +144,10 @@ struct LogicNetwork {
     }
 
     // Or the products together to build the SOP (Sum of Product).
-    VASTValPtr SOP = BLO.optimizeORExpr<VASTValPtr>(SumOps, Bitwidth);
+    VASTValPtr SOP = BLO.optimizeOR<VASTValPtr>(SumOps, Bitwidth);
 
     if (isComplement)
-      SOP = BLO.optimizeNotExpr(SOP);
+      SOP = BLO.optimizeNot(SOP);
 
     ++NumLUTExpand;
     return SOP;
@@ -486,9 +487,10 @@ VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
   char *Name = Abc_ObjName(Abc_ObjRegular(O));
 
   VASTValPtr V = ValueNames.lookup(Name);
+
   if (V) {
     if (Abc_ObjIsComplement(O))
-     V = BLO.optimizeNotExpr(V);
+      V = BLO.optimizeNot(V);
 
     return V;
   }
@@ -541,7 +543,7 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
   // Do not need to build the LUT for a simple invert.
   if (Abc_SopIsInv(sop)) {
     assert(Ops.size() == 1 && "Bad operand size for invert!");
-    return BLO.optimizeNotExpr(Ops[0]);
+    return BLO.optimizeNot(Ops[0]);
   }
 
   // Do not need to build the LUT for a simple buffer.
@@ -624,7 +626,7 @@ void LogicNetwork::buildLUTDatapath() {
     assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
     VASTValPtr NewVal = at->second;
     if (Abc_ObjIsComplement(FI))
-      NewVal = BLO.optimizeNotExpr(NewVal);
+      NewVal = BLO.optimizeNot(NewVal);
 
     // Update the mapping if the mapped value changed.
     BLO.replaceIfNotEqual(VH, NewVal);

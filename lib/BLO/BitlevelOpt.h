@@ -39,12 +39,12 @@ public:
   void eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops);
 
   // Construct !V, then try to optimize it.
-  VASTValPtr optimizeNotExpr(VASTValPtr V) {
+  VASTValPtr optimizeNot(VASTValPtr V) {
     return eliminateInvertFlag(Builder.buildNotExpr(V));
   }
 
   template<typename T>
-  VASTValPtr optimizeORExpr(ArrayRef<T> Ops, unsigned BitWidth) {
+  VASTValPtr optimizeOR(ArrayRef<T> Ops, unsigned BitWidth) {
     assert(Ops.size() >= 1 && "There should be more than one operand!!");
 
     if (Ops.size() == 1)
@@ -53,18 +53,23 @@ public:
     SmallVector<VASTValPtr, 4> NotExprs;
     // Build the operands of Or operation into not Expr.
     for (unsigned i = 0; i < Ops.size(); ++i) {
-      VASTValPtr V = optimizeNotExpr(Ops[i]);
+      VASTValPtr V = optimizeNot(Ops[i]);
       NotExprs.push_back(V);
     }
 
     // Build Or operation with the And Inverter Graph (AIG).
-    VASTValPtr V = optimizeAndExpr<VASTValPtr>(NotExprs, BitWidth);
-    return optimizeNotExpr(V);
+    VASTValPtr V = optimizeAnd<VASTValPtr>(NotExprs, BitWidth);
+    return optimizeNot(V);
   }
 
   template<typename T>
-  VASTValPtr optimizeAndExpr(ArrayRef<T> Ops, unsigned BitWidth) {
+  VASTValPtr optimizeAnd(ArrayRef<T> Ops, unsigned BitWidth) {
     return optimizeNAryExpr<VASTExpr::dpAnd, T>(Ops, BitWidth);
+  }
+
+  template<typename T>
+  VASTValPtr optimizedpBitCat(ArrayRef<T> Ops, unsigned BitWidth) {
+    return optimizeNAryExpr<VASTExpr::dpBitCat, T>(Ops, BitWidth);
   }
 
   template<VASTExpr::Opcode Opcode, typename T>
