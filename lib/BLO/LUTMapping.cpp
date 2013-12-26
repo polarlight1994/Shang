@@ -232,7 +232,6 @@ struct LogicNetwork {
 
   void cleanUp();
 
-
   // Call abc routine to synthesis the logic network.
   void synthesis();
 
@@ -514,6 +513,8 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
 
   assert(Abc_ObjIsNode(Obj) && "Unexpected Obj Type!");
 
+  bool AnyConstOperand = false;
+
   Abc_Obj_t *FI;
   int j;
   Abc_ObjForEachFanin(Obj, FI, j) {
@@ -521,6 +522,8 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
 
     VASTValPtr Operand = getAsOperand(FI);
     assert(Bitwidth == Operand->getBitWidth() && "Bitwidth mismatch!");
+
+    AnyConstOperand |= isa<VASTConstant>(Operand.get());
 
     Ops.push_back(Operand);
   }
@@ -563,6 +566,10 @@ VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
     ++NumSimpleLUTExpand;
     return expandSOP<VASTValPtr>(sop, Ops, Bitwidth);
   }
+
+  // Do not mix LUT with constant operand.
+  if (AnyConstOperand)
+    return expandSOP<VASTValPtr>(sop, Ops, Bitwidth);
 
   ++NumLUTBulit;
   return BLO->buildLUTExpr(Ops, Bitwidth, sop);
