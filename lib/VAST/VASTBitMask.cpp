@@ -15,6 +15,7 @@
 #include "vast/VASTBitMask.h"
 #include "vast/VASTDatapathNodes.h"
 #include "vast/VASTSeqValue.h"
+#include "vast/VASTMemoryBank.h"
 
 #include "llvm/IR/Value.h"
 #include "llvm/IR/DataLayout.h"
@@ -483,11 +484,62 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
   }
 }
 
+static VASTValPtr FindAddr(const LoadInst *LI, const VASTSelector *AddrPort) {
+  typedef VASTSelector::const_iterator const_iterator;
+  for (const_iterator I = AddrPort->begin(), E = AddrPort->end(); I != E; ++I) {
+    const VASTLatch &L = *I;
+    if (L.Op->getValue() == LI)
+      return L;
+  }
+
+  return None;
+}
+
+void VASTBitMask::evaluateFUOutputMask(VASTSeqValue *SV) {
+  VASTMemoryBank *Bank = dyn_cast<VASTMemoryBank>(SV->getParent());
+
+  // Only evaluate the bitmask of memory bank output for now.
+  if (Bank == NULL)
+    return;
+
+  // We are only going to evaluate the bitmask for the alignment of the data,
+  // which is encoded in the higher part of the value.
+  if (SV->getBitWidth() == Bank->getDataWidth())
+    return;
+
+  // Get the corresponding load instruction of this SV.
+  LoadInst *LI = cast<LoadInst>(SV->getLLVMValue());
+
+  // Now look for the same load instruction from the Address port.
+  VASTValPtr Addr = FindAddr(LI, Bank->getAddr(0));
+  if (Addr == None && Bank->isDualPort())
+    Addr = FindAddr(LI, Bank->getAddr(1));
+
+  assert(Addr != None && "Cannot find the corresponding address!");
+
+  unsigned BytesPerWord = Bank->getDataWidth() / 8;
+  unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
+  assert(ByteAddrWidth && "Should print as block RAM!");
+  assert(ByteAddrWidth == SV->getBitWidth() - Bank->getDataWidth()
+         && "Unexpected byte address width!");
+
+  // Extract the bitmask and shift it to the correct place.
+  VASTBitMask ByteAddrMask = EvaluateBitExtract(Addr, ByteAddrWidth, 0);
+  ByteAddrMask = VASTBitMask(ByteAddrMask.KnownZeros.zextOrTrunc(SV->getBitWidth()),
+                             ByteAddrMask.KnownOnes.zextOrTrunc(SV->getBitWidth()));
+  ByteAddrMask = VASTBitMask(ByteAddrMask.KnownZeros.shl(Bank->getDataWidth()),
+                             ByteAddrMask.KnownOnes.shl(Bank->getDataWidth()));
+  mergeAnyKnown(ByteAddrMask);
+}
+
 void VASTBitMask::evaluateMask(VASTSeqValue *SV) {
   // Slot and enable are always assigned by 1, but timing is important for them
   // so we cannot simply replace the output of Slot and Enables by 1.
   if (SV->isSlot() || SV->isEnable())
     return;
+
+  if (SV->isFUOutput())
+    return evaluateFUOutputMask(SV);
 
   if (SV->fanin_empty())
     return;
