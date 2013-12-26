@@ -38,10 +38,7 @@ DatapathBLO::DatapathBLO(DatapathContainer &Datapath)
 
 DatapathBLO::~DatapathBLO() {}
 
-void DatapathBLO::resetForNextIteration() {
-  Visited.clear();
-  Datapath.gc();
-}
+void DatapathBLO::resetForNextIteration() {}
 
 bool DatapathBLO::replaceIfNotEqual(VASTValPtr From, VASTValPtr To) {
   if (To == None || From == To)
@@ -732,7 +729,9 @@ bool DatapathBLO::optimizeForward(VASTModule &VM) {
     }
   }
 
-  return Changed || !Visited.empty();
+  bool AnyReplacement = !Visited.empty();
+  Visited.clear();
+  return Changed || AnyReplacement;
 }
 
 namespace {
