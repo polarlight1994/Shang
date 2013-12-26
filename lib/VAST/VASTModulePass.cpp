@@ -815,7 +815,7 @@ VASTModuleBuilder::alignLoadResult(VASTSeqValue *Result, VASTValPtr ByteOffset,
     // the higher part of the bus output.
     if (!isa<VASTConstant>(ByteOffset.get()))
       ShiftAmt = Builder.buildBitExtractExpr(Result, DataWidth + ByteAddrWidth,
-                                           DataWidth);
+                                             DataWidth);
     // Again, convert the shift amount in bytes to shift amount in bits.
     VASTValPtr ShiftAmtBits[] = { ShiftAmt, Builder.getConstant(0, 3) };
     ShiftAmt = Builder.buildBitCatExpr(ShiftAmtBits, ByteAddrWidth + 3);
