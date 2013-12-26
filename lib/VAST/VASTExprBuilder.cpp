@@ -291,9 +291,38 @@ VASTValPtr VASTExprBuilder::buildROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank
   return Context.createROMLookUp(Addr, Bank, Bitwidth);
 }
 
+typedef std::pair<VASTValPtr, unsigned> LUTOpTy;
+static bool LUTOpLess(const LUTOpTy &LHS, const LUTOpTy &RHS) {
+  return VASTValPtr::type_less(LHS.first, RHS.first);
+}
+
 VASTValPtr VASTExprBuilder::buildLUTExpr(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth,
                                          StringRef SOP) {
-  return Context.createLUT(Ops, Bitwidth, SOP);
+  // Sort the Operands for better structural hashing.
+  SmallVector<LUTOpTy, 8> SortedOPs;
+  for (unsigned i = 0; i < Ops.size(); ++i)
+    SortedOPs.push_back(LUTOpTy(Ops[i], i));
+
+  std::sort(SortedOPs.begin(), SortedOPs.end(), LUTOpLess);
+
+  // Now reconstruct the SOP.
+  SmallString<64> NewSOP(SOP);
+  // Calculate the rowsize in the SOP.
+  unsigned RowSize = Ops.size() +
+                     1 /*for the space*/ + 1/*for the result*/ + 1/*for the \n*/;
+  unsigned NumRows = SOP.size() / RowSize;
+  assert(NumRows * RowSize == SOP.size() && "Broken SOP!");
+
+  SmallVector<VASTValPtr, 8> NewOPs;
+  for (unsigned i = 0; i < Ops.size(); ++i) {
+    LUTOpTy Op = SortedOPs[i];
+    NewOPs.push_back(Op.first);
+    for (unsigned j = 0; j < NumRows; ++j)
+      // Reorder the SOP table
+      NewSOP[j * RowSize + i] = SOP[j * RowSize + Op.second];
+  }
+
+  return Context.createLUT(NewOPs, Bitwidth, NewSOP);
 }
 
 VASTValPtr VASTExprBuilder::buildOrExpr(ArrayRef<VASTValPtr> Ops,
