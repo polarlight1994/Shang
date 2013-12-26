@@ -104,6 +104,7 @@ protected:
 
   union VASTNodeContents16Ty {
     uint16_t SeqInstData;
+    uint16_t SelType;
     struct VASTExprContentsTy {
       uint8_t Opcode;
       uint8_t LB;
@@ -112,6 +113,7 @@ protected:
 
   union VASTNodeContents8Ty {
     uint8_t ValueBitwidth;
+    uint8_t SelBitwidth;
     bool SeqInstIsLatch : 1;
   } Contents8;
 

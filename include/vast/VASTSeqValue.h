@@ -51,8 +51,6 @@ private:
 
   VASTNode* Parent;
   SmallPtrSet<VASTSeqValue*, 8> Defs;
-  const uint8_t BitWidth;
-  const uint8_t T : 3;
 
   friend class VASTSeqValue;
   void addUser(VASTSeqValue *V);
@@ -94,9 +92,9 @@ public:
   void setParent(VASTNode *N);
 
   const char *getName() const { return Contents64.Name; }
-  unsigned getBitWidth() const { return BitWidth; }
+  unsigned getBitWidth() const { return Contents8.SelBitwidth; }
 
-  Type getType() const { return Type(T); }
+  Type getType() const { return Type(Contents16.SelType); }
   bool isEnable() const { return getType() == Enable; }
   bool isSlot() const { return getType() == Slot; }
   bool isTemp() const { return getType() == Temp; }
