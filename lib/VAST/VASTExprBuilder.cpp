@@ -377,23 +377,8 @@ VASTValPtr VASTExprBuilder::buildAddExpr(ArrayRef<VASTValPtr> Ops,
   if (Ops.size() == 1)
     return Ops[0];
 
-  // Make sure the carry bit located in the last operand in the operand list.
-  SmallVector<VASTValPtr, 8> NewOps;
-  VASTValPtr Carry = None;
-  for (unsigned i = 0; i < Ops.size(); ++i) {
-    if (Carry == None && Ops[i]->getBitWidth() == 1) {
-      Carry = Ops[i];
-      continue;
-    }
-
-    NewOps.push_back(Ops[i]);
-  }
-
-  std::sort(NewOps.begin(), NewOps.end(), VASTValPtr::type_less);
-  if (Carry != None)
-    NewOps.push_back(Carry);
-
-  return Context.createExpr(VASTExpr::dpAdd, NewOps, BitWidth);
+  SmallVector<VASTValPtr, 8> NewOps(Ops.begin(), Ops.end());
+  return buildCommutativeExpr(VASTExpr::dpAdd, NewOps, BitWidth);
 }
 
 VASTValPtr VASTExprBuilder::buildAndExpr(ArrayRef<VASTValPtr> Ops,
