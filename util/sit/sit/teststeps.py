@@ -558,7 +558,7 @@ IfFile:close()
                '-shang-enable-memory-optimization=%(shang_enable_memory_optimization)s' % self,
                '-shang-enable-dual-port-ram=%(shang_enable_dual_port_ram)s' % self,
                '-vast-max-combinational-rom-logic-level=%(vast_max_combinational_rom_logic_level)s' % self,
-               '-shang-enable-pre-schedule-lut-mapping=%(shang_enable_pre_schedule_lut_mapping)s' % self,
+               '-shang-enable-pre-schedule-blo=%(shang_enable_pre_schedule_blo)s' % self,
                '-shang-enable-register-sharing=%(shang_enable_register_sharing)s' % self,
                '-shang-max-scheduling-iteration=%(shang_max_scheduling_iteration)s' % self,
                '-shang-dump-intermediate-netlist=%(shang_dump_intermediate_netlist)s' % self,

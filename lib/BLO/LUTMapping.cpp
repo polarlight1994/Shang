@@ -11,6 +11,7 @@
 // expressions in the VerilogAST to LUTs with ABC logic synthesis.
 //
 //===----------------------------------------------------------------------===//
+#include "BitlevelOpt.h"
 
 #include "vast/VASTModule.h"
 #include "vast/VASTModulePass.h"
@@ -72,10 +73,9 @@ struct LogicNetwork {
   ABCContext &Context;
 
   Abc_Ntk_t *Ntk;
-  VASTModule &VM;
   VASTExprBuilder &Builder;
 
-  LogicNetwork(VASTModule &VM, VASTExprBuilder &Builder);
+  explicit LogicNetwork(VASTExprBuilder &Builder);
 
   ~LogicNetwork() {
     Abc_NtkDelete(Ntk);
@@ -633,37 +633,17 @@ void LogicNetwork::buildLUTDatapath() {
 
 static ManagedStatic<ABCContext> GlobalContext;
 
-LogicNetwork::LogicNetwork(VASTModule &VM, VASTExprBuilder &Builder)
-  : Context(*GlobalContext), VM(VM), Builder(Builder) {
+LogicNetwork::LogicNetwork(VASTExprBuilder &Builder)
+  : Context(*GlobalContext), Builder(Builder) {
   Ntk = Abc_NtkAlloc(ABC_NTK_STRASH, ABC_FUNC_AIG, 1);
-  Ntk->pName = Extra_UtilStrsav(VM.getName().c_str());
+  Ntk->pName = Extra_UtilStrsav("vast logic network");
 }
 
-namespace {
-struct LUTMapping : public VASTModulePass {
-  static char ID;
-  LUTMapping() : VASTModulePass(ID) {
-    initializeLUTMappingPass(*PassRegistry::getPassRegistry());
-  }
+bool DatapathBLO::performLUTMapping() {
+  LogicNetwork Ntk(Builder);
 
-  bool runOnVASTModule(VASTModule &VM);
-
-  void getAnalysisUsage(AnalysisUsage &AU) const {
-    VASTModulePass::getAnalysisUsage(AU);
-    AU.addPreservedID(PreSchedBindingID);
-  }
-};
-}
-
-bool LUTMapping::runOnVASTModule(VASTModule &VM) {
-  DatapathContainer &DP = VM;
-
-  MinimalExprBuilderContext Context(DP);
-  VASTExprBuilder Builder(Context);
-
-  LogicNetwork Ntk(VM, Builder);
-
-  if (!Ntk.buildAIG(DP)) return true;
+  if (!Ntk.buildAIG(Datapath))
+    return false;
 
   Ntk.cleanUp();
 
@@ -675,14 +655,6 @@ bool LUTMapping::runOnVASTModule(VASTModule &VM) {
 
   Ntk.buildLUTDatapath();
 
-  return true;
+  return false;
 }
 
-char LUTMapping::ID = 0;
-
-INITIALIZE_PASS(LUTMapping, "vast-lut-mapping", "Map Logic Operation to LUTs",
-                false, true)
-
-Pass *vast::createLUTMappingPass() {
-  return new LUTMapping();
-}

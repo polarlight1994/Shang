@@ -135,6 +135,7 @@ public:
   bool optimizeAndReplace(VASTValPtr V);
 
   bool optimizeForward(VASTModule &VM);
+  bool performLUTMapping();
 
   void resetForNextIteration();
 };

@@ -55,7 +55,6 @@ Pass *createMemoryPartitionPass();
 Pass *createShangTargetTransformInfoPass();
 Pass *createAlwaysSpeculatePass();
 
-Pass *createLUTMappingPass();
 Pass *createBitlevelOptPass();
 Pass *createOptimizePHINodesPass();
 Pass *createTimingNetlistPass();
@@ -98,7 +97,6 @@ void initializeMemoryPartitionPass(PassRegistry &Registry);
 void initializeLowerAllocaPass(PassRegistry &Registry);
 void initializeGlobalToStackPass(PassRegistry &Registry);
 void initializeLowerIntrinsicPass(PassRegistry &Registry);
-void initializeLUTMappingPass(PassRegistry &Registry);
 void initializeBitlevelOptPass(PassRegistry &Registry);
 void initializeOptimizePHINodesPass(PassRegistry &Registry);
 void initializeDataflowPass(PassRegistry &Registry);

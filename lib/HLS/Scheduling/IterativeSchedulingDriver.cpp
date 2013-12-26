@@ -146,13 +146,15 @@ public:
     TPM->addIndirectPassManager(this);
     PMS.push(this);
 
+    schedulePass(createBitlevelOptPass());
+
     schedulePass(createVASTSchedulingPass());
     // Do not need to add other subpasses if we are not iterate at all.
     if (MaxIteration <= 1)
       return;
 
     // Add the passes for each single iteration.
-    schedulePass(createLUTMappingPass());
+    schedulePass(createBitlevelOptPass());
     schedulePass(new DataflowAnnotation(true));
 
     // Finish the whole HLS process if we want to dump the intermediate netlist

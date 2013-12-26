@@ -72,8 +72,8 @@ static cl::opt<bool> EnableRegisterSharing("shang-enable-register-sharing",
   cl::init(false));
 
 static cl::opt<bool>
-EnablePreScheduleLUTMapping("shang-enable-pre-schedule-lut-mapping",
-  cl::desc("Perform lut mapping before scheduling"),
+EnablePreScheduleBLO("shang-enable-pre-schedule-blo",
+  cl::desc("Perform bit-level optimization before scheduling"),
   cl::init(true));
 
 static cl::opt<bool> EnableMUXPipelining("shang-enable-mux-pipelining",
@@ -285,9 +285,9 @@ int main(int argc, char **argv) {
     // Allocate the BlockRAMs.
     HLSPasses.add(createMemoryPartitionPass());
 
-    if (EnablePreScheduleLUTMapping) HLSPasses.add(createLUTMappingPass());
     // Run the bit-level optimization.
-    HLSPasses.add(createBitlevelOptPass());
+    if (EnablePreScheduleBLO)
+      HLSPasses.add(createBitlevelOptPass());
 
     // Perform the scheduling.
     HLSPasses.add(createDataflowAnnotationPass());
@@ -295,7 +295,7 @@ int main(int argc, char **argv) {
     HLSPasses.add(createIterativeSchedulingPass());
     // Scheduling will restruct the datapath. Optimize the datapath again
     // after scheduling.
-    HLSPasses.add(createLUTMappingPass());
+    HLSPasses.add(createBitlevelOptPass());
 
     // HLSPasses.add(createRegisterSharingPass());
     if (EnableMUXPipelining) HLSPasses.add(createSelectorPipeliningPass());

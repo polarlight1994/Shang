@@ -766,6 +766,7 @@ bool BitlevelOpt::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
   bool Changed = false;
 
   Changed |= BLO.optimizeForward(VM);
+  Changed |= BLO.performLUTMapping();
 
   ++NumIterations;
   return Changed;
