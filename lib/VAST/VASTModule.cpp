@@ -281,10 +281,8 @@ struct DatapathPrinter {
     if (E->getOpcode() == VASTExpr::dpKeep)
       OS << "(* keep *) ";
 
-    OS << "wire ";
-
     unsigned Bitwidth = E->getBitWidth();
-    OS << VASTValue::BitRange(Bitwidth, 0, Bitwidth > 1) << ' ';
+    OS << "wire" << VASTValue::BitRange(Bitwidth, 0, Bitwidth > 1) << ' ';
 
     E->printName(OS);
 
