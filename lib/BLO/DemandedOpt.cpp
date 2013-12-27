@@ -14,12 +14,14 @@
 #include "BitlevelOpt.h"
 
 #include "vast/VASTModule.h"
+#include "vast/PatternMatch.h"
 
 #define DEBUG_TYPE "vast-demanded-opt"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
 using namespace vast;
+using namespace PatternMatch;
 
 namespace {
 struct DemandedBitOptimizer {
@@ -135,7 +137,6 @@ bool DatapathBLO::shrink(VASTModule &VM) {
        I != E; ++I) {
     VASTSelector *Sel = I;
 
-    // TODO: Optimize the MUX.
     typedef VASTSelector::def_iterator def_iterator;
     for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
       VASTSeqValue *SV = *I;
@@ -149,7 +150,22 @@ bool DatapathBLO::shrink(VASTModule &VM) {
         DBO.fineGrainShrinkAndReplace(L, *SV);
       }
     }
+
+    SmallVector<VASTExpr*, 8> Worklist;
+    typedef VASTSelector::ann_iterator ann_iterator;
+    for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I)
+      Worklist.push_back(I->first);
+
+    while (!Worklist.empty()) {
+      VASTExpr *Keep = Worklist.pop_back_val();
+      VASTValPtr Keepee = matchUnderlying(Keep, extract_keepee());
+      assert(Keepee && "Unexpected expression type for annotation!");
+      VASTValPtr NewKeepee = DBO.replaceKnownBitsFromMask(Keepee, Keepee, true);
+      // Replace the old keep expression by the new one.
+      replaceIfNotEqual(Keep, optimizeKeep(NewKeepee));
+    }
   }
 
+  Visited.clear();
   return Changed;
 }
