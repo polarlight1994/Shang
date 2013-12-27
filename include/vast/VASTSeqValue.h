@@ -133,9 +133,14 @@ public:
   bool empty() const { return Assigns.empty(); }
 
   void annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V);
-  typedef FoldingSet<Annotation>::const_iterator ann_iterator;
-  ann_iterator ann_begin() const { return Annotations.begin(); }
-  ann_iterator ann_end() const { return Annotations.end(); }
+  typedef FoldingSet<Annotation>::const_iterator const_ann_iterator;
+  const_ann_iterator ann_begin() const { return Annotations.begin(); }
+  const_ann_iterator ann_end() const { return Annotations.end(); }
+
+  typedef FoldingSet<Annotation>::iterator ann_iterator;
+  ann_iterator ann_begin() { return Annotations.begin(); }
+  ann_iterator ann_end() { return Annotations.end(); }
+
   bool ann_empty() const { return Annotations.empty(); }
 
   VASTValPtr getGuard() const { return Guard; }
