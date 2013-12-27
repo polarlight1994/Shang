@@ -27,7 +27,6 @@ using namespace llvm;
 
 extern char &ControlLogicSynthesisID;
 extern char &TimingDrivenSelectorSynthesisID;
-extern char &SimpleSelectorSynthesisID;
 extern char &DatapathNamerID;
 extern char &BitlevelOptID;
 extern char &SeqLiveVariablesID;
@@ -108,7 +107,6 @@ void initializeSTGDistancesPass(PassRegistry &Registry);
 
 void initializeControlLogicSynthesisPass(PassRegistry &Registry);
 void initializeTimingDrivenSelectorSynthesisPass(PassRegistry &Registry);
-void initializeSimpleSelectorSynthesisPass(PassRegistry &Registry);
 void initializeSelectorPipeliningPass(PassRegistry &Registry);
 void initializeDatapathNamerPass(PassRegistry &Registry);
 void initializeCachedStrashTablePass(PassRegistry &Registry);

@@ -351,7 +351,6 @@ INITIALIZE_PASS_BEGIN(DataflowAnnotation,
   INITIALIZE_PASS_DEPENDENCY(Dataflow)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
-  INITIALIZE_PASS_DEPENDENCY(SimpleSelectorSynthesis)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
 INITIALIZE_PASS_END(DataflowAnnotation,
@@ -365,7 +364,6 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<Dataflow>();
 
   AU.addRequiredID(ControlLogicSynthesisID);
-  AU.addRequiredID(SimpleSelectorSynthesisID);
   AU.addRequiredID(DatapathNamerID);
 
   AU.addRequiredID(STGDistancesID);
