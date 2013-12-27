@@ -702,9 +702,25 @@ VASTSeqValue::VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V)
 
 void VASTSeqValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                       unsigned LB) const{
-  OS << getName();
+  OS << "((" << getName();
   if (UB)
     OS << VASTValue::BitRange(UB, LB, getBitWidth() > 1);
+  // Mask away the known zeros, if there is any.
+  if (anyKnownZero()) {
+    APInt KnownZeros = getKnownZeros();
+    SmallString<128> Str;
+    (~KnownZeros).toString(Str, 2, false, false);
+    OS << " & " << getBitWidth() << "'b" << Str;
+  }
+  OS << ")";
+
+  // Set the known ones, if there is any
+  if (anyKnownOne()) {
+    SmallString<128> Str;
+    getKnownOnes().toString(Str, 2, false, false);
+    OS << " | " << getBitWidth() << "'b" << Str;
+  }
+  OS << ")";
 }
 
 void VASTSeqValue::printFanins(raw_ostream &OS) const {
