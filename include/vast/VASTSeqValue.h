@@ -75,6 +75,8 @@ public:
     void annotateSlot(ArrayRef<VASTSlot*> Slots);
 
     ArrayRef<VASTSlot*> getSlots() const { return Slots; }
+    ArrayRef<VASTSlot*>::iterator slot_begin() const { return Slots.begin(); }
+    ArrayRef<VASTSlot*>::iterator slot_end() const { return Slots.end(); }
   };
 
 private:

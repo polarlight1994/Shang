@@ -561,11 +561,12 @@ VASTSelector::Annotation::Annotation(VASTNode *User, VASTExpr *E,
 
 bool VASTSelector::Annotation::onReplace(VASTValPtr Old, VASTValPtr New) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(New.get());
+  VASTSelector *Sel = cast<VASTSelector>(&getUser());
 
   // The annotation is not need anymore if the new expression is not
   // an expression.
   if (Expr == NULL) {
-    cast<VASTSelector>(&getUser())->deleteAnnotation(this);
+    Sel->deleteAnnotation(this);
     // Interrupt the replacement process since we had delete 'this'!
     return true;
   }
@@ -574,10 +575,13 @@ bool VASTSelector::Annotation::onReplace(VASTValPtr Old, VASTValPtr New) {
   if (Expr->isTimingBarrier())
     return false;
 
-  // Now annotate the new Keeps.
-  cast<VASTSelector>(&getUser())->annotateReadSlot(getSlots(), Expr);
+  // Temporary store slots for the current annotation, because we are going to
+  // delete the current annotation.
+  SmallVector<VASTSlot*, 8> Slots(slot_begin(), slot_end());
   // This keep is not used anymore, delete it.
-  cast<VASTSelector>(&getUser())->deleteAnnotation(this);
+  Sel->deleteAnnotation(this);
+  // Now annotate the new Keeps.
+  Sel->annotateReadSlot(Slots, Expr);
   // Interrupt the replacement process since we had delete 'this'!
   return true;
 }
