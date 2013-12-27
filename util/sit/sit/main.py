@@ -181,7 +181,7 @@ def main(builtinParameters = {}):
           next_active_jobs.append(subtest)
       elif status == 'failed' :
         job.dumplog()
-        if job.retry_counter > 0 :
+        if job.retry_counter > 100 :
           print "Retry", job.getStepDesc(), job.retry_counter
           job.retry_counter -= 1
           job.runTest()
