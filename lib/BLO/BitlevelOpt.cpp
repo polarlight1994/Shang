@@ -646,7 +646,7 @@ VASTValPtr DatapathBLO::replaceKnownBits(VASTValPtr V) {
   // If all bit is known, simply return the constant to replace the expr.
   ++NodesReplacedByKnownBits;
   VASTBitMask Mask(V);
-  return getConstant(Mask.getKnownValue());
+  return getConstant(Mask.getKnownValues());
 }
 
 bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {

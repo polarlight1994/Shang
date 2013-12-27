@@ -43,6 +43,8 @@ protected:
 
   void printMaskVerification(raw_ostream &OS, const VASTMaskedValue *V) const;
   void printMaskVerification(raw_ostream &OS, const VASTExpr *E) const;
+
+  APInt getBitSliceImpl(const APInt &Int, unsigned UB, unsigned LB) const;
 public:
   explicit VASTBitMask(unsigned Size)
     : KnownZeros(APInt::getNullValue(Size)),
@@ -57,23 +59,40 @@ public:
   }
 
   /*implicit*/ VASTBitMask(PtrInvPair<VASTValue> V);
-
-  APInt getKnownZeros() const { return KnownZeros; }
-  APInt getKnownOnes() const { return KnownOnes; }
-
-  bool isAllKnownZero() const { return KnownZeros.isAllOnesValue(); }
-
-  bool isKnownZeroAt(unsigned N) const {
-    return KnownZeros[N];
+#define generateBitsFunctions(WHAT, VALUE); \
+  APInt getKnown##WHAT##s() const { return VALUE; } \
+  APInt getKnown##WHAT##s(unsigned UB, unsigned LB = 0) const { \
+  return getBitSliceImpl(getKnown##WHAT##s(), UB, LB); \
+  } \
+  bool is##WHAT##KnownAt(unsigned N) const { \
+    return get##Known##WHAT##s()[N]; \
+  } \
+  bool isAll##WHAT##Known() const { \
+    return get##Known##WHAT##s().isAllOnesValue(); \
+  } \
+  bool isAll##WHAT##Known(unsigned UB, unsigned LB = 0) const { \
+    return getBitSliceImpl(get##Known##WHAT##s(), UB, LB).isAllOnesValue(); \
+  } \
+  bool hasAny##WHAT##Known() const { \
+    return get##Known##WHAT##s().getBoolValue(); \
+  } \
+  bool hasAny##WHAT##Known(unsigned UB, unsigned LB = 0) const { \
+    return getBitSliceImpl(get##Known##WHAT##s(), UB, LB).getBoolValue(); \
   }
 
-  bool isKnownOneAt(unsigned N) const {
-    return KnownOnes[N];
-  }
+  generateBitsFunctions(One, KnownOnes);
+  generateBitsFunctions(Zero, KnownZeros);
+  generateBitsFunctions(Bit, KnownOnes | KnownZeros);
+  generateBitsFunctions(Value, KnownOnes & ~KnownZeros);
 
   void setKnwonZeroAt(unsigned i) {
     KnownOnes.clearBit(i);
     KnownZeros.setBit(i);
+  }
+
+  void setKnwonOneAt(unsigned i) {
+    KnownZeros.clearBit(i);
+    KnownOnes.setBit(i);
   }
 
   /// \brief Zero extend or truncate to width
@@ -109,24 +128,6 @@ public:
   }
 
   unsigned getMaskWidth() const;
-
-  // Functions for the known bits of the BitMask
-  APInt getKnownBits() const;
-
-  APInt getKnownValue(unsigned UB, unsigned LB = 0) const;
-  APInt getKnownValue() const {
-    return getKnownValue(getMaskWidth(), 0);
-  }
-
-  bool isAllBitKnown(unsigned UB, unsigned LB = 0) const;
-
-  bool isAllBitKnown() const {
-    return isAllBitKnown(getMaskWidth(), 0);
-  }
-
-  bool anyBitKnown() const;
-  bool anyKnownZero() const { return getKnownZeros().getBoolValue(); }
-  bool anyKnownOne() const { return getKnownOnes().getBoolValue(); }
 
   VASTBitMask invert(bool invert = true) const {
     return invert ? VASTBitMask(KnownOnes, KnownZeros)

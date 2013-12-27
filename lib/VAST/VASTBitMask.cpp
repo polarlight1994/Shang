@@ -53,30 +53,12 @@ void VASTBitMask::verify() const {
   assert(!(KnownOnes & KnownZeros) && "Bit masks contradict!");
 }
 
-bool VASTBitMask::isAllBitKnown(unsigned UB, unsigned LB) const {
-  APInt KnownBits = getKnownBits();
+APInt VASTBitMask::getBitSliceImpl(const APInt &Int,
+                                   unsigned UB, unsigned LB) const {
+  if (UB != Int.getBitWidth() || LB != 0)
+    return VASTConstant::getBitSlice(Int, UB, LB);
 
-  if (UB != getMaskWidth() || LB != 0)
-    KnownBits = VASTConstant::getBitSlice(KnownBits, UB, LB);
-
-  return KnownBits.isAllOnesValue();
-}
-
-APInt VASTBitMask::getKnownBits() const {
-  return KnownZeros | KnownOnes;
-}
-
-APInt VASTBitMask::getKnownValue(unsigned UB, unsigned LB) const {
-  assert(isAllBitKnown(UB, LB) && "The value is unknown!");
-
-  if (UB != getMaskWidth() || LB != 0)
-    return VASTConstant::getBitSlice(KnownOnes, UB, LB);
-
-  return KnownOnes;
-}
-
-bool VASTBitMask::anyBitKnown() const {
-  return KnownOnes.getBoolValue() || KnownZeros.getBoolValue();
+  return Int;
 }
 
 unsigned VASTBitMask::getMaskWidth() const {
@@ -102,7 +84,7 @@ void VASTBitMask::printMask(raw_ostream &OS) const {
 }
 
 void VASTBitMask::printMaskIfAnyKnown(raw_ostream &OS) const {
-  if (anyBitKnown())
+  if (hasAnyBitKnown())
     printMask(OS);
 }
 
@@ -284,7 +266,7 @@ VASTBitMask VASTBitMask::EvaluateAdd(VASTBitMask LHS, VASTBitMask RHS,
               C = EvaluateAnd(LHS, RHS, BitWidth);
 
   for (unsigned i = 0; i < BitWidth; ++i) {
-    if (!S.anyBitKnown() || C.isAllKnownZero())
+    if (!S.hasAnyBitKnown() || C.isAllZeroKnown())
       break;
 
     VASTBitMask ShiftedC = C.shl(1);
@@ -308,14 +290,14 @@ VASTBitMask VASTBitMask::EvaluateMul(VASTBitMask LHS, VASTBitMask RHS,
 
   for (unsigned i = 0; i < BitWidth; ++i) {
     // Nothing to do if Both LHS and RHS is zero.
-    if (LHS.isAllKnownZero() || RHS.isAllKnownZero() ||!P.anyBitKnown())
+    if (LHS.isAllZeroKnown() || RHS.isAllZeroKnown() ||!P.hasAnyBitKnown())
       break;
 
     // If the i-th bit is known 1 in RHS, we always add the shifted LHS
     // to the result in this case.
-    if (RHS.isKnownOneAt(i))
+    if (RHS.isOneKnownAt(i))
       P = EvaluateAdd(P, LHS, BitWidth);
-    else if (!RHS.isKnownZeroAt(i)) {
+    else if (!RHS.isZeroKnownAt(i)) {
       // If the current bit is unknown, we can only be sure about the zeros
       // that will be add to the product.
       VASTBitMask Mask(LHS.getKnownZeros(), APInt::getNullValue(BitWidth));
@@ -336,14 +318,14 @@ VASTBitMask VASTBitMask::EvaluateShl(VASTBitMask LHS, VASTBitMask RHS,
   unsigned RHSMaxSize = std::min(Log2_32_Ceil(LHS.getMaskWidth()),
                                  RHS.getMaskWidth());
   VASTBitMask M = LHS;
-  for (unsigned i = 0; i < RHSMaxSize && M.anyBitKnown(); ++i) {
+  for (unsigned i = 0; i < RHSMaxSize && M.hasAnyBitKnown(); ++i) {
     // If the i-th bit is known 1 in RHS, we always add the shifted LHS
     // to the result in this case.
-    if (RHS.isKnownOneAt(i))
+    if (RHS.isOneKnownAt(i))
       M = M.shl(1 << i);
     // Otherwise if the bit at RHS is unknown, the result bits are known only
     // if the LHS bit is known no matter it is shifted or not.
-    else if (!RHS.isKnownZeroAt(i))
+    else if (!RHS.isZeroKnownAt(i))
       M.mergeAllKnown(M.shl(1 << i));
   }
 
@@ -357,14 +339,14 @@ VASTBitMask VASTBitMask::EvaluateLshr(VASTBitMask LHS, VASTBitMask RHS,
   unsigned RHSMaxSize = std::min(Log2_32_Ceil(LHS.getMaskWidth()),
                                  RHS.getMaskWidth());
   VASTBitMask M = LHS;
-  for (unsigned i = 0; i < RHSMaxSize && M.anyBitKnown(); ++i) {
+  for (unsigned i = 0; i < RHSMaxSize && M.hasAnyBitKnown(); ++i) {
     // If the i-th bit is known 1 in RHS, we always add the shifted LHS
     // to the result in this case.
-    if (RHS.isKnownOneAt(i))
+    if (RHS.isOneKnownAt(i))
       M = M.lshr(1 << i);
     // Otherwise if the bit at RHS is unknown, the result bits are known only
     // if the LHS bit is known no matter it is shifted or not.
-    else if (!RHS.isKnownZeroAt(i))
+    else if (!RHS.isZeroKnownAt(i))
       M.mergeAllKnown(M.lshr(1 << i));
   }
 
@@ -377,14 +359,14 @@ VASTBitMask VASTBitMask::EvaluateAshr(VASTBitMask LHS, VASTBitMask RHS,
   unsigned RHSMaxSize = std::min(Log2_32_Ceil(LHS.getMaskWidth()),
                                  RHS.getMaskWidth());
   VASTBitMask M = LHS;
-  for (unsigned i = 0; i < RHSMaxSize && M.anyBitKnown(); ++i) {
+  for (unsigned i = 0; i < RHSMaxSize && M.hasAnyBitKnown(); ++i) {
     // If the i-th bit is known 1 in RHS, we always add the shifted LHS
     // to the result in this case.
-    if (RHS.isKnownOneAt(i))
+    if (RHS.isOneKnownAt(i))
       M = M.ashr(1 << i);
     // Otherwise if the bit at RHS is unknown, the result bits are known only
     // if the LHS bit is known no matter it is shifted or not.
-    else if (!RHS.isKnownZeroAt(i))
+    else if (!RHS.isZeroKnownAt(i))
       M.mergeAllKnown(M.ashr(1 << i));
   }
 
@@ -566,13 +548,13 @@ void
 VASTBitMask::printMaskVerification(raw_ostream &OS, const VASTExpr *E) const {
   // No need to verify the bit manipulate expressions, they are just extracting
   // repeating, and concating bits.
-  if (!anyBitKnown() || E->getOpcode() <= VASTExpr::LastBitManipulate)
+  if (!hasAnyBitKnown() || E->getOpcode() <= VASTExpr::LastBitManipulate)
     return;
 
   OS << "// synthesis translate_off\n"
         "always @(*) begin\n";
   // There should not be 1s in the bits that are known zeros
-  if (anyKnownZero()) {
+  if (hasAnyZeroKnown()) {
     OS.indent(2) << "if (";
     E->printAsOperand(OS, false);
     SmallString<128> Str;
@@ -587,7 +569,7 @@ VASTBitMask::printMaskVerification(raw_ostream &OS, const VASTExpr *E) const {
   }
 
   // There should not be 0s in the bits that are known ones
-  if (anyKnownOne()) {
+  if (hasAnyOneKnown()) {
     OS.indent(2) << "if (~";
     E->printAsOperand(OS, false);
     SmallString<128> Str;

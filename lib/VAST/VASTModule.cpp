@@ -305,7 +305,7 @@ struct DatapathPrinter {
     E->assignNameID(0);
     E->printAsOperand(OS, false);
     // Mask away the known zeros, if there is any.
-    if (E->anyKnownZero()) {
+    if (E->hasAnyZeroKnown()) {
       APInt KnownZeros = E->getKnownZeros();
       SmallString<128> Str;
       (~KnownZeros).toString(Str, 2, false, false);
@@ -314,7 +314,7 @@ struct DatapathPrinter {
     OS << ")";
 
     // Set the known ones, if there is any
-    if (E->anyKnownOne()) {
+    if (E->hasAnyOneKnown()) {
       SmallString<128> Str;
       E->getKnownOnes().toString(Str, 2, false, false);
       OS << " | " << Bitwidth << "'b" << Str;

@@ -64,7 +64,7 @@ VASTValPtr DemandedBitOptimizer::replaceKnownBitsFromMask(VASTValPtr V,
   APInt KnownBits = Mask.getKnownBits();
 
   if (KnownBits.isAllOnesValue())
-    return BLO->getConstant(Mask.getKnownValue());
+    return BLO->getConstant(Mask.getKnownValues());
 
   // Do nothing if there is no bits known.
   if (!KnownBits.getBoolValue())
@@ -95,7 +95,7 @@ VASTValPtr DemandedBitOptimizer::replaceKnownBitsFromMask(VASTValPtr V,
     // expression.
     // Also, Use the known bits whenever possible.
     if (Mask.isAllBitKnown(UB, LB))
-      Bits[NumSegments - i - 1] = BLO->getConstant(Mask.getKnownValue(UB, LB));
+      Bits[NumSegments - i - 1] = BLO->getConstant(Mask.getKnownValues(UB, LB));
     else
       Bits[NumSegments - i - 1] = BLO.optimizeBitExtract(V, UB, LB);
 

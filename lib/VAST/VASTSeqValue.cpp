@@ -706,18 +706,17 @@ void VASTSeqValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   if (UB)
     OS << VASTValue::BitRange(UB, LB, getBitWidth() > 1);
   // Mask away the known zeros, if there is any.
-  if (anyKnownZero()) {
-    APInt KnownZeros = getKnownZeros();
+  if (hasAnyZeroKnown(UB, LB)) {
     SmallString<128> Str;
-    (~KnownZeros).toString(Str, 2, false, false);
+    (~getKnownZeros(UB, LB)).toString(Str, 2, false, false);
     OS << " & " << getBitWidth() << "'b" << Str;
   }
   OS << ")";
 
   // Set the known ones, if there is any
-  if (anyKnownOne()) {
+  if (hasAnyOneKnown(UB, LB)) {
     SmallString<128> Str;
-    getKnownOnes().toString(Str, 2, false, false);
+    getKnownOnes(UB, LB).toString(Str, 2, false, false);
     OS << " | " << getBitWidth() << "'b" << Str;
   }
   OS << ")";
@@ -788,7 +787,7 @@ void VASTRegister::printDecl(raw_ostream &OS) const {
   typedef VASTSelector::def_iterator def_iterator;
   for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
     VASTSeqValue *V = *I;
-    if (!V->anyBitKnown())
+    if (!V->hasAnyBitKnown())
       continue;
 
     if (Value *Val = V->getLLVMValue()) {
