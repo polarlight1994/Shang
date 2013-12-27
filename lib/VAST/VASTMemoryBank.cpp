@@ -410,10 +410,11 @@ VASTMemoryBank::printBanksPort(vlang_raw_ostream &OS, unsigned PortNum,
        << getRDataName(PortNum, 2) << ";\n";
   }
 
+  OS << "// synthesis translate_off\n";
   OS << "if (" << Addr->getName()
      << VASTValue::BitRange(getAddrWidth(), ByteAddrWidth, true) << ">= "
      << NumWords << ")  $finish(\"Write access out of bound!\");\n";
-
+  OS << "// synthesis translate_on\n";
 
   OS.always_ff_end(false);
 }
@@ -674,6 +675,7 @@ VASTMemoryBank::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
        << getRDataName(PortNum, 2) << ";\n";
   }
 
+  OS << "// synthesis translate_off\n";
   // Verify the addresses.
   OS << "if (" << Addr->getName()
       << VASTValue::BitRange(getAddrWidth(), ByteAddrWidth, true)
@@ -682,6 +684,8 @@ VASTMemoryBank::printBlockPort(vlang_raw_ostream &OS, unsigned PortNum,
     OS << "if (" << Addr->getName()
         << VASTValue::BitRange(ByteAddrWidth, 0, true) << " != "
         << ByteAddrWidth << "'b0) $finish(\"Write access out of bound!\");\n";
+  OS << "// synthesis translate_on\n";
+
 
   OS.always_ff_end(false);
 }
