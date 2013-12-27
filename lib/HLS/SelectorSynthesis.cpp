@@ -17,8 +17,6 @@
 #include "vast/VASTMemoryBank.h"
 #include "vast/VASTExprBuilder.h"
 #include "vast/STGDistances.h"
-
-#include "vast/Strash.h"
 #include "vast/VASTModulePass.h"
 #include "vast/VASTModule.h"
 #include "vast/Passes.h"
@@ -33,19 +31,17 @@ using namespace llvm;
 
 namespace {
 struct TimingDrivenSelectorSynthesis : public VASTModulePass {
-  CachedStrashTable *CST;
   STGDistances *STGDist;
   VASTModule *VM;
 
   static char ID;
 
-  TimingDrivenSelectorSynthesis() : VASTModulePass(ID), CST(0), STGDist(0) {
+  TimingDrivenSelectorSynthesis() : VASTModulePass(ID), STGDist(0) {
     initializeTimingDrivenSelectorSynthesisPass(*PassRegistry::getPassRegistry());
   }
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequired<CachedStrashTable>();
     AU.addRequired<STGDistances>();
     AU.addPreserved<STGDistances>();
     AU.addRequiredID(ControlLogicSynthesisID);
@@ -65,7 +61,6 @@ INITIALIZE_PASS_BEGIN(TimingDrivenSelectorSynthesis,
                       "Implement the MUX for the Sequantal Logic", false, true)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
-  INITIALIZE_PASS_DEPENDENCY(CachedStrashTable)
 INITIALIZE_PASS_END(TimingDrivenSelectorSynthesis,
                     "timing-driven-selector-synthesis",
                     "Implement the MUX for the Sequantal Logic", false, true)
@@ -110,6 +105,8 @@ struct GuardBuilder {
     for (iterator I = ReadAtSlot.begin(), E = ReadAtSlot.end(); I != E; ++I) {
       VASTValPtr V = I->second;
 
+      // Keep the guarding condition and annotate it with the slot that it
+      // is read.
       V = Builder.buildKeep(V);
       Sel->annotateReadSlot(I->first, V);
 
@@ -152,7 +149,7 @@ void
 TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
                                                   VASTExprBuilder &Builder) {
   typedef std::vector<VASTLatch> OrVec;
-  typedef std::map<unsigned, OrVec> CSEMapTy;
+  typedef std::map<VASTValPtr, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator iterator;
 
   CSEMapTy CSEMap;
@@ -165,7 +162,7 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
     // Index the input of the assignment based on the strash id. By doing this
     // we can pack the structural identical inputs together.
-    CSEMap[CST->getOrCreateStrashID(VASTValPtr(U))].push_back(U);
+    CSEMap[VASTValPtr(U)].push_back(U);
 
     GB.addCondition(U);
   }
@@ -206,29 +203,30 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   }
 
   unsigned Bitwidth = Sel->getBitWidth();
-  SmallVector<VASTValPtr, 4> SlotFanins, AllFanins;
+  SmallVector<VASTValPtr, 4> AllFanins;
   SmallVector<VASTSlot*, 4> Slots;
 
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    SlotFanins.clear();
     GB.reset();
 
+    VASTValPtr FIVal = I->first;
     const OrVec &Ors = I->second;
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
       const VASTLatch &L = *OI;
-      SlotFanins.push_back(L);
+      assert(FIVal == L && "Unexpected fanin!");
       GB.addCondition(L);
       Slots.push_back(L.getSlot());
     }
 
     VASTValPtr FIGuard = GB.buildGuard();
 
-    VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
     CurLeaves.clear();
     FIVal->extractSupportingSeqVal(CurLeaves);
 
     // We need to keep the node to prevent it from being optimized improperly,
     // if it is reachable by the intersect leaves.
+    // TODO: Some keep node can be avoid if we can prove that the intersection
+    // does not hide the multi-cycle path.
     if (intersect(IntersectLeaves, CurLeaves)) {
       FIVal = Builder.buildKeep(FIVal);
       Sel->annotateReadSlot(Slots, FIVal);
@@ -246,20 +244,17 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
 bool TimingDrivenSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   STGDist = &getAnalysis<STGDistances>();
-  CST = &getAnalysis<CachedStrashTable>();
 
-  {
-    MinimalExprBuilderContext Context(VM);
-    VASTExprBuilder Builder(Context);
-    this->VM = &VM;
+  MinimalExprBuilderContext Context(VM);
+  VASTExprBuilder Builder(Context);
+  this->VM = &VM;
 
-    typedef VASTModule::selector_iterator iterator;
+  typedef VASTModule::selector_iterator iterator;
 
-    // Eliminate the identical SeqOps.
-    for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
-      I->dropMux();
-      synthesizeSelector(I, Builder);
-    }
+  // Eliminate the identical SeqOps.
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+    I->dropMux();
+    synthesizeSelector(I, Builder);
   }
 
   return true;
