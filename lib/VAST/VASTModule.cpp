@@ -441,6 +441,8 @@ void VASTModule::eraseSelector(VASTSelector *Sel) {
   // Also erase the selector from the symbol table.
   SymbolTable.erase(Sel->getName());
 
+  // Explicitly release the timing annotations before we delete the selector.
+  Sel->dropMux();
   Selectors.erase(Sel);
 }
 

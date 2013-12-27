@@ -549,7 +549,6 @@ void VASTSelector::print(raw_ostream &OS) const {
 }
 
 void VASTSelector::eraseFanin(VASTLatch U) {
-  assert(!isSelectorSynthesized() && "Cannot erase latch!");
   iterator at = std::find(begin(), end(), U);
   assert(at != end() && "U is not in the assignment vector!");
   Assigns.erase(at);
