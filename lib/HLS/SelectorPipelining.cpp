@@ -67,9 +67,11 @@ struct MUXPipeliner {
   VASTSelector *Sel;
   unsigned MaxPerCyleFINum;
   VASTModule *VM;
+  VASTExprBuilder &Builder;
 
-  MUXPipeliner(VASTSelector *Sel, unsigned MaxPerCyleFINum, VASTModule *VM)
-    : Sel(Sel), MaxPerCyleFINum(MaxPerCyleFINum), VM(VM) {}
+  MUXPipeliner(VASTSelector *Sel, unsigned MaxPerCyleFINum, VASTModule *VM,
+               VASTExprBuilder &Builder)
+    : Sel(Sel), MaxPerCyleFINum(MaxPerCyleFINum), VM(VM), Builder(Builder) {}
 
   ~MUXPipeliner() {
     DeleteContainerPointers(Fannins);
@@ -122,7 +124,7 @@ struct SelectorPipelining : public VASTModulePass {
     initializeSelectorPipeliningPass(*PassRegistry::getPassRegistry());
   }
 
-  bool pipelineFanins(VASTSelector *Sel);
+  bool pipelineFanins(VASTSelector *Sel, VASTExprBuilder &Builder);
   // Decompose a SeqInst latching more than one SeqVal to several SeqInsts
   // where each of them only latching one SeqVal.
   void descomposeSeqInst(VASTSeqInst *SeqInst);
@@ -196,6 +198,8 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
   }
 
   DEBUG(dbgs() << "Before MUX pipelining:\n"; VM.dump(););
+  MinimalExprBuilderContext Context(VM);
+  VASTExprBuilder Builder(Context);
 
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     // FIXME: Get the MUX delay from the timing estimator.
@@ -205,7 +209,7 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
     // number do not need to be retime.
     if (Sel->isSlot()) continue;
 
-    pipelineFanins(Sel);
+    pipelineFanins(Sel, Builder);
   }
 
   DEBUG(dbgs() << "After MUX pipelining:\n"; VM.dump(););
@@ -237,7 +241,7 @@ void SelectorPipelining::descomposeSeqInst(VASTSeqInst *SeqInst) {
 //  return true;
 //}
 
-bool SelectorPipelining::pipelineFanins(VASTSelector *Sel) {
+bool SelectorPipelining::pipelineFanins(VASTSelector *Sel, VASTExprBuilder &Builder) {
   // Iterate over all fanins to build the Fanin Slack Map.
   // Try to build the pipeline register by inserting the map.
   unsigned BitWidth = Sel->getBitWidth();
@@ -245,7 +249,7 @@ bool SelectorPipelining::pipelineFanins(VASTSelector *Sel) {
   if (Sel->size() < MaxFIsPerCycles)
     return false;
 
-  MUXPipeliner P(Sel, MaxFIsPerCycles, VM);
+  MUXPipeliner P(Sel, MaxFIsPerCycles, VM, Builder);
   buildPipelineFIs(Sel, P);
 
   return P.pipelineGreedy();
@@ -415,14 +419,35 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
 
     // Pipeline the guarding condition.
     VASTSeqValue *PipelinedEn = getValueAt(EnSel, S);
-    VM->assignCtrlLogic(PipelinedEn, VASTConstant::True, S, FICnd, true);
+    if (PipelinedEn->num_fanins()) {
+      VASTLatch L = PipelinedEn->getUniqueFanin();
+      L.replacePredBy(Builder.buildOrExpr(L.getGuard(), FICnd, 1));
+    } else
+      VM->assignCtrlLogic(PipelinedEn, VASTConstant::True, S, FICnd, true);
     // Read the pipelined guarding condition instead.
     FI->L.replacePredBy(PipelinedEn, false);
 
     // Pipeline the fanin value.
     if (FISel) {
       VASTSeqValue *PipelinedFI = getValueAt(FISel, S);
-      VM->assignCtrlLogic(PipelinedFI, FIVal, S, FICnd, true);
+      if (PipelinedFI->num_fanins()) {
+        VASTLatch L = PipelinedFI->getUniqueFanin();
+        VASTValPtr OldCnd = L.getGuard();
+        // Merge the guarding condition by OR.
+        L.replacePredBy(Builder.buildOrExpr(OldCnd, FICnd, 1));
+
+        // Build the mini MUX to merge the fainins.
+        unsigned Bitwidth = Sel->getBitWidth();
+        VASTValPtr OldFI =
+          Builder.buildAndExpr(L, Builder.buildBitRepeat(OldCnd, Bitwidth),
+                               Bitwidth);
+        VASTValPtr NewFI =
+          Builder.buildAndExpr(FIVal, Builder.buildBitRepeat(FICnd, Bitwidth),
+                               Bitwidth);
+
+        L.replaceUsedBy(Builder.buildOrExpr(OldFI, NewFI, Bitwidth));
+      } else
+        VM->assignCtrlLogic(PipelinedFI, FIVal, S, FICnd, true);
       FI->L.replaceUsedBy(PipelinedFI);
     }
   }
