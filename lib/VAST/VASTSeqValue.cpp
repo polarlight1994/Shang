@@ -692,10 +692,12 @@ void VASTSelector::setName(const char *Name) {
 
 //===----------------------------------------------------------------------===//
 VASTSeqValue::VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V)
-  : VASTMaskedValue(vastSeqValue, Selector->getBitWidth()),
-    Selector(Selector), V(V) {
+  : VASTMaskedValue(vastSeqValue, Selector->getBitWidth()), V(V) {
   Selector->addUser(this);
   Contents32.SeqValIdx = Idx;
+  // Use pointer to to the Selector, this allow us to change the selector at
+  // will.
+  Contents64.Sel = Selector;
 }
 
 void VASTSeqValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
@@ -719,17 +721,17 @@ void VASTSeqValue::dumpFanins() const {
 }
 
 VASTSelector *VASTSeqValue::getSelector() const {
-  assert(Selector && "Unexpected null selector!");
-  return Selector;
+  assert(Contents64.Sel && "Unexpected null selector!");
+  return Contents64.Sel;
 }
 
 void VASTSeqValue::changeSelector(VASTSelector *NewSel) {
   assert(NewSel != getSelector() && "Selector not changed!");
 
   getSelector()->removeUser(this);
-  Selector = NewSel;
-  if (Selector)
-    Selector->addUser(this);
+  Contents64.Sel = NewSel;
+  if (NewSel)
+    NewSel->addUser(this);
 }
 
 VASTSeqValue::~VASTSeqValue() {}

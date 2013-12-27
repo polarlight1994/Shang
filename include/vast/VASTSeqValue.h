@@ -228,15 +228,12 @@ public:
   };
 
 private:
-  // Use pointer to to the Selector, this allow us to change the selector at
-  // will.
-  VASTSelector *Selector;
   Value *V;
 
   friend struct ilist_sentinel_traits<VASTSeqValue>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
   VASTSeqValue()
-    : VASTMaskedValue(vastSeqValue, 1), Selector(0), V(0) {}
+    : VASTMaskedValue(vastSeqValue, 1), V(NULL) {}
 
 public:
   VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V);
