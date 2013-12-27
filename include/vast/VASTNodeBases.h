@@ -59,10 +59,10 @@ public:
     vastFirstValueType = vastConstant,
     vastExpr,
     vastFirstMaskedValueType = vastExpr,
-    vastWrapper,
     vastSeqValue,
-    vastLastValueType = vastSeqValue,
     vastLastMaskedValueType = vastSeqValue,
+    vastWrapper,
+    vastLastValueType = vastWrapper,
 
     vastInPort,
     vastOutPort,
@@ -611,11 +611,11 @@ public:
   void printMaskVerification(raw_ostream &OS) const;
 };
 
-class VASTNamedValue : public VASTMaskedValue {
+class VASTNamedValue : public VASTValue {
 protected:
   VASTNamedValue(VASTTypes T, const char *Name, unsigned BitWidth)
-    : VASTMaskedValue(T, BitWidth) {
-    assert((T == vastWrapper || T == vastSeqValue) && "Bad node type!");
+    : VASTValue(T, BitWidth) {
+    assert((T == vastWrapper) && "Bad node type!");
     Contents64.Name = Name;
   }
 
@@ -636,8 +636,7 @@ public:
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTNamedValue *A) { return true; }
   static inline bool classof(const VASTNode *A) {
-    return A->getASTType() == vastWrapper ||
-           A->getASTType() == vastSeqValue;
+    return A->getASTType() == vastWrapper;
   }
 
   static inline std::string Mangle(const std::string &S) {

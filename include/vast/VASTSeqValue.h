@@ -185,7 +185,7 @@ public:
 };
 
 // Represent values, in SSA form, in the sequential logic.
-class VASTSeqValue : public VASTNamedValue, public ilist_node<VASTSeqValue> {
+class VASTSeqValue : public VASTMaskedValue, public ilist_node<VASTSeqValue> {
 public:
   template<typename Iterator>
   class FaninIterator
@@ -236,7 +236,7 @@ private:
   friend struct ilist_sentinel_traits<VASTSeqValue>;
   // Default constructor for ilist_sentinel_traits<VASTSeqOp>.
   VASTSeqValue()
-    : VASTNamedValue(vastSeqValue, 0, 1), Selector(0), V(0) {}
+    : VASTMaskedValue(vastSeqValue, 1), Selector(0), V(0) {}
 
 public:
   VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V);
@@ -248,6 +248,8 @@ public:
   // information of transaction to this local storage.
   VASTSelector *getSelector() const;
   void changeSelector(VASTSelector *NewSel);
+
+  const char *getName() const { return getSelector()->getName(); }
 
   // Forward the functions from the Selector.
   VASTSelector::Type getType() const { return getSelector()->getType(); }
@@ -301,6 +303,8 @@ public:
   bool   fanin_empty() const { return num_fanins() == 0; }
 
   const VASTLatch &getUniqueFanin() const;
+
+  void printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTSeqValue *A) { return true; }

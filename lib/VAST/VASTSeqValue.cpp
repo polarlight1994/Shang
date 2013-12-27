@@ -687,23 +687,22 @@ void VASTSelector::setName(const char *Name) {
   if (Contents64.Name == Name)
     return;
 
-  // Change the name of the selector.
   Contents64.Name = Name;
-
-  for (def_iterator I = def_begin(), E = def_end(); I != E; ++I) {
-    VASTSeqValue *SV = *I;
-
-    if (SV->getName() != getName())
-      SV->changeSelector(this);
-  }
 }
 
 //===----------------------------------------------------------------------===//
 VASTSeqValue::VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V)
-  : VASTNamedValue(vastSeqValue, Selector->getName(), Selector->getBitWidth()),
+  : VASTMaskedValue(vastSeqValue, Selector->getBitWidth()),
     Selector(Selector), V(V) {
   Selector->addUser(this);
   Contents32.SeqValIdx = Idx;
+}
+
+void VASTSeqValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
+                                      unsigned LB) const{
+  OS << getName();
+  if (UB)
+    OS << VASTValue::BitRange(UB, LB, getBitWidth() > 1);
 }
 
 void VASTSeqValue::printFanins(raw_ostream &OS) const {
@@ -725,18 +724,12 @@ VASTSelector *VASTSeqValue::getSelector() const {
 }
 
 void VASTSeqValue::changeSelector(VASTSelector *NewSel) {
-  if (NewSel == getSelector()) {
-    assert(Contents64.Name != Selector->getName() && "Selector not changed!");
-    Contents64.Name = Selector->getName();
-    return;
-  }
+  assert(NewSel != getSelector() && "Selector not changed!");
 
   getSelector()->removeUser(this);
   Selector = NewSel;
-  if (Selector) {
-    Contents64.Name = Selector->getName();
+  if (Selector)
     Selector->addUser(this);
-  }
 }
 
 VASTSeqValue::~VASTSeqValue() {}

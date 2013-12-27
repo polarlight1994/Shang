@@ -60,10 +60,11 @@ static std::string GetSTAObjectName(const VASTSelector *Sel) {
 static std::string GetSTAObjectName(const VASTValue *V) {
   std::string Name;
   raw_string_ostream OS(Name);
-  if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
-    if (const VASTSeqValue *SV = dyn_cast<VASTSeqValue>(NV))
-      return GetSTAObjectName(SV->getSelector());
 
+  if (const VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V))
+    return GetSTAObjectName(SV->getSelector());
+
+  if (const VASTNamedValue *NV = dyn_cast<VASTNamedValue>(V)) {
     // The block RAM should be printed as Prefix + ArrayName in the script.
     if (const char *N = NV->getName()) {
       OS << ' ' << N << "* ";
@@ -128,7 +129,7 @@ void VASTValue::printAsOperand(raw_ostream &OS, bool isInverted) const {
 
 void VASTValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                    unsigned LB) const {
-  assert(0 && "VASTValue::printAsOperand should not be called!");
+  llvm_unreachable("VASTValue::printAsOperand should not be called!");
 }
 
 std::string VASTValue::BitRange(unsigned UB, unsigned LB, bool printOneBit){

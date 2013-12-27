@@ -192,8 +192,13 @@ struct Strash : public ImmutablePass, public StrashTable<Strash> {
   }
 
   void profileNonTrivialLeaf(VASTValue *Ptr, FoldingSetNodeID &ID) {
-    VASTNamedValue *NV = cast<VASTNamedValue>(Ptr);
-    ID.AddString(NV->getName());
+    if (VASTNamedValue *NV = dyn_cast<VASTNamedValue>(Ptr)) {
+      ID.AddString(NV->getName());
+      return;
+    }
+
+    VASTSeqValue *SV = cast<VASTSeqValue>(Ptr);
+    ID.AddString(SV->getName());
   }
 };
 }
