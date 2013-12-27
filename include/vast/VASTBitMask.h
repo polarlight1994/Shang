@@ -59,7 +59,8 @@ public:
   }
 
   /*implicit*/ VASTBitMask(PtrInvPair<VASTValue> V);
-#define generateBitsFunctions(WHAT, VALUE); \
+
+#define CREATEBITACCESSORS(WHAT, VALUE); \
   APInt getKnown##WHAT##s() const { return VALUE; } \
   APInt getKnown##WHAT##s(unsigned UB, unsigned LB = 0) const { \
   return getBitSliceImpl(getKnown##WHAT##s(), UB, LB); \
@@ -80,10 +81,10 @@ public:
     return getBitSliceImpl(get##Known##WHAT##s(), UB, LB).getBoolValue(); \
   }
 
-  generateBitsFunctions(One, KnownOnes);
-  generateBitsFunctions(Zero, KnownZeros);
-  generateBitsFunctions(Bit, KnownOnes | KnownZeros);
-  generateBitsFunctions(Value, KnownOnes & ~KnownZeros);
+  CREATEBITACCESSORS(One, KnownOnes);
+  CREATEBITACCESSORS(Zero, KnownZeros);
+  CREATEBITACCESSORS(Bit, KnownOnes | KnownZeros);
+  CREATEBITACCESSORS(Value, KnownOnes & ~KnownZeros);
 
   void setKnwonZeroAt(unsigned i) {
     KnownOnes.clearBit(i);
