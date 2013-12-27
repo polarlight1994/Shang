@@ -354,7 +354,7 @@ protected:
 
 public:
   VASTUse(VASTNode *User = 0, VASTValPtr V = 0);
-  ~VASTUse() {}
+  virtual ~VASTUse() {}
 
   bool isInvalid() const { return !V; }
   void reset() {
