@@ -93,7 +93,6 @@ private:
   void dumpInstTrace(vlang_raw_ostream &OS, const VASTSeqOp *Op,
                      const VASTLatch &L, const Instruction *Inst,
                      const char *TraceDataBase) const;
-  void instantiateSelector(raw_ostream &OS) const;
 
 public:
   VASTSelector(const char *Name = 0, unsigned BitWidth = 0,
@@ -150,7 +149,6 @@ public:
   void dropMux();
 
   bool isSelectorSynthesized() const { return !Guard.isInvalid(); }
-  void printSelectorModule(raw_ostream &O) const;
 
   VASTSeqValue *getSSAValue() const;
 
