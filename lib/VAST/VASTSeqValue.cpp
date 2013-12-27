@@ -565,43 +565,58 @@ VASTSelector::Annotation::Annotation(VASTNode *User, VASTExpr *E,
 
 bool VASTSelector::Annotation::onReplace(VASTValPtr Old, VASTValPtr New) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(New.get());
+  VASTExpr *OldExpr = cast<VASTExpr>(Old.get());
   VASTSelector *Sel = cast<VASTSelector>(&getUser());
 
   // The annotation is not need anymore if the new expression is not
   // an expression.
   if (Expr == NULL) {
-    Sel->deleteAnnotation(this);
+    Sel->deleteAnnotation(OldExpr, this);
+    // Release the annotation.
+    delete this;
     // Interrupt the replacement process since we had delete 'this'!
     return true;
   }
 
   // Yet another timing barrier, just replace the old Keep expression.
-  if (Expr->isTimingBarrier())
+  if (Expr->isTimingBarrier()) {
+    // Just update the mapping.
+    Sel->removeAnnotation(OldExpr);
+    Sel->addAnnotation(Expr, this);
     return false;
+  }
 
-  // Temporary store slots for the current annotation, because we are going to
-  // delete the current annotation.
-  SmallVector<VASTSlot*, 8> Slots(slot_begin(), slot_end());
   // This keep is not used anymore, delete it.
-  Sel->deleteAnnotation(this);
+  Sel->deleteAnnotation(OldExpr, this);
   // Now annotate the new Keeps.
-  Sel->annotateReadSlot(Slots, Expr);
+  Sel->annotateReadSlot(getSlots(), Expr);
+  // Release the annotation.
+  delete this;
   // Interrupt the replacement process since we had delete 'this'!
   return true;
-}
-
-void VASTSelector::Annotation::Profile(FoldingSetNodeID& ID) const {
-  ID.AddPointer(get());
 }
 
 void VASTSelector::Annotation::annotateSlot(ArrayRef<VASTSlot*> Slots) {
   this->Slots.append(Slots.begin(), Slots.end());
 }
 
-void VASTSelector::deleteAnnotation(Annotation *Ann) {
+void VASTSelector::removeAnnotation(VASTExpr *E) {
+  bool erased = Annotations.erase(E);
+  assert(erased && "Annotation does not exist?");
+  (void) erased;
+}
+
+void VASTSelector::addAnnotation(VASTExpr *E, Annotation *Ann) {
+  bool inserted = Annotations.insert(std::make_pair(E, Ann)).second;
+  assert(inserted && "Cannot add new annotation!");
+  (void) inserted;
+}
+
+void VASTSelector::deleteAnnotation(VASTExpr *E, Annotation *Ann) {
   assert(Ann->isInvalid() && "The annotation is not unlinked from the keep!");
-  Annotations.RemoveNode(Ann);
-  delete Ann;
+  bool erased = Annotations.erase(E);
+  assert(erased && "Annotation does not exist?");
+  (void)erased;
 }
 
 void VASTSelector::createAnnotation(ArrayRef<VASTSlot*> Slots, VASTExpr *E) {
@@ -610,11 +625,12 @@ void VASTSelector::createAnnotation(ArrayRef<VASTSlot*> Slots, VASTExpr *E) {
 
   ID.AddPointer(E);
 
-  void *IP = NULL;
-  if (Annotation *A = Annotations.FindNodeOrInsertPos(ID, IP))
+  Annotation *&A = Annotations[E];
+
+  if (A != NULL)
     return A->annotateSlot(Slots);
 
-  Annotations.InsertNode(new Annotation(this, E, Slots), IP);
+  A = new Annotation(this, E, Slots);
 }
 
 void VASTSelector::annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V)  {
@@ -667,18 +683,7 @@ void VASTSelector::annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V)  {
 }
 
 void VASTSelector::dropMux() {
-  SmallVector<Annotation*, 8> DeadAnns;
-
-  typedef FoldingSet<Annotation>::iterator iterator;
-  for (iterator I = Annotations.begin(), E = Annotations.end(); I != E; ++I)
-    DeadAnns.push_back(&*I);
-
-  Annotations.clear();
-
-  // Release the annotations.
-  while (!DeadAnns.empty())
-    delete DeadAnns.pop_back_val();
-
+  DeleteContainerSeconds(Annotations);
   Fanin.reset();
   Guard.reset();
 }

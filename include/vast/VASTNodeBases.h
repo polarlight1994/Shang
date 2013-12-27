@@ -372,10 +372,12 @@ public:
 
   void replaceUseBy(VASTValPtr RHS) {
     assert(V && V != RHS && "Cannot replace!");
+    VASTValPtr OldV = V;
+
     unlinkUseFromUser();
 
     // The subclass may interrput the replacement process.
-    if (LLVM_UNLIKELY(onReplace(V, RHS)))
+    if (LLVM_UNLIKELY(onReplace(OldV, RHS)))
       return;
 
     V = RHS;
