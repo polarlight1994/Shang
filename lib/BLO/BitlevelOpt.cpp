@@ -716,11 +716,6 @@ bool DatapathBLO::optimizeForward(VASTModule &VM) {
       }
     }
 
-    // Do not optimize the register if we had already generate the MUX.
-    // Otherwise we may invalidate the timing information annotate to the MUX.
-    if (Sel->isSelectorSynthesized())
-      continue;
-
     typedef VASTSelector::def_iterator def_iterator;
     for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
       VASTSeqValue *SV = *I;

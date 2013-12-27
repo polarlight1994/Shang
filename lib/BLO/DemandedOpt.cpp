@@ -135,10 +135,6 @@ bool DatapathBLO::shrink(VASTModule &VM) {
        I != E; ++I) {
     VASTSelector *Sel = I;
 
-    // Do not invalid the synthesized MUX.
-    if (Sel->isSelectorSynthesized())
-      continue;
-
     // TODO: Optimize the MUX.
     typedef VASTSelector::def_iterator def_iterator;
     for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
