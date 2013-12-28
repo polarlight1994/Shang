@@ -580,23 +580,30 @@ bool VASTSelector::Annotation::onReplace(VASTValPtr Old, VASTValPtr New) {
   // The annotation is not need anymore if the new expression is not
   // an expression.
   if (Expr == NULL) {
-    Sel->deleteAnnotation(OldExpr, this);
+    Sel->removeAnnotation(OldExpr);
     // Release the annotation.
     delete this;
     // Interrupt the replacement process since we had delete 'this'!
     return true;
   }
 
-  // Yet another timing barrier, just replace the old Keep expression.
   if (Expr->isTimingBarrier()) {
     // Just update the mapping.
     Sel->removeAnnotation(OldExpr);
-    Sel->addAnnotation(Expr, this);
-    return false;
+    Annotation *Ann = Sel->addAnnotation(Expr, this);
+    // Yet another timing barrier, just replace the old Keep expression.
+    if (Ann == NULL)
+      return false;
+
+    // Move the slot from this annotation to the existing one.
+    Ann->annotateSlot(getSlots());
+    // Delete this annotation and interrupt the replacement process.
+    delete this;
+    return true;
   }
 
   // This keep is not used anymore, delete it.
-  Sel->deleteAnnotation(OldExpr, this);
+  Sel->removeAnnotation(OldExpr);
   // Now annotate the new Keeps.
   Sel->annotateReadSlot(getSlots(), Expr);
   // Release the annotation.
@@ -615,17 +622,13 @@ void VASTSelector::removeAnnotation(VASTExpr *E) {
   (void) erased;
 }
 
-void VASTSelector::addAnnotation(VASTExpr *E, Annotation *Ann) {
-  bool inserted = Annotations.insert(std::make_pair(E, Ann)).second;
-  assert(inserted && "Cannot add new annotation!");
-  (void) inserted;
-}
-
-void VASTSelector::deleteAnnotation(VASTExpr *E, Annotation *Ann) {
-  assert(Ann->isInvalid() && "The annotation is not unlinked from the keep!");
-  bool erased = Annotations.erase(E);
-  assert(erased && "Annotation does not exist?");
-  (void)erased;
+VASTSelector::Annotation *
+VASTSelector::addAnnotation(VASTExpr *E, Annotation *Ann) {
+  typedef std::pair<std::map<VASTExpr*, Annotation*>::iterator, bool>
+          ret_ty;
+  ret_ty r = Annotations.insert(std::make_pair(E, Ann));
+  // Return the existed annotation
+  return r.second ? NULL : r.first->second;
 }
 
 void VASTSelector::createAnnotation(ArrayRef<VASTSlot*> Slots, VASTExpr *E) {

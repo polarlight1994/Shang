@@ -80,9 +80,8 @@ public:
 private:
   std::map<VASTExpr*, Annotation*> Annotations;
   void createAnnotation(ArrayRef<VASTSlot*> Slots, VASTExpr *E);
-  void deleteAnnotation(VASTExpr *E, Annotation *Ann);
   void removeAnnotation(VASTExpr *E);
-  void addAnnotation(VASTExpr *E, Annotation *Ann);
+  Annotation *addAnnotation(VASTExpr *E, Annotation *Ann);
 
   VASTUse Guard, Fanin;
 
