@@ -54,6 +54,14 @@ struct TimingDrivenSelectorSynthesis : public VASTModulePass {
 
   bool runOnVASTModule(VASTModule &VM);
 
+  typedef std::set<VASTSelector*> RegSet;
+  typedef std::set<VASTSeqValue*> ValSet;
+  bool requiresBarrier(const RegSet &IntersectRegs, const ValSet &CurVals,
+                       ArrayRef<VASTSlot*> ReadSlots);
+
+  bool isMultiCyclePathHidden(VASTSelector *S, VASTSeqValue *V,
+                              ArrayRef<VASTSlot*> ReadSlots);
+
   void synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
 
   void releaseMemory() {}
@@ -74,20 +82,36 @@ char TimingDrivenSelectorSynthesis::ID = 0;
 
 char &vast::TimingDrivenSelectorSynthesisID = TimingDrivenSelectorSynthesis::ID;
 
-static bool intersect(const std::set<VASTSelector*> &LHS,
-                      const std::set<VASTSeqValue*> &RHS) {
-  typedef std::set<VASTSeqValue*>::iterator iterator;
-  for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I) {
+bool
+TimingDrivenSelectorSynthesis::requiresBarrier(const RegSet &IntersectRegs,
+                                               const ValSet &CurVals,
+                                               ArrayRef<VASTSlot*> ReadSlots) {
+  typedef ValSet::iterator iterator;
+  for (iterator I = CurVals.begin(), E = CurVals.end(); I != E; ++I) {
     VASTSeqValue *SV = *I;
 
     if (SV->isSlot() || SV->isFUOutput())
       continue;
 
-    if (LHS.count(SV->getSelector()))
+    VASTSelector *Sel = SV->getSelector();
+    if (IntersectRegs.count(Sel) && isMultiCyclePathHidden(Sel, SV, ReadSlots))
       return true;
   }
 
   return false;
+}
+
+bool
+TimingDrivenSelectorSynthesis::isMultiCyclePathHidden(VASTSelector *S,
+                                                      VASTSeqValue *V,
+                                                      ArrayRef<VASTSlot*>
+                                                      ReadSlots) {
+  // Calculate the number of cycles available according to the dataflow analysis
+  unsigned FlowDistant = STGDist->getIntervalFromDef(V,ReadSlots);
+  // Calculate the number of cycle avaiable according to the structural analysis.
+  unsigned StructuralDistant = STGDist->getIntervalFromDef(S, ReadSlots);
+
+  return StructuralDistant < FlowDistant;
 }
 
 namespace {
@@ -229,7 +253,7 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
     // We need to keep the node to prevent it from being optimized improperly,
     // if it is reachable by the intersect leaves.
-    if (intersect(IntersectLeaves, CurLeaves)) {
+    if (requiresBarrier(IntersectLeaves, CurLeaves, Slots)) {
       FIVal = Builder.buildKeep(FIVal);
       Sel->annotateReadSlot(Slots, FIVal);
     }
