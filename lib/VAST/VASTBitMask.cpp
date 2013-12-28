@@ -538,51 +538,35 @@ void VASTBitMask::evaluateMask(VASTSeqValue *SV) {
   mergeAnyKnown(NewMask);
 }
 
-void VASTBitMask::printMaskVerification(raw_ostream &OS,
-                                        const VASTMaskedValue *V) const {
-  if (const VASTExpr *E = dyn_cast<VASTExpr>(V))
-    return printMaskVerification(OS, E);
-}
-
 void
-VASTBitMask::printMaskVerification(raw_ostream &OS, const VASTExpr *E) const {
-  // No need to verify the bit manipulate expressions, they are just extracting
-  // repeating, and concating bits.
-  if (!hasAnyBitKnown() || E->getOpcode() <= VASTExpr::LastBitManipulate)
-    return;
-
-  OS << "// synthesis translate_off\n"
-        "always @(*) begin\n";
+VASTBitMask::printMaskVerification(raw_ostream &OS, VASTValPtr V) const {
   // There should not be 1s in the bits that are known zeros
   if (hasAnyZeroKnown()) {
     OS.indent(2) << "if (";
-    E->printAsOperand(OS, false);
+    V.printAsOperand(OS);
     SmallString<128> Str;
     KnownZeros.toString(Str, 2, false, false);
     OS << " & " << getMaskWidth() << "'b" << Str << ") begin\n";
-    OS.indent(4) << "$display(\"At time %t, " << E
+    OS.indent(4) << "$display(\"At time %t, " << (void*)V
                  << " with unexpected ones: %b!\", $time(),";
-    E->printAsOperand(OS, false);
+    V.printAsOperand(OS);
     OS << ");\n";
     OS.indent(4) << "$finish(1);\n";
-    OS.indent(4) << "end\n";
+    OS.indent(2) << "end\n";
   }
 
   // There should not be 0s in the bits that are known ones
   if (hasAnyOneKnown()) {
     OS.indent(2) << "if (~";
-    E->printAsOperand(OS, false);
+    V.printAsOperand(OS);
     SmallString<128> Str;
     KnownOnes.toString(Str, 2, false, false);
     OS << " & " << getMaskWidth() << "'b" << Str << ") begin\n";
-    OS.indent(4) << "$display(\"At time %t, " << E
+    OS.indent(4) << "$display(\"At time %t, " << (void*)V
                  << " with unexpected zeros: %b!\", $time(),";
-    E->printAsOperand(OS, false);
+    V.printAsOperand(OS);
     OS << ");\n";
     OS.indent(4) << "$finish(1);\n";
-    OS.indent(4) << "end\n";
+    OS.indent(2) << "end\n";
   }
-
-  OS << "end\n"
-        "// synthesis translate_on\n\n";
 }

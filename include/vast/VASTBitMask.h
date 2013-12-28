@@ -41,9 +41,6 @@ protected:
 
   void evaluateFUOutputMask(VASTSeqValue *V);
 
-  void printMaskVerification(raw_ostream &OS, const VASTMaskedValue *V) const;
-  void printMaskVerification(raw_ostream &OS, const VASTExpr *E) const;
-
   APInt getBitSliceImpl(const APInt &Int, unsigned UB, unsigned LB) const;
 public:
   explicit VASTBitMask(unsigned Size)
@@ -184,6 +181,8 @@ public:
                                   unsigned BitWidth);
 
   void verify() const;
+
+  void printMaskVerification(raw_ostream &OS, PtrInvPair<VASTValue> V) const;
 };
 }
 

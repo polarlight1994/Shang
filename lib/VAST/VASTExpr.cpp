@@ -292,6 +292,21 @@ void VASTExpr::printName(raw_ostream &OS) const {
   OS << Prefix << getNameID() << Prefix;
 }
 
+void VASTExpr::printMaskVerification(raw_ostream &OS) const {
+  // No need to verify the bit manipulate expressions, they are just extracting
+  // repeating, and concating bits.
+  if (!hasAnyBitKnown() || this->getOpcode() <= VASTExpr::LastBitManipulate)
+    return;
+
+  OS << "// synthesis translate_off\n"
+        "always @(*) begin\n";
+
+  VASTBitMask::printMaskVerification(OS, const_cast<VASTExpr*>(this));
+
+  OS << "end\n"
+        "// synthesis translate_on\n\n";
+}
+
 void
 VASTExpr::printAsOperandImpl(raw_ostream &OS, unsigned UB, unsigned LB) const {
   if (printAsOperandInteral(OS)) {

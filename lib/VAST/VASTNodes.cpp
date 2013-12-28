@@ -271,10 +271,6 @@ void VASTMaskedValue::evaluateMask() {
   return VASTBitMask::evaluateMask(this);
 }
 
-void VASTMaskedValue::printMaskVerification(raw_ostream &OS) const {
-  return VASTBitMask::printMaskVerification(OS, this);
-}
-
 //===----------------------------------------------------------------------===//
 void VASTNamedValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                         unsigned LB) const{

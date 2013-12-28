@@ -265,6 +265,7 @@ public:
   void printName(raw_ostream &OS) const;
 
   void print(raw_ostream &OS) const { printAsOperandInteral(OS); }
+  void printMaskVerification(raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTExpr *A) { return true; }
