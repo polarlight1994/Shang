@@ -439,9 +439,18 @@ VASTSelector::printVerificationCode(vlang_raw_ostream &OS, STGDistances *STGDist
       dumpTrace(OS, Op, L, TraceDataBase);
 
     // Also verify the bitmasks.
-    if (VASTSeqValue *SV = L.getDst())
-      if (SV->hasAnyBitKnown())
+    if (VASTSeqValue *SV = L.getDst()) {
+      if (SV->hasAnyBitKnown()) {
+
+        OS << "/* Verify BitMask of " << SV->getName() << ':';
+        L.Op->print(OS);
+        OS << "*/";
+        OS << ' ';
+        SV->printMask(OS);
+
         SV->printMaskVerification(OS, L);
+      }
+    }
 
     OS.exit_block();
   }
@@ -715,8 +724,11 @@ void VASTSeqValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   OS << "((" << getName();
   if (UB)
     OS << VASTValue::BitRange(UB, LB, getBitWidth() > 1);
+
+  // OS << "/*" << this << "*/";
+
   // Mask away the known zeros, if there is any.
-  if (hasAnyZeroKnown(UB, LB) && false) {
+  if (hasAnyZeroKnown(UB, LB)) {
     SmallString<128> Str;
     (~getKnownZeros(UB, LB)).toString(Str, 2, false, false);
     OS << " & " << getBitWidth() << "'b" << Str;
@@ -724,7 +736,7 @@ void VASTSeqValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   OS << ")";
 
   // Set the known ones, if there is any
-  if (hasAnyOneKnown(UB, LB) && false) {
+  if (hasAnyOneKnown(UB, LB)) {
     SmallString<128> Str;
     getKnownOnes(UB, LB).toString(Str, 2, false, false);
     OS << " | " << getBitWidth() << "'b" << Str;
