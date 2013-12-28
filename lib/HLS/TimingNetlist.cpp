@@ -124,24 +124,6 @@ void TimingNetlist::extractDelay(VASTSelector *Sel, VASTValue *Src,
   }
 }
 
-void
-TimingNetlist::annotateDelay(VASTValue *Src, VASTValue *Dst, delay_type delay) {
-  delay_type &old_delay = PathInfo[Dst][Src];
-  old_delay = std::max(old_delay, delay);
-}
-
-void
-TimingNetlist::annotateDelay(VASTValue *Src, VASTSelector *Dst, delay_type delay)
-{
-  delay_type &old_delay = FaninInfo[Dst][Src];
-  old_delay = std::max(old_delay, delay);
-}
-
-void TimingNetlist::annotateDelay(VASTSelector *Src, delay_type delay) {
-  assert(Src->isFUOutput() && "Bad selector type!");
-  FUOutputDelay[Src] = delay;
-}
-
 TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
   initializeTimingNetlistPass(*PassRegistry::getPassRegistry());
 }

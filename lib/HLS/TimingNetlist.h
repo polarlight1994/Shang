@@ -78,12 +78,6 @@ public:
   delay_type getDelay(VASTValue *Src, VASTValue *Thu, VASTSelector *Dst) const;
   delay_type getFUOutputDelay(VASTSelector *Src) const;
 
-  /// Back-annotate delay to the timing netlist.
-  ///
-  void annotateDelay(VASTValue *Src, VASTSelector *Dst, delay_type delay);
-  void annotateDelay(VASTValue *Src, VASTValue *Dst, delay_type delay);
-  void annotateDelay(VASTSelector *Src, delay_type delay);
-
   /// getDelaySrcs - Extract the all registers such that there exists a path
   /// from these register, goes though Src, to Sel, and the corresponding
   /// critical path delay.
