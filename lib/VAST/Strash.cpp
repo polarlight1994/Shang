@@ -199,9 +199,6 @@ struct Strash : public ImmutablePass, public StrashTable<Strash> {
 
     VASTSeqValue *SV = cast<VASTSeqValue>(Ptr);
     ID.AddString(SV->getName());
-    // Different known bits imply different structure.
-    SV->getKnownOnes().Profile(ID);
-    SV->getKnownZeros().Profile(ID);
   }
 };
 }
