@@ -81,7 +81,7 @@ public:
   CREATEBITACCESSORS(One, KnownOnes)
   CREATEBITACCESSORS(Zero, KnownZeros)
   CREATEBITACCESSORS(Bit, KnownOnes | KnownZeros)
-  CREATEBITACCESSORS(Value, KnownOnes & ~KnownZeros)
+  CREATEBITACCESSORS(Value, (KnownOnes & ~KnownZeros))
 
   void setKnwonZeroAt(unsigned i) {
     KnownOnes.clearBit(i);
@@ -92,6 +92,10 @@ public:
     KnownZeros.clearBit(i);
     KnownOnes.setBit(i);
   }
+
+  // Calculate the Hamming Distance between bitmasks, the unknown bits are
+  // considered always different.
+  unsigned calculateDistanceFrom(const VASTBitMask &RHS) const;
 
   /// \brief Zero extend or truncate to width
   ///

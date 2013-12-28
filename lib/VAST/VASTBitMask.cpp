@@ -140,6 +140,24 @@ void VASTBitMask::mergeAllKnown(const VASTBitMask &Other) {
   verify();
 }
 
+unsigned VASTBitMask::calculateDistanceFrom(const VASTBitMask &RHS) const {
+  APInt KnownBits = getKnownBits(), RHSKnownBits = getKnownBits();
+  APInt AllKnownBits = KnownBits & RHSKnownBits;
+
+  unsigned NumKnownBits = AllKnownBits.countPopulation();
+
+  // If no bits are in common, we assume that they are all different.
+  if (NumKnownBits == 0)
+    return getMaskWidth();
+
+  APInt KnownValue = getKnownValues() & AllKnownBits,
+        RHSKnownValue = RHS.getKnownValues() & AllKnownBits;
+
+  // Calculate the different between known bits.
+  APInt Delta = KnownValue ^ RHSKnownValue;
+  return Delta.countPopulation() + (getMaskWidth() - NumKnownBits);
+}
+
 void VASTBitMask::evaluateMask(VASTMaskedValue *V) {
   if (VASTExpr *E = dyn_cast<VASTExpr>(V))
     return evaluateMask(E);
