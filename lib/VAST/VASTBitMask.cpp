@@ -531,8 +531,24 @@ void VASTBitMask::evaluateMask(VASTSeqValue *SV) {
   VASTBitMask NewMask(getMaskWidth());
   NewMask.KnownZeros = APInt::getAllOnesValue(getMaskWidth());
   NewMask.KnownOnes = APInt::getAllOnesValue(getMaskWidth());
-  typedef VASTSeqValue::fanin_iterator iterator;
-  for (iterator I = SV->fanin_begin(), E = SV->fanin_end(); I != E; ++I)
+  // Becareful of Non-SSA register that guarded by the enable signals that is
+  // not slot registers. In this case, different SSA value from the same
+  // register may be enabled by the same enable register at the different
+  // slots. For example:
+  // FI0 = En (Slot0 SSA) & Value (Slot0 SSA) with bitmask 0
+  // FI1 = En (Slot1 SSA) & Value (Slot1 SSA) with bitmask 1
+  // FI2 = En (Slot2 SSA) & Value (Slot2 SSA) with bitmask 2
+  // MUXOut = FI0 | FI1 | FI2 ... Other Fanins ...
+  // Here Value (Slot0 SSA) and Value (Slot1 SSA) may have imcompatible
+  // bitmask. As a SSA value, we know at that monent the register should
+  // have the bitmask of the bitmask of that SSA value. However, because
+  // the enable signal is also not SSA, the other SSA values are also
+  // enabled, and the bitmasks from other SSA value are introduced.
+  // Hence we need to consider the bitmasks of all fanins fo the same
+  // register.
+  typedef VASTSelector::iterator iterator;
+  VASTSelector *Selector = SV->getSelector();
+  for (iterator I = Selector->begin(), E = Selector->end(); I != E; ++I)
     NewMask.mergeAllKnown(VASTValPtr(*I));
 
   mergeAnyKnown(NewMask);
