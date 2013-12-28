@@ -105,13 +105,10 @@ void VASTBitMask::mergeAnyKnown(Value *V, ScalarEvolution &SE,
 
   ComputeMaskedBits(V, Mask.KnownZeros, Mask.KnownOnes, &TD);
 
-  const SCEV *S = SE.getSCEV(V);
-  ConstantRange R = SE.isKnownNonNegative(S) ?
-                    SE.getUnsignedRange(S) :
-                    SE.getSignedRange(S);
+  ConstantRange R = SE.getSignedRange(SE.getSCEV(V));
 
   // Further trim the unknown bits if the Range is zero based.
-  if (R.getLower().isNonNegative()) {
+  if (R.getLower().isMinValue()) {
     APInt UB = R.getUpper();
     // Note that the upper bound of ConstantRange is not included in the range.
     --UB;
