@@ -472,9 +472,52 @@ static int sort_by_slot(MUXFI *const *LHS, MUXFI *const *RHS) {
   return 0;
 }
 
+typedef std::pair<MUXFI*, unsigned> FIDistance;
+static int sort_by_distance(const FIDistance *LHS, const FIDistance *RHS) {
+  return LHS->second < RHS->second;
+}
+
+// Sort the distance between fanins based on the hamming distance between known
+// bits.
+static void SortMaskDistance(MutableArrayRef<MUXFI*> FIs) {
+  VASTBitMask BaseLine = FIs.front()->getFI();
+  std::vector<FIDistance> Distances;
+
+  // First of all, soft the fanins according to the known bits.
+  for (unsigned i = 0, e = FIs.size(); i < e; ++i) {
+    MUXFI *FI = FIs[i];
+    VASTBitMask M(FI->getFI());
+    unsigned KnownBits = M.getNumKnownBits();
+    unsigned UnknownBits = M.getMaskWidth() - KnownBits;
+    Distances.push_back(FIDistance(FI, UnknownBits));
+  }
+
+  array_pod_sort(Distances.begin(), Distances.end(), sort_by_distance);
+
+  VASTBitMask Baseline(Distances.front().first->getFI());
+  // Update the number of unknown bit to the hamming distance to the mask
+  // with least unknown bits.
+  Distances[0].second = 0;
+  for (unsigned i = 1, e = FIs.size(); i < e; ++i) {
+    VASTValPtr V = Distances[i].first->getFI();
+    unsigned Distance = Baseline.calculateDistanceFrom(V);
+    Distances[i].second = Distance;
+  }
+
+  // Sort according to the hamming distance.
+  array_pod_sort(Distances.begin(), Distances.end(), sort_by_distance);
+
+  // Now apply the order to the original array.
+  for (unsigned i = 0, e = FIs.size(); i < e; ++i)
+    FIs[i] = Distances[i].first;
+}
+
+
 bool MUXPipeliner::pipelineGreedy() {
-  if (Fannins.empty()) return false;
-  ArrayRef<MUXFI*> FanninsRef(Fannins);
+  if (Fannins.empty())
+    return false;
+
+  MutableArrayRef<MUXFI*> FanninsRef(Fannins);
 
   unsigned UsedFINum = Sel->size() - Fannins.size();
   int AvailableFINum = std::max(int(MaxPerCyleFINum - UsedFINum), 1);
@@ -499,6 +542,8 @@ bool MUXPipeliner::pipelineGreedy() {
 
   for (unsigned i = 0, e = FanninsRef.size(); i < e; i += NextLevelFINum) {
     unsigned n = std::min(NextLevelFINum, e - i);
+    MutableArrayRef<MUXFI*> MaskSorted = FanninsRef.slice(i);
+    SortMaskDistance(MaskSorted);
     retimeLatchesOneCycleEarlier(FanninsRef.slice(i, n));
   }
 

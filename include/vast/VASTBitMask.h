@@ -62,6 +62,12 @@ public:
   APInt getKnown##WHAT##s(unsigned UB, unsigned LB = 0) const { \
   return getBitSliceImpl(getKnown##WHAT##s(), UB, LB); \
   } \
+  unsigned getNumKnown##WHAT##s() const { \
+    return getKnown##WHAT##s().countPopulation(); \
+  } \
+  unsigned getNumKnown##WHAT##s(unsigned UB, unsigned LB = 0) const { \
+  return getKnown##WHAT##s(UB, LB).countPopulation(); \
+  } \
   bool is##WHAT##KnownAt(unsigned N) const { \
     return get##Known##WHAT##s()[N]; \
   } \
