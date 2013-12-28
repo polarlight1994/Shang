@@ -39,7 +39,7 @@ struct VASTLatch {
   operator VASTValPtr () const;
   VASTUse &operator->() const;
   void replaceUsedBy(VASTValPtr V) const;
-  void replacePredBy(VASTValPtr V, bool UseSlotActive = true) const;
+  void replaceGuardBy(VASTValPtr V, bool UseSlotActive = true) const;
   void removeFromParent();
   void eraseOperand();
 

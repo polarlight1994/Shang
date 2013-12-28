@@ -421,11 +421,11 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
     VASTSeqValue *PipelinedEn = getValueAt(EnSel, S);
     if (PipelinedEn->num_fanins()) {
       VASTLatch L = PipelinedEn->getUniqueFanin();
-      L.replacePredBy(Builder.buildOrExpr(L.getGuard(), FICnd, 1));
+      L.replaceGuardBy(Builder.buildOrExpr(L.getGuard(), FICnd, 1));
     } else
       VM->assignCtrlLogic(PipelinedEn, VASTConstant::True, S, FICnd, true);
     // Read the pipelined guarding condition instead.
-    FI->L.replacePredBy(PipelinedEn, false);
+    FI->L.replaceGuardBy(PipelinedEn, false);
 
     // Pipeline the fanin value.
     if (FISel) {
@@ -434,7 +434,7 @@ void MUXPipeliner::retimeLatchesOneCycleEarlier(iterator I, iterator E) {
         VASTLatch L = PipelinedFI->getUniqueFanin();
         VASTValPtr OldCnd = L.getGuard();
         // Merge the guarding condition by OR.
-        L.replacePredBy(Builder.buildOrExpr(OldCnd, FICnd, 1));
+        L.replaceGuardBy(Builder.buildOrExpr(OldCnd, FICnd, 1));
 
         // Build the mini MUX to merge the fainins.
         unsigned Bitwidth = Sel->getBitWidth();

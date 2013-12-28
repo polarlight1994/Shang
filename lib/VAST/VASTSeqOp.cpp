@@ -37,7 +37,7 @@ void VASTLatch::replaceUsedBy(VASTValPtr V) const {
   Op->getUseInteranal(No).replaceUseBy(V);
 }
 
-void VASTLatch::replacePredBy(VASTValPtr V, bool UseSlotActive) const {
+void VASTLatch::replaceGuardBy(VASTValPtr V, bool UseSlotActive) const {
   Op->replaceGuardBy(V, UseSlotActive);
 }
 
