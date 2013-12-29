@@ -250,6 +250,9 @@ VASTValPtr VASTExprBuilder::copyExpr(VASTExpr *Expr, ArrayRef<VASTValPtr> Ops) {
     return buildBitRepeat(Ops[0], Expr->getRepeatTimes());
   case VASTExpr::dpLUT:
     return buildLUTExpr(Ops, Expr->getBitWidth(), Expr->getLUT());
+  case VASTExpr::dpROMLookUp:
+    assert(Ops.size() == 1 && "Wrong operand number!");
+    return buildROMLookUp(Ops[0], Expr->getROMContent(), Expr->getBitWidth());
   }
 
   return buildExpr(Expr->getOpcode(), Ops, Expr->getBitWidth());
