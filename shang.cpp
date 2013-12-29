@@ -293,12 +293,16 @@ int main(int argc, char **argv) {
     HLSPasses.add(createDataflowAnnotationPass());
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
     HLSPasses.add(createIterativeSchedulingPass());
+
     // Scheduling will restruct the datapath. Optimize the datapath again
     // after scheduling.
     HLSPasses.add(createBitlevelOptPass());
 
     // HLSPasses.add(createRegisterSharingPass());
-    if (EnableMUXPipelining) HLSPasses.add(createSelectorPipeliningPass());
+    if (EnableMUXPipelining)
+      HLSPasses.add(createSelectorPipeliningPass());
+
+    HLSPasses.add(createBitlevelOptPass());
 
     // Analyse the slack between registers.
     HLSPasses.add(createRTLCodeGenPass());
