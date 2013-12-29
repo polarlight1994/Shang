@@ -206,6 +206,8 @@ private:
   friend class DatapathContainer;
 
   bool printAsOperandInteral(raw_ostream &OS) const;
+  bool printExpr(raw_ostream &OS) const;
+  void dumpExpr() const;
 
   void dropUses();
 

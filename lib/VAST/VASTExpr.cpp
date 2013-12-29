@@ -327,6 +327,10 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
     return false;
   }
 
+  return printExpr(OS);
+}
+
+bool VASTExpr::printExpr(raw_ostream &OS) const {
   OS << '(';
   typedef ArrayRef<VASTUse> UseArray;
 
@@ -373,6 +377,11 @@ bool VASTExpr::printAsOperandInteral(raw_ostream &OS) const {
 
   OS << ')';
   return true;
+}
+
+void VASTExpr::dumpExpr() const {
+  printExpr(dbgs());
+  dbgs() << '\n';
 }
 
 const char *VASTExpr::getFUName() const {
