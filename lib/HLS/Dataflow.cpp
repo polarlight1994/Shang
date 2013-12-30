@@ -18,6 +18,7 @@
 #include "vast/Dataflow.h"
 #include "vast/VASTModule.h"
 #include "vast/STGDistances.h"
+#include "vast/Strash.h"
 #include "vast/LuaI.h"
 
 #include "llvm/Analysis/Dominators.h"
@@ -351,6 +352,7 @@ INITIALIZE_PASS_BEGIN(DataflowAnnotation,
   INITIALIZE_PASS_DEPENDENCY(Dataflow)
   INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(SelectorSynthesisForAnnotation)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
 INITIALIZE_PASS_END(DataflowAnnotation,
@@ -364,8 +366,8 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<Dataflow>();
 
   AU.addRequiredID(ControlLogicSynthesisID);
+  AU.addRequiredID(SelectorSynthesisForAnnotationID);
   AU.addRequiredID(DatapathNamerID);
-
   AU.addRequiredID(STGDistancesID);
   AU.addRequired<TimingNetlist>();
 

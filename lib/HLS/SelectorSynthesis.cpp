@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implement the control logic synthesis pass.
+// This file implement the Selector MUX synthesis passes.
 //
 //===----------------------------------------------------------------------===//
 
@@ -30,12 +30,12 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
 
 namespace {
 struct TimingDrivenSelectorSynthesis : public VASTModulePass {
   CachedStrashTable *CST;
   STGDistances *STGDist;
-  VASTModule *VM;
 
   static char ID;
 
@@ -274,7 +274,6 @@ bool TimingDrivenSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
 
   MinimalExprBuilderContext Context(VM);
   VASTExprBuilder Builder(Context);
-  this->VM = &VM;
 
   typedef VASTModule::selector_iterator iterator;
 
@@ -286,3 +285,184 @@ bool TimingDrivenSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
 
   return true;
 }
+
+namespace {
+struct SelectorSynthesisForAnnotation : public VASTModulePass {
+  static char ID;
+
+  SelectorSynthesisForAnnotation() : VASTModulePass(ID) {
+    initializeSelectorSynthesisForAnnotationPass(*PassRegistry::getPassRegistry());
+  }
+
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    VASTModulePass::getAnalysisUsage(AU);
+    AU.addRequired<CachedStrashTable>();
+    AU.addRequiredID(ControlLogicSynthesisID);
+    AU.addPreservedID(ControlLogicSynthesisID);
+  }
+
+  bool runOnVASTModule(VASTModule &VM);
+
+  void synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
+
+  void releaseMemory() {}
+};
+}
+
+INITIALIZE_PASS_BEGIN(SelectorSynthesisForAnnotation,
+                      "selector-synthesis-for-timing-annotation",
+                      "Implement the MUX for the Sequantal Logic",
+                      false, true)
+  INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(CachedStrashTable)
+INITIALIZE_PASS_END(SelectorSynthesisForAnnotation,
+                    "selector-synthesis-for-timing-annotation",
+                    "Implement the MUX for the Sequantal Logic",
+                    false, true)
+
+bool SelectorSynthesisForAnnotation::runOnVASTModule(VASTModule &VM) {
+  MinimalExprBuilderContext Context(VM);
+  VASTExprBuilder Builder(Context);
+
+  typedef VASTModule::selector_iterator iterator;
+
+  // Eliminate the identical SeqOps.
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+    I->dropMux();
+    synthesizeSelector(I, Builder);
+  }
+
+  return true;
+}
+
+static bool intersect(const std::set<VASTSelector*> &LHS,
+                      const std::set<VASTSeqValue*> &RHS) {
+  typedef std::set<VASTSeqValue*>::iterator iterator;
+  for (iterator I = RHS.begin(), E = RHS.end(); I != E; ++I) {
+    VASTSeqValue *SV = *I;
+
+    if (SV->isSlot() || SV->isFUOutput())
+      continue;
+
+    if (LHS.count(SV->getSelector()))
+      return true;
+  }
+
+  return false;
+}
+
+void SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
+                                                        VASTExprBuilder &Builder)
+{
+  typedef std::vector<VASTLatch> OrVec;
+  typedef std::map<VASTValPtr, OrVec> CSEMapTy;
+  typedef CSEMapTy::const_iterator iterator;
+
+  CSEMapTy CSEMap;
+  std::set<VASTSeqValue*> CurLeaves;
+  std::set<VASTSelector*> AllLeaves, IntersectLeaves;
+  typedef std::set<VASTSeqValue*>::iterator leaf_iterator;
+
+  for (VASTSelector::const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+    VASTLatch U = *I;
+
+    if (Sel->isTrivialFannin(U))
+      continue;
+
+    CurLeaves.clear();
+    VASTValPtr FI = U;
+    FI->extractSupportingSeqVal(CurLeaves);
+    U.getGuard()->extractSupportingSeqVal(CurLeaves);
+
+    for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
+         LI != LE; ++LI) {
+      VASTSeqValue *Leaf = *LI;
+      if (!AllLeaves.insert(Leaf->getSelector()).second &&
+          !Leaf->isSlot() && !Leaf->isFUOutput())
+        IntersectLeaves.insert(Leaf->getSelector());
+    }
+
+    // Index the input of the assignment based on the strash id. By doing this
+    // we can pack the structural identical inputs together.
+    CSEMap[FI].push_back(U);
+  }
+
+  if (CSEMap.empty()) return;
+
+  unsigned Bitwidth = Sel->getBitWidth();
+
+  SmallVector<VASTValPtr, 4> SlotGuards, FaninGuards, AllFanins;
+  SmallVector<VASTSlot*, 4> Slots;
+
+  for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    SlotGuards.clear();
+
+    const OrVec &Ors = I->second;
+    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
+      SmallVector<VASTValPtr, 2> CurGuards;
+      const VASTLatch &L = *OI;
+      VASTSlot *S = L.getSlot();
+
+      if (VASTValPtr SlotActive = L.getSlotActive())
+        CurGuards.push_back(SlotActive);
+
+      VASTValPtr CurGuard = L.getGuard();
+
+      CurLeaves.clear();
+      CurGuard->extractSupportingSeqVal(CurLeaves);
+      // We need to keep the node to prevent it from being optimized improperly,
+      // if it is reachable by the intersect leaves.
+      if (intersect(IntersectLeaves, CurLeaves)) {
+        // Simply keep all guarding condition, because they are only 1 bit nodes,
+        // and their upper bound is the product of number of slots and number of
+        // basic blocks.
+        CurGuard = Builder.buildKeep(CurGuard);
+
+        // Also annotate S, so that we can construct the annotation to VASTSeqOp
+        // mapping based on the slot.
+        Sel->annotateReadSlot(S, CurGuard);
+      }
+
+      CurGuards.push_back(CurGuard);
+      CurGuard = Builder.buildAndExpr(CurGuards, 1);
+
+      SlotGuards.push_back(CurGuard);
+      Slots.push_back(S);
+    }
+
+    VASTValPtr FIGuard = Builder.buildOrExpr(SlotGuards, 1);
+    FaninGuards.push_back(FIGuard);
+
+    // No need to build the fanin for the enables, only the guard is used by
+    // them.
+    if (Sel->isEnable() || Sel->isSlot())
+      continue;
+
+    VASTValPtr FIVal = I->first;
+
+    CurLeaves.clear();
+    FIVal->extractSupportingSeqVal(CurLeaves);
+
+    // We need to keep the node to prevent it from being optimized improperly,
+    // if it is reachable by the intersect leaves.
+    if (intersect(IntersectLeaves, CurLeaves)) {
+      FIVal = Builder.buildKeep(FIVal);
+      Sel->annotateReadSlot(Slots, FIVal);
+    }
+
+    VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
+    VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
+    AllFanins.push_back(GuardedFIVal);
+    Slots.clear();
+  }
+
+  // Build the final fanin only if the selector is not enable.
+  VASTValPtr FI = VASTConstant::True;
+  if (!Sel->isEnable() && !Sel->isSlot())
+    FI = Builder.buildOrExpr(AllFanins, Bitwidth);
+
+  Sel->setMux(FI, Builder.buildOrExpr(FaninGuards, 1));
+}
+
+char SelectorSynthesisForAnnotation::ID = 0;
+char &vast::SelectorSynthesisForAnnotationID = SelectorSynthesisForAnnotation::ID;
