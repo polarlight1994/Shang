@@ -164,6 +164,10 @@ struct ExternalTimingAnalysis {
     float total_delay;
     float cell_delay;
     delay_type() : total_delay(0.0f), cell_delay(0.0f) {}
+    delay_type(NoneType)
+      : total_delay(-1.1e+10f), cell_delay(-1.1e+10f) {}
+
+    bool isNone() const { return total_delay < -1e+10f; }
 
     bool operator < (const delay_type &RHS) const {
       return total_delay < RHS.total_delay;
@@ -308,7 +312,49 @@ struct ExternalTimingAnalysis {
 
   void getPathDelay(const VASTLatch &L, VASTValPtr V,
                     std::map<VASTSeqValue*, delay_type> &Srcs);
+
+  delay_type getArrivalTime(VASTSelector *To, VASTSeqValue *From);
+  delay_type getArrivalTime(VASTSelector *To, VASTExpr *Thu, VASTSeqValue *From);
 };
+}
+
+ExternalTimingAnalysis::delay_type
+ExternalTimingAnalysis::getArrivalTime(VASTSelector *To, VASTSeqValue *From) {
+  SimpleArrivalInfo::const_iterator I = SimpleArrivals.find(To);
+  assert(I != SimpleArrivals.end() && "End-to-End arrivial time not available!");
+  const SrcInfo &ArrivalSrcs = I->second;
+
+  typedef SrcInfo::const_iterator src_iterator;
+  src_iterator J = ArrivalSrcs.find(From);
+
+  // If there is more than one paths between Leaf and selector, the delay
+  // is not directly available.
+  if (J == ArrivalSrcs.end())
+    return None;
+
+  return *J->second;
+}
+
+ExternalTimingAnalysis::delay_type
+ExternalTimingAnalysis::getArrivalTime(VASTSelector *To, VASTExpr *Thu,
+                                       VASTSeqValue *From) {
+  ComplexArrivialInfo::const_iterator K = ComplexArrivials.find(To);
+  assert(K != ComplexArrivials.end() && "Src-Thu-Dst arrivial information not found!");
+  const HalfArrivialInfo &STArrivials = K->second;
+
+  HalfArrivialInfo::const_iterator ThuI = STArrivials.find(Thu);
+  // Sometimes the thu nodes are connected to other selectors that are
+  // modified in current slot.
+  if (ThuI == STArrivials.end())
+    return None;
+
+  const SrcInfo &Delays = ThuI->second;
+  typedef SrcInfo::const_iterator src_iterator;
+  src_iterator ThuSrcI = Delays.find(From);
+  if (ThuSrcI == Delays.end())
+    return None;
+
+  return *ThuSrcI->second;
 }
 
 void
@@ -330,29 +376,25 @@ ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
     return;
 
   VASTSelector *Sel = L.getSelector();
-
-  SimpleArrivalInfo::const_iterator I = SimpleArrivals.find(Sel);
-  assert(I != SimpleArrivals.end() && "End-to-End arrivial time not available!");
-  const SrcInfo &FIDelays = I->second;
-
   SmallVector<VASTSeqValue*, 4> MissedLeaves;
 
   typedef LeafSet::iterator iterator;
   typedef SrcInfo::const_iterator src_iterator;
   for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
     VASTSeqValue *Leaf = *I;
-    src_iterator J = FIDelays.find(Leaf);
+
+    delay_type Delay = getArrivalTime(Sel, Leaf);
 
     // If there is more than one paths between Leaf and selector, the delay
     // is not directly available.
-    if (J == FIDelays.end()) {
+    if (Delay.isNone()) {
       MissedLeaves.push_back(Leaf);
       continue;
     }
 
     // Otherwise Update the delay.
     delay_type &OldDelay = Srcs[Leaf];
-    OldDelay = std::max(OldDelay, *J->second);
+    OldDelay = std::max(OldDelay, Delay);
   }
 
   if (MissedLeaves.empty())
@@ -364,32 +406,22 @@ ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
   assert(J != AnnotoatedFanins.end() && "Annotation node not available!");
   const std::set<VASTExpr*> &ThuNodes = J->second;
 
-  ComplexArrivialInfo::const_iterator K = ComplexArrivials.find(Sel);
-  assert(K != ComplexArrivials.end() && "Src-Thu-Dst arrivial information not found!");
-  const HalfArrivialInfo &STArrivials = K->second;
-
   typedef std::set<VASTExpr*>::const_iterator thu_iterator;
   for (thu_iterator I = ThuNodes.begin(), E = ThuNodes.end(); I != E; ++I) {
     VASTExpr *Expr = *I;
-
-    HalfArrivialInfo::const_iterator ThuI = STArrivials.find(Expr);
-    // Sometimes the thu nodes are connected to other selectors that are
-    // modified in current slot.
-    if (ThuI == STArrivials.end())
-      continue;
-
-    const SrcInfo &Delays = ThuI->second;
 
     typedef SmallVector<VASTSeqValue*, 4>::iterator leaf_iterator;
     for (leaf_iterator I = MissedLeaves.begin(), E = MissedLeaves.end();
          I != E; ++I) {
       VASTSeqValue *Leaf = *I;
-      src_iterator ThuSrcI = Delays.find(Leaf);
-      if (ThuSrcI == Delays.end())
+
+      delay_type Delay = getArrivalTime(Sel, Expr, Leaf);
+
+      if (Delay.isNone())
         continue;
 
       delay_type &OldDelay = Srcs[Leaf];
-      OldDelay = std::max(OldDelay, *ThuSrcI->second);
+      OldDelay = std::max(OldDelay, Delay);
     }
   }
 
