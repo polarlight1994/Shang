@@ -199,6 +199,9 @@ struct Strash : public ImmutablePass, public StrashTable<Strash> {
 
     VASTSeqValue *SV = cast<VASTSeqValue>(Ptr);
     ID.AddString(SV->getName());
+    // Different bitmasks also imply different structures.
+    SV->getKnownZeros().Profile(ID);
+    SV->getKnownOnes().Profile(ID);
   }
 };
 }
