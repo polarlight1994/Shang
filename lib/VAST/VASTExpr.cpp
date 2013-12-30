@@ -293,11 +293,13 @@ void VASTExpr::printName(raw_ostream &OS) const {
 }
 
 void VASTExpr::printMaskVerification(raw_ostream &OS) const {
-  // No need to verify the bit manipulate expressions, they are just extracting
-  // repeating, and concating bits.
-  if (!hasAnyBitKnown() || this->getOpcode() <= VASTExpr::LastBitManipulate)
+  if (!hasAnyBitKnown())
     return;
 
+  // Verify all expressions, including the bit manipulate expressions, even
+  // though they are just extracting repeating, and concating bits. Even
+  // these kinds of expressions may have a wrong bitmask, especially we are
+  // messing up with strutural hashining! The daemon is in the detail!
   OS << "// synthesis translate_off\n"
         "always @(*) begin\n";
 
