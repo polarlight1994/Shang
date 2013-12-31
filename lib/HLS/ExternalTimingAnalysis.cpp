@@ -188,10 +188,6 @@ struct ExternalTimingAnalysis {
   typedef std::map<VASTSelector*, HalfArrivialInfo> ComplexArrivialInfo;
   ComplexArrivialInfo ComplexArrivials;
 
-  // The annotated expressions that are read by specificed VASTSeqOp
-  typedef std::map<VASTSeqOp*, std::set<VASTExpr*> > AnnotoatedFaninsMap;
-  AnnotoatedFaninsMap AnnotoatedFanins;
-
   // Test if a slot register can ever be set.
   std::map<BasicBlock*, std::vector<float*> > BBReachability;
 
@@ -400,22 +396,23 @@ ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
   if (MissedLeaves.empty())
     return;
 
-  // Get the delay through annotated nodes.
-  VASTSeqOp *Op = L.Op;
-  AnnotoatedFaninsMap::const_iterator J = AnnotoatedFanins.find(Op);
-  assert(J != AnnotoatedFanins.end() && "Annotation node not available!");
-  const std::set<VASTExpr*> &ThuNodes = J->second;
+  VASTSlot *ReadSlot = L.getSlot();
+  typedef VASTSelector::ann_iterator ann_iterator;
+  for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
+    const VASTSelector::Annotation &Ann = *I->second;
+    ArrayRef<VASTSlot*> Slots(Ann.getSlots());
+    VASTExpr *Thu = I->first;
+    assert(Thu->isTimingBarrier() && "Unexpected Expr Type!");
 
-  typedef std::set<VASTExpr*>::const_iterator thu_iterator;
-  for (thu_iterator I = ThuNodes.begin(), E = ThuNodes.end(); I != E; ++I) {
-    VASTExpr *Expr = *I;
+    if (std::find(Slots.begin(), Slots.end(), ReadSlot) == Slots.end())
+      continue;
 
     typedef SmallVector<VASTSeqValue*, 4>::iterator leaf_iterator;
     for (leaf_iterator I = MissedLeaves.begin(), E = MissedLeaves.end();
          I != E; ++I) {
       VASTSeqValue *Leaf = *I;
 
-      delay_type Delay = getArrivalTime(Sel, Expr, Leaf);
+      delay_type Delay = getArrivalTime(Sel, Thu, Leaf);
 
       if (Delay.isNone())
         continue;
@@ -803,9 +800,9 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
     if (Sel->isTrivialFannin(U))
       continue;
 
-    VASTSeqOp *&Op = SlotMap[U.getSlot()];
-    assert(Op == 0 && "Expected 1-to-1 mapping from VASTSlot to VASTSeqOp!");
-    Op = U.Op;
+    VASTSeqOp *Op = U.Op;
+    bool inserted = SlotMap.insert(std::make_pair(U.getSlot(), Op)).second;
+    assert(inserted && "Expected 1-to-1 mapping from VASTSlot to VASTSeqOp!");
 
     // Collect all leaves for current fanin.
     CurLeaves.clear();
@@ -862,10 +859,7 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
     // Get the thu node of the path.
     VASTExpr *Expr = Ann.getAsLValue<VASTExpr>();
 
-    if (Expr == 0)
-      continue;
-
-    assert(Expr->isTimingBarrier() && "Unexpected VASTExpr type!");
+    assert(Expr && Expr->isTimingBarrier() && "Annotation without Expr?");
 
     CurLeaves.clear();
     Expr->extractSupportingSeqVal(CurLeaves);
@@ -873,26 +867,21 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
     // Ignore the thu node if it is not reachable from the intersect leaves.
     if (CurLeaves.empty())
       continue;
-
-    for (unsigned i = 0; i < Slots.size(); ++i) {
-      VASTSeqOp *Op = SlotMap.lookup(Slots[i]);
-      // For guarding conditions, we are 
-      if (Op == 0)
-        continue;
       
-      for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
-           LI != LE; ++LI) {
-        VASTSeqValue *Leaf = *LI;
-        // Get the register to thu delay.
-        delay_type *&P = ComplexArrivials[Sel][Expr][Leaf];
-        if (P)
-          continue;
+    for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
+          LI != LE; ++LI) {
+      VASTSeqValue *Leaf = *LI;
+      // Get the register to thu delay.
+      delay_type *&P = ComplexArrivials[Sel][Expr][Leaf];
+      if (P)
+        continue;
 
-        P = allocateDelayRef();
+      P = allocateDelayRef();
+      for (unsigned i = 0; i < Slots.size(); ++i) {
+        VASTSeqOp *Op = SlotMap.lookup(Slots[i]);
+        assert(Op && "Read slot missed?");
         CH.addSource(Leaf, Expr, calculateCycles(Leaf, Op));
       }
-
-      AnnotoatedFanins[Op].insert(Expr);
     }
   }
 
