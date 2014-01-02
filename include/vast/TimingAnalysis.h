@@ -14,20 +14,25 @@
 #ifndef VAST_TIMING_ANAYSIS_H
 #define VAST_TIMING_ANAYSIS_H
 
-#include "vast/LuaI.h"
-#include "vast/VASTDatapathNodes.h"
-#include "vast/VASTSeqValue.h"
-#include "vast/Utilities.h"
-
 #include "llvm/ADT/None.h"
-#include "llvm/Support/ErrorHandling.h"
+#include <map>
+
+namespace llvm {
+class Pass;
+class AnalysisUsage;
+class BasicBlock;
+}
 
 namespace vast {
 using namespace llvm;
 
 class VASTValue;
 class VASTExpr;
+struct VASTLatch;
 class VASTSeqValue;
+class VASTSelector;
+class VASTModule;
+class VASTExprBuilder;
 class Dataflow;
 
 class TimingAnalysis {
@@ -63,6 +68,10 @@ public:
       return TotalDelay < -1e+10f;
     }
 
+    bool operator!=(NoneType) const {
+      return !operator==(None);
+    }
+
     bool operator < (const PhysicalDelay &RHS) const {
       return TotalDelay < RHS.TotalDelay;
     }
@@ -88,7 +97,7 @@ public:
                                        VASTSeqValue *From);
 
   typedef std::map<VASTSeqValue*, PhysicalDelay> ArrivalMap;
-  void extractDelay(const VASTLatch &L, VASTValPtr V, ArrivalMap &Arrivals);
+  void extractDelay(const VASTLatch &L, VASTValue *V, ArrivalMap &Arrivals);
 
   virtual bool isBasicBlockUnreachable(BasicBlock *BB) const;
 };

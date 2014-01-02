@@ -388,9 +388,6 @@ INITIALIZE_PASS_BEGIN(DataflowAnnotation,
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(Dataflow)
   INITIALIZE_AG_DEPENDENCY(TimingAnalysis)
-  INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
-  INITIALIZE_PASS_DEPENDENCY(SelectorSynthesisForAnnotation)
-  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
 INITIALIZE_PASS_END(DataflowAnnotation,
                     "vast-dataflow-annotation", "Dataflow Annotation",
@@ -443,8 +440,8 @@ void DataflowAnnotation::annotateDelay(VASTModule &VM) {
       // Extract the delay from the fan-in and the guarding condition.
       VASTValPtr FI = L;
       TA.extractDelay(L, SlotValue, Srcs);
-      TA.extractDelay(L, Guard, Srcs);
-      TA.extractDelay(L, FI, Srcs);
+      TA.extractDelay(L, Guard.get(), Srcs);
+      TA.extractDelay(L, FI.get(), Srcs);
     }
 
     typedef ArrivalInfo::iterator src_iterator;

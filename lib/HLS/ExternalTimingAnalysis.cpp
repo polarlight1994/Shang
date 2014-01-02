@@ -1118,6 +1118,10 @@ INITIALIZE_AG_PASS_BEGIN(ExternalToolDriver, TimingAnalysis,
                          "external-tool-driver",
                          "External Tool Driver",
                          false, true, false)
+INITIALIZE_PASS_DEPENDENCY(SelectorSynthesisForAnnotation)
+INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
+INITIALIZE_AG_DEPENDENCY(TimingAnalysis)
+  INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
 INITIALIZE_AG_PASS_END(ExternalToolDriver, TimingAnalysis,
                        "external-tool-driver",
                        "External Tool Driver",

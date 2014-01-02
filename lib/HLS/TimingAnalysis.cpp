@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 #include "vast/TimingAnalysis.h"
 #include "vast/Passes.h"
-
+#include "vast/LuaI.h"
 #include "vast/VASTModule.h"
 #include "vast/VASTModulePass.h"
 #include "llvm/Support/MathExtras.h"
@@ -41,9 +41,10 @@ void TimingAnalysis::InitializeTimingAnalysis(Pass *P) {
   TA = &P->getAnalysis<TimingAnalysis>();
 }
 
-void TimingAnalysis::extractDelay(const VASTLatch &L, VASTValPtr V, ArrivalMap &Arrivals) {
+void TimingAnalysis::extractDelay(const VASTLatch &L, VASTValue *V,
+                                  ArrivalMap &Arrivals) {
   // Simply add the zero delay record if the fanin itself is a register.
-  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V.get())) {
+  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V)) {
     if (!SV->isSlot() && !SV->isFUOutput()) {
       // Please note that this insertion may fail (V already existed), but it
       // does not hurt because here we only want to ensure the record exist.
@@ -115,6 +116,9 @@ void TimingAnalysis::extractDelay(const VASTLatch &L, VASTValPtr V, ArrivalMap &
 }
 
 void TimingAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
+  AU.addRequiredID(ControlLogicSynthesisID);
+  AU.addRequiredID(SelectorSynthesisForAnnotationID);
+  AU.addRequiredID(DatapathNamerID);
   AU.addRequired<TimingAnalysis>();
   AU.setPreservesAll();
 }
@@ -213,6 +217,7 @@ public:
   void verify() const;
   void verifyConnectivity() const;
 
+  // Iterative the arrival times.
   typedef ilist<ArrivalTime>::iterator arrival_iterator;
   arrival_iterator arrival_begin() { return Arrivals.begin(); }
   arrival_iterator arrival_end() { return Arrivals.end(); }
@@ -220,6 +225,7 @@ public:
   const_arrival_iterator arrival_begin() const { return Arrivals.begin(); }
   const_arrival_iterator arrival_end() const { return Arrivals.end(); }
 
+  // Get the iterator point to the first arrival time of a given source node.
   const_arrival_iterator arrival_begin(VASTValue *V) const {
     std::map<VASTValue*, ArrivalTime*>::const_iterator I = ArrivalStart.find(V);
     if (I == ArrivalStart.end())
@@ -923,7 +929,6 @@ INITIALIZE_AG_PASS_BEGIN(TimingNetlist, TimingAnalysis,
                          "Preform Timing Estimation on the RTL Netlist",
                          false, true, true)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
-  INITIALIZE_PASS_DEPENDENCY(SelectorSynthesisForAnnotation)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
 INITIALIZE_AG_PASS_END(TimingNetlist, TimingAnalysis,
                        "shang-timing-netlist",
@@ -937,11 +942,6 @@ void TimingNetlist::releaseMemory() {
 
 void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
-
-  AU.addRequiredID(ControlLogicSynthesisID);
-  AU.addRequiredID(SelectorSynthesisForAnnotationID);
-  AU.addRequiredTransitiveID(DatapathNamerID);
-
   AU.setPreservesAll();
 }
 

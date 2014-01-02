@@ -304,6 +304,7 @@ struct SelectorSynthesisForAnnotation : public VASTModulePass {
     // SelectorSynthesisForAnnotation will not destroy the result of
     // TimingDrivenSelectorSynthesis.
     AU.addPreservedID(TimingDrivenSelectorSynthesisID);
+    AU.addPreserved<STGDistances>();
   }
 
   bool runOnVASTModule(VASTModule &VM);
