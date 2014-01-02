@@ -17,7 +17,7 @@
 //   {"from":<src-reg>,"to":<dst-reg>,"delay":<delay-in-nanosecond>}
 //
 //===----------------------------------------------------------------------===//
-#include "TimingEstimator.h"
+#include "DelayMatrix.h"
 
 #include "vast/Passes.h"
 #include "vast/Dataflow.h"

@@ -12,7 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TimingNetlist.h"
-#include "TimingEstimator.h"
+#include "DelayMatrix.h"
 
 #include "vast/VASTMemoryBank.h"
 #include "vast/VASTModule.h"
@@ -609,18 +609,11 @@ void DelayModel::updateArrival() {
 }
 
 //===----------------------------------------------------------------------===//
-TimingNetlist::delay_type
-TimingNetlist::getDelay(VASTValue *Src, VASTSelector *Dst) const {
-  const_fanin_iterator at = FaninInfo.find(Dst);
-  assert(at != FaninInfo.end() && "Path not exist!");
-
-  src_iterator path_start_from = at->second.find(Src);
-  assert(path_start_from != at->second.end() && "Path not exist!");
-  return path_start_from->second;
+float TimingNetlist::getDelay(VASTValue *Src, VASTSelector *Dst) const {
+  return 0.0f;
 }
 
-TimingNetlist::delay_type
-TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
+float TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
   // TODO:
   //if (VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(Dst)) {
   //  for each fanin fi of Dst,
@@ -629,58 +622,15 @@ TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
 
   //  return CRITICAL delay to all fanins + Mux delay?
   //}
-
-  const_path_iterator path_end_at = PathInfo.find(Dst);
-  assert(path_end_at != PathInfo.end() && "Path not exist!");
-  src_iterator path_start_from = path_end_at->second.find(Src);
-  assert(path_start_from != path_end_at->second.end() && "Path not exist!");
-  return path_start_from->second;
+  return 0.0f;
 }
 
-TimingNetlist::delay_type
-TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu,
-                        VASTSelector *Dst) const {
+float TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu,
+                              VASTSelector *Dst) const {
   if (Thu == 0) return getDelay(Src, Dst);
 
-  delay_type S2T = getDelay(Src, Thu), T2D = getDelay(Thu, Dst);
+  float S2T = getDelay(Src, Thu), T2D = getDelay(Thu, Dst);
   return S2T + T2D;
-}
-
-TimingNetlist::delay_type
-TimingNetlist::getFUOutputDelay(VASTSelector *Src) const {
-  assert(Src->isFUOutput() && "Bad selector type!");
-  FUOutputDelayInfo::const_iterator at = FUOutputDelay.find(Src);
-  return at == FUOutputDelay.end() ? 0.0f : at->second;
-}
-
-TimingNetlist::delay_type
-TimingNetlist::accumulateSelDelay(VASTSelector *Sel, VASTSeqValue *V,
-                                  VASTValue *Thu, delay_type delay) {
-  if (Sel)  delay += getDelay(Thu, Sel);
-
-  return delay;
-}
-
-void TimingNetlist::extractDelay(VASTSelector *Sel, VASTValue *Src,
-                                 RegDelaySet &Set) {
-  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(Src)) {
-    delay_type &OldDelay = Set[SV];
-    OldDelay = std::max(OldDelay, 0.0f);
-    return;
-  }
-
-  if (VASTExpr *Expr = dyn_cast<VASTExpr>(Src)) {
-    std::map<VASTExpr*, DelayModel*>::iterator I = ModelMap.find(Expr);
-    assert(I != ModelMap.end() && "Model of childexpr cannot be found!");
-    DelayModel *M = I->second;
-    typedef DelayModel::arrival_iterator iterator;
-    for (iterator I = M->arrival_begin(), E = M->arrival_end(); I != E; ++I) {
-      if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(I->Src)) {
-        delay_type &OldDelay = Set[SV];
-        OldDelay = std::max(OldDelay, I->Arrival);
-      }
-    }
-  }
 }
 
 DelayModel *TimingNetlist::createModel(VASTExpr *Expr) {
@@ -766,10 +716,6 @@ Pass *vast::createTimingNetlistPass() {
 }
 
 void TimingNetlist::releaseMemory() {
-  PathInfo.clear();
-  FaninInfo.clear();
-  FUOutputDelay.clear();
-
   ModelMap.clear();
   Models.clear();
 }
@@ -780,114 +726,13 @@ void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
 }
 
 //===----------------------------------------------------------------------===//
-void TimingNetlist::buildTimingPath(VASTValue *Thu, VASTSelector *Dst,
-                                    delay_type MUXDelay) {
-  if (!isa<VASTExpr>(Thu)) {
-    if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(Thu)) {
-      // Include the output delay.
-      if (SV->isFUOutput())
-        MUXDelay += getFUOutputDelay(SV->getSelector());
-
-      TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][SV];
-      OldDelay = std::max(MUXDelay, OldDelay);
-
-      // Look across the pipeline boundaries of the chaining candidates.
-      if (isChainingCandidate(SV->getLLVMValue()) && SV->num_fanins() == 1) {
-        const VASTLatch &L = SV->getUniqueFanin();
-        buildTimingPath(VASTValPtr(L).get(), Dst, MUXDelay);
-        buildTimingPath(VASTValPtr(L.getGuard()).get(), Dst, MUXDelay);
-      }
-    }
-
-    return;
-  }
-
-  path_iterator at = PathInfo.find(Thu);
-  if (at == PathInfo.end()) return;
-
-  TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Thu];
-  OldDelay = std::max(OldDelay, MUXDelay);
-  
-  SrcDelayInfo &Srcs = at->second;
-
-  // If this expression if not driven by any register, there is not timing path.
-  for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-    VASTValue *Src = I->first;
-    TimingNetlist::delay_type NewDelay = I->second;
-    // Do not miss the output delay.
-    if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(Src))
-      if (SV->isFUOutput())
-        NewDelay = std::max(NewDelay, getFUOutputDelay(SV->getSelector()));
-
-    // Accumulate the delay of the fanin MUX.
-    NewDelay += MUXDelay;
-
-    TimingNetlist::delay_type &OldDelay = FaninInfo[Dst][Src];
-    OldDelay =std::max(OldDelay, NewDelay);
-  }  
-}
-
-TimingNetlist::delay_type
-TimingNetlist::getSelectorDelayImpl(unsigned NumFannins, VASTSelector *Sel) const {
-  float MUXDelay = 0.0f;
-
-  if (TimingModel != TimingNetlist::ZeroDelay) {
-    VFUMux *Mux = LuaI::Get<VFUMux>();
-    MUXDelay = Mux->getMuxLatency(NumFannins);
-    if (Sel && isa<VASTMemoryBank>(Sel->getParent()))
-      // Also accumulate the delay of the block RAM.
-      MUXDelay += LuaI::Get<VFUMemBus>()->AddrLatency;
-  }
-
-  return delay_type(MUXDelay);
-}
 
 bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
-  BlackBoxDelayEsitmator Estimator(PathInfo);
-
   // Build the timing path for datapath nodes.
   typedef DatapathContainer::expr_iterator expr_iterator;
   for (expr_iterator I = VM.expr_begin(), E = VM.expr_end(); I != E; ++I) {
-    if (!I->use_empty()) Estimator.estimateTimingOnCone(I);
-    if (!I->use_empty()) buildTimingNetlist(I);
-  }
-
-  // Build the timing path for registers.
-  typedef VASTModule::selector_iterator iterator;
-  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
-    VASTSelector *Sel = I;
-
-    // Calculate the delay of the Fanin MUX.
-    delay_type MUXDelay = getSelectorDelayImpl(Sel->size(), Sel);
-
-    if (Sel->isSelectorSynthesized()) {
-      typedef VASTSelector::ann_iterator ann_iterator;
-      for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
-        const VASTSelector::Annotation &Ann = *I->second;
-        VASTValue *V = VASTValPtr(Ann).get();
-        // FIXME: Use the correct mux delay!
-        buildTimingPath(V, Sel, MUXDelay);
-      }
-
-      // Path from the direct inputs of the selector.
-      buildTimingPath(Sel->getFanin().get(), Sel, delay_type());
-      buildTimingPath(Sel->getGuard().get(), Sel, delay_type());
-    }
-
-    typedef VASTSelector::iterator fanin_iterator;
-    for (fanin_iterator FI = Sel->begin(), FE = Sel->end(); FI != FE; ++FI) {
-      VASTLatch U = *FI;
-
-      if (Sel->isTrivialFannin(U))
-        continue;
-
-      // Estimate the delay for each fanin.
-      buildTimingPath(VASTValPtr(U).get(), Sel, MUXDelay);
-      // And the predicate expression.
-      buildTimingPath(VASTValPtr(U.getGuard()).get(), Sel, MUXDelay);
-      if (VASTValPtr SlotActive = U.getSlotActive())
-        buildTimingPath(SlotActive.get(), Sel, MUXDelay);
-    }
+    if (!I->use_empty())
+      buildTimingNetlist(I);
   }
 
   DEBUG(dbgs() << "Timing Netlist: \n";
@@ -896,31 +741,4 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   return false;
 }
 
-void TimingNetlist::print(raw_ostream &OS) const {
-  for (const_path_iterator I = path_begin(), E = path_end(); I != E; ++I)
-    printPathsTo(OS, *I);
-}
-
-void TimingNetlist::dumpPathsTo(VASTValue *Dst) const {
-  printPathsTo(dbgs(), Dst);
-}
-
-void TimingNetlist::printPathsTo(raw_ostream &OS, VASTValue *Dst) const {
-  const_path_iterator at = PathInfo.find(Dst);
-  assert(at != PathInfo.end() && "DstReg not find!");
-  printPathsTo(OS, *at);
-}
-
-void TimingNetlist::printPathsTo(raw_ostream &OS, const PathTy &Path) const {
-  VASTValue *Dst = Path.first;
-  OS << "Dst: ";
-  Dst->printAsOperand(OS, false);
-  OS << " {\n";
-  for (src_iterator I = Path.second.begin(), E = Path.second.end(); I != E; ++I)
-  {
-    OS.indent(2);
-    I->first->printAsOperand(OS, false);
-    OS << '(' << I->second << ")\n";
-  }
-  OS << "}\n";
-}
+void TimingNetlist::print(raw_ostream &OS) const {}

@@ -11,7 +11,7 @@
 // build the flow dependencies on LLVM IR.
 //
 //===----------------------------------------------------------------------===//
-#include "TimingEstimator.h"
+#include "DelayMatrix.h"
 #include "TimingNetlist.h"
 
 #include "vast/Passes.h"

@@ -97,7 +97,8 @@ struct SelectorPipelining : public VASTModulePass {
   // Number of cycles at a specificed slot that we can move back unconditionally.
   std::map<unsigned, unsigned> SlotSlack;
 
-  typedef std::map<VASTValue*, TimingNetlist::SrcDelayInfo> PathDelayInfo;
+  typedef std::map<VASTValue*, float> ArrivalMap;
+  typedef std::map<VASTValue*, ArrivalMap> PathDelayInfo;
   PathDelayInfo ArrivialCache;
 
   float cacheArrivial(VASTValue *Src, VASTValue *Dst, float CurArrival) {
@@ -111,7 +112,7 @@ struct SelectorPipelining : public VASTModulePass {
     if (I == ArrivialCache.end())
       return 0.0f;
 
-    TimingNetlist::SrcDelayInfo::const_iterator J = I->second.find(Src);
+    ArrivalMap::const_iterator J = I->second.find(Src);
     if (J == I->second.end())
       return 0.0f;
 

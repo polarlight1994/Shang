@@ -3,7 +3,7 @@ add_subdirectory(Binding)
 
 add_llvm_library(ShangHLS
   TimingNetlist.cpp
-  TimingEstimator.cpp
+  DelayMatrix.cpp
   TimingScriptGen.cpp
   ExternalTimingAnalysis.cpp
   Dataflow.cpp
