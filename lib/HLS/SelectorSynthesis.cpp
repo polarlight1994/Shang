@@ -60,7 +60,7 @@ struct TimingDrivenSelectorSynthesis : public VASTModulePass {
   bool isMultiCyclePathHidden(VASTSelector *S, VASTSeqValue *V,
                               ArrayRef<VASTSlot*> ReadSlots);
 
-  void synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
+  bool synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
 
   void releaseMemory() {}
 };
@@ -170,9 +170,9 @@ struct GuardBuilder {
 };
 }
 
-void
-TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
-                                                  VASTExprBuilder &Builder) {
+bool TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
+                                                       VASTExprBuilder &Builder)
+{
   typedef std::vector<VASTLatch> OrVec;
   typedef std::map<unsigned, OrVec> CSEMapTy;
   typedef CSEMapTy::const_iterator iterator;
@@ -183,7 +183,8 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   for (VASTSelector::const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
     VASTLatch U = *I;
 
-    if (Sel->isTrivialFannin(U)) continue;
+    if (Sel->isTrivialFannin(U))
+      continue;
 
     // Index the input of the assignment based on the strash id. By doing this
     // we can pack the structural identical inputs together.
@@ -192,19 +193,20 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     GB.addCondition(U);
   }
 
-  if (CSEMap.empty()) return;
+  if (CSEMap.empty())
+    return false;
 
   VASTValPtr Guard = GB.buildGuard();
 
   if (Sel->isEnable() || Sel->isSlot()) {
     Sel->setMux(VASTConstant::True, Guard);
-    return;
+    return true;
   }
 
   if (Sel->numNonTrivialFanins() == 1) {
     VASTLatch L = Sel->getUniqueFannin();
     Sel->setMux(L, Guard);
-    return;
+    return true;
   }
 
   // Build the intersect leaves set
@@ -264,9 +266,11 @@ TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
   // Build the final fanin only if the selector is not enable.
   Sel->setMux(Builder.buildOrExpr(AllFanins, Bitwidth), Guard);
+  return true;
 }
 
 bool TimingDrivenSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
+  bool Changed = false;
   STGDist = &getAnalysis<STGDistances>();
   CST = &getAnalysis<CachedStrashTable>();
 
@@ -278,7 +282,7 @@ bool TimingDrivenSelectorSynthesis::runOnVASTModule(VASTModule &VM) {
   // Eliminate the identical SeqOps.
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     I->dropMux();
-    synthesizeSelector(I, Builder);
+    Changed |= synthesizeSelector(I, Builder);
   }
 
   return true;
@@ -297,11 +301,14 @@ struct SelectorSynthesisForAnnotation : public VASTModulePass {
     AU.addRequired<CachedStrashTable>();
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
+    // SelectorSynthesisForAnnotation will not destroy the result of
+    // TimingDrivenSelectorSynthesis.
+    AU.addPreservedID(TimingDrivenSelectorSynthesisID);
   }
 
   bool runOnVASTModule(VASTModule &VM);
 
-  void synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
+  bool synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
 
   void releaseMemory() {}
 };
@@ -319,18 +326,21 @@ INITIALIZE_PASS_END(SelectorSynthesisForAnnotation,
                     false, true)
 
 bool SelectorSynthesisForAnnotation::runOnVASTModule(VASTModule &VM) {
+  bool Changed = false;
   MinimalExprBuilderContext Context(VM);
   VASTExprBuilder Builder(Context);
 
   typedef VASTModule::selector_iterator iterator;
 
-  // Eliminate the identical SeqOps.
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
-    I->dropMux();
-    synthesizeSelector(I, Builder);
+    // Do not thing if the MUX is already there.
+    if (I->isSelectorSynthesized())
+      continue;
+
+    Changed |= synthesizeSelector(I, Builder);;
   }
 
-  return true;
+  return Changed;
 }
 
 static bool intersect(const std::set<VASTSelector*> &LHS,
@@ -349,7 +359,7 @@ static bool intersect(const std::set<VASTSelector*> &LHS,
   return false;
 }
 
-void SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
+bool SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
                                                         VASTExprBuilder &Builder)
 {
   typedef std::vector<VASTLatch> OrVec;
@@ -385,7 +395,8 @@ void SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
     CSEMap[FI].push_back(U);
   }
 
-  if (CSEMap.empty()) return;
+  if (CSEMap.empty())
+    return false;
 
   unsigned Bitwidth = Sel->getBitWidth();
 
@@ -460,6 +471,7 @@ void SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
     FI = Builder.buildOrExpr(AllFanins, Bitwidth);
 
   Sel->setMux(FI, Builder.buildOrExpr(FaninGuards, 1));
+  return true;
 }
 
 char SelectorSynthesisForAnnotation::ID = 0;
