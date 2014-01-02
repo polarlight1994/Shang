@@ -195,9 +195,21 @@ public:
   DelayModel(VASTExpr *Node, ArrayRef<DelayModel*> Fanins);
   ~DelayModel();
 
+  static VASTValue *GetAsLeaf(VASTValPtr V) {
+    if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>())
+      return SV;
+
+    if (VASTExpr *Expr = V.getAsLValue<VASTExpr>())
+      if (Expr->isTimingBarrier())
+        return Expr;
+
+    return NULL;
+  }
+
   typedef ArrayRef<DelayModel>::iterator iterator;
 
   void updateArrival();
+
   void verify() const;
   void verifyConnectivity() const;
 
@@ -526,8 +538,8 @@ void DelayModel::addArrival(VASTValue *V, float Arrival, uint8_t ToUB, uint8_t T
 void DelayModel::updateArrivalParallel(unsigned i, float Delay) {
   VASTValPtr V = Node->getOperand(i);
 
-  if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>()) {
-    addArrival(SV, 0.0f, Node->getBitWidth(), 0);
+  if (VASTValue *Val = GetAsLeaf(V)) {
+    addArrival(Val, 0.0f, Node->getBitWidth(), 0);
     return;
   }
 
@@ -549,8 +561,8 @@ void DelayModel::updateArrivalCritial(unsigned i, float Delay,
                                       uint8_t ToUB, uint8_t ToLB) {
   VASTValPtr V = Node->getOperand(i);
 
-  if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>()) {
-    addArrival(SV, 0.0f, ToUB, ToLB);
+  if (VASTValue *Val = GetAsLeaf(V)) {
+    addArrival(Val, 0.0f, ToUB, ToLB);
     return;
   }
 
@@ -576,8 +588,8 @@ void DelayModel::updateBitCatArrival() {
     unsigned BitWidth = V->getBitWidth();
     OffSet -= BitWidth;
 
-    if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>()) {
-      addArrival(SV, 0.0f, OffSet + BitWidth, OffSet);
+    if (VASTValue *Val = GetAsLeaf(V)) {
+      addArrival(Val, 0.0f, OffSet + BitWidth, OffSet);
       continue;
     }
 
@@ -605,8 +617,8 @@ void DelayModel::updateBitExtractArrival() {
 
   VASTValPtr V = Node->getOperand(0);
 
-  if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>()) {
-    addArrival(SV, 0.0f, BitWidth, 0);
+  if (VASTValue *Val = GetAsLeaf(V)) {
+    addArrival(Val, 0.0f, BitWidth, 0);
     return;
   }
 
@@ -665,9 +677,9 @@ void DelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
   VASTValPtr V = Node->getOperand(i);
 
   // TODO: Consider the bitmask.
-  if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>()) {
+  if (VASTValue *Val = GetAsLeaf(V)) {
     for (unsigned j = 0; j < BitWidth; ++j)
-      addArrival(SV, Base + j * PerBit, j + 1, j);
+      addArrival(Val, Base + j * PerBit, j + 1, j);
 
     return;
   }
@@ -699,8 +711,8 @@ void DelayModel::updateCmpArrivial() {
     VASTValPtr V = Node->getOperand(i);
 
     // TODO: Consider the bitmask.
-    if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>()) {
-      addArrival(SV, Delay, 1, 0);
+    if (VASTValue *Val = GetAsLeaf(V)) {
+      addArrival(Val, Delay, 1, 0);
       continue;
     }
 
@@ -723,8 +735,8 @@ void DelayModel::updateShiftAmt() {
   unsigned LL = V->getBitWidth();
 
   // TODO: Consider the bitmask.
-  if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>()) {
-    addArrival(SV, LL * VFUs::LUTDelay, 1, 0);
+  if (VASTValue *Val = GetAsLeaf(V)) {
+    addArrival(Val, LL * VFUs::LUTDelay, 1, 0);
     return;
   }
 
@@ -749,8 +761,8 @@ void DelayModel::updateShlArrival() {
   float Delay = LuaI::Get<VFUShift>()->lookupLatency(std::min(BitWidth, 64u));
 
   // TODO: Consider the bitmask.
-  if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>()) {
-    addArrival(SV, Delay, BitWidth, 0);
+  if (VASTValue *Val = GetAsLeaf(V)) {
+    addArrival(Val, Delay, BitWidth, 0);
     return;
   }
 
@@ -774,8 +786,8 @@ void DelayModel::updateShrArrival() {
   float Delay = LuaI::Get<VFUShift>()->lookupLatency(std::min(BitWidth, 64u));
 
   // TODO: Consider the bitmask.
-  if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>()) {
-    addArrival(SV, Delay, BitWidth, 0);
+  if (VASTValue *Val = GetAsLeaf(V)) {
+    addArrival(Val, Delay, BitWidth, 0);
     return;
   }
 
