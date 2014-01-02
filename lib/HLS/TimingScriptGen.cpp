@@ -17,7 +17,7 @@
 // the slack is 0. But if we read the data at cycle 3, the slack is 1.
 //
 //===----------------------------------------------------------------------===//
-#include "TimingNetlist.h"
+#include "vast/TimingAnalysis.h"
 
 #include "vast/VASTSeqValue.h"
 #include "vast/STGDistances.h"
@@ -30,9 +30,6 @@
 #include "vast/LuaI.h"
 
 #include "llvm/Pass.h"
-#include "llvm/IR/DataLayout.h"
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Support/SourceMgr.h"
@@ -83,7 +80,7 @@ struct Leaf {
 
 /// AnnotatedCone - Combinational cone annotated with timing information.
 struct AnnotatedCone {
-  TimingNetlist &TNL;
+  TimingAnalysis &TA;
   STGDistances &STGDist;
   VASTNode *Node;
   raw_ostream &OS;
@@ -97,9 +94,9 @@ struct AnnotatedCone {
   QueryCacheTy QueryCache;
   SmallVector<VASTSelector*, 4> Sels;
 
-  AnnotatedCone(TimingNetlist &TNL, STGDistances &STGDist, VASTNode *Node,
+  AnnotatedCone(TimingAnalysis &TA, STGDistances &STGDist, VASTNode *Node,
                 raw_ostream &OS)
-    : TNL(TNL), STGDist(STGDist), Node(Node), OS(OS), Inf(STGDistances::Inf)
+    : TA(TA), STGDist(STGDist), Node(Node), OS(OS), Inf(STGDistances::Inf)
   {}
 
   void addSelector(VASTSelector *Sel) {
@@ -129,7 +126,7 @@ struct AnnotatedCone {
   void annotatePathInterval(VASTValue *Tree, VASTSelector *Dst,
                             ArrayRef<VASTSlot*> ReadSlots);
 
-  Leaf buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots, VASTValue *Thu,
+  Leaf buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots, VASTExpr *Thu,
                  VASTSelector *Dst);
   void annotateLeaf(VASTSelector *Sel, VASTExpr *Parent, Leaf CurLeaf,
                     SeqValSetTy &LocalInterval);
@@ -190,14 +187,13 @@ struct TimingScriptGen : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequired<STGDistances>();
-    AU.addRequired<TimingNetlist>();
+    AU.addRequired<TimingAnalysis>();
     AU.addRequiredID(DatapathNamerID);
-    AU.addRequired<DataLayout>();
+    AU.addRequired<STGDistances>();
     AU.setPreservesAll();
   }
 
-  void writeConstraintsFor(VASTSelector *Sel, TimingNetlist &TNL,
+  void writeConstraintsFor(VASTSelector *Sel, TimingAnalysis &TA,
                            STGDistances &STGDist);
   void annoataConstraintsFor(AnnotatedCone &Cache, VASTSelector *Sel);
 
@@ -214,9 +210,9 @@ struct TimingScriptGen : public VASTModulePass {
 }
 
 Leaf AnnotatedCone::buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots,
-                              VASTValue *Thu, VASTSelector *Dst) {
+                              VASTExpr *Thu, VASTSelector *Dst) {
   unsigned Interval = STGDist.getIntervalFromDef(V->getSelector(), ReadSlots);
-  float EstimatedDelay = TNL.getDelay(V, Thu, Dst);
+  float EstimatedDelay = TA.getArrivalTime(Dst, Thu, V);
   return Leaf(Interval, EstimatedDelay);
 }
 
@@ -231,9 +227,10 @@ AnnotatedCone::annotateLeaf(VASTSelector *Sel, VASTExpr *Parent, Leaf CurLeaf,
 
 void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
                                          ArrayRef<VASTSlot*> ReadSlots) {
-  VASTExpr *Expr = dyn_cast<VASTExpr>(Root);
+  VASTExpr *RootExpr = dyn_cast<VASTExpr>(Root);
 
-  if (Expr == 0) return;
+  if (RootExpr == 0)
+    return;
 
   typedef  VASTOperandList::op_iterator ChildIt;
 
@@ -244,7 +241,7 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
   // for the current cone.
   SeqValSetTy LocalInterval;
 
-  VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
+  VisitStack.push_back(std::make_pair(RootExpr, RootExpr->op_begin()));
   while (!VisitStack.empty()) {
     VASTExpr *Expr = VisitStack.back().first;
     ChildIt &It = VisitStack.back().second;
@@ -272,7 +269,7 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
       if (generateSubmoduleConstraints(V)) continue;
 
-      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, Root, Dst),
+      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, RootExpr, Dst),
                    LocalInterval);
       continue;
     }  
@@ -302,7 +299,7 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
       // even V may be masked by the false path indicated by the keep attribute.
       // we will first generate the tight constraints and overwrite them by
       // looser constraints.
-      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, Root, Dst),
+      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, RootExpr, Dst),
                    LocalInterval);
     }
   }
@@ -477,17 +474,18 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
           );\n";
 
   STGDistances &STGDist = getAnalysis<STGDistances>();
-  TimingNetlist &TNL =getAnalysis<TimingNetlist>();
+  TimingAnalysis &TA =getAnalysis<TimingAnalysis>();
 
   //Write the timing constraints.
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     VASTSelector *Sel = I;
 
-    if (Sel->empty()) continue;
+    if (Sel->empty())
+      continue;
 
     // Handle the trivial case.
-    writeConstraintsFor(Sel, TNL, STGDist);
+    writeConstraintsFor(Sel, TA, STGDist);
   }
 
   // Also generate the location constraints.
@@ -508,9 +506,9 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
 }
 
 void
-TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingNetlist &TNL,
+TimingScriptGen::writeConstraintsFor(VASTSelector *Dst, TimingAnalysis &TA,
                                      STGDistances &STGDist) {
-  AnnotatedCone Cache(TNL, STGDist, Dst, OS);
+  AnnotatedCone Cache(TA, STGDist, Dst, OS);
 
   annoataConstraintsFor(Cache, Dst);
 
@@ -555,7 +553,7 @@ void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache, VASTSelector *Dst
     if (Cache.generateSubmoduleConstraints(Src)) return;
 
     Cache.addIntervalFromSrc(Src->getSelector(),
-                             Cache.buildLeaf(Src, ReadSlots, 0, Dst));
+                             Cache.buildLeaf(Src, ReadSlots, NULL, Dst));
 
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
@@ -577,9 +575,8 @@ char TimingScriptGen::ID = 0;
 INITIALIZE_PASS_BEGIN(TimingScriptGen, "vast-timing-script-generation",
                       "Generate timing script to export the behavior-level timing",
                       false, true)
-  INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
-  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
+  INITIALIZE_AG_DEPENDENCY(TimingAnalysis)
   INITIALIZE_PASS_DEPENDENCY(STGDistances)
 INITIALIZE_PASS_END(TimingScriptGen, "vast-timing-script-generation",
                     "Generate timing script to export the behavior-level timing",

@@ -58,7 +58,7 @@ Pass *createAlwaysSpeculatePass();
 
 Pass *createBitlevelOptPass();
 Pass *createOptimizePHINodesPass();
-Pass *createTimingNetlistPass();
+Pass *createExternalToolDriverPass();
 Pass *createDataflowAnnotationPass(bool Accumulative = false);
 Pass *createVASTSchedulingPass();
 Pass *createIterativeSchedulingPass();
@@ -92,8 +92,8 @@ void initializeMemoryAccessCoalescingPass(PassRegistry &Registry);
 void initializeBasicBlockTopOrderPass(PassRegistry &Registry);
 
 void initializeHLSAllocationAnalysisGroup(PassRegistry &Registry);
-void initializeBasicAllocationPass(PassRegistry &Registry);
-void initializeMemoryPartitionPass(PassRegistry &Registry);
+
+void initializeTimingAnalysisAnalysisGroup(PassRegistry &Registry);
 
 void initializeLowerAllocaPass(PassRegistry &Registry);
 void initializeGlobalToStackPass(PassRegistry &Registry);
@@ -102,7 +102,6 @@ void initializeBitlevelOptPass(PassRegistry &Registry);
 void initializeOptimizePHINodesPass(PassRegistry &Registry);
 void initializeDataflowPass(PassRegistry &Registry);
 void initializeDataflowAnnotationPass(PassRegistry &Registry);
-void initializeTimingNetlistPass(PassRegistry &Registry);
 void initializeVASTSchedulingPass(PassRegistry &Registry);
 void initializeIterativeSchedulingPass(PassRegistry &Registry);
 void initializeSTGDistancesPass(PassRegistry &Registry);

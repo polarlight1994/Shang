@@ -10,8 +10,6 @@
 // This file implement the control logic synthesis pass.
 //
 //===----------------------------------------------------------------------===//
-#include "TimingNetlist.h"
-
 #include "vast/Dataflow.h"
 #include "vast/FUInfo.h"
 #include "vast/VASTMemoryBank.h"

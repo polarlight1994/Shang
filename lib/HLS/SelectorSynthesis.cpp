@@ -11,8 +11,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "TimingNetlist.h"
-
 #include "vast/FUInfo.h"
 #include "vast/VASTMemoryBank.h"
 #include "vast/VASTExprBuilder.h"

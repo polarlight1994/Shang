@@ -2,8 +2,7 @@ add_subdirectory(Scheduling)
 add_subdirectory(Binding)
 
 add_llvm_library(ShangHLS
-  TimingNetlist.cpp
-  DelayMatrix.cpp
+  TimingAnalysis.cpp
   TimingScriptGen.cpp
   ExternalTimingAnalysis.cpp
   Dataflow.cpp

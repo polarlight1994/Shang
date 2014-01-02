@@ -52,6 +52,10 @@ MaxComblROMLL("vast-max-combinational-rom-logic-level",
   cl::desc("The maximal allowed logic level of a combinational ROM"),
   cl::init(1));
 
+namespace llvm {
+void initializeMemoryPartitionPass(PassRegistry &Registry);
+}
+
 namespace {
 struct MemoryPartition : public ModulePass, public HLSAllocation {
   static char ID;

@@ -290,6 +290,7 @@ int main(int argc, char **argv) {
       HLSPasses.add(createBitlevelOptPass());
 
     // Perform the scheduling.
+    HLSPasses.add(createExternalToolDriverPass());
     HLSPasses.add(createDataflowAnnotationPass());
     HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
     HLSPasses.add(createVASTSchedulingPass());

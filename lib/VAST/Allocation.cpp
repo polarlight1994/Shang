@@ -72,12 +72,15 @@ HLSAllocation::~HLSAllocation() {
 
 char HLSAllocation::ID = 0;
 
+namespace llvm {
+  void initializeBasicAllocationPass(PassRegistry &Registry);
+}
+
 INITIALIZE_ANALYSIS_GROUP(HLSAllocation,
                           "High-level Synthesis Resource Allocation",
                           BasicAllocation)
 
 namespace {
-/// TODO: Implement the HLS allocation as analysis group.
 /// HLSAllocation - The resource allocation interface.
 struct BasicAllocation : public ImmutablePass, public HLSAllocation {
   static char ID;

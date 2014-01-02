@@ -11,11 +11,9 @@
 // build the flow dependencies on LLVM IR.
 //
 //===----------------------------------------------------------------------===//
-#include "DelayMatrix.h"
-#include "TimingNetlist.h"
-
 #include "vast/Passes.h"
 #include "vast/Dataflow.h"
+#include "vast/TimingAnalysis.h"
 #include "vast/VASTModule.h"
 #include "vast/STGDistances.h"
 #include "vast/Strash.h"
@@ -348,12 +346,8 @@ class DataflowAnnotation : public VASTModulePass {
   const bool Accumulative;
 
   void annotateDelay(VASTModule &VM);
-  void annotateDelay(VASTModule &VM, DelayMatrix &Matrix);
 
-  typedef DelayMatrix::PhysicalDelay PhysicalDelay;
-  typedef std::map<VASTSeqValue*, PhysicalDelay> ArrivalMap;
-  void extraxtDelay(DelayMatrix &Matrix, const VASTLatch &L, VASTValPtr V,
-                    ArrivalMap &Arrivals);
+  typedef TimingAnalysis::PhysicalDelay PhysicalDelay;
   void annotateDelay(DataflowInst Inst, VASTSlot *S, VASTSeqValue *V,
                      float delay, float ic_delay);
 public:
@@ -393,7 +387,7 @@ INITIALIZE_PASS_BEGIN(DataflowAnnotation,
                       "vast-dataflow-annotation", "Dataflow Annotation",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(Dataflow)
-  INITIALIZE_PASS_DEPENDENCY(TimingNetlist)
+  INITIALIZE_AG_DEPENDENCY(TimingAnalysis)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
   INITIALIZE_PASS_DEPENDENCY(SelectorSynthesisForAnnotation)
   INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
@@ -408,11 +402,8 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
   AU.addRequired<Dataflow>();
 
-  AU.addRequiredID(ControlLogicSynthesisID);
-  AU.addRequiredID(SelectorSynthesisForAnnotationID);
-  AU.addRequiredID(DatapathNamerID);
+  AU.addRequired<TimingAnalysis>();
   AU.addRequiredID(STGDistancesID);
-  AU.addRequired<TimingNetlist>();
 
   AU.setPreservesAll();
 }
@@ -424,81 +415,9 @@ void DataflowAnnotation::annotateDelay(DataflowInst Inst, VASTSlot *S,
   DF->annotateDelay(Inst, S, SV, delay, ic_delay, Slack);
 }
 
-void DataflowAnnotation::extraxtDelay(DelayMatrix &Matrix, const VASTLatch &L,
-                                      VASTValPtr V, ArrivalMap &Arrivals) {
-  // Simply add the zero delay record if the fanin itself is a register.
-  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V.get())) {
-    if (!SV->isSlot() && !SV->isFUOutput()) {
-      // Please note that this insertion may fail (V already existed), but it
-      // does not hurt because here we only want to ensure the record exist.
-      Arrivals.insert(std::make_pair(SV, PhysicalDelay()));
-      return;
-    }
-  }
+void DataflowAnnotation::annotateDelay(VASTModule &VM) {
+  TimingAnalysis &TA = getAnalysis<TimingAnalysis>();
 
-  typedef std::set<VASTSeqValue*> LeafSet;
-  LeafSet Leaves;
-  V->extractSupportingSeqVal(Leaves);
-  if (Leaves.empty())
-    return;
-
-  VASTSelector *Sel = L.getSelector();
-  SmallVector<VASTSeqValue*, 4> MissedLeaves;
-
-  typedef LeafSet::iterator iterator;
-  for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
-    VASTSeqValue *Leaf = *I;
-
-    PhysicalDelay Delay = Matrix.getArrivalTime(Sel, Leaf);
-
-    // If there is more than one paths between Leaf and selector, the delay
-    // is not directly available.
-    if (Delay.isNone()) {
-      MissedLeaves.push_back(Leaf);
-      continue;
-    }
-
-    // Otherwise Update the delay.
-    PhysicalDelay &OldDelay = Arrivals[Leaf];
-    OldDelay = std::max(OldDelay, Delay);
-  }
-
-  if (MissedLeaves.empty())
-    return;
-
-  VASTSlot *ReadSlot = L.getSlot();
-  typedef VASTSelector::ann_iterator ann_iterator;
-  for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
-    const VASTSelector::Annotation &Ann = *I->second;
-    ArrayRef<VASTSlot*> Slots(Ann.getSlots());
-    VASTExpr *Thu = I->first;
-    assert(Thu->isTimingBarrier() && "Unexpected Expr Type!");
-
-    if (std::find(Slots.begin(), Slots.end(), ReadSlot) == Slots.end())
-      continue;
-
-    typedef SmallVector<VASTSeqValue*, 4>::iterator leaf_iterator;
-    for (leaf_iterator I = MissedLeaves.begin(), E = MissedLeaves.end();
-         I != E; ++I) {
-      VASTSeqValue *Leaf = *I;
-
-      PhysicalDelay Delay = Matrix.getArrivalTime(Sel, Thu, Leaf);
-
-      if (Delay.isNone())
-        continue;
-
-      PhysicalDelay &OldDelay = Arrivals[Leaf];
-      OldDelay = std::max(OldDelay, Delay);
-    }
-  }
-
-#ifndef NDEBUG
-  for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I)
-    assert(Arrivals.count(*I) && "Source delay missed!");
-#endif
-}
-
-void DataflowAnnotation::annotateDelay(VASTModule &VM, DelayMatrix &Matrix) {
   typedef VASTModule::seqop_iterator iterator;
   for (iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
     VASTSeqOp *Op = I;
@@ -509,9 +428,9 @@ void DataflowAnnotation::annotateDelay(VASTModule &VM, DelayMatrix &Matrix) {
     if (!Inst)
       continue;
 
-    typedef std::map<VASTSeqValue*, DelayMatrix::PhysicalDelay>
+    typedef std::map<VASTSeqValue*, TimingAnalysis::PhysicalDelay>
             ArrivalInfo;
-    std::map<VASTSeqValue*, DelayMatrix::PhysicalDelay> Srcs;
+    std::map<VASTSeqValue*, TimingAnalysis::PhysicalDelay> Srcs;
     VASTValPtr Guard = Op->getGuard();
     VASTSeqValue *SlotValue = Op->getSlot()->getValue();
 
@@ -523,9 +442,9 @@ void DataflowAnnotation::annotateDelay(VASTModule &VM, DelayMatrix &Matrix) {
 
       // Extract the delay from the fan-in and the guarding condition.
       VASTValPtr FI = L;
-      extraxtDelay(Matrix, L, SlotValue, Srcs);
-      extraxtDelay(Matrix, L, Guard, Srcs);
-      extraxtDelay(Matrix, L, FI, Srcs);
+      TA.extractDelay(L, SlotValue, Srcs);
+      TA.extractDelay(L, Guard, Srcs);
+      TA.extractDelay(L, FI, Srcs);
     }
 
     typedef ArrivalInfo::iterator src_iterator;
@@ -548,15 +467,9 @@ void DataflowAnnotation::annotateDelay(VASTModule &VM, DelayMatrix &Matrix) {
   Function &F = VM.getLLVMFunction();
   for (bb_iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
-    if (Matrix.isBasicBlockUnreachable(BB))
+    if (TA.isBasicBlockUnreachable(BB))
       DF->addUnreachableBlocks(BB);
   }
-}
-
-void DataflowAnnotation::annotateDelay(VASTModule &VM) {
-  OwningPtr<DelayMatrix> Ptr(createExternalTimingAnalysis(VM, *DF));
-
-  annotateDelay(VM, *Ptr);
 }
 
 bool DataflowAnnotation::runOnVASTModule(VASTModule &VM) {

@@ -25,6 +25,7 @@
 namespace vast {
 using namespace llvm;
 
+struct VASTLatch;
 class VASTSlot;
 class VASTCtrlRgn;
 struct ShortestPathImpl;

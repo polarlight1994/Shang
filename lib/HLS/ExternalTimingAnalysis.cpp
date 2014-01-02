@@ -17,8 +17,8 @@
 //   {"from":<src-reg>,"to":<dst-reg>,"delay":<delay-in-nanosecond>}
 //
 //===----------------------------------------------------------------------===//
-#include "DelayMatrix.h"
 
+#include "vast/TimingAnalysis.h"
 #include "vast/Passes.h"
 #include "vast/Dataflow.h"
 #include "vast/VASTModule.h"
@@ -152,11 +152,12 @@ public:
   }
 };
 
-struct ExternalTimingAnalysis : public DelayMatrix {
+struct ExternalTimingAnalysis {
   SmallString<256> OutputDir;
   VASTModule &VM;
   Dataflow &DF;
 
+  typedef TimingAnalysis::PhysicalDelay PhysicalDelay;
   SpecificBumpPtrAllocator<PhysicalDelay> Allocator;
 
   std::vector<float*> DelayRefs;
@@ -595,7 +596,7 @@ struct ConstraintHelper {
 
 unsigned
 ExternalTimingAnalysis::calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op) {
-  Dataflow::delay_type delay = DF.getDelay(Src, Op, Op->getSlot());
+  Dataflow::delay_type delay;  // = DF.getDelay(Src, Op, Op->getSlot());
 
   float TotalDelay = delay.expected();
   float CellDelay = TotalDelay - delay.expected_ic_delay();
@@ -1030,13 +1031,100 @@ bool ExternalTimingAnalysis::readRegionPlacement(){
   return true;
 }
 
-DelayMatrix *vast::createExternalTimingAnalysis(VASTModule &VM, Dataflow &DF) {
-  ExternalTimingAnalysis *ETA = new ExternalTimingAnalysis(VM, DF);
+namespace llvm {
+void initializeExternalToolDriverPass(PassRegistry &Registry);
+}
 
-  if (!ETA->analysisWithSynthesisTool()) {
-    delete ETA;
-    return NULL;
+namespace {
+struct ExternalToolDriver : public VASTModulePass, public TimingAnalysis {
+  static char ID;
+  ExternalTimingAnalysis *ETA;
+
+  ExternalToolDriver() : VASTModulePass(ID), ETA(NULL) {
+    initializeExternalToolDriverPass(*PassRegistry::getPassRegistry());
+  }
+  
+  PhysicalDelay getArrivalTime(VASTSelector *To, VASTSeqValue *From);
+  PhysicalDelay getArrivalTime(VASTSelector *To, VASTExpr *Thu,
+                               VASTSeqValue *From);
+  bool isBasicBlockUnreachable(BasicBlock *BB) const;
+
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    VASTModulePass::getAnalysisUsage(AU);
+    TimingAnalysis::getAnalysisUsage(AU);
+    AU.addRequired<Dataflow>();
   }
 
-  return ETA;
+  void releaseMemory() {
+    if (ETA)
+      delete ETA;
+
+    ETA = NULL;
+  }
+
+  bool runOnVASTModule(VASTModule &VM) {
+    InitializeTimingAnalysis(this);
+    assert(ETA == NULL && "Last ETA didn't released!");
+    ETA = new ExternalTimingAnalysis(VM, getAnalysis<Dataflow>());
+
+    if (!ETA->analysisWithSynthesisTool()) {
+      delete ETA;
+      ETA = NULL;
+    }
+
+    return false;
+  }
+
+  /// getAdjustedAnalysisPointer - This method is used when a pass implements
+  /// an analysis interface through multiple inheritance.  If needed, it
+  /// should override this to adjust the this pointer as needed for the
+  /// specified pass info.
+  virtual void *getAdjustedAnalysisPointer(const void *ID) {
+    if (ID == &TimingAnalysis::ID)
+      return (TimingAnalysis*)this;
+
+    return this;
+  }
+};
+}
+
+TimingAnalysis::PhysicalDelay
+ExternalToolDriver::getArrivalTime(VASTSelector *To, VASTSeqValue *From) {
+  if (ETA) {
+    return ETA->getArrivalTime(To, From);
+  }
+
+  return TimingAnalysis::getArrivalTime(To, From);
+}
+
+TimingAnalysis::PhysicalDelay
+ExternalToolDriver::getArrivalTime(VASTSelector *To, VASTExpr *Thu,
+                                   VASTSeqValue *From) {
+  if (ETA) {
+    return ETA->getArrivalTime(To, Thu, From);
+  }
+
+  return TimingAnalysis::getArrivalTime(To, Thu, From);
+}
+
+bool ExternalToolDriver::isBasicBlockUnreachable(BasicBlock *BB) const {
+  if (ETA)
+    return ETA->isBasicBlockUnreachable(BB);
+
+  return TimingAnalysis::isBasicBlockUnreachable(BB);
+}
+
+INITIALIZE_AG_PASS_BEGIN(ExternalToolDriver, TimingAnalysis,
+                         "external-tool-driver",
+                         "External Tool Driver",
+                         false, true, false)
+INITIALIZE_AG_PASS_END(ExternalToolDriver, TimingAnalysis,
+                       "external-tool-driver",
+                       "External Tool Driver",
+                       false, true, false)
+
+char ExternalToolDriver::ID = 0;
+
+Pass *vast::createExternalToolDriverPass() {
+  return new ExternalToolDriver();
 }

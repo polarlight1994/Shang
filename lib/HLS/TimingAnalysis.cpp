@@ -1,4 +1,4 @@
-//=--- TimingNetlist.cpp - The Netlist for Delay Estimation -------*- C++ -*-=//
+//---- TimingAnalysis.cpp - Abstract Interface for Timing Analysis -*- C++ -*-//
 //
 //                      The VAST HLS frameowrk                                //
 //
@@ -7,39 +7,266 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implement the interface timing netlist.
+// This file datapath define the delay estimator based on linear approximation.
 //
 //===----------------------------------------------------------------------===//
-
-#include "TimingNetlist.h"
-#include "DelayMatrix.h"
-
-#include "vast/VASTMemoryBank.h"
-#include "vast/VASTModule.h"
+#include "vast/TimingAnalysis.h"
 #include "vast/Passes.h"
-#include "vast/FUInfo.h"
-#include "vast/LuaI.h"
 
-#include "llvm/ADT/OwningPtr.h"
-#include "llvm/ADT/SetOperations.h"
-#include "llvm/Support/CommandLine.h"
-#define DEBUG_TYPE "shang-timing-netlist"
+#include "vast/VASTModule.h"
+#include "vast/VASTModulePass.h"
+#include "llvm/Support/MathExtras.h"
+#define DEBUG_TYPE "shang-timing-estimator"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
 
-static cl::opt<enum TimingNetlist::ModelType>
-TimingModel("timing-model", cl::Hidden,
-            cl::desc("The Timing Model of the Delay Estimator"),
-            cl::values(
-  clEnumValN(TimingNetlist::External, "external",
-            "Perform delay estimation with synthesis tool"),
-  clEnumValN(TimingNetlist::BlackBox, "blackbox",
-            "Only accumulate the critical path delay of each FU"),
-  clEnumValN(TimingNetlist::ZeroDelay, "zero-delay",
-            "Assume all datapath delay is zero"),
-  clEnumValEnd));
+TimingAnalysis::PhysicalDelay TimingAnalysis::getArrivalTime(VASTSelector *To,
+                                                             VASTSeqValue *From) {
+  return TA->getArrivalTime(To, From);
+}
 
+TimingAnalysis::PhysicalDelay TimingAnalysis::getArrivalTime(VASTSelector *To,
+                                                             VASTExpr *Thu,
+                                                             VASTSeqValue *From) {
+  return TA->getArrivalTime(To, Thu, From);
+}
+
+bool TimingAnalysis::isBasicBlockUnreachable(BasicBlock *BB) const {
+  return TA->isBasicBlockUnreachable(BB);
+}
+
+void TimingAnalysis::InitializeTimingAnalysis(Pass *P) {
+  TA = &P->getAnalysis<TimingAnalysis>();
+}
+
+void TimingAnalysis::extractDelay(const VASTLatch &L, VASTValPtr V, ArrivalMap &Arrivals) {
+  // Simply add the zero delay record if the fanin itself is a register.
+  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V.get())) {
+    if (!SV->isSlot() && !SV->isFUOutput()) {
+      // Please note that this insertion may fail (V already existed), but it
+      // does not hurt because here we only want to ensure the record exist.
+      Arrivals.insert(std::make_pair(SV, PhysicalDelay()));
+      return;
+    }
+  }
+
+  typedef std::set<VASTSeqValue*> LeafSet;
+  LeafSet Leaves;
+  V->extractSupportingSeqVal(Leaves);
+  if (Leaves.empty())
+    return;
+
+  VASTSelector *Sel = L.getSelector();
+  SmallVector<VASTSeqValue*, 4> MissedLeaves;
+
+  typedef LeafSet::iterator iterator;
+  for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
+    VASTSeqValue *Leaf = *I;
+
+    PhysicalDelay Delay = getArrivalTime(Sel, Leaf);
+
+    // If there is more than one paths between Leaf and selector, the delay
+    // is not directly available.
+    if (Delay == None) {
+      MissedLeaves.push_back(Leaf);
+      continue;
+    }
+
+    // Otherwise Update the delay.
+    PhysicalDelay &OldDelay = Arrivals[Leaf];
+    OldDelay = std::max(OldDelay, Delay);
+  }
+
+  if (MissedLeaves.empty())
+    return;
+
+  VASTSlot *ReadSlot = L.getSlot();
+  typedef VASTSelector::ann_iterator ann_iterator;
+  for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
+    const VASTSelector::Annotation &Ann = *I->second;
+    ArrayRef<VASTSlot*> Slots(Ann.getSlots());
+    VASTExpr *Thu = I->first;
+    assert(Thu->isTimingBarrier() && "Unexpected Expr Type!");
+
+    if (std::find(Slots.begin(), Slots.end(), ReadSlot) == Slots.end())
+      continue;
+
+    typedef SmallVector<VASTSeqValue*, 4>::iterator leaf_iterator;
+    for (leaf_iterator I = MissedLeaves.begin(), E = MissedLeaves.end();
+         I != E; ++I) {
+      VASTSeqValue *Leaf = *I;
+
+      PhysicalDelay Delay = getArrivalTime(Sel, Thu, Leaf);
+
+      if (Delay == None)
+        continue;
+
+      PhysicalDelay &OldDelay = Arrivals[Leaf];
+      OldDelay = std::max(OldDelay, Delay);
+    }
+  }
+
+#ifndef NDEBUG
+  for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I)
+    assert(Arrivals.count(*I) && "Source delay missed!");
+#endif
+}
+
+void TimingAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
+  AU.addRequired<TimingAnalysis>();
+  AU.setPreservesAll();
+}
+
+char TimingAnalysis::ID = 0;
+
+namespace llvm {
+void initializeTimingNetlistPass(PassRegistry &Registry);
+}
+
+INITIALIZE_ANALYSIS_GROUP(TimingAnalysis,
+                          "High-level Synthesis Timing Analysis",
+                          TimingNetlist)
+
+//===----------------------------------------------------------------------===//
+namespace {
+// Bit level arrival time.
+struct ArrivalTime : public ilist_node<ArrivalTime> {
+  VASTValue *Src;
+  float Arrival;
+  // Arrival to bit range [ToLB, ToUB)
+  uint8_t ToUB, ToLB;
+  ArrivalTime(VASTValue *Src, float Arrival, uint8_t ToUB, uint8_t ToLB);
+  ArrivalTime() : Src(NULL), Arrival(0.0f), ToUB(0), ToLB(0) {}
+  void verify() const;
+
+  unsigned width() const { return ToUB - ToLB; }
+};
+
+class DelayModel : public ilist_node<DelayModel> {
+  VASTExpr *Node;
+  // The fanin to the current delay model, order matters.
+  ArrayRef<DelayModel*> Fanins;
+
+  ilist<ArrivalTime> Arrivals;
+  std::map<VASTValue*, ArrivalTime*> ArrivalStart;
+
+  ilist<ArrivalTime>::iterator
+  findInsertPosition(ArrivalTime *Start, VASTValue *V, uint8_t ToLB);
+
+  void addArrival(VASTValue *V, float Arrival, uint8_t ToUB, uint8_t ToLB);
+
+  void updateArrivalCarryChain(unsigned i, float Base, float PerBit);
+  void updateArrivalCritial(unsigned i, float Delay, uint8_t ToUB, uint8_t ToLB);
+  void updateArrivalParallel(unsigned i, float Delay);
+
+  void updateArrivalParallel(float delay);
+  void updateArrivalCritial(float delay, uint8_t ToUB, uint8_t ToLB);
+
+  void updateBitCatArrival();
+  void updateBitRepeatArrival();
+  void updateBitExtractArrival();
+  void updateBitMaskArrival();
+  void updateReductionArrival();
+  void updateROMLookUpArrival();
+
+  template<typename VFUTy>
+  void updateCarryChainArrival(VFUTy *FU)  {
+    unsigned BitWidth = Node->getBitWidth();
+
+    // Dirty HACK: We only have the data up to 64 bit FUs.
+    float Delay = FU->lookupLatency(std::min(BitWidth, 64u));
+    float PreBit = Delay / BitWidth;
+
+    unsigned NumOperands = Node->size();
+    float Base = PreBit * (NumOperands - 1);
+
+    for (unsigned i = 0, e = Node->size(); i < e; ++i)
+      updateArrivalCarryChain(i, Base, PreBit);
+  }
+
+  void updateCmpArrivial();
+  void updateShiftAmt();
+  void updateShlArrival();
+  void updateShrArrival();
+public:
+  DelayModel() : Node(NULL) {}
+  DelayModel(VASTExpr *Node, ArrayRef<DelayModel*> Fanins);
+  ~DelayModel();
+
+  typedef ArrayRef<DelayModel>::iterator iterator;
+
+  void updateArrival();
+  void verify() const;
+  void verifyConnectivity() const;
+
+  typedef ilist<ArrivalTime>::iterator arrival_iterator;
+  arrival_iterator arrival_begin() { return Arrivals.begin(); }
+  arrival_iterator arrival_end() { return Arrivals.end(); }
+  typedef ilist<ArrivalTime>::const_iterator const_arrival_iterator;
+  const_arrival_iterator arrival_begin() const { return Arrivals.begin(); }
+  const_arrival_iterator arrival_end() const { return Arrivals.end(); }
+
+  const_arrival_iterator arrival_begin(VASTValue *V) const {
+    std::map<VASTValue*, ArrivalTime*>::const_iterator I = ArrivalStart.find(V);
+    if (I == ArrivalStart.end())
+      return Arrivals.end();
+
+    return I->second;
+  }
+
+  bool inRange(const_arrival_iterator I, VASTValue *V) const {
+    if (I == Arrivals.end())
+      return false;
+
+    return I->Src == V;
+  }
+};
+
+/// Timinging Netlist - Annotate the timing information to the RTL netlist.
+class TimingNetlist : public VASTModulePass, public TimingAnalysis {
+public:
+// The bit-level delay model.
+  ilist<DelayModel> Models;
+  std::map<VASTExpr*, DelayModel*> ModelMap;
+
+  DelayModel *createModel(VASTExpr *Expr);
+
+  void buildTimingNetlist(VASTValue *V);
+public: 
+  static char ID;
+
+  TimingNetlist();
+
+  PhysicalDelay getArrivalTimeImpl(VASTValue *To, VASTValue *From);
+  PhysicalDelay getArrivalTimeImpl(VASTSelector *To, VASTValue *From);
+
+  PhysicalDelay getArrivalTime(VASTSelector *To, VASTSeqValue *From);
+  PhysicalDelay getArrivalTime(VASTSelector *To, VASTExpr *Thu,
+                               VASTSeqValue *From);
+
+  bool isBasicBlockUnreachable(BasicBlock *BB) const {
+    return false;
+  }
+
+  virtual void releaseMemory();
+  virtual bool runOnVASTModule(VASTModule &VM);
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const;
+  void print(raw_ostream &OS) const;
+
+  /// getAdjustedAnalysisPointer - This method is used when a pass implements
+  /// an analysis interface through multiple inheritance.  If needed, it
+  /// should override this to adjust the this pointer as needed for the
+  /// specified pass info.
+  virtual void *getAdjustedAnalysisPointer(const void *ID) {
+    if (ID == &TimingAnalysis::ID)
+      return (TimingAnalysis*)this;
+
+    return this;
+  }
+};
+}
 //===----------------------------------------------------------------------===//
 ArrivalTime::ArrivalTime(VASTValue *Src, float Arrival,
                          uint8_t ToUB, uint8_t ToLB)
@@ -609,30 +836,6 @@ void DelayModel::updateArrival() {
 }
 
 //===----------------------------------------------------------------------===//
-float TimingNetlist::getDelay(VASTValue *Src, VASTSelector *Dst) const {
-  return 0.0f;
-}
-
-float TimingNetlist::getDelay(VASTValue *Src, VASTValue *Dst) const {
-  // TODO:
-  //if (VASTSeqValue *SVal = dyn_cast<VASTSeqValue>(Dst)) {
-  //  for each fanin fi of Dst,
-  //    get the CRITICAL path delay from Src to fi
-  //    max reduction
-
-  //  return CRITICAL delay to all fanins + Mux delay?
-  //}
-  return 0.0f;
-}
-
-float TimingNetlist::getDelay(VASTValue *Src, VASTValue *Thu,
-                              VASTSelector *Dst) const {
-  if (Thu == 0) return getDelay(Src, Dst);
-
-  float S2T = getDelay(Src, Thu), T2D = getDelay(Thu, Dst);
-  return S2T + T2D;
-}
-
 DelayModel *TimingNetlist::createModel(VASTExpr *Expr) {
   DelayModel *&Model = ModelMap[Expr];
   assert(Model == NULL && "Model had already existed!");
@@ -703,17 +906,17 @@ TimingNetlist::TimingNetlist() : VASTModulePass(ID) {
 
 char TimingNetlist::ID = 0;
 
-INITIALIZE_PASS_BEGIN(TimingNetlist, "shang-timing-netlist",
-                      "Preform Timing Estimation on the RTL Netlist",
-                      false, true)
+INITIALIZE_AG_PASS_BEGIN(TimingNetlist, TimingAnalysis,
+                         "shang-timing-netlist",
+                         "Preform Timing Estimation on the RTL Netlist",
+                         false, true, true)
   INITIALIZE_PASS_DEPENDENCY(ControlLogicSynthesis)
-INITIALIZE_PASS_END(TimingNetlist, "shang-timing-netlist",
-                    "Preform Timing Estimation on the RTL Netlist",
-                    false, true)
-
-Pass *vast::createTimingNetlistPass() {
-  return new TimingNetlist();
-}
+  INITIALIZE_PASS_DEPENDENCY(SelectorSynthesisForAnnotation)
+  INITIALIZE_PASS_DEPENDENCY(DatapathNamer)
+INITIALIZE_AG_PASS_END(TimingNetlist, TimingAnalysis,
+                       "shang-timing-netlist",
+                       "Preform Timing Estimation on the RTL Netlist",
+                       false, true, true)
 
 void TimingNetlist::releaseMemory() {
   ModelMap.clear();
@@ -722,6 +925,11 @@ void TimingNetlist::releaseMemory() {
 
 void TimingNetlist::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
+
+  AU.addRequiredID(ControlLogicSynthesisID);
+  AU.addRequiredID(SelectorSynthesisForAnnotationID);
+  AU.addRequiredTransitiveID(DatapathNamerID);
+
   AU.setPreservesAll();
 }
 
@@ -741,4 +949,46 @@ bool TimingNetlist::runOnVASTModule(VASTModule &VM) {
   return false;
 }
 
-void TimingNetlist::print(raw_ostream &OS) const {}
+void TimingNetlist::print(raw_ostream &OS) const {
+}
+
+TimingAnalysis::PhysicalDelay
+TimingNetlist::getArrivalTimeImpl(VASTValue *To, VASTValue *From) {
+  VASTExpr *Expr = dyn_cast<VASTExpr>(To);
+
+  if (Expr == NULL)
+    return PhysicalDelay(0.0f);
+
+  std::map<VASTExpr*, DelayModel*>::iterator I = ModelMap.find(Expr);
+  assert(I != ModelMap.end() && "Model of Expr cannot be found!");
+  DelayModel *M = I->second;
+  PhysicalDelay Arrival = None;
+
+
+  typedef DelayModel::const_arrival_iterator iterator;
+  for (iterator I = M->arrival_begin(From); M->inRange(I, From); ++I)
+    Arrival = std::max(Arrival, PhysicalDelay(I->Arrival));
+
+  return Arrival;
+}
+
+TimingAnalysis::PhysicalDelay
+TimingNetlist::getArrivalTimeImpl(VASTSelector *To, VASTValue *From) {
+  PhysicalDelay FIArrival = getArrivalTimeImpl(To->getFanin().get(), From);
+  PhysicalDelay GuardArrival = getArrivalTimeImpl(To->getGuard().get(), From);
+  // TODO: FU delay.
+  return std::max(FIArrival, GuardArrival);
+}
+
+TimingAnalysis::PhysicalDelay
+TimingNetlist::getArrivalTime(VASTSelector *To, VASTSeqValue *From) {
+  return getArrivalTimeImpl(To, From);
+}
+
+TimingAnalysis::PhysicalDelay TimingNetlist::getArrivalTime(VASTSelector *To, VASTExpr *Thu,
+                                                            VASTSeqValue *From) {
+  if (Thu == NULL)
+    return getArrivalTimeImpl(To, From);
+
+  return getArrivalTimeImpl(To, Thu) + getArrivalTimeImpl(Thu, From);
+}
