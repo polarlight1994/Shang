@@ -643,7 +643,7 @@ void DelayModel::updateBitExtractArrival() {
       continue;
 
     // Transform the arrival bits.
-    addArrival(AT->Src, 0.0f, CurUB - LB, CurLB - LB);
+    addArrival(AT->Src, AT->Arrival, CurUB - LB, CurLB - LB);
   }
 }
 
