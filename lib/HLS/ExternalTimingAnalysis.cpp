@@ -17,6 +17,7 @@
 //   {"from":<src-reg>,"to":<dst-reg>,"delay":<delay-in-nanosecond>}
 //
 //===----------------------------------------------------------------------===//
+#include "TimingEstimator.h"
 
 #include "vast/Passes.h"
 #include "vast/Dataflow.h"
@@ -151,33 +152,15 @@ public:
   }
 };
 
-struct ExternalTimingAnalysis {
+struct ExternalTimingAnalysis : public DelayMatrix {
   SmallString<256> OutputDir;
   VASTModule &VM;
-  Dataflow *DF;
-  STGDistances *Distances;
+  Dataflow &DF;
 
-  // Data structure that explicitly hold the total delay and cell delay of a
-  // datapath. Based on total delay and cell delay we can calculate the
-  // corresponding wire delay.
-  struct delay_type {
-    float total_delay;
-    float cell_delay;
-    delay_type() : total_delay(0.0f), cell_delay(0.0f) {}
-    delay_type(NoneType)
-      : total_delay(-1.1e+10f), cell_delay(-1.1e+10f) {}
-
-    bool isNone() const { return total_delay < -1e+10f; }
-
-    bool operator < (const delay_type &RHS) const {
-      return total_delay < RHS.total_delay;
-    }
-  };
-
-  SpecificBumpPtrAllocator<delay_type> Allocator;
+  SpecificBumpPtrAllocator<PhysicalDelay> Allocator;
 
   std::vector<float*> DelayRefs;
-  typedef std::map<VASTSeqValue*, delay_type*> SrcInfo;
+  typedef std::map<VASTSeqValue*, PhysicalDelay*> SrcInfo;
   // The end-to-end (source register to destinate register) arrival time.
   typedef std::map<VASTSelector*, SrcInfo> SimpleArrivalInfo;
   SimpleArrivalInfo SimpleArrivals;
@@ -192,7 +175,7 @@ struct ExternalTimingAnalysis {
   std::map<BasicBlock*, std::vector<float*> > BBReachability;
 
   void extractSlotReachability(raw_ostream &TclO, VASTSelector *Sel,
-                               delay_type *DelayRef);
+                               PhysicalDelay *DelayRef);
 
   bool isBasicBlockUnreachable(ArrayRef<float*> SlotsStatus) const {
     for (unsigned i = 0; i < SlotsStatus.size(); ++i)
@@ -272,7 +255,7 @@ struct ExternalTimingAnalysis {
   void writeDelayMatrixExtractionScript(raw_ostream &TclO, bool PAR,
                                         bool ZeroICDelay);
   void extractTimingForPath(raw_ostream &O, VASTSelector *Dst, VASTSeqValue *Src,
-                            VASTExpr *Thu, delay_type *DelayRef, bool IsCellDelay);
+                            VASTExpr *Thu, PhysicalDelay *DelayRef, bool IsCellDelay);
   unsigned calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op);
 
   typedef std::set<VASTSeqValue*> LeafSet;
@@ -290,8 +273,8 @@ struct ExternalTimingAnalysis {
     *DelayRefs[Idx] = Delay;
   }
 
-  delay_type *allocateDelayRef() {
-    delay_type *P = new (Allocator.Allocate()) delay_type();
+  PhysicalDelay *allocateDelayRef() {
+    PhysicalDelay *P = new (Allocator.Allocate()) PhysicalDelay();
     // Don't forget to initialize the content!
     ++NumQueriesWritten;
     return P;
@@ -300,21 +283,18 @@ struct ExternalTimingAnalysis {
   // Read the JSON file written by the timing extraction script.
   bool readTimingAnalysisResult();
 
-  ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF, STGDistances *Distences);
+  ExternalTimingAnalysis(VASTModule &VM, Dataflow &DF);
 
   bool analysisWithSynthesisTool();
 
   bool readRegionPlacement();
 
-  void getPathDelay(const VASTLatch &L, VASTValPtr V,
-                    std::map<VASTSeqValue*, delay_type> &Srcs);
-
-  delay_type getArrivalTime(VASTSelector *To, VASTSeqValue *From);
-  delay_type getArrivalTime(VASTSelector *To, VASTExpr *Thu, VASTSeqValue *From);
+  PhysicalDelay getArrivalTime(VASTSelector *To, VASTSeqValue *From);
+  PhysicalDelay getArrivalTime(VASTSelector *To, VASTExpr *Thu, VASTSeqValue *From);
 };
 }
 
-ExternalTimingAnalysis::delay_type
+ExternalTimingAnalysis::PhysicalDelay
 ExternalTimingAnalysis::getArrivalTime(VASTSelector *To, VASTSeqValue *From) {
   SimpleArrivalInfo::const_iterator I = SimpleArrivals.find(To);
   assert(I != SimpleArrivals.end() && "End-to-End arrivial time not available!");
@@ -331,7 +311,7 @@ ExternalTimingAnalysis::getArrivalTime(VASTSelector *To, VASTSeqValue *From) {
   return *J->second;
 }
 
-ExternalTimingAnalysis::delay_type
+ExternalTimingAnalysis::PhysicalDelay
 ExternalTimingAnalysis::getArrivalTime(VASTSelector *To, VASTExpr *Thu,
                                        VASTSeqValue *From) {
   ComplexArrivialInfo::const_iterator K = ComplexArrivials.find(To);
@@ -351,144 +331,6 @@ ExternalTimingAnalysis::getArrivalTime(VASTSelector *To, VASTExpr *Thu,
     return None;
 
   return *ThuSrcI->second;
-}
-
-void
-ExternalTimingAnalysis::getPathDelay(const VASTLatch &L, VASTValPtr V,
-                                     std::map<VASTSeqValue*, delay_type> &Srcs) {
-  // Simply add the zero delay record if the fanin itself is a register.
-  if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V.get())) {
-    if (!SV->isSlot() && !SV->isFUOutput()) {
-      // Please note that this insertion may fail (V already existed), but it
-      // does not hurt because here we only want to ensure the record exist.
-      Srcs.insert(std::make_pair(SV, delay_type()));
-      return;
-    }
-  }
-
-  LeafSet Leaves;
-  V->extractSupportingSeqVal(Leaves);
-  if (Leaves.empty())
-    return;
-
-  VASTSelector *Sel = L.getSelector();
-  SmallVector<VASTSeqValue*, 4> MissedLeaves;
-
-  typedef LeafSet::iterator iterator;
-  typedef SrcInfo::const_iterator src_iterator;
-  for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
-    VASTSeqValue *Leaf = *I;
-
-    delay_type Delay = getArrivalTime(Sel, Leaf);
-
-    // If there is more than one paths between Leaf and selector, the delay
-    // is not directly available.
-    if (Delay.isNone()) {
-      MissedLeaves.push_back(Leaf);
-      continue;
-    }
-
-    // Otherwise Update the delay.
-    delay_type &OldDelay = Srcs[Leaf];
-    OldDelay = std::max(OldDelay, Delay);
-  }
-
-  if (MissedLeaves.empty())
-    return;
-
-  VASTSlot *ReadSlot = L.getSlot();
-  typedef VASTSelector::ann_iterator ann_iterator;
-  for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
-    const VASTSelector::Annotation &Ann = *I->second;
-    ArrayRef<VASTSlot*> Slots(Ann.getSlots());
-    VASTExpr *Thu = I->first;
-    assert(Thu->isTimingBarrier() && "Unexpected Expr Type!");
-
-    if (std::find(Slots.begin(), Slots.end(), ReadSlot) == Slots.end())
-      continue;
-
-    typedef SmallVector<VASTSeqValue*, 4>::iterator leaf_iterator;
-    for (leaf_iterator I = MissedLeaves.begin(), E = MissedLeaves.end();
-         I != E; ++I) {
-      VASTSeqValue *Leaf = *I;
-
-      delay_type Delay = getArrivalTime(Sel, Thu, Leaf);
-
-      if (Delay.isNone())
-        continue;
-
-      delay_type &OldDelay = Srcs[Leaf];
-      OldDelay = std::max(OldDelay, Delay);
-    }
-  }
-
-#ifndef NDEBUG
-  for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I)
-    assert(Srcs.count(*I) && "Source delay missed!");
-#endif
-}
-
-bool DataflowAnnotation::externalDelayAnnotation(VASTModule &VM) {
-  ExternalTimingAnalysis ETA(VM, DF, Distances);
-
-  // Run the synthesis tool to get the arrival time estimation.
-  if (!ETA.analysisWithSynthesisTool()) return false;
-
-  typedef VASTModule::seqop_iterator iterator;
-  for (iterator I = VM.seqop_begin(), E = VM.seqop_end(); I != E; ++I) {
-    VASTSeqOp *Op = I;
-
-    Instruction *Inst = dyn_cast_or_null<Instruction>(Op->getValue());
-
-    // Nothing to do if Op does not have an underlying instruction.
-    if (!Inst)
-      continue;
-
-    typedef std::map<VASTSeqValue*, ExternalTimingAnalysis::delay_type>
-            ArrivalInfo;
-    std::map<VASTSeqValue*, ExternalTimingAnalysis::delay_type> Srcs;
-    VASTValPtr Guard = Op->getGuard();
-    VASTSeqValue *SlotValue = Op->getSlot()->getValue();
-
-    for (unsigned i = 0, e = Op->num_srcs(); i != e; ++i) {
-      VASTLatch L = Op->getSrc(i);
-      VASTSelector *Sel = L.getSelector();
-      if (Sel->isTrivialFannin(L))
-        continue;
-
-      // Extract the delay from the fan-in and the guarding condition.
-      VASTValPtr FI = L;
-      ETA.getPathDelay(L, SlotValue, Srcs);
-      ETA.getPathDelay(L, Guard, Srcs);
-      ETA.getPathDelay(L, FI, Srcs);
-    }
-
-    typedef ArrivalInfo::iterator src_iterator;
-    for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-      VASTSeqValue *Src = I->first;
-      float delay = I->second.total_delay,
-            ic_delay = delay - I->second.cell_delay;
-
-      if (Src->isSlot()) {
-        if (Src->getLLVMValue() == 0)
-          continue;
-      }
-
-      annotateDelay(Op, Op->getSlot(), Src, delay, ic_delay);
-    }
-  }
-
-  // Annotate the unreachable blocks.
-  typedef Function::iterator bb_iterator;
-  Function &F = VM.getLLVMFunction();
-  for (bb_iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    BasicBlock *BB = I;
-    if (ETA.isBasicBlockUnreachable(BB))
-      DF->addUnreachableBlocks(BB);
-  }
-
-  // External timing analysis successfully completed.
-  return true;
 }
 
 void ExternalTimingAnalysis::writeNetlist() const {
@@ -566,7 +408,7 @@ void ExtractTimingForPath(raw_ostream &O, unsigned RefIdx, bool HasThu) {
 void
 ExternalTimingAnalysis::extractTimingForPath(raw_ostream &O, VASTSelector *Dst,
                                              VASTSeqValue *Src, VASTExpr *Thu,
-                                             delay_type *Delay,
+                                             PhysicalDelay *Delay,
                                              bool IsCellDelay) {
   O << "set src " << GetSTACollection(Src) << '\n';
   O << "set dst " << GetSTACollection(Dst) << '\n';
@@ -575,7 +417,7 @@ ExternalTimingAnalysis::extractTimingForPath(raw_ostream &O, VASTSelector *Dst,
   // if (Thu) O << "set thu " << GetSTACollection(Thu) << '\n';
 
   unsigned RefIndex = DelayRefs.size();
-  DelayRefs.push_back(IsCellDelay ? & Delay->cell_delay : &Delay->total_delay);
+  DelayRefs.push_back(IsCellDelay ? & Delay->CellDelay : &Delay->TotalDelay);
 
   ExtractTimingForPath(O, RefIndex, Thu != 0);
   DEBUG(O << "post_message -type info \"" << Src->getSTAObjectName()
@@ -753,7 +595,7 @@ struct ConstraintHelper {
 
 unsigned
 ExternalTimingAnalysis::calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op) {
-  Dataflow::delay_type delay = DF->getDelay(Src, Op, Op->getSlot());
+  Dataflow::delay_type delay = DF.getDelay(Src, Op, Op->getSlot());
 
   float TotalDelay = delay.expected();
   float CellDelay = TotalDelay - delay.expected_ic_delay();
@@ -766,7 +608,7 @@ ExternalTimingAnalysis::calculateCycles(VASTSeqValue *Src, VASTSeqOp *Op) {
 
 void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,
                                                      VASTSelector *Sel,
-                                                     delay_type *DelayRef) {
+                                                     PhysicalDelay *DelayRef) {
   VASTSeqValue *V = Sel->getSSAValue();
   assert(V && "Slot enable value not defined?");
   BasicBlock *BB = dyn_cast_or_null<BasicBlock>(V->getLLVMValue());
@@ -775,8 +617,8 @@ void ExternalTimingAnalysis::extractSlotReachability(raw_ostream &TclO,
     return;
 
   unsigned RefIndex = DelayRefs.size();
-  DelayRefs.push_back(&DelayRef->total_delay);
-  BBReachability[BB].push_back(&DelayRef->total_delay);
+  DelayRefs.push_back(&DelayRef->TotalDelay);
+  BBReachability[BB].push_back(&DelayRef->TotalDelay);
 
   TclO << "set slot " << GetSTACollection(Sel) << "\n"
           "if {[get_collection_size $slot] == 0} {\n"
@@ -872,7 +714,7 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
           LI != LE; ++LI) {
       VASTSeqValue *Leaf = *LI;
       // Get the register to thu delay.
-      delay_type *&P = ComplexArrivials[Sel][Expr][Leaf];
+      PhysicalDelay *&P = ComplexArrivials[Sel][Expr][Leaf];
       if (P)
         continue;
 
@@ -928,10 +770,9 @@ bool ExternalTimingAnalysis::readTimingAnalysisResult() {
   return true;
 }
 
-ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM, Dataflow *DF,
-                                               STGDistances *Distences)
+ExternalTimingAnalysis::ExternalTimingAnalysis(VASTModule &VM, Dataflow &DF)
   : OutputDir(sys::path::parent_path(LuaI::GetString("RTLOutput"))),
-    VM(VM), DF(DF), Distances(Distences) {
+    VM(VM), DF(DF) {
   sys::path::append(OutputDir, "TimingNetlist");
   bool Existed;
   sys::fs::create_directories(StringRef(OutputDir), Existed);
@@ -1187,4 +1028,15 @@ bool ExternalTimingAnalysis::readRegionPlacement(){
   VM.setBoundingBoxConstraint(BBX, BBY, BBWidth, BBHeight);
 
   return true;
+}
+
+DelayMatrix *vast::createExternalTimingAnalysis(VASTModule &VM, Dataflow &DF) {
+  ExternalTimingAnalysis *ETA = new ExternalTimingAnalysis(VM, DF);
+
+  if (!ETA->analysisWithSynthesisTool()) {
+    delete ETA;
+    return NULL;
+  }
+
+  return ETA;
 }

@@ -25,6 +25,7 @@ class PassRegistry;
 namespace vast {
 using namespace llvm;
 
+extern char &DataflowAnnotationID;
 extern char &ControlLogicSynthesisID;
 extern char &TimingDrivenSelectorSynthesisID;
 extern char &SelectorSynthesisForAnnotationID;
@@ -58,7 +59,7 @@ Pass *createAlwaysSpeculatePass();
 Pass *createBitlevelOptPass();
 Pass *createOptimizePHINodesPass();
 Pass *createTimingNetlistPass();
-Pass *createDataflowAnnotationPass();
+Pass *createDataflowAnnotationPass(bool Accumulative = false);
 Pass *createVASTSchedulingPass();
 Pass *createIterativeSchedulingPass();
 

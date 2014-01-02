@@ -216,44 +216,6 @@ public:
 
   void dumpToSQL() const;
 };
-
-class DataflowAnnotation : public VASTModulePass {
-  Dataflow *DF;
-  STGDistances *Distances;
-  const bool Accumulative;
-
-  bool externalDelayAnnotation(VASTModule &VM);
-  void extractFlowDep(VASTSeqOp *SeqOp, TimingNetlist &TNL);
-  void internalDelayAnnotation(VASTModule &VM);
-
-  void annotateDelay(DataflowInst Inst, VASTSlot *S, VASTSeqValue *V,
-                     float delay, float ic_delay);
-public:
-  typedef Dataflow::delay_type delay_type;
-
-  static char ID;
-  explicit DataflowAnnotation(bool Accumulative = false);
-
-  typedef Dataflow::SrcSet SrcSet;
-  void getFlowDep(DataflowInst Inst, SrcSet &Set) const {
-    DF->getFlowDep(Inst, Set);
-  }
-
-  void getIncomingFrom(DataflowInst Inst, BasicBlock *BB, SrcSet &Set) const {
-    DF->getIncomingFrom(Inst, BB, Set);
-  }
-
-  delay_type getSlackFromLaunch(Instruction *Inst) const {
-    return DF->getSlackFromLaunch(Inst);
-  }
-
-  delay_type getDelayFromLaunch(Instruction *Inst) const {
-    return DF->getDelayFromLaunch(Inst);
-  }
-
-  void getAnalysisUsage(AnalysisUsage &AU) const;
-  bool runOnVASTModule(VASTModule &VM);
-};
 }
 
 #endif

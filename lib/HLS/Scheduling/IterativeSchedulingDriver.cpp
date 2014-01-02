@@ -63,8 +63,8 @@ public:
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequired<DataflowAnnotation>();
-    AU.addPreserved<DataflowAnnotation>();
+    AU.addRequiredID(DataflowAnnotationID);
+    AU.addPreservedID(DataflowAnnotationID);
   }
 
   void recoverOutputPath();
@@ -155,7 +155,7 @@ public:
 
     // Add the passes for each single iteration.
     schedulePass(createBitlevelOptPass());
-    schedulePass(new DataflowAnnotation(true));
+    schedulePass(createDataflowAnnotationPass(true));
 
     // Finish the whole HLS process if we want to dump the intermediate netlist
     // for each iteration.
