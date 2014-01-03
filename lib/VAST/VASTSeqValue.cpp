@@ -705,13 +705,6 @@ void VASTSelector::setMux(VASTValPtr Fanin, VASTValPtr Guard) {
   this->Guard.set(Guard);
 }
 
-void VASTSelector::setName(const char *Name) {
-  if (Contents64.Name == Name)
-    return;
-
-  Contents64.Name = Name;
-}
-
 //===----------------------------------------------------------------------===//
 VASTSeqValue::VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V)
   : VASTMaskedValue(vastSeqValue, Selector->getBitWidth()), V(V) {

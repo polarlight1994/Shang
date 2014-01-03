@@ -168,8 +168,6 @@ public:
   void printSelector(raw_ostream &OS) const;
   void printRegisterBlock(vlang_raw_ostream &OS, uint64_t InitVal) const;
 
-  void setName(const char *Name);
-
   // Generate the code to verify the register assignment.
   void printVerificationCode(vlang_raw_ostream &OS, STGDistances *STGDist,
                              const char *TraceDataBase) const;

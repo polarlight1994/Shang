@@ -41,12 +41,7 @@ struct DatapathNamer : public VASTModulePass {
 
   bool runOnVASTModule(VASTModule &VM);
 
-  bool assignName(CachedStrashTable &Strash, VASTModule &VM);
-  
-  void nameExpr(VASTExpr *Expr, CachedStrashTable &Strash) {
-    unsigned StrashID = Strash.getOrCreateStrashID(Expr);
-    Expr->assignNameID(StrashID);
-  }
+  void assignName(CachedStrashTable &Strash, VASTModule &VM);
 };
 }
 
@@ -59,51 +54,17 @@ char DatapathNamer::ID = 0;
 char &vast::DatapathNamerID = DatapathNamer::ID;
 
 bool DatapathNamer::runOnVASTModule(VASTModule &VM) {
-  VM.resetSelectorName();
-
-  CachedStrashTable &Strash = getAnalysis<CachedStrashTable>();
-
-  while (assignName(Strash, VM))
-    Strash.releaseMemory();
+  assignName(getAnalysis<CachedStrashTable>(), VM);
 
   return false;
 }
 
-bool DatapathNamer::assignName(CachedStrashTable &Strash, VASTModule &VM) {
+void DatapathNamer::assignName(CachedStrashTable &Strash, VASTModule &VM) {
+  unsigned CurID = 0;
   typedef VASTModule::expr_iterator expr_iterator;
-  for (expr_iterator I = VM.expr_begin(), E = VM.expr_end(); I != E; ++I)
-    nameExpr(I, Strash);
-
-  bool SelectorNameChanged = false;
-  typedef std::pair<unsigned, unsigned> FIPair;
-  std::map<FIPair, VASTSelector*> IdenticalSelectors;
-
-  typedef VASTModule::selector_iterator iterator;
-  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
-    VASTSelector *Sel = I;
-
-    if (!Sel->isSelectorSynthesized())
-      continue;
-
-    // Do not rename the selector like memory ports, output port, etc.
-    if (!isa<VASTRegister>(Sel->getParent()))
-      continue;
-
-    unsigned FIIdx = Strash.getOrCreateStrashID(Sel->getFanin());
-    unsigned GuardIdx = Strash.getOrCreateStrashID(Sel->getGuard());
-    VASTSelector *&IdenticalSel = IdenticalSelectors[FIPair(FIIdx, GuardIdx)];
-
-    if (IdenticalSel) {
-      if (IdenticalSel->getName() != Sel->getName())  {
-        SelectorNameChanged |= true;
-        Sel->setName(IdenticalSel->getName());
-      }
-
-      continue;
-    }
-
-    IdenticalSel = Sel;
+  for (expr_iterator I = VM.expr_begin(), E = VM.expr_end(); I != E; ++I) {
+    VASTExpr *Expr = I;
+    unsigned StrashID = Strash.getOrCreateStrashID(Expr);
+    Expr->assignNameID(StrashID);
   }
-
-  return SelectorNameChanged;
 }

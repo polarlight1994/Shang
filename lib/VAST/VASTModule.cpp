@@ -437,7 +437,9 @@ void VASTModule::eraseSelector(VASTSelector *Sel) {
     Registers.erase(R);
 
   // Also erase the selector from the symbol table.
-  SymbolTable.erase(Sel->getName());
+  bool Erased = SymbolTable.erase(Sel->getName());
+  assert(Erased && "Selector not erased!");
+  (void) Erased;
 
   // Explicitly release the timing annotations before we delete the selector.
   Sel->dropMux();
@@ -561,16 +563,6 @@ VASTSelector *VASTModule::createSelector(const Twine &Name, unsigned BitWidth,
 }
 
 //===----------------------------------------------------------------------===//
-void VASTModule::resetSelectorName() {
-  typedef SymTabTy::iterator iterator;
-  for (iterator I = SymbolTable.begin(), E = SymbolTable.end(); I != E; ++I) {
-    VASTSelector *Sel = dyn_cast<VASTSelector>(I->second);
-    if (Sel == 0)
-      continue;
-
-    Sel->setName(I->getKeyData());
-  }
-}
 
 void VASTModule::printSubmodules(raw_ostream &OS) const {
   vlang_raw_ostream O(OS);

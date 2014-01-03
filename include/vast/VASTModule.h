@@ -303,8 +303,6 @@ public:
 
   void print(raw_ostream &OS) const;
 
-  void resetSelectorName();
-
   bool gc() {
     bool changed = false;
 
