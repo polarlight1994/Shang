@@ -911,7 +911,10 @@ DelayModel *TimingNetlist::createModel(VASTExpr *Expr) {
   for (unsigned i = 0; i < Expr->size(); ++i) {
     VASTExpr *ChildExpr = Expr->getOperand(i).getAsLValue<VASTExpr>();
 
-    if (ChildExpr == NULL) {
+    // There is no fanin delay model if we reach the leaf of a combinational
+    // cone. The expressions with a keep attribute are also considered as
+    // a leaf.
+    if (ChildExpr == NULL || ChildExpr->isTimingBarrier()) {
       Fanins.push_back(NULL);
       continue;
     }
