@@ -1114,8 +1114,13 @@ struct ExternalToolDriver : public VASTModulePass, public TimingAnalysis {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    TimingAnalysis::getAnalysisUsage(AU);
+    AU.addRequiredID(ControlLogicSynthesisID);
+    AU.addRequiredID(SelectorSynthesisForAnnotationID);
+    AU.addRequiredID(BitlevelOptID);
+    AU.addRequiredID(DatapathNamerID);
+    AU.addRequired<TimingAnalysis>();
     AU.addRequired<Dataflow>();
+    AU.setPreservesAll();
   }
 
   void releaseMemory() {
