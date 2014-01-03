@@ -460,8 +460,12 @@ bool SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
       Sel->annotateReadSlot(Slots, FIVal);
     }
 
-    VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
-    VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
+    VASTValPtr GuardedFIVal = FIVal;
+    if (CSEMap.size() == 1) {
+      VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
+      GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
+    }
+
     AllFanins.push_back(GuardedFIVal);
     Slots.clear();
   }
