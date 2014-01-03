@@ -65,7 +65,7 @@ public:
       : TotalDelay(-1.1e+10f), CellDelay(-1.1e+10f) {}
 
     bool operator==(NoneType) const {
-      return TotalDelay < -1e+10f;
+      return TotalDelay < 0.0f;
     }
 
     bool operator!=(NoneType) const {
