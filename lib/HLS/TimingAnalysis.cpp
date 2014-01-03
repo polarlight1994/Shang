@@ -115,6 +115,14 @@ void TimingAnalysis::extractDelay(const VASTLatch &L, VASTValue *V,
 #endif
 }
 
+void TimingAnalysis::printArrivalPath(raw_ostream &OS, VASTSelector *To,
+                                      VASTValue *From) {
+}
+
+void TimingAnalysis::printArrivalPath(raw_ostream &OS, VASTSelector *To,
+                                      VASTExpr *Thu, VASTValue *From) {
+}
+
 void TimingAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequiredID(ControlLogicSynthesisID);
   AU.addRequiredID(SelectorSynthesisForAnnotationID);
@@ -263,6 +271,19 @@ public:
   PhysicalDelay getArrivalTime(VASTSelector *To, VASTSeqValue *From);
   PhysicalDelay getArrivalTime(VASTSelector *To, VASTExpr *Thu,
                                VASTSeqValue *From);
+
+  void printArrivalPathImpl(raw_ostream &OS, VASTValue *To, VASTValue *From);
+
+  void printArrivalPath(raw_ostream &OS, VASTSelector *To, VASTValue *From) {
+    printArrivalPathImpl(OS, To->getFanin().get(), From);
+    printArrivalPathImpl(OS, To->getGuard().get(), From);
+  }
+
+  void printArrivalPath(raw_ostream &OS, VASTSelector *To, VASTExpr *Thu, VASTValue *From) {
+    printArrivalPathImpl(OS, Thu, From);
+    printArrivalPathImpl(OS, To->getFanin().get(), Thu);
+    printArrivalPathImpl(OS, To->getGuard().get(), Thu);
+  }
 
   bool isBasicBlockUnreachable(BasicBlock *BB) const {
     return false;
@@ -1003,4 +1024,85 @@ TimingAnalysis::PhysicalDelay TimingNetlist::getArrivalTime(VASTSelector *To, VA
     return getArrivalTimeImpl(To, From);
 
   return getArrivalTimeImpl(To, Thu) + getArrivalTimeImpl(Thu, From);
+}
+
+namespace {
+struct ArrivalPrinter {
+  raw_ostream &OS;
+  TimingNetlist &TNL;
+  VASTValue *Src;
+  std::set<VASTExpr*> Visited;
+
+  ArrivalPrinter(raw_ostream &OS, TimingNetlist &TNL, VASTValue *Src)
+    : OS(OS), TNL(TNL), Src(Src) {}
+
+  void printExpr(VASTExpr *Expr, unsigned Level) {
+    DelayModel *M = TNL.lookUpDelayModel(Expr);
+
+    if (!M->hasArrivalFrom(Src))
+      return;
+
+    OS.indent(Level) << "Expr: ";
+    Expr->printName(OS);
+    OS << ' ';
+    Expr->printExpr(OS);
+    OS << '\n';
+
+    typedef DelayModel::const_arrival_iterator iterator;
+    for (iterator I = M->arrival_begin(Src); M->inRange(I, Src); ++I) {
+      const ArrivalTime *AT = I;
+      OS.indent(Level + 2)
+        << "Delay: [" << unsigned(AT->ToUB) << ':' << unsigned(AT->ToLB) << "] "
+        << AT->Arrival * VFUs::Period << '\n';
+    }
+  }
+
+  void print(VASTValue *Root) {
+    VASTExpr *Expr = dyn_cast_or_null<VASTExpr>(Root);
+
+    if (Expr == NULL)
+      return;
+
+    // The entire tree had been visited.
+    if (!Visited.insert(Expr).second) return;
+
+    typedef VASTOperandList::op_iterator ChildIt;
+    std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
+
+    VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
+
+    while (!VisitStack.empty()) {
+      VASTExpr *Node = VisitStack.back().first;
+      ChildIt It = VisitStack.back().second;
+
+      // We have visited all children of current node.
+      if (It == Node->op_end()) {
+        VisitStack.pop_back();
+
+        // Visit the current Node.
+        printExpr(Node, VisitStack.size());
+
+        continue;
+      }
+
+      // Otherwise, remember the node and visit its children first.
+      VASTValue *ChildNode = It->unwrap().get();
+      ++VisitStack.back().second;
+
+      if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
+        // ChildNode has a name means we had already visited it.
+        if (!Visited.insert(ChildExpr).second || ChildExpr->isTimingBarrier())
+          continue;
+
+        VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
+      }
+    }
+    OS << '\n';
+  }
+};
+}
+
+void TimingNetlist::printArrivalPathImpl(raw_ostream &OS, VASTValue *To,
+                                         VASTValue *From) {
+  ArrivalPrinter(OS, *this, From).print(To);
 }

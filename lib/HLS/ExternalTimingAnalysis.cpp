@@ -246,8 +246,14 @@ struct ExternalTimingAnalysis {
   // Write the project file to perform the timing analysis.
   void writeMapDesignScript(raw_ostream &O) const;
   void writeFitDesignScript(raw_ostream &O, bool DontFit, bool EnableETA) const;
+  void writeTimingNetlistCreationScript(raw_ostream &TclO, bool PAR,
+                                        bool ZeroICDelay);
   void writeTimingAnalysisDriver(raw_ostream &O, bool PostMapOnly);
   void writeReadPlacementScript(raw_ostream &O) const;
+
+  // Dump the path.
+  void printArrivalPathImpl(raw_ostream &OS, VASTSelector *To, VASTExpr *Thu,
+                            VASTValue *From);
 
   // Write the script to extract the timing analysis results from quartus.
   void buildDelayMatrix();
@@ -833,7 +839,7 @@ ExternalTimingAnalysis::writeFitDesignScript(raw_ostream &O, bool PAR,
   O << '\n';
 }
 
-void ExternalTimingAnalysis::writeDelayMatrixExtractionScript(raw_ostream &O,
+void ExternalTimingAnalysis::writeTimingNetlistCreationScript(raw_ostream &O,
                                                               bool PAR,
                                                               bool ZeroICDelay) {
   // Create the timing netlist before we perform any analysis.
@@ -843,6 +849,12 @@ void ExternalTimingAnalysis::writeDelayMatrixExtractionScript(raw_ostream &O,
   O << "\n"
     "read_sdc {" << getSDCPath() << "}\n"
     "update_timing_netlist\n";
+}
+
+void ExternalTimingAnalysis::writeDelayMatrixExtractionScript(raw_ostream &O,
+                                                              bool PAR,
+                                                              bool ZeroICDelay) {
+  writeTimingNetlistCreationScript(O, PAR, ZeroICDelay);
 
   // Print the critical path in the datapath to debug the TimingNetlist.
   O << "report_timing -from_clock { clk } -to_clock { clk }"
@@ -933,6 +945,57 @@ ExternalTimingAnalysis::writeReadPlacementScript(raw_ostream &O) const {
          "unload_report\n";
   }
   O << "project_close\n";
+}
+
+// Dump the path.
+void ExternalTimingAnalysis::printArrivalPathImpl(raw_ostream &OS, VASTSelector *To,
+                                                  VASTExpr *Thu, VASTValue *From) {
+
+  std::string QueryScript = getTmpFilePath("query.tcl");
+  OwningPtr<raw_fd_ostream> QueryTclO(createTmpFile(QueryScript));
+
+  *QueryTclO << "load_package flow\n"
+                "load_package report\n"
+             << "project_open " << VM.getName() << " \n";
+
+  writeTimingNetlistCreationScript(*QueryTclO, EnablePAR, true);
+
+  *QueryTclO << "set src " << GetSTACollection(From) << '\n';
+  *QueryTclO << "set dst " << GetSTACollection(To) << '\n';
+  if (Thu)
+    *QueryTclO << "set thu " << GetSTACollection(Thu) << '\n';
+
+  // Generate the query script.
+  *QueryTclO << "report_path -from $src ";
+  if (Thu)
+    *QueryTclO << "-through $thu ";
+  *QueryTclO << "-to $dst -nworst 1 -pairs_only -stdout\n";
+
+  *QueryTclO << "project_close\n";
+  QueryTclO.reset();
+
+  const char *LUAPath[] = { "TimingAnalysis", "ExternalTool" };
+
+  SmallString<256> quartus(LuaI::GetString(LUAPath));
+  std::vector<const char*> args;
+
+  args.push_back(quartus.c_str());
+  if (Use64BitQuartus)
+    args.push_back("--64bit");
+  args.push_back("-t");
+  args.push_back(QueryScript.c_str());
+  args.push_back(0);
+
+  // Synchronize the output.
+  OS.flush();
+
+  std::string ErrorInfo;
+  if (LLVM_UNLIKELY(sys::ExecuteAndWait(quartus, &args[0], 0, 0,
+                                        ExternalToolTimeOut, 0, &ErrorInfo))) {
+    report_fatal_error("Dump path delay fail!\n");
+  }
+
+  sys::fs::remove(QueryScript);
 }
 
 bool ExternalTimingAnalysis::analysisWithSynthesisTool() {

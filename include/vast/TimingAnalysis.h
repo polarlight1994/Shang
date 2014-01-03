@@ -89,12 +89,16 @@ public:
     }
   };
 
-  TimingAnalysis() : TA(NULL) {}
+  TimingAnalysis() : TA(0) {}
 
   virtual ~TimingAnalysis() {}
   virtual PhysicalDelay getArrivalTime(VASTSelector *To, VASTSeqValue *From);
   virtual PhysicalDelay getArrivalTime(VASTSelector *To, VASTExpr *Thu,
                                        VASTSeqValue *From);
+
+  virtual void printArrivalPath(raw_ostream &OS, VASTSelector *To, VASTValue *From);
+  virtual void printArrivalPath(raw_ostream &OS, VASTSelector *To, VASTExpr *Thu,
+                                VASTValue *From);
 
   typedef std::map<VASTSeqValue*, PhysicalDelay> ArrivalMap;
   void extractDelay(const VASTLatch &L, VASTValue *V, ArrivalMap &Arrivals);
