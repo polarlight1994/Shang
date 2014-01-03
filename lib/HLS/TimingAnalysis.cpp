@@ -15,6 +15,8 @@
 #include "vast/LuaI.h"
 #include "vast/VASTModule.h"
 #include "vast/VASTModulePass.h"
+#include "vast/VASTMemoryBank.h"
+
 #include "llvm/Support/MathExtras.h"
 #define DEBUG_TYPE "shang-timing-estimator"
 #include "llvm/Support/Debug.h"
@@ -207,17 +209,6 @@ public:
   DelayModel(VASTExpr *Node, ArrayRef<DelayModel*> Fanins);
   ~DelayModel();
 
-  static VASTValue *GetAsLeaf(VASTValPtr V) {
-    if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>())
-      return SV;
-
-    if (VASTExpr *Expr = V.getAsLValue<VASTExpr>())
-      if (Expr->isTimingBarrier())
-        return Expr;
-
-    return NULL;
-  }
-
   typedef ArrayRef<DelayModel>::iterator iterator;
 
   void updateArrival();
@@ -232,6 +223,10 @@ public:
   typedef ilist<ArrivalTime>::const_iterator const_arrival_iterator;
   const_arrival_iterator arrival_begin() const { return Arrivals.begin(); }
   const_arrival_iterator arrival_end() const { return Arrivals.end(); }
+
+  bool hasArrivalFrom(VASTValue *V) const {
+    return ArrivalStart.count(V);
+  }
 
   // Get the iterator point to the first arrival time of a given source node.
   const_arrival_iterator arrival_begin(VASTValue *V) const {
@@ -264,6 +259,11 @@ public:
   static char ID;
 
   TimingNetlist();
+  DelayModel *lookUpDelayModel(VASTExpr *Expr) const {
+    std::map<VASTExpr*, DelayModel*>::const_iterator I = ModelMap.find(Expr);
+    assert(I != ModelMap.end() && "Model of Expr cannot be found!");
+    return I->second;
+  }
 
   PhysicalDelay getArrivalTimeImpl(VASTValue *To, VASTValue *From);
   PhysicalDelay getArrivalTimeImpl(VASTSelector *To, VASTValue *From);
@@ -562,11 +562,37 @@ void DelayModel::addArrival(VASTValue *V, float Arrival, uint8_t ToUB, uint8_t T
   }
 }
 
+//===----------------------------------------------------------------------===//
+static VASTValue *GetAsLeaf(VASTValPtr V) {
+  if (VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>())
+    return SV;
+
+  if (VASTExpr *Expr = V.getAsLValue<VASTExpr>())
+  if (Expr->isTimingBarrier())
+    return Expr;
+
+  return NULL;
+}
+
+static float GetLeafDelay(VASTValue *V) {
+  VASTSeqValue *SV = dyn_cast<VASTSeqValue>(V);
+
+  if (SV == NULL || !SV->isFUOutput())
+    return 0.0f;
+
+  if (!isa<VASTMemoryBank>(SV->getParent()))
+    return 0.0f;
+
+  return LuaI::Get<VFUMemBus>()->AddrLatency;
+}
+
+//===----------------------------------------------------------------------===//
+
 void DelayModel::updateArrivalParallel(unsigned i, float Delay) {
   VASTValPtr V = Node->getOperand(i);
 
   if (VASTValue *Val = GetAsLeaf(V)) {
-    addArrival(Val, 0.0f, Node->getBitWidth(), 0);
+    addArrival(Val, Delay + GetLeafDelay(Val), Node->getBitWidth(), 0);
     return;
   }
 
@@ -589,7 +615,7 @@ void DelayModel::updateArrivalCritial(unsigned i, float Delay,
   VASTValPtr V = Node->getOperand(i);
 
   if (VASTValue *Val = GetAsLeaf(V)) {
-    addArrival(Val, 0.0f, ToUB, ToLB);
+    addArrival(Val, Delay + GetLeafDelay(Val), ToUB, ToLB);
     return;
   }
 
@@ -616,7 +642,7 @@ void DelayModel::updateBitCatArrival() {
     OffSet -= BitWidth;
 
     if (VASTValue *Val = GetAsLeaf(V)) {
-      addArrival(Val, 0.0f, OffSet + BitWidth, OffSet);
+      addArrival(Val, 0.0f + GetLeafDelay(Val), OffSet + BitWidth, OffSet);
       continue;
     }
 
@@ -645,7 +671,7 @@ void DelayModel::updateBitExtractArrival() {
   VASTValPtr V = Node->getOperand(0);
 
   if (VASTValue *Val = GetAsLeaf(V)) {
-    addArrival(Val, 0.0f, BitWidth, 0);
+    addArrival(Val, 0.0f + GetLeafDelay(Val), BitWidth, 0);
     return;
   }
 
@@ -674,7 +700,7 @@ void DelayModel::updateBitMaskArrival() {
   updateArrivalParallel(0.0f);
 }
 
-static unsigned log(unsigned x, unsigned n) {
+static unsigned LogCeiling(unsigned x, unsigned n) {
   unsigned log2n = Log2_32_Ceil(n);
   return (Log2_32_Ceil(x) + log2n - 1) / log2n;
 }
@@ -684,7 +710,7 @@ void DelayModel::updateReductionArrival() {
   unsigned NumBits = V->getBitWidth();
   // Only reduce the unknow bits.
   NumBits -= VASTBitMask(V).getNumKnownBits();
-  unsigned LogicLevels = log(NumBits, VFUs::MaxLutSize);
+  unsigned LogicLevels = LogCeiling(NumBits, VFUs::MaxLutSize);
   updateArrivalParallel(LogicLevels * VFUs::LUTDelay);
 }
 
@@ -693,7 +719,7 @@ void DelayModel::updateROMLookUpArrival() {
   unsigned NumBits = Addr->getBitWidth();
   // Only reduce the unknow bits.
   NumBits -= VASTBitMask(Addr).getNumKnownBits();
-  unsigned LogicLevels = log(NumBits, VFUs::MaxLutSize);
+  unsigned LogicLevels = LogCeiling(NumBits, VFUs::MaxLutSize);
   float delay = LogicLevels * VFUs::LUTDelay;
   unsigned BitWidth = Node->getBitWidth();
   updateArrivalCritial(delay, BitWidth, 0);
@@ -705,8 +731,9 @@ void DelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
 
   // TODO: Consider the bitmask.
   if (VASTValue *Val = GetAsLeaf(V)) {
+    float OutputDelay = GetLeafDelay(Val);
     for (unsigned j = 0; j < BitWidth; ++j)
-      addArrival(Val, Base + j * PerBit, j + 1, j);
+      addArrival(Val, Base + j * PerBit + OutputDelay, j + 1, j);
 
     return;
   }
@@ -739,7 +766,7 @@ void DelayModel::updateCmpArrivial() {
 
     // TODO: Consider the bitmask.
     if (VASTValue *Val = GetAsLeaf(V)) {
-      addArrival(Val, Delay, 1, 0);
+      addArrival(Val, Delay + GetLeafDelay(Val), 1, 0);
       continue;
     }
 
@@ -763,7 +790,7 @@ void DelayModel::updateShiftAmt() {
 
   // TODO: Consider the bitmask.
   if (VASTValue *Val = GetAsLeaf(V)) {
-    addArrival(Val, LL * VFUs::LUTDelay, 1, 0);
+    addArrival(Val, LL * VFUs::LUTDelay + GetLeafDelay(Val), 1, 0);
     return;
   }
 
@@ -789,7 +816,7 @@ void DelayModel::updateShlArrival() {
 
   // TODO: Consider the bitmask.
   if (VASTValue *Val = GetAsLeaf(V)) {
-    addArrival(Val, Delay, BitWidth, 0);
+    addArrival(Val, Delay + GetLeafDelay(Val), BitWidth, 0);
     return;
   }
 
@@ -814,7 +841,7 @@ void DelayModel::updateShrArrival() {
 
   // TODO: Consider the bitmask.
   if (VASTValue *Val = GetAsLeaf(V)) {
-    addArrival(Val, Delay, BitWidth, 0);
+    addArrival(Val, Delay + GetLeafDelay(Val), BitWidth, 0);
     return;
   }
 
@@ -844,7 +871,7 @@ void DelayModel::updateArrival() {
   case vast::VASTExpr::dpBitMask:
     return updateBitMaskArrival();
   case vast::VASTExpr::dpAnd: {
-    unsigned LogicLevels = log(Node->size(), VFUs::MaxLutSize);
+    unsigned LogicLevels = LogCeiling(Node->size(), VFUs::MaxLutSize);
     return updateArrivalParallel(LogicLevels * VFUs::LUTDelay);
   }
   case vast::VASTExpr::dpRAnd:
@@ -889,9 +916,7 @@ DelayModel *TimingNetlist::createModel(VASTExpr *Expr) {
       continue;
     }
 
-    std::map<VASTExpr*, DelayModel*>::iterator I = ModelMap.find(ChildExpr);
-    assert(I != ModelMap.end() && "Model of childexpr cannot be found!");
-    Fanins.push_back(I->second);
+    Fanins.push_back(lookUpDelayModel(ChildExpr));
   }
 
   Model = new DelayModel(Expr, Fanins);
@@ -926,12 +951,12 @@ void TimingNetlist::buildTimingNetlist(VASTValue *V) {
       M->updateArrival();
       continue;
     }
-    
+
     VASTValue *Child = It->getAsLValue<VASTValue>();
     ++It;
 
     if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(Child)) {
-      if (!ModelMap.count(ChildExpr))
+      if (!ModelMap.count(ChildExpr) && !ChildExpr->isTimingBarrier())
         VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
 
       continue;
@@ -990,13 +1015,10 @@ TimingNetlist::getArrivalTimeImpl(VASTValue *To, VASTValue *From) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(To);
 
   if (Expr == NULL)
-    return PhysicalDelay(0.0f);
+    return To == From ? PhysicalDelay(GetLeafDelay(From)) : None;
 
-  std::map<VASTExpr*, DelayModel*>::iterator I = ModelMap.find(Expr);
-  assert(I != ModelMap.end() && "Model of Expr cannot be found!");
-  DelayModel *M = I->second;
+  DelayModel *M = lookUpDelayModel(Expr);
   PhysicalDelay Arrival = None;
-
 
   typedef DelayModel::const_arrival_iterator iterator;
   for (iterator I = M->arrival_begin(From); M->inRange(I, From); ++I)
@@ -1009,8 +1031,10 @@ TimingAnalysis::PhysicalDelay
 TimingNetlist::getArrivalTimeImpl(VASTSelector *To, VASTValue *From) {
   PhysicalDelay FIArrival = getArrivalTimeImpl(To->getFanin().get(), From);
   PhysicalDelay GuardArrival = getArrivalTimeImpl(To->getGuard().get(), From);
-  // TODO: FU delay.
-  return std::max(FIArrival, GuardArrival);
+  // Also consider the delay from the d pin of the register.
+  // TODO: Consider wire delay based on the connections.
+  return std::max(FIArrival + PhysicalDelay(VFUs::RegDelay),
+                  GuardArrival + PhysicalDelay(VFUs::ClkEnDelay));
 }
 
 TimingAnalysis::PhysicalDelay
