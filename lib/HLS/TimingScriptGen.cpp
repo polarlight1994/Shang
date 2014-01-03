@@ -476,6 +476,8 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
   STGDistances &STGDist = getAnalysis<STGDistances>();
   TimingAnalysis &TA =getAnalysis<TimingAnalysis>();
 
+  std::map<VASTMemoryBank*, AnnotatedCone*> MemBankCones;
+
   //Write the timing constraints.
   typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
@@ -485,7 +487,35 @@ bool TimingScriptGen::runOnVASTModule(VASTModule &VM)  {
       continue;
 
     // Handle the trivial case.
-    writeConstraintsFor(Sel, TA, STGDist);
+    if (isa<VASTRegister>(Sel->getParent()) ||
+        isa<VASTOutPort>(Sel->getParent())) {
+      writeConstraintsFor(Sel, TA, STGDist);
+      continue;
+    }
+
+    VASTMemoryBank *Bank = cast<VASTMemoryBank>(Sel->getParent());
+    // Input ports of memory bank are pipelined if the read latency of the memory
+    // bank is bigger than 1.
+    if (Bank->getReadLatency() > 1) {
+      writeConstraintsFor(Sel, TA, STGDist);
+      continue;
+    }
+
+    // Otherwise we can only match them with the underlying memory bank instead
+    // the input port themselves.
+    AnnotatedCone *&Cone = MemBankCones[Bank];
+
+    if (Cone == NULL)
+      Cone = new AnnotatedCone(TA, STGDist, Bank, OS);
+
+    annoataConstraintsFor(*Cone, Sel);
+  }
+
+  // Generate the constraints for memory bus and release the cone for memory bus.
+  typedef std::map<VASTMemoryBank*, AnnotatedCone*>::iterator iteator;
+  for (iteator I = MemBankCones.begin(), E = MemBankCones.end(); I != E; ++I) {
+    I->second->generateMCPEntries();
+    delete I->second;
   }
 
   // Also generate the location constraints.

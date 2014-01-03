@@ -47,8 +47,8 @@ static std::string GetSTAObjectName(const VASTSelector *Sel) {
   std::string Name;
   raw_string_ostream OS(Name);
 
-  if (Sel->isFUOutput()) {
-    if (const VASTMemoryBank *RAM = dyn_cast<VASTMemoryBank>(Sel->getParent()))
+  if (const VASTMemoryBank *RAM = dyn_cast<VASTMemoryBank>(Sel->getParent())) {
+    if (Sel->isFUOutput() || RAM->getReadLatency() == 1)
       return GetSTAObjectName(RAM);
   }
 
