@@ -1133,12 +1133,14 @@ struct ExternalToolDriver : public VASTModulePass, public TimingAnalysis {
   bool runOnVASTModule(VASTModule &VM) {
     InitializeTimingAnalysis(this);
     assert(ETA == NULL && "Last ETA didn't released!");
-    ETA = new ExternalTimingAnalysis(VM, getAnalysis<Dataflow>());
 
-    if (!ETA->analysisWithSynthesisTool()) {
-      delete ETA;
-      ETA = NULL;
-    }
+    // Temporary disable external timing analysis.
+    //ETA = new ExternalTimingAnalysis(VM, getAnalysis<Dataflow>());
+
+    //if (!ETA->analysisWithSynthesisTool()) {
+    //  delete ETA;
+    //  ETA = NULL;
+    //}
 
     return false;
   }
