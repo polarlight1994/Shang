@@ -145,6 +145,10 @@ bool DatapathBLO::shrink(VASTModule &VM) {
       for (fainin_iterator I = SV->fanin_begin(), E = SV->fanin_end();
            I != E; ++I) {
         VASTLatch L = *I;
+
+        if (Sel->isTrivialFannin(L))
+          continue;
+
         // Preform fine grain shrinking on fanin of register assignment, avoid
         // *any* known bits!
         DBO.fineGrainShrinkAndReplace(L, *SV);
