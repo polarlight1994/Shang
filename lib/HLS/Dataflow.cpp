@@ -439,9 +439,9 @@ void DataflowAnnotation::annotateDelay(VASTModule &VM) {
 
       // Extract the delay from the fan-in and the guarding condition.
       VASTValPtr FI = L;
-      TA.extractDelay(L, SlotValue, Srcs);
       TA.extractDelay(L, Guard.get(), Srcs);
       TA.extractDelay(L, FI.get(), Srcs);
+      TA.extractDelay(L, SlotValue, Srcs);
     }
 
     typedef ArrivalInfo::iterator src_iterator;
