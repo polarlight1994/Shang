@@ -1,6 +1,22 @@
-FUs.LUTDelay = 0.2 / PERIOD
+-- There are different delay from the input of a LUT to its output. E.g. the
+-- delay from input a to the output is 0.356 while the delay from input d
+-- to the output is 0.247. There is no way for us to determinate the pin
+-- during HLS, so we use the maximal value.
+FUs.LUTDelay = 0.356 / PERIOD
+-- The delay from d pin to the register.
+FUs.RegDelay = 0.077 / PERIOD
+-- The delay from clock enable signal to the register
+FUs.ClkEnDelay = 0.385 / PERIOD
+--
+FUs.CarryChainDelay = 0.066 / PERIOD
+-- There are 10 ALM in a LAB and each ALM have 2 addition function. The carry
+-- chains in the same ALM are directly connected without using local/global
+-- interconnect resource.
+FUs.MaxCarryChainLevel = 10 * 2
+
 FUs.MaxLutSize = 6
-FUs.MemoryBus.AddrLatency = 1.0 / PERIOD -- Block RAM
+-- Latency from the address port to data output
+FUs.MemoryBus.AddrLatency = 1.053 / PERIOD -- Block RAM
 
 FUs.udiv = { Latencies = { ['64'] = 140.679 / PERIOD } }
 FUs.sdiv = { Latencies = { ['64'] = 140.679 / PERIOD } }

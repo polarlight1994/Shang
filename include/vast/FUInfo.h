@@ -65,8 +65,9 @@ namespace VFUs {
   extern unsigned MaxLutSize;
   extern double Period;
 
-  // Latency of clock enable multiplexer selector
   extern float LUTDelay;
+  extern float RegDelay;
+  extern float ClkEnDelay;
 
   inline bool isFUCompatible(VFUs::FUTypes LHS, VFUs::FUTypes RHS) {
     if (LHS > LastPostBindFUType || RHS > LastPostBindFUType)

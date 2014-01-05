@@ -186,6 +186,8 @@ void LuaI::updateFUs() {
 
   READPARAMETER(Period, double);
   READPARAMETER(LUTDelay, float);
+  READPARAMETER(ClkEnDelay, float);
+  READPARAMETER(RegDelay, float);
   READPARAMETER(MaxLutSize, unsigned);
 }
 
