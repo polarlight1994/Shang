@@ -119,10 +119,13 @@ void VASTBitMask::mergeAnyKnown(Value *V, ScalarEvolution &SE,
   return mergeAnyKnown(Mask.invert(Inverted));
 }
 
+bool VASTBitMask::isCompatibleWith(const VASTBitMask &Other) const {
+  return Other.getMaskWidth() == getMaskWidth() &&
+         !(KnownOnes & Other.KnownZeros) && !(KnownZeros & Other.KnownOnes);
+}
+
 void VASTBitMask::mergeAnyKnown(const VASTBitMask &Other) {
-  assert(Other.getMaskWidth() == getMaskWidth() && "Size of V is unknown!");
-  assert(!(KnownOnes & Other.KnownZeros) && !(KnownZeros & Other.KnownOnes) &&
-         "Bit masks contradict!");
+  assert(isCompatibleWith(Other) && "Bit masks contradict!");
 
   KnownOnes |= Other.KnownOnes;
   KnownZeros |= Other.KnownZeros;

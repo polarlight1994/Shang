@@ -156,6 +156,7 @@ public:
   // Merge any known bits from other to the current bit mask
   void mergeAnyKnown(const VASTBitMask &Other);
   void mergeAllKnown(const VASTBitMask &Other);
+  bool isCompatibleWith(const VASTBitMask &Other) const;
 
   void printMask(raw_ostream &OS) const;
   void printMaskIfAnyKnown(raw_ostream &OS) const;
