@@ -381,8 +381,52 @@ bool VASTExpr::printExpr(raw_ostream &OS) const {
   return true;
 }
 
-void VASTExpr::dumpExpr() const {
-  printExpr(dbgs());
+void VASTExpr::printExprTree(raw_ostream &OS, bool StopAtTimingBarrier) const {
+  std::set<VASTExpr*> Visited;
+
+  typedef VASTOperandList::const_op_iterator ChildIt;
+  std::vector<std::pair<const VASTExpr*, ChildIt> > VisitStack;
+
+  VisitStack.push_back(std::make_pair(this, op_begin()));
+
+  while (!VisitStack.empty()) {
+    const VASTExpr *Node = VisitStack.back().first;
+    ChildIt It = VisitStack.back().second;
+
+    // We have visited all children of current node.
+    if (It == Node->op_end()) {
+      VisitStack.pop_back();
+
+      unsigned Level = VisitStack.size();
+      // Visit the current Node.
+      OS.indent(Level * 2) << "Expr: ";
+      Node->printName(OS);
+      OS << ' ';
+      Node->printExpr(OS);
+      OS << '\n';
+
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    VASTValue *ChildNode = It->unwrap().get();
+    ++VisitStack.back().second;
+
+    if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
+      // ChildNode has a name means we had already visited it.
+      if (!Visited.insert(ChildExpr).second)
+        continue;
+
+      if (StopAtTimingBarrier && ChildExpr->isTimingBarrier())
+        continue;
+
+      VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
+    }
+  }
+}
+
+void VASTExpr::dumpExprTree(bool StopAtTimingBarrier) const {
+  printExprTree(dbgs(), StopAtTimingBarrier);
   dbgs() << '\n';
 }
 

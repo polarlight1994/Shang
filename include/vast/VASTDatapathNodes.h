@@ -266,7 +266,9 @@ public:
 
   void print(raw_ostream &OS) const { printAsOperandInteral(OS); }
   bool printExpr(raw_ostream &OS) const;
-  void dumpExpr() const;
+
+  void printExprTree(raw_ostream &OS, bool StopAtTimingBarrier = false) const;
+  void dumpExprTree(bool StopAtTimingBarrier = false) const;
   void printMaskVerification(raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
