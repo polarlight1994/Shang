@@ -20,10 +20,15 @@
 #include "vast/Passes.h"
 
 #include "llvm/ADT/StringSet.h"
+#include "llvm/Support/CommandLine.h"
 #define DEBUG_TYPE "vast-datapath-namer"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+static cl::opt<bool>
+StrashNaming("vast-strash-naming",
+             cl::desc("Name the expressions based on strash."),
+             cl::init(true));
 
 namespace {
 struct DatapathNamer : public VASTModulePass {
@@ -64,7 +69,15 @@ void DatapathNamer::assignName(CachedStrashTable &Strash, VASTModule &VM) {
   typedef VASTModule::expr_iterator expr_iterator;
   for (expr_iterator I = VM.expr_begin(), E = VM.expr_end(); I != E; ++I) {
     VASTExpr *Expr = I;
-    unsigned StrashID = Strash.getOrCreateStrashID(Expr);
-    Expr->assignNameID(StrashID);
+
+    // Name the expressions according to structural hashing ID if the user ask
+    // to do so.
+    if (StrashNaming) {
+      unsigned StrashID = Strash.getOrCreateStrashID(Expr);
+      Expr->assignNameID(StrashID);
+      continue;
+    }
+
+    Expr->assignNameID(++CurID);
   }
 }
