@@ -21,6 +21,7 @@ namespace llvm {
 class Pass;
 class AnalysisUsage;
 class BasicBlock;
+class raw_ostream;
 }
 
 namespace vast {
