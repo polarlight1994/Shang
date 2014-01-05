@@ -206,8 +206,6 @@ private:
   friend class DatapathContainer;
 
   bool printAsOperandInteral(raw_ostream &OS) const;
-  bool printExpr(raw_ostream &OS) const;
-  void dumpExpr() const;
 
   void dropUses();
 
@@ -267,6 +265,8 @@ public:
   void printName(raw_ostream &OS) const;
 
   void print(raw_ostream &OS) const { printAsOperandInteral(OS); }
+  bool printExpr(raw_ostream &OS) const;
+  void dumpExpr() const;
   void printMaskVerification(raw_ostream &OS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
