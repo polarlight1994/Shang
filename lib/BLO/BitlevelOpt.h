@@ -171,6 +171,8 @@ public:
 
   bool optimizeAndReplace(VASTValPtr V);
 
+  bool optimizeSelector(VASTSelector *Sel);
+
   bool optimizeForward(VASTModule &VM);
   bool performLUTMapping();
   bool shrink(VASTModule &VM);

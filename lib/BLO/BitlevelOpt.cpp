@@ -695,38 +695,61 @@ bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
   return Replaced;
 }
 
-bool DatapathBLO::optimizeForward(VASTModule &VM) {
+bool DatapathBLO::optimizeSelector(VASTSelector *Sel) {
   bool Changed = false;
-  typedef VASTModule::selector_iterator selector_iterator;
 
-  for (selector_iterator I = VM.selector_begin(), E = VM.selector_end();
-       I != E; ++I) {
-    VASTSelector *Sel = I;
+  VASTBitMask MuxMask(Sel->getBitWidth());
 
-    if (Sel->isSelectorSynthesized()) {
-      // Only optimize the guard and fanin
-      optimizeAndReplace(Sel->getGuard());
-      optimizeAndReplace(Sel->getFanin());
-    } else {
-      typedef VASTSelector::const_iterator const_iterator;
-      for (const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
-        const VASTLatch &L = *I;
-        optimizeAndReplace(L);
-        optimizeAndReplace(L.getGuard());
-      }
-    }
+  if (Sel->isSelectorSynthesized()) {
+    // Only optimize the guard and fanin
+    optimizeAndReplace(Sel->getGuard());
+    optimizeAndReplace(Sel->getFanin());
 
-    typedef VASTSelector::def_iterator def_iterator;
-    for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
-      VASTSeqValue *SV = *I;
-      VASTBitMask OldMask = *SV;
-      Changed |= optimizeAndReplace(SV) || OldMask != *SV;
-    }
+    // Slot and enable are always assigned by 1, but timing is important for
+    // them so we cannot simply replace the output of Slot and Enables by 1.
+    if (!Sel->isSlot() && !Sel->isEnable())
+      MuxMask = Sel->getFanin();
   }
 
-  bool AnyReplacement = !Visited.empty();
-  Visited.clear();
-  return Changed || AnyReplacement;
+  typedef VASTSelector::const_iterator const_iterator;
+  for (const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
+    const VASTLatch &L = *I;
+
+    if (Sel->isTrivialFannin(L))
+      continue;
+
+    Changed |= optimizeAndReplace(L);
+    Changed |= optimizeAndReplace(L.getGuard());
+
+    assert(VASTBitMask(L.getFanin()).isCompatibleWith(MuxMask)
+           && "Bad bitmask evaluation!");
+  }
+
+  typedef VASTSelector::def_iterator def_iterator;
+  for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
+    VASTSeqValue *SV = *I;
+    VASTBitMask OldMask = *SV;
+
+    SV->mergeAnyKnown(MuxMask);
+
+    Changed |= optimizeAndReplace(SV);
+    Changed |= OldMask != *SV;
+  }
+    
+  return Changed;
+}
+
+bool DatapathBLO::optimizeForward(VASTModule &VM) {
+  bool Changed = false;
+  typedef VASTModule::selector_iterator iterator;
+
+  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
+    VASTSelector *Sel = I;
+
+    Changed |= optimizeSelector(Sel);
+  }
+
+  return Changed;
 }
 
 namespace {
