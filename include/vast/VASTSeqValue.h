@@ -164,6 +164,9 @@ public:
 
   void print(raw_ostream &OS) const;
 
+  void printFanins(raw_ostream &OS) const;
+  void dumpFanins() const;
+
   void printDecl(raw_ostream &OS) const;
   void printSelector(raw_ostream &OS) const;
   void printRegisterBlock(vlang_raw_ostream &OS, uint64_t InitVal) const;

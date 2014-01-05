@@ -69,6 +69,17 @@ bool VASTSelector::isTrivialFannin(const VASTLatch &L) const {
   return false;
 }
 
+void VASTSelector::printFanins(raw_ostream &OS) const {
+  for (const_iterator I = begin(), E = end(); I != E; ++I) {
+    VASTLatch U = *I;
+    U.Op->print(OS);
+  }
+}
+
+void VASTSelector::dumpFanins() const {
+  printFanins(dbgs());
+}
+
 unsigned VASTSelector::numNonTrivialFanins() const {
   unsigned Count = 0;
 
