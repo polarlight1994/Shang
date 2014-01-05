@@ -300,13 +300,12 @@ namespace vast {
 using namespace llvm;
 
 class CombPatterns : public StrashTable<CombPatterns> {
-  typedef std::map<VASTValPtr, unsigned> CacheTy;
+  typedef std::map<VASTValue*, unsigned> CacheTy;
   CacheTy Cache;
 
   typedef std::map<VASTExpr*, std::vector<VASTSelector*> > LeavesMapTy;
   LeavesMapTy LeavesMap;
 
-  unsigned getOrCreatePatternID(VASTExpr *Ptr, bool isInverted);
   unsigned getOrCreatePatternID(VASTExpr *Ptr);
 public:
   CombPatterns() {}
@@ -321,9 +320,14 @@ public:
     ID.AddString(NV->getName());
   }
 
-  unsigned lookupCache(VASTValPtr Ptr) const {
+  unsigned lookupCache(VASTValue *Ptr) const {
     CacheTy::const_iterator I = Cache.find(Ptr);
     return I == Cache.end() ? 0 : I->second;
+  }
+
+  unsigned lookupCache(VASTValPtr Ptr) const {
+    unsigned ID = lookupCache(Ptr.get());
+    return ID == 0 ? 0 : (ID + (Ptr.isInverted() ? 1 : 0));
   }
 
   unsigned getOrCreatePatternID(VASTValPtr Ptr);
@@ -408,23 +412,11 @@ unsigned CombPatterns::getOrCreatePatternID(VASTValPtr Ptr) {
     return ID;
   }
 
-  VASTExpr *ExprPtr = dyn_cast<VASTExpr>(Ptr);
-  if (ExprPtr == NULL)
+  VASTExpr *Expr = dyn_cast<VASTExpr>(Ptr);
+  if (Expr == NULL)
     return getOrCreateStrashID(Ptr, Cache);
 
-  return getOrCreatePatternID(ExprPtr, Ptr.isInverted());
-}
-
-unsigned CombPatterns::getOrCreatePatternID(VASTExpr *Ptr, bool isInverted) {
-  if (unsigned ID = lookupCache(VASTValPtr(Ptr, isInverted))) {
-    assert(LeavesMap.count(cast<VASTExpr>(Ptr)) &&
-           "Id exists with out leaves?");
-    return ID;
-  }
-
-  // Build the pattern for the underlying expression first.
-  getOrCreatePatternID(VASTValPtr(Ptr, isInverted));
-  return getOrCreateStrashID(Ptr, Cache);
+  return getOrCreatePatternID(Expr) + (Ptr.isInverted() ? 1 : 0);
 }
 
 unsigned CombPatterns::getOrCreatePatternID(VASTExpr* Expr) {
