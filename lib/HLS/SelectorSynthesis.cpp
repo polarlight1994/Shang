@@ -461,7 +461,8 @@ bool SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
     }
 
     VASTValPtr GuardedFIVal = FIVal;
-    if (CSEMap.size() == 1) {
+    // Guarding condition is only need when we have more than 1 fanins.
+    if (CSEMap.size() != 1) {
       VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
       GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
     }
