@@ -214,7 +214,10 @@ public:
   void updateArrival();
 
   void verify() const;
-  void verifyConnectivity() const;
+
+  // This is a temporary word arround for the potential bugs uncover by the
+  // ability of false path detection by the bit-level netlist.
+  void fixConnectivity();
 
   // Iterative the arrival times.
   typedef ilist<ArrivalTime>::iterator arrival_iterator;
@@ -356,22 +359,21 @@ void DelayModel::verify() const {
   }
 }
 
-void DelayModel::verifyConnectivity() const {
+void DelayModel::fixConnectivity() {
   std::set<VASTSeqValue*> Srcs;
-  Node->extractSupportingSeqVal(Srcs);
+  // Extract all leaves (i.e. VASTSeqValue and keeped VASTExpr) of the
+  // conbinational cone.
+  Node->extractSupportingSeqVal(Srcs, true);
 
-  for (const_arrival_iterator I = arrival_begin(), E = arrival_end();
-       I != E; ++I) {
-    const ArrivalTime *AT = I;
-
-    if (VASTSeqValue *SV = dyn_cast<VASTSeqValue>(AT->Src))
-      Srcs.erase(SV);
-  }
-
+  // Add a zero arrival time recode for the leaf if it does not appear in the
+  // arrival time list due to bit-level false path.
   typedef std::set<VASTSeqValue*>::iterator iterator;
   for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
     VASTSeqValue *SV = *I;
-    const_cast<DelayModel*>(this)->addArrival(SV, 0.0f, Node->getBitWidth(), 0);
+    if (hasArrivalFrom(SV))
+      continue;
+
+    this->addArrival(SV, 0.0f, Node->getBitWidth(), 0);
   }
 }
 
@@ -399,10 +401,10 @@ struct ArrivalVerifier {
   ArrivalVerifier(DelayModel *M) : M(M) {}
   ~ArrivalVerifier() { M->verify(); }
 };
-struct ConnectivityVerifier {
+struct ConnectivityFixer {
   DelayModel *M;
-  ConnectivityVerifier(DelayModel *M) : M(M) {}
-  ~ConnectivityVerifier() { M->verifyConnectivity(); }
+  ConnectivityFixer(DelayModel *M) : M(M) {}
+  ~ConnectivityFixer() { M->fixConnectivity(); }
 };
 }
 
@@ -857,7 +859,7 @@ void DelayModel::updateShrArrival() {
 }
 
 void DelayModel::updateArrival() {
-  ConnectivityVerifier CV(this);
+  ConnectivityFixer CF(this);
 
   VASTExpr::Opcode Opcode = Node->getOpcode();
 
