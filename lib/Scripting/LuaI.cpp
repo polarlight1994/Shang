@@ -253,6 +253,10 @@ std::string LuaI::GetString(const char *Name) {
   return Interpreter->getValueStr(Name);
 }
 
+bool LuaI::GetBool(ArrayRef<const char*> Path) {
+  return Interpreter->getValueT<bool>(Path);
+}
+
 float LuaI::GetFloat(ArrayRef<const char*> Path) {
   return Interpreter->getValueT<float>(Path);
 }

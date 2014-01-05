@@ -71,11 +71,6 @@ class LuaI {
   template<typename T>
   T getValueT(ArrayRef<const char*> Path) const;
 
-  // template<class T>
-  // void bindToGlobals(const char *Name, T *O) {
-  //  luabind::globals(State)[Name] = O;
-  //}
-
   std::string getValueStr(ArrayRef<const char*> Path) const;
 
   luabridge::LuaRef getValue(const char *Name) const;
@@ -95,6 +90,8 @@ public:
 
   static std::string GetString(const char *Name);
   static std::string GetString(ArrayRef<const char*> Path);
+
+  static bool GetBool(ArrayRef<const char*> Path);
 
   static float GetFloat(ArrayRef<const char*> Path);
 
