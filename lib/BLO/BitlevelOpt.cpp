@@ -746,6 +746,7 @@ struct BitlevelOpt : public VASTModulePass {
     AU.addPreservedID(PreSchedBindingID);
     AU.addPreservedID(ControlLogicSynthesisID);
     AU.addPreservedID(TimingDrivenSelectorSynthesisID);
+    AU.addPreservedID(SelectorSynthesisForAnnotationID);
     AU.addPreservedID(STGDistancesID);
   }
 };
