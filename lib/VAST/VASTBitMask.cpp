@@ -486,15 +486,14 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
   }
 }
 
-static VASTValPtr FindAddr(const LoadInst *LI, const VASTSelector *AddrPort) {
+static void CollectAddrs(const LoadInst *LI, const VASTSelector *AddrPort,
+                         SmallVectorImpl<VASTValPtr> &Addrs) {
   typedef VASTSelector::const_iterator const_iterator;
   for (const_iterator I = AddrPort->begin(), E = AddrPort->end(); I != E; ++I) {
     const VASTLatch &L = *I;
     if (L.Op->getValue() == LI)
-      return L;
+      Addrs.push_back(L);
   }
-
-  return None;
 }
 
 void VASTBitMask::evaluateFUOutputMask(VASTSeqValue *SV) {
@@ -512,12 +511,15 @@ void VASTBitMask::evaluateFUOutputMask(VASTSeqValue *SV) {
   // Get the corresponding load instruction of this SV.
   LoadInst *LI = cast<LoadInst>(SV->getLLVMValue());
 
-  // Now look for the same load instruction from the Address port.
-  VASTValPtr Addr = FindAddr(LI, Bank->getAddr(0));
-  if (Addr == None && Bank->isDualPort())
-    Addr = FindAddr(LI, Bank->getAddr(1));
+  SmallVector<VASTValPtr, 4> Addrs;
+  // Now look for the same load instruction from the Address port. Since the
+  // operation maybe duplicated, we need to collect *all* address assignments
+  // derived from the same LoadInst.
+  CollectAddrs(LI, Bank->getAddr(0), Addrs);
+  if (Addrs.empty() && Bank->isDualPort())
+    CollectAddrs(LI, Bank->getAddr(1), Addrs);
 
-  assert(Addr != None && "Cannot find the corresponding address!");
+  assert(!Addrs.empty() && "Cannot find the corresponding address!");
 
   unsigned BytesPerWord = Bank->getDataWidth() / 8;
   unsigned ByteAddrWidth = Log2_32_Ceil(BytesPerWord);
@@ -525,8 +527,15 @@ void VASTBitMask::evaluateFUOutputMask(VASTSeqValue *SV) {
   assert(ByteAddrWidth == SV->getBitWidth() - Bank->getDataWidth()
          && "Unexpected byte address width!");
 
-  // Extract the bitmask and shift it to the correct place.
-  VASTBitMask ByteAddrMask = EvaluateBitExtract(Addr, ByteAddrWidth, 0);
+  // Extract the bitmask from all address assignments.
+  VASTBitMask ByteAddrMask(ByteAddrWidth);
+  ByteAddrMask.KnownZeros = APInt::getAllOnesValue(ByteAddrWidth);
+  ByteAddrMask.KnownOnes = APInt::getAllOnesValue(ByteAddrWidth);
+  
+  for (unsigned i = 0, e = Addrs.size(); i < e; ++i)
+    ByteAddrMask.mergeAllKnown(EvaluateBitExtract(Addrs[i], ByteAddrWidth, 0));
+
+  // And shift it to the correct place.
   ByteAddrMask = VASTBitMask(ByteAddrMask.KnownZeros.zextOrTrunc(SV->getBitWidth()),
                              ByteAddrMask.KnownOnes.zextOrTrunc(SV->getBitWidth()));
   ByteAddrMask = VASTBitMask(ByteAddrMask.KnownZeros.shl(Bank->getDataWidth()),
