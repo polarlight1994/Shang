@@ -26,7 +26,7 @@ using namespace llvm;
 struct Strash;
 class CachedStrashTable : public VASTModulePass {
 public:
-  typedef std::map<VASTValPtr, unsigned> CacheTy;
+  typedef std::map<VASTValue*, unsigned> CacheTy;
 private:
   CacheTy Cache;
   Strash *Table;

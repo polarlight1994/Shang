@@ -80,6 +80,8 @@ class StrashTable {
   }
 
   void profile(VASTValue *Ptr, FoldingSetNodeID &ID, CacheTy &Cache) {
+    ID.AddInteger(Ptr->getASTType());
+
     if (VASTExpr *E = dyn_cast<VASTExpr>(Ptr)) {
       profileExpr(E, ID, Cache);
       return;
@@ -88,45 +90,45 @@ class StrashTable {
     profileLeaf(Ptr, ID);
   }
 
-  void profile(VASTValPtr Ptr, FoldingSetNodeID &ID, CacheTy &Cache) {
-    unsigned NodeType = Ptr->getASTType();
-    unsigned Data = (NodeType & 0x1f) | ((Ptr.isInverted() ? 0x1 : 0x0) << 5);
-    assert(NodeType == (Data & 0x1f) && "NodeType overflow!");
-    ID.AddInteger(Data);
-    profile(Ptr.get(), ID, Cache);
-  }
-
 public:
   StrashTable() : LastID(0) {}
 
-  unsigned lookupCache(VASTValPtr Ptr, CacheTy &Cache) const {
+  unsigned lookupCache(VASTValue *Ptr, CacheTy &Cache) const {
     CacheTy::const_iterator I = Cache.find(Ptr);
     return I == Cache.end() ? 0 : I->second;
+  }
+
+  unsigned lookupCache(VASTValPtr Ptr, CacheTy &Cache) const {
+    unsigned ID = lookupCache(Ptr.get(), Cache);
+    return ID == 0 ? 0 : (ID + (Ptr.isInverted() ? 1 : 0));
   }
 
   unsigned getOrCreateStrashID(VASTValPtr Ptr, CacheTy &Cache) {
     if (unsigned NodeId = lookupCache(Ptr, Cache))
       return NodeId;
 
+    VASTValue *V = Ptr.get();
+
     // Now look it up in the Hash Table. 
     FoldingSetNodeID ID;
-    profile(Ptr, ID, Cache);
+    profile(V, ID, Cache);
 
     void *IP = 0;
     if (StrashNode *N = Set.FindNodeOrInsertPos(ID, IP)) {
       unsigned NodeId = unsigned(*N);
       assert(NodeId && "Bad ID!");
-      Cache.insert(std::make_pair(Ptr, NodeId));
+      Cache.insert(std::make_pair(V, NodeId));
       return NodeId;
     }
 
-    StrashNode *N = new (Allocator) StrashNode(ID.Intern(Allocator), ++LastID);
+    LastID += 2;
+    StrashNode *N = new (Allocator) StrashNode(ID.Intern(Allocator), LastID);
     Set.InsertNode(N, IP);
 
     unsigned NodeId = unsigned(*N);
     assert(NodeId && "Bad ID!");
-    Cache.insert(std::make_pair(Ptr, NodeId));
-    return NodeId;
+    Cache.insert(std::make_pair(V, NodeId));
+    return NodeId + (Ptr.isInverted() ? 1 : 0);
   }
 
   // Add the selector to the table according to its name.
