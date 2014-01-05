@@ -51,6 +51,7 @@ struct VASTLatch {
   VASTSlot *getSlot() const;
   unsigned getSlotNum() const;
   VASTUse &getGuard() const;
+  VASTUse &getFanin() const;
   VASTValPtr getSlotActive() const;
 
   bool operator==(const VASTLatch &RHS) const {

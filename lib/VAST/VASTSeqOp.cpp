@@ -22,15 +22,15 @@
 using namespace llvm;
 //===----------------------------------------------------------------------===//
 VASTLatch::operator VASTUse &() const {
-  return Op->getUseInteranal(No);
+  return getFanin();
 }
 
 VASTLatch::operator VASTValPtr() const {
-  return Op->getUseInteranal(No);
+  return getFanin();
 }
 
 VASTUse &VASTLatch::operator ->() const {
-  return Op->getUseInteranal(No);
+  return getFanin();
 }
 
 void VASTLatch::replaceUsedBy(VASTValPtr V) const {
@@ -51,6 +51,10 @@ unsigned VASTLatch::getSlotNum() const {
 
 VASTUse &VASTLatch::getGuard() const {
   return Op->getGuard();
+}
+
+VASTUse &VASTLatch::getFanin() const {
+  return Op->getUseInteranal(No);
 }
 
 VASTValPtr VASTLatch::getSlotActive() const {
