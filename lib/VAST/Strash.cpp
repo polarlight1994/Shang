@@ -67,7 +67,8 @@ class StrashTable {
     SmallVector<unsigned, 8> Operands;
     for (unsigned i = 0; i < Expr->size(); ++i) {
       VASTValPtr Operand = Expr->getOperand(i);
-      unsigned NodeID = getOrCreateStrashID(Operand, Cache);
+      unsigned NodeID = lookupCache(Operand, Cache);
+      assert(NodeID && "Expected operand ID had been already calculated!");
       Operands.push_back(NodeID);
     }
 
@@ -103,12 +104,54 @@ public:
     return ID == 0 ? 0 : (ID + (Ptr.isInverted() ? 1 : 0));
   }
 
+  void profileTree(VASTExpr *Expr, CacheTy &Cache) {
+    typedef VASTOperandList::op_iterator ChildIt;
+    std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
+
+    VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
+
+    while (!VisitStack.empty()) {
+      VASTExpr *Node = VisitStack.back().first;
+      ChildIt It = VisitStack.back().second;
+
+      // We have visited all children of current node.
+      if (It == Node->op_end()) {
+        VisitStack.pop_back();
+        createStrashID(Node, Cache);
+        continue;
+      }
+
+      // Otherwise, remember the node and visit its children first.
+      VASTValue *ChildNode = It->unwrap().get();
+      ++VisitStack.back().second;
+
+      // Had we already visied ChildNode?
+      if (Cache.count(ChildNode))
+        continue;
+
+      if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
+        VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
+        continue;
+      }
+
+      // Else create the strash ID for the leaf.
+      createStrashID(ChildNode, Cache);
+    }
+  }
+
   unsigned getOrCreateStrashID(VASTValPtr Ptr, CacheTy &Cache) {
-    if (unsigned NodeId = lookupCache(Ptr, Cache))
-      return NodeId;
-
     VASTValue *V = Ptr.get();
+    if (VASTExpr *Expr = dyn_cast<VASTExpr>(V))
+      profileTree(Expr, Cache);
+    else
+      (void) createStrashID(V, Cache);
 
+    unsigned NodeId = lookupCache(Ptr, Cache);
+    assert(NodeId && "Strash ID should had already been cached!");
+    return NodeId;
+  }
+
+  unsigned createStrashID(VASTValue *V, CacheTy &Cache) {
     // Now look it up in the Hash Table. 
     FoldingSetNodeID ID;
     profile(V, ID, Cache);
@@ -121,6 +164,7 @@ public:
       return NodeId;
     }
 
+    // Increase the ID by 2 so that we reserve the ID for the invert of V.
     LastID += 2;
     StrashNode *N = new (Allocator) StrashNode(ID.Intern(Allocator), LastID);
     Set.InsertNode(N, IP);
@@ -128,7 +172,7 @@ public:
     unsigned NodeId = unsigned(*N);
     assert(NodeId && "Bad ID!");
     Cache.insert(std::make_pair(V, NodeId));
-    return NodeId + (Ptr.isInverted() ? 1 : 0);
+    return NodeId;
   }
 
   // Add the selector to the table according to its name.
@@ -158,6 +202,7 @@ public:
   }
 };
 } // end namespace
+//===----------------------------------------------------------------------===//
 
 namespace llvm {
 using namespace vast;
