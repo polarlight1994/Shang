@@ -56,7 +56,7 @@ struct TimingDrivenSelectorSynthesis : public VASTModulePass {
   typedef std::set<VASTSeqValue*> ValSet;
   typedef ValSet::iterator leaf_iterator;
 
-  bool requiresBarrier(const RegSet &IntersectRegs, const ValSet &CurVals,
+  bool requiresBarrier(const RegSet &IntersectRegs, VASTValPtr V,
                        ArrayRef<VASTSlot*> ReadSlots);
   void updateStructuralInterval(VASTValPtr Root, VASTSlot *ReadSlot,
                                 RegSet &IntersectRegs);
@@ -82,8 +82,11 @@ char &vast::TimingDrivenSelectorSynthesisID = TimingDrivenSelectorSynthesis::ID;
 
 bool
 TimingDrivenSelectorSynthesis::requiresBarrier(const RegSet &IntersectRegs,
-                                               const ValSet &CurVals,
+                                               VASTValPtr V,
                                                ArrayRef<VASTSlot*> ReadSlots) {
+  ValSet CurVals;
+  V->extractCombConeLeaves(CurVals);
+
   typedef ValSet::iterator iterator;
   for (iterator I = CurVals.begin(), E = CurVals.end(); I != E; ++I) {
     VASTSeqValue *SV = *I;
@@ -273,7 +276,6 @@ bool TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     SmallVector<VASTSlot*, 4> Slots;
     SmallVector<VASTValPtr, 4> SlotFanins;
-    std::set<VASTSeqValue*> CurLeaves;
     GuardBuilder GB(Builder, Sel);
 
     const OrVec &Ors = I->second;
@@ -287,12 +289,11 @@ bool TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     VASTValPtr FIGuard = GB.buildGuard();
 
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
-    FIVal->extractCombConeLeaves(CurLeaves);
 
     VASTExpr::Opcode AnnType = VASTExpr::dpSAnn;
     // We need to hard annotate the node to prevent it from being optimized
     // improperly, if it is reachable by the intersect leaves.
-    if (requiresBarrier(IntersectLeaves, CurLeaves, Slots))
+    if (requiresBarrier(IntersectLeaves, FIVal, Slots))
       AnnType = VASTExpr::dpHAnn;
 
     FIVal = Builder.buildAnnotation(AnnType, FIVal);
