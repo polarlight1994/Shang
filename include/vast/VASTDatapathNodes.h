@@ -173,8 +173,11 @@ public:
     // The bitwidth of the ROM is stored in the second operand, i.e. the wrapper
     // that wrap the actually ROM context.
     dpROMLookUp,
-    //
-    dpKeep
+    // Soft annotation and hard annotation, both of them are associated with the
+    // states that they are read. The hard annotation will be applied a "keep"
+    // attribute to prevent the logic synthesis tool from restruct the
+    // corresponding logic
+    dpHAnn, dpSAnn
   };
 private:
   VASTExpr(const VASTExpr&);              // Do not implement
@@ -240,8 +243,16 @@ public:
     return Contents64.Bank;
   }
 
-  bool isTimingBarrier() const {
-    return getOpcode() == dpKeep;
+  bool isSoftAnnotation() const {
+    return getOpcode() == dpSAnn;
+  }
+
+  bool isHardAnnotation() const {
+    return getOpcode() == dpSAnn;
+  }
+
+  bool isAnnotation() const {
+    return isSoftAnnotation() || isHardAnnotation();
   }
 
   inline bool isSubWord() const {
@@ -262,8 +273,8 @@ public:
   void print(raw_ostream &OS) const { printAsOperandInteral(OS); }
   bool printExpr(raw_ostream &OS) const;
 
-  void printExprTree(raw_ostream &OS, bool StopAtTimingBarrier = false) const;
-  void dumpExprTree(bool StopAtTimingBarrier = false) const;
+  void printExprTree(raw_ostream &OS) const;
+  void dumpExprTree() const;
   void printMaskVerification(raw_ostream &OS) const;
 
   void verify() const;

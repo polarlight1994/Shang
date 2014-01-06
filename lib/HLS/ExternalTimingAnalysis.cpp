@@ -708,7 +708,10 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
     // Get the thu node of the path.
     VASTExpr *Expr = Ann.getAsLValue<VASTExpr>();
 
-    assert(Expr && Expr->isTimingBarrier() && "Annotation without Expr?");
+    assert(Expr && Expr->isAnnotation() && "Annotation without Expr?");
+    // Ignore the soft anntations
+    if (Expr->isSoftAnnotation())
+      continue;
 
     CurLeaves.clear();
     Expr->extractSupportingSeqVal(CurLeaves);

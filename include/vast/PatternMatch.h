@@ -90,6 +90,23 @@ inline Opcode_match<Opcode, True_match> m_Opcode() {
   return Opcode_match<Opcode, True_match>(True_match());
 }
 
+template<typename LTy, typename RTy>
+struct match_binbine_or {
+  const LTy &LHS;
+  const RTy &RHS;
+
+  typedef typename LTy::RetTy RetTy;
+
+  match_binbine_or(const LTy &LHS, const RTy &RHS) : LHS(LHS), RHS(RHS) {}
+  
+  RetTy match(VASTExpr *Expr) const {
+    if (RetTy R = LHS.match(Expr))
+      return R;
+
+    return RHS.match(Expr);
+  }
+};
+
 /// Pattern matching for generic NAry expression.
 
 
@@ -133,8 +150,14 @@ struct IdenticalSelectorOperands {
 //===----------------------------------------------------------------------===//
 //
 // Matcher for specificed expression type
-inline Opcode_match<VASTExpr::dpKeep, ExtractOp<0> > extract_keepee() {
-  return Opcode_match<VASTExpr::dpKeep, ExtractOp<0> >(ExtractOp<0>());
+inline match_binbine_or<Opcode_match<VASTExpr::dpSAnn, ExtractOp<0> >,
+                        Opcode_match<VASTExpr::dpHAnn, ExtractOp<0> > >
+extract_annotation() {
+  typedef ExtractOp<0> ExtractOp0;
+  typedef Opcode_match<VASTExpr::dpSAnn, ExtractOp0> MatchSAnn;
+  typedef Opcode_match<VASTExpr::dpHAnn, ExtractOp0> MatchHAnn;
+  typedef match_binbine_or<MatchSAnn, MatchHAnn> MatchAnn;
+  return MatchAnn(MatchSAnn(ExtractOp0()), MatchHAnn(ExtractOp0()));
 }
 
 

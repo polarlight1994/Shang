@@ -218,7 +218,7 @@ public:
     return V;
   }
 
-  VASTValPtr buildKeep(VASTValPtr V);
+  VASTValPtr buildAnnotation(VASTExpr::Opcode Opcode, VASTValPtr V);
   VASTValPtr buildROMLookUp(VASTValPtr Addr, VASTMemoryBank *Bank,
                             unsigned Bitwidth);
   VASTValPtr buildLUTExpr(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth,

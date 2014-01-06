@@ -71,7 +71,8 @@ VASTValPtr DatapathBLO::eliminateInvertFlag(VASTValPtr V) {
   case VASTExpr::dpBitExtract:
   case VASTExpr::dpBitCat:
   case VASTExpr::dpBitRepeat:
-  case VASTExpr::dpKeep:
+  case VASTExpr::dpSAnn:
+  case VASTExpr::dpHAnn:
     break;
     // Else stop propagating the invert flag here. In fact, the invert
     // flag cost nothing in LUT-based FPGA. What we worry about is the
@@ -365,8 +366,9 @@ VASTValPtr DatapathBLO::optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op) {
   return Builder.buildReduction(Opc, Op);
 }
 
-VASTValPtr DatapathBLO::optimizeKeep(VASTValPtr Op) {
-  return Builder.buildKeep(eliminateInvertFlag(Op));
+VASTValPtr DatapathBLO::optimizeAnnotation(VASTExpr::Opcode Opcode,
+                                           VASTValPtr Op) {
+  return Builder.buildAnnotation(Opcode, eliminateInvertFlag(Op));
 }
 
 VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
@@ -611,8 +613,9 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   case VASTExpr::dpRAnd:
   case VASTExpr::dpRXor:
     return optimizeReduction(Opcode, Expr->getOperand(0));
-  case VASTExpr::dpKeep:
-    return optimizeKeep(Expr->getOperand(0));
+  case VASTExpr::dpSAnn:
+  case VASTExpr::dpHAnn:
+    return optimizeAnnotation(Opcode, Expr->getOperand(0));
   case VASTExpr::dpShl:
   case VASTExpr::dpLshr:
   case VASTExpr::dpAshr:

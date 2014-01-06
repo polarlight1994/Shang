@@ -278,7 +278,8 @@ struct DatapathPrinter {
     if (!PrintedNames.insert(NameID).second)
       return;
 
-    if (E->getOpcode() == VASTExpr::dpKeep)
+    // Apply the keep attribute to the hard annotations.
+    if (E->getOpcode() == VASTExpr::dpHAnn)
       OS << "(* keep *) ";
 
     unsigned Bitwidth = E->getBitWidth();

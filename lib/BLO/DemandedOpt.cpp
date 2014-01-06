@@ -162,11 +162,14 @@ bool DatapathBLO::shrink(VASTModule &VM) {
 
     while (!Worklist.empty()) {
       VASTExpr *Keep = Worklist.pop_back_val();
-      VASTValPtr Keepee = matchUnderlying(Keep, extract_keepee());
-      assert(Keepee && "Unexpected expression type for annotation!");
-      VASTValPtr NewKeepee = DBO.replaceKnownBitsFromMask(Keepee, Keepee, true);
+      VASTValPtr Ann = matchUnderlying(Keep, extract_annotation());
+      assert(Ann && "Unexpected expression type for annotation!");
+      // Perform fine grain optimization on the hard annotation since we do not
+      // allow the logic synthesis tool to optimize it.
+      bool FineGrainOpt = Keep->isHardAnnotation();
+      VASTValPtr NewAnn = DBO.replaceKnownBitsFromMask(Ann, Ann, FineGrainOpt);
       // Replace the old keep expression by the new one.
-      replaceIfNotEqual(Keep, optimizeKeep(NewKeepee));
+      replaceIfNotEqual(Keep, optimizeAnnotation(Keep->getOpcode(), NewAnn));
     }
   }
 

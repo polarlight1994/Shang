@@ -165,6 +165,58 @@ struct StructualLess : public std::binary_function<VASTValPtr, VASTValPtr, bool>
 };
 }
 
+// Extract leaves like extractSupportingSeqVal, but stop at the hard annotations,
+// to which the multi-cycle path constraints are applied.
+static void ExtractLeaves(VASTValue *Root, std::set<VASTSeqValue*> &SeqVals) {
+  std::set<VASTExpr*> Visited;
+  VASTExpr *Expr = dyn_cast<VASTExpr>(Root);
+  // The entire tree had been visited.
+  if (Expr == 0) {
+    // If ChildNode is a not data-path operand list, it may be the SeqVal.
+    if (VASTSeqValue *SeqVal = dyn_cast<VASTSeqValue>(Root))
+      SeqVals.insert(SeqVal);
+
+    return;
+  }
+
+  typedef VASTOperandList::op_iterator ChildIt;
+  std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
+
+  VisitStack.push_back(std::make_pair(Expr, Expr->op_begin()));
+
+  while (!VisitStack.empty()) {
+    VASTExpr *Node = VisitStack.back().first;
+    ChildIt It = VisitStack.back().second;
+
+    // We have visited all children of current node.
+    if (It == Node->op_end()) {
+      VisitStack.pop_back();
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    VASTValue *ChildNode = It->unwrap().get();
+    ++VisitStack.back().second;
+
+    if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
+      if (ChildExpr->isHardAnnotation())
+        continue;
+
+      // ChildNode has a name means we had already visited it.
+      if (!Visited.insert(ChildExpr).second) continue;
+
+      VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
+      continue;
+    }
+
+    // If ChildNode is a not data-path operand list, it may be the SeqVal.
+    if (VASTSeqValue *SeqVal = dyn_cast_or_null<VASTSeqValue>(ChildNode)) {
+      SeqVals.insert(SeqVal);
+      continue;
+    }
+  }
+}
+
 void
 VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
                                VASTValue *V, VASTSlot *ReadSlot) const {
@@ -173,7 +225,7 @@ VASTSelector::verifyHoldCycles(vlang_raw_ostream &OS, STGDistances *STGDist,
 
   OS << "// Verify timing of cone rooted on " << VASTValPtr(V) << "\n";
   // Get *all* source register of the cone rooted on SubExpr.
-  V->extractSupportingSeqVal(Srcs, false /*Search across keep nodes!*/);
+  ExtractLeaves(V, Srcs);
 
   if (Srcs.empty()) return;
 
@@ -598,7 +650,7 @@ bool VASTSelector::Annotation::onReplace(VASTValPtr Old, VASTValPtr New) {
     return true;
   }
 
-  if (Expr->isTimingBarrier()) {
+  if (Expr->isAnnotation()) {
     // Just update the mapping.
     Sel->removeAnnotation(OldExpr);
     Annotation *Ann = Sel->addAnnotation(Expr, this);
@@ -643,7 +695,7 @@ VASTSelector::addAnnotation(VASTExpr *E, Annotation *Ann) {
 }
 
 void VASTSelector::createAnnotation(ArrayRef<VASTSlot*> Slots, VASTExpr *E) {
-  assert(E->isTimingBarrier() && "Unexpected expression type!");
+  assert(E->isAnnotation() && "Unexpected expression type!");
   FoldingSetNodeID ID;
 
   ID.AddPointer(E);
@@ -661,7 +713,7 @@ void VASTSelector::annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V)  {
   if (!Expr)
     return;
 
-  if (Expr->isTimingBarrier()) {
+  if (Expr->isAnnotation()) {
     createAnnotation(Slots, Expr);
     return;
   }
@@ -695,7 +747,7 @@ void VASTSelector::annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V)  {
       // ChildNode has a name means we had already visited it.
       if (!Visited.insert(ChildExpr).second) continue;
 
-      if (ChildExpr->isTimingBarrier()) {
+      if (ChildExpr->isAnnotation()) {
         createAnnotation(Slots, ChildExpr);
         continue;
       }

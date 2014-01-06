@@ -208,10 +208,11 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
     assert(Ops.size() == 1 && "Unexpected more than 1 operands for reduction!");
     assert(BitWidth == 1 && "Bitwidth of reduction should be 1!");
     return buildReduction(Opc, Ops[0]);
-  case VASTExpr::dpKeep:
-    assert(Ops.size() == 1 && "Unexpected more than 1 operands for reduction!");
+  case VASTExpr::dpSAnn:
+  case VASTExpr::dpHAnn:
+    assert(Ops.size() == 1 && "Unexpected more than 1 operands for annotation!");
     assert(BitWidth == Ops[0]->getBitWidth() && "Bad bitwidth!");
-    return buildKeep(Ops[0]);
+    return buildAnnotation(Opc, Ops[0]);
   default:
     llvm_unreachable("Unexpected opcode!");
     break;
@@ -227,9 +228,10 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op,
   case VASTExpr::dpRXor:
     assert(BitWidth == 1 && "Bitwidth of reduction should be 1!");
     return buildReduction(Opc, Op);
-  case VASTExpr::dpKeep:
+  case VASTExpr::dpSAnn:
+  case VASTExpr::dpHAnn:
     assert(BitWidth == Op->getBitWidth() && "Bad bitwidth!");
-    return buildKeep(Op);
+    return buildAnnotation(Opc, Op);
   default:
     llvm_unreachable("Unexpected opcode!");
     break;
@@ -258,7 +260,7 @@ VASTValPtr VASTExprBuilder::copyExpr(VASTExpr *Expr, ArrayRef<VASTValPtr> Ops) {
   return buildExpr(Expr->getOpcode(), Ops, Expr->getBitWidth());
 }
 
-VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
+VASTValPtr VASTExprBuilder::buildAnnotation(VASTExpr::Opcode Opcode, VASTValPtr V) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
 
   // Only keep expressions!
@@ -266,26 +268,33 @@ VASTValPtr VASTExprBuilder::buildKeep(VASTValPtr V) {
     return V;
 
   bool IsInverted = V.isInverted();
-  
+
+  // No need to Annotate twice!
+  if (Opcode == Expr->getOpcode())
+    return V;
+
   switch (Expr->getOpcode()) {
   default:break;
-    // No need to keep twice!
-  case VASTExpr::dpKeep:
-    return V;
-  case VASTExpr::dpBitRepeat:
-    return buildBitRepeat(buildKeep(Expr->getOperand(0)).invert(IsInverted),
-                          Expr->getRepeatTimes());
+  case VASTExpr::dpBitRepeat: {
+    VASTValPtr Ann = buildAnnotation(Opcode, Expr->getOperand(0));
+    Ann = Ann.invert(IsInverted);
+    return buildBitRepeat(Ann, Expr->getRepeatTimes());
+  }
   case VASTExpr::dpBitCat: {
     typedef VASTExpr::op_iterator iterator;
     SmallVector<VASTValPtr, 4> Ops;
-    for (iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
-      Ops.push_back(buildKeep(*I).invert(IsInverted));
+    for (iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
+      VASTValPtr Ann = buildAnnotation(Opcode, *I);
+      Ann = Ann.invert(IsInverted);
+      Ops.push_back(Ann);
+    }
+
     return buildBitCatExpr(Ops, Expr->getBitWidth());
   }
   }
 
   VASTValPtr Ops[] = { V.get() };
-  VASTValPtr K = Context.createExpr(VASTExpr::dpKeep, Ops, V->getBitWidth());
+  VASTValPtr K = Context.createExpr(Opcode, Ops, V->getBitWidth());
   return K.invert(IsInverted);
 }
 

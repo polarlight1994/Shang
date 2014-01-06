@@ -106,7 +106,7 @@ public:
 
   VASTValPtr optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op);
   
-  VASTValPtr optimizeKeep(VASTValPtr Op);
+  VASTValPtr optimizeAnnotation(VASTExpr::Opcode Opcode, VASTValPtr Op);
 
   VASTValPtr optimizeSignBit(VASTValPtr V) {
     return optimizeBitExtract(V, V->getBitWidth(), V->getBitWidth() - 1);

@@ -132,7 +132,8 @@ struct GuardBuilder {
     for (iterator I = ReadAtSlot.begin(), E = ReadAtSlot.end(); I != E; ++I) {
       VASTValPtr V = I->second;
 
-      V = Builder.buildKeep(V);
+      // Build hard annotation for 1 bit guarding condition.
+      V = Builder.buildAnnotation(VASTExpr::dpHAnn, V);
       Sel->annotateReadSlot(I->first, V);
 
       SmallVector<VASTValPtr, 2> CurGuards;
@@ -251,12 +252,14 @@ bool TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     CurLeaves.clear();
     FIVal->extractSupportingSeqVal(CurLeaves);
 
-    // We need to keep the node to prevent it from being optimized improperly,
-    // if it is reachable by the intersect leaves.
-    if (requiresBarrier(IntersectLeaves, CurLeaves, Slots)) {
-      FIVal = Builder.buildKeep(FIVal);
-      Sel->annotateReadSlot(Slots, FIVal);
-    }
+    VASTExpr::Opcode AnnType = VASTExpr::dpSAnn;
+    // We need to hard annotate the node to prevent it from being optimized
+    // improperly, if it is reachable by the intersect leaves.
+    if (requiresBarrier(IntersectLeaves, CurLeaves, Slots))
+      AnnType = VASTExpr::dpHAnn;
+
+    FIVal = Builder.buildAnnotation(AnnType, FIVal);
+    Sel->annotateReadSlot(Slots, FIVal);
 
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
@@ -420,18 +423,20 @@ bool SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
 
       CurLeaves.clear();
       CurGuard->extractSupportingSeqVal(CurLeaves);
+
+      VASTExpr::Opcode AnnType = VASTExpr::dpSAnn;
       // We need to keep the node to prevent it from being optimized improperly,
       // if it is reachable by the intersect leaves.
-      if (intersect(IntersectLeaves, CurLeaves)) {
-        // Simply keep all guarding condition, because they are only 1 bit nodes,
-        // and their upper bound is the product of number of slots and number of
-        // basic blocks.
-        CurGuard = Builder.buildKeep(CurGuard);
+      if (intersect(IntersectLeaves, CurLeaves))
+        AnnType = VASTExpr::dpHAnn;
 
-        // Also annotate S, so that we can construct the annotation to VASTSeqOp
-        // mapping based on the slot.
-        Sel->annotateReadSlot(S, CurGuard);
-      }
+      // Simply keep all guarding condition, because they are only 1 bit nodes,
+      // and their upper bound is the product of number of slots and number of
+      // basic blocks.
+      CurGuard = Builder.buildAnnotation(AnnType, CurGuard);
+      // Also annotate S, so that we can construct the annotation to VASTSeqOp
+      // mapping based on the slot.
+      Sel->annotateReadSlot(S, CurGuard);
 
       CurGuards.push_back(CurGuard);
       CurGuard = Builder.buildAndExpr(CurGuards, 1);
@@ -453,12 +458,14 @@ bool SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
     CurLeaves.clear();
     FIVal->extractSupportingSeqVal(CurLeaves);
 
+    VASTExpr::Opcode AnnType = VASTExpr::dpSAnn;
     // We need to keep the node to prevent it from being optimized improperly,
     // if it is reachable by the intersect leaves.
-    if (intersect(IntersectLeaves, CurLeaves)) {
-      FIVal = Builder.buildKeep(FIVal);
-      Sel->annotateReadSlot(Slots, FIVal);
-    }
+    if (intersect(IntersectLeaves, CurLeaves))
+      AnnType = VASTExpr::dpHAnn;
+
+    FIVal = Builder.buildAnnotation(AnnType, FIVal);
+    Sel->annotateReadSlot(Slots, FIVal);
 
     VASTValPtr GuardedFIVal = FIVal;
     // Guarding condition is only need when we have more than 1 fanins.

@@ -477,7 +477,8 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
   case VASTExpr::dpAshr:
     mergeAnyKnown(EvaluateAshr(Masks[0], Masks[1], BitWidth));
     break;
-  case VASTExpr::dpKeep:
+  case VASTExpr::dpSAnn:
+  case VASTExpr::dpHAnn:
     // Simply propagate the masks from the RHS of the assignment.
     mergeAnyKnown(Masks[0]);
     break;

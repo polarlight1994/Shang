@@ -338,7 +338,7 @@ unsigned VASTExpr::getNameID() const {
 }
 
 void VASTExpr::printName(raw_ostream &OS) const {
-  char Prefix = isTimingBarrier() ? 'k' : 'w';
+  char Prefix = isHardAnnotation() ? 'h' : ( isSoftAnnotation() ? 's' : 'w');
   OS << Prefix << getNameID() << Prefix;
 }
 
@@ -415,9 +415,10 @@ bool VASTExpr::printExpr(raw_ostream &OS) const {
   case dpBitCat:    printBitCat(OS, getOperands());    break;
   case dpBitRepeat: printBitRepeat(OS, getOperand(0), getRepeatTimes()); break;
 
-  case dpKeep:
+  case dpSAnn:
+  case dpHAnn:
     getOperand(0).printAsOperand(OS, getUB(), getLB());
-    OS << "/*keep*/";
+    OS << "/*Annotation*/";
     break;
 
   case dpROMLookUp:
@@ -431,7 +432,7 @@ bool VASTExpr::printExpr(raw_ostream &OS) const {
   return true;
 }
 
-void VASTExpr::printExprTree(raw_ostream &OS, bool StopAtTimingBarrier) const {
+void VASTExpr::printExprTree(raw_ostream &OS) const {
   std::set<VASTExpr*> Visited;
 
   typedef VASTOperandList::const_op_iterator ChildIt;
@@ -467,16 +468,13 @@ void VASTExpr::printExprTree(raw_ostream &OS, bool StopAtTimingBarrier) const {
       if (!Visited.insert(ChildExpr).second)
         continue;
 
-      if (StopAtTimingBarrier && ChildExpr->isTimingBarrier())
-        continue;
-
       VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
     }
   }
 }
 
-void VASTExpr::dumpExprTree(bool StopAtTimingBarrier) const {
-  printExprTree(dbgs(), StopAtTimingBarrier);
+void VASTExpr::dumpExprTree() const {
+  printExprTree(dbgs());
   dbgs() << '\n';
 }
 

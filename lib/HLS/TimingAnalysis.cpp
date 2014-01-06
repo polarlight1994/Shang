@@ -91,7 +91,11 @@ void TimingAnalysis::extractDelay(const VASTLatch &L, VASTValue *V,
     const VASTSelector::Annotation &Ann = *I->second;
     ArrayRef<VASTSlot*> Slots(Ann.getSlots());
     VASTExpr *Thu = I->first;
-    assert(Thu->isTimingBarrier() && "Unexpected Expr Type!");
+    assert(Thu->isAnnotation() && "Unexpected Expr Type!");
+
+    // Ignore the soft annotations.
+    if (Thu->isSoftAnnotation())
+      continue;
 
     if (std::find(Slots.begin(), Slots.end(), ReadSlot) == Slots.end())
       continue;
@@ -570,7 +574,7 @@ static VASTValue *GetAsLeaf(VASTValPtr V) {
     return SV;
 
   if (VASTExpr *Expr = V.getAsLValue<VASTExpr>())
-  if (Expr->isTimingBarrier())
+  if (Expr->isHardAnnotation())
     return Expr;
 
   return NULL;
@@ -895,7 +899,8 @@ void DelayModel::updateArrival() {
     return updateArrivalParallel(VFUs::LUTDelay);
   case vast::VASTExpr::dpROMLookUp:
     return updateROMLookUpArrival();
-  case vast::VASTExpr::dpKeep:
+  case vast::VASTExpr::dpSAnn:
+  case vast::VASTExpr::dpHAnn:
     return updateArrivalParallel(0.0f);
   default:
     llvm_unreachable("Unexpected opcode!");
@@ -914,9 +919,9 @@ DelayModel *TimingNetlist::createModel(VASTExpr *Expr) {
     VASTExpr *ChildExpr = Expr->getOperand(i).getAsLValue<VASTExpr>();
 
     // There is no fanin delay model if we reach the leaf of a combinational
-    // cone. The expressions with a keep attribute are also considered as
+    // cone. The expressions with hard annotation are also considered as
     // a leaf.
-    if (ChildExpr == NULL || ChildExpr->isTimingBarrier()) {
+    if (ChildExpr == NULL || ChildExpr->isHardAnnotation()) {
       Fanins.push_back(NULL);
       continue;
     }
@@ -961,7 +966,7 @@ void TimingNetlist::buildTimingNetlist(VASTValue *V) {
     ++It;
 
     if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(Child)) {
-      if (!ModelMap.count(ChildExpr) && !ChildExpr->isTimingBarrier())
+      if (!ModelMap.count(ChildExpr) && !ChildExpr->isHardAnnotation())
         VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
 
       continue;
@@ -1120,7 +1125,7 @@ struct ArrivalPrinter {
 
       if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
         // ChildNode has a name means we had already visited it.
-        if (!Visited.insert(ChildExpr).second || ChildExpr->isTimingBarrier())
+        if (!Visited.insert(ChildExpr).second || ChildExpr->isHardAnnotation())
           continue;
 
         VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
