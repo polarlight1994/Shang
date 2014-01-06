@@ -97,7 +97,9 @@ struct AnnotatedCone {
   void addIntervalFromSrc(VASTSelector *Leaf, unsigned Cycles) {
     assert(Cycles && "unexpected zero interval!");
     unsigned &OldCycles = CyclesFromSrcLB[Leaf];
-    OldCycles = std::min(OldCycles, Cycles);
+    // DIRTY HACK: Wrap the OldCycles, so that we can insert the new Cycles
+    // with the min function even OldCycles is 0.
+    OldCycles = std::min(OldCycles - 1, Cycles - 1) + 1;
     checkIntervalFromSlot(Leaf, OldCycles);
   }
 
@@ -278,6 +280,8 @@ void AnnotatedCone::generateMCPWithInterval(SrcTy *Src, const std::string &ThuNa
                                             unsigned Cycles, float Arrival,
                                             unsigned Order) const {
   assert(!ThuName.empty() && "Bad through node name!");
+  assert(Cycles && "Expect nonzero cycles!");
+
   OS << "INSERT INTO mcps(src, dst, thu, cycles, normalized_delay, constraint_order)"
         "VALUES(\n"
      << '\'' << Src->getSTAObjectName() << "', \n"
