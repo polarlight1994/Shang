@@ -219,10 +219,6 @@ public:
 
   void verify() const;
 
-  // This is a temporary word arround for the potential bugs uncover by the
-  // ability of false path detection by the bit-level netlist.
-  void fixConnectivity();
-
   // Iterative the arrival times.
   typedef ilist<ArrivalTime>::iterator arrival_iterator;
   arrival_iterator arrival_begin() { return Arrivals.begin(); }
@@ -363,24 +359,6 @@ void DelayModel::verify() const {
   }
 }
 
-void DelayModel::fixConnectivity() {
-  std::set<VASTSeqValue*> Srcs;
-  // Extract all leaves (i.e. VASTSeqValue and keeped VASTExpr) of the
-  // conbinational cone.
-  Node->extractSupportingSeqVal(Srcs, true);
-
-  // Add a zero arrival time recode for the leaf if it does not appear in the
-  // arrival time list due to bit-level false path.
-  typedef std::set<VASTSeqValue*>::iterator iterator;
-  for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-    VASTSeqValue *SV = *I;
-    if (hasArrivalFrom(SV))
-      continue;
-
-    this->addArrival(SV, 0.0f, Node->getBitWidth(), 0);
-  }
-}
-
 DelayModel::arrival_iterator
 DelayModel::findInsertPosition(ArrivalTime *Start, VASTValue *V, uint8_t ToLB) {
   if (Start == NULL)
@@ -404,11 +382,6 @@ struct ArrivalVerifier {
   DelayModel *M;
   ArrivalVerifier(DelayModel *M) : M(M) {}
   ~ArrivalVerifier() { M->verify(); }
-};
-struct ConnectivityFixer {
-  DelayModel *M;
-  ConnectivityFixer(DelayModel *M) : M(M) {}
-  ~ConnectivityFixer() { M->fixConnectivity(); }
 };
 }
 
@@ -863,8 +836,6 @@ void DelayModel::updateShrArrival() {
 }
 
 void DelayModel::updateArrival() {
-  ConnectivityFixer CF(this);
-
   VASTExpr::Opcode Opcode = Node->getOpcode();
 
   switch (Opcode) {
