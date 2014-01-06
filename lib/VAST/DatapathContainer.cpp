@@ -88,6 +88,14 @@ void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
          "Unexpected VASTValPtr value!");
   assert(From->getBitWidth() == To->getBitWidth() && "Bitwidth not match!");
   assert(!To->isDead() && "Replacing node by dead node!");
+
+#ifdef XDEBUG
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(To.get())) {
+    if (Expr->isReachableFrom(From.get()))
+      llvm_unreachable("Unexpected cycle in expression tree!");
+  }
+#endif
+
   VASTValue::use_iterator UI = From->use_begin(), UE = From->use_end();
   // Remove the node from the CES map to prevent other node from being CES to
   // the node that is going to be replaced.
