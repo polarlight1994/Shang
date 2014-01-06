@@ -177,11 +177,6 @@ public:
     dpKeep
   };
 private:
-  // Operands, right after this VASTExpr.
-  const VASTUse *ops() const {
-    return reinterpret_cast<const VASTUse*>(this + 1);
-  }
-
   VASTExpr(const VASTExpr&);              // Do not implement
   void operator=(const VASTExpr&);        // Do not implement
 
@@ -270,6 +265,9 @@ public:
   void printExprTree(raw_ostream &OS, bool StopAtTimingBarrier = false) const;
   void dumpExprTree(bool StopAtTimingBarrier = false) const;
   void printMaskVerification(raw_ostream &OS) const;
+
+  void verify() const;
+  bool isReachableFrom(const VASTValue *RHS) const;
 
   /// Methods for support type inquiry through isa, cast, and dyn_cast:
   static inline bool classof(const VASTExpr *A) { return true; }

@@ -223,7 +223,55 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
 
   return true;
 }
+
 //===----------------------------------------------------------------------===//
+bool VASTExpr::isReachableFrom(const VASTValue *RHS) const {
+  std::set<const VASTExpr*> DFVisited;
+
+  typedef VASTOperandList::const_op_iterator ChildIt;
+  std::vector<std::pair<const VASTExpr*, ChildIt> > VisitStack;
+
+  VisitStack.push_back(std::make_pair(this, op_begin()));
+  DFVisited.insert(this);
+
+  while (!VisitStack.empty()) {
+    const VASTExpr *Node = VisitStack.back().first;
+    ChildIt It = VisitStack.back().second;
+
+    // We have visited all children of current node.
+    if (It == Node->op_end()) {
+      VisitStack.pop_back();
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    VASTValue *ChildNode = It->unwrap().get();
+
+    ++VisitStack.back().second;
+    if (ChildNode == RHS)
+      return true;
+
+    if (VASTExpr *ChildExpr = dyn_cast<VASTExpr>(ChildNode)) {
+      // Had we already visied ChildNode?
+      if (!DFVisited.insert(ChildExpr).second)
+        continue;
+
+      VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
+      continue;
+    }
+  }
+
+  return false;
+}
+
+//===----------------------------------------------------------------------===//
+void VASTExpr::verify() const {
+#ifdef XDEBUG
+  if (isReachableFrom(this))
+    llvm_unreachable("Unexpected cycle in expression tree!");
+#endif
+}
+
 void VASTExpr::initializeOperands(ArrayRef<VASTValPtr> Ops) {
   assert(Ops.size() && "Unexpected empty operand list!");
   // Construct the uses that use the operand.
@@ -231,6 +279,8 @@ void VASTExpr::initializeOperands(ArrayRef<VASTValPtr> Ops) {
     assert(Ops[i].get() && "Unexpected null VASTValPtr!");
     (void) new (Operands + i) VASTUse(this, Ops[i]);
   }
+
+  verify();
 }
 
 VASTExpr::VASTExpr(Opcode Opc, ArrayRef<VASTValPtr> Ops, unsigned BitWidth)
