@@ -41,13 +41,9 @@
 using namespace llvm;
 
 static cl::opt<bool>
-DisableTimingScriptGeneration("shang-disable-timing-script",
+DisableTimingScriptGeneration("vast-disable-timing-script",
                               cl::desc("Disable timing script generation"),
                               cl::init(false));
-static cl::opt<bool>
-KeepNodesOnly("shang-timing-script-keep-only",
-              cl::desc("Only generate timing script thu 'keep' nodes"),
-              cl::init(true));
 
 STATISTIC(NumMultiCyclesConstraints, "Number of multicycles timing constraints "
                                      "generated");
@@ -58,26 +54,6 @@ STATISTIC(NumConstraints, "Number of timing constraints generated");
 STATISTIC(NumTimgViolation, "Number of timing paths with negative slack");
 
 namespace{
-struct TimingScriptGen;
-struct Leaf {
-  unsigned NumCycles;
-  float CriticalDelay;
-  Leaf(unsigned NumCycles = STGDistances::Inf, float CriticalDelay = 0.0f)
-    : NumCycles(NumCycles), CriticalDelay(CriticalDelay) {}
-
-  // Update the source information with tighter cycles constraint and larger
-  // critical delay
-  void update(unsigned NumCycles, float CriticalDelay) {
-    this->NumCycles = std::min(this->NumCycles, NumCycles);
-    this->CriticalDelay = std::max(this->CriticalDelay, CriticalDelay);
-  }
-
-  Leaf &update(const Leaf &RHS) {
-    update(RHS.NumCycles, RHS.CriticalDelay);
-    return *this;
-  }
-};
-
 /// AnnotatedCone - Combinational cone annotated with timing information.
 struct AnnotatedCone {
   TimingAnalysis &TA;
@@ -87,10 +63,10 @@ struct AnnotatedCone {
   const uint32_t Inf;
   static unsigned ConstrantCounter;
 
-  typedef DenseMap<VASTSelector*, Leaf> SeqValSetTy;
+  typedef std::map<VASTSelector*, unsigned> SeqValSetTy;
   SeqValSetTy CyclesFromSrcLB;
 
-  typedef DenseMap<VASTExpr*, SeqValSetTy> QueryCacheTy;
+  typedef std::map<VASTExpr*, SeqValSetTy> QueryCacheTy;
   QueryCacheTy QueryCache;
   SmallVector<VASTSelector*, 4> Sels;
 
@@ -109,51 +85,64 @@ struct AnnotatedCone {
     Sels.clear();
   }
 
-  static void checkIntervalFromSlot(VASTSelector *Sel, unsigned Cycles) {
-    assert((!Sel->isSlot() || Cycles <= 1) && "Bad interval for slot registers!");
+  static void checkIntervalFromSlot(VASTSelector *Leaf, unsigned Cycles) {
+    assert((!Leaf->isSlot() || Cycles <= 1) && "Bad interval for slot registers!");
     (void) Cycles;
-    (void) Sel;
+    (void) Leaf;
   }
 
-  void addIntervalFromSrc(VASTSelector *Sel, const Leaf &L) {
-    assert(L.NumCycles && "unexpected zero interval!");
-    unsigned Cycles = CyclesFromSrcLB[Sel].update(L).NumCycles;
-    checkIntervalFromSlot(Sel, Cycles);
+  void addIntervalFromSrc(VASTSelector *Leaf, unsigned Cycles) {
+    assert(Cycles && "unexpected zero interval!");
+    unsigned &OldCycles = CyclesFromSrcLB[Leaf];
+    OldCycles = std::min(OldCycles, Cycles);
+    checkIntervalFromSlot(Leaf, OldCycles);
   }
 
   bool generateSubmoduleConstraints(VASTSeqValue *SeqVal);
 
-  void annotatePathInterval(VASTValue *Tree, VASTSelector *Dst,
+  void annotatePathInterval(VASTExpr *Root, VASTSelector *Dst,
                             ArrayRef<VASTSlot*> ReadSlots);
 
-  Leaf buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots, VASTExpr *Thu,
-                 VASTSelector *Dst);
-  void annotateLeaf(VASTSelector *Sel, VASTExpr *Parent, Leaf CurLeaf,
-                    SeqValSetTy &LocalInterval);
+  void annotateLeaf(VASTSelector *Leaf, ArrayRef<VASTSlot*> ReadSlots,
+                    VASTExpr *Parent);
 
   // Propagate the timing information of the current combinational cone.
-  void propagateInterval(VASTExpr *Expr, const SeqValSetTy &LocalIntervalMap) {
+  void propagateInterval(VASTExpr *Expr, ArrayRef<VASTSlot*> ReadSlots) {
     typedef VASTOperandList::op_iterator iterator;
     SeqValSetTy &CurSet = QueryCache[Expr];
     for (iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
       VASTExpr *SubExpr = dyn_cast<VASTExpr>(VASTValPtr(*I).get());
-      if (SubExpr == 0)
+      if (SubExpr == NULL)
         continue;
 
       QueryCacheTy::const_iterator at = QueryCache.find(SubExpr);
-      if (at == QueryCache.end()) continue;
+      assert(at != QueryCache.end() && "Visiting the expr tree out of order!");
 
       const SeqValSetTy &Srcs = at->second;
       typedef SeqValSetTy::const_iterator src_iterator;
       for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-        assert(I->second.NumCycles && "Unexpected zero delay!");
+        VASTSelector *Leaf = I->first;
+        unsigned ChildCycle = I->second;
+        assert(ChildCycle && "Unexpected zero delay!");
 
-        Leaf &SI = CurSet[I->first];
-        // Look up the timing information from the map of current cone.
-        SeqValSetTy::const_iterator at = LocalIntervalMap.find(I->first);
-        assert(at != LocalIntervalMap.end() && "Node not visited yet?");
-        SI.update(at->second);
+        // Propagate the cycles from child expression.
+        typedef std::pair<SeqValSetTy::iterator, bool> ret_ty;
+        ret_ty r = CurSet.insert(*I);
+
+        // Update the exsiting cycles if we cannot insert the new cycle.
+        if (!r.second) {
+          unsigned &CurCycles = r.first->second;
+          CurCycles = std::min(CurCycles, ChildCycle);
+        }
       }
+    }
+
+    // Now update the number of read cycles according to the read Slots.
+    typedef SeqValSetTy::iterator src_iterator;
+    for (src_iterator I = CurSet.begin(), E = CurSet.end(); I != E; ++I) {
+      VASTSelector *Leaf = I->first;
+      unsigned &CurCycles = I->second;
+      CurCycles = std::min(CurCycles, STGDist.getIntervalFromDef(Leaf, ReadSlots));
     }
   }
 
@@ -169,7 +158,8 @@ struct AnnotatedCone {
   // Bind multi-cycle path constraints to the scripting engine.
   template<typename SrcTy>
   void generateMCPWithInterval(SrcTy *Src, const std::string &ThuName,
-                             const Leaf &SI, unsigned Order) const;
+                               unsigned Cycles, float Arrival,
+                               unsigned Order) const;
   unsigned generateMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const;
 
   typedef SeqValSetTy::const_iterator src_iterator;
@@ -209,23 +199,15 @@ struct TimingScriptGen : public VASTModulePass {
 };
 }
 
-Leaf AnnotatedCone::buildLeaf(VASTSeqValue *V, ArrayRef<VASTSlot*> ReadSlots,
-                              VASTExpr *Thu, VASTSelector *Dst) {
-  unsigned Interval = STGDist.getIntervalFromDef(V->getSelector(), ReadSlots);
-  float EstimatedDelay = TA.getArrivalTime(Dst, Thu, V);
-  return Leaf(Interval, EstimatedDelay);
-}
-
 void
-AnnotatedCone::annotateLeaf(VASTSelector *Sel, VASTExpr *Parent, Leaf CurLeaf,
-                            SeqValSetTy &LocalInterval) {
-  LocalInterval[Sel].update(CurLeaf);
-  QueryCache[Parent][Sel].update(CurLeaf);
-  // Add the information to statistics.
-  addIntervalFromSrc(Sel, CurLeaf);
+AnnotatedCone::annotateLeaf(VASTSelector *Leaf, ArrayRef<VASTSlot*> ReadSlots,
+                            VASTExpr *Parent) {
+  unsigned &Cycles = QueryCache[Parent][Leaf];
+  Cycles = std::min(STGDist.getIntervalFromDef(Leaf, ReadSlots), Cycles);
+  addIntervalFromSrc(Leaf, Cycles);
 }
 
-void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
+void AnnotatedCone::annotatePathInterval(VASTExpr *Root, VASTSelector *Dst,
                                          ArrayRef<VASTSlot*> ReadSlots) {
   VASTExpr *RootExpr = dyn_cast<VASTExpr>(Root);
 
@@ -235,13 +217,14 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
   typedef  VASTOperandList::op_iterator ChildIt;
 
   std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
+  // SlotStack, that immediate (annotated) read slots of current expressions.
+  std::vector<ArrayRef<VASTSlot*> > SlotStack;
   // Remember the visited node for the current cone.
   std::set<VASTValue*> Visited;
-  // Remember the number of cycles from the reachable register to the read slot
-  // for the current cone.
-  SeqValSetTy LocalInterval;
 
+  SlotStack.push_back(ReadSlots);
   VisitStack.push_back(std::make_pair(RootExpr, RootExpr->op_begin()));
+
   while (!VisitStack.empty()) {
     VASTExpr *Expr = VisitStack.back().first;
     ChildIt &It = VisitStack.back().second;
@@ -249,9 +232,17 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
     // All sources of this node is visited.
     if (It == Expr->op_end()) {
       VisitStack.pop_back();
+
       // Propagate the interval information from the operands of the current
       // value.
-      propagateInterval(Expr, LocalInterval);
+      propagateInterval(Expr, SlotStack.back());
+
+      if (VASTSelector::Annotation *Ann = Dst->lookupAnnotation(Expr)) {
+        assert(Ann->getSlots() == SlotStack.back() && "Slot stack broken!");
+        SlotStack.pop_back();
+        (void) Ann;
+      }
+
       continue;
     }
 
@@ -267,41 +258,22 @@ void AnnotatedCone::annotatePathInterval(VASTValue *Root, VASTSelector *Dst,
      continue;
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
-      if (generateSubmoduleConstraints(V)) continue;
+      if (generateSubmoduleConstraints(V))
+        continue;
 
-      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, RootExpr, Dst),
-                   LocalInterval);
+      annotateLeaf(V->getSelector(), SlotStack.back(), Expr);
       continue;
     }  
 
     VASTExpr *SubExpr = dyn_cast<VASTExpr>(ChildNode);
 
-    if (SubExpr == 0)
+    if (SubExpr == NULL)
       continue;
 
-    // Do not move across the keep nodes.
-    if (!SubExpr->isTimingBarrier()) {
-      VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
-      continue;
-    }
+    if (VASTSelector::Annotation *Ann = Dst->lookupAnnotation(SubExpr))
+      SlotStack.push_back(Ann->getSlots());
 
-    typedef std::set<VASTSeqValue*> SVSet;
-    SVSet Srcs;
-    // Get *all* source register of the cone rooted on SubExpr.
-    SubExpr->extractSupportingSeqVal(Srcs, false /*Search across keep nodes!*/);
-    assert(!Srcs.empty() && "Unexpected trivial cone with keep attribute!");
-    for (SVSet::iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-      VASTSeqValue *V = *I;
-
-      if (generateSubmoduleConstraints(V)) continue;
-
-      // Add the information to statistics. It is ok to add the interval here
-      // even V may be masked by the false path indicated by the keep attribute.
-      // we will first generate the tight constraints and overwrite them by
-      // looser constraints.
-      annotateLeaf(V->getSelector(), Expr, buildLeaf(V, ReadSlots, RootExpr, Dst),
-                   LocalInterval);
-    }
+    VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
   }
 }
 
@@ -319,7 +291,7 @@ void AnnotatedCone::dump() const {
     for (reg_it RI = Set.begin(), RE = Set.end(); RI != RE; ++RI) {
       dbgs() << '(';
       //printBindingLuaCode(dbgs(), RI->first);
-      dbgs() << '#' << RI->second.NumCycles << "), ";
+      dbgs() << '#' << RI->second << "), ";
     }
 
     dbgs() << "}\n";
@@ -332,24 +304,27 @@ unsigned AnnotatedCone::ConstrantCounter = 0;
 // the define node.
 template<typename SrcTy>
 void AnnotatedCone::generateMCPWithInterval(SrcTy *Src, const std::string &ThuName,
-                                            const Leaf &SI, unsigned Order) const {
+                                            unsigned Cycles, float Arrival,
+                                            unsigned Order) const {
   assert(!ThuName.empty() && "Bad through node name!");
   OS << "INSERT INTO mcps(src, dst, thu, cycles, normalized_delay, constraint_order)"
         "VALUES(\n"
      << '\'' << Src->getSTAObjectName() << "', \n"
      << '\'' << Node->getSTAObjectName() << "', \n"
      << '\'' << ThuName << "', \n"
-     << SI.NumCycles << ", \n"
-     << SI.CriticalDelay << ", \n"
+     << Cycles << ", \n"
+     << Arrival << ", \n"
      << Order << ");\n";
 
   // Perform the Statistic.
-  if (SI.NumCycles > 1) {
+  if (Cycles > 1) {
     ++NumMultiCyclesConstraints;
-    if (SI.CriticalDelay > 1.0f) ++NumRequiredConstraints;
+    if (Arrival > 1.0f)
+      ++NumRequiredConstraints;
   }
-  if (SI.NumCycles == AnnotatedCone::Inf) ++NumFalseTimingPath;
-  if (SI.NumCycles < SI.CriticalDelay) ++NumTimgViolation;
+
+  if (Cycles == AnnotatedCone::Inf) ++NumFalseTimingPath;
+  if (Cycles < Arrival) ++NumTimgViolation;
 }
 
 unsigned
@@ -361,12 +336,16 @@ AnnotatedCone::generateMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const
     if (ThuName.empty())
       return 0;
 
-    if (KeepNodesOnly && !Thu->isTimingBarrier()) return 0;
+    if (!Thu->isHardAnnotation())
+      return 0;
   }
 
   typedef SeqValSetTy::const_iterator iterator;
-  for (iterator I = SrcSet.begin(), E = SrcSet.end(); I != E; ++I)
-    generateMCPWithInterval(I->first, ThuName, I->second, ++ConstrantCounter);
+  for (iterator I = SrcSet.begin(), E = SrcSet.end(); I != E; ++I) {
+    // TODO: Extract the arrival time.
+    float Arrival = I->second;
+    generateMCPWithInterval(I->first, ThuName, I->second, Arrival, ++ConstrantCounter);
+  }
 
   return SrcSet.size();
 }
@@ -433,22 +412,26 @@ void AnnotatedCone::generateMCPEntries() {
 }
 
 bool AnnotatedCone::generateSubmoduleConstraints(VASTSeqValue *SeqVal) {
-  if (!SeqVal->isFUOutput()) return false;
+  if (!SeqVal->isFUOutput())
+    return false;
 
   VASTSubModule *SubMod = dyn_cast<VASTSubModule>(SeqVal->getParent());
-  if (SubMod == 0) return false;
+  if (SubMod == NULL)
+    return false;
 
   unsigned Latency = SubMod->getLatency();
   // No latency information available.
-  if (Latency == 0) return false;
+  if (Latency == 0)
+    return false;
 
   // Add the timing constraints from operand registers to the output registers.
   typedef VASTSubModule::fanin_iterator fanin_iterator;
   for (fanin_iterator I = SubMod->fanin_begin(), E = SubMod->fanin_end();
        I != E; ++I) {
     VASTSelector *Operand = *I;
-    Leaf CurLeaf = Leaf(Latency, float(Latency));
-    generateMCPWithInterval(Operand, "shang-null-node", CurLeaf, ++ConstrantCounter);
+    float Arrival = Latency;
+    generateMCPWithInterval(Operand, "shang-null-node", Latency, Arrival,
+                            ++ConstrantCounter);
   }
 
   return true;
@@ -551,26 +534,11 @@ void TimingScriptGen::annoataConstraintsFor(AnnotatedCone &Cache,
   typedef VASTSelector::const_iterator iterator;
   for (iterator I = Sel->begin(), E = Sel->end(); I != E; ++I)
     AllSlots.push_back((*I).getSlot());
+
   // Annotate all slots to FI and Guard, otherwise we may miss some path not
   // block by the keeped nodes.
-  //extractTimingPaths(Cache, Sel, AllSlots, Sel->getFanin().get());
-  //extractTimingPaths(Cache, Sel, AllSlots, Sel->getGuard().get());
-
-  for (VASTSelector::const_iterator I = Sel->begin(), E = Sel->end(); I != E; ++I) {
-    VASTLatch U = *I;
-
-    if (Sel->isTrivialFannin(U)) continue;
-
-    extractTimingPaths(Cache, Sel, U.getSlot(), VASTValPtr(U).get());
-    extractTimingPaths(Cache, Sel, U.getSlot(), VASTValPtr(U.getGuard()).get());
-  }
-
-  typedef VASTSelector::ann_iterator ann_iterator;
-  for (ann_iterator I = Sel->ann_begin(), E = Sel->ann_end(); I != E; ++I) {
-    const VASTSelector::Annotation &Ann = *I->second;
-    ArrayRef<VASTSlot*> Slots(Ann.getSlots());
-    extractTimingPaths(Cache, Sel, Slots, VASTValPtr(Ann).get());
-  }
+  extractTimingPaths(Cache, Sel, AllSlots, Sel->getGuard().get());
+  extractTimingPaths(Cache, Sel, AllSlots, Sel->getFanin().get());
 
   Cache.addSelector(Sel);
 }
@@ -582,8 +550,9 @@ void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache, VASTSelector *Dst
   if (VASTSeqValue *Src = dyn_cast<VASTSeqValue>(DepTree)){
     if (Cache.generateSubmoduleConstraints(Src)) return;
 
-    Cache.addIntervalFromSrc(Src->getSelector(),
-                             Cache.buildLeaf(Src, ReadSlots, NULL, Dst));
+    VASTSelector *Leaf = Src->getSelector();
+    unsigned NumCycles = Cache.STGDist.getIntervalFromDef(Leaf, ReadSlots);
+    Cache.addIntervalFromSrc(Leaf, NumCycles);
 
     // Even a trivial path can be a false path, e.g.:
     // slot 1:
@@ -594,10 +563,13 @@ void TimingScriptGen::extractTimingPaths(AnnotatedCone &Cache, VASTSelector *Dst
     return;
   }
 
-  // If Define Value is immediate or symbol, skip it.
-  if (!isa<VASTExpr>(DepTree)) return;
+  VASTExpr *Expr = dyn_cast<VASTExpr>(DepTree);
 
-  Cache.annotatePathInterval(DepTree, Dst, ReadSlots);
+  // If Value is a constant, just skip it.
+  if (Expr == NULL)
+    return;
+
+  Cache.annotatePathInterval(Expr, Dst, ReadSlots);
 }
 
 char TimingScriptGen::ID = 0;
