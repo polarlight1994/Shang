@@ -63,11 +63,14 @@ struct AnnotatedCone {
   const uint32_t Inf;
   static unsigned ConstrantCounter;
 
-  typedef std::map<VASTSelector*, unsigned> SeqValSetTy;
-  SeqValSetTy CyclesFromSrcLB;
+  typedef std::set<VASTSelector*> LeafSetTy;
+  typedef std::map<VASTExpr*, LeafSetTy> ExprLeafSetTy;
 
-  typedef std::map<VASTExpr*, SeqValSetTy> QueryCacheTy;
-  QueryCacheTy QueryCache;
+  typedef std::map<VASTSelector*, unsigned> IntervalSetTy;
+  IntervalSetTy CyclesFromSrcLB;
+
+  typedef std::map<VASTExpr*, IntervalSetTy> ExprIntervalSetTy;
+  ExprIntervalSetTy ExprIntervals;
   SmallVector<VASTSelector*, 4> Sels;
 
   AnnotatedCone(TimingAnalysis &TA, STGDistances &STGDist, VASTNode *Node,
@@ -80,7 +83,7 @@ struct AnnotatedCone {
   }
 
   void reset() {
-    QueryCache.clear();
+    ExprIntervals.clear();
     CyclesFromSrcLB.clear();
     Sels.clear();
   }
@@ -103,46 +106,47 @@ struct AnnotatedCone {
   void annotatePathInterval(VASTExpr *Root, VASTSelector *Dst,
                             ArrayRef<VASTSlot*> ReadSlots);
 
-  void annotateLeaf(VASTSelector *Leaf, ArrayRef<VASTSlot*> ReadSlots,
-                    VASTExpr *Parent);
+  LeafSetTy &buildLeaves(VASTExpr *Expr, ExprLeafSetTy &LeafSet) {
+    LeafSetTy &CurSet = LeafSet[Expr];
 
-  // Propagate the timing information of the current combinational cone.
-  void propagateInterval(VASTExpr *Expr, ArrayRef<VASTSlot*> ReadSlots) {
     typedef VASTOperandList::op_iterator iterator;
-    SeqValSetTy &CurSet = QueryCache[Expr];
     for (iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I) {
       VASTExpr *SubExpr = dyn_cast<VASTExpr>(VASTValPtr(*I).get());
       if (SubExpr == NULL)
         continue;
 
-      QueryCacheTy::const_iterator at = QueryCache.find(SubExpr);
-      assert(at != QueryCache.end() && "Visiting the expr tree out of order!");
-
-      const SeqValSetTy &Srcs = at->second;
-      typedef SeqValSetTy::const_iterator src_iterator;
-      for (src_iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {
-        VASTSelector *Leaf = I->first;
-        unsigned ChildCycle = I->second;
-        assert(ChildCycle && "Unexpected zero delay!");
-
-        // Propagate the cycles from child expression.
-        typedef std::pair<SeqValSetTy::iterator, bool> ret_ty;
-        ret_ty r = CurSet.insert(*I);
-
-        // Update the exsiting cycles if we cannot insert the new cycle.
-        if (!r.second) {
-          unsigned &CurCycles = r.first->second;
-          CurCycles = std::min(CurCycles, ChildCycle);
-        }
-      }
+      ExprLeafSetTy::const_iterator at = LeafSet.find(SubExpr);
+      assert(at != LeafSet.end() && "Visiting the expr tree out of order!");
+      set_union(CurSet, at->second);
     }
 
+    return CurSet;
+  }
+
+  void annotateExpr(VASTExpr *Expr, ArrayRef<VASTSlot*> ReadSlots,
+                    const LeafSetTy &CurLeaves) {
+    IntervalSetTy &CurSet = ExprIntervals[Expr];
+
     // Now update the number of read cycles according to the read Slots.
-    typedef SeqValSetTy::iterator src_iterator;
-    for (src_iterator I = CurSet.begin(), E = CurSet.end(); I != E; ++I) {
-      VASTSelector *Leaf = I->first;
-      unsigned &CurCycles = I->second;
-      CurCycles = std::min(CurCycles, STGDist.getIntervalFromDef(Leaf, ReadSlots));
+    typedef LeafSetTy::const_iterator iterator;
+    for (iterator I = CurLeaves.begin(), E = CurLeaves.end(); I != E; ++I) {
+      VASTSelector *Leaf = *I;
+      unsigned Cycles = STGDist.getIntervalFromDef(Leaf, ReadSlots);
+      typedef std::pair<IntervalSetTy::iterator, bool> RetTy;
+      RetTy result = CurSet.insert(std::make_pair(Leaf, Cycles));
+
+      // In most of the time there will be only annotation to the same expr.
+      // However, in the case of Block RAM with smaller than 2 cycle read
+      // latency, we merge the combinational cones rooted on both port. As a
+      // result, there will be more than one annotation to the same expr.
+      if (!result.second) {
+        unsigned &ExistedCycles = result.first->second;
+        assert((ExistedCycles == Cycles || isa<VASTMemoryBank>(Node)) &&
+                "Duplicated annoation on unexpected node!");
+        ExistedCycles = std::min(ExistedCycles, Cycles);
+      }
+
+      addIntervalFromSrc(Leaf, Cycles);
     }
   }
 
@@ -160,13 +164,7 @@ struct AnnotatedCone {
   void generateMCPWithInterval(SrcTy *Src, const std::string &ThuName,
                                unsigned Cycles, float Arrival,
                                unsigned Order) const;
-  unsigned generateMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const;
-
-  typedef SeqValSetTy::const_iterator src_iterator;
-  src_iterator src_begin() const { return CyclesFromSrcLB.begin(); }
-  src_iterator src_end() const { return CyclesFromSrcLB.end(); }
-
-  void dump() const;
+  unsigned generateMCPThough(VASTExpr *Thu, const IntervalSetTy &SrcSet) const;
 };
 
 struct TimingScriptGen : public VASTModulePass {
@@ -199,17 +197,6 @@ struct TimingScriptGen : public VASTModulePass {
 };
 }
 
-void
-AnnotatedCone::annotateLeaf(VASTSelector *Leaf, ArrayRef<VASTSlot*> ReadSlots,
-                            VASTExpr *Parent) {
-  unsigned &Cycles = QueryCache[Parent][Leaf];
-  unsigned NewCycles = STGDist.getIntervalFromDef(Leaf, ReadSlots);
-  assert(NewCycles > 0 && "Unexpected 0 cycles between read and write!");
-  // DIRTY HACL: Wrap the 0 initialzed Cycles so that we can update it.
-  Cycles = std::min(NewCycles - 1, Cycles - 1) + 1;
-  addIntervalFromSrc(Leaf, Cycles);
-}
-
 void AnnotatedCone::annotatePathInterval(VASTExpr *Root, VASTSelector *Dst,
                                          ArrayRef<VASTSlot*> ReadSlots) {
   VASTExpr *RootExpr = dyn_cast<VASTExpr>(Root);
@@ -220,12 +207,9 @@ void AnnotatedCone::annotatePathInterval(VASTExpr *Root, VASTSelector *Dst,
   typedef  VASTOperandList::op_iterator ChildIt;
 
   std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
-  // SlotStack, that immediate (annotated) read slots of current expressions.
-  std::vector<ArrayRef<VASTSlot*> > SlotStack;
   // Remember the visited node for the current cone.
-  std::set<VASTValue*> Visited;
+  ExprLeafSetTy Leaves;
 
-  SlotStack.push_back(ReadSlots);
   VisitStack.push_back(std::make_pair(RootExpr, RootExpr->op_begin()));
 
   while (!VisitStack.empty()) {
@@ -236,15 +220,9 @@ void AnnotatedCone::annotatePathInterval(VASTExpr *Root, VASTSelector *Dst,
     if (It == Expr->op_end()) {
       VisitStack.pop_back();
 
-      // Propagate the interval information from the operands of the current
-      // value.
-      propagateInterval(Expr, SlotStack.back());
-
-      if (VASTSelector::Annotation *Ann = Dst->lookupAnnotation(Expr)) {
-        assert(Ann->getSlots() == SlotStack.back() && "Slot stack broken!");
-        SlotStack.pop_back();
-        (void) Ann;
-      }
+      LeafSetTy &CurLeaves = buildLeaves(Expr, Leaves);
+      if (VASTSelector::Annotation *Ann = Dst->lookupAnnotation(Expr))
+        annotateExpr(Expr, Ann->getSlots(), CurLeaves);
 
       continue;
     }
@@ -256,15 +234,12 @@ void AnnotatedCone::annotatePathInterval(VASTExpr *Root, VASTSelector *Dst,
     if (ChildNode == NULL)
      continue;
 
-    // And do not visit a node twice.
-    if (!Visited.insert(ChildNode).second)
-     continue;
 
     if (VASTSeqValue *V = dyn_cast<VASTSeqValue>(ChildNode)) {
       if (generateSubmoduleConstraints(V))
         continue;
 
-      annotateLeaf(V->getSelector(), SlotStack.back(), Expr);
+      Leaves[Expr].insert(V->getSelector());
       continue;
     }  
 
@@ -273,31 +248,24 @@ void AnnotatedCone::annotatePathInterval(VASTExpr *Root, VASTSelector *Dst,
     if (SubExpr == NULL)
       continue;
 
-    if (VASTSelector::Annotation *Ann = Dst->lookupAnnotation(SubExpr))
-      SlotStack.push_back(Ann->getSlots());
+    // And do not visit a node twice.
+    if (Leaves.count(SubExpr))
+      continue;
 
     VisitStack.push_back(std::make_pair(SubExpr, SubExpr->op_begin()));
   }
-}
 
-void AnnotatedCone::dump() const {
-  dbgs() << "\nCurrent data-path timing:\n";
-  typedef QueryCacheTy::const_iterator it;
-  for (it I = QueryCache.begin(), E = QueryCache.end(); I != E; ++I) {
-    const SeqValSetTy &Set = I->second;
-    typedef SeqValSetTy::const_iterator reg_it;
+  ExprLeafSetTy::iterator I = Leaves.find(Root);
+  assert(I != Leaves.end() && "Combinational cone without leaf?");
+  const LeafSetTy &CurLeaves = I->second;
+  // Now update the number of read cycles according to the read Slots.
+  typedef LeafSetTy::const_iterator iterator;
+  for (iterator I = CurLeaves.begin(), E = CurLeaves.end(); I != E; ++I) {
+    VASTSelector *Leaf = *I;
+    if (CyclesFromSrcLB.count(Leaf))
+      continue;
 
-    //if (!printBindingLuaCode(dbgs(), I->first))
-    //  continue;
-
-    dbgs() << "\n\t{ ";
-    for (reg_it RI = Set.begin(), RE = Set.end(); RI != RE; ++RI) {
-      dbgs() << '(';
-      //printBindingLuaCode(dbgs(), RI->first);
-      dbgs() << '#' << RI->second << "), ";
-    }
-
-    dbgs() << "}\n";
+    addIntervalFromSrc(Leaf, STGDist.getIntervalFromDef(Leaf, ReadSlots));
   }
 }
 
@@ -330,8 +298,8 @@ void AnnotatedCone::generateMCPWithInterval(SrcTy *Src, const std::string &ThuNa
   if (Cycles < Arrival) ++NumTimgViolation;
 }
 
-unsigned
-AnnotatedCone::generateMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const {
+unsigned AnnotatedCone::generateMCPThough(VASTExpr *Thu, 
+                                          const IntervalSetTy &SrcSet) const {
   std::string ThuName = "shang-null-node";
   if (Thu) {
     ThuName = Thu->getSTAObjectName();
@@ -343,11 +311,12 @@ AnnotatedCone::generateMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const
       return 0;
   }
 
-  typedef SeqValSetTy::const_iterator iterator;
+  typedef IntervalSetTy::const_iterator iterator;
   for (iterator I = SrcSet.begin(), E = SrcSet.end(); I != E; ++I) {
     // TODO: Extract the arrival time.
     float Arrival = I->second;
-    generateMCPWithInterval(I->first, ThuName, I->second, Arrival, ++ConstrantCounter);
+    generateMCPWithInterval(I->first, ThuName, I->second, Arrival,
+                            ++ConstrantCounter);
   }
 
   return SrcSet.size();
@@ -355,10 +324,10 @@ AnnotatedCone::generateMCPThough(VASTExpr *Thu, const SeqValSetTy &SrcSet) const
 
 void AnnotatedCone::generateMCPThough(VASTExpr *Expr) const {
   // Visit the node before we pushing it into the stack.
-  QueryCacheTy::const_iterator I = QueryCache.find(Expr);
+  ExprIntervalSetTy::const_iterator I = ExprIntervals.find(Expr);
 
   // Write the annotation if there is any.
-  if (I != QueryCache.end())
+  if (I != ExprIntervals.end())
     NumConstraints += generateMCPThough(Expr, I->second);
 }
 
@@ -366,7 +335,7 @@ void AnnotatedCone::generateMCPEntriesDFOrder(VASTValue *Root) const {
   VASTExpr *RootExpr = dyn_cast<VASTExpr>(Root);
 
   // Trivial cone that only consists of 1 register is not handle here.
-  if (RootExpr == 0) return;
+  if (RootExpr == NULL) return;
 
   typedef  VASTOperandList::op_iterator ChildIt;
   std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
@@ -377,7 +346,7 @@ void AnnotatedCone::generateMCPEntriesDFOrder(VASTValue *Root) const {
   VisitStack.push_back(std::make_pair(RootExpr, RootExpr->op_begin()));
   while (!VisitStack.empty()) {
     VASTExpr *Expr = VisitStack.back().first;
-    ChildIt It = VisitStack.back().second;
+    ChildIt &It = VisitStack.back().second;
 
     if (It == Expr->op_end()) {
       VisitStack.pop_back();
@@ -386,12 +355,14 @@ void AnnotatedCone::generateMCPEntriesDFOrder(VASTValue *Root) const {
 
     // Otherwise, remember the node and visit its children first.
     VASTValue *ChildNode = It->unwrap().get();
-    ++VisitStack.back().second;
+    ++It;
 
-    if (ChildNode == 0) continue;
+    if (ChildNode == NULL)
+      continue;
 
     // And do not visit a node twice.
-    if (!Visited.insert(ChildNode).second) continue;
+    if (!Visited.insert(ChildNode).second)
+      continue;
 
     if (VASTExpr *SubExpr = dyn_cast<VASTExpr>(ChildNode)) {
       generateMCPThough(SubExpr);
@@ -402,7 +373,7 @@ void AnnotatedCone::generateMCPEntriesDFOrder(VASTValue *Root) const {
 }
 
 void AnnotatedCone::generateMCPEntries(VASTSelector *Dst) const {
-  generateMCPThough(0, CyclesFromSrcLB);
+  generateMCPThough(NULL, CyclesFromSrcLB);
   NumConstraints += CyclesFromSrcLB.size();
 
   generateMCPEntriesDFOrder(Dst->getGuard().get());
