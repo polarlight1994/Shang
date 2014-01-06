@@ -696,9 +696,6 @@ VASTSelector::addAnnotation(VASTExpr *E, Annotation *Ann) {
 
 void VASTSelector::createAnnotation(ArrayRef<VASTSlot*> Slots, VASTExpr *E) {
   assert(E->isAnnotation() && "Unexpected expression type!");
-  FoldingSetNodeID ID;
-
-  ID.AddPointer(E);
 
   Annotation *&A = Annotations[E];
 
@@ -755,6 +752,15 @@ void VASTSelector::annotateReadSlot(ArrayRef<VASTSlot*> Slots, VASTValPtr V)  {
       VisitStack.push_back(std::make_pair(ChildExpr, ChildExpr->op_begin()));
     }
   }
+}
+
+VASTSelector::Annotation *VASTSelector::lookupAnnotation(VASTExpr *Expr) const {
+  if (!Expr->isAnnotation())
+    return NULL;
+
+  std::map<VASTExpr*, Annotation*>::const_iterator I = Annotations.find(Expr);
+  assert(I != Annotations.end() && "Annotation missed!");
+  return I->second;
 }
 
 void VASTSelector::dropMux() {

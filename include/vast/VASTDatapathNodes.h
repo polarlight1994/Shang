@@ -248,7 +248,7 @@ public:
   }
 
   bool isHardAnnotation() const {
-    return getOpcode() == dpSAnn;
+    return getOpcode() == dpHAnn;
   }
 
   bool isAnnotation() const {

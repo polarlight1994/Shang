@@ -140,6 +140,8 @@ public:
   ann_iterator ann_begin() { return Annotations.begin(); }
   ann_iterator ann_end() { return Annotations.end(); }
 
+  Annotation *lookupAnnotation(VASTExpr *Expr) const;
+
   bool ann_empty() const { return Annotations.empty(); }
 
   VASTValPtr getGuard() const { return Guard; }
