@@ -234,6 +234,7 @@ bool TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   std::set<VASTSelector*> AllLeaves;
   std::map<VASTSelector*, unsigned> IntersectLeaves;
 
+  // Build the intersect leaves.
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     const OrVec &Ors = I->second;
     std::set<VASTSeqValue*> CurLeaves;
