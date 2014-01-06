@@ -432,20 +432,16 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
   switch (E->getOpcode()) {
   default: break;
   case VASTExpr::dpBitExtract:
-    mergeAnyKnown(EvaluateBitExtract(Masks[0], E->getUB(), E->getLB()));
-    break;
+    return mergeAnyKnown(EvaluateBitExtract(Masks[0], E->getUB(), E->getLB()));
   case VASTExpr::dpBitCat:
-    mergeAnyKnown(EvaluateBitCat(Masks, BitWidth));
-    break;
+    return mergeAnyKnown(EvaluateBitCat(Masks, BitWidth));
   case VASTExpr::dpAnd:
   // BitMask expression is also an AND expression execpt that the RHS is
   // always constant.
   case VASTExpr::dpBitMask:
-    mergeAnyKnown(EvaluateAnd(Masks, BitWidth));
-    break;
+    return mergeAnyKnown(EvaluateAnd(Masks, BitWidth));
   case VASTExpr::dpLUT:
-    mergeAnyKnown(EvaluateLUT(Masks, BitWidth, E->getLUT()));
-    break;
+    return mergeAnyKnown(EvaluateLUT(Masks, BitWidth, E->getLUT()));
   case VASTExpr::dpAdd: {
     // Evaluate the bitmask pairwise for the ADD for now.
     while (Masks.size() > 1) {
@@ -454,8 +450,7 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
       Masks.push_back(EvaluateAdd(LHS, RHS, BitWidth));
     }
 
-    mergeAnyKnown(Masks[0]);
-    break;
+    return mergeAnyKnown(Masks[0]);
   }
   case VASTExpr::dpMul: {
     // Evaluate the bitmask pairwise for the ADD for now.
@@ -465,23 +460,18 @@ void VASTBitMask::evaluateMask(VASTExpr *E) {
       Masks.push_back(EvaluateMul(LHS, RHS, BitWidth));
     }
 
-    mergeAnyKnown(Masks[0]);
-    break;
+    return mergeAnyKnown(Masks[0]);
   }
   case VASTExpr::dpShl:
-    mergeAnyKnown(EvaluateShl(Masks[0], Masks[1], BitWidth));
-    break;
+    return mergeAnyKnown(EvaluateShl(Masks[0], Masks[1], BitWidth));
   case VASTExpr::dpLshr:
-    mergeAnyKnown(EvaluateLshr(Masks[0], Masks[1], BitWidth));
-    break;
+    return mergeAnyKnown(EvaluateLshr(Masks[0], Masks[1], BitWidth));
   case VASTExpr::dpAshr:
-    mergeAnyKnown(EvaluateAshr(Masks[0], Masks[1], BitWidth));
-    break;
+    return mergeAnyKnown(EvaluateAshr(Masks[0], Masks[1], BitWidth));
   case VASTExpr::dpSAnn:
   case VASTExpr::dpHAnn:
     // Simply propagate the masks from the RHS of the assignment.
-    mergeAnyKnown(Masks[0]);
-    break;
+    return mergeAnyKnown(Masks[0]);
   // Yet to be implement:
   case VASTExpr::dpSGT:
   case VASTExpr::dpUGT:
