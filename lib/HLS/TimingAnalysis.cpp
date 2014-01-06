@@ -57,7 +57,7 @@ void TimingAnalysis::extractDelay(const VASTLatch &L, VASTValue *V,
 
   typedef std::set<VASTSeqValue*> LeafSet;
   LeafSet Leaves;
-  V->extractSupportingSeqVal(Leaves);
+  V->extractCombConeLeaves(Leaves);
   if (Leaves.empty())
     return;
 

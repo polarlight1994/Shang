@@ -165,7 +165,7 @@ struct StructualLess : public std::binary_function<VASTValPtr, VASTValPtr, bool>
 };
 }
 
-// Extract leaves like extractSupportingSeqVal, but stop at the hard annotations,
+// Extract leaves like extractCombConeLeaves, but stop at the hard annotations,
 // to which the multi-cycle path constraints are applied.
 static void ExtractLeaves(VASTValue *Root, std::set<VASTSeqValue*> &SeqVals) {
   std::set<VASTExpr*> Visited;

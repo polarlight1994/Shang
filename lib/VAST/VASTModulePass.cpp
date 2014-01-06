@@ -245,7 +245,7 @@ VASTSeqValue *VASTModuleBuilder::getOrCreateSeqValImpl(Value *V,
       // by some known bits.
       assert(Expr->getOpcode() == VASTExpr::dpBitCat && "Unexpected expr type!");
       std::set<VASTSeqValue*> SeqVals;
-      Expr->extractSupportingSeqVal(SeqVals);
+      Expr->extractCombConeLeaves(SeqVals);
       assert(SeqVals.size() == 1 && "Bad supporting seqvalue!");
       VASTSeqValue *SV = *SeqVals.begin();
       assert(SV->getLLVMValue() == V && "LLVM Value not match!");

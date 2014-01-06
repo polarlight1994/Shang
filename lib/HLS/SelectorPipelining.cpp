@@ -299,11 +299,11 @@ SelectorPipelining::buildPipelineFIs(VASTSelector *Sel, MUXPipeliner &Pipeliner)
 
     Srcs.clear();
     VASTValue *FI = VASTValPtr(DstLatch).get();
-    FI->extractSupportingSeqVal(Srcs);
+    FI->extractCombConeLeaves(Srcs);
     float MinSlack = getFaninSlack(Srcs, DstLatch, FI);
     Srcs.clear();
     VASTValue *Guard = VASTValPtr(DstLatch.getGuard()).get();
-    Guard->extractSupportingSeqVal(Srcs);
+    Guard->extractCombConeLeaves(Srcs);
     MinSlack = std::min(MinSlack, getFaninSlack(Srcs, DstLatch, Guard));
 
     // Make sure the Retime slack is not negative

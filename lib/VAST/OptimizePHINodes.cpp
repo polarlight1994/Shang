@@ -48,10 +48,10 @@ bool OptimizePHINodes::isDominatingFanin(const VASTLatch &L, BasicBlock *BB,
                                          DominatorTree &DT) {
   std::set<VASTSeqValue*> Srcs;
   VASTValue *FI = VASTValPtr(L).get();
-  FI->extractSupportingSeqVal(Srcs);
+  FI->extractCombConeLeaves(Srcs);
 
   VASTValue *Guard = VASTValPtr(L.getGuard()).get();
-  Guard->extractSupportingSeqVal(Srcs);
+  Guard->extractCombConeLeaves(Srcs);
 
   typedef std::set<VASTSeqValue*>::iterator iterator;
   for (iterator I = Srcs.begin(), E = Srcs.end(); I != E; ++I) {

@@ -144,7 +144,7 @@ std::string VASTValue::BitRange(unsigned UB, unsigned LB, bool printOneBit){
   return ret;
 }
 
-bool VASTValue::extractSupportingSeqVal(std::set<VASTSeqValue*> &SeqVals) {
+bool VASTValue::extractCombConeLeaves(std::set<VASTSeqValue*> &SeqVals) {
   VASTValue *Root = this;
 
   std::set<VASTExpr*> Visited;

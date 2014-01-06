@@ -657,8 +657,8 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
     CurLeaves.clear();
     VASTValPtr FI = U;
     // No need to extract the leaves from the same node twice.
-    FI->extractSupportingSeqVal(CurLeaves);
-    U.getGuard()->extractSupportingSeqVal(CurLeaves);
+    FI->extractCombConeLeaves(CurLeaves);
+    U.getGuard()->extractCombConeLeaves(CurLeaves);
     // Also extract the arrival time from the slot register.
     CurLeaves.insert(U.getSlot()->getValue());
 
@@ -678,7 +678,7 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
 
     // Directly add the slot active to all leaves set.
     if (VASTValue *SlotActive = U.getSlotActive().get())
-      SlotActive->extractSupportingSeqVal(AllLeaves);
+      SlotActive->extractCombConeLeaves(AllLeaves);
   }
 
   for (leaf_iterator I = AllLeaves.begin(), E = AllLeaves.end(); I != E; ++I) {
@@ -714,7 +714,7 @@ void ExternalTimingAnalysis::buildDelayMatrixForSelector(raw_ostream &TimingSDCO
       continue;
 
     CurLeaves.clear();
-    Expr->extractSupportingSeqVal(CurLeaves);
+    Expr->extractCombConeLeaves(CurLeaves);
     set_intersect(CurLeaves, IntersectLeaves);
     // Ignore the thu node if it is not reachable from the intersect leaves.
     if (CurLeaves.empty())

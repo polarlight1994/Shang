@@ -219,7 +219,7 @@ bool TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     const OrVec &Ors = I->second;
     CurLeaves.clear();
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI)
-      (*OI)->extractSupportingSeqVal(CurLeaves);
+      (*OI)->extractCombConeLeaves(CurLeaves);
 
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
@@ -250,7 +250,7 @@ bool TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
 
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
     CurLeaves.clear();
-    FIVal->extractSupportingSeqVal(CurLeaves);
+    FIVal->extractCombConeLeaves(CurLeaves);
 
     VASTExpr::Opcode AnnType = VASTExpr::dpSAnn;
     // We need to hard annotate the node to prevent it from being optimized
@@ -383,8 +383,8 @@ bool SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
 
     CurLeaves.clear();
     VASTValPtr FI = U;
-    FI->extractSupportingSeqVal(CurLeaves);
-    U.getGuard()->extractSupportingSeqVal(CurLeaves);
+    FI->extractCombConeLeaves(CurLeaves);
+    U.getGuard()->extractCombConeLeaves(CurLeaves);
 
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
@@ -422,7 +422,7 @@ bool SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
       VASTValPtr CurGuard = L.getGuard();
 
       CurLeaves.clear();
-      CurGuard->extractSupportingSeqVal(CurLeaves);
+      CurGuard->extractCombConeLeaves(CurLeaves);
 
       VASTExpr::Opcode AnnType = VASTExpr::dpSAnn;
       // We need to keep the node to prevent it from being optimized improperly,
@@ -456,7 +456,7 @@ bool SelectorSynthesisForAnnotation::synthesizeSelector(VASTSelector *Sel,
     VASTValPtr FIVal = I->first;
 
     CurLeaves.clear();
-    FIVal->extractSupportingSeqVal(CurLeaves);
+    FIVal->extractCombConeLeaves(CurLeaves);
 
     VASTExpr::Opcode AnnType = VASTExpr::dpSAnn;
     // We need to keep the node to prevent it from being optimized improperly,

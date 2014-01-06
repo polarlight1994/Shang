@@ -264,7 +264,7 @@ void SeqLiveVariables::handleSlot(VASTSlot *S) {
     for (read_itetator UI = SeqOp->op_begin(), UE = SeqOp->op_end();
           UI != UE; ++UI)
       if (VASTValue *V = UI->unwrap().get())
-        V->extractSupportingSeqVal(ReadAtSlot);
+        V->extractCombConeLeaves(ReadAtSlot);
 
     // The Slot Register are also used.
     if (SeqOp->getSlot()->isSynthesized())

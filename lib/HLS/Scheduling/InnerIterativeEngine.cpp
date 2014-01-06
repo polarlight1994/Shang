@@ -92,10 +92,10 @@ struct SelectorSlackVerifier {
       Srcs.clear();
 
       VASTValue *FI = VASTValPtr(DstLatch).get();
-      FI->extractSupportingSeqVal(Srcs);
+      FI->extractCombConeLeaves(Srcs);
 
       VASTValue *Guard = VASTValPtr(DstLatch.getGuard()).get();
-      Guard->extractSupportingSeqVal(Srcs);
+      Guard->extractCombConeLeaves(Srcs);
 
       MinimalSlacks[U] = buildSlackMap(U, Srcs);
     }

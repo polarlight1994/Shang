@@ -286,7 +286,7 @@ void BBLiveIntervals::run(VASTModule &VM) {
     // Extract the used SeqValues.
     SVs.clear();
     for (op_iterator I = Op->op_begin(), E = Op->op_end(); I != E; ++I)
-      (*I)->extractSupportingSeqVal(SVs);
+      (*I)->extractCombConeLeaves(SVs);
 
     typedef std::set<VASTSeqValue*>::iterator def_iterator;
     for (def_iterator I = SVs.begin(), E = SVs.end(); I != E; ++I) {
