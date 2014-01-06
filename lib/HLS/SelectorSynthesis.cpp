@@ -52,14 +52,14 @@ struct TimingDrivenSelectorSynthesis : public VASTModulePass {
 
   bool runOnVASTModule(VASTModule &VM);
 
-  typedef std::set<VASTSelector*> RegSet;
+  typedef std::map<VASTSelector*, unsigned> RegSet;
   typedef std::set<VASTSeqValue*> ValSet;
+  typedef ValSet::iterator leaf_iterator;
+
   bool requiresBarrier(const RegSet &IntersectRegs, const ValSet &CurVals,
                        ArrayRef<VASTSlot*> ReadSlots);
-
-  bool isMultiCyclePathHidden(VASTSelector *S, VASTSeqValue *V,
-                              ArrayRef<VASTSlot*> ReadSlots);
-
+  void updateStructuralInterval(VASTValPtr Root, VASTSlot *ReadSlot,
+                                RegSet &IntersectRegs);
   bool synthesizeSelector(VASTSelector *Sel, VASTExprBuilder &Builder);
 
   void releaseMemory() {}
@@ -92,24 +92,44 @@ TimingDrivenSelectorSynthesis::requiresBarrier(const RegSet &IntersectRegs,
       continue;
 
     VASTSelector *Sel = SV->getSelector();
-    if (IntersectRegs.count(Sel) && isMultiCyclePathHidden(Sel, SV, ReadSlots))
+    RegSet::const_iterator J = IntersectRegs.find(Sel);
+    // Not interset ...
+    if (J == IntersectRegs.end())
+      continue;
+
+    // Calculate the number of cycles available according to the dataflow analysis
+    unsigned FlowDistant = STGDist->getIntervalFromDef(SV, ReadSlots);
+    unsigned StructuralDistant = J->second;
+
+    // Timing barrier is required if the flow distant is not represented by the
+    // structural distant.
+    if (FlowDistant > StructuralDistant)
       return true;
   }
 
   return false;
 }
 
-bool
-TimingDrivenSelectorSynthesis::isMultiCyclePathHidden(VASTSelector *S,
-                                                      VASTSeqValue *V,
-                                                      ArrayRef<VASTSlot*>
-                                                      ReadSlots) {
-  // Calculate the number of cycles available according to the dataflow analysis
-  unsigned FlowDistant = STGDist->getIntervalFromDef(V,ReadSlots);
-  // Calculate the number of cycle avaiable according to the structural analysis.
-  unsigned StructuralDistant = STGDist->getIntervalFromDef(S, ReadSlots);
+void
+TimingDrivenSelectorSynthesis::updateStructuralInterval(VASTValPtr Root,
+                                                        VASTSlot *ReadSlot,
+                                                        RegSet &IntersectRegs) {
+  ValSet Vals;
+  Root->extractCombConeLeaves(Vals);
 
-  return StructuralDistant < FlowDistant;
+  for (leaf_iterator LI = Vals.begin(), LE = Vals.end(); LI != LE; ++LI) {
+    VASTSeqValue *Leaf = *LI;
+    VASTSelector *CurSel = Leaf->getSelector();
+
+    RegSet::iterator I = IntersectRegs.find(CurSel);
+    if (I == IntersectRegs.end())
+      continue;
+
+    unsigned &Cycles = I->second;
+    unsigned CurCycles = STGDist->getIntervalFromDef(CurSel, ReadSlot);
+    assert(CurCycles && "unexpected zero interval!");
+    Cycles = std::min(Cycles, CurCycles);
+  }
 }
 
 namespace {
@@ -163,10 +183,7 @@ struct GuardBuilder {
     // FIXME: We can build apply the keep attribute according to the STG
     // subgroup hierarchy sequentially to relax the constraints.
     VASTValPtr &GuardAtSlot = ReadAtSlot[S->getParentState()];
-    if (GuardAtSlot)
-      GuardAtSlot = Builder.orEqual(GuardAtSlot, CurGuard);
-    else
-      GuardAtSlot = CurGuard;
+    GuardAtSlot = Builder.orEqual(GuardAtSlot, CurGuard);
   }
 };
 }
@@ -211,32 +228,53 @@ bool TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
   }
 
   // Build the intersect leaves set
-  std::set<VASTSeqValue*> CurLeaves;
-  std::set<VASTSelector*> AllLeaves, IntersectLeaves;
-  typedef std::set<VASTSeqValue*>::iterator leaf_iterator;
+  std::set<VASTSelector*> AllLeaves;
+  std::map<VASTSelector*, unsigned> IntersectLeaves;
 
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
     const OrVec &Ors = I->second;
-    CurLeaves.clear();
-    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI)
-      (*OI)->extractCombConeLeaves(CurLeaves);
+    std::set<VASTSeqValue*> CurLeaves;
 
+    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
+      const VASTLatch &L = *OI;
+      L->extractCombConeLeaves(CurLeaves);
+      L.getGuard()->extractCombConeLeaves(CurLeaves);
+    }
+      
     for (leaf_iterator LI = CurLeaves.begin(), LE = CurLeaves.end();
          LI != LE; ++LI) {
       VASTSeqValue *Leaf = *LI;
-      if (!AllLeaves.insert(Leaf->getSelector()).second &&
-          !Leaf->isSlot() && !Leaf->isFUOutput())
-        IntersectLeaves.insert(Leaf->getSelector());
+      VASTSelector *CurSel = Leaf->getSelector();
+
+      if (!AllLeaves.insert(CurSel).second && !CurSel->isSlot() &&
+          !CurSel->isFUOutput()) {
+        IntersectLeaves.insert(std::make_pair(CurSel, UINT32_MAX));
+      }
+    }
+  }
+
+  // Initialize the structural available cycles for the intersect leaves.
+  for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
+    const OrVec &Ors = I->second;
+
+    for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
+      const VASTLatch &L = *OI;
+      VASTSlot *S = L.getSlot();
+      updateStructuralInterval(L, S, IntersectLeaves);
+      // The guarding condition is read by all slots in the control equivalent
+      // states instead the guarding condition equivalent states.
+      updateStructuralInterval(L.getGuard(), S->getParentState(), IntersectLeaves);
     }
   }
 
   unsigned Bitwidth = Sel->getBitWidth();
-  SmallVector<VASTValPtr, 4> SlotFanins, AllFanins;
-  SmallVector<VASTSlot*, 4> Slots;
+  SmallVector<VASTValPtr, 4> AllFanins;
 
   for (iterator I = CSEMap.begin(), E = CSEMap.end(); I != E; ++I) {
-    SlotFanins.clear();
-    GB.reset();
+    SmallVector<VASTSlot*, 4> Slots;
+    SmallVector<VASTValPtr, 4> SlotFanins;
+    std::set<VASTSeqValue*> CurLeaves;
+    GuardBuilder GB(Builder, Sel);
 
     const OrVec &Ors = I->second;
     for (OrVec::const_iterator OI = Ors.begin(), OE = Ors.end(); OI != OE; ++OI) {
@@ -249,7 +287,6 @@ bool TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     VASTValPtr FIGuard = GB.buildGuard();
 
     VASTValPtr FIVal = Builder.buildAndExpr(SlotFanins, Bitwidth);
-    CurLeaves.clear();
     FIVal->extractCombConeLeaves(CurLeaves);
 
     VASTExpr::Opcode AnnType = VASTExpr::dpSAnn;
@@ -264,7 +301,6 @@ bool TimingDrivenSelectorSynthesis::synthesizeSelector(VASTSelector *Sel,
     VASTValPtr FIMask = Builder.buildBitRepeat(FIGuard, Bitwidth);
     VASTValPtr GuardedFIVal = Builder.buildAndExpr(FIVal, FIMask, Bitwidth);
     AllFanins.push_back(GuardedFIVal);
-    Slots.clear();
   }
 
   // Build the final fanin only if the selector is not enable.
