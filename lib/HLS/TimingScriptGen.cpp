@@ -203,7 +203,10 @@ void
 AnnotatedCone::annotateLeaf(VASTSelector *Leaf, ArrayRef<VASTSlot*> ReadSlots,
                             VASTExpr *Parent) {
   unsigned &Cycles = QueryCache[Parent][Leaf];
-  Cycles = std::min(STGDist.getIntervalFromDef(Leaf, ReadSlots), Cycles);
+  unsigned NewCycles = STGDist.getIntervalFromDef(Leaf, ReadSlots);
+  assert(NewCycles > 0 && "Unexpected 0 cycles between read and write!");
+  // DIRTY HACL: Wrap the 0 initialzed Cycles so that we can update it.
+  Cycles = std::min(NewCycles - 1, Cycles - 1) + 1;
   addIntervalFromSrc(Leaf, Cycles);
 }
 
