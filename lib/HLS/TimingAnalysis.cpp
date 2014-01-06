@@ -93,10 +93,6 @@ void TimingAnalysis::extractDelay(const VASTLatch &L, VASTValue *V,
     VASTExpr *Thu = I->first;
     assert(Thu->isAnnotation() && "Unexpected Expr Type!");
 
-    // Ignore the soft annotations.
-    if (Thu->isSoftAnnotation())
-      continue;
-
     if (std::find(Slots.begin(), Slots.end(), ReadSlot) == Slots.end())
       continue;
 
