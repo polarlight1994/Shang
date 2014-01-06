@@ -115,10 +115,22 @@ void TimingAnalysis::extractDelay(const VASTLatch &L, VASTValue *V,
     }
   }
 
-#ifndef NDEBUG
-  for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I)
-    assert(Arrivals.count(*I) && "Source delay missed!");
-#endif
+  DEBUG(for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
+    VASTSeqValue *SV = *I;
+
+    if (LLVM_LIKELY(Arrivals.count(SV)))
+      continue;
+
+    Sel->getFanin().printAsOperand(dbgs());
+    dbgs() << '\n';
+    Sel->getGuard().printAsOperand(dbgs());
+    dbgs() << '\n';
+    Sel->dumpFanins();
+
+    dbgs() << "Missed arrival time from: " << SV->getName() << '\n';
+    cast<VASTExpr>(V)->dumpExprTree();
+    dbgs() << '\n';
+  });
 }
 
 void TimingAnalysis::printArrivalPath(raw_ostream &OS, VASTSelector *To,
