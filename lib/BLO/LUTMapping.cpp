@@ -483,23 +483,23 @@ bool LogicNetwork::buildAIG(VASTExpr *E) {
 }
 
 VASTValPtr LogicNetwork::getAsOperand(Abc_Obj_t *O) const {
+  // This value should have be rewritten.
+  AbcObjMapTy::const_iterator at = RewriteMap.find(Abc_ObjRegular(O));
+  if (at != RewriteMap.end())
+    return at->second;
+
+  assert(Abc_ObjIsPi(Abc_ObjFanin0(O)) && "Node should had been rewitten!");
+
   // Try to look up the VASTValue in the Fanin map.
   char *Name = Abc_ObjName(Abc_ObjRegular(O));
 
   VASTValPtr V = ValueNames.lookup(Name);
+  assert(V != None && "Cannot find node for PI!");
 
-  if (V) {
-    if (Abc_ObjIsComplement(O))
-      V = BLO.optimizeNot(V);
+  if (Abc_ObjIsComplement(O))
+    V = BLO.optimizeNot(V);
 
-    return V;
-  }
-
-  // Otherwise this value should be rewritten.
-  AbcObjMapTy::const_iterator at = RewriteMap.find(Abc_ObjRegular(O));
-  assert(at != RewriteMap.end() && "Bad Abc_Obj_t visiting order!");
-
-  return at->second;
+  return V;
 }
 
 VASTValPtr LogicNetwork::buildLUTExpr(Abc_Obj_t *Obj, unsigned Bitwidth) {
