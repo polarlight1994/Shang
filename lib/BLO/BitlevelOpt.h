@@ -184,6 +184,10 @@ public:
   bool shrink(VASTModule &VM);
 
   void resetForNextIteration();
+
+  //===--------------------------------------------------------------------===//
+  static bool isMask(APInt Value);
+  static bool isShiftedMask(APInt Value);
 };
 }
 #endif

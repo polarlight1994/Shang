@@ -33,6 +33,21 @@ STATISTIC(NodesReplacedByKnownBits,
           "during the bit-level optimization");
 
 //===----------------------------------------------------------------------===//
+/// Stole from LLVM's MathExtras.h
+/// This function returns true if the argument is a sequence of ones starting
+/// at the least significant bit with the remainder zero.
+bool DatapathBLO::isMask(APInt Value) {
+  //  Value && ((Value + 1) & Value) == 0;
+  return Value.getBoolValue() && !(((Value + 1) & Value)).getBoolValue();
+}
+
+/// This function returns true if the argument contains a sequence of ones with
+/// the remainder zero Ex. isShiftedMask_32(0x0000FF00U) == true.
+bool DatapathBLO::isShiftedMask(APInt Value) {
+  return isMask((Value - 1) | Value);
+}
+
+//===----------------------------------------------------------------------===//
 DatapathBLO::DatapathBLO(DatapathContainer &Datapath)
   : MinimalExprBuilderContext(Datapath), Builder(*this) {}
 

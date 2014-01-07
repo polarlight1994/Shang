@@ -40,23 +40,9 @@ struct DemandedBitOptimizer {
 }
 
 //===----------------------------------------------------------------------===//
-/// Stole from LLVM's MathExtras.h
-/// This function returns true if the argument is a sequence of ones starting
-/// at the least significant bit with the remainder zero.
-static bool isMask(APInt Value) {
-  //  Value && ((Value + 1) & Value) == 0;
-  return Value.getBoolValue() && !(((Value + 1) & Value)).getBoolValue();
-}
-
-/// This function returns true if the argument contains a sequence of ones with
-/// the remainder zero Ex. isShiftedMask_32(0x0000FF00U) == true.
-static bool isShiftedMask(APInt Value) {
-  return isMask((Value - 1) | Value);
-}
-
 static bool hasEnoughKnownbits(APInt KnownBits, bool FineGrain) {
-  return isMask(KnownBits) || isShiftedMask(KnownBits) ||
-         isMask(~KnownBits) || isShiftedMask(~KnownBits) ||
+  return DatapathBLO::isMask(KnownBits) || DatapathBLO::isShiftedMask(KnownBits) ||
+         DatapathBLO::isMask(~KnownBits) || DatapathBLO::isShiftedMask(~KnownBits) ||
          FineGrain;
 }
 
