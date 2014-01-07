@@ -12,7 +12,6 @@
 // introduce false pass
 //===----------------------------------------------------------------------===//
 
-#include "vast/DesignMetrics.h"
 #include "vast/FUInfo.h"
 #include "vast/Passes.h"
 
