@@ -455,7 +455,7 @@ VASTValPtr DatapathBLO::optimizeMulImpl(MutableArrayRef<VASTValPtr> Ops,
 
   std::sort(Ops.begin(), Ops.end(), VASTValPtr::type_less);
 
-  APInt C = APInt::getLowBitsSet(BitWidth, 1);
+  APInt C = APInt(BitWidth, 1);
 
   VASTValPtr LastVal = None;
   unsigned ActualPos = 0;
@@ -475,27 +475,64 @@ VASTValPtr DatapathBLO::optimizeMulImpl(MutableArrayRef<VASTValPtr> Ops,
   if (!C.getBoolValue())
     return getConstant(C);
 
-  // A * 1 => A, thus we can ignore the 1.
-  if (C != APInt::getLowBitsSet(BitWidth, 1) && !C.isAllOnesValue())
-    Ops[ActualPos++] = getConstant(C);
+  // A * 1 => A, we can Ignore the constant.
+  if (C == APInt(BitWidth, 1))
+    return Builder.buildMulExpr(Ops.slice(0, ActualPos), BitWidth);
 
-  Ops = Ops.slice(0, ActualPos);
+  // Reserve a place for the constant operand.
+  Ops[ActualPos++] = None;
 
-  VASTValPtr Result = None;
+  return optimizeMulWithConst(Ops, C, BitWidth);
+}
 
-  // If there is only 1 operand left, simply return the operand.
-  if (ActualPos == 1)
-    Result = Ops[0];
-  else
-    Result = Builder.buildMulExpr(Ops, BitWidth);
+VASTValPtr DatapathBLO::optimizeMulWithConst(MutableArrayRef<VASTValPtr> Ops,
+                                             APInt C, unsigned BitWidth) {
+  assert(Ops.back() == None &&
+         "Expect place holder for the constant operand at the end!");
 
-  // A * -1 = -A
-  if (C.isAllOnesValue()) {
-    VASTValPtr NegOps[] = { optimizeNot(Result), getConstant(1, BitWidth) };
-    Result = optimizeAddImpl(NegOps, BitWidth);
+  if (C.isPowerOf2()) {
+    // Remove the place holder for the constant operand.
+    Ops = Ops.slice(0, Ops.size() - 1);
+
+    unsigned lg2 = C.countTrailingZeros();
+    VASTValPtr SubExpr = Builder.buildMulExpr(Ops, BitWidth);
+    // Implement the multiplication by shift.
+    return optimizeShift(VASTExpr::dpShl,
+                          SubExpr, getConstant(lg2, BitWidth),
+                          BitWidth);
   }
 
-  return Result;
+  // Implement the multiplication by shift and addition if the immediate is
+  // bit mask, i.e. A * <N lower bits set> = (A << N) - A.
+  if (isMask(C)) {
+    // Remove the place holder for the constant operand.
+    Ops = Ops.slice(0, Ops.size() - 1);
+    unsigned lg2 = C.countTrailingOnes();
+
+    VASTValPtr SubMul = Ops.size() == 1 ? Ops[0] :
+                        Builder.buildMulExpr(Ops, BitWidth);
+    // Lower A * -1 = A.
+    if (lg2 == BitWidth) {
+      VASTValPtr NegOps[] = { optimizeNot(SubMul), VASTConstant::True };
+      return optimizeAddImpl(NegOps, BitWidth);
+    }
+
+    VASTValPtr ShiftedSubExpr
+      = optimizeShift(VASTExpr::dpShl, SubMul, getConstant(lg2, BitWidth),
+                      BitWidth);
+
+    // Construct the subtraction: A - B = A + ~B + 1.
+    VASTValPtr AddOps[] = {
+      ShiftedSubExpr, optimizeNot(SubMul), VASTConstant::True
+    };
+
+    return optimizeAddImpl(AddOps, BitWidth);
+  }
+
+  // Else we have to build the multiplication with the constant.
+  Ops.back() = getConstant(C);
+
+  return Builder.buildMulExpr(Ops, BitWidth);
 }
 
 VASTValPtr DatapathBLO::optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
