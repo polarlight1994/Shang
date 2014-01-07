@@ -122,7 +122,7 @@ def main(builtinParameters = {}):
 
   option_space_dict['timing_model'] = [ 'blackbox' ]
 
-  option_space_dict['fmax'] = [ 400 ]
+  option_space_dict['fmax'] = [ 200, 300, 400, 500 ] if args.mode == TestStep.AlteraSyn else [ 400 ]
   option_space_dict['device_family'] = [ 'StratixIV' ]
 
   option_space_dict['membus_read_latency'] = [ 1 ]
