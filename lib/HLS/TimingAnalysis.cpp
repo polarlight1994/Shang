@@ -744,9 +744,13 @@ void DelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
 }
 
 void DelayModel::updateCmpArrivial() {
-  unsigned BitWidth = Node->getOperand(0)->getBitWidth();
+  APInt KnownBits = VASTBitMask(Node->getOperand(0)).getKnownBits() &
+                    VASTBitMask(Node->getOperand(1)).getKnownBits();
+  // Get the unknown bits.
+  unsigned BitWidth = KnownBits.getBitWidth() - KnownBits.countPopulation();
+  // Get the delay of comparison between the unknown bits.
   float Delay = LuaI::Get<VFUICmp>()->lookupLatency(std::min(BitWidth, 64u));
-  float PerBit = Delay / BitWidth;
+  // TODO: Caculate the number of logic levels.
 
   for (unsigned i = 0, e = Node->size(); i < e; ++i) {
     VASTValPtr V = Node->getOperand(i);
@@ -764,9 +768,7 @@ void DelayModel::updateCmpArrivial() {
 
     for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
       ArrivalTime *AT = I;
-      unsigned Distance = BitWidth - AT->ToLB;
-      float CurDelay = Distance * PerBit;
-      addArrival(AT->Src, AT->Arrival + CurDelay, 1, 0);
+      addArrival(AT->Src, AT->Arrival + Delay, 1, 0);
     }
   }
 }
