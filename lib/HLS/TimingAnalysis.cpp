@@ -787,10 +787,16 @@ void DelayModel::updateCmpArrivial() {
 
 void DelayModel::updateShiftAmt() {
   VASTValPtr V = Node->getOperand(1);
-  unsigned LL = V->getBitWidth();
+  APInt KnwonBits = VASTBitMask(V).getKnownBits();
+
+  // A shift is required if the any bit is unknown.
+  // But wire delay is required by all bits except the known tailing/leading
+  // bits. Also consider the wire delay due to duplication.
 
   // TODO: Consider the bitmask.
   if (VASTValue *Val = GetAsLeaf(V)) {
+    unsigned LL = V->getBitWidth() - KnwonBits.countPopulation();
+
     addArrival(Val, LL * VFUs::LUTDelay + GetLeafDelay(Val), 1, 0);
     return;
   }
@@ -800,10 +806,16 @@ void DelayModel::updateShiftAmt() {
   if (M == NULL)
     return;
 
+  unsigned UB = V->getBitWidth() - KnwonBits.countLeadingOnes(),
+           LB = KnwonBits.countTrailingOnes();
+
   for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
     ArrivalTime *AT = I;
-    unsigned Distance = LL - AT->ToLB;
-    addArrival(AT->Src, AT->Arrival + Distance * VFUs::LUTDelay, 1, 0);
+    if (AT->ToLB > UB)
+      continue;
+
+    unsigned LL = UB - std::max(LB, unsigned(AT->ToLB));
+    addArrival(AT->Src, AT->Arrival + LL * VFUs::LUTDelay, 1, 0);
   }
 }
 
