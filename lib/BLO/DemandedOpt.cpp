@@ -11,8 +11,7 @@
 // in the datapath.
 //
 //===----------------------------------------------------------------------===//
-#include "BitlevelOpt.h"
-
+#include "vast/BitlevelOpt.h"
 #include "vast/VASTModule.h"
 #include "vast/PatternMatch.h"
 

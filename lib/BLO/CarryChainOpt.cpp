@@ -12,8 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "BitlevelOpt.h"
-
+#include "vast/BitlevelOpt.h"
 #include "vast/VASTModule.h"
 #include "vast/VASTHandle.h"
 

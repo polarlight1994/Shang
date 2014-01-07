@@ -11,8 +11,7 @@
 // expressions in the VerilogAST to LUTs with ABC logic synthesis.
 //
 //===----------------------------------------------------------------------===//
-#include "BitlevelOpt.h"
-
+#include "vast/BitlevelOpt.h"
 #include "vast/VASTModule.h"
 #include "vast/VASTHandle.h"
 
