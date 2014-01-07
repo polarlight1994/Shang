@@ -88,9 +88,8 @@ public:
       return optimizeAndImpl(FlattenOps, BitWidth);
     case VASTExpr::dpAdd:
       return optimizeAddImpl(FlattenOps, BitWidth);
-      break;
     case VASTExpr::dpMul:
-      break;
+      return optimizeMulImpl(FlattenOps, BitWidth);
     }
 
     return Builder.buildExpr(Opcode, FlattenOps, BitWidth);
@@ -114,6 +113,8 @@ public:
 
 
   VASTValPtr optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
+                             unsigned BitWidth);
+  VASTValPtr optimizeMulImpl(MutableArrayRef<VASTValPtr>  Ops,
                              unsigned BitWidth);
 
   VASTValPtr optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,

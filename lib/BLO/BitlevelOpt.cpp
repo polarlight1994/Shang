@@ -430,6 +430,57 @@ VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
   return Builder.buildAddExpr(Ops, BitWidth);
 }
 
+VASTValPtr DatapathBLO::optimizeMulImpl(MutableArrayRef<VASTValPtr> Ops,
+                                        unsigned BitWidth) {
+  // Handle the trivial case trivially.
+  if (Ops.size() == 1)
+    return Ops[0];
+
+  std::sort(Ops.begin(), Ops.end(), VASTValPtr::type_less);
+
+  APInt C = APInt::getLowBitsSet(BitWidth, 1);
+
+  VASTValPtr LastVal = None;
+  unsigned ActualPos = 0;
+  for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
+    VASTValPtr CurVal = Ops[i];
+    // Accumulate the constants.
+    if (VASTConstPtr CurC = dyn_cast<VASTConstPtr>(CurVal)) {
+      C *= CurC.getAPInt();
+      continue;
+    }
+
+    Ops[ActualPos++] = CurVal;
+    LastVal = CurVal;
+  }
+
+  // A * 0 => 0
+  if (!C.getBoolValue())
+    return getConstant(C);
+
+  // A * 1 => A, thus we can ignore the 1.
+  if (C != APInt::getLowBitsSet(BitWidth, 1) && !C.isAllOnesValue())
+    Ops[ActualPos++] = getConstant(C);
+
+  Ops = Ops.slice(0, ActualPos);
+
+  VASTValPtr Result = None;
+
+  // If there is only 1 operand left, simply return the operand.
+  if (ActualPos == 1)
+    Result = Ops[0];
+  else
+    Result = Builder.buildMulExpr(Ops, BitWidth);
+
+  // A * -1 = -A
+  if (C.isAllOnesValue()) {
+    VASTValPtr NegOps[] = { optimizeNot(Result), getConstant(1, BitWidth) };
+    Result = optimizeAddImpl(NegOps, BitWidth);
+  }
+
+  return Result;
+}
+
 VASTValPtr DatapathBLO::optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
                                       unsigned BitWidth) {
   LHS = eliminateInvertFlag(LHS);
