@@ -583,11 +583,11 @@ void
 VASTBitMask::printMaskVerification(raw_ostream &OS, VASTValPtr V) const {
   // There should not be 1s in the bits that are known zeros
   if (hasAnyZeroKnown()) {
-    OS.indent(2) << "if (";
+    OS.indent(2) << "if ($time() > 0 && (";
     V.printAsOperand(OS);
     SmallString<128> Str;
     KnownZeros.toString(Str, 2, false, false);
-    OS << " & " << getMaskWidth() << "'b" << Str << ") begin\n";
+    OS << " & " << getMaskWidth() << "'b" << Str << ")) begin\n";
     OS.indent(4) << "$display(\"At time %t, " << (void*)V
                  << " with unexpected ones: %b!\", $time(),";
     V.printAsOperand(OS);
@@ -598,11 +598,11 @@ VASTBitMask::printMaskVerification(raw_ostream &OS, VASTValPtr V) const {
 
   // There should not be 0s in the bits that are known ones
   if (hasAnyOneKnown()) {
-    OS.indent(2) << "if (~";
+    OS.indent(2) << "if ($time() > 0 && (~";
     V.printAsOperand(OS);
     SmallString<128> Str;
     KnownOnes.toString(Str, 2, false, false);
-    OS << " & " << getMaskWidth() << "'b" << Str << ") begin\n";
+    OS << " & " << getMaskWidth() << "'b" << Str << ")) begin\n";
     OS.indent(4) << "$display(\"At time %t, " << (void*)V
                  << " with unexpected zeros: %b!\", $time(),";
     V.printAsOperand(OS);
