@@ -410,8 +410,6 @@ public:
   DatapathContainer();
   virtual ~DatapathContainer();
 
-  BumpPtrAllocator &getAllocator() { return Allocator; }
-
   VASTValPtr createExprImpl(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                             unsigned Bitwidth);
   VASTValPtr createLUTImpl(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth,
