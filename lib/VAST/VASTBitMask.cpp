@@ -538,6 +538,10 @@ void VASTBitMask::evaluateFUOutputMask(VASTSeqValue *SV) {
 }
 
 void VASTBitMask::evaluateMask(VASTSeqValue *SV) {
+  // Do not fail on some strange SeqValue.
+  if (!SV->hasSelector())
+    return;
+
   // Slot and enable are always assigned by 1, but timing is important for them
   // so we cannot simply replace the output of Slot and Enables by 1.
   if (SV->isSlot() || SV->isEnable())
