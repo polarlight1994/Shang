@@ -98,7 +98,13 @@ VASTValPtr MinimalExprBuilderContext::createLUT(ArrayRef<VASTValPtr> Ops,
 
 void MinimalExprBuilderContext::replaceAllUseWith(VASTValPtr From,
                                                   VASTValPtr To) {
+  deleteContenxt(To.get());
   Datapath.replaceAllUseWithImpl(From, To);
+}
+
+void MinimalExprBuilderContext::replaceUseOf(VASTValPtr V, VASTUse &U) {
+  if (VASTValue *Replaced = Datapath.replaceUseOfImpl(V, U))
+    deleteContenxt(Replaced);
 }
 
 MinimalExprBuilderContext::~MinimalExprBuilderContext() {

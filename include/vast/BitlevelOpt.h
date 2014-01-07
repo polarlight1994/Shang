@@ -31,6 +31,8 @@ public:
   // Allow user to access the builder to build expression.
   VASTExprBuilder *operator->() { return &Builder; }
 
+  using MinimalExprBuilderContext::replaceUseOf;
+
   VASTValPtr optimizeExpr(VASTExpr::Opcode Opc, ArrayRef<VASTValPtr> Ops,
                           unsigned BitWidth);
 

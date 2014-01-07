@@ -419,6 +419,7 @@ public:
   createROMLookUpImpl(VASTValPtr Addr, VASTMemoryBank *Bank, unsigned BitWidth);
 
   virtual void replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To);
+  virtual VASTValue *replaceUseOfImpl(VASTValPtr V, VASTUse &U);
 
   VASTConstant *getConstantImpl(const APInt &Value);
 

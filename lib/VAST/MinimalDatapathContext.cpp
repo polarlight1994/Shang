@@ -60,6 +60,11 @@ void MinimalDatapathContext::replaceAllUseWith(VASTValPtr From, VASTValPtr To) {
   Datapath.replaceAllUseWithImpl(From, To);
 }
 
+void MinimalDatapathContext::replaceUseOf(VASTValPtr V, VASTUse &U) {
+  if (VASTValue *Replaced = Datapath.replaceUseOfImpl(V, U))
+    deleteContenxt(Replaced);
+}
+
 MinimalDatapathContext::MinimalDatapathContext(DatapathContainer &Datapath,
                                                DataLayout *TD)
   : DatapathBuilderContext(TD), Datapath(Datapath) {

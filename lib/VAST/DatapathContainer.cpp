@@ -83,6 +83,33 @@ VASTValPtr DatapathContainer::invert(VASTValPtr U) {
   return U.invert();
 }
 
+VASTValue *DatapathContainer::replaceUseOfImpl(VASTValPtr V, VASTUse &U) {
+  VASTValPtr From = U;
+
+  assert(From && V && From != V && From.get() != V.get() &&
+         "Unexpected VASTValPtr value!");
+  assert(From->getBitWidth() == V->getBitWidth() && "Bitwidth not match!");
+  assert(!V->isDead() && "Replacing node by dead node!");
+
+#ifdef XDEBUG
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(V.get())) {
+    if (Expr->isReachableFrom(From.get()))
+      llvm_unreachable("Unexpected cycle in expression tree!");
+  }
+#endif
+
+  // This node is about to morph, remove its old self from the CSE maps.
+  removeValueFromCSEMaps(&U.getUser());
+
+  U.replaceUseBy(V);
+
+  // Now that we have modified User, add it back to the CSE maps.  If it
+  // already exists there, recursively merge the results together.
+  addModifiedValueToCSEMaps(&U.getUser());
+
+  return From->use_empty() ? From.get() : NULL;
+}
+
 void DatapathContainer::replaceAllUseWithImpl(VASTValPtr From, VASTValPtr To) {
   assert(From && To && From != To && From.get() != To.get() &&
          "Unexpected VASTValPtr value!");

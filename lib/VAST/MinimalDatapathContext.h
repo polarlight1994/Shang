@@ -48,6 +48,7 @@ public:
   virtual VASTValPtr getAsOperandImpl(Value *Op);
 
   virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
+  virtual void replaceUseOf(VASTValPtr V, VASTUse &U);
 };
 }
 

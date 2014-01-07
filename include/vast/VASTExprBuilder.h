@@ -44,6 +44,7 @@ public:
                                StringRef SOP);
 
   virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
+  void replaceUseOf(VASTValPtr V, VASTUse &U);
 
   virtual void deleteContenxt(VASTValue *V);
 };
@@ -69,7 +70,8 @@ public:
                              unsigned BitWidth);
   VASTValPtr createLUT(ArrayRef<VASTValPtr> Ops, unsigned Bitwidth,
                        StringRef SOP);
-  void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
+  virtual void replaceAllUseWith(VASTValPtr From, VASTValPtr To);
+  virtual void replaceUseOf(VASTValPtr V, VASTUse &U);
 };
 
 class VASTExprBuilder {

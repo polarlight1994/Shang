@@ -109,7 +109,7 @@ DemandedBitOptimizer::fineGrainShrinkAndReplace(VASTUse &U, VASTBitMask Mask) {
   assert(NewMask == Mask && "Bit Mask not match!");
 #endif
 
-  U.replaceUseBy(NewV);
+  BLO.replaceUseOf(NewV, U);
   return true;
 }
 
