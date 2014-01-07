@@ -81,6 +81,9 @@ public:
       visit(*I++);
   }
 
+
+  void optimize();
+
   DataLayout *getDataLayout() const;
 
   void reset();

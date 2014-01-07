@@ -733,6 +733,10 @@ bool TrivialLoopUnroll::runOnLoop(Loop *L, LPPassManager &LPM) {
     return false;
   }
 
+  // Preform optimizetion on the patial datapath to avoid over estimating the
+  // unrolling cost.
+  Metrics.optimize();
+
   // FIXME: Read the threshold from the constraints script.
   uint64_t Threshold = 256000 * ThresholdFactor;
 

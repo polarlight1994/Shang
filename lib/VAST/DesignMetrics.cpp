@@ -14,7 +14,10 @@
 
 #include "IR2Datapath.h"
 #include "vast/Passes.h"
+#include "vast/VASTSeqValue.h"
+#include "vast/VASTHandle.h"
 #include "vast/DesignMetrics.h"
+#include "vast/BitlevelOpt.h"
 #include "vast/FUInfo.h"
 #include "vast/LuaI.h"
 
@@ -39,12 +42,12 @@ class DesignMetricsImpl : public DatapathBuilderContext {
   DatapathBuilder Builder;
 
   // The data-path value which are used by control-path operations.
-  typedef std::set<VASTValue*> ValSetTy;
-  ValSetTy LiveOutedVal;
+  std::map<Value*, VASTHandle> Addrs, Datas;
+  typedef SmallVector<VASTHandle, 4> FaninVec;
+  std::map<Value*, FaninVec> PHIs;
+  ilist<VASTSeqValue> Values;
 
-  ValSetTy AddressBusFanins, DataBusFanins;
   // The lower bound of the total control-steps.
-  unsigned StepLB;
   unsigned NumCalls;
   // TODO: Model the control-path, in the control-path, we can focus on the MUX
   // in the control-path, note that the effect of FU allocation&binding
@@ -73,39 +76,41 @@ class DesignMetricsImpl : public DatapathBuilderContext {
 
   VASTValPtr getAsOperandImpl(Value *Op);
 
-  // Visit the expression tree whose root is Root and return the cost of the
-  // tree, insert all visited data-path nodes into Visited.
-  uint64_t getExprTreeFUCost(VASTValPtr Root, std::set<VASTExpr*> &Visited) const;
-
   // Collect the fanin information of the memory bus.
   void visitLoadInst(LoadInst &I);
   void visitStoreInst(StoreInst &I);
 public:
   explicit DesignMetricsImpl(DataLayout *TD)
-    : DatapathBuilderContext(TD), Builder(*this), StepLB(0), NumCalls(0){}
+    : DatapathBuilderContext(TD), Builder(*this), NumCalls(0){}
 
-  ~DesignMetricsImpl() {}
+  ~DesignMetricsImpl() {
+    reset();
+  }
 
   void visit(Instruction &Inst);
   void visit(BasicBlock &BB);
   void visit(Function &F);
 
   void reset() {
+    PHIs.clear();
+    Datas.clear();
+    Addrs.clear();
     DPContainer.reset();
-    LiveOutedVal.clear();
-    AddressBusFanins.clear();
-    DataBusFanins.clear();
-    StepLB = 0;
+    Values.clear();
     NumCalls = 0;
   }
 
-  uint64_t getFUCost(VASTValue *V) const;
+  void optimize();
+  bool optimize(DatapathBLO &Opt, std::map<Value*, VASTHandle> &MUXes);
+  bool optimize(DatapathBLO &Opt, std::map<Value*, FaninVec> &FIs);
+
+  uint64_t getFUCost(const VASTExpr *Expr) const;
 
   // Visit all data-path expression and compute the cost.
   uint64_t getDatapathFUCost() const;
-  unsigned getNumAddrBusFanin() const { return AddressBusFanins.size(); }
-  unsigned getNumDataBusFanin() const { return DataBusFanins.size(); }
-  unsigned getStepsLowerBound() const { return StepLB; }
+  unsigned getNumAddrBusFanin() const { return Addrs.size(); }
+  unsigned getNumDataBusFanin() const { return Datas.size(); }
+  unsigned getStepsLowerBound() const { return Addrs.size() + getNumCalls(); }
   unsigned getNumCalls() const { return NumCalls; }
 
   DataLayout *getDataLayout() const { return Builder.getDataLayout(); }
@@ -129,36 +134,33 @@ VASTValPtr DesignMetricsImpl::getAsOperandImpl(Value *Op) {
   if (ConstantInt *Int = dyn_cast<ConstantInt>(Op))
     return getConstant(Int->getValue());
 
-  if (VASTValPtr V = Builder.lookupExpr(Op)) return V;
+  if (VASTValPtr V = Builder.lookupExpr(Op))
+    return V;
 
   unsigned NumBits = Builder.getValueSizeInBits(Op);
 
-  // Else we need to create a leaf node for the expression tree.
-  VASTWrapper *ValueOp
-    = DPContainer.getAllocator().Allocate<VASTWrapper>();
-    
-  new (ValueOp) VASTWrapper("", NumBits, Op);
+  VASTSeqValue *Val = new VASTSeqValue(Op, NumBits);
+  Values.push_back(Val);
 
   // Remember the newly create VASTLLVMValue, so that it will not be created
   // again.
-  indexVASTExpr(Op, ValueOp);
-  return ValueOp;
+  return indexVASTExpr(Op, Val);
 }
 
 void DesignMetricsImpl::visitLoadInst(LoadInst &I) {
   Value *Address = I.getPointerOperand();
   if (VASTValPtr V = getAsOperandImpl(Address))
-    AddressBusFanins.insert(V.get());
+    Addrs[&I] = V;
 }
 
 void DesignMetricsImpl::visitStoreInst(StoreInst &I) {
   Value *Address = I.getPointerOperand();
   if (VASTValPtr V = getAsOperandImpl(Address))
-    AddressBusFanins.insert(V.get());
+    Addrs[&I] = V;
 
   Value *Data = I.getValueOperand();
   if (VASTValPtr V = getAsOperandImpl(Data))
-    DataBusFanins.insert(V.get());
+    Datas[&I] = V;
 }
 
 void DesignMetricsImpl::visit(Instruction &Inst) {
@@ -167,37 +169,40 @@ void DesignMetricsImpl::visit(Instruction &Inst) {
     return;
   }
 
+  if (LoadInst *LI = dyn_cast<LoadInst>(&Inst))
+    return visitLoadInst(*LI);
+
+  if (StoreInst *SI = dyn_cast<StoreInst>(&Inst))
+    return visitStoreInst(*SI);
+
+  if (isa<CallInst>(Inst)
+      || Inst.getOpcode() == Instruction::SDiv
+      || Inst.getOpcode() == Instruction::UDiv
+      || Inst.getOpcode() == Instruction::SRem
+      || Inst.getOpcode() == Instruction::URem)
+    ++NumCalls;
+
   // Else Inst is a control-path instruction, all its operand are live-outed.
   // A live-outed data-path expression and its children should never be
   // eliminated.
   typedef Instruction::op_iterator op_iterator;
   for (op_iterator I = Inst.op_begin(), E = Inst.op_end(); I != E; ++I) {
+    Value *V = *I;
+
+    if (isa<BasicBlock>(V))
+      continue;
+
     if (VASTValPtr V = Builder.lookupExpr(*I))
-      LiveOutedVal.insert(V.get());
+      PHIs[&Inst].push_back(V);
   }
-
-  if (LoadInst *LI = dyn_cast<LoadInst>(&Inst))
-    visitLoadInst(*LI);
-  else if (StoreInst *SI = dyn_cast<StoreInst>(&Inst))
-    visitStoreInst(*SI);
-  else if (isa<CallInst>(Inst)
-           || Inst.getOpcode() == Instruction::SDiv
-           || Inst.getOpcode() == Instruction::UDiv
-           || Inst.getOpcode() == Instruction::SRem
-           || Inst.getOpcode() == Instruction::URem)
-    ++NumCalls;
-  else // Unknown trivial instructions.
-    return;
-
-  // These control-path operations must be scheduled to its own step.
-  ++StepLB;
 }
 
 void DesignMetricsImpl::visit(BasicBlock &BB) {
   typedef BasicBlock::iterator iterator;
   for (iterator I = BB.begin(), E = BB.end(); I != E; ++I) {
     // PHINodes will be handled in somewhere else.
-    if (isa<PHINode>(I)) continue;
+    if (isa<PHINode>(I))
+     continue;
 
     visit(*I);
   }
@@ -208,14 +213,15 @@ void DesignMetricsImpl::visit(BasicBlock &BB) {
     BasicBlock *SuccBB = *SI;
     for (iterator I = SuccBB->begin(), E = SuccBB->end(); I != E; ++I) {
       PHINode *PN = dyn_cast<PHINode>(I);
-      if (PN == 0) break;
+
+      if (PN == NULL)
+        break;
 
       Value *LiveOutedFromBB = PN->DoPHITranslation(SuccBB, &BB);
       if (VASTValPtr V = Builder.lookupExpr(LiveOutedFromBB))
-        LiveOutedVal.insert(V.get());
+        PHIs[PN].push_back(V);
     }
   }
-
 }
 
 void DesignMetricsImpl::visit(Function &F) {
@@ -225,12 +231,8 @@ void DesignMetricsImpl::visit(Function &F) {
     visit(**I);
 }
 
-uint64_t DesignMetricsImpl::getFUCost(VASTValue *V) const {
-  VASTExpr *Expr = dyn_cast<VASTExpr>(V);
-  // We can only estimate the cost of VASTExpr.
-  if (!Expr) return 0;
-
-  unsigned ValueSize = std::min(V->getBitWidth(), 64u);
+uint64_t DesignMetricsImpl::getFUCost(const VASTExpr *Expr) const {
+  unsigned ValueSize = std::min(Expr->getBitWidth() - Expr->getNumKnownBits(), 64u);
 
   switch (Expr->getOpcode()) {
   default: break;
@@ -247,39 +249,55 @@ uint64_t DesignMetricsImpl::getFUCost(VASTValue *V) const {
   return 0;
 }
 
-namespace {
-struct CostAccumulator {
-  const DesignMetricsImpl &Impl;
-  uint64_t Cost;
-
-  CostAccumulator(const DesignMetricsImpl &Impl) : Impl(Impl), Cost(0) {}
-
-  void operator()(VASTNode *N) {
-    if (VASTValue *V = dyn_cast<VASTValue>(N))
-      Cost += Impl.getFUCost(V);
-  }
-};
-}
-
-uint64_t DesignMetricsImpl::getExprTreeFUCost(VASTValPtr Root,
-                                              std::set<VASTExpr*> &Visited)
-                                              const {
-  CostAccumulator Accumulator(*this);
-  if (VASTExpr *Expr = dyn_cast<VASTExpr>(Root.get()))
-    Expr->visitConeTopOrder(Visited, Accumulator);
-
-  return Accumulator.Cost;
-}
-
 uint64_t DesignMetricsImpl::getDatapathFUCost() const {
   uint64_t Cost = 0;
-  std::set<VASTExpr*> Visited;
 
-  typedef ValSetTy::const_iterator iterator;
-  for (iterator I = LiveOutedVal.begin(), E = LiveOutedVal.end(); I != E; ++I)
-    Cost += getExprTreeFUCost(*I, Visited);
+  typedef DatapathContainer::const_expr_iterator iterator;
+  for (iterator I = DPContainer.expr_begin(), E = DPContainer.expr_end();
+       I != E; ++I)
+    Cost += getFUCost(I);
 
   return Cost;
+}
+
+bool DesignMetricsImpl::optimize(DatapathBLO &Opt,
+                                 std::map<Value*, VASTHandle> &Muxes) {
+  bool Changed = false;
+
+  typedef std::map<Value*, VASTHandle>::iterator iterator;
+  for (iterator I = Muxes.begin(), E = Muxes.end(); I != E; ++I)
+    Changed |= Opt.optimizeAndReplace(I->second);
+
+  return Changed;    
+}
+bool
+DesignMetricsImpl::optimize(DatapathBLO &Opt, std::map<Value*, FaninVec> &PHIs) {
+  bool Changed = false;
+
+  typedef std::map<Value*, FaninVec>::iterator iterator;
+  for (iterator I = PHIs.begin(), E = PHIs.end(); I != E; ++I) {
+    ArrayRef<VASTHandle> FIs = I->second;
+    for (unsigned i = 0; i < FIs.size(); ++i)
+      Changed |= Opt.optimizeAndReplace(FIs[i]);
+  }
+
+  return Changed;
+}
+
+void DesignMetricsImpl::optimize() {
+  bool Changed = true;
+
+  // Optimize the datapath to avoid overestimate the cost.
+  DatapathBLO Opt(DPContainer);
+
+  while (Changed) {
+    Changed = false;
+    Changed |= optimize(Opt, Addrs);
+    Changed |= optimize(Opt, Datas);
+    Changed |= optimize(Opt, PHIs);
+
+    Opt.resetForNextIteration();
+  }
 }
 
 DesignMetrics::DesignMetrics(DataLayout *TD)
@@ -312,6 +330,10 @@ DesignMetrics::DesignCost::DesignCost(uint64_t DatapathCost,
   : DatapathCost(DatapathCost),
     NumAddrBusFanin(NumAddrBusFanin), NumDataBusFanin(NumDataBusFanin),
     StepLB(StepLB) {}
+
+void DesignMetrics::optimize() {
+  Impl->optimize();
+}
 
 DesignMetrics::DesignCost DesignMetrics::getCost() const {
   return DesignCost(std::max<uint64_t>(Impl->getDatapathFUCost(), 1),

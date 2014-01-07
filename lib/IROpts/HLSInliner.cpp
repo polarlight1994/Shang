@@ -48,6 +48,10 @@ public:
     DesignMetrics Metrics(&getAnalysis<DataLayout>());
     Metrics.visit(*F);
 
+    // Preform optimizetion on the patial datapath to avoid over estimating the
+    // inlining cost.
+    Metrics.optimize();
+
     Cost = Metrics.getCost();
     DEBUG(dbgs() << "Inline cost of function: " << F->getName() << ':'
                  << Cost << '\n' << "Number of CallSites: " << F->getNumUses()
