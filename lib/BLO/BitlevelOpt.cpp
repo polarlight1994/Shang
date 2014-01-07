@@ -53,7 +53,9 @@ DatapathBLO::DatapathBLO(DatapathContainer &Datapath)
 
 DatapathBLO::~DatapathBLO() {}
 
-void DatapathBLO::resetForNextIteration() {}
+void DatapathBLO::resetForNextIteration() {
+  Visited.clear();
+}
 
 bool DatapathBLO::replaceIfNotEqual(VASTValPtr From, VASTValPtr To) {
   if (To == None || From == To)
