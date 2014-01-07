@@ -215,6 +215,12 @@ CREATE TABLE mcps(
        cycles INTEGER,
        normalized_delay REAL
        );
+
+CREATE TABLE locations(
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       node TEXT,
+       x INTEGER, y INTEGER,
+       width INTEGER, height INTEGER);
 ''')
 
     #Generate the HLS config.
