@@ -719,8 +719,13 @@ void DelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
   // TODO: Consider the bitmask.
   if (VASTValue *Val = GetAsLeaf(V)) {
     float OutputDelay = GetLeafDelay(Val);
-    for (unsigned j = 0; j < BitWidth; ++j)
+    for (unsigned j = 0; j < BitWidth; ++j) {
+      // Do not need the arrival time if the bit is known.
+      if (Node->isBitKnownAt(j))
+        continue;
+
       addArrival(Val, Base + j * PerBit + OutputDelay, j + 1, j);
+    }
 
     return;
   }
@@ -735,6 +740,10 @@ void DelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
 
     // Propagate the carry bit till the MSB of the result.
     for (unsigned j = AT->ToLB, e = BitWidth; j < e; ++j) {
+      // Do not need the arrival time if the bit is known.
+      if (Node->isBitKnownAt(j))
+        continue;
+
       // Calculate the number of logic level from the lsb of the operand to
       // current bit.
       unsigned k = j - AT->ToLB;
