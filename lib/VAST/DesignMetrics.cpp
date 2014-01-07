@@ -53,8 +53,6 @@ class DesignMetricsImpl : public DatapathBuilderContext {
   // TODO: To not perform cycle-accurate speed performance estimation at the IR
   // layer, instead we should only care about the number of memory accesses.
 
-  using VASTExprBuilderContext::getConstant;
-
   VASTConstant *getConstant(const APInt &Value) {
     return DPContainer.getConstantImpl(Value);
   }

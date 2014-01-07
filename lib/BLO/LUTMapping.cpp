@@ -14,7 +14,6 @@
 #include "BitlevelOpt.h"
 
 #include "vast/VASTModule.h"
-#include "vast/VASTModulePass.h"
 #include "vast/VASTHandle.h"
 
 #include "llvm/Support/CommandLine.h"

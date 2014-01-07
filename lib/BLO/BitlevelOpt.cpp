@@ -371,7 +371,7 @@ VASTValPtr DatapathBLO::optimizeAnnotation(VASTExpr::Opcode Opcode,
   return Builder.buildAnnotation(Opcode, eliminateInvertFlag(Op));
 }
 
-VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
+VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr> Ops,
                                         unsigned BitWidth) {
   // Handle the trivial case trivially.
   if (Ops.size() == 1)
@@ -409,6 +409,8 @@ VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
     }
     // Accumulate the constants.
     if (VASTConstPtr CurC = dyn_cast<VASTConstPtr>(CurVal)) {
+      assert((CurC->getBitWidth() == BitWidth || CurC->getBitWidth() == 1)
+             && "Unexpected bitwidth!");
       C += CurC.getAPInt().zextOrTrunc(BitWidth);
       continue;
     }
