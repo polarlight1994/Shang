@@ -2,6 +2,7 @@ add_llvm_library(ShangBLO
   LUTMapping.cpp
   DemandedOpt.cpp
   BitlevelOpt.cpp
+  CarryChainOpt.cpp
 )
 
 get_property(ABC_INCLUDE_DIRS GLOBAL PROPERTY ABC_INCLUDE_DIRS)

@@ -114,8 +114,13 @@ public:
 
   VASTValPtr optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
                              unsigned BitWidth);
+
   VASTValPtr optimizeMulImpl(MutableArrayRef<VASTValPtr>  Ops,
                              unsigned BitWidth);
+
+  VASTValPtr optimizeCarryChain(VASTExpr::Opcode Opcode,
+                                MutableArrayRef<VASTValPtr>  Ops,
+                                unsigned BitWidth);
 
   VASTValPtr optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
                            unsigned BitWidth);

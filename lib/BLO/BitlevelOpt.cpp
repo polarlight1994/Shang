@@ -429,7 +429,7 @@ VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr> Ops,
   if (ActualPos == 1)
     return Ops[0];
 
-  return Builder.buildAddExpr(Ops, BitWidth);
+  return optimizeCarryChain(VASTExpr::dpAdd, Ops, BitWidth);
 }
 
 VASTValPtr DatapathBLO::optimizeMulImpl(MutableArrayRef<VASTValPtr> Ops,
