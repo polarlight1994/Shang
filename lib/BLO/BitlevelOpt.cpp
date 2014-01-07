@@ -335,8 +335,16 @@ VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
   VASTValPtr And = Builder.buildAndExpr(Ops, BitWidth);
 
   // Build the bitmask expression if we get some mask.
-  if (!C.isAllOnesValue())
+  if (!C.isAllOnesValue()) {
+    // Perform knwon bits replacement.
+    if (hasEnoughKnownbits(C, false)) {
+      // Create the mask with knwon zeros.
+      VASTBitMask Mask(~C, APInt::getNullValue(BitWidth));
+      return replaceKnownBitsFromMask(And, Mask, false);
+    }
+
     And = Builder.buildBitMask(And, C);
+  }
 
   return And;
 }
