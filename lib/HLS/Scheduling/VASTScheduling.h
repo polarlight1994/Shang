@@ -517,6 +517,10 @@ public:
   typedef std::map<BasicBlock*, std::vector<VASTSchedUnit*> >::const_iterator
           const_bb_iterator;
 
+  bool isBBReachable(BasicBlock *BB) const {
+    return BBMap.count(BB);
+  }
+
   MutableArrayRef<VASTSchedUnit*> getSUInBB(BasicBlock *BB);
   ArrayRef<VASTSchedUnit*> getSUInBB(BasicBlock *BB) const;
 

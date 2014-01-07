@@ -325,6 +325,8 @@ void VASTSchedGraph::sortSUsByIdx() {
 
 VASTSchedUnit *
 VASTSchedGraph::createSUnit(BasicBlock *BB, VASTSchedUnit::Type T) {
+  assert((T == VASTSchedUnit::BlockEntry || isBBReachable(BB)) &&
+         "Cannot create node for unreachable block!");
   VASTSchedUnit *U = new VASTSchedUnit(TotalSUs++, BB, T);
   // Insert the newly create SU before the exit.
   SUnits.insert(SUnits.back(), U);
@@ -402,10 +404,17 @@ void VASTSchedGraph::viewGraph() {
   ViewGraph(this, "SchedulingGraph");
 }
 
-void VASTSchedGraph::verifyBBEntry(const VASTSchedUnit *SU) const {
+void
+VASTSchedGraph::verifyBBEntry(const VASTSchedUnit *SU) const {
   BasicBlock *BB = SU->getParent();
+  std::set<BasicBlock*> Preds;
 
-  std::set<BasicBlock*> Preds(pred_begin(BB), pred_end(BB));
+  for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
+    BasicBlock *Pred = *I;
+
+    if (isBBReachable(Pred))
+      Preds.insert(Pred);
+  }
 
   typedef VASTSchedUnit::const_dep_iterator dep_iterator;
   for (dep_iterator DI = SU->dep_begin(), DE = SU->dep_end(); DI != DE; ++DI) {
@@ -510,7 +519,11 @@ void VASTSchedGraph::topologicalSortSUs() {
     Visited.clear();
     BasicBlock *BB = *I;
 
-    MutableArrayRef<VASTSchedUnit*> SUs(getSUInBB(BB));
+    bb_iterator at = BBMap.find(BB);
+    if (at == BBMap.end())
+      continue;
+
+    MutableArrayRef<VASTSchedUnit*> SUs(at->second);
     for (unsigned i = 0; i < SUs.size(); ++i)
       topsortCone(SUs[i], Visited, BB);
   }

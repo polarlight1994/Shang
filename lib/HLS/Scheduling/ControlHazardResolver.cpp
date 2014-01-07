@@ -74,6 +74,9 @@ void ControlChainingHazardResolver::initDistances() {
     for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
       BasicBlock *BB = *I;
 
+      if (!G.isBBReachable(BB))
+        continue;
+
       TimeFrame Distance = calculateTimeFrame(BB);
       updateTimeFrame(BB, Distance);
     }

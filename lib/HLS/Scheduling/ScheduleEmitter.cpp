@@ -391,7 +391,8 @@ void ScheduleEmitter::emitScheduleInBB(MutableArrayRef<VASTSchedUnit*> SUs) {
   unsigned EntrySchedSlot = SUs[0]->getSchedule();
   // All SUs are scheduled to the same slot with the entry, hence they are all
   // folded to the predecessor of this BB.
-  if (SUs.back()->getSchedule() == EntrySchedSlot) return;
+  if (SUs.back()->getSchedule() == EntrySchedSlot)
+    return;
 
   BasicBlock *BB = SUs[0]->getParent();
 
@@ -481,6 +482,10 @@ void ScheduleEmitter::emitSchedule() {
 
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
     BasicBlock *BB = *I;
+
+    if (!G.isBBReachable(BB))
+      continue;
+
     MutableArrayRef<VASTSchedUnit*> SUs(G.getSUInBB(BB));
     emitScheduleInBB(SUs);
   }

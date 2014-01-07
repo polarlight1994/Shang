@@ -164,6 +164,9 @@ void Verifier::verify() {
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
     BasicBlock *BB = *I;
 
+    if (!G.isBBReachable(BB))
+      continue;
+
     DEBUG(dbgs() << "Visiting: " << BB->getName() << '\n');
 
     if (BB == &F.getEntryBlock()) continue;

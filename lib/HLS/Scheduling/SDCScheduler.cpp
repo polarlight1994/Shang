@@ -1020,6 +1020,10 @@ void SDCScheduler::initalizeCFGEdges() {
 
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
+
+    if (!G.isBBReachable(BB))
+      continue;
+
     VASTSchedUnit *BBEntry = G.getEntrySU(BB);
 
     // Collect all back-edge of the current loop

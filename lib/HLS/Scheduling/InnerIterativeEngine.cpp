@@ -386,6 +386,10 @@ bool ItetrativeEngine::performScheduling(VASTModule &VM) {
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
+
+    if (!Scheduler->isBBReachable(BB))
+      continue;
+
     DEBUG(dbgs() << "Applying constraints to BB: " << BB->getName() << '\n');
 
     float ExitWightSum = assignEdgeWeight(BB);

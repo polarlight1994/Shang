@@ -603,6 +603,10 @@ struct GlobalDependenciesBuilderBase  {
 
     for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
       BasicBlock *BB = *I;
+
+      if (!G.isBBReachable(BB))
+        continue;
+
       if (DomTreeNode *Node = SyncAnalysis.DT.getNode(BB))
         buildDependenciesBottonUp(Node);
     }
