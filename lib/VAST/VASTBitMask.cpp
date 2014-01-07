@@ -272,7 +272,7 @@ VASTBitMask::EvaluateLUT(ArrayRef<VASTBitMask> Masks, unsigned BitWidth,
 
 //===----------------------------------------------------------------------===//
 VASTBitMask VASTBitMask::EvaluateAdd(VASTBitMask LHS, VASTBitMask RHS,
-                                     unsigned BitWidth) {
+                                     VASTBitMask &C,  unsigned BitWidth) {
   // Perform bit level evaluation for addition.
   // unsigned int carry = a & b;
   // unsigned int result = a ^ b;
@@ -283,8 +283,8 @@ VASTBitMask VASTBitMask::EvaluateAdd(VASTBitMask LHS, VASTBitMask RHS,
   // }
   // return result;
 
-  VASTBitMask S = EvaluateXor(LHS, RHS, BitWidth),
-              C = EvaluateAnd(LHS, RHS, BitWidth);
+  VASTBitMask S = EvaluateXor(LHS, RHS, BitWidth);
+  C = EvaluateAnd(LHS, RHS, BitWidth);
 
   for (unsigned i = 0; i < BitWidth; ++i) {
     if (!S.hasAnyBitKnown() || C.isAllZeroKnown())
