@@ -716,13 +716,15 @@ void DelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
   unsigned BitWidth = Node->getBitWidth();
   VASTValPtr V = Node->getOperand(i);
   APInt KnwonBits = VASTBitMask(V).getKnownBits();
-  // Get the upperbound of the unknwon bits.
-  unsigned UB = BitWidth - KnwonBits.countLeadingOnes();
+  // Get the upperbound and lowerbound of the unknwon bits, only calculate the
+  // carry chain propagation delay for the unknwon bits. For the upper bound,
+  // we also consider the extra carry bit.
+  unsigned UB = std::min(BitWidth - KnwonBits.countLeadingOnes() + 1, BitWidth),
+           LB = KnwonBits.countTrailingOnes();
 
-  // TODO: Consider the bitmask.
   if (VASTValue *Val = GetAsLeaf(V)) {
     float OutputDelay = GetLeafDelay(Val);
-    for (unsigned j = 0; j < UB; ++j) {
+    for (unsigned j = LB; j < UB; ++j) {
       // Do not need the arrival time if the bit is known.
       if (Node->isBitKnownAt(j))
         continue;
@@ -742,7 +744,7 @@ void DelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
     ArrivalTime *AT = I;
 
     // Propagate the carry bit till the MSB of the result.
-    for (unsigned j = AT->ToLB, e = UB; j < e; ++j) {
+    for (unsigned j = std::max(LB, unsigned(AT->ToLB)), e = UB; j < e; ++j) {
       // Do not need the arrival time if the bit is known.
       if (Node->isBitKnownAt(j))
         continue;
