@@ -239,8 +239,11 @@ private:
 
 public:
   VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V);
+  VASTSeqValue(Value *V, unsigned Bitwidth);
 
   ~VASTSeqValue();
+
+  bool hasSelector() const;
 
   // For common registers, the Idx is the corresponding register number in the
   // MachineFunction. With this register number we can get the define/use/kill

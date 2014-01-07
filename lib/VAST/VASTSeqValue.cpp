@@ -784,6 +784,12 @@ VASTSeqValue::VASTSeqValue(VASTSelector *Selector, unsigned Idx, Value *V)
   Contents64.Sel = Selector;
 }
 
+VASTSeqValue::VASTSeqValue(Value *V, unsigned Bitwidth)
+  : VASTMaskedValue(vastSeqValue, Bitwidth), V(V) {
+  Contents32.SeqValIdx = 0;
+  Contents64.Sel = NULL;
+}
+
 void VASTSeqValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
                                       unsigned LB) const{
   OS << "((" << getName();
@@ -822,8 +828,12 @@ void VASTSeqValue::dumpFanins() const {
   printFanins(dbgs());
 }
 
+bool VASTSeqValue::hasSelector() const {
+  return Contents64.Sel;
+}
+
 VASTSelector *VASTSeqValue::getSelector() const {
-  assert(Contents64.Sel && "Unexpected null selector!");
+  assert(hasSelector() && "Unexpected null selector!");
   return Contents64.Sel;
 }
 
