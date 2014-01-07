@@ -46,6 +46,12 @@ bool DatapathBLO::isShiftedMask(APInt Value) {
   return isMask((Value - 1) | Value);
 }
 
+bool DatapathBLO::hasEnoughKnownbits(APInt KnownBits, bool FineGrain) {
+  return DatapathBLO::isMask(KnownBits) || DatapathBLO::isShiftedMask(KnownBits) ||
+         DatapathBLO::isMask(~KnownBits) || DatapathBLO::isShiftedMask(~KnownBits) ||
+         FineGrain;
+}
+
 //===----------------------------------------------------------------------===//
 DatapathBLO::DatapathBLO(DatapathContainer &Datapath)
   : MinimalExprBuilderContext(Datapath), Builder(*this) {}
@@ -739,6 +745,55 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   }
 
   return Expr;
+}
+
+VASTValPtr DatapathBLO::replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
+                                                 bool FineGrain) {
+  APInt KnownBits = Mask.getKnownBits();
+
+  if (KnownBits.isAllOnesValue()) {
+    ++NodesReplacedByKnownBits;
+    return getConstant(Mask.getKnownValues());
+  }
+
+  // Do nothing if there is no bits known.
+  if (!KnownBits.getBoolValue())
+    return V;
+
+  if (!hasEnoughKnownbits(KnownBits, FineGrain))
+    return V;
+
+  SmallVector<unsigned, 8> SplitPos;
+  unsigned Bitwidth = Mask.getMaskWidth();
+
+  // Calculate the split points to split the known and unknon bits.
+  for (unsigned i = 1; i < Bitwidth; ++i) {
+    if (KnownBits[i] != KnownBits[i - 1])
+      SplitPos.push_back(i);
+  }
+
+  SplitPos.push_back(Bitwidth);
+
+  assert(SplitPos.size() > 1 && "Too few split points!");
+
+  unsigned NumSegments = SplitPos.size();
+  SmallVector<VASTValPtr, 8> Bits(NumSegments, None);
+  unsigned LB = 0;
+  for (unsigned i = 0; i < NumSegments; ++i) {
+    unsigned UB = SplitPos[i];
+
+    // Put the segments from MSB to LSB, which is required by the BitCat
+    // expression.
+    // Also, Use the known bits whenever possible.
+    if (Mask.isAllBitKnown(UB, LB))
+      Bits[NumSegments - i - 1] = getConstant(Mask.getKnownValues(UB, LB));
+    else
+      Bits[NumSegments - i - 1] = optimizeBitExtract(V, UB, LB);
+
+    LB = UB;
+  }
+
+  return optimizedpBitCat<VASTValPtr>(Bits, Bitwidth);
 }
 
 VASTValPtr DatapathBLO::replaceKnownBits(VASTValPtr V) {

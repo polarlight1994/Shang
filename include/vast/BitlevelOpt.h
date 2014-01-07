@@ -169,7 +169,12 @@ public:
   }
 
   VASTValPtr optimizeExpr(VASTExpr *Expr);
+
+  // Knwon bits replacement
   VASTValPtr replaceKnownBits(VASTValPtr V);
+  VASTValPtr replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
+                                      bool FineGrain);
+
   bool replaceIfNotEqual(VASTValPtr From, VASTValPtr To);
 
   template<VASTExpr::Opcode Opcode>
@@ -193,6 +198,7 @@ public:
   //===--------------------------------------------------------------------===//
   static bool isMask(APInt Value);
   static bool isShiftedMask(APInt Value);
+  static bool hasEnoughKnownbits(APInt KnownBits, bool FineGrain);
 };
 }
 #endif
