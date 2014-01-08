@@ -28,6 +28,36 @@ struct DemandedBitOptimizer {
 
   explicit DemandedBitOptimizer(DatapathBLO &BLO) : BLO(BLO) {}
 
+  APInt getUsedBits(VASTValPtr V) {
+    unsigned BitWidth = V->getBitWidth();
+
+    // Do not worry about the 1 bit value ...
+    if (BitWidth == 1)
+      return APInt::getAllOnesValue(BitWidth);
+
+    APInt AllUnused = APInt::getAllOnesValue(BitWidth);
+
+    typedef VASTValue::use_iterator iterator;
+    for (iterator I = V->use_begin(), E = V->use_end(); I != E; ++I) {
+      VASTExpr *Expr = dyn_cast<VASTExpr>(*I);
+
+      if (Expr == NULL)
+        continue;
+
+      // Any expr that is not a bitextract use all bits.
+      if (Expr->getOpcode() != VASTExpr::dpBitExtract)
+        // Bits are used only if they are unknown.
+        return ~VASTBitMask(V).getKnownBits();
+
+      APInt CurUsed = APInt::getBitsSet(BitWidth, Expr->getLB(), Expr->getUB());
+      APInt CurUnused = ~CurUsed;
+      AllUnused &= CurUnused;
+    }
+
+    APInt Used = ~AllUnused;
+    return Used;
+  }
+
   VASTValPtr shrink(VASTExpr *Expr) {
     VASTExpr::Opcode Opcode = Expr->getOpcode();
 
@@ -68,14 +98,19 @@ struct DemandedBitOptimizer {
 template<VASTExpr::Opcode Opcode>
 VASTValPtr DemandedBitOptimizer::shrinkParallel(VASTExpr *Expr) {
   APInt KnownBits = Expr->getKnownBits();
-
-  if (!BLO.hasEnoughKnownbits(Expr->getKnownBits(), false))
-    return Expr;
-
   unsigned BitWidth = KnownBits.getBitWidth();
-
   SmallVector<unsigned, 8> SplitPos;
-  DatapathBLO::extractSplitPositions(KnownBits, SplitPos);
+
+  if (BLO.hasEnoughKnownbits(KnownBits, false))
+    DatapathBLO::extractSplitPositions(KnownBits, SplitPos);
+  else {
+    APInt KnownBits = ~getUsedBits(Expr);
+
+    if (!BLO.hasEnoughKnownbits(KnownBits, false))
+      return Expr;
+
+    DatapathBLO::extractSplitPositions(KnownBits, SplitPos);
+  }
 
   return BLO.splitAndConCat<Opcode>(Expr->getOperands(), BitWidth, SplitPos);
 }
@@ -115,6 +150,10 @@ bool DatapathBLO::shrink(VASTModule &VM) {
 
       // Use Handle to trace the potantial replacement.
       VASTHandle VH(++I);
+
+      // Do not need to worry about the dead expressions.
+      if (Expr->use_empty())
+        continue;
 
       VASTValPtr NewVal = DBO.shrink(Expr);
       if (replaceIfNotEqual(Expr, NewVal)) {
