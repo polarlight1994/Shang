@@ -79,9 +79,24 @@ BasicBlock *VASTSlot::getParent() const {
 
 bool VASTSlot::hasNextSlot(VASTSlot *NextSlot) const {
   for (const_succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I)
-    if (NextSlot == EdgePtr(*I)) return true;
+    if (NextSlot == EdgePtr(*I))
+      return true;
 
   return false;
+}
+
+void VASTSlot::unlinkSucc(VASTSlot *S) {
+  for (succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
+    if (S != EdgePtr(*I))
+      continue;
+
+    pred_iterator at = std::find(S->PredSlots.begin(), S->PredSlots.end(), this);
+    S->PredSlots.erase(at);
+    NextSlots.erase(I);
+    return;
+  }
+
+  llvm_unreachable("Not the sucessor of this slot!");
 }
 
 void VASTSlot::unlinkSuccs() {
@@ -96,6 +111,10 @@ void VASTSlot::unlinkSuccs() {
   }
 
   NextSlots.clear();
+}
+
+void VASTSlot::eraseFromParent() {
+  R.getSLotList().erase(this);
 }
 
 VASTSlot::op_iterator VASTSlot::removeOp(op_iterator where) {

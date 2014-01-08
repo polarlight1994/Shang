@@ -223,6 +223,9 @@ public:
   unsigned pred_size() const { return PredSlots.size(); }
 
   void unlinkSuccs();
+  void unlinkSucc(VASTSlot *S);
+
+  void eraseFromParent();
 
   typedef SubGrpIterator<false> subgrp_iterator;
   inline subgrp_iterator subgrp_begin();
