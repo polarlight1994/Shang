@@ -73,9 +73,9 @@ struct DemandedBitOptimizer {
     case VASTExpr::dpShl:
       return shrinkShiftLeft(Expr);
     case VASTExpr::dpAshr:
-      break;
+      return shrinkShiftRight<VASTExpr::dpAshr>(Expr);
     case VASTExpr::dpLshr:
-      break;
+      return shrinkShiftRight<VASTExpr::dpLshr>(Expr);
     }
 
     return Expr;
@@ -88,6 +88,9 @@ struct DemandedBitOptimizer {
   VASTValPtr shrinkCarryChain(VASTExpr *Expr);
 
   VASTValPtr shrinkShiftLeft(VASTExpr *Expr);
+
+  template<VASTExpr::Opcode Opcode>
+  VASTValPtr shrinkShiftRight(VASTExpr *Expr);
 
   // Shrink V and replace V on all its user.
   bool shrinkAndReplace(VASTValPtr V, VASTBitMask Mask, bool FineGrain);
@@ -121,7 +124,7 @@ template<VASTExpr::Opcode Opcode>
 VASTValPtr DemandedBitOptimizer::shrinkCarryChain(VASTExpr *Expr) {
   APInt KnownBits = Expr->getKnownBits();
 
-  // Only optimize the leading bits, it is the carry chaings optimizations to
+  // Only trim the leading bits, it is the carry chaings optimizations to
   // trim the tailing bits.
   unsigned Leadings = KnownBits.countLeadingOnes();
   unsigned Bitwidth = Expr->getBitWidth();
@@ -147,8 +150,7 @@ VASTValPtr DemandedBitOptimizer::shrinkCarryChain(VASTExpr *Expr) {
 VASTValPtr DemandedBitOptimizer::shrinkShiftLeft(VASTExpr *Expr) {
   APInt KnownBits = Expr->getKnownBits();
 
-  // Only optimize the leading bits, it is the carry chaings optimizations to
-  // trim the tailing bits.
+  // Only trim the leading bits
   unsigned Leadings = KnownBits.countLeadingOnes();
   unsigned Bitwidth = Expr->getBitWidth();
 
@@ -166,6 +168,32 @@ VASTValPtr DemandedBitOptimizer::shrinkShiftLeft(VASTExpr *Expr) {
   VASTValPtr Lo = BLO.optimizeShift(VASTExpr::dpShl, LHS, Expr->getOperand(1),
                                     UB);
   VASTValPtr Hi = BLO->getConstant(Expr->getKnownValues(Bitwidth, UB));
+  VASTValPtr Segments[] = { Hi, Lo };
+  return BLO.optimizedpBitCat<VASTValPtr>(Segments, Bitwidth);
+}
+
+template<VASTExpr::Opcode Opcode>
+VASTValPtr DemandedBitOptimizer::shrinkShiftRight(VASTExpr *Expr) {
+  APInt KnownBits = Expr->getKnownBits();
+
+  // Only trim the tailing bits.
+  unsigned Trailing = KnownBits.countTrailingOnes();
+  unsigned Bitwidth = Expr->getBitWidth();
+
+  if (Trailing == 0) {
+    // Get the tailing unused bits.
+    APInt UsedBits = getUsedBits(Expr);
+    Trailing = UsedBits.countTrailingZeros();
+
+    if (Trailing == 0)
+      return Expr;
+  }
+
+  unsigned LB = Trailing;
+  VASTValPtr LHS = BLO.optimizeBitExtract(Expr->getOperand(0), Bitwidth, Trailing);
+  VASTValPtr Hi = BLO.optimizeShift(Opcode, LHS, Expr->getOperand(1),
+                                    Bitwidth - Trailing);
+  VASTValPtr Lo = BLO->getConstant(Expr->getKnownValues(Trailing, 0));
   VASTValPtr Segments[] = { Hi, Lo };
   return BLO.optimizedpBitCat<VASTValPtr>(Segments, Bitwidth);
 }
