@@ -91,6 +91,8 @@ InlineCost HLSInliner::getInlineCost(CallSite CS)  {
                                       Attribute::NoInline))
     return InlineCost::getNever();
 
+  DesignMetrics::DesignCost Cost = lookupOrComputeCost(F);
+
   unsigned NumUses = 0;
   typedef Instruction::use_iterator use_iterator;
   for (use_iterator I = F->use_begin(), E = F->use_end(); I != E; ++I) {
@@ -100,17 +102,11 @@ InlineCost HLSInliner::getInlineCost(CallSite CS)  {
 
     Function *CurCaller = CurCS.getCaller();
 
-    // Don't try to inline F if all its caller function are not visited, but
-    // please not that CurCaller will never be visited if it do not have any
-    // user.
-    if (!CachedCost.count(CurCaller) && CurCaller->getNumUses() != 0)
-      return InlineCost::getNever();
-
-    if (CurCaller == CallerF) ++NumUses;
+    if (CurCaller == CallerF)
+      ++NumUses;
   }
 
   DEBUG(dbgs() << "Function: " << F->getName() << '\n');
-  DesignMetrics::DesignCost Cost = lookupOrComputeCost(F);
   uint64_t Threshold = 64000;
   uint64_t IncreasedCost = Cost.getCostInc(NumUses, 1, 8, 0) * Cost.StepLB;
 
