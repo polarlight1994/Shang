@@ -97,6 +97,7 @@ public:
     return Builder.buildExpr(Opcode, FlattenOps, BitWidth);
   }
 
+  // Optimizations for bitwise operations, bit manipulations
   VASTValPtr optimizeBitCatImpl(MutableArrayRef<VASTValPtr> Ops,
                                 unsigned BitWidth);
   VASTValPtr optimizeBitRepeat(VASTValPtr Pattern, unsigned Times);
@@ -113,7 +114,10 @@ public:
     return optimizeBitExtract(V, V->getBitWidth(), V->getBitWidth() - 1);
   }
 
+  VASTValPtr optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
+                           unsigned BitWidth);
 
+  // Optimizations for carry chain related operations.
   VASTValPtr optimizeAddImpl(MutableArrayRef<VASTValPtr>  Ops,
                              unsigned BitWidth);
 
@@ -126,9 +130,6 @@ public:
   VASTValPtr optimizeCarryChain(VASTExpr::Opcode Opcode,
                                 MutableArrayRef<VASTValPtr>  Ops,
                                 unsigned BitWidth);
-
-  VASTValPtr optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
-                           unsigned BitWidth);
 
   // Optimize the comparisons.
   VASTValPtr optimizeSGT(VASTValPtr LHS, VASTValPtr RHS);
@@ -179,6 +180,40 @@ public:
   // Extract the bit position to split the knwon bits and unknwon bits.
   static
   void extractSplitPositions(APInt Mask, SmallVectorImpl<unsigned> &SplitPos);
+
+  template<VASTExpr::Opcode Opcode, typename T>
+  VASTValPtr splitAndConCat(ArrayRef<T> Ops, unsigned BitWidth,
+                            ArrayRef<unsigned> SplitPos) {
+    unsigned NumSegments = SplitPos.size();
+    SmallVector<VASTValPtr, 8> Bits(NumSegments, None);
+    unsigned LB = 0;
+
+    for (unsigned i = 0; i < NumSegments; ++i) {
+      unsigned UB = SplitPos[i];
+
+      SmallVector<VASTValPtr, 8> Operands;
+
+      // Build the And for the current segment.
+      for (unsigned j = 0, e = Ops.size(); j < e; ++j) {
+        VASTValPtr V = Ops[j];
+        VASTBitMask CurMask = V;
+
+        if (CurMask.isAllBitKnown(UB, LB))
+          Operands.push_back(getConstant(CurMask.getKnownValues(UB, LB)));
+        else
+          Operands.push_back(optimizeBitExtract(V, UB, LB));
+      }
+
+      // Put the segments from MSB to LSB, which is required by the BitCat
+      // expression.
+      Bits[NumSegments - i - 1]
+        = optimizeNAryExpr<Opcode, VASTValPtr>(Operands, UB - LB);
+
+      LB = UB;
+    }
+
+    return optimizedpBitCat<VASTValPtr>(Bits, BitWidth);
+  }
 
   bool replaceIfNotEqual(VASTValPtr From, VASTValPtr To);
 

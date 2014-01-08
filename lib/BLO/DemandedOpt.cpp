@@ -72,50 +72,12 @@ VASTValPtr DemandedBitOptimizer::shrinkParallel(VASTExpr *Expr) {
   if (!BLO.hasEnoughKnownbits(Expr->getKnownBits(), false))
     return Expr;
 
-  unsigned Bitwidth = KnownBits.getBitWidth();
+  unsigned BitWidth = KnownBits.getBitWidth();
 
   SmallVector<unsigned, 8> SplitPos;
   DatapathBLO::extractSplitPositions(KnownBits, SplitPos);
 
-  unsigned NumSegments = SplitPos.size();
-  SmallVector<VASTValPtr, 8> Bits(NumSegments, None);
-  unsigned LB = 0;
-
-  for (unsigned i = 0; i < NumSegments; ++i) {
-    unsigned UB = SplitPos[i];
-
-    // Use the knwon bits when ever possible.
-    if (Expr->isAllBitKnown(UB, LB)) {
-      Bits[NumSegments - i - 1]
-        = BLO->getConstant(Expr->getKnownValues(UB, LB));
-      LB = UB;
-      continue;
-    }
-
-    SmallVector<VASTValPtr, 8> Operands;
-
-    // Build the And for the current segment.
-    for (unsigned j = 0, e = Expr->size(); j < e; ++j) {
-      VASTValPtr V = Expr->getOperand(j);
-      VASTBitMask CurMask = V;
-
-      if (CurMask.isAllBitKnown(UB, LB))
-        V = BLO->getConstant(CurMask.getKnownValues(UB, LB));
-      else
-        V = BLO.optimizeBitExtract(V, UB, LB);
-
-      Operands.push_back(V);
-    }
-
-    // Put the segments from MSB to LSB, which is required by the BitCat
-    // expression.
-    Bits[NumSegments - i - 1]
-      = BLO.optimizeNAryExpr<Opcode, VASTValPtr>(Operands, UB - LB);
-
-    LB = UB;
-  }
-
-  return BLO.optimizedpBitCat<VASTValPtr>(Bits, Bitwidth);
+  return BLO.splitAndConCat<Opcode>(Expr->getOperands(), BitWidth, SplitPos);
 }
 
 bool
