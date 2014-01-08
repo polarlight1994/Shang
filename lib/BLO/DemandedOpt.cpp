@@ -111,12 +111,12 @@ VASTValPtr DemandedBitOptimizer::shrinkParallel(VASTExpr *Expr) {
   if (BLO.hasEnoughKnownbits(KnownBits, false))
     DatapathBLO::extractSplitPositions(KnownBits, SplitPos);
   else {
-    APInt KnownBits = ~getUsedBits(Expr);
+    APInt UsedBits = getUsedBits(Expr);
 
-    if (!BLO.hasEnoughKnownbits(KnownBits, false))
+    if (!BLO.hasEnoughKnownbits(UsedBits, false))
       return Expr;
 
-    DatapathBLO::extractSplitPositions(KnownBits, SplitPos);
+    DatapathBLO::extractSplitPositions(UsedBits, SplitPos);
   }
 
   return BLO.splitAndConCat<Opcode>(Expr->getOperands(), BitWidth, SplitPos);
