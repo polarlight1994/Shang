@@ -24,6 +24,11 @@
 using namespace llvm;
 using namespace vast;
 
+TimingAnalysis::PhysicalDelay TimingAnalysis::getArrivalTime(VASTValue *To,
+                                                             VASTValue *From) {
+  return TA->getArrivalTime(To, From);
+}
+
 TimingAnalysis::PhysicalDelay TimingAnalysis::getArrivalTime(VASTSelector *To,
                                                              VASTSeqValue *From) {
   return TA->getArrivalTime(To, From);
