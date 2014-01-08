@@ -231,19 +231,48 @@ void DesignMetricsImpl::visit(Function &F) {
     visit(**I);
 }
 
+static unsigned LogCeiling(unsigned x, unsigned n) {
+  unsigned log2n = Log2_32_Ceil(n);
+  return (Log2_32_Ceil(x) + log2n - 1) / log2n;
+}
+
+static unsigned DivCeiling(unsigned x, unsigned y) {
+  return (x + y - 1) / y;
+}
+
 uint64_t DesignMetricsImpl::getFUCost(const VASTExpr *Expr) const {
   unsigned ValueSize = std::min(Expr->getBitWidth() - Expr->getNumKnownBits(), 64u);
 
   switch (Expr->getOpcode()) {
   default: break;
-
-  case VASTExpr::dpAdd: return LuaI::Get<VFUAddSub>()->lookupCost(ValueSize);
-  case VASTExpr::dpMul: return LuaI::Get<VFUMult>()->lookupCost(ValueSize);
+  case VASTExpr::dpLUT:
+    return VFUs::LUTCost * ValueSize;
+  case VASTExpr::dpAnd: {
+    unsigned LL = LogCeiling(Expr->size(), VFUs::MaxLutSize);
+    unsigned NumLUTs = DivCeiling((pow(VFUs::MaxLutSize, LL) - 1),
+                                   VFUs::MaxLutSize - 1);
+    return VFUs::LUTCost * ValueSize * NumLUTs;
+  }
+  case VASTExpr::dpRAnd:
+  case VASTExpr::dpRXor: {
+    VASTValPtr V = Expr->getOperand(0);
+    unsigned InputBits = V->getBitWidth() - VASTBitMask(V).getNumKnownBits();
+    unsigned LL = LogCeiling(InputBits, VFUs::MaxLutSize);
+    unsigned NumLUTs = DivCeiling((pow(VFUs::MaxLutSize, LL) - 1),
+                                   VFUs::MaxLutSize - 1);
+    return VFUs::LUTCost * NumLUTs;
+  }
+  case VASTExpr::dpAdd:
+    return LuaI::Get<VFUAddSub>()->lookupCost(ValueSize);
+  case VASTExpr::dpMul:
+    return LuaI::Get<VFUMult>()->lookupCost(ValueSize);
   case VASTExpr::dpSGT:
-  case VASTExpr::dpUGT: return LuaI::Get<VFUICmp>()->lookupCost(ValueSize);
+  case VASTExpr::dpUGT:
+    return LuaI::Get<VFUICmp>()->lookupCost(Expr->getOperand(0)->getBitWidth());
   case VASTExpr::dpShl:
   case VASTExpr::dpAshr:
-  case VASTExpr::dpLshr: return LuaI::Get<VFUShift>()->lookupCost(ValueSize);
+  case VASTExpr::dpLshr:
+    return LuaI::Get<VFUShift>()->lookupCost(ValueSize);
   }
 
   return 0;
@@ -296,6 +325,7 @@ void DesignMetricsImpl::optimize() {
     Changed |= optimize(Opt, Datas);
     Changed |= optimize(Opt, PHIs);
 
+    Opt.performLUTMapping();
     Opt.resetForNextIteration();
   }
 }

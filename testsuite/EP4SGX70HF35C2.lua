@@ -21,6 +21,8 @@ FUs.MemoryBus.AddrLatency = 1.053 / PERIOD -- Block RAM
 FUs.udiv = { Latencies = { ['64'] = 140.679 / PERIOD } }
 FUs.sdiv = { Latencies = { ['64'] = 140.679 / PERIOD } }
 
+FUs.LUTCost = 1
+
 FUs.AddSub = { Latencies = { 0 , 1.450 / PERIOD , 1.631 / PERIOD , 1.953 / PERIOD , 2.601 / PERIOD }, --Add
 	             Costs = {2, 10, 18, 34, 66}, --Add
                StartInterval=1}
