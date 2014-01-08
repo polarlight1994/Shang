@@ -32,7 +32,7 @@ struct DemandedBitOptimizer {
     unsigned BitWidth = V->getBitWidth();
 
     // Do not worry about the 1 bit value ...
-    if (BitWidth == 1)
+    if (BitWidth == 1 || V->use_empty())
       return APInt::getAllOnesValue(BitWidth);
 
     APInt AllUnused = APInt::getAllOnesValue(BitWidth);
@@ -53,6 +53,10 @@ struct DemandedBitOptimizer {
       APInt CurUnused = ~CurUsed;
       AllUnused &= CurUnused;
     }
+
+    // Do not messup with the Exprs with strange user...
+    if (AllUnused.isAllOnesValue())
+      return AllUnused;
 
     APInt Used = ~AllUnused;
     return Used;
@@ -123,18 +127,25 @@ VASTValPtr DemandedBitOptimizer::shrinkCarryChain(VASTExpr *Expr) {
 
   // Only optimize the leading bits, it is the carry chaings optimizations to
   // trim the tailing bits.
-  if (unsigned Leadings = KnownBits.countLeadingOnes()) {
-    unsigned Bitwidth = Expr->getBitWidth();
-    unsigned UB = Bitwidth - Leadings;
+  unsigned Leadings = KnownBits.countLeadingOnes();
+  unsigned Bitwidth = Expr->getBitWidth();
 
-    unsigned SplitPos[] = { 0, UB };
-    VASTValPtr Lo = BLO.splitAndConCat<Opcode>(Expr->getOperands(), UB, SplitPos);
-    VASTValPtr Hi = BLO->getConstant(Expr->getKnownValues(Bitwidth, UB));
-    VASTValPtr Segments[] = { Hi, Lo };
-    return BLO.optimizedpBitCat<VASTValPtr>(Segments, Bitwidth);
+  if (Leadings == 0) {
+    // Get the leading unused bits.
+    APInt UsedBits = getUsedBits(Expr);
+    Leadings = UsedBits.countLeadingZeros();
+
+    if (Leadings == 0)
+      return Expr;
   }
 
-  return Expr;
+  unsigned UB = Bitwidth - Leadings;
+
+  unsigned SplitPos[] = { 0, UB };
+  VASTValPtr Lo = BLO.splitAndConCat<Opcode>(Expr->getOperands(), UB, SplitPos);
+  VASTValPtr Hi = BLO->getConstant(Expr->getKnownValues(Bitwidth, UB));
+  VASTValPtr Segments[] = { Hi, Lo };
+  return BLO.optimizedpBitCat<VASTValPtr>(Segments, Bitwidth);
 }
 
 bool
