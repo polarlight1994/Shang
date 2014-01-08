@@ -3,6 +3,7 @@ add_llvm_library(ShangBLO
   DemandedOpt.cpp
   BitlevelOpt.cpp
   CarryChainOpt.cpp
+  BitManipulate.cpp
 )
 
 get_property(ABC_INCLUDE_DIRS GLOBAL PROPERTY ABC_INCLUDE_DIRS)
