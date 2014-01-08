@@ -279,6 +279,7 @@ public:
   PhysicalDelay getArrivalTimeImpl(VASTValue *To, VASTValue *From);
   PhysicalDelay getArrivalTimeImpl(VASTSelector *To, VASTValue *From);
 
+  PhysicalDelay getArrivalTime(VASTValue *To, VASTValue *From);
   PhysicalDelay getArrivalTime(VASTSelector *To, VASTSeqValue *From);
   PhysicalDelay getArrivalTime(VASTSelector *To, VASTExpr *Thu,
                                VASTSeqValue *From);
@@ -1052,6 +1053,11 @@ TimingNetlist::getArrivalTimeImpl(VASTSelector *To, VASTValue *From) {
   // TODO: Consider wire delay based on the connections.
   return std::max(FIArrival + PhysicalDelay(VFUs::RegDelay),
                   GuardArrival + PhysicalDelay(VFUs::ClkEnDelay));
+}
+
+TimingAnalysis::PhysicalDelay
+TimingNetlist::getArrivalTime(VASTValue *To, VASTValue *From) {
+  return getArrivalTimeImpl(To, From);
 }
 
 TimingAnalysis::PhysicalDelay

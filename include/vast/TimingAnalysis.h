@@ -93,6 +93,8 @@ public:
   TimingAnalysis() : TA(0) {}
 
   virtual ~TimingAnalysis() {}
+
+  virtual PhysicalDelay getArrivalTime(VASTValue *To, VASTValue *From);
   virtual PhysicalDelay getArrivalTime(VASTSelector *To, VASTSeqValue *From);
   virtual PhysicalDelay getArrivalTime(VASTSelector *To, VASTExpr *Thu,
                                        VASTSeqValue *From);
