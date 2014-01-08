@@ -28,6 +28,20 @@ struct DemandedBitOptimizer {
 
   explicit DemandedBitOptimizer(DatapathBLO &BLO) : BLO(BLO) {}
 
+  APInt getUsedBits(VASTSelector *Sel) {
+    // Do not claim any bits unused if the definitions are not available.
+    if (Sel->def_empty())
+      return APInt::getAllOnesValue(Sel->getBitWidth());
+
+    APInt AnyUsed = APInt::getNullValue(Sel->getBitWidth());
+
+    typedef VASTSelector::def_iterator def_iterator;
+    for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I)
+      AnyUsed |= getUsedBits(*I);
+
+    return AnyUsed;
+  }
+
   APInt getUsedBits(VASTValPtr V) {
     unsigned BitWidth = V->getBitWidth();
 
@@ -253,6 +267,7 @@ bool DatapathBLO::shrink(VASTModule &VM) {
   for (selector_iterator I = VM.selector_begin(), E = VM.selector_end();
        I != E; ++I) {
     VASTSelector *Sel = I;
+    APInt UnusedBits = ~DBO.getUsedBits(Sel);
 
     typedef VASTSelector::def_iterator def_iterator;
     for (def_iterator I = Sel->def_begin(), E = Sel->def_end(); I != E; ++I) {
@@ -266,9 +281,20 @@ bool DatapathBLO::shrink(VASTModule &VM) {
         if (Sel->isTrivialFannin(L))
           continue;
 
+        // Get the mask of current SV, fill all unknown bits by 0. We need to
+        // care fully remove the knwon
+        VASTBitMask FIMask(L.getFanin());
+        APInt CurUnusedZeros = (UnusedBits &
+                                ~(SV->getKnownOnes() | FIMask.getKnownOnes()));
+        APInt CurUnusedOnes = (UnusedBits &
+                               ~(SV->getKnownZeros() | FIMask.getKnownOnes() |
+                                 CurUnusedZeros));
+        VASTBitMask Mask(SV->getKnownZeros() | CurUnusedZeros,
+                         SV->getKnownOnes() | CurUnusedOnes);
+
         // Preform fine grain shrinking on fanin of register assignment, avoid
         // *any* known bits!
-        DBO.fineGrainShrinkAndReplace(L, *SV);
+        DBO.fineGrainShrinkAndReplace(L, Mask);
       }
     }
 
