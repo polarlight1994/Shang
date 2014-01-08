@@ -216,7 +216,7 @@ VASTValPtr DatapathBLO::optimizeAndPatialKnowns(MutableArrayRef<VASTValPtr> Ops,
   }
 
   // Split the expression in the middle.
-  unsigned SplitPos[] = { BitWidth / 2, BitWidth };
+  unsigned SplitPos[] = { 0, BitWidth / 2, BitWidth };
   return splitAndConCat<VASTExpr::dpAnd>(Ops, BitWidth, SplitPos);
 }
 

@@ -294,6 +294,7 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
 void DatapathBLO::extractSplitPositions(APInt Mask,
                                         SmallVectorImpl<unsigned> &SplitPos) {
   unsigned Bitwidth = Mask.getBitWidth();
+  SplitPos.push_back(0);
 
   // Calculate the split points to split the known and unknon bits.
   for (unsigned i = 1; i < Bitwidth; ++i) {
@@ -323,13 +324,15 @@ VASTValPtr DatapathBLO::replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
   SmallVector<unsigned, 8> SplitPos;
   extractSplitPositions(KnownBits, SplitPos);
 
-  assert(SplitPos.size() > 1 && "Too few split points!");
+  assert(SplitPos.size() > 2 && "Too few split points!");
 
-  unsigned NumSegments = SplitPos.size();
+  unsigned NumSegments = SplitPos.size() - 1;
   SmallVector<VASTValPtr, 8> Bits(NumSegments, None);
-  unsigned LB = 0;
+  unsigned LB = SplitPos[0];
+  assert(LB == 0 && "Segments do not cover the original value!");
+
   for (unsigned i = 0; i < NumSegments; ++i) {
-    unsigned UB = SplitPos[i];
+    unsigned UB = SplitPos[i + 1];
 
     // Put the segments from MSB to LSB, which is required by the BitCat
     // expression.
@@ -342,6 +345,7 @@ VASTValPtr DatapathBLO::replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
     LB = UB;
   }
 
+  assert(LB == V->getBitWidth() && "Segments do not cover the original value!");
   return optimizedpBitCat<VASTValPtr>(Bits, V->getBitWidth());
 }
 

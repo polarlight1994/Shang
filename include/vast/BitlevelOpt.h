@@ -188,12 +188,12 @@ public:
   template<VASTExpr::Opcode Opcode, typename T>
   VASTValPtr splitAndConCat(ArrayRef<T> Ops, unsigned BitWidth,
                             ArrayRef<unsigned> SplitPos) {
-    unsigned NumSegments = SplitPos.size();
+    unsigned NumSegments = SplitPos.size() - 1;
     SmallVector<VASTValPtr, 8> Bits(NumSegments, None);
-    unsigned LB = 0;
+    unsigned LB = SplitPos[0];
 
     for (unsigned i = 0; i < NumSegments; ++i) {
-      unsigned UB = SplitPos[i];
+      unsigned UB = SplitPos[i + 1];
 
       SmallVector<VASTValPtr, 8> Operands;
 
@@ -216,7 +216,7 @@ public:
       LB = UB;
     }
 
-    return optimizedpBitCat<VASTValPtr>(Bits, BitWidth);
+    return optimizedpBitCat<VASTValPtr>(Bits, SplitPos.back());
   }
 
   bool replaceIfNotEqual(VASTValPtr From, VASTValPtr To);
