@@ -35,31 +35,26 @@ struct DemandedBitOptimizer {
     if (BitWidth == 1 || V->use_empty())
       return APInt::getAllOnesValue(BitWidth);
 
-    APInt AllUnused = APInt::getAllOnesValue(BitWidth);
+    APInt AnyUsed = APInt::getNullValue(BitWidth);
 
     typedef VASTValue::use_iterator iterator;
     for (iterator I = V->use_begin(), E = V->use_end(); I != E; ++I) {
       VASTExpr *Expr = dyn_cast<VASTExpr>(*I);
 
-      if (Expr == NULL)
-        continue;
-
-      // Any expr that is not a bitextract use all bits.
-      if (Expr->getOpcode() != VASTExpr::dpBitExtract)
+      // Any expr user is not a bitextract use all bits.
+      if (Expr == NULL || Expr->getOpcode() != VASTExpr::dpBitExtract)
         // Bits are used only if they are unknown.
         return ~VASTBitMask(V).getKnownBits();
 
       APInt CurUsed = APInt::getBitsSet(BitWidth, Expr->getLB(), Expr->getUB());
-      APInt CurUnused = ~CurUsed;
-      AllUnused &= CurUnused;
+      AnyUsed |= CurUsed;
     }
 
     // Do not messup with the Exprs with strange user...
-    if (AllUnused.isAllOnesValue())
-      return AllUnused;
+    if (!AnyUsed)
+      return APInt::getAllOnesValue(BitWidth);
 
-    APInt Used = ~AllUnused;
-    return Used;
+    return AnyUsed;
   }
 
   VASTValPtr shrink(VASTExpr *Expr) {
