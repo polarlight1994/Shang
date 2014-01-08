@@ -64,6 +64,8 @@ struct DemandedBitOptimizer {
     default: break;
     case VASTExpr::dpLUT:
       break;
+    // BitMask is also a kind of And expr.
+    case VASTExpr::dpBitMask:
     case VASTExpr::dpAnd:
       return shrinkParallel<VASTExpr::dpAnd>(Expr);
     case VASTExpr::dpAdd:
