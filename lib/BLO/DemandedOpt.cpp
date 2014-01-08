@@ -61,8 +61,7 @@ struct DemandedBitOptimizer {
     VASTExpr::Opcode Opcode = Expr->getOpcode();
 
     switch (Opcode) {
-    default:
-      break;
+    default: break;
     case VASTExpr::dpLUT:
       break;
     case VASTExpr::dpAnd:
@@ -72,7 +71,7 @@ struct DemandedBitOptimizer {
     case VASTExpr::dpMul:
       return shrinkCarryChain<VASTExpr::dpMul>(Expr);
     case VASTExpr::dpShl:
-      break;
+      return shrinkShiftLeft(Expr);
     case VASTExpr::dpAshr:
       break;
     case VASTExpr::dpLshr:
@@ -87,6 +86,8 @@ struct DemandedBitOptimizer {
 
   template<VASTExpr::Opcode Opcode>
   VASTValPtr shrinkCarryChain(VASTExpr *Expr);
+
+  VASTValPtr shrinkShiftLeft(VASTExpr *Expr);
 
   // Shrink V and replace V on all its user.
   bool shrinkAndReplace(VASTValPtr V, VASTBitMask Mask, bool FineGrain);
@@ -138,6 +139,32 @@ VASTValPtr DemandedBitOptimizer::shrinkCarryChain(VASTExpr *Expr) {
 
   unsigned SplitPos[] = { 0, UB };
   VASTValPtr Lo = BLO.splitAndConCat<Opcode>(Expr->getOperands(), UB, SplitPos);
+  VASTValPtr Hi = BLO->getConstant(Expr->getKnownValues(Bitwidth, UB));
+  VASTValPtr Segments[] = { Hi, Lo };
+  return BLO.optimizedpBitCat<VASTValPtr>(Segments, Bitwidth);
+}
+
+VASTValPtr DemandedBitOptimizer::shrinkShiftLeft(VASTExpr *Expr) {
+  APInt KnownBits = Expr->getKnownBits();
+
+  // Only optimize the leading bits, it is the carry chaings optimizations to
+  // trim the tailing bits.
+  unsigned Leadings = KnownBits.countLeadingOnes();
+  unsigned Bitwidth = Expr->getBitWidth();
+
+  if (Leadings == 0) {
+    // Get the leading unused bits.
+    APInt UsedBits = getUsedBits(Expr);
+    Leadings = UsedBits.countLeadingZeros();
+
+    if (Leadings == 0)
+      return Expr;
+  }
+
+  unsigned UB = Bitwidth - Leadings;
+  VASTValPtr LHS = BLO.optimizeBitExtract(Expr->getOperand(0), UB, 0);
+  VASTValPtr Lo = BLO.optimizeShift(VASTExpr::dpShl, LHS, Expr->getOperand(1),
+                                    UB);
   VASTValPtr Hi = BLO->getConstant(Expr->getKnownValues(Bitwidth, UB));
   VASTValPtr Segments[] = { Hi, Lo };
   return BLO.optimizedpBitCat<VASTValPtr>(Segments, Bitwidth);
