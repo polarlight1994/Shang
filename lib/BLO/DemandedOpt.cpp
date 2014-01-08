@@ -64,21 +64,19 @@ struct DemandedBitOptimizer {
     switch (Opcode) {
     default:
       break;
-    case vast::VASTExpr::dpLUT:
+    case VASTExpr::dpLUT:
       break;
     case VASTExpr::dpAnd:
       return shrinkParallel<VASTExpr::dpAnd>(Expr);
-    case vast::VASTExpr::dpAdd:
+    case VASTExpr::dpAdd:
+      return shrinkCarryChain<VASTExpr::dpAdd>(Expr);
+    case VASTExpr::dpMul:
+      return shrinkCarryChain<VASTExpr::dpMul>(Expr);
+    case VASTExpr::dpShl:
       break;
-    case vast::VASTExpr::dpMul:
+    case VASTExpr::dpAshr:
       break;
-    case vast::VASTExpr::dpShl:
-      break;
-    case vast::VASTExpr::dpAshr:
-      break;
-    case vast::VASTExpr::dpLshr:
-      break;
-    case vast::VASTExpr::dpROMLookUp:
+    case VASTExpr::dpLshr:
       break;
     }
 
@@ -87,6 +85,10 @@ struct DemandedBitOptimizer {
 
   template<VASTExpr::Opcode Opcode>
   VASTValPtr shrinkParallel(VASTExpr *Expr);
+
+  template<VASTExpr::Opcode Opcode>
+  VASTValPtr shrinkCarryChain(VASTExpr *Expr);
+
   // Shrink V and replace V on all its user.
   bool shrinkAndReplace(VASTValPtr V, VASTBitMask Mask, bool FineGrain);
   // Shrink the value used by U, and replace it on U only.
@@ -113,6 +115,26 @@ VASTValPtr DemandedBitOptimizer::shrinkParallel(VASTExpr *Expr) {
   }
 
   return BLO.splitAndConCat<Opcode>(Expr->getOperands(), BitWidth, SplitPos);
+}
+
+template<VASTExpr::Opcode Opcode>
+VASTValPtr DemandedBitOptimizer::shrinkCarryChain(VASTExpr *Expr) {
+  APInt KnownBits = Expr->getKnownBits();
+
+  // Only optimize the leading bits, it is the carry chaings optimizations to
+  // trim the tailing bits.
+  if (unsigned Leadings = KnownBits.countLeadingOnes()) {
+    unsigned Bitwidth = Expr->getBitWidth();
+    unsigned UB = Bitwidth - Leadings;
+
+    unsigned SplitPos[] = { 0, UB };
+    VASTValPtr Lo = BLO.splitAndConCat<Opcode>(Expr->getOperands(), UB, SplitPos);
+    VASTValPtr Hi = BLO->getConstant(Expr->getKnownValues(Bitwidth, UB));
+    VASTValPtr Segments[] = { Hi, Lo };
+    return BLO.optimizedpBitCat<VASTValPtr>(Segments, Bitwidth);
+  }
+
+  return Expr;
 }
 
 bool
