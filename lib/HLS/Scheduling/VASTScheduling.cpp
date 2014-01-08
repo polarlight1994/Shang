@@ -1067,7 +1067,7 @@ void VASTScheduling::fixSchedulingGraph() {
       continue;
 
     // Ignore the virtual nodes.
-    if (U->isVirtual())
+    if (U->isVirtual() && !U->isPHI())
       continue;
 
     Instruction *Inst = U->getInst();
