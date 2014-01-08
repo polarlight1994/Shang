@@ -28,6 +28,35 @@ struct DemandedBitOptimizer {
 
   explicit DemandedBitOptimizer(DatapathBLO &BLO) : BLO(BLO) {}
 
+  VASTValPtr shrink(VASTExpr *Expr) {
+    VASTExpr::Opcode Opcode = Expr->getOpcode();
+
+    switch (Opcode) {
+    default:
+      break;
+    case vast::VASTExpr::dpLUT:
+      break;
+    case VASTExpr::dpAnd:
+      return shrinkParallel<VASTExpr::dpAnd>(Expr);
+    case vast::VASTExpr::dpAdd:
+      break;
+    case vast::VASTExpr::dpMul:
+      break;
+    case vast::VASTExpr::dpShl:
+      break;
+    case vast::VASTExpr::dpAshr:
+      break;
+    case vast::VASTExpr::dpLshr:
+      break;
+    case vast::VASTExpr::dpROMLookUp:
+      break;
+    }
+
+    return Expr;
+  }
+
+  template<VASTExpr::Opcode Opcode>
+  VASTValPtr shrinkParallel(VASTExpr *Expr);
   // Shrink V and replace V on all its user.
   bool shrinkAndReplace(VASTValPtr V, VASTBitMask Mask, bool FineGrain);
   // Shrink the value used by U, and replace it on U only.
@@ -36,6 +65,59 @@ struct DemandedBitOptimizer {
 }
 
 //===----------------------------------------------------------------------===//
+template<VASTExpr::Opcode Opcode>
+VASTValPtr DemandedBitOptimizer::shrinkParallel(VASTExpr *Expr) {
+  APInt KnownBits = Expr->getKnownBits();
+
+  if (!BLO.hasEnoughKnownbits(Expr->getKnownBits(), false))
+    return Expr;
+
+  unsigned Bitwidth = KnownBits.getBitWidth();
+
+  SmallVector<unsigned, 8> SplitPos;
+  DatapathBLO::extractSplitPositions(KnownBits, SplitPos);
+
+  unsigned NumSegments = SplitPos.size();
+  SmallVector<VASTValPtr, 8> Bits(NumSegments, None);
+  unsigned LB = 0;
+
+  for (unsigned i = 0; i < NumSegments; ++i) {
+    unsigned UB = SplitPos[i];
+
+    // Use the knwon bits when ever possible.
+    if (Expr->isAllBitKnown(UB, LB)) {
+      Bits[NumSegments - i - 1]
+        = BLO->getConstant(Expr->getKnownValues(UB, LB));
+      LB = UB;
+      continue;
+    }
+
+    SmallVector<VASTValPtr, 8> Operands;
+
+    // Build the And for the current segment.
+    for (unsigned j = 0, e = Expr->size(); j < e; ++j) {
+      VASTValPtr V = Expr->getOperand(j);
+      VASTBitMask CurMask = V;
+
+      if (CurMask.isAllBitKnown(UB, LB))
+        V = BLO->getConstant(CurMask.getKnownValues(UB, LB));
+      else
+        V = BLO.optimizeBitExtract(V, UB, LB);
+
+      Operands.push_back(V);
+    }
+
+    // Put the segments from MSB to LSB, which is required by the BitCat
+    // expression.
+    Bits[NumSegments - i - 1]
+      = BLO.optimizeNAryExpr<Opcode, VASTValPtr>(Operands, UB - LB);
+
+    LB = UB;
+  }
+
+  return BLO.optimizedpBitCat<VASTValPtr>(Bits, Bitwidth);
+}
+
 bool
 DemandedBitOptimizer::fineGrainShrinkAndReplace(VASTUse &U, VASTBitMask Mask) {
   VASTValPtr V = U;
@@ -60,6 +142,26 @@ DemandedBitOptimizer::fineGrainShrinkAndReplace(VASTUse &U, VASTBitMask Mask) {
 bool DatapathBLO::shrink(VASTModule &VM) {
   bool Changed = false;
   DemandedBitOptimizer DBO(*this);
+
+  bool DatapathChanged = true;
+
+  while (DatapathChanged) {
+    DatapathChanged = false;
+    typedef DatapathContainer::expr_iterator iterator;
+    for (iterator I = Datapath.expr_begin(); I != Datapath.expr_end(); /*++I*/) {
+      VASTExpr *Expr = I;
+
+      // Use Handle to trace the potantial replacement.
+      VASTHandle VH(++I);
+
+      VASTValPtr NewVal = DBO.shrink(Expr);
+      if (replaceIfNotEqual(Expr, NewVal)) {
+        Changed = DatapathChanged = true;
+        // Recover the iterator from the replacement.
+        I = VH.getAsLValue<VASTExpr>();
+      }
+    }
+  }
 
   typedef VASTModule::selector_iterator selector_iterator;
   for (selector_iterator I = VM.selector_begin(), E = VM.selector_end();
