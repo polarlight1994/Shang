@@ -797,12 +797,13 @@ void VASTSeqValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
     OS << VASTValue::BitRange(UB, LB, getBitWidth() > 1);
 
   // OS << "/*" << this << "*/";
+  unsigned OperandWidth = UB - LB;
 
   // Mask away the known zeros, if there is any.
   if (hasAnyZeroKnown(UB, LB)) {
     SmallString<128> Str;
     (~getKnownZeros(UB, LB)).toString(Str, 2, false, false);
-    OS << " & " << getBitWidth() << "'b" << Str;
+    OS << " & " << OperandWidth << "'b" << Str;
   }
   OS << ")";
 
@@ -810,7 +811,7 @@ void VASTSeqValue::printAsOperandImpl(raw_ostream &OS, unsigned UB,
   if (hasAnyOneKnown(UB, LB)) {
     SmallString<128> Str;
     getKnownOnes(UB, LB).toString(Str, 2, false, false);
-    OS << " | " << getBitWidth() << "'b" << Str;
+    OS << " | " << OperandWidth << "'b" << Str;
   }
   OS << ")";
 }
