@@ -106,6 +106,10 @@ public:
   VASTValPtr optimizeAndImpl(MutableArrayRef<VASTValPtr>  Ops,
                              unsigned BitWidth);
 
+  // Optimize the and expressions with patial known bits in its operand.
+  VASTValPtr optimizeAndPatialKnowns(MutableArrayRef<VASTValPtr>  Ops,
+                                     unsigned BitWidth);
+
   VASTValPtr optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op);
   
   VASTValPtr optimizeAnnotation(VASTExpr::Opcode Opcode, VASTValPtr Op);

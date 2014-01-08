@@ -200,6 +200,26 @@ VASTValPtr DatapathBLO::optimizeBitCatImpl(MutableArrayRef<VASTValPtr> Ops,
   return Builder.buildBitCatExpr(Ops, BitWidth);
 }
 
+VASTValPtr DatapathBLO::optimizeAndPatialKnowns(MutableArrayRef<VASTValPtr> Ops,
+                                                unsigned BitWidth) {
+  if (BitWidth == 1)
+    return Builder.buildAndExpr(Ops, BitWidth);
+
+  for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
+    APInt CurKnowns = VASTBitMask(Ops[i]).getKnownBits();
+
+    if (!isMask(CurKnowns) && !isMask(~CurKnowns))
+      return Builder.buildAndExpr(Ops, BitWidth);
+
+    if (CurKnowns.countPopulation() < BitWidth / 2)
+      return Builder.buildAndExpr(Ops, BitWidth);
+  }
+
+  // Split the expression in the middle.
+  unsigned SplitPos[] = { BitWidth / 2, BitWidth };
+  return splitAndConCat<VASTExpr::dpAnd>(Ops, BitWidth, SplitPos);
+}
+
 VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
                                         unsigned BitWidth) {
   // Handle the trivial case trivially.
@@ -239,7 +259,7 @@ VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
   // Resize the operand vector so it only contains valid operands.
   Ops = Ops.slice(0, ActualPos);
 
-  VASTValPtr And = Builder.buildAndExpr(Ops, BitWidth);
+  VASTValPtr And = optimizeAndPatialKnowns(Ops, BitWidth);
 
   // Build the bitmask expression if we get some mask.
   if (!C.isAllOnesValue()) {
