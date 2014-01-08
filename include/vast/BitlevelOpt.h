@@ -130,6 +130,7 @@ public:
   VASTValPtr optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
                            unsigned BitWidth);
 
+  // Optimize the comparisons.
   VASTValPtr optimizeSGT(VASTValPtr LHS, VASTValPtr RHS);
   VASTValPtr optimizeUGT(VASTValPtr LHS, VASTValPtr RHS);
   VASTValPtr optimizeCmpWithConst(VASTExpr::Opcode Opcode, VASTValPtr X,
@@ -174,6 +175,10 @@ public:
   VASTValPtr replaceKnownBits(VASTValPtr V);
   VASTValPtr replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
                                       bool FineGrain);
+
+  // Extract the bit position to split the knwon bits and unknwon bits.
+  static
+  void extractSplitPositions(APInt Mask, SmallVectorImpl<unsigned> &SplitPos);
 
   bool replaceIfNotEqual(VASTValPtr From, VASTValPtr To);
 

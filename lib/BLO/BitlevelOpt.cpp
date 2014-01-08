@@ -290,6 +290,19 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   return Expr;
 }
 
+void DatapathBLO::extractSplitPositions(APInt Mask,
+                                        SmallVectorImpl<unsigned> &SplitPos) {
+  unsigned Bitwidth = Mask.getBitWidth();
+
+  // Calculate the split points to split the known and unknon bits.
+  for (unsigned i = 1; i < Bitwidth; ++i) {
+    if (Mask[i] != Mask[i - 1])
+      SplitPos.push_back(i);
+  }
+
+  SplitPos.push_back(Bitwidth);
+}
+
 VASTValPtr DatapathBLO::replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
                                                  bool FineGrain) {
   APInt KnownBits = Mask.getKnownBits();
@@ -307,15 +320,7 @@ VASTValPtr DatapathBLO::replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
     return V;
 
   SmallVector<unsigned, 8> SplitPos;
-  unsigned Bitwidth = Mask.getMaskWidth();
-
-  // Calculate the split points to split the known and unknon bits.
-  for (unsigned i = 1; i < Bitwidth; ++i) {
-    if (KnownBits[i] != KnownBits[i - 1])
-      SplitPos.push_back(i);
-  }
-
-  SplitPos.push_back(Bitwidth);
+  extractSplitPositions(KnownBits, SplitPos);
 
   assert(SplitPos.size() > 1 && "Too few split points!");
 
@@ -336,7 +341,7 @@ VASTValPtr DatapathBLO::replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
     LB = UB;
   }
 
-  return optimizedpBitCat<VASTValPtr>(Bits, Bitwidth);
+  return optimizedpBitCat<VASTValPtr>(Bits, V->getBitWidth());
 }
 
 VASTValPtr DatapathBLO::replaceKnownBits(VASTValPtr V) {
