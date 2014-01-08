@@ -197,14 +197,6 @@ public:
   void printModuleDecl(raw_ostream &OS) const;
   void printSignalDecl(raw_ostream &OS) const;
 
-  template<class T>
-  T *lookupSymbol(const Twine &Name) const {
-    SymTabTy::const_iterator at = SymbolTable.find(Name.str());
-    if (at == SymbolTable.end()) return 0;
-
-    return cast_or_null<T>(at->second);
-  }
-
   // Allow user to add ports.
   VASTPort *addPort(VASTNode *Node, bool IsInput);
   VASTInPort *addInputPort(const Twine &Name, unsigned BitWidth,
