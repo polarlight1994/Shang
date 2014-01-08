@@ -51,10 +51,11 @@ bool DatapathBLO::isShiftedMask(APInt Value) {
 }
 
 bool DatapathBLO::hasEnoughKnownbits(APInt KnownBits, bool FineGrain) {
-  return DatapathBLO::isMask(KnownBits) ||
-         DatapathBLO::isShiftedMask(KnownBits) ||
-         DatapathBLO::isShiftedMask(~KnownBits) ||
-         (KnownBits.getBoolValue() && FineGrain);
+  return KnownBits.getBoolValue() && (
+           DatapathBLO::isMask(KnownBits) ||
+           DatapathBLO::isShiftedMask(KnownBits) ||
+           DatapathBLO::isShiftedMask(~KnownBits) ||
+           FineGrain);
 }
 
 //===----------------------------------------------------------------------===//
