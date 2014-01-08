@@ -16,7 +16,10 @@
 #include "vast/BitlevelOpt.h"
 #include "vast/Passes.h"
 #include "vast/VASTModule.h"
+#include "vast/Dataflow.h"
 #include "vast/VASTModulePass.h"
+
+#include "llvm/Analysis/Dominators.h"
 
 #include "llvm/ADT/Statistic.h"
 #define DEBUG_TYPE "vast-bit-level-opt"
@@ -30,6 +33,7 @@ STATISTIC(NodesReplaced,
 STATISTIC(NodesReplacedByKnownBits,
           "Number of Nodes whose bits are all known "
           "during the bit-level optimization");
+STATISTIC(SlotsEliminated, "Number of unreachable states eliminated");
 
 //===----------------------------------------------------------------------===//
 /// Stole from LLVM's MathExtras.h
@@ -935,9 +939,12 @@ struct BitlevelOpt : public VASTModulePass {
 
   bool runOnVASTModule(VASTModule &VM);
 
+  void eliminateDeadSlot(VASTCtrlRgn &R, DominatorTree &DT, Dataflow& DF);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
+    AU.addRequired<DominatorTree>();
+    AU.addRequired<Dataflow>();
     AU.addPreservedID(PreSchedBindingID);
     AU.addPreservedID(ControlLogicSynthesisID);
     AU.addPreservedID(TimingDrivenSelectorSynthesisID);
@@ -966,13 +973,101 @@ bool BitlevelOpt::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
 
 bool BitlevelOpt::runOnVASTModule(VASTModule &VM) {
   DatapathBLO BLO(VM);
+  DominatorTree &DT = getAnalysis<DominatorTree>();
+  Dataflow &DF = getAnalysis<Dataflow>();
 
   do {
     BLO.resetForNextIteration();
+    eliminateDeadSlot(VM, DT, DF);
     VM.gc();
   } while (runSingleIteration(VM, BLO));
 
   return true;
+}
+
+static void UnlinkFromPreds(VASTSlot *S) {
+  SmallVector<VASTSlot*, 4> Preds(S->pred_begin(), S->pred_end());
+
+  while (!Preds.empty()) {
+    VASTSlot *PredSlot = Preds.pop_back_val();
+    // Remove the edge from the STG
+    PredSlot->unlinkSucc(S);
+
+    typedef VASTSlot::op_iterator op_iterator;
+    // Locate the corresponding branch operation and erase it.
+    for (op_iterator I = PredSlot->op_begin(); I != PredSlot->op_end(); ++I) {
+      VASTSlotCtrl *Br = dyn_cast<VASTSlotCtrl>(*I);
+      if (Br == NULL || !Br->isBranch())
+        continue;
+
+      if (Br->getTargetSlot() == S) {
+        Br->eraseFromParent();
+        break;
+      }
+    }
+  }
+}
+
+void
+BitlevelOpt::eliminateDeadSlot(VASTCtrlRgn &R, DominatorTree &DT, Dataflow &DF) {
+  bool Changed = false;
+
+  typedef VASTModule::slot_iterator slot_iterator;
+  // Build the signals corresponding to the slots.
+  for (slot_iterator I = R.slot_begin(), E = R.slot_end(); I != E; /*++I*/) {
+    VASTSlot *S = I++;
+
+    // The slot is dead.
+    if (S->pred_size() == 0) {
+      if (!S->IsSubGrp) {
+        DF.addUnreachableBlocks(S->getParent());
+        ++SlotsEliminated;
+      }
+
+      S->unlinkSuccs();
+      S->eraseFromParent();
+      Changed = true;
+      continue;
+    }
+
+    SmallVector<VASTSlotCtrl*, 4> DeadOps;
+    typedef VASTSlot::op_iterator op_iterator;
+    for (op_iterator I = S->op_begin(); I != S->op_end(); ++I) {
+      VASTSlotCtrl *SeqOp = dyn_cast<VASTSlotCtrl>(*I);
+      if (SeqOp == NULL || !SeqOp->isBranch())
+        continue;
+
+      if (SeqOp->getGuard() != VASTConstant::False)
+        continue;
+
+      DeadOps.push_back(SeqOp);
+    }
+
+    while (!DeadOps.empty()) {
+      VASTSlotCtrl *SeqOp = DeadOps.pop_back_val();
+
+      VASTSlot *Succ = SeqOp->getTargetSlot();
+
+      // Eliminate the STG edge and corresponding branch operation (i.e. state
+      // transfer operation).
+      S->unlinkSucc(Succ);
+      SeqOp->eraseFromParent();
+
+      // We can prove the slot dead according to the dominator tree: If the
+      // dominating CFG edge will never be taken, the target BB of the edge
+      // is dead.
+      if (DT.dominates(S->getParent(), Succ->getParent())) {
+        UnlinkFromPreds(Succ);
+        Changed = true;
+      }
+    }
+  }
+
+  if (!Changed)
+    return;
+
+  // Start over if any slot is deleted, this may expose more dead blocks.
+  return eliminateDeadSlot(R, DT, DF);
 }
 
 Pass *vast::createBitlevelOptPass() {

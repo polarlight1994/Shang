@@ -36,6 +36,13 @@ bool VASTCtrlRgn::gcImpl() {
       DEBUG(dbgs() << "Removing SeqOp whose predicate is always false:\n";
             Op->dump(););
 
+      // Work Around: Do not eliminate the VASTSlotCtrl, which will distory the
+      // STG information. Instead, the only valid place to delate these
+      // operations is in the bit-level optimization pass, which will correctly
+      // restruct the STG information.
+      if (isa<VASTSlotCtrl>(Op))
+        continue;
+
       Op->eraseFromParent();
 
       Changed |= true;
