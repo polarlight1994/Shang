@@ -10,7 +10,7 @@
 // This file implement the control logic synthesis pass.
 //
 //===----------------------------------------------------------------------===//
-#include "vast/Dataflow.h"
+#include "vast/TimingAnalysis.h"
 #include "vast/FUInfo.h"
 #include "vast/VASTMemoryBank.h"
 #include "vast/VASTExprBuilder.h"
@@ -89,37 +89,15 @@ struct MUXPipeliner {
 };
 
 struct SelectorPipelining : public VASTModulePass {
-  Dataflow *DF;
+  TimingAnalysis *TA;
   STGDistances *STGDist;
   VASTModule *VM;
   // Number of cycles at a specificed slot that we can move back unconditionally.
   std::map<unsigned, unsigned> SlotSlack;
 
-  typedef std::map<VASTValue*, float> ArrivalMap;
-  typedef std::map<VASTValue*, ArrivalMap> PathDelayInfo;
-  PathDelayInfo ArrivialCache;
-
-  float cacheArrivial(VASTValue *Src, VASTValue *Dst, float CurArrival) {
-    float &OldArrival = ArrivialCache[Dst][Src];
-    OldArrival = std::max(OldArrival, CurArrival);
-    return CurArrival;
-  }
-
-  float lookUpArrival(VASTValue *Src, VASTValue *Dst) const {
-    PathDelayInfo::const_iterator I = ArrivialCache.find(Dst);
-    if (I == ArrivialCache.end())
-      return 0.0f;
-
-    ArrivalMap::const_iterator J = I->second.find(Src);
-    if (J == I->second.end())
-      return 0.0f;
-
-    return J->second;
-  }
-
   static char ID;
 
-  SelectorPipelining() : VASTModulePass(ID), DF(0), STGDist(0) {
+  SelectorPipelining() : VASTModulePass(ID), TA(0), STGDist(0) {
     initializeSelectorPipeliningPass(*PassRegistry::getPassRegistry());
   }
 
@@ -141,7 +119,7 @@ struct SelectorPipelining : public VASTModulePass {
     AU.addRequiredID(ControlLogicSynthesisID);
     AU.addPreservedID(ControlLogicSynthesisID);
     // FIXME: Require dataflow annotation.
-    AU.addRequired<Dataflow>();
+    AU.addRequired<TimingAnalysis>();
     AU.addRequired<STGDistances>();
     AU.addPreserved<STGDistances>();
   }
@@ -150,7 +128,6 @@ struct SelectorPipelining : public VASTModulePass {
 
   void releaseMemory() {
     SlotSlack.clear();
-    ArrivialCache.clear();
   }
 };
 }
@@ -173,13 +150,8 @@ Pass *vast::createSelectorPipeliningPass() {
 bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
   this->VM = &VM;
 
-  DF = &getAnalysis<Dataflow>();
+  TA = &getAnalysis<TimingAnalysis>();
   STGDist = &getAnalysis<STGDistances>();
-
-  typedef VASTModule::selector_iterator iterator;
-  // Clear up all MUX before we perform selector pipelining.
-  for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I)
-    I->dropMux();
 
   std::vector<VASTSeqInst*> Worklist;
 
@@ -200,6 +172,7 @@ bool SelectorPipelining::runOnVASTModule(VASTModule &VM) {
   MinimalExprBuilderContext Context(VM);
   VASTExprBuilder Builder(Context);
 
+  typedef VASTModule::selector_iterator iterator;
   for (iterator I = VM.selector_begin(), E = VM.selector_end(); I != E; ++I) {
     // FIXME: Get the MUX delay from the timing estimator.
     VASTSelector *Sel = I;
@@ -250,6 +223,9 @@ bool SelectorPipelining::pipelineFanins(VASTSelector *Sel, VASTExprBuilder &Buil
 
   MUXPipeliner P(Sel, MaxFIsPerCycles, VM, Builder);
   buildPipelineFIs(Sel, P);
+
+  // Clear up all MUX before we perform selector pipelining.
+  Sel->dropMux();
 
   return P.pipelineGreedy();
 }
@@ -353,17 +329,13 @@ float SelectorPipelining::getFaninSlack(const SVSet &S, const VASTLatch &L,
 
 float SelectorPipelining::getArrivialTime(VASTSeqValue *SV, const VASTLatch &L,
                                           VASTValue *FI) {
-  if (!SV->getLLVMValue() || DataflowInst(L.Op).getPointer() == 0)
-    return lookUpArrival(SV, FI);
-
-  float Arrival = 0.0f;
-
-  Arrival = DF->getDelay(SV, L.Op, L.getSlot()).expected();
+  TimingAnalysis::PhysicalDelay Arrival = TA->getArrivalTime(FI, SV);
+  float ArrivalTime = Arrival == None ? 1000.0f : Arrival;
   //float EnableDelay = DF->getDelay(L.getSlot()->getValue(), L.Op, L.getSlot());
   //EnableDelay = std::max(0.0f, EnableDelay - 1.0f);
   //Arrival -= EnableDelay;
 
-  return cacheArrivial(SV, FI, Arrival);
+  return ArrivalTime;
 }
 
 static VASTSlot *getSlotAtLevel(VASTSlot *S, unsigned Level) {
