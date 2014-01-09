@@ -180,13 +180,7 @@ public:
                                         unsigned UB, unsigned LB);
 
   static VASTBitMask EvaluateAdd(VASTBitMask LHS, VASTBitMask RHS,
-                                 unsigned BitWidth) {
-    VASTBitMask C(BitWidth);
-    return EvaluateAdd(LHS, RHS, C, BitWidth);
-  }
-
-  static VASTBitMask EvaluateAdd(VASTBitMask LHS, VASTBitMask RHS,
-                                 VASTBitMask &C,  unsigned BitWidth);
+                                 unsigned BitWidth);
   static VASTBitMask EvaluateMul(VASTBitMask LHS, VASTBitMask RHS,
                                  unsigned BitWidth);
 
