@@ -119,6 +119,11 @@ struct DemandedBitOptimizer {
 template<VASTExpr::Opcode Opcode>
 VASTValPtr DemandedBitOptimizer::shrinkParallel(VASTExpr *Expr) {
   APInt KnownBits = Expr->getKnownBits();
+
+  // All known bits replacement is not performed here.
+  if (LLVM_UNLIKELY(KnownBits.isAllOnesValue()))
+    return Expr;
+
   unsigned BitWidth = KnownBits.getBitWidth();
   SmallVector<unsigned, 8> SplitPos;
 
@@ -127,12 +132,13 @@ VASTValPtr DemandedBitOptimizer::shrinkParallel(VASTExpr *Expr) {
   else {
     APInt UsedBits = getUsedBits(Expr);
 
-    if (!BLO.hasEnoughKnownbits(UsedBits, false))
+    if (UsedBits.isAllOnesValue() || !BLO.hasEnoughKnownbits(UsedBits, false))
       return Expr;
 
     DatapathBLO::extractSplitPositions(UsedBits, SplitPos);
   }
 
+  assert(SplitPos.size() > 2 && "Not enough position to split!");
   return BLO.splitAndConCat<Opcode>(Expr->getOperands(), SplitPos);
 }
 
