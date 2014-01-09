@@ -103,7 +103,6 @@ VASTValPtr DatapathBLO::optimizeMulImpl(MutableArrayRef<VASTValPtr> Ops,
     }
 
     Ops[ActualPos++] = CurVal;
-    LastVal = CurVal;
   }
 
   // A * 0 => 0

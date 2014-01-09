@@ -124,7 +124,6 @@ VASTValPtr DemandedBitOptimizer::shrinkParallel(VASTExpr *Expr) {
   if (LLVM_UNLIKELY(KnownBits.isAllOnesValue()))
     return Expr;
 
-  unsigned BitWidth = KnownBits.getBitWidth();
   SmallVector<unsigned, 8> SplitPos;
 
   if (BLO.hasEnoughKnownbits(KnownBits, false))
