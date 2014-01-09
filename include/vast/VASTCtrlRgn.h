@@ -48,7 +48,6 @@ class VASTCtrlRgn : public VASTSubModuleBase {
   VASTCtrlRgn(VASTModule &Parent, Function &F, const char *Name);
   VASTCtrlRgn();
 
-
   VASTSeqCtrlOp *createCtrlLogic(VASTValPtr Src, VASTSlot *Slot,
                                  VASTValPtr GuardCnd, bool UseSlotActive);
 protected:
@@ -60,6 +59,8 @@ protected:
   bool gcImpl();
 public:
   ~VASTCtrlRgn();
+
+  bool isTopRegion() const;
 
   VASTModule *getParentModule() const;
   Function *getFunction() const;

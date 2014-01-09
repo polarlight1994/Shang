@@ -61,7 +61,7 @@ Function *VASTCtrlRgn::getFunction() const {
 }
 
 BasicBlock *VASTCtrlRgn::getEntryBlock() const {
-  return &getFunction()->getEntryBlock();
+  return &F->getEntryBlock();
 }
 
 void VASTCtrlRgn::print(raw_ostream &OS) const {
@@ -99,10 +99,13 @@ VASTCtrlRgn::createSlot(unsigned SlotNum, BasicBlock *ParentBB,
   return Slot;
 }
 
+bool VASTCtrlRgn::isTopRegion() const {
+  return this == (VASTCtrlRgn*)Parent;
+}
+
 VASTSlot *VASTCtrlRgn::createLandingSlot() {
-  BasicBlock *Entry = NULL/*getEntryBlock()*/;
-  VASTSlot *Landing = new VASTSlot(0, *this, Entry,
-                                   VASTConstant::True, false, 0);
+  BasicBlock *Entry = isTopRegion() ? NULL : getEntryBlock();
+  VASTSlot *Landing = new VASTSlot(0, *this, Entry, VASTConstant::True, false, 0);
   Slots.push_back(Landing);
   return Landing;
 }
