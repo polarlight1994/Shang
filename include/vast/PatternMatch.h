@@ -135,6 +135,17 @@ struct BinaryOpWithConst {
   }
 };
 
+/// Match an expr extract bits from register.
+struct ExtractSeqVal {
+  typedef bool RetTy;
+
+  bool match(VASTExpr *Expr) const {
+    if (Expr->getOpcode() != VASTExpr::dpBitExtract)
+      return false;
+
+    return Expr->getOperand(0).getAsLValue<VASTSeqValue>() != NULL;
+  }
+};
 //===----------------------------------------------------------------------===//
 //
 // Matcher for specificed expression type

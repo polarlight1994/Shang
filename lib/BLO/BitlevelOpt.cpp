@@ -130,7 +130,7 @@ VASTValPtr DatapathBLO::optimizeAnnotation(VASTExpr::Opcode Opcode,
                                            VASTValPtr Op) {
   Op = eliminateInvertFlag(Op);
 
-  if (VASTExpr *Expr = match(Op, BinaryOpWithConst())) {
+  if (VASTExpr *Expr = matchUnderlying(Op, BinaryOpWithConst())) {
     SmallVector<VASTValPtr, 4> Operands;
     for (unsigned i = 0; i < Expr->size(); ++i) {
       VASTValPtr V = Expr->getOperand(i);
@@ -152,6 +152,10 @@ VASTValPtr DatapathBLO::optimizeAnnotation(VASTExpr::Opcode Opcode,
 
     return V;
   }
+
+  // Do not annotate the trivial exprs.
+  if (matchUnderlying(Op, ExtractSeqVal()))
+    return Op;
 
   return Builder.buildAnnotation(Opcode, Op);
 }
