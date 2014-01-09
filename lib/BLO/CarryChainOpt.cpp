@@ -193,6 +193,24 @@ VASTValPtr DatapathBLO::optimizeMulWithConst(MutableArrayRef<VASTValPtr> Ops,
     return optimizeAdd<VASTValPtr>(AddOps, BitWidth);
   }
 
+  // If the constant is a invert bitmask like 0xff00, we can perform the following
+  // transform:
+  // A * 0xff00 = (A * (0x00ff << 8)) = (A * 0x00ff) << 8
+  // Now we get a multiplication with bitmask, which can be handled by the
+  // code above.
+  if (isMask(~C)) {
+    // Remove the place holder for the constant operand.
+    Ops = Ops.slice(0, Ops.size() - 1);
+    unsigned lg2 = C.countTrailingZeros();
+
+    VASTValPtr SubMul = Ops.size() == 1 ? Ops[0] :
+                        Builder.buildMulExpr(Ops, BitWidth);
+    VASTValPtr NewOperands[] = { SubMul, None };
+    SubMul = optimizeMulWithConst(NewOperands, C.lshr(lg2), BitWidth);
+    return optimizeShift(VASTExpr::dpShl, SubMul, getConstant(lg2, BitWidth),
+                         BitWidth);
+  }
+
   // Else we have to build the multiplication with the constant.
   Ops.back() = getConstant(C);
   
