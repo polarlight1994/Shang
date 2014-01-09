@@ -721,15 +721,18 @@ void DelayModel::updateROMLookUpArrival() {
 void DelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
   unsigned BitWidth = Node->getBitWidth();
   VASTValPtr V = Node->getOperand(i);
+
+#ifdef FCCM_IS_DONE
   APInt KnwonBits = VASTBitMask(V).getKnownBits();
   // Get the upperbound and lowerbound of the unknwon bits, only calculate the
   // carry chain propagation delay for the unknwon bits. For the upper bound,
   // we also consider the extra carry bit.
   unsigned UB = std::min(BitWidth - KnwonBits.countLeadingOnes() + 1, BitWidth),
            LB = KnwonBits.countTrailingOnes();
-
+#endif
   if (VASTValue *Val = GetAsLeaf(V)) {
     float OutputDelay = GetLeafDelay(Val);
+#ifdef FCCM_IS_DONE
     for (unsigned j = LB; j < UB; ++j) {
       // Do not need the arrival time if the bit is known.
       if (Node->isBitKnownAt(j))
@@ -737,6 +740,9 @@ void DelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
 
       addArrival(Val, Base + j * PerBit + OutputDelay, j + 1, j);
     }
+#else
+    addArrival(Val, Base + BitWidth * PerBit + OutputDelay, BitWidth, 0);
+#endif
 
     return;
   }
@@ -749,6 +755,7 @@ void DelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
   for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
     ArrivalTime *AT = I;
 
+#ifdef FCCM_IS_DONE
     // Propagate the carry bit till the MSB of the result.
     for (unsigned j = std::max(LB, unsigned(AT->ToLB)), e = UB; j < e; ++j) {
       // Do not need the arrival time if the bit is known.
@@ -760,6 +767,10 @@ void DelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
       unsigned k = j - AT->ToLB;
       addArrival(AT->Src, AT->Arrival + Base + k * PerBit, j + 1, j);
     }
+#else
+    addArrival(AT->Src, AT->Arrival + Base + BitWidth * PerBit,
+               BitWidth, AT->ToLB);
+#endif
   }
 }
 
