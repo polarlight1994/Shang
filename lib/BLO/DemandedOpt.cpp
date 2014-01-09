@@ -205,7 +205,6 @@ VASTValPtr DemandedBitOptimizer::shrinkShiftRight(VASTExpr *Expr) {
       return Expr;
   }
 
-  unsigned LB = Trailing;
   VASTValPtr LHS = BLO.optimizeBitExtract(Expr->getOperand(0), Bitwidth, Trailing);
   VASTValPtr Hi = BLO.optimizeShift(Opcode, LHS, Expr->getOperand(1),
                                     Bitwidth - Trailing);
