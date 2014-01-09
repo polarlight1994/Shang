@@ -30,10 +30,25 @@ struct CarryChainOpt {
   CarryChainOpt(DatapathBLO *BLO) : BLO(*BLO) {}
 
   VASTValPtr optimize(MutableArrayRef<VASTValPtr> Ops, unsigned BitWidth);
+  VASTValPtr optimizeBinary(VASTValPtr LHS, VASTValPtr RHS, unsigned BitWidth);
 };
 }
 
 //===----------------------------------------------------------------------===//
+template<VASTExpr::Opcode Opcode>
+VASTValPtr CarryChainOpt<Opcode>::optimizeBinary(VASTValPtr LHS, VASTValPtr RHS,
+                                                 unsigned BitWidth) {
+  VASTBitMask LHSMask(LHS), RHSMask(RHS);
+
+  APInt LHSZeros = LHSMask.getKnownZeros(), RHSZeros = RHSMask.getKnownZeros();
+  // Implement the add by Xor if there is no carry at all.
+  if (Opcode == VASTExpr::dpAdd && (LHSZeros | RHSZeros).isAllOnesValue())
+    return BLO->buildOrExpr(LHS, RHS, BitWidth);
+
+  // Evaluate the carry bits.
+  return BLO->buildExpr(Opcode, LHS, RHS, BitWidth);
+}
+
 template<VASTExpr::Opcode Opcode>
 VASTValPtr CarryChainOpt<Opcode>::optimize(MutableArrayRef<VASTValPtr> Ops,
                                            unsigned BitWidth) {
@@ -41,8 +56,13 @@ VASTValPtr CarryChainOpt<Opcode>::optimize(MutableArrayRef<VASTValPtr> Ops,
   if (Ops.size() == 1)
     return Ops[0];
 
+  // Short cut for most common cases
+  if (Ops.size() == 2)
+    return optimizeBinary(Ops[0], Ops[1], BitWidth);
+
   return BLO->buildExpr(Opcode, Ops, BitWidth);
 }
+
 VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr> Ops,
                                         unsigned BitWidth) {
   // Handle the trivial case trivially.
