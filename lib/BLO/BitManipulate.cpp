@@ -276,27 +276,16 @@ VASTValPtr DatapathBLO::optimizeAndImpl(MutableArrayRef<VASTValPtr> Ops,
   return And;
 }
 
-VASTValPtr DatapathBLO::optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op) {
+VASTValPtr DatapathBLO::optimizeRAnd(VASTValPtr Op) {
   Op = eliminateInvertFlag(Op);
 
   if (VASTConstPtr C = dyn_cast<VASTConstPtr>(Op)) {
     APInt Val = C.getAPInt();
-    switch (Opc) {
-    case VASTExpr::dpRAnd:
-      // Only reduce to 1 if all bits are 1.
-      if (Val.isAllOnesValue())
-        return getConstant(true, 1);
-      else
-        return getConstant(false, 1);
-    case VASTExpr::dpRXor:
-      // Only reduce to 1 if there are odd 1s.
-      if (Val.countPopulation() & 0x1)
-        return getConstant(true, 1);
-      else
-        return getConstant(false, 1);
-      break; // FIXME: Who knows how to evaluate this?
-    default:  llvm_unreachable("Unexpected Reduction Node!");
-    }
+    // Only reduce to 1 if all bits are 1.
+    if (Val.isAllOnesValue())
+      return VASTConstant::True;
+
+    return VASTConstant::False;
   }
 
   // Promote the reduction to the operands.
@@ -307,20 +296,14 @@ VASTValPtr DatapathBLO::optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op) {
       SmallVector<VASTValPtr, 8> Ops;
       typedef VASTExpr::op_iterator op_iterator;
       for (op_iterator I = Expr->op_begin(), E = Expr->op_end(); I != E; ++I)
-        Ops.push_back(optimizeReduction(Opc, *I));
+        Ops.push_back(optimizeRAnd(*I));
 
-      switch (Opc) {
-      case VASTExpr::dpRAnd:
-        return optimizeNAryExpr<VASTExpr::dpAnd, VASTValPtr>(Ops, 1);
-      case VASTExpr::dpRXor:
-        return Builder.buildXorExpr(Ops, 1);
-      default:  llvm_unreachable("Unexpected Reduction Node!");
-      }
+      return optimizeNAryExpr<VASTExpr::dpAnd, VASTValPtr>(Ops, 1);
     }
     }
   }
 
-  return Builder.buildReduction(Opc, Op);
+  return Builder.buildRAnd(Op);
 }
 
 VASTValPtr DatapathBLO::optimizeShift(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,

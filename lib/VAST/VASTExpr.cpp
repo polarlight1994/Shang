@@ -398,7 +398,6 @@ bool VASTExpr::printExpr(raw_ostream &OS) const {
   case dpAnd: printSimpleOp(OS, getOperands(), " & "); break;
 
   case dpRAnd:  printUnaryOp(OS, getOperand(0), "&");  break;
-  case dpRXor:  printUnaryOp(OS, getOperand(0), "^");  break;
 
   case dpSGT:   printSimpleSignedOp(OS, getOperands(),  " > ");  break;
 
@@ -488,7 +487,6 @@ const char *VASTExpr::getFUName() const {
   case dpSGT:   return "shang_sgt";
   case dpUGT:   return "shang_ugt";
   case dpRAnd:  return "shang_rand";
-  case dpRXor:  return "shang_rxor";
   case dpROMLookUp:  return "shang_comb_rom";
   default: break;
   }
@@ -525,7 +523,6 @@ bool VASTExpr::printFUInstantiation(raw_ostream &OS) const {
     if (InstSubModForFU && hasNameID() && printBinaryFU(OS, this))
       return true;
     break;
-  case VASTExpr::dpRXor:
   case VASTExpr::dpRAnd:
     if (InstSubModForFU && hasNameID() && printUnaryFU(OS, this))
       return true;

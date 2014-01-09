@@ -151,7 +151,7 @@ public:
 
   VASTValPtr buildShiftExpr(VASTExpr::Opcode Opc, VASTValPtr LHS, VASTValPtr RHS,
                             unsigned BitWidth);
-  VASTValPtr buildReduction(VASTExpr::Opcode Opc, VASTValPtr Op);
+  VASTValPtr buildRAnd(VASTValPtr Op);
   VASTValPtr buildROr(VASTValPtr V) {
     // A | B .. | Z = ~(~A & ~B ... & ~Z).
     return buildNotExpr(buildExpr(VASTExpr::dpRAnd, buildNotExpr(V), 1));

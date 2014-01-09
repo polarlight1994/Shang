@@ -110,7 +110,7 @@ public:
   VASTValPtr optimizeAndPatialKnowns(MutableArrayRef<VASTValPtr>  Ops,
                                      unsigned BitWidth);
 
-  VASTValPtr optimizeReduction(VASTExpr::Opcode Opc, VASTValPtr Op);
+  VASTValPtr optimizeRAnd(VASTValPtr Op);
   
   VASTValPtr optimizeAnnotation(VASTExpr::Opcode Opcode, VASTValPtr Op);
 

@@ -272,8 +272,7 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
     return optimizeNAryExpr<VASTExpr::dpMul>(Expr->getOperands(),
                                              Expr->getBitWidth());
   case VASTExpr::dpRAnd:
-  case VASTExpr::dpRXor:
-    return optimizeReduction(Opcode, Expr->getOperand(0));
+    return optimizeRAnd(Expr->getOperand(0));
   case VASTExpr::dpSAnn:
   case VASTExpr::dpHAnn:
     return optimizeAnnotation(Opcode, Expr->getOperand(0));

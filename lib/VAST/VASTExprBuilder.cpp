@@ -137,8 +137,8 @@ VASTValPtr VASTExprBuilder::buildBitExtractExpr(VASTValPtr U, unsigned UB,
   return Context.createBitExtract(U, UB, LB);
 }
 
-VASTValPtr VASTExprBuilder::buildReduction(VASTExpr::Opcode Opc,VASTValPtr Op) {
-  return Context.createExpr(Opc, Op, 1);
+VASTValPtr VASTExprBuilder::buildRAnd(VASTValPtr Op) {
+  return Context.createExpr(VASTExpr::dpRAnd, Op, 1);
 }
 
 VASTValPtr
@@ -210,10 +210,9 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc,
     assert(BitWidth == 1 && "Bitwidth of ICmp should be 1!");
     return buildICmpExpr(Opc, Ops[0], Ops[1]);
   case VASTExpr::dpRAnd:
-  case VASTExpr::dpRXor:
     assert(Ops.size() == 1 && "Unexpected more than 1 operands for reduction!");
     assert(BitWidth == 1 && "Bitwidth of reduction should be 1!");
-    return buildReduction(Opc, Ops[0]);
+    return buildRAnd(Ops[0]);
   case VASTExpr::dpSAnn:
   case VASTExpr::dpHAnn:
     assert(Ops.size() == 1 && "Unexpected more than 1 operands for annotation!");
@@ -231,9 +230,8 @@ VASTValPtr VASTExprBuilder::buildExpr(VASTExpr::Opcode Opc, VASTValPtr Op,
                                       unsigned BitWidth) {
   switch (Opc) {
   case VASTExpr::dpRAnd:
-  case VASTExpr::dpRXor:
     assert(BitWidth == 1 && "Bitwidth of reduction should be 1!");
-    return buildReduction(Opc, Op);
+    return buildRAnd(Op);
   case VASTExpr::dpSAnn:
   case VASTExpr::dpHAnn:
     assert(BitWidth == Op->getBitWidth() && "Bad bitwidth!");

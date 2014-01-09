@@ -894,7 +894,6 @@ void DelayModel::updateArrival() {
     return updateArrivalParallel(LogicLevels * VFUs::LUTDelay);
   }
   case vast::VASTExpr::dpRAnd:
-  case vast::VASTExpr::dpRXor:
     return updateReductionArrival();
   case vast::VASTExpr::dpAdd:
     return updateCarryChainArrival(LuaI::Get<VFUAddSub>());

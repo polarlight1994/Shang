@@ -153,7 +153,6 @@ public:
     // bitwise logic datapath
     dpAnd,
     dpRAnd,
-    dpRXor,
     // Cannot inline.
     // FU datapath
     dpAdd,
@@ -299,7 +298,7 @@ public:
   static unsigned GetResultBitWidth(Opcode Opc) {
     switch (Opc) {
     default:      return 0;
-    case dpRAnd:  case dpRXor: case dpSGT:   case dpUGT:   return 1;
+    case dpRAnd:  case dpSGT:   case dpUGT:   return 1;
     }
   }
 
