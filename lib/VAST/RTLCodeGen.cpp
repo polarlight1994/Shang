@@ -96,7 +96,7 @@ void RTLCodeGen::generateCodeForTopModule(Module *M, VASTModule &VM) {
 }
 
 bool RTLCodeGen::runOnVASTModule(VASTModule &VM) {
-  Function &F = VM.getLLVMFunction();
+  Function &F = *VM.getFunction();
   std::string RTLOutputPath = LuaI::GetString("RTLOutput");
   std::string Error;
   raw_fd_ostream Output(RTLOutputPath.c_str(), Error);

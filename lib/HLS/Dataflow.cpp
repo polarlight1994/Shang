@@ -461,7 +461,7 @@ void DataflowAnnotation::annotateDelay(VASTModule &VM) {
 
   // Annotate the unreachable blocks.
   typedef Function::iterator bb_iterator;
-  Function &F = VM.getLLVMFunction();
+  Function &F = *VM.getFunction();
   for (bb_iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
     if (TA.isBasicBlockUnreachable(BB))

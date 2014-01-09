@@ -677,6 +677,7 @@ protected:
   friend struct ilist_sentinel_traits<VASTSubModuleBase>;
 public:
   ~VASTSubModuleBase() {}
+  const char *getName() const { return Contents64.Name; }
 
   typedef SmallVectorImpl<VASTSelector*>::iterator fanin_iterator;
   fanin_iterator fanin_begin() { return Fanins.begin(); }
@@ -685,8 +686,6 @@ public:
   typedef SmallVectorImpl<VASTSelector*>::const_iterator const_fanin_iterator;
   const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
   const_fanin_iterator fanin_end()   const { return Fanins.end(); }
-
-  typedef SmallVectorImpl<VASTValue*>::iterator fanout_iterator;
 
   VASTSelector *getFanout(unsigned Idx) const {
     return Fanouts[Idx];

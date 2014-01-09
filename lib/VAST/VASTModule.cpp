@@ -201,14 +201,9 @@ VASTWrapper *VASTModule::getOrCreateWrapper(const Twine &Name, unsigned BitWidth
   return Wire;
 }
 
-void VASTModule::setFunction(Function &F) {
-  this->F = &F;
-  Name = F.getName();
-}
-
-VASTModule::VASTModule()
-  : VASTCtrlRgn(), Ports(NumSpecialPort), Name(), BBX(0), BBY(0),
-    BBWidth(0), BBHeight(0), F(0), NumArgPorts(0) {}
+VASTModule::VASTModule(Function &F)
+  : VASTCtrlRgn(*this, F, F.getValueName()->getKeyData()), Ports(NumSpecialPort),
+    BBX(0), BBY(0), BBWidth(0), BBHeight(0), NumArgPorts(0) {}
 
 void VASTModule::setBoundingBoxConstraint(unsigned BBX, unsigned BBY,
                                           unsigned BBWidth, unsigned BBHeight) {

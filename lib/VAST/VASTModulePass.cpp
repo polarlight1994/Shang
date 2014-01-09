@@ -981,7 +981,6 @@ bool VASTModuleAnalysis::runOnFunction(Function &F) {
   assert(VM == 0 && "Module has been already created!");
   HLSAllocation &A = getAnalysis<HLSAllocation>();
   VM = &A.getModule();
-  VM->setFunction(F);
 
   VASTModuleBuilder Builder(*VM, A,
                             getAnalysis<DataLayout>(),
@@ -1054,7 +1053,7 @@ VASTModule &VASTModulePass::rebuildModule() {
 
   // And the corresponding LLVM Function, we will rebuild the VASTModule based
   // on the LLVM FUnction.
-  Function &F = (*VMA).getLLVMFunction();
+  Function &F = *VMA->getFunction();
 
   // Release and rebuild.
   VMA.releaseMemory();

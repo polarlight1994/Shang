@@ -148,12 +148,8 @@ private:
   SymTabTy SymbolTable;
   typedef StringMapEntry<VASTNode*> SymEntTy;
 
-  // The Name of the Design.
-  std::string Name;
   // The placement constraint of the bounding box. The constraint is in the
   unsigned BBX, BBY, BBWidth, BBHeight;
-  // The corresponding function for this module.
-  Function *F;
 
   unsigned NumArgPorts, RetPortIdx;
 
@@ -164,17 +160,11 @@ private:
   bool gcImpl();
 
 public:
-  // TEMORARY HACK before hierarchy CFG is finished
-  void setFunction(Function &F);
-  Function &getLLVMFunction() { return *F; }
-
-  VASTModule();
+  explicit VASTModule(Function &F);
 
   ~VASTModule();
 
   void reset();
-
-  const std::string &getName() const { return Name; }
 
   bool hasBoundingBoxConstraint() const {
     return BBX && BBY && BBWidth && BBHeight;

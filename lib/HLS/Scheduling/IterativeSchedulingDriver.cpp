@@ -109,7 +109,7 @@ public:
   bool runOnVASTModule(VASTModule &VM) {
     if (MaxIteration == 0) return false;
 
-    Function &F = VM.getLLVMFunction();
+    Function &F = *VM.getFunction();
 
     for (unsigned i = 0, e = MaxIteration - 1; i < e; ++i) {
       // Redirect the output path for the intermediate netlist.

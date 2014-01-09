@@ -1082,7 +1082,7 @@ void VASTScheduling::fixSchedulingGraph() {
 
   // Also add the dependencies form the return instruction to the exit of
   // the scheduling graph.
-  Function &F = VM->getLLVMFunction();
+  Function &F = *VM->getFunction();
 
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
     buildSyncEdgeForPHIs(I);
@@ -1140,7 +1140,7 @@ void VASTScheduling::buildSchedulingGraph() {
 
 bool VASTScheduling::runOnVASTModule(VASTModule &VM) {
   this->VM = &VM;
-  Function &F = VM.getLLVMFunction();
+  Function &F = *VM.getFunction();
 
   OwningPtr<VASTSchedGraph> GPtr(new VASTSchedGraph(F));
   G = GPtr.get();

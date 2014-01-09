@@ -273,7 +273,7 @@ void BBLiveIntervals::handleUse(Instruction *Def, VASTSeqOp *Op) {
 }
 
 void BBLiveIntervals::run(VASTModule &VM) {
-  buildBBNumbers(VM.getLLVMFunction());
+  buildBBNumbers(*VM.getFunction());
 
   createInstVarInfo(VM);
 

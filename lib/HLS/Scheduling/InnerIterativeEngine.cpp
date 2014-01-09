@@ -344,7 +344,7 @@ struct ItetrativeEngine {
     if (!performScheduling(VM))
       return false;
 
-    float NumBBs = VM.getLLVMFunction().getBasicBlockList().size();
+    float NumBBs = VM.getFunction()->getBasicBlockList().size();
     MUXFIViolation = 0;
 
     typedef VASTModule::selector_iterator iterator;
@@ -382,7 +382,7 @@ bool ItetrativeEngine::performScheduling(VASTModule &VM) {
 
   TotalWeight = 0.0f;
 
-  Function &F = VM.getLLVMFunction();
+  Function &F = *VM.getFunction();
   typedef Function::iterator iterator;
   for (iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;

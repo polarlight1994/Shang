@@ -19,6 +19,7 @@
 #include "vast/VASTModule.h"
 
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/Pass.h"
@@ -82,7 +83,7 @@ INITIALIZE_ANALYSIS_GROUP(HLSAllocation,
 
 namespace {
 /// HLSAllocation - The resource allocation interface.
-struct BasicAllocation : public ImmutablePass, public HLSAllocation {
+struct BasicAllocation : public ModulePass, public HLSAllocation {
   static char ID;
 
   BasicAllocation();
@@ -106,14 +107,25 @@ struct BasicAllocation : public ImmutablePass, public HLSAllocation {
      M->addOutputPort("fin", 1, VASTModule::Finish);
   }
 
-  void initializePass() {
+  bool runOnModule(Module &M) {
     // Note: BasicAllocation does not call InitializeHLSAllocation because it's
     // special and does not support chaining.
     TD = &getAnalysis<DataLayout>();
-    // Create the module.
-    M = new VASTModule();
-    // Create the common ports for a module.
-    addCommonPorts();
+    typedef Module::iterator iterator;
+    for (iterator I = M.begin(), E = M.end(); I != E; ++I) {
+      Function *F = I;
+
+      if (F->isDeclaration() || !F->use_empty())
+        continue;
+
+      // Create the module.
+      assert(this->M == NULL && "Module is already existed!");
+      this->M = new VASTModule(*F);
+      // Create the common ports for a module.
+      addCommonPorts();
+    }
+
+    return false;
   }
 
   ~BasicAllocation() {
@@ -132,7 +144,7 @@ struct BasicAllocation : public ImmutablePass, public HLSAllocation {
 };
 }
 
-BasicAllocation::BasicAllocation() : ImmutablePass(ID) {
+BasicAllocation::BasicAllocation() : ModulePass(ID) {
   initializeBasicAllocationPass(*PassRegistry::getPassRegistry());
 }
 

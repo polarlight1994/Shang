@@ -199,23 +199,23 @@ struct ExternalTimingAnalysis {
   }
 
   std::string getNetlistPath() const {
-    return getTmpFilePath(VM.getName() + ".sv");
+    return getTmpFilePath(std::string(VM.getName()) + ".sv");
   }
 
   std::string getSDCPath() const {
-    return getTmpFilePath(VM.getName() + ".sdc");
+    return getTmpFilePath(std::string(VM.getName()) + ".sdc");
   }
 
   std::string getResultPath() const {
-    return getTmpFilePath(VM.getName() + ".json");
+    return getTmpFilePath(std::string(VM.getName()) + ".json");
   }
 
   std::string getPlacementPath() const {
-    return getTmpFilePath(VM.getName() + ".rgp");
+    return getTmpFilePath(std::string(VM.getName()) + ".rgp");
   }
 
   std::string getDriverScriptPath() const {
-    return getTmpFilePath(VM.getName() + ".tcl");
+    return getTmpFilePath(std::string(VM.getName()) + ".tcl");
   }
 
   std::string getTmpFilePath(const Twine &FileName) const {
@@ -1164,6 +1164,20 @@ struct ExternalToolDriver : public VASTModulePass, public TimingAnalysis {
 TimingAnalysis::PhysicalDelay
 ExternalToolDriver::getArrivalTime(VASTSelector *To, VASTSeqValue *From) {
   if (ETA) {
+    float External = ETA->getArrivalTime(To, From).CellDelay * VFUs::Period;
+    float Internal = TimingAnalysis::getArrivalTime(To, From) * VFUs::Period;
+    if (External < 0.0f && Internal > 0.0f)
+      TimingAnalysis::getArrivalTime(To, From);
+
+    float Ratio = Internal / External;
+
+    // Should not under estimate the cell delay!
+    if (ceil(External / VFUs::Period) > ceil(Internal / VFUs::Period) && Internal >= 0.0f) {
+      TA->printArrivalPath(dbgs(), To, From);
+      ETA->printArrivalPathImpl(dbgs(), To, NULL, From);
+      dbgs().indent(2) << External << "," << Internal << ", " << Ratio << '\n';
+    }
+
     return ETA->getArrivalTime(To, From);
   }
 
@@ -1174,6 +1188,18 @@ TimingAnalysis::PhysicalDelay
 ExternalToolDriver::getArrivalTime(VASTSelector *To, VASTExpr *Thu,
                                    VASTSeqValue *From) {
   if (ETA) {
+    float External = ETA->getArrivalTime(To, Thu, From).CellDelay * VFUs::Period;
+    float Internal = TimingAnalysis::getArrivalTime(To, Thu, From) * VFUs::Period;
+    float Ratio = Internal / External;
+
+    // Should not under estimate the cell delay!
+    if (ceil(External / VFUs::Period) > ceil(Internal / VFUs::Period) && Internal >= 0.0f) {
+      TA->printArrivalPath(dbgs(), To, Thu, From);
+      ETA->printArrivalPathImpl(dbgs(), To, Thu, From);
+      dbgs().indent(2) << External << "," << Internal << ", " << Ratio << '\n';
+      TimingAnalysis::getArrivalTime(To, Thu, From);
+    }
+
     return ETA->getArrivalTime(To, Thu, From);
   }
 
@@ -1181,8 +1207,8 @@ ExternalToolDriver::getArrivalTime(VASTSelector *To, VASTExpr *Thu,
 }
 
 bool ExternalToolDriver::isBasicBlockUnreachable(BasicBlock *BB) const {
-  if (ETA)
-    return ETA->isBasicBlockUnreachable(BB);
+  // if (ETA)
+  //  return ETA->isBasicBlockUnreachable(BB);
 
   return TimingAnalysis::isBasicBlockUnreachable(BB);
 }
