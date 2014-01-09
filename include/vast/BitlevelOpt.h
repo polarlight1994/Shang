@@ -141,10 +141,6 @@ public:
   VASTValPtr optimizeMulWithConst(MutableArrayRef<VASTValPtr>  Ops,
                                   APInt C, unsigned BitWidth);
 
-  VASTValPtr optimizeCarryChain(VASTExpr::Opcode Opcode,
-                                MutableArrayRef<VASTValPtr>  Ops,
-                                unsigned BitWidth);
-
   // Optimize the comparisons.
   VASTValPtr optimizeSGT(VASTValPtr LHS, VASTValPtr RHS);
   VASTValPtr optimizeUGT(VASTValPtr LHS, VASTValPtr RHS);

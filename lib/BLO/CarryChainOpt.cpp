@@ -21,6 +21,28 @@
 
 using namespace vast;
 
+
+//===----------------------------------------------------------------------===//
+namespace {
+template<VASTExpr::Opcode Opcode>
+struct CarryChainOpt {
+  DatapathBLO &BLO;
+  CarryChainOpt(DatapathBLO *BLO) : BLO(*BLO) {}
+
+  VASTValPtr optimize(MutableArrayRef<VASTValPtr> Ops, unsigned BitWidth);
+};
+}
+
+//===----------------------------------------------------------------------===//
+template<VASTExpr::Opcode Opcode>
+VASTValPtr CarryChainOpt<Opcode>::optimize(MutableArrayRef<VASTValPtr> Ops,
+                                           unsigned BitWidth) {
+  // Early return for the trivial case.
+  if (Ops.size() == 1)
+    return Ops[0];
+
+  return BLO->buildExpr(Opcode, Ops, BitWidth);
+}
 VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr> Ops,
                                         unsigned BitWidth) {
   // Handle the trivial case trivially.
@@ -79,7 +101,7 @@ VASTValPtr DatapathBLO::optimizeAddImpl(MutableArrayRef<VASTValPtr> Ops,
   if (ActualPos == 1)
     return Ops[0];
 
-  return optimizeCarryChain(VASTExpr::dpAdd, Ops, BitWidth);
+  return CarryChainOpt<VASTExpr::dpAdd>(this).optimize(Ops, BitWidth);
 }
 
 VASTValPtr DatapathBLO::optimizeMulImpl(MutableArrayRef<VASTValPtr> Ops,
@@ -168,17 +190,11 @@ VASTValPtr DatapathBLO::optimizeMulWithConst(MutableArrayRef<VASTValPtr> Ops,
       ShiftedSubExpr, optimizeNot(SubMul), VASTConstant::True
     };
 
-    return optimizeAddImpl(AddOps, BitWidth);
+    return optimizeAdd<VASTValPtr>(AddOps, BitWidth);
   }
 
   // Else we have to build the multiplication with the constant.
   Ops.back() = getConstant(C);
-
-  return Builder.buildMulExpr(Ops, BitWidth);
-}
-
-VASTValPtr DatapathBLO::optimizeCarryChain(VASTExpr::Opcode Opcode,
-                                           MutableArrayRef<VASTValPtr>  Ops,
-                                           unsigned BitWidth) {
-  return Builder.buildExpr(Opcode, Ops, BitWidth);
+  
+  return CarryChainOpt<VASTExpr::dpMul>(this).optimize(Ops, BitWidth);
 }
