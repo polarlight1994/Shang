@@ -109,44 +109,6 @@ struct match_binbine_or {
 
 /// Pattern matching for generic NAry expression.
 
-
-/// The operand list contains all SeqValues from the same register.
-template<VASTExpr::Opcode Opcode>
-struct IdenticalSelectorOperands {
-  typedef VASTExpr *RetTy;
-
-  VASTExpr *match(VASTExpr *Expr) const {
-    if (Expr->getOpcode() != Opcode)
-      return NULL;
-
-    // Check the first operand.
-    VASTValPtr V = Expr->getOperand(0);
-    VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>();
-
-    if (SV == NULL)
-      return NULL;
-
-    bool CommonInvertFlag = V.isInverted();
-    VASTNode *CommonParent = SV->getParent();
-
-    for (unsigned i = 1; i < Expr->size(); ++i) {
-      VASTValPtr V = Expr->getOperand(i);
-      if (V.isInverted() != CommonInvertFlag)
-        return NULL;
-
-      VASTSeqValue *SV = V.getAsLValue<VASTSeqValue>();
-
-      if (SV == NULL)
-        return NULL;
-
-      if (SV->getParent() != CommonParent)
-        return NULL;
-    }
-
-    return Expr;
-  }
-};
-
 //===----------------------------------------------------------------------===//
 //
 // Matcher for specificed expression type
@@ -158,13 +120,6 @@ extract_annotation() {
   typedef Opcode_match<VASTExpr::dpHAnn, ExtractOp0> MatchHAnn;
   typedef match_binbine_or<MatchSAnn, MatchHAnn> MatchAnn;
   return MatchAnn(MatchSAnn(ExtractOp0()), MatchHAnn(ExtractOp0()));
-}
-
-
-/// Match the AND expression whose operand are from the same register.
-inline IdenticalSelectorOperands<VASTExpr::dpAnd>
-m_IdOperandAND() {
-  return IdenticalSelectorOperands<VASTExpr::dpAnd>();
 }
 
 } // end of namespace PatternMatch
