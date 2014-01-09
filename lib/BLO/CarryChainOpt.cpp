@@ -124,16 +124,24 @@ VASTValPtr DatapathBLO::optimizeMulWithConst(MutableArrayRef<VASTValPtr> Ops,
   assert(Ops.back() == None &&
          "Expect place holder for the constant operand at the end!");
 
-  if (C.isPowerOf2()) {
+  // Implement the Mul by addition if the population of the constant is low.
+  if (C.countPopulation() <= 2u) {
     // Remove the place holder for the constant operand.
     Ops = Ops.slice(0, Ops.size() - 1);
-
-    unsigned lg2 = C.countTrailingZeros();
     VASTValPtr SubExpr = Builder.buildMulExpr(Ops, BitWidth);
-    // Implement the multiplication by shift.
-    return optimizeShift(VASTExpr::dpShl,
-                          SubExpr, getConstant(lg2, BitWidth),
-                          BitWidth);
+    
+    SmallVector<VASTValPtr, 4> Addends;
+    for (unsigned i = 0; i < BitWidth; ++i) {
+      if (!C[i])
+        continue;
+
+      // Implement the multiplication by shift.
+      Addends.push_back(optimizeShift(VASTExpr::dpShl,
+                                      SubExpr, getConstant(i, BitWidth),
+                                      BitWidth));
+    }
+
+    return optimizeAdd<VASTValPtr>(Addends, BitWidth);
   }
 
   // Implement the multiplication by shift and addition if the immediate is

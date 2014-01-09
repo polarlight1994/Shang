@@ -74,6 +74,16 @@ public:
     return optimizeNAryExpr<VASTExpr::dpBitCat, T>(Ops, BitWidth);
   }
 
+  template<typename T>
+  VASTValPtr optimizeAdd(ArrayRef<T> Ops, unsigned BitWidth) {
+    return optimizeNAryExpr<VASTExpr::dpAdd, T>(Ops, BitWidth);
+  }
+
+  template<typename T>
+  VASTValPtr optimizeMul(ArrayRef<T> Ops, unsigned BitWidth) {
+    return optimizeNAryExpr<VASTExpr::dpMul, T>(Ops, BitWidth);
+  }
+
   template<VASTExpr::Opcode Opcode, typename T>
   VASTValPtr optimizeNAryExpr(ArrayRef<T> Ops, unsigned BitWidth) {
     SmallVector<VASTValPtr, 8> FlattenOps;
