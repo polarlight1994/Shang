@@ -248,17 +248,20 @@ VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
     return KnownBits;
 
   VASTExpr::Opcode Opcode = Expr->getOpcode();
+
   switch (Opcode) {
   case VASTExpr::dpAnd:
     return optimizeNAryExpr<VASTExpr::dpAnd>(Expr->getOperands(),
                                              Expr->getBitWidth());
   case VASTExpr::dpBitExtract: {
-    VASTValPtr Op = Expr->getOperand(0);
+    VASTValPtr Op = replaceKnownBits(Expr->getOperand(0), false);
     return optimizeBitExtract(Op, Expr->getUB(), Expr->getLB());
   }
-  case VASTExpr::dpBitCat:
-    return optimizeNAryExpr<VASTExpr::dpBitCat>(Expr->getOperands(),
-                                                Expr->getBitWidth());
+  case VASTExpr::dpBitCat: {
+    SmallVector<VASTValPtr, 4> Ops;
+    extractOperandKnownBits(Ops, Expr->getOperands(), false);
+    return optimizedpBitCat<VASTValPtr>(Ops, Expr->getBitWidth());
+  }
   case VASTExpr::dpBitRepeat: {
     unsigned Times = Expr->getRepeatTimes();
 

@@ -155,11 +155,19 @@ public:
     return false;
   }
 
+  template<typename T>
+  void extractOperandKnownBits(SmallVectorImpl<VASTValPtr> &Dst, ArrayRef<T> Src,
+                               bool FineGrain) {
+    for (unsigned i = 0; i < Src.size(); ++i)
+      Dst.push_back(replaceKnownBits(Src[i], FineGrain));
+  }
+
   template<VASTExpr::Opcode Opcode, typename T>
   void flattenExpr(SmallVectorImpl<VASTValPtr> &Dst, ArrayRef<T> Src) {
     for (unsigned i = 0; i < Src.size(); ++i) {
       // Try to remove the invert flag.
       VASTValPtr V = eliminateInvertFlag(Src[i]);
+
       if (!V.isInverted()) {
         if (VASTExpr *Expr = dyn_cast<VASTExpr>(V)) {
           // Flatten the expression tree with the same kind of opcode.
