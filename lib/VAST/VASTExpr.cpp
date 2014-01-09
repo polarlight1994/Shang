@@ -226,6 +226,9 @@ static bool printUnaryFU(raw_ostream &OS, const VASTExpr *E) {
 
 //===----------------------------------------------------------------------===//
 bool VASTExpr::isReachableFrom(const VASTValue *RHS) const {
+  if (RHS == NULL)
+    return false;
+
   std::set<const VASTExpr*> DFVisited;
 
   typedef VASTOperandList::const_op_iterator ChildIt;
@@ -433,19 +436,22 @@ bool VASTExpr::printExpr(raw_ostream &OS) const {
 
 void VASTExpr::printExprTree(raw_ostream &OS) const {
   std::set<VASTExpr*> Visited;
+  unsigned ID = 0;
 
   typedef VASTOperandList::const_op_iterator ChildIt;
-  std::vector<std::pair<const VASTExpr*, ChildIt> > VisitStack;
-
-  VisitStack.push_back(std::make_pair(this, op_begin()));
+  std::vector<std::pair<VASTExpr*, ChildIt> > VisitStack;
+  VASTExpr *Root = const_cast<VASTExpr*>(this);
+  VisitStack.push_back(std::make_pair(Root, op_begin()));
 
   while (!VisitStack.empty()) {
-    const VASTExpr *Node = VisitStack.back().first;
+    VASTExpr *Node = VisitStack.back().first;
     ChildIt It = VisitStack.back().second;
 
     // We have visited all children of current node.
     if (It == Node->op_end()) {
       VisitStack.pop_back();
+
+      Node->assignNameID(++ID);
 
       unsigned Level = VisitStack.size();
       // Visit the current Node.

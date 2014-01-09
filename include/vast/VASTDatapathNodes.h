@@ -268,8 +268,8 @@ public:
   void assignNameID(unsigned NameID);
   unsigned getNameID() const;
   void printName(raw_ostream &OS) const;
+  void print(raw_ostream &OS) const { printExprTree(OS); }
 
-  void print(raw_ostream &OS) const { printAsOperandInteral(OS); }
   bool printExpr(raw_ostream &OS) const;
 
   void printExprTree(raw_ostream &OS) const;

@@ -93,7 +93,7 @@ VASTValue *DatapathContainer::replaceUseOfImpl(VASTValPtr V, VASTUse &U) {
 
 #ifdef XDEBUG
   if (VASTExpr *Expr = dyn_cast<VASTExpr>(V.get())) {
-    if (Expr->isReachableFrom(From.get()))
+    if (Expr->isReachableFrom(dyn_cast_or_null<VASTValue>(&U.getUser())))
       llvm_unreachable("Unexpected cycle in expression tree!");
   }
 #endif
