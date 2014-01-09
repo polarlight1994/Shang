@@ -288,6 +288,14 @@ VASTValPtr DatapathBLO::optimizeRAnd(VASTValPtr Op) {
     return VASTConstant::False;
   }
 
+  VASTBitMask Mask(Op);
+
+  // Any knwon zero in the operand of RAnd results in 0 in the RAnd result.
+  if (Mask.hasAnyZeroKnown())
+    return VASTConstant::False;
+
+  Op = replaceKnownBitsFromMask(Op, Mask, false);
+
   // Promote the reduction to the operands.
   if (VASTExpr *Expr = dyn_cast<VASTExpr>(Op)) {
     switch (Expr->getOpcode()) {
