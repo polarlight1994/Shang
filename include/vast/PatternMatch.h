@@ -108,6 +108,32 @@ struct match_binbine_or {
 };
 
 /// Pattern matching for generic NAry expression.
+/// Match a Binary expression with only 1 non-const operand.
+struct BinaryOpWithConst {
+  typedef VASTExpr *RetTy;
+
+  VASTExpr *match(VASTExpr *Expr) const {
+    VASTExpr::Opcode Opcode = Expr->getOpcode();
+
+    if (Opcode < VASTExpr::FirstFUOpc || Opcode >= VASTExpr::FirstICmpOpc)
+      return NULL;
+
+    VASTValue *V = NULL;
+    for (unsigned i = 0; i < Expr->size(); ++i) {
+      VASTValPtr Op = Expr->getOperand(i);
+      if (isa<VASTConstant>(Op.get()))
+        continue;
+
+      // There is already a non constant operand.
+      if (V != NULL)
+        return NULL;
+
+      V = Op.get();
+    }
+
+    return Expr;
+  }
+};
 
 //===----------------------------------------------------------------------===//
 //

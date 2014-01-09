@@ -12,7 +12,7 @@
 // the bit-level optimization do not optimize the Module any further.
 //
 //===----------------------------------------------------------------------===//
-
+#include "vast/PatternMatch.h"
 #include "vast/BitlevelOpt.h"
 #include "vast/Passes.h"
 #include "vast/VASTModule.h"
@@ -26,6 +26,8 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
+using namespace PatternMatch;
 
 STATISTIC(NumIterations, "Number of bit-level optimization iteration");
 STATISTIC(NodesReplaced,
@@ -126,7 +128,32 @@ VASTValPtr DatapathBLO::eliminateInvertFlag(VASTValPtr V) {
 
 VASTValPtr DatapathBLO::optimizeAnnotation(VASTExpr::Opcode Opcode,
                                            VASTValPtr Op) {
-  return Builder.buildAnnotation(Opcode, eliminateInvertFlag(Op));
+  Op = eliminateInvertFlag(Op);
+
+  if (VASTExpr *Expr = match(Op, BinaryOpWithConst())) {
+    SmallVector<VASTValPtr, 4> Operands;
+    for (unsigned i = 0; i < Expr->size(); ++i) {
+      VASTValPtr V = Expr->getOperand(i);
+      
+      if (isa<VASTConstant>(V.get())) {
+        Operands.push_back(V);
+        continue;
+      }
+
+      // Apply the annotation to nonconstant operand.
+      Operands.push_back(optimizeAnnotation(Opcode, V));
+    }
+
+    VASTValPtr V = Builder.copyExpr(Expr, Operands);
+    // We had strip the invert flag when we retrive the Expr, do not miss it in
+    // the final result
+    if (Op.isInverted())
+      V = optimizeNot(V);
+
+    return V;
+  }
+
+  return Builder.buildAnnotation(Opcode, Op);
 }
 
 VASTValPtr DatapathBLO::optimizeCmpWithConst(VASTExpr::Opcode Opcode,
