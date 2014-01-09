@@ -38,12 +38,30 @@ struct CarryChainOpt {
 template<VASTExpr::Opcode Opcode>
 VASTValPtr CarryChainOpt<Opcode>::optimizeBinary(VASTValPtr LHS, VASTValPtr RHS,
                                                  unsigned BitWidth) {
-  VASTBitMask LHSMask(LHS), RHSMask(RHS);
+  if (Opcode == VASTExpr::dpAdd) {
+    // Try to break the carry chain.
+    VASTBitMask InitialCarries = VASTBitMask::EvaluateAnd(LHS, RHS, BitWidth);
 
-  APInt LHSZeros = LHSMask.getKnownZeros(), RHSZeros = RHSMask.getKnownZeros();
-  // Implement the add by Xor if there is no carry at all.
-  if (Opcode == VASTExpr::dpAdd && (LHSZeros | RHSZeros).isAllOnesValue())
-    return BLO->buildOrExpr(LHS, RHS, BitWidth);
+    // If the initial carries are all zero, there will be no carry at all during
+    // the addition. Lower the Addition to OR (or XOR).
+    if (InitialCarries.isAllZeroKnown())
+      return BLO->buildOrExpr(LHS, RHS, BitWidth);
+
+    // Chop of the carry chain from LSB.
+    unsigned TrailingZeros = InitialCarries.getKnownZeros().countTrailingOnes();
+    if (TrailingZeros) {
+      VASTValPtr LHSLo = BLO.optimizeBitExtract(LHS, TrailingZeros, 0),
+                 RHSLo = BLO.optimizeBitExtract(RHS, TrailingZeros, 0);
+      VASTValPtr Lo = BLO->buildOrExpr(LHSLo, RHSLo, TrailingZeros);
+
+      VASTValPtr LHSHi = BLO.optimizeBitExtract(LHS, BitWidth, TrailingZeros),
+                 RHSHi = BLO.optimizeBitExtract(RHS, BitWidth, TrailingZeros);
+      VASTValPtr His[] = { LHSHi, RHSHi };
+      VASTValPtr Hi = BLO.optimizeAdd<VASTValPtr>(His, BitWidth - TrailingZeros);
+      VASTValPtr Segments[] = { Hi, Lo };
+      return BLO.optimizedpBitCat<VASTValPtr>(Segments, BitWidth);
+    }
+  }
 
   // Evaluate the carry bits.
   return BLO->buildExpr(Opcode, LHS, RHS, BitWidth);
