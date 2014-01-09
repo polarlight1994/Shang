@@ -187,8 +187,7 @@ public:
   void extractSplitPositions(APInt Mask, SmallVectorImpl<unsigned> &SplitPos);
 
   template<VASTExpr::Opcode Opcode, typename T>
-  VASTValPtr splitAndConCat(ArrayRef<T> Ops, unsigned BitWidth,
-                            ArrayRef<unsigned> SplitPos) {
+  VASTValPtr splitAndConCat(ArrayRef<T> Ops, ArrayRef<unsigned> SplitPos) {
     unsigned NumSegments = SplitPos.size() - 1;
     SmallVector<VASTValPtr, 8> Bits(NumSegments, None);
     unsigned LB = SplitPos[0];

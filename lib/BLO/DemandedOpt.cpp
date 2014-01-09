@@ -133,7 +133,7 @@ VASTValPtr DemandedBitOptimizer::shrinkParallel(VASTExpr *Expr) {
     DatapathBLO::extractSplitPositions(UsedBits, SplitPos);
   }
 
-  return BLO.splitAndConCat<Opcode>(Expr->getOperands(), BitWidth, SplitPos);
+  return BLO.splitAndConCat<Opcode>(Expr->getOperands(), SplitPos);
 }
 
 template<VASTExpr::Opcode Opcode>
@@ -157,7 +157,7 @@ VASTValPtr DemandedBitOptimizer::shrinkCarryChain(VASTExpr *Expr) {
   unsigned UB = Bitwidth - Leadings;
 
   unsigned SplitPos[] = { 0, UB };
-  VASTValPtr Lo = BLO.splitAndConCat<Opcode>(Expr->getOperands(), UB, SplitPos);
+  VASTValPtr Lo = BLO.splitAndConCat<Opcode>(Expr->getOperands(), SplitPos);
   VASTValPtr Hi = BLO->getConstant(Expr->getKnownValues(Bitwidth, UB));
   VASTValPtr Segments[] = { Hi, Lo };
   return BLO.optimizedpBitCat<VASTValPtr>(Segments, Bitwidth);
