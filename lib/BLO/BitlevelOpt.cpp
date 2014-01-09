@@ -72,13 +72,17 @@ bool DatapathBLO::replaceIfNotEqual(VASTValPtr From, VASTValPtr To) {
   if (To == None || From == To)
     return false;
 
+  VASTBitMask OldMask(From);
   replaceAllUseWith(From, To);
   ++NodesReplaced;
 
   // Now To is a optimized node, we will not optimize it again in the current
   // iteration.
-  if (VASTExpr *Expr = dyn_cast<VASTExpr>(To.get()))
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(To.get())) {
     Visited.insert(Expr);
+    // Apply the bitmask from the original node.
+    Expr->mergeAnyKnown(OldMask.invert(To.isInverted()));
+  }
 
   return true;
 }
