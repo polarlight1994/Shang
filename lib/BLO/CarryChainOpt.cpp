@@ -63,6 +63,25 @@ VASTValPtr CarryChainOpt<Opcode>::optimizeBinary(VASTValPtr LHS, VASTValPtr RHS,
     }
   }
 
+  if (Opcode == VASTExpr::dpMul) {
+    // Also chop off the trailing zeros for Mul.
+    APInt LHSZeros = VASTBitMask(LHS).getKnownZeros(),
+          RHSZeros = VASTBitMask(RHS).getKnownZeros();
+
+    unsigned LHSTrailing = LHSZeros.countTrailingOnes(),
+             RHSTrailing = RHSZeros.countTrailingOnes();
+
+    if (unsigned Trailing = LHSTrailing + RHSTrailing) {
+      unsigned SubMulWidth = BitWidth - Trailing;
+      LHS = BLO.optimizeBitExtract(LHS, LHSTrailing + SubMulWidth, LHSTrailing);
+      RHS = BLO.optimizeBitExtract(RHS, RHSTrailing + SubMulWidth, RHSTrailing);
+      VASTValPtr Operands[] = { LHS, RHS };
+      VASTValPtr SubMul = BLO.optimizeMul<VASTValPtr>(Operands, SubMulWidth);
+      VASTValPtr Segments[] = { SubMul, BLO->getConstant(0, Trailing) };
+      return BLO.optimizedpBitCat<VASTValPtr>(Segments, BitWidth);
+    }
+  }
+
   // Evaluate the carry bits.
   return BLO->buildExpr(Opcode, LHS, RHS, BitWidth);
 }
@@ -152,7 +171,6 @@ VASTValPtr DatapathBLO::optimizeMulImpl(MutableArrayRef<VASTValPtr> Ops,
 
   APInt C = APInt(BitWidth, 1);
 
-  VASTValPtr LastVal = None;
   unsigned ActualPos = 0;
   for (unsigned i = 0, e = Ops.size(); i != e; ++i) {
     VASTValPtr CurVal = Ops[i];
@@ -171,7 +189,7 @@ VASTValPtr DatapathBLO::optimizeMulImpl(MutableArrayRef<VASTValPtr> Ops,
 
   // A * 1 => A, we can Ignore the constant.
   if (C == APInt(BitWidth, 1))
-    return Builder.buildMulExpr(Ops.slice(0, ActualPos), BitWidth);
+    return CarryChainOpt<VASTExpr::dpMul>(this).optimize(Ops, BitWidth);
 
   // Reserve a place for the constant operand.
   Ops[ActualPos++] = None;
