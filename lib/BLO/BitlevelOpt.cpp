@@ -350,7 +350,13 @@ VASTValPtr DatapathBLO::replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
   }
 
   assert(LB == V->getBitWidth() && "Segments do not cover the original value!");
-  return optimizedpBitCat<VASTValPtr>(Bits, V->getBitWidth());
+  VASTValPtr Result = optimizedpBitCat<VASTValPtr>(Bits, V->getBitWidth());
+
+  // Apply the mask to the newly built expression.
+  if (VASTExpr *Expr = dyn_cast<VASTExpr>(Result.get()))
+    Expr->mergeAnyKnown(Mask.invert(Result.isInverted()));
+
+  return Result;
 }
 
 VASTValPtr DatapathBLO::replaceKnownAllBits(VASTValPtr V) {
