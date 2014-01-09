@@ -180,6 +180,7 @@ public:
   VASTValPtr replaceKnownAllBits(VASTValPtr V);
   VASTValPtr replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
                                       bool FineGrain);
+  VASTValPtr replaceKnownBits(VASTValPtr V, bool FineGrain);
 
   // Extract the bit position to split the knwon bits and unknwon bits.
   static

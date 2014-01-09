@@ -376,6 +376,27 @@ VASTValPtr DatapathBLO::replaceKnownAllBits(VASTValPtr V) {
   return getConstant(Mask.getKnownValues());
 }
 
+VASTValPtr DatapathBLO::replaceKnownBits(VASTValPtr V, bool FineGrain) {
+  VASTMaskedValue *MV = dyn_cast<VASTMaskedValue>(V.get());
+  if (MV == NULL)
+    return V;
+
+  // Update the bitmask before we perform the optimization.
+  MV->evaluateMask();
+
+  if (LLVM_LIKELY(!MV->isAllBitKnown())) {
+    if (hasEnoughKnownbits(MV->getKnownBits(), FineGrain))
+      return replaceKnownBitsFromMask(V, V, FineGrain);
+
+    return V;
+  }
+
+  // If all bit is known, simply return the constant to replace the expr.
+  ++NodesReplacedByKnownBits;
+  VASTBitMask Mask(V);
+  return getConstant(Mask.getKnownValues());
+}
+
 bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
 
