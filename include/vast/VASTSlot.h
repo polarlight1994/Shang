@@ -157,7 +157,7 @@ public:
   const bool      IsSubGrp : 1;
   const SlotNumTy Schedule;
 
-  void createSignals(VASTModule *VM);
+  void createSignals();
   void copySignals(VASTSlot *S);
 
   BasicBlock *getParent() const;

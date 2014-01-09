@@ -193,7 +193,7 @@ void ControlLogicBuilder::buildControlLogic(VASTModule &M) {
     if (S->IsSubGrp)
       continue;
 
-    S->createSignals(&M);
+    S->createSignals();
 
     // Share the signal to the virtual slots, because the virtual slot reachable
     // from this slot without visiting any non-virtual slots are sharing the

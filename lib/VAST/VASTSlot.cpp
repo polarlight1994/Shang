@@ -57,14 +57,18 @@ VASTSlot::~VASTSlot() {
   if (!SlotGuard.isInvalid()) SlotGuard.unlinkUseFromUser();
 }
 
-void VASTSlot::createSignals(VASTModule *VM) {
+void VASTSlot::createSignals() {
   assert(!IsSubGrp && "Cannot create signal for virtual slots!");
+  VASTModule *VM = getParentRgn().getParentModule();
 
   // Create the relative signals.
-  std::string SlotName = "Slot" + utostr_32(SlotNum);
+  SmallString<36> S;
+  S += "Slot";
+  S += utostr_32(SlotNum);
+  S += "r";
   uint64_t InitVal = SlotNum == 0 ? 1 : 0;
   VASTRegister *R =
-    VM->createRegister(SlotName + "r", 1, InitVal, VASTSelector::Slot);
+    VM->createRegister(S.str(), 1, InitVal, VASTSelector::Slot);
   SlotReg.set(VM->createSeqValue(R->getSelector(), SlotNum, getParent()));
 }
 
