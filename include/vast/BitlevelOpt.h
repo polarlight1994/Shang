@@ -177,7 +177,7 @@ public:
   VASTValPtr optimizeExpr(VASTExpr *Expr);
 
   // Knwon bits replacement
-  VASTValPtr replaceKnownBits(VASTValPtr V);
+  VASTValPtr replaceKnownAllBits(VASTValPtr V);
   VASTValPtr replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
                                       bool FineGrain);
 

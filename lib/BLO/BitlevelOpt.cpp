@@ -243,7 +243,7 @@ void DatapathBLO::eliminateInvertFlag(MutableArrayRef<VASTValPtr> Ops) {
 
 VASTValPtr DatapathBLO::optimizeExpr(VASTExpr *Expr) {
   // Replace the expr by known bits if possible.
-  VASTValPtr KnownBits = replaceKnownBits(Expr);
+  VASTValPtr KnownBits = replaceKnownAllBits(Expr);
   if (KnownBits != Expr)
     return KnownBits;
 
@@ -353,7 +353,7 @@ VASTValPtr DatapathBLO::replaceKnownBitsFromMask(VASTValPtr V, VASTBitMask Mask,
   return optimizedpBitCat<VASTValPtr>(Bits, V->getBitWidth());
 }
 
-VASTValPtr DatapathBLO::replaceKnownBits(VASTValPtr V) {
+VASTValPtr DatapathBLO::replaceKnownAllBits(VASTValPtr V) {
   VASTMaskedValue *MV = dyn_cast<VASTMaskedValue>(V.get());
   if (MV == NULL)
     return V;
@@ -374,7 +374,7 @@ bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
   VASTExpr *Expr = dyn_cast<VASTExpr>(V.get());
 
   if (Expr == NULL)
-    return replaceIfNotEqual(V, replaceKnownBits(V));
+    return replaceIfNotEqual(V, replaceKnownAllBits(V));
 
   // This expression had been optimized in the current iteration.
   if (Visited.count(Expr))
@@ -394,7 +394,7 @@ bool DatapathBLO::optimizeAndReplace(VASTValPtr V) {
     // We have visited all children of current node.
     if (Idx == CurNode->size()) {
       VisitStack.pop_back();
-      VASTValPtr NewVal = replaceKnownBits(optimizeExpr(CurNode));
+      VASTValPtr NewVal = replaceKnownAllBits(optimizeExpr(CurNode));
       Replaced |= replaceIfNotEqual(CurNode, NewVal);
       continue;
     }
