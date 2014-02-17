@@ -54,7 +54,7 @@ class TestStep :
     self.fpga_device = FamilyDevices[config['device_family']]
     self.require_license = (config['device_family'] == 'StratixIV')
     #Use full version for stratix devices.
-    self.quartus_bin = '/nfs/app/altera/13.0sp1/quartus/bin/'
+    self.quartus_bin = '/buildbot_work/app/quartus/quartus/bin'
 
     # The results dict, for debug use
     self.results = {}
@@ -877,7 +877,7 @@ endmodule
     self.generateFileFromTemplate('''#!/bin/bash
 #$ -S /bin/bash
 
-export PATH=/nfs/app/altera/modelsim_ase_12_x64/modelsim_ase/bin/:$PATH
+export PATH=/buildbot_work/app/modelsim/modelsim_ase/bin/:$PATH
 
 vlib work || exit 1
 vlog -sv {{ rtl_output }} || exit 1
@@ -902,7 +902,7 @@ class LegUpHWSimStep(HWSimStep) :
     self.generateFileFromTemplate('''#!/bin/bash
 #$ -S /bin/bash
 
-export PATH=/nfs/app/altera/modelsim_ase_12_x64/modelsim_ase/bin/:$PATH
+export PATH=/buildbot_work/app/modelsim/modelsim_ase/bin:$PATH
 
 vlib work || exit 1
 vlog -sv {{ rtl_output }} || exit 1
@@ -1233,7 +1233,7 @@ endmodule
     self.generateFileFromTemplate('''#!/bin/bash
 #$ -S /bin/bash
 
-export PATH=/nfs/app/altera/modelsim_ase_12_x64/modelsim_ase/bin/:$PATH
+export PATH=/buildbot_work/app/modelsim/modelsim_ase/bin:$PATH
 
 vlib work || exit 1
 vlog -vlog01compat {{ test_name }}.vo || exit 1
