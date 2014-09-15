@@ -249,16 +249,16 @@ uint64_t DesignMetricsImpl::getFUCost(const VASTExpr *Expr) const {
     return VFUs::LUTCost * ValueSize;
   case VASTExpr::dpAnd: {
     unsigned LL = LogCeiling(Expr->size(), VFUs::MaxLutSize);
-    unsigned NumLUTs = DivCeiling((pow(VFUs::MaxLutSize, LL) - 1),
-                                   VFUs::MaxLutSize - 1);
+    unsigned NumLUTs = DivCeiling(int(pow(double(VFUs::MaxLutSize), double(LL))) - 1,
+                                  VFUs::MaxLutSize - 1);
     return VFUs::LUTCost * ValueSize * NumLUTs;
   }
   case VASTExpr::dpRAnd: {
     VASTValPtr V = Expr->getOperand(0);
     unsigned InputBits = V->getBitWidth() - VASTBitMask(V).getNumKnownBits();
     unsigned LL = LogCeiling(InputBits, VFUs::MaxLutSize);
-    unsigned NumLUTs = DivCeiling((pow(VFUs::MaxLutSize, LL) - 1),
-                                   VFUs::MaxLutSize - 1);
+    unsigned NumLUTs = DivCeiling(int(pow(double(VFUs::MaxLutSize), double(LL))) - 1,
+                                  VFUs::MaxLutSize - 1);
     return VFUs::LUTCost * NumLUTs;
   }
   case VASTExpr::dpAdd:
