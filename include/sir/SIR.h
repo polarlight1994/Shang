@@ -1,4 +1,4 @@
-//===----------- SIR.h - Modules in SIR -----------*- C++ -*-===//
+//===------------------- SIR.h - Modules in SIR ----------------*- C++ -*-===//
 //
 //                      The SIR HLS framework                                //
 //
@@ -175,10 +175,10 @@ private:
   SeqInst2RegMapTy SeqInst2Reg;
 
 protected:
-  Module *M;
+  Function *F;
 
 public:
-  SIR(Module *M) : M(M) {}
+  SIR(Function *F) : F(F) {}
   ~SIR();
 
   port_iterator ports_begin() { return Ports.begin(); }
@@ -200,11 +200,7 @@ public:
   SIRRegister *lookupSIRReg(Instruction *SeqInst) {
     const_seqinst2reg_iterator at = SeqInst2Reg.find(SeqInst);
     return at == SeqInst2Reg.end() ? 0 : at->second;
-  }
-
-
-  const std::string getName() const { return M->getModuleIdentifier(); }
-  Module *getModule() { return M; }
+  }  
 
   // Create register for corresponding SeqInst.
   SIRRegister *getOrCreateRegister(Instruction *SeqInst, StringRef Name = 0,

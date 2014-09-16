@@ -1,4 +1,4 @@
-//===----------- SIR.cpp - Modules in SIR -----------*- C++ -*-===//
+//===----------------- SIR.cpp - Modules in SIR ----------------*- C++ -*-===//
 //
 //                      The SIR HLS framework                                //
 //
