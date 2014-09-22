@@ -176,12 +176,13 @@ struct SIRBuilder : public InstVisitor<SIRBuilder, void> {
   void visitBinaryOperator(BinaryOperator &I);
   void visitGetElementPtrInst(GetElementPtrInst &I);
   void visitGEPOperator(GEPOperator &O, GetElementPtrInst &I);
-  void visitStoreInst(StoreInst &I);
-  void visitLoadInst(LoadInst &I);
-  void visitBranchInst(BranchInst &I);
-  void visitUnreachableInst(UnreachableInst &I);
-  void visitReturnInst(ReturnInst &I);
-  void visitSwitchInst(SwitchInst &I);
+  // Disable the control-path instruction for now.
+  //void visitStoreInst(StoreInst &I);
+  //void visitLoadInst(LoadInst &I);
+  //void visitBranchInst(BranchInst &I);
+  //void visitUnreachableInst(UnreachableInst &I);
+  //void visitReturnInst(ReturnInst &I);
+  //void visitSwitchInst(SwitchInst &I);
 
 };
 
@@ -203,16 +204,8 @@ struct SIRInit : public FunctionPass {
   operator SIR*() const { return SM; }
   SIR* operator->() const { return SM;}
 };
-
-INITIALIZE_PASS_BEGIN(SIRInit,
-                      "shang-ir-init", "SIR Init",
-                      false, true)
-  INITIALIZE_PASS_DEPENDENCY(DataLayout)
-INITIALIZE_PASS_END(SIRInit,
-                    "shang-ir-init", "SIR Init",
-                    false, true)
-
-char SIRInit::ID = 0;
 }
+
+
 
 #endif

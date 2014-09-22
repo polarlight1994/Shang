@@ -12,10 +12,87 @@
 //===----------------------------------------------------------------------===//
 #include "llvm/IR/Value.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/ADT/ValueMap.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/raw_ostream.h"
 
 #ifndef SIR_MODULE_H
 #define SIR_MODULE_H
+
+namespace llvm {
+  static std::string buildLiteral(uint64_t Value, unsigned bitwidth, bool isMinValue) {
+    std::string ret;
+    ret = utostr_32(bitwidth) + '\'';
+    if (bitwidth == 1) ret += "b";
+    else               ret += "h";
+    // Mask the value that small than 4 bit to prevent printing something
+    // like 1'hf out.
+    if (bitwidth < 4) Value &= (1 << bitwidth) - 1;
+
+    if(isMinValue) {
+      ret += utohexstr(Value);
+      return ret;
+    }
+
+    std::string ss = utohexstr(Value);
+    unsigned int uselength = (bitwidth/4) + (((bitwidth&0x3) == 0) ? 0 : 1);
+    if(uselength < ss.length())
+      ss = ss.substr(ss.length() - uselength, uselength);
+    ret += ss;
+
+    return ret;
+  }
+
+  static std::string getFUName(IntrinsicInst &I) {
+    switch (I.getIntrinsicID()) {
+    case Intrinsic::shang_add:  return "shang_addc";
+    case Intrinsic::shang_mul:  return "shang_mult";
+    case Intrinsic::shang_rand: return "shang_rand";
+    case Intrinsic::shang_shl:  return "shang_shl";
+    case Intrinsic::shang_lshr: return "shang_srl";
+    case Intrinsic::shang_ashr: return "shang_ashr";
+    case Intrinsic::shang_ugt:  return "shang_ugt";
+    case Intrinsic::shang_sgt:  return "shang_sgt";
+    default: break;
+    }
+
+    return NULL;
+  }
+
+  static std::string Mangle(const std::string &S) {
+    std::string Result;
+
+    for (unsigned i = 0, e = S.size(); i != e; ++i) {
+      if (isalnum(S[i]) || S[i] == '_') {
+        Result += S[i];
+      } else {
+        Result += '_';
+      }
+    }
+
+    return Result;
+  }
+
+  static std::string BitRange(unsigned UB, unsigned LB = 0, bool printOneBit = false) {
+    std::string ret;
+    assert(UB && UB > LB && "Bad bit range!");
+    --UB;
+    if (UB != LB)
+      ret = "[" + utostr_32(UB) + ":" + utostr_32(LB) + "]";
+    else if(printOneBit)
+      ret = "[" + utostr_32(LB) + "]";
+
+    return ret;
+  }
+
+  static void printName(raw_ostream &OS, Instruction &I) {
+    OS << Mangle(I.getName());
+  }
+}
 
 namespace llvm {
 // Represent the Mux structure in Verilog
@@ -66,18 +143,20 @@ public:
 };
 
 // Represent the registers in the Verilog.
-class SIRRegister : public ilist_node<SIRRegister> {
+class SIRRegister {
 private:
   const uint64_t InitVal;
   SIRSelector *Sel;
 
 public:
-  SIRRegister(unsigned BitWidth = 0, std::string Name = "",
-              uint64_t InitVal = 0) : InitVal(InitVal) {
-    this->Sel = new SIRSelector(Name, BitWidth);
-  }
+  enum SIRRegisterTypes {
+    General,            // Common registers which hold data for data-path.
+    OutPort,            // Register for OutPort of module.
+  };
+  SIRRegister(SIRRegisterTypes T = SIRRegister::General, unsigned BitWidth = 0,
+              std::string Name = "", uint64_t InitVal = 0);
   SIRRegister(SIRSelector *Sel, uint64_t InitVal = 0)
-    : Sel(Sel), InitVal(InitVal) {}
+              : Sel(Sel), InitVal(InitVal) {}
 
   SIRSelector *getSelector() const { return Sel; }
 
@@ -93,25 +172,32 @@ public:
 };
 
 // Represent the ports in the Verilog.
-class SIRPort : public ilist_node<SIRPort> {
+class SIRPort {
 public:
   enum SIRPortTypes {
-    InPort,
-    OutPort
+    Clk,
+    Rst,
+    Start,
+    ArgPort,
+    InPort = ArgPort,
+    RetPort,
+    OutPort = RetPort    
   };
 
-protected:
-  virtual std::string getNameImpl() const;
-  virtual unsigned getBitWidthImpl() const;
-  virtual SIRPortTypes getPortTypeImpl() const;
-public:
-  SIRPort();
-  virtual ~SIRPort();
+private:
+  unsigned BitWidth;
+  const std::string Name;
+  SIRPortTypes T;
 
-  const std::string getName() const { return getNameImpl(); }
-  unsigned getBitWidth() const { return getBitWidthImpl(); }
-  SIRPortTypes getPortType() const { return getPortTypeImpl(); }
-  bool isInput() const { return getPortType() == InPort; }
+public:
+  SIRPort(SIRPortTypes T, unsigned BitWidth, const std::string Name)
+          : T(T), BitWidth(BitWidth), Name(Name) {}
+  ~SIRPort();
+
+  const std::string getName() const { return Name; }
+  unsigned getBitWidth() const { return BitWidth; }
+  SIRPortTypes getPortType() const { return T; }
+  bool isInput() const { return T != RetPort; }
 
   // Print the port
   void printDecl(raw_ostream &OS) const;
@@ -119,43 +205,32 @@ public:
 
 // Represent the In-Port in Verilog.
 class SIRInPort : public SIRPort {
-private:
-  unsigned BitWidth;
-  const std::string Name;
-
-  std::string getNameImpl() const { return Name; }
-  unsigned getBitWidthImpl() const { return BitWidth; }
-  SIRPort::SIRPortTypes getPortTypeImpl() { return SIRPort::InPort; }
-
 public:
-  SIRInPort(unsigned BitWidth, const std::string Name)
-    : BitWidth(BitWidth), Name(Name) {}
+  SIRInPort(SIRPort::SIRPortTypes T, 
+            unsigned BitWidth, const std::string Name)
+    : SIRPort(T, BitWidth, Name) {}
 };
 
 // Represent the Out-Port in Verilog.
 class SIROutPort : public SIRPort {
 private:
-  unsigned BitWidth;
-  const std::string Name;
   SIRRegister *Reg;
 
-  std::string getNameImpl() const { return Name; }
-  unsigned getBitWidthImpl() const { return BitWidth; }
-  SIRPort::SIRPortTypes getPortTypeImpl() { return SIRPort::OutPort; }
-
 public:
-  SIROutPort(unsigned BitWidth, const std::string Name) {
-    this->Reg = new SIRRegister(BitWidth, Name);
+  SIROutPort(SIRPort::SIRPortTypes T,
+             unsigned BitWidth, const std::string Name)
+             : SIRPort(T, BitWidth, Name){
+    this->Reg = new SIRRegister(SIRRegister::General, BitWidth, Name);
   }
 };
 
 // The module in Shang IR.
 class SIR {
-  typedef ilist<SIRPort> SIRPortVector;
+  typedef SmallVector<SIRPort *, 8> SIRPortVector;
   typedef SIRPortVector::iterator port_iterator;
   typedef SIRPortVector::const_iterator const_port_iterator;
 
-  typedef ilist<SIRRegister> RegisterVector;
+  typedef SmallVector<SIRPort *, 8> RegisterVector;
   typedef RegisterVector::iterator register_iterator;
   typedef RegisterVector::const_iterator const_register_iterator;
 
@@ -181,6 +256,8 @@ public:
   SIR(Function *F) : F(F) {}
   ~SIR();
 
+  Function *getFunction() { return F; }
+
   port_iterator ports_begin() { return Ports.begin(); }
   const_port_iterator ports_begin() const { return Ports.begin(); }
 
@@ -202,15 +279,65 @@ public:
     return at == SeqInst2Reg.end() ? 0 : at->second;
   }  
 
+  // -------------------Functions to generate Verilog-------------------- //
+
   // Create register for corresponding SeqInst.
-  SIRRegister *getOrCreateRegister(Instruction *SeqInst, StringRef Name = 0,
-                                   unsigned BitWidth = 0, uint64_t InitVal = 0);
+  SIRRegister *getOrCreateRegister(Instruction *SeqInst = 0,
+                                   SIRRegister::SIRRegisterTypes T = SIRRegister::General,
+                                   StringRef Name = 0, unsigned BitWidth = 0,
+                                   uint64_t InitVal = 0);
+  // Create port for interface of module.
+  SIRPort *getOrCreatePort(SIRPort::SIRPortTypes T, StringRef Name, unsigned BitWidth);
 
 
   // -------------------Functions to generate Verilog-------------------- //
   
   // Print the declaration of module.
   void printModuleDecl(raw_ostream &OS) const;
+
+  void printAsOperandImpl(raw_ostream &OS, Value *U, unsigned UB, unsigned LB) {
+    if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
+      assert(UB == CI->getBitWidth() && LB == 0 && "The slice of constant is not supported yet!");
+      OS << "((";
+      OS << buildLiteral(CI->getZExtValue(), UB, false);
+      OS << "))";
+      return;
+    }
+
+    // Print the correct name if this value is a SeqValue.
+    Instruction *SeqInst = dyn_cast<Instruction>(U);
+    if (lookupSIRReg(SeqInst))
+      OS << "((" << Mangle(SeqInst->getName());
+    else
+      OS << "((" << Mangle(SeqInst->getName());
+
+    unsigned OperandWidth = UB - LB;
+    if (UB)
+      OS << BitRange(UB, LB, OperandWidth > 1);
+
+    // Ignore the mask for now
+    OS << "))";
+
+  }
+
+  void printAsOperand(raw_ostream &OS, Value *U, unsigned BitWidth) {
+    // Need to find a more proper way to get BitWidth 
+    printAsOperandImpl(OS, U, BitWidth, 0);
+  }
+
+  void printSimpleOpImpl(raw_ostream &OS, ArrayRef<Value *> Ops,
+                         const char *Opc, unsigned BitWidth) {
+    unsigned NumOps = Ops.size();
+    assert(NumOps && "Unexpected zero operand!");
+    printAsOperand(OS, Ops[0], BitWidth);
+
+    for (unsigned i = 1; i < NumOps; ++i) {
+      OS << Opc;
+      printAsOperand(OS, Ops[i], BitWidth);
+    }
+  }
+
+
 
 };
 

@@ -21,6 +21,7 @@ ENDIF (NOT MSVC AND NOT USE_LOCAL_LP_SOLVE)
 target_link_libraries (
   ShangScheduling
   ShangVAST
+  ShangSIR
   ${LPSOLVE_LIBRARY}
   ${EXTRA_LIBS}
 )

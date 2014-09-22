@@ -14,6 +14,7 @@ add_llvm_library(ShangHLS
 target_link_libraries (
   ShangHLS
   ShangVAST
+  ShangSIR
   ShangScheduling
   ShangBinding
 )

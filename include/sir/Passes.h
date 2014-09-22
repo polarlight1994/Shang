@@ -23,7 +23,11 @@ class PassRegistry;
 }
 
 namespace llvm {
+Pass *createSIRInitPass();
+Pass *createSIR2RTLPass();
+
 void initializeSIRInitPass(PassRegistry &Registry);
+void initializeSIR2RTLPass(PassRegistry &Registry);
 } // end namespace
 
 #endif
