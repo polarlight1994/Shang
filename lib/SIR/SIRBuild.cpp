@@ -82,9 +82,9 @@ void SIRInit::getAnalysisUsage(AnalysisUsage &AU) const {
 
 void SIRBuilder::buildInterface(Function *F) {
   // Add basic ports.
-  SM->getOrCreatePort(SIRPort::Clk, "clk", 1);
-  SM->getOrCreatePort(SIRPort::Rst, "rstN", 1);
-  SM->getOrCreatePort(SIRPort::Start, "start", 1);
+  SM->createPort(SIRPort::Clk, "clk", 1);
+  SM->createPort(SIRPort::Rst, "rstN", 1);
+  SM->createPort(SIRPort::Start, "start", 1);
 
   for (Function::arg_iterator I = F->arg_begin(), E = F->arg_end();
        I != E; ++I) {
@@ -92,7 +92,7 @@ void SIRBuilder::buildInterface(Function *F) {
     StringRef Name = Arg->getName();
     unsigned BitWidth = TD.getTypeSizeInBits(Arg->getType());
 
-    SM->getOrCreatePort(SIRPort::ArgPort, Name, BitWidth);
+    SM->createPort(SIRPort::ArgPort, Name, BitWidth);
   }
   
   Type *RetTy = F->getReturnType();
@@ -100,7 +100,7 @@ void SIRBuilder::buildInterface(Function *F) {
     assert(RetTy->isIntegerTy() && "Only support return integer now!");
     unsigned BitWidth = TD.getTypeSizeInBits(RetTy);
 
-    SM->getOrCreatePort(SIRPort::RetPort, "return_value", BitWidth);
+    SM->createPort(SIRPort::RetPort, "return_value", BitWidth);
   }
 }
 
@@ -158,8 +158,19 @@ void SIRBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
 // All Control-path instructions should be built by SIRControlpathBuilder
 //-----------------------------------------------------------------------//
 
+void SIRBuilder::visitReturnInst(ReturnInst &I) {
+  if (I.getNumOperands()) {
+    SIRRegister *Reg = cast<SIROutPort>(SM->getRetPort())->getRegister();
+    // Warning: the guard should the slot value, we set it as true for now.
+    Reg->addAssignment(I.getReturnValue(), SM->createIntegerValue(1, 1));
+
+    // Index the register with return instruction.
+    SM->IndexSeqInst2Reg(&I, Reg);
+  }
+}
 
 
+/// Functions to provide basic information of instruction
 
 unsigned SIRDatapathBuilder::getBitWidth(Value *U) {
   Type *Ty = U->getType();

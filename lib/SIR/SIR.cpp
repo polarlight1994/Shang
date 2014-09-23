@@ -30,11 +30,6 @@ void SIRSelector::printDecl(raw_ostream &OS) const {
      << ";\n";
 }
 
-SIRRegister::SIRRegister(SIRRegisterTypes T /* = SIRRegister::General */,
-                         unsigned BitWidth /* = 0 */, std::string Name /* = "" */,
-                         uint64_t InitVal /* = 0 */) : InitVal(InitVal) {
-  this->Sel = new SIRSelector(Name, BitWidth);
-}
 
 void SIRPort::printDecl(raw_ostream &OS) const {
   if (isInput())
@@ -53,37 +48,62 @@ void SIRPort::printDecl(raw_ostream &OS) const {
   OS << " " << Mangle(getName());
 }
 
-SIRRegister *SIR::getOrCreateRegister(Instruction *SeqInst /* = 0 */,
-                                      SIRRegister::SIRRegisterTypes T /* = SIRRegister::General */,
-                                      StringRef Name /* = 0 */, unsigned BitWidth /* = 0 */,
-                                      uint64_t InitVal /* = 0 */) {
-  assert(SeqInst || T == SIRRegister::OutPort
-         && "Only Reg for Port can have no corresponding SeqInst!");
-  
-  // If we already create the register, find it.
-  if (lookupSIRReg(SeqInst)) return lookupSIRReg(SeqInst);
 
-  // Create the register.
-  SIRRegister *Reg = new SIRRegister(T, BitWidth, Name, InitVal);
-  // Index the register with SeqInst.
-  IndexSeqInst2Reg(SeqInst, Reg);
-
-  return Reg;
+IntegerType *SIR::createIntegerType(unsigned BitWidth) {
+  return IntegerType::get(C, BitWidth);
 }
 
-SIRPort *SIR::getOrCreatePort(SIRPort::SIRPortTypes T, StringRef Name,
-                              unsigned BitWidth) {
+Value *SIR::createIntegerValue(unsigned BitWidth, unsigned Val) {
+  IntegerType *T = createIntegerType(BitWidth);
+  return ConstantInt::get(T, Val);
+}
+
+SIRSelector *SIR::createSelector(StringRef Name, unsigned BitWidth) {
+  SIRSelector *Sel = new SIRSelector(Name, BitWidth);
+  return Sel;
+}
+
+SIRPort *SIR::createPort(SIRPort::SIRPortTypes T, StringRef Name,
+                         unsigned BitWidth) {
   // InPort or OutPort?
   if (T <= SIRPort::InPort) {
     SIRPort *P = new SIRInPort(T, BitWidth, Name);
     Ports.push_back(P);
     return P;
   } else {
-    SIRPort *P = new SIROutPort(T, BitWidth, Name);
+    // Record the Idx of RetPort
+    if (T == SIRPort::RetPort) RetPortIdx = Ports.size(); 
+
+    // Create the register for OutPort.
+    SIRRegister *Reg = getOrCreateRegister(Name, BitWidth, 0, 0,
+                                           SIRRegister::OutPort);
+    SIROutPort *P = new SIROutPort(T, Reg, BitWidth, Name);
+    // Store the port.
     Ports.push_back(P);
     return P;
   }
 }
+
+SIRRegister *SIR::getOrCreateRegister(StringRef Name, unsigned BitWidth,
+                                      Instruction *SeqInst, uint64_t InitVal,
+                                      SIRRegister::SIRRegisterTypes T) {
+  assert(SeqInst || T == SIRRegister::OutPort
+         && "Only Reg for Port can have no corresponding SeqInst!");
+  
+  // If we already create the register, find it.
+  if (SeqInst && lookupSIRReg(SeqInst)) return lookupSIRReg(SeqInst);
+
+  // Create the register.
+  SIRSelector *Sel = createSelector(Name, BitWidth);
+  SIRRegister *Reg = new SIRRegister(Sel, InitVal);
+  // Index the register with SeqInst if exists.
+  if (SeqInst) IndexSeqInst2Reg(SeqInst, Reg);
+  // Store the register.
+  Registers.push_back(Reg);
+
+  return Reg;
+}
+
 
 void SIR::printModuleDecl(raw_ostream &OS) const {
   OS << "module " << F->getValueName()->getKey();

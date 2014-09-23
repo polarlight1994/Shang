@@ -108,15 +108,26 @@ private:
   typedef std::vector<Value *> FaninGuardVector;
   FaninGuardVector FaninGuards;
 
+  // After SelectorSynthesis, all assignments will be
+  // synthesized into forms below:
+  // SelVal = (Fanin1 & Guard1) | (Fanin2 & Guard2)...
+  Value *SelVal;
+
+  // When the SelGuard is true, the SelVal can be
+  // assign to the register.
+  Value *SelGuard;
+
   const std::string Name;
   unsigned BitWidth;
 
 public:
   SIRSelector(std::string Name = "", unsigned BitWidth = 0)
-    : Name(Name), BitWidth(BitWidth) {}
+              : Name(Name), BitWidth(BitWidth) {}
 
   const std::string getName() const { return Name; }
   unsigned getBitWidth() const { return BitWidth; }
+  Value *getSelVal() const { return SelVal; }
+  Value *getSelGuard() const { return SelGuard; }
 
   typedef FaninVector::const_iterator const_iterator;
   const_iterator assign_begin() const { return Fanins.begin(); }
@@ -136,7 +147,10 @@ public:
   unsigned guard_size() const { return FaninGuards.size(); }
   bool guard_empty() const { return FaninGuards.empty(); }
 
+  // If the guard is NULL means the condition is always true.
   void addAssignment(Value *Fanin, Value *FaninGuard);
+
+  bool assignmentEmpty() { return Fanins.empty(); }
 
   // Print the declaration of this selector
   void printDecl(raw_ostream &OS) const;
@@ -144,28 +158,36 @@ public:
 
 // Represent the registers in the Verilog.
 class SIRRegister {
-private:
-  const uint64_t InitVal;
-  SIRSelector *Sel;
-
 public:
   enum SIRRegisterTypes {
     General,            // Common registers which hold data for data-path.
     OutPort,            // Register for OutPort of module.
   };
-  SIRRegister(SIRRegisterTypes T = SIRRegister::General, unsigned BitWidth = 0,
-              std::string Name = "", uint64_t InitVal = 0);
-  SIRRegister(SIRSelector *Sel, uint64_t InitVal = 0)
-              : Sel(Sel), InitVal(InitVal) {}
+
+private:
+  SIRRegisterTypes T;
+  const uint64_t InitVal;
+  SIRSelector *Sel;
+
+public:
+  SIRRegister(SIRSelector *Sel, uint64_t InitVal = 0,
+              SIRRegisterTypes T = SIRRegister::General)
+              : Sel(Sel), InitVal(InitVal), T(T) {}
 
   SIRSelector *getSelector() const { return Sel; }
 
   // Forward the functions from the Selector.
-  std::string getName() const { return getSelector()->getName(); }
-  unsigned getBitWidth() const { return getSelector()->getBitWidth(); }
+  std::string getName() const { return Sel->getName(); }
+  unsigned getBitWidth() const { return Sel->getBitWidth(); }
+  const uint64_t getInitVal() const { return InitVal; }
+  SIRRegisterTypes getRegisterType() const { return T; }
+  Value *getRegVal() const { return Sel->getSelVal(); }
+  Value *getRegGuard() const { return Sel->getSelGuard(); }
   void addAssignment(Value *Fanin, Value *FaninGuard) {
-    return getSelector()->addAssignment(Fanin, FaninGuard);
+    return Sel->addAssignment(Fanin, FaninGuard);
   }
+  bool assignmentEmpty() { return Sel->assignmentEmpty(); }
+
   void printDecl(raw_ostream &OS) const {
     return getSelector()->printDecl(OS);
   }
@@ -208,7 +230,13 @@ class SIRInPort : public SIRPort {
 public:
   SIRInPort(SIRPort::SIRPortTypes T, 
             unsigned BitWidth, const std::string Name)
-    : SIRPort(T, BitWidth, Name) {}
+            : SIRPort(T, BitWidth, Name) {}
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast.
+  static inline bool classof(const SIRInPort *A) { return true; }
+  static inline bool classof(const SIRPort *A) {
+    return (A->isInput());
+  }
 };
 
 // Represent the Out-Port in Verilog.
@@ -217,20 +245,31 @@ private:
   SIRRegister *Reg;
 
 public:
-  SIROutPort(SIRPort::SIRPortTypes T,
+  SIROutPort(SIRPort::SIRPortTypes T, SIRRegister *Reg, 
              unsigned BitWidth, const std::string Name)
-             : SIRPort(T, BitWidth, Name){
-    this->Reg = new SIRRegister(SIRRegister::General, BitWidth, Name);
+             : Reg(Reg), SIRPort(T, BitWidth, Name){}
+
+  SIRRegister *getRegister() const { return Reg; }
+
+  // Methods for support type inquiry through isa, cast, and dyn_cast.
+  static inline bool classof(const SIROutPort *A) { return true; }
+  static inline bool classof(const SIRPort *A) {
+    return !(A->isInput());
   }
 };
 
 // The module in Shang IR.
 class SIR {
+public:
   typedef SmallVector<SIRPort *, 8> SIRPortVector;
   typedef SIRPortVector::iterator port_iterator;
   typedef SIRPortVector::const_iterator const_port_iterator;
 
-  typedef SmallVector<SIRPort *, 8> RegisterVector;
+  typedef SmallVector<SIRSelector *, 8> SelectorVector;
+  typedef SelectorVector::iterator selector_iterator;
+  typedef SelectorVector::const_iterator const_selector_iterator;
+
+  typedef SmallVector<SIRRegister *, 8> RegisterVector;
   typedef RegisterVector::iterator register_iterator;
   typedef RegisterVector::const_iterator const_register_iterator;
 
@@ -240,23 +279,30 @@ class SIR {
   typedef SeqInst2RegMapTy::const_iterator const_seqinst2reg_iterator;
 
 private:
-  // Input/Output ports of the module.
+  // Input/Output ports of the module
   SIRPortVector Ports;
-
-  // Registers in the module.
+  // Selectors in the module
+  SelectorVector Selectors;
+  // Registers in the module
   RegisterVector Registers;
 
   // The map between SeqInst and SIRRegister
   SeqInst2RegMapTy SeqInst2Reg;
 
+  // Record the Idx of RetPort.
+  unsigned RetPortIdx;
+
 protected:
   Function *F;
+  // Use LLVMContext to create Type and ConstantInt Value.
+  LLVMContext &C;
 
 public:
-  SIR(Function *F) : F(F) {}
+  SIR(Function *F) : F(F), C(F->getContext()) {}
   ~SIR();
 
   Function *getFunction() { return F; }
+  LLVMContext &getContext() { return C; }
 
   port_iterator ports_begin() { return Ports.begin(); }
   const_port_iterator ports_begin() const { return Ports.begin(); }
@@ -279,15 +325,33 @@ public:
     return at == SeqInst2Reg.end() ? 0 : at->second;
   }  
 
+  unsigned getRetPortIdx() const { return RetPortIdx; }
+
+  SIRPort *getPort(unsigned i) const {
+    assert(i < Ports.size() && "Out of range!");
+    return Ports[i];
+  }
+  SIRPort *getRetPort() const { return getPort(RetPortIdx); }
+
+  // --------------Functions to create ConstantInt Value------------------//
+
+  // Create Type
+  IntegerType *createIntegerType(unsigned BitWidth);
+
+  // Create Value
+  Value *createIntegerValue(unsigned BitWidth, unsigned Val);
+
+
   // -------------------Functions to generate Verilog-------------------- //
 
+  // Create selector for register.
+  SIRSelector *createSelector(StringRef Name, unsigned BitWidth);
   // Create register for corresponding SeqInst.
-  SIRRegister *getOrCreateRegister(Instruction *SeqInst = 0,
-                                   SIRRegister::SIRRegisterTypes T = SIRRegister::General,
-                                   StringRef Name = 0, unsigned BitWidth = 0,
-                                   uint64_t InitVal = 0);
+  SIRRegister *getOrCreateRegister(StringRef Name, unsigned BitWidth,
+                                   Instruction *SeqInst = 0, uint64_t InitVal = 0,
+                                   SIRRegister::SIRRegisterTypes T = SIRRegister::General);
   // Create port for interface of module.
-  SIRPort *getOrCreatePort(SIRPort::SIRPortTypes T, StringRef Name, unsigned BitWidth);
+  SIRPort *createPort(SIRPort::SIRPortTypes T, StringRef Name, unsigned BitWidth);
 
 
   // -------------------Functions to generate Verilog-------------------- //
