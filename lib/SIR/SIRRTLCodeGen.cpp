@@ -43,7 +43,7 @@
 #define DEBUG_TYPE "sir-rtl-codegen"
 
 using namespace llvm;
-// To use the Lua in VAST
+// To use the LUA in VAST
 using namespace vast;
 
 namespace llvm {
@@ -53,7 +53,7 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
   DataLayout &TD;
 
   SIRDatapathPrinter(raw_ostream &OS, SIR *SM, DataLayout &TD)
-                    : OS(OS), SM(SM), TD(TD) {}
+                     : OS(OS), SM(SM), TD(TD) {}
 
   // Visit each BB in the SIR module.
   void visitBasicBlock(BasicBlock *BB);
@@ -78,6 +78,99 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
   void printUnaryOps(ArrayRef<Value *>Ops, const char *Opc);
   void printSimpleOp(ArrayRef<Value *> Ops, const char *Opc);
   };
+
+struct SIRControlPathPrinter {
+  raw_ostream &OS;
+  SIR *SM;
+  DataLayout &TD;
+
+  SIRControlPathPrinter(raw_ostream &OS, SIR *SM, DataLayout &TD)
+                        : OS(OS), SM(SM), TD(TD) {}
+
+  /// Functions to print registers
+
+  // Print the Selector as MUX.
+  void printSelector(SIRSelector *Sel, raw_ostream &OS, DataLayout &TD);
+  // Print the Register.
+  void printRegister(SIRRegister *Reg, vlang_raw_ostream &OS, DataLayout &TD);
+  void printRegister(SIRRegister *Reg, raw_ostream &OS, DataLayout &TD);
+
+  void generateCodeForRegisters();
+};
+}
+
+void SIRControlPathPrinter::printSelector(SIRSelector *Sel, raw_ostream &OS,
+                                          DataLayout &TD) {
+  // If the register has no Fanin, then ignore it.
+  if (Sel->assignmentEmpty()) return;
+
+  // Register must have been synthesized
+  Value *SelVal = Sel->getSelVal();
+  Value *SelGuard = Sel->getSelGuard();
+
+  if (SelVal) {
+    OS << "// Synthesized MUX\n";
+    OS << "wire " << Mangle(Sel->getName()) << "_register_guard = ";
+    unsigned Guard_BitWidth = TD.getTypeSizeInBits(SelGuard->getType());
+    assert(Guard_BitWidth == 1 && "Bad BitWidth of Guard!");
+    SM->printAsOperand(OS, SelGuard, Guard_BitWidth);
+    OS << ";\n";
+
+    // Print (or implement) the MUX by:
+    // output = (Sel0 & FANNIN0) | (Sel1 & FANNIN1) ...
+    OS << "wire " << BitRange(Sel->getBitWidth(), 0, false)
+       << Mangle(Sel->getName()) << "_register_wire = ";
+    SM->printAsOperand(OS, SelVal, Sel->getBitWidth());
+    OS << ";\n";
+  }
+}
+
+void SIRControlPathPrinter::printRegister(SIRRegister *Reg, vlang_raw_ostream &OS,
+                                          DataLayout &TD) {
+  if (Reg->assignmentEmpty()) {
+    // Print the driver of the output ports.
+    // Change the judgment to the type of register!
+    if (Reg->getRegisterType() == SIRRegister::OutPort) {
+      OS.always_ff_begin();
+      OS << Mangle(Reg->getName()) << " <= "
+         << buildLiteral(Reg->getInitVal(), Reg->getBitWidth(), false) << ";\n";
+      OS.always_ff_end();
+    }
+
+    return;
+  }
+
+  // Print the selector of the register.
+  printSelector(Reg->getSelector(), OS, TD);
+
+  // Print the sequential logic of the register.
+  OS.always_ff_begin();
+  // Reset the register.
+  OS << Mangle(Reg->getName()) << " <= "
+     << buildLiteral(Reg->getInitVal(), Reg->getBitWidth(), false) << ";\n";  
+
+  OS.else_begin();
+
+  // Print the assignment.
+  OS.if_begin(Twine(Mangle(Reg->getName())) + Twine("_register_guard"));
+  OS << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName()) << "_register_wire"
+    << BitRange(Reg->getBitWidth(), 0, false) << ";\n";
+  OS.exit_block();
+
+  OS.always_ff_end();
+}
+
+void SIRControlPathPrinter::printRegister(SIRRegister *Reg, raw_ostream &OS,
+                                          DataLayout &TD) {
+  vlang_raw_ostream S(OS);
+  printRegister(Reg, S, TD);
+}
+
+void SIRControlPathPrinter::generateCodeForRegisters() {  
+  for (SIR::const_register_iterator I = SM->registers_begin(), E = SM->registers_end();
+       I != E; ++I) {
+    printRegister(*I, OS, TD);
+  }
 }
 
 void SIRDatapathPrinter::printSimpleOp(ArrayRef<Value *> Ops, const char *Opc) {
@@ -365,8 +458,8 @@ struct SIR2RTL : public SIRPass {
 
 	void generateCodeForTopModule();
   void generateCodeForDecl(SIR &SM);
-  void generateCodeForDatapath(SIR &SM, DataLayout &TD,
-                               bool PrintSelfVerification);
+  void generateCodeForDatapath(SIR &SM, DataLayout &TD);
+  void generateCodeForControlpath(SIR &SM, DataLayout &TD);
   void generateCodeForMemoryBank(SIR &SM, DataLayout &TD);
   void generateCodeForRegisters(SIR &SM, DataLayout &TD);
   void generateCodeForOutPort(SIR &SM, DataLayout &TD);
@@ -376,7 +469,7 @@ struct SIR2RTL : public SIRPass {
 	void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
-    //AU.addRequiredID(SIRSelectorSynthesisID);
+    AU.addRequiredID(SIRSelectorSynthesisID);
 		//AU.addRequiredTransitiveID(ControlLogicSynthesisID);
 		//AU.addRequiredTransitiveID(TimingDrivenSelectorSynthesisID);
 		//AU.addRequiredID(BitlevelOptID);
@@ -398,8 +491,7 @@ void SIR2RTL::generateCodeForDecl(SIR &SM) {
   SM.printModuleDecl(Out);
 }
 
-void SIR2RTL::generateCodeForDatapath(SIR &SM, DataLayout &TD,
-                                      bool PrintSelfVerification) {
+void SIR2RTL::generateCodeForDatapath(SIR &SM, DataLayout &TD) {
   // Create the DataPathPrinter.
   SIRDatapathPrinter DPP(Out, &SM, TD);
 
@@ -410,6 +502,14 @@ void SIR2RTL::generateCodeForDatapath(SIR &SM, DataLayout &TD,
 
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     DPP.visitBasicBlock(*I);
+}
+
+void SIR2RTL::generateCodeForControlpath(SIR &SM, DataLayout &TD) {
+  // Create the ControlPathPrinter.
+  SIRControlPathPrinter CPP(Out, &SM, TD);
+
+  // Generate code for registers in sequential logic.
+  CPP.generateCodeForRegisters();
 }
 
 bool SIR2RTL::runOnSIR(SIR &SM) {
@@ -429,9 +529,10 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
   Out.module_begin();
 
   // Generate the code for data-path.
-  generateCodeForDatapath(SM, TD, false);
+  generateCodeForDatapath(SM, TD);
 
-  // Sequential logic of the registers.
+  // Generate the code for control-path.
+  generateCodeForControlpath(SM, TD);
 
   Out.module_end();
 
@@ -453,7 +554,7 @@ INITIALIZE_PASS_BEGIN(SIR2RTL, "shang-sir-verilog-writer",
                       "Write the RTL verilog code to output file.",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
-  //INITIALIZE_PASS_DEPENDENCY(SIRSelectorSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(SIRSelectorSynthesis)
 INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",
                     "Write the RTL verilog code to output file.",
                     false, true)
