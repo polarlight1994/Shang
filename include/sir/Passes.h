@@ -1,6 +1,6 @@
 //===------------- Passes.h - Passes Implemented in SIR----------*- C++ -*-===//
 //
-//                      The VAST HLS frameowrk                                //
+//                       The SIR HLS framework                                //
 //
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
@@ -23,9 +23,12 @@ class PassRegistry;
 }
 
 namespace llvm {
+extern char &SIRSelectorSynthesisID;
+
 Pass *createSIRInitPass();
 Pass *createSIR2RTLPass();
 
+void initializeSIRSelectorSynthesisPass(PassRegistry &Registry);
 void initializeSIRInitPass(PassRegistry &Registry);
 void initializeSIR2RTLPass(PassRegistry &Registry);
 } // end namespace

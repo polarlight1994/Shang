@@ -152,6 +152,8 @@ public:
 
   bool assignmentEmpty() { return Fanins.empty(); }
 
+  void setMux(Value *V, Value *G) { SelVal = V; SelGuard = G; }
+
   // Print the declaration of this selector
   void printDecl(raw_ostream &OS) const;
 };
@@ -168,6 +170,7 @@ private:
   SIRRegisterTypes T;
   const uint64_t InitVal;
   SIRSelector *Sel;
+  Instruction *SeqInst;
 
 public:
   SIRRegister(SIRSelector *Sel, uint64_t InitVal = 0,
@@ -175,6 +178,9 @@ public:
               : Sel(Sel), InitVal(InitVal), T(T) {}
 
   SIRSelector *getSelector() const { return Sel; }
+
+  void setSeqInst(Instruction *I) { SeqInst = I; }
+  Instruction *getSeqInst() const { return SeqInst; }
 
   // Forward the functions from the Selector.
   std::string getName() const { return Sel->getName(); }
@@ -265,10 +271,6 @@ public:
   typedef SIRPortVector::iterator port_iterator;
   typedef SIRPortVector::const_iterator const_port_iterator;
 
-  typedef SmallVector<SIRSelector *, 8> SelectorVector;
-  typedef SelectorVector::iterator selector_iterator;
-  typedef SelectorVector::const_iterator const_selector_iterator;
-
   typedef SmallVector<SIRRegister *, 8> RegisterVector;
   typedef RegisterVector::iterator register_iterator;
   typedef RegisterVector::const_iterator const_register_iterator;
@@ -281,8 +283,6 @@ public:
 private:
   // Input/Output ports of the module
   SIRPortVector Ports;
-  // Selectors in the module
-  SelectorVector Selectors;
   // Registers in the module
   RegisterVector Registers;
 
@@ -317,6 +317,8 @@ public:
   const_register_iterator registers_end() const { return Registers.end(); }
 
   bool IndexSeqInst2Reg(Instruction *SeqInst, SIRRegister *Reg) {
+    // Also make the register remember the SeqInst.
+    Reg->setSeqInst(SeqInst);
     return SeqInst2Reg.insert(std::make_pair(SeqInst, Reg)).second;
   }
 

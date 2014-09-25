@@ -96,8 +96,10 @@ SIRRegister *SIR::getOrCreateRegister(StringRef Name, unsigned BitWidth,
   // Create the register.
   SIRSelector *Sel = createSelector(Name, BitWidth);
   SIRRegister *Reg = new SIRRegister(Sel, InitVal);
+
   // Index the register with SeqInst if exists.
   if (SeqInst) IndexSeqInst2Reg(SeqInst, Reg);
+
   // Store the register.
   Registers.push_back(Reg);
 
