@@ -701,7 +701,7 @@ static unsigned LogCeiling(unsigned x, unsigned n) {
 void DelayModel::updateReductionArrival() {
   VASTValPtr V = Node->getOperand(0);
   unsigned NumBits = V->getBitWidth();
-  // Only reduce the unknow bits.
+  // Only reduce the unknown bits.
   NumBits -= VASTBitMask(V).getNumKnownBits();
   unsigned LogicLevels = LogCeiling(NumBits, VFUs::MaxLutSize);
   updateArrivalParallel(LogicLevels * VFUs::LUTDelay);
@@ -710,7 +710,7 @@ void DelayModel::updateReductionArrival() {
 void DelayModel::updateROMLookUpArrival() {
   VASTValPtr Addr = Node->getOperand(0);
   unsigned NumBits = Addr->getBitWidth();
-  // Only reduce the unknow bits.
+  // Only reduce the unknown bits.
   NumBits -= VASTBitMask(Addr).getNumKnownBits();
   unsigned LogicLevels = LogCeiling(NumBits, VFUs::MaxLutSize);
   float delay = LogicLevels * VFUs::LUTDelay;

@@ -36,7 +36,6 @@ namespace llvm {
 }
 
 char SIRSelectorSynthesis::ID = 0;
-char &llvm::SIRSelectorSynthesisID = SIRSelectorSynthesis::ID;
 
 INITIALIZE_PASS_BEGIN(SIRSelectorSynthesis,
                       "SIR-selector-synthesis",

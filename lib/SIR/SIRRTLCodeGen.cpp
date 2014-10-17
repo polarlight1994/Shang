@@ -469,7 +469,7 @@ struct SIR2RTL : public SIRPass {
 	void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
-    AU.addRequiredID(SIRSelectorSynthesisID);
+    AU.addRequired<SIRSelectorSynthesis>();
 		//AU.addRequiredTransitiveID(ControlLogicSynthesisID);
 		//AU.addRequiredTransitiveID(TimingDrivenSelectorSynthesisID);
 		//AU.addRequiredID(BitlevelOptID);
@@ -558,5 +558,4 @@ INITIALIZE_PASS_BEGIN(SIR2RTL, "shang-sir-verilog-writer",
 INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",
                     "Write the RTL verilog code to output file.",
                     false, true)
-
 
