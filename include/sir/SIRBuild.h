@@ -40,10 +40,10 @@ class SIRDatapathBuilder : public InstVisitor<SIRDatapathBuilder, void> {
 public:
   SIRDatapathBuilder(SIR *SM, DataLayout &TD) : SM(SM), TD(TD) {}
 
-  // Functions to provide basic information of instruction
+  /// Functions to provide basic information of instruction
   unsigned getBitWidth(Value *U);
 
-  // Functions to visit all data-path instructions
+  /// Functions to visit all data-path instructions
   void visitSExtInst(SExtInst &I);
   void visitZExtInst(ZExtInst &I);
   void visitTruncInst(TruncInst &I);
@@ -56,95 +56,140 @@ public:
   void visitGetElementPtrInst(GetElementPtrInst &I);
   void visitGEPOperator(GEPOperator &O, GetElementPtrInst &I);
 
-  // Functions to create Shang-Inst
+  /// Functions to create Shang-Inst
   Value *createShangInstPattern(ArrayRef<Value *> Ops, Type *RetTy,
-                                Instruction *Insertbefore,
+                                Value *InsertPosition,
                                 Intrinsic::ID FuncID, bool UsedAsArg);
   Value *createSBitExtractInst(Value *U, unsigned UB, unsigned LB,
-                               Instruction *Insertbefore, bool UsedAsArg);
-  Value *createSBitCatInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+                               Value *InsertPosition, bool UsedAsArg);
+  Value *createSBitCatInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                            bool UsedAsArg);
   Value *createSBitRepeatInst(Value *U, unsigned RepeatTimes,
-                              Instruction *Insertbefore, bool UsedAsArg);
+                              Value *InsertPosition, bool UsedAsArg);
   Value *createSSExtInst(Value *U, unsigned DstBitWidth,
-                         Instruction *Insertbefore, bool UsedAsArg);
+                         Value *InsertPosition, bool UsedAsArg);
   Value *createSSExtInstOrSelf(Value *U, unsigned DstBitWidth,
-                               Instruction *Insertbefore, bool UsedAsArg);
+                               Value *InsertPosition, bool UsedAsArg);
   Value *createSZExtInst(Value *U, unsigned DstBitWidth,
-                         Instruction *Insertbefore, bool UsedAsArg);
+                         Value *InsertPosition, bool UsedAsArg);
   Value *createSZExtInstOrSelf(Value *U, unsigned DstBitWidth,
-                               Instruction *Insertbefore, bool UsedAsArg);
+                               Value *InsertPosition, bool UsedAsArg);
   Value *createSTruncInst(Value *U, unsigned UB, unsigned LB,
-                          Instruction *Insertbefore, bool UsedAsArg);
-  Value *createSCastInst(Value *U, Instruction *Insertbefore, bool UsedAsArg);
+                          Value *InsertPosition, bool UsedAsArg);
+  Value *createSCastInst(Value *U, Value *InsertPosition, bool UsedAsArg);
   Value *createSSelInst(Value *Cnd, Value *TrueV, Value *FalseV,
-                        Instruction *Insertbefore, bool UsedAsArg);
+                        Value *InsertPosition, bool UsedAsArg);
 
-  Value *createSNotInst(Value *U, Instruction *Insertbefore, bool UsedAsArg);
-  Value *createSRAndInst(Value *U, Instruction *Insertbefore, bool UsedAsArg);
-  Value *createSROrInst(Value *U, Instruction *Insertbefore, bool UsedAsArg);
-  Value *createSRXorInst(Value *U, Instruction *Insertbefore, bool UsedAsArg);
+  Value *createSNotInst(Value *U, Value *InsertPosition, bool UsedAsArg);
+  Value *createSRAndInst(Value *U, Value *InsertPosition, bool UsedAsArg);
+  Value *createSROrInst(Value *U, Value *InsertPosition, bool UsedAsArg);
+  Value *createSRXorInst(Value *U, Value *InsertPosition, bool UsedAsArg);
 
-  Value *createSNEInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSNEInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                        bool UsedAsArg);
-  Value *createSEQInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSEQInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                        bool UsedAsArg);
-  Value *createSEQInst(Value *LHS, Value *RHS, Instruction *Insertbefore,
+  Value *createSEQInst(Value *LHS, Value *RHS, Value *InsertPosition,
                        bool UsedAsArg);
-  Value *createSdpSGTInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSdpSGTInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                           bool UsedAsArg);
-  Value *createSdpUGTInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSdpUGTInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                           bool UsedAsArg);
 
   Value *createSIcmpOrEqInst(ICmpInst::Predicate Predicate, ArrayRef<Value *> Ops,
-                             Instruction *Insertbefore, bool UsedAsArg);
+                             Value *InsertPosition, bool UsedAsArg);
   Value *createSIcmpOrEqInst(ICmpInst::Predicate Predicate, Value *LHS, Value *RHS,
-                             Instruction *Insertbefore, bool UsedAsArg);
+                             Value *InsertPosition, bool UsedAsArg);
   Value *createSICmpInst(ICmpInst::Predicate Predicate, ArrayRef<Value *> Ops,
-                         Instruction *Insertbefore, bool UsedAsArg);
+                         Value *InsertPosition, bool UsedAsArg);
   Value *createSICmpInst(ICmpInst::Predicate Predicate, Value *LHS, Value *RHS,
-                         Instruction *Insertbefore, bool UsedAsArg);
+                         Value *InsertPosition, bool UsedAsArg);
 
-  Value *createSAddInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSAddInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                         bool UsedAsArg);
-  Value *createSSubInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSSubInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                         bool UsedAsArg);
-  Value *createSMulInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSMulInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                         bool UsedAsArg);
-  Value *createSUDivInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSUDivInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                          bool UsedAsArg);
-  Value *createSSDivInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSSDivInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                          bool UsedAsArg);
-  Value *createSAddInst(Value *LHS, Value *RHS, Instruction *Insertbefore,
+  Value *createSAddInst(Value *LHS, Value *RHS, Value *InsertPosition,
                         bool UsedAsArg);
-  Value *createSMulInst(Value *LHS, Value *RHS, Instruction *Insertbefore,
+  Value *createSMulInst(Value *LHS, Value *RHS, Value *InsertPosition,
                         bool UsedAsArg);
 
   Value *createSSRemInst(ArrayRef<Value *> Ops, BinaryOperator &I);
 
-  Value *createSAndInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSAndInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                         bool UsedAsArg);
-  Value *createSOrInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSOrInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                        bool UsedAsArg);
-  Value *createSXorInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSXorInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                         bool UsedAsArg);
-  Value *createSAndInst(Value *LHS, Value *RHS, Instruction *Insertbefore,
+  Value *createSAndInst(Value *LHS, Value *RHS, Value *InsertPosition,
                         bool UsedAsArg);
-  Value *createSOrInst(Value *LHS, Value *RHS, Instruction *Insertbefore,
+  Value *createSOrInst(Value *LHS, Value *RHS, Value *InsertPosition,
                        bool UsedAsArg);
-  Value *createSXorInst(Value *LHS, Value *RHS, Instruction *Insertbefore,
+  Value *createSXorInst(Value *LHS, Value *RHS, Value *InsertPosition,
                         bool UsedAsArg);
-  Value *createSOrEqualInst(Value *LHS, Value *RHS, Instruction *Insertbefore,
+  Value *createSOrEqualInst(Value *LHS, Value *RHS, Value *InsertPosition,
                             bool UsedAsArg);
 
-  Value *createSShiftInst(ArrayRef<Value *> Ops, Instruction *Insertbefore,
+  Value *createSShiftInst(ArrayRef<Value *> Ops, Value *InsertPosition,
                           Intrinsic::ID FuncID, bool UsedAsArg);
-  Value *createSShiftInst(Value *LHS, Value *RHS, Instruction *Insertbefore,
+  Value *createSShiftInst(Value *LHS, Value *RHS, Value *InsertPosition,
                           Intrinsic::ID FuncID, bool UsedAsArg);
 
   // Functions to help us create Shang-Inst.
-  Value *getSignBit(Value *U, Instruction *InsertBefore);
-  Value *createSConstantInt(uint16_t Value, IntegerType *T, bool Signed);
+  Value *getSignBit(Value *U, Value *InsertPosition);
+  Value *createSConstantInt(uint16_t Value, unsigned BitWidth);
+};
+
+// SIRCtrlRgnBuilder focus on the building of Control-path
+// in SIR.
+class SIRCtrlRgnBuilder : public InstVisitor<SIRCtrlRgnBuilder, void> {
+  SIR *SM;
+  DataLayout &TD;
+  // During the building of control path, we need
+  // to construct data-path instruction sometimes.
+  SIRDatapathBuilder D_Builder;
+
+public:
+  SIRCtrlRgnBuilder(SIR *SM, DataLayout &TD)
+                    : SM(SM), TD(TD), D_Builder(SM, TD) {}
+
+  // Remember the landing slot and the latest slot of a basic block.
+  std::map<BasicBlock *, std::pair<SIRSlot *, SIRSlot *>> BB2SlotMap;
+
+  /// Functions to provide basic information
+  unsigned getBitWidth(Value *U);
+
+  /// Functions to visit all control-path instructions
+  void visitBranchInst(BranchInst &I);
+  void visitReturnInst(ReturnInst &I);
+
+  /// Functions to build Control Logic
+  Instruction *createPseudoInst();
+
+  SIRRegister *createRegister(StringRef Name, unsigned BitWidth,
+                              Instruction *SeqInst, uint64_t InitVal = 0,
+                              SIRRegister::SIRRegisterTypes T = SIRRegister::General);
+  SIRPort *createPort(SIRPort::SIRPortTypes T, StringRef Name, unsigned BitWidth);
+
+  SIRSlot *getOrCreateLandingSlot(BasicBlock *BB);
+  SIRSlot *getLatestSlot(BasicBlock *BB);
+  SIRSlot *getStartSlot();
+  SIRSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB,
+                      unsigned Schedule, bool IsSubGrp = false);
+  SIRSlot *createSubGroup(BasicBlock *BB, Value *Guard, SIRSlot *SrcSlot);
+  void createConditionalTransition(BasicBlock *DstBB, SIRSlot *SrcSlot, Value *Guard);
+
+  void visitPHIsInSucc(SIRSlot *SrcSlot, SIRSlot *DstSlot, Value *Guard, BasicBlock *SrcBB);
+  // Add a successor slot  
+  void createStateTransition(SIRSlot *SrcSlot, SIRSlot *DstSlot, Value *Cnd);
+  void assignToReg(SIRSlot *S, Value *Guard, Value *Src, SIRRegister *Dst);
 };
 
 // SIRBuilder build the SIR by visiting all instructions
@@ -155,15 +200,16 @@ struct SIRBuilder : public InstVisitor<SIRBuilder, void> {
   // The construction of SIR is divided into two parts:
   // (1) data-path: built by SIRDatapathBuilder
   // (2) control-path: built by SIRControlpathBuilder
-  SIRDatapathBuilder Builder;
+  SIRDatapathBuilder D_Builder;
+  SIRCtrlRgnBuilder C_Builder;
 
   SIRBuilder(SIR *SM, DataLayout &TD)
-    : SM(SM), TD(TD), Builder(SM, TD) {}
+             : SM(SM), TD(TD), D_Builder(SM, TD), C_Builder(SM, TD) {}
 
   // Build the basic interface for whole module.
   void buildInterface(Function *F);
 
-  // Functions to visit BB & Insts.
+  /// Functions to visit BB & Insts.
   void visitBasicBlock(BasicBlock &BB);
   void visitSExtInst(SExtInst &I);
   void visitZExtInst(ZExtInst &I);
@@ -176,12 +222,11 @@ struct SIRBuilder : public InstVisitor<SIRBuilder, void> {
   void visitBinaryOperator(BinaryOperator &I);
   void visitGetElementPtrInst(GetElementPtrInst &I);
   void visitGEPOperator(GEPOperator &O, GetElementPtrInst &I);
-  // Disable the control-path instruction for now.
   //void visitStoreInst(StoreInst &I);
   //void visitLoadInst(LoadInst &I);
-  //void visitBranchInst(BranchInst &I);
+  void visitBranchInst(BranchInst &I);
   //void visitUnreachableInst(UnreachableInst &I);
-  //void visitReturnInst(ReturnInst &I);
+  void visitReturnInst(ReturnInst &I);
   //void visitSwitchInst(SwitchInst &I);
 
 };

@@ -30,7 +30,6 @@ void SIRSelector::printDecl(raw_ostream &OS) const {
      << ";\n";
 }
 
-
 void SIRPort::printDecl(raw_ostream &OS) const {
   if (isInput())
     OS << "input ";
@@ -48,6 +47,27 @@ void SIRPort::printDecl(raw_ostream &OS) const {
   OS << " " << Mangle(getName());
 }
 
+bool SIRSlot::hasNextSlot(SIRSlot *NextSlot) {
+  for (const_succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I)
+    if (NextSlot == EdgePtr(*I))
+      return true;
+
+  return false;
+}
+
+void SIRSlot::addSuccSlot(SIRSlot *NextSlot, EdgeType T) {
+  assert(T <= 3 && "Unexpected distance!");
+  // Do not add the same successor slot twice.
+  if (hasNextSlot(NextSlot)) return;
+
+  // Hack: I think we can have this loop 
+  // when we don't have subgrp to avoid it.
+  //assert(NextSlot != this && "Unexpected loop!");
+
+  // Connect the slots.
+  NextSlot->PredSlots.push_back(EdgePtr(this, T));
+  NextSlots.push_back(EdgePtr(NextSlot, T));
+}
 
 IntegerType *SIR::createIntegerType(unsigned BitWidth) {
   return IntegerType::get(C, BitWidth);
@@ -57,55 +77,6 @@ Value *SIR::createIntegerValue(unsigned BitWidth, unsigned Val) {
   IntegerType *T = createIntegerType(BitWidth);
   return ConstantInt::get(T, Val);
 }
-
-SIRSelector *SIR::createSelector(StringRef Name, unsigned BitWidth) {
-  SIRSelector *Sel = new SIRSelector(Name, BitWidth);
-  return Sel;
-}
-
-SIRPort *SIR::createPort(SIRPort::SIRPortTypes T, StringRef Name,
-                         unsigned BitWidth) {
-  // InPort or OutPort?
-  if (T <= SIRPort::InPort) {
-    SIRPort *P = new SIRInPort(T, BitWidth, Name);
-    Ports.push_back(P);
-    return P;
-  } else {
-    // Record the Idx of RetPort
-    if (T == SIRPort::RetPort) RetPortIdx = Ports.size(); 
-
-    // Create the register for OutPort.
-    SIRRegister *Reg = getOrCreateRegister(Name, BitWidth, 0, 0,
-                                           SIRRegister::OutPort);
-    SIROutPort *P = new SIROutPort(T, Reg, BitWidth, Name);
-    // Store the port.
-    Ports.push_back(P);
-    return P;
-  }
-}
-
-SIRRegister *SIR::getOrCreateRegister(StringRef Name, unsigned BitWidth,
-                                      Instruction *SeqInst, uint64_t InitVal,
-                                      SIRRegister::SIRRegisterTypes T) {
-  assert(SeqInst || T == SIRRegister::OutPort
-         && "Only Reg for Port can have no corresponding SeqInst!");
-  
-  // If we already create the register, find it.
-  if (SeqInst && lookupSIRReg(SeqInst)) return lookupSIRReg(SeqInst);
-
-  // Create the register.
-  SIRSelector *Sel = createSelector(Name, BitWidth);
-  SIRRegister *Reg = new SIRRegister(Sel, InitVal);
-
-  // Index the register with SeqInst if exists.
-  if (SeqInst) IndexSeqInst2Reg(SeqInst, Reg);
-
-  // Store the register.
-  Registers.push_back(Reg);
-
-  return Reg;
-}
-
 
 void SIR::printModuleDecl(raw_ostream &OS) const {
   OS << "module " << F->getValueName()->getKey();
@@ -119,6 +90,3 @@ void SIR::printModuleDecl(raw_ostream &OS) const {
   }
   OS << ");\n";
 }
-
-
-
