@@ -90,7 +90,7 @@ struct SIRControlPathPrinter {
   /// Functions to print registers
 
   // Print the Selector as MUX.
-  void printSelector(SIRSelector *Sel, raw_ostream &OS, DataLayout &TD);
+  void printSelector(SIRSelector *Sel, raw_ostream &OS, DataLayout &TD, bool isSlotReg);
   // Print the Register.
   void printRegister(SIRRegister *Reg, vlang_raw_ostream &OS, DataLayout &TD);
   void printRegister(SIRRegister *Reg, raw_ostream &OS, DataLayout &TD);
@@ -100,7 +100,7 @@ struct SIRControlPathPrinter {
 }
 
 void SIRControlPathPrinter::printSelector(SIRSelector *Sel, raw_ostream &OS,
-                                          DataLayout &TD) {
+                                          DataLayout &TD, bool isSlotReg) {
   // If the register has no Fanin, then ignore it.
   if (Sel->assignmentEmpty()) return;
 
@@ -115,6 +115,9 @@ void SIRControlPathPrinter::printSelector(SIRSelector *Sel, raw_ostream &OS,
     assert(Guard_BitWidth == 1 && "Bad BitWidth of Guard!");
     SM->printAsOperand(OS, SelGuard, Guard_BitWidth);
     OS << ";\n";
+
+    // If it is slot register, we only need the guard signal.
+    if (isSlotReg) return;
 
     // Print (or implement) the MUX by:
     // output = (Sel0 & FANNIN0) | (Sel1 & FANNIN1) ...
@@ -141,7 +144,7 @@ void SIRControlPathPrinter::printRegister(SIRRegister *Reg, vlang_raw_ostream &O
   }
 
   // Print the selector of the register.
-  printSelector(Reg->getSelector(), OS, TD);
+  printSelector(Reg->getSelector(), OS, TD, Reg->isSlot());
 
   // Print the sequential logic of the register.
   OS.always_ff_begin();
@@ -152,10 +155,16 @@ void SIRControlPathPrinter::printRegister(SIRRegister *Reg, vlang_raw_ostream &O
   OS.else_begin();
 
   // Print the assignment.
-  OS.if_begin(Twine(Mangle(Reg->getName())) + Twine("_register_guard"));
-  OS << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName()) << "_register_wire"
-    << BitRange(Reg->getBitWidth(), 0, false) << ";\n";
-  OS.exit_block();
+  if (Reg->isSlot()) {
+    OS << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName()) << "_register_guard"
+       << ";\n";
+  } else {
+    OS.if_begin(Twine(Mangle(Reg->getName())) + Twine("_register_guard"));
+    OS << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName()) << "_register_wire"
+       << BitRange(Reg->getBitWidth(), 0, false) << ";\n";
+    OS.exit_block();
+  }
+  
 
   OS.always_ff_end();
 }
@@ -359,6 +368,10 @@ bool SIRDatapathPrinter::printExpr(IntrinsicInst &I) {
 }
 
 void SIRDatapathPrinter::visitIntrinsicInst(IntrinsicInst &I) {
+  // Skip all the pseudo instruction.
+  if (I.getIntrinsicID() == Intrinsic::shang_pseudo)
+    return;
+
   unsigned BitWidth = TD.getTypeSizeInBits(I.getType());
   OS << "wire" << BitRange(BitWidth, 0, BitWidth > 1) << ' ';
 
@@ -469,7 +482,7 @@ struct SIR2RTL : public SIRPass {
 	void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
-    AU.addRequired<SIRSelectorSynthesis>();
+    AU.addRequiredID(SIRSelectorSynthesisID);
 		//AU.addRequiredTransitiveID(ControlLogicSynthesisID);
 		//AU.addRequiredTransitiveID(TimingDrivenSelectorSynthesisID);
 		//AU.addRequiredID(BitlevelOptID);
@@ -515,6 +528,8 @@ void SIR2RTL::generateCodeForControlpath(SIR &SM, DataLayout &TD) {
 bool SIR2RTL::runOnSIR(SIR &SM) {
   DataLayout &TD = getAnalysis<DataLayout>();
   Function &F = *(SM.getFunction());
+
+  // Get the output path for Verilog code.
   std::string RTLOutputPath = LuaI::GetString("RTLOutput");
   std::string Error;
   raw_fd_ostream Output(RTLOutputPath.c_str(), Error);
@@ -530,6 +545,8 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
 
   // Generate the code for data-path.
   generateCodeForDatapath(SM, TD);
+
+  Out << "\n\n";
 
   // Generate the code for control-path.
   generateCodeForControlpath(SM, TD);
