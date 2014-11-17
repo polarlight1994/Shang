@@ -353,28 +353,26 @@ private:
 
   // The schedule result
   typedef uint16_t SlotNumTy;
-  const SlotNumTy SlotNum : 15;
-  const bool      IsSubGrp : 1;
+  const SlotNumTy SlotNum;
   const SlotNumTy Schedule;
 
 public:
   SIRSlot(unsigned SlotNum, BasicBlock *ParentBB,
-          Value *SlotGuard, SIRRegister *Reg,
-          bool IsSubGrp, unsigned Schedule)
-    : SlotNum(SlotNum), ParentBB(ParentBB), SlotGuardReg(Reg),
-    IsSubGrp(IsSubGrp), Schedule(Schedule) {}
+          Value *SlotGuard, SIRRegister *Reg, unsigned Schedule)
+    : SlotNum(SlotNum), ParentBB(ParentBB),
+    SlotGuardReg(Reg), Schedule(Schedule) {}
   ~SIRSlot();
 
   SlotNumTy getSlotNum() { return SlotNum; }
   SlotNumTy getSchedule() { return Schedule; }
   BasicBlock *getParent() { return ParentBB; }
   SIRRegister *getGuardReg() { return SlotGuardReg; }
+  Value *getGuardValue() { return getGuardReg()->getSeqInst(); }
 
   SIRSlot *getSubGroup(BasicBlock *BB) const;
 
   // If the SrcSlot already has this NextSlot as successor.
   bool hasNextSlot(SIRSlot *NextSlot);
-  bool isSubGrp() { return IsSubGrp; }
 
   void addSeqOp(Instruction *I) { Operations.push_back(I); }
   void addSuccSlot(SIRSlot *NextSlot, EdgeType T);
@@ -406,24 +404,24 @@ public:
 }; 
 
 // Represent the assign operation in SIR.
-class SIRSeqOp : public ilist_node<SIRSeqOp> {
+class SIRSeqOp {
 private:
   Value *Src;
   SIRRegister *DstReg;
   Value *Guard;
   SIRSlot *S;
 
-  // Default constructor for ilist_node<SIRSeqOp>
-  SIRSeqOp() {}
-
 public:
   SIRSeqOp(Value *Src, SIRRegister *DstReg,
-    Value *Guard, SIRSlot *S) 
+           Value *Guard, SIRSlot *S) 
     : Src(Src), DstReg(DstReg), Guard(Guard), S(S) {}
 
+  Value *getSrc() const { return Src; }
   Value *getGuard() const { return Guard; }
   SIRSlot *getSlot() const { return S; }
   SIRRegister *getDst() const { return DstReg; }
+
+  void setSlot(SIRSlot *Slot) { S = Slot; }
 };
 
 // The module in Shang IR.
@@ -445,6 +443,10 @@ public:
   typedef SlotVector::iterator slot_iterator;
   typedef SlotVector::const_iterator const_slot_iterator;
 
+  typedef SmallVector<SIRSeqOp *, 8> SeqOpVector;
+  typedef SeqOpVector::iterator seqop_iterator;
+  typedef SeqOpVector::const_iterator const_seqop_iterator;
+
   typedef DenseMap<Instruction *, SIRRegister *> SeqInst2RegMapTy;
   typedef SeqInst2RegMapTy::iterator seqinst2reg_iterator;
   typedef SeqInst2RegMapTy::const_iterator const_seqinst2reg_iterator;
@@ -458,10 +460,12 @@ private:
   SIRPortVector Ports;
   // Registers in the module
   RegisterVector Registers;
-  // The Slots in CtrlRgn of the module
-  SlotVector Slots;
   // The DataPathInsts in the module
   DataPathInstVector DataPathInsts;
+  // The Slots in CtrlRgn of the module
+  SlotVector Slots;
+  // The SeqOps in CtrlRgn of the module
+  SeqOpVector SeqOps;
   // The map between SeqInst and SIRRegister
   SeqInst2RegMapTy SeqInst2Reg;
   // The map between Register and SIRSlot
@@ -469,6 +473,8 @@ private:
 
   // Record the Idx of RetPort.
   unsigned RetPortIdx;
+  // Record the landing slot and the latest slot of BB.
+  std::map<BasicBlock *, std::pair<SIRSlot *, SIRSlot *>> BB2SlotMap;
 
 protected:
   Function *F;
@@ -507,6 +513,12 @@ public:
   const_datapathinst_iterator const_datapathinst_begin() { return DataPathInsts.begin(); }
   const_datapathinst_iterator const_datapathinst_end() { return DataPathInsts.end(); }
 
+  seqop_iterator seqop_begin() { return SeqOps.begin(); }
+  seqop_iterator seqop_end() { return SeqOps.end(); }
+
+  const_seqop_iterator const_seqop_begin() { return SeqOps.begin(); }
+  const_seqop_iterator const_seqop_end() { return SeqOps.end(); }
+
   unsigned getSlotsSize() { return Slots.size(); }
   SlotVector &getSlotList() { return Slots; }
   SIRSlot *getStartSlot() { return Slots.front(); }
@@ -516,8 +528,11 @@ public:
   void IndexSlot(SIRSlot *Slot) {
     Slots.push_back(Slot);
   }
-  void IndexPorts(SIRPort *Port) {
+  void IndexPort(SIRPort *Port) {
     Ports.push_back(Port);
+  }
+  void IndexSeqOp(SIRSeqOp *SeqOp) {
+    SeqOps.push_back(SeqOp);
   }
   void IndexRegister(SIRRegister *Reg) {
     Registers.push_back(Reg);
@@ -551,6 +566,33 @@ public:
 
   void setRetPortIdx(unsigned Idx) { RetPortIdx = Idx; }
   unsigned getRetPortIdx() const { return RetPortIdx; }
+
+  bool IndexBB2Slots(BasicBlock *BB,
+                     SIRSlot *LandingSlot, SIRSlot *LatestSlot) {
+    return BB2SlotMap.insert(std::make_pair(BB,
+                             std::make_pair(LandingSlot, LatestSlot))).second;
+  }
+  std::map<BasicBlock *, std::pair<SIRSlot *, SIRSlot *>> getBB2SlotMap() {
+    return BB2SlotMap;
+  }
+  std::pair<SIRSlot *, SIRSlot *> getSlotsOfBB(BasicBlock *BB) {
+    std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
+      at = BB2SlotMap.find(BB);
+    //assert(at != BB2SlotMap.end() && "Slots not found!");
+    return at->second;
+  }
+  SIRSlot *getLandingSlot(BasicBlock *BB) {
+    std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
+      at = BB2SlotMap.find(BB);
+    assert(at != BB2SlotMap.end() && "Landing slot not found!");
+    return at->second.first;
+  }
+  SIRSlot *getLatestSlot(BasicBlock *BB) {
+    std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
+      at = BB2SlotMap.find(BB);
+    assert(at != BB2SlotMap.end() && "Latest slot not found!");
+    return at->second.second;
+  }
 
   SIRPort *getPort(unsigned i) const {
     assert(i < Ports.size() && "Out of range!");

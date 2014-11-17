@@ -160,9 +160,6 @@ public:
   SIRCtrlRgnBuilder(SIR *SM, DataLayout &TD)
                     : SM(SM), TD(TD), D_Builder(SM, TD) {}
 
-  // Remember the landing slot and the latest slot of a basic block.
-  std::map<BasicBlock *, std::pair<SIRSlot *, SIRSlot *>> BB2SlotMap;
-
   /// Functions to provide basic information
   unsigned getBitWidth(Value *U);
 
@@ -179,10 +176,7 @@ public:
   SIRPort *createPort(SIRPort::SIRPortTypes T, StringRef Name, unsigned BitWidth);
 
   SIRSlot *getOrCreateLandingSlot(BasicBlock *BB);
-  SIRSlot *getLatestSlot(BasicBlock *BB);
-  SIRSlot *getStartSlot();
-  SIRSlot *createSlot(unsigned SlotNum, BasicBlock *ParentBB,
-                      unsigned Schedule, bool IsSubGrp = false);
+  SIRSlot *createSlot(BasicBlock *ParentBB, unsigned Schedule);
   SIRSlot *createSubGroup(BasicBlock *BB, Value *Guard, SIRSlot *SrcSlot);
   void createConditionalTransition(BasicBlock *DstBB, SIRSlot *SrcSlot, Value *Guard);
 

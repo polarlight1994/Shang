@@ -104,7 +104,7 @@ void SIRBuilder::buildInterface(Function *F) {
   }
 
   // Create StartSlot for module.
-  SIRSlot *IdleStartSlot = C_Builder.createSlot(SM->getSlotsSize(), 0, 0, false);
+  SIRSlot *IdleStartSlot = C_Builder.createSlot(0, 0);
   assert(IdleStartSlot && "We need to create a start slot here!");
 
   // Get the Start signal of module.
@@ -256,7 +256,7 @@ SIRPort *SIRCtrlRgnBuilder::createPort(SIRPort::SIRPortTypes T, StringRef Name,
   if (T <= SIRPort::InPort) {
     LLVMContext &C = SM->getContext();
     SIRPort *P = new SIRInPort(T, BitWidth, Name, C);
-    SM->IndexPorts(P);
+    SM->IndexPort(P);
     return P;
   } else {
     // Record the Idx of RetPort
@@ -266,60 +266,49 @@ SIRPort *SIRCtrlRgnBuilder::createPort(SIRPort::SIRPortTypes T, StringRef Name,
     SIRRegister *Reg = createRegister(Name, BitWidth, 0, 0,
                                       SIRRegister::OutPort);
     SIROutPort *P = new SIROutPort(T, Reg, BitWidth, Name);
-    SM->IndexPorts(P);
+    SM->IndexPort(P);
     return P;
   }  
 }
 
-SIRSlot *SIRCtrlRgnBuilder::createSlot(unsigned SlotNum, BasicBlock *ParentBB,
-  unsigned Schedule, bool IsSubGrp /* = false */) {
-    typedef SmallVector<SIRSlot *, 8>::iterator slot_iterator;
-    for (slot_iterator I = SM->slot_begin(), E = SM->slot_end(); I != E; I++) {
-      assert((*I)->getSlotNum() != SlotNum
-              && "The same slot had already been created!");
-    }
+SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) {
+  // To be noted that, the SlotNum is decided by the creating order,
+  // so it has no connection with the state transition order.
+  unsigned SlotNum = SM->getSlotsSize();
+  // Create a slot register for this slot.
+  std::string Name = "Slot" + utostr_32(SlotNum) + "r";
+  // If the slot is start slot, the InitVal should be 1.
+  unsigned InitVal = !SlotNum ? 1: 0;
+  SIRRegister *SlotGuardReg = createRegister(Name, 1, 0, InitVal,
+                                             SIRRegister::SlotReg);
 
-    // Create a slot register for this slot.
-    std::string Name = "Slot" + utostr_32(SlotNum) + "r";
-    // If the slot is start slot, the InitVal should be 1.
-    unsigned InitVal = !SlotNum ? 1: 0;
-    SIRRegister *SlotGuardReg = createRegister(Name, 1, 0, InitVal,
-      SIRRegister::SlotReg);
+  SIRSlot *S = new SIRSlot(SlotNum, ParentBB, SlotGuardReg->getSeqInst(),
+                           SlotGuardReg, Schedule);
 
-    SIRSlot *S = new SIRSlot(SlotNum, ParentBB, SlotGuardReg->getSeqInst(),
-      SlotGuardReg, IsSubGrp, Schedule);
+  // Store the slot.
+  SM->IndexSlot(S);
 
-    // Store the slot.
-    SM->IndexSlot(S);
-
-    return S;  
+  return S;  
 }
 
 SIRSlot *SIRCtrlRgnBuilder::getOrCreateLandingSlot(BasicBlock *BB) {
   // Get the landing slot if it is already created.
-  std::pair<SIRSlot *, SIRSlot *> &Slots = BB2SlotMap[BB];
+  std::map<BasicBlock *, std::pair<SIRSlot *, SIRSlot *>> BB2SlotMap 
+    = SM->getBB2SlotMap();
 
-  if (Slots.first == 0) {
-    // Create the landing slot for this BB.
-    assert(Slots.second == 0 && "Unexpected latest slot!");
-
-
-    Slots.first = 
-      (Slots.second = createSlot(SM->getSlotsSize(), BB, 0));
-  }
-
-  return Slots.first;
-}
-
-SIRSlot *SIRCtrlRgnBuilder::getLatestSlot(BasicBlock *BB)  {
   std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
-    at = BB2SlotMap.find(BB);
-  assert(at != BB2SlotMap.end() && "Latest slot not found!");
-  return at->second.second;
-}
+    at = BB2SlotMap.find(BB);  
 
-SIRSlot *SIRCtrlRgnBuilder::getStartSlot() {
-  return *(SM->slot_begin());
+  if (at == BB2SlotMap.end()) { 
+    // Create the landing slot for this BB.
+    SIRSlot *S = createSlot(BB, 0);
+    SM->IndexBB2Slots(BB, S, S);
+
+    return S;
+  }
+  
+  std::pair<SIRSlot *, SIRSlot *> &Slots = BB2SlotMap[BB];
+  return Slots.first;
 }
 
 void SIRCtrlRgnBuilder::createConditionalTransition(BasicBlock *DstBB,
@@ -370,29 +359,32 @@ void SIRCtrlRgnBuilder::createStateTransition(SIRSlot *SrcSlot, SIRSlot *DstSlot
 
 void SIRCtrlRgnBuilder::assignToReg(SIRSlot *S, Value *Guard, Value *Src,
                                     SIRRegister *Dst) {  
-  Value *InsertPosition = Dst->getSeqInst();
-  // If the register is constructed for port or slot, 
-  // we should appoint a insert point for it since
-  // the SeqInst it holds is pseudo instruction.
-  if (Dst->isOutPort() || Dst->isSlot()) {
-    InsertPosition = &SM->getFunction()->getBasicBlockList().back();
-  }
-
-  // Associate the guard with the Slot guard.
-  Value *FaninGuard = D_Builder.createSAndInst(Guard, S->getGuardReg()->getSeqInst(),
-                                               InsertPosition, true);
-
-  assert(getBitWidth(Src) == Dst->getBitWidth() && "BitWidth not matches!");
-  assert(getBitWidth(Guard) == 1 && "Bad BitWidth of Guard Value!");
-
-  // Assign the Src value to the register.
-  Dst->addAssignment(Src, FaninGuard);
+//   Value *InsertPosition = Dst->getSeqInst();
+//   // If the register is constructed for port or slot, 
+//   // we should appoint a insert point for it since
+//   // the SeqInst it holds is pseudo instruction.
+//   if (Dst->isOutPort() || Dst->isSlot()) {
+//     InsertPosition = &SM->getFunction()->getBasicBlockList().back();
+//   }
+// 
+//   // Associate the guard with the Slot guard.
+//   Value *FaninGuard = D_Builder.createSAndInst(Guard, S->getGuardReg()->getSeqInst(),
+//                                                InsertPosition, true);
+// 
+//   assert(getBitWidth(Src) == Dst->getBitWidth() && "BitWidth not matches!");
+//   assert(getBitWidth(Guard) == 1 && "Bad BitWidth of Guard Value!");
+// 
+//   // Assign the Src value to the register.
+//   Dst->addAssignment(Src, FaninGuard);
+  // Create the SeqOp to describe the assignment to the register.
+  SIRSeqOp *SeqOp = new SIRSeqOp(Src, Dst, Guard, S);
+  SM->IndexSeqOp(SeqOp);
 }
 
 /// Functions to visit all control-path instructions
 
 void SIRCtrlRgnBuilder::visitBranchInst(BranchInst &I) {
-  SIRSlot *CurSlot = getLatestSlot(I.getParent());
+  SIRSlot *CurSlot = SM->getLatestSlot(I.getParent());
   // Treat unconditional branch differently.
   if (I.isUnconditional()) {
     BasicBlock *DstBB = I.getSuccessor(0);
@@ -412,10 +404,10 @@ void SIRCtrlRgnBuilder::visitBranchInst(BranchInst &I) {
 
 void SIRCtrlRgnBuilder::visitReturnInst(ReturnInst &I) {
   // Get the latest slot of CurBB.
-  SIRSlot *CurSlot = getLatestSlot(I.getParent());
+  SIRSlot *CurSlot = SM->getLatestSlot(I.getParent());
 
   // Jump back to the start slot on return.
-  createStateTransition(CurSlot, getStartSlot(), SM->createIntegerValue(1, 1));
+  createStateTransition(CurSlot, SM->getStartSlot(), SM->createIntegerValue(1, 1));
 
   if (I.getNumOperands()) {
     SIRRegister *Reg = cast<SIROutPort>(SM->getRetPort())->getRegister();

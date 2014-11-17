@@ -23,9 +23,12 @@ class PassRegistry;
 }
 
 namespace llvm {
+extern char &SIRSelectorSynthesisID;
+
 Pass *createSIRInitPass();
 Pass *createSIR2RTLPass();
 
+void initializeSIRTimingAnalysisPass(PassRegistry &Registry);
 void initializeSIRSelectorSynthesisPass(PassRegistry &Registry);
 void initializeSIRInitPass(PassRegistry &Registry);
 void initializeSIR2RTLPass(PassRegistry &Registry);
