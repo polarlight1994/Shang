@@ -16,6 +16,8 @@
 #include "sir/SIRBuild.h"
 #include "sir/Passes.h"
 
+#include "llvm/ADT/PostOrderIterator.h"
+
 using namespace llvm;
 
 namespace llvm {
@@ -59,20 +61,30 @@ bool SIRSelectorSynthesis::runOnSIR(SIR &SM) {
 
   DataLayout &TD = getAnalysis<DataLayout>();
 
-  // Initialize a SIRDatapathBuilder to build expr for guard and Fanin
+  // Initialize a SIRDatapathBuilder to build expression for guard and Fanin
   SIRDatapathBuilder Builder(&SM, TD);
 
-  typedef SIR::register_iterator iterator;
+  typedef SIR::seqop_iterator iterator;
 
-  for (iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
-    SIRSelector *Sel = (*I)->getSelector();
-    Value *InsertPosition = (*I)->getSeqInst();
-    // If the register is constructed for port or slot, 
-    // we should appoint a insert point for it since
-    // the SeqInst it holds is pseudo instruction.
-    if ((*I)->isOutPort() || (*I)->isSlot()) {
-      InsertPosition = &SM.getFunction()->getBasicBlockList().back();
-    }    
+  for (iterator I = SM.seqop_begin(), E = SM.seqop_end(); I != E; ++I) {
+		SIRSeqOp *SeqOp = *I;
+		SIRRegister *Reg = SeqOp->getDst();
+		SIRSelector *Sel = Reg->getSelector();
+
+		Value *InsertPosition = Reg->getSeqInst();
+		// If the register is constructed for port or slot, 
+		// we should appoint a insert point for it since
+		// the SeqInst it holds is pseudo instruction.
+		if (Reg->isOutPort() || Reg->isSlot()) {
+			InsertPosition = SM.getFunction()->getEntryBlock().getFirstNonPHI();
+		}
+
+		// Extract the assignments for selectors.
+		Value *Src = SeqOp->getSrc(), *Guard = SeqOp->getGuard();
+		Value *SlotGuard = SeqOp->getSlot()->getGuardValue();
+		// The guarding condition should consider the SlotGuard.
+		Value *AssignGuard = Builder.createSAndInst(Guard, SlotGuard, InsertPosition, true);
+		Reg->addAssignment(Src, AssignGuard);        
 
     Changed |= synthesizeSelector(Sel, InsertPosition, Builder);
   }
@@ -98,8 +110,7 @@ bool SIRSelectorSynthesis::synthesizeSelector(SIRSelector *Sel,
       Value *Temp = *I;
       FaninGuards.push_back(Temp);
     }
-      //FaninGuards.push_back(*I);
-
+      
     if (Fanins.empty() || FaninGuards.empty())
       return false;
 
