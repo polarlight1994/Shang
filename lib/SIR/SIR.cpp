@@ -90,3 +90,19 @@ void SIR::printModuleDecl(raw_ostream &OS) const {
   }
   OS << ");\n";
 }
+
+bool SIR::gcImpl() {
+	// Hack: The GC function here should be constructed
+	// according to the DeadInstElemPass in LLVM.
+	return false;
+}
+
+bool SIR::gc() {
+	bool changed = false;
+
+	// Iteratively release the dead objects.
+	while (gcImpl())
+		changed = true;
+
+	return changed;
+}

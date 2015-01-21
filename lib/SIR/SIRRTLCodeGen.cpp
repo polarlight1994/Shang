@@ -434,7 +434,7 @@ void SIRDatapathPrinter::visitPtrToIntInst(PtrToIntInst &I) {
   // The type of value is defined by reader.
   // For example, 0x00000000 can be interpreted to be integer 0 
   // or float 0.0.
-  // We just need to handle the bitwidth here because the width 
+  // We just need to handle the BitWidth here because the width 
   // of operand may be larger than we need.
   SM->printAsOperand(OS, I.getOperand(0), BitWidth);
 
@@ -446,7 +446,6 @@ void SIRDatapathPrinter::visitBasicBlock(BasicBlock *BB) {
   for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) 
     visit(I);
 }
-
   
 namespace {
 struct SIR2RTL : public SIRPass {
@@ -482,12 +481,8 @@ struct SIR2RTL : public SIRPass {
 	void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
+		AU.addRequiredID(SIRSchedulingID);
     AU.addRequiredID(SIRSelectorSynthesisID);
-		//AU.addRequiredTransitiveID(ControlLogicSynthesisID);
-		//AU.addRequiredTransitiveID(TimingDrivenSelectorSynthesisID);
-		//AU.addRequiredID(BitlevelOptID);
-		//AU.addRequiredTransitiveID(DatapathNamerID);
-		//AU.addRequired<STGDistances>();
 		AU.setPreservesAll();
 	}
 };
@@ -571,6 +566,7 @@ INITIALIZE_PASS_BEGIN(SIR2RTL, "shang-sir-verilog-writer",
                       "Write the RTL verilog code to output file.",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
+	INITIALIZE_PASS_DEPENDENCY(SIRScheduling)
   INITIALIZE_PASS_DEPENDENCY(SIRSelectorSynthesis)
 INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",
                     "Write the RTL verilog code to output file.",

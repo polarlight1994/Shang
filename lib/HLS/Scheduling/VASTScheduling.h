@@ -381,7 +381,7 @@ public:
     }
 
     assert(getEdgeFrom(Src).getLatency() >= NewE.getLatency()
-           && "Edge not isnerted?");
+           && "Edge not inserted?");
   }
 
   // SSA Form require that a def dominates all its uses. From the use's point
@@ -622,7 +622,7 @@ class VASTScheduling : public VASTModulePass {
   VASTSchedUnit *getOrCreateBBEntry(BasicBlock *BB);
 
   void buildFlowDependencies(VASTSchedUnit *DstU, DataflowValue Src,
-                             Dataflow::delay_type delay);
+                             Dataflow::delay_type delay_dist);
   void buildFlowDependencies(Instruction *Inst, VASTSchedUnit *U);
   void buildFlowDependencies(VASTSchedUnit *U);
   void buildFlowDependenciesConditionalInst(Instruction *Inst, BasicBlock *Target,

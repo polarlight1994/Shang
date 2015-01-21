@@ -979,7 +979,7 @@ void TimingNetlist::buildTimingNetlist(VASTValue *V) {
     if (It == Node->op_end()) {
       VisitStack.pop_back();
 
-      // Caculate the arrivial time to the output of this node.
+      // Calculate the arrival time to the output of this node.
       DelayModel *M = createModel(Node);
       M->updateArrival();
       continue;
