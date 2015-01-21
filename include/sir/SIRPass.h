@@ -11,11 +11,10 @@
 // on the SIR module.
 //
 //===----------------------------------------------------------------------===//
-
-#include "llvm/Pass.h"
-
 #ifndef SIR_PASS_H
 #define SIR_PASS_H
+
+#include "llvm/Pass.h"
 
 namespace llvm {
 class Function;

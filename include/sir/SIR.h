@@ -10,6 +10,9 @@
 // This file implements the SIR.
 //
 //===----------------------------------------------------------------------===//
+#ifndef SIR_MODULE_H
+#define SIR_MODULE_H
+
 #include "llvm/IR/Value.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Constants.h"
@@ -21,10 +24,18 @@
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/Support/raw_ostream.h"
 
-#ifndef SIR_MODULE_H
-#define SIR_MODULE_H
-
 namespace llvm {
+	static uint64_t getConstantIntValue(Value *V) {
+		ConstantInt *CI = dyn_cast<ConstantInt>(V);
+		assert(CI && "Unexpected Value type!");
+
+		APInt AI = CI->getValue();
+		if (AI.isNonNegative()) return AI.getZExtValue();
+		else {
+			return 0 - (AI.abs().getZExtValue());
+		}
+	}
+
   static std::string buildLiteral(uint64_t Value, unsigned bitwidth, bool isMinValue) {
     std::string ret;
     ret = utostr_32(bitwidth) + '\'';
@@ -159,19 +170,6 @@ public:
   void printDecl(raw_ostream &OS) const;
 };
 
-// Represent the value stored in the register.
-// class SIRSeqValue : public Value {
-//   // Hack: Maybe we can find out a better to
-//   // implement the SeqVal without inheriting
-//   // from Value class.
-// public:
-//   SIRSeqValue(Type *Ty) : Value(Ty, Value::InstructionVal) {};
-// 
-//   static inline bool classof(const Value *V) {
-//     return V->getValueID() == Value::InstructionVal;
-//   }
-// };
-
 // Represent the registers in the Verilog.
 class SIRRegister {
 public:
@@ -213,8 +211,8 @@ public:
   unsigned getBitWidth() const { return Sel->getBitWidth(); }
   const uint64_t getInitVal() const { return InitVal; }
   SIRRegisterTypes getRegisterType() const { return T; }
-  Value *getRegValExpr() const { return Sel->getSelVal(); }
-  Value *getRegGuardExpr() const { return Sel->getSelGuard(); }
+  Value *getRegVal() const { return Sel->getSelVal(); }
+  Value *getRegGuard() const { return Sel->getSelGuard(); }
   void addAssignment(Value *Fanin, Value *FaninGuard) {
     return Sel->addAssignment(Fanin, FaninGuard);
   }
@@ -297,6 +295,33 @@ public:
     return !(A->isInput());
   }
 };
+}
+
+namespace llvm {
+class SIRSlot;
+class SIRSeqOp;
+
+// Represent the assign operation in SIR.
+class SIRSeqOp {
+private:
+	Value *Src;
+	SIRRegister *DstReg;
+	Value *Guard;
+	SIRSlot *S;
+
+public:
+	SIRSeqOp(Value *Src, SIRRegister *DstReg,
+		       Value *Guard, SIRSlot *S) 
+		: Src(Src), DstReg(DstReg), Guard(Guard), S(S) {}
+
+	Value *getLLVMValue() const { return DstReg->getSeqInst(); }
+	Value *getSrc() const { return Src; }
+	Value *getGuard() const { return Guard; }
+	SIRSlot *getSlot() const { return S; }
+	SIRRegister *getDst() const { return DstReg; }
+
+	void setSlot(SIRSlot *Slot) { S = Slot; }
+};
 
 // Represent the state in the state-transition graph.
 class SIRSlot {
@@ -340,7 +365,7 @@ private:
   BasicBlock *ParentBB;
 
   // The SeqOps in the current slot
-  typedef std::vector<Instruction *> OpVector;
+  typedef std::vector<SIRSeqOp *> OpVector;
   OpVector Operations;
 
   // The link to other slots
@@ -374,7 +399,7 @@ public:
   // If the SrcSlot already has this NextSlot as successor.
   bool hasNextSlot(SIRSlot *NextSlot);
 
-  void addSeqOp(Instruction *I) { Operations.push_back(I); }
+  void addSeqOp(SIRSeqOp *Op) { Operations.push_back(Op); }
   void addSuccSlot(SIRSlot *NextSlot, EdgeType T);
 
   void unlinkSuccs();
@@ -403,27 +428,32 @@ public:
   unsigned pred_size() const { return PredSlots.size(); }
 }; 
 
-// Represent the assign operation in SIR.
-class SIRSeqOp {
-private:
-  Value *Src;
-  SIRRegister *DstReg;
-  Value *Guard;
-  SIRSlot *S;
-
-public:
-  SIRSeqOp(Value *Src, SIRRegister *DstReg,
-           Value *Guard, SIRSlot *S) 
-    : Src(Src), DstReg(DstReg), Guard(Guard), S(S) {}
-
-  Value *getSrc() const { return Src; }
-  Value *getGuard() const { return Guard; }
-  SIRSlot *getSlot() const { return S; }
-  SIRRegister *getDst() const { return DstReg; }
-
-  void setSlot(SIRSlot *Slot) { S = Slot; }
+template<> struct GraphTraits<SIRSlot *> {
+	typedef SIRSlot NodeType;
+	typedef NodeType::succ_iterator ChildIteratorType;
+	static NodeType *getEntryNode(NodeType* N) { return N; }
+	static inline ChildIteratorType child_begin(NodeType *N) {
+		return N->succ_begin();
+	}
+	static inline ChildIteratorType child_end(NodeType *N) {
+		return N->succ_end();
+	}
 };
 
+template<> struct GraphTraits<const SIRSlot *> {
+	typedef const SIRSlot NodeType;
+	typedef NodeType::const_succ_iterator ChildIteratorType;
+	static NodeType *getEntryNode(NodeType* N) { return N; }
+	static inline ChildIteratorType child_begin(NodeType *N) {
+		return N->succ_begin();
+	}
+	static inline ChildIteratorType child_end(NodeType *N) {
+		return N->succ_end();
+	}
+};
+}
+
+namespace llvm {
 // The module in Shang IR.
 class SIR {
 public:
@@ -484,6 +514,10 @@ protected:
 public:
   SIR(Function *F) : F(F), C(F->getContext()) {}
   ~SIR();
+
+	// Release the dead objects in SIR.
+	bool gcImpl();
+	bool gc();
 
   Function *getFunction() { return F; }
   Module *getModule() { return F->getParent(); }

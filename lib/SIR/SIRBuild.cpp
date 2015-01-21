@@ -66,8 +66,8 @@ bool SIRInit::runOnFunction(Function &F) {
   Builder.buildInterface(&F);
 
   // Visit the basic block in topological order.
-  ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
-  typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
+  ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
+  typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
 
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     Builder.visitBasicBlock(*(*I));
@@ -139,52 +139,42 @@ void SIRBuilder::visitBasicBlock(BasicBlock &BB) {
 //-----------------------------------------------------------------------//
 
 void SIRBuilder::visitTruncInst(TruncInst &I) {
-  SM->IndexDataPathInst(&I);
   D_Builder.visit(I);
 }
 
 void SIRBuilder::visitZExtInst(ZExtInst &I) {
-  SM->IndexDataPathInst(&I);
   D_Builder.visit(I);
 }
 
 void SIRBuilder::visitSExtInst(SExtInst &I) {
-  SM->IndexDataPathInst(&I);
   D_Builder.visit(I);
 }
 
 void SIRBuilder::visitPtrToIntInst(PtrToIntInst &I) {
-  SM->IndexDataPathInst(&I);
   D_Builder.visit(I);
 }
 
 void SIRBuilder::visitIntToPtrInst(IntToPtrInst &I) {
-  SM->IndexDataPathInst(&I);
   D_Builder.visit(I);
 }
 
 void SIRBuilder::visitBitCastInst(BitCastInst &I) {
-  SM->IndexDataPathInst(&I);
   D_Builder.visit(I);
 }
 
 void SIRBuilder::visitSelectInst(SelectInst &I) {
-  SM->IndexDataPathInst(&I);
   D_Builder.visit(I);
 }
 
 void SIRBuilder::visitICmpInst(ICmpInst &I) {
-  SM->IndexDataPathInst(&I);
   D_Builder.visit(I);
 }
 
 void SIRBuilder::visitBinaryOperator(BinaryOperator &I) {
-  SM->IndexDataPathInst(&I);
   D_Builder.visit(I);
 }
 
 void SIRBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
-  SM->IndexDataPathInst(&I);
   D_Builder.visit(I);
 }
 
@@ -217,9 +207,9 @@ Instruction *SIRCtrlRgnBuilder::createPseudoInst() {
   Value *InsertPosition = &*SM->getFunction()->getEntryBlock().getFirstInsertionPt();
   Value *PseudoInstOp = SM->createIntegerValue(1, 1);
   Value *PseudoInst = D_Builder.createShangInstPattern(PseudoInstOp,
-                                                          SM->createIntegerType(1),
-                                                          InsertPosition, Intrinsic::shang_pseudo,
-                                                          true);
+                                                       SM->createIntegerType(1),
+                                                       InsertPosition, Intrinsic::shang_pseudo,
+                                                       true);
   return dyn_cast<Instruction>(PseudoInst);
 }
 
@@ -378,6 +368,9 @@ void SIRCtrlRgnBuilder::assignToReg(SIRSlot *S, Value *Guard, Value *Src,
 //   Dst->addAssignment(Src, FaninGuard);
   // Create the SeqOp to describe the assignment to the register.
   SIRSeqOp *SeqOp = new SIRSeqOp(Src, Dst, Guard, S);
+	// Add this SeqOp to the lists in SIRSlot.
+	S->addSeqOp(SeqOp);
+
   SM->IndexSeqOp(SeqOp);
 }
 
