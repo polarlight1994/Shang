@@ -10,7 +10,9 @@
 // This file define the abstract interface for timing analysis
 //
 //===----------------------------------------------------------------------===//
+#include "sir/SIR.h"
 #include "sir/SIRPass.h"
+#include "sir/Passes.h"
 
 #include "llvm/IR/Instruction.h"
 #include "llvm/ADT/None.h"
@@ -38,7 +40,8 @@ struct ArrivalTime : public ilist_node<ArrivalTime> {
   float Arrival;
   // Arrival to bit range [ToLB, ToUB)
   uint8_t ToUB, ToLB;
-  ArrivalTime(Value *Src, float Arrival, uint8_t ToUB, uint8_t ToLB);
+  ArrivalTime(Value *Src, float Arrival, uint8_t ToUB, uint8_t ToLB)
+		: Src(Src), Arrival(Arrival), ToUB(ToUB), ToLB(ToLB) {}
   ArrivalTime() : Src(NULL), Arrival(0.0f), ToUB(0), ToLB(0) {}
   void verify() const;
 
@@ -50,13 +53,19 @@ class SIRDelayModel : public ilist_node<SIRDelayModel> {
   // to provide some basic informations
   // like bit-width and so on.
   SIR *SM;
-  DataLayout &TD;
+  DataLayout *TD;
   Instruction *Node;
   // The FanIn to the current delay model, order matters.
   ArrayRef<SIRDelayModel *> Fanins;
 
-  ilist<ArrivalTime> Arrivals;
   // The delay from Src value to this model
+  ilist<ArrivalTime> Arrivals; 
+  // The ArrivalStart only remember the Src Value
+  // and its ArrivalTime in the first time. That is
+	// the ArrivalStart won't record all paths from
+  // Src to Dst. Only the first recorded path will
+	// stay in it so that we can know whether this
+	// Src has been detected before.
   std::map<Value *, ArrivalTime *> ArrivalStart;
 
   ilist<ArrivalTime>::iterator
@@ -81,17 +90,20 @@ class SIRDelayModel : public ilist_node<SIRDelayModel> {
 
   template<typename VFUTy>
   void updateCarryChainArrival(VFUTy *FU)  {
-    unsigned BitWidth = Node->getBitWidth();
+    unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
 
     // Dirty HACK: We only have the data up to 64 bit FUs.
     float Delay = FU->lookupLatency(std::min(BitWidth, 64u));
     float PreBit = Delay / BitWidth;
 
-    unsigned NumOperands = Node->size();
+		// Also note that the real numbers of operands should be minus 1.
+    unsigned NumOperands = Node->getNumOperands() - 1;
+		// Hack: why the base is connected to the NumOperands?
     float Base = PreBit * (NumOperands - 1);
 
-    for (unsigned i = 0, e = Node->size(); i < e; ++i)
-      updateArrivalCarryChain(i, Base, PreBit);
+		// Also note that the real numbers of operands should be minus 1.
+    for (unsigned I = 0, E = Node->getNumOperands() - 1; I < E; ++I)
+      updateArrivalCarryChain(I, Base, PreBit);
   }
 
   void updateCmpArrivial();
@@ -99,8 +111,8 @@ class SIRDelayModel : public ilist_node<SIRDelayModel> {
   void updateShlArrival();
   void updateShrArrival();
 public:
-  SIRDelayModel();
-  SIRDelayModel(SIR *SM, DataLayout &TD, Instruction *Node,
+  SIRDelayModel()/* : SM(0), TD(0), Node(0), Fanins(0) */{}
+  SIRDelayModel(SIR *SM, DataLayout *TD, Instruction *Node,
                 ArrayRef<SIRDelayModel *> Fanins);
   ~SIRDelayModel();
 
@@ -131,7 +143,8 @@ public:
     return I->second;
   }
 
-  // Visit from the iterator I to the iterator which targets V.
+  // Visit all the Arrivals which has V as SrcVal, and
+	// the I is the begin of this traverse.
   bool inRange(const_arrival_iterator I, Value *V) const {
     if (I == Arrivals.end())
       return false;
@@ -142,35 +155,28 @@ public:
 
 class SIRTimingAnalysis : public SIRPass {
 private:
-  void InitializeSIRTimingAnalysis(Pass *P);
   void getAnalysisUsage(AnalysisUsage &AU) const;
 
 public:
   static char ID;
 
-  SIRTimingAnalysis() : SIRPass(ID) {}
+  SIRTimingAnalysis() : SIRPass(ID) {
+    initializeSIRTimingAnalysisPass(*PassRegistry::getPassRegistry());
+  }
+
   ~SIRTimingAnalysis() {}
 
   bool runOnSIR(SIR &SM);
 
-  // Data structure that explicitly hold the total delay and cell delay of a
-  // datapath. Based on total delay and cell delay we can calculate the
-  // corresponding wire delay.
+  // Data structure that explicitly hold the delay of a data-path. 
   struct PhysicalDelay {
-    float TotalDelay;
-    float CellDelay;
+    float Delay;
 
-    PhysicalDelay() : TotalDelay(0.0f), CellDelay(0.0f) {}
-    PhysicalDelay(float TotalDelay, float CellDelay)
-      : TotalDelay(TotalDelay), CellDelay(CellDelay) {}
-
-    explicit PhysicalDelay(float TotalDelay)
-      : TotalDelay(TotalDelay), CellDelay(TotalDelay) {}
-    PhysicalDelay(NoneType)
-      : TotalDelay(-1.1e+10f), CellDelay(-1.1e+10f) {}
+    PhysicalDelay() : Delay(0.0f) {}
+    PhysicalDelay(float Delay) : Delay(Delay) {}
 
     bool operator==(NoneType) const {
-      return TotalDelay < 0.0f;
+      return Delay < 0.0f;
     }
 
     bool operator!=(NoneType) const {
@@ -178,19 +184,18 @@ public:
     }
 
     bool operator < (const PhysicalDelay &RHS) const {
-      return TotalDelay < RHS.TotalDelay;
+      return Delay < RHS.Delay;
     }
 
     PhysicalDelay operator+(const PhysicalDelay &RHS) const {
       if (operator==(None) || RHS == None)
         return None;
 
-      return PhysicalDelay(TotalDelay + RHS.TotalDelay,
-        CellDelay + RHS.CellDelay);
+      return PhysicalDelay(Delay + RHS.Delay);
     }
 
     operator float() const {
-      return TotalDelay;
+      return Delay;
     }
   };
 
@@ -213,7 +218,7 @@ public:
                         Value *From);
 
   typedef std::map<Value *, PhysicalDelay> ArrivalMap;
-  void extractDelay(SIR *SM, SIRRegister *Reg, Value *V, ArrivalMap &Arrivals);
+	void extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arrivals);
 
   bool isBasicBlockUnreachable(BasicBlock *BB) const;
 };

@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file datapath define the delay estimator based on linear approximation.
+// This file data-path define the delay estimator based on linear approximation.
 //
 //===----------------------------------------------------------------------===//
 #include "sir/SIRTimingAnalysis.h"
@@ -15,13 +15,46 @@
 #include "sir/SIR.h"
 #include "sir/SIRPass.h"
 
+#include "vast/FUInfo.h"
+#include "vast/LuaI.h"
+
 #include "llvm/Support/MathExtras.h"
 #define DEBUG_TYPE "shang-sir-timing-estimator"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
 
-SIRDelayModel::SIRDelayModel(SIR *SM, DataLayout &TD, Instruction *Node,
+static unsigned LogCeiling(unsigned x, unsigned n) {
+	unsigned log2n = Log2_32_Ceil(n);
+	return (Log2_32_Ceil(x) + log2n - 1) / log2n;
+}
+
+static bool IsLeafValue(SIR *SM, Value *V) {
+	// When we visit the Srcs of value, the Leaf Value
+	// means the top nodes of the Expr-Tree. There are 
+	// three kinds of Leaf Value:
+	// 1) Argument 2) Register 3) ConstantValue
+	// The path between Leaf Value and other values 
+	// will cost no delay (except wire delay).
+	// However, since the ConstantValue will have
+	// no impact on the scheduling process, so 
+	// we will just ignore the ConstantInt in
+	// previous step.
+
+	assert(!isa<ConstantInt>(V) 
+		     && "ConstantInt should be ignored in previous process!");
+
+	if (isa<Argument>(V))	return true;
+
+	if (Instruction *Inst = dyn_cast<Instruction>(V))
+		if (SM->lookupSIRReg(Inst))
+			return true;
+
+	return false;
+}
+
+SIRDelayModel::SIRDelayModel(SIR *SM, DataLayout *TD, Instruction *Node,
                              ArrayRef<SIRDelayModel *> Fanins)
                              : SM(SM), TD(TD), Node(Node) {
   SIRDelayModel **Data = new SIRDelayModel *[Fanins.size()];
@@ -32,11 +65,6 @@ SIRDelayModel::SIRDelayModel(SIR *SM, DataLayout &TD, Instruction *Node,
 SIRDelayModel::~SIRDelayModel() {
   if (Fanins.data())
     delete[] Fanins.data();
-}
-
-static unsigned LogCeiling(unsigned x, unsigned n) {
-  unsigned log2n = Log2_32_Ceil(n);
-  return (Log2_32_Ceil(x) + log2n - 1) / log2n;
 }
 
 ilist<ArrivalTime>::iterator
@@ -263,26 +291,35 @@ void SIRDelayModel::addArrival(Value *V, float Arrival, uint8_t ToUB, uint8_t To
 }
 
 void SIRDelayModel::updateBitCatArrival() {
-  unsigned OffSet = TD.getTypeSizeInBits(Node->getType());
+	// OffSet is the whole BitWidth of the Value this Delay Model holds.
+  unsigned OffSet = TD->getTypeSizeInBits(Node->getType());
   
-  for (unsigned I = 0, E = Node->getNumOperands(); I < E; ++I) {
+	// Since the Value this Delay Model holds is a BitCat instruction,
+	// the delay coming from Srcs will be divided into several parts.
+	// /-input.a-/ /-input.b-/ /-input.c-/
+	// ~~delay.a~~~~~delay.b~~~~~delay.c~~
+	// /-------------output--------------/
+	// Also note that the real numbers of operands should be minus 1.
+  for (unsigned I = 0, E = Node->getNumOperands() - 1; I < E; ++I) {
     Value *V = Node->getOperand(I);
-    unsigned BitWidth = TD.getTypeSizeInBits(V->getType());
+    unsigned BitWidth = TD->getTypeSizeInBits(V->getType());
     OffSet -= BitWidth;
 
-    // If the operand is a SeqVal, then the delay will be zero.
-    if (SM->lookupSIRReg(dyn_cast<Instruction>(V))) {
-      // Hack: the second 0.0f should be modified when the value
-      // is MemBus.
-      addArrival(V, 0.0f + 0.0f, OffSet + BitWidth, OffSet);
-      continue;
-    }
+		// If the operand is a ConstantInt, then ignore it because
+		// it will have no impact on the scheduling process.
+		if (isa<ConstantInt>(V)) continue;
+
+		// Simply add the zero delay if the Src itself is a Leaf Value.
+		if (IsLeafValue(SM, V)) {
+			addArrival(V, 0.0f + 0.0f, OffSet + BitWidth, OffSet);
+			continue;
+		}
 
     SIRDelayModel *M = Fanins[I];
     if (M == NULL)
       continue;
 
-    // Otherwise Transform the arrival bits.
+    // Otherwise inherit the arrival information from the higher level.
     for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
       addArrival(I->Src, I->Arrival + 0.0f, I->ToUB + OffSet, I->ToLB + OffSet);
     }
@@ -291,41 +328,51 @@ void SIRDelayModel::updateBitCatArrival() {
   assert(OffSet == 0 && "Bad Offset!");
 }
 
-void SIRDelayModel::updateBitRepeatArrival() {
-  unsigned BitWidth = TD.getTypeSizeInBits(Node->getType());
+void SIRDelayModel::updateBitExtractArrival() {
+	unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
 
-  updateArrivalCritial(0, 0.0f, BitWidth, 0);
+	Value *V = Node->getOperand(0);
+
+	// If the operand is a ConstantInt, then ignore it because
+	// it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V)) return;
+
+	// Simply add the zero delay if the Src itself is a Leaf Value.
+	if (IsLeafValue(SM, V)) {
+		addArrival(V, 0.0f + 0.0f, BitWidth, 0);
+		return;
+	}
+
+	SIRDelayModel *M = Fanins[0];
+	if (M == NULL)
+		return;
+
+	uint8_t UB = getConstantIntValue(Node->getOperand(1));
+	uint8_t LB = getConstantIntValue(Node->getOperand(2));
+
+	// Since the Value this Delay Model holds is a BitExtract instruction,
+	// the delay coming from V will inherit form the V's SrcVal.
+	// /----input.a----/ /----input.b----/ /----input.c----/
+	// ~~~~~delay.a~~~~~~~~~~~delay.b~~~~~~~~~~~delay.c~~~~~
+	// /------------------------V--------------------------/ 
+	//       /~delay.a~/ /~~~~delay.b~~~~//~delay.c~/
+	//       /----------------output----------------/
+	for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
+		ArrivalTime *AT = I;
+		unsigned CurLB = std::max(AT->ToLB, LB), CurUB = std::min(AT->ToUB, UB);
+
+		if (CurLB >= CurUB)
+			continue;
+
+		// Transform the arrival bits.
+		addArrival(AT->Src, AT->Arrival, CurUB - LB, CurLB - LB);
+	}
 }
 
-void SIRDelayModel::updateBitExtractArrival() {
-  unsigned BitWidth = TD.getTypeSizeInBits(Node->getType());
-
-  Value *V = Node->getOperand(0);
-  // If the operand is a SeqVal, then the delay will be zero.
-  if (SM->lookupSIRReg(dyn_cast<Instruction>(V)) {
-    // Hack: the second 0.0f should be modified when the value
-    // is MemBus.
-    addArrival(V, 0.0f + 0.0f, BitWidth, 0);
-    return;
-  }
-
-  SIRDelayModel *M = Fanins[0];
-  if (M == NULL)
-    return;
-
-  uint64_t UB = (dyn_cast<ConstantInt>(Node->getOperand(1)))->getZExtValue();
-  uint64_t LB = (dyn_cast<ConstantInt>(Node->getOperand(2)))->getZExtValue();
-
-  for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
-    ArrivalTime *AT = I;
-    unsigned CurLB = std::max(AT->ToLB, LB), CurUB = std::min(AT->ToUB, UB);
-
-    if (CurLB >= CurUB)
-      continue;
-
-    // Transform the arrival bits.
-    addArrival(AT->Src, AT->Arrival, CurUB - LB, CurLB - LB);
-  }
+void SIRDelayModel::updateBitRepeatArrival() {
+	// Since the Value this Delay Model holds is a BitRepeat instruction,
+	// the delay model fits the ArrivalCritial Model.
+  updateArrivalCritial(0, 0.0f);
 }
 
 void SIRDelayModel::updateBitMaskArrival() {
@@ -335,13 +382,15 @@ void SIRDelayModel::updateBitMaskArrival() {
 void SIRDelayModel::updateArrivalParallel(unsigned i, float Delay) {
   Value *V = Node->getOperand(i);
 
-  // If the operand is a SeqVal, then the delay will be zero.
-  if (SM->lookupSIRReg(dyn_cast<Instruction>(V))) {
-    // Hack: the second 0.0f should be modified when the value
-    // is MemBus.
-    addArrival(V, Delay + 0.0f, TD.getTypeSizeInBits(Node->getType()), 0);
-    return;
-  }
+	// If the operand is a ConstantInt, then ignore it because
+	// it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V)) return;
+
+	// Simply add the zero delay if the Src itself is a Leaf Value.
+	if (IsLeafValue(SM, V)) {
+		addArrival(V, Delay + 0.0f, TD->getTypeSizeInBits(Node->getType()), 0);
+		return;
+	}
 
   SIRDelayModel *M = Fanins[i];
   if (M == NULL)
@@ -353,21 +402,24 @@ void SIRDelayModel::updateArrivalParallel(unsigned i, float Delay) {
 }
 
 void SIRDelayModel::updateArrivalParallel(float delay) {
-  for (unsigned I = 0, E = Node->getNumOperands(); I < E; ++I)
+	// Also note that the real numbers of operands should be minus 1.
+  for (unsigned I = 0, E = Node->getNumOperands() - 1; I < E; ++I)
     updateArrivalParallel(I, delay);
 }
 
 void SIRDelayModel::updateArrivalCritial(unsigned i, float Delay) {
   Value *V = Node->getOperand(i);
-  unsigned BitWidth = TD.getTypeSizeInBits(Node->getType());
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
 
-  // If the operand is a SeqVal, then the delay will be zero.
-  if (SM->lookupSIRReg(dyn_cast<Instruction>(V))) {
-    // Hack: the second 0.0f should be modified when the value
-    // is MemBus.
-    addArrival(V, Delay + 0.0f, BitWidth, 0);
-    return;
-  }
+	// If the operand is a ConstantInt, then ignore it because
+	// it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V)) return;
+
+	// Simply add the zero delay if the Src itself is a Leaf Value.
+	if (IsLeafValue(SM, V)) {
+		addArrival(V, Delay + 0.0f, BitWidth, 0);
+		return;
+	}
 
   SIRDelayModel *M = Fanins[i];
   if (M == NULL)
@@ -379,13 +431,40 @@ void SIRDelayModel::updateArrivalCritial(unsigned i, float Delay) {
 }
 
 void SIRDelayModel::updateArrivalCritial(float delay) {
-  for (unsigned I = 0; E = Node->getNumOperands(); I < E; ++I)
+	// Also note that the real numbers of operands should be minus 1.
+  for (unsigned I = 0, E = Node->getNumOperands() - 1; I < E; ++I)
     updateArrivalCritial(I, delay);
+}
+
+void SIRDelayModel::updateArrivalCarryChain(unsigned i, float Base,
+	                                          float PerBit) {
+	unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
+	Value *V = Node->getOperand(i);
+
+	// If the operand is a ConstantInt, then ignore it because
+	// it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V)) return;
+
+	// Simply add the zero delay if the Src itself is a Leaf Value.
+	if (IsLeafValue(SM, V)) {
+		addArrival(V, Base + BitWidth * PerBit + 0.0f, BitWidth, 0);
+		return;
+	}
+
+	SIRDelayModel *M = Fanins[i];
+	if (M = NULL)
+		return;
+
+	for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
+		ArrivalTime *AT = I;
+		addArrival(AT->Src, AT->Arrival + Base + BitWidth * PerBit,
+			         BitWidth, AT->ToLB);
+	}
 }
 
 void SIRDelayModel::updateReductionArrival() {
   Value *V = Node->getOperand(0);
-  unsigned NumBits = TD.getTypeSizeInBits(V->getType());
+  unsigned NumBits = TD->getTypeSizeInBits(V->getType());
   // Hack: we do not have BitMask now,so all bits are unknown bits.
   // Only reduce the unknown bits.
   //NumBits -= VASTBitMask(V).getNumKnownBits();
@@ -397,48 +476,27 @@ void SIRDelayModel::updateROMLookUpArrival() {
   // Hack: unfinished function.
 }
 
-void SIRDelayModel::updateArrivalCarryChain(unsigned i, float Base,
-                                            float PerBit) {
-  unsigned BitWidth = TD.getTypeSizeInBits(Node->getType());
-  Value *V = Node->getOperand(i);
-
-  // If the operand is a SeqVal, then the delay will be zero.
-  if (SM->lookupSIRReg(dyn_cast<Instruction>(V))) {
-    // Hack: the second 0.0f should be modified when the value
-    // is MemBus.
-    addArrival(V, Base + BitWidth * PerBit + 0.0f, BitWidth, 0);
-    return;
-  }
-
-  DelayModel *M = Fanins[i];
-  if (M = NULL)
-    return;
-
-  for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
-    ArrivalTime *AT = I;
-    addArrival(AT->Src, AT->Arrival + Base + BitWidth * PerBit,
-               BitWidth, AT->ToLB);
-  }
-}
-
 void SIRDelayModel::updateCmpArrivial() {
   // Hack: we do not have BitMask now,so all bits are unknown bits.
   // and we should calculate the number of logic levels in the future.
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
   float Delay = LuaI::Get<VFUICmp>()->lookupLatency(std::min(BitWidth, 64u));
 
-  for (unsigned I = 0, E = Node->getNumOperands(); I < E; ++I) {
+	// Also note that the real numbers of operands should be minus 1.
+  for (unsigned I = 0, E = Node->getNumOperands() - 1; I < E; ++I) {
     Value *V = Node->getOperand(I);
 
-    // Hack: we may consider the bitmask here in the future.
-    // If the operand is a SeqVal, then the delay will be zero.
-    if (SM->lookupSIRReg(dyn_cast<Instruction>(V))) {
-      // Hack: the second 0.0f should be modified when the value
-      // is MemBus.
-      addArrival(V, Delay + 0.0f, 1, 0);
-      continue;
-    }
+		// If the operand is a ConstantInt, then ignore it because
+		// it will have no impact on the scheduling process.
+		if (isa<ConstantInt>(V)) continue;
 
-    DelayModel *M = Fanins[I];
+		// Simply add the zero delay if the Src itself is a Leaf Value.
+		if (IsLeafValue(SM, V)) {
+			addArrival(V, Delay + 0.0f, 1, 0);
+			continue;
+		}
+
+    SIRDelayModel *M = Fanins[I];
     if (M == NULL)
       continue;
 
@@ -452,22 +510,25 @@ void SIRDelayModel::updateCmpArrivial() {
 void SIRDelayModel::updateShiftAmt() {
   Value *V = Node->getOperand(1);  
 
-  // If the operand is a SeqVal, then the delay will be zero.
-  if (SM->lookupSIRReg(dyn_cast<Instruction>(V))) {
-    // Hack: we do not have BitMask now,so all bits are unknown bits.
-    unsigned LL = TD.getTypeSizeInBits(V->getType());
-    // Hack: the second 0.0f should be modified when the value
-    // is MemBus.
-    addArrival(V, LL * VFUs::LUTDelay + 0.0f, 1, 0);
-    return;
-  } 
+	// If the operand is a ConstantInt, then ignore it because
+	// it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V)) return;
+
+	// Simply add the zero delay if the Src itself is a Leaf Value.
+	if (IsLeafValue(SM, V)) {
+		unsigned LL = TD->getTypeSizeInBits(V->getType());
+		// Hack: the second 0.0f should be modified when the value
+		// is MemBus.
+		addArrival(V, LL * VFUs::LUTDelay + 0.0f, 1, 0);
+		return;
+	}
 
   SIRDelayModel *M = Fanins[1];
   if (M == NULL)
     return;
 
   // Hack: we do not have BitMask now,so all bits are unknown bits.
-  unsigned UB = TD.getTypeSizeInBits(V->getType());
+  unsigned UB = TD->getTypeSizeInBits(V->getType());
   unsigned LB = 0;
   
   for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
@@ -485,22 +546,23 @@ void SIRDelayModel::updateShlArrival() {
   updateShiftAmt();
 
   Value *V = Node->getOperand(0);
-  unsigned BitWidth = TD.getTypeSizeInBits(Node->getType());
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
 
   float Delay = LuaI::Get<VFUShift>()->lookupLatency(std::min(BitWidth, 64u));
 
-  // Hack: we may consider the bitmask here in the future.
-  // If the operand is a SeqVal, then the delay will be zero.
-  if (SM->lookupSIRReg(dyn_cast<Instruction>(V))) {
-    // Hack: the second 0.0f should be modified when the value
-    // is MemBus.
-    addArrival(V, Delay + 0.0f, BitWidth, 0);
-    return;
-  }
+	// If the operand is a ConstantInt, then ignore it because
+	// it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V)) return;
+
+	// Simply add the zero delay if the Src itself is a Leaf Value.
+	if (IsLeafValue(SM, V)) {
+		addArrival(V, Delay + 0.0f, BitWidth, 0);
+		return;
+	}
 
   SIRDelayModel *M = Fanins[0];
   if (M == NULL)
-    continue;
+    return;
 
   for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
     ArrivalTime *AT = I;
@@ -513,18 +575,19 @@ void SIRDelayModel::updateShrArrival() {
   updateShiftAmt();
 
   Value *V = Node->getOperand(0);
-  unsigned BitWidth = TD.getTypeSizeInBits(Node->getType());
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
 
   float Delay = LuaI::Get<VFUShift>()->lookupLatency(std::min(BitWidth, 64u));
 
-  // Hack: we may consider the bitmask here in the future.
-  // If the operand is a SeqVal, then the delay will be zero.
-  if (SM->lookupSIRReg(dyn_cast<Instruction>(V))) {
-    // Hack: the second 0.0f should be modified when the value
-    // is MemBus.
-    addArrival(V, Delay + 0.0f, BitWidth, 0);
-    return;
-  }
+	// If the operand is a ConstantInt, then ignore it because
+	// it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V)) return;
+
+	// Simply add the zero delay if the Src itself is a Leaf Value.
+	if (IsLeafValue(SM, V)) {
+		addArrival(V, Delay + 0.0f, BitWidth, 0);
+		return;
+	}
 
   SIRDelayModel *M = Fanins[0];
   if (M == NULL)
@@ -537,9 +600,15 @@ void SIRDelayModel::updateShrArrival() {
 }
 
 void SIRDelayModel::updateArrival() {
-  unsigned Opcode = Node->getOpcode();
+	// Since all data-path instruction in SIR
+	// is Intrinsic Inst. So the opcode of 
+	// data-path instruction is its InstrisicID.
+  IntrinsicInst *I = dyn_cast<IntrinsicInst>(Node);
+	assert(I && "Unexpected non-IntrinsicInst!");
 
-  switch (Opcode) {
+	Intrinsic::ID ID = I->getIntrinsicID();
+
+  switch (ID) {
   case Intrinsic::shang_bit_cat:
     return updateBitCatArrival();
   case Intrinsic::shang_bit_repeat:
@@ -547,17 +616,27 @@ void SIRDelayModel::updateArrival() {
   case Intrinsic::shang_bit_extract:
     return updateBitExtractArrival();
 
-  case Intrinsic::shang_and:
-    unsigned LogicLevels = LogCeiling(Node->getNumOperands(), VFUs::MaxLutSize);
+	case Intrinsic::shang_not:
+		return updateArrivalParallel(0.0f);
+  case Intrinsic::shang_and: {
+		// To be noted that, in LLVM IR the return value
+		// is counted in Operands, so the real numbers
+		// of operands should be minus one.
+		unsigned IONums = Node->getNumOperands() - 1;
+    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
     return updateArrivalParallel(LogicLevels * VFUs::LUTDelay);
-
-  case Intrinsic::shang_rand:
-    return updateReductionArrival();
+  }
+  case Intrinsic::shang_rand: {
+		unsigned IONums = TD->getTypeSizeInBits(Node->getOperand(0)->getType());
+    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
+		return updateArrivalParallel(LogicLevels * VFUs::LUTDelay);
+	}
 
   case Intrinsic::shang_add:
     return updateCarryChainArrival(LuaI::Get<VFUAddSub>());
   case Intrinsic::shang_mul:
     return updateCarryChainArrival(LuaI::Get<VFUMult>());
+
   case Intrinsic::shang_shl:
     return updateShlArrival();
   case Intrinsic::shang_ashr:
@@ -566,13 +645,13 @@ void SIRDelayModel::updateArrival() {
   case Intrinsic::shang_sgt:
   case Intrinsic::shang_ugt:
     return updateCmpArrivial();
-  //case vast::VASTExpr::dpLUT:
-  //  return updateArrivalParallel(VFUs::LUTDelay);
-  //case vast::VASTExpr::dpROMLookUp:
-  //  return updateROMLookUpArrival();
-  //case vast::VASTExpr::dpSAnn:
-  //case vast::VASTExpr::dpHAnn:
-  //  return updateArrivalParallel(0.0f);
+
+	case  Intrinsic::shang_pseudo:
+		// To be noted that, pseudo instruction is created
+		// to represent the assignment to SlotReg, so it
+		// will devote 0 delay.
+		return updateArrivalParallel(0.0f);
+
   default:
     llvm_unreachable("Unexpected opcode!");
     break;
@@ -585,29 +664,27 @@ SIRDelayModel *SIRTimingAnalysis::createModel(Instruction *Inst, SIR *SM, DataLa
   SmallVector<SIRDelayModel *, 8> Fanins;
 
   // Fill the Fanin list by visit all operands and operands of
-  // operands.
-  for (unsigned i = 0; i < Inst->getNumOperands(); ++i) {
+  // operands. And remember that the real number of operands
+	// should be minus 1.
+  for (unsigned i = 0; i < Inst->getNumOperands() - 1; ++i) {
     Instruction *ChildInst = dyn_cast<Instruction>(Inst->getOperand(i));
 
-    // There is no Fanin delay model if we reach the leaf of a combinational
-    // cone. The expressions with hard annotation are also considered as
-    // a leaf.
-    // Hack: Do not have the hard-annotation yet.
-    if (ChildInst == NULL /*|| ChildInst->isHardAnnotation()*/) {
-      Fanins.push_back(NULL);
-      continue;
-    }
+		// If we reach the leaf of this data-path, then we get no Delay Model.
+		if (!ChildInst) {
+			Fanins.push_back(NULL);
+			continue;
+		}
 
     Fanins.push_back(lookUpDelayModel(ChildInst));
   }
 
-  Model = new SIRDelayModel(SM, TD, Inst, Fanins);
+  Model = new SIRDelayModel(SM, &TD, Inst, Fanins);
   Models.push_back(Model);
   return Model;
 }
 
 SIRDelayModel *SIRTimingAnalysis::lookUpDelayModel(Instruction *Inst) const {
-  std::map<Instruction *, SIRDelayModel*>::const_iterator I = ModelMap.find(Inst);
+  std::map<Instruction *, SIRDelayModel *>::const_iterator I = ModelMap.find(Inst);
   assert(I != ModelMap.end() && "Model of Inst cannot be found!");
   return I->second;
 }
@@ -654,18 +731,15 @@ void SIRTimingAnalysis::buildTimingNetlist(Value *V, SIR *SM, DataLayout &TD) {
 
 SIRTimingAnalysis::PhysicalDelay SIRTimingAnalysis::getArrivalTime(Value *To,
                                                                    Value *From) {
+  // Hack: The From here must be a SIRSeqVal.
   Instruction *Inst = dyn_cast<Instruction>(To);
 
-  // Hack: Do not understand what should be done here.
-  assert(Inst && "This function is not finished yet!");
-  //if (!Inst)
-    // When the Dst Val is not a instruction, the delay only come from
-    // the Src Val.
-    //return To == From ? PhysicalDelay(GetLeafDelay(From)) : None;
+  assert(Inst && "This should be a instruction!");
 
   SIRDelayModel *M = lookUpDelayModel(Inst);
   PhysicalDelay Arrival = None;
 
+  // Visit all Arrivals which has the Src Value as From and get the biggest Arrival.
   typedef SIRDelayModel::const_arrival_iterator iterator;
   for (iterator I = M->arrival_begin(From); M->inRange(I, From); ++I)
     Arrival = std::max(Arrival, PhysicalDelay(I->Arrival));
@@ -675,6 +749,7 @@ SIRTimingAnalysis::PhysicalDelay SIRTimingAnalysis::getArrivalTime(Value *To,
 
 SIRTimingAnalysis::PhysicalDelay SIRTimingAnalysis::getArrivalTime(SIRRegister *To,
                                                                    Value *From) {
+  // Hack: The From here must be a SIRSeqVal.
   PhysicalDelay FIArrival = getArrivalTime(To->getRegVal(), From);
   PhysicalDelay GuardArrival = getArrivalTime(To->getRegGuard(), From);
   // Also consider the delay from the d pin of the register.
@@ -687,84 +762,143 @@ SIRTimingAnalysis::PhysicalDelay SIRTimingAnalysis::getArrivalTime(SIRRegister *
 SIRTimingAnalysis::PhysicalDelay SIRTimingAnalysis::getArrivalTime(SIRRegister *To,
                                                                    Value *Thu,
                                                                    Value *From) {
+  // Hack: The From and Thu here must be a SIRSeqVal.
+  if (Thu == NULL)
+    return getArrivalTime(To, From);
 
+  return getArrivalTime(To, Thu) + getArrivalTime(Thu, From);
 }
 
-bool SIRTimingAnalysis::isBasicBlockUnreachable(BasicBlock *BB) const {
-  return TA->isBasicBlockUnreachable(BB);
-}
+void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arrivals) {
+	SIRRegister *DstReg = Op->getDst();
 
-void SIRTimingAnalysis::InitializeSIRTimingAnalysis(Pass *P) {
-  TA = &P->getAnalysis<TimingAnalysis>();
-}
+	// Considering two data-path coming to the Op: 1) SrcVal; 2) Guard.
+	Value *SrcVal = Op->getSrc();
+	Value *Guard = Op->getGuard();
 
-void SIRTimingAnalysis::extractDelay(SIR *SM, SIRRegister *Reg,
-                                     Value *V, ArrivalMap &Arrivals) {
-  // Simply add the zero delay record if the FanIn itself is a register.
-  if (Instruction *I = dyn_cast<Instruction>(V)) {
-    if (SM->lookupSIRReg(I)) {
-      Arrivals.insert(std::make_pair(V, PhysicalDelay()));
-      return;
-    }    
-  }
+	SmallVector<Value *, 4> Srcs;
+	Srcs.push_back(SrcVal);
+	Srcs.push_back(Guard);
 
-  // To be noted that, the value here must be SeqVal,
-  // which meas it should have a corresponding register.
-  typedef std::set<Value *> LeafSet;
-  LeafSet Leaves;
-  // Hack: Need to be implemented
-  SM->extractCombConeLeaves(V, Leaves);
-  if (Leaves.empty())
-    return;
+	for (int i = 0; i < Srcs.size(); i++) {
+		Value *V = Srcs[i];
 
-  SmallVector<Value *, 4> MissedLeaves;
+		// If the operand is a ConstantInt, then ignore it because
+		// it will have no impact on the scheduling process.
+		if (isa<ConstantInt>(V)) continue;
 
-  typedef LeafSet::iterator iterator;
-  for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
-    Value *Leaf = *I;
+		// Simply add the zero delay if the Src itself is a Leaf Value.
+		if (IsLeafValue(SM, V)) {
+			Arrivals.insert(std::make_pair(V, PhysicalDelay(0.0f)));
+			continue;;			
+		}
 
-    // Compute the delay from Leaf to Dst Reg.
-    PhysicalDelay Delay = getArrivalTime(Reg, Leaf);
+		// Then collect all the SeqVals when we traverse the data-path
+		// reversely, so to be noted that all the Values down here must
+	  // be SeqVal.
+		typedef std::set<Value *> LeafSet;
+		LeafSet Leaves;
 
-    // If there is more than one paths between Leaf and selector, the delay
-    // is not directly available.
-    if (Delay == None) {
-      MissedLeaves.push_back(Leaf);
-      continue;
-    }
+		std::set<Value *> Visited;
+		Instruction *Inst = dyn_cast<Instruction>(V);
+		assert(Inst && "Unexpected Value type!");
 
-    // Otherwise Update the delay.
-    PhysicalDelay &OldDelay = Arrivals[Leaf];
-    OldDelay = std::max(OldDelay, Delay);
-  }
+		typedef Instruction::op_iterator ChildIt;
+		std::vector<std::pair<Instruction *, ChildIt>> VisitStack;
 
-  if (MissedLeaves.empty())
-    return;
+		VisitStack.push_back(std::make_pair(Inst, Inst->op_begin()));
 
-  // Handle the missed leaves.
-  // Hack : Need to handle the missed leaves.
-  assert(MissedLeaves.empty() && "This function not finished yet!");
+		while (!VisitStack.empty()) {
+			Instruction *Node = VisitStack.back().first;
+			ChildIt It = VisitStack.back().second;
+
+			// We have visited all children of current node.
+			if (It == Node->op_begin()) {
+				VisitStack.pop_back();
+				continue;
+			}
+
+			// Otherwise, remember the node and visit its children first.
+			Value *ChildNode = *It;
+			++VisitStack.back().second;
+
+			if (Instruction *ChildInst = dyn_cast<Instruction>(ChildNode)) {
+				// ChildInst has a name means we had already visited it.
+				if (!Visited.insert(ChildInst).second) continue;
+
+				VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
+				continue;
+			}
+
+			// Also ignore the ConstantInt.
+			if (isa<ConstantInt>(ChildNode)) continue;
+
+			// The Leaf Value is what we want to find.
+			if (IsLeafValue(SM, ChildNode)) {
+				Leaves.insert(ChildNode);
+				continue;
+			}
+		}
+
+		if (Leaves.empty())	return;
+
+		SmallVector<Value *, 4> MissedLeaves;
+
+		typedef LeafSet::iterator iterator;
+		for (iterator I = Leaves.begin(), E = Leaves.end(); I != E; ++I) {
+			Value *Leaf = *I;
+
+			// Compute the delay from Leaf to Dst Reg.
+			PhysicalDelay Delay = getArrivalTime(DstReg, Leaf);
+
+			// If there is more than one paths between Leaf and selector, the delay
+			// is not directly available.
+			if (Delay == None) {
+				MissedLeaves.push_back(Leaf);
+				continue;
+			}
+
+			// Otherwise Update the delay.
+			PhysicalDelay &OldDelay = Arrivals[Leaf];
+			OldDelay = std::max(OldDelay, Delay);
+		}
+
+		if (MissedLeaves.empty())
+			return;
+
+		// Handle the missed leaves.
+		// Hack : Need to handle the missed leaves.
+		assert(MissedLeaves.empty() && "This function not finished yet!");
+	}
 }
 
 void SIRTimingAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
-  // Hack: It seems need the passes below.
-  //AU.addRequiredID(ControlLogicSynthesisID);
+	SIRPass::getAnalysisUsage(AU);
   AU.addRequired<DataLayout>();
-  AU.addRequired<SIRSelectorSynthesis>();
-  //AU.addRequiredID(DatapathNamerID);
+  AU.addRequiredID(SIRSelectorSynthesisID);
   AU.setPreservesAll();
 }
 
 char SIRTimingAnalysis::ID = 0;
+INITIALIZE_PASS_BEGIN(SIRTimingAnalysis,
+                      "SIR-timing-analysis",
+                      "Implement the timing analysis for SIR",
+                      false, true)
+  INITIALIZE_PASS_DEPENDENCY(DataLayout)
+  INITIALIZE_PASS_DEPENDENCY(SIRSelectorSynthesis)
+INITIALIZE_PASS_END(SIRTimingAnalysis,
+                    "SIR-timing-analysis",
+                    "Implement the timing analysis for SIR",
+                    false, true)
 
 bool SIRTimingAnalysis::runOnSIR(SIR &SM) {
   DataLayout &TD = getAnalysis<DataLayout>();
 
-  // Build the timing path for datapath nodes.
+  // Build the timing path for data-path nodes.
   typedef SIR::datapathinst_iterator inst_iterator;
   for (inst_iterator I = SM.datapathinst_begin(), E = SM.datapathinst_end();
        I != E; ++I) {
-    buildTimingNetlist(*I, SM, TD);
+    buildTimingNetlist(*I, &SM, TD);
   }
 
   return false;
