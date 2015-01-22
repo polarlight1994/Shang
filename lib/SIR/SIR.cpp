@@ -15,13 +15,13 @@
 
 using namespace llvm;
 
-void SIRSelector::addAssignment(Value *Fanin, Value *FaninGuard) {
+void SIRRegister::addAssignment(Value *Fanin, Value *FaninGuard) {
   Fanins.push_back(Fanin);
   FaninGuards.push_back(FaninGuard);
   assert(Fanins.size() == FaninGuards.size() && "Size not compatible!");
 }
 
-void SIRSelector::printDecl(raw_ostream &OS) const {
+void SIRRegister::printDecl(raw_ostream &OS) const {
   // Need to Implement these functions.
   OS << "reg" << BitRange(getBitWidth(), 0, false);
   OS << " " << Mangle(getName());

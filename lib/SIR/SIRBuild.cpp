@@ -230,8 +230,7 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
   assert(!SM->lookupSIRReg(SeqInst) && "Register already created before!");
 
   // Create the register.
-  SIRSelector *Sel = new SIRSelector(Name, BitWidth);
-  SIRRegister *Reg = new SIRRegister(Sel, InitVal, T, SeqInst);
+  SIRRegister *Reg = new SIRRegister(Name, BitWidth, InitVal, T, SeqInst);
 
   // Index the register and index it with the SeqInst.
   SM->IndexRegister(Reg);

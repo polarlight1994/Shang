@@ -68,7 +68,6 @@ bool SIRSelectorSynthesis::runOnSIR(SIR &SM) {
   for (seqop_iterator I = SM.seqop_begin(), E = SM.seqop_end(); I != E; ++I) {
 		SIRSeqOp *SeqOp = *I;
 		SIRRegister *Reg = SeqOp->getDst();
-		SIRSelector *Sel = Reg->getSelector();
 
 		Value *InsertPosition = Reg->getSeqInst();
 		// If the register is constructed for port or slot, 
@@ -111,16 +110,14 @@ bool SIRSelectorSynthesis::synthesizeSelector(SIRRegister *Reg,
     SmallVector<Value *, 4> OrVec;
     SmallVector<Value *, 4> Fanins, FaninGuards;
 
-		SIRSelector *Sel = Reg->getSelector();
-
-    for (SIRSelector::const_iterator I = Sel->assign_begin(),
-         E = Sel->assign_end(); I != E; ++I) {
+    for (SIRRegister::const_iterator I = Reg->assign_begin(),
+         E = Reg->assign_end(); I != E; ++I) {
       Value *Temp = *I;
       Fanins.push_back(Temp);
     }
       //Fanins.push_back(*I);
-    for (SIRSelector::const_guard_iterator I = Sel->guard_begin(),
-         E = Sel->guard_end(); I != E; ++I) {
+    for (SIRRegister::const_guard_iterator I = Reg->guard_begin(),
+         E = Reg->guard_end(); I != E; ++I) {
       Value *Temp = *I;
       FaninGuards.push_back(Temp);
     }
@@ -128,7 +125,7 @@ bool SIRSelectorSynthesis::synthesizeSelector(SIRRegister *Reg,
     if (Fanins.empty() || FaninGuards.empty())
       return false;
 
-    unsigned Bitwidth = Sel->getBitWidth();
+    unsigned Bitwidth = Reg->getBitWidth();
 
     assert(Fanins.size() == FaninGuards.size() && "Size not compatible!");
 
@@ -136,14 +133,14 @@ bool SIRSelectorSynthesis::synthesizeSelector(SIRRegister *Reg,
 		// since the Src Value will always be 1'b1.
 		if (Reg->isSlot()) {
 			Value *Guard = Builder.createSOrInst(FaninGuards, InsertPosition, true);
-			Sel->setMux(Builder.createSConstantInt(1, 1), Guard);
+			Reg->setMux(Builder.createSConstantInt(1, 1), Guard);
 
 			return true;
 		}
 
 		// If there are only 1 Fanin, we can simplify the Verilog code.
 		if (Fanins.size() == 1) {
-			Sel->setMux(Fanins[0], FaninGuards[0]);
+			Reg->setMux(Fanins[0], FaninGuards[0]);
 
 			return true;
 		}
@@ -157,7 +154,7 @@ bool SIRSelectorSynthesis::synthesizeSelector(SIRRegister *Reg,
     Value *FI = Builder.createSOrInst(OrVec, InsertPosition, true);
     Value *Guard = Builder.createSOrInst(FaninGuards, InsertPosition, true);    
 
-    Sel->setMux(FI, Guard);
+    Reg->setMux(FI, Guard);
 
 		return true;
 }

@@ -88,10 +88,7 @@ struct SIRControlPathPrinter {
                         : OS(OS), SM(SM), TD(TD) {}
 
   /// Functions to print registers
-
-  // Print the Selector as MUX.
-  void printSelector(SIRSelector *Sel, raw_ostream &OS, DataLayout &TD, bool isSlotReg);
-  // Print the Register.
+	void printMuxInReg(SIRRegister *Reg, raw_ostream &OS, DataLayout &TD);
   void printRegister(SIRRegister *Reg, vlang_raw_ostream &OS, DataLayout &TD);
   void printRegister(SIRRegister *Reg, raw_ostream &OS, DataLayout &TD);
 
@@ -99,31 +96,31 @@ struct SIRControlPathPrinter {
 };
 }
 
-void SIRControlPathPrinter::printSelector(SIRSelector *Sel, raw_ostream &OS,
-                                          DataLayout &TD, bool isSlotReg) {
+void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg, raw_ostream &OS,
+                                          DataLayout &TD) {
   // If the register has no Fanin, then ignore it.
-  if (Sel->assignmentEmpty()) return;
+  if (Reg->assignmentEmpty()) return;
 
   // Register must have been synthesized
-  Value *SelVal = Sel->getSelVal();
-  Value *SelGuard = Sel->getSelGuard();
+  Value *RegVal = Reg->getRegVal();
+  Value *RegGuard = Reg->getRegGuard();
 
-  if (SelVal) {
+  if (RegVal) {
     OS << "// Synthesized MUX\n";
-    OS << "wire " << Mangle(Sel->getName()) << "_register_guard = ";
-    unsigned Guard_BitWidth = TD.getTypeSizeInBits(SelGuard->getType());
+    OS << "wire " << Mangle(Reg->getName()) << "_register_guard = ";
+    unsigned Guard_BitWidth = TD.getTypeSizeInBits(RegGuard->getType());
     assert(Guard_BitWidth == 1 && "Bad BitWidth of Guard!");
-    SM->printAsOperand(OS, SelGuard, Guard_BitWidth);
+    SM->printAsOperand(OS, RegGuard, Guard_BitWidth);
     OS << ";\n";
 
     // If it is slot register, we only need the guard signal.
-    if (isSlotReg) return;
+    if (Reg->isSlot()) return;
 
     // Print (or implement) the MUX by:
     // output = (Sel0 & FANNIN0) | (Sel1 & FANNIN1) ...
-    OS << "wire " << BitRange(Sel->getBitWidth(), 0, false)
-       << Mangle(Sel->getName()) << "_register_wire = ";
-    SM->printAsOperand(OS, SelVal, Sel->getBitWidth());
+    OS << "wire " << BitRange(Reg->getBitWidth(), 0, false)
+       << Mangle(Reg->getName()) << "_register_wire = ";
+    SM->printAsOperand(OS, RegVal, Reg->getBitWidth());
     OS << ";\n";
   }
 }
@@ -144,7 +141,7 @@ void SIRControlPathPrinter::printRegister(SIRRegister *Reg, vlang_raw_ostream &O
   }
 
   // Print the selector of the register.
-  printSelector(Reg->getSelector(), OS, TD, Reg->isSlot());
+  printMuxInReg(Reg, OS, TD);
 
   // Print the sequential logic of the register.
   OS.always_ff_begin();
