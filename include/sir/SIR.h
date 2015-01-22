@@ -23,6 +23,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/ilist_node.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Debug.h"
 
 namespace llvm {
 	static uint64_t getConstantIntValue(Value *V) {
@@ -321,6 +322,10 @@ public:
 	SIRRegister *getDst() const { return DstReg; }
 
 	void setSlot(SIRSlot *Slot) { S = Slot; }
+
+	// Functions for debug
+	void print(raw_ostream &OS) const;
+	void dump() const; 
 };
 
 // Represent the state in the state-transition graph.
@@ -374,7 +379,7 @@ private:
 
   // Hack: Maybe we should replace the reg with a
   // structure like VASTUse.
-  SIRRegister *SlotGuardReg;
+  SIRRegister *SlotReg;
 
   // The schedule result
   typedef uint16_t SlotNumTy;
@@ -385,14 +390,14 @@ public:
   SIRSlot(unsigned SlotNum, BasicBlock *ParentBB,
           Value *SlotGuard, SIRRegister *Reg, unsigned Schedule)
     : SlotNum(SlotNum), ParentBB(ParentBB),
-    SlotGuardReg(Reg), Schedule(Schedule) {}
+    SlotReg(Reg), Schedule(Schedule) {}
   ~SIRSlot();
 
-  SlotNumTy getSlotNum() { return SlotNum; }
-  SlotNumTy getSchedule() { return Schedule; }
-  BasicBlock *getParent() { return ParentBB; }
-  SIRRegister *getGuardReg() { return SlotGuardReg; }
-  Value *getGuardValue() { return getGuardReg()->getSeqInst(); }
+  SlotNumTy getSlotNum() const { return SlotNum; }
+  SlotNumTy getSchedule() const { return Schedule; }
+  BasicBlock *getParent() const { return ParentBB; }
+  SIRRegister *getSlotReg() const { return SlotReg; }
+  Value *getGuardValue() const { return getSlotReg()->getSeqInst(); }
 
   SIRSlot *getSubGroup(BasicBlock *BB) const;
 
@@ -426,6 +431,10 @@ public:
   const_pred_iterator pred_begin() const { return PredSlots.begin(); }
   const_pred_iterator pred_end() const { return PredSlots.end(); }
   unsigned pred_size() const { return PredSlots.size(); }
+
+	// Functions for debug
+	void print(raw_ostream &OS) const;
+	void dump() const;
 }; 
 
 template<> struct GraphTraits<SIRSlot *> {

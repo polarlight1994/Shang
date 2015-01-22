@@ -20,6 +20,7 @@
 #include "sir/Passes.h"
 
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/Support/Debug.h"
 
 using namespace llvm;
 
@@ -130,6 +131,34 @@ BasicBlock *SIRSchedUnit::getIncomingBB() const {
 BasicBlock *SIRSchedUnit::getTargetBB() const {
 	assert(isTerminator() && "Call getTargetBB on wrong SUnit type!");
 	return BB;
+}
+
+void SIRSchedUnit::print(raw_ostream &OS) const {
+	if (isEntry()) {
+		OS << "Entry Node";
+		return;
+	}
+
+	if (isExit()) {
+		OS << "Exit Node";
+		return;
+	}
+
+	if (isBBEntry()) OS << "BB Entry\n";
+	else if (isPHI()) OS << "PHI\n";
+	else OS << "Normal\n";
+
+	if (Inst) {
+		OS << "Instruction contained:";
+		Inst->dump();
+	}
+
+	OS << "Scheduled to " << Schedule;
+}
+
+void SIRSchedUnit::dump() const {
+	print(dbgs());
+	dbgs() << '\n';
 }
 
 SIRSchedGraph::SIRSchedGraph(Function &F) : F(F), TotalSUs(2) {

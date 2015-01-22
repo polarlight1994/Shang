@@ -313,6 +313,10 @@ public:
 
   // Return the index of the current scheduling unit.
   uint32_t getIdx() const { return InstIdx; }
+
+	/// Functions for debug
+	void print(raw_ostream &OS) const;
+	void dump() const;
 };
 
 template<> struct GraphTraits<SIRSchedUnit *> {

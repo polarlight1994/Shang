@@ -47,6 +47,18 @@ void SIRPort::printDecl(raw_ostream &OS) const {
   OS << " " << Mangle(getName());
 }
 
+void SIRSeqOp::print(raw_ostream &OS) const {
+	OS << "Assign the Src Value " << Src->getName()
+		 << " to register " << DstReg->getName()
+		 << " in Slot #" << S->getSlotNum()
+		 << " Scheduled to " << S->getSchedule() << "\n";
+}
+
+void SIRSeqOp::dump() const {
+	print(dbgs());
+	dbgs() << "\n";
+}
+
 bool SIRSlot::hasNextSlot(SIRSlot *NextSlot) {
   for (const_succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I)
     if (NextSlot == EdgePtr(*I))
@@ -67,6 +79,16 @@ void SIRSlot::addSuccSlot(SIRSlot *NextSlot, EdgeType T) {
   // Connect the slots.
   NextSlot->PredSlots.push_back(EdgePtr(this, T));
   NextSlots.push_back(EdgePtr(NextSlot, T));
+}
+
+void SIRSlot::print(raw_ostream &OS) const {
+	OS << "Slot #" << SlotNum << " Scheduled to " << Schedule
+		 << " Guarding by " << getGuardValue()->getName() << "\n";
+}
+
+void SIRSlot::dump() const {
+	print(dbgs());
+	dbgs() << "\n";
 }
 
 IntegerType *SIR::createIntegerType(unsigned BitWidth) {
