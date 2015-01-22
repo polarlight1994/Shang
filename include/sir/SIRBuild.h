@@ -117,6 +117,8 @@ public:
                          bool UsedAsArg);
   Value *createSAddInst(Value *LHS, Value *RHS, Value *InsertPosition,
                         bool UsedAsArg);
+	Value *createSAddInst(Value *LHS, Value *RHS, Value *Carry,
+		                    Value *InsertPosition, bool UsedAsArg);
   Value *createSMulInst(Value *LHS, Value *RHS, Value *InsertPosition,
                         bool UsedAsArg);
 
