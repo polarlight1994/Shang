@@ -108,69 +108,6 @@ namespace llvm {
 }
 
 namespace llvm {
-// Represent the Mux structure in Verilog
-// class SIRSelector : public ilist_node<SIRSelector> {
-// private:
-//   SIRSelector(const SIRSelector &) LLVM_DELETED_FUNCTION;
-//   void operator=(const SIRSelector &) LLVM_DELETED_FUNCTION;
-// 
-//   // Map the transaction condition to transaction value.
-//   typedef std::vector<Value *> FaninVector;
-//   FaninVector Fanins;
-// 
-//   typedef std::vector<Value *> FaninGuardVector;
-//   FaninGuardVector FaninGuards;
-// 
-//   // After SelectorSynthesis, all assignments will be
-//   // synthesized into forms below:
-//   // SelVal = (Fanin1 & Guard1) | (Fanin2 & Guard2)...
-//   Value *SelVal;
-// 
-//   // When the SelGuard is true, the SelVal can be
-//   // assign to the register.
-//   Value *SelGuard;
-// 
-//   const std::string Name;
-//   unsigned BitWidth;
-// 
-// public:
-//   SIRSelector(std::string Name = "", unsigned BitWidth = 0)
-//               : Name(Name), BitWidth(BitWidth) {}
-// 
-//   const std::string getName() const { return Name; }
-//   unsigned getBitWidth() const { return BitWidth; }
-//   Value *getSelVal() const { return SelVal; }
-//   Value *getSelGuard() const { return SelGuard; }
-// 
-//   typedef FaninVector::const_iterator const_iterator;
-//   const_iterator assign_begin() const { return Fanins.begin(); }
-//   const_iterator assign_end() const { return Fanins.end(); }
-//   typedef FaninVector::iterator iterator;
-//   iterator assign_begin() { return Fanins.begin(); }
-//   iterator assign_end() { return Fanins.end(); }
-//   unsigned assign_size() const { return Fanins.size(); }
-//   bool assign_empty() const { return Fanins.empty(); }
-// 
-//   typedef FaninGuardVector::const_iterator const_guard_iterator;
-//   const_guard_iterator guard_begin() const { return FaninGuards.begin(); }
-//   const_guard_iterator guard_end() const { return FaninGuards.end(); }
-//   typedef FaninGuardVector::iterator guard_iterator;
-//   guard_iterator guard_begin() { return FaninGuards.begin(); }
-//   guard_iterator guard_end() { return FaninGuards.end(); }
-//   unsigned guard_size() const { return FaninGuards.size(); }
-//   bool guard_empty() const { return FaninGuards.empty(); }
-// 
-//   // If the guard is NULL means the condition is always true.
-//   void addAssignment(Value *Fanin, Value *FaninGuard);
-// 
-//   bool assignmentEmpty() { return Fanins.empty(); }
-// 
-//   void setMux(Value *V, Value *G) { SelVal = V; SelGuard = G; }
-// 
-//   // Print the declaration of this selector
-//   void printDecl(raw_ostream &OS) const;
-// };
-
 // Represent the registers in the Verilog.
 class SIRRegister {
 public:
@@ -183,8 +120,11 @@ public:
 private:
   SIRRegisterTypes T;
   const uint64_t InitVal;
-  Instruction *SeqInst;
+	BasicBlock *ParentBB;
+	Value *LLVMValue;
 
+	/// Each register contains a corresponding Mux to holds
+	/// all assignment to it.
 	// Map the transaction condition to transaction value.
 	typedef std::vector<Value *> FaninVector;
 	FaninVector Fanins;
@@ -198,7 +138,10 @@ private:
 	Value *RegVal;
 
 	// When the RegGuard is true, the RegVal can be
-	// assign to the register.
+	// assign to the register. After RegisterSynthesis,
+	// all assignments will be synthesized into forms
+  // below:
+	// RegGuard = Guard1 | Guard2...
 	Value *RegGuard;
 
 	const std::string Name;
@@ -206,11 +149,11 @@ private:
 
 public:
   SIRRegister(std::string Name = "", unsigned BitWidth = 0,
-		          uint64_t InitVal = 0,
+		          uint64_t InitVal = 0, BasicBlock *ParentBB = NULL,
               SIRRegisterTypes T = SIRRegister::General,
-              Instruction *SeqInst = 0)
-              : Name(Name), BitWidth(BitWidth),
-							  InitVal(InitVal), T(T), SeqInst(SeqInst) {}
+              Value *LLVMValue = 0)
+    : Name(Name), BitWidth(BitWidth), ParentBB(ParentBB),
+		InitVal(InitVal), T(T), LLVMValue(LLVMValue) {}
 
 	typedef FaninVector::const_iterator const_iterator;
 	const_iterator assign_begin() const { return Fanins.begin(); }
@@ -230,14 +173,16 @@ public:
 	unsigned guard_size() const { return FaninGuards.size(); }
 	bool guard_empty() const { return FaninGuards.empty(); }
 
-  void setSeqInst(Instruction *I) { SeqInst = I; }
-  Instruction *getSeqInst() const { return SeqInst; }
+  void setLLVMValue(Instruction *I) { LLVMValue = I; }
+  Value *getLLVMValue() const { return LLVMValue; }
+
+	void setParentBB(BasicBlock *BB) { ParentBB = BB; }
+	BasicBlock *getParentBB() const { return ParentBB; }
 
   bool isGeneral() { return T == SIRRegister::General; }
   bool isSlot() { return T == SIRRegister::SlotReg; }
   bool isOutPort() { return T == SIRRegister::OutPort; }
-
-  // Forward the functions from the Selector.
+  
   std::string getName() const { return Name; }
   unsigned getBitWidth() const { return BitWidth; }
   const uint64_t getInitVal() const { return InitVal; }
@@ -246,7 +191,27 @@ public:
   Value *getRegGuard() const { return RegGuard; }
   void addAssignment(Value *Fanin, Value *FaninGuard);
   bool assignmentEmpty() { return Fanins.empty(); }
-	void setMux(Value *V, Value *G) { RegVal = V; RegGuard = G; }
+	void setMux(Value *V, Value *G) { 
+		RegVal = V; RegGuard = G; 
+
+		// Set the real operands to this register assign instruction.
+		IntrinsicInst *II = dyn_cast<IntrinsicInst>(getLLVMValue());
+		if (II && II->getIntrinsicID() == Intrinsic::shang_pseudo) {
+			Value *PseudoSrcVal = II->getOperand(0);
+			Value *PseudoGuardVal = II->getOperand(1);
+			if (PseudoSrcVal != RegVal) {
+				II->setOperand(0, RegVal);
+			}
+			if (PseudoGuardVal != RegGuard)
+				II->setOperand(1, RegGuard);
+		}
+	}
+	void dropMux() { 
+		RegVal = NULL; RegGuard = NULL;
+
+		Fanins.clear();
+		FaninGuards.clear();
+	}
 
   void printDecl(raw_ostream &OS) const;
 };
@@ -342,7 +307,7 @@ public:
 		       Value *Guard, SIRSlot *S) 
 		: Src(Src), DstReg(DstReg), Guard(Guard), S(S) {}
 
-	Value *getLLVMValue() const { return DstReg->getSeqInst(); }
+	Value *getLLVMValue() const { return DstReg->getLLVMValue(); }
 	Value *getSrc() const { return Src; }
 	Value *getGuard() const { return Guard; }
 	SIRSlot *getSlot() const { return S; }
@@ -424,7 +389,7 @@ public:
   SlotNumTy getSchedule() const { return Schedule; }
   BasicBlock *getParent() const { return ParentBB; }
   SIRRegister *getSlotReg() const { return SlotReg; }
-  Value *getGuardValue() const { return getSlotReg()->getSeqInst(); }
+  Value *getGuardValue() const { return getSlotReg()->getLLVMValue(); }
 
   SIRSlot *getSubGroup(BasicBlock *BB) const;
 
@@ -612,11 +577,11 @@ public:
   }
 
   bool IndexSeqInst2Reg(Instruction *SeqInst, SIRRegister *Reg) {
-    // Make sure the register remember the sequential instruction.
-    if (Reg->getSeqInst() != SeqInst) {
-      assert(!Reg->getSeqInst() || Reg->isOutPort() && "It should be empty!");
-      Reg->setSeqInst(SeqInst);
-    }
+//     // Make sure the register remember the sequential instruction.
+//     if (Reg->getSeqInst() != SeqInst) {
+//       assert(!Reg->getSeqInst() || Reg->isOutPort() && "It should be empty!");
+//       Reg->setSeqInst(SeqInst);
+//     }
     // Remember the connection between sequential instruction
     // and the register.
     return SeqInst2Reg.insert(std::make_pair(SeqInst, Reg)).second;
