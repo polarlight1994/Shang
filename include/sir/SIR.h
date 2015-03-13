@@ -332,23 +332,29 @@ public:
     ImplicitFlow = 2
   };
 
-  // The pointer to successor which is also encoded with the distance.
-  struct EdgePtr : public PointerIntPair<SIRSlot *, 2, EdgeType> {
-  private:
-    typedef PointerIntPair<SIRSlot *, 2, EdgeType> _Base;
+	// The pointer to successor which is also encoded with the distance and the condition.
+	struct EdgePtr {
+	private:
+		SIRSlot *S;
+		EdgeType Ty;
+		Value *Cnd;
 
-    // Hide the function getInt from PointerIntPair.
-    void getInt() const { }
-  public:
-    operator SIRSlot *() const { return getPointer(); }
-    SIRSlot *operator->() const { return getPointer(); }
-    EdgePtr(SIRSlot *S, EdgeType T) : _Base(S, T) {}
+		// Hide the function getInt from PointerIntPair.
+		void getInt() const { }
+	public:
+		EdgePtr(SIRSlot *S, EdgeType Ty, Value *Cnd)
+			: S(S), Ty(Ty), Cnd(Cnd) {}
 
-    EdgeType getType() const { return _Base::getInt(); }
-    unsigned getDistance() const {
-      return _Base::getInt() == Sucessor ? 1 : 0;
-    }
-  };
+		operator SIRSlot *() const { return S; }
+		SIRSlot *operator->() const { return S; }
+		
+		SIRSlot *getSlot() const { return S; }
+		EdgeType getType() const { return Ty; }
+		unsigned getDistance() const {
+			return Ty == Sucessor ? 1 : 0;
+		}
+		Value *getCnd() const { return Cnd; }
+	};
 
   typedef SmallVector<EdgePtr, 4> SuccVecTy;
   typedef SuccVecTy::iterator succ_iterator;
@@ -369,8 +375,6 @@ private:
   PredVecTy PredSlots;
   SuccVecTy NextSlots;
 
-  // Hack: Maybe we should replace the reg with a
-  // structure like VASTUse.
   SIRRegister *SlotReg;
 
   // The schedule result
@@ -397,10 +401,12 @@ public:
   bool hasNextSlot(SIRSlot *NextSlot);
 
   void addSeqOp(SIRSeqOp *Op) { Operations.push_back(Op); }
-  void addSuccSlot(SIRSlot *NextSlot, EdgeType T);
+  void addSuccSlot(SIRSlot *NextSlot, EdgeType T, Value *Cnd);
 
   void unlinkSuccs();
   void unlinkSucc(SIRSlot *S);
+
+	void replaceAllUsesWith(SIRSlot *S);
 
   typedef OpVector::const_iterator const_op_iterator;
   const_op_iterator op_begin() const { return Operations.begin(); }
@@ -577,11 +583,6 @@ public:
   }
 
   bool IndexSeqInst2Reg(Instruction *SeqInst, SIRRegister *Reg) {
-//     // Make sure the register remember the sequential instruction.
-//     if (Reg->getSeqInst() != SeqInst) {
-//       assert(!Reg->getSeqInst() || Reg->isOutPort() && "It should be empty!");
-//       Reg->setSeqInst(SeqInst);
-//     }
     // Remember the connection between sequential instruction
     // and the register.
     return SeqInst2Reg.insert(std::make_pair(SeqInst, Reg)).second;
@@ -646,6 +647,8 @@ public:
   
   // Print the declaration of module.
   void printModuleDecl(raw_ostream &OS) const;
+	// Print the declaration of register.
+	void printRegDecl(raw_ostream &OS) const;
 
   void printAsOperandImpl(raw_ostream &OS, Value *U, unsigned UB, unsigned LB) {
     if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
