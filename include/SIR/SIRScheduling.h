@@ -155,14 +155,11 @@ public:
 	~SIRScheduleEmitter() {
 		// Clear up the SIRSeqOp in the old slots.
 		OldSlots.clear();
-
-		// Release the dead objects in SIR.
-		SM->gc();
 	}
 
 	unsigned getBitWidth(Value *U) { return D_Builder.getBitWidth(U); }
 
-	void emitToSlot(SIRSeqOp *Inst, SIRSlot *ToSlot);
+	void emitToSlot(SIRSeqOp *SeqOp, SIRSlot *ToSlot);
 	void emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs);
 	void emitSchedule();
 };

@@ -452,7 +452,7 @@ void SIRDelayModel::updateArrivalCarryChain(unsigned i, float Base,
 	}
 
 	SIRDelayModel *M = Fanins[i];
-	if (M = NULL)
+	if (M == NULL)
 		return;
 
 	for (arrival_iterator I = M->arrival_begin(); I != M->arrival_end(); ++I) {
@@ -600,6 +600,12 @@ void SIRDelayModel::updateShrArrival() {
 }
 
 void SIRDelayModel::updateArrival() {
+  // If the Node is PHI instruction, then it is
+	// associated with a register. So the delay is
+	// also 0.0f.
+	if (isa<PHINode>(Node))
+		return updateArrivalParallel(0.0f);
+
 	// Since all data-path instruction in SIR
 	// is Intrinsic Inst. So the opcode of 
 	// data-path instruction is its InstrisicID.
@@ -633,6 +639,7 @@ void SIRDelayModel::updateArrival() {
 	}
 
   case Intrinsic::shang_add:
+	case Intrinsic::shang_addc:
     return updateCarryChainArrival(LuaI::Get<VFUAddSub>());
   case Intrinsic::shang_mul:
     return updateCarryChainArrival(LuaI::Get<VFUMult>());
@@ -875,7 +882,7 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 void SIRTimingAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 	SIRPass::getAnalysisUsage(AU);
   AU.addRequired<DataLayout>();
-  AU.addRequiredID(SIRSelectorSynthesisID);
+  AU.addRequiredID(SIRRegisterSynthesisForAnnotationID);
   AU.setPreservesAll();
 }
 
@@ -885,7 +892,7 @@ INITIALIZE_PASS_BEGIN(SIRTimingAnalysis,
                       "Implement the timing analysis for SIR",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
-  INITIALIZE_PASS_DEPENDENCY(SIRSelectorSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForAnnotation)
 INITIALIZE_PASS_END(SIRTimingAnalysis,
                     "SIR-timing-analysis",
                     "Implement the timing analysis for SIR",

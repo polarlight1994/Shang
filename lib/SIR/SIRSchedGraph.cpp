@@ -258,7 +258,7 @@ ArrayRef<SIRSchedUnit *> SIRSchedGraph::lookupSUs(Value *V) const {
 	IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
 
 	if (at == IR2SUMap.end())
-		return NULL;
+		return ArrayRef<SIRSchedUnit *>();
 
 	return at->second;
 }

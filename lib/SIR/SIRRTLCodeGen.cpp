@@ -479,7 +479,7 @@ struct SIR2RTL : public SIRPass {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
 		AU.addRequiredID(SIRSchedulingID);
-    AU.addRequiredID(SIRSelectorSynthesisID);
+    AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
 		AU.setPreservesAll();
 	}
 };
@@ -494,6 +494,9 @@ void SIR2RTL::generateCodeForTopModule() {
 void SIR2RTL::generateCodeForDecl(SIR &SM) {
   // Print code for module declaration.
   SM.printModuleDecl(Out);
+
+	// Print code for register declaration.
+	SM.printRegDecl(Out);
 }
 
 void SIR2RTL::generateCodeForDatapath(SIR &SM, DataLayout &TD) {
@@ -518,6 +521,9 @@ void SIR2RTL::generateCodeForControlpath(SIR &SM, DataLayout &TD) {
 }
 
 bool SIR2RTL::runOnSIR(SIR &SM) {
+	// Remove the dead SIR instruction before the CodeGen.
+	SM.gc();
+
   DataLayout &TD = getAnalysis<DataLayout>();
   Function &F = *(SM.getFunction());
 
@@ -564,7 +570,7 @@ INITIALIZE_PASS_BEGIN(SIR2RTL, "shang-sir-verilog-writer",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
 	INITIALIZE_PASS_DEPENDENCY(SIRScheduling)
-  INITIALIZE_PASS_DEPENDENCY(SIRSelectorSynthesis)
+  INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
 INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",
                     "Write the RTL verilog code to output file.",
                     false, true)
