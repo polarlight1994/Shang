@@ -113,7 +113,7 @@ void SIRBuilder::buildInterface(Function *F) {
 
   // Whole module will be run only when the Start signal is true.
   Value *InsertPosition = F->getEntryBlock().getFirstInsertionPt();
-  Value *IdleLoopCondition = D_Builder.createSNotInst(Start, InsertPosition, true);
+  Value *IdleLoopCondition = D_Builder.createSNotInst(Start, Start->getType(), InsertPosition, true);
   C_Builder.createStateTransition(IdleStartSlot, IdleStartSlot, IdleLoopCondition);
 
   // If the Start signal is true, then slot will jump to the slot of first BB.
@@ -186,6 +186,10 @@ void SIRBuilder::visitBranchInst(BranchInst &I) {
   C_Builder.visit(I);
 }
 
+void SIRBuilder::visitSwitchInst(SwitchInst &I) {
+	C_Builder.visit(I);
+}
+
 void SIRBuilder::visitReturnInst(ReturnInst &I) {
   C_Builder.visit(I);
 }
@@ -197,46 +201,89 @@ unsigned SIRCtrlRgnBuilder::getBitWidth(Value *U) {
 }
 
 /// Functions to build Control Logic
-Instruction *SIRCtrlRgnBuilder::createPseudoInst() {
+Instruction *SIRCtrlRgnBuilder::findInsertPostion(BasicBlock *BB, bool IsSlot) {
+	assert(BB && "Unexpected empty BB!");
+
+	// If the pseudo instruction is created for OutPort,
+	// then the insert position should be right before 
+	// the Ret instruction.
+	if (!IsSlot) {
+		TerminatorInst *TI = BB->getTerminator();
+		assert(isa<ReturnInst>(TI) && "Wrong pseudo instruction or Wrong BB!");
+		return TI;
+	}
+
+	// Otherwise, The insert position should be the front of non-PHI
+	// instructions and all pseudo instructions should be sorted by
+	// its creating time order.
+	BasicBlock *EntryBB = &SM->getFunction()->getEntryBlock();
+	typedef BasicBlock::iterator iterator;
+	for (iterator I = EntryBB->begin(), E = EntryBB->end(); I != E; ++I) {
+		// Skip all the PHI instruction.
+		if (isa<PHINode>(I)) continue;
+		if (isa<IntrinsicInst>(I)) continue;
+		return I;
+	}
+}
+
+Instruction *SIRCtrlRgnBuilder::createPseudoInst(unsigned BitWidth, Value *InsertPosition) {
   // For slots and ports, we create this pseudo SeqInst,
   // which will represent the assign operation to
   // the register of this slot or port.
   // The pseudo SeqInst will be:
   // SeqInst = 1'b1;
   // And the insert position will be the front of whole module.
-  Value *InsertPosition = &*SM->getFunction()->getEntryBlock().getFirstInsertionPt();
-  Value *PseudoInstOp = SM->createIntegerValue(1, 1);
-  Value *PseudoInst = D_Builder.createShangInstPattern(PseudoInstOp,
-                                                       SM->createIntegerType(1),
+  Value *PseudoSrcVal = SM->createIntegerValue(BitWidth, 1);
+	Value *PseudoGuardVal = SM->createIntegerValue(1, 1);
+	Value *Ops[] = { PseudoSrcVal, PseudoGuardVal };
+
+  Value *PseudoInst = D_Builder.createShangInstPattern(Ops,
+                                                       SM->createIntegerType(BitWidth),
                                                        InsertPosition, Intrinsic::shang_pseudo,
                                                        true);
   return dyn_cast<Instruction>(PseudoInst);
 }
 
-SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth, 
+SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth,
+	                                             BasicBlock *ParentBB,
                                                Instruction *SeqInst, uint64_t InitVal, 
                                                SIRRegister::SIRRegisterTypes T) {
   assert(SeqInst || T == SIRRegister::OutPort || T == SIRRegister::SlotReg
-         && "Only Reg for Port or Slot can have no corresponding SeqInst!");
+         && "Only Reg for Port or Slot can have no corresponding LLVM IR instruction!");
 
-  if (!SeqInst) {
-    // If the SeqInst is empty, then this register is created for
-    // Slot or OutPort. In this circumstance, we can construct a
-    // pseudo SeqInst for it.
-    SeqInst = createPseudoInst();
-    assert(SeqInst && "Unexpected empty PseudoSeqInst!");
+	// If the SeqInst is empty, then this register is created for
+	// Slot or OutPort. In this circumstance, we can construct a
+	// pseudo SeqInst for it. To be noted that, the insert position
+	// of this pseudo instruction for SlotReg and OutPort is different.
+
+  if (!SeqInst && T == SIRRegister::SlotReg) {
+		if (!ParentBB) ParentBB = &SM->getFunction()->getBasicBlockList().front();
+		Value *InsertPosition = findInsertPostion(ParentBB, T == SIRRegister::SlotReg);
+    SeqInst = createPseudoInst(BitWidth, InsertPosition);
   }
 
-  assert(!SM->lookupSIRReg(SeqInst) && "Register already created before!");
+	// For the OutPort Register, we also create a pseudo instruction. 
+	// But this pseudo instruction will be inserted into the back of
+	// whole module.
+	if (!SeqInst && T == SIRRegister::OutPort) {
+		assert(!ParentBB && "Unexpected ParentBB!");
+		ParentBB = &SM->getFunction()->getBasicBlockList().back();
+		Value *InsertPosition = findInsertPostion(ParentBB, false);
+		SeqInst = createPseudoInst(BitWidth, InsertPosition);
+	}
 
-  // Create the register.
-  SIRRegister *Reg = new SIRRegister(Name, BitWidth, InitVal, T, SeqInst);
+	assert(SeqInst && "Unexpected empty PseudoSeqInst!");
+	assert(ParentBB && "Unexpected empty ParentBB!");
+	assert(!SM->lookupSIRReg(SeqInst) && "Register already created before!");
 
-  // Index the register and index it with the SeqInst.
-  SM->IndexRegister(Reg);
-  SM->IndexSeqInst2Reg(SeqInst, Reg);
+	// For the General Register.
+	SIRRegister *Reg = new SIRRegister(Name, BitWidth, InitVal, ParentBB, T, SeqInst);
 
-  return Reg;
+	// Index the register and index it with the SeqInst.
+	SM->IndexRegister(Reg);
+	SM->IndexSeqInst2Reg(SeqInst, Reg);
+
+	return Reg;
 }
 
 SIRPort *SIRCtrlRgnBuilder::createPort(SIRPort::SIRPortTypes T, StringRef Name, 
@@ -251,8 +298,9 @@ SIRPort *SIRCtrlRgnBuilder::createPort(SIRPort::SIRPortTypes T, StringRef Name,
     // Record the Idx of RetPort
     if (T == SIRPort::RetPort) SM->setRetPortIdx(SM->getPortsSize()); 
 
-    // Create the register for OutPort.
-    SIRRegister *Reg = createRegister(Name, BitWidth, 0, 0,
+    // Create the register for OutPort. To be noted that,
+		// here we cannot assign the ParentBB for this register.
+    SIRRegister *Reg = createRegister(Name, BitWidth, 0, 0, 0,
                                       SIRRegister::OutPort);
     SIROutPort *P = new SIROutPort(T, Reg, BitWidth, Name);
     SM->IndexPort(P);
@@ -268,10 +316,10 @@ SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) 
   std::string Name = "Slot" + utostr_32(SlotNum) + "r";
   // If the slot is start slot, the InitVal should be 1.
   unsigned InitVal = !SlotNum ? 1: 0;
-  SIRRegister *SlotGuardReg = createRegister(Name, 1, 0, InitVal,
+  SIRRegister *SlotGuardReg = createRegister(Name, 1, ParentBB, 0, InitVal,
                                              SIRRegister::SlotReg);
 
-  SIRSlot *S = new SIRSlot(SlotNum, ParentBB, SlotGuardReg->getSeqInst(),
+  SIRSlot *S = new SIRSlot(SlotNum, ParentBB, SlotGuardReg->getLLVMValue(),
                            SlotGuardReg, Schedule);
 
   // Store the slot.
@@ -289,7 +337,7 @@ SIRSlot *SIRCtrlRgnBuilder::getOrCreateLandingSlot(BasicBlock *BB) {
     at = BB2SlotMap.find(BB);  
 
   if (at == BB2SlotMap.end()) { 
-    // Create the landing slot for this BB.
+    // Create the landing slot and latest slot for this BB.
     SIRSlot *S = createSlot(BB, 0);
     SM->IndexBB2Slots(BB, S, S);
 
@@ -329,7 +377,7 @@ void SIRCtrlRgnBuilder::visitPHIsInSucc(SIRSlot *SrcSlot, SIRSlot *DstSlot,
     // If the register already exist, then just assign to it.
     SIRRegister *PHISeqValReg = SM->lookupSIRReg(I);
     if (!PHISeqValReg) 
-      PHISeqValReg = createRegister(PN->getName(), BitWidth, I);
+      PHISeqValReg = createRegister(PN->getName(), BitWidth, DstBB, I);
 
     assignToReg(SrcSlot, Guard, LiveOut, PHISeqValReg);   
   }
@@ -338,12 +386,7 @@ void SIRCtrlRgnBuilder::visitPHIsInSucc(SIRSlot *SrcSlot, SIRSlot *DstSlot,
 void SIRCtrlRgnBuilder::createStateTransition(SIRSlot *SrcSlot, SIRSlot *DstSlot, Value *Cnd) {
   assert(!SrcSlot->hasNextSlot(DstSlot) && "Edge already existed!");
 
-  SrcSlot->addSuccSlot(DstSlot, SIRSlot::Sucessor);
-  // The State Transition is actually a SeqOp which assign a true/false value to
-  // the Slot Reg in the right time to active DstSlot. So we can handle it like
-  // a SeqOp.
-  SIRRegister *Reg = DstSlot->getSlotReg();
-  assignToReg(SrcSlot, Cnd, SM->createIntegerValue(1, 1), Reg);
+  SrcSlot->addSuccSlot(DstSlot, SIRSlot::Sucessor, Cnd);
 }
 
 void SIRCtrlRgnBuilder::assignToReg(SIRSlot *S, Value *Guard, Value *Src,
@@ -373,7 +416,131 @@ void SIRCtrlRgnBuilder::visitBranchInst(BranchInst &I) {
   createConditionalTransition(TrueBB, CurSlot, Cnd);
 
   BasicBlock *FalseBB = I.getSuccessor(1);
-  createConditionalTransition(FalseBB, CurSlot, D_Builder.createSNotInst(Cnd, &I, true));
+  createConditionalTransition(FalseBB, CurSlot, D_Builder.createSNotInst(Cnd, Cnd->getType(), &I, true));
+}
+
+// Copy from LowerSwitch.cpp.
+namespace {
+struct CaseRange {
+	APInt Low;
+	APInt High;
+	BasicBlock* BB;
+
+	CaseRange(APInt low = APInt(), APInt high = APInt(), BasicBlock *bb = 0) :
+		Low(low), High(high), BB(bb) { }
+
+	};
+
+typedef std::vector<CaseRange>           CaseVector;
+typedef std::vector<CaseRange>::iterator CaseItr;
+
+// The comparison function for sorting the switch case values in the vector.
+struct CaseCmp {
+	bool operator () (const CaseRange& C1, const CaseRange& C2) {
+		return C1.Low.slt(C2.High);
+	}
+};}
+
+// Clusterify - Transform simple list of Cases into list of CaseRange's
+static unsigned Clusterify(CaseVector& Cases, SwitchInst *SI) {
+	unsigned numCmps = 0;
+
+	// Start with "simple" cases
+	for (SwitchInst::CaseIt i = SI->case_begin(), e = SI->case_end(); i != e; ++i)
+		Cases.push_back(CaseRange(i.getCaseValue()->getValue(),
+		                          i.getCaseValue()->getValue(),
+		                          i.getCaseSuccessor()));
+
+	std::sort(Cases.begin(), Cases.end(), CaseCmp());
+
+	// Merge case into clusters
+	if (Cases.size() >= 2) {
+		for (CaseItr I = Cases.begin(), J = llvm::next(Cases.begin()); J != Cases.end(); ) {
+			int64_t nextValue = J->Low.getSExtValue();
+			int64_t currentValue = I->High.getSExtValue();
+			BasicBlock* nextBB = J->BB;
+			BasicBlock* currentBB = I->BB;
+
+			// If the two neighboring cases go to the same destination, merge them
+			// into a single case.
+			if ((nextValue-currentValue == 1) && (currentBB == nextBB)) {
+				I->High = J->High;
+				J = Cases.erase(J);
+			} else {
+				I = J++;
+			}
+		}
+	}
+
+	for (CaseItr I = Cases.begin(), E = Cases.end(); I != E; ++I, ++numCmps) {
+		if (I->Low != I->High)
+			// A range counts double, since it requires two compares.
+			++numCmps;
+	}
+
+	return numCmps;
+}
+
+void SIRCtrlRgnBuilder::visitSwitchInst(SwitchInst &I) {
+	SIRSlot *CurSlot = SM->getLatestSlot(I.getParent());
+
+	// The Condition Value
+	Value *CndVal = I.getCondition();
+	// The Case Map
+	std::map<BasicBlock *, Value *> CaseMap;
+
+	// Prepare cases vector.
+	CaseVector Cases;
+	Clusterify(Cases, &I);
+
+	// Build the condition map.
+	for (CaseItr CI = Cases.begin(), CE = Cases.end(); CI != CE; ++CI) {
+		const CaseRange &Case = *CI;
+		// Simple case, test if the CndVal is equal to a specific value.
+		if (Case.High == Case.Low) {
+			Value *CaseVal = SM->createIntegerValue(getBitWidth(CndVal), Case.High.getSExtValue());
+			Value *Pred = D_Builder.createSEQInst(CndVal, CaseVal, SM->createIntegerType(1),
+				                                    &I, true);
+			Value *&BBPred = CaseMap[Case.BB];
+			if (!BBPred) BBPred = Pred;
+			else D_Builder.createSOrEqualInst(BBPred, Pred, BBPred->getType(), &I, true);
+
+			continue;
+	}
+
+  // Test if Low <= CndVal <= High.
+	Value *Low = SM->createIntegerValue(getBitWidth(CndVal), Case.Low.getSExtValue());
+	Value *LowCmp = D_Builder.createSIcmpOrEqInst(CmpInst::ICMP_UGT, CndVal, Low,
+		                                            SM->createIntegerType(1), &I, true);
+	Value *High = SM->createIntegerValue(getBitWidth(High), Case.High.getSExtValue());
+	Value *HighCmp = D_Builder.createSIcmpOrEqInst(CmpInst::ICMP_UGT, High, CndVal,
+		                                             SM->createIntegerType(1), &I, true);
+	Value *Pred = D_Builder.createSAndInst(LowCmp, HighCmp, LowCmp->getType(), &I, true);
+	Value *&BBPred = CaseMap[Case.BB];
+	if (!BBPred) BBPred = Pred;
+	else D_Builder.createSOrEqualInst(BBPred, Pred, BBPred->getType(), &I, true);
+	}
+
+	// The predicate for each non-default destination.
+	SmallVector<Value *, 4> CasePreds;
+	typedef std::map<BasicBlock*, Value *>::iterator CaseIt;
+	for (CaseIt CI = CaseMap.begin(), CE = CaseMap.end(); CI != CE; ++CI) {
+		BasicBlock *SuccBB = CI->first;
+		Value *Pred = CI->second;
+		CasePreds.push_back(Pred);
+
+		createConditionalTransition(SuccBB, CurSlot, Pred);
+	}
+
+	// Jump to the default block when all the case value not match, i.e. all case
+	// predicate is false.
+	Value *DefaultPred 
+		= D_Builder.createSNotInst(D_Builder.createSOrInst(CasePreds, SM->createIntegerType(1),
+		                                                   &I, true),
+															 SM->createIntegerType(1), &I, true);
+	BasicBlock *DefBB = I.getDefaultDest();
+
+	createConditionalTransition(DefBB, CurSlot, DefaultPred);
 }
 
 void SIRCtrlRgnBuilder::visitReturnInst(ReturnInst &I) {
@@ -418,59 +585,60 @@ unsigned SIRDatapathBuilder::getBitWidth(Value *U) {
 
 void SIRDatapathBuilder::visitTruncInst(TruncInst &I) {
   createSTruncInst(I.getOperand(0), getBitWidth(&I), 0,
-                   &I, false);
+                   I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitZExtInst(ZExtInst &I) {
   unsigned NumBits = getBitWidth(&I);
-  createSZExtInst(I.getOperand(0), NumBits, &I, false);
+  createSZExtInst(I.getOperand(0), NumBits, I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitSExtInst(SExtInst &I) {
   unsigned NumBits = getBitWidth(&I);
-  createSSExtInst(I.getOperand(0), NumBits, &I, false);
+  createSSExtInst(I.getOperand(0), NumBits, I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitPtrToIntInst(PtrToIntInst &I) {
-  createSCastInst(I.getPointerOperand(), &I, false);
+  createSCastInst(I.getPointerOperand(), I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitIntToPtrInst(IntToPtrInst &I) {
-  createSCastInst(I.getOperand(0), &I, false);
+  createSCastInst(I.getOperand(0), I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitBitCastInst(BitCastInst &I) {
-  createSCastInst(I.getOperand(0), &I, false);
+  createSCastInst(I.getOperand(0), I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitSelectInst(SelectInst &I) {
   createSSelInst(I.getOperand(0), I.getOperand(1),
-                 I.getOperand(2), &I, false);
+                 I.getOperand(2), I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitICmpInst(ICmpInst &I) {
   Value *Ops[] = {I.getOperand(0), I.getOperand(1)};
-  createSICmpInst(I.getPredicate(), Ops, &I, false);
+  createSICmpInst(I.getPredicate(), Ops, I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitBinaryOperator(BinaryOperator &I) {
   Value *Ops[] = {I.getOperand(0), I.getOperand(1)};
+	Type *RetTy = I.getType();
 
   switch (I.getOpcode()) {
-  case Instruction::Add: createSAddInst(Ops, &I, false); return;
-  case Instruction::Sub: createSSubInst(Ops, &I, false); return;
-  case Instruction::Mul: createSMulInst(Ops, &I, false); return;
+  case Instruction::Add: createSAddInst(Ops, RetTy, &I, false); return;
+  case Instruction::Sub: createSSubInst(Ops, RetTy, &I, false); return;
+  case Instruction::Mul: createSMulInst(Ops, RetTy, &I, false); return;
 
-  case Instruction::Shl: createSShiftInst(Ops, &I, Intrinsic::shang_shl, false); return;
-  case Instruction::AShr: createSShiftInst(Ops, &I, Intrinsic::shang_ashr, false); return;
-  case Instruction::LShr: createSShiftInst(Ops, &I, Intrinsic::shang_lshr, false); return;
+  case Instruction::Shl: createSShiftInst(Ops, RetTy, &I, Intrinsic::shang_shl, false); return;
+  case Instruction::AShr: createSShiftInst(Ops, RetTy, &I, Intrinsic::shang_ashr, false); return;
+  case Instruction::LShr: createSShiftInst(Ops, RetTy, &I, Intrinsic::shang_lshr, false); return;
 
-  case Instruction::UDiv: createSUDivInst(Ops, &I, false); return;
-  case Instruction::SDiv: createSSDivInst(Ops, &I, false); return;
+  case Instruction::UDiv: createSUDivInst(Ops, RetTy, &I, false); return;
+  case Instruction::SDiv: createSSDivInst(Ops, RetTy, &I, false); return;
 
-  case Instruction::And: createSAndInst(Ops, &I, false); return;
-  case Instruction::Or:  createSOrInst(Ops, &I, false); return;
-  case Instruction::Xor: createSXorInst(Ops, &I, false); return;
+  case Instruction::And: createSAndInst(Ops, RetTy, &I, false); return;
+  case Instruction::Or:  createSOrInst(Ops, RetTy, &I, false); return;
+  case Instruction::Xor: createSXorInst(Ops, RetTy, &I, false); return;
 
   default: llvm_unreachable("Unexpected opcode"); break;
   }
@@ -501,14 +669,14 @@ void SIRDatapathBuilder::visitGEPOperator(GEPOperator &O, GetElementPtrInst &I) 
 
   typedef GEPOperator::op_iterator op_iterator;
   for (op_iterator OI = O.idx_begin(), E = O.op_end(); OI != E; ++OI) {
-    const Value *Idx = *OI;
+    Value *Idx = *OI;
     if (StructType *StTy = dyn_cast<StructType>(Ty)) {
-      unsigned Field = cast<ConstantInt>(Idx)->getZExtValue();
+      unsigned Field = getConstantIntValue(Idx);
       if (Field) {
         // N = N + Offset
         uint64_t Offset = TD.getStructLayout(StTy)->getElementOffset(Field);
         PtrVal = createSAddInst(PtrVal, createSConstantInt(Offset, PtrSize),
-          &I, true);
+                                PtrVal->getType(), &I, true);
       }
 
       Ty = StTy->getElementType(Field);
@@ -521,7 +689,7 @@ void SIRDatapathBuilder::visitGEPOperator(GEPOperator &O, GetElementPtrInst &I) 
         uint64_t Offs = TD.getTypeAllocSize(Ty)
                         * cast<ConstantInt>(CI)->getSExtValue();
         PtrVal = createSAddInst(PtrVal, createSConstantInt(Offs, PtrSize),
-          &I, true);
+                                PtrVal->getType(), &I, true);
         continue;
       }
 
@@ -531,7 +699,7 @@ void SIRDatapathBuilder::visitGEPOperator(GEPOperator &O, GetElementPtrInst &I) 
 
       // If the index is smaller or larger than intptr_t, truncate or extend
       // it.
-      IdxN = createSBitExtractInst(IdxN, PtrSize, 0, &I, true);
+      IdxN = createSBitExtractInst(IdxN, PtrSize, 0, SM->createIntegerType(PtrSize), &I, true);
 
       // If this is a multiply by a power of two, turn it into a shl
       // immediately.  This is a very common case.
@@ -539,15 +707,15 @@ void SIRDatapathBuilder::visitGEPOperator(GEPOperator &O, GetElementPtrInst &I) 
         if (ElementSize.isPowerOf2()) {
           unsigned Amt = ElementSize.logBase2();
           IdxN = createSShiftInst(IdxN, createSConstantInt(Amt, PtrSize),
-                                  &I, Intrinsic::shang_shl, true);
+                                  IdxN->getType(), &I, Intrinsic::shang_shl, true);
         } else {
           Value *Scale = createSConstantInt(ElementSize.getSExtValue(),
                                             PtrSize);
-          IdxN = createSMulInst(IdxN, Scale, &I, true);
+          IdxN = createSMulInst(IdxN, Scale, IdxN->getType(), &I, true);
         }
       }
 
-      PtrVal = createSAddInst(PtrVal, IdxN, &I, true);
+      PtrVal = createSAddInst(PtrVal, IdxN, PtrVal->getType(), &I, true);
     }
   }
 
@@ -598,29 +766,22 @@ Value *SIRDatapathBuilder::createShangInstPattern(ArrayRef<Value *> Ops, Type *R
   assert(false && "Unexpected InsertPosition!");
 }
 
-Value *SIRDatapathBuilder::createSBitCatInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                             bool UsedAsArg) {
-  // Compute the RetTy
-  unsigned RetBitWidth = 0;
-  for (unsigned i = 0; i < Ops.size(); ++i) {
-    RetBitWidth += getBitWidth(Ops[i]);
-  }
-  IntegerType *RetTy = IntegerType::get(InsertPosition->getContext(), RetBitWidth);
-
+Value *SIRDatapathBuilder::createSBitCatInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                           Value *InsertPosition, bool UsedAsArg) {
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_bit_cat, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSBitExtractInst(Value *U, unsigned UB, unsigned LB,
+Value *SIRDatapathBuilder::createSBitExtractInst(Value *U, unsigned UB, unsigned LB, Type *RetTy,
                                                  Value *InsertPosition, bool UsedAsArg) {
   Value *Ops[] = {U, createSConstantInt(UB, 8), createSConstantInt(LB, 8)};
 
-  // Compute the RetTy
-  IntegerType *RetTy = IntegerType::get(InsertPosition->getContext(), UB - LB);
+  assert(TD.getTypeSizeInBits(RetTy) == UB - LB && "RetTy not matches!");
 
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_bit_extract, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSCastInst(Value *U, Value *InsertPosition, bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSCastInst(Value *U, Type *RetTy,
+	                                         Value *InsertPosition, bool UsedAsArg) {
   if (!UsedAsArg) {
     assert((!U || getBitWidth(U) == getBitWidth(InsertPosition))
       && "Cast between types with different size found!");
@@ -629,133 +790,133 @@ Value *SIRDatapathBuilder::createSCastInst(Value *U, Value *InsertPosition, bool
   return U;
 }
 
-Value *SIRDatapathBuilder::createSTruncInst(Value *U, unsigned UB, unsigned LB,
+Value *SIRDatapathBuilder::createSTruncInst(Value *U, unsigned UB, unsigned LB, Type *RetTy,
                                             Value *InsertPosition, bool UsedAsArg) {
   // Truncate the value by bit-extract expression.
-  return createSBitExtractInst(U, UB, LB, InsertPosition, UsedAsArg);
+  return createSBitExtractInst(U, UB, LB, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSZExtInst(Value *U, unsigned DstBitWidth, Value *InsertPosition,
-                                           bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSZExtInst(Value *U, unsigned DstBitWidth, Type *RetTy,
+	                                         Value *InsertPosition, bool UsedAsArg) {
   unsigned SrcBitWidth = getBitWidth(U);
   assert(DstBitWidth > SrcBitWidth && "Unexpected DstBitWidth!");
   unsigned NumExtendBits = DstBitWidth - SrcBitWidth;
   Value *Zero = createSConstantInt(0, 1);
 
-  Value *ExtendBits = createSBitRepeatInst(Zero, NumExtendBits, InsertPosition, true);
+  Value *ExtendBits = createSBitRepeatInst(Zero, NumExtendBits, SM->createIntegerType(NumExtendBits),
+		                                       InsertPosition, true);
   Value *Ops[] = { ExtendBits, U };
-  return createSBitCatInst(Ops, InsertPosition, UsedAsArg);
+  return createSBitCatInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSZExtInstOrSelf(Value *U, unsigned DstBitWidth, Value *InsertPosition,
-                                                 bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSZExtInstOrSelf(Value *U, unsigned DstBitWidth, Type *RetTy,
+	                                               Value *InsertPosition, bool UsedAsArg) {
   if (getBitWidth(U) < DstBitWidth)
-    return createSZExtInst(U, DstBitWidth, InsertPosition, UsedAsArg);
+    return createSZExtInst(U, DstBitWidth, RetTy, InsertPosition, UsedAsArg);
   else if (!UsedAsArg) InsertPosition->replaceAllUsesWith(U);
 
   return U;
 }
 
-Value *SIRDatapathBuilder::createSSExtInst(Value *U, unsigned DstBitWidth, Value *InsertPosition,
-                                           bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSSExtInst(Value *U, unsigned DstBitWidth, Type *RetTy,
+	                                         Value *InsertPosition, bool UsedAsArg) {
   unsigned SrcBitWidth = getBitWidth(U);
   assert(DstBitWidth > SrcBitWidth && "Unexpected DstBitWidth!");
   unsigned NumExtendBits = DstBitWidth - SrcBitWidth;
   Value *SignBit = getSignBit(U, InsertPosition);
 
-  Value *ExtendBits = createSBitRepeatInst(SignBit, NumExtendBits, InsertPosition, true);
+  Value *ExtendBits = createSBitRepeatInst(SignBit, NumExtendBits, SM->createIntegerType(NumExtendBits),
+		                                       InsertPosition, true);
   Value *Ops[] = { ExtendBits, U };
-  return createSBitCatInst(Ops, InsertPosition, UsedAsArg);
+  return createSBitCatInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSSExtInstOrSelf(Value *U, unsigned DstBitWidth, Value *InsertPosition,
-                                                 bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSSExtInstOrSelf(Value *U, unsigned DstBitWidth, Type *RetTy,
+	                                               Value *InsertPosition, bool UsedAsArg) {
   if (getBitWidth(U) < DstBitWidth)
-    return createSSExtInst(U, DstBitWidth, InsertPosition, UsedAsArg);
+    return createSSExtInst(U, DstBitWidth, RetTy, InsertPosition, UsedAsArg);
   else if (!UsedAsArg) InsertPosition->replaceAllUsesWith(U);
 
   return U;
 }
 
-Value *SIRDatapathBuilder::createSRAndInst(Value *U, Value *InsertPosition,
-                                           bool UsedAsArg) {
-  // Compute the RetTy
-  IntegerType *RetTy = IntegerType::get(InsertPosition->getContext(), 1);
+Value *SIRDatapathBuilder::createSRAndInst(Value *U, Type *RetTy,
+	                                         Value *InsertPosition, bool UsedAsArg) {
+	assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
 
   return createShangInstPattern(U, RetTy, InsertPosition, Intrinsic::shang_rand, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSRXorInst(Value *U, Value *InsertPosition,
-                                           bool UsedAsArg) {
-  // Compute the RetTy
-  IntegerType *RetTy = IntegerType::get(InsertPosition->getContext(), 1);
+Value *SIRDatapathBuilder::createSRXorInst(Value *U, Type *RetTy,
+	                                         Value *InsertPosition, bool UsedAsArg) {
+  assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
 
   return createShangInstPattern(U, RetTy, InsertPosition, Intrinsic::shang_rxor, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSROrInst(Value *U, Value *InsertPosition,
-                                          bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSROrInst(Value *U, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
   // A | B .. | Z = ~(~A & ~B ... & ~Z).
-  Value *NotU = createSNotInst(U, InsertPosition, true);
-  return createSNotInst(createSRAndInst(NotU, InsertPosition, true),
+  Value *NotU = createSNotInst(U, U->getType(), InsertPosition, true);
+  return createSNotInst(createSRAndInst(NotU, RetTy, InsertPosition, true), RetTy,
                         InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSNEInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                         bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSNEInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                       Value *InsertPosition, bool UsedAsArg) {
+	assert(getBitWidth(Ops[0]) == getBitWidth(Ops[1]) == TD.getTypeSizeInBits(RetTy)
+		     && "RetTy not matches!");
+
   // Get the bitwise difference by Xor.
-  Value *BitWissDiff = createSXorInst(Ops, InsertPosition, true);
+  Value *BitWissDiff = createSXorInst(Ops, Ops[0]->getType(), InsertPosition, true);
   // If there is any bitwise difference, then LHS and RHS is not equal.
-  return createSROrInst(BitWissDiff, InsertPosition, UsedAsArg);
+  return createSROrInst(BitWissDiff, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSEQInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                         bool UsedAsArg) {
-  return createSNotInst(createSNEInst(Ops, InsertPosition, true),
-                        InsertPosition, UsedAsArg);
+Value *SIRDatapathBuilder::createSEQInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                       Value *InsertPosition, bool UsedAsArg) {
+  return createSNotInst(createSNEInst(Ops, RetTy, InsertPosition, true),
+                        RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSEQInst(Value *LHS, Value *RHS, Value *InsertPosition,
-                                         bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSEQInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                       Value *InsertPosition, bool UsedAsArg) {
   Value *Ops[] = { LHS, RHS };
-  return createSEQInst(Ops, InsertPosition, true);
+  return createSEQInst(Ops, RetTy, InsertPosition, true);
 }
 
-Value *SIRDatapathBuilder::createSdpSGTInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                            bool UsedAsArg) {
-  // Compute the RetTy
-  IntegerType *RetTy = IntegerType::get(InsertPosition->getContext(), 1);
+Value *SIRDatapathBuilder::createSdpSGTInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                          Value *InsertPosition, bool UsedAsArg) {
+  assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
 
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_sgt, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSdpUGTInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                            bool UsedAsArg) {
-  // Compute the RetTy
-  IntegerType *RetTy = IntegerType::get(InsertPosition->getContext(), 1);
+Value *SIRDatapathBuilder::createSdpUGTInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                          Value *InsertPosition, bool UsedAsArg) {
+  assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
 
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_ugt, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSBitRepeatInst(Value *U, unsigned RepeatTimes, Value *InsertPosition,
-                                                bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSBitRepeatInst(Value *U, unsigned RepeatTimes, Type *RetTy,
+	                                              Value *InsertPosition, bool UsedAsArg) {
   if (RepeatTimes == 1) {
     if (!UsedAsArg) InsertPosition->replaceAllUsesWith(U);
     return U;
   }
 
-  // Compute the RetTy
-  IntegerType *RetTy = SM->createIntegerType(getBitWidth(U) * RepeatTimes);
+  assert(TD.getTypeSizeInBits(RetTy) == getBitWidth(U) * RepeatTimes && "RetTy not matches!");
   Value *Ops[] = { U, createSConstantInt(RepeatTimes, 32)};
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_bit_repeat, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSSelInst(Value *Cnd, Value *TrueV, Value *FalseV,
-                                          Value *InsertPosition, bool UsedAsArg) {
+                                          Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
   assert(getBitWidth(Cnd) == 1 && "Bad condition width!");
 
   unsigned Bitwidth = getBitWidth(TrueV);
-  assert(getBitWidth(FalseV) == Bitwidth && "Bad bitwidth!");
+  assert(TD.getTypeSizeInBits(RetTy) == getBitWidth(FalseV) == Bitwidth && "Bad Bitwidth!");
 
   if (ConstantInt *C = dyn_cast<ConstantInt>(Cnd)) {
     Value *Result = C->getValue().getBoolValue() ? TrueV : FalseV; 
@@ -763,65 +924,68 @@ Value *SIRDatapathBuilder::createSSelInst(Value *Cnd, Value *TrueV, Value *False
     return Result;
   }
 
-  Value *NewCnd = createSBitRepeatInst(Cnd, Bitwidth, InsertPosition, true);
-  return createSOrInst(createSAndInst(NewCnd, TrueV, InsertPosition, true),
-                       createSAndInst(createSNotInst(NewCnd, InsertPosition, true),
-                                      FalseV, InsertPosition, true),
-                       InsertPosition, UsedAsArg);
+  Value *NewCnd = createSBitRepeatInst(Cnd, Bitwidth, RetTy, InsertPosition, true);
+  return createSOrInst(createSAndInst(NewCnd, TrueV, RetTy, InsertPosition, true),
+                       createSAndInst(createSNotInst(NewCnd, RetTy, InsertPosition, true),
+                                      FalseV, RetTy, InsertPosition, true),
+                       RetTy, InsertPosition, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSIcmpOrEqInst(ICmpInst::Predicate Predicate, ArrayRef<Value *> Ops,
-                                               Value *InsertPosition, bool UsedAsArg) {
-  Value *ICmpResult = createSICmpInst(Predicate, Ops, InsertPosition, true);
-  Value *EQResult = createSEQInst(Ops, InsertPosition, true);
+                                               Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
+	assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");  
+
+  Value *ICmpResult = createSICmpInst(Predicate, Ops, RetTy, InsertPosition, true);
+  Value *EQResult = createSEQInst(Ops, RetTy, InsertPosition, true);
   Value *NewOps[] = {EQResult, ICmpResult};
-  return createSOrInst(NewOps, InsertPosition, UsedAsArg);
+  return createSOrInst(NewOps, RetTy, InsertPosition, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSIcmpOrEqInst(ICmpInst::Predicate Predicate, Value *LHS, Value *RHS,
-                                               Value *InsertPosition, bool UsedAsArg) {
+                                               Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
   Value *Ops[] = { LHS, RHS };
-  return createSIcmpOrEqInst(Predicate, Ops, InsertPosition, UsedAsArg);
+  return createSIcmpOrEqInst(Predicate, Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSICmpInst(ICmpInst::Predicate Predicate, ArrayRef<Value *> Ops,
-                                           Value *InsertPosition, bool UsedAsArg) {
+	                                         Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
   assert(Ops.size() == 2 && "There must be two operands!");
   assert(getBitWidth(Ops[0]) == getBitWidth(Ops[1]) && "Bad icmp bitwidth!");
+	assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
   SmallVector<Value *, 2> NewOps;
   for (int i = 0; i < Ops.size(); i++)
     NewOps.push_back(Ops[i]);
 
   switch (Predicate) {
   case CmpInst::ICMP_NE:
-    return createSNEInst(NewOps, InsertPosition, UsedAsArg);
+    return createSNEInst(NewOps, RetTy, InsertPosition, UsedAsArg);
   case CmpInst::ICMP_EQ:
-    return createSEQInst(NewOps, InsertPosition, UsedAsArg);
+    return createSEQInst(NewOps, RetTy, InsertPosition, UsedAsArg);
 
   case CmpInst::ICMP_SLT:
     std::swap(NewOps[0], NewOps[1]);
     // Fall though.
   case CmpInst::ICMP_SGT:
-    return createSdpSGTInst(NewOps, InsertPosition, UsedAsArg);
+    return createSdpSGTInst(NewOps, RetTy, InsertPosition, UsedAsArg);
 
   case CmpInst::ICMP_ULT:
     std::swap(NewOps[0], NewOps[1]);
     // Fall though.
   case CmpInst::ICMP_UGT:
-    return createSdpUGTInst(NewOps, InsertPosition, UsedAsArg);
+    return createSdpUGTInst(NewOps, RetTy, InsertPosition, UsedAsArg);
 
   case CmpInst::ICMP_SLE:
     std::swap(NewOps[0], NewOps[1]);
     // Fall though.
   case CmpInst::ICMP_SGE:
-    return createSIcmpOrEqInst(CmpInst::ICMP_SGT, NewOps, InsertPosition, UsedAsArg);
+    return createSIcmpOrEqInst(CmpInst::ICMP_SGT, NewOps, RetTy, InsertPosition, UsedAsArg);
     //return buildICmpOrEqExpr(VASTExpr::dpSGT, LHS, RHS);
 
   case CmpInst::ICMP_ULE:
     std::swap(NewOps[0], NewOps[1]);
     // Fall though.
   case CmpInst::ICMP_UGE:
-    return createSIcmpOrEqInst(CmpInst::ICMP_UGT, NewOps, InsertPosition, UsedAsArg);
+    return createSIcmpOrEqInst(CmpInst::ICMP_UGT, NewOps, RetTy, InsertPosition, UsedAsArg);
 
   default: break;
   }
@@ -830,187 +994,255 @@ Value *SIRDatapathBuilder::createSICmpInst(ICmpInst::Predicate Predicate, ArrayR
   return 0;
 }
 
-Value *SIRDatapathBuilder::createSNotInst(Value *U, Value *InsertPosition,
-                                          bool UsedAsArg) {
-  return createShangInstPattern(U, U->getType(), InsertPosition, Intrinsic::shang_not, UsedAsArg);
+Value *SIRDatapathBuilder::createSNotInst(Value *U, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
+//   // If the instruction is like: A = ~(~B), then we can simplify it.
+  IntrinsicInst *Inst = dyn_cast<IntrinsicInst>(U);
+	if(Inst && Inst->getIntrinsicID() == Intrinsic::shang_not) {
+		Value *Operand = Inst->getOperand(0);
+
+		// If the inst is not used as an argument of other functions,
+		// then it is used to replace the inst in IR
+		if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
+		return Operand;
+	}
+
+	assert(U->getType() == RetTy && "RetTy not matches!");
+
+  return createShangInstPattern(U, RetTy, InsertPosition, Intrinsic::shang_not, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSAddInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                          bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSAddInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
 	assert(getBitWidth(Ops[0]) == getBitWidth(Ops[1]) && "BitWidth not matches!");
 	// If the operands size is 3, then it should be the shang_addc.
   if (Ops.size() == 3) {
 	  assert(TD.getTypeSizeInBits(Ops[2]->getType()) == 1 && "Bad BitWidth of Carry!");
-		return createShangInstPattern(Ops, Ops[0]->getType(), InsertPosition, Intrinsic::shang_addc, UsedAsArg);
+		return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_addc, UsedAsArg);
 	}			
   assert(Ops.size() == 2 && "Bad operands size!");
-	return createShangInstPattern(Ops, Ops[0]->getType(), InsertPosition, Intrinsic::shang_add, UsedAsArg);
+	return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_add, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSAddInst(Value *LHS, Value *RHS, Value *InsertPosition,
-                                          bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSAddInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
   Value *Ops[] = { LHS, RHS };
-  return createSAddInst(Ops, InsertPosition, UsedAsArg);
+  return createSAddInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSAddInst(Value *LHS, Value *RHS, Value *Carry,
+Value *SIRDatapathBuilder::createSAddInst(Value *LHS, Value *RHS, Value *Carry, Type *RetTy,
 	                                        Value *InsertPosition, bool UsedAsArg) {
 	Value *Ops[] = { LHS, RHS, Carry };
-	return createSAddInst(Ops, InsertPosition, UsedAsArg);
+	return createSAddInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSSubInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                          bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSSubInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
   Value *NewOps[] = { Ops[0],
-                      createSNotInst(Ops[1], InsertPosition, true),
+                      createSNotInst(Ops[1], Ops[1]->getType(), InsertPosition, true),
                       createSConstantInt(1, 1) };
-  return createSAddInst(NewOps, InsertPosition, UsedAsArg);
+  return createSAddInst(NewOps, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSMulInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                          bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSMulInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
   // Handle the trivial case trivially.
   if (Ops.size() == 1) {
     if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Ops[0]);
     return Ops[0];
   }
-
-  // Compute the RetTy
-  unsigned RetBitWidth = 1;
-  for (unsigned i = 0; i < Ops.size(); ++i) {
-    RetBitWidth *= getBitWidth(Ops[i]);
-  }
-  IntegerType *RetTy = IntegerType::get(InsertPosition->getContext(), RetBitWidth);
 
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_mul, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSMulInst(Value *LHS, Value *RHS, Value *InsertPosition,
-                                          bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSMulInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
     Value *Ops[] = { LHS, RHS};
-    return createSMulInst(Ops, InsertPosition, UsedAsArg);
+    return createSMulInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSUDivInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                           bool UsedAsArg) {
-    // Compute the RetTy
-    unsigned RetBitWidth = getBitWidth(Ops[0]);
-    for (unsigned i = 1; i < Ops.size(); ++i) {
-      RetBitWidth /= getBitWidth(Ops[i]);
-    }
-    IntegerType *RetTy = IntegerType::get(InsertPosition->getContext(), RetBitWidth);
-
-    return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_udiv, UsedAsArg);
+Value *SIRDatapathBuilder::createSUDivInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                         Value *InsertPosition, bool UsedAsArg) {
+  return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_udiv, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSSDivInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                           bool UsedAsArg) {
-    // Compute the RetTy
-    unsigned RetBitWidth = getBitWidth(Ops[0]);
-    for (unsigned i = 1; i < Ops.size(); ++i) {
-      RetBitWidth /= getBitWidth(Ops[i]);
-    }
-    IntegerType *RetTy = IntegerType::get(InsertPosition->getContext(), RetBitWidth);
-
-    return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_sdiv, UsedAsArg);
+Value *SIRDatapathBuilder::createSSDivInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                         Value *InsertPosition, bool UsedAsArg) {
+  return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_sdiv, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSShiftInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                            Intrinsic::ID FuncID, bool UsedAsArg) {
-    assert(Ops.size() == 2 && "The shift inst must have two operands!");
-    Value *LHS = Ops[0]; Value *RHS = Ops[1];
-    // Limit the shift amount so keep the behavior of the hardware the same as
-    // the corresponding software.
-    unsigned RHSMaxSize = Log2_32_Ceil(getBitWidth(LHS));
-    if (getBitWidth(RHS) > RHSMaxSize) 
-      RHS = createSBitExtractInst(Ops[1], RHSMaxSize, 0, InsertPosition, true);  
-    Value *NewOps[] = {LHS, RHS};
+Value *SIRDatapathBuilder::createSShiftInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                          Value *InsertPosition, Intrinsic::ID FuncID,
+																						bool UsedAsArg) {
+  assert(Ops.size() == 2 && "The shift inst must have two operands!");
+  Value *LHS = Ops[0]; Value *RHS = Ops[1];
+  // Limit the shift amount so keep the behavior of the hardware the same as
+  // the corresponding software.
+  unsigned RHSMaxSize = Log2_32_Ceil(getBitWidth(LHS));
+  if (getBitWidth(RHS) > RHSMaxSize) 
+    RHS = createSBitExtractInst(Ops[1], RHSMaxSize, 0, SM->createIntegerType(RHSMaxSize), 
+		                            InsertPosition, true);  
+  Value *NewOps[] = {LHS, RHS};
 
-    return createShangInstPattern(NewOps, LHS->getType(), InsertPosition, FuncID, UsedAsArg);
+	assert(LHS->getType() == RetTy && "RetTy not matches!");
+  return createShangInstPattern(NewOps, RetTy, InsertPosition, FuncID, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSShiftInst(Value *LHS, Value *RHS, Value *InsertPosition,
-                                            Intrinsic::ID FuncID, bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSShiftInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                          Value *InsertPosition, Intrinsic::ID FuncID,
+																						bool UsedAsArg) {
     Value *Ops[] = { LHS, RHS };
-    return createSShiftInst(Ops, InsertPosition, FuncID, UsedAsArg);
+    return createSShiftInst(Ops, RetTy, InsertPosition, FuncID, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                          bool UsedAsArg) {
-    // Handle the trivial case trivially.
-    if (Ops.size() == 1) {
-      if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Ops[0]);
-      return Ops[0];
-    }
+Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
+	for (int i = 0; i < Ops.size(); i++) {
+		assert(Ops[0]->getType() == RetTy && "RetTy not matches!");
+	}
 
-    return createShangInstPattern(Ops, Ops[0]->getType(), InsertPosition, Intrinsic::shang_and, UsedAsArg);
-}
-
-Value *SIRDatapathBuilder::createSAndInst(Value *LHS, Value *RHS, Value *InsertPosition,
-                                          bool UsedAsArg) {
-	assert(getBitWidth(LHS) == getBitWidth(RHS) && "BitWidth not match!");
-
-  Value *Ops[] = {LHS, RHS};
-  return createSAndInst(Ops, InsertPosition, UsedAsArg);
-}
-
-Value *SIRDatapathBuilder::createSOrInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                         bool UsedAsArg) {
   // Handle the trivial case trivially.
   if (Ops.size() == 1) {
     if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Ops[0]);
     return Ops[0];
   }
 
+	// If the instruction is like: 
+	// 1) A = 1'b1 & B & C,
+	// 2) A = (~1'b1) & B & C,
+	// then we can simplify it.
+	bool hasOneValue = false;
+	SmallVector<Value *, 4> NewOps;
+	typedef ArrayRef<Value *>::iterator iterator;
+	for (iterator I = Ops.begin(), E = Ops.end(); I != E; I++) {
+		Value *Operand = *I;
+
+		// 1) A = 1'b1 & B & C
+		ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
+		if (CI && getConstantIntValue(CI) == 1) {
+			hasOneValue = true;
+			continue;
+		}
+
+		// 2) A = (~1'b1) & B & C
+		IntrinsicInst *II = dyn_cast<IntrinsicInst>(Operand);
+		if (II && II->getIntrinsicID() == Intrinsic::shang_not) {
+			Value *NotInstOperand = II->getOperand(0);
+			ConstantInt *CI = dyn_cast<ConstantInt>(NotInstOperand);
+			if (CI && getConstantIntValue(CI) == 1) {
+				// If the inst is not used as an argument of other functions,
+				// then it is used to replace the inst in IR
+				if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
+				return Operand;
+			}
+		}
+
+		NewOps.push_back(Operand);
+	}
+
+	// If all operand are removed, then they all are 1'b1;
+	if (NewOps.size() == 0) return SM->createIntegerValue(1, 1);
+
+	if (hasOneValue)
+		return createSAndInst(NewOps, RetTy, InsertPosition, UsedAsArg);
+	else
+		return createShangInstPattern(NewOps, RetTy, InsertPosition,
+																	Intrinsic::shang_and, UsedAsArg);
+}
+
+Value *SIRDatapathBuilder::createSAndInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
+	assert(LHS->getType() == RHS->getType() && LHS->getType() == RetTy
+		     && "BitWidth not match!");
+
+  Value *Ops[] = {LHS, RHS};
+  return createSAndInst(Ops, RetTy, InsertPosition, UsedAsArg);
+}
+
+Value *SIRDatapathBuilder::createSOrInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                       Value *InsertPosition, bool UsedAsArg) {
+  for (int i = 0; i < Ops.size(); i++)
+		assert(Ops[i]->getType() == RetTy && "RetTy not matches!");
+
+  // Handle the trivial case trivially.
+  if (Ops.size() == 1) {
+    if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Ops[0]);
+    return Ops[0];
+  }
+
+	// If there are more than two operands, transform it into mutil-SOrInst.
+	if (Ops.size() > 2) {
+		Value *TempSOrInst = createSOrInst(Ops[0], Ops[1], RetTy, InsertPosition, true);
+		for (int i = 0; i < Ops.size() - 3; i++) {
+			TempSOrInst = createSOrInst(TempSOrInst, Ops[i + 2], RetTy, InsertPosition, true);
+		}
+
+		int num = Ops.size();
+		return createSOrInst(TempSOrInst, Ops[num - 1], RetTy, InsertPosition, UsedAsArg);
+	}
+
   SmallVector<Value *, 8> NotInsts;
   // Build the operands of Or operation into not inst.
   for (unsigned i = 0; i < Ops.size(); ++i) 
-    NotInsts.push_back(createSNotInst(Ops[i], InsertPosition, true));
+    NotInsts.push_back(createSNotInst(Ops[i], RetTy, InsertPosition, true));
 
   // Build Or operation with the And Inverter Graph (AIG).
-  Value *AndInst = createSAndInst(NotInsts, InsertPosition, true);
-  return createSNotInst(AndInst, InsertPosition, UsedAsArg);
+  Value *AndInst = createSAndInst(NotInsts, RetTy, InsertPosition, true);
+  return createSNotInst(AndInst, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSOrInst(Value *LHS, Value *RHS, Value *InsertPosition,
-                                         bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSOrInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                       Value *InsertPosition, bool UsedAsArg) {
+	assert(LHS->getType() == RHS->getType() && LHS->getType() == RetTy
+		     && "BitWidth not match!");	
+
   Value *Ops[] = {LHS, RHS};
-  return createSOrInst(Ops, InsertPosition, UsedAsArg);
+  return createSOrInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSXorInst(ArrayRef<Value *> Ops, Value *InsertPosition,
-                                          bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSXorInst(ArrayRef<Value *> Ops, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
   assert (Ops.size() == 2 && "There should be more than one operand!!");
 
+	for (int i = 0; i < Ops.size(); i++)
+		assert(Ops[i]->getType() == RetTy && "RetTy not matches!");
+
   // Build the Xor Expr with the And Inverter Graph (AIG).
-  Value *OrInst = createSOrInst(Ops, InsertPosition, true);
-  Value *AndInst = createSAndInst(Ops, InsertPosition, true);
-  Value *NotInst = createSNotInst(AndInst, InsertPosition, true);
+  Value *OrInst = createSOrInst(Ops, RetTy, InsertPosition, true);
+  Value *AndInst = createSAndInst(Ops, RetTy, InsertPosition, true);
+  Value *NotInst = createSNotInst(AndInst, RetTy, InsertPosition, true);
 
   Value *NewOps[] = {OrInst, NotInst};
-  return createSAndInst(NewOps, InsertPosition, UsedAsArg);
+  return createSAndInst(NewOps, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSXorInst(Value *LHS, Value *RHS, Value *InsertPosition,
-                                          bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSXorInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
+  assert(LHS->getType() == RHS->getType() && LHS->getType() == RetTy
+		     && "BitWidth not match!");
+
   Value *Ops[] = {LHS, RHS};
-  return createSXorInst(Ops, InsertPosition, UsedAsArg);
+  return createSXorInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSOrEqualInst(Value *LHS, Value *RHS, Value *InsertPosition,
-                                              bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSOrEqualInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                            Value *InsertPosition, bool UsedAsArg) {
+	assert(LHS->getType() == RHS->getType() && LHS->getType() == RetTy
+		     && "BitWidth not match!");
+
   if (LHS == NULL) {
     if (!UsedAsArg) InsertPosition->replaceAllUsesWith(RHS);
     return (LHS = RHS);
   }
 
-  return (LHS = createSOrInst(LHS, RHS, InsertPosition, UsedAsArg));
+  return (LHS = createSOrInst(LHS, RHS, RetTy, InsertPosition, UsedAsArg));
 }
 
 /// Functions to help us create Shang-Inst.
 Value *SIRDatapathBuilder::getSignBit(Value *U, Value *InsertPosition) {
   unsigned BitWidth = getBitWidth(U);
-  return createSBitExtractInst(U, BitWidth, BitWidth - 1, InsertPosition, true);
+  return createSBitExtractInst(U, BitWidth, BitWidth - 1, SM->createIntegerType(1),
+		                           InsertPosition, true);
 }
 
 Value *SIRDatapathBuilder::createSConstantInt(uint16_t Value, unsigned BitWidth) {

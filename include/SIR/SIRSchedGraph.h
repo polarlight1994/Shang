@@ -217,6 +217,7 @@ public:
   unsigned getSchedule() const { return Schedule; }
 	bool scheduleTo(unsigned Step) { 
 		bool Changed = Step != Schedule;
+		// StartSlot must be a IdleSlot without any SeqOps!
 		assert(Step && "Bad schedule!");
 		Schedule = Step;
 		return Changed; 
