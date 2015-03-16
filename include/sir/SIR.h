@@ -638,9 +638,12 @@ public:
 
   // --------------Functions to create ConstantInt Value------------------//
 
-  // Create Type
+	// Create Boolean Value
+	Value *creatConstantBoolean(bool True);
+
+  // Create Integer Type
   IntegerType *createIntegerType(unsigned BitWidth);
-  // Create Value
+  // Create Integer Value
   Value *createIntegerValue(unsigned BitWidth, unsigned Val);
 
   // -------------------Functions to generate Verilog-------------------- //

@@ -7,6 +7,7 @@ SIRSchedulerBase.cpp
 SIRScheduling.cpp
 SIRListScheduler.cpp
 SIRRegisterSynthesis.cpp
+SIRFSMSynthesis.cpp
 SIRPass.cpp
 SIRRTLCodeGen.cpp
 )

@@ -86,11 +86,12 @@ bool SIRFSMSynthesis::synthesisStateTransistion(SIRSlot *SrcSlot, SIRSlot *DstSl
 	assert(Builder.getBitWidth(Cnd) == 1 && "BitWidth not matches!");
 
 	// Build the assignment condition.
-	Value *Guard = Builder.createSAndInst(SrcSlot->getGuardValue(), Cnd, Cnd->getType(), Reg->getLLVMValue(), true);
+	Value *Guard = Builder.createSAndInst(SrcSlot->getGuardValue(), Cnd,
+		                                    Cnd->getType(), Reg->getLLVMValue(), true);
 
 	// The State Transition is actually a SeqOp which assign a true/false value to
 	// the Slot Reg in the right time to active DstSlot.
-	Reg->addAssignment(SM->createIntegerValue(1, 1), Guard);
+	Reg->addAssignment(SM->creatConstantBoolean(true), Guard);
 
 	return true;
 }

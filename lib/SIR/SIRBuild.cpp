@@ -234,7 +234,7 @@ Instruction *SIRCtrlRgnBuilder::createPseudoInst(unsigned BitWidth, Value *Inser
   // SeqInst = 1'b1;
   // And the insert position will be the front of whole module.
   Value *PseudoSrcVal = SM->createIntegerValue(BitWidth, 1);
-	Value *PseudoGuardVal = SM->createIntegerValue(1, 1);
+	Value *PseudoGuardVal = SM->creatConstantBoolean(true);
 	Value *Ops[] = { PseudoSrcVal, PseudoGuardVal };
 
   Value *PseudoInst = D_Builder.createShangInstPattern(Ops,
@@ -405,7 +405,7 @@ void SIRCtrlRgnBuilder::visitBranchInst(BranchInst &I) {
   // Treat unconditional branch differently.
   if (I.isUnconditional()) {
     BasicBlock *DstBB = I.getSuccessor(0);
-    createConditionalTransition(DstBB, CurSlot, SM->createIntegerValue(1, 1));
+    createConditionalTransition(DstBB, CurSlot, SM->creatConstantBoolean(true));
     return;
   }
 
@@ -548,14 +548,17 @@ void SIRCtrlRgnBuilder::visitReturnInst(ReturnInst &I) {
   SIRSlot *CurSlot = SM->getLatestSlot(I.getParent());
 
   // Jump back to the start slot on return.
-  createStateTransition(CurSlot, SM->getStartSlot(), SM->createIntegerValue(1, 1));
+  createStateTransition(CurSlot, SM->getStartSlot(), SM->creatConstantBoolean(true));
 
   if (I.getNumOperands()) {
     SIRRegister *Reg = cast<SIROutPort>(SM->getRetPort())->getRegister();
     
     // Launch the instruction to assignment value to register.
-    assignToReg(CurSlot, SM->createIntegerValue(1, 1),
+    assignToReg(CurSlot, SM->creatConstantBoolean(true),
                 I.getReturnValue(), Reg);
+
+		// Replace the Ret operand with the RegVal.
+		I.setOperand(0, Reg->getLLVMValue());
 
     // Index the register with return instruction.
     SM->IndexSeqInst2Reg(&I, Reg);
@@ -1040,7 +1043,7 @@ Value *SIRDatapathBuilder::createSSubInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                        Value *InsertPosition, bool UsedAsArg) {
   Value *NewOps[] = { Ops[0],
                       createSNotInst(Ops[1], Ops[1]->getType(), InsertPosition, true),
-                      createSConstantInt(1, 1) };
+                      creatConstantBoolean(true) };
   return createSAddInst(NewOps, RetTy, InsertPosition, UsedAsArg);
 }
 
@@ -1141,7 +1144,7 @@ Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
 	}
 
 	// If all operand are removed, then they all are 1'b1;
-	if (NewOps.size() == 0) return SM->createIntegerValue(1, 1);
+	if (NewOps.size() == 0) return SM->creatConstantBoolean(true);
 
 	if (hasOneValue)
 		return createSAndInst(NewOps, RetTy, InsertPosition, UsedAsArg);
@@ -1245,6 +1248,10 @@ Value *SIRDatapathBuilder::getSignBit(Value *U, Value *InsertPosition) {
 		                           InsertPosition, true);
 }
 
-Value *SIRDatapathBuilder::createSConstantInt(uint16_t Value, unsigned BitWidth) {
+Value *SIRDatapathBuilder::createSConstantInt(int16_t Value, unsigned BitWidth) {
   return SM->createIntegerValue(BitWidth, Value);
+}
+
+Value *SIRDatapathBuilder::creatConstantBoolean(bool True) {
+	return SM->creatConstantBoolean(True);
 }

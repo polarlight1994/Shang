@@ -452,7 +452,7 @@ void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 			// Replace the Old Slot with the CurSlot int STG
 			CurSlot->replaceAllUsesWith(NextSlot);
 
-			C_Builder.createStateTransition(CurSlot, NextSlot, SM->createIntegerValue(1, 1));
+			C_Builder.createStateTransition(CurSlot, NextSlot, SM->creatConstantBoolean(true));
 			CurSlot = NextSlot;
 		}
 

@@ -147,6 +147,7 @@ public:
   // Functions to help us create Shang-Inst.
   Value *getSignBit(Value *U, Value *InsertPosition);
   Value *createSConstantInt(uint16_t Value, unsigned BitWidth);
+	Value *creatConstantBoolean(bool True);
 };
 
 // SIRCtrlRgnBuilder focus on the building of Control-path
