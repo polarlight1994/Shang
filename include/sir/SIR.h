@@ -654,7 +654,7 @@ public:
     if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
       assert(UB == CI->getBitWidth() && LB == 0 && "The slice of constant is not supported yet!");
       OS << "((";
-      OS << buildLiteral(CI->getZExtValue(), UB, false);
+      OS << buildLiteral(getConstantIntValue(CI), UB, false);
       OS << "))";
       return;
     }

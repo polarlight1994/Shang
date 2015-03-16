@@ -222,7 +222,7 @@ void SIRDatapathPrinter::printBitExtract(ArrayRef<Value *> Ops) {
   ConstantInt *UB = dyn_cast<ConstantInt>(Ops[1]);
   ConstantInt *LB = dyn_cast<ConstantInt>(Ops[2]);
 
-  SM->printAsOperandImpl(OS, Ops[0], UB->getZExtValue(), LB->getZExtValue());
+  SM->printAsOperandImpl(OS, Ops[0], getConstantIntValue(UB), getConstantIntValue(LB));
 }
 
 void SIRDatapathPrinter::printBitCat(ArrayRef<Value *> Ops) {
