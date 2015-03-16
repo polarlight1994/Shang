@@ -86,7 +86,7 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
 void SIRScheduling::buildDataFlowDependencies(SIRSchedUnit *DstU, Value *Src,
 	                                            float delay) {	
 	if (Instruction *Inst = dyn_cast<Instruction>(Src)) {
-		if(G->hasSU(Inst)) {
+		if(!G->hasSU(Inst)) {
 			// If we cannot find the source SU, then it must be located
 			// in other SchedGraph corresponding to other Function.
 			// And we ignore this dependency.
@@ -106,9 +106,6 @@ void SIRScheduling::buildDataFlowDependencies(SIRSchedUnit *DstU, Value *Src,
 	assert((!isa<BasicBlock>(Src)
 			    || DT->dominates(cast<BasicBlock>(Src), DstU->getParentBB()))
 			   && "Flow dependency should be a dominance edge!");
-
-	// Hack: We should consider the Src when it is type of
-	// FUInput FUOutPut(Mem read and write) specially.
 
 	SIRSchedUnit *SrcSU = getDataFlowSU(Src);
 	assert(delay >= 0.0f && "Unexpected negative delay!");

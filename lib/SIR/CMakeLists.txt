@@ -6,7 +6,6 @@ SIRSchedGraph.cpp
 SIRSchedulerBase.cpp
 SIRScheduling.cpp
 SIRListScheduler.cpp
-SIRScheduleEmitter.cpp
 SIRRegisterSynthesis.cpp
 SIRPass.cpp
 SIRRTLCodeGen.cpp
