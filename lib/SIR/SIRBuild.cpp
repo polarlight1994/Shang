@@ -498,7 +498,7 @@ void SIRCtrlRgnBuilder::visitSwitchInst(SwitchInst &I) {
 		const CaseRange &Case = *CI;
 		// Simple case, test if the CndVal is equal to a specific value.
 		if (Case.High == Case.Low) {
-			Value *CaseVal = SM->createIntegerValue(getBitWidth(CndVal), Case.High.getSExtValue());
+			Value *CaseVal = SM->createIntegerValue(Case.High);
 			Value *Pred = D_Builder.createSEQInst(CndVal, CaseVal, SM->createIntegerType(1),
 				                                    &I, true);
 			Value *&BBPred = CaseMap[Case.BB];
@@ -509,10 +509,10 @@ void SIRCtrlRgnBuilder::visitSwitchInst(SwitchInst &I) {
 	}
 
   // Test if Low <= CndVal <= High.
-	Value *Low = SM->createIntegerValue(getBitWidth(CndVal), Case.Low.getSExtValue());
+	Value *Low = SM->createIntegerValue(Case.Low);
 	Value *LowCmp = D_Builder.createSIcmpOrEqInst(CmpInst::ICMP_UGT, CndVal, Low,
 		                                            SM->createIntegerType(1), &I, true);
-	Value *High = SM->createIntegerValue(getBitWidth(High), Case.High.getSExtValue());
+	Value *High = SM->createIntegerValue(Case.High);
 	Value *HighCmp = D_Builder.createSIcmpOrEqInst(CmpInst::ICMP_UGT, High, CndVal,
 		                                             SM->createIntegerType(1), &I, true);
 	Value *Pred = D_Builder.createSAndInst(LowCmp, HighCmp, LowCmp->getType(), &I, true);
@@ -712,8 +712,7 @@ void SIRDatapathBuilder::visitGEPOperator(GEPOperator &O, GetElementPtrInst &I) 
           IdxN = createSShiftInst(IdxN, createSConstantInt(Amt, PtrSize),
                                   IdxN->getType(), &I, Intrinsic::shang_shl, true);
         } else {
-          Value *Scale = createSConstantInt(ElementSize.getSExtValue(),
-                                            PtrSize);
+          Value *Scale = createSConstantInt(ElementSize);
           IdxN = createSMulInst(IdxN, Scale, IdxN->getType(), &I, true);
         }
       }
@@ -1250,6 +1249,10 @@ Value *SIRDatapathBuilder::getSignBit(Value *U, Value *InsertPosition) {
 
 Value *SIRDatapathBuilder::createSConstantInt(int16_t Value, unsigned BitWidth) {
   return SM->createIntegerValue(BitWidth, Value);
+}
+
+Value *SIRDatapathBuilder::createSConstantInt(const APInt &Value) {
+	return SM->createIntegerValue(Value);
 }
 
 Value *SIRDatapathBuilder::creatConstantBoolean(bool True) {

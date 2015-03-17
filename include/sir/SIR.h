@@ -26,18 +26,25 @@
 #include "llvm/Support/Debug.h"
 
 namespace llvm {
-	static uint64_t getConstantIntValue(Value *V) {
+	// Get the signed value of a ConstantInt.
+	static int64_t getConstantIntValue(Value *V) {
 		ConstantInt *CI = dyn_cast<ConstantInt>(V);
 		assert(CI && "Unexpected Value type!");
 
 		APInt AI = CI->getValue();
+
+		// If it is a one-bit value, then we don't need to
+		// consider whether it is negative or not.
+		if (AI.getBitWidth() == 1) return AI.getBoolValue();
+
 		if (AI.isNonNegative()) return AI.getZExtValue();
 		else {
 			return 0 - (AI.abs().getZExtValue());
 		}
 	}
 
-  static std::string buildLiteral(uint64_t Value, unsigned bitwidth, bool isMinValue) {
+	// Construct a string of unsigned int in binary or hexadecimal.
+  static std::string buildLiteralUnsigned(uint64_t Value, unsigned bitwidth) {
     std::string ret;
     ret = utostr_32(bitwidth) + '\'';
     if (bitwidth == 1) ret += "b";
@@ -45,11 +52,6 @@ namespace llvm {
     // Mask the value that small than 4 bit to prevent printing something
     // like 1'hf out.
     if (bitwidth < 4) Value &= (1 << bitwidth) - 1;
-
-    if(isMinValue) {
-      ret += utohexstr(Value);
-      return ret;
-    }
 
     std::string ss = utohexstr(Value);
     unsigned int uselength = (bitwidth/4) + (((bitwidth&0x3) == 0) ? 0 : 1);
@@ -60,6 +62,7 @@ namespace llvm {
     return ret;
   }
 
+	// Construct a string of corresponding FU name.
   static std::string getFUName(IntrinsicInst &I) {
     switch (I.getIntrinsicID()) {
     case Intrinsic::shang_add:  return "shang_addc";
@@ -76,6 +79,7 @@ namespace llvm {
     return NULL;
   }
 
+	// Construct a string with only characters, numbers and underlines. 
   static std::string Mangle(const std::string &S) {
     std::string Result;
 
@@ -90,6 +94,7 @@ namespace llvm {
     return Result;
   }
 
+	// Construct a string of BitRange like [31:0].
   static std::string BitRange(unsigned UB, unsigned LB = 0, bool printOneBit = false) {
     std::string ret;
     assert(UB && UB > LB && "Bad bit range!");
@@ -102,9 +107,27 @@ namespace llvm {
     return ret;
   }
 
+	// Print the name of IR instruction.
   static void printName(raw_ostream &OS, Instruction &I) {
     OS << Mangle(I.getName());
   }
+
+	 // Print the true form of the ConstantInt value in binary or hexadecimal. 
+	static void printConstantIntValue(raw_ostream &OS, ConstantInt *CI) {
+		OS << utostr_32(CI->getBitWidth()) << '\'';
+
+		APInt AI = CI->getValue();
+
+		if (AI.isNegative()) {
+			AI = AI.abs();
+			AI.setBit(CI->getBitWidth() - 1);
+		}
+
+		if (CI->getBitWidth() <= 4)
+			OS << "b" << AI.toString(2, false);
+		else
+			OS << "h" << AI.toString(16, false);
+	}
 }
 
 namespace llvm {
@@ -644,7 +667,8 @@ public:
   // Create Integer Type
   IntegerType *createIntegerType(unsigned BitWidth);
   // Create Integer Value
-  Value *createIntegerValue(unsigned BitWidth, unsigned Val);
+  Value *createIntegerValue(unsigned BitWidth, signed Val);
+	Value *createIntegerValue(const APInt &Val);
 
   // -------------------Functions to generate Verilog-------------------- //
   
@@ -657,7 +681,7 @@ public:
     if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
       assert(UB == CI->getBitWidth() && LB == 0 && "The slice of constant is not supported yet!");
       OS << "((";
-      OS << buildLiteral(getConstantIntValue(CI), UB, false);
+      printConstantIntValue(OS, CI);
       OS << "))";
       return;
     }
@@ -680,7 +704,6 @@ public:
 
     // Ignore the mask for now
     OS << "))";
-
   }
 
   void printAsOperand(raw_ostream &OS, Value *U, unsigned BitWidth) {

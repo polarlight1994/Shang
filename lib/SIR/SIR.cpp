@@ -28,7 +28,7 @@ void SIRRegister::printDecl(raw_ostream &OS) const {
   OS << "reg" << BitRange(getBitWidth(), 0, false);
   OS << " " << Mangle(getName());
   // Set the IniteVal.
-  OS << " = " << buildLiteral(InitVal, getBitWidth(), false)
+  OS << " = " << buildLiteralUnsigned(InitVal, getBitWidth())
      << ";\n";
 }
 
@@ -140,13 +140,21 @@ void SIRSlot::dump() const {
 	dbgs() << "\n";
 }
 
+Value *SIR::creatConstantBoolean(bool True) {
+	return True ? ConstantInt::getTrue(C) : ConstantInt::getFalse(C);
+}
+
 IntegerType *SIR::createIntegerType(unsigned BitWidth) {
   return IntegerType::get(C, BitWidth);
 }
 
-Value *SIR::createIntegerValue(unsigned BitWidth, unsigned Val) {
+Value *SIR::createIntegerValue(unsigned BitWidth, signed Val) {
   IntegerType *T = createIntegerType(BitWidth);
-  return ConstantInt::get(T, Val);
+  return ConstantInt::getSigned(T, Val);
+}
+
+Value *SIR::createIntegerValue(const APInt &Val) {
+	return ConstantInt::get(C, Val);
 }
 
 void SIR::printModuleDecl(raw_ostream &OS) const {

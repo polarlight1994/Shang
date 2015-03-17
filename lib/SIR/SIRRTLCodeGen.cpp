@@ -133,7 +133,7 @@ void SIRControlPathPrinter::printRegister(SIRRegister *Reg, vlang_raw_ostream &O
     if (Reg->getRegisterType() == SIRRegister::OutPort) {
       OS.always_ff_begin();
       OS << Mangle(Reg->getName()) << " <= "
-         << buildLiteral(Reg->getInitVal(), Reg->getBitWidth(), false) << ";\n";
+         << buildLiteralUnsigned(Reg->getInitVal(), Reg->getBitWidth()) << ";\n";
       OS.always_ff_end();
     }
 
@@ -147,7 +147,7 @@ void SIRControlPathPrinter::printRegister(SIRRegister *Reg, vlang_raw_ostream &O
   OS.always_ff_begin();
   // Reset the register.
   OS << Mangle(Reg->getName()) << " <= "
-     << buildLiteral(Reg->getInitVal(), Reg->getBitWidth(), false) << ";\n";  
+     << buildLiteralUnsigned(Reg->getInitVal(), Reg->getBitWidth()) << ";\n";  
 
   OS.else_begin();
 

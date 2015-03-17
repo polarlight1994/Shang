@@ -146,7 +146,8 @@ public:
 
   // Functions to help us create Shang-Inst.
   Value *getSignBit(Value *U, Value *InsertPosition);
-  Value *createSConstantInt(uint16_t Value, unsigned BitWidth);
+  Value *createSConstantInt(int16_t Value, unsigned BitWidth);
+	Value *createSConstantInt(const APInt &Value);
 	Value *creatConstantBoolean(bool True);
 };
 
