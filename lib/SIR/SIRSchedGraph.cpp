@@ -171,11 +171,12 @@ SIRSchedGraph::SIRSchedGraph(Function &F) : F(F), TotalSUs(2) {
 SIRSchedGraph::~SIRSchedGraph() {}
 
 bool SIRSchedGraph::indexSU2IR(SIRSchedUnit *SU, Value *V) {
-	// Only BB Value can have mutil-SUnits, so if the Value
-	// already have corresponding SUnit, the insert operation
-	// can not be done.	
+	// Only BB Value and PHI node can have mutil-SUnits, 
+	// so if the Value already have corresponding SUnit, 
+	// the insert operation can not be done.	
 	if(hasSU(V)) {
-		assert(isa<BasicBlock>(V) && "SUnit already exits!");
+		assert(isa<BasicBlock>(V) || isa<PHINode>(V)
+			     && "SUnit already exits!");
 		IR2SUMap[V].push_back(SU);
 		return true;
 	}

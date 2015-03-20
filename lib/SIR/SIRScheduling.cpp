@@ -77,10 +77,12 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
 	TerminatorInst *Inst = BB->getTerminator();
 
 	ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(Inst);
-	assert(SUs.size() == 1 && "Bad number of Scheduling Units!");
 	
 	SIRSchedUnit *Exit = G->getExit();
-	Exit->addDep(SUs[0], SIRDep::CreateCtrlDep(0));
+
+	for (int i = 0; i < SUs.size(); i++) {
+		Exit->addDep(SUs[i], SIRDep::CreateCtrlDep(0));
+	}	
 }
 
 void SIRScheduling::buildDataFlowDependencies(SIRSchedUnit *DstU, Value *Src,
@@ -236,9 +238,6 @@ void SIRScheduling::buildMemoryDependencies() {
 	typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
 	for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
 		buildLocalMemoryDependencies(*I);
-
-	// Hack: If we want to schedule BB globally, we need to 
-	// analysis memory access globally.
 }
 
 SIRSchedUnit *SIRScheduling::getDataFlowSU(Value *V) {
@@ -249,8 +248,8 @@ SIRSchedUnit *SIRScheduling::getDataFlowSU(Value *V) {
 	// We should get the corresponding SUnit of SeqOp.
 	ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(V);
 
-	assert(SUs.size() == 1 || isa<BasicBlock>(V)
-		&& "Only BasicBlock can have many SUnits!");
+	assert(SUs.size() == 1 || isa<BasicBlock>(V) || isa<PHINode>(V)
+		     && "Only BasicBlock can have many SUnits!");
 
 	if(!isa<BasicBlock>(V) && !isa<PHINode>(V))
 		return SUs[0];
@@ -282,35 +281,35 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 	// Or we create the Entry SUnit for this BB.
 	else BBEntry = getOrCreateBBEntry(BB);
 
-	// Collect all the SeqOps in this slot, and we
-	// will create SUnits for each of them.
+	// Collect all SeqOps in this slot and create SUnits for them.
 	std::vector<SIRSeqOp *> Ops;
 	Ops.insert(Ops.end(), S->op_begin(), S->op_end());
 
 	typedef std::vector<SIRSeqOp *>::iterator op_iterator;
 	for (op_iterator OI = Ops.begin(), OE = Ops.end(); OI != OE; ++OI) {
 		SIRSeqOp *Op = *OI;
-		Instruction *Inst = dyn_cast<Instruction>(Op->getLLVMValue());		
-
-		// We should consider the SeqOp with corresponding IR instruction
-		// and no corresponding IR instruction differently. If it is a
-		// Shang pseudo instruction, then it is a SlotReg assign operation,
-		// which do not need a corresponding SUnit.
+		Instruction *Inst = dyn_cast<Instruction>(Op->getLLVMValue()); 
+		
+		// Since we haven't run the FSMSynthesisPass here, so all SeqOps
+		// are with real IR instruction except the Ret instruction.
 		if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
-			// Here we should treat the Ret instruction differently, since it
-			// different from others in two ways:
-			// 1) The module may have mutil-RetInst, but only one Ret Register.
-			// 2) The SeqInst in Ret Register is a pseudo instruction.
-			if (Op->getDst()->isOutPort()) {
-				// Hack: we just set the Inst to the last Ret Instruction in module.
-				BB = Inst->getParent();
-				Inst = BB->getTerminator();
-			} 
- 				else if (II->getIntrinsicID() == Intrinsic::shang_pseudo)
- 				continue;
+			assert(II->getIntrinsicID() == Intrinsic::shang_pseudo
+				     && Op->getDst()->isOutPort() 
+						 && "Only RetReg can have pseudo instruction!"); 
 		}			
 		
-		SIRSchedUnit *U = G->createSUnit(Inst, BB, SIRSchedUnit::Normal, Op);
+		// If it is not a pseudo instruction, check if it is a PHI node
+		// or normal node.
+		SIRSchedUnit::Type Ty = isa<PHINode>(Inst) ? 
+			                        SIRSchedUnit::PHI : SIRSchedUnit::Normal;
+
+		SIRSchedUnit *U = G->createSUnit(Inst, BB, Ty, Op);
+
+		if (U->isPHI())
+			// Since the PHI latches are predicated, their depends on the parent BB,
+			// i.e. the PHI latches are implicitly guard by the 'condition' of their
+			// parent BB.
+			U->addDep(BBEntry, SIRDep::CreateCtrlDep(0));
 
 		buildDataFlowDependencies(U);
 
@@ -349,7 +348,7 @@ void SIRScheduling::buildSchedulingGraph() {
 		RPO(SM->getStartSlot());
 
 	// Build the Scheduling Units according to the SeqOps in Slot.
-	typedef
+	typedef	
 		ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *>>::rpo_iterator
 		slot_top_iterator;
 
