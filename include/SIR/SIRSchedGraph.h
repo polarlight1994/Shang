@@ -89,6 +89,8 @@ public:
     BlockEntry,
     // PHI node
     PHI,
+		// Slot Transition
+		SlotTransition,
 		// Normal node for Scheduling
 		Normal,
     // Invalid node for the ilist sentinel

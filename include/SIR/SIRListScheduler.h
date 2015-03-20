@@ -72,7 +72,7 @@ struct BBContext {
 
 	// The SchedUnits that should be schedule to
 	// the EntrySlot/ExitSlot of the current BB.
-	SmallVector<SIRSchedUnit *, 4> Entrys, Exits;
+	std::set<SIRSchedUnit *> Entrys, Exits;
 
 	typedef PriorityQueue<SIRSchedUnit *, std::vector<SIRSchedUnit *>,
 		PriorityHeuristic> SUQueue;
@@ -88,8 +88,8 @@ struct BBContext {
 
 	void collectReadySUs(ArrayRef<SIRSchedUnit *> SUs);
 
-	void scheduleSUsToEntrySlot(ArrayRef<SIRSchedUnit *> SUs);
-	void scheduleSUsToExitSlot(ArrayRef<SIRSchedUnit *> SUs);
+	void scheduleSUsToEntrySlot();
+	void scheduleSUsToExitSlot();
 
 	void enter(BasicBlock *BB);
 	void exit(BasicBlock *BB);

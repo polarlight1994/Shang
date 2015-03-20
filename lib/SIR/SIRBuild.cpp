@@ -379,6 +379,8 @@ void SIRCtrlRgnBuilder::visitPHIsInSucc(SIRSlot *SrcSlot, SIRSlot *DstSlot,
     if (!PHISeqValReg) 
       PHISeqValReg = createRegister(PN->getName(), BitWidth, DstBB, I);
 
+		// Make the assignment in SrcSlot, so we can schedule it in the latest slot
+		// of SrcBB.
     assignToReg(SrcSlot, Guard, LiveOut, PHISeqValReg);   
   }
 }
@@ -554,10 +556,13 @@ void SIRCtrlRgnBuilder::visitReturnInst(ReturnInst &I) {
     SIRRegister *Reg = cast<SIROutPort>(SM->getRetPort())->getRegister();
     
     // Launch the instruction to assignment value to register.
+		// Here we should know that the Ret instruction different from others:
+		// The module may have mutil-RetInst, but only one Ret Register.
     assignToReg(CurSlot, SM->creatConstantBoolean(true),
                 I.getReturnValue(), Reg);
 
-		// Replace the Ret operand with the RegVal.
+		// Replace the Ret operand with the RegVal. So all Ret-instruction
+		// will return the RetRegVal in the corresponding slot.
 		I.setOperand(0, Reg->getLLVMValue());
 
     // Index the register with return instruction.
