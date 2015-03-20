@@ -50,9 +50,9 @@ void SIRPort::printDecl(raw_ostream &OS) const {
 }
 
 void SIRSeqOp::print(raw_ostream &OS) const {
-	OS << "Assign the Src Value " << Src->getName()
-		 << " to register " << DstReg->getName()
-		 << " in Slot #" << S->getSlotNum()
+	OS << "Assign the Src Value " << "[" <<Src->getName()
+		 << "]" << " to register " << "[" << DstReg->getName()
+		 << "]" << " in Slot #" << S->getSlotNum()
 		 << " Scheduled to " << S->getSchedule() << "\n";
 }
 
