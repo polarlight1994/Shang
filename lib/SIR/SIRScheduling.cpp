@@ -38,7 +38,7 @@ SIRSchedUnit *SIRScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 	if (G->hasSU(BB)) {
 		ArrayRef<SIRSchedUnit *> &SUs = G->lookupSUs(BB);
 		for (unsigned I = 0, E = SUs.size(); I != E; ++I)
-			if (SUs[I]->isBBEntry())
+			if (SUs[I]->isBBEntry() && SUs[I]->getParentBB() == BB)
 				return SUs[I];
 	}
 
@@ -55,20 +55,20 @@ SIRSchedUnit *SIRScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 	// Save the mapping between the SUnit with the Value.
 	G->indexSU2IR(Entry, BB);
 
-	// Also create the SUnit for the PHI nodes.
-	typedef BasicBlock::iterator iterator;
-	for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
-		PHINode *PN = dyn_cast<PHINode>(I);
-		if (PN) {
-			SIRSchedUnit *U = G->createSUnit(PN, BB, SIRSchedUnit::PHI, 0);
-
-			// No need to add the dependency edges from the incoming values, because
-			// the SU is anyway scheduled to the same slot as the entry of the BB.
-			// And we will build the conditional dependencies for the conditional
-			// CFG edge between BBs.
-			G->indexSU2IR(U, PN);
-		}		
-	}
+// 	// Also create the SUnit for the PHI nodes.
+// 	typedef BasicBlock::iterator iterator;
+// 	for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+// 		PHINode *PN = dyn_cast<PHINode>(I);
+// 		if (PN) {
+// 			SIRSchedUnit *U = G->createSUnit(PN, BB, SIRSchedUnit::PHI, 0);
+// 
+// 			// No need to add the dependency edges from the incoming values, because
+// 			// the SU is anyway scheduled to the same slot as the entry of the BB.
+// 			// And we will build the conditional dependencies for the conditional
+// 			// CFG edge between BBs.
+// 			G->indexSU2IR(U, PN);
+// 		}		
+// 	}
 
 	return Entry;
 }
@@ -147,17 +147,24 @@ void SIRScheduling::buildControlFlowDependencies(BasicBlock *TargetBB,
 	                                               ArrayRef<SIRSchedUnit *> SUs) {
 	SIRSchedUnit *Entry = 0;
 
-	for (unsigned i = 0; i < SUs.size(); ++i)
-		if (SUs[i]->isBBEntry())	
-			Entry = SUs[i];
+	// Get the Entry SUnit of this BB.
+	for (unsigned i = 0; i < SUs.size(); ++i) {		
+		if (SUs[i]->isBBEntry() && SUs[i]->getParentBB() == TargetBB)  	
+			Entry = SUs[i];			
+	}
 
+
+	// Create the CtrlDep from SUnits which targets this BB
+	// to Entry SUnit to this BB.
 	for (unsigned i = 0; i < SUs.size(); ++i) {
-		if (SUs[i]->isBBEntry())
+		if (SUs[i]->isBBEntry() && SUs[i]->getParentBB() == TargetBB)
 			continue;
-
-	assert(isa<TerminatorInst>(SUs[i]->getInst())
-			   && "Unexpected instruction type!");
-	assert(SUs[i]->getTargetBB() == TargetBB && "Wrong target BB!");
+  
+  Instruction *Inst = SUs[i]->getInst();
+	assert(!Inst && (SUs[i]->isEntry() || SUs[i]->isBBEntry())
+		     && "Unexpected NULL instruction!");
+	assert(!Inst || isa<TerminatorInst>(Inst) && "Unexpected instruction type!");
+	assert(!Inst || SUs[i]->getTargetBB() == TargetBB && "Wrong target BB!");
 
 	Entry->addDep(SUs[i], SIRDep::CreateCtrlDep(0));
 	}
@@ -280,6 +287,23 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 	if (!BB) BBEntry = G->getEntry();
 	// Or we create the Entry SUnit for this BB.
 	else BBEntry = getOrCreateBBEntry(BB);
+
+	// Index all the TargetBB of this Entry SUnit according to
+	// the successor of this Slot.
+	typedef SIRSlot::succ_iterator iterator;
+	for (iterator I = S->succ_begin(), E = S->succ_end(); I != E; I++) {
+		SIRSlot *DstSlot = *I;
+		BasicBlock *DstBB = DstSlot->getParent();
+
+		// If it's not a BB transition, ignore it. And note that
+		// if DstBB and BB are the same and not empty, then only 
+		// when S is the latest slot, then there are a BB 
+		// transition from BB to BB itself.
+		if (DstBB == BB && (!BB || S!= SM->getLatestSlot(BB))) 
+			continue;
+
+		G->indexSU2IR(BBEntry, DstBB);
+	}
 
 	// Collect all SeqOps in this slot and create SUnits for them.
 	std::vector<SIRSeqOp *> Ops;
