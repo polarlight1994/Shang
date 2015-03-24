@@ -505,11 +505,15 @@ void SIR2RTL::generateCodeForDatapath(SIR &SM, DataLayout &TD) {
 
   // Visit the basic block in topological order.
   Function *F = SM.getFunction();
-  ReversePostOrderTraversal<BasicBlock*> RPO(&(F->getEntryBlock()));
-  typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
+//   ReversePostOrderTraversal<BasicBlock*> RPO(&(F->getEntryBlock()));
+//   typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
+// 
+//   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
+//     DPP.visitBasicBlock(*I);
 
-  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
-    DPP.visitBasicBlock(*I);
+	typedef Function::iterator iterator;
+	for (iterator I = F->begin(), E = F->end(); I != E; ++I)
+		DPP.visitBasicBlock(I);
 }
 
 void SIR2RTL::generateCodeForControlpath(SIR &SM, DataLayout &TD) {
