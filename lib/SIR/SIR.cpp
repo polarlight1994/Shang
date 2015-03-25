@@ -175,7 +175,12 @@ void SIR::printRegDecl(raw_ostream &OS) const {
 
 	for (SIR::const_register_iterator I = registers_begin(), E = registers_end();
 		   I != E; ++I) {
-		(*I)->printDecl(OS.indent(2));
+    SIRRegister *Reg = *I;
+
+    // Do not need to declaration the output register.
+    if (Reg->isOutPort()) continue;
+
+		Reg->printDecl(OS.indent(2));
 	}
 }
 
