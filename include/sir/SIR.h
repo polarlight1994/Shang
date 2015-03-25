@@ -66,6 +66,7 @@ namespace llvm {
   static std::string getFUName(IntrinsicInst &I) {
     switch (I.getIntrinsicID()) {
     case Intrinsic::shang_add:  return "shang_addc";
+		case Intrinsic::shang_addc: return "shang_addc";
     case Intrinsic::shang_mul:  return "shang_mult";
     case Intrinsic::shang_rand: return "shang_rand";
     case Intrinsic::shang_shl:  return "shang_shl";

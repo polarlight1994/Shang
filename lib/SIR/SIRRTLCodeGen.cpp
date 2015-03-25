@@ -312,6 +312,7 @@ bool SIRDatapathPrinter::printSubModuleInstantiation(IntrinsicInst &I) {
   switch (ID) {
   default: break;
   case Intrinsic::shang_add:
+	case Intrinsic::shang_addc:
     if (printFUAdd(I)) return true;
     break;
   case Intrinsic::shang_mul:
@@ -384,6 +385,7 @@ void SIRDatapathPrinter::visitIntrinsicInst(IntrinsicInst &I) {
   case Intrinsic::shang_lshr:
   case Intrinsic::shang_sgt:
   case Intrinsic::shang_ugt:
+	case Intrinsic::shang_addc:
     if (printSubModuleInstantiation(I)) return;
     break;
 
