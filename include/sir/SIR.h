@@ -624,7 +624,15 @@ public:
   unsigned getRetPortIdx() const { return RetPortIdx; }
 
   bool IndexBB2Slots(BasicBlock *BB,
-                     SIRSlot *LandingSlot, SIRSlot *LatestSlot) {
+                     SIRSlot *LandingSlot, SIRSlot *LatestSlot) {    
+		std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
+      at = BB2SlotMap.find(BB);
+		// If there are already a map between BB and Landing/Latest Slot,
+		// then we update it.
+		if (at != BB2SlotMap.end()) {
+			BB2SlotMap.erase(at);
+		}
+
     return BB2SlotMap.insert(std::make_pair(BB,
                              std::make_pair(LandingSlot, LatestSlot))).second;
   }
@@ -637,13 +645,13 @@ public:
     //assert(at != BB2SlotMap.end() && "Slots not found!");
     return at->second;
   }
-  SIRSlot *getLandingSlot(BasicBlock *BB) {
+  SIRSlot *getLandingSlot(BasicBlock *BB) const {
     std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
       at = BB2SlotMap.find(BB);
     assert(at != BB2SlotMap.end() && "Landing slot not found!");
     return at->second.first;
   }
-  SIRSlot *getLatestSlot(BasicBlock *BB) {
+  SIRSlot *getLatestSlot(BasicBlock *BB) const {
     std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
       at = BB2SlotMap.find(BB);
     assert(at != BB2SlotMap.end() && "Latest slot not found!");
