@@ -217,3 +217,41 @@ bool SIR::gc() {
 
 	return changed;
 }
+
+void SIR::print(raw_ostream &OS) const {
+	// Print all information about SIR.
+	OS << "======================Note=====================\n" << "All INFO of SIR will be printed by default!\n";
+	OS << "If you want to view only part of it, please select following dump methods:\n";
+	OS << "(1) IRInfo: dumpIR(); (2) BB2SlotInfo: dumpBB2Slot();\n";
+	OS << "(3) Reg2SlotInfo: dumpReg2Slot()\n";
+	OS << "===============================================\n";
+
+  dumpIR();
+	dumpBB2Slot();
+	dumpReg2Slot();
+
+	OS << "======================Note=====================\n" << "All INFO of SIR will be printed by default!\n";
+	OS << "If you want to view only part of it, please select following dump methods:\n";
+	OS << "(1) IRInfo: dumpIR(); (2) BB2SlotInfo: dumpBB2Slot();\n";
+	OS << "(3) Reg2SlotInfo: dumpReg2Slot()\n";
+	OS << "===============================================\n";
+}
+
+void SIR::dump() const {
+	print(dbgs());
+	dbgs() << "\n";
+}
+
+void SIR::dumpIR() const {
+	Function *F = this->getFunction();
+
+	F->dump();
+}
+
+void SIR::dumpBB2Slot() const {
+
+}
+
+void SIR::dumpReg2Slot() const {
+
+}

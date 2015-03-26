@@ -546,13 +546,9 @@ public:
   SIR(Function *F) : F(F), C(F->getContext()) {}
   ~SIR();
 
-	// Release the dead objects in SIR.
-	bool gcImpl();
-	bool gc();
-
-  Function *getFunction() { return F; }
-  Module *getModule() { return F->getParent(); }
-  LLVMContext &getContext() { return C; }
+  Function *getFunction() const { return F; }
+  Module *getModule() const { return F->getParent(); }
+  LLVMContext &getContext() const { return C; }
 
   port_iterator ports_begin() { return Ports.begin(); }
   const_port_iterator ports_begin() const { return Ports.begin(); }
@@ -723,6 +719,20 @@ public:
       printAsOperand(OS, Ops[i], BitWidth);
     }
   }
+
+
+	// ---------------------------Other Functions---------------------------- //
+
+	// Release the dead objects in SIR.
+	bool gcImpl();
+	bool gc();
+
+	// Functions for debug
+	void print(raw_ostream &OS) const;
+	void dump() const;
+	void dumpIR() const;
+	void dumpBB2Slot() const;
+	void dumpReg2Slot() const;
 
 };
 
