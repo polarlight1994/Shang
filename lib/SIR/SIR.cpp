@@ -249,7 +249,28 @@ void SIR::dumpIR() const {
 }
 
 void SIR::dumpBB2Slot() const {
+	raw_ostream &OS = dbgs();
+	Function *F = this->getFunction();
 
+	OS << "\n";
+
+	// Print the entry slot.
+	OS << "Entry Slot#0\n";
+
+	typedef Function::iterator iterator;
+	for (iterator I = F->begin(), E = F->end(); I != E; I++) {
+		BasicBlock *BB = I;
+
+		// Get the corresponding landing slot and latest slot.
+		SIRSlot *LandingSlot = getLandingSlot(BB);
+		SIRSlot *LatestSlot = getLatestSlot(BB);
+
+		OS << "BasicBlock [" << BB->getName() << "] with landing slot "
+			 << "Slot#" << LandingSlot->getSlotNum() << " and latest slot "
+			 << "Slot#" << LatestSlot->getSlotNum() << "\n";
+	}
+
+	OS << "\n";
 }
 
 void SIR::dumpReg2Slot() const {
