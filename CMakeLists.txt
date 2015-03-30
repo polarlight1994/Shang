@@ -114,7 +114,8 @@ ENDIF (NOT MSVC)
 
 # Create the shang HLS executable.
 set(LLVM_LINK_COMPONENTS
-    irreader bitreader asmparser codegen SelectionDAG transformutils ipo)
+#    irreader bitreader asmparser codegen SelectionDAG transformutils ipo)
+	irreader bitreader asmparser codegen SelectionDAG transformutils ipo)
 
 add_llvm_tool(shang
   shang.cpp
