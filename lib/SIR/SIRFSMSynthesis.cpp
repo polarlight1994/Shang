@@ -93,5 +93,9 @@ bool SIRFSMSynthesis::synthesisStateTransistion(SIRSlot *SrcSlot, SIRSlot *DstSl
 	// the Slot Reg in the right time to active DstSlot.
 	Reg->addAssignment(SM->creatConstantBoolean(true), Guard);
 
+	// Index the slot register to this slot and the normal register will
+	// be indexed in SIRSchedulingPass.
+	SM->IndexReg2Slot(Reg, DstSlot);
+
 	return true;
 }

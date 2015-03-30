@@ -441,6 +441,10 @@ void SIRScheduleEmitter::emitToSlot(SIRSeqOp *SeqOp, SIRSlot *ToSlot) {
 	SIRRegister *Dst = SeqOp->getDst();	
 	Value *GuardVal = SeqOp->getGuard();
 
+	// Index the normal register to this slot and the slot register will
+	// be indexed in SIRFSMSynthsisPass.
+	SM->IndexReg2Slot(Dst, ToSlot);
+
 	Value *InsertPosition = Dst->getLLVMValue();
 
 	// Associate the guard with the Slot guard.
