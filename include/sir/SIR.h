@@ -607,7 +607,7 @@ public:
     // and the register.
     return SeqInst2Reg.insert(std::make_pair(SeqInst, Reg)).second;
   }
-  SIRRegister *lookupSIRReg(Instruction *SeqInst) {
+  SIRRegister *lookupSIRReg(Instruction *SeqInst) const {
     const_seqinst2reg_iterator at = SeqInst2Reg.find(SeqInst);
     return at == SeqInst2Reg.end() ? 0 : at->second;
   }
@@ -615,7 +615,7 @@ public:
   bool IndexReg2Slot(SIRRegister *Reg, SIRSlot *S) {
     return Reg2Slot.insert(std::make_pair(Reg, S)).second;
   }
-  SIRSlot *lookupSIRSlot(SIRRegister *Reg) {
+  SIRSlot *lookupSIRSlot(SIRRegister *Reg) const {
     const_reg2slot_iterator at = Reg2Slot.find(Reg);
     return at == Reg2Slot.end() ? 0 : at->second;
   }

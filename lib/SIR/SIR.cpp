@@ -274,5 +274,19 @@ void SIR::dumpBB2Slot() const {
 }
 
 void SIR::dumpReg2Slot() const {
+	raw_ostream &OS = dbgs();	
 
+	OS << "\n";
+
+	for (const_register_iterator I = registers_begin(), E = registers_end(); I != E; I++) {
+		SIRRegister *Reg = *I;
+
+		// Get the corresponding slot.
+		SIRSlot *Slot = lookupSIRSlot(Reg);
+
+		OS << "Register [" << Reg->getName() << "] in slot "
+			 << "Slot#" << Slot->getSlotNum() << "\n";
+	}
+
+	OS << "\n";
 }
