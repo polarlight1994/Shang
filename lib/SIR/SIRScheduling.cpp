@@ -347,7 +347,7 @@ void SIRScheduling::finishBuildingSchedGraph() {
 	SIRSchedUnit *Exit = G->getExit();
 
 	typedef SIRSchedGraph::iterator iterator;
-	for (iterator I = std::next(G->begin()), E = Exit; I != E; ++I) {
+	for (iterator I = llvm::next(G->begin()), E = Exit; I != E; ++I) {
 		SIRSchedUnit *U = I;
 
 		// Ignore the BBEntry.
