@@ -2,6 +2,7 @@
 #include "sir/Passes.h"
 
 using namespace llvm;
+using namespace std;
 
 char SIRScheduling::ID = 0;
 char &llvm::SIRSchedulingID = SIRScheduling::ID;
