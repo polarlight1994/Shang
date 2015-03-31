@@ -637,7 +637,7 @@ public:
     return BB2SlotMap.insert(std::make_pair(BB,
                              std::make_pair(LandingSlot, LatestSlot))).second;
   }
-  std::map<BasicBlock *, std::pair<SIRSlot *, SIRSlot *>> getBB2SlotMap() {
+  std::map<BasicBlock *, slot_pair> getBB2SlotMap() {
     return BB2SlotMap;
   }
   std::pair<SIRSlot *, SIRSlot *> getSlotsOfBB(BasicBlock *BB) {
