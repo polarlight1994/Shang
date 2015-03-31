@@ -37,7 +37,7 @@ Pass *llvm::createSIRSchedulingPass() {
 SIRSchedUnit *SIRScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 	// Simply return the BBEntry if it had already existed.
 	if (G->hasSU(BB)) {
-		ArrayRef<SIRSchedUnit *> &SUs = G->lookupSUs(BB);
+		ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(BB);
 		for (unsigned I = 0, E = SUs.size(); I != E; ++I)
 			if (SUs[I]->isBBEntry() && SUs[I]->getParentBB() == BB)
 				return SUs[I];
