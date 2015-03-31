@@ -626,7 +626,7 @@ public:
 
   bool IndexBB2Slots(BasicBlock *BB,
                      SIRSlot *LandingSlot, SIRSlot *LatestSlot) {    
-		std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
+		std::map<BasicBlock*, slot_pair>::const_iterator
       at = BB2SlotMap.find(BB);
 		// If there are already a map between BB and Landing/Latest Slot,
 		// then we update it.
@@ -640,20 +640,20 @@ public:
   std::map<BasicBlock *, slot_pair> getBB2SlotMap() {
     return BB2SlotMap;
   }
-  std::pair<SIRSlot *, SIRSlot *> getSlotsOfBB(BasicBlock *BB) {
-    std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
+  slot_pair getSlotsOfBB(BasicBlock *BB) {
+    std::map<BasicBlock*, slot_pair>::const_iterator
       at = BB2SlotMap.find(BB);
     //assert(at != BB2SlotMap.end() && "Slots not found!");
     return at->second;
   }
   SIRSlot *getLandingSlot(BasicBlock *BB) const {
-    std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
+    std::map<BasicBlock*, slot_pair>::const_iterator
       at = BB2SlotMap.find(BB);
     assert(at != BB2SlotMap.end() && "Landing slot not found!");
     return at->second.first;
   }
   SIRSlot *getLatestSlot(BasicBlock *BB) const {
-    std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
+    std::map<BasicBlock*, slot_pair>::const_iterator
       at = BB2SlotMap.find(BB);
     assert(at != BB2SlotMap.end() && "Latest slot not found!");
     return at->second.second;
