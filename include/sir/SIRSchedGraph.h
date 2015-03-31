@@ -348,12 +348,12 @@ private:
   SUList SUnits;
   
  	// Mapping between LLVM IR and SIR Scheduling Units.
- 	typedef std::map<Value *, SmallVector<SIRSchedUnit *, 4>> IR2SUMapTy;
+ 	typedef std::map<Value *, SmallVector<SIRSchedUnit *, 4> > IR2SUMapTy;
  	IR2SUMapTy IR2SUMap;
 
   // Helper class to arrange the scheduling units according to their parent BB,
   // we will emit the schedule or build the linear order BB by BB.
-  std::map<BasicBlock*, std::vector<SIRSchedUnit *>> BBMap;
+  std::map<BasicBlock*, std::vector<SIRSchedUnit *> > BBMap;
 
 public:
   SIRSchedGraph(Function &F);
@@ -405,11 +405,11 @@ public:
   const_reverse_iterator rbegin() const { return SUnits.rbegin(); }
   const_reverse_iterator rend() const { return SUnits.rend(); }
 
-  typedef std::map<BasicBlock*, std::vector<SIRSchedUnit *>>::iterator bb_iterator;
+  typedef std::map<BasicBlock*, std::vector<SIRSchedUnit *> >::iterator bb_iterator;
   bb_iterator bb_begin() { return BBMap.begin(); }
   bb_iterator bb_end() { return BBMap.end(); }
 
-  typedef std::map<BasicBlock*, std::vector<SIRSchedUnit *>>::const_iterator
+  typedef std::map<BasicBlock*, std::vector<SIRSchedUnit *> >::const_iterator
     const_bb_iterator;
   const_bb_iterator bb_begin() const { return BBMap.begin(); }
   const_bb_iterator bb_end() const { return BBMap.end(); }

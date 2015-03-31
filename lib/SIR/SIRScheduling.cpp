@@ -368,12 +368,12 @@ void SIRScheduling::finishBuildingSchedGraph() {
 
 void SIRScheduling::buildSchedulingGraph() {
 	// Build the scheduling units according to the original scheduling.
-	ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *>>
+	ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >
 		RPO(SM->getStartSlot());
 
 	// Build the Scheduling Units according to the SeqOps in Slot.
 	typedef	
-		ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *>>::rpo_iterator
+		ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >::rpo_iterator
 		slot_top_iterator;
 
 	for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
