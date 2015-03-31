@@ -229,6 +229,7 @@ void SIR::print(raw_ostream &OS) {
   dumpIR();
 	dumpBB2Slot();
 	dumpReg2Slot();
+	dumpSeqOp2Slot();
 
 	OS << "======================Note=====================\n" << "All INFO of SIR will be printed by default!\n";
 	OS << "If you want to view only part of it, please select following dump methods:\n";
