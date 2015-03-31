@@ -1,0 +1,86 @@
+From 30da55bb1134dfcf448435e27d0b67c21aabd8d2 Mon Sep 17 00:00:00 2001
+From: polarlight <971471059@qq.com>
+Date: Tue, 31 Mar 2015 10:30:39 +0800
+Subject: [PATCH] Extend LLVM to add Shang Intrinsic instructions
+
+---
+ include/llvm/IR/IntrinsicsShang.td | 66 ++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 66 insertions(+)
+ create mode 100644 include/llvm/IR/IntrinsicsShang.td
+
+diff --git a/include/llvm/IR/IntrinsicsShang.td b/include/llvm/IR/IntrinsicsShang.td
+new file mode 100644
+index 0000000..846bc84
+--- /dev/null
++++ b/include/llvm/IR/IntrinsicsShang.td
+@@ -0,0 +1,66 @@
++//===- IntrinsicsShang.td - Defines Shang intrinsics -----------*- tablegen -*-===//
++//
++//                     The LLVM Compiler Infrastructure
++//
++// This file is distributed under the University of Illinois Open Source
++// License. See LICENSE.TXT for details.
++//
++//===----------------------------------------------------------------------===//
++//
++// This file defines all of the Shang-specific intrinsics.
++//
++//===----------------------------------------------------------------------===//
++
++
++//===----------------------------------------------------------------------===//
++// TLS
++
++let TargetPrefix = "shang" in {  // All intrinsics start with "llvm.shang.".
++
++//===----------------------------------------------------------------------===//
++// Saturating Arithmentic
++def int_shang_not : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty]>;
++
++def int_shang_rand : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty]>;
++def int_shang_rxor : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty]>;
++
++def int_shang_and : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty],
++                              [IntrNoMem, Commutative]>;
++
++def int_shang_add : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty],
++                              [IntrNoMem, Commutative]>;	
++def int_shang_addc : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty, llvm_anyint_ty],
++                              [IntrNoMem, Commutative]>;								  
++def int_shang_mul : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty],
++                              [IntrNoMem, Commutative]>;	
++def int_shang_sdiv : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty],
++                               [IntrNoMem, Commutative]>;	
++def int_shang_udiv : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty],
++                               [IntrNoMem, Commutative]>;	
++	
++def int_shang_sgt : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty]>;
++def int_shang_ugt : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty]>;
++	
++def int_shang_bit_cat : Intrinsic<[llvm_anyint_ty],
++                                  [llvm_anyint_ty, llvm_anyint_ty]>;
++def int_shang_bit_extract : Intrinsic<[llvm_anyint_ty],
++                                      [llvm_anyint_ty, llvm_anyint_ty, llvm_anyint_ty]>;
++def int_shang_bit_repeat : Intrinsic<[llvm_anyint_ty],
++                                     [llvm_anyint_ty, llvm_anyint_ty]>;
++	
++def int_shang_shl : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty]>;
++def int_shang_ashr : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty]>;
++def int_shang_lshr : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty]>;
++
++
++//===----------------------------------------------------------------------===//
++// Load, Store and Clear exclusive
++def int_shang_strex : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyptr_ty]>;
++
++//===----------------------------------------------------------------------===//
++// Assign instruction for General Registers created in ShangIR
++def int_shang_assign : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty]>;
++// Pseudo instruction for Slot Registers created in ShangIR
++def int_shang_pseudo : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty]>;
++
++} //end TargetPrefix
+\ No newline at end of file
+-- 
+1.9.5.msysgit.1
+
