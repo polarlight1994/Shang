@@ -626,7 +626,7 @@ public:
 
   bool IndexBB2Slots(BasicBlock *BB,
                      SIRSlot *LandingSlot, SIRSlot *LatestSlot) {    
-		std::map<BasicBlock*, slot_pair>::const_iterator
+		std::map<BasicBlock*, slot_pair>::iterator
       at = BB2SlotMap.find(BB);
 		// If there are already a map between BB and Landing/Latest Slot,
 		// then we update it.
