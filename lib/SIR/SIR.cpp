@@ -218,7 +218,7 @@ bool SIR::gc() {
 	return changed;
 }
 
-void SIR::print(raw_ostream &OS) const {
+void SIR::print(raw_ostream &OS) {
 	// Print all information about SIR.
 	OS << "======================Note=====================\n" << "All INFO of SIR will be printed by default!\n";
 	OS << "If you want to view only part of it, please select following dump methods:\n";
@@ -237,18 +237,18 @@ void SIR::print(raw_ostream &OS) const {
 	OS << "===============================================\n";
 }
 
-void SIR::dump() const {
+void SIR::dump() {
 	print(dbgs());
 	dbgs() << "\n";
 }
 
-void SIR::dumpIR() const {
+void SIR::dumpIR() {
 	Function *F = this->getFunction();
 
 	F->dump();
 }
 
-void SIR::dumpBB2Slot() const {
+void SIR::dumpBB2Slot() {
 	raw_ostream &OS = dbgs();
 	Function *F = this->getFunction();
 
@@ -273,7 +273,7 @@ void SIR::dumpBB2Slot() const {
 	OS << "\n";
 }
 
-void SIR::dumpReg2Slot() const {
+void SIR::dumpReg2Slot() {
 	raw_ostream &OS = dbgs();	
 
 	OS << "\n";
@@ -289,4 +289,22 @@ void SIR::dumpReg2Slot() const {
 	}
 
 	OS << "\n";
+}
+
+void SIR::dumpSeqOp2Slot() {
+	raw_ostream &OS = dbgs();	
+
+	OS << "\n";
+
+	typedef seqop_iterator iterator;
+	for (iterator I = seqop_begin(), E = seqop_end(); I != E; I++) {
+		SIRSeqOp *SeqOp = *I;
+
+		// Get the corresponding slot.
+		SIRSlot *Slot = SeqOp->getSlot();
+
+		OS << "Assign Value [" << SeqOp->getSrc()->getName() << "] to register ["
+			 << SeqOp->getDst()->getName() << "] in slot Slot#" << Slot->getSlotNum()
+			 << "\n";
+	}
 }

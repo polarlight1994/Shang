@@ -580,11 +580,11 @@ public:
   const_seqop_iterator const_seqop_begin() { return SeqOps.begin(); }
   const_seqop_iterator const_seqop_end() { return SeqOps.end(); }
 
-  unsigned getSlotsSize() { return Slots.size(); }
+  unsigned getSlotsSize() const { return Slots.size(); }
   SlotVector &getSlotList() { return Slots; }
-  SIRSlot *getStartSlot() { return Slots.front(); }
+  SIRSlot *getStartSlot() const { return Slots.front(); }
 
-  unsigned getPortsSize() { return Ports.size(); }
+  unsigned getPortsSize() const { return Ports.size(); }
 
   void IndexSlot(SIRSlot *Slot) {
     Slots.push_back(Slot);
@@ -736,12 +736,12 @@ public:
 	bool gc();
 
 	// Functions for debug
-	void print(raw_ostream &OS) const;
-	void dump() const;
-	void dumpIR() const;
-	void dumpBB2Slot() const;
-	void dumpReg2Slot() const;
-	void dumpSeqOp2Slot() const;
+	void print(raw_ostream &OS);
+	void dump();
+	void dumpIR();
+	void dumpBB2Slot();
+	void dumpReg2Slot();
+	void dumpSeqOp2Slot();
 
 };
 
