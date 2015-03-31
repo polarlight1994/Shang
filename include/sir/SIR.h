@@ -535,7 +535,8 @@ private:
   // Record the Idx of RetPort.
   unsigned RetPortIdx;
   // Record the landing slot and the latest slot of BB.
-  std::map<BasicBlock *, std::pair<SIRSlot *, SIRSlot *>> BB2SlotMap;
+	typedef std::pair<SIRSlot *, SIRSlot *> slot_pair;
+  std::map<BasicBlock *, slot_pair> BB2SlotMap;
 
 protected:
   Function *F;
