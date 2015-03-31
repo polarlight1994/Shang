@@ -706,7 +706,7 @@ void SIRTimingAnalysis::buildTimingNetlist(Value *V, SIR *SM, DataLayout &TD) {
     return;
 
   typedef Instruction::op_iterator ChildIt;
-  std::vector<std::pair<Instruction *, ChildIt>> VisitStack;
+  std::vector<std::pair<Instruction *, ChildIt> > VisitStack;
 
   VisitStack.push_back(std::make_pair(Root, Root->op_begin()));
 
@@ -811,7 +811,7 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 		assert(Inst && "Unexpected Value type!");
 
 		typedef Instruction::op_iterator ChildIt;
-		std::vector<std::pair<Instruction *, ChildIt>> VisitStack;
+		std::vector<std::pair<Instruction *, ChildIt> > VisitStack;
 
 		VisitStack.push_back(std::make_pair(Inst, Inst->op_begin()));
 

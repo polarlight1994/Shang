@@ -192,7 +192,7 @@ void SIRSchedGraph::toposortCone(SIRSchedUnit *Root,
 		if (!Visited.insert(Root).second) return;
 
 		typedef SIRSchedUnit::dep_iterator ChildIt;
-		std::vector<std::pair<SIRSchedUnit *, ChildIt>> WorkStack;
+		std::vector<std::pair<SIRSchedUnit *, ChildIt> > WorkStack;
 
 		WorkStack.push_back(std::make_pair(Root, Root->dep_begin()));
 

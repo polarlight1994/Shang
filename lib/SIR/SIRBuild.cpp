@@ -330,10 +330,11 @@ SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) 
 
 SIRSlot *SIRCtrlRgnBuilder::getOrCreateLandingSlot(BasicBlock *BB) {
   // Get the landing slot if it is already created.
-  std::map<BasicBlock *, std::pair<SIRSlot *, SIRSlot *>> BB2SlotMap 
+	typedef std::pair<SIRSlot *, SIRSlot *> slot_pair;
+  std::map<BasicBlock *, slot_pair> BB2SlotMap 
     = SM->getBB2SlotMap();
 
-  std::map<BasicBlock*, std::pair<SIRSlot *, SIRSlot *> >::const_iterator
+  std::map<BasicBlock*, slot_pair>::const_iterator
     at = BB2SlotMap.find(BB);  
 
   if (at == BB2SlotMap.end()) { 
@@ -344,7 +345,7 @@ SIRSlot *SIRCtrlRgnBuilder::getOrCreateLandingSlot(BasicBlock *BB) {
     return S;
   }
   
-  std::pair<SIRSlot *, SIRSlot *> &Slots = BB2SlotMap[BB];
+  slot_pair &Slots = BB2SlotMap[BB];
   return Slots.first;
 }
 
