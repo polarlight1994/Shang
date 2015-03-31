@@ -143,9 +143,9 @@ void TimingAnalysis::printArrivalPath(raw_ostream &OS, VASTSelector *To,
 }
 
 void TimingAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.addRequiredID(ControlLogicSynthesisID);
-  AU.addRequiredID(SelectorSynthesisForAnnotationID);
-  AU.addRequiredID(DatapathNamerID);
+  AU.addRequiredID(vast::ControlLogicSynthesisID);
+  AU.addRequiredID(vast::SelectorSynthesisForAnnotationID);
+  AU.addRequiredID(vast::DatapathNamerID);
   AU.addRequired<TimingAnalysis>();
   AU.setPreservesAll();
 }

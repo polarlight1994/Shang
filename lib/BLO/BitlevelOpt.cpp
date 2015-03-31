@@ -551,11 +551,11 @@ struct BitlevelOpt : public VASTModulePass {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequired<DominatorTree>();
     AU.addRequired<Dataflow>();
-    AU.addPreservedID(PreSchedBindingID);
-    AU.addPreservedID(ControlLogicSynthesisID);
-    AU.addPreservedID(TimingDrivenSelectorSynthesisID);
-    AU.addPreservedID(SelectorSynthesisForAnnotationID);
-    AU.addPreservedID(STGDistancesID);
+    AU.addPreservedID(vast::PreSchedBindingID);
+    AU.addPreservedID(vast::ControlLogicSynthesisID);
+    AU.addPreservedID(vast::TimingDrivenSelectorSynthesisID);
+    AU.addPreservedID(vast::SelectorSynthesisForAnnotationID);
+    AU.addPreservedID(vast::STGDistancesID);
   }
 };
 }

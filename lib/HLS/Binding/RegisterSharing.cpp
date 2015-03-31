@@ -74,10 +74,10 @@ struct RegisterSharing : public VASTModulePass {
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequired<DominatorTree>();
-    AU.addRequiredID(ControlLogicSynthesisID);
-    AU.addPreservedID(ControlLogicSynthesisID);
+    AU.addRequiredID(vast::ControlLogicSynthesisID);
+    AU.addPreservedID(vast::ControlLogicSynthesisID);
 
-    AU.addPreservedID(STGDistancesID);
+    AU.addPreservedID(vast::STGDistancesID);
 
     AU.addRequired<SeqLiveVariables>();
     //AU.addPreserved<SeqLiveVariables>();

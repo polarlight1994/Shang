@@ -177,7 +177,7 @@ struct TimingScriptGen : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequiredID(DatapathNamerID);
+    AU.addRequiredID(vast::DatapathNamerID);
     AU.addRequired<STGDistances>();
     AU.addRequired<TimingAnalysis>();
     AU.setPreservesAll();

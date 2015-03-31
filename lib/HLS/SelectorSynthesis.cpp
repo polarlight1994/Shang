@@ -46,8 +46,8 @@ struct TimingDrivenSelectorSynthesis : public VASTModulePass {
     AU.addRequired<CachedStrashTable>();
     AU.addRequired<STGDistances>();
     AU.addPreserved<STGDistances>();
-    AU.addRequiredID(ControlLogicSynthesisID);
-    AU.addPreservedID(ControlLogicSynthesisID);
+    AU.addRequiredID(vast::ControlLogicSynthesisID);
+    AU.addPreservedID(vast::ControlLogicSynthesisID);
   }
 
   bool runOnVASTModule(VASTModule &VM);
@@ -340,11 +340,11 @@ struct SelectorSynthesisForAnnotation : public VASTModulePass {
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
     AU.addRequired<CachedStrashTable>();
-    AU.addRequiredID(ControlLogicSynthesisID);
-    AU.addPreservedID(ControlLogicSynthesisID);
+    AU.addRequiredID(vast::ControlLogicSynthesisID);
+    AU.addPreservedID(vast::ControlLogicSynthesisID);
     // SelectorSynthesisForAnnotation will not destroy the result of
     // TimingDrivenSelectorSynthesis.
-    AU.addPreservedID(TimingDrivenSelectorSynthesisID);
+    AU.addPreservedID(vast::TimingDrivenSelectorSynthesisID);
     AU.addPreserved<STGDistances>();
   }
 

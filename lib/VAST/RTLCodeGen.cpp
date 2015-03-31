@@ -56,10 +56,10 @@ struct RTLCodeGen : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequiredTransitiveID(ControlLogicSynthesisID);
-    AU.addRequiredTransitiveID(TimingDrivenSelectorSynthesisID);
-    AU.addRequiredID(BitlevelOptID);
-    AU.addRequiredTransitiveID(DatapathNamerID);
+    AU.addRequiredTransitiveID(vast::ControlLogicSynthesisID);
+    AU.addRequiredTransitiveID(vast::TimingDrivenSelectorSynthesisID);
+    AU.addRequiredID(vast::BitlevelOptID);
+    AU.addRequiredTransitiveID(vast::DatapathNamerID);
     AU.addRequired<STGDistances>();
     AU.setPreservesAll();
   }

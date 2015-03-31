@@ -63,8 +63,8 @@ public:
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequiredID(DataflowAnnotationID);
-    AU.addPreservedID(DataflowAnnotationID);
+    AU.addRequiredID(vast::DataflowAnnotationID);
+    AU.addPreservedID(vast::DataflowAnnotationID);
   }
 
   void recoverOutputPath();

@@ -408,7 +408,7 @@ void PreSchedBinding::getAnalysisUsage(AnalysisUsage &AU) const {
   VASTModulePass::getAnalysisUsage(AU);
 
   AU.addRequired<DominatorTree>();
-  AU.addRequiredID(ControlLogicSynthesisID);
+  AU.addRequiredID(vast::ControlLogicSynthesisID);
   AU.addRequired<CombPatternTable>();
   AU.setPreservesAll();
 }

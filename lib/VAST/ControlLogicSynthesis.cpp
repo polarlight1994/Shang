@@ -94,7 +94,7 @@ struct ControlLogicSynthesis : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addPreservedID(PreSchedBindingID);
+    AU.addPreservedID(vast::PreSchedBindingID);
   }
 };
 }

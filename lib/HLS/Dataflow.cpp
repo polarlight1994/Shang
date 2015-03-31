@@ -400,7 +400,7 @@ void DataflowAnnotation::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<Dataflow>();
 
   AU.addRequired<TimingAnalysis>();
-  AU.addRequiredID(STGDistancesID);
+  AU.addRequiredID(vast::STGDistancesID);
 
   AU.setPreservesAll();
 }

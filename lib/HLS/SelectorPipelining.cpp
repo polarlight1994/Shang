@@ -116,8 +116,8 @@ struct SelectorPipelining : public VASTModulePass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     VASTModulePass::getAnalysisUsage(AU);
-    AU.addRequiredID(ControlLogicSynthesisID);
-    AU.addPreservedID(ControlLogicSynthesisID);
+    AU.addRequiredID(vast::ControlLogicSynthesisID);
+    AU.addPreservedID(vast::ControlLogicSynthesisID);
     // FIXME: Require dataflow annotation.
     AU.addRequired<TimingAnalysis>();
     AU.addRequired<STGDistances>();
