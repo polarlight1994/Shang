@@ -1,16 +1,26 @@
-From 30da55bb1134dfcf448435e27d0b67c21aabd8d2 Mon Sep 17 00:00:00 2001
+From 7c384bb8b7811c2d2e637a81508902a92cb828a6 Mon Sep 17 00:00:00 2001
 From: polarlight <971471059@qq.com>
-Date: Tue, 31 Mar 2015 10:30:39 +0800
-Subject: [PATCH] Extend LLVM to add Shang Intrinsic instructions
+Date: Tue, 31 Mar 2015 13:25:04 +0800
+Subject: [PATCH] Extend the llvm to add shang intrinsic instructions
 
 ---
+ include/llvm/IR/Intrinsics.td      |  1 +
  include/llvm/IR/IntrinsicsShang.td | 66 ++++++++++++++++++++++++++++++++++++++
- 1 file changed, 66 insertions(+)
+ 2 files changed, 67 insertions(+)
  create mode 100644 include/llvm/IR/IntrinsicsShang.td
 
+diff --git a/include/llvm/IR/Intrinsics.td b/include/llvm/IR/Intrinsics.td
+index 53341b7..c09ef3e 100644
+--- a/include/llvm/IR/Intrinsics.td
++++ b/include/llvm/IR/Intrinsics.td
+@@ -511,3 +511,4 @@ include "llvm/IR/IntrinsicsHexagon.td"
+ include "llvm/IR/IntrinsicsNVVM.td"
+ include "llvm/IR/IntrinsicsMips.td"
+ include "llvm/IR/IntrinsicsR600.td"
++include "llvm/IR/IntrinsicsShang.td"
 diff --git a/include/llvm/IR/IntrinsicsShang.td b/include/llvm/IR/IntrinsicsShang.td
 new file mode 100644
-index 0000000..846bc84
+index 0000000..3aafbde
 --- /dev/null
 +++ b/include/llvm/IR/IntrinsicsShang.td
 @@ -0,0 +1,66 @@
@@ -44,26 +54,26 @@ index 0000000..846bc84
 +                              [IntrNoMem, Commutative]>;
 +
 +def int_shang_add : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty],
-+                              [IntrNoMem, Commutative]>;	
++                              [IntrNoMem, Commutative]>;
 +def int_shang_addc : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty, llvm_anyint_ty],
-+                              [IntrNoMem, Commutative]>;								  
++                              [IntrNoMem, Commutative]>;
 +def int_shang_mul : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty],
-+                              [IntrNoMem, Commutative]>;	
++                              [IntrNoMem, Commutative]>;
 +def int_shang_sdiv : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty],
-+                               [IntrNoMem, Commutative]>;	
++                               [IntrNoMem, Commutative]>;
 +def int_shang_udiv : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty],
-+                               [IntrNoMem, Commutative]>;	
-+	
++                               [IntrNoMem, Commutative]>;
++
 +def int_shang_sgt : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty]>;
 +def int_shang_ugt : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty]>;
-+	
++
 +def int_shang_bit_cat : Intrinsic<[llvm_anyint_ty],
 +                                  [llvm_anyint_ty, llvm_anyint_ty]>;
 +def int_shang_bit_extract : Intrinsic<[llvm_anyint_ty],
 +                                      [llvm_anyint_ty, llvm_anyint_ty, llvm_anyint_ty]>;
 +def int_shang_bit_repeat : Intrinsic<[llvm_anyint_ty],
 +                                     [llvm_anyint_ty, llvm_anyint_ty]>;
-+	
++
 +def int_shang_shl : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty]>;
 +def int_shang_ashr : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty]>;
 +def int_shang_lshr : Intrinsic<[llvm_anyint_ty], [llvm_anyint_ty, llvm_anyint_ty]>;
