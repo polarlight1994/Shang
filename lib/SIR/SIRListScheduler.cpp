@@ -38,7 +38,7 @@ void BBContext::exit(BasicBlock *BB) {
 		assert(SU->isScheduled() && "All SUnits should be scheduled now!");
 	}
 
-	BB = nullptr;
+	BB = NULL;
 	Entrys.clear();
 	Exits.clear();
 }
