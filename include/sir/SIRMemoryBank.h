@@ -15,6 +15,7 @@
 #define SIR_MEMORY_BANK_H
 
 #include "sir/SIR.h"
+#include "sir/SIRBuild.h"
 #include "sir/LangSteam.h"
 
 #include "llvm/IR/GlobalVariable.h"
@@ -43,8 +44,8 @@ class SIRMemoryBank {
 		            bool IsDualPort, unsigned ReadLatency);
 	friend class SIR;
 
-	void addPorts(SIR *SM);
-	void addBasicPins(SIR *SM, unsigned PortNum);	
+	void addPorts(SIRCtrlRgnBuilder *SCRB);
+	void addBasicPins(SIRCtrlRgnBuilder *SCRB, unsigned PortNum);	
 
 	// Signal names of the memory bank.
 	std::string getAddrName(unsigned PortNum) const;

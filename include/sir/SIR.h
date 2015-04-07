@@ -138,6 +138,8 @@ public:
   enum SIRRegisterTypes {
     General,            // Common registers which hold data for data-path.
     SlotReg,            // Register for slot.
+    FUInput,						// Input register for FUnits like memory bank.
+    FUOutput,           // Output register for FUnits like memory bank.
     OutPort,            // Register for OutPort of module.
   };
 

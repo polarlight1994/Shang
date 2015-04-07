@@ -20,11 +20,13 @@ SIRMemoryBank::SIRMemoryBank(unsigned BusNum, unsigned AddrSize,
   : BusNum(BusNum), AddrSize(AddrSize), DataSize(DataSize),
 	  IsDualPort(IsDualPort), ReadLatency(ReadLatency) {}
 
-void SIRMemoryBank::addPorts(SIR *SM) {
-	addBasicPins(SM, 0);
-	if (isDualPort()) addBasicPins(SM, 1);
+void SIRMemoryBank::addPorts(SIRCtrlRgnBuilder *SCRB) {
+	addBasicPins(SCRB, 0);
+	if (isDualPort()) addBasicPins(SCRB, 1);
 }
 
-void SIRMemoryBank::addBasicPins(SIR *SM, unsigned PortNum) {
-
+void SIRMemoryBank::addBasicPins(SIRCtrlRgnBuilder *SCRB, unsigned PortNum) {
+	// Address pin
+	SIRRegister *Addr = SCRB->createRegister(getAddrName(PortNum), getAddrWidth(), 0,
+		                                       0, 0, SIRRegister::FUInput);
 }
