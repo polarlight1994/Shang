@@ -1,4 +1,4 @@
-//===------ SIRMemoryBank.cpp - Memory Banks in Verilog AST -----*- C++ -*-===//
+//===----------- SIRMemoryBank.cpp - Memory Banks in SIR --------*- C++ -*-===//
 //
 //                       The SIR HLS framework                                //
 //
@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implement the classes for memory banks in Verilog AST.
+// This file implement the classes for memory banks in SIR.
 //
 //===----------------------------------------------------------------------===//
 
