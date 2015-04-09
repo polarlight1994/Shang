@@ -16,6 +16,7 @@
 
 #include "sir/SIR.h"
 #include "sir/SIRBuild.h"
+#include "sir/SIRSubModuleBase.h"
 #include "sir/LangSteam.h"
 
 #include "llvm/IR/GlobalVariable.h"
@@ -30,7 +31,7 @@
 using namespace llvm;
 
 namespace llvm {
-class SIRMemoryBank {
+class SIRMemoryBank : public SIRSubModuleBase {
 	const unsigned BusNum;
 	const unsigned AddrSize, DataSize;
 	// The read port and write port has different clk.

@@ -29,4 +29,22 @@ void SIRMemoryBank::addBasicPins(SIRCtrlRgnBuilder *SCRB, unsigned PortNum) {
 	// Address pin
 	SIRRegister *Addr = SCRB->createRegister(getAddrName(PortNum), getAddrWidth(), 0,
 		                                       0, 0, SIRRegister::FUInput);
+	addFanin(Addr);
+
+	// Read (from memory) data pin
+	unsigned RDataWidth = getDataWidth();
+	SIRRegister *RData = SCRB->createRegister(getRDataName(PortNum), RDataWidth,
+		                                        0, 0, 0, SIRRegister::FUOutput);
+	addFanout(RData);
+
+	// Write (to memory) data pin
+	unsigned WDataWidth = getDataWidth();
+	SIRRegister *WData = SCRB->createRegister(getWDataName(PortNum), WDataWidth,
+		                                        0, 0, 0, SIRRegister::FUInput);
+	addFanin(WData);
 }
+
+void SIRMemoryBank::addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes) {
+
+}
+
