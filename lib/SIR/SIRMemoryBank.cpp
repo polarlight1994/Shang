@@ -18,32 +18,41 @@
 using namespace llvm;
 
 SIRMemoryBank::SIRMemoryBank(unsigned BusNum, unsigned AddrSize,
-	                           unsigned DataSize, bool IsDualPort, unsigned ReadLatency)
+	                           unsigned DataSize, unsigned ReadLatency)
   : BusNum(BusNum), AddrSize(AddrSize), DataSize(DataSize),
-	  IsDualPort(IsDualPort), ReadLatency(ReadLatency) {}
+	  ReadLatency(ReadLatency) {}
 
 void SIRMemoryBank::addPorts(SIRCtrlRgnBuilder *SCRB) {
-	addBasicPins(SCRB, 0);
-	if (isDualPort()) addBasicPins(SCRB, 1);
+	addBasicPins(SCRB);
 }
 
-void SIRMemoryBank::addBasicPins(SIRCtrlRgnBuilder *SCRB, unsigned PortNum) {
+void SIRMemoryBank::addBasicPins(SIRCtrlRgnBuilder *SCRB) {
 	// Address pin
-	SIRRegister *Addr = SCRB->createRegister(getAddrName(PortNum), getAddrWidth(), 0,
+	SIRRegister *Addr = SCRB->createRegister(getAddrName(), getAddrWidth(), 0,
 		                                       0, 0, SIRRegister::FUInput);
 	addFanin(Addr);
 
 	// Write (to memory) data pin
 	unsigned WDataWidth = getDataWidth();
-	SIRRegister *WData = SCRB->createRegister(getWDataName(PortNum), WDataWidth,
+	SIRRegister *WData = SCRB->createRegister(getWDataName(), WDataWidth,
 		                                        0, 0, 0, SIRRegister::FUInput);
 	addFanin(WData);
 
 	// Read (from memory) data pin
 	unsigned RDataWidth = getDataWidth();
-	SIRRegister *RData = SCRB->createRegister(getRDataName(PortNum), RDataWidth,
-		0, 0, 0, SIRRegister::FUOutput);
+	SIRRegister *RData = SCRB->createRegister(getRDataName(), RDataWidth,
+		                                        0, 0, 0, SIRRegister::FUOutput);
 	addFanout(RData);
+
+	// Enable pin
+	SIRRegister *Enable = SCRB->createRegister(getEnableName(), 1, 0, 0,
+		                                         0, SIRRegister::FUInput);
+	addFanin(Enable);
+
+	// Write enable pin
+	SIRRegister *WriteEn = SCRB->createRegister(getWriteEnName(), 1, 0, 0,
+		                                          0, SIRRegister::FUInput);
+	addFanin(WriteEn);
 }
 
 void SIRMemoryBank::addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes) {
@@ -82,17 +91,58 @@ unsigned SIRMemoryBank::getOffset(GlobalVariable *GV) const {
 	return at->second;
 }
 
-SIRRegister *SIRMemoryBank::getAddr(unsigned PortNum) const {
-	return getFanin(InputsPerPort * PortNum + 0);
+SIRRegister *SIRMemoryBank::getAddr() const {
+	return getFanin(0);
 }
 
-SIRRegister *SIRMemoryBank::getWData(unsigned PortNum) const {
-	return getFanin(InputsPerPort * PortNum + 1);
+SIRRegister *SIRMemoryBank::getWData() const {
+	return getFanin(1);
 }
 
-SIRRegister *SIRMemoryBank::getRData(unsigned PortNum) const {
-	return getFanout(PortNum);
+SIRRegister *SIRMemoryBank::getRData() const {
+	return getFanout(0);
 }
 
+SIRRegister *SIRMemoryBank::getEnable() const {
+	return getFanin(2);
+}
 
+SIRRegister *SIRMemoryBank::getWriteEnable() const {
+	return getFanin(3);
+}
 
+std::string SIRMemoryBank::getAddrName() const {
+	return "mem" + utostr(Idx) + "addr";
+}
+
+std::string SIRMemoryBank::getRDataName() const {
+	return "mem" + utostr(Idx) + "rdata";
+}
+
+std::string SIRMemoryBank::getWDataName() const {
+	return "mem" + utostr(Idx) + "wdata";
+}
+
+std::string SIRMemoryBank::getEnableName() const {
+	return "mem" + utostr(Idx) + "en";
+}
+
+std::string SIRMemoryBank::getWriteEnName() const {
+  return "mem" + utostr(Idx) + "wen";
+}
+
+std::string SIRMemoryBank::getArrayName() const {
+	return "mem" + utostr(Idx) + "ram";
+}
+
+void SIRMemoryBank::printDecl(raw_ostream &OS) const {
+	getAddr()->printDecl(OS);
+	getRData()->printDecl(OS);
+	getWData()->printDecl(OS);
+  getEnable()->printDecl(OS);
+	getWriteEnable()->printDecl(OS);
+}
+
+void SIRMemoryBank::printMemoryBank(vlang_raw_ostream &OS) const {
+	
+}

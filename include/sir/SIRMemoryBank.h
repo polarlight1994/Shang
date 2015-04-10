@@ -34,8 +34,6 @@ namespace llvm {
 class SIRMemoryBank : public SIRSubModuleBase {
 	const unsigned BusNum;
 	const unsigned AddrSize, DataSize;
-	// The read port and write port has different clk.
-	const bool IsDualPort : 1;
 	const unsigned ReadLatency : 5;
 	// For each MemoryBank, we have two input port
 	// including Address and WData.
@@ -46,38 +44,35 @@ class SIRMemoryBank : public SIRSubModuleBase {
 	// The map between GVs and its offset in memory bank
 	std::map<GlobalVariable *, unsigned> BaseAddrs;
 
-	SIRMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
-		            bool IsDualPort, unsigned ReadLatency);
+	SIRMemoryBank(unsigned BusNum, unsigned AddrSize,
+		            unsigned DataSize, unsigned ReadLatency);
 	friend class SIR;
 
 	void addPorts(SIRCtrlRgnBuilder *SCRB);
-	void addBasicPins(SIRCtrlRgnBuilder *SCRB, unsigned PortNum);	
+	void addBasicPins(SIRCtrlRgnBuilder *SCRB);	
 
 	// Signal names of the memory bank.
-	std::string getAddrName(unsigned PortNum) const;
-	std::string getRDataName(unsigned PortNum) const;
-	std::string getWDataName(unsigned PortNum) const;
-	std::string getEnableName(unsigned PortNum) const;
-	std::string getWriteEnName(unsigned PortNum) const;
+	std::string getAddrName() const;
+	std::string getRDataName() const;
+	std::string getWDataName() const;
+	std::string getEnableName() const;
+	std::string getWriteEnName() const;
 	
 	void printInitializeFile(vlang_raw_ostream &OS) const;
 	void printMemoryBank(vlang_raw_ostream &OS) const;
-	void printMemoryBankPort(vlang_raw_ostream &OS, unsigned PortNum,
-		                       unsigned ByteAddrWidth, unsigned NumWords) const;
+	void printMemoryBankPort(vlang_raw_ostream &OS, unsigned ByteAddrWidth,
+		                       unsigned NumWords) const;
 
 public:
 	unsigned getDataWidth() const { return DataSize; }
 	unsigned getAddrWidth() const { return AddrSize; }
 	unsigned getReadLatency() const { return ReadLatency; }
 
-	bool isDualPort() const { return IsDualPort; }
-
-	unsigned getByteAddrWidth() const;
 	std::string getArrayName() const;
 
-	SIRRegister *getAddr(unsigned PortNum) const;
-	SIRRegister *getRData(unsigned PortNum) const;
-	SIRRegister *getWData(unsigned PortNum) const;
+	SIRRegister *getAddr() const;
+	SIRRegister *getRData() const;
+	SIRRegister *getWData() const;
 	SIRRegister *getEnable() const;
 	SIRRegister *getWriteEnable() const;
 
