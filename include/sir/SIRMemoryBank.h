@@ -37,6 +37,11 @@ class SIRMemoryBank : public SIRSubModuleBase {
 	// The read port and write port has different clk.
 	const bool IsDualPort : 1;
 	const unsigned ReadLatency : 5;
+	// For each MemoryBank, we have two input port
+	// including Address and WData.
+	static const unsigned InputsPerPort = 2;
+  // The address of last byte.
+	unsigned EndByteAddr;
 
 	// The map between GVs and its offset in memory bank
 	std::map<GlobalVariable *, unsigned> BaseAddrs;
@@ -77,7 +82,7 @@ public:
 	SIRRegister *getWriteEnable() const;
 
 	void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
-	unsigned getStartOffset(GlobalVariable *GV) const;
+	unsigned getOffset(GlobalVariable *GV) const;
 
 	void printDecl(raw_ostream &OS) const;
 	void print(vlang_raw_ostream &OS) const;
