@@ -394,12 +394,12 @@ class SIRMemoryBank : public SIRSubModuleBase {
 	BaseAddrMap	BaseAddrs;
 
 	typedef BaseAddrMap::iterator baseaddrs_iterator;
-	typedef BaseAddrMap::const_iterator const_baseaddrs_iterator;
+	typedef BaseAddrMap::const_iterator const_baseaddrs_iterator;	
 
+public:
 	SIRMemoryBank(unsigned BusNum, unsigned AddrSize,
 		            unsigned DataSize, unsigned ReadLatency);
 
-public:
 	unsigned getDataWidth() const { return DataSize; }
 	unsigned getAddrWidth() const { return AddrSize; }
 	unsigned getReadLatency() const { return ReadLatency; }
