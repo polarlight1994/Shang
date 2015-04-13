@@ -332,6 +332,13 @@ void SIRCtrlRgnBuilder::createPortsForMemoryBank(SIRMemoryBank *SMB) {
 	SMB->addFanin(WriteEn);
 }
 
+SIRMemoryBank *SIRCtrlRgnBuilder::createMemoryBank(unsigned BusNum, unsigned AddrSize,
+	                                                 unsigned DataSize, unsigned ReadLatency) {
+	SIRMemoryBank *SMB = new SIRMemoryBank(BusNum, AddrSize, DataSize, ReadLatency);
+
+	return SMB;
+}
+
 SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) {
   // To be noted that, the SlotNum is decided by the creating order,
   // so it has no connection with the state transition order.

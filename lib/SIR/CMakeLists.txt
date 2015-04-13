@@ -1,6 +1,5 @@
 add_llvm_library(ShangSIR
 SIR.cpp
-SIRMemoryBank.cpp
 SIRBuild.cpp
 SIRTimingAnalysis.cpp
 SIRSchedGraph.cpp
