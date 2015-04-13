@@ -317,6 +317,128 @@ public:
 }
 
 namespace llvm {
+class SIRSubModuleBase : public ilist_node<SIRSubModuleBase> {
+public:
+	enum Type {
+		SubModule,
+		MemoryBank
+	};
+
+private:
+	SmallVector<SIRRegister *, 8> Fanins;
+	SmallVector<SIRRegister *, 8> Fanouts;
+
+protected:
+	// The Idx of all sub-modules in SIR.
+	const unsigned Idx;	
+	const Type Ty;
+
+	SIRSubModuleBase(Type Ty, unsigned Idx)
+		: Ty(Ty), Idx(Idx) {}	
+
+public:
+	~SIRSubModuleBase() {}
+
+	void addFanin(SIRRegister *Fanin);
+	void addFanout(SIRRegister *Fanout);
+
+	Type getType() const { return Ty; }
+	unsigned getNum() const { return Idx; }
+
+	typedef SmallVectorImpl<SIRRegister *>::iterator fanin_iterator;
+	fanin_iterator fanin_begin() { return Fanins.begin(); }
+	fanin_iterator fanin_end() { return Fanins.end(); }
+
+	typedef SmallVectorImpl<SIRRegister *>::const_iterator const_fanin_iterator;
+	const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
+	const_fanin_iterator fanin_end()   const { return Fanins.end(); }
+
+	SIRRegister *getFanin(unsigned Idx) const { return Fanouts[Idx]; }
+	SIRRegister *getFanout(unsigned Idx) const { return Fanins[Idx]; }
+};
+
+class SIRSubModule : public SIRSubModuleBase {
+	// Special ports in the sub-module.
+	SIRRegister *StartPort, *FinPort, *RetPort;
+
+	// The latency of the sub-module.
+	unsigned Latency;
+
+	SIRSubModule(unsigned FUNum)
+		: SIRSubModuleBase(SubModule, FUNum), StartPort(0),
+		FinPort(0), RetPort(0), Latency(0) {}
+
+public:
+	SIRRegister *getStartPort() const { return StartPort; }
+	SIRRegister *getFinPort() const { return FinPort; }
+	SIRRegister *getRetPort() const { return RetPort; }
+
+	unsigned getLatency() const { return Latency; }
+	std::string getPortName(const Twine &PortName) const;
+
+	void printDecl(raw_ostream &OS) const;
+
+};
+
+class SIRMemoryBank : public SIRSubModuleBase {
+	const unsigned AddrSize, DataSize;
+	const unsigned ReadLatency : 5;
+	// For each MemoryBank, we have two input port
+	// including Address and WData.
+	static const unsigned InputsPerPort = 2;
+	// The address of last byte.
+	unsigned EndByteAddr;
+
+	// The map between GVs and its offset in memory bank
+	typedef std::map<GlobalVariable *, unsigned> BaseAddrMap;
+	BaseAddrMap	BaseAddrs;
+
+	typedef BaseAddrMap::iterator baseaddrs_iterator;
+	typedef BaseAddrMap::const_iterator const_baseaddrs_iterator;
+
+	SIRMemoryBank(unsigned BusNum, unsigned AddrSize,
+		            unsigned DataSize, unsigned ReadLatency);
+
+public:
+	unsigned getDataWidth() const { return DataSize; }
+	unsigned getAddrWidth() const { return AddrSize; }
+	unsigned getReadLatency() const { return ReadLatency; }
+	unsigned getEndByteAddr() const { return EndByteAddr; }
+
+	// Signal names of the memory bank.
+	std::string getAddrName() const;
+	std::string getRDataName() const;
+	std::string getWDataName() const;
+	std::string getEnableName() const;
+	std::string getWriteEnName() const;
+	std::string getArrayName() const;
+
+	SIRRegister *getAddr() const;
+	SIRRegister *getRData() const;
+	SIRRegister *getWData() const;
+	SIRRegister *getEnable() const;
+	SIRRegister *getWriteEnable() const;
+
+	void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
+	unsigned getOffset(GlobalVariable *GV) const;
+
+	baseaddrs_iterator baseaddrs_begin() { return BaseAddrs.begin(); }
+	baseaddrs_iterator baseaddrs_end() { return BaseAddrs.end(); }
+
+	const_baseaddrs_iterator const_baseaddrs_begin() { return BaseAddrs.begin(); }
+	const_baseaddrs_iterator const_baseaddrs_end() { return BaseAddrs.end(); }
+
+	void printDecl(raw_ostream &OS) const;
+
+	/// Methods for support type inquiry through isa, cast, and dyn_cast;
+	static inline bool classof(const SIRMemoryBank *SMB) { return true; }
+	static inline bool classof(const SIRSubModuleBase *SSMB) {
+		return SSMB->getType() == MemoryBank;
+	}
+};
+}
+
+namespace llvm {
 class SIRSlot;
 class SIRSeqOp;
 
@@ -498,6 +620,10 @@ public:
   typedef RegisterVector::iterator register_iterator;
   typedef RegisterVector::const_iterator const_register_iterator;
 
+	typedef SmallVector<SIRSubModuleBase *, 8> SubModuleBaseVector;
+	typedef SubModuleBaseVector::iterator submodulebase_iterator;
+	typedef SubModuleBaseVector::const_iterator const_submodulebase_iterator;
+
   typedef SmallVector<Instruction *, 8> DataPathInstVector;
   typedef DataPathInstVector::iterator datapathinst_iterator;
   typedef DataPathInstVector::const_iterator const_datapathinst_iterator;
@@ -523,6 +649,8 @@ private:
   SIRPortVector Ports;
   // Registers in the module
   RegisterVector Registers;
+	// SubModules in the module
+	SubModuleBaseVector SubModuleBases;
   // The DataPathInsts in the module
   DataPathInstVector DataPathInsts;
   // The Slots in CtrlRgn of the module
@@ -554,22 +682,28 @@ public:
   LLVMContext &getContext() const { return C; }
 
   port_iterator ports_begin() { return Ports.begin(); }
-  const_port_iterator ports_begin() const { return Ports.begin(); }
+	port_iterator ports_end() { return Ports.end(); }
 
-  port_iterator ports_end() { return Ports.end(); }
-  const_port_iterator ports_end() const { return Ports.end(); }
+  const_port_iterator const_ports_begin() const { return Ports.begin(); }  
+  const_port_iterator const_ports_end() const { return Ports.end(); }
 
   register_iterator registers_begin() { return Registers.begin(); }
   register_iterator registers_end() { return Registers.end(); }
 
-  const_register_iterator registers_begin() const { return Registers.begin(); }
-  const_register_iterator registers_end() const { return Registers.end(); }
+  const_register_iterator const_registers_begin() const { return Registers.begin(); }
+  const_register_iterator const_registers_end() const { return Registers.end(); }
+
+	submodulebase_iterator submodules_begin() { return SubModuleBases.begin(); }
+	submodulebase_iterator submodules_end() { return SubModuleBases.end(); }
+
+	const_submodulebase_iterator const_submodules_begin() { return SubModuleBases.begin(); }
+	const_submodulebase_iterator const_submodules_end() { return SubModuleBases.end(); }
 
   slot_iterator slot_begin() { return Slots.begin(); }
   slot_iterator slot_end() { return Slots.end(); }
 
-  const_slot_iterator slot_begin() const { return Slots.begin(); }
-  const_slot_iterator slot_end() const { return Slots.end(); }
+  const_slot_iterator const_slot_begin() const { return Slots.begin(); }
+  const_slot_iterator const_slot_end() const { return Slots.end(); }
 
   datapathinst_iterator datapathinst_begin() { return DataPathInsts.begin(); }
   datapathinst_iterator datapathinst_end() { return DataPathInsts.end(); }

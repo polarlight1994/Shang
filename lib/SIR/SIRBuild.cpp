@@ -308,6 +308,30 @@ SIRPort *SIRCtrlRgnBuilder::createPort(SIRPort::SIRPortTypes T, StringRef Name,
   }  
 }
 
+void SIRCtrlRgnBuilder::createPortsForMemoryBank(SIRMemoryBank *SMB) {
+	// Address pin
+	SIRRegister *Addr = createRegister(SMB->getAddrName(), SMB->getAddrWidth(), 0, 0, 0, SIRRegister::FUInput);
+	SMB->addFanin(Addr);
+
+	// Write (to memory) data pin
+	unsigned WDataWidth = SMB->getDataWidth();
+	SIRRegister *WData = createRegister(SMB->getWDataName(), WDataWidth, 0, 0, 0, SIRRegister::FUInput);
+	SMB->addFanout(WData);
+
+	// Read (from memory) data pin
+	unsigned RDataWidth = SMB->getDataWidth();
+	SIRRegister *RData = createRegister(SMB->getRDataName(), RDataWidth, 0, 0, 0, SIRRegister::FUOutput);
+	SMB->addFanout(RData);
+
+	// Enable pin
+	SIRRegister *Enable = createRegister(SMB->getEnableName(), 1, 0, 0,	0, SIRRegister::FUInput);
+	SMB->addFanin(Enable);
+
+	// Write enable pin
+	SIRRegister *WriteEn = createRegister(SMB->getWriteEnName(), 1, 0, 0,	0, SIRRegister::FUInput);
+	SMB->addFanin(WriteEn);
+}
+
 SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) {
   // To be noted that, the SlotNum is decided by the creating order,
   // so it has no connection with the state transition order.

@@ -173,13 +173,24 @@ public:
   void visitReturnInst(ReturnInst &I);
 
   /// Functions to build Control Logic
+
+	// Functions to build sequential instruction
 	Instruction *findInsertPostion(BasicBlock *BB, bool IsSlot);
   Instruction *createPseudoInst(unsigned BitWidth, Value *InsertPosition);
 
+	// Function to build register
   SIRRegister *createRegister(StringRef Name, unsigned BitWidth, BasicBlock *ParentBB,
 		                          Instruction *Inst, uint64_t InitVal = 0,
                               SIRRegister::SIRRegisterTypes T = SIRRegister::General);
+
+	// Function to build Port
   SIRPort *createPort(SIRPort::SIRPortTypes T, StringRef Name, unsigned BitWidth);
+
+	// Functions to build SubModule
+	SIRSubModule *createSubModule();
+	void createPortsForMemoryBank(SIRMemoryBank *SMB);
+	SIRMemoryBank *createMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
+		                              unsigned ReadLatency);
 
   SIRSlot *getOrCreateLandingSlot(BasicBlock *BB);
   SIRSlot *createSlot(BasicBlock *ParentBB, unsigned Schedule);

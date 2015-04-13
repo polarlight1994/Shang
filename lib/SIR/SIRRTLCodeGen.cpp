@@ -33,6 +33,7 @@
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Transforms/Scalar.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SourceMgr.h"
@@ -88,16 +89,21 @@ struct SIRControlPathPrinter {
                         : OS(OS), SM(SM), TD(TD) {}
 
   /// Functions to print registers
-	void printMuxInReg(SIRRegister *Reg, raw_ostream &OS, DataLayout &TD);
-  void printRegister(SIRRegister *Reg, vlang_raw_ostream &OS, DataLayout &TD);
-  void printRegister(SIRRegister *Reg, raw_ostream &OS, DataLayout &TD);
+	void printMuxInReg(SIRRegister *Reg);
+  void printRegister(SIRRegister *Reg);
+
+	/// Functions to print SubModules
+	void printInitializeFile(SIRMemoryBank *SMB);
+	void printMemoryBankImpl(SIRMemoryBank *SMB, unsigned BytesPerGV,
+		                       unsigned ByteAddrWidth, unsigned NumWords);
+	void printMemoryBank(SIRMemoryBank *SMB);
 
   void generateCodeForRegisters();
+	void generateCodeForMemoryBank();
 };
 }
 
-void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg, raw_ostream &OS,
-                                          DataLayout &TD) {
+void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg) {
   // If the register has no Fanin, then ignore it.
   if (Reg->assignmentEmpty()) return;
 
@@ -125,58 +131,242 @@ void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg, raw_ostream &OS,
   }
 }
 
-void SIRControlPathPrinter::printRegister(SIRRegister *Reg, vlang_raw_ostream &OS,
-                                          DataLayout &TD) {
-  if (Reg->assignmentEmpty()) {
-    // Print the driver of the output ports.
-    // Change the judgment to the type of register!
-    if (Reg->getRegisterType() == SIRRegister::OutPort) {
-      OS.always_ff_begin();
-      OS << Mangle(Reg->getName()) << " <= "
-         << buildLiteralUnsigned(Reg->getInitVal(), Reg->getBitWidth()) << ";\n";
-      OS.always_ff_end();
-    }
+void SIRControlPathPrinter::printRegister(SIRRegister *Reg) {
+  vlang_raw_ostream VOS(OS);
+
+	if (Reg->assignmentEmpty()) {
+		// Print the driver of the output ports.
+		// Change the judgment to the type of register!
+		if (Reg->getRegisterType() == SIRRegister::OutPort) {
+			VOS.always_ff_begin();
+			VOS << Mangle(Reg->getName()) << " <= "
+				<< buildLiteralUnsigned(Reg->getInitVal(), Reg->getBitWidth()) << ";\n";
+			VOS.always_ff_end();
+		}
+
+		return;
+	}
+
+	// Print the selector of the register.
+	printMuxInReg(Reg);
+
+	// Print the sequential logic of the register.
+	VOS.always_ff_begin();
+	// Reset the register.
+	VOS << Mangle(Reg->getName()) << " <= "
+		<< buildLiteralUnsigned(Reg->getInitVal(), Reg->getBitWidth()) << ";\n";  
+
+	VOS.else_begin();
+
+	// Print the assignment.
+	if (Reg->isSlot()) {
+		VOS << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName()) << "_register_guard"
+			<< ";\n";
+	} else {
+		VOS.if_begin(Twine(Mangle(Reg->getName())) + Twine("_register_guard"));
+		VOS << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName()) << "_register_wire"
+			<< BitRange(Reg->getBitWidth(), 0, false) << ";\n";
+		VOS.exit_block();
+	}
+
+
+	VOS.always_ff_end();
+}
+
+namespace {
+static inline
+int base_addr_less(const std::pair<GlobalVariable *, unsigned> *P1,
+                   const std::pair<GlobalVariable *, unsigned> *P2) {
+  return P2->second - P1->second;
+}
+
+typedef SmallVector<uint8_t, 1024> ByteBuffer;
+
+static
+unsigned FillByteBuffer(ByteBuffer &Buf, uint64_t Val, unsigned SizeInBytes) {
+  SizeInBytes = std::max(1u, SizeInBytes);
+  for (unsigned i = 0; i < SizeInBytes; ++i) {
+    Buf.push_back(Val & 0xff);
+    Val >>= 8;
+  }
+
+  return SizeInBytes;
+}
+
+static void FillByteBuffer(ByteBuffer &Buf, const Constant *C) {
+  if (const ConstantInt *CI = dyn_cast<ConstantInt>(C)) {
+    FillByteBuffer(Buf, CI->getZExtValue(), CI->getBitWidth() / 8);
+    return;
+  }
+
+  if (isa<ConstantPointerNull>(C)) {
+    unsigned PtrSizeInBytes = LuaI::Get<VFUMemBus>()->getAddrWidth() / 8;
+    FillByteBuffer(Buf, 0, PtrSizeInBytes);
+    return;
+  }
+
+  if (const ConstantDataSequential *CDS = dyn_cast<ConstantDataSequential>(C)) {
+    for (unsigned i = 0, e = CDS->getNumElements(); i != e; ++i)
+      FillByteBuffer(Buf, CDS->getElementAsConstant(i));
 
     return;
   }
 
-  // Print the selector of the register.
-  printMuxInReg(Reg, OS, TD);
+  if (const ConstantArray *CA = dyn_cast<ConstantArray>(C)) {
+    for (unsigned i = 0, e = CA->getNumOperands(); i != e; ++i)
+      FillByteBuffer(Buf, cast<Constant>(CA->getOperand(i)));
 
-  // Print the sequential logic of the register.
-  OS.always_ff_begin();
-  // Reset the register.
-  OS << Mangle(Reg->getName()) << " <= "
-     << buildLiteralUnsigned(Reg->getInitVal(), Reg->getBitWidth()) << ";\n";  
-
-  OS.else_begin();
-
-  // Print the assignment.
-  if (Reg->isSlot()) {
-    OS << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName()) << "_register_guard"
-       << ";\n";
-  } else {
-    OS.if_begin(Twine(Mangle(Reg->getName())) + Twine("_register_guard"));
-    OS << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName()) << "_register_wire"
-       << BitRange(Reg->getBitWidth(), 0, false) << ";\n";
-    OS.exit_block();
+    return;
   }
-  
 
-  OS.always_ff_end();
+  llvm_unreachable("Unsupported constant type to bind to script engine!");
 }
 
-void SIRControlPathPrinter::printRegister(SIRRegister *Reg, raw_ostream &OS,
-                                          DataLayout &TD) {
-  vlang_raw_ostream S(OS);
-  printRegister(Reg, S, TD);
+struct MemContextWriter {
+  raw_ostream &OS;
+  typedef SmallVector<std::pair<GlobalVariable *, unsigned>, 8> VarVector;
+  VarVector &Vars;
+  unsigned WordSizeInBytes;
+  unsigned EndByteAddr;
+  const Twine &CombROMLHS;
+
+  MemContextWriter(raw_ostream &OS, VarVector &Vars, unsigned WordSizeInBytes,
+                   unsigned EndByteAddr, const Twine &CombROMLHS)
+    : OS(OS), Vars(Vars), WordSizeInBytes(WordSizeInBytes),
+      EndByteAddr(EndByteAddr), CombROMLHS(CombROMLHS) {}
+
+  void padZeroToByteAddr(raw_ostream &OS, unsigned CurByteAddr,
+                         unsigned TargetByteAddr) {
+    assert(TargetByteAddr % WordSizeInBytes == 0 && "Bad target byte address!");
+    assert(CurByteAddr <= TargetByteAddr && "Bad current byte address!");
+    while (CurByteAddr != TargetByteAddr) {
+      OS << "00";
+      ++CurByteAddr;
+      if (CurByteAddr % WordSizeInBytes == 0)
+        OS << "// " << CurByteAddr << '\n';
+    }
+  }
+
+  void writeContext();
+
+  static
+  void WriteContext(raw_ostream &OS, VarVector &Vars, unsigned WordSizeInBytes,
+                    unsigned EndByteAddr, const Twine &CombROMLHS) {
+    MemContextWriter MCW(OS, Vars, WordSizeInBytes, EndByteAddr, CombROMLHS);
+    MCW.writeContext();
+  }
+};
+}
+
+void SIRControlPathPrinter::printInitializeFile(SIRMemoryBank *SMB) {
+	vlang_raw_ostream VOS(OS);
+
+	std::string InitFileName = "mem" + utostr_32(SMB->getNum()) + "ram_init.txt";
+
+	SmallString<256> FullInitFilePath
+		= sys::path::parent_path(LuaI::GetString("RTLOutput"));
+	sys::path::append(FullInitFilePath, InitFileName);
+
+	std::string ErrorInfo;
+	const char *CFullInitFilePath = FullInitFilePath.c_str();
+	raw_fd_ostream InitFileO(CFullInitFilePath, ErrorInfo);
+
+	if (ErrorInfo.empty()) {
+		DEBUG(dbgs() << "writing" << CFullInitFilePath << '\n');
+
+		OS << "initial  $readmemh(\"";
+		OS.write_escaped(FullInitFilePath);
+		OS << "\", " << SMB->getArrayName() << ");\n";
+	} else {
+		report_fatal_error("Cannot open file '" + FullInitFilePath.str()
+			+ "' for writing block RAM initialize file!\n");
+		return;
+	}
+
+	SmallVector<std::pair<GlobalVariable *, unsigned>, 8> Vars;
+
+  typedef std::map<GlobalVariable*, unsigned>::const_iterator iterator;
+  for (iterator I = SMB->const_baseaddrs_begin(), E = SMB->const_baseaddrs_end(); I != E; ++I) {
+    Vars.push_back(*I);
+
+    // Print the information about the global variable in the memory.
+    VOS << "/* Offset: " << I->second << ' ' << I->first->getType() << ' '
+        << I->first->getName() << "*/\n";
+  }
+
+  array_pod_sort(Vars.begin(), Vars.end(), base_addr_less);
+  MemContextWriter::WriteContext(InitFileO, Vars, SMB->getDataWidth() / 8,
+                                 SMB->getEndByteAddr(), Twine());
+}
+
+void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned BytesPerGV,
+	                                              unsigned ByteAddrWidth, unsigned NumWords) {
+	vlang_raw_ostream VOS(OS);
+
+	SIRRegister *Addr = SMB->getAddr();
+	if (Addr->assign_empty()) return;
+
+	SIRRegister *WData = SMB->getWData();
+	
+	printRegister(Addr);
+	printRegister(WData);
+
+	// Hack: If the read latency is bigger than 1, we should pipeline the input port.
+	if (!WData->assign_empty()) 
+		assert(SMB->getReadLatency() == 1 && "Need to pipeline input port!");
+
+	VOS.always_ff_begin(false);
+
+	if (!WData->assign_empty()) {
+		VOS.if_begin(Twine(WData->getName()) + "en");
+
+		VOS << SMB->getArrayName() << "[" << SMB->getAddrName()
+			  << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "]"
+			  << " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
+
+		VOS.exit_block();		
+	}
+
+	VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
+		  << SMB->getArrayName() << "[" << SMB->getAddrName()
+			<< BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
+
+	VOS.always_ff_end(false);
+}
+
+void SIRControlPathPrinter::printMemoryBank(SIRMemoryBank *SMB) {
+	unsigned EndByteAddr = SMB->getEndByteAddr();
+	unsigned BytesPerGV = SMB->getDataWidth() / 8;
+	unsigned AddrWidth = Log2_32_Ceil(BytesPerGV);
+
+	assert(EndByteAddr % BytesPerGV == 0 && "Current Offset is not aligned!");
+	unsigned NumWords = (EndByteAddr / BytesPerGV);\
+
+		// use a multi-dimensional packed array to model individual bytes within the
+		// word. Please note that the bytes is ordered from 0 to 7 ([0:7]) because
+		// so that the byte address can access the correct byte.
+		OS << "(* ramstyle = \"no_rw_check\", max_depth = " << NumWords << " *) logic"
+		   << BitRange(BytesPerGV) << BitRange(8) << ' ' << SMB->getArrayName()
+		   << "[0:" << NumWords << "-1];\n";
+
+	printInitializeFile(SMB);
+
+	printMemoryBankImpl(SMB, BytesPerGV, AddrWidth, NumWords);
 }
 
 void SIRControlPathPrinter::generateCodeForRegisters() {  
-  for (SIR::const_register_iterator I = SM->registers_begin(), E = SM->registers_end();
+  for (SIR::const_register_iterator I = SM->const_registers_begin(), E = SM->const_registers_end();
        I != E; ++I) {
-    printRegister(*I, OS, TD);
+    printRegister(*I);
   }
+}
+
+void SIRControlPathPrinter::generateCodeForMemoryBank() {
+	for (SIR::const_submodulebase_iterator I = SM->submodules_begin(), E = SM->submodules_end();
+		   I != E; ++I) {
+		if(SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) 
+			printMemoryBank(SMB);	
+	}		
 }
 
 void SIRDatapathPrinter::printSimpleOp(ArrayRef<Value *> Ops, const char *Opc) {
@@ -472,7 +662,6 @@ struct SIR2RTL : public SIRPass {
   void generateCodeForDatapath(SIR &SM, DataLayout &TD);
   void generateCodeForControlpath(SIR &SM, DataLayout &TD);
   void generateCodeForMemoryBank(SIR &SM, DataLayout &TD);
-  void generateCodeForRegisters(SIR &SM, DataLayout &TD);
   void generateCodeForOutPort(SIR &SM, DataLayout &TD);
 
 	bool runOnSIR(SIR &SM);
@@ -507,11 +696,6 @@ void SIR2RTL::generateCodeForDatapath(SIR &SM, DataLayout &TD) {
 
   // Visit the basic block in topological order.
   Function *F = SM.getFunction();
-//   ReversePostOrderTraversal<BasicBlock*> RPO(&(F->getEntryBlock()));
-//   typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
-// 
-//   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
-//     DPP.visitBasicBlock(*I);
 
 	typedef Function::iterator iterator;
 	for (iterator I = F->begin(), E = F->end(); I != E; ++I)
@@ -524,6 +708,14 @@ void SIR2RTL::generateCodeForControlpath(SIR &SM, DataLayout &TD) {
 
   // Generate code for registers in sequential logic.
   CPP.generateCodeForRegisters();
+}
+
+void SIR2RTL::generateCodeForMemoryBank(SIR &SM, DataLayout &TD) {
+	// Create the ControlPathPrinter.
+	SIRControlPathPrinter CPP(Out, &SM, TD);
+
+	// Generate code for MemoryBanks.
+	CPP.generateCodeForMemoryBank();
 }
 
 bool SIR2RTL::runOnSIR(SIR &SM) {
