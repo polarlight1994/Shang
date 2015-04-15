@@ -24,7 +24,7 @@ namespace llvm {
 class SIRAllocation {
 protected:
 	SIR *SM;
-	const DataLayout *TD;
+	DataLayout *TD;
 
 	SIRAllocation() : SM(0), TD(0) {}
 

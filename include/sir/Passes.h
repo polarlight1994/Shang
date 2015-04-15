@@ -33,6 +33,7 @@ Pass *createSIRMemoryPartitionPass();
 Pass *createSIR2RTLPass();
 Pass *createSIRSchedulingPass();
 
+void initializeSIRAllocationAnalysisGroup(PassRegistry &Registry);
 void initializeSIRMemoryPartitionPass(PassRegistry &Registry);
 void initializeSIRSchedulingPass(PassRegistry &Registry);
 void initializeSIRTimingAnalysisPass(PassRegistry &Registry);

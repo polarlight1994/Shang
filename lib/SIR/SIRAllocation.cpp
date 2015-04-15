@@ -11,9 +11,15 @@
 //
 //===-----------------------------------------------------------------------------------===//
 
+#include "sir/SIRBuild.h"
 #include "sir/SIRAllocation.h"
 
+#include "vast/LuaI.h"
+
+#include "llvm/ADT/SmallPtrSet.h"
+
 using namespace llvm;
+using namespace vast;
 
 namespace llvm {
 struct SIRMemoryPartition : public ModulePass, public SIRAllocation {
@@ -41,7 +47,9 @@ struct SIRMemoryPartition : public ModulePass, public SIRAllocation {
 
 	void getAnalysisUsage(AnalysisUsage &AU) const {
 		SIRAllocation::getAnalysisUsage(AU);
-		AU.addRequired<AnalysisUsage>();
+		AU.addRequired<AliasAnalysis>();
+		AU.addRequired<DataLayout>();
+		AU.addRequired<SIRInit>();
 		AU.setPreservesAll();
 	}
 
@@ -66,6 +74,8 @@ INITIALIZE_AG_PASS_BEGIN(SIRMemoryPartition, SIRAllocation,
 	                       "sir-memory-partition", "SIR Memory Partition",
 	                       false, true, false)
 	INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
+	INITIALIZE_PASS_DEPENDENCY(DataLayout)
+	INITIALIZE_PASS_DEPENDENCY(SIRInit)
 INITIALIZE_AG_PASS_END(SIRMemoryPartition, SIRAllocation,
 	                     "sir-memory-partition", "SIR Memory Partition",
 	                     false, true, false)
@@ -80,6 +90,8 @@ bool SIRMemoryPartition::runOnModule(Module &M) {
 	InitializeSIRAllocation(this);
 
 	AliasSetTracker AST(getAnalysis<AliasAnalysis>());
+	TD = &(getAnalysis<DataLayout>());
+	SM = &(*getAnalysis<SIRInit>());	
 
 	typedef Module::global_iterator global_iterator;
 	for (global_iterator I = M.global_begin(), E = M.global_end(); I != E; ++I) {
@@ -109,16 +121,14 @@ bool SIRMemoryPartition::runOnModule(Module &M) {
 }
 
 bool SIRMemoryPartition::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
-	SIR &SM = getModule();
-	unsigned MemBusSizeInBytes = LuaI::Get<VFUMemBus>()->getDataWidth() / 8;
+	SIRCtrlRgnBuilder *SCRB = new SIRCtrlRgnBuilder(SM, *TD);	
 	unsigned ReadLatency = LuaI::Get<VFUMemBus>()->getReadLatency();
-	bool AllocateNewPort = true;
 
 	SmallVector<Value *, 8> Pointers;
 	SmallPtrSet<Type *, 8> AccessedTypes;
 	SmallVector<std::pair<GlobalVariable *, unsigned>, 8> Objects;
 
-	unsigned BankSizeInBytes = 0; MaxElementSizeInBytes = 0;
+	unsigned BankSizeInBytes = 0, MaxElementSizeInBytes = 0;
 
 	for (AliasSet::iterator AI = AS->begin(), AE = AS->end(); AI != AE; ++AI) {
 		// Extract the load/store element from the instruction.
@@ -126,10 +136,11 @@ bool SIRMemoryPartition::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 		Type *ElemTy = cast<PointerType>(V->getType())->getElementType();
 		unsigned ElementSizeInBytes = TD->getTypeStoreSize(ElemTy);
 		
-		if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V) {
+		if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
 			// Do not allocate local memory port if the pointers alias with external
 			// global variables.
-			AllocateNewPort &= GV->hasInternalLinkage() || GV->hasPrivateLinkage();
+			assert(GV->hasInternalLinkage() || GV->hasPrivateLinkage()
+				     && "Unexpected linkage GV!");
 
 			// Calculate the size of the object.
 			unsigned NumElem = 1;
@@ -140,5 +151,60 @@ bool SIRMemoryPartition::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 				NumElem *= AT->getNumElements();
 			}
 
-		}
+			// GV may be a struct. In this case, we may not load/store the whole
+			// struct in a single instruction. This mean the required data port size
+			// is not necessary as big as the element size here.
+			ElementSizeInBytes = std::min(TD->getTypeStoreSize(ElemTy),
+				                            uint64_t(ElementSizeInBytes));
+			unsigned CurArraySize = NumElem * ElementSizeInBytes;
+
+			// Accumulate the element size.
+			BankSizeInBytes += CurArraySize;
+			Objects.push_back(std::make_pair(GV, CurArraySize));
+		} else
+			Pointers.push_back(V);
+
+		AccessedTypes.insert(ElemTy);
+		// Update the max size of the accessed type.
+		MaxElementSizeInBytes = std::max(MaxElementSizeInBytes, ElementSizeInBytes);
+	}
+
+	unsigned AddrWidth = Log2_32_Ceil(BankSizeInBytes);
+
+	// Create the memory bus.
+	SIRMemoryBank *SMB = SCRB->createMemoryBank(BankNum, AddrWidth,
+		                                          MaxElementSizeInBytes, ReadLatency);
+
+	// Remember the binding and add the global variable to the memory bank.
+	while (!Objects.empty()) {
+		std::pair<GlobalVariable*, unsigned> Obj = Objects.pop_back_val();
+		GlobalVariable *GV = Obj.first;
+		DEBUG(dbgs() << "Assign " << *GV << " to Memory #" << BankNum << "\n");
+
+		SMB->addGlobalVariable(GV, Obj.second);
+		bool inserted = Binding.insert(std::make_pair(GV, SMB)).second;
+		assert(inserted && "Allocation not inserted!");
+	}
+
+
+	// Remember the pointer operand binding
+	while (!Pointers.empty()) {
+		Value *Ptr = Pointers.pop_back_val();
+
+		bool inserted = Binding.insert(std::make_pair(Ptr, SMB)).second;
+		assert(inserted && "Allocation not inserted!");
+		(void) inserted;
+	}
+
+	return true;
+}
+
+void SIRMemoryPartition::runOnFunction(Function &F, AliasSetTracker &AST) {
+	for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
+		Instruction *Inst = &*I;
+
+		if (!(isa<LoadInst>(Inst) || isa<StoreInst>(Inst))) continue;
+
+		AST.add(Inst);
+	}
 }

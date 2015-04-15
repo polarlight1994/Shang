@@ -162,7 +162,7 @@ class SIRCtrlRgnBuilder : public InstVisitor<SIRCtrlRgnBuilder, void> {
 
 public:
   SIRCtrlRgnBuilder(SIR *SM, DataLayout &TD)
-                    : SM(SM), TD(TD), D_Builder(SM, TD) {}
+    : SM(SM), TD(TD), D_Builder(SM, TD) {}
 
   /// Functions to provide basic information
   unsigned getBitWidth(Value *U);
