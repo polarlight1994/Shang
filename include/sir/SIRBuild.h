@@ -11,6 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include "sir/SIR.h"
+#include "sir/SIRAllocation.h"
 #include "sir/Passes.h"
 
 #include "llvm/InstVisitor.h"
@@ -178,7 +179,7 @@ public:
 	Instruction *findInsertPostion(BasicBlock *BB, bool IsSlot);
   Instruction *createPseudoInst(unsigned BitWidth, Value *InsertPosition);
 
-	// Function to build register
+	// Functions to build register
   SIRRegister *createRegister(StringRef Name, unsigned BitWidth, BasicBlock *ParentBB,
 		                          Instruction *Inst, uint64_t InitVal = 0,
                               SIRRegister::SIRRegisterTypes T = SIRRegister::General);
@@ -191,15 +192,22 @@ public:
 	void createPortsForMemoryBank(SIRMemoryBank *SMB);
 	SIRMemoryBank *createMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
 		                              unsigned ReadLatency);
+	void createMemoryTransaction(Value *Addr, Value *Data, SIRMemoryBank *Bank, Instruction &I);
 
+	// Functions to build slot
   SIRSlot *getOrCreateLandingSlot(BasicBlock *BB);
   SIRSlot *createSlot(BasicBlock *ParentBB, unsigned Schedule);
-  SIRSlot *createSubGroup(BasicBlock *BB, Value *Guard, SIRSlot *SrcSlot);
-  void createConditionalTransition(BasicBlock *DstBB, SIRSlot *SrcSlot, Value *Guard);
+	SIRSlot *advanceToNextSlot(SIRSlot *CurSlot);
+	SIRSlot *advanceToNextSlot(SIRSlot *CurSlot, unsigned NumSlots);
 
+	// Functions to build the transition between BB.
+  void createConditionalTransition(BasicBlock *DstBB, SIRSlot *SrcSlot, Value *Guard);
   void visitPHIsInSucc(SIRSlot *SrcSlot, SIRSlot *DstSlot, Value *Guard, BasicBlock *SrcBB);
-  // Add a successor slot  
+
+  // Functions to build the transition between Slot. 
   void createStateTransition(SIRSlot *SrcSlot, SIRSlot *DstSlot, Value *Cnd);
+
+	// Functions to build the assign operation.
   void assignToReg(SIRSlot *S, Value *Guard, Value *Src, SIRRegister *Dst);
 };
 
@@ -208,14 +216,15 @@ public:
 struct SIRBuilder : public InstVisitor<SIRBuilder, void> {
   SIR *SM;
   DataLayout &TD;
+	SIRAllocation &SA;
   // The construction of SIR is divided into two parts:
   // (1) data-path: built by SIRDatapathBuilder
   // (2) control-path: built by SIRControlpathBuilder
   SIRDatapathBuilder D_Builder;
   SIRCtrlRgnBuilder C_Builder;
 
-  SIRBuilder(SIR *SM, DataLayout &TD)
-             : SM(SM), TD(TD), D_Builder(SM, TD), C_Builder(SM, TD) {}
+  SIRBuilder(SIR *SM, DataLayout &TD, SIRAllocation &SA)
+             : SM(SM), TD(TD), SA(SA), D_Builder(SM, TD), C_Builder(SM, TD) {}
 
   // Build the basic interface for whole module.
   void buildInterface(Function *F);
@@ -233,8 +242,8 @@ struct SIRBuilder : public InstVisitor<SIRBuilder, void> {
   void visitBinaryOperator(BinaryOperator &I);
   void visitGetElementPtrInst(GetElementPtrInst &I);
   void visitGEPOperator(GEPOperator &O, GetElementPtrInst &I);
-  //void visitStoreInst(StoreInst &I);
-  //void visitLoadInst(LoadInst &I);
+  void visitStoreInst(StoreInst &I);
+  void visitLoadInst(LoadInst &I);
   void visitBranchInst(BranchInst &I);
   //void visitUnreachableInst(UnreachableInst &I);
 	void visitSwitchInst(SwitchInst &I);

@@ -50,17 +50,19 @@ INITIALIZE_PASS_BEGIN(SIRInit,
                       "shang-ir-init", "SIR Init",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
+	INITIALIZE_AG_DEPENDENCY(SIRAllocation)
 INITIALIZE_PASS_END(SIRInit,
                     "shang-ir-init", "SIR Init",
                     false, true)
 
 bool SIRInit::runOnFunction(Function &F) {
   DataLayout &TD = getAnalysis<DataLayout>();
+	SIRAllocation &SA = getAnalysis<SIRAllocation>();
 
   SM = new SIR(&F);
 
   // Initialize SIR from IR by transform llvm-inst to Shang-inst.
-  SIRBuilder Builder(SM, TD);
+  SIRBuilder Builder(SM, TD, SA);
 
   // Build the general interface(Ports) of the module.
   Builder.buildInterface(&F);
@@ -77,6 +79,7 @@ bool SIRInit::runOnFunction(Function &F) {
 
 void SIRInit::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addRequired<DataLayout>();
+	AU.addRequired<SIRAllocation>();
   AU.setPreservesAll();
 }
 
@@ -194,6 +197,12 @@ void SIRBuilder::visitReturnInst(ReturnInst &I) {
   C_Builder.visit(I);
 }
 
+void SIRBuilder::visitStoreInst(StoreInst &I) {
+	// Get the corresponding memory bank.
+	SIRMemoryBank *Bank = SA.getMemoryBank(I);
+
+	C_Builder.createMemoryTransaction(I.getPointerOperand(), I.getValueOperand(), Bank, I);
+}
 
 /// Functions to provide basic information
 unsigned SIRCtrlRgnBuilder::getBitWidth(Value *U) {
@@ -339,6 +348,49 @@ SIRMemoryBank *SIRCtrlRgnBuilder::createMemoryBank(unsigned BusNum, unsigned Add
 	return SMB;
 }
 
+void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
+	                                              SIRMemoryBank *Bank, Instruction &I) {
+	// Get ParentBB of this instruction.
+	BasicBlock *ParentBB = I.getParent();
+	// Get the slot.
+	SIRSlot *Slot = SM->getLatestSlot(ParentBB);
+
+	/// Handle the address pin.
+	// Clamp the address width, to the address width of the memory bank.
+	Type *RetTy = SM->createIntegerType(Bank->getAddrWidth());
+	Value *AddrVal = D_Builder.createSBitExtractInst(Addr, Bank->getAddrWidth(), 0, RetTy, &I, true);
+	
+	assignToReg(Slot, SM->createIntegerValue(1), AddrVal, Bank->getAddr());
+
+	/// Handle the data pin and write enable pin.
+	// If Data != NULL, then this intruction is writing to memory.
+	if (Data) {
+		assert(getBitWidth(Data) <= Bank->getDataWidth() && "Unexpected data width!");
+
+		Type *RetTy = SM->createIntegerType(Bank->getDataWidth());
+		Value *DataVal = D_Builder.createSZExtInstOrSelf(Data, Bank->getDataWidth(), RetTy, &I, true);
+
+		// Handle the data pin.
+		assignToReg(Slot, SM->createIntegerValue(1), DataVal, Bank->getWData());
+		// Handle the write enable pin.
+		assignToReg(Slot, SM->createIntegerValue(1), SM->createIntegerValue(1), Bank->getWriteEnable());
+	} 
+	// If Data == NULL, then this intruction is reading from memory.
+	else {
+		// According the read latency, advance to the slot
+		// that we can get the RData.
+		unsigned Latency = Bank->getReadLatency();
+		Slot = advanceToNextSlot(Slot, Latency);
+
+		
+	}
+
+	/// Handle the enable pin.
+	assignToReg(Slot, SM->createIntegerValue(1), SM->createIntegerValue(1), Bank->getEnable());
+
+
+}
+
 SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) {
   // To be noted that, the SlotNum is decided by the creating order,
   // so it has no connection with the state transition order.
@@ -378,6 +430,33 @@ SIRSlot *SIRCtrlRgnBuilder::getOrCreateLandingSlot(BasicBlock *BB) {
   
   slot_pair &Slots = BB2SlotMap[BB];
   return Slots.first;
+}
+
+SIRSlot *SIRCtrlRgnBuilder::advanceToNextSlot(SIRSlot *CurSlot) {
+	BasicBlock *BB = CurSlot->getParent();
+	SIRSlot *Slot = SM->getLatestSlot(BB);
+
+	assert(Slot == CurSlot && "CurSlot is not the last slot in BB!");
+	assert(CurSlot->succ_empty() && "CurSlot already have successors!");
+
+	// Create the next slot.
+	SIRSlot *NextSlot = createSlot(BB, 0);
+
+	// Connect the slots.
+	CurSlot->addSuccSlot(NextSlot, SIRSlot::Sucessor, SM->createIntegerValue(1));
+	// Index the new latest slot to BB.
+	SM->IndexBB2Slots(BB, SM->getLandingSlot(BB), NextSlot);
+
+	return NextSlot;
+}
+
+SIRSlot *SIRCtrlRgnBuilder::advanceToNextSlot(SIRSlot *CurSlot, unsigned NumSlots) {
+	SIRSlot *S = CurSlot;
+
+	for (unsigned i = 0; i < NumSlots; ++i)
+		S = advanceToNextSlot(S);
+
+	return S;
 }
 
 void SIRCtrlRgnBuilder::createConditionalTransition(BasicBlock *DstBB,

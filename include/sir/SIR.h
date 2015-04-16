@@ -475,9 +475,7 @@ public:
   // of the edge, only the successor edge represents a real state transition
   // which have a timing distance of 1.
   enum EdgeType {
-    SubGrp = 0,
-    Sucessor = 1,
-    ImplicitFlow = 2
+    Sucessor = 0
   };
 
 	// The pointer to successor which is also encoded with the distance and the condition.

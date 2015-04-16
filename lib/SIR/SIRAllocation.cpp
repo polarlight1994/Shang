@@ -125,7 +125,6 @@ bool SIRMemoryPartition::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 	unsigned ReadLatency = LuaI::Get<VFUMemBus>()->getReadLatency();
 
 	SmallVector<Value *, 8> Pointers;
-	SmallPtrSet<Type *, 8> AccessedTypes;
 	SmallVector<std::pair<GlobalVariable *, unsigned>, 8> Objects;
 
 	unsigned BankSizeInBytes = 0, MaxElementSizeInBytes = 0;
@@ -164,7 +163,6 @@ bool SIRMemoryPartition::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 		} else
 			Pointers.push_back(V);
 
-		AccessedTypes.insert(ElemTy);
 		// Update the max size of the accessed type.
 		MaxElementSizeInBytes = std::max(MaxElementSizeInBytes, ElementSizeInBytes);
 	}
