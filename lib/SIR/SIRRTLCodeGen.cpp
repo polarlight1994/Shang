@@ -34,6 +34,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SourceMgr.h"
@@ -256,6 +257,63 @@ struct MemContextWriter {
     MCW.writeContext();
   }
 };
+}
+
+void MemContextWriter::writeContext() {
+	unsigned NumCasesWritten = 0;
+	unsigned CurByteAddr = 0;
+	ByteBuffer Buffer;
+
+	while (!Vars.empty()) {
+		std::pair<GlobalVariable*, unsigned> Var = Vars.pop_back_val();
+
+		GlobalVariable *GV = Var.first;
+		DEBUG(dbgs() << GV->getName() << " CurByteAddress " << CurByteAddr << '\n');
+		unsigned StartOffset = Var.second;
+		if (CombROMLHS.isTriviallyEmpty())
+			padZeroToByteAddr(OS, CurByteAddr, StartOffset);
+		CurByteAddr = StartOffset;
+		DEBUG(dbgs() << "Pad zero to " << StartOffset << '\n');
+		OS << "//" << GV->getName() << " start byte address " << StartOffset << '\n';
+		if (GV->hasInitializer() && !GV->getInitializer()->isNullValue()) {
+			FillByteBuffer(Buffer, GV->getInitializer());
+			unsigned BytesToPad = OffsetToAlignment(Buffer.size(), WordSizeInBytes);
+			for (unsigned i = 0; i < BytesToPad; ++i)
+				Buffer.push_back(0);
+
+			assert(Buffer.size() % WordSizeInBytes == 0 && "Buffer does not padded!");
+			for (unsigned i = 0, e = (Buffer.size() / WordSizeInBytes); i != e; ++i) {
+				// Write the case assignment for combinational ROM.
+				if (!CombROMLHS.isTriviallyEmpty()) {
+					OS.indent(2) << CurByteAddr << ": " << CombROMLHS
+						<< " = " << WordSizeInBytes * 8 << "'h";
+					++NumCasesWritten;
+				}
+
+				for (unsigned j = 0; j < WordSizeInBytes; ++j) {
+					// Directly write out the buffer in little endian!
+					unsigned Idx = i * WordSizeInBytes + (WordSizeInBytes - j - 1);
+					OS << format("%02x", Buffer[Idx]);
+					++CurByteAddr;
+				}
+
+				if (!CombROMLHS.isTriviallyEmpty())
+					OS << ';';
+				OS << "// " << CurByteAddr << '\n';
+			}
+
+			assert((CurByteAddr % WordSizeInBytes) == 0 && "Bad ByteBuffer size!");
+			DEBUG(dbgs() << "Write initializer: " << CurByteAddr << '\n');
+			Buffer.clear();
+		}
+	}
+
+	if (CombROMLHS.isTriviallyEmpty())
+		padZeroToByteAddr(OS, CurByteAddr, EndByteAddr);
+	else
+		OS.indent(2)
+		<< "default: " << CombROMLHS << " = "
+		<< WordSizeInBytes << "'b" << (NumCasesWritten ? 'x' : '0') << ";\n";
 }
 
 void SIRControlPathPrinter::printInitializeFile(SIRMemoryBank *SMB) {
