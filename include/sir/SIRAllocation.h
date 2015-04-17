@@ -22,6 +22,10 @@
 
 namespace llvm {
 class SIRAllocation {
+	// SIRAllocation is a analysis group, this
+	// is previous allocation to chain to.
+	SIRAllocation *Allocation;
+
 protected:
 	SIR *SM;
 	DataLayout *TD;
@@ -36,7 +40,7 @@ protected:
 public:
 	static char ID;
 
-	virtual ~SIRAllocation();
+	virtual ~SIRAllocation() {}
 
 	SIR &getModule() const { return *SM; }
 	SIR *operator->() const { return SM; }

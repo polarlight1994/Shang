@@ -13,6 +13,7 @@
 
 #include "sir/SIRBuild.h"
 #include "sir/SIRAllocation.h"
+#include "sir/Passes.h"
 
 #include "vast/LuaI.h"
 
@@ -20,6 +21,54 @@
 
 using namespace llvm;
 using namespace vast;
+
+SIRMemoryBank *SIRAllocation::getMemoryBank(const StoreInst &I) const {
+	assert(Allocation
+		&& "Allocation didn't call InitializeHLSAllocation in its run method!");
+	return Allocation->getMemoryBank(I);
+}
+
+SIRMemoryBank *SIRAllocation::getMemoryBank(const LoadInst &I) const {
+	assert(Allocation
+		&& "Allocation didn't call InitializeHLSAllocation in its run method!");
+	return Allocation->getMemoryBank(I);
+}
+
+SIRMemoryBank *SIRAllocation::getMemoryBank(const GlobalVariable &GV) const {
+	assert(Allocation
+		&& "Allocation didn't call InitializeHLSAllocation in its run method!");
+	return Allocation->getMemoryBank(GV);
+}
+
+SIRMemoryBank *SIRAllocation::getMemoryBank(const Value &V) const {
+	if (const LoadInst *L = dyn_cast<LoadInst>(&V))
+		return getMemoryBank(*L);
+
+	if (const StoreInst *S = dyn_cast<StoreInst>(&V))
+		return getMemoryBank(*S);
+
+	if (const GlobalVariable *G = dyn_cast<GlobalVariable>(&V))
+		return getMemoryBank(*G);
+
+	return NULL;
+}
+
+void SIRAllocation::getAnalysisUsage(AnalysisUsage &AU) const {
+	AU.addRequired<SIRAllocation>();
+	AU.addRequired<DataLayout>();
+}
+
+void SIRAllocation::InitializeSIRAllocation(Pass *P) {
+	TD = &P->getAnalysis<DataLayout>();
+	Allocation = &P->getAnalysis<SIRAllocation>();
+	SM = Allocation->SM;
+}
+
+char SIRAllocation::ID = 0;
+
+INITIALIZE_ANALYSIS_GROUP(SIRAllocation,
+	                        "High-level Synthesis Resource Allocation in SIR",
+	                        SIRBasicAllocation)
 
 namespace llvm {
 struct SIRMemoryPartition : public ModulePass, public SIRAllocation {
@@ -48,7 +97,6 @@ struct SIRMemoryPartition : public ModulePass, public SIRAllocation {
 	void getAnalysisUsage(AnalysisUsage &AU) const {
 		SIRAllocation::getAnalysisUsage(AU);
 		AU.addRequired<AliasAnalysis>();
-		AU.addRequired<DataLayout>();
 		AU.addRequired<SIRInit>();
 		AU.setPreservesAll();
 	}

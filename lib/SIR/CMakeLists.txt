@@ -1,6 +1,7 @@
 add_llvm_library(ShangSIR
 SIR.cpp
 SIRBuild.cpp
+SIRAllocation.cpp
 SIRTimingAnalysis.cpp
 SIRSchedGraph.cpp
 SIRSchedulerBase.cpp
