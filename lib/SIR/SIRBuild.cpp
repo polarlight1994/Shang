@@ -204,6 +204,14 @@ void SIRBuilder::visitStoreInst(StoreInst &I) {
 	C_Builder.createMemoryTransaction(I.getPointerOperand(), I.getValueOperand(), Bank, I);
 }
 
+void SIRBuilder::visitLoadInst(LoadInst &I) {
+	// Get the corresponding memory bank.
+	SIRMemoryBank *Bank = SA.getMemoryBank(I);
+
+	C_Builder.createMemoryTransaction(I.getPointerOperand(), 0, Bank, I);
+}
+
+
 /// Functions to provide basic information
 unsigned SIRCtrlRgnBuilder::getBitWidth(Value *U) {
   return TD.getTypeSizeInBits(U->getType());
@@ -360,7 +368,7 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 	Type *RetTy = SM->createIntegerType(Bank->getAddrWidth());
 	Value *AddrVal = D_Builder.createSBitExtractInst(Addr, Bank->getAddrWidth(), 0, RetTy, &I, true);
 	
-	assignToReg(Slot, SM->createIntegerValue(1), AddrVal, Bank->getAddr());
+	assignToReg(Slot, SM->createIntegerValue(1, 1), AddrVal, Bank->getAddr());
 
 	/// Handle the data pin and write enable pin.
 	// If Data != NULL, then this intruction is writing to memory.
@@ -371,9 +379,9 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 		Value *DataVal = D_Builder.createSZExtInstOrSelf(Data, Bank->getDataWidth(), RetTy, &I, true);
 
 		// Handle the data pin.
-		assignToReg(Slot, SM->createIntegerValue(1), DataVal, Bank->getWData());
+		assignToReg(Slot, SM->createIntegerValue(1, 1), DataVal, Bank->getWData());
 		// Handle the write enable pin.
-		assignToReg(Slot, SM->createIntegerValue(1), SM->createIntegerValue(1), Bank->getWriteEnable());
+		assignToReg(Slot, SM->createIntegerValue(1, 1), SM->createIntegerValue(1, 1), Bank->getWriteEnable());
 	} 
 	// If Data == NULL, then this intruction is reading from memory.
 	else {
@@ -386,7 +394,7 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 	}
 
 	/// Handle the enable pin.
-	assignToReg(Slot, SM->createIntegerValue(1), SM->createIntegerValue(1), Bank->getEnable());
+	assignToReg(Slot, SM->createIntegerValue(1, 1), SM->createIntegerValue(1, 1), Bank->getEnable());
 
 
 }
@@ -443,7 +451,7 @@ SIRSlot *SIRCtrlRgnBuilder::advanceToNextSlot(SIRSlot *CurSlot) {
 	SIRSlot *NextSlot = createSlot(BB, 0);
 
 	// Connect the slots.
-	CurSlot->addSuccSlot(NextSlot, SIRSlot::Sucessor, SM->createIntegerValue(1));
+	CurSlot->addSuccSlot(NextSlot, SIRSlot::Sucessor, SM->createIntegerValue(1, 1));
 	// Index the new latest slot to BB.
 	SM->IndexBB2Slots(BB, SM->getLandingSlot(BB), NextSlot);
 
