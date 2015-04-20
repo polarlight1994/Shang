@@ -73,7 +73,7 @@ void SIRSubModule::printDecl(raw_ostream &OS) const {
 SIRMemoryBank::SIRMemoryBank(unsigned BusNum, unsigned AddrSize,
 	                           unsigned DataSize, unsigned ReadLatency)
 	: SIRSubModuleBase(MemoryBank, BusNum), AddrSize(AddrSize),
-	DataSize(DataSize),	ReadLatency(ReadLatency) {}
+	DataSize(DataSize),	ReadLatency(ReadLatency), EndByteAddr(0) {}
 
 void SIRMemoryBank::addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes) {
 	DEBUG(dbgs() << "Insert the GV [" << GV->getName() 

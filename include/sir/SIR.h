@@ -353,8 +353,8 @@ public:
 	const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
 	const_fanin_iterator fanin_end()   const { return Fanins.end(); }
 
-	SIRRegister *getFanin(unsigned Idx) const { return Fanouts[Idx]; }
-	SIRRegister *getFanout(unsigned Idx) const { return Fanins[Idx]; }
+	SIRRegister *getFanin(unsigned Idx) const { return Fanins[Idx]; }
+	SIRRegister *getFanout(unsigned Idx) const { return Fanouts[Idx]; }
 };
 
 class SIRSubModule : public SIRSubModuleBase {
@@ -733,6 +733,9 @@ public:
   void IndexRegister(SIRRegister *Reg) {
     Registers.push_back(Reg);
   }
+	void IndexSubModuleBase(SIRSubModuleBase *SMB) {
+		SubModuleBases.push_back(SMB);
+	}
   void IndexDataPathInst(Instruction *DataPathInst) {
     DataPathInsts.push_back(DataPathInst);
   }

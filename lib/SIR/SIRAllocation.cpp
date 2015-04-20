@@ -143,7 +143,7 @@ bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 
 	// Create the memory bus.
 	SIRMemoryBank *SMB = SCRB->createMemoryBank(BankNum, AddrWidth,
-		                                          MaxElementSizeInBytes, ReadLatency);
+		                                          MaxElementSizeInBytes * 8, ReadLatency);
 
 	// Remember the binding and add the global variable to the memory bank.
 	while (!Objects.empty()) {
