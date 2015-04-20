@@ -42,8 +42,7 @@ static bool IsLeafValue(SIR *SM, Value *V) {
 	// we will just ignore the ConstantInt in
 	// previous step.
 
-	assert(!isa<ConstantInt>(V) 
-		     && "ConstantInt should be ignored in previous process!");
+	if (isa<ConstantInt>(V)) return true;		    
 
 	if (isa<Argument>(V))	return true;
 
@@ -600,10 +599,14 @@ void SIRDelayModel::updateShrArrival() {
 }
 
 void SIRDelayModel::updateArrival() {
-  // If the Node is PHI instruction, then it is
-	// associated with a register. So the delay is
-	// also 0.0f.
-	if (isa<PHINode>(Node))
+  // If the Node is PHI instruction, Argument,
+	// then it is associated with a register. So the delay is also 0.0f.
+	if (isa<PHINode>(Node) || isa<Argument>(Node))
+		return updateArrivalParallel(0.0f);
+
+	// These two instructions have not been transformed into SIR,
+	// but clearly they cost no delay.
+	if (isa<PtrToIntInst>(Node) || isa<IntToPtrInst>(Node))
 		return updateArrivalParallel(0.0f);
 
 	// Since all data-path instruction in SIR
@@ -674,15 +677,14 @@ SIRDelayModel *SIRTimingAnalysis::createModel(Instruction *Inst, SIR *SM, DataLa
   // operands. And remember that the real number of operands
 	// should be minus 1.
   for (unsigned i = 0; i < Inst->getNumOperands() - 1; ++i) {
-    Instruction *ChildInst = dyn_cast<Instruction>(Inst->getOperand(i));
-
+		Value *ChildInst = Inst->getOperand(i);
 		// If we reach the leaf of this data-path, then we get no Delay Model.
-		if (!ChildInst) {
+		if (IsLeafValue(SM, ChildInst)) {
 			Fanins.push_back(NULL);
 			continue;
 		}
 
-    Fanins.push_back(lookUpDelayModel(ChildInst));
+		Fanins.push_back(lookUpDelayModel(dyn_cast<Instruction>(ChildInst)));
   }
 
   Model = new SIRDelayModel(SM, &TD, Inst, Fanins);
@@ -727,7 +729,10 @@ void SIRTimingAnalysis::buildTimingNetlist(Value *V, SIR *SM, DataLayout &TD) {
     Value *ChildNode = *It;
     ++It;
 
-    if (Instruction *ChildInst = dyn_cast<Instruction>(ChildNode)) {
+    if (Instruction *ChildInst = dyn_cast<Instruction>(ChildNode)) {			
+			if (IsLeafValue(SM, ChildInst))
+				continue;
+
       if (!ModelMap.count(ChildInst))
         VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
 
