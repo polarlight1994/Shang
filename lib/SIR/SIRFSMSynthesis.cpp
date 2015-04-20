@@ -37,15 +37,16 @@ struct SIRFSMSynthesis : public SIRPass {
 
 char SIRFSMSynthesis::ID = 0;
 char &llvm::SIRFSMSynthesisID = SIRFSMSynthesis::ID;
+
 INITIALIZE_PASS_BEGIN(SIRFSMSynthesis,
-	"SIR-FSM-synthesis",
-	"Implement the FSM in SIR",
-	false, true)
+	                    "SIR-FSM-synthesis",
+	                    "Implement the FSM in SIR",
+	                    false, true)
 	INITIALIZE_PASS_DEPENDENCY(DataLayout)
 INITIALIZE_PASS_END(SIRFSMSynthesis,
-	"SIR-FSM-synthesis",
-	"Implement the FSM in SIR",
-	false, true)
+	                  "SIR-FSM-synthesis",
+	                  "Implement the FSM in SIR",
+	                  false, true)
 
 void SIRFSMSynthesis::getAnalysisUsage(AnalysisUsage &AU) const {
 	SIRPass::getAnalysisUsage(AU);

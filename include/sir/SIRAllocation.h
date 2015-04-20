@@ -15,41 +15,43 @@
 #define SIR_ALLOCATION_H
 
 #include "sir/SIR.h"
-#include "sir/Passes.h"
 
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/AliasSetTracker.h"
 
 namespace llvm {
-class SIRAllocation {
-	// SIRAllocation is a analysis group, this
-	// is previous allocation to chain to.
-	SIRAllocation *Allocation;
-
-protected:
+class SIRAllocation : public ModulePass {
+private:
 	SIR *SM;
-	DataLayout *TD;
+	DataLayout *TD;	
 
-	SIRAllocation() : SM(0), TD(0) {}
-
-	void InitializeSIRAllocation(Pass *P);
-
-	/// getAnalysisUsage - All HLSAllocation implementations should invoke this
-	/// directly (using HLSAllocation::getAnalysisUsage(AU)).
-	virtual void getAnalysisUsage(AnalysisUsage &AU) const;
 public:
 	static char ID;
 
-	virtual ~SIRAllocation() {}
+	SIRAllocation();
 
-	SIR &getModule() const { return *SM; }
-	SIR *operator->() const { return SM; }
+	// The map between value and memory bank
+	ValueMap<const Value *, SIRMemoryBank *> Binding;
 
-	// Memory Bank allocation queries.
-	virtual SIRMemoryBank *getMemoryBank(const GlobalVariable &GV) const;
-	virtual SIRMemoryBank *getMemoryBank(const LoadInst &I) const;
-	virtual SIRMemoryBank *getMemoryBank(const StoreInst &I) const;
-	SIRMemoryBank *getMemoryBank(const Value &V) const;
+	// Look up the memory port allocation.
+	SIRMemoryBank *getMemoryBank(const LoadInst &I) const {
+		return Binding.lookup(I.getPointerOperand());
+	}
+
+	SIRMemoryBank *getMemoryBank(const StoreInst &I) const {
+		return Binding.lookup(I.getPointerOperand());
+	}
+
+	SIRMemoryBank *getMemoryBank(const GlobalVariable &GV) const {
+		return Binding.lookup(&GV);
+	}	
+
+	void getAnalysisUsage(AnalysisUsage &AU) const;
+
+	bool createSIRMemoryBank(AliasSet *AS, unsigned BankNum);
+
+	bool runOnModule(Module &M);
+	void runOnFunction(Function &F, AliasSetTracker &AST);
 };
 }
 

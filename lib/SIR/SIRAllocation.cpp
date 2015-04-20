@@ -22,124 +22,39 @@
 using namespace llvm;
 using namespace vast;
 
-SIRMemoryBank *SIRAllocation::getMemoryBank(const StoreInst &I) const {
-	assert(Allocation
-		&& "Allocation didn't call InitializeHLSAllocation in its run method!");
-	return Allocation->getMemoryBank(I);
+SIRAllocation::SIRAllocation() : SM(0), TD(0), ModulePass(ID) {
+	initializeSIRAllocationPass(*PassRegistry::getPassRegistry());
 }
 
-SIRMemoryBank *SIRAllocation::getMemoryBank(const LoadInst &I) const {
-	assert(Allocation
-		&& "Allocation didn't call InitializeHLSAllocation in its run method!");
-	return Allocation->getMemoryBank(I);
-}
-
-SIRMemoryBank *SIRAllocation::getMemoryBank(const GlobalVariable &GV) const {
-	assert(Allocation
-		&& "Allocation didn't call InitializeHLSAllocation in its run method!");
-	return Allocation->getMemoryBank(GV);
-}
-
-SIRMemoryBank *SIRAllocation::getMemoryBank(const Value &V) const {
-	if (const LoadInst *L = dyn_cast<LoadInst>(&V))
-		return getMemoryBank(*L);
-
-	if (const StoreInst *S = dyn_cast<StoreInst>(&V))
-		return getMemoryBank(*S);
-
-	if (const GlobalVariable *G = dyn_cast<GlobalVariable>(&V))
-		return getMemoryBank(*G);
-
-	return NULL;
-}
-
-void SIRAllocation::getAnalysisUsage(AnalysisUsage &AU) const {
-	AU.addRequired<SIRAllocation>();
-	AU.addRequired<DataLayout>();
-}
-
-void SIRAllocation::InitializeSIRAllocation(Pass *P) {
-	TD = &P->getAnalysis<DataLayout>();
-	Allocation = &P->getAnalysis<SIRAllocation>();
-	SM = Allocation->SM;
-}
-
-char SIRAllocation::ID = 0;
-
-INITIALIZE_ANALYSIS_GROUP(SIRAllocation,
-	                        "High-level Synthesis Resource Allocation in SIR",
-	                        SIRBasicAllocation)
-
-namespace llvm {
-struct SIRMemoryPartition : public ModulePass, public SIRAllocation {
-	static char ID;
-
-	// The map between value and memory bank
-	ValueMap<const Value *, SIRMemoryBank *> Binding;
-
-	// Look up the memory port allocation.
-	virtual SIRMemoryBank *getMemoryBank(const LoadInst &I) const {
-		return Binding.lookup(I.getPointerOperand());
-	}
-
-	virtual SIRMemoryBank *getMemoryBank(const StoreInst &I) const {
-		return Binding.lookup(I.getPointerOperand());
-	}
-
-	virtual SIRMemoryBank *getMemoryBank(const GlobalVariable &GV) const {
-		return Binding.lookup(&GV);
-	}
-
-	SIRMemoryPartition() : ModulePass(ID) {
-		initializeSIRMemoryPartitionPass(*PassRegistry::getPassRegistry());
-	}
-
-	void getAnalysisUsage(AnalysisUsage &AU) const {
-		SIRAllocation::getAnalysisUsage(AU);
-		AU.addRequired<AliasAnalysis>();
-		AU.addRequired<SIRInit>();
-		AU.setPreservesAll();
-	}
-
-	bool createSIRMemoryBank(AliasSet *AS, unsigned BankNum);
-
-	bool runOnModule(Module &M);
-	void runOnFunction(Function &F, AliasSetTracker &AST);
-
-	/// getAdjustedAnalysisPointer - This method is used when a pass implements
-	/// an analysis interface through multiple inheritance.  If needed, it
-	/// should override this to adjust the this pointer as needed for the
-	/// specified pass info.
-	virtual void *getAdjustedAnalysisPointer(const void *ID) {
-		if (ID == &SIRAllocation::ID)
-			return (SIRAllocation*)this;
-		return this;
-	}
-};
-}
-
-INITIALIZE_AG_PASS_BEGIN(SIRMemoryPartition, SIRAllocation,
-	                       "sir-memory-partition", "SIR Memory Partition",
-	                       false, true, false)
+INITIALIZE_PASS_BEGIN(SIRAllocation,
+	                    "sir-allocation", "SIR Allocation",
+	                    false, true, false)
 	INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
 	INITIALIZE_PASS_DEPENDENCY(DataLayout)
 	INITIALIZE_PASS_DEPENDENCY(SIRInit)
-INITIALIZE_AG_PASS_END(SIRMemoryPartition, SIRAllocation,
-	                     "sir-memory-partition", "SIR Memory Partition",
-	                     false, true, false)
+INITIALIZE_PASS_END(SIRAllocation,
+	                  "sir-allocation", "SIR Allocation",
+	                   false, true, false)
 
-char SIRMemoryPartition::ID = 0;
+char SIRAllocation::ID = 0;
 
-Pass *llvm::createSIRMemoryPartitionPass() {
-	return new SIRMemoryPartition();
+Pass *llvm::createSIRAllocationPass() {
+	return new SIRAllocation();
 }
 
-bool SIRMemoryPartition::runOnModule(Module &M) {
-	InitializeSIRAllocation(this);
+void SIRAllocation::getAnalysisUsage(AnalysisUsage &AU) const {
+	AU.addRequired<AliasAnalysis>();		
+	AU.addRequired<DataLayout>();
+	AU.addRequired<SIRInit>();
+	AU.setPreservesAll();
+}
 
+bool SIRAllocation::runOnModule(Module &M) {
 	AliasSetTracker AST(getAnalysis<AliasAnalysis>());
 	TD = &(getAnalysis<DataLayout>());
-	SM = &(*getAnalysis<SIRInit>());	
+	
+	// Create the SIR from the module.
+	SM = new SIR(&M);
 
 	typedef Module::global_iterator global_iterator;
 	for (global_iterator I = M.global_begin(), E = M.global_end(); I != E; ++I) {
@@ -168,7 +83,7 @@ bool SIRMemoryPartition::runOnModule(Module &M) {
 	return false;
 }
 
-bool SIRMemoryPartition::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
+bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 	SIRCtrlRgnBuilder *SCRB = new SIRCtrlRgnBuilder(SM, *TD);	
 	unsigned ReadLatency = LuaI::Get<VFUMemBus>()->getReadLatency();
 
@@ -245,7 +160,7 @@ bool SIRMemoryPartition::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 	return true;
 }
 
-void SIRMemoryPartition::runOnFunction(Function &F, AliasSetTracker &AST) {
+void SIRAllocation::runOnFunction(Function &F, AliasSetTracker &AST) {
 	for (inst_iterator I = inst_begin(F), E = inst_end(F); I != E; ++I) {
 		Instruction *Inst = &*I;
 

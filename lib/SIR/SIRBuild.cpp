@@ -50,7 +50,7 @@ INITIALIZE_PASS_BEGIN(SIRInit,
                       "shang-ir-init", "SIR Init",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
-	INITIALIZE_AG_DEPENDENCY(SIRAllocation)
+	INITIALIZE_PASS_DEPENDENCY(SIRAllocation)
 INITIALIZE_PASS_END(SIRInit,
                     "shang-ir-init", "SIR Init",
                     false, true)
