@@ -266,13 +266,16 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
                                                Instruction *SeqInst, uint64_t InitVal, 
                                                SIRRegister::SIRRegisterTypes T) {
   assert(SeqInst || T == SIRRegister::OutPort || T == SIRRegister::SlotReg
-         && "Only Reg for Port or Slot can have no corresponding LLVM IR instruction!");
+		     || T == SIRRegister::FUInput || T == SIRRegister::FUOutput
+         && "Only Reg for Port, Slot or FUInOut can have no corresponding LLVM IR instruction!");
 
-	// If the SeqInst is empty, then this register is created for
-	// Slot or OutPort. In this circumstance, we can construct a
-	// pseudo SeqInst for it. To be noted that, the insert position
-	// of this pseudo instruction for SlotReg and OutPort is different.
+	/// If the SeqInst is empty, we can construct a pseudo SeqInst for it.
+	/// To be noted that, the insert position of this pseudo instruction
+	/// is different according its type.
 
+	// For the Slot Register, we create a pseudo instruction.
+	// And this pseudo instruction will be inserted into the front of
+	// whole module.
   if (!SeqInst && T == SIRRegister::SlotReg) {
 		if (!ParentBB) ParentBB = &SM->getFunction()->getBasicBlockList().front();
 		Value *InsertPosition = findInsertPostion(ParentBB, T == SIRRegister::SlotReg);
@@ -282,7 +285,8 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
 	// For the OutPort Register, we also create a pseudo instruction. 
 	// But this pseudo instruction will be inserted into the back of
 	// whole module.
-	if (!SeqInst && T == SIRRegister::OutPort) {
+	if (!SeqInst &&
+		  (T == SIRRegister::OutPort || T == SIRRegister::FUInput || T == SIRRegister::FUOutput)) {
 		assert(!ParentBB && "Unexpected ParentBB!");
 		ParentBB = &SM->getFunction()->getBasicBlockList().back();
 		Value *InsertPosition = findInsertPostion(ParentBB, false);
@@ -333,7 +337,7 @@ void SIRCtrlRgnBuilder::createPortsForMemoryBank(SIRMemoryBank *SMB) {
 	// Write (to memory) data pin
 	unsigned WDataWidth = SMB->getDataWidth();
 	SIRRegister *WData = createRegister(SMB->getWDataName(), WDataWidth, 0, 0, 0, SIRRegister::FUInput);
-	SMB->addFanout(WData);
+	SMB->addFanin(WData);
 
 	// Read (from memory) data pin
 	unsigned RDataWidth = SMB->getDataWidth();
@@ -352,6 +356,12 @@ void SIRCtrlRgnBuilder::createPortsForMemoryBank(SIRMemoryBank *SMB) {
 SIRMemoryBank *SIRCtrlRgnBuilder::createMemoryBank(unsigned BusNum, unsigned AddrSize,
 	                                                 unsigned DataSize, unsigned ReadLatency) {
 	SIRMemoryBank *SMB = new SIRMemoryBank(BusNum, AddrSize, DataSize, ReadLatency);
+
+	// Also create the ports for it.
+	createPortsForMemoryBank(SMB);
+
+	// Index the memory bank.
+	SM->IndexSubModuleBase(SMB);
 
 	return SMB;
 }
@@ -388,9 +398,7 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 		// According the read latency, advance to the slot
 		// that we can get the RData.
 		unsigned Latency = Bank->getReadLatency();
-		Slot = advanceToNextSlot(Slot, Latency);
-
-		
+		Slot = advanceToNextSlot(Slot, Latency);		
 	}
 
 	/// Handle the enable pin.
@@ -778,18 +786,13 @@ void SIRDatapathBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
 }
 
 void SIRDatapathBuilder::visitGEPOperator(GEPOperator &O, GetElementPtrInst &I) {
-  //assert(O.getPointerOperand()->getType() == O.getType() && "Type not match!");
   Value *Ptr = O.getPointerOperand();
+  unsigned PtrSize = getBitWidth(Ptr);
 
-  // Cast the Ptr into int type so we can do the math operation below.
-  Value *PtrVal = new PtrToIntInst(Ptr, IntegerType::getInt32Ty(I.getContext()),
-    "SIRPtrToInt", &I);
+	// Cast the Ptr into int type so we can do the math operation below.
+	Value *PtrVal = new PtrToIntInst(Ptr, SM->createIntegerType(PtrSize),
+		                               "SIRPtrToInt", &I);
 
-  //Value *Test = cast<>
-  // FIXME: All the pointer arithmetic are perform under the precision of
-  // PtrSize, do we need to perform the arithmetic at the max available integer
-  // width and truncate the result?
-  unsigned PtrSize = getBitWidth(O.getPointerOperand());
   // Note that the pointer operand may be a vector of pointers. Take the scalar
   // element which holds a pointer.
   Type *Ty = O.getPointerOperandType()->getScalarType();
@@ -1042,7 +1045,7 @@ Value *SIRDatapathBuilder::createSSelInst(Value *Cnd, Value *TrueV, Value *False
   assert(getBitWidth(Cnd) == 1 && "Bad condition width!");
 
   unsigned Bitwidth = getBitWidth(TrueV);
-  assert(TD.getTypeSizeInBits(RetTy) == getBitWidth(FalseV) == Bitwidth && "Bad Bitwidth!");
+  assert(TD.getTypeSizeInBits(RetTy) == Bitwidth  && getBitWidth(FalseV) == Bitwidth && "Bad Bitwidth!");
 
   if (ConstantInt *C = dyn_cast<ConstantInt>(Cnd)) {
     Value *Result = C->getValue().getBoolValue() ? TrueV : FalseV; 
