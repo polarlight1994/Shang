@@ -59,7 +59,7 @@ bool SIRInit::runOnFunction(Function &F) {
   DataLayout &TD = getAnalysis<DataLayout>();
 	SIRAllocation &SA = getAnalysis<SIRAllocation>();
 
-  SM = new SIR(&F);
+  SM = SA.getSIR();
 
   // Initialize SIR from IR by transform llvm-inst to Shang-inst.
   SIRBuilder Builder(SM, TD, SA);

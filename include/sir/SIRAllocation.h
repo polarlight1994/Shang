@@ -30,6 +30,9 @@ public:
 
 	SIRAllocation();
 
+	SIR *getSIR() const { return SM; }
+	DataLayout *getDataLayout() const { return TD; }
+
 	// The map between value and memory bank
 	ValueMap<const Value *, SIRMemoryBank *> Binding;
 

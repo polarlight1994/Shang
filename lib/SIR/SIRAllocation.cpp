@@ -31,7 +31,6 @@ INITIALIZE_PASS_BEGIN(SIRAllocation,
 	                    false, true, false)
 	INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
 	INITIALIZE_PASS_DEPENDENCY(DataLayout)
-	INITIALIZE_PASS_DEPENDENCY(SIRInit)
 INITIALIZE_PASS_END(SIRAllocation,
 	                  "sir-allocation", "SIR Allocation",
 	                   false, true, false)
@@ -45,7 +44,6 @@ Pass *llvm::createSIRAllocationPass() {
 void SIRAllocation::getAnalysisUsage(AnalysisUsage &AU) const {
 	AU.addRequired<AliasAnalysis>();		
 	AU.addRequired<DataLayout>();
-	AU.addRequired<SIRInit>();
 	AU.setPreservesAll();
 }
 
@@ -53,8 +51,19 @@ bool SIRAllocation::runOnModule(Module &M) {
 	AliasSetTracker AST(getAnalysis<AliasAnalysis>());
 	TD = &(getAnalysis<DataLayout>());
 	
-	// Create the SIR from the module.
-	SM = new SIR(&M);
+	// Create the SIR from the Functions in module.
+	typedef Module::iterator iterator;
+	for (iterator I = M.begin(), E = M.end(); I != E; ++I) {
+		Function *F = I;
+
+		// Do not creat SIR for useless Function.
+		if (F->isDeclaration() || !F->use_empty())
+			continue;
+
+		// Create the SIR.
+		assert(SM == NULL && "SIR module already exist!");
+		SM = new SIR(F);
+	}
 
 	typedef Module::global_iterator global_iterator;
 	for (global_iterator I = M.global_begin(), E = M.global_end(); I != E; ++I) {
