@@ -56,10 +56,10 @@ struct PriorityHeuristic {
 
 		// Ascending order using ASAP.
 		if (LHSTF.ALAP < RHSTF.ALAP) return true;
-		if (LHSTF.ALAP > RHSTF.ALAP) 
-			return false;	
+		if (LHSTF.ALAP > RHSTF.ALAP) return false;
 
-		assert(false && "Bad priority calculated!");
+		// Tie breaker: Original topological order.
+		return LHS->getIdx() < RHS->getIdx();
 	}
 };
 
