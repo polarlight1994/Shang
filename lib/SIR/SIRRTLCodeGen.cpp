@@ -805,6 +805,9 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
   // Generate the code for control-path.
   generateCodeForControlpath(SM, TD);
 
+	// Generate the code for memory bank.
+	generateCodeForMemoryBank(SM, TD);
+
   Out.module_end();
 
   Out.flush();
