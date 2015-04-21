@@ -208,6 +208,9 @@ public:
   bool isGeneral() { return T == SIRRegister::General; }
   bool isSlot() { return T == SIRRegister::SlotReg; }
   bool isOutPort() { return T == SIRRegister::OutPort; }
+	bool isFUInput() { return T == SIRRegister::FUInput; }
+	bool isFUOutput() { return T == SIRRegister::FUOutput; }
+	bool isFUInOut() { return isFUInput() || isFUOutput(); }
   
   std::string getName() const { return Name; }
   unsigned getBitWidth() const { return BitWidth; }
@@ -822,7 +825,18 @@ public:
 
   void printAsOperandImpl(raw_ostream &OS, Value *U, unsigned UB, unsigned LB) {
     if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
-      assert(UB == CI->getBitWidth() && LB == 0 && "The slice of constant is not supported yet!");
+			// Need to slice the wanted bits.
+      if (UB != CI->getBitWidth() || LB == 0) {				
+				assert(UB <= CI->getBitWidth() && UB > LB  && "Bad bit range!");
+				APInt Val = CI->getValue();
+				if (UB != CI->getBitWidth())
+					Val = Val.trunc(UB);
+				if (LB != 0) {
+					Val = Val.lshr(LB);
+					Val = Val.trunc(UB - LB);
+				}
+				CI = ConstantInt::get(CI->getContext(), Val);
+			}
       OS << "((";
       printConstantIntValue(OS, CI);
       OS << "))";
@@ -832,13 +846,13 @@ public:
     // Print correctly if this value is a argument.
     if (Argument *Arg = dyn_cast<Argument>(U)) {
       OS << "((" << Mangle(Arg->getName());
-    } 
-    else if (Instruction *SeqInst = dyn_cast<Instruction>(U)) {
-      // Print correctly if this value is a SeqValue.
-      if (SIRRegister *Reg = lookupSIRReg(SeqInst))
+    }
+		// Print correctly if this value is a SeqValue.
+    else if (Instruction *Inst = dyn_cast<Instruction>(U)) {      
+      if (SIRRegister *Reg = lookupSIRReg(Inst))
         OS << "((" << Mangle(Reg->getName());
       else
-        OS << "((" << Mangle(SeqInst->getName());
+        OS << "((" << Mangle(Inst->getName());
     } 
 
     unsigned OperandWidth = UB - LB;
