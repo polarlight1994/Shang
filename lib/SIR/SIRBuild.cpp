@@ -285,8 +285,8 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
 	// For the OutPort Register, we also create a pseudo instruction. 
 	// But this pseudo instruction will be inserted into the back of
 	// whole module.
-	if (!SeqInst &&
-		  (T == SIRRegister::OutPort || T == SIRRegister::FUInput || T == SIRRegister::FUOutput)) {
+	if (!SeqInst && (T == SIRRegister::OutPort || T == SIRRegister::FUInput ||
+		               T == SIRRegister::FUOutput)) {
 		assert(!ParentBB && "Unexpected ParentBB!");
 		ParentBB = &SM->getFunction()->getBasicBlockList().back();
 		Value *InsertPosition = findInsertPostion(ParentBB, false);
@@ -398,13 +398,23 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 		// According the read latency, advance to the slot
 		// that we can get the RData.
 		unsigned Latency = Bank->getReadLatency();
-		Slot = advanceToNextSlot(Slot, Latency);		
+		Slot = advanceToNextSlot(Slot, Latency);	
+
+		// Load the RData into a register.
+		Value *RData = Bank->getRData()->getLLVMValue();
+
+		// Extract the wanted bits and the result will replace the use of this LoadInst.
+		Value *Result = D_Builder.createSBitExtractInst(RData, getBitWidth(&I), 0,
+			                                              SM->createIntegerType(getBitWidth(&I)), &I, true);
+
+		SIRRegister *ResultReg = createRegister(I.getName(), getBitWidth(&I), ParentBB, &I, 0, SIRRegister::General);
+		assignToReg(Slot, SM->createIntegerValue(1, 1), Result, ResultReg);
+
+		SM->IndexSeqInst2Reg(&I, ResultReg);
 	}
 
 	/// Handle the enable pin.
 	assignToReg(Slot, SM->createIntegerValue(1, 1), SM->createIntegerValue(1, 1), Bank->getEnable());
-
-
 }
 
 SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) {
@@ -906,7 +916,8 @@ Value *SIRDatapathBuilder::createSBitExtractInst(Value *U, unsigned UB, unsigned
 
   assert(TD.getTypeSizeInBits(RetTy) == UB - LB && "RetTy not matches!");
 
-  return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_bit_extract, UsedAsArg);
+  Value *Temp = createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_bit_extract, UsedAsArg);
+	return Temp;
 }
 
 Value *SIRDatapathBuilder::createSCastInst(Value *U, Type *RetTy,
