@@ -26,13 +26,7 @@ unsigned SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
     const SIRSchedUnit *Dep = *DI;
 
     // Ignore the back-edges when we are not pipelining the BB.
-    if (Dep->getIdx() > A->getIdx() && MII == 0) {
-      assert((Dep->getIdx() < A->getIdx()
-              || DI.getEdgeType(MII) == SIRDep::Generic
-              || DI.getEdgeType(MII) == SIRDep::MemDep)
-              && "Bad dependencies forms cycles");
-      continue;
-    }
+    if (Dep->getIdx() > A->getIdx() && MII == 0) continue;
 
     unsigned DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
     int Step = DepASAP + DI.getLatency(MII);
@@ -52,13 +46,7 @@ unsigned SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
     SIRDep UseEdge = Use->getEdgeFrom(A, MII);
 
     // Ignore the back-edges when we are not pipelining the BB.
-    if (Use->getIdx() < A->getIdx() && MII == 0) {
-      assert((Use->getIdx() > A->getIdx())
-             || UseEdge.getEdgeType() == SIRDep::Generic
-             || UseEdge.getEdgeType() == SIRDep::MemDep
-             && "Bad dependencies!");
-      continue;
-    }
+    if (Use->getIdx() < A->getIdx() && MII == 0) continue;
 
     unsigned UseALAP = Use->isScheduled() ?
                        Use->getSchedule() : getALAPStep(Use);
