@@ -103,12 +103,6 @@ void SIRScheduling::buildDataFlowDependencies(SIRSchedUnit *DstU, Value *Src,
 		return;
 
 	assert(Src && "Not a valid source!");
-	assert((!isa<Instruction>(Src)
-			    || DT->dominates(cast<Instruction>(Src)->getParent(), DstU->getParentBB()))
-			   && "Flow dependency should be a dominance edge!");
-	assert((!isa<BasicBlock>(Src)
-			    || DT->dominates(cast<BasicBlock>(Src), DstU->getParentBB()))
-			   && "Flow dependency should be a dominance edge!");
 
 	SIRSchedUnit *SrcSU = getDataFlowSU(Src);
 	assert(delay >= 0.0f && "Unexpected negative delay!");
@@ -319,12 +313,11 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 		// are with real IR instruction except the Ret instruction.
 		if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
 			assert(II->getIntrinsicID() == Intrinsic::shang_pseudo
-				     && Op->getDst()->isOutPort() 
+				     && (Op->getDst()->isOutPort() || Op->getDst()->isFUInOut())
 						 && "Only RetReg can have pseudo instruction!"); 
 		}			
 		
-		// If it is not a pseudo instruction, check if it is a PHI node
-		// or normal node.
+		// Check if it is a PHI node or normal node.
 		SIRSchedUnit::Type Ty = isa<PHINode>(Inst) ? 
 			                        SIRSchedUnit::PHI : SIRSchedUnit::Normal;
 
@@ -459,11 +452,12 @@ void SIRScheduleEmitter::emitToSlot(SIRSeqOp *SeqOp, SIRSlot *ToSlot) {
 
 void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 	assert(SUs[0]->isBBEntry() && "BBEntry must be placed at the beginning!");
-	unsigned EntrySchedSlot = SUs[0]->getSchedule();
 
 	BasicBlock *BB = SUs[0]->getParentBB(); 
 	SIRSlot *CurSlot = SM->getLandingSlot(BB);
+	unsigned CurSlotSchedule = CurSlot->getSchedule();
 	assert(CurSlot && "Landing Slot not created?");
+	assert(CurSlotSchedule == 0 && "Entry Slot not schedule in 0?");
 
 	for (unsigned i = 1; i < SUs.size(); ++i) {
 		SIRSchedUnit *CurSU = SUs[i];
@@ -473,9 +467,9 @@ void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 		// Calculate the real Slot we should emit to according to the
 		// difference value between CurScheSlot and EntrySchedSlot.
 		// Create the slot if it is not created.
-		while (EntrySchedSlot != TargetSchedSlot) {
-			++EntrySchedSlot;
-			SIRSlot *NextSlot = C_Builder.createSlot(BB, EntrySchedSlot);
+		while (CurSlotSchedule != TargetSchedSlot) {
+			++CurSlotSchedule;
+			SIRSlot *NextSlot = C_Builder.createSlot(BB, CurSlotSchedule);
 
 			// Replace the Old Slot with the CurSlot int STG
 			CurSlot->replaceAllUsesWith(NextSlot);
