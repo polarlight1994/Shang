@@ -56,21 +56,6 @@ SIRSchedUnit *SIRScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 	// Save the mapping between the SUnit with the Value.
 	G->indexSU2IR(Entry, BB);
 
-// 	// Also create the SUnit for the PHI nodes.
-// 	typedef BasicBlock::iterator iterator;
-// 	for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
-// 		PHINode *PN = dyn_cast<PHINode>(I);
-// 		if (PN) {
-// 			SIRSchedUnit *U = G->createSUnit(PN, BB, SIRSchedUnit::PHI, 0);
-// 
-// 			// No need to add the dependency edges from the incoming values, because
-// 			// the SU is anyway scheduled to the same slot as the entry of the BB.
-// 			// And we will build the conditional dependencies for the conditional
-// 			// CFG edge between BBs.
-// 			G->indexSU2IR(U, PN);
-// 		}		
-// 	}
-
 	return Entry;
 }
 
