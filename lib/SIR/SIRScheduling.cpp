@@ -442,12 +442,16 @@ void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 	SIRSlot *CurSlot = SM->getLandingSlot(BB);
 	unsigned CurSlotSchedule = CurSlot->getSchedule();
 	assert(CurSlot && "Landing Slot not created?");
-	assert(CurSlotSchedule == 0 && "Entry Slot not schedule in 0?");
+	assert(CurSlotSchedule == 0 && "EntrySlot is not schedule in 0?");
 
 	for (unsigned i = 1; i < SUs.size(); ++i) {
 		SIRSchedUnit *CurSU = SUs[i];
 
-		unsigned TargetSchedSlot = CurSU->getSchedule();
+		// To be noted that, since we set the Entry SUnit to schedule 0,
+		// all other SUnits including BBEntry can be scheduled to 1 at
+		// least. However, the Slot schedule of BB is counted from 0.
+		// So we must minus the SUnit schedule to eliminate the gap.
+		unsigned TargetSchedSlot = CurSU->getSchedule() - 1;
 
 		// Calculate the real Slot we should emit to according to the
 		// difference value between CurScheSlot and EntrySchedSlot.

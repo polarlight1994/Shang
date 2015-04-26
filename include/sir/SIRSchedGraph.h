@@ -312,6 +312,9 @@ public:
            && "Edge not inserted?");
   }
 
+	// Only the Entry SUnit can have schedule of 0.
+	// So all others scheduled SUnit should have a
+	// positive schedule number.
   bool isScheduled() const { return Schedule != 0; }
 
   // Return the index of the current scheduling unit.
