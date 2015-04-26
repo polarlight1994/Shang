@@ -824,6 +824,7 @@ public:
 	void printRegDecl(raw_ostream &OS) const;
 
   void printAsOperandImpl(raw_ostream &OS, Value *U, unsigned UB, unsigned LB) {
+		// Print correctly if this value is a ConstantInt.
     if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
 			// Need to slice the wanted bits.
       if (UB != CI->getBitWidth() || LB == 0) {				
@@ -842,9 +843,11 @@ public:
       OS << "))";
       return;
     }
-
+		else if (GlobalValue *GV = dyn_cast<GlobalValue>(U)) {
+			OS << "((" << Mangle(GV->getName());
+		}
     // Print correctly if this value is a argument.
-    if (Argument *Arg = dyn_cast<Argument>(U)) {
+    else if (Argument *Arg = dyn_cast<Argument>(U)) {
       OS << "((" << Mangle(Arg->getName());
     }
 		// Print correctly if this value is a SeqValue.
@@ -858,9 +861,7 @@ public:
     unsigned OperandWidth = UB - LB;
     if (UB)
       OS << BitRange(UB, LB, OperandWidth > 1);
-
-    // Ignore the mask for now
-    OS << "))";
+		OS << "))";
   }
 
   void printAsOperand(raw_ostream &OS, Value *U, unsigned BitWidth) {
