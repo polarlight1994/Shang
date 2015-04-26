@@ -415,6 +415,12 @@ void SIRControlPathPrinter::printMemoryBank(SIRMemoryBank *SMB) {
 void SIRControlPathPrinter::generateCodeForRegisters() {  
   for (SIR::const_register_iterator I = SM->const_registers_begin(), E = SM->const_registers_end();
        I != E; ++I) {
+		SIRRegister *Reg = *I;
+
+    // Ignore the registers created for FUnits like memory bank, since
+		// they will be printed in Function generateCodeForMemoryBank.
+    if (Reg->isFUInOut()) continue;
+
     printRegister(*I);
   }
 }
