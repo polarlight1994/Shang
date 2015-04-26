@@ -412,9 +412,9 @@ void SIRControlPathPrinter::printMemoryBank(SIRMemoryBank *SMB) {
 	printMemoryBankImpl(SMB, BytesPerGV, AddrWidth, NumWords);
 }
 
-void SIRControlPathPrinter::generateCodeForRegisters() {  
-  for (SIR::const_register_iterator I = SM->const_registers_begin(), E = SM->const_registers_end();
-       I != E; ++I) {
+void SIRControlPathPrinter::generateCodeForRegisters() {
+	typedef SIR::const_register_iterator iterator;
+  for (iterator I = SM->const_registers_begin(), E = SM->const_registers_end(); I != E; ++I) {
 		SIRRegister *Reg = *I;
 
     // Ignore the registers created for FUnits like memory bank, since
@@ -426,9 +426,9 @@ void SIRControlPathPrinter::generateCodeForRegisters() {
 }
 
 void SIRControlPathPrinter::generateCodeForMemoryBank() {
-	for (SIR::const_submodulebase_iterator I = SM->submodules_begin(), E = SM->submodules_end();
-		   I != E; ++I) {
-		if(SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) 
+	typedef SIR::const_submodulebase_iterator iterator;
+	for (iterator I = SM->const_submodules_begin(), E = SM->const_submodules_end(); I != E; ++I) {
+		if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) 
 			printMemoryBank(SMB);	
 	}		
 }
@@ -752,6 +752,9 @@ void SIR2RTL::generateCodeForDecl(SIR &SM) {
 
 	// Print code for register declaration.
 	SM.printRegDecl(Out);
+
+	// Print code for MemoryBank declaration.
+	SM.printMemoryBankDecl(Out);
 }
 
 void SIR2RTL::generateCodeForDatapath(SIR &SM, DataLayout &TD) {

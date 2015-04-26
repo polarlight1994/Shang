@@ -24,7 +24,6 @@ void SIRRegister::addAssignment(Value *Fanin, Value *FaninGuard) {
 }
 
 void SIRRegister::printDecl(raw_ostream &OS) const {
-  // Need to Implement these functions.
   OS << "reg" << BitRange(getBitWidth(), 0, false);
   OS << " " << Mangle(getName());
   // Set the IniteVal.
@@ -156,11 +155,21 @@ std::string SIRMemoryBank::getArrayName() const {
 }
 
 void SIRMemoryBank::printDecl(raw_ostream &OS) const {
-	getAddr()->printDecl(OS);
-	getRData()->printDecl(OS);
-	getWData()->printDecl(OS);
-	getEnable()->printDecl(OS);
-	getWriteEnable()->printDecl(OS);
+	typedef std::map<GlobalVariable*, unsigned>::const_iterator iterator;
+	for (iterator I = const_baseaddrs_begin(), E = const_baseaddrs_end();
+		I != E; ++I) {
+			OS << "reg" << BitRange(getAddrWidth(), 0, false);
+			OS << " " << Mangle(I->first->getName());
+			// Print the initial offset.
+			OS << " = " << buildLiteralUnsigned(I->second, getAddrWidth())
+				 << ";\n";
+	}
+
+	getAddr()->printDecl(OS.indent(2));
+	getRData()->printDecl(OS.indent(2));
+	getWData()->printDecl(OS.indent(2));
+	getEnable()->printDecl(OS.indent(2));
+	getWriteEnable()->printDecl(OS.indent(2));
 }
 
 void SIRSeqOp::print(raw_ostream &OS) const {
@@ -287,14 +296,29 @@ void SIR::printModuleDecl(raw_ostream &OS) const {
 void SIR::printRegDecl(raw_ostream &OS) const {
 	OS << "\n";
 
-	for (SIR::const_register_iterator I = const_registers_begin(), E = const_registers_end();
+	typedef const_register_iterator iterator;
+	for (iterator I = const_registers_begin(), E = const_registers_end();
 		   I != E; ++I) {
     SIRRegister *Reg = *I;
 
-    // Do not need to declaration the output register.
-    if (Reg->isOutPort()) continue;
+    // Do not need to declaration registers for the output and FUInOut,
+		// since we have do it elsewhere.
+    if (Reg->isOutPort() || Reg->isFUInOut()) continue;
+
+
 
 		Reg->printDecl(OS.indent(2));
+	}
+}
+
+void SIR::printMemoryBankDecl(raw_ostream &OS) const {
+	OS << "\n";	
+
+	typedef const_submodulebase_iterator iterator;
+	for (iterator I = const_submodules_begin(), E = const_submodules_end(); I != E; ++I) {
+		if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
+			SMB->printDecl(OS.indent(2));			
+		}
 	}
 }
 

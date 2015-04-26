@@ -428,8 +428,8 @@ public:
 	baseaddrs_iterator baseaddrs_begin() { return BaseAddrs.begin(); }
 	baseaddrs_iterator baseaddrs_end() { return BaseAddrs.end(); }
 
-	const_baseaddrs_iterator const_baseaddrs_begin() { return BaseAddrs.begin(); }
-	const_baseaddrs_iterator const_baseaddrs_end() { return BaseAddrs.end(); }
+	const_baseaddrs_iterator const_baseaddrs_begin() const { return BaseAddrs.begin(); }
+	const_baseaddrs_iterator const_baseaddrs_end() const { return BaseAddrs.end(); }
 
 	void printDecl(raw_ostream &OS) const;
 
@@ -697,8 +697,8 @@ public:
 	submodulebase_iterator submodules_begin() { return SubModuleBases.begin(); }
 	submodulebase_iterator submodules_end() { return SubModuleBases.end(); }
 
-	const_submodulebase_iterator const_submodules_begin() { return SubModuleBases.begin(); }
-	const_submodulebase_iterator const_submodules_end() { return SubModuleBases.end(); }
+	const_submodulebase_iterator const_submodules_begin() const { return SubModuleBases.begin(); }
+	const_submodulebase_iterator const_submodules_end() const { return SubModuleBases.end(); }
 
   slot_iterator slot_begin() { return Slots.begin(); }
   slot_iterator slot_end() { return Slots.end(); }
@@ -822,6 +822,8 @@ public:
   void printModuleDecl(raw_ostream &OS) const;
 	// Print the declaration of register.
 	void printRegDecl(raw_ostream &OS) const;
+	// Print the declaration of MemoryBank.
+	void printMemoryBankDecl(raw_ostream &OS) const;
 
   void printAsOperandImpl(raw_ostream &OS, Value *U, unsigned UB, unsigned LB) {
 		// Print correctly if this value is a ConstantInt.
