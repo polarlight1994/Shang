@@ -12,6 +12,9 @@
 // code, given LLVM bitcode.
 //
 //===----------------------------------------------------------------------===//
+#include "sir/Passes.h"
+#include "sir/LangSteam.h"
+
 #include "vast/Passes.h"
 #include "vast/Utilities.h"
 #include "vast/LuaI.h"
@@ -198,7 +201,7 @@ int main(int argc, char **argv) {
     PassManager HLSIRPasses;
     HLSIRPasses.add(new DataLayout(DataLayoutStr));
     HLSIRPasses.add(createShangTargetTransformInfoPass());
-    addIROptimizationPasses(HLSIRPasses);
+    //addIROptimizationPasses(HLSIRPasses);
     addHLSPreparePasses(HLSIRPasses);
     HLSIRPasses.run(mod);
   }
@@ -273,42 +276,58 @@ int main(int argc, char **argv) {
     // Move the datapath instructions as soon as possible.
     // HLSPasses.add(createAlwaysSpeculatePass());
 
+		std::string IROutputPath = LuaI::GetString("SoftwareIROutput");
+		std::string Error;
+		raw_fd_ostream Output(IROutputPath.c_str(), Error);
+		vlang_raw_ostream Out;
+		Out.setStream(Output);
+
     if (DumpIRBeforeHLS)
-      HLSPasses.add(createPrintModulePass(&dbgs()));
+      HLSPasses.add(createPrintModulePass(&Out));
 
-    // Replace the stack alloca variables by global variables.
-    HLSPasses.add(createLowerAllocaPass());
+		//Replace the stack alloca variables by global variables.
+		HLSPasses.add(createLowerAllocaPass());
 
-    // Name the instructions.
-    HLSPasses.add(createInstructionNamerPass());
+		// Schedule the SIR using List Scheduling algorithm
+		HLSPasses.add(createSIRSchedulingPass());
 
-    // Allocate the BlockRAMs.
-    HLSPasses.add(createMemoryPartitionPass());
+    // Try to dump the RTL code based on the SIR
+    HLSPasses.add(createSIR2RTLPass());
 
-    // Run the bit-level optimization.
-    if (EnablePreScheduleBLO)
-      HLSPasses.add(createBitlevelOptPass());
-
-    // Perform the scheduling.
-    HLSPasses.add(createExternalToolDriverPass());
-    HLSPasses.add(createDataflowAnnotationPass());
-    HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
-    HLSPasses.add(createVASTSchedulingPass());
-    DEBUG(HLSPasses.add(createIterativeSchedulingPass()));
-
-    // Scheduling will restruct the datapath. Optimize the datapath again
-    // after scheduling.
-    HLSPasses.add(createBitlevelOptPass());
-
-    // HLSPasses.add(createRegisterSharingPass());
-    if (EnableMUXPipelining)
-      HLSPasses.add(createSelectorPipeliningPass());
-
-    HLSPasses.add(createBitlevelOptPass());
-
-    // Analyse the slack between registers.
-    HLSPasses.add(createRTLCodeGenPass());
-    HLSPasses.add(createTimingScriptGenPass());
+/// Disable all the passes to debug SIR2RTL
+    //Replace the stack alloca variables by global variables.
+//         HLSPasses.add(createLowerAllocaPass());
+//
+//         // Name the instructions.
+//         HLSPasses.add(createInstructionNamerPass());
+//
+//         // Allocate the BlockRAMs.
+//         HLSPasses.add(createMemoryPartitionPass());
+//
+//         // Run the bit-level optimization.
+//         if (EnablePreScheduleBLO)
+//           HLSPasses.add(createBitlevelOptPass());
+//
+//         // Perform the scheduling.
+//         HLSPasses.add(createExternalToolDriverPass());
+//         HLSPasses.add(createDataflowAnnotationPass());
+//         HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
+//         HLSPasses.add(createVASTSchedulingPass());
+//         DEBUG(HLSPasses.add(createIterativeSchedulingPass()));
+//
+//         // Scheduling will reconstruct the datapath. Optimize the datapath again
+//         // after scheduling.
+//         HLSPasses.add(createBitlevelOptPass());
+//
+//         // HLSPasses.add(createRegisterSharingPass());
+//         if (EnableMUXPipelining)
+//           HLSPasses.add(createSelectorPipeliningPass());
+//
+//         HLSPasses.add(createBitlevelOptPass());
+//
+//         // Analyze the slack between registers.
+//         HLSPasses.add(createRTLCodeGenPass());
+//         HLSPasses.add(createTimingScriptGenPass());
 
     // Run the passes.
     HLSPasses.run(mod);
