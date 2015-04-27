@@ -69,8 +69,6 @@ bool SIRRegisterSynthesisForAnnotation::runOnSIR(SIR &SM) {
  		SIRSeqOp *SeqOp = *I;
  		SIRRegister *Reg = SeqOp->getDst();
  
- 		Value *InsertPosition = Reg->getLLVMValue();
- 
  		// Extract the assignments for Registers.
  		Value *Src = SeqOp->getSrc(), *Guard = SeqOp->getGuard();
 		// Since we just synthesis the register for annotation, so here we do not
@@ -82,7 +80,9 @@ bool SIRRegisterSynthesisForAnnotation::runOnSIR(SIR &SM) {
 	for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
 		SIRRegister *Reg = *I;
 
-		Value *InsertPosition = Reg->getLLVMValue();
+		// Insert the implement of register just in front of the terminator instruction
+		// at back of the module to avoid being used before declaration.
+		Value *InsertPosition = SM.getPositionAtBackOfModule();
 
 		Changed |= synthesizeRegister(Reg, InsertPosition, Builder);
 	}
@@ -186,7 +186,10 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
 	for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
 		SIRRegister *Reg = *I;
 
-		Value *InsertPosition = Reg->getLLVMValue();
+		// Insert the implement of register just in front of the terminator instruction
+		// at back of the module to avoid being used before declaration.
+		Value *InsertPosition = SM.getPositionAtBackOfModule();
+
 		Changed |= synthesizeRegister(Reg, InsertPosition, Builder);
 	}
 

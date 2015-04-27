@@ -86,9 +86,13 @@ bool SIRFSMSynthesis::synthesisStateTransistion(SIRSlot *SrcSlot, SIRSlot *DstSl
 
 	assert(Builder.getBitWidth(Cnd) == 1 && "BitWidth not matches!");
 
+	// Insert the implement just in front of the terminator instruction
+	// at back of the module to avoid being used before declaration.
+	Value *InsertPosition = SM->getPositionAtBackOfModule();
+
 	// Build the assignment condition.
 	Value *Guard = Builder.createSAndInst(SrcSlot->getGuardValue(), Cnd,
-		                                    Cnd->getType(), Reg->getLLVMValue(), true);
+		                                    Cnd->getType(), InsertPosition, true);
 
 	// The State Transition is actually a SeqOp which assign a true/false value to
 	// the Slot Reg in the right time to active DstSlot.

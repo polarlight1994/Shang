@@ -114,8 +114,11 @@ void SIRBuilder::buildInterface(Function *F) {
   Value *Start 
     = cast<SIRInPort>(SM->getPort(SIRPort::Start))->getValue();
 
-  // Whole module will be run only when the Start signal is true.
-  Value *InsertPosition = F->getEntryBlock().getFirstInsertionPt();
+	// Insert the implement just in front of the terminator instruction
+	// at back of the module to avoid being used before declaration.
+	Value *InsertPosition = SM->getPositionAtBackOfModule();
+
+	// Whole module will be run only when the Start signal is true.
   Value *IdleLoopCondition = D_Builder.createSNotInst(Start, Start->getType(), InsertPosition, true);
   C_Builder.createStateTransition(IdleStartSlot, IdleStartSlot, IdleLoopCondition);
 
@@ -217,32 +220,6 @@ unsigned SIRCtrlRgnBuilder::getBitWidth(Value *U) {
   return TD.getTypeSizeInBits(U->getType());
 }
 
-/// Functions to build Control Logic
-Instruction *SIRCtrlRgnBuilder::findInsertPostion(BasicBlock *BB, bool IsSlot) {
-	assert(BB && "Unexpected empty BB!");
-
-	// If the pseudo instruction is created for OutPort,
-	// then the insert position should be right before 
-	// the Ret instruction.
-	if (!IsSlot) {
-		TerminatorInst *TI = BB->getTerminator();
-		assert(isa<ReturnInst>(TI) && "Wrong pseudo instruction or Wrong BB!");
-		return TI;
-	}
-
-	// Otherwise, The insert position should be the front of non-PHI
-	// instructions and all pseudo instructions should be sorted by
-	// its creating time order.
-	BasicBlock *EntryBB = &SM->getFunction()->getEntryBlock();
-	typedef BasicBlock::iterator iterator;
-	for (iterator I = EntryBB->begin(), E = EntryBB->end(); I != E; ++I) {
-		// Skip all the PHI instruction.
-		if (isa<PHINode>(I)) continue;
-		if (isa<IntrinsicInst>(I)) continue;
-		return I;
-	}
-}
-
 Instruction *SIRCtrlRgnBuilder::createPseudoInst(unsigned BitWidth, Value *InsertPosition) {
   // For slots and ports, we create this pseudo SeqInst,
   // which will represent the assign operation to
@@ -274,11 +251,13 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
 	/// is different according its type.
 
 	// For the Slot Register, we create a pseudo instruction.
-	// And this pseudo instruction will be inserted into the front of
-	// whole module.
+	// And this pseudo instruction will be inserted into the
+	// back of whole module.
   if (!SeqInst && T == SIRRegister::SlotReg) {
-		if (!ParentBB) ParentBB = &SM->getFunction()->getBasicBlockList().front();
-		Value *InsertPosition = findInsertPostion(ParentBB, T == SIRRegister::SlotReg);
+		// Insert the implement of register just in front of the terminator instruction
+		// at back of the module to avoid being used before declaration.
+		Value *InsertPosition = SM->getPositionAtBackOfModule();
+
     SeqInst = createPseudoInst(BitWidth, InsertPosition);
   }
 
@@ -288,13 +267,15 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
 	if (!SeqInst && (T == SIRRegister::OutPort || T == SIRRegister::FUInput ||
 		               T == SIRRegister::FUOutput)) {
 		assert(!ParentBB && "Unexpected ParentBB!");
-		ParentBB = &SM->getFunction()->getBasicBlockList().back();
-		Value *InsertPosition = findInsertPostion(ParentBB, false);
+
+		// Insert the implement of register just in front of the terminator instruction
+		// at back of the module to avoid being used before declaration.
+		Value *InsertPosition = SM->getPositionAtBackOfModule();
+
 		SeqInst = createPseudoInst(BitWidth, InsertPosition);
 	}
 
 	assert(SeqInst && "Unexpected empty PseudoSeqInst!");
-	assert(ParentBB && "Unexpected empty ParentBB!");
 	assert(!SM->lookupSIRReg(SeqInst) && "Register already created before!");
 
 	// For the General Register.

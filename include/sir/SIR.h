@@ -822,6 +822,14 @@ public:
   }
   SIRPort *getRetPort() const { return getPort(RetPortIdx); }
 
+	// Give the position just in front of the terminator instruction
+	// at back of the module. And all DataPath instruction created for
+	// registers will be inserted here to avoid being used before declaration.
+	Value *getPositionAtBackOfModule() const {
+		BasicBlock *LastBB = &getFunction()->getBasicBlockList().back();
+		return LastBB->getTerminator();
+	}
+
   // --------------Functions to create ConstantInt Value------------------//
 
 	// Create Boolean Value

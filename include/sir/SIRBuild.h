@@ -176,7 +176,6 @@ public:
   /// Functions to build Control Logic
 
 	// Functions to build sequential instruction
-	Instruction *findInsertPostion(BasicBlock *BB, bool IsSlot);
   Instruction *createPseudoInst(unsigned BitWidth, Value *InsertPosition);
 
 	// Functions to build register
