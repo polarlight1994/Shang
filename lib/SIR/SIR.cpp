@@ -329,12 +329,10 @@ bool SIR::gcImpl() {
 	// Remove all the instructions that is not be used anymore.
 	Function *F = getFunction();
 
-	// Visit the basic block in topological order.
-	ReversePostOrderTraversal<BasicBlock *> RPO(&F->getEntryBlock());
-	typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
-
-	for (bb_top_iterator BBI = RPO.begin(), BBE = RPO.end(); BBI != BBE; ++BBI) {
-		BasicBlock *BB = *BBI;
+	// Visit all BasicBlock in Function to delete all useless instruction.
+	typedef Function::iterator iterator;
+	for (iterator BBI = F->begin(), BBE = F->end(); BBI != BBE; ++BBI) {
+		BasicBlock *BB = BBI;
 		typedef BasicBlock::iterator iterator;
 		for (iterator InstI = BB->begin(), InstE = BB->end(); InstI != InstE; ++InstI) {
 			Instruction *Inst = InstI;
