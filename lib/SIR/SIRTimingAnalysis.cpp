@@ -602,9 +602,9 @@ void SIRDelayModel::updateShrArrival() {
 }
 
 void SIRDelayModel::updateArrival() {
-  // If the Node is PHI instruction, Argument,
+  // If the Node is PHI instruction, Argument or GlobalValue,
 	// then it is associated with a register. So the delay is also 0.0f.
-	if (isa<PHINode>(Node) || isa<Argument>(Node))
+	if (isa<PHINode>(Node) || isa<Argument>(Node) || isa<GlobalValue>(Node))
 		return updateArrivalParallel(0.0f);
 
 	// These two instructions have not been transformed into SIR,

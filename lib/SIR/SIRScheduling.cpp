@@ -109,6 +109,7 @@ void SIRScheduling::buildDataFlowDependencies(SIRSchedUnit *U) {
 		Value *SrcVal = I->first;
 		// The SrcVal must be a Leaf Value.
 		assert((isa<Argument>(SrcVal) || isa<ConstantInt>(SrcVal)
+			      || isa<GlobalValue>(SrcVal)
 			      || SM->lookupSIRReg(dyn_cast<Instruction>(SrcVal)))
 			      && "This is not a LeafVal!");
 
