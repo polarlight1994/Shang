@@ -33,8 +33,9 @@ static unsigned LogCeiling(unsigned x, unsigned n) {
 static bool IsLeafValue(SIR *SM, Value *V) {
 	// When we visit the Srcs of value, the Leaf Value
 	// means the top nodes of the Expr-Tree. There are 
-	// three kinds of Leaf Value:
+	// four kinds of Leaf Value:
 	// 1) Argument 2) Register 3) ConstantValue
+	// 4) GlobalValue
 	// The path between Leaf Value and other values 
 	// will cost no delay (except wire delay).
 	// However, since the ConstantValue will have
@@ -45,6 +46,8 @@ static bool IsLeafValue(SIR *SM, Value *V) {
 	if (isa<ConstantInt>(V)) return true;		    
 
 	if (isa<Argument>(V))	return true;
+
+	if (isa<GlobalValue>(V)) return true;
 
 	if (Instruction *Inst = dyn_cast<Instruction>(V))
 		if (SM->lookupSIRReg(Inst))
@@ -675,8 +678,10 @@ SIRDelayModel *SIRTimingAnalysis::createModel(Instruction *Inst, SIR *SM, DataLa
 
   // Fill the Fanin list by visit all operands and operands of
   // operands. And remember that the real number of operands
-	// should be minus 1.
-  for (unsigned i = 0; i < Inst->getNumOperands() - 1; ++i) {
+	// of IntrinsicInst should be minus 1.
+	unsigned NumOperands = isa<IntrinsicInst>(Inst)
+		                       ? (Inst->getNumOperands() - 1) : Inst->getNumOperands();
+  for (unsigned i = 0; i < NumOperands; ++i) {
 		Value *ChildInst = Inst->getOperand(i);
 		// If we reach the leaf of this data-path, then we get no Delay Model.
 		if (IsLeafValue(SM, ChildInst)) {
