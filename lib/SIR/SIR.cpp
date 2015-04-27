@@ -110,6 +110,10 @@ unsigned SIRMemoryBank::getOffset(GlobalVariable *GV) const {
 	return at->second;
 }
 
+bool SIRMemoryBank::indexGV2OriginalPtrSize(GlobalVariable *GV, unsigned PtrSize) {
+	return GVs2PtrSize.insert(std::make_pair(GV, PtrSize)).second;
+}
+
 SIRRegister *SIRMemoryBank::getAddr() const {
 	return getFanin(0);
 }
@@ -158,10 +162,11 @@ void SIRMemoryBank::printDecl(raw_ostream &OS) const {
 	typedef std::map<GlobalVariable*, unsigned>::const_iterator iterator;
 	for (iterator I = const_baseaddrs_begin(), E = const_baseaddrs_end();
 		I != E; ++I) {
-			OS << "reg" << BitRange(getAddrWidth(), 0, false);
+			unsigned PtrSize = lookupPtrSize(I->first);
+			OS << "reg" << BitRange(PtrSize, 0, false);
 			OS << " " << Mangle(I->first->getName());
 			// Print the initial offset.
-			OS << " = " << buildLiteralUnsigned(I->second, getAddrWidth())
+			OS << " = " << buildLiteralUnsigned(I->second, PtrSize)
 				 << ";\n";
 	}
 
@@ -304,8 +309,6 @@ void SIR::printRegDecl(raw_ostream &OS) const {
     // Do not need to declaration registers for the output and FUInOut,
 		// since we have do it elsewhere.
     if (Reg->isOutPort() || Reg->isFUInOut()) continue;
-
-
 
 		Reg->printDecl(OS.indent(2));
 	}

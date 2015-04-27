@@ -395,9 +395,16 @@ class SIRMemoryBank : public SIRSubModuleBase {
 	// The map between GVs and its offset in memory bank
 	typedef std::map<GlobalVariable *, unsigned> BaseAddrMap;
 	BaseAddrMap	BaseAddrs;
+	// The map between GVs and its OriginalPtrSize
+	// for GetElementPtrInst in memory bank
+	typedef std::map<GlobalVariable *, unsigned> GVs2PtrSizeMap;
+	GVs2PtrSizeMap GVs2PtrSize;
 
 	typedef BaseAddrMap::iterator baseaddrs_iterator;
-	typedef BaseAddrMap::const_iterator const_baseaddrs_iterator;	
+	typedef BaseAddrMap::const_iterator const_baseaddrs_iterator;
+
+	typedef GVs2PtrSizeMap::iterator gvs2ptrsize_iterator;
+	typedef GVs2PtrSizeMap::const_iterator const_gvs2ptrsize_iterator;
 
 public:
 	SIRMemoryBank(unsigned BusNum, unsigned AddrSize,
@@ -425,11 +432,23 @@ public:
 	void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
 	unsigned getOffset(GlobalVariable *GV) const;
 
+	bool indexGV2OriginalPtrSize(GlobalVariable *GV, unsigned PtrSize);
+	unsigned lookupPtrSize(GlobalVariable *GV) const {
+		const_gvs2ptrsize_iterator at = GVs2PtrSize.find(GV);
+		return at == GVs2PtrSize.end() ? 0 : at->second;
+	}
+
 	baseaddrs_iterator baseaddrs_begin() { return BaseAddrs.begin(); }
 	baseaddrs_iterator baseaddrs_end() { return BaseAddrs.end(); }
 
 	const_baseaddrs_iterator const_baseaddrs_begin() const { return BaseAddrs.begin(); }
 	const_baseaddrs_iterator const_baseaddrs_end() const { return BaseAddrs.end(); }
+
+	gvs2ptrsize_iterator gvs2ptrsize_begin() { return GVs2PtrSize.begin(); }
+	gvs2ptrsize_iterator gvs2ptrsize_end() { return GVs2PtrSize.end(); }
+
+	const_gvs2ptrsize_iterator const_gvs2ptrsize_begin() const { return GVs2PtrSize.begin(); }
+	const_gvs2ptrsize_iterator const_gvs2ptrsize_end() const { return GVs2PtrSize.end(); }
 
 	void printDecl(raw_ostream &OS) const;
 
@@ -744,8 +763,6 @@ public:
   }
 
   bool IndexSeqInst2Reg(Instruction *SeqInst, SIRRegister *Reg) {
-    // Remember the connection between sequential instruction
-    // and the register.
     return SeqInst2Reg.insert(std::make_pair(SeqInst, Reg)).second;
   }
   SIRRegister *lookupSIRReg(Instruction *SeqInst) const {

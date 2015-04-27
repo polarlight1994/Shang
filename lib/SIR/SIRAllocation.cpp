@@ -154,6 +154,11 @@ bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 		SMB->addGlobalVariable(GV, Obj.second);
 		bool inserted = Binding.insert(std::make_pair(GV, SMB)).second;
 		assert(inserted && "Allocation not inserted!");
+
+		// Get the OriginalPtrSize which will be used in GetElementPtrInst to
+		// calculate the offset address for each GV inserted into this SMB.
+		unsigned OriginalPtrSize = TD->getTypeStoreSizeInBits(GV->getType());
+		SMB->indexGV2OriginalPtrSize(GV, OriginalPtrSize);
 	}
 
 

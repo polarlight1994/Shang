@@ -790,7 +790,6 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
 	SM.gc();
 
   DataLayout &TD = getAnalysis<DataLayout>();
-  Function &F = *(SM.getFunction());
 
   // Get the output path for Verilog code.
   std::string RTLOutputPath = LuaI::GetString("RTLOutput");
