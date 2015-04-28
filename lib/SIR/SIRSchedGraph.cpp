@@ -175,8 +175,13 @@ bool SIRSchedGraph::indexSU2IR(SIRSchedUnit *SU, Value *V) {
 	// so if the Value already have corresponding SUnit, 
 	// the insert operation can not be done.	
 	if(hasSU(V)) {
-		assert(isa<BasicBlock>(V) || isa<PHINode>(V)
-			     && "SUnit already exits!");
+  // Still only BB Value and PHI node can have mutil-SUnits,
+	// however, we create a pseudo instruction to hold the value
+	// in PHINode, so the value here is not the PHINode itself.
+	// For now, we can't detect whether this value is associated
+	// with PHINode.
+// 		assert(isa<BasicBlock>(V) || isa<PHINode>(V)
+// 			     && "SUnit already exits!");
 		IR2SUMap[V].push_back(SU);
 		return true;
 	}

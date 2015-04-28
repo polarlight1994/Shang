@@ -295,14 +295,13 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 		SIRSeqOp *Op = *OI;
 		Instruction *Inst = dyn_cast<Instruction>(Op->getLLVMValue()); 
 		
-		// Since we haven't run the FSMSynthesisPass here, so all SeqOps
-		// are with real IR instruction except the Ret instruction.
-		if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
+		// All SeqOps should be associated with a pseudo instruction.
+		// To be noted that, we haven't run the FSMSynthesisPass here,
+		// so these StateTransistion SeqOps are not included here.
+		if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
 			assert(II->getIntrinsicID() == Intrinsic::shang_pseudo
-				     && (Op->getDst()->isOutPort() || Op->getDst()->isFUInOut())
-						 && "Only RetReg can have pseudo instruction!"); 
-		}			
-		
+			       && "Only RetReg can have pseudo instruction!");
+
 		// Check if it is a PHI node or normal node.
 		SIRSchedUnit::Type Ty = isa<PHINode>(Inst) ? 
 			                        SIRSchedUnit::PHI : SIRSchedUnit::Normal;

@@ -656,6 +656,10 @@ public:
   typedef SeqOpVector::iterator seqop_iterator;
   typedef SeqOpVector::const_iterator const_seqop_iterator;
 
+	typedef DenseMap<Instruction *, IntrinsicInst *> Inst2SeqInstMapTy;
+	typedef Inst2SeqInstMapTy::iterator inst2seqinst_iterator;
+	typedef Inst2SeqInstMapTy::const_iterator const_inst2seqinst_iterator;
+
   typedef DenseMap<Instruction *, SIRRegister *> SeqInst2RegMapTy;
   typedef SeqInst2RegMapTy::iterator seqinst2reg_iterator;
   typedef SeqInst2RegMapTy::const_iterator const_seqinst2reg_iterator;
@@ -677,6 +681,8 @@ private:
   SlotVector Slots;
   // The SeqOps in CtrlRgn of the module
   SeqOpVector SeqOps;
+	// The map between Inst and SeqInst
+	Inst2SeqInstMapTy Inst2SeqInst;
   // The map between SeqInst and SIRRegister
   SeqInst2RegMapTy SeqInst2Reg;
   // The map between Register and SIRSlot
@@ -761,6 +767,14 @@ public:
   void IndexDataPathInst(Instruction *DataPathInst) {
     DataPathInsts.push_back(DataPathInst);
   }
+
+	bool IndexInst2SeqInst(Instruction *I, IntrinsicInst *II) {
+		return Inst2SeqInst.insert(std::make_pair(I, II)).second;
+	}
+	IntrinsicInst *lookupSeqInst(Instruction *I) const {
+		const_inst2seqinst_iterator at = Inst2SeqInst.find(I);
+		return at == Inst2SeqInst.end() ? 0 : at->second;
+	}
 
   bool IndexSeqInst2Reg(Instruction *SeqInst, SIRRegister *Reg) {
     return SeqInst2Reg.insert(std::make_pair(SeqInst, Reg)).second;

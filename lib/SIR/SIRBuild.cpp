@@ -242,17 +242,18 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
 	                                             BasicBlock *ParentBB,
                                                Instruction *SeqInst, uint64_t InitVal, 
                                                SIRRegister::SIRRegisterTypes T) {
-  assert(SeqInst || T == SIRRegister::OutPort || T == SIRRegister::SlotReg
-		     || T == SIRRegister::FUInput || T == SIRRegister::FUOutput
-         && "Only Reg for Port, Slot or FUInOut can have no corresponding LLVM IR instruction!");
-
 	/// If the SeqInst is empty, we can construct a pseudo SeqInst for it.
-	/// To be noted that, the insert position of this pseudo instruction
-	/// is different according its type.
 
-	// For the Slot Register, we create a pseudo instruction.
-	// And this pseudo instruction will be inserted into the
-	// back of whole module.
+	if (!SeqInst && T == SIRRegister::General) {
+		// Insert the implement of register just in front of the terminator instruction
+		// at back of the module to avoid being used before declaration.
+		Value *InsertPosition = SM->getPositionAtBackOfModule();
+
+		SeqInst = createPseudoInst(BitWidth, InsertPosition);
+	}
+
+	// For the Slot Register, we create a pseudo instruction and this pseudo instruction
+	// will be inserted into the back of whole module.
   if (!SeqInst && T == SIRRegister::SlotReg) {
 		// Insert the implement of register just in front of the terminator instruction
 		// at back of the module to avoid being used before declaration.
@@ -261,11 +262,10 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
     SeqInst = createPseudoInst(BitWidth, InsertPosition);
   }
 
-	// For the OutPort Register, we also create a pseudo instruction. 
-	// But this pseudo instruction will be inserted into the back of
-	// whole module.
-	if (!SeqInst && (T == SIRRegister::OutPort || T == SIRRegister::FUInput ||
-		               T == SIRRegister::FUOutput)) {
+	// For the InOutPort Register, we also create a pseudo instruction and insert it
+	// into the back of whole module.
+	if (!SeqInst && (T == SIRRegister::OutPort ||
+		               T == SIRRegister::FUInput || T == SIRRegister::FUOutput)) {
 		assert(!ParentBB && "Unexpected ParentBB!");
 
 		// Insert the implement of register just in front of the terminator instruction
@@ -388,10 +388,14 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 		Value *Result = D_Builder.createSBitExtractInst(RData, getBitWidth(&I), 0,
 			                                              SM->createIntegerType(getBitWidth(&I)), &I, true);
 
-		SIRRegister *ResultReg = createRegister(I.getName(), getBitWidth(&I), ParentBB, &I, 0, SIRRegister::General);
-		assignToReg(Slot, SM->createIntegerValue(1, 1), Result, ResultReg);
+		SIRRegister *ResultReg = createRegister(I.getName(), getBitWidth(&I), ParentBB);
 
-		SM->IndexSeqInst2Reg(&I, ResultReg);
+		// Since this instruction is a LoadInst, we should index this Inst to SeqInst.
+		// And replace the use of it to the result register.
+		SM->IndexInst2SeqInst(&I,	dyn_cast<IntrinsicInst>(ResultReg->getLLVMValue()));
+		I.replaceAllUsesWith(ResultReg->getLLVMValue());
+
+		assignToReg(Slot, SM->createIntegerValue(1, 1), Result, ResultReg);
 	}
 
 	/// Handle the enable pin.
@@ -487,19 +491,25 @@ void SIRCtrlRgnBuilder::visitPHIsInSucc(SIRSlot *SrcSlot, SIRSlot *DstSlot,
 
     // The value which lives out from SrcBB to DstBB;
     Value *LiveOutedFromSrcBB = PN->DoPHITranslation(DstBB, SrcBB);
-
-    // Hack: we don't have methods to identify which BB is unreachable.
-    // If the SrcBB cannot be reached, then the LiveOut will be zero.
-    Value *LiveOut = LiveOutedFromSrcBB;
     
     // If the register already exist, then just assign to it.
-    SIRRegister *PHISeqValReg = SM->lookupSIRReg(I);
-    if (!PHISeqValReg) 
-      PHISeqValReg = createRegister(PN->getName(), BitWidth, DstBB, I);
+		SIRRegister *PHISeqValReg;
+    if (!SM->lookupSeqInst(PN)) {
+      PHISeqValReg = createRegister(PN->getName(), BitWidth, DstBB);
 
-		// Make the assignment in SrcSlot, so we can schedule it in the latest slot
-		// of SrcBB.
-    assignToReg(SrcSlot, Guard, LiveOut, PHISeqValReg);   
+			// Index this Inst to SeqInst.
+			SM->IndexInst2SeqInst(PN,
+				                    dyn_cast<IntrinsicInst>(PHISeqValReg->getLLVMValue()));
+			// Replace the use of Inst to the Register of SeqInst.
+			PN->replaceAllUsesWith(PHISeqValReg->getLLVMValue());
+		} else {
+			IntrinsicInst *II = SM->lookupSeqInst(PN);
+
+			PHISeqValReg = SM->lookupSIRReg(II);
+		}
+
+		// Assign in SrcSlot so we can schedule to the latest slot of SrcBB.
+		assignToReg(SrcSlot, Guard, LiveOutedFromSrcBB, PHISeqValReg);
   }
 }
 
@@ -1130,7 +1140,8 @@ Value *SIRDatapathBuilder::createSNotInst(Value *U, Type *RetTy,
 
 	assert(U->getType() == RetTy && "RetTy not matches!");
 
-  return createShangInstPattern(U, RetTy, InsertPosition, Intrinsic::shang_not, UsedAsArg);
+	Value *Temp = createShangInstPattern(U, RetTy, InsertPosition, Intrinsic::shang_not, UsedAsArg);
+  return Temp;
 }
 
 Value *SIRDatapathBuilder::createSAddInst(ArrayRef<Value *> Ops, Type *RetTy,
