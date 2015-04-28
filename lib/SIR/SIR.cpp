@@ -338,6 +338,12 @@ bool SIR::gcImpl() {
 			Instruction *Inst = InstI;
 
 			if (Inst->use_empty() && !isa<ReturnInst>(Inst)) {
+				// If the Inst is a pseudo instruction, then it is a register.
+				// The GC of useless register is not handled here.
+				if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
+					if (II->getIntrinsicID() == Intrinsic::shang_pseudo)
+						continue;
+
 				Inst->eraseFromParent();
 				return true;
 			}
