@@ -425,7 +425,9 @@ void SIRScheduleEmitter::emitToSlot(SIRSeqOp *SeqOp, SIRSlot *ToSlot) {
 	// be indexed in SIRFSMSynthsisPass.
 	SM->IndexReg2Slot(Dst, ToSlot);
 
-	Value *InsertPosition = Dst->getLLVMValue();
+	// Insert the implement of register just in front of the terminator instruction
+	// at back of the module to avoid being used before declaration.
+	Value *InsertPosition = SM->getPositionAtBackOfModule();
 
 	// Associate the guard with the Slot guard.
 	Value *NewGuardVal = D_Builder.createSAndInst(GuardVal, ToSlot->getGuardValue(),
