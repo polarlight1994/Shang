@@ -236,21 +236,34 @@ SIRSchedUnit *SIRScheduling::getDataFlowSU(Value *V) {
 	// We should get the corresponding SUnit of SeqOp.
 	ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(V);
 
-	assert(SUs.size() == 1 || isa<BasicBlock>(V) || isa<PHINode>(V)
-		     && "Only BasicBlock can have many SUnits!");
-
-	if(!isa<BasicBlock>(V) && !isa<PHINode>(V))
-		return SUs[0];
+// 	assert(SUs.size() == 1 || isa<BasicBlock>(V) || isa<PHINode>(V)
+// 		     && "Only BasicBlock can have many SUnits!");
+//
+// 	if(!isa<BasicBlock>(V) && !isa<PHINode>(V))
+// 		return SUs[0];
+	// Still only BB Value and PHI node can have mutil-SUnits,
+	// however, we create a pseudo instruction to hold the value
+	// in PHINode, so the value here is not the PHINode itself.
+	// For now, we can't detect whether this value is associated
+	// with PHINode through the type of Value itself.
+	if (SUs.size()) return SUs[0];
 
 	for (unsigned I = 0; I < SUs.size(); I++) {
 		SIRSchedUnit *CurSU = SUs[I];
 
-		// If this is a BasicBlock, then we return its Entry SUnit.
-		if (isa<BasicBlock>(V) && CurSU->isBBEntry())
-			return CurSU;
-
-		// If this is a PHINode, then we return the PHI SUnit.
-		if (isa<PHINode>(V) && CurSU->isPHI())
+// 		// If this is a BasicBlock, then we return its Entry SUnit.
+// 		if (isa<BasicBlock>(V) && CurSU->isBBEntry())
+// 			return CurSU;
+//
+// 		// If this is a PHINode, then we return the PHI SUnit.
+// 		if (isa<PHINode>(V) && CurSU->isPHI())
+// 			return CurSU;
+		// Still only BB Value and PHI node can have mutil-SUnits,
+		// however, we create a pseudo instruction to hold the value
+		// in PHINode, so the value here is not the PHINode itself.
+		// For now, we can't detect whether this value is associated
+		// with PHINode through the type of Value itself.
+		if (CurSU->isPHI() || CurSU->isBBEntry())
 			return CurSU;
 
 		continue;
@@ -303,8 +316,16 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 			       && "Only RetReg can have pseudo instruction!");
 
 		// Check if it is a PHI node or normal node.
-		SIRSchedUnit::Type Ty = isa<PHINode>(Inst) ? 
-			                        SIRSchedUnit::PHI : SIRSchedUnit::Normal;
+		// Still only BB Value and PHI node can have mutil-SUnits,
+		// however, we create a pseudo instruction to hold the value
+		// in PHINode, so the value here is not the PHINode itself.
+		// For now, we can't detect whether this value is associated
+		// with PHINode through the type of Value itself.
+// 		SIRSchedUnit::Type Ty = isa<PHINode>(Inst) ?
+// 			                        SIRSchedUnit::PHI : SIRSchedUnit::Normal;
+		// So we detect whether its a PHINode from the DstReg.
+		SIRSchedUnit::Type Ty = Op->getDst()->isPHI() ?
+															SIRSchedUnit::PHI : SIRSchedUnit::Normal;
 
 		SIRSchedUnit *U = G->createSUnit(Inst, BB, Ty, Op);
 

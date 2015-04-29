@@ -244,7 +244,9 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
                                                SIRRegister::SIRRegisterTypes T) {
 	/// If the SeqInst is empty, we can construct a pseudo SeqInst for it.
 
-	if (!SeqInst && T == SIRRegister::General) {
+  // For the General Register or PHI Register, we create a pseudo instruction and
+	// this pseudo instruction will be inserted into the back of whole module.
+	if (!SeqInst && (T == SIRRegister::General || T == SIRRegister::PHI)) {
 		// Insert the implement of register just in front of the terminator instruction
 		// at back of the module to avoid being used before declaration.
 		Value *InsertPosition = SM->getPositionAtBackOfModule();
@@ -495,7 +497,7 @@ void SIRCtrlRgnBuilder::visitPHIsInSucc(SIRSlot *SrcSlot, SIRSlot *DstSlot,
     // If the register already exist, then just assign to it.
 		SIRRegister *PHISeqValReg;
     if (!SM->lookupSeqInst(PN)) {
-      PHISeqValReg = createRegister(PN->getName(), BitWidth, DstBB);
+      PHISeqValReg = createRegister(PN->getName(), BitWidth, DstBB, 0, 0, SIRRegister::PHI);
 
 			// Index this Inst to SeqInst.
 			SM->IndexInst2SeqInst(PN,

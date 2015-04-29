@@ -137,6 +137,7 @@ class SIRRegister {
 public:
   enum SIRRegisterTypes {
     General,            // Common registers which hold data for data-path.
+		PHI,                // Register hold value in PHINode.
     SlotReg,            // Register for slot.
     FUInput,						// Input register for FUnits like memory bank.
     FUOutput,           // Output register for FUnits like memory bank.
@@ -206,6 +207,7 @@ public:
 	BasicBlock *getParentBB() const { return ParentBB; }
 
   bool isGeneral() { return T == SIRRegister::General; }
+	bool isPHI() { return T == SIRRegister::PHI; }
   bool isSlot() { return T == SIRRegister::SlotReg; }
   bool isOutPort() { return T == SIRRegister::OutPort; }
 	bool isFUInput() { return T == SIRRegister::FUInput; }
