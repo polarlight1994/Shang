@@ -220,26 +220,28 @@ unsigned SIRCtrlRgnBuilder::getBitWidth(Value *U) {
   return TD.getTypeSizeInBits(U->getType());
 }
 
-Instruction *SIRCtrlRgnBuilder::createPseudoInst(unsigned BitWidth, Value *InsertPosition) {
-  // For slots and ports, we create this pseudo SeqInst,
-  // which will represent the assign operation to
-  // the register of this slot or port.
-  // The pseudo SeqInst will be:
-  // SeqInst = 1'b1;
+Instruction *SIRCtrlRgnBuilder::createPseudoInst(Type *RetTy, Value *InsertPosition) {
+  // For all SeqValue which will be held in register, we create this pseudo SeqInst,
+  // which will represent the assign operation to the register of this slot or port.
   // And the insert position will be the front of whole module.
+
+	// Get the BitWidth of the RetTy, and we will create two pseudo value
+	// to represent the operand of this pseudo instruction.
+	unsigned BitWidth = TD.getTypeSizeInBits(RetTy);
+
   Value *PseudoSrcVal = SM->createIntegerValue(BitWidth, 1);
 	Value *PseudoGuardVal = SM->creatConstantBoolean(true);
 	Value *Ops[] = { PseudoSrcVal, PseudoGuardVal };
 
   Value *PseudoInst = D_Builder.createShangInstPattern(Ops,
-                                                       SM->createIntegerType(BitWidth),
+                                                       RetTy,
                                                        InsertPosition, Intrinsic::shang_pseudo,
                                                        true);
   return dyn_cast<Instruction>(PseudoInst);
 }
 
-SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth,
-	                                             BasicBlock *ParentBB,
+SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, Type *ValueTy,
+																							 BasicBlock *ParentBB,
                                                Instruction *SeqInst, uint64_t InitVal, 
                                                SIRRegister::SIRRegisterTypes T) {
 	/// If the SeqInst is empty, we can construct a pseudo SeqInst for it.
@@ -251,7 +253,7 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
 		// at back of the module to avoid being used before declaration.
 		Value *InsertPosition = SM->getPositionAtBackOfModule();
 
-		SeqInst = createPseudoInst(BitWidth, InsertPosition);
+		SeqInst = createPseudoInst(ValueTy, InsertPosition);
 	}
 
 	// For the Slot Register, we create a pseudo instruction and this pseudo instruction
@@ -261,7 +263,7 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
 		// at back of the module to avoid being used before declaration.
 		Value *InsertPosition = SM->getPositionAtBackOfModule();
 
-    SeqInst = createPseudoInst(BitWidth, InsertPosition);
+    SeqInst = createPseudoInst(ValueTy, InsertPosition);
   }
 
 	// For the InOutPort Register, we also create a pseudo instruction and insert it
@@ -274,13 +276,14 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, unsigned BitWidth
 		// at back of the module to avoid being used before declaration.
 		Value *InsertPosition = SM->getPositionAtBackOfModule();
 
-		SeqInst = createPseudoInst(BitWidth, InsertPosition);
+		SeqInst = createPseudoInst(ValueTy, InsertPosition);
 	}
 
 	assert(SeqInst && "Unexpected empty PseudoSeqInst!");
 	assert(!SM->lookupSIRReg(SeqInst) && "Register already created before!");
 
-	// For the General Register.
+	// Create the register, and the BitWidth is determined by the ValueTy.
+	unsigned BitWidth = TD.getTypeSizeInBits(ValueTy);
 	SIRRegister *Reg = new SIRRegister(Name, BitWidth, InitVal, ParentBB, T, SeqInst);
 
 	// Index the register and index it with the SeqInst.
@@ -304,8 +307,8 @@ SIRPort *SIRCtrlRgnBuilder::createPort(SIRPort::SIRPortTypes T, StringRef Name,
 
     // Create the register for OutPort. To be noted that,
 		// here we cannot assign the ParentBB for this register.
-    SIRRegister *Reg = createRegister(Name, BitWidth, 0, 0, 0,
-                                      SIRRegister::OutPort);
+    SIRRegister *Reg = createRegister(Name, SM->createIntegerType(BitWidth),
+			                                0, 0, 0, SIRRegister::OutPort);
     SIROutPort *P = new SIROutPort(T, Reg, BitWidth, Name);
     SM->IndexPort(P);
     return P;
@@ -314,25 +317,28 @@ SIRPort *SIRCtrlRgnBuilder::createPort(SIRPort::SIRPortTypes T, StringRef Name,
 
 void SIRCtrlRgnBuilder::createPortsForMemoryBank(SIRMemoryBank *SMB) {
 	// Address pin
-	SIRRegister *Addr = createRegister(SMB->getAddrName(), SMB->getAddrWidth(), 0, 0, 0, SIRRegister::FUInput);
+	Type *AddrTy = SM->createIntegerType(SMB->getAddrWidth());
+	SIRRegister *Addr = createRegister(SMB->getAddrName(), AddrTy, 0, 0, 0, SIRRegister::FUInput);
 	SMB->addFanin(Addr);
 
 	// Write (to memory) data pin
-	unsigned WDataWidth = SMB->getDataWidth();
-	SIRRegister *WData = createRegister(SMB->getWDataName(), WDataWidth, 0, 0, 0, SIRRegister::FUInput);
+	Type *WDataTy = SM->createIntegerType(SMB->getDataWidth());
+	SIRRegister *WData = createRegister(SMB->getWDataName(), WDataTy, 0, 0, 0, SIRRegister::FUInput);
 	SMB->addFanin(WData);
 
 	// Read (from memory) data pin
-	unsigned RDataWidth = SMB->getDataWidth();
-	SIRRegister *RData = createRegister(SMB->getRDataName(), RDataWidth, 0, 0, 0, SIRRegister::FUOutput);
+	Type *RDataTy = SM->createIntegerType(SMB->getDataWidth());
+	SIRRegister *RData = createRegister(SMB->getRDataName(), WDataTy, 0, 0, 0, SIRRegister::FUOutput);
 	SMB->addFanout(RData);
 
 	// Enable pin
-	SIRRegister *Enable = createRegister(SMB->getEnableName(), 1, 0, 0,	0, SIRRegister::FUInput);
+	Type *EnableTy = SM->createIntegerType(1);
+	SIRRegister *Enable = createRegister(SMB->getEnableName(), EnableTy, 0, 0,	0, SIRRegister::FUInput);
 	SMB->addFanin(Enable);
 
 	// Write enable pin
-	SIRRegister *WriteEn = createRegister(SMB->getWriteEnName(), 1, 0, 0,	0, SIRRegister::FUInput);
+	Type *WriteEnTy = SM->createIntegerType(1);
+	SIRRegister *WriteEn = createRegister(SMB->getWriteEnName(), WriteEnTy, 0, 0,	0, SIRRegister::FUInput);
 	SMB->addFanin(WriteEn);
 }
 
@@ -390,7 +396,7 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 		Value *Result = D_Builder.createSBitExtractInst(RData, getBitWidth(&I), 0,
 			                                              SM->createIntegerType(getBitWidth(&I)), &I, true);
 
-		SIRRegister *ResultReg = createRegister(I.getName(), getBitWidth(&I), ParentBB);
+		SIRRegister *ResultReg = createRegister(I.getName(), I.getType(), ParentBB);
 
 		// Since this instruction is a LoadInst, we should index this Inst to SeqInst.
 		// And replace the use of it to the result register.
@@ -412,8 +418,8 @@ SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) 
   std::string Name = "Slot" + utostr_32(SlotNum) + "r";
   // If the slot is start slot, the InitVal should be 1.
   unsigned InitVal = !SlotNum ? 1: 0;
-  SIRRegister *SlotGuardReg = createRegister(Name, 1, ParentBB, 0, InitVal,
-                                             SIRRegister::SlotReg);
+  SIRRegister *SlotGuardReg = createRegister(Name, SM->createIntegerType(1), ParentBB,
+		                                         0, InitVal, SIRRegister::SlotReg);
 
   SIRSlot *S = new SIRSlot(SlotNum, ParentBB, SlotGuardReg->getLLVMValue(),
                            SlotGuardReg, Schedule);
@@ -497,7 +503,7 @@ void SIRCtrlRgnBuilder::visitPHIsInSucc(SIRSlot *SrcSlot, SIRSlot *DstSlot,
     // If the register already exist, then just assign to it.
 		SIRRegister *PHISeqValReg;
     if (!SM->lookupSeqInst(PN)) {
-      PHISeqValReg = createRegister(PN->getName(), BitWidth, DstBB, 0, 0, SIRRegister::PHI);
+      PHISeqValReg = createRegister(PN->getName(), PN->getType(), DstBB, 0, 0, SIRRegister::PHI);
 
 			// Index this Inst to SeqInst.
 			SM->IndexInst2SeqInst(PN,
