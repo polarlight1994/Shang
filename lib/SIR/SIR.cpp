@@ -202,10 +202,6 @@ void SIRSlot::addSuccSlot(SIRSlot *NextSlot, EdgeType T, Value *Cnd) {
   // Do not add the same successor slot twice.
   if (hasNextSlot(NextSlot)) return;
 
-  // Hack: I think we can have this loop 
-  // when we don't have subgrp to avoid it.
-  //assert(NextSlot != this && "Unexpected loop!");
-
   // Connect the slots.
   NextSlot->PredSlots.push_back(EdgePtr(this, T, Cnd));
   NextSlots.push_back(EdgePtr(NextSlot, T, Cnd));
@@ -231,7 +227,6 @@ void SIRSlot::unlinkSucc(SIRSlot *S) {
 void SIRSlot::unlinkSuccs() {
 	for (succ_iterator I = succ_begin(), E = succ_end(); I != E; ++I) {
 		SIRSlot *SuccSlot = *I;
-		assert(SuccSlot != this && "Unexpected loop!");
 
 		// Find the this slot in the PredSlot of the successor and erase it.
 		pred_iterator at
