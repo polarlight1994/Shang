@@ -458,8 +458,17 @@ void SIRScheduleEmitter::emitToSlot(SIRSeqOp *SeqOp, SIRSlot *ToSlot) {
 	Dst->addAssignment(SrcVal, NewGuardVal);
 }
 
+namespace {
+	bool SUnitLess(SIRSchedUnit *LHS, SIRSchedUnit *RHS) {
+		return LHS->getSchedule() < RHS->getSchedule();
+	}
+}
+
 void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 	assert(SUs[0]->isBBEntry() && "BBEntry must be placed at the beginning!");
+
+	if (SUs.size() == 8)
+		assert(SUs.size() == 8 && "Temp code for debug!");
 
 	BasicBlock *BB = SUs[0]->getParentBB(); 
 	SIRSlot *CurSlot = SM->getLandingSlot(BB);
@@ -467,8 +476,20 @@ void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 	assert(CurSlot && "Landing Slot not created?");
 	assert(CurSlotSchedule == 0 && "EntrySlot is not schedule in 0?");
 
-	for (unsigned i = 1; i < SUs.size(); ++i) {
-		SIRSchedUnit *CurSU = SUs[i];
+	std::vector<SIRSchedUnit *> NewSUs(SUs.begin() +1, SUs.end());
+	// Sort the SUs to make sure they are ranged by schedule in ascending order.
+	std::sort(NewSUs.begin(), NewSUs.end(), SUnitLess);
+
+	unsigned temp = 0;
+	for (int i = 0; i < NewSUs.size(); i++) {
+		assert(NewSUs[i]->getSchedule() >= temp && "bad order");
+		temp = NewSUs[i]->getSchedule();
+	}
+
+	assert(SUs[0]->isBBEntry() && "BBEntry must be placed at the beginning!");
+
+	for (unsigned i = 0; i < NewSUs.size(); ++i) {
+		SIRSchedUnit *CurSU = NewSUs[i];
 
 		// To be noted that, since we set the Entry SUnit to schedule 0,
 		// all other SUnits including BBEntry can be scheduled to 1 at
