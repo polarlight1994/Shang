@@ -909,6 +909,12 @@ Value *SIRDatapathBuilder::createSBitCatInst(ArrayRef<Value *> Ops, Type *RetTy,
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_bit_cat, UsedAsArg);
 }
 
+Value *SIRDatapathBuilder::createSBitCatInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                           Value *InsertPosition, bool UsedAsArg) {
+	Value *Ops[] = { LHS, RHS };
+  return createSBitCatInst(Ops, RetTy, InsertPosition, UsedAsArg);
+}
+
 Value *SIRDatapathBuilder::createSBitExtractInst(Value *U, unsigned UB, unsigned LB, Type *RetTy,
                                                  Value *InsertPosition, bool UsedAsArg) {
   Value *Ops[] = {U, createSConstantInt(UB, 8), createSConstantInt(LB, 8)};
@@ -1216,12 +1222,21 @@ Value *SIRDatapathBuilder::createSShiftInst(ArrayRef<Value *> Ops, Type *RetTy,
 																						bool UsedAsArg) {
   assert(Ops.size() == 2 && "The shift inst must have two operands!");
   Value *LHS = Ops[0]; Value *RHS = Ops[1];
+
   // Limit the shift amount so keep the behavior of the hardware the same as
   // the corresponding software.
   unsigned RHSMaxSize = Log2_32_Ceil(getBitWidth(LHS));
-  if (getBitWidth(RHS) > RHSMaxSize) 
+	if (ConstantInt *CI = dyn_cast<ConstantInt>(RHS))
+		assert(getConstantIntValue(CI) < getBitWidth(LHS) && "Unexpected shift amount!");
+	else if (getBitWidth(RHS) > RHSMaxSize) {
+		// Extract the useful bits.
     RHS = createSBitExtractInst(Ops[1], RHSMaxSize, 0, SM->createIntegerType(RHSMaxSize), 
-		                            InsertPosition, true);  
+		                            InsertPosition, true);
+		// Pad a 0 bit to act as sign bit, so it will not be recognized as a negative number.
+		RHS = createSBitCatInst(SM->createIntegerValue(1, 0), RHS, SM->createIntegerType(RHSMaxSize + 1),
+			                      InsertPosition, true);
+	}
+
   Value *NewOps[] = {LHS, RHS};
 
 	assert(LHS->getType() == RetTy && "RetTy not matches!");
