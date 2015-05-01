@@ -65,6 +65,8 @@ public:
                                Value *InsertPosition, bool UsedAsArg);
   Value *createSBitCatInst(ArrayRef<Value *> Ops, Type *RetTy,
 		                       Value *InsertPosition, bool UsedAsArg);
+	Value *createSBitCatInst(Value *LHS, Value *RHS, Type *RetTy,
+		                       Value *InsertPosition, bool UsedAsArg);
   Value *createSBitRepeatInst(Value *U, unsigned RepeatTimes, Type *RetTy,
                               Value *InsertPosition, bool UsedAsArg);
   Value *createSSExtInst(Value *U, unsigned DstBitWidth, Type *RetTy,
