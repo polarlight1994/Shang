@@ -376,18 +376,31 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
 	VOS.always_ff_begin(false);
 
 	if (!WData->assign_empty()) {
-		VOS.if_begin(Twine(WData->getName()) + "en");
+		VOS.if_begin(SMB->getWriteEnName());
 
-		VOS << SMB->getArrayName() << "[" << SMB->getAddrName()
-			  << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "]"
-			  << " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
+		// Handle a special circumstance when only one GV in memory bank.
+		// Then the AddrWidth will be just the same with ByteAddrWidth.
+		// So we should just cout the memXram[0];
+		if (SMB->getAddrWidth() == ByteAddrWidth) {
+			VOS << SMB->getArrayName() << "[0]"
+				  << " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
 
-		VOS.exit_block();		
+			VOS.exit_block();
+
+			VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
+				<< SMB->getArrayName() << "[0];\n";
+		} else {
+			VOS << SMB->getArrayName() << "[" << SMB->getAddrName()
+				<< BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "]"
+				<< " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
+
+			VOS.exit_block();
+
+			VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
+				<< SMB->getArrayName() << "[" << SMB->getAddrName()
+				<< BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
+		}
 	}
-
-	VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
-		  << SMB->getArrayName() << "[" << SMB->getAddrName()
-			<< BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
 
 	VOS.always_ff_end(false);
 }
@@ -398,7 +411,7 @@ void SIRControlPathPrinter::printMemoryBank(SIRMemoryBank *SMB) {
 	unsigned AddrWidth = Log2_32_Ceil(BytesPerGV);
 
 	assert(EndByteAddr % BytesPerGV == 0 && "Current Offset is not aligned!");
-	unsigned NumWords = (EndByteAddr / BytesPerGV);\
+	unsigned NumWords = (EndByteAddr / BytesPerGV);
 
 		// use a multi-dimensional packed array to model individual bytes within the
 		// word. Please note that the bytes is ordered from 0 to 7 ([0:7]) because

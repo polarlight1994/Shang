@@ -117,6 +117,10 @@ BasicBlock *SIRSchedUnit::getParentBB() const {
 	// get the ParentBB from the Instruction it holds.
 	// To be noted that, in this circumstance, the BB
 	// that SIRSchedUnit holds is its TargetBB.
+	// If this SUnit is a PHI, then we should also get
+	// its ParentBB through the Instruction it holds.
+	// And To be noted that, in this circumstance, the
+	// BB that SIRSchedUnit holds is its SrcBB.
 	if (isTerminator() || isPHI())
 		return getInst()->getParent();
 
@@ -283,13 +287,12 @@ SIRSchedUnit *SIRSchedGraph::createSUnit(Instruction *Inst, BasicBlock *ParentBB
 	// Insert the newly create SU before the exit.
 	SUnits.insert(SUnits.back(), U);
 
+	// If this SUnit is PHI node, then the ParentBB will not be the same with
+	// U->getParentBB(), since we actually move the PHI node to the SrcBB.
+	// So we should index this PHI node to the SrcBB not the original BB.
 	if (U->getParentBB() != ParentBB)
 		assert(T == SIRSchedUnit::PHI && "Only the PHI node are moved across the BB!");
 
-	// Hack: If this SUnit is PHI node, then the ParentBB will not be the same with
-	// U->getParentBB(), since we actually move the PHI node to the SrcBB. And i 
-	// think we should index this PHI node to the SrcBB not the original BB.
-	//BBMap[U->getParentBB()].push_back(U);
 	BBMap[ParentBB].push_back(U);
   
 	return U;
