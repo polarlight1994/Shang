@@ -363,11 +363,16 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
 
 	SIRRegister *Addr = SMB->getAddr();
 	if (Addr->assign_empty()) return;
+	SIRRegister *Enable = SMB->getEnable();
+	if (Enable->assign_empty()) return;
 
 	SIRRegister *WData = SMB->getWData();
+	SIRRegister *WriteEn = SMB->getWriteEnable();
 	
 	printRegister(Addr);
+	printRegister(Enable);
 	printRegister(WData);
+	printRegister(WriteEn);
 
 	// Hack: If the read latency is bigger than 1, we should pipeline the input port.
 	if (!WData->assign_empty()) 
@@ -396,6 +401,18 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
 
 			VOS.exit_block();
 
+			VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
+				<< SMB->getArrayName() << "[" << SMB->getAddrName()
+				<< BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
+		}
+	} else {
+		// Handle a special circumstance when only one GV in memory bank.
+		// Then the AddrWidth will be just the same with ByteAddrWidth.
+		// So we should just cout the memXram[0];
+		if (SMB->getAddrWidth() == ByteAddrWidth) {
+			VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
+				<< SMB->getArrayName() << "[0];\n";
+		} else {
 			VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
 				<< SMB->getArrayName() << "[" << SMB->getAddrName()
 				<< BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
