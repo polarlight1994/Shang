@@ -628,6 +628,10 @@ bool SIRDatapathPrinter::printExpr(IntrinsicInst &I) {
   switch (I.getIntrinsicID()) {
   case Intrinsic::shang_and:
     printSimpleOp(Ops, " & "); break;
+	case Intrinsic::shang_or:
+		printSimpleOp(Ops, " | "); break;
+	case Intrinsic::shang_xor:
+		printSimpleOp(Ops, " ^ "); break;
   case Intrinsic::shang_not:
     printInvertExpr(Ops); break;
   case Intrinsic::shang_rand:
@@ -675,6 +679,8 @@ void SIRDatapathPrinter::visitIntrinsicInst(IntrinsicInst &I) {
 
   case Intrinsic::shang_and:
   case Intrinsic::shang_not:
+	case Intrinsic::shang_or:
+	case Intrinsic::shang_xor:
   case Intrinsic::shang_rand:
   case Intrinsic::shang_rxor:
   case Intrinsic::shang_bit_repeat:

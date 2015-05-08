@@ -630,7 +630,10 @@ void SIRDelayModel::updateArrival() {
 
 	case Intrinsic::shang_not:
 		return updateArrivalParallel(0.0f);
-  case Intrinsic::shang_and: {
+  case Intrinsic::shang_and:
+	case Intrinsic::shang_or:
+	case Intrinsic::shang_xor:
+	{
 		// To be noted that, in LLVM IR the return value
 		// is counted in Operands, so the real numbers
 		// of operands should be minus one.

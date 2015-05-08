@@ -98,6 +98,8 @@ public:
 		                      Value *InsertPosition, bool UsedAsArg);
   Value *createSdpUGTInst(ArrayRef<Value *> Ops, Type *RetTy,
 		                      Value *InsertPosition, bool UsedAsArg);
+	Value *createSdpUGTInst(Value *LHS, Value *RHS, Type *RetTy,
+		                      Value *InsertPosition, bool UsedAsArg);
 
   Value *createSIcmpOrEqInst(ICmpInst::Predicate Predicate, ArrayRef<Value *> Ops,
                              Type *RetTy, Value *InsertPosition, bool UsedAsArg);

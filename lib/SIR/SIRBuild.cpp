@@ -925,8 +925,7 @@ Value *SIRDatapathBuilder::createSBitExtractInst(Value *U, unsigned UB, unsigned
 	return Temp;
 }
 
-Value *SIRDatapathBuilder::createSCastInst(Value *U, Type *RetTy,
-	                                         Value *InsertPosition, bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSCastInst(Value *U, Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
   if (!UsedAsArg) {
     assert((!U || getBitWidth(U) == getBitWidth(InsertPosition))
       && "Cast between types with different size found!");
@@ -985,22 +984,19 @@ Value *SIRDatapathBuilder::createSSExtInstOrSelf(Value *U, unsigned DstBitWidth,
   return U;
 }
 
-Value *SIRDatapathBuilder::createSRAndInst(Value *U, Type *RetTy,
-	                                         Value *InsertPosition, bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSRAndInst(Value *U, Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
 	assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
 
   return createShangInstPattern(U, RetTy, InsertPosition, Intrinsic::shang_rand, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSRXorInst(Value *U, Type *RetTy,
-	                                         Value *InsertPosition, bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSRXorInst(Value *U, Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
   assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
 
   return createShangInstPattern(U, RetTy, InsertPosition, Intrinsic::shang_rxor, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSROrInst(Value *U, Type *RetTy,
-	                                        Value *InsertPosition, bool UsedAsArg) {
+Value *SIRDatapathBuilder::createSROrInst(Value *U, Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
   // A | B .. | Z = ~(~A & ~B ... & ~Z).
   Value *NotU = createSNotInst(U, U->getType(), InsertPosition, true);
   return createSNotInst(createSRAndInst(NotU, RetTy, InsertPosition, true), RetTy,
@@ -1027,7 +1023,7 @@ Value *SIRDatapathBuilder::createSEQInst(ArrayRef<Value *> Ops, Type *RetTy,
 Value *SIRDatapathBuilder::createSEQInst(Value *LHS, Value *RHS, Type *RetTy,
 	                                       Value *InsertPosition, bool UsedAsArg) {
   Value *Ops[] = { LHS, RHS };
-  return createSEQInst(Ops, RetTy, InsertPosition, true);
+  return createSEQInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSdpSGTInst(ArrayRef<Value *> Ops, Type *RetTy,
@@ -1042,6 +1038,12 @@ Value *SIRDatapathBuilder::createSdpUGTInst(ArrayRef<Value *> Ops, Type *RetTy,
   assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
 
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_ugt, UsedAsArg);
+}
+
+Value *SIRDatapathBuilder::createSdpUGTInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                          Value *InsertPosition, bool UsedAsArg) {
+	Value *Ops[] = { LHS, RHS };
+	return createSdpUGTInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSBitRepeatInst(Value *U, unsigned RepeatTimes, Type *RetTy,
@@ -1336,14 +1338,16 @@ Value *SIRDatapathBuilder::createSOrInst(ArrayRef<Value *> Ops, Type *RetTy,
 		return createSOrInst(TempSOrInst, Ops[num - 1], RetTy, InsertPosition, UsedAsArg);
 	}
 
-  SmallVector<Value *, 8> NotInsts;
-  // Build the operands of Or operation into not inst.
-  for (unsigned i = 0; i < Ops.size(); ++i) 
-    NotInsts.push_back(createSNotInst(Ops[i], RetTy, InsertPosition, true));
-
-  // Build Or operation with the And Inverter Graph (AIG).
-  Value *AndInst = createSAndInst(NotInsts, RetTy, InsertPosition, true);
-  return createSNotInst(AndInst, RetTy, InsertPosition, UsedAsArg);
+	// Disable the AIG transition for debug convenient.
+//   SmallVector<Value *, 8> NotInsts;
+//   // Build the operands of Or operation into not inst.
+//   for (unsigned i = 0; i < Ops.size(); ++i)
+//     NotInsts.push_back(createSNotInst(Ops[i], RetTy, InsertPosition, true));
+//
+//   // Build Or operation with the And Inverter Graph (AIG).
+//   Value *AndInst = createSAndInst(NotInsts, RetTy, InsertPosition, true);
+//   return createSNotInst(AndInst, RetTy, InsertPosition, UsedAsArg);
+	return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_or, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSOrInst(Value *LHS, Value *RHS, Type *RetTy,
@@ -1362,13 +1366,15 @@ Value *SIRDatapathBuilder::createSXorInst(ArrayRef<Value *> Ops, Type *RetTy,
 	for (int i = 0; i < Ops.size(); i++)
 		assert(Ops[i]->getType() == RetTy && "RetTy not matches!");
 
-  // Build the Xor Expr with the And Inverter Graph (AIG).
-  Value *OrInst = createSOrInst(Ops, RetTy, InsertPosition, true);
-  Value *AndInst = createSAndInst(Ops, RetTy, InsertPosition, true);
-  Value *NotInst = createSNotInst(AndInst, RetTy, InsertPosition, true);
-
-  Value *NewOps[] = {OrInst, NotInst};
-  return createSAndInst(NewOps, RetTy, InsertPosition, UsedAsArg);
+	// Disable the AIG transition for debug convenient.
+//   // Build the Xor Expr with the And Inverter Graph (AIG).
+//   Value *OrInst = createSOrInst(Ops, RetTy, InsertPosition, true);
+//   Value *AndInst = createSAndInst(Ops, RetTy, InsertPosition, true);
+//   Value *NotInst = createSNotInst(AndInst, RetTy, InsertPosition, true);
+//
+//   Value *NewOps[] = {OrInst, NotInst};
+//   return createSAndInst(NewOps, RetTy, InsertPosition, UsedAsArg);
+	return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_xor, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSXorInst(Value *LHS, Value *RHS, Type *RetTy,
