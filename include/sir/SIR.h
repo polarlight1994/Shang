@@ -119,11 +119,6 @@ namespace llvm {
 
 		APInt AI = CI->getValue();
 
-		if (AI.isNegative()) {
-			AI = AI.abs();
-			AI.setBit(CI->getBitWidth() - 1);
-		}
-
 		if (CI->getBitWidth() <= 4)
 			OS << "b" << AI.toString(2, false);
 		else
@@ -903,7 +898,7 @@ public:
 
     unsigned OperandWidth = UB - LB;
     if (UB)
-      OS << BitRange(UB, LB, OperandWidth > 1);
+      OS << BitRange(UB, LB, OperandWidth == 1);
 		OS << "))";
   }
 

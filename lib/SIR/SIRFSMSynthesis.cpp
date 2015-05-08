@@ -32,7 +32,7 @@ struct SIRFSMSynthesis : public SIRPass {
 
 	bool synthesisStateTransistion(SIRSlot *SrcSlot, SIRSlot *DstSlot,
 		                             Value *Cnd, SIR *SM, SIRDatapathBuilder &Builder);
-};
+	};
 }
 
 char SIRFSMSynthesis::ID = 0;
