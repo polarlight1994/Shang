@@ -61,6 +61,8 @@ public:
   Value *createShangInstPattern(ArrayRef<Value *> Ops, Type *RetTy,
                                 Value *InsertPosition,
                                 Intrinsic::ID FuncID, bool UsedAsArg);
+	Value *createSNegativeInst(Value *U, bool isPositiveValue, bool isNegativeValue,
+		                         Type *RetTy, Value *InsertPosition, bool UseAsArg);
   Value *createSBitExtractInst(Value *U, unsigned UB, unsigned LB, Type *RetTy,
                                Value *InsertPosition, bool UsedAsArg);
   Value *createSBitCatInst(ArrayRef<Value *> Ops, Type *RetTy,
@@ -124,6 +126,8 @@ public:
 		                    Value *InsertPosition, bool UsedAsArg);
 	Value *createSAddInst(Value *LHS, Value *RHS, Value *Carry, Type *RetTy,
 		                    Value *InsertPosition, bool UsedAsArg);
+	Value *createSFormatSubInst(Value *LHS, Value *RHS, Type *RetTy,
+		                          Value *InsertPosition, bool UsedAsArg);
   Value *createSMulInst(Value *LHS, Value *RHS, Type *RetTy,
 		                    Value *InsertPosition, bool UsedAsArg);
 

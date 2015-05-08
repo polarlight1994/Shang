@@ -904,6 +904,36 @@ Value *SIRDatapathBuilder::createShangInstPattern(ArrayRef<Value *> Ops, Type *R
   assert(false && "Unexpected InsertPosition!");
 }
 
+Value *SIRDatapathBuilder::createSNegativeInst(Value *U, bool isPositiveValue, bool isNegativeValue,
+	                                             Type *RetTy, Value *InsertPosition, bool UseAsArg) {
+	assert(U->getType() == RetTy && "Unexpected RetTy!");
+
+	// Prepare some useful elements.
+	unsigned BitWidth = getBitWidth(U);
+	Value *temp = createSBitExtractInst(U, BitWidth - 1, 0, SM->createIntegerType(BitWidth - 1), InsertPosition, true);
+
+	// If it is a Positive Value, just change the sign bit to 1'b1;
+	if (isPositiveValue) {
+		assert(!isNegativeValue && "This should be a positive value!");
+
+		return createSBitCatInst(SM->createIntegerValue(1, 1), temp, RetTy, InsertPosition, UseAsArg);
+	}
+
+	// If it is a Negative Value, just change the sign bit to 1'b0;
+	if (isNegativeValue) {
+		assert(!isPositiveValue && "This should be a negative value!");
+
+		return createSBitCatInst(SM->createIntegerValue(1, 0), temp, RetTy, InsertPosition, UseAsArg);
+	}
+
+	assert(!isPositiveValue && !isNegativeValue && "These two circumstance should be handled before!");
+
+	// If we do not know the detail information, we should build the logic to test it is Positive or Negative.
+	Value *NewSignBit = createSNotInst(getSignBit(U, InsertPosition), SM->createIntegerType(1), InsertPosition, true);
+
+	return createSBitCatInst(NewSignBit, temp, RetTy, InsertPosition, UseAsArg);
+}
+
 Value *SIRDatapathBuilder::createSBitCatInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                           Value *InsertPosition, bool UsedAsArg) {
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_bit_cat, UsedAsArg);
@@ -1184,12 +1214,78 @@ Value *SIRDatapathBuilder::createSAddInst(Value *LHS, Value *RHS, Value *Carry, 
 	return createSAddInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
+Value *SIRDatapathBuilder::createSFormatSubInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                              Value *InsertPosition, bool UsedAsArg) {
+	// To be noted that, this method can be only called when we have transform the Sub
+  // operation into format form: a - b, a > 0, b > 0; And we will implement it by change
+  // it into a + ~b + 1.
+
+  Value *isGreater = createSdpUGTInst(LHS, RHS, SM->createIntegerType(1), InsertPosition, true);
+	Value *extendedIsGreater = createSBitRepeatInst(isGreater, TD.getTypeSizeInBits(RetTy), RetTy, InsertPosition, true);
+	Value *isNotGreater = createSNotInst(isGreater, SM->createIntegerType(1), InsertPosition, true);
+	Value *extendedIsNotGreater = createSBitRepeatInst(isNotGreater, TD.getTypeSizeInBits(RetTy), RetTy, InsertPosition, true);
+
+	// If a > b, then we can simply implement the Sub operation by a + ~b + 1.
+	Value *NotRHS = createSNotInst(RHS, RHS->getType(), InsertPosition, true);
+	Value *resultWhenAisGreaterThanB = createSAddInst(LHS, NotRHS, SM->createIntegerValue(1, 1), RetTy, InsertPosition, true);
+	Value *temp1 = createSAndInst(resultWhenAisGreaterThanB, extendedIsGreater, RetTy, InsertPosition, true);
+
+	// If a < b, then we can change the Sub operation by -(b + ~a + 1).
+	Value *NotLHS = createSNotInst(LHS, LHS->getType(), InsertPosition, true);
+	Value *AddResult = createSAddInst(RHS, NotLHS, SM->createIntegerValue(1, 1), RetTy, InsertPosition, true);
+	Value *resultWhenAisNotGreaterThanB = createSNegativeInst(AddResult, true, false, RetTy, InsertPosition, true);
+	Value *temp2 = createSAndInst(resultWhenAisNotGreaterThanB, extendedIsNotGreater, RetTy, InsertPosition, true);
+
+	Value *Temps[] = { temp1, temp2 };
+	return createSOrInst(Temps, RetTy, InsertPosition, UsedAsArg);
+}
+
 Value *SIRDatapathBuilder::createSSubInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                        Value *InsertPosition, bool UsedAsArg) {
-  Value *NewOps[] = { Ops[0],
-                      createSNotInst(Ops[1], Ops[1]->getType(), InsertPosition, true),
-                      creatConstantBoolean(true) };
-  return createSAddInst(NewOps, RetTy, InsertPosition, UsedAsArg);
+	assert(Ops.size() == 2 && "Only support two operands now!");
+	Value *A = Ops[0], *B = Ops[1];
+	unsigned BitWidthOfA = getBitWidth(A);
+	unsigned BitWidthOfB = getBitWidth(B);
+	unsigned BitWidthOfResult = TD.getTypeSizeInBits(RetTy);
+
+	// Prepare some useful elements.
+	Type *OneBitTy = SM->createIntegerType(1);
+
+	// All Sub-Operators should be transformed into : a - b, a > 0, b > 0;
+  Value *isANegative = getSignBit(A, InsertPosition);
+	Value *isBNegative = getSignBit(B, InsertPosition);
+	Value *isAPositive = createSNotInst(isANegative, OneBitTy, InsertPosition, true);
+	Value *isBPositive = createSNotInst(isBNegative, OneBitTy, InsertPosition, true);
+	Value *isOnlyAPositive = createSAndInst(isAPositive, isBNegative, OneBitTy, InsertPosition, true);
+	Value *isOnlyBPositive = createSAndInst(isANegative, isBPositive, OneBitTy, InsertPosition, true);
+	Value *isABPositive = createSAndInst(isAPositive, isBPositive, OneBitTy, InsertPosition, true);
+	Value *isABNegative = createSAndInst(isANegative, isBNegative, OneBitTy, InsertPosition, true);
+
+	Value *NegativeA = createSNegativeInst(A, false, false, A->getType(), InsertPosition, true);
+	Value *NegativeB = createSNegativeInst(B, false, false, B->getType(), InsertPosition, true);
+
+	// If A & B are positive, then we can change the A - B into A + ~B + 1;
+  Value *resultWhenABisPositive = createSFormatSubInst(A, B, RetTy, InsertPosition, true);
+	Value *temp1 = createSAndInst(createSBitRepeatInst(isABPositive, BitWidthOfResult, RetTy, InsertPosition, true),
+		                            resultWhenABisPositive, RetTy, InsertPosition, true);
+
+	// If A is positive, B is negative, then we can change the A - B into A + (-B);
+	Value *resultWhenOnlyAisPositive = createSAddInst(A, NegativeB, RetTy, InsertPosition, true);
+	Value *temp2 = createSAndInst(createSBitRepeatInst(isOnlyAPositive, BitWidthOfResult, RetTy, InsertPosition, true),
+																resultWhenOnlyAisPositive, RetTy, InsertPosition, true);
+
+	// If A is negative, B is positive, then we can change the A - B into -((-A) + B);
+	Value *resultWhenOnlyBisPositive = createSNegativeInst(createSAddInst(NegativeA, B, RetTy, InsertPosition, true), true, false, RetTy, InsertPosition, true);
+	Value *temp3 = createSAndInst(createSBitRepeatInst(isOnlyBPositive, BitWidthOfResult, RetTy, InsertPosition, true),
+		                            resultWhenOnlyBisPositive, RetTy, InsertPosition, true);
+
+	// If A & B are negative, then we can change the A - B into (-B) - (-A);
+	Value *resultWhenABisNegative = createSFormatSubInst(NegativeB, NegativeA, RetTy, InsertPosition, true);
+	Value *temp4 = createSAndInst(createSBitRepeatInst(isABNegative, BitWidthOfResult, RetTy, InsertPosition, true),
+		                            resultWhenABisNegative, RetTy, InsertPosition, true);
+
+	Value *Temps[] = { temp1, temp2, temp3, temp4 };
+  return createSOrInst(Temps, RetTy, InsertPosition, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSMulInst(ArrayRef<Value *> Ops, Type *RetTy,
