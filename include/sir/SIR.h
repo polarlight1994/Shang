@@ -861,65 +861,6 @@ public:
 	// Print the declaration of MemoryBank.
 	void printMemoryBankDecl(raw_ostream &OS) const;
 
-  void printAsOperandImpl(raw_ostream &OS, Value *U, unsigned UB, unsigned LB) {
-		// Print correctly if this value is a ConstantInt.
-    if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
-			// Need to slice the wanted bits.
-      if (UB != CI->getBitWidth() || LB == 0) {				
-				assert(UB <= CI->getBitWidth() && UB > LB  && "Bad bit range!");
-				APInt Val = CI->getValue();
-				if (UB != CI->getBitWidth())
-					Val = Val.trunc(UB);
-				if (LB != 0) {
-					Val = Val.lshr(LB);
-					Val = Val.trunc(UB - LB);
-				}
-				CI = ConstantInt::get(CI->getContext(), Val);
-			}
-      OS << "((";
-      printConstantIntValue(OS, CI);
-      OS << "))";
-      return;
-    }
-		else if (GlobalValue *GV = dyn_cast<GlobalValue>(U)) {
-			OS << "((" << Mangle(GV->getName());
-		}
-    // Print correctly if this value is a argument.
-    else if (Argument *Arg = dyn_cast<Argument>(U)) {
-      OS << "((" << Mangle(Arg->getName());
-    }
-		// Print correctly if this value is a SeqValue.
-    else if (Instruction *Inst = dyn_cast<Instruction>(U)) {      
-      if (SIRRegister *Reg = lookupSIRReg(Inst))
-        OS << "((" << Mangle(Reg->getName());
-      else
-        OS << "((" << Mangle(Inst->getName());
-    } 
-
-    unsigned OperandWidth = UB - LB;
-    if (UB)
-      OS << BitRange(UB, LB, OperandWidth == 1);
-		OS << "))";
-  }
-
-  void printAsOperand(raw_ostream &OS, Value *U, unsigned BitWidth) {
-    // Need to find a more proper way to get BitWidth 
-    printAsOperandImpl(OS, U, BitWidth, 0);
-  }
-
-  void printSimpleOpImpl(raw_ostream &OS, ArrayRef<Value *> Ops,
-                         const char *Opc, unsigned BitWidth) {
-    unsigned NumOps = Ops.size();
-    assert(NumOps && "Unexpected zero operand!");
-    printAsOperand(OS, Ops[0], BitWidth);
-
-    for (unsigned i = 1; i < NumOps; ++i) {
-      OS << Opc;
-      printAsOperand(OS, Ops[i], BitWidth);
-    }
-  }
-
-
 	// ---------------------------Other Functions---------------------------- //
 
 	// Release the dead objects in SIR.

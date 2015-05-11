@@ -69,6 +69,61 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
   void visitPtrToIntInst(PtrToIntInst &I);
 
   // Functions to print Verilog RTL code
+	void printAsOperand(raw_ostream &OS, Value *U, unsigned UB, unsigned LB = 0) {
+		unsigned BitWidth = TD.getTypeSizeInBits(U->getType());
+
+		// Print correctly if this value is a ConstantInt.
+		if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
+			// Need to slice the wanted bits.
+			if (UB != CI->getBitWidth() || LB == 0) {
+				assert(UB <= CI->getBitWidth() && UB > LB  && "Bad bit range!");
+				APInt Val = CI->getValue();
+				if (UB != CI->getBitWidth())
+					Val = Val.trunc(UB);
+				if (LB != 0) {
+					Val = Val.lshr(LB);
+					Val = Val.trunc(UB - LB);
+				}
+				CI = ConstantInt::get(CI->getContext(), Val);
+			}
+			OS << "((";
+			printConstantIntValue(OS, CI);
+			OS << "))";
+			return;
+		}
+		else if (GlobalValue *GV = dyn_cast<GlobalValue>(U)) {
+			OS << "((" << Mangle(GV->getName());
+		}
+		// Print correctly if this value is a argument.
+		else if (Argument *Arg = dyn_cast<Argument>(U)) {
+			OS << "((" << Mangle(Arg->getName());
+		}
+		// Print correctly if this value is a SeqValue.
+		else if (Instruction *Inst = dyn_cast<Instruction>(U)) {
+			if (SIRRegister *Reg = SM->lookupSIRReg(Inst))
+				OS << "((" << Mangle(Reg->getName());
+			else
+				OS << "((" << Mangle(Inst->getName());
+		}
+
+		unsigned OperandWidth = UB - LB;
+		if (UB && BitWidth != 1)
+			OS << BitRange(UB, LB, OperandWidth == 1);
+		OS << "))";
+	}
+
+	void printSimpleOpImpl(raw_ostream &OS, ArrayRef<Value *> Ops,
+		                     const char *Opc, unsigned BitWidth) {
+			unsigned NumOps = Ops.size();
+			assert(NumOps && "Unexpected zero operand!");
+			printAsOperand(OS, Ops[0], BitWidth);
+
+			for (unsigned i = 1; i < NumOps; ++i) {
+				OS << Opc;
+				printAsOperand(OS, Ops[i], BitWidth);
+			}
+	}
+
   bool printExpr(IntrinsicInst &I);
   bool printFUAdd(IntrinsicInst &I);  
   bool printBinaryFU(IntrinsicInst &I);  
@@ -88,6 +143,62 @@ struct SIRControlPathPrinter {
 
   SIRControlPathPrinter(raw_ostream &OS, SIR *SM, DataLayout &TD)
                         : OS(OS), SM(SM), TD(TD) {}
+
+	/// Basic Print Functions
+	void printAsOperand(raw_ostream &OS, Value *U, unsigned UB, unsigned LB = 0) {
+		unsigned BitWidth = TD.getTypeSizeInBits(U->getType());
+
+		// Print correctly if this value is a ConstantInt.
+		if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
+			// Need to slice the wanted bits.
+			if (UB != BitWidth || LB == 0) {
+				assert(UB <= BitWidth && UB > LB  && "Bad bit range!");
+				APInt Val = CI->getValue();
+				if (UB != BitWidth)
+					Val = Val.trunc(UB);
+				if (LB != 0) {
+					Val = Val.lshr(LB);
+					Val = Val.trunc(UB - LB);
+				}
+				CI = ConstantInt::get(CI->getContext(), Val);
+			}
+			OS << "((";
+			printConstantIntValue(OS, CI);
+			OS << "))";
+			return;
+		}
+		else if (GlobalValue *GV = dyn_cast<GlobalValue>(U)) {
+			OS << "((" << Mangle(GV->getName());
+		}
+		// Print correctly if this value is a argument.
+		else if (Argument *Arg = dyn_cast<Argument>(U)) {
+			OS << "((" << Mangle(Arg->getName());
+		}
+		// Print correctly if this value is a SeqValue.
+		else if (Instruction *Inst = dyn_cast<Instruction>(U)) {
+			if (SIRRegister *Reg = SM->lookupSIRReg(Inst))
+				OS << "((" << Mangle(Reg->getName());
+			else
+				OS << "((" << Mangle(Inst->getName());
+		}
+
+		unsigned OperandWidth = UB - LB;
+		if (UB && BitWidth != 1)
+			OS << BitRange(UB, LB, OperandWidth == 1);
+		OS << "))";
+	}
+
+	void printSimpleOpImpl(raw_ostream &OS, ArrayRef<Value *> Ops,
+		                     const char *Opc, unsigned BitWidth) {
+			unsigned NumOps = Ops.size();
+			assert(NumOps && "Unexpected zero operand!");
+			printAsOperand(OS, Ops[0], BitWidth);
+
+			for (unsigned i = 1; i < NumOps; ++i) {
+				OS << Opc;
+				printAsOperand(OS, Ops[i], BitWidth);
+			}
+	}
 
   /// Functions to print registers
 	void printMuxInReg(SIRRegister *Reg);
@@ -117,7 +228,7 @@ void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg) {
     OS << "wire " << Mangle(Reg->getName()) << "_register_guard = ";
     unsigned Guard_BitWidth = TD.getTypeSizeInBits(RegGuard->getType());
     assert(Guard_BitWidth == 1 && "Bad BitWidth of Guard!");
-    SM->printAsOperand(OS, RegGuard, Guard_BitWidth);
+    printAsOperand(OS, RegGuard, Guard_BitWidth);
     OS << ";\n";
 
     // If it is slot register, we only need the guard signal.
@@ -127,7 +238,7 @@ void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg) {
     // output = (Sel0 & FANNIN0) | (Sel1 & FANNIN1) ...
     OS << "wire " << BitRange(Reg->getBitWidth(), 0, false)
        << Mangle(Reg->getName()) << "_register_wire = ";
-    SM->printAsOperand(OS, RegVal, Reg->getBitWidth());
+    printAsOperand(OS, RegVal, Reg->getBitWidth());
     OS << ";\n";
   }
 }
@@ -472,14 +583,14 @@ void SIRDatapathPrinter::printSimpleOp(ArrayRef<Value *> Ops, const char *Opc) {
            && "The BitWidth not match!");
   }
 
-  SM->printSimpleOpImpl(OS, Ops, Opc, BitWidth);
+  printSimpleOpImpl(OS, Ops, Opc, BitWidth);
 }
 
 void SIRDatapathPrinter::printUnaryOps(ArrayRef<Value *>Ops, const char *Opc) {
   assert(Ops.size() == 1 && "Bad operand numbers!");
   OS << Opc;
   unsigned BitWidth = TD.getTypeSizeInBits(Ops[0]->getType());
-  SM->printAsOperand(OS, Ops[0], BitWidth);
+  printAsOperand(OS, Ops[0], BitWidth);
 }
 
 void SIRDatapathPrinter::printInvertExpr(ArrayRef<Value *> Ops) {
@@ -487,7 +598,7 @@ void SIRDatapathPrinter::printInvertExpr(ArrayRef<Value *> Ops) {
   unsigned BitWidth = TD.getTypeSizeInBits(Ops[0]->getType());
 
   OS << "(~";
-  SM->printAsOperand(OS, Ops[0], BitWidth);
+  printAsOperand(OS, Ops[0], BitWidth);
   OS << ")";
 }
 
@@ -497,7 +608,7 @@ void SIRDatapathPrinter::printBitRepeat(ArrayRef<Value *> Ops) {
   ConstantInt *RepeatTimes = dyn_cast<ConstantInt>(Ops[1]);
 
   OS << '{' << RepeatTimes->getValue() << '{';
-  SM->printAsOperand(OS, Ops[0], BitWidth);
+  printAsOperand(OS, Ops[0], BitWidth);
   OS << "}}";
 }
 
@@ -506,16 +617,16 @@ void SIRDatapathPrinter::printBitExtract(ArrayRef<Value *> Ops) {
   ConstantInt *UB = dyn_cast<ConstantInt>(Ops[1]);
   ConstantInt *LB = dyn_cast<ConstantInt>(Ops[2]);
 
-  SM->printAsOperandImpl(OS, Ops[0], getConstantIntValue(UB), getConstantIntValue(LB));
+  printAsOperand(OS, Ops[0], getConstantIntValue(UB), getConstantIntValue(LB));
 }
 
 void SIRDatapathPrinter::printBitCat(ArrayRef<Value *> Ops) {
   assert(Ops.size() == 2 && "Bad operands number");
 
   OS << "(({";
-  SM->printAsOperand(OS, Ops[0], TD.getTypeSizeInBits(Ops[0]->getType()));
+  printAsOperand(OS, Ops[0], TD.getTypeSizeInBits(Ops[0]->getType()));
   OS << ", ";
-  SM->printAsOperand(OS, Ops[1], TD.getTypeSizeInBits(Ops[1]->getType()));
+  printAsOperand(OS, Ops[1], TD.getTypeSizeInBits(Ops[1]->getType()));
   OS << "}))";
 }
 
@@ -543,17 +654,17 @@ bool SIRDatapathPrinter::printFUAdd(IntrinsicInst &I) {
 
   OS << '(';
 
-  SM->printAsOperand(OS, Ops[0], TD.getTypeSizeInBits(Ops[0]->getType()));
+  printAsOperand(OS, Ops[0], TD.getTypeSizeInBits(Ops[0]->getType()));
   OS << ", ";
-  SM->printAsOperand(OS, Ops[1], TD.getTypeSizeInBits(Ops[1]->getType()));
+  printAsOperand(OS, Ops[1], TD.getTypeSizeInBits(Ops[1]->getType()));
   OS << ", ";
   if (Ops.size() == 3) {
     assert(TD.getTypeSizeInBits(Ops[2]->getType()) == 1 && "Expected carry bit!");
-    SM->printAsOperand(OS, Ops[2], 1);
+    printAsOperand(OS, Ops[2], 1);
   } else
     OS << "1'b0";
   OS << ", ";
-  SM->printAsOperand(OS, &I, TD.getTypeSizeInBits(Callee->getReturnType()));
+  printAsOperand(OS, &I, TD.getTypeSizeInBits(Callee->getReturnType()));
   OS << ");\n";
   return true;
 }
@@ -580,11 +691,11 @@ bool SIRDatapathPrinter::printBinaryFU(IntrinsicInst &I) {
 
   OS << '(';
 
-  SM->printAsOperand(OS, Ops[0], TD.getTypeSizeInBits(Ops[0]->getType()));
+  printAsOperand(OS, Ops[0], TD.getTypeSizeInBits(Ops[0]->getType()));
   OS << ", ";
-  SM->printAsOperand(OS, Ops[1], TD.getTypeSizeInBits(Ops[1]->getType()));
+  printAsOperand(OS, Ops[1], TD.getTypeSizeInBits(Ops[1]->getType()));
   OS << ", ";
-  SM->printAsOperand(OS, &I, TD.getTypeSizeInBits(Callee->getReturnType()));
+  printAsOperand(OS, &I, TD.getTypeSizeInBits(Callee->getReturnType()));
   OS << ");\n";
   return true;
 }
@@ -706,7 +817,7 @@ void SIRDatapathPrinter::visitIntToPtrInst(IntToPtrInst &I) {
   // or float 0.0.
   // We just need to handle the bitwidth here because the width 
   // of operand may be larger than we need.
-  SM->printAsOperand(OS, I.getOperand(0), BitWidth);
+  printAsOperand(OS, I.getOperand(0), BitWidth);
 
   OS << "));\n";
 }
@@ -725,7 +836,7 @@ void SIRDatapathPrinter::visitPtrToIntInst(PtrToIntInst &I) {
   // or float 0.0.
   // We just need to handle the BitWidth here because the width 
   // of operand may be larger than we need.
-  SM->printAsOperand(OS, I.getOperand(0), BitWidth);
+  printAsOperand(OS, I.getOperand(0), BitWidth);
 
   OS << "));\n";
 }
