@@ -958,9 +958,11 @@ Value *SIRDatapathBuilder::createSBitExtractInst(Value *U, unsigned UB, unsigned
 Value *SIRDatapathBuilder::createSCastInst(Value *U, Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
   if (!UsedAsArg) {
     assert((!U || getBitWidth(U) == getBitWidth(InsertPosition))
-      && "Cast between types with different size found!");
+            && "Cast between types with different size found!");
+
     InsertPosition->replaceAllUsesWith(U);
   }
+
   return U;
 }
 
@@ -1219,11 +1221,9 @@ Value *SIRDatapathBuilder::createSFormatSubInst(Value *LHS, Value *RHS, Type *Re
 	// To be noted that, this method can be only called when we have transform the Sub
   // operation into format form: a - b, a > 0, b > 0; And we will implement it by change
   // it into a + ~b + 1.
-
-  Value *isGreater = createSdpUGTInst(LHS, RHS, SM->createIntegerType(1), InsertPosition, true);
-	Value *extendedIsGreater = createSBitRepeatInst(isGreater, TD.getTypeSizeInBits(RetTy), RetTy, InsertPosition, true);
-	Value *isNotGreater = createSNotInst(isGreater, SM->createIntegerType(1), InsertPosition, true);
+	Value *isNotGreater = createSdpUGTInst(RHS, LHS, SM->createIntegerType(1), InsertPosition, true);
 	Value *extendedIsNotGreater = createSBitRepeatInst(isNotGreater, TD.getTypeSizeInBits(RetTy), RetTy, InsertPosition, true);
+	Value *extendedIsGreater = createSNotInst(extendedIsNotGreater, RetTy, InsertPosition, true);
 
 	// If a > b, then we can simply implement the Sub operation by a + ~b + 1.
 	Value *NotRHS = createSNotInst(RHS, RHS->getType(), InsertPosition, true);
