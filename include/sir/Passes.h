@@ -23,7 +23,7 @@ class PassRegistry;
 }
 
 namespace llvm {
-extern char &SIRFSMSynthesisID;
+//extern char &SIRFSMSynthesisID;
 extern char &SIRRegisterSynthesisForAnnotationID;
 extern char &SIRRegisterSynthesisForCodeGenID;
 extern char &SIRSchedulingID;

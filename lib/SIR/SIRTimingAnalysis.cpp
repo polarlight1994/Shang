@@ -896,6 +896,7 @@ void SIRTimingAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 	SIRPass::getAnalysisUsage(AU);
   AU.addRequired<DataLayout>();
   AU.addRequiredID(SIRRegisterSynthesisForAnnotationID);
+	//AU.addRequiredID(SIRFSMSynthesisID);
   AU.setPreservesAll();
 }
 
