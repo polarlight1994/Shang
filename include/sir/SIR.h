@@ -460,32 +460,7 @@ public:
 namespace llvm {
 class SIRSlot;
 class SIRSeqOp;
-
-// Represent the assign operation in SIR.
-class SIRSeqOp {
-private:
-	Value *Src;
-	SIRRegister *DstReg;
-	Value *Guard;
-	SIRSlot *S;
-
-public:
-	SIRSeqOp(Value *Src, SIRRegister *DstReg,
-		       Value *Guard, SIRSlot *S) 
-		: Src(Src), DstReg(DstReg), Guard(Guard), S(S) {}
-
-	Value *getLLVMValue() const { return DstReg->getLLVMValue(); }
-	Value *getSrc() const { return Src; }
-	Value *getGuard() const { return Guard; }
-	SIRSlot *getSlot() const { return S; }
-	SIRRegister *getDst() const { return DstReg; }
-
-	void setSlot(SIRSlot *Slot) { S = Slot; }
-
-	// Functions for debug
-	void print(raw_ostream &OS) const;
-	void dump() const; 
-};
+class SIRSlotTransition;
 
 // Represent the state in the state-transition graph.
 class SIRSlot {
@@ -542,10 +517,8 @@ private:
 
   SIRRegister *SlotReg;
 
-  // The schedule result
-  typedef uint16_t SlotNumTy;
-  const SlotNumTy SlotNum;
-  const SlotNumTy Schedule;
+  unsigned SlotNum;
+  unsigned Schedule;
 
 public:
   SIRSlot(unsigned SlotNum, BasicBlock *ParentBB,
@@ -554,13 +527,13 @@ public:
     SlotReg(Reg), Schedule(Schedule) {}
   ~SIRSlot();
 
-  SlotNumTy getSlotNum() const { return SlotNum; }
-  SlotNumTy getSchedule() const { return Schedule; }
+  unsigned getSlotNum() const { return SlotNum; }
+  unsigned getSchedule() const { return Schedule; }
   BasicBlock *getParent() const { return ParentBB; }
   SIRRegister *getSlotReg() const { return SlotReg; }
   Value *getGuardValue() const { return getSlotReg()->getLLVMValue(); }
 
-  SIRSlot *getSubGroup(BasicBlock *BB) const;
+  void setSchedule(unsigned Step) { Schedule = Step; }
 
   // If the SrcSlot already has this NextSlot as successor.
   bool hasNextSlot(SIRSlot *NextSlot);
@@ -570,8 +543,6 @@ public:
 
   void unlinkSuccs();
   void unlinkSucc(SIRSlot *S);
-
-	void replaceAllUsesWith(SIRSlot *S);
 
   typedef OpVector::const_iterator const_op_iterator;
   const_op_iterator op_begin() const { return Operations.begin(); }
@@ -621,6 +592,69 @@ template<> struct GraphTraits<const SIRSlot *> {
 	}
 	static inline ChildIteratorType child_end(NodeType *N) {
 		return N->succ_end();
+	}
+};
+
+// Represent the assign operation in SIR.
+class SIRSeqOp {
+public:
+	enum Type {
+		General,
+		SlotTransition
+	};
+
+private:
+	const Type T;
+	Value *Src;
+	SIRRegister *DstReg;
+	Value *Guard;
+	SIRSlot *S;
+
+public:
+	SIRSeqOp(Value *Src, SIRRegister *DstReg, Value *Guard,
+		       SIRSlot *S, Type T = General) 
+		: Src(Src), DstReg(DstReg), Guard(Guard), S(S), T(T) {}
+
+	Value *getLLVMValue() const { return DstReg->getLLVMValue(); }
+	Value *getSrc() const { return Src; }
+	Value *getGuard() const { return Guard; }
+	SIRSlot *getSlot() const { return S; }
+	SIRRegister *getDst() const { return DstReg; }
+	Type getType() const { return T; }
+
+	bool isSlotTransition() const { return T == SlotTransition; }
+
+	void setSlot(SIRSlot *Slot) { S = Slot; }
+
+	// Functions for debug
+	void print(raw_ostream &OS) const;
+	void dump() const;
+
+	/// Methods for support type inquiry through isa, cast, and dyn_cast:
+	static inline bool classof(const SIRSeqOp *SeqOp) { return true; }
+	static inline bool classof(const SIRSlotTransition *SST) { return true; }
+};
+
+// Represent the state transition in SIR.
+// Note that this is also assign operation
+// to the SlotReg indeed.
+class SIRSlotTransition : public SIRSeqOp {
+private:
+	SIRSlot *DstSlot;
+
+public:
+	// Dirty Hack: the Src Value here should be limited as 1'b1.
+	SIRSlotTransition(Value *Src, SIRSlot *SrcSlot, SIRSlot *DstSlot, Value *Cnd)
+		: SIRSeqOp(Src, DstSlot->getSlotReg(), Cnd, SrcSlot, SIRSeqOp::SlotTransition), DstSlot(DstSlot) {}
+
+	SIRSlot *getSrcSlot() const { return getSlot(); }
+	SIRSlot *getDstSlot() const { return DstSlot; }
+	Value *getCnd() const { return getGuard(); }
+
+	/// Methods for support type inquiry through isa, cast, and dyn_cast:
+	static inline bool classof(const SIRSlotTransition *SST) { return true; }
+	static inline bool classof(const SIRSeqOp *SeqOp) {
+		return SeqOp->getType() == SlotTransition;
 	}
 };
 }

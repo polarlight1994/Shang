@@ -237,22 +237,6 @@ void SIRSlot::unlinkSuccs() {
 	NextSlots.clear();
 }
 
-void SIRSlot::replaceAllUsesWith(SIRSlot *S) {
-	SmallVector<EdgePtr, 4> Succs;
-
-	// Store all the Succs of CurSlot.
-	for (succ_iterator I = this->succ_begin(), E = this->succ_end(); I != E; ++I) 
-		Succs.push_back(*I);
-	
-	// Unlink all Succs of CurSlot.
-	this->unlinkSuccs();
-
-	// Link all Succs of CurSlot to Target Slot.
-	typedef SmallVector<EdgePtr, 4>::iterator iterator;
-	for (iterator I = Succs.begin(), E = Succs.end(); I != E; ++I) 
-		S->addSuccSlot(I->getSlot(), I->getType(), I->getCnd());	
-}
-
 void SIRSlot::print(raw_ostream &OS) const {
 	OS << "Slot #" << SlotNum << " Scheduled to " << Schedule
 		 << " Guarding by " << getGuardValue()->getName() << "\n";
