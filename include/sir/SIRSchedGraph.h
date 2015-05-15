@@ -231,6 +231,7 @@ public:
   bool isExit() const { return T == Exit; }
   bool isBBEntry() const { return T == BlockEntry; }
   bool isPHI() const { return T == PHI; }
+	bool isSlotTransition() const { return T == SlotTransition; }
 
 	bool isTerminator() const { return isa<TerminatorInst>(getInst()); }
 
@@ -249,6 +250,15 @@ public:
   void addToUseList(SIRSchedUnit *User) {
     UseList.insert(User);
   }
+	SmallVector<SIRSchedUnit *, 4> getUseList() const {
+		SmallVector<SIRSchedUnit *, 4> Users;
+
+		typedef UseListTy::iterator iterator;
+		for (iterator I = UseList.begin(), E = UseList.end(); I != E; I++) {
+			Users.push_back(*I);
+		}
+		return Users;
+	}
 
   // Iterators for dependencies.
   dep_iterator dep_begin() { return Deps.begin(); }
@@ -312,10 +322,15 @@ public:
            && "Edge not inserted?");
   }
 
-	// Only the Entry SUnit can have schedule of 0.
-	// So all others scheduled SUnit should have a
-	// positive schedule number.
-  bool isScheduled() const { return Schedule != 0; }
+	bool isInSlot0r() const {
+		return !getParentBB() && !isEntry() && !isEntry();
+	}
+
+	// Only the Entry/Exit SUnit and SUnits in Slot0r can have schedule of 0.
+	// So all others scheduled SUnit should have a positive schedule number.
+  bool isScheduled() const {
+		return isInSlot0r() || isEntry() || Schedule != 0;
+	}
 
   // Return the index of the current scheduling unit.
   uint32_t getIdx() const { return InstIdx; }
@@ -354,6 +369,10 @@ private:
  	typedef std::map<Value *, SmallVector<SIRSchedUnit *, 4> > IR2SUMapTy;
  	IR2SUMapTy IR2SUMap;
 
+	// Mappint between SIRSlot and SIR Scheduling Units it contains.
+	typedef std::map<SIRSlot *, SmallVector<SIRSchedUnit *, 4> > Slot2SUMapTy;
+	Slot2SUMapTy Slot2SUMap;
+
   // Helper class to arrange the scheduling units according to their parent BB,
   // we will emit the schedule or build the linear order BB by BB.
   std::map<BasicBlock*, std::vector<SIRSchedUnit *> > BBMap;
@@ -377,6 +396,10 @@ public:
 	bool hasSU(Value *V) const { return IR2SUMap.count(V); }
 	ArrayRef<SIRSchedUnit *> lookupSUs(Value *V) const;
 	bool indexSU2IR(SIRSchedUnit *SU, Value *V);
+
+	bool hasSlot(SIRSlot *S) const { return Slot2SUMap.count(S); }
+	ArrayRef<SIRSchedUnit *> lookupSUs(SIRSlot *S) const;
+	bool indexSU2Slot(SIRSchedUnit *SU, SIRSlot *S);
 
   MutableArrayRef<SIRSchedUnit *> getSUsInBB(BasicBlock *BB);
   ArrayRef<SIRSchedUnit *> getSUsInBB(BasicBlock *BB) const;

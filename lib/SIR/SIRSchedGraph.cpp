@@ -106,8 +106,6 @@ SIRDep SIRSchedUnit::EdgeBundle::getEdge(unsigned II) const {
 }
 
 BasicBlock *SIRSchedUnit::getParentBB() const {
-	assert(!isEntry() && !isExit() && "Call getParentBB() on wrong SUnit type!");
-
 	// If the SUnit has no corresponding IR instruction,
 	// then it may be the BlockEntry, so return the BB
 	// directly.
@@ -174,11 +172,20 @@ SIRSchedGraph::SIRSchedGraph(Function &F) : F(F), TotalSUs(2) {
 
 SIRSchedGraph::~SIRSchedGraph() {}
 
+ArrayRef<SIRSchedUnit *> SIRSchedGraph::lookupSUs(Value *V) const {
+	IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
+
+	if (at == IR2SUMap.end())
+		return ArrayRef<SIRSchedUnit *>();
+
+	return at->second;
+}
+
 bool SIRSchedGraph::indexSU2IR(SIRSchedUnit *SU, Value *V) {
 	// Only BB Value and PHI node can have mutil-SUnits, 
 	// so if the Value already have corresponding SUnit, 
 	// the insert operation can not be done.	
-	if(hasSU(V)) {
+	if (hasSU(V)) {
   // Still only BB Value and PHI node can have mutil-SUnits,
 	// however, we create a pseudo instruction to hold the value
 	// in PHINode, so the value here is not the PHINode itself.
@@ -193,6 +200,26 @@ bool SIRSchedGraph::indexSU2IR(SIRSchedUnit *SU, Value *V) {
 	SmallVector<SIRSchedUnit *, 4> SUs;
 	SUs.push_back(SU);
   IR2SUMap.insert(std::make_pair(V, SUs));
+}
+
+ArrayRef<SIRSchedUnit *> SIRSchedGraph::lookupSUs(SIRSlot *S) const {
+	Slot2SUMapTy::const_iterator at = Slot2SUMap.find(S);
+
+	if (at == Slot2SUMap.end())
+		return ArrayRef<SIRSchedUnit *>();
+
+	return at->second;
+}
+
+bool SIRSchedGraph::indexSU2Slot(SIRSchedUnit *SU, SIRSlot *S) {
+	if (hasSlot(S)) {
+		Slot2SUMap[S].push_back(SU);
+		return true;
+	}
+
+	SmallVector<SIRSchedUnit *, 4> SUs;
+	SUs.push_back(SU);
+	Slot2SUMap.insert(std::make_pair(S, SUs));
 }
 
 void SIRSchedGraph::toposortCone(SIRSchedUnit *Root,
@@ -238,6 +265,13 @@ void SIRSchedGraph::topologicalSortSUs() {
 	std::set<SIRSchedUnit *> Visited;
 	SUnits.splice(SUnits.end(), SUnits, Entry);
 
+	// Handle the SUnit create for the Slot0r which has no parent BB.
+	bb_iterator at = BBMap.find(0);
+	assert(at != BBMap.end() && "Haven't create the SUnit for the Slot0r!");
+	MutableArrayRef<SIRSchedUnit *> SUs(at->second);
+	for (unsigned i = 0; i < SUs.size(); ++i)
+		toposortCone(SUs[i], Visited, 0);
+
 	ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
 	typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
 
@@ -262,15 +296,6 @@ void SIRSchedGraph::topologicalSortSUs() {
 
 	assert(Idx == size() && "Topological sort is not applied to all SU?");
 	assert(getEntry()->isEntry() && getExit()->isExit() && "Broken TopSort!");
-}
-
-ArrayRef<SIRSchedUnit *> SIRSchedGraph::lookupSUs(Value *V) const {
-	IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
-
-	if (at == IR2SUMap.end())
-		return ArrayRef<SIRSchedUnit *>();
-
-	return at->second;
 }
 
 MutableArrayRef<SIRSchedUnit *> SIRSchedGraph::getSUsInBB(BasicBlock *BB) {
