@@ -76,9 +76,10 @@ bool BBContext::isSUReady(SIRSchedUnit *SU) {
 	for (iterator DI = SU->dep_begin(), DE = SU->dep_end(); DI != DE; ++DI) {
 		SIRSchedUnit *DepSU = *DI;
 
-// 		// Ignore the dependency cross the BB.
-// 		if (DepSU->getParentBB() != SU->getParentBB())
-// 			continue;
+		// Ignore the back-edge dependency cross the BB.
+		if (DepSU->getParentBB() != SU->getParentBB()
+				&& DepSU->getIdx() > SU->getIdx())
+			continue;
 
 		AllScheduled &= DepSU->isScheduled();
 	}
@@ -97,8 +98,9 @@ void BBContext::collectReadySUs(ArrayRef<SIRSchedUnit *> SUs) {
 
 		// If this SUnit is in Slot0r, then we do not need to add
 		// it into the ReadySUs, since it must be scheduled to 0
-		// without any doubt.
-		if (SU->isInSlot0r())
+		// without any doubt. Also we only collect the ready SUnits
+		// in this BB.
+		if (SU->isInSlot0r() || SU->getParentBB() != BB)
 			continue;
 
 		// SUnit should not be scheduled unless the SUnit is
@@ -110,7 +112,7 @@ void BBContext::collectReadySUs(ArrayRef<SIRSchedUnit *> SUs) {
 		if (SU->isBBEntry() || SU->isExit() || SU->isPHI())
 			continue;
 
-		if (isSUReady(SU) && SU->getParentBB() == BB)
+		if (isSUReady(SU))
 			ReadyQueue.push(SU);
 	}
 }
@@ -131,7 +133,7 @@ void BBContext::scheduleBB() {
 		// After we schedule a unit, we should reset the ReadyQueue.
 		S.resetTimeFrame();
 
-		ArrayRef<SIRSchedUnit *> Users = SU->getUseList();
+		SmallVector<SIRSchedUnit *, 4> Users = SU->getUseList();
 
 		collectReadySUs(Users);
 		ReadyQueue.reheapify();
