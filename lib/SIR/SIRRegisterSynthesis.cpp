@@ -45,6 +45,7 @@ INITIALIZE_PASS_BEGIN(SIRRegisterSynthesisForAnnotation,
                       "Implement the MUX for the Sequential Logic in SIR for annotation",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
+	//INITIALIZE_PASS_DEPENDENCY(SIRFSMSynthesis)
 INITIALIZE_PASS_END(SIRRegisterSynthesisForAnnotation,
 	                  "SIR-Register-synthesis-for-annotation",
 	                  "Implement the MUX for the Sequential Logic in SIR for annotation",
@@ -68,11 +69,15 @@ bool SIRRegisterSynthesisForAnnotation::runOnSIR(SIR &SM) {
    for (seqop_iterator I = SM.seqop_begin(), E = SM.seqop_end(); I != E; ++I) {
  		SIRSeqOp *SeqOp = *I;
  		SIRRegister *Reg = SeqOp->getDst();
- 
+    
+		// Insert the implement of register just in front of the terminator instruction
+		// at back of the module to avoid being used before declaration.
+		Value *InsertPosition = SM.getPositionAtBackOfModule();
+
  		// Extract the assignments for Registers.
  		Value *Src = SeqOp->getSrc(), *Guard = SeqOp->getGuard();
-		// Since we just synthesis the register for annotation, so here we do not
-		// consider the SlotGuard.
+		Value *GuardConsiderSlot = Builder.createSAndInst(Guard, SeqOp->getSlot()->getGuardValue(),
+			                                                Guard->getType(), InsertPosition, true);
  		Reg->addAssignment(Src, Guard);          
   }
 
@@ -161,7 +166,7 @@ INITIALIZE_PASS_BEGIN(SIRRegisterSynthesisForCodeGen,
                       "Implement the MUX for the Sequential Logic in SIR for CodeGen",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
-	INITIALIZE_PASS_DEPENDENCY(SIRFSMSynthesis)
+	//INITIALIZE_PASS_DEPENDENCY(SIRFSMSynthesis)
 INITIALIZE_PASS_END(SIRRegisterSynthesisForCodeGen,
 	                  "SIR-Register-synthesis-for-code-generate",
 	                  "Implement the MUX for the Sequential Logic in SIR for CodeGen",
@@ -170,7 +175,7 @@ INITIALIZE_PASS_END(SIRRegisterSynthesisForCodeGen,
 void SIRRegisterSynthesisForCodeGen::getAnalysisUsage(AnalysisUsage &AU) const {
   SIRPass::getAnalysisUsage(AU);
   AU.addRequired<DataLayout>();
-	AU.addRequiredID(SIRFSMSynthesisID);
+	//AU.addRequiredID(SIRFSMSynthesisID);
   AU.setPreservesAll();
 }
 
@@ -182,7 +187,50 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
   // Initialize a SIRDatapathBuilder to build expression for guard and Fanin
   SIRDatapathBuilder Builder(&SM, TD);
 
+	// Since the RegVal and RegGuard will be regenerate to associate the guard
+	// condition with the SlotGuard, so drop it first.
 	typedef SIR::register_iterator reg_iterator;
+	for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
+		SIRRegister *Reg = *I;
+		Reg->dropMux();
+	}
+
+	typedef SIR::seqop_iterator seqop_iterator;
+	for(seqop_iterator I = SM.seqop_begin(), E = SM.seqop_end(); I != E; ++I) {
+		SIRSeqOp *SeqOp = *I;
+
+		// Dirty Hack: Need to find a much more proper way to delete the old
+		// SSTs which is useless since we insert new slots between them.
+		if (SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SeqOp)) {
+			SIRSlot *SrcSlot = SST->getSrcSlot();
+			SIRSlot *DstSlot = SST->getDstSlot();
+
+			if (!SrcSlot->hasNextSlot(DstSlot))
+				continue;
+		}
+
+		Value *SrcVal = SeqOp->getSrc();
+		SIRRegister *Dst = SeqOp->getDst();	
+		Value *GuardVal = SeqOp->getGuard();
+		SIRSlot *Slot = SeqOp->getSlot();
+
+		// Index the normal register to this slot and the slot register will
+		// be indexed in SIRFSMSynthsisPass.
+		SM.IndexReg2Slot(Dst, Slot);
+
+		// Insert the implement of register just in front of the terminator instruction
+		// at back of the module to avoid being used before declaration.
+		Value *InsertPosition = SM.getPositionAtBackOfModule();
+
+		// Associate the guard with the Slot guard.
+		Value *NewGuardVal = Builder.createSAndInst(GuardVal, Slot->getGuardValue(),
+			                                          GuardVal->getType(), InsertPosition, true);
+
+		assert(Builder.getBitWidth(NewGuardVal) == 1 && "Bad BitWidth of Guard Value!");
+
+		Dst->addAssignment(SrcVal, NewGuardVal);
+	}
+
 	for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
 		SIRRegister *Reg = *I;
 
