@@ -74,7 +74,13 @@ bool BBContext::isSUReady(SIRSchedUnit *SU) {
 
 	typedef SIRSchedUnit::dep_iterator iterator;
 	for (iterator DI = SU->dep_begin(), DE = SU->dep_end(); DI != DE; ++DI) {
-		AllScheduled &= DI->isScheduled();
+		SIRSchedUnit *DepSU = *DI;
+
+// 		// Ignore the dependency cross the BB.
+// 		if (DepSU->getParentBB() != SU->getParentBB())
+// 			continue;
+
+		AllScheduled &= DepSU->isScheduled();
 	}
 
 	// Hack: why BBEntry and PHI only need one of dependencies is ready.
@@ -89,13 +95,22 @@ void BBContext::collectReadySUs(ArrayRef<SIRSchedUnit *> SUs) {
 	for (iterator I = SUs.begin(), E = SUs.end(); I != E; ++I) {
 		SIRSchedUnit *SU = *I;
 
-		assert(!SU->isScheduled() && "SUnit should not be scheduled yet!");
+		// If this SUnit is in Slot0r, then we do not need to add
+		// it into the ReadySUs, since it must be scheduled to 0
+		// without any doubt.
+		if (SU->isInSlot0r())
+			continue;
+
+		// SUnit should not be scheduled unless the SUnit is
+		// Entry, Exit or SUnit created for the Slot0r.
+		assert((!SU->isScheduled() || SU->isInSlot0r())
+			      && "SUnit should not be scheduled yet!");
 
 		// Entrys, Exits and PHINodes will be handled elsewhere.
 		if (SU->isBBEntry() || SU->isExit() || SU->isPHI())
 			continue;
 
-		if (isSUReady(SU))
+		if (isSUReady(SU) && SU->getParentBB() == BB)
 			ReadyQueue.push(SU);
 	}
 }
@@ -115,6 +130,10 @@ void BBContext::scheduleBB() {
 
 		// After we schedule a unit, we should reset the ReadyQueue.
 		S.resetTimeFrame();
+
+		ArrayRef<SIRSchedUnit *> Users = SU->getUseList();
+
+		collectReadySUs(Users);
 		ReadyQueue.reheapify();
 	}
 

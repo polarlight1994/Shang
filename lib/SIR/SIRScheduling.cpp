@@ -164,6 +164,29 @@ void SIRScheduling::buildControlFlowDependencies() {
 		// the entry SU of this BB.
 		buildControlFlowDependencies(BB, G->lookupSUs(BB));
 	}
+
+
+	typedef iplist<SIRSchedUnit>::iterator sunit_iterator;
+	for (sunit_iterator I = G->begin(), E = G->end(); I != E; ++I) {
+		SIRSchedUnit *SU = I;
+
+		if (!SU->isSlotTransition()) continue;
+
+		SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SU->getSeqOp());
+		assert(SST && "Unexpected non-SlotTransition SUnit!");
+
+		SIRSlot *DstSlot = SST->getDstSlot();
+
+		ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(DstSlot);
+		for (int i = 0; i < SUs.size(); i++) {
+			SIRSchedUnit *CurSU = SUs[i];
+
+			// Do not add a self-loop dependency.
+			if (CurSU == SU) continue;
+
+			CurSU->addDep(SU, SIRDep::CreateCtrlDep(1));
+		}
+	}
 }
 
 void SIRScheduling::buildMemoryDependency(Instruction *SrcInst, Instruction *DstInst) {
@@ -315,17 +338,12 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 			assert(II->getIntrinsicID() == Intrinsic::shang_pseudo
 			       && "Only RetReg can have pseudo instruction!");
 
-		// Check if it is a PHI node or normal node.
-		// Still only BB Value and PHI node can have mutil-SUnits,
-		// however, we create a pseudo instruction to hold the value
-		// in PHINode, so the value here is not the PHINode itself.
-		// For now, we can't detect whether this value is associated
-		// with PHINode through the type of Value itself.
-// 		SIRSchedUnit::Type Ty = isa<PHINode>(Inst) ?
-// 			                        SIRSchedUnit::PHI : SIRSchedUnit::Normal;
-		// So we detect whether its a PHINode from the DstReg.
-		SIRSchedUnit::Type Ty = Op->getDst()->isPHI() ?
-															SIRSchedUnit::PHI : SIRSchedUnit::Normal;
+		// Detect whether the type of SIRSchedUnit from the DstReg.
+		SIRSchedUnit::Type Ty;
+		SIRRegister *DstReg = Op->getDst();
+		if (DstReg->isPHI())			  Ty = SIRSchedUnit::PHI;
+		else if (DstReg->isSlot())  Ty = SIRSchedUnit::SlotTransition;
+		else                        Ty = SIRSchedUnit::Normal;
 
 		SIRSchedUnit *U = G->createSUnit(Inst, BB, Ty, Op);
 
@@ -338,6 +356,7 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 		buildDataFlowDependencies(U);
 
 		G->indexSU2IR(U, Inst);
+		G->indexSU2Slot(U, S);
 		continue;
 	}
 }
@@ -397,15 +416,6 @@ void SIRScheduling::schedule() {
 }
 
 void SIRScheduling::emitSchedule() {
-	// Since the RegVal and RegGuard will be regenerate
-	// in ScheduleEmitter to associate the guard condition
-	// with the SlotGuard, so drop it first.
-	typedef SIR::register_iterator iterator;
-	for (iterator I = SM->registers_begin(), E = SM->registers_end(); I != E; ++I) {
-		SIRRegister *Reg = *I;
-		Reg->dropMux();
-	}		
-
 	SIRScheduleEmitter SSE(*TD, SM, *G);
 
 	SSE.emitSchedule();
@@ -434,33 +444,41 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
 	return true;
 }
 
-void SIRScheduleEmitter::emitToSlot(SIRSeqOp *SeqOp, SIRSlot *ToSlot) {
-	SeqOp->setSlot(ToSlot);
+void SIRScheduleEmitter::insertSlotBefore(SIRSlot *S, SIRSlot *DstS,
+	                                        SIRSlot::EdgeType T, Value *Cnd) {
+	SmallVector<SIRSlot::EdgePtr, 4> Preds;
+	for (SIRSlot::pred_iterator I = DstS->pred_begin(), E = DstS->pred_end(); I != E; I++) {
+		Preds.push_back(*I);
+	}
 
-	Value *SrcVal = SeqOp->getSrc();
-	SIRRegister *Dst = SeqOp->getDst();	
-	Value *GuardVal = SeqOp->getGuard();
+	typedef SmallVector<SIRSlot::EdgePtr, 4>::iterator iterator;
+	for (iterator I = Preds.begin(), E = Preds.end(); I != E; I++) {
+		SIRSlot *Pred = I->getSlot();
 
-	// Index the normal register to this slot and the slot register will
-	// be indexed in SIRFSMSynthsisPass.
-	SM->IndexReg2Slot(Dst, ToSlot);
+		// Unlink the edge from Pred to DstS.
+		Pred->unlinkSucc(DstS);
 
-	// Insert the implement of register just in front of the terminator instruction
-	// at back of the module to avoid being used before declaration.
-	Value *InsertPosition = SM->getPositionAtBackOfModule();
+		// Link the edge from Pred to S.
+		C_Builder.createStateTransition(Pred, S, I->getCnd());
+	}
 
-	// Associate the guard with the Slot guard.
-	Value *NewGuardVal = D_Builder.createSAndInst(GuardVal, ToSlot->getGuardValue(),
-		                                            GuardVal->getType(), InsertPosition, true);
-
-	assert(getBitWidth(NewGuardVal) == 1 && "Bad BitWidth of Guard Value!");
-
-	Dst->addAssignment(SrcVal, NewGuardVal);
+	// Link the edge from S to DstS.
+	C_Builder.createStateTransition(S, DstS, Cnd);
 }
 
 namespace {
 	bool SUnitLess(SIRSchedUnit *LHS, SIRSchedUnit *RHS) {
 		return LHS->getSchedule() < RHS->getSchedule();
+	}
+}
+
+void SIRScheduleEmitter::emitSUsInSlot0r(MutableArrayRef<SIRSchedUnit *> SUs) {
+	SIRSlot *Slot0r = SM->getStartSlot();
+
+	for (unsigned i = 0; i < SUs.size(); ++i) {
+		SIRSchedUnit *SU = SUs[i];
+
+		SU->getSeqOp()->setSlot(Slot0r);
 	}
 }
 
@@ -476,52 +494,44 @@ void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 	assert(CurSlot && "Landing Slot not created?");
 	assert(CurSlotSchedule == 0 && "EntrySlot is not schedule in 0?");
 
+	unsigned BBEntrySchedule = SUs[0]->getSchedule();
+
 	std::vector<SIRSchedUnit *> NewSUs(SUs.begin() +1, SUs.end());
 	// Sort the SUs to make sure they are ranged by schedule in ascending order.
 	std::sort(NewSUs.begin(), NewSUs.end(), SUnitLess);
-
-	unsigned temp = 0;
-	for (int i = 0; i < NewSUs.size(); i++) {
-		assert(NewSUs[i]->getSchedule() >= temp && "bad order");
-		temp = NewSUs[i]->getSchedule();
-	}
 
 	assert(SUs[0]->isBBEntry() && "BBEntry must be placed at the beginning!");
 
 	for (unsigned i = 0; i < NewSUs.size(); ++i) {
 		SIRSchedUnit *CurSU = NewSUs[i];
+		SIRSeqOp *SeqOp = CurSU->getSeqOp();
+		SIRSlot *EmitSlot = SeqOp->getSlot();
 
-		// To be noted that, since we set the Entry SUnit to schedule 0,
-		// all other SUnits including BBEntry can be scheduled to 1 at
-		// least. However, the Slot schedule of BB is counted from 0.
-		// So we must minus the SUnit schedule to eliminate the gap.
-		unsigned TargetSchedSlot = CurSU->getSchedule() - 1;
+		unsigned EmitSlotSchedule = EmitSlot->getSchedule();
+		unsigned TargetSchedule = CurSU->getSchedule() - BBEntrySchedule;
+		unsigned SlotsNeedToAlloca = TargetSchedule - EmitSlotSchedule;
 
-		// Calculate the real Slot we should emit to according to the
-		// difference value between CurScheSlot and EntrySchedSlot.
-		// Create the slot if it is not created.
-		while (CurSlotSchedule != TargetSchedSlot) {
-			++CurSlotSchedule;
-			SIRSlot *NextSlot = C_Builder.createSlot(BB, CurSlotSchedule);
+		// Set the schedule of the EmitSlot.
+		EmitSlot->setSchedule(TargetSchedule);
 
-			// Replace the Old Slot with the CurSlot int STG
-			CurSlot->replaceAllUsesWith(NextSlot);
+		while(SlotsNeedToAlloca--) {
+			SIRSlot *NewSlot = C_Builder.createSlot(BB, TargetSchedule--);
 
-			C_Builder.createStateTransition(CurSlot, NextSlot, SM->creatConstantBoolean(true));
-			CurSlot = NextSlot;
+			// Insert the NewSlot from bottom to up before the EmitSlot.
+			insertSlotBefore(NewSlot, EmitSlot, SIRSlot::Sucessor, SM->createIntegerValue(1, 1));
+
+			EmitSlot = NewSlot;
 		}
-
-		assert(CurSlot->getSchedule() == TargetSchedSlot && "Schedule not match!");
-		emitToSlot(CurSU->getSeqOp(), CurSlot);
 	}
-
- 	// Update the latest slot of BB.
- 	SM->IndexBB2Slots(BB, SM->getLandingSlot(BB), CurSlot);	
 }
 
 void SIRScheduleEmitter::emitSchedule() {
 	// Get some basic information.
 	Function &F = *SM->getFunction();
+
+	// Handle the SUnits in Slot0r which don't have parent BB.
+	MutableArrayRef<SIRSchedUnit *> SUs(G.getSUsInBB(0));
+	emitSUsInSlot0r(SUs);
 
 	// Visit the basic block in topological order to emit all SUnits in BB.
 	ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());

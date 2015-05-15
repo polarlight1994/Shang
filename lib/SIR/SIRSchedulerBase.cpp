@@ -20,9 +20,6 @@ using namespace llvm;
 static const unsigned MaxSlot = UINT16_MAX >> 2;
 
 unsigned SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
-	// If this SUnit is BBEntry, then return 0;
-	if (A->isBBEntry()) return 1;
-
   unsigned NewStep = 0;
   typedef SIRSchedUnit::const_dep_iterator iterator;
   for (iterator DI = A->dep_begin(), DE = A->dep_end(); DI != DE; ++DI) {
@@ -42,9 +39,6 @@ unsigned SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
 }
 
 unsigned SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
-	// If this SUnit is BBEntry, then return 0;
-	if (A->isBBEntry()) return 1;
-
   unsigned NewStep = MaxSlot;
   typedef SIRSchedUnit::const_use_iterator iterator;
   for (iterator UI = A->use_begin(), UE = A->use_end(); UI != UE; ++UI) {
@@ -57,7 +51,7 @@ unsigned SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
     unsigned UseALAP = Use->isScheduled() ?
                        Use->getSchedule() : getALAPStep(Use);
     if (UseALAP == 0) {
-      assert(UseEdge.isLoopCarried() && "Broken time frame!");
+      assert(UseEdge.isLoopCarried() || !Use->getParentBB()&& "Broken time frame!");
       UseALAP = MaxSlot;
     }
 

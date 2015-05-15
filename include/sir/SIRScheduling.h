@@ -159,7 +159,8 @@ public:
 
 	unsigned getBitWidth(Value *U) { return D_Builder.getBitWidth(U); }
 
-	void emitToSlot(SIRSeqOp *SeqOp, SIRSlot *ToSlot);
+	void insertSlotBefore(SIRSlot *S, SIRSlot *DstS, SIRSlot::EdgeType T, Value *Cnd);
+	void emitSUsInSlot0r(MutableArrayRef<SIRSchedUnit *> SUs);
 	void emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs);
 	void emitSchedule();
 };

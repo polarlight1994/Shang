@@ -55,8 +55,8 @@ struct PriorityHeuristic {
 		if (LHSTF.ALAP > RHSTF.ALAP) return false;
 
 		// Ascending order using ASAP.
-		if (LHSTF.ALAP < RHSTF.ALAP) return true;
-		if (LHSTF.ALAP > RHSTF.ALAP) return false;
+		if (LHSTF.ASAP < RHSTF.ASAP) return true;
+		if (LHSTF.ASAP > RHSTF.ASAP) return false;
 
 		// Tie breaker: Original topological order.
 		return LHS->getIdx() < RHS->getIdx();
