@@ -110,17 +110,17 @@ void SIRBuilder::buildInterface(Function *F) {
   SIRSlot *IdleStartSlot = C_Builder.createSlot(0, 0);
   assert(IdleStartSlot && "We need to create a start slot here!");
 
-  // Get the Start signal of module.
-  Value *Start 
-    = cast<SIRInPort>(SM->getPort(SIRPort::Start))->getValue();
-
 	// Insert the implement just in front of the terminator instruction
 	// at back of the module to avoid being used before declaration.
 	Value *InsertPosition = SM->getPositionAtBackOfModule();
 
+  // Get the Start signal of module.
+  Value *Start
+    = cast<SIRInPort>(SM->getPort(SIRPort::Start))->getValue();
+	Value *IdleCnd = D_Builder.createSNotInst(Start, Start->getType(), InsertPosition, true);
+
 	// Whole module will be run only when the Start signal is true.
-  Value *IdleLoopCondition = D_Builder.createSNotInst(Start, Start->getType(), InsertPosition, true);
-  C_Builder.createStateTransition(IdleStartSlot, IdleStartSlot, IdleLoopCondition);
+  C_Builder.createStateTransition(IdleStartSlot, IdleStartSlot, IdleCnd);
 
   // If the Start signal is true, then slot will jump to the slot of first BB.
   BasicBlock *EntryBB = &F->getEntryBlock();
@@ -362,6 +362,9 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 	// Get the slot.
 	SIRSlot *Slot = SM->getLatestSlot(ParentBB);
 
+	/// Handle the enable pin.
+	assignToReg(Slot, SM->createIntegerValue(1, 1), SM->createIntegerValue(1, 1), Bank->getEnable());
+
 	/// Handle the address pin.
 	// Clamp the address width, to the address width of the memory bank.
 	Type *RetTy = SM->createIntegerType(Bank->getAddrWidth());
@@ -406,8 +409,9 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 		assignToReg(Slot, SM->createIntegerValue(1, 1), Result, ResultReg);
 	}
 
-	/// Handle the enable pin.
-	assignToReg(Slot, SM->createIntegerValue(1, 1), SM->createIntegerValue(1, 1), Bank->getEnable());
+	// Advance to next slot so other operations will not conflicted with this memory
+	// transaction operation.
+	advanceToNextSlot(Slot);
 }
 
 SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) {
@@ -426,6 +430,7 @@ SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) 
 
   // Store the slot.
   SM->IndexSlot(S);
+	SM->IndexReg2Slot(SlotGuardReg, S);
 
   return S;  
 }
@@ -455,14 +460,28 @@ SIRSlot *SIRCtrlRgnBuilder::advanceToNextSlot(SIRSlot *CurSlot) {
 	BasicBlock *BB = CurSlot->getParent();
 	SIRSlot *Slot = SM->getLatestSlot(BB);
 
+	if (CurSlot != Slot) {
+		assert(CurSlot->succ_size() == 1 && "Unexpected multiple successors!");
+
+		SIRSlot *SuccSlot = CurSlot->succ_begin()->getSlot();
+
+		assert(SuccSlot->getParent() == CurSlot->getParent()
+			     && "Should locate in the same BB!");
+		assert(SuccSlot->getSchedule() == CurSlot->getSchedule() + 1
+			     && "Bad schedule of the SuccSlot!");
+
+		return SuccSlot;
+	}
+
 	assert(Slot == CurSlot && "CurSlot is not the last slot in BB!");
-	assert(CurSlot->succ_empty() && "CurSlot already have successors!");
 
 	// Create the next slot.
-	SIRSlot *NextSlot = createSlot(BB, 0);
+	unsigned Schedule = CurSlot->getSchedule() + 1;
+	SIRSlot *NextSlot = createSlot(BB, Schedule);
 
-	// Connect the slots.
-	CurSlot->addSuccSlot(NextSlot, SIRSlot::Sucessor, SM->createIntegerValue(1, 1));
+	// Create the transition between two slots.
+	createStateTransition(CurSlot, NextSlot, SM->createIntegerValue(1, 1));
+
 	// Index the new latest slot to BB.
 	SM->IndexBB2Slots(BB, SM->getLandingSlot(BB), NextSlot);
 
@@ -525,11 +544,18 @@ void SIRCtrlRgnBuilder::createStateTransition(SIRSlot *SrcSlot, SIRSlot *DstSlot
   assert(!SrcSlot->hasNextSlot(DstSlot) && "Edge already existed!");
 
   SrcSlot->addSuccSlot(DstSlot, SIRSlot::Sucessor, Cnd);
+	assignToReg(SrcSlot, Cnd, SM->createIntegerValue(1, 1), DstSlot->getSlotReg());
 }
 
 void SIRCtrlRgnBuilder::assignToReg(SIRSlot *S, Value *Guard, Value *Src,
-                                    SIRRegister *Dst) {  
-  SIRSeqOp *SeqOp = new SIRSeqOp(Src, Dst, Guard, S);
+                                    SIRRegister *Dst) {
+  SIRSeqOp *SeqOp;
+
+  if (Dst->isSlot())
+		SeqOp = new SIRSlotTransition(Src, S, SM->lookupSIRSlot(Dst), Guard);
+	else
+    SeqOp = new SIRSeqOp(Src, Dst, Guard, S);
+
 	// Add this SeqOp to the lists in SIRSlot.
 	S->addSeqOp(SeqOp);
 
@@ -1362,7 +1388,8 @@ Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
 
 	// If the instruction is like: 
 	// 1) A = 1'b1 & B & C,
-	// 2) A = (~1'b1) & B & C,
+	// 2) A = 1'b0 & B & C,
+	// 3) A = (~1'b0) & B & C,
 	// then we can simplify it.
 	bool hasOneValue = false;
 	SmallVector<Value *, 4> NewOps;
@@ -1370,25 +1397,33 @@ Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
 	for (iterator I = Ops.begin(), E = Ops.end(); I != E; I++) {
 		Value *Operand = *I;
 
-		// 1) A = 1'b1 & B & C
-		ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
-		if (CI && getConstantIntValue(CI) == 1) {
-			hasOneValue = true;
-			continue;
-		}
+// 		// 1) A = 1'b1 & B & C
+// 		ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
+// 		if (CI && getConstantIntValue(CI) == 1) {
+// 			hasOneValue = true;
+// 			continue;
+// 		}
 
-		// 2) A = (~1'b1) & B & C
-		IntrinsicInst *II = dyn_cast<IntrinsicInst>(Operand);
-		if (II && II->getIntrinsicID() == Intrinsic::shang_not) {
-			Value *NotInstOperand = II->getOperand(0);
-			ConstantInt *CI = dyn_cast<ConstantInt>(NotInstOperand);
-			if (CI && getConstantIntValue(CI) == 1) {
-				// If the inst is not used as an argument of other functions,
-				// then it is used to replace the inst in IR
-				if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
-				return Operand;
-			}
-		}
+// 		// 2) A = 1'b0 & B & C
+// 		if (CI && getConstantIntValue(CI) == 0) {
+// 			// If the inst is not used as an argument of other functions,
+// 			// then it is used to replace the inst in IR
+// 			if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
+// 			return Operand;
+// 		}
+
+// 		// 3) A = (~1'b1) & B & C
+// 		IntrinsicInst *II = dyn_cast<IntrinsicInst>(Operand);
+// 		if (II && II->getIntrinsicID() == Intrinsic::shang_not) {
+// 			Value *NotInstOperand = II->getOperand(0);
+// 			ConstantInt *CI = dyn_cast<ConstantInt>(NotInstOperand);
+// 			if (CI && getConstantIntValue(CI) == 1) {
+// 				// If the inst is not used as an argument of other functions,
+// 				// then it is used to replace the inst in IR
+// 				if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
+// 				return Operand;
+// 			}
+// 		}
 
 		NewOps.push_back(Operand);
 	}
@@ -1433,6 +1468,48 @@ Value *SIRDatapathBuilder::createSOrInst(ArrayRef<Value *> Ops, Type *RetTy,
 		int num = Ops.size();
 		return createSOrInst(TempSOrInst, Ops[num - 1], RetTy, InsertPosition, UsedAsArg);
 	}
+
+	assert(Ops.size() == 2 && "Unexpected Operand Size!");
+
+// 	// If the instruction is like:
+// 	// 1) A = 1'b1 | B | C,
+// 	// 2) A = 1'b0 | B | C,
+// 	// 3) A = (~1'b0) | B | C,
+// 	// then we can simplify it.
+// 	bool hasZeroValue = false;
+// 	SmallVector<Value *, 4> NewOps;
+// 	typedef ArrayRef<Value *>::iterator iterator;
+// 	for (iterator I = Ops.begin(), E = Ops.end(); I != E; I++) {
+// 		Value *Operand = *I;
+//
+// 		// 1) A = 1'b1 | B | C
+// 		ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
+// 		if (CI && getConstantIntValue(CI) == 1) {
+// 			// If the inst is not used as an argument of other functions,
+// 			// then it is used to replace the inst in IR
+// 			if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
+// 			return Operand;
+// 		}
+//
+// 		// 2) A = 1'b0 | B | C
+// 		if (CI && getConstantIntValue(CI) == 0) {
+// 			hasZeroValue = true;
+// 			continue;
+// 		}
+//
+// 		// 3) A = (~1'b1) & B & C
+// 		IntrinsicInst *II = dyn_cast<IntrinsicInst>(Operand);
+// 		if (II && II->getIntrinsicID() == Intrinsic::shang_not) {
+// 			Value *NotInstOperand = II->getOperand(0);
+// 			ConstantInt *CI = dyn_cast<ConstantInt>(NotInstOperand);
+// 			if (CI && getConstantIntValue(CI) == 1) {
+// 				hasZeroValue = true;
+// 				continue;
+// 			}
+// 		}
+//
+// 		NewOps.push_back(Operand);
+// 	}
 
 	// Disable the AIG transition for debug convenient.
 //   SmallVector<Value *, 8> NotInsts;
