@@ -181,7 +181,8 @@ void SIRSeqOp::print(raw_ostream &OS) const {
 	OS << "Assign the Src Value " << "[" <<Src->getName()
 		 << "]" << " to register " << "[" << DstReg->getName()
 		 << "]" << " in Slot #" << S->getSlotNum()
-		 << " Scheduled to " << S->getSchedule() << "\n";
+		 << " Scheduled to " << S->getStepInLocalBB()
+		 << " in local BB"<< "\n";
 }
 
 void SIRSeqOp::dump() const {
@@ -238,8 +239,9 @@ void SIRSlot::unlinkSuccs() {
 }
 
 void SIRSlot::print(raw_ostream &OS) const {
-	OS << "Slot #" << SlotNum << " Scheduled to " << Schedule
-		 << " Guarding by " << getGuardValue()->getName() << "\n";
+	OS << "Slot #" << SlotNum << " Scheduled to " << Step
+		 << " in local BB Guarding by "
+     << getGuardValue()->getName() << "\n";
 }
 
 void SIRSlot::dump() const {

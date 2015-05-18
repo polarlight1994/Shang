@@ -51,7 +51,7 @@ unsigned SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
     unsigned UseALAP = Use->isScheduled() ?
                        Use->getSchedule() : getALAPStep(Use);
     if (UseALAP == 0) {
-      assert(UseEdge.isLoopCarried() || !Use->getParentBB()&& "Broken time frame!");
+      assert(UseEdge.isLoopCarried() && "Broken time frame!");
       UseALAP = MaxSlot;
     }
 

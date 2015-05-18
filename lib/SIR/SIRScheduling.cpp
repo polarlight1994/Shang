@@ -426,40 +426,38 @@ namespace {
 }
 
 void SIRScheduleEmitter::insertSlotBefore(SIRSlot *S, SIRSlot *DstS,
-	SIRSlot::EdgeType T, Value *Cnd) {
-		SmallVector<SIRSlot::EdgePtr, 4> Preds;
-		for (SIRSlot::pred_iterator I = DstS->pred_begin(), E = DstS->pred_end(); I != E; I++) {
-			Preds.push_back(*I);
-		}
+	                                        SIRSlot::EdgeType T, Value *Cnd) {
+	SmallVector<SIRSlot::EdgePtr, 4> Preds;
+	for (SIRSlot::pred_iterator I = DstS->pred_begin(), E = DstS->pred_end(); I != E; I++) {
+		Preds.push_back(*I);
+	}
 
-		typedef SmallVector<SIRSlot::EdgePtr, 4>::iterator iterator;
-		for (iterator I = Preds.begin(), E = Preds.end(); I != E; I++) {
-			SIRSlot *Pred = I->getSlot();
+	typedef SmallVector<SIRSlot::EdgePtr, 4>::iterator iterator;
+	for (iterator I = Preds.begin(), E = Preds.end(); I != E; I++) {
+		SIRSlot *Pred = I->getSlot();
 
-			// Unlink the edge from Pred to DstS.
-			Pred->unlinkSucc(DstS);
+		// Unlink the edge from Pred to DstS.
+		Pred->unlinkSucc(DstS);
 
-			// Link the edge from Pred to S.
-			C_Builder.createStateTransition(Pred, S, I->getCnd());
-		}
+		// Link the edge from Pred to S.
+		C_Builder.createStateTransition(Pred, S, I->getCnd());
+	}
 
-		// Link the edge from S to DstS.
-		C_Builder.createStateTransition(S, DstS, Cnd);
+	// Link the edge from S to DstS.
+	C_Builder.createStateTransition(S, DstS, Cnd);
 }
 
 void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 	assert(SUs[0]->isBBEntry() && "BBEntry must be placed at the beginning!");
 
-	if (SUs.size() == 8)
-		assert(SUs.size() == 8 && "Temp code for debug!");
-
 	BasicBlock *BB = SUs[0]->getParentBB(); 
-	SIRSlot *CurSlot = SM->getLandingSlot(BB);
-	unsigned CurSlotSchedule = CurSlot->getSchedule();
-	assert(CurSlot && "Landing Slot not created?");
-	assert(CurSlotSchedule == 0 && "EntrySlot is not schedule in 0?");
+	SIRSlot *EntrySlot = SM->getLandingSlot(BB);
 
-	unsigned BBEntrySchedule = SUs[0]->getSchedule();
+	assert(EntrySlot && "Landing Slot not created?");
+	assert(EntrySlot->getStepInLocalBB() == 0 && "Unexpected local step!");
+
+	// The global schedule result of the Entry SUnit.
+	unsigned EntrySUSchedule = SUs[0]->getSchedule();
 
 	std::vector<SIRSchedUnit *> NewSUs(SUs.begin() +1, SUs.end());
 	// Sort the SUs to make sure they are ranged by schedule in ascending order.
@@ -472,20 +470,23 @@ void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 		SIRSeqOp *SeqOp = CurSU->getSeqOp();
 		SIRSlot *EmitSlot = SeqOp->getSlot();
 
-		unsigned EmitSlotSchedule = EmitSlot->getSchedule();
-		unsigned TargetSchedule = CurSU->getSchedule() - BBEntrySchedule;
+		// The local step of specified slot.
+		unsigned EmitSlotStep = EmitSlot->getStepInLocalBB();
+		// The target local step of the SUnit. Since we may specify the target
+		// slot in SIRBuild pass, so we must consider the constraint it brings.
+		unsigned TargetStep = CurSU->getSchedule() - EntrySUSchedule;
+		TargetStep = std::max(TargetStep, EmitSlotStep);
 
-		// Since we may specify the target slot in SIRBuild pass, so we must
-    // consider the constraint it brings.
-		TargetSchedule = std::max(TargetSchedule, EmitSlotSchedule);
+		// The numbers of slots need to allocate to meet the
+    // target local step of the SUnit.
+		unsigned SlotsNeedToAlloca = TargetStep - EmitSlotStep;
 
-		unsigned SlotsNeedToAlloca = TargetSchedule - EmitSlotSchedule;
-
-		// Set the schedule of the EmitSlot.
-		EmitSlot->setSchedule(TargetSchedule);
+		// Set the schedule of the EmitSlot to the target step
+		// since we will allocate enough slots before it.
+		EmitSlot->setStep(TargetStep);
 
 		while(SlotsNeedToAlloca--) {
-			SIRSlot *NewSlot = C_Builder.createSlot(BB, TargetSchedule--);
+			SIRSlot *NewSlot = C_Builder.createSlot(BB, TargetStep--);
 
 			// Insert the NewSlot from bottom to up before the EmitSlot.
 			insertSlotBefore(NewSlot, EmitSlot, SIRSlot::Sucessor, SM->createIntegerValue(1, 1));

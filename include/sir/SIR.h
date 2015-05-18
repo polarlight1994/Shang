@@ -517,23 +517,25 @@ private:
 
   SIRRegister *SlotReg;
 
+	// The creating order which is not equal to
+	// its real schedule step in FSM.
   unsigned SlotNum;
-  unsigned Schedule;
+	// The schedule step in local BB.
+  unsigned Step;
 
 public:
   SIRSlot(unsigned SlotNum, BasicBlock *ParentBB,
-          Value *SlotGuard, SIRRegister *Reg, unsigned Schedule)
-    : SlotNum(SlotNum), ParentBB(ParentBB),
-    SlotReg(Reg), Schedule(Schedule) {}
+          Value *SlotGuard, SIRRegister *Reg, unsigned Step)
+    : SlotNum(SlotNum), ParentBB(ParentBB), SlotReg(Reg), Step(Step) {}
   ~SIRSlot();
 
   unsigned getSlotNum() const { return SlotNum; }
-  unsigned getSchedule() const { return Schedule; }
+  unsigned getStepInLocalBB() const { return Step; }
   BasicBlock *getParent() const { return ParentBB; }
   SIRRegister *getSlotReg() const { return SlotReg; }
   Value *getGuardValue() const { return getSlotReg()->getLLVMValue(); }
 
-  void setSchedule(unsigned Step) { Schedule = Step; }
+  void setStep(unsigned Step) { Step = Step; }
 
   // If the SrcSlot already has this NextSlot as successor.
   bool hasNextSlot(SIRSlot *NextSlot);

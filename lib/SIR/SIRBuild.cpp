@@ -467,7 +467,7 @@ SIRSlot *SIRCtrlRgnBuilder::advanceToNextSlot(SIRSlot *CurSlot) {
 
 		assert(SuccSlot->getParent() == CurSlot->getParent()
 			     && "Should locate in the same BB!");
-		assert(SuccSlot->getSchedule() == CurSlot->getSchedule() + 1
+		assert(SuccSlot->getStepInLocalBB() == CurSlot->getStepInLocalBB() + 1
 			     && "Bad schedule of the SuccSlot!");
 
 		return SuccSlot;
@@ -476,8 +476,8 @@ SIRSlot *SIRCtrlRgnBuilder::advanceToNextSlot(SIRSlot *CurSlot) {
 	assert(Slot == CurSlot && "CurSlot is not the last slot in BB!");
 
 	// Create the next slot.
-	unsigned Schedule = CurSlot->getSchedule() + 1;
-	SIRSlot *NextSlot = createSlot(BB, Schedule);
+	unsigned Step = CurSlot->getStepInLocalBB() + 1;
+	SIRSlot *NextSlot = createSlot(BB, Step);
 
 	// Create the transition between two slots.
 	createStateTransition(CurSlot, NextSlot, SM->createIntegerValue(1, 1));
