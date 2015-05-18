@@ -199,16 +199,6 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
 	for(seqop_iterator I = SM.seqop_begin(), E = SM.seqop_end(); I != E; ++I) {
 		SIRSeqOp *SeqOp = I;
 
-		// Dirty Hack: Need to find a much more proper way to delete the old
-		// SSTs which is useless since we insert new slots between them.
-		if (SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SeqOp)) {
-			SIRSlot *SrcSlot = SST->getSrcSlot();
-			SIRSlot *DstSlot = SST->getDstSlot();
-
-			if (!SrcSlot->hasNextSlot(DstSlot))
-				continue;
-		}
-
 		Value *SrcVal = SeqOp->getSrc();
 		SIRRegister *Dst = SeqOp->getDst();	
 		Value *GuardVal = SeqOp->getGuard();

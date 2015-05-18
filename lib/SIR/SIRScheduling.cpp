@@ -502,7 +502,6 @@ void SIRScheduleEmitter::emitSchedule() {
 	// Visit the basic block in topological order to emit all SUnits in BB.
 	ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
 	typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
-
 	for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
 		BasicBlock *BB = *I;
 
@@ -511,5 +510,22 @@ void SIRScheduleEmitter::emitSchedule() {
 
 		MutableArrayRef<SIRSchedUnit *> SUs(G.getSUsInBB(BB));
 		emitSUsInBB(SUs);
+	}
+
+	// After ScheduleEmit, lots of SlotTransitions will be replaced by new ones
+	// and become useless, so we remove them here.
+	typedef SIR::seqop_iterator seqop_iterator;
+	for (seqop_iterator I = SM->seqop_begin(), E = SM->seqop_end(); I != E;) {
+		// We must move forward the iterator here to avoid the error caused by
+		// iterator erase function called below.
+		SIRSeqOp *SeqOp = I++;
+
+		if (SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SeqOp)) {
+			SIRSlot *SrcSlot = SST->getSrcSlot();
+			SIRSlot *DstSlot = SST->getDstSlot();
+
+			if (!SrcSlot->hasNextSlot(DstSlot))
+				SM->deleteUselessSeqOp(SeqOp);
+		}
 	}
 }
