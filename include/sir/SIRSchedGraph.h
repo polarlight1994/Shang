@@ -89,8 +89,6 @@ public:
     BlockEntry,
     // PHI node
     PHI,
-		// Slot Transition
-		SlotTransition,
 		// Normal node for Scheduling
 		Normal,
     // Invalid node for the ilist sentinel
@@ -231,7 +229,6 @@ public:
   bool isExit() const { return T == Exit; }
   bool isBBEntry() const { return T == BlockEntry; }
   bool isPHI() const { return T == PHI; }
-	bool isSlotTransition() const { return T == SlotTransition; }
 
 	bool isTerminator() const { return isa<TerminatorInst>(getInst()); }
 

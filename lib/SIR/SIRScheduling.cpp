@@ -164,29 +164,6 @@ void SIRScheduling::buildControlFlowDependencies() {
 		// the entry SU of this BB.
 		buildControlFlowDependencies(BB, G->lookupSUs(BB));
 	}
-
-
-	typedef iplist<SIRSchedUnit>::iterator sunit_iterator;
-	for (sunit_iterator I = G->begin(), E = G->end(); I != E; ++I) {
-		SIRSchedUnit *SU = I;
-
-		if (!SU->isSlotTransition()) continue;
-
-		SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SU->getSeqOp());
-		assert(SST && "Unexpected non-SlotTransition SUnit!");
-
-		SIRSlot *DstSlot = SST->getDstSlot();
-
-		ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(DstSlot);
-		for (int i = 0; i < SUs.size(); i++) {
-			SIRSchedUnit *CurSU = SUs[i];
-
-			// Do not add a self-loop dependency.
-			if (CurSU == SU) continue;
-
-			CurSU->addDep(SU, SIRDep::CreateCtrlDep(1));
-		}
-	}
 }
 
 void SIRScheduling::buildMemoryDependency(Instruction *SrcInst, Instruction *DstInst) {
@@ -329,20 +306,18 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 	typedef std::vector<SIRSeqOp *>::iterator op_iterator;
 	for (op_iterator OI = Ops.begin(), OE = Ops.end(); OI != OE; ++OI) {
 		SIRSeqOp *Op = *OI;
+
+		// Do not create SUnit for the SlotTransition, since we know which
+		// slot to emit it. And the dependency between the SUnits in DstSlot
+		// to this SlotTransition will be handled in emitting process.
+		if (isa<SIRSlotTransition>(Op)) continue;
+
 		Instruction *Inst = dyn_cast<Instruction>(Op->getLLVMValue()); 
 		
-		// All SeqOps should be associated with a pseudo instruction.
-		// To be noted that, we haven't run the FSMSynthesisPass here,
-		// so these StateTransistion SeqOps are not included here.
-		if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
-			assert(II->getIntrinsicID() == Intrinsic::shang_pseudo
-			       && "Only RetReg can have pseudo instruction!");
-
 		// Detect whether the type of SIRSchedUnit from the DstReg.
 		SIRSchedUnit::Type Ty;
 		SIRRegister *DstReg = Op->getDst();
 		if (DstReg->isPHI())			  Ty = SIRSchedUnit::PHI;
-		else if (DstReg->isSlot())  Ty = SIRSchedUnit::SlotTransition;
 		else                        Ty = SIRSchedUnit::Normal;
 
 		SIRSchedUnit *U = G->createSUnit(Inst, BB, Ty, Op);
@@ -472,16 +447,6 @@ namespace {
 	}
 }
 
-void SIRScheduleEmitter::emitSUsInSlot0r(MutableArrayRef<SIRSchedUnit *> SUs) {
-	SIRSlot *Slot0r = SM->getStartSlot();
-
-	for (unsigned i = 0; i < SUs.size(); ++i) {
-		SIRSchedUnit *SU = SUs[i];
-
-		SU->getSeqOp()->setSlot(Slot0r);
-	}
-}
-
 void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 	assert(SUs[0]->isBBEntry() && "BBEntry must be placed at the beginning!");
 
@@ -509,6 +474,11 @@ void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 
 		unsigned EmitSlotSchedule = EmitSlot->getSchedule();
 		unsigned TargetSchedule = CurSU->getSchedule() - BBEntrySchedule;
+
+		// Since we may specify the target slot in SIRBuild pass, so we must
+    // consider the constraint it brings.
+		TargetSchedule = std::max(TargetSchedule, EmitSlotSchedule);
+
 		unsigned SlotsNeedToAlloca = TargetSchedule - EmitSlotSchedule;
 
 		// Set the schedule of the EmitSlot.
@@ -528,10 +498,6 @@ void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 void SIRScheduleEmitter::emitSchedule() {
 	// Get some basic information.
 	Function &F = *SM->getFunction();
-
-	// Handle the SUnits in Slot0r which don't have parent BB.
-	MutableArrayRef<SIRSchedUnit *> SUs(G.getSUsInBB(0));
-	emitSUsInSlot0r(SUs);
 
 	// Visit the basic block in topological order to emit all SUnits in BB.
 	ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
