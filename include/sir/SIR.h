@@ -596,7 +596,7 @@ template<> struct GraphTraits<const SIRSlot *> {
 };
 
 // Represent the assign operation in SIR.
-class SIRSeqOp {
+class SIRSeqOp : public ilist_node<SIRSeqOp> {
 public:
 	enum Type {
 		General,
@@ -611,6 +611,9 @@ private:
 	SIRSlot *S;
 
 public:
+	// Constructors used for the ilist_node.
+	SIRSeqOp() : Src(0), DstReg(0), Guard(0), S(0), T(General) {}
+	// Default Constructor.
 	SIRSeqOp(Value *Src, SIRRegister *DstReg, Value *Guard,
 		       SIRSlot *S, Type T = General) 
 		: Src(Src), DstReg(DstReg), Guard(Guard), S(S), T(T) {}
@@ -683,9 +686,9 @@ public:
   typedef SlotVector::iterator slot_iterator;
   typedef SlotVector::const_iterator const_slot_iterator;
 
-  typedef SmallVector<SIRSeqOp *, 8> SeqOpVector;
-  typedef SeqOpVector::iterator seqop_iterator;
-  typedef SeqOpVector::const_iterator const_seqop_iterator;
+  typedef ilist<SIRSeqOp> SeqOpList;
+  typedef SeqOpList::iterator seqop_iterator;
+  typedef SeqOpList::const_iterator const_seqop_iterator;
 
 	typedef DenseMap<Instruction *, IntrinsicInst *> Inst2SeqInstMapTy;
 	typedef Inst2SeqInstMapTy::iterator inst2seqinst_iterator;
@@ -711,7 +714,7 @@ private:
   // The Slots in CtrlRgn of the module
   SlotVector Slots;
   // The SeqOps in CtrlRgn of the module
-  SeqOpVector SeqOps;
+  SeqOpList SeqOps;
 	// The map between Inst and SeqInst
 	Inst2SeqInstMapTy Inst2SeqInst;
   // The map between SeqInst and SIRRegister
@@ -798,6 +801,10 @@ public:
   void IndexDataPathInst(Instruction *DataPathInst) {
     DataPathInsts.push_back(DataPathInst);
   }
+
+	void deleteUselessSeqOp(SIRSeqOp *SeqOp) {
+		SeqOps.erase(SeqOp);
+	}
 
 	bool IndexInst2SeqInst(Instruction *I, IntrinsicInst *II) {
 		return Inst2SeqInst.insert(std::make_pair(I, II)).second;

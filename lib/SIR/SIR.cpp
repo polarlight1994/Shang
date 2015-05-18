@@ -423,7 +423,7 @@ void SIR::dumpSeqOp2Slot() {
 
 	typedef seqop_iterator iterator;
 	for (iterator I = seqop_begin(), E = seqop_end(); I != E; I++) {
-		SIRSeqOp *SeqOp = *I;
+		SIRSeqOp *SeqOp = I;
 
 		// Get the corresponding slot.
 		SIRSlot *Slot = SeqOp->getSlot();

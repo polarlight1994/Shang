@@ -67,8 +67,8 @@ bool SIRRegisterSynthesisForAnnotation::runOnSIR(SIR &SM) {
 
    typedef SIR::seqop_iterator seqop_iterator;
    for (seqop_iterator I = SM.seqop_begin(), E = SM.seqop_end(); I != E; ++I) {
- 		SIRSeqOp *SeqOp = *I;
- 		SIRRegister *Reg = SeqOp->getDst();
+		 SIRSeqOp *SeqOp = I;
+		 SIRRegister *Reg = SeqOp->getDst();
     
 		// Insert the implement of register just in front of the terminator instruction
 		// at back of the module to avoid being used before declaration.
@@ -197,7 +197,7 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
 
 	typedef SIR::seqop_iterator seqop_iterator;
 	for(seqop_iterator I = SM.seqop_begin(), E = SM.seqop_end(); I != E; ++I) {
-		SIRSeqOp *SeqOp = *I;
+		SIRSeqOp *SeqOp = I;
 
 		// Dirty Hack: Need to find a much more proper way to delete the old
 		// SSTs which is useless since we insert new slots between them.
