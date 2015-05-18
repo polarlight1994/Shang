@@ -331,7 +331,7 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 		buildDataFlowDependencies(U);
 
 		G->indexSU2IR(U, Inst);
-		G->indexSU2Slot(U, S);
+
 		continue;
 	}
 }
@@ -419,32 +419,32 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
 	return true;
 }
 
-void SIRScheduleEmitter::insertSlotBefore(SIRSlot *S, SIRSlot *DstS,
-	                                        SIRSlot::EdgeType T, Value *Cnd) {
-	SmallVector<SIRSlot::EdgePtr, 4> Preds;
-	for (SIRSlot::pred_iterator I = DstS->pred_begin(), E = DstS->pred_end(); I != E; I++) {
-		Preds.push_back(*I);
-	}
-
-	typedef SmallVector<SIRSlot::EdgePtr, 4>::iterator iterator;
-	for (iterator I = Preds.begin(), E = Preds.end(); I != E; I++) {
-		SIRSlot *Pred = I->getSlot();
-
-		// Unlink the edge from Pred to DstS.
-		Pred->unlinkSucc(DstS);
-
-		// Link the edge from Pred to S.
-		C_Builder.createStateTransition(Pred, S, I->getCnd());
-	}
-
-	// Link the edge from S to DstS.
-	C_Builder.createStateTransition(S, DstS, Cnd);
-}
-
 namespace {
 	bool SUnitLess(SIRSchedUnit *LHS, SIRSchedUnit *RHS) {
 		return LHS->getSchedule() < RHS->getSchedule();
 	}
+}
+
+void SIRScheduleEmitter::insertSlotBefore(SIRSlot *S, SIRSlot *DstS,
+	SIRSlot::EdgeType T, Value *Cnd) {
+		SmallVector<SIRSlot::EdgePtr, 4> Preds;
+		for (SIRSlot::pred_iterator I = DstS->pred_begin(), E = DstS->pred_end(); I != E; I++) {
+			Preds.push_back(*I);
+		}
+
+		typedef SmallVector<SIRSlot::EdgePtr, 4>::iterator iterator;
+		for (iterator I = Preds.begin(), E = Preds.end(); I != E; I++) {
+			SIRSlot *Pred = I->getSlot();
+
+			// Unlink the edge from Pred to DstS.
+			Pred->unlinkSucc(DstS);
+
+			// Link the edge from Pred to S.
+			C_Builder.createStateTransition(Pred, S, I->getCnd());
+		}
+
+		// Link the edge from S to DstS.
+		C_Builder.createStateTransition(S, DstS, Cnd);
 }
 
 void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {

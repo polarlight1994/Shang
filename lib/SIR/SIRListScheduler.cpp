@@ -76,17 +76,13 @@ bool BBContext::isSUReady(SIRSchedUnit *SU) {
 	for (iterator DI = SU->dep_begin(), DE = SU->dep_end(); DI != DE; ++DI) {
 		SIRSchedUnit *DepSU = *DI;
 
-		// Ignore the back-edge dependency cross the BB.
-		if (DepSU->getParentBB() != SU->getParentBB()
-				&& DepSU->getIdx() > SU->getIdx())
-			continue;
+// 		// Ignore the back-edge dependency cross the BB.
+// 		if (DepSU->getParentBB() != SU->getParentBB()
+// 				&& DepSU->getIdx() > SU->getIdx())
+// 			continue;
 
 		AllScheduled &= DepSU->isScheduled();
 	}
-
-	// Hack: why BBEntry and PHI only need one of dependencies is ready.
-	// 	if (SU->isBBEntry() || SU->isPHI())
-	// 		return AnyScheduled;
 
 	return AllScheduled;
 }
@@ -96,17 +92,12 @@ void BBContext::collectReadySUs(ArrayRef<SIRSchedUnit *> SUs) {
 	for (iterator I = SUs.begin(), E = SUs.end(); I != E; ++I) {
 		SIRSchedUnit *SU = *I;
 
-		// If this SUnit is in Slot0r, then we do not need to add
-		// it into the ReadySUs, since it must be scheduled to 0
-		// without any doubt. Also we only collect the ready SUnits
-		// in this BB.
-		if (SU->isInSlot0r() || SU->getParentBB() != BB)
+		// Only collect the ready SUnits in this BB.
+		if (SU->getParentBB() != BB)
 			continue;
 
-		// SUnit should not be scheduled unless the SUnit is
-		// Entry, Exit or SUnit created for the Slot0r.
-		assert((!SU->isScheduled() || SU->isInSlot0r())
-			      && "SUnit should not be scheduled yet!");
+		// SUnit should not be scheduled.
+		assert(!SU->isScheduled() && "SUnit should not be scheduled yet!");
 
 		// Entrys, Exits and PHINodes will be handled elsewhere.
 		if (SU->isBBEntry() || SU->isExit() || SU->isPHI())
@@ -130,12 +121,12 @@ void BBContext::scheduleBB() {
 
 		SU->scheduleTo(Step);
 
-		// After we schedule a unit, we should reset the ReadyQueue.
+		// After we schedule a unit, we should reset the TimeFrame.
 		S.resetTimeFrame();
-
+		// Also we should reset the ready queue.
 		SmallVector<SIRSchedUnit *, 4> Users = SU->getUseList();
-
 		collectReadySUs(Users);
+
 		ReadyQueue.reheapify();
 	}
 

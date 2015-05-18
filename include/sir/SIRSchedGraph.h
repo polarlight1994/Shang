@@ -319,14 +319,10 @@ public:
            && "Edge not inserted?");
   }
 
-	bool isInSlot0r() const {
-		return !getParentBB() && !isEntry() && !isEntry();
-	}
-
-	// Only the Entry/Exit SUnit and SUnits in Slot0r can have schedule of 0.
-	// So all others scheduled SUnit should have a positive schedule number.
+	// Only the Entry/Exit SUnit can have initial schedule of 0. So all
+	// others scheduled SUnit should have a positive schedule number.
   bool isScheduled() const {
-		return isInSlot0r() || isEntry() || Schedule != 0;
+		return Schedule != 0;
 	}
 
   // Return the index of the current scheduling unit.
@@ -366,10 +362,6 @@ private:
  	typedef std::map<Value *, SmallVector<SIRSchedUnit *, 4> > IR2SUMapTy;
  	IR2SUMapTy IR2SUMap;
 
-	// Mappint between SIRSlot and SIR Scheduling Units it contains.
-	typedef std::map<SIRSlot *, SmallVector<SIRSchedUnit *, 4> > Slot2SUMapTy;
-	Slot2SUMapTy Slot2SUMap;
-
   // Helper class to arrange the scheduling units according to their parent BB,
   // we will emit the schedule or build the linear order BB by BB.
   std::map<BasicBlock*, std::vector<SIRSchedUnit *> > BBMap;
@@ -393,10 +385,6 @@ public:
 	bool hasSU(Value *V) const { return IR2SUMap.count(V); }
 	ArrayRef<SIRSchedUnit *> lookupSUs(Value *V) const;
 	bool indexSU2IR(SIRSchedUnit *SU, Value *V);
-
-	bool hasSlot(SIRSlot *S) const { return Slot2SUMap.count(S); }
-	ArrayRef<SIRSchedUnit *> lookupSUs(SIRSlot *S) const;
-	bool indexSU2Slot(SIRSchedUnit *SU, SIRSlot *S);
 
   MutableArrayRef<SIRSchedUnit *> getSUsInBB(BasicBlock *BB);
   ArrayRef<SIRSchedUnit *> getSUsInBB(BasicBlock *BB) const;

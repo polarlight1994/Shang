@@ -202,26 +202,6 @@ bool SIRSchedGraph::indexSU2IR(SIRSchedUnit *SU, Value *V) {
   IR2SUMap.insert(std::make_pair(V, SUs));
 }
 
-ArrayRef<SIRSchedUnit *> SIRSchedGraph::lookupSUs(SIRSlot *S) const {
-	Slot2SUMapTy::const_iterator at = Slot2SUMap.find(S);
-
-	if (at == Slot2SUMap.end())
-		return ArrayRef<SIRSchedUnit *>();
-
-	return at->second;
-}
-
-bool SIRSchedGraph::indexSU2Slot(SIRSchedUnit *SU, SIRSlot *S) {
-	if (hasSlot(S)) {
-		Slot2SUMap[S].push_back(SU);
-		return true;
-	}
-
-	SmallVector<SIRSchedUnit *, 4> SUs;
-	SUs.push_back(SU);
-	Slot2SUMap.insert(std::make_pair(S, SUs));
-}
-
 void SIRSchedGraph::toposortCone(SIRSchedUnit *Root,
 	                               std::set<SIRSchedUnit *> &Visited,
 	                               BasicBlock *BB) {
