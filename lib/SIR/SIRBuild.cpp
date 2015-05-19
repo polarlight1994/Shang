@@ -10,9 +10,12 @@
 // Implementation of the SIRBuild pass, which construct the SIR from LLVM IR
 //
 //===----------------------------------------------------------------------===//
+#include "vast/LuaI.h"
+
 #include "sir/SIR.h"
 #include "sir/SIRBuild.h"
 #include "sir/Passes.h"
+#include "sir/LangSteam.h"
 
 #include "llvm/InstVisitor.h"
 #include "llvm/PassSupport.h"
@@ -37,6 +40,9 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+using namespace vast;
+
+static int NumSIRTemps = 0;
 
 //------------------------------------------------------------------------//
 char SIRInit::ID = 0;
@@ -56,6 +62,14 @@ INITIALIZE_PASS_END(SIRInit,
                     false, true)
 
 bool SIRInit::runOnFunction(Function &F) {
+	// Dump the Function for debug.
+	std::string FinalIR = LuaI::GetString("FinalIR");
+	std::string ErrorInFinalIR;
+	raw_fd_ostream OutputForFinalIR(FinalIR.c_str(), ErrorInFinalIR);
+	vlang_raw_ostream OutForFinalIR;
+	OutForFinalIR.setStream(OutputForFinalIR);
+	OutForFinalIR << F;
+
   DataLayout &TD = getAnalysis<DataLayout>();
 	SIRAllocation &SA = getAnalysis<SIRAllocation>();
 
@@ -69,12 +83,15 @@ bool SIRInit::runOnFunction(Function &F) {
   // Build the general interface(Ports) of the module.
   Builder.buildInterface(&F);
 
-  // Visit the basic block in topological order.
-  ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
-  typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
-
-  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
-    Builder.visitBasicBlock(*(*I));
+//   // Visit the basic block in topological order.
+//   ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
+//   typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
+// 
+//   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
+//     Builder.visitBasicBlock(*(*I));
+	typedef Function::iterator bb_iterator;
+	for (bb_iterator I = F.begin(), E = F.end(); I != E; ++I)
+		Builder.visitBasicBlock(*I);
 
   return false;
 }
@@ -251,7 +268,12 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, Type *ValueTy,
 																							 BasicBlock *ParentBB,
                                                Instruction *SeqInst, uint64_t InitVal, 
                                                SIRRegister::SIRRegisterTypes T) {
-	/// If the SeqInst is empty, we can construct a pseudo SeqInst for it.
+	// Make sure we don't get empty name.
+  std::string RegName;
+  if (Name.size() == 0)
+		RegName = "SIRTemp" + utostr_32(NumSIRTemps++);
+	else
+		RegName = Name;
 
   // For the General Register or PHI Register, we create a pseudo instruction and
 	// this pseudo instruction will be inserted into the back of whole module.
@@ -291,7 +313,7 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, Type *ValueTy,
 
 	// Create the register, and the BitWidth is determined by the ValueTy.
 	unsigned BitWidth = TD.getTypeSizeInBits(ValueTy);
-	SIRRegister *Reg = new SIRRegister(Name, BitWidth, InitVal, ParentBB, T, SeqInst);
+	SIRRegister *Reg = new SIRRegister(RegName, BitWidth, InitVal, ParentBB, T, SeqInst);
 
 	// Index the register and index it with the SeqInst.
 	SM->IndexRegister(Reg);
@@ -1454,6 +1476,9 @@ Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
 	for (iterator I = Ops.begin(), E = Ops.end(); I != E; I++) {
 		Value *Operand = *I;
 
+		if (isa<UndefValue>(Operand))
+			Value *temp = Operand;
+
 // 		// 1) A = 1'b1 & B & C
 // 		ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
 // 		if (CI && getConstantIntValue(CI) == 1) {
@@ -1490,9 +1515,13 @@ Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
 
 	if (hasOneValue)
 		return createSAndInst(NewOps, RetTy, InsertPosition, UsedAsArg);
-	else
-		return createShangInstPattern(NewOps, RetTy, InsertPosition,
-																	Intrinsic::shang_and, UsedAsArg);
+	else {
+		//return createShangInstPattern(NewOps, RetTy, InsertPosition,
+		//															Intrinsic::shang_and, UsedAsArg);
+		Value *temp = createShangInstPattern(NewOps, RetTy, InsertPosition,
+																		Intrinsic::shang_and, UsedAsArg);
+		return temp;
+	}
 }
 
 Value *SIRDatapathBuilder::createSAndInst(Value *LHS, Value *RHS, Type *RetTy,

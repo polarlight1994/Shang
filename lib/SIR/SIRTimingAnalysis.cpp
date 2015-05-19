@@ -692,6 +692,7 @@ SIRDelayModel *SIRTimingAnalysis::createModel(Instruction *Inst, SIR *SM, DataLa
 			continue;
 		}
 
+		assert(isa<Instruction>(ChildInst) && "Unexpected non-instruction!");
 		Fanins.push_back(lookUpDelayModel(dyn_cast<Instruction>(ChildInst)));
   }
 
