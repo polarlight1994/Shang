@@ -54,6 +54,8 @@ public:
   void visitSelectInst(SelectInst &I);
   void visitICmpInst(ICmpInst &I);
   void visitBinaryOperator(BinaryOperator &I);
+	void visitIntrinsicInst(IntrinsicInst &I);
+	void visitExtractValueInst(ExtractValueInst &I);
   void visitGetElementPtrInst(GetElementPtrInst &I);
   void visitGEPOperator(GEPOperator &O, GetElementPtrInst &I);
 
@@ -254,7 +256,8 @@ struct SIRBuilder : public InstVisitor<SIRBuilder, void> {
   void visitStoreInst(StoreInst &I);
   void visitLoadInst(LoadInst &I);
   void visitBranchInst(BranchInst &I);
-  //void visitUnreachableInst(UnreachableInst &I);
+  void visitIntrinsicInst(IntrinsicInst &I);
+	void visitExtractValueInst(ExtractValueInst &I);
 	void visitSwitchInst(SwitchInst &I);
   void visitReturnInst(ReturnInst &I);
 };

@@ -61,6 +61,8 @@ bool SIRInit::runOnFunction(Function &F) {
 
   SM = SA.getSIR();
 
+	assert(SM->getFunction() == &F && "Function not matches!");
+
   // Initialize SIR from IR by transform llvm-inst to Shang-inst.
   SIRBuilder Builder(SM, TD, SA);
 
@@ -132,11 +134,8 @@ void SIRBuilder::visitBasicBlock(BasicBlock &BB) {
   // Create the landing slot for this BB.
   SIRSlot *S = C_Builder.getOrCreateLandingSlot(&BB);
 
-  // Hack: After implement the DataflowPass, we should treat
-  // the Unreachable BB differently.
-
   typedef BasicBlock::iterator iterator;
-  for (iterator I = BB.begin(), E = BB.end(); I != E; ++I) 
+  for (iterator I = BB.begin(), E = BB.end(); I != E; ++I)
     visit(I);
 }
 
@@ -182,6 +181,14 @@ void SIRBuilder::visitBinaryOperator(BinaryOperator &I) {
 
 void SIRBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
   D_Builder.visit(I);
+}
+
+void SIRBuilder::visitIntrinsicInst(IntrinsicInst &I) {
+	D_Builder.visit(I);
+}
+
+void SIRBuilder::visitExtractValueInst(ExtractValueInst &I) {
+	D_Builder.visit(I);
 }
 
 //-----------------------------------------------------------------------//
@@ -368,7 +375,10 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 	/// Handle the address pin.
 	// Clamp the address width, to the address width of the memory bank.
 	Type *RetTy = SM->createIntegerType(Bank->getAddrWidth());
-	Value *AddrVal = D_Builder.createSBitExtractInst(Addr, Bank->getAddrWidth(), 0, RetTy, &I, true);
+	// Mutate the type of the address to integer so that we can do match operation on it.
+	assert(Addr->getType()->isPointerTy() && "Unexpected address type!");
+	Value *AddrVal = new PtrToIntInst(Addr, SM->createIntegerType(getBitWidth(Addr)), "SIRPrtToInt", &I);
+	AddrVal = D_Builder.createSBitExtractInst(AddrVal, Bank->getAddrWidth(), 0, RetTy, &I, true);
 	
 	assignToReg(Slot, SM->createIntegerValue(1, 1), AddrVal, Bank->getAddr());
 
@@ -378,6 +388,7 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 		assert(getBitWidth(Data) <= Bank->getDataWidth() && "Unexpected data width!");
 
 		Type *RetTy = SM->createIntegerType(Bank->getDataWidth());
+		assert(Data->getType()->isIntegerTy() && "Unexpected data type!");
 		Value *DataVal = D_Builder.createSZExtInstOrSelf(Data, Bank->getDataWidth(), RetTy, &I, true);
 
 		// Handle the data pin.
@@ -814,6 +825,52 @@ void SIRDatapathBuilder::visitBinaryOperator(BinaryOperator &I) {
   }
 
   return;
+}
+
+void SIRDatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
+	switch (I.getIntrinsicID()) {
+	default: break;
+
+	case Intrinsic::uadd_with_overflow: {
+		Value *LHS = I.getOperand(0), *RHS = I.getOperand(1);
+
+		assert(getBitWidth(LHS) == getBitWidth(RHS) && "BitWidth not matches!");
+
+		// The result of uadd_with_overflow is 1 bit bigger than the operand size.
+		unsigned ResultBitWidth = getBitWidth(LHS) + 1;
+		// Mutate the RetTy to IntegerType with correct BitWidth since
+		// the original RetTy cannot be recognized by SIR framework.
+		I.mutateType(SM->createIntegerType(ResultBitWidth));
+		createSAddInst(LHS, RHS, I.getType(), &I, false);
+	}
+	}
+}
+
+void SIRDatapathBuilder::visitExtractValueInst(ExtractValueInst &I) {
+	Value *Operand = I.getAggregateOperand();
+	unsigned BitWidth = getBitWidth(Operand);
+
+	// To be noted that, the ExtractValue instruction only happens with
+	// construction of uadd_with_overflow for now. And since we have
+	// transform the uadd_with_overflow into Shang add, so here it should
+	// be Shang add instruction.
+	IntrinsicInst *II = dyn_cast<IntrinsicInst>(Operand);
+	assert(II && II->getIntrinsicID() == Intrinsic::shang_add
+		     && "Only support the extract value instruction on Shang add!");
+
+	assert(I.getNumIndices() == 1 && "Unexpected number of indices!");
+
+	// Return the overflow bit.
+	if (I.getIndices()[0] == 1) {
+		createSBitExtractInst(Operand, BitWidth, BitWidth - 1,
+		                      SM->createIntegerType(1), &I, false);
+		return;
+	}
+
+	// Else return the addition result.
+	assert(I.getIndices()[0] == 0 && "Bad index!");
+	createSBitExtractInst(Operand, BitWidth - 1, 0,
+		                    SM->createIntegerType(BitWidth - 1), &I, false);
 }
 
 void SIRDatapathBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
