@@ -108,10 +108,13 @@ void SIRScheduling::buildDataFlowDependencies(SIRSchedUnit *U) {
 	for (iterator I = AT.begin(), E = AT.end(); I != E; I++) {
 		Value *SrcVal = I->first;
 		// The SrcVal must be a Leaf Value.
-		assert((isa<Argument>(SrcVal) || isa<ConstantInt>(SrcVal)
-			      || isa<GlobalValue>(SrcVal)
-			      || SM->lookupSIRReg(dyn_cast<Instruction>(SrcVal)))
-			      && "This is not a LeafVal!");
+		assert(!(isa<Argument>(SrcVal) || isa<ConstantInt>(SrcVal) || isa<GlobalValue>(SrcVal))
+			     && "Should be ignored in extract arrivals!");
+		assert(SM->lookupSIRReg(dyn_cast<Instruction>(SrcVal))
+			     && "This is not a SeqVal in SIR!");
+
+		if(isa<Argument>(SrcVal) || isa<ConstantInt>(SrcVal) || isa<GlobalValue>(SrcVal))
+			Value *temp = SrcVal;
 
 		float delay = I->second.Delay;
 		buildDataFlowDependencies(U, SrcVal, delay);

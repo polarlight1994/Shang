@@ -803,19 +803,20 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 	for (int i = 0; i < Srcs.size(); i++) {
 		Value *V = Srcs[i];
 
-		// If the operand is a ConstantInt, then ignore it because
-		// it will have no impact on the scheduling process.
-		if (isa<ConstantInt>(V)) continue;
+		// If the operand is a ConstantInt, Argument or GlobalValue, then ignore it
+		// because it will have no impact on the scheduling process.
+		if (isa<ConstantInt>(V) || isa<Argument>(V) || isa<GlobalValue>(V)) continue;
 
-		// Simply add the zero delay if the Src itself is a Leaf Value.
+		// Simply add the zero delay if the Src itself is a Leaf Value. Since we have
+		// ignore the ConstantInt, Argument or GlobalValue, so what left here is only
+		// the SeqValue in SIR.
 		if (IsLeafValue(SM, V)) {
 			Arrivals.insert(std::make_pair(V, PhysicalDelay(0.0f)));
 			continue;;			
 		}
 
-		// Then collect all the SeqVals when we traverse the data-path
-		// reversely, so to be noted that all the Values down here must
-	  // be SeqVal.
+		// Then collect all the SeqVals when we traverse the data-path reversely, so
+		// to be noted that all the Values down here must be SeqVal.
 		typedef std::set<Value *> LeafSet;
 		LeafSet Leaves;
 
@@ -850,10 +851,13 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 				continue;
 			}
 
-			// Also ignore the ConstantInt.
-			if (isa<ConstantInt>(ChildNode)) continue;
+			// Also ignore the ConstantInt, Argument or GlobalValue.
+			if (isa<ConstantInt>(ChildNode) || isa<Argument>(ChildNode)
+				  || isa<GlobalValue>(ChildNode)) continue;
 
-			// The Leaf Value is what we want to find.
+			// After ignore the ConstantInt, Argument and GlobalValue,
+			// the Leaf Value is what we want to find that is the SeqVal
+			// in SIR.
 			if (IsLeafValue(SM, ChildNode)) {
 				Leaves.insert(ChildNode);
 				continue;
