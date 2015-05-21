@@ -721,7 +721,7 @@ void SIRCtrlRgnBuilder::visitSwitchInst(SwitchInst &I) {
 	// The predicate for each non-default destination.
 	SmallVector<Value *, 4> CasePreds;
 	typedef std::map<BasicBlock*, Value *>::iterator CaseIt;
-	for (CaseIt CI = CaseMap.begin(), CE = CaseMap.end(); CI != CE; ++CI) {
+	for (CaseIt CI = CaseMap.begin(), CE = CaseMap.end(); CI != CE; CI++) {
 		BasicBlock *SuccBB = CI->first;
 		Value *Pred = CI->second;
 		CasePreds.push_back(Pred);
@@ -1263,7 +1263,6 @@ Value *SIRDatapathBuilder::createSICmpInst(ICmpInst::Predicate Predicate, ArrayR
     // Fall though.
   case CmpInst::ICMP_SGE:
     return createSIcmpOrEqInst(CmpInst::ICMP_SGT, NewOps, RetTy, InsertPosition, UsedAsArg);
-    //return buildICmpOrEqExpr(VASTExpr::dpSGT, LHS, RHS);
 
   case CmpInst::ICMP_ULE:
     std::swap(NewOps[0], NewOps[1]);
@@ -1645,7 +1644,7 @@ Value *SIRDatapathBuilder::createSXorInst(Value *LHS, Value *RHS, Type *RetTy,
   return createSXorInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSOrEqualInst(Value *LHS, Value *RHS, Type *RetTy,
+Value *SIRDatapathBuilder::createSOrEqualInst(Value *&LHS, Value *RHS, Type *RetTy,
 	                                            Value *InsertPosition, bool UsedAsArg) {
 	assert(LHS->getType() == RHS->getType() && LHS->getType() == RetTy
 		     && "BitWidth not match!");

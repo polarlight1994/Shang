@@ -147,7 +147,7 @@ public:
 		                   Value *InsertPosition, bool UsedAsArg);
   Value *createSXorInst(Value *LHS, Value *RHS, Type *RetTy,
 		                    Value *InsertPosition, bool UsedAsArg);
-  Value *createSOrEqualInst(Value *LHS, Value *RHS, Type *RetTy,
+  Value *createSOrEqualInst(Value *&LHS, Value *RHS, Type *RetTy,
 		                        Value *InsertPosition, bool UsedAsArg);
 
   Value *createSShiftInst(ArrayRef<Value *> Ops, Type *RetTy, Value *InsertPosition,
