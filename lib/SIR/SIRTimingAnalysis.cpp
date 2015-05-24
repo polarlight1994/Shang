@@ -438,8 +438,7 @@ void SIRDelayModel::updateArrivalCritial(float delay) {
     updateArrivalCritial(I, delay);
 }
 
-void SIRDelayModel::updateArrivalCarryChain(unsigned i, float Base,
-	                                          float PerBit) {
+void SIRDelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit) {
 	unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
 	Value *V = Node->getOperand(i);
 
@@ -652,6 +651,12 @@ void SIRDelayModel::updateArrival() {
     return updateCarryChainArrival(LuaI::Get<VFUAddSub>());
   case Intrinsic::shang_mul:
     return updateCarryChainArrival(LuaI::Get<VFUMult>());
+
+	case Intrinsic::shang_sdiv:
+	case Intrinsic::shang_udiv: {
+    // Hack: Need to add the lookUpDelay function of Div into VFUs.
+		return updateArrivalParallel(345.607);
+	}
 
   case Intrinsic::shang_shl:
     return updateShlArrival();

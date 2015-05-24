@@ -68,6 +68,8 @@ namespace llvm {
     case Intrinsic::shang_add:  return "shang_addc";
 		case Intrinsic::shang_addc: return "shang_addc";
     case Intrinsic::shang_mul:  return "shang_mult";
+		case Intrinsic::shang_udiv: return "shang_udiv";
+		case Intrinsic::shang_sdiv: return "shang_sdiv";
     case Intrinsic::shang_rand: return "shang_rand";
     case Intrinsic::shang_shl:  return "shang_shl";
     case Intrinsic::shang_lshr: return "shang_srl";

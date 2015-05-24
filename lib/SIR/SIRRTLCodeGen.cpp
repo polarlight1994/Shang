@@ -486,7 +486,7 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
 	printRegister(WriteEn);
 
 	// Hack: If the read latency is bigger than 1, we should pipeline the input port.
-	if (!WData->assign_empty()) 
+	if (!WData->assign_empty())
 		assert(SMB->getReadLatency() == 1 && "Need to pipeline input port!");
 
 	VOS.always_ff_begin(false);
@@ -711,6 +711,8 @@ bool SIRDatapathPrinter::printSubModuleInstantiation(IntrinsicInst &I) {
     if (printFUAdd(I)) return true;
     break;
   case Intrinsic::shang_mul:
+	case Intrinsic::shang_udiv:
+	case Intrinsic::shang_sdiv:
   case Intrinsic::shang_shl:
   case Intrinsic::shang_lshr:
   case Intrinsic::shang_ashr:
@@ -779,6 +781,8 @@ void SIRDatapathPrinter::visitIntrinsicInst(IntrinsicInst &I) {
   default: break;
   case Intrinsic::shang_add:
   case Intrinsic::shang_mul:
+	case Intrinsic::shang_udiv:
+	case Intrinsic::shang_sdiv:
   case Intrinsic::shang_shl:
   case Intrinsic::shang_ashr:
   case Intrinsic::shang_lshr:
@@ -800,6 +804,8 @@ void SIRDatapathPrinter::visitIntrinsicInst(IntrinsicInst &I) {
     if (printExpr(I)) return;
     break;
   }
+
+	llvm_unreachable("Unexpected opcode!");
 }
 
 // The IntToPtr and PtrToInt instruction should be treated specially.
