@@ -64,7 +64,11 @@ public:
                                 Value *InsertPosition,
                                 Intrinsic::ID FuncID, bool UsedAsArg);
 	Value *createSNegativeInst(Value *U, bool isPositiveValue, bool isNegativeValue,
-		                         Type *RetTy, Value *InsertPosition, bool UseAsArg);
+		                         Type *RetTy, Value *InsertPosition, bool UsedAsArg);
+	Value *createSOriginToComplementInst(Value *U, Type *RetTy, Value *InsertPosition,
+		                                   bool UsedAsArg);
+	Value *createSComplementToOriginInst(Value *U, Type *RetTy, Value *InsertPosition,
+		                                   bool UsedAsArg);
   Value *createSBitExtractInst(Value *U, unsigned UB, unsigned LB, Type *RetTy,
                                Value *InsertPosition, bool UsedAsArg);
   Value *createSBitCatInst(ArrayRef<Value *> Ops, Type *RetTy,
@@ -127,6 +131,8 @@ public:
   Value *createSAddInst(Value *LHS, Value *RHS, Type *RetTy,
 		                    Value *InsertPosition, bool UsedAsArg);
 	Value *createSAddInst(Value *LHS, Value *RHS, Value *Carry, Type *RetTy,
+		                    Value *InsertPosition, bool UsedAsArg);
+	Value *createSSubInst(Value *LHS, Value *RHS, Type *RetTy,
 		                    Value *InsertPosition, bool UsedAsArg);
 	Value *createSFormatSubInst(Value *LHS, Value *RHS, Type *RetTy,
 		                          Value *InsertPosition, bool UsedAsArg);

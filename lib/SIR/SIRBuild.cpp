@@ -1010,7 +1010,7 @@ Value *SIRDatapathBuilder::createShangInstPattern(ArrayRef<Value *> Ops, Type *R
 }
 
 Value *SIRDatapathBuilder::createSNegativeInst(Value *U, bool isPositiveValue, bool isNegativeValue,
-	                                             Type *RetTy, Value *InsertPosition, bool UseAsArg) {
+	                                             Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
 	assert(U->getType() == RetTy && "Unexpected RetTy!");
 
 	// Prepare some useful elements.
@@ -1021,14 +1021,14 @@ Value *SIRDatapathBuilder::createSNegativeInst(Value *U, bool isPositiveValue, b
 	if (isPositiveValue) {
 		assert(!isNegativeValue && "This should be a positive value!");
 
-		return createSBitCatInst(SM->createIntegerValue(1, 1), temp, RetTy, InsertPosition, UseAsArg);
+		return createSBitCatInst(SM->createIntegerValue(1, 1), temp, RetTy, InsertPosition, UsedAsArg);
 	}
 
 	// If it is a Negative Value, just change the sign bit to 1'b0;
 	if (isNegativeValue) {
 		assert(!isPositiveValue && "This should be a negative value!");
 
-		return createSBitCatInst(SM->createIntegerValue(1, 0), temp, RetTy, InsertPosition, UseAsArg);
+		return createSBitCatInst(SM->createIntegerValue(1, 0), temp, RetTy, InsertPosition, UsedAsArg);
 	}
 
 	assert(!isPositiveValue && !isNegativeValue && "These two circumstance should be handled before!");
@@ -1036,7 +1036,67 @@ Value *SIRDatapathBuilder::createSNegativeInst(Value *U, bool isPositiveValue, b
 	// If we do not know the detail information, we should build the logic to test it is Positive or Negative.
 	Value *NewSignBit = createSNotInst(getSignBit(U, InsertPosition), SM->createIntegerType(1), InsertPosition, true);
 
-	return createSBitCatInst(NewSignBit, temp, RetTy, InsertPosition, UseAsArg);
+	return createSBitCatInst(NewSignBit, temp, RetTy, InsertPosition, UsedAsArg);
+}
+
+Value *SIRDatapathBuilder::createSOriginToComplementInst(Value *U, Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
+	assert(U->getType() == RetTy && "Unexpected RetTy!");
+
+	unsigned BitWidth = getBitWidth(U);
+
+	Value *isNegative = createSBitExtractInst(U, BitWidth, BitWidth - 1, SM->createIntegerType(1), InsertPosition, true);
+	Value *isPositive = createSNotInst(isNegative, isNegative->getType(), InsertPosition, true);
+
+	/// If the value is positive, then the complement will be same as origin.
+	Value *resultWhenPositive = U;
+	Value *PositiveCondition = createSBitRepeatInst(isPositive, BitWidth, resultWhenPositive->getType(), InsertPosition, true);
+	Value *temp1 = createSAndInst(resultWhenPositive, PositiveCondition, resultWhenPositive->getType(), InsertPosition, true);
+
+	/// If the value is negative, then compute the complement.
+	// Extract the other bits and revert them.
+	Value *OtherBits = createSBitExtractInst(U, BitWidth - 1, 0, SM->createIntegerType(BitWidth - 1), InsertPosition, true);
+	Value *RevertBits = createSNotInst(OtherBits, OtherBits->getType(), InsertPosition, true);
+
+	// Catenate the Sign bit and Revert bits, then plus 1.
+	Value *CatenateResult = createSBitCatInst(SM->createIntegerValue(1, 1), RevertBits, RetTy, InsertPosition, true);
+	Value *AddResult = createSAddInst(CatenateResult, SM->createIntegerValue(1, 1), RetTy, InsertPosition, UsedAsArg);
+
+	Value *resultWhenNegative = AddResult;
+	Value *NegativeCondition = createSBitRepeatInst(isNegative, BitWidth, resultWhenNegative->getType(), InsertPosition, true);
+	Value *temp2 = createSAndInst(resultWhenNegative, NegativeCondition, resultWhenNegative->getType(), InsertPosition, true);
+
+	Value *Temps[] = { temp1, temp2 };
+	return createSOrInst(Temps, RetTy, InsertPosition, UsedAsArg);
+}
+
+Value *SIRDatapathBuilder::createSComplementToOriginInst(Value *U, Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
+	assert(U->getType() == RetTy && "Unexpected RetTy!");
+
+	unsigned BitWidth = getBitWidth(U);
+
+	Value *isNegative = createSBitExtractInst(U, BitWidth, BitWidth - 1, SM->createIntegerType(1), InsertPosition, true);
+	Value *isPositive = createSNotInst(isNegative, isNegative->getType(), InsertPosition, true);
+
+	/// If the value is positive, then the origin will be same as complement.
+	Value *resultWhenPositive = U;
+	Value *PositiveCondition = createSBitRepeatInst(isPositive, BitWidth, resultWhenPositive->getType(), InsertPosition, true);
+	Value *temp1 = createSAndInst(resultWhenPositive, PositiveCondition, resultWhenPositive->getType(), InsertPosition, true);
+
+	/// If the value is negative, then compute the complement.
+	// Extract the other bits and minus 1.
+	Value *OtherBits = createSBitExtractInst(U, BitWidth - 1, 0, SM->createIntegerType(BitWidth - 1), InsertPosition, true);
+	Value *MinusResult = createSFormatSubInst(OtherBits, SM->createIntegerValue(BitWidth - 1, 1), OtherBits->getType(), InsertPosition, true);
+
+	// Revert the minus result and Catenate the Sign bit.
+	Value *RevertBits = createSNotInst(MinusResult, MinusResult->getType(), InsertPosition, true);
+	Value *CatenateResult = createSBitCatInst(SM->createIntegerValue(1, 1), RevertBits, RetTy, InsertPosition, UsedAsArg);
+
+	Value *resultWhenNegative = CatenateResult;
+	Value *NegativeCondition = createSBitRepeatInst(isNegative, BitWidth, resultWhenNegative->getType(), InsertPosition, true);
+	Value *temp2 = createSAndInst(resultWhenNegative, NegativeCondition, resultWhenNegative->getType(), InsertPosition, true);
+
+	Value *Temps[] = { temp1, temp2 };
+	return createSOrInst(Temps, RetTy, InsertPosition, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSBitCatInst(ArrayRef<Value *> Ops, Type *RetTy,
@@ -1298,7 +1358,7 @@ Value *SIRDatapathBuilder::createSNotInst(Value *U, Type *RetTy,
 
 Value *SIRDatapathBuilder::createSAddInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                        Value *InsertPosition, bool UsedAsArg) {
-	assert(getBitWidth(Ops[0]) == getBitWidth(Ops[1]) && "BitWidth not matches!");
+/*	//assert(getBitWidth(Ops[0]) == getBitWidth(Ops[1]) && "BitWidth not matches!");*/
 	// If the operands size is 3, then it should be the shang_addc.
   if (Ops.size() == 3) {
 	  assert(TD.getTypeSizeInBits(Ops[2]->getType()) == 1 && "Bad BitWidth of Carry!");
@@ -1322,6 +1382,8 @@ Value *SIRDatapathBuilder::createSAddInst(Value *LHS, Value *RHS, Value *Carry, 
 
 Value *SIRDatapathBuilder::createSFormatSubInst(Value *LHS, Value *RHS, Type *RetTy,
 	                                              Value *InsertPosition, bool UsedAsArg) {
+	assert(getBitWidth(LHS) == getBitWidth(RHS) && "BitWidth should be same in Sub instruction!");
+
 	// To be noted that, this method can be only called when we have transform the Sub
   // operation into format form: a - b, a > 0, b > 0; And we will implement it by change
   // it into a + ~b + 1.
@@ -1351,6 +1413,8 @@ Value *SIRDatapathBuilder::createSSubInst(ArrayRef<Value *> Ops, Type *RetTy,
 	unsigned BitWidthOfA = getBitWidth(A);
 	unsigned BitWidthOfB = getBitWidth(B);
 	unsigned BitWidthOfResult = TD.getTypeSizeInBits(RetTy);
+
+	assert(BitWidthOfA == BitWidthOfB && "BitWidth should be same in Sub instruction!");
 
 	// Prepare some useful elements.
 	Type *OneBitTy = SM->createIntegerType(1);
@@ -1392,6 +1456,12 @@ Value *SIRDatapathBuilder::createSSubInst(ArrayRef<Value *> Ops, Type *RetTy,
   return createSOrInst(Temps, RetTy, InsertPosition, UsedAsArg);
 }
 
+Value *SIRDatapathBuilder::createSSubInst(Value *LHS, Value *RHS, Type *RetTy,
+	                                        Value *InsertPosition, bool UsedAsArg) {
+	Value *Ops[] = { LHS, RHS };
+  return createSSubInst(Ops, RetTy, InsertPosition, UsedAsArg);
+}
+
 Value *SIRDatapathBuilder::createSMulInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                        Value *InsertPosition, bool UsedAsArg) {
   // Handle the trivial case trivially.
@@ -1416,7 +1486,18 @@ Value *SIRDatapathBuilder::createSUDivInst(ArrayRef<Value *> Ops, Type *RetTy,
 
 Value *SIRDatapathBuilder::createSSDivInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                         Value *InsertPosition, bool UsedAsArg) {
-  return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_sdiv, UsedAsArg);
+  assert(Ops.size() == 2 && "Unexpected operand size!");
+	Value *LHS = Ops[0], *RHS = Ops[1];
+
+	// The SDiv IP in Quartus take two's complement as input and output, so we should
+  // transform the input and output here.
+	Value *LHSComplement = createSOriginToComplementInst(LHS, LHS->getType(), InsertPosition, true);
+	Value *RHSComplement = createSOriginToComplementInst(RHS, RHS->getType(), InsertPosition, true);
+
+	Value *NewOps[] = { LHSComplement, RHSComplement };
+
+  Value *DivResult = createShangInstPattern(NewOps, RetTy, InsertPosition, Intrinsic::shang_sdiv, true);
+	return createSComplementToOriginInst(DivResult, RetTy, InsertPosition, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSShiftInst(ArrayRef<Value *> Ops, Type *RetTy,
@@ -1519,6 +1600,10 @@ Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
 		//															Intrinsic::shang_and, UsedAsArg);
 		Value *temp = createShangInstPattern(NewOps, RetTy, InsertPosition,
 																		Intrinsic::shang_and, UsedAsArg);
+
+		if (!isa<IntrinsicInst>(NewOps[0]) && isa<Instruction>(NewOps[0]))
+			int i = 0;
+
 		return temp;
 	}
 }
