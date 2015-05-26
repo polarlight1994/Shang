@@ -132,6 +132,10 @@ public:
 		                    Value *InsertPosition, bool UsedAsArg);
 	Value *createSAddInst(Value *LHS, Value *RHS, Value *Carry, Type *RetTy,
 		                    Value *InsertPosition, bool UsedAsArg);
+	Value *createFormatAddInst(Value *LHS, Value *RHS, Type *RetTy,
+		                         Value *InsertPosition, bool UsedAsArg);
+	Value *createFormatAddInst(Value *LHS, Value *RHS, Value *Carry, Type *RetTy,
+		                         Value *InsertPosition, bool UsedAsArg);
 	Value *createSSubInst(Value *LHS, Value *RHS, Type *RetTy,
 		                    Value *InsertPosition, bool UsedAsArg);
 	Value *createSFormatSubInst(Value *LHS, Value *RHS, Type *RetTy,
