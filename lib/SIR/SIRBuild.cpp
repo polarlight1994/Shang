@@ -1358,14 +1358,76 @@ Value *SIRDatapathBuilder::createSNotInst(Value *U, Type *RetTy,
 
 Value *SIRDatapathBuilder::createSAddInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                        Value *InsertPosition, bool UsedAsArg) {
-/*	//assert(getBitWidth(Ops[0]) == getBitWidth(Ops[1]) && "BitWidth not matches!");*/
-	// If the operands size is 3, then it should be the shang_addc.
-  if (Ops.size() == 3) {
-	  assert(TD.getTypeSizeInBits(Ops[2]->getType()) == 1 && "Bad BitWidth of Carry!");
-		return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_addc, UsedAsArg);
-	}			
-  assert(Ops.size() == 2 && "Bad operands size!");
-	return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_add, UsedAsArg);
+  assert(Ops.size() == 2 || Ops.size() == 3 && "Unexpected operand size!");
+
+	// The Addc IP in Quartus take unsigned as input and output, so we should
+	// transform the input and output here.
+	Value *A = Ops[0], *B = Ops[1];
+	unsigned BitWidthOfA = getBitWidth(A), BitWidthOfB = getBitWidth(B), BitWidthOfResult = TD.getTypeSizeInBits(RetTy);
+
+	Value *NegativeA = createSNegativeInst(A, false, true, A->getType(), InsertPosition, true);
+	Value *NegativeB = createSNegativeInst(B, false, true, B->getType(), InsertPosition, true);
+
+	Value *isANegative = createSBitExtractInst(A, BitWidthOfA, BitWidthOfA - 1, SM->createIntegerType(1),
+		                                         InsertPosition, true);
+	Value *isAPositive = createSNotInst(isANegative, isANegative->getType(), InsertPosition, true);
+
+	Value *isBNegative = createSBitExtractInst(B, BitWidthOfB, BitWidthOfB - 1, SM->createIntegerType(1),
+		                                         InsertPosition, true);
+	Value *isBPostive = createSNotInst(isBNegative, isBNegative->getType(), InsertPosition, true);
+
+	// If A is positive and B is negative, then we transform it into A - (-B).
+	Value *isOnlyAPostive = createSAndInst(isAPositive, isBNegative, SM->createIntegerType(1), InsertPosition, true);
+	Value *resultWhenOnlyAisPositive = createSFormatSubInst(A, NegativeB, RetTy, InsertPosition, true);
+	if (Ops.size() == 3) {
+		Value *Carry = Ops[2];
+		assert(getBitWidth(Carry) == 1 && "Unexpected BitWidth of Carry!");
+
+		resultWhenOnlyAisPositive = createSAddInst(resultWhenOnlyAisPositive, Carry, RetTy, InsertPosition, true);
+	}
+	Value *temp1 = createSAndInst(createSBitRepeatInst(isOnlyAPostive, BitWidthOfResult, RetTy, InsertPosition, true),
+		                            resultWhenOnlyAisPositive, RetTy, InsertPosition, true);
+
+	// If A is negative and B is positive, then we transform it into B - (-A).
+	Value *isOnlyBPostive = createSAndInst(isANegative, isBPostive, SM->createIntegerType(1), InsertPosition, true);
+	Value *resultWhenOnlyBisPositive = createSFormatSubInst(B, NegativeA, RetTy, InsertPosition, true);
+	if (Ops.size() == 3) {
+		Value *Carry = Ops[2];
+		assert(getBitWidth(Carry) == 1 && "Unexpected BitWidth of Carry!");
+
+		resultWhenOnlyBisPositive = createSAddInst(resultWhenOnlyBisPositive, Carry, RetTy, InsertPosition, true);
+	}
+	Value *temp2 = createSAndInst(createSBitRepeatInst(isOnlyBPostive, BitWidthOfResult, RetTy, InsertPosition, true),
+		                            resultWhenOnlyBisPositive, RetTy, InsertPosition, true);
+
+	// If both A and B is negative, then we transform it into -((-A) + (-B))
+	Value *isABNegative = createSAndInst(isANegative, isBNegative, SM->createIntegerType(1), InsertPosition, true);
+	Value *NegativeOps[] = { NegativeA, NegativeB };
+	Value *resultWhenABisNegative = createSNegativeInst(createShangInstPattern(NegativeOps, RetTy, InsertPosition, Intrinsic::shang_add, true),
+		                                                  true, false, RetTy, InsertPosition, true);
+	if (Ops.size() == 3) {
+		Value *Carry = Ops[2];
+		assert(getBitWidth(Carry) == 1 && "Unexpected BitWidth of Carry!");
+
+		resultWhenABisNegative = createSAddInst(resultWhenABisNegative, Carry, RetTy, InsertPosition, true);
+	}
+	Value *temp3 = createSAndInst(createSBitRepeatInst(isABNegative, BitWidthOfResult, RetTy, InsertPosition, true),
+		                            resultWhenABisNegative, RetTy, InsertPosition, true);
+
+	// If both A and B is positive, then we do not need to do any transform.
+	Value *isABPositive = createSAndInst(isAPositive, isBPostive, SM->createIntegerType(1), InsertPosition, true);
+	Value *resultWhenABisPositive;
+	if (Ops.size() == 3) {
+		assert(TD.getTypeSizeInBits(Ops[2]->getType()) == 1 && "Bad BitWidth of Carry!");
+		resultWhenABisPositive = createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_addc, true);
+	} else {
+		resultWhenABisPositive = createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_add, true);
+	}
+	Value *temp4 = createSAndInst(createSBitRepeatInst(isABPositive, BitWidthOfResult, RetTy, InsertPosition, true),
+		                            resultWhenABisPositive, RetTy, InsertPosition, true);
+
+	Value *Temps[] = { temp1, temp2, temp3, temp4 };
+	return createSOrInst(Temps, RetTy, InsertPosition, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSAddInst(Value *LHS, Value *RHS, Type *RetTy,
