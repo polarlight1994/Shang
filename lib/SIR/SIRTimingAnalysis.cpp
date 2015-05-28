@@ -35,7 +35,7 @@ static bool IsLeafValue(SIR *SM, Value *V) {
 	// means the top nodes of the Expr-Tree. There are 
 	// four kinds of Leaf Value:
 	// 1) Argument 2) Register 3) ConstantValue
-	// 4) GlobalValue
+	// 4) GlobalValue 5) UndefValue
 	// The path between Leaf Value and other values 
 	// will cost no delay (except wire delay).
 	// However, since the ConstantValue will have
@@ -48,6 +48,8 @@ static bool IsLeafValue(SIR *SM, Value *V) {
 	if (isa<Argument>(V))	return true;
 
 	if (isa<GlobalValue>(V)) return true;
+
+	if (isa<UndefValue>(V)) return true;
 
 	if (Instruction *Inst = dyn_cast<Instruction>(V))
 		if (SM->lookupSIRReg(Inst))
@@ -307,9 +309,10 @@ void SIRDelayModel::updateBitCatArrival() {
     unsigned BitWidth = TD->getTypeSizeInBits(V->getType());
     OffSet -= BitWidth;
 
-		// If the operand is a ConstantInt, then ignore it because
-		// it will have no impact on the scheduling process.
-		if (isa<ConstantInt>(V)) continue;
+		// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+		// then ignore it because it will have no impact on the scheduling process.
+		if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+			  isa<Argument>(V) || isa<UndefValue>(V)) continue;
 
 		// Simply add the zero delay if the Src itself is a Leaf Value.
 		if (IsLeafValue(SM, V)) {
@@ -335,9 +338,10 @@ void SIRDelayModel::updateBitExtractArrival() {
 
 	Value *V = Node->getOperand(0);
 
-	// If the operand is a ConstantInt, then ignore it because
-	// it will have no impact on the scheduling process.
-	if (isa<ConstantInt>(V)) return;
+	// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+	// then ignore it because it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
 	if (IsLeafValue(SM, V)) {
@@ -384,9 +388,10 @@ void SIRDelayModel::updateBitMaskArrival() {
 void SIRDelayModel::updateArrivalParallel(unsigned i, float Delay) {
   Value *V = Node->getOperand(i);
 
-	// If the operand is a ConstantInt, then ignore it because
-	// it will have no impact on the scheduling process.
-	if (isa<ConstantInt>(V)) return;
+	// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+	// then ignore it because it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
 	if (IsLeafValue(SM, V)) {
@@ -413,9 +418,10 @@ void SIRDelayModel::updateArrivalCritial(unsigned i, float Delay) {
   Value *V = Node->getOperand(i);
   unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
 
-	// If the operand is a ConstantInt, then ignore it because
-	// it will have no impact on the scheduling process.
-	if (isa<ConstantInt>(V)) return;
+	// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+	// then ignore it because it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
 	if (IsLeafValue(SM, V)) {
@@ -442,9 +448,10 @@ void SIRDelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit
 	unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
 	Value *V = Node->getOperand(i);
 
-	// If the operand is a ConstantInt, then ignore it because
-	// it will have no impact on the scheduling process.
-	if (isa<ConstantInt>(V)) return;
+	// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+	// then ignore it because it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
 	if (IsLeafValue(SM, V)) {
@@ -487,9 +494,10 @@ void SIRDelayModel::updateCmpArrivial() {
   for (unsigned I = 0, E = Node->getNumOperands() - 1; I < E; ++I) {
     Value *V = Node->getOperand(I);
 
-		// If the operand is a ConstantInt, then ignore it because
-		// it will have no impact on the scheduling process.
-		if (isa<ConstantInt>(V)) continue;
+		// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+		// then ignore it because it will have no impact on the scheduling process.
+		if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+			  isa<Argument>(V) || isa<UndefValue>(V)) continue;
 
 		// Simply add the zero delay if the Src itself is a Leaf Value.
 		if (IsLeafValue(SM, V)) {
@@ -511,9 +519,10 @@ void SIRDelayModel::updateCmpArrivial() {
 void SIRDelayModel::updateShiftAmt() {
   Value *V = Node->getOperand(1);  
 
-	// If the operand is a ConstantInt, then ignore it because
-	// it will have no impact on the scheduling process.
-	if (isa<ConstantInt>(V)) return;
+	// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+	// then ignore it because it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
 	if (IsLeafValue(SM, V)) {
@@ -551,9 +560,10 @@ void SIRDelayModel::updateShlArrival() {
 
   float Delay = LuaI::Get<VFUShift>()->lookupLatency(std::min(BitWidth, 64u));
 
-	// If the operand is a ConstantInt, then ignore it because
-	// it will have no impact on the scheduling process.
-	if (isa<ConstantInt>(V)) return;
+	// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+	// then ignore it because it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
 	if (IsLeafValue(SM, V)) {
@@ -580,9 +590,10 @@ void SIRDelayModel::updateShrArrival() {
 
   float Delay = LuaI::Get<VFUShift>()->lookupLatency(std::min(BitWidth, 64u));
 
-	// If the operand is a ConstantInt, then ignore it because
-	// it will have no impact on the scheduling process.
-	if (isa<ConstantInt>(V)) return;
+	// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+	// then ignore it because it will have no impact on the scheduling process.
+	if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
 	if (IsLeafValue(SM, V)) {
@@ -809,9 +820,10 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 	for (int i = 0; i < Srcs.size(); i++) {
 		Value *V = Srcs[i];
 
-		// If the operand is a ConstantInt, Argument or GlobalValue, then ignore it
-		// because it will have no impact on the scheduling process.
-		if (isa<ConstantInt>(V) || isa<Argument>(V) || isa<GlobalValue>(V)) continue;
+		// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+		// then ignore it because it will have no impact on the scheduling process.
+		if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+			  isa<Argument>(V) || isa<UndefValue>(V)) continue;
 
 		// Simply add the zero delay if the Src itself is a Leaf Value. Since we have
 		// ignore the ConstantInt, Argument or GlobalValue, so what left here is only
@@ -857,9 +869,10 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 				continue;
 			}
 
-			// Also ignore the ConstantInt, Argument or GlobalValue.
-			if (isa<ConstantInt>(ChildNode) || isa<Argument>(ChildNode)
-				  || isa<GlobalValue>(ChildNode)) continue;
+			// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
+			// then ignore it because it will have no impact on the scheduling process.
+			if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
+				  isa<Argument>(V) || isa<UndefValue>(V)) continue;
 
 			// After ignore the ConstantInt, Argument and GlobalValue,
 			// the Leaf Value is what we want to find that is the SeqVal

@@ -91,6 +91,12 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
 			OS << "))";
 			return;
 		}
+		else if (UndefValue *UV = dyn_cast<UndefValue>(U)) {
+			OS << "((";
+			OS << UB - LB;
+			OS << "'hx))";
+			return;
+		}
 		else if (GlobalValue *GV = dyn_cast<GlobalValue>(U)) {
 			OS << "((" << Mangle(GV->getName());
 		}
@@ -579,6 +585,9 @@ void SIRDatapathPrinter::printSimpleOp(ArrayRef<Value *> Ops, const char *Opc) {
   unsigned BitWidth = TD.getTypeSizeInBits(Ops[0]->getType());
   
   for (int i = 0; i < Ops.size(); i++) {
+		if (isa<UndefValue>(Ops[i]))
+			int i = 1;
+
     assert(BitWidth == TD.getTypeSizeInBits(Ops[i]->getType())
            && "The BitWidth not match!");
   }
