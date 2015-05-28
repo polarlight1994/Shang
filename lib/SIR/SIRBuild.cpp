@@ -83,15 +83,14 @@ bool SIRInit::runOnFunction(Function &F) {
   // Build the general interface(Ports) of the module.
   Builder.buildInterface(&F);
 
-  // Visit the basic block in topological order.
+  // Visit the basic block in topological order so we can avoid the instruction
+	// is used before it is defined which will lead to bug when we create a Shang
+	// Intrinsic to replace it.
   ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
   typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
 
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     Builder.visitBasicBlock(*(*I));
-// 	typedef Function::iterator bb_iterator;
-// 	for (bb_iterator I = F.begin(), E = F.end(); I != E; ++I)
-// 		Builder.visitBasicBlock(*I);
 
   return false;
 }
