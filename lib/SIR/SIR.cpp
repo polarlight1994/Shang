@@ -266,46 +266,6 @@ Value *SIR::createIntegerValue(const APInt &Val) {
 	return ConstantInt::get(C, Val);
 }
 
-void SIR::printModuleDecl(raw_ostream &OS) const {
-  OS << "module " << F->getValueName()->getKey();
-  OS << "(\n";
-  Ports.front()->printDecl(OS.indent(4));  
-  for (SIRPortVector::const_iterator I = Ports.begin() + 1, E = Ports.end();
-       I != E; ++I) {
-    // Assign the ports to virtual pins.
-    OS << ",\n (* altera_attribute = \"-name VIRTUAL_PIN on\" *)";
-    (*I)->printDecl(OS.indent(4));
-  }
-  OS << ");\n";
-}
-
-void SIR::printRegDecl(raw_ostream &OS) const {
-	OS << "\n";
-
-	typedef const_register_iterator iterator;
-	for (iterator I = const_registers_begin(), E = const_registers_end();
-		   I != E; ++I) {
-    SIRRegister *Reg = *I;
-
-    // Do not need to declaration registers for the output and FUInOut,
-		// since we have do it elsewhere.
-    if (Reg->isOutPort() || Reg->isFUInOut()) continue;
-
-		Reg->printDecl(OS.indent(2));
-	}
-}
-
-void SIR::printMemoryBankDecl(raw_ostream &OS) const {
-	OS << "\n";	
-
-	typedef const_submodulebase_iterator iterator;
-	for (iterator I = const_submodules_begin(), E = const_submodules_end(); I != E; ++I) {
-		if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
-			SMB->printDecl(OS.indent(2));			
-		}
-	}
-}
-
 bool SIR::gcImpl() {
 	// Remove all the instructions that is not be used anymore.
 	Function *F = getFunction();

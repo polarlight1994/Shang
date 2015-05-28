@@ -884,7 +884,7 @@ struct SIR2RTL : public SIRPass {
   void printOutPort(const SIROutPort *OutPort, raw_ostream &OS, DataLayout &TD);
 
 	void generateCodeForTopModule();
-  void generateCodeForDecl(SIR &SM);
+  void generateCodeForDecl(SIR &SM, DataLayout &TD);
   void generateCodeForDatapath(SIR &SM, DataLayout &TD);
   void generateCodeForControlpath(SIR &SM, DataLayout &TD);
   void generateCodeForMemoryBank(SIR &SM, DataLayout &TD);
@@ -908,15 +908,52 @@ void SIR2RTL::generateCodeForTopModule() {
   Out << FUTemplate << "\n";
 }
 
-void SIR2RTL::generateCodeForDecl(SIR &SM) {
+void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
   // Print code for module declaration.
-  SM.printModuleDecl(Out);
+	Out << "module " << SM.getFunction()->getValueName()->getKey();
+
+	Out << "(\n";
+
+	// Print code for port declaration.
+	SIRPort *Port = *SM.const_ports_begin();
+	Port->printDecl(Out.indent(4));
+	typedef SIR::const_port_iterator port_iterator;
+	for (port_iterator I = SM.const_ports_begin() + 1, E = SM.const_ports_end();
+		   I != E; ++I) {
+		SIRPort *Port = *I;
+
+		// Assign the ports to virtual pins.
+		Out << ",\n (* altera_attribute = \"-name VIRTUAL_PIN on\" *)";
+		Port->printDecl(Out.indent(4));
+	}
+
+	Out << ");\n";
 
 	// Print code for register declaration.
-	SM.printRegDecl(Out);
+	typedef SIR::const_register_iterator reg_iterator;
+	for (reg_iterator I = SM.const_registers_begin(), E = SM.const_registers_end();
+		   I != E; ++I) {
+		SIRRegister *Reg = *I;
+
+		// Do not need to declaration registers for the output and FUInOut,
+		// since we have do it in MemoryBank declaration part.
+		if (Reg->isOutPort() || Reg->isFUInOut()) continue;
+
+		Reg->printDecl(Out.indent(2));
+	}
+
+	Out << "\n";
 
 	// Print code for MemoryBank declaration.
-	SM.printMemoryBankDecl(Out);
+	typedef SIR::const_submodulebase_iterator submod_iterator;
+	for (submod_iterator I = SM.const_submodules_begin(), E = SM.const_submodules_end();
+		   I != E; ++I) {
+		if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
+			SMB->printDecl(Out.indent(2));
+		}
+	}
+
+	Out << "\n";
 }
 
 void SIR2RTL::generateCodeForDatapath(SIR &SM, DataLayout &TD) {
@@ -963,7 +1000,7 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
   // Copy the basic modules from LUA script to the Verilog file.
   generateCodeForTopModule();
   // Generate the declarations for module and ports.
-  generateCodeForDecl(SM);
+  generateCodeForDecl(SM, TD);
   
   Out.module_begin();
 
