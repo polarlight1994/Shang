@@ -569,7 +569,7 @@ INITIALIZE_PASS(BitlevelOpt, "vast-bit-level-opt",
 bool BitlevelOpt::runSingleIteration(VASTModule &VM, DatapathBLO &BLO) {
   bool Changed = false;
 
-  Changed |= BLO.optimizeForward(VM);
+  //Changed |= BLO.optimizeForward(VM);
   Changed |= BLO.performLUTMapping();
   Changed |= BLO.shrink(VM);
 

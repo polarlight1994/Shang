@@ -50,7 +50,7 @@ public:
 
     // Preform optimizetion on the patial datapath to avoid over estimating the
     // inlining cost.
-    Metrics.optimize();
+    //Metrics.optimize();
 
     Cost = Metrics.getCost();
     DEBUG(dbgs() << "Inline cost of function: " << F->getName() << ':'
