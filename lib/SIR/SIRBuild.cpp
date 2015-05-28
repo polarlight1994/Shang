@@ -83,15 +83,15 @@ bool SIRInit::runOnFunction(Function &F) {
   // Build the general interface(Ports) of the module.
   Builder.buildInterface(&F);
 
-//   // Visit the basic block in topological order.
-//   ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
-//   typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
-// 
-//   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
-//     Builder.visitBasicBlock(*(*I));
-	typedef Function::iterator bb_iterator;
-	for (bb_iterator I = F.begin(), E = F.end(); I != E; ++I)
-		Builder.visitBasicBlock(*I);
+  // Visit the basic block in topological order.
+  ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
+  typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
+
+  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
+    Builder.visitBasicBlock(*(*I));
+// 	typedef Function::iterator bb_iterator;
+// 	for (bb_iterator I = F.begin(), E = F.end(); I != E; ++I)
+// 		Builder.visitBasicBlock(*I);
 
   return false;
 }
@@ -863,7 +863,7 @@ void SIRDatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 		// Mutate the RetTy to IntegerType with correct BitWidth since
 		// the original RetTy cannot be recognized by SIR framework.
 		I.mutateType(SM->createIntegerType(ResultBitWidth));
-		createFormatAddInst(LHS, RHS, I.getType(), &I, false);
+		createSAddInst(LHS, RHS, I.getType(), &I, false);
 	}
 	}
 }
@@ -919,8 +919,8 @@ void SIRDatapathBuilder::visitGEPOperator(GEPOperator &O, GetElementPtrInst &I) 
       if (Field) {
         // N = N + Offset
         uint64_t Offset = TD.getStructLayout(StTy)->getElementOffset(Field);
-        PtrVal = createFormatAddInst(PtrVal, createSConstantInt(Offset, PtrSize),
-                                     PtrVal->getType(), &I, true);
+        PtrVal = createSAddInst(PtrVal, createSConstantInt(Offset, PtrSize),
+                                PtrVal->getType(), &I, true);
       }
 
       Ty = StTy->getElementType(Field);
@@ -932,8 +932,8 @@ void SIRDatapathBuilder::visitGEPOperator(GEPOperator &O, GetElementPtrInst &I) 
         if (CI->isZero()) continue;
         uint64_t Offs = TD.getTypeAllocSize(Ty)
                         * cast<ConstantInt>(CI)->getSExtValue();
-        PtrVal = createFormatAddInst(PtrVal, createSConstantInt(Offs, PtrSize),
-                                     PtrVal->getType(), &I, true);
+        PtrVal = createSAddInst(PtrVal, createSConstantInt(Offs, PtrSize),
+                                PtrVal->getType(), &I, true);
         continue;
       }
 
@@ -958,7 +958,7 @@ void SIRDatapathBuilder::visitGEPOperator(GEPOperator &O, GetElementPtrInst &I) 
         }
       }
 
-      PtrVal = createFormatAddInst(PtrVal, IdxN, PtrVal->getType(), &I, true);
+      PtrVal = createSAddInst(PtrVal, IdxN, PtrVal->getType(), &I, true);
     }
   }
 
@@ -1059,7 +1059,7 @@ Value *SIRDatapathBuilder::createSOriginToComplementInst(Value *U, Type *RetTy, 
 
 	// Catenate the Sign bit and Revert bits, then plus 1.
 	Value *CatenateResult = createSBitCatInst(SM->createIntegerValue(1, 1), RevertBits, RetTy, InsertPosition, true);
-	Value *AddResult = createFormatAddInst(CatenateResult, SM->createIntegerValue(1, 1), RetTy, InsertPosition, UsedAsArg);
+	Value *AddResult = createSAddInst(CatenateResult, SM->createIntegerValue(1, 1), RetTy, InsertPosition, UsedAsArg);
 
 	Value *resultWhenNegative = AddResult;
 	Value *NegativeCondition = createSBitRepeatInst(isNegative, BitWidth, resultWhenNegative->getType(), InsertPosition, true);
@@ -1085,7 +1085,7 @@ Value *SIRDatapathBuilder::createSComplementToOriginInst(Value *U, Type *RetTy, 
 	/// If the value is negative, then compute the complement.
 	// Extract the other bits and minus 1.
 	Value *OtherBits = createSBitExtractInst(U, BitWidth - 1, 0, SM->createIntegerType(BitWidth - 1), InsertPosition, true);
-	Value *MinusResult = createSFormatSubInst(OtherBits, SM->createIntegerValue(BitWidth - 1, 1), OtherBits->getType(), InsertPosition, true);
+	Value *MinusResult = createSSubInst(OtherBits, SM->createIntegerValue(BitWidth - 1, 1), OtherBits->getType(), InsertPosition, true);
 
 	// Revert the minus result and Catenate the Sign bit.
 	Value *RevertBits = createSNotInst(MinusResult, MinusResult->getType(), InsertPosition, true);
@@ -1356,95 +1356,17 @@ Value *SIRDatapathBuilder::createSNotInst(Value *U, Type *RetTy,
   return Temp;
 }
 
-Value *SIRDatapathBuilder::createFormatAddInst(Value *LHS, Value *RHS, Type *RetTy,
-	                                             Value *InsertPosition, bool UsedAsArg) {
-	// To be noted that, this method can be only called when the operands meet the acquirements:
-	// a > 0, b > 0; And we will implement it with the shang_add intrinsic intruction.
-	Value *PositiveOps[] = { LHS, RHS };
-
-	return createShangInstPattern(PositiveOps, RetTy, InsertPosition, Intrinsic::shang_add, UsedAsArg);
-}
-
-Value *SIRDatapathBuilder::createFormatAddInst(Value *LHS, Value *RHS, Value *Carry, Type *RetTy,
-	                                             Value *InsertPosition, bool UsedAsArg) {
-	// To be noted that, this method can be only called when the operands meet the acquirements:
-	// a > 0, b > 0; And we will implement it with the shang_addc intrinsic intruction.
-	Value *PositiveOps[] = { LHS, RHS, Carry };
-
-	return createShangInstPattern(PositiveOps, RetTy, InsertPosition, Intrinsic::shang_addc, UsedAsArg);
-}
-
 Value *SIRDatapathBuilder::createSAddInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                        Value *InsertPosition, bool UsedAsArg) {
   assert(Ops.size() == 2 || Ops.size() == 3 && "Unexpected operand size!");
 
-	// The Addc IP in Quartus take unsigned as input and output, so we should
-	// transform the input and output here.
-	Value *A = Ops[0], *B = Ops[1];
-	unsigned BitWidthOfA = getBitWidth(A), BitWidthOfB = getBitWidth(B), BitWidthOfResult = TD.getTypeSizeInBits(RetTy);
-
-	Value *NegativeA = createSNegativeInst(A, false, true, A->getType(), InsertPosition, true);
-	Value *NegativeB = createSNegativeInst(B, false, true, B->getType(), InsertPosition, true);
-
-	Value *isANegative = createSBitExtractInst(A, BitWidthOfA, BitWidthOfA - 1, SM->createIntegerType(1),
-		                                         InsertPosition, true);
-	Value *isAPositive = createSNotInst(isANegative, isANegative->getType(), InsertPosition, true);
-
-	Value *isBNegative = createSBitExtractInst(B, BitWidthOfB, BitWidthOfB - 1, SM->createIntegerType(1),
-		                                         InsertPosition, true);
-	Value *isBPostive = createSNotInst(isBNegative, isBNegative->getType(), InsertPosition, true);
-
-	// If A is positive and B is negative, then we transform it into A - (-B).
-	Value *isOnlyAPostive = createSAndInst(isAPositive, isBNegative, SM->createIntegerType(1), InsertPosition, true);
-	Value *resultWhenOnlyAisPositive = createSFormatSubInst(A, NegativeB, RetTy, InsertPosition, true);
 	if (Ops.size() == 3) {
-		Value *Carry = Ops[2];
-		assert(getBitWidth(Carry) == 1 && "Unexpected BitWidth of Carry!");
+		assert(getBitWidth(Ops[2]) == 1 && "Unexpected BitWidth of Carry!");
 
-		resultWhenOnlyAisPositive = createFormatAddInst(resultWhenOnlyAisPositive, Carry, RetTy, InsertPosition, true);
+		return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_addc, UsedAsArg);
 	}
-	Value *temp1 = createSAndInst(createSBitRepeatInst(isOnlyAPostive, BitWidthOfResult, RetTy, InsertPosition, true),
-		                            resultWhenOnlyAisPositive, RetTy, InsertPosition, true);
 
-	// If A is negative and B is positive, then we transform it into B - (-A).
-	Value *isOnlyBPostive = createSAndInst(isANegative, isBPostive, SM->createIntegerType(1), InsertPosition, true);
-	Value *resultWhenOnlyBisPositive = createSFormatSubInst(B, NegativeA, RetTy, InsertPosition, true);
-	if (Ops.size() == 3) {
-		Value *Carry = Ops[2];
-		assert(getBitWidth(Carry) == 1 && "Unexpected BitWidth of Carry!");
-
-		resultWhenOnlyBisPositive = createFormatAddInst(resultWhenOnlyBisPositive, Carry, RetTy, InsertPosition, true);
-	}
-	Value *temp2 = createSAndInst(createSBitRepeatInst(isOnlyBPostive, BitWidthOfResult, RetTy, InsertPosition, true),
-		                            resultWhenOnlyBisPositive, RetTy, InsertPosition, true);
-
-	// If both A and B is negative, then we transform it into -((-A) + (-B))
-	Value *isABNegative = createSAndInst(isANegative, isBNegative, SM->createIntegerType(1), InsertPosition, true);
-	Value *resultWhenABisNegative = createSNegativeInst(createFormatAddInst(NegativeA, NegativeB, RetTy, InsertPosition, true),
-		                                                  true, false, RetTy, InsertPosition, true);
-	if (Ops.size() == 3) {
-		Value *Carry = Ops[2];
-		assert(getBitWidth(Carry) == 1 && "Unexpected BitWidth of Carry!");
-
-		resultWhenABisNegative = createFormatAddInst(resultWhenABisNegative, Carry, RetTy, InsertPosition, true);
-	}
-	Value *temp3 = createSAndInst(createSBitRepeatInst(isABNegative, BitWidthOfResult, RetTy, InsertPosition, true),
-		                            resultWhenABisNegative, RetTy, InsertPosition, true);
-
-	// If both A and B is positive, then we do not need to do any transform.
-	Value *isABPositive = createSAndInst(isAPositive, isBPostive, SM->createIntegerType(1), InsertPosition, true);
-	Value *resultWhenABisPositive = createFormatAddInst(A, B, RetTy, InsertPosition, true);
-	if (Ops.size() == 3) {
-		Value *Carry = Ops[2];
-		assert(getBitWidth(Carry) == 1 && "Unexpected BitWidth of Carry!");
-
-		resultWhenABisPositive = createFormatAddInst(resultWhenABisPositive, Carry, RetTy, InsertPosition, true);
-	} 
-	Value *temp4 = createSAndInst(createSBitRepeatInst(isABPositive, BitWidthOfResult, RetTy, InsertPosition, true),
-		                            resultWhenABisPositive, RetTy, InsertPosition, true);
-
-	Value *Temps[] = { temp1, temp2, temp3, temp4 };
-	return createSOrInst(Temps, RetTy, InsertPosition, UsedAsArg);
+	return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_add, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSAddInst(Value *LHS, Value *RHS, Type *RetTy,
@@ -1459,79 +1381,15 @@ Value *SIRDatapathBuilder::createSAddInst(Value *LHS, Value *RHS, Value *Carry, 
 	return createSAddInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
-Value *SIRDatapathBuilder::createSFormatSubInst(Value *LHS, Value *RHS, Type *RetTy,
-	                                              Value *InsertPosition, bool UsedAsArg) {
-	assert(getBitWidth(LHS) == getBitWidth(RHS) && "BitWidth should be same in Sub instruction!");
-
-	// To be noted that, this method can be only called when the operands meet the acquirements:
-  // a > 0, b > 0; And we will implement it with a + ~b + 1 instruction.
-	Value *isNotGreater = createSdpUGTInst(RHS, LHS, SM->createIntegerType(1), InsertPosition, true);
-	Value *extendedIsNotGreater = createSBitRepeatInst(isNotGreater, TD.getTypeSizeInBits(RetTy), RetTy, InsertPosition, true);
-	Value *extendedIsGreater = createSNotInst(extendedIsNotGreater, RetTy, InsertPosition, true);
-
-	// If a > b, then we can simply implement the Sub operation by a + ~b + 1.
-	Value *NotRHS = createSNotInst(RHS, RHS->getType(), InsertPosition, true);
-	Value *resultWhenAisGreaterThanB = createFormatAddInst(LHS, NotRHS, SM->createIntegerValue(1, 1), RetTy, InsertPosition, true);
-	Value *temp1 = createSAndInst(resultWhenAisGreaterThanB, extendedIsGreater, RetTy, InsertPosition, true);
-
-	// If a < b, then we can change the Sub operation by -(b + ~a + 1).
-	Value *NotLHS = createSNotInst(LHS, LHS->getType(), InsertPosition, true);
-	Value *AddResult = createFormatAddInst(RHS, NotLHS, SM->createIntegerValue(1, 1), RetTy, InsertPosition, true);
-	Value *resultWhenAisNotGreaterThanB = createSNegativeInst(AddResult, true, false, RetTy, InsertPosition, true);
-	Value *temp2 = createSAndInst(resultWhenAisNotGreaterThanB, extendedIsNotGreater, RetTy, InsertPosition, true);
-
-	Value *Temps[] = { temp1, temp2 };
-	return createSOrInst(Temps, RetTy, InsertPosition, UsedAsArg);
-}
-
 Value *SIRDatapathBuilder::createSSubInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                        Value *InsertPosition, bool UsedAsArg) {
 	assert(Ops.size() == 2 && "Only support two operands now!");
 	Value *A = Ops[0], *B = Ops[1];
-	unsigned BitWidthOfA = getBitWidth(A);
-	unsigned BitWidthOfB = getBitWidth(B);
-	unsigned BitWidthOfResult = TD.getTypeSizeInBits(RetTy);
 
-	assert(BitWidthOfA == BitWidthOfB && "BitWidth should be same in Sub instruction!");
+	// Transform the A - B into A + ~B + 1.
+	Value *NotB = createSNotInst(B, B->getType(), InsertPosition, true);
 
-	// Prepare some useful elements.
-	Type *OneBitTy = SM->createIntegerType(1);
-
-	// All Sub-Operators should be transformed into : a - b, a > 0, b > 0;
-  Value *isANegative = getSignBit(A, InsertPosition);
-	Value *isBNegative = getSignBit(B, InsertPosition);
-	Value *isAPositive = createSNotInst(isANegative, OneBitTy, InsertPosition, true);
-	Value *isBPositive = createSNotInst(isBNegative, OneBitTy, InsertPosition, true);
-	Value *isOnlyAPositive = createSAndInst(isAPositive, isBNegative, OneBitTy, InsertPosition, true);
-	Value *isOnlyBPositive = createSAndInst(isANegative, isBPositive, OneBitTy, InsertPosition, true);
-	Value *isABPositive = createSAndInst(isAPositive, isBPositive, OneBitTy, InsertPosition, true);
-	Value *isABNegative = createSAndInst(isANegative, isBNegative, OneBitTy, InsertPosition, true);
-
-	Value *NegativeA = createSNegativeInst(A, false, false, A->getType(), InsertPosition, true);
-	Value *NegativeB = createSNegativeInst(B, false, false, B->getType(), InsertPosition, true);
-
-	// If A & B are positive, then we can change the A - B into A + ~B + 1;
-  Value *resultWhenABisPositive = createSFormatSubInst(A, B, RetTy, InsertPosition, true);
-	Value *temp1 = createSAndInst(createSBitRepeatInst(isABPositive, BitWidthOfResult, RetTy, InsertPosition, true),
-		                            resultWhenABisPositive, RetTy, InsertPosition, true);
-
-	// If A is positive, B is negative, then we can change the A - B into A + (-B);
-	Value *resultWhenOnlyAisPositive = createFormatAddInst(A, NegativeB, RetTy, InsertPosition, true);
-	Value *temp2 = createSAndInst(createSBitRepeatInst(isOnlyAPositive, BitWidthOfResult, RetTy, InsertPosition, true),
-																resultWhenOnlyAisPositive, RetTy, InsertPosition, true);
-
-	// If A is negative, B is positive, then we can change the A - B into -((-A) + B);
-	Value *resultWhenOnlyBisPositive = createSNegativeInst(createFormatAddInst(NegativeA, B, RetTy, InsertPosition, true), true, false, RetTy, InsertPosition, true);
-	Value *temp3 = createSAndInst(createSBitRepeatInst(isOnlyBPositive, BitWidthOfResult, RetTy, InsertPosition, true),
-		                            resultWhenOnlyBisPositive, RetTy, InsertPosition, true);
-
-	// If A & B are negative, then we can change the A - B into (-B) - (-A);
-	Value *resultWhenABisNegative = createSFormatSubInst(NegativeB, NegativeA, RetTy, InsertPosition, true);
-	Value *temp4 = createSAndInst(createSBitRepeatInst(isABNegative, BitWidthOfResult, RetTy, InsertPosition, true),
-		                            resultWhenABisNegative, RetTy, InsertPosition, true);
-
-	Value *Temps[] = { temp1, temp2, temp3, temp4 };
-  return createSOrInst(Temps, RetTy, InsertPosition, UsedAsArg);
+	return createSAddInst(A, NotB, SM->createIntegerValue(1, 1), RetTy, InsertPosition, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSSubInst(Value *LHS, Value *RHS, Type *RetTy,
@@ -1559,23 +1417,16 @@ Value *SIRDatapathBuilder::createSMulInst(Value *LHS, Value *RHS, Type *RetTy,
 
 Value *SIRDatapathBuilder::createSUDivInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                         Value *InsertPosition, bool UsedAsArg) {
+  assert(Ops.size() == 2 && "Unexpected operand size!");
+
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_udiv, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSSDivInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                         Value *InsertPosition, bool UsedAsArg) {
   assert(Ops.size() == 2 && "Unexpected operand size!");
-	Value *LHS = Ops[0], *RHS = Ops[1];
 
-	// The SDiv IP in Quartus take two's complement as input and output, so we should
-  // transform the input and output here.
-	Value *LHSComplement = createSOriginToComplementInst(LHS, LHS->getType(), InsertPosition, true);
-	Value *RHSComplement = createSOriginToComplementInst(RHS, RHS->getType(), InsertPosition, true);
-
-	Value *NewOps[] = { LHSComplement, RHSComplement };
-
-  Value *DivResult = createShangInstPattern(NewOps, RetTy, InsertPosition, Intrinsic::shang_sdiv, true);
-	return createSComplementToOriginInst(DivResult, RetTy, InsertPosition, UsedAsArg);
+	return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_sdiv, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSShiftInst(ArrayRef<Value *> Ops, Type *RetTy,
