@@ -640,7 +640,6 @@ void SIRDatapathPrinter::printBitCat(ArrayRef<Value *> Ops) {
 }
 
 bool SIRDatapathPrinter::printFUAdd(IntrinsicInst &I) {
-  
   // Extract the called function
   Function *Callee = I.getCalledFunction();
 
@@ -710,8 +709,6 @@ bool SIRDatapathPrinter::printBinaryFU(IntrinsicInst &I) {
 }
 
 bool SIRDatapathPrinter::printSubModuleInstantiation(IntrinsicInst &I) {
-  OS << ";\n";
-
   Intrinsic::ID ID = I.getIntrinsicID();
   switch (ID) {
   default: break;
@@ -736,6 +733,13 @@ bool SIRDatapathPrinter::printSubModuleInstantiation(IntrinsicInst &I) {
 }
 
 bool SIRDatapathPrinter::printExpr(IntrinsicInst &I) {
+	OS << "assign ";
+
+	printName(OS, I);
+
+	unsigned BitWidth = TD.getTypeSizeInBits(I.getType());
+	OS << BitRange(BitWidth, 0, BitWidth > 1);
+
   OS << " = ((";
 
   // Extract the called function
@@ -779,11 +783,6 @@ void SIRDatapathPrinter::visitIntrinsicInst(IntrinsicInst &I) {
   // Skip all the pseudo instruction.
   if (I.getIntrinsicID() == Intrinsic::shang_pseudo)
     return;
-
-  unsigned BitWidth = TD.getTypeSizeInBits(I.getType());
-  OS << "wire" << BitRange(BitWidth, 0, BitWidth > 1) << ' ';
-
-  printName(OS, I);
 
   Intrinsic::ID ID = I.getIntrinsicID();
   switch (ID) {
@@ -910,7 +909,8 @@ void SIR2RTL::generateCodeForTopModule() {
 
 void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
   // Print code for module declaration.
-	Out << "module " << SM.getFunction()->getValueName()->getKey();
+	Function *F = SM.getFunction();
+	Out << "module " << F->getValueName()->getKey();
 
 	Out << "(\n";
 
@@ -954,6 +954,28 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
 	}
 
 	Out << "\n";
+
+	// Print code for wire declaration.
+	typedef Function::iterator bb_iterator;
+	for (bb_iterator I = F->begin(), E = F->end(); I != E; ++I) {
+		BasicBlock *BB = I;
+
+		typedef BasicBlock::iterator inst_iterator;
+		for (inst_iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+			Instruction *Inst = I;
+
+			if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
+				if (II->getIntrinsicID() == Intrinsic::shang_pseudo)
+					continue;
+
+				raw_ostream &wireOS = Out.indent(2);
+				unsigned BitWidth = TD.getTypeSizeInBits(II->getType());
+
+				wireOS << "wire " << BitRange(BitWidth, 0, false);
+				wireOS << Mangle(II->getName()) << ";\n";
+			}
+		}
+	}
 }
 
 void SIR2RTL::generateCodeForDatapath(SIR &SM, DataLayout &TD) {
