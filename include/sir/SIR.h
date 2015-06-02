@@ -25,6 +25,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Debug.h"
 
+static int NumSIRTempWires = 0;
+
 namespace llvm {
 	// Get the signed value of a ConstantInt.
 	static int64_t getConstantIntValue(Value *V) {
@@ -73,7 +75,7 @@ namespace llvm {
     case Intrinsic::shang_rand: return "shang_rand";
     case Intrinsic::shang_shl:  return "shang_shl";
     case Intrinsic::shang_lshr: return "shang_srl";
-    case Intrinsic::shang_ashr: return "shang_ashr";
+    case Intrinsic::shang_ashr: return "shang_sra";
     case Intrinsic::shang_ugt:  return "shang_ugt";
     case Intrinsic::shang_sgt:  return "shang_sgt";
     default: break;
