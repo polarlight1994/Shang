@@ -509,7 +509,7 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
 			VOS << SMB->getArrayName() << "[0]"
 				  << " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
 
-			VOS.exit_block();
+			VOS.else_begin();
 
 			VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
 				<< SMB->getArrayName() << "[0];\n";
@@ -518,7 +518,7 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
 				<< BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "]"
 				<< " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
 
-			VOS.exit_block();
+			VOS.else_begin();
 
 			VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
 				<< SMB->getArrayName() << "[" << SMB->getAddrName()
