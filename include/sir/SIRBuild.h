@@ -41,16 +41,14 @@ class SIRDatapathBuilder : public InstVisitor<SIRDatapathBuilder, void> {
 public:
   SIRDatapathBuilder(SIR *SM, DataLayout &TD) : SM(SM), TD(TD) {}
 
-  /// Functions to provide basic information of instruction
-  unsigned getBitWidth(Value *U);
+  /// Functions to provide basic informations and elements
+  unsigned getBitWidth(Value *V);
+	Value *getAsOperand(Value *Operand, Instruction *ParentInst);
 
   /// Functions to visit all data-path instructions
   void visitSExtInst(SExtInst &I);
   void visitZExtInst(ZExtInst &I);
   void visitTruncInst(TruncInst &I);
-  void visitIntToPtrInst(IntToPtrInst &I);
-  void visitPtrToIntInst(PtrToIntInst &I);
-  void visitBitCastInst(BitCastInst &I);
   void visitSelectInst(SelectInst &I);
   void visitICmpInst(ICmpInst &I);
   void visitBinaryOperator(BinaryOperator &I);
@@ -159,6 +157,11 @@ public:
   Value *createSShiftInst(Value *LHS, Value *RHS, Type *RetTy, Value *InsertPosition,
                           Intrinsic::ID FuncID, bool UsedAsArg);
 
+	Value *createSGEPInst(GEPOperator *GEP, Type *RetTy,
+		                    Value *InsertPosition, bool UseAsArg);
+	Value *createPtrToIntInst(Value *V, Type *IntTy, Value *InsertPosition);
+	Value *createIntToPtrInst(Value *V, Type *PtrTy, Value *InsertPosition);
+
   // Functions to help us create Shang-Inst.
   Value *getSignBit(Value *U, Value *InsertPosition);
   Value *createSConstantInt(int16_t Value, unsigned BitWidth);
@@ -249,9 +252,6 @@ struct SIRBuilder : public InstVisitor<SIRBuilder, void> {
   void visitSExtInst(SExtInst &I);
   void visitZExtInst(ZExtInst &I);
   void visitTruncInst(TruncInst &I);
-  void visitIntToPtrInst(IntToPtrInst &I);
-  void visitPtrToIntInst(PtrToIntInst &I);
-  void visitBitCastInst(BitCastInst &I);
   void visitSelectInst(SelectInst &I);
   void visitICmpInst(ICmpInst &I);
   void visitBinaryOperator(BinaryOperator &I);

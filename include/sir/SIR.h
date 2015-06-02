@@ -25,8 +25,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Debug.h"
 
-static int NumSIRTempWires = 0;
-
 namespace llvm {
 	// Get the signed value of a ConstantInt.
 	static int64_t getConstantIntValue(Value *V) {

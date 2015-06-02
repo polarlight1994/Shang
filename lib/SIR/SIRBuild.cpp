@@ -42,7 +42,7 @@
 using namespace llvm;
 using namespace vast;
 
-static int NumSIRTemps = 0;
+static int NumSIRTempRegs = 0;
 
 //------------------------------------------------------------------------//
 char SIRInit::ID = 0;
@@ -171,18 +171,6 @@ void SIRBuilder::visitSExtInst(SExtInst &I) {
   D_Builder.visit(I);
 }
 
-void SIRBuilder::visitPtrToIntInst(PtrToIntInst &I) {
-  D_Builder.visit(I);
-}
-
-void SIRBuilder::visitIntToPtrInst(IntToPtrInst &I) {
-  D_Builder.visit(I);
-}
-
-void SIRBuilder::visitBitCastInst(BitCastInst &I) {
-  D_Builder.visit(I);
-}
-
 void SIRBuilder::visitSelectInst(SelectInst &I) {
   D_Builder.visit(I);
 }
@@ -227,14 +215,21 @@ void SIRBuilder::visitStoreInst(StoreInst &I) {
 	// Get the corresponding memory bank.
 	SIRMemoryBank *Bank = SA.getMemoryBank(I);
 
-	C_Builder.createMemoryTransaction(I.getPointerOperand(), I.getValueOperand(), Bank, I);
+	// Get the correct operand of the StoreInst.
+	Value *PointerOperand = D_Builder.getAsOperand(I.getPointerOperand(), &I);
+	Value *ValueOperand = D_Builder.getAsOperand(I.getValueOperand(), &I);
+
+	C_Builder.createMemoryTransaction(PointerOperand, ValueOperand, Bank, I);
 }
 
 void SIRBuilder::visitLoadInst(LoadInst &I) {
 	// Get the corresponding memory bank.
 	SIRMemoryBank *Bank = SA.getMemoryBank(I);
 
-	C_Builder.createMemoryTransaction(I.getPointerOperand(), 0, Bank, I);
+	// Get the correct operand of the LoadInst.
+	Value *PointerOperand = D_Builder.getAsOperand(I.getPointerOperand(), &I);
+
+	C_Builder.createMemoryTransaction(PointerOperand, 0, Bank, I);
 }
 
 
@@ -270,7 +265,7 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, Type *ValueTy,
 	// Make sure we don't get empty name.
   std::string RegName;
   if (Name.size() == 0)
-		RegName = "SIRTemp" + utostr_32(NumSIRTemps++);
+		RegName = "SIRTempReg" + utostr_32(NumSIRTempRegs++);
 	else
 		RegName = Name;
 
@@ -398,7 +393,8 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 	Type *RetTy = SM->createIntegerType(Bank->getAddrWidth());
 	// Mutate the type of the address to integer so that we can do match operation on it.
 	assert(Addr->getType()->isPointerTy() && "Unexpected address type!");
-	Value *AddrVal = new PtrToIntInst(Addr, SM->createIntegerType(getBitWidth(Addr)), "SIRPrtToInt", &I);
+
+	Value *AddrVal = D_Builder.createPtrToIntInst(Addr, SM->createIntegerType(getBitWidth(Addr)), &I);
 	AddrVal = D_Builder.createSBitExtractInst(AddrVal, Bank->getAddrWidth(), 0, RetTy, &I, true);
 	
 	assignToReg(Slot, SM->createIntegerValue(1, 1), AddrVal, Bank->getAddr());
@@ -549,7 +545,7 @@ void SIRCtrlRgnBuilder::visitPHIsInSucc(SIRSlot *SrcSlot, SIRSlot *DstSlot,
     unsigned BitWidth = TD.getTypeSizeInBits(PN->getType());
 
     // The value which lives out from SrcBB to DstBB;
-    Value *LiveOutedFromSrcBB = PN->DoPHITranslation(DstBB, SrcBB);
+    Value *LiveOutedFromSrcBB = D_Builder.getAsOperand(PN->DoPHITranslation(DstBB, SrcBB), PN);
     
     // If the register already exist, then just assign to it.
 		SIRRegister *PHISeqValReg;
@@ -606,7 +602,7 @@ void SIRCtrlRgnBuilder::visitBranchInst(BranchInst &I) {
   }
 
   // Connect the slots according to the condition.
-  Value *Cnd = I.getCondition();
+  Value *Cnd = D_Builder.getAsOperand(I.getCondition(), &I);
 
   BasicBlock *TrueBB = I.getSuccessor(0);
   createConditionalTransition(TrueBB, CurSlot, Cnd);
@@ -681,7 +677,7 @@ void SIRCtrlRgnBuilder::visitSwitchInst(SwitchInst &I) {
 	SIRSlot *CurSlot = SM->getLatestSlot(I.getParent());
 
 	// The Condition Value
-	Value *CndVal = I.getCondition();
+	Value *CndVal = D_Builder.getAsOperand(I.getCondition(), &I);
 	// The Case Map
 	std::map<BasicBlock *, Value *> CaseMap;
 
@@ -753,7 +749,7 @@ void SIRCtrlRgnBuilder::visitReturnInst(ReturnInst &I) {
 		// Here we should know that the Ret instruction different from others:
 		// The module may have mutil-RetInst, but only one Ret Register.
     assignToReg(CurSlot, SM->creatConstantBoolean(true),
-                I.getReturnValue(), Reg);
+                D_Builder.getAsOperand(I.getReturnValue(), &I), Reg);
 
 		// Replace the Ret operand with the RegVal. So all Ret-instruction
 		// will return the RetRegVal in the corresponding slot.
@@ -766,64 +762,108 @@ void SIRCtrlRgnBuilder::visitReturnInst(ReturnInst &I) {
 
 
 
-/// Functions to provide basic information of instruction
+/// Functions to provide basic informations and elements.
 
-unsigned SIRDatapathBuilder::getBitWidth(Value *U) {
+unsigned SIRDatapathBuilder::getBitWidth(Value *V) {
   // Since we create a pseudo instruction for these slots and ports register,
   // so we should handle these pseudo instruction differently when we meet them.
-  if(!U) {
-    SIRRegister *Reg = SM->lookupSIRReg(dyn_cast<Instruction>(U));
+  if(!V) {
+    SIRRegister *Reg = SM->lookupSIRReg(dyn_cast<Instruction>(V));
     assert(Reg && (Reg->isOutPort() || Reg->isSlot()) && "Unexpected Null Value!");
 
     return Reg->getBitWidth();
   }
 
-  Type *Ty = U->getType();
+  Type *Ty = V->getType();
   unsigned BitWidth = TD.getTypeSizeInBits(Ty);
   return BitWidth;
+}
+
+Value *SIRDatapathBuilder::getAsOperand(Value *Operand, Instruction *ParentInst) {
+	if (GEPOperator *GEP = dyn_cast<GEPOperator>(Operand))
+		return createSGEPInst(GEP, GEP->getType(), ParentInst, true);
+
+	if (ConstantExpr *CE = dyn_cast<ConstantExpr>(Operand)) {
+		switch (CE->getOpcode()) {
+		case Instruction::GetElementPtr: {
+			GEPOperator *GEP = dyn_cast<GEPOperator>(CE);
+			assert (GEP && "Unexpected NULL GEP!");
+
+			return createSGEPInst(GEP, GEP->getType(), ParentInst, true);
+		}
+		case Instruction::IntToPtr: {
+			Value *IntOperand = getAsOperand(CE->getOperand(0), ParentInst);
+
+			Value *ITPInst = createIntToPtrInst(IntOperand, CE->getType(), ParentInst);
+			return ITPInst;
+		}
+		case Instruction::PtrToInt: {
+			Value *PtrOperand = getAsOperand(CE->getOperand(0), ParentInst);
+
+			return createPtrToIntInst(PtrOperand, CE->getType(), ParentInst);
+		}
+		case Instruction::BitCast: {
+			Value *BCOperand = getAsOperand(CE->getOperand(0), ParentInst);
+
+			Value *BCInst = new BitCastInst(BCOperand, CE->getType(), "SIRBitCast", ParentInst);
+			return BCInst;
+		}
+		case Instruction::ZExt: {
+			Value *ZExtOperand = getAsOperand(CE->getOperand(0), ParentInst);
+
+			return createSZExtInst(ZExtOperand, getBitWidth(CE), CE->getType(), ParentInst, true);
+		}
+		default: llvm_unreachable("Unexpected Opcode!");
+		}
+	}
+
+	assert(isa<Instruction>(Operand) || isa<ConstantInt>(Operand) || isa<UndefValue>(Operand)
+		     || isa<Argument>(Operand) || isa<GlobalValue>(Operand) && "Unexpected Value!");
+
+	return Operand;
 }
 
 /// Functions to visit all data-path instructions
 
 void SIRDatapathBuilder::visitTruncInst(TruncInst &I) {
-  createSTruncInst(I.getOperand(0), getBitWidth(&I), 0,
-                   I.getType(), &I, false);
+  createSTruncInst(getAsOperand(I.getOperand(0), &I), getBitWidth(&I),
+		               0, I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitZExtInst(ZExtInst &I) {
   unsigned NumBits = getBitWidth(&I);
-  createSZExtInst(I.getOperand(0), NumBits, I.getType(), &I, false);
+  createSZExtInst(getAsOperand(I.getOperand(0), &I), NumBits, I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitSExtInst(SExtInst &I) {
   unsigned NumBits = getBitWidth(&I);
-  createSSExtInst(I.getOperand(0), NumBits, I.getType(), &I, false);
-}
-
-void SIRDatapathBuilder::visitPtrToIntInst(PtrToIntInst &I) {
-  createSCastInst(I.getPointerOperand(), I.getType(), &I, false);
-}
-
-void SIRDatapathBuilder::visitIntToPtrInst(IntToPtrInst &I) {
-  createSCastInst(I.getOperand(0), I.getType(), &I, false);
-}
-
-void SIRDatapathBuilder::visitBitCastInst(BitCastInst &I) {
-  createSCastInst(I.getOperand(0), I.getType(), &I, false);
+  createSSExtInst(getAsOperand(I.getOperand(0), &I), NumBits, I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitSelectInst(SelectInst &I) {
-  createSSelInst(I.getOperand(0), I.getOperand(1),
-                 I.getOperand(2), I.getType(), &I, false);
+	// Get the correct operands.
+	Value *Cnd    = getAsOperand(I.getOperand(0), &I);
+	Value *TrueV  = getAsOperand(I.getOperand(1), &I);
+	Value *FalseV = getAsOperand(I.getOperand(2), &I);
+
+  createSSelInst(Cnd, TrueV, FalseV, I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitICmpInst(ICmpInst &I) {
-  Value *Ops[] = {I.getOperand(0), I.getOperand(1)};
+	// Get the correct operands.
+	Value *LHS  = getAsOperand(I.getOperand(0), &I);
+	Value *RHS  = getAsOperand(I.getOperand(1), &I);
+
+  Value *Ops[] = { LHS, RHS };
   createSICmpInst(I.getPredicate(), Ops, I.getType(), &I, false);
 }
 
 void SIRDatapathBuilder::visitBinaryOperator(BinaryOperator &I) {
-  Value *Ops[] = {I.getOperand(0), I.getOperand(1)};
+	// Get the correct operands.
+	Value *LHS  = getAsOperand(I.getOperand(0), &I);
+	Value *RHS  = getAsOperand(I.getOperand(1), &I);
+  Value *Ops[] = { LHS, RHS };
+
 	Type *RetTy = I.getType();
 
   switch (I.getOpcode()) {
@@ -853,7 +893,9 @@ void SIRDatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 	default: break;
 
 	case Intrinsic::uadd_with_overflow: {
-		Value *LHS = I.getOperand(0), *RHS = I.getOperand(1);
+		// Get the correct operands.
+		Value *LHS = getAsOperand(I.getOperand(0), &I);
+		Value *RHS = getAsOperand(I.getOperand(1), &I);
 
 		assert(getBitWidth(LHS) == getBitWidth(RHS) && "BitWidth not matches!");
 
@@ -863,21 +905,38 @@ void SIRDatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 		// the original RetTy cannot be recognized by SIR framework.
 		I.mutateType(SM->createIntegerType(ResultBitWidth));
 		createSAddInst(LHS, RHS, I.getType(), &I, false);
+
+		return;
 	}
+	case Intrinsic::shang_pseudo:
+	case Intrinsic::shang_not:
+	case Intrinsic::shang_rand:
+	case Intrinsic::shang_rxor:
+	case Intrinsic::shang_and:
+	case Intrinsic::shang_or:
+	case Intrinsic::shang_xor:
+	case Intrinsic::shang_add:
+	case Intrinsic::shang_addc:
+	case Intrinsic::shang_mul:
+	case Intrinsic::shang_sdiv:
+	case Intrinsic::shang_udiv:
+	case Intrinsic::shang_sgt:
+	case Intrinsic::shang_ugt:
+	case Intrinsic::shang_bit_cat:
+	case Intrinsic::shang_bit_extract:
+	case Intrinsic::shang_bit_repeat:
+	case Intrinsic::shang_shl:
+	case Intrinsic::shang_ashr:
+	case Intrinsic::shang_lshr:
+		return;
 	}
+
+	llvm_unreachable("Unexpected opcode");
 }
 
 void SIRDatapathBuilder::visitExtractValueInst(ExtractValueInst &I) {
-	Value *Operand = I.getAggregateOperand();
+	Value *Operand = getAsOperand(I.getAggregateOperand(), &I);
 	unsigned BitWidth = getBitWidth(Operand);
-
-// 	// To be noted that, the ExtractValue instruction only happens with
-// 	// construction of uadd_with_overflow for now. And since we have
-// 	// transform the uadd_with_overflow into Shang add, so here it should
-// 	// be Shang add instruction.
-// 	IntrinsicInst *II = dyn_cast<IntrinsicInst>(Operand);
-// 	assert(II && II->getIntrinsicID() == Intrinsic::shang_add
-// 		     && "Only support the extract value instruction on Shang add!");
 
 	assert(I.getNumIndices() == 1 && "Unexpected number of indices!");
 
@@ -895,77 +954,11 @@ void SIRDatapathBuilder::visitExtractValueInst(ExtractValueInst &I) {
 }
 
 void SIRDatapathBuilder::visitGetElementPtrInst(GetElementPtrInst &I) {
-  return visitGEPOperator(cast<GEPOperator>(I), I);
+	GEPOperator *GEP = dyn_cast<GEPOperator>(&I);
+	assert(GEP && "Unexpected NULL GEP!");
+
+  createSGEPInst(GEP, I.getType(), &I, false);
 }
-
-void SIRDatapathBuilder::visitGEPOperator(GEPOperator &O, GetElementPtrInst &I) {
-  Value *Ptr = O.getPointerOperand();
-  unsigned PtrSize = getBitWidth(Ptr);
-
-	// Cast the Ptr into int type so we can do the math operation below.
-	Value *PtrVal = new PtrToIntInst(Ptr, SM->createIntegerType(PtrSize),
-		                               "SIRPtrToInt", &I);
-
-  // Note that the pointer operand may be a vector of pointers. Take the scalar
-  // element which holds a pointer.
-  Type *Ty = O.getPointerOperandType()->getScalarType();
-
-  typedef GEPOperator::op_iterator op_iterator;
-  for (op_iterator OI = O.idx_begin(), E = O.op_end(); OI != E; ++OI) {
-    Value *Idx = *OI;
-    if (StructType *StTy = dyn_cast<StructType>(Ty)) {
-      unsigned Field = getConstantIntValue(Idx);
-      if (Field) {
-        // N = N + Offset
-        uint64_t Offset = TD.getStructLayout(StTy)->getElementOffset(Field);
-        PtrVal = createSAddInst(PtrVal, createSConstantInt(Offset, PtrSize),
-                                PtrVal->getType(), &I, true);
-      }
-
-      Ty = StTy->getElementType(Field);
-    } else {
-      Ty = cast<SequentialType>(Ty)->getElementType();
-
-      // If this is a constant subscript, handle it quickly.
-      if (const ConstantInt *CI = dyn_cast<ConstantInt>(Idx)) {
-        if (CI->isZero()) continue;
-        uint64_t Offs = TD.getTypeAllocSize(Ty)
-                        * cast<ConstantInt>(CI)->getSExtValue();
-        PtrVal = createSAddInst(PtrVal, createSConstantInt(Offs, PtrSize),
-                                PtrVal->getType(), &I, true);
-        continue;
-      }
-
-      // N = N + Idx * ElementSize;
-      APInt ElementSize = APInt(PtrSize, TD.getTypeAllocSize(Ty));
-      Value *IdxN = const_cast<Value*>(Idx);
-
-      // If the index is smaller or larger than intptr_t, truncate or extend
-      // it.
-      IdxN = createSBitExtractInst(IdxN, PtrSize, 0, SM->createIntegerType(PtrSize), &I, true);
-
-      // If this is a multiply by a power of two, turn it into a shl
-      // immediately.  This is a very common case.
-      if (ElementSize != 1) {
-        if (ElementSize.isPowerOf2()) {
-          unsigned Amt = ElementSize.logBase2();
-          IdxN = createSShiftInst(IdxN, createSConstantInt(Amt, PtrSize),
-                                  IdxN->getType(), &I, Intrinsic::shang_shl, true);
-        } else {
-          Value *Scale = createSConstantInt(ElementSize);
-          IdxN = createSMulInst(IdxN, Scale, IdxN->getType(), &I, true);
-        }
-      }
-
-      PtrVal = createSAddInst(PtrVal, IdxN, PtrVal->getType(), &I, true);
-    }
-  }
-
-  Value *PtrResult = new IntToPtrInst(PtrVal, I.getType(), "SIRIntToPtr", &I);
-  I.replaceAllUsesWith(PtrResult);
-}
-
-/// Functions to create Shang-Inst
 
 Value *SIRDatapathBuilder::createShangInstPattern(ArrayRef<Value *> Ops, Type *RetTy,
                                                   Value *InsertPosition, Intrinsic::ID FuncID,
@@ -992,7 +985,25 @@ Value *SIRDatapathBuilder::createShangInstPattern(ArrayRef<Value *> Ops, Type *R
 
     // If the inst is not used as an argument of other functions,
     // then it is used to replace the inst in IR
-    if (!UsedAsArg) InsertBefore->replaceAllUsesWith(NewInst);
+    if (!UsedAsArg) {
+			Value *result = NewInst;
+
+			// Before we call the replaceAllUsesWith function, we should make sure the
+			// type matches. To be noted that, we only permit PointerTy & IntegerTy.
+			if (InsertBefore->getType() != NewInst->getType()) {
+				Type *OriginType = InsertBefore->getType();
+				assert(OriginType->isPointerTy() && "Unexpected Type!");
+
+				result = createIntToPtrInst(result, OriginType, InsertBefore);
+
+				InsertBefore->replaceAllUsesWith(result);
+			}
+
+			InsertBefore->replaceAllUsesWith(result);
+		}
+
+		// Only return the IntegerTy since all the following SIR instructions only support
+		// IntegerTy as operands.
     return NewInst;
   }
   else if (BasicBlock *InsertAtEnd = dyn_cast<BasicBlock>(InsertPosition)) {
@@ -1117,17 +1128,6 @@ Value *SIRDatapathBuilder::createSBitExtractInst(Value *U, unsigned UB, unsigned
 
   Value *Temp = createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_bit_extract, UsedAsArg);
 	return Temp;
-}
-
-Value *SIRDatapathBuilder::createSCastInst(Value *U, Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
-  if (!UsedAsArg) {
-    assert((!U || getBitWidth(U) == getBitWidth(InsertPosition))
-            && "Cast between types with different size found!");
-
-    InsertPosition->replaceAllUsesWith(U);
-  }
-
-  return U;
 }
 
 Value *SIRDatapathBuilder::createSTruncInst(Value *U, unsigned UB, unsigned LB, Type *RetTy,
@@ -1257,9 +1257,10 @@ Value *SIRDatapathBuilder::createSBitRepeatInst(Value *U, unsigned RepeatTimes, 
 Value *SIRDatapathBuilder::createSSelInst(Value *Cnd, Value *TrueV, Value *FalseV,
                                           Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
   assert(getBitWidth(Cnd) == 1 && "Bad condition width!");
+	assert(TrueV->getType() == FalseV->getType() && TrueV->getType() == RetTy && "Unexpected Type!");
 
   unsigned Bitwidth = getBitWidth(TrueV);
-  assert(TD.getTypeSizeInBits(RetTy) == Bitwidth  && getBitWidth(FalseV) == Bitwidth && "Bad Bitwidth!");
+	Type *IntTy = SM->createIntegerType(Bitwidth);
 
   if (ConstantInt *C = dyn_cast<ConstantInt>(Cnd)) {
     Value *Result = C->getValue().getBoolValue() ? TrueV : FalseV; 
@@ -1267,11 +1268,21 @@ Value *SIRDatapathBuilder::createSSelInst(Value *Cnd, Value *TrueV, Value *False
     return Result;
   }
 
-  Value *NewCnd = createSBitRepeatInst(Cnd, Bitwidth, RetTy, InsertPosition, true);
-  return createSOrInst(createSAndInst(NewCnd, TrueV, RetTy, InsertPosition, true),
-                       createSAndInst(createSNotInst(NewCnd, RetTy, InsertPosition, true),
-                                      FalseV, RetTy, InsertPosition, true),
-                       RetTy, InsertPosition, UsedAsArg);
+	// If the operand is PointerTy, we should transform it into IntegerTy so we can do logic operations on it.
+	if (RetTy->isPointerTy()) {
+	  Instruction *InsertBefore = dyn_cast<Instruction>(InsertPosition);
+
+		TrueV = createPtrToIntInst(TrueV, IntTy, InsertBefore);
+		FalseV = createPtrToIntInst(FalseV, IntTy, InsertBefore);
+	}
+
+  Value *NewCnd = createSBitRepeatInst(Cnd, Bitwidth, IntTy, InsertPosition, true);
+	Value *NotNewCnd = createSNotInst(NewCnd, IntTy, InsertPosition, true);
+
+	Value *ResultWhenCnd = createSAndInst(NewCnd, TrueV, IntTy, InsertPosition, true);
+	Value *ResultWhenNotCnd= createSAndInst(NotNewCnd, FalseV, IntTy, InsertPosition, true);
+
+	return createSOrInst(ResultWhenCnd, ResultWhenNotCnd, IntTy, InsertPosition, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSIcmpOrEqInst(ICmpInst::Predicate Predicate, ArrayRef<Value *> Ops,
@@ -1293,7 +1304,7 @@ Value *SIRDatapathBuilder::createSIcmpOrEqInst(ICmpInst::Predicate Predicate, Va
 Value *SIRDatapathBuilder::createSICmpInst(ICmpInst::Predicate Predicate, ArrayRef<Value *> Ops,
 	                                         Type *RetTy, Value *InsertPosition, bool UsedAsArg) {
   assert(Ops.size() == 2 && "There must be two operands!");
-  assert(getBitWidth(Ops[0]) == getBitWidth(Ops[1]) && "Bad icmp bitwidth!");
+  assert(getBitWidth(Ops[0]) == getBitWidth(Ops[1]) && "Bad ICMP BitWidth!");
 	assert(TD.getTypeSizeInBits(RetTy) == 1 && "RetTy not matches!");
   SmallVector<Value *, 2> NewOps;
   for (int i = 0; i < Ops.size(); i++)
@@ -1410,7 +1421,7 @@ Value *SIRDatapathBuilder::createSMulInst(ArrayRef<Value *> Ops, Type *RetTy,
 
 Value *SIRDatapathBuilder::createSMulInst(Value *LHS, Value *RHS, Type *RetTy,
 	                                        Value *InsertPosition, bool UsedAsArg) {
-    Value *Ops[] = { LHS, RHS};
+    Value *Ops[] = { LHS, RHS };
     return createSMulInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
@@ -1538,10 +1549,25 @@ Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
 
 Value *SIRDatapathBuilder::createSAndInst(Value *LHS, Value *RHS, Type *RetTy,
 	                                        Value *InsertPosition, bool UsedAsArg) {
-	assert(LHS->getType() == RHS->getType() && LHS->getType() == RetTy
-		     && "BitWidth not match!");
+	unsigned BitWidth = TD.getTypeSizeInBits(RetTy);
+	assert(getBitWidth(LHS) == BitWidth && "Unexpected BitWidth!");
+	assert(getBitWidth(RHS) == BitWidth && "Unexpected BitWidth!");
 
-  Value *Ops[] = {LHS, RHS};
+	Value *NewLHS = LHS, *NewRHS = RHS;
+
+	Type *IntTy = SM->createIntegerType(BitWidth);
+	// Transform into IntegerTy so it can be taken as operand in Shang Intrinsic instruction.
+	if (LHS->getType()->isPointerTy())
+		NewLHS = createPtrToIntInst(LHS, IntTy, dyn_cast<Instruction>(InsertPosition));
+	if (RHS->getType()->isPointerTy())
+		NewRHS = createPtrToIntInst(RHS, IntTy, dyn_cast<Instruction>(InsertPosition));
+	// The RetTy also need to be transformed into IntegerTy when we create this instruction as
+	// argument of other Shang intrinsic instructions. However, if it is used to replace the
+	// origin instruction then we will handle it in the createShangInstPattern function.
+	if (UsedAsArg)
+		RetTy = IntTy;
+
+  Value *Ops[] = {NewLHS, NewRHS};
   return createSAndInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
@@ -1623,10 +1649,25 @@ Value *SIRDatapathBuilder::createSOrInst(ArrayRef<Value *> Ops, Type *RetTy,
 
 Value *SIRDatapathBuilder::createSOrInst(Value *LHS, Value *RHS, Type *RetTy,
 	                                       Value *InsertPosition, bool UsedAsArg) {
-	assert(LHS->getType() == RHS->getType() && LHS->getType() == RetTy
-		     && "BitWidth not match!");	
+	unsigned BitWidth = TD.getTypeSizeInBits(RetTy);
+	assert(getBitWidth(LHS) == BitWidth && "Unexpected BitWidth!");
+	assert(getBitWidth(RHS) == BitWidth && "Unexpected BitWidth!");
 
-  Value *Ops[] = {LHS, RHS};
+	Value *NewLHS = LHS, *NewRHS = RHS;
+
+	Type *IntTy = SM->createIntegerType(BitWidth);
+	// Transform into IntegerTy so it can be taken as operand in Shang Intrinsic instruction.
+	if (LHS->getType()->isPointerTy())
+		NewLHS = createPtrToIntInst(LHS, IntTy, dyn_cast<Instruction>(InsertPosition));
+	if (RHS->getType()->isPointerTy())
+		NewRHS = createPtrToIntInst(RHS, IntTy, dyn_cast<Instruction>(InsertPosition));
+	// The RetTy also need to be transformed into IntegerTy when we create this instruction as
+	// argument of other Shang intrinsic instructions. However, if it is used to replace the
+	// origin instruction then we will handle it in the createShangInstPattern function.
+	if (UsedAsArg)
+		RetTy = IntTy;
+
+  Value *Ops[] = {NewLHS, NewRHS};
   return createSOrInst(Ops, RetTy, InsertPosition, UsedAsArg);
 }
 
@@ -1668,6 +1709,97 @@ Value *SIRDatapathBuilder::createSOrEqualInst(Value *&LHS, Value *RHS, Type *Ret
   }
 
   return (LHS = createSOrInst(LHS, RHS, RetTy, InsertPosition, UsedAsArg));
+}
+
+Value *SIRDatapathBuilder::createSGEPInst(GEPOperator *GEP, Type *RetTy,
+	                                        Value *InserPosition, bool UsedAsArg) {
+  Instruction *InsertBefore = dyn_cast<Instruction>(InserPosition);
+	assert(InsertBefore && "Unexpected NULL InsertBefore!");
+
+	Value *Ptr = getAsOperand(GEP->getPointerOperand(), InsertBefore);
+  unsigned PtrSize = getBitWidth(Ptr);
+
+	// Cast the Ptr into int type so we can do the math operation below.
+	Value *PtrVal = createPtrToIntInst(Ptr, SM->createIntegerType(PtrSize), InsertBefore);
+
+  // Note that the pointer operand may be a vector of pointers. Take the scalar
+  // element which holds a pointer.
+  Type *Ty = GEP->getPointerOperandType()->getScalarType();
+
+  typedef GEPOperator::op_iterator op_iterator;
+  for (op_iterator OI = GEP->idx_begin(), E = GEP->op_end(); OI != E; ++OI) {
+    Value *Idx = *OI;
+    if (StructType *StTy = dyn_cast<StructType>(Ty)) {
+      unsigned Field = getConstantIntValue(Idx);
+      if (Field) {
+        // N = N + Offset
+        uint64_t Offset = TD.getStructLayout(StTy)->getElementOffset(Field);
+        PtrVal = createSAddInst(PtrVal, createSConstantInt(Offset, PtrSize),
+                                PtrVal->getType(), InserPosition, true);
+      }
+
+      Ty = StTy->getElementType(Field);
+    } else {
+      Ty = cast<SequentialType>(Ty)->getElementType();
+
+      // If this is a constant subscript, handle it quickly.
+      if (const ConstantInt *CI = dyn_cast<ConstantInt>(Idx)) {
+        if (CI->isZero()) continue;
+        uint64_t Offs = TD.getTypeAllocSize(Ty)
+                        * cast<ConstantInt>(CI)->getSExtValue();
+        PtrVal = createSAddInst(PtrVal, createSConstantInt(Offs, PtrSize),
+                                PtrVal->getType(), InserPosition, true);
+        continue;
+      }
+
+      // N = N + Idx * ElementSize;
+      APInt ElementSize = APInt(PtrSize, TD.getTypeAllocSize(Ty));
+      Value *IdxN = const_cast<Value*>(Idx);
+
+      // If the index is smaller or larger than intptr_t, truncate or extend
+      // it.
+      IdxN = createSBitExtractInst(IdxN, PtrSize, 0, SM->createIntegerType(PtrSize),
+				                           InserPosition, true);
+
+      // If this is a multiply by a power of two, turn it into a shl
+      // immediately.  This is a very common case.
+      if (ElementSize != 1) {
+        if (ElementSize.isPowerOf2()) {
+          unsigned Amt = ElementSize.logBase2();
+          IdxN = createSShiftInst(IdxN, createSConstantInt(Amt, PtrSize),
+                                  IdxN->getType(), InserPosition, Intrinsic::shang_shl, true);
+        } else {
+          Value *Scale = createSConstantInt(ElementSize);
+          IdxN = createSMulInst(IdxN, Scale, IdxN->getType(), InserPosition, true);
+        }
+      }
+
+      PtrVal = createSAddInst(PtrVal, IdxN, PtrVal->getType(), InserPosition, true);
+    }
+  }
+
+  Value *PtrResult = createIntToPtrInst(PtrVal, RetTy, InsertBefore);
+
+	if (!UsedAsArg) {
+		assert(GEP == InserPosition && "Unexpected InsertPosition!");
+		GEP->replaceAllUsesWith(PtrResult);
+	}
+
+	return PtrResult;
+}
+
+Value *SIRDatapathBuilder::createPtrToIntInst(Value *V, Type *IntTy, Value *InsertPosition) {
+	assert(IntTy->isIntegerTy() && "Unexpected Type!");
+
+	Value *Inst = new PtrToIntInst(V, IntTy, "SIRPtrToInt", dyn_cast<Instruction>(InsertPosition));
+	return Inst;
+}
+
+Value *SIRDatapathBuilder::createIntToPtrInst(Value *V, Type *PtrTy, Value *InsertPosition) {
+	assert(PtrTy->isPointerTy() && "Unexpected Type!");
+
+	Value *Inst = new IntToPtrInst(V, PtrTy, "SIRIntToPtr", dyn_cast<Instruction>(InsertPosition));
+	return Inst;
 }
 
 /// Functions to help us create Shang-Inst.

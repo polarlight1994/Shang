@@ -64,9 +64,13 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
   // into Shang-Inst, AKA Intrinsic Inst.
   void visitIntrinsicInst(IntrinsicInst &I);
 
-  // Some instructions should be treated differently.
+  // The BitCast instructions should be treated differently,
+	// since we cannot implement them with Shang intrinsic
+	// instructions due to the different type error when we
+	// use the replaceAllUsesWith function.
   void visitIntToPtrInst(IntToPtrInst &I);
   void visitPtrToIntInst(PtrToIntInst &I);
+	void visitBitCastInst(BitCastInst &I);
 
   // Functions to print Verilog RTL code
 	void printAsOperand(raw_ostream &OS, Value *U, unsigned UB, unsigned LB = 0) {
@@ -492,8 +496,6 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
 	printRegister(WriteEn);
 
 	// Hack: If the read latency is bigger than 1, we should pipeline the input port.
-	if (!WData->assign_empty())
-		assert(SMB->getReadLatency() == 1 && "Need to pipeline input port!");
 
 	VOS.always_ff_begin(false);
 
@@ -829,7 +831,7 @@ void SIRDatapathPrinter::visitIntToPtrInst(IntToPtrInst &I) {
   // The type of value is defined by reader.
   // For example, 0x00000000 can be interpreted to be integer 0 
   // or float 0.0.
-  // We just need to handle the bitwidth here because the width 
+  // We just need to handle the BitWidth here because the width
   // of operand may be larger than we need.
   printAsOperand(OS, I.getOperand(0), BitWidth);
 
@@ -846,13 +848,32 @@ void SIRDatapathPrinter::visitPtrToIntInst(PtrToIntInst &I) {
 
   // In fact, cast operation doesn't change the value.
   // The type of value is defined by reader.
-  // For example, 0x00000000 can be interpreted to be integer 0 
+  // For example, 0x00000000 can be interpreted to be integer 0
   // or float 0.0.
-  // We just need to handle the BitWidth here because the width 
+  // We just need to handle the BitWidth here because the width
   // of operand may be larger than we need.
   printAsOperand(OS, I.getOperand(0), BitWidth);
 
   OS << "));\n";
+}
+
+void SIRDatapathPrinter::visitBitCastInst(BitCastInst &I) {
+	unsigned BitWidth = TD.getTypeSizeInBits(I.getType());
+	OS << "wire" << BitRange(BitWidth, 0, BitWidth > 1) << ' ';
+
+	printName(OS, I);
+
+	OS << " = ((";
+
+	// In fact, cast operation doesn't change the value.
+	// The type of value is defined by reader.
+	// For example, 0x00000000 can be interpreted to be integer 0
+	// or float 0.0.
+	// We just need to handle the BitWidth here because the width
+	// of operand may be larger than we need.
+	printAsOperand(OS, I.getOperand(0), BitWidth);
+
+	OS << "));\n";
 }
 
 void SIRDatapathPrinter::visitBasicBlock(BasicBlock *BB) {
