@@ -617,9 +617,9 @@ void SIRDelayModel::updateArrival() {
 	if (isa<PHINode>(Node) || isa<Argument>(Node) || isa<GlobalValue>(Node))
 		return updateArrivalParallel(0.0f);
 
-	// These two instructions have not been transformed into SIR,
+	// These instructions have not been transformed into SIR,
 	// but clearly they cost no delay.
-	if (isa<PtrToIntInst>(Node) || isa<IntToPtrInst>(Node))
+	if (isa<PtrToIntInst>(Node) || isa<IntToPtrInst>(Node) || isa<BitCastInst>(Node))
 		return updateArrivalParallel(0.0f);
 
 	// Since all data-path instruction in SIR
