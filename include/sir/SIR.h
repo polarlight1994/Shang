@@ -384,7 +384,8 @@ public:
 
 class SIRMemoryBank : public SIRSubModuleBase {
 	const unsigned AddrSize, DataSize;
-	const unsigned ReadLatency : 5;
+	const unsigned ReadLatency;
+	const bool RequireByteEnable;
 	// For each MemoryBank, we have two input port
 	// including Address and WData.
 	static const unsigned InputsPerPort = 2;
@@ -406,13 +407,17 @@ class SIRMemoryBank : public SIRSubModuleBase {
 	typedef GVs2PtrSizeMap::const_iterator const_gvs2ptrsize_iterator;
 
 public:
-	SIRMemoryBank(unsigned BusNum, unsigned AddrSize,
-		            unsigned DataSize, unsigned ReadLatency);
+	SIRMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
+		            bool RequireByteEnable, unsigned ReadLatency);
 
 	unsigned getDataWidth() const { return DataSize; }
 	unsigned getAddrWidth() const { return AddrSize; }
 	unsigned getReadLatency() const { return ReadLatency; }
 	unsigned getEndByteAddr() const { return EndByteAddr; }
+	unsigned getByteEnWidth() const { return DataSize / 8; }
+	unsigned getByteAddrWidth() const;
+
+	bool requireByteEnable() const { return RequireByteEnable; }
 
 	// Signal names of the memory bank.
 	std::string getAddrName() const;
@@ -420,13 +425,15 @@ public:
 	std::string getWDataName() const;
 	std::string getEnableName() const;
 	std::string getWriteEnName() const;
+	std::string getByteEnName() const;
 	std::string getArrayName() const;
 
 	SIRRegister *getAddr() const;
 	SIRRegister *getRData() const;
 	SIRRegister *getWData() const;
 	SIRRegister *getEnable() const;
-	SIRRegister *getWriteEnable() const;
+	SIRRegister *getWriteEn() const;
+	SIRRegister *getByteEn() const;
 
 	void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
 	unsigned getOffset(GlobalVariable *GV) const;

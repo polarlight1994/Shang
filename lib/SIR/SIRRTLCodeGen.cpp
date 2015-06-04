@@ -211,8 +211,8 @@ struct SIRControlPathPrinter {
 	}
 
   /// Functions to print registers
-	void printMuxInReg(SIRRegister *Reg);
-  void printRegister(SIRRegister *Reg);
+	void printMuxInReg(SIRRegister *Reg, bool UsedAsGuard = false);
+  void printRegister(SIRRegister *Reg, bool UsedAsGuard = false);
 
 	/// Functions to print SubModules
 	void printInitializeFile(SIRMemoryBank *SMB);
@@ -225,7 +225,7 @@ struct SIRControlPathPrinter {
 };
 }
 
-void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg) {
+void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg, bool UsedAsGuard) {
   // If the register has no Fanin, then ignore it.
   if (Reg->assignmentEmpty()) return;
 
@@ -241,8 +241,8 @@ void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg) {
     printAsOperand(OS, RegGuard, Guard_BitWidth);
     OS << ";\n";
 
-    // If it is slot register, we only need the guard signal.
-    if (Reg->isSlot()) return;
+    // If it is used as Guard, we only need the guard signal.
+    if (UsedAsGuard) return;
 
     // Print (or implement) the MUX by:
     // output = (Sel0 & FANNIN0) | (Sel1 & FANNIN1) ...
@@ -253,7 +253,7 @@ void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg) {
   }
 }
 
-void SIRControlPathPrinter::printRegister(SIRRegister *Reg) {
+void SIRControlPathPrinter::printRegister(SIRRegister *Reg, bool UsedAsGuard) {
   vlang_raw_ostream VOS(OS);
 
 	if (Reg->assignmentEmpty()) {
@@ -270,7 +270,7 @@ void SIRControlPathPrinter::printRegister(SIRRegister *Reg) {
 	}
 
 	// Print the selector of the register.
-	printMuxInReg(Reg);
+	printMuxInReg(Reg, UsedAsGuard);
 
 	// Print the sequential logic of the register.
 	VOS.always_ff_begin();
@@ -281,7 +281,7 @@ void SIRControlPathPrinter::printRegister(SIRRegister *Reg) {
 	VOS.else_begin();
 
 	// Print the assignment.
-	if (Reg->isSlot()) {
+	if (UsedAsGuard) {
 		VOS << Mangle(Reg->getName()) << " <= " << Mangle(Reg->getName()) << "_register_guard"
 			<< ";\n";
 	} else {
@@ -488,42 +488,94 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
 	if (Enable->assign_empty()) return;
 
 	SIRRegister *WData = SMB->getWData();
-	SIRRegister *WriteEn = SMB->getWriteEnable();
+	SIRRegister *WriteEn = SMB->getWriteEn();
 	
 	printRegister(Addr);
-	printRegister(Enable);
+	printRegister(Enable, true);
 	printRegister(WData);
-	printRegister(WriteEn);
+	printRegister(WriteEn, true);
+	
+	if (SMB->requireByteEnable())
+		printRegister(SMB->getByteEn());
 
 	// Hack: If the read latency is bigger than 1, we should pipeline the input port.
 
+	// Print the code for the WData and RData.
 	VOS.always_ff_begin(false);
-
 	if (!WData->assign_empty()) {
-		VOS.if_begin(SMB->getWriteEnName());
+		if (SMB->requireByteEnable()) {
+			VOS.if_begin(SMB->getWriteEnName());
 
-		// Handle a special circumstance when only one GV in memory bank.
-		// Then the AddrWidth will be just the same with ByteAddrWidth.
-		// So we should just cout the memXram[0];
-		if (SMB->getAddrWidth() == ByteAddrWidth) {
-			VOS << SMB->getArrayName() << "[0]"
-				  << " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
+			// Handle a special circumstance when only one GV in memory bank.
+			// Then the AddrWidth will be just the same with ByteAddrWidth.
+			// So we should just cout the memXram[0];
+			if (SMB->getAddrWidth() == ByteAddrWidth) {
+				for (unsigned i = 0; i < BytesPerGV; ++i) {
+					VOS.if_() << SMB->getByteEnName() << "[" << i << "]";
+					VOS._then() << SMB->getArrayName() << "[0]" << "[" << i
+						          << "] <= " << SMB->getWDataName()
+											<< BitRange((i + 1) * 8, i * 8) << ";\n";
 
-			VOS.else_begin();
+					VOS.exit_block();
+				}
 
-			VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
-				<< SMB->getArrayName() << "[0];\n";
+				VOS.else_begin();
+
+				VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
+					  << SMB->getArrayName() << "[0];\n";
+
+				VOS.exit_block();
+
+			} else {
+				for (unsigned i = 0; i < BytesPerGV; ++i) {
+					VOS.if_() << SMB->getByteEnName() << "[" << i << "]";
+					VOS._then() << SMB->getArrayName() << "["
+						          << SMB->getAddrName()
+											<< BitRange(SMB->getAddrWidth(), ByteAddrWidth, true)
+						          << "][" << i	<< "] <= " << SMB->getWDataName()
+						          << BitRange((i + 1) * 8, i * 8) << ";\n";
+
+					VOS.exit_block();
+				}
+
+				VOS.else_begin();
+
+				VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
+					 << SMB->getArrayName() << "[" << SMB->getAddrName()
+					 << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
+
+				VOS.exit_block();
+			}
 		} else {
-			VOS << SMB->getArrayName() << "[" << SMB->getAddrName()
-				<< BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "]"
-				<< " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
+			VOS.if_begin(SMB->getWriteEnName());
 
-			VOS.else_begin();
+			// Handle a special circumstance when only one GV in memory bank.
+			// Then the AddrWidth will be just the same with ByteAddrWidth.
+			// So we should just cout the memXram[0];
+			if (SMB->getAddrWidth() == ByteAddrWidth) {
+				VOS << SMB->getArrayName() << "[0]"
+					<< " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
 
-			VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
-				<< SMB->getArrayName() << "[" << SMB->getAddrName()
-				<< BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
-		}
+				VOS.else_begin();
+
+				VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
+					<< SMB->getArrayName() << "[0];\n";
+
+				VOS.exit_block();
+			} else {
+				VOS << SMB->getArrayName() << "[" << SMB->getAddrName()
+					  << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "]"
+					  << " <= " << SMB->getWDataName() << BitRange(SMB->getDataWidth()) << ";\n";
+
+				VOS.else_begin();
+
+				VOS << SMB->getRDataName() << BitRange(SMB->getDataWidth()) << " <= "
+					  << SMB->getArrayName() << "[" << SMB->getAddrName()
+					  << BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
+
+				VOS.exit_block();
+			}
+		}		
 	} else {
 		// Handle a special circumstance when only one GV in memory bank.
 		// Then the AddrWidth will be just the same with ByteAddrWidth.
@@ -537,7 +589,6 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
 				<< BitRange(SMB->getAddrWidth(), ByteAddrWidth, true) << "];\n";
 		}
 	}
-
 	VOS.always_ff_end(false);
 }
 
@@ -570,7 +621,7 @@ void SIRControlPathPrinter::generateCodeForRegisters() {
 		// they will be printed in Function generateCodeForMemoryBank.
     if (Reg->isFUInOut()) continue;
 
-    printRegister(*I);
+    printRegister(*I, Reg->isSlot());
   }
 }
 

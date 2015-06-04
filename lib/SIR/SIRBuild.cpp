@@ -62,13 +62,13 @@ INITIALIZE_PASS_END(SIRInit,
                     false, true)
 
 bool SIRInit::runOnFunction(Function &F) {
-	// Dump the Function for debug.
-	std::string FinalIR = LuaI::GetString("FinalIR");
-	std::string ErrorInFinalIR;
-	raw_fd_ostream OutputForFinalIR(FinalIR.c_str(), ErrorInFinalIR);
-	vlang_raw_ostream OutForFinalIR;
-	OutForFinalIR.setStream(OutputForFinalIR);
-	OutForFinalIR << F;
+// 	// Dump the Function for debug.
+// 	std::string FinalIR = LuaI::GetString("FinalIR");
+// 	std::string ErrorInFinalIR;
+// 	raw_fd_ostream OutputForFinalIR(FinalIR.c_str(), ErrorInFinalIR);
+// 	vlang_raw_ostream OutForFinalIR;
+// 	OutForFinalIR.setStream(OutputForFinalIR);
+// 	OutForFinalIR << F;
 
   DataLayout &TD = getAnalysis<DataLayout>();
 	SIRAllocation &SA = getAnalysis<SIRAllocation>();
@@ -363,11 +363,18 @@ void SIRCtrlRgnBuilder::createPortsForMemoryBank(SIRMemoryBank *SMB) {
 	Type *WriteEnTy = SM->createIntegerType(1);
 	SIRRegister *WriteEn = createRegister(SMB->getWriteEnName(), WriteEnTy, 0, 0,	0, SIRRegister::FUInput);
 	SMB->addFanin(WriteEn);
+
+	// Byte enable pin
+	if (SMB->requireByteEnable()) {
+		Type *ByteEnTy = SM->createIntegerType(SMB->getByteEnWidth());
+		SIRRegister *ByteEn = createRegister(SMB->getByteEnName(), ByteEnTy, 0, 0, 0, SIRRegister::FUInput);
+		SMB->addFanin(ByteEn);
+	}
 }
 
-SIRMemoryBank *SIRCtrlRgnBuilder::createMemoryBank(unsigned BusNum, unsigned AddrSize,
-	                                                 unsigned DataSize, unsigned ReadLatency) {
-	SIRMemoryBank *SMB = new SIRMemoryBank(BusNum, AddrSize, DataSize, ReadLatency);
+SIRMemoryBank *SIRCtrlRgnBuilder::createMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
+	                                                 bool RequireByteEnable, unsigned ReadLatency) {
+	SIRMemoryBank *SMB = new SIRMemoryBank(BusNum, AddrSize, DataSize, RequireByteEnable, ReadLatency);
 
 	// Also create the ports for it.
 	createPortsForMemoryBank(SMB);
@@ -386,7 +393,7 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 	SIRSlot *Slot = SM->getLatestSlot(ParentBB);
 
 	/// Handle the enable pin.
-	assignToReg(Slot, SM->createIntegerValue(1, 1), SM->createIntegerValue(1, 1), Bank->getEnable());
+	assignToReg(Slot, SM->createIntegerValue(1, 1), SM->createIntegerValue(1, 1), Bank->getEnable());	
 
 	/// Handle the address pin.
 	// Clamp the address width, to the address width of the memory bank.
@@ -399,6 +406,25 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 	
 	assignToReg(Slot, SM->createIntegerValue(1, 1), AddrVal, Bank->getAddr());
 
+	/// Handle the byte enable pin.
+	if (Bank->requireByteEnable()) {
+		// Initial the ByteEn.
+		PointerType *AddrTy = cast<PointerType>(Addr->getType());
+		Type *DataTy = AddrTy->getElementType();
+		unsigned DataSizeInBytes = TD.getTypeStoreSize(DataTy);
+		unsigned ByteEnInitialValue = (0x1 << DataSizeInBytes) - 1;
+
+		Value *ByteEnInit = SM->createIntegerValue(Bank->getByteEnWidth(), ByteEnInitialValue);
+		// Get the byte address part in address.
+		unsigned ByteAddrPartWidth = Bank->getByteAddrWidth();
+		Value *ByteAddr = D_Builder.createSBitExtractInst(AddrVal, ByteAddrPartWidth, 0,
+																											SM->createIntegerType(ByteAddrPartWidth), &I, true);
+		Value *ByteEn = D_Builder.createSShiftInst(ByteEnInit, ByteAddr, ByteEnInit->getType(),
+			                                         &I, Intrinsic::shang_shl, true);
+
+		assignToReg(Slot, SM->createIntegerValue(1, 1), ByteEn, Bank->getByteEn());
+	}
+
 	/// Handle the data pin and write enable pin.
 	// If Data != NULL, then this intruction is writing to memory.
 	if (Data) {
@@ -406,12 +432,29 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 
 		Type *RetTy = SM->createIntegerType(Bank->getDataWidth());
 		assert(Data->getType()->isIntegerTy() && "Unexpected data type!");
+		// Extend the data width to match the memory bank.
 		Value *DataVal = D_Builder.createSZExtInstOrSelf(Data, Bank->getDataWidth(), RetTy, &I, true);
+
+		// If the memory bank requires ByteEnable, then we need to align the Data according to the
+		// byte address part in address.
+		if (Bank->requireByteEnable()) {
+			// Get the byte address part in address.
+			unsigned ByteAddrPartWidth = Bank->getByteAddrWidth();
+			Value *ByteAddr = D_Builder.createSBitExtractInst(AddrVal, ByteAddrPartWidth, 0,
+				                                                SM->createIntegerType(ByteAddrPartWidth), &I, true);
+
+			// Align the data by shift the data according the byte address value. To be note that the
+			// byte address is in byte level, so we need to multiply it by 8. And the data in right
+			// side has low byte address.
+			Value *ShiftAmt = D_Builder.createSBitCatInst(ByteAddr, SM->createIntegerValue(3, 0),
+				                                            SM->createIntegerType(ByteAddrPartWidth + 3), &I, true);
+			DataVal = D_Builder.createSShiftInst(DataVal, ShiftAmt, DataVal->getType(), &I, Intrinsic::shang_shl, true);
+		}
 
 		// Handle the data pin.
 		assignToReg(Slot, SM->createIntegerValue(1, 1), DataVal, Bank->getWData());
 		// Handle the write enable pin.
-		assignToReg(Slot, SM->createIntegerValue(1, 1), SM->createIntegerValue(1, 1), Bank->getWriteEnable());
+		assignToReg(Slot, SM->createIntegerValue(1, 1), SM->createIntegerValue(1, 1), Bank->getWriteEn());
 	} 
 	// If Data == NULL, then this intruction is reading from memory.
 	else {
@@ -423,9 +466,26 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 		// Load the RData into a register.
 		Value *RData = Bank->getRData()->getLLVMValue();
 
-		// Extract the wanted bits and the result will replace the use of this LoadInst.
-		Value *Result = D_Builder.createSBitExtractInst(RData, getBitWidth(&I), 0,
-			                                              SM->createIntegerType(getBitWidth(&I)), &I, true);
+		// Align the RData if the Bank requires ByteEn.
+		if (getBitWidth(RData) != getBitWidth(&I)) {
+			assert(getBitWidth(&I) < getBitWidth(RData) && "Unexpected Access BitWidth!");
+			assert(Bank->requireByteEnable() && "The Memory Bank should require ByteEn!");
+
+			// Get the byte address part in address.
+			unsigned ByteAddrPartWidth = Bank->getByteAddrWidth();
+			Value *ByteAddr = D_Builder.createSBitExtractInst(AddrVal, ByteAddrPartWidth, 0,
+				                                                SM->createIntegerType(ByteAddrPartWidth), &I, true);
+			// Align the data by shift the data according the byte address value. To be note that the
+			// byte address is in byte level, so we need to multiply it by 8. And the data in right
+			// side has low byte address.
+			Value *ShiftAmt = D_Builder.createSBitCatInst(ByteAddr, SM->createIntegerValue(3, 0),
+				                                            SM->createIntegerType(ByteAddrPartWidth + 3), &I, true);
+			RData = D_Builder.createSShiftInst(RData, ShiftAmt, RData->getType(), &I, Intrinsic::shang_lshr, true);
+		}
+
+ 		// Extract the wanted bits and the result will replace the use of this LoadInst.
+ 		Value *Result = D_Builder.createSBitExtractInst(RData, getBitWidth(&I), 0,
+ 			                                              SM->createIntegerType(getBitWidth(&I)), &I, true);
 
 		SIRRegister *ResultReg = createRegister(I.getName(), I.getType(), ParentBB);
 
@@ -908,6 +968,11 @@ void SIRDatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 
 		return;
 	}
+	// Hack: these two instrinsics have not been handled yet.
+	case Intrinsic::memcpy:
+	case Intrinsic::memset:
+		return;
+
 	case Intrinsic::shang_pseudo:
 	case Intrinsic::shang_not:
 	case Intrinsic::shang_rand:
@@ -977,7 +1042,11 @@ Value *SIRDatapathBuilder::createShangInstPattern(ArrayRef<Value *> Ops, Type *R
   Value *Func = Intrinsic::getDeclaration(M, FuncID, FuncTy);
 
   if (Instruction *InsertBefore = dyn_cast<Instruction>(InsertPosition)) {
-    Instruction *NewInst = CallInst::Create(Func, Ops, Func->getName(), InsertBefore);
+		// The name of the instruction we created.
+		std::string S = UsedAsArg ? Func->getName() : InsertPosition->getName();
+
+		// Create the instruction.
+    Instruction *NewInst = CallInst::Create(Func, Ops, S, InsertBefore);
 
     // Index all these data-path instructions.
     if (FuncID != Intrinsic::shang_pseudo)

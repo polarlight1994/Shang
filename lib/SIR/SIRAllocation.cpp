@@ -69,6 +69,9 @@ bool SIRAllocation::runOnModule(Module &M) {
 	for (global_iterator I = M.global_begin(), E = M.global_end(); I != E; ++I) {
 		GlobalVariable *GV = I;
 
+		// The AST will collect the GV and all Load/Store instruction corresponding
+		// with the GV, so we can get the real data transfer information to decide
+		// the data width and wire width of SIRMemoryBank.
 		AST.add(GV, AliasAnalysis::UnknownSize, 0);
 	}
 
@@ -94,19 +97,22 @@ bool SIRAllocation::runOnModule(Module &M) {
 
 bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 	SIRCtrlRgnBuilder *SCRB = new SIRCtrlRgnBuilder(SM, *TD);	
-	unsigned ReadLatency = LuaI::Get<VFUMemBus>()->getReadLatency();
+	unsigned ReadLatency = 2/*LuaI::Get<VFUMemBus>()->getReadLatency()*/;
 
 	SmallVector<Value *, 8> Pointers;
+	SmallPtrSet<Type *, 8> AccessedTypes;
 	SmallVector<std::pair<GlobalVariable *, unsigned>, 8> Objects;
 
 	unsigned BankSizeInBytes = 0, MaxElementSizeInBytes = 0;
 
 	for (AliasSet::iterator AI = AS->begin(), AE = AS->end(); AI != AE; ++AI) {
-		// Extract the load/store element from the instruction.
+		// Extract the GV and load/store element from the instruction.
 		Value *V = AI.getPointer();
+    // The type of GV or load/store, which can provide the data width information.
 		Type *ElemTy = cast<PointerType>(V->getType())->getElementType();
 		unsigned ElementSizeInBytes = TD->getTypeStoreSize(ElemTy);
 		
+		// If it is GV, collect the size information when it is a array.
 		if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
 			// Do not allocate local memory port if the pointers alias with external
 			// global variables.
@@ -135,15 +141,23 @@ bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 		} else
 			Pointers.push_back(V);
 
+		// Remember all the accessed type to decide whether we need ByteEn.
+		AccessedTypes.insert(ElemTy);
 		// Update the max size of the accessed type.
 		MaxElementSizeInBytes = std::max(MaxElementSizeInBytes, ElementSizeInBytes);
 	}
 
+	// The Address width will be log2(BankSizeInBytes).
 	unsigned AddrWidth = Log2_32_Ceil(BankSizeInBytes);
 
+	// If there are multi-ElemTy, it means the load/store instructions and the GV itself
+	// have different data width, so we need the ByteEn to implement the load/store in
+	// byte level.
+	bool RequireByteEnable = (AccessedTypes.size() != 1);
+
 	// Create the memory bus.
-	SIRMemoryBank *SMB = SCRB->createMemoryBank(BankNum, AddrWidth,
-		                                          MaxElementSizeInBytes * 8, ReadLatency);
+	SIRMemoryBank *SMB = SCRB->createMemoryBank(BankNum, AddrWidth, MaxElementSizeInBytes * 8,
+		                                          RequireByteEnable, ReadLatency);
 
 	// Remember the binding and add the global variable to the memory bank.
 	while (!Objects.empty()) {
@@ -160,7 +174,6 @@ bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 		unsigned OriginalPtrSize = TD->getTypeStoreSizeInBits(GV->getType());
 		SMB->indexGV2OriginalPtrSize(GV, OriginalPtrSize);
 	}
-
 
 	// Remember the pointer operand binding
 	while (!Pointers.empty()) {

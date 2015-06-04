@@ -69,10 +69,22 @@ void SIRSubModule::printDecl(raw_ostream &OS) const {
 		Ret->printDecl(OS);
 }
 
-SIRMemoryBank::SIRMemoryBank(unsigned BusNum, unsigned AddrSize,
-	                           unsigned DataSize, unsigned ReadLatency)
+SIRMemoryBank::SIRMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
+	                           bool RequireByteEnable, unsigned ReadLatency)
 	: SIRSubModuleBase(MemoryBank, BusNum), AddrSize(AddrSize),
-	DataSize(DataSize),	ReadLatency(ReadLatency), EndByteAddr(0) {}
+	DataSize(DataSize),	RequireByteEnable(RequireByteEnable),
+	ReadLatency(ReadLatency), EndByteAddr(0) {}
+
+unsigned SIRMemoryBank::getByteAddrWidth() const {
+	assert(requireByteEnable() && "Unexpected non-RequiredByteEnable memory bus!");
+
+	// To access the memory bus in byte size, the address width need to increase
+	// by log2(DataWidth).
+	unsigned ByteAddrWidth = Log2_32_Ceil(getDataWidth() / 8);
+	assert(ByteAddrWidth && "Unexpected NULL ByteAddrWidth!");
+
+	return ByteAddrWidth;
+}
 
 void SIRMemoryBank::addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes) {
 	DEBUG(dbgs() << "Insert the GV [" << GV->getName() 
@@ -130,8 +142,12 @@ SIRRegister *SIRMemoryBank::getEnable() const {
 	return getFanin(2);
 }
 
-SIRRegister *SIRMemoryBank::getWriteEnable() const {
+SIRRegister *SIRMemoryBank::getWriteEn() const {
 	return getFanin(3);
+}
+
+SIRRegister *SIRMemoryBank::getByteEn() const {
+	return getFanin(4);
 }
 
 std::string SIRMemoryBank::getAddrName() const {
@@ -154,6 +170,10 @@ std::string SIRMemoryBank::getWriteEnName() const {
 	return "mem" + utostr(Idx) + "wen";
 }
 
+std::string SIRMemoryBank::getByteEnName() const {
+	return "mem" + utostr(Idx) + "byteen";
+}
+
 std::string SIRMemoryBank::getArrayName() const {
 	return "mem" + utostr(Idx) + "ram";
 }
@@ -174,7 +194,10 @@ void SIRMemoryBank::printDecl(raw_ostream &OS) const {
 	getRData()->printDecl(OS.indent(2));
 	getWData()->printDecl(OS.indent(2));
 	getEnable()->printDecl(OS.indent(2));
-	getWriteEnable()->printDecl(OS.indent(2));
+	getWriteEn()->printDecl(OS.indent(2));
+
+	if (requireByteEnable())
+		getByteEn()->printDecl(OS.indent(2));
 }
 
 void SIRSeqOp::print(raw_ostream &OS) const {
