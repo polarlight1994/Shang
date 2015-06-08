@@ -43,7 +43,9 @@ static bool IsLeafValue(SIR *SM, Value *V) {
 	// we will just ignore the ConstantInt in
 	// previous step.
 
-	if (isa<ConstantInt>(V)) return true;		    
+	if (isa<ConstantInt>(V)) return true;
+
+	if (isa<ConstantAggregateZero>(V)) return true;
 
 	if (isa<Argument>(V))	return true;
 

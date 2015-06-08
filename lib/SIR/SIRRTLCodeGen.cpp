@@ -95,6 +95,12 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
 			OS << "))";
 			return;
 		}
+		else if (ConstantAggregateZero *CAZ = dyn_cast<ConstantAggregateZero>(U)) {
+			OS << "((";
+			OS << UB - LB;
+			OS << "'h0))";
+			return;
+		}
 		else if (UndefValue *UV = dyn_cast<UndefValue>(U)) {
 			OS << "((";
 			OS << UB - LB;
