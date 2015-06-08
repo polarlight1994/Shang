@@ -995,6 +995,21 @@ void SIRDatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 
 		return;
 	}
+	case Intrinsic::bswap: {
+		unsigned BitWidth = getBitWidth(&I);
+		Value *V = getAsOperand(I.getOperand(0), &I);
+
+		assert(BitWidth % 16 == 0 && "Unexpected BitWidth!");
+		unsigned NumBytes = BitWidth / 8;
+
+		SmallVector<Value *, 8> Bytes;
+		for (unsigned i = 0; i != NumBytes; ++i)
+			Bytes.push_back(createSBitExtractInst(V, i * 8 + 8, i * 8, createIntegerType(8), &I, true));
+
+		createSBitCatInst(Bytes, I.getType(), &I, false);
+
+		return;
+	}
 	// Ignore the llvm.mem Intrinsic since we have lower it in SIRLowerIntrinsicPass
 	case Intrinsic::memcpy:
 	case Intrinsic::memset:
@@ -1207,6 +1222,17 @@ Value *SIRDatapathBuilder::createSComplementToOriginInst(Value *U, Type *RetTy, 
 
 Value *SIRDatapathBuilder::createSBitCatInst(ArrayRef<Value *> Ops, Type *RetTy,
 	                                           Value *InsertPosition, bool UsedAsArg) {
+// If there are more than two operands, transform it into mutil-SBitCatInst.
+	if (Ops.size() > 2) {
+		Value *TempSBitCatInst = createSBitCatInst(Ops[0], Ops[1], RetTy, InsertPosition, true);
+		for (int i = 0; i < Ops.size() - 3; i++) {
+			TempSBitCatInst = createSBitCatInst(TempSBitCatInst, Ops[i + 2], RetTy, InsertPosition, true);
+		}
+
+		int num = Ops.size();
+		return createSBitCatInst(TempSBitCatInst, Ops[num - 1], RetTy, InsertPosition, UsedAsArg);
+	}
+
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_bit_cat, UsedAsArg);
 }
 
@@ -1644,15 +1670,8 @@ Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
 	if (hasOneValue)
 		return createSAndInst(NewOps, RetTy, InsertPosition, UsedAsArg);
 	else {
-		//return createShangInstPattern(NewOps, RetTy, InsertPosition,
-		//															Intrinsic::shang_and, UsedAsArg);
-		Value *temp = createShangInstPattern(NewOps, RetTy, InsertPosition,
-																		Intrinsic::shang_and, UsedAsArg);
-
-		if (!isa<IntrinsicInst>(NewOps[0]) && isa<Instruction>(NewOps[0]))
-			int i = 0;
-
-		return temp;
+		return createShangInstPattern(NewOps, RetTy, InsertPosition,
+																	Intrinsic::shang_and, UsedAsArg);
 	}
 }
 
