@@ -893,17 +893,6 @@ public:
 		return LastBB->getTerminator();
 	}
 
-  // --------------Functions to create ConstantInt Value------------------//
-
-	// Create Boolean Value
-	Value *creatConstantBoolean(bool True);
-
-  // Create Integer Type
-  IntegerType *createIntegerType(unsigned BitWidth);
-  // Create Integer Value
-  Value *createIntegerValue(unsigned BitWidth, signed Val);
-	Value *createIntegerValue(const APInt &Val);
-
   // -------------------Functions to generate Verilog-------------------- //
   
   // Print the declaration of module.

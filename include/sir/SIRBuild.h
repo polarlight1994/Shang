@@ -161,12 +161,13 @@ public:
 		                    Value *InsertPosition, bool UseAsArg);
 	Value *createPtrToIntInst(Value *V, Type *IntTy, Value *InsertPosition);
 	Value *createIntToPtrInst(Value *V, Type *PtrTy, Value *InsertPosition);
+	Value *createBitCastInst(Value *V, Type *RetTy, Value *InsertPosition);
 
   // Functions to help us create Shang-Inst.
   Value *getSignBit(Value *U, Value *InsertPosition);
-  Value *createSConstantInt(int16_t Value, unsigned BitWidth);
-	Value *createSConstantInt(const APInt &Value);
-	Value *creatConstantBoolean(bool True);
+	IntegerType *createIntegerType(unsigned BitWidth);
+	Value *createIntegerValue(unsigned BitWidth, unsigned Val);
+	Value *createIntegerValue(APInt Val);
 };
 
 // SIRCtrlRgnBuilder focus on the building of Control-path
@@ -227,6 +228,11 @@ public:
 
 	// Functions to build the assign operation.
   void assignToReg(SIRSlot *S, Value *Guard, Value *Src, SIRRegister *Dst);
+
+	// Forward some basic functions from the DataPathBuilder.
+	IntegerType *createIntegerType(unsigned BitWidth);
+	Value *createIntegerValue(unsigned BitWidth, unsigned Val);
+	Value *createIntegerValue(APInt Val);
 };
 
 // SIRBuilder build the SIR by visiting all instructions

@@ -272,23 +272,6 @@ void SIRSlot::dump() const {
 	dbgs() << "\n";
 }
 
-Value *SIR::creatConstantBoolean(bool True) {
-	return True ? ConstantInt::getTrue(C) : ConstantInt::getFalse(C);
-}
-
-IntegerType *SIR::createIntegerType(unsigned BitWidth) {
-  return IntegerType::get(C, BitWidth);
-}
-
-Value *SIR::createIntegerValue(unsigned BitWidth, signed Val) {
-  IntegerType *T = createIntegerType(BitWidth);
-  return ConstantInt::getSigned(T, Val);
-}
-
-Value *SIR::createIntegerValue(const APInt &Val) {
-	return ConstantInt::get(C, Val);
-}
-
 bool SIR::gcImpl() {
 	// Remove all the instructions that is not be used anymore.
 	Function *F = getFunction();

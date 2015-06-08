@@ -264,7 +264,7 @@ bool SIRRegisterSynthesisForCodeGen::synthesizeRegister(SIRRegister *Reg,
 	// since the Src Value will always be 1'b1.
 	if (Reg->isSlot()) {
 	  Value *Guard = Builder.createSOrInst(FaninGuards, FaninGuards[0]->getType(), InsertPosition, true);
-		Reg->setMux(Builder.createSConstantInt(1, 1), Guard);
+		Reg->setMux(Builder.createIntegerValue(1, 1), Guard);
 
 		return true;
 	}

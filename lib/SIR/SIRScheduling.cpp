@@ -492,7 +492,7 @@ void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 			SIRSlot *NewSlot = C_Builder.createSlot(BB, TargetStep--);
 
 			// Insert the NewSlot from bottom to up before the EmitSlot.
-			insertSlotBefore(NewSlot, EmitSlot, SIRSlot::Sucessor, SM->createIntegerValue(1, 1));
+			insertSlotBefore(NewSlot, EmitSlot, SIRSlot::Sucessor, D_Builder.createIntegerValue(1, 1));
 
 			EmitSlot = NewSlot;
 		}
