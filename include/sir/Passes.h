@@ -28,11 +28,13 @@ extern char &SIRRegisterSynthesisForAnnotationID;
 extern char &SIRRegisterSynthesisForCodeGenID;
 extern char &SIRSchedulingID;
 
+Pass *createSIRLowerIntrinsicPass();
 Pass *createSIRInitPass();
 Pass *createSIRAllocationPass();
 Pass *createSIR2RTLPass();
 Pass *createSIRSchedulingPass();
 
+void initializeSIRLowerIntrinsicPass(PassRegistry &Registry);
 void initializeSIRAllocationPass(PassRegistry &Registry);
 void initializeSIRMemoryPartitionPass(PassRegistry &Registry);
 void initializeSIRSchedulingPass(PassRegistry &Registry);

@@ -91,6 +91,9 @@ InlineCost HLSInliner::getInlineCost(CallSite CS)  {
                                       Attribute::NoInline))
     return InlineCost::getNever();
 
+	if (F->getName().startswith("sir_mem"))
+		return InlineCost::getAlways();
+
   DesignMetrics::DesignCost Cost = lookupOrComputeCost(F);
 
   unsigned NumUses = 0;
