@@ -43,6 +43,7 @@ public:
 
   /// Functions to provide basic informations and elements
   unsigned getBitWidth(Value *V);
+	unsigned getBitWidth(Type *Ty);
 	Value *getAsOperand(Value *Operand, Instruction *ParentInst);
 
   /// Functions to visit all data-path instructions
@@ -54,6 +55,9 @@ public:
   void visitBinaryOperator(BinaryOperator &I);
 	void visitIntrinsicInst(IntrinsicInst &I);
 	void visitExtractValueInst(ExtractValueInst &I);
+	void visitExtractElementInst(ExtractElementInst &I);
+	void visitInsertElementInst(InsertElementInst &I);
+	void visitShuffleVectorInst(ShuffleVectorInst &I);
   void visitGetElementPtrInst(GetElementPtrInst &I);
   void visitGEPOperator(GEPOperator &O, GetElementPtrInst &I);
 
@@ -135,7 +139,8 @@ public:
   Value *createSMulInst(Value *LHS, Value *RHS, Type *RetTy,
 		                    Value *InsertPosition, bool UsedAsArg);
 
-  Value *createSSRemInst(ArrayRef<Value *> Ops, BinaryOperator &I);
+  Value *createSSRemInst(ArrayRef<Value *> Ops, Type *RetTy,
+		                     Value *InsertPosition, bool UsedAsArg);
 
   Value *createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
 		                    Value *InsertPosition, bool UsedAsArg);
@@ -159,9 +164,9 @@ public:
 
 	Value *createSGEPInst(GEPOperator *GEP, Type *RetTy,
 		                    Value *InsertPosition, bool UseAsArg);
-	Value *createPtrToIntInst(Value *V, Type *IntTy, Value *InsertPosition);
-	Value *createIntToPtrInst(Value *V, Type *PtrTy, Value *InsertPosition);
-	Value *createBitCastInst(Value *V, Type *RetTy, Value *InsertPosition);
+	Value *createPtrToIntInst(Value *V, Type *IntTy, Value *InsertPosition, bool UsedAsArg);
+	Value *createIntToPtrInst(Value *V, Type *PtrTy, Value *InsertPosition, bool UsedAsArg);
+	Value *createBitCastInst(Value *V, Type *RetTy, Value *InsertPosition, bool UsedAsArg);
 
   // Functions to help us create Shang-Inst.
   Value *getSignBit(Value *U, Value *InsertPosition);
@@ -268,6 +273,9 @@ struct SIRBuilder : public InstVisitor<SIRBuilder, void> {
   void visitBranchInst(BranchInst &I);
   void visitIntrinsicInst(IntrinsicInst &I);
 	void visitExtractValueInst(ExtractValueInst &I);
+	void visitExtractElementInst(ExtractElementInst &I);
+	void visitInsertElementInst(InsertElementInst &I);
+	void visitShuffleVectorInst(ShuffleVectorInst &I);
 	void visitSwitchInst(SwitchInst &I);
   void visitReturnInst(ReturnInst &I);
 };
@@ -286,9 +294,6 @@ struct SIRInit : public FunctionPass {
 
   bool runOnFunction(Function &F);
   void getAnalysisUsage(AnalysisUsage &AU) const;
-
-  operator SIR*() const { return SM; }
-  SIR* operator->() const { return SM;}
 };
 }
 

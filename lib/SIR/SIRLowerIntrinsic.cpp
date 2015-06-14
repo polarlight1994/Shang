@@ -1,4 +1,7 @@
 #include "sir/Passes.h"
+#include "sir/SIR.h"
+#include "sir/SIRPass.h"
+#include "sir/SIRBuild.h"
 
 #include "vast/LuaI.h"
 
@@ -7,7 +10,10 @@
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/User.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IRReader/IRReader.h"
@@ -24,22 +30,30 @@
 using namespace llvm;
 using namespace vast;
 
+static int NumInstructionLowered = 0;
 static int NumMemIntrinsicsLowered = 0;
+static int NumVectorInstLowered = 0;
+static int NumShuffleVectorInstLowered = 0;
 
 namespace llvm {
-struct SIRLowerIntrinsic : public ModulePass {
+struct SIRLowerIntrinsic : public SIRPass {
 	static char ID;
 
-	SIRLowerIntrinsic() : ModulePass(ID) {
+	SIRLowerIntrinsic() : SIRPass(ID) {
 		initializeSIRLowerIntrinsicPass(*PassRegistry::getPassRegistry());
 	}
 
-	bool runOnModule(Module &M);
+	bool runOnSIR(SIR &SM);
 
 	void getAnalysisUsage(AnalysisUsage &AU) const;
 
-	bool linkMemIntrinsicBC(Module &M, DataLayout *TD, MemIntrinsic *MI);
-	bool lowerMemIntrinsic(Module &M, DataLayout *TD);
+	void visitAndLowerInst(SIR &SM, DataLayout *TD);
+
+	bool lowerMemIntrinsic(Module *M, DataLayout *TD, MemIntrinsic *MI);
+	bool lowerIntrinsic(Module *M, DataLayout *TD, IntrinsicInst *II);
+
+	bool lowerShuffleVectorInst(SIRDatapathBuilder &Builder, ShuffleVectorInst *SVI);
+	bool lowerVectorInst(SIRDatapathBuilder &Builder, Instruction *VI);
 };
 }
 
@@ -60,12 +74,153 @@ Pass *llvm::createSIRLowerIntrinsicPass() {
 }
 
 void SIRLowerIntrinsic::getAnalysisUsage(AnalysisUsage &AU) const {
+	SIRPass::getAnalysisUsage(AU);
 	AU.addRequired<DataLayout>();
 	AU.setPreservesAll();
 }
 
-bool SIRLowerIntrinsic::linkMemIntrinsicBC(Module &M, DataLayout *TD,
-	                                         MemIntrinsic *MI) {
+bool SIRLowerIntrinsic::lowerShuffleVectorInst(SIRDatapathBuilder &Builder,
+	                                             ShuffleVectorInst *SVI) {
+	Value *VectorOp1 = SVI->getOperand(0);
+	Value *VectorOp2 = SVI->getOperand(1);
+	Value *MaskOp = SVI->getOperand(2);
+
+	VectorType *VectorOp1Ty = dyn_cast<VectorType>(VectorOp1->getType());
+	VectorType *VectorOp2Ty = dyn_cast<VectorType>(VectorOp2->getType());
+	VectorType *MaskOpTy = dyn_cast<VectorType>(MaskOp->getType());
+
+	assert(VectorOp1Ty == VectorOp2Ty && "Unexpected Type!");
+	assert(VectorOp1Ty && VectorOp2Ty && MaskOpTy && "Unexpected Type!");
+
+	unsigned ElemBitWidth = Builder.getBitWidth(VectorOp1Ty->getElementType());
+	unsigned VectorOp1ElemNum = VectorOp1Ty->getNumElements();
+	unsigned VectorOp2ElemNum = VectorOp2Ty->getNumElements();
+	unsigned MaskOpElemNum = MaskOpTy->getNumElements();
+
+	ConstantVector *MaskCV = dyn_cast<ConstantVector>(MaskOp);
+	assert(MaskCV || isa<ConstantAggregateZero>(MaskOp) && "Unexpected MaskOp Type!");
+
+	Value *ZeroInit = Builder.createIntegerValue(32, 0);
+
+	SmallVector<Value *, 8> Masks;
+	for (int i = 0; i < MaskOpElemNum; i++) {
+		Value *Mask = MaskCV ? MaskCV->getOperand(i) : ZeroInit;
+		Masks.push_back(Mask);
+	}
+
+	SmallVector<Value *, 8> ResultElems;
+
+	for (unsigned i = 0; i < MaskOpElemNum; i++) {
+		Value *Idx = Builder.createIntegerValue(32, i);
+		Value *Mask = Masks[i];
+
+		Value *ResultElem;
+		if (ConstantInt *CI = dyn_cast<ConstantInt>(Mask)) {
+			int MaskVal = getConstantIntValue(CI);
+
+			if (MaskVal < VectorOp1ElemNum) {
+				ResultElem = ExtractElementInst::Create(VectorOp1, Mask, "", SVI);
+			} else {
+				Value *AlignedMask = Builder.createIntegerValue(32, MaskVal - VectorOp1ElemNum);
+
+				ResultElem = ExtractElementInst::Create(VectorOp2, AlignedMask, "", SVI);
+			}
+		} else if (UndefValue *UV = dyn_cast<UndefValue>(Mask)) {
+			// Hack: Not sure if the result is UndefValue when the mask is UndefValue.
+			ResultElem = UndefValue::get(VectorOp1Ty->getElementType());
+		}
+
+		ResultElems.push_back(ResultElem);
+	}
+
+	unsigned BitCatBitWidth = MaskOpElemNum * ElemBitWidth;
+	Value *BitCatResult = Builder.createSBitCatInst(ResultElems, Builder.createIntegerType(BitCatBitWidth),
+		                                              SVI, true);
+
+	Value *Result = Builder.createBitCastInst(BitCatResult, SVI->getType(), SVI, false);
+
+	return (Result != NULL);
+}
+
+bool SIRLowerIntrinsic::lowerVectorInst(SIRDatapathBuilder &Builder, Instruction *VI) {
+	assert(VI->getType()->isVectorTy() && "Unexpected Non-Vector instruction!");
+
+	unsigned BitWidth = Builder.getBitWidth(VI);
+	unsigned Nums = VI->getType()->getVectorNumElements();
+	Type *ElemTy = VI->getType()->getVectorElementType();
+
+	unsigned NumOperands = VI->getNumOperands();
+
+	SmallVector<Value *, 4> PartInsts;
+
+	for (int i = Nums - 1; i >= 0; i--) {
+		SmallVector<Value *, 4> PartOps;
+
+		for (int j = 0; j < NumOperands; j++) {
+			Value *Operand_j = VI->getOperand(j);
+			assert(Operand_j->getType()->isVectorTy() && "Unexpected operand Type!");
+
+			Value *Idx = Builder.createIntegerValue(32, i);
+			Value *Operand_j_i_Elem = ExtractElementInst::Create(Operand_j, Idx, "", VI);
+			PartOps.push_back(Operand_j_i_Elem);
+		}
+
+		switch (VI->getOpcode()) {
+		default:
+			llvm_unreachable("Unexpected Opcode!");
+		case Instruction::ICmp: {
+			ICmpInst *ICI = dyn_cast<ICmpInst>(VI);
+			assert(ICI && "Unexpected NULL ICI!");
+			assert(PartOps.size() == 2 && "Unexpected operand size!");
+
+			Value *PartInst = new ICmpInst(VI, ICI->getPredicate(), PartOps[0], PartOps[1], "");
+			PartInsts.push_back(PartInst);
+
+			break;
+		}
+		case Instruction::ZExt: {
+			ZExtInst *ZI = dyn_cast<ZExtInst>(VI);
+			assert(ZI && "Unexpected NULL ZI!");
+			assert(PartOps.size() == 1 && "Unexpected operand size!");
+
+			Value *PartInst = new ZExtInst(PartOps[0], ElemTy, "", VI);
+			PartInsts.push_back(PartInst);
+
+			break;
+		}
+		case Instruction::Add:
+		case Instruction::Sub:
+		case Instruction::Mul:
+		case Instruction::Shl:
+		case Instruction::AShr:
+		case Instruction::LShr:
+		case Instruction::UDiv:
+		case Instruction::SDiv:
+		case Instruction::And:
+		case Instruction::Or:
+		case Instruction::Xor:
+			BinaryOperator *BO = dyn_cast<BinaryOperator>(VI);
+			assert(BO && "Unexpected NULL BO!");
+			assert(PartOps.size() == 2 && "Unexpected operand size!");
+
+			Value *PartInst = BinaryOperator::Create(BinaryOperator::BinaryOps(VI->getOpcode()),
+				                                       PartOps[0], PartOps[1], "", VI);
+			PartInsts.push_back(PartInst);
+
+			break;
+
+		}
+	}
+
+	Value *BitCatResult = Builder.createSBitCatInst(PartInsts, Builder.createIntegerType(BitWidth),
+		                                              VI, true);
+
+	Value *Result = Builder.createBitCastInst(BitCatResult, VI->getType(), VI, false);
+
+	return (Result != NULL);
+}
+
+bool SIRLowerIntrinsic::lowerMemIntrinsic(Module *M, DataLayout *TD, MemIntrinsic *MI) {
 	// Link the SIR-Mem-Intrinsic-BC file at the first time.
 	if (!NumMemIntrinsicsLowered) {
 		SMDiagnostic Err;
@@ -79,12 +234,12 @@ bool SIRLowerIntrinsic::linkMemIntrinsicBC(Module &M, DataLayout *TD,
 			llvm_unreachable("Error in loading file");
 
 		// Link to the origin module.
-		Linker L(&M);
+		Linker L(M);
 		if (L.linkInModule(SIRMemIntrinsic, &ErrorMessage))
 			llvm_unreachable("Error in linking file");
 
 		// Verify if we link module successfully.
-		if (verifyModule(M))
+		if (verifyModule(*M))
 			llvm_unreachable("Linked module is broken");
 	}
 
@@ -117,19 +272,56 @@ bool SIRLowerIntrinsic::linkMemIntrinsicBC(Module &M, DataLayout *TD,
 		llvm_unreachable("Unexpected MemIntrinsic");
 	}
 
-	Function *MIFunc = M.getFunction(FN);
+	Function *MIFunc = M->getFunction(FN);
 	Instruction *SIRMemInstrinsic = CallInst::Create(MIFunc, Ops,
 		                                               MI->getName(), MI);
 	assert(SIRMemInstrinsic && "Unexpected NULL instruction!");
 
+	MI->replaceAllUsesWith(SIRMemInstrinsic);
+
 	return true;
 }
 
-bool SIRLowerIntrinsic::lowerMemIntrinsic(Module &M, DataLayout *TD) {
-	// Visit all instruction in module to detect whether
-  // there exits llvm.mem intrinsics.
+bool SIRLowerIntrinsic::lowerIntrinsic(Module *M, DataLayout *TD, IntrinsicInst *II) {
+	bool Changed = false;
+
+	switch (II->getIntrinsicID()) {
+	default:
+		break;
+	case Intrinsic::memcpy:
+	case Intrinsic::memset:
+	case Intrinsic::memmove:
+		MemIntrinsic *MI = dyn_cast<MemIntrinsic>(II);
+		if (lowerMemIntrinsic(M, TD, MI)) {
+			Changed = true;
+			NumMemIntrinsicsLowered++;
+		}
+		break;
+	}
+
+	// Set all the unused SIRMemIntrinsic functions into LocalLinkage,
+	// so that we can delete the unused functions after linking.
+	typedef Module::iterator iterator;
+	for (iterator I = M->begin(), E = M->end();	I != E; I++) {
+		Function *F = I;
+
+		if (F->getName().startswith("sir_mem"))
+			F->setLinkage(GlobalValue::InternalLinkage);
+	}
+
+	return Changed;
+}
+
+void SIRLowerIntrinsic::visitAndLowerInst(SIR &SM, DataLayout *TD) {
+	SIRDatapathBuilder Builder(&SM, *TD);
+
+	Module *M = SM.getModule();
+
+	SmallVector<Instruction *, 8> InstLowered;
+
+	// Visit all instruction in module and lower instruction.
 	typedef Module::iterator f_iterator;
-	for (f_iterator I = M.begin(), E = M.end(); I != E; I++) {
+	for (f_iterator I = M->begin(), E = M->end(); I != E; I++) {
 		Function *F = I;
 
 		typedef Function::iterator bb_iterator;
@@ -140,46 +332,58 @@ bool SIRLowerIntrinsic::lowerMemIntrinsic(Module &M, DataLayout *TD) {
 			for (inst_iterator I = BB->begin(), E = BB->end(); I != E; I++) {
 				Instruction *Inst = I;
 
-				if (!isa<IntrinsicInst>(Inst))
-					continue;
+				if (isa<ShuffleVectorInst>(Inst))
+					int I = 0;
 
-				IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst);
+				if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
+					if (lowerIntrinsic(M, TD, II)) {
+						NumInstructionLowered++;
+						InstLowered.push_back(Inst);
+						break;
+					}
+				}
 
-				switch (II->getIntrinsicID()) {
-				default:
-					break;
-				case Intrinsic::memcpy:
-				case Intrinsic::memset:
-				case Intrinsic::memmove:
-					MemIntrinsic *MI = dyn_cast<MemIntrinsic>(II);
-					if (linkMemIntrinsicBC(M, TD, MI))
-						NumMemIntrinsicsLowered ++;
-					break;
+				if (Inst->getType()->isVectorTy()) {
+					if (isa<LoadInst>(Inst) || isa<StoreInst>(Inst) ||
+						  isa<InsertElementInst>(Inst) ||
+							isa<ExtractElementInst>(Inst) ||
+							isa<PHINode>(Inst) || isa<BitCastInst>(Inst))
+						continue;
+
+					if (ShuffleVectorInst *SVI = dyn_cast<ShuffleVectorInst>(Inst)) {
+						if (lowerShuffleVectorInst(Builder, SVI)) {
+							NumShuffleVectorInstLowered++;
+							InstLowered.push_back(Inst);
+							break;
+						}
+					}
+
+					if (lowerVectorInst(Builder, Inst)) {
+						NumVectorInstLowered++;
+						InstLowered.push_back(Inst);
+						break;
+					}
 				}
 			}
 		}
 	}
 
-	// Set all the unused SIRMemIntrinsic functions into LocalLinkage,
-	// so that we can delete the unused functions after linking.
-	typedef Module::iterator iterator;
-	for (iterator I = M.begin(), E = M.end();	I != E; I++) {
-		Function *F = I;
+	// After lowering, we should remove the LoweredInst since it is useless.
+	typedef SmallVector<Instruction *, 8>::iterator iterator;
+	for (iterator I = InstLowered.begin(), E = InstLowered.end(); I != E; I++) {
+		Instruction *LowerInst = *I;
 
-		if (F->getName().startswith("sir_mem"))
-			F->setLinkage(GlobalValue::InternalLinkage);
+		assert(LowerInst->use_empty() && "Unexpected Use still exist!");
+
+		LowerInst->eraseFromParent();
 	}
-
-	return (NumMemIntrinsicsLowered != 0);
 }
 
-bool SIRLowerIntrinsic::runOnModule(Module &M) {
-	bool Changed = false;
-
+bool SIRLowerIntrinsic::runOnSIR(SIR &SM) {
 	DataLayout *TD = &getAnalysis<DataLayout>();
 
-	// Lower the llvm.mem intrinsics.
-	Changed |= lowerMemIntrinsic(M, TD);
+	// Visit and lower the instruction.
+	visitAndLowerInst(SM, TD);
 
-	return Changed;
+	return (NumInstructionLowered != 0);
 }
