@@ -175,7 +175,6 @@ INITIALIZE_PASS_END(SIRRegisterSynthesisForCodeGen,
 void SIRRegisterSynthesisForCodeGen::getAnalysisUsage(AnalysisUsage &AU) const {
   SIRPass::getAnalysisUsage(AU);
   AU.addRequired<DataLayout>();
-	//AU.addRequiredID(SIRFSMSynthesisID);
   AU.setPreservesAll();
 }
 

@@ -95,10 +95,39 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
 			OS << "))";
 			return;
 		}
+		else if (ConstantVector *CV = dyn_cast<ConstantVector>(U)) {
+			unsigned Num = CV->getNumOperands();
+
+			OS << "{";
+
+			for (int i = 0; i < Num; i++) {
+				Constant *Elem = CV->getAggregateElement(i);
+
+				if (ConstantInt *CI = dyn_cast<ConstantInt>(Elem)) {
+					printConstantIntValue(OS, CI);
+				}
+
+				if (UndefValue *UV = dyn_cast<UndefValue>(Elem)) {
+					OS << TD.getTypeSizeInBits(UV->getType()) << "'hx";
+				}
+
+				if (i != Num -1)
+					OS << ", ";
+			}
+
+			OS << "}";
+			return;
+		}
 		else if (ConstantAggregateZero *CAZ = dyn_cast<ConstantAggregateZero>(U)) {
 			OS << "((";
 			OS << UB - LB;
 			OS << "'h0))";
+			return;
+		}
+		else if (ConstantPointerNull *CPN = dyn_cast<ConstantPointerNull>(U)) {
+			OS << "((";
+			OS << UB - LB;
+			OS << "'hx))";
 			return;
 		}
 		else if (UndefValue *UV = dyn_cast<UndefValue>(U)) {
@@ -1087,6 +1116,12 @@ void SIR2RTL::generateCodeForMemoryBank(SIR &SM, DataLayout &TD) {
 bool SIR2RTL::runOnSIR(SIR &SM) {
 	// Remove the dead SIR instruction before the CodeGen.
 	SM.gc();
+
+	// Dump all the useful debug information before the CodeGen.
+	std::string DebugOutputPath = LuaI::GetString("DebugOutput");
+	std::string DebugError;
+	raw_fd_ostream DebugOutput(DebugOutputPath.c_str(), DebugError);
+	SM.print(DebugOutput);
 
   DataLayout &TD = getAnalysis<DataLayout>();
 

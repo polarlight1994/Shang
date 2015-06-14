@@ -13,6 +13,7 @@ SIRScheduling::SIRScheduling() : SIRPass(ID) {
 
 void SIRScheduling::getAnalysisUsage(AnalysisUsage &AU) const {
 	SIRPass::getAnalysisUsage(AU);
+	AU.addRequired<SIRInit>();
 	AU.addRequired<SIRTimingAnalysis>();
 	AU.addRequired<AliasAnalysis>();
 	AU.addRequired<DominatorTree>();
@@ -108,7 +109,11 @@ void SIRScheduling::buildDataFlowDependencies(SIRSchedUnit *U) {
 	for (iterator I = AT.begin(), E = AT.end(); I != E; I++) {
 		Value *SrcVal = I->first;
 		// The SrcVal must be a Leaf Value.
-		assert(!(isa<Argument>(SrcVal) || isa<ConstantInt>(SrcVal) || isa<GlobalValue>(SrcVal))
+		assert(!(isa<ConstantInt>(SrcVal) || isa<ConstantVector>(SrcVal) ||
+			       isa<ConstantAggregateZero>(SrcVal) ||
+						 isa<ConstantPointerNull>(SrcVal) ||
+						 isa<Argument>(SrcVal) || isa<ConstantInt>(SrcVal) ||
+						 isa<GlobalValue>(SrcVal))
 			     && "Should be ignored in extract arrivals!");
 		assert(SM->lookupSIRReg(dyn_cast<Instruction>(SrcVal))
 			     && "This is not a SeqVal in SIR!");

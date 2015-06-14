@@ -14,6 +14,7 @@
 #include "sir/Passes.h"
 #include "sir/SIR.h"
 #include "sir/SIRPass.h"
+#include "sir/SIRBuild.h"
 
 #include "vast/FUInfo.h"
 #include "vast/LuaI.h"
@@ -45,7 +46,11 @@ static bool IsLeafValue(SIR *SM, Value *V) {
 
 	if (isa<ConstantInt>(V)) return true;
 
+	if (isa<ConstantVector>(V)) return true;
+
 	if (isa<ConstantAggregateZero>(V)) return true;
+
+	if (isa<ConstantPointerNull>(V)) return true;
 
 	if (isa<Argument>(V))	return true;
 
@@ -824,8 +829,9 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 
 		// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
 		// then ignore it because it will have no impact on the scheduling process.
-		if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
-			  isa<Argument>(V) || isa<UndefValue>(V)) continue;
+		if (isa<ConstantInt>(V) || isa<ConstantVector>(V) ||
+			  isa<ConstantAggregateZero>(V) || isa<ConstantPointerNull>(V) ||
+				isa<GlobalValue>(V) || isa<Argument>(V) || isa<UndefValue>(V)) continue;
 
 		// Simply add the zero delay if the Src itself is a Leaf Value. Since we have
 		// ignore the ConstantInt, Argument or GlobalValue, so what left here is only
@@ -920,8 +926,8 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 void SIRTimingAnalysis::getAnalysisUsage(AnalysisUsage &AU) const {
 	SIRPass::getAnalysisUsage(AU);
   AU.addRequired<DataLayout>();
+	AU.addRequired<SIRInit>();
   AU.addRequiredID(SIRRegisterSynthesisForAnnotationID);
-	//AU.addRequiredID(SIRFSMSynthesisID);
   AU.setPreservesAll();
 }
 
