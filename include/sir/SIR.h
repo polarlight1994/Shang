@@ -910,11 +910,11 @@ public:
 
 	// Functions for debug
 	void print(raw_ostream &OS);
-	void dump();
-	void dumpIR();
-	void dumpBB2Slot();
-	void dumpReg2Slot();
-	void dumpSeqOp2Slot();
+	void dump(raw_ostream &OS);
+	void dumpIR(raw_ostream &OS);
+	void dumpBB2Slot(raw_ostream &OS);
+	void dumpReg2Slot(raw_ostream &OS);
+	void dumpSeqOp2Slot(raw_ostream &OS);
 
 };
 

@@ -318,10 +318,10 @@ void SIR::print(raw_ostream &OS) {
 	OS << "(3) Reg2SlotInfo: dumpReg2Slot()\n";
 	OS << "===============================================\n";
 
-  dumpIR();
-	dumpBB2Slot();
-	dumpReg2Slot();
-	dumpSeqOp2Slot();
+  //dumpIR(OS);
+	dumpBB2Slot(OS);
+	//dumpReg2Slot(OS);
+	//dumpSeqOp2Slot(OS);
 
 	OS << "======================Note=====================\n" << "All INFO of SIR will be printed by default!\n";
 	OS << "If you want to view only part of it, please select following dump methods:\n";
@@ -330,19 +330,18 @@ void SIR::print(raw_ostream &OS) {
 	OS << "===============================================\n";
 }
 
-void SIR::dump() {
-	print(dbgs());
-	dbgs() << "\n";
+void SIR::dump(raw_ostream &OS) {
+	print(OS);
+	OS << "\n";
 }
 
-void SIR::dumpIR() {
+void SIR::dumpIR(raw_ostream &OS) {
 	Function *F = this->getFunction();
 
-	F->dump();
+	F->print(OS);
 }
 
-void SIR::dumpBB2Slot() {
-	raw_ostream &OS = dbgs();
+void SIR::dumpBB2Slot(raw_ostream &OS) {
 	Function *F = this->getFunction();
 
 	OS << "\n";
@@ -366,9 +365,7 @@ void SIR::dumpBB2Slot() {
 	OS << "\n";
 }
 
-void SIR::dumpReg2Slot() {
-	raw_ostream &OS = dbgs();	
-
+void SIR::dumpReg2Slot(raw_ostream &OS) {
 	OS << "\n";
 
 	for (const_register_iterator I = registers_begin(), E = registers_end(); I != E; I++) {
@@ -384,9 +381,7 @@ void SIR::dumpReg2Slot() {
 	OS << "\n";
 }
 
-void SIR::dumpSeqOp2Slot() {
-	raw_ostream &OS = dbgs();	
-
+void SIR::dumpSeqOp2Slot(raw_ostream &OS) {
 	OS << "\n";
 
 	typedef seqop_iterator iterator;
