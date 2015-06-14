@@ -55,6 +55,9 @@ public:
 
 	bool runOnModule(Module &M);
 	void runOnFunction(Function &F, AliasSetTracker &AST);
+
+	operator SIR*() const { return SM; }
+	SIR *operator->() const { return SM; }
 };
 }
 

@@ -46,15 +46,15 @@ using namespace llvm;
 
 
 void SIRPass::getAnalysisUsage(AnalysisUsage &AU) const {
-  AU.addRequiredTransitive<SIRInit>();
-  AU.addPreserved<SIRInit>();
+  AU.addRequiredTransitive<SIRAllocation>();
+  AU.addPreserved<SIRAllocation>();
   AU.setPreservesCFG();
 }
 
 bool SIRPass::runOnFunction(Function &F) {
-  SIRInit &S = getAnalysis<SIRInit>();
+  SIRAllocation &SA = getAnalysis<SIRAllocation>();
 
-  bool changed = runOnSIR(*S);
+  bool changed = runOnSIR(*SA);
 
   return changed;
 }
