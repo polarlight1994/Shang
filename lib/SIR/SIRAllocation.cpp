@@ -165,6 +165,9 @@ bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 		GlobalVariable *GV = Obj.first;
 		DEBUG(dbgs() << "Assign " << *GV << " to Memory #" << BankNum << "\n");
 
+		// Hack: Avoid the Alignment is less than the DataWidth
+		GV->setAlignment(std::max(GV->getAlignment(), SMB->getDataWidth() / 8));
+
 		SMB->addGlobalVariable(GV, Obj.second);
 		bool inserted = Binding.insert(std::make_pair(GV, SMB)).second;
 		assert(inserted && "Allocation not inserted!");
