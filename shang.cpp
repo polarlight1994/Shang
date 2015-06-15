@@ -192,7 +192,7 @@ int main(int argc, char **argv) {
   }
 
   if (mod.empty()) {
-    report_fatal_error("Module become empty after Software/Hardware paritioning!");
+    report_fatal_error("Module become empty after Software/Hardware partitioning!");
     return 0;
   }
 
@@ -201,9 +201,9 @@ int main(int argc, char **argv) {
     PassManager HLSIRPasses;
     HLSIRPasses.add(new DataLayout(DataLayoutStr));
     HLSIRPasses.add(createShangTargetTransformInfoPass());
-    //addIROptimizationPasses(HLSIRPasses);
+		addIROptimizationPasses(HLSIRPasses);
     addHLSPreparePasses(HLSIRPasses);
-    HLSIRPasses.run(mod);
+		HLSIRPasses.run(mod);
   }
 
   const char *MainSynthesisInfoPath[2] = { "Functions", "main" };
@@ -247,8 +247,6 @@ int main(int argc, char **argv) {
       HLSPasses.add(createDeadStoreEliminationPass());
     }
 
-    // HLSPasses.add(createAlwaysSpeculatePass());
-
     // Unroll the loop to expose more coalescing opportunities.
     if (EnableMemoryOptimization) {
       HLSPasses.add(createMemoryAccessAlignerPass());
@@ -264,7 +262,7 @@ int main(int argc, char **argv) {
       // Run the SCEVAA pass to compute more accurate alias information.
       HLSPasses.add(createScalarEvolutionAliasAnalysisPass());
       HLSPasses.add(createMemoryAccessCoalescingPass());
-      // Verifier the IR produced by the Coalescer.
+      // Verifier the IR produced by the Coalesce.
       HLSPasses.add(createVerifierPass());
       HLSPasses.add(createGVNPass());
       HLSPasses.add(createInstructionCombiningPass());
@@ -273,25 +271,27 @@ int main(int argc, char **argv) {
 
     // Try to optimize the computation.
     HLSPasses.add(createInstructionCombiningPass());
-    // Move the datapath instructions as soon as possible.
-    // HLSPasses.add(createAlwaysSpeculatePass());
 
-		std::string IROutputPath = LuaI::GetString("SoftwareIROutput");
+		// Lower the llvm.mem intrinsic.
+		HLSPasses.add(createSIRLowerIntrinsicPass());
+		HLSPasses.add(createHLSInlinerPass());
+		HLSPasses.add(createGlobalDCEPass());
+
+		//Replace the stack alloca variables by global variables.
+		HLSPasses.add(createLowerAllocaPass());
+
+		// Name the instructions to make the LLVM IR easier for debugging.
+		HLSPasses.add(createInstructionNamerPass());
+
+		std::string IROutputPath = LuaI::GetString("FinalIR");
 		std::string Error;
 		raw_fd_ostream Output(IROutputPath.c_str(), Error);
 		vlang_raw_ostream Out;
 		Out.setStream(Output);
 
-    if (DumpIRBeforeHLS)
-      HLSPasses.add(createPrintModulePass(&Out));
+		HLSPasses.add(createPrintModulePass(&Out));
 
-		//Replace the stack alloca variables by global variables.
-		HLSPasses.add(createLowerAllocaPass());
-
-		// Schedule the SIR using List Scheduling algorithm
-		HLSPasses.add(createSIRSchedulingPass());
-
-    // Try to dump the RTL code based on the SIR
+    // Enable the RTL transform.
     HLSPasses.add(createSIR2RTLPass());
 
 /// Disable all the passes to debug SIR2RTL
