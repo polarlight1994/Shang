@@ -1770,60 +1770,51 @@ Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
     return Ops[0];
   }
 
-	// If the instruction is like: 
-	// 1) A = 1'b1 & B & C,
-	// 2) A = 1'b0 & B & C,
-	// 3) A = (~1'b0) & B & C,
-	// then we can simplify it.
-	bool hasOneValue = false;
 	SmallVector<Value *, 4> NewOps;
 	typedef ArrayRef<Value *>::iterator iterator;
 	for (iterator I = Ops.begin(), E = Ops.end(); I != E; I++) {
 		Value *Operand = *I;
+		ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
 
-		if (isa<UndefValue>(Operand))
-			Value *temp = Operand;
+		// If A = x'b0 & B & C, we can simplify it into x'b0.
+		if (CI && getConstantIntValue(CI) == 0) {
+			// If the inst is not used as an argument of other functions,
+			// then it is used to replace the inst in IR
+			if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
+			return Operand;
+		}
 
-// 		// 1) A = 1'b1 & B & C
-// 		ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
-// 		if (CI && getConstantIntValue(CI) == 1) {
-// 			hasOneValue = true;
-// 			continue;
-// 		}
-
-// 		// 2) A = 1'b0 & B & C
-// 		if (CI && getConstantIntValue(CI) == 0) {
-// 			// If the inst is not used as an argument of other functions,
-// 			// then it is used to replace the inst in IR
-// 			if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
-// 			return Operand;
-// 		}
-
-// 		// 3) A = (~1'b1) & B & C
-// 		IntrinsicInst *II = dyn_cast<IntrinsicInst>(Operand);
-// 		if (II && II->getIntrinsicID() == Intrinsic::shang_not) {
-// 			Value *NotInstOperand = II->getOperand(0);
-// 			ConstantInt *CI = dyn_cast<ConstantInt>(NotInstOperand);
-// 			if (CI && getConstantIntValue(CI) == 1) {
-// 				// If the inst is not used as an argument of other functions,
-// 				// then it is used to replace the inst in IR
-// 				if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
-// 				return Operand;
-// 			}
-// 		}
+		// If A = 1'b1 & 1'bB & 1'bC, we can simplify it into A = 1'bB & 1'bC.
+		if (CI && getConstantIntValue(CI) == 1 && getBitWidth(RetTy) == 1)
+			// Ignore the 1'b1 operand, since it have no impact on result.
+			continue;
 
 		NewOps.push_back(Operand);
 	}
 
-	// If all operand are removed, then they all are 1'b1;
-	if (NewOps.size() == 0) return createIntegerValue(1, 1);
+	// If the size of NewOps is zero, it means all operands are 1'b1.
+	if (NewOps.size() == 0) {
+		assert(getBitWidth(RetTy) == 1 && "Unexpected BitWidth!");
+		Value *OneValue = createIntegerValue(1, 1);
 
-	if (hasOneValue)
-		return createSAndInst(NewOps, RetTy, InsertPosition, UsedAsArg);
-	else {
-		return createShangInstPattern(NewOps, RetTy, InsertPosition,
-																	Intrinsic::shang_and, UsedAsArg);
+		if (!UsedAsArg)
+			InsertPosition->replaceAllUsesWith(OneValue);
+
+		return OneValue;
 	}
+
+	// If the size of NewOps is one, then the left value is the result.
+	if (NewOps.size() == 1) {
+		Value *LeftValue = NewOps[0];
+
+		if (!UsedAsArg)
+			InsertPosition->replaceAllUsesWith(LeftValue);
+
+		return LeftValue;
+	}
+
+	return createShangInstPattern(NewOps, RetTy, InsertPosition,
+																Intrinsic::shang_and, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSAndInst(Value *LHS, Value *RHS, Type *RetTy,
@@ -1879,56 +1870,49 @@ Value *SIRDatapathBuilder::createSOrInst(ArrayRef<Value *> Ops, Type *RetTy,
 
 	assert(Ops.size() == 2 && "Unexpected Operand Size!");
 
-// 	// If the instruction is like:
-// 	// 1) A = 1'b1 | B | C,
-// 	// 2) A = 1'b0 | B | C,
-// 	// 3) A = (~1'b0) | B | C,
-// 	// then we can simplify it.
-// 	bool hasZeroValue = false;
-// 	SmallVector<Value *, 4> NewOps;
-// 	typedef ArrayRef<Value *>::iterator iterator;
-// 	for (iterator I = Ops.begin(), E = Ops.end(); I != E; I++) {
-// 		Value *Operand = *I;
-//
-// 		// 1) A = 1'b1 | B | C
-// 		ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
-// 		if (CI && getConstantIntValue(CI) == 1) {
-// 			// If the inst is not used as an argument of other functions,
-// 			// then it is used to replace the inst in IR
-// 			if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
-// 			return Operand;
-// 		}
-//
-// 		// 2) A = 1'b0 | B | C
-// 		if (CI && getConstantIntValue(CI) == 0) {
-// 			hasZeroValue = true;
-// 			continue;
-// 		}
-//
-// 		// 3) A = (~1'b1) & B & C
-// 		IntrinsicInst *II = dyn_cast<IntrinsicInst>(Operand);
-// 		if (II && II->getIntrinsicID() == Intrinsic::shang_not) {
-// 			Value *NotInstOperand = II->getOperand(0);
-// 			ConstantInt *CI = dyn_cast<ConstantInt>(NotInstOperand);
-// 			if (CI && getConstantIntValue(CI) == 1) {
-// 				hasZeroValue = true;
-// 				continue;
-// 			}
-// 		}
-//
-// 		NewOps.push_back(Operand);
-// 	}
+	SmallVector<Value *, 4> NewOps;
+	typedef ArrayRef<Value *>::iterator iterator;
+	for (iterator I = Ops.begin(), E = Ops.end(); I != E; I++) {
+		Value *Operand = *I;
+		ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
 
-	// Disable the AIG transition for debug convenient.
-//   SmallVector<Value *, 8> NotInsts;
-//   // Build the operands of Or operation into not inst.
-//   for (unsigned i = 0; i < Ops.size(); ++i)
-//     NotInsts.push_back(createSNotInst(Ops[i], RetTy, InsertPosition, true));
-//
-//   // Build Or operation with the And Inverter Graph (AIG).
-//   Value *AndInst = createSAndInst(NotInsts, RetTy, InsertPosition, true);
-//   return createSNotInst(AndInst, RetTy, InsertPosition, UsedAsArg);
-	return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_or, UsedAsArg);
+		// If A = 1'b1 | 1'bB | 1'bC, we can simplify it into 1'b1.
+		if (CI && getConstantIntValue(CI) == 1 && getBitWidth(RetTy) == 1) {
+			// If the inst is not used as an argument of other functions,
+			// then it is used to replace the inst in IR
+			if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
+			return Operand;
+		}
+
+		// If A = x'b0 | B | C, we can simplify it into A = B | C.
+		if (CI && getConstantIntValue(CI) == 0)
+			// Ignore the x'b0 operand, since it have no impact on result.
+			continue;
+
+		NewOps.push_back(Operand);
+	}
+
+	// If the size of NewOps is zero, it means all operands are x'b0.
+	if (NewOps.size() == 0) {
+		Value *ZeroValue = createIntegerValue(getBitWidth(RetTy), 0);
+
+		if (!UsedAsArg)
+			InsertPosition->replaceAllUsesWith(ZeroValue);
+
+		return ZeroValue;
+	}
+
+	// If the size of NewOps is one, then the left value is the result.
+	if (NewOps.size() == 1) {
+		Value *LeftValue = NewOps[0];
+
+		if (!UsedAsArg)
+			InsertPosition->replaceAllUsesWith(LeftValue);
+
+		return LeftValue;
+	}
+
+	return createShangInstPattern(NewOps, RetTy, InsertPosition, Intrinsic::shang_or, UsedAsArg);
 }
 
 Value *SIRDatapathBuilder::createSOrInst(Value *LHS, Value *RHS, Type *RetTy,
