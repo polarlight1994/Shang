@@ -28,12 +28,12 @@ SIRAllocation::SIRAllocation() : SM(0), TD(0), ModulePass(ID) {
 
 INITIALIZE_PASS_BEGIN(SIRAllocation,
 	                    "sir-allocation", "SIR Allocation",
-	                    false, true, false)
+	                    false, true)
 	INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
 	INITIALIZE_PASS_DEPENDENCY(DataLayout)
 INITIALIZE_PASS_END(SIRAllocation,
 	                  "sir-allocation", "SIR Allocation",
-	                   false, true, false)
+	                   false, true)
 
 char SIRAllocation::ID = 0;
 
