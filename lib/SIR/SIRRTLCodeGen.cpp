@@ -1117,12 +1117,6 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
 	// Remove the dead SIR instruction before the CodeGen.
 	SM.gc();
 
-	// Dump all the useful debug information before the CodeGen.
-	std::string DebugOutputPath = LuaI::GetString("DebugOutput");
-	std::string DebugError;
-	raw_fd_ostream DebugOutput(DebugOutputPath.c_str(), DebugError);
-	SM.print(DebugOutput);
-
   DataLayout &TD = getAnalysis<DataLayout>();
 
   // Get the output path for Verilog code.
