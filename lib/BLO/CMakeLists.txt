@@ -11,6 +11,9 @@ get_property(ABC_LIBRARY GLOBAL PROPERTY ABC_LIBRARY)
 
 target_link_libraries (
   ShangBLO
+	ShangHLS
+	ShangIROpts
+	ShangScripting
   ShangVAST
   ${ABC_LIBRARY}
 )

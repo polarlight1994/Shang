@@ -24,3 +24,8 @@ add_llvm_library(ShangVAST
   DatapathNamer.cpp
   RTLCodeGen.cpp
 )
+
+target_link_libraries (
+	ShangVAST
+	LLVMAnalysis
+)
