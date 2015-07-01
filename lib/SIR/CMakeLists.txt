@@ -13,3 +13,5 @@ SIRFSMSynthesis.cpp
 SIRPass.cpp
 SIRRTLCodeGen.cpp
 )
+
+target_link_libraries(ShangSIR LLVMLinker)
