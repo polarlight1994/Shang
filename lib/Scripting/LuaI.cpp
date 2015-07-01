@@ -52,23 +52,15 @@ LuaI::~LuaI() {
 }
 
 void LuaI::init() {
-  // Open lua libraries.
+  // Open Lua libraries.
   luaL_openlibs(State);
 
-  // load_luapp_lo(State);
+	load_luapp_lo(State);
 
-  // Bind the object.
-  setGlobal(State, newTable(State), "TimingAnalysis");
   // Cost/latency of functional units
   setGlobal(State, newTable(State), "FUs");
   // Functions to be mapped to hardware
   setGlobal(State, newTable(State), "Functions");
-  // Predefined modules
-  setGlobal(State, newTable(State), "Modules");
-  // Synthesis attribute
-  setGlobal(State, newTable(State), "SynAttr");
-  // Table for Miscellaneous information
-  setGlobal(State, newTable(State), "Misc");
 }
 
 static void ReportNILPath(ArrayRef<const char*> Path) {
@@ -159,6 +151,7 @@ void LuaI::initSimpleFU(LuaRef FUs) {
 
 void LuaI::updateFUs() {
   LuaRef FUs = getGlobal(State, "FUs");
+
   // Initialize the functional unit descriptions.
   FUSet[VFUs::MemoryBus]
     = new VFUMemBus(FUs[VFUDesc::getTypeName(VFUs::MemoryBus)]);
@@ -193,14 +186,6 @@ void LuaI::updateFUs() {
 
 void LuaI::updateStatus() {
   updateFUs();
-
-  // Read the synthesis attributes.
-  const char *Path[] = { "SynAttr", "DirectClkEnAttr" };
-  VASTNode::DirectClkEnAttr = getValueStr(Path);
-  Path[1] = "ParallelCaseAttr";
-  VASTNode::ParallelCaseAttr = getValueStr(Path);
-  Path[1] = "FullCaseAttr";
-  VASTNode::FullCaseAttr = getValueStr(Path);
 
   // Build the data layout.
   raw_string_ostream s(DataLayout);
@@ -265,4 +250,8 @@ float LuaI::GetFloat(ArrayRef<const char*> Path) {
 
 bool LuaI::EvalString(const std::string &ScriptStr, SMDiagnostic &Err) {
   return Interpreter->runScriptStr(ScriptStr, Err);
+}
+
+bool LuaI::EvalFile(const std::string &ScriptPath, SMDiagnostic &Err) {
+	return Interpreter->runScriptFile(ScriptPath, Err);
 }

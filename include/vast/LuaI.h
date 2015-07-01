@@ -87,6 +87,7 @@ public:
   ~LuaI();
 
   static bool EvalString(const std::string &ScriptStr, SMDiagnostic &Err);
+	static bool EvalFile(const std::string &ScriptPath, SMDiagnostic &Err);
 
   static std::string GetString(const char *Name);
   static std::string GetString(ArrayRef<const char*> Path);
