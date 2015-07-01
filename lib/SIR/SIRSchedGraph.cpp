@@ -245,6 +245,18 @@ void SIRSchedGraph::topologicalSortSUs() {
 	std::set<SIRSchedUnit *> Visited;
 	SUnits.splice(SUnits.end(), SUnits, Entry);
 
+	// Handle the SUnits located in Slot0r specially since they have
+	// no ParentBB.
+	bb_iterator at = BBMap.find(NULL);
+	if (at != BBMap.end()) {
+		MutableArrayRef<SIRSchedUnit *> SUsInSlot0r(at->second);
+		for (unsigned i = 0; i < SUsInSlot0r.size(); ++i) {
+			SIRSchedUnit *SUnitInSlot0r = SUsInSlot0r[i];
+
+			SUnits.splice(SUnits.end(), SUnits, SUnitInSlot0r);
+		}
+	}
+
 	ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
 	typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
 
