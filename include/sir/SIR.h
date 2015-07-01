@@ -253,6 +253,7 @@ public:
     Start,
     ArgPort,
     InPort = ArgPort,
+		Finish,
     RetPort,
     OutPort = RetPort    
   };
@@ -270,7 +271,7 @@ public:
   const std::string getName() const { return Name; }
   unsigned getBitWidth() const { return BitWidth; }
   SIRPortTypes getPortType() const { return T; }
-  bool isInput() const { return T != RetPort; }
+  bool isInput() const { return T != RetPort && T != Finish; }
 
   // Print the port
   void printDecl(raw_ostream &OS) const;
@@ -733,8 +734,9 @@ private:
   // The map between Register and SIRSlot
   Reg2SlotMapTy Reg2Slot;
 
-  // Record the Idx of RetPort.
+  // Record the Idx of FinPort and RetPort.
   unsigned RetPortIdx;
+	unsigned FinPortIdx;
   // Record the landing slot and the latest slot of BB.
 	typedef std::pair<SIRSlot *, SIRSlot *> slot_pair;
   std::map<BasicBlock *, slot_pair> BB2SlotMap;
@@ -842,7 +844,9 @@ public:
   }
 
   void setRetPortIdx(unsigned Idx) { RetPortIdx = Idx; }
+	void setFinPortIdx(unsigned Idx) { FinPortIdx = Idx; }
   unsigned getRetPortIdx() const { return RetPortIdx; }
+	unsigned getFinPortIdx() const { return FinPortIdx; }
 
   bool IndexBB2Slots(BasicBlock *BB,
                      SIRSlot *LandingSlot, SIRSlot *LatestSlot) {    
@@ -884,6 +888,7 @@ public:
     return Ports[i];
   }
   SIRPort *getRetPort() const { return getPort(RetPortIdx); }
+	SIRPort *getFinPort() const { return getPort(FinPortIdx); }
 
 	// Give the position just in front of the terminator instruction
 	// at back of the module. And all DataPath instruction created for

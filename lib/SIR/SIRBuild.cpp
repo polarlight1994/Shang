@@ -106,6 +106,7 @@ void SIRBuilder::buildInterface(Function *F) {
   C_Builder.createPort(SIRPort::Clk, "clk", 1);
   C_Builder.createPort(SIRPort::Rst, "rstN", 1);
   C_Builder.createPort(SIRPort::Start, "start", 1);
+	C_Builder.createPort(SIRPort::Finish, "fin", 1);
 
   for (Function::arg_iterator I = F->arg_begin(), E = F->arg_end();
        I != E; ++I) {
@@ -139,6 +140,10 @@ void SIRBuilder::buildInterface(Function *F) {
 
 	// Whole module will be run only when the Start signal is true.
   C_Builder.createStateTransition(IdleStartSlot, IdleStartSlot, IdleCnd);
+
+	// Set the Finish signal of module.
+	SIRRegister *FinReg = cast<SIROutPort>(SM->getFinPort())->getRegister();
+	C_Builder.assignToReg(IdleStartSlot, Start, D_Builder.createIntegerValue(1, 0), FinReg);
 
   // If the Start signal is true, then slot will jump to the slot of first BB.
   BasicBlock *EntryBB = &F->getEntryBlock();
@@ -337,8 +342,11 @@ SIRPort *SIRCtrlRgnBuilder::createPort(SIRPort::SIRPortTypes T, StringRef Name,
     SM->IndexPort(P);
     return P;
   } else {
-    // Record the Idx of RetPort
-    if (T == SIRPort::RetPort) SM->setRetPortIdx(SM->getPortsSize()); 
+    // Record the Idx of FinPort and RetPort.
+    if (T == SIRPort::RetPort)
+			SM->setRetPortIdx(SM->getPortsSize());
+		if (T == SIRPort::Finish)
+			SM->setFinPortIdx(SM->getPortsSize());
 
     // Create the register for OutPort. To be noted that,
 		// here we cannot assign the ParentBB for this register.
@@ -839,6 +847,10 @@ void SIRCtrlRgnBuilder::visitReturnInst(ReturnInst &I) {
     // Index the register with return instruction.
     SM->IndexSeqInst2Reg(&I, Reg);
   }
+
+	// Enable the finish port.
+	SIRRegister *FinReg = cast<SIROutPort>(SM->getFinPort())->getRegister();
+	assignToReg(CurSlot, createIntegerValue(1, 1), createIntegerValue(1, 1), FinReg);
 }
 
 IntegerType *SIRCtrlRgnBuilder::createIntegerType(unsigned BitWidth) {
@@ -1736,14 +1748,10 @@ Value *SIRDatapathBuilder::createSShiftInst(ArrayRef<Value *> Ops, Type *RetTy,
   unsigned RHSMaxSize = Log2_32_Ceil(getBitWidth(LHS));
 	if (ConstantInt *CI = dyn_cast<ConstantInt>(RHS))
 		assert(getConstantIntValue(CI) < getBitWidth(LHS) && "Unexpected shift amount!");
-	else if (getBitWidth(RHS) > RHSMaxSize) {
+	if (getBitWidth(RHS) > RHSMaxSize)
 		// Extract the useful bits.
     RHS = createSBitExtractInst(Ops[1], RHSMaxSize, 0, createIntegerType(RHSMaxSize), 
 		                            InsertPosition, true);
-		// Pad a 0 bit to act as sign bit, so it will not be recognized as a negative number.
-		RHS = createSBitCatInst(createIntegerValue(1, 0), RHS, createIntegerType(RHSMaxSize + 1),
-			                      InsertPosition, true);
-	}
 
   Value *NewOps[] = {LHS, RHS};
 
