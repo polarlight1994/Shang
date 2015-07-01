@@ -10,6 +10,13 @@ add_llvm_library(ShangScripting
   LuaI.cpp
 )
 
+macro(luamodule luasrc)
+  add_custom_target(${luasrc}Lua_gen
+                    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${luasrc}.inc)
+endmacro(luamodule)
+
+luamodule(luapp)
+
 target_link_libraries (
   ShangScripting
   ${LUA_LIBRARY}
