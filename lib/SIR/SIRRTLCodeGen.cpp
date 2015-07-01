@@ -995,6 +995,7 @@ struct SIR2RTL : public SIRPass {
   void generateCodeForControlpath(SIR &SM, DataLayout &TD);
   void generateCodeForMemoryBank(SIR &SM, DataLayout &TD);
   void generateCodeForOutPort(SIR &SM, DataLayout &TD);
+	void generateCodeForTestsuite(SIR &SM, DataLayout &TD);
 
 	bool runOnSIR(SIR &SM);
 	
@@ -1113,6 +1114,52 @@ void SIR2RTL::generateCodeForMemoryBank(SIR &SM, DataLayout &TD) {
 	CPP.generateCodeForMemoryBank();
 }
 
+void SIR2RTL::generateCodeForTestsuite(SIR &SM, DataLayout &TD) {
+	SMDiagnostic Err;
+	const Function *F = SM.getFunction();
+
+	std::string BasicInfo;
+	raw_string_ostream BI(BasicInfo);
+
+	BI << "FuncInfo = { ";
+	BI << "Name = '" << F->getName() << "', ";
+
+	BI << "ReturnSize = ";
+	if (F->getReturnType()->isVoidTy())
+		BI << '0';
+	else
+		BI << TD.getTypeStoreSizeInBits(F->getReturnType());
+	BI << ", ";
+
+	BI << "Args = { ";
+
+	if (F->arg_size()) {
+		Function::const_arg_iterator I = F->arg_begin();
+		BI << "{ Name = '" << I->getName() << "', Size = "
+			 << TD.getTypeStoreSizeInBits(I->getType()) << "}";
+		++I;
+
+		for (Function::const_arg_iterator E = F->arg_end(); I != E; ++I)
+			BI << " , { Name = '" << I->getName() << "', Size = "
+			   << TD.getTypeStoreSizeInBits(I->getType()) << "}";
+	}
+
+	BI << "} }";
+
+	BI.flush();
+	if (!LuaI::EvalString(BI.str(), Err))
+		llvm_unreachable("Cannot create function infomation!");
+	BasicInfo.clear();
+
+	std::string SCIFScript;
+	raw_string_ostream SS(SCIFScript);
+	SS << LuaI::GetString("SCIFCodeGen");
+
+	if (!LuaI::EvalString(SS.str(), Err))
+		report_fatal_error("In Scripting pass" + Err.getMessage());
+	SCIFScript.clear();
+}
+
 bool SIR2RTL::runOnSIR(SIR &SM) {
 	// Remove the dead SIR instruction before the CodeGen.
 	SM.gc();
@@ -1148,6 +1195,10 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
 
   Out.flush();
   Out.setStream(nulls());
+
+	// Generate the code for testsuite.
+	generateCodeForTestsuite(SM, TD);
+
   return false;
 }
 
