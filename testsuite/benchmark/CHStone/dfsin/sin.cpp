@@ -172,6 +172,6 @@ int main ()
 	    ("input=%016llx expected=%016llx output=%016llx\n",
 	     test_in[i], test_out[i], result);
 	}
-      // printf ("%d\n", main_result);
+      printf ("%d\n", main_result);
       return main_result;
     }

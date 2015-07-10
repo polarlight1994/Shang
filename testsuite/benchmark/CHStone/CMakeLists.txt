@@ -24,5 +24,3 @@ add_subdirectory(jpeg)
 
 # This is actually the first run
 add_subdirectory(motion)
-
-add_subdirectory(testadd)
