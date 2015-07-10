@@ -27,6 +27,9 @@ private:
 
 public:
 	static char ID;
+	// Create a VirtualMB only to serve as a memory bank interface
+	// between the hardware and software in HW/SW co-simulation.
+	SIRMemoryBank *VirtualMB;
 
 	SIRAllocation();
 
@@ -48,6 +51,11 @@ public:
 	SIRMemoryBank *getMemoryBank(const GlobalVariable &GV) const {
 		return Binding.lookup(&GV);
 	}	
+
+	SIRMemoryBank *getVirtualMemoryBank() const {
+		assert(VirtualMB && "VirtualMB can only be called in HW/SW co-simulation!");
+		return VirtualMB;
+	}
 
 	void getAnalysisUsage(AnalysisUsage &AU) const;
 

@@ -79,6 +79,8 @@ bool SIRAllocation::runOnModule(Module &M) {
 	for (iterator I = M.begin(), E = M.end(); I != E; ++I)
 		runOnFunction(*I, AST);
 
+	// All memory bank number will start from 1 and the number 0
+	// is left for the virtual memory bank in HW/SW co-simulation.
 	unsigned CurPortNum = 1;
 
 	for (AliasSetTracker::iterator I = AST.begin(), E = AST.end(); I != E; ++I) {
@@ -90,13 +92,16 @@ bool SIRAllocation::runOnModule(Module &M) {
 
 		if (createSIRMemoryBank(AS, CurPortNum))
 			++CurPortNum;
+		else
+			return false;
 	}
 
 	return false;
 }
 
 bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
-	SIRCtrlRgnBuilder *SCRB = new SIRCtrlRgnBuilder(SM, *TD);	
+	SIRCtrlRgnBuilder *SCRB = new SIRCtrlRgnBuilder(SM, *TD);
+
 	unsigned ReadLatency = 2/*LuaI::Get<VFUMemBus>()->getReadLatency()*/;
 
 	SmallVector<Value *, 8> Pointers;
@@ -108,16 +113,16 @@ bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 	for (AliasSet::iterator AI = AS->begin(), AE = AS->end(); AI != AE; ++AI) {
 		// Extract the GV and load/store element from the instruction.
 		Value *V = AI.getPointer();
-    // The type of GV or load/store, which can provide the data width information.
+		// The type of GV or load/store, which can provide the data width information.
 		Type *ElemTy = cast<PointerType>(V->getType())->getElementType();
 		unsigned ElementSizeInBytes = TD->getTypeStoreSize(ElemTy);
-		
+
 		// If it is GV, collect the size information when it is a array.
 		if (GlobalVariable *GV = dyn_cast<GlobalVariable>(V)) {
 			// Do not allocate local memory port if the pointers alias with external
 			// global variables.
-			assert(GV->hasInternalLinkage() || GV->hasPrivateLinkage()
-				     && "Unexpected linkage GV!");
+			// 			assert(GV->hasInternalLinkage() || GV->hasPrivateLinkage()
+			// 				     && "Unexpected linkage GV!");
 
 			// Calculate the size of the object.
 			unsigned NumElem = 1;
@@ -132,10 +137,9 @@ bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 			// struct in a single instruction. This mean the required data port size
 			// is not necessary as big as the element size here.
 			ElementSizeInBytes = std::min(TD->getTypeStoreSize(ElemTy),
-				                            uint64_t(ElementSizeInBytes));
+				uint64_t(ElementSizeInBytes));
 			unsigned CurArraySize = NumElem * ElementSizeInBytes;
-
-			// Accumulate the element size.
+				// Accumulate the element size.
 			BankSizeInBytes += CurArraySize;
 			Objects.push_back(std::make_pair(GV, CurArraySize));
 		} else
@@ -146,29 +150,39 @@ bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 		// Update the max size of the accessed type.
 		MaxElementSizeInBytes = std::max(MaxElementSizeInBytes, ElementSizeInBytes);
 	}
+		// The address width of the memory bank.
+	unsigned AddrWidth;
 
-	// The Address width will be log2(BankSizeInBytes).
-	unsigned AddrWidth = Log2_32_Ceil(BankSizeInBytes);
+	bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
+	if (enableCoSimulation)
+		// If we are running the co-simulation, then the address width
+		// should be determined by the software, so we get the result
+		// from Lua file.
+		AddrWidth = LuaI::Get<VFUMemBus>()->getAddrWidth();
+	else
+		// The Address width will be log2(BankSizeInBytes).
+		AddrWidth = /*Log2_32_Ceil(BankSizeInBytes)*/32;
 
-	// If there are multi-ElemTy, it means the load/store instructions and the GV itself
+	// The memory bank is read only if all load/store instructions do not modify the
+	// accessed location.
+	bool IsReadOnly = !AS->isMod();
+		// If there are multi-ElemTy, it means the load/store instructions and the GV itself
 	// have different data width, so we need the ByteEn to implement the load/store in
 	// byte level.
 	bool RequireByteEnable = (AccessedTypes.size() != 1);
-
-	// Create the memory bus.
+		// Create the memory bus.
 	SIRMemoryBank *SMB = SCRB->createMemoryBank(BankNum, AddrWidth, MaxElementSizeInBytes * 8,
-		                                          RequireByteEnable, ReadLatency);
-
-	// Remember the binding and add the global variable to the memory bank.
+		                                          RequireByteEnable, IsReadOnly, ReadLatency);
+		// Remember the binding and add the global variable to the memory bank.
 	while (!Objects.empty()) {
 		std::pair<GlobalVariable*, unsigned> Obj = Objects.pop_back_val();
 		GlobalVariable *GV = Obj.first;
-		DEBUG(dbgs() << "Assign " << *GV << " to Memory #" << BankNum << "\n");
 
+		DEBUG(dbgs() << "Assign " << *GV << " to Memory #" << BankNum << "\n");
 		// Hack: Avoid the Alignment is less than the DataWidth
 		GV->setAlignment(std::max(GV->getAlignment(), SMB->getDataWidth() / 8));
+			               SMB->addGlobalVariable(GV, Obj.second);
 
-		SMB->addGlobalVariable(GV, Obj.second);
 		bool inserted = Binding.insert(std::make_pair(GV, SMB)).second;
 		assert(inserted && "Allocation not inserted!");
 
@@ -177,11 +191,9 @@ bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 		unsigned OriginalPtrSize = TD->getTypeStoreSizeInBits(GV->getType());
 		SMB->indexGV2OriginalPtrSize(GV, OriginalPtrSize);
 	}
-
 	// Remember the pointer operand binding
 	while (!Pointers.empty()) {
 		Value *Ptr = Pointers.pop_back_val();
-
 		bool inserted = Binding.insert(std::make_pair(Ptr, SMB)).second;
 		assert(inserted && "Allocation not inserted!");
 		(void) inserted;

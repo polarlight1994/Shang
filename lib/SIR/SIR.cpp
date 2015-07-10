@@ -31,6 +31,26 @@ void SIRRegister::printDecl(raw_ostream &OS) const {
      << ";\n";
 }
 
+void SIRRegister::printVirtualPortDecl(raw_ostream &OS, bool IsInput) const {
+	OS << ",\n (* altera_attribute = \"-name VIRTUAL_PIN on\" *)";
+	OS.indent(4);
+
+	if (IsInput)
+		OS << "input ";
+	else
+		OS << "output ";
+
+	// If it is a output, then it should be a register.
+	if (!IsInput)
+		OS << "reg";
+	else
+		OS << "wire";
+
+	if (getBitWidth() > 1) OS << "[" << utostr_32(getBitWidth() - 1) << ":0]";
+
+	OS << " " << Mangle(getName());
+}
+
 void SIRPort::printDecl(raw_ostream &OS) const {
   if (isInput())
     OS << "input ";
@@ -70,10 +90,10 @@ void SIRSubModule::printDecl(raw_ostream &OS) const {
 }
 
 SIRMemoryBank::SIRMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
-	                           bool RequireByteEnable, unsigned ReadLatency)
+	                           bool RequireByteEnable, bool IsReadOnly, unsigned ReadLatency)
 	: SIRSubModuleBase(MemoryBank, BusNum), AddrSize(AddrSize),
 	DataSize(DataSize),	RequireByteEnable(RequireByteEnable),
-	ReadLatency(ReadLatency), EndByteAddr(0) {}
+	IsReadOnly(IsReadOnly), ReadLatency(ReadLatency), EndByteAddr(0) {}
 
 unsigned SIRMemoryBank::getByteAddrWidth() const {
 	assert(requireByteEnable() && "Unexpected non-RequiredByteEnable memory bus!");
@@ -198,6 +218,17 @@ void SIRMemoryBank::printDecl(raw_ostream &OS) const {
 
 	if (requireByteEnable())
 		getByteEn()->printDecl(OS.indent(2));
+}
+
+void SIRMemoryBank::printVirtualPortDecl(raw_ostream &OS) const {
+	getEnable()->printVirtualPortDecl(OS, false);
+	getWriteEn()->printVirtualPortDecl(OS, false);
+	getAddr()->printVirtualPortDecl(OS, false);
+	getRData()->printVirtualPortDecl(OS, true);
+	getWData()->printVirtualPortDecl(OS, false);
+
+	if (requireByteEnable())
+		getByteEn()->printVirtualPortDecl(OS, false);
 }
 
 void SIRSeqOp::print(raw_ostream &OS) const {

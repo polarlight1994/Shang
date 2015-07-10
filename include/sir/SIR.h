@@ -241,7 +241,11 @@ public:
 		FaninGuards.clear();
 	}
 
+	// Declare the register and assign the initial value.
   void printDecl(raw_ostream &OS) const;
+	// Declare the register as Ports of the module.
+	// This method is only called in Co-Simulation.
+	void printVirtualPortDecl(raw_ostream &OS, bool IsInput) const;
 };
 
 // Represent the ports in the Verilog.
@@ -255,7 +259,7 @@ public:
     InPort = ArgPort,
 		Finish,
     RetPort,
-    OutPort = RetPort    
+    OutPort = RetPort
   };
 
 private:
@@ -271,7 +275,7 @@ public:
   const std::string getName() const { return Name; }
   unsigned getBitWidth() const { return BitWidth; }
   SIRPortTypes getPortType() const { return T; }
-  bool isInput() const { return T != RetPort && T != Finish; }
+  bool isInput() const { return T <= InPort; }
 
   // Print the port
   void printDecl(raw_ostream &OS) const;
@@ -387,6 +391,7 @@ class SIRMemoryBank : public SIRSubModuleBase {
 	const unsigned AddrSize, DataSize;
 	const unsigned ReadLatency;
 	const bool RequireByteEnable;
+	const bool IsReadOnly;
 	// For each MemoryBank, we have two input port
 	// including Address and WData.
 	static const unsigned InputsPerPort = 2;
@@ -409,7 +414,7 @@ class SIRMemoryBank : public SIRSubModuleBase {
 
 public:
 	SIRMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
-		            bool RequireByteEnable, unsigned ReadLatency);
+		            bool RequireByteEnable, bool IsReadOnly, unsigned ReadLatency);
 
 	unsigned getDataWidth() const { return DataSize; }
 	unsigned getAddrWidth() const { return AddrSize; }
@@ -419,6 +424,7 @@ public:
 	unsigned getByteAddrWidth() const;
 
 	bool requireByteEnable() const { return RequireByteEnable; }
+	bool isReadOnly() const { return IsReadOnly; }
 
 	// Signal names of the memory bank.
 	std::string getAddrName() const;
@@ -457,7 +463,11 @@ public:
 	const_gvs2ptrsize_iterator const_gvs2ptrsize_begin() const { return GVs2PtrSize.begin(); }
 	const_gvs2ptrsize_iterator const_gvs2ptrsize_end() const { return GVs2PtrSize.end(); }
 
+	// Declare all the regs used in memory bank.
 	void printDecl(raw_ostream &OS) const;
+	// Declare all the regs used in memory bank as Ports of module.
+	// This method is only called in Co-Simulation.
+	void printVirtualPortDecl(raw_ostream &OS) const;
 
 	/// Methods for support type inquiry through isa, cast, and dyn_cast;
 	static inline bool classof(const SIRMemoryBank *SMB) { return true; }

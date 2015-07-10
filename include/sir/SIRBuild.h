@@ -215,7 +215,7 @@ public:
 	SIRSubModule *createSubModule();
 	void createPortsForMemoryBank(SIRMemoryBank *SMB);
 	SIRMemoryBank *createMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
-		                              bool RequireByteEnable, unsigned ReadLatency);
+		                              bool RequireByteEnable, bool IsReadOnly, unsigned ReadLatency);
 	void createMemoryTransaction(Value *Addr, Value *Data, SIRMemoryBank *Bank, Instruction &I);
 
 	// Functions to build slot

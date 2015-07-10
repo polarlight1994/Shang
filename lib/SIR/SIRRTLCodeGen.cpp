@@ -100,7 +100,7 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
 
 			OS << "{";
 
-			for (int i = 0; i < Num; i++) {
+			for (unsigned i = 0; i < Num; i++) {
 				Constant *Elem = CV->getAggregateElement(i);
 
 				if (ConstantInt *CI = dyn_cast<ConstantInt>(Elem)) {
@@ -137,7 +137,17 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
 			return;
 		}
 		else if (GlobalValue *GV = dyn_cast<GlobalValue>(U)) {
-			OS << "((" << Mangle(GV->getName());
+			// Get the enableCosimulation property from the Lua file.
+			bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
+			if (enableCoSimulation) {
+				// If we are running the co-simulation, then the we should
+				// get the address of the GVs from the imported DPI-C SW
+				// functions.
+				OS << "((" << "`gv" + Mangle(GV->getName()) << "))";
+
+				return;
+			} else
+				OS << "((" << Mangle(GV->getName());
 		}
 		// Print correctly if this value is a argument.
 		else if (Argument *Arg = dyn_cast<Argument>(U)) {
@@ -196,10 +206,10 @@ struct SIRControlPathPrinter {
 		// Print correctly if this value is a ConstantInt.
 		if (ConstantInt *CI = dyn_cast<ConstantInt>(U)) {
 			// Need to slice the wanted bits.
-			if (UB != BitWidth || LB == 0) {
-				assert(UB <= BitWidth && UB > LB  && "Bad bit range!");
+			if (UB != CI->getBitWidth() || LB == 0) {
+				assert(UB <= CI->getBitWidth() && UB > LB  && "Bad bit range!");
 				APInt Val = CI->getValue();
-				if (UB != BitWidth)
+				if (UB != CI->getBitWidth())
 					Val = Val.trunc(UB);
 				if (LB != 0) {
 					Val = Val.lshr(LB);
@@ -212,8 +222,59 @@ struct SIRControlPathPrinter {
 			OS << "))";
 			return;
 		}
+		else if (ConstantVector *CV = dyn_cast<ConstantVector>(U)) {
+			unsigned Num = CV->getNumOperands();
+
+			OS << "{";
+
+			for (unsigned i = 0; i < Num; i++) {
+				Constant *Elem = CV->getAggregateElement(i);
+
+				if (ConstantInt *CI = dyn_cast<ConstantInt>(Elem)) {
+					printConstantIntValue(OS, CI);
+				}
+
+				if (UndefValue *UV = dyn_cast<UndefValue>(Elem)) {
+					OS << TD.getTypeSizeInBits(UV->getType()) << "'hx";
+				}
+
+				if (i != Num -1)
+					OS << ", ";
+			}
+
+			OS << "}";
+			return;
+		}
+		else if (ConstantAggregateZero *CAZ = dyn_cast<ConstantAggregateZero>(U)) {
+			OS << "((";
+			OS << UB - LB;
+			OS << "'h0))";
+			return;
+		}
+		else if (ConstantPointerNull *CPN = dyn_cast<ConstantPointerNull>(U)) {
+			OS << "((";
+			OS << UB - LB;
+			OS << "'hx))";
+			return;
+		}
+		else if (UndefValue *UV = dyn_cast<UndefValue>(U)) {
+			OS << "((";
+			OS << UB - LB;
+			OS << "'hx))";
+			return;
+		}
 		else if (GlobalValue *GV = dyn_cast<GlobalValue>(U)) {
-			OS << "((" << Mangle(GV->getName());
+			// Get the enableCosimulation property from the Lua file.
+			bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
+			if (enableCoSimulation) {
+				// If we are running the co-simulation, then the we should
+				// get the address of the GVs from the imported DPI-C SW
+				// functions.
+				OS << "((" << "`gv" + GV->getName() << "))";
+
+				return;
+			} else
+				OS << "((" << Mangle(GV->getName());
 		}
 		// Print correctly if this value is a argument.
 		else if (Argument *Arg = dyn_cast<Argument>(U)) {
@@ -254,6 +315,8 @@ struct SIRControlPathPrinter {
 	void printMemoryBankImpl(SIRMemoryBank *SMB, unsigned BytesPerGV,
 		                       unsigned ByteAddrWidth, unsigned NumWords);
 	void printMemoryBank(SIRMemoryBank *SMB);
+
+	void printVirtualMemoryBank(SIRMemoryBank *SMB);
 
   void generateCodeForRegisters();
 	void generateCodeForMemoryBank();
@@ -647,6 +710,26 @@ void SIRControlPathPrinter::printMemoryBank(SIRMemoryBank *SMB) {
 	printMemoryBankImpl(SMB, BytesPerGV, AddrWidth, NumWords);
 }
 
+void SIRControlPathPrinter::printVirtualMemoryBank(SIRMemoryBank *SMB) {
+	vlang_raw_ostream VOS(OS);
+
+	SIRRegister *Addr = SMB->getAddr();
+	if (Addr->assign_empty()) return;
+	SIRRegister *Enable = SMB->getEnable();
+	if (Enable->assign_empty()) return;
+
+	SIRRegister *WData = SMB->getWData();
+	SIRRegister *WriteEn = SMB->getWriteEn();
+
+	printRegister(Addr);
+	printRegister(Enable, true);
+	printRegister(WData);
+	printRegister(WriteEn, true);
+
+	if (SMB->requireByteEnable())
+		printRegister(SMB->getByteEn());
+}
+
 void SIRControlPathPrinter::generateCodeForRegisters() {
 	typedef SIR::const_register_iterator iterator;
   for (iterator I = SM->const_registers_begin(), E = SM->const_registers_end(); I != E; ++I) {
@@ -661,10 +744,19 @@ void SIRControlPathPrinter::generateCodeForRegisters() {
 }
 
 void SIRControlPathPrinter::generateCodeForMemoryBank() {
+	// Get the enableCosimulation property from the Lua file.
+	bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
+
 	typedef SIR::const_submodulebase_iterator iterator;
 	for (iterator I = SM->const_submodules_begin(), E = SM->const_submodules_end(); I != E; ++I) {
-		if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) 
-			printMemoryBank(SMB);	
+		if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
+			if (enableCoSimulation)
+				// If we are running the co-simulation, we should handle the
+				// CodeGen of the memory bank specially.
+				printVirtualMemoryBank(SMB);
+      else
+				printMemoryBank(SMB);
+		}			
 	}		
 }
 
@@ -989,12 +1081,15 @@ struct SIR2RTL : public SIRPass {
 
   void printOutPort(const SIROutPort *OutPort, raw_ostream &OS, DataLayout &TD);
 
-	void generateCodeForTopModule();
+	void generateCodeForTopModule(SIR &SM, DataLayout &TD);
   void generateCodeForDecl(SIR &SM, DataLayout &TD);
   void generateCodeForDatapath(SIR &SM, DataLayout &TD);
   void generateCodeForControlpath(SIR &SM, DataLayout &TD);
   void generateCodeForMemoryBank(SIR &SM, DataLayout &TD);
   void generateCodeForOutPort(SIR &SM, DataLayout &TD);
+
+	void generateCodeForGlobalVariableScript(SIR &SM, DataLayout &TD);
+	void generateCodeForSCIFScript(SIR &SM, DataLayout &TD);
 	void generateCodeForTestsuite(SIR &SM, DataLayout &TD);
 
 	bool runOnSIR(SIR &SM);
@@ -1009,7 +1104,11 @@ struct SIR2RTL : public SIRPass {
 };
 }
 
-void SIR2RTL::generateCodeForTopModule() {
+void SIR2RTL::generateCodeForTopModule(SIR &SM, DataLayout &TD) {
+	bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
+	if (enableCoSimulation)
+		generateCodeForGlobalVariableScript(SM, TD);
+
   const char *FUTemplatePath[] = { "FUs", "CommonTemplate" };
   std::string FUTemplate = LuaI::GetString(FUTemplatePath);
   Out << FUTemplate << "\n";
@@ -1035,7 +1134,22 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
 		Port->printDecl(Out.indent(4));
 	}
 
-	Out << ");\n";
+	// Get the enableCosimulation property from the Lua file.
+	bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
+
+	if (enableCoSimulation) {
+		// If we are running the co-simulation, we should add the
+		// memory bank transfer interface ports with the software part.
+		typedef SIR::const_submodulebase_iterator submod_iterator;
+		for (submod_iterator I = SM.const_submodules_begin(), E = SM.const_submodules_end();
+					I != E; ++I) {
+			if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
+				SMB->printVirtualPortDecl(Out);
+			}
+		}
+	}
+
+	Out << ");\n\n\n";
 
 	// Print code for register declaration.
 	typedef SIR::const_register_iterator reg_iterator;
@@ -1052,14 +1166,21 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
 
 	Out << "\n";
 
-	// Print code for MemoryBank declaration.
-	typedef SIR::const_submodulebase_iterator submod_iterator;
-	for (submod_iterator I = SM.const_submodules_begin(), E = SM.const_submodules_end();
-		   I != E; ++I) {
-		if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
-			SMB->printDecl(Out.indent(2));
+	if (!enableCoSimulation) {
+		// If we are running the co-simulation, then all registers used in memory bank will
+		// have been declared in Ports, then we do need to re-declared it.
+		typedef SIR::const_submodulebase_iterator submod_iterator;
+		for (submod_iterator I = SM.const_submodules_begin(), E = SM.const_submodules_end();
+			   I != E; ++I) {
+			if (SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I)) {
+				// Do not need to print declaration for SIRMemoryBank#0,
+				// since it is a interface in HW/SW co-simulation and
+				// have been declared in ports.
+				if (SMB->getNum() != 0)
+					SMB->printDecl(Out.indent(2));
+			}
 		}
-	}
+	}	
 
 	Out << "\n";
 
@@ -1084,6 +1205,8 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
 			}
 		}
 	}
+
+	Out << "\n";
 }
 
 void SIR2RTL::generateCodeForDatapath(SIR &SM, DataLayout &TD) {
@@ -1114,7 +1237,162 @@ void SIR2RTL::generateCodeForMemoryBank(SIR &SM, DataLayout &TD) {
 	CPP.generateCodeForMemoryBank();
 }
 
-void SIR2RTL::generateCodeForTestsuite(SIR &SM, DataLayout &TD) {
+static void printConstant(raw_ostream &OS, uint64_t Val, Type* Ty, DataLayout *TD) {
+	OS << '\'';
+	if (TD->getTypeSizeInBits(Ty) == 1)
+		OS << (Val ? '1' : '0');
+	else {
+		std::string FormatS =
+			"%0" + utostr_32(TD->getTypeStoreSize(Ty) * 2) + "llx";
+		OS << "0x" << format(FormatS.c_str(), Val);
+	}
+	OS << '\'';
+}
+
+static void ExtractConstant(raw_ostream &OS, Constant *C, DataLayout *TD) {
+	if (ConstantInt *CI = dyn_cast<ConstantInt>(C)) {
+		printConstant(OS, CI->getZExtValue(), CI->getType(), TD);
+		return;
+	}
+
+	if (isa<ConstantPointerNull>(C)) {
+		printConstant(OS, 0, C->getType(), TD);
+		return;
+	}
+
+	if (ConstantDataSequential *CDS = dyn_cast<ConstantDataSequential>(C)) {
+		ExtractConstant(OS, CDS->getElementAsConstant(0), TD);
+		for (unsigned i = 1, e = CDS->getNumElements(); i != e; ++i) {
+			OS << ", ";
+			ExtractConstant(OS, CDS->getElementAsConstant(i), TD);
+		}
+		return;
+	}
+
+	if (ConstantArray *CA = dyn_cast<ConstantArray>(C)) {
+		ExtractConstant(OS, cast<Constant>(CA->getOperand(0)), TD);
+		for (unsigned i = 1, e = CA->getNumOperands(); i != e; ++i) {
+			OS << ", ";
+			ExtractConstant(OS, cast<Constant>(CA->getOperand(i)), TD);
+		}
+		return;
+	}
+
+	llvm_unreachable("Unsupported constant type to bind to script engine!");
+	OS << '0';
+}
+
+void SIR2RTL::generateCodeForGlobalVariableScript(SIR &SM, DataLayout &TD) {
+	SMDiagnostic Err;
+
+	// Put the global variable information to the script engine.
+	if (!LuaI::EvalString("GlobalVariables = {}\n", Err))
+		llvm_unreachable("Cannot create globalvariable table in scripting pass!");
+
+	// Put the virtual memory bank information to the script engine.
+	if (!LuaI::EvalString("VirtualMBs = {}\n", Err))
+		llvm_unreachable("Cannot create virtualmb table in scripting pass!");
+
+	Module *M = SM.getModule();
+
+	std::string GVScript;
+	raw_string_ostream GVSS(GVScript);
+	// Push the global variable information into the script engine.
+	for (Module::global_iterator GI = M->global_begin(), E = M->global_end();
+		   GI != E; ++GI ) {
+		GlobalVariable *GV = GI;
+
+		GVSS << "GlobalVariables." << Mangle(GV->getName()) << " = { ";
+		GVSS << "isLocal = " << GV->hasLocalLinkage() << ", ";
+		GVSS << "AddressSpace = " << GV->getType()->getAddressSpace() << ", ";
+		GVSS << "Alignment = " << GV->getAlignment() << ", ";
+		Type *Ty = cast<PointerType>(GV->getType())->getElementType();
+		// The element type of a scalar is the type of the scalar.
+		Type *ElemTy = Ty;
+		unsigned NumElem = 1;
+		// Try to expand multi-dimension array to single dimension array.
+		while (const ArrayType *AT = dyn_cast<ArrayType>(ElemTy)) {
+			ElemTy = AT->getElementType();
+			NumElem *= AT->getNumElements();
+		}
+		GVSS << "NumElems = " << NumElem << ", ";
+
+		GVSS << "ElemSize = " << TD.getTypeStoreSizeInBits(ElemTy) << ", ";
+
+		// The initialer table: Initializer = { c0, c1, c2, ... }
+		GVSS << "Initializer = ";
+		if (!GV->hasInitializer())
+			GVSS << "nil";
+		else {
+			Constant *C = GV->getInitializer();
+
+			GVSS << "{ ";
+			if (C->isNullValue()) {
+				Constant *Null = Constant::getNullValue(ElemTy);
+
+				ExtractConstant(GVSS, Null, &TD);
+				for (unsigned i = 1; i < NumElem; ++i) {
+					GVSS << ", ";
+					ExtractConstant(GVSS, Null, &TD);
+				}
+			} else
+				ExtractConstant(GVSS, C, &TD);
+
+			GVSS << "}";
+		}
+
+		GVSS << '}';
+
+		GVSS.flush();
+		if (!LuaI::EvalString(GVScript, Err)) {
+			llvm_unreachable("Cannot create globalvariable infomation!");
+		}
+		GVScript.clear();
+	}
+
+	std::string MBScript;
+	raw_string_ostream MBSS(MBScript);
+	// Push the virtual memory bank information into the script engine.
+	for (SIR::const_submodulebase_iterator I = SM.const_submodules_begin(),
+		   E = SM.const_submodules_end(); I != E; I++) {
+		SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I);
+
+		MBSS << "VirtualMBs." << SMB->getArrayName() << " = { ";
+		MBSS << "EnableName = '" << SMB->getEnableName() << "', ";
+		MBSS << "WriteEnName = '" << SMB->getWriteEnName() << "', ";
+		MBSS << "RequireByteEn = " << SMB->requireByteEnable() << ", ";
+		if (SMB->requireByteEnable()) {
+			MBSS << "ByteEnName = '" << SMB->getByteEnName() << "', ";
+			MBSS << "ByteEnWidth = " << SMB->getByteEnWidth() << ", ";
+		}
+		MBSS << "RDataName = '" << SMB->getRDataName() << "', ";
+		MBSS << "WDataName = '" << SMB->getWDataName() << "', ";
+		MBSS << "AddrName = '" << SMB->getAddrName() << "', ";
+		MBSS << "DataWidth = " << SMB->getDataWidth() << ", ";
+		MBSS << "AddrWidth = " << SMB->getAddrWidth() << " }";
+
+		MBSS.flush();
+		if (!LuaI::EvalString(MBScript, Err)) {
+			llvm_unreachable("Cannot create virtualmb infomation!");
+		}
+		MBScript.clear();
+	}
+
+
+	// Run the script against the GlobalVariables table.
+	std::string GVCodeGenScript;
+	raw_string_ostream GVS(GVCodeGenScript);
+	GVS << LuaI::GetString("GlobalVariableCodeGen");
+
+	if (!LuaI::EvalString(GVS.str(), Err))
+		report_fatal_error("In Scripting pass" + Err.getMessage());
+	GVCodeGenScript.clear();
+
+	std::string GlobalVariableCode = LuaI::GetString("GlobalVariableCode");
+	Out << GlobalVariableCode << "\n";
+}
+
+void SIR2RTL::generateCodeForSCIFScript(SIR &SM, DataLayout &TD) {
 	SMDiagnostic Err;
 	const Function *F = SM.getFunction();
 
@@ -1136,12 +1414,12 @@ void SIR2RTL::generateCodeForTestsuite(SIR &SM, DataLayout &TD) {
 	if (F->arg_size()) {
 		Function::const_arg_iterator I = F->arg_begin();
 		BI << "{ Name = '" << I->getName() << "', Size = "
-			 << TD.getTypeStoreSizeInBits(I->getType()) << "}";
+			<< TD.getTypeStoreSizeInBits(I->getType()) << "}";
 		++I;
 
 		for (Function::const_arg_iterator E = F->arg_end(); I != E; ++I)
 			BI << " , { Name = '" << I->getName() << "', Size = "
-			   << TD.getTypeStoreSizeInBits(I->getType()) << "}";
+			<< TD.getTypeStoreSizeInBits(I->getType()) << "}";
 	}
 
 	BI << "} }";
@@ -1160,6 +1438,12 @@ void SIR2RTL::generateCodeForTestsuite(SIR &SM, DataLayout &TD) {
 	SCIFScript.clear();
 }
 
+void SIR2RTL::generateCodeForTestsuite(SIR &SM, DataLayout &TD) {
+	bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
+	if (enableCoSimulation)
+		generateCodeForSCIFScript(SM, TD);
+}
+
 bool SIR2RTL::runOnSIR(SIR &SM) {
 	// Remove the dead SIR instruction before the CodeGen.
 	SM.gc();
@@ -1172,9 +1456,8 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
   raw_fd_ostream Output(RTLOutputPath.c_str(), Error);
   Out.setStream(Output);
 
-  Out << "//Welcome to SIR framework\n";
   // Copy the basic modules from LUA script to the Verilog file.
-  generateCodeForTopModule();
+  generateCodeForTopModule(SM, TD);
   // Generate the declarations for module and ports.
   generateCodeForDecl(SM, TD);
   
