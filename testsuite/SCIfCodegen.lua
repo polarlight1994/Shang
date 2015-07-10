@@ -11,6 +11,30 @@ $('#')ifdef __cplusplus
 extern "C" {
 $('#')endif
 
+#for k,v in pairs(GlobalVariables) do
+#if v.AddressSpace == 0 then
+void *vlt_$(escapeNumber(k))() {
+  $(if v.isLocal == 1 then _put('static') else _put('extern') end)
+#if v.Alignment~=0 then
+  __attribute__((aligned($(v.Alignment))))
+#end
+  $(getType(v.ElemSize)) $(k)$(if v.NumElems > 1 then  _put('[' .. v.NumElems .. ']') end)
+  $(if v.Initializer ~= nil then
+    _put(' = {')
+    for i,n in ipairs(v.Initializer) do
+      if i ~= 1 then _put(', ') end
+      _put(n)
+      if v.ElemSize == 32 then _put('u')
+      elseif v.ElemSize > 32 then _put('ull')
+      end
+    end
+    _put('}')
+  end);
+  return (void *)$(if v.NumElems == 1 then  _put('&') end)$(k);
+}
+#end --end addresssapce == 0
+#end
+
 // Dirty Hack: Only C function is supported now.
 $('#')ifdef __cplusplus
 }
@@ -46,11 +70,21 @@ SC_MODULE(V$(RTLModuleName)_tb){
   public:
     sc_in_clk clk;
     sc_signal<bool> fin;
-    $(getRetPort(FuncInfo.ReturnSize));
     sc_signal<bool> rstN;
     sc_signal<bool> start;
+    $(getRetPort(FuncInfo.ReturnSize))
 #for i,v in ipairs(FuncInfo.Args) do
-    sc_signal<$(getBitWidth(v.Size))>$(v.Name);
+    sc_signal<$(getBitWidth(v.Size))> $(v.Name);
+#end
+#for i,v in pairs(VirtualMBs) do
+		sc_signal<bool> $(v.EnableName);
+		sc_signal<bool> $(v.WriteEnName);
+#if v.RequireByteEn == 1 then
+		sc_signal<$(getBitWidth(v.ByteEnWidth))> $(v.ByteEnName);
+#end
+		sc_signal<$(getBitWidth(v.AddrWidth))> $(v.AddrName);
+		sc_signal<$(getBitWidth(v.DataWidth))> $(v.WDataName);
+		sc_signal<$(getBitWidth(v.DataWidth))> $(v.RDataName);
 #end
 
     V$(RTLModuleName) DUT;
@@ -72,7 +106,74 @@ SC_MODULE(V$(RTLModuleName)_tb){
 		  assert(RetVle == 0 && "Return value of main function is not 0!");
 #end
       sc_stop();
-    }    
+    }
+
+		void bus_transation() {
+			while(true) {
+#for i,v in pairs(VirtualMBs) do
+				if(($(v.EnableName))) {
+					long long cur_addr = $(v.AddrName).read();
+#if v.RequireByteEn == 1 then
+					$(getType(v.ByteEnWidth)) cur_be = $(v.ByteEnName).read();
+					if(($(v.WriteEnName))) {
+						switch (cur_be) {
+						case 1:   *((unsigned char *)cur_addr) = ((unsigned char)$(v.WDataName).read()); break;
+						case 2:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 8)); break;
+						case 4:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 16)); break;
+						case 8:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 24)); break;
+						case 16:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 32)); break;
+						case 32:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 40)); break;
+						case 64:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 48)); break;
+						case 128:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 56)); break;
+
+						case 3:   *((unsigned short *)cur_addr) = ((unsigned short)$(v.WDataName).read()); break;
+						case 12:  *((unsigned short *)cur_addr) = ((unsigned short)($(v.WDataName).read() >> 16)); break;
+						case 48:  *((unsigned short *)cur_addr) = ((unsigned short)($(v.WDataName).read() >> 32)); break;
+						case 192: *((unsigned short *)cur_addr) = ((unsigned short)($(v.WDataName).read() >> 48)); break;
+
+						case 15:  *((unsigned int *)cur_addr) = ((unsigned int)$(v.WDataName).read()); break;
+						case 240: *((unsigned int *)cur_addr) = ((unsigned int)($(v.WDataName).read() >> 32)); break;
+
+						case 255: *((unsigned long long *)cur_addr) = ((unsigned long long)$(v.WDataName).read()); break;
+						default: printf("cur_be is %d\n", cur_be); assert(0 && "Unsupported cur_be!"); break;
+						}
+					} else {
+						switch (cur_be) {
+						case 1:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)); break;
+						case 2:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)) << 8; break;
+						case 4:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)) << 16; break;
+						case 8:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)) << 24; break;
+						case 16:  $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)) << 32; break;
+						case 32:  $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)) << 40; break;
+						case 64:  $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)) << 48; break;
+						case 128:  $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)) << 56; break;
+
+						case 3:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned short *)cur_addr)); break;
+						case 12:  $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned short *)cur_addr)) << 16; break;
+						case 48:  $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned short *)cur_addr)) << 32; break;
+						case 192:  $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned short *)cur_addr)) << 48; break;
+
+						case 15:  $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned int *)cur_addr)); break;
+						case 240: $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned int *)cur_addr)) << 32; break;
+
+						case 255: $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned long long *)cur_addr)); break;
+						default: printf("cur_be is %d\n", cur_be); assert(0 && "Unsupported cur_be!"); break;
+						}
+					}
+#else
+					if(($(v.WriteEnName))) {
+						*(($(getType(v.DataWidth)) *)cur_addr) = (($(getType(v.DataWidth)))$(v.WDataName).read());
+					} else {
+						$(v.RDataName) = *(($(getType(v.DataWidth)) *)cur_addr);
+					}
+
+#end
+				}
+#end
+
+				wait();
+			}
+		}
 
     static V$(RTLModuleName)_tb* Instance() {
       static V$(RTLModuleName)_tb _instance("top");
@@ -91,11 +192,23 @@ SC_MODULE(V$(RTLModuleName)_tb){
 #if FuncInfo.ReturnSize~=0 then
         DUT.return_value(return_value);  
 #else
-        
 #end
         DUT.start(start);
         DUT.rstN(rstN);
+
+#for i,v in pairs(VirtualMBs) do
+				DUT.$(v.EnableName)($(v.EnableName));
+				DUT.$(v.WriteEnName)($(v.WriteEnName));
+#if v.RequireByteEn == 1 then
+				DUT.$(v.ByteEnName)($(v.ByteEnName));
+#end
+				DUT.$(v.AddrName)($(v.AddrName));
+				DUT.$(v.WDataName)($(v.WDataName));
+				DUT.$(v.RDataName)($(v.RDataName));
+#end
+
         SC_CTHREAD(sw_main_entry,clk.pos());
+				SC_CTHREAD(bus_transation, clk.pos());
       }
     private:
       V$(RTLModuleName)_tb(const V$(RTLModuleName)_tb&) ;
@@ -119,8 +232,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
       wait();
       ++cnt;
     }
-    
-    //printf("$(RTLModuleName) finish\n");
+
 #if FuncInfo.ReturnSize~=0 then
     return ($(getType(FuncInfo.ReturnSize))) tb_ptr->return_value;      
 #else 
@@ -142,14 +254,33 @@ SC_MODULE(V$(RTLModuleName)_tb){
     sc_start();
 
     return 0;
-  }  
-#end  
+  }
+#end
 ]=]
 
 SCIFCodeGen = [=[
-local IfFile = assert(io.open (IFFileName, "a+"))
+local IfFile = assert(io.open (IFFileName, "w"))
 local preprocess = require "luapp" . preprocess
 local _, message = preprocess {input=SCIFTemplate, output=IfFile}
 if message ~= nil then print(message) end
 IfFile:close()
+]=]
+
+GlobalVariableTemplate = [=[
+/* verilator lint_off DECLFILENAME */
+/* verilator lint_off WIDTH */
+/* verilator lint_off UNUSED */
+
+#for k,v in pairs(GlobalVariables) do
+#if v.AddressSpace == 0 then
+import "DPI-C" function chandle vlt_$(escapeNumber(k))();
+`define gv$(k) vlt_$(escapeNumber(k))()
+#end
+#end
+]=]
+
+GlobalVariableCodeGen = [=[
+local preprocess = require "luapp" . preprocess
+GlobalVariableCode, message = preprocess {input=GlobalVariableTemplate}
+if message ~= nil then print(message) end
 ]=]

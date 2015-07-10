@@ -1,8 +1,9 @@
 --Return type with given size.
 function getType(Size)
-  if Size == 0 then        return "void"
-  elseif Size == 1 then    return "bool"
-  elseif Size == 8 then    return "unsigned char"
+  if Size == 0 then       return "void"
+  elseif Size == 1 then   return "bool"
+	elseif Size == 4 then   return "unsigned char"
+  elseif Size == 8 then   return "unsigned char"
   elseif Size == 16 then  return "unsigned short"
   elseif Size == 32 then  return "unsigned int"
   elseif Size == 64 then  return "unsigned long long"
@@ -25,16 +26,17 @@ end
 
 --Decide the bit widths of return value
 function getRetPort(Size)
-  if Size == 0 then        return " "
-  elseif Size == 64 then  return "sc_signal<uint64_t>return_value"
-  else                    return "sc_signal<uint32_t>return_value"
+  if Size == 0 then        return ""
+  elseif Size == 64 then  return "sc_signal<uint64_t>return_value;"
+  else                    return "sc_signal<uint32_t>return_value;"
   end
 end
 
 --Giving the arguments type in SystemC
 function getBitWidth(Size)
-  if Size == 1 then        return "bool "
-  elseif Size == 8 then    return "unsigned int"
+  if Size == 1      then  return "bool"
+	elseif Size == 4  then  return "unsigned int"
+  elseif Size == 8  then  return "unsigned int"
   elseif Size == 16 then  return "unsigned int"
   elseif Size == 32 then  return "uint32_t"
   elseif Size == 64 then  return "uint64_t"

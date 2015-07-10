@@ -11,6 +11,8 @@ local FMAX = @FMAX@
 PERIOD = 1000.0 / FMAX
 FUs.Period = PERIOD
 
+enableCoSimulation = @enableCoSimulation@
+
 POINTER_SIZE_IN_BITS = @POINTER_SIZE_IN_BITS@
 
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
@@ -20,8 +22,4 @@ Functions.@TEST@ = RTLModuleName
 
 -- Load ip module and simulation interface script.
 dofile('@SIR_SOURCE_ROOT@/' .. 'FuncDefine.lua')
-dofile('@SIR_SOURCE_ROOT@/' .. 'SCIfCodegen.lua')  
-
-
-
-
+dofile('@SIR_SOURCE_ROOT@/' .. 'SCIfCodegen.lua')
