@@ -161,7 +161,7 @@ bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
 		AddrWidth = LuaI::Get<VFUMemBus>()->getAddrWidth();
 	else
 		// The Address width will be log2(BankSizeInBytes).
-		AddrWidth = /*Log2_32_Ceil(BankSizeInBytes)*/32;
+		AddrWidth = Log2_32_Ceil(BankSizeInBytes);
 
 	// The memory bank is read only if all load/store instructions do not modify the
 	// accessed location.

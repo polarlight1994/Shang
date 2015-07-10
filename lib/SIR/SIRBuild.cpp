@@ -231,17 +231,7 @@ void SIRBuilder::visitReturnInst(ReturnInst &I) {
 void SIRBuilder::visitStoreInst(StoreInst &I) {
 	// Get the corresponding memory bank.
 	SIRMemoryBank *Bank;
-
-// 	// Get the enableCosimulation property from the Lua file.
-// 	bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
-// 	if (enableCoSimulation)
-// 		// If we are running the co-simulation, then all the Load/Store
-// 		// instructions should be connected with the virtual memory bank.
-// 		Bank = SA.getVirtualMemoryBank();
-// 	else
-		// Else we should get the right memory bank according to the
-    // result of the allocation.
-		Bank = SA.getMemoryBank(I);
+	Bank = SA.getMemoryBank(I);
 
 	// Get the correct operand of the StoreInst.
 	Value *PointerOperand = D_Builder.getAsOperand(I.getPointerOperand(), &I);
@@ -253,17 +243,7 @@ void SIRBuilder::visitStoreInst(StoreInst &I) {
 void SIRBuilder::visitLoadInst(LoadInst &I) {
 	// Get the corresponding memory bank.
 	SIRMemoryBank *Bank;
-
-// 	// Get the enableCosimulation property from the Lua file.
-// 	bool enableCoSimulation = LuaI::GetBool("enableCoSimulation");
-// 	if (enableCoSimulation)
-// 		// If we are running the co-simulation, then all the Load/Store
-// 		// instructions should be connected with the virtual memory bank.
-// 		Bank = SA.getVirtualMemoryBank();
-// 	else
-		// Else we should get the right memory bank according to the
-		// result of the allocation.
-		Bank = SA.getMemoryBank(I);
+	Bank = SA.getMemoryBank(I);
 
 	// Get the correct operand of the LoadInst.
 	Value *PointerOperand = D_Builder.getAsOperand(I.getPointerOperand(), &I);
