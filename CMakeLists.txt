@@ -120,4 +120,4 @@ set(LLVM_LINK_COMPONENTS
 add_llvm_tool(shang
   shang.cpp
  )
-target_link_libraries(shang ShangIROpts ShangVAST ShangSIR ShangHLS ShangBLO ShangScripting )
+target_link_libraries(shang ShangIROpts ShangVAST ShangSIR ShangHLS ShangBLO ShangScripting)

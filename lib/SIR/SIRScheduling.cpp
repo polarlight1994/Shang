@@ -142,7 +142,6 @@ void SIRScheduling::buildControlFlowDependencies(BasicBlock *TargetBB,
 			Entry = SUs[i];			
 	}
 
-
 	// Create the CtrlDep from SUnits which targets this BB
 	// to Entry SUnit to this BB.
 	for (unsigned i = 0; i < SUs.size(); ++i) {
