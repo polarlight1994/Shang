@@ -1,1 +1,1 @@
-add_benchmark_stats("sin")
+add_cosimulation_test("sin")

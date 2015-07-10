@@ -1,1 +1,1 @@
-add_benchmark_stats("adpcm_main")
+add_cosimulation_test("adpcm_main")

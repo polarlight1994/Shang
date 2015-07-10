@@ -21,7 +21,8 @@ add_subdirectory(mips)
 #Huge design gol last
 add_subdirectory(blowfish)
 add_subdirectory(jpeg)
-#message(STATUS "Chstore Benchmarks : " ${Benchmarks})
 
 # This is actually the first run
 add_subdirectory(motion)
+
+add_subdirectory(testadd)

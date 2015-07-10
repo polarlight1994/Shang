@@ -1,1 +1,1 @@
-add_benchmark_stats("mips")
+add_cosimulation_test("mips")

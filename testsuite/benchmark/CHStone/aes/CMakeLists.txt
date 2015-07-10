@@ -1,1 +1,1 @@
-add_benchmark_stats("aes_main")
+add_cosimulation_test("aes_main")

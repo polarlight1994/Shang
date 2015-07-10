@@ -1,1 +1,1 @@
-add_benchmark_stats("motion_vectors")
+add_cosimulation_test("motion_vectors")

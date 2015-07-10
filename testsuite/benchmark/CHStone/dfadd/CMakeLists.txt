@@ -1,1 +1,1 @@
-add_benchmark_stats("float64_add")
+add_cosimulation_test("float64_add")

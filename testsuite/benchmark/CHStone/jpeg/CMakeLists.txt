@@ -1,1 +1,1 @@
-add_benchmark_stats("jpeg2bmp_main")
+add_cosimulation_test("jpeg2bmp_main")

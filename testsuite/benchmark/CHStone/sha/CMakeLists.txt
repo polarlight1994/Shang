@@ -1,1 +1,1 @@
-add_benchmark_stats("sha_stream")
+add_cosimulation_test("sha_stream")
