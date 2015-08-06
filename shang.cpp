@@ -87,7 +87,7 @@ static cl::opt<bool> DumpIRBeforeHLS("shang-enable-dump-ir-before-hls",
   cl::desc("Print the IR before HLS"),
   cl::init(false));
 
-static void addHLSPreparePasses(PassManager &PM) {
+void addHLSPreparePasses(PassManager &PM) {
   // Basic AliasAnalysis support.
   // Add TypeBasedAliasAnalysis before BasicAliasAnalysis so that
   // BasicAliasAnalysis wins if they disagree. This is intended to help
@@ -96,9 +96,9 @@ static void addHLSPreparePasses(PassManager &PM) {
   PM.add(createBasicAliasAnalysisPass());
 
   // Try to lower memory access to accessing local memory, and annotate the
-  // unhandled stack allocation alias with global variable, schedule this pass
+  // un-handled stack allocation alias with global variable, schedule this pass
   // before standard target orient IR passes which create ugly instructions
-  // and these intructions are not able to be handle by the BlockRAMFormation
+  // and these instructions are not able to be handle by the BlockRAMFormation
   // pass.
   //PM.add(createBlockRAMFormation(*getIntrinsicInfo()));
   // Schedule the DeadArgEliminationPass to clean up the module.
@@ -207,7 +207,6 @@ int main(int argc, char **argv) {
   }
 
   const char *MainSynthesisInfoPath[2] = { "Functions", "main" };
-  bool isMainSynthesis = !LuaI::GetString(MainSynthesisInfoPath).empty();
   // Stage 3, perform high-level synthesis.
   // Build up all of the passes that we want to do to the module.
   {
@@ -282,14 +281,6 @@ int main(int argc, char **argv) {
 
 		// Name the instructions to make the LLVM IR easier for debugging.
 		HLSPasses.add(createInstructionNamerPass());
-
-		std::string IROutputPath = LuaI::GetString("FinalIR");
-		std::string Error;
-		raw_fd_ostream Output(IROutputPath.c_str(), Error);
-		vlang_raw_ostream Out;
-		Out.setStream(Output);
-
-		HLSPasses.add(createPrintModulePass(&Out));
 
     // Enable the RTL transform.
     HLSPasses.add(createSIR2RTLPass());
