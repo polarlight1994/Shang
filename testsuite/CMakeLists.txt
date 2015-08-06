@@ -8,6 +8,8 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${SIR_SOURCE_ROOT}/cmake")
 FIND_PACKAGE(Verilator REQUIRED)
 FIND_PACKAGE(SystemC   REQUIRED)
 
+FIND_PATH(QUARTUS_BIN_DIR quartus_sh)
+
 #Set up the llvm binaries.
 set(LLC ${LLVM_TOOLS_BINARY_DIR}/llc)
 set(LLI ${LLVM_TOOLS_BINARY_DIR}/lli)
@@ -20,6 +22,8 @@ set(SHANG ${LLVM_TOOLS_BINARY_DIR}/shang)
 set(FMAX "100.0" CACHE STRING "The maximum frequency of the synthesized designs")
 set(TIMEOUT "240" CACHE STRING "Maximum time allow the simulation to run")
 
+set(BenchmarkSummaryTmp "${SIR_BINARY_ROOT}/benchmark.summary.json.tmp")
+
 #Set up some environment values according to the platform.
 if (CMAKE_SIZEOF_VOID_P MATCHES 8)
   set(POINTER_SIZE_IN_BITS 64)
@@ -30,6 +34,79 @@ else (CMAKE_SIZEOF_VOID_P MATCHES 8)
   set(SYSTEMC_LIB_PATH ${SYSTEMC}/lib-linux)
   set(LLC_MARCH "x86")
 endif(CMAKE_SIZEOF_VOID_P MATCHES 8)
+
+add_custom_target(benchmark_cosimulation
+									COMMENT "Run the co-simulation of whole benchmark")
+
+add_custom_target(benchmark_synthesis
+									COMMENT "Run the synthesis of whole benchmark")
+
+macro(add_synthesis_test test_name)
+	set(TEST "${test_name}")
+	set(TEST_RTL_ENTITY		"main")
+
+	set(TEST_SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+	set(TEST_BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR})
+	set(TEST_RTL_OBJ_ROOT "${TEST_BINARY_ROOT}/obj_dir")
+
+	set(SIR_MemIntrinsic_BC "${SIR_SOURCE_ROOT}/sir_mem.bc")
+
+	set(TEST_SRC       		"${TEST_SOURCE_ROOT}/${TEST}.cpp")
+	set(TEST_BC        		"${TEST_BINARY_ROOT}/${TEST}.bc")
+	set(TEST_LL        		"${TEST_BINARY_ROOT}/${TEST}.ll")
+
+	set(TEST_RTL_SRC   		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sv")
+
+	set(enableCoSimulation false)
+
+	configure_file(
+		"${SIR_SOURCE_ROOT}/common_config.lua.in"
+		"${TEST_BINARY_ROOT}/common_config.lua"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/test_config_main.lua.in"
+		"${TEST_BINARY_ROOT}/test_config_main.lua"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/EP2C70F896C6.lua"
+		"${TEST_BINARY_ROOT}/EP2C70F896C6.lua"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/verilog_synthesis_altera.tcl.in"
+		"${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl"
+	)
+
+	#Compile the source file to IR.
+  add_custom_command(OUTPUT ${TEST_BC} ${TEST_LL}
+		#Use Clang to compile to BC.
+    COMMAND ${CLANG} ${TEST_SRC}
+            -O0 -c -emit-llvm
+            -o ${TEST_BC}
+		#Use LLVMDIS to compile to IR.
+    COMMAND ${LLVM_DIS} ${TEST_BC} -o ${TEST_LL}
+    DEPENDS ${TEST_SRC} ${LLVM_LINK} ${CLANG} ${LLVM_DIS}
+    WORKING_DIRECTORY ${TEST_BINARY_ROOT}
+    COMMENT "Compiling ${TEST_SRC} to ${TEST_BC}"
+  )
+
+	#Run the Shang.exe to compile cpp into verilog and software part.
+	add_custom_command(OUTPUT ${TEST_RTL_SRC}
+		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/test_config_main.lua"
+		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/test_config_main.lua"
+		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
+		COMMENT "Run ${SHANG} to get verilog and software part"
+	)
+
+	#Run the quartus to compile the verilog and get report.
+	add_custom_command(OUTPUT ${BenchmarkSummaryTmp}
+		COMMAND ${QUARTUS_BIN_DIR}/quartus_sh -t "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" > /dev/null
+		DEPENDS ${TEST_RTL_SRC} "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl"
+		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
+		COMMENT "Compile the verilog and get report"
+	)
+	add_custom_target(${TEST}_synthesis	DEPENDS ${BenchmarkSummaryTmp})
+
+endmacro(add_synthesis_test)
 
 macro(add_cosimulation_test test_name)
 	set(TEST "${test_name}")
@@ -66,8 +143,8 @@ macro(add_cosimulation_test test_name)
 		"${TEST_BINARY_ROOT}/common_config.lua"
 	)
 	configure_file(
-		"${SIR_SOURCE_ROOT}/cosimulation_config.lua.in"
-		"${TEST_BINARY_ROOT}/cosimulation_config.lua"
+		"${SIR_SOURCE_ROOT}/test_config.lua.in"
+		"${TEST_BINARY_ROOT}/test_config.lua"
 	)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/EP2C70F896C6.lua"
@@ -98,12 +175,11 @@ macro(add_cosimulation_test test_name)
 
 	#Run the Shang.exe to compile cpp into verilog and software part.
 	add_custom_command(OUTPUT ${TEST_RTL_SRC} ${TEST_SW_LL}
-		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/cosimulation_config.lua"
-		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/cosimulation_config.lua"
+		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/test_config.lua"
+		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/test_config.lua"
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Run ${SHANG} to get verilog and software part"
 	)
-	add_custom_target(${TEST}_debug DEPENDS ${TEST_RTL_SRC} ${TEST_SW_LL})
 
 	#Use the LLC to compile the software part into obj file.
 	add_custom_command(OUTPUT ${TEST_SW_O}
@@ -162,7 +238,6 @@ macro(add_cosimulation_test test_name)
 		COMMENT "Compare the output"
 	)
 	add_dependencies(${TEST}_cosimulation ${TEST}_test_output ${TEST}_expected_output)
-
 
 endmacro(add_cosimulation_test)
 

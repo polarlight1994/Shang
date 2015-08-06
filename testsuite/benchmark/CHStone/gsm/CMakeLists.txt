@@ -1,1 +1,2 @@
-add_cosimulation_test("Gsm_LPC_Analysis")
+add_benchmark_cosimulation_test("Gsm_LPC_Analysis")
+add_benchmark_synthesis_test("Gsm_LPC_Analysis")

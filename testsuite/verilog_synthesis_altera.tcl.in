@@ -1,0 +1,78 @@
+# Load necessary package.
+load_package flow
+load_package report
+
+# Create the project.
+project_new main -overwrite
+
+# Target: DE2-70 Board
+set_global_assignment -name FAMILY CycloneII
+set_global_assignment -name DEVICE EP2C70F896C6
+
+# Build project and specify some configures
+# =====================
+set_global_assignment -name TOP_LEVEL_ENTITY main
+set_global_assignment -name SOURCE_FILE @TEST_RTL_SRC@
+set_global_assignment -name VERILOG_MACRO "quartus_synthesis"
+
+set_global_assignment -name RESERVE_ALL_UNUSED_PINS "AS INPUT TRI-STATED"
+set_global_assignment -name RESERVE_ASDO_AFTER_CONFIGURATION "AS OUTPUT DRIVING AN UNSPECIFIED SIGNAL"
+set_global_assignment -name STRATIX_DEVICE_IO_STANDARD LVTTL
+set_global_assignment -name ERROR_CHECK_FREQUENCY_DIVISOR 1
+
+set_global_assignment -name RESERVE_ALL_UNUSED_PINS_NO_OUTPUT_GND "AS INPUT TRI-STATED"
+set_global_assignment -name LL_ROOT_REGION ON -section_id "Root Region"
+set_global_assignment -name LL_MEMBER_STATE LOCKED -section_id "Root Region"
+
+# Don't produce too much messages
+set_global_assignment -name HDL_MESSAGE_LEVEL LEVEL1
+set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW
+# =====================
+
+# Run the project
+# =====================
+execute_module -tool map
+execute_module -tool fit
+execute_module -tool asm
+execute_module -tool eda
+# =====================
+
+#Process the result.
+# =====================
+load_report
+
+# Summary
+set DataJSON [open "@BenchmarkSummaryTmp@" a+]
+
+puts $DataJSON "\n\{\"name\":\"@TEST@\","
+
+puts $DataJSON "\"les\":\"[get_fitter_resource_usage -resource {Total logic elements}]\","
+puts $DataJSON "\"les_wo_reg\":\"[get_fitter_resource_usage -resource {*Combinational with no register}]\","
+puts $DataJSON "\"les_w_reg_only\":\"[get_fitter_resource_usage -resource {*Register only}]\","
+puts $DataJSON "\"les_and_reg\":\"[get_fitter_resource_usage -resource {*Combinational with a register}]\","
+
+puts $DataJSON "\"lut4\":\"[get_fitter_resource_usage -resource {*4 input functions}]\","
+puts $DataJSON "\"lut3\":\"[get_fitter_resource_usage -resource {*3 input functions}]\","
+puts $DataJSON "\"lut2\":\"[get_fitter_resource_usage -resource {*2 input functions}]\","
+
+puts $DataJSON "\"regs\":\"[get_fitter_resource_usage -resource {*Dedicated logic registers}]\","
+
+puts $DataJSON "\"mult9\":\"[get_fitter_resource_usage -resource {*Embedded Multiplier 9-bit elements}]\","
+puts $DataJSON "\"ave_ic\":\"[get_fitter_resource_usage -resource {*Average interconnect usage (total/H/V)}]\","
+puts $DataJSON "\"peak_ic\":\"[get_fitter_resource_usage -resource {*Peak interconnect usage (total/H/V)}]\","
+
+puts $DataJSON "\"max_fanout_non-global_node\":\"[get_fitter_resource_usage -resource {*Highest non-global fan-out signal}]\","
+puts $DataJSON "\"max_fanout_non-global\":\"[get_fitter_resource_usage -resource {*Highest non-global fan-out}]\","
+puts $DataJSON "\"total_fanout\":\"[get_fitter_resource_usage -resource {*Total fan-out}]\","
+puts $DataJSON "\"ave_fanout\":\"[get_fitter_resource_usage -resource {*Average fan-out}]\","
+
+unload_report
+
+puts $DataJSON "\}"
+close $DataJSON
+# =====================
+
+project_close
+
+
+
