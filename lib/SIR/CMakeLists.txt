@@ -8,6 +8,7 @@ SIRSchedGraph.cpp
 SIRSchedulerBase.cpp
 SIRScheduling.cpp
 SIRListScheduler.cpp
+SIRSDCScheduler.cpp
 SIRRegisterSynthesis.cpp
 SIRFSMSynthesis.cpp
 SIRPass.cpp
