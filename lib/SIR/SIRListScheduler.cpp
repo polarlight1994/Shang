@@ -76,10 +76,14 @@ bool BBContext::isSUReady(SIRSchedUnit *SU) {
 	for (iterator DI = SU->dep_begin(), DE = SU->dep_end(); DI != DE; ++DI) {
 		SIRSchedUnit *DepSU = *DI;
 
-// 		// Ignore the back-edge dependency cross the BB.
-// 		if (DepSU->getParentBB() != SU->getParentBB()
-// 				&& DepSU->getIdx() > SU->getIdx())
-// 			continue;
+		// The BBEntry is definitely scheduled it into entry slot of this BB.
+		// The PHI is definitely scheduled it into exit slot of this BB.
+		// Also all back-edge will ended on the BBEntry/Entry, so we ignore
+		// these SUnit.
+		if (DepSU->isEntry() || DepSU->isBBEntry() || DepSU->isPHI()) continue;
+
+		// All SUnit in Slot0r is also definitely scheduled into Slot0r.
+		if (!DepSU->getParentBB()) continue;
 
 		AllScheduled &= DepSU->isScheduled();
 	}
@@ -92,12 +96,14 @@ void BBContext::collectReadySUs(ArrayRef<SIRSchedUnit *> SUs) {
 	for (iterator I = SUs.begin(), E = SUs.end(); I != E; ++I) {
 		SIRSchedUnit *SU = *I;
 
+		// If the SUnit is already scheduled, that means this is
+		// a back-edge. So we just ignore it.
+		if (SU->isScheduled())
+			continue;
+
 		// Only collect the ready SUnits in this BB.
 		if (SU->getParentBB() != BB)
 			continue;
-
-		// SUnit should not be scheduled.
-		assert(!SU->isScheduled() && "SUnit should not be scheduled yet!");
 
 		// Entrys, Exits and PHINodes will be handled elsewhere.
 		if (SU->isBBEntry() || SU->isExit() || SU->isPHI())
@@ -154,7 +160,7 @@ void BBContext::scheduleSUsToExitSlot() {
   typedef std::set<SIRSchedUnit *>::iterator iterator;
   for (iterator I = Exits.begin(), E = Exits.end(); I != E; ++I) {
 		SIRSchedUnit *SU = *I;
-		EndSlot = std::max(StartSlot + 1, S.calculateASAP(SU));
+		EndSlot = std::max(StartSlot, S.calculateASAP(SU));
   }
 
   for (iterator I = Exits.begin(), E = Exits.end(); I != E; ++I) {
@@ -179,8 +185,8 @@ bool ListScheduler::schedule() {
 
   ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
  	typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
- 
-  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)  	
+
+  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     scheduleBB(*I);
 
   // Hack: what if we don't schedule the exit specially?
