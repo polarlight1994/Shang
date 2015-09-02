@@ -26,10 +26,12 @@ unsigned SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
     const SIRSchedUnit *Dep = *DI;
 
     // Ignore the back-edges when we are not pipelining the BB.
-    if (Dep->getIdx() > A->getIdx() && MII == 0) continue;
+    if (Dep->getIdx() >= A->getIdx() && MII == 0) continue;
 
     unsigned DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
-    int Step = DepASAP + DI.getLatency(MII);
+		unsigned DepLatency = Dep->getLatency();
+
+    int Step = DepASAP + DepLatency + DI.getLatency(MII);
 
     unsigned UStep = std::max(0, Step);
     NewStep = std::max(UStep, NewStep);
@@ -46,16 +48,17 @@ unsigned SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
     SIRDep UseEdge = Use->getEdgeFrom(A, MII);
 
     // Ignore the back-edges when we are not pipelining the BB.
-    if (Use->getIdx() < A->getIdx() && MII == 0) continue;
+    if (Use->getIdx() <= A->getIdx() && MII == 0) continue;
 
-    unsigned UseALAP = Use->isScheduled() ?
-                       Use->getSchedule() : getALAPStep(Use);
+    unsigned UseALAP = Use->isScheduled() ? Use->getSchedule() : getALAPStep(Use);
+		unsigned ALatency = A->getLatency();
+
     if (UseALAP == 0) {
       assert(UseEdge.isLoopCarried() && "Broken time frame!");
       UseALAP = MaxSlot;
     }
 
-    unsigned Step = UseALAP - UseEdge.getLatency(MII);
+    unsigned Step = UseALAP - ALatency - UseEdge.getLatency(MII);
     NewStep = std::min(Step, NewStep);
   }
 
