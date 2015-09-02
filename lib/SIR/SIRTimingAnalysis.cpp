@@ -733,11 +733,9 @@ SIRDelayModel *SIRTimingAnalysis::lookUpDelayModel(Instruction *Inst) const {
 void SIRTimingAnalysis::buildTimingNetlist(Value *V, SIR *SM, DataLayout &TD) {
   Instruction *Root = dyn_cast<Instruction>(V);
 
-  if (!Root)
-    return;
+  if (!Root) return;
 
-  if (ModelMap.count(Root))
-    return;
+  if (ModelMap.count(Root)) return;
 
   typedef Instruction::op_iterator ChildIt;
   std::vector<std::pair<Instruction *, ChildIt> > VisitStack;
@@ -881,16 +879,20 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 			Value *ChildNode = *It;
 			++VisitStack.back().second;
 
+			// If the ChildNode is not a instruction, then we do not need to iterate
+			// further since we have reach the end of this datapath.
 			if (isLeafValue(SM, ChildNode)) {
-				// If the operand is a SIRSeqVal, then we reach the end of this datapath.
+				// If the operand is a SIRSeqVal, save it so we can look up the latency later.
 				if (SM->lookupSIRReg(dyn_cast<Instruction>(ChildNode)))
 					Leaves.insert(ChildNode);
 
-				// If the operand is a Constant, GlobalValue, Argument or UndefValue,
+				// If the ChildNode is a Constant, GlobalValue, Argument or UndefValue,
 				// then ignore it because it will have no impact on the scheduling process.
 				continue;
 			}
 
+			// Or we need to iterate the operand of this ChildNode until we reach
+			// to the end of this datapath.
 			if (Instruction *ChildInst = dyn_cast<Instruction>(ChildNode)) {
 				// ChildInst has a name means we had already visited it.
 				if (!Visited.insert(ChildInst).second) continue;
@@ -955,12 +957,12 @@ INITIALIZE_PASS_END(SIRTimingAnalysis,
 bool SIRTimingAnalysis::runOnSIR(SIR &SM) {
   DataLayout &TD = getAnalysis<DataLayout>();
 
-  // Build the timing path for data-path nodes.
+  // Build the timing path for data-path nodes. Then we can get an arrival
+	// map containing <Src SeqVal, delay> for all value.
   typedef SIR::datapathinst_iterator inst_iterator;
   for (inst_iterator I = SM.datapathinst_begin(), E = SM.datapathinst_end();
-       I != E; ++I) {
+       I != E; ++I)
     buildTimingNetlist(*I, &SM, TD);
-  }
 
   return false;
 }

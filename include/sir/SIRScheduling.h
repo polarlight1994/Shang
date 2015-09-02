@@ -111,7 +111,7 @@ private:
 	void buildDataDependencies(SIRSchedUnit *U);
 	void buildControlDependencies(SIRSchedUnit *U);
 	void buildMemoryDependency(Instruction *SrcInst, Instruction *DstInst);
-	void buildLocalMemoryDependencies(BasicBlock *BB);
+	void buildMemoryDependencies(BasicBlock *BB);
 
 	ArrayRef<SIRSchedUnit *> getDataFlowSU(Value *V);
 
