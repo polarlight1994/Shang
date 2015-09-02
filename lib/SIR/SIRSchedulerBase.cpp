@@ -74,18 +74,21 @@ unsigned SIRScheduleBase::buildTimeFrameAndResetSchedule(bool reset) {
 }
 
 void SIRScheduleBase::resetTimeFrame() {
-  // Reset the time frames
+  // Reset the time frames to [0, MaxSlot];
   for (iterator I = begin(), E = end(); I != E; ++I)
     SUnitToTF[I] = TimeFrame(0, MaxSlot);
 }
 
 void SIRScheduleBase::buildTimeFrame() {
+	// The Entry is always scheduled into Slot0r.
   SIRSchedUnit *EntryRoot = G.getEntry();
   assert(EntryRoot->isScheduled() && "Entry must be scheduled first!");
 
   resetTimeFrame();
 
-  // Build the time frames
+  // Build the time frames, to be noted that we are only use
+	// the ASAP and ALAP to get time frame for each SUnit not
+	// scheduling them really.
   bool HasNegativeCycle = buildASAPStep();
   assert(!HasNegativeCycle && "Unexpected negative cycle!");
   buildALAPStep();
@@ -102,17 +105,24 @@ bool SIRScheduleBase::buildASAPStep() {
     for (iterator I = begin(), E = end(); I != E; ++I) {
       const SIRSchedUnit *U = &*I;
 
+			// If it is already scheduled, get the result as time frame.
       if (U->isScheduled()) {
         SUnitToTF[U].ASAP = U->getSchedule();
         continue;
       }
 
+			// Calculate the ASAP step.
       unsigned NewStep = calculateASAP(U);
 
+			// Update the ASAP step.
       unsigned &ASAPStep = SUnitToTF[U].ASAP;
       if (ASAPStep == NewStep) continue;
       ASAPStep = NewStep;
 
+			// If NeedToReCalc is true, then we need to re-calculate
+			// whole graph later. "continue" here is to avoid determining
+			// NeedToReCalc anymore to save time since once it is true,
+			// it will always be true in this loop.
       if (NeedToReCalc) continue;
 
       // We need to re-calculate the ASAP steps if the sink
@@ -132,15 +142,20 @@ bool SIRScheduleBase::buildASAPStep() {
     }
   }
 
+	// Use the ASAP step of Exit as the CriticalPathEnd, also this determined
+	// the longest path delay.
   SIRSchedUnit *Exit = G.getExit();
   unsigned ExitASAP = getASAPStep(Exit);
   CriticalPathEnd = std::max(CriticalPathEnd, ExitASAP);
+
   return false;
 }
 
 bool SIRScheduleBase::buildALAPStep() {
   bool NeedToReCalc = true;
   int LastSlot = CriticalPathEnd;
+
+	// The Exit is always scheduled into LastSlot.
   SUnitToTF[G.getExit()].ALAP = LastSlot;
 
   // Build the time frame iteratively.
@@ -151,13 +166,16 @@ bool SIRScheduleBase::buildALAPStep() {
 
       if (U == G.getExit()) continue;
 
+			// If it is already scheduled, get the result as time frame.
       if (U->isScheduled()) {
         SUnitToTF[U].ALAP = U->getSchedule();
         continue;
       }
 
+			// Calculate the ALAP step.
       unsigned NewStep = calculateALAP(U);
 
+			// Update the ALAP step.
       unsigned &ALAPStep = SUnitToTF[U].ALAP;
       if (ALAPStep == NewStep) continue;
       assert(getASAPStep(U) <= NewStep && "Broken ALAP step!");

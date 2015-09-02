@@ -21,15 +21,19 @@ void BBContext::enter(BasicBlock *BB) {
 	EndSlot = S.MaxSlot;
 	this->BB = BB;
 
+	// Schedule the BBEntry to Entry Slot.
+	scheduleSUsToEntrySlot();
+
 	ArrayRef<SIRSchedUnit *> SUs(S->getSUsInBB(BB));
-
-	collectSUsInEntrySlot(SUs);
-	collectSUsInExitSlot(SUs);
-
 	collectReadySUs(SUs);
 }
 
 void BBContext::exit(BasicBlock *BB) {
+	// Schedule the PHI to Exit Slot.
+	// To be noted that, the PHI scheduled here is actually from
+	// the successor BB.
+	scheduleSUsToExitSlot();
+
 	// Make sure all the SUnits is scheduled.
 	ArrayRef<SIRSchedUnit *> SUs(S->getSUsInBB(BB));
 	typedef ArrayRef<SIRSchedUnit *>::iterator iterator;
@@ -41,31 +45,6 @@ void BBContext::exit(BasicBlock *BB) {
 	BB = NULL;
 	Entrys.clear();
 	Exits.clear();
-}
-
-void BBContext::collectSUsInEntrySlot(ArrayRef<SIRSchedUnit *> SUs) {
-  // The SUs that corresponds to the entry of BB are entry nodes.
-	typedef ArrayRef<SIRSchedUnit *>::iterator iterator;
-	for (iterator I = SUs.begin(), E = SUs.end(); I != E; ++I) {
-		SIRSchedUnit *SU = *I;
-		if (SU->isBBEntry())
-			Entrys.insert(SU);
-	}
-}
-
-void BBContext::collectSUsInExitSlot(ArrayRef<SIRSchedUnit *> SUs) {
-  // The SUs that corresponds to the terminator of BB are exit nodes.
-  ArrayRef<SIRSchedUnit *> SUnits = S->lookupSUs(BB->getTerminator());
-
-  Exits.insert(SUnits.begin(), SUnits.end());
-
-  // PHINodes also need to schedule to the end of the BB.
-	typedef ArrayRef<SIRSchedUnit *>::iterator iterator;
-	for (iterator I = SUs.begin(), E = SUs.end(); I != E; I++) {
-		SIRSchedUnit *SU = *I;
-		if (SU->isPHI())
-			Exits.insert(SU);
-	}
 }
 
 bool BBContext::isSUReady(SIRSchedUnit *SU) {
@@ -80,7 +59,8 @@ bool BBContext::isSUReady(SIRSchedUnit *SU) {
 		// The PHI is definitely scheduled it into exit slot of this BB.
 		// Also all back-edge will ended on the BBEntry/Entry, so we ignore
 		// these SUnit.
-		if (DepSU->isEntry() || DepSU->isBBEntry() || DepSU->isPHI()) continue;
+		if (DepSU->isEntry() || DepSU->isBBEntry() || DepSU->isPHI())
+			continue;
 
 		// All SUnit in Slot0r is also definitely scheduled into Slot0r.
 		if (!DepSU->getParentBB()) continue;
@@ -112,12 +92,14 @@ void BBContext::collectReadySUs(ArrayRef<SIRSchedUnit *> SUs) {
 		if (isSUReady(SU))
 			ReadyQueue.push(SU);
 	}
+
+	// Sort the SUnits.
+	ReadyQueue.reheapify();
 }
 
 void BBContext::scheduleBB() {
+	// Collect information of BB.
 	enter(BB);
-
-	scheduleSUsToEntrySlot();
 
 	while (!ReadyQueue.empty()) {
 		SIRSchedUnit *SU = ReadyQueue.top();
@@ -132,38 +114,45 @@ void BBContext::scheduleBB() {
 		// Also we should reset the ready queue.
 		SmallVector<SIRSchedUnit *, 4> Users = SU->getUseList();
 		collectReadySUs(Users);
-
-		ReadyQueue.reheapify();
 	}
-
-	scheduleSUsToExitSlot();
 
 	exit(BB);
 }
 
 void BBContext::scheduleSUsToEntrySlot() {
-  // Schedule the entry and all PHIs to the same slot.
-  typedef std::set<SIRSchedUnit *>::iterator iterator;
-  for (iterator I = Entrys.begin(), E = Entrys.end(); I != E; ++I) {
-    SIRSchedUnit *SU = *I;    
-    StartSlot = std::max(StartSlot, S.calculateASAP(SU));
-  }
+  // Get the BBEntry SUnit.
+  ArrayRef<SIRSchedUnit *> SUs = S->lookupSUs(BB);
+	assert(SUs.size() == 1 && "Unexpected mutil-SUnits!");
+	SIRSchedUnit *Entry = SUs[0];
 
-  for (iterator I = Entrys.begin(), E = Entrys.end(); I != E; ++I) {
-    SIRSchedUnit *SU = *I;
-		SU->scheduleTo(StartSlot);
-  }
+	// Calculate the EntrySlot and schedule the BBEntry into it.
+	unsigned EntrySlot = S.calculateASAP(Entry);
+	Entry->scheduleTo(EntrySlot);
 }
 
 void BBContext::scheduleSUsToExitSlot() {
+	// The SUs that corresponds to the terminator of BB are exit nodes.
+	ArrayRef<SIRSchedUnit *> SUnits = S->lookupSUs(BB->getTerminator());
+
+	Exits.insert(SUnits.begin(), SUnits.end());
+
+	// PHINodes also need to schedule to the end of the BB.
+	ArrayRef<SIRSchedUnit *> SUs = S->getSUsInBB(BB);
+	typedef ArrayRef<SIRSchedUnit *>::iterator array_iterator;
+	for (array_iterator I = SUs.begin(), E = SUs.end(); I != E; I++) {
+		SIRSchedUnit *SU = *I;
+		if (SU->isPHI())
+			Exits.insert(SU);
+	}
+
   // Schedule the exit to the exit slot.
-  typedef std::set<SIRSchedUnit *>::iterator iterator;
-  for (iterator I = Exits.begin(), E = Exits.end(); I != E; ++I) {
+	typedef std::set<SIRSchedUnit *>::iterator set_iterator;
+  for (set_iterator I = Exits.begin(), E = Exits.end(); I != E; ++I) {
 		SIRSchedUnit *SU = *I;
 		EndSlot = std::max(StartSlot, S.calculateASAP(SU));
   }
 
-  for (iterator I = Exits.begin(), E = Exits.end(); I != E; ++I) {
+  for (set_iterator I = Exits.begin(), E = Exits.end(); I != E; ++I) {
 		SIRSchedUnit *SU = *I;
 		SU->scheduleTo(EndSlot);
   }
@@ -185,6 +174,7 @@ bool ListScheduler::schedule() {
 
   ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
  	typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
+
 
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     scheduleBB(*I);

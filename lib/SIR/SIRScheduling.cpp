@@ -43,7 +43,6 @@ SIRSchedUnit *SIRScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 	// Simply return the BBEntry if it had already existed.
 	if (G->hasSU(BB)) {
 		ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(BB);
-		// Only PHI can have mutil-SUnits now.
 		assert(SUs.size() == 1 && "Unexpected mutil-SUnits!");
 
 		return SUs.front();
@@ -70,11 +69,19 @@ SIRSchedUnit *SIRScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 }
 
 void SIRScheduling::constraintTerminators(BasicBlock *BB) {
-	// Get the terminator of this BB and its corresponding SUnits.
+	// Get the terminator of this BB and check if it is a Ret instruction.
 	TerminatorInst *Inst = BB->getTerminator();
-	ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(Inst);
+	if (!isa<ReturnInst>(Inst)) return;
+
+	// Get the corresponding SUnits of the Ret instruction. To be noted
+	// that the SUnits is not indexed to the Ret instruction but to the
+	// operand of the Ret instruction because in SIRBuilder we replace
+	// the original operand of Ret into this pseudo instruction to act
+	// as the SeqVal.
+	ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(Inst->getOperand(0));
+	//assert(SUs.size() && "Unexpected NULL SUs!");
 	
-	// The ExitSUnit is depended on these terminator SUnits.
+	// The ExitSUnit is depended on these SUnits.
 	SIRSchedUnit *Exit = G->getExit();
 	for (int i = 0; i < SUs.size(); i++)
 		Exit->addDep(SUs[i], SIRDep::CreateCtrlDep(0));
@@ -100,7 +107,7 @@ void SIRScheduling::buildDependencies() {
 	ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
 	typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
 	for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
-		buildLocalMemoryDependencies(*I);
+		buildMemoryDependencies(*I);
 }
 
 void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
@@ -151,14 +158,24 @@ void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
 	if (U->isEntry()) return;
 
 	// The first kind of control dependency is that all SUnits
-	// is depending on the EntrySU of this BB.
-	BasicBlock *ParentBB = U->getParentBB();
-	SIRSchedUnit *EntrySU = getOrCreateBBEntry(ParentBB);
-	U->addDep(EntrySU, SIRDep::CreateCtrlDep(0));
+	// is depending on the EntrySU of this BB. But we should
+	// be careful when we get the parent BB since it is special
+	// for the PHI SUnit.
+	BasicBlock *ParentBB;
+	if (U->isPHI())
+		ParentBB = U->getSeqOp()->getSlot()->getParent();
+	else
+		ParentBB = U->getParentBB();
 
-	// Other two kinds of control dependency is about the slot transition.
+	SIRSchedUnit *EntrySU = getOrCreateBBEntry(ParentBB);
+	// Do not add self-loop.
+	if (!U->isBBEntry())
+		U->addDep(EntrySU, SIRDep::CreateCtrlDep(0));
+
+	// Other two kinds of control dependency is:
 	// 1) transition to next slot in current basic block.
 	// 2) transition to successor basic block.
+	// and they are all associated with the SlotTransition.
 	if (!U->isSlotTransition()) return;
 
 	// Get the SlotTransition.
@@ -174,9 +191,14 @@ void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
 	// If the fist SUnit in destination slot is a BBEntry, that means we
 	// are transiting to successor BB. In this circumstance, we can just
 	// constraint the BBEntry, since other SUnits is constrained by the
-	// BBEntry already.
-	if (SUsInDstSlot[0]->isBBEntry())
-		SUsInDstSlot[0]->addDep(U, SIRDep::CreateCtrlDep(0));
+	// BBEntry already. By doing this, we can ensure that all control
+	// edges between BBs are ended on the BBEntry which is easy to handle
+	// later especially when it is a back-edge.
+	SIRSchedUnit *FirstSUsInDstSlot = SUsInDstSlot[0];
+	if (FirstSUsInDstSlot->isBBEntry() || FirstSUsInDstSlot->isEntry())
+		FirstSUsInDstSlot->addDep(U, SIRDep::CreateCtrlDep(0));
+	// Or we are transition to the next slot in same BB. In this circumstance,
+	// all SUnit in next slot is depended on the SlotTransition.
 	else
 		for (int i = 0; i < SUsInDstSlot.size(); i++)
 			SUsInDstSlot[i]->addDep(U, SIRDep::CreateCtrlDep(0));
@@ -215,7 +237,7 @@ void SIRScheduling::buildMemoryDependency(Instruction *SrcInst, Instruction *Dst
 	DstU->addDep(SrcU, SIRDep::CreateMemDep(Latency, 0));
 }
 
-void SIRScheduling::buildLocalMemoryDependencies(BasicBlock *BB) {
+void SIRScheduling::buildMemoryDependencies(BasicBlock *BB) {
 	typedef BasicBlock::iterator iterator;
 	SmallVector<Instruction *, 16> PiorMemInsts;
 
@@ -254,19 +276,15 @@ ArrayRef<SIRSchedUnit *> SIRScheduling::getDataFlowSU(Value *V) {
 }
 
 void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
-	int temp = S->getSlotNum();
-
-	if (temp == 220)
-		int i = 1;
-
 	BasicBlock *BB = S->getParent();
 
-	SIRSchedUnit *BBEntry = 0;
-	// If the BB is NULL, this slot should be the entry
-	// or the exit of the state-transition graph.
-	if (!BB) BBEntry = G->getEntry();
-	// Or we create the Entry SUnit for this BB.
-	else BBEntry = getOrCreateBBEntry(BB);
+	// Before we create the SUnit for all SeqOps in this Slot,
+	// we should create the BBEntry for the ParentBB, since
+	// we are not visit by BB, so we need to getParentBB from
+	// the Slot and if it is already created in previous slot
+	// then return it, and if we are handling Slot0r,
+	// then the BB is NULL so we return the Entry SUnit.
+	SIRSchedUnit *BBEntry = getOrCreateBBEntry(BB);
 
 	// Collect all SeqOps in this slot and create SUnits for them.
 	std::vector<SIRSeqOp *> Ops;
@@ -321,6 +339,12 @@ void SIRScheduling::finishBuildingSchedGraph() {
 }
 
 void SIRScheduling::buildSchedulingGraph() {
+	SIRSchedUnit *Entry = G->getEntry();
+	SIRSlot *StartSlot = SM->getStartSlot();
+
+	// Index the Entry SUnit to the StartSlot.
+	G->indexSU2Slot(Entry, StartSlot);
+
 	// Build the scheduling units according to the original scheduling.
 	ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >
 		RPO(SM->getStartSlot());
@@ -330,9 +354,13 @@ void SIRScheduling::buildSchedulingGraph() {
 		ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >::rpo_iterator
 		slot_top_iterator;
 
+	// Visit the SIRSlots in reverse post order so that the building order of
+	// SUnits is topological generally to avoid creating a dependency to a
+	// SUnit which is not created yet when building dependencies.
 	for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
 		buildSchedulingUnits(*I);
 
+	// Build dependencies.
 	buildDependencies();
 
 	// Constraint all nodes that do not have a user by adding SIRDep to

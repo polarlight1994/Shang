@@ -322,10 +322,19 @@ public:
            && "Edge not inserted?");
   }
 
-	// Only the Entry SUnit can have schedule of 0. So all others
+	// Only the SUnit in Slot0r can have schedule of 0. So all others
 	// scheduled SUnit should have a positive schedule number.
   bool isScheduled() const {
-		return Schedule != 0 || (isEntry() && Schedule == 0);
+		if (Schedule == 0) {
+			if (isEntry()) return true;
+			if (!isBBEntry() && !isExit())
+				if(getSeqOp()->getSlot()->getSlotNum() == 0)
+					return true;
+
+			return false;
+		}
+
+		return true;
 	}
 
   // Return the index of the current scheduling unit.
