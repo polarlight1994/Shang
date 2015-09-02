@@ -89,7 +89,9 @@ public:
     BlockEntry,
     // PHI node
     PHI,
-		// Normal node for Scheduling
+		// Slot transition
+		SlotTransition,
+		// Normal node
 		Normal,
     // Invalid node for the ilist sentinel
     Invalid
@@ -229,6 +231,7 @@ public:
   bool isExit() const { return T == Exit; }
   bool isBBEntry() const { return T == BlockEntry; }
   bool isPHI() const { return T == PHI; }
+	bool isSlotTransition() const { return T == SlotTransition; }
 
 	bool isTerminator() const { return isa<TerminatorInst>(getInst()); }
 
@@ -301,7 +304,7 @@ public:
   }
 
   void addDep(SIRSchedUnit *Src, SIRDep NewEdge) {
-    assert(Src != this && "Cannot add self-loop!");
+    //assert(Src != this && "Cannot add self-loop!");
     DepSet::iterator at = Deps.find(Src);
 
     // If there is no old Dep before, then just add a new one.
@@ -319,10 +322,10 @@ public:
            && "Edge not inserted?");
   }
 
-	// Only the Entry/Exit SUnit can have initial schedule of 0. So all
-	// others scheduled SUnit should have a positive schedule number.
+	// Only the Entry SUnit can have schedule of 0. So all others
+	// scheduled SUnit should have a positive schedule number.
   bool isScheduled() const {
-		return Schedule != 0;
+		return Schedule != 0 || (isEntry() && Schedule == 0);
 	}
 
   // Return the index of the current scheduling unit.
@@ -357,14 +360,18 @@ private:
   unsigned TotalSUs;
 	typedef iplist<SIRSchedUnit> SUList;
   SUList SUnits;
+
+	// Mapping between SIRSlot and SIRScheUnits.
+	typedef std::map<SIRSlot *, SmallVector<SIRSchedUnit *, 4> >Slot2SUMapTy;
+	Slot2SUMapTy Slot2SUMap;
   
- 	// Mapping between LLVM IR and SIR Scheduling Units.
+	// Mapping between LLVM IR and SIRScheUnits.
  	typedef std::map<Value *, SmallVector<SIRSchedUnit *, 4> > IR2SUMapTy;
  	IR2SUMapTy IR2SUMap;
 
   // Helper class to arrange the scheduling units according to their parent BB,
   // we will emit the schedule or build the linear order BB by BB.
-  std::map<BasicBlock*, std::vector<SIRSchedUnit *> > BBMap;
+  std::map<BasicBlock *, std::vector<SIRSchedUnit *> > BBMap;
 
 public:
   SIRSchedGraph(Function &F);
@@ -381,6 +388,10 @@ public:
   bool isBBReachable(BasicBlock *BB) const {
     return BBMap.count(BB);
   }
+
+	bool hasSU(SIRSlot *S) const { return Slot2SUMap.count(S); }
+	ArrayRef<SIRSchedUnit *> lookupSUs(SIRSlot *S) const;
+	bool indexSU2Slot(SIRSchedUnit *SU, SIRSlot *S);
 
 	bool hasSU(Value *V) const { return IR2SUMap.count(V); }
 	ArrayRef<SIRSchedUnit *> lookupSUs(Value *V) const;

@@ -107,19 +107,13 @@ private:
 
 	void constraintTerminators(BasicBlock *BB);
 
-	void buildDataFlowDependencies(SIRSchedUnit *U, Value *SrcVal,
-		                             float delay);
-	void buildDataFlowDependencies(SIRSchedUnit *U);
-
-	void buildControlFlowDependencies(BasicBlock *TargetBB,
-		                                ArrayRef<SIRSchedUnit *> SUs);
-	void buildControlFlowDependencies();
-
+	void buildDependencies();
+	void buildDataDependencies(SIRSchedUnit *U);
+	void buildControlDependencies(SIRSchedUnit *U);
 	void buildMemoryDependency(Instruction *SrcInst, Instruction *DstInst);
 	void buildLocalMemoryDependencies(BasicBlock *BB);
-	void buildMemoryDependencies();
 
-	SIRSchedUnit *getDataFlowSU(Value *V);
+	ArrayRef<SIRSchedUnit *> getDataFlowSU(Value *V);
 
 	void buildSchedulingUnits(SIRSlot *S);
 
