@@ -31,7 +31,7 @@ static unsigned LogCeiling(unsigned x, unsigned n) {
 	return (Log2_32_Ceil(x) + log2n - 1) / log2n;
 }
 
-static bool IsLeafValue(SIR *SM, Value *V) {
+static bool isLeafValue(SIR *SM, Value *V) {
 	// When we visit the Srcs of value, the Leaf Value
 	// means the top nodes of the Expr-Tree. There are 
 	// four kinds of Leaf Value:
@@ -322,7 +322,7 @@ void SIRDelayModel::updateBitCatArrival() {
 			  isa<Argument>(V) || isa<UndefValue>(V)) continue;
 
 		// Simply add the zero delay if the Src itself is a Leaf Value.
-		if (IsLeafValue(SM, V)) {
+		if (isLeafValue(SM, V)) {
 			addArrival(V, 0.0f + 0.0f, OffSet + BitWidth, OffSet);
 			continue;
 		}
@@ -351,7 +351,7 @@ void SIRDelayModel::updateBitExtractArrival() {
 		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
-	if (IsLeafValue(SM, V)) {
+	if (isLeafValue(SM, V)) {
 		addArrival(V, 0.0f + 0.0f, BitWidth, 0);
 		return;
 	}
@@ -401,7 +401,7 @@ void SIRDelayModel::updateArrivalParallel(unsigned i, float Delay) {
 		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
-	if (IsLeafValue(SM, V)) {
+	if (isLeafValue(SM, V)) {
 		addArrival(V, Delay + 0.0f, TD->getTypeSizeInBits(Node->getType()), 0);
 		return;
 	}
@@ -431,7 +431,7 @@ void SIRDelayModel::updateArrivalCritial(unsigned i, float Delay) {
 		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
-	if (IsLeafValue(SM, V)) {
+	if (isLeafValue(SM, V)) {
 		addArrival(V, Delay + 0.0f, BitWidth, 0);
 		return;
 	}
@@ -461,7 +461,7 @@ void SIRDelayModel::updateArrivalCarryChain(unsigned i, float Base, float PerBit
 		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
-	if (IsLeafValue(SM, V)) {
+	if (isLeafValue(SM, V)) {
 		addArrival(V, Base + BitWidth * PerBit + 0.0f, BitWidth, 0);
 		return;
 	}
@@ -507,7 +507,7 @@ void SIRDelayModel::updateCmpArrivial() {
 			  isa<Argument>(V) || isa<UndefValue>(V)) continue;
 
 		// Simply add the zero delay if the Src itself is a Leaf Value.
-		if (IsLeafValue(SM, V)) {
+		if (isLeafValue(SM, V)) {
 			addArrival(V, Delay + 0.0f, 1, 0);
 			continue;
 		}
@@ -532,7 +532,7 @@ void SIRDelayModel::updateShiftAmt() {
 		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
-	if (IsLeafValue(SM, V)) {
+	if (isLeafValue(SM, V)) {
 		unsigned LL = TD->getTypeSizeInBits(V->getType());
 		// Hack: the second 0.0f should be modified when the value
 		// is MemBus.
@@ -573,7 +573,7 @@ void SIRDelayModel::updateShlArrival() {
 		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
-	if (IsLeafValue(SM, V)) {
+	if (isLeafValue(SM, V)) {
 		addArrival(V, Delay + 0.0f, BitWidth, 0);
 		return;
 	}
@@ -603,7 +603,7 @@ void SIRDelayModel::updateShrArrival() {
 		  isa<Argument>(V) || isa<UndefValue>(V)) return;
 
 	// Simply add the zero delay if the Src itself is a Leaf Value.
-	if (IsLeafValue(SM, V)) {
+	if (isLeafValue(SM, V)) {
 		addArrival(V, Delay + 0.0f, BitWidth, 0);
 		return;
 	}
@@ -710,7 +710,7 @@ SIRDelayModel *SIRTimingAnalysis::createModel(Instruction *Inst, SIR *SM, DataLa
   for (unsigned i = 0; i < NumOperands; ++i) {
 		Value *ChildInst = Inst->getOperand(i);
 		// If we reach the leaf of this data-path, then we get no Delay Model.
-		if (IsLeafValue(SM, ChildInst)) {
+		if (isLeafValue(SM, ChildInst)) {
 			Fanins.push_back(NULL);
 			continue;
 		}
@@ -762,7 +762,7 @@ void SIRTimingAnalysis::buildTimingNetlist(Value *V, SIR *SM, DataLayout &TD) {
     ++It;
 
     if (Instruction *ChildInst = dyn_cast<Instruction>(ChildNode)) {			
-			if (IsLeafValue(SM, ChildInst))
+			if (isLeafValue(SM, ChildInst))
 				continue;
 
       if (!ModelMap.count(ChildInst))
@@ -793,14 +793,20 @@ SIRTimingAnalysis::PhysicalDelay SIRTimingAnalysis::getArrivalTime(Value *To,
 
 SIRTimingAnalysis::PhysicalDelay SIRTimingAnalysis::getArrivalTime(SIRRegister *To,
                                                                    Value *From) {
-  // Hack: The From here must be a SIRSeqVal.
-  PhysicalDelay FIArrival = getArrivalTime(To->getRegVal(), From);
-  PhysicalDelay GuardArrival = getArrivalTime(To->getRegGuard(), From);
-  // Also consider the delay from the d pin of the register.
-  // TODO: Consider wire delay based on the connections.
-  // Hack: Need to copy the VFUs from vast to SIR
-  return std::max(FIArrival + PhysicalDelay(VFUs::RegDelay),
-                  GuardArrival + PhysicalDelay(VFUs::ClkEnDelay));
+	// Consider two datapath: From -- To.RegVal; From -- To.GuardVal.
+  Value *RegVal = To->getRegVal();Value *RegGuard = To->getRegGuard();
+	PhysicalDelay FIArrival, GuardArrival;
+
+	if (!isa<ConstantInt>(RegVal) && !isa<GlobalValue>(RegVal) &&
+		  !isa<Argument>(RegVal) &&	!isa<UndefValue>(RegVal))
+    FIArrival = getArrivalTime(RegVal, From);
+
+	if (!isa<ConstantInt>(RegGuard) && !isa<GlobalValue>(RegGuard) &&
+		  !isa<Argument>(RegGuard) &&	!isa<UndefValue>(RegGuard))
+		GuardArrival = getArrivalTime(RegGuard, From);
+
+	return std::max(FIArrival + PhysicalDelay(VFUs::RegDelay),
+									GuardArrival + PhysicalDelay(VFUs::ClkEnDelay));
 }
 
 SIRTimingAnalysis::PhysicalDelay SIRTimingAnalysis::getArrivalTime(SIRRegister *To,
@@ -827,19 +833,25 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 	for (int i = 0; i < Srcs.size(); i++) {
 		Value *V = Srcs[i];
 
-		// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
-		// then ignore it because it will have no impact on the scheduling process.
-		if (isa<ConstantInt>(V) || isa<ConstantVector>(V) ||
-			  isa<ConstantAggregateZero>(V) || isa<ConstantPointerNull>(V) ||
-				isa<GlobalValue>(V) || isa<Argument>(V) || isa<UndefValue>(V)) continue;
+		if (isLeafValue(SM, V)) {
+			// If the operand is a SIRSeqVal, then we set the delay to 0.0f.
+			if (SM->lookupSIRReg(dyn_cast<Instruction>(V)))
+				Arrivals.insert(std::make_pair(V, PhysicalDelay(0.0f)));
 
-		// Simply add the zero delay if the Src itself is a Leaf Value. Since we have
-		// ignore the ConstantInt, Argument or GlobalValue, so what left here is only
-		// the SeqValue in SIR.
-		if (IsLeafValue(SM, V)) {
-			Arrivals.insert(std::make_pair(V, PhysicalDelay(0.0f)));
-			continue;;			
+			// If the operand is a Constant, GlobalValue, Argument or UndefValue,
+			// then ignore it because it will have no impact on the scheduling process.
+			continue;
 		}
+
+// 		SIRDelayModel *M = lookUpDelayModel(dyn_cast<Instruction>(V));
+// 		assert(M && "Unexpected NULL Delay Model!");
+//
+// 		// Extract all the arrivals from SeqVals.
+// 		typedef SIRDelayModel::const_arrival_iterator iterator;
+// 		for (iterator I = M->arrival_begin(), E = M->arrival_end(); I != E; I++) {
+// 			PhysicalDelay &OldDelay = Arrivals[I->Src];
+// 			OldDelay = std::max(OldDelay,	PhysicalDelay(I->Arrival));
+// 		}
 
 		// Then collect all the SeqVals when we traverse the data-path reversely, so
 		// to be noted that all the Values down here must be SeqVal.
@@ -860,7 +872,7 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 			ChildIt It = VisitStack.back().second;
 
 			// We have visited all children of current node.
-			if (It == Node->op_begin()) {
+			if (It == Node->op_end()) {
 				VisitStack.pop_back();
 				continue;
 			}
@@ -869,24 +881,21 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 			Value *ChildNode = *It;
 			++VisitStack.back().second;
 
+			if (isLeafValue(SM, ChildNode)) {
+				// If the operand is a SIRSeqVal, then we reach the end of this datapath.
+				if (SM->lookupSIRReg(dyn_cast<Instruction>(ChildNode)))
+					Leaves.insert(ChildNode);
+
+				// If the operand is a Constant, GlobalValue, Argument or UndefValue,
+				// then ignore it because it will have no impact on the scheduling process.
+				continue;
+			}
+
 			if (Instruction *ChildInst = dyn_cast<Instruction>(ChildNode)) {
 				// ChildInst has a name means we had already visited it.
 				if (!Visited.insert(ChildInst).second) continue;
 
 				VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
-				continue;
-			}
-
-			// If the operand is a ConstantInt, GlobalValue, Argument or UndefValue,
-			// then ignore it because it will have no impact on the scheduling process.
-			if (isa<ConstantInt>(V) || isa<GlobalValue>(V) ||
-				  isa<Argument>(V) || isa<UndefValue>(V)) continue;
-
-			// After ignore the ConstantInt, Argument and GlobalValue,
-			// the Leaf Value is what we want to find that is the SeqVal
-			// in SIR.
-			if (IsLeafValue(SM, ChildNode)) {
-				Leaves.insert(ChildNode);
 				continue;
 			}
 		}
