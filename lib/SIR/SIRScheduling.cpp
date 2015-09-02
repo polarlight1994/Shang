@@ -36,23 +36,32 @@ Pass *llvm::createSIRSchedulingPass() {
 }
 
 SIRSchedUnit *SIRScheduling::getOrCreateBBEntry(BasicBlock *BB) {
+	// Take the Entry SUnit as the pseudo BBEntry of these SUnit in
+	// Slot0r which do not have a real parent BB.
+	if (!BB) return G->getEntry();
+
 	// Simply return the BBEntry if it had already existed.
 	if (G->hasSU(BB)) {
 		ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(BB);
-		for (unsigned I = 0, E = SUs.size(); I != E; ++I)
-			if (SUs[I]->isBBEntry() && SUs[I]->getParentBB() == BB)
-				return SUs[I];
+		// Only PHI can have mutil-SUnits now.
+		assert(SUs.size() == 1 && "Unexpected mutil-SUnits!");
+
+		return SUs.front();
 	}
 
+	// Or we have to create the BBEntry.
 	SIRSchedUnit *Entry = G->createSUnit(0, BB,
 		                                   SIRSchedUnit::BlockEntry, 0);
 
-	if (pred_begin(BB) == pred_end(BB)) {
-		// If the BB has no Preds, which means it's a Entry BB.
-		// The Entry SUnit of Entry BB should have a SIRDep
-		// coming from the Entry of Scheduling Graph.
+	// If the BB has no Preds, which means it's a Entry BB.
+	// The Entry SUnit of Entry BB should have a SIRDep
+	// coming from the Entry of Scheduling Graph.
+	if (pred_begin(BB) == pred_end(BB))
 		Entry->addDep(G->getEntry(), SIRDep::CreateCtrlDep(0));
-	}
+
+	// The BBEntry should be indexed into EntrySlot.
+	SIRSlot *EntrySlot = SM->getLandingSlot(BB);
+	G->indexSU2Slot(Entry, EntrySlot);
 
 	// Save the mapping between the SUnit with the Value.
 	G->indexSU2IR(Entry, BB);
@@ -61,41 +70,43 @@ SIRSchedUnit *SIRScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 }
 
 void SIRScheduling::constraintTerminators(BasicBlock *BB) {
+	// Get the terminator of this BB and its corresponding SUnits.
 	TerminatorInst *Inst = BB->getTerminator();
-
 	ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(Inst);
 	
+	// The ExitSUnit is depended on these terminator SUnits.
 	SIRSchedUnit *Exit = G->getExit();
-
-	for (int i = 0; i < SUs.size(); i++) {
+	for (int i = 0; i < SUs.size(); i++)
 		Exit->addDep(SUs[i], SIRDep::CreateCtrlDep(0));
-	}	
 }
 
-void SIRScheduling::buildDataFlowDependencies(SIRSchedUnit *DstU, Value *Src,
-	                                            float delay) {	
-	if (Instruction *Inst = dyn_cast<Instruction>(Src)) {
-		if(!G->hasSU(Inst)) {
-			// If we cannot find the source SU, then it must be located
-			// in other SchedGraph corresponding to other Function.
-			// And we ignore this dependency.
-			assert(Inst->getParent()->getParent() != &G->getFunction()
-				     && "Cannot find source SU in this Function!");
-			return;
-		}
-	} else if (isa<BasicBlock>(Src))
-		// The dependencies from BasicBlocks are control dependencies, we will
-		// calculate them based on post dominance frontier later.
-		return;
+void SIRScheduling::buildDependencies() {
+	// The dependencies need to be built includes
+	// 1) data dependency
+	// 2) control dependency
+	// 3) memory dependency
 
-	assert(Src && "Not a valid source!");
+	// Visit all SUnits to build data & control dependency.
+	typedef SIRSchedGraph::iterator iterator;
+	for (iterator I = G->begin(), E = G->end(); I != E; I++) {
+		SIRSchedUnit *SU = I;
 
-	SIRSchedUnit *SrcSU = getDataFlowSU(Src);
-	assert(delay >= 0.0f && "Unexpected negative delay!");
-	DstU->addDep(SrcSU, SIRDep::CreateValDep(ceil(delay)));
+		buildDataDependencies(SU);
+		buildControlDependencies(SU);
+	}
+
+	// Visit all BBs to build the memory dependencies.
+	Function &F = G->getFunction();
+	ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
+	typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
+	for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
+		buildLocalMemoryDependencies(*I);
 }
 
-void SIRScheduling::buildDataFlowDependencies(SIRSchedUnit *U) {
+void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
+	// Entry/Exit/BBEntry do not have any data dependencies.
+	if (U->isEntry() || U->isExit() || U->isBBEntry()) return;
+
 	SIRSeqOp *Op = U->getSeqOp();
 
 	// Construct the data flow dependencies according
@@ -108,69 +119,71 @@ void SIRScheduling::buildDataFlowDependencies(SIRSchedUnit *U) {
 	typedef SIRTimingAnalysis::ArrivalMap::iterator iterator;
 	for (iterator I = AT.begin(), E = AT.end(); I != E; I++) {
 		Value *SrcVal = I->first;
-		// The SrcVal must be a Leaf Value.
-		assert(!(isa<ConstantInt>(SrcVal) || isa<ConstantVector>(SrcVal) ||
-			       isa<ConstantAggregateZero>(SrcVal) ||
-						 isa<ConstantPointerNull>(SrcVal) ||
-						 isa<Argument>(SrcVal) || isa<ConstantInt>(SrcVal) ||
-						 isa<GlobalValue>(SrcVal))
-			     && "Should be ignored in extract arrivals!");
-		assert(SM->lookupSIRReg(dyn_cast<Instruction>(SrcVal))
-			     && "This is not a SeqVal in SIR!");
+		// The SrcVal must be a SIRSeqValue.
+		SIRRegister *Reg = SM->lookupSIRReg(dyn_cast<Instruction>(SrcVal));
+		assert(Reg && "This is not a SeqVal in SIR!");
 
-		if(isa<Argument>(SrcVal) || isa<ConstantInt>(SrcVal) || isa<GlobalValue>(SrcVal))
-			Value *temp = SrcVal;
+		// If the SIRSeqValue is a memrdata, then there will be no
+		// corresponding SIRSchedUnit, since the register is not
+		// assigned inside the SIR module. We can ignore it as it
+		// behaves like the argument. And it is safe since
+		// this data dependency can be honored by the SlotTransition
+		// we set in createMemoryTransaction function.
+		if (Reg->isFUOutput()) continue;
 
+		// Get the delay.
 		float delay = I->second.Delay;
-		buildDataFlowDependencies(U, SrcVal, delay);
-	}
+		assert(delay >= 0.0f && "Unexpected negative delay!");
 
-	// If this Unit has no any data flow dependency,
-	// then we should create a ctrl dependency for it
-	// to limit its scheduling arrange.
+		// Get the SrcSUnits.
+		ArrayRef<SIRSchedUnit *> SrcSUs = getDataFlowSU(SrcVal);
+		assert(SrcSUs.size() && "Unexpected NULL SrcSUs!");
+
+		for (int i = 0; i < SrcSUs.size(); i++)
+			U->addDep(SrcSUs[i], SIRDep::CreateValDep(ceil(delay)));
+	}
+}
+
+void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
+	// Entry do not have any control dependencies except the
+	// dependency to the slot transition which will be handled
+	// later.
+	if (U->isEntry()) return;
+
+	// The first kind of control dependency is that all SUnits
+	// is depending on the EntrySU of this BB.
+	BasicBlock *ParentBB = U->getParentBB();
+	SIRSchedUnit *EntrySU = getOrCreateBBEntry(ParentBB);
+	U->addDep(EntrySU, SIRDep::CreateCtrlDep(0));
+
+	// Other two kinds of control dependency is about the slot transition.
+	// 1) transition to next slot in current basic block.
+	// 2) transition to successor basic block.
+	if (!U->isSlotTransition()) return;
+
+	// Get the SlotTransition.
+	SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(U->getSeqOp());
+	assert (SST && "Unexpected NULL SIRSlotTransition!");
+
+	// Get the destination slot.
+	SIRSlot *DstSlot = SST->getDstSlot();
+
+	// All SUnits in destination slot are depended on this SlotTransition.
+	ArrayRef<SIRSchedUnit *> SUsInDstSlot = G->lookupSUs(DstSlot);
+
+	// If the fist SUnit in destination slot is a BBEntry, that means we
+	// are transiting to successor BB. In this circumstance, we can just
+	// constraint the BBEntry, since other SUnits is constrained by the
+	// BBEntry already.
+	if (SUsInDstSlot[0]->isBBEntry())
+		SUsInDstSlot[0]->addDep(U, SIRDep::CreateCtrlDep(0));
+	else
+		for (int i = 0; i < SUsInDstSlot.size(); i++)
+			SUsInDstSlot[i]->addDep(U, SIRDep::CreateCtrlDep(0));
+
+	// Constraint the non-dep SUnit to the Entry.
 	if (U->dep_empty())
 		U->addDep(G->getEntry(), SIRDep::CreateCtrlDep(0));
-}
-
-void SIRScheduling::buildControlFlowDependencies(BasicBlock *TargetBB,
-	                                               ArrayRef<SIRSchedUnit *> SUs) {
-	SIRSchedUnit *Entry = 0;
-
-	// Get the Entry SUnit of this BB.
-	for (unsigned i = 0; i < SUs.size(); ++i) {		
-		if (SUs[i]->isBBEntry() && SUs[i]->getParentBB() == TargetBB)  	
-			Entry = SUs[i];			
-	}
-
-	// Create the CtrlDep from SUnits which targets this BB
-	// to Entry SUnit to this BB.
-	for (unsigned i = 0; i < SUs.size(); ++i) {
-		if (SUs[i]->isBBEntry() && SUs[i]->getParentBB() == TargetBB)
-			continue;
-  
-  Instruction *Inst = SUs[i]->getInst();
-	assert(!Inst && (SUs[i]->isEntry() || SUs[i]->isBBEntry())
-		     && "Unexpected NULL instruction!");
-	assert(!Inst || isa<TerminatorInst>(Inst) && "Unexpected instruction type!");
-	assert(!Inst || SUs[i]->getTargetBB() == TargetBB && "Wrong target BB!");
-
-	Entry->addDep(SUs[i], SIRDep::CreateCtrlDep(0));
-	}
-}
-
-void SIRScheduling::buildControlFlowDependencies() {
-	Function *F = SM->getFunction();
-
-	typedef Function::iterator iterator;
-	for (iterator I = F->begin(), E = F->end(); I != E; ++I) {
-		BasicBlock *BB = I;
-
-		// When we pass the BB as LLVM Value to the function
-		// lookupSUs, we'll get the SUs which contain the
-		// terminate instructions targeting this BB and 
-		// the entry SU of this BB.
-		buildControlFlowDependencies(BB, G->lookupSUs(BB));
-	}
 }
 
 void SIRScheduling::buildMemoryDependency(Instruction *SrcInst, Instruction *DstInst) {
@@ -185,11 +198,9 @@ void SIRScheduling::buildMemoryDependency(Instruction *SrcInst, Instruction *Dst
 		if (isNoAlias(SrcInst, DstInst, AA)) return;
 	}
 
-	// Since the BB Value can have mutil-SUnits, so the IR2SUMap maintain the structure
-	// of map<Value *, SmallVector<SIRSchedUnit *, 4>>. However, normally one instruction
-	// maps with one SUnit.
 	ArrayRef<SIRSchedUnit *> SrcUs = G->lookupSUs(SrcInst), DstUs = G->lookupSUs(DstInst);
-	assert((SrcUs.size() == DstUs.size() == 1) && "Only BB Value can have mutil-SUnits!");
+	// Only one SUnit expected here.
+	assert((SrcUs.size() == DstUs.size() == 1) && "Unexpected mutil-SUnits!");
 	SIRSchedUnit *SrcU = SrcUs.front(), *DstU = DstUs.front();
 
 	unsigned Latency = 1;
@@ -224,62 +235,30 @@ void SIRScheduling::buildLocalMemoryDependencies(BasicBlock *BB) {
 	}
 }
 
-void SIRScheduling::buildMemoryDependencies() {
-	Function &F = G->getFunction();
-
-	// Build the local memory dependencies inside basic blocks.
-	ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
-
-	typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
-	for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
-		buildLocalMemoryDependencies(*I);
-}
-
-SIRSchedUnit *SIRScheduling::getDataFlowSU(Value *V) {
+ArrayRef<SIRSchedUnit *> SIRScheduling::getDataFlowSU(Value *V) {
+	// If we are getting the corresponding SUnit of the argument,
+	// then we can just return the Entry SUnit of the SchedGraph.
 	if (isa<Argument>(V)) return G->getEntry();
 
 	assert(G->hasSU(V) && "Flow dependencies missed!");
 
-	// We should get the corresponding SUnit of SeqOp.
+	// We should get the corresponding SUnit of this LLVM IR.
+	// To be noted that, if we are passing in BB as Value here,
+	// then we will get the Entry SUnit of the BB.
 	ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(V);
 
-// 	assert(SUs.size() == 1 || isa<BasicBlock>(V) || isa<PHINode>(V)
-// 		     && "Only BasicBlock can have many SUnits!");
-//
-// 	if(!isa<BasicBlock>(V) && !isa<PHINode>(V))
-// 		return SUs[0];
-	// Still only BB Value and PHI node can have mutil-SUnits,
-	// however, we create a pseudo instruction to hold the value
-	// in PHINode, so the value here is not the PHINode itself.
-	// For now, we can't detect whether this value is associated
-	// with PHINode through the type of Value itself.
-	if (SUs.size()) return SUs[0];
+	if (isa<BasicBlock>(V))
+		assert(SUs.size() == 1 && "Unexpected multi-SUnits!");
 
-	for (unsigned I = 0; I < SUs.size(); I++) {
-		SIRSchedUnit *CurSU = SUs[I];
-
-// 		// If this is a BasicBlock, then we return its Entry SUnit.
-// 		if (isa<BasicBlock>(V) && CurSU->isBBEntry())
-// 			return CurSU;
-//
-// 		// If this is a PHINode, then we return the PHI SUnit.
-// 		if (isa<PHINode>(V) && CurSU->isPHI())
-// 			return CurSU;
-		// Still only BB Value and PHI node can have mutil-SUnits,
-		// however, we create a pseudo instruction to hold the value
-		// in PHINode, so the value here is not the PHINode itself.
-		// For now, we can't detect whether this value is associated
-		// with PHINode through the type of Value itself.
-		if (CurSU->isPHI() || CurSU->isBBEntry())
-			return CurSU;
-
-		continue;
-	}	
-
-	assert(false && "There must be something wrong!");
+	return SUs;
 }
 
 void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
+	int temp = S->getSlotNum();
+
+	if (temp == 220)
+		int i = 1;
+
 	BasicBlock *BB = S->getParent();
 
 	SIRSchedUnit *BBEntry = 0;
@@ -289,23 +268,6 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 	// Or we create the Entry SUnit for this BB.
 	else BBEntry = getOrCreateBBEntry(BB);
 
-	// Index all the TargetBB of this Entry SUnit according to
-	// the successor of this Slot.
-	typedef SIRSlot::succ_iterator iterator;
-	for (iterator I = S->succ_begin(), E = S->succ_end(); I != E; I++) {
-		SIRSlot *DstSlot = *I;
-		BasicBlock *DstBB = DstSlot->getParent();
-
-		// If it's not a BB transition, ignore it. And note that
-		// if DstBB and BB are the same and not empty, then only 
-		// when S is the latest slot, then there are a BB 
-		// transition from BB to BB itself.
-		if (DstBB == BB && (!BB || S!= SM->getLatestSlot(BB))) 
-			continue;
-
-		G->indexSU2IR(BBEntry, DstBB);
-	}
-
 	// Collect all SeqOps in this slot and create SUnits for them.
 	std::vector<SIRSeqOp *> Ops;
 	Ops.insert(Ops.end(), S->op_begin(), S->op_end());
@@ -314,29 +276,19 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 	for (op_iterator OI = Ops.begin(), OE = Ops.end(); OI != OE; ++OI) {
 		SIRSeqOp *Op = *OI;
 
-		// Do not create SUnit for the SlotTransition, since we know which
-		// slot to emit it. And the dependency between the SUnits in DstSlot
-		// to this SlotTransition will be handled in emitting process.
-		if (isa<SIRSlotTransition>(Op)) continue;
-
 		Instruction *Inst = dyn_cast<Instruction>(Op->getLLVMValue()); 
 		
-		// Detect whether the type of SIRSchedUnit from the DstReg.
+		// Detect whether the type of SIRSchedUnit according to the DstReg.
 		SIRSchedUnit::Type Ty;
 		SIRRegister *DstReg = Op->getDst();
 		if (DstReg->isPHI())			  Ty = SIRSchedUnit::PHI;
+		else if (DstReg->isSlot())	Ty = SIRSchedUnit::SlotTransition;
 		else                        Ty = SIRSchedUnit::Normal;
 
 		SIRSchedUnit *U = G->createSUnit(Inst, BB, Ty, Op);
 
-		if (U->isPHI())
-			// Since the PHI latches are predicated, their depends on the parent BB,
-			// i.e. the PHI latches are implicitly guard by the 'condition' of their
-			// parent BB.
-			U->addDep(BBEntry, SIRDep::CreateCtrlDep(0));
-
-		buildDataFlowDependencies(U);
-
+		// Index the SUnit to the Slot and the LLVM IR.
+		G->indexSU2Slot(U, S);
 		G->indexSU2IR(U, Inst);
 
 		continue;
@@ -356,6 +308,7 @@ void SIRScheduling::finishBuildingSchedGraph() {
 		// Terminators will be handled later.
 		if (U->isTerminator()) continue;
 
+		// Constraint the non-use SUnit to the Exit.
 		if(U->use_empty())
 			Exit->addDep(U, SIRDep::CreateCtrlDep(0));
 	}
@@ -380,14 +333,15 @@ void SIRScheduling::buildSchedulingGraph() {
 	for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
 		buildSchedulingUnits(*I);
 
-	buildControlFlowDependencies();
-
-	buildMemoryDependencies();
+	buildDependencies();
 
 	// Constraint all nodes that do not have a user by adding SIRDep to
 	// the terminator in its parent BB.
 	finishBuildingSchedGraph();
 
+	// Sort all SUnits according to the dependencies and reassign the
+	// index based on the result, so we can easily recognize the back-edge
+	// according to the index.
 	G->topologicalSortSUs();
 }
 

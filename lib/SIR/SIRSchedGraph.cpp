@@ -27,7 +27,13 @@ using namespace llvm;
 SIRSchedUnit::SIRSchedUnit(unsigned InstIdx, Instruction *Inst,
 	                         Type T, BasicBlock *BB, SIRSeqOp *SeqOp)
 													 : II(0), Schedule(0), InstIdx(InstIdx),
-													   Inst(Inst), T(T), BB(BB), SeqOp(SeqOp) {}
+													   Inst(Inst), T(T), BB(BB), SeqOp(SeqOp) {
+	if (T == SIRSchedUnit::Entry || T == SIRSchedUnit::Exit	||
+			T == SIRSchedUnit::BlockEntry || T == SIRSchedUnit::Invalid)
+		this->Latency = 0;
+	else
+		this->Latency = 1;
+}
 
 SIRSchedUnit::SIRSchedUnit() : InstIdx(0), Inst(0), 
 	                             T(SIRSchedUnit::Invalid), BB(0), SeqOp(0) {}
@@ -182,67 +188,82 @@ ArrayRef<SIRSchedUnit *> SIRSchedGraph::lookupSUs(Value *V) const {
 }
 
 bool SIRSchedGraph::indexSU2IR(SIRSchedUnit *SU, Value *V) {
-	// Only BB Value and PHI node can have mutil-SUnits, 
-	// so if the Value already have corresponding SUnit, 
-	// the insert operation can not be done.	
+	// If there are already a map, then we just add the SU into it.
 	if (hasSU(V)) {
-  // Still only BB Value and PHI node can have mutil-SUnits,
-	// however, we create a pseudo instruction to hold the value
-	// in PHINode, so the value here is not the PHINode itself.
-	// For now, we can't detect whether this value is associated
-	// with PHINode.
-// 		assert(isa<BasicBlock>(V) || isa<PHINode>(V)
-// 			     && "SUnit already exits!");
 		IR2SUMap[V].push_back(SU);
 		return true;
 	}
 	
+	// Or we need to create a new map.
 	SmallVector<SIRSchedUnit *, 4> SUs;
 	SUs.push_back(SU);
   IR2SUMap.insert(std::make_pair(V, SUs));
 }
 
+ArrayRef<SIRSchedUnit *> SIRSchedGraph::lookupSUs(SIRSlot *S) const {
+	Slot2SUMapTy::const_iterator at = Slot2SUMap.find(S);
+
+	if (at == Slot2SUMap.end())
+		return ArrayRef<SIRSchedUnit *>();
+
+	return at->second;
+}
+
+bool SIRSchedGraph::indexSU2Slot(SIRSchedUnit *SU, SIRSlot *S) {
+	// If there are already a map, then we just add the SU into it.
+	if (hasSU(S)) {
+		Slot2SUMap[S].push_back(SU);
+
+		return true;
+	}
+
+	// Or we need to create a new map.
+	SmallVector<SIRSchedUnit *, 4> SUs;
+	SUs.push_back(SU);
+	Slot2SUMap.insert(std::make_pair(S, SUs));
+}
+
 void SIRSchedGraph::toposortCone(SIRSchedUnit *Root,
 	                               std::set<SIRSchedUnit *> &Visited,
 	                               BasicBlock *BB) {
-		if (!Visited.insert(Root).second) return;
+	if (!Visited.insert(Root).second) return;
 
-		typedef SIRSchedUnit::dep_iterator ChildIt;
-		std::vector<std::pair<SIRSchedUnit *, ChildIt> > WorkStack;
+	typedef SIRSchedUnit::dep_iterator ChildIt;
+	std::vector<std::pair<SIRSchedUnit *, ChildIt> > WorkStack;
 
-		WorkStack.push_back(std::make_pair(Root, Root->dep_begin()));
+	WorkStack.push_back(std::make_pair(Root, Root->dep_begin()));
 
-		while (!WorkStack.empty()) {
-			SIRSchedUnit *U = WorkStack.back().first;
-			ChildIt I = WorkStack.back().second;
+	while (!WorkStack.empty()) {
+		SIRSchedUnit *U = WorkStack.back().first;
+		ChildIt I = WorkStack.back().second;
 
-			// Visit the current node if all its dependencies are visited.
-			if (U->isBBEntry() || I == U->dep_end()) {
-				WorkStack.pop_back();
-				SUnits.splice(SUnits.end(), SUnits, U);
-				continue;
-			}
-
-			++WorkStack.back().second;
-
-			SIRSchedUnit *Child = *I;
-
-			// We have reach the top SUnit.
-			if (Child->isEntry() || Child->getParentBB() != BB)
-				continue;
-
-			// Do not visit the same node twice!
-			if (!Visited.insert(Child).second) continue;
-
-			WorkStack.push_back(std::make_pair(Child, Child->dep_begin()));
+		// Visit the current node if all its dependencies are visited.
+		if (U->isBBEntry() || I == U->dep_end()) {
+			WorkStack.pop_back();
+			SUnits.splice(SUnits.end(), SUnits, U);
+			continue;
 		}
+
+		++WorkStack.back().second;
+
+		SIRSchedUnit *Child = *I;
+
+		// We have reach the top SUnit.
+		if (Child->isEntry() || Child->getParentBB() != BB)
+			continue;
+
+		// Do not visit the same node twice!
+		if (!Visited.insert(Child).second) continue;
+
+		WorkStack.push_back(std::make_pair(Child, Child->dep_begin()));
+	}
 }
 
 void SIRSchedGraph::topologicalSortSUs() {
 	SIRSchedUnit *Entry = getEntry(), *Exit = getExit();
 	assert(Entry->isEntry() && Exit->isExit() && "Bad order!");
 
-	std::set<SIRSchedUnit *> Visited;
+	// Ensure the Entry is the first.
 	SUnits.splice(SUnits.end(), SUnits, Entry);
 
 	// Handle the SUnits located in Slot0r specially since they have
@@ -253,9 +274,12 @@ void SIRSchedGraph::topologicalSortSUs() {
 		for (unsigned i = 0; i < SUsInSlot0r.size(); ++i) {
 			SIRSchedUnit *SUnitInSlot0r = SUsInSlot0r[i];
 
+			// Ensure all SUnit in Slot0r is in the front of others.
 			SUnits.splice(SUnits.end(), SUnits, SUnitInSlot0r);
 		}
 	}
+
+	std::set<SIRSchedUnit *> Visited;
 
 	ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
 	typedef ReversePostOrderTraversal<BasicBlock*>::rpo_iterator bb_top_iterator;
@@ -273,6 +297,7 @@ void SIRSchedGraph::topologicalSortSUs() {
 			toposortCone(SUs[i], Visited, BB);
 	}
 
+	// Ensure the Exit is the last.
 	SUnits.splice(SUnits.end(), SUnits, Exit);
 
 	unsigned Idx = 0;
@@ -312,8 +337,5 @@ void SIRSchedGraph::resetSchedule() {
 	// Reset all SUnits in graph.
 	for (iterator I = begin(), E = end(); I != E; ++I)
 		I->resetSchedule();
-
-	// Make sure the Entry is in the first Slot.
-	getEntry()->scheduleTo(1);
 }
 
