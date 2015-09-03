@@ -456,6 +456,8 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 
 		if (Data->getType()->isVectorTy()) {
 			Data = D_Builder.createBitCastInst(Data, createIntegerType(getBitWidth(Data)), &I, true);
+		} else if (Data->getType()->isPointerTy()) {
+			Data = D_Builder.createPtrToIntInst(Data, createIntegerType(getBitWidth(Data)), &I, true);
 		}
 
 		Type *RetTy = createIntegerType(Bank->getDataWidth());
