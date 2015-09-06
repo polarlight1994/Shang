@@ -158,14 +158,8 @@ void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
 	if (U->isEntry()) return;
 
 	// The first kind of control dependency is that all SUnits
-	// is depending on the EntrySU of this BB. But we should
-	// be careful when we get the parent BB since it is special
-	// for the PHI SUnit.
-	BasicBlock *ParentBB;
-	if (U->isPHI())
-		ParentBB = U->getSeqOp()->getSlot()->getParent();
-	else
-		ParentBB = U->getParentBB();
+	// is depending on the EntrySU of this BB.
+	BasicBlock *ParentBB = U->getParentBB();
 
 	SIRSchedUnit *EntrySU = getOrCreateBBEntry(ParentBB);
 	// Do not add self-loop.
@@ -323,9 +317,6 @@ void SIRScheduling::finishBuildingSchedGraph() {
 		// Ignore the BBEntry.
 		if (U->isBBEntry()) continue;
 
-		// Terminators will be handled later.
-		if (U->isTerminator()) continue;
-
 		// Constraint the non-use SUnit to the Exit.
 		if(U->use_empty())
 			Exit->addDep(U, SIRDep::CreateCtrlDep(0));
@@ -439,7 +430,7 @@ void SIRScheduleEmitter::insertSlotBefore(SIRSlot *S, SIRSlot *DstS,
 void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 	assert(SUs[0]->isBBEntry() && "BBEntry must be placed at the beginning!");
 
-	BasicBlock *BB = SUs[0]->getParentBB(); 
+	BasicBlock *BB = SUs[0]->getParentBB();
 	SIRSlot *EntrySlot = SM->getLandingSlot(BB);
 
 	assert(EntrySlot && "Landing Slot not created?");

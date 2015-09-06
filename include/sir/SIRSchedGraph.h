@@ -233,8 +233,6 @@ public:
   bool isPHI() const { return T == PHI; }
 	bool isSlotTransition() const { return T == SlotTransition; }
 
-	bool isTerminator() const { return isa<TerminatorInst>(getInst()); }
-
 	Instruction *getInst() const { return Inst; }
 	SIRSeqOp *getSeqOp() const { return SeqOp; }
 
@@ -242,8 +240,6 @@ public:
 	// If the SUnit is terminator, then the BB we hold in SUnit is its TargetBB.
 	// Otherwise the BB we hold in SUnit is its ParentBB.
   BasicBlock *getParentBB() const;
-	BasicBlock *getIncomingBB() const;
-	BasicBlock *getTargetBB() const;
 
 	unsigned getLatency() const { return Latency; }
 

@@ -81,12 +81,13 @@ void BBContext::collectReadySUs(ArrayRef<SIRSchedUnit *> SUs) {
 		if (SU->isScheduled())
 			continue;
 
-		// Only collect the ready SUnits in this BB.
-		if (SU->getParentBB() != BB)
-			continue;
-
 		// Entrys, Exits and PHINodes will be handled elsewhere.
 		if (SU->isBBEntry() || SU->isExit() || SU->isPHI())
+			continue;
+
+		// If the SUnit is located in other BB, ignore it since it
+		// will be handled in that BB.
+		if (SU->getParentBB() != BB)
 			continue;
 
 		if (isSUReady(SU))

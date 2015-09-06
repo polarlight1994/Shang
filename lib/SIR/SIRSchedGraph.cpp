@@ -43,8 +43,6 @@ void SIRSchedUnit::EdgeBundle::addEdge(SIRDep NewEdge) {
 	// place to insert. The principle is 
 	// 1) keep the distance of edges in ascending order
 	// 2) replace the old edge if new edge's latency is bigger
-
-
 	unsigned InsertBefore = 0, Size = Edges.size();
 	bool NeedToInsert = true;
 
@@ -112,32 +110,6 @@ SIRDep SIRSchedUnit::EdgeBundle::getEdge(unsigned II) const {
 }
 
 BasicBlock *SIRSchedUnit::getParentBB() const {
-	// If the SUnit has no corresponding IR instruction,
-	// then it may be the BlockEntry, so return the BB
-	// directly.
-	if (!getInst()) return BB;
-
-	// If this SUnit is a terminator, then we should
-	// get the ParentBB from the Instruction it holds.
-	// To be noted that, in this circumstance, the BB
-	// that SIRSchedUnit holds is its TargetBB.
-	// If this SUnit is a PHI, then we should also get
-	// its ParentBB through the Instruction it holds.
-	// And To be noted that, in this circumstance, the
-	// BB that SIRSchedUnit holds is its SrcBB.
-	if (isTerminator() || isPHI())
-		return getInst()->getParent();
-
-	return BB;
-}
-
-BasicBlock *SIRSchedUnit::getIncomingBB() const {
-	assert(isPHI() && "Call getIncomingBB on wrong SUnit type!");
-	return BB;
-}
-
-BasicBlock *SIRSchedUnit::getTargetBB() const {
-	assert(isTerminator() && "Call getTargetBB on wrong SUnit type!");
 	return BB;
 }
 
@@ -321,13 +293,7 @@ SIRSchedUnit *SIRSchedGraph::createSUnit(Instruction *Inst, BasicBlock *ParentBB
 	SIRSchedUnit *U = new SIRSchedUnit(TotalSUs++, Inst, T, ParentBB, SeqOp);
 	// Insert the newly create SU before the exit.
 	SUnits.insert(SUnits.back(), U);
-
-	// If this SUnit is PHI node, then the ParentBB will not be the same with
-	// U->getParentBB(), since we actually move the PHI node to the SrcBB.
-	// So we should index this PHI node to the SrcBB not the original BB.
-	if (U->getParentBB() != ParentBB)
-		assert(T == SIRSchedUnit::PHI && "Only the PHI node are moved across the BB!");
-
+	// Index the SUnit to the corresponding BB.
 	BBMap[ParentBB].push_back(U);
   
 	return U;
