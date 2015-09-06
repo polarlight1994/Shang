@@ -20,7 +20,7 @@ set(LLVM_LINK ${LLVM_TOOLS_BINARY_DIR}/llvm-link)
 set(SHANG ${LLVM_TOOLS_BINARY_DIR}/shang)
 
 set(FMAX "100.0" CACHE STRING "The maximum frequency of the synthesized designs")
-set(TIMEOUT "240" CACHE STRING "Maximum time allow the simulation to run")
+set(TIMEOUT "2400" CACHE STRING "Maximum time allow the simulation to run")
 
 set(BenchmarkSummaryTmp "${SIR_BINARY_ROOT}/benchmark.summary.json.tmp")
 
@@ -223,7 +223,7 @@ macro(add_cosimulation_test test_name)
 	#Run the exe to get test output.
 	add_custom_command(OUTPUT ${TEST_BINARY_ROOT}/Test.output
 		COMMAND	rm -rf "${TEST_BINARY_ROOT}/Test.output"
-		COMMAND timeout ${TIMEOUT}s "${TEST_SC_EXE}" > "${TEST_BINARY_ROOT}/Test.output"
+		COMMAND "${TEST_SC_EXE}" > "${TEST_BINARY_ROOT}/Test.output"
 		DEPENDS ${TEST_SC_EXE}
 		WORKING_DIRECTORY ${TEST_RTL_OBJ_ROOT}
 		COMMENT "Run ${TEST_SC_EXE} to get test output"
