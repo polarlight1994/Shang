@@ -15,4 +15,6 @@ SIRPass.cpp
 SIRRTLCodeGen.cpp
 )
 
-target_link_libraries(ShangSIR LLVMLinker)
+include_directories(${LPSOLVE_INCLUDE_DIR})
+
+target_link_libraries(ShangSIR LLVMLinker ${LPSOLVE_LIBRARY})
