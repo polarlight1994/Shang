@@ -365,9 +365,12 @@ void SIRScheduling::buildSchedulingGraph() {
 }
 
 void SIRScheduling::schedule() {
-	ListScheduler LS(*G, G->getEntry()->getSchedule());
+// 	ListScheduler LS(*G, G->getEntry()->getSchedule());
+//
+// 	LS.schedule();
+	SIRSDCScheduler SDC(*G, G->getEntry()->getSchedule());
 
-	LS.schedule();
+	SDC.schedule();
 }
 
 void SIRScheduling::emitSchedule() {
@@ -455,7 +458,7 @@ void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 		// The target local step of the SUnit. Since we may specify the target
 		// slot in SIRBuild pass, so we must consider the constraint it brings.
 		unsigned TargetStep = CurSU->getSchedule() - EntrySUSchedule;
-		TargetStep = std::max(TargetStep, EmitSlotStep);
+		TargetStep = max(TargetStep, EmitSlotStep);
 
 		// The numbers of slots need to allocate to meet the
     // target local step of the SUnit.
