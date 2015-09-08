@@ -181,9 +181,10 @@ bool SIRSDCScheduler::scheduleSUs() {
 	unsigned TotalRows = get_Norig_rows(lp);
 	unsigned Changed = 0;
 
-	std::string SDCResult = LuaI::GetString("SDCResult");
-	std::string Error;
-	raw_fd_ostream Output(SDCResult.c_str(), Error);
+/// Debug Code
+// 	std::string SDCResult = LuaI::GetString("SDCResult");
+// 	std::string Error;
+// 	raw_fd_ostream Output(SDCResult.c_str(), Error);
 
 	for (iterator I = begin(), E = end(); I != E; ++I) {
 		SIRSchedUnit *U = I;
@@ -192,7 +193,8 @@ bool SIRSDCScheduler::scheduleSUs() {
 		REAL Result = get_var_primalresult(lp, TotalRows + Col);
 		unsigned FinalResult = unsigned(Result);
 
-		Output << "SU#" << U->getIdx() << " scheduled to " << FinalResult << "\n";
+/// Debug Code
+/*		Output << "SU#" << U->getIdx() << " scheduled to " << FinalResult << "\n";*/
 
 		// Handle the SUnits in Slot0r specially since they are
 		// always scheduled to 0.

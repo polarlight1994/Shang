@@ -173,18 +173,19 @@ bool ListScheduler::schedule() {
   SIRSchedUnit *Exit = G.getExit();
   Exit->scheduleTo(calculateASAP(Exit));
 
-	std::string LSResult = LuaI::GetString("LSResult");
-	std::string Error;
-	raw_fd_ostream Output(LSResult.c_str(), Error);
-
-	typedef SIRSchedGraph::iterator iterator;
-	for (iterator I = G.begin(), E = G.end(); I != E; ++I) {
-		SIRSchedUnit *U = I;
-
-		unsigned Result = U->getSchedule();
-
-		Output <<  "SU#" << U->getIdx() << " scheduled to " << Result << "\n";
-	}
+/// Debug Code
+// 	std::string LSResult = LuaI::GetString("LSResult");
+// 	std::string Error;
+// 	raw_fd_ostream Output(LSResult.c_str(), Error);
+//
+// 	typedef SIRSchedGraph::iterator iterator;
+// 	for (iterator I = G.begin(), E = G.end(); I != E; ++I) {
+// 		SIRSchedUnit *U = I;
+//
+// 		unsigned Result = U->getSchedule();
+//
+// 		Output <<  "SU#" << U->getIdx() << " scheduled to " << Result << "\n";
+// 	}
 
   return true;
 }
