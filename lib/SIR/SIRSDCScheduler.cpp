@@ -14,8 +14,10 @@
 #include "sir/SIRSDCScheduler.h"
 #include "llvm/ADT/STLExtras.h"
 #include "lp_solve/lp_lib.h"
+#include "vast/LuaI.h"
 
 using namespace llvm;
+using namespace vast;
 
 void SIRSDCScheduler::reset() {
 	// Clear all the containers.
@@ -33,7 +35,7 @@ unsigned SIRSDCScheduler::createLPVariable(SIRSchedUnit *U, unsigned ColNum) {
 	assert(inserted && "ColNum already existed!");
 
 	// Name the LP Variable for debug.
-	std::string LPVar = "lpvar" + utostr_32(ColNum);
+	std::string LPVar = "lpvar" + utostr_32(U->getIdx());
 	set_col_name(lp, ColNum, const_cast<char *>(LPVar.c_str()));
 
 	set_int(lp, ColNum, TRUE);
@@ -96,7 +98,7 @@ void SIRSDCScheduler::addDependencyConstraints() {
 			SIRSchedUnit *SrcSU = *DI;
 
 			// Ignore the back-edge.
-			if(SrcSU->getIdx() >= DstSU->getIdx())
+			if (SrcSU->getIdx() >= DstSU->getIdx())
 				continue;
 
 		  unsigned SrcSUCol = getSUCol(SrcSU);
@@ -151,8 +153,6 @@ bool SIRSDCScheduler::solveLP(lprec *lp) {
 
 	set_var_weights(lp, VarWeights.data());
 
-	write_lp(lp, "log.lp");
-
 	return interpertResult(solve(lp));
 }
 
@@ -162,7 +162,7 @@ bool SIRSDCScheduler::interpertResult(int Result) {
 	case INFEASIBLE:
 		return false;
 	// The result is sub-optimal.
-	case SUBOPTIMAL:
+	//case SUBOPTIMAL:
 	// The result is solved in pre-solve.
 	case PRESOLVED:
 	// The result is optimal.
@@ -176,8 +176,14 @@ bool SIRSDCScheduler::interpertResult(int Result) {
 }
 
 bool SIRSDCScheduler::scheduleSUs() {
+	write_lp(lp, "log.lp");
+
 	unsigned TotalRows = get_Norig_rows(lp);
 	unsigned Changed = 0;
+
+	std::string SDCResult = LuaI::GetString("SDCResult");
+	std::string Error;
+	raw_fd_ostream Output(SDCResult.c_str(), Error);
 
 	for (iterator I = begin(), E = end(); I != E; ++I) {
 		SIRSchedUnit *U = I;
@@ -185,6 +191,8 @@ bool SIRSDCScheduler::scheduleSUs() {
 		unsigned Col = getSUCol(U);
 		REAL Result = get_var_primalresult(lp, TotalRows + Col);
 		unsigned FinalResult = unsigned(Result);
+
+		Output << "SU#" << U->getIdx() << " scheduled to " << FinalResult << "\n";
 
 		// Handle the SUnits in Slot0r specially since they are
 		// always scheduled to 0.
