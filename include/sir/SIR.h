@@ -712,13 +712,13 @@ public:
   typedef SeqOpList::iterator seqop_iterator;
   typedef SeqOpList::const_iterator const_seqop_iterator;
 
-	typedef DenseMap<Instruction *, IntrinsicInst *> Inst2SeqInstMapTy;
-	typedef Inst2SeqInstMapTy::iterator inst2seqinst_iterator;
-	typedef Inst2SeqInstMapTy::const_iterator const_inst2seqinst_iterator;
+	typedef DenseMap<Value *, Value *> Val2SeqValMapTy;
+	typedef Val2SeqValMapTy::iterator val2valseq_iterator;
+	typedef Val2SeqValMapTy::const_iterator const_val2valseq_iterator;
 
-  typedef DenseMap<Instruction *, SIRRegister *> SeqInst2RegMapTy;
-  typedef SeqInst2RegMapTy::iterator seqinst2reg_iterator;
-  typedef SeqInst2RegMapTy::const_iterator const_seqinst2reg_iterator;
+  typedef DenseMap<Value *, SIRRegister *> SeqVal2RegMapTy;
+  typedef SeqVal2RegMapTy::iterator seqval2reg_iterator;
+  typedef SeqVal2RegMapTy::const_iterator const_seqval2reg_iterator;
 
   typedef DenseMap<SIRRegister *, SIRSlot *> Reg2SlotMapTy;
   typedef Reg2SlotMapTy::iterator reg2slot_iterator;
@@ -738,9 +738,9 @@ private:
   // The SeqOps in CtrlRgn of the module
   SeqOpList SeqOps;
 	// The map between Inst and SeqInst
-	Inst2SeqInstMapTy Inst2SeqInst;
+	Val2SeqValMapTy Val2SeqVal;
   // The map between SeqInst and SIRRegister
-  SeqInst2RegMapTy SeqInst2Reg;
+  SeqVal2RegMapTy SeqVal2Reg;
   // The map between Register and SIRSlot
   Reg2SlotMapTy Reg2Slot;
 
@@ -829,20 +829,30 @@ public:
 		SeqOps.erase(SeqOp);
 	}
 
-	bool IndexInst2SeqInst(Instruction *I, IntrinsicInst *II) {
-		return Inst2SeqInst.insert(std::make_pair(I, II)).second;
+	bool IndexVal2SeqVal(Value *Val, Value *SeqVal) {
+		// The SeqVal should be the form of shang_pseudo.
+		IntrinsicInst *II = dyn_cast<IntrinsicInst>(SeqVal);
+		assert(II && II->getIntrinsicID() == Intrinsic::shang_pseudo
+					 && "Unexpected SeqVal type!");
+
+		return Val2SeqVal.insert(std::make_pair(Val, SeqVal)).second;
 	}
-	IntrinsicInst *lookupSeqInst(Instruction *I) const {
-		const_inst2seqinst_iterator at = Inst2SeqInst.find(I);
-		return at == Inst2SeqInst.end() ? 0 : at->second;
+	Value *lookupSeqVal(Value *Val) const {
+		const_val2valseq_iterator at = Val2SeqVal.find(Val);
+		return at == Val2SeqVal.end() ? 0 : at->second;
 	}
 
-  bool IndexSeqInst2Reg(Instruction *SeqInst, SIRRegister *Reg) {
-    return SeqInst2Reg.insert(std::make_pair(SeqInst, Reg)).second;
+  bool IndexSeqVal2Reg(Value *SeqVal, SIRRegister *Reg) {
+		// The SeqVal should be the form of shang_pseudo.
+		IntrinsicInst *II = dyn_cast<IntrinsicInst>(SeqVal);
+		assert(II && II->getIntrinsicID() == Intrinsic::shang_pseudo
+			     && "Unexpected SeqVal type!");
+
+    return SeqVal2Reg.insert(std::make_pair(SeqVal, Reg)).second;
   }
-  SIRRegister *lookupSIRReg(Instruction *SeqInst) const {
-    const_seqinst2reg_iterator at = SeqInst2Reg.find(SeqInst);
-    return at == SeqInst2Reg.end() ? 0 : at->second;
+  SIRRegister *lookupSIRReg(Value *SeqVal) const {
+    const_seqval2reg_iterator at = SeqVal2Reg.find(SeqVal);
+    return at == SeqVal2Reg.end() ? 0 : at->second;
   }
 
   bool IndexReg2Slot(SIRRegister *Reg, SIRSlot *S) {

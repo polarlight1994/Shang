@@ -199,13 +199,11 @@ public:
   /// Functions to build Control Logic
 
 	// Functions to build sequential instruction
-  Instruction *createPseudoInst(Type *RetTy, Value *InsertPosition);
-	Instruction *createAssignInst(Value *Src, Value *Guard, SIRSlot *S,
-		                            Value *InsertPosition);
+  Value *createPseudoInst(Type *RetTy, Value *InsertPosition);
 
 	// Functions to build register
-  SIRRegister *createRegister(StringRef Name, Type *ValueTy, BasicBlock *ParentBB = 0,
-		                          Instruction *Inst = 0, uint64_t InitVal = 0,
+  SIRRegister *createRegister(StringRef Name, Type *ValueTy,
+															BasicBlock *ParentBB = 0, uint64_t InitVal = 0,
                               SIRRegister::SIRRegisterTypes T = SIRRegister::General);
 
 	// Function to build Port
