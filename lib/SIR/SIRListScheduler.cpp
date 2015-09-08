@@ -12,8 +12,10 @@
 //
 //===----------------------------------------------------------------------===//
 #include "sir/SIRListScheduler.h"
+#include "vast/LuaI.h"
 
 using namespace llvm;
+using namespace vast;
 
 void BBContext::enter(BasicBlock *BB) {
 	// Initialize
@@ -93,9 +95,6 @@ void BBContext::collectReadySUs(ArrayRef<SIRSchedUnit *> SUs) {
 		if (isSUReady(SU))
 			ReadyQueue.push(SU);
 	}
-
-	// Sort the SUnits.
-	ReadyQueue.reheapify();
 }
 
 void BBContext::scheduleBB() {
@@ -110,8 +109,8 @@ void BBContext::scheduleBB() {
 
 		SU->scheduleTo(Step);
 
-		// After we schedule a unit, we should reset the TimeFrame.
-		S.resetTimeFrame();
+		// After we schedule a unit, we should re-build the TimeFrame.
+		S.buildTimeFrame();
 		// Also we should reset the ready queue.
 		SmallVector<SIRSchedUnit *, 4> Users = SU->getUseList();
 		collectReadySUs(Users);
@@ -126,17 +125,12 @@ void BBContext::scheduleSUsToEntrySlot() {
 	assert(SUs.size() == 1 && "Unexpected mutil-SUnits!");
 	SIRSchedUnit *Entry = SUs[0];
 
-	// Calculate the EntrySlot and schedule the BBEntry into it.
-	unsigned EntrySlot = S.calculateASAP(Entry);
-	Entry->scheduleTo(EntrySlot);
+	// Calculate the StartSlot and schedule the BBEntry into it.
+	StartSlot = S.calculateASAP(Entry);
+	Entry->scheduleTo(StartSlot);
 }
 
 void BBContext::scheduleSUsToExitSlot() {
-	// The SUs that corresponds to the terminator of BB are exit nodes.
-	ArrayRef<SIRSchedUnit *> SUnits = S->lookupSUs(BB->getTerminator());
-
-	Exits.insert(SUnits.begin(), SUnits.end());
-
 	// PHINodes also need to schedule to the end of the BB.
 	ArrayRef<SIRSchedUnit *> SUs = S->getSUsInBB(BB);
 	typedef ArrayRef<SIRSchedUnit *>::iterator array_iterator;
@@ -150,12 +144,7 @@ void BBContext::scheduleSUsToExitSlot() {
 	typedef std::set<SIRSchedUnit *>::iterator set_iterator;
   for (set_iterator I = Exits.begin(), E = Exits.end(); I != E; ++I) {
 		SIRSchedUnit *SU = *I;
-		EndSlot = std::max(StartSlot, S.calculateASAP(SU));
-  }
-
-  for (set_iterator I = Exits.begin(), E = Exits.end(); I != E; ++I) {
-		SIRSchedUnit *SU = *I;
-		SU->scheduleTo(EndSlot);
+		SU->scheduleTo(S.calculateASAP(SU));
   }
 }
 
@@ -180,10 +169,22 @@ bool ListScheduler::schedule() {
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     scheduleBB(*I);
 
-  // Hack: what if we don't schedule the exit specially?
   // Schedule the Exit ASAP.
   SIRSchedUnit *Exit = G.getExit();
   Exit->scheduleTo(calculateASAP(Exit));
+
+	std::string LSResult = LuaI::GetString("LSResult");
+	std::string Error;
+	raw_fd_ostream Output(LSResult.c_str(), Error);
+
+	typedef SIRSchedGraph::iterator iterator;
+	for (iterator I = G.begin(), E = G.end(); I != E; ++I) {
+		SIRSchedUnit *U = I;
+
+		unsigned Result = U->getSchedule();
+
+		Output <<  "SU#" << U->getIdx() << " scheduled to " << Result << "\n";
+	}
 
   return true;
 }
