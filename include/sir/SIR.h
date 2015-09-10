@@ -224,13 +224,13 @@ public:
 
 		// Set the real operands to this register assign instruction.
 		IntrinsicInst *II = dyn_cast<IntrinsicInst>(getLLVMValue());
-		if (II && II->getIntrinsicID() == Intrinsic::shang_pseudo) {
-			Value *PseudoSrcVal = II->getOperand(0);
-			Value *PseudoGuardVal = II->getOperand(1);
-			if (PseudoSrcVal != RegVal) {
+		if (II && II->getIntrinsicID() == Intrinsic::shang_reg_assign) {
+			Value *RegSrcVal = II->getOperand(0);
+			Value *RegGuardVal = II->getOperand(1);
+			if (RegSrcVal != RegVal) {
 				II->setOperand(0, RegVal);
 			}
-			if (PseudoGuardVal != RegGuard)
+			if (RegGuardVal != RegGuard)
 				II->setOperand(1, RegGuard);
 		}
 	}
@@ -737,11 +737,11 @@ private:
   SlotVector Slots;
   // The SeqOps in CtrlRgn of the module
   SeqOpList SeqOps;
-	// The map between Inst and SeqInst
+	// The map between Value in LLVM IR and SeqVal in SIR
 	Val2SeqValMapTy Val2SeqVal;
-  // The map between SeqInst and SIRRegister
+  // The map between SeqVal in SIR and Reg in SIR
   SeqVal2RegMapTy SeqVal2Reg;
-  // The map between Register and SIRSlot
+  // The map between Reg and SIRSlot
   Reg2SlotMapTy Reg2Slot;
 
   // Record the Idx of FinPort and RetPort.
@@ -830,9 +830,9 @@ public:
 	}
 
 	bool IndexVal2SeqVal(Value *Val, Value *SeqVal) {
-		// The SeqVal should be the form of shang_pseudo.
+		// The SeqVal should be the form of shang_reg_assign.
 		IntrinsicInst *II = dyn_cast<IntrinsicInst>(SeqVal);
-		assert(II && II->getIntrinsicID() == Intrinsic::shang_pseudo
+		assert(II && II->getIntrinsicID() == Intrinsic::shang_reg_assign
 					 && "Unexpected SeqVal type!");
 
 		return Val2SeqVal.insert(std::make_pair(Val, SeqVal)).second;
@@ -843,9 +843,9 @@ public:
 	}
 
   bool IndexSeqVal2Reg(Value *SeqVal, SIRRegister *Reg) {
-		// The SeqVal should be the form of shang_pseudo.
+		// The SeqVal should be the form of shang_reg_assign.
 		IntrinsicInst *II = dyn_cast<IntrinsicInst>(SeqVal);
-		assert(II && II->getIntrinsicID() == Intrinsic::shang_pseudo
+		assert(II && II->getIntrinsicID() == Intrinsic::shang_reg_assign
 			     && "Unexpected SeqVal type!");
 
     return SeqVal2Reg.insert(std::make_pair(SeqVal, Reg)).second;
@@ -940,9 +940,7 @@ public:
 	void dumpBB2Slot(raw_ostream &OS);
 	void dumpReg2Slot(raw_ostream &OS);
 	void dumpSeqOp2Slot(raw_ostream &OS);
-
 };
-
 }
 
 #endif

@@ -960,8 +960,9 @@ bool SIRDatapathPrinter::printExpr(IntrinsicInst &I) {
 }
 
 void SIRDatapathPrinter::visitIntrinsicInst(IntrinsicInst &I) {
-  // Skip all the pseudo instruction.
-  if (I.getIntrinsicID() == Intrinsic::shang_pseudo)
+  // Skip all the reg_assign instruction since it has nothing
+	// to do with the Datapath.
+  if (I.getIntrinsicID() == Intrinsic::shang_reg_assign)
     return;
 
   Intrinsic::ID ID = I.getIntrinsicID();
@@ -1194,7 +1195,7 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
 			Instruction *Inst = I;
 
 			if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst)) {
-				if (II->getIntrinsicID() == Intrinsic::shang_pseudo)
+				if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
 					continue;
 
 				raw_ostream &wireOS = Out.indent(2);

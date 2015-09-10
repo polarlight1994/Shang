@@ -75,7 +75,7 @@ private:
 			case Intrinsic::shang_rxor:
 			case Intrinsic::shang_sgt:
 			case Intrinsic::shang_ugt:
-			case Intrinsic::shang_pseudo:
+			case Intrinsic::shang_reg_assign:
 				return false;
 			}
 		}

@@ -198,10 +198,10 @@ public:
 
   /// Functions to build Control Logic
 
-	// Functions to build sequential instruction
-  Value *createPseudoInst(Type *RetTy, Value *InsertPosition);
+	// Function to represent the SeqVal stored in register
+  Value *createRegAssignInst(Type *RetTy, Value *InsertPosition);
 
-	// Functions to build register
+	// Function to build register
   SIRRegister *createRegister(StringRef Name, Type *ValueTy,
 															BasicBlock *ParentBB = 0, uint64_t InitVal = 0,
                               SIRRegister::SIRRegisterTypes T = SIRRegister::General);

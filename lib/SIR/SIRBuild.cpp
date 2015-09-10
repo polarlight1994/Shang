@@ -257,7 +257,7 @@ unsigned SIRCtrlRgnBuilder::getBitWidth(Value *U) {
   return TD.getTypeSizeInBits(U->getType());
 }
 
-Value *SIRCtrlRgnBuilder::createPseudoInst(Type *RetTy, Value *InsertPosition) {
+Value *SIRCtrlRgnBuilder::createRegAssignInst(Type *RetTy, Value *InsertPosition) {
   // For all SeqValue which will be held in register, we create this pseudo SeqInst,
   // which will represent the assign operation to the register of this slot or port.
   // And the insert position will be the front of whole module.
@@ -266,36 +266,38 @@ Value *SIRCtrlRgnBuilder::createPseudoInst(Type *RetTy, Value *InsertPosition) {
 	// to represent the operand of this pseudo instruction.
 	unsigned BitWidth = TD.getTypeSizeInBits(RetTy);
 
+	// Create pseudo SrcVal and GuardVal to assign to the register here. To be noted
+	// that, the real SrcVal and GuardVal will replace these pseudo value after
+	// register synthesis pass.
   Value *PseudoSrcVal = createIntegerValue(BitWidth, 1);
 	Value *PseudoGuardVal = createIntegerValue(1, 1);
 	Value *Ops[] = { PseudoSrcVal, PseudoGuardVal };
 
-  Value *PseudoInst = D_Builder.createShangInstPattern(Ops,
-                                                       RetTy,
-                                                       InsertPosition, Intrinsic::shang_pseudo,
-                                                       true);
-  return PseudoInst;
+  Value *RegAssignInst = D_Builder.createShangInstPattern(Ops, RetTy, InsertPosition,
+		                                                      Intrinsic::shang_reg_assign,
+                                                          true);
+  return RegAssignInst;
 }
 
 SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, Type *ValueTy,
 																							 BasicBlock *ParentBB, uint64_t InitVal, 
                                                SIRRegister::SIRRegisterTypes T) {
-	// Make sure we don't get empty name.
-  std::string RegName;
-  if (Name.size() == 0)
-		RegName = "SIRTempReg" + utostr_32(NumSIRTempRegs++);
-	else
-		RegName = Name;
-
   // For the General Register or PHI Register, we create a pseudo instruction and
 	// this pseudo instruction will be inserted into the back of whole module.
 	// Insert the implement of register just in front of the terminator instruction
 	// at back of the module to avoid being used before declaration.
 	Value *InsertPosition = SM->getPositionAtBackOfModule();
-	Value *SeqVal = createPseudoInst(ValueTy, InsertPosition);
+	Value *SeqVal = createRegAssignInst(ValueTy, InsertPosition);
 
 	assert(SeqVal && "Unexpected empty PseudoSeqInst!");
 	assert(!SM->lookupSIRReg(SeqVal) && "Register already created before!");
+
+	// Make sure we don't get empty name.
+	std::string RegName;
+	if (Name.size() == 0)
+		RegName = "SIRTempReg" + utostr_32(NumSIRTempRegs++);
+	else
+		RegName = Name;
 
 	// Create the register, and the BitWidth is determined by the ValueTy.
 	unsigned BitWidth = TD.getTypeSizeInBits(ValueTy);
@@ -492,8 +494,9 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 
 		SIRRegister *ResultReg = createRegister(I.getName(), I.getType(), ParentBB);
 
-		// Since this instruction is a LoadInst, we should index this Inst to SeqInst.
-		// And replace the use of it to the result register.
+		// The LoadInst is load the result into a register, that is a SeqVal in SIR.
+		// So index the LoadInst to the SeqVal and replace all use of the LoadInst
+		// with the SeqVal.
 		SM->IndexVal2SeqVal(&I,	ResultReg->getLLVMValue());
 		I.replaceAllUsesWith(ResultReg->getLLVMValue());
 
@@ -1027,7 +1030,7 @@ void SIRDatapathBuilder::visitIntrinsicInst(IntrinsicInst &I) {
 	case Intrinsic::memset:
 	case Intrinsic::memmove:
 	// Ignore the Shang Intrinsic we created.
-	case Intrinsic::shang_pseudo:
+	case Intrinsic::shang_reg_assign:
 	case Intrinsic::shang_not:
 	case Intrinsic::shang_rand:
 	case Intrinsic::shang_rxor:
@@ -1195,7 +1198,7 @@ Value *SIRDatapathBuilder::createShangInstPattern(ArrayRef<Value *> Ops, Type *R
     Instruction *NewInst = CallInst::Create(Func, Ops, S, InsertBefore);
 
     // Index all these data-path instructions.
-    if (FuncID != Intrinsic::shang_pseudo)
+    if (FuncID != Intrinsic::shang_reg_assign)
       SM->IndexDataPathInst(NewInst);
 
     // If the inst is not used as an argument of other functions,
@@ -1223,7 +1226,7 @@ Value *SIRDatapathBuilder::createShangInstPattern(ArrayRef<Value *> Ops, Type *R
     Instruction *NewInst = CallInst::Create(Func, Ops, Func->getName(), InsertAtEnd);
 
     // Index all these data-path instructions.
-    if (FuncID != Intrinsic::shang_pseudo)
+    if (FuncID != Intrinsic::shang_reg_assign)
       SM->IndexDataPathInst(NewInst);
 
     return NewInst;

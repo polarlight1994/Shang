@@ -685,9 +685,9 @@ void SIRDelayModel::updateArrival() {
   case Intrinsic::shang_ugt:
     return updateCmpArrivial();
 
-	case  Intrinsic::shang_pseudo:
-		// To be noted that, pseudo instruction is created
-		// to represent the assignment to SlotReg, so it
+	case  Intrinsic::shang_reg_assign:
+		// To be noted that, reg_assign instruction is created
+		// to represent the SeqVal stored in register, so it
 		// will devote 0 delay.
 		return updateArrivalParallel(0.0f);
 
