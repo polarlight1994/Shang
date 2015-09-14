@@ -45,7 +45,6 @@ INITIALIZE_PASS_BEGIN(SIRRegisterSynthesisForAnnotation,
                       "Implement the MUX for the Sequential Logic in SIR for annotation",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
-	//INITIALIZE_PASS_DEPENDENCY(SIRFSMSynthesis)
 INITIALIZE_PASS_END(SIRRegisterSynthesisForAnnotation,
 	                  "SIR-Register-synthesis-for-annotation",
 	                  "Implement the MUX for the Sequential Logic in SIR for annotation",
