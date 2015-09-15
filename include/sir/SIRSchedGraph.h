@@ -44,32 +44,32 @@ public:
   };
 
 private:
-  uint8_t EdgeType : 4;
+  unsigned EdgeType;
   // Iterate distance.
-  int16_t Distance : 14;
+  unsigned Distance;
   // The latency of this edge.
-  uint16_t Latency : 14;
+  float Latency;
 
 public:
-  SIRDep(enum Types T, unsigned Latency, int Distance)
+  SIRDep(enum Types T, float Latency, int Distance)
     : EdgeType(T), Latency(Latency), Distance(Distance) {}
 
-	static SIRDep CreateValDep(int Latency) {
+	static SIRDep CreateValDep(float Latency) {
 		return SIRDep(ValDep, Latency, 0);
 	}
 
-	static SIRDep CreateMemDep(int Latency, int Distance) {
+	static SIRDep CreateMemDep(float Latency, int Distance) {
 		return SIRDep(MemDep, Latency, Distance);
 	}
 
-	static SIRDep CreateCtrlDep(int Latency) {
+	static SIRDep CreateCtrlDep(float Latency) {
 		return SIRDep(CtrlDep, Latency, 0);
 	}
 
   Types getEdgeType() const { return Types(EdgeType); }
   int getDistance() const { return Distance; }
   bool isLoopCarried() const { return getDistance() != 0; }
-  inline int getLatency(unsigned II = 0) const {
+  inline float getLatency(unsigned II = 0) const {
     // Compute the latency considering the distance in loop.
     return Latency - int(II) * getDistance();
   }
@@ -91,8 +91,10 @@ public:
     PHI,
 		// Slot transition
 		SlotTransition,
-		// Normal node
-		Normal,
+		// Normal node for SeqOp
+		SeqSU,
+		// Normal node for CombOp
+		CombSU,
     // Invalid node for the ilist sentinel
     Invalid
   };
@@ -102,9 +104,9 @@ private:
   // Initial Interval of the functional unit.
   uint32_t II : 8;
   uint32_t Schedule : 20;
-  uint16_t InstIdx;
+  uint16_t Idx;
 	// The latency of this unit self.
-	uint16_t Latency;
+	float Latency;
 
   // EdgeBundle allow us add/remove edges between SIRSchedUnit more easily.
   struct EdgeBundle {
@@ -184,9 +186,10 @@ public:
 private:
   // Remember the dependencies of the scheduling unit.
   DepSet Deps;
-  
-	Instruction *Inst;
+
+	Instruction *CombOp;
   SIRSeqOp *SeqOp;
+
   BasicBlock *BB;
 
 	friend struct ilist_sentinel_traits<SIRSchedUnit>;
@@ -207,15 +210,17 @@ private:
 public:
 	// The virtual constructor to construct the ilist.
 	SIRSchedUnit();
-  // Create the virtual SUs.
-  SIRSchedUnit(unsigned InstIdx, Instruction *Inst, 
-		           Type T, BasicBlock *BB, SIRSeqOp *SeqOp);
+	// The constructor for Virtual SUnit.
+	SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB);
+  // The constructor for SeqOp SUnit.
+  SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, SIRSeqOp *SeqOp);
+	// The constructor for CombOp SUnit.
+	SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, Instruction *CombOp);
 
-  void setII(unsigned newII) { this->II = std::max(this->II, II); }
   unsigned getII() const { return II; }
-
-	unsigned getInstIdx() const { return InstIdx; }
-
+	void setII(unsigned newII) { this->II = std::max(this->II, II); }
+	unsigned getIdx() const { return Idx; }
+	Type getType() const { return T; }
   unsigned getSchedule() const { return Schedule; }
 	bool scheduleTo(unsigned Step) { 
 		bool Changed = Step != Schedule;
@@ -224,24 +229,27 @@ public:
 		Schedule = Step;
 		return Changed; 
 	}
-
 	void resetSchedule() { Schedule = 0; }
+
+	Value *getValue();
 
   bool isEntry() const { return T == Entry; }
   bool isExit() const { return T == Exit; }
   bool isBBEntry() const { return T == BlockEntry; }
   bool isPHI() const { return T == PHI; }
 	bool isSlotTransition() const { return T == SlotTransition; }
+	bool isSeqSU() const { return T == SeqSU; }
+	bool isCombSU() const { return T == CombSU; }
 
-	Instruction *getInst() const { return Inst; }
 	SIRSeqOp *getSeqOp() const { return SeqOp; }
+	Instruction *getCombOp() const { return CombOp; }
 
 	// If the SUnit is PHI, then the BB we hold in SUnit is its IncomingBB.
 	// If the SUnit is terminator, then the BB we hold in SUnit is its TargetBB.
 	// Otherwise the BB we hold in SUnit is its ParentBB.
   BasicBlock *getParentBB() const;
 
-	unsigned getLatency() const { return Latency; }
+	float getLatency() const { return Latency; }
 
   void addToUseList(SIRSchedUnit *User) {
     UseList.insert(User);
@@ -323,7 +331,7 @@ public:
   bool isScheduled() const {
 		if (Schedule == 0) {
 			if (isEntry()) return true;
-			if (!isBBEntry() && !isExit())
+			if (!isBBEntry() && !isExit() && !isCombSU())
 				if(getSeqOp()->getSlot()->getSlotNum() == 0)
 					return true;
 
@@ -332,9 +340,6 @@ public:
 
 		return true;
 	}
-
-  // Return the index of the current scheduling unit.
-  uint32_t getIdx() const { return InstIdx; }
 
 	/// Functions for debug
 	void print(raw_ostream &OS) const;
@@ -412,8 +417,8 @@ public:
   }
 
   SIRSchedUnit *createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T);
-  SIRSchedUnit *createSUnit(Instruction *Inst, BasicBlock *ParentBB,
-		                        SIRSchedUnit::Type T, SIRSeqOp *SeqOp);
+	SIRSchedUnit *createSUnit(BasicBlock *ParentBB, Instruction *CombOp);
+  SIRSchedUnit *createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T, SIRSeqOp *SeqOp);
 
   // Iterate over all scheduling units in the scheduling graph.
   typedef SUList::iterator iterator;

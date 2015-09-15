@@ -70,7 +70,9 @@ private:
 			case Intrinsic::shang_sdiv:
 			case Intrinsic::shang_udiv:
 			case Intrinsic::shang_and:
+			case Intrinsic::shang_or:
 			case Intrinsic::shang_not:
+			case Intrinsic::shang_xor:
 			case Intrinsic::shang_rand:
 			case Intrinsic::shang_rxor:
 			case Intrinsic::shang_sgt:
@@ -116,7 +118,8 @@ private:
 
 	ArrayRef<SIRSchedUnit *> getDataFlowSU(Value *V);
 
-	void buildSchedulingUnits(SIRSlot *S);
+	void buildSchedulingUnitsForSeqOp(SIRSlot *S);
+	void buildSchedulingUnitsForCombOp(Instruction *CombOp);
 
 	void finishBuildingSchedGraph();
 

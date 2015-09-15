@@ -24,19 +24,34 @@
 
 using namespace llvm;
 
-SIRSchedUnit::SIRSchedUnit(unsigned InstIdx, Instruction *Inst,
-	                         Type T, BasicBlock *BB, SIRSeqOp *SeqOp)
-													 : II(0), Schedule(0), InstIdx(InstIdx),
-													   Inst(Inst), T(T), BB(BB), SeqOp(SeqOp) {
-	if (T == SIRSchedUnit::Entry || T == SIRSchedUnit::Exit	||
-			T == SIRSchedUnit::BlockEntry || T == SIRSchedUnit::Invalid)
-		this->Latency = 0;
-	else
-		this->Latency = 1;
+SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB)
+	                         : II(0), Schedule(0), Idx(Idx),
+													   T(T), BB(BB), SeqOp(0), CombOp(0) {
+	assert(T == SIRSchedUnit::Entry || T == SIRSchedUnit::Exit ||
+		     T == SIRSchedUnit::BlockEntry && "Unexpected Type for Virtual SUnit!");
+
+	this->Latency = 0.0;
 }
 
-SIRSchedUnit::SIRSchedUnit() : InstIdx(0), Inst(0), 
-	                             T(SIRSchedUnit::Invalid), BB(0), SeqOp(0) {}
+SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, SIRSeqOp *SeqOp)
+													 : II(0), Schedule(0), Idx(Idx),
+													   T(T), BB(BB), SeqOp(SeqOp), CombOp(0) {
+	assert(T == SIRSchedUnit::SlotTransition || T == SIRSchedUnit::SeqSU ||
+		     T == SIRSchedUnit::PHI && "Unexpected Type for SeqOp SUnit!");
+
+	this->Latency = 1.0;
+}
+
+SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, Instruction *CombOp)
+													 : II(0), Schedule(0), Idx(Idx),
+													   T(T), BB(BB), SeqOp(0), CombOp(CombOp) {
+	assert(T == SIRSchedUnit::CombSU && "Unexpected Type for CombOp SUnit!");
+
+	// Hack: need to give a correct latency.
+	this->Latency = 0.0;
+}
+
+SIRSchedUnit::SIRSchedUnit() : Idx(0), T(Invalid), BB(0), SeqOp(0) {}
 
 void SIRSchedUnit::EdgeBundle::addEdge(SIRDep NewEdge) {
 	// When we add a new edge here, we should choose a appropriate
@@ -114,23 +129,40 @@ BasicBlock *SIRSchedUnit::getParentBB() const {
 }
 
 void SIRSchedUnit::print(raw_ostream &OS) const {
-	if (isEntry()) {
-		OS << "Entry Node";
-		return;
+	switch (T) {
+	case SIRSchedUnit::Entry:
+		OS << "Entry\n";
+		break;
+	case SIRSchedUnit::Exit:
+		OS << "Exit\n";
+		break;
+	case SIRSchedUnit::BlockEntry:
+		OS << "BBEntry\n";
+		break;
+	case SIRSchedUnit::PHI:
+		OS << "PHI\n";
+		break;
+	case SIRSchedUnit::SlotTransition: {
+		SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(getSeqOp());
+		OS << "SlotTransition\n";
+		OS << "Slot transition from Slot#" << SST->getSrcSlot()->getSlotNum()
+			<< " to Slot#" << SST->getDstSlot()->getSlotNum() << "\n";
+		break;
 	}
-
-	if (isExit()) {
-		OS << "Exit Node";
-		return;
+	case SIRSchedUnit::SeqSU: {
+		SIRSeqOp *SeqOp = getSeqOp();
+		OS << "SeqOp\n";
+		OS << "SeqOp contained: assign Value [" << getSeqOp()->getSrc()
+			 << "] to Reg [" << getSeqOp()->getDst()->getName() << "] in"
+			 << " Slot#" << getSeqOp()->getSlot()->getSlotNum() << "\n";
+		break;
 	}
-
-	if (isBBEntry()) OS << "BB Entry\n";
-	else if (isPHI()) OS << "PHI\n";
-	else OS << "Normal\n";
-
-	if (Inst) {
-		OS << "Instruction contained:";
-		Inst->dump();
+	case SIRSchedUnit::CombSU:
+		OS << "CombOp\n";
+		OS << "CombOp contained: [" << getCombOp() << "]\n";
+		break;
+	default:
+		llvm_unreachable("Unexpected SUnit Type!");
 	}
 
 	OS << "Scheduled to " << Schedule;
@@ -143,9 +175,9 @@ void SIRSchedUnit::dump() const {
 
 SIRSchedGraph::SIRSchedGraph(Function &F) : F(F), TotalSUs(2) {
 	// Create the entry SU.
-	SUnits.push_back(new SIRSchedUnit(0, 0, SIRSchedUnit::Entry, 0, 0));
+	SUnits.push_back(new SIRSchedUnit(0, SIRSchedUnit::Entry, 0));
 	// Create the exit SU.
-	SUnits.push_back(new SIRSchedUnit(-1, 0, SIRSchedUnit::Exit, 0, 0));
+	SUnits.push_back(new SIRSchedUnit(-1, SIRSchedUnit::Exit, 0));
 }
 
 SIRSchedGraph::~SIRSchedGraph() {}
@@ -274,7 +306,7 @@ void SIRSchedGraph::topologicalSortSUs() {
 
 	unsigned Idx = 0;
 	for (iterator I = begin(), E = end(); I != E; ++I)
-		I->InstIdx = Idx++;
+		I->Idx = Idx++;
 
 	assert(Idx == size() && "Topological sort is not applied to all SU?");
 	assert(getEntry()->isEntry() && getExit()->isExit() && "Broken TopSort!");
@@ -288,9 +320,34 @@ MutableArrayRef<SIRSchedUnit *> SIRSchedGraph::getSUsInBB(BasicBlock *BB) {
 	return MutableArrayRef<SIRSchedUnit *>(at->second);
 }
 
-SIRSchedUnit *SIRSchedGraph::createSUnit(Instruction *Inst, BasicBlock *ParentBB,
-	                                       SIRSchedUnit::Type T, SIRSeqOp *SeqOp) {
-	SIRSchedUnit *U = new SIRSchedUnit(TotalSUs++, Inst, T, ParentBB, SeqOp);
+SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T) {
+	assert(T == SIRSchedUnit::BlockEntry && "Unexpected Type of SUnit!");
+
+	SIRSchedUnit *U = new SIRSchedUnit(TotalSUs++, T, ParentBB);
+	// Insert the newly create SU before the exit.
+	SUnits.insert(SUnits.back(), U);
+	// Index the SUnit to the corresponding BB.
+	BBMap[ParentBB].push_back(U);
+
+	return U;
+}
+
+SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, Instruction *CombOp) {
+	SIRSchedUnit *U = new SIRSchedUnit(TotalSUs++, SIRSchedUnit::CombSU, ParentBB, CombOp);
+	// Insert the newly create SU before the exit.
+	SUnits.insert(SUnits.back(), U);
+	// Index the SUnit to the corresponding BB.
+	BBMap[ParentBB].push_back(U);
+
+	return U;
+}
+
+SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T,
+																				 SIRSeqOp *SeqOp) {
+  assert(T == SIRSchedUnit::PHI || T == SIRSchedUnit::SlotTransition ||
+		     T == SIRSchedUnit::SeqSU && "Unexpected Type of SUnit!");
+
+	SIRSchedUnit *U = new SIRSchedUnit(TotalSUs++, T, ParentBB, SeqOp);
 	// Insert the newly create SU before the exit.
 	SUnits.insert(SUnits.back(), U);
 	// Index the SUnit to the corresponding BB.
