@@ -1358,11 +1358,20 @@ Value *SIRDatapathBuilder::createSBitCatInst(Value *LHS, Value *RHS, Type *RetTy
 
 Value *SIRDatapathBuilder::createSBitExtractInst(Value *U, unsigned UB, unsigned LB, Type *RetTy,
                                                  Value *InsertPosition, bool UsedAsArg) {
-  Value *Ops[] = {U, createIntegerValue(16, UB), createIntegerValue(16, LB)};
-
-  assert(TD.getTypeSizeInBits(RetTy) == UB - LB && "RetTy not matches!");
+	assert(TD.getTypeSizeInBits(RetTy) == UB - LB && "RetTy not matches!");
 	assert(UB <= getBitWidth(U) && LB >=0 && "Unexpected Extract BitWidth!");
 
+	if (isa<ConstantInt>(U) && LB == 0) {
+		if (UB == getBitWidth(U))
+			return U;
+
+		int64_t ValOfU = getConstantIntValue(U);
+		int64_t MaxVal = std::pow(2.0, (double)UB) - 1;
+		if (ValOfU <= MaxVal)
+			return createIntegerValue(UB, ValOfU);
+	}
+
+  Value *Ops[] = {U, createIntegerValue(16, UB), createIntegerValue(16, LB)};
   return createShangInstPattern(Ops, RetTy, InsertPosition, Intrinsic::shang_bit_extract, UsedAsArg);
 }
 
