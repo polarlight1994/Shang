@@ -233,9 +233,8 @@ void SIRTimingAnalysis::extractArrivals(DataLayout *TD, Instruction *CombOp, Arr
 	// Since all data-path instruction in SIR is Intrinsic Inst.
 	// So the opcode of data-path instruction is its InstrisicID.
 	IntrinsicInst *II = dyn_cast<IntrinsicInst>(CombOp);
-	assert(II && "Unexpected non-IntrinsicInst!");
-	assert(II->getIntrinsicID() != Intrinsic::shang_reg_assign
-		     && "Unexpected instruction for CombOp!");
+	assert(II || isa<IntToPtrInst>(CombOp) || isa<PtrToIntInst>(CombOp) ||
+		     isa<BitCastInst>(CombOp) && "Unexpected non-IntrinsicInst!");
 
 	SmallVector<Value *, 4> Operands;
 
@@ -245,7 +244,7 @@ void SIRTimingAnalysis::extractArrivals(DataLayout *TD, Instruction *CombOp, Arr
 		Operands.push_back(CombOp->getOperand(i));
 	}
 
-	if (II->getIntrinsicID() == Intrinsic::shang_bit_extract) {
+	if (II && II->getIntrinsicID() == Intrinsic::shang_bit_extract) {
 		assert(Operands.size() == 3 && "Unexpected operand size!");
 
 		Instruction *Operand = dyn_cast<Instruction>(Operands[0]);
@@ -314,7 +313,8 @@ bool SIRTimingAnalysis::runOnSIR(SIR &SM) {
 		for (inst_iterator InstI = BB->begin(), InstE = BB->end(); InstI != InstE; ++InstI) {
 			Instruction *Inst = InstI;
 
-			if (!isa<IntrinsicInst>(Inst))
+			if (!isa<IntrinsicInst>(Inst) && !isa<IntToPtrInst>(Inst) &&
+				  !isa<PtrToIntInst>(Inst) && !isa<BitCastInst>(Inst))
 				continue;
 
 			createModel(Inst, &SM, TD);

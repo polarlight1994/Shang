@@ -1,7 +1,10 @@
 #include "sir/SIRScheduling.h"
 #include "sir/Passes.h"
 
+#include "vast/LuaI.h"
+
 using namespace llvm;
+using namespace vast;
 using namespace std;
 
 char SIRScheduling::ID = 0;
@@ -49,8 +52,7 @@ SIRSchedUnit *SIRScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 	}
 
 	// Or we have to create the BBEntry.
-	SIRSchedUnit *Entry = G->createSUnit(0, BB,
-		                                   SIRSchedUnit::BlockEntry, 0);
+	SIRSchedUnit *Entry = G->createSUnit(BB, SIRSchedUnit::BlockEntry);
 
 	// If the BB has no Preds, which means it's a Entry BB.
 	// The Entry SUnit of Entry BB should have a SIRDep
@@ -114,40 +116,36 @@ void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
 	// Entry/Exit/BBEntry do not have any data dependencies.
 	if (U->isEntry() || U->isExit() || U->isBBEntry()) return;
 
-	SIRSeqOp *Op = U->getSeqOp();
+	SIRTimingAnalysis::ArrivalMap Arrivals;
 
-	// Construct the data flow dependencies according
-	// to the Timing Analysis result.	
-	SIRTimingAnalysis::ArrivalMap AT;
-	// Extract all the dependencies coming from
-	// the Src value of current SIRSeqOp. 
-	TA->extractArrivals(SM, Op, AT);
+	if (U->isCombSU()) {
+		Instruction *CombOp = U->getCombOp();
+		assert(CombOp && "Unexpected NULL CombOp!");
+
+		TA->extractArrivals(TD, CombOp, Arrivals);
+	} else {
+		SIRSeqOp *SeqOp = U->getSeqOp();
+		assert(SeqOp && "Unexpected NULL SeqOp!");
+
+		TA->extractArrivals(TD, SeqOp, Arrivals);
+	}
 
 	typedef SIRTimingAnalysis::ArrivalMap::iterator iterator;
-	for (iterator I = AT.begin(), E = AT.end(); I != E; I++) {
+	for (iterator I = Arrivals.begin(), E = Arrivals.end(); I != E; ++I) {
 		Value *SrcVal = I->first;
-		// The SrcVal must be a SIRSeqValue.
-		SIRRegister *Reg = SM->lookupSIRReg(dyn_cast<Instruction>(SrcVal));
-		assert(Reg && "This is not a SeqVal in SIR!");
+		float Delay = I->second;
 
-		// If the SIRSeqValue is a memrdata, then there will be no
-		// corresponding SIRSchedUnit, since the register is not
-		// assigned inside the SIR module. We can ignore it as it
-		// behaves like the argument. And it is safe since
-		// this data dependency can be honored by the SlotTransition
-		// we set in createMemoryTransaction function.
-		if (Reg->isFUOutput()) continue;
+		// The memrdata Value will have no corresponding SUnit since the
+		// assign operation is not implemented in SIR.
+		if (SIRRegister *Reg = SM->lookupSIRReg(SrcVal))
+			if (Reg->isFUOutput())
+				continue;
 
-		// Get the delay.
-		float delay = I->second.Delay;
-		assert(delay >= 0.0f && "Unexpected negative delay!");
-
-		// Get the SrcSUnits.
 		ArrayRef<SIRSchedUnit *> SrcSUs = getDataFlowSU(SrcVal);
 		assert(SrcSUs.size() && "Unexpected NULL SrcSUs!");
 
 		for (int i = 0; i < SrcSUs.size(); i++)
-			U->addDep(SrcSUs[i], SIRDep::CreateValDep(ceil(delay)));
+			U->addDep(SrcSUs[i], SIRDep::CreateValDep(Delay));
 	}
 }
 
@@ -221,9 +219,8 @@ void SIRScheduling::buildMemoryDependency(Instruction *SrcInst, Instruction *Dst
 
 	unsigned Latency = 1;
 
-	// If the DstInst is call instruction, then the real
-	// dependency is from the callee instruction to Src.
-	// So we can minus the delay by 1.
+	// If the DstInst is call instruction, then the real dependency is from the callee
+	// instruction to Src. So we can minus the delay by 1.
 	if (isa<CallInst>(DstInst)) {
 		Latency = 0;
 	}
@@ -269,7 +266,7 @@ ArrayRef<SIRSchedUnit *> SIRScheduling::getDataFlowSU(Value *V) {
 	return SUs;
 }
 
-void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
+void SIRScheduling::buildSchedulingUnitsForSeqOp(SIRSlot *S) {
 	BasicBlock *BB = S->getParent();
 
 	// Before we create the SUnit for all SeqOps in this Slot,
@@ -295,9 +292,9 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 		SIRRegister *DstReg = Op->getDst();
 		if (DstReg->isPHI())			  Ty = SIRSchedUnit::PHI;
 		else if (DstReg->isSlot())	Ty = SIRSchedUnit::SlotTransition;
-		else                        Ty = SIRSchedUnit::Normal;
+		else                        Ty = SIRSchedUnit::SeqSU;
 
-		SIRSchedUnit *U = G->createSUnit(Inst, BB, Ty, Op);
+		SIRSchedUnit *U = G->createSUnit(BB, Ty, Op);
 
 		// Index the SUnit to the Slot and the LLVM IR.
 		G->indexSU2Slot(U, S);
@@ -305,6 +302,15 @@ void SIRScheduling::buildSchedulingUnits(SIRSlot *S) {
 
 		continue;
 	}
+}
+
+void SIRScheduling::buildSchedulingUnitsForCombOp(Instruction *CombOp) {
+	BasicBlock *BB = CombOp->getParent();
+
+	SIRSchedUnit *U = G->createSUnit(BB, CombOp);
+
+	// Index the SUnit to the LLVM IR.
+	G->indexSU2IR(U, CombOp);
 }
 
 void SIRScheduling::finishBuildingSchedGraph() {
@@ -336,20 +342,45 @@ void SIRScheduling::buildSchedulingGraph() {
 	// Index the Entry SUnit to the StartSlot.
 	G->indexSU2Slot(Entry, StartSlot);
 
-	// Build the scheduling units according to the original scheduling.
-	ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >
-		RPO(SM->getStartSlot());
+	// Build the Scheduling Units for SeqOps.
+	{
+		ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >
+			RPO(SM->getStartSlot());
+		typedef
+			ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >::rpo_iterator
+			slot_iterator;
 
-	// Build the Scheduling Units according to the SeqOps in Slot.
-	typedef	
-		ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >::rpo_iterator
-		slot_top_iterator;
+		// Visit the SIRSlots in reverse post order so that the building order of
+		// SUnits is topological generally to avoid creating a dependency to a
+		// SUnit which is not created yet when building dependencies.
+		for (slot_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
+			buildSchedulingUnitsForSeqOp(*I);
+	}
 
-	// Visit the SIRSlots in reverse post order so that the building order of
-	// SUnits is topological generally to avoid creating a dependency to a
-	// SUnit which is not created yet when building dependencies.
-	for (slot_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
-		buildSchedulingUnits(*I);
+	// Build the Scheduling Units for CombOps.
+	{
+		Function *F = SM->getFunction();
+
+		typedef Function::iterator bb_iterator;
+		for (bb_iterator BBI = F->begin(), BBE = F->end(); BBI != BBE; ++BBI) {
+			BasicBlock *BB = BBI;
+
+			typedef BasicBlock::iterator inst_iterator;
+			for (inst_iterator InstI = BB->begin(), InstE = BB->end(); InstI != InstE; ++InstI) {
+				Instruction *Inst = InstI;
+
+				if (!isa<IntrinsicInst>(Inst) && !isa<IntToPtrInst>(Inst) &&
+					  !isa<PtrToIntInst>(Inst) && !isa<BitCastInst>(Inst))
+					continue;
+
+				if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
+					if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
+						continue;
+
+				buildSchedulingUnitsForCombOp(Inst);
+			}
+		}
+	}
 
 	// Build dependencies.
 	buildDependencies();
@@ -362,7 +393,72 @@ void SIRScheduling::buildSchedulingGraph() {
 	// index based on the result, so we can easily recognize the back-edge
 	// according to the index.
 	G->topologicalSortSUs();
+
+	/// Debug Code.
+	std::string SchedGraph = LuaI::GetString("SchedGraph");
+	std::string Error;
+	raw_fd_ostream Output(SchedGraph.c_str(), Error);
+
+	typedef SIRSchedGraph::iterator iterator;
+	for (iterator I = G->begin(), E = G->end(); I != E; ++I) {
+		SIRSchedUnit *U = I;
+
+		Output << "#" << U->getIdx() << ":\t";
+
+		Output << "Depends on: ";
+
+		typedef SIRSchedUnit::dep_iterator dep_iterator;
+		for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
+			SIRSchedUnit *DepSU = *I;
+
+			Output << "#" << DepSU->getIdx() << "; ";
+		}
+
+		Output << "\t";
+
+		switch (U->getType()) {
+		case SIRSchedUnit::Entry:
+			Output << "Entry\n";
+			break;
+		case SIRSchedUnit::Exit:
+			Output << "Exit\n";
+			break;
+		case SIRSchedUnit::BlockEntry:
+			Output << "BBEntry of ";
+			Output << U->getParentBB()->getName() << "\n";
+			break;
+		case SIRSchedUnit::PHI:
+			Output << "PHI of ";
+			Output << U->getSeqOp()->getDst()->getName() << "\n";
+			break;
+		case SIRSchedUnit::SlotTransition: {
+			SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(U->getSeqOp());
+			Output << "SlotTransition    ";
+			Output << "Slot#" << SST->getSrcSlot()->getSlotNum()
+				     << " -- Slot#" << SST->getDstSlot()->getSlotNum() << "\n";
+			break;
+		}
+		case SIRSchedUnit::SeqSU: {
+			SIRSeqOp *SeqOp = U->getSeqOp();
+			Output << "SeqSU    ";
+			Output << "assign Value [";
+			SeqOp->getSrc()->print(Output);
+			Output << "] to Reg [" << SeqOp->getDst()->getName() << "] in"
+				     << " Slot#" << SeqOp->getSlot()->getSlotNum() << "\n";
+			break;
+		}
+		case SIRSchedUnit::CombSU:
+			Output << "CombOp    ";
+			Output << "CombOp contained: [";
+			U->getCombOp()->print(Output);
+			Output << "]\n";
+			break;
+		default:
+			llvm_unreachable("Unexpected SUnit Type!");
+		}
+	}
 }
+
 
 void SIRScheduling::schedule() {
 // 	ListScheduler LS(*G, G->getEntry()->getSchedule());
@@ -450,6 +546,9 @@ void SIRScheduleEmitter::emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs) {
 
 	for (unsigned i = 0; i < NewSUs.size(); ++i) {
 		SIRSchedUnit *CurSU = NewSUs[i];
+
+		if (CurSU->isCombSU()) continue;
+
 		SIRSeqOp *SeqOp = CurSU->getSeqOp();
 		SIRSlot *EmitSlot = SeqOp->getSlot();
 

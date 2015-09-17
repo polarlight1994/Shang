@@ -100,11 +100,12 @@ public:
   };
 
 private:
-  const Type T : 4;
+  const Type T;
   // Initial Interval of the functional unit.
-  uint32_t II : 8;
-  uint32_t Schedule : 20;
+  uint32_t II;
   uint16_t Idx;
+
+	float Schedule;
 	// The latency of this unit self.
 	float Latency;
 
@@ -221,15 +222,15 @@ public:
 	void setII(unsigned newII) { this->II = std::max(this->II, II); }
 	unsigned getIdx() const { return Idx; }
 	Type getType() const { return T; }
-  unsigned getSchedule() const { return Schedule; }
-	bool scheduleTo(unsigned Step) { 
-		bool Changed = Step != Schedule;
+  float getSchedule() const { return Schedule; }
+	bool scheduleTo(float NewSchedule) {
+		bool Changed = NewSchedule != Schedule;
 		// StartSlot must be a IdleSlot without any SeqOps!
-		assert(Step && "Bad schedule!");
-		Schedule = Step;
+		assert(NewSchedule && "Bad schedule!");
+		Schedule = NewSchedule;
 		return Changed; 
 	}
-	void resetSchedule() { Schedule = 0; }
+	void resetSchedule() { Schedule = 0.0; }
 
 	Value *getValue();
 
@@ -293,13 +294,6 @@ public:
     return getDepIt(A).getEdge(II);
   }
 
-  unsigned getDFLatency(const SIRSchedUnit *A) const {
-    assert(isDependsOn(A) && "Current atom not depend on A!");
-    int L = getDepIt(A).getDFLatency();
-    assert(L >= 0 && "Not a data-flow dependence!");
-    return unsigned(L);
-  }
-
   void removeDep(SIRSchedUnit *Src) {
     bool Erased = Deps.erase(Src);
     assert(Erased && "Src not a dependency of the current node!");
@@ -316,7 +310,7 @@ public:
       Deps.insert(std::make_pair(Src, EdgeBundle(NewEdge)));
       Src->addToUseList(this);
     } else {
-      int OldLatency = getEdgeFrom(Src).getLatency();
+      float OldLatency = getEdgeFrom(Src).getLatency();
       at->second.addEdge(NewEdge);
       assert(OldLatency <= getEdgeFrom(Src).getLatency() && "Edge lost!");
       (void) OldLatency;
@@ -329,6 +323,8 @@ public:
 	// Only the SUnit in Slot0r can have schedule of 0. So all others
 	// scheduled SUnit should have a positive schedule number.
   bool isScheduled() const {
+		assert(!(Schedule < 0.0) && "Unexpected negative schedule!");
+
 		if (Schedule == 0) {
 			if (isEntry()) return true;
 			if (!isBBEntry() && !isExit() && !isCombSU())

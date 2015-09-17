@@ -25,7 +25,7 @@
 using namespace llvm;
 
 SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB)
-	                         : II(0), Schedule(0), Idx(Idx),
+	                         : II(0), Schedule(0.0), Idx(Idx),
 													   T(T), BB(BB), SeqOp(0), CombOp(0) {
 	assert(T == SIRSchedUnit::Entry || T == SIRSchedUnit::Exit ||
 		     T == SIRSchedUnit::BlockEntry && "Unexpected Type for Virtual SUnit!");
@@ -34,7 +34,7 @@ SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB)
 }
 
 SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, SIRSeqOp *SeqOp)
-													 : II(0), Schedule(0), Idx(Idx),
+													 : II(0), Schedule(0.0), Idx(Idx),
 													   T(T), BB(BB), SeqOp(SeqOp), CombOp(0) {
 	assert(T == SIRSchedUnit::SlotTransition || T == SIRSchedUnit::SeqSU ||
 		     T == SIRSchedUnit::PHI && "Unexpected Type for SeqOp SUnit!");
@@ -43,7 +43,7 @@ SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, SIRSeqOp *SeqOp
 }
 
 SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, Instruction *CombOp)
-													 : II(0), Schedule(0), Idx(Idx),
+													 : II(0), Schedule(0.0), Idx(Idx),
 													   T(T), BB(BB), SeqOp(0), CombOp(CombOp) {
 	assert(T == SIRSchedUnit::CombSU && "Unexpected Type for CombOp SUnit!");
 

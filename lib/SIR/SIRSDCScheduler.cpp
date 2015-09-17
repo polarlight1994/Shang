@@ -37,8 +37,7 @@ unsigned SIRSDCScheduler::createLPVariable(SIRSchedUnit *U, unsigned ColNum) {
 	// Name the LP Variable for debug.
 	std::string LPVar = "lpvar" + utostr_32(U->getIdx());
 	set_col_name(lp, ColNum, const_cast<char *>(LPVar.c_str()));
-
-	set_int(lp, ColNum, TRUE);
+	set_int(lp, ColNum, FALSE);
 
 	// Constraint the SUnit if we can.
 	if (U->isScheduled()) {
@@ -107,7 +106,7 @@ void SIRSDCScheduler::addDependencyConstraints() {
 			REAL Coefs[] = { 1.0, -1.0 };
 			int Cols[] = { DstSUCol, SrcSUCol };
 
-			unsigned Latency = DepEdge.getLatency() + SrcSU->getLatency();
+			float Latency = DepEdge.getLatency() + SrcSU->getLatency();
 
 			// Create the constraint according to the dependency.
 			if (!add_constraintex(lp, array_lengthof(Cols), Coefs, Cols, GE, Latency))
@@ -182,9 +181,9 @@ bool SIRSDCScheduler::scheduleSUs() {
 	unsigned Changed = 0;
 
 /// Debug Code
-// 	std::string SDCResult = LuaI::GetString("SDCResult");
-// 	std::string Error;
-// 	raw_fd_ostream Output(SDCResult.c_str(), Error);
+	std::string SDCResult = LuaI::GetString("SDCResult");
+	std::string Error;
+	raw_fd_ostream Output(SDCResult.c_str(), Error);
 
 	for (iterator I = begin(), E = end(); I != E; ++I) {
 		SIRSchedUnit *U = I;
@@ -194,13 +193,13 @@ bool SIRSDCScheduler::scheduleSUs() {
 		unsigned FinalResult = unsigned(Result);
 
 /// Debug Code
-/*		Output << "SU#" << U->getIdx() << " scheduled to " << FinalResult << "\n";*/
+		Output << "SU#" << U->getIdx() << " scheduled to " << Result << "\n";
 
 		// Handle the SUnits in Slot0r specially since they are
 		// always scheduled to 0.
 		if (!U->getParentBB() && !U->isExit())
-			assert(FinalResult == 0 && "Unexpected SDC result!");
-		else if (U->scheduleTo(FinalResult))
+			assert(Result == 0.0 && "Unexpected SDC result!");
+		else if (U->scheduleTo(Result))
 			++Changed;
 	}
 
@@ -208,8 +207,8 @@ bool SIRSDCScheduler::scheduleSUs() {
 }
 
 bool SIRSDCScheduler::schedule() {
-	// Initial the scheduler.
-	buildTimeFrameAndResetSchedule(true);
+	// Reset the schedule.
+	G.resetSchedule();
 
 	// Create the LP model and LP Variables for SUnits.
 	createLPAndLPVariables();
