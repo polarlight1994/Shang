@@ -236,22 +236,22 @@ void SIRTimingAnalysis::extractArrivals(DataLayout *TD, Instruction *CombOp, Arr
 	assert(II || isa<IntToPtrInst>(CombOp) || isa<PtrToIntInst>(CombOp) ||
 		     isa<BitCastInst>(CombOp) && "Unexpected non-IntrinsicInst!");
 
-	SmallVector<Value *, 4> Operands;
-
-	typedef Instruction::op_iterator iterator;
-	for (int i = 0; i < CombOp->getNumOperands() - 1; ++i) {
-		Value *temp = CombOp->getOperand(i);
-		Operands.push_back(CombOp->getOperand(i));
-	}
-
+	// The bit_extract instruction should be handled specially, since the delay
+	// of the data dependency is only related to part bits of the SrcVal.
 	if (II && II->getIntrinsicID() == Intrinsic::shang_bit_extract) {
-		assert(Operands.size() == 3 && "Unexpected operand size!");
+		Value *OperandVal = CombOp->getOperand(0);
 
-		Instruction *Operand = dyn_cast<Instruction>(Operands[0]);
+		// If the Operand is Argument or ConstantInt, then this SUnit has no data dependence.
+		if (isa<Argument>(OperandVal) || isa<ConstantInt>(OperandVal))
+			return;
+
+		Instruction *Operand = dyn_cast<Instruction>(OperandVal);
+		assert(Operand && "Unexpected NULL Operand!");
+
 		SIRDelayModel *DM = lookUpDelayModel(Operand);
 
-		int UB = getConstantIntValue(dyn_cast<ConstantInt>(Operands[1]));
-		int LB = getConstantIntValue(dyn_cast<ConstantInt>(Operands[2]));
+		int UB = getConstantIntValue(dyn_cast<ConstantInt>(CombOp->getOperand(1)));
+		int LB = getConstantIntValue(dyn_cast<ConstantInt>(CombOp->getOperand(2)));
 
 		float UBDelay = DM->getDelayInBit(UB);
 		float LBDelay = DM->getDelayInBit(LB);
@@ -262,15 +262,23 @@ void SIRTimingAnalysis::extractArrivals(DataLayout *TD, Instruction *CombOp, Arr
 		return;
 	}
 
-	for (int i = 0; i < Operands.size(); ++i) {
-		Value *temp = Operands[i];
-		Instruction *Operand = dyn_cast<Instruction>(Operands[i]);
+	SmallVector<Value *, 4> Operands;
 
-		if (!Operand) {
-			assert(isa<ConstantInt>(Operands[i]) || isa<Argument>(Operands[i]) ||
-				     isa<UndefValue>(Operands[i]) && "Unexpected NULL Inst!");
+	typedef Instruction::op_iterator iterator;
+	for (int i = 0; i < CombOp->getNumOperands() - 1; ++i) {
+		Value *Operand = CombOp->getOperand(i);
+
+		// Ignore these Values since they have no corresponding DelayModel.
+		if (isa<Argument>(Operand) || isa<ConstantInt>(Operand) ||
+			  isa<UndefValue>(Operand))
 			continue;
-		}
+
+		Operands.push_back(CombOp->getOperand(i));
+	}
+
+	for (int i = 0; i < Operands.size(); ++i) {
+		Instruction *Operand = dyn_cast<Instruction>(Operands[i]);
+		assert(Operand && "Unexpected NULL Operand!");
 
 		SIRDelayModel *DM = lookUpDelayModel(Operand);
 		unsigned BitWidth = TD->getTypeSizeInBits(Operand->getType());
