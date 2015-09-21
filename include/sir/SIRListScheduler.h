@@ -27,82 +27,82 @@
 
 namespace llvm {
 struct PriorityHeuristic {
-	typedef SIRScheduleBase::TimeFrame TimeFrame;
-	mutable std::map<const SIRSchedUnit*, TimeFrame> TFCache;
-	const SIRScheduleBase &S;
+  typedef SIRScheduleBase::TimeFrame TimeFrame;
+  mutable std::map<const SIRSchedUnit*, TimeFrame> TFCache;
+  const SIRScheduleBase &S;
 
-	PriorityHeuristic(const SIRScheduleBase &S) : S(S) {}
+  PriorityHeuristic(const SIRScheduleBase &S) : S(S) {}
 
-	TimeFrame calculateTimeFrame(const SIRSchedUnit *SU) const {
-		TimeFrame &TF = TFCache[SU];
-		if (!TF)
-			TF = S.calculateTimeFrame(SU);
+  TimeFrame calculateTimeFrame(const SIRSchedUnit *SU) const {
+    TimeFrame &TF = TFCache[SU];
+    if (!TF)
+      TF = S.calculateTimeFrame(SU);
 
-		return TF;
-	};
+    return TF;
+  };
 
-	bool operator()(const SIRSchedUnit *LHS, const SIRSchedUnit *RHS) const {
-		// we consider the priority from these aspects:
-		// Size Of TF, ALAP, ASAP
+  bool operator()(const SIRSchedUnit *LHS, const SIRSchedUnit *RHS) const {
+    // we consider the priority from these aspects:
+    // Size Of TF, ALAP, ASAP
 
-		TimeFrame LHSTF = calculateTimeFrame(LHS),
-			        RHSTF = calculateTimeFrame(RHS);
-		if (LHSTF.size() < RHSTF.size()) return true;
-		if (LHSTF.size() > RHSTF.size()) return false;
+    TimeFrame LHSTF = calculateTimeFrame(LHS),
+      RHSTF = calculateTimeFrame(RHS);
+    if (LHSTF.size() < RHSTF.size()) return true;
+    if (LHSTF.size() > RHSTF.size()) return false;
 
-		// Ascending order using ALAP.
-		if (LHSTF.ALAP < RHSTF.ALAP) return true;
-		if (LHSTF.ALAP > RHSTF.ALAP) return false;
+    // Ascending order using ALAP.
+    if (LHSTF.ALAP < RHSTF.ALAP) return true;
+    if (LHSTF.ALAP > RHSTF.ALAP) return false;
 
-		// Ascending order using ASAP.
-		if (LHSTF.ASAP < RHSTF.ASAP) return true;
-		if (LHSTF.ASAP > RHSTF.ASAP) return false;
+    // Ascending order using ASAP.
+    if (LHSTF.ASAP < RHSTF.ASAP) return true;
+    if (LHSTF.ASAP > RHSTF.ASAP) return false;
 
-		// Tie breaker: Original topological order.
-		return LHS->getIdx() < RHS->getIdx();
-	}
+    // Tie breaker: Original topological order.
+    return LHS->getIdx() < RHS->getIdx();
+  }
 };
 
 struct BBContext {
-	SIRScheduleBase &S;
-	BasicBlock *BB;
+  SIRScheduleBase &S;
+  BasicBlock *BB;
 
-	// The first/last schedule of the current BB.
-	float StartSchedule, EndSchedule;
+  // The first/last schedule of the current BB.
+  float StartSchedule, EndSchedule;
 
-	// The SchedUnits that should be schedule to
-	// the EntrySlot/ExitSlot of the current BB.
-	std::set<SIRSchedUnit *> Entrys, Exits;
+  // The SchedUnits that should be schedule to
+  // the EntrySlot/ExitSlot of the current BB.
+  std::set<SIRSchedUnit *> Entrys, Exits;
 
-	typedef PriorityQueue<SIRSchedUnit *, std::vector<SIRSchedUnit *>,
-		PriorityHeuristic> SUQueue;
-	SUQueue ReadyQueue;
+  typedef PriorityQueue<SIRSchedUnit *, std::vector<SIRSchedUnit *>,
+                        PriorityHeuristic> SUQueue;
+  SUQueue ReadyQueue;
 
-	BBContext(SIRScheduleBase &S, BasicBlock *BB) 
-		: S(S), BB(BB), ReadyQueue(PriorityHeuristic(S)) {}
+  BBContext(SIRScheduleBase &S, BasicBlock *BB)
+    : S(S), BB(BB), ReadyQueue(PriorityHeuristic(S)) {}
 
-	bool isSUReady(SIRSchedUnit *SU);
+  bool isSUReady(SIRSchedUnit *SU);
 
-	void collectSUsInEntrySlot(ArrayRef<SIRSchedUnit *> SUs);
-	void collectSUsInExitSlot(ArrayRef<SIRSchedUnit *> SUs);
+  void collectSUsInEntrySlot(ArrayRef<SIRSchedUnit *> SUs);
+  void collectSUsInExitSlot(ArrayRef<SIRSchedUnit *> SUs);
 
-	void collectReadySUs(ArrayRef<SIRSchedUnit *> SUs);
+  void collectReadySUs(ArrayRef<SIRSchedUnit *> SUs);
 
-	void scheduleSUsToEntrySlot();
-	void scheduleSUsToExitSlot();
+  void scheduleSUsToEntrySlot();
+  void scheduleSUsToExitSlot();
 
-	void enter(BasicBlock *BB);
-	void exit(BasicBlock *BB);
+  void enter(BasicBlock *BB);
+  void exit(BasicBlock *BB);
 
-	void scheduleBB();
+  void scheduleBB();
 };
 
 struct ListScheduler : public SIRScheduleBase {
-	ListScheduler(SIRSchedGraph &G, unsigned EntrySlot) 
-		: SIRScheduleBase(G, EntrySlot) {}	
+  ListScheduler(SIRSchedGraph &G, unsigned EntrySlot)
+    : SIRScheduleBase(G, EntrySlot) {}
 
-	void scheduleBB(BasicBlock *BB);
-	bool schedule();
+  void scheduleBB(BasicBlock *BB);
+  bool schedule();
 }; 
 }
 

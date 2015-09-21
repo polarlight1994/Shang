@@ -26,106 +26,106 @@
 #include "llvm/Support/Debug.h"
 
 namespace llvm {
-	// Get the signed value of a ConstantInt.
-	static int64_t getConstantIntValue(Value *V) {
-		ConstantInt *CI = dyn_cast<ConstantInt>(V);
-		assert(CI && "Unexpected Value type!");
+// Get the signed value of a ConstantInt.
+static int64_t getConstantIntValue(Value *V) {
+  ConstantInt *CI = dyn_cast<ConstantInt>(V);
+  assert(CI && "Unexpected Value type!");
 
-		APInt AI = CI->getValue();
+  APInt AI = CI->getValue();
 
-		// If it is a one-bit value, then we don't need to
-		// consider whether it is negative or not.
-		if (AI.getBitWidth() == 1) return AI.getBoolValue();
+  // If it is a one-bit value, then we don't need to
+  // consider whether it is negative or not.
+  if (AI.getBitWidth() == 1) return AI.getBoolValue();
 
-		if (AI.isNonNegative()) return AI.getZExtValue();
-		else {
-			return 0 - (AI.abs().getZExtValue());
-		}
-	}
+  if (AI.isNonNegative()) return AI.getZExtValue();
+  else {
+    return 0 - (AI.abs().getZExtValue());
+  }
+}
 
-	// Construct a string of unsigned int in binary or hexadecimal.
-  static std::string buildLiteralUnsigned(uint64_t Value, unsigned bitwidth) {
-    std::string ret;
-    ret = utostr_32(bitwidth) + '\'';
-    if (bitwidth == 1) ret += "b";
-    else               ret += "h";
-    // Mask the value that small than 4 bit to prevent printing something
-    // like 1'hf out.
-    if (bitwidth < 4) Value &= (1 << bitwidth) - 1;
+// Construct a string of unsigned int in binary or hexadecimal.
+static std::string buildLiteralUnsigned(uint64_t Value, unsigned bitwidth) {
+  std::string ret;
+  ret = utostr_32(bitwidth) + '\'';
+  if (bitwidth == 1) ret += "b";
+  else               ret += "h";
+  // Mask the value that small than 4 bit to prevent printing something
+  // like 1'hf out.
+  if (bitwidth < 4) Value &= (1 << bitwidth) - 1;
 
-    std::string ss = utohexstr(Value);
-    unsigned int uselength = (bitwidth/4) + (((bitwidth&0x3) == 0) ? 0 : 1);
-    if(uselength < ss.length())
-      ss = ss.substr(ss.length() - uselength, uselength);
-    ret += ss;
+  std::string ss = utohexstr(Value);
+  unsigned int uselength = (bitwidth/4) + (((bitwidth&0x3) == 0) ? 0 : 1);
+  if(uselength < ss.length())
+    ss = ss.substr(ss.length() - uselength, uselength);
+  ret += ss;
 
-    return ret;
+  return ret;
+}
+
+// Construct a string of corresponding FU name.
+static std::string getFUName(IntrinsicInst &I) {
+  switch (I.getIntrinsicID()) {
+  case Intrinsic::shang_add:  return "shang_addc";
+  case Intrinsic::shang_addc: return "shang_addc";
+  case Intrinsic::shang_mul:  return "shang_mult";
+  case Intrinsic::shang_udiv: return "shang_udiv";
+  case Intrinsic::shang_sdiv: return "shang_sdiv";
+  case Intrinsic::shang_rand: return "shang_rand";
+  case Intrinsic::shang_shl:  return "shang_shl";
+  case Intrinsic::shang_lshr: return "shang_srl";
+  case Intrinsic::shang_ashr: return "shang_sra";
+  case Intrinsic::shang_ugt:  return "shang_ugt";
+  case Intrinsic::shang_sgt:  return "shang_sgt";
+  default: break;
   }
 
-	// Construct a string of corresponding FU name.
-  static std::string getFUName(IntrinsicInst &I) {
-    switch (I.getIntrinsicID()) {
-    case Intrinsic::shang_add:  return "shang_addc";
-		case Intrinsic::shang_addc: return "shang_addc";
-    case Intrinsic::shang_mul:  return "shang_mult";
-		case Intrinsic::shang_udiv: return "shang_udiv";
-		case Intrinsic::shang_sdiv: return "shang_sdiv";
-    case Intrinsic::shang_rand: return "shang_rand";
-    case Intrinsic::shang_shl:  return "shang_shl";
-    case Intrinsic::shang_lshr: return "shang_srl";
-    case Intrinsic::shang_ashr: return "shang_sra";
-    case Intrinsic::shang_ugt:  return "shang_ugt";
-    case Intrinsic::shang_sgt:  return "shang_sgt";
-    default: break;
+  return NULL;
+}
+
+// Construct a string with only characters, numbers and underlines.
+static std::string Mangle(const std::string &S) {
+  std::string Result;
+
+  for (unsigned i = 0, e = S.size(); i != e; ++i) {
+    if (isalnum(S[i]) || S[i] == '_') {
+      Result += S[i];
+    } else {
+      Result += '_';
     }
-
-    return NULL;
   }
 
-	// Construct a string with only characters, numbers and underlines. 
-  static std::string Mangle(const std::string &S) {
-    std::string Result;
+  return Result;
+}
 
-    for (unsigned i = 0, e = S.size(); i != e; ++i) {
-      if (isalnum(S[i]) || S[i] == '_') {
-        Result += S[i];
-      } else {
-        Result += '_';
-      }
-    }
+// Construct a string of BitRange like [31:0].
+static std::string BitRange(unsigned UB, unsigned LB = 0, bool printOneBit = false) {
+  std::string ret;
+  assert(UB && UB > LB && "Bad bit range!");
+  --UB;
+  if (UB != LB)
+    ret = "[" + utostr_32(UB) + ":" + utostr_32(LB) + "]";
+  else if(printOneBit)
+    ret = "[" + utostr_32(LB) + "]";
 
-    return Result;
-  }
+  return ret;
+}
 
-	// Construct a string of BitRange like [31:0].
-  static std::string BitRange(unsigned UB, unsigned LB = 0, bool printOneBit = false) {
-    std::string ret;
-    assert(UB && UB > LB && "Bad bit range!");
-    --UB;
-    if (UB != LB)
-      ret = "[" + utostr_32(UB) + ":" + utostr_32(LB) + "]";
-    else if(printOneBit)
-      ret = "[" + utostr_32(LB) + "]";
+// Print the name of IR instruction.
+static void printName(raw_ostream &OS, Instruction &I) {
+  OS << Mangle(I.getName());
+}
 
-    return ret;
-  }
+// Print the true form of the ConstantInt value in binary or hexadecimal.
+static void printConstantIntValue(raw_ostream &OS, ConstantInt *CI) {
+  OS << utostr_32(CI->getBitWidth()) << '\'';
 
-	// Print the name of IR instruction.
-  static void printName(raw_ostream &OS, Instruction &I) {
-    OS << Mangle(I.getName());
-  }
+  APInt AI = CI->getValue();
 
-	 // Print the true form of the ConstantInt value in binary or hexadecimal. 
-	static void printConstantIntValue(raw_ostream &OS, ConstantInt *CI) {
-		OS << utostr_32(CI->getBitWidth()) << '\'';
-
-		APInt AI = CI->getValue();
-
-		if (CI->getBitWidth() <= 4)
-			OS << "b" << AI.toString(2, false);
-		else
-			OS << "h" << AI.toString(16, false);
-	}
+  if (CI->getBitWidth() <= 4)
+    OS << "b" << AI.toString(2, false);
+  else
+    OS << "h" << AI.toString(16, false);
+}
 }
 
 namespace llvm {
@@ -134,7 +134,7 @@ class SIRRegister {
 public:
   enum SIRRegisterTypes {
     General,            // Common registers which hold data for data-path.
-		PHI,                // Register hold value in PHINode.
+    PHI,                // Register hold value in PHINode.
     SlotReg,            // Register for slot.
     FUInput,						// Input register for FUnits like memory bank.
     FUOutput,           // Output register for FUnits like memory bank.
@@ -144,73 +144,73 @@ public:
 private:
   SIRRegisterTypes T;
   const uint64_t InitVal;
-	BasicBlock *ParentBB;
-	Value *LLVMValue;
+  BasicBlock *ParentBB;
+  Value *LLVMValue;
 
-	/// Each register contains a corresponding Mux to holds
-	/// all assignment to it.
-	// Map the transaction condition to transaction value.
-	typedef std::vector<Value *> FaninVector;
-	FaninVector Fanins;
+  /// Each register contains a corresponding Mux to holds
+  /// all assignment to it.
+  // Map the transaction condition to transaction value.
+  typedef std::vector<Value *> FaninVector;
+  FaninVector Fanins;
 
-	typedef std::vector<Value *> FaninGuardVector;
-	FaninGuardVector FaninGuards;
+  typedef std::vector<Value *> FaninGuardVector;
+  FaninGuardVector FaninGuards;
 
-	// After RegisterSynthesis, all assignments will be
-	// synthesized into forms below:
-	// RegVal = (Fanin1 & Guard1) | (Fanin2 & Guard2)...
-	Value *RegVal;
+  // After RegisterSynthesis, all assignments will be
+  // synthesized into forms below:
+  // RegVal = (Fanin1 & Guard1) | (Fanin2 & Guard2)...
+  Value *RegVal;
 
-	// When the RegGuard is true, the RegVal can be
-	// assign to the register. After RegisterSynthesis,
-	// all assignments will be synthesized into forms
+  // When the RegGuard is true, the RegVal can be
+  // assign to the register. After RegisterSynthesis,
+  // all assignments will be synthesized into forms
   // below:
-	// RegGuard = Guard1 | Guard2...
-	Value *RegGuard;
+  // RegGuard = Guard1 | Guard2...
+  Value *RegGuard;
 
-	const std::string Name;
-	unsigned BitWidth;
+  const std::string Name;
+  unsigned BitWidth;
 
 public:
   SIRRegister(std::string Name = "", unsigned BitWidth = 0,
-		          uint64_t InitVal = 0, BasicBlock *ParentBB = NULL,
+              uint64_t InitVal = 0, BasicBlock *ParentBB = NULL,
               SIRRegisterTypes T = SIRRegister::General,
               Value *LLVMValue = 0)
     : Name(Name), BitWidth(BitWidth), ParentBB(ParentBB),
-		InitVal(InitVal), T(T), LLVMValue(LLVMValue) {}
+    InitVal(InitVal), T(T), LLVMValue(LLVMValue) {}
 
-	typedef FaninVector::const_iterator const_iterator;
-	const_iterator assign_begin() const { return Fanins.begin(); }
-	const_iterator assign_end() const { return Fanins.end(); }
-	typedef FaninVector::iterator iterator;
-	iterator assign_begin() { return Fanins.begin(); }
-	iterator assign_end() { return Fanins.end(); }
-	unsigned assign_size() const { return Fanins.size(); }
-	bool assign_empty() const { return Fanins.empty(); }
+  typedef FaninVector::const_iterator const_iterator;
+  const_iterator assign_begin() const { return Fanins.begin(); }
+  const_iterator assign_end() const { return Fanins.end(); }
+  typedef FaninVector::iterator iterator;
+  iterator assign_begin() { return Fanins.begin(); }
+  iterator assign_end() { return Fanins.end(); }
+  unsigned assign_size() const { return Fanins.size(); }
+  bool assign_empty() const { return Fanins.empty(); }
 
-	typedef FaninGuardVector::const_iterator const_guard_iterator;
-	const_guard_iterator guard_begin() const { return FaninGuards.begin(); }
-	const_guard_iterator guard_end() const { return FaninGuards.end(); }
-	typedef FaninGuardVector::iterator guard_iterator;
-	guard_iterator guard_begin() { return FaninGuards.begin(); }
-	guard_iterator guard_end() { return FaninGuards.end(); }
-	unsigned guard_size() const { return FaninGuards.size(); }
-	bool guard_empty() const { return FaninGuards.empty(); }
+  typedef FaninGuardVector::const_iterator const_guard_iterator;
+  const_guard_iterator guard_begin() const { return FaninGuards.begin(); }
+  const_guard_iterator guard_end() const { return FaninGuards.end(); }
+  typedef FaninGuardVector::iterator guard_iterator;
+  guard_iterator guard_begin() { return FaninGuards.begin(); }
+  guard_iterator guard_end() { return FaninGuards.end(); }
+  unsigned guard_size() const { return FaninGuards.size(); }
+  bool guard_empty() const { return FaninGuards.empty(); }
 
   void setLLVMValue(Instruction *I) { LLVMValue = I; }
   Value *getLLVMValue() const { return LLVMValue; }
 
-	void setParentBB(BasicBlock *BB) { ParentBB = BB; }
-	BasicBlock *getParentBB() const { return ParentBB; }
+  void setParentBB(BasicBlock *BB) { ParentBB = BB; }
+  BasicBlock *getParentBB() const { return ParentBB; }
 
   bool isGeneral() { return T == SIRRegister::General; }
-	bool isPHI() { return T == SIRRegister::PHI; }
+  bool isPHI() { return T == SIRRegister::PHI; }
   bool isSlot() { return T == SIRRegister::SlotReg; }
   bool isOutPort() { return T == SIRRegister::OutPort; }
-	bool isFUInput() { return T == SIRRegister::FUInput; }
-	bool isFUOutput() { return T == SIRRegister::FUOutput; }
-	bool isFUInOut() { return isFUInput() || isFUOutput(); }
-  
+  bool isFUInput() { return T == SIRRegister::FUInput; }
+  bool isFUOutput() { return T == SIRRegister::FUOutput; }
+  bool isFUInOut() { return isFUInput() || isFUOutput(); }
+
   std::string getName() const { return Name; }
   unsigned getBitWidth() const { return BitWidth; }
   const uint64_t getInitVal() const { return InitVal; }
@@ -219,33 +219,33 @@ public:
   Value *getRegGuard() const { return RegGuard; }
   void addAssignment(Value *Fanin, Value *FaninGuard);
   bool assignmentEmpty() { return Fanins.empty(); }
-	void setMux(Value *V, Value *G) { 
-		RegVal = V; RegGuard = G; 
+  void setMux(Value *V, Value *G) {
+    RegVal = V; RegGuard = G;
 
-		// Set the real operands to this register assign instruction.
-		IntrinsicInst *II = dyn_cast<IntrinsicInst>(getLLVMValue());
-		if (II && II->getIntrinsicID() == Intrinsic::shang_reg_assign) {
-			Value *RegSrcVal = II->getOperand(0);
-			Value *RegGuardVal = II->getOperand(1);
-			if (RegSrcVal != RegVal) {
-				II->setOperand(0, RegVal);
-			}
-			if (RegGuardVal != RegGuard)
-				II->setOperand(1, RegGuard);
-		}
-	}
-	void dropMux() { 
-		RegVal = NULL; RegGuard = NULL;
+    // Set the real operands to this register assign instruction.
+    IntrinsicInst *II = dyn_cast<IntrinsicInst>(getLLVMValue());
+    if (II && II->getIntrinsicID() == Intrinsic::shang_reg_assign) {
+      Value *RegSrcVal = II->getOperand(0);
+      Value *RegGuardVal = II->getOperand(1);
+      if (RegSrcVal != RegVal) {
+        II->setOperand(0, RegVal);
+      }
+      if (RegGuardVal != RegGuard)
+        II->setOperand(1, RegGuard);
+    }
+  }
+  void dropMux() {
+    RegVal = NULL; RegGuard = NULL;
 
-		Fanins.clear();
-		FaninGuards.clear();
-	}
+    Fanins.clear();
+    FaninGuards.clear();
+  }
 
-	// Declare the register and assign the initial value.
+  // Declare the register and assign the initial value.
   void printDecl(raw_ostream &OS) const;
-	// Declare the register as Ports of the module.
-	// This method is only called in Co-Simulation.
-	void printVirtualPortDecl(raw_ostream &OS, bool IsInput) const;
+  // Declare the register as Ports of the module.
+  // This method is only called in Co-Simulation.
+  void printVirtualPortDecl(raw_ostream &OS, bool IsInput) const;
 };
 
 // Represent the ports in the Verilog.
@@ -257,7 +257,7 @@ public:
     Start,
     ArgPort,
     InPort = ArgPort,
-		Finish,
+    Finish,
     RetPort,
     OutPort = RetPort
   };
@@ -269,7 +269,7 @@ private:
 
 public:
   SIRPort(SIRPortTypes T, unsigned BitWidth, const std::string Name)
-          : T(T), BitWidth(BitWidth), Name(Name) {}
+    : T(T), BitWidth(BitWidth), Name(Name) {}
   ~SIRPort();
 
   const std::string getName() const { return Name; }
@@ -289,7 +289,7 @@ private:
 public:
   SIRInPort(SIRPort::SIRPortTypes T, unsigned BitWidth,
             const std::string Name, LLVMContext &C)
-            : SIRPort(T, BitWidth, Name) {
+    : SIRPort(T, BitWidth, Name) {
     // Hack: Do we need to provide the ParentFunction to it?
     V = new Argument(Type::getInt1Ty(C), Name);
   };
@@ -311,7 +311,7 @@ private:
 public:
   SIROutPort(SIRPort::SIRPortTypes T, SIRRegister *Reg, 
              unsigned BitWidth, const std::string Name)
-             : Reg(Reg), SIRPort(T, BitWidth, Name){}
+    : Reg(Reg), SIRPort(T, BitWidth, Name){}
 
   SIRRegister *getRegister() const { return Reg; }
 
@@ -326,154 +326,154 @@ public:
 namespace llvm {
 class SIRSubModuleBase : public ilist_node<SIRSubModuleBase> {
 public:
-	enum Type {
-		SubModule,
-		MemoryBank
-	};
+  enum Type {
+    SubModule,
+    MemoryBank
+  };
 
 private:
-	SmallVector<SIRRegister *, 8> Fanins;
-	SmallVector<SIRRegister *, 8> Fanouts;
+  SmallVector<SIRRegister *, 8> Fanins;
+  SmallVector<SIRRegister *, 8> Fanouts;
 
 protected:
-	// The Idx of all sub-modules in SIR.
-	const unsigned Idx;	
-	const Type Ty;
+  // The Idx of all sub-modules in SIR.
+  const unsigned Idx;
+  const Type Ty;
 
-	SIRSubModuleBase(Type Ty, unsigned Idx)
-		: Ty(Ty), Idx(Idx) {}	
+  SIRSubModuleBase(Type Ty, unsigned Idx)
+    : Ty(Ty), Idx(Idx) {}
 
 public:
-	~SIRSubModuleBase() {}
+  ~SIRSubModuleBase() {}
 
-	void addFanin(SIRRegister *Fanin);
-	void addFanout(SIRRegister *Fanout);
+  void addFanin(SIRRegister *Fanin);
+  void addFanout(SIRRegister *Fanout);
 
-	Type getType() const { return Ty; }
-	unsigned getNum() const { return Idx; }
+  Type getType() const { return Ty; }
+  unsigned getNum() const { return Idx; }
 
-	typedef SmallVectorImpl<SIRRegister *>::iterator fanin_iterator;
-	fanin_iterator fanin_begin() { return Fanins.begin(); }
-	fanin_iterator fanin_end() { return Fanins.end(); }
+  typedef SmallVectorImpl<SIRRegister *>::iterator fanin_iterator;
+  fanin_iterator fanin_begin() { return Fanins.begin(); }
+  fanin_iterator fanin_end() { return Fanins.end(); }
 
-	typedef SmallVectorImpl<SIRRegister *>::const_iterator const_fanin_iterator;
-	const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
-	const_fanin_iterator fanin_end()   const { return Fanins.end(); }
+  typedef SmallVectorImpl<SIRRegister *>::const_iterator const_fanin_iterator;
+  const_fanin_iterator fanin_begin() const { return Fanins.begin(); }
+  const_fanin_iterator fanin_end()   const { return Fanins.end(); }
 
-	SIRRegister *getFanin(unsigned Idx) const { return Fanins[Idx]; }
-	SIRRegister *getFanout(unsigned Idx) const { return Fanouts[Idx]; }
+  SIRRegister *getFanin(unsigned Idx) const { return Fanins[Idx]; }
+  SIRRegister *getFanout(unsigned Idx) const { return Fanouts[Idx]; }
 };
 
 class SIRSubModule : public SIRSubModuleBase {
-	// Special ports in the sub-module.
-	SIRRegister *StartPort, *FinPort, *RetPort;
+  // Special ports in the sub-module.
+  SIRRegister *StartPort, *FinPort, *RetPort;
 
-	// The latency of the sub-module.
-	unsigned Latency;
+  // The latency of the sub-module.
+  unsigned Latency;
 
-	SIRSubModule(unsigned FUNum)
-		: SIRSubModuleBase(SubModule, FUNum), StartPort(0),
-		FinPort(0), RetPort(0), Latency(0) {}
+  SIRSubModule(unsigned FUNum)
+    : SIRSubModuleBase(SubModule, FUNum), StartPort(0),
+    FinPort(0), RetPort(0), Latency(0) {}
 
 public:
-	SIRRegister *getStartPort() const { return StartPort; }
-	SIRRegister *getFinPort() const { return FinPort; }
-	SIRRegister *getRetPort() const { return RetPort; }
+  SIRRegister *getStartPort() const { return StartPort; }
+  SIRRegister *getFinPort() const { return FinPort; }
+  SIRRegister *getRetPort() const { return RetPort; }
 
-	unsigned getLatency() const { return Latency; }
-	std::string getPortName(const Twine &PortName) const;
+  unsigned getLatency() const { return Latency; }
+  std::string getPortName(const Twine &PortName) const;
 
-	void printDecl(raw_ostream &OS) const;
+  void printDecl(raw_ostream &OS) const;
 
 };
 
 class SIRMemoryBank : public SIRSubModuleBase {
-	const unsigned AddrSize, DataSize;
-	const unsigned ReadLatency;
-	const bool RequireByteEnable;
-	const bool IsReadOnly;
-	// For each MemoryBank, we have two input port
-	// including Address and WData.
-	static const unsigned InputsPerPort = 2;
-	// The address of last byte.
-	unsigned EndByteAddr;
+  const unsigned AddrSize, DataSize;
+  const unsigned ReadLatency;
+  const bool RequireByteEnable;
+  const bool IsReadOnly;
+  // For each MemoryBank, we have two input port
+  // including Address and WData.
+  static const unsigned InputsPerPort = 2;
+  // The address of last byte.
+  unsigned EndByteAddr;
 
-	// The map between GVs and its offset in memory bank
-	typedef std::map<GlobalVariable *, unsigned> BaseAddrMap;
-	BaseAddrMap	BaseAddrs;
-	// The map between GVs and its OriginalPtrSize
-	// for GetElementPtrInst in memory bank
-	typedef std::map<GlobalVariable *, unsigned> GVs2PtrSizeMap;
-	GVs2PtrSizeMap GVs2PtrSize;
+  // The map between GVs and its offset in memory bank
+  typedef std::map<GlobalVariable *, unsigned> BaseAddrMap;
+  BaseAddrMap	BaseAddrs;
+  // The map between GVs and its OriginalPtrSize
+  // for GetElementPtrInst in memory bank
+  typedef std::map<GlobalVariable *, unsigned> GVs2PtrSizeMap;
+  GVs2PtrSizeMap GVs2PtrSize;
 
-	typedef BaseAddrMap::iterator baseaddrs_iterator;
-	typedef BaseAddrMap::const_iterator const_baseaddrs_iterator;
+  typedef BaseAddrMap::iterator baseaddrs_iterator;
+  typedef BaseAddrMap::const_iterator const_baseaddrs_iterator;
 
-	typedef GVs2PtrSizeMap::iterator gvs2ptrsize_iterator;
-	typedef GVs2PtrSizeMap::const_iterator const_gvs2ptrsize_iterator;
+  typedef GVs2PtrSizeMap::iterator gvs2ptrsize_iterator;
+  typedef GVs2PtrSizeMap::const_iterator const_gvs2ptrsize_iterator;
 
 public:
-	SIRMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
-		            bool RequireByteEnable, bool IsReadOnly, unsigned ReadLatency);
+  SIRMemoryBank(unsigned BusNum, unsigned AddrSize, unsigned DataSize,
+                bool RequireByteEnable, bool IsReadOnly, unsigned ReadLatency);
 
-	unsigned getDataWidth() const { return DataSize; }
-	unsigned getAddrWidth() const { return AddrSize; }
-	unsigned getReadLatency() const { return ReadLatency; }
-	unsigned getEndByteAddr() const { return EndByteAddr; }
-	unsigned getByteEnWidth() const { return DataSize / 8; }
-	unsigned getByteAddrWidth() const;
+  unsigned getDataWidth() const { return DataSize; }
+  unsigned getAddrWidth() const { return AddrSize; }
+  unsigned getReadLatency() const { return ReadLatency; }
+  unsigned getEndByteAddr() const { return EndByteAddr; }
+  unsigned getByteEnWidth() const { return DataSize / 8; }
+  unsigned getByteAddrWidth() const;
 
-	bool requireByteEnable() const { return RequireByteEnable; }
-	bool isReadOnly() const { return IsReadOnly; }
+  bool requireByteEnable() const { return RequireByteEnable; }
+  bool isReadOnly() const { return IsReadOnly; }
 
-	// Signal names of the memory bank.
-	std::string getAddrName() const;
-	std::string getRDataName() const;
-	std::string getWDataName() const;
-	std::string getEnableName() const;
-	std::string getWriteEnName() const;
-	std::string getByteEnName() const;
-	std::string getArrayName() const;
+  // Signal names of the memory bank.
+  std::string getAddrName() const;
+  std::string getRDataName() const;
+  std::string getWDataName() const;
+  std::string getEnableName() const;
+  std::string getWriteEnName() const;
+  std::string getByteEnName() const;
+  std::string getArrayName() const;
 
-	SIRRegister *getAddr() const;
-	SIRRegister *getRData() const;
-	SIRRegister *getWData() const;
-	SIRRegister *getEnable() const;
-	SIRRegister *getWriteEn() const;
-	SIRRegister *getByteEn() const;
+  SIRRegister *getAddr() const;
+  SIRRegister *getRData() const;
+  SIRRegister *getWData() const;
+  SIRRegister *getEnable() const;
+  SIRRegister *getWriteEn() const;
+  SIRRegister *getByteEn() const;
 
-	void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
-	unsigned getOffset(GlobalVariable *GV) const;
+  void addGlobalVariable(GlobalVariable *GV, unsigned SizeInBytes);
+  unsigned getOffset(GlobalVariable *GV) const;
 
-	bool indexGV2OriginalPtrSize(GlobalVariable *GV, unsigned PtrSize);
-	unsigned lookupPtrSize(GlobalVariable *GV) const {
-		const_gvs2ptrsize_iterator at = GVs2PtrSize.find(GV);
-		return at == GVs2PtrSize.end() ? 0 : at->second;
-	}
+  bool indexGV2OriginalPtrSize(GlobalVariable *GV, unsigned PtrSize);
+  unsigned lookupPtrSize(GlobalVariable *GV) const {
+    const_gvs2ptrsize_iterator at = GVs2PtrSize.find(GV);
+    return at == GVs2PtrSize.end() ? 0 : at->second;
+  }
 
-	baseaddrs_iterator baseaddrs_begin() { return BaseAddrs.begin(); }
-	baseaddrs_iterator baseaddrs_end() { return BaseAddrs.end(); }
+  baseaddrs_iterator baseaddrs_begin() { return BaseAddrs.begin(); }
+  baseaddrs_iterator baseaddrs_end() { return BaseAddrs.end(); }
 
-	const_baseaddrs_iterator const_baseaddrs_begin() const { return BaseAddrs.begin(); }
-	const_baseaddrs_iterator const_baseaddrs_end() const { return BaseAddrs.end(); }
+  const_baseaddrs_iterator const_baseaddrs_begin() const { return BaseAddrs.begin(); }
+  const_baseaddrs_iterator const_baseaddrs_end() const { return BaseAddrs.end(); }
 
-	gvs2ptrsize_iterator gvs2ptrsize_begin() { return GVs2PtrSize.begin(); }
-	gvs2ptrsize_iterator gvs2ptrsize_end() { return GVs2PtrSize.end(); }
+  gvs2ptrsize_iterator gvs2ptrsize_begin() { return GVs2PtrSize.begin(); }
+  gvs2ptrsize_iterator gvs2ptrsize_end() { return GVs2PtrSize.end(); }
 
-	const_gvs2ptrsize_iterator const_gvs2ptrsize_begin() const { return GVs2PtrSize.begin(); }
-	const_gvs2ptrsize_iterator const_gvs2ptrsize_end() const { return GVs2PtrSize.end(); }
+  const_gvs2ptrsize_iterator const_gvs2ptrsize_begin() const { return GVs2PtrSize.begin(); }
+  const_gvs2ptrsize_iterator const_gvs2ptrsize_end() const { return GVs2PtrSize.end(); }
 
-	// Declare all the regs used in memory bank.
-	void printDecl(raw_ostream &OS) const;
-	// Declare all the regs used in memory bank as Ports of module.
-	// This method is only called in Co-Simulation.
-	void printVirtualPortDecl(raw_ostream &OS) const;
+  // Declare all the regs used in memory bank.
+  void printDecl(raw_ostream &OS) const;
+  // Declare all the regs used in memory bank as Ports of module.
+  // This method is only called in Co-Simulation.
+  void printVirtualPortDecl(raw_ostream &OS) const;
 
-	/// Methods for support type inquiry through isa, cast, and dyn_cast;
-	static inline bool classof(const SIRMemoryBank *SMB) { return true; }
-	static inline bool classof(const SIRSubModuleBase *SSMB) {
-		return SSMB->getType() == MemoryBank;
-	}
+  /// Methods for support type inquiry through isa, cast, and dyn_cast;
+  static inline bool classof(const SIRMemoryBank *SMB) { return true; }
+  static inline bool classof(const SIRSubModuleBase *SSMB) {
+    return SSMB->getType() == MemoryBank;
+  }
 };
 }
 
@@ -492,29 +492,30 @@ public:
     Sucessor = 0
   };
 
-	// The pointer to successor which is also encoded with the distance and the condition.
-	struct EdgePtr {
-	private:
-		SIRSlot *S;
-		EdgeType Ty;
-		Value *Cnd;
+  // The pointer to successor which is also encoded with the distance and the condition.
+  struct EdgePtr {
+  private:
+    SIRSlot *S;
+    EdgeType Ty;
+    Value *Cnd;
 
-		// Hide the function getInt from PointerIntPair.
-		void getInt() const { }
-	public:
-		EdgePtr(SIRSlot *S, EdgeType Ty, Value *Cnd)
-			: S(S), Ty(Ty), Cnd(Cnd) {}
+    // Hide the function getInt from PointerIntPair.
+    void getInt() const { }
 
-		operator SIRSlot *() const { return S; }
-		SIRSlot *operator->() const { return S; }
-		
-		SIRSlot *getSlot() const { return S; }
-		EdgeType getType() const { return Ty; }
-		unsigned getDistance() const {
-			return Ty == Sucessor ? 1 : 0;
-		}
-		Value *getCnd() const { return Cnd; }
-	};
+  public:
+    EdgePtr(SIRSlot *S, EdgeType Ty, Value *Cnd)
+      : S(S), Ty(Ty), Cnd(Cnd) {}
+
+    operator SIRSlot *() const { return S; }
+    SIRSlot *operator->() const { return S; }
+
+    SIRSlot *getSlot() const { return S; }
+    EdgeType getType() const { return Ty; }
+    unsigned getDistance() const {
+      return Ty == Sucessor ? 1 : 0;
+    }
+    Value *getCnd() const { return Cnd; }
+  };
 
   typedef SmallVector<EdgePtr, 4> SuccVecTy;
   typedef SuccVecTy::iterator succ_iterator;
@@ -537,10 +538,10 @@ private:
 
   SIRRegister *SlotReg;
 
-	// The creating order which is not equal to
-	// its real schedule step in FSM.
+  // The creating order which is not equal to
+  // its real schedule step in FSM.
   unsigned SlotNum;
-	// The schedule step in local BB.
+  // The schedule step in local BB.
   unsigned Step;
 
 public:
@@ -588,76 +589,76 @@ public:
   const_pred_iterator pred_end() const { return PredSlots.end(); }
   unsigned pred_size() const { return PredSlots.size(); }
 
-	// Functions for debug
-	void print(raw_ostream &OS) const;
-	void dump() const;
+  // Functions for debug
+  void print(raw_ostream &OS) const;
+  void dump() const;
 }; 
 
 template<> struct GraphTraits<SIRSlot *> {
-	typedef SIRSlot NodeType;
-	typedef NodeType::succ_iterator ChildIteratorType;
-	static NodeType *getEntryNode(NodeType* N) { return N; }
-	static inline ChildIteratorType child_begin(NodeType *N) {
-		return N->succ_begin();
-	}
-	static inline ChildIteratorType child_end(NodeType *N) {
-		return N->succ_end();
-	}
+  typedef SIRSlot NodeType;
+  typedef NodeType::succ_iterator ChildIteratorType;
+  static NodeType *getEntryNode(NodeType* N) { return N; }
+  static inline ChildIteratorType child_begin(NodeType *N) {
+    return N->succ_begin();
+  }
+  static inline ChildIteratorType child_end(NodeType *N) {
+    return N->succ_end();
+  }
 };
 
 template<> struct GraphTraits<const SIRSlot *> {
-	typedef const SIRSlot NodeType;
-	typedef NodeType::const_succ_iterator ChildIteratorType;
-	static NodeType *getEntryNode(NodeType* N) { return N; }
-	static inline ChildIteratorType child_begin(NodeType *N) {
-		return N->succ_begin();
-	}
-	static inline ChildIteratorType child_end(NodeType *N) {
-		return N->succ_end();
-	}
+  typedef const SIRSlot NodeType;
+  typedef NodeType::const_succ_iterator ChildIteratorType;
+  static NodeType *getEntryNode(NodeType* N) { return N; }
+  static inline ChildIteratorType child_begin(NodeType *N) {
+    return N->succ_begin();
+  }
+  static inline ChildIteratorType child_end(NodeType *N) {
+    return N->succ_end();
+  }
 };
 
 // Represent the assign operation in SIR.
 class SIRSeqOp : public ilist_node<SIRSeqOp> {
 public:
-	enum Type {
-		General,
-		SlotTransition
-	};
+  enum Type {
+    General,
+    SlotTransition
+  };
 
 private:
-	const Type T;
-	Value *Src;
-	SIRRegister *DstReg;
-	Value *Guard;
-	SIRSlot *S;
+  const Type T;
+  Value *Src;
+  SIRRegister *DstReg;
+  Value *Guard;
+  SIRSlot *S;
 
 public:
-	// Constructors used for the ilist_node.
-	SIRSeqOp() : Src(0), DstReg(0), Guard(0), S(0), T(General) {}
-	// Default Constructor.
-	SIRSeqOp(Value *Src, SIRRegister *DstReg, Value *Guard,
-		       SIRSlot *S, Type T = General) 
-		: Src(Src), DstReg(DstReg), Guard(Guard), S(S), T(T) {}
+  // Constructors used for the ilist_node.
+  SIRSeqOp() : Src(0), DstReg(0), Guard(0), S(0), T(General) {}
+  // Default Constructor.
+  SIRSeqOp(Value *Src, SIRRegister *DstReg, Value *Guard,
+           SIRSlot *S, Type T = General)
+    : Src(Src), DstReg(DstReg), Guard(Guard), S(S), T(T) {}
 
-	Value *getLLVMValue() const { return DstReg->getLLVMValue(); }
-	Value *getSrc() const { return Src; }
-	Value *getGuard() const { return Guard; }
-	SIRSlot *getSlot() const { return S; }
-	SIRRegister *getDst() const { return DstReg; }
-	Type getType() const { return T; }
+  Value *getLLVMValue() const { return DstReg->getLLVMValue(); }
+  Value *getSrc() const { return Src; }
+  Value *getGuard() const { return Guard; }
+  SIRSlot *getSlot() const { return S; }
+  SIRRegister *getDst() const { return DstReg; }
+  Type getType() const { return T; }
 
-	bool isSlotTransition() const { return T == SlotTransition; }
+  bool isSlotTransition() const { return T == SlotTransition; }
 
-	void setSlot(SIRSlot *Slot) { S = Slot; }
+  void setSlot(SIRSlot *Slot) { S = Slot; }
 
-	// Functions for debug
-	void print(raw_ostream &OS) const;
-	void dump() const;
+  // Functions for debug
+  void print(raw_ostream &OS) const;
+  void dump() const;
 
-	/// Methods for support type inquiry through isa, cast, and dyn_cast:
-	static inline bool classof(const SIRSeqOp *SeqOp) { return true; }
-	static inline bool classof(const SIRSlotTransition *SST) { return true; }
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const SIRSeqOp *SeqOp) { return true; }
+  static inline bool classof(const SIRSlotTransition *SST) { return true; }
 };
 
 // Represent the state transition in SIR.
@@ -665,22 +666,23 @@ public:
 // to the SlotReg indeed.
 class SIRSlotTransition : public SIRSeqOp {
 private:
-	SIRSlot *DstSlot;
+  SIRSlot *DstSlot;
 
 public:
-	// Dirty Hack: the Src Value here should be limited as 1'b1.
-	SIRSlotTransition(Value *Src, SIRSlot *SrcSlot, SIRSlot *DstSlot, Value *Cnd)
-		: SIRSeqOp(Src, DstSlot->getSlotReg(), Cnd, SrcSlot, SIRSeqOp::SlotTransition), DstSlot(DstSlot) {}
+  // Dirty Hack: the Src Value here should be limited as 1'b1.
+  SIRSlotTransition(Value *Src, SIRSlot *SrcSlot, SIRSlot *DstSlot, Value *Cnd)
+    : SIRSeqOp(Src, DstSlot->getSlotReg(), Cnd, SrcSlot, SIRSeqOp::SlotTransition),
+    DstSlot(DstSlot) {}
 
-	SIRSlot *getSrcSlot() const { return getSlot(); }
-	SIRSlot *getDstSlot() const { return DstSlot; }
-	Value *getCnd() const { return getGuard(); }
+  SIRSlot *getSrcSlot() const { return getSlot(); }
+  SIRSlot *getDstSlot() const { return DstSlot; }
+  Value *getCnd() const { return getGuard(); }
 
-	/// Methods for support type inquiry through isa, cast, and dyn_cast:
-	static inline bool classof(const SIRSlotTransition *SST) { return true; }
-	static inline bool classof(const SIRSeqOp *SeqOp) {
-		return SeqOp->getType() == SlotTransition;
-	}
+  /// Methods for support type inquiry through isa, cast, and dyn_cast:
+  static inline bool classof(const SIRSlotTransition *SST) { return true; }
+  static inline bool classof(const SIRSeqOp *SeqOp) {
+    return SeqOp->getType() == SlotTransition;
+  }
 };
 }
 
@@ -696,9 +698,9 @@ public:
   typedef RegisterVector::iterator register_iterator;
   typedef RegisterVector::const_iterator const_register_iterator;
 
-	typedef SmallVector<SIRSubModuleBase *, 8> SubModuleBaseVector;
-	typedef SubModuleBaseVector::iterator submodulebase_iterator;
-	typedef SubModuleBaseVector::const_iterator const_submodulebase_iterator;
+  typedef SmallVector<SIRSubModuleBase *, 8> SubModuleBaseVector;
+  typedef SubModuleBaseVector::iterator submodulebase_iterator;
+  typedef SubModuleBaseVector::const_iterator const_submodulebase_iterator;
 
   typedef SmallVector<Instruction *, 8> DataPathInstVector;
   typedef DataPathInstVector::iterator datapathinst_iterator;
@@ -712,9 +714,9 @@ public:
   typedef SeqOpList::iterator seqop_iterator;
   typedef SeqOpList::const_iterator const_seqop_iterator;
 
-	typedef DenseMap<Value *, Value *> Val2SeqValMapTy;
-	typedef Val2SeqValMapTy::iterator val2valseq_iterator;
-	typedef Val2SeqValMapTy::const_iterator const_val2valseq_iterator;
+  typedef DenseMap<Value *, Value *> Val2SeqValMapTy;
+  typedef Val2SeqValMapTy::iterator val2valseq_iterator;
+  typedef Val2SeqValMapTy::const_iterator const_val2valseq_iterator;
 
   typedef DenseMap<Value *, SIRRegister *> SeqVal2RegMapTy;
   typedef SeqVal2RegMapTy::iterator seqval2reg_iterator;
@@ -729,16 +731,16 @@ private:
   SIRPortVector Ports;
   // Registers in the module
   RegisterVector Registers;
-	// SubModules in the module
-	SubModuleBaseVector SubModuleBases;
+  // SubModules in the module
+  SubModuleBaseVector SubModuleBases;
   // The DataPathInsts in the module
   DataPathInstVector DataPathInsts;
   // The Slots in CtrlRgn of the module
   SlotVector Slots;
   // The SeqOps in CtrlRgn of the module
   SeqOpList SeqOps;
-	// The map between Value in LLVM IR and SeqVal in SIR
-	Val2SeqValMapTy Val2SeqVal;
+  // The map between Value in LLVM IR and SeqVal in SIR
+  Val2SeqValMapTy Val2SeqVal;
   // The map between SeqVal in SIR and Reg in SIR
   SeqVal2RegMapTy SeqVal2Reg;
   // The map between Reg and SIRSlot
@@ -746,9 +748,9 @@ private:
 
   // Record the Idx of FinPort and RetPort.
   unsigned RetPortIdx;
-	unsigned FinPortIdx;
+  unsigned FinPortIdx;
   // Record the landing slot and the latest slot of BB.
-	typedef std::pair<SIRSlot *, SIRSlot *> slot_pair;
+  typedef std::pair<SIRSlot *, SIRSlot *> slot_pair;
   std::map<BasicBlock *, slot_pair> BB2SlotMap;
 
 protected:
@@ -765,7 +767,7 @@ public:
   LLVMContext &getContext() const { return C; }
 
   port_iterator ports_begin() { return Ports.begin(); }
-	port_iterator ports_end() { return Ports.end(); }
+  port_iterator ports_end() { return Ports.end(); }
 
   const_port_iterator const_ports_begin() const { return Ports.begin(); }  
   const_port_iterator const_ports_end() const { return Ports.end(); }
@@ -776,11 +778,11 @@ public:
   const_register_iterator const_registers_begin() const { return Registers.begin(); }
   const_register_iterator const_registers_end() const { return Registers.end(); }
 
-	submodulebase_iterator submodules_begin() { return SubModuleBases.begin(); }
-	submodulebase_iterator submodules_end() { return SubModuleBases.end(); }
+  submodulebase_iterator submodules_begin() { return SubModuleBases.begin(); }
+  submodulebase_iterator submodules_end() { return SubModuleBases.end(); }
 
-	const_submodulebase_iterator const_submodules_begin() const { return SubModuleBases.begin(); }
-	const_submodulebase_iterator const_submodules_end() const { return SubModuleBases.end(); }
+  const_submodulebase_iterator const_submodules_begin() const { return SubModuleBases.begin(); }
+  const_submodulebase_iterator const_submodules_end() const { return SubModuleBases.end(); }
 
   slot_iterator slot_begin() { return Slots.begin(); }
   slot_iterator slot_end() { return Slots.end(); }
@@ -818,35 +820,35 @@ public:
   void IndexRegister(SIRRegister *Reg) {
     Registers.push_back(Reg);
   }
-	void IndexSubModuleBase(SIRSubModuleBase *SMB) {
-		SubModuleBases.push_back(SMB);
-	}
+  void IndexSubModuleBase(SIRSubModuleBase *SMB) {
+    SubModuleBases.push_back(SMB);
+  }
   void IndexDataPathInst(Instruction *DataPathInst) {
     DataPathInsts.push_back(DataPathInst);
   }
 
-	void deleteUselessSeqOp(SIRSeqOp *SeqOp) {
-		SeqOps.erase(SeqOp);
-	}
+  void deleteUselessSeqOp(SIRSeqOp *SeqOp) {
+    SeqOps.erase(SeqOp);
+  }
 
-	bool IndexVal2SeqVal(Value *Val, Value *SeqVal) {
-		// The SeqVal should be the form of shang_reg_assign.
-		IntrinsicInst *II = dyn_cast<IntrinsicInst>(SeqVal);
-		assert(II && II->getIntrinsicID() == Intrinsic::shang_reg_assign
-					 && "Unexpected SeqVal type!");
+  bool IndexVal2SeqVal(Value *Val, Value *SeqVal) {
+    // The SeqVal should be the form of shang_reg_assign.
+    IntrinsicInst *II = dyn_cast<IntrinsicInst>(SeqVal);
+    assert(II && II->getIntrinsicID() == Intrinsic::shang_reg_assign
+           && "Unexpected SeqVal type!");
 
-		return Val2SeqVal.insert(std::make_pair(Val, SeqVal)).second;
-	}
-	Value *lookupSeqVal(Value *Val) const {
-		const_val2valseq_iterator at = Val2SeqVal.find(Val);
-		return at == Val2SeqVal.end() ? 0 : at->second;
-	}
+    return Val2SeqVal.insert(std::make_pair(Val, SeqVal)).second;
+  }
+  Value *lookupSeqVal(Value *Val) const {
+    const_val2valseq_iterator at = Val2SeqVal.find(Val);
+    return at == Val2SeqVal.end() ? 0 : at->second;
+  }
 
   bool IndexSeqVal2Reg(Value *SeqVal, SIRRegister *Reg) {
-		// The SeqVal should be the form of shang_reg_assign.
-		IntrinsicInst *II = dyn_cast<IntrinsicInst>(SeqVal);
-		assert(II && II->getIntrinsicID() == Intrinsic::shang_reg_assign
-			     && "Unexpected SeqVal type!");
+    // The SeqVal should be the form of shang_reg_assign.
+    IntrinsicInst *II = dyn_cast<IntrinsicInst>(SeqVal);
+    assert(II && II->getIntrinsicID() == Intrinsic::shang_reg_assign
+           && "Unexpected SeqVal type!");
 
     return SeqVal2Reg.insert(std::make_pair(SeqVal, Reg)).second;
   }
@@ -864,19 +866,18 @@ public:
   }
 
   void setRetPortIdx(unsigned Idx) { RetPortIdx = Idx; }
-	void setFinPortIdx(unsigned Idx) { FinPortIdx = Idx; }
+  void setFinPortIdx(unsigned Idx) { FinPortIdx = Idx; }
   unsigned getRetPortIdx() const { return RetPortIdx; }
-	unsigned getFinPortIdx() const { return FinPortIdx; }
+  unsigned getFinPortIdx() const { return FinPortIdx; }
 
-  bool IndexBB2Slots(BasicBlock *BB,
-                     SIRSlot *LandingSlot, SIRSlot *LatestSlot) {    
-		std::map<BasicBlock*, slot_pair>::iterator
-      at = BB2SlotMap.find(BB);
-		// If there are already a map between BB and Landing/Latest Slot,
-		// then we update it.
-		if (at != BB2SlotMap.end()) {
-			BB2SlotMap.erase(at);
-		}
+  bool IndexBB2Slots(BasicBlock *BB, SIRSlot *LandingSlot,
+                     SIRSlot *LatestSlot) {
+    std::map<BasicBlock*, slot_pair>::iterator at = BB2SlotMap.find(BB);
+    // If there are already a map between BB and Landing/Latest Slot,
+    // then we update it.
+    if (at != BB2SlotMap.end()) {
+      BB2SlotMap.erase(at);
+    }
 
     return BB2SlotMap.insert(std::make_pair(BB,
                              std::make_pair(LandingSlot, LatestSlot))).second;
@@ -908,38 +909,38 @@ public:
     return Ports[i];
   }
   SIRPort *getRetPort() const { return getPort(RetPortIdx); }
-	SIRPort *getFinPort() const { return getPort(FinPortIdx); }
+  SIRPort *getFinPort() const { return getPort(FinPortIdx); }
 
-	// Give the position just in front of the terminator instruction
-	// at back of the module. And all DataPath instruction created for
-	// registers will be inserted here to avoid being used before declaration.
-	Value *getPositionAtBackOfModule() const {
-		BasicBlock *LastBB = &getFunction()->getBasicBlockList().back();
-		return LastBB->getTerminator();
-	}
+  // Give the position just in front of the terminator instruction
+  // at back of the module. And all DataPath instruction created for
+  // registers will be inserted here to avoid being used before declaration.
+  Value *getPositionAtBackOfModule() const {
+    BasicBlock *LastBB = &getFunction()->getBasicBlockList().back();
+    return LastBB->getTerminator();
+  }
 
   // -------------------Functions to generate Verilog-------------------- //
-  
+
   // Print the declaration of module.
   void printModuleDecl(raw_ostream &OS) const;
-	// Print the declaration of register.
-	void printRegDecl(raw_ostream &OS) const;
-	// Print the declaration of MemoryBank.
-	void printMemoryBankDecl(raw_ostream &OS) const;
+  // Print the declaration of register.
+  void printRegDecl(raw_ostream &OS) const;
+  // Print the declaration of MemoryBank.
+  void printMemoryBankDecl(raw_ostream &OS) const;
 
-	// ---------------------------Other Functions---------------------------- //
+  // ---------------------------Other Functions---------------------------- //
 
-	// Release the dead objects in SIR.
-	bool gcImpl();
-	bool gc();
+  // Release the dead objects in SIR.
+  bool gcImpl();
+  bool gc();
 
-	// Functions for debug
-	void print(raw_ostream &OS);
-	void dump(raw_ostream &OS);
-	void dumpIR(raw_ostream &OS);
-	void dumpBB2Slot(raw_ostream &OS);
-	void dumpReg2Slot(raw_ostream &OS);
-	void dumpSeqOp2Slot(raw_ostream &OS);
+  // Functions for debug
+  void print(raw_ostream &OS);
+  void dump(raw_ostream &OS);
+  void dumpIR(raw_ostream &OS);
+  void dumpBB2Slot(raw_ostream &OS);
+  void dumpReg2Slot(raw_ostream &OS);
+  void dumpSeqOp2Slot(raw_ostream &OS);
 };
 }
 

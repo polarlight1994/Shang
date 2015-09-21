@@ -25,7 +25,7 @@
 namespace llvm {
 class SIRScheduleBase {
 public:
-	const unsigned EntrySlot;
+  const unsigned EntrySlot;
   static const unsigned MaxSlot = UINT16_MAX >> 2;
   struct TimeFrame {
     float ASAP, ALAP;
@@ -48,15 +48,15 @@ public:
       return TimeFrame(ASAP + i, ALAP + i);
     }
 
-	float size() const {
+    float size() const {
       return ALAP - ASAP;
     }
   };
 
 protected:
   // MII in modulo schedule.
-	unsigned MII;
-	float CriticalPathEnd;
+  unsigned MII;
+  float CriticalPathEnd;
 
   typedef std::map<const SIRSchedUnit *, TimeFrame> TFMapTy;
   TFMapTy SUnitToTF;
@@ -67,13 +67,13 @@ public:
   SIRScheduleBase(SIRSchedGraph &G, unsigned EntrySlot)
     : EntrySlot(EntrySlot), MII(0), CriticalPathEnd(0), G(G) {}
 
-	// Forward some functions from SIRScheGraph.
-	ArrayRef<SIRSchedUnit *> lookupSUs(Value *V) {
-		return G.lookupSUs(V);
-	}
-	ArrayRef<SIRSchedUnit *> getSUsInBB(BasicBlock *BB) {
-		return G.getSUsInBB(BB);
-	}
+  // Forward some functions from SIRScheGraph.
+  ArrayRef<SIRSchedUnit *> lookupSUs(Value *V) {
+    return G.lookupSUs(V);
+  }
+  ArrayRef<SIRSchedUnit *> getSUsInBB(BasicBlock *BB) {
+    return G.getSUsInBB(BB);
+  }
 
   float calculateASAP(const SIRSchedUnit *A) const;
   float calculateALAP(const SIRSchedUnit *A) const;
@@ -88,10 +88,10 @@ public:
   SIRSchedGraph *operator->() const { return &G; }
 
   typedef SIRSchedGraph::iterator iterator;
-	typedef SIRSchedGraph::const_iterator const_iterator;
+  typedef SIRSchedGraph::const_iterator const_iterator;
   typedef SIRSchedGraph::reverse_iterator reverse_iterator;
   typedef SIRSchedGraph::const_reverse_iterator const_reverse_iterator;
-  
+
   float getASAPStep(const SIRSchedUnit *A) const {
     TFMapTy::const_iterator at = SUnitToTF.find(A);
     assert(at != SUnitToTF.end() && "TimeFrame for SU not exist!");
@@ -129,8 +129,8 @@ public:
     CriticalPathEnd = EntrySlot + L;
   }
 
-	// Build TimeFrame for all SUnits and reset the scheduling
-	// graph. The return value is the CriticalPathEnd.
+  // Build TimeFrame for all SUnits and reset the scheduling
+  // graph. The return value is the CriticalPathEnd.
   unsigned buildTimeFrameAndResetSchedule(bool reset);
 
   void resetTimeFrame();
@@ -138,17 +138,17 @@ public:
 };
 
 template<> struct GraphTraits<SIRScheduleBase *>
-	: public GraphTraits<SIRSchedGraph *> {
-	
-	typedef SIRSchedGraph::iterator nodes_iterator;
+: public GraphTraits<SIRSchedGraph *> {
 
-	static nodes_iterator nodes_begin(SIRScheduleBase *G) {
-		return G->begin();
-	}
+  typedef SIRSchedGraph::iterator nodes_iterator;
 
-	static nodes_iterator nodes_end(SIRScheduleBase *G) {
-		return G->end();
-	}
+  static nodes_iterator nodes_begin(SIRScheduleBase *G) {
+    return G->begin();
+  }
+
+  static nodes_iterator nodes_end(SIRScheduleBase *G) {
+    return G->end();
+  }
 };
 }
 

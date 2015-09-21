@@ -54,17 +54,17 @@ public:
   SIRDep(enum Types T, float Latency, int Distance)
     : EdgeType(T), Latency(Latency), Distance(Distance) {}
 
-	static SIRDep CreateValDep(float Latency) {
-		return SIRDep(ValDep, Latency, 0);
-	}
+  static SIRDep CreateValDep(float Latency) {
+    return SIRDep(ValDep, Latency, 0);
+  }
 
-	static SIRDep CreateMemDep(float Latency, int Distance) {
-		return SIRDep(MemDep, Latency, Distance);
-	}
+  static SIRDep CreateMemDep(float Latency, int Distance) {
+    return SIRDep(MemDep, Latency, Distance);
+  }
 
-	static SIRDep CreateCtrlDep(float Latency) {
-		return SIRDep(CtrlDep, Latency, 0);
-	}
+  static SIRDep CreateCtrlDep(float Latency) {
+    return SIRDep(CtrlDep, Latency, 0);
+  }
 
   Types getEdgeType() const { return Types(EdgeType); }
   int getDistance() const { return Distance; }
@@ -89,12 +89,12 @@ public:
     BlockEntry,
     // PHI node
     PHI,
-		// Slot transition
-		SlotTransition,
-		// Normal node for SeqOp
-		SeqSU,
-		// Normal node for CombOp
-		CombSU,
+    // Slot transition
+    SlotTransition,
+    // Normal node for SeqOp
+    SeqSU,
+    // Normal node for CombOp
+    CombSU,
     // Invalid node for the ilist sentinel
     Invalid
   };
@@ -105,12 +105,12 @@ private:
   uint32_t II;
   uint16_t Idx;
 
-	float Schedule;
-	// The latency of this unit self.
-	float Latency;
+  float Schedule;
+  // The latency of this unit self.
+  float Latency;
 
   // Denote of whether this unit has been scheduled.
-	bool IsScheduled;
+  bool IsScheduled;
 
   // EdgeBundle allow us add/remove edges between SIRSchedUnit more easily.
   struct EdgeBundle {
@@ -118,9 +118,9 @@ private:
     explicit EdgeBundle(SIRDep E) : Edges(1, E) {}
 
     void addEdge(SIRDep NewEdge);
-		// Since in all edges in Bundle, only the one with
-		// biggest latency matters, so here we return the
-		// biggest latency SIRDep.
+    // Since in all edges in Bundle, only the one with
+    // biggest latency matters, so here we return the
+    // biggest latency SIRDep.
     SIRDep getEdge(unsigned II = 0) const;
 
     int getDFLatency() const;
@@ -191,13 +191,13 @@ private:
   // Remember the dependencies of the scheduling unit.
   DepSet Deps;
 
-	Instruction *CombOp;
+  Instruction *CombOp;
   SIRSeqOp *SeqOp;
 
   BasicBlock *BB;
 
-	friend struct ilist_sentinel_traits<SIRSchedUnit>;
-	friend class SIRSchedGraph;
+  friend struct ilist_sentinel_traits<SIRSchedUnit>;
+  friend class SIRSchedGraph;
 
   // The scheduling units that using this scheduling unit,
   // which means these units below depends on this unit.
@@ -212,68 +212,68 @@ private:
   }
 
 public:
-	// The virtual constructor to construct the ilist.
-	SIRSchedUnit();
-	// The constructor for Virtual SUnit.
-	SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB);
+  // The virtual constructor to construct the ilist.
+  SIRSchedUnit();
+  // The constructor for Virtual SUnit.
+  SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB);
   // The constructor for SeqOp SUnit.
   SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, SIRSeqOp *SeqOp);
-	// The constructor for CombOp SUnit.
-	SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, Instruction *CombOp);
+  // The constructor for CombOp SUnit.
+  SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, Instruction *CombOp);
 
   unsigned getII() const { return II; }
-	void setII(unsigned newII) { this->II = std::max(this->II, II); }
-	unsigned getIdx() const { return Idx; }
-	Type getType() const { return T; }
+  void setII(unsigned newII) { this->II = std::max(this->II, II); }
+  unsigned getIdx() const { return Idx; }
+  Type getType() const { return T; }
   float getSchedule() const { return Schedule; }
-	bool scheduleTo(float NewSchedule) {
-		assert(NewSchedule >= 0 && "Unexpected NULL schedule!");
+  bool scheduleTo(float NewSchedule) {
+    assert(NewSchedule >= 0 && "Unexpected NULL schedule!");
 
-		if (NewSchedule == 0)
-			assert(!getParentBB() && !isExit() && "Only SUnits in Slot0r can scheduled to 0!");
+    if (NewSchedule == 0)
+      assert(!getParentBB() && !isExit() && "Only SUnits in Slot0r can scheduled to 0!");
 
-		// Set the IsScheduled.
-		IsScheduled = true;
+    // Set the IsScheduled.
+    IsScheduled = true;
 
-		bool Changed = NewSchedule != Schedule;
-		Schedule = NewSchedule;
+    bool Changed = NewSchedule != Schedule;
+    Schedule = NewSchedule;
 
-		return Changed; 
-	}
-	void resetSchedule() { Schedule = 0.0; }
+    return Changed;
+  }
+  void resetSchedule() { Schedule = 0.0; }
 
-	Value *getValue();
+  Value *getValue();
 
   bool isEntry() const { return T == Entry; }
   bool isExit() const { return T == Exit; }
   bool isBBEntry() const { return T == BlockEntry; }
   bool isPHI() const { return T == PHI; }
-	bool isSlotTransition() const { return T == SlotTransition; }
-	bool isSeqSU() const { return T == SeqSU; }
-	bool isCombSU() const { return T == CombSU; }
+  bool isSlotTransition() const { return T == SlotTransition; }
+  bool isSeqSU() const { return T == SeqSU; }
+  bool isCombSU() const { return T == CombSU; }
 
-	SIRSeqOp *getSeqOp() const { return SeqOp; }
-	Instruction *getCombOp() const { return CombOp; }
+  SIRSeqOp *getSeqOp() const { return SeqOp; }
+  Instruction *getCombOp() const { return CombOp; }
 
-	// If the SUnit is PHI, then the BB we hold in SUnit is its IncomingBB.
-	// If the SUnit is terminator, then the BB we hold in SUnit is its TargetBB.
-	// Otherwise the BB we hold in SUnit is its ParentBB.
+  // If the SUnit is PHI, then the BB we hold in SUnit is its IncomingBB.
+  // If the SUnit is terminator, then the BB we hold in SUnit is its TargetBB.
+  // Otherwise the BB we hold in SUnit is its ParentBB.
   BasicBlock *getParentBB() const;
 
-	float getLatency() const { return Latency; }
+  float getLatency() const { return Latency; }
 
   void addToUseList(SIRSchedUnit *User) {
     UseList.insert(User);
   }
-	SmallVector<SIRSchedUnit *, 4> getUseList() const {
-		SmallVector<SIRSchedUnit *, 4> Users;
+  SmallVector<SIRSchedUnit *, 4> getUseList() const {
+    SmallVector<SIRSchedUnit *, 4> Users;
 
-		typedef UseListTy::iterator iterator;
-		for (iterator I = UseList.begin(), E = UseList.end(); I != E; I++) {
-			Users.push_back(*I);
-		}
-		return Users;
-	}
+    typedef UseListTy::iterator iterator;
+    for (iterator I = UseList.begin(), E = UseList.end(); I != E; I++) {
+      Users.push_back(*I);
+    }
+    return Users;
+  }
 
   // Iterators for dependencies.
   dep_iterator dep_begin() { return Deps.begin(); }
@@ -327,33 +327,33 @@ public:
     }
 
     assert(getEdgeFrom(Src).getLatency() >= NewEdge.getLatency()
-           && "Edge not inserted?");
+      && "Edge not inserted?");
   }
 
-	// Only the SUnit in Slot0r can have schedule of 0. So all others
-	// scheduled SUnit should have a positive schedule number.
+  // Only the SUnit in Slot0r can have schedule of 0. So all others
+  // scheduled SUnit should have a positive schedule number.
   bool isScheduled() const { return IsScheduled; }
 
-	/// Functions for debug
-	void print(raw_ostream &OS) const;
-	void dump() const;
+  /// Functions for debug
+  void print(raw_ostream &OS) const;
+  void dump() const;
 };
 
 template<> struct GraphTraits<SIRSchedUnit *> {
-	typedef SIRSchedUnit NodeType;
-	typedef SIRSchedUnit::use_iterator ChildIteratorType;
+  typedef SIRSchedUnit NodeType;
+  typedef SIRSchedUnit::use_iterator ChildIteratorType;
 
-	static NodeType *getEntryNode(const SIRSchedUnit *N) {
-		return const_cast<SIRSchedUnit *>(N);
-	}
+  static NodeType *getEntryNode(const SIRSchedUnit *N) {
+    return const_cast<SIRSchedUnit *>(N);
+  }
 
-	static ChildIteratorType child_begin(NodeType *N) {
-		return N->use_begin();
-	}
+  static ChildIteratorType child_begin(NodeType *N) {
+    return N->use_begin();
+  }
 
-	static ChildIteratorType child_end(NodeType *N) {
-		return N->use_end();
-	}
+  static ChildIteratorType child_end(NodeType *N) {
+    return N->use_end();
+  }
 };
 
 class SIRSchedGraph {
@@ -361,16 +361,16 @@ private:
   Function &F;
 
   unsigned TotalSUs;
-	typedef iplist<SIRSchedUnit> SUList;
+  typedef iplist<SIRSchedUnit> SUList;
   SUList SUnits;
 
-	// Mapping between SIRSlot and SIRScheUnits.
-	typedef std::map<SIRSlot *, SmallVector<SIRSchedUnit *, 4> >Slot2SUMapTy;
-	Slot2SUMapTy Slot2SUMap;
-  
-	// Mapping between LLVM IR and SIRScheUnits.
- 	typedef std::map<Value *, SmallVector<SIRSchedUnit *, 4> > IR2SUMapTy;
- 	IR2SUMapTy IR2SUMap;
+  // Mapping between SIRSlot and SIRScheUnits.
+  typedef std::map<SIRSlot *, SmallVector<SIRSchedUnit *, 4> >Slot2SUMapTy;
+  Slot2SUMapTy Slot2SUMap;
+
+  // Mapping between LLVM IR and SIRScheUnits.
+  typedef std::map<Value *, SmallVector<SIRSchedUnit *, 4> > IR2SUMapTy;
+  IR2SUMapTy IR2SUMap;
 
   // Helper class to arrange the scheduling units according to their parent BB,
   // we will emit the schedule or build the linear order BB by BB.
@@ -392,13 +392,13 @@ public:
     return BBMap.count(BB);
   }
 
-	bool hasSU(SIRSlot *S) const { return Slot2SUMap.count(S); }
-	ArrayRef<SIRSchedUnit *> lookupSUs(SIRSlot *S) const;
-	bool indexSU2Slot(SIRSchedUnit *SU, SIRSlot *S);
+  bool hasSU(SIRSlot *S) const { return Slot2SUMap.count(S); }
+  ArrayRef<SIRSchedUnit *> lookupSUs(SIRSlot *S) const;
+  bool indexSU2Slot(SIRSchedUnit *SU, SIRSlot *S);
 
-	bool hasSU(Value *V) const { return IR2SUMap.count(V); }
-	ArrayRef<SIRSchedUnit *> lookupSUs(Value *V) const;
-	bool indexSU2IR(SIRSchedUnit *SU, Value *V);
+  bool hasSU(Value *V) const { return IR2SUMap.count(V); }
+  ArrayRef<SIRSchedUnit *> lookupSUs(Value *V) const;
+  bool indexSU2IR(SIRSchedUnit *SU, Value *V);
 
   MutableArrayRef<SIRSchedUnit *> getSUsInBB(BasicBlock *BB);
   ArrayRef<SIRSchedUnit *> getSUsInBB(BasicBlock *BB) const;
@@ -410,7 +410,7 @@ public:
   }
 
   SIRSchedUnit *createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T);
-	SIRSchedUnit *createSUnit(BasicBlock *ParentBB, Instruction *CombOp);
+  SIRSchedUnit *createSUnit(BasicBlock *ParentBB, Instruction *CombOp);
   SIRSchedUnit *createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T, SIRSeqOp *SeqOp);
 
   // Iterate over all scheduling units in the scheduling graph.
@@ -425,7 +425,7 @@ public:
   typedef SUList::reverse_iterator reverse_iterator;
   reverse_iterator rbegin() { return SUnits.rbegin(); }
   reverse_iterator rend() { return SUnits.rend(); }
- 
+
   typedef SUList::const_reverse_iterator const_reverse_iterator;
   const_reverse_iterator rbegin() const { return SUnits.rbegin(); }
   const_reverse_iterator rend() const { return SUnits.rend(); }
@@ -441,32 +441,32 @@ public:
 
   unsigned size() const { return TotalSUs; }
 
-	// Sort the scheduling units in topological order.
-	void toposortCone(SIRSchedUnit *Root, std::set<SIRSchedUnit *> &Visited,
-		                BasicBlock *BB);
-	void topologicalSortSUs();
+  // Sort the scheduling units in topological order.
+  void toposortCone(SIRSchedUnit *Root, std::set<SIRSchedUnit *> &Visited,
+    BasicBlock *BB);
+  void topologicalSortSUs();
 
   // Reset the schedule of all the scheduling units in the graph.
   void resetSchedule();
 };
 
 template<> struct GraphTraits<SIRSchedGraph *> : public GraphTraits<SIRSchedUnit *> {
-	typedef SIRSchedUnit NodeType;
-	typedef SIRSchedUnit::use_iterator ChildIteratorType;
+  typedef SIRSchedUnit NodeType;
+  typedef SIRSchedUnit::use_iterator ChildIteratorType;
 
-	static NodeType *getEntryNode(const SIRSchedGraph *G) {
-		return const_cast<SIRSchedUnit *>(G->getEntry());
-	}
+  static NodeType *getEntryNode(const SIRSchedGraph *G) {
+    return const_cast<SIRSchedUnit *>(G->getEntry());
+  }
 
-	typedef SIRSchedGraph::iterator nodes_iterator;
+  typedef SIRSchedGraph::iterator nodes_iterator;
 
-	static nodes_iterator nodes_begin(SIRSchedGraph *G) {
-		return G->begin();
-	}
+  static nodes_iterator nodes_begin(SIRSchedGraph *G) {
+    return G->begin();
+  }
 
-	static nodes_iterator nodes_end(SIRSchedGraph *G) {
-		return G->end();
-	}
+  static nodes_iterator nodes_end(SIRSchedGraph *G) {
+    return G->end();
+  }
 };
 }
 

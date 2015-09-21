@@ -41,7 +41,7 @@ struct ArrivalTime : public ilist_node<ArrivalTime> {
   // Arrival to bit range [ToLB, ToUB)
   uint8_t ToUB, ToLB;
   ArrivalTime(Value *Src, float Arrival, uint8_t ToUB, uint8_t ToLB)
-		: Src(Src), Arrival(Arrival), ToUB(ToUB), ToLB(ToLB) {}
+    : Src(Src), Arrival(Arrival), ToUB(ToUB), ToLB(ToLB) {}
   ArrivalTime() : Src(NULL), Arrival(0.0f), ToUB(0), ToLB(0) {}
   void verify() const;
 
@@ -56,22 +56,23 @@ class SIRDelayModel : public ilist_node<SIRDelayModel> {
   DataLayout *TD;
   Instruction *Node;
 
-	// The delay from input to the output bit.
-	std::map<unsigned, float> ModelDelay;	
+  // The delay from input to the output bit.
+  std::map<unsigned, float> ModelDelay;
 
   void calcArrivalParallel(float Delay);
-	void calcArrivalLinear(float Base, float PerBit);
+  void calcArrivalLinear(float Base, float PerBit);
 
-	void calcAddArrival();
-	void calcMulArrival();
+  void calcAddArrival();
+  void calcMulArrival();
   void calcCmpArrivial();
-  void calcShiftArrival();  
+  void calcShiftArrival();
+
 public:
   SIRDelayModel() {}
   SIRDelayModel(SIR *SM, DataLayout *TD, Instruction *Node);
 
-	void calcArrival();
-	float getDelayInBit(unsigned BitNum);
+  void calcArrival();
+  float getDelayInBit(unsigned BitNum);
 };
 
 class SIRTimingAnalysis : public SIRPass {
@@ -123,17 +124,16 @@ public:
   // The bit-level delay model.
   ilist<SIRDelayModel> Models;
   std::map<Instruction *, SIRDelayModel *> ModelMap;
-  
+
   SIRDelayModel *createModel(Instruction *Inst, SIR *SM, DataLayout &TD);
   SIRDelayModel *lookUpDelayModel(Instruction *Inst) const;
 
   typedef std::map<Value *, PhysicalDelay> ArrivalMap;
-	void extractArrivals(DataLayout *TD, SIRSeqOp *SeqOp, ArrivalMap &Arrivals);
-	void extractArrivals(DataLayout *TD, Instruction *CombOp, ArrivalMap &Arrivals);
+  void extractArrivals(DataLayout *TD, SIRSeqOp *SeqOp, ArrivalMap &Arrivals);
+  void extractArrivals(DataLayout *TD, Instruction *CombOp, ArrivalMap &Arrivals);
 
   bool isBasicBlockUnreachable(BasicBlock *BB) const;
 };
-
 }
 
 
