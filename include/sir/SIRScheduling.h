@@ -21,8 +21,8 @@
 #include "SIRPass.h"
 #include "SIRTimingAnalysis.h"
 #include "SIRSchedGraph.h"
-//#include "SIRListScheduler.h"
-#include "SIRSDCScheduler.h"
+#include "SIRListScheduler.h"
+//#include "SIRSDCScheduler.h"
 
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/BasicBlock.h"

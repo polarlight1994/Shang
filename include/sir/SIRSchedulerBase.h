@@ -28,9 +28,9 @@ public:
 	const unsigned EntrySlot;
   static const unsigned MaxSlot = UINT16_MAX >> 2;
   struct TimeFrame {
-    unsigned ASAP, ALAP;
+    float ASAP, ALAP;
 
-    TimeFrame(unsigned ASAP = UINT32_MAX, unsigned ALAP = 0)
+    TimeFrame(float ASAP = UINT32_MAX, float ALAP = 0)
       : ASAP(ASAP), ALAP(ALAP) {}
 
     TimeFrame(const TimeFrame &RHS) : ASAP(RHS.ASAP), ALAP(RHS.ALAP) {}
@@ -48,14 +48,15 @@ public:
       return TimeFrame(ASAP + i, ALAP + i);
     }
 
-    unsigned size() const {
-      return ALAP - ASAP + 1;
+	float size() const {
+      return ALAP - ASAP;
     }
   };
 
 protected:
   // MII in modulo schedule.
-  unsigned MII, CriticalPathEnd;
+	unsigned MII;
+	float CriticalPathEnd;
 
   typedef std::map<const SIRSchedUnit *, TimeFrame> TFMapTy;
   TFMapTy SUnitToTF;
@@ -74,8 +75,8 @@ public:
 		return G.getSUsInBB(BB);
 	}
 
-  unsigned calculateASAP(const SIRSchedUnit *A) const;
-  unsigned calculateALAP(const SIRSchedUnit *A) const;
+  float calculateASAP(const SIRSchedUnit *A) const;
+  float calculateALAP(const SIRSchedUnit *A) const;
   TimeFrame calculateTimeFrame(const SIRSchedUnit *A) const {
     return TimeFrame(calculateASAP(A), calculateALAP(A));
   }
@@ -91,20 +92,20 @@ public:
   typedef SIRSchedGraph::reverse_iterator reverse_iterator;
   typedef SIRSchedGraph::const_reverse_iterator const_reverse_iterator;
   
-  unsigned getASAPStep(const SIRSchedUnit *A) const {
+  float getASAPStep(const SIRSchedUnit *A) const {
     TFMapTy::const_iterator at = SUnitToTF.find(A);
     assert(at != SUnitToTF.end() && "TimeFrame for SU not exist!");
     return at->second.ASAP;
   }
 
-  unsigned getALAPStep(const SIRSchedUnit *A) const {
+  float getALAPStep(const SIRSchedUnit *A) const {
     TFMapTy::const_iterator at = SUnitToTF.find(A);
     assert(at != SUnitToTF.end() && "TimeFrame for SU not exist!");
     return at->second.ALAP;
   }
 
-  unsigned getTimeFrame(const SIRSchedUnit *A) const {
-    return getALAPStep(A) - getASAPStep(A) + 1;
+  float getTimeFrame(const SIRSchedUnit *A) const {
+    return getALAPStep(A) - getASAPStep(A);
   }
 
   iterator begin() const { return G.begin(); }
@@ -117,14 +118,14 @@ public:
   void setMII(unsigned II) { MII = II; }
   void increaseMII() { ++MII; }
   void decreaseMII() { --MII; }
-  void lengthenCriticalPath() { ++CriticalPathEnd; }
-  void shortenCriticalPath() { --CriticalPathEnd; }
+  void lengthenCriticalPath() { CriticalPathEnd += 1; }
+  void shortenCriticalPath() { CriticalPathEnd -= 1; }
 
-  unsigned getCriticalPathLength() {
+  float getCriticalPathLength() {
     assert(CriticalPathEnd > EntrySlot && "CriticalPathLength not available!");
     return CriticalPathEnd - EntrySlot;
   }
-  void setCriticalPathLength(unsigned L) {
+  void setCriticalPathLength(float L) {
     CriticalPathEnd = EntrySlot + L;
   }
 
@@ -134,14 +135,6 @@ public:
 
   void resetTimeFrame();
   void buildTimeFrame();
-
-  // Find the RecMII by binary search algorithm.
-  unsigned computeRecMII(unsigned MinRecMII);
-
-  // Compute the corresponding step in steady state. 
-  unsigned computeStepKey(unsigned step) const;
-
-  bool allNodesScheduled(const_iterator I, const_iterator E) const;
 };
 
 template<> struct GraphTraits<SIRScheduleBase *>

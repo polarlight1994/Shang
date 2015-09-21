@@ -461,12 +461,12 @@ void SIRScheduling::buildSchedulingGraph() {
 
 
 void SIRScheduling::schedule() {
-// 	ListScheduler LS(*G, G->getEntry()->getSchedule());
-//
-// 	LS.schedule();
-	SIRSDCScheduler SDC(*G, G->getEntry()->getSchedule());
+	ListScheduler LS(*G, G->getEntry()->getSchedule());
 
-	SDC.schedule();
+	LS.schedule();
+//	SIRSDCScheduler SDC(*G, G->getEntry()->getSchedule());
+//
+//	SDC.schedule();
 }
 
 void SIRScheduling::emitSchedule() {

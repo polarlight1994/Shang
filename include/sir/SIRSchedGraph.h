@@ -109,6 +109,9 @@ private:
 	// The latency of this unit self.
 	float Latency;
 
+  // Denote of whether this unit has been scheduled.
+	bool IsScheduled;
+
   // EdgeBundle allow us add/remove edges between SIRSchedUnit more easily.
   struct EdgeBundle {
     SmallVector<SIRDep, 1> Edges;
@@ -163,7 +166,7 @@ public:
     SIRDep::Types getEdgeType(unsigned II = 0) const {
       return getEdge(II).getEdgeType();
     }
-    inline int getLatency(unsigned II = 0) const {
+    inline float getLatency(unsigned II = 0) const {
       return getEdge(II).getLatency(II);
     }
     bool isLoopCarried(unsigned II = 0) const {
@@ -224,10 +227,17 @@ public:
 	Type getType() const { return T; }
   float getSchedule() const { return Schedule; }
 	bool scheduleTo(float NewSchedule) {
+		assert(NewSchedule >= 0 && "Unexpected NULL schedule!");
+
+		if (NewSchedule == 0)
+			assert(!getParentBB() && !isExit() && "Only SUnits in Slot0r can scheduled to 0!");
+
+		// Set the IsScheduled.
+		IsScheduled = true;
+
 		bool Changed = NewSchedule != Schedule;
-		// StartSlot must be a IdleSlot without any SeqOps!
-		assert(NewSchedule && "Bad schedule!");
 		Schedule = NewSchedule;
+
 		return Changed; 
 	}
 	void resetSchedule() { Schedule = 0.0; }
@@ -322,20 +332,7 @@ public:
 
 	// Only the SUnit in Slot0r can have schedule of 0. So all others
 	// scheduled SUnit should have a positive schedule number.
-  bool isScheduled() const {
-		assert(!(Schedule < 0.0) && "Unexpected negative schedule!");
-
-		if (Schedule == 0) {
-			if (isEntry()) return true;
-			if (!isBBEntry() && !isExit() && !isCombSU())
-				if(getSeqOp()->getSlot()->getSlotNum() == 0)
-					return true;
-
-			return false;
-		}
-
-		return true;
-	}
+  bool isScheduled() const { return IsScheduled; }
 
 	/// Functions for debug
 	void print(raw_ostream &OS) const;

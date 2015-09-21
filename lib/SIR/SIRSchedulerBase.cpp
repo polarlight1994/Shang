@@ -19,8 +19,11 @@
 using namespace llvm;
 static const unsigned MaxSlot = UINT16_MAX >> 2;
 
-unsigned SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
-  unsigned NewStep = 0;
+float SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
+	if (A->getIdx() == 30)
+		int temp = 0;
+
+  float NewStep = 0;
   typedef SIRSchedUnit::const_dep_iterator iterator;
   for (iterator DI = A->dep_begin(), DE = A->dep_end(); DI != DE; ++DI) {
     const SIRSchedUnit *Dep = *DI;
@@ -28,20 +31,21 @@ unsigned SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
     // Ignore the back-edges when we are not pipelining the BB.
     if (Dep->getIdx() >= A->getIdx() && MII == 0) continue;
 
-    unsigned DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
-		unsigned DepLatency = Dep->getLatency();
+    float DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
+		float DepLatency = Dep->getLatency();
 
-    int Step = DepASAP + DepLatency + DI.getLatency(MII);
+    float Step = DepASAP + DepLatency + DI.getLatency(MII);
+		assert(Step >= 0.0 && "Unexpected Negative Schedule!");
 
-    unsigned UStep = std::max(0, Step);
-    NewStep = std::max(UStep, NewStep);
+    NewStep = std::max(Step, NewStep);
   }
 
   return NewStep;
 }
 
-unsigned SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
-  unsigned NewStep = MaxSlot;
+float SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
+  float NewStep = MaxSlot;
+
   typedef SIRSchedUnit::const_use_iterator iterator;
   for (iterator UI = A->use_begin(), UE = A->use_end(); UI != UE; ++UI) {
     SIRSchedUnit *Use = *UI;
@@ -50,15 +54,10 @@ unsigned SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
     // Ignore the back-edges when we are not pipelining the BB.
     if (Use->getIdx() <= A->getIdx() && MII == 0) continue;
 
-    unsigned UseALAP = Use->isScheduled() ? Use->getSchedule() : getALAPStep(Use);
-		unsigned ALatency = A->getLatency();
+    float UseALAP = Use->isScheduled() ? Use->getSchedule() : getALAPStep(Use);
+		float ALatency = A->getLatency();
 
-    if (UseALAP == 0) {
-      assert(UseEdge.isLoopCarried() && "Broken time frame!");
-      UseALAP = MaxSlot;
-    }
-
-    unsigned Step = UseALAP - ALatency - UseEdge.getLatency(MII);
+    float Step = UseALAP - ALatency - UseEdge.getLatency(MII);
     NewStep = std::min(Step, NewStep);
   }
 
@@ -82,7 +81,8 @@ void SIRScheduleBase::resetTimeFrame() {
 void SIRScheduleBase::buildTimeFrame() {
 	// The Entry is always scheduled into Slot0r.
   SIRSchedUnit *EntryRoot = G.getEntry();
-  assert(EntryRoot->isScheduled() && "Entry must be scheduled first!");
+  assert(EntryRoot->isScheduled() || EntryRoot->isEntry()
+		     && "Entry must be scheduled first!");
 
   resetTimeFrame();
 
@@ -112,12 +112,12 @@ bool SIRScheduleBase::buildASAPStep() {
       }
 
 			// Calculate the ASAP step.
-      unsigned NewStep = calculateASAP(U);
+      float NewSchedule = calculateASAP(U);
 
 			// Update the ASAP step.
-      unsigned &ASAPStep = SUnitToTF[U].ASAP;
-      if (ASAPStep == NewStep) continue;
-      ASAPStep = NewStep;
+	  float &ASAPSchedule = SUnitToTF[U].ASAP;
+      if (ASAPSchedule == NewSchedule) continue;
+	  ASAPSchedule = NewSchedule;
 
 			// If NeedToReCalc is true, then we need to re-calculate
 			// whole graph later. "continue" here is to avoid determining
@@ -145,7 +145,7 @@ bool SIRScheduleBase::buildASAPStep() {
 	// Use the ASAP step of Exit as the CriticalPathEnd, also this determined
 	// the longest path delay.
   SIRSchedUnit *Exit = G.getExit();
-  unsigned ExitASAP = getASAPStep(Exit);
+  float ExitASAP = getASAPStep(Exit);
   CriticalPathEnd = std::max(CriticalPathEnd, ExitASAP);
 
   return false;
@@ -153,10 +153,9 @@ bool SIRScheduleBase::buildASAPStep() {
 
 bool SIRScheduleBase::buildALAPStep() {
   bool NeedToReCalc = true;
-  int LastSlot = CriticalPathEnd;
 
-	// The Exit is always scheduled into LastSlot.
-  SUnitToTF[G.getExit()].ALAP = LastSlot;
+	// The Exit is always scheduled into the end of Critical Path.
+  SUnitToTF[G.getExit()].ALAP = CriticalPathEnd;
 
   // Build the time frame iteratively.
   while(NeedToReCalc) {
@@ -173,13 +172,13 @@ bool SIRScheduleBase::buildALAPStep() {
       }
 
 			// Calculate the ALAP step.
-      unsigned NewStep = calculateALAP(U);
+      float NewSchedule = calculateALAP(U);
 
 			// Update the ALAP step.
-      unsigned &ALAPStep = SUnitToTF[U].ALAP;
-      if (ALAPStep == NewStep) continue;
-      assert(getASAPStep(U) <= NewStep && "Broken ALAP step!");
-      ALAPStep = NewStep;
+	  float &ALAPSchedule = SUnitToTF[U].ALAP;
+    if (ALAPSchedule == NewSchedule) continue;
+    assert(NewSchedule > getASAPStep(U) || std::abs(NewSchedule - getASAPStep(U)) < 0.01 && "Broken ALAP schedule!");
+	  ALAPSchedule = NewSchedule;
 
       // We need to re-calculate the ALAP steps if the source
       // of the edges need to be update.
@@ -193,53 +192,6 @@ bool SIRScheduleBase::buildALAPStep() {
   }
 
   return false;
-}
-
-unsigned SIRScheduleBase::computeRecMII(unsigned MinRecMII) {
-  unsigned CriticalPathLength = getCriticalPathLength();
-  unsigned MaxRecMII = CriticalPathLength;
-  unsigned RecMII = 0;
-
-  MinRecMII = std::max(1u, MinRecMII);
-  G.resetSchedule();
-
-  // Find the RecMII by binary search algorithm.
-  while (MinRecMII <= MaxRecMII) {
-    unsigned MidRecMII = MinRecMII + (MaxRecMII - MinRecMII) / 2;
-
-    setMII(MidRecMII);
-
-    resetTimeFrame();
-    if (!buildASAPStep()) {
-      RecMII = MidRecMII;
-      // There is no negative cycles, try to further reduce the MII.
-      MaxRecMII = MidRecMII - 1;
-    } else
-      // Else we need to relax the MII.
-      MinRecMII = MidRecMII + 1;
-  }
-
-  assert (RecMII && "Negative cycle found even pipeline is disabled!");
-  return RecMII;
-}
-
-unsigned SIRScheduleBase::computeStepKey(unsigned step) const {
-  if (MII != 0) {
-    int offset = int(step - EntrySlot) & int(MII);
-    // Adjust the offset if necessary.
-    if (offset < 0) offset += MII;
-
-    step = EntrySlot + offset;
-  }
-
-  return step;
-}
-
-bool SIRScheduleBase::allNodesScheduled(const_iterator I, const_iterator E) const {
-  while (I != E)
-    if (!(I++)->isScheduled()) return false;
-
-  return true;
 }
 
 

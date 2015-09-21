@@ -67,8 +67,8 @@ struct BBContext {
 	SIRScheduleBase &S;
 	BasicBlock *BB;
 
-	// The first/last step of the current BB.
-	unsigned StartSlot, EndSlot;
+	// The first/last schedule of the current BB.
+	float StartSchedule, EndSchedule;
 
 	// The SchedUnits that should be schedule to
 	// the EntrySlot/ExitSlot of the current BB.

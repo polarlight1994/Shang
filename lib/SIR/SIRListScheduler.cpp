@@ -19,8 +19,8 @@ using namespace vast;
 
 void BBContext::enter(BasicBlock *BB) {
 	// Initialize
-	StartSlot = S.EntrySlot;
-	EndSlot = S.MaxSlot;
+	StartSchedule = S.EntrySlot;
+	EndSchedule = S.MaxSlot;
 	this->BB = BB;
 
 	// Schedule the BBEntry to Entry Slot.
@@ -67,6 +67,14 @@ bool BBContext::isSUReady(SIRSchedUnit *SU) {
 		// All SUnit in Slot0r is also definitely scheduled into Slot0r.
 		if (!DepSU->getParentBB()) continue;
 
+		// Ignore the back-edge. To be noted that the only back-edge in SIR
+		// is data back-edge, since all control back-edge will ended on the
+		// Entry/BBEntry SUnits which are handled specially.
+		if (SU->getIdx() < DepSU->getIdx()) {
+			assert(SU->getEdgeFrom(DepSU).getEdgeType() == SIRDep::ValDep && "Unexpected Dependency Type!");
+			continue;
+		}
+
 		AllScheduled &= DepSU->isScheduled();
 	}
 
@@ -105,7 +113,7 @@ void BBContext::scheduleBB() {
 		SIRSchedUnit *SU = ReadyQueue.top();
 		ReadyQueue.pop();
 
-		unsigned Step = std::max(S.calculateASAP(SU), StartSlot);
+		float Step = std::max(S.calculateASAP(SU), StartSchedule);
 
 		SU->scheduleTo(Step);
 
@@ -126,8 +134,8 @@ void BBContext::scheduleSUsToEntrySlot() {
 	SIRSchedUnit *Entry = SUs[0];
 
 	// Calculate the StartSlot and schedule the BBEntry into it.
-	StartSlot = S.calculateASAP(Entry);
-	Entry->scheduleTo(StartSlot);
+	StartSchedule = S.calculateASAP(Entry);
+	Entry->scheduleTo(StartSchedule);
 }
 
 void BBContext::scheduleSUsToExitSlot() {
@@ -174,18 +182,18 @@ bool ListScheduler::schedule() {
   Exit->scheduleTo(calculateASAP(Exit));
 
 /// Debug Code
-// 	std::string LSResult = LuaI::GetString("LSResult");
-// 	std::string Error;
-// 	raw_fd_ostream Output(LSResult.c_str(), Error);
-//
-// 	typedef SIRSchedGraph::iterator iterator;
-// 	for (iterator I = G.begin(), E = G.end(); I != E; ++I) {
-// 		SIRSchedUnit *U = I;
-//
-// 		unsigned Result = U->getSchedule();
-//
-// 		Output <<  "SU#" << U->getIdx() << " scheduled to " << Result << "\n";
-// 	}
+	std::string LSResult = LuaI::GetString("LSResult");
+	std::string Error;
+	raw_fd_ostream Output(LSResult.c_str(), Error);
+
+	typedef SIRSchedGraph::iterator iterator;
+	for (iterator I = G.begin(), E = G.end(); I != E; ++I) {
+		SIRSchedUnit *U = I;
+
+		float Result = U->getSchedule();
+
+		Output <<  "SU#" << U->getIdx() << " scheduled to " << Result << "\n";
+	}
 
   return true;
 }
