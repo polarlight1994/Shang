@@ -167,7 +167,7 @@ bool SIRAllocation::createSIRMemoryBank(AliasSet *AS, unsigned BankNum) {
   bool RequireByteEnable = (AccessedTypes.size() != 1);
   // Create the memory bus.
   SIRMemoryBank *SMB = SCRB->createMemoryBank(BankNum, AddrWidth, MaxElementSizeInBytes * 8,
-    RequireByteEnable, IsReadOnly, ReadLatency);
+                                              RequireByteEnable, IsReadOnly, ReadLatency);
   // Remember the binding and add the global variable to the memory bank.
   while (!Objects.empty()) {
     std::pair<GlobalVariable*, unsigned> Obj = Objects.pop_back_val();
