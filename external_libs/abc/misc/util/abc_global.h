@@ -65,7 +65,7 @@
 #include <stdarg.h>
 
 #ifndef __cplusplus
-typedef int bool;
+//typedef int bool;
 #endif
 
 ////////////////////////////////////////////////////////////////////////
