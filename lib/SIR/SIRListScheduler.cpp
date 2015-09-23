@@ -101,8 +101,10 @@ void BBContext::collectReadySUs(ArrayRef<SIRSchedUnit *> SUs) {
     if (SU->getParentBB() != BB)
       continue;
 
-    if (isSUReady(SU))
+    if (isSUReady(SU)) {
+      ReadyQueue.reheapify();
       ReadyQueue.push(SU);
+    }
   }
 }
 
@@ -119,10 +121,12 @@ void BBContext::scheduleBB() {
     SU->scheduleTo(Step);
 
     // After we schedule a unit, we should re-build the TimeFrame.
-    S.buildTimeFrame();
+    //S.buildTimeFrame();
     // Also we should reset the ready queue.
     SmallVector<SIRSchedUnit *, 4> Users = SU->getUseList();
     collectReadySUs(Users);
+
+    ReadyQueue.reheapify();
   }
 
   exit(BB);
