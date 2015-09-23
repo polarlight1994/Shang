@@ -760,7 +760,18 @@ protected:
 
 public:
   SIR(Function *F) : F(F), C(F->getContext()) {}
-  ~SIR();
+  ~SIR() {
+    Ports.clear();
+    Registers.clear();
+    SubModuleBases.clear();
+    DataPathInsts.clear();
+    Slots.clear();
+    SeqOps.clear();
+    Val2SeqVal.clear();
+    SeqVal2Reg.clear();
+    Reg2Slot.clear();
+    BB2SlotMap.clear();
+  }
 
   Function *getFunction() const { return F; }
   Module *getModule() const { return F->getParent(); }
