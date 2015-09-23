@@ -1395,8 +1395,8 @@ Value *SIRDatapathBuilder::createSBitCatInst(ArrayRef<Value *> Ops, Type *RetTy,
                                           InsertPosition, true);
     }
 
-    TempSBitCatBitWidth = TempSBitCatBitWidth + getBitWidth(Ops[num - 1]);
     int num = Ops.size();
+    TempSBitCatBitWidth = TempSBitCatBitWidth + getBitWidth(Ops[num - 1]);
     return createSBitCatInst(TempSBitCatInst, Ops[num - 1],
                              createIntegerType(TempSBitCatBitWidth),
                              InsertPosition, UsedAsArg);

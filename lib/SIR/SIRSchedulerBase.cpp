@@ -20,9 +20,6 @@ using namespace llvm;
 static const unsigned MaxSlot = UINT16_MAX >> 2;
 
 float SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
-  if (A->getIdx() == 30)
-    int temp = 0;
-
   float NewStep = 0;
   typedef SIRSchedUnit::const_dep_iterator iterator;
   for (iterator DI = A->dep_begin(), DE = A->dep_end(); DI != DE; ++DI) {
