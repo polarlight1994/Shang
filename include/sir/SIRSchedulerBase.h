@@ -80,6 +80,11 @@ public:
   TimeFrame calculateTimeFrame(const SIRSchedUnit *A) const {
     return TimeFrame(calculateASAP(A), calculateALAP(A));
   }
+  TimeFrame getTimeFrame(const SIRSchedUnit *A) const {
+    TFMapTy::const_iterator at = SUnitToTF.find(A);
+    assert(at != SUnitToTF.end() && "TimeFrame for SU not exist!");
+    return at->second;
+  }
 
   bool buildASAPStep();
   bool buildALAPStep();
@@ -102,10 +107,6 @@ public:
     TFMapTy::const_iterator at = SUnitToTF.find(A);
     assert(at != SUnitToTF.end() && "TimeFrame for SU not exist!");
     return at->second.ALAP;
-  }
-
-  float getTimeFrame(const SIRSchedUnit *A) const {
-    return getALAPStep(A) - getASAPStep(A);
   }
 
   iterator begin() const { return G.begin(); }

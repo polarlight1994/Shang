@@ -28,25 +28,16 @@
 namespace llvm {
 struct PriorityHeuristic {
   typedef SIRScheduleBase::TimeFrame TimeFrame;
-  mutable std::map<const SIRSchedUnit*, TimeFrame> TFCache;
   const SIRScheduleBase &S;
 
   PriorityHeuristic(const SIRScheduleBase &S) : S(S) {}
-
-  TimeFrame calculateTimeFrame(const SIRSchedUnit *SU) const {
-    TimeFrame &TF = TFCache[SU];
-    if (!TF)
-      TF = S.calculateTimeFrame(SU);
-
-    return TF;
-  };
 
   bool operator()(const SIRSchedUnit *LHS, const SIRSchedUnit *RHS) const {
     // we consider the priority from these aspects:
     // Size Of TF, ALAP, ASAP
 
-    TimeFrame LHSTF = calculateTimeFrame(LHS),
-      RHSTF = calculateTimeFrame(RHS);
+    TimeFrame LHSTF = S.getTimeFrame(LHS),
+              RHSTF = S.getTimeFrame(RHS);
     if (LHSTF.size() < RHSTF.size()) return true;
     if (LHSTF.size() > RHSTF.size()) return false;
 
