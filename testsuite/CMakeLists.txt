@@ -57,6 +57,7 @@ macro(add_synthesis_test test_name)
 
 	set(TEST_RTL_SRC   		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sv")
 
+	set(DEBUG_FINAL_IR		"${TEST_BINARY_ROOT}/${TEST}.finalir")
 	set(DEBUG_SDC_RESULT	"${TEST_BINARY_ROOT}/${TEST}.sdcresult")
 	set(DEBUG_LS_RESULT		"${TEST_BINARY_ROOT}/${TEST}.lsresult")
 	set(DEBUG_SchedGraph	"${TEST_BINARY_ROOT}/${TEST}.schedgraph")
@@ -140,6 +141,7 @@ macro(add_cosimulation_test test_name)
 
 	set(TEST_SC_EXE				"${TEST_RTL_OBJ_ROOT}/V${DUT_NAME}_RTL")
 
+	set(DEBUG_FINAL_IR		"${TEST_BINARY_ROOT}/${TEST}.finalir")
 	set(DEBUG_SDC_RESULT	"${TEST_BINARY_ROOT}/${TEST}.sdcresult")
 	set(DEBUG_LS_RESULT		"${TEST_BINARY_ROOT}/${TEST}.lsresult")
 	set(DEBUG_SchedGraph	"${TEST_BINARY_ROOT}/${TEST}.schedgraph")
