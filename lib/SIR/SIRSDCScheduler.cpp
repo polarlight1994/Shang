@@ -178,9 +178,9 @@ bool SIRSDCScheduler::scheduleSUs() {
   unsigned Changed = 0;
 
   /// Debug Code
-  std::string SDCResult = LuaI::GetString("SDCResult");
-  std::string Error;
-  raw_fd_ostream Output(SDCResult.c_str(), Error);
+//   std::string SDCResult = LuaI::GetString("SDCResult");
+//   std::string Error;
+//   raw_fd_ostream Output(SDCResult.c_str(), Error);
 
   for (iterator I = begin(), E = end(); I != E; ++I) {
     SIRSchedUnit *U = I;
@@ -190,7 +190,7 @@ bool SIRSDCScheduler::scheduleSUs() {
     unsigned FinalResult = unsigned(Result);
 
     /// Debug Code
-    Output << "SU#" << U->getIdx() << " scheduled to " << Result << "\n";
+/*    Output << "SU#" << U->getIdx() << " scheduled to " << Result << "\n";*/
 
     // Handle the SUnits in Slot0r specially since they are
     // always scheduled to 0.

@@ -395,78 +395,78 @@ void SIRScheduling::buildSchedulingGraph() {
   G->topologicalSortSUs();
 
   /// Debug Code.
-  std::string SchedGraph = LuaI::GetString("SchedGraph");
-  std::string Error;
-  raw_fd_ostream Output(SchedGraph.c_str(), Error);
-
-  typedef SIRSchedGraph::iterator iterator;
-  for (iterator I = G->begin(), E = G->end(); I != E; ++I) {
-    SIRSchedUnit *U = I;
-
-    Output << "#" << U->getIdx() << ":\t";
-
-    Output << "Depends on: ";
-
-    typedef SIRSchedUnit::dep_iterator dep_iterator;
-    for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
-      SIRSchedUnit *DepSU = *I;
-
-      Output << "#" << DepSU->getIdx() << "; ";
-    }
-
-    Output << "\t";
-
-    switch (U->getType()) {
-    case SIRSchedUnit::Entry:
-      Output << "Entry\n";
-      break;
-    case SIRSchedUnit::Exit:
-      Output << "Exit\n";
-      break;
-    case SIRSchedUnit::BlockEntry:
-      Output << "BBEntry of ";
-      Output << U->getParentBB()->getName() << "\n";
-      break;
-    case SIRSchedUnit::PHI:
-      Output << "PHI of ";
-      Output << U->getSeqOp()->getDst()->getName() << "\n";
-      break;
-    case SIRSchedUnit::SlotTransition: {
-      SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(U->getSeqOp());
-      Output << "SlotTransition    ";
-      Output << "Slot#" << SST->getSrcSlot()->getSlotNum()
-        << " -- Slot#" << SST->getDstSlot()->getSlotNum() << "\n";
-      break;
-                                       }
-    case SIRSchedUnit::SeqSU: {
-      SIRSeqOp *SeqOp = U->getSeqOp();
-      Output << "SeqSU    ";
-      Output << "assign Value [";
-      SeqOp->getSrc()->print(Output);
-      Output << "] to Reg [" << SeqOp->getDst()->getName() << "] in"
-        << " Slot#" << SeqOp->getSlot()->getSlotNum() << "\n";
-      break;
-                              }
-    case SIRSchedUnit::CombSU:
-      Output << "CombOp    ";
-      Output << "CombOp contained: [";
-      U->getCombOp()->print(Output);
-      Output << "]\n";
-      break;
-    default:
-      llvm_unreachable("Unexpected SUnit Type!");
-    }
-  }
+//   std::string SchedGraph = LuaI::GetString("SchedGraph");
+//   std::string Error;
+//   raw_fd_ostream Output(SchedGraph.c_str(), Error);
+//
+//   typedef SIRSchedGraph::iterator iterator;
+//   for (iterator I = G->begin(), E = G->end(); I != E; ++I) {
+//     SIRSchedUnit *U = I;
+//
+//     Output << "#" << U->getIdx() << ":\t";
+//
+//     Output << "Depends on: ";
+//
+//     typedef SIRSchedUnit::dep_iterator dep_iterator;
+//     for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E; ++I) {
+//       SIRSchedUnit *DepSU = *I;
+//
+//       Output << "#" << DepSU->getIdx() << "; ";
+//     }
+//
+//     Output << "\t";
+//
+//     switch (U->getType()) {
+//     case SIRSchedUnit::Entry:
+//       Output << "Entry\n";
+//       break;
+//     case SIRSchedUnit::Exit:
+//       Output << "Exit\n";
+//       break;
+//     case SIRSchedUnit::BlockEntry:
+//       Output << "BBEntry of ";
+//       Output << U->getParentBB()->getName() << "\n";
+//       break;
+//     case SIRSchedUnit::PHI:
+//       Output << "PHI of ";
+//       Output << U->getSeqOp()->getDst()->getName() << "\n";
+//       break;
+//     case SIRSchedUnit::SlotTransition: {
+//       SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(U->getSeqOp());
+//       Output << "SlotTransition    ";
+//       Output << "Slot#" << SST->getSrcSlot()->getSlotNum()
+//         << " -- Slot#" << SST->getDstSlot()->getSlotNum() << "\n";
+//       break;
+//                                        }
+//     case SIRSchedUnit::SeqSU: {
+//       SIRSeqOp *SeqOp = U->getSeqOp();
+//       Output << "SeqSU    ";
+//       Output << "assign Value [";
+//       SeqOp->getSrc()->print(Output);
+//       Output << "] to Reg [" << SeqOp->getDst()->getName() << "] in"
+//         << " Slot#" << SeqOp->getSlot()->getSlotNum() << "\n";
+//       break;
+//                               }
+//     case SIRSchedUnit::CombSU:
+//       Output << "CombOp    ";
+//       Output << "CombOp contained: [";
+//       U->getCombOp()->print(Output);
+//       Output << "]\n";
+//       break;
+//     default:
+//       llvm_unreachable("Unexpected SUnit Type!");
+//     }
+//   }
 }
 
 
 void SIRScheduling::schedule() {
-  ListScheduler LS(*G, G->getEntry()->getSchedule());
+//   ListScheduler LS(*G, G->getEntry()->getSchedule());
+//
+//   LS.schedule();
+	SIRSDCScheduler SDC(*G, G->getEntry()->getSchedule());
 
-  LS.schedule();
-  //	SIRSDCScheduler SDC(*G, G->getEntry()->getSchedule());
-  //
-  //	SDC.schedule();
+	SDC.schedule();
 }
 
 void SIRScheduling::emitSchedule() {

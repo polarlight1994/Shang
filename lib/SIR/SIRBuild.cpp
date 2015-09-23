@@ -63,12 +63,12 @@ INITIALIZE_PASS_END(SIRInit,
 
 bool SIRInit::runOnFunction(Function &F) {
   /// Debug code
-  std::string FinalIR = LuaI::GetString("FinalIR");
-  std::string ErrorInFinalIR;
-	raw_fd_ostream OutputForFinalIR(FinalIR.c_str(), ErrorInFinalIR);
-	vlang_raw_ostream OutForFinalIR;
-	OutForFinalIR.setStream(OutputForFinalIR);
-	OutForFinalIR << F;
+//   std::string FinalIR = LuaI::GetString("FinalIR");
+//   std::string ErrorInFinalIR;
+// 	raw_fd_ostream OutputForFinalIR(FinalIR.c_str(), ErrorInFinalIR);
+// 	vlang_raw_ostream OutForFinalIR;
+// 	OutForFinalIR.setStream(OutputForFinalIR);
+// 	OutForFinalIR << F;
 
   DataLayout &TD = getAnalysis<DataLayout>();
   SIRAllocation &SA = getAnalysis<SIRAllocation>();
@@ -327,8 +327,9 @@ SIRPort *SIRCtrlRgnBuilder::createPort(SIRPort::SIRPortTypes T, StringRef Name,
 
     // Create the register for OutPort. To be noted that,
     // here we cannot assign the ParentBB for this register.
+    uint64_t MaxVal = (uint64_t)std::pow(2.0, (double)BitWidth) - 1;
     SIRRegister *Reg = createRegister(Name, createIntegerType(BitWidth),
-      0, 0, SIRRegister::OutPort);
+                                      0, MaxVal, SIRRegister::OutPort);
     SIROutPort *P = new SIROutPort(T, Reg, BitWidth, Name);
     SM->IndexPort(P);
     return P;
