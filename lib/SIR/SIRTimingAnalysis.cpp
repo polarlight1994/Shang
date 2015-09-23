@@ -217,7 +217,8 @@ void SIRTimingAnalysis::extractArrivals(DataLayout *TD, SIRSeqOp *SeqOp,
 
     if (!Inst) {
       assert(isa<ConstantInt>(Srcs[i]) || isa<Argument>(Srcs[i]) ||
-        isa<UndefValue>(Srcs[i]) && "Unexpected NULL Inst!");
+             isa<UndefValue>(Srcs[i]) || isa<ConstantPointerNull>(Srcs[i])
+             && "Unexpected NULL Inst!");
       continue;
     }
 
@@ -273,7 +274,7 @@ void SIRTimingAnalysis::extractArrivals(DataLayout *TD, Instruction *CombOp,
 
     // Ignore these Values since they have no corresponding DelayModel.
     if (isa<Argument>(Operand) || isa<ConstantInt>(Operand) ||
-        isa<UndefValue>(Operand))
+        isa<UndefValue>(Operand) || isa<ConstantPointerNull>(Operand))
       continue;
 
     Operands.push_back(CombOp->getOperand(i));
