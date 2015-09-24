@@ -272,7 +272,7 @@ int main(int argc, char **argv) {
     HLSPasses.add(createInstructionCombiningPass());
 
 		// Lower the llvm.mem intrinsic.
-		//HLSPasses.add(createSIRLowerIntrinsicPass());
+		HLSPasses.add(createSIRLowerIntrinsicPass());
 		HLSPasses.add(createHLSInlinerPass());
 		HLSPasses.add(createGlobalDCEPass());
 
