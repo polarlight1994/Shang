@@ -459,7 +459,6 @@ void SIRScheduling::buildSchedulingGraph() {
 //   }
 }
 
-
 void SIRScheduling::schedule() {
 //   ListScheduler LS(*G, G->getEntry()->getSchedule());
 //
