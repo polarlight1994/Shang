@@ -37,7 +37,7 @@ unsigned SIRSDCScheduler::createLPVariable(SIRSchedUnit *U, unsigned ColNum) {
   // Name the LP Variable for debug.
   std::string LPVar = "lpvar" + utostr_32(U->getIdx());
   set_col_name(lp, ColNum, const_cast<char *>(LPVar.c_str()));
-  set_int(lp, ColNum, FALSE);
+  set_int(lp, ColNum, TRUE);
 
   // Constraint the SUnit if we can.
   if (U->isScheduled()) {
@@ -103,7 +103,7 @@ void SIRSDCScheduler::addDependencyConstraints() {
       REAL Coefs[] = { 1.0, -1.0 };
       int Cols[] = { DstSUCol, SrcSUCol };
 
-      float Latency = DepEdge.getLatency() + SrcSU->getLatency();
+      unsigned Latency = DepEdge.getLatency() + SrcSU->getLatency();
 
       // Create the constraint according to the dependency.
       if (!add_constraintex(lp, array_lengthof(Cols), Coefs, Cols, GE, Latency))

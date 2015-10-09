@@ -116,7 +116,7 @@ void BBContext::scheduleBB() {
     SIRSchedUnit *SU = ReadyQueue.top();
     ReadyQueue.pop();
 
-    float Step = std::max(S.calculateASAP(SU), StartSchedule);
+    unsigned Step = std::max(S.calculateASAP(SU), StartSchedule);
 
     SU->scheduleTo(Step);
 

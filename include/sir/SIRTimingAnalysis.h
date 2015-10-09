@@ -55,24 +55,102 @@ class SIRDelayModel : public ilist_node<SIRDelayModel> {
   SIR *SM;
   DataLayout *TD;
   Instruction *Node;
+  // The FanIn to the current delay model, order matters.
+  ArrayRef<SIRDelayModel *> Fanins;
 
-  // The delay from input to the output bit.
-  std::map<unsigned, float> ModelDelay;
+  // The delay from Src value to this model
+  ilist<ArrivalTime> Arrivals;
+  // The ArrivalStart only remember the Src Value
+  // and its ArrivalTime in the first time. That is
+  // the ArrivalStart won't record all paths from
+  // Src to Dst. Only the first recorded path will
+  // stay in it so that we can know whether this
+  // Src has been detected before.
+  std::map<Value *, ArrivalTime *> ArrivalStart;
 
-  void calcArrivalParallel(float Delay);
-  void calcArrivalLinear(float Base, float PerBit);
+  ilist<ArrivalTime>::iterator
+    findInsertPosition(ArrivalTime *Start, Value *V, uint8_t ToLB);
 
-  void calcAddArrival();
-  void calcMulArrival();
-  void calcCmpArrivial();
-  void calcShiftArrival();
+  // The arrival time from Src Value to [ToLB, ToUB) bit range of this model
+  void addArrival(Value *V, float Arrival, uint8_t ToUB, uint8_t ToLB);
 
+  void updateArrivalCarryChain(unsigned i, float Base, float PerBit);
+  void updateArrivalCritial(unsigned i, float Delay);
+  void updateArrivalCritial(float delay);
+  void updateArrivalParallel(unsigned i, float Delay);
+  void updateArrivalParallel(float delay);
+
+
+  void updateBitCatArrival();
+  void updateBitRepeatArrival();
+  void updateBitExtractArrival();
+  void updateBitMaskArrival();
+  void updateReductionArrival();
+  void updateROMLookUpArrival();
+
+  template<typename VFUTy>
+  void updateCarryChainArrival(VFUTy *FU)  {
+    unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
+
+    // Dirty HACK: We only have the data up to 64 bit FUs.
+    float Delay = FU->lookupLatency(std::min(BitWidth, 64u));
+    float PreBit = Delay / BitWidth;
+
+    // Also note that the real numbers of operands should be minus 1.
+    unsigned NumOperands = Node->getNumOperands() - 1;
+    // Hack: why the base is connected to the NumOperands?
+    float Base = PreBit * (NumOperands - 1);
+
+    // Also note that the real numbers of operands should be minus 1.
+    for (unsigned I = 0, E = Node->getNumOperands() - 1; I < E; ++I)
+      updateArrivalCarryChain(I, Base, PreBit);
+  }
+
+  void updateCmpArrivial();
+  void updateShiftAmt();
+  void updateShlArrival();
+  void updateShrArrival();
 public:
-  SIRDelayModel() {}
-  SIRDelayModel(SIR *SM, DataLayout *TD, Instruction *Node);
+  SIRDelayModel()/* : SM(0), TD(0), Node(0), Fanins(0) */{}
+  SIRDelayModel(SIR *SM, DataLayout *TD, Instruction *Node,
+                ArrayRef<SIRDelayModel *> Fanins);
+  ~SIRDelayModel();
 
-  void calcArrival();
-  float getDelayInBit(unsigned BitNum);
+  typedef ArrayRef<SIRDelayModel>::iterator iterator;
+
+  void updateArrival();
+
+  void verify() const;
+
+  // Iterative the arrival times.
+  typedef ilist<ArrivalTime>::iterator arrival_iterator;
+  arrival_iterator arrival_begin() { return Arrivals.begin(); }
+  arrival_iterator arrival_end() { return Arrivals.end(); }
+  typedef ilist<ArrivalTime>::const_iterator const_arrival_iterator;
+  const_arrival_iterator arrival_begin() const { return Arrivals.begin(); }
+  const_arrival_iterator arrival_end() const { return Arrivals.end(); }
+
+  bool hasArrivalFrom(Value *V) const {
+    return ArrivalStart.count(V);
+  }
+
+  // Get the iterator point to the first arrival time of a given source node.
+  const_arrival_iterator arrival_begin(Value *V) const {
+    std::map<Value *, ArrivalTime *>::const_iterator I = ArrivalStart.find(V);
+    if (I == ArrivalStart.end())
+      return Arrivals.end();
+
+    return I->second;
+  }
+
+  // Visit all the Arrivals which has V as SrcVal, and
+  // the I is the begin of this traverse.
+  bool inRange(const_arrival_iterator I, Value *V) const {
+    if (I == Arrivals.end())
+      return false;
+
+    return I->Src == V;
+  }
 };
 
 class SIRTimingAnalysis : public SIRPass {
@@ -128,9 +206,19 @@ public:
   SIRDelayModel *createModel(Instruction *Inst, SIR *SM, DataLayout &TD);
   SIRDelayModel *lookUpDelayModel(Instruction *Inst) const;
 
+  void buildTimingNetlist(Value *V, SIR *SM, DataLayout &TD);
+
+  PhysicalDelay getArrivalTime(Value *To, Value *From);
+  PhysicalDelay getArrivalTime(SIRRegister *To, Value *From);
+  PhysicalDelay getArrivalTime(SIRRegister *To, Value *Thu,
+                               Value *From);
+
+  void printArrivalPath(raw_ostream &OS, SIRRegister *To, Value *From);
+  void printArrivalPath(raw_ostream &OS, SIRRegister *To, Value *Thu,
+                        Value *From);
+
   typedef std::map<Value *, PhysicalDelay> ArrivalMap;
-  void extractArrivals(DataLayout *TD, SIRSeqOp *SeqOp, ArrivalMap &Arrivals);
-  void extractArrivals(DataLayout *TD, Instruction *CombOp, ArrivalMap &Arrivals);
+  void extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arrivals);
 
   bool isBasicBlockUnreachable(BasicBlock *BB) const;
 };

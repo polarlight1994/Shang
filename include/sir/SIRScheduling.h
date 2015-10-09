@@ -117,7 +117,6 @@ private:
   ArrayRef<SIRSchedUnit *> getDataFlowSU(Value *V);
 
   void buildSchedulingUnitsForSeqOp(SIRSlot *S);
-  void buildSchedulingUnitsForCombOp(Instruction *CombOp);
 
   void finishBuildingSchedGraph();
 

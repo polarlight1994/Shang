@@ -79,7 +79,9 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
   // that the SUnits is not indexed to the Ret instruction but to the
   // operand of the Ret instruction because in SIRBuilder we replace
   // the original operand of Ret into this pseudo instruction to act
-  // as the SeqVal.
+  // as the SeqVal. But we should ignore the instruction like "ret
+  // void".
+  if (!Inst->getNumOperands()) return;
   ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(Inst->getOperand(0));
 
   // The ExitSUnit is depended on these SUnits.
@@ -117,17 +119,12 @@ void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
 
   SIRTimingAnalysis::ArrivalMap Arrivals;
 
-  if (U->isCombSU()) {
-    Instruction *CombOp = U->getCombOp();
-    assert(CombOp && "Unexpected NULL CombOp!");
-
-    TA->extractArrivals(TD, CombOp, Arrivals);
-  } else {
-    SIRSeqOp *SeqOp = U->getSeqOp();
-    assert(SeqOp && "Unexpected NULL SeqOp!");
-
-    TA->extractArrivals(TD, SeqOp, Arrivals);
-  }
+  // Construct the data flow dependencies according
+  // to the Timing Analysis result.
+  SIRTimingAnalysis::ArrivalMap AT;
+  // Extract all the dependencies coming from
+  // the Src value of current SIRSeqOp.
+  TA->extractArrivals(SM, U->getSeqOp(), AT);
 
   typedef SIRTimingAnalysis::ArrivalMap::iterator iterator;
   for (iterator I = Arrivals.begin(), E = Arrivals.end(); I != E; ++I) {
@@ -303,15 +300,6 @@ void SIRScheduling::buildSchedulingUnitsForSeqOp(SIRSlot *S) {
   }
 }
 
-void SIRScheduling::buildSchedulingUnitsForCombOp(Instruction *CombOp) {
-  BasicBlock *BB = CombOp->getParent();
-
-  SIRSchedUnit *U = G->createSUnit(BB, CombOp);
-
-  // Index the SUnit to the LLVM IR.
-  G->indexSU2IR(U, CombOp);
-}
-
 void SIRScheduling::finishBuildingSchedGraph() {
   SIRSchedUnit *Exit = G->getExit();
 
@@ -342,45 +330,17 @@ void SIRScheduling::buildSchedulingGraph() {
   G->indexSU2Slot(Entry, StartSlot);
 
   // Build the Scheduling Units for SeqOps.
-  {
-    ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >
-      RPO(SM->getStartSlot());
-    typedef
-      ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >::rpo_iterator
-      slot_iterator;
+  ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >
+    RPO(SM->getStartSlot());
+  typedef
+    ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >::rpo_iterator
+    slot_iterator;
 
-    // Visit the SIRSlots in reverse post order so that the building order of
-    // SUnits is topological generally to avoid creating a dependency to a
-    // SUnit which is not created yet when building dependencies.
-    for (slot_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
-      buildSchedulingUnitsForSeqOp(*I);
-  }
-
-  // Build the Scheduling Units for CombOps.
-  {
-    Function *F = SM->getFunction();
-
-    typedef Function::iterator bb_iterator;
-    for (bb_iterator BBI = F->begin(), BBE = F->end(); BBI != BBE; ++BBI) {
-      BasicBlock *BB = BBI;
-
-      typedef BasicBlock::iterator inst_iterator;
-      for (inst_iterator InstI = BB->begin(), InstE = BB->end();
-           InstI != InstE; ++InstI) {
-        Instruction *Inst = InstI;
-
-        if (!isa<IntrinsicInst>(Inst) && !isa<IntToPtrInst>(Inst) &&
-          !isa<PtrToIntInst>(Inst) && !isa<BitCastInst>(Inst))
-          continue;
-
-        if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
-          if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
-            continue;
-
-        buildSchedulingUnitsForCombOp(Inst);
-      }
-    }
-  }
+  // Visit the SIRSlots in reverse post order so that the building order of
+  // SUnits is topological generally to avoid creating a dependency to a
+  // SUnit which is not created yet when building dependencies.
+  for (slot_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
+    buildSchedulingUnitsForSeqOp(*I);
 
   // Build dependencies.
   buildDependencies();

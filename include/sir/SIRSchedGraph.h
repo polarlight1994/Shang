@@ -48,28 +48,28 @@ private:
   // Iterate distance.
   unsigned Distance;
   // The latency of this edge.
-  float Latency;
+  unsigned Latency;
 
 public:
-  SIRDep(enum Types T, float Latency, int Distance)
+  SIRDep(enum Types T, unsigned Latency, int Distance)
     : EdgeType(T), Latency(Latency), Distance(Distance) {}
 
-  static SIRDep CreateValDep(float Latency) {
+  static SIRDep CreateValDep(unsigned Latency) {
     return SIRDep(ValDep, Latency, 0);
   }
 
-  static SIRDep CreateMemDep(float Latency, int Distance) {
+  static SIRDep CreateMemDep(unsigned Latency, int Distance) {
     return SIRDep(MemDep, Latency, Distance);
   }
 
-  static SIRDep CreateCtrlDep(float Latency) {
+  static SIRDep CreateCtrlDep(unsigned Latency) {
     return SIRDep(CtrlDep, Latency, 0);
   }
 
   Types getEdgeType() const { return Types(EdgeType); }
   int getDistance() const { return Distance; }
   bool isLoopCarried() const { return getDistance() != 0; }
-  inline float getLatency(unsigned II = 0) const {
+  inline unsigned getLatency(unsigned II = 0) const {
     // Compute the latency considering the distance in loop.
     return Latency - int(II) * getDistance();
   }
@@ -105,9 +105,9 @@ private:
   uint32_t II;
   uint16_t Idx;
 
-  float Schedule;
+  unsigned Schedule;
   // The latency of this unit self.
-  float Latency;
+  unsigned Latency;
 
   // Denote of whether this unit has been scheduled.
   bool IsScheduled;
@@ -225,8 +225,8 @@ public:
   void setII(unsigned newII) { this->II = std::max(this->II, II); }
   unsigned getIdx() const { return Idx; }
   Type getType() const { return T; }
-  float getSchedule() const { return Schedule; }
-  bool scheduleTo(float NewSchedule) {
+  unsigned getSchedule() const { return Schedule; }
+  bool scheduleTo(unsigned NewSchedule) {
     assert(NewSchedule >= 0 && "Unexpected NULL schedule!");
 
     if (NewSchedule == 0)
@@ -240,7 +240,10 @@ public:
 
     return Changed;
   }
-  void resetSchedule() { Schedule = 0.0; }
+  void resetSchedule() {
+    Schedule = 0;
+    IsScheduled = false;
+  }
 
   Value *getValue();
 
@@ -260,7 +263,7 @@ public:
   // Otherwise the BB we hold in SUnit is its ParentBB.
   BasicBlock *getParentBB() const;
 
-  float getLatency() const { return Latency; }
+  unsigned getLatency() const { return Latency; }
 
   void addToUseList(SIRSchedUnit *User) {
     UseList.insert(User);
@@ -320,7 +323,7 @@ public:
       Deps.insert(std::make_pair(Src, EdgeBundle(NewEdge)));
       Src->addToUseList(this);
     } else {
-      float OldLatency = getEdgeFrom(Src).getLatency();
+      unsigned OldLatency = getEdgeFrom(Src).getLatency();
       at->second.addEdge(NewEdge);
       assert(OldLatency <= getEdgeFrom(Src).getLatency() && "Edge lost!");
       (void) OldLatency;
@@ -443,7 +446,7 @@ public:
 
   // Sort the scheduling units in topological order.
   void toposortCone(SIRSchedUnit *Root, std::set<SIRSchedUnit *> &Visited,
-    BasicBlock *BB);
+                    BasicBlock *BB);
   void topologicalSortSUs();
 
   // Reset the schedule of all the scheduling units in the graph.
