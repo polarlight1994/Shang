@@ -25,13 +25,14 @@ unsigned SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
   for (iterator DI = A->dep_begin(), DE = A->dep_end(); DI != DE; ++DI) {
     const SIRSchedUnit *Dep = *DI;
 
-    // Ignore the back-edges when we are not pipelining the BB.
-    if (Dep->getIdx() >= A->getIdx() && MII == 0) continue;
+    // Ignore the back-edges when not pipelining the BB.
+    if (Dep->getIdx() >= A->getIdx()) continue;
 
     unsigned DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
     unsigned DepLatency = Dep->getLatency();
 
-    unsigned Step = DepASAP + DepLatency + DI.getLatency(MII);
+    // We are not pipelining here.
+    unsigned Step = DepASAP + DepLatency + DI.getLatency(0);
     assert(Step >= 0 && "Unexpected Negative Schedule!");
 
     NewStep = std::max(Step, NewStep);
@@ -46,15 +47,16 @@ unsigned SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
   typedef SIRSchedUnit::const_use_iterator iterator;
   for (iterator UI = A->use_begin(), UE = A->use_end(); UI != UE; ++UI) {
     SIRSchedUnit *Use = *UI;
-    SIRDep UseEdge = Use->getEdgeFrom(A, MII);
+    SIRDep UseEdge = Use->getEdgeFrom(A, 0);
 
-    // Ignore the back-edges when we are not pipelining the BB.
-    if (Use->getIdx() <= A->getIdx() && MII == 0) continue;
+    // Ignore the back-edges when not pipelining the BB.
+    if (Use->getIdx() <= A->getIdx()) continue;
 
     unsigned UseALAP = Use->isScheduled() ? Use->getSchedule() : getALAPStep(Use);
     unsigned ALatency = A->getLatency();
 
-    unsigned Step = UseALAP - ALatency - UseEdge.getLatency(MII);
+    // We are not pipelining here.
+    unsigned Step = UseALAP - ALatency - UseEdge.getLatency(0);
     NewStep = std::min(Step, NewStep);
   }
 

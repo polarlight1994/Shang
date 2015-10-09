@@ -54,8 +54,6 @@ public:
   };
 
 protected:
-  // MII in modulo schedule.
-  unsigned MII;
   unsigned CriticalPathEnd;
 
   typedef std::map<const SIRSchedUnit *, TimeFrame> TFMapTy;
@@ -65,7 +63,7 @@ protected:
 
 public:
   SIRScheduleBase(SIRSchedGraph &G, unsigned EntrySlot)
-    : EntrySlot(EntrySlot), MII(0), CriticalPathEnd(0), G(G) {}
+    : EntrySlot(EntrySlot), CriticalPathEnd(0), G(G) {}
 
   // Forward some functions from SIRScheGraph.
   ArrayRef<SIRSchedUnit *> lookupSUs(Value *V) {
@@ -75,10 +73,10 @@ public:
     return G.getSUsInBB(BB);
   }
 
-  unsigned calculateASAP(const SIRSchedUnit *A) const;
-  unsigned calculateALAP(const SIRSchedUnit *A) const;
+  virtual unsigned calculateASAP(const SIRSchedUnit *A) const;
+  virtual unsigned calculateALAP(const SIRSchedUnit *A) const;
   TimeFrame calculateTimeFrame(const SIRSchedUnit *A) const {
-    return TimeFrame(calculateASAP(A), calculateALAP(A));
+    return TimeFrame(this->calculateASAP(A), this->calculateALAP(A));
   }
   TimeFrame getTimeFrame(const SIRSchedUnit *A) const {
     TFMapTy::const_iterator at = SUnitToTF.find(A);
@@ -115,10 +113,6 @@ public:
   reverse_iterator rend() const { return G.rend(); }
 
   unsigned getEntrySlot() const { return EntrySlot; }
-  unsigned getMII() const { return MII; }
-  void setMII(unsigned II) { MII = II; }
-  void increaseMII() { ++MII; }
-  void decreaseMII() { --MII; }
   void lengthenCriticalPath() { CriticalPathEnd += 1; }
   void shortenCriticalPath() { CriticalPathEnd -= 1; }
 
@@ -149,6 +143,34 @@ template<> struct GraphTraits<SIRScheduleBase *>
 
   static nodes_iterator nodes_end(SIRScheduleBase *G) {
     return G->end();
+  }
+};
+
+struct PriorityHeuristic {
+  typedef SIRScheduleBase::TimeFrame TimeFrame;
+  const SIRScheduleBase &S;
+
+  PriorityHeuristic(const SIRScheduleBase &S) : S(S) {}
+
+  bool operator()(const SIRSchedUnit *LHS, const SIRSchedUnit *RHS) const {
+    // we consider the priority from these aspects:
+    // Size Of TF, ALAP, ASAP
+
+    TimeFrame LHSTF = S.getTimeFrame(LHS),
+      RHSTF = S.getTimeFrame(RHS);
+    if (LHSTF.size() < RHSTF.size()) return true;
+    if (LHSTF.size() > RHSTF.size()) return false;
+
+    // Ascending order using ALAP.
+    if (LHSTF.ALAP < RHSTF.ALAP) return true;
+    if (LHSTF.ALAP > RHSTF.ALAP) return false;
+
+    // Ascending order using ASAP.
+    if (LHSTF.ASAP < RHSTF.ASAP) return true;
+    if (LHSTF.ASAP > RHSTF.ASAP) return false;
+
+    // Tie breaker: Original topological order.
+    return LHS->getIdx() < RHS->getIdx();
   }
 };
 }
