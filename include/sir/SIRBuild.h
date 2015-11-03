@@ -233,10 +233,10 @@ public:
                        Value *Guard, BasicBlock *SrcBB);
 
   // Functions to build the transition between Slot. 
-  void createStateTransition(SIRSlot *SrcSlot, SIRSlot *DstSlot, Value *Cnd);
+  SIRSlotTransition *createStateTransition(SIRSlot *SrcSlot, SIRSlot *DstSlot, Value *Cnd);
 
   // Functions to build the assign operation.
-  void assignToReg(SIRSlot *S, Value *Guard, Value *Src, SIRRegister *Dst);
+  SIRSeqOp *assignToReg(SIRSlot *S, Value *Guard, Value *Src, SIRRegister *Dst);
 
   // Forward some basic functions from the DataPathBuilder.
   IntegerType *createIntegerType(unsigned BitWidth);

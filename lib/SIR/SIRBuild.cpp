@@ -63,12 +63,12 @@ INITIALIZE_PASS_END(SIRInit,
 
 bool SIRInit::runOnFunction(Function &F) {
   /// Debug code
-//   std::string FinalIR = LuaI::GetString("FinalIR");
-//   std::string ErrorInFinalIR;
-// 	raw_fd_ostream OutputForFinalIR(FinalIR.c_str(), ErrorInFinalIR);
-// 	vlang_raw_ostream OutForFinalIR;
-// 	OutForFinalIR.setStream(OutputForFinalIR);
-// 	OutForFinalIR << F;
+  std::string FinalIR = LuaI::GetString("FinalIR");
+  std::string ErrorInFinalIR;
+	raw_fd_ostream OutputForFinalIR(FinalIR.c_str(), ErrorInFinalIR);
+	vlang_raw_ostream OutForFinalIR;
+	OutForFinalIR.setStream(OutputForFinalIR);
+	OutForFinalIR << F;
 
   DataLayout &TD = getAnalysis<DataLayout>();
   SIRAllocation &SA = getAnalysis<SIRAllocation>();
@@ -390,10 +390,15 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
   // Get ParentBB of this instruction.
   BasicBlock *ParentBB = I.getParent();
   // Get the slot.
-  SIRSlot *Slot = SM->getLatestSlot(ParentBB);
+  SIRSlot *Slot = SM->getLandingSlot(ParentBB);
+
+  // Initial a vector to collect all SeqOps we created to implement this Load/Store instruction,
+  // to be noted that, the collecting order matters!
+  SmallVector<SIRSeqOp *, 4> MemSeqOps;
 
   /// Handle the enable pin.
-  assignToReg(Slot, createIntegerValue(1, 1), createIntegerValue(1, 1), Bank->getEnable());
+  SIRSeqOp *AssignToEn = assignToReg(Slot, createIntegerValue(1, 1), createIntegerValue(1, 1), Bank->getEnable());
+  MemSeqOps.push_back(AssignToEn);
 
   /// Handle the address pin.
   // Clamp the address width, to the address width of the memory bank.
@@ -404,7 +409,8 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
   Value *AddrVal = D_Builder.createPtrToIntInst(Addr, createIntegerType(getBitWidth(Addr)), &I, true);
   AddrVal = D_Builder.createSBitExtractInst(AddrVal, Bank->getAddrWidth(), 0, RetTy, &I, true);
 
-  assignToReg(Slot, createIntegerValue(1, 1), AddrVal, Bank->getAddr());
+  SIRSeqOp *AssignToAddr = assignToReg(Slot, createIntegerValue(1, 1), AddrVal, Bank->getAddr());
+  MemSeqOps.push_back(AssignToAddr);
 
   /// Handle the byte enable pin.
   if (Bank->requireByteEnable()) {
@@ -422,7 +428,8 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
     Value *ByteEn = D_Builder.createSShiftInst(ByteEnInit, ByteAddr, ByteEnInit->getType(),
                                                &I, Intrinsic::shang_shl, true);
 
-    assignToReg(Slot, createIntegerValue(1, 1), ByteEn, Bank->getByteEn());
+    SIRSeqOp *AssignToByteEn = assignToReg(Slot, createIntegerValue(1, 1), ByteEn, Bank->getByteEn());
+    MemSeqOps.push_back(AssignToByteEn);
   }
 
   /// Handle the data pin and write enable pin.
@@ -458,9 +465,12 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
     }
 
     // Handle the data pin.
-    assignToReg(Slot, createIntegerValue(1, 1), DataVal, Bank->getWData());
+    SIRSeqOp *AssignToWData = assignToReg(Slot, createIntegerValue(1, 1), DataVal, Bank->getWData());
+    MemSeqOps.push_back(AssignToWData);
+
     // Handle the write enable pin.
-    assignToReg(Slot, createIntegerValue(1, 1), createIntegerValue(1, 1), Bank->getWriteEn());
+    SIRSeqOp *AssignToWriteEn = assignToReg(Slot, createIntegerValue(1, 1), createIntegerValue(1, 1), Bank->getWriteEn());
+    MemSeqOps.push_back(AssignToWriteEn);
   }
   // If Data == NULL, then this intruction is reading from memory.
   else {
@@ -501,8 +511,14 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
     SM->IndexVal2SeqVal(&I,	ResultReg->getLLVMValue());
                         I.replaceAllUsesWith(ResultReg->getLLVMValue());
 
-    assignToReg(Slot, createIntegerValue(1, 1), Result, ResultReg);
+    SIRSeqOp *AssignToResult = assignToReg(Slot, createIntegerValue(1, 1), Result, ResultReg);
+    MemSeqOps.push_back(AssignToResult);
   }
+
+  // Index the MemInst to MemSeqOps
+  SM->IndexMemInst2SeqOps(&I, MemSeqOps);
+
+  ArrayRef<SIRSeqOp *> SeqOps = SM->lookupMemSeqOps(&I);
 
   // Advance to next slot so other operations will not conflicted with this memory
   // transaction operation.
@@ -637,14 +653,20 @@ void SIRCtrlRgnBuilder::visitPHIsInSucc(SIRSlot *SrcSlot, SIRSlot *DstSlot,
   }
 }
 
-void SIRCtrlRgnBuilder::createStateTransition(SIRSlot *SrcSlot, SIRSlot *DstSlot, Value *Cnd) {
+SIRSlotTransition *SIRCtrlRgnBuilder::createStateTransition(SIRSlot *SrcSlot, SIRSlot *DstSlot,
+                                                            Value *Cnd) {
   assert(!SrcSlot->hasNextSlot(DstSlot) && "Edge already existed!");
 
   SrcSlot->addSuccSlot(DstSlot, SIRSlot::Sucessor, Cnd);
-  assignToReg(SrcSlot, Cnd, createIntegerValue(1, 1), DstSlot->getSlotReg());
+  SIRSeqOp *SeqOp = assignToReg(SrcSlot, Cnd, createIntegerValue(1, 1), DstSlot->getSlotReg());
+
+  SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SeqOp);
+  assert(SST && "Should be a SIR Slot Transition!");
+
+  return SST;
 }
 
-void SIRCtrlRgnBuilder::assignToReg(SIRSlot *S, Value *Guard, Value *Src,
+SIRSeqOp *SIRCtrlRgnBuilder::assignToReg(SIRSlot *S, Value *Guard, Value *Src,
                                     SIRRegister *Dst) {
   SIRSeqOp *SeqOp;
 
@@ -657,6 +679,8 @@ void SIRCtrlRgnBuilder::assignToReg(SIRSlot *S, Value *Guard, Value *Src,
   S->addSeqOp(SeqOp);
 
   SM->IndexSeqOp(SeqOp);
+
+  return SeqOp;
 }
 
 /// Functions to visit all control-path instructions
