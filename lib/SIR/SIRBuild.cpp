@@ -283,11 +283,8 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, Type *ValueTy,
                                                BasicBlock *ParentBB, uint64_t InitVal,
                                                SIRRegister::SIRRegisterTypes T) {
   // For the General Register or PHI Register, we create a pseudo instruction and
-  // this pseudo instruction will be inserted into the back of whole module.
-  // Insert the implement of register just in front of the terminator instruction
-  // at back of the module to avoid being used before declaration.
-  Value *InsertPosition = SM->getPositionAtBackOfModule();
-  Value *SeqVal = createRegAssignInst(ValueTy, InsertPosition);
+  // this pseudo instruction will be inserted into the back of the BasicBlock.
+  Value *SeqVal = createRegAssignInst(ValueTy, ParentBB);
 
   assert(SeqVal && "Unexpected empty PseudoSeqInst!");
   assert(!SM->lookupSIRReg(SeqVal) && "Register already created before!");
