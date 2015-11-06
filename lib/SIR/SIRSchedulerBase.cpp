@@ -17,6 +17,7 @@
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
+
 static const unsigned MaxSlot = UINT16_MAX >> 2;
 
 unsigned SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {

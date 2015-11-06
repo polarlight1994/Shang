@@ -26,34 +26,6 @@
 #include "llvm/Support/Debug.h"
 
 namespace llvm {
-struct PriorityHeuristic {
-  typedef SIRScheduleBase::TimeFrame TimeFrame;
-  const SIRScheduleBase &S;
-
-  PriorityHeuristic(const SIRScheduleBase &S) : S(S) {}
-
-  bool operator()(const SIRSchedUnit *LHS, const SIRSchedUnit *RHS) const {
-    // we consider the priority from these aspects:
-    // Size Of TF, ALAP, ASAP
-
-    TimeFrame LHSTF = S.getTimeFrame(LHS),
-              RHSTF = S.getTimeFrame(RHS);
-    if (LHSTF.size() < RHSTF.size()) return true;
-    if (LHSTF.size() > RHSTF.size()) return false;
-
-    // Ascending order using ALAP.
-    if (LHSTF.ALAP < RHSTF.ALAP) return true;
-    if (LHSTF.ALAP > RHSTF.ALAP) return false;
-
-    // Ascending order using ASAP.
-    if (LHSTF.ASAP < RHSTF.ASAP) return true;
-    if (LHSTF.ASAP > RHSTF.ASAP) return false;
-
-    // Tie breaker: Original topological order.
-    return LHS->getIdx() < RHS->getIdx();
-  }
-};
-
 struct BBContext {
   SIRScheduleBase &S;
   BasicBlock *BB;

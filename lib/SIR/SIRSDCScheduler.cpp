@@ -44,7 +44,7 @@ unsigned SIRSDCScheduler::createLPVariable(SIRSchedUnit *U, unsigned ColNum) {
     set_lowbo(lp, ColNum, U->getSchedule());
     set_upbo(lp, ColNum, U->getSchedule());
   } else
-    set_lowbo(lp, ColNum, EntrySlot);
+    set_lowbo(lp, ColNum, EntrySchedule);
 
   // Assign a low priority to the variables, so the LPSolve can focus on
   // those difficult constraints first.
@@ -88,8 +88,6 @@ void SIRSDCScheduler::addDependencyConstraints() {
 
     typedef SIRSchedUnit::dep_iterator dep_iterator;
     for (dep_iterator DI = DstSU->dep_begin(), DE = DstSU->dep_end();	DI != DE; ++DI) {
-      assert(!DI.isLoopCarried() && "Cannot handled in SDC!");
-
       // Get the Src SUnit and the dependency edge.
       SIRSchedUnit *SrcSU = *DI;
 
@@ -178,9 +176,9 @@ bool SIRSDCScheduler::scheduleSUs() {
   unsigned Changed = 0;
 
   /// Debug Code
-//   std::string SDCResult = LuaI::GetString("SDCResult");
-//   std::string Error;
-//   raw_fd_ostream Output(SDCResult.c_str(), Error);
+  std::string SDCResult = LuaI::GetString("SDCResult");
+  std::string Error;
+  raw_fd_ostream Output(SDCResult.c_str(), Error);
 
   for (iterator I = begin(), E = end(); I != E; ++I) {
     SIRSchedUnit *U = I;
@@ -190,13 +188,13 @@ bool SIRSDCScheduler::scheduleSUs() {
     unsigned FinalResult = unsigned(Result);
 
     /// Debug Code
-/*    Output << "SU#" << U->getIdx() << " scheduled to " << Result << "\n";*/
+    Output << "SU#" << U->getIdx() << " scheduled to " << FinalResult << "\n";
 
     // Handle the SUnits in Slot0r specially since they are
     // always scheduled to 0.
     if (!U->getParentBB() && !U->isExit())
       assert(Result == 0.0 && "Unexpected SDC result!");
-    else if (U->scheduleTo(Result))
+    else if (U->scheduleTo(FinalResult))
       ++Changed;
   }
 

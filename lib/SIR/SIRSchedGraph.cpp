@@ -26,31 +26,32 @@ using namespace llvm;
 
 SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB)
   : II(0), Schedule(0), Idx(Idx), IsScheduled(false),
-  T(T), BB(BB), SeqOp(0), CombOp(0) {
+  T(T), BB(BB), SeqOps(0) {
   assert(T == SIRSchedUnit::Entry || T == SIRSchedUnit::Exit ||
          T == SIRSchedUnit::BlockEntry && "Unexpected Type for Virtual SUnit!");
 
   this->Latency = 0;
 }
 
+SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB,
+                           SmallVector<SIRSeqOp *, 4> SeqOps)
+  : II(0), Schedule(0), Idx(Idx), IsScheduled(false), T(T), BB(BB), SeqOps(SeqOps) {
+  assert(T == SIRSchedUnit::SeqSU && "Unexpected Type for SeqOps SUnit!");
+
+  this->Latency = 1;
+}
+
 SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, SIRSeqOp *SeqOp)
-  : II(0), Schedule(0), Idx(Idx), IsScheduled(false), T(T), BB(BB), SeqOp(SeqOp),
-  CombOp(0) {
+  : II(0), Schedule(0), Idx(Idx), IsScheduled(false), T(T), BB(BB) {
+  this->SeqOps.push_back(SeqOp);
+
   assert(T == SIRSchedUnit::SlotTransition || T == SIRSchedUnit::SeqSU ||
          T == SIRSchedUnit::PHI && "Unexpected Type for SeqOp SUnit!");
 
   this->Latency = 1;
 }
 
-SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, Instruction *CombOp)
-  : II(0), Schedule(0), Idx(Idx), IsScheduled(false), T(T), BB(BB), SeqOp(0),
-  CombOp(CombOp) {
-  assert(T == SIRSchedUnit::CombSU && "Unexpected Type for CombOp SUnit!");
-
-  this->Latency = 0;
-}
-
-SIRSchedUnit::SIRSchedUnit() : Idx(0), T(Invalid), BB(0), SeqOp(0) {}
+SIRSchedUnit::SIRSchedUnit() : Idx(0), T(Invalid), BB(0), SeqOps(0) {}
 
 void SIRSchedUnit::EdgeBundle::addEdge(SIRDep NewEdge) {
   // When we add a new edge here, we should choose a appropriate
@@ -127,6 +128,24 @@ BasicBlock *SIRSchedUnit::getParentBB() const {
   return BB;
 }
 
+void SIRSchedUnit::replaceAllDepWith(SIRSchedUnit *NewSUnit) {
+  for (dep_iterator DI = dep_begin(), DE = dep_end(); DI != DE;) {
+    SIRSchedUnit *DepSU = *DI;
+    ++DI;
+
+    NewSUnit->addDep(DepSU, getEdgeFrom(DepSU));
+    removeDep(DepSU);
+  }
+
+  for (use_iterator UI = use_begin(), UE = use_end(); UI != UE;) {
+    SIRSchedUnit *UseSU = *UI;
+    ++UI;
+
+    UseSU->addDep(NewSUnit, UseSU->getEdgeFrom(this));
+    UseSU->removeDep(this);
+  }
+}
+
 void SIRSchedUnit::print(raw_ostream &OS) const {
   switch (T) {
   case SIRSchedUnit::Entry:
@@ -147,7 +166,7 @@ void SIRSchedUnit::print(raw_ostream &OS) const {
     OS << "Slot transition from Slot#" << SST->getSrcSlot()->getSlotNum()
       << " to Slot#" << SST->getDstSlot()->getSlotNum() << "\n";
     break;
-                                     }
+  }
   case SIRSchedUnit::SeqSU: {
     SIRSeqOp *SeqOp = getSeqOp();
     OS << "SeqOp\n";
@@ -155,13 +174,7 @@ void SIRSchedUnit::print(raw_ostream &OS) const {
       << "] to Reg [" << getSeqOp()->getDst()->getName() << "] in"
       << " Slot#" << getSeqOp()->getSlot()->getSlotNum() << "\n";
     break;
-                            }
-  case SIRSchedUnit::CombSU:
-    OS << "CombOp\n";
-    OS << "CombOp contained: [" << getCombOp() << "]\n";
-    break;
-  default:
-    llvm_unreachable("Unexpected SUnit Type!");
+  }
   }
 
   OS << "Scheduled to " << Schedule;
@@ -180,6 +193,15 @@ SIRSchedGraph::SIRSchedGraph(Function &F) : F(F), TotalSUs(2) {
 }
 
 SIRSchedGraph::~SIRSchedGraph() {}
+
+SIRSchedUnit *SIRSchedGraph::lookupSU(SIRSeqOp *SeqOp) const {
+  SeqOp2SUMapTy::const_iterator at = SeqOp2SUMap.find(SeqOp);
+
+  if (at == SeqOp2SUMap.end())
+    return NULL;
+
+  return at->second;
+}
 
 ArrayRef<SIRSchedUnit *> SIRSchedGraph::lookupSUs(Value *V) const {
   IR2SUMapTy::const_iterator at = IR2SUMap.find(V);
@@ -200,7 +222,7 @@ bool SIRSchedGraph::indexSU2IR(SIRSchedUnit *SU, Value *V) {
   // Or we need to create a new map.
   SmallVector<SIRSchedUnit *, 4> SUs;
   SUs.push_back(SU);
-  IR2SUMap.insert(std::make_pair(V, SUs));
+  return IR2SUMap.insert(std::make_pair(V, SUs)).second;
 }
 
 ArrayRef<SIRSchedUnit *> SIRSchedGraph::lookupSUs(SIRSlot *S) const {
@@ -223,7 +245,22 @@ bool SIRSchedGraph::indexSU2Slot(SIRSchedUnit *SU, SIRSlot *S) {
   // Or we need to create a new map.
   SmallVector<SIRSchedUnit *, 4> SUs;
   SUs.push_back(SU);
-  Slot2SUMap.insert(std::make_pair(S, SUs));
+  return Slot2SUMap.insert(std::make_pair(S, SUs)).second;
+}
+
+SIRSchedUnit *SIRSchedGraph::getLoopSU(BasicBlock *BB) {
+  LoopBB2LoopSUMapTy::const_iterator at = LoopBB2LoopSUMap.find(BB);
+
+  if (at == LoopBB2LoopSUMap.end())
+    return NULL;
+
+  return at->second;
+}
+
+bool SIRSchedGraph::indexLoopSU2LoopBB(SIRSchedUnit *SU, BasicBlock *BB) {
+  assert(!hasLoopSU(BB) && "Loop SUnit already existed!");
+
+  return LoopBB2LoopSUMap.insert(std::make_pair(BB, SU)).second;
 }
 
 void SIRSchedGraph::toposortCone(SIRSchedUnit *Root,
@@ -253,6 +290,11 @@ void SIRSchedGraph::toposortCone(SIRSchedUnit *Root,
 
     // We have reach the top SUnit.
     if (Child->isEntry() || Child->getParentBB() != BB)
+      continue;
+
+    // Also ignore the PHI SUnit in this BB, since this dependency
+    // will be a back-edge formed a loop.
+    if (Child->isPHI())
       continue;
 
     // Do not visit the same node twice!
@@ -311,28 +353,18 @@ void SIRSchedGraph::topologicalSortSUs() {
   assert(getEntry()->isEntry() && getExit()->isExit() && "Broken TopSort!");
 }
 
-MutableArrayRef<SIRSchedUnit *> SIRSchedGraph::getSUsInBB(BasicBlock *BB) {
-  bb_iterator at = BBMap.find(BB);
+ArrayRef<SIRSchedUnit *> SIRSchedGraph::getSUsInBB(BasicBlock *BB) const {
+  const_bb_iterator at = BBMap.find(BB);
 
   assert(at != BBMap.end() && "BB not found!");
 
-  return MutableArrayRef<SIRSchedUnit *>(at->second);
+  return at->second;
 }
 
 SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T) {
   assert(T == SIRSchedUnit::BlockEntry && "Unexpected Type of SUnit!");
 
   SIRSchedUnit *U = new SIRSchedUnit(TotalSUs++, T, ParentBB);
-  // Insert the newly create SU before the exit.
-  SUnits.insert(SUnits.back(), U);
-  // Index the SUnit to the corresponding BB.
-  BBMap[ParentBB].push_back(U);
-
-  return U;
-}
-
-SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, Instruction *CombOp) {
-  SIRSchedUnit *U = new SIRSchedUnit(TotalSUs++, SIRSchedUnit::CombSU, ParentBB, CombOp);
   // Insert the newly create SU before the exit.
   SUnits.insert(SUnits.back(), U);
   // Index the SUnit to the corresponding BB.
@@ -351,13 +383,79 @@ SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Typ
   SUnits.insert(SUnits.back(), U);
   // Index the SUnit to the corresponding BB.
   BBMap[ParentBB].push_back(U);
+  // Index the SUnit to the corresponding SeqOp.
+  SeqOp2SUMap.insert(std::make_pair(SeqOp, U));
 
   return U;
 }
 
+SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T,
+                                         SmallVector<SIRSeqOp *, 4> SeqOps) {
+  assert(T == SIRSchedUnit::SeqSU && "Unexpected Type of SUnit!");
+
+  SIRSchedUnit *U = new SIRSchedUnit(TotalSUs++, T, ParentBB, SeqOps);
+  // Insert the newly create SU before the exit.
+  SUnits.insert(SUnits.back(), U);
+
+  return U;
+}
+
+void SIRSchedGraph::replaceAllUseWith(SIRSchedUnit *OldSU, SIRSchedUnit *NewSU) {
+  OldSU->replaceAllDepWith(NewSU);
+
+  BasicBlock *BB = OldSU->getParentBB();
+  SIRSeqOp *SeqOp = OldSU->getSeqOp();
+  SIRSlot *S = SeqOp->getSlot();
+  Value *V = SeqOp->getLLVMValue();
+
+  SeqOp2SUMap[SeqOp] = NewSU;
+
+  typedef SmallVector<SIRSchedUnit *, 4>::iterator iterator;
+
+  SmallVector<SIRSchedUnit *, 4> &SlotSUs = Slot2SUMap[S];
+  for (int i = 0; i < SlotSUs.size(); ++i) {
+    if (OldSU == SlotSUs[i]) {
+      SlotSUs[i] = NewSU;
+      break;
+    }
+  }
+
+  SmallVector<SIRSchedUnit *, 4> &ValueSUs = IR2SUMap[V];
+  for (int i = 0; i < ValueSUs.size(); ++i) {
+    if (OldSU == ValueSUs[i]) {
+      ValueSUs[i] = NewSU;
+      break;
+    }
+  }
+
+  SmallVector<SIRSchedUnit *, 4> &BBSUs = BBMap[BB];
+  bool AlreadyExist = false;;
+  for (int i = 0; i < BBSUs.size(); ++i) {
+    if (NewSU == BBSUs[i]) {
+      AlreadyExist = true;
+      break;
+    }
+  }
+  for (int i = 0; i < BBSUs.size(); ++i) {
+    if (OldSU == BBSUs[i]) {
+      if (!AlreadyExist)
+        BBSUs[i] = NewSU;
+      else
+        BBSUs.erase(BBSUs.begin() + i);
+
+      break;
+    }
+  }
+
+  SUnits.erase(OldSU);
+  TotalSUs--;
+}
+
 void SIRSchedGraph::resetSchedule() {
   // Reset all SUnits in graph.
-  for (iterator I = begin(), E = end(); I != E; ++I)
+  for (iterator I = begin(), E = end(); I != E; ++I) {
+    SIRSchedUnit *SUnit = I;
     I->resetSchedule();
+  }
 }
 

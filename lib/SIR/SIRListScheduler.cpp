@@ -19,8 +19,8 @@ using namespace vast;
 
 void BBContext::enter(BasicBlock *BB) {
   // Initialize
-  StartSchedule = S.EntrySlot;
-  EndSchedule = S.MaxSlot;
+  StartSchedule = S.EntrySchedule;
+  EndSchedule = S.MaxSchedule;
   this->BB = BB;
 
   // Schedule the BBEntry to Entry Slot.
