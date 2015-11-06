@@ -25,8 +25,8 @@
 namespace llvm {
 class SIRScheduleBase {
 public:
-  const unsigned EntrySlot;
-  static const unsigned MaxSlot = UINT16_MAX >> 2;
+  const unsigned EntrySchedule;
+  static const unsigned MaxSchedule = UINT16_MAX >> 2;
   struct TimeFrame {
     unsigned ASAP, ALAP;
 
@@ -62,8 +62,8 @@ protected:
   SIRSchedGraph &G;
 
 public:
-  SIRScheduleBase(SIRSchedGraph &G, unsigned EntrySlot)
-    : EntrySlot(EntrySlot), CriticalPathEnd(0), G(G) {}
+  SIRScheduleBase(SIRSchedGraph &G, unsigned EntrySchedule)
+    : EntrySchedule(EntrySchedule), CriticalPathEnd(0), G(G) {}
 
   // Forward some functions from SIRScheGraph.
   ArrayRef<SIRSchedUnit *> lookupSUs(Value *V) {
@@ -73,9 +73,17 @@ public:
     return G.getSUsInBB(BB);
   }
 
+  // Calculate the ASAP and ALAP.
   virtual unsigned calculateASAP(const SIRSchedUnit *A) const;
   virtual unsigned calculateALAP(const SIRSchedUnit *A) const;
+
+  // Build TimeFrame.
+  virtual void buildTimeFrame();
+  // Reset TimeFrame.
+  virtual void resetTimeFrame();
+
   TimeFrame calculateTimeFrame(const SIRSchedUnit *A) const {
+    // Use this pointer to make sure we call the right version.
     return TimeFrame(this->calculateASAP(A), this->calculateALAP(A));
   }
   TimeFrame getTimeFrame(const SIRSchedUnit *A) const {
@@ -83,9 +91,12 @@ public:
     assert(at != SUnitToTF.end() && "TimeFrame for SU not exist!");
     return at->second;
   }
+  // Build TimeFrame for all SUnits and reset the scheduling
+  // graph. The return value is the CriticalPathEnd.
+  unsigned buildTimeFrameAndResetSchedule(bool reset);
 
-  bool buildASAPStep();
-  bool buildALAPStep();
+  virtual bool buildASAPStep();
+  virtual bool buildALAPStep();
 
   SIRSchedGraph &operator*() const { return G; }
   SIRSchedGraph *operator->() const { return &G; }
@@ -94,6 +105,11 @@ public:
   typedef SIRSchedGraph::const_iterator const_iterator;
   typedef SIRSchedGraph::reverse_iterator reverse_iterator;
   typedef SIRSchedGraph::const_reverse_iterator const_reverse_iterator;
+
+  iterator begin() { return G.begin(); }
+  iterator end() { return G.end(); }
+  reverse_iterator rbegin() { return G.rbegin(); }
+  reverse_iterator rend() { return G.rend(); }
 
   unsigned getASAPStep(const SIRSchedUnit *A) const {
     TFMapTy::const_iterator at = SUnitToTF.find(A);
@@ -107,29 +123,17 @@ public:
     return at->second.ALAP;
   }
 
-  iterator begin() const { return G.begin(); }
-  iterator end() const { return G.end(); }
-  reverse_iterator rbegin() const { return G.rbegin(); }
-  reverse_iterator rend() const { return G.rend(); }
-
-  unsigned getEntrySlot() const { return EntrySlot; }
+  unsigned getEntrySchedule() const { return EntrySchedule; }
   void lengthenCriticalPath() { CriticalPathEnd += 1; }
   void shortenCriticalPath() { CriticalPathEnd -= 1; }
 
   unsigned getCriticalPathLength() {
-    assert(CriticalPathEnd > EntrySlot && "CriticalPathLength not available!");
-    return CriticalPathEnd - EntrySlot;
+    assert(CriticalPathEnd > EntrySchedule && "CriticalPathLength not available!");
+    return CriticalPathEnd - EntrySchedule;
   }
   void setCriticalPathLength(float L) {
-    CriticalPathEnd = EntrySlot + L;
+    CriticalPathEnd = EntrySchedule + L;
   }
-
-  // Build TimeFrame for all SUnits and reset the scheduling
-  // graph. The return value is the CriticalPathEnd.
-  unsigned buildTimeFrameAndResetSchedule(bool reset);
-
-  void resetTimeFrame();
-  void buildTimeFrame();
 };
 
 template<> struct GraphTraits<SIRScheduleBase *>

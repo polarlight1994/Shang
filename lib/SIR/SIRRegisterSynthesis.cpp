@@ -70,9 +70,10 @@ bool SIRRegisterSynthesisForAnnotation::runOnSIR(SIR &SM) {
     SIRSeqOp *SeqOp = I;
     SIRRegister *Reg = SeqOp->getDst();
 
-    // Insert the implement of register just in front of the terminator instruction
-    // at back of the module to avoid being used before declaration.
-    Value *InsertPosition = SM.getPositionAtBackOfModule();
+    // Insert the implement of register at the back of BB or the back of Module
+    // if the Reg belong to no BB.
+    Value *InsertPosition = Reg->getParentBB() ?
+                            Reg->getParentBB() : SM.getPositionAtBackOfModule();
 
     // Extract the assignments for Registers.
     Value *Src = SeqOp->getSrc(), *Guard = SeqOp->getGuard();
@@ -213,9 +214,10 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
     // be indexed in SIRFSMSynthsisPass.
     SM.IndexReg2Slot(Dst, Slot);
 
-    // Insert the implement of register just in front of the terminator instruction
-    // at back of the module to avoid being used before declaration.
-    Value *InsertPosition = SM.getPositionAtBackOfModule();
+    // Insert the implement of register at the back of BB or the back of Module
+    // if the Reg belong to no BB.
+    Value *InsertPosition = Dst->getParentBB() ?
+                            Dst->getParentBB() : SM.getPositionAtBackOfModule();
 
     // Associate the guard with the Slot guard.
     Value *NewGuardVal = Builder.createSAndInst(GuardVal, Slot->getGuardValue(),
@@ -230,9 +232,10 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
     SIRRegister *Reg = *I;
 
-    // Insert the implement of register just in front of the terminator instruction
-    // at back of the module to avoid being used before declaration.
-    Value *InsertPosition = SM.getPositionAtBackOfModule();
+    // Insert the implement of register at the back of BB or the back of Module
+    // if the Reg belong to no BB.
+    Value *InsertPosition = Reg->getParentBB() ?
+                            Reg->getParentBB() : SM.getPositionAtBackOfModule();
 
     Changed |= synthesizeRegister(Reg, InsertPosition, Builder);
   }
