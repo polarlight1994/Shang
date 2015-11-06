@@ -36,34 +36,40 @@ namespace llvm {
 class SIRDep {
 public:
   enum Types {
+    // Data dependency
     ValDep      = 0,
+    // Memory dependency
     MemDep      = 1,
+    // Control dependency
     CtrlDep     = 2,
-    // Generic dependency that may form cycles.
-    Generic     = 3
+    // Sync dependency
+    SyncDep     = 3
   };
 
 private:
   unsigned EdgeType;
   // Iterate distance.
-  unsigned Distance;
+  int Distance;
   // The latency of this edge.
-  unsigned Latency;
+  int Latency;
 
 public:
-  SIRDep(enum Types T, unsigned Latency, int Distance)
+  SIRDep(enum Types T, int Latency, int Distance)
     : EdgeType(T), Latency(Latency), Distance(Distance) {}
 
-  static SIRDep CreateValDep(unsigned Latency) {
-    return SIRDep(ValDep, Latency, 0);
+  static SIRDep CreateValDep(int Latency, int Distance = 0) {
+    return SIRDep(ValDep, Latency, Distance);
   }
 
-  static SIRDep CreateMemDep(unsigned Latency, int Distance) {
+  static SIRDep CreateMemDep(int Latency, int Distance = 0) {
     return SIRDep(MemDep, Latency, Distance);
   }
 
-  static SIRDep CreateCtrlDep(unsigned Latency) {
-    return SIRDep(CtrlDep, Latency, 0);
+  static SIRDep CreateCtrlDep(int Latency, int Distance = 0) {
+    return SIRDep(CtrlDep, Latency, Distance);
+  }
+  static SIRDep CreateSyncDep() {
+    return SIRDep(SyncDep, -1, 0);
   }
 
   Types getEdgeType() const { return Types(EdgeType); }
@@ -166,7 +172,7 @@ public:
     SIRDep::Types getEdgeType(unsigned II = 0) const {
       return getEdge(II).getEdgeType();
     }
-    inline float getLatency(unsigned II = 0) const {
+    inline int getLatency(unsigned II = 0) const {
       return getEdge(II).getLatency(II);
     }
     bool isLoopCarried(unsigned II = 0) const {
@@ -190,9 +196,10 @@ public:
 private:
   // Remember the dependencies of the scheduling unit.
   DepSet Deps;
-
-  Instruction *CombOp;
-  SIRSeqOp *SeqOp;
+  // The SeqOps that contained in the SUnit are SeqOps
+  // that should be scheduled together. For example,
+  // the SeqOps created for MemInst.
+  SmallVector<SIRSeqOp *, 4> SeqOps;
 
   BasicBlock *BB;
 
@@ -216,10 +223,11 @@ public:
   SIRSchedUnit();
   // The constructor for Virtual SUnit.
   SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB);
+  // The constructor for SeqOps SUnit.
+  SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB,
+               SmallVector<SIRSeqOp *, 4>  SeqOps);
   // The constructor for SeqOp SUnit.
   SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, SIRSeqOp *SeqOp);
-  // The constructor for CombOp SUnit.
-  SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, Instruction *CombOp);
 
   unsigned getII() const { return II; }
   void setII(unsigned newII) { this->II = std::max(this->II, II); }
@@ -228,9 +236,6 @@ public:
   unsigned getSchedule() const { return Schedule; }
   bool scheduleTo(unsigned NewSchedule) {
     assert(NewSchedule >= 0 && "Unexpected NULL schedule!");
-
-    if (NewSchedule == 0)
-      assert(!getParentBB() && !isExit() && "Only SUnits in Slot0r can scheduled to 0!");
 
     // Set the IsScheduled.
     IsScheduled = true;
@@ -253,10 +258,13 @@ public:
   bool isPHI() const { return T == PHI; }
   bool isSlotTransition() const { return T == SlotTransition; }
   bool isSeqSU() const { return T == SeqSU; }
-  bool isCombSU() const { return T == CombSU; }
 
-  SIRSeqOp *getSeqOp() const { return SeqOp; }
-  Instruction *getCombOp() const { return CombOp; }
+  SIRSeqOp *getSeqOp() const {
+    assert(SeqOps.size() == 1 && "Use the wrong function!");
+
+    return SeqOps.front();
+  }
+  ArrayRef<SIRSeqOp *> getSeqOps() const { return SeqOps; }
 
   // If the SUnit is PHI, then the BB we hold in SUnit is its IncomingBB.
   // If the SUnit is terminator, then the BB we hold in SUnit is its TargetBB.
@@ -315,7 +323,10 @@ public:
   }
 
   void addDep(SIRSchedUnit *Src, SIRDep NewEdge) {
-    //assert(Src != this && "Cannot add self-loop!");
+    // Only PHI node will have self-loop data dependency.
+    if (Src == this)
+      assert(Src->isPHI() && "Cannot add self-loop!");
+
     DepSet::iterator at = Deps.find(Src);
 
     // If there is no old Dep before, then just add a new one.
@@ -332,6 +343,8 @@ public:
     assert(getEdgeFrom(Src).getLatency() >= NewEdge.getLatency()
       && "Edge not inserted?");
   }
+
+  void replaceAllDepWith(SIRSchedUnit *NewSUnit);
 
   // Only the SUnit in Slot0r can have schedule of 0. So all others
   // scheduled SUnit should have a positive schedule number.
@@ -367,17 +380,25 @@ private:
   typedef iplist<SIRSchedUnit> SUList;
   SUList SUnits;
 
-  // Mapping between SIRSlot and SIRScheUnits.
+  // Mapping between SIRSeqOp and SIRSchedUnit.
+  typedef std::map<SIRSeqOp *, SIRSchedUnit *> SeqOp2SUMapTy;
+  SeqOp2SUMapTy SeqOp2SUMap;
+
+  // Mapping between SIRSlot and SIRSchedUnits.
   typedef std::map<SIRSlot *, SmallVector<SIRSchedUnit *, 4> >Slot2SUMapTy;
   Slot2SUMapTy Slot2SUMap;
 
-  // Mapping between LLVM IR and SIRScheUnits.
+  // Mapping between LLVM IR and SIRSchedUnits.
   typedef std::map<Value *, SmallVector<SIRSchedUnit *, 4> > IR2SUMapTy;
   IR2SUMapTy IR2SUMap;
 
+  // Mapping between Loop BB and Loop SUnit.
+  typedef std::map<BasicBlock *, SIRSchedUnit *> LoopBB2LoopSUMapTy;
+  LoopBB2LoopSUMapTy LoopBB2LoopSUMap;
+
   // Helper class to arrange the scheduling units according to their parent BB,
   // we will emit the schedule or build the linear order BB by BB.
-  std::map<BasicBlock *, std::vector<SIRSchedUnit *> > BBMap;
+  std::map<BasicBlock *, SmallVector<SIRSchedUnit *, 4> > BBMap;
 
 public:
   SIRSchedGraph(Function &F);
@@ -395,6 +416,10 @@ public:
     return BBMap.count(BB);
   }
 
+  bool hasSU(SIRSeqOp *SeqOp) const { return SeqOp2SUMap.count(SeqOp); }
+  SIRSchedUnit *lookupSU(SIRSeqOp *SeqOp) const;
+  bool indexSU2SeqOp(SIRSchedUnit *SU, SIRSeqOp *SeqOp);
+
   bool hasSU(SIRSlot *S) const { return Slot2SUMap.count(S); }
   ArrayRef<SIRSchedUnit *> lookupSUs(SIRSlot *S) const;
   bool indexSU2Slot(SIRSchedUnit *SU, SIRSlot *S);
@@ -403,7 +428,10 @@ public:
   ArrayRef<SIRSchedUnit *> lookupSUs(Value *V) const;
   bool indexSU2IR(SIRSchedUnit *SU, Value *V);
 
-  MutableArrayRef<SIRSchedUnit *> getSUsInBB(BasicBlock *BB);
+  bool hasLoopSU(BasicBlock *BB) const { return LoopBB2LoopSUMap.count(BB); }
+  SIRSchedUnit *getLoopSU(BasicBlock *BB);
+  bool indexLoopSU2LoopBB(SIRSchedUnit *SU, BasicBlock *BB);
+
   ArrayRef<SIRSchedUnit *> getSUsInBB(BasicBlock *BB) const;
 
   SIRSchedUnit *getEntrySU(BasicBlock *BB) const {
@@ -413,8 +441,9 @@ public:
   }
 
   SIRSchedUnit *createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T);
-  SIRSchedUnit *createSUnit(BasicBlock *ParentBB, Instruction *CombOp);
   SIRSchedUnit *createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T, SIRSeqOp *SeqOp);
+  SIRSchedUnit *createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T,
+                            SmallVector<SIRSeqOp *, 4> SeqOps);
 
   // Iterate over all scheduling units in the scheduling graph.
   typedef SUList::iterator iterator;
@@ -433,14 +462,18 @@ public:
   const_reverse_iterator rbegin() const { return SUnits.rbegin(); }
   const_reverse_iterator rend() const { return SUnits.rend(); }
 
-  typedef std::map<BasicBlock*, std::vector<SIRSchedUnit *> >::iterator bb_iterator;
+  typedef std::map<BasicBlock *, SmallVector<SIRSchedUnit *, 4> >::iterator bb_iterator;
   bb_iterator bb_begin() { return BBMap.begin(); }
   bb_iterator bb_end() { return BBMap.end(); }
 
-  typedef std::map<BasicBlock*, std::vector<SIRSchedUnit *> >::const_iterator
+  typedef std::map<BasicBlock *, SmallVector<SIRSchedUnit *, 4> >::const_iterator
     const_bb_iterator;
   const_bb_iterator bb_begin() const { return BBMap.begin(); }
   const_bb_iterator bb_end() const { return BBMap.end(); }
+
+  typedef LoopBB2LoopSUMapTy::const_iterator const_loopbb_iterator;
+  const_loopbb_iterator loopbb_begin() const { return LoopBB2LoopSUMap.begin(); }
+  const_loopbb_iterator loopbb_end() const { return LoopBB2LoopSUMap.end(); }
 
   unsigned size() const { return TotalSUs; }
 
@@ -448,6 +481,8 @@ public:
   void toposortCone(SIRSchedUnit *Root, std::set<SIRSchedUnit *> &Visited,
                     BasicBlock *BB);
   void topologicalSortSUs();
+
+  void replaceAllUseWith(SIRSchedUnit *OldSU, SIRSchedUnit *NewSU);
 
   // Reset the schedule of all the scheduling units in the graph.
   void resetSchedule();

@@ -556,7 +556,7 @@ public:
   SIRRegister *getSlotReg() const { return SlotReg; }
   Value *getGuardValue() const { return getSlotReg()->getLLVMValue(); }
 
-  void setStep(unsigned Step) { Step = Step; }
+  void setStep(unsigned S) { Step = S; }
 
   // If the SrcSlot already has this NextSlot as successor.
   bool hasNextSlot(SIRSlot *NextSlot);
@@ -714,6 +714,10 @@ public:
   typedef SeqOpList::iterator seqop_iterator;
   typedef SeqOpList::const_iterator const_seqop_iterator;
 
+  typedef std::map<Value *, SmallVector<SIRSeqOp *, 4> > MemInst2SeqOpsMapTy;
+  typedef MemInst2SeqOpsMapTy::iterator meminst2seqops_iterator;
+  typedef MemInst2SeqOpsMapTy::const_iterator const_meminst2seqops_iterator;
+
   typedef DenseMap<Value *, Value *> Val2SeqValMapTy;
   typedef Val2SeqValMapTy::iterator val2valseq_iterator;
   typedef Val2SeqValMapTy::const_iterator const_val2valseq_iterator;
@@ -739,6 +743,8 @@ private:
   SlotVector Slots;
   // The SeqOps in CtrlRgn of the module
   SeqOpList SeqOps;
+  // The map between MemInst and corresponding SeqOps in SIR
+  MemInst2SeqOpsMapTy MemInst2SeqOps;
   // The map between Value in LLVM IR and SeqVal in SIR
   Val2SeqValMapTy Val2SeqVal;
   // The map between SeqVal in SIR and Reg in SIR
@@ -840,6 +846,21 @@ public:
 
   void deleteUselessSeqOp(SIRSeqOp *SeqOp) {
     SeqOps.erase(SeqOp);
+  }
+
+  bool IndexMemInst2SeqOps(Value *MemInst, SmallVector<SIRSeqOp *, 4> MemSeqOps) {
+    assert(isa<LoadInst>(MemInst) || isa<StoreInst>(MemInst)
+           && "Unexpected Value Type!");
+
+    return MemInst2SeqOps.insert(std::make_pair(MemInst, MemSeqOps)).second;
+  }
+  ArrayRef<SIRSeqOp *> lookupMemSeqOps(Value *MemInst) const {
+    MemInst2SeqOpsMapTy::const_iterator at = MemInst2SeqOps.find(MemInst);
+
+    if (at == MemInst2SeqOps.end())
+      return ArrayRef<SIRSeqOp *>();
+
+    return at->second;
   }
 
   bool IndexVal2SeqVal(Value *Val, Value *SeqVal) {

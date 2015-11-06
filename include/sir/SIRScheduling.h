@@ -21,6 +21,7 @@
 #include "SIRPass.h"
 #include "SIRTimingAnalysis.h"
 #include "SIRSchedGraph.h"
+#include "SIRIMSScheduler.h"
 /*#include "SIRListScheduler.h"*/
 #include "SIRSDCScheduler.h"
 
@@ -48,6 +49,7 @@ private:
   AliasAnalysis *AA;
   DominatorTree *DT;
   DataLayout *TD;
+  SIRAllocation *SA;
 
   inline bool isCall(Instruction *Inst) const {
     CallInst *CI = dyn_cast<CallInst>(Inst);
@@ -116,6 +118,7 @@ private:
 
   ArrayRef<SIRSchedUnit *> getDataFlowSU(Value *V);
 
+  void buildSchedulingUnitsPack(BasicBlock *BB, SmallVector<SIRSeqOp *, 4> SeqOps);
   void buildSchedulingUnitsForSeqOp(SIRSlot *S);
 
   void finishBuildingSchedGraph();
@@ -155,7 +158,8 @@ public:
   unsigned getBitWidth(Value *U) { return D_Builder.getBitWidth(U); }
 
   void insertSlotBefore(SIRSlot *S, SIRSlot *DstS, SIRSlot::EdgeType T, Value *Cnd);
-  void emitSUsInBB(MutableArrayRef<SIRSchedUnit *> SUs);
+  void resetStepOfSlot(SIRSlot *S, unsigned Step);
+  void emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs);
   void emitSchedule();
 };
 }

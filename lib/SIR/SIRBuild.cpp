@@ -284,7 +284,10 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, Type *ValueTy,
                                                SIRRegister::SIRRegisterTypes T) {
   // For the General Register or PHI Register, we create a pseudo instruction and
   // this pseudo instruction will be inserted into the back of the BasicBlock.
-  Value *SeqVal = createRegAssignInst(ValueTy, ParentBB);
+  // If we are creating registers which have no ParentBB, then we insert it into
+  // the back of the module.
+  Value *InsertPosition = ParentBB ? ParentBB : SM->getPositionAtBackOfModule();
+  Value *SeqVal = createRegAssignInst(ValueTy, InsertPosition);
 
   assert(SeqVal && "Unexpected empty PseudoSeqInst!");
   assert(!SM->lookupSIRReg(SeqVal) && "Register already created before!");
@@ -389,12 +392,13 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
   // Get the slot.
   SIRSlot *Slot = SM->getLandingSlot(ParentBB);
 
-  // Initial a vector to collect all SeqOps we created to implement this Load/Store instruction,
-  // to be noted that, the collecting order matters!
+  // Initial a vector to collect all SeqOps we created to implement this Load/Store
+  // instruction, to be noted that, the collecting order matters!
   SmallVector<SIRSeqOp *, 4> MemSeqOps;
 
   /// Handle the enable pin.
-  SIRSeqOp *AssignToEn = assignToReg(Slot, createIntegerValue(1, 1), createIntegerValue(1, 1), Bank->getEnable());
+  SIRSeqOp *AssignToEn = assignToReg(Slot, createIntegerValue(1, 1),
+                                     createIntegerValue(1, 1), Bank->getEnable());
   MemSeqOps.push_back(AssignToEn);
 
   /// Handle the address pin.
@@ -403,10 +407,13 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
   // Mutate the type of the address to integer so that we can do match operation on it.
   assert(Addr->getType()->isPointerTy() && "Unexpected address type!");
 
-  Value *AddrVal = D_Builder.createPtrToIntInst(Addr, createIntegerType(getBitWidth(Addr)), &I, true);
-  AddrVal = D_Builder.createSBitExtractInst(AddrVal, Bank->getAddrWidth(), 0, RetTy, &I, true);
+  Value *AddrVal = D_Builder.createPtrToIntInst(Addr, createIntegerType(getBitWidth(Addr)),
+                                                &I, true);
+  AddrVal = D_Builder.createSBitExtractInst(AddrVal, Bank->getAddrWidth(),
+                                            0, RetTy, &I, true);
 
-  SIRSeqOp *AssignToAddr = assignToReg(Slot, createIntegerValue(1, 1), AddrVal, Bank->getAddr());
+  SIRSeqOp *AssignToAddr = assignToReg(Slot, createIntegerValue(1, 1),
+                                       AddrVal, Bank->getAddr());
   MemSeqOps.push_back(AssignToAddr);
 
   /// Handle the byte enable pin.
@@ -421,11 +428,13 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
     // Get the byte address part in address.
     unsigned ByteAddrPartWidth = Bank->getByteAddrWidth();
     Value *ByteAddr = D_Builder.createSBitExtractInst(AddrVal, ByteAddrPartWidth, 0,
-                                                      createIntegerType(ByteAddrPartWidth), &I, true);
+                                                      createIntegerType(ByteAddrPartWidth),
+                                                      &I, true);
     Value *ByteEn = D_Builder.createSShiftInst(ByteEnInit, ByteAddr, ByteEnInit->getType(),
                                                &I, Intrinsic::shang_shl, true);
 
-    SIRSeqOp *AssignToByteEn = assignToReg(Slot, createIntegerValue(1, 1), ByteEn, Bank->getByteEn());
+    SIRSeqOp *AssignToByteEn = assignToReg(Slot, createIntegerValue(1, 1),
+                                           ByteEn, Bank->getByteEn());
     MemSeqOps.push_back(AssignToByteEn);
   }
 
@@ -510,16 +519,14 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 
     SIRSeqOp *AssignToResult = assignToReg(Slot, createIntegerValue(1, 1), Result, ResultReg);
     MemSeqOps.push_back(AssignToResult);
+
+    // Advance to next slot so other operations will not conflicted with this memory
+    // transaction operation.
+    advanceToNextSlot(Slot);
   }
 
   // Index the MemInst to MemSeqOps
   SM->IndexMemInst2SeqOps(&I, MemSeqOps);
-
-  ArrayRef<SIRSeqOp *> SeqOps = SM->lookupMemSeqOps(&I);
-
-  // Advance to next slot so other operations will not conflicted with this memory
-  // transaction operation.
-  advanceToNextSlot(Slot);
 }
 
 SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) {
@@ -1226,6 +1233,8 @@ Value *SIRDatapathBuilder::createShangInstPattern(ArrayRef<Value *> Ops, Type *R
   Module *M = SM->getModule();
   Value *Func = Intrinsic::getDeclaration(M, FuncID, FuncTy);
 
+  // If the InsertPosition is a Instruction, then we insert the new-created instruction
+  // before the InsertPosition-Instruction.
   if (Instruction *InsertBefore = dyn_cast<Instruction>(InsertPosition)) {
     // The name of the instruction we created.
     std::string S = UsedAsArg ? Func->getName() : InsertPosition->getName();
@@ -1258,8 +1267,12 @@ Value *SIRDatapathBuilder::createShangInstPattern(ArrayRef<Value *> Ops, Type *R
     // IntegerTy as operands.
     return NewInst;
   }
+  // If the InsertPosition is a BasicBlock, then we insert the new-created instruction
+  // at the back of the InsertPosition-BasicBlock but before the TerminatorInst so that
+  // we will not mess up with the getTerminator() function of BasicBlock.
   else if (BasicBlock *InsertAtEnd = dyn_cast<BasicBlock>(InsertPosition)) {
-    Instruction *NewInst = CallInst::Create(Func, Ops, Func->getName(), InsertAtEnd);
+    Instruction *Terminator = InsertAtEnd->getTerminator();
+    Instruction *NewInst = CallInst::Create(Func, Ops, Func->getName(), Terminator);
 
     // Index all these data-path instructions.
     if (FuncID != Intrinsic::shang_reg_assign)
