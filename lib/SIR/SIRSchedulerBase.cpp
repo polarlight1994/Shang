@@ -13,7 +13,6 @@
 
 #include "sir/SIRSchedulerBase.h"
 
-#define DEBUG_TYPE "shang-sir-scheduler-base"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;

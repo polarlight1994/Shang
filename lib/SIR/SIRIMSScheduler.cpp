@@ -430,7 +430,7 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
     ReadyQueue.reheapify();
   }
 
-  if (!varifySchedule())
+  if (!verifySchedule())
     return Fail;
 
   emitSchedule();
@@ -531,6 +531,8 @@ void SIRIMSScheduler::rebuildSTM() {
                                       I->getCnd());
       // Increment here to avoid the unlink affects the iterator.
       ++I;
+      // Unlink the origin edge.
+      Pred->unlinkSucc(OriginEntrySlot);
       continue;
     }
 
@@ -576,8 +578,8 @@ void SIRIMSScheduler::rebuildSTM() {
 }
 
 void SIRIMSScheduler::generatePrologue() {
-  for (int i = 0; i < StageNum - 1; ++i) {
-    for (int j = 0; j < MII; ++j) {
+  for (unsigned i = 0; i < StageNum - 1; ++i) {
+    for (unsigned j = 0; j < MII; ++j) {
       // Create a new Slot for this step.
       SIRSlot *S = createSlotForPrologue(j);
 
@@ -595,7 +597,7 @@ void SIRIMSScheduler::generatePrologue() {
         if (SU->isBBEntry() || SU->isSlotTransition()) continue;
 
         ArrayRef<SIRSeqOp *> SeqOps = SU->getSeqOps();
-        for (int k = 0; k < SeqOps.size(); ++k) {
+        for (unsigned k = 0; k < SeqOps.size(); ++k) {
           SIRSeqOp *SeqOp = SeqOps[k];
 
           C_Builder.assignToReg(S, C_Builder.createIntegerValue(1, 1),
@@ -607,8 +609,8 @@ void SIRIMSScheduler::generatePrologue() {
 }
 
 void SIRIMSScheduler::generateEpilogue() {
-  for (int i = StageNum - 1; i > 0; --i) {
-    for (int j = 0; j < MII; ++j) {
+  for (unsigned i = StageNum - 1; i > 0; --i) {
+    for (unsigned j = 0; j < MII; ++j) {
       // Create a new Slot for this step.
       SIRSlot *S = createSlotForEpilogue(j);
 
@@ -626,7 +628,7 @@ void SIRIMSScheduler::generateEpilogue() {
         if (SU->isBBEntry() || SU->isSlotTransition()) continue;
 
         ArrayRef<SIRSeqOp *> SeqOps = SU->getSeqOps();
-        for (int k = 0; k < SeqOps.size(); ++k) {
+        for (unsigned k = 0; k < SeqOps.size(); ++k) {
           SIRSeqOp *SeqOp = SeqOps[k];
 
           C_Builder.assignToReg(S, C_Builder.createIntegerValue(1, 1),
@@ -656,7 +658,7 @@ void SIRIMSScheduler::emitSUnitsToSlot() {
       if (SU->isBBEntry() || SU->isSlotTransition()) continue;
 
       ArrayRef<SIRSeqOp *> SeqOps = SU->getSeqOps();
-      for (int i = 0; i < SeqOps.size(); ++i)
+      for (unsigned i = 0; i < SeqOps.size(); ++i)
         SeqOps[i]->setSlot(S);
     }
   }

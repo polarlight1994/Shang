@@ -115,7 +115,6 @@ bool SIRLowerIntrinsic::lowerMemIntrinsic(Module *M, DataLayout *TD, MemIntrinsi
   FuncTy.push_back(Length->getType());
 
   std::string FN;
-  Intrinsic::ID ID;
   switch(MI->getIntrinsicID()) {
   case Intrinsic::memcpy:
     FN = "sir_memcpy_" + utostr_32(SizeInBytes);

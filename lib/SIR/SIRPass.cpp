@@ -40,7 +40,6 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Support/Debug.h"
 
-#define DEBUG_TYPE "shang-ir-pass"
 
 using namespace llvm;
 

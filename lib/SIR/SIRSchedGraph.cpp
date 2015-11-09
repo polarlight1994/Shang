@@ -413,7 +413,7 @@ void SIRSchedGraph::replaceAllUseWith(SIRSchedUnit *OldSU, SIRSchedUnit *NewSU) 
   typedef SmallVector<SIRSchedUnit *, 4>::iterator iterator;
 
   SmallVector<SIRSchedUnit *, 4> &SlotSUs = Slot2SUMap[S];
-  for (int i = 0; i < SlotSUs.size(); ++i) {
+  for (unsigned i = 0; i < SlotSUs.size(); ++i) {
     if (OldSU == SlotSUs[i]) {
       SlotSUs[i] = NewSU;
       break;
@@ -421,7 +421,7 @@ void SIRSchedGraph::replaceAllUseWith(SIRSchedUnit *OldSU, SIRSchedUnit *NewSU) 
   }
 
   SmallVector<SIRSchedUnit *, 4> &ValueSUs = IR2SUMap[V];
-  for (int i = 0; i < ValueSUs.size(); ++i) {
+  for (unsigned i = 0; i < ValueSUs.size(); ++i) {
     if (OldSU == ValueSUs[i]) {
       ValueSUs[i] = NewSU;
       break;
@@ -430,13 +430,13 @@ void SIRSchedGraph::replaceAllUseWith(SIRSchedUnit *OldSU, SIRSchedUnit *NewSU) 
 
   SmallVector<SIRSchedUnit *, 4> &BBSUs = BBMap[BB];
   bool AlreadyExist = false;;
-  for (int i = 0; i < BBSUs.size(); ++i) {
+  for (unsigned i = 0; i < BBSUs.size(); ++i) {
     if (NewSU == BBSUs[i]) {
       AlreadyExist = true;
       break;
     }
   }
-  for (int i = 0; i < BBSUs.size(); ++i) {
+  for (unsigned i = 0; i < BBSUs.size(); ++i) {
     if (OldSU == BBSUs[i]) {
       if (!AlreadyExist)
         BBSUs[i] = NewSU;

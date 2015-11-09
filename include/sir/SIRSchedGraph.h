@@ -99,8 +99,6 @@ public:
     SlotTransition,
     // Normal node for SeqOp
     SeqSU,
-    // Normal node for CombOp
-    CombSU,
     // Invalid node for the ilist sentinel
     Invalid
   };

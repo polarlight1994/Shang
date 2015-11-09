@@ -20,7 +20,6 @@
 #include "vast/LuaI.h"
 
 #include "llvm/Support/MathExtras.h"
-#define DEBUG_TYPE "shang-sir-timing-estimator"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
@@ -828,7 +827,7 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
   Srcs.push_back(SrcVal);
   Srcs.push_back(Guard);
 
-  for (int i = 0; i < Srcs.size(); i++) {
+  for (unsigned i = 0; i < Srcs.size(); i++) {
     Value *V = Srcs[i];
 
     if (isLeafValue(SM, V)) {

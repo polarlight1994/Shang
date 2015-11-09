@@ -22,7 +22,6 @@
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/Support/CFG.h"
 
-#define DEBUG_TYPE "sir-list-scheduler"
 #include "llvm/Support/Debug.h"
 
 namespace llvm {
