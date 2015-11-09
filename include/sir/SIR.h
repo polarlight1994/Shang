@@ -130,7 +130,7 @@ static void printConstantIntValue(raw_ostream &OS, ConstantInt *CI) {
 
 namespace llvm {
 // Represent the registers in the Verilog.
-class SIRRegister {
+class SIRRegister : public ilist_node<SIRRegister> {
 public:
   enum SIRRegisterTypes {
     General,            // Common registers which hold data for data-path.
@@ -168,10 +168,11 @@ private:
   // RegGuard = Guard1 | Guard2...
   Value *RegGuard;
 
-  const std::string Name;
+  std::string Name;
   unsigned BitWidth;
 
 public:
+  // Construction for normal node & ilist node.
   SIRRegister(std::string Name = "", unsigned BitWidth = 0,
               uint64_t InitVal = 0, BasicBlock *ParentBB = NULL,
               SIRRegisterTypes T = SIRRegister::General,
@@ -199,6 +200,8 @@ public:
 
   void setLLVMValue(Instruction *I) { LLVMValue = I; }
   Value *getLLVMValue() const { return LLVMValue; }
+
+  void setRegName(std::string N) { Name = N; }
 
   void setParentBB(BasicBlock *BB) { ParentBB = BB; }
   BasicBlock *getParentBB() const { return ParentBB; }
@@ -483,39 +486,39 @@ class SIRSeqOp;
 class SIRSlotTransition;
 
 // Represent the state in the state-transition graph.
-class SIRSlot {
+class SIRSlot : public ilist_node<SIRSlot> {
 public:
-  // The types of the edges in the STG, the number representing the timing distance
-  // of the edge, only the successor edge represents a real state transition
-  // which have a timing distance of 1.
-  enum EdgeType {
+// The types of the edges in the STG, the number representing the timing distance
+// of the edge, only the successor edge represents a real state transition
+// which have a timing distance of 1.
+enum EdgeType {
     Sucessor = 0
-  };
+};
 
   // The pointer to successor which is also encoded with the distance and the condition.
-  struct EdgePtr {
-  private:
-    SIRSlot *S;
-    EdgeType Ty;
-    Value *Cnd;
+struct EdgePtr {
+private:
+  SIRSlot *S;
+  EdgeType Ty;
+  Value *Cnd;
 
-    // Hide the function getInt from PointerIntPair.
-    void getInt() const { }
+  // Hide the function getInt from PointerIntPair.
+  void getInt() const { }
 
-  public:
-    EdgePtr(SIRSlot *S, EdgeType Ty, Value *Cnd)
-      : S(S), Ty(Ty), Cnd(Cnd) {}
+public:
+  EdgePtr(SIRSlot *S, EdgeType Ty, Value *Cnd)
+    : S(S), Ty(Ty), Cnd(Cnd) {}
 
-    operator SIRSlot *() const { return S; }
-    SIRSlot *operator->() const { return S; }
+  operator SIRSlot *() const { return S; }
+  SIRSlot *operator->() const { return S; }
 
-    SIRSlot *getSlot() const { return S; }
-    EdgeType getType() const { return Ty; }
-    unsigned getDistance() const {
-      return Ty == Sucessor ? 1 : 0;
-    }
-    Value *getCnd() const { return Cnd; }
-  };
+  SIRSlot *getSlot() const { return S; }
+  EdgeType getType() const { return Ty; }
+  unsigned getDistance() const {
+    return Ty == Sucessor ? 1 : 0;
+  }
+  Value *getCnd() const { return Cnd; }
+};
 
   typedef SmallVector<EdgePtr, 4> SuccVecTy;
   typedef SuccVecTy::iterator succ_iterator;
@@ -545,10 +548,12 @@ private:
   unsigned Step;
 
 public:
+  // Construction for ilist node.
+  SIRSlot(): SlotNum(0), ParentBB(0), SlotReg(0), Step(0) {}
+  // Construction for normal Slot.
   SIRSlot(unsigned SlotNum, BasicBlock *ParentBB,
           Value *SlotGuard, SIRRegister *Reg, unsigned Step)
     : SlotNum(SlotNum), ParentBB(ParentBB), SlotReg(Reg), Step(Step) {}
-  ~SIRSlot();
 
   unsigned getSlotNum() const { return SlotNum; }
   unsigned getStepInLocalBB() const { return Step; }
@@ -588,6 +593,9 @@ public:
   const_pred_iterator pred_begin() const { return PredSlots.begin(); }
   const_pred_iterator pred_end() const { return PredSlots.end(); }
   unsigned pred_size() const { return PredSlots.size(); }
+
+  // Reset the SlotNum and Name.
+  void resetNum(unsigned Num);
 
   // Functions for debug
   void print(raw_ostream &OS) const;
@@ -694,9 +702,9 @@ public:
   typedef SIRPortVector::iterator port_iterator;
   typedef SIRPortVector::const_iterator const_port_iterator;
 
-  typedef SmallVector<SIRRegister *, 8> RegisterVector;
-  typedef RegisterVector::iterator register_iterator;
-  typedef RegisterVector::const_iterator const_register_iterator;
+  typedef ilist<SIRRegister> RegisterList;
+  typedef RegisterList::iterator register_iterator;
+  typedef RegisterList::const_iterator const_register_iterator;
 
   typedef SmallVector<SIRSubModuleBase *, 8> SubModuleBaseVector;
   typedef SubModuleBaseVector::iterator submodulebase_iterator;
@@ -706,9 +714,9 @@ public:
   typedef DataPathInstVector::iterator datapathinst_iterator;
   typedef DataPathInstVector::const_iterator const_datapathinst_iterator;
 
-  typedef SmallVector<SIRSlot *, 8> SlotVector;
-  typedef SlotVector::iterator slot_iterator;
-  typedef SlotVector::const_iterator const_slot_iterator;
+  typedef ilist<SIRSlot> SlotList;
+  typedef SlotList::iterator slot_iterator;
+  typedef SlotList::const_iterator const_slot_iterator;
 
   typedef ilist<SIRSeqOp> SeqOpList;
   typedef SeqOpList::iterator seqop_iterator;
@@ -738,13 +746,13 @@ private:
   // Input/Output ports of the module
   SIRPortVector Ports;
   // Registers in the module
-  RegisterVector Registers;
+  RegisterList Registers;
   // SubModules in the module
   SubModuleBaseVector SubModuleBases;
   // The DataPathInsts in the module
   DataPathInstVector DataPathInsts;
   // The Slots in CtrlRgn of the module
-  SlotVector Slots;
+  SlotList Slots;
   // The SeqOps in CtrlRgn of the module
   SeqOpList SeqOps;
   // The map between MemInst and corresponding SeqOps in SIR
@@ -826,9 +834,6 @@ public:
   const_seqop_iterator const_seqop_end() { return SeqOps.end(); }
 
   unsigned getSlotsSize() const { return Slots.size(); }
-  SlotVector &getSlotList() { return Slots; }
-  SIRSlot *getStartSlot() const { return Slots.front(); }
-
   unsigned getPortsSize() const { return Ports.size(); }
 
   void IndexSlot(SIRSlot *Slot) {
@@ -850,6 +855,10 @@ public:
     DataPathInsts.push_back(DataPathInst);
   }
 
+  void deleteUselessSlot(SIRSlot *S) {
+    Registers.erase(S->getSlotReg());
+    Slots.erase(S);
+  }
   void deleteUselessSeqOp(SIRSeqOp *SeqOp) {
     SeqOps.erase(SeqOp);
   }

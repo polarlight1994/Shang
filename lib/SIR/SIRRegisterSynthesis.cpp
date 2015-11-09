@@ -85,7 +85,7 @@ bool SIRRegisterSynthesisForAnnotation::runOnSIR(SIR &SM) {
 
   typedef SIR::register_iterator reg_iterator;
   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
-    SIRRegister *Reg = *I;
+    SIRRegister *Reg = I;
 
     // Insert the implement of register just in front of the terminator instruction
     // at back of the module to avoid being used before declaration.
@@ -197,7 +197,7 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
   // condition with the SlotGuard, so drop it first.
   typedef SIR::register_iterator reg_iterator;
   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
-    SIRRegister *Reg = *I;
+    SIRRegister *Reg = I;
     Reg->dropMux();
   }
 
@@ -230,7 +230,7 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
   }
 
   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
-    SIRRegister *Reg = *I;
+    SIRRegister *Reg = I;
 
     // Insert the implement of register at the back of BB or the back of Module
     // if the Reg belong to no BB.

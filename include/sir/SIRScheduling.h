@@ -145,22 +145,18 @@ private:
   SIRSchedGraph &G;
   SIRDatapathBuilder D_Builder;
   SIRCtrlRgnBuilder C_Builder;
-  SmallVector<SIRSlot *, 8> OldSlots;
 
 public:
   SIRScheduleEmitter(DataLayout &TD, SIR *SM, SIRSchedGraph &G)
     : TD(TD), SM(SM), G(G), D_Builder(SM, TD), C_Builder(SM, TD) {};
-  ~SIRScheduleEmitter() {
-    // Clear up the SIRSeqOp in the old slots.
-    OldSlots.clear();
-  }
+  ~SIRScheduleEmitter() {}
 
   unsigned getBitWidth(Value *U) { return D_Builder.getBitWidth(U); }
 
-  void insertSlotBefore(SIRSlot *S, SIRSlot *DstS, SIRSlot::EdgeType T, Value *Cnd);
-  void resetStepOfSlot(SIRSlot *S, unsigned Step);
   void emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs);
   void emitSchedule();
+
+  void gc();
 };
 }
 

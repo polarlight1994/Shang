@@ -42,7 +42,6 @@
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
 
-#define DEBUG_TYPE "sir-rtl-codegen"
 
 using namespace llvm;
 // To use the LUA in VAST
@@ -729,16 +728,16 @@ void SIRControlPathPrinter::printVirtualMemoryBank(SIRMemoryBank *SMB) {
 }
 
 void SIRControlPathPrinter::generateCodeForRegisters() {
-  typedef SIR::const_register_iterator iterator;
-  for (iterator I = SM->const_registers_begin(), E = SM->const_registers_end();
+  typedef SIR::register_iterator iterator;
+  for (iterator I = SM->registers_begin(), E = SM->registers_end();
        I != E; ++I) {
-    SIRRegister *Reg = *I;
+    SIRRegister *Reg = I;
 
     // Ignore the registers created for FUnits like memory bank, since
     // they will be printed in Function generateCodeForMemoryBank.
     if (Reg->isFUInOut()) continue;
 
-    printRegister(*I, Reg->isSlot());
+    printRegister(Reg, Reg->isSlot());
   }
 }
 
@@ -763,13 +762,9 @@ void SIRControlPathPrinter::generateCodeForMemoryBank() {
 void SIRDatapathPrinter::printSimpleOp(ArrayRef<Value *> Ops, const char *Opc) {
   unsigned BitWidth = TD.getTypeSizeInBits(Ops[0]->getType());
 
-  for (int i = 0; i < Ops.size(); i++) {
-    if (isa<UndefValue>(Ops[i]))
-      int i = 1;
-
+  for (unsigned i = 0; i < Ops.size(); i++)
     assert(BitWidth == TD.getTypeSizeInBits(Ops[i]->getType())
            && "The BitWidth not match!");
-  }
 
   printSimpleOpImpl(OS, Ops, Opc, BitWidth);
 }
@@ -1155,10 +1150,10 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
   Out << ");\n\n\n";
 
   // Print code for register declaration.
-  typedef SIR::const_register_iterator reg_iterator;
-  for (reg_iterator I = SM.const_registers_begin(), E = SM.const_registers_end();
+  typedef SIR::register_iterator reg_iterator;
+  for (reg_iterator I = SM.registers_begin(), E = SM.registers_end();
        I != E; ++I) {
-    SIRRegister *Reg = *I;
+    SIRRegister *Reg = I;
 
     // Do not need to declaration registers for the output and FUInOut,
     // since we have do it in MemoryBank declaration part.

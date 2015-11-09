@@ -836,9 +836,11 @@ void SIRCtrlRgnBuilder::visitSwitchInst(SwitchInst &I) {
 void SIRCtrlRgnBuilder::visitReturnInst(ReturnInst &I) {
   // Get the latest slot of CurBB.
   SIRSlot *CurSlot = SM->getLatestSlot(I.getParent());
+  // Get the start slot of SIR.
+  SIRSlot *StartSlot = SM->slot_begin();
 
   // Jump back to the start slot on return.
-  createStateTransition(CurSlot, SM->getStartSlot(), createIntegerValue(1, 1));
+  createStateTransition(CurSlot, StartSlot, createIntegerValue(1, 1));
 
   if (I.getNumOperands()) {
     SIRRegister *Reg = cast<SIROutPort>(SM->getRetPort())->getRegister();
@@ -1423,7 +1425,7 @@ Value *SIRDatapathBuilder::createSBitCatInst(ArrayRef<Value *> Ops, Type *RetTy,
     Value *TempSBitCatInst = createSBitCatInst(Ops[0], Ops[1],
                                                createIntegerType(TempSBitCatBitWidth),
                                                InsertPosition, true);
-    for (int i = 0; i < Ops.size() - 3; i++) {
+    for (unsigned i = 0; i < Ops.size() - 3; i++) {
       TempSBitCatBitWidth = TempSBitCatBitWidth + getBitWidth(Ops[i + 2]);
       TempSBitCatInst = createSBitCatInst(TempSBitCatInst, Ops[i + 2],
                                           createIntegerType(TempSBitCatBitWidth),
@@ -1890,9 +1892,8 @@ Value *SIRDatapathBuilder::createSShiftInst(Value *LHS, Value *RHS, Type *RetTy,
 
 Value *SIRDatapathBuilder::createSAndInst(ArrayRef<Value *> Ops, Type *RetTy,
                                           Value *InsertPosition, bool UsedAsArg) {
-  for (int i = 0; i < Ops.size(); i++) {
+  for (unsigned i = 0; i < Ops.size(); i++)
     assert(Ops[0]->getType() == RetTy && "RetTy not matches!");
-  }
 
   // Handle the trivial case trivially.
   if (Ops.size() == 1) {
@@ -1978,7 +1979,7 @@ Value *SIRDatapathBuilder::createSAndInst(Value *LHS, Value *RHS, Type *RetTy,
 
 Value *SIRDatapathBuilder::createSOrInst(ArrayRef<Value *> Ops, Type *RetTy,
                                          Value *InsertPosition, bool UsedAsArg) {
-  for (int i = 0; i < Ops.size(); i++)
+  for (unsigned i = 0; i < Ops.size(); i++)
     assert(Ops[i]->getType() == RetTy && "RetTy not matches!");
 
   // Handle the trivial case trivially.
@@ -1990,7 +1991,7 @@ Value *SIRDatapathBuilder::createSOrInst(ArrayRef<Value *> Ops, Type *RetTy,
   // If there are more than two operands, transform it into mutil-SOrInst.
   if (Ops.size() > 2) {
     Value *TempSOrInst = createSOrInst(Ops[0], Ops[1], RetTy, InsertPosition, true);
-    for (int i = 0; i < Ops.size() - 3; i++) {
+    for (unsigned i = 0; i < Ops.size() - 3; i++) {
       TempSOrInst = createSOrInst(TempSOrInst, Ops[i + 2], RetTy, InsertPosition, true);
     }
 
@@ -2074,7 +2075,7 @@ Value *SIRDatapathBuilder::createSXorInst(ArrayRef<Value *> Ops, Type *RetTy,
                                           Value *InsertPosition, bool UsedAsArg) {
   assert (Ops.size() == 2 && "There should be more than one operand!!");
 
-  for (int i = 0; i < Ops.size(); i++)
+  for (unsigned i = 0; i < Ops.size(); i++)
     assert(Ops[i]->getType() == RetTy && "RetTy not matches!");
 
   // Disable the AIG transition for debug convenient.

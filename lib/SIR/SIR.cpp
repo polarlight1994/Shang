@@ -292,6 +292,14 @@ void SIRSlot::unlinkSuccs() {
   NextSlots.clear();
 }
 
+void SIRSlot::resetNum(unsigned Num) {
+  // Reset the SlotNum;
+  SlotNum = Num;
+
+  // Also reset the name of SlotReg.
+  SlotReg->setRegName("Slot" + utostr_32(Num) + "r");
+}
+
 void SIRSlot::print(raw_ostream &OS) const {
   OS << "Slot #" << SlotNum << " Scheduled to " << Step
      << " in local BB Guarding by "
@@ -399,8 +407,8 @@ void SIR::dumpBB2Slot(raw_ostream &OS) {
 void SIR::dumpReg2Slot(raw_ostream &OS) {
   OS << "\n";
 
-  for (const_register_iterator I = registers_begin(), E = registers_end(); I != E; I++) {
-    SIRRegister *Reg = *I;
+  for (register_iterator I = registers_begin(), E = registers_end(); I != E; I++) {
+    SIRRegister *Reg = I;
 
     // Get the corresponding slot.
     SIRSlot *Slot = lookupSIRSlot(Reg);
