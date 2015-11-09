@@ -320,7 +320,7 @@ bool SIRIMSScheduler::schedulePHINodes() {
   return true;
 }
 
-bool SIRIMSScheduler::varifySchedule() {
+bool SIRIMSScheduler::verifySchedule() {
   for (iterator I = begin(), E = end(); I != E; ++I) {
     SIRSchedUnit *SU = *I;
 
@@ -572,7 +572,7 @@ void SIRIMSScheduler::rebuildSTM() {
     OriginExitSlot->unlinkSucc(Succ);
   }
 
-  SM->IndexBB2Slots(LoopBB, PrologueEntrySlot, SteadyStateExitSlot);
+  SM->IndexBB2Slots(LoopBB, PrologueEntrySlot, EpilogueExitSlot);
 }
 
 void SIRIMSScheduler::generatePrologue() {

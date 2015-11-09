@@ -153,7 +153,7 @@ public:
   void generatePrologue();
   void generateEpilogue();
 
-  bool varifySchedule();
+  bool verifySchedule();
 
   void emitSchedule();
 };
