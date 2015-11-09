@@ -132,9 +132,9 @@ bool SIRIMSScheduler::buildASAPStep() {
 
       // We need to re-calculate the ASAP steps if the sink
       // of the back-edges need to be update.
-      typedef SIRSchedUnit::const_use_iterator use_iterator;
+      typedef SIRSchedUnit::use_iterator use_iterator;
       for (use_iterator UI = U->use_begin(), UE = U->use_end(); UI != UE; ++UI) {
-        const SIRSchedUnit *Use = *UI;
+        SIRSchedUnit *Use = *UI;
         // Use this pointer to make sure we call the right version.
         NeedToReCalc |= (Use->getIdx() < U->getIdx())
           && (this->calculateASAP(Use) != getASAPStep(Use));
@@ -186,9 +186,9 @@ bool SIRIMSScheduler::buildALAPStep() {
 
       // We need to re-calculate the ALAP steps if the source
       // of the edges need to be update.
-      typedef SIRSchedUnit::const_dep_iterator dep_iterator;
+      typedef SIRSchedUnit::dep_iterator dep_iterator;
       for (dep_iterator DI = U->dep_begin(), DE = U->dep_end(); DI != DE; ++DI) {
-        const SIRSchedUnit *Dep = *DI;
+        SIRSchedUnit *Dep = *DI;
         NeedToReCalc |= (U->getIdx() < Dep->getIdx())
           && (calculateALAP(Dep) != getALAPStep(Dep));
       }
