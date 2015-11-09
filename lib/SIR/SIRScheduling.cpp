@@ -604,9 +604,10 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   }
 
   // Inherit the Prevs of the origin EntrySlot.
+  SmallVector<SIRSlot *, 4> UnlinkPreds;
   typedef SIRSlot::pred_iterator pred_iterator;
   for (pred_iterator I = EntrySlot->pred_begin(), E = EntrySlot->pred_end();
-       I != E;) {
+       I != E; ++I) {
     SIRSlot *Pred = I->getSlot();
 
     // The edge is coming from current BB that means this is the loop edge.
@@ -617,20 +618,19 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
       // We should inherit the condition of this loop edge.
       C_Builder.createStateTransition(NewSlots.back(), NewSlots.front(),
                                       I->getCnd());
-      // Increment here to avoid the unlink affects the iterator.
-      ++I;
-      // Unlink the origin edge.
-      Pred->unlinkSucc(EntrySlot);
+      // Collect the Preds should be unlink.
+      UnlinkPreds.push_back(Pred);
       continue;
     }
 
     // Link the edge from the Pred to NewEntrySlot.
     C_Builder.createStateTransition(Pred, NewSlots.front(), I->getCnd());
-    // Increment here to avoid the unlink affects the iterator.
-    ++I;
-    // Unlink the origin edge.
-    Pred->unlinkSucc(EntrySlot);
+    // Collect the Preds should be unlink.
+    UnlinkPreds.push_back(Pred);
   }
+  // Unlink the origin edge.
+  for (unsigned i = 0; i < UnlinkPreds.size(); ++i)
+    UnlinkPreds[i]->unlinkSucc(EntrySlot);
 
   // Create the Slot Transition inside the New Slots.
   for (unsigned i = 0; i < NewSlots.size() - 1; ++i) {
@@ -643,27 +643,26 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   }
 
   // Inherit the Succs of the origin ExitSlot.
+  SmallVector<SIRSlot *, 4> UnlinkSuccs;
   typedef SIRSlot::succ_iterator succ_iterator;
   for (succ_iterator I = ExitSlot->succ_begin(), E = ExitSlot->succ_end();
-       I != E;) {
+       I != E; ++I) {
     SIRSlot *Succ = I->getSlot();
 
     // Ignore the slot transition inside this Loop BB since this will only
     // happen when we transition from ExitSlot to EntrySlot, which we already
     // handled in previous step.
-    if (Succ->getParent() == BB) {
-      // Increment here to avoid the unlink affects the iterator.
-      ++I;
+    if (Succ->getParent() == BB)
       continue;
-    }
 
     // Link the edge from the NewExitSlot to Succ.
     C_Builder.createStateTransition(NewSlots.back(), Succ, I->getCnd());
-    // Increment here to avoid the unlink affects the iterator.
-    ++I;
-    // Unlink the origin edge.
-    ExitSlot->unlinkSucc(Succ);
+    // Collect the Succs should be unlink.
+    UnlinkSuccs.push_back(Succ);
   }
+  // Unlink the origin edge.
+  for (unsigned i = 0; i < UnlinkSuccs.size(); ++i)
+    ExitSlot->unlinkSucc(UnlinkSuccs[i]);
 }
 
 void SIRScheduleEmitter::emitSchedule() {

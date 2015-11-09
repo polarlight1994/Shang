@@ -518,9 +518,10 @@ void SIRIMSScheduler::rebuildSTM() {
 
   // Create the State Transition from Previous BB to the Prologue of Loop BB by
   // inherit the processors of origin EntrySlot.
+  SmallVector<SIRSlot *, 4> UnlinkPreds;
   typedef SIRSlot::pred_iterator pred_iterator;
   for (pred_iterator I = OriginEntrySlot->pred_begin(), E = OriginEntrySlot->pred_end();
-       I != E;) {
+       I != E; ++I) {
     SIRSlot *Pred = I->getSlot();
 
     // The edge is coming from current BB that means this is the loop edge.
@@ -529,20 +530,19 @@ void SIRIMSScheduler::rebuildSTM() {
       // We should inherit the condition of this loop edge.
       C_Builder.createStateTransition(SteadyStateExitSlot, SteadyStateEntrySlot,
                                       I->getCnd());
-      // Increment here to avoid the unlink affects the iterator.
-      ++I;
-      // Unlink the origin edge.
-      Pred->unlinkSucc(OriginEntrySlot);
+      // Collect the Preds should be unlink.
+      UnlinkPreds.push_back(Pred);
       continue;
     }
 
     // Link the edge from the Pred to PrologueEntrySlot.
     C_Builder.createStateTransition(Pred, PrologueEntrySlot, I->getCnd());
-    // Increment here to avoid the unlink affects the iterator.
-    ++I;
-    // Unlink the origin edge.
-    Pred->unlinkSucc(OriginEntrySlot);
+    // Collect the Preds should be unlink.
+    UnlinkPreds.push_back(Pred);
   }
+  // Unlink the origin edge.
+  for (unsigned i = 0; i < UnlinkPreds.size(); ++i)
+    UnlinkPreds[i]->unlinkSucc(OriginEntrySlot);
 
   // Create the State Transition from the Prologue to Steady State.
   C_Builder.createStateTransition(PrologueExitSlot, SteadyStateEntrySlot,
@@ -550,29 +550,28 @@ void SIRIMSScheduler::rebuildSTM() {
 
   // Create the State Transition from the Steady State to Epilogue of Loop BB by
   // inherit the successors of origin ExitSlot.
+  SmallVector<SIRSlot *, 4> UnlinkSuccs;
   typedef SIRSlot::succ_iterator succ_iterator;
   for (succ_iterator I = OriginExitSlot->succ_begin(), E = OriginExitSlot->succ_end();
-       I != E;) {
+       I != E; ++I) {
     SIRSlot *Succ = I->getSlot();
 
     // Ignore the slot transition inside this Loop BB since this will only
     // happen when we transition from ExitSlot to EntrySlot, which we already
     // handled in previous step.
-    if (Succ->getParent() == LoopBB) {
-      // Increment here to avoid the unlink affects the iterator.
-      ++I;
+    if (Succ->getParent() == LoopBB)
       continue;
-    }
 
     // Link the edge from the SteadyStateExitSlot to EpilogueEntrySlot.
     C_Builder.createStateTransition(SteadyStateExitSlot, EpilogueEntrySlot, I->getCnd());
     // Also link the edge from the EpilogueExitSLot to Succ.
     C_Builder.createStateTransition(EpilogueExitSlot, Succ, I->getCnd());
-    // Increment here to avoid the unlink affects the iterator.
-    ++I;
-    // Unlink the origin edge.
-    OriginExitSlot->unlinkSucc(Succ);
+    // Collect the Succs should be unlink.
+    UnlinkSuccs.push_back(Succ);
   }
+  // Unlink the origin edge.
+  for (unsigned i = 0; i < UnlinkSuccs.size(); ++i)
+    OriginExitSlot->unlinkSucc(UnlinkSuccs[i]);
 
   SM->IndexBB2Slots(LoopBB, PrologueEntrySlot, EpilogueExitSlot);
 }
