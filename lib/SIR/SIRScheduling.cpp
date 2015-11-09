@@ -530,7 +530,9 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
 
     SIRIMSScheduler IMS(&SM, TD, *G, BB);
 
-    IMS.schedule();
+    // If we pipeline the BB successfully, index it.
+    if (IMS.schedule() == SIRIMSScheduler::Success)
+      SM.IndexPipelinedBB2MII(BB, IMS.getMII());
   }
 
   schedule();
@@ -663,6 +665,10 @@ void SIRScheduleEmitter::emitSchedule() {
     BasicBlock *BB = *I;
 
     if (!G.isBBReachable(BB))
+      continue;
+
+    // The schedule emit of Pipelined BB is implemented in IMSScheduler.
+    if (SM->IsBBPipelined(BB))
       continue;
 
     emitSUsInBB(G.getSUsInBB(BB));
