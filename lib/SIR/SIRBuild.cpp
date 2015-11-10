@@ -283,10 +283,8 @@ SIRRegister *SIRCtrlRgnBuilder::createRegister(StringRef Name, Type *ValueTy,
                                                BasicBlock *ParentBB, uint64_t InitVal,
                                                SIRRegister::SIRRegisterTypes T) {
   // For the General Register or PHI Register, we create a pseudo instruction and
-  // this pseudo instruction will be inserted into the back of the BasicBlock.
-  // If we are creating registers which have no ParentBB, then we insert it into
-  // the back of the module.
-  Value *InsertPosition = ParentBB ? ParentBB : SM->getPositionAtBackOfModule();
+  // this pseudo instruction will be inserted into the back of the module.
+  Value *InsertPosition = SM->getPositionAtBackOfModule();
   Value *SeqVal = createRegAssignInst(ValueTy, InsertPosition);
 
   assert(SeqVal && "Unexpected empty PseudoSeqInst!");
@@ -1959,14 +1957,14 @@ Value *SIRDatapathBuilder::createSAndInst(Value *LHS, Value *RHS, Type *RetTy,
   Type *IntTy = createIntegerType(BitWidth);
   // Transform into IntegerTy so it can be taken as operand in Shang Intrinsic instruction.
   if (LHS->getType()->isPointerTy())
-    NewLHS = createPtrToIntInst(LHS, IntTy, dyn_cast<Instruction>(InsertPosition), true);
+    NewLHS = createPtrToIntInst(LHS, IntTy, InsertPosition, true);
   else if (!LHS->getType()->isIntegerTy())
-    NewLHS = createBitCastInst(LHS, IntTy, dyn_cast<Instruction>(InsertPosition), true);
+    NewLHS = createBitCastInst(LHS, IntTy, InsertPosition, true);
 
   if (RHS->getType()->isPointerTy())
-    NewRHS = createPtrToIntInst(RHS, IntTy, dyn_cast<Instruction>(InsertPosition), true);
+    NewRHS = createPtrToIntInst(RHS, IntTy, InsertPosition, true);
   else if (!RHS->getType()->isIntegerTy())
-    NewRHS = createBitCastInst(RHS, IntTy, dyn_cast<Instruction>(InsertPosition), true);
+    NewRHS = createBitCastInst(RHS, IntTy, InsertPosition, true);
   // The RetTy also need to be transformed into IntegerTy when we create this instruction as
   // argument of other Shang intrinsic instructions. However, if it is used to replace the
   // origin instruction then we will handle it in the createShangInstPattern function.
@@ -2195,8 +2193,13 @@ Value *SIRDatapathBuilder::createPtrToIntInst(Value *V, Type *IntTy,
                                               Value *InsertPosition, bool UsedAsArg) {
   assert(IntTy->isIntegerTy() && "Unexpected Type!");
 
-  Value *Inst = new PtrToIntInst(V, IntTy, "SIRPtrToInt",
-                                 dyn_cast<Instruction>(InsertPosition));
+  Value *Inst;
+  if (Instruction *I = dyn_cast<Instruction>(InsertPosition))
+    Inst = new PtrToIntInst(V, IntTy, "SIRPtrToInt", I);
+  else if (BasicBlock *BB = dyn_cast<BasicBlock>(InsertPosition))
+    Inst = new PtrToIntInst(V, IntTy, "SIRPtrToInt", BB);
+
+  //assert(Inst && "Instruction not created?");
 
   if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Inst);
 
@@ -2207,8 +2210,13 @@ Value *SIRDatapathBuilder::createIntToPtrInst(Value *V, Type *PtrTy,
                                               Value *InsertPosition, bool UsedAsArg) {
   assert(PtrTy->isPointerTy() && "Unexpected Type!");
 
-  Value *Inst = new IntToPtrInst(V, PtrTy, "SIRIntToPtr",
-                                 dyn_cast<Instruction>(InsertPosition));
+  Value *Inst;
+  if (Instruction *I = dyn_cast<Instruction>(InsertPosition))
+    Inst = new IntToPtrInst(V, PtrTy, "SIRIntToPtr", I);
+  else if (BasicBlock *BB = dyn_cast<BasicBlock>(InsertPosition))
+    Inst = new IntToPtrInst(V, PtrTy, "SIRIntToPtr", BB);
+
+  assert(Inst && "Instruction not created?");
 
   if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Inst);
 
@@ -2217,8 +2225,13 @@ Value *SIRDatapathBuilder::createIntToPtrInst(Value *V, Type *PtrTy,
 
 Value *SIRDatapathBuilder::createBitCastInst(Value *V, Type *RetTy,
                                              Value *InsertPosition, bool UsedAsArg) {
-  Value *Inst = new BitCastInst(V, RetTy, "SIRBitCast",
-                                dyn_cast<Instruction>(InsertPosition));
+  Value *Inst;
+  if (Instruction *Inst = dyn_cast<Instruction>(InsertPosition))
+    Inst = new BitCastInst(V, RetTy, "SIRBitCast", Inst);
+  else if (BasicBlock *BB = dyn_cast<BasicBlock>(InsertPosition))
+    Inst = new BitCastInst(V, RetTy, "SIRBitCast", BB);
+
+  assert(Inst && "Instruction not created?");
 
   if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Inst);
 

@@ -70,10 +70,8 @@ bool SIRRegisterSynthesisForAnnotation::runOnSIR(SIR &SM) {
     SIRSeqOp *SeqOp = I;
     SIRRegister *Reg = SeqOp->getDst();
 
-    // Insert the implement of register at the back of BB or the back of Module
-    // if the Reg belong to no BB.
-    Value *InsertPosition = Reg->getParentBB() ?
-                            Reg->getParentBB() : SM.getPositionAtBackOfModule();
+    // Insert the implement of register at the back of Module.
+    Value *InsertPosition = SM.getPositionAtBackOfModule();
 
     // Extract the assignments for Registers.
     Value *Src = SeqOp->getSrc(), *Guard = SeqOp->getGuard();
@@ -198,6 +196,10 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
   typedef SIR::register_iterator reg_iterator;
   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
     SIRRegister *Reg = I;
+
+    // Ignore the FUOutput.
+    if (Reg->isFUOutput()) continue;
+
     Reg->dropMux();
   }
 
@@ -214,10 +216,8 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
     // be indexed in SIRFSMSynthsisPass.
     SM.IndexReg2Slot(Dst, Slot);
 
-    // Insert the implement of register at the back of BB or the back of Module
-    // if the Reg belong to no BB.
-    Value *InsertPosition = Dst->getParentBB() ?
-                            Dst->getParentBB() : SM.getPositionAtBackOfModule();
+    // Insert the implement of register at the back of Module.
+    Value *InsertPosition = SM.getPositionAtBackOfModule();
 
     // Associate the guard with the Slot guard.
     Value *NewGuardVal = Builder.createSAndInst(GuardVal, Slot->getGuardValue(),
@@ -232,10 +232,11 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
     SIRRegister *Reg = I;
 
-    // Insert the implement of register at the back of BB or the back of Module
-    // if the Reg belong to no BB.
-    Value *InsertPosition = Reg->getParentBB() ?
-                            Reg->getParentBB() : SM.getPositionAtBackOfModule();
+    // Ignore the FUOutput.
+    if (Reg->isFUOutput()) continue;
+
+    // Insert the implement of register at the back of Module.
+    Value *InsertPosition = SM.getPositionAtBackOfModule();
 
     Changed |= synthesizeRegister(Reg, InsertPosition, Builder);
   }
