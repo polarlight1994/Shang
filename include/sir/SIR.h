@@ -856,7 +856,6 @@ public:
   }
 
   void deleteUselessSlot(SIRSlot *S) {
-    Registers.erase(S->getSlotReg());
     Slots.erase(S);
   }
   void deleteUselessSeqOp(SIRSeqOp *SeqOp) {

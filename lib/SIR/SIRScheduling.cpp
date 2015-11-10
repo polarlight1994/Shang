@@ -542,12 +542,6 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
   return true;
 }
 
-namespace {
-  bool SUnitLess(SIRSchedUnit *LHS, SIRSchedUnit *RHS) {
-    return LHS->getSchedule() < RHS->getSchedule();
-  }
-}
-
 void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   assert(SUs[0]->isBBEntry() && "BBEntry must be placed at the beginning!");
 

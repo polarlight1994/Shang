@@ -325,10 +325,17 @@ bool SIR::gcImpl() {
 
       if (Inst->use_empty() && !isa<ReturnInst>(Inst)) {
         // If the Inst is a reg_assign instruction, then it is a SeqVal.
-        // The GC of useless SeqVal is not handled here.
+        // We also need to delete the corresponding register.
         if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
-          if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
-            continue;
+          if (II->getIntrinsicID() == Intrinsic::shang_reg_assign) {
+            SIRRegister *Reg = lookupSIRReg(II);
+
+            // Ignore the MemoryBank register and Output register of Module.
+            if (Reg->isFUInOut() || Reg->isOutPort())
+              continue;
+
+            Registers.erase(Reg);
+          }
 
         Inst->eraseFromParent();
         return true;
