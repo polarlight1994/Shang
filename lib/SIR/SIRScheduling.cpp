@@ -106,8 +106,27 @@ void SIRScheduling::buildDependencies() {
     buildControlDependencies(SU);
   }
 
-  // Visit all BBs to build the memory dependencies.
   Function &F = G->getFunction();
+
+  SmallVector<SIRSeqOp *, 4> OutputSeqOpsPack;
+  BasicBlock *ReturnBB = &F.getBasicBlockList().back();
+  ArrayRef<SIRSchedUnit *> SUs = G->getSUsInBB(ReturnBB);
+  for (unsigned i = 0; i < SUs.size(); ++i) {
+    SIRSchedUnit *SU = SUs[i];
+
+    if (SU->isBBEntry())
+      continue;
+
+    SIRSeqOp *SeqOp = SU->getSeqOp();
+    SIRRegister *Reg = SeqOp->getDst();
+
+    if (Reg->isOutPort())
+      OutputSeqOpsPack.push_back(SeqOp);
+  }
+
+  buildSchedulingUnitsPack(ReturnBB, OutputSeqOpsPack);
+
+  // Visit all BBs to build the memory dependencies.
   ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
   typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
