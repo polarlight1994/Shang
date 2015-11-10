@@ -135,9 +135,12 @@ bool SIRIMSScheduler::buildASAPStep() {
       typedef SIRSchedUnit::use_iterator use_iterator;
       for (use_iterator UI = U->use_begin(), UE = U->use_end(); UI != UE; ++UI) {
         SIRSchedUnit *Use = *UI;
-        // Use this pointer to make sure we call the right version.
+
+        if (Use->getParentBB() != LoopBB)
+          continue;
+
         NeedToReCalc |= (Use->getIdx() < U->getIdx())
-          && (this->calculateASAP(Use) != getASAPStep(Use));
+          && (calculateASAP(Use) != getASAPStep(Use));
       }
     }
 
@@ -189,6 +192,10 @@ bool SIRIMSScheduler::buildALAPStep() {
       typedef SIRSchedUnit::dep_iterator dep_iterator;
       for (dep_iterator DI = U->dep_begin(), DE = U->dep_end(); DI != DE; ++DI) {
         SIRSchedUnit *Dep = *DI;
+
+        if (Dep->getParentBB() != LoopBB)
+          continue;
+
         NeedToReCalc |= (U->getIdx() < Dep->getIdx())
           && (calculateALAP(Dep) != getALAPStep(Dep));
       }
@@ -355,7 +362,29 @@ bool SIRIMSScheduler::verifySchedule() {
   return true;
 }
 
+namespace {
+bool SUnitLess(SIRSchedUnit *LHS, SIRSchedUnit *RHS) {
+  return LHS->getIdx() < RHS->getIdx();
+}
+}
+
+void SIRIMSScheduler::collectBasicInfo() {
+  // First collect the EntrySlot and ExitSlot of LoopBB.
+  this->OriginEntrySlot = SM->getLandingSlot(LoopBB);
+  this->OriginExitSlot = SM->getLatestSlot(LoopBB);
+
+  // Then collect all SUnit in LoopBB in order.
+  ArrayRef<SIRSchedUnit *> SUs = G.getSUsInBB(LoopBB);
+  for (int i = 0; i < SUs.size(); ++i)
+    SUnits.push_back(SUs[i]);
+
+  std::sort(SUnits.begin(), SUnits.end(), SUnitLess);
+}
+
 SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
+  // Collect basic info of this loop BB.
+  collectBasicInfo();
+
   // Calculate the MII according to the Rec&Res.
   computeMII();
 
@@ -367,8 +396,7 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
   if (MII > CriticalPathEnd)
     return Fail;
 
-  ArrayRef<SIRSchedUnit *> SUs = G.getSUsInBB(LoopBB);
-  for (iterator I = SUs.begin(), E = SUs.end(); I != E; ++I) {
+  for (iterator I = begin(), E = end(); I != E; ++I) {
     SIRSchedUnit *SU = *I;
 
     /// Collect all the LoopSUnits and ignore them since they will

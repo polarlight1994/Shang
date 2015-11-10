@@ -44,7 +44,7 @@ private:
   // Origin EntrySlot/ExitSlot.
   SIRSlot *OriginEntrySlot, *OriginExitSlot;
   // The SUnits in BasicBlock.
-  ArrayRef<SIRSchedUnit *> SUnits;
+  SmallVector<SIRSchedUnit *, 4> SUnits;
   // The Loop SUnits in BasicBlock.
   SmallVector<SIRSchedUnit *, 4> LoopSUs;
   // The PHI SUnits in BasicBlocak.
@@ -68,13 +68,7 @@ private:
 public:
   SIRIMSScheduler(SIR *SM, DataLayout *TD, SIRSchedGraph &G, BasicBlock *LoopBB)
     : SIRScheduleBase(G, 0), LoopBB(LoopBB), MII(0), StageNum(0),
-    SUnits(G.getSUsInBB(LoopBB)), SM(SM), C_Builder(SM, *TD),
-    ReadyQueue(PriorityHeuristic(*this)) {
-    // Since we will re-build the STM of the Loop BB, we should record the
-    // origin EntrySlot and ExitSlot.
-    this->OriginEntrySlot = SM->getLandingSlot(LoopBB);
-    this->OriginExitSlot = SM->getLatestSlot(LoopBB);
-  }
+    SM(SM), C_Builder(SM, *TD), ReadyQueue(PriorityHeuristic(*this)) {}
 
   SIRSchedGraph &operator*() const { return G; }
   SIRSchedGraph *operator->() const { return &G; }
@@ -87,8 +81,8 @@ public:
   void resetTimeFrame();
   void buildTimeFrame();
 
-  typedef ArrayRef<SIRSchedUnit *>::iterator iterator;
-  typedef ArrayRef<SIRSchedUnit *>::reverse_iterator reverse_iterator;
+  typedef SmallVector<SIRSchedUnit *, 4>::iterator iterator;
+  typedef SmallVector<SIRSchedUnit *, 4>::reverse_iterator reverse_iterator;
 
   iterator begin() { return SUnits.begin(); }
   iterator end() { return SUnits.end(); }
@@ -137,6 +131,9 @@ public:
 
     return ScheduleResult[U].second;
   }
+
+  // Collect basic information.
+  void collectBasicInfo();
 
   bool scheduleLoopSUs();
   bool schedulePHINodes();
