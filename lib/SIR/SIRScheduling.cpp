@@ -108,56 +108,11 @@ void SIRScheduling::buildDependencies() {
 
   Function &F = G->getFunction();
 
-  SmallVector<SIRSeqOp *, 4> OutputSeqOpsPack;
-  BasicBlock *ReturnBB = &F.getBasicBlockList().back();
-  ArrayRef<SIRSchedUnit *> SUs = G->getSUsInBB(ReturnBB);
-  for (unsigned i = 0; i < SUs.size(); ++i) {
-    SIRSchedUnit *SU = SUs[i];
-
-    if (SU->isBBEntry())
-      continue;
-
-    SIRSeqOp *SeqOp = SU->getSeqOp();
-    SIRRegister *Reg = SeqOp->getDst();
-
-    if (Reg->isOutPort())
-      OutputSeqOpsPack.push_back(SeqOp);
-  }
-
-  buildSchedulingUnitsPack(ReturnBB, OutputSeqOpsPack);
-
   // Visit all BBs to build the memory dependencies.
   ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
   typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
     buildMemoryDependencies(*I);
-
-  // Pack all SUnits that need to be scheduled together.
-  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
-    BasicBlock *BB = *I;
-
-    typedef BasicBlock::iterator iterator;
-    for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
-      Instruction *Inst = I;
-      if (!isLoadStore(Inst)) continue;
-
-      ArrayRef<SIRSeqOp *> SeqOps = SM->lookupMemSeqOps(Inst);
-      SmallVector<SIRSeqOp *, 4> SeqOpsPack;
-
-      if (isa<LoadInst>(Inst)) {
-        for (unsigned i = 0; i < SeqOps.size() - 1; ++i)
-          SeqOpsPack.push_back(SeqOps[i]);
-
-        buildSchedulingUnitsPack(BB, SeqOpsPack);
-      }
-      else if (isa<StoreInst>(Inst)) {
-        for (unsigned i = 0; i < SeqOps.size(); ++i)
-          SeqOpsPack.push_back(SeqOps[i]);
-
-        buildSchedulingUnitsPack(BB, SeqOpsPack);
-      }
-    }
-  }
 }
 
 void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
@@ -323,6 +278,64 @@ void SIRScheduling::buildMemoryDependencies(BasicBlock *BB) {
   }
 }
 
+void SIRScheduling::packSUnits() {
+  Function &F = G->getFunction();
+  // Pack all SUnits that handled the MemoryBank Input Register.
+  ReversePostOrderTraversal<BasicBlock *> RPO(&F.getEntryBlock());
+  typedef ReversePostOrderTraversal<BasicBlock *>::rpo_iterator bb_top_iterator;
+
+  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
+    BasicBlock *BB = *I;
+
+    // Pack all SUnits assign to Output Register.
+    SmallVector<SIRSeqOp *, 4> OutputSeqOpsPack;
+    ArrayRef<SIRSchedUnit *> SUs = G->getSUsInBB(BB);
+    for (unsigned i = 0; i < SUs.size(); ++i) {
+      SIRSchedUnit *SU = SUs[i];
+
+      if (SU->isBBEntry())
+        continue;
+
+      SIRSeqOp *SeqOp = SU->getSeqOp();
+      SIRRegister *Reg = SeqOp->getDst();
+
+      if (Reg->isOutPort())
+        OutputSeqOpsPack.push_back(SeqOp);
+    }
+
+    if (OutputSeqOpsPack.size())
+      buildSchedulingUnitsPack(BB, OutputSeqOpsPack);
+  }
+
+  for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
+    BasicBlock *BB = *I;
+
+    typedef BasicBlock::iterator iterator;
+    for (iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+      Instruction *Inst = I;
+      if (!isLoadStore(Inst)) continue;
+
+      ArrayRef<SIRSeqOp *> SeqOps = SM->lookupMemSeqOps(Inst);
+      SmallVector<SIRSeqOp *, 4> SeqOpsPack;
+
+      if (isa<LoadInst>(Inst)) {
+        for (unsigned i = 0; i < SeqOps.size() - 1; ++i)
+          SeqOpsPack.push_back(SeqOps[i]);
+
+        if (SeqOpsPack.size())
+          buildSchedulingUnitsPack(BB, SeqOpsPack);
+      }
+      else if (isa<StoreInst>(Inst)) {
+        for (unsigned i = 0; i < SeqOps.size(); ++i)
+          SeqOpsPack.push_back(SeqOps[i]);
+
+        if (SeqOpsPack.size())
+          buildSchedulingUnitsPack(BB, SeqOpsPack);
+      }
+    }
+  }
+}
+
 ArrayRef<SIRSchedUnit *> SIRScheduling::getDataFlowSU(Value *V) {
   // If we are getting the corresponding SUnit of the argument,
   // then we can just return the Entry SUnit of the SchedGraph.
@@ -438,6 +451,9 @@ void SIRScheduling::buildSchedulingGraph() {
   // Build dependencies.
   buildDependencies();
 
+  // Pack SUnits that need to be scheduled together.
+  packSUnits();
+
   // Constraint all nodes that do not have a user by adding SIRDep to
   // the terminator in its parent BB.
   finishBuildingSchedGraph();
@@ -543,16 +559,16 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
   buildSchedulingGraph();
 
   // Use the IMSScheduler on all loop BBs.
-  typedef SIRSchedGraph::const_loopbb_iterator iterator;
-  for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
-    BasicBlock *BB = I->first;
-
-    SIRIMSScheduler IMS(&SM, TD, *G, BB);
-
-    // If we pipeline the BB successfully, index it.
-    if (IMS.schedule() == SIRIMSScheduler::Success)
-      SM.IndexPipelinedBB2MII(BB, IMS.getMII());
-  }
+//   typedef SIRSchedGraph::const_loopbb_iterator iterator;
+//   for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
+//     BasicBlock *BB = I->first;
+//
+//     SIRIMSScheduler IMS(&SM, TD, *G, BB);
+//
+//     // If we pipeline the BB successfully, index it.
+//     if (IMS.schedule() == SIRIMSScheduler::Success)
+//       SM.IndexPipelinedBB2MII(BB, IMS.getMII());
+//   }
 
   schedule();
 
@@ -732,22 +748,5 @@ void SIRScheduleEmitter::gc() {
   for (slot_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
     SIRSlot *S = *I;
     S->resetNum(SlotNum++);
-  }
-
-  // After ScheduleEmit, lots of SlotTransitions will be replaced by new ones
-  // and become useless, so we remove them here.
-  typedef SIR::seqop_iterator seqop_iterator;
-  for (seqop_iterator I = SM->seqop_begin(), E = SM->seqop_end(); I != E;) {
-    // We must move forward the iterator here to avoid the error caused by
-    // iterator erase function called below.
-    SIRSeqOp *SeqOp = I++;
-
-    if (SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SeqOp)) {
-      SIRSlot *SrcSlot = SST->getSrcSlot();
-      SIRSlot *DstSlot = SST->getDstSlot();
-
-      if (!SrcSlot->hasNextSlot(DstSlot))
-        SM->deleteUselessSeqOp(SeqOp);
-    }
   }
 }

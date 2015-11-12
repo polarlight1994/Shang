@@ -121,6 +121,8 @@ private:
   void buildSchedulingUnitsPack(BasicBlock *BB, SmallVector<SIRSeqOp *, 4> SeqOps);
   void buildSchedulingUnitsForSeqOp(SIRSlot *S);
 
+  void packSUnits();
+
   void finishBuildingSchedGraph();
 
   void buildSchedulingGraph();
