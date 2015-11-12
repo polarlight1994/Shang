@@ -464,18 +464,18 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
   emitSchedule();
 
   /// Debug code
-  std::string TimeFrameResult = LuaI::GetString("IMSResult");
-  std::string Error;
-  raw_fd_ostream Output(TimeFrameResult.c_str(), Error);
-
-  Output << "MII is set to " << MII << "\n";
-
-  for (iterator I = begin(), E = end(); I != E; ++I) {
-    SIRSchedUnit *U = *I;     
-
-    Output << "SU#" << U->getIdx() << " is scheduled to "
-      << "step " << getStep(U) << "\n";
-  }
+//   std::string IMSResult = LuaI::GetString("IMSResult");
+//   std::string Error;
+//   raw_fd_ostream Output(IMSResult.c_str(), Error);
+//
+//   Output << "MII is set to " << MII << "\n";
+//
+//   for (iterator I = begin(), E = end(); I != E; ++I) {
+//     SIRSchedUnit *U = *I;
+//
+//     Output << "SU#" << U->getIdx() << " is scheduled to "
+//       << "step " << getStep(U) << "\n";
+//   }
 
   return Success;
 }
