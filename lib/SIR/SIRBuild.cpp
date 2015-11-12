@@ -2226,8 +2226,8 @@ Value *SIRDatapathBuilder::createIntToPtrInst(Value *V, Type *PtrTy,
 Value *SIRDatapathBuilder::createBitCastInst(Value *V, Type *RetTy,
                                              Value *InsertPosition, bool UsedAsArg) {
   Value *Inst;
-  if (Instruction *Inst = dyn_cast<Instruction>(InsertPosition))
-    Inst = new BitCastInst(V, RetTy, "SIRBitCast", Inst);
+  if (Instruction *I = dyn_cast<Instruction>(InsertPosition))
+    Inst = new BitCastInst(V, RetTy, "SIRBitCast", I);
   else if (BasicBlock *BB = dyn_cast<BasicBlock>(InsertPosition))
     Inst = new BitCastInst(V, RetTy, "SIRBitCast", BB);
 
