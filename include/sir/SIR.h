@@ -25,6 +25,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Debug.h"
 
+#include <iostream>
+
 namespace llvm {
 // Get the signed value of a ConstantInt.
 static int64_t getConstantIntValue(Value *V) {
@@ -856,6 +858,14 @@ public:
   }
 
   void deleteUselessSlot(SIRSlot *S) {
+    typedef SIRSlot::op_iterator iterator;
+    for (iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
+      SIRSeqOp *SeqOp = *I;
+
+      if (SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SeqOp))
+        deleteUselessSeqOp(SST);
+    }
+
     Slots.erase(S);
   }
   void deleteUselessSeqOp(SIRSeqOp *SeqOp) {
