@@ -2197,7 +2197,7 @@ Value *SIRDatapathBuilder::createPtrToIntInst(Value *V, Type *IntTy,
   if (Instruction *I = dyn_cast<Instruction>(InsertPosition))
     Inst = new PtrToIntInst(V, IntTy, "SIRPtrToInt", I);
   else if (BasicBlock *BB = dyn_cast<BasicBlock>(InsertPosition))
-    Inst = new PtrToIntInst(V, IntTy, "SIRPtrToInt", BB);
+    Inst = new PtrToIntInst(V, IntTy, "SIRPtrToInt", BB->getTerminator());
 
   //assert(Inst && "Instruction not created?");
 
@@ -2214,7 +2214,7 @@ Value *SIRDatapathBuilder::createIntToPtrInst(Value *V, Type *PtrTy,
   if (Instruction *I = dyn_cast<Instruction>(InsertPosition))
     Inst = new IntToPtrInst(V, PtrTy, "SIRIntToPtr", I);
   else if (BasicBlock *BB = dyn_cast<BasicBlock>(InsertPosition))
-    Inst = new IntToPtrInst(V, PtrTy, "SIRIntToPtr", BB);
+    Inst = new IntToPtrInst(V, PtrTy, "SIRIntToPtr", BB->getTerminator());
 
   assert(Inst && "Instruction not created?");
 
@@ -2229,7 +2229,7 @@ Value *SIRDatapathBuilder::createBitCastInst(Value *V, Type *RetTy,
   if (Instruction *I = dyn_cast<Instruction>(InsertPosition))
     Inst = new BitCastInst(V, RetTy, "SIRBitCast", I);
   else if (BasicBlock *BB = dyn_cast<BasicBlock>(InsertPosition))
-    Inst = new BitCastInst(V, RetTy, "SIRBitCast", BB);
+    Inst = new BitCastInst(V, RetTy, "SIRBitCast", BB->getTerminator());
 
   assert(Inst && "Instruction not created?");
 
