@@ -563,7 +563,7 @@ public:
   SIRRegister *getSlotReg() const { return SlotReg; }
   Value *getGuardValue() const { return getSlotReg()->getLLVMValue(); }
 
-  void setStep(unsigned S) { Step = S; }
+  void resetStep(unsigned S) { Step = S; }
 
   // If the SrcSlot already has this NextSlot as successor.
   bool hasNextSlot(SIRSlot *NextSlot);

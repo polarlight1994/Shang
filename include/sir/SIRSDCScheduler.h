@@ -67,8 +67,8 @@ private:
   LPObjFn ObjFn;
 
 public:
-  SIRSDCScheduler(SIRSchedGraph &G, unsigned EntrySlot)
-    : SIRScheduleBase(G, EntrySlot) {}
+  SIRSDCScheduler(SIRSchedGraph &G, unsigned EntrySchedule)
+    : SIRScheduleBase(G, EntrySchedule) {}
 
   SIRSchedGraph &operator*() const { return G; }
   SIRSchedGraph *operator->() const { return &G; }

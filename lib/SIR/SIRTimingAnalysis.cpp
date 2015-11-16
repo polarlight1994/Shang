@@ -840,16 +840,6 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
       continue;
     }
 
-    // 		SIRDelayModel *M = lookUpDelayModel(dyn_cast<Instruction>(V));
-    // 		assert(M && "Unexpected NULL Delay Model!");
-    //
-    // 		// Extract all the arrivals from SeqVals.
-    // 		typedef SIRDelayModel::const_arrival_iterator iterator;
-    // 		for (iterator I = M->arrival_begin(), E = M->arrival_end(); I != E; I++) {
-    // 			PhysicalDelay &OldDelay = Arrivals[I->Src];
-    // 			OldDelay = std::max(OldDelay,	PhysicalDelay(I->Arrival));
-    // 		}
-
     // Then collect all the SeqVals when we traverse the data-path reversely, so
     // to be noted that all the Values down here must be SeqVal.
     typedef std::set<Value *> LeafSet;
