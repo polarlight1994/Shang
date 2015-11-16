@@ -388,7 +388,7 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
   // Get ParentBB of this instruction.
   BasicBlock *ParentBB = I.getParent();
   // Get the slot.
-  SIRSlot *Slot = SM->getLandingSlot(ParentBB);
+  SIRSlot *Slot = SM->getLatestSlot(ParentBB);
 
   // Initial a vector to collect all SeqOps we created to implement this Load/Store
   // instruction, to be noted that, the collecting order matters!
@@ -517,14 +517,14 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
 
     SIRSeqOp *AssignToResult = assignToReg(Slot, createIntegerValue(1, 1), Result, ResultReg);
     MemSeqOps.push_back(AssignToResult);
-
-    // Advance to next slot so other operations will not conflicted with this memory
-    // transaction operation.
-    advanceToNextSlot(Slot);
   }
 
   // Index the MemInst to MemSeqOps
   SM->IndexMemInst2SeqOps(&I, MemSeqOps);
+
+  // Advance to next slot so other operations will not conflicted with this memory
+  // transaction operation.
+  advanceToNextSlot(Slot);
 }
 
 SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) {
