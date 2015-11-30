@@ -144,14 +144,14 @@ void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
     for (unsigned i = 0; i < SrcSUs.size(); i++) {
       SIRSchedUnit *SrcSU = SrcSUs[i];
 
-      unsigned Distance;
+      unsigned Distance = 0;
 
       if (SrcSU->isPHI() && SrcSU->getParentBB() == U->getParentBB())
         Distance = 1;
       else
         Distance = 0;
 
-      U->addDep(SrcSUs[i], SIRDep::CreateValDep(ceil(Delay), Distance));
+      U->addDep(SrcSUs[i], SIRDep::CreateValDep(Delay, Distance));
     }
   }
 }
@@ -197,11 +197,11 @@ void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
   if (FirstSUsInDstSlot->isBBEntry() || FirstSUsInDstSlot->isEntry()) {
     FirstSUsInDstSlot->addDep(U, SIRDep::CreateCtrlDep(0));
 
-    // If we are transiting back to the beginning of this BB, then
-    // we are handling a loop BB. So index the loop BB and this
-    // corresponding loop SU here.
-    if (FirstSUsInDstSlot->isBBEntry() && DstSlot->getParent() == ParentBB)
-      G->indexLoopSU2LoopBB(U, ParentBB);
+//     // If we are transiting back to the beginning of this BB, then
+//     // we are handling a loop BB. So index the loop BB and this
+//     // corresponding loop SU here.
+//     if (FirstSUsInDstSlot->isBBEntry() && DstSlot->getParent() == ParentBB)
+//       G->indexLoopSU2LoopBB(U, ParentBB);
   }
   // Or we are transition to the next slot in same BB. In this circumstance,
   // all SUnit in next slot is depended on the SlotTransition.
@@ -707,9 +707,9 @@ void SIRScheduleEmitter::emitSchedule() {
     if (!G.isBBReachable(BB))
       continue;
 
-    // The schedule emit of Pipelined BB is implemented in IMSScheduler.
-    if (SM->IsBBPipelined(BB))
-      continue;
+//     // The schedule emit of Pipelined BB is implemented in IMSScheduler.
+//     if (SM->IsBBPipelined(BB))
+//       continue;
 
     emitSUsInBB(G.getSUsInBB(BB));
   }
