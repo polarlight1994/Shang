@@ -36,11 +36,9 @@ unsigned SIRIMSScheduler::calculateASAP(const SIRSchedUnit *A) const {
     if (Dep->getIdx() >= A->getIdx())
       continue;
 
-    // If the dependency is coming from previous BB, we should transform it
-    // into dependency to the Entry of LoopBB.
+    // If the dependency is coming from previous BB, we transform it into
+    // dependency to the Entry of LoopBB.
     if (Dep->getParentBB() != LoopBB) {
-      assert(Dep->isPHI() && "All dependencies cross BB should be PHI-Data-Dependency!");
-
       unsigned Step = DI.getLatency(MII);
       assert(Step >= 0.0 && "Unexpected Negative Schedule!");
 
