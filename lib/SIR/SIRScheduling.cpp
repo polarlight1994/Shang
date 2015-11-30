@@ -559,16 +559,16 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
   buildSchedulingGraph();
 
   // Use the IMSScheduler on all loop BBs.
-  typedef SIRSchedGraph::const_loopbb_iterator iterator;
-  for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
-    BasicBlock *BB = I->first;
-
-    SIRIMSScheduler IMS(&SM, TD, *G, BB);
-
-    // If we pipeline the BB successfully, index it.
-    if (IMS.schedule() == SIRIMSScheduler::Success)
-      SM.IndexPipelinedBB2MII(BB, IMS.getMII());
-  }
+//   typedef SIRSchedGraph::const_loopbb_iterator iterator;
+//   for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
+//     BasicBlock *BB = I->first;
+// 
+//     SIRIMSScheduler IMS(&SM, TD, *G, BB);
+// 
+//     // If we pipeline the BB successfully, index it.
+//     if (IMS.schedule() == SIRIMSScheduler::Success)
+//       SM.IndexPipelinedBB2MII(BB, IMS.getMII());
+//   }
 
   schedule();
 
@@ -707,9 +707,9 @@ void SIRScheduleEmitter::emitSchedule() {
     if (!G.isBBReachable(BB))
       continue;
 
-//     // The schedule emit of Pipelined BB is implemented in IMSScheduler.
-//     if (SM->IsBBPipelined(BB))
-//       continue;
+    // The schedule emit of Pipelined BB is implemented in IMSScheduler.
+    if (SM->IsBBPipelined(BB))
+      continue;
 
     emitSUsInBB(G.getSUsInBB(BB));
   }
