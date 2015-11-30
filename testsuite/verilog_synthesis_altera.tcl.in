@@ -34,6 +34,7 @@ set_global_assignment -name SYNTH_MESSAGE_LEVEL LOW
 execute_module -tool map
 execute_module -tool fit
 execute_module -tool asm
+execute_module -tool sta -args {--report_script @SIR_SOURCE_ROOT@/extract_timing.tcl}
 execute_module -tool eda
 # =====================
 
@@ -45,6 +46,8 @@ load_report
 set DataJSON [open "@BenchmarkSummaryTmp@" a+]
 
 puts $DataJSON "\n\{\"name\":\"@TEST@\","
+
+puts $DataJSON "\"restricted_fmax\":\"[get_report_panel_data -name {*Fmax*} -col 1 -row 1]\","
 
 puts $DataJSON "\"les\":\"[get_fitter_resource_usage -resource {Total logic elements}]\","
 puts $DataJSON "\"les_wo_reg\":\"[get_fitter_resource_usage -resource {*Combinational with no register}]\","
@@ -67,6 +70,16 @@ puts $DataJSON "\"total_fanout\":\"[get_fitter_resource_usage -resource {*Total 
 puts $DataJSON "\"ave_fanout\":\"[get_fitter_resource_usage -resource {*Average fan-out}]\","
 
 unload_report
+
+#Read the execution cycles
+set cycleFile [open "@TEST@_DUT_RTL.txt" r]
+#while { [gets $cycleFile line] >= 0 } {
+gets $cycleFile line
+regexp {@TEST@_DUT_RTL hardware run cycles ([0-9]+)} $line match total_cycles
+set total_cycles
+puts $DataJSON "\"cycles\":\"$total_cycles\""
+#}
+close $cycleFile
 
 puts $DataJSON "\}"
 close $DataJSON

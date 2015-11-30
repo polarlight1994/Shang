@@ -57,10 +57,11 @@ macro(add_synthesis_test test_name)
 
 	set(TEST_RTL_SRC   		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sv")
 
+	set(CycleCounter			"${TEST_BINARY_ROOT}/${test_name}_DUT_RTL.txt")
+
 	set(DEBUG_FINAL_IR		"${TEST_BINARY_ROOT}/${TEST}.finalir")
 	set(DEBUG_SDC_RESULT	"${TEST_BINARY_ROOT}/${TEST}.sdcresult")
 	set(DEBUG_LS_RESULT		"${TEST_BINARY_ROOT}/${TEST}.lsresult")
-	set(DEBUG_IMS_RESULT	"${TEST_BINARY_ROOT}/${TEST}.imsresult")
 	set(DEBUG_SchedGraph	"${TEST_BINARY_ROOT}/${TEST}.schedgraph")
 
 	set(enableCoSimulation false)
@@ -106,7 +107,7 @@ macro(add_synthesis_test test_name)
 	#Run the quartus to compile the verilog and get report.
 	add_custom_command(OUTPUT ${BenchmarkSummaryTmp}
 		COMMAND ${QUARTUS_BIN_DIR}/quartus_sh -t "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" > /dev/null
-		DEPENDS ${TEST_RTL_SRC} "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl"
+		DEPENDS ${TEST_RTL_SRC} "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" ${CycleCounter}
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Compile the verilog and get report"
 	)
@@ -142,10 +143,11 @@ macro(add_cosimulation_test test_name)
 
 	set(TEST_SC_EXE				"${TEST_RTL_OBJ_ROOT}/V${DUT_NAME}_RTL")
 
+	set(CycleCounter			"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.txt")
+
 	set(DEBUG_FINAL_IR		"${TEST_BINARY_ROOT}/${TEST}.finalir")
 	set(DEBUG_SDC_RESULT	"${TEST_BINARY_ROOT}/${TEST}.sdcresult")
 	set(DEBUG_LS_RESULT		"${TEST_BINARY_ROOT}/${TEST}.lsresult")
-	set(DEBUG_IMS_RESULT	"${TEST_BINARY_ROOT}/${TEST}.imsresult")
 	set(DEBUG_SchedGraph	"${TEST_BINARY_ROOT}/${TEST}.schedgraph")
 
 	set(enableCoSimulation true)
@@ -233,14 +235,14 @@ macro(add_cosimulation_test test_name)
 	)
 
 	#Run the exe to get test output.
-	add_custom_command(OUTPUT ${TEST_BINARY_ROOT}/Test.output
+	add_custom_command(OUTPUT ${TEST_BINARY_ROOT}/Test.output ${CycleCounter}
 		COMMAND	rm -rf "${TEST_BINARY_ROOT}/Test.output"
 		COMMAND "${TEST_SC_EXE}" > "${TEST_BINARY_ROOT}/Test.output"
 		DEPENDS ${TEST_SC_EXE}
 		WORKING_DIRECTORY ${TEST_RTL_OBJ_ROOT}
 		COMMENT "Run ${TEST_SC_EXE} to get test output"
 	)
-	add_custom_target(${TEST}_test_output DEPENDS "${TEST_BINARY_ROOT}/Test.output")
+	add_custom_target(${TEST}_test_output DEPENDS "${TEST_BINARY_ROOT}/Test.output" ${CycleCounter})
 
 	#Compare the output.
 	add_custom_target(${TEST}_cosimulation
@@ -251,6 +253,12 @@ macro(add_cosimulation_test test_name)
 	)
 	add_dependencies(${TEST}_cosimulation ${TEST}_test_output ${TEST}_expected_output)
 
+	#Do not clean these file.
+	set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
+				${MAIN_RTL_SRC}
+        ${CycleCounter}
+				${TEST_BINARY_ROOT}/Expected.output ${TEST_BINARY_ROOT}/Test.output
+				${TEST_BINARY_ROOT}/obj_dir/V${DUT_NAME}_RTL ${TEST}_origin)
 endmacro(add_cosimulation_test)
 
 add_subdirectory(benchmark)

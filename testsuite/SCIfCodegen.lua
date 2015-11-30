@@ -105,6 +105,10 @@ SC_MODULE(V$(RTLModuleName)_tb){
 			 ));
 		  assert(RetVle == 0 && "Return value of main function is not 0!");
 #end
+			ofstream outfile;
+      outfile.open ("$(CounterFile)");
+      outfile <<"$(RTLModuleName) hardware run cycles " << cnt <<endl;
+      outfile.close();
       sc_stop();
     }
 
