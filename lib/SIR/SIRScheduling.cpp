@@ -197,11 +197,11 @@ void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
   if (FirstSUsInDstSlot->isBBEntry() || FirstSUsInDstSlot->isEntry()) {
     FirstSUsInDstSlot->addDep(U, SIRDep::CreateCtrlDep(0));
 
-//     // If we are transiting back to the beginning of this BB, then
-//     // we are handling a loop BB. So index the loop BB and this
-//     // corresponding loop SU here.
-//     if (FirstSUsInDstSlot->isBBEntry() && DstSlot->getParent() == ParentBB)
-//       G->indexLoopSU2LoopBB(U, ParentBB);
+    // If we are transiting back to the beginning of this BB, then
+    // we are handling a loop BB. So index the loop BB and this
+    // corresponding loop SU here.
+    if (FirstSUsInDstSlot->isBBEntry() && DstSlot->getParent() == ParentBB)
+      G->indexLoopSU2LoopBB(U, ParentBB);
   }
   // Or we are transition to the next slot in same BB. In this circumstance,
   // all SUnit in next slot is depended on the SlotTransition.
@@ -559,16 +559,16 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
   buildSchedulingGraph();
 
   // Use the IMSScheduler on all loop BBs.
-//   typedef SIRSchedGraph::const_loopbb_iterator iterator;
-//   for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
-//     BasicBlock *BB = I->first;
-//
-//     SIRIMSScheduler IMS(&SM, TD, *G, BB);
-//
-//     // If we pipeline the BB successfully, index it.
-//     if (IMS.schedule() == SIRIMSScheduler::Success)
-//       SM.IndexPipelinedBB2MII(BB, IMS.getMII());
-//   }
+  typedef SIRSchedGraph::const_loopbb_iterator iterator;
+  for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
+    BasicBlock *BB = I->first;
+
+    SIRIMSScheduler IMS(&SM, TD, *G, BB);
+
+    // If we pipeline the BB successfully, index it.
+    if (IMS.schedule() == SIRIMSScheduler::Success)
+      SM.IndexPipelinedBB2MII(BB, IMS.getMII());
+  }
 
   schedule();
 
