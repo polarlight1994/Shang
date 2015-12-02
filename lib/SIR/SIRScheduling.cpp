@@ -562,9 +562,9 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
 //   typedef SIRSchedGraph::const_loopbb_iterator iterator;
 //   for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
 //     BasicBlock *BB = I->first;
-// 
+//
 //     SIRIMSScheduler IMS(&SM, TD, *G, BB);
-// 
+//
 //     // If we pipeline the BB successfully, index it.
 //     if (IMS.schedule() == SIRIMSScheduler::Success)
 //       SM.IndexPipelinedBB2MII(BB, IMS.getMII());
@@ -573,6 +573,21 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
   schedule();
 
   emitSchedule();
+
+//   std::string LoopBBInfo = LuaI::GetString("LoopBBInfo");
+//   std::string Error;
+//   raw_fd_ostream Output(LoopBBInfo.c_str(), Error);
+//
+//   typedef SIRSchedGraph::const_loopbb_iterator iterator;
+//   for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
+//     BasicBlock *BB = I->first;
+//
+//     SIRSlot *StartSlot = SM.getLandingSlot(BB);
+//     SIRSlot *LatestSlot = SM.getLatestSlot(BB);
+//
+//     Output << BB->getName() << " starts from Slot#" << StartSlot->getSlotNum()
+//            << " and ends at Slot#" << LatestSlot->getSlotNum() << "\n";
+//   }
 
   return true;
 }
@@ -692,6 +707,9 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   // Unlink the origin edge.
   for (unsigned i = 0; i < UnlinkSuccs.size(); ++i)
     ExitSlot->unlinkSucc(UnlinkSuccs[i]);
+
+  // Index the new EntrySlot/ExitSlot of this BB.
+  SM->IndexBB2Slots(BB, NewSlots.front(), NewSlots.back());
 }
 
 void SIRScheduleEmitter::emitSchedule() {
