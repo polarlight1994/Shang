@@ -661,6 +661,8 @@ public:
   bool isSlotTransition() const { return T == SlotTransition; }
 
   void setSlot(SIRSlot *Slot) { S = Slot; }
+  void setSrc(Value *V) { Src = V; }
+  void setGuard(Value *V) { Guard = V; }
 
   // Functions for debug
   void print(raw_ostream &OS) const;
