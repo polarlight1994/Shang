@@ -99,6 +99,12 @@ public:
     SlotTransition,
     // Normal node for SeqOp
     SeqSU,
+    // PHI pack
+    PHIPack,
+    // Output pack
+    OutputPack,
+    // Memory pack
+    MemoryPack,
     // Invalid node for the ilist sentinel
     Invalid
   };
@@ -256,6 +262,9 @@ public:
   bool isPHI() const { return T == PHI; }
   bool isSlotTransition() const { return T == SlotTransition; }
   bool isSeqSU() const { return T == SeqSU; }
+  bool isPHIPack() const { return T == PHIPack; }
+  bool isOutputPack() const { return T == OutputPack; }
+  bool isMemoryPack() const { return T == MemoryPack; }
 
   SIRSeqOp *getSeqOp() const {
     assert(SeqOps.size() == 1 && "Use the wrong function!");
@@ -322,8 +331,8 @@ public:
 
   void addDep(SIRSchedUnit *Src, SIRDep NewEdge) {
     // Only PHI node will have self-loop data dependency.
-    if (Src == this)
-      assert(Src->isPHI() && "Cannot add self-loop!");
+    if (Src == this && NewEdge.getEdgeType() == SIRDep::ValDep)
+      assert(Src->isPHI() || Src->isPHIPack() && "Cannot add self-loop!");
 
     DepSet::iterator at = Deps.find(Src);
 

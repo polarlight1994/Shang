@@ -118,7 +118,8 @@ private:
 
   ArrayRef<SIRSchedUnit *> getDataFlowSU(Value *V);
 
-  void buildSchedulingUnitsPack(BasicBlock *BB, SmallVector<SIRSeqOp *, 4> SeqOps);
+  SIRSchedUnit *buildSchedulingUnitsPack(BasicBlock *BB, SmallVector<SIRSeqOp *, 4> SeqOps,
+                                         SIRSchedUnit::Type T);
   void buildSchedulingUnitsForSeqOp(SIRSlot *S);
 
   void packSUnits();

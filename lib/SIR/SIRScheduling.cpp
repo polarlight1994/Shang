@@ -181,6 +181,12 @@ void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
   SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(U->getSeqOp());
   assert (SST && "Unexpected NULL SIRSlotTransition!");
 
+  // Get the src slot.
+  SIRSlot *SrcSlot = SST->getSrcSlot();
+
+  // The SlotTransitions in DstSlot are depended on all SUnits in SrcSlot.
+  ArrayRef<SIRSchedUnit *> SUsInSrcSlot = G->lookupSUs(SrcSlot);
+
   // Get the destination slot.
   SIRSlot *DstSlot = SST->getDstSlot();
 
@@ -205,13 +211,16 @@ void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
   }
   // Or we are transition to the next slot in same BB. In this circumstance,
   // all SUnit in next slot is depended on the SlotTransition.
-  else
-    for (unsigned i = 0; i < SUsInDstSlot.size(); i++)
-      SUsInDstSlot[i]->addDep(U, SIRDep::CreateCtrlDep(0));
+  else {
+    for (unsigned i = 0; i < SUsInDstSlot.size(); i++) {
+      SIRSchedUnit *SU = SUsInDstSlot[i];
 
-  // Constraint the non-dep SUnit to the Entry.
-  if (U->dep_empty())
-    U->addDep(G->getEntry(), SIRDep::CreateCtrlDep(0));
+      // This will be handled later.
+      if (SU->isSlotTransition()) continue;
+
+      SUsInDstSlot[i]->addDep(U, SIRDep::CreateCtrlDep(0));
+    }
+  }
 }
 
 void SIRScheduling::buildMemoryDependencies(BasicBlock *BB) {
@@ -287,8 +296,9 @@ void SIRScheduling::packSUnits() {
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
     BasicBlock *BB = *I;
 
-    // Pack all SUnits assign to Output Register.
     SmallVector<SIRSeqOp *, 4> OutputSeqOpsPack;
+    SmallVector<SIRSeqOp *, 4> PHISeqOpsPack;
+
     ArrayRef<SIRSchedUnit *> SUs = G->getSUsInBB(BB);
     for (unsigned i = 0; i < SUs.size(); ++i) {
       SIRSchedUnit *SU = SUs[i];
@@ -296,15 +306,23 @@ void SIRScheduling::packSUnits() {
       if (SU->isBBEntry())
         continue;
 
+      if (SU->isPHI()) {
+        PHISeqOpsPack.push_back(SU->getSeqOp());
+        continue;
+      }
+
       SIRSeqOp *SeqOp = SU->getSeqOp();
       SIRRegister *Reg = SeqOp->getDst();
 
+      // Pack all SUnits assign to Output Register.
       if (Reg->isOutPort())
         OutputSeqOpsPack.push_back(SeqOp);
     }
-
+    if (PHISeqOpsPack.size()) {
+      SIRSchedUnit *PHIPack = buildSchedulingUnitsPack(BB, PHISeqOpsPack, SIRSchedUnit::PHIPack);
+    }
     if (OutputSeqOpsPack.size())
-      buildSchedulingUnitsPack(BB, OutputSeqOpsPack);
+      buildSchedulingUnitsPack(BB, OutputSeqOpsPack, SIRSchedUnit::OutputPack);
   }
 
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
@@ -323,14 +341,14 @@ void SIRScheduling::packSUnits() {
           SeqOpsPack.push_back(SeqOps[i]);
 
         if (SeqOpsPack.size())
-          buildSchedulingUnitsPack(BB, SeqOpsPack);
+          buildSchedulingUnitsPack(BB, SeqOpsPack, SIRSchedUnit::MemoryPack);
       }
       else if (isa<StoreInst>(Inst)) {
         for (unsigned i = 0; i < SeqOps.size(); ++i)
           SeqOpsPack.push_back(SeqOps[i]);
 
         if (SeqOpsPack.size())
-          buildSchedulingUnitsPack(BB, SeqOpsPack);
+          buildSchedulingUnitsPack(BB, SeqOpsPack, SIRSchedUnit::MemoryPack);
       }
     }
   }
@@ -354,10 +372,11 @@ ArrayRef<SIRSchedUnit *> SIRScheduling::getDataFlowSU(Value *V) {
   return SUs;
 }
 
-void SIRScheduling::buildSchedulingUnitsPack(BasicBlock *BB,
-                                             SmallVector<SIRSeqOp *, 4> SeqOps) {
+SIRSchedUnit *SIRScheduling::buildSchedulingUnitsPack(BasicBlock *BB,
+                                                      SmallVector<SIRSeqOp *, 4> SeqOps,
+                                                      SIRSchedUnit::Type T) {
   // Create a New SUnit.
-  SIRSchedUnit *PackSU = G->createSUnit(BB, SIRSchedUnit::SeqSU, SeqOps);
+  SIRSchedUnit *PackSU = G->createSUnit(BB, T, SeqOps);
 
   // Inherit all dependencies.
   typedef SmallVector<SIRSeqOp *, 4>::iterator iterator;
@@ -367,6 +386,8 @@ void SIRScheduling::buildSchedulingUnitsPack(BasicBlock *BB,
     SIRSchedUnit *SU = G->lookupSU(SeqOp);
     G->replaceAllUseWith(SU, PackSU);
   }
+
+  return PackSU;
 }
 
 void SIRScheduling::buildSchedulingUnitsForSeqOp(SIRSlot *S) {
@@ -520,6 +541,45 @@ void SIRScheduling::buildSchedulingGraph() {
       }
       break;
     }
+    case SIRSchedUnit::MemoryPack: {
+      ArrayRef<SIRSeqOp *> SeqOps = U->getSeqOps();
+      for (unsigned i = 0; i < SeqOps.size(); ++i) {
+        SIRSeqOp *SeqOp = SeqOps[i];
+
+        Output << "SeqSU    ";
+        Output << "assign Value [";
+        SeqOp->getSrc()->print(Output);
+        Output << "] to Reg [" << SeqOp->getDst()->getName() << "] in"
+          << " Slot#" << SeqOp->getSlot()->getSlotNum() << "\n";
+      }
+      break;
+    }
+    case SIRSchedUnit::PHIPack: {
+      ArrayRef<SIRSeqOp *> SeqOps = U->getSeqOps();
+      for (unsigned i = 0; i < SeqOps.size(); ++i) {
+        SIRSeqOp *SeqOp = SeqOps[i];
+
+        Output << "SeqSU    ";
+        Output << "assign Value [";
+        SeqOp->getSrc()->print(Output);
+        Output << "] to Reg [" << SeqOp->getDst()->getName() << "] in"
+          << " Slot#" << SeqOp->getSlot()->getSlotNum() << "\n";
+      }
+      break;
+    }
+    case SIRSchedUnit::OutputPack: {
+      ArrayRef<SIRSeqOp *> SeqOps = U->getSeqOps();
+      for (unsigned i = 0; i < SeqOps.size(); ++i) {
+        SIRSeqOp *SeqOp = SeqOps[i];
+
+        Output << "SeqSU    ";
+        Output << "assign Value [";
+        SeqOp->getSrc()->print(Output);
+        Output << "] to Reg [" << SeqOp->getDst()->getName() << "] in"
+          << " Slot#" << SeqOp->getSlot()->getSlotNum() << "\n";
+      }
+      break;
+    }
     default:
       llvm_unreachable("Unexpected SUnit Type!");
     }
@@ -562,9 +622,12 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
 //   typedef SIRSchedGraph::const_loopbb_iterator iterator;
 //   for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
 //     BasicBlock *BB = I->first;
-//
+// 
+//     if (BB->getName() != "for.body.i.i")
+//       continue;
+// 
 //     SIRIMSScheduler IMS(&SM, TD, *G, BB);
-//
+// 
 //     // If we pipeline the BB successfully, index it.
 //     if (IMS.schedule() == SIRIMSScheduler::Success)
 //       SM.IndexPipelinedBB2MII(BB, IMS.getMII());
@@ -628,11 +691,15 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   // Emit the SeqOps into the target Slot.
   for (unsigned i = 0; i < SUs.size(); ++i) {
     SIRSchedUnit *SU = SUs[i];
+
+    if (SU->isSlotTransition())
+      continue;
+
     unsigned TargetStep;
 
     // We should make sure the PHI is scheduled
     // to the ExitSlot.
-    if (SU->isPHI())
+    if (SU->isPHI() || SU->isPHIPack())
       TargetStep = CriticalPathLength;
     else
       TargetStep = SU->getSchedule() - EntrySUSchedule;
@@ -659,9 +726,18 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
     if (Pred->getParent() == BB) {
       assert(Pred == ExitSlot && "Unexpected Loop Edge!");
 
-      // We should inherit the condition of this loop edge.
-      C_Builder.createStateTransition(NewSlots.back(), NewSlots.front(),
-                                      I->getCnd());
+      if (SM->IsBBPipelined(BB)) {
+        unsigned II = SM->getMIIOfPipelinedBB(BB);
+
+        Value *LoopCnd = G.getLoopSU(BB)->getSeqOp()->getGuard();
+        SIRSlot *SlotBeforeNextIteration = C_Builder.advanceToNextSlot(NewSlots.front(), II - 1);
+        C_Builder.createStateTransition(SlotBeforeNextIteration, NewSlots.front(), LoopCnd);
+      } else {
+        // We should inherit the condition of this loop edge.
+        C_Builder.createStateTransition(NewSlots.back(), NewSlots.front(),
+                                        I->getCnd());
+      }
+
       // Collect the Preds should be unlink.
       UnlinkPreds.push_back(Pred);
       continue;
@@ -692,6 +768,7 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   for (succ_iterator I = ExitSlot->succ_begin(), E = ExitSlot->succ_end();
        I != E; ++I) {
     SIRSlot *Succ = I->getSlot();
+    Value *Cnd = I->getCnd();
 
     // Ignore the slot transition inside this Loop BB since this will only
     // happen when we transition from ExitSlot to EntrySlot, which we already
@@ -699,8 +776,23 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
     if (Succ->getParent() == BB)
       continue;
 
+    if (SM->IsBBPipelined(BB)) {
+      unsigned II = SM->getMIIOfPipelinedBB(BB);
+
+      SIRSlot *EntryS = NewSlots.front();
+      SIRSlot *ExitS = NewSlots.back();
+
+      for (int i = 0; i < CriticalPathLength - II + 1; ++i) {
+        SIRRegister *CndReg = C_Builder.createRegister(Cnd->getName().data() + utostr_32(i), Cnd->getType(), BB);
+        SIRSlot *AssignSlot = C_Builder.advanceToNextSlot(EntryS, II - 1);
+
+        C_Builder.assignToReg(AssignSlot, C_Builder.createIntegerValue(1, 1), Cnd, CndReg);
+        Cnd = CndReg->getLLVMValue();
+      }
+    }
+
     // Link the edge from the NewExitSlot to Succ.
-    C_Builder.createStateTransition(NewSlots.back(), Succ, I->getCnd());
+    C_Builder.createStateTransition(NewSlots.back(), Succ, Cnd);
     // Collect the Succs should be unlink.
     UnlinkSuccs.push_back(Succ);
   }
@@ -723,10 +815,6 @@ void SIRScheduleEmitter::emitSchedule() {
     BasicBlock *BB = *I;
 
     if (!G.isBBReachable(BB))
-      continue;
-
-    // The schedule emit of Pipelined BB is implemented in IMSScheduler.
-    if (SM->IsBBPipelined(BB))
       continue;
 
     emitSUsInBB(G.getSUsInBB(BB));
