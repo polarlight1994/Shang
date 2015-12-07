@@ -92,7 +92,7 @@ void SIRSDCScheduler::addDependencyConstraints() {
       SIRSchedUnit *SrcSU = *DI;
 
       // Ignore the back-edge.
-      if (SrcSU->getIdx() >= DstSU->getIdx())
+      if (SrcSU->getIdx() >= DstSU->getIdx() || DI.getDistance() != 0)
         continue;
 
       unsigned SrcSUCol = getSUCol(SrcSU);

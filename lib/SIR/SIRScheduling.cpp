@@ -72,7 +72,29 @@ SIRSchedUnit *SIRScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 }
 
 void SIRScheduling::constraintTerminators(BasicBlock *BB) {
-  // Get the terminator of this BB and check if it is a Ret instruction.
+  /// First constraint the Branch SUnits and PHI SUnits into the
+  /// last step of this BB.
+  SIRSlot *ExitSlot = SM->getLatestSlot(BB);
+  ArrayRef<SIRSchedUnit *> SUsInExitSlot = G->lookupSUs(ExitSlot);
+
+  ArrayRef<SIRSchedUnit *> SUsInBB = G->getSUsInBB(BB);
+
+  if (ExitSlot != SM->getLandingSlot(BB)) {
+    for (int i = 0; i < SUsInExitSlot.size(); ++i) {
+      SIRSchedUnit *SU = SUsInExitSlot[i];
+
+      for (int j = 0; j < SUsInBB.size(); ++j) {
+        SIRSchedUnit *DepSU = SUsInBB[j];
+
+        if (DepSU->isSlotTransition() || DepSU->isPHI() || DepSU->isPHIPack()) continue;
+
+        SU->addDep(DepSU, SIRDep::CreateCtrlDep(0));
+      }
+    }
+  }
+
+  /// Second constraint the Return SUnits into the last step of
+  /// whole module.
   TerminatorInst *Inst = BB->getTerminator();
   if (!isa<ReturnInst>(Inst)) return;
 
@@ -220,6 +242,10 @@ void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
 
       SUsInDstSlot[i]->addDep(U, SIRDep::CreateCtrlDep(0));
     }
+
+    // Constraint the non-dep SUnit to the Entry.
+    if (U->dep_empty())
+      U->addDep(G->getEntry(), SIRDep::CreateCtrlDep(0));
   }
 }
 
