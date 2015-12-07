@@ -653,7 +653,8 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
 
     // If we pipeline the BB successfully, index it.
     if (IMS.schedule() == SIRIMSScheduler::Success) {
-      errs() << "Pipelined BB " << BB->getName() << "\n";
+      errs() << "Pipelined BB " << BB->getName() << "in II of "
+             << IMS.getMII() << "\n";
 
       SM.IndexPipelinedBB2MII(BB, IMS.getMII());
     }
