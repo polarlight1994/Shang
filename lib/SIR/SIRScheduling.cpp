@@ -173,7 +173,7 @@ void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
       else
         Distance = 0;
 
-      U->addDep(SrcSUs[i], SIRDep::CreateValDep(Delay, Distance));
+      U->addDep(SrcSUs[i], SIRDep::CreateValDep(ceil(Delay), Distance));
     }
   }
 }
