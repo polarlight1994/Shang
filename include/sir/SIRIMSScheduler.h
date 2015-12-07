@@ -135,6 +135,8 @@ public:
   // Collect basic information.
   void collectBasicInfo();
 
+  bool couldBePipelined();
+
   bool scheduleLoopSUs();
   bool schedulePHINodes();
   Result schedule();

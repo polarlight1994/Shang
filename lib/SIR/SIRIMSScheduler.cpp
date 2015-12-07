@@ -36,16 +36,9 @@ unsigned SIRIMSScheduler::calculateASAP(const SIRSchedUnit *A) const {
     if (Dep->getIdx() >= A->getIdx())
       continue;
 
-    // If the dependency is coming from previous BB, we transform it into
-    // dependency to the Entry of LoopBB.
-    if (Dep->getParentBB() != LoopBB) {
-      unsigned Step = DI.getLatency(MII);
-      assert(Step >= 0.0 && "Unexpected Negative Schedule!");
-
-      NewStep = std::max(Step, NewStep);
-
+    // Ignore the dependency across the BB.
+    if (Dep->getParentBB() != LoopBB)
       continue;
-    }
 
     unsigned DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
     unsigned DepLatency = Dep->getLatency();
@@ -75,7 +68,7 @@ unsigned SIRIMSScheduler::calculateALAP(const SIRSchedUnit *A) const {
     if (Use->getIdx() <= A->getIdx())
       continue;
 
-    // Ignore the dependency across the BB
+    // Ignore the dependency across the BB.
     if (Use->getParentBB() != LoopBB)
       continue;
 
@@ -148,12 +141,6 @@ bool SIRIMSScheduler::buildASAPStep() {
       if (NumCalcTimes >= GraphSize) return true;
     }
   }
-
-  // The ASAP of LoopSU should always be set to CriticalPathEnd regardless of the
-  // data dependency.
-  SIRSchedUnit *LoopSU = G.getLoopSU(LoopBB);
-  unsigned &LoopSUASAP = SUnitToTF[LoopSU].ASAP;
-  LoopSUASAP = CriticalPathEnd;
 
   return false;
 }
@@ -288,43 +275,6 @@ void SIRIMSScheduler::unscheduleSU(SIRSchedUnit *U) {
   ScheduleResult.erase(at);
 }
 
-bool SIRIMSScheduler::scheduleLoopSUs() {
-  SIRSchedUnit *LoopSU = G.getLoopSU(LoopBB);
-  // To ensure the LoopSU is scheduled to the end of Steady State,
-  // we may need to delay the ASAP result of it. In this process,
-  // we will schedule it into the end of origin Stage.
-  int OriginResult = getASAPStep(LoopSU);
-  int Stage = (OriginResult - EntrySchedule) / MII;
-  int ScheduleResult = (Stage + 1) * MII - 1;
-
-  for (iterator I = LoopSUs.begin(), E = LoopSUs.end(); I != E; ++I) {
-    SIRSchedUnit *SU = *I;
-
-    assert(getASAPStep(SU) <= OriginResult
-           && "All LoopSUs should be scheduled to same slot!");
-
-    scheduleSUTo(SU, ScheduleResult);
-
-    // Update the CriticalPathEnd.
-    CriticalPathEnd = std::max(CriticalPathEnd, unsigned(ScheduleResult));
-  }
-
-  return true;
-}
-
-bool SIRIMSScheduler::schedulePHINodes() {
-  for (iterator I = PHINodes.begin(), E = PHINodes.end(); I != E; ++I) {
-    SIRSchedUnit *SU = *I;
-
-    assert(getASAPStep(SU) <= CriticalPathEnd
-           && "Wrong ASAP Step of PHI Node!");
-    
-    scheduleSUTo(SU, CriticalPathEnd);
-  }
-
-  return true;
-}
-
 bool SIRIMSScheduler::verifySchedule() {
   for (iterator I = begin(), E = end(); I != E; ++I) {
     SIRSchedUnit *SU = *I;
@@ -379,6 +329,22 @@ void SIRIMSScheduler::collectBasicInfo() {
   std::sort(SUnits.begin(), SUnits.end(), SUnitLess);
 }
 
+bool SIRIMSScheduler::couldBePipelined() {
+  // If the MII is equal to CriticalPathEnd, then it means the
+  // loop pipeline is not able to be implemented.
+  if (MII > CriticalPathEnd)
+    return false;
+
+  // If the loop condition cannot be evaluated in less than II
+  // slots, then we cannot decide whether we can initial a new
+  // iteration.
+  SIRSchedUnit *LoopSU = G.getLoopSU(LoopBB);
+  if (getASAPStep(LoopSU) > MII)
+    return false;
+
+  return true;
+}
+
 SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
   // Collect basic info of this loop BB.
   collectBasicInfo();
@@ -389,51 +355,33 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
   // Build TimeFrame for the SUnits in this local BB.
   buildTimeFrame();
 
-  // If the MII is equal to CriticalPathEnd, then it means the
-  // loop pipeline is not able to be implemented.
-  if (MII > CriticalPathEnd)
+  if (!couldBePipelined())
     return Fail;
 
   for (iterator I = begin(), E = end(); I != E; ++I) {
     SIRSchedUnit *SU = *I;
 
-    /// Collect all the LoopSUnits and ignore them since they will
-    /// be scheduled to the end of the Steady State regardless of
-    /// the dependencies.
-    // The SUnit transition back to the EntrySlot of BB is LoopSUnit.
-    if (SU == G.getLoopSU(LoopBB)) {
-      LoopSUs.push_back(SU);
-
-      continue;
-    }
-    // The SUnit transition to EntrySlot of successor BB is LoopSUnit
-    if (SU->isSlotTransition()) {
-      SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SU->getSeqOp());
-      SIRSlot *SrcSlot = SST->getSrcSlot();
-      SIRSlot *DstSlot = SST->getDstSlot();
-
-      if (DstSlot->getParent() != SrcSlot->getParent()) {
-        LoopSUs.push_back(SU);
-
-        continue;
-      }
-    }
-
-    /// Ignore PHINodes since they will be scheduled to the end of the
-    /// CriticalPath regardless of the dependencies.
-    if (SU->isPHI())
-      continue;
+//     /// Collect all the LoopSUnits and ignore them since they will
+//     /// be scheduled to the end of the Steady State regardless of
+//     /// the dependencies.
+//     // The SUnit transition back to the EntrySlot of BB is LoopSUnit.
+//     if (SU == G.getLoopSU(LoopBB))
+//       LoopSUs.push_back(SU);
+// 
+//     // The SUnit transition to EntrySlot of successor BB is LoopSUnit
+//     if (SU->isSlotTransition()) {
+//       SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SU->getSeqOp());
+//       SIRSlot *SrcSlot = SST->getSrcSlot();
+//       SIRSlot *DstSlot = SST->getDstSlot();
+// 
+//       if (DstSlot->getParent() != SrcSlot->getParent())
+//         LoopSUs.push_back(SU);
+//     }
 
     // Other SUnits will be pushed into ReadyQueue to prepare to be
     // scheduled.
     ReadyQueue.push(SU);
   }
-
-  // Schedule all LoopSUnits to the end of the Steady State.
-  scheduleLoopSUs();
-
-  // Schedule all PHINodes to the end of CriticalPath.
-  schedulePHINodes();
 
   while (!ReadyQueue.empty()) {
     SIRSchedUnit *SU = ReadyQueue.top();
@@ -456,237 +404,26 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
     ReadyQueue.reheapify();
   }
 
-  if (!verifySchedule())
-    return Fail;
+//   if (!verifySchedule())
+//     return Fail;
 
   emitSchedule();
 
   /// Debug code
-//   std::string IMSResult = LuaI::GetString("IMSResult");
-//   std::string Error;
-//   raw_fd_ostream Output(IMSResult.c_str(), Error);
-//
-//   Output << "MII is set to " << MII << "\n";
-//
-//   for (iterator I = begin(), E = end(); I != E; ++I) {
-//     SIRSchedUnit *U = *I;
-//
-//     Output << "SU#" << U->getIdx() << " is scheduled to "
-//       << "step " << getStep(U) << "\n";
-//   }
+  std::string IMSResult = LuaI::GetString("IMSResult");
+  std::string Error;
+  raw_fd_ostream Output(IMSResult.c_str(), Error);
+
+  Output << "MII is set to " << MII << "\n";
+
+  for (iterator I = begin(), E = end(); I != E; ++I) {
+    SIRSchedUnit *U = *I;
+
+    Output << "SU#" << U->getIdx() << " is scheduled to "
+      << "#" << U->getSchedule() << " and step " << getStep(U) << "\n";
+  }
 
   return Success;
-}
-
-SIRSlot *SIRIMSScheduler::createSlotForPrologue(unsigned Step) {
-  SIRSlot *S = C_Builder.createSlot(LoopBB, Step);
-
-  PrologueSlots.push_back(S);
-
-  return S;
-}
-
-SIRSlot *SIRIMSScheduler::createSlotForSteadyState(unsigned Step) {
-  SIRSlot *S = C_Builder.createSlot(LoopBB, Step);
-
-  SteadyStateSlots.push_back(S);
-
-  return S;
-}
-
-SIRSlot *SIRIMSScheduler::createSlotForEpilogue(unsigned Step) {
-  SIRSlot *S = C_Builder.createSlot(LoopBB, Step);
-
-  EpilogueSlots.push_back(S);
-
-  return S;
-}
-
-void SIRIMSScheduler::rebuildSTM() {
-  // Get the EntrySlot/ExitSlot of Prologue.
-  SIRSlot *PrologueEntrySlot = PrologueSlots.front();
-  SIRSlot *PrologueExitSlot = PrologueSlots.back();
-
-  // Get the EntrySlot/ExitSlot of SteadyState.
-  SIRSlot *SteadyStateEntrySlot = SteadyStateSlots.front();
-  SIRSlot *SteadyStateExitSlot = SteadyStateSlots.back();
-
-  // Get the EntrySlot/ExitSlot of Epilogue.
-  SIRSlot *EpilogueEntrySlot = EpilogueSlots.front();
-  SIRSlot *EpilogueExitSlot = EpilogueSlots.back();
-
-  for (unsigned i = 0; i < PrologueSlots.size() - 1; ++i) {
-    // Create the slot transition from last slot to this slot.
-    SIRSlot *S = PrologueSlots[i];
-    SIRSlot *SuccSlot = PrologueSlots[i + 1];
-
-    C_Builder.createStateTransition(S, SuccSlot,
-                                    C_Builder.createIntegerValue(1, 1));
-  }
-
-  for (unsigned i = 0; i < SteadyStateSlots.size() - 1; ++i) {
-    // Create the slot transition from last slot to this slot.
-    SIRSlot *S = SteadyStateSlots[i];
-    SIRSlot *SuccSlot = SteadyStateSlots[i + 1];
-
-    C_Builder.createStateTransition(S, SuccSlot,
-                                    C_Builder.createIntegerValue(1, 1));
-  }
-
-  for (unsigned i = 0; i < EpilogueSlots.size() - 1; ++i) {
-    // Create the slot transition from last slot to this slot.
-    SIRSlot *S = EpilogueSlots[i];
-    SIRSlot *SuccSlot = EpilogueSlots[i + 1];
-
-    C_Builder.createStateTransition(S, SuccSlot,
-                                    C_Builder.createIntegerValue(1, 1));
-  }
-
-  // Create the State Transition from Previous BB to the Prologue of Loop BB by
-  // inherit the processors of origin EntrySlot.
-  SmallVector<SIRSlot *, 4> UnlinkPreds;
-  typedef SIRSlot::pred_iterator pred_iterator;
-  for (pred_iterator I = OriginEntrySlot->pred_begin(), E = OriginEntrySlot->pred_end();
-       I != E; ++I) {
-    SIRSlot *Pred = I->getSlot();
-
-    // The edge is coming from current BB that means this is the loop edge.
-    // we should handle it specially.
-    if (Pred->getParent() == LoopBB) {
-      // We should inherit the condition of this loop edge.
-      C_Builder.createStateTransition(SteadyStateExitSlot, SteadyStateEntrySlot,
-                                      I->getCnd());
-      // Collect the Preds should be unlink.
-      UnlinkPreds.push_back(Pred);
-      continue;
-    }
-
-    // Link the edge from the Pred to PrologueEntrySlot.
-    C_Builder.createStateTransition(Pred, PrologueEntrySlot, I->getCnd());
-    // Collect the Preds should be unlink.
-    UnlinkPreds.push_back(Pred);
-  }
-  // Unlink the origin edge.
-  for (unsigned i = 0; i < UnlinkPreds.size(); ++i)
-    UnlinkPreds[i]->unlinkSucc(OriginEntrySlot);
-
-  // Create the State Transition from the Prologue to Steady State.
-  C_Builder.createStateTransition(PrologueExitSlot, SteadyStateEntrySlot,
-                                  C_Builder.createIntegerValue(1, 1));
-
-  // Create the State Transition from the Steady State to Epilogue of Loop BB by
-  // inherit the successors of origin ExitSlot.
-  SmallVector<SIRSlot *, 4> UnlinkSuccs;
-  typedef SIRSlot::succ_iterator succ_iterator;
-  for (succ_iterator I = OriginExitSlot->succ_begin(), E = OriginExitSlot->succ_end();
-       I != E; ++I) {
-    SIRSlot *Succ = I->getSlot();
-
-    // Ignore the slot transition inside this Loop BB since this will only
-    // happen when we transition from ExitSlot to EntrySlot, which we already
-    // handled in previous step.
-    if (Succ->getParent() == LoopBB)
-      continue;
-
-    // Link the edge from the SteadyStateExitSlot to EpilogueEntrySlot.
-    C_Builder.createStateTransition(SteadyStateExitSlot, EpilogueEntrySlot, I->getCnd());
-    // Also link the edge from the EpilogueExitSLot to Succ.
-    C_Builder.createStateTransition(EpilogueExitSlot, Succ, I->getCnd());
-    // Collect the Succs should be unlink.
-    UnlinkSuccs.push_back(Succ);
-  }
-  // Unlink the origin edge.
-  for (unsigned i = 0; i < UnlinkSuccs.size(); ++i)
-    OriginExitSlot->unlinkSucc(UnlinkSuccs[i]);
-
-  SM->IndexBB2Slots(LoopBB, PrologueEntrySlot, EpilogueExitSlot);
-}
-
-void SIRIMSScheduler::generatePrologue() {
-  for (unsigned i = 0; i < StageNum - 1; ++i) {
-    for (unsigned j = 0; j < MII; ++j) {
-      // Create a new Slot for this step.
-      SIRSlot *S = createSlotForPrologue(j);
-
-      // Get all SeqOps scheduled to this step, and emit them to this NewSlot.
-      typedef
-        std::map<SIRSchedUnit *, std::pair<unsigned, unsigned> >::iterator iterator;
-      for (iterator I = ScheduleResult.begin(), E = ScheduleResult.end();
-           I != E; ++I) {
-        if (I->second.first != j || I->second.second > i)
-          continue;
-
-        SIRSchedUnit *SU = I->first;
-
-        // Ignore the BBEntry and SlotTransition SUnits.
-        if (SU->isBBEntry() || SU->isSlotTransition()) continue;
-
-        ArrayRef<SIRSeqOp *> SeqOps = SU->getSeqOps();
-        for (unsigned k = 0; k < SeqOps.size(); ++k) {
-          SIRSeqOp *SeqOp = SeqOps[k];
-
-          C_Builder.assignToReg(S, C_Builder.createIntegerValue(1, 1),
-                                SeqOp->getSrc(), SeqOp->getDst());
-        }
-      }    
-    }
-  }
-}
-
-void SIRIMSScheduler::generateEpilogue() {
-  for (unsigned i = StageNum - 1; i > 0; --i) {
-    for (unsigned j = 0; j < MII; ++j) {
-      // Create a new Slot for this step.
-      SIRSlot *S = createSlotForEpilogue(j);
-
-      // Get all SeqOps scheduled to this step, and emit them to this NewSlot.
-      typedef
-        std::map<SIRSchedUnit *, std::pair<unsigned, unsigned> >::iterator iterator;
-      for (iterator I = ScheduleResult.begin(), E = ScheduleResult.end();
-           I != E; ++I) {
-        if (I->second.first != j || I->second.second < i)
-          continue;
-
-        SIRSchedUnit *SU = I->first;
-
-        // Ignore the BBEntry and SlotTransition SUnits.
-        if (SU->isBBEntry() || SU->isSlotTransition()) continue;
-
-        ArrayRef<SIRSeqOp *> SeqOps = SU->getSeqOps();
-        for (unsigned k = 0; k < SeqOps.size(); ++k) {
-          SIRSeqOp *SeqOp = SeqOps[k];
-
-          C_Builder.assignToReg(S, C_Builder.createIntegerValue(1, 1),
-                                SeqOp->getSrc(), SeqOp->getDst());
-        }
-      }
-    }
-  }
-}
-
-void SIRIMSScheduler::emitSUnitsToSlot() {
-  for (unsigned i = 0; i < MII; ++i) {
-    // Create a new Slot for this step.
-    SIRSlot *S = createSlotForSteadyState(i);
-
-    // Get all SeqOps scheduled to this step,
-    // and emit them to this NewSlot.
-    typedef std::map<SIRSchedUnit *, std::pair<unsigned, unsigned> >::iterator iterator;
-    for (iterator I = ScheduleResult.begin(), E = ScheduleResult.end();
-         I != E; ++I) {
-      if (I->second.first != i)
-        continue;
-
-      SIRSchedUnit *SU = I->first;
-
-      // Ignore the BBEntry and SlotTransition SUnits.
-      if (SU->isBBEntry() || SU->isSlotTransition()) continue;
-
-      ArrayRef<SIRSeqOp *> SeqOps = SU->getSeqOps();
-      for (unsigned i = 0; i < SeqOps.size(); ++i)
-        SeqOps[i]->setSlot(S);
-    }
-  }
 }
 
 void SIRIMSScheduler::emitSchedule() {
@@ -703,8 +440,6 @@ void SIRIMSScheduler::emitSchedule() {
   for (iterator I = SUs.begin(), E = SUs.end(); I != E; ++I) {
     SIRSchedUnit *U = *I;
 
-    // Ignore the BBEntry since it will schedule to step 0 without
-    // any dependencies.
     if (U->isBBEntry()) continue;
 
     typedef SIRSchedUnit::dep_iterator dep_iterator;
@@ -718,21 +453,16 @@ void SIRIMSScheduler::emitSchedule() {
 
       // Remove all dependencies inside of the BB, then we can
       // add a new constraint.
-      if (DepU->getParentBB() == U->getParentBB()) {
-        U->removeDep(DepU);
+      if (DepU->getParentBB() == U->getParentBB())
         continue;
-      }
 
       // If the dependency is coming from outside of the BB, we can
       // transform it into a dependency between Src SUnit to the BBEntry
       // so that origin dependency will not affect the step result.
-      unsigned NewLatency = std::max(0, OriginLatency - int(getStep(U)));
+      unsigned NewLatency = std::max(0, OriginLatency - int(getASAPStep(U)));
       U->removeDep(DepU);
       EntrySU->addDep(DepU, SIRDep::CreateCtrlDep(NewLatency));
     }
-
-    // Add a new constraint.
-    U->addDep(EntrySU, SIRDep::CreateCtrlDep(getStep(U)));
   }
 
   // Also constraint the LoopSUnit to locate before the Exit.
@@ -740,13 +470,4 @@ void SIRIMSScheduler::emitSchedule() {
   SIRSchedUnit *Exit = G.getExit();
 
   Exit->addDep(LoopSU, SIRDep::CreateCtrlDep(0));
-
-  // Emit the SUnits to corresponding Slot.
-  emitSUnitsToSlot();
-
-  generatePrologue();
-  generateEpilogue();
-
-  // Re-build the STM.
-  rebuildSTM();
 }
