@@ -167,10 +167,7 @@ void LuaI::updateFUs() {
   // Read other parameters.
 #define READPARAMETER(PARAMETER, T) { \
     LuaRef R = FUs[#PARAMETER]; \
-    if (R.isNil()) \
-      errs() << "FUs."#PARAMETER \
-             << " is missed in the configuration script!\n"; \
-    else \
+    if (!R.isNil()) \
       VFUs::PARAMETER = R.cast<T>(); \
   }
 
