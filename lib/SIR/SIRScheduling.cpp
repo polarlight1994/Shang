@@ -645,19 +645,19 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
   buildSchedulingGraph();
 
   // Use the IMSScheduler on all loop BBs.
-//   typedef SIRSchedGraph::const_loopbb_iterator iterator;
-//   for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
-//     BasicBlock *BB = I->first;
-// 
-//     if (BB->getName() != "for.body.i.i")
-//       continue;
-// 
-//     SIRIMSScheduler IMS(&SM, TD, *G, BB);
-// 
-//     // If we pipeline the BB successfully, index it.
-//     if (IMS.schedule() == SIRIMSScheduler::Success)
-//       SM.IndexPipelinedBB2MII(BB, IMS.getMII());
-//   }
+  typedef SIRSchedGraph::const_loopbb_iterator iterator;
+  for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
+    BasicBlock *BB = I->first;
+
+    SIRIMSScheduler IMS(&SM, TD, *G, BB);
+
+    // If we pipeline the BB successfully, index it.
+    if (IMS.schedule() == SIRIMSScheduler::Success) {
+      errs() << "Pipelined BB " << BB->getName() << "\n";
+
+      SM.IndexPipelinedBB2MII(BB, IMS.getMII());
+    }
+  }
 
   schedule();
 

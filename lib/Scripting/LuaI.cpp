@@ -102,7 +102,7 @@ T LuaI::getValueT(ArrayRef<const char*> Path) const {
   LuaRef R = getValue(Path);
 
   if (R.isNil()) {
-    ReportNILPath(Path);
+    //ReportNILPath(Path);
     return T();
   }
 
