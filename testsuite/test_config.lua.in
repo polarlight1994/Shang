@@ -9,6 +9,7 @@ IFFileName = [[@TEST_IF_SRC@]]
 FinalIR = [[@DEBUG_FINAL_IR@]]
 SDCResult = [[@DEBUG_SDC_RESULT@]]
 LSResult = [[@DEBUG_LS_RESULT@]]
+IMSResult = [[@DEBUG_IMS_RESULT@]]
 SchedGraph = [[@DEBUG_SchedGraph@]]
 
 CounterFile = [[@CycleCounter@]]
