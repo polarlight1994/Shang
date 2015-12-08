@@ -491,6 +491,9 @@ public:
 
   void replaceAllUseWith(SIRSchedUnit *OldSU, SIRSchedUnit *NewSU);
 
+  void deleteUselessSUnit(SIRSchedUnit *U);
+  void gc();
+
   // Reset the schedule of all the scheduling units in the graph.
   void resetSchedule();
 };

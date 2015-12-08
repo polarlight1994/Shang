@@ -24,6 +24,8 @@
 
 using namespace llvm;
 
+static int Num = 0;
+
 SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB)
   : II(0), Schedule(0), Idx(Idx), IsScheduled(false),
   T(T), BB(BB), SeqOps(0) {
@@ -402,6 +404,8 @@ SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Typ
 void SIRSchedGraph::replaceAllUseWith(SIRSchedUnit *OldSU, SIRSchedUnit *NewSU) {
   OldSU->replaceAllDepWith(NewSU);
 
+  assert(OldSU->dep_empty() && OldSU->use_empty() && "Dependencies not clean!");
+
   BasicBlock *BB = OldSU->getParentBB();
   SIRSeqOp *SeqOp = OldSU->getSeqOp();
   SIRSlot *S = SeqOp->getSlot();
@@ -446,8 +450,29 @@ void SIRSchedGraph::replaceAllUseWith(SIRSchedUnit *OldSU, SIRSchedUnit *NewSU) 
     }
   }
 
-  SUnits.erase(OldSU);
+  Num++;
+}
+
+void SIRSchedGraph::deleteUselessSUnit(SIRSchedUnit *U) {
+  SUnits.erase(U);
+
   TotalSUs--;
+}
+
+void SIRSchedGraph::gc() {
+  int num = 0;
+
+  // Delete all the useless SUnit.
+  for (iterator I = begin(), E = end(); I != E;) {
+    SIRSchedUnit *U = I++;
+
+    if (U->dep_empty() && U->use_empty()) {
+      num++;
+      deleteUselessSUnit(U);
+    }
+  }
+
+  assert(Num == num && "Still some useless SUnits not deleted!");
 }
 
 void SIRSchedGraph::resetSchedule() {
