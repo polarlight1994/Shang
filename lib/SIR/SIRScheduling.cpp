@@ -80,17 +80,21 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
   ArrayRef<SIRSchedUnit *> SUsInBB = G->getSUsInBB(BB);
 
   if (ExitSlot != SM->getLandingSlot(BB)) {
-    for (int i = 0; i < SUsInExitSlot.size(); ++i) {
-      SIRSchedUnit *SU = SUsInExitSlot[i];
+  for (int i = 0; i < SUsInExitSlot.size(); ++i) {
+    SIRSchedUnit *SU = SUsInExitSlot[i];
 
-      for (int j = 0; j < SUsInBB.size(); ++j) {
-        SIRSchedUnit *DepSU = SUsInBB[j];
+    if (!SU->isSlotTransition() && !SU->isPHI() && !SU->isPHIPack())
+      continue;
 
-        if (DepSU->isSlotTransition() || DepSU->isPHI() || DepSU->isPHIPack()) continue;
+    for (int j = 0; j < SUsInBB.size(); ++j) {
+      SIRSchedUnit *DepSU = SUsInBB[j];
 
-        SU->addDep(DepSU, SIRDep::CreateCtrlDep(0));
-      }
+      if (DepSU->isSlotTransition() || DepSU->isPHI() || DepSU->isPHIPack())
+        continue;
+
+      SU->addDep(DepSU, SIRDep::CreateCtrlDep(0));
     }
+  }
   }
 
   /// Second constraint the Return SUnits into the last step of
@@ -294,6 +298,16 @@ void SIRScheduling::buildMemoryDependencies(BasicBlock *BB) {
         // Get all SeqOps created for this MemInst.
         ArrayRef<SIRSeqOp *> OtherSeqOps = SM->lookupMemSeqOps(MemInst);
 
+        int Latency = 0;
+        if (isa<LoadInst>(MemInst) && isa<LoadInst>(Inst))
+          Latency = 2;
+        if (isa<LoadInst>(MemInst) && isa<StoreInst>(Inst))
+          Latency = 2;
+        if (isa<StoreInst>(MemInst) && isa<LoadInst>(Inst))
+          Latency = 1;
+        if (isa<StoreInst>(MemInst) && isa<StoreInst>(Inst))
+          Latency = 1;
+
         for (unsigned j = 0; j < SeqOps.size(); ++j) {
           SIRSeqOp *SeqOp = SeqOps[j];
           SIRSchedUnit *SU = G->lookupSU(SeqOp);
@@ -302,7 +316,7 @@ void SIRScheduling::buildMemoryDependencies(BasicBlock *BB) {
             SIRSeqOp *OtherSeqOp = OtherSeqOps[k];
             SIRSchedUnit *OtherSU = G->lookupSU(OtherSeqOp);
 
-            SU->addDep(OtherSU, SIRDep::CreateMemDep(0));
+              SU->addDep(OtherSU, SIRDep::CreateMemDep(Latency));
           }
         }
       }
@@ -455,8 +469,11 @@ void SIRScheduling::buildSchedulingUnitsForSeqOp(SIRSlot *S) {
 }
 
 void SIRScheduling::finishBuildingSchedGraph() {
-  SIRSchedUnit *Exit = G->getExit();
+  // GC: delete all useless SUnit.
+  G->gc();
 
+  // Handle the Exit.
+  SIRSchedUnit *Exit = G->getExit();
   typedef SIRSchedGraph::iterator iterator;
   for (iterator I = llvm::next(G->begin()), E = Exit; I != E; ++I) {
     SIRSchedUnit *U = I;
@@ -852,7 +869,7 @@ void SIRScheduleEmitter::emitSchedule() {
 }
 
 void SIRScheduleEmitter::gc() {
-  // Delete all the old & useless Slot.
+  // Delete all the useless Slot.
   bool Changed = true;
   while (Changed) {
     Changed = false;
@@ -870,14 +887,13 @@ void SIRScheduleEmitter::gc() {
     }
   }
 
+  // Visit the SIRSlots in reverse post order to re-name them in order.
   SIRSlot *StartSlot = SM->slot_begin();
   unsigned SlotNum = 0;
   ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> > RPO(StartSlot);
   typedef
     ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >::rpo_iterator
     slot_iterator;
-
-  // Visit the SIRSlots in reverse post order to re-name them in order.
   for (slot_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
     SIRSlot *S = *I;
     S->resetNum(SlotNum++);
