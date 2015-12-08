@@ -522,9 +522,9 @@ void SIRCtrlRgnBuilder::createMemoryTransaction(Value *Addr, Value *Data,
   // Index the MemInst to MemSeqOps
   SM->IndexMemInst2SeqOps(&I, MemSeqOps);
 
-  // Advance to next slot so other operations will not conflicted with this memory
-  // transaction operation.
-  advanceToNextSlot(Slot);
+//   // Advance to next slot so other operations will not conflicted with this memory
+//   // transaction operation.
+//   advanceToNextSlot(Slot);
 }
 
 SIRSlot *SIRCtrlRgnBuilder::createSlot(BasicBlock *ParentBB, unsigned Schedule) {
