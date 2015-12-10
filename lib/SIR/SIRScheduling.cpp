@@ -79,11 +79,14 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
 
   ArrayRef<SIRSchedUnit *> SUsInBB = G->getSUsInBB(BB);
 
-  if (ExitSlot != SM->getLandingSlot(BB)) {
   for (int i = 0; i < SUsInExitSlot.size(); ++i) {
     SIRSchedUnit *SU = SUsInExitSlot[i];
 
-    if (!SU->isSlotTransition() && !SU->isPHI() && !SU->isPHIPack())
+    bool AssignToOutPort = false;
+    if (SU->getSeqOps().size() == 1)
+      AssignToOutPort= SU->getSeqOp()->getDst()->isOutPort();
+
+    if (!SU->isSlotTransition() && !SU->isPHI() && !SU->isPHIPack() && !AssignToOutPort)
       continue;
 
     for (int j = 0; j < SUsInBB.size(); ++j) {
@@ -94,7 +97,6 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
 
       SU->addDep(DepSU, SIRDep::CreateCtrlDep(0));
     }
-  }
   }
 
   /// Second constraint the Return SUnits into the last step of
