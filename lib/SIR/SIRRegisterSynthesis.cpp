@@ -102,17 +102,13 @@ bool SIRRegisterSynthesisForAnnotation::synthesizeRegister(SIRRegister *Reg,
   SmallVector<Value *, 4> OrVec;
   SmallVector<Value *, 4> Fanins, FaninGuards;
 
-  for (SIRRegister::const_iterator I = Reg->assign_begin(),
-    E = Reg->assign_end(); I != E; ++I) {
-      Value *Temp = *I;
-      Fanins.push_back(Temp);
-  }
+  for (SIRRegister::const_iterator I = Reg->fanin_begin(),
+       E = Reg->fanin_end(); I != E; ++I)
+    Fanins.push_back(*I);
 
   for (SIRRegister::const_guard_iterator I = Reg->guard_begin(),
-    E = Reg->guard_end(); I != E; ++I) {
-      Value *Temp = *I;
-      FaninGuards.push_back(Temp);
-  }
+       E = Reg->guard_end(); I != E; ++I)
+    FaninGuards.push_back(*I);
 
   if (Fanins.empty() || FaninGuards.empty())
     return false;
@@ -251,17 +247,13 @@ bool SIRRegisterSynthesisForCodeGen::synthesizeRegister(SIRRegister *Reg,
   SmallVector<Value *, 4> OrVec;
   SmallVector<Value *, 4> Fanins, FaninGuards;
 
-  for (SIRRegister::const_iterator I = Reg->assign_begin(),
-    E = Reg->assign_end(); I != E; ++I) {
-      Value *Temp = *I;
-      Fanins.push_back(Temp);
-  }
+  for (SIRRegister::const_iterator I = Reg->fanin_begin(),
+       E = Reg->fanin_end(); I != E; ++I)
+    Fanins.push_back(*I);
 
   for (SIRRegister::const_guard_iterator I = Reg->guard_begin(),
-    E = Reg->guard_end(); I != E; ++I) {
-      Value *Temp = *I;
-      FaninGuards.push_back(Temp);
-  }
+       E = Reg->guard_end(); I != E; ++I)
+    FaninGuards.push_back(*I);
 
   if (Fanins.empty() || FaninGuards.empty())
     return false;

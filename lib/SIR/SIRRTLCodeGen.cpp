@@ -324,7 +324,7 @@ struct SIRControlPathPrinter {
 
 void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg, bool UsedAsGuard) {
   // If the register has no Fanin, then ignore it.
-  if (Reg->assignmentEmpty()) return;
+  if (Reg->fanin_empty()) return;
 
   // Register must have been synthesized
   Value *RegVal = Reg->getRegVal();
@@ -353,15 +353,8 @@ void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg, bool UsedAsGuard) {
 void SIRControlPathPrinter::printRegister(SIRRegister *Reg, bool UsedAsGuard) {
   vlang_raw_ostream VOS(OS);
 
-  if (Reg->assignmentEmpty()) {
-    // Print the driver of the output ports.
-    // Change the judgment to the type of register!
-    if (Reg->getRegisterType() == SIRRegister::OutPort) {
-      VOS.always_ff_begin();
-      VOS << Mangle(Reg->getName()) << " <= "
-          << buildLiteralUnsigned(Reg->getInitVal(), Reg->getBitWidth()) << ";\n";
-      VOS.always_ff_end();
-    }
+  if (Reg->fanin_empty()) {
+    assert(Reg->isFUInput() && "Unexpected Fanin Empty register!");
 
     return;
   }
@@ -578,9 +571,9 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
   vlang_raw_ostream VOS(OS);
 
   SIRRegister *Addr = SMB->getAddr();
-  if (Addr->assign_empty()) return;
+  if (Addr->fanin_empty()) return;
   SIRRegister *Enable = SMB->getEnable();
-  if (Enable->assign_empty()) return;
+  if (Enable->fanin_empty()) return;
 
   SIRRegister *WData = SMB->getWData();
   SIRRegister *WriteEn = SMB->getWriteEn();
@@ -597,7 +590,7 @@ void SIRControlPathPrinter::printMemoryBankImpl(SIRMemoryBank *SMB, unsigned Byt
 
   // Print the code for the WData and RData.
   VOS.always_ff_begin(false);
-  if (!WData->assign_empty()) {
+  if (!WData->fanin_empty()) {
     if (SMB->requireByteEnable()) {
       VOS.if_begin(SMB->getWriteEnName());
 
@@ -711,9 +704,9 @@ void SIRControlPathPrinter::printVirtualMemoryBank(SIRMemoryBank *SMB) {
   vlang_raw_ostream VOS(OS);
 
   SIRRegister *Addr = SMB->getAddr();
-  if (Addr->assign_empty()) return;
+  if (Addr->fanin_empty()) return;
   SIRRegister *Enable = SMB->getEnable();
-  if (Enable->assign_empty()) return;
+  if (Enable->fanin_empty()) return;
 
   SIRRegister *WData = SMB->getWData();
   SIRRegister *WriteEn = SMB->getWriteEn();

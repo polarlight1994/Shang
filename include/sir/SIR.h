@@ -131,6 +131,25 @@ static void printConstantIntValue(raw_ostream &OS, ConstantInt *CI) {
 }
 
 namespace llvm {
+class SIRSlot;
+
+class SIRSeqOp;
+class SIRSlotTransition;
+
+class SIRRegister;
+
+class SIRPort;
+class SIRInPort;
+class SIROutPort;
+
+class SIRSubModuleBase;
+class SIRSubModule;
+class SIRMemoryBank;
+
+class SIR;
+}
+
+namespace llvm {
 // Represent the registers in the Verilog.
 class SIRRegister : public ilist_node<SIRRegister> {
 public:
@@ -151,12 +170,15 @@ private:
 
   /// Each register contains a corresponding Mux to holds
   /// all assignment to it.
-  // Map the transaction condition to transaction value.
   typedef std::vector<Value *> FaninVector;
   FaninVector Fanins;
 
   typedef std::vector<Value *> FaninGuardVector;
   FaninGuardVector FaninGuards;
+
+  // Also remember the slot of assignment.
+  typedef std::map<Value *, SIRSlot *> Fanin2SlotMapTy;
+  Fanin2SlotMapTy Fanin2Slot;
 
   // After RegisterSynthesis, all assignments will be
   // synthesized into forms below:
@@ -183,13 +205,13 @@ public:
     InitVal(InitVal), T(T), LLVMValue(LLVMValue) {}
 
   typedef FaninVector::const_iterator const_iterator;
-  const_iterator assign_begin() const { return Fanins.begin(); }
-  const_iterator assign_end() const { return Fanins.end(); }
+  const_iterator fanin_begin() const { return Fanins.begin(); }
+  const_iterator fanin_end() const { return Fanins.end(); }
   typedef FaninVector::iterator iterator;
-  iterator assign_begin() { return Fanins.begin(); }
-  iterator assign_end() { return Fanins.end(); }
-  unsigned assign_size() const { return Fanins.size(); }
-  bool assign_empty() const { return Fanins.empty(); }
+  iterator fanin_begin() { return Fanins.begin(); }
+  iterator fanin_end() { return Fanins.end(); }
+  unsigned fanin_size() const { return Fanins.size(); }
+  bool fanin_empty() const { return Fanins.empty(); }
 
   typedef FaninGuardVector::const_iterator const_guard_iterator;
   const_guard_iterator guard_begin() const { return FaninGuards.begin(); }
@@ -199,6 +221,13 @@ public:
   guard_iterator guard_end() { return FaninGuards.end(); }
   unsigned guard_size() const { return FaninGuards.size(); }
   bool guard_empty() const { return FaninGuards.empty(); }
+
+  typedef Fanin2SlotMapTy::const_iterator const_fanin2slot_iterator;
+  const_fanin2slot_iterator fanin2slot_begin() const { return Fanin2Slot.begin(); }
+  const_fanin2slot_iterator fanin2slot_end() const { return Fanin2Slot.end(); }
+  typedef Fanin2SlotMapTy::iterator fanin2slot_iterator;
+  fanin2slot_iterator fanin2slot_begin() { return Fanin2Slot.begin(); }
+  fanin2slot_iterator fanin2slot_end() { return Fanin2Slot.end(); }
 
   void setLLVMValue(Instruction *I) { LLVMValue = I; }
   Value *getLLVMValue() const { return LLVMValue; }
@@ -223,7 +252,6 @@ public:
   Value *getRegVal() const { return RegVal; }
   Value *getRegGuard() const { return RegGuard; }
   void addAssignment(Value *Fanin, Value *FaninGuard);
-  bool assignmentEmpty() { return Fanins.empty(); }
   void setMux(Value *V, Value *G) {
     RegVal = V; RegGuard = G;
 
@@ -483,10 +511,6 @@ public:
 }
 
 namespace llvm {
-class SIRSlot;
-class SIRSeqOp;
-class SIRSlotTransition;
-
 // Represent the state in the state-transition graph.
 class SIRSlot : public ilist_node<SIRSlot> {
 public:
