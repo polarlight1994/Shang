@@ -701,6 +701,14 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
   return true;
 }
 
+void SIRScheduleEmitter::emitSeqOpToSlot(SIRSeqOp *SeqOp, SIRSlot *S) {
+  SIRSlot *OriginSlot = SeqOp->getSlot();
+
+  // Create a new SeqOp and set it to target slot.
+  SIRSeqOp *NewSeqOp = C_Builder.assignToReg(S, SeqOp->getGuard(),
+                                             SeqOp->getSrc(), SeqOp->getDst());
+}
+
 void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   assert(SUs[0]->isBBEntry() && "BBEntry must be placed at the beginning!");
 
@@ -738,9 +746,6 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   for (unsigned i = 0; i < SUs.size(); ++i) {
     SIRSchedUnit *SU = SUs[i];
 
-    if (SU->isSlotTransition())
-      continue;
-
     unsigned TargetStep;
 
     // We should make sure the PHI is scheduled
@@ -752,11 +757,18 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
 
     SIRSlot *TargetSlot = NewSlots[TargetStep];
 
+    bool IsSlotTransition = SU->isSlotTransition();
+
     ArrayRef<SIRSeqOp *> SeqOps = SU->getSeqOps();
     for (unsigned j = 0; j < SeqOps.size(); ++j) {
       SIRSeqOp *SeqOp = SeqOps[j];
 
-      SeqOp->setSlot(TargetSlot);
+      // Do not emit the SlotTransition since we already
+      // re-build the STM.
+      if (IsSlotTransition)
+        continue;
+
+      emitSeqOpToSlot(SeqOp, TargetSlot);
     }
   }
 
@@ -851,8 +863,33 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
 }
 
 void SIRScheduleEmitter::emitSchedule() {
+  // Clean all the origin SeqOps since we will emit new SeqOps
+  // according to the schedule result.
+  SM->clearSeqOps();
+
   // Get some basic information.
   Function &F = *SM->getFunction();
+
+  // Emit the SUnits in Slot0r which have no parent BB.
+  ArrayRef<SIRSchedUnit *> SUsInSlot0r = G.getSUsInBB(0);
+  typedef ArrayRef<SIRSchedUnit *>::iterator su_iterator;
+  for (su_iterator SI = SUsInSlot0r.begin(), SE = SUsInSlot0r.end(); SI != SE; ++SI) {
+    SIRSchedUnit *SU = *SI;
+
+    assert(SU->getSchedule() == 0 && "Unexpected schedule result!");
+
+    bool IsSlotTransition = SU->isSlotTransition();
+
+    ArrayRef<SIRSeqOp *> SeqOps = SU->getSeqOps();
+    for (int i = 0; i < SeqOps.size(); ++i) {
+      SIRSeqOp *SeqOp = SeqOps[i];
+
+      if (IsSlotTransition)
+        continue;
+
+      emitSeqOpToSlot(SeqOp, SM->slot_begin());
+    }
+  }
 
   // Visit the basic block in topological order to emit all SUnits in BB.
   ReversePostOrderTraversal<BasicBlock*> RPO(&F.getEntryBlock());
@@ -872,9 +909,9 @@ void SIRScheduleEmitter::emitSchedule() {
 
 void SIRScheduleEmitter::gc() {
   // Delete all the useless Slot.
-  bool Changed = true;
-  while (Changed) {
-    Changed = false;
+  bool SlotChanged = true;
+  while (SlotChanged) {
+    SlotChanged = false;
 
     typedef SIR::slot_iterator slot_iterator;
     for (slot_iterator I = SM->slot_begin(), E = SM->slot_end(); I != E;) {
@@ -884,7 +921,27 @@ void SIRScheduleEmitter::gc() {
         S->unlinkSuccs();
         SM->deleteUselessSlot(S);
 
-        Changed = true;
+        SlotChanged = true;
+      }
+    }
+  }
+
+  // Delete all the useless SlotTransition.
+  bool SlotTransChanged = true;
+  while (SlotTransChanged) {
+    SlotTransChanged = false;
+
+    typedef SIR::seqop_iterator seqop_iterator;
+    for (seqop_iterator I = SM->seqop_begin(), E = SM->seqop_end(); I != E;) {
+      SIRSeqOp *SeqOp = I++;
+
+      if (SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SeqOp)) {
+        SIRSlot *Src = SST->getSrcSlot();
+        SIRSlot *Dst = SST->getDstSlot();
+
+        // This SlotTransition is useless.
+        if (!Src->hasNextSlot(Dst))
+          SM->deleteUselessSeqOp(SeqOp);
       }
     }
   }
