@@ -856,7 +856,7 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 
     while (!VisitStack.empty()) {
       Instruction *Node = VisitStack.back().first;
-      ChildIt It = VisitStack.back().second;
+      ChildIt &It = VisitStack.back().second;
 
       // We have visited all children of current node.
       if (It == Node->op_end()) {
