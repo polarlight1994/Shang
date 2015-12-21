@@ -177,8 +177,8 @@ private:
   FaninGuardVector FaninGuards;
 
   // Also remember the slot of assignment.
-  typedef std::map<Value *, SIRSlot *> Fanin2SlotMapTy;
-  Fanin2SlotMapTy Fanin2Slot;
+  typedef std::vector<SIRSlot *> FaninSlotVector;
+  FaninSlotVector FaninSlots;
 
   // After RegisterSynthesis, all assignments will be
   // synthesized into forms below:
@@ -222,12 +222,12 @@ public:
   unsigned guard_size() const { return FaninGuards.size(); }
   bool guard_empty() const { return FaninGuards.empty(); }
 
-  typedef Fanin2SlotMapTy::const_iterator const_fanin2slot_iterator;
-  const_fanin2slot_iterator fanin2slot_begin() const { return Fanin2Slot.begin(); }
-  const_fanin2slot_iterator fanin2slot_end() const { return Fanin2Slot.end(); }
-  typedef Fanin2SlotMapTy::iterator fanin2slot_iterator;
-  fanin2slot_iterator fanin2slot_begin() { return Fanin2Slot.begin(); }
-  fanin2slot_iterator fanin2slot_end() { return Fanin2Slot.end(); }
+  typedef FaninSlotVector::const_iterator const_faninslots_iterator;
+  const_faninslots_iterator faninslots_begin() const { return FaninSlots.begin(); }
+  const_faninslots_iterator faninslots_end() const { return FaninSlots.end(); }
+  typedef FaninSlotVector::iterator faninslots_iterator;
+  faninslots_iterator faninslots_begin() { return FaninSlots.begin(); }
+  faninslots_iterator faninslots_end() { return FaninSlots.end(); }
 
   void setLLVMValue(Instruction *I) { LLVMValue = I; }
   Value *getLLVMValue() const { return LLVMValue; }
@@ -252,6 +252,7 @@ public:
   Value *getRegVal() const { return RegVal; }
   Value *getRegGuard() const { return RegGuard; }
   void addAssignment(Value *Fanin, Value *FaninGuard);
+  void addAssignment(Value *Fanin, Value *FaninGuard, SIRSlot *S);
   void setMux(Value *V, Value *G) {
     RegVal = V; RegGuard = G;
 
@@ -272,6 +273,11 @@ public:
 
     Fanins.clear();
     FaninGuards.clear();
+    FaninSlots.clear();
+
+    assert(Fanins.size() == 0 && "Fanins not cleared!");
+    assert(FaninGuards.size() == 0 && "FaininGuards not cleared!");
+    assert(FaninSlots.size() == 0 && "FaninSlots not cleared!");
   }
 
   // Declare the register and assign the initial value.
@@ -888,14 +894,34 @@ public:
     for (iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
       SIRSeqOp *SeqOp = *I;
 
-      if (SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SeqOp))
-        deleteUselessSeqOp(SST);
+      bool hasSeqOp = false;
+      for (seqop_iterator SI = seqop_begin(), SE = seqop_end(); SI != SE; ++SI) {
+        SIRSeqOp *seqop = SI;
+
+        if(SeqOp == seqop)
+          hasSeqOp = true;
+      }
+
+      if (hasSeqOp)
+        deleteUselessSeqOp(SeqOp);
     }
 
-    Slots.erase(S);
+    Registers.remove(S->getSlotReg());
+
+    Slots.remove(S);
   }
   void deleteUselessSeqOp(SIRSeqOp *SeqOp) {
-    SeqOps.erase(SeqOp);
+    SeqOps.remove(SeqOp);
+  }
+
+  void clearSeqOps() {
+    for (seqop_iterator SI = seqop_begin(), SE = seqop_end(); SI != SE;) {
+      SIRSeqOp *SeqOp = SI++;
+
+      SeqOps.remove(SeqOp);
+    }
+
+    assert(SeqOps.size() == 0 && "Not cleared!");
   }
 
   bool IndexMemInst2SeqOps(Value *MemInst, SmallVector<SIRSeqOp *, 4> MemSeqOps) {

@@ -23,6 +23,14 @@ void SIRRegister::addAssignment(Value *Fanin, Value *FaninGuard) {
   assert(Fanins.size() == FaninGuards.size() && "Size not compatible!");
 }
 
+void SIRRegister::addAssignment(Value *Fanin, Value *FaninGuard, SIRSlot *S) {
+  Fanins.push_back(Fanin);
+  FaninGuards.push_back(FaninGuard);
+  FaninSlots.push_back(S);
+  assert(Fanins.size() == FaninGuards.size() && "Size not compatible!");
+  assert(Fanins.size() == FaninSlots.size() && "Size not compatible!");
+}
+
 void SIRRegister::printDecl(raw_ostream &OS) const {
   OS << "reg" << BitRange(getBitWidth(), 0, false);
   OS << " " << Mangle(getName());
@@ -334,7 +342,16 @@ bool SIR::gcImpl() {
             if (Reg->isFUInOut() || Reg->isOutPort())
               continue;
 
-            Registers.erase(Reg);
+            bool hasReg = false;
+            for (register_iterator RI = registers_begin(), RE = registers_end(); RI != RE; ++RI) {
+              SIRRegister *reg = RI;
+
+              if (reg == Reg)
+                hasReg = true;
+            }
+
+            if (hasReg)
+              Registers.remove(Reg);
           }
 
         Inst->eraseFromParent();

@@ -222,7 +222,7 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
 
     assert(Builder.getBitWidth(NewGuardVal) == 1 && "Bad BitWidth of Guard Value!");
 
-    Dst->addAssignment(SrcVal, NewGuardVal);
+    Dst->addAssignment(SrcVal, NewGuardVal, Slot);
   }
 
   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {

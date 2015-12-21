@@ -669,7 +669,7 @@ SIRSlotTransition *SIRCtrlRgnBuilder::createStateTransition(SIRSlot *SrcSlot, SI
 }
 
 SIRSeqOp *SIRCtrlRgnBuilder::assignToReg(SIRSlot *S, Value *Guard, Value *Src,
-                                    SIRRegister *Dst) {
+                                         SIRRegister *Dst) {
   SIRSeqOp *SeqOp;
 
   if (Dst->isSlot())
