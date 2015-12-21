@@ -27,6 +27,7 @@ namespace llvm {
 extern char &SIRRegisterSynthesisForAnnotationID;
 extern char &SIRRegisterSynthesisForCodeGenID;
 extern char &SIRSchedulingID;
+extern char &SIRTimingScriptGenID;
 
 Pass *createSIRLowerIntrinsicPass();
 Pass *createSIRInitPass();
@@ -43,6 +44,8 @@ void initializeSIRFSMSynthesisPass(PassRegistry &Registry);
 void initializeSIRRegisterSynthesisForAnnotationPass(PassRegistry &Registry);
 void initializeSIRRegisterSynthesisForCodeGenPass(PassRegistry &Registry);
 void initializeSIRInitPass(PassRegistry &Registry);
+void initializeSIRSTGDistancePass(PassRegistry &Registry);
+void initializeSIRTimingScriptGenPass(PassRegistry &Registry);
 void initializeSIR2RTLPass(PassRegistry &Registry);
 } // end namespace
 

@@ -12,6 +12,8 @@ SIRSDCScheduler.cpp
 SIRIMSScheduler.cpp
 SIRRegisterSynthesis.cpp
 SIRPass.cpp
+SIRSTGDistance.cpp
+SIRTimingScriptGen.cpp
 SIRRTLCodeGen.cpp
 )
 

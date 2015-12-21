@@ -1,5 +1,6 @@
 InputFile = [[@TEST_BC@]]
 RTLOutput = [[@TEST_RTL_SRC@]]
+SDCFile = [[@TEST_SDC@]]
 SoftwareIROutput = [[@TEST_SW_LL@]]
 RTLModuleName = [[@TEST_RTL_ENTITY@]]
 test_binary_root = [[@TEST_BINARY_ROOT@]]

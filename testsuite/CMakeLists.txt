@@ -56,13 +56,14 @@ macro(add_synthesis_test test_name)
 	set(TEST_LL        		"${TEST_BINARY_ROOT}/${TEST}.ll")
 
 	set(TEST_RTL_SRC   		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sv")
+	set(TEST_SDC     		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sdc")
 
-	set(CycleCounter			"${TEST_BINARY_ROOT}/${test_name}_DUT_RTL.txt")
+	set(CycleCounter		"${TEST_BINARY_ROOT}/${test_name}_DUT_RTL.txt")
 
 	set(DEBUG_FINAL_IR		"${TEST_BINARY_ROOT}/${TEST}.finalir")
 	set(DEBUG_SDC_RESULT	"${TEST_BINARY_ROOT}/${TEST}.sdcresult")
 	set(DEBUG_LS_RESULT		"${TEST_BINARY_ROOT}/${TEST}.lsresult")
-	set(DEBUG_IMS_RESULT  "${TEST_BINARY_ROOT}/${TEST}.imsresult")
+	set(DEBUG_IMS_RESULT  	"${TEST_BINARY_ROOT}/${TEST}.imsresult")
 	set(DEBUG_SchedGraph	"${TEST_BINARY_ROOT}/${TEST}.schedgraph")
 
 	set(enableCoSimulation false)
@@ -98,7 +99,7 @@ macro(add_synthesis_test test_name)
   )
 
 	#Run the Shang.exe to compile cpp into verilog and software part.
-	add_custom_command(OUTPUT ${TEST_RTL_SRC}
+	add_custom_command(OUTPUT ${TEST_RTL_SRC} ${TEST_SDC}
 		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/test_config_main.lua"
 		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/test_config_main.lua"
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
@@ -108,7 +109,7 @@ macro(add_synthesis_test test_name)
 	#Run the quartus to compile the verilog and get report.
 	add_custom_command(OUTPUT ${BenchmarkSummaryTmp}
 		COMMAND ${QUARTUS_BIN_DIR}/quartus_sh -t "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" > /dev/null
-		DEPENDS ${TEST_RTL_SRC} "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" ${CycleCounter}
+		DEPENDS ${TEST_RTL_SRC} ${TEST_SDC} "${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl" ${CycleCounter}
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}
 		COMMENT "Compile the verilog and get report"
 	)
@@ -132,6 +133,7 @@ macro(add_cosimulation_test test_name)
 	set(TEST_LL        		"${TEST_BINARY_ROOT}/${TEST}.ll")
 	
 	set(TEST_RTL_SRC   		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sv")
+	set(TEST_SDC     		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sdc")
 	set(TEST_SW_LL				"${TEST_BINARY_ROOT}/${DUT_NAME}_SW.ll")
 
 	set(TEST_IF_SRC				"${TEST_BINARY_ROOT}/${DUT_NAME}_IF.cpp")
@@ -190,7 +192,7 @@ macro(add_cosimulation_test test_name)
 	add_custom_target(${TEST}_expected_output DEPENDS "${TEST_BINARY_ROOT}/Expected.output")
 
 	#Run the Shang.exe to compile cpp into verilog and software part.
-	add_custom_command(OUTPUT ${TEST_RTL_SRC} ${TEST_SW_LL}
+	add_custom_command(OUTPUT ${TEST_RTL_SRC} ${TEST_SDC} ${TEST_SW_LL}
 		COMMAND timeout ${TIMEOUT}s sh -c "${SHANG} ${TEST_BINARY_ROOT}/test_config.lua"
 		DEPENDS ${TMIEOUT} ${TEST_BC} ${SHANG} "${TEST_BINARY_ROOT}/test_config.lua"
 		WORKING_DIRECTORY ${TEST_BINARY_ROOT}

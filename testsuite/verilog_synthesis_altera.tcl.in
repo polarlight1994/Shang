@@ -13,6 +13,7 @@ set_global_assignment -name DEVICE EP2C70F896C6
 # =====================
 set_global_assignment -name TOP_LEVEL_ENTITY main
 set_global_assignment -name SOURCE_FILE @TEST_RTL_SRC@
+set_global_assignment -name SDC_FILE @TEST_SDC@
 set_global_assignment -name VERILOG_MACRO "quartus_synthesis"
 
 set_global_assignment -name RESERVE_ALL_UNUSED_PINS "AS INPUT TRI-STATED"
