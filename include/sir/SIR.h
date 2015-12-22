@@ -894,16 +894,18 @@ public:
     for (iterator I = S->op_begin(), E = S->op_end(); I != E; ++I) {
       SIRSeqOp *SeqOp = *I;
 
-      bool hasSeqOp = false;
-      for (seqop_iterator SI = seqop_begin(), SE = seqop_end(); SI != SE; ++SI) {
-        SIRSeqOp *seqop = SI;
+      if (isa<SIRSlotTransition>(SeqOp)) {
+        bool hasSeqOp = false;
+        for (seqop_iterator SI = seqop_begin(), SE = seqop_end(); SI != SE; ++SI) {
+          SIRSeqOp *seqop = SI;
 
-        if(SeqOp == seqop)
-          hasSeqOp = true;
+          if(SeqOp == seqop)
+            hasSeqOp = true;
+        }
+
+        if (hasSeqOp)
+          deleteUselessSeqOp(SeqOp);
       }
-
-      if (hasSeqOp)
-        deleteUselessSeqOp(SeqOp);
     }
 
     Registers.remove(S->getSlotReg());
