@@ -217,8 +217,8 @@ void ConeWithTimingInfo::generateConstraintEntries(raw_ostream &OS) {
 
   typedef TimingIntervalMapTy::iterator iterator;
   for (iterator I = TimingInterval.begin(), E = TimingInterval.end(); I != E; ++I) {
-    OS << "set src [get_keepers " << I->first->getName() << "*]\n";
-    OS << "set dst [get_keepers " << DstReg->getName() << "*]\n";
+    OS << "set src [get_keepers " << Mangle(I->first->getName()) << "*]\n";
+    OS << "set dst [get_keepers " << Mangle(DstReg->getName()) << "*]\n";
     OS << "if {[get_collection_size $src] && [get_collection_size $dst]} {\n";
     OS << "  set_multicycle_path -from $src -to $dst -setup -end " << I->second << "\n";
     OS << "}\n\n";
