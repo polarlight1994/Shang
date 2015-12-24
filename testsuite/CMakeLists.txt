@@ -260,7 +260,7 @@ macro(add_cosimulation_test test_name)
 	#Do not clean these file.
 	set_property(DIRECTORY APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
 				${MAIN_RTL_SRC}
-        ${CycleCounter}
+                ${CycleCounter}
 				${TEST_BINARY_ROOT}/Expected.output ${TEST_BINARY_ROOT}/Test.output
 				${TEST_BINARY_ROOT}/obj_dir/V${DUT_NAME}_RTL ${TEST}_origin)
 endmacro(add_cosimulation_test)

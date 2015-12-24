@@ -203,6 +203,13 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
   for(seqop_iterator I = SM.seqop_begin(), E = SM.seqop_end(); I != E; ++I) {
     SIRSeqOp *SeqOp = I;
 
+    if (SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SeqOp)) {
+      SIRSlot *SrcSlot = SST->getSrcSlot();
+      SIRSlot *DstSlot = SST->getDstSlot();
+
+      assert (SrcSlot->hasNextSlot(DstSlot) && "Unexpected useless SlotTransition!");
+    }
+
     Value *SrcVal = SeqOp->getSrc();
     SIRRegister *Dst = SeqOp->getDst();
     Value *GuardVal = SeqOp->getGuard();

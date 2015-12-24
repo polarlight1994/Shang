@@ -889,6 +889,19 @@ void SIRScheduleEmitter::gc() {
     }
   }
 
+  typedef SIR::seqop_iterator seqop_iterator;
+  for (seqop_iterator SI = SM->seqop_begin(), SE = SM->seqop_end(); SI != SE;) {
+    SIRSeqOp *SeqOp = SI++;
+
+    if (SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SeqOp)) {
+      SIRSlot *SrcSlot = SST->getSrcSlot();
+      SIRSlot *DstSlot = SST->getDstSlot();
+
+      if (!SrcSlot->hasNextSlot(DstSlot))
+        SM->deleteUselessSeqOp(SeqOp);
+    }
+  }
+
   // Visit the SIRSlots in reverse post order to re-name them in order.
   SIRSlot *StartSlot = SM->slot_begin();
   unsigned SlotNum = 0;
