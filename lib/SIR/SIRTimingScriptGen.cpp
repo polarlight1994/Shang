@@ -40,6 +40,9 @@ struct ConeWithTimingInfo {
   typedef std::map<Instruction *, TimingIntervalMapTy> Reg2ValPathIntervalMapTy;
   Reg2ValPathIntervalMapTy Reg2ValPathInterval;
 
+  typedef std::map<SIRRegister *, Instruction *> ViaValueMapTy;
+  ViaValueMapTy ViaValueMap;
+
   ConeWithTimingInfo(Value *V, SIR *SM, SIRSTGDistance *STGDist)
     : V(V), SM(SM), STGDist(STGDist) {}
 
@@ -144,6 +147,8 @@ void ConeWithTimingInfo::extractTimingPaths(Instruction *Root, SIRRegister *DstR
           bool Success = Reg2ValPath[Inst].insert(Reg).second;
           assert(Success && "Already existed?");
 
+          ViaValueMap.insert(std::make_pair(Reg, Inst));
+
           extractLeafReg(Inst, Reg2ValPath);
 
           continue;
@@ -191,8 +196,9 @@ void ConeWithTimingInfo::extractTimingPaths(Instruction *Root, SIRRegister *DstR
       continue;
 
     unsigned Distance = STGDist->getIntervalFromSrc(Leaf, ReadSlots);
-    if (Distance < UINT16_MAX)
+    if (Distance < UINT16_MAX) {
       addIntervalFromSrc(Leaf, Distance);
+    }
   }
 }
 
@@ -206,12 +212,6 @@ void ConeWithTimingInfo::addIntervalFromSrc(SIRRegister *SrcReg, unsigned Interv
 }
 
 void ConeWithTimingInfo::generateConstraintEntries(raw_ostream &OS) {
-  // Print the clk settings.
-  OS << "create_clock -name \"clk\" -period 10ns [get_ports {clk}]\n";
-  OS << "derive_pll_clocks -create_base_clocks\n";
-  OS << "set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0";
-  OS << "\n\n";
-
   SIRRegister *DstReg = SM->lookupSIRReg(V);
   assert(DstReg && "Unexpected NULL Register!");
 
@@ -220,7 +220,17 @@ void ConeWithTimingInfo::generateConstraintEntries(raw_ostream &OS) {
     OS << "set src [get_keepers " << Mangle(I->first->getName()) << "*]\n";
     OS << "set dst [get_keepers " << Mangle(DstReg->getName()) << "*]\n";
     OS << "if {[get_collection_size $src] && [get_collection_size $dst]} {\n";
-    OS << "  set_multicycle_path -from $src -to $dst -setup -end " << I->second << "\n";
+
+    Instruction *ViaValue = ViaValueMap[I->first];
+    if  (ViaValue) {
+      OS << "  set thu [get_nets " << Mangle(ViaValue->getName()) << "*]\n";
+      OS << "  if {[get_collection_size $thu]} {\n";
+      OS << "    set_multicycle_path -from $src -through $thu -to $dst -setup -end " << I->second << "\n";
+      OS << "  }\n";
+    } else {
+      OS << "  set_multicycle_path -from $src -to $dst -setup -end " << I->second << "\n";
+    }
+
     OS << "}\n\n";
   }
 }
@@ -272,6 +282,12 @@ bool SIRTimingScriptGen::runOnSIR(SIR &SM) {
   std::string TimingScript = LuaI::GetString("SDCFile");
   std::string Error;
   raw_fd_ostream Output(TimingScript.c_str(), Error);
+
+  // Print the clk settings.
+  Output << "create_clock -name \"clk\" -period 10ns [get_ports {clk}]\n";
+  Output << "derive_pll_clocks -create_base_clocks\n";
+  Output << "set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0";
+  Output << "\n\n";
 
   typedef SIR::register_iterator reg_iterator;
   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
