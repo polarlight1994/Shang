@@ -218,7 +218,7 @@ unsigned SIRIMSScheduler::computeRecMII() {
   for (iterator I = begin(), E = end(); I != E; ++I) {
     SIRSchedUnit *SU = *I;
 
-    if (!SU->isPHI()) continue;
+    if (!SU->isPHI() || !SU->isPHIPack()) continue;
 
     PHINodes.push_back(SU);
   }
@@ -230,7 +230,7 @@ unsigned SIRIMSScheduler::computeRecMII() {
     for (dep_iterator DI = PHINode->dep_begin(), DE = PHINode->dep_end(); DI != DE; ++DI) {
       SIRSchedUnit *DepSU = *DI;
 
-      if (DepSU->isPHI() && DepSU->getParentBB() == LoopBB && DI.getDistance(MII) == 1)
+      if ((DepSU->isPHI() || DepSU->isPHIPack()) && DepSU->getParentBB() == LoopBB && DI.getDistance(MII) == 1)
         RecMII = std::max(RecMII, int(ceil(DI.getLatency(MII))));
     }
   }
