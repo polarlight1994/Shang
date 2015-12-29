@@ -723,10 +723,15 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
   // between the SUnits.
   buildSchedulingGraph();
 
+  unsigned pipelinenum = 0;
+
   // Use the IMSScheduler on all loop BBs.
   typedef SIRSchedGraph::const_loopbb_iterator iterator;
   for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
     BasicBlock *BB = I->first;
+
+    if (pipelinenum >= 1)
+      continue;
 
     SIRIMSScheduler IMS(&SM, TD, *G, BB);
 
@@ -736,6 +741,7 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
              << IMS.getMII() << "\n";
 
       SM.IndexPipelinedBB2MII(BB, IMS.getMII());
+      pipelinenum++;
     }
   }
 
@@ -746,14 +752,14 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
 //   std::string LoopBBInfo = LuaI::GetString("LoopBBInfo");
 //   std::string Error;
 //   raw_fd_ostream Output(LoopBBInfo.c_str(), Error);
-//
+// 
 //   typedef SIRSchedGraph::const_loopbb_iterator iterator;
 //   for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
 //     BasicBlock *BB = I->first;
-//
+// 
 //     SIRSlot *StartSlot = SM.getLandingSlot(BB);
 //     SIRSlot *LatestSlot = SM.getLatestSlot(BB);
-//
+// 
 //     Output << BB->getName() << " starts from Slot#" << StartSlot->getSlotNum()
 //            << " and ends at Slot#" << LatestSlot->getSlotNum() << "\n";
 //   }
@@ -898,7 +904,7 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
 
       for (int i = 0; i < CriticalPathLength - II + 1; ++i) {
         SIRRegister *CndReg = C_Builder.createRegister(Cnd->getName().data() + utostr_32(i), Cnd->getType(), BB);
-        SIRSlot *AssignSlot = C_Builder.advanceToNextSlot(EntryS, II - 1);
+        SIRSlot *AssignSlot = NewSlots[II - 1 + i];
 
         C_Builder.assignToReg(AssignSlot, C_Builder.createIntegerValue(1, 1), Cnd, CndReg);
         Cnd = CndReg->getLLVMValue();
