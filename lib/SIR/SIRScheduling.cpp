@@ -72,9 +72,16 @@ SIRSchedUnit *SIRScheduling::getOrCreateBBEntry(BasicBlock *BB) {
 }
 
 void SIRScheduling::constraintTerminators(BasicBlock *BB) {
+  SIRSlot *ExitSlot = SM->getLatestSlot(BB);
+  SIRSlot *EntrySlot = SM->getLandingSlot(BB);
+
+  // If there is only one slot in BB, then we do not need
+  // to do anything to constraint.
+  if (EntrySlot == ExitSlot)
+    return;
+
   /// First constraint the Branch SUnits and PHI SUnits into the
   /// last step of this BB.
-  SIRSlot *ExitSlot = SM->getLatestSlot(BB);
   ArrayRef<SIRSchedUnit *> SUsInExitSlot = G->lookupSUs(ExitSlot);
 
   ArrayRef<SIRSchedUnit *> SUsInBB = G->getSUsInBB(BB);
@@ -213,14 +220,13 @@ void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
   SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(U->getSeqOp());
   assert (SST && "Unexpected NULL SIRSlotTransition!");
 
-  // Get the src slot.
+  // Get the source slot.
   SIRSlot *SrcSlot = SST->getSrcSlot();
+  // Get the destination slot.
+  SIRSlot *DstSlot = SST->getDstSlot();
 
   // The SlotTransitions in DstSlot are depended on all SUnits in SrcSlot.
   ArrayRef<SIRSchedUnit *> SUsInSrcSlot = G->lookupSUs(SrcSlot);
-
-  // Get the destination slot.
-  SIRSlot *DstSlot = SST->getDstSlot();
 
   // All SUnits in destination slot are depended on this SlotTransition.
   ArrayRef<SIRSchedUnit *> SUsInDstSlot = G->lookupSUs(DstSlot);
@@ -231,14 +237,14 @@ void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
   // BBEntry already. By doing this, we can ensure that all control
   // edges between BBs are ended on the BBEntry which is easy to handle
   // later especially when it is a back-edge.
-  SIRSchedUnit *FirstSUsInDstSlot = SUsInDstSlot[0];
-  if (FirstSUsInDstSlot->isBBEntry() || FirstSUsInDstSlot->isEntry()) {
-    FirstSUsInDstSlot->addDep(U, SIRDep::CreateCtrlDep(0));
+  SIRSchedUnit *FirstSUInDstSlot = SUsInDstSlot[0];
+  if (FirstSUInDstSlot->isBBEntry() || FirstSUInDstSlot->isEntry()) {
+    FirstSUInDstSlot->addDep(U, SIRDep::CreateCtrlDep(0));
 
     // If we are transiting back to the beginning of this BB, then
     // we are handling a loop BB. So index the loop BB and this
     // corresponding loop SU here.
-    if (FirstSUsInDstSlot->isBBEntry() && DstSlot->getParent() == ParentBB)
+    if (FirstSUInDstSlot->isBBEntry() && DstSlot->getParent() == ParentBB)
       G->indexLoopSU2LoopBB(U, ParentBB);
   }
   // Or we are transition to the next slot in same BB. In this circumstance,
