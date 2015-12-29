@@ -247,7 +247,10 @@ public:
 
     return Changed;
   }
-  void resetSchedule() { Schedule = 0.0; }
+  void resetSchedule() {
+    IsScheduled = false;
+    Schedule = 0.0;
+  }
 
   Value *getValue();
 
