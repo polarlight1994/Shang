@@ -782,7 +782,7 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
     float ScheduleResult = SU->getSchedule();
 
     assert(ScheduleResult >= EntrySUSchedule && "Wrong Schedule Result!");
-    unsigned PathLength = ceil(ScheduleResult - EntrySUSchedule);
+    unsigned PathLength = floor(ScheduleResult - EntrySUSchedule);
 
     CriticalPathLength = (std::max)(CriticalPathLength, PathLength);
   }
