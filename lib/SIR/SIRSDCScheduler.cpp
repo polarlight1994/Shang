@@ -37,7 +37,7 @@ unsigned SIRSDCScheduler::createLPVariable(SIRSchedUnit *U, unsigned ColNum) {
   // Name the LP Variable for debug.
   std::string LPVar = "lpvar" + utostr_32(U->getIdx());
   set_col_name(lp, ColNum, const_cast<char *>(LPVar.c_str()));
-  set_int(lp, ColNum, TRUE);
+  set_int(lp, ColNum, FALSE);
 
   // Constraint the SUnit if we can.
   if (U->isScheduled()) {
@@ -101,7 +101,7 @@ void SIRSDCScheduler::addDependencyConstraints() {
       REAL Coefs[] = { 1.0, -1.0 };
       int Cols[] = { DstSUCol, SrcSUCol };
 
-      unsigned Latency = DepEdge.getLatency() + SrcSU->getLatency();
+      float Latency = DepEdge.getLatency() + SrcSU->getLatency();
 
       // Create the constraint according to the dependency.
       if (!add_constraintex(lp, array_lengthof(Cols), Coefs, Cols, GE, Latency))
@@ -185,16 +185,15 @@ bool SIRSDCScheduler::scheduleSUs() {
 
     unsigned Col = getSUCol(U);
     REAL Result = get_var_primalresult(lp, TotalRows + Col);
-    unsigned FinalResult = unsigned(Result);
 
     /// Debug Code
-    Output << "SU#" << U->getIdx() << " scheduled to " << FinalResult << "\n";
+    Output << "SU#" << U->getIdx() << " scheduled to " << Result << "\n";
 
     // Handle the SUnits in Slot0r specially since they are
     // always scheduled to 0.
     if (!U->getParentBB() && !U->isExit())
       assert(Result == 0.0 && "Unexpected SDC result!");
-    else if (U->scheduleTo(FinalResult))
+    else if (U->scheduleTo(Result))
       ++Changed;
   }
 

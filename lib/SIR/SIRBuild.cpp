@@ -326,6 +326,8 @@ SIRPort *SIRCtrlRgnBuilder::createPort(SIRPort::SIRPortTypes T, StringRef Name,
     // Create the register for OutPort. To be noted that,
     // here we cannot assign the ParentBB for this register.
     uint64_t MaxVal = (uint64_t)std::pow(2.0, (double)BitWidth) - 1;
+    if (T == SIRPort::Finish)
+      MaxVal = 0;
     SIRRegister *Reg = createRegister(Name, createIntegerType(BitWidth),
                                       0, MaxVal, SIRRegister::OutPort);
     SIROutPort *P = new SIROutPort(T, Reg, BitWidth, Name);

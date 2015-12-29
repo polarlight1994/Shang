@@ -51,31 +51,28 @@ private:
   // Iterate distance.
   int Distance;
   // The latency of this edge.
-  int Latency;
+  float Latency;
 
 public:
-  SIRDep(enum Types T, int Latency, int Distance)
+  SIRDep(enum Types T, float Latency, int Distance)
     : EdgeType(T), Latency(Latency), Distance(Distance) {}
 
-  static SIRDep CreateValDep(int Latency, int Distance = 0) {
-    return SIRDep(ValDep, Latency, Distance);
+  static SIRDep CreateValDep(float Latency, int Distance = 0) {
+    return SIRDep(ValDep, Latency, 0);
   }
 
-  static SIRDep CreateMemDep(int Latency, int Distance = 0) {
+  static SIRDep CreateMemDep(float Latency, int Distance = 0) {
     return SIRDep(MemDep, Latency, Distance);
   }
 
-  static SIRDep CreateCtrlDep(int Latency, int Distance = 0) {
-    return SIRDep(CtrlDep, Latency, Distance);
-  }
-  static SIRDep CreateSyncDep() {
-    return SIRDep(SyncDep, -1, 0);
+  static SIRDep CreateCtrlDep(float Latency, int Distance = 0) {
+    return SIRDep(CtrlDep, Latency, 0);
   }
 
   Types getEdgeType() const { return Types(EdgeType); }
   int getDistance() const { return Distance; }
   bool isLoopCarried() const { return getDistance() != 0; }
-  inline unsigned getLatency(unsigned II = 0) const {
+  inline float getLatency(unsigned II = 0) const {
     // Compute the latency considering the distance in loop.
     return Latency - int(II) * getDistance();
   }
@@ -99,6 +96,8 @@ public:
     SlotTransition,
     // Normal node for SeqOp
     SeqSU,
+    // Normal node for CombOp
+    CombSU,
     // PHI pack
     PHIPack,
     // Output pack
@@ -115,9 +114,9 @@ private:
   uint32_t II;
   uint16_t Idx;
 
-  unsigned Schedule;
+  float Schedule;
   // The latency of this unit self.
-  unsigned Latency;
+  float Latency;
 
   // Denote of whether this unit has been scheduled.
   bool IsScheduled;
@@ -176,7 +175,7 @@ public:
     SIRDep::Types getEdgeType(unsigned II = 0) const {
       return getEdge(II).getEdgeType();
     }
-    inline int getLatency(unsigned II = 0) const {
+    inline float getLatency(unsigned II = 0) const {
       return getEdge(II).getLatency(II);
     }
     bool isLoopCarried(unsigned II = 0) const {
@@ -187,11 +186,6 @@ public:
     }
 
     int getDistance(unsigned II = 0) const { return getEdge(II).getDistance(); }
-
-    int getDFLatency() const { return getEdgeBundle().getDFLatency(); }
-    bool hasDataDependency() const {
-      return getEdgeBundle().hasDataDependency();
-    }
   };
 
   typedef SIRSchedUnitDepIterator<DepSet::const_iterator, true> const_dep_iterator;
@@ -204,6 +198,8 @@ private:
   // that should be scheduled together. For example,
   // the SeqOps created for MemInst.
   SmallVector<SIRSeqOp *, 4> SeqOps;
+  // The CombOp contained in the SUnit.
+  Instruction *CombOp;
 
   BasicBlock *BB;
 
@@ -232,13 +228,15 @@ public:
                SmallVector<SIRSeqOp *, 4>  SeqOps);
   // The constructor for SeqOp SUnit.
   SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, SIRSeqOp *SeqOp);
+  // The constructor for CombOp SUnit.
+  SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, Instruction *CombOp);
 
   unsigned getII() const { return II; }
   void setII(unsigned newII) { this->II = std::max(this->II, II); }
   unsigned getIdx() const { return Idx; }
   Type getType() const { return T; }
-  unsigned getSchedule() const { return Schedule; }
-  bool scheduleTo(unsigned NewSchedule) {
+  float getSchedule() const { return Schedule; }
+  bool scheduleTo(float NewSchedule) {
     assert(NewSchedule >= 0 && "Unexpected NULL schedule!");
 
     // Set the IsScheduled.
@@ -249,10 +247,7 @@ public:
 
     return Changed;
   }
-  void resetSchedule() {
-    Schedule = 0;
-    IsScheduled = false;
-  }
+  void resetSchedule() { Schedule = 0.0; }
 
   Value *getValue();
 
@@ -262,6 +257,7 @@ public:
   bool isPHI() const { return T == PHI; }
   bool isSlotTransition() const { return T == SlotTransition; }
   bool isSeqSU() const { return T == SeqSU; }
+  bool isCombSU() const { return T == CombSU; }
   bool isPHIPack() const { return T == PHIPack; }
   bool isOutputPack() const { return T == OutputPack; }
   bool isMemoryPack() const { return T == MemoryPack; }
@@ -273,12 +269,16 @@ public:
   }
   ArrayRef<SIRSeqOp *> getSeqOps() const { return SeqOps; }
 
+  Instruction *getCombOp() const {
+    return CombOp;
+  }
+
   // If the SUnit is PHI, then the BB we hold in SUnit is its IncomingBB.
   // If the SUnit is terminator, then the BB we hold in SUnit is its TargetBB.
   // Otherwise the BB we hold in SUnit is its ParentBB.
   BasicBlock *getParentBB() const;
 
-  unsigned getLatency() const { return Latency; }
+  float getLatency() const { return Latency; }
 
   void addToUseList(SIRSchedUnit *User) {
     UseList.insert(User);
@@ -341,7 +341,7 @@ public:
       Deps.insert(std::make_pair(Src, EdgeBundle(NewEdge)));
       Src->addToUseList(this);
     } else {
-      unsigned OldLatency = getEdgeFrom(Src).getLatency();
+      float OldLatency = getEdgeFrom(Src).getLatency();
       at->second.addEdge(NewEdge);
       assert(OldLatency <= getEdgeFrom(Src).getLatency() && "Edge lost!");
       (void) OldLatency;
@@ -451,6 +451,7 @@ public:
   SIRSchedUnit *createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T, SIRSeqOp *SeqOp);
   SIRSchedUnit *createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T,
                             SmallVector<SIRSeqOp *, 4> SeqOps);
+  SIRSchedUnit *createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T, Instruction *CombOp);
 
   // Iterate over all scheduling units in the scheduling graph.
   typedef SUList::iterator iterator;
@@ -486,7 +487,7 @@ public:
 
   // Sort the scheduling units in topological order.
   void toposortCone(SIRSchedUnit *Root, std::set<SIRSchedUnit *> &Visited,
-                    BasicBlock *BB);
+    BasicBlock *BB);
   void topologicalSortSUs();
 
   void replaceAllUseWith(SIRSchedUnit *OldSU, SIRSchedUnit *NewSU);

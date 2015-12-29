@@ -21,8 +21,8 @@ using namespace vast;
 
 static const unsigned MaxSlot = UINT16_MAX >> 2;
 
-unsigned SIRIMSScheduler::calculateASAP(const SIRSchedUnit *A) const {
-  unsigned NewStep = 0;
+float SIRIMSScheduler::calculateASAP(const SIRSchedUnit *A) const {
+  float NewStep = 0;
 
   // All BBEntry should be schedule to 0.
   if (A->isBBEntry())
@@ -40,11 +40,11 @@ unsigned SIRIMSScheduler::calculateASAP(const SIRSchedUnit *A) const {
     if (Dep->getParentBB() != LoopBB)
       continue;
 
-    unsigned DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
-    unsigned DepLatency = Dep->getLatency();
+    float DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
+    float DepLatency = Dep->getLatency();
 
     // Get the correct latency in MII.
-    unsigned Step = DepASAP + DepLatency + DI.getLatency(MII);
+    float Step = DepASAP + DepLatency + DI.getLatency(MII);
     assert(Step >= 0.0 && "Unexpected Negative Schedule!");
 
     NewStep = std::max(Step, NewStep);
@@ -53,8 +53,8 @@ unsigned SIRIMSScheduler::calculateASAP(const SIRSchedUnit *A) const {
   return NewStep;
 }
 
-unsigned SIRIMSScheduler::calculateALAP(const SIRSchedUnit *A) const {
-  unsigned NewStep = CriticalPathEnd;
+float SIRIMSScheduler::calculateALAP(const SIRSchedUnit *A) const {
+  float NewStep = CriticalPathEnd;
 
   // All loop SUnit should be schedule to MII.
   if (A == G.getLoopSU(LoopBB))
@@ -74,11 +74,11 @@ unsigned SIRIMSScheduler::calculateALAP(const SIRSchedUnit *A) const {
 
     SIRDep UseEdge = Use->getEdgeFrom(A);
 
-    unsigned UseALAP = Use->isScheduled() ? Use->getSchedule() : getALAPStep(Use);
-    unsigned ALatency = A->getLatency();
+    float UseALAP = Use->isScheduled() ? Use->getSchedule() : getALAPStep(Use);
+    float ALatency = A->getLatency();
 
     // Get the correct latency in MII.
-    unsigned Step = UseALAP - ALatency - UseEdge.getLatency(MII);
+    float Step = UseALAP - ALatency - UseEdge.getLatency(MII);
     NewStep = std::min(Step, NewStep);
   }
 
@@ -105,13 +105,13 @@ bool SIRIMSScheduler::buildASAPStep() {
       }
 
       // Calculate the ASAP step.
-      unsigned NewSchedule = calculateASAP(U);
+      float NewSchedule = calculateASAP(U);
 
       // Get the max ASAP as the CriticalPathEnd.
       CriticalPathEnd = std::max(CriticalPathEnd, NewSchedule);
 
       // Update the ASAP step.
-      unsigned &ASAPSchedule = SUnitToTF[U].ASAP;
+      float &ASAPSchedule = SUnitToTF[U].ASAP;
       if (ASAPSchedule == NewSchedule) continue;
       ASAPSchedule = NewSchedule;
 
@@ -161,14 +161,14 @@ bool SIRIMSScheduler::buildALAPStep() {
       }
 
       // Calculate the ALAP step.
-      unsigned NewSchedule = calculateALAP(U);
+      float NewSchedule = calculateALAP(U);
 
       // Update the ALAP step.
-      unsigned &ALAPSchedule = SUnitToTF[U].ALAP;
+      float &ALAPSchedule = SUnitToTF[U].ALAP;
       if (ALAPSchedule == NewSchedule) continue;
 
       // Here we should make sure the ASAP is smaller than the ALAP.
-      assert(getASAPStep(U) <= NewSchedule && "Broken ALAP schedule!");
+      assert(int(getASAPStep(U)) <= int(NewSchedule) && "Broken ALAP schedule!");
 
       ALAPSchedule = NewSchedule;
 
@@ -231,7 +231,7 @@ unsigned SIRIMSScheduler::computeRecMII() {
       SIRSchedUnit *DepSU = *DI;
 
       if (DepSU->isPHI() && DepSU->getParentBB() == LoopBB && DI.getDistance(MII) == 1)
-        RecMII = std::max(RecMII, DI.getLatency(MII));
+        RecMII = std::max(RecMII, int(ceil(DI.getLatency(MII))));
     }
   }
 
@@ -361,23 +361,6 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
   for (iterator I = begin(), E = end(); I != E; ++I) {
     SIRSchedUnit *SU = *I;
 
-//     /// Collect all the LoopSUnits and ignore them since they will
-//     /// be scheduled to the end of the Steady State regardless of
-//     /// the dependencies.
-//     // The SUnit transition back to the EntrySlot of BB is LoopSUnit.
-//     if (SU == G.getLoopSU(LoopBB))
-//       LoopSUs.push_back(SU);
-// 
-//     // The SUnit transition to EntrySlot of successor BB is LoopSUnit
-//     if (SU->isSlotTransition()) {
-//       SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SU->getSeqOp());
-//       SIRSlot *SrcSlot = SST->getSrcSlot();
-//       SIRSlot *DstSlot = SST->getDstSlot();
-// 
-//       if (DstSlot->getParent() != SrcSlot->getParent())
-//         LoopSUs.push_back(SU);
-//     }
-
     // Other SUnits will be pushed into ReadyQueue to prepare to be
     // scheduled.
     ReadyQueue.push(SU);
@@ -388,7 +371,8 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
     ReadyQueue.pop();
 
     unsigned EarliestResult = 0;
-    for (unsigned i = getASAPStep(SU), e = getALAPStep(SU); i <= e; i += 1) {
+    for (unsigned i = unsigned(floor(getASAPStep(SU))),
+                  e = unsigned(floor(getALAPStep(SU))); i <= e; i += 1) {
       scheduleSUTo(SU, i);
 
       break;
@@ -443,13 +427,13 @@ void SIRIMSScheduler::emitSchedule() {
     if (U->isBBEntry()) continue;
 
     typedef SIRSchedUnit::dep_iterator dep_iterator;
-    for (dep_iterator I = U->dep_begin(), E = U->dep_end(); I != E;) {
-      SIRSchedUnit *DepU = *I;
-      int OriginLatency = I->getLatency();
+    for (dep_iterator DI = U->dep_begin(), DE = U->dep_end(); DI != DE;) {
+      SIRSchedUnit *DepU = *DI;
+      float OriginLatency = DI->getLatency();
 
       // Move forward here since we will remove dependency later
       // which may affect the iterator.
-      I++;
+      DI++;
 
       // Remove all dependencies inside of the BB, then we can
       // add a new constraint.
@@ -459,7 +443,8 @@ void SIRIMSScheduler::emitSchedule() {
       // If the dependency is coming from outside of the BB, we can
       // transform it into a dependency between Src SUnit to the BBEntry
       // so that origin dependency will not affect the step result.
-      unsigned NewLatency = std::max(0, OriginLatency - int(getASAPStep(U)));
+      float NewLatency = OriginLatency - getASAPStep(U);
+      NewLatency = NewLatency > 0 ? NewLatency : 0;
       U->removeDep(DepU);
       EntrySU->addDep(DepU, SIRDep::CreateCtrlDep(NewLatency));
     }

@@ -27,12 +27,12 @@ using namespace llvm;
 static int Num = 0;
 
 SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB)
-  : II(0), Schedule(0), Idx(Idx), IsScheduled(false),
-  T(T), BB(BB), SeqOps(0) {
+  : II(0), Schedule(0.0), Idx(Idx), IsScheduled(false),
+  T(T), BB(BB), SeqOps(0), CombOp(0) {
   assert(T == SIRSchedUnit::Entry || T == SIRSchedUnit::Exit ||
          T == SIRSchedUnit::BlockEntry && "Unexpected Type for Virtual SUnit!");
 
-  this->Latency = 0;
+  this->Latency = 0.0;
 }
 
 SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB,
@@ -42,13 +42,20 @@ SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB,
 }
 
 SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, SIRSeqOp *SeqOp)
-  : II(0), Schedule(0), Idx(Idx), IsScheduled(false), T(T), BB(BB) {
-  this->SeqOps.push_back(SeqOp);
-
+  : II(0), Schedule(0.0), Idx(Idx), IsScheduled(false), T(T), BB(BB), CombOp(0) {
   assert(T == SIRSchedUnit::SlotTransition || T == SIRSchedUnit::SeqSU ||
          T == SIRSchedUnit::PHI && "Unexpected Type for SeqOp SUnit!");
 
-  this->Latency = 1;
+  this->SeqOps.push_back(SeqOp);
+  this->Latency = 1.0;
+}
+
+SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB, Instruction *CombOp)
+  : II(0), Schedule(0.0), Idx(Idx), IsScheduled(false), T(T), BB(BB), SeqOps(0),
+  CombOp(CombOp) {
+  assert(T == SIRSchedUnit::CombSU && "Unexpected Type for CombOp SUnit!");
+
+  this->Latency = 0.0;
 }
 
 SIRSchedUnit::SIRSchedUnit() : Idx(0), T(Invalid), BB(0), SeqOps(0) {}
@@ -108,13 +115,13 @@ SIRDep SIRSchedUnit::EdgeBundle::getEdge(unsigned II) const {
   assert(!Edges.empty() && "Unexpected empty edge bundle!");
 
   SIRDep CurEdge = Edges.front();
-  unsigned CurLatency = CurEdge.getLatency(II);
+  float CurLatency = CurEdge.getLatency(II);
 
   for (unsigned I = 1, E = Edges.size(); I != E; ++I) {
     SIRDep NewEdge = Edges[I];
 
     // Find the edge of II with biggest latency.
-    unsigned NewLatency = NewEdge.getLatency(II);
+    float NewLatency = NewEdge.getLatency(II);
     if (NewLatency > CurLatency) {
       CurLatency = NewLatency;
       CurEdge = NewEdge;
@@ -397,6 +404,19 @@ SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Typ
   SIRSchedUnit *U = new SIRSchedUnit(TotalSUs++, T, ParentBB, SeqOps);
   // Insert the newly create SU before the exit.
   SUnits.insert(SUnits.back(), U);
+
+  return U;
+}
+
+SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T,
+                                         Instruction *CombOp) {
+  assert(T == SIRSchedUnit::CombSU && "Unexpected Type of SUnit!");
+
+  SIRSchedUnit *U = new SIRSchedUnit(TotalSUs++, T, ParentBB, CombOp);
+  // Insert the newly create SU before the exit.
+  SUnits.insert(SUnits.back(), U);
+  // Index the SUnit to the corresponding BB.
+  BBMap[ParentBB].push_back(U);
 
   return U;
 }

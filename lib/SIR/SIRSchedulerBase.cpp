@@ -19,8 +19,8 @@ using namespace llvm;
 
 static const unsigned MaxSlot = UINT16_MAX >> 2;
 
-unsigned SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
-  unsigned NewStep = 0;
+float SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
+  float NewStep = 0;
   typedef SIRSchedUnit::const_dep_iterator iterator;
   for (iterator DI = A->dep_begin(), DE = A->dep_end(); DI != DE; ++DI) {
     const SIRSchedUnit *Dep = *DI;
@@ -28,12 +28,12 @@ unsigned SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
     // Ignore the back-edges when not pipelining the BB.
     if (Dep->getIdx() >= A->getIdx()) continue;
 
-    unsigned DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
-    unsigned DepLatency = Dep->getLatency();
+    float DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
+    float DepLatency = Dep->getLatency();
 
     // We are not pipelining here.
-    unsigned Step = DepASAP + DepLatency + DI.getLatency(0);
-    assert(Step >= 0 && "Unexpected Negative Schedule!");
+    float Step = DepASAP + DepLatency + DI.getLatency(0);
+    assert(Step >= 0.0 && "Unexpected Negative Schedule!");
 
     NewStep = std::max(Step, NewStep);
   }
@@ -41,8 +41,8 @@ unsigned SIRScheduleBase::calculateASAP(const SIRSchedUnit *A) const {
   return NewStep;
 }
 
-unsigned SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
-  unsigned NewStep = MaxSlot;
+float SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
+  float NewStep = MaxSlot;
 
   typedef SIRSchedUnit::const_use_iterator iterator;
   for (iterator UI = A->use_begin(), UE = A->use_end(); UI != UE; ++UI) {
@@ -52,11 +52,11 @@ unsigned SIRScheduleBase::calculateALAP(const SIRSchedUnit *A) const  {
     // Ignore the back-edges when not pipelining the BB.
     if (Use->getIdx() <= A->getIdx()) continue;
 
-    unsigned UseALAP = Use->isScheduled() ? Use->getSchedule() : getALAPStep(Use);
-    unsigned ALatency = A->getLatency();
+    float UseALAP = Use->isScheduled() ? Use->getSchedule() : getALAPStep(Use);
+    float ALatency = A->getLatency();
 
     // We are not pipelining here.
-    unsigned Step = UseALAP - ALatency - UseEdge.getLatency(0);
+    float Step = UseALAP - ALatency - UseEdge.getLatency(0);
     NewStep = std::min(Step, NewStep);
   }
 
@@ -111,10 +111,10 @@ bool SIRScheduleBase::buildASAPStep() {
       }
 
       // Calculate the ASAP step.
-      unsigned NewSchedule = calculateASAP(U);
+      float NewSchedule = calculateASAP(U);
 
       // Update the ASAP step.
-      unsigned &ASAPSchedule = SUnitToTF[U].ASAP;
+      float &ASAPSchedule = SUnitToTF[U].ASAP;
       if (ASAPSchedule == NewSchedule) continue;
       ASAPSchedule = NewSchedule;
 
@@ -130,7 +130,7 @@ bool SIRScheduleBase::buildASAPStep() {
       for (use_iterator UI = U->use_begin(), UE = U->use_end(); UI != UE; ++UI) {
         const SIRSchedUnit *Use = *UI;
         NeedToReCalc |= (Use->getIdx() < U->getIdx())
-                        && (calculateASAP(Use) != getASAPStep(Use));
+          && (calculateASAP(Use) != getASAPStep(Use));
       }
     }
 
@@ -144,7 +144,7 @@ bool SIRScheduleBase::buildASAPStep() {
   // Use the ASAP step of Exit as the CriticalPathEnd, also this determined
   // the longest path delay.
   SIRSchedUnit *Exit = G.getExit();
-  unsigned ExitASAP = getASAPStep(Exit);
+  float ExitASAP = getASAPStep(Exit);
   CriticalPathEnd = std::max(CriticalPathEnd, ExitASAP);
 
   return false;
@@ -171,16 +171,18 @@ bool SIRScheduleBase::buildALAPStep() {
       }
 
       // Calculate the ALAP step.
-      unsigned NewSchedule = calculateALAP(U);
+      float NewSchedule = calculateALAP(U);
 
       // Update the ALAP step.
-      unsigned &ALAPSchedule = SUnitToTF[U].ALAP;
+      float &ALAPSchedule = SUnitToTF[U].ALAP;
       if (ALAPSchedule == NewSchedule) continue;
 
       // Here we should make sure the ASAP is smaller than the ALAP.
       // To be noted that there will be little error in the numbers
       // since it is in Float type.
-      assert(getASAPStep(U) <= NewSchedule && "Broken ALAP schedule!");
+      assert(NewSchedule > getASAPStep(U) ||
+             std::abs(NewSchedule - getASAPStep(U)) < 0.01
+             && "Broken ALAP schedule!");
 
       ALAPSchedule = NewSchedule;
 
@@ -189,8 +191,8 @@ bool SIRScheduleBase::buildALAPStep() {
       typedef SIRSchedUnit::const_dep_iterator dep_iterator;
       for (dep_iterator DI = U->dep_begin(), DE = U->dep_end(); DI != DE; ++DI) {
         const SIRSchedUnit *Dep = *DI;
-        NeedToReCalc |= (U->getIdx() < Dep->getIdx())
-                        && (calculateALAP(Dep) != getALAPStep(Dep));
+        NeedToReCalc |= U->getIdx() < Dep->getIdx()
+          && calculateALAP(Dep) != getALAPStep(Dep);
       }
     }
   }

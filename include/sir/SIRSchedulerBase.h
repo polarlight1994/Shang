@@ -28,9 +28,9 @@ public:
   const unsigned EntrySchedule;
   static const unsigned MaxSchedule = UINT16_MAX >> 2;
   struct TimeFrame {
-    unsigned ASAP, ALAP;
+    float ASAP, ALAP;
 
-    TimeFrame(unsigned ASAP = UINT32_MAX, unsigned ALAP = 0)
+    TimeFrame(float ASAP = UINT32_MAX, float ALAP = 0)
       : ASAP(ASAP), ALAP(ALAP) {}
 
     TimeFrame(const TimeFrame &RHS) : ASAP(RHS.ASAP), ALAP(RHS.ALAP) {}
@@ -54,7 +54,7 @@ public:
   };
 
 protected:
-  unsigned CriticalPathEnd;
+  float CriticalPathEnd;
 
   typedef std::map<const SIRSchedUnit *, TimeFrame> TFMapTy;
   TFMapTy SUnitToTF;
@@ -73,18 +73,12 @@ public:
     return G.getSUsInBB(BB);
   }
 
-  // Calculate the ASAP and ALAP.
-  virtual unsigned calculateASAP(const SIRSchedUnit *A) const;
-  virtual unsigned calculateALAP(const SIRSchedUnit *A) const;
-
-  // Build TimeFrame.
-  virtual void buildTimeFrame();
-  // Reset TimeFrame.
-  virtual void resetTimeFrame();
+  float calculateASAP(const SIRSchedUnit *A) const;
+  float calculateALAP(const SIRSchedUnit *A) const;
 
   TimeFrame calculateTimeFrame(const SIRSchedUnit *A) const {
     // Use this pointer to make sure we call the right version.
-    return TimeFrame(this->calculateASAP(A), this->calculateALAP(A));
+    return TimeFrame(calculateASAP(A), calculateALAP(A));
   }
   TimeFrame getTimeFrame(const SIRSchedUnit *A) const {
     TFMapTy::const_iterator at = SUnitToTF.find(A);
@@ -94,6 +88,8 @@ public:
   // Build TimeFrame for all SUnits and reset the scheduling
   // graph. The return value is the CriticalPathEnd.
   unsigned buildTimeFrameAndResetSchedule(bool reset);
+  void buildTimeFrame();
+  void resetTimeFrame();
 
   virtual bool buildASAPStep();
   virtual bool buildALAPStep();
@@ -111,13 +107,13 @@ public:
   reverse_iterator rbegin() { return G.rbegin(); }
   reverse_iterator rend() { return G.rend(); }
 
-  unsigned getASAPStep(const SIRSchedUnit *A) const {
+  float getASAPStep(const SIRSchedUnit *A) const {
     TFMapTy::const_iterator at = SUnitToTF.find(A);
     assert(at != SUnitToTF.end() && "TimeFrame for SU not exist!");
     return at->second.ASAP;
   }
 
-  unsigned getALAPStep(const SIRSchedUnit *A) const {
+  float getALAPStep(const SIRSchedUnit *A) const {
     TFMapTy::const_iterator at = SUnitToTF.find(A);
     assert(at != SUnitToTF.end() && "TimeFrame for SU not exist!");
     return at->second.ALAP;
@@ -127,7 +123,7 @@ public:
   void lengthenCriticalPath() { CriticalPathEnd += 1; }
   void shortenCriticalPath() { CriticalPathEnd -= 1; }
 
-  unsigned getCriticalPathLength() {
+  float getCriticalPathLength() {
     assert(CriticalPathEnd > EntrySchedule && "CriticalPathLength not available!");
     return CriticalPathEnd - EntrySchedule;
   }

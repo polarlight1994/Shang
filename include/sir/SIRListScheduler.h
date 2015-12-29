@@ -30,7 +30,7 @@ struct BBContext {
   BasicBlock *BB;
 
   // The first/last schedule of the current BB.
-  unsigned StartSchedule, EndSchedule;
+  float StartSchedule, EndSchedule;
 
   // The SchedUnits that should be schedule to
   // the EntrySlot/ExitSlot of the current BB.

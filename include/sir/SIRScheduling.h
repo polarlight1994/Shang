@@ -121,6 +121,7 @@ private:
   SIRSchedUnit *buildSchedulingUnitsPack(BasicBlock *BB, SmallVector<SIRSeqOp *, 4> SeqOps,
                                          SIRSchedUnit::Type T);
   void buildSchedulingUnitsForSeqOp(SIRSlot *S);
+  void buildSchedulingUnitsForCombOp(Instruction *CombOp);
 
   void packSUnits();
 

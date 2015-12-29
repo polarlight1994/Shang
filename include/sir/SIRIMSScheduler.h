@@ -73,8 +73,8 @@ public:
   SIRSchedGraph &operator*() const { return G; }
   SIRSchedGraph *operator->() const { return &G; }
 
-  unsigned calculateASAP(const SIRSchedUnit *A) const;
-  unsigned calculateALAP(const SIRSchedUnit *A) const;
+  float calculateASAP(const SIRSchedUnit *A) const;
+  float calculateALAP(const SIRSchedUnit *A) const;
   bool buildASAPStep();
   bool buildALAPStep();
 

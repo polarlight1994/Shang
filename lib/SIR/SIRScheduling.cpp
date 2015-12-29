@@ -82,11 +82,7 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
   for (int i = 0; i < SUsInExitSlot.size(); ++i) {
     SIRSchedUnit *SU = SUsInExitSlot[i];
 
-    bool AssignToOutPort = false;
-    if (SU->getSeqOps().size() == 1)
-      AssignToOutPort= SU->getSeqOp()->getDst()->isOutPort();
-
-    if (!SU->isSlotTransition() && !SU->isPHI() && !SU->isPHIPack() && !AssignToOutPort)
+    if (!SU->isSlotTransition() && !SU->isPHI() && !SU->isPHIPack() && !SU->isOutputPack())
       continue;
 
     for (int j = 0; j < SUsInBB.size(); ++j) {
@@ -108,8 +104,7 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
   // that the SUnits is not indexed to the Ret instruction but to the
   // operand of the Ret instruction because in SIRBuilder we replace
   // the original operand of Ret into this pseudo instruction to act
-  // as the SeqVal. But we should ignore the instruction like "ret
-  // void".
+  // as the SeqVal.
   if (!Inst->getNumOperands()) return;
   ArrayRef<SIRSchedUnit *> SUs = G->lookupSUs(Inst->getOperand(0));
 
@@ -149,13 +144,22 @@ void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
 
   // Construct the data flow dependencies according
   // to the Timing Analysis result.
-  SIRTimingAnalysis::ArrivalMap AT;
-  // Extract all the dependencies coming from
-  // the Src value of current SIRSeqOp.
-  TA->extractArrivals(SM, U->getSeqOp(), AT);
+  SIRTimingAnalysis::ArrivalMap Arrivals;
+
+  if (U->isCombSU()) {
+    Instruction *CombOp = U->getCombOp();
+    assert(CombOp && "Unexpected NULL CombOp!");
+
+    TA->extractArrivals(TD, CombOp, Arrivals);
+  } else {
+    SIRSeqOp *SeqOp = U->getSeqOp();
+    assert(SeqOp && "Unexpected NULL SeqOp!");
+
+    TA->extractArrivals(TD, SeqOp, Arrivals);
+  }
 
   typedef SIRTimingAnalysis::ArrivalMap::iterator iterator;
-  for (iterator I = AT.begin(), E = AT.end(); I != E; ++I) {
+  for (iterator I = Arrivals.begin(), E = Arrivals.end(); I != E; ++I) {
     Value *SrcVal = I->first;
     float Delay = I->second;
 
@@ -179,7 +183,7 @@ void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
       else
         Distance = 0;
 
-      U->addDep(SrcSUs[i], SIRDep::CreateValDep(ceil(Delay), Distance));
+      U->addDep(SrcSUs[i], SIRDep::CreateValDep(Delay, Distance));
     }
   }
 }
@@ -348,6 +352,9 @@ void SIRScheduling::packSUnits() {
       if (SU->isBBEntry())
         continue;
 
+      if (SU->isCombSU())
+        continue;
+
       if (SU->isPHI()) {
         PHISeqOpsPack.push_back(SU->getSeqOp());
         continue;
@@ -470,6 +477,15 @@ void SIRScheduling::buildSchedulingUnitsForSeqOp(SIRSlot *S) {
   }
 }
 
+void SIRScheduling::buildSchedulingUnitsForCombOp(Instruction *CombOp) {
+  BasicBlock *BB = CombOp->getParent();
+
+  SIRSchedUnit *U = G->createSUnit(BB, SIRSchedUnit::CombSU, CombOp);
+
+  // Index the SUnit to the LLVM IR.
+  G->indexSU2IR(U, CombOp);
+}
+
 void SIRScheduling::finishBuildingSchedGraph() {
   // GC: delete all useless SUnit.
   G->gc();
@@ -503,16 +519,45 @@ void SIRScheduling::buildSchedulingGraph() {
   G->indexSU2Slot(Entry, StartSlot);
 
   // Build the Scheduling Units for SeqOps.
-  ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> > RPO(StartSlot);
-  typedef
-    ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >::rpo_iterator
-    slot_iterator;
+  {
+    ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >
+      RPO(SM->slot_begin());
+    typedef
+      ReversePostOrderTraversal<SIRSlot *, GraphTraits<SIRSlot *> >::rpo_iterator
+      slot_iterator;
 
-  // Visit the SIRSlots in reverse post order so that the building order of
-  // SUnits is topological generally to avoid creating a dependency to a
-  // SUnit which is not created yet when building dependencies.
-  for (slot_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
-    buildSchedulingUnitsForSeqOp(*I);
+    // Visit the SIRSlots in reverse post order so that the building order of
+    // SUnits is topological generally to avoid creating a dependency to a
+    // SUnit which is not created yet when building dependencies.
+    for (slot_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I)
+      buildSchedulingUnitsForSeqOp(*I);
+  }
+
+  // Build the Scheduling Units for CombOps.
+  {
+    Function *F = SM->getFunction();
+
+    typedef Function::iterator bb_iterator;
+    for (bb_iterator BBI = F->begin(), BBE = F->end(); BBI != BBE; ++BBI) {
+      BasicBlock *BB = BBI;
+
+      typedef BasicBlock::iterator inst_iterator;
+      for (inst_iterator InstI = BB->begin(), InstE = BB->end();
+           InstI != InstE; ++InstI) {
+        Instruction *Inst = InstI;
+
+        if (!isa<IntrinsicInst>(Inst) && !isa<IntToPtrInst>(Inst) &&
+            !isa<PtrToIntInst>(Inst) && !isa<BitCastInst>(Inst))
+          continue;
+
+        if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
+          if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
+            continue;
+
+        buildSchedulingUnitsForCombOp(Inst);
+      }
+    }
+  }
 
   // Build dependencies.
   buildDependencies();
@@ -584,6 +629,15 @@ void SIRScheduling::buildSchedulingGraph() {
         Output << "] to Reg [" << SeqOp->getDst()->getName() << "] in"
           << " Slot#" << SeqOp->getSlot()->getSlotNum() << "\n";
       }
+      break;
+    }
+    case SIRSchedUnit::CombSU: {
+      Instruction *CombOp = U->getCombOp();
+      Output << "CombSU    ";
+      Output << "Operation [";
+      CombOp->print(Output);
+      Output << "]\n";
+
       break;
     }
     case SIRSchedUnit::MemoryPack: {
@@ -712,16 +766,17 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   assert(EntrySlot->getStepInLocalBB() == 0 && "Unexpected local step!");
 
   // The global schedule result of the Entry SUnit.
-  unsigned EntrySUSchedule = SUs[0]->getSchedule();
+  float EntrySUSchedule = SUs[0]->getSchedule();
+  //assert(EntrySUSchedule - int(EntrySUSchedule) == 0 && "Should not be a real float!");
 
   // Calculate the CriticalPathLength.
   unsigned CriticalPathLength = 0;
   for (unsigned i = 0; i < SUs.size(); ++i) {
     SIRSchedUnit *SU = SUs[i];
-    unsigned ScheduleResult = SU->getSchedule();
+    float ScheduleResult = SU->getSchedule();
 
     assert(ScheduleResult >= EntrySUSchedule && "Wrong Schedule Result!");
-    unsigned PathLength = ScheduleResult - EntrySUSchedule;
+    unsigned PathLength = ceil(ScheduleResult - EntrySUSchedule);
 
     CriticalPathLength = (std::max)(CriticalPathLength, PathLength);
   }
@@ -738,17 +793,17 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   for (unsigned i = 0; i < SUs.size(); ++i) {
     SIRSchedUnit *SU = SUs[i];
 
-    if (SU->isSlotTransition())
+    if (SU->isSlotTransition() || SU->isCombSU())
       continue;
 
     unsigned TargetStep;
 
     // We should make sure the PHI is scheduled
     // to the ExitSlot.
-    if (SU->isPHI() || SU->isPHIPack())
+    if (SU->isPHI() || SU->isPHIPack() || SU->isOutputPack())
       TargetStep = CriticalPathLength;
     else
-      TargetStep = SU->getSchedule() - EntrySUSchedule;
+      TargetStep = floor(SU->getSchedule() - EntrySUSchedule);
 
     SIRSlot *TargetSlot = NewSlots[TargetStep];
 
