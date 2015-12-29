@@ -779,6 +779,13 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   unsigned CriticalPathLength = 0;
   for (unsigned i = 0; i < SUs.size(); ++i) {
     SIRSchedUnit *SU = SUs[i];
+
+    // Ignore the CombSU here, since the critical path
+    // will decided by all SeqSU. The schedule result
+    // of CombSU may not be correct to calculate the
+    // criticalpath.
+    if (SU->isCombSU()) continue;
+
     float ScheduleResult = SU->getSchedule();
 
     assert(ScheduleResult >= EntrySUSchedule && "Wrong Schedule Result!");
