@@ -37,7 +37,11 @@ unsigned SIRSDCScheduler::createLPVariable(SIRSchedUnit *U, unsigned ColNum) {
   // Name the LP Variable for debug.
   std::string LPVar = "lpvar" + utostr_32(U->getIdx());
   set_col_name(lp, ColNum, const_cast<char *>(LPVar.c_str()));
-  set_int(lp, ColNum, FALSE);
+
+  if (U->isCombSU())
+    set_int(lp, ColNum, FALSE);
+  else
+    set_int(lp, ColNum, TRUE);
 
   // Constraint the SUnit if we can.
   if (U->isScheduled()) {
