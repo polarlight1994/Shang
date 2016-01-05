@@ -70,7 +70,7 @@ void SIRSchedUnit::EdgeBundle::addEdge(SIRDep NewEdge) {
 
   SIRDep::Types NewEdgeType = NewEdge.getEdgeType();
   unsigned NewDistance = NewEdge.getDistance();
-  int NewLatency = NewEdge.getLatency();
+  float NewLatency = NewEdge.getLatency();
 
   while (InsertBefore < Size) {
     SIRDep &CurEdge = Edges[InsertBefore];
@@ -81,7 +81,7 @@ void SIRSchedUnit::EdgeBundle::addEdge(SIRDep NewEdge) {
 
     SIRDep::Types CurEdgeType = CurEdge.getEdgeType();
     unsigned CurDistance = CurEdge.getDistance();
-    int CurLatency = CurEdge.getLatency();
+    float CurLatency = CurEdge.getLatency();
 
     // Update the edge with the tighter constraint.
     if (CurDistance == NewDistance && CurLatency < NewLatency) {

@@ -154,17 +154,23 @@ void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
   // to the Timing Analysis result.
   SIRTimingAnalysis::ArrivalMap Arrivals;
 
-  if (U->isCombSU()) {
-    Instruction *CombOp = U->getCombOp();
-    assert(CombOp && "Unexpected NULL CombOp!");
+// Set to multi-cycle-chain mode.
+//   if (U->isCombSU()) {
+//     Instruction *CombOp = U->getCombOp();
+//     assert(CombOp && "Unexpected NULL CombOp!");
+// 
+//     TA->extractArrivals(TD, CombOp, Arrivals);
+//   } else {
+//     SIRSeqOp *SeqOp = U->getSeqOp();
+//     assert(SeqOp && "Unexpected NULL SeqOp!");
+// 
+//     TA->extractArrivals(TD, SeqOp, Arrivals);
+//   }
 
-    TA->extractArrivals(TD, CombOp, Arrivals);
-  } else {
-    SIRSeqOp *SeqOp = U->getSeqOp();
-    assert(SeqOp && "Unexpected NULL SeqOp!");
+  SIRSeqOp *SeqOp = U->getSeqOp();
+  assert(SeqOp && "Unexpected NULL SeqOp!");
 
-    TA->extractArrivals(TD, SeqOp, Arrivals);
-  }
+  TA->extractArrivals(SM, SeqOp, Arrivals);
 
   typedef SIRTimingAnalysis::ArrivalMap::iterator iterator;
   for (iterator I = Arrivals.begin(), E = Arrivals.end(); I != E; ++I) {
@@ -540,31 +546,31 @@ void SIRScheduling::buildSchedulingGraph() {
       buildSchedulingUnitsForSeqOp(*I);
   }
 
-  // Build the Scheduling Units for CombOps.
-  {
-    Function *F = SM->getFunction();
-
-    typedef Function::iterator bb_iterator;
-    for (bb_iterator BBI = F->begin(), BBE = F->end(); BBI != BBE; ++BBI) {
-      BasicBlock *BB = BBI;
-
-      typedef BasicBlock::iterator inst_iterator;
-      for (inst_iterator InstI = BB->begin(), InstE = BB->end();
-           InstI != InstE; ++InstI) {
-        Instruction *Inst = InstI;
-
-        if (!isa<IntrinsicInst>(Inst) && !isa<IntToPtrInst>(Inst) &&
-            !isa<PtrToIntInst>(Inst) && !isa<BitCastInst>(Inst))
-          continue;
-
-        if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
-          if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
-            continue;
-
-        buildSchedulingUnitsForCombOp(Inst);
-      }
-    }
-  }
+//   // Build the Scheduling Units for CombOps.
+//   {
+//     Function *F = SM->getFunction();
+// 
+//     typedef Function::iterator bb_iterator;
+//     for (bb_iterator BBI = F->begin(), BBE = F->end(); BBI != BBE; ++BBI) {
+//       BasicBlock *BB = BBI;
+// 
+//       typedef BasicBlock::iterator inst_iterator;
+//       for (inst_iterator InstI = BB->begin(), InstE = BB->end();
+//            InstI != InstE; ++InstI) {
+//         Instruction *Inst = InstI;
+// 
+//         if (!isa<IntrinsicInst>(Inst) && !isa<IntToPtrInst>(Inst) &&
+//             !isa<PtrToIntInst>(Inst) && !isa<BitCastInst>(Inst))
+//           continue;
+// 
+//         if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
+//           if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
+//             continue;
+// 
+//         buildSchedulingUnitsForCombOp(Inst);
+//       }
+//     }
+//   }
 
   // Build dependencies.
   buildDependencies();

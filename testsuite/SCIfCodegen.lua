@@ -103,7 +103,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
 				_put(v.Name)
 			end
 		));
-		assert(RetVle == 0 && "Return value of main function is not 0!");
+		 assert(RetVle == 0 && "Return value of main function is not 0!");
 #end
 		ofstream outfile;
 		outfile.open ("$(CounterFile)");
@@ -116,12 +116,10 @@ SC_MODULE(V$(RTLModuleName)_tb){
 		while(true) {
 #for i,v in pairs(VirtualMBs) do
 			if(($(v.EnableName))) {
-				unsigned CyclesToWait = 0;
 				long long cur_addr = $(v.AddrName).read();
 #if v.RequireByteEn == 1 then
 				$(getType(v.ByteEnWidth)) cur_be = $(v.ByteEnName).read();
 				if(($(v.WriteEnName))) {
-					CyclesToWait = 1;
 					switch (cur_be) {
 						case 1:   *((unsigned char *)cur_addr) = ((unsigned char)$(v.WDataName).read()); break;
 						case 2:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 8)); break;
@@ -144,7 +142,6 @@ SC_MODULE(V$(RTLModuleName)_tb){
 						default: printf("cur_be is %d\n", cur_be); assert(0 && "Unsupported cur_be!"); break;
 					}
 				} else {
-					CyclesToWait = 2;
 					switch (cur_be) {
 						case 1:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)); break;
 						case 2:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)) << 8; break;
@@ -169,18 +166,11 @@ SC_MODULE(V$(RTLModuleName)_tb){
 				}
 #else
 				if(($(v.WriteEnName))) {
-					CyclesToWait = 1;
 					*(($(getType(v.DataWidth)) *)cur_addr) = (($(getType(v.DataWidth)))$(v.WDataName).read());
 				} else {
-					CyclesToWait = 2;
 					$(v.RDataName) = *(($(getType(v.DataWidth)) *)cur_addr);
 				}
-
 #end
-				for (unsigned i = 0; i < CyclesToWait; ++i) {
-					wait();
-					assert(!($(v.EnableName)) && "Please disable memory while waiting it ready!");
-				}
 			}
 #end
 			wait();
@@ -188,8 +178,8 @@ SC_MODULE(V$(RTLModuleName)_tb){
 	}
 
     static V$(RTLModuleName)_tb* Instance() {
-      static V$(RTLModuleName)_tb _instance("top");
-      return &_instance ;
+		static V$(RTLModuleName)_tb _instance("top");
+		return &_instance ;
     }
 
     protected:
@@ -219,12 +209,12 @@ SC_MODULE(V$(RTLModuleName)_tb){
 		DUT.$(v.RDataName)($(v.RDataName));
 #end
 
-        SC_CTHREAD(sw_main_entry, clk.pos());
+        SC_CTHREAD(sw_main_entry,clk.pos());
 		SC_CTHREAD(bus_transation, clk.pos());
       }
     private:
-		V$(RTLModuleName)_tb(const V$(RTLModuleName)_tb&) ;
-		V$(RTLModuleName)_tb& operator=(const V$(RTLModuleName)_tb&) ;
+      V$(RTLModuleName)_tb(const V$(RTLModuleName)_tb&) ;
+      V$(RTLModuleName)_tb& operator=(const V$(RTLModuleName)_tb&) ;
     };  
 
   $(getType(FuncInfo.ReturnSize)) $(FuncInfo.Name)_if($(
@@ -246,28 +236,27 @@ SC_MODULE(V$(RTLModuleName)_tb){
     }
 
 #if FuncInfo.ReturnSize~=0 then
-    $(getType(FuncInfo.ReturnSize)) result = ($(getType(FuncInfo.ReturnSize))) tb_ptr->return_value;
-	return result;
+    return ($(getType(FuncInfo.ReturnSize))) tb_ptr->return_value;      
 #else 
     return;
 #end
   }
 
-  //The main function called sc_main in SystemC  
-  int sc_main(int argc, char **argv) {
-    //Close the information which provided by SystemC
-    sc_report_handler::set_actions("/IEEE_Std_1666/deprecated", SC_DO_NOTHING);
+	//The main function called sc_main in SystemC  
+	int sc_main(int argc, char **argv) {
+		//Close the information which provided by SystemC
+		sc_report_handler::set_actions("/IEEE_Std_1666/deprecated", SC_DO_NOTHING);
     
-    Verilated::commandArgs(argc,argv);
-    sc_clock clk ("clk",10, 0.5, 3, true);
-    V$(RTLModuleName)_tb *top = V$(RTLModuleName)_tb::Instance();
-    //Link the stimulate to the clk
-    top->clk(clk);
-    //Start the test
-    sc_start();
+		Verilated::commandArgs(argc,argv);
+		sc_clock clk ("clk",10, 0.5, 3, true);
+		V$(RTLModuleName)_tb *top = V$(RTLModuleName)_tb::Instance();
+		//Link the stimulate to the clk
+		top->clk(clk);
+		//Start the test
+		sc_start();
 
-    return 0;
-  }
+		return 0;
+	}
 #end
 ]=]
 
