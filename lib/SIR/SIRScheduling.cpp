@@ -4,6 +4,7 @@
 #include "vast/LuaI.h"
 
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/ErrorHandling.h"
 
 using namespace llvm;
 using namespace vast;
@@ -286,7 +287,7 @@ void SIRScheduling::buildMemoryDependencies(BasicBlock *BB) {
       for (unsigned i = 0; i < SeqOps.size() - 1; i++) {
         SIRSchedUnit *SU = G->lookupSU(SeqOps[i]);
 
-        AssignToResultSU->addDep(SU, SIRDep::CreateMemDep(2));
+        AssignToResultSU->addDep(SU, SIRDep::CreateMemDep(Bank->getReadLatency()));
       }
     }
     else
@@ -723,15 +724,10 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
   // between the SUnits.
   buildSchedulingGraph();
 
-  unsigned pipelinenum = 0;
-
   // Use the IMSScheduler on all loop BBs.
   typedef SIRSchedGraph::const_loopbb_iterator iterator;
   for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
     BasicBlock *BB = I->first;
-
-    if (pipelinenum >= 1)
-      continue;
 
     SIRIMSScheduler IMS(&SM, TD, *G, BB);
 
@@ -741,7 +737,6 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
              << IMS.getMII() << "\n";
 
       SM.IndexPipelinedBB2MII(BB, IMS.getMII());
-      pipelinenum++;
     }
   }
 
@@ -779,7 +774,7 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
 
   // The global schedule result of the Entry SUnit.
   float EntrySUSchedule = SUs[0]->getSchedule();
-  //assert(EntrySUSchedule - int(EntrySUSchedule) == 0 && "Should not be a real float!");
+  assert(EntrySUSchedule - int(EntrySUSchedule) == 0 && "Should not be a real float!");
 
   // Calculate the CriticalPathLength.
   unsigned CriticalPathLength = 0;
@@ -789,7 +784,7 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
     // Ignore the CombSU here, since the critical path
     // will decided by all SeqSU. The schedule result
     // of CombSU may not be correct to calculate the
-    // criticalpath.
+    // critical path.
     if (SU->isCombSU()) continue;
 
     float ScheduleResult = SU->getSchedule();
@@ -819,10 +814,13 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
 
     // We should make sure the PHI is scheduled
     // to the ExitSlot.
-    if (SU->isPHI() || SU->isPHIPack() || SU->isOutputPack())
+    if (SU->isPHI() || SU->isPHIPack() || SU->isOutputPack()) {
       TargetStep = CriticalPathLength;
-    else
+      SU->scheduleTo(EntrySUSchedule + CriticalPathLength);
+    }
+    else {
       TargetStep = floor(SU->getSchedule() - EntrySUSchedule);
+    }
 
     SIRSlot *TargetSlot = NewSlots[TargetStep];
 
@@ -942,6 +940,257 @@ void SIRScheduleEmitter::emitSchedule() {
 
   // Delete all useless components and re-name Slots in order.
   gc();
+
+  // Pipeline the data-path in SIR.
+  //pipelineDataPath();
+}
+
+void SIRScheduleEmitter::pipelineDataPath() {
+//    std::string PipelineRegInfo = LuaI::GetString("PipelineRegInfo");
+//    std::string Error;
+//    raw_fd_ostream Output(PipelineRegInfo.c_str(), Error);
+//
+//    // Pipeline the argument value of module.
+//    Function *F = SM->getFunction();
+//    for (Function::arg_iterator I = F->arg_begin(), E = F->arg_end();
+//         I != E; ++I) {
+//      Argument *Arg = I;
+//      StringRef Name = Arg->getName();
+//      Type *Ty = Arg->getType();
+//      bool IsPointer = Ty->isPointerTy();
+//      unsigned BitWidth = TD.getTypeSizeInBits(Ty);
+// 
+//      // Create a register to hold its value.
+//      Value *Start = cast<SIRInPort>(SM->getPort(SIRPort::Start))->getValue();
+//      SIRRegister *ArgReg = C_Builder.createRegister(Name.str()+ "_reg", C_Builder.createIntegerType(BitWidth));
+//      C_Builder.assignToReg(SM->slot_begin(), Start, Arg, ArgReg);
+// 
+//      // Now pipeline the argument register.
+//      Value *NewArgVal = ArgReg->getLLVMValue();
+// 
+//      // If it is pointer value, remember to change type.
+//      if (IsPointer) {
+//        Value *InsertPosition = SM->getPositionAtBackOfModule();
+//        NewArgVal = D_Builder.createIntToPtrInst(NewArgVal, Ty, InsertPosition, true);
+//      }
+//      Arg->replaceAllUsesWith(NewArgVal);
+// 
+//      // Pipeline level of this argument.
+//      unsigned PipelineDepth = 0;
+//      // Pipeline registers of this argument.
+//      std::vector<SIRRegister *> PipelineRegs;
+//      // Map between pipelined register and corresponding use instruction.
+//      std::map<unsigned, std::set<Instruction *> > PipelineReg2UseInst;
+// 
+//      typedef Value::use_iterator use_iterator;
+//      for (use_iterator UI = NewArgVal->use_begin(), UE = NewArgVal->use_end(); UI != UE; ++UI) {
+//        Value *UseVal = dyn_cast<Instruction>(*UI);
+// 
+//        if (Instruction *UseInst = dyn_cast<Instruction>(UseVal)) {
+//          if (isa<IntToPtrInst>(UseVal) || isa<PtrToIntInst>(UseVal) ||
+//              isa<BitCastInst>(UseVal) || isa<IntrinsicInst>(UseVal)) {
+//            // Only pipeline the data-path.
+//            if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(UseInst))
+//              if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
+//                continue;
+// 
+//            ArrayRef<SIRSchedUnit *> UseSUnits = G.lookupSUs(UseInst);
+//            assert(UseSUnits.size() == 1 && "Unexpected SUnits size for this UseInst?");
+//            SIRSchedUnit *UseSUnit = UseSUnits.front();
+// 
+//            int UseSchedResult = int(floor(UseSUnit->getSchedule()));
+// 
+//            assert(UseSchedResult > 0 && "Unexpected schedule result!");
+//            unsigned PipelineLevel = UseSchedResult - 1;
+//            /*PipelineLevel = PipelineLevel > 10 ? 10 : PipelineLevel;*/
+// 
+//            // Index the pipelined level of this UseInst.
+//            if (PipelineLevel) {
+//              bool Success = PipelineReg2UseInst[PipelineLevel].insert(UseInst).second;
+//              assert(Success && "Unexpected failed!");
+// 
+//              PipelineDepth = PipelineDepth > PipelineLevel ? PipelineDepth : PipelineLevel;
+//            }
+//          }
+//        }
+//      }
+// 
+//      // Create the pipeline registers to pipeline the value in data-path.
+//      Value *Val = ArgReg->getLLVMValue();
+//      for (int i = 0; i < PipelineDepth; ++i) {
+//        std::string PipelineRegName = Val->getName().str()+ "_pipeline_" + utostr_32(i);
+//        SIRRegister *PipelineReg = C_Builder.createRegister(PipelineRegName, Val->getType(),
+//                                                            0, 0, SIRRegister::Pipeline);
+//        PipelineRegs.push_back(PipelineReg);
+// 
+//        // Value passed between pipeline registers in order.
+//        C_Builder.assignToReg(0, C_Builder.createIntegerValue(1, 1), Val, PipelineReg);
+//        Val = PipelineReg->getLLVMValue();
+//      }
+// 
+//      // Reconstruct the data-path to make sure the UseInst use the correct pipeline register.
+//      typedef std::map<unsigned, std::set<Instruction *> >::iterator map_iterator;
+//      for (map_iterator MI = PipelineReg2UseInst.begin(), ME = PipelineReg2UseInst.end(); MI != ME; ++MI) {
+//        unsigned PipelineLevel = MI->first;
+//        SIRRegister *PipelineReg = PipelineRegs[PipelineLevel - 1];
+// 
+//        std::set<Instruction *> UseInsts = MI->second;
+//        typedef std::set<Instruction *>::iterator inst_iterator;
+//        for (inst_iterator II = UseInsts.begin(), IE = UseInsts.end(); II != IE; ++II) {
+//          Instruction *UseInst = *II;
+// 
+//          unsigned OperandNum = UINT32_MAX;
+//          for (int i = 0; i < UseInst->getNumOperands(); ++i) {
+//            Value *Operand = UseInst->getOperand(i);
+//            if (Operand == NewArgVal)
+//              OperandNum = i;
+//          }
+//          assert(OperandNum != UINT32_MAX && "CombOp not used in UseInst?");
+// 
+//          // Replace the operand with pipeline register. And if the origin argument is pointer,
+//          // remember to change type.
+//          Value *PipelineRegVal = PipelineReg->getLLVMValue();
+//          if (IsPointer) {
+//            Value *InsertPosition = SM->getPositionAtBackOfModule();
+//            PipelineRegVal = D_Builder.createIntToPtrInst(PipelineRegVal, Ty, InsertPosition, true);
+//          }
+//          UseInst->setOperand(OperandNum, PipelineRegVal);
+//        }
+//      }
+// 
+//        // Print debug information for these pipeline registers.
+//        Output << "The Value pipelined is [" << NewArgVal->getName() << "], the pipeline depth is" << PipelineDepth << "\n";
+//        for (map_iterator MI = PipelineReg2UseInst.begin(), ME = PipelineReg2UseInst.end(); MI != ME; ++MI) {
+//          unsigned PipelineLevel = MI->first;
+//          SIRRegister *PipelineReg = PipelineRegs[PipelineLevel - 1];
+//  
+//          Output << "In Level #" << PipelineLevel << ", pipeline register is " << PipelineReg->getName() << "\n";
+//          Output << "The UseInsts is\n";
+//  
+//          std::set<Instruction *> UseInsts = MI->second;
+//          typedef std::set<Instruction *>::iterator inst_iterator;
+//          for (inst_iterator II = UseInsts.begin(), IE = UseInsts.end(); II != IE; ++II) {
+//            Instruction *UseInst = *II;
+//  
+//            Output << "    " << UseInst->getName() << "\n";
+//          }
+//        }
+//        Output << "\n";
+//      }
+
+  {
+    typedef SIRSchedGraph::iterator iterator;
+    for (iterator I = G.begin(), E= G.end(); I != E; ++I) {
+      SIRSchedUnit *SU = I;
+
+      // Only pipeline the data-path here.
+      if (!SU->isCombSU()) continue;
+
+      // Pipeline level of this data-path instruction.
+      unsigned PipelineDepth = 0;
+      // Pipeline registers of this data-path instruction.
+      std::vector<SIRRegister *> PipelineRegs;
+      // Map between pipelined register and corresponding use instruction.
+      std::map<unsigned, std::set<Instruction *> > PipelineReg2UseInst;
+
+      Instruction *CombOp = SU->getCombOp();
+      int SchedResult = int(floor(SU->getSchedule()));
+
+      typedef Instruction::use_iterator use_iterator;
+      for (use_iterator UI = CombOp->use_begin(), UE = CombOp->use_end(); UI != UE; ++UI) {
+        Value *UseVal = dyn_cast<Instruction>(*UI);
+
+        if (Instruction *UseInst = dyn_cast<Instruction>(UseVal)) {
+          if (isa<IntToPtrInst>(UseVal) || isa<PtrToIntInst>(UseVal) ||
+              isa<BitCastInst>(UseVal) || isa<IntrinsicInst>(UseVal)) {
+            // Only pipeline the data-path.
+            if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(UseInst))
+              if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
+                continue;
+
+            ArrayRef<SIRSchedUnit *> UseSUnits = G.lookupSUs(UseInst);
+            assert(UseSUnits.size() == 1 && "Unexpected SUnits size for this UseInst?");
+            SIRSchedUnit *UseSUnit = UseSUnits.front();
+
+            int UseSchedResult = int(floor(UseSUnit->getSchedule()));
+
+            /*assert(UseSchedResult >= SchedResult && "Unexpected schedule result!");*/
+            if (UseSchedResult <= SchedResult)
+              continue;
+
+            unsigned PipelineLevel = UseSchedResult - SchedResult;
+
+            // Index the pipelined level of this UseInst.
+            if (PipelineLevel) {
+              bool Success = PipelineReg2UseInst[PipelineLevel].insert(UseInst).second;
+              //assert(Success && "Unexpected failed!");
+
+              PipelineDepth = PipelineDepth > PipelineLevel ? PipelineDepth : PipelineLevel;
+            }
+          }
+        }
+      }
+
+      // Create the pipeline registers to pipeline the value in data-path.
+      Value *Val = CombOp;
+      for (int i = 0; i < PipelineDepth; ++i) {
+        std::string PipelineRegName = Val->getName().str()+ "_pipeline_" + utostr_32(i);
+        SIRRegister *PipelineReg = C_Builder.createRegister(PipelineRegName, Val->getType(),
+                                                            CombOp->getParent(), 0,
+                                                            SIRRegister::Pipeline);
+        PipelineRegs.push_back(PipelineReg);
+
+        // Value passed between pipeline registers in order.
+        C_Builder.assignToReg(0, C_Builder.createIntegerValue(1, 1), Val, PipelineReg);
+        Val = PipelineReg->getLLVMValue();
+      }
+
+      // Reconstruct the data-path to make sure the UseInst use the correct pipeline register.
+      typedef std::map<unsigned, std::set<Instruction *> >::iterator map_iterator;
+      for (map_iterator MI = PipelineReg2UseInst.begin(), ME = PipelineReg2UseInst.end(); MI != ME; ++MI) {
+        unsigned PipelineLevel = MI->first;
+        SIRRegister *PipelineReg = PipelineRegs[PipelineLevel - 1];
+
+        std::set<Instruction *> UseInsts = MI->second;
+        typedef std::set<Instruction *>::iterator inst_iterator;
+        for (inst_iterator II = UseInsts.begin(), IE = UseInsts.end(); II != IE; ++II) {
+          Instruction *UseInst = *II;
+
+          unsigned OperandNum = UINT32_MAX;
+          for (int i = 0; i < UseInst->getNumOperands(); ++i) {
+            Value *Operand = UseInst->getOperand(i);
+            if (Operand == CombOp)
+              OperandNum = i;
+          }
+          assert(OperandNum != UINT32_MAX && "CombOp not used in UseInst?");
+
+          // Replace the operand with pipeline register.
+          UseInst->setOperand(OperandNum, PipelineReg->getLLVMValue());
+        }
+      }
+// 
+//       if (PipelineDepth) {
+//         // Print debug information for these pipeline registers.
+//         Output << "The Value pipelined is [" << CombOp->getName() << "], the pipeline depth is " << PipelineDepth << "\n";
+//         for (map_iterator MI = PipelineReg2UseInst.begin(), ME = PipelineReg2UseInst.end(); MI != ME; ++MI) {
+//           unsigned PipelineLevel = MI->first;
+//           SIRRegister *PipelineReg = PipelineRegs[PipelineLevel - 1];
+// 
+//           Output << "In Level #" << PipelineLevel << ", pipeline register is " << PipelineReg->getName() << "\n";
+//           Output << "The UseInsts is\n";
+// 
+//           std::set<Instruction *> UseInsts = MI->second;
+//           typedef std::set<Instruction *>::iterator inst_iterator;
+//           for (inst_iterator II = UseInsts.begin(), IE = UseInsts.end(); II != IE; ++II) {
+//             Instruction *UseInst = *II;
+// 
+//             Output << "    " << UseInst->getName() << "\n";
+//           }
+//         }
+//         Output << "\n";
+//       }
+    }
+  }
 }
 
 void SIRScheduleEmitter::gc() {

@@ -157,8 +157,12 @@ public:
 
   unsigned getBitWidth(Value *U) { return D_Builder.getBitWidth(U); }
 
+  // Emit all SeqOps into correct Slot and build STM.
   void emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs);
   void emitSchedule();
+
+  // Pipeline all data-path.
+  void pipelineDataPath();
 
   void gc();
 };
