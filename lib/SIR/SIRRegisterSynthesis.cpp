@@ -215,6 +215,13 @@ bool SIRRegisterSynthesisForCodeGen::runOnSIR(SIR &SM) {
     Value *GuardVal = SeqOp->getGuard();
     SIRSlot *Slot = SeqOp->getSlot();
 
+    if (Dst->isPipeline()) {
+      assert (!Slot && "Unexpected specified slot!");
+
+      Dst->addAssignment(SrcVal, GuardVal, 0);
+      continue;
+    }
+
     // Index the normal register to this slot and the slot register will
     // be indexed in SIRFSMSynthsisPass.
     SM.IndexReg2Slot(Dst, Slot);

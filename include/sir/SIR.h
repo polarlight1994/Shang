@@ -157,6 +157,7 @@ public:
     General,            // Common registers which hold data for data-path.
     PHI,                // Register hold value in PHINode.
     SlotReg,            // Register for slot.
+    Pipeline,           // Register for pipeline of data-path.
     FUInput,						// Input register for FUnits like memory bank.
     FUOutput,           // Output register for FUnits like memory bank.
     OutPort,            // Register for OutPort of module.
@@ -240,6 +241,7 @@ public:
   bool isGeneral() { return T == SIRRegister::General; }
   bool isPHI() { return T == SIRRegister::PHI; }
   bool isSlot() { return T == SIRRegister::SlotReg; }
+  bool isPipeline() { return T == SIRRegister::Pipeline; }
   bool isOutPort() { return T == SIRRegister::OutPort; }
   bool isFUInput() { return T == SIRRegister::FUInput; }
   bool isFUOutput() { return T == SIRRegister::FUOutput; }

@@ -143,7 +143,7 @@ void SIRBuilder::buildInterface(Function *F) {
 
   // Set the Finish signal of module.
   SIRRegister *FinReg = cast<SIROutPort>(SM->getFinPort())->getRegister();
-  C_Builder.assignToReg(IdleStartSlot, Start, D_Builder.createIntegerValue(1, 0), FinReg);
+  C_Builder.assignToReg(IdleStartSlot, Start, C_Builder.createIntegerValue(1, 0), FinReg);
 
   // If the Start signal is true, then slot will jump to the slot of first BB.
   BasicBlock *EntryBB = &F->getEntryBlock();
@@ -679,8 +679,10 @@ SIRSeqOp *SIRCtrlRgnBuilder::assignToReg(SIRSlot *S, Value *Guard, Value *Src,
   else
     SeqOp = new SIRSeqOp(Src, Dst, Guard, S);
 
-  // Add this SeqOp to the lists in SIRSlot.
-  S->addSeqOp(SeqOp);
+  // If SIRSlot is specified , then add this SeqOp to the lists in SIRSlot.
+  // If not, then the SeqOp is executed every clock like pipeline.
+  if (S)
+    S->addSeqOp(SeqOp);
 
   SM->IndexSeqOp(SeqOp);
 
