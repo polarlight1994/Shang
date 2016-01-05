@@ -77,50 +77,52 @@ SC_MODULE(V$(RTLModuleName)_tb){
     sc_signal<$(getBitWidth(v.Size))> $(v.Name);
 #end
 #for i,v in pairs(VirtualMBs) do
-		sc_signal<bool> $(v.EnableName);
-		sc_signal<bool> $(v.WriteEnName);
+	sc_signal<bool> $(v.EnableName);
+	sc_signal<bool> $(v.WriteEnName);
 #if v.RequireByteEn == 1 then
-		sc_signal<$(getBitWidth(v.ByteEnWidth))> $(v.ByteEnName);
+	sc_signal<$(getBitWidth(v.ByteEnWidth))> $(v.ByteEnName);
 #end
-		sc_signal<$(getBitWidth(v.AddrWidth))> $(v.AddrName);
-		sc_signal<$(getBitWidth(v.DataWidth))> $(v.WDataName);
-		sc_signal<$(getBitWidth(v.DataWidth))> $(v.RDataName);
+	sc_signal<$(getBitWidth(v.AddrWidth))> $(v.AddrName);
+	sc_signal<$(getBitWidth(v.DataWidth))> $(v.WDataName);
+	sc_signal<$(getBitWidth(v.DataWidth))> $(v.RDataName);
 #end
 
     V$(RTLModuleName) DUT;
     
     void sw_main_entry(){
-      V$(RTLModuleName)_tb *tb_ptr = V$(RTLModuleName)_tb::Instance();
-      wait(); tb_ptr->rstN = 0;
-      wait(10); tb_ptr->rstN = 1;
-      wait();
+		V$(RTLModuleName)_tb *tb_ptr = V$(RTLModuleName)_tb::Instance();
+		wait(); tb_ptr->rstN = 0;
+		wait(10); tb_ptr->rstN = 1;
+		wait();
 #if FuncInfo.Name ~= "main"	then
-			sw_main();
+		sw_main();
 #else
-			$(getType(FuncInfo.ReturnSize)) RetVle = $(FuncInfo.Name)_if($(
-				for i,v in ipairs(FuncInfo.Args) do
-					if i ~= 1 then _put(', ') end
-					_put(v.Name)
-				end
-			 ));
-		  assert(RetVle == 0 && "Return value of main function is not 0!");
+		$(getType(FuncInfo.ReturnSize)) RetVle = $(FuncInfo.Name)_if($(
+			for i,v in ipairs(FuncInfo.Args) do
+				if i ~= 1 then _put(', ') end
+				_put(v.Name)
+			end
+		));
+		assert(RetVle == 0 && "Return value of main function is not 0!");
 #end
-			ofstream outfile;
-      outfile.open ("$(CounterFile)");
-      outfile <<"$(RTLModuleName) hardware run cycles " << cnt <<endl;
-      outfile.close();
-      sc_stop();
+		ofstream outfile;
+		outfile.open ("$(CounterFile)");
+		outfile <<"$(RTLModuleName) hardware run cycles " << cnt <<endl;
+		outfile.close();
+		sc_stop();
     }
 
-		void bus_transation() {
-			while(true) {
+	void bus_transation() {
+		while(true) {
 #for i,v in pairs(VirtualMBs) do
-				if(($(v.EnableName))) {
-					long long cur_addr = $(v.AddrName).read();
+			if(($(v.EnableName))) {
+				unsigned CyclesToWait = 0;
+				long long cur_addr = $(v.AddrName).read();
 #if v.RequireByteEn == 1 then
-					$(getType(v.ByteEnWidth)) cur_be = $(v.ByteEnName).read();
-					if(($(v.WriteEnName))) {
-						switch (cur_be) {
+				$(getType(v.ByteEnWidth)) cur_be = $(v.ByteEnName).read();
+				if(($(v.WriteEnName))) {
+					CyclesToWait = 1;
+					switch (cur_be) {
 						case 1:   *((unsigned char *)cur_addr) = ((unsigned char)$(v.WDataName).read()); break;
 						case 2:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 8)); break;
 						case 4:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 16)); break;
@@ -140,9 +142,10 @@ SC_MODULE(V$(RTLModuleName)_tb){
 
 						case 255: *((unsigned long long *)cur_addr) = ((unsigned long long)$(v.WDataName).read()); break;
 						default: printf("cur_be is %d\n", cur_be); assert(0 && "Unsupported cur_be!"); break;
-						}
-					} else {
-						switch (cur_be) {
+					}
+				} else {
+					CyclesToWait = 2;
+					switch (cur_be) {
 						case 1:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)); break;
 						case 2:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)) << 8; break;
 						case 4:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)) << 16; break;
@@ -162,22 +165,27 @@ SC_MODULE(V$(RTLModuleName)_tb){
 
 						case 255: $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned long long *)cur_addr)); break;
 						default: printf("cur_be is %d\n", cur_be); assert(0 && "Unsupported cur_be!"); break;
-						}
 					}
-#else
-					if(($(v.WriteEnName))) {
-						*(($(getType(v.DataWidth)) *)cur_addr) = (($(getType(v.DataWidth)))$(v.WDataName).read());
-					} else {
-						$(v.RDataName) = *(($(getType(v.DataWidth)) *)cur_addr);
-					}
-
-#end
 				}
-#end
+#else
+				if(($(v.WriteEnName))) {
+					CyclesToWait = 1;
+					*(($(getType(v.DataWidth)) *)cur_addr) = (($(getType(v.DataWidth)))$(v.WDataName).read());
+				} else {
+					CyclesToWait = 2;
+					$(v.RDataName) = *(($(getType(v.DataWidth)) *)cur_addr);
+				}
 
-				wait();
+#end
+				for (unsigned i = 0; i < CyclesToWait; ++i) {
+					wait();
+					assert(!($(v.EnableName)) && "Please disable memory while waiting it ready!");
+				}
 			}
+#end
+			wait();
 		}
+	}
 
     static V$(RTLModuleName)_tb* Instance() {
       static V$(RTLModuleName)_tb _instance("top");
@@ -185,8 +193,8 @@ SC_MODULE(V$(RTLModuleName)_tb){
     }
 
     protected:
-    //Include the DUT in the top module
-      SC_CTOR(V$(RTLModuleName)_tb): DUT("DUT"){
+		//Include the DUT in the top module
+		SC_CTOR(V$(RTLModuleName)_tb): DUT("DUT"){
         DUT.clk(clk);
 #for i,v in ipairs(FuncInfo.Args) do
         DUT.$(v.Name)($(v.Name));
@@ -201,22 +209,22 @@ SC_MODULE(V$(RTLModuleName)_tb){
         DUT.rstN(rstN);
 
 #for i,v in pairs(VirtualMBs) do
-				DUT.$(v.EnableName)($(v.EnableName));
-				DUT.$(v.WriteEnName)($(v.WriteEnName));
+		DUT.$(v.EnableName)($(v.EnableName));
+		DUT.$(v.WriteEnName)($(v.WriteEnName));
 #if v.RequireByteEn == 1 then
-				DUT.$(v.ByteEnName)($(v.ByteEnName));
+		DUT.$(v.ByteEnName)($(v.ByteEnName));
 #end
-				DUT.$(v.AddrName)($(v.AddrName));
-				DUT.$(v.WDataName)($(v.WDataName));
-				DUT.$(v.RDataName)($(v.RDataName));
+		DUT.$(v.AddrName)($(v.AddrName));
+		DUT.$(v.WDataName)($(v.WDataName));
+		DUT.$(v.RDataName)($(v.RDataName));
 #end
 
-        SC_CTHREAD(sw_main_entry,clk.pos());
-				SC_CTHREAD(bus_transation, clk.pos());
+        SC_CTHREAD(sw_main_entry, clk.pos());
+		SC_CTHREAD(bus_transation, clk.pos());
       }
     private:
-      V$(RTLModuleName)_tb(const V$(RTLModuleName)_tb&) ;
-      V$(RTLModuleName)_tb& operator=(const V$(RTLModuleName)_tb&) ;
+		V$(RTLModuleName)_tb(const V$(RTLModuleName)_tb&) ;
+		V$(RTLModuleName)_tb& operator=(const V$(RTLModuleName)_tb&) ;
     };  
 
   $(getType(FuncInfo.ReturnSize)) $(FuncInfo.Name)_if($(
@@ -233,12 +241,13 @@ SC_MODULE(V$(RTLModuleName)_tb){
     wait(); tb_ptr->start=0;
     wait(tb_ptr->clk == 1);
     while(!(tb_ptr->fin)){
-      wait();
-      ++cnt;
+		wait();
+		++cnt;
     }
 
 #if FuncInfo.ReturnSize~=0 then
-    return ($(getType(FuncInfo.ReturnSize))) tb_ptr->return_value;      
+    $(getType(FuncInfo.ReturnSize)) result = ($(getType(FuncInfo.ReturnSize))) tb_ptr->return_value;
+	return result;
 #else 
     return;
 #end
