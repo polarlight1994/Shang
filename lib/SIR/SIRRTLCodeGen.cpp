@@ -1350,6 +1350,7 @@ void SIR2RTL::generateCodeForGlobalVariableScript(SIR &SM, DataLayout &TD) {
       SIRMemoryBank *SMB = dyn_cast<SIRMemoryBank>(*I);
 
       MBSS << "VirtualMBs." << SMB->getArrayName() << " = { ";
+      MBSS << "BankAccessFunc = '" << "bus_transaction_" + utostr_32(SMB->getNum()) << "', ";
       MBSS << "EnableName = '" << SMB->getEnableName() << "', ";
       MBSS << "WriteEnName = '" << SMB->getWriteEnName() << "', ";
       MBSS << "RequireByteEn = " << SMB->requireByteEnable() << ", ";

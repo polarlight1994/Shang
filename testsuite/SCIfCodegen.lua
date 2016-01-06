@@ -112,14 +112,16 @@ SC_MODULE(V$(RTLModuleName)_tb){
 		sc_stop();
     }
 
-	void bus_transation() {
-		while(true) {
 #for i,v in pairs(VirtualMBs) do
+	void $(v.BankAccessFunc)() {
+		while(true) {
 			if(($(v.EnableName))) {
+			    unsigned CyclesToWait = 0;
 				long long cur_addr = $(v.AddrName).read();
 #if v.RequireByteEn == 1 then
 				$(getType(v.ByteEnWidth)) cur_be = $(v.ByteEnName).read();
 				if(($(v.WriteEnName))) {
+					CyclesToWait = 1;
 					switch (cur_be) {
 						case 1:   *((unsigned char *)cur_addr) = ((unsigned char)$(v.WDataName).read()); break;
 						case 2:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 8)); break;
@@ -142,6 +144,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
 						default: printf("cur_be is %d\n", cur_be); assert(0 && "Unsupported cur_be!"); break;
 					}
 				} else {
+					CyclesToWait = 2;
 					switch (cur_be) {
 						case 1:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)); break;
 						case 2:   $(v.RDataName) = ($(getType(v.DataWidth)))(*((unsigned char *)cur_addr)) << 8; break;
@@ -166,16 +169,27 @@ SC_MODULE(V$(RTLModuleName)_tb){
 				}
 #else
 				if(($(v.WriteEnName))) {
+					CyclesToWait = 1;
 					*(($(getType(v.DataWidth)) *)cur_addr) = (($(getType(v.DataWidth)))$(v.WDataName).read());
 				} else {
+					CyclesToWait = 2;
 					$(v.RDataName) = *(($(getType(v.DataWidth)) *)cur_addr);
 				}
 #end
+				wait();
+				for (unsigned i = 0; i < CyclesToWait - 1; ++i) {
+					wait();
+					if (($(v.EnableName))) {
+						printf("In cycles %d\n", i);
+					}
+					assert(!($(v.EnableName)) && "Please disable memory while waiting it ready!");
+				}
+			} else {
+				wait();
 			}
-#end
-			wait();
 		}
 	}
+#end
 
     static V$(RTLModuleName)_tb* Instance() {
 		static V$(RTLModuleName)_tb _instance("top");
@@ -210,7 +224,9 @@ SC_MODULE(V$(RTLModuleName)_tb){
 #end
 
         SC_CTHREAD(sw_main_entry,clk.pos());
-		SC_CTHREAD(bus_transation, clk.pos());
+#for i,v in pairs(VirtualMBs) do
+		SC_CTHREAD($(v.BankAccessFunc), clk.pos());
+#end
       }
     private:
       V$(RTLModuleName)_tb(const V$(RTLModuleName)_tb&) ;
