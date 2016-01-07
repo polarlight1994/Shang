@@ -62,13 +62,13 @@ INITIALIZE_PASS_END(SIRInit,
                     false, true)
 
 bool SIRInit::runOnFunction(Function &F) {
-  /// Debug code
-  std::string FinalIR = LuaI::GetString("FinalIR");
-  std::string ErrorInFinalIR;
-	raw_fd_ostream OutputForFinalIR(FinalIR.c_str(), ErrorInFinalIR);
-	vlang_raw_ostream OutForFinalIR;
-	OutForFinalIR.setStream(OutputForFinalIR);
-	OutForFinalIR << F;
+//   /// Debug code
+//   std::string FinalIR = LuaI::GetString("FinalIR");
+//   std::string ErrorInFinalIR;
+// 	raw_fd_ostream OutputForFinalIR(FinalIR.c_str(), ErrorInFinalIR);
+// 	vlang_raw_ostream OutForFinalIR;
+// 	OutForFinalIR.setStream(OutputForFinalIR);
+// 	OutForFinalIR << F;
 
   DataLayout &TD = getAnalysis<DataLayout>();
   SIRAllocation &SA = getAnalysis<SIRAllocation>();
@@ -1460,6 +1460,14 @@ Value *SIRDatapathBuilder::createSBitExtractInst(Value *U, unsigned UB,
                                                  bool UsedAsArg) {
   assert(TD.getTypeSizeInBits(RetTy) == UB - LB && "RetTy not matches!");
   assert(UB <= getBitWidth(U) && LB >=0 && "Unexpected Extract BitWidth!");
+
+  // Trivial case: no real extract move here.
+  if (UB == getBitWidth(U) && LB == 0) {
+    if (!UsedAsArg)
+      InsertPosition->replaceAllUsesWith(U);
+
+    return U;
+  }
 
   if (isa<ConstantInt>(U) && LB == 0) {
     if (UB == getBitWidth(U))
