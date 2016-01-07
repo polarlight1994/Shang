@@ -192,24 +192,5 @@ bool SIRSTGDistance::runOnSIR(SIR &SM) {
     }
   }
 
-  std::string DistanceMatrixS = LuaI::GetString("DistanceMatrix");
-  std::string Error;
-  raw_fd_ostream Output(DistanceMatrixS.c_str(), Error);
-
-  typedef std::map<unsigned, std::map<unsigned, unsigned> >::iterator dm_iterator;
-  for (dm_iterator I = DistanceMatrix.begin(), E = DistanceMatrix.end(); I != E; ++I) {
-    unsigned Dst = I->first;
-
-    std::map<unsigned, unsigned> map = I->second;
-    typedef std::map<unsigned, unsigned>::iterator map_iterator;
-    for (map_iterator MI = map.begin(), ME = map.end(); MI != ME; ++MI) {
-      unsigned Src = MI->first;
-
-      unsigned Distance = MI->second;
-
-      Output << "From [" << Src << "] to [" << Dst << "] with distance of " << Distance << "\n";
-    }
-  }
-
   return false;
 }
