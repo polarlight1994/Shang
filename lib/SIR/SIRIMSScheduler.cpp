@@ -279,6 +279,10 @@ bool SIRIMSScheduler::verifySchedule() {
   for (iterator I = begin(), E = end(); I != E; ++I) {
     SIRSchedUnit *SU = *I;
 
+    // Make sure all SUnits should be scheduled.
+    if (!SU->isScheduled())
+      return false;
+
     unsigned Stage = getStage(SU);
     unsigned Step = getStep(SU);
 
@@ -360,39 +364,89 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
   if (!couldBePipelined())
     return Fail;
 
-  for (iterator I = begin(), E = end(); I != E; ++I) {
-    SIRSchedUnit *SU = *I;
+  while (MII < CriticalPathEnd) {
+    // Initialize the ReadyQueue.
+    assert(!ReadyQueue.size() && "ReadyQueue not cleared!");
+    for (iterator I = begin(), E = end(); I != E; ++I) {
+      SIRSchedUnit *SU = *I;
 
-    // Other SUnits will be pushed into ReadyQueue to prepare to be
-    // scheduled.
-    ReadyQueue.push(SU);
-  }
+      // Reset the SUnit.
+      SU->resetSchedule();
 
-  while (!ReadyQueue.empty()) {
-    SIRSchedUnit *SU = ReadyQueue.top();
-    ReadyQueue.pop();
+      // Other SUnits will be pushed into ReadyQueue to prepare to be
+      // scheduled.
+      ReadyQueue.push(SU);
+    }
 
-    unsigned EarliestResult = 0;
-    for (unsigned i = unsigned(floor(getASAPStep(SU))),
-                  e = unsigned(floor(getALAPStep(SU))); i <= e; i += 1) {
-      scheduleSUTo(SU, i);
+    while (!ReadyQueue.empty()) {
+      SIRSchedUnit *SU = ReadyQueue.top();
+      ReadyQueue.pop();
 
+      unsigned EarliestResult = 0;
+      for (unsigned i = unsigned(floor(getASAPStep(SU))),
+                    e = unsigned(floor(getALAPStep(SU))); i <= e; i += 1) {
+        if(scheduleSUTo(SU, i))
+          break;
+      }
+
+      // Rebuild the TimeFrame and the ReadyQueue.
+      buildTimeFrame();
+      ReadyQueue.reheapify();
+    }
+
+    // Verify the schedule result.
+    if (!verifySchedule()) {
+      // If not success, then clear all data, increase II and try again.
+      ReadyQueue.clear();
+      ScheduleResult.clear();
+      resetTimeFrame();
+
+      // Increase MII and rebuild the TimeFrame.
+      increaseMII();
+      buildTimeFrame();
+
+      continue;
+    } else {
       break;
     }
-
-    // Otherwise we cannot schedule SU because of other constraints.
-    if (!SU->isScheduled()) {
-      return Fail;
-    }
-
-    // Rebuild the TimeFrame and the ReadyQueue.
-    buildTimeFrame();
-    ReadyQueue.reheapify();
   }
 
-  // Verify the schedule result by examine the back-edge dependencies.
-  if (!verifySchedule())
+  if (MII >= CriticalPathEnd)
     return Fail;
+
+//   for (iterator I = begin(), E = end(); I != E; ++I) {
+//     SIRSchedUnit *SU = *I;
+// 
+//     // Other SUnits will be pushed into ReadyQueue to prepare to be
+//     // scheduled.
+//     ReadyQueue.push(SU);
+//   }
+// 
+//   while (!ReadyQueue.empty()) {
+//     SIRSchedUnit *SU = ReadyQueue.top();
+//     ReadyQueue.pop();
+// 
+//     unsigned EarliestResult = 0;
+//     for (unsigned i = unsigned(floor(getASAPStep(SU))),
+//                   e = unsigned(floor(getALAPStep(SU))); i <= e; i += 1) {
+//       scheduleSUTo(SU, i);
+// 
+//       break;
+//     }
+// 
+//     // Otherwise we cannot schedule SU because of other constraints.
+//     if (!SU->isScheduled()) {
+//       return Fail;
+//     }
+// 
+//     // Rebuild the TimeFrame and the ReadyQueue.
+//     buildTimeFrame();
+//     ReadyQueue.reheapify();
+//   }
+// 
+//   // Verify the schedule result by examine the back-edge dependencies.
+//   if (!verifySchedule())
+//     return Fail;
 
   emitSchedule();
 
