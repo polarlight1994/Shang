@@ -192,7 +192,7 @@ void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
 
       unsigned Distance = 0;
 
-      if (SrcSU->isPHI() && SrcSU->getParentBB() == U->getParentBB())
+      if ((SrcSU->isPHI() || SrcSU->isPHIPack()) && SrcSU->getParentBB() == U->getParentBB())
         Distance = 1;
       else
         Distance = 0;
