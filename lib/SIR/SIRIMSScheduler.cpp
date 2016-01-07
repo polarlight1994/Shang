@@ -282,6 +282,8 @@ bool SIRIMSScheduler::verifySchedule() {
     unsigned Stage = getStage(SU);
     unsigned Step = getStep(SU);
 
+    // Make sure the schedule meets all the back-edge
+    // dependencies constraints.
     typedef SIRSchedUnit::dep_iterator dep_iterator;
     for (dep_iterator DI = SU->dep_begin(), DE = SU->dep_end(); DI != DE; ++DI) {
       SIRSchedUnit *DepSU = *DI;
@@ -388,8 +390,9 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
     ReadyQueue.reheapify();
   }
 
-//   if (!verifySchedule())
-//     return Fail;
+  // Verify the schedule result by examine the back-edge dependencies.
+  if (!verifySchedule())
+    return Fail;
 
   emitSchedule();
 
