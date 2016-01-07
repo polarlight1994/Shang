@@ -26,6 +26,7 @@
 #include "llvm/Support/Debug.h"
 
 #include <iostream>
+#include <set>
 
 namespace llvm {
 // Get the signed value of a ConstantInt.
@@ -802,6 +803,9 @@ private:
   // The map between Pipelined BB and its MII
   PipelinedBB2MIIMapTy PipelinedBB2MII;
 
+  // Registers that should be keeped.
+  std::set<SIRRegister *> KeepRegs;
+
   // Record the Idx of FinPort and RetPort.
   unsigned RetPortIdx;
   unsigned FinPortIdx;
@@ -827,6 +831,12 @@ public:
     SeqVal2Reg.clear();
     Reg2Slot.clear();
     BB2SlotMap.clear();
+  }
+
+  bool hasKeepReg(SIRRegister *Reg) const { return KeepRegs.count(Reg); }
+  void indexKeepReg(SIRRegister *Reg) {
+    if (!KeepRegs.count(Reg) && !Reg->isSlot())
+      KeepRegs.insert(Reg);
   }
 
   Function *getFunction() const { return F; }

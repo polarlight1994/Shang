@@ -17,6 +17,7 @@
 #include "vast/LuaI.h"
 
 #include "llvm/ADT/PostOrderIterator.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <set>
 
@@ -29,12 +30,64 @@ INITIALIZE_PASS_BEGIN(SIRSTGDistance,
                       "SIR-STG-Distance",
                       "Compute the shortest path distance between states in STG",
                       false, true)
+  INITIALIZE_PASS_DEPENDENCY(SIRTimingAnalysis)
   INITIALIZE_PASS_DEPENDENCY(SIRScheduling)
   INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
 INITIALIZE_PASS_END(SIRSTGDistance,
                     "SIR-STG-Distance",
                     "Compute the shortest path distance between states in STG",
                     false, true)
+
+bool SIRSTGDistance::existPath(Value *Src, Value *Dst) {
+  if (Src == Dst)
+    return true;
+
+  Instruction *Root = dyn_cast<Instruction>(Dst);
+
+  if (!Root) return false;
+
+  typedef Instruction::op_iterator ChildIt;
+  std::vector<std::pair<Instruction *, ChildIt> > VisitStack;
+  VisitStack.push_back(std::make_pair(Root, Root->op_begin()));
+
+  while (!VisitStack.empty()) {
+    Instruction *Inst = VisitStack.back().first;
+    ChildIt &It = VisitStack.back().second;
+    ChildIt EndIt = Inst->op_end();
+
+    if (It == EndIt) {
+      if (*It == Src)
+        return true;
+
+      VisitStack.pop_back();
+      continue;
+    }
+
+    // Otherwise, remember the node and visit its children first.
+    Value *ChildVal = *It;
+
+    if (ChildVal == Src)
+      return true;
+
+    if (It != EndIt)
+      ++It;
+
+    if (Instruction *ChildInst = dyn_cast<Instruction>(ChildVal)) {
+      if (!ChildInst)
+        continue;
+
+      if (IntrinsicInst *ChildII = dyn_cast<IntrinsicInst>(ChildInst))
+        if (ChildII->getIntrinsicID() == Intrinsic::shang_reg_assign) {
+          SIRRegister *Reg = SM->lookupSIRReg(ChildVal);
+          continue;
+        }
+
+      VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
+    }
+  }
+
+  return false;
+}
 
 unsigned SIRSTGDistance::getIntervalFromSrc(SIRRegister *Reg, SIRSlot *ReadSlot) {
   unsigned PathInterval = UINT16_MAX;
@@ -102,12 +155,48 @@ unsigned SIRSTGDistance::getIntervalFromSrc(SIRSlot *DefSlot, SIRSlot *ReadSlot)
   return std::min(PathInterval + 1u, 65535u);
 }
 
-unsigned SIRSTGDistance::getIntervalFromSrc(SIRRegister *Reg, ArrayRef<SIRSlot *> ReadSlots) {
+unsigned SIRSTGDistance::getIntervalFromSrc(SIRRegister *SrcReg, SIRRegister *DstReg, ArrayRef<SIRSlot *> ReadSlots) {
   unsigned PathInterval = UINT16_MAX;
 
+  SmallVector<SIRSlot *, 4> RealReadSlots;
+
   typedef ArrayRef<SIRSlot *>::iterator iterator;
-  for (iterator I = ReadSlots.begin(), E = ReadSlots.end(); I != E; ++I)
-    PathInterval = std::min(PathInterval, getIntervalFromSrc(Reg, *I));
+  for (iterator I = ReadSlots.begin(), E = ReadSlots.end(); I != E; ++I) {
+    SIRSlot *S = *I;
+
+    typedef SIRSlot::op_iterator op_iterator;
+    for (op_iterator OI = S->op_begin(), OE = S->op_end(); OI != OE; ++OI) {
+      SIRSeqOp *SeqOp = *OI;
+
+      if (SeqOp->getDst() != DstReg)
+        continue;
+
+      Value *SrcVal = SeqOp->getSrc();
+      Value *GuardVal = SeqOp->getGuard();
+      Value *SlotVal = SeqOp->getSlot()->getGuardValue();
+
+      SmallVector<Value *, 4> Roots;
+      Roots.push_back(SrcVal);
+      Roots.push_back(GuardVal);
+      Roots.push_back(SlotVal);
+
+      for (int i = 0; i < Roots.size(); ++i) {
+        Value *Src = Roots[i];
+
+        if (existPath(SrcReg->getLLVMValue(), Src))
+          RealReadSlots.push_back(S);
+      }
+    }
+  }
+
+  assert (RealReadSlots.size() && "Unexpected no read slot!");
+
+  for (int i = 0; i < RealReadSlots.size(); ++i) {
+    SIRSlot *ReadSlot = RealReadSlots[i];
+
+    unsigned Interval = getIntervalFromSrc(SrcReg, ReadSlot);
+    PathInterval = std::min(PathInterval, Interval);
+  }
 
   return PathInterval;
 }
@@ -140,6 +229,8 @@ bool SIRSTGDistance::updateDistance(unsigned Distance, unsigned SrcSlotNum,
 }
 
 bool SIRSTGDistance::runOnSIR(SIR &SM) {
+  this->SM = &SM;
+
   typedef SIR::slot_iterator slot_iterator;
   for (slot_iterator I = SM.slot_begin(), E = SM.slot_end(); I != E; ++I) {
     SIRSlot *Src = I;

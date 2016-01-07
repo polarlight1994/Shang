@@ -18,11 +18,14 @@
 #include "sir/SIR.h"
 #include "sir/SIRPass.h"
 #include "sir/Passes.h"
+#include "sir/SIRTimingAnalysis.h"
 
 namespace llvm {
 class SIRSTGDistance : public SIRPass {
 public:
   static char ID;
+  SIR *SM;
+
   std::map<unsigned, std::map<unsigned, unsigned> > DistanceMatrix;
 
   SIRSTGDistance() : SIRPass(ID) {
@@ -31,6 +34,7 @@ public:
   
   void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
+    AU.addRequired<SIRTimingAnalysis>();
     AU.addRequiredID(SIRSchedulingID);
     AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
     AU.setPreservesAll();
@@ -39,9 +43,11 @@ public:
   unsigned getDistance(unsigned SrcSlotNum, unsigned DstSlotNum);
   bool updateDistance(unsigned Distance, unsigned SrcSlotNum, unsigned DstSlotNum);
 
+  bool existPath(Value *Src, Value *Dst);
+
   unsigned getIntervalFromSrc(SIRSlot *DefSlot, SIRSlot *ReadSlot);
   unsigned getIntervalFromSrc(SIRRegister *Reg, SIRSlot *ReadSlot);
-  unsigned getIntervalFromSrc(SIRRegister *Reg, ArrayRef<SIRSlot *> ReadSlots);
+  unsigned getIntervalFromSrc(SIRRegister *SrcReg, SIRRegister *DstReg, ArrayRef<SIRSlot *> ReadSlots);
 
   bool runOnSIR(SIR &SM);
 };

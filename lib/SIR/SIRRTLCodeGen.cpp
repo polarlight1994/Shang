@@ -1153,6 +1153,9 @@ void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
     // since we have do it in MemoryBank declaration part.
     if (Reg->isOutPort() || Reg->isFUInOut()) continue;
 
+    if (SM.hasKeepReg(Reg))
+      Out << "/*synthesis keep*/";
+
     Reg->printDecl(Out.indent(2));
   }
 

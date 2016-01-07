@@ -15,6 +15,7 @@
 #include "sir/SIR.h"
 #include "sir/SIRPass.h"
 #include "sir/SIRBuild.h"
+#include "sir/LangSteam.h"
 
 #include "vast/FUInfo.h"
 #include "vast/LuaI.h"
@@ -58,7 +59,7 @@ static bool isLeafValue(SIR *SM, Value *V) {
   if (isa<UndefValue>(V)) return true;
 
   if (Instruction *Inst = dyn_cast<Instruction>(V))
-    if (SM->lookupSIRReg(Inst))
+    if (SIRRegister *Reg = SM->lookupSIRReg(Inst))
       return true;
 
   return false;
@@ -415,8 +416,10 @@ void SIRDelayModel::updateArrivalParallel(unsigned i, float Delay) {
 }
 
 void SIRDelayModel::updateArrivalParallel(float delay) {
-  // Also note that the real numbers of operands should be minus 1.
-  for (unsigned I = 0, E = Node->getNumOperands() - 1; I < E; ++I)
+  unsigned NumOperands = isa<IntrinsicInst>(Node) ? (Node->getNumOperands() - 1)
+                                                  : Node->getNumOperands();
+
+  for (unsigned I = 0, E = NumOperands; I < E; ++I)
     updateArrivalParallel(I, delay);
 }
 
@@ -671,7 +674,7 @@ void SIRDelayModel::updateArrival() {
   case Intrinsic::shang_sdiv:
   case Intrinsic::shang_udiv: {
     // Hack: Need to add the lookUpDelay function of Div into VFUs.
-    return updateArrivalParallel(345.607);
+    return updateArrivalParallel(345.607f);
   }
 
   case Intrinsic::shang_shl:
@@ -719,6 +722,9 @@ SIRDelayModel *SIRTimingAnalysis::createModel(Instruction *Inst, SIR *SM, DataLa
 
   Model = new SIRDelayModel(SM, &TD, Inst, Fanins);
   Models.push_back(Model);
+
+  Model->updateArrival();
+
   return Model;
 }
 
@@ -751,7 +757,7 @@ void SIRTimingAnalysis::buildTimingNetlist(Value *V, SIR *SM, DataLayout &TD) {
 
       // Calculate the arrival time to the output of this node.
       SIRDelayModel *M = createModel(Node, SM, TD);
-      M->updateArrival();
+
       continue;
     }
 
@@ -832,7 +838,7 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
 
     if (isLeafValue(SM, V)) {
       // If the operand is a SIRSeqVal, then we set the delay to 0.0f.
-      if (SM->lookupSIRReg(dyn_cast<Instruction>(V)))
+      if (SIRRegister *LeafReg = SM->lookupSIRReg(dyn_cast<Instruction>(V)))
         Arrivals.insert(std::make_pair(V, PhysicalDelay(0.0f)));
 
       // If the operand is a Constant, GlobalValue, Argument or UndefValue,
@@ -872,7 +878,7 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
       // further since we have reach the end of this datapath.
       if (isLeafValue(SM, ChildNode)) {
         // If the operand is a SIRSeqVal, save it so we can look up the latency later.
-        if (SM->lookupSIRReg(dyn_cast<Instruction>(ChildNode)))
+        if (SIRRegister *Reg = SM->lookupSIRReg(dyn_cast<Instruction>(ChildNode)))
           Leaves.insert(ChildNode);
 
         // If the ChildNode is a Constant, GlobalValue, Argument or UndefValue,

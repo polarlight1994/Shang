@@ -835,6 +835,7 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
       SIRSeqOp *SeqOp = SeqOps[j];
 
       SeqOp->setSlot(TargetSlot);
+      TargetSlot->addSeqOp(SeqOp);
     }
   }
 

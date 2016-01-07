@@ -195,7 +195,7 @@ void ConeWithTimingInfo::extractTimingPaths(Instruction *Root, SIRRegister *DstR
     if (TimingInterval.count(Leaf))
       continue;
 
-    unsigned Distance = STGDist->getIntervalFromSrc(Leaf, ReadSlots);
+    unsigned Distance = STGDist->getIntervalFromSrc(Leaf, DstReg, ReadSlots);
     if (Distance < UINT16_MAX) {
       addIntervalFromSrc(Leaf, Distance);
     }
@@ -215,21 +215,28 @@ void ConeWithTimingInfo::generateConstraintEntries(raw_ostream &OS) {
   SIRRegister *DstReg = SM->lookupSIRReg(V);
   assert(DstReg && "Unexpected NULL Register!");
 
+  SM->indexKeepReg(DstReg);
+
   typedef TimingIntervalMapTy::iterator iterator;
   for (iterator I = TimingInterval.begin(), E = TimingInterval.end(); I != E; ++I) {
+    if (I->second == 1)
+      continue;
+
+    SM->indexKeepReg(I->first);
+
     OS << "set src [get_keepers " << Mangle(I->first->getName()) << "*]\n";
     OS << "set dst [get_keepers " << Mangle(DstReg->getName()) << "*]\n";
     OS << "if {[get_collection_size $src] && [get_collection_size $dst]} {\n";
 
     Instruction *ViaValue = ViaValueMap[I->first];
-    if  (ViaValue) {
-      OS << "  set thu [get_nets " << Mangle(ViaValue->getName()) << "*]\n";
-      OS << "  if {[get_collection_size $thu]} {\n";
-      OS << "    set_multicycle_path -from $src -through $thu -to $dst -setup -end " << I->second << "\n";
-      OS << "  }\n";
-    } else {
+//     if  (ViaValue) {
+//       OS << "  set thu [get_nets " << Mangle(ViaValue->getName()) << "*]\n";
+//       OS << "  if {[get_collection_size $thu]} {\n";
+//       OS << "    set_multicycle_path -from $src -through $thu -to $dst -setup -end " << I->second << "\n";
+//       OS << "  }\n";
+//     } else {
       OS << "  set_multicycle_path -from $src -to $dst -setup -end " << I->second << "\n";
-    }
+/*    }*/
 
     OS << "}\n\n";
   }
@@ -241,7 +248,7 @@ void SIRTimingScriptGen::extractTimingPaths(ConeWithTimingInfo &Cone, SIRRegiste
   if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(V)) {
     if (II->getIntrinsicID() == Intrinsic::shang_reg_assign) {
       SIRRegister *SrcReg = SM->lookupSIRReg(V);
-      unsigned Interval = STGDist->getIntervalFromSrc(SrcReg, ReadSlots);
+      unsigned Interval = STGDist->getIntervalFromSrc(SrcReg, Reg, ReadSlots);
       Cone.addIntervalFromSrc(SrcReg, Interval);
 
       return;
@@ -293,7 +300,7 @@ bool SIRTimingScriptGen::runOnSIR(SIR &SM) {
   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
     SIRRegister *Reg = I;
 
-    if (Reg->fanin_empty())
+    if (Reg->fanin_empty() || (Reg->getLLVMValue()->use_empty() && !Reg->isFUInput()))
       continue;
 
     generateConstraints(Reg, Output);
