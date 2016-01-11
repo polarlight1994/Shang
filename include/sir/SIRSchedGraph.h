@@ -58,7 +58,7 @@ public:
     : EdgeType(T), Latency(Latency), Distance(Distance) {}
 
   static SIRDep CreateValDep(float Latency, int Distance = 0) {
-    return SIRDep(ValDep, Latency, 0);
+    return SIRDep(ValDep, Latency, Distance);
   }
 
   static SIRDep CreateMemDep(float Latency, int Distance = 0) {
