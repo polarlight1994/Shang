@@ -76,21 +76,23 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
   SIRSlot *ExitSlot = SM->getLatestSlot(BB);
   SIRSlot *EntrySlot = SM->getLandingSlot(BB);
 
+  ArrayRef<SIRSchedUnit *> SUsInBB = G->getSUsInBB(BB);
+
   /// First constraint the Branch SUnits and PHI SUnits into the
   /// last step of this BB.
   ArrayRef<SIRSchedUnit *> SUsInExitSlot = G->lookupSUs(ExitSlot);
 
-  ArrayRef<SIRSchedUnit *> SUsInBB = G->getSUsInBB(BB);
-
   for (int i = 0; i < SUsInExitSlot.size(); ++i) {
     SIRSchedUnit *SU = SUsInExitSlot[i];
 
-    if (!SU->isSlotTransition() && !SU->isPHI() &&
-        !SU->isPHIPack() && !SU->isExitSlotPack())
+    if (!SU->isSlotTransition() && !SU->isExitSlotPack())
       continue;
 
     for (int j = 0; j < SUsInBB.size(); ++j) {
       SIRSchedUnit *DepSU = SUsInBB[j];
+
+      // No need to constraint to itself.
+      if (DepSU == SU) continue;
 
       SU->addDep(DepSU, SIRDep::CreateSyncDep());
     }
@@ -185,7 +187,8 @@ void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
 
       unsigned Distance = 0;
 
-      if ((SrcSU->isPHI() || SrcSU->isPHIPack() || SrcSU->isExitSlotPack()) && SrcSU->getParentBB() == U->getParentBB())
+      if ((SrcSU->isPHI() || SrcSU->isPHIPack() || SrcSU->isExitSlotPack()) &&
+          SrcSU->getParentBB() == U->getParentBB())
         Distance = 1;
       else
         Distance = 0;
@@ -360,7 +363,7 @@ void SIRScheduling::packSUnits() {
       if (SU->isCombSU())
         continue;
 
-      // All PHI SeqOps should be scheduled to last step.
+      // Constraint the PHINodes necessary into the last step.
       if (SU->isPHI()) {
         ExitSlotSeqOpsPack.push_back(SU->getSeqOp());
         continue;

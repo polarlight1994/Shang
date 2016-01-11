@@ -101,7 +101,7 @@ void SIRSchedUnit::EdgeBundle::addEdge(SIRDep NewEdge) {
     ++InsertBefore;
   }
 
-  assert((InsertBefore == Edges.size() ||
+  assert((InsertBefore <= Edges.size() ||
           (Edges[InsertBefore].getLatency() <= NewEdge.getLatency() &&
            Edges[InsertBefore].getDistance() >= NewEdge.getDistance()))
          && "Bad insert position!");
@@ -299,10 +299,17 @@ void SIRSchedGraph::toposortCone(SIRSchedUnit *Root,
     if (Child->isEntry() || Child->getParentBB() != BB)
       continue;
 
-    // Also ignore the PHI SUnit in this BB, since this dependency
+    // Ignore the ExitSlotPack SUnit in this BB, since this dependency
     // will be a back-edge formed a loop.
-    if (Child->isPHI() || Child->isPHIPack() || Child->isExitSlotPack())
+    if (Child->isExitSlotPack())
       continue;
+
+    // Ignore the PHI SUnit in this BB when it is also a back-edge
+    // data dependency. To be noted that, the dependency from PHI
+    // to ExitSlotPack is not back-edge.
+    if (Child->isPHI() || Child->isPHIPack())
+      if (!U->isExitSlotPack())
+        continue;
 
     // Do not visit the same node twice!
     if (!Visited.insert(Child).second) continue;
