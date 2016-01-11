@@ -105,7 +105,11 @@ void SIRSDCScheduler::addDependencyConstraints() {
       REAL Coefs[] = { 1.0, -1.0 };
       int Cols[] = { DstSUCol, SrcSUCol };
 
-      float Latency = DepEdge.getLatency() + SrcSU->getLatency();
+      float Latency;
+      if (DI.getEdgeType() != SIRDep::SyncDep)
+        Latency = DepEdge.getLatency() + SrcSU->getLatency();
+      else
+        Latency = 0.0f;
 
       // Create the constraint according to the dependency.
       if (!add_constraintex(lp, array_lengthof(Cols), Coefs, Cols, GE, Latency))

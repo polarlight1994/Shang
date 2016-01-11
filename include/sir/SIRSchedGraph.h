@@ -69,6 +69,10 @@ public:
     return SIRDep(CtrlDep, Latency, 0);
   }
 
+  static SIRDep CreateSyncDep() {
+    return SIRDep(SyncDep, 0, 0);
+  }
+
   Types getEdgeType() const { return Types(EdgeType); }
   int getDistance() const { return Distance; }
   bool isLoopCarried() const { return getDistance() != 0; }
@@ -100,8 +104,8 @@ public:
     CombSU,
     // PHI pack
     PHIPack,
-    // Output pack
-    OutputPack,
+    // ExitSlot pack
+    ExitSlotPack,
     // Memory pack
     MemoryPack,
     // Invalid node for the ilist sentinel
@@ -262,7 +266,7 @@ public:
   bool isSeqSU() const { return T == SeqSU; }
   bool isCombSU() const { return T == CombSU; }
   bool isPHIPack() const { return T == PHIPack; }
-  bool isOutputPack() const { return T == OutputPack; }
+  bool isExitSlotPack() const { return T == ExitSlotPack; }
   bool isMemoryPack() const { return T == MemoryPack; }
 
   SIRSeqOp *getSeqOp() const {
@@ -335,7 +339,7 @@ public:
   void addDep(SIRSchedUnit *Src, SIRDep NewEdge) {
     // Only PHI node will have self-loop data dependency.
     if (Src == this && NewEdge.getEdgeType() == SIRDep::ValDep)
-      assert(Src->isPHI() || Src->isPHIPack() && "Cannot add self-loop!");
+      assert(Src->isPHI() || Src->isPHIPack() || Src->isExitSlotPack() && "Cannot add self-loop!");
 
     DepSet::iterator at = Deps.find(Src);
 

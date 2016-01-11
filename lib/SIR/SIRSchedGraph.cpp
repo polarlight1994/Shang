@@ -301,7 +301,7 @@ void SIRSchedGraph::toposortCone(SIRSchedUnit *Root,
 
     // Also ignore the PHI SUnit in this BB, since this dependency
     // will be a back-edge formed a loop.
-    if (Child->isPHI() || Child->isPHIPack())
+    if (Child->isPHI() || Child->isPHIPack() || Child->isExitSlotPack())
       continue;
 
     // Do not visit the same node twice!
@@ -398,8 +398,8 @@ SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Typ
 
 SIRSchedUnit *SIRSchedGraph::createSUnit(BasicBlock *ParentBB, SIRSchedUnit::Type T,
                                          SmallVector<SIRSeqOp *, 4> SeqOps) {
-  assert(T == SIRSchedUnit::PHIPack || T == SIRSchedUnit::OutputPack ||
-         T == SIRSchedUnit::MemoryPack && "Unexpected Type of SUnit!");
+  assert(T == SIRSchedUnit::PHIPack || T == SIRSchedUnit::MemoryPack ||
+         T == SIRSchedUnit::ExitSlotPack && "Unexpected Type of SUnit!");
 
   SIRSchedUnit *U = new SIRSchedUnit(TotalSUs++, T, ParentBB, SeqOps);
   // Insert the newly create SU before the exit.
