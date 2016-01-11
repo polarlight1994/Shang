@@ -308,6 +308,7 @@ public:
   const_dep_iterator dep_end() const { return Deps.end(); }
 
   bool dep_empty() const { return Deps.empty(); }
+  unsigned dep_size() const { return Deps.size(); }
 
   /// Iterators for the uses.
   typedef UseListTy::iterator use_iterator;
@@ -319,6 +320,7 @@ public:
   const_use_iterator use_end() const { return UseList.end(); }
 
   bool use_empty() const { return UseList.empty(); }
+  unsigned use_size() const { return UseList.size(); }
 
   bool isDependsOn(const SIRSchedUnit *A) const {
     return Deps.count(const_cast<SIRSchedUnit *>(A));
