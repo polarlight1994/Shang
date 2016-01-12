@@ -121,7 +121,7 @@ SC_MODULE(V$(RTLModuleName)_tb){
 #if v.RequireByteEn == 1 then
 				$(getType(v.ByteEnWidth)) cur_be = $(v.ByteEnName).read();
 				if(($(v.WriteEnName))) {
-					CyclesToWait = 1;
+					CyclesToWait = 0;
 					switch (cur_be) {
 						case 1:   *((unsigned char *)cur_addr) = ((unsigned char)$(v.WDataName).read()); break;
 						case 2:   *((unsigned char *)cur_addr) = ((unsigned char)($(v.WDataName).read() >> 8)); break;
@@ -169,21 +169,21 @@ SC_MODULE(V$(RTLModuleName)_tb){
 				}
 #else
 				if(($(v.WriteEnName))) {
-					CyclesToWait = 1;
+					CyclesToWait = 0;
 					*(($(getType(v.DataWidth)) *)cur_addr) = (($(getType(v.DataWidth)))$(v.WDataName).read());
 				} else {
 					CyclesToWait = 2;
 					$(v.RDataName) = *(($(getType(v.DataWidth)) *)cur_addr);
 				}
 #end
-				wait();
-				for (unsigned i = 0; i < CyclesToWait - 1; ++i) {
+				for (unsigned i = 0; i < CyclesToWait; ++i) {
 					wait();
 					if (($(v.EnableName))) {
 						printf("In cycles %d\n", i);
 					}
 					assert(!($(v.EnableName)) && "Please disable memory while waiting it ready!");
 				}
+				wait();
 			} else {
 				wait();
 			}
