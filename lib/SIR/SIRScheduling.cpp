@@ -88,7 +88,7 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
     if (!SU->isSlotTransition() && !SU->isExitSlotPack())
       continue;
 
-    for (int j = 0; j < SUsInBB.size(); ++j) {
+    for (unsigned j = 0; j < SUsInBB.size(); ++j) {
       SIRSchedUnit *DepSU = SUsInBB[j];
 
       // No need to constraint to itself.
@@ -910,7 +910,7 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
       SIRSlot *EntryS = NewSlots.front();
       SIRSlot *ExitS = NewSlots.back();
 
-      for (int i = 0; i < CriticalPathLength - II + 1; ++i) {
+      for (unsigned i = 0; i < CriticalPathLength - II + 1; ++i) {
         SIRRegister *CndReg = C_Builder.createRegister(Cnd->getName().data() + utostr_32(i), Cnd->getType(), BB);
         SIRSlot *AssignSlot = NewSlots[II - 1 + i];
 
@@ -1143,7 +1143,7 @@ void SIRScheduleEmitter::pipelineDataPath() {
 
       // Create the pipeline registers to pipeline the value in data-path.
       Value *Val = CombOp;
-      for (int i = 0; i < PipelineDepth; ++i) {
+      for (unsigned i = 0; i < PipelineDepth; ++i) {
         std::string PipelineRegName = Val->getName().str()+ "_pipeline_" + utostr_32(i);
         SIRRegister *PipelineReg = C_Builder.createRegister(PipelineRegName, Val->getType(),
                                                             CombOp->getParent(), 0,
@@ -1167,7 +1167,7 @@ void SIRScheduleEmitter::pipelineDataPath() {
           Instruction *UseInst = *II;
 
           unsigned OperandNum = UINT32_MAX;
-          for (int i = 0; i < UseInst->getNumOperands(); ++i) {
+          for (unsigned i = 0; i < UseInst->getNumOperands(); ++i) {
             Value *Operand = UseInst->getOperand(i);
             if (Operand == CombOp)
               OperandNum = i;
