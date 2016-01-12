@@ -835,7 +835,7 @@ public:
 
   bool hasKeepReg(SIRRegister *Reg) const { return KeepRegs.count(Reg); }
   void indexKeepReg(SIRRegister *Reg) {
-    if (!KeepRegs.count(Reg) && !Reg->isSlot())
+    if (!KeepRegs.count(Reg))
       KeepRegs.insert(Reg);
   }
 
