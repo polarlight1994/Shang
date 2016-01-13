@@ -412,6 +412,10 @@ private:
   typedef std::map<BasicBlock *, SIRSchedUnit *> LoopBB2LoopSUMapTy;
   LoopBB2LoopSUMapTy LoopBB2LoopSUMap;
 
+  // Mapping between SIRSchedUnit and SIRMemoryBank it accessed.
+  typedef std::map<SIRSchedUnit *, SIRMemoryBank *> SU2SMBMapTy;
+  SU2SMBMapTy SU2SMBMap;
+
   // Helper class to arrange the scheduling units according to their parent BB,
   // we will emit the schedule or build the linear order BB by BB.
   std::map<BasicBlock *, SmallVector<SIRSchedUnit *, 4> > BBMap;
@@ -447,6 +451,10 @@ public:
   bool hasLoopSU(BasicBlock *BB) const { return LoopBB2LoopSUMap.count(BB); }
   SIRSchedUnit *getLoopSU(BasicBlock *BB);
   bool indexLoopSU2LoopBB(SIRSchedUnit *SU, BasicBlock *BB);
+
+  bool hasMemoryBank(SIRSchedUnit *SU) const { return SU2SMBMap.count(SU); }
+  SIRMemoryBank *getMemoryBank(SIRSchedUnit *SU);
+  bool indexMemoryBank2SUnit(SIRMemoryBank *Bank, SIRSchedUnit *SU);
 
   ArrayRef<SIRSchedUnit *> getSUsInBB(BasicBlock *BB) const;
 

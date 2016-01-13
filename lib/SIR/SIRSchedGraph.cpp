@@ -25,6 +25,7 @@
 using namespace llvm;
 
 static int Num = 0;
+static int num = 0;
 
 SIRSchedUnit::SIRSchedUnit(unsigned Idx, Type T, BasicBlock *BB)
   : II(0), Schedule(0.0), Idx(Idx), IsScheduled(false),
@@ -174,14 +175,60 @@ void SIRSchedUnit::print(raw_ostream &OS) const {
       << " to Slot#" << SST->getDstSlot()->getSlotNum() << "\n";
     break;
   }
+  case SIRSchedUnit::CombSU: {
+    Instruction *CombOp = getCombOp();
+    OS << "CombOp\n";
+    OS << "CombOp contained: ";
+    CombOp->print(OS);
+    OS << "\n";
+    break;
+  }
   case SIRSchedUnit::SeqSU: {
     SIRSeqOp *SeqOp = getSeqOp();
     OS << "SeqOp\n";
     OS << "SeqOp contained: assign Value [" << getSeqOp()->getSrc()
-      << "] to Reg [" << getSeqOp()->getDst()->getName() << "] in"
-      << " Slot#" << getSeqOp()->getSlot()->getSlotNum() << "\n";
+       << "] to Reg [" << getSeqOp()->getDst()->getName() << "] in"
+       << " Slot#" << getSeqOp()->getSlot()->getSlotNum() << "\n";
     break;
   }
+  case SIRSchedUnit::PHIPack: {
+    ArrayRef<SIRSeqOp *> SeqOps = getSeqOps();
+    OS << "PHIPack\n";
+    for (unsigned i = 0; i < SeqOps.size(); ++i) {
+      SIRSeqOp *SeqOp = SeqOps[i];
+
+      OS << "SeqOp contained: assign Value [" << SeqOp->getSrc()
+         << "] to Reg [" << SeqOp->getDst()->getName() << "] in"
+         << " Slot#" << SeqOp->getSlot()->getSlotNum() << "\n";
+    }
+    break;
+  }
+  case SIRSchedUnit::MemoryPack: {
+    ArrayRef<SIRSeqOp *> SeqOps = getSeqOps();
+    OS << "MemoryPack\n";
+    for (unsigned i = 0; i < SeqOps.size(); ++i) {
+      SIRSeqOp *SeqOp = SeqOps[i];
+
+      OS << "SeqOp contained: assign Value [" << SeqOp->getSrc()
+        << "] to Reg [" << SeqOp->getDst()->getName() << "] in"
+        << " Slot#" << SeqOp->getSlot()->getSlotNum() << "\n";
+    }
+    break;
+  }
+  case SIRSchedUnit::ExitSlotPack: {
+    ArrayRef<SIRSeqOp *> SeqOps = getSeqOps();
+    OS << "ExitSlotPack\n";
+    for (unsigned i = 0; i < SeqOps.size(); ++i) {
+      SIRSeqOp *SeqOp = SeqOps[i];
+
+      OS << "SeqOp contained: assign Value [" << SeqOp->getSrc()
+        << "] to Reg [" << SeqOp->getDst()->getName() << "] in"
+        << " Slot#" << SeqOp->getSlot()->getSlotNum() << "\n";
+    }
+    break;
+  }
+  case SIRSchedUnit::Invalid:
+    break;
   }
 
   OS << "Scheduled to " << Schedule;
@@ -268,6 +315,21 @@ bool SIRSchedGraph::indexLoopSU2LoopBB(SIRSchedUnit *SU, BasicBlock *BB) {
   assert(!hasLoopSU(BB) && "Loop SUnit already existed!");
 
   return LoopBB2LoopSUMap.insert(std::make_pair(BB, SU)).second;
+}
+
+SIRMemoryBank *SIRSchedGraph::getMemoryBank(SIRSchedUnit *SU) {
+  SU2SMBMapTy::const_iterator at = SU2SMBMap.find(SU);
+
+  if (at == SU2SMBMap.end())
+    return NULL;
+
+  return at->second;
+}
+
+bool SIRSchedGraph::indexMemoryBank2SUnit(SIRMemoryBank *Bank, SIRSchedUnit *SU) {
+  assert(!hasMemoryBank(SU) && "Memory Bank already existed!");
+
+  return SU2SMBMap.insert(std::make_pair(SU, Bank)).second;
 }
 
 void SIRSchedGraph::toposortCone(SIRSchedUnit *Root,
@@ -487,8 +549,6 @@ void SIRSchedGraph::deleteUselessSUnit(SIRSchedUnit *U) {
 }
 
 void SIRSchedGraph::gc() {
-  int num = 0;
-
   // Delete all the useless SUnit.
   for (iterator I = begin(), E = end(); I != E;) {
     SIRSchedUnit *U = I++;

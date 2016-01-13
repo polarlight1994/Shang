@@ -62,13 +62,13 @@ INITIALIZE_PASS_END(SIRInit,
                     false, true)
 
 bool SIRInit::runOnFunction(Function &F) {
-//   /// Debug code
-//   std::string FinalIR = LuaI::GetString("FinalIR");
-//   std::string ErrorInFinalIR;
-// 	raw_fd_ostream OutputForFinalIR(FinalIR.c_str(), ErrorInFinalIR);
-// 	vlang_raw_ostream OutForFinalIR;
-// 	OutForFinalIR.setStream(OutputForFinalIR);
-// 	OutForFinalIR << F;
+  /// Debug code
+  std::string FinalIR = LuaI::GetString("FinalIR");
+  std::string ErrorInFinalIR;
+	raw_fd_ostream OutputForFinalIR(FinalIR.c_str(), ErrorInFinalIR);
+	vlang_raw_ostream OutForFinalIR;
+	OutForFinalIR.setStream(OutputForFinalIR);
+	OutForFinalIR << F;
 
   DataLayout &TD = getAnalysis<DataLayout>();
   SIRAllocation &SA = getAnalysis<SIRAllocation>();

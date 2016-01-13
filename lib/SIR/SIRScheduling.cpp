@@ -82,7 +82,7 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
   /// last step of this BB.
   ArrayRef<SIRSchedUnit *> SUsInExitSlot = G->lookupSUs(ExitSlot);
 
-  for (int i = 0; i < SUsInExitSlot.size(); ++i) {
+  for (unsigned i = 0; i < SUsInExitSlot.size(); ++i) {
     SIRSchedUnit *SU = SUsInExitSlot[i];
 
     if (!SU->isSlotTransition() && !SU->isExitSlotPack())
@@ -256,8 +256,8 @@ void SIRScheduling::buildControlDependencies(SIRSchedUnit *U) {
     for (unsigned i = 0; i < SUsInDstSlot.size(); i++) {
       SIRSchedUnit *SU = SUsInDstSlot[i];
 
-      // This will be handled later.
-      if (SU->isSlotTransition()) continue;
+//       // This will be handled later.
+//       if (SU->isSlotTransition()) continue;
 
       SUsInDstSlot[i]->addDep(U, SIRDep::CreateCtrlDep(0));
     }
@@ -351,6 +351,10 @@ void SIRScheduling::packSUnits() {
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
     BasicBlock *BB = *I;
 
+    // Ignore the LoopBB since we will try to pipeline it later.
+    if (G->hasLoopSU(BB))
+      continue;
+
     SmallVector<SIRSeqOp *, 4> ExitSlotSeqOpsPack;
 
     ArrayRef<SIRSchedUnit *> SUs = G->getSUsInBB(BB);
@@ -382,7 +386,8 @@ void SIRScheduling::packSUnits() {
     }
 
     if (ExitSlotSeqOpsPack.size()) {
-      SIRSchedUnit *ExitSlotPack = buildSchedulingUnitsPack(BB, ExitSlotSeqOpsPack, SIRSchedUnit::ExitSlotPack);
+      SIRSchedUnit *ExitSlotPack
+        = buildSchedulingUnitsPack(BB, ExitSlotSeqOpsPack, SIRSchedUnit::ExitSlotPack);
     }
   }
 
@@ -394,22 +399,37 @@ void SIRScheduling::packSUnits() {
       Instruction *Inst = I;
       if (!isLoadStore(Inst)) continue;
 
+      SIRMemoryBank *Bank;
       ArrayRef<SIRSeqOp *> SeqOps = SM->lookupMemSeqOps(Inst);
       SmallVector<SIRSeqOp *, 4> SeqOpsPack;
 
-      if (isa<LoadInst>(Inst)) {
+      if (LoadInst *LI = dyn_cast<LoadInst>(Inst)) {
+        Bank = SA->getMemoryBank(*LI);
+
         for (unsigned i = 0; i < SeqOps.size() - 1; ++i)
           SeqOpsPack.push_back(SeqOps[i]);
 
-        if (SeqOpsPack.size())
-          buildSchedulingUnitsPack(BB, SeqOpsPack, SIRSchedUnit::MemoryPack);
+        assert(SeqOps.size() && "Unexpected empty SeqOps!");
+
+        SIRSchedUnit *LoadPackSU
+          = buildSchedulingUnitsPack(BB, SeqOpsPack, SIRSchedUnit::MemoryPack);
+
+        // Index the LoadPackSU and its corresponding MemoryBank.
+        G->indexMemoryBank2SUnit(Bank, LoadPackSU);
       }
-      else if (isa<StoreInst>(Inst)) {
+      else if (StoreInst *SI = dyn_cast<StoreInst>(Inst)) {
+        Bank = SA->getMemoryBank(*SI);
+
         for (unsigned i = 0; i < SeqOps.size(); ++i)
           SeqOpsPack.push_back(SeqOps[i]);
 
-        if (SeqOpsPack.size())
-          buildSchedulingUnitsPack(BB, SeqOpsPack, SIRSchedUnit::MemoryPack);
+        assert(SeqOps.size() && "Unexpected empty SeqOps!");
+
+        SIRSchedUnit *StorePackSU
+          = buildSchedulingUnitsPack(BB, SeqOpsPack, SIRSchedUnit::MemoryPack);
+
+        // Index the StorePackSU and its corresponding MemoryBank.
+        G->indexMemoryBank2SUnit(Bank, StorePackSU);
       }
     }
   }
@@ -519,7 +539,13 @@ void SIRScheduling::finishBuildingSchedGraph() {
   // Handle the Terminators.
   Function &F = G->getFunction();
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
-    constraintTerminators(I);
+    BasicBlock *BB = I;
+
+    // Ignore the Loop BB since we will try to pipeline it.
+    if (G->hasLoopSU(BB))
+      continue;
+
+    constraintTerminators(BB);
   }
 }
 
@@ -730,20 +756,69 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
   buildSchedulingGraph();
 
   // Use the IMSScheduler on all loop BBs.
-//   typedef SIRSchedGraph::const_loopbb_iterator iterator;
-//   for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
-//     BasicBlock *BB = I->first;
-// 
-//     SIRIMSScheduler IMS(&SM, TD, *G, BB);
-// 
-//     // If we pipeline the BB successfully, index it.
-//     if (IMS.schedule() == SIRIMSScheduler::Success) {
-//       errs() << "Pipelined BB " << BB->getName() << "in II of "
-//              << IMS.getMII() << "\n";
-// 
-//       SM.IndexPipelinedBB2MII(BB, IMS.getMII());
-//     }
-//   }
+  typedef SIRSchedGraph::const_loopbb_iterator iterator;
+  for (iterator I = G->loopbb_begin(), E = G->loopbb_end(); I != E; ++I) {
+    BasicBlock *BB = I->first;
+
+    SIRIMSScheduler IMS(&SM, TD, *G, BB);
+
+    // If we pipeline the BB successfully, index it.
+    if (IMS.schedule() == SIRIMSScheduler::Success) {
+      errs() << "Pipelined BB " << BB->getName() << " in II of "
+             << IMS.getMII() << "\n";
+
+      SM.IndexPipelinedBB2MII(BB, IMS.getMII());
+    }
+    // If we fail to pipeline the BB, then we need to constraint the PHI
+    // and OutPort SeqOps like normal BB to make sure they are scheduled
+    // to last step.
+    else {
+      errs() << "Failed to pipeline BB " << BB->getName() << "\n";
+
+      SmallVector<SIRSeqOp *, 4> ExitSlotSeqOpsPack;
+
+      ArrayRef<SIRSchedUnit *> SUs = G->getSUsInBB(BB);
+      for (unsigned i = 0; i < SUs.size(); ++i) {
+        SIRSchedUnit *SU = SUs[i];
+
+        if (SU->isBBEntry())
+          continue;
+
+        if (SU->isCombSU())
+          continue;
+
+        // Constraint the PHINodes necessary into the last step.
+        if (SU->isPHI()) {
+          ExitSlotSeqOpsPack.push_back(SU->getSeqOp());
+          continue;
+        }
+
+        // All SlotTransition in ExitSlot should be scheduled to last step.
+        if (SU->isSlotTransition() &&
+            SU->getSeqOp()->getSlot() == SM.getLatestSlot(BB)) {
+          ExitSlotSeqOpsPack.push_back(SU->getSeqOp());
+          continue;
+        }
+
+        // All SeqOps assign to Output Register should be scheduled to last step.
+        if (SU->getSeqOps().size() == 1 && SU->getSeqOp()->getDst()->isOutPort())
+          ExitSlotSeqOpsPack.push_back(SU->getSeqOp());
+      }
+
+      if (ExitSlotSeqOpsPack.size()) {
+        SIRSchedUnit *ExitSlotPack
+          = buildSchedulingUnitsPack(BB, ExitSlotSeqOpsPack, SIRSchedUnit::ExitSlotPack);
+      }
+
+      G->gc();
+
+      // Also need to constraint the terminators.
+      constraintTerminators(BB);
+
+      // Also we need to re-sort the SUnits in SchedGraph.
+      G->topologicalSortSUs();
+    }
+  }
 
   schedule();
 
@@ -815,17 +890,12 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
     if (SU->isSlotTransition() || SU->isCombSU())
       continue;
 
-    unsigned TargetStep;
+    unsigned TargetStep = floor(SU->getSchedule() - EntrySUSchedule);
 
-    // We should make sure the PHI is scheduled
-    // to the ExitSlot.
-    if (SU->isPHI() || SU->isPHIPack() || SU->isExitSlotPack()) {
-      TargetStep = floor(SU->getSchedule() - EntrySUSchedule);
-      assert(TargetStep == CriticalPathLength && "Unexpected TargetStep!");
-    }
-    else {
-      TargetStep = floor(SU->getSchedule() - EntrySUSchedule);
-    }
+    // We should make sure the PHI and OutPort SeqOps are scheduled to the ExitSlot.
+    if (SU->isPHI() || SU->isPHIPack() || SU->isExitSlotPack() ||
+        (SU->getSeqOps().size() == 1 && SU->getSeqOp()->getDst()->isOutPort()))
+      assert(TargetStep == CriticalPathLength || SM->getMIIOfPipelinedBB(BB) && "Unexpected TargetStep!");
 
     SIRSlot *TargetSlot = NewSlots[TargetStep];
 

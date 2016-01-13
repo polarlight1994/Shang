@@ -803,7 +803,7 @@ private:
   // The map between Pipelined BB and its MII
   PipelinedBB2MIIMapTy PipelinedBB2MII;
 
-  // Registers that should be keeped.
+  // Registers that should be kept.
   std::set<SIRRegister *> KeepRegs;
 
   // Record the Idx of FinPort and RetPort.
@@ -827,9 +827,12 @@ public:
     DataPathInsts.clear();
     Slots.clear();
     SeqOps.clear();
+    MemInst2SeqOps.clear();
     Val2SeqVal.clear();
     SeqVal2Reg.clear();
     Reg2Slot.clear();
+    PipelinedBB2MII.clear();
+    KeepRegs.clear();
     BB2SlotMap.clear();
   }
 
