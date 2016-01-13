@@ -912,6 +912,16 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
     }
   }
 
+  // Create the Slot Transition inside the New Slots.
+  for (unsigned i = 0; i < NewSlots.size() - 1; ++i) {
+    // Create the slot transition from last slot to this slot.
+    SIRSlot *S = NewSlots[i];
+    SIRSlot *SuccSlot = NewSlots[i + 1];
+
+    C_Builder.createStateTransition(S, SuccSlot,
+                                    C_Builder.createIntegerValue(1, 1));
+  }
+
   // Inherit the Prevs of the origin EntrySlot.
   SmallVector<SIRSlot *, 4> UnlinkPreds;
   typedef SIRSlot::pred_iterator pred_iterator;
@@ -949,16 +959,6 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
   // Unlink the origin edge.
   for (unsigned i = 0; i < UnlinkPreds.size(); ++i)
     UnlinkPreds[i]->unlinkSucc(EntrySlot);
-
-  // Create the Slot Transition inside the New Slots.
-  for (unsigned i = 0; i < NewSlots.size() - 1; ++i) {
-    // Create the slot transition from last slot to this slot.
-    SIRSlot *S = NewSlots[i];
-    SIRSlot *SuccSlot = NewSlots[i + 1];
-
-    C_Builder.createStateTransition(S, SuccSlot,
-                                    C_Builder.createIntegerValue(1, 1));
-  }
 
   // Inherit the Succs of the origin ExitSlot.
   SmallVector<SIRSlot *, 4> UnlinkSuccs;
