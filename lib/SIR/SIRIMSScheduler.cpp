@@ -396,88 +396,90 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
   if (!couldBePipelined())
     return Fail;
 
-//   while (MII < CriticalPathEnd) {
-//     // Initialize the ReadyQueue.
-//     assert(!ReadyQueue.size() && "ReadyQueue not cleared!");
-//     for (iterator I = begin(), E = end(); I != E; ++I) {
-//       SIRSchedUnit *SU = *I;
+  while (MII < CriticalPathEnd) {
+    // Initialize the ReadyQueue.
+    assert(!ReadyQueue.size() && "ReadyQueue not cleared!");
+    for (iterator I = begin(), E = end(); I != E; ++I) {
+      SIRSchedUnit *SU = *I;
+
+      // Reset the SUnit.
+      SU->resetSchedule();
+
+      // Other SUnits will be pushed into ReadyQueue to prepare to be
+      // scheduled.
+      ReadyQueue.push(SU);
+    }
+
+    while (!ReadyQueue.empty()) {
+      SIRSchedUnit *SU = ReadyQueue.top();
+      ReadyQueue.pop();
+
+      unsigned EarliestResult = 0;
+      for (unsigned i = unsigned(floor(getASAPStep(SU))),
+                    e = unsigned(floor(getALAPStep(SU))); i <= e; i += 1) {
+        if(tryToScheduleSUTo(SU, i)) {
+          scheduleSUTo(SU, i);
+          break;
+        }
+      }
+
+      // Rebuild the TimeFrame and the ReadyQueue.
+      buildTimeFrame();
+      ReadyQueue.reheapify();
+    }
+
+    // Verify the schedule result.
+    if (!verifySchedule()) {
+      // If not success, then clear all data, increase II and try again.
+      ReadyQueue.clear();
+      ScheduleResult.clear();
+      resetTimeFrame();
+
+      // Increase MII and rebuild the TimeFrame.
+      increaseMII();
+      buildTimeFrame();
+
+      continue;
+    } else {
+      break;
+    }
+  }
+
+  if (MII >= CriticalPathEnd)
+    return Fail;
+
+//   for (iterator I = begin(), E = end(); I != E; ++I) {
+//     SIRSchedUnit *SU = *I;
 // 
-//       // Reset the SUnit.
-//       SU->resetSchedule();
-// 
-//       // Other SUnits will be pushed into ReadyQueue to prepare to be
-//       // scheduled.
-//       ReadyQueue.push(SU);
-//     }
-// 
-//     while (!ReadyQueue.empty()) {
-//       SIRSchedUnit *SU = ReadyQueue.top();
-//       ReadyQueue.pop();
-// 
-//       unsigned EarliestResult = 0;
-//       for (unsigned i = unsigned(floor(getASAPStep(SU))),
-//                     e = unsigned(floor(getALAPStep(SU))); i <= e; i += 1) {
-//         if(scheduleSUTo(SU, i))
-//           break;
-//       }
-// 
-//       // Rebuild the TimeFrame and the ReadyQueue.
-//       buildTimeFrame();
-//       ReadyQueue.reheapify();
-//     }
-// 
-//     // Verify the schedule result.
-//     if (!verifySchedule()) {
-//       // If not success, then clear all data, increase II and try again.
-//       ReadyQueue.clear();
-//       ScheduleResult.clear();
-//       resetTimeFrame();
-// 
-//       // Increase MII and rebuild the TimeFrame.
-//       increaseMII();
-//       buildTimeFrame();
-// 
-//       continue;
-//     } else {
-//       break;
-//     }
+//     // Other SUnits will be pushed into ReadyQueue to prepare to be
+//     // scheduled.
+//     ReadyQueue.push(SU);
 //   }
 // 
-//   if (MII >= CriticalPathEnd)
-//     return Fail;
-
-  for (iterator I = begin(), E = end(); I != E; ++I) {
-    SIRSchedUnit *SU = *I;
-
-    // Other SUnits will be pushed into ReadyQueue to prepare to be
-    // scheduled.
-    ReadyQueue.push(SU);
-  }
-
-  while (!ReadyQueue.empty()) {
-    SIRSchedUnit *SU = ReadyQueue.top();
-    ReadyQueue.pop();
-
-    unsigned EarliestResult = 0;
-    for (unsigned i = unsigned(floor(getASAPStep(SU))),
-                  e = unsigned(floor(getALAPStep(SU))); i <= e; i += 1) {
-      if (tryToScheduleSUTo(SU, i)) {
-        scheduleSUTo(SU, i);
-        break;
-      }
-    }
-
-    // Otherwise we cannot schedule SU because of other constraints.
-    if (!SU->isScheduled()) {
-      return Fail;
-    }
-
-    // Rebuild the TimeFrame and the ReadyQueue.
-    buildTimeFrame();
-    ReadyQueue.reheapify();
-  }
-
-  // Verify the schedule result by examine the back-edge dependencies.
+//   while (!ReadyQueue.empty()) {
+//     SIRSchedUnit *SU = ReadyQueue.top();
+//     ReadyQueue.pop();
+// 
+//     unsigned EarliestResult = 0;
+//     for (unsigned i = unsigned(floor(getASAPStep(SU))),
+//                   e = unsigned(floor(getALAPStep(SU))); i <= e; i += 1) {
+//       if (tryToScheduleSUTo(SU, i)) {
+//         scheduleSUTo(SU, i);
+//         break;
+//       }
+//     }
+// 
+//     // Otherwise we cannot schedule SU because of other constraints.
+//     if (!SU->isScheduled()) {
+//       return Fail;
+//     }
+// 
+//     // Rebuild the TimeFrame and the ReadyQueue.
+//     buildTimeFrame();
+//     ReadyQueue.reheapify();
+//   }
+// 
+//   // Verify the schedule result by examine the back-edge dependencies.
 //   if (!verifySchedule())
 //     return Fail;
 
