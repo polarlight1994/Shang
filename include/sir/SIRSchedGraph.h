@@ -412,6 +412,10 @@ private:
   typedef std::map<BasicBlock *, SIRSchedUnit *> LoopBB2LoopSUMapTy;
   LoopBB2LoopSUMapTy LoopBB2LoopSUMap;
 
+  // Mapping between Pipelined BB and MII.
+  typedef std::map<BasicBlock *, unsigned> PipelinedBB2MIIMapTy;
+  PipelinedBB2MIIMapTy PipelineBB2MIIMap;
+
   // Mapping between SIRSchedUnit and SIRMemoryBank it accessed.
   typedef std::map<SIRSchedUnit *, SIRMemoryBank *> SU2SMBMapTy;
   SU2SMBMapTy SU2SMBMap;
@@ -451,6 +455,10 @@ public:
   bool hasLoopSU(BasicBlock *BB) const { return LoopBB2LoopSUMap.count(BB); }
   SIRSchedUnit *getLoopSU(BasicBlock *BB);
   bool indexLoopSU2LoopBB(SIRSchedUnit *SU, BasicBlock *BB);
+
+  bool hasMII(BasicBlock *BB) const { return PipelineBB2MIIMap.count(BB); }
+  unsigned getMII(BasicBlock *BB);
+  bool indexPipelinedBB2MII(BasicBlock *PipelinedBB, unsigned MII);
 
   bool hasMemoryBank(SIRSchedUnit *SU) const { return SU2SMBMap.count(SU); }
   SIRMemoryBank *getMemoryBank(SIRSchedUnit *SU);

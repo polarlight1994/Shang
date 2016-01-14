@@ -180,7 +180,7 @@ unsigned SIRSTGDistance::getIntervalFromSrc(SIRRegister *SrcReg, SIRRegister *Ds
       Roots.push_back(GuardVal);
       Roots.push_back(SlotVal);
 
-      for (int i = 0; i < Roots.size(); ++i) {
+      for (unsigned i = 0; i < Roots.size(); ++i) {
         Value *Src = Roots[i];
 
         if (existPath(SrcReg->getLLVMValue(), Src))
@@ -191,7 +191,7 @@ unsigned SIRSTGDistance::getIntervalFromSrc(SIRRegister *SrcReg, SIRRegister *Ds
 
   assert (RealReadSlots.size() && "Unexpected no read slot!");
 
-  for (int i = 0; i < RealReadSlots.size(); ++i) {
+  for (unsigned i = 0; i < RealReadSlots.size(); ++i) {
     SIRSlot *ReadSlot = RealReadSlots[i];
 
     unsigned Interval = getIntervalFromSrc(SrcReg, ReadSlot);

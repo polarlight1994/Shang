@@ -317,6 +317,21 @@ bool SIRSchedGraph::indexLoopSU2LoopBB(SIRSchedUnit *SU, BasicBlock *BB) {
   return LoopBB2LoopSUMap.insert(std::make_pair(BB, SU)).second;
 }
 
+unsigned SIRSchedGraph::getMII(BasicBlock *BB) {
+  PipelinedBB2MIIMapTy::const_iterator at = PipelineBB2MIIMap.find(BB);
+
+  if (at == PipelineBB2MIIMap.end())
+    return NULL;
+
+  return at->second;
+}
+
+bool SIRSchedGraph::indexPipelinedBB2MII(BasicBlock *PipelinedBB, unsigned MII) {
+  assert(!hasMII(PipelinedBB) && "MII already existed!");
+
+  return PipelineBB2MIIMap.insert(std::make_pair(PipelinedBB, MII)).second;
+}
+
 SIRMemoryBank *SIRSchedGraph::getMemoryBank(SIRSchedUnit *SU) {
   SU2SMBMapTy::const_iterator at = SU2SMBMap.find(SU);
 

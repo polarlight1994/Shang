@@ -775,10 +775,6 @@ public:
   typedef Reg2SlotMapTy::iterator reg2slot_iterator;
   typedef Reg2SlotMapTy::const_iterator const_reg2slot_iterator;
 
-  typedef std::map<BasicBlock *, unsigned> PipelinedBB2MIIMapTy;
-  typedef PipelinedBB2MIIMapTy::iterator pipelinedbb2mii_iterator;
-  typedef PipelinedBB2MIIMapTy::const_iterator const_pipelinedbb2mii_iterator;
-
 private:
   // Input/Output ports of the module
   SIRPortVector Ports;
@@ -800,8 +796,6 @@ private:
   SeqVal2RegMapTy SeqVal2Reg;
   // The map between Reg and SIRSlot
   Reg2SlotMapTy Reg2Slot;
-  // The map between Pipelined BB and its MII
-  PipelinedBB2MIIMapTy PipelinedBB2MII;
 
   // Registers that should be kept.
   std::set<SIRRegister *> KeepRegs;
@@ -831,7 +825,6 @@ public:
     Val2SeqVal.clear();
     SeqVal2Reg.clear();
     Reg2Slot.clear();
-    PipelinedBB2MII.clear();
     KeepRegs.clear();
     BB2SlotMap.clear();
   }
@@ -988,17 +981,6 @@ public:
   SIRSlot *lookupSIRSlot(SIRRegister *Reg) const {
     const_reg2slot_iterator at = Reg2Slot.find(Reg);
     return at == Reg2Slot.end() ? 0 : at->second;
-  }
-
-  bool IndexPipelinedBB2MII(BasicBlock *PipelinedBB, unsigned MII) {
-    return PipelinedBB2MII.insert(std::make_pair(PipelinedBB, MII)).second;
-  }
-  unsigned getMIIOfPipelinedBB(BasicBlock *PipelinedBB) const {
-    const_pipelinedbb2mii_iterator at = PipelinedBB2MII.find(PipelinedBB);
-    return at == PipelinedBB2MII.end() ? 0 : at->second;
-  }
-  bool IsBBPipelined(BasicBlock *BB) {
-    return PipelinedBB2MII.count(BB);
   }
 
   void setRetPortIdx(unsigned Idx) { RetPortIdx = Idx; }
