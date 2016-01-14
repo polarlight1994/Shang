@@ -458,41 +458,6 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
   if (MII > CriticalPathEnd + 1)
     return Fail;
 
-//   for (iterator I = begin(), E = end(); I != E; ++I) {
-//     SIRSchedUnit *SU = *I;
-// 
-//     // Other SUnits will be pushed into ReadyQueue to prepare to be
-//     // scheduled.
-//     ReadyQueue.push(SU);
-//   }
-// 
-//   while (!ReadyQueue.empty()) {
-//     SIRSchedUnit *SU = ReadyQueue.top();
-//     ReadyQueue.pop();
-// 
-//     unsigned EarliestResult = 0;
-//     for (unsigned i = unsigned(floor(getASAPStep(SU))),
-//                   e = unsigned(floor(getALAPStep(SU))); i <= e; i += 1) {
-//       if (tryToScheduleSUTo(SU, i)) {
-//         scheduleSUTo(SU, i);
-//         break;
-//       }
-//     }
-// 
-//     // Otherwise we cannot schedule SU because of other constraints.
-//     if (!SU->isScheduled()) {
-//       return Fail;
-//     }
-// 
-//     // Rebuild the TimeFrame and the ReadyQueue.
-//     buildTimeFrame();
-//     ReadyQueue.reheapify();
-//   }
-// 
-//   // Verify the schedule result by examine the back-edge dependencies.
-//   if (!verifySchedule())
-//     return Fail;
-
   emitSchedule();
 
   /// Debug code
