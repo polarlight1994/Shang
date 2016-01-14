@@ -192,6 +192,17 @@ bool SIRIMSScheduler::buildALAPStep() {
   return false;
 }
 
+void SIRIMSScheduler::resetSchedule() {
+  // Reset the CriticalPathEnd.
+  CriticalPathEnd = 0;
+
+  // Reset the schedule status of SUnit;
+  for (iterator I = begin(), E = end(); I != E; ++I) {
+    SIRSchedUnit *U = *I;
+    U->resetSchedule();
+  }
+}
+
 void SIRIMSScheduler::resetTimeFrame() {
   // Reset the time frames to [0, MaxSlot];
   for (iterator I = begin(), E = end(); I != E; ++I)
@@ -396,14 +407,13 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
   if (!couldBePipelined())
     return Fail;
 
-  while (MII < CriticalPathEnd) {
+  while (MII <= CriticalPathEnd + 1) {
     // Initialize the ReadyQueue.
     assert(!ReadyQueue.size() && "ReadyQueue not cleared!");
     for (iterator I = begin(), E = end(); I != E; ++I) {
       SIRSchedUnit *SU = *I;
 
-      // Reset the SUnit.
-      SU->resetSchedule();
+      assert(!SU->isScheduled() && "Unexpected already scheduled SUnit!");
 
       // Other SUnits will be pushed into ReadyQueue to prepare to be
       // scheduled.
@@ -433,7 +443,7 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
       // If not success, then clear all data, increase II and try again.
       ReadyQueue.clear();
       ScheduleResult.clear();
-      resetTimeFrame();
+      resetSchedule();
 
       // Increase MII and rebuild the TimeFrame.
       increaseMII();
@@ -445,7 +455,7 @@ SIRIMSScheduler::Result SIRIMSScheduler::schedule() {
     }
   }
 
-  if (MII >= CriticalPathEnd)
+  if (MII > CriticalPathEnd + 1)
     return Fail;
 
 //   for (iterator I = begin(), E = end(); I != E; ++I) {

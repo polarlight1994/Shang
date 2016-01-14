@@ -78,6 +78,7 @@ public:
   bool buildASAPStep();
   bool buildALAPStep();
 
+  void resetSchedule();
   void resetTimeFrame();
   void buildTimeFrame();
 
