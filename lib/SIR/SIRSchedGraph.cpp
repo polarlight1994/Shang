@@ -372,6 +372,12 @@ void SIRSchedGraph::toposortCone(SIRSchedUnit *Root,
 
     SIRSchedUnit *Child = *I;
 
+    // The SyncDep in created only to constraint the PHI and ExitSlot-
+    // Transition into last step, we don't want it to affect the
+    // sort order.
+    if (I.getEdgeType() == SIRDep::SyncDep)
+      continue;
+
     // We have reach the top SUnit.
     if (Child->isEntry() || Child->getParentBB() != BB)
       continue;

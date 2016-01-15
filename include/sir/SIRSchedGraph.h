@@ -69,8 +69,8 @@ public:
     return SIRDep(CtrlDep, Latency, 0);
   }
 
-  static SIRDep CreateSyncDep() {
-    return SIRDep(SyncDep, 0, 0);
+  static SIRDep CreateSyncDep(float Latency) {
+    return SIRDep(SyncDep, 0 - Latency, 0);
   }
 
   Types getEdgeType() const { return Types(EdgeType); }

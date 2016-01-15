@@ -90,26 +90,40 @@ void SIRSDCScheduler::addDependencyConstraints() {
     // Get the Col of the SUnit.
     unsigned DstSUCol = getSUCol(DstSU);
 
+    // Get the ParentBB of the SUnit.
+    BasicBlock *BB = DstSU->getParentBB();
+    unsigned MII = G.getMII(BB);
+
     typedef SIRSchedUnit::dep_iterator dep_iterator;
     for (dep_iterator DI = DstSU->dep_begin(), DE = DstSU->dep_end();	DI != DE; ++DI) {
       // Get the Src SUnit and the dependency edge.
       SIRSchedUnit *SrcSU = *DI;
-
-      // Ignore the back-edge.
-      if (SrcSU->getIdx() >= DstSU->getIdx() || DI.getDistance() != 0)
-        continue;
-
       unsigned SrcSUCol = getSUCol(SrcSU);
       SIRDep DepEdge = DI.getEdge();
-
       REAL Coefs[] = { 1.0, -1.0 };
       int Cols[] = { DstSUCol, SrcSUCol };
 
       float Latency;
-      if (DI.getEdgeType() != SIRDep::SyncDep)
-        Latency = DepEdge.getLatency() + SrcSU->getLatency();
-      else
-        Latency = 0.0f;
+
+      // Ignore the dependency to itself.
+      if (DstSU == SrcSU)
+        continue;
+
+      if (MII) {
+        // Need to ignore the control back-edge.
+        if (SrcSU->getIdx() >= DstSU->getIdx() && DI.getEdgeType() == SIRDep::CtrlDep)
+          continue;
+
+        Latency = DepEdge.getLatency(MII) + SrcSU->getLatency();
+      } else {
+          // Ignore the back-edge.
+          if ((SrcSU->getIdx() >= DstSU->getIdx() || DI.getDistance() != 0) &&
+              DI.getEdgeType() != SIRDep::SyncDep)
+            continue;
+
+          // We are not pipelining BB here so the II is zero.
+          Latency = DepEdge.getLatency(0) + SrcSU->getLatency();
+      }
 
       // Create the constraint according to the dependency.
       if (!add_constraintex(lp, array_lengthof(Cols), Coefs, Cols, GE, Latency))
@@ -178,8 +192,6 @@ bool SIRSDCScheduler::interpertResult(int Result) {
 }
 
 bool SIRSDCScheduler::scheduleSUs() {
-  write_lp(lp, "log.lp");
-
   unsigned TotalRows = get_Norig_rows(lp);
   unsigned Changed = 0;
 
@@ -221,13 +233,16 @@ bool SIRSDCScheduler::schedule() {
   // Build the ASAP object.
   buildASAPObj();
 
+  // Print the LP model to debug.
+  write_lp(lp, "log.lp");
+
   // Solve the LP model.
   bool repeat = true;
   while (repeat) {
     if (!solveLP(lp)) {
       reset();
 
-      return false;
+      llvm_unreachable("SDC failed!");
     }
 
     // Schedule the SUnit according to the result. If fail,
