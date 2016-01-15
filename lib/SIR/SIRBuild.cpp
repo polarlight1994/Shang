@@ -145,6 +145,32 @@ void SIRBuilder::buildInterface(Function *F) {
   SIRRegister *FinReg = cast<SIROutPort>(SM->getFinPort())->getRegister();
   C_Builder.assignToReg(IdleStartSlot, Start, C_Builder.createIntegerValue(1, 0), FinReg);
 
+  // Set the Argument register of module.
+  for (Function::arg_iterator I = F->arg_begin(), E = F->arg_end();
+       I != E; ++I) {
+    Argument *Arg = I;
+    StringRef Name = Arg->getName();
+    unsigned BitWidth = TD.getTypeSizeInBits(Arg->getType());
+
+    SIRRegister *ArgReg = C_Builder.createRegister(Name.str()+ "_reg", C_Builder.createIntegerType(BitWidth));
+
+    Value *ArgVal = Arg;
+    if (Arg->getType()->isPointerTy())
+      ArgVal = D_Builder.createPtrToIntInst(Arg, ArgReg->getLLVMValue()->getType(), InsertPosition, true);
+
+    C_Builder.assignToReg(IdleStartSlot, Start, ArgVal, ArgReg);
+
+    Value *RegVal = ArgReg->getLLVMValue();
+
+    // Then we need to do a type transform.
+    if (Arg->getType()->isPointerTy())
+      RegVal = D_Builder.createIntToPtrInst(ArgReg->getLLVMValue(), Arg->getType(), InsertPosition, true);
+    else
+      assert(Arg->getType()->isIntegerTy() && "Unexpected Argument Type!");
+
+    Arg->replaceAllUsesWith(RegVal);
+  }
+
   // If the Start signal is true, then slot will jump to the slot of first BB.
   BasicBlock *EntryBB = &F->getEntryBlock();
   SIRSlot *EntryBBSlot = C_Builder.getOrCreateLandingSlot(EntryBB);
