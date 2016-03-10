@@ -245,6 +245,10 @@ float LuaI::GetFloat(ArrayRef<const char*> Path) {
   return Interpreter->getValueT<float>(Path);
 }
 
+int LuaI::GetInt(ArrayRef<const char*> Path) {
+  return Interpreter->getValueT<int>(Path);
+}
+
 bool LuaI::EvalString(const std::string &ScriptStr, SMDiagnostic &Err) {
   return Interpreter->runScriptStr(ScriptStr, Err);
 }

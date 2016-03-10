@@ -96,6 +96,8 @@ public:
 
   static float GetFloat(ArrayRef<const char*> Path);
 
+  static int GetInt(ArrayRef<const char*> Path);
+
   static bool Load(const std::string &Path);
   static std::string GetDataLayout();
   static LuaI &Get();
