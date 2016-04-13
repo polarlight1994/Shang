@@ -41,10 +41,10 @@ unsigned SIRIMSScheduler::calculateASAP(const SIRSchedUnit *A) const {
       continue;
 
     unsigned DepASAP = Dep->isScheduled() ? Dep->getSchedule() : getASAPStep(Dep);
-    unsigned DepLatency = ceil(Dep->getLatency());
 
     // Get the correct latency in MII.
-    unsigned Step = DepASAP + DepLatency + ceil(DI.getLatency(MII));
+    unsigned Step = DepASAP + Dep->getLatency() + ceil(DI.getLatency(MII));
+
     assert(Step >= 0 && "Unexpected Negative Schedule!");
 
     NewStep = std::max(Step, NewStep);
@@ -73,12 +73,11 @@ unsigned SIRIMSScheduler::calculateALAP(const SIRSchedUnit *A) const {
       continue;
 
     SIRDep UseEdge = Use->getEdgeFrom(A);
-
     unsigned UseALAP = Use->isScheduled() ? Use->getSchedule() : getALAPStep(Use);
-    unsigned ALatency = ceil(A->getLatency());
 
     // Get the correct latency in MII.
-    unsigned Step = UseALAP - ALatency - ceil(UseEdge.getLatency(MII));
+    unsigned Step = UseALAP - A->getLatency() - ceil(UseEdge.getLatency(MII));
+
     NewStep = std::min(Step, NewStep);
   }
 
@@ -226,29 +225,27 @@ unsigned SIRIMSScheduler::computeRecMII() {
   /// Calculate the RecMII according to the data dependency edge loop
   /// using formula: Latency/Distance. To be noted that, all data
   /// dependency edge loop will occurred will contained the PHI node.
+  /// And the PHINode are packed in the ExitSlotPack.
 
   // First we collect all the PHI nodes in loop BB.
   for (iterator I = begin(), E = end(); I != E; ++I) {
     SIRSchedUnit *SU = *I;
 
-    if (!SU->isPHI() || !SU->isPHIPack()) continue;
-
-    PHINodes.push_back(SU);
-  }
-
-  for (iterator I = PHINodes.begin(), E = PHINodes.end(); I != E; ++I) {
-    SIRSchedUnit *PHINode = *I;
+    if (!SU->isExitSlotPack() && !SU->isPHI()) continue;
 
     typedef SIRSchedUnit::dep_iterator dep_iterator;
-    for (dep_iterator DI = PHINode->dep_begin(), DE = PHINode->dep_end(); DI != DE; ++DI) {
+    for (dep_iterator DI = SU->dep_begin(), DE = SU->dep_end();
+         DI != DE; ++DI) {
       SIRSchedUnit *DepSU = *DI;
 
-      if ((DepSU->isPHI() || DepSU->isPHIPack()) && DepSU->getParentBB() == LoopBB && DI.getDistance(MII) == 1)
+      if (DepSU == SU)
         RecMII = std::max(RecMII, int(ceil(DI.getLatency(MII))));
     }
+
+    return RecMII;
   }
 
-  return RecMII;
+  llvm_unreachable("ExitSlotPack not found?");
 }
 
 unsigned SIRIMSScheduler::computeResMII() {
@@ -514,6 +511,11 @@ void SIRIMSScheduler::emitSchedule() {
       NewLatency = NewLatency > 0 ? NewLatency : 0;
       U->removeDep(DepU);
       EntrySU->addDep(DepU, SIRDep::CreateCtrlDep(NewLatency));
+    }
+
+    for (dep_iterator DI = U->dep_begin(), DE = U->dep_end(); DI != DE; ++DI) {
+      SIRSchedUnit *DepU = *DI;
+      int temp = 0;
     }
   }
 

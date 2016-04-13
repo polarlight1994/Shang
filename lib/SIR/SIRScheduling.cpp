@@ -88,13 +88,27 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
     if (!SU->isSlotTransition() && !SU->isExitSlotPack())
       continue;
 
+    bool isExitSlotPack = SU->isExitSlotPack();
+
     for (unsigned j = 0; j < SUsInBB.size(); ++j) {
       SIRSchedUnit *DepSU = SUsInBB[j];
 
       // No need to constraint to itself.
       if (DepSU == SU) continue;
 
-      SU->addDep(DepSU, SIRDep::CreateSyncDep());
+      bool isExitSlotTransition = false;
+      if (DepSU->isSlotTransition()) {
+        SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(DepSU->getSeqOp());
+        if (SST->getDstSlot() == EntrySlot || SST->getDstSlot()->getParent() != BB)
+          isExitSlotTransition = true;
+      }
+
+      // Do not add a SyncDep from the SlotTransition to ExitSlotPack
+      // since it will form a loop which invalided the SDC.
+      if (isExitSlotPack && isExitSlotTransition)
+        continue;
+
+      SU->addDep(DepSU, SIRDep::CreateSyncDep(DepSU->getLatency()));
     }
   }
 
@@ -114,7 +128,7 @@ void SIRScheduling::constraintTerminators(BasicBlock *BB) {
   // The ExitSUnit is depended on these SUnits.
   SIRSchedUnit *Exit = G->getExit();
   for (unsigned i = 0; i < SUs.size(); i++)
-    Exit->addDep(SUs[i], SIRDep::CreateSyncDep());
+    Exit->addDep(SUs[i], SIRDep::CreateCtrlDep(0));
 }
 
 void SIRScheduling::buildDependencies() {
@@ -149,23 +163,17 @@ void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
   // to the Timing Analysis result.
   SIRTimingAnalysis::ArrivalMap Arrivals;
 
-// Set to multi-cycle-chain mode.
-//   if (U->isCombSU()) {
-//     Instruction *CombOp = U->getCombOp();
-//     assert(CombOp && "Unexpected NULL CombOp!");
-// 
-//     TA->extractArrivals(TD, CombOp, Arrivals);
-//   } else {
-//     SIRSeqOp *SeqOp = U->getSeqOp();
-//     assert(SeqOp && "Unexpected NULL SeqOp!");
-// 
-//     TA->extractArrivals(TD, SeqOp, Arrivals);
-//   }
+  if (U->isCombSU()) {
+    Instruction *CombOp = U->getCombOp();
+    assert(CombOp && "Unexpected NULL CombOp!");
 
-  SIRSeqOp *SeqOp = U->getSeqOp();
-  assert(SeqOp && "Unexpected NULL SeqOp!");
+    TA->extractArrivals(SM, TD, CombOp, Arrivals);
+  } else {
+    SIRSeqOp *SeqOp = U->getSeqOp();
+    assert(SeqOp && "Unexpected NULL SeqOp!");
 
-  TA->extractArrivals(SM, SeqOp, Arrivals);
+    TA->extractArrivals(SM, SeqOp, Arrivals);
+  }
 
   typedef SIRTimingAnalysis::ArrivalMap::iterator iterator;
   for (iterator I = Arrivals.begin(), E = Arrivals.end(); I != E; ++I) {
@@ -187,7 +195,10 @@ void SIRScheduling::buildDataDependencies(SIRSchedUnit *U) {
 
       unsigned Distance = 0;
 
-      if ((SrcSU->isPHI() || SrcSU->isPHIPack() || SrcSU->isExitSlotPack()) &&
+      // The Distance only occurred in the LoopBB where the SrcSUnits
+      // are always the PHINodes.
+      if ((SrcSU->isPHI() || SrcSU->isPHIPack() ||
+           SrcSU->isExitSlotPack()) &&
           SrcSU->getParentBB() == U->getParentBB())
         Distance = 1;
       else
@@ -351,9 +362,10 @@ void SIRScheduling::packSUnits() {
   for (bb_top_iterator I = RPO.begin(), E = RPO.end(); I != E; ++I) {
     BasicBlock *BB = *I;
 
-    // Ignore the LoopBB since we will try to pipeline it later.
-    if (G->hasLoopSU(BB))
-      continue;
+//     // Ignore the LoopBB since we will try to pipeline it later.
+//     if (G->hasLoopSU(BB))
+//       continue;
+    bool isLoopBB = G->hasLoopSU(BB);
 
     SmallVector<SIRSeqOp *, 4> ExitSlotSeqOpsPack;
 
@@ -369,15 +381,37 @@ void SIRScheduling::packSUnits() {
 
       // Constraint the PHINodes necessary into the last step.
       if (SU->isPHI()) {
+        // If the DstReg is the same BB, it means the PHI is
+        // coming from Loop BB, which should not be constrained
+        // since it will be handled in IMS.
+        if (isLoopBB && SU->getSeqOp()->getDst()->getParentBB() == BB)
+          continue;
+
         ExitSlotSeqOpsPack.push_back(SU->getSeqOp());
         continue;
       }
 
-      // All SlotTransition in ExitSlot should be scheduled to last step.
-      if (SU->isSlotTransition() &&
-          SU->getSeqOp()->getSlot() == SM->getLatestSlot(BB)) {
-        ExitSlotSeqOpsPack.push_back(SU->getSeqOp());
-        continue;
+      // When we pack the SlotTransition in ExitSlot, we should treat
+      // the loop BB and normal BB differently.
+      if (isLoopBB) {
+        // If it is a loop BB, only pack the SlotTransition which transit to
+        // successor BB.
+        if (SU->isSlotTransition()) {
+          SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SU->getSeqOp());
+          if (SST->getSrcSlot() == SM->getLatestSlot(BB) &&
+              SST->getDstSlot()->getParent() != BB) {
+            ExitSlotSeqOpsPack.push_back(SU->getSeqOp());
+            continue;
+          }
+        }
+      } else {
+        // If it is not a loop BB, all SlotTransition in ExitSlot should be
+        // scheduled to last step.
+        if (SU->isSlotTransition() &&
+            SU->getSeqOp()->getSlot() == SM->getLatestSlot(BB)) {
+          ExitSlotSeqOpsPack.push_back(SU->getSeqOp());
+          continue;
+        }
       }
 
       // All SeqOps assign to Output Register should be scheduled to last step.
@@ -541,10 +575,6 @@ void SIRScheduling::finishBuildingSchedGraph() {
   for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
     BasicBlock *BB = I;
 
-    // Ignore the Loop BB since we will try to pipeline it.
-    if (G->hasLoopSU(BB))
-      continue;
-
     constraintTerminators(BB);
   }
 }
@@ -571,31 +601,48 @@ void SIRScheduling::buildSchedulingGraph() {
       buildSchedulingUnitsForSeqOp(*I);
   }
 
-//   // Build the Scheduling Units for CombOps.
-//   {
-//     Function *F = SM->getFunction();
-// 
-//     typedef Function::iterator bb_iterator;
-//     for (bb_iterator BBI = F->begin(), BBE = F->end(); BBI != BBE; ++BBI) {
-//       BasicBlock *BB = BBI;
-// 
-//       typedef BasicBlock::iterator inst_iterator;
-//       for (inst_iterator InstI = BB->begin(), InstE = BB->end();
-//            InstI != InstE; ++InstI) {
-//         Instruction *Inst = InstI;
-// 
-//         if (!isa<IntrinsicInst>(Inst) && !isa<IntToPtrInst>(Inst) &&
-//             !isa<PtrToIntInst>(Inst) && !isa<BitCastInst>(Inst))
-//           continue;
-// 
-//         if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
-//           if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
-//             continue;
-// 
-//         buildSchedulingUnitsForCombOp(Inst);
-//       }
-//     }
-//   }
+  // Build the Scheduling Units for CombOps In Loop BB so that we can Pipeline
+  // it in IMS.
+  {
+    Function *F = SM->getFunction();
+
+    typedef Function::iterator bb_iterator;
+    for (bb_iterator BBI = F->begin(), BBE = F->end(); BBI != BBE; ++BBI) {
+      BasicBlock *BB = BBI;
+
+      bool isLoop = false;
+      SIRSlot *EntrySlot = SM->getLandingSlot(BB);
+      SIRSlot *ExitSlot = SM->getLatestSlot(BB);
+
+      typedef SIRSlot::succ_iterator succ_iterator;
+      for (succ_iterator SI = ExitSlot->succ_begin(), SE = ExitSlot->succ_end(); SI != SE; ++SI) {
+        SIRSlot *SuccSlot = *SI;
+
+        if (SuccSlot == EntrySlot) {
+          isLoop = true;
+          break;
+        }
+      }      
+
+      if (isLoop) {
+        typedef BasicBlock::iterator inst_iterator;
+        for (inst_iterator InstI = BB->begin(), InstE = BB->end();
+             InstI != InstE; ++InstI) {
+          Instruction *Inst = InstI;
+
+          if (!isa<IntrinsicInst>(Inst) && !isa<IntToPtrInst>(Inst) &&
+              !isa<PtrToIntInst>(Inst) && !isa<BitCastInst>(Inst))
+            continue;
+
+          if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))
+            if (II->getIntrinsicID() == Intrinsic::shang_reg_assign)
+              continue;
+
+          buildSchedulingUnitsForCombOp(Inst);
+        }
+      }
+    }
+  }
 
   // Build dependencies.
   buildDependencies();
@@ -763,11 +810,11 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
     SIRIMSScheduler IMS(&SM, TD, *G, BB);
 
     // If we pipeline the BB successfully, index it.
-    if (IMS.schedule() == SIRIMSScheduler::Success) {
+    if (false && IMS.schedule() == SIRIMSScheduler::Success) {
       errs() << "Pipelined BB " << BB->getName() << " in II of "
              << IMS.getMII() << "\n";
 
-      SM.IndexPipelinedBB2MII(BB, IMS.getMII());
+      G->indexPipelinedBB2MII(BB, IMS.getMII());
     }
     // If we fail to pipeline the BB, then we need to constraint the PHI
     // and OutPort SeqOps like normal BB to make sure they are scheduled
@@ -775,48 +822,29 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
     else {
       errs() << "Failed to pipeline BB " << BB->getName() << "\n";
 
-      SmallVector<SIRSeqOp *, 4> ExitSlotSeqOpsPack;
-
       ArrayRef<SIRSchedUnit *> SUs = G->getSUsInBB(BB);
       for (unsigned i = 0; i < SUs.size(); ++i) {
         SIRSchedUnit *SU = SUs[i];
 
-        if (SU->isBBEntry())
+        if (!SU->isSlotTransition() && !SU->isPHI())
           continue;
 
-        if (SU->isCombSU())
-          continue;
-
-        // Constraint the PHINodes necessary into the last step.
-        if (SU->isPHI()) {
-          ExitSlotSeqOpsPack.push_back(SU->getSeqOp());
-          continue;
+        if (SU->isSlotTransition()) {
+          SIRSlotTransition *SST = dyn_cast<SIRSlotTransition>(SU->getSeqOp());
+          if (SST->getDstSlot() != SM.getLandingSlot(BB))
+            continue;
         }
 
-        // All SlotTransition in ExitSlot should be scheduled to last step.
-        if (SU->isSlotTransition() &&
-            SU->getSeqOp()->getSlot() == SM.getLatestSlot(BB)) {
-          ExitSlotSeqOpsPack.push_back(SU->getSeqOp());
-          continue;
+        for (unsigned j = 0; j < SUs.size(); ++j) {
+          SIRSchedUnit *DepSU = SUs[j];
+
+          // No need to depend to itself.
+          if (DepSU == SU)
+            continue;
+
+          SU->addDep(DepSU, SIRDep::CreateSyncDep(DepSU->getLatency()));
         }
-
-        // All SeqOps assign to Output Register should be scheduled to last step.
-        if (SU->getSeqOps().size() == 1 && SU->getSeqOp()->getDst()->isOutPort())
-          ExitSlotSeqOpsPack.push_back(SU->getSeqOp());
       }
-
-      if (ExitSlotSeqOpsPack.size()) {
-        SIRSchedUnit *ExitSlotPack
-          = buildSchedulingUnitsPack(BB, ExitSlotSeqOpsPack, SIRSchedUnit::ExitSlotPack);
-      }
-
-      G->gc();
-
-      // Also need to constraint the terminators.
-      constraintTerminators(BB);
-
-      // Also we need to re-sort the SUnits in SchedGraph.
-      G->topologicalSortSUs();
     }
   }
 
@@ -843,18 +871,39 @@ bool SIRScheduling::runOnSIR(SIR &SM) {
 }
 
 void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
-  assert(SUs[0]->isBBEntry() && "BBEntry must be placed at the beginning!");
+  SIRSchedUnit *BBEntry = SUs[0];
+  assert(BBEntry->isBBEntry() && "BBEntry must be placed at the beginning!");
 
-  BasicBlock *BB = SUs[0]->getParentBB();
+  BasicBlock *BB = BBEntry->getParentBB();
   SIRSlot *EntrySlot = SM->getLandingSlot(BB);
   SIRSlot *ExitSlot = SM->getLatestSlot(BB);
+
+  if (BB->getName() == "while.body4.i22.i")
+    int temp = 0;
 
   assert(EntrySlot && "Landing Slot not created?");
   assert(EntrySlot->getStepInLocalBB() == 0 && "Unexpected local step!");
 
   // The global schedule result of the Entry SUnit.
-  float EntrySUSchedule = SUs[0]->getSchedule();
+  float EntrySUSchedule = BBEntry->getSchedule();
   assert(EntrySUSchedule - int(EntrySUSchedule) == 0 && "Should not be a real float!");
+
+  // The delay of Entry SUnit due to the Cross-BB dependency.
+  float delay = 0.0f;
+//   typedef SIRSchedUnit::dep_iterator dep_iterator;
+//   for (dep_iterator DI = BBEntry->dep_begin(), DE = BBEntry->dep_end(); DI != DE; ++DI) {
+//     SIRSchedUnit *DepSU = *DI;
+//     float Latency = DI.getLatency();
+// 
+//     float DepResult = DepSU->getSchedule() + DepSU->getLatency() + Latency;
+//     delay = delay < (EntrySUSchedule - ceil(DepResult)) ? delay : (EntrySUSchedule - ceil(DepResult));
+//   }
+
+  if (delay > 0.0f)
+    assert(G.hasMII(BB) && "Unexpected delay here!");
+
+  if (G.hasMII(BB))
+    delay = 1.0f;
 
   // Calculate the CriticalPathLength.
   unsigned CriticalPathLength = 0;
@@ -873,6 +922,14 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
     unsigned PathLength = floor(ScheduleResult - EntrySUSchedule);
 
     CriticalPathLength = (std::max)(CriticalPathLength, PathLength);
+  }
+
+  // Create extra Slots for the delay of BBEntry.
+  SmallVector<SIRSlot *, 4> ExtraSlots;
+  for (unsigned i = 0; i < delay; ++i) {
+    SIRSlot *ExtraSlot = C_Builder.createSlot(0, i);
+
+    ExtraSlots.push_back(ExtraSlot);
   }
 
   // Create New Slots for each step and collect them in order.
@@ -895,7 +952,7 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
     // We should make sure the PHI and OutPort SeqOps are scheduled to the ExitSlot.
     if (SU->isPHI() || SU->isPHIPack() || SU->isExitSlotPack() ||
         (SU->getSeqOps().size() == 1 && SU->getSeqOp()->getDst()->isOutPort()))
-      assert(TargetStep == CriticalPathLength || SM->getMIIOfPipelinedBB(BB) && "Unexpected TargetStep!");
+      assert(TargetStep == CriticalPathLength || G.getMII(BB) && "Unexpected TargetStep!");
 
     SIRSlot *TargetSlot = NewSlots[TargetStep];
 
@@ -922,43 +979,90 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
                                     C_Builder.createIntegerValue(1, 1));
   }
 
-  // Inherit the Prevs of the origin EntrySlot.
-  SmallVector<SIRSlot *, 4> UnlinkPreds;
-  typedef SIRSlot::pred_iterator pred_iterator;
-  for (pred_iterator I = EntrySlot->pred_begin(), E = EntrySlot->pred_end();
-       I != E; ++I) {
-    SIRSlot *Pred = I->getSlot();
+  if (ExtraSlots.size()) {
+    // Create the Slot Transition inside the Extra Slots.
+    for (unsigned i = 0; i < ExtraSlots.size() - 1; ++i) {
+      SIRSlot *S = ExtraSlots[i];
+      SIRSlot *SuccSlot = ExtraSlots[i + 1];
 
-    // The edge is coming from current BB that means this is the loop edge.
-    // we should handle it specially.
-    if (Pred->getParent() == BB) {
-      assert(Pred == ExitSlot && "Unexpected Loop Edge!");
-
-      if (SM->IsBBPipelined(BB)) {
-        unsigned II = SM->getMIIOfPipelinedBB(BB);
-
-        Value *LoopCnd = G.getLoopSU(BB)->getSeqOp()->getGuard();
-        SIRSlot *SlotBeforeNextIteration = C_Builder.advanceToNextSlot(NewSlots.front(), II - 1);
-        C_Builder.createStateTransition(SlotBeforeNextIteration, NewSlots.front(), LoopCnd);
-      } else {
-        // We should inherit the condition of this loop edge.
-        C_Builder.createStateTransition(NewSlots.back(), NewSlots.front(),
-                                        I->getCnd());
-      }
-
-      // Collect the Preds should be unlink.
-      UnlinkPreds.push_back(Pred);
-      continue;
+      C_Builder.createStateTransition(S, SuccSlot,
+                                      C_Builder.createIntegerValue(1, 1));
     }
 
-    // Link the edge from the Pred to NewEntrySlot.
-    C_Builder.createStateTransition(Pred, NewSlots.front(), I->getCnd());
-    // Collect the Preds should be unlink.
-    UnlinkPreds.push_back(Pred);
+    // Inherit the Prevs of the origin EntrySlot.
+    SmallVector<SIRSlot *, 4> UnlinkPreds;
+    typedef SIRSlot::pred_iterator pred_iterator;
+    for (pred_iterator I = EntrySlot->pred_begin(), E = EntrySlot->pred_end();
+         I != E; ++I) {
+       SIRSlot *Pred = I->getSlot();
+
+       // The edge is coming from current BB that means this is the loop edge.
+       // we should handle it specially.
+       if (Pred->getParent() == BB) {
+         assert(Pred == ExitSlot && "Unexpected Loop Edge!");
+
+         if (unsigned II = G.getMII(BB)) {
+           Value *LoopCnd = G.getLoopSU(BB)->getSeqOp()->getGuard();
+           SIRSlot *SlotBeforeNextIteration = C_Builder.advanceToNextSlot(NewSlots.front(), II - 1);
+           C_Builder.createStateTransition(SlotBeforeNextIteration, NewSlots.front(), LoopCnd);
+         } else {
+           // We should inherit the condition of this loop edge.
+           C_Builder.createStateTransition(NewSlots.back(), NewSlots.front(), I->getCnd());
+         }
+
+         // Collect the Preds should be unlink.
+         UnlinkPreds.push_back(Pred);
+         continue;
+       }
+
+       // Link the edge from the Pred to NewEntrySlot.
+       C_Builder.createStateTransition(Pred, ExtraSlots.front(), I->getCnd());
+       // Collect the Preds should be unlink.
+       UnlinkPreds.push_back(Pred);
+    }
+    // Unlink the origin edge.
+    for (unsigned i = 0; i < UnlinkPreds.size(); ++i)
+      UnlinkPreds[i]->unlinkSucc(EntrySlot);
+
+    // Create the SlotTransition from ExtraSlot to NewSlot.
+    C_Builder.createStateTransition(ExtraSlots.back(), NewSlots.front(), C_Builder.createIntegerValue(1, 1));
+  } else {
+    // Inherit the Prevs of the origin EntrySlot.
+    SmallVector<SIRSlot *, 4> UnlinkPreds;
+    typedef SIRSlot::pred_iterator pred_iterator;
+    for (pred_iterator I = EntrySlot->pred_begin(), E = EntrySlot->pred_end();
+         I != E; ++I) {
+      SIRSlot *Pred = I->getSlot();
+
+      // The edge is coming from current BB that means this is the loop edge.
+      // we should handle it specially.
+      if (Pred->getParent() == BB) {
+        assert(Pred == ExitSlot && "Unexpected Loop Edge!");
+
+        if (unsigned II = G.getMII(BB)) {
+          Value *LoopCnd = G.getLoopSU(BB)->getSeqOp()->getGuard();
+          SIRSlot *SlotBeforeNextIteration = C_Builder.advanceToNextSlot(NewSlots.front(), II - 1);
+          C_Builder.createStateTransition(SlotBeforeNextIteration, NewSlots.front(), LoopCnd);
+        } else {
+          // We should inherit the condition of this loop edge.
+          C_Builder.createStateTransition(NewSlots.back(), NewSlots.front(),
+            I->getCnd());
+        }
+
+        // Collect the Preds should be unlink.
+        UnlinkPreds.push_back(Pred);
+        continue;
+      }
+
+      // Link the edge from the Pred to NewEntrySlot.
+      C_Builder.createStateTransition(Pred, NewSlots.front(), I->getCnd());
+      // Collect the Preds should be unlink.
+      UnlinkPreds.push_back(Pred);
+    }
+    // Unlink the origin edge.
+    for (unsigned i = 0; i < UnlinkPreds.size(); ++i)
+      UnlinkPreds[i]->unlinkSucc(EntrySlot);
   }
-  // Unlink the origin edge.
-  for (unsigned i = 0; i < UnlinkPreds.size(); ++i)
-    UnlinkPreds[i]->unlinkSucc(EntrySlot);
 
   // Inherit the Succs of the origin ExitSlot.
   SmallVector<SIRSlot *, 4> UnlinkSuccs;
@@ -974,9 +1078,7 @@ void SIRScheduleEmitter::emitSUsInBB(ArrayRef<SIRSchedUnit *> SUs) {
     if (Succ->getParent() == BB)
       continue;
 
-    if (SM->IsBBPipelined(BB)) {
-      unsigned II = SM->getMIIOfPipelinedBB(BB);
-
+    if (unsigned II = G.getMII(BB)) {
       SIRSlot *EntryS = NewSlots.front();
       SIRSlot *ExitS = NewSlots.back();
 

@@ -43,7 +43,9 @@ public:
     // Control dependency
     CtrlDep     = 2,
     // Sync dependency
-    SyncDep     = 3
+    SyncDep     = 3,
+    // Delay dependency
+    DelayDep    = 4
   };
 
 private:
@@ -67,6 +69,9 @@ public:
 
   static SIRDep CreateCtrlDep(float Latency, int Distance = 0) {
     return SIRDep(CtrlDep, Latency, 0);
+  }
+  static SIRDep CreateDelayDep(float Latency, int Distance = 0) {
+    return SIRDep(DelayDep, Latency, 0);
   }
 
   static SIRDep CreateSyncDep(float Latency) {

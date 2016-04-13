@@ -58,6 +58,9 @@ class SIRDelayModel : public ilist_node<SIRDelayModel> {
   // The FanIn to the current delay model, order matters.
   ArrayRef<SIRDelayModel *> Fanins;
 
+  // The delay from input to the output bit.
+  std::map<unsigned, float> ModelDelay;
+
   // The delay from Src value to this model
   ilist<ArrivalTime> Arrivals;
   // The ArrivalStart only remember the Src Value
@@ -110,6 +113,14 @@ class SIRDelayModel : public ilist_node<SIRDelayModel> {
   void updateShiftAmt();
   void updateShlArrival();
   void updateShrArrival();
+
+  void calcArrivalParallel(float delay);
+  void calcArrivalLinear(float Base, float PerBit);
+  void calcShiftArrival();
+  void calcCmpArrival();
+  void calcMulArrival();
+  void calcAddArrival();
+
 public:
   SIRDelayModel()/* : SM(0), TD(0), Node(0), Fanins(0) */{}
   SIRDelayModel(SIR *SM, DataLayout *TD, Instruction *Node,
@@ -119,6 +130,9 @@ public:
   typedef ArrayRef<SIRDelayModel>::iterator iterator;
 
   void updateArrival();
+  void calcArrival();
+
+  float getDelayInBit(unsigned BitNum);
 
   void verify() const;
 
@@ -219,6 +233,7 @@ public:
 
   typedef std::map<Value *, PhysicalDelay> ArrivalMap;
   void extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arrivals);
+  void extractArrivals(SIR *SM, DataLayout *TD, Instruction *CombOp, ArrivalMap &Arrivals);
 
   bool isBasicBlockUnreachable(BasicBlock *BB) const;
 };

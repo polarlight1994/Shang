@@ -145,7 +145,7 @@ void ConeWithTimingInfo::extractTimingPaths(Instruction *Root, SIRRegister *DstR
 
           SIRRegister *Reg = SM->lookupSIRReg(ChildInst);
           bool Success = Reg2ValPath[Inst].insert(Reg).second;
-          assert(Success && "Already existed?");
+          /*assert(Success && "Already existed?");*/
 
           ViaValueMap.insert(std::make_pair(Reg, Inst));
 

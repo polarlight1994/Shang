@@ -111,7 +111,7 @@ void SIRSDCScheduler::addDependencyConstraints() {
 
       if (MII) {
         // Need to ignore the control back-edge.
-        if (SrcSU->getIdx() >= DstSU->getIdx() && DI.getEdgeType() == SIRDep::CtrlDep)
+        if (SrcSU->getIdx() >= DstSU->getIdx() && (DI.getEdgeType() == SIRDep::CtrlDep || DI.getEdgeType() == SIRDep::DelayDep))
           continue;
 
         Latency = DepEdge.getLatency(MII) + SrcSU->getLatency();

@@ -31,6 +31,12 @@ static unsigned LogCeiling(unsigned x, unsigned n) {
   return (Log2_32_Ceil(x) + log2n - 1) / log2n;
 }
 
+float SIRDelayModel::getDelayInBit(unsigned BitNum) {
+  assert(ModelDelay.count(BitNum) && "Unexpected BitNum!");
+
+  return ModelDelay[BitNum];
+}
+
 static bool isLeafValue(SIR *SM, Value *V) {
   // When we visit the Srcs of value, the Leaf Value
   // means the top nodes of the Expr-Tree. There are
@@ -698,6 +704,145 @@ void SIRDelayModel::updateArrival() {
   }
 }
 
+void SIRDelayModel::calcArrivalParallel(float delay) {
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
+
+  for (int i = 0; i < BitWidth; ++i)
+    ModelDelay.insert(std::make_pair(i, delay));
+
+  // Also index the critical path delay as (BitWidth, CriticalDelay)
+  ModelDelay.insert(std::make_pair(BitWidth, delay));
+}
+
+void SIRDelayModel::calcArrivalLinear(float Base, float PerBit) {
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
+
+  for (int i = 0; i < BitWidth; ++i)
+    ModelDelay.insert(std::make_pair(i, Base + i * PerBit));
+
+  float CriticalDelay = PerBit >= 0 ? (Base + (BitWidth - 1) * PerBit)
+    : Base;
+
+  // Also index the critical path delay as (BitWidth, CriticalDelay)
+  ModelDelay.insert(std::make_pair(BitWidth, CriticalDelay));
+}
+
+void SIRDelayModel::calcAddArrival() {
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
+  float Delay = LuaI::Get<VFUAddSub>()->lookupLatency(std::min(BitWidth, 64u));
+
+  // Calculate the Base and PerBit. In fact, if we build add chain expression
+  // like a + b + c + ..., then the Base and PerBit should be modified because
+  // the delay is less that n * DelayOfAdd.
+  float PerBit = Delay / BitWidth;
+  float Base = PerBit;
+
+  calcArrivalLinear(Base, PerBit);
+}
+
+void SIRDelayModel::calcMulArrival() {
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
+  float Delay = LuaI::Get<VFUMult>()->lookupLatency(std::min(BitWidth, 64u));
+
+  // Calculate the Base and PerBit. In fact, if we build add chain expression
+  // like a + b + c + ..., then the Base and PerBit should be modified because
+  // the delay is less that n * DelayOfAdd.
+  float PerBit = Delay / BitWidth;
+  float Base = PerBit;
+
+  calcArrivalLinear(Base, PerBit);
+}
+
+void SIRDelayModel::calcCmpArrival() {
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
+  float Delay = LuaI::Get<VFUICmp>()->lookupLatency(std::min(BitWidth, 64u));
+
+  calcArrivalParallel(Delay);
+}
+
+void SIRDelayModel::calcShiftArrival() {
+  Value *V = Node->getOperand(0);
+  unsigned BitWidth = TD->getTypeSizeInBits(Node->getType());
+
+  float Delay = LuaI::Get<VFUShift>()->lookupLatency(std::min(BitWidth, 64u));
+
+  calcArrivalParallel(Delay);
+}
+
+void SIRDelayModel::calcArrival() {
+  // These instructions have not been transformed into SIR,
+  // but clearly they cost no delay.
+  if (isa<PtrToIntInst>(Node) || isa<IntToPtrInst>(Node) || isa<BitCastInst>(Node))
+    return calcArrivalParallel(0.0f);
+
+  // Since all data-path instruction in SIR is Intrinsic Inst.
+  // So the opcode of data-path instruction is its InstrisicID.
+  IntrinsicInst *I = dyn_cast<IntrinsicInst>(Node);
+  assert(I && "Unexpected non-IntrinsicInst!");
+
+  Intrinsic::ID ID = I->getIntrinsicID();
+
+  switch (ID) {
+  case Intrinsic::shang_bit_cat:
+  case Intrinsic::shang_bit_repeat:
+  case Intrinsic::shang_bit_extract:
+  case Intrinsic::shang_not:
+    return calcArrivalParallel(0.0f);
+
+  case Intrinsic::shang_and:
+  case Intrinsic::shang_or:
+  case Intrinsic::shang_xor: {
+    // The Input BitWidth is InputNums * BitWidth, the output
+    // BitWidth is BitWidth, and each logic level can shrink
+    // the width by LUTSize times, so the number of levels is
+    // calculated by log operation. To be noted that, in LLVM
+    // IR the return value is counted in Operands, so the real
+    // numbers of operands should be minus one.
+    unsigned IONums = Node->getNumOperands() - 1;
+    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
+    return calcArrivalParallel(LogicLevels * VFUs::LUTDelay);
+                             }
+  case Intrinsic::shang_rand: {
+    // The Input BitWidth is BitWidth, the output BitWidth is 1,
+    // and each logic level can shrink the width by LUTSize times,
+    // so the number of levels is calculated by log operation.
+    unsigned IONums = TD->getTypeSizeInBits(Node->getOperand(0)->getType());
+    unsigned LogicLevels = LogCeiling(IONums, VFUs::MaxLutSize);
+    return calcArrivalParallel(LogicLevels * VFUs::LUTDelay);
+                              }
+
+  case Intrinsic::shang_add:
+  case Intrinsic::shang_addc:
+    return calcAddArrival();
+  case Intrinsic::shang_mul:
+    return calcMulArrival();
+
+  case Intrinsic::shang_sdiv:
+  case Intrinsic::shang_udiv:
+    // Hack: Need to add the lookUpDelay function of Div into VFUs.
+    return calcArrivalParallel(345.607);
+
+  case Intrinsic::shang_shl:
+  case Intrinsic::shang_ashr:
+  case Intrinsic::shang_lshr:
+    return calcShiftArrival();
+
+  case Intrinsic::shang_sgt:
+  case Intrinsic::shang_ugt:
+    return calcCmpArrival();
+
+  case  Intrinsic::shang_reg_assign:
+    // To be noted that, reg_assign instruction is created
+    // to represent the SeqVal stored in register, so it
+    // will devote 0 delay.
+    return calcArrivalParallel(0.0f);
+
+  default:
+    llvm_unreachable("Unexpected opcode!");
+    break;
+  }
+}
+
 SIRDelayModel *SIRTimingAnalysis::createModel(Instruction *Inst, SIR *SM, DataLayout &TD) {
   SIRDelayModel *&Model = ModelMap[Inst];
   assert(Model == NULL && "Model had already existed!");
@@ -723,7 +868,10 @@ SIRDelayModel *SIRTimingAnalysis::createModel(Instruction *Inst, SIR *SM, DataLa
   Model = new SIRDelayModel(SM, &TD, Inst, Fanins);
   Models.push_back(Model);
 
+  // If we are calculating the delay of whole data-path.
   Model->updateArrival();
+  // If we are only considering the delay of this instruction.
+  Model->calcArrival();
 
   return Model;
 }
@@ -926,6 +1074,83 @@ void SIRTimingAnalysis::extractArrivals(SIR *SM, SIRSeqOp *Op, ArrivalMap &Arriv
     // Handle the missed leaves.
     // Hack : Need to handle the missed leaves.
     assert(MissedLeaves.empty() && "This function not finished yet!");
+  }
+}
+
+void SIRTimingAnalysis::extractArrivals(SIR *SM, DataLayout *TD, Instruction *CombOp, ArrivalMap &Arrivals) {
+  // Since all data-path instruction in SIR is Intrinsic Inst.
+  // So the opcode of data-path instruction is its InstrisicID.
+  IntrinsicInst *II = dyn_cast<IntrinsicInst>(CombOp);
+  assert(II || isa<IntToPtrInst>(CombOp) || isa<PtrToIntInst>(CombOp) ||
+         isa<BitCastInst>(CombOp) && "Unexpected non-IntrinsicInst!");
+
+  // The bit_extract instruction should be handled specially, since the delay
+  // of the data dependency is only related to part bits of the SrcVal.
+  if (II && II->getIntrinsicID() == Intrinsic::shang_bit_extract) {
+    Value *OperandVal = CombOp->getOperand(0);
+
+    // If the Operand is Argument or ConstantInt, then this SUnit has no data dependence.
+    if (isa<Argument>(OperandVal) || isa<ConstantInt>(OperandVal))
+      return;
+
+    Instruction *Operand = dyn_cast<Instruction>(OperandVal);
+    assert(Operand && "Unexpected NULL Operand!");
+
+    PhysicalDelay Delay;
+    if (SIRRegister *Reg = SM->lookupSIRReg(Operand)) {
+      Delay = PhysicalDelay(0.0f);
+    } else {
+      SIRDelayModel *DM = lookUpDelayModel(Operand);
+      int UB = getConstantIntValue(dyn_cast<ConstantInt>(CombOp->getOperand(1)));
+      int LB = getConstantIntValue(dyn_cast<ConstantInt>(CombOp->getOperand(2)));
+
+      float UBDelay = DM->getDelayInBit(UB);
+      float LBDelay = DM->getDelayInBit(LB);
+      Delay = PhysicalDelay(std::max(UBDelay, LBDelay));
+    }
+
+    PhysicalDelay &OldDelay = Arrivals[Operand];
+    OldDelay = std::max(OldDelay, Delay);
+    return;
+  }
+
+  SmallVector<Value *, 4> Operands;
+
+  unsigned OperandSize;
+  if (isa<IntToPtrInst>(CombOp) || isa<PtrToIntInst>(CombOp) || isa<BitCastInst>(CombOp))
+    OperandSize = CombOp->getNumOperands();
+  else
+    OperandSize = CombOp->getNumOperands() - 1;
+
+  typedef Instruction::op_iterator iterator;
+  for (int i = 0; i < OperandSize; ++i) {
+    Value *Operand = CombOp->getOperand(i);
+
+    // Ignore these Values since they have no corresponding DelayModel.
+    if (isa<Argument>(Operand) || isa<ConstantInt>(Operand) ||
+        isa<UndefValue>(Operand) || isa<ConstantPointerNull>(Operand) ||
+        isa<GlobalVariable>(Operand))
+      continue;
+
+    Operands.push_back(CombOp->getOperand(i));
+  }
+
+  for (int i = 0; i < Operands.size(); ++i) {
+    Value *Val = Operands[i];
+    Instruction *Operand = dyn_cast<Instruction>(Operands[i]);
+    assert(Operand && "Unexpected NULL Operand!");
+
+    PhysicalDelay Delay;
+    if (SIRRegister *Reg = SM->lookupSIRReg(Val)) {
+      Delay = PhysicalDelay(0.0f);
+    } else {
+      SIRDelayModel *DM = lookUpDelayModel(Operand);
+      unsigned BitWidth = TD->getTypeSizeInBits(Operand->getType());
+      Delay = PhysicalDelay(DM->getDelayInBit(BitWidth));
+    }    
+
+    PhysicalDelay &OldDelay = Arrivals[Operand];
+    OldDelay = std::max(OldDelay, Delay);
   }
 }
 
