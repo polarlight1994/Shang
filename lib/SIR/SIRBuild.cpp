@@ -2288,9 +2288,22 @@ IntegerType *SIRDatapathBuilder::createIntegerType(unsigned BitWidth) {
 
 Value *SIRDatapathBuilder::createIntegerValue(unsigned BitWidth, unsigned Val) {
   IntegerType *T = createIntegerType(BitWidth);
-  return ConstantInt::get(T, Val);
+  ConstantInt *CI =  ConstantInt::get(T, Val);
+  APInt V = CI->getValue();
+
+  // The mask of constant value is itself.
+  SIRBitMask Mask(~V, V);
+  SM->IndexVal2BitMask(CI, Mask);
+
+  return CI;
 }
 
 Value *SIRDatapathBuilder::createIntegerValue(APInt Val) {
-  return ConstantInt::get(SM->getContext(), Val);
+  Value *V = ConstantInt::get(SM->getContext(), Val);
+
+  // The mask of constant value is itself.
+  SIRBitMask Mask(~Val, Val);
+  SM->IndexVal2BitMask(V, Mask);
+
+  return V;
 }

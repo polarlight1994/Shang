@@ -147,10 +147,173 @@ class SIRSubModuleBase;
 class SIRSubModule;
 class SIRMemoryBank;
 
+class SIRBitMask;
+
 class SIR;
 }
 
 namespace llvm {
+class SIRBitMask {
+private:
+  APInt KnownZeros, KnownOnes;
+
+public:
+  SIRBitMask(unsigned BitWidth)
+    : KnownZeros(APInt::getNullValue(BitWidth)),
+      KnownOnes(APInt::getNullValue(BitWidth)) {}
+
+  SIRBitMask(Value *V, unsigned BitWidth)
+    : KnownZeros(APInt::getNullValue(BitWidth)),
+      KnownOnes(APInt::getNullValue(BitWidth)) {
+    // Construct the mask from the constant directly.
+    if (ConstantInt *CI = dyn_cast<ConstantInt>(V)) {
+      APInt BitValue = CI->getValue();
+
+      KnownOnes = BitValue;
+      KnownZeros = ~BitValue;
+    }
+  }
+
+  SIRBitMask(APInt KnownZeros, APInt KnownOnes)
+    : KnownZeros(KnownZeros), KnownOnes(KnownOnes) {
+    assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth()
+           && "BitWidth not matches!");
+
+    verify();
+  }
+
+  // Get the BitWidth of the Masks.
+  unsigned getMaskWidth() const {
+    verify();
+
+    return KnownZeros.getBitWidth();
+  }
+
+  // Verify the correctness of KnownZeros and KnownOnes
+  void verify() const {
+    assert(KnownZeros.getBitWidth() == KnownOnes.getBitWidth() && "BitWidth not matches!");
+    assert(!(KnownZeros & KnownOnes) && "BitMasks conflicts!");
+  }
+
+  bool isCompatibleWith(const SIRBitMask &Mask) {
+    return getMaskWidth() == Mask.getMaskWidth() &&
+           !(KnownOnes & Mask.KnownZeros) && !(KnownZeros & Mask.KnownOnes);
+  }
+
+  // Set bit of KnownZeros and KnownOnes
+  void setKnownZeroAt(unsigned i) {
+    KnownZeros.setBit(i);
+    KnownOnes.clearBit(i);
+    verify();
+  }
+  void setKnownOneAt(unsigned i) {
+    KnownOnes.setBit(i);
+    KnownZeros.clearBit(i);
+    verify();
+  }
+
+  void mergeKnownByOr(const SIRBitMask &Mask) {
+    assert(isCompatibleWith(Mask) && "BitMask conflicts!");
+
+    KnownZeros |= Mask.KnownZeros;
+    KnownOnes |= Mask.KnownOnes;
+    verify();
+  }
+  void mergeKnownByAnd(const SIRBitMask &Mask) {
+    assert(isCompatibleWith(Mask) && "BitMask conflicts!");
+
+    KnownZeros &= Mask.KnownZeros;
+    KnownOnes &= Mask.KnownOnes;
+    verify();
+  }
+
+  // Bit extraction of BitMasks.
+  APInt getBitExtraction(const APInt &OriginMask,
+                         unsigned UB, unsigned LB) const {
+    if (UB != OriginMask.getBitWidth() || LB != 0)
+      return OriginMask.lshr(LB).sextOrTrunc(UB - LB);
+
+    return OriginMask;
+  }
+
+  // Shift left and fill the lower bits with zeros.
+  SIRBitMask shl(unsigned i) {
+    APInt PaddingZeros = APInt::getLowBitsSet(getMaskWidth(), i);
+
+    return SIRBitMask(KnownZeros.shl(i) | PaddingZeros, KnownOnes.shl(i));
+  }
+  // Logic shift right and fill the higher bits with zeros.
+  SIRBitMask lshr(unsigned i) {
+    APInt PaddingZeros = APInt::getHighBitsSet(getMaskWidth(), i);
+
+    return SIRBitMask(KnownZeros.lshr(i) | PaddingZeros, KnownOnes.lshr(i));
+  }
+  // Arithmetic shift right and fill the higher bits with sign bit. However,
+  // this can only be down when it is known.
+  SIRBitMask ashr(unsigned i) {
+    return SIRBitMask(KnownZeros.ashr(i), KnownOnes.ashr(i));
+  }
+  // Extend the width of mask
+  SIRBitMask extend(unsigned BitWidth) {
+    return SIRBitMask(KnownZeros.zextOrSelf(BitWidth), KnownOnes.zextOrSelf(BitWidth));
+  }
+
+#define CREATEBITACCESSORS(WHAT, VALUE) \
+  APInt getKnown##WHAT##s() const { return VALUE; } \
+  APInt getKnown##WHAT##s(unsigned UB, unsigned LB = 0) const { \
+    return getBitExtraction(getKnown##WHAT##s(), UB, LB); \
+  } \
+  unsigned getNumKnown##WHAT##s() const { \
+    return getKnown##WHAT##s().countPopulation(); \
+  } \
+  unsigned getNumKnown##WHAT##s(unsigned UB, unsigned LB = 0) const { \
+    return getKnown##WHAT##s(UB, LB).countPopulation(); \
+  } \
+  bool is##WHAT##KnownAt(unsigned N) const { \
+    return get##Known##WHAT##s()[N]; \
+  } \
+  bool isAll##WHAT##Known() const { \
+    return get##Known##WHAT##s().isAllOnesValue(); \
+  } \
+  bool isAll##WHAT##Known(unsigned UB, unsigned LB = 0) const { \
+    return getBitExtraction(get##Known##WHAT##s(), UB, LB).isAllOnesValue(); \
+  } \
+  bool hasAny##WHAT##Known() const { \
+    return get##Known##WHAT##s().getBoolValue(); \
+  } \
+  bool hasAny##WHAT##Known(unsigned UB, unsigned LB = 0) const { \
+    return getBitExtraction(get##Known##WHAT##s(), UB, LB).getBoolValue(); \
+  }
+
+  CREATEBITACCESSORS(One, KnownOnes)
+  CREATEBITACCESSORS(Zero, KnownZeros)
+  CREATEBITACCESSORS(Bit, KnownOnes | KnownZeros)
+  CREATEBITACCESSORS(Value, (KnownOnes & ~KnownZeros))
+
+  // Mask evaluation function.
+  SIRBitMask evaluateAnd(SIRBitMask LHS, SIRBitMask RHS);
+  SIRBitMask evaluateOr(SIRBitMask LHS, SIRBitMask RHS);
+  SIRBitMask evaluateNot(SIRBitMask Mask);
+  SIRBitMask evaluateXor(SIRBitMask LHS, SIRBitMask RHS);
+  SIRBitMask evaluateRand(SIRBitMask Mask);
+  SIRBitMask evaluateRxor(SIRBitMask Mask);
+  SIRBitMask evaluateBitCat(SIRBitMask LHS, SIRBitMask RHS);
+  SIRBitMask evaluateBitExtract(SIRBitMask Mask, unsigned UB, unsigned LB);
+  SIRBitMask evaluateBitRepeat(SIRBitMask Mask, unsigned RepeatTimes);
+  SIRBitMask evaluateAdd(SIRBitMask LHS, SIRBitMask RHS);
+  SIRBitMask evaluateAddc(SIRBitMask LHS, SIRBitMask RHS, SIRBitMask Carry);
+  SIRBitMask evaluateMul(SIRBitMask LHS, SIRBitMask RHS);
+  SIRBitMask evaluateShl(SIRBitMask LHS, SIRBitMask RHS);
+  SIRBitMask evaluateLshr(SIRBitMask LHS, SIRBitMask RHS);
+  SIRBitMask evaluateAshr(SIRBitMask LHS, SIRBitMask RHS);
+  SIRBitMask evaluateUgt(SIRBitMask LHS, SIRBitMask RHS);
+  SIRBitMask evaluateSgt(SIRBitMask LHS, SIRBitMask RHS);
+
+  void evaluateMask(Instruction *Inst, SIR *SM, DataLayout *TD);
+
+  void print(raw_ostream &Output);
+};
+
 // Represent the registers in the Verilog.
 class SIRRegister : public ilist_node<SIRRegister> {
 public:
@@ -231,7 +394,7 @@ public:
   faninslots_iterator faninslots_begin() { return FaninSlots.begin(); }
   faninslots_iterator faninslots_end() { return FaninSlots.end(); }
 
-  void setLLVMValue(Instruction *I) { LLVMValue = I; }
+  void setLLVMValue(Value *V) { LLVMValue = V; }
   Value *getLLVMValue() const { return LLVMValue; }
 
   void setRegName(std::string N) { Name = N; }
@@ -282,6 +445,7 @@ public:
     assert(FaninGuards.size() == 0 && "FaininGuards not cleared!");
     assert(FaninSlots.size() == 0 && "FaninSlots not cleared!");
   }
+  bool isSynthesized() { return (RegVal != NULL); }
 
   // Declare the register and assign the initial value.
   void printDecl(raw_ostream &OS) const;
@@ -763,6 +927,10 @@ public:
   typedef MemInst2SeqOpsMapTy::iterator meminst2seqops_iterator;
   typedef MemInst2SeqOpsMapTy::const_iterator const_meminst2seqops_iterator;
 
+  typedef std::map<Value *, SIRBitMask> Val2BitMaskMapTy;
+  typedef Val2BitMaskMapTy::iterator val2bitmask_iterator;
+  typedef Val2BitMaskMapTy::const_iterator const_val2bitmask_iterator;
+
   typedef DenseMap<Value *, Value *> Val2SeqValMapTy;
   typedef Val2SeqValMapTy::iterator val2valseq_iterator;
   typedef Val2SeqValMapTy::const_iterator const_val2valseq_iterator;
@@ -792,6 +960,8 @@ private:
   MemInst2SeqOpsMapTy MemInst2SeqOps;
   // The map between Value in LLVM IR and SeqVal in SIR
   Val2SeqValMapTy Val2SeqVal;
+  // The map between Value in SIR and BitMask.
+  Val2BitMaskMapTy Val2BitMask;
   // The map between SeqVal in SIR and Reg in SIR
   SeqVal2RegMapTy SeqVal2Reg;
   // The map between Reg and SIRSlot
@@ -946,6 +1116,22 @@ public:
     if (at == MemInst2SeqOps.end())
       return ArrayRef<SIRSeqOp *>();
 
+    return at->second;
+  }
+
+  bool IndexVal2BitMask(Value *Val, SIRBitMask BitMask) {
+    BitMask.verify();
+
+    return Val2BitMask.insert(std::make_pair(Val, BitMask)).second;
+  }
+  bool hasBitMask(Value *Val) const {
+    const_val2bitmask_iterator at = Val2BitMask.find(Val);
+    return at != Val2BitMask.end();
+  }
+  SIRBitMask getBitMask(Value *Val) const {
+    assert(hasBitMask(Val) && "Mask not created yet?");
+
+    const_val2bitmask_iterator at = Val2BitMask.find(Val);
     return at->second;
   }
 
