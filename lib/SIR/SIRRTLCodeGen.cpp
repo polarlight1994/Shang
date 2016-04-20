@@ -178,8 +178,11 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
       }
   }
 
+  void generateBoothMulArray(IntrinsicInst &I);
+
   bool printExpr(IntrinsicInst &I);
-  bool printFUAdd(IntrinsicInst &I);  
+  bool printFUAdd(IntrinsicInst &I);
+  bool printFUMul(IntrinsicInst &I);
   bool printBinaryFU(IntrinsicInst &I);  
   bool printSubModuleInstantiation(IntrinsicInst &I);
   void printInvertExpr(ArrayRef<Value *> Ops);
@@ -752,6 +755,22 @@ void SIRControlPathPrinter::generateCodeForMemoryBank() {
   }
 }
 
+void SIRDatapathPrinter::generateBoothMulArray(IntrinsicInst &I) {
+  assert(I.getIntrinsicID() == Intrinsic::shang_mul && "Unexpected intrinsic instruction type!");
+
+  Value *LHS = I.getOperand(0), *RHS = I.getOperand(1);
+  SIRBitMask LHSMask = SM->getBitMask(LHS), RHSMask = SM->getBitMask(RHS);
+
+  unsigned BitWidth = TD.getTypeSizeInBits(I.getType());
+  unsigned LHSBitWidth = LHSMask.getMaskWidth(), RHSBitWidth = RHSMask.getMaskWidth();
+
+  unsigned partial_product_num = floor(RHSBitWidth / 2.0) + 1;
+  
+  // Initialize the partial product dot matrix.
+  std::set<std::set<string> > DotMatrix;
+  
+}
+
 void SIRDatapathPrinter::printSimpleOp(ArrayRef<Value *> Ops, const char *Opc) {
   unsigned BitWidth = TD.getTypeSizeInBits(Ops[0]->getType());
 
@@ -848,6 +867,37 @@ bool SIRDatapathPrinter::printFUAdd(IntrinsicInst &I) {
   return true;
 }
 
+bool SIRDatapathPrinter::printFUMul(IntrinsicInst &I) {
+  // Extract the called function
+  Function *Callee = I.getCalledFunction();
+
+  assert(Callee->arg_size() == 2 && "Not a binary expression!");
+
+  SmallVector<Value *, 2> Ops;
+  typedef CallInst::op_iterator iterator;
+  for (iterator i = I.op_begin(); i != I.op_end(); i++)
+    Ops.push_back(*i);
+
+  OS << "booth_mul" << "#("
+    << TD.getTypeSizeInBits(Ops[0]->getType()) << ", "
+    << TD.getTypeSizeInBits(Ops[1]->getType()) << ", "
+    << TD.getTypeSizeInBits(Callee->getReturnType()) << ") ";
+
+  // Here need to print a module name, not value name
+  printName(OS, I);
+  OS << '_' << getFUName(I);
+
+  OS << '(';
+
+  printAsOperand(OS, Ops[0], TD.getTypeSizeInBits(Ops[0]->getType()));
+  OS << ", ";
+  printAsOperand(OS, Ops[1], TD.getTypeSizeInBits(Ops[1]->getType()));
+  OS << ", ";
+  printAsOperand(OS, &I, TD.getTypeSizeInBits(Callee->getReturnType()));
+  OS << ");\n";
+  return true;
+}
+
 bool SIRDatapathPrinter::printBinaryFU(IntrinsicInst &I) {
   // Extract the called function
   Function *Callee = I.getCalledFunction();
@@ -888,6 +938,8 @@ bool SIRDatapathPrinter::printSubModuleInstantiation(IntrinsicInst &I) {
     if (printFUAdd(I)) return true;
     break;
   case Intrinsic::shang_mul:
+    if (printFUMul(I)) return true;
+    break;
   case Intrinsic::shang_udiv:
   case Intrinsic::shang_sdiv:
   case Intrinsic::shang_shl:
