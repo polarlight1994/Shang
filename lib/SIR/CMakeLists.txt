@@ -1,6 +1,9 @@
 add_llvm_library(ShangSIR
 SIR.cpp
 SIRBuild.cpp
+SIRBitMask.cpp
+SIRDatapathBLO.cpp
+SIRAddMulChain.cpp
 SIRLowerIntrinsic.cpp
 SIRAllocation.cpp
 SIRTimingAnalysis.cpp
@@ -18,5 +21,6 @@ SIRRTLCodeGen.cpp
 )
 
 include_directories(${LPSOLVE_INCLUDE_DIR})
+include_directories(${PYTHON_INCLUDE_DIR})
 
-target_link_libraries(ShangSIR LLVMLinker ${LPSOLVE_LIBRARY})
+target_link_libraries(ShangSIR LLVMLinker ${LPSOLVE_LIBRARY} ${PYTHON_LIBRARY} ${UTIL_LIBRARY})

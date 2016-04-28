@@ -332,6 +332,9 @@ bool SIR::gcImpl() {
       Instruction *Inst = InstI;
 
       if (Inst->use_empty() && !isa<ReturnInst>(Inst)) {
+        if (hasKeepVal(Inst))
+          continue;
+
         // If the Inst is a reg_assign instruction, then it is a SeqVal.
         // We also need to delete the corresponding register.
         if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(Inst))

@@ -6,12 +6,19 @@ RTLModuleName = [[@TEST_RTL_ENTITY@]]
 test_binary_root = [[@TEST_BINARY_ROOT@]]
 SIRMemIntrinsic = [[@SIR_MemIntrinsic_BC@]]
 IFFileName = [[@TEST_IF_SRC@]]
+CompressorInfo = [[@TEST_CompressorInfo@]]
+CompressorName = [[@TEST_CompressorName@]]
+CompressorPath = [[@TEST_CompressorPath@]]
 
 FinalIR = [[@DEBUG_FINAL_IR@]]
 SDCResult = [[@DEBUG_SDC_RESULT@]]
 LSResult = [[@DEBUG_LS_RESULT@]]
 IMSResult = [[@DEBUG_IMS_RESULT@]]
 SchedGraph = [[@DEBUG_SchedGraph@]]
+MaskOutput = [[@DEBUG_MaskOutput@]]
+MulMaskOutput = [[@DEBUG_MulMaskOutput@]]
+Chain = [[@DEBUG_Chain@]]
+DotMatrix = [[@DEBUG_DotMatrix@]]
 
 CounterFile = [[@CycleCounter@]]
 
@@ -26,7 +33,7 @@ POINTER_SIZE_IN_BITS = @POINTER_SIZE_IN_BITS@
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
 dofile('@TEST_BINARY_ROOT@/' .. 'EP2C70F896C6.lua')
 
-Functions.main = RTLModuleName
+Functions.@TEST@ = RTLModuleName
 
 -- Load ip module and simulation interface script.
 dofile('@SIR_SOURCE_ROOT@/' .. 'FuncDefine.lua')

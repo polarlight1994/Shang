@@ -42,6 +42,7 @@
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
 
+#include "Python.h"
 
 using namespace llvm;
 // To use the LUA in VAST
@@ -188,6 +189,7 @@ struct SIRDatapathPrinter : public InstVisitor<SIRDatapathPrinter, void> {
   void printBitCat(ArrayRef<Value *> Ops);
   void printUnaryOps(ArrayRef<Value *>Ops, const char *Opc);
   void printSimpleOp(ArrayRef<Value *> Ops, const char *Opc);
+  bool printCompressor(IntrinsicInst &I);
 };
 
 struct SIRControlPathPrinter {
@@ -327,8 +329,8 @@ void SIRControlPathPrinter::printMuxInReg(SIRRegister *Reg, bool UsedAsGuard) {
   if (Reg->fanin_empty()) return;
 
   // Register must have been synthesized
-  Value *RegVal = Reg->getRegVal();
-  Value *RegGuard = Reg->getRegGuard();
+  Value *RegVal = dyn_cast<Instruction>(Reg->getLLVMValue())->getOperand(0);
+  Value *RegGuard = dyn_cast<Instruction>(Reg->getLLVMValue())->getOperand(1);
 
   if (RegVal) {
     OS << "// Synthesized MUX\n";
@@ -879,6 +881,28 @@ bool SIRDatapathPrinter::printBinaryFU(IntrinsicInst &I) {
   return true;
 }
 
+bool SIRDatapathPrinter::printCompressor(IntrinsicInst &I) {
+  // Extract all operands to be added.
+  OS << "compressor_" + Mangle(I.getName()) + " compressor_" + Mangle(I.getName()) << "(\n";
+
+  std::vector<Value *> Ops = SM->lookupOpsOfChain(&I);
+  for (unsigned i = 0; i < Ops.size(); ++i) {
+    Value *Op = Ops[i];
+    std::string OpName = Op->getName();
+
+    if (isa<ConstantInt>(Op))
+      continue;
+    else if (SIRRegister *Reg = SM->lookupSIRReg(Op))
+      OpName = Reg->getName();
+
+    OS.indent(2) << ".operand_" << utostr_32(i) << "(" << Mangle(OpName) << "),\n";
+  }
+  OS.indent(2) << ".result(" << Mangle(I.getName()) << ")\n";
+  OS << ");\n";
+
+  return true;
+}
+
 bool SIRDatapathPrinter::printSubModuleInstantiation(IntrinsicInst &I) {
   Intrinsic::ID ID = I.getIntrinsicID();
   switch (ID) {
@@ -896,6 +920,9 @@ bool SIRDatapathPrinter::printSubModuleInstantiation(IntrinsicInst &I) {
   case Intrinsic::shang_sgt:
   case Intrinsic::shang_ugt: 
     if (printBinaryFU(I)) return true;
+    break;
+  case Intrinsic::shang_compressor:
+    if(printCompressor(I)) return true;
     break;
   }
 
@@ -968,6 +995,7 @@ void SIRDatapathPrinter::visitIntrinsicInst(IntrinsicInst &I) {
   case Intrinsic::shang_sgt:
   case Intrinsic::shang_ugt:
   case Intrinsic::shang_addc:
+  case Intrinsic::shang_compressor:
     if (printSubModuleInstantiation(I)) return;
     break;
 
@@ -1083,12 +1111,15 @@ struct SIR2RTL : public SIRPass {
   void generateCodeForSCIFScript(SIR &SM, DataLayout &TD);
   void generateCodeForTestsuite(SIR &SM, DataLayout &TD);
 
+  void generateCodeForCompressor(SIR &SM, DataLayout &TD);
+
   bool runOnSIR(SIR &SM);
 
   void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
     AU.addRequiredID(SIRSchedulingID);
+    AU.addRequiredID(SIRAddMulChainID);
     AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
     AU.addRequiredID(SIRTimingScriptGenID);
     AU.setPreservesAll();
@@ -1109,7 +1140,9 @@ void SIR2RTL::generateCodeForTopModule(SIR &SM, DataLayout &TD) {
 void SIR2RTL::generateCodeForDecl(SIR &SM, DataLayout &TD) {
   // Print code for module declaration.
   Function *F = SM.getFunction();
-  Out << "module " << F->getValueName()->getKey();
+
+  std::string RTLModuleName = LuaI::GetString("RTLModuleName");
+  Out << "module " << RTLModuleName;
 
   Out << "(\n";
 
@@ -1440,6 +1473,24 @@ void SIR2RTL::generateCodeForTestsuite(SIR &SM, DataLayout &TD) {
     generateCodeForSCIFScript(SM, TD);
 }
 
+void SIR2RTL::generateCodeForCompressor(SIR &SM, DataLayout &TD) {
+  Py_Initialize();
+
+  assert(Py_IsInitialized() && "Python module not initialized!");
+
+  FILE *fp = NULL;
+  std::string CompressorPath = LuaI::GetString("CompressorPath") + "/booth_mul_codegen.py";
+  errs() << CompressorPath << "\n";
+
+  fp = fopen(CompressorPath.c_str(), "rb");
+
+  assert(fp && "Python file not found!");
+
+  PyRun_SimpleFile(fp, "booth_mul_codegen.py");
+  
+  Py_Finalize();
+}
+
 bool SIR2RTL::runOnSIR(SIR &SM) {
   // Remove the dead SIR instruction before the CodeGen.
   SM.gc();
@@ -1478,6 +1529,8 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
   // Generate the code for testsuite.
   generateCodeForTestsuite(SM, TD);
 
+  generateCodeForCompressor(SM, TD);
+
   return false;
 }
 
@@ -1495,6 +1548,7 @@ INITIALIZE_PASS_BEGIN(SIR2RTL, "shang-sir-verilog-writer",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(SIRScheduling)
+  INITIALIZE_PASS_DEPENDENCY(SIRAddMulChain)
   INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
   INITIALIZE_PASS_DEPENDENCY(SIRTimingScriptGen)
 INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",

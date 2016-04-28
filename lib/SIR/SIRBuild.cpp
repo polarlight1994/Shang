@@ -2042,18 +2042,18 @@ Value *SIRDatapathBuilder::createSOrInst(ArrayRef<Value *> Ops, Type *RetTy,
     Value *Operand = *I;
     ConstantInt *CI = dyn_cast<ConstantInt>(Operand);
 
-    // If A = 1'b1 | 1'bB | 1'bC, we can simplify it into 1'b1.
-    if (CI && getConstantIntValue(CI) == 1 && getBitWidth(RetTy) == 1) {
-      // If the inst is not used as an argument of other functions,
-      // then it is used to replace the inst in IR
-      if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
-      return Operand;
-    }
-
-    // If A = x'b0 | B | C, we can simplify it into A = B | C.
-    if (CI && getConstantIntValue(CI) == 0)
-      // Ignore the x'b0 operand, since it have no impact on result.
-      continue;
+//     If A = 1'b1 | 1'bB | 1'bC, we can simplify it into 1'b1.
+//           if (CI && getConstantIntValue(CI) == 1 && getBitWidth(RetTy) == 1) {
+//             // If the inst is not used as an argument of other functions,
+//             // then it is used to replace the inst in IR
+//             if (!UsedAsArg) InsertPosition->replaceAllUsesWith(Operand);
+//             return Operand;
+//           }
+//       
+//           // If A = x'b0 | B | C, we can simplify it into A = B | C.
+//           if (CI && getConstantIntValue(CI) == 0)
+//             // Ignore the x'b0 operand, since it have no impact on result.
+//             continue;
 
     NewOps.push_back(Operand);
   }
@@ -2275,6 +2275,19 @@ Value *SIRDatapathBuilder::createBitCastInst(Value *V, Type *RetTy,
   return Inst;
 }
 
+Value *SIRDatapathBuilder::createCompressorInst(Value *InsertPosition) {
+  SmallVector<Value *, 2> Ops;
+  Ops.push_back(createIntegerValue(getBitWidth(InsertPosition), 1));
+
+  Value *CompressorInst =  createShangInstPattern(Ops, InsertPosition->getType(),
+                                                        InsertPosition, Intrinsic::shang_compressor,
+                                                        false);
+
+  Instruction *Compressor = dyn_cast<Instruction>(CompressorInst);
+
+  return CompressorInst;
+}
+
 /// Functions to help us create Shang-Inst.
 Value *SIRDatapathBuilder::getSignBit(Value *U, Value *InsertPosition) {
   unsigned BitWidth = getBitWidth(U);
@@ -2288,9 +2301,22 @@ IntegerType *SIRDatapathBuilder::createIntegerType(unsigned BitWidth) {
 
 Value *SIRDatapathBuilder::createIntegerValue(unsigned BitWidth, unsigned Val) {
   IntegerType *T = createIntegerType(BitWidth);
-  return ConstantInt::get(T, Val);
+  ConstantInt *CI =  ConstantInt::get(T, Val);
+  APInt V = CI->getValue();
+
+  // The mask of constant value is itself.
+  SIRBitMask Mask(~V, V);
+  SM->IndexVal2BitMask(CI, Mask);
+
+  return CI;
 }
 
 Value *SIRDatapathBuilder::createIntegerValue(APInt Val) {
-  return ConstantInt::get(SM->getContext(), Val);
+  Value *V = ConstantInt::get(SM->getContext(), Val);
+
+  // The mask of constant value is itself.
+  SIRBitMask Mask(~Val, Val);
+  SM->IndexVal2BitMask(V, Mask);
+
+  return V;
 }

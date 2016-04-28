@@ -281,30 +281,30 @@ void SIRTimingScriptGen::generateConstraints(SIRRegister *Reg, raw_ostream &OS) 
 }
 
 bool SIRTimingScriptGen::runOnSIR(SIR &SM) {
-  SIRSTGDistance &STGDist = getAnalysis<SIRSTGDistance>();
-
-  this->SM = &SM;
-  this->STGDist = &STGDist;
-
-  std::string TimingScript = LuaI::GetString("SDCFile");
-  std::string Error;
-  raw_fd_ostream Output(TimingScript.c_str(), Error);
-
-  // Print the clk settings.
-  Output << "create_clock -name \"clk\" -period 10ns [get_ports {clk}]\n";
-  Output << "derive_pll_clocks -create_base_clocks\n";
-  Output << "set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0";
-  Output << "\n\n";
-
-  typedef SIR::register_iterator reg_iterator;
-  for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
-    SIRRegister *Reg = I;
-
-    if (Reg->fanin_empty() || (Reg->getLLVMValue()->use_empty() && !Reg->isFUInput()))
-      continue;
-
-    generateConstraints(Reg, Output);
-  }
+//   SIRSTGDistance &STGDist = getAnalysis<SIRSTGDistance>();
+// 
+//   this->SM = &SM;
+//   this->STGDist = &STGDist;
+// 
+//   std::string TimingScript = LuaI::GetString("SDCFile");
+//   std::string Error;
+//   raw_fd_ostream Output(TimingScript.c_str(), Error);
+// 
+//   // Print the clk settings.
+//   Output << "create_clock -name \"clk\" -period 10ns [get_ports {clk}]\n";
+//   Output << "derive_pll_clocks -create_base_clocks\n";
+//   Output << "set_multicycle_path -from [get_clocks {clk}] -to [get_clocks {clk}] -hold -end 0";
+//   Output << "\n\n";
+// 
+//   typedef SIR::register_iterator reg_iterator;
+//   for (reg_iterator I = SM.registers_begin(), E = SM.registers_end(); I != E; ++I) {
+//     SIRRegister *Reg = I;
+// 
+//     if (Reg->fanin_empty() || (Reg->getLLVMValue()->use_empty() && !Reg->isFUInput()))
+//       continue;
+// 
+//     generateConstraints(Reg, Output);
+//   }
 
   return false;
 }

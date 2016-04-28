@@ -20,7 +20,7 @@
 
 using namespace llvm;
 
-namespace llvm {
+namespace {
 struct SIRRegisterSynthesisForAnnotation : public SIRPass {
   static char ID;
 
@@ -32,9 +32,8 @@ struct SIRRegisterSynthesisForAnnotation : public SIRPass {
 
   void getAnalysisUsage(AnalysisUsage &AU) const;
 
-  bool synthesizeRegister(SIRRegister *Reg,
-    Value *InsertPosition,
-    SIRDatapathBuilder &Builder);
+  bool synthesizeRegister(SIRRegister *Reg, Value *InsertPosition,
+                          SIRDatapathBuilder &Builder);
 };
 }
 
@@ -141,8 +140,7 @@ bool SIRRegisterSynthesisForAnnotation::synthesizeRegister(SIRRegister *Reg,
   return true;
 }
 
-
-namespace llvm {
+namespace {
 struct SIRRegisterSynthesisForCodeGen : public SIRPass {
   static char ID;
 
@@ -167,6 +165,7 @@ INITIALIZE_PASS_BEGIN(SIRRegisterSynthesisForCodeGen,
                       "SIR-Register-synthesis-for-code-generate",
                       "Implement the MUX for the Sequential Logic in SIR for CodeGen",
                       false, true)
+  INITIALIZE_PASS_DEPENDENCY(SIRBitLevelOpt)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
 INITIALIZE_PASS_END(SIRRegisterSynthesisForCodeGen,
                     "SIR-Register-synthesis-for-code-generate",
@@ -176,6 +175,7 @@ INITIALIZE_PASS_END(SIRRegisterSynthesisForCodeGen,
 void SIRRegisterSynthesisForCodeGen::getAnalysisUsage(AnalysisUsage &AU) const {
   SIRPass::getAnalysisUsage(AU);
   AU.addRequired<DataLayout>();
+  AU.addRequiredID(SIRBitLevelOptID);
   AU.setPreservesAll();
 }
 

@@ -57,6 +57,10 @@ macro(add_synthesis_test test_name)
 
 	set(TEST_RTL_SRC   		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sv")
 	set(TEST_SDC     		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.sdc")
+	
+	set(TEST_CompressorInfo	"${TEST_BINARY_ROOT}/CompressorInfo.txt")
+	set(TEST_CompressorName	"${TEST_RTL_ENTITY}")
+	set(TEST_CompressorPath	"${TEST_BINARY_ROOT}")
 
 	set(CycleCounter		"${TEST_BINARY_ROOT}/${test_name}_DUT_RTL.txt")
 
@@ -65,7 +69,11 @@ macro(add_synthesis_test test_name)
 	set(DEBUG_LS_RESULT		"${TEST_BINARY_ROOT}/${TEST}.lsresult")
 	set(DEBUG_IMS_RESULT  	"${TEST_BINARY_ROOT}/${TEST}.imsresult")
 	set(DEBUG_SchedGraph	"${TEST_BINARY_ROOT}/${TEST}.schedgraph")
-
+	set(DEBUG_MaskOutput	"${TEST_BINARY_ROOT}/${TEST}.maskoutput")
+	set(DEBUG_MulMaskOutput	"${TEST_BINARY_ROOT}/${TEST}.mulmaskoutput")
+	set(DEBUG_Chain			"${TEST_BINARY_ROOT}/${TEST}.chain")
+	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrix")
+	
 	set(enableCoSimulation false)
 
 	configure_file(
@@ -83,6 +91,10 @@ macro(add_synthesis_test test_name)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/verilog_synthesis_altera.tcl.in"
 		"${TEST_BINARY_ROOT}/${TEST}_verilog_synthesis_altera.tcl"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/booth_mul_codegen.py"
+		"${TEST_BINARY_ROOT}/booth_mul_codegen.py"
 	)
 
 	#Compile the source file to IR.
@@ -147,13 +159,21 @@ macro(add_cosimulation_test test_name)
 	set(TEST_SC_EXE				"${TEST_RTL_OBJ_ROOT}/V${DUT_NAME}_RTL")
 
 	set(CycleCounter			"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.txt")
+	
+	set(TEST_CompressorInfo	"${TEST_BINARY_ROOT}/CompressorInfo.txt")
+	set(TEST_CompressorName	"${TEST_RTL_ENTITY}")
+	set(TEST_CompressorPath	"${TEST_BINARY_ROOT}")
 
 	set(DEBUG_FINAL_IR		"${TEST_BINARY_ROOT}/${TEST}.finalir")
 	set(DEBUG_SDC_RESULT	"${TEST_BINARY_ROOT}/${TEST}.sdcresult")
 	set(DEBUG_LS_RESULT		"${TEST_BINARY_ROOT}/${TEST}.lsresult")
-	set(DEBUG_IMS_RESULT  "${TEST_BINARY_ROOT}/${TEST}.imsresult")
+	set(DEBUG_IMS_RESULT  	"${TEST_BINARY_ROOT}/${TEST}.imsresult")
 	set(DEBUG_SchedGraph	"${TEST_BINARY_ROOT}/${TEST}.schedgraph")
-
+	set(DEBUG_MaskOutput	"${TEST_BINARY_ROOT}/${TEST}.maskoutput")
+	set(DEBUG_MulMaskOutput	"${TEST_BINARY_ROOT}/${TEST}.mulmaskoutput")
+	set(DEBUG_Chain			"${TEST_BINARY_ROOT}/${TEST}.chain")
+	set(DEBUG_DotMatrix		"${TEST_BINARY_ROOT}/${TEST_RTL_ENTITY}.dotmatrix")
+	
 	set(enableCoSimulation true)
 
 	configure_file(
@@ -167,6 +187,10 @@ macro(add_cosimulation_test test_name)
 	configure_file(
 		"${SIR_SOURCE_ROOT}/EP2C70F896C6.lua"
 		"${TEST_BINARY_ROOT}/EP2C70F896C6.lua"
+	)
+	configure_file(
+		"${SIR_SOURCE_ROOT}/booth_mul_codegen.py"
+		"${TEST_BINARY_ROOT}/booth_mul_codegen.py"
 	)
 
 	#Compile the source file to IR.
