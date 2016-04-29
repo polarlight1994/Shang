@@ -158,6 +158,9 @@ private:
   APInt KnownZeros, KnownOnes;
 
 public:
+  SIRBitMask() : KnownZeros(APInt::getNullValue(1)),
+                 KnownOnes(APInt::getNullValue(1)) {}
+
   SIRBitMask(unsigned BitWidth)
     : KnownZeros(APInt::getNullValue(BitWidth)),
       KnownOnes(APInt::getNullValue(BitWidth)) {}
@@ -1151,6 +1154,12 @@ public:
 
   bool IndexVal2BitMask(Value *Val, SIRBitMask BitMask) {
     BitMask.verify();
+
+    if (hasBitMask(Val)) {
+      Val2BitMask[Val] = BitMask;
+
+      return true;
+    }
 
     return Val2BitMask.insert(std::make_pair(Val, BitMask)).second;
   }
