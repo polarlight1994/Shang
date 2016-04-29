@@ -311,9 +311,23 @@ public:
   SIRBitMask evaluateUDiv(SIRBitMask LHS, SIRBitMask RHS);
   SIRBitMask evaluateSDiv(SIRBitMask LHS, SIRBitMask RHS);
 
-  void evaluateMask(Instruction *Inst, SIR *SM, DataLayout *TD);
+  bool updateMask(Instruction *Inst, SIR *SM, DataLayout *TD);
 
-  void print(raw_ostream &Output);
+  void print(raw_ostream &Output) {
+    Output << "[";
+
+    unsigned BitWidth = getMaskWidth();
+    for (unsigned i = 0; i < BitWidth; ++i) {
+      if (KnownZeros[BitWidth - 1 - i] == 1)
+        Output << 0;
+      else if (KnownOnes[BitWidth - 1 - i] == 1)
+        Output << 1;
+      else
+        Output << 'x';
+    }
+
+    Output << "]";
+  }
 };
 
 // Represent the registers in the Verilog.
