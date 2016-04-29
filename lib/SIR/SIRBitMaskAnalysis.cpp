@@ -734,7 +734,35 @@ void SIRBitMaskAnalysis::printMask(raw_fd_ostream &Output) {
 }
 
 void SIRBitMaskAnalysis::verifyMaskCorrectness() {
+  Function *F = SM->getFunction();
+  SIRDatapathBuilder Builder(SM, *TD);
 
+  typedef Function::iterator bb_iterator;
+  typedef BasicBlock::iterator inst_iterator;
+  for (bb_iterator BI = F->begin(), BE = F->end(); BI != BE; ++BI) {
+    BasicBlock *BB = BI;
+
+    for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
+      Instruction *Inst = II;
+
+      if (!SM->hasBitMask(Inst)) {
+        continue;
+      }
+
+      SIRBitMask Mask = SM->getBitMask(Inst);
+
+      Value *KnownZeros = Builder.createIntegerValue(Mask.getKnownZeros());
+      Value *KnownOnes = Builder.createIntegerValue(Mask.getKnownOnes());
+
+      unsigned BitWidth = Mask.getMaskWidth();
+      Value *MaskedVal = Builder.createSOrInst(Builder.createIntegerValue(BitWidth, 1), Builder.createIntegerValue(BitWidth, 1), Inst->getType(), Inst, true);
+
+      Inst->replaceAllUsesWith(MaskedVal);
+      Instruction *MaskedInst = dyn_cast<Instruction>(MaskedVal);
+      MaskedInst->setOperand(0, Builder.createSAndInst(Inst, Builder.createSNotInst(KnownZeros, KnownZeros->getType(), Inst, true), Inst->getType(), Inst, true));
+      MaskedInst->setOperand(1, KnownOnes);
+    }
+  }
 }
 
 bool SIRBitMaskAnalysis::runIteration() {
