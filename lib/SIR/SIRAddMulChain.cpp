@@ -204,7 +204,7 @@ void SIRAddMulChain::collect(IntrinsicInst *ChainRoot) {
     }
   }
 
-  if (Depth != 0 && Chain.size() != 1) {
+  if (Depth != 0 && Chain.size() > 2) {
     ChainMap.insert(std::make_pair(ChainRoot, Chain));
     Collected.insert(ChainRoot);
   }
