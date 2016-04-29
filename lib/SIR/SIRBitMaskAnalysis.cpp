@@ -390,11 +390,13 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
 
     // If the mask of operand has not been computed yet.
     if (!SM->hasBitMask(Operand)) {
-      assert(isa<GlobalValue>(Operand) && "Unexpected value type!");
+      assert(isa<GlobalValue>(Operand) || (SM->lookupSIRReg(Operand) != NULL) ||
+             isa<Argument>(Operand) || isa<UndefValue>(Operand) && "Unexpected value type!");
 
       SIRBitMask Mask(BitWidth);
 
       SM->IndexVal2BitMask(Operand, Mask);
+      SM->IndexVal2BitMask(Inst, Mask);
       return Mask;
     }
 
@@ -594,6 +596,7 @@ bool SIRBitMaskAnalysis::computeAndUpdateMask(Instruction *Inst) {
     return true;
   }
 
+  SM->IndexVal2BitMask(Inst, NewMask);
   return false;
 }
 
@@ -635,6 +638,11 @@ bool SIRBitMaskAnalysis::traverseFromRoot(Value *Val) {
     // Ignore the non-instruction value.
     if (!ChildInst)
       continue;
+
+    // Ignore the register.
+    if (IntrinsicInst *ChildII = dyn_cast<IntrinsicInst>(ChildInst))
+      if (ChildII->getIntrinsicID() == Intrinsic::shang_reg_assign)
+        continue;
 
     // No need to visit the same node twice.
     if (!LocalVisited.insert(ChildInst).second || Visited.count(ChildInst))
@@ -751,13 +759,24 @@ void SIRBitMaskAnalysis::verifyMaskCorrectness() {
 
       SIRBitMask Mask = SM->getBitMask(Inst);
 
+      if (!Mask.hasAnyBitKnown())
+        continue;
+
       Value *KnownZeros = Builder.createIntegerValue(Mask.getKnownZeros());
       Value *KnownOnes = Builder.createIntegerValue(Mask.getKnownOnes());
 
       unsigned BitWidth = Mask.getMaskWidth();
       Value *MaskedVal = Builder.createSOrInst(Builder.createIntegerValue(BitWidth, 1), Builder.createIntegerValue(BitWidth, 1), Inst->getType(), Inst, true);
 
-      Inst->replaceAllUsesWith(MaskedVal);
+      if (MaskedVal->getType() != Inst->getType()) {
+        Type *OriginType = Inst->getType();
+        assert(OriginType->isPointerTy() && "Unexpected Type!");
+
+        Value *MaskedPointerVal = Builder.createIntToPtrInst(MaskedVal, OriginType, Inst, false);
+      } else {
+        Inst->replaceAllUsesWith(MaskedVal);
+      }
+
       Instruction *MaskedInst = dyn_cast<Instruction>(MaskedVal);
       MaskedInst->setOperand(0, Builder.createSAndInst(Inst, Builder.createSNotInst(KnownZeros, KnownZeros->getType(), Inst, true), Inst->getType(), Inst, true));
       MaskedInst->setOperand(1, KnownOnes);
@@ -782,7 +801,11 @@ bool SIRBitMaskAnalysis::runOnSIR(SIR &SM) {
   std::string Error;
   raw_fd_ostream Output(MaskOutputPath.c_str(), Error);
 
-  while(runIteration());
+  unsigned num_iterations = 0;
+
+  while(runIteration()) {
+    errs() << "run iteration #" << num_iterations++ << "\n";
+  }
 
   verifyMaskCorrectness();
   printMask(Output);
