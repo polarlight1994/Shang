@@ -24,6 +24,7 @@ struct SIRBitMaskAnalysis : public SIRPass {
   }
 
   void printMask(raw_fd_ostream &Output);
+  void verifyMaskCorrectness();
 
   // Bit extraction of BitMasks.
   APInt getBitExtraction(const APInt &OriginMask,
@@ -65,7 +66,7 @@ struct SIRBitMaskAnalysis : public SIRPass {
   void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
-    AU.addRequiredID(SIRRegisterSynthesisForAnnotationID);
+    AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
     AU.setPreservesAll();
   }
 };
@@ -573,8 +574,8 @@ SIRBitMask SIRBitMaskAnalysis::computeMask(Instruction *Inst, SIR *SM, DataLayou
 }
 
 bool isDifferentMask(SIRBitMask NewMask, SIRBitMask OldMask) {
-  return ((NewMask.getKnownOnes() == OldMask.getKnownOnes()) &&
-          (NewMask.getKnownZeros() == OldMask.getKnownZeros()));
+  return ((NewMask.getKnownOnes() != OldMask.getKnownOnes()) ||
+          (NewMask.getKnownZeros() != OldMask.getKnownZeros()));
 }
 
 bool SIRBitMaskAnalysis::computeAndUpdateMask(Instruction *Inst) {
@@ -732,6 +733,10 @@ void SIRBitMaskAnalysis::printMask(raw_fd_ostream &Output) {
   }
 }
 
+void SIRBitMaskAnalysis::verifyMaskCorrectness() {
+
+}
+
 bool SIRBitMaskAnalysis::runIteration() {
   bool Changed = false;
 
@@ -741,22 +746,18 @@ bool SIRBitMaskAnalysis::runIteration() {
 }
 
 bool SIRBitMaskAnalysis::runOnSIR(SIR &SM) {
-//   DataLayout &TD = getAnalysis<DataLayout>();
-// 
-//   std::string MulMaskOutputPath = LuaI::GetString("MulMaskOutput");
-//   std::string MulError;
-//   raw_fd_ostream MulOutput(MulMaskOutputPath.c_str(), MulError);
-//   SIRDatapathBLO BLO(&SM, &TD, MulOutput);
-// 
-//   // Get the output path for Verilog code.
-//   std::string MaskOutputPath = LuaI::GetString("MaskOutput");
-//   std::string Error;
-//   raw_fd_ostream Output(MaskOutputPath.c_str(), Error);
-// 
-//   runIteration(BLO);
-//   printMask(SM, TD, Output);
-// 
-//   MulOutput << AllMulInst.size();
+  this->TD = &getAnalysis<DataLayout>();
+  this->SM = &SM;
+
+  // Get the output path for Verilog code.
+  std::string MaskOutputPath = LuaI::GetString("MaskOutput");
+  std::string Error;
+  raw_fd_ostream Output(MaskOutputPath.c_str(), Error);
+
+  while(runIteration());
+
+  verifyMaskCorrectness();
+  printMask(Output);
 
   return false;
 }

@@ -16,12 +16,14 @@ struct SIRAddMulChain : public SIRPass {
   DataLayout *TD;
   SIR *SM;
 
+  unsigned ChainNum;
+
   std::set<IntrinsicInst *> Visited;
   std::set<IntrinsicInst *> Collected;
   std::map<IntrinsicInst *, std::set<IntrinsicInst *> > ChainMap;
   std::map<IntrinsicInst *, IntrinsicInst *> ChainRoot2Compressor;
 
-  SIRAddMulChain() : SIRPass(ID) {
+  SIRAddMulChain() : SIRPass(ID), ChainNum(0) {
     initializeSIRAddMulChainPass(*PassRegistry::getPassRegistry());
   }
 
@@ -38,7 +40,7 @@ struct SIRAddMulChain : public SIRPass {
   void getAnalysisUsage(AnalysisUsage &AU) const {
     SIRPass::getAnalysisUsage(AU);
     AU.addRequired<DataLayout>();
-    AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
+    AU.addRequiredID(SIRBitMaskAnalysisID);
     AU.setPreservesAll();
   }
 };
@@ -50,20 +52,20 @@ INITIALIZE_PASS_BEGIN(SIRAddMulChain, "sir-add-mul-chain",
                       "Perform the add-mul chain optimization",
                       false, true)
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
-  INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
+  INITIALIZE_PASS_DEPENDENCY(SIRBitMaskAnalysis)
 INITIALIZE_PASS_END(SIRAddMulChain, "sir-add-mul-chain",
                     "Perform the add-mul chain optimization",
                     false, true)
 
 bool SIRAddMulChain::runOnSIR(SIR &SM) {
-  this->TD = &getAnalysis<DataLayout>();
-  this->SM = &SM;
-
-  collectAddMulChain();
-  printAllChain();
-
-  replaceWithCompressor();
-  generateDotMatrix();
+//   this->TD = &getAnalysis<DataLayout>();
+//   this->SM = &SM;
+// 
+//   collectAddMulChain();
+//   printAllChain();
+// 
+//   replaceWithCompressor();
+//   generateDotMatrix();
 
   return false;
 }
@@ -248,6 +250,8 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
       SM->indexKeepVal(Operand);
     }
   }
+
+  errs() << "Chain No." << ChainNum++ << "with size of " << Operands.size() << "\n";
 
   IntrinsicInst *Compressor = ChainRoot2Compressor[ChainRoot];
   SM->IndexOps2AdderChain(Compressor, Operands);

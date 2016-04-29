@@ -1,5 +1,5 @@
 ##################################
-add_subdirectory(aircraft)
+#add_subdirectory(aircraft)
 add_subdirectory(arai)
 add_subdirectory(chem)
 add_subdirectory(dir)
@@ -10,4 +10,4 @@ add_subdirectory(mcm)
 add_subdirectory(pr)
 add_subdirectory(u5ml)
 add_subdirectory(wang)
-add_subdirectory(add_chain)
+#add_subdirectory(add_chain)
