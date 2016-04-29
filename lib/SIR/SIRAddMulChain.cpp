@@ -1,5 +1,6 @@
+#include "sir/SIR.h"
+#include "sir/SIRBuild.h"
 #include "sir/SIRPass.h"
-#include "sir/SIRDatapathBLO.h"
 #include "sir/Passes.h"
 
 #include "vast/LuaI.h"
@@ -8,10 +9,6 @@
 
 using namespace llvm;
 using namespace vast;
-
-namespace llvm {
-
-}
 
 namespace {
 struct SIRAddMulChain : public SIRPass {
