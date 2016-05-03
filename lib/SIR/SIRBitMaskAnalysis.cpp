@@ -900,7 +900,7 @@ bool SIRDatapathOpt::shrinkOperatorStrengh() {
       if (IntrinsicInst *IInst = dyn_cast<IntrinsicInst>(Inst)) {
         Intrinsic::ID ID = IInst->getIntrinsicID();
         
-        if (ID == Intrinsic::shang_add || ID == Intrinsic::shang_addc || ID == Intrinsic::shang_mul)
+        if (ID == Intrinsic::shang_add || ID == Intrinsic::shang_addc)
           AddMulVector.push_back(IInst);
       }
     }

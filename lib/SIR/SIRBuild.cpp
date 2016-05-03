@@ -1910,7 +1910,7 @@ Value *SIRDatapathBuilder::createSShiftInst(ArrayRef<Value *> Ops, Type *RetTy,
   if (getBitWidth(RHS) > RHSMaxSize)
     // Extract the useful bits.
     RHS = createSBitExtractInst(Ops[1], RHSMaxSize, 0, createIntegerType(RHSMaxSize), 
-    InsertPosition, true);
+                                InsertPosition, true);
 
   Value *NewOps[] = {LHS, RHS};
 
