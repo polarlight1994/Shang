@@ -649,7 +649,7 @@ void CompGraphBase::viewGraph() {
   ViewGraph(this, "CompatibilityGraph");
 }
 
-#include "lpsolve/lp_lib.h"
+#include "lp_lib.h"
 
 namespace vast {
 using namespace llvm;
