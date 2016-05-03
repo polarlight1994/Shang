@@ -14,5 +14,5 @@ endmacro(add_benchmark_synthesis_test)
 
 #add_subdirectory(DSPStone)
 add_subdirectory(CHStone)
-#add_subdirectory(DFGs)
+add_subdirectory(DFGs)
 #add_subdirectory(legup_chstone)
