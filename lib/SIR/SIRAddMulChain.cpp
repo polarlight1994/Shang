@@ -58,14 +58,14 @@ INITIALIZE_PASS_END(SIRAddMulChain, "sir-add-mul-chain",
                     false, true)
 
 bool SIRAddMulChain::runOnSIR(SIR &SM) {
-//   this->TD = &getAnalysis<DataLayout>();
-//   this->SM = &SM;
-// 
-//   collectAddMulChain();
-//   printAllChain();
-// 
-//   replaceWithCompressor();
-//   generateDotMatrix();
+  this->TD = &getAnalysis<DataLayout>();
+  this->SM = &SM;
+
+  collectAddMulChain();
+  printAllChain();
+
+  replaceWithCompressor();
+  generateDotMatrix();
 
   return false;
 }
@@ -298,8 +298,26 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
       for (unsigned j = 0; j < MatrixColNum; ++j) {
         std::string string_j = utostr_32(j);
 
-        if (j < RowValBitWidth)
+        if (j < RowValBitWidth) {
+          if (SM->hasBitMask(RowVal)) {
+            SIRBitMask Mask = SM->getBitMask(RowVal);
+
+            if (Mask.isOneKnownAt(j)) {
+              errs() << "Mask is One!\n";
+
+              Matrix[i][j] = "1\'b1";
+              continue;
+            }
+            else if (Mask.isZeroKnownAt(j)) {
+              errs() << "Mask is Zero!\n";
+
+              Matrix[i][j] = "1\'b0";
+              continue;
+            }
+          }
+
           Matrix[i][j] = Mangle(RowValName) + LeftBracket + string_j + RightBracket;
+        }
         else
           Matrix[i][j] = "1\'b0";
       }

@@ -1120,6 +1120,7 @@ struct SIR2RTL : public SIRPass {
     AU.addRequired<DataLayout>();
     AU.addRequiredID(SIRSchedulingID);
     AU.addRequiredID(SIRAddMulChainID);
+    //AU.addRequiredID(SIRDatapathOptID);
     AU.addRequiredID(SIRRegisterSynthesisForCodeGenID);
     AU.addRequiredID(SIRTimingScriptGenID);
     AU.setPreservesAll();
@@ -1480,7 +1481,6 @@ void SIR2RTL::generateCodeForCompressor(SIR &SM, DataLayout &TD) {
 
   FILE *fp = NULL;
   std::string CompressorPath = LuaI::GetString("CompressorPath") + "/booth_mul_codegen.py";
-  errs() << CompressorPath << "\n";
 
   fp = fopen(CompressorPath.c_str(), "rb");
 
@@ -1529,7 +1529,7 @@ bool SIR2RTL::runOnSIR(SIR &SM) {
   // Generate the code for testsuite.
   generateCodeForTestsuite(SM, TD);
 
-  //generateCodeForCompressor(SM, TD);
+  generateCodeForCompressor(SM, TD);
 
   return false;
 }
@@ -1549,6 +1549,7 @@ INITIALIZE_PASS_BEGIN(SIR2RTL, "shang-sir-verilog-writer",
   INITIALIZE_PASS_DEPENDENCY(DataLayout)
   INITIALIZE_PASS_DEPENDENCY(SIRScheduling)
   INITIALIZE_PASS_DEPENDENCY(SIRAddMulChain)
+  //INITIALIZE_PASS_DEPENDENCY(SIRDatapathOpt)
   INITIALIZE_PASS_DEPENDENCY(SIRRegisterSynthesisForCodeGen)
   INITIALIZE_PASS_DEPENDENCY(SIRTimingScriptGen)
 INITIALIZE_PASS_END(SIR2RTL, "shang-sir-verilog-writer",

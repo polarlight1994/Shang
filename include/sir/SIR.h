@@ -293,6 +293,59 @@ public:
   CREATEBITACCESSORS(Bit, KnownOnes | KnownZeros)
   CREATEBITACCESSORS(Value, (KnownOnes & ~KnownZeros))
 
+  unsigned countLeadingZeros() {
+    unsigned LeadingZeros = 0;
+    unsigned MaskWidth = getMaskWidth();
+
+    for (unsigned i = 0; i < MaskWidth; ++i) {
+      if (isZeroKnownAt(MaskWidth - 1 - i))
+        ++LeadingZeros;
+      else
+        break;
+    }
+
+    return LeadingZeros;
+  }
+  unsigned countTrailingZeros() {
+    unsigned TrailingZeros = 0;
+    unsigned MaskWidth = getMaskWidth();
+
+    for (unsigned i = 0; i < MaskWidth; ++i) {
+      if (isZeroKnownAt(i))
+        ++TrailingZeros;
+      else
+        break;
+    }
+
+    return TrailingZeros;
+  }
+  unsigned countLeadingOnes() {
+    unsigned LeadingOnes = 0;
+    unsigned MaskWidth = getMaskWidth();
+
+    for (unsigned i = 0; i < MaskWidth; ++i) {
+      if (isOneKnownAt(MaskWidth - 1 - i))
+        ++LeadingOnes;
+      else
+        break;
+    }
+
+    return LeadingOnes;
+  }
+  unsigned countTrailingOnes() {
+    unsigned TrailingOnes = 0;
+    unsigned MaskWidth = getMaskWidth();
+
+    for (unsigned i = 0; i < MaskWidth; ++i) {
+      if (isOneKnownAt(i))
+        ++TrailingOnes;
+      else
+        break;
+    }
+
+    return TrailingOnes;
+  }
+
   // Mask evaluation function.
   SIRBitMask evaluateAnd(SIRBitMask LHS, SIRBitMask RHS);
   SIRBitMask evaluateOr(SIRBitMask LHS, SIRBitMask RHS);

@@ -70,6 +70,27 @@ struct SIRBitMaskAnalysis : public SIRPass {
     AU.setPreservesAll();
   }
 };
+
+struct SIRDatapathOpt : public SIRPass {
+  SIR *SM;
+  DataLayout *TD;
+
+  static char ID;
+  SIRDatapathOpt() : SIRPass(ID) {
+    initializeSIRDatapathOptPass(*PassRegistry::getPassRegistry());
+  }
+
+  bool shrinkOperatorStrengh(IntrinsicInst *II, SIRDatapathBuilder Builder);
+  bool shrinkOperatorStrengh();
+  bool runOnSIR(SIR &SM);
+
+  void getAnalysisUsage(AnalysisUsage &AU) const {
+    SIRPass::getAnalysisUsage(AU);
+    AU.addRequired<DataLayout>();
+    AU.addRequiredID(SIRBitMaskAnalysisID);
+    AU.setPreservesAll();
+  }
+};
 }
 
 char SIRBitMaskAnalysis::ID = 0;
@@ -807,8 +828,100 @@ bool SIRBitMaskAnalysis::runOnSIR(SIR &SM) {
     errs() << "run iteration #" << num_iterations++ << "\n";
   }
 
-  verifyMaskCorrectness();
+  //verifyMaskCorrectness();
   printMask(Output);
+
+  return false;
+}
+
+char SIRDatapathOpt::ID = 0;
+char &llvm::SIRDatapathOptID = SIRDatapathOpt::ID;
+INITIALIZE_PASS_BEGIN(SIRDatapathOpt, "sir-datapath-optimization",
+                      "Perform the datapath optimization",
+                      false, true)
+  INITIALIZE_PASS_DEPENDENCY(DataLayout)
+  INITIALIZE_PASS_DEPENDENCY(SIRBitMaskAnalysis)
+INITIALIZE_PASS_END(SIRDatapathOpt, "sir-datapath-optimization",
+                    "Perform the datapath optimization",
+                    false, true)
+
+bool SIRDatapathOpt::shrinkOperatorStrengh(IntrinsicInst *II, SIRDatapathBuilder Builder) {
+  SIRBitMask Mask = SM->getBitMask(II);
+
+  // Without useful mask information, we can do nothing.
+  unsigned LeadingZero = Mask.countLeadingZeros();
+  if (LeadingZero == 0)
+    return false;
+
+  Intrinsic::ID ID = II->getIntrinsicID();
+
+  if (ID == Intrinsic::shang_add || ID == Intrinsic::shang_addc) {
+    errs() << "Shrinked operation\n";
+
+    unsigned ShrinkedBitWidth = Builder.getBitWidth(II) - LeadingZero;
+
+    // Create the shrinked operator.
+    Type *ShrinkedRetTy = Builder.createIntegerType(ShrinkedBitWidth);
+    Value *ShrinkedLHS = Builder.createSBitExtractInst(II->getOperand(0), ShrinkedBitWidth, 0,
+                                                       ShrinkedRetTy, II, true);
+    Value *ShrinkedRHS = Builder.createSBitExtractInst(II->getOperand(1), ShrinkedBitWidth, 0,
+                                                       ShrinkedRetTy, II, true);
+
+    Value *ShrinkedAdder;
+    if (ID == Intrinsic::shang_add)
+      ShrinkedAdder = Builder.createSAddInst(ShrinkedLHS, ShrinkedRHS, ShrinkedRetTy, II, true);
+    else
+      ShrinkedAdder = Builder.createSAddInst(ShrinkedLHS, ShrinkedRHS, II->getOperand(2), ShrinkedRetTy, II, true);
+
+    // Remember to pad to bit width we need.
+    Value *PadingZeros = Builder.createIntegerValue(LeadingZero, 0);
+    Value *FinalResult = Builder.createSBitCatInst(PadingZeros, ShrinkedAdder, II->getType(), II, false);
+
+    return true;
+  }
+
+  return false;
+}
+
+bool SIRDatapathOpt::shrinkOperatorStrengh() {
+  // Collect all Adders and Multipliers
+  SmallVector<IntrinsicInst *, 4> AddMulVector;
+
+  Function *F = SM->getFunction();
+
+  typedef Function::iterator bb_iterator;
+  for (bb_iterator BI = F->begin(), BE = F->end(); BI != BE; ++BI) {
+    BasicBlock *BB = BI;
+
+    typedef BasicBlock::iterator inst_iterator;
+    for (inst_iterator II = BB->begin(), IE = BB->end(); II != IE; ++II) {
+      Instruction *Inst = II;
+
+      if (IntrinsicInst *IInst = dyn_cast<IntrinsicInst>(Inst)) {
+        Intrinsic::ID ID = IInst->getIntrinsicID();
+        
+        if (ID == Intrinsic::shang_add || ID == Intrinsic::shang_addc || ID == Intrinsic::shang_mul)
+          AddMulVector.push_back(IInst);
+      }
+    }
+  }
+
+  // Shrink the operator strength according to the bit mask.
+  SIRDatapathBuilder Builder(SM, *TD);
+  for (unsigned i = 0; i < AddMulVector.size(); ++i) {
+    IntrinsicInst *II = AddMulVector[i];
+
+    shrinkOperatorStrengh(II, Builder);
+  }
+
+  return false;
+}
+
+bool SIRDatapathOpt::runOnSIR(SIR &SM) {
+  this->TD = &getAnalysis<DataLayout>();
+  this->SM = &SM;
+
+  shrinkOperatorStrengh();
 
   return false;
 }
