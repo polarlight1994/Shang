@@ -61,14 +61,14 @@ INITIALIZE_PASS_END(SIRAddMulChain, "sir-add-mul-chain",
                     false, true)
 
 bool SIRAddMulChain::runOnSIR(SIR &SM) {
-  this->TD = &getAnalysis<DataLayout>();
-  this->SM = &SM;
-
-  collectAddMulChain();
-  printAllChain();
-
-  replaceWithCompressor();
-  generateDotMatrix();
+//   this->TD = &getAnalysis<DataLayout>();
+//   this->SM = &SM;
+// 
+//   collectAddMulChain();
+//   printAllChain();
+// 
+//   replaceWithCompressor();
+//   generateDotMatrix();
 
   return false;
 }
@@ -263,6 +263,34 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
 //           FlattenMul2PPNum.insert(std::make_pair(OperandInst, PartialProductNum));
 //           TotalPartialProductNum += PartialProductNum;
 //         }
+
+        Intrinsic::ID ID = OperandInst->getIntrinsicID();
+        // To check if there are add/mul--bit_extract--add chains exists.
+        if (ID == Intrinsic::shang_shl || ID == Intrinsic::shang_lshr) {
+          if (isa<ConstantInt>(OperandInst->getOperand(1))) {
+            if (IntrinsicInst *Op = dyn_cast<IntrinsicInst>(OperandInst->getOperand(0))) {
+              Intrinsic::ID OpID = Op->getIntrinsicID();
+
+              if (OpID == Intrinsic::shang_add || OpID == Intrinsic::shang_addc)
+                errs() << "Found one add--bit_extract--add chain\n";
+              if (OpID == Intrinsic::shang_mul)
+                errs() << "Found one mul--bit_extract--add chain\n";
+            }
+          }
+        }
+
+        if (ID == Intrinsic::shang_bit_extract) {
+          if (isa<ConstantInt>(OperandInst->getOperand(1)) && isa<ConstantInt>(OperandInst->getOperand(2))) {
+            if (IntrinsicInst *Op = dyn_cast<IntrinsicInst>(OperandInst->getOperand(0))) {
+              Intrinsic::ID OpID = Op->getIntrinsicID();
+
+              if (OpID == Intrinsic::shang_add || OpID == Intrinsic::shang_addc)
+                errs() << "Found one add--bit_extract--add chain\n";
+              if (OpID == Intrinsic::shang_mul)
+                errs() << "Found one mul--bit_extract--add chain\n";
+            }
+          }
+        }
       }
 
       Operands.push_back(Operand);
@@ -321,18 +349,18 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
         std::string string_j = utostr_32(j);
 
         if (j < RowValBitWidth) {
-          if (SM->hasBitMask(RowVal)) {
-            SIRBitMask Mask = SM->getBitMask(RowVal);
-
-            if (Mask.isOneKnownAt(j)) {
-              Matrix[i][j] = "1\'b1";
-              continue;
-            }
-            else if (Mask.isZeroKnownAt(j)) {
-              Matrix[i][j] = "1\'b0";
-              continue;
-            }
-          }
+//           if (SM->hasBitMask(RowVal)) {
+//             SIRBitMask Mask = SM->getBitMask(RowVal);
+// 
+//             if (Mask.isOneKnownAt(j)) {
+//               Matrix[i][j] = "1\'b1";
+//               continue;
+//             }
+//             else if (Mask.isZeroKnownAt(j)) {
+//               Matrix[i][j] = "1\'b0";
+//               continue;
+//             }
+//           }
 
           Matrix[i][j] = Mangle(RowValName) + LeftBracket + string_j + RightBracket;
         }
@@ -372,6 +400,8 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
 
     Output << "\n";
   }
+
+  errs() << "compressor_" + Mangle(Compressor->getName()) << "-" << MatrixRowNum << "-" << MatrixColNum << "\n";
 }
 
 void SIRAddMulChain::replaceWithCompressor() {
@@ -426,8 +456,4 @@ void SIRAddMulChain::printAllChain() {
 
     OptNum += Chain.size();
   }
-
-  
-
-  errs() << "Numbers of Chain to be optimized is " << OptNum << "\n";
 }

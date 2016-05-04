@@ -856,7 +856,7 @@ bool SIRDatapathOpt::shrinkOperatorStrengh(IntrinsicInst *II, SIRDatapathBuilder
   Intrinsic::ID ID = II->getIntrinsicID();
 
   if (ID == Intrinsic::shang_add || ID == Intrinsic::shang_addc) {
-    errs() << "Shrinked operation\n";
+    errs() << "Shrinked operation by width of " << utostr_32(LeadingZero) + "\n";
 
     unsigned ShrinkedBitWidth = Builder.getBitWidth(II) - LeadingZero;
 
