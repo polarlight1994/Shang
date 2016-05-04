@@ -193,16 +193,16 @@ void SIRAddMulChain::collect(IntrinsicInst *ChainRoot) {
     if (Collected.count(ChildInst))
       continue;
 
-    unsigned UsedByChainNum = 0;
-    typedef Value::use_iterator use_iterator;
-    for (use_iterator UI = ChildInst->use_begin(), UE = ChildInst->use_end(); UI != UE; ++UI) {
-      Value *UserVal = *UI;
-
-      if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal))
-        ++UsedByChainNum;
-    }
-    if (UsedByChainNum >= 2)
-      continue;
+//     unsigned UsedByChainNum = 0;
+//     typedef Value::use_iterator use_iterator;
+//     for (use_iterator UI = ChildInst->use_begin(), UE = ChildInst->use_end(); UI != UE; ++UI) {
+//       Value *UserVal = *UI;
+// 
+//       if (IntrinsicInst *UserInst = dyn_cast<IntrinsicInst>(UserVal))
+//         ++UsedByChainNum;
+//     }
+//     if (UsedByChainNum >= 2)
+//       continue;
 
     if (ChildInst->getIntrinsicID() == Intrinsic::shang_add || ChildInst->getIntrinsicID() == Intrinsic::shang_addc) {
       VisitStack.push_back(std::make_pair(ChildInst, ChildInst->op_begin()));
