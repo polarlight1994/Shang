@@ -349,18 +349,18 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
         std::string string_j = utostr_32(j);
 
         if (j < RowValBitWidth) {
-//           if (SM->hasBitMask(RowVal)) {
-//             SIRBitMask Mask = SM->getBitMask(RowVal);
-// 
-//             if (Mask.isOneKnownAt(j)) {
-//               Matrix[i][j] = "1\'b1";
-//               continue;
-//             }
-//             else if (Mask.isZeroKnownAt(j)) {
-//               Matrix[i][j] = "1\'b0";
-//               continue;
-//             }
-//           }
+          if (SM->hasBitMask(RowVal)) {
+            SIRBitMask Mask = SM->getBitMask(RowVal);
+
+            if (Mask.isOneKnownAt(j)) {
+              Matrix[i][j] = "1\'b1";
+              continue;
+            }
+            else if (Mask.isZeroKnownAt(j)) {
+              Matrix[i][j] = "1\'b0";
+              continue;
+            }
+          }
 
           Matrix[i][j] = Mangle(RowValName) + LeftBracket + string_j + RightBracket;
         }
