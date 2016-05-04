@@ -61,14 +61,14 @@ INITIALIZE_PASS_END(SIRAddMulChain, "sir-add-mul-chain",
                     false, true)
 
 bool SIRAddMulChain::runOnSIR(SIR &SM) {
-//   this->TD = &getAnalysis<DataLayout>();
-//   this->SM = &SM;
-// 
-//   collectAddMulChain();
-//   printAllChain();
-// 
-//   replaceWithCompressor();
-//   generateDotMatrix();
+  this->TD = &getAnalysis<DataLayout>();
+  this->SM = &SM;
+
+  collectAddMulChain();
+  printAllChain();
+
+  replaceWithCompressor();
+  generateDotMatrix();
 
   return false;
 }
