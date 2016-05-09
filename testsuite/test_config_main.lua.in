@@ -33,7 +33,7 @@ POINTER_SIZE_IN_BITS = @POINTER_SIZE_IN_BITS@
 dofile('@TEST_BINARY_ROOT@/' .. 'common_config.lua')
 dofile('@TEST_BINARY_ROOT@/' .. 'EP2C70F896C6.lua')
 
-Functions.main = RTLModuleName
+Functions.@TEST@ = RTLModuleName
 
 -- Load ip module and simulation interface script.
 dofile('@SIR_SOURCE_ROOT@/' .. 'FuncDefine.lua')

@@ -17,6 +17,8 @@ compressor_no = 0
 
 BASE_DIR = ''
 
+CompressorsList = dict()
+
 def codegen():
   global BASE_DIR
   
@@ -110,6 +112,7 @@ def initMatrix(FileName):
   global partial_product_num
   global partial_product_bits_num
   global append_partial_product_num
+  global CompressorsList
   
   PartialProductMatrixPath = os.path.join(BASE_DIR, FileName + '.dotmatrix')
   partial_product_matrix = open(PartialProductMatrixPath, 'r')
@@ -121,6 +124,7 @@ def initMatrix(FileName):
   partial_product_num = MatrixInfo[1]
   partial_product_bits_num = MatrixInfo[2]
   append_partial_product_num = 0
+  CompressorsList.clear()
 
   WTAFilePath = os.path.join(BASE_DIR, VerilogFile + '.sv')
   WTA_file = open(WTAFilePath, 'a')
@@ -323,6 +327,35 @@ def getCompressionStatus(matrix):
 
   return compress_status
 
+def checkIdenticalCompressor(triple_elements):
+  global CompressorsList
+
+  key_1 = triple_elements[0] + triple_elements[1] + triple_elements[2]
+  if (CompressorsList.get(key_1)):
+    return CompressorsList.get(key_1)
+
+  key_2 = triple_elements[0] + triple_elements[2] + triple_elements[1]
+  if (CompressorsList.get(key_2)):
+    return CompressorsList.get(key_2)
+
+  key_3 = triple_elements[1] + triple_elements[0] + triple_elements[2]
+  if (CompressorsList.get(key_3)):
+    return CompressorsList.get(key_3)
+
+  key_4 = triple_elements[1] + triple_elements[2] + triple_elements[0]
+  if (CompressorsList.get(key_4)):
+    return CompressorsList.get(key_4)
+
+  key_5 = triple_elements[2] + triple_elements[0] + triple_elements[1]
+  if (CompressorsList.get(key_5)):
+    return CompressorsList.get(key_5)
+
+  key_6 = triple_elements[2] + triple_elements[1] + triple_elements[0]
+  if (CompressorsList.get(key_6)):
+    return CompressorsList.get(key_6)
+
+  return None
+
 def compressTripleLines(matrix, stage):
   compress_status = getCompressionStatus(matrix)
 
@@ -332,13 +365,23 @@ def compressTripleLines(matrix, stage):
       
       for no in range(0, num):
         triple_elements = [matrix[row_no][3*no], matrix[row_no][3*no+1], matrix[row_no][3*no+2]]
-        sum_name = 'sum_' + str(row_no) + '_' + str(no) + '_' + str(stage)
-        carry_name = 'carry_' + str(row_no) + '_' + str(no) + '_' + str(stage)
-        compressor_generator(triple_elements, sum_name, carry_name)
 
         matrix[row_no][3*no] = '1\'b0'
         matrix[row_no][3*no+1] = '1\'b0'
         matrix[row_no][3*no+2] = '1\'b0'
+
+        sum_name = 'NULL'
+        carry_name = 'NULL'
+
+        IdenticalCompressor = checkIdenticalCompressor(triple_elements)
+        if (IdenticalCompressor != None):
+          print(str(IdenticalCompressor))
+          sum_name = IdenticalCompressor[0]
+          carry_name = IdenticalCompressor[1]
+        else:
+          sum_name = 'sum_' + str(row_no) + '_' + str(no) + '_' + str(stage)
+          carry_name = 'carry_' + str(row_no) + '_' + str(no) + '_' + str(stage)
+          compressor_generator(triple_elements, sum_name, carry_name)
 
         matrix[row_no].append(sum_name)
         if (row_no <= partial_product_bits_num - 2):
@@ -347,12 +390,22 @@ def compressTripleLines(matrix, stage):
       reminder = compress_status[row_no] % 3
       if (reminder == 2):
         triple_elements = [matrix[row_no][3*num], matrix[row_no][3*num+1], '1\'b0']
-        sum_name = 'sum_' + str(row_no) + '_' + str(num) + '_' + str(stage)
-        carry_name = 'carry_' + str(row_no) + '_' + str(num) + '_' + str(stage)
-        compressor_generator(triple_elements, sum_name, carry_name)
 
         matrix[row_no][3*num] = '1\'b0'
         matrix[row_no][3*num+1] = '1\'b0'
+
+        sum_name = 'NULL'
+        carry_name = 'NULL'
+
+        IdenticalCompressor = checkIdenticalCompressor(triple_elements)
+        if (IdenticalCompressor != None):
+          print(str(IdenticalCompressor))
+          sum_name = IdenticalCompressor[0]
+          carry_name = IdenticalCompressor[1]
+        else:
+          sum_name = 'sum_' + str(row_no) + '_' + str(num) + '_' + str(stage)
+          carry_name = 'carry_' + str(row_no) + '_' + str(num) + '_' + str(stage)
+          compressor_generator(triple_elements, sum_name, carry_name)
 
         matrix[row_no].append(sum_name)
         if (row_no <= partial_product_bits_num - 2):
@@ -370,12 +423,22 @@ def compressTripleLines(matrix, stage):
 
       if (need_to_compress):
         triple_elements = [matrix[row_no][0], matrix[row_no][1], '1\'b0']
-        sum_name = 'sum_' + str(row_no) + '_0_' + str(stage)
-        carry_name = 'carry_' + str(row_no) + '_0_' + str(stage)
-        compressor_generator(triple_elements, sum_name, carry_name)
 
         matrix[row_no][0] = '1\'b0'
         matrix[row_no][1] = '1\'b0'
+
+        sum_name = 'NULL'
+        carry_name = 'NULL'
+
+        IdenticalCompressor = checkIdenticalCompressor(triple_elements)
+        if (IdenticalCompressor != None):
+          print(str(IdenticalCompressor))
+          sum_name = IdenticalCompressor[0]
+          carry_name = IdenticalCompressor[1]
+        else:
+          sum_name = 'sum_' + str(row_no) + '_' + str(no) + '_' + str(stage)
+          carry_name = 'carry_' + str(row_no) + '_' + str(no) + '_' + str(stage)
+          compressor_generator(triple_elements, sum_name, carry_name)
 
         matrix[row_no].append(sum_name)
         if (row_no <= partial_product_bits_num - 2):
@@ -464,6 +527,7 @@ def printMatrix(matrix):
 
 def compressor_generator(triple_elements, sum_name, carry_name):
   global compressor_no
+  global CompressorsList
   
   WTAFilePath = os.path.join(BASE_DIR, VerilogFile + '.sv')
   WTA_file = open(WTAFilePath, 'a')
@@ -477,6 +541,10 @@ def compressor_generator(triple_elements, sum_name, carry_name):
                  '\t.cout(' + carry_name + ')\n' + \
                  ');\n\n')
   WTA_file.close()
+
+  key = triple_elements[0] + triple_elements[1] + triple_elements[2]
+  value = [sum_name, carry_name]
+  CompressorsList.setdefault(key, value)
   
   compressor_no += 1
 

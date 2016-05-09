@@ -387,12 +387,13 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
       }
 
       Operands.push_back(Operand);
+      SM->indexKeepVal(Operand);
     }
   }
 
   // Optimize operands if there are known same sign bits in two or more operands.
   std::vector<Value *> OptOperands = Operands;
-  OptOperands = OptimizeOperands(Operands, ChainRoot, TD->getTypeSizeInBits(ChainRoot->getType()));
+  //OptOperands = OptimizeOperands(Operands, ChainRoot, TD->getTypeSizeInBits(ChainRoot->getType()));
 
   IntrinsicInst *Compressor = ChainRoot2Compressor[ChainRoot];
   SM->IndexOps2AdderChain(Compressor, OptOperands);
@@ -441,6 +442,7 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
 
       RowValName = "operand_" + utostr_32(i);
 
+      std::string SameBit;
       for (unsigned j = 0; j < MatrixColNum; ++j) {
         std::string string_j = utostr_32(j);
 
@@ -458,6 +460,17 @@ void SIRAddMulChain::generateDotmatrixForChain(IntrinsicInst *ChainRoot, raw_fd_
               errs() << "Mask set to Zero!\n";
 
               Matrix[i][j] = "1\'b0";
+              continue;
+            } else if (Mask.isSameKnownAt(j)) {
+              errs() << "Same bit!\n";
+
+              if (SameBit.size() != 0)
+                Matrix[i][j] = SameBit;
+              else {
+                SameBit = Mangle(RowValName) + LeftBracket + string_j + RightBracket;
+                Matrix[i][j] = SameBit;
+              }
+
               continue;
             }
           }
